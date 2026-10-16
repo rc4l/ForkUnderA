@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as cap from "./capture.mjs";
+import { percentile } from "./stats.mjs";
 
 // [rc4l] A console command on an instance, waited on as long as a telemetry command can take, its output returned.
 export const execSlow = (c, text) => cap.exec(c, text, cap.SLOW_COMMAND);
@@ -35,6 +36,12 @@ export function levelStarted(text) {
   return m ? m[1] : null;
 }
 
+// [rc4l] The size a step "check: resize WxH" asks the game window to take, as a person dragging its corner would, or null for any other step; a page soaked by tools/web takes the same step.
+export function resizeAsked(text) {
+  const m = /^check: resize (\d+)x(\d+)$/.exec(String(text).trim());
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
 // [rc4l] One cycle of a soak as steps run in order: a named action, else console texts separated by "|", each with the map it starts (null for none), which the soak waits for.
 export function soakSteps(action, map) {
   if (SOAK_ACTIONS[action] && !map) throw new Error(`soak: ${action} repeats the current map, and the instance is in none`);
@@ -46,7 +53,7 @@ export function soakSteps(action, map) {
 export function soakSlower(cycles, warmup, { share = 0.25, floors = { stepSeconds: 0.25, frameMs: 0.1 } } = {}) {
   const judged = cycles.slice(Math.max(0, warmup));
   if (judged.length < 4) return [];
-  const median = (v) => { const s = [...v].sort((a, b) => a - b); return s[Math.floor((s.length - 1) / 2)]; };
+  const median = (v) => percentile(v, 50);
   const half = Math.floor(judged.length / 2);
   const out = [];
   for (const [key, floor] of Object.entries(floors)) {
@@ -123,8 +130,8 @@ async function awaitNewLevel(c, before, { sleep, timeoutMs = 60000 }) {
   throw new Error("soak: the level never came back");
 }
 
-// [rc4l] Repeats an action's steps on c cycles times, marking memory after each cycle once it settles on judge (c itself, or a server c joins and leaves), and returns judge's verdict (fua_soak verdict json: pass, marks, judged, grew as { name, text } and its report), leaving out readings under each ignore prefix, with each cycle's step time and judge's frame time, what got slower, and with sites the allocation stacks that grew from the first judged cycle to the last.
-export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, settleMs = 4000, ignore = [], judge = c, sites = false, exec = execSlow, sleep = cap.sleep, now = Date.now, log = () => {} }) {
+// [rc4l] Repeats an action's steps on c, marking memory on judge (c, or a server c joins and leaves) after each cycle, and returns judge's fua_soak verdict with each cycle's times, what got slower and, with sites, the allocation stacks that grew.
+export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, settleMs = 4000, ignore = [], judge = c, sites = false, resize = null, exec = execSlow, sleep = cap.sleep, now = Date.now, log = () => {} }) {
   const steps = soakSteps(action, (await c.rpc("player.camera").catch(() => ({}))).map);
   const ran = [];
   const record = sites && cycles - warmup >= 2;
@@ -134,6 +141,13 @@ export async function runSoak(c, { action = "reload", cycles = 6, warmup = 1, se
     if (record && i === warmup) await exec(judge, "fua_allocsites start");
     const started = now();
     for (const step of steps) {
+      const size = resizeAsked(step.text);
+      if (size) {
+        if (!resize) throw new Error(`soak: nothing here can size a window for "${step.text}"`);
+        await resize(...size);
+        await sleep(300);
+        continue;
+      }
       const before = step.map ? await playedLevelTime(c, { sleep }) : 0;
       await exec(c, step.text);
       if (step.map) await awaitNewLevel(c, before, { sleep });

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resizeAsked } from '../fuactl/src/telemetry.mjs';
 
 export const CHROME_CANDIDATES = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -60,41 +61,44 @@ export function formatEval(result) {
 // [rc4l] The keys a page may ask smoke to press, with the codes Chrome's input events want.
 export const KEYS = { Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 }, Enter: { code: 'Enter', keyCode: 13 } };
 
-// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle, "check: press KEY" presses one of KEYS, "check: resize WxH" makes the window that size; null for any other line.
+// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle, "check: press KEY" presses one of KEYS, "check: resize WxH" makes the window that size (fuactl's resizeAsked, which a desktop soak takes too); null for any other line.
 export function inputAsked(line) {
-  const m = /^\[log\] check: (click|press (\S+)|resize (\d+)x(\d+))$/.exec(line);
+  if (!line.startsWith('[log] ')) return null;
+  const size = resizeAsked(line.slice(6));
+  if (size) return { resize: size };
+  const m = /^\[log\] check: (click|press (\S+))$/.exec(line);
   if (!m) return null;
-  if (m[3]) return { resize: [Number(m[3]), Number(m[4])] };
   if (!m[2]) return { click: true };
   return KEYS[m[2]] ? { key: m[2], ...KEYS[m[2]] } : null;
 }
 
-// [rc4l] Until a download has landed in dir and none is still being written (Chrome's .crdownload), or ten seconds, since closing Chrome mid-download leaves only the partial file.
-export async function downloadsSettled(dir, { timeoutMs = 10000, pollMs = 100 } = {}) {
-  for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await new Promise(r => setTimeout(r, pollMs))) {
-    const files = fs.readdirSync(dir);
-    if (files.length && !files.some(f => f.endsWith('.crdownload'))) return true;
-  }
-  return false;
-}
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForJson(url, deadline) {
+// [rc4l] What attempt returns once it is not undefined, tried again after each wait until deadline, past which its last error, or a timeout, is thrown.
+export async function retry(attempt, deadline, wait = () => pause(100)) {
   for (;;) {
-    try { return await (await fetch(url)).json(); }
-    catch (e) { if (Date.now() > deadline) throw e; await new Promise(r => setTimeout(r, 100)); }
-  }
-}
-
-// [rc4l] The debugging port a Chrome started with --remote-debugging-port=0 chose, from the DevToolsActivePort file it writes in its profile, so a run reaches its own Chrome and never one a stale run left on a fixed port.
-export async function devToolsPort(dir, deadline, { read = (f) => fs.readFileSync(f, 'utf8'), wait = () => new Promise((r) => setTimeout(r, 100)) } = {}) {
-  for (;;) {
+    let error = null;
     try {
-      const port = Number(read(path.join(dir, 'DevToolsActivePort')).split(/\r?\n/)[0]);
-      if (port > 0) return port;
-    } catch { /* not written yet */ }
-    if (Date.now() > deadline) throw new Error(`Chrome wrote no DevToolsActivePort in ${dir}`);
+      const value = await attempt();
+      if (value !== undefined) return value;
+    } catch (e) { error = e; }
+    if (Date.now() > deadline) throw error ?? new Error('timed out');
     await wait();
   }
+}
+
+// [rc4l] Until a download has landed in dir and none is still being written (Chrome's .crdownload), or ten seconds, since closing Chrome mid-download leaves only the partial file.
+export function downloadsSettled(dir, { timeoutMs = 10000, pollMs = 100 } = {}) {
+  const settled = () => { const files = fs.readdirSync(dir); return files.length && !files.some(f => f.endsWith('.crdownload')) ? true : undefined; };
+  return retry(settled, Date.now() + timeoutMs, () => pause(pollMs)).catch(() => false);
+}
+
+const waitForJson = (url, deadline) => retry(async () => (await fetch(url)).json(), deadline);
+
+// [rc4l] The debugging port a Chrome started with --remote-debugging-port=0 chose, from the DevToolsActivePort file it writes in its profile, so a run reaches its own Chrome and never one a stale run left on a fixed port.
+export function devToolsPort(dir, deadline, { read = (f) => fs.readFileSync(f, 'utf8'), wait } = {}) {
+  const port = () => { const p = Number(read(path.join(dir, 'DevToolsActivePort')).split(/\r?\n/)[0]); return p > 0 ? p : undefined; };
+  return retry(port, deadline, wait).catch(() => { throw new Error(`Chrome wrote no DevToolsActivePort in ${dir}`); });
 }
 
 // [rc4l] Chrome's own log lines about its GPU process and devices, the last `count` of them, the page's console echoed there left out: why a page lost its device, which the page itself is never told.
@@ -104,7 +108,6 @@ export function gpuLogLines(text, count = 15) {
     .slice(-count);
 }
 
-// [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
 // [rc4l] Removes a scratch folder, and says so rather than throwing when Chrome's helper processes still hold it, since a leftover temp folder is no reason to fail a run; false when it stayed.
 export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
   try {
@@ -116,7 +119,8 @@ export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
   }
 }
 
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, port: askedPort = 0, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
+// [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
@@ -124,12 +128,12 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
   // [rc4l] The last run's port file goes first, so the port read back is this Chrome's.
   fs.rmSync(path.join(dir, 'DevToolsActivePort'), { force: true });
   const log = logFile ? fs.openSync(logFile, 'w') : 'ignore';
-  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(askedPort, dir, { headless, software, autoplay })], { stdio: ['ignore', 'ignore', log] });
+  const proc = spawn(exe, [...(logFile ? ['--enable-logging=stderr', '--v=0'] : []), ...chromeArgs(0, dir, { headless, software, autoplay })], { stdio: ['ignore', 'ignore', log] });
   if (logFile) fs.closeSync(log);
   const lines = [];
   try {
     const deadline = Date.now() + seconds * 1000;
-    const port = askedPort || await devToolsPort(dir, deadline);
+    const port = await devToolsPort(dir, deadline);
     const targets = await waitForJson(`http://127.0.0.1:${port}/json/list`, deadline);
     const version = (await waitForJson(`http://127.0.0.1:${port}/json/version`, deadline)).Browser;
     const page = targets.find(t => t.type === 'page');

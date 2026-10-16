@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { windowKind, parseWindowLines, shotScript } from "../src/window.mjs";
+import { windowKind, parseWindowLines, shotScript, resizeScript, gameWindowOf } from "../src/window.mjs";
 
 // [rc4l] Queue #41 was read off a hung GL window and a minimized backend one, with PowerShell written beside the tool each time.
 test("a window is GL's or the backend's by its title", () => {
@@ -23,4 +23,14 @@ test("a capture names the window and quotes the path PowerShell's way", () => {
   const s = shotScript("123", "C:/it's here/a.png");
   assert.match(s, /\[IntPtr\]123/);
   assert.match(s, /Save\('C:\/it''s here\/a\.png'\)/);
+});
+
+test("a resize keeps the window where it stands and sizes the instance's game window", () => {
+  const s = resizeScript("77", 900, 700);
+  assert.match(s, /\[IntPtr\]77/);
+  assert.match(s, /MoveWindow\(\$h, \$r\.L, \$r\.T, 900, 700, \$true\)/);
+  const w = (pid, kind) => ({ pid, kind, hwnd: `${pid}${kind}` });
+  assert.equal(gameWindowOf([w(1, "vk"), w(2, "gl"), w(1, "gl"), w(1, null)], 1).hwnd, "1gl");
+  assert.equal(gameWindowOf([w(1, null), w(1, "vk")], 1).hwnd, "1vk");
+  assert.equal(gameWindowOf([w(2, "gl")], 1), null);
 });

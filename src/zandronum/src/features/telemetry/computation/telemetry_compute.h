@@ -160,10 +160,13 @@ enum class RegionKind { Private, Mapped, Image };
 struct MemoryRegion { double bytes; RegionKind kind; bool executable, writable; };
 // [rc4l] Committed memory by kind as readings named prefix + private_rw_bytes, private_exec_bytes, private_other_bytes, mapped_bytes and private_regions, so growth outside every heap shows what holds it (a driver's pools, compiled code, a mapped file).
 std::vector<Reading> ComputeRegionReadings(const std::vector<MemoryRegion> &regions, const std::string &prefix);
+// [rc4l] Whether a Windows region's protection (its PAGE_* value, whose numbers this takes as Windows defines them) lets it execute and write.
+struct RegionAccess { bool executable, writable; };
+RegionAccess ComputeWin32RegionAccess(unsigned protect);
 
 // [rc4l] One memory heap a driver reports: whether it is the device's own, what the process uses of it and what it may.
 struct HeapBudget { bool deviceLocal; double used, budget; };
-// [rc4l] The device's own heaps summed (deviceLocal) or the host's the device reaches, which is what a process holds there and may hold.
+// [rc4l] The device's own heaps summed (deviceLocal) or the host's the device reaches, which is what a process holds there and may hold, both negative when no heap is of that kind.
 HeapBudget ComputeHeapBudget(const std::vector<HeapBudget> &heaps, bool deviceLocal);
 
 // [rc4l] An object's name as its memory tag: anything from a digit, '#' or '[' on dropped and trailing spaces trimmed, so numbered copies share a tag; unnamed ones are "unnamed".

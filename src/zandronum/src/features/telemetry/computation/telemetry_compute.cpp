@@ -490,15 +490,25 @@ std::vector<Reading> ComputeRegionReadings(const std::vector<MemoryRegion> &regi
 		{ prefix + "mapped_bytes", "bytes", mapped }, { prefix + "private_regions", "objects", count } };
 }
 
+RegionAccess ComputeWin32RegionAccess(unsigned protect)
+{
+	// [rc4l] The low byte is one value: PAGE_EXECUTE (0x10), _READ (0x20), _READWRITE (0x40) and _WRITECOPY (0x80) execute, and those last two, PAGE_READWRITE (0x04) and PAGE_WRITECOPY (0x08) write.
+	const unsigned p = protect & 0xff;
+	return RegionAccess{ (p & 0xf0) != 0, (p & 0xcc) != 0 };
+}
+
 HeapBudget ComputeHeapBudget(const std::vector<HeapBudget> &heaps, bool deviceLocal)
 {
 	HeapBudget sum = { deviceLocal, 0.0, 0.0 };
+	bool any = false;
 	for (const HeapBudget &h : heaps)
 	{
 		if (h.deviceLocal != deviceLocal) continue;
+		any = true;
 		sum.used += h.used;
 		sum.budget += h.budget;
 	}
+	if (!any) sum.used = sum.budget = -1.0;
 	return sum;
 }
 

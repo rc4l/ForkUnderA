@@ -47,7 +47,7 @@ const char *BackendApiName();
 
 // [rc4l] The engine drew a view of the world this frame, which the present draws under the 2D layer.
 void NoteWorldView();
-// [rc4l] Every start (a wad_reload's too) makes the textures and materials again, so the backend's caches keyed on the old ones go, which only a level load did before; a restart to the title kept them.
+// [rc4l] Drops the backend's caches keyed on textures and materials, which every start (a wad_reload's too) makes again at addresses the old ones may have had.
 void ForgetBackendTextures();
 // [rc4l] Step the level's set-up through at once before its first view, which a launch without GL can since the map bakes the level whole, so that view, and a wipe's new screen, are drawn rather than black.
 void SettleLevelScene();

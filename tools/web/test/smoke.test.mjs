@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { chromeArgs, devToolsPort, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly } from '../smoke.mjs';
+import { chromeArgs, devToolsPort, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly, retry } from '../smoke.mjs';
 
 test("Chrome's log is read for what it says about its GPU process, not for the page's console", () => {
   const log = [
@@ -90,4 +90,13 @@ test('a run reads the debugging port its own Chrome chose, waiting until it is w
   const port = await devToolsPort('/p', Date.now() + 1000, { read: () => { const r = reads.shift(); if (r === '') throw new Error('ENOENT'); return r; }, wait: async () => {} });
   assert.equal(port, 61234);
   await assert.rejects(devToolsPort('/p', Date.now() - 1, { read: () => { throw new Error('ENOENT'); }, wait: async () => {} }), /wrote no DevToolsActivePort/);
+});
+
+test('a retry returns the first answer, and past its deadline throws the last error or a timeout', async () => {
+  const answers = [undefined, 'no', 7];
+  let tries = 0;
+  assert.equal(await retry(() => { tries++; const a = answers.shift(); if (a === 'no') throw new Error('not yet'); return a; }, Date.now() + 1000, async () => {}), 7);
+  assert.equal(tries, 3);
+  await assert.rejects(retry(() => { throw new Error('refused'); }, Date.now() - 1, async () => {}), /refused/);
+  await assert.rejects(retry(() => undefined, Date.now() - 1, async () => {}), /timed out/);
 });

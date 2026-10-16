@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { allocGrowth, parseAllocReport, consoleTextFor, levelStarted, soakSteps, soakSlower, soakCycleLines, parseConsoleJson, runSoak, compareStats, formatCompare, baselinePath, perfGate, execSlow } from "../src/telemetry.mjs";
+import { allocGrowth, parseAllocReport, consoleTextFor, levelStarted, resizeAsked, soakSteps, soakSlower, soakCycleLines, parseConsoleJson, runSoak, compareStats, formatCompare, baselinePath, perfGate, execSlow } from "../src/telemetry.mjs";
 
 test("each view is the console command it names, built from its words and flags", () => {
   assert.equal(consoleTextFor("console", ["map", "MAP02"]), "map MAP02");
@@ -28,7 +28,7 @@ test("a soak's steps are a named action on the soak's map, or console texts sepa
     [{ text: "wad_reload a.wad map=E1M1", map: "E1M1" }, { text: "wad_reload - b.pk3 map=MAP01", map: "MAP01" }]);
 });
 
-test("the map console text starts is read from map, changemap and a wad_reload's map=", () => {
+test("the map console text starts is read from each command that starts one, and a connect's is the server's", () => {
   assert.equal(levelStarted("map MAP11"), "MAP11");
   assert.equal(levelStarted(" changemap e1m2"), "e1m2");
   assert.equal(levelStarted("wad_reload doom2.wad a.pk3 map=MAP03"), "MAP03");
@@ -45,7 +45,7 @@ test("a soak got slower when its later cycles' median passes the earlier ones' b
   const flat = [cycle(9, 9), cycle(1.6, 0.25), cycle(1.7, 0.26), cycle(1.6, 0.25), cycle(1.65, 0.27)];
   assert.deepEqual(soakSlower(flat, 1), []);
   const worse = [cycle(9, 9), cycle(1.6, 0.25), cycle(1.6, 0.25), cycle(2.4, 0.5), cycle(2.5, 0.6)];
-  assert.deepEqual(soakSlower(worse, 1), ["stepSeconds went from 1.60 to 2.40", "frameMs went from 0.25 to 0.50"]);
+  assert.deepEqual(soakSlower(worse, 1), ["stepSeconds went from 1.60 to 2.45", "frameMs went from 0.25 to 0.55"]);
   assert.deepEqual(soakSlower([cycle(0.1, 0.01), cycle(0.1, 0.01), cycle(0.2, 0.05), cycle(0.2, 0.05)], 0), []);
   assert.deepEqual(soakSlower(worse.slice(0, 4), 1), []);
   assert.deepEqual(soakCycleLines([cycle(1.5, 0.25)]), ["cycle 1: steps 1.50 s, frame p50 0.250 ms"]);
@@ -151,6 +151,19 @@ test("a soak can judge another instance than the one its steps run on", async ()
   assert.equal(r.pass, true);
   assert.deepEqual(client.ran, ["connect 127.0.0.1:10670", "disconnect"]);
   assert.deepEqual(server.ran, ["fua_soak begin", "fua_soak mark", "fua_stats json frame/ms", "fua_soak verdict 1 json"]);
+});
+
+// [rc4l] The resize audit sized the window from outside with a script beside the tool, which a soak step does now, with the text a page takes.
+test("a resize step sizes the window through the caller and no console command runs for it", async () => {
+  assert.deepEqual(resizeAsked("check: resize 900x700"), [900, 700]);
+  assert.equal(resizeAsked("check: resize big"), null);
+  assert.equal(resizeAsked("vid_setmode 900 700"), null);
+  const { c, exec, ran } = fakeInstance({ verdict: { pass: true } });
+  const sized = [];
+  await runSoak(c, { action: "check: resize 900x700|check: resize 1280x720", cycles: 1, settleMs: 0, exec, sleep: async () => {}, resize: async (w, h) => sized.push(`${w}x${h}`) });
+  assert.deepEqual(sized, ["900x700", "1280x720"]);
+  assert.ok(!ran.some((t) => t.startsWith("check:")));
+  await assert.rejects(runSoak(c, { action: "check: resize 900x700", cycles: 1, settleMs: 0, exec, sleep: async () => {} }), /nothing here can size a window/);
 });
 
 // [rc4l] Rapid WAD changes: a cycle reloads one set and then another, each waited on, and marks once back on the first map.

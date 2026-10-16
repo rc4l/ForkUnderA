@@ -7,12 +7,13 @@ import * as cap from "./capture.mjs";
 import * as shot from "./shot.mjs";
 import * as ui from "./ui.mjs";
 import { withLockedInstance } from "./play.mjs";
-import { resolveEngine, engineProcessCount, exited } from "./launch.mjs";
+import { resolveEngine, engineProcessCount, exited, slashed } from "./launch.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
+export const FREEDOOM1 = path.join(path.dirname(FREEDOOM2), "freedoom1.wad");
 
 // [rc4l] The console lines a side runs once its level is up: each cvar, then its own commands (a re-bake, say).
 export function sideCommands(side) {
@@ -114,7 +115,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
   // [rc4l] GL reads its frame back out of the window, so another engine on top can make it garbage.
   const others = sides.some((sd) => sd.gl) ? engineProcessCount() : 0;
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
-  const exe = resolveEngine().split(path.sep).join("/");
+  const exe = slashed(resolveEngine());
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
   const lines = [];
@@ -355,7 +356,7 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
 export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70, commands = [] }) {
   const others = engineProcessCount();
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
-  const exe = resolveEngine().split(path.sep).join("/");
+  const exe = slashed(resolveEngine());
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: { name: "pair", glDraws: true, commands } }, async (c, map) => {
     const frames = {};
     await cap.waitTics(c, settleTics);
@@ -372,7 +373,7 @@ export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad 
 
 // [rc4l] One Vulkan launch per map; at each vantage a capture after each of `steps` (shot.captureSequence), and each box judged between the two captures its `pair` names: for what a command must change (a mark made) and what must survive one (a mode change).
 export async function compareSequence({ name, wad, maps, vantages, steps, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], sides = [] }) {
-  const exe = resolveEngine().split(path.sep).join("/");
+  const exe = slashed(resolveEngine());
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     const frames = {};
     for (const v of vantages) {
@@ -387,7 +388,7 @@ export async function compareSequence({ name, wad, maps, vantages, steps, boxes,
 // [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not; the launch takes the first non-GL side's settings.
 export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720], sides = [] }) {
-  const exe = resolveEngine().split(path.sep).join("/");
+  const exe = slashed(resolveEngine());
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     const frames = {};
     for (const v of vantages) {

@@ -475,7 +475,6 @@ TEST(TelemetryRegions, CommittedMemoryIsTotalledByKind)
 	EXPECT_DOUBLE_EQ(r[4].value, 4.0);
 }
 
-// [rc4l] Host-visible memory a device allocates sits in the process's private bytes, so it is summed apart from the device's own.
 // [rc4l] A wad_reload soak leaves out what settles over the first restarts (the heap's commit) and still judges the rest.
 TEST(TelemetrySoak, IgnoredPrefixesAreNotJudged)
 {
@@ -501,6 +500,16 @@ TEST(TelemetrySoak, VerdictArgumentsComeInAnyOrder)
 	EXPECT_EQ(ComputeSoakVerdictArgs({ "-" }).warmup, 0);
 }
 
+TEST(TelemetryRegions, AWindowsProtectionSaysWhetherItExecutesAndWrites)
+{
+	const unsigned noAccess = 0x01, readOnly = 0x02, readWrite = 0x04, writeCopy = 0x08, execute = 0x10, executeRead = 0x20, executeReadWrite = 0x40, executeWriteCopy = 0x80, guard = 0x100;
+	for (unsigned p : { noAccess, readOnly }) EXPECT_FALSE(ComputeWin32RegionAccess(p).executable || ComputeWin32RegionAccess(p).writable);
+	for (unsigned p : { readWrite, writeCopy, readWrite | guard }) EXPECT_TRUE(!ComputeWin32RegionAccess(p).executable && ComputeWin32RegionAccess(p).writable);
+	for (unsigned p : { execute, executeRead }) EXPECT_TRUE(ComputeWin32RegionAccess(p).executable && !ComputeWin32RegionAccess(p).writable);
+	for (unsigned p : { executeReadWrite, executeWriteCopy }) EXPECT_TRUE(ComputeWin32RegionAccess(p).executable && ComputeWin32RegionAccess(p).writable);
+}
+
+// [rc4l] Host-visible memory a device allocates sits in the process's private bytes, so it is summed apart from the device's own.
 TEST(TelemetryBudget, TheDevicesHeapsAndTheHostsAreSummedApart)
 {
 	const std::vector<HeapBudget> heaps = { { true, 100.0, 1000.0 }, { false, 5.0, 50.0 }, { true, 20.0, 200.0 }, { false, 1.0, 10.0 } };
@@ -512,4 +521,7 @@ TEST(TelemetryBudget, TheDevicesHeapsAndTheHostsAreSummedApart)
 	EXPECT_FALSE(host.deviceLocal);
 	EXPECT_DOUBLE_EQ(host.used, 6.0);
 	EXPECT_DOUBLE_EQ(host.budget, 60.0);
+	const HeapBudget none = ComputeHeapBudget({}, true);
+	EXPECT_DOUBLE_EQ(none.used, -1.0);
+	EXPECT_DOUBLE_EQ(none.budget, -1.0);
 }

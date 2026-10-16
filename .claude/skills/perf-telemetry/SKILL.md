@@ -36,11 +36,11 @@ node src/cli.mjs soak --cycles 6 --port 7799           # reload the level six ti
 node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allocation stacks that grew from cycle 3 to cycle 8
 ```
 
-- `soak --action "A|B|..."` repeats any console steps in order, waiting on each that starts a level (`map`, `changemap`, `wad_reload ... map=`, `fua_hostmap`, `connect`) and marking once a cycle, so every mark lands on the same map. Each cycle's step time and frame time print, and a later half slower than the earlier fails it.
+- `soak --action "A|B|..."` repeats any console steps in order, waiting on each that starts a level (`levelStarted` in `telemetry.mjs` says which) and marking once a cycle, so every mark lands on the same map. Each cycle's step time and frame time print, and a later half slower than the earlier fails it.
 - Recipes the restart and hosting audit used:
   - Rapid WAD changes: `--action "wad_reload <other iwad> map=E1M1|wad_reload <iwad> <pwad> map=MAP01"` (forward slashes); with no `map=`, the restarts stay at the title.
   - Self-hosting: `--action "fua_hostmap MAP01"`. A server: launch one with `launch --arg "-host,-port,10670"`, then `soak --port <client> --judge-port <server> --judge-token T --action "connect 127.0.0.1:10670|disconnect"` judges the server while the client joins and leaves.
-  - Resizing: move the window from outside (`MoveWindow`), since `vid_setmode` leaves a window's size alone; fullscreen: `--action "fullscreen 1|fullscreen 0"`, which covers the user's screen while it runs.
+  - Resizing: `--action "check: resize 900x700|check: resize 1340x860"` sizes the game window from outside as a drag does (`window --resize WxH` once), since `vid_setmode` leaves a window's size alone; fullscreen: `--action "fullscreen 1|fullscreen 0"`, which covers the user's screen while it runs.
 - Turn on `fua_render_in_background` for a soak (scenarios do): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
 - Private bytes settle over the first sixty or so restarts (the heap's commit and the driver's caches) and level off; judge a restart soak with `--ignore mem/private_bytes` and live allocations, heap bytes, GPU memory and handles, or run eighty restarts and watch the plateau. `mem/win/` and `mem/heaps_committed_bytes` say whether growth sits in a heap or outside every one.
 - A soak judges every gauge and breakdown reading in bytes, objects, handles or threads, the backend's GPU memory by tag and in a browser what the page holds among them, except those registered with `soaked` false, such as a peak, which only ever grows. Its verdict names each counter that grew and by how much a cycle.

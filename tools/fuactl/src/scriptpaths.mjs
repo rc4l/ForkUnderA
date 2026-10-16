@@ -3,8 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { sweepDirFor } from "./shot.mjs";
-
-const slashed = (p) => p.split(path.sep).join("/");
+import { slashed } from "./launch.mjs";
 
 export const FUACTL_DIR = slashed(path.resolve(fileURLToPath(new URL("..", import.meta.url))));
 export const CLI = `${FUACTL_DIR}/src/cli.mjs`;

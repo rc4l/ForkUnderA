@@ -60,7 +60,7 @@ browser numbers each kind from one, and a buffer sharing a kept texture's number
 collector (queue #48). Diligent's WebGPU device keeps every upload page it ever made, so the scene buffer is kept
 while the level fits it and its big writes go in upload-page-sized pieces (`kUploadPageBytes`, `dgupload.cpp`).
 `features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
-Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` from `features/frame/framedriver.cpp`, so the caches keyed on the old textures and materials go before new ones can reuse their addresses; a level load did it alone before, and a restart to the title kept them.
+Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
 
 At exit the backend shuts down before the static destructors (`ShutdownBackend`, an `atterm` in
 `diligent/dgwindow.cpp`): the swapchain goes while its window is still there, the frame fence while the console

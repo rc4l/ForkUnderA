@@ -82,9 +82,7 @@ void PWO_Init()
 	Printf( "PWO_Init: Initializing preferred weapon order.\n" );
 
 	// [rc4l] A restart makes every weapon class again at new addresses, so the entries keyed on the old ones are freed instead of kept, or matched by a new class at an old address.
-	for ( unsigned int i = 0; i < WeaponInfo.Size(); ++i )
-		delete WeaponInfo[i];
-	WeaponInfo.Clear();
+	WeaponInfo.DeleteAndClear();
 	WeaponInfoPerClass.Clear();
 
 	ParsingPWO = true;

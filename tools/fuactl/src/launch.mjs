@@ -22,6 +22,9 @@ const STAGED_ENGINES = [
 // which is talking to an ALREADY RUNNING instance over a port and wants the path only to know where
 // the PNG lands. `ui read` and every `rpc` worked, so the tool looked fine right up until the one
 // call that reads a file back off disk. Found driving a Windows build.
+// [rc4l] A path with forward slashes, which the engine's command line and its console (where a backslash escapes) both take.
+export const slashed = (p) => String(p).split(path.sep).join("/");
+
 export function resolveEngine() {
   const env = process.env.FUACTL_ENGINE;
   // cwd is either the repo root or tools/fuactl, so each candidate is tried from both.

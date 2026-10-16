@@ -72,11 +72,9 @@ void CommittedRegions(std::vector<Reading> &out)
 	for (const char *at = NULL; VirtualQuery(at, &mbi, sizeof(mbi)) == sizeof(mbi); at = (const char *)mbi.BaseAddress + mbi.RegionSize)
 	{
 		if (mbi.State != MEM_COMMIT) continue;
-		const DWORD p = mbi.Protect & 0xff;
-		const bool exec = p == PAGE_EXECUTE || p == PAGE_EXECUTE_READ || p == PAGE_EXECUTE_READWRITE || p == PAGE_EXECUTE_WRITECOPY;
-		const bool write = p == PAGE_READWRITE || p == PAGE_WRITECOPY || p == PAGE_EXECUTE_READWRITE || p == PAGE_EXECUTE_WRITECOPY;
+		const RegionAccess access = ComputeWin32RegionAccess(mbi.Protect);
 		const RegionKind kind = mbi.Type == MEM_PRIVATE ? RegionKind::Private : mbi.Type == MEM_MAPPED ? RegionKind::Mapped : RegionKind::Image;
-		regions.push_back(MemoryRegion{ (double)mbi.RegionSize, kind, exec, write });
+		regions.push_back(MemoryRegion{ (double)mbi.RegionSize, kind, access.executable, access.writable });
 	}
 	const std::vector<Reading> readings = ComputeRegionReadings(regions, "mem/win/");
 	out.insert(out.end(), readings.begin(), readings.end());
@@ -123,21 +121,20 @@ void ReadOs(OsReadings &out)
 	}
 	DWORD handles = 0;
 	if (GetProcessHandleCount(GetCurrentProcess(), &handles)) out.handles = (double)handles;
-	HeapSummaryRecord heap = {};
-	heap.cb = sizeof(heap);
-	if (heapSummary != NULL && heapSummary(GetProcessHeap(), 0, &heap)) out.heapBytes = (double)heap.cbAllocated;
+	// [rc4l] One heap's summary, false where Windows cannot give it.
+	const auto summarize = [](HANDLE h, HeapSummaryRecord &rec) { rec = {}; rec.cb = sizeof(rec); return heapSummary != NULL && heapSummary(h, 0, &rec) != FALSE; };
+	HeapSummaryRecord heap;
+	if (summarize(GetProcessHeap(), heap)) out.heapBytes = (double)heap.cbAllocated;
 	HANDLE heaps[256];
-	const DWORD heapCount = GetProcessHeaps(256, heaps);
-	if (heapSummary != NULL && heapCount > 0 && heapCount <= 256)
+	const DWORD heapCount = GetProcessHeaps(ARRAYSIZE(heaps), heaps);
+	if (heapSummary != NULL && heapCount > 0 && heapCount <= ARRAYSIZE(heaps))
 	{
 		out.allHeapsBytes = out.heapsCommittedBytes = 0.0;
 		for (DWORD i = 0; i < heapCount; i++)
 		{
-			HeapSummaryRecord each = {};
-			each.cb = sizeof(each);
-			if (!heapSummary(heaps[i], 0, &each)) continue;
-			out.allHeapsBytes += (double)each.cbAllocated;
-			out.heapsCommittedBytes += (double)each.cbCommitted;
+			if (!summarize(heaps[i], heap)) continue;
+			out.allHeapsBytes += (double)heap.cbAllocated;
+			out.heapsCommittedBytes += (double)heap.cbCommitted;
 		}
 	}
 	out.gpuProcessBytes = DxgiProcessBytes();

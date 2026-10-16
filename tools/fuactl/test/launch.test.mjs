@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -434,4 +434,10 @@ test("an instance asked to stop goes cleanly, or is killed when it will not", as
   const stuck = fakeProc();
   assert.equal(await stopInstance({ proc: stuck }, 10), "forced");
   assert.deepEqual(stuck.asked, ["SIGTERM", "SIGKILL"]);
+});
+
+// [rc4l] The engine's console reads a backslash as an escape, so every path fuactl hands it goes forward.
+test("a path handed to the engine has forward slashes", () => {
+  assert.equal(slashed(["C:", "wads", "a.wad"].join(path.sep)), "C:/wads/a.wad");
+  assert.equal(slashed("/already/forward"), "/already/forward");
 });

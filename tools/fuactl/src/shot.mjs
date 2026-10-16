@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
 import { exec, waitTics, sleep } from "./capture.mjs";
-import { engineProcessCount } from "./launch.mjs";
+import { engineProcessCount, slashed } from "./launch.mjs";
 import { decodePNG, isBlankImage, boxMean } from "./pngcore.mjs";
 
 
@@ -182,7 +182,7 @@ function pngIsUsable(file) {
 
 // [rc4l] The engine writes its GL screenshot into sweep/ beside its own binary, so a pair lands there whichever build is running.
 export function sweepDirFor(engineBin) {
-  return path.posix.join(path.dirname(String(engineBin)).split(path.sep).join("/"), "sweep");
+  return path.posix.join(slashed(path.dirname(String(engineBin))), "sweep");
 }
 
 // [rc4l] Stand the player at a camera with the sim running, so the view and everything it sees settle there.

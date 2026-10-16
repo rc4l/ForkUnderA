@@ -31,7 +31,7 @@ One registry every feature reports its performance through. Counters are named `
 
 `fuactl` drives all of it (`tools/fuactl/src/telemetry.mjs`):
 - Views of the console commands: `console`, `stats`, `record`, `flight`, `hitches`, `memsnap` and `memdiff`.
-- `soak`: repeats an action, `reload` or console texts separated by `|`, each that starts a level waited on; prints each cycle's time and frame time and fails on growth or a slowdown; `--ignore` leaves readings out, and `--judge-port` judges another instance, a server the soaking one joins and leaves.
+- `soak`: repeats an action, `reload` or console texts separated by `|`, each that starts a level waited on and `check: resize WxH` sizing the window; prints each cycle's time and frame time and fails on growth or a slowdown; `--ignore` leaves readings out, and `--judge-port` judges another instance, a server the soaking one joins and leaves.
 - `compare`: two `fua_stats json` readings side by side.
 - `perfgate`: the counters at a view against this machine's saved baseline, kept under `~/.forkundera/baselines/`.
 

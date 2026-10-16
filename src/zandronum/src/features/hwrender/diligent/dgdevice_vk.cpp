@@ -37,11 +37,11 @@ static DescriptorLimits ReadLimits(Diligent::IRenderDevice *device)
 // [rc4l] The device the memory budget is read from, which lives for the process once made.
 static Diligent::IRenderDevice *g_budgetDevice = nullptr;
 
-// [rc4l] The driver's own account of each heap, everything the process allocated there (Diligent's and the driver's own included) and what it may, through VK_EXT_memory_budget; false where the device lacks it.
-static bool ReadHeaps(std::vector<zx::telemetry::HeapBudget> &out)
+// [rc4l] The driver's own account of each heap, everything the process allocated there (Diligent's and the driver's own included) and what it may, through VK_EXT_memory_budget; none where the device lacks it.
+static void ReadHeaps(std::vector<zx::telemetry::HeapBudget> &out)
 {
 	Diligent::RefCntAutoPtr<Diligent::IRenderDeviceVk> vk(g_budgetDevice, Diligent::IID_RenderDeviceVk);
-	if (!vk || vkGetPhysicalDeviceMemoryProperties2 == NULL || vkEnumerateDeviceExtensionProperties == NULL) return false;
+	if (!vk || vkGetPhysicalDeviceMemoryProperties2 == NULL || vkEnumerateDeviceExtensionProperties == NULL) return;
 	const VkPhysicalDevice phys = vk->GetVkPhysicalDevice();
 	static int supported = -1;
 	if (supported < 0)
@@ -53,7 +53,7 @@ static bool ReadHeaps(std::vector<zx::telemetry::HeapBudget> &out)
 		supported = 0;
 		for (const VkExtensionProperties &e : exts) if (!std::strcmp(e.extensionName, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME)) supported = 1;
 	}
-	if (!supported) return false;
+	if (!supported) return;
 	VkPhysicalDeviceMemoryBudgetPropertiesEXT heaps = {};
 	heaps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
 	VkPhysicalDeviceMemoryProperties2 props = {};
@@ -62,7 +62,6 @@ static bool ReadHeaps(std::vector<zx::telemetry::HeapBudget> &out)
 	vkGetPhysicalDeviceMemoryProperties2(phys, &props);
 	for (uint32_t h = 0; h < props.memoryProperties.memoryHeapCount; h++)
 		out.push_back(zx::telemetry::HeapBudget{ (props.memoryProperties.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0, (double)heaps.heapUsage[h], (double)heaps.heapBudget[h] });
-	return true;
 }
 
 // [rc4l] The driver's heaps, read at most a few times a second for every gauge, empty where the device cannot say.
@@ -73,14 +72,14 @@ static const std::vector<zx::telemetry::HeapBudget> &Heaps()
 	if (every.Due(zx::telemetry::NowNs() / 1000000))
 	{
 		last.clear();
-		if (!ReadHeaps(last)) last.clear();
+		ReadHeaps(last);
 	}
 	return last;
 }
 
-static double BudgetUsed() { return Heaps().empty() ? -1.0 : zx::telemetry::ComputeHeapBudget(Heaps(), true).used; }
-static double BudgetAvailable() { return Heaps().empty() ? -1.0 : zx::telemetry::ComputeHeapBudget(Heaps(), true).budget; }
-static double HostUsed() { return Heaps().empty() ? -1.0 : zx::telemetry::ComputeHeapBudget(Heaps(), false).used; }
+static double BudgetUsed() { return zx::telemetry::ComputeHeapBudget(Heaps(), true).used; }
+static double BudgetAvailable() { return zx::telemetry::ComputeHeapBudget(Heaps(), true).budget; }
+static double HostUsed() { return zx::telemetry::ComputeHeapBudget(Heaps(), false).used; }
 static const bool s_budgetCounted = (
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_used_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500 }, BudgetUsed),
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/vk_budget_bytes", "bytes", zx::telemetry::CounterKind::Gauge, 500, false }, BudgetAvailable),

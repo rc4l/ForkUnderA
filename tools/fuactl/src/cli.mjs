@@ -5,7 +5,7 @@
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry, pidAlive } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
-import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag } from "./launch.mjs";
+import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
 import { sampleProcess } from "./sample.mjs";
@@ -16,7 +16,7 @@ import * as cap from "./capture.mjs";
 import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
-import { engineWindows } from "./window.mjs";
+import { engineWindows, resizeEngineWindow } from "./window.mjs";
 import * as shot from "./shot.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
@@ -51,6 +51,12 @@ const num = (v) => (v != null && v !== true ? Number(v) : undefined);
 
 const SPOTS = new URL("../spots.json", import.meta.url);
 const SESSION = () => path.resolve(process.cwd(), ".play-session");
+// [rc4l] The engine process of the instance on --port (else the last play), from its play session, which the bridge does not report.
+const sessionPid = (flags) => {
+  const pid = shot.readSession(shot.restartSessionFile(SESSION(), flags.port))?.pid;
+  if (!pid) throw new Error(`no play session names the engine's process${flags.port ? ` on port ${flags.port}` : ""}`);
+  return pid;
+};
 
 // [rc4l] The instance a command means: --port, else the last play session, else null.
 function sessionTarget(flags) {
@@ -193,7 +199,7 @@ const USAGE = `fuactl <command>
   costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]   what a frame costs at one view of a running instance: frame p50/p99, GPU and submit time, the world passes and phases, the walk's clipping, batches and sprites (the performance scope's step 0)
   abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
-  window [--shot gl|vk --out FILE]   the engine's windows as Windows sees them (minimized, hung, where), and with --shot what that window really shows, read from the compositor rather than GL's own buffer
+  window [--shot gl|vk --out FILE] [--resize WxH [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, and with --resize the instance's game window sized as dragging its corner does
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
@@ -210,7 +216,7 @@ const USAGE = `fuactl <command>
   hitches [N] [--port P]             the last N slow frames, each with the timed regions it spent most in
   memsnap [NAME] [--port P]          keep every memory gauge and tag under NAME for memdiff
   memdiff [A] [B] [--port P]         what changed between snapshots A and B, or between A and now
-  soak [--action reload|"TEXT|TEXT..."] [--cycles N] [--warmup W] [--settle MS] [--ignore PREFIX,...] [--judge-port P [--judge-token T]] [--sites] [--port P]   repeat an action N times, its steps separated by | and each one that starts a level (map, changemap, wad_reload ... map=) waited on, and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak; --ignore leaves out readings under those prefixes; --judge-port judges another instance, a server this one joins and leaves; --sites records allocations from the first judged cycle and prints the stacks whose live count grew by the last), or the cycles or the frames after them got slower
+  soak [--action reload|"STEP|STEP..."] [--cycles N] [--warmup W] [--settle MS] [--ignore PREFIX,...] [--judge-port P [--judge-token T]] [--sites] [--port P]   repeat an action's console steps N times, waiting on each that starts a level, and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak) or the cycles got slower; a step "check: resize WxH" sizes the game window, --ignore leaves readings under those prefixes out, --judge-port judges a server this instance joins and leaves, and --sites prints the allocation stacks that grew
   compare A.json B.json [--share F] [--floor MS]   two fua_stats json readings side by side; a timing whose p50 or p99 grew by over F (0.15) and FLOOR ms (0.1) is marked
   perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
@@ -400,7 +406,7 @@ async function main() {
       const out = await shot.captureBurst(c, {
         side: flags.side === "gl" ? "gl" : "vk", count: Number(flags.count) || 8,
         box: flags.box ? String(flags.box).split(",").map(Number) : [0, 0, 1, 1],
-        engineBin: engineOf(flags).split(path.sep).join("/"), tag: rest[0] || "burst",
+        engineBin: slashed(engineOf(flags)), tag: rest[0] || "burst",
       });
       for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
       c.close();
@@ -408,7 +414,15 @@ async function main() {
     }
     // [rc4l] `fuactl window` -- the windows as Windows sees them and what one shows, instead of PowerShell beside the tool.
     case "window": {
-      if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error("usage: fuactl window [--shot gl|vk --out FILE]"); process.exit(2); }
+      if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error(usageFor(USAGE, "window")); process.exit(2); }
+      if (flags.resize) {
+        const [w, h] = String(flags.resize).split("x").map(Number);
+        if (!(w > 0 && h > 0)) { console.error(usageFor(USAGE, "window")); process.exit(2); }
+        const sized = resizeEngineWindow(sessionPid(flags), w, h);
+        console.log(sized ? `sized the game window to ${w}x${h}` : "no game window for that instance");
+        if (!sized) process.exit(1);
+        break;
+      }
       const r = engineWindows({ shot: flags.shot ? String(flags.shot) : null,
         out: flags.shot ? path.resolve(String(flags.out || `window_${flags.shot}.png`)) : null });
       for (const w of r.windows)
@@ -425,7 +439,7 @@ async function main() {
         const at = shot.cameraFromFlags(flags, SPOTS);
         if (at) await shot.moveTo(c, at);
         const out = await shot.captureSteps(c, { tag: rest[0] || "steps", hold: String(flags.hold), count: Number(flags.count) || 8,
-          engineBin: engineOf(flags).split(path.sep).join("/") });
+          engineBin: slashed(engineOf(flags)) });
         for (const s of out) console.log(`${s.name} viewz ${s.viewz} ${s.gl || "(no GL)"} ${s.vk || "(no Vulkan)"}`);
       } finally { c.close(); }
       break;
@@ -440,7 +454,7 @@ async function main() {
         const at = shot.cameraFromFlags(flags, SPOTS);
         if (at) await shot.moveTo(c, at);
         const r = await sectorOf(c, { side: flags.side === "vk" ? "vk" : "gl", x, y,
-          engineBin: engineOf(flags).split(path.sep).join("/"), log: (m) => console.error(m) });
+          engineBin: slashed(engineOf(flags)), log: (m) => console.error(m) });
         console.log(r.sector === null ? `pixel ${x},${y} follows no sector's colour (sky, a fullbright, or a texel with no red or green)`
           : `sector ${r.sector} (of ${r.count}, ${r.frames} frames); the sectors stay painted until the map restarts`);
         process.exitCode = r.sector === null ? 1 : 0;
@@ -992,6 +1006,7 @@ async function main() {
       const judge = flags["judge-port"] ? await connectTarget({ port: flags["judge-port"], token: flags["judge-token"] }, usageFor(USAGE, "soak")) : null;
       const result = await withUi(flags, (c) => telemetry.runSoak(c, {
         judge: judge ?? c,
+        resize: async (w, h) => { if (!resizeEngineWindow(sessionPid(flags), w, h)) throw new Error(`soak: no game window to size to ${w}x${h}`); },
         action: flags.action && flags.action !== true ? String(flags.action) : "reload",
         cycles: num(flags.cycles) ?? 6, warmup: num(flags.warmup) ?? 1, settleMs: num(flags.settle) ?? 4000,
         ignore: flags.ignore && flags.ignore !== true ? String(flags.ignore).split(",") : [],

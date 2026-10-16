@@ -36,6 +36,7 @@ public class FuaWin {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint f);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
 }
 "@`;
@@ -71,10 +72,31 @@ $bmp.Save('${String(out).replace(/'/g, "''")}')
 `;
 }
 
+// [rc4l] The script that sizes window hwnd to width by height where it stands, as dragging its corner does, printing "SIZED|1" when it took.
+export function resizeScript(hwnd, width, height) {
+  return `${USER32}
+$h = [IntPtr]${Number(hwnd)}
+$r = New-Object FuaWin+RECT; [void][FuaWin]::GetWindowRect($h, [ref]$r)
+"SIZED|{0}" -f [int][FuaWin]::MoveWindow($h, $r.L, $r.T, ${Number(width)}, ${Number(height)}, $true)
+`;
+}
+
+// [rc4l] Process pid's game window among windows: GL's when it has one, since the backend's view sits inside it, else the backend's own.
+export function gameWindowOf(windows, pid) {
+  const own = windows.filter((w) => w.pid === pid && w.kind);
+  return own.find((w) => w.kind === "gl") ?? own[0] ?? null;
+}
+
 function runPowerShell(script) {
   const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { encoding: "utf8" });
   if (r.error) throw r.error;
   return r.stdout || "";
+}
+
+// [rc4l] Sizes process pid's game window to width by height, false when it has none.
+export function resizeEngineWindow(pid, width, height) {
+  const target = gameWindowOf(engineWindows().windows, pid);
+  return !!target && runPowerShell(resizeScript(target.hwnd, width, height)).includes("SIZED|1");
 }
 
 // [rc4l] The engine's windows, and with shot ("gl" or "vk") the first of that kind captured to out.
