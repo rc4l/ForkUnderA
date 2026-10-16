@@ -38,7 +38,6 @@
 
 #include "features/server-browser/browser.h"
 #include "features/server-browser/zx_joinserver.h"
-#include "features/continue/zx_continue.h"
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/server-browser/computation/joinresume_compute.h"
 #include "features/server-browser/computation/stableline_compute.h"
@@ -47,6 +46,16 @@
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wadreload/zx_wadreload.h"
+
+namespace zx
+{
+
+// [rc4l] Who hears a local game being left (SetLeavingLocalGameListener).
+static void ( *g_LeavingLocalGameListener )( void ) = NULL;
+
+void SetLeavingLocalGameListener( void ( *listener )( void ) ) { g_LeavingLocalGameListener = listener; }
+
+} // namespace zx
 
 // [rc4l] Load Freedoom when the server's IWAD is a game you do not own. Only ever a fallback -- the
 // server's real IWAD wins whenever it can be found -- and only for the games Freedoom actually
@@ -471,7 +480,7 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 	// [rc4l] Snapshot what we are leaving before the reload takes it. This has to be here rather
 	// than anywhere nearer the connect: the reload restarts the engine, so by the time a connect is
 	// attempted the local game has already gone.
-	zx::Continue_NoteLeavingLocalGame();
+	if ( zx::g_LeavingLocalGameListener != NULL ) zx::g_LeavingLocalGameListener( );
 
 	zx::NoteJoinStarted(plan.serverName.GetChars());
 

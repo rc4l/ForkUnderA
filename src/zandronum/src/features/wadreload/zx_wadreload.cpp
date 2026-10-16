@@ -30,6 +30,11 @@ FString StoredReloadMap;
 
 namespace zx { namespace wadreload {
 
+const char *PendingReloadMap()
+{
+	return StoredReloadMap.GetChars();
+}
+
 namespace {
 
 // Pull the current -iwad value and the -file run out of the global Args (what's loaded right now).

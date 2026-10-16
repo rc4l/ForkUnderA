@@ -97,8 +97,11 @@ yet. Scenario `walldecal`.
 - `gl/data/gl_data.cpp` `gl_RecalcVertexHeights`: calls `RecalcVertexHeights` (`ComputeVertexHeights`), so GL and
   the bake split walls at the same heights under `r_seamless`, which `ComputeSeamlessFan` ports from
   `GLWall::SplitLeftEdge` and the rest; a change of `r_seamless` re-bakes the level's walls.
-- `hwrender/diligent/dgscene.cpp` `DrawSkySurfaces`: reads the list of the view it is drawing;
-  `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and paint its planes from it.
+- `features/sprites/spritebuild.cpp`: `SetModelPieceListener`, so `fua_sprite_check` hears each model piece
+  captured, GL's and the derived one, without the mesh calling the sprites.
+- `hwrender/diligent/dgskyportal.cpp` and `dgskylooks.cpp`: the sky list of the view being drawn.
+- `hwrender/diligent/dgviewtargets.cpp`: `RenderStackPortals`/`DrawStackSurfaces` render each stacked view and
+  paint its planes from it.
 
 The rest of this section predates the bake: **P0 had none.** P0 is a console command and a pure computation unit; it reads existing map structures
 and writes nothing. The dirty-tracking hooks the later phases need are enumerated in

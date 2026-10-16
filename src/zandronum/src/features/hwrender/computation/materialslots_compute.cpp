@@ -28,6 +28,13 @@ std::string ComputeShaderWithDefines(const char *source, const std::string &defi
 	return out;
 }
 
+std::string ComputeMaterialShaderDefines(unsigned slots)
+{
+	std::string d = "#define FUA_MAT_SLOTS " + std::to_string(slots > 0 ? slots : 1u) + "\n";
+	if (slots > 0) d += "#define FUA_BINDLESS 1\n";
+	return d;
+}
+
 unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned filled)
 {
 	return from == 0 ? capacity : (filled < capacity ? filled : capacity);

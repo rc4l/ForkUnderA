@@ -62,6 +62,9 @@ void Fua_ShowBackendWindow(void *window, int visible)
 // [rc4l] The application's run loop services every window, and the engine runs it.
 void Fua_PumpBackendWindow(void *) {}
 
+// [rc4l] The swapchain follows the surface's size itself.
+bool Fua_BackendSurfaceSize(void *, int &, int &) { return false; }
+
 bool Fua_RestoreEngineWindow()
 {
 	NSView *view = (NSView *)I_EngineContentView();

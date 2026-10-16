@@ -215,7 +215,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// [rc4l] The weapon's screen-space quad (x1/y1/x2/y2 are pixels including viewwindowx/y), for a check against GL's weapon; built after Apply so the colour is the final shaded one.
 	if (gl_observer)
 	{
-		zx::hwrender::Quad2D q;
+		zx::draw2d::Quad2D q;
 		q.material = tex;
 		q.x = x1; q.y = y1; q.w = x2 - x1; q.h = y2 - y1;
 		q.u1 = fU1; q.v1 = fV1; q.u2 = fU2; q.v2 = fV2;

@@ -13,6 +13,7 @@
 #include "version.h"
 
 #include "features/addon-catalogue/computation/hostplan_compute.h"
+#include "features/fileio/computation/readfile_compute.h"
 #include "features/wad-download/computation/iwadallow_compute.h"
 #include "features/addon-catalogue/computation/iwadpick_compute.h"
 #include "features/addon-catalogue/computation/menuart_compute.h"
@@ -47,33 +48,8 @@ bool g_Loaded = false;
 // hundreds the engine prints while loading is easy to scroll past.
 int g_Problems = 0;
 
-bool ReadWholeFile( const char *path, std::string &out )
-{
-	FILE *f = fopen( path, "rb" );
-	if ( f == NULL )
-		return false;
-
-	// [rc4l] A catalogue entry is a few hundred bytes. Anything past this is not one, and refusing it
-	// unread means a stray gigabyte in the folder cannot stall startup.
-	const long kSaneMax = 256 * 1024;
-
-	fseek( f, 0, SEEK_END );
-	const long size = ftell( f );
-	fseek( f, 0, SEEK_SET );
-
-	if (( size < 0 ) || ( size > kSaneMax ))
-	{
-		fclose( f );
-		return false;
-	}
-
-	out.resize( static_cast<size_t>( size ));
-	const size_t got = ( size > 0 ) ? fread( &out[0], 1, static_cast<size_t>( size ), f ) : 0;
-	fclose( f );
-
-	out.resize( got );
-	return true;
-}
+// [rc4l] A catalogue entry is a few hundred bytes, so anything past this is not one, and a stray gigabyte in the folder cannot stall startup.
+const size_t kEntryMaxBytes = 256 * 1024;
 
 bool FileExists( const char *path )
 {
@@ -129,7 +105,7 @@ void LoadRoot( const char *root, bool bShipped, std::vector<CatalogueEntry> &out
 		const FString jsonPath = path + "/addon.json";
 
 		std::string json;
-		if ( !ReadWholeFile( jsonPath.GetChars( ), json ))
+		if ( !ComputeReadWholeFile( jsonPath.GetChars( ), json, kEntryMaxBytes ))
 			continue;	// a folder with no addon.json is simply not an entry
 
 		CatalogueEntry entry;
@@ -241,7 +217,7 @@ void LoadRemixRoot( const char *root, const char *idPrefix, std::vector<AddonRem
 			continue;			// ScanDirectory recurses; only direct children are remixes
 
 		std::string json;
-		if ( !ReadWholeFile(( path + "/remix.json" ).GetChars( ), json ))
+		if ( !ComputeReadWholeFile(( path + "/remix.json" ).GetChars( ), json, kEntryMaxBytes ))
 			continue;
 
 		const FString fullId = FString( idPrefix ) + id;

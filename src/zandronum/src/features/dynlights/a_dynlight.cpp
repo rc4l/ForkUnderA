@@ -48,7 +48,7 @@
 #include "network.h"
 
 #include "features/dynlights/dynlight.h"
-#include "features/sprites/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
+#include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 
 EXTERN_CVAR (Float, r_lights_size);

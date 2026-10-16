@@ -11,7 +11,7 @@
 struct sector_t;
 class AActor;
 
-namespace zx { namespace hwrender { struct Quad2D; } }
+namespace zx { namespace draw2d { struct Quad2D; } }
 
 namespace zx { namespace sprites {
 
@@ -22,7 +22,7 @@ void BuildPlayerSprites(sector_t *viewsector, int viewArea, bool hudModels = fal
 void BuildTargeterSprites(AActor *viewActor);
 
 // [rc4l] With fua_psprite_check on, a quad GL's DrawPSprite recorded, so the derivation can be compared against it.
-void NoteGLPSprite(const zx::hwrender::Quad2D &q);
+void NoteGLPSprite(const zx::draw2d::Quad2D &q);
 
 // [rc4l] Compare the frame's derived weapon against GL's; called once both are in.
 void CheckFramePSprites();

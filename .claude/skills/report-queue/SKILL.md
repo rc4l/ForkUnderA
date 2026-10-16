@@ -31,11 +31,21 @@ node src/cli.mjs queue add "<their words, then what the screenshot shows>" --por
   what it shows, since it does not survive the conversation and the queue does.
 - Reply in one line (`#3 queued at q3-ceiling-over-the-stairs`). Then, unless they said to hold, keep
   working the queue; a new item never interrupts the one in progress.
+- Where no engine answers (a browser page, which has no bridge, or an engine that already crashed),
+  `queue add "<description>" --no-instance [--map M]` queues it without a spot. Ask them to type
+  `currentpos` in the game console if the place matters, and `queue note` what it prints.
 
 `queue list` shows open items (`--all` includes closed). `queue next` prints the oldest open item with
 its full spot record.
 
 ## Work an item
+
+A report from the browser build reproduces in headless Chrome rather than an engine window:
+`node tools/web/stage.mjs build-web <dir> --wads <iwad>,<map>` stages a page with their wads, and
+`node tools/web/probe.mjs <dir> --query "iwad=...&file=...&map=..." --run "god; wait 1000; +attack"
+[--autoplay]` plays it, listing what the commands printed, the sounds it started (and any started again), the
+screen textures it held and its WebGPU errors; `--soak reload` instead reloads the map and prints what kept growing. The probe's Chrome is always muted, and a minimal template map isolates the fault
+better than their mod's busy map.
 
 1. **Read it.** `queue next`. The spot's `loaded` says which wads the map needs; launching without them
    silently lands in the IWAD's MAP01 (`fua-side-by-side`, `fua-capture-spot`).
@@ -84,7 +94,10 @@ its full spot record.
 Use their exact steps (a map change, a mouse turn, the same window mode) before you give up; a fault
 they see only while something moves ("during the crouch") is caught with `steps <tag> --hold +crouch`,
 one paused tic at a time. Judder, freezes or "choppy while vid_fps is high" are timing, not pixels: take
-`fuactl present --port 7801` while they play before touching the engine (`zandronum-session`). Then
+`fuactl present --port 7801` while they play before touching the engine (`zandronum-session`), and read
+`stats frame/`, `stats phase/` and `hitches` there (`perf-telemetry`). From a browser, ask them to type
+`fua_flightdump` and `fua_hitches` in the console where it happens and paste what they print; memory or
+"out of memory" reports want `fua_memsnap a`, the action, then `fua_memdiff a`. Then
 audit lifetimes instead of re-shooting: a pipeline holding a static binding to a buffer that has been
 replaced usually still captures correctly. Fix what the audit finds, close the item with
 `queue done <id> --unverified --note "..."`, and tell the user plainly that the fix is unverified.

@@ -3,14 +3,11 @@
 //
 // [rc4l] The frame buffer of a launch without GL: the engine's window as GL's sets it up, minus the context, with every 2D draw recorded for the backend and the frame presented by it.
 
-#include "gl/system/gl_system.h"
 #include "features/hwrender/backendonly.h"
-#include "features/hwrender/hud2d.h"
-#include "features/hwrender/record2d.h"   // [rc4l] Record2DCanvas, the 2D recorded rather than drawn
+#include "features/draw2d/record2d.h"   // [rc4l] zx::draw2d::Record2DCanvas, the 2D recorded rather than drawn
 #include "features/draw2d/draw2d.h"
 #include "features/display/display.h"
-#include "features/frame/playerview.h"   // [rc4l] ForgetCamera
-#include "features/frame/framedriver.h"   // [rc4l] CreateFrameDriver
+#include "features/viewsetup/viewsetup.h"   // [rc4l] ForgetCamera
 #include <vector>
 #include "features/hwrender/computation/imageresize_compute.h"
 #include "features/hwrender/computation/backendchoice_compute.h"
@@ -26,17 +23,35 @@
 
 #if defined(FUA_DILIGENT)
 #ifdef _WIN32
+#include "gl/system/gl_system.h"   // [rc4l] before win32gliface.h, which leans on its Windows headers
 #include "win32gliface.h"
 // [rc4l] Each platform's frame buffer without its GL context: the window, the modes and the gamma ramp.
 typedef Win32GLFrameBuffer BackendFrameBufferBase;
 #else
-#include "sdlglvideo.h"   // [rc4l] posix/sdl's or posix/cocoa's, whichever backend the build uses
-typedef SDLGLFB BackendFrameBufferBase;
+#include "backendfb.h"   // [rc4l] posix/sdl's or posix/cocoa's, whichever backend the build uses
 #endif
 #endif
 
-// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy); -vulkan and -gl override it for one launch.
-CVAR(Int, vid_backend, zx::hwrender::kVidBackendVulkan, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+#ifdef FUA_DILIGENT_VULKAN
+static const bool kVulkanBuilt = true;
+#else
+static const bool kVulkanBuilt = false;
+#endif
+#ifdef FUA_WEBGPU
+static const bool kWebGPUBuilt = true;
+#else
+static const bool kWebGPUBuilt = false;
+#endif
+
+// [rc4l] The renderer a launch draws with (ComputeWantsBackendOnly): 1 Vulkan (Recommended), 0 GL (Legacy), 2 the backend on WebGPU where built; -vulkan, -webgpu and -gl override it for one launch, and ComputeVidBackendFor keeps it to what the build can honour.
+CUSTOM_CVAR(Int, vid_backend, zx::hwrender::ComputeVidBackendFor(zx::hwrender::kVidBackendVulkan, kVulkanBuilt, kWebGPUBuilt), CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	const int honoured = zx::hwrender::ComputeVidBackendFor(self, kVulkanBuilt, kWebGPUBuilt);
+	if (honoured != self) self = honoured;
+}
+
+// [rc4l] Whether the video menu's renderer can be changed, which a browser's build, drawing only with WebGPU, greys out.
+CVAR(Bool, vid_backend_choosable, zx::hwrender::ComputeVidBackendChoosable(kVulkanBuilt, kWebGPUBuilt), CVAR_NOSET)
 
 EXTERN_CVAR(Bool, fua_vulkan)
 EXTERN_CVAR(Bool, fua_dg_standalone)
@@ -60,14 +75,6 @@ void RestoreSavedSwitches()
 #endif
 }
 
-FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)())
-{
-	std::vector<zx::frame::DrivenRenderer> renderers;
-	if (BackendOnly()) BeginBackendOnly();
-	else renderers.push_back({ createGL(), zx::frame::kRendererGL });
-	renderers.push_back({ CreateBackendRenderer(), zx::frame::kRendererBackend });
-	return zx::frame::CreateFrameDriver(renderers);
-}
 
 bool BackendOnly()
 {
@@ -78,7 +85,8 @@ bool BackendOnly()
 #else
 		const bool built = false;
 #endif
-		const bool wants = ComputeWantsBackendOnly(vid_backend, Args->CheckParm("-vulkan") != 0, Args->CheckParm("-gl") != 0, built);
+		const bool argBackend = Args->CheckParm("-vulkan") != 0 || Args->CheckParm("-webgpu") != 0;
+		const bool wants = ComputeWantsBackendOnly(vid_backend, argBackend, Args->CheckParm("-gl") != 0, built);
 		g_backendOnly = (wants && BackendDeviceStarts()) ? 1 : 0;
 	}
 	return g_backendOnly == 1;
@@ -114,7 +122,7 @@ public:
 		: BackendFrameBufferBase(hMonitor, width, height, bits, refreshHz, fullscreen, false)
 	{
 		mColors.Load();
-		zx::frame::ForgetCamera();
+		zx::viewsetup::ForgetCamera();
 		zx::materials::GenerateGlobalBrightmap();
 		DoSetGamma();
 		Accel2D = true;
@@ -156,7 +164,7 @@ public:
 	void GameRestart()
 	{
 		mColors.Load();
-		zx::frame::ForgetCamera();
+		zx::viewsetup::ForgetCamera();
 		zx::materials::GenerateGlobalBrightmap();
 	}
 
@@ -222,6 +230,7 @@ public:
 		pitch = sw * 3;
 		color_type = SS_RGB;
 	}
+
 	void ReleaseScreenshotBuffer()
 	{
 		delete[] mShot;
@@ -253,7 +262,7 @@ private:
 	zx::display::ScreenColors mColors;
 	BYTE *mShot = NULL;
 	int mClientW = 0, mClientH = 0;   // [rc4l] the client size last reconciled
-	zx::hwrender::Record2DCanvas m2D;   // [rc4l] the 2D, recorded rather than drawn
+	zx::draw2d::Record2DCanvas m2D;   // [rc4l] the 2D, recorded rather than drawn
 };
 
 IMPLEMENT_CLASS(DiligentFrameBuffer)

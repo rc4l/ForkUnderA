@@ -62,9 +62,9 @@ TEST(Quad2D, ATextureRecordIsItsQuadAndNothingElse)
 	TextureQuadOut q;
 	ComputeTextureQuad(Patch(), q);
 	q.r = 51; q.a = 102;
-	zx::hwrender::Quad2D garbage;
+	zx::draw2d::Quad2D garbage;
 	memset(&garbage, 0x5a, sizeof(garbage));
-	zx::hwrender::Quad2D d = garbage;
+	zx::draw2d::Quad2D d = garbage;
 	d = ComputeTextureQuadRecord(q);
 	EXPECT_FLOAT_EQ(d.x, 84.f); EXPECT_FLOAT_EQ(d.y, 42.f); EXPECT_FLOAT_EQ(d.w, 128.f); EXPECT_FLOAT_EQ(d.h, 64.f);
 	EXPECT_FLOAT_EQ(d.u2, 1.f); EXPECT_FLOAT_EQ(d.v2, 1.f);
@@ -148,7 +148,7 @@ TEST(ComputeDrawColorDirect, AColourOrNoPaletteEntryIsDrawnDirect)
 
 TEST(Quad2D, AFillIsAnUntexturedRectangleInItsColour)
 {
-	const zx::hwrender::Quad2D q = ComputeFillQuad(2.f, 3.f, 40.f, 50.f, 0xff8000u, 0.5f);
+	const zx::draw2d::Quad2D q = ComputeFillQuad(2.f, 3.f, 40.f, 50.f, 0xff8000u, 0.5f);
 	EXPECT_EQ(nullptr, q.material);
 	EXPECT_FLOAT_EQ(40.f, q.w); EXPECT_FLOAT_EQ(50.f, q.h);
 	EXPECT_FLOAT_EQ(1.f, q.r); EXPECT_FLOAT_EQ(128.f / 255.f, q.g); EXPECT_FLOAT_EQ(0.f, q.b); EXPECT_FLOAT_EQ(0.5f, q.a);
@@ -158,17 +158,17 @@ TEST(Quad2D, AFillIsAnUntexturedRectangleInItsColour)
 
 TEST(Quad2D, ALineCarriesItsFarEndAndAPixelIsOneSquare)
 {
-	const zx::hwrender::Quad2D l = ComputeLineQuad(1, 2, 30, 40, 0x00ff00u);
+	const zx::draw2d::Quad2D l = ComputeLineQuad(1, 2, 30, 40, 0x00ff00u);
 	EXPECT_EQ(kQuadLine, l.kind);
 	EXPECT_FLOAT_EQ(30.f, l.lx2); EXPECT_FLOAT_EQ(40.f, l.ly2);
 	EXPECT_FLOAT_EQ(1.f, l.g);
-	const zx::hwrender::Quad2D p = ComputePixelQuad(5, 6, 0);
+	const zx::draw2d::Quad2D p = ComputePixelQuad(5, 6, 0);
 	EXPECT_FLOAT_EQ(1.f, p.w); EXPECT_FLOAT_EQ(1.f, p.h); EXPECT_FLOAT_EQ(0.f, p.u2);
 }
 
 TEST(Quad2D, TheScreenTintCoversTheScreenMultipliedOrOver)
 {
-	const zx::hwrender::Quad2D m = ComputeScreenFillQuad(640.f, 400.f, 0.5f, 0.25f, 1.f, 0.75f, true);
+	const zx::draw2d::Quad2D m = ComputeScreenFillQuad(640.f, 400.f, 0.5f, 0.25f, 1.f, 0.75f, true);
 	EXPECT_FLOAT_EQ(640.f, m.w); EXPECT_FLOAT_EQ(400.f, m.h);
 	EXPECT_FLOAT_EQ(0.25f, m.g); EXPECT_FLOAT_EQ(0.75f, m.a);
 	EXPECT_EQ(kBlend2DMultiply, m.blend);
@@ -207,11 +207,11 @@ TEST(Quad2D, APolygonsTextureTurnsWithIt)
 TEST(Quad2D, APolygonIsAFanOfTrianglesFromItsFirstPoint)
 {
 	using namespace zx::draw2d;
-	zx::hwrender::Quad2D base = ComputeFillQuad(0, 0, 0, 0, 0xffffffu, 1.f);
+	zx::draw2d::Quad2D base = ComputeFillQuad(0, 0, 0, 0, 0xffffffu, 1.f);
 	base.material = &base;
 	const float points[8] = { 0, 0, 10, 0, 10, 10, 0, 10 };
 	const float uv[8] = { 0, 0, 1, 0, 1, 1, 0, 1 };
-	std::vector<zx::hwrender::Quad2D> tris;
+	std::vector<zx::draw2d::Quad2D> tris;
 	ComputePolyTriangles(base, points, uv, 4, tris);
 	ASSERT_EQ(2u, tris.size());
 	EXPECT_EQ(kQuadTri, tris[0].kind);
@@ -223,4 +223,50 @@ TEST(Quad2D, APolygonIsAFanOfTrianglesFromItsFirstPoint)
 	EXPECT_EQ(1.f, tris[1].v3);
 	ComputePolyTriangles(base, points, uv, 2, tris);
 	EXPECT_TRUE(tris.empty());
+}
+
+// [rc4l] A greyed menu row is its glyphs under MAKEARGB(96,48,0,0), which GL draws as a second pass and the backend dropped.
+TEST(Quad2D, AnOverlayIsTheGlyphsCoverageInItsColour)
+{
+	zx::draw2d::Quad2D base = ComputeFillQuad(10.f, 20.f, 30.f, 40.f, 0xffffffu, 1.f);
+	base.material = &base;
+	base.u1 = 0.25f; base.v2 = 0.75f;
+	base.translation = 7; base.fuzz = 2; base.fixedColormap = 3; base.texMode = kTexModulate; base.blend = kBlend2DAdditive;
+	base.tint.strength = 0.5f;
+	zx::draw2d::Quad2D over;
+	ASSERT_TRUE(ComputeOverlayQuad(base, 0x60300000u, over));
+	EXPECT_EQ(over.material, base.material);
+	EXPECT_FLOAT_EQ(over.x, 10.f); EXPECT_FLOAT_EQ(over.w, 30.f); EXPECT_FLOAT_EQ(over.u1, 0.25f); EXPECT_FLOAT_EQ(over.v2, 0.75f);
+	EXPECT_FLOAT_EQ(over.r, 0x30 / 255.f); EXPECT_FLOAT_EQ(over.g, 0.f); EXPECT_FLOAT_EQ(over.b, 0.f);
+	EXPECT_FLOAT_EQ(over.a, 0x60 / 255.f);
+	EXPECT_EQ(over.texMode, kTexMask);
+	EXPECT_EQ(over.blend, kBlend2DAlpha);
+	EXPECT_EQ(over.translation, 0);
+	EXPECT_EQ(over.fuzz, 0);
+	EXPECT_EQ(over.fixedColormap, 0);
+	EXPECT_FLOAT_EQ(over.tint.strength, 0.f);
+}
+
+TEST(Quad2D, NoOverlayAddsNoPass)
+{
+	const zx::draw2d::Quad2D base = ComputeFillQuad(0.f, 0.f, 1.f, 1.f, 0xffffffu, 1.f);
+	zx::draw2d::Quad2D over = base;
+	EXPECT_FALSE(ComputeOverlayQuad(base, 0u, over));
+}
+
+TEST(Quad2D, TheSameListKeepsItsVertices)
+{
+	EXPECT_FALSE(ComputeRebuild2DVertices(7u, 7u, 40, 40));
+}
+
+TEST(Quad2D, AClearedListIsBuiltAgain)
+{
+	EXPECT_TRUE(ComputeRebuild2DVertices(8u, 7u, 40, 40));
+}
+
+// [rc4l] A wipe step recorded its console again under the same generation, and the pass drew those quads past the end of the vertices, which a browser's WebGPU refused for the whole frame.
+TEST(Quad2D, QuadsRecordedAfterTheBuildAreBuiltToo)
+{
+	EXPECT_TRUE(ComputeRebuild2DVertices(7u, 7u, 912, 456));
+	EXPECT_TRUE(ComputeRebuild2DVertices(7u, 7u, 10, 40));
 }

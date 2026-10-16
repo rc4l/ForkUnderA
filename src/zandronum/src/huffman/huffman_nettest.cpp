@@ -163,3 +163,15 @@ TEST_F(Huffman, DecodeOfTruncatedStreamStaysInBounds) {
     EXPECT_GE(outSize, 0);
     EXPECT_LE(outSize, (int)out.size());       // bounded; ASan proves no OOB
 }
+
+// [rc4l] A wad_reload restart constructs the network again, which built a second codec over the first; the first is kept now, so one destruct frees everything (LeakSanitizer on the Linux job) and the codec still round-trips.
+TEST(HuffmanLifetime, ConstructingAgainKeepsTheOneCodec) {
+    HUFFMAN_Construct();
+    HUFFMAN_Construct();
+    std::vector<unsigned char> in(64, 0x42), enc(256, 0), dec(128, 0);
+    int encSize = (int)enc.size(), decSize = (int)dec.size();
+    HUFFMAN_Encode(in.data(), enc.data(), (int)in.size(), &encSize);
+    HUFFMAN_Decode(enc.data(), dec.data(), encSize, &decSize);
+    EXPECT_EQ(decSize, (int)in.size());
+    HUFFMAN_Destruct();
+}

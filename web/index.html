@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ForkUnderA</title>
+<link rel="stylesheet" href="fua.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<main>
+  <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="status" role="status">
+    <p id="status-text">Loading…</p>
+    <progress id="progress" max="1" value="0"></progress>
+    <button id="again" type="button" hidden>Play again</button>
+  </div>
+  <div id="error" hidden>
+    <pre id="error-text"></pre>
+    <div id="report" hidden>
+      <p id="report-status"></p>
+      <button id="report-copy" type="button">Copy report</button>
+      <button id="report-save" type="button">Save report</button>
+    </div>
+  </div>
+</main>
+<footer>
+  <span>Freedoom is bundled under its own <a href="data/freedoom-license.txt">licence</a>.</span>
+  <button id="wads-button" type="button">Your WADs</button>
+  <button id="fullscreen" type="button">Fullscreen</button>
+  <details>
+    <summary>Console</summary>
+    <pre id="console"></pre>
+  </details>
+</footer>
+<dialog id="wads">
+  <h2>Your WADs</h2>
+  <p>Files you add stay in this browser. Pick the IWAD to play and the PWADs to load, then restart.</p>
+  <div id="wads-list"></div>
+  <label class="wads-add">Add files <input id="wads-add" type="file" multiple accept=".wad,.iwad,.pk3,.ipk3,.pk7,.zip,.deh,.bex"></label>
+  <div class="wads-actions">
+    <button id="wads-apply" type="button">Restart with these</button>
+    <button id="wads-close" type="button">Close</button>
+  </div>
+</dialog>
+<script src="crashreport.js"></script>
+<script src="gpu.js"></script>
+<script src="home.js"></script>
+<script src="data.js"></script>
+<script src="wads.js"></script>
+<script src="fua.js"></script>
+<script src="forkundera.js"></script>
+</body>
+</html>

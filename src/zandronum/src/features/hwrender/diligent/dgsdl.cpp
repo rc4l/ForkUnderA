@@ -64,6 +64,9 @@ void Fua_ShowBackendWindow(void *window, int visible)
 // [rc4l] SDL has one event queue for every window, which the engine already pumps.
 void Fua_PumpBackendWindow(void *) {}
 
+// [rc4l] The swapchain follows the surface's size itself.
+bool Fua_BackendSurfaceSize(void *, int &, int &) { return false; }
+
 bool Fua_RestoreEngineWindow()
 {
 	SDL_Window *engine = I_EngineWindow();

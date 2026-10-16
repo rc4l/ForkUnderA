@@ -44,3 +44,10 @@ TEST(MaterialSlots, DefinesGoRightAfterTheVersionLine)
 	EXPECT_EQ("#version 450\n#define N 7\nvoid main() {}\n", ComputeShaderWithDefines("#version 450\nvoid main() {}\n", "#define N 7\n"));
 	EXPECT_EQ("#version 450", ComputeShaderWithDefines("#version 450", "#define N 7\n"));
 }
+
+// [rc4l] A device with the array declares it at its size; one without gets a legal size and no FUA_BINDLESS, so the shaders leave the array out.
+TEST(MaterialSlots, TheShaderDefinesFollowTheArray)
+{
+	EXPECT_EQ("#define FUA_MAT_SLOTS 4096\n#define FUA_BINDLESS 1\n", ComputeMaterialShaderDefines(4096));
+	EXPECT_EQ("#define FUA_MAT_SLOTS 1\n", ComputeMaterialShaderDefines(0));
+}

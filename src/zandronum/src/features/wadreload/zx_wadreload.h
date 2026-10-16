@@ -17,6 +17,9 @@
 
 namespace zx { namespace wadreload {
 
+// [rc4l] The map a pending wad_reload boots into after its restart, empty for the title.
+const char *PendingReloadMap();
+
 enum class ReloadResult
 {
 	Restarting,      // the restart is requested; D_DoomLoop throws CRestartException at its next top

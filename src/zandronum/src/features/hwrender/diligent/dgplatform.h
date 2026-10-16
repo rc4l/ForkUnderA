@@ -8,7 +8,7 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] What a swapchain is made on: an HWND on Windows; an X11 window and display, or a Wayland surface and display, on Linux; a Metal-layered NSView on macOS.
+// [rc4l] What a swapchain is made on: an HWND on Windows; an X11 window and display, or a Wayland surface and display, on Linux; a Metal-layered NSView on macOS; a canvas's CSS selector in a browser.
 struct BackendWindowHandles
 {
 	void *hwnd;
@@ -17,6 +17,7 @@ struct BackendWindowHandles
 	void *waylandSurface;
 	void *waylandDisplay;
 	void *nsView;
+	const char *canvasId;
 };
 
 // [rc4l] A window for the backend `w` by `h`: the engine's own when GL does not draw into it, inside it where the platform can nest one, else beside it; NULL when none could be made.
@@ -33,6 +34,9 @@ void Fua_ShowBackendWindow(void *window, int visible);
 
 // [rc4l] Service a window the engine's event loop does not, once a presented frame.
 void Fua_PumpBackendWindow(void *window);
+
+// [rc4l] The size the window's swapchain should have now, where nothing tells the swapchain itself (a browser's canvas); false where it follows its surface on its own.
+bool Fua_BackendSurfaceSize(void *window, int &w, int &h);
 
 // [rc4l] Un-minimize the engine's window without taking focus; true if it was minimized.
 bool Fua_RestoreEngineWindow();

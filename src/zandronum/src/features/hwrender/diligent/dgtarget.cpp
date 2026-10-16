@@ -20,9 +20,9 @@ Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_blitSRB;
 const char *kBlitPS =
 	"#version 450\n"
 	"layout(location = 0) in vec2 vUV;\n"
-	"layout(binding = 1) uniform sampler2D uTex;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(texture(uTex, vUV).rgb, 1.0); }\n";
+	"void main() { outColor = vec4(texture(sampler2D(uTex, uTex_sampler), vUV).rgb, 1.0); }\n";
 
 // [rc4l] The size a frame is drawn at: the screen's in a launch without GL, else the window's.
 void WantedSize(int &w, int &h)

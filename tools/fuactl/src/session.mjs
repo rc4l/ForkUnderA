@@ -3,11 +3,10 @@
 // multi-instance + desync detection, none of which a console-scraping bolt-on could do.
 import { launchInstance, stopInstance } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
-import { waitInLevel } from "./capture.mjs";
+import { waitInLevel, sleep } from "./capture.mjs";
 import { desyncVerdict } from "./proto.mjs";
 import { sampleProcess } from "./sample.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
   // The engine takes a few seconds to boot and bind its bridge port; retry ECONNREFUSED until it's up.

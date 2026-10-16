@@ -22,6 +22,9 @@ const STAGED_ENGINES = [
 // which is talking to an ALREADY RUNNING instance over a port and wants the path only to know where
 // the PNG lands. `ui read` and every `rpc` worked, so the tool looked fine right up until the one
 // call that reads a file back off disk. Found driving a Windows build.
+// [rc4l] A path with forward slashes, which the engine's command line and its console (where a backslash escapes) both take.
+export const slashed = (p) => String(p).split(path.sep).join("/");
+
 export function resolveEngine() {
   const env = process.env.FUACTL_ENGINE;
   // cwd is either the repo root or tools/fuactl, so each candidate is tried from both.
@@ -167,8 +170,8 @@ export function engineArgs(opts = {}, configPath) {
     for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
-  // [rc4l] The engine's own default is now Vulkan alone (vid_backend 1), so a harness launch asks for GL unless it asked for -vulkan or for the engine's own choice (engineDefault).
-  if (!args.includes("-vulkan") && !opts.engineDefault) args.push("-gl");
+  // [rc4l] The engine's own default is now Vulkan alone (vid_backend 1), so a harness launch asks for GL unless it asked for -vulkan, -webgpu or the engine's own choice (engineDefault).
+  if (!args.includes("-vulkan") && !args.includes("-webgpu") && !opts.engineDefault) args.push("-gl");
 
   // [rc4l] The map goes LAST, because the engine runs `+` commands in the order they appear.
   //
@@ -237,14 +240,21 @@ export async function launchInstance(opts = {}) {
   return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };
 }
 
-// Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.
-export function stopInstance(inst, graceMs = 4000) {
+// [rc4l] How proc ended ({ code, signal }) once it has, or null when it is still running after timeoutMs.
+export function exited(proc, timeoutMs) {
+  if (proc.exitCode != null || proc.signalCode) return Promise.resolve({ code: proc.exitCode, signal: proc.signalCode });
   return new Promise((resolve) => {
-    if (!inst.proc || inst.proc.exitCode != null || inst.proc.signalCode) return resolve("already-exited");
-    let done = false;
-    const finish = (how) => { if (!done) { done = true; resolve(how); } };
-    inst.proc.once("exit", () => finish("clean"));
-    try { inst.proc.kill("SIGTERM"); } catch { /* ignore */ }
-    setTimeout(() => { try { inst.proc.kill("SIGKILL"); } catch {} finish("forced"); }, graceMs);
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    proc.once("exit", (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
   });
+}
+
+// Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.
+export async function stopInstance(inst, graceMs = 4000) {
+  if (!inst.proc || inst.proc.exitCode != null || inst.proc.signalCode) return "already-exited";
+  const gone = exited(inst.proc, graceMs);
+  try { inst.proc.kill("SIGTERM"); } catch { /* ignore */ }
+  if (await gone) return "clean";
+  try { inst.proc.kill("SIGKILL"); } catch { /* ignore */ }
+  return "forced";
 }

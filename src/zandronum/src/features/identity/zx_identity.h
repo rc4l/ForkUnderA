@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-// [rc4l] The crypto and the key files behind anonymous accounts, where the decisions live in
-// computation/identity_compute.h and this is what touches OpenSSL and the disk.
+// [rc4l] The key files and the accounts behind anonymous play, where the decisions live in
+// computation/identity_compute.h, the primitives in zx_identitycrypto.h, and this touches the disk.
 //
 // NOTHING HERE BLOCKS A RUNNING SERVER, because keys are read once at startup and a handshake is
 // then arithmetic and nothing else.

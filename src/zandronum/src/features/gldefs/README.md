@@ -8,6 +8,11 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   (`features/materials/textureinfo.cpp`), and `hardwareshader` (`features/hwshaders`). It also attaches the
   defined lights to actors as their frames change (`gl_SetActorLights`), and drops and remakes them
   (`gl_DeleteAllAttachedLights`, `gl_RecreateAllAttachedLights`) around a save or a light setting change.
+- `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
+  `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
+  `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;
+  `r_lights` and `r_lights_additive` drop and remake the attached lights. `features/dynlights/dynlight.h`
+  declares them.
 - `glow.cpp`: `glow` blocks, which flats glow, and how much a glowing floor or ceiling lights a sprite
   (`gl_CheckSpriteGlow`).
 
@@ -17,7 +22,6 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
 
 - `features/frame/levelrenderer.cpp`: `Init` parses the definitions; `StateChanged`, `StartSerialize` and
   `EndSerialize` attach, drop and remake lights.
-- `features/dynlights/lightsettings.cpp`: `r_lights` and `r_lights_additive` drop and remake the lights.
 - `gl/renderer/gl_lightdata.h`: includes `gldefs.h` in place of the declarations it held;
   `gl/renderer/gl_renderer.cpp` drops the lights when GL shuts down.
 - `gl/scene/*`: `glow.h` for the glowing flats.

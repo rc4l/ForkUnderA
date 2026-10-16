@@ -4,6 +4,8 @@
 // [rc4l] The scene buffer: built from the level mesh sorted by material, and patched in place as pieces move, repaint or appear.
 
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputePieceShader
+#include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeUploadChunks
+#include "features/telemetry/telemetry.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 
 namespace zx { namespace hwrender {
@@ -125,6 +127,18 @@ static TArray<unsigned int> g_pendingRepaints;
 // Batches the last sorted build produced -- the figure appends are measured against.
 static int g_builtBatchCount = 0;
 
+// [rc4l] Diligent's upload page, its EngineCreateInfo default, which a browser's device keeps every one of once made.
+static const size_t kUploadPageBytes = 1 << 20;
+
+// [rc4l] A buffer's first bytes written in upload-page-sized pieces, so the pages a load needs add up to what it writes rather than to the next power of two of each write.
+static void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, size_t bytes, const void *data)
+{
+	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
+	{
+		ctx->UpdateBuffer(buf, at, n, (const char *)data + at, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	});
+}
+
 // [rc4l] Build the backend vertex buffer from the level mesh, and upload it.
 //
 // Called at upload AND whenever geometry moves. A door does not merely nudge its vertices: the wall
@@ -136,6 +150,7 @@ static int g_builtBatchCount = 0;
 // quadratic; it runs for the handful of frames a door is actually moving, and not at all otherwise.
 static bool BuildSceneBuffer(FString &err)
 {
+	ZX_COUNT("scene/rebuilds", "rebuilds", 1);   // [rc4l] whole scene buffer builds, which a level with moving sectors makes in play
 	int srcCount = 0;
 	const zx::levelmesh::MeshVertex *src = zx::levelmesh::MeshVertexData(srcCount);
 	int npieces = 0;
@@ -292,42 +307,31 @@ static bool BuildSceneBuffer(FString &err)
 	g_slotByOffset.Clear();
 	for (unsigned i = 0; i < g_vbSlots.Size(); i++) g_slotByOffset.Insert(g_vbSlots[i].meshOffset, i);
 
-	Diligent::BufferDesc bd;
-	bd.Name = "fua scene VB";
-	// [rc4l] A quarter more room than the level needs right now.
-	//
-	// A piece that appears mid-game -- a seg baked the first time it is looked at, a surface re-baked
-	// at a different size -- can then be APPENDED rather than forcing the whole buffer to be rebuilt
-	// and re-uploaded. Without slack there is nowhere to put it and every new surface in the level
-	// costs a full rebuild, which is what Sunder MAP16 was doing 21 times a tic.
-	g_scene.vbCapacity = (unsigned int)(g_scene.cpuVerts.Size() + g_scene.cpuVerts.Size() / 4 + 1024);
-	bd.Size = (Diligent::Uint64)g_scene.vbCapacity * sizeof(SceneVertex);
-	// [rc4l] USAGE_DEFAULT, not IMMUTABLE. The level mesh is not as static as its name suggests:
-	// doors, lifts and crushers move sector planes, the wall cache re-bakes those segs, and the
-	// vertices change. An IMMUTABLE buffer cannot be updated at all, so every moving thing in the
-	// level was frozen in the backend's view -- a door would open in the GL window and stay shut here.
-	bd.Usage = Diligent::USAGE_DEFAULT;
-	// [rc4l] BIND_RAY_TRACING as well, when the device has it. A buffer handed to BuildBLAS as
-	// geometry must declare that use at creation; without it the build appears to succeed and the
-	// process dies on a later submit with nothing in the log. Vertex buffer first -- the raster path
-	// still draws from this exact buffer.
-	bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-	if (RayTracingAvailable())
+	// [rc4l] The vertex buffer is kept while the level still fits it, as the piece records are: a rebuild made it again each time, three 18 MB buffers in one Sunder load.
+	const bool vbKept = g_scene.vb && g_scene.cpuVerts.Size() <= g_scene.vbCapacity;
+	if (!vbKept)
 	{
-		// Also readable as storage: a ray query returns a primitive index, so the shader has to fetch
-		// the triangle's own vertices to shade it. One float per element keeps the GLSL side a plain
-		// float array instead of matching a struct layout across two languages.
-		bd.BindFlags |= Diligent::BIND_RAY_TRACING | Diligent::BIND_SHADER_RESOURCE;
-		bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
-		bd.ElementByteStride = sizeof(float);
+		Diligent::BufferDesc bd;
+		bd.Name = "fua scene VB";
+		// [rc4l] A quarter more room than the level needs, so a piece that appears mid-game is appended rather than costing a whole rebuild (Sunder MAP16 made 21 a tic without it).
+		g_scene.vbCapacity = (unsigned int)(g_scene.cpuVerts.Size() + g_scene.cpuVerts.Size() / 4 + 1024);
+		bd.Size = (Diligent::Uint64)g_scene.vbCapacity * sizeof(SceneVertex);
+		// [rc4l] USAGE_DEFAULT rather than IMMUTABLE, since doors, lifts and crushers re-bake their segs and an immutable buffer froze every moving thing in the backend's view.
+		bd.Usage = Diligent::USAGE_DEFAULT;
+		// [rc4l] BIND_RAY_TRACING as well when the device has it, since a buffer BuildBLAS takes must declare that use at creation or the process dies on a later submit with nothing in the log.
+		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+		if (RayTracingAvailable())
+		{
+			// [rc4l] Readable as storage too, as a float array, since a ray query returns a primitive index whose vertices the shader fetches itself.
+			bd.BindFlags |= Diligent::BIND_RAY_TRACING | Diligent::BIND_SHADER_RESOURCE;
+			bd.Mode = Diligent::BUFFER_MODE_STRUCTURED;
+			bd.ElementByteStride = sizeof(float);
+		}
+		// [rc4l] Created empty and then filled, since Diligent refuses initial data smaller than the buffer and the buffer keeps slack for appended pieces.
+		g_scene.vb.Release();
+		CreateDeviceBuffer(bd, nullptr, &g_scene.vb);
+		if (!g_scene.vb) { err = "vertex buffer creation failed"; return false; }
 	}
-	// [rc4l] Created empty, then filled -- Diligent refuses initial data smaller than the buffer,
-	// and the buffer is deliberately larger than the level so pieces can be appended into the slack.
-	// It rejected this outright ("initial DataSize must be larger than the buffer size") and the
-	// backend then drew nothing at all, which is at least a loud way to fail.
-	g_scene.vb.Release();
-	GetDevice()->CreateBuffer(bd, nullptr, &g_scene.vb);
-	if (!g_scene.vb) { err = "vertex buffer creation failed"; return false; }
 
 	// [rc4l] The per-piece records, sized for this level with the same slack the vertices get.
 	//
@@ -343,9 +347,7 @@ static bool BuildSceneBuffer(FString &err)
 		g_scene.pieceCapacity = want;
 		if (auto *ctx2 = GetContext())
 			if (g_scene.pieces.Size() > 0)
-				ctx2->UpdateBuffer(g_scene.pieceBuf, 0,
-					(Diligent::Uint64)g_scene.pieces.Size() * sizeof(ScenePieceData),
-					&g_scene.pieces[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				UpdateBufferInPages(ctx2, g_scene.pieceBuf, g_scene.pieces.Size() * sizeof(ScenePieceData), &g_scene.pieces[0]);
 	}
 	else if (auto *ctx3 = GetContext())
 	{
@@ -355,9 +357,7 @@ static bool BuildSceneBuffer(FString &err)
 		// times a minute, and making thirteen pipelines again each time is a stutter you can feel with
 		// the mouse. A buffer that still fits is kept, and only a bigger one costs a rebuild.
 		if (g_scene.pieces.Size() > 0)
-			ctx3->UpdateBuffer(g_scene.pieceBuf, 0,
-				(Diligent::Uint64)g_scene.pieces.Size() * sizeof(ScenePieceData),
-				&g_scene.pieces[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			UpdateBufferInPages(ctx3, g_scene.pieceBuf, g_scene.pieces.Size() * sizeof(ScenePieceData), &g_scene.pieces[0]);
 	}
 	// [rc4l] The stacked views' bits follow the same rule: kept while this level's subsectors fit.
 	const unsigned int visWords = (unsigned int)zx::levelmesh::ComputeStackVisWords(numsubsectors + numsides, zx::levelmesh::WalkSlots());
@@ -378,8 +378,7 @@ static bool BuildSceneBuffer(FString &err)
 		if (!EnsureScenePipeline(perr)) { err = perr; return false; }
 	}
 	if (auto *ctx = GetContext())
-		ctx->UpdateBuffer(g_scene.vb, 0, (Diligent::Uint64)g_scene.cpuVerts.Size() * sizeof(SceneVertex),
-			&g_scene.cpuVerts[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		UpdateBufferInPages(ctx, g_scene.vb, g_scene.cpuVerts.Size() * sizeof(SceneVertex), &g_scene.cpuVerts[0]);
 
 	// [rc4l] Give every batch its own SRB now that the list is final. Sized once, so the RefCntAutoPtrs
 	// never move and the raw pointers handed to SceneBatch stay valid.

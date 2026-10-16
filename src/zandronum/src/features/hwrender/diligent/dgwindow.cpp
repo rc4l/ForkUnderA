@@ -20,13 +20,20 @@
 
 #ifdef FUA_DILIGENT
 
-#include "EngineFactoryVk.h"
+#include "features/hwrender/diligent/dgdevice.h"
+#include "features/hwrender/computation/framepacing_compute.h"   // [rc4l] ComputePresentInterval
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
 #include "RefCntAutoPtr.hpp"
 #include "NativeWindow.h"
 #include "features/hwrender/diligent/dgplatform.h"
+#include "features/hwrender/diligent/dgshared.h"   // [rc4l] ReleaseFrameFence, ReleaseLevelResources
+#include "features/hwrender/diligent/dgmemory.h"   // [rc4l] ReportHeldDeviceObjects
+#include "features/hwrender/diligent/dggputimer.h"   // [rc4l] ReleaseGpuPasses
+#include "features/hwrender/backendonly.h"   // [rc4l] ForgetBackendWindow
+#include "DebugOutput.h"
+#include "i_system.h"   // [rc4l] atterm
 
 namespace zx { namespace hwrender {
 
@@ -120,6 +127,18 @@ static bool EnsurePipeline(FString &err)
 	return true;
 }
 
+// [rc4l] At exit, ahead of the static destructors (atterm runs first) and while the window and the console are still there: the swapchain and the frame fence released and Diligent's messages kept off the console, since what is left is destroyed after both are gone; a quit crashed printing the fence's message to a freed console.
+static void ShutdownBackend()
+{
+	// [rc4l] What is still held once the level's resources are gone is the backend's own (targets, pipelines, constants) or a leak, which the console log keeps.
+	ReleaseLevelResources();
+	ReportHeldDeviceObjects("at shutdown, after the level's resources were released");
+	ReleaseGpuPasses();
+	ForgetBackendWindow(g_hwnd);
+	ReleaseFrameFence();
+	Diligent::SetDebugMessageCallback(nullptr);
+}
+
 bool DiligentShowWindow(FString &report)
 {
 	FString err;
@@ -128,7 +147,6 @@ bool DiligentShowWindow(FString &report)
 
 	if (!g_swap)
 	{
-		auto *factory = Diligent::GetEngineFactoryVk();
 		Diligent::SwapChainDesc scd;
 		// [rc4l] Match the engine's own framebuffer: plain UNORM, not Diligent's default sRGB.
 		//
@@ -152,9 +170,12 @@ bool DiligentShowWindow(FString &report)
 		win.pWaylandSurface = handles.waylandSurface;
 #elif PLATFORM_MACOS
 		win.pNSView = handles.nsView;
+#elif PLATFORM_WEB
+		win.pCanvasId = handles.canvasId;
 #endif
-		factory->CreateSwapChainVk(GetDevice(), GetContext(), scd, win, &g_swap);
-		if (!g_swap) { report = "CreateSwapChainVk failed"; return false; }
+		ChosenDeviceApi()->createSwapChain(GetDevice(), GetContext(), scd, win, &g_swap);
+		if (!g_swap) { report = "swapchain creation failed"; return false; }
+		atterm(ShutdownBackend);
 		// [rc4l] Say what depth format we actually got. Z-fighting the GL renderer does not have is
 		// first a question about depth precision, and "Diligent probably defaults to D32" is not an
 		// answer -- a 16-bit depth buffer against a 5..65536 frustum would fight everywhere.
@@ -195,7 +216,7 @@ bool DiligentFrame(int count, FString &report)
 		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
 		ctx->Draw(draw);
 
-		g_swap->Present(0);
+		g_swap->Present(ComputePresentInterval(false, PagePaced()));
 		Fua_PumpBackendWindow(g_hwnd);
 	}
 	g_frames += count;
@@ -207,8 +228,8 @@ bool DiligentFrame(int count, FString &report)
 void ForgetBackendWindow(void *window)
 {
 	if (window == NULL || window != g_hwnd) return;
-	// [rc4l] The device is done with the swapchain's images before the surface under them goes.
-	if (GetDevice() != NULL) GetDevice()->IdleGPU();
+	// [rc4l] The device is done with the swapchain's images before the surface under them goes; a browser's canvas outlives its swapchain, and its GPU cannot be waited on.
+	if (GetDevice() != NULL && CanWaitForGPU()) GetDevice()->IdleGPU();
 	g_pso.Release();
 	g_swap.Release();
 	g_hwnd = NULL;
@@ -216,6 +237,14 @@ void ForgetBackendWindow(void *window)
 
 // [rc4l] Accessors for dgscene.cpp -- one swapchain and one window, shared.
 Diligent::ISwapChain *GetSwapChain() { return g_swap; }
+
+void FollowBackendSurface()
+{
+	int w = 0, h = 0;
+	if (!g_swap || !Fua_BackendSurfaceSize(g_hwnd, w, h)) return;
+	const Diligent::SwapChainDesc &d = g_swap->GetDesc();
+	if ((int)d.Width != w || (int)d.Height != h) g_swap->Resize((Diligent::Uint32)w, (Diligent::Uint32)h);
+}
 void *GetBackendWindow() { return g_hwnd; }
 
 }} // namespace zx::hwrender

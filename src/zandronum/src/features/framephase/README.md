@@ -7,7 +7,8 @@ upload and light-list parts inside it), the present, the main loop's input reads
 input and display. Modules mark their work with a `Scope`; the main
 loop closes each frame with `FrameBoundary`; `fua_viewtrace` records the last frame's phases with each
 sample, and `fuactl trace` reports what the slow frames spent more on (`computation/framephase_compute` names
-the phases).
+the phases). Each phase is also the `features/telemetry` timing `phase/<name>`, and `FrameBoundary` ends the
+registry's frame (`FrameMark`).
 
 ## In-engine hooks
 

@@ -37,6 +37,21 @@ MapSectionScope::~MapSectionScope() { currentmapsection = saved; }
 CVAR(Int, r_weaponlight, 8, CVAR_ARCHIVE);
 
 // [rc4l] Settings both renderers read, defined here rather than in gl/ so a build without GL (the server) still links them.
+CVAR(Float, r_mask_sprite_threshold, 0.5f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR(Float, skyoffset, 0, 0)	// for testing
+
+// Set up 3D-specific console variables:
+CVAR(Int, vr_mode, 0, CVAR_GLOBALCONFIG)
+
+// intraocular distance in meters
+CVAR(Float, vr_ipd, 0.062f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG) // METERS
+
+// distance between viewer and the display screen
+CVAR(Float, vr_screendist, 0.80f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // METERS
+
+// default conversion between (vertical) DOOM units and meters
+CVAR(Float, vr_hunits_per_meter, 41.0f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // METERS
+
 CVAR(Bool, r_mirrors, true, 0)	// This is for debugging only!
 CVAR(Bool, r_mirror_envmap, true, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 CVAR(Bool, r_seamless, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)

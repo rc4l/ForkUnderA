@@ -8,8 +8,9 @@
 
 .DESCRIPTION
     Builds ZandroX (x64) the same way CI does: vcpkg-supplied OpenAL audio stack,
-    the DirectX headers reshaped out of the modern Windows SDK, MSVC via the
-    Visual Studio 2022 generator, then packages a runnable dist-windows/ zip.
+    the DirectX headers reshaped out of the modern Windows SDK, MSVC with Ninja
+    from Visual Studio's developer shell (into build-win-ninja/), then packages a
+    runnable dist-windows/ zip.
 
     This is the "compile from source" path — it (re)builds the dependencies with
     vcpkg. For a fast build from prebuilt, committed dependencies, use
@@ -37,6 +38,11 @@
 .PARAMETER NoPackage
     Stop after compiling; do not assemble or zip dist-windows/.
 
+.PARAMETER Generator
+    The CMake generator (default: Ninja Multi-Config, as CI builds, where each compile can go through
+    a launcher such as sccache). "Visual Studio 17 2022" builds into build-win/ instead, the tree
+    windows_build.ps1 uses.
+
 .EXAMPLE
     .\windows_compile.ps1
     .\windows_compile.ps1 -Configuration Debug -NoPackage
@@ -51,14 +57,18 @@ param(
 
     [switch]$Clean,
     [switch]$SkipDeps,
-    [switch]$NoPackage
+    [switch]$NoPackage,
+
+    [string]$Generator = "Ninja Multi-Config"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $ScriptRoot = $PSScriptRoot
-$BuildDir   = Join-Path $ScriptRoot "build-win"
+# [rc4l] Ninja builds into a tree of its own, since build-win/ is the Visual Studio tree windows_build.ps1 and windows_build_run.ps1 share, and CMake refuses to switch a tree's generator.
+$isVS       = $Generator -like "Visual Studio*"
+$BuildDir   = Join-Path $ScriptRoot $(if ($isVS) { "build-win" } else { "build-win-ninja" })
 $DistDir    = Join-Path $ScriptRoot "dist-windows"
 $DepsDir    = Join-Path $ScriptRoot "deps"
 
@@ -165,7 +175,7 @@ Write-Note "DXSDK_DIR set to $dx"
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) ---------------------------------
 # [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file — the toolchain's
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
-Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, STATIC deps)"
+Write-Status "Configuring CMake ($Generator, x64, OpenAL, STATIC deps)"
 # [rc4l] Kept so the replay assertion below has something to read.
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 $ConfigureLog = Join-Path $BuildDir "configure.log"
@@ -209,7 +219,17 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
     $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
 }
-& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
+# [rc4l] Ninja needs MSVC on PATH, which a plain PowerShell lacks, so the script enters Visual Studio's developer shell itself when it is not in one already (CI's is).
+if (-not $isVS -and -not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    $vsPath = if (Test-Path $vswhere) { & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath } else { $null }
+    if (-not $vsPath) { throw "Visual Studio with the C++ workload not found; install it, or pass -Generator 'Visual Studio 17 2022'." }
+    Write-Status "Entering the Visual Studio developer shell ($vsPath)"
+    & (Join-Path $vsPath "Common7\Tools\Launch-VsDevShell.ps1") -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
+}
+# [rc4l] Visual Studio takes its platform and toolset here; Ninja Multi-Config gets them from the developer shell and builds the one configuration asked for, since a Debug one breaks on a generated source.
+$genArgs = @(if ($isVS) { "-A", "x64", "-T", "v143" } else { "-DCMAKE_CONFIGURATION_TYPES=$Configuration" })
+& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G $Generator @genArgs `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
@@ -241,7 +261,8 @@ if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" 
 
 # --- Build -----------------------------------------------------------------
 Write-Status "Building ($Configuration)"
-& cmake --build $BuildDir --config $Configuration -- -m
+$buildArgs = @(if ($isVS) { "--", "-m" })
+& cmake --build $BuildDir --config $Configuration @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
 $exe = Join-Path $BuildDir "$Configuration\forkundera.exe"

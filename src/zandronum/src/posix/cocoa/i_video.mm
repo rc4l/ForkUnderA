@@ -66,6 +66,7 @@
 #include "features/fua-branding/computation/fua_version_compute.h"   // [rc4l] FUA title
 #include "features/hwrender/computation/glcontext_compute.h"        // [rc4l] GL profile chain
 #include "features/hwrender/backendonly.h"                         // [rc4l] a launch without GL
+#include "features/frame/framedriver.h"   // [rc4l] CreateLaunchRenderer
 
 // [rc4l] video-scale: client size vs render size (v_video.cpp).
 extern int zx_pendingClientWidth, zx_pendingClientHeight;
@@ -1263,7 +1264,7 @@ void I_CreateRenderer()
 		extern FRenderer* gl_CreateInterface();
 
 #ifndef NO_GL
-		Renderer = zx::hwrender::CreateLaunchRenderer(gl_CreateInterface);
+		Renderer = zx::frame::CreateLaunchRenderer(gl_CreateInterface);
 #else
 		// [rc4l] Dedicated server (no OpenGL): the trivial null renderer.
 		Renderer = new FNullRenderer;

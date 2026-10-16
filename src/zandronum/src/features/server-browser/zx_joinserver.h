@@ -116,6 +116,9 @@ bool ConsumeJoinReady();
 // it only ever spoke about joining.
 void NoteHostReady();
 
+// [rc4l] Who hears that a local game is being left for a server, which the continue tab does to offer it again; NULL for no one.
+void SetLeavingLocalGameListener( void ( *listener )( void ) );
+
 } // namespace zx
 
 #endif // ZX_JOINSERVER_H

@@ -7,7 +7,8 @@
 #include "networkheaders.h"
 
 #include "features/server-hosting/zx_reachprobe.h"
-#include "features/server-browser/browser.h"
+#include "features/server-hosting/zx_registrydirectory.h"
+#include "networkshared.h"   // [rc4l] NETADDRESS_s
 
 #include "doomtype.h"
 #include "c_dispatch.h"
@@ -188,9 +189,9 @@ void SendRequest( const std::string &cookie )
 	// [rc4l] The registry of the family under test, falling back to whichever one answered when this
 	// machine has no address of that family at all -- on a v4-only host there is nothing v6 to ask.
 	NETADDRESS_s registry;
-	if ( BROWSER_GetServerRegistryAddressForFamily( g_TryingV6, registry ) == false )
+	if ( zx::Registries( ).addressForFamily( g_TryingV6, registry ) == false )
 	{
-		if ( BROWSER_GetServerRegistryAddress( registry ) == false )
+		if ( zx::Registries( ).address( registry ) == false )
 		{
 			g_Phase = ProbePhase::Failed;
 			return;
@@ -216,7 +217,7 @@ bool RetryOtherFamily( ProbePhase verdict )
 	const bool bOther = !g_TryingV6;
 
 	NETADDRESS_s registry;
-	const bool bAvailable = BROWSER_GetServerRegistryAddressForFamily( bOther, registry );
+	const bool bAvailable = zx::Registries( ).addressForFamily( bOther, registry );
 
 	// The rule itself is computation/reachprobe_compute's; this is only the socket work behind it.
 	if ( ComputeShouldTryOtherFamily( verdict, g_TryingV6, g_TriedV4, g_TriedV6, bAvailable ) == false )
@@ -381,7 +382,7 @@ void ReachProbeRequest( int port )
 	g_TryingV6 = true;
 
 	NETADDRESS_s probe;
-	if ( BROWSER_GetServerRegistryAddressForFamily( true, probe ) == false )
+	if ( zx::Registries( ).addressForFamily( true, probe ) == false )
 		g_TryingV6 = false;
 
 	g_Cookie = "";
@@ -487,18 +488,18 @@ std::string ReachProbeDebugText( void )
 		+ (( !g_TriedV4 && !g_TriedV6 ) ? "(none yet)" : "" ) + "\n";
 
 	NETADDRESS_s registry;
-	if ( BROWSER_GetServerRegistryAddress( registry ))
+	if ( zx::Registries( ).address( registry ))
 		out += std::string( "registry resolves to " ) + registry.ToString( ) + "\n";
 	else
 		out += "registry does NOT resolve, so no request can leave\n";
 
 	NETADDRESS_s perFamily;
-	if ( BROWSER_GetServerRegistryAddressForFamily( false, perFamily ))
+	if ( zx::Registries( ).addressForFamily( false, perFamily ))
 		out += std::string( "registry over v4: " ) + perFamily.ToString( ) + "\n";
 	else
 		out += "registry over v4: none, so v4 cannot be tested\n";
 
-	if ( BROWSER_GetServerRegistryAddressForFamily( true, perFamily ))
+	if ( zx::Registries( ).addressForFamily( true, perFamily ))
 		out += std::string( "registry over v6: " ) + perFamily.ToString( ) + "\n";
 	else
 		out += "registry over v6: none, so v6 cannot be tested\n";

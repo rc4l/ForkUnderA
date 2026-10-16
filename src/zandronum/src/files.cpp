@@ -37,6 +37,7 @@
 #include "i_system.h"
 #include "templates.h"
 #include "m_misc.h"
+#include "features/telemetry/telemetry.h"
 
 //==========================================================================
 //
@@ -141,6 +142,7 @@ long FileReader::Read (void *buffer, long len)
 	}
 	len = (long)fread (buffer, 1, len, File);
 	FilePos += len;
+	ZX_COUNT ("io/read_bytes", "bytes", len);   // [rc4l] every file read, for features/telemetry
 	return len;
 }
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { viewpoint, SANDBOX, HOLD_TICS, ticOf } from "../src/capture.mjs";
+import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND } from "../src/capture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // This tool's own directory -- NOT tools/, which holds unrelated CI tripwires that drive nothing.
@@ -76,4 +76,11 @@ test("the tic counter is read from gametic, and a missing one is an error not a 
   assert.equal(ticOf({ gametic: 3088, leveltime: 714, inlevel: true }), 3088);
   assert.throws(() => ticOf({ leveltime: 714 }), /gametic/);
   assert.throws(() => ticOf(null), /gametic/);
+});
+
+test("sleep waits about as long as it is asked, and a slow command waits longer than a quick one", async () => {
+  const started = Date.now();
+  await sleep(20);
+  assert.ok(Date.now() - started >= 15);
+  assert.ok(SLOW_COMMAND.quietMs > 220 && SLOW_COMMAND.maxMs > 4000);
 });

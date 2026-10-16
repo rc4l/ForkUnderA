@@ -8,6 +8,10 @@ namespace zx
 
 HeaderReach ComputeHeaderReach(const ReachIn &in)
 {
+	// [rc4l] A launch that keeps off the network asks nothing, so nothing it was told counts.
+	if (in.offlineLaunch)
+		return HeaderReach::OfflineLaunch;
+
 	// Proof first. One answer settles the question even while others are outstanding.
 	if (in.anyRegistryAnswered)
 		return HeaderReach::Internet;
@@ -34,6 +38,7 @@ ReachTint HeaderReachTint(HeaderReach reach)
 		return ReachTint::Orange;
 
 	case HeaderReach::Offline:
+	case HeaderReach::OfflineLaunch:
 		return ReachTint::Grey;
 
 	default:
@@ -54,6 +59,9 @@ const char *HeaderReachTooltip(HeaderReach reach)
 	case HeaderReach::Offline:
 		return "No network connection was found";
 
+	case HeaderReach::OfflineLaunch:
+		return "This game plays offline";
+
 	default:
 		return "Checking your connection...";
 	}
@@ -61,7 +69,7 @@ const char *HeaderReachTooltip(HeaderReach reach)
 
 bool PlayOnlineSelectable(HeaderReach reach)
 {
-	return reach != HeaderReach::Offline;
+	return reach != HeaderReach::Offline && reach != HeaderReach::OfflineLaunch;
 }
 
 } // namespace zx

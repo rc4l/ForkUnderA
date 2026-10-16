@@ -1,8 +1,8 @@
 # features/hwrender
 
 The Diligent (Vulkan) backend that draws the level mesh beside or over GL's window, and the pure
-`computation/` helpers it is built from. `diligent/` holds the backend itself; `hud2d` is the
-Diligent-free layer both renderers can see.
+`computation/` helpers it is built from. `diligent/` holds the backend itself; `backendonly.h` is the
+Diligent-free interface the engine and the other features call it through.
 
 The player's view is framed in the view window as GL's `SetViewport` frames it (a status bar raises it,
 a smaller `screenblocks` shrinks it): `computation/backendview_compute`'s `ComputeViewWindowViewport` is
@@ -20,10 +20,12 @@ picture; framed from the frame's shape, the screen's edges past the walk drew sk
 
 A launch draws with the backend alone, with no GL context at all (every client build), unless the
 player chose GL: `vid_backend` (the video mode menu's Renderer, "Vulkan (Recommended)" or "GL (Legacy)", read
-at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`). When
+at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`).
+`ComputeVidBackendFor` keeps it to what the build can honour: a browser's build, whose only renderer is WebGPU,
+always reads WebGPU, and `vid_backend_choosable` is false there, which greys the menu's Renderer out. When
 Vulkan was chosen and its device does not start, the launch says why on the console and draws with GL instead
 (`BackendDeviceStarts`). `I_CreateRenderer`
-installs `FBackendRenderer` (`backendrenderer.cpp`), whose `RenderView` is `features/frame`'s
+installs `features/frame`'s `FBackendRenderer` (`features/frame/backendrenderer.cpp`), whose `RenderView` is
 `RenderPlayerView` and whose level, light and fake-flat work is shared with GL. Each platform's video keeps the
 window and modes but makes no GL context (`Win32GLVideo` sets no pixel format, SDL's window is made without
 `SDL_WINDOW_OPENGL`, Cocoa's content view is a CAMetalLayer), and makes `DiligentFrameBuffer` (`backendvideo.cpp`,
@@ -45,9 +47,27 @@ at the virtual size; screenshots and the replay read that target. It keeps the l
 console and menus. The save picture is the player's last view drawn at the picture's size through the camera
 texture path (`RenderSavePicture`), with the screen's tint applied on the CPU (`ComputeApplyScreenFill`). A level
 settles before its first view (`SettleLevelScene`), since the map bakes it whole, so that view and a wipe's new
-screen are drawn rather than black.
+screen are drawn rather than black. Each wipe step is a frame of its own and starts its 2D afresh (`D_WipeStep`);
+the console and menu piled up under one generation before, and a browser refused the frames drawn past the 2D's
+vertices (`ComputeRebuild2DVertices` now builds them for every quad recorded).
 
-Every 2D draw is recorded through `Record2DCanvas` (`record2d.cpp`), `features/draw2d` working it out: the
+On WebGPU the backend frees its own GPU memory: each texture and buffer it makes (`CreateDeviceTexture`,
+`CreateDeviceBuffer`) and the swapchain's own two are kept by handle (`DeviceApi::keep`,
+`computation/keptobjects_compute`) and destroyed after the first present once nothing holds them
+(`FreeReleasedObjects`). A browser frees a released one only when its garbage collector runs, and a page resized a
+few times ran out of GPU memory first. Vulkan frees them itself. Textures' handles and buffers' are kept apart: a
+browser numbers each kind from one, and a buffer sharing a kept texture's number went unkept and waited on the
+collector (queue #48). Diligent's WebGPU device keeps every upload page it ever made, so the scene buffer is kept
+while the level fits it and its big writes go in upload-page-sized pieces (`kUploadPageBytes`, `dgupload.cpp`).
+`features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
+Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
+
+At exit the backend shuts down before the static destructors (`ShutdownBackend`, an `atterm` in
+`diligent/dgwindow.cpp`): the swapchain goes while its window is still there, the frame fence while the console
+its destructor reports to is still there, and Diligent's messages stop reaching the console. A quit crashed when
+the fence's message reached a console that had already been freed (scenario `quitclean`).
+
+Every 2D draw is recorded through `features/draw2d`'s `Record2DCanvas` into its frame's capture: the
 backend's own frame buffer draws its 2D with it, and in a launch with GL the frame buffer `features/sidebyside`
 makes records GL's 2D with it beside GL drawing it, so GL's renderer records nothing itself.
 
@@ -68,6 +88,14 @@ The translucent pass sorts by `ComputeTranslucentSortKey`, the order `ComputeDra
 one 128-bit number per draw (tested to agree with the rule on every pair of 576 draws), so the sort compares
 integers rather than walking the rule.
 
+`vid_fps` gives each renderer its own frame time (`rendererrate.cpp`): the frame is split at `LiveFrame`, GL's
+part before it and the backend's after.
+
+The sky is three files: the level's dome or box and the fade (`diligent/dgsky.cpp`), the skybox portal and
+the surfaces painted from it by screen position (`dgskyportal.cpp`), and other skies' pictures
+(`dgskylooks.cpp`), sharing `dgsky_internal.h`. Line mirrors are `dgviews.cpp`; reflective planes and
+stacked views, drawn into pooled targets, are `dgviewtargets.cpp`.
+
 A frame's sprites, models and decals are laid out on the game thread (`computation/dynlayout_compute`, each
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
@@ -81,21 +109,19 @@ ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes
 
 | file | hook | what for |
 |---|---|---|
-| `d_main.cpp` | `Clear2D`, `FrameTimingBegin`, `LiveFrame` | start the frame's 2D capture and renderer clock; draw the backend's frame after GL's |
-| `gl/scene/gl_sprite.cpp`, `gl_spriteview.cpp` | `SpriteViewProvider` | GL's sprites ask GL's own view, the backend's ask `SpriteView()` |
+| `d_main.cpp` | `FrameTimingBegin`, `LiveFrame` | start the renderer clock; draw the backend's frame after GL's |
 | `gl/scene/gl_drawinfo.cpp`, `gl_walls_draw.cpp` | `ComputeGLSpritesBefore`, `ComputeWallLightIndex` | GL's draw order and wall light lists, shared with the backend |
 | `features/frame/framedriver.cpp` | `FrameRouteNow` (`features/frame/computation/frameroute_compute`) | which renderers draw the frame |
 | `features/sidebyside/sidebyside.cpp` | `FrameRouteNow` | whether GL presents, which is whenever it draws |
-| `features/visibility/viswalk.cpp` | `SetSkyFog` | the sky's fade layer, derived from the walk |
-| `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `ComputeRateBox`, `Set2DTarget` | `vid_fps` shows each window its own renderer's frame time, `fua_fps_scale` times larger |
-| `win32/hardware.cpp`, `posix/sdl/hardware.cpp`, `posix/cocoa/i_video.mm` `I_CreateRenderer` | `CreateLaunchRenderer` | GL and the backend under the frame driver, or the backend alone in a launch without GL |
+| `v_video.cpp` | `BackendRateLive`, `RendererRateShown`, `ComputeRateText`, `ComputeRateBox` | `vid_fps` shows each window its own renderer's frame time, `fua_fps_scale` times larger |
+| `posix/sdl/hardware.cpp` `I_CreateRenderer`, `posix/cocoa/i_video.mm` | `BackendOnly` | a renderer for a launch without GL however the build was made, and no GL view in one |
 | `win32/win32gliface.cpp` | `BackendOnly`, `CreateBackendFrameBuffer` | no pixel format or context, and the backend's frame buffer |
 | `posix/sdl/sdlglvideo.cpp` | `CreateBackendFrameBuffer`, `ForgetBackendWindow`, `I_EngineWindow` | a window with no GL context, the backend's frame buffer, and its swapchain dropped before a mode change destroys the window |
 | `posix/sdl/i_input.cpp` | `I_EngineWindow` | the window mouse warps and grabs, which has no GL context to find it by |
 | `posix/cocoa/i_video.mm` | `CreateBackendFrameBuffer`, `I_EngineContentView` | a CAMetalLayer content view and no GL context, and the backend's frame buffer |
-| `features/sidebyside/sidebyside.cpp` | `Record2DCanvas`, `Get2DTarget` | GL's frame buffer records every 2D draw for the backend, and GL leaves out one meant for the backend's window alone |
 | `features/frame/playerview.cpp` | `NoteWorldView`, `StandaloneActive` | the frame drew the world |
-| `features/hwrender/backendrenderer.cpp` | `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |
+| `features/frame/backendrenderer.cpp` | `BeginBackendOnly`, `SettleLevelScene`, `RenderSavePicture`, `RenderBackendCamera` | a level settled before its first view; the save picture; camera textures |
 | `features/hwrender/backendvideo.cpp` | `WipeStart`, `WipeEnd`, `WipeTic`, `WipeCleanup`, `PreparePoly` | the screen wipes and the textured automap |
+| `g_game.cpp` `G_DoSaveGame`, `r_renderer.h` `FRenderer::SaveWritten`, `features/frame/framedriver.cpp` | `RenderSavePictureLater` | in a browser the save is written with the placeholder picture, and the picture goes into it once it is read back |
 | `gl/data/gl_vertexbuffer.cpp`, `gl/models/gl_models.cpp`, `gl/system/gl_interface.h` | `gl_HasContext` | vertex buffers keep only their CPU copy without GL |
 | `features/materials/textureinfo.cpp`, `material.cpp`, `hqresize.cpp`, `features/levelprep/levelprep.cpp` | `FMaterial::TextureBuffer`, `FMaterial::FlushAll` | texture reads and flushes that do not go through `GLRenderer` |

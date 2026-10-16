@@ -12,8 +12,8 @@
 // See src/zandronum/src/features/hwrender/diligent/README.md.
 
 import { BridgeClient } from "./client.mjs";
+import { sleep } from "./capture.mjs";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // [rc4l] Console output does not come back from `console.exec`, it goes to the engine log -- so the
 // caller passes the log path and we read the interesting lines back out of it.

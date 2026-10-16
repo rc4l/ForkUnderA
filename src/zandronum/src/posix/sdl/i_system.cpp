@@ -86,6 +86,7 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 #include "v_text.h"
+#include "sdlhost.h"   // [rc4l] ShowFatal, CanAskForIWad
 
 EXTERN_CVAR (String, language)
 
@@ -405,6 +406,8 @@ void STACK_ARGS I_FatalError (const char *error, ...)
 #ifdef __APPLE__
 		Mac_I_FatalError(errortext);
 #endif // __APPLE__
+		// [rc4l] A page has no stderr to look at, so its loop stops and the message shows on it.
+		zx::sdlhost::ShowFatal(errortext);
 		
 		// Record error to log (if logging)
 		if (Logfile)
@@ -652,6 +655,8 @@ int I_PickIWad (WadStuff *wads, int numwads, bool showwin, int defaultiwad)
 {
 	int i;
 
+	// [rc4l] A page has no dialog to ask with; it names the IWAD (-iwad) when the player picked one.
+	if (!zx::sdlhost::CanAskForIWad()) showwin = false;
 	if (!showwin)
 	{
 		return defaultiwad;

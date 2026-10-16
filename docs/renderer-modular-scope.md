@@ -47,6 +47,11 @@ Rules:
 - Pure logic lives in `Compute*` units with colocated tests (AGENTS.md).
 - Each module's README lists its public API and its engine hooks.
 
+CI checks the first two for every feature (`tools/layering_tripwire.py`): no feature includes a header below
+another's root other than its pure `computation/`, and no features include each other in a cycle. Where a
+lower feature has to reach a higher one, the higher one installs a listener or a table of calls at startup
+(the model pieces the sprite check hears, the registries the server browser keeps for hosting).
+
 ## Where today's code breaks those rules
 
 Inventory of 2026-10-12:
@@ -163,6 +168,16 @@ against its API instead.
 
 Against the pre-split binary, Vulkan frames of 13 template scenes were identical to the pixel, apart
 from content that varies between two runs of the same binary (animated textures, console text).
+
+**Again, 2026-10-15.** `dgsky.cpp` (1,624) and `dgviews.cpp` (1,606) had grown past the line, and split:
+
+| File | Lines | What |
+|---|---|---|
+| `dgsky.cpp` | 911 | the level's dome or box and the fade |
+| `dgskyportal.cpp` | 471 | the skybox portal, and the surfaces and occluders painted by screen position |
+| `dgskylooks.cpp` | 191 | other skies' pictures (a line's, sky2) |
+| `dgviews.cpp` | 1,225 | line mirrors, raster and ray-traced |
+| `dgviewtargets.cpp` | 391 | reflective planes and stacked views, drawn into pooled targets |
 
 ### P3: a scene module and a materials module
 

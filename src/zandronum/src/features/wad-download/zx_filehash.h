@@ -20,7 +20,7 @@
 // and the cap allows more.
 //
 // Thread-safety: these are the ONLY hashing entry points the download worker uses, and they touch
-// nothing but stdio and OpenSSL. Deliberately not md5.h's MD5SumOfFile, which goes through the
+// nothing but stdio and the in-tree digests. Deliberately not md5.h's MD5SumOfFile, which goes through the
 // engine's FileReader -- see the threading note in zx_waddownload.cpp.
 
 #ifndef ZX_FILEHASH_H

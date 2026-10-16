@@ -41,7 +41,7 @@
 #define stat _stat
 #else
 #include <dirent.h>
-#ifndef __sun
+#if !defined(__sun) && !defined(__EMSCRIPTEN__)
 #include <fts.h>
 #endif
 #endif
@@ -185,7 +185,7 @@ int FDirectory::AddDirectory(const char *dirpath)
 	return count;
 }
 
-#elif defined(__sun) || defined(__APPLE__)
+#elif defined(__sun) || defined(__APPLE__) || defined(__EMSCRIPTEN__)
 
 int FDirectory::AddDirectory(const char *dirpath)
 {

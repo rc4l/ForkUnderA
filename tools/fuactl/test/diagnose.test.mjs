@@ -58,6 +58,28 @@ test("diagnoseHang: an unreachable engine gets sampled and the stuck function is
   assert.match(r.summary, /AM_ScrollParchment/);
 });
 
+// [rc4l] On Windows the in-engine sampler reports through the stuck game thread, so the native stack dump names the function instead.
+test("diagnoseHang: with no sampler, the busiest thread's first engine frame is named", async () => {
+  const r = await diagnoseHang({
+    port: 7917, pid: 5,
+    _pidAlive: () => true,
+    _probe: async () => ({ connected: false, error: "rpc timeout: sim.tic" }),
+    _sample: async () => ({ available: false, backend: "none" }),
+    _stacks: (pid) => ({ available: true, threads: [{ thread: pid, cpuMs: 480, sample: 1, frames: ["ntdll!Wait+0x14", "forkundera!zx::hwrender::PresentFrame  dgscene.cpp:711"] }] }),
+  });
+  assert.equal(r.stuckIn, "zx::hwrender::PresentFrame");
+  assert.match(r.summary, /busiest thread in: zx::hwrender::PresentFrame/);
+  const none = await diagnoseHang({
+    port: 7917, pid: 5,
+    _pidAlive: () => true,
+    _probe: async () => ({ connected: false, error: "rpc timeout: sim.tic" }),
+    _sample: async () => ({ available: false, backend: "none" }),
+    _stacks: () => ({ available: false, error: "cannot open process 5" }),
+  });
+  assert.equal(none.stuckIn, undefined);
+  assert.equal(none.stack.error, "cannot open process 5");
+});
+
 // A thread blocked on a condvar (the frozen-tic deadlock shape) produces no samples at all, which
 // is a different finding from "spinning here" and must not read as "nothing wrong".
 test("diagnoseHang: no samples means blocked, not looping", async () => {

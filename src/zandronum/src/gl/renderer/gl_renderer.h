@@ -76,7 +76,7 @@ public:
 	FSkyVertexBuffer *mSkyVBO;
 	FLightBuffer *mLights;
 	zx::draw2d::PolyDraw mPoly;                    // [rc4l] FillSimplePoly's points and texture coordinates, worked out by features/draw2d
-	std::vector<zx::hwrender::Quad2D> mPolyTris;   // [rc4l] and its fan, which PreparePoly works out with them
+	std::vector<zx::draw2d::Quad2D> mPolyTris;   // [rc4l] and its fan, which PreparePoly works out with them
 
 
 	FGLRenderer(OpenGLFrameBuffer *fb);

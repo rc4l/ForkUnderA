@@ -60,7 +60,7 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 |---|---|
 | `src/CMakeLists.txt` | registers `features/continue/zx_continue.cpp` |
 | `c_cmds.cpp` | `quit`/`exit` record the session before exiting |
-| `features/server-browser/zx_joinserver.cpp` | `NoteJoinSucceeded` records the server |
+| `features/server-browser/zx_joinserver.cpp` | `NoteJoinSucceeded` records the server; `SetLeavingLocalGameListener`, which this tab installs, hears a local game being left |
 | `features/global-header/zx_globalheader.cpp` | the Continue tab: label, count, pinned index, activation |
 | `features/global-header/computation/globalheader_compute.{h,cpp}` | `pinnedIndex` layout and `StepHeaderTabPinned` |
 | `mcp_rpc.cpp` | `ui.continue`, for `fuactl continue` |
@@ -68,7 +68,7 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 | `g_game.{h,cpp}` | exports `G_DoSaveGame`, the synchronous save the quit path needs |
 | `g_level.cpp` | `map` from a client brackets its deliberate disconnect with `Continue_NoteChoosingDestination` |
 | `w_wad.{h,cpp}` | adds `W_GetLoadedWadPath`, the real path of a file we already have open |
-| `features/server-hosting/zx_hosting.cpp` | `HostStart` names loaded files by path, so the child can find them |
+| `features/server-hosting/zx_hosting.cpp` | `HostStart` names loaded files by path, so the child can find them; `SetHostingListener`, which this tab installs, hears a hosted server start |
 
 ## Computation units
 

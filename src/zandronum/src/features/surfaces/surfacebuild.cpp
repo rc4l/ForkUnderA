@@ -6,6 +6,8 @@
 #include "r_state.h"
 #include "r_sky.h"   // skyflatnum, for the lower texture's sky reference
 #include "g_level.h"   // level.flags, for the fog test GLWall::Process makes
+#include "features/surfaces/planeuv.h"   // [rc4l] PlaneUVFor
+#include "features/fakeflat/fakeflat.h"   // [rc4l] TransferSector
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 #include "textures/textures.h"
@@ -20,7 +22,6 @@
 #include "features/surfaces/computation/wallgeom_compute.h"
 #include "features/surfaces/computation/walluv_compute.h"
 #include "features/surfaces/computation/gapfill_compute.h"
-#include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "p_3dfloors.h"   // F3DFloor, for the FF_FIX abuse GL will not flood over
 #include "features/horizon/computation/horizon_compute.h"
@@ -48,8 +49,8 @@ void HeightsAt(const seg_t *seg, fixed_t x, fixed_t y, WallHeights &out)
 {
 	// [rc4l] Both sides as GL's Process takes them, a height transfer's by its view area (gl_FakeFlat), while the texture keeps the real sectors' pegging.
 	sector_t fs, bs;
-	const sector_t *front = zx::levelmesh::TransferSector(seg->frontsector, &fs, false);
-	const sector_t *back = seg->backsector != NULL ? zx::levelmesh::TransferSector(seg->backsector, &bs, true) : NULL;
+	const sector_t *front = zx::fakeflat::TransferSector(seg->frontsector, &fs, false);
+	const sector_t *back = seg->backsector != NULL ? zx::fakeflat::TransferSector(seg->backsector, &bs, true) : NULL;
 	out.frontFloor   = FIXED2FLOAT(front->floorplane.ZatPoint(x, y));
 	out.frontCeiling = FIXED2FLOAT(front->ceilingplane.ZatPoint(x, y));
 	out.twoSided = (back != NULL);
@@ -136,7 +137,7 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, FDynamicColo
 	if (seg == NULL || seg->sidedef == NULL || seg->frontsector == NULL) return false;
 	// [rc4l] A height transfer's front lights its walls as gl_FakeFlat gives it for the view area: under a lake, the control sector's light and colour.
 	sector_t transfer;
-	const sector_t *front = zx::levelmesh::TransferSector(seg->frontsector, &transfer, false);
+	const sector_t *front = zx::fakeflat::TransferSector(seg->frontsector, &transfer, false);
 	// [rc4l] A sector with a 3D floor light list does not have ONE light level -- and that is now the
 	// CALLER's problem rather than a reason to refuse.
 	//
@@ -228,7 +229,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 				GLSectorPlane sp;
 				sp.GetFromSector(bs, which);
 				zx::levelmesh::PlaneUVTransform uvt;
-				zx::levelmesh::PlaneUVFor(sp, mat, uvt);
+				zx::surfaces::PlaneUVFor(sp, mat, uvt);
 				const zx::levelmesh::PlaneUVAffine a = zx::levelmesh::ComputePlaneUVAffine(uvt);
 				out.flood = true;
 				out.floodCeiling = ceilingPart;

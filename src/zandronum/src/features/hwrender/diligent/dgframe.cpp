@@ -4,9 +4,11 @@
 // [rc4l] The frame driver: arming a level for the backend, the per-frame entry point, and the present-to-present clock fua_frametimes reads.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/draw2d/record.h"   // [rc4l] Clear2D
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/computation/levelsetup_compute.h"
-#include "features/mcp-bridge/computation/mcprpc_compute.h"   // [rc4l] SummarizeFrameTimes
+#include "features/perfstats/computation/perfstats_compute.h"   // [rc4l] ComputeFrameTimeSummary
+#include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, fua_vis_check)
 EXTERN_CVAR(Bool, fua_sprite_check)
@@ -18,6 +20,30 @@ namespace zx { namespace hwrender {
 // [rc4l] Where this level's set-up stands, as levelsetup_compute steps it.
 static LevelSetup g_setup = ComputeLevelSetupStart();
 
+// [rc4l] Everything a level owned on the GPU, released for the next level, and at shutdown before what is still held is reported.
+void ReleaseLevelResources()
+{
+	// [rc4l] The texture cache and material SRBs are keyed on raw FMaterial*, so a new level's materials at an old one's addresses wore its textures after a few map changes; SRBs reference the textures, so they go first.
+	ReleaseBatchSRBs();
+	ReleaseMaterialSRBs();
+	for (unsigned int b = 0; b < g_scene.batches.Size(); b++) g_scene.batches[b].srb = NULL;
+	// [rc4l] The material slot table holds the same stale pointers and is read every frame, so a new level's materials at the old addresses hit the poisoned cache and wore other surfaces' textures (93% of dbab04's frame, only after a map change).
+	ResetMaterialSlots();
+	g_stats.dynSlotUnfilledTotal = 0;
+	ReleaseWorldSRBs();
+	// [rc4l] The pipelines too, since uMaterials is a static variable Diligent copies into every binding, and refilling it on a pipeline that has handed out bindings keeps the old level's textures.
+	ReleaseScenePipelines();
+	ReleaseMaterials();
+	// [rc4l] Camera targets are keyed on FMaterial* too and go stale the same way.
+	ReleaseCameraTargets();
+	ReleaseAccelerationStructures();
+}
+
+void ForgetBackendTextures()
+{
+	if (GetDevice() != nullptr) ReleaseLevelResources();
+}
+
 // [rc4l] Bake this level from the map and upload it, once, without anyone typing anything.
 
 static bool AutoSetupForLevel()
@@ -28,44 +54,7 @@ static bool AutoSetupForLevel()
 	{
 	case kSetupArm:
 		if (gamestate != GS_LEVEL) return false;
-		// [rc4l] Drop everything keyed on a pointer the old level owned.
-		//
-		// The texture cache and the material SRBs are keyed on raw FMaterial*, and ReleaseMaterials
-		// was never called from anywhere -- so they survived every map change for the life of the
-		// process. That is fine until the engine frees a level's materials and the allocator hands
-		// the same addresses to a new level's, at which point the cache serves the PREVIOUS map's
-		// texture for a material that merely happens to live where the old one did. It needs several
-		// map changes to show up, which is exactly how it was found: a map that renders correctly on
-		// its own came up with black and wrong surfaces after cycling through the rotation to reach
-		// it. SRBs reference the textures, so they go first.
-		ReleaseBatchSRBs();
-		ReleaseMaterialSRBs();
-		for (unsigned int b = 0; b < g_scene.batches.Size(); b++) g_scene.batches[b].srb = NULL;
-		// [rc4l] The material SLOT TABLE holds the same stale pointers, and it is worse than the caches
-		// because something reads it every frame.
-		//
-		// Between a level change and the new scene upload, RefreshBindless would fill the array from
-		// the old level's FMaterial pointers -- and GetMaterialSRV caches what it makes of them, keyed
-		// on those same addresses. The new level then allocates its materials at the addresses the old
-		// ones just vacated, hits the poisoned cache, and every surface comes up wearing some other
-		// surface's texture. 93% of the frame on dbab04, and only ever after a map change, which is why
-		// it looked like the map rather than the transition.
-		ResetMaterialSlots();
-		g_stats.dynSlotUnfilledTotal = 0;
-		ReleaseWorldSRBs();
-		// [rc4l] And the PIPELINES, because the material array lives on them.
-		//
-		// uMaterials is a STATIC variable, which means Diligent stores it on the pipeline and copies it
-		// into every binding made from that pipeline. A level change refills it -- and on a pipeline
-		// that has already handed out bindings, refilling does not take: the array keeps the PREVIOUS
-		// level's textures, so the new level renders with its geometry perfect and every surface
-		// wearing the wrong picture. A map loaded directly is fine because the array is filled before
-		// any binding exists, which is why this only ever showed up after a map change.
-		ReleaseScenePipelines();
-		ReleaseMaterials();
-		// Camera targets are keyed on FMaterial* too, and go stale for exactly the same reason.
-		ReleaseCameraTargets();
-		ReleaseAccelerationStructures();
+		ReleaseLevelResources();
 		CollectMirrors();
 		ResetSkyForLevel();
 		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first
@@ -74,6 +63,7 @@ static bool AutoSetupForLevel()
 		// point is that nobody is.
 		if (!gl_wallmesh) gl_wallmesh = true;
 		{
+			ZX_ZONE("load/bake");   // [rc4l] the level mesh baked from the map
 			// [rc4l] Every wall and plane straight from the map, so the level is baked whole before its first view.
 			const int built = zx::levelmesh::BakeLevelFromMap();
 			const int flats = zx::levelmesh::BakeFlatsFromMap();
@@ -86,6 +76,7 @@ static bool AutoSetupForLevel()
 		// [rc4l] Upload the level the map baked whole, retrying a failed upload on later frames, since giving up is permanent for the level.
 		{
 			FString report;
+			ZX_ZONE("load/upload");   // [rc4l] the baked level uploaded to the GPU
 			ComputeLevelSetupUploaded(g_setup, SceneUpload(report));
 			if (g_setup.state == kSetupReady) Printf("vulkan: %s\n", report.GetChars());
 			else if (g_setup.state == kSetupGaveUp) Printf("vulkan: setup failed after %d attempts -- %s\n", g_setup.tries, report.GetChars());
@@ -135,6 +126,8 @@ void RecordPresentInterval()
 	if (g_frameHavePrev)
 	{
 		const double ms = std::chrono::duration<double, std::milli>(now - g_framePrev).count();
+		static const zx::telemetry::Counter present = zx::telemetry::Register(zx::telemetry::CounterSpec{ "frame/present_ms", "ms", zx::telemetry::CounterKind::Time, 0 });
+		zx::telemetry::Set(present, ms);   // [rc4l] present to present, which the player sees, as fua_frametimes reads it
 		g_frameMs[g_frameHead] = ms;
 		FrameParts &fp = g_frameParts[g_frameHead];
 		fp.invalMs    = (float)zx::levelmesh::InvalidationMsLastFrame();
@@ -143,6 +136,18 @@ void RecordPresentInterval()
 		fp.runs       = g_stats.fRuns;
 		fp.patchVerts = g_stats.fPatchVerts;
 		fp.ticked     = (level.time != g_lastLevelTime);
+		// [rc4l] The same parts as features/telemetry counters, so a capture or a flight dump carries them beside the frame.
+		static const zx::telemetry::Counter parts[] = {
+			zx::telemetry::Register(zx::telemetry::CounterSpec{ "levelmesh/invalidate_ms", "ms", zx::telemetry::CounterKind::Time, 0 }),
+			zx::telemetry::Register(zx::telemetry::CounterSpec{ "levelmesh/sectors_dirty", "sectors", zx::telemetry::CounterKind::Total, 0 }),
+			zx::telemetry::Register(zx::telemetry::CounterSpec{ "levelmesh/repaints", "repaints", zx::telemetry::CounterKind::Total, 0 }),
+			zx::telemetry::Register(zx::telemetry::CounterSpec{ "levelmesh/runs", "runs", zx::telemetry::CounterKind::Total, 0 }),
+			zx::telemetry::Register(zx::telemetry::CounterSpec{ "levelmesh/patch_verts", "vertices", zx::telemetry::CounterKind::Total, 0 }) };
+		zx::telemetry::Set(parts[0], fp.invalMs);
+		zx::telemetry::Set(parts[1], fp.sectors);
+		zx::telemetry::Set(parts[2], fp.repaints);
+		zx::telemetry::Set(parts[3], fp.runs);
+		zx::telemetry::Set(parts[4], fp.patchVerts);
 		g_lastLevelTime = level.time;
 		g_stats.fRepaints = g_stats.fRuns = g_stats.fPatchVerts = g_stats.fPatches = 0;
 		g_frameHead = (g_frameHead + 1) % kFrameRing;
@@ -157,8 +162,8 @@ void ResetFrameTimes() { g_frameCount = 0; g_frameHead = 0; g_frameHavePrev = fa
 CCMD( fua_frametimes )
 {
 	if (g_frameCount < 8) { Printf( "fua_frametimes: not enough frames yet -- play for a second.\n" ); return; }
-	// [rc4l] The bridge's frame-time summary, so this and perf.capture agree on what a percentile is.
-	const zx::mcp::PerfSummary s = zx::mcp::SummarizeFrameTimes(std::vector<double>(g_frameMs, g_frameMs + g_frameCount));
+	// [rc4l] The shared frame-time summary, so this and perf.capture agree on what a percentile is.
+	const zx::perfstats::PerfSummary s = zx::perfstats::ComputeFrameTimeSummary(std::vector<double>(g_frameMs, g_frameMs + g_frameCount));
 	const double med = s.p50, p99 = s.p99;
 	// How many frames took more than twice the median -- that is what a stutter IS.
 	int hitches = 0; for (int i = 0; i < g_frameCount; i++) if (g_frameMs[i] > med * 2.0) hitches++;
@@ -235,7 +240,7 @@ CCMD( fua_frametimes )
 	ResetFrameTimes();
 }
 
-// [rc4l] See hud2d.h; it does not ask about fua_dg_standalone, since with the embedded window up GL's output is discarded either way.
+// [rc4l] See backendonly.h; it does not ask about fua_dg_standalone, since with the embedded window up GL's output is discarded either way.
 bool BackendPresenting()
 {
 	if (!fua_vulkan || !fua_dg_embed) return false;
@@ -275,7 +280,7 @@ void SettleLevelScene()
 		if (AdvanceLevelScene() && StandaloneActive()) return;
 }
 
-// [rc4l] One live frame from the current camera, its engine-side declaration in dglive.h.
+// [rc4l] One live frame from the current camera, declared for the engine in backendonly.h.
 void LiveFrame()
 {
 	// [rc4l] A launch without GL presents from its frame buffer's Update, where every path of D_Display passes.
@@ -368,7 +373,7 @@ void WipeEnd()
 	g_worldViewThisFrame = false;
 	DrawBackendFrame(false);
 	WipeTakeEnd();
-	zx::hwrender::Clear2D();
+	zx::draw2d::Clear2D();
 }
 
 void PresentBackendOnly(bool present)
@@ -379,6 +384,7 @@ void PresentBackendOnly(bool present)
 	if (!present) return;
 	zx::hwrender::GLFrameDone();
 	g_lastFrameWorld = world;
+	FollowBackendSurface();
 	DrawBackendFrame(true);
 	zx::hwrender::BackendFrameDone();
 }

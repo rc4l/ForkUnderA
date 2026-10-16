@@ -16,7 +16,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// [rc4l] Waits ms milliseconds; every module that waits on an engine takes it from here.
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// [rc4l] exec's waits for a command that prints a lot or works for a while first (fua_stats, a soak's mark or verdict, a capture's stop).
+export const SLOW_COMMAND = { quietMs: 400, maxMs: 20000 };
 
 // ---------------------------------------------------------------------------------------------
 // Console, with its output

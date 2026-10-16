@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include <stddef.h>   // offsetof, for the cached-record guard
+#include "features/fakeflat/fakeflat.h"   // [rc4l] ViewDependent
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] SideLook, SectorLook
 #include "features/levelmesh/captureshading.h"
@@ -1224,7 +1225,7 @@ void RebakeTransferSegs()
 	if (!gl_wallmesh) return;
 	for (int s = 0; s < numsectors && (unsigned)s < g_sectorSegs.Size(); s++)
 	{
-		if (!ViewDependent(&sectors[s])) continue;
+		if (!zx::fakeflat::ViewDependent(&sectors[s])) continue;
 		for (unsigned k = 0; k < g_sectorSegs[s].Size(); k++) RebakeChangedSeg(g_sectorSegs[s][k], true);
 	}
 }

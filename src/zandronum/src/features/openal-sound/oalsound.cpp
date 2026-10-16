@@ -523,8 +523,9 @@ static void FindLoopTags(FileReader *fr, unsigned int *start, bool *startass, un
 
 static void FindLoopTags(const BYTE *data, size_t size, unsigned int *start, bool *startass, unsigned int *end, bool *endass)
 {
-	MemoryReader *reader = new MemoryReader((const char*)data, (long)size);
-	FindLoopTags(reader, start, startass, end, endass);
+	// [rc4l] On the stack, since the reader made with new here was never deleted, one leaked a sound loaded.
+	MemoryReader reader((const char*)data, (long)size);
+	FindLoopTags(&reader, start, startass, end, endass);
 }
 
 class OpenALSoundStream : public SoundStream
@@ -924,7 +925,8 @@ public:
         UserData = userdata;
         SampleRate = samplerate;
 
-        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_FLOAT32"));
+        // [rc4l] The extension's own spelling: OpenAL Soft matches names in any case, Emscripten's OpenAL only exactly.
+        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_float32"));
         if(Format == AL_NONE)
         {
             Printf("Unsupported format: 0x%x\n", flags);
@@ -1248,14 +1250,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         // although it can generate reasonable number of sources.
 
         const int numChannels = MAX<int>(*snd_channels, 2);
-        int numSources = numMono + numStereo;
-
-        if (0 == numSources)
-        {
-            numSources = numChannels;
-        }
-
-        Sources.Resize(MIN<int>(numChannels, numSources));
+        Sources.Resize(ComputeSourceCount(numMono, numStereo, numChannels));
         for (unsigned i = 0; i < Sources.Size(); i++)
         {
             alGenSources(1, &Sources[i]);
@@ -2045,10 +2040,12 @@ unsigned int OpenALSoundRenderer::GetPosition(FISoundChannel *chan)
     if(chan == NULL || chan->SysChannel == NULL)
         return 0;
 
-    ALint pos;
-    alGetSourcei(GET_PTRID(chan->SysChannel), AL_SAMPLE_OFFSET, &pos);
+    const ALuint source = GET_PTRID(chan->SysChannel);
+    ALint state = AL_INITIAL, pos = 0;
+    alGetSourcei(source, AL_SOURCE_STATE, &state);
+    alGetSourcei(source, AL_SAMPLE_OFFSET, &pos);
     if(getALError() == AL_NO_ERROR)
-        return pos;
+        return ComputeSourcePosition(state == AL_STOPPED, pos);
     return 0;
 }
 

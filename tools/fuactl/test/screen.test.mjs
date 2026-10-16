@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { screencapPaths, needsBuild, ensureScreencap, parseCapture, analyzeCapture, formatCapture, parseTrace, alignTrace, formatTrace, captureScreen } from "../src/screen.mjs";
+import { parseCapture, analyzeCapture, formatCapture, parseTrace, alignTrace, formatTrace, captureScreen } from "../src/screen.mjs";
 
 // [rc4l] A 480 Hz capture: every refresh a new image, except where a refresh is skipped.
 function rows(gapsInRefreshes, period = 1e6 / 480) {
@@ -12,26 +12,6 @@ function rows(gapsInRefreshes, period = 1e6 / 480) {
   for (const g of gapsInRefreshes) { t += g * period; out.push({ us: Math.round(t), changed: true, frames: 1 }); }
   return out;
 }
-
-test("the helper is built when missing or older than its source, and not otherwise", () => {
-  const p = screencapPaths("/x");
-  assert.equal(p.exe, path.join("/x", "build", "Release", "screencap.exe"));
-  assert.equal(needsBuild(p, (f) => (f === p.exe ? null : 5)), true);
-  assert.equal(needsBuild(p, (f) => (f === p.exe ? 4 : 5)), true);
-  assert.equal(needsBuild(p, (f) => (f === p.exe ? 6 : 5)), false);
-});
-
-test("building runs cmake configure then build, and a failure names its errors", () => {
-  const p = screencapPaths("/x");
-  const calls = [];
-  const exe = ensureScreencap("cmake", { paths: { ...p, exe: "/nowhere/screencap.exe" }, run: (cm, args) => { calls.push(args[0]); return { status: 0 }; } });
-  assert.equal(exe, "/nowhere/screencap.exe");
-  assert.deepEqual(calls, ["-S", "--build"]);
-  assert.throws(() => ensureScreencap("cmake", { paths: { ...p, exe: "/nowhere/screencap.exe" }, run: () => ({ status: 1, stdout: "x\nerror C2065: nope\n" }) }), /error C2065/);
-  const fresh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-sc-")), "screencap.exe");
-  fs.writeFileSync(fresh, "");
-  assert.equal(ensureScreencap("cmake", { paths: { source: fresh, build: "/b", exe: fresh }, run: () => { throw new Error("must not build"); } }), fresh);
-});
 
 test("the capture's rows are its frames, changed or not, each one desktop frame unless it says more", () => {
   assert.deepEqual(parseCapture("present_us,changed,frames\n0,1,1\n2083,0,1\n6249,1,2\n"), [

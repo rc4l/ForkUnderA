@@ -70,7 +70,7 @@ int ScreenBlends(sector_t *viewsector, int viewArea, bool fixedColormap, int pal
 	return n;
 }
 
-zx::hwrender::Quad2D PrepareScreenFill(const ScreenFill &f)
+zx::draw2d::Quad2D PrepareScreenFill(const ScreenFill &f)
 {
 	return ComputeScreenFillQuad((float)SCREENWIDTH, (float)SCREENHEIGHT, f.r, f.g, f.b, f.a, f.multiply);
 }

@@ -13,9 +13,11 @@
 
 #include "features/global-header/computation/globalheader_compute.h"
 #include "features/global-header/computation/headerreach_compute.h"
+#include "features/net/zx_offline.h"   // [rc4l] OfflineLaunch
 #include "features/global-header/computation/menuresume_compute.h"
 #include "features/server-browser/browser.h"
-#include "features/server-browser/zx_joinserver.h" // IsServerBrowserOpen: which tab is lit
+#include "features/server-browser/zx_joinserver.h"
+#include "features/server-browser/zx_menuchrome.h" // IsServerBrowserOpen: which tab is lit
 #include "features/server-browser/computation/registrystatus_compute.h"
 #include "features/server-browser/computation/tooltip_compute.h"
 // The rounded-panel gradient the update notice, the link prompt and the browser's own chrome all
@@ -211,6 +213,11 @@ HeaderTab CurrentTab( )
 HeaderReach Reach( )
 {
 	ReachIn in;
+
+	// [rc4l] A launch that keeps off the network has no socket to ask with, and nothing to be told.
+	in.offlineLaunch = net::OfflineLaunch( );
+	if ( in.offlineLaunch )
+		return ComputeHeaderReach( in );
 
 	const unsigned int count = BROWSER_GetServerRegistryCount( );
 	for ( unsigned int i = 0; i < count; ++i )
@@ -864,3 +871,7 @@ bool GlobalHeader_MouseClick( int screenX, int screenY )
 }
 
 } // namespace zx
+
+// [rc4l] The server browser's menu below the bar asks it where its bottom is and whether it has the keyboard.
+static const zx::MenuChrome g_GlobalHeaderChrome = { zx::GlobalHeader_ScreenBottom, zx::GlobalHeader_HasFocus };
+static const bool g_bGlobalHeaderChromeInstalled = ( zx::SetMenuChrome( &g_GlobalHeaderChrome ), true );

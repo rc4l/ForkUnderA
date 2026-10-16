@@ -12,50 +12,15 @@
 # scripts/game-server-entrypoint.sh for that chain and features/addon-catalogue/README.md for what an
 # entry is.
 #
-# Built from THIS repo rather than consuming a release tarball, for the same reason Dockerfile.registry
-# is: engine and catalogue ship together and must not drift. A published tarball would add a second
-# release cadence to keep in step, and the failure mode of getting it wrong is a server whose clients
-# cannot join it.
+# [rc4l] It packages a server that linux_compile.sh --serveronly already compiled natively on Ubuntu 22.04 and tools/stage-game-server.sh staged into dist-prebuilt/ from the same commit, so the image has one way to be made and its compile is the one every Linux build takes.
 
-# ---- build ---------------------------------------------------------------------------------------
-# [rc4l] Ubuntu 22.04 in BOTH stages, deliberately. The runtime stage has to supply the same glibc the
-# binary was linked against, and pinning one image for both makes that true by construction rather
-# than by remembering to bump two lines together.
-FROM ubuntu:22.04 AS build
+# ---- stage ---------------------------------------------------------------------------------------
+# [rc4l] Ubuntu 22.04 here and in the runtime below, the glibc the server was linked against on the ubuntu-22.04 runner that compiled it.
+FROM ubuntu:22.04 AS stage
+COPY dist-prebuilt/ /stage/
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# [rc4l] The full dependency list from linux_compile.sh, not a hand-trimmed server subset. SERVERONLY
-# turns off sound, GTK and GL in the BUILD, but CMake still probes for them while configuring, and a
-# probe that fails silently produces a differently-configured binary rather than an error. Build-stage
-# size is discarded anyway.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential cmake ninja-build git python3 pkg-config ca-certificates \
-        libssl-dev libopus-dev zlib1g-dev libbz2-dev libjpeg-dev \
-        libsdl2-dev libgl1-mesa-dev libglu1-mesa-dev libglew-dev libgme-dev \
-        libopenal-dev libsndfile1-dev libmpg123-dev \
-        libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
-        libcurl4-openssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /src
-COPY . .
-
-# [rc4l] linux_compile.sh is the one build path a dev, package-linux.sh and this image all take, so
-# there is nothing here that only CI exercises. It stages the binary, the pk3s, Freedoom and
-# catalogue/ into dist-linux/ForkUnderA-linux-<arch>/, which is exactly the runtime payload.
-RUN SERVERONLY=ON ./linux_compile.sh
-
-# [rc4l] Normalise the arch out of the staged directory name so the COPY below is a fixed path. The
-# alternative is a wildcard COPY, which silently succeeds with zero matches.
-#
-# The BINARY name is discovered rather than assumed, and that is not defensiveness for its own sake:
-# ZDOOM_EXE_NAME is a cache variable with SERVERONLY appending "-server" to whatever it holds, so the
-# name is a build-system decision this file has no business restating. Encoding a guess produced a
-# green compile and an image with nothing to run. Pick the one ELF file in the payload and give it a
-# fixed name from here on, failing loudly on none or several.
-RUN mkdir -p /stage && cp -r dist-linux/ForkUnderA-linux-*/. /stage/ \
-    && found=""; count=0; \
+# [rc4l] The binary is found rather than named, since SERVERONLY appends "-server" to ZDOOM_EXE_NAME, a cache variable, and a guessed name once made an image with nothing to run.
+RUN found=""; count=0; \
        for f in /stage/*; do \
          [ -f "$f" ] || continue; \
          case "$(head -c 4 "$f" | od -An -c | tr -d ' \n')" in \
@@ -102,7 +67,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # builds, so a persisted ini could only ever disagree with it.
 ENV HOME=/home/fua
 
-COPY --from=build /stage /opt/forkundera
+COPY --from=stage /stage /opt/forkundera
 
 # [rc4l] Which engine is in here, as a label rather than folklore. The image carries its own
 # game-server version in its tag, and that number says nothing about the engine inside it -- so

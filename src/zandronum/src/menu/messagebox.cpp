@@ -50,6 +50,7 @@
 #include "features/updater/computation/openurl_compute.h"   // [rc4l] zx::IsOpenableURL scheme gate
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded panel geometry/gradient
 #include "features/updater/computation/release_url_compute.h" // [rc4l] OS-correct download URL
+#include "features/mainloop/mainloop.h"   // [rc4l] Quit, which a stepped loop finishes later
 
 
 extern FSaveGameNode *quickSaveSlot;
@@ -411,16 +412,18 @@ void DQuitMenu::HandleResult(bool res)
 {
 	if (res)
 	{
+		int vbls = 0;
 		// [BB] !netgame -> ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			if (gameinfo.quitSound.IsNotEmpty())
 			{
 				S_Sound (CHAN_VOICE | CHAN_UI, gameinfo.quitSound, snd_menuvolume, ATTN_NONE);
-				I_WaitVBL (105);
+				vbls = 105;
 			}
 		}
-		ST_Endoom();
+		// [rc4l] Waits out the quit sound and ends, or on a stepped loop ends once the sound has had its time.
+		zx::mainloop::Quit(vbls);
 	}
 	else
 	{

@@ -4,6 +4,7 @@
 #include "features/hwrender/computation/rendererrate_compute.h"
 
 #include <stdio.h>
+#include <string.h>
 
 namespace zx { namespace hwrender {
 
@@ -37,6 +38,11 @@ void ComputeRateFrame(RendererRate &r, unsigned nowMs, double frameMs)
 bool ComputeRateLive(const RendererRate &r, unsigned nowMs)
 {
 	return r.seen && nowMs - r.lastMs < 1000;
+}
+
+const char *ComputeBackendRateName(const char *apiName)
+{
+	return apiName != NULL && strcmp(apiName, "WebGPU") == 0 ? "WebGPU" : "VK";
 }
 
 int ComputeRateText(char *out, size_t size, const char *name, int ms, int fps)

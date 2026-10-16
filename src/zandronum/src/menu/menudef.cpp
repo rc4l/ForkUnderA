@@ -55,6 +55,7 @@
 #include "doomerrors.h"
 
 #include "features/freeform-menu/freeformmenuitems.h"
+#include "menu/menuplatform_compute.h"
 #include "optionmenuitems.h"
 
 void ClearSaveGames();
@@ -147,6 +148,20 @@ static bool CheckSkipGameBlock(FScanner &sc)
 //
 //=============================================================================
 
+// [rc4l] The platform IfOption's platform keywords are matched against (menuplatform_compute.h).
+static zx::MenuPlatform CurrentMenuPlatform()
+{
+#if defined(__EMSCRIPTEN__)
+	return zx::MenuPlatform::Web;
+#elif defined(_WIN32)
+	return zx::MenuPlatform::Windows;
+#elif defined(__APPLE__)
+	return zx::MenuPlatform::Mac;
+#else
+	return zx::MenuPlatform::Unix;
+#endif
+}
+
 static bool CheckSkipOptionBlock(FScanner &sc)
 {
 	bool filter = false;
@@ -156,24 +171,7 @@ static bool CheckSkipOptionBlock(FScanner &sc)
 		sc.MustGetString();
 		if (sc.Compare("ReadThis")) filter |= gameinfo.drawreadthis;
 		else if (sc.Compare("Swapmenu")) filter |= gameinfo.swapmenu;
-		else if (sc.Compare("Windows"))
-		{
-			#ifdef _WIN32
-				filter = true;
-			#endif
-		}
-		else if (sc.Compare("unix"))
-		{
-			#ifdef __unix__
-				filter = true;
-			#endif
-		}
-		else if (sc.Compare("Mac"))
-		{
-			#ifdef __APPLE__
-				filter = true;
-			#endif
-		}
+		else if (zx::ComputeIsMenuPlatformKeyword(sc.String)) filter |= zx::ComputeMenuPlatformMatches(sc.String, CurrentMenuPlatform());
 		else if (sc.Compare("OpenAL")) // [rc4l] the OpenAL backend is present (always, unless NO_OPENAL)
 		{
 			#ifndef NO_OPENAL
@@ -1606,7 +1604,12 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 	while (!sc.CheckString("}"))
 	{
 		sc.MustGetString();
-		if (sc.Compare("ifgame"))
+		// [rc4l] The else of an IfOption whose block was taken, as list and freeform menus have it.
+		if (sc.Compare("else"))
+		{
+			SkipSubBlock(sc);
+		}
+		else if (sc.Compare("ifgame"))
 		{
 			if (!CheckSkipGameBlock(sc))
 			{

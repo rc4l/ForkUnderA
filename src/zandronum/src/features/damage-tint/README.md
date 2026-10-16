@@ -39,7 +39,7 @@ against the actor's own floor plane) — per-pixel falloff on the GPU, no new sh
    `DrawTexture`.
 4. The Vulkan backend reads the same gradients: `features/sprites/spritebuild.cpp`
    (`DamageTint_SpriteGradient` per band into `MeshPiece::tint`), `features/sprites/pspritebuild.cpp`
-   (`DamageTint_WeaponGradient` into `Quad2D::tint`) and `features/hwrender/record2d.cpp`
+   (`DamageTint_WeaponGradient` into `Quad2D::tint`) and `features/draw2d/record2d.cpp`
    (`DamageTint_Armed2D` for the face); the shaders' `fuaDamageTint` is `ComputeTintTexel`.
 5. `CMakeLists.txt` — `features/damage-tint/damagetint.cpp` in the zdoom source list (no
    IMPLEMENT_CLASS, so ordering is irrelevant; kept with the other features).

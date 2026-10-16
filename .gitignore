@@ -10,6 +10,7 @@ src/zandronum/sqlite/sqlite-autoconf*
 
 # Test/coverage build trees (cmake -S tests -B build-*)
 build-tests/
+build-tests-web/
 build-san/
 build-coverage/
 build-cov-llvm/
@@ -74,5 +75,11 @@ build-diligent/
 tools/fuactl/.play-session*
 tools/fuactl/queue.json
 
-# fuactl screen capture helper build tree (tools/fuactl/native/screencap)
-tools/fuactl/native/screencap/build/
+# fuactl's native helpers' build trees (tools/fuactl/native/<helper>/build)
+tools/fuactl/native/*/build/
+
+# Web builds (web_compile.sh, tools/web/webgpu-check/build.sh)
+build-web/
+build-webgpu-check/
+dist-web/
+build-hosttools/

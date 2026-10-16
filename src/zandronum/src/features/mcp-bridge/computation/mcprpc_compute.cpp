@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "features/json/computation/json_compute.h"
 
 namespace zx { namespace mcp {
 
@@ -155,34 +156,6 @@ RpcRequest ParseRequest(const std::string &line)
 	return r;
 }
 
-void JsonEscape(const std::string &in, std::string &out)
-{
-	out.clear();
-	for (size_t i = 0; i < in.size(); ++i)
-	{
-		unsigned char c = (unsigned char)in[i];
-		switch (c)
-		{
-			case '"':  out += "\\\""; break;
-			case '\\': out += "\\\\"; break;
-			case '\n': out += "\\n";  break;
-			case '\r': break; // drop CR
-			case '\t': out += "\\t";  break;
-			default:
-				if (c < 0x20)
-				{
-					char b[8];
-					// hand-rolled \uXXXX (no sprintf) so this stays trivially pure/testable
-					const char *hex = "0123456789abcdef";
-					b[0] = '\\'; b[1] = 'u'; b[2] = '0'; b[3] = '0';
-					b[4] = hex[(c >> 4) & 0xf]; b[5] = hex[c & 0xf]; b[6] = 0;
-					out += b;
-				}
-				else out.push_back((char)c);
-		}
-	}
-}
-
 std::string BuildOkResponse(long id, const std::string &bodyJson)
 {
 	std::string s = "{\"id\":";
@@ -195,23 +168,19 @@ std::string BuildOkResponse(long id, const std::string &bodyJson)
 
 std::string BuildErrResponse(long id, const std::string &message)
 {
-	std::string esc;
-	JsonEscape(message, esc);
 	std::string s = "{\"id\":";
 	s += std::to_string(id);
-	s += ",\"ok\":false,\"error\":\"";
-	s += esc;
-	s += "\"}";
+	s += ",\"ok\":false,\"error\":";
+	s += zx::json::ComputeJsonQuoted(message);
+	s += "}";
 	return s;
 }
 
 std::string BuildEvent(const std::string &name, const std::string &dataJson)
 {
-	std::string esc;
-	JsonEscape(name, esc);
-	std::string s = "{\"t\":\"event\",\"event\":\"";
-	s += esc;
-	s += "\",\"data\":";
+	std::string s = "{\"t\":\"event\",\"event\":";
+	s += zx::json::ComputeJsonQuoted(name);
+	s += ",\"data\":";
 	s += dataJson.empty() ? std::string("{}") : dataJson;
 	s += "}";
 	return s;
@@ -256,15 +225,6 @@ bool StepComplete(long currentLevelTime, long targetLevelTime)
 }
 
 namespace {
-	double Percentile(const std::vector<double> &sorted, double pct)
-	{
-		if (sorted.empty()) return 0.0;
-		double idx = (pct / 100.0) * (double)(sorted.size() - 1);
-		long i = (long)(idx + 0.5); // nearest-rank
-		if (i < 0) i = 0;
-		if (i >= (long)sorted.size()) i = (long)sorted.size() - 1;
-		return sorted[(size_t)i];
-	}
 	std::string Fixed3(double v)
 	{
 		if (std::isnan(v) || std::isinf(v)) return "0";
@@ -278,36 +238,7 @@ namespace {
 	}
 }
 
-PerfSummary SummarizeFrameTimes(const std::vector<double> &frameMs)
-{
-	PerfSummary s;
-	s.n = (int)frameMs.size();
-	s.mean = s.min = s.max = s.p50 = s.p95 = s.p99 = s.fpsAvg = s.fps1pctLow = 0.0;
-	if (frameMs.empty()) return s;
-
-	std::vector<double> v = frameMs;
-	std::sort(v.begin(), v.end());
-	double sum = 0.0;
-	for (double x : v) sum += x;
-	s.mean = sum / (double)v.size();
-	s.min = v.front();
-	s.max = v.back();
-	s.p50 = Percentile(v, 50);
-	s.p95 = Percentile(v, 95);
-	s.p99 = Percentile(v, 99);
-	s.fpsAvg = s.mean > 0 ? 1000.0 / s.mean : 0.0;
-
-	// 1% low: the worst 1% of frames (largest frametimes), averaged, expressed as FPS.
-	size_t worstCount = v.size() / 100;
-	if (worstCount < 1) worstCount = 1;
-	double wsum = 0.0;
-	for (size_t i = v.size() - worstCount; i < v.size(); ++i) wsum += v[i];
-	double worstMean = wsum / (double)worstCount;
-	s.fps1pctLow = worstMean > 0 ? 1000.0 / worstMean : 0.0;
-	return s;
-}
-
-std::string PerfSummaryJson(const PerfSummary &s)
+std::string PerfSummaryJson(const zx::perfstats::PerfSummary &s)
 {
 	std::string j = "{\"n\":" + std::to_string(s.n);
 	j += ",\"mean_ms\":" + Fixed3(s.mean);

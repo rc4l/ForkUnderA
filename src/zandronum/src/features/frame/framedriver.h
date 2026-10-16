@@ -24,6 +24,12 @@ struct DrivenRenderer
 // [rc4l] The driver over `renderers`, any number of each kind, called in this order; it owns them.
 FRenderer *CreateFrameDriver(const std::vector<DrivenRenderer> &renderers);
 
+// [rc4l] The renderer the backend draws the world with, in a launch without GL or beside it (backendrenderer.cpp).
+FRenderer *CreateBackendRenderer();
+
+// [rc4l] The renderer a launch draws with, which every platform's I_CreateRenderer asks for: GL's (from createGL, NULL in a build without GL) and the backend's under the frame driver, or the backend's alone in a launch without GL.
+FRenderer *CreateLaunchRenderer(FRenderer *(*createGL)());
+
 }} // namespace zx::frame
 
 #endif // ZX_FRAMEDRIVER_H

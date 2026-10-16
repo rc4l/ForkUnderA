@@ -11,6 +11,14 @@
 #include <alc.h>
 #include <alext.h>
 
+// [rc4l] Emscripten's al.h and alc.h name no calling convention for their entry points.
+#ifndef AL_APIENTRY
+#define AL_APIENTRY
+#endif
+#ifndef ALC_APIENTRY
+#define ALC_APIENTRY
+#endif
+
 #include <efx.h>
 
 #ifndef ALC_ENUMERATE_ALL_EXT

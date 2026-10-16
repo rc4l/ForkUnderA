@@ -367,7 +367,7 @@ Three lessons, all of which cost time:
 
 ### P0 — Budget measurement **← DONE**
 
-`features/levelmesh/` with a pure `surfacebudget_compute` unit (19 tests) and a `fua_levelmesh_stats`
+`features/levelmesh/` with a pure, tested `surfacebudget_compute` unit and a `fua_levelmesh_stats`
 console command that walks `sides[]`/`subsectors[]` and reports the worst-case fixed-range cost.
 Nothing renders from it; no engine hooks are wired.
 
@@ -401,7 +401,7 @@ the one step the pixel-identity gate cannot cover -- off the critical path entir
 
 P2a becomes a later optimization aimed at 3D-floor-heavy ZDoom/Zandronum mods (the catalogue's own
 content is the case to measure), not a gate on the mesh. The band-selection math
-(`computation/lightband_compute`, 14 tests) is already written and stays valid for when it is taken.
+(`computation/lightband_compute`, tested) is already written and stays valid for when it is taken.
 
 **Caveat worth stating**: Sunder is one wad family and a vanilla-format one. Before assuming light
 banding is rare in general, re-run the stats on a catalogue mod that actually uses 3D floors.

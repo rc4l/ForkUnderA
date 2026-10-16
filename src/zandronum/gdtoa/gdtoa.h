@@ -74,6 +74,11 @@ THIS SOFTWARE.
 #define Arith_Kind_ASL 2
 #define Double_Align
 #endif
+#elif defined(__EMSCRIPTEN__)
+/* [rc4l] wasm32 is little-endian IEEE with 32-bit long, as i386 is, and a
+ * browser build cannot run arithchk on the target any more than OS X could. */
+#define IEEE_8087
+#define Arith_Kind_ASL 1
 #else
 #include "arith.h"
 #endif

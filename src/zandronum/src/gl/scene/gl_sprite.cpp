@@ -61,8 +61,8 @@
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "gl/scene/gl_observer.h"
-#include "features/hwrender/spriteview.h"   // [rc4l] SpriteViewProvider, which gl_spriteview.cpp answers
-const zx::hwrender::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/gl_spriteview.cpp
+#include "features/viewsetup/spriteview.h"   // [rc4l] SpriteViewProvider, which gl_spriteview.cpp answers
+const zx::viewsetup::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/gl_spriteview.cpp
 #include "features/materials/materials.h"   // [rc4l] ParticleTexture
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
