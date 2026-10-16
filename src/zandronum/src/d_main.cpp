@@ -173,6 +173,7 @@
 #include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
 #include "features/frame/viewtrace.h"   // [rc4l] NoteMouseEvent
 #include "features/framephase/framephase.h"   // [rc4l] FrameBoundary and the main loop's phases
+#include "features/handoff/seam.h"   // [rc4l] NoteMainThread
 #include "p_local.h"
 
 
@@ -3051,6 +3052,7 @@ static void FinalGC()
 
 void D_DoomMain (void)
 {
+	zx::handoff::NoteMainThread();   // [rc4l] before any seam, so their thread checks know which thread is main
 	int p;
 	const char *v;
 	const char *wad;

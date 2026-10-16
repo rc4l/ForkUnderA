@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+#
+# [rc4l] Tests for the boundary tripwire on made-up trees, stdlib only: python3 tools/boundary_tripwire_test.py
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc, field_patterns, in_set,  # noqa: E402
+                               lowered, seams, stale_docs, with_doc)
+
+RENDER = {'name': 'render', 'files': ['features/sprites/'], 'exclude': ['*/computation/*', '*_test.cpp'],
+          'patterns': [{'name': 'actor', 'regex': r'\bAActor\b'}]}
+TABLE = 'ZX_COPY_FIELD(sector, floorplane, secplane_t)\nZX_COPY_FIELD(side, textures, part)\nZX_COPY_FIELD(actor, angle, angle_t)\n'
+
+
+class BoundaryTripwire(unittest.TestCase):
+    def test_comments_and_strings_do_not_count(self):
+        text = 'a = AActor; // AActor\n/* AActor\nAActor */ s = "AActor";\n'
+        stripped = code_only(text)
+        self.assertEqual(stripped.count('AActor'), 1)
+        self.assertEqual(stripped.count('\n'), text.count('\n'))
+
+    def test_a_rule_covers_its_folders_and_globs(self):
+        self.assertTrue(in_set('features/sprites/a.cpp', ['features/sprites/']))
+        self.assertTrue(in_set('p_map.cpp', ['p_*.cpp']))
+        self.assertFalse(in_set('features/spritesx/a.cpp', ['features/sprites/']))
+
+    def test_matches_are_counted_per_file_outside_its_exclusions(self):
+        files = {'features/sprites/a.cpp': 'AActor *a; AActor *b;', 'features/sprites/computation/c_compute.cpp': 'AActor',
+                 'features/sprites/a_test.cpp': 'AActor', 'features/sprites/README.md': 'AActor', 'g_game.cpp': 'AActor'}
+        self.assertEqual(counts([RENDER], files), {'render': {'features/sprites/a.cpp': 2}})
+
+    def test_copied_fields_are_live_unless_read_through_rc(self):
+        rule = dict(RENDER, patterns=[], fields={'table': 'features/gamecopy/fields.h', 'types': ['sector', 'side']})
+        files = {'features/gamecopy/fields.h': TABLE,
+                 'features/sprites/a.cpp': 'f(sec->floorplane); g(sec->rc.floorplane); h(s.rc->textures); k(side.textures); m(mo->angle);'}
+        self.assertEqual([p['name'] for p in field_patterns(rule, files)], ['live floorplane', 'live textures'])
+        self.assertEqual(counts([rule], files), {'render': {'features/sprites/a.cpp': 2}})
+        self.assertEqual(field_patterns(RENDER, files), [])
+
+    def test_a_crossing_beyond_its_allowance_fails_and_one_below_asks_to_lower_it(self):
+        found = {'render': {'a.cpp': 3, 'b.cpp': 1, 'new.cpp': 1}}
+        allow = {'render': {'a.cpp': 2, 'b.cpp': 4, 'gone.cpp': 1}}
+        self.assertEqual(check(found, allow), [
+            'render: a.cpp crosses 3 times, allowed 2',
+            'render: b.cpp crosses 1 times now; lower its allowance from 4 (--update)',
+            'render: gone.cpp crosses 0 times now; lower its allowance from 1 (--update)',
+            'render: new.cpp crosses 1 times, allowed 0'])
+        self.assertEqual(check({'render': {'a.cpp': 2}}, {'render': {'a.cpp': 2}}), [])
+
+    def test_an_update_lowers_allowances_but_never_raises_or_adds_them(self):
+        found = {'render': {'a.cpp': 3, 'b.cpp': 1, 'new.cpp': 5}}
+        allow = {'render': {'a.cpp': 2, 'b.cpp': 4, 'gone.cpp': 1}}
+        self.assertEqual(lowered(found, allow), {'render': {'a.cpp': 2, 'b.cpp': 1}})
+
+    def test_seams_are_listed_once_with_their_owner_outside_tests(self):
+        files = {'a.cpp': 'ZX_SEAM("copy/fill", Handoff); ZX_SEAM_UNTIMED("sound/device", Main);',
+                 'b.cpp': 'ZX_SEAM("copy/fill", Handoff);', 'a_test.cpp': 'ZX_SEAM("x/y", Main);',
+                 'features/handoff/seam.h': 'ZX_SEAM("doc/example", Main)'}
+        self.assertEqual(seams(files), [('copy/fill', 'Handoff', 'a.cpp'), ('copy/fill', 'Handoff', 'b.cpp'), ('sound/device', 'Main', 'a.cpp')])
+
+    def test_the_generated_section_lists_the_table_and_the_seams(self):
+        rule = dict(RENDER, fields={'table': 'features/gamecopy/fields.h', 'types': ['sector']})
+        files = {'features/gamecopy/fields.h': TABLE, 'a.cpp': 'ZX_SEAM("copy/fill", Handoff);'}
+        text = doc(files, [rule, RENDER])
+        self.assertIn('- sector: `floorplane`', text)
+        self.assertIn('- actor: `angle`', text)
+        self.assertIn('- `copy/fill` (Handoff), `a.cpp`', text)
+
+    def test_a_readme_with_markers_is_stale_until_rewritten(self):
+        self.assertIsNone(with_doc('no markers', 'x'))
+        readme = 'head\n' + DOC_BEGIN + '\nold\n' + DOC_END + '\ntail\n'
+        self.assertEqual(with_doc(readme, 'new\n'), 'head\n' + DOC_BEGIN + '\nnew\n' + DOC_END + '\ntail\n')
+        files = {'features/handoff/README.md': readme, 'other/README.md': 'plain', 'a.cpp': ''}
+        stale = stale_docs(files, [RENDER])
+        self.assertEqual([rel for rel, _ in stale], ['features/handoff/README.md'])
+        files['features/handoff/README.md'] = stale[0][1]
+        self.assertEqual(stale_docs(files, [RENDER]), [])
+
+
+if __name__ == '__main__':
+    unittest.main()

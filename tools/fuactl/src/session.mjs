@@ -8,7 +8,7 @@ import { desyncVerdict } from "./proto.mjs";
 import { sampleProcess } from "./sample.mjs";
 
 
-async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
+export async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
   // The engine takes a few seconds to boot and bind its bridge port; retry ECONNREFUSED until it's up.
   for (let i = 0; ; i++) {
     const c = new BridgeClient();

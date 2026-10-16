@@ -2,7 +2,8 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, DELAYDIRECT: 56, SETCAMERATOTEXTURE: 269 };
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, GOTO: 52, DELAYDIRECT: 56, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87,
+  CONSOLECOMMAND: 134, MOREHUDMESSAGE: 159, ENDHUDMESSAGE: 161, SETCAMERATOTEXTURE: 269 };
 
 // [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
 export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
@@ -31,4 +32,26 @@ export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
 export function callSpecial(special, args) {
   if (args.length < 1 || args.length > 5) throw new Error(`a special takes 1 to 5 arguments, not ${args.length}`);
   return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.LSPEC1 + args.length - 1, special];
+}
+
+// [rc4l] The words of `Print(s:strings[i])`.
+export function printString(i) {
+  return [PCD.BEGINPRINT, PCD.PUSHNUMBER, i, PCD.PRINTSTRING, PCD.ENDPRINT];
+}
+
+// [rc4l] The words of `HudMessage(s:strings[i]; type, id, color, x, y, holdTime)`, the last three in map units as 16.16 fixed point.
+export function hudMessage(i, { type = 0, id = 0, color = 0, x = 0.5, y = 0.5, hold = 1 } = {}) {
+  const fixed = (v) => Math.round(v * 65536);
+  return [PCD.BEGINPRINT, PCD.PUSHNUMBER, i, PCD.PRINTSTRING, PCD.MOREHUDMESSAGE,
+    ...[type, id, color, fixed(x), fixed(y), fixed(hold)].flatMap((v) => [PCD.PUSHNUMBER, v]), PCD.ENDHUDMESSAGE];
+}
+
+// [rc4l] The words of `ConsoleCommand(strings[i])`, which the engine pops as three words, the string first.
+export function consoleCommand(i) {
+  return [PCD.PUSHNUMBER, i, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 0, PCD.CONSOLECOMMAND];
+}
+
+// [rc4l] The words that jump to word `index` of the script, which ACS0 addresses by its byte offset in the lump.
+export function gotoWord(index) {
+  return [PCD.GOTO, 8 + 4 * index];
 }

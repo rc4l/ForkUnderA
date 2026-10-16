@@ -31,7 +31,7 @@ byte-identical and simply vanish.
 | File | Role |
 |------|------|
 | `mcp_bridge.cpp` | Transport + lifecycle. **Engine-free** (no engine headers). Loopback socket, request queue, `SIGTERM/SIGINT`→clean-quit, pidfile registry, orphan watchdog. |
-| `mcp_rpc.cpp` | The RPC dispatch + handlers (**engine-facing**): determinism, structured state, input, run on the game thread. |
+| `mcp_rpc.cpp` | The RPC dispatch + handlers (**engine-facing**): determinism, structured state, input, run on the main thread. |
 | `mcp_bridge.h` | Entry points; inline no-op stubs when `FUA_MCP_BRIDGE` is off. |
 | `mcp_crash.cpp` / `mcp_event.cpp` / `mcp_hud.cpp` / `mcp_renderinfo.cpp` | Backends: crash backtrace, input injection, HUD/frame capture, renderer info. |
 | `mcp_glperf.{h,cpp}` | **GPU render profiler** (`gl.timers` / `renderer.info`). GL_TIMESTAMP timer queries around the render passes, read back through a multi-frame ring so the CPU never stalls on the pipeline. `mcp_glperf.h` is inline no-ops when the bridge is off; the GL glue also has a `NO_GL` (server) fallback. |
@@ -82,7 +82,7 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   `kill monsters` shows up in the tic that runs it. Combine with `sim.pause` + `sim.step` to dissect
   a specific tic — this is how the kill-storm tic train was decomposed without external samplers.
 - **Sampling (Windows)**: `perf.sample {seconds, hz, top, engine, tic_min, tic_max, stacks}` → async
-  `sample` event with the functions the game thread was in (`mcp_sample.cpp`). `stacks 1` also walks each
+  `sample` event with the functions the main thread was in (`mcp_sample.cpp`). `stacks 1` also walks each
   sample's stack by the images' unwind data while the thread is held, with no allocation, and adds an
   `inclusive` table (each function's share of the samples it was anywhere on the stack of,
   `ComputeInclusiveRanks`); `fuactl sample --port P --stacks` prints both.
@@ -109,7 +109,7 @@ mismatch is a desync — this is what makes cross-instance session checks possib
 
 ## Lifecycle — no more hanging instances
 
-- **Clean quit**: `SIGTERM`/`SIGINT` set a flag honored on the game thread, which calls `exit(0)` →
+- **Clean quit**: `SIGTERM`/`SIGINT` set a flag honored on the main thread, which calls `exit(0)` →
   the engine's full `atexit`/`call_terms` teardown (GL/SDL/Cocoa). No mid-render hard kill, so no macOS
   window-server wedge.
 - **Registry**: every armed instance writes `~/.forkundera/instances/<pid>.json` on startup and removes

@@ -410,7 +410,7 @@ static void GatherSkySurfaces(TArray<SceneVertex> &sv)
 		? zx::horizon::HorizonSkyVertices(nhorizon, eye[1]) : NULL;
 	if (src == NULL) nverts = 0;
 	if (hsrc == NULL) nhorizon = 0;
-	// [rc4l] Sized once and filled, as a Push a vertex was 3% of a Sunder MAP14 frame's game thread.
+	// [rc4l] Sized once and filled, as a Push a vertex was 3% of a Sunder MAP14 frame's main thread.
 	sv.Resize((unsigned)(nverts + nhorizon));
 	SceneVertex *out = sv.Size() > 0 ? &sv[0] : NULL;
 	for (int i = 0; i < nverts; i++) out[i] = ToSceneVertex(src[i], 0);

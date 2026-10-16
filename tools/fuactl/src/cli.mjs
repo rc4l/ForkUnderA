@@ -18,6 +18,7 @@ import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem
 import { findMapLumps, mapReport } from "./mapdata.mjs";
 import { engineWindows, resizeEngineWindow } from "./window.mjs";
 import * as shot from "./shot.mjs";
+import * as fixtures from "./fixtures.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
 import { png } from "./png.mjs";
@@ -38,6 +39,7 @@ import { runCoverage } from "./coverage.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { recentCrashes, summarizeCrash } from "./crashes.mjs";
+import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -174,6 +176,9 @@ const USAGE = `fuactl <command>
   screen --port P [--token T] [--seconds N] [--orbit DEG] [--period S] [--class WINDOWCLASS] [--pid N]   what reaches the screen of a running instance (Windows): new images shown, refreshes repeated and stalls a second, from the compositor's own frames, with the aim orbiting so every refresh should bring a new image; with the engine's own frames lined up against them, how old each image's content was when it was seen and how much that changed (judder)
   fps --map M [--iwad W] [--file a.wad,...] [--modes gl,embed,vulkan] [--res WxH] [--rounds N] [--frames N] [--warmup N] [--vsync] [--sample SEC] [--no-shot] [--engine PATH] [--port P] [--cvar k=v] [--label L]   frame rate under GL alone, the backend in the GL launch and the backend alone, each a locked launch of its own, one at a time; notes a median that sits on a display refresh
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
+  simtrace --port P [--token T] --out FILE [--tics N]   each tic's fingerprint and every damage, kill and spawn for the next N tics (sim.trace), into FILE; +fua_simtrace N FILE on a launch traces from its first tic
+  tracediff A B   where two sim traces part: the first tic whose fingerprint differs and the first event that moved; exit 1 when they differ
+  fixture record|trace|check [NAME ...] [--engine PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, or hold each trace to its saved baseline (the first check saves it), exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
@@ -746,6 +751,46 @@ async function main() {
       console.log(JSON.stringify(report, null, 2));
       break;
     }
+    case "simtrace": {
+      if (!flags.port || !flags.out) { console.error("usage: fuactl simtrace --port P [--token T] --out FILE [--tics N]"); process.exit(2); }
+      const tics = num(flags.tics) ?? 350;
+      const out = path.resolve(String(flags.out));
+      const report = await withUi(flags, async (c) => {
+        const done = c.waitEvent("trace", 60000 + tics * 200);
+        await c.rpc("sim.trace", { tics, path: out });
+        return done;
+      });
+      console.log(JSON.stringify(report));
+      break;
+    }
+    case "tracediff": {
+      if (rest.length < 2) { console.error(usageFor(USAGE, "tracediff")); process.exit(2); }
+      const [a, b] = rest.slice(0, 2).map((f) => parseSimTrace(fs.readFileSync(String(f), "utf8")));
+      const d = diffSimTraces(a, b);
+      for (const line of describeSimTraceDiff(d)) console.log(line);
+      if (!d.same) process.exit(1);
+      break;
+    }
+    case "fixture": {
+      const [what, ...names] = rest;
+      if (!["record", "trace", "check"].includes(what)) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
+      const list = fixtures.pickFixtures(names);
+      const opts = { engine: engineOf(flags), store: presetDirs(flags).storeDir, cvars: shot.parseCvarFlag(flags.cvar) || {}, update: !!flags.update,
+        log: (m) => console.error(`[fixture] ${m}`) };
+      if (what === "record") {
+        for (const f of list) console.log(`${f.name}: ${await fixtures.recordFixture(f, opts)}`);
+      } else if (what === "trace") {
+        for (const f of list) {
+          const out = flags.out && list.length === 1 ? path.resolve(String(flags.out)) : path.join(fixtures.fixtureDir(), `${f.name}.latest.trace`);
+          console.log(`${f.name}: ${await fixtures.traceFixture(f, out, opts)}`);
+        }
+      } else {
+        const results = await fixtures.checkFixtures(list, opts);
+        for (const r of results) for (const line of r.lines) console.log(`${r.name}: ${line}`);
+        if (results.some((r) => r.same === false)) process.exit(1);
+      }
+      break;
+    }
     case "bench": {
       if (!flags.port) { console.error("usage: fuactl bench --port P --scenario FILE.json [--runs N] [--metric total.p99_ms]"); process.exit(2); }
       if (!flags.scenario) { console.error("bench needs --scenario FILE.json (see scenarios/)"); process.exit(2); }
@@ -915,9 +960,10 @@ async function main() {
       const hours = flags.hours && flags.hours !== true ? Number(flags.hours) : 24;
       const found = recentCrashes(Date.now() - hours * 3600 * 1000);
       for (const c of found) {
-        const { why, stack } = summarizeCrash(fs.readFileSync(c.file, "utf8"));
+        const { why, seams, stack } = summarizeCrash(fs.readFileSync(c.file, "utf8"));
         console.log(`${new Date(c.at).toISOString()} ${c.file}
   ${why}`);
+        if (seams) console.log(`  seams: ${seams}`);
         for (const f of stack) console.log(`    ${f}`);
       }
       console.log(`${found.length} crash file(s) in the last ${hours} hour(s)`);

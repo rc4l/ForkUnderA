@@ -11,7 +11,7 @@
 namespace zx {
 namespace replay {
 
-// Cheap per-frame check (game thread): true when capture is enabled AND a new frame is due at the
+// Cheap per-frame check (main thread): true when capture is enabled AND a new frame is due at the
 // configured capture rate. Also drives lazy start/stop and flushes any pending user messages.
 bool WantsFrame();
 

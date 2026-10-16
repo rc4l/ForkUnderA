@@ -9,7 +9,7 @@
 #include <thread>
 #include "features/telemetry/telemetry.h"
 
-// [rc4l] Workers beside the game thread for a frame's parallel work: -1 picks by the machine, 0 runs everything on the game thread.
+// [rc4l] Workers beside the main thread for a frame's parallel work: -1 picks by the machine, 0 runs everything on the main thread.
 CVAR(Int, fua_jobs_threads, -1, 0)
 // [rc4l] Microseconds an idle worker polls for the next job before it sleeps; a sleeping worker wakes late to a frame's next job.
 CVAR(Int, fua_jobs_spin_us, 200, 0)

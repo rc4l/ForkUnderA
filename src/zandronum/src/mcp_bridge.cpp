@@ -46,9 +46,9 @@
 #include "features/json/computation/json_compute.h"
 
 // --- Engine entry points (implemented in mcp_rpc.cpp / mcp_crash.cpp) --------
-// Run one queued RPC request on the game thread and send its response. args is the raw JSON "args".
+// Run one queued RPC request on the main thread and send its response. args is the raw JSON "args".
 void MCP_RPC_Dispatch( long id, const char *cmd, const char *args );
-// Per-frame housekeeping on the game thread (step re-freeze, event pumping, HUD frame capture).
+// Per-frame housekeeping on the main thread (step re-freeze, event pumping, HUD frame capture).
 void MCP_RPC_Tick();
 
 #ifdef _WIN32
@@ -86,7 +86,7 @@ namespace
 	std::string              g_rxbuf;
 	std::string              g_pidfilePath;
 
-	// Set by the SIGTERM/SIGINT handler; honoured on the game thread so GL/Cocoa teardown runs
+	// Set by the SIGTERM/SIGINT handler; honoured on the main thread so GL/Cocoa teardown runs
 	// on the main thread between frames -- a clean exit(0) instead of a mid-render hard kill that
 	// wedges the macOS window server.
 	volatile sig_atomic_t    g_quitRequested = 0;
@@ -172,7 +172,7 @@ namespace
 #endif
 }
 
-// Send one framed JSON line to the connected client. Thread-safe; called from the game thread
+// Send one framed JSON line to the connected client. Thread-safe; called from the main thread
 // (responses/events) and the listen thread (hello). Public so mcp_rpc.cpp can emit results/events.
 void MCP_Bridge_SendJson( const char *json )
 {
@@ -220,7 +220,7 @@ namespace
 				fprintf( stderr, "fua: bridge watchdog -- supervising process %d is gone, quitting\n",
 					parentPid );
 				fflush( stderr );
-				// Ask for a CLEAN quit first (game thread runs GL/Cocoa teardown), then hard-exit as a
+				// Ask for a CLEAN quit first (main thread runs GL/Cocoa teardown), then hard-exit as a
 				// last resort if the loop is wedged and doesn't honour the flag within a grace window.
 				g_quitRequested = 1;
 				std::this_thread::sleep_for( std::chrono::milliseconds( 3000 ) );

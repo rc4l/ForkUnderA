@@ -96,7 +96,7 @@ the surfaces painted from it by screen position (`dgskyportal.cpp`), and other s
 (`dgskylooks.cpp`), sharing `dgsky_internal.h`. Line mirrors are `dgviews.cpp`; reflective planes and
 stacked views, drawn into pooled targets, are `dgviewtargets.cpp`.
 
-A frame's sprites, models and decals are laid out on the game thread (`computation/dynlayout_compute`, each
+A frame's sprites, models and decals are laid out on the main thread (`computation/dynlayout_compute`, each
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 

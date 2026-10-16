@@ -71,6 +71,12 @@ jobs:
           python3 tools/layering_tripwire_test.py
           python3 tools/layering_tripwire.py
 
+      # [rc4l] The renderer reads the game only through its per-tic copy and a tic leaves the renderer alone, each crossing allowed only where it already was.
+      - name: Boundary tripwire
+        run: |
+          python3 tools/boundary_tripwire_test.py
+          python3 tools/boundary_tripwire.py
+
       # [rc4l] A .ps1 with non-ASCII bytes and no UTF-8 BOM fails to PARSE under Windows PowerShell
       # 5.1 (the default shell on a stock Windows box) because it decodes as ANSI. CI cannot notice
       # on its own -- our workflows run `shell: pwsh`, which reads UTF-8 regardless -- so this only

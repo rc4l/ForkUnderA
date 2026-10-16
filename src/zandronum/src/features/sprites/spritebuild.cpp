@@ -323,7 +323,7 @@ static void DeriveModel(AActor *thing, const Subject &s, const Look &l, bool che
 	zx::levelmesh::ModelCaptureEnd();
 }
 
-// [rc4l] Derive an actor's sprite as GLSprite::Process and Draw do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the game thread may do.
+// [rc4l] Derive an actor's sprite as GLSprite::Process and Draw do: the pieces drawn, 0 for none; on a worker thread (`lane`), -1 when its material is not made yet, which only the main thread may do.
 static int DeriveSprite(AActor *thing, const Subject &s, SpritePiece *out, int max, bool lane = false)
 {
 	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
@@ -732,7 +732,7 @@ void BuildSprite(AActor *thing)
 	for (int i = 0; i < n; i++) zx::levelmesh::DynAppend(pieces[i].quad, 4, pieces[i].piece);
 }
 
-// [rc4l] An actor a lane derived: its pieces in the lane's list, or that the game thread derives it.
+// [rc4l] An actor a lane derived: its pieces in the lane's list, or that the main thread derives it.
 struct LaneSprite
 {
 	int first, count;

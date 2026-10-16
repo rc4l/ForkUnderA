@@ -26,7 +26,7 @@ struct SpritePiece;
 // [rc4l] Derive an actor's sprite or model into the dynamic stream, noted for fua_sprite_check as well while it is on.
 void BuildSprite(AActor *thing);
 
-// [rc4l] BuildSprite for `count` actors, in that order: sprites derived on the job pool and appended in turn, models and a sprite whose material is not made yet on the game thread; not for the checks, which compare one actor at a time.
+// [rc4l] BuildSprite for `count` actors, in that order: sprites derived on the job pool and appended in turn, models and a sprite whose material is not made yet on the main thread; not for the checks, which compare one actor at a time.
 void BuildSprites(AActor *const *things, int count);
 
 // [rc4l] Derive a particle in `sector` (as GL's walk sees it) into the dynamic stream, noted for the check likewise.

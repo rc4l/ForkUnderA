@@ -1718,6 +1718,7 @@ add_executable( zdoom WIN32
 	features/frame/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
+	features/handoff/seam.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
 	features/viewsetup/viewsetup.cpp
@@ -1730,6 +1731,9 @@ add_executable( zdoom WIN32
 	features/visibility/computation/mirrorview_compute.cpp
 	features/visibility/computation/walkslices_compute.cpp
 	features/jobs/computation/jobpool_compute.cpp
+	features/handoff/computation/handoff_compute.cpp
+	features/handoff/computation/lock_compute.cpp
+	features/handoff/computation/queue_compute.cpp
 	features/wipe/computation/wipe_compute.cpp
 	features/surfaces/computation/skywall_compute.cpp
 	features/sprites/computation/spritestyle_compute.cpp

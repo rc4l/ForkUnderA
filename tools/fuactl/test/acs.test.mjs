@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acs0, callSpecial, PCD } from "../src/acs.mjs";
+import { acs0, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -49,4 +49,15 @@ test("every named p-code is numbered as p_acs.h's enum orders it", async () => {
   const header = readFileSync(new URL("../../../src/zandronum/src/p_acs.h", import.meta.url), "latin1");
   const order = [...header.slice(header.indexOf("PCD_NOP")).matchAll(/\b(PCD_\w+)\s*,/g)].map((m) => m[1]);
   for (const [name, num] of Object.entries(PCD)) assert.equal(order.indexOf(`PCD_${name}`), num, name);
+});
+
+test("a print, a HUD message, a console command and a jump compile as the engine pops them", () => {
+  assert.deepEqual(printString(2), [PCD.BEGINPRINT, PCD.PUSHNUMBER, 2, PCD.PRINTSTRING, PCD.ENDPRINT]);
+  const hud = hudMessage(1, { id: 7, color: 6, x: 0.5, y: 0.25, hold: 2 });
+  assert.deepEqual(hud.slice(0, 5), [PCD.BEGINPRINT, PCD.PUSHNUMBER, 1, PCD.PRINTSTRING, PCD.MOREHUDMESSAGE]);
+  assert.deepEqual(hud.slice(5, -1).filter((_, k) => k % 2 === 1), [0, 7, 6, 32768, 16384, 131072]);
+  assert.equal(hud[hud.length - 1], PCD.ENDHUDMESSAGE);
+  assert.deepEqual(hudMessage(0).slice(5, -1).filter((_, k) => k % 2 === 1), [0, 0, 0, 32768, 32768, 65536]);
+  assert.deepEqual(consoleCommand(3), [PCD.PUSHNUMBER, 3, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 0, PCD.CONSOLECOMMAND]);
+  assert.deepEqual(gotoWord(5), [PCD.GOTO, 28]);
 });

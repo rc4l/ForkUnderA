@@ -1,7 +1,7 @@
 //
 // mcp_rpc.cpp -- the "programmable engine" RPC dispatch for the native MCP bridge (ENGINE-FACING).
 //
-// mcp_bridge.cpp owns the socket and queue and hands each request here on the GAME THREAD (so every
+// mcp_bridge.cpp owns the socket and queue and hands each request here on the MAIN THREAD (so every
 // handler touches engine state safely). Wire framing is the tested pure core in
 // features/mcp-bridge/computation/mcprpc_compute. Compiled only when FUA_MCP_BRIDGE is defined.
 //
@@ -182,27 +182,7 @@ namespace
 	// traces with "diverging" hashes on the Complex Doom kill storm).
 	QWORD StateHash( bool withRng )
 	{
-		uint64_t h = FnvInit();
-		h = FnvMixU64( h, (uint64_t)level.time );
-		if ( withRng )
-			h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
-		if ( InLevel() )
-		{
-			const PClass *lightcls = PClass::FindClass( "DynamicLight" );
-			TThinkerIterator<AActor> it;
-			AActor *mo;
-			while ( ( mo = it.Next() ) != NULL )
-			{
-				if ( lightcls != NULL && mo->IsKindOf( lightcls ) )
-					continue;
-				h = FnvMixU64( h, (uint64_t)mo->x );
-				h = FnvMixU64( h, (uint64_t)mo->y );
-				h = FnvMixU64( h, (uint64_t)mo->z );
-				h = FnvMixU64( h, (uint64_t)mo->angle );
-				h = FnvMixU64( h, (uint64_t)mo->health );
-			}
-		}
-		return (QWORD)h;
+		return MCP_StateHash( withRng );
 	}
 
 	std::string ActorJson( AActor *mo )
@@ -793,7 +773,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "perf.sample" )
 	{
-		// Flat self-time profile of the game thread: which functions the CPU was actually inside.
+		// Flat self-time profile of the main thread: which functions the CPU was actually inside.
 		// Runs on its own thread, so this returns at once and the table arrives as a "sample" event.
 		// Bracket it with sim.pause/sim.step to attribute the samples to a known tic range, which is
 		// the thing an external sampler cannot do.

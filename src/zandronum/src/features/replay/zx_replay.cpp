@@ -97,14 +97,14 @@ struct Stream
 	std::vector<std::vector<unsigned char> > spare;
 	std::string             saveReq;
 	bool                    stop = false;
-	bool                    running = false;   // game-thread view of worker liveness
+	bool                    running = false;   // main-thread view of worker liveness
 	// [rc4l] Frames this stream has actually been given since it started.
 	//
 	// With the backend carrying the frame, GL draws nothing worth recording and its stream is no
 	// longer fed -- see OpenGLFrameBuffer::Swap. It stays "running", so without this fua_clip wrote a
 	// second file of nothing beside the real one and announced both.
 	unsigned int            framesIn = 0;
-	int64_t                 lastFrameUs = 0;   // [rc4l] when it was last given a frame, game thread only
+	int64_t                 lastFrameUs = 0;   // [rc4l] when it was last given a frame, main thread only
 	const char             *tag = "";          // filename suffix; "" for the primary stream
 	bool                    takesAudio = false;
 };
@@ -114,14 +114,14 @@ Stream                 g_streams[STREAM_COUNT];
 std::mutex             g_audioMtx;
 std::deque<AudioChunk> g_audioQueue;     // captured audio awaiting encode (bounded)
 
-// worker -> game-thread result, flushed to the console on the game thread
+// worker -> main-thread result, flushed to the console on the main thread
 std::mutex             g_resMtx;
 bool                   g_resPending = false;
 bool                   g_resOk = false;
 std::string            g_resPath;
 std::string            g_pendingInfo;   // one-shot status line (e.g. which encoder was selected)
 
-int64_t                g_lastCaptureUs = 0;   // game thread only
+int64_t                g_lastCaptureUs = 0;   // main thread only
 // [rc4l] The Vulkan stream keeps its OWN capture clock.
 //
 // Sharing one clock does not work: WantsFrame() reports a frame due and SubmitFrame advances the
@@ -196,7 +196,7 @@ void WorkerLoop(Stream *st)
 	{
 		WorkerLoopInner(st);
 	}
-	// stderr, not Printf: this runs on the capture thread, and the console is the game thread's.
+	// stderr, not Printf: this runs on the capture thread, and the console is the main thread's.
 	catch (const std::exception &e)
 	{
 		fprintf(stderr, "fua replay: capture thread stopped -- %s\n", e.what());
@@ -363,7 +363,7 @@ void PushFrame(Stream *st, const unsigned char *topRow, int w, int h, int pitch,
 	const size_t row = (size_t)w * zx::ComputeReplayPixelBytes(format);
 	f.pixels.resize(row * h);
 	// Copy to a top-down tightly-packed buffer (pitch may be negative for GL bottom-up readback).
-	// [rc4l] In bands on the job pool, so a large window's frame is not one thread's copy on the game thread's frame.
+	// [rc4l] In bands on the job pool, so a large window's frame is not one thread's copy on the main thread's frame.
 	struct Copy
 	{
 		unsigned char *dst; const unsigned char *src; size_t row; int h, pitch;

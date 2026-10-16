@@ -36,6 +36,7 @@
 #include "features/crashreport/computation/crash_report_compute.h"
 #include "features/crashreport/computation/crash_symbolize_compute.h"
 #include "features/telemetry/telemetry.h"
+#include "features/handoff/seam.h"   // [rc4l] the seam each thread was in
 
 #ifndef _WIN32
 // [rc4l] POSIX crash naming: dyld has every loaded module's symbols at crash time, so dladdr names
@@ -193,6 +194,19 @@ static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *clo
 		}
 		if (base && base[0]) sentry_value_set_by_key(tags, "zx_image_base", sentry_value_new_string(base));
 		if (did && did[0])   sentry_value_set_by_key(tags, "zx_debug_id", sentry_value_new_string(did));
+	}
+
+	// [rc4l] Which seam each thread was in, so a crash between the game and the main thread names the crossing.
+	{
+		sentry_value_t tags = sentry_value_get_by_key(event, "tags");
+		if (sentry_value_is_null(tags))
+		{
+			tags = sentry_value_new_object();
+			sentry_value_set_by_key(event, "tags", tags);
+		}
+		const char *mainSeam = zx::handoff::CurrentSeam(false), *gameSeam = zx::handoff::CurrentSeam(true);
+		sentry_value_set_by_key(tags, "zx_seam_main", sentry_value_new_string(mainSeam ? mainSeam : "none"));
+		sentry_value_set_by_key(tags, "zx_seam_game", sentry_value_new_string(gameSeam ? gameSeam : "none"));
 	}
 
 #ifndef _WIN32

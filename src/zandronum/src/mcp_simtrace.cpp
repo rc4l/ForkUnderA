@@ -5,8 +5,9 @@
 //   <tic> D <targetclass> <x> <y> <z> <damage> <inflictorclass>
 //   <tic> K <victimclass> <x> <y> <z> <sourceclass>
 //   <tic> S <class> <x> <y> <z>
-// Coordinates are whole map units. The first differing line between two runs is the event
-// that shifted.
+//   <tic> H <hash>                     the sim's fingerprint once the tic has run (MCP_StateHash, world scope)
+// Coordinates are whole map units. The first differing H line names the tic two runs diverged at,
+// and the first differing event line the event that shifted.
 //
 
 #ifdef FUA_MCP_BRIDGE
@@ -15,7 +16,14 @@
 #include "actor.h"
 #include "doomstat.h"
 #include "g_level.h"
+#include "c_dispatch.h"
+#include "dthinker.h"
+#include "m_random.h"
+#include "r_defs.h"
+#include "r_state.h"
+#include "features/mcp-bridge/computation/mcprpc_compute.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string>
 #include <vector>
 
@@ -43,6 +51,43 @@ namespace
 				a->x >> FRACBITS, a->y >> FRACBITS, a->z >> FRACBITS, ocls );
 		g_lines.push_back( buf );
 	}
+}
+
+unsigned long long MCP_StateHash( bool withRng )
+{
+	using namespace zx::mcp;
+	uint64_t h = FnvInit();
+	h = FnvMixU64( h, (uint64_t)level.time );
+	if ( withRng )
+		h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
+	if ( gamestate != GS_LEVEL )
+		return h;
+	const PClass *lightcls = PClass::FindClass( "DynamicLight" );
+	TThinkerIterator<AActor> it;
+	AActor *mo;
+	while ( ( mo = it.Next() ) != NULL )
+	{
+		if ( lightcls != NULL && mo->IsKindOf( lightcls ) )
+			continue;
+		h = FnvMixU64( h, (uint64_t)mo->x );
+		h = FnvMixU64( h, (uint64_t)mo->y );
+		h = FnvMixU64( h, (uint64_t)mo->z );
+		h = FnvMixU64( h, (uint64_t)mo->angle );
+		h = FnvMixU64( h, (uint64_t)mo->health );
+		h = FnvMixU64( h, (uint64_t)mo->velx );
+		h = FnvMixU64( h, (uint64_t)mo->vely );
+		h = FnvMixU64( h, (uint64_t)mo->velz );
+		h = FnvMixU64( h, (uint64_t)mo->tics );
+		h = FnvMixU64( h, (uint64_t)mo->sprite );
+		h = FnvMixU64( h, (uint64_t)mo->frame );
+	}
+	for ( int i = 0; i < numsectors; i++ )
+	{
+		h = FnvMixU64( h, (uint64_t)sectors[i].floorplane.d );
+		h = FnvMixU64( h, (uint64_t)sectors[i].ceilingplane.d );
+		h = FnvMixU64( h, (uint64_t)sectors[i].lightlevel );
+	}
+	return h;
 }
 
 void MCP_SimTrace_Arm( int tics, const char *path )
@@ -79,6 +124,9 @@ void MCP_SimTrace_TicDone()
 	if ( level.time == lastLevelTime )
 		return;
 	lastLevelTime = level.time;
+	char hash[64];
+	snprintf( hash, sizeof hash, "%d H %llu", level.time, MCP_StateHash( false ) );
+	g_lines.push_back( hash );
 	if ( --g_ticsLeft > 0 )
 		return;
 
@@ -101,6 +149,17 @@ void MCP_SimTrace_TicDone()
 	g_report = buf;
 	g_reportReady = true;
 	g_lines.clear();
+}
+
+// [rc4l] Arms the trace from the console or the command line, so a run started with +fua_simtrace is traced from its first tic.
+CCMD( fua_simtrace )
+{
+	if ( argv.argc() < 3 )
+	{
+		Printf( "fua_simtrace <tics> <file>: every damage, kill and spawn and each tic's fingerprint for that many tics\n" );
+		return;
+	}
+	MCP_SimTrace_Arm( atoi( argv[1] ), argv[2] );
 }
 
 bool MCP_SimTrace_ReportReady( std::string &json )

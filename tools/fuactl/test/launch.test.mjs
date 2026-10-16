@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -440,4 +440,27 @@ test("an instance asked to stop goes cleanly, or is killed when it will not", as
 test("a path handed to the engine has forward slashes", () => {
   assert.equal(slashed(["C:", "wads", "a.wad"].join(path.sep)), "C:/wads/a.wad");
   assert.equal(slashed("/already/forward"), "/already/forward");
+});
+
+test("a demo launch plays the demo instead of loading a map first", () => {
+  const args = engineArgs({ playdemo: "C:/f/gtfix.lmp", postMap: ["fua_simtrace 70 t.txt"] }, "x.ini");
+  assert.ok(!args.includes("+map"));
+  const at = args.indexOf("-playdemo");
+  assert.equal(args[at + 1], "C:/f/gtfix.lmp");
+  assert.deepEqual(args.slice(-3), ["+fua_simtrace", "70", "t.txt"]);
+});
+
+test("a post-map command goes to the engine word by word, quotes dropped", () => {
+  assert.deepEqual(commandWords('recordmap "C:/a b/f.lmp" MAP01'), ["recordmap", "C:/a b/f.lmp", "MAP01"]);
+  assert.deepEqual(commandWords("god"), ["god"]);
+  assert.deepEqual(engineArgs({ postMap: ["give all"] }, "x.ini").slice(-2), ["+give", "all"]);
+});
+
+test("a recording launch records the game the engine starts on the map, without loading it first", () => {
+  const args = engineArgs({ record: "C:/f/gtfix.lmp", map: "MAP04" }, "x.ini");
+  assert.ok(!args.includes("+map"));
+  const at = args.indexOf("-record");
+  assert.deepEqual(args.slice(at, at + 4), ["-record", "C:/f/gtfix.lmp", "-warp", "4"]);
+  assert.equal(warpNumber("map11"), 11);
+  assert.throws(() => warpNumber("E1M1"), /MAPxx/);
 });

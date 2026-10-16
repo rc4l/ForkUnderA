@@ -130,6 +130,18 @@ export function writeInstanceIni(configPath, opts = {}) {
   return { w, h };
 }
 
+// [rc4l] The level number -warp takes for a MAPxx name.
+export function warpNumber(map) {
+  const m = /^MAP(\d+)$/i.exec(String(map));
+  if (!m) throw new Error(`-warp takes a MAPxx map, not ${map}`);
+  return Number(m[1]);
+}
+
+// [rc4l] A console command's words, a double-quoted run being one word without its quotes.
+export function commandWords(text) {
+  return [...String(text).matchAll(/"([^"]*)"|(\S+)/g)].map((m) => (m[1] !== undefined ? m[1] : m[2]));
+}
+
 export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
@@ -181,6 +193,10 @@ export function engineArgs(opts = {}, configPath) {
   // Monsters shove the player off a recorded position and shoot whatever is being measured, which
   // is the one thing a measurement instance must not have.
   if (opts.connect) args.push("+connect", opts.connect);
+  // [rc4l] A demo brings its own map, which a +map before it would load first and trace as the demo's.
+  else if (opts.playdemo) args.push("-playdemo", opts.playdemo);
+  // [rc4l] A recording starts with the game the engine itself starts (-record with -warp), since a +recordmap on the command line is dropped and a +map after -record loads the level twice.
+  else if (opts.record) args.push("-record", opts.record, "-warp", String(warpNumber(opts.map || "MAP01")));
   else args.push("+map", opts.map || "MAP01");
 
   // [rc4l] ...and anything that only means something once a level EXISTS goes after it.
@@ -189,7 +205,11 @@ export function engineArgs(opts = {}, configPath) {
   // ignored or applied to nothing. That is the mirror of the cvar bug above -- same command line,
   // opposite ordering requirement -- so both sides are stated here rather than left to whoever
   // adds the next argument.
-  for (const c of opts.postMap || []) args.push(`+${c}`);
+  // [rc4l] Word by word, since the engine quotes an argument holding a space, which makes "+recordmap f.lmp MAP01" one unknown command.
+  for (const c of opts.postMap || []) {
+    const [head, ...tail] = commandWords(c);
+    args.push(`+${head}`, ...tail);
+  }
 
   return args;
 }

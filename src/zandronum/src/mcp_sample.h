@@ -6,7 +6,7 @@
 // scripting: wpr.exe needs elevation and WPA or tracerpt to symbolise, xperf needs the ADK, and
 // everything else is a third-party install. So the engine samples itself.
 //
-// A sampler thread interrupts the game thread `hz` times a second and writes down its instruction
+// A sampler thread interrupts the main thread `hz` times a second and writes down its instruction
 // pointer; when the run ends it resolves those addresses through dbghelp -- already linked and
 // already used by mcp_crash.cpp -- and reports the hottest functions. That is a flat self-time
 // profile: where the CPU actually was, not who called it.
@@ -26,7 +26,7 @@
 
 #ifdef FUA_MCP_BRIDGE
 
-// Start a run against the CALLING thread, which must be the game thread -- the RPC dispatch runs
+// Start a run against the CALLING thread, which must be the main thread -- the RPC dispatch runs
 // there, which is the whole reason the handle is taken here rather than guessed later. Returns
 // false if a run is already going or the platform has no sampler.
 //

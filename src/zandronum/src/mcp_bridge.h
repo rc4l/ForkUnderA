@@ -17,7 +17,7 @@
 #ifdef FUA_MCP_BRIDGE
 
 // Called once per frame from D_DoomLoop. Lazily starts the listener on the first call,
-// drains queued RPC requests (dispatched here on the game thread), and pumps events.
+// drains queued RPC requests (dispatched here on the main thread), and pumps events.
 void MCP_Bridge_Poll();
 
 // Mirrors one line of console output to the connected client (as an "out" event).
@@ -28,7 +28,7 @@ void MCP_Bridge_Shutdown();
 
 // Arm the crash-backtrace handler (implemented in mcp_crash.cpp). Idempotent, opt-in.
 void MCP_Crash_Init();
-// Bumped by the game thread every pass of the main loop. If it stops while the process is still
+// Bumped by the main thread every pass of the main loop. If it stops while the process is still
 // alive, the hang watchdog suspends that thread and writes its stack -- see mcp_crash.cpp.
 void MCP_Crash_NoteAlive();
 

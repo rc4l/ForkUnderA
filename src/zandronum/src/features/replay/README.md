@@ -58,7 +58,7 @@ bindable command is **`fua_clip`** (commands don't take the `cl_` cvar prefix).
   saves each stream fed within the last second (`ComputeStreamLive`), so GL's stream, which standalone
   stops feeding, writes no stale clip. The image goes to the encoder as it is (RGBA or BGRA, its scaler
   converting as it shrinks), copied out in row bands on the job pool into a reused buffer: the old
-  per-pixel swizzle to RGB24 and a fresh buffer a capture cost the game thread about 1.3 ms a capture at
+  per-pixel swizzle to RGB24 and a fresh buffer a capture cost the main thread about 1.3 ms a capture at
   1280x800, 30 times a second, and now about 0.4 (Sunder MAP14, the backend phase's mean with replay off,
   on before and on after). Hooks: `features/hwrender/diligent/dgdiag.cpp` `CaptureReplayFrame` and `dgscene.cpp` `PresentFrame`.
 - **Capture perf (done):** the capture hook uses a **double-buffered PBO async readback** — it issues

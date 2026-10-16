@@ -9,23 +9,23 @@ ENGINE_SRC="$ROOT/src/zandronum/src"
 NAME='[a-z0-9_]+(/[a-z0-9_]+)+'
 failed=0
 
-# [rc4l] Every ZX_ZONE, ZX_COUNT and CounterSpec occurrence on its own line, prefixed with its file and line, outside comments and the macros' own definitions.
-sites=$(grep -rnoE '(ZX_ZONE|ZX_COUNT)[[:space:]]*\([^)]*|CounterSpec\{[^,}]*' "$ENGINE_SRC" --include='*.cpp' --include='*.h' 2>/dev/null \
-    | grep -vE '^[^:]*features/telemetry/telemetry\.h:')
+# [rc4l] Every ZX_ZONE, ZX_COUNT, ZX_SEAM and CounterSpec occurrence on its own line, prefixed with its file and line, outside comments and the macros' own definitions.
+sites=$(grep -rnoE '(ZX_ZONE|ZX_COUNT|ZX_SEAM_UNTIMED|ZX_SEAM)[[:space:]]*\([^)]*|CounterSpec\{[^,}]*' "$ENGINE_SRC" --include='*.cpp' --include='*.h' 2>/dev/null \
+    | grep -vE '^[^:]*features/(telemetry/telemetry|handoff/seam)\.h:')
 comments=$(grep -rnE '^[[:space:]]*(//|\*|/\*)' "$ENGINE_SRC" --include='*.cpp' --include='*.h' 2>/dev/null | cut -d: -f1,2)
 if [ -n "$comments" ]; then sites=$(echo "$sites" | grep -vF -f <(echo "$comments" | sed 's/$/:/')); fi
 
 # [rc4l] A CounterSpec may take its name from a variable, which names it where the variable is set, or build it on a literal "group/" prefix.
-bad=$(echo "$sites" | grep -vE ":(ZX_ZONE|ZX_COUNT)[[:space:]]*\([[:space:]]*\"$NAME\"|:CounterSpec\{[[:space:]]*(\"$NAME\"|[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*$|\(std::string\(\"[a-z0-9_]+/\"\))" | grep -v '^$')
+bad=$(echo "$sites" | grep -vE ":(ZX_ZONE|ZX_COUNT|ZX_SEAM_UNTIMED|ZX_SEAM)[[:space:]]*\([[:space:]]*\"$NAME\"|:CounterSpec\{[[:space:]]*(\"$NAME\"|[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*$|\(std::string\(\"[a-z0-9_]+/\"\))" | grep -v '^$')
 if [ -n "$bad" ]; then
     echo "TELEMETRY TRIPWIRE: counters not named by a \"group/name\" literal in lower case:" >&2
     echo "$bad" >&2
     failed=1
 fi
 
-dupes=$(echo "$sites" | grep -oE "ZX_ZONE[[:space:]]*\([[:space:]]*\"$NAME\"" | grep -oE "\"$NAME\"" | sort | uniq -d)
+dupes=$(echo "$sites" | grep -oE "(ZX_ZONE|ZX_SEAM_UNTIMED|ZX_SEAM)[[:space:]]*\([[:space:]]*\"$NAME\"" | grep -oE "\"$NAME\"" | sort | uniq -d)
 if [ -n "$dupes" ]; then
-    echo "TELEMETRY TRIPWIRE: ZX_ZONE names used at more than one site:" >&2
+    echo "TELEMETRY TRIPWIRE: ZX_ZONE or ZX_SEAM names used at more than one site:" >&2
     echo "$dupes" >&2
     failed=1
 fi

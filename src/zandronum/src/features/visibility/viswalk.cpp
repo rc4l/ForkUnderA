@@ -59,7 +59,7 @@
 
 // [rc4l] Compare the walk against GL's own every frame GL walks, counting what differs for fua_vis_report.
 CVAR(Bool, fua_vis_check, false, 0)
-// [rc4l] Slices the player's walk is split into by view angle and run on the job pool: -1 is one a lane, 1 walks it on the game thread alone.
+// [rc4l] Slices the player's walk is split into by view angle and run on the job pool: -1 is one a lane, 1 walks it on the main thread alone.
 CVAR(Int, fua_vis_slices, -1, 0)
 // [rc4l] Walk the player's view in one slice beside the sliced walk and compare the two, for fua_vis_report.
 CVAR(Bool, fua_vis_threadcheck, false, 0)
@@ -587,7 +587,7 @@ template <class T, class U> void SetFlag(T &field, U bit, bool direct, std::vect
 	else later.push_back(&field);
 }
 
-// [rc4l] A slice's walk on one lane: the slice, the lane's vertex angles, and whether it is the walk's only slice, on the game thread, which marks what it sees itself and keeps its own view area; slices instead switch from `initial` to `switchTo` at `switchKey`, where the walk found its first line into a height transfer.
+// [rc4l] A slice's walk on one lane: the slice, the lane's vertex angles, and whether it is the walk's only slice, on the main thread, which marks what it sees itself and keeps its own view area; slices instead switch from `initial` to `switchTo` at `switchKey`, where the walk found its first line into a height transfer.
 struct ClipWalk
 {
 	Slice *slice;
