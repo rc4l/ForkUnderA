@@ -40,6 +40,8 @@ class BoundaryTripwire(unittest.TestCase):
         self.assertEqual([p['name'] for p in field_patterns(rule, files)], ['live floorplane', 'live textures'])
         self.assertEqual(counts([rule], files), {'render': {'features/sprites/a.cpp': 2}})
         self.assertEqual(field_patterns(RENDER, files), [])
+        generic = dict(rule, fields=dict(rule['fields'], unpatterned=['textures']))
+        self.assertEqual([p['name'] for p in field_patterns(generic, files)], ['live floorplane'])
 
     def test_a_crossing_beyond_its_allowance_fails_and_one_below_asks_to_lower_it(self):
         found = {'render': {'a.cpp': 3, 'b.cpp': 1, 'new.cpp': 1}}

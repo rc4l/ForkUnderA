@@ -174,6 +174,7 @@
 #include "features/frame/viewtrace.h"   // [rc4l] NoteMouseEvent
 #include "features/framephase/framephase.h"   // [rc4l] FrameBoundary and the main loop's phases
 #include "features/handoff/seam.h"   // [rc4l] NoteMainThread
+#include "features/gamecopy/gamecopy.h"   // [rc4l] FillMap
 #include "p_local.h"
 
 
@@ -905,6 +906,10 @@ void D_Display ()
 {
 	bool wipe;
 	bool hw2d;
+
+	// [rc4l] The render copy taken from the tics just run, until the handoff takes it between tics.
+	zx::gamecopy::FillMap ();
+	zx::gamecopy::CheckBeforeViews ();
 
 	// [BC] No need for servers to do this.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )

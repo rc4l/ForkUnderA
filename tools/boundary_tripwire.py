@@ -49,7 +49,7 @@ def field_patterns(rule, files):
     if not spec:
         return []
     table = files.get(spec['table'], '')
-    names = sorted({name for kind, name in FIELD.findall(table) if kind in spec['types']})
+    names = sorted({name for kind, name in FIELD.findall(table) if kind in spec['types'] and name not in spec.get('unpatterned', [])})
     return [{'name': 'live %s' % name, 'regex': r'(?<!\brc)(?:\.|->)\s*%s\b' % name} for name in names]
 
 

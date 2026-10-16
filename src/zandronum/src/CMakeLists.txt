@@ -1719,6 +1719,7 @@ add_executable( zdoom WIN32
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
 	features/handoff/seam.cpp
+	features/gamecopy/gamecopy.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
 	features/viewsetup/viewsetup.cpp
@@ -1734,6 +1735,7 @@ add_executable( zdoom WIN32
 	features/handoff/computation/handoff_compute.cpp
 	features/handoff/computation/lock_compute.cpp
 	features/handoff/computation/queue_compute.cpp
+	features/gamecopy/computation/blend_compute.cpp
 	features/wipe/computation/wipe_compute.cpp
 	features/surfaces/computation/skywall_compute.cpp
 	features/sprites/computation/spritestyle_compute.cpp

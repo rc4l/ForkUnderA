@@ -21,7 +21,9 @@
     {"name": "game function", "regex": "\\bP_[A-Z]\\w*\\s*\\("},
     {"name": "live level state", "regex": "\\blevel\\s*\\.\\s*(flags|flags2|time|maptime|totaltime|fadeto|outsidefog|skyspeed1|skyspeed2|DefaultSkybox)\\b"}
    ],
-   "fields": {"table": "features/gamecopy/fields.h", "types": ["sector", "side", "line", "vertex", "polyobj"]}
+   "fields": {"table": "features/gamecopy/fields.h", "types": ["sector", "side", "line", "vertex", "polyobj"],
+    "why_unpatterned": "Members named too generically to tell a live read from any other struct's member by name; the copy check and ThreadSanitizer watch them instead.",
+    "unpatterned": ["x", "y", "flags", "Flags", "special", "Light", "args", "Alpha"]}
   },
   {
    "name": "game-leaves-the-renderer-alone",

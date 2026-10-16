@@ -808,30 +808,6 @@ bool sector_t::PlaneMoving(int pos)
 }
 
 
-int sector_t::GetFloorLight () const
-{
-	if (GetFlags(sector_t::floor) & PLANEF_ABSLIGHTING)
-	{
-		return GetPlaneLight(floor);
-	}
-	else
-	{
-		return ClampLight(lightlevel + GetPlaneLight(floor));
-	}
-}
-
-int sector_t::GetCeilingLight () const
-{
-	if (GetFlags(ceiling) & PLANEF_ABSLIGHTING)
-	{
-		return GetPlaneLight(ceiling);
-	}
-	else
-	{
-		return ClampLight(lightlevel + GetPlaneLight(ceiling));
-	}
-}
-
 
 ASkyViewpoint *sector_t::GetSkyBox(int which)
 {

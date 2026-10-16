@@ -6,6 +6,7 @@
 #include "features/hwrender/backendonly.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"  // [rc4l] ComputeMaxViewPitch
 #include "features/levelmesh/wallcache.h"                      // [rc4l] AllocForLevel, FreeLevel
+#include "features/gamecopy/gamecopy.h"                         // [rc4l] InitLevel
 #include "features/levelmesh/staticmesh.h"                     // [rc4l] MeshInitForLevel, MeshFreeLevel
 #include "features/visibility/viswalk.h"                       // [rc4l] ForgetWalk
 #include "r_state.h"                                           // [rc4l] numsegs
@@ -68,6 +69,7 @@ void FLevelRenderer::PreprocessLevel()
 {
 	zx::levelprep::PrepareLevel();
 	gl_PreprocessLevel();
+	zx::gamecopy::InitLevel();
 	zx::levelmesh::AllocForLevel(numsegs);
 	zx::levelmesh::MeshInitForLevel();
 }

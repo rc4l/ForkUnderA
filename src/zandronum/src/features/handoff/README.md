@@ -37,8 +37,13 @@ Generated from the field tables and the `ZX_SEAM` declarations; do not edit by h
 
 Copied by `features/gamecopy/fields.h`:
 
-- nothing yet
+- line: `flags`, `special`, `Alpha`, `args`
+- sector: `planes`, `floorplane`, `ceilingplane`, `ColorMap`, `special`, `lightlevel`, `MoreFlags`, `Flags`, `reflect`
+- side: `textures`, `Light`, `Flags`
+- vertex: `x`, `y`
 
 Seams:
 
+- `copy/blend` (Main), `features/gamecopy/gamecopy.cpp`
+- `copy/fill` (Handoff), `features/gamecopy/gamecopy.cpp`
 <!-- boundary:end -->

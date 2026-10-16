@@ -51,6 +51,7 @@
 #include "r_data/r_translate.h"
 #include "p_3dmidtex.h"
 #include "r_data/r_interpolate.h"
+#include "features/gamecopy/gamecopy.h"   // [rc4l] BlendMap
 #include "v_palette.h"
 #include "features/fixed64/computation/finetable_compute.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
@@ -905,6 +906,8 @@ void R_SetupFrame (AActor *actor)
 	R_SetViewAngle ();
 
 	interpolator.DoInterpolations (r_TicFrac);
+	zx::gamecopy::BlendMap (r_TicFrac);   // [rc4l] the render copy moved as the live game just was
+	zx::gamecopy::CheckAfterInterpolation ();
 
 	// Keep the view within the sector's floor and ceiling
 	// [AK] Allow spectators without physical restrictions to pass through floors/ceilings.

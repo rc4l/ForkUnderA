@@ -326,14 +326,33 @@ export async function pictureFixture(f, { engine, store, dir = fixtureDir(), cva
 }
 
 // [rc4l] A fixture's demo played with GL drawing beside the backend and every walk checked against GL's (fua_vis_check) up to its picture tic.
-export async function visCheckFixture(f, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
+export async function visCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: { fua_dg_standalone: 0, fua_vis_check: 1 }, gl: true, report: "fua_vis_report", parse: parseVisReport,
+    describe: (r) => (r.found ? `${r.walked} frames walked beside GL, ${r.differed} differed` : "no walk was checked against GL") });
+}
+
+// [rc4l] The numbers fua_copy_report gives: what the render copy was compared against the live game, before the views and after the interpolations, and how much differed.
+export function parseCopyReport(text) {
+  const before = /copy before views: (\d+) compared, (\d+) differed/.exec(text);
+  const blends = /copy blends: (\d+) compared, (\d+) differed/.exec(text);
+  return { walked: before ? Number(before[1]) : 0, blends: blends ? Number(blends[1]) : 0,
+    differed: (before ? Number(before[2]) : 0) + (blends ? Number(blends[2]) : 0), found: !!before, text };
+}
+
+// [rc4l] A fixture's demo played with the render copy held to the live game (fua_copy_check) up to its picture tic.
+export async function copyCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: { fua_copy_check: 1 }, report: "fua_copy_report", parse: parseCopyReport,
+    describe: (r) => (r.found ? `${r.walked} map structures and ${r.blends} blends compared with the live game, ${r.differed} differed` : "the copy was not checked") });
+}
+
+// [rc4l] A fixture's demo played with a check's cvars on to its picture tic, then judged by the report the check prints: clean when it compared something and nothing differed.
+async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, report, parse, describe }) {
   const spec = PICTURES[f.name];
-  const { inst, c } = await playTo(f, { engine, store, dir, cvars: { fua_dg_standalone: 0, fua_vis_check: 1, ...cvars }, gl: true });
+  const { inst, c } = await playTo(f, { engine, store, dir, cvars: { ...check, ...cvars }, gl });
   try {
     await waitLevelTime(c, spec.tic);
-    const report = parseVisReport(await execOut(c, "fua_vis_report", { maxMs: 6000 }));
-    const same = report.found && report.walked > 0 && report.differed === 0;
-    return { name: f.name, same, line: report.found ? `${report.walked} frames walked beside GL, ${report.differed} differed` : "no walk was checked against GL" };
+    const r = parse(await execOut(c, report, { maxMs: 6000 }));
+    return { name: f.name, same: r.found && r.walked > 0 && r.differed === 0, line: describe(r), report: r };
   } finally {
     c.close();
     await stopInstance(inst);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, parseVisReport, pickFixtures, stepAt } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, parseCopyReport, parseVisReport, pickFixtures, stepAt } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -70,6 +70,12 @@ test("the walk check's report is read as frames compared and frames that differe
     "portal views: 40 frames derived beside GL (0 stacked views, 1 mirrors, 0 sheens), 2 differed, 0 with a view GL's occlusion query left unwalked\n";
   assert.deepEqual(parseVisReport(text), { walked: 120, differed: 3, found: true });
   assert.deepEqual(parseVisReport("nothing here"), { walked: 0, differed: 0, found: false });
+});
+
+test("the copy check's report is read as structures and blends compared and how many differed", () => {
+  const r = parseCopyReport("copy before views: 900 compared, 2 differed\nsector 4's copy is not the live sector\ncopy blends: 30 compared, 1 differed\n");
+  assert.deepEqual([r.walked, r.blends, r.differed, r.found], [900, 30, 3, true]);
+  assert.deepEqual([parseCopyReport("").found, parseCopyReport("").differed], [false, 0]);
 });
 
 test("a fixture's IWAD is Freedoom from the repo, or found by name in the store or beside the engine", () => {

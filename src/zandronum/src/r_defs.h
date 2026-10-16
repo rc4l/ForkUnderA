@@ -87,6 +87,12 @@ struct vertexdata_t
 	fixed_t zCeiling, zFloor;
 	DWORD flags;
 };
+// [rc4l] features/gamecopy: what the renderer reads of a vertex, which the vertex holds live and its render copy `rc` holds as drawn.
+struct VertexState
+{
+	fixed_t x, y;
+};
+
 struct vertex_t
 {
 	fixed_t x, y;
@@ -99,6 +105,8 @@ struct vertex_t
 	int numsectors;
 	sector_t ** sectors;
 	float * heightlist;
+	VertexState rc;   // [rc4l] features/gamecopy: as the renderer draws it
+	bool rcDirty;     // [rc4l] features/gamecopy: the heights round it moved in the copy, which the renderer clears once it has recomputed them
 
 	vertex_t()
 	{
@@ -110,6 +118,8 @@ struct vertex_t
 		numheights = numsectors = 0;
 		sectors = NULL;
 		heightlist = NULL;
+		rc.x = rc.y = 0;
+		rcDirty = true;
 	}
 
 	bool operator== (const vertex_t &other)
@@ -252,19 +262,13 @@ protected:
 
 class ASkyViewpoint;
 
-struct secplane_t
+// [rc4l] A plane's equation and what it answers, apart from Zandronum's unlagged history, so a sector's render copy holds the plane without it.
+struct secplane_core_t
 {
 	// the plane is defined as a*x + b*y + c*z + d = 0
 	// ic is 1/c, for faster Z calculations
 
 	fixed_t a, b, c, d, ic;
-
-	// [Spleen] Store the old D's of the plane for unlagged support
-	fixed_t		unlaggedD[UNLAGGEDTICS];
-	fixed_t		restoreD;
-
-	// [AK] The old D of the plane before backtracing a player.
-	fixed_t		backtraceRestoreD;
 
 	// Returns < 0 : behind; == 0 : on; > 0 : in front
 	int PointOnSide (fixed_t x, fixed_t y, fixed_t z) const
@@ -323,13 +327,13 @@ struct secplane_t
 	}
 
 	// Returns true if 2 planes are the same
-	bool operator== (const secplane_t &other) const
+	bool operator== (const secplane_core_t &other) const
 	{
 		return a == other.a && b == other.b && c == other.c && d == other.d;
 	}
 
 	// Returns true if 2 planes are different
-	bool operator!= (const secplane_t &other) const
+	bool operator!= (const secplane_core_t &other) const
 	{
 		return a != other.a || b != other.b || c != other.c || d != other.d;
 	}
@@ -368,8 +372,18 @@ struct secplane_t
 		return -TMulScale16 (a, v->x, b, v->y, z, c);
 	}
 
-	bool CopyPlaneIfValid (secplane_t *dest, const secplane_t *opp) const;
+};
 
+struct secplane_t : secplane_core_t
+{
+	// [Spleen] Store the old D's of the plane for unlagged support
+	fixed_t		unlaggedD[UNLAGGEDTICS];
+	fixed_t		restoreD;
+
+	// [AK] The old D of the plane before backtracing a player.
+	fixed_t		backtraceRestoreD;
+
+	bool CopyPlaneIfValid (secplane_t *dest, const secplane_t *opp) const;
 };
 
 FArchive &operator<< (FArchive &arc, secplane_t &plane);
@@ -489,7 +503,151 @@ struct FTransform
 	fixed_t base_angle, base_yoffs;
 };
 
-struct sector_t
+// [rc4l] A sector plane's texture, light and placement, at namespace scope so a sector's render copy holds the same type.
+struct sector_splane_t
+{
+	FTransform xform;
+	int Flags;
+	int Light;
+	fixed_t alpha;
+	FTextureID Texture;
+	fixed_t TexZ;
+};
+
+// [rc4l] features/gamecopy: a sector's reads, written once for the live sector and its render copy alike.
+template <class S> struct SectorReads
+{
+	fixed_t GetXOffset(int pos) const
+	{
+		return self().planes[pos].xform.xoffs;
+	}
+
+	fixed_t GetYOffset(int pos, bool addbase = true) const
+	{
+		if (!addbase)
+		{
+			return self().planes[pos].xform.yoffs;
+		}
+		else
+		{
+			return self().planes[pos].xform.yoffs + self().planes[pos].xform.base_yoffs;
+		}
+	}
+
+	fixed_t GetXScale(int pos) const
+	{
+		return self().planes[pos].xform.xscale;
+	}
+
+	fixed_t GetYScale(int pos) const
+	{
+		return self().planes[pos].xform.yscale;
+	}
+
+	angle_t GetAngle(int pos, bool addbase = true) const
+	{
+		if (!addbase)
+		{
+			return self().planes[pos].xform.angle;
+		}
+		else
+		{
+			return self().planes[pos].xform.angle + (angle_t)zx::raw(self().planes[pos].xform.base_angle);
+		}
+	}
+
+	fixed_t GetAlpha(int pos) const
+	{
+		return self().planes[pos].alpha;
+	}
+
+	int GetFlags(int pos) const
+	{
+		return self().planes[pos].Flags;
+	}
+
+	int GetPlaneLight(int pos) const
+	{
+		return self().planes[pos].Light;
+	}
+
+	FTextureID GetTexture(int pos) const
+	{
+		return self().planes[pos].Texture;
+	}
+
+	fixed_t GetPlaneTexZ(int pos) const
+	{
+		return self().planes[pos].TexZ;
+	}
+
+	static short ClampLight(int level)
+	{
+		return (short)clamp(level, SHRT_MIN, SHRT_MAX);
+	}
+
+	int GetLightLevel() const
+	{
+		return self().lightlevel;
+	}
+
+	// [rc4l] Moved from p_sectors.cpp so the render copy answers the same way.
+	int GetFloorLight () const
+	{
+		if (GetFlags(0) & PLANEF_ABSLIGHTING)
+		{
+			return GetPlaneLight(0);
+		}
+		else
+		{
+			return ClampLight(self().lightlevel + GetPlaneLight(0));
+		}
+	}
+
+	int GetCeilingLight () const
+	{
+		if (GetFlags(1) & PLANEF_ABSLIGHTING)
+		{
+			return GetPlaneLight(1);
+		}
+		else
+		{
+			return ClampLight(self().lightlevel + GetPlaneLight(1));
+		}
+	}
+
+	// [rc4l] The live sector's plane, or its copy's, which is a plane without the unlagged history.
+	auto &GetSecPlane(int pos)
+	{
+		return pos == 0 ? self().floorplane : self().ceilingplane;
+	}
+
+	const auto &GetSecPlane(int pos) const
+	{
+		return pos == 0 ? self().floorplane : self().ceilingplane;
+	}
+
+	float GetReflect(int pos) const { return gl_plane_reflection_i ? self().reflect[pos] : 0; }
+
+private:
+	const S &self() const { return *static_cast<const S *>(this); }
+	S &self() { return *static_cast<S *>(this); }
+};
+
+// [rc4l] features/gamecopy: what the renderer reads of a sector, which the sector holds live and its render copy `rc` holds as of the last tic (features/gamecopy/fields.h lists it).
+struct SectorState : SectorReads<SectorState>
+{
+	sector_splane_t planes[2];
+	secplane_core_t floorplane, ceilingplane;
+	FDynamicColormap *ColorMap;
+	short special;
+	short lightlevel;
+	WORD MoreFlags;
+	DWORD Flags;
+	float reflect[2];
+};
+
+struct sector_t : SectorReads<sector_t>
 {
 	// Member functions
 	bool IsLinked(sector_t *other, bool ceiling) const;
@@ -515,8 +673,6 @@ struct sector_t
 	// [BB] Added bInformClients and bExecuteOnClient.
 	void SetFade(int r, int g, int b, bool bInformClients = true, bool bExecuteOnClient = false);
 	void ClosestPoint(fixed_t x, fixed_t y, fixed_t &ox, fixed_t &oy) const;
-	int GetFloorLight () const;
-	int GetCeilingLight () const;
 	sector_t *GetHeightSec() const;
 
 	DInterpolation *SetInterpolation(int position, bool attach);
@@ -530,15 +686,7 @@ struct sector_t
 		ceiling
 	};
 
-	struct splane
-	{
-		FTransform xform;
-		int Flags;
-		int Light;
-		fixed_t alpha;
-		FTextureID Texture;
-		fixed_t TexZ;
-	};
+	typedef sector_splane_t splane;
 
 
 	splane planes[2];
@@ -555,11 +703,6 @@ struct sector_t
 		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
-	fixed_t GetXOffset(int pos) const
-	{
-		return planes[pos].xform.xoffs;
-	}
-
 	void SetYOffset(int pos, fixed_t o)
 	{
 		planes[pos].xform.yoffs = o;
@@ -572,27 +715,10 @@ struct sector_t
 		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
-	fixed_t GetYOffset(int pos, bool addbase = true) const
-	{
-		if (!addbase)
-		{
-			return planes[pos].xform.yoffs;
-		}
-		else
-		{
-			return planes[pos].xform.yoffs + planes[pos].xform.base_yoffs;
-		}
-	}
-
 	void SetXScale(int pos, fixed_t o)
 	{
 		planes[pos].xform.xscale = o;
 		fua_placement++;	// [rc4l] features/levelmesh flat bake
-	}
-
-	fixed_t GetXScale(int pos) const
-	{
-		return planes[pos].xform.xscale;
 	}
 
 	void SetYScale(int pos, fixed_t o)
@@ -601,27 +727,10 @@ struct sector_t
 		fua_placement++;	// [rc4l] features/levelmesh flat bake
 	}
 
-	fixed_t GetYScale(int pos) const
-	{
-		return planes[pos].xform.yscale;
-	}
-
 	void SetAngle(int pos, angle_t o)
 	{
 		planes[pos].xform.angle = o;
 		fua_placement++;	// [rc4l] features/levelmesh flat bake
-	}
-
-	angle_t GetAngle(int pos, bool addbase = true) const
-	{
-		if (!addbase)
-		{
-			return planes[pos].xform.angle;
-		}
-		else
-		{
-			return planes[pos].xform.angle + (angle_t)zx::raw(planes[pos].xform.base_angle);
-		}
 	}
 
 	void SetBase(int pos, fixed_t y, angle_t o)
@@ -636,35 +745,15 @@ struct sector_t
 		planes[pos].alpha = o;
 	}
 
-	fixed_t GetAlpha(int pos) const
-	{
-		return planes[pos].alpha;
-	}
-
-	int GetFlags(int pos) const 
-	{
-		return planes[pos].Flags;
-	}
-
 	void ChangeFlags(int pos, int And, int Or)
 	{
 		planes[pos].Flags &= ~And;
 		planes[pos].Flags |= Or;
 	}
 
-	int GetPlaneLight(int pos) const 
-	{
-		return planes[pos].Light;
-	}
-
 	void SetPlaneLight(int pos, int level)
 	{
 		planes[pos].Light = level;
-	}
-
-	FTextureID GetTexture(int pos) const
-	{
-		return planes[pos].Texture;
 	}
 
 	void SetTexture(int pos, FTextureID tex, bool floorclip = true)
@@ -673,11 +762,6 @@ struct sector_t
 		planes[pos].Texture = tex;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 		if (floorclip && pos == floor && tex != old) AdjustFloorClip();
-	}
-
-	fixed_t GetPlaneTexZ(int pos) const
-	{
-		return planes[pos].TexZ;
 	}
 
 	void SetVerticesDirty()
@@ -712,11 +796,6 @@ struct sector_t
 		SetAllVerticesDirty();
 	}
 
-	static inline short ClampLight(int level)
-	{
-		return (short)clamp(level, SHRT_MIN, SHRT_MAX);
-	}
-
 	void ChangeLightLevel(int newval)
 	{
 		lightlevel = ClampLight(lightlevel + newval);
@@ -727,16 +806,6 @@ struct sector_t
 	{
 		lightlevel = ClampLight(newval);
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
-	}
-
-	int GetLightLevel() const
-	{
-		return lightlevel;
-	}
-
-	secplane_t &GetSecPlane(int pos)
-	{
-		return pos == floor? floorplane:ceilingplane;
 	}
 
 	bool PlaneMoving(int pos);
@@ -860,7 +929,6 @@ struct sector_t
 	fixed_t			vboheight[2];	// Last calculated height for the 2 planes of this actual sector
 	int				vbocount[2];	// Total count of vertices belonging to this sector's planes
 
-	float GetReflect(int pos) { return gl_plane_reflection_i? reflect[pos] : 0; }
 	bool VBOHeightcheck(int pos) const { return vboheight[pos] == GetPlaneTexZ(pos); }
 
 	enum
@@ -914,6 +982,10 @@ struct sector_t
 	float				SavedCeilingReflect;
 	float				SavedFloorReflect;
 
+	// [rc4l] features/gamecopy: as the renderer draws it, filled between tics and blended between them each frame.
+	SectorState			rc;
+	// [rc4l] features/gamecopy: bumped when the copy's walls (rcShape), plane placement (rcPlacement) or look (rcLook) changed, which the renderer's caches key on.
+	int					rcShape, rcPlacement, rcLook;
 };
 
 FArchive &operator<< (FArchive &arc, sector_t::splane &p);
@@ -944,7 +1016,62 @@ enum
 	WALLF_LIGHT_FOG      = 128,	// This wall's Light is used even in fog.
 };
 
-struct side_t
+// [rc4l] One part of a sidedef's texture (top, middle or bottom), at namespace scope so a side's render copy holds the same type.
+struct side_part_t
+{
+	fixed_t xoffset;
+	fixed_t yoffset;
+	fixed_t xscale;
+	fixed_t yscale;
+	FTextureID texture;
+	TObjPtr<DInterpolation> interpolation;
+	//int Light;
+	// [AK] Saved properties for when a map resets, or when we need to give updates
+	// to new clients connecting.
+	fixed_t SavedXOffset;
+	fixed_t SavedYOffset;
+	fixed_t SavedXScale;
+	fixed_t SavedYScale;
+	FTextureID SavedTexture;
+};
+
+// [rc4l] features/gamecopy: a sidedef's reads, written once for the live side and its render copy alike.
+template <class S> struct SideReads
+{
+	FTextureID GetTexture(int which) const
+	{
+		return self().textures[which].texture;
+	}
+	fixed_t GetTextureXOffset(int which) const
+	{
+		return self().textures[which].xoffset;
+	}
+	fixed_t GetTextureYOffset(int which) const
+	{
+		return self().textures[which].yoffset;
+	}
+	fixed_t GetTextureXScale(int which) const
+	{
+		return self().textures[which].xscale;
+	}
+	fixed_t GetTextureYScale(int which) const
+	{
+		return self().textures[which].yscale;
+	}
+
+private:
+	const S &self() const { return *static_cast<const S *>(this); }
+};
+
+// [rc4l] features/gamecopy: what the renderer reads of a sidedef, which the side holds live and its render copy `rc` holds as of the last tic.
+struct SideState : SideReads<SideState>
+{
+	side_part_t textures[3];
+	SWORD Light;
+	BYTE Flags;
+};
+
+struct side_t : SideReads<side_t>
 {
 	enum ETexpart
 	{
@@ -952,24 +1079,7 @@ struct side_t
 		mid=1,
 		bottom=2
 	};
-	struct part
-	{
-		fixed_t xoffset;
-		fixed_t yoffset;
-		fixed_t xscale;
-		fixed_t yscale;
-		FTextureID texture;
-		TObjPtr<DInterpolation> interpolation;
-		//int Light;
-
-		// [AK] Saved properties for when a map resets, or when we need to give updates
-		// to new clients connecting.
-		fixed_t SavedXOffset;
-		fixed_t SavedYOffset;
-		fixed_t SavedXScale;
-		fixed_t SavedYScale;
-		FTextureID SavedTexture;
-	};
+	typedef side_part_t part;
 
 	sector_t*	sector;			// Sector the SideDef is facing.
 	DBaseDecal*	AttachedDecals;	// [RH] Decals bound to the wall
@@ -995,10 +1105,6 @@ struct side_t
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache: Transfer_WallLight re-lights a side every time its source sector's light changes
 	}
 
-	FTextureID GetTexture(int which) const
-	{
-		return textures[which].texture;
-	}
 	void SetTexture(int which, FTextureID tex)
 	{
 		textures[which].texture = tex;
@@ -1015,10 +1121,6 @@ struct side_t
 		textures[top].xoffset =
 		textures[mid].xoffset =
 		textures[bottom].xoffset = offset;
-	}
-	fixed_t GetTextureXOffset(int which) const
-	{
-		return textures[which].xoffset;
 	}
 	void AddTextureXOffset(int which, fixed_t delta)
 	{
@@ -1037,10 +1139,6 @@ struct side_t
 		textures[mid].yoffset =
 		textures[bottom].yoffset = offset;
 	}
-	fixed_t GetTextureYOffset(int which) const
-	{
-		return textures[which].yoffset;
-	}
 	void AddTextureYOffset(int which, fixed_t delta)
 	{
 		textures[which].yoffset += delta;
@@ -1055,10 +1153,6 @@ struct side_t
 	{
 		textures[top].xscale = textures[mid].xscale = textures[bottom].xscale = scale == 0 ? FRACUNIT : scale;
 	}
-	fixed_t GetTextureXScale(int which) const
-	{
-		return textures[which].xscale;
-	}
 	void MultiplyTextureXScale(int which, fixed_t delta)
 	{
 		textures[which].xscale = FixedMul(textures[which].xscale, delta);
@@ -1072,10 +1166,6 @@ struct side_t
 	void SetTextureYScale(fixed_t scale)
 	{
 		textures[top].yscale = textures[mid].yscale = textures[bottom].yscale = scale == 0 ? FRACUNIT : scale;
-	}
-	fixed_t GetTextureYScale(int which) const
-	{
-		return textures[which].yscale;
 	}
 	void MultiplyTextureYScale(int which, fixed_t delta)
 	{
@@ -1094,6 +1184,10 @@ struct side_t
 	seg_t **segs;	// all segs belonging to this sidedef in ascending order. Used for precise rendering
 	int numsegs;
 
+	// [rc4l] features/gamecopy: as the renderer draws it, and bumped when it changed, which the renderer's caches key on.
+	SideState rc;
+	int rcShape;
+
 };
 
 FArchive &operator<< (FArchive &arc, side_t::part &p);
@@ -1108,6 +1202,15 @@ FArchive &operator<< (FArchive &arc, side_t::part &p);
 #define	TEXCHANGE_BACKTOP		8
 #define	TEXCHANGE_BACKMEDIUM	16
 #define	TEXCHANGE_BACKBOTTOM	32
+// [rc4l] features/gamecopy: what the renderer reads of a linedef, which the line holds live and its render copy `rc` holds as of the last tic.
+struct LineState
+{
+	DWORD		flags;
+	int			special;
+	fixed_t		Alpha;
+	int			args[5];
+};
+
 struct line_t
 {
 	vertex_t	*v1, *v2;	// vertices, from v1 to v2
@@ -1135,6 +1238,7 @@ struct line_t
 	DWORD		SavedFlags;
 	fixed_t		SavedAlpha;
 
+	LineState	rc;	// [rc4l] features/gamecopy: as the renderer draws it
 };
 
 // phares 3/14/98
