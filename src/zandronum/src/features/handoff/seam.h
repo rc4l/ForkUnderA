@@ -28,9 +28,11 @@ Phase CurrentPhase();
 // [rc4l] A seam's fixed part, made the first time its ZX_SEAM runs.
 struct SeamSite
 {
-	SeamSite(const char *name, Owner owner, bool timed);
+	SeamSite(const char *name, Owner owner, bool timed, const char *function, int line);
 	int index;
 	const char *name;
+	const char *function;   // [rc4l] the function and line it sits in, since many sites share one name
+	int line;
 	Owner owner;
 	zx::telemetry::Counter counter;   // [rc4l] its timing, -1 when untimed
 };
@@ -61,11 +63,11 @@ uint64_t SeamViolations();
 #define ZX_SEAM_CAT(a, b) ZX_SEAM_CAT2(a, b)
 // [rc4l] Declares and enters the seam name (a "group/name" literal, also its timing counter) owned by owner for the rest of the scope.
 #define ZX_SEAM(name, owner) \
-	static const zx::handoff::SeamSite ZX_SEAM_CAT(zxSeamSite, __LINE__)(name, zx::handoff::Owner::owner, true); \
+	static const zx::handoff::SeamSite ZX_SEAM_CAT(zxSeamSite, __LINE__)(name, zx::handoff::Owner::owner, true, __func__, __LINE__); \
 	const zx::handoff::SeamScope ZX_SEAM_CAT(zxSeam, __LINE__)(ZX_SEAM_CAT(zxSeamSite, __LINE__))
 // [rc4l] ZX_SEAM for a crossing too frequent to time (a lock, a sound), which is still checked, named and stressed.
 #define ZX_SEAM_UNTIMED(name, owner) \
-	static const zx::handoff::SeamSite ZX_SEAM_CAT(zxSeamSite, __LINE__)(name, zx::handoff::Owner::owner, false); \
+	static const zx::handoff::SeamSite ZX_SEAM_CAT(zxSeamSite, __LINE__)(name, zx::handoff::Owner::owner, false, __func__, __LINE__); \
 	const zx::handoff::SeamScope ZX_SEAM_CAT(zxSeam, __LINE__)(ZX_SEAM_CAT(zxSeamSite, __LINE__))
 
 }} // namespace zx::handoff

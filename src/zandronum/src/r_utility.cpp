@@ -30,6 +30,8 @@
 // HEADER FILES ------------------------------------------------------------
 
 #include <stdlib.h>
+#include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
 #include <math.h>
 
 #include "templates.h"
@@ -53,6 +55,7 @@
 #include "r_data/r_interpolate.h"
 #include "features/gamecopy/gamecopy.h"   // [rc4l] BlendMap
 #include "features/gamecopy/players.h"    // [rc4l] the records a view is set up from
+#include "features/gamecopy/xfloors.h"    // [rc4l] the copied light lists and height transfers
 #include "v_palette.h"
 #include "features/fixed64/computation/finetable_compute.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
@@ -82,7 +85,7 @@ extern FSpecialColormap*realfixedcolormap;
 
 struct InterpolationViewer
 {
-	const void *ViewActor;	// [rc4l] the camera's identity, compared and never read
+	unsigned int ViewId;	// [rc4l] the camera's render copy id, which no later actor reuses
 	int otic;
 	fixed_t oviewx, oviewy, oviewz;
 	fixed_t nviewx, nviewy, nviewz;
@@ -92,8 +95,9 @@ struct InterpolationViewer
 
 // PRIVATE DATA DECLARATIONS -----------------------------------------------
 static TArray<InterpolationViewer> PastViewers;
-static FRandom pr_torchflicker ("TorchFlicker");
-static FRandom pr_hom;
+bool r_liveInterpolated;   // [rc4l] the last R_SetupFrame moved the live game, which EndViewpoint puts back
+static FRandom rr_torchflicker ("TorchFlicker");   // [rc4l] rr_: streams only the renderer draws from, never the game
+static FRandom rr_hom;
 static bool NoInterpolateView;
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
@@ -632,9 +636,12 @@ static void R_InterpolateView (const zx::gamecopy::PlayerRecord *player, const z
 		( GAME_GetEndLevelDelay( ) == false ) &&
 		( ~level.flags2 & LEVEL2_FROZEN || player->timefreezer != 0 ))
 	{
-		viewangle = iview->nviewangle + (LocalViewAngle & 0xFFFF0000);
+		// [rc4l] features/handoff: beside a running tic the copy is a tic behind, so the turn of the ticcmds built since it was taken is added, or the view would snap back each tic.
+		int pendingYaw = 0, pendingPitch = 0;
+		if (zx::handoff::TicInFlight ()) Net_PendingLocalTurn (zx::gamecopy::CopyTic (), pendingYaw, pendingPitch);
+		viewangle = iview->nviewangle + (LocalViewAngle & 0xFFFF0000) + pendingYaw;
 
-		fixed_t delta = player->centering ? 0 : -(signed)(LocalViewPitch & 0xFFFF0000);
+		fixed_t delta = player->centering ? 0 : -(signed)(LocalViewPitch & 0xFFFF0000) - pendingPitch;
 
 		viewpitch = iview->nviewpitch;
 		if (delta > 0)
@@ -684,6 +691,12 @@ static void R_InterpolateView (const zx::gamecopy::PlayerRecord *player, const z
 
 void R_ResetViewInterpolation ()
 {
+	// [rc4l] features/handoff: the view's interpolation is the main thread's, so a tic on its own thread resets it in the handoff.
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { R_ResetViewInterpolation (); }, 0, 0 });
+		return;
+	}
 	NoInterpolateView = true;
 }
 
@@ -710,19 +723,19 @@ void R_SetViewAngle ()
 //
 //==========================================================================
 
-static InterpolationViewer *FindPastViewer (const void *actor)
+static InterpolationViewer *FindPastViewer (unsigned int actor)
 {
 	for (unsigned int i = 0; i < PastViewers.Size(); ++i)
 	{
-		if (PastViewers[i].ViewActor == actor)
+		if (PastViewers[i].ViewId == actor)
 		{
 			return &PastViewers[i];
 		}
 	}
 
 	// Not found, so make a new one
-	InterpolationViewer iview = { NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-	iview.ViewActor = actor;
+	InterpolationViewer iview = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	iview.ViewId = actor;
 	iview.otic = -1;
 	return &PastViewers[PastViewers.Push (iview)];
 }
@@ -748,9 +761,21 @@ void R_FreePastViewers ()
 
 void R_ClearPastViewer (AActor *actor)
 {
+	// [rc4l] features/handoff: a tic on its own thread forgets the camera's past views in the handoff, by the actor's id.
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t) { R_ClearPastViewerId ((unsigned int)a); }, intptr_t (actor != NULL ? actor->rcSerial : 0u), 0 });
+		return;
+	}
+	R_ClearPastViewerId (actor != NULL ? actor->rcSerial : 0u);
+}
+
+// [rc4l] R_ClearPastViewer by the render copy id of the camera.
+void R_ClearPastViewerId (unsigned int id)
+{
 	for (unsigned int i = 0; i < PastViewers.Size(); ++i)
 	{
-		if (PastViewers[i].ViewActor == actor)
+		if (id != 0 && PastViewers[i].ViewId == id)
 		{
 			// Found it, so remove it.
 			if (i == PastViewers.Size())
@@ -787,25 +812,41 @@ static fixed_t QuakePower(fixed_t factor, fixed_t intensity, fixed_t offset)
 	{
 		// [rc4l] strong fixed_t: the RNG takes a raw int modulus and returns raw bits, where
 		// upstream's plain int did both implicitly.
-		randumb = fixed_t::FromRaw(pr_torchflicker(intensity.Raw() * 2)) - intensity;
+		randumb = fixed_t::FromRaw(rr_torchflicker(intensity.Raw() * 2)) - intensity;
 	}
 	return FixedMul(factor, randumb + offset);
 }
 
+// [rc4l] features/gamecopy: GL names the actor it views from, whose record a view asked for before this level's first fill takes then.
 void R_SetupFrame (AActor *actor)
 {
 	if (actor == NULL)
 	{
 		I_Error ("Tried to render from a NULL actor.");
 	}
-
-	// [rc4l] features/gamecopy: the view comes from the render copy's records, the actor only naming whose; a view asked for before this level's first fill takes it now.
-	const zx::gamecopy::ActorRecord *actorRec = zx::gamecopy::RecordOf(actor);
-	if (actorRec == NULL)
+	if (zx::gamecopy::RecordOf(actor) == NULL)
 	{
 		zx::gamecopy::FillNow ();
-		actorRec = zx::gamecopy::RecordOf(actor);
 	}
+	R_SetupFrameFromRecord (zx::gamecopy::IndexOf(zx::gamecopy::RecordOf(actor)), true);
+	// [rc4l] GL's walks stamp what they visit with the validcount the game shares; the backend keeps its own stamps.
+	validcount++;
+}
+
+// [rc4l] features/gamecopy: puts back what the last R_SetupFrame moved of the live game, if it moved any.
+void R_RestoreLiveInterpolation ()
+{
+	if (r_liveInterpolated)
+	{
+		interpolator.RestoreInterpolations ();
+	}
+	r_liveInterpolated = false;
+}
+
+// [rc4l] features/gamecopy: the view comes from the render copy's records alone, so a frame drawn beside a running tic never reads a live actor; interpolateLive also moves the live game as GL draws it.
+void R_SetupFrameFromRecord (int record, bool interpolateLive)
+{
+	const zx::gamecopy::ActorRecord *actorRec = zx::gamecopy::Record(record);
 	if (actorRec == NULL)
 	{
 		I_Error ("Tried to render from an actor the render copy does not hold.");
@@ -829,7 +870,7 @@ void R_SetupFrame (AActor *actor)
 	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
 	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(camIndex);
 
-	iview = FindPastViewer (cam->who);
+	iview = FindPastViewer (cam->id);
 
 	int nowtic = I_GetTime (false);
 	if (iview->otic != -1 && nowtic > iview->otic)
@@ -919,9 +960,17 @@ void R_SetupFrame (AActor *actor)
 
 	R_SetViewAngle ();
 
-	interpolator.DoInterpolations (r_TicFrac);
-	zx::gamecopy::BlendMap (r_TicFrac);   // [rc4l] the render copy moved as the live game just was
-	zx::gamecopy::CheckAfterInterpolation ();
+	// [rc4l] fua_copy_check moves the live game for a view GL does not draw too, so the copy's blends have something to be held to.
+	r_liveInterpolated = interpolateLive || zx::gamecopy::CopyCheckOn ();
+	if (r_liveInterpolated)
+	{
+		interpolator.DoInterpolations (r_TicFrac);
+	}
+	zx::gamecopy::BlendMap (r_TicFrac);   // [rc4l] the render copy moved as the live game is for GL
+	if (r_liveInterpolated)
+	{
+		zx::gamecopy::CheckAfterInterpolation ();
+	}
 
 	// Keep the view within the sector's floor and ceiling
 	// [AK] Allow spectators without physical restrictions to pass through floors/ceilings.
@@ -991,14 +1040,15 @@ void R_SetupFrame (AActor *actor)
 	// [RH] Can also select a blend
 	newblend = 0;
 
-	TArray<lightlist_t> &lightlist = viewsector->e->XFloor.lightlist;
+	// [rc4l] features/gamecopy: the copied light list and height transfer.
+	TArray<lightlist_t> &lightlist = viewsector->e->rcXFloor.lightlist;
 	if (lightlist.Size() > 0)
 	{
 		for(unsigned int i = 0; i < lightlist.Size(); i++)
 		{
-			secplane_t *plane;
+			const secplane_core_t *plane;
 			int viewside;
-			plane = (i < lightlist.Size()-1) ? &lightlist[i+1].plane : &viewsector->floorplane;
+			plane = (i < lightlist.Size()-1) ? &lightlist[i+1].plane : &viewsector->rc.floorplane;
 			viewside = plane->PointOnSide(viewx, viewy, viewz);
 			// Reverse the direction of the test if the plane was downward facing.
 			// We want to know if the view is above it, whatever its orientation may be.
@@ -1018,12 +1068,12 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		const sector_t *s = viewsector->GetHeightSec();
+		const sector_t *s = zx::gamecopy::HeightSecOf(viewsector);
 		if (s != NULL)
 		{
-			newblend = s->floorplane.PointOnSide(viewx, viewy, viewz) < 0
+			newblend = s->rc.floorplane.PointOnSide(viewx, viewy, viewz) < 0
 				? s->bottommap
-				: s->ceilingplane.PointOnSide(viewx, viewy, viewz) < 0
+				: s->rc.ceilingplane.PointOnSide(viewx, viewy, viewz) < 0
 				? s->topmap
 				: s->midmap;
 			if (APART(newblend) == 0 && newblend >= numfakecmaps)
@@ -1056,8 +1106,6 @@ void R_SetupFrame (AActor *actor)
 	Renderer->CopyStackedViewParameters();
 	Renderer->SetupFrame(player != NULL ? &players[player->number] : NULL);
 
-	validcount++;
-
 	if (RenderTarget == screen && r_clearbuffer != 0)
 	{
 		int color;
@@ -1081,7 +1129,7 @@ void R_SetupFrame (AActor *actor)
 		}
 		else
 		{
-			color = pr_hom();
+			color = rr_hom();
 		}
 		Renderer->ClearBuffer(color);
 	}
@@ -1145,6 +1193,12 @@ void FCanvasTextureInfo::Add (AActor *viewpoint, FTextureID picnum, int fov)
 // Updates all canvas textures that were visible in the last frame.
 //
 //==========================================================================
+
+// [rc4l] features/gamecopy: GL and any renderer without its own draw a camera texture's view from the live actor the record names.
+void FRenderer::RenderCameraRecord (FCanvasTexture *tex, int record, int fov)
+{
+	RenderTextureView (tex, zx::gamecopy::LiveOf (zx::gamecopy::Record (record)), fov);
+}
 
 void FCanvasTextureInfo::UpdateAll ()
 {

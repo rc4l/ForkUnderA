@@ -484,6 +484,13 @@ struct extsector_t
 		TArray<sector_t*>				attached;		// 3D floors attached to this sector
 	} XFloor;
 
+	// [rc4l] features/gamecopy: the 3D floors and light list as the renderer reads them, copies whose planes and light levels are the render copy's.
+	struct xfloorcopy
+	{
+		TArray<F3DFloor *>				ffloors;
+		TArray<lightlist_t>				lightlist;
+	} rcXFloor;
+
 	TArray<vertex_t *> vertices;
 	
 	void Serialize(FArchive &arc);

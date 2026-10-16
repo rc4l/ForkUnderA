@@ -15,8 +15,14 @@ bool ComputeOwnerAllows(Owner owner, bool onMain, bool onGame, Phase phase)
 	case Owner::GameThread: return onGame;
 	case Owner::GameData: return (onGame && phase.gameRunning) || (onMain && phase.mainInHandoff && !phase.gameRunning);
 	case Owner::Handoff: return onMain && phase.mainInHandoff && !phase.gameRunning;
+	case Owner::Idle: return onMain && !phase.gameRunning;
 	default: return true;
 	}
+}
+
+bool ComputeBesideTic(bool onMain, bool onGame, Phase phase)
+{
+	return onMain && !onGame && phase.gameRunning;
 }
 
 const char *ComputeOwnerName(Owner owner)
@@ -27,6 +33,7 @@ const char *ComputeOwnerName(Owner owner)
 	case Owner::GameThread: return "game";
 	case Owner::GameData: return "game data";
 	case Owner::Handoff: return "handoff";
+	case Owner::Idle: return "idle";
 	default: return "any";
 	}
 }

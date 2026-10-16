@@ -385,7 +385,7 @@ struct FSpriteModelFrame
 
 void gl_InitModels();
 FSpriteModelFrame * gl_FindModelFrame(const PClass * ti, int sprite, int frame, bool dropped);
-bool gl_IsHUDModelForPlayerAvailable (player_t * player);
+bool gl_IsHUDModelFor (const PClass *weapon, FState *state);   // [rc4l] whether MODELDEF draws a weapon's state as a HUD model
 
 // [rc4l] Every model MODELDEF and VOXELDEF loaded, for a renderer that keeps something per model.
 int ModelCount();

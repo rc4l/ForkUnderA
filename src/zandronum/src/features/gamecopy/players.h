@@ -52,6 +52,17 @@ struct ViewSource
 	bool altersWeapon;
 };
 
+// [rc4l] A camera texture and the record of the actor it views from, -1 for none.
+struct CameraTexture
+{
+	FCanvasTexture *texture;
+	int record;
+	int fov;
+};
+
+// [rc4l] The camera textures as the last fill took them, in the list's order.
+const std::vector<CameraTexture> &CameraTextures();
+
 // [rc4l] Player n's record as the last fill took it, NULL when n is not in the game.
 const PlayerRecord *Player(int n);
 // [rc4l] What the last fill found of a record viewed from, NULL when nothing views from it.

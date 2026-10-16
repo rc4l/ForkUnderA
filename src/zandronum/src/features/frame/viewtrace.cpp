@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/frame/viewtrace.h"
+#include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "features/frame/computation/viewtrace_compute.h"
 #include "features/framephase/framephase.h"   // [rc4l] each frame's phases
 
@@ -73,7 +74,7 @@ void NoteMainView()
 	s.us = zx::framephase::NowUs();
 	s.angle = (unsigned)viewangle;
 	s.localAngle = (unsigned)LocalViewAngle;
-	s.gametic = gametic;
+	s.gametic = zx::gamecopy::CopyTic();   // [rc4l] the tic the frame shows
 	const float *phases = zx::framephase::LastFramePhases();
 	s.presentAt = zx::framephase::LastFramePhaseStarts()[zx::framephase::kPhasePresent];
 	s.frameUs = zx::framephase::LastFrameUs();

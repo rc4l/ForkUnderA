@@ -70,6 +70,9 @@ void R_SetViewSize (int blocks);
 void R_SetFOV (float fov);
 float R_GetFOV ();
 void R_SetupFrame (AActor * camera);
+void R_SetupFrameFromRecord (int record, bool interpolateLive);
+extern bool r_liveInterpolated;   // [rc4l] whether the last R_SetupFrame moved the live game
+void R_RestoreLiveInterpolation ();   // [rc4l] puts back what it moved   // [rc4l] features/gamecopy: from the render copy's record of the camera, the live game moved too for GL
 void R_SetViewAngle ();
 
 // Called by startup code.
@@ -83,6 +86,7 @@ void R_SetWindow (int windowSize, int fullWidth, int fullHeight, int stHeight);
 
 extern void R_FreePastViewers ();
 extern void R_ClearPastViewer (AActor *actor);
+extern void R_ClearPastViewerId (unsigned int id);   // [rc4l] by the render copy id
 
 // This list keeps track of the cameras that draw into canvas textures.
 struct FCanvasTextureInfo

@@ -161,7 +161,7 @@ bool DamageNegated( player_t *player )
 
 TintSubject TintSubjectOf( AActor *actor )
 {
-	TintSubject s = { actor, false, false, FTextureID() };
+	TintSubject s = { actor != NULL ? actor->rcSerial : 0u, false, false, FTextureID() };
 	s.texture.SetInvalid();
 	if ( actor == NULL || actor->player == NULL || actor->player->mo != actor )
 		return s;
@@ -199,7 +199,7 @@ CCMD( fua_tintdebug )
 		sec->e ? (int)sec->e->XFloor.ffloors.Size() : 0 );
 	float intensity;
 	int lastTic;
-	if ( DamageTint_Ramp( mo, intensity, lastTic ))
+	if ( DamageTint_Ramp( mo->rcSerial, intensity, lastTic ))
 		Printf( "intensity=%.2f lastTic=%d (now %d)\n", intensity, lastTic, level.time );
 	else
 		Printf( "no ramp entry yet\n" );

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+#
+# [rc4l] ThreadSanitizer suppressions for the game thread's CI job (.github/workflows/game-thread.yml): races inside the
+# drivers and libraries the engine calls into, which keep their own locking, never the engine's own code.
+called_from_lib:libvulkan_lvp.so
+called_from_lib:libLLVM
+called_from_lib:libopenal.so
+called_from_lib:libasound.so
+called_from_lib:libpulse.so
+called_from_lib:libX11.so
+called_from_lib:libxcb.so
+called_from_lib:libGLX_mesa.so
+called_from_lib:libgallium
+race:libvulkan_lvp.so
+race:libLLVM
+race:libopenal.so

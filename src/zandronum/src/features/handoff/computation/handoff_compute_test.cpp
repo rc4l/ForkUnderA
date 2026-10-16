@@ -44,12 +44,30 @@ TEST(HandoffOwner, TheHandoffIsTheMainThreadBetweenTics)
 	EXPECT_TRUE(ComputeOwnerAllows(Owner::Any, false, false, kTic));
 }
 
+TEST(HandoffOwner, IdleIsTheMainThreadWhileNoTicRuns)
+{
+	EXPECT_TRUE(ComputeOwnerAllows(Owner::Idle, true, true, kHandoff));
+	EXPECT_TRUE(ComputeOwnerAllows(Owner::Idle, true, false, kFrame));
+	EXPECT_FALSE(ComputeOwnerAllows(Owner::Idle, true, true, kTic));
+	EXPECT_FALSE(ComputeOwnerAllows(Owner::Idle, false, true, kFrame));
+}
+
+// [rc4l] Only the main thread waits, only while a tic runs on the game thread; an inline tic's main thread is its game thread too.
+TEST(HandoffBesideTic, TheMainThreadWaitsOnlyBesideATicOnTheGameThread)
+{
+	EXPECT_TRUE(ComputeBesideTic(true, false, Phase{ true, false }));
+	EXPECT_FALSE(ComputeBesideTic(true, false, Phase{ false, true }));
+	EXPECT_FALSE(ComputeBesideTic(true, true, Phase{ true, false }));
+	EXPECT_FALSE(ComputeBesideTic(false, true, Phase{ true, false }));
+}
+
 TEST(HandoffOwner, EveryOwnerHasAName)
 {
 	EXPECT_STREQ("main", ComputeOwnerName(Owner::Main));
 	EXPECT_STREQ("game", ComputeOwnerName(Owner::GameThread));
 	EXPECT_STREQ("game data", ComputeOwnerName(Owner::GameData));
 	EXPECT_STREQ("handoff", ComputeOwnerName(Owner::Handoff));
+	EXPECT_STREQ("idle", ComputeOwnerName(Owner::Idle));
 	EXPECT_STREQ("any", ComputeOwnerName(Owner::Any));
 }
 

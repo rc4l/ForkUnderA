@@ -157,8 +157,8 @@ static void Evaluate(Candidate &c)
 
 	// [rc4l] AddLowerMissingTexture leaves a transparent door's lowered floor and an FF_FIX 3D floor's deliberate gap alone.
 	const bool doorHack = back->transdoor && back->transdoorheight == back->rc.GetPlaneTexZ(sector_t::floor);
-	const bool fixHack = back->e != NULL && back->e->XFloor.ffloors.Size() > 0 &&
-		(back->e->XFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
+	const bool fixHack = back->e != NULL && back->e->rcXFloor.ffloors.Size() > 0 &&
+		(back->e->rcXFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
 	in.textured = c.bottomTextured;
 	in.sloped = Sloped(front->rc.floorplane) || Sloped(back->rc.floorplane);
 	c.down = !doorHack && !fixHack && ComputeMissingLower(in, c.downZ);

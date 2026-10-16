@@ -13,6 +13,7 @@
 #include "gl/renderer/gl_lightdata.h"     // [rc4l] gl_SetColor and gl_SetFog, the shading GL's answer comes from
 #include "gl/renderer/gl_renderstate.h"   // [rc4l] the dynamic light GL left for a sprite, and the shading it set
 #include "features/horizon/horizon.h"   // [rc4l] OwnsSky
+#include "features/gamecopy/actors.h"   // [rc4l] the record a skybox is named by
 #include "features/levelmesh/flatmesh.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/levelmesh/modelmesh.h"
@@ -137,7 +138,7 @@ struct FGLChecks : public FGLObserver
 		// [rc4l] GL's own captured quads are only compared, so they keep the level's sky; a horizon line's is the horizon's.
 		if (zx::horizon::OwnsSky((wall.seg != NULL && wall.seg->linedef != NULL) ? wall.seg->linedef->special : 0)) return;
 		zx::levelmesh::AddViewSkyQuad(zx::levelmesh::WalkSkyList(), wall.glseg.x1, wall.glseg.y1, wall.glseg.x2, wall.glseg.y2,
-			wall.zbottom, wall.ztop, skybox, 0);
+			wall.zbottom, wall.ztop, zx::gamecopy::IndexOf(zx::gamecopy::RecordOf(skybox)), 0);
 	}
 	void SkyHole(const GLWall &wall)
 	{

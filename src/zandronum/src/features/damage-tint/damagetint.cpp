@@ -9,6 +9,8 @@
 // win automatically via the blend-op gate.
 
 #include "gl/system/gl_system.h"
+#include "features/gamecopy/players.h"   // [rc4l] the console player's body record
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "doomtype.h"
 #include "doomstat.h"
 #include "g_level.h"
@@ -59,7 +61,7 @@ namespace
 		int      lastTic;
 		PalEntry color; // latched while active, so a fade-out keeps the pool's color
 	};
-	TMap<const void *, TintState> g_state;
+	TMap<unsigned int, TintState> g_state;
 	TMap<int, PalEntry> g_avgCache; // floor texture id -> average color
 
 	PalEntry FloorAverageColor( FTextureID id )
@@ -86,11 +88,10 @@ namespace
 		return avg;
 	}
 
-	// Advance (and occasionally prune) the per-actor ramp. Keyed on the actor pointer; an address
-	// reused by a new actor can inherit at most one frame of stale fade-out -- cosmetic only.
-	float UpdateIntensity( const void *actor, bool active, PalEntry activeColor, PalEntry &colorOut )
+	// [rc4l] Advance (and occasionally prune) the per-actor ramp, keyed on the actor's render copy id, which no later actor reuses.
+	float UpdateIntensity( unsigned int actor, bool active, PalEntry activeColor, PalEntry &colorOut )
 	{
-		TintState st = { 0.0f, level.time, PalEntry( 255, 255, 255 ) };
+		TintState st = { 0.0f, zx::gamecopy::Level().time, PalEntry( 255, 255, 255 ) };
 		if ( TintState *hit = g_state.CheckKey( actor ))
 			st = *hit;
 		if ( active )
@@ -99,25 +100,25 @@ namespace
 
 		// A lastTic from the future means the level changed under us (the clock restarted and the
 		// actor address was recycled) -- start this entry over instead of freezing its ramp.
-		if ( st.lastTic > level.time )
+		if ( st.lastTic > zx::gamecopy::Level().time )
 		{
 			st.intensity = 0.0f;
-			st.lastTic = level.time;
+			st.lastTic = zx::gamecopy::Level().time;
 		}
 
-		st.intensity = RampStep( st.intensity, active, level.time - st.lastTic, RISE_TICS, FALL_TICS );
-		st.lastTic = level.time;
+		st.intensity = RampStep( st.intensity, active, zx::gamecopy::Level().time - st.lastTic, RISE_TICS, FALL_TICS );
+		st.lastTic = zx::gamecopy::Level().time;
 		g_state.Insert( actor, st );
 
 		static int lastSweep = -1;
-		if ( level.time < lastSweep || level.time - lastSweep > 128 )
+		if ( zx::gamecopy::Level().time < lastSweep || zx::gamecopy::Level().time - lastSweep > 128 )
 		{
-			lastSweep = level.time;
-			TArray<const void *> stale;
-			TMap<const void *, TintState>::Iterator it( g_state );
-			TMap<const void *, TintState>::Pair *pair;
+			lastSweep = zx::gamecopy::Level().time;
+			TArray<unsigned int> stale;
+			TMap<unsigned int, TintState>::Iterator it( g_state );
+			TMap<unsigned int, TintState>::Pair *pair;
 			while ( it.NextPair( pair ))
-				if ( pair->Value.lastTic > level.time || level.time - pair->Value.lastTic > 70 )
+				if ( pair->Value.lastTic > zx::gamecopy::Level().time || zx::gamecopy::Level().time - pair->Value.lastTic > 70 )
 					stale.Push( pair->Key );
 			for ( unsigned int i = 0; i < stale.Size(); ++i )
 				g_state.Remove( stale[i] );
@@ -131,7 +132,7 @@ namespace
 	int TintStrength( const TintSubject &s, int blendOp, DWORD styleFlags, int basePct, PalEntry &avgOut, bool &glowOut )
 	{
 		glowOut = false;
-		if ( basePct <= 0 || gamestate != GS_LEVEL || s.who == NULL )
+		if ( basePct <= 0 || gamestate != GS_LEVEL || s.id == 0 )
 			return 0;
 		if ( !s.playerBody )
 			return 0; // players only: floor damage is a player mechanic
@@ -145,11 +146,11 @@ namespace
 		if ( active )
 			activeColor = FloorAverageColor( s.texture );
 
-		float intensity = UpdateIntensity( s.who, active, activeColor, avgOut );
+		float intensity = UpdateIntensity( s.id, active, activeColor, avgOut );
 		if ( intensity <= 0.02f )
 			return 0;
 
-		float pulse = active ? PulseFactor( level.time & 31, PULSE_PEAK, PULSE_DECAY ) : 1.0f;
+		float pulse = active ? PulseFactor( zx::gamecopy::Level().time & 31, PULSE_PEAK, PULSE_DECAY ) : 1.0f;
 		return EffectivePct( basePct, intensity, pulse );
 	}
 } // namespace
@@ -189,21 +190,21 @@ bool DamageTint_WeaponGradient( const TintSubject &s, int blendOp, DWORD styleFl
 	return Gradient( s, blendOp, styleFlags, cl_damagetint_weapon, cl_damagetint_weapon_coverage, vt, vb, out );
 }
 
-bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb )
+bool DamageTint_BeginSpriteGlow( const TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb )
 {
 	// Per-pixel gradient across the sprite's vertical texture span: full tint at the feet (the
 	// larger V), fading to none at the coverage point. Same shader path as the weapon and
 	// mugshot, so it reads identically on any clothing color; protected players glow instead.
 	TintGradient g;
-	if ( !DamageTint_SpriteGradient( TintSubjectOf( actor ), blendOp, styleFlags, vt, vb, g ))
+	if ( !DamageTint_SpriteGradient( s, blendOp, styleFlags, vt, vb, g ))
 		return false;
 	SetGLTint( g );
 	return true;
 }
 
-bool DamageTint_Ramp( const void *who, float &intensity, int &lastTic )
+bool DamageTint_Ramp( unsigned int id, float &intensity, int &lastTic )
 {
-	const TintState *st = g_state.CheckKey( who );
+	const TintState *st = g_state.CheckKey( id );
 	if ( st == NULL )
 		return false;
 	intensity = st->intensity;
@@ -254,11 +255,14 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 		*glowOut = false;
 	if ( consoleplayer < 0 || consoleplayer >= MAXPLAYERS || !playeringame[consoleplayer] )
 		return PalEntry( 0 );
-	AActor *mo = players[consoleplayer].mo;
+	// [rc4l] The console player's body as the render copy holds it.
+	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player( consoleplayer );
+	const zx::gamecopy::ActorRecord *const mo = me != NULL ? zx::gamecopy::Record( me->mo ) : NULL;
+	const TintSubject subject = { mo != NULL ? mo->id : 0u, mo != NULL && mo->playerBody, mo != NULL && mo->tintActive, mo != NULL ? mo->tintTexture : FTextureID() };
 	PalEntry avg;
 	bool glow;
 	// The mugshot has no render style; qualify with the neutral style so only the floor state decides.
-	int pct = TintStrength( TintSubjectOf( mo ), STYLEOP_Add, 0, cl_damagetint_face, avg, glow );
+	int pct = TintStrength( subject, STYLEOP_Add, 0, cl_damagetint_face, avg, glow );
 	if ( pct <= 0 )
 		return PalEntry( 0 );
 	int cov = clamp<int>( cl_damagetint_face_coverage, 0, 100 );
@@ -274,7 +278,7 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 #else // NO_GL -- dedicated server: no renderer, no tint; nothing references these there.
 
 #include "features/damage-tint/damagetint.h"
-bool DamageTint_BeginSpriteGlow( AActor *, int, DWORD, float, float ) { return false; }
+bool DamageTint_BeginSpriteGlow( const zx::damagetint::TintSubject &, int, DWORD, float, float ) { return false; }
 void DamageTint_EndSpriteGlow() {}
 bool DamageTint_SpriteGradient( const zx::damagetint::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
 bool DamageTint_WeaponGradient( const zx::damagetint::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }

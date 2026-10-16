@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The fixture's demo traced inline and on the game thread under ThreadSanitizer must agree tic by tic, with no race in the engine's own code.
+name: game thread
+
+on:
+  pull_request:
+    paths:
+      - 'src/zandronum/src/**'
+      - 'tools/fuactl/**'
+      - 'tools/tsan.supp'
+      - '.github/workflows/game-thread.yml'
+  workflow_dispatch:
+
+jobs:
+  tsan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: game-thread-tsan
+          max-size: 400M
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Software Vulkan and a display
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 xvfb
+
+      - name: Build with ThreadSanitizer and the bridge
+        env:
+          ZX_TSAN: "1"
+          ZX_MCP_BRIDGE: "1"
+        run: ./linux_compile.sh --install-deps 2>&1 | tail -40
+
+      # [rc4l] Races only the engine's own code makes are judged; the drivers and libraries it calls into keep their own.
+      - name: Record and trace the template fixture
+        env:
+          TSAN_OPTIONS: "log_path=${{ github.workspace }}/tsan suppressions=${{ github.workspace }}/tools/tsan.supp halt_on_error=0 second_deadlock_stack=1"
+          FUACTL_ENGINE: ${{ github.workspace }}/build-linux/forkundera
+        run: |
+          set -e
+          cd tools/fuactl
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture record gtfix
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=0 --out "$RUNNER_TEMP/inline.trace"
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=1,fua_gamethread_stress=200 --out "$RUNNER_TEMP/thread.trace"
+          node src/cli.mjs tracediff "$RUNNER_TEMP/inline.trace" "$RUNNER_TEMP/thread.trace"
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture seamcheck gtfix --cvar fua_gamethread=1
+
+      - name: No race in the engine's own code
+        if: always()
+        run: |
+          shopt -s nullglob
+          reports=( tsan.* )
+          for f in "${reports[@]}"; do echo "== $f"; head -120 "$f"; done
+          if [ ${#reports[@]} -gt 0 ]; then echo "ThreadSanitizer found ${#reports[@]} report file(s)"; exit 1; fi

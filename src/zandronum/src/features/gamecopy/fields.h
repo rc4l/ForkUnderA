@@ -4,7 +4,7 @@
 // [rc4l] The one declaration of what the renderer reads of the game, each line a member of a map structure's state (SectorState, SideState, LineState, VertexState in r_defs.h) or of an actor record, from which come the copy's comparison and fill, fua_copy_check, the size check that keeps this list and the structs in step, and the boundary tripwire's patterns for reading a member live.
 
 // [rc4l] ZX_COPY_FIELD(kind, member, group): group is what a change means to the renderer's caches, Shape (walls re-baked), Look (re-checked, re-baked only if the picture changed) or Plane (a plane's placement re-bakes its flats, anything else its walls), and the list has no include guard since each use expands it with the lines it reads defined.
-// [rc4l] ZX_ACTOR_FIELD(member) is an actor member each actor record copies, ZX_ACTOR_DERIVED(type, member) a value the fill works out from the game for it, ZX_PLAYER_FIELD and ZX_PLAYER_DERIVED the same for a player record, and a line kind a use leaves undefined expands to nothing.
+// [rc4l] ZX_ACTOR_FIELD(member) is an actor member each actor record copies, ZX_ACTOR_DERIVED(type, member) a value the fill works out from the game for it, ZX_PLAYER_*, ZX_LEVEL_* and ZX_DECAL_FIELD the same for a player record, the level's and a wall decal's, and a line kind a use leaves undefined expands to nothing.
 
 #ifndef ZX_COPY_FIELD
 #define ZX_COPY_FIELD(kind, member, group)
@@ -25,6 +25,18 @@
 #ifndef ZX_PLAYER_DERIVED
 #define ZX_PLAYER_DERIVED(type, member)
 #define ZX_PLAYER_DERIVED_DEFAULTED
+#endif
+#ifndef ZX_DECAL_FIELD
+#define ZX_DECAL_FIELD(member)
+#define ZX_DECAL_FIELD_DEFAULTED
+#endif
+#ifndef ZX_LEVEL_FIELD
+#define ZX_LEVEL_FIELD(member)
+#define ZX_LEVEL_FIELD_DEFAULTED
+#endif
+#ifndef ZX_LEVEL_DERIVED
+#define ZX_LEVEL_DERIVED(type, member)
+#define ZX_LEVEL_DERIVED_DEFAULTED
 #endif
 
 ZX_COPY_FIELD(sector, planes, Plane)
@@ -56,6 +68,7 @@ ZX_ACTOR_FIELD(velx)
 ZX_ACTOR_FIELD(vely)
 ZX_ACTOR_FIELD(velz)
 ZX_ACTOR_FIELD(angle)
+ZX_ACTOR_FIELD(PrevAngle)
 ZX_ACTOR_FIELD(pitch)
 ZX_ACTOR_FIELD(roll)
 ZX_ACTOR_FIELD(PrevRoll)
@@ -85,6 +98,7 @@ ZX_ACTOR_FIELD(subsector)
 ZX_ACTOR_FIELD(reactiontime)
 ZX_ACTOR_FIELD(health)
 ZX_ACTOR_DERIVED(const void *, who)          // [rc4l] the live actor, compared and never read
+ZX_ACTOR_DERIVED(unsigned int, id)           // [rc4l] its serial, never reused, which renderer caches key on
 ZX_ACTOR_DERIVED(const PClass *, type)
 ZX_ACTOR_DERIVED(const void *, target)       // [rc4l] who its target is
 ZX_ACTOR_DERIVED(int, nextInSector)          // [rc4l] the next record in its sector's list, -1 at the end
@@ -134,6 +148,29 @@ ZX_PLAYER_DERIVED(FWeaponBobIn, bobIn)       // [rc4l] what P_BobWeapon reads of
 ZX_PLAYER_DERIVED(std::vector<pspdef_t>, layers)   // [rc4l] its weapon's layers, in draw order
 ZX_PLAYER_DERIVED(zx::gamecopy::ScreenBlendLayers, screenBlend)   // [rc4l] what V_AddPlayerBlend adds to the screen
 
+ZX_DECAL_FIELD(LeftDistance)
+ZX_DECAL_FIELD(Z)
+ZX_DECAL_FIELD(ScaleX)
+ZX_DECAL_FIELD(ScaleY)
+ZX_DECAL_FIELD(Alpha)
+ZX_DECAL_FIELD(AlphaColor)
+ZX_DECAL_FIELD(Translation)
+ZX_DECAL_FIELD(PicNum)
+ZX_DECAL_FIELD(RenderFlags)
+ZX_DECAL_FIELD(RenderStyle)
+ZX_DECAL_FIELD(Sector)
+
+ZX_LEVEL_FIELD(time)
+ZX_LEVEL_FIELD(maptime)
+ZX_LEVEL_FIELD(flags)
+ZX_LEVEL_FIELD(flags2)
+ZX_LEVEL_FIELD(skyspeed1)
+ZX_LEVEL_FIELD(skyspeed2)
+ZX_LEVEL_FIELD(fadeto)
+ZX_LEVEL_FIELD(outsidefog)
+ZX_LEVEL_DERIVED(FTextureID, sky1)           // [rc4l] sky1texture, which ChangeSky sets
+ZX_LEVEL_DERIVED(FTextureID, sky2)
+
 #ifdef ZX_COPY_FIELD_DEFAULTED
 #undef ZX_COPY_FIELD
 #undef ZX_COPY_FIELD_DEFAULTED
@@ -153,4 +190,16 @@ ZX_PLAYER_DERIVED(zx::gamecopy::ScreenBlendLayers, screenBlend)   // [rc4l] what
 #ifdef ZX_PLAYER_DERIVED_DEFAULTED
 #undef ZX_PLAYER_DERIVED
 #undef ZX_PLAYER_DERIVED_DEFAULTED
+#endif
+#ifdef ZX_DECAL_FIELD_DEFAULTED
+#undef ZX_DECAL_FIELD
+#undef ZX_DECAL_FIELD_DEFAULTED
+#endif
+#ifdef ZX_LEVEL_FIELD_DEFAULTED
+#undef ZX_LEVEL_FIELD
+#undef ZX_LEVEL_FIELD_DEFAULTED
+#endif
+#ifdef ZX_LEVEL_DERIVED_DEFAULTED
+#undef ZX_LEVEL_DERIVED
+#undef ZX_LEVEL_DERIVED_DEFAULTED
 #endif

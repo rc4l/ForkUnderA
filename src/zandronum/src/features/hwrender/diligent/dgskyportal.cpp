@@ -5,7 +5,7 @@
 
 #include "features/hwrender/diligent/dgsky_internal.h"
 #include <vector>
-#include "g_level.h"   // [rc4l] level.DefaultSkybox
+#include "features/gamecopy/players.h"   // [rc4l] the sky viewpoints as the render copy holds them
 
 namespace zx { namespace hwrender {
 
@@ -21,17 +21,17 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skySurfVB;
 static unsigned int g_skySurfVBCapacity = 0;
 
 // [rc4l] The one skybox this frame's sky comes from, or NULL for an ordinary sky, since rendering one per sector multiplies a full scene render by the count (docs/tdr-crash-after-map-loads.md).
-static ASkyViewpoint *CurrentSkyViewpoint()
+static const zx::gamecopy::ActorRecord *CurrentSkyViewpoint()
 {
 	if (!fua_dg_skyportal) return NULL;
 	// [rc4l] The viewpoint the visible sky surfaces name comes first, since the camera sector's shows the right city from the wrong room on a map with several skyboxes.
-	ASkyViewpoint *fromWalls = (ASkyViewpoint *)zx::levelmesh::SkyQuadViewpoint();
+	const zx::gamecopy::ActorRecord *fromWalls = zx::gamecopy::Record(zx::levelmesh::SkyQuadViewpoint());
 	if (fromWalls != NULL) return fromWalls;
-	sector_t *sec = (consoleplayer >= 0 && players[consoleplayer].camera != NULL)
-		? players[consoleplayer].camera->Sector : NULL;
+	const zx::gamecopy::ActorRecord *const camera = zx::gamecopy::CameraOf(consoleplayer);
+	sector_t *sec = camera != NULL ? camera->Sector : NULL;
 	// [rc4l] A stacked ceiling's "skybox" is the stack's anchor, as GLWall::SkyPlane knows, and a sky rendered from it is the town seen from a rooftop.
-	ASkyViewpoint *sb = (sec != NULL && sec->portals[sector_t::ceiling] == NULL) ? sec->GetSkyBox(sector_t::ceiling) : NULL;
-	if (sb == NULL) sb = level.DefaultSkybox;
+	const zx::gamecopy::ActorRecord *sb = (sec != NULL && sec->portals[sector_t::ceiling] == NULL) ? zx::gamecopy::Record(zx::gamecopy::SkyBoxOf(sec, sector_t::ceiling)) : NULL;
+	if (sb == NULL) sb = zx::gamecopy::Record(zx::gamecopy::DefaultSkyBox());
 	return sb;
 }
 
@@ -268,7 +268,7 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 {
 	g_skyPortalActive = false;
 	if (!fua_dg_skyportal) return false;
-	ASkyViewpoint *sb = CurrentSkyViewpoint();
+	const zx::gamecopy::ActorRecord *sb = CurrentSkyViewpoint();
 	if (sb == NULL) return false;
 	if (!EnsureSkyPortalResources()) return false;
 

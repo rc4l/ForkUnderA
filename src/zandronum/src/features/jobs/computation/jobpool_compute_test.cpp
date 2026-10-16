@@ -145,12 +145,15 @@ TEST(JobPool, StopsWorkersWhetherSpinningOrAsleep)
 
 TEST(JobPool, AutoWorkersTakeHalfTheMachineLessTheCallerUpToTheCap)
 {
-	EXPECT_EQ(0, ComputeAutoWorkers(1, 7));
-	EXPECT_EQ(0, ComputeAutoWorkers(2, 7));
-	EXPECT_EQ(1, ComputeAutoWorkers(4, 7));
-	EXPECT_EQ(3, ComputeAutoWorkers(8, 7));
-	EXPECT_EQ(7, ComputeAutoWorkers(32, 7));
-	EXPECT_EQ(0, ComputeAutoWorkers(32, 0));
+	EXPECT_EQ(0, ComputeAutoWorkers(1, 7, 1));
+	EXPECT_EQ(0, ComputeAutoWorkers(2, 7, 1));
+	EXPECT_EQ(1, ComputeAutoWorkers(4, 7, 1));
+	EXPECT_EQ(3, ComputeAutoWorkers(8, 7, 1));
+	EXPECT_EQ(7, ComputeAutoWorkers(32, 7, 1));
+	EXPECT_EQ(0, ComputeAutoWorkers(32, 0, 1));
+	// [rc4l] The game thread takes a core of its own from the pool.
+	EXPECT_EQ(2, ComputeAutoWorkers(8, 7, 2));
+	EXPECT_EQ(0, ComputeAutoWorkers(4, 7, 2));
 }
 
 namespace {

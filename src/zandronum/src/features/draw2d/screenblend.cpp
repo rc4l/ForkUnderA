@@ -24,13 +24,13 @@ namespace zx { namespace draw2d {
 // [rc4l] The blend a sector paints over the view: its height transfer's colormap for the area the eye is in, or the 3D floor fog the eye is under.
 static PalEntry SectorBlend(sector_t *viewsector, int viewArea)
 {
-	if (!viewsector->e->XFloor.ffloors.Size())
+	if (!viewsector->e->rcXFloor.ffloors.Size())
 	{
 		if (!viewsector->heightsec || (viewsector->rc.MoreFlags & SECF_IGNOREHEIGHTSEC)) return 0;
 		return PalEntry(viewArea == kViewAreaAbove ? viewsector->heightsec->topmap
 			: viewArea == kViewAreaBelow ? viewsector->heightsec->bottommap : viewsector->heightsec->midmap);
 	}
-	const TArray<lightlist_t> &lightlist = viewsector->e->XFloor.lightlist;
+	const TArray<lightlist_t> &lightlist = viewsector->e->rcXFloor.lightlist;
 	static TArray<BlendBand> bands;
 	bands.Resize(lightlist.Size());
 	for (unsigned i = 0; i < lightlist.Size(); i++)

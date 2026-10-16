@@ -25,6 +25,7 @@
 //-----------------------------------------------------------------------------
 
 #include <stdio.h>
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
 
 #include "doomdef.h"
 #include "templates.h"
@@ -1375,6 +1376,12 @@ void AM_LevelInit ()
 
 void AM_Stop ()
 {
+	// [rc4l] features/handoff: the automap is the main thread's, so a tic on its own thread stops it in the handoff.
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { AM_Stop (); }, 0, 0 });
+		return;
+	}
 	automapactive = false;
 	stopped = true;
 	V_SetBorderNeedRefresh();

@@ -513,8 +513,64 @@ export function sumReports(reports) {
   return out;
 }
 
+// [rc4l] The part of the frame the HUD check compares: all but the top strip, where the console's notify lines are drawn after the HUD.
+export const HUD_BOX = [0, 0.03, 1, 1];
+
+// [rc4l] The tics the HUD check pauses at: the picture tic and the half second before it, where a HUD message fades and the status bar counts.
+export function hudTics(spec) {
+  return [spec.tic - 30, spec.tic - 15, spec.tic];
+}
+
+// [rc4l] A fixture's demo on Vulkan alone, paused at each of hudTics, its frame with the HUD the handoff recorded held to the same frame with the HUD drawn live (fua_hud_record 0): the recording is the live HUD at that tic, to the pixel.
+export async function hudCheckFixture(f, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
+  const spec = PICTURES[f.name];
+  // [rc4l] No frame-rate readout, which changes from one capture to the next.
+  const { inst, c } = await playTo(f, { engine, store, dir, cvars: { vid_fps: 0, ...cvars } });
+  try {
+    let compared = 0, differed = 0;
+    const worst = [];
+    for (const tic of hudTics(spec)) {
+      await c.rpc("sim.pauseat", { tic });
+      await waitLevelTime(c, tic, { paused: true });
+      const frames = {};
+      for (const record of [1, 0]) {
+        await exec(c, `fua_hud_record ${record}`);
+        await sleep(600);
+        const file = path.join(os.tmpdir(), `fuactl-hud-${f.name}-${tic}-${record}-${process.pid}.png`);
+        if (!(await captureVulkan(c, file))) throw new Error(`${f.name} tic ${tic}: no Vulkan capture`);
+        frames[record] = decodePNG(file);
+      }
+      await exec(c, "fua_hud_record 1");
+      // [rc4l] Below the console's notify lines, which are drawn live after the HUD and may change between the two captures.
+      const max = boxDiffMax(frames[1], frames[0], HUD_BOX);
+      compared++;
+      if (max > 0) { differed++; worst.push(`tic ${tic} block ${max.toFixed(2)}`); }
+      await c.rpc("sim.resume", {});
+    }
+    const line = `${compared} paused tics with the recorded HUD held to the live one, ${differed} differed${worst.length ? ` (${worst.join(", ")})` : ""}`;
+    return { name: f.name, same: compared > 0 && differed === 0, line, report: { walked: compared, differed, found: compared > 0 } };
+  } finally {
+    c.close();
+    await stopInstance(inst);
+  }
+}
+
+// [rc4l] What fua_seams prints: each seam entered (a table line with its entries) and the entries a thread its owner does not allow made, with the first such seam.
+export function parseSeamReport(text) {
+  const total = /^(\d+) violations(?:, the first in (\S+) on the (\w+) thread(?: in (\S+?)[;\s])?)?/m.exec(text);
+  const entered = String(text).split(/\r?\n/).filter((l) => /^\s*\S+\/\S+\s/.test(l)).length;
+  return { walked: entered, differed: total ? Number(total[1]) : 0, first: total && total[2] ? `${total[2]} (${total[3]}${total[4] ? `, ${total[4]}` : ""})` : "", found: !!total, text };
+}
+
+// [rc4l] A fixture's demo played to its picture tic on Vulkan alone, judged by fua_seams: no frame touched game data and no tic the main thread's state, outside the handoff.
+export async function seamCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: {}, gl: false, report: "fua_seams", parse: parseSeamReport,
+    describe: (r) => (r.found ? `${r.walked} seams entered, ${r.differed} violations${r.first ? `, the first in ${r.first}` : ""}` : "the seams were not listed") });
+}
+
 // [rc4l] The checks a fixture's demo can be played under, each judged by its own report.
-export const CHECKS = { vischeck: visCheckFixture, copycheck: copyCheckFixture, spritecheck: spriteCheckFixture, pspritecheck: pspriteCheckFixture, seencheck: seenCheckFixture };
+export const CHECKS = { vischeck: visCheckFixture, copycheck: copyCheckFixture, spritecheck: spriteCheckFixture, pspritecheck: pspriteCheckFixture, seencheck: seenCheckFixture,
+  hudcheck: hudCheckFixture, seamcheck: seamCheckFixture };
 
 // [rc4l] A fixture's demo played with a check's cvars on to its picture tic, then judged by the report the check prints: clean when it compared something and nothing differed; `paused` judges only the frames drawn paused there, from each of the views `views` picks.
 async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, paused = false, views = (spec) => spec.views, report, parse, describe,

@@ -14,6 +14,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "p_3dfloors.h"   // F3DFloor, for the 3D floor wall faces
+#include "features/gamecopy/xfloors.h"   // [rc4l] the copied 3D floors and light lists
 #include "features/levelmesh/computation/lightband_compute.h"   // [rc4l] BandPlane, the band boundaries in map units
 #include "doomdata.h"
 #include "r_sky.h"   // skyflatnum, for the sky surfaces
@@ -334,7 +335,7 @@ static void BandBottoms(const TArray<lightlist_t> &lights, int nLights, float x1
 static int BandLights(const seg_t *seg, const TArray<lightlist_t> *&lights)
 {
 	const sector_t *front = seg->frontsector;
-	lights = (front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+	lights = (front != NULL && front->e != NULL) ? &front->e->rcXFloor.lightlist : NULL;
 	const int n = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
 	return n > kBandsPerPart ? kBandsPerPart : n;
 }
@@ -342,7 +343,7 @@ static int BandLights(const seg_t *seg, const TArray<lightlist_t> *&lights)
 // [rc4l] Put3DWall's rule for a band lit by `ll`: its level unless it points back at the wall's own sector, and then the wall's.
 static int BandLightLevel(const lightlist_t &ll, const seg_t *seg, int wallLevel)
 {
-	return ll.p_lightlevel != &seg->sidedef->sector->lightlevel ? gl_ClampLight(*ll.p_lightlevel) : wallLevel;
+	return ll.p_lightlevel != &seg->sidedef->sector->rc.lightlevel ? gl_ClampLight(*ll.p_lightlevel) : wallLevel;
 }
 
 int DerivedPartBands(const seg_t *seg, const zx::surfaces::DerivedWallSpan &d, const zx::surfaces::DerivedWallLight &dl, PartBand *out)
@@ -411,7 +412,7 @@ bool FFFaceTexture(const seg_t *seg, const F3DFloor *rover, FTextureID &texid, i
 int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, FFFace *out, int max)
 {
 	if (seg->backsector == NULL || seg->backsector->e == NULL || seg->frontsector == NULL) return 0;
-	const TArray<F3DFloor *> &ff = seg->backsector->e->XFloor.ffloors;
+	const TArray<F3DFloor *> &ff = seg->backsector->e->rcXFloor.ffloors;
 	if (ff.Size() == 0) return 0;
 	if (max > kMaxFFFaces) max = kMaxFFFaces;
 
@@ -425,8 +426,8 @@ int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, F
 	struct { float x1, y1, x2, y2; float ztop[2]; float zbottom[2]; } mid;
 	const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 	if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-	mid.x1 = FIXED2FLOAT(lv1->x); mid.y1 = FIXED2FLOAT(lv1->y);
-	mid.x2 = FIXED2FLOAT(lv2->x); mid.y2 = FIXED2FLOAT(lv2->y);
+	mid.x1 = FIXED2FLOAT(lv1->rc.x); mid.y1 = FIXED2FLOAT(lv1->rc.y);   // [rc4l] the copy's, which a polyobject's blend moves
+	mid.x2 = FIXED2FLOAT(lv2->rc.x); mid.y2 = FIXED2FLOAT(lv2->rc.y);
 	const sector_t *fs = seg->frontsector, *bs = seg->backsector;
 	float fch[2], bch[2], ffh[2], bfh[2];
 	fch[0] = FIXED2FLOAT(fs->rc.ceilingplane.ZatPoint(lv1)); fch[1] = FIXED2FLOAT(fs->rc.ceilingplane.ZatPoint(lv2));
@@ -466,9 +467,9 @@ int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, F
 	// [rc4l] This side's own slabs, which take away the water a neighbour's water would wall off, as GL's ClipFFloors does.
 	zx::surfaces::FFRover nearRovers[kMaxFFFaces];
 	int nn = 0;
-	for (unsigned k = 0; fs->e != NULL && k < fs->e->XFloor.ffloors.Size() && nn < max; k++)
+	for (unsigned k = 0; fs->e != NULL && k < fs->e->rcXFloor.ffloors.Size() && nn < max; k++)
 	{
-		F3DFloor *rover = fs->e->XFloor.ffloors[k];
+		F3DFloor *rover = fs->e->rcXFloor.ffloors[k];
 		if (rover != NULL && (rover->flags & FF_EXISTS))
 			ToFFRover(rover, mid.x1, mid.y1, mid.x2, mid.y2, nearRovers[nn++]);
 	}
@@ -494,7 +495,7 @@ int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, F
 		{
 			const lightlist_t &ll = (*lights)[bb[0].lightIndex];
 			f.lightIndex = bb[0].lightIndex;
-			if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel) f.light = gl_ClampLight(*ll.p_lightlevel);
+			if (ll.p_lightlevel != &seg->sidedef->sector->rc.lightlevel) f.light = gl_ClampLight(*ll.p_lightlevel);
 			f.lightFrom = ll.extra_colormap;
 		}
 	}
@@ -746,7 +747,7 @@ static bool BakeFogSheet(const seg_t *seg, MeshRange &range, const zx::surfaces:
 	const line_t *line = seg->linedef;
 	const bool frontSide = seg->sidedef == line->sidedef[0];
 	const vertex_t *va = frontSide ? line->v1 : line->v2, *vb = frontSide ? line->v2 : line->v1;
-	const float x1 = FIXED2FLOAT(va->x), y1 = FIXED2FLOAT(va->y), x2 = FIXED2FLOAT(vb->x), y2 = FIXED2FLOAT(vb->y);
+	const float x1 = FIXED2FLOAT(va->rc.x), y1 = FIXED2FLOAT(va->rc.y), x2 = FIXED2FLOAT(vb->rc.x), y2 = FIXED2FLOAT(vb->rc.y);   // [rc4l] the copy's
 	zx::levelmesh::MidOpeningIn in;
 	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->rc.ceilingplane), x1, y1, x2, y2, in.frontCeiling);
 	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->rc.floorplane), x1, y1, x2, y2, in.frontFloor);
@@ -820,7 +821,7 @@ int BakeSegFromMap(int segIndex)
 	sc.hasOwnLitPiece = false;   // [rc4l] set below; a fog boundary or a flood is a piece a reshade cannot redo
 	const sector_t *front = seg->frontsector;
 	const TArray<lightlist_t> *lights =
-		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+		(front != NULL && front->e != NULL) ? &front->e->rcXFloor.lightlist : NULL;
 	int nLights = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
 	if (nLights > kBandsPerPart) nLights = kBandsPerPart;
 
@@ -967,7 +968,7 @@ int BakeSegFromMap(int segIndex)
 			{
 				// The fog plane defines the light, not the front sector -- GL's own comment.
 				lightlist_t *fl = (rover->target != NULL && rover->top.plane != NULL) ?
-					P_GetPlaneLight(rover->target, rover->top.plane, true) : NULL;
+					zx::gamecopy::GetPlaneLight(rover->target, *rover->top.plane, true) : NULL;
 				if (fl == NULL || fl->extra_colormap == NULL) { MeshSquash(range); continue; }
 
 				// [rc4l] A colour layer RenderTranslucentWall draws unsplit.

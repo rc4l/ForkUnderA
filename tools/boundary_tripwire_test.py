@@ -8,17 +8,29 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc, field_patterns, in_set,  # noqa: E402
+from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc, exempted, field_patterns, in_set,  # noqa: E402
                                lowered, seams, stale_docs, with_doc)
+
+NL = '\n'
 
 RENDER = {'name': 'render', 'files': ['features/sprites/'], 'exclude': ['*/computation/*', '*_test.cpp'],
           'patterns': [{'name': 'actor', 'regex': r'\bAActor\b'}]}
 TABLE = ('ZX_COPY_FIELD(sector, floorplane, secplane_t)\nZX_COPY_FIELD(side, textures, part)\nZX_COPY_FIELD(actor, angle, angle_t)\n'
          '#define ZX_ACTOR_FIELD(member)\nZX_ACTOR_FIELD(sprite)\nZX_ACTOR_DERIVED(const void *, who)   // [rc4l] note\n'
-         'ZX_PLAYER_FIELD(viewz)\nZX_PLAYER_DERIVED(std::vector<pspdef_t>, layers)\n')
+         'ZX_PLAYER_FIELD(viewz)\nZX_PLAYER_DERIVED(std::vector<pspdef_t>, layers)\nZX_LEVEL_FIELD(time)\nZX_LEVEL_DERIVED(FTextureID, sky1)\n'
+         'ZX_DECAL_FIELD(Alpha)\n')
 
 
 class BoundaryTripwire(unittest.TestCase):
+    def test_console_commands_declarations_and_exempt_patterns_read_nothing(self):
+        text = ('class AActor;' + NL + 'void Hook(AActor *a);' + NL + 'CCMD(dump) { AActor *mo = players[0].mo; if (mo) { f(mo); } }' + NL +
+                'void RenderView(player_t *p) { AActor *x; }' + NL + 'return Make(AActor *b);' + NL)
+        out = exempted(text, {'exempt': [r'\bvoid\s+RenderView\s*\([^)]*\)']})
+        self.assertEqual(out.count('AActor'), 2)
+        self.assertEqual(out.count(NL), text.count(NL))
+        self.assertNotIn('players', out)
+        self.assertNotIn('player_t', out)
+
     def test_comments_and_strings_do_not_count(self):
         text = 'a = AActor; // AActor\n/* AActor\nAActor */ s = "AActor";\n'
         stripped = code_only(text)
@@ -85,6 +97,9 @@ class BoundaryTripwire(unittest.TestCase):
         self.assertIn('- actor, worked out by the fill: `who`', text)
         self.assertIn('- player: `viewz`', text)
         self.assertIn('- player, worked out by the fill: `layers`', text)
+        self.assertIn('- level: `time`', text)
+        self.assertIn('- level, worked out by the fill: `sky1`', text)
+        self.assertIn('- decal: `Alpha`', text)
         self.assertIn('- `copy/fill` (Handoff), `a.cpp`', text)
 
     def test_a_readme_with_markers_is_stale_until_rewritten(self):

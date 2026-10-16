@@ -17,6 +17,7 @@
 // never clash with the engine's types.
 //
 #include "mcp_bridge.h"
+#include "features/handoff/gamethread.h"   // [rc4l] the game thread the watchdog watches
 #include "features/handoff/seam.h"   // [rc4l] the seam each thread was in
 
 // [rc4l] Pure decision helper for chaining to the fatal-signal handler that was installed before
@@ -312,6 +313,7 @@ void WriteAbortReport( const char *why )
 // a crash would. A spinning thread cannot be asked what it is doing; it has to be taken and read.
 volatile LONG   g_heartbeat = 0;
 HANDLE          g_mainThread = NULL;
+HANDLE          g_gameThread = NULL;   // [rc4l] features/handoff: the thread running tics beside the main one, once there is one
 volatile LONG   g_hangReported = 0;
 
 void WriteThreadStack( HANDLE thread, const char *why )
@@ -369,9 +371,19 @@ void HangWatchdog()
 {
 	LONG last = -1;
 	int stalls = 0;
+	uint64_t lastGame = 0;
+	int gameStalls = 0;
 	for ( ;; )
 	{
 		Sleep( 5000 );
+		// [rc4l] features/handoff: a tic in flight on the game thread that stops passing its seams is a hang of its own, which the main thread's heartbeat would not show.
+		const uint64_t game = zx::handoff::Heartbeat( true );
+		if ( g_gameThread == NULL || !zx::handoff::TicInFlight() || zx::handoff::GameThreadDone() || game != lastGame ) { lastGame = game; gameStalls = 0; }
+		else if ( ++gameStalls >= 6 )
+		{
+			WriteThreadStack( g_gameThread, "game thread stalled for 30s in a tic" );
+			return;
+		}
 		const LONG now = g_heartbeat;
 		if ( now != last ) { last = now; stalls = 0; continue; }
 		// Level loads legitimately block the main loop, so only a LONG stall counts.
@@ -449,6 +461,17 @@ void AbortHandler( int )
 	_exit( 3 );
 }
 #endif // _WIN32
+
+// [rc4l] features/handoff: the game thread arms its own stack guarantee and hands the watchdog a handle it can read a hang off.
+void MCP_Crash_NoteGameThread()
+{
+#ifdef _WIN32
+	ULONG guarantee = 65536;
+	SetThreadStackGuarantee( &guarantee );
+	DuplicateHandle( GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_gameThread,
+		0, FALSE, DUPLICATE_SAME_ACCESS );
+#endif
+}
 
 // The main thread's proof of life. Cheap enough for the main loop: one interlocked increment.
 void MCP_Crash_NoteAlive()

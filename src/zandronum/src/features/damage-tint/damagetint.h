@@ -12,23 +12,22 @@
 
 #include "doomtype.h"
 
-class AActor;
+namespace zx { namespace damagetint { struct TintGradient; struct TintSubject; } }
 
 // Body sprites: if the actor qualifies (player, normal blend style, on a damaging floor or still
 // fading out), arm the shader's per-pixel multiplicative gradient across the sprite's vertical
 // texture span (vt..vb -- feet at the patch bottom) and return true. The caller MUST call
 // DamageTint_EndSpriteGlow() after its draw when this returns true. (An additive glow was tried
 // first; adding to the LIGHT gets multiplied by the texel, so a red tint on green armor vanished.)
-bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb );
+bool DamageTint_BeginSpriteGlow( const zx::damagetint::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb );
 void DamageTint_EndSpriteGlow();
 
-namespace zx { namespace damagetint { struct TintGradient; struct TintSubject; } }
 
 // [rc4l] A body sprite's gradient over its texture span vt..vb when the actor qualifies, for whichever renderer draws it; false for none.
 bool DamageTint_SpriteGradient( const zx::damagetint::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
 
 // [rc4l] An actor's ramp as it stands, for fua_tintdebug; false before it has one.
-bool DamageTint_Ramp( const void *who, float &intensity, int &lastTic );
+bool DamageTint_Ramp( unsigned int id, float &intensity, int &lastTic );
 
 // [rc4l] The first-person weapon's gradient over its frame's vt..vb, judged by the player's own style; false for none.
 bool DamageTint_WeaponGradient( const zx::damagetint::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );

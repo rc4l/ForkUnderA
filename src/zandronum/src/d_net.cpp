@@ -26,6 +26,7 @@
 //-----------------------------------------------------------------------------
 
 #include <stddef.h>
+#include "features/handoff/loop.h"   // [rc4l] RunTic
 
 #include "version.h"
 #include "menu/menu.h"
@@ -1918,22 +1919,44 @@ void TryRunTics (void)
 				D_DoAdvanceDemo ();
 			}
 			if (debugfile) fprintf (debugfile, "run tic %d\n", gametic);
-			C_Ticker ();
-			M_Ticker ();
-			I_GetTime (true);
-			MCP_SimPreTic (); // [ForkUnderA] tic-scheduled bridge actions (sim.cheatat); no-op unless FUA_MCP_BRIDGE
-			{
-				ZX_ZONE ("sim/gticker"); // [rc4l] the whole tic in features/telemetry, which perf.ticprof reads too
-				G_Ticker ();
-			}
-			MCP_TicProf_TicDone ();
-			zx::telemetry::TicMark ();
-			MCP_SimTrace_TicDone ();
-			gametic++;
-
-			NetUpdate ();	// check for new console commands
+			// [rc4l] features/handoff: the handoff's work, the playsim's tic and the handoff's work again.
+			zx::handoff::RunTic ();
 		}
 		S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
+	}
+}
+
+// [rc4l] features/handoff: how many tics are due now, the input taken and the clock read, running none; TryRunTics's start for a single-player loop that never waits for a tic.
+int Net_TicsDue (void)
+{
+	entertic = I_GetTime (false);
+	const int realtics = entertic - oldentertics;
+	oldentertics = entertic;
+	NetUpdate ();
+	int lowtic = INT_MAX;
+	for (int i = 0; i < doomcom.numnodes; i++)
+		if (nodeingame[i] && nettics[i] < lowtic)
+			lowtic = nettics[i];
+	const int availabletics = ticdup == 1 ? lowtic - gametic : lowtic - gametic / ticdup;
+	int counts;
+	if (realtics < availabletics-1)
+		counts = realtics+1;
+	else if (realtics < availabletics)
+		counts = realtics;
+	else
+		counts = availabletics;
+	return counts > 0 ? counts : 0;
+}
+
+// [rc4l] features/handoff: the turn of the console player's ticcmds from fromTic up to maketic, built but not yet in the game the frame shows, as 32-bit angles.
+void Net_PendingLocalTurn (int fromTic, int &yaw, int &pitch)
+{
+	yaw = pitch = 0;
+	for (int k = fromTic; k < maketic; k++)
+	{
+		const usercmd_t &cmd = localcmds[k % LOCALCMDTICS].ucmd;
+		yaw += cmd.yaw << 16;
+		pitch += cmd.pitch << 16;
 	}
 }
 

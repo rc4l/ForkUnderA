@@ -33,6 +33,7 @@
 */
 
 #include "templates.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
 #include "mcp_bridge.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] HostChildEcho
 #include "p_setup.h"
@@ -783,6 +784,13 @@ int PrintString (int printlevel, const char *outline)
 		return 0;
 	}
 
+	// [rc4l] features/handoff: the console is the main thread's, so a tic on its own thread prints in the handoff.
+	if ( zx::handoff::Deferring() )
+	{
+		zx::handoff::QueuePrint( printlevel, outline );
+		return static_cast<int>( strlen( outline ));
+	}
+
 	// [BB]: outline is const, it may NOT be altered! Since some of the functions below 
 	// alter the output string, we have to make a copy of it and only alter this.
 
@@ -1459,6 +1467,12 @@ void C_ToggleConsole ()
 
 void C_HideConsole ()
 {
+	// [rc4l] features/handoff: the console is the main thread's, so a tic on its own thread hides it in the handoff.
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { C_HideConsole (); }, 0, 0 });
+		return;
+	}
 	// [Leo] Don't let the console close while requesting/receiving a snapshot.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) ||
 		( NETWORK_InClientMode() && ( CLIENT_GetConnectionState() != CTS_ACTIVE )))

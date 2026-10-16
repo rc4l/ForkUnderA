@@ -33,6 +33,7 @@
 */
 
 #include <assert.h>
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
 
 #include "actor.h"
 #include "p_conversation.h"
@@ -1112,6 +1113,8 @@ void P_FreeStrifeConversations ()
 //
 //============================================================================
 
+static void ShowConversation (intptr_t node, intptr_t pauseTic);
+
 void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveangle)
 {
 
@@ -1207,26 +1210,41 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 	// [SB] But this stuff only matters on the client.
 	if (NETWORK_GetState() != NETSTATE_SERVER && pc->player == &players[consoleplayer])
 	{
-		if (CurNode->SpeakerVoice != 0)
+		// [rc4l] features/handoff: the menu is the main thread's, so a tic on its own thread shows it in the handoff.
+		if (zx::handoff::Deferring ())
 		{
-			I_SetMusicVolume (dlg_musicvolume);
+			zx::handoff::QueueUI ({ ShowConversation, intptr_t (CurNode), gametic + 20 });
 		}
-
-		DConversationMenu *cmenu = new DConversationMenu(CurNode);
-
-
-		if (CurNode != PrevNode)
-		{ // Only reset the selection if showing a different menu.
-			DConversationMenu::mSelection = 0;
-			PrevNode = CurNode;
+		else
+		{
+			ShowConversation (intptr_t (CurNode), gametic + 20);
 		}
-
-		// And open the menu
-		M_StartControlPanel (false);
-		M_ActivateMenu(cmenu);
-		ConversationPauseTic = gametic + 20;
-		menuactive = MENU_OnNoPause;
 	}
+}
+
+// [rc4l] The conversation's menu for node, paused until pauseTic, as P_StartConversation opens it.
+static void ShowConversation (intptr_t node, intptr_t pauseTic)
+{
+	FStrifeDialogueNode *const shown = reinterpret_cast<FStrifeDialogueNode *>(node);
+	if (shown->SpeakerVoice != 0)
+	{
+		I_SetMusicVolume (dlg_musicvolume);
+	}
+
+	DConversationMenu *cmenu = new DConversationMenu(shown);
+
+
+	if (shown != PrevNode)
+	{ // Only reset the selection if showing a different menu.
+		DConversationMenu::mSelection = 0;
+		PrevNode = shown;
+	}
+
+	// And open the menu
+	M_StartControlPanel (false);
+	M_ActivateMenu(cmenu);
+	ConversationPauseTic = int (pauseTic);
+	menuactive = MENU_OnNoPause;
 }
 
 //============================================================================

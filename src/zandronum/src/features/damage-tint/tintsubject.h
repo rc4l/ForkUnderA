@@ -17,7 +17,7 @@ namespace zx { namespace damagetint {
 // [rc4l] What the tint needs of an actor: whose it is, whether it is a player's own body, and whether its floor hurts it unprotected and which floor that is.
 struct TintSubject
 {
-	const void *who;
+	unsigned int id;   // [rc4l] its render copy id, 0 for none
 	bool playerBody;
 	bool active;
 	FTextureID texture;

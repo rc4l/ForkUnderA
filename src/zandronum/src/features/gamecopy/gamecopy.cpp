@@ -4,10 +4,18 @@
 #include "features/gamecopy/gamecopy.h"
 #include "features/gamecopy/actors.h"
 #include "features/gamecopy/players.h"
-#include "features/models/models.h"   // [rc4l] gl_IsHUDModelForPlayerAvailable
+#include "features/gamecopy/xfloors.h"
+#include "features/gamecopy/lights.h"
+#include "features/gamecopy/level.h"
+#include "features/gamecopy/particles.h"
+#include "features/gamecopy/decals.h"
+#include "features/gamecopy/seen.h"
+#include "features/gamecopy/polyobjs.h"
+#include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] kTorchPower, kLightAmpPower
 #include "features/gamecopy/computation/recordlinks_compute.h"
 #include "features/gamecopy/computation/filldue_compute.h"
+#include "features/gamecopy/computation/serial_compute.h"
 #include "features/damage-tint/tintsubject.h"
 #include "features/frame/computation/oracle_compute.h"
 #include "features/handoff/seam.h"
@@ -30,9 +38,13 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_data/r_interpolate.h"
+#include "r_sky.h"
+#include "r_data/r_translate.h"
+#include "textures/textures.h"
 
 #include <cstring>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 // [rc4l] Holds the render copy to the live game while tics run inline: before each frame's views, and after each view's interpolations.
@@ -368,12 +380,19 @@ void FillPolyobjects()
 
 std::vector<ActorRecord> g_actors;   // [rc4l] the last fill's actors, reused fill to fill
 std::vector<int> g_firstIn;          // [rc4l] each sector's first record
+std::vector<int> g_skyBoxes;         // [rc4l] each sector's floor and ceiling sky viewpoint records
+int g_defaultSkyBox = -1;
+unsigned int g_lastSerial = kNoId;   // [rc4l] the last id given
+std::unordered_map<unsigned int, int> g_byId;   // [rc4l] each id's record, built by the first lookup after a fill
+bool g_byIdBuilt = false;
+int g_level = 0;   // [rc4l] which level the copy is of
 
 // [rc4l] Every actor in thinker order, then each sector's records linked in its thinglist's order.
 void FillActors()
 {
 	ZX_ZONE("copy/actor_fill");   // [rc4l] the actor records taken
 	g_actors.clear();
+	g_byIdBuilt = false;
 	TThinkerIterator<AActor> it;
 	for (AActor *a; (a = it.Next()) != NULL; )
 	{
@@ -393,6 +412,17 @@ void FillActors()
 		}
 	}
 	ZX_COUNT("copy/actors", "actors", g_actors.size());
+}
+
+int RecordIndexOf(const AActor *a);
+
+// [rc4l] Each sector's sky viewpoints and the level's default one, as records.
+void FillSkyBoxes()
+{
+	g_skyBoxes.resize(numsectors * 2);
+	for (int i = 0; i < numsectors; i++)
+		for (int pos = 0; pos < 2; pos++) g_skyBoxes[i * 2 + pos] = RecordIndexOf(sectors[i].GetSkyBox(pos));
+	g_defaultSkyBox = RecordIndexOf(level.DefaultSkybox);
 }
 
 // [rc4l] The first member two records hold differently, or NULL.
@@ -416,9 +446,31 @@ const char *PlayerDiffers(const PlayerRecord &a, const PlayerRecord &b)
 	return NULL;
 }
 
+LevelRecord g_level_;   // [rc4l] the level as the last fill took it
+
+void TakeLevel(LevelRecord &out)
+{
+#define ZX_LEVEL_FIELD(m) out.m = level.m;
+#include "features/gamecopy/fields.h"
+#undef ZX_LEVEL_FIELD
+	out.sky1 = sky1texture;
+	out.sky2 = sky2texture;
+}
+
+const char *LevelDiffers(const LevelRecord &a, const LevelRecord &b)
+{
+#define ZX_LEVEL_FIELD(m) if (!Same(a.m, b.m)) return #m;
+#define ZX_LEVEL_DERIVED(type, m) if (!Same(a.m, b.m)) return #m;
+#include "features/gamecopy/fields.h"
+#undef ZX_LEVEL_FIELD
+#undef ZX_LEVEL_DERIVED
+	return NULL;
+}
+
 PlayerRecord g_players[MAXPLAYERS];   // [rc4l] the last fill's players
 bool g_inGame[MAXPLAYERS];
 std::vector<ViewSource> g_sources;    // [rc4l] the last fill's view sources
+std::vector<CameraTexture> g_cameras;  // [rc4l] the last fill's camera textures
 
 // [rc4l] The index of a live actor's record in this fill, -1 for none.
 int RecordIndexOf(const AActor *a)
@@ -453,7 +505,9 @@ void TakePlayer(player_t &live, PlayerRecord &out)
 	out.weaponFOVScale = live.ReadyWeapon != NULL ? live.ReadyWeapon->FOVScale : 0.f;
 	out.weaponType = live.ReadyWeapon != NULL ? live.ReadyWeapon->GetClass() : NULL;
 	out.weaponYAdjust = live.ReadyWeapon != NULL ? live.ReadyWeapon->YAdjust : fixed_t(0);
-	out.hudModel = gl_IsHUDModelForPlayerAvailable(&live);
+	// [rc4l] Find, not operator[], which would make the layer it looks for.
+	const pspdef_t *const weaponLayer = live.psprites.Find(ps_weapon);
+	out.hudModel = live.ReadyWeapon != NULL && weaponLayer != NULL && gl_IsHUDModelFor(live.ReadyWeapon->GetClass(), weaponLayer->state);
 	out.bobIn = P_WeaponBobInputs(&live);
 	out.layers.clear();
 	for (unsigned i = 0; i < live.psprites.Size(); i++) out.layers.push_back(live.psprites.Element(i));
@@ -505,7 +559,13 @@ void FillViewSources()
 	};
 	for (int i = 0; i < MAXPLAYERS; i++)
 		if (g_inGame[i]) add(players[i].camera != NULL ? (AActor *)players[i].camera : players[i].mo);
-	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next) add(p->Viewpoint);
+	g_cameras.clear();
+	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next)
+	{
+		add(p->Viewpoint);
+		const CameraTexture c = { p->Texture, RecordIndexOf(p->Viewpoint), p->FOV };
+		g_cameras.push_back(c);
+	}
 }
 
 bool SameSource(const ViewSource &a, const ViewSource &b)
@@ -539,6 +599,8 @@ void TakeActor(AActor &live, ActorRecord &out)
 #include "features/gamecopy/fields.h"
 #undef ZX_ACTOR_FIELD
 	out.who = &live;
+	if (live.rcSerial == kNoId) live.rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
+	out.id = live.rcSerial;
 	out.type = live.GetClass();
 	out.target = live.target;
 	out.nextInSector = -1;
@@ -584,6 +646,41 @@ const ActorRecord *RecordOf(const AActor *actor)
 	return Record(RecordIndexOf(actor));
 }
 
+const ActorRecord *RecordById(unsigned int id)
+{
+	if (id == kNoId) return NULL;
+	if (!g_byIdBuilt)
+	{
+		g_byId.clear();
+		for (size_t i = 0; i < g_actors.size(); i++) g_byId[g_actors[i].id] = (int)i;
+		g_byIdBuilt = true;
+	}
+	const auto it = g_byId.find(id);
+	if (it != g_byId.end()) return &g_actors[it->second];
+	ZX_COUNT("copy/stale_ids", "lookups", 1);   // [rc4l] a cached id whose actor the copy no longer holds
+	return NULL;
+}
+
+int CopyTic()
+{
+	return g_filledTic;
+}
+
+int CopyLevel()
+{
+	return g_level;
+}
+
+const LevelRecord &Level()
+{
+	return g_level_;
+}
+
+const std::vector<CameraTexture> &CameraTextures()
+{
+	return g_cameras;
+}
+
 const PlayerRecord *Player(int n)
 {
 	return n >= 0 && n < MAXPLAYERS && g_inGame[n] ? &g_players[n] : NULL;
@@ -626,6 +723,17 @@ void AddScreenBlend(const ScreenBlendLayers &s, float blend[4])
 	if (blend[3] > s.cap) blend[3] = s.cap;
 }
 
+int SkyBoxOf(const sector_t *sector, int plane)
+{
+	const ptrdiff_t i = sector - sectors;
+	return i >= 0 && i * 2 + 1 < (ptrdiff_t)g_skyBoxes.size() ? g_skyBoxes[i * 2 + plane] : -1;
+}
+
+int DefaultSkyBox()
+{
+	return g_defaultSkyBox;
+}
+
 int FirstActorIn(const sector_t *sector)
 {
 	const ptrdiff_t i = sector - sectors;
@@ -646,11 +754,24 @@ void InitLevel()
 	g_blends.Clear();
 	g_gathering.Clear();
 	g_actors.clear();
+	g_byIdBuilt = false;
+	g_level++;
 	g_firstIn.clear();
+	g_skyBoxes.clear();
+	g_defaultSkyBox = -1;
 	g_sources.clear();
+	g_cameras.clear();
 	g_viewCamera = -1;
 	for (int i = 0; i < MAXPLAYERS; i++) g_inGame[i] = false;
 	g_filledTic = -1;
+	TakeLevel(g_level_);
+	InitXFloors();
+	InitLights();
+	InitSeen();
+	InitPolyBSPs();
+	// [rc4l] features/handoff: room for what a level's scripts add while its tics run, so the arrays a frame reads do not move under it.
+	TexMan.ReserveHeadroom(1024);
+	for (int i = 0; i < NUM_TRANSLATION_TABLES; i++) translationtables[i].Grow(256);
 }
 
 void FillMap()
@@ -662,10 +783,18 @@ void FillNow()
 {
 	g_filledTic = gametic;
 	ZX_SEAM("copy/fill", Handoff);
+	MergeSeen();
 	FillSectors();
+	FillXFloors();
 	FillSides();
 	FillPolyobjects();
+	FillPolyBSPs();
+	TakeLevel(g_level_);
 	FillActors();
+	FillLights();
+	FillParticles();
+	FillDecals();
+	FillSkyBoxes();
 	FillPlayers();
 	FillViewSources();
 	g_gathering.Clear();
@@ -710,6 +839,8 @@ void BlendMap(fixed_t smoothratio)
 			Put(v.rc.x, ComputeBlendFixed(b.oldXY[i * 2], b.curXY[i * 2], smoothratio));
 			Put(v.rc.y, ComputeBlendFixed(b.oldXY[i * 2 + 1], b.curXY[i * 2 + 1], smoothratio));
 		}
+	BlendXFloors();
+	BlendPolyBSPs();
 }
 
 // [rc4l] The seen bits the renderer sets on the live map between tics (ML_MAPPED, SECF_DRAWN), which no tic changes, taken as the copy's while a check compares.
@@ -728,6 +859,11 @@ int LineChangeIgnoringSeen(line_t &l)
 	const int change = LineChange(l);
 	l.rc.flags = saved;
 	return change;
+}
+
+bool CopyCheckOn()
+{
+	return fua_copy_check;
 }
 
 void CheckBeforeViews()
@@ -792,6 +928,11 @@ void CheckBeforeViews()
 		if (differs != NULL && zx::frame::ComputeOracleDiffer(g_before, 6))
 			zx::frame::ComputeOracleNote(g_before, "  player %d's %s is not the live player's\n", i, differs);
 	}
+	g_before.checked++;
+	LevelRecord freshLevel;
+	TakeLevel(freshLevel);
+	if (const char *differs = LevelDiffers(g_level_, freshLevel))
+		if (zx::frame::ComputeOracleDiffer(g_before, 6)) zx::frame::ComputeOracleNote(g_before, "  the level's %s is not the live level's\n", differs);
 	for (const ViewSource &v : g_sources)
 	{
 		g_before.checked++;

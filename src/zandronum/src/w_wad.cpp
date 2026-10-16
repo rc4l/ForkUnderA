@@ -48,6 +48,7 @@
 #include "cmdlib.h"
 #include "c_dispatch.h"
 #include "w_wad.h"
+#include "features/handoff/seam.h"   // [rc4l] wad/read
 #include "w_zip.h"
 #include "m_crc32.h"
 #include "v_text.h"
@@ -1626,6 +1627,7 @@ FWadLump & FWadLump::operator= (const FWadLump &copy)
 FWadLump::FWadLump(FResourceLump *lump, bool alwayscache)
 : FileReader()
 {
+	ZX_SEAM_UNTIMED("wad/read", Main);   // [rc4l] features/handoff: an archive has one reader, so only the main thread reads lumps
 	FileReader *f = lump->GetReader();
 
 	if (f != NULL && f->GetFile() != NULL && !alwayscache)

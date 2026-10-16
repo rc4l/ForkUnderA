@@ -5,6 +5,7 @@
 // geometry is built and nothing renders from this yet -- see features/levelmesh/README.md.
 
 #include "features/levelmesh/levelmesh.h"
+#include "features/gamecopy/xfloors.h"   // [rc4l] the copied light lists
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/levelmesh/computation/linequery_compute.h"   // [rc4l] fua_find_lines' key=value and texture-prefix matching
 #include "features/levelmesh/computation/lookhits_compute.h"   // [rc4l] fua_look's pieces behind the nearest
@@ -56,8 +57,8 @@ static int FFloorBlocksForSide(const side_t *side)
 {
 	int blocks = 0;
 	const line_t *ln = side->linedef;
-	if (ln->frontsector && ln->frontsector->e) blocks += (int)ln->frontsector->e->XFloor.ffloors.Size();
-	if (ln->backsector && ln->backsector->e) blocks += (int)ln->backsector->e->XFloor.ffloors.Size();
+	if (ln->frontsector && ln->frontsector->e) blocks += (int)ln->frontsector->e->rcXFloor.ffloors.Size();
+	if (ln->backsector && ln->backsector->e) blocks += (int)ln->backsector->e->rcXFloor.ffloors.Size();
 	return blocks;
 }
 
@@ -99,7 +100,7 @@ void CollectSideBudgets(Collected &out)
 			// [rc4l] SplitWall keys off the FRONT sector's lightlist, so that is what decides
 			// whether this side's vertex count can vary.
 			const sector_t *fs = side->sector;
-			if (fs != NULL && fs->e != NULL && (int)fs->e->XFloor.lightlist.Size() > 1)
+			if (fs != NULL && fs->e != NULL && (int)fs->e->rcXFloor.lightlist.Size() > 1)
 				out.sidesTouchingBands++;
 		}
 
@@ -110,8 +111,8 @@ void CollectSideBudgets(Collected &out)
 	{
 		const sector_t *sec = &sectors[i];
 		if (sec->e == NULL) continue;
-		if (sec->e->XFloor.ffloors.Size() > 0) out.sectorsWithFFloors++;
-		const int ll = (int)sec->e->XFloor.lightlist.Size();
+		if (sec->e->rcXFloor.ffloors.Size() > 0) out.sectorsWithFFloors++;
+		const int ll = (int)sec->e->rcXFloor.lightlist.Size();
 		if (ll > out.maxLightlistSize) out.maxLightlistSize = ll;
 		if (ll > 1) out.sectorsWithBands++;
 	}
@@ -129,7 +130,7 @@ void CollectSideBudgets(Collected &out)
 
 fixed_t LightListBottom(const sector_t *sector, unsigned entry, fixed_t x, fixed_t y)
 {
-	const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
+	const TArray<lightlist_t> &lightlist = sector->e->rcXFloor.lightlist;
 	return entry + 1 < lightlist.Size() ? lightlist[entry + 1].plane.ZatPoint(x, y) : sector->rc.floorplane.ZatPoint(x, y);
 }
 
@@ -300,7 +301,7 @@ CCMD( fua_sector_at )
 				rs->sectornum, ft ? ft->Name.GetChars( ) : "-", FIXED2FLOAT( rs->rc.floorplane.ZatPoint( x, y ) ),
 				ct ? ct->Name.GetChars( ) : "-", FIXED2FLOAT( rs->rc.ceilingplane.ZatPoint( x, y ) ),
 				rs->rc.GetTexture( sector_t::ceiling ) == skyflatnum ? " (sky)" : "",
-				( rs->e != NULL && rs->e->XFloor.ffloors.Size( ) ) ? " [3D floors]" : "" );
+				( rs->e != NULL && rs->e->rcXFloor.ffloors.Size( ) ) ? " [3D floors]" : "" );
 	}
 }
 
@@ -463,7 +464,7 @@ CCMD( fua_levelmesh_stats )
 		for ( int i = 0; i < numsectors; i++ )
 		{
 			if ( sectors[i].e == NULL ) continue;
-			const unsigned n = sectors[i].e->XFloor.ffloors.Size( );
+			const unsigned n = sectors[i].e->rcXFloor.ffloors.Size( );
 			if ( n == 0 ) continue;
 			ffSectors++;
 			ffPlanes += (int)n * 2;   // each 3D floor contributes a top and a bottom plane
@@ -471,8 +472,8 @@ CCMD( fua_levelmesh_stats )
 		for ( int i = 0; i < numsegs; i++ )
 		{
 			const sector_t *fs = segs[i].frontsector, *bs = segs[i].backsector;
-			if (( fs != NULL && fs->e != NULL && fs->e->XFloor.ffloors.Size( ) > 0 ) ||
-				( bs != NULL && bs->e != NULL && bs->e->XFloor.ffloors.Size( ) > 0 ))
+			if (( fs != NULL && fs->e != NULL && fs->e->rcXFloor.ffloors.Size( ) > 0 ) ||
+				( bs != NULL && bs->e != NULL && bs->e->rcXFloor.ffloors.Size( ) > 0 ))
 				ffSegs++;
 		}
 		int flatOwn = 0, flat3D = 0;
@@ -900,10 +901,10 @@ CCMD( fua_look )
 				}
 				// [rc4l] The light-list band GL lights this plane with under a 3D floor, as the flat bake takes it now.
 				sector_t *ls = ss->render_sector ? ss->render_sector : ss->sector;
-				if ( ls != NULL && ls->e != NULL && ls->e->XFloor.ffloors.Size( ) > 0 )
+				if ( ls != NULL && ls->e != NULL && ls->e->rcXFloor.ffloors.Size( ) > 0 )
 				{
 					const bool ceil = res.HitType == TRACE_HitCeiling;
-					lightlist_t *band = P_GetPlaneLight(ls, ceil ? &ls->ceilingplane : &ls->floorplane, ceil );
+					lightlist_t *band = zx::gamecopy::GetPlaneLight(ls, ceil ? ls->rc.ceilingplane : ls->rc.floorplane, ceil );
 					const PalEntry bc = band->extra_colormap != NULL ? band->extra_colormap->Color : PalEntry( 0 );
 					Printf( "          3D floor band: light %d, colour %02x%02x%02x\n",
 							band->p_lightlevel != NULL ? *band->p_lightlevel : -1, bc.r, bc.g, bc.b );
@@ -1512,8 +1513,8 @@ CCMD( fua_sector_lights )
 	if ( s < 0 || s >= numsectors ) { Printf( "no sector %d: the map has %d\n", s, numsectors ); return; }
 	const sector_t &sec = sectors[s];
 	if ( sec.e == NULL ) { Printf( "sector %d has no extended data\n", s ); return; }
-	const TArray<lightlist_t> &ll = sec.e->XFloor.lightlist;
-	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->XFloor.ffloors.Size( ), sec.rc.lightlevel );
+	const TArray<lightlist_t> &ll = sec.e->rcXFloor.lightlist;
+	Printf( "sector %d: %u lights, %u 3D floors, own light %d\n", s, ll.Size( ), sec.e->rcXFloor.ffloors.Size( ), sec.rc.lightlevel );
 	// [rc4l] Each plane's own light, which GL keeps over a 3D floor's band when it is absolute or the band is the sector's own, and the sector's colour.
 	const PalEntry own = sec.rc.ColorMap != NULL ? sec.rc.ColorMap->Color : PalEntry( 0 );
 	// [rc4l] With the colour's alpha (GL's blend factor), its desaturation and its fade, what gl_CalcLightColor and gl_SetFog read beside it.
@@ -1531,7 +1532,7 @@ CCMD( fua_sector_lights )
 		Printf( "  %u: plane z %.1f, light %d%s, colour %02x%02x%02x, flags %x, caster %s %d\n", i,
 			FIXED2FLOAT( ll[i].plane.ZatPoint( sec.soundorg[0], sec.soundorg[1] ) ),
 			ll[i].p_lightlevel != NULL ? *ll[i].p_lightlevel : -1,
-			ll[i].p_lightlevel == &sec.lightlevel ? " (own)" : "", c.r, c.g, c.b, ll[i].flags,
+			ll[i].p_lightlevel == &sec.rc.lightlevel ? " (own)" : "", c.r, c.g, c.b, ll[i].flags,
 			ll[i].caster != NULL ? "a 3D floor, control sector" : "none", model );
 	}
 }
@@ -1646,7 +1647,7 @@ CCMD( fua_find_3dfloors )
 	{
 		sector_t *sec = &sectors[i];
 		if ( sec->e == NULL ) continue;
-		const unsigned n = sec->e->XFloor.ffloors.Size( );
+		const unsigned n = sec->e->rcXFloor.ffloors.Size( );
 		if ( n == 0 ) continue;
 		total++;
 
@@ -1666,7 +1667,7 @@ CCMD( fua_find_3dfloors )
 
 		for ( unsigned f = 0; f < n; f++ )
 		{
-			F3DFloor *r = sec->e->XFloor.ffloors[f];
+			F3DFloor *r = sec->e->rcXFloor.ffloors[f];
 			if ( r == NULL || r->top.plane == NULL ) continue;
 			// ::top is the CONTROL sector's ceiling plane, which is the surface walked on -- a control
 			// sector is modelled upside down. Getting that backwards is what once left decals floating.

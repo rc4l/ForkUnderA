@@ -33,6 +33,7 @@
 */
 
 #include <stdlib.h>
+#include "features/handoff/seam.h"   // [rc4l] gc seams
 #include <string.h>
 
 #include "cmdlib.h"
@@ -452,6 +453,7 @@ void DObject::InPlaceConstructor (void *mem)
 DObject::DObject ()
 : Class(0), ObjectFlags(0)
 {
+	ZX_SEAM_UNTIMED ("gc/object", GameData);   // [rc4l] features/handoff: an object joins the collector's list, a tic's or the handoff's to touch
 	ObjectFlags = GC::CurrentWhite & OF_WhiteBits;
 	ObjNext = GC::Root;
 	GC::Root = this;
@@ -460,6 +462,7 @@ DObject::DObject ()
 DObject::DObject (PClass *inClass)
 : Class(inClass), ObjectFlags(0)
 {
+	ZX_SEAM_UNTIMED ("gc/object", GameData);
 	ObjectFlags = GC::CurrentWhite & OF_WhiteBits;
 	ObjNext = GC::Root;
 	GC::Root = this;

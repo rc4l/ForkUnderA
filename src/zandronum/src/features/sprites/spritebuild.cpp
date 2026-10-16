@@ -3,6 +3,7 @@
 
 #include "features/sprites/spritebuild.h"
 #include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
+#include "features/gamecopy/players.h"   // [rc4l] CameraOf
 #include "features/damage-tint/tintsubject.h"   // [rc4l] TintSubject
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
@@ -128,7 +129,7 @@ int StyleBlendMode(const FRenderStyle &s, float alpha)
 // [rc4l] The lower edge of each light list entry at the actor, as SplitSprite and SetSpriteColor measure it.
 static int LightListBottoms(const ActorRecord *actor, const sector_t *sector, float *bottoms, int max)
 {
-	const TArray<lightlist_t> &lightlist = actor->Sector->e->XFloor.lightlist;
+	const TArray<lightlist_t> &lightlist = actor->Sector->e->rcXFloor.lightlist;
 	int n = 0;
 	for (unsigned i = 0; i < lightlist.Size() && n < max; i++)
 		bottoms[n++] = FIXED2FLOAT(zx::levelmesh::LightListBottom(sector, i, actor->x, actor->y));
@@ -202,7 +203,7 @@ static bool SubjectOf(const ActorRecord *thing, Subject &s)
 struct Look
 {
 	bool fullbright;
-	int lightlevel;
+	int light;   // [rc4l] its light level
 	FColormap cm;
 	SpriteStyleOut so;
 	bool inverse;      // [rc4l] drawn in TM_INVERSE, as gl_GetRenderStyle takes InvertSource
@@ -214,14 +215,14 @@ static bool LookOf(const ActorRecord *thing, const Subject &s, bool disableFullb
 	// [rc4l] Fullbright unless GLDEFS turns it off for this frame, the sky-aware sector light, and a glowing floor.
 	l.fullbright = (thing->flags5 & MF5_BRIGHT) || ((thing->renderflags & RF_FULLBRIGHT) && !disableFullbright);
 	sector_t *rendersector = s.rendersector;
-	l.lightlevel = l.fullbright ? 255 : gl_ClampLight(rendersector->rc.GetTexture(sector_t::ceiling) == skyflatnum ?
+	l.light = l.fullbright ? 255 : gl_ClampLight(rendersector->rc.GetTexture(sector_t::ceiling) == skyflatnum ?
 		rendersector->rc.GetCeilingLight() : rendersector->rc.GetFloorLight());
 	{
 		FTexture *floortex = TexMan[rendersector->rc.GetTexture(sector_t::floor)];
 		if (floortex != NULL && floortex->isGlowing())
-			l.lightlevel = ComputeSpriteGlow(l.lightlevel, (s.thingz - rendersector->rc.floorplane.ZatPoint(s.thingx, s.thingy)).Raw(),
+			l.light = ComputeSpriteGlow(l.light, (s.thingz - rendersector->rc.floorplane.ZatPoint(s.thingx, s.thingy)).Raw(),
 				floortex->gl_info.GlowHeight);
-		l.lightlevel = (BYTE)l.lightlevel;
+		l.light = (BYTE)l.light;
 	}
 
 	FRenderStyle style = thing->RenderStyle;
@@ -296,7 +297,7 @@ static PalEntry ThingColorOf(const ActorRecord *thing)
 // [rc4l] A model as Process, Draw and gl_RenderModel take it: one band, lit from the light list entry at the actor's middle, its surfaces captured under the pose's matrix.
 static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &l, bool checked)
 {
-	int lightlevel = l.lightlevel;
+	int lightlevel = l.light;
 	FColormap cm = l.cm;
 	if (!gl_fixedcolormap && !l.fullbright)
 	{
@@ -304,7 +305,7 @@ static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &
 		const int n = LightListBottoms(thing, thing->Sector, bottoms, kMaxBands);
 		// [rc4l] SetSpriteColor, against a model's single height and the actor's y as GL measures it.
 		const int entry = ComputeSpriteColorEntry(s.z, float(thing->y + (thing->height >> 1)), bottoms, n);
-		if (entry >= 0) TakeListLight(thing->Sector->e->XFloor.lightlist[entry], false, lightlevel, cm);
+		if (entry >= 0) TakeListLight(thing->Sector->e->rcXFloor.lightlist[entry], false, lightlevel, cm);
 	}
 	DrawFade(l.so, lightlevel, cm);
 	float dyn[3];
@@ -367,7 +368,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	{
 		// [rc4l] The floor and ceiling GL clips against: a 3D floor the actor stands on, a height transfer, or the sector's own.
 		float btm = 1000000.0f, top = -1000000.0f;
-		extsector_t::xfloor &xf = thing->Sector->e->XFloor;
+		extsector_t::xfloorcopy &xf = thing->Sector->e->rcXFloor;
 		if (xf.ffloors.Size())
 		{
 			for (unsigned i = 0; i < xf.ffloors.Size(); i++)
@@ -407,28 +408,28 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	Look look;
 	if (!LookOf(thing, s, fi.disableFullbright, fi.transparent, look)) return 0;
 	const bool fullbright = look.fullbright;
-	const int lightlevel = look.lightlevel;
+	const int lightlevel = look.light;
 	const FColormap cm = look.cm;
 	const SpriteStyleOut so = look.so;
 
 	// [rc4l] Bands: one, unless a 3D floor's light list cuts the sprite; an XY billboard takes the band holding its centre instead.
-	struct Band { float z1, z2, vt, vb; int lightlevel; FColormap cm; };
+	struct Band { float z1, z2, vt, vb; int light; FColormap cm; };
 	Band bands[kMaxBands];
 	int nbands = 0;
-	const TArray<lightlist_t> &lightlist = thing->Sector->e->XFloor.lightlist;
-	const bool xyProcess = !(thing->renderflags & RF_FORCEYBILLBOARD) && type == RF_FACESPRITE && players[consoleplayer].camera &&
+	const TArray<lightlist_t> &lightlist = thing->Sector->e->rcXFloor.lightlist;
+	const bool xyProcess = !(thing->renderflags & RF_FORCEYBILLBOARD) && type == RF_FACESPRITE && zx::gamecopy::CameraOf(consoleplayer) != NULL &&
 		(r_billboard_mode == 1 || thing->renderflags & RF_FORCEXYBILLBOARD);
 	if (xyProcess || lightlist.Size() == 0 || gl_fixedcolormap || fullbright)
 	{
 		Band &b = bands[nbands++];
-		b.z1 = e.z1; b.z2 = e.z2; b.vt = fi.vt; b.vb = fi.vb; b.lightlevel = lightlevel; b.cm = cm;
+		b.z1 = e.z1; b.z2 = e.z2; b.vt = fi.vt; b.vb = fi.vb; b.light = lightlevel; b.cm = cm;
 		if (xyProcess && !gl_fixedcolormap && !fullbright)
 		{
 			float bottoms[kMaxBands];
 			const int n = LightListBottoms(thing, thing->Sector, bottoms, kMaxBands);
 			// [rc4l] GL measures from the actor's y, not its z, and in raw 16.16 units; kept so the two agree.
 			const int entry = ComputeSpriteColorEntry(e.z2, float(thing->y + (thing->height >> 1)), bottoms, n);
-			if (entry >= 0) TakeListLight(lightlist[entry], false, b.lightlevel, b.cm);
+			if (entry >= 0) TakeListLight(lightlist[entry], false, b.light, b.cm);
 		}
 	}
 	else
@@ -442,7 +443,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 			Band &b = bands[nbands++];
 			b.z1 = split[i].z1; b.z2 = split[i].z2; b.vt = split[i].vt; b.vb = split[i].vb;
 			b.cm = cm;
-			TakeListLight(lightlist[split[i].entry], true, b.lightlevel, b.cm);
+			TakeListLight(lightlist[split[i].entry], true, b.light, b.cm);
 		}
 	}
 
@@ -455,13 +456,13 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	if (xyDraw || roll) view.ViewAngles(viewYaw, viewPitch);
 	const float rollDegrees = roll ? zx::ComputeSpriteRollDegrees(thing->PrevRoll, thing->roll, frac.Raw()) : 0.f;
 	const int rel = fullbright ? 0 : getExtraLight();
-	const zx::damagetint::TintSubject tint = { thing->who, thing->playerBody, thing->tintActive, thing->tintTexture };
+	const zx::damagetint::TintSubject tint = { thing->id, thing->playerBody, thing->tintActive, thing->tintTexture };
 
 	int drawn = 0;
 	for (int i = 0; i < nbands && drawn < max; i++)
 	{
 		Band &b = bands[i];
-		DrawFade(so, b.lightlevel, b.cm);
+		DrawFade(so, b.light, b.cm);
 
 		SpriteEdges be = e;
 		be.z1 = b.z1; be.z2 = b.z2;
@@ -483,11 +484,11 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		mp.mirrorView = zx::levelmesh::MirrorCaptureView();
 		mp.stackSlot = zx::levelmesh::StackCaptureSlot();
 		mp.dynLightIndex = -1;
-		mp.lightLevel = b.lightlevel;
+		mp.lightLevel = b.light;
 		mp.lightColor = b.cm.LightColor.d;
 		mp.fadeColor = b.cm.FadeColor.d;
 		const SpriteDrawLook drawLook = SpriteDrawLookAt(so.style, so.trans, b.cm, x, y, false);
-		zx::levelmesh::CaptureSpriteShading(b.lightlevel, rel, b.cm, drawLook, ThingColorOf(thing).d, mp);
+		zx::levelmesh::CaptureSpriteShading(b.light, rel, b.cm, drawLook, ThingColorOf(thing).d, mp);
 		mp.stencil = (so.style.flags & STYLEF_ColorIsFixed) != 0;
 		// [rc4l] Under a fog layer GL lets every texel with any alpha through, both passes.
 		mp.alphaTest = so.hw != kHwNoAlphaTest && !drawLook.fogLayer;
@@ -508,7 +509,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		{
 			SpritePiece &f = out[drawn++];
 			f = p;
-			zx::levelmesh::CaptureFogLayer(b.lightlevel, rel, b.cm, f.piece);
+			zx::levelmesh::CaptureFogLayer(b.light, rel, b.cm, f.piece);
 		}
 	}
 	return drawn;
@@ -530,7 +531,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	if (gl_fixedcolormap) cm.Clear();
 	else if (!particle->bright)
 	{
-		const TArray<lightlist_t> &lightlist = sector->e->XFloor.lightlist;
+		const TArray<lightlist_t> &lightlist = sector->e->rcXFloor.lightlist;
 		cm = sector->rc.ColorMap;
 		for (unsigned i = 0; i < lightlist.Size(); i++)
 		{
@@ -817,11 +818,11 @@ void BuildSprites(const ActorRecord *const *things, int count)
 	}
 }
 
-void BuildParticle(particle_t *particle, sector_t *sector)
+void BuildParticle(particle_t *particle, const void *who, sector_t *sector)
 {
 	SpritePiece p;
 	const bool drawn = DeriveParticle(particle, sector, p);
-	if (drawn && fua_sprite_check) Note(g_ours, particle, true, p.piece, p.quad, 4);
+	if (drawn && fua_sprite_check) Note(g_ours, who, true, p.piece, p.quad, 4);
 	if (drawn && zx::levelmesh::DynamicCaptureActive())
 	{
 		zx::levelmesh::DynAppend(p.quad, 4, p.piece);

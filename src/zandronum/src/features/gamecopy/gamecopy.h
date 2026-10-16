@@ -21,6 +21,9 @@ void BlendMap(zx::Fixed smoothratio);
 // [rc4l] Where each interpolation adds its values at the start and end of the tic while FillMap gathers them.
 Blends &GatheringBlends();
 
+// [rc4l] Whether fua_copy_check is on, which has a view GL does not draw move the live game too.
+bool CopyCheckOn();
+
 // [rc4l] fua_copy_check, before a frame's views: what no blend moves still matches the live game, which only something changing the game outside a tic breaks.
 void CheckBeforeViews();
 // [rc4l] fua_copy_check, after a view's interpolations moved the live game: the copy's blends landed where they did.

@@ -11,6 +11,7 @@
 
 // [rc4l] Workers beside the main thread for a frame's parallel work: -1 picks by the machine, 0 runs everything on the main thread.
 CVAR(Int, fua_jobs_threads, -1, 0)
+EXTERN_CVAR(Bool, fua_gamethread)   // [rc4l] features/handoff: the game thread runs beside the pool's workers
 // [rc4l] Microseconds an idle worker polls for the next job before it sleeps; a sleeping worker wakes late to a frame's next job.
 CVAR(Int, fua_jobs_spin_us, 200, 0)
 
@@ -48,7 +49,7 @@ const bool s_observed = (SetJobObserver(&kTelemetry), true);
 JobPool &Pool()
 {
 	int want = fua_jobs_threads;
-	if (want < 0) want = ComputeAutoWorkers((int)std::thread::hardware_concurrency(), 7);
+	if (want < 0) want = ComputeAutoWorkers((int)std::thread::hardware_concurrency(), 7, fua_gamethread ? 2 : 1);
 	if (want > kMaxWorkers) want = kMaxWorkers;
 	if (g_pool == NULL) g_pool = new JobPool(want);
 	else if (want != g_pool->Workers()) g_pool->Resize(want);

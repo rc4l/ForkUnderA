@@ -25,6 +25,8 @@ void StartStepped(void (*frame)());
 void Quit(int vbls);
 // [rc4l] Ends the program once a stepped loop's quit has had its time, called at the top of every frame.
 void FinishPendingQuit();
+// [rc4l] Whether a stepped loop's quit is waiting out its time.
+bool QuitPending();
 
 }} // namespace zx::mainloop
 

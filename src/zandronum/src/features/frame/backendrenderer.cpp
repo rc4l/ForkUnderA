@@ -71,7 +71,7 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	void RenderView(player_t *player)
 	{
 		zx::hwrender::SettleLevelScene();
-		zx::frame::RenderPlayerView(player, zx::hwrender::BackendPaletteBrightness());
+		zx::frame::RenderPlayerView(int(player - players), zx::hwrender::BackendPaletteBrightness());
 	}
 
 	// [rc4l] The player's view drawn at the picture's size with the screen's tint over it, as GL's WriteSavePic draws it; the placeholder when there is no scene, and for now on a device that reads it back only later.
@@ -93,7 +93,7 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 		const float fov = FieldOfView * 360.0f / FINEANGLES;
 		// [rc4l] A 1.6 ratio both ways, as GL's WriteSavePic hands RenderViewpoint.
 		const FViewLens lens = { fov, 1.6f, 1.6f };
-		const bool savedMain = zx::frame::BeginViewpoint(zx::gamecopy::LiveOf(cam), lens, false, false);
+		const bool savedMain = zx::frame::BeginRecordViewpoint(zx::gamecopy::IndexOf(cam), lens, false, false);
 		WriteSavePicFromView(file, width, height, fov);
 		zx::frame::EndViewpoint(savedMain);
 	}
@@ -138,17 +138,23 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	// [rc4l] A camera texture is the backend's own view into its own target: the camera's viewpoint set up and its scene swept, as GL's RenderViewpoint does for it, then drawn.
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)
 	{
+		RenderCameraRecord(tex, zx::gamecopy::IndexOf(zx::gamecopy::RecordOf(viewpoint)), fov);
+	}
+
+	// [rc4l] From the render copy's record of the viewpoint, so a frame drawn beside a running tic reads no live actor.
+	void RenderCameraRecord(FCanvasTexture *tex, int record, int fov)
+	{
 		const void *mat = zx::materials::MaterialForTexture(tex, false);
-		if (mat != NULL && viewpoint != NULL)
+		if (mat != NULL && record >= 0)
 		{
 			int w, h;
 			zx::materials::MaterialRenderSize(mat, w, h);
 			const float ratio = (float)w / h;
 			// [MobiusU9B] The texture's own shape for both ratios, as GL's RenderTextureView hands RenderViewpoint.
 			const FViewLens lens = { (float)fov, ratio, ratio };
-			const bool savedMain = zx::frame::BeginViewpoint(viewpoint, lens, false, false);
+			const bool savedMain = zx::frame::BeginRecordViewpoint(record, lens, false, false);
 			zx::frame::StandaloneScene();
-			zx::frame::RenderBackendCamera(mat, viewpoint, fov);
+			zx::frame::RenderBackendCamera(mat, record, fov);
 			zx::frame::EndViewpoint(savedMain);
 		}
 		tex->SetUpdated();

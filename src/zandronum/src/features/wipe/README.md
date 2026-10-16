@@ -15,5 +15,6 @@ GL draw the same wipe.
 ## In-engine hooks
 
 - `gl/system/gl_wipe.cpp` `Wiper_Melt`, `Wiper_Crossfade` and `Wiper_Burn`: GL's wipers drawn from these.
+- `wiperandoms.cpp` `DrawMeltRandoms`: the melt's bytes of `M_Random`, behind the `wipe/randoms` seam, which only the main thread may enter while no tic runs, which `dgwipe.cpp` draws from.
 - `features/hwrender/diligent/dgwipe.cpp`: the backend's wipes, from `DiligentFrameBuffer`'s `WipeStartScreen`,
   `WipeEndScreen`, `WipeDo` and `WipeCleanup`.

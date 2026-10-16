@@ -30,17 +30,17 @@ static const float TITLE_FOV = 90.0f;
 //
 //===========================================================================
 
-float FOV_InterpolatedForFrame(player_t *player)
+float FOV_InterpolatedForFrame(int player)
 {
-	if (player == NULL)
+	if (player < 0)
 		return TITLE_FOV;
 
 	// Follow the camera when spying another player (chasecam, spectating, demos), matching how
 	// D_Display picks the FOV it feeds R_SetFOV.
 	// [rc4l] features/gamecopy: the players as the last fill took them.
-	const zx::gamecopy::ActorRecord *const cam = zx::gamecopy::CameraOf(int(player - players));
+	const zx::gamecopy::ActorRecord *const cam = zx::gamecopy::CameraOf(player);
 	const zx::gamecopy::PlayerRecord *const spied = cam != NULL ? zx::gamecopy::Player(cam->playerIndex) : NULL;
-	const zx::gamecopy::PlayerRecord *const cameraPlayer = spied != NULL ? spied : zx::gamecopy::Player(int(player - players));
+	const zx::gamecopy::PlayerRecord *const cameraPlayer = spied != NULL ? spied : zx::gamecopy::Player(player);
 
 	if (gamestate == GS_TITLELEVEL || cameraPlayer == NULL)
 		return TITLE_FOV;

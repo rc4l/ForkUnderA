@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/levelmesh/projdecals.h"
+#include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "features/levelmesh/computation/decalproject_compute.h"
 #include "features/levelmesh/computation/packedcolor_compute.h"
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeSpriteBlendMode
@@ -17,6 +18,7 @@
 #include "c_dispatch.h"
 #include "tarray.h"
 #include "features/materials/materials.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring, Deferred
 
 #include <math.h>
 
@@ -80,7 +82,7 @@ EXTERN_CVAR(Int, cl_maxdecals)
 // [rc4l] Its own RNG stream, not pr_decal(), because a projection must not change what the engine
 // rolls. Sharing one would desync the game against a demo or another client the moment a mark was
 // drawn -- the renderer would be consuming the simulation's random numbers.
-static FRandom pr_projdecal ("ProjDecal");
+static FRandom rr_projdecal ("ProjDecal");   // [rc4l] rr_: a stream only the renderer draws from, never the game
 
 namespace zx { namespace levelmesh {
 
@@ -114,6 +116,7 @@ struct ProjDecal
 	int          fadeTime;
 	float        baseAlpha;
 	float        currentAlpha;
+	float        ownerAlpha;   // [rc4l] the owner's alpha as the handoff last copied it, which the frame reads instead of the owner
 
 	DecalBox     box;
 	FTextureID   pic;
@@ -146,6 +149,22 @@ struct MarkStyle
 	FRenderStyle style;
 	DWORD        renderFlags;
 };
+
+// [rc4l] A mark or a forgotten owner a tic on the game thread made, made in the handoff in order, since a mark loads its picture and the frame reads the store.
+struct PendingMark
+{
+	enum Kind { kOwned, kChain, kTemplate, kForget } kind;
+	DBaseDecal *owner;
+	const FDecalTemplate *tpl;
+	MarkStyle style;
+	fixed_t x, y, z;
+	float normal[3];
+	float advance;
+	ImpactContext impact;
+	int tic;
+};
+void ApplyPendingMark(const PendingMark &p);
+zx::handoff::Deferred<PendingMark> g_pending(ApplyPendingMark);
 
 inline float Dot3(const float a[3], const float b[3]) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; }
 
@@ -205,7 +224,7 @@ void StoreDecal(const ProjDecal &incoming)
 // close -- and pushing anyway drives the box a full radius THROUGH the floor. A plasma ball has a
 // radius of 13 and a scorch 15 units across, so its whole picture ended up underground.
 void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, int fadeTime,
-                     fixed_t x, fixed_t y, fixed_t z, const float surfN[3], float advance)
+                     fixed_t x, fixed_t y, fixed_t z, const float surfN[3], float advance, int spawnTic)
 {
 	FTexture *texture = TexMan[style.pic];
 	if (texture == NULL) { if (fua_decal_log) Printf("  mark dropped: no texture\n"); return; }
@@ -256,11 +275,12 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 
 	ProjDecal decal;
 	decal.owner = owner;
-	decal.spawnTic = gametic;
+	decal.spawnTic = spawnTic;
 	decal.fadeStart = fadeStart;
 	decal.fadeTime = fadeTime;
 	decal.baseAlpha = style.alpha;
 	decal.currentAlpha = style.alpha;
+	decal.ownerAlpha = style.alpha;
 	decal.box = box;
 	decal.pic = style.pic;
 	decal.translation = style.translation;
@@ -289,7 +309,7 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 		const float upness = surfN[2];
 		if (upness > 0.7f || upness < -0.7f)
 		{
-			sector_t *sec = P_PointInSector(x, y);
+			sector_t *sec = R_PointInSubsector(x, y)->sector;   // [rc4l] the BSP, which no tic changes
 			if (sec != NULL)
 			{
 				const int plane = (upness > 0.f) ? 0 : 1;
@@ -306,7 +326,7 @@ void BuildProjection(const MarkStyle &style, DBaseDecal *owner, int fadeStart, i
 }
 
 void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
-                       const float surfaceNormal[3], float advance)
+                       const float surfaceNormal[3], float advance, int spawnTic)
 {
 	// [rc4l] No mode test here: the two callers disagree about which switch applies. A wall mark
 	// needs fua_decalmode, a floor mark needs fua_decal_flats, and each asks for itself.
@@ -328,13 +348,88 @@ void SpawnFromTemplate(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t 
 	// ApplyToDecal rolls them into the engine's decal; a mark with no engine decal behind it never
 	// passes through there, so without this every floor scorch in the level is the same graphic in
 	// the same orientation.
-	if (tpl->RenderFlags & FDecalTemplate::DECAL_RandomFlipX) { if (pr_projdecal() & 1) style.renderFlags |= RF_XFLIP; }
-	if (tpl->RenderFlags & FDecalTemplate::DECAL_RandomFlipY) { if (pr_projdecal() & 1) style.renderFlags |= RF_YFLIP; }
+	if (tpl->RenderFlags & FDecalTemplate::DECAL_RandomFlipX) { if (rr_projdecal() & 1) style.renderFlags |= RF_XFLIP; }
+	if (tpl->RenderFlags & FDecalTemplate::DECAL_RandomFlipY) { if (rr_projdecal() & 1) style.renderFlags |= RF_YFLIP; }
 
 	int fadeStart = -1, fadeTime = 0;
 	if (!GetDecalFadeTiming(tpl->Animator, fadeStart, fadeTime)) fadeStart = -1;
 
-	BuildProjection(style, NULL, fadeStart, fadeTime, x, y, z, surfaceNormal, advance);
+	BuildProjection(style, NULL, fadeStart, fadeTime, x, y, z, surfaceNormal, advance, spawnTic);
+}
+
+// [rc4l] A floor or ceiling mark and the marks under it.
+void SpawnChain(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, const float surfaceNormal[3], int spawnTic)
+{
+	// [rc4l] A floor mark never reaches StaticCreate's walk of DECALDEF's lowerdecal chain (the BFG's scorch under its glow), so it walks it here, lowest first and at most eight deep against a malformed cycle.
+	const FDecalTemplate *chain[8];
+	int depth = 0;
+	for (const FDecalTemplate *t = tpl; t != NULL && depth < 8; depth++)
+	{
+		chain[depth] = t;
+		if (t->LowerDecal == NULL) { depth++; break; }
+		const FDecalTemplate *lower = t->LowerDecal->GetDecal();
+		if (lower == t) { depth++; break; }
+		t = lower;
+	}
+
+	// [rc4l] What the chain came out as, the one place that knows how many templates it had and which pictures they name.
+	if (fua_decal_log)
+	{
+		FString names;
+		for (int i = 0; i < depth; i++)
+		{
+			FTexture *t = TexMan[chain[i]->PicNum];
+			names += (i ? ", " : "");
+			names += t != NULL ? t->Name.GetChars() : "?";
+		}
+		Printf("projected chain: %d deep [%s]\n", depth, names.GetChars());
+	}
+
+	// Zero advance: the caller passes the plane's own height, which IS the contact point.
+	for (int i = depth - 1; i >= 0; i--) SpawnFromTemplate(chain[i], x, y, z, surfaceNormal, 0.f, spawnTic);
+}
+
+void ForgetNow(DBaseDecal *owner)
+{
+	for (unsigned i = 0; i < g_decals.Size(); )
+	{
+		if (g_decals[i].owner == owner) g_decals.Delete(i);
+		else i++;
+	}
+}
+
+// [rc4l] One call as the tic made it, under the impact it was made under.
+void ApplyPendingMark(const PendingMark &p)
+{
+	const ImpactContext held = g_impact;
+	g_impact = p.impact;
+	switch (p.kind)
+	{
+	case PendingMark::kOwned: BuildProjection(p.style, p.owner, -1, 0, p.x, p.y, p.z, p.normal, p.advance, p.tic); break;
+	case PendingMark::kChain: SpawnChain(p.tpl, p.x, p.y, p.z, p.normal, p.tic); break;
+	case PendingMark::kTemplate: SpawnFromTemplate(p.tpl, p.x, p.y, p.z, p.normal, p.advance, p.tic); break;
+	case PendingMark::kForget: ForgetNow(p.owner); break;
+	}
+	g_impact = held;
+}
+
+// [rc4l] Whether a call waits for the handoff, as one from a tic on the game thread does.
+bool Defer(PendingMark::Kind kind, DBaseDecal *owner, const FDecalTemplate *tpl, const MarkStyle *style,
+           fixed_t x, fixed_t y, fixed_t z, const float normal[3], float advance)
+{
+	if (!zx::handoff::Deferring()) return false;
+	PendingMark p = {};
+	p.kind = kind;
+	p.owner = owner;
+	p.tpl = tpl;
+	if (style != NULL) p.style = *style;
+	p.x = x; p.y = y; p.z = z;
+	for (int i = 0; i < 3; i++) p.normal[i] = normal != NULL ? normal[i] : 0.f;
+	p.advance = advance;
+	p.impact = g_impact;
+	p.tic = gametic;
+	g_pending.Make(p);
+	return true;
 }
 
 } // namespace
@@ -379,7 +474,9 @@ void SpawnProjectedDecal(DBaseDecal *owner, const FDecalTemplate *tpl,
 	style.renderFlags = owner->RenderFlags;
 
 	// No fade of its own: the owner has one, and reading it is always right.
-	BuildProjection(style, owner, -1, 0, x, y, z, surfN, g_impact.valid ? g_impact.radius : 0.f);
+	const float advance = g_impact.valid ? g_impact.radius : 0.f;
+	if (Defer(PendingMark::kOwned, owner, NULL, &style, x, y, z, surfN, advance)) return;
+	BuildProjection(style, owner, -1, 0, x, y, z, surfN, advance, gametic);
 }
 
 void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
@@ -388,47 +485,8 @@ void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fi
 	// The floor/ceiling case, and the only one fua_decal_flats admits on its own -- nothing else in
 	// the engine marks a flat.
 	if (!ProjectedDecalsActive()) return;
-	// [rc4l] A mark is often TWO decals, and this path has to spawn both itself.
-	//
-	// DECALDEF's `lowerdecal` puts one graphic underneath another: the BFG's mark is a green glow
-	// with a black scorch beneath it. DImpactDecal::StaticCreate walks that chain, so a mark on a
-	// WALL gets both -- it recurses, and the hook that mirrors each decal into a projection is inside
-	// the recursion. A mark on a FLOOR never goes near StaticCreate, because Doom does not decal
-	// floors at all, so it is handed the generator's template and has to do the walk itself. Without
-	// it exactly one of the two appears -- a BFG leaving its glow on the ground with no scorch.
-	//
-	// Lowest first, so it is stored first and drawn underneath, which is the order StaticCreate uses.
-	// The depth limit is a cycle guard: a template chain is map data and can be malformed.
-	const FDecalTemplate *chain[8];
-	int depth = 0;
-	for (const FDecalTemplate *t = tpl; t != NULL && depth < 8; depth++)
-	{
-		chain[depth] = t;
-		if (t->LowerDecal == NULL) { depth++; break; }
-		const FDecalTemplate *lower = t->LowerDecal->GetDecal();
-		if (lower == t) { depth++; break; }
-		t = lower;
-	}
-
-	// [rc4l] What the chain actually came out as.
-	//
-	// A mark that is missing and a mark that was never asked for look the same everywhere downstream,
-	// and the draw-side debug cannot tell them apart because it only ever sees what survived. This is
-	// the one place that knows how many templates the chain had and which pictures they name.
-	if (fua_decal_log)
-	{
-		FString names;
-		for (int i = 0; i < depth; i++)
-		{
-			FTexture *t = TexMan[chain[i]->PicNum];
-			names += (i ? ", " : "");
-			names += t != NULL ? t->Name.GetChars() : "?";
-		}
-		Printf("projected chain: %d deep [%s]\n", depth, names.GetChars());
-	}
-
-	// Zero advance: the caller passes the plane's own height, which IS the contact point.
-	for (int i = depth - 1; i >= 0; i--) SpawnFromTemplate(chain[i], x, y, z, surfaceNormal, 0.f);
+	if (Defer(PendingMark::kChain, NULL, tpl, NULL, x, y, z, surfaceNormal, 0.f)) return;
+	SpawnChain(tpl, x, y, z, surfaceNormal, gametic);
 }
 
 void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
@@ -439,15 +497,23 @@ void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, 
 	if (fua_decalmode == 0) return;
 	float surfN[3];
 	NormalFromLine(hitLine, surfN);
-	SpawnFromTemplate(tpl, x, y, z, surfN, g_impact.valid ? g_impact.radius : 0.f);
+	const float advance = g_impact.valid ? g_impact.radius : 0.f;
+	if (Defer(PendingMark::kTemplate, NULL, tpl, NULL, x, y, z, surfN, advance)) return;
+	SpawnFromTemplate(tpl, x, y, z, surfN, advance, gametic);
 }
 
 void ForgetProjectedDecal(DBaseDecal *owner)
 {
-	for (unsigned i = 0; i < g_decals.Size(); )
+	if (Defer(PendingMark::kForget, owner, NULL, NULL, 0, 0, 0, NULL, 0.f)) return;
+	ForgetNow(owner);
+}
+
+void CopyProjectedDecalOwners()
+{
+	for (unsigned i = 0; i < g_decals.Size(); i++)
 	{
-		if (g_decals[i].owner == owner) g_decals.Delete(i);
-		else i++;
+		ProjDecal &d = g_decals[i];
+		if (d.owner != NULL) d.ownerAlpha = (d.owner->RenderFlags & RF_INVISIBLE) ? 0.f : FIXED2FLOAT(d.owner->Alpha);
 	}
 }
 
@@ -455,6 +521,7 @@ void ClearProjectedDecals()
 {
 	g_decals.Clear();
 	g_gpuDecals.Clear();
+	g_pending.Clear();
 	ClearImpactContext();
 }
 
@@ -480,7 +547,8 @@ void UpdateProjectedDecals()
 			// and an earlier version that copied the fade curve instead ran a glow at two thirds
 			// brightness the instant it appeared and had it gone while the engine still had a second
 			// of it left. Beside GL that reads as "the glow is dimmer in Vulkan".
-			if (!(d.owner->RenderFlags & RF_INVISIBLE)) d.currentAlpha = FIXED2FLOAT(d.owner->Alpha);
+			// [rc4l] As the handoff copied it, since the frame may be beside a tic fading it.
+			d.currentAlpha = d.ownerAlpha;
 			i++;
 			continue;
 		}
@@ -490,7 +558,7 @@ void UpdateProjectedDecals()
 		float alpha = d.baseAlpha;
 		if (d.fadeStart >= 0)
 		{
-			const int age = gametic - d.spawnTic;
+			const int age = zx::gamecopy::CopyTic() - d.spawnTic;   // [rc4l] at the tic the frame shows
 			if (age >= d.fadeStart)
 			{
 				const int into = age - d.fadeStart;

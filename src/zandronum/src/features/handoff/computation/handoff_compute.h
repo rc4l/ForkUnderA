@@ -14,14 +14,17 @@
 
 namespace zx { namespace handoff {
 
-// [rc4l] Who a seam belongs to: the main thread, the thread running tics, game data (the running tic, or the main thread in the handoff), the handoff itself, or anyone.
-enum class Owner { Main, GameThread, GameData, Handoff, Any };
+// [rc4l] Who a seam belongs to: the main thread, the thread running tics, game data (the running tic, or the main thread in the handoff), the handoff itself, the main thread while no tic runs, in a frame or not, or anyone.
+enum class Owner { Main, GameThread, GameData, Handoff, Idle, Any };
 
 // [rc4l] Where the two threads are: whether a tic is running, and whether the main thread is in the handoff, the stretch between tics when it may touch game data.
 struct Phase { bool gameRunning; bool mainInHandoff; };
 
 // [rc4l] Whether a thread may enter a seam of owner; with the tic run inline the main thread is also the game thread, and draws outside the handoff as it would beside a running game.
 bool ComputeOwnerAllows(Owner owner, bool onMain, bool onGame, Phase phase);
+
+// [rc4l] Whether the calling thread is the main one drawing beside a tic on the game thread, so what it does to game data, as a focus change pausing the game does, waits for the handoff.
+bool ComputeBesideTic(bool onMain, bool onGame, Phase phase);
 
 // [rc4l] The owner's name as a seam listing prints it.
 const char *ComputeOwnerName(Owner owner);

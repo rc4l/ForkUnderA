@@ -359,6 +359,7 @@ bool S_GetSoundPaused (void);	// [rc4l] getter for freeform menu (Q-Zandronum)
 // Updates music & sounds
 //
 void S_UpdateSounds (AActor *listener);
+void S_RunDeferredSounds ();   // [rc4l] features/handoff: the device calls a tic on its own thread queued, in the handoff that takes it back
 
 void S_RestoreEvictedChannels();
 

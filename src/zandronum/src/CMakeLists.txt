@@ -1720,7 +1720,19 @@ add_executable( zdoom WIN32
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
 	features/handoff/seam.cpp
+	features/handoff/loop.cpp
+	features/handoff/hud.cpp
+	features/handoff/effects.cpp
+	features/handoff/snapshot.cpp
+	features/handoff/gamethread.cpp
 	features/gamecopy/gamecopy.cpp
+	features/gamecopy/xfloors.cpp
+	features/gamecopy/lights.cpp
+	features/gamecopy/particles.cpp
+	features/gamecopy/decals.cpp
+	features/gamecopy/seen.cpp
+	features/gamecopy/polyobjs.cpp
+	features/wipe/wiperandoms.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
 	features/viewsetup/viewsetup.cpp
@@ -1751,6 +1763,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/frameroute_compute.cpp
 	features/frame/computation/viewtrace_compute.cpp
 	features/frame/computation/framestall_compute.cpp
+	features/frame/computation/frameclock_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
 	features/dynlights/computation/nodeindex_compute.cpp
@@ -1949,7 +1962,7 @@ if( EMSCRIPTEN )
 		"SHELL: -s ALLOW_MEMORY_GROWTH=1"
 		"SHELL: -s INITIAL_MEMORY=256MB"
 		"SHELL: -s STACK_SIZE=8MB"
-		"SHELL: -s PTHREAD_POOL_SIZE=8"
+		"SHELL: -s PTHREAD_POOL_SIZE=9"   # [rc4l] the job pool's workers and the game thread
 		"SHELL: -s EXIT_RUNTIME=0"
 		"SHELL: -s INVOKE_RUN=0"
 		"SHELL: -s FORCE_FILESYSTEM=1"

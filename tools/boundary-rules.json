@@ -9,7 +9,10 @@
     "features/surfaces/", "features/fakeflat/", "features/viewsetup/", "features/fov-interp/fovinterp.cpp",
     "features/materials/", "features/draw2d/screenblend.cpp", "features/damage-tint/", "features/hitboxviz/", "features/models/"
    ],
-   "exclude": ["*/computation/*", "*_test.cpp", "features/damage-tint/tintsubject.*"],
+   "exclude": ["*/computation/*", "*_test.cpp", "*_gl.cpp", "features/damage-tint/tintsubject.*"],
+   "why_excluded": "GL draws only while tics run inline (the *_gl.cpp files and gl/), and tintsubject is the damage tint's game half the fill calls.",
+   "exempt": ["\\b(?:void|bool)\\s+(?:\\w+::)?(?:RenderView|WriteSavePic|RenderTextureView|SetupFrame|StateChanged)\\s*\\([^)]*\\)"],
+   "why_exempt": "The renderer interface's signatures name the game's player and actor; the backend turns them into record indices without reading them, and the bodies are still checked. Console command bodies and declarations are never counted, since commands run between tics and a declaration reads nothing.",
    "patterns": [
     {"name": "live thinker iteration", "regex": "\\bTThinkerIterator\\s*<"},
     {"name": "live actor", "regex": "\\bAActor\\b"},
@@ -18,7 +21,7 @@
     {"name": "write-and-undo interpolation", "regex": "\\binterpolator\\s*\\."},
     {"name": "shared visit stamp", "regex": "\\bvalidcount\\b"},
     {"name": "game randomness", "regex": "\\bM_Random\\b|\\bpr_\\w+\\s*\\("},
-    {"name": "game function", "regex": "\\bP_[A-Z]\\w*\\s*\\("},
+    {"name": "game function", "regex": "\\bP_(?!AproxDistance\\b)[A-Z]\\w*\\s*\\("},
     {"name": "live level state", "regex": "\\blevel\\s*\\.\\s*(flags|flags2|time|maptime|totaltime|fadeto|outsidefog|skyspeed1|skyspeed2|DefaultSkybox)\\b"}
    ],
    "fields": {"table": "features/gamecopy/fields.h", "types": ["sector", "side", "line", "vertex", "polyobj"],
@@ -45,6 +48,7 @@
     {"name": "menus and console", "regex": "\\bmenuactive\\b|\\bConsoleState\\b|\\bM_StartControlPanel\\b|\\bM_SetMenu\\b|\\bM_ClearMenus\\b|\\bC_HideConsole\\b|\\bC_FullConsole\\b"},
     {"name": "automap", "regex": "\\bAM_[A-Z]\\w*\\s*\\("},
     {"name": "sound device", "regex": "\\bGSnd\\s*->"},
+    {"name": "renderer features", "regex": "\\bzx::(levelmesh|hwrender|materials|sprites|visibility|frame|draw2d|viewsetup|horizon|surfaces|models|hitboxviz|crosshair|damagetint)::"},
     {"name": "render cvar", "regex": "\\bvid_[a-z]\\w*\\b|\\bgl_[a-z][a-z0-9_]*\\b|\\bfua_dg_\\w+\\b|\\br_drawtrans\\b|\\br_lights\\w*\\b"}
    ]
   }

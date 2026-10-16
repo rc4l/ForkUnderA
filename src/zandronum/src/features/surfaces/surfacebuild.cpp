@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "doomtype.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_sky.h"   // skyflatnum, for the lower texture's sky reference
@@ -156,7 +157,7 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, FDynamicColo
 	// re-derived here on purpose.
 	int rel = 0;
 	const int orglightlevel = gl_ClampLight(front->rc.lightlevel);
-	const bool foggy = (!gl_isBlack(front->rc.ColorMap->Fade) || (level.flags & LEVEL_HASFADETABLE));
+	const bool foggy = (!gl_isBlack(front->rc.ColorMap->Fade) || (zx::gamecopy::Level().flags & LEVEL_HASFADETABLE));
 	out.lightLevel = gl_ClampLight(seg->sidedef->GetRcLightLevel(foggy, orglightlevel, false, &rel));
 	if (orglightlevel >= 253)                    out.relLight = 0;   // fake contrast is invisible here
 	else if (out.lightLevel - rel > 256)         out.relLight = 256 - out.lightLevel + rel;
@@ -209,8 +210,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		g.backPortal = bs->portals[which] != NULL;
 		g.transdoor = bs->transdoor;
 		g.polyobj = (seg->sidedef->rc.Flags & WALLF_POLYOBJ) != 0;
-		g.fixAbuse = bs->e != NULL && bs->e->XFloor.ffloors.Size() != 0 &&
-			(bs->e->XFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
+		g.fixAbuse = bs->e != NULL && bs->e->rcXFloor.ffloors.Size() != 0 &&
+			(bs->e->rcXFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
 		g.fakeFlat = sub == NULL || sub->render_sector != sub->sector || fs != sub->sector;
 		g.hasPartner = seg->PartnerSeg != NULL && seg->PartnerSeg->Subsector != NULL &&
 			!(seg->PartnerSeg->Subsector->hacked & 4);
@@ -318,8 +319,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// because that is the span GL draws -- see the fracleft note below.
 	const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 	if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-	const fixed_t px[2] = { lv1->x, lv2->x };
-	const fixed_t py[2] = { lv1->y, lv2->y };
+	const fixed_t px[2] = { lv1->rc.x, lv2->rc.x };   // [rc4l] the copy's, which a polyobject's blend moves
+	const fixed_t py[2] = { lv1->rc.y, lv2->rc.y };
 	// Both ends' heights first: the upper's and the lower's clamps are decided by the pair, not by
 	// each end on its own -- see SpanBothEnds.
 	WallHeights hEnd[2];
@@ -401,8 +402,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	{
 		const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 		if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-		const float ax = FIXED2FLOAT(lv1->x), ay = FIXED2FLOAT(lv1->y);
-		const float bx = FIXED2FLOAT(lv2->x), by = FIXED2FLOAT(lv2->y);
+		const float ax = FIXED2FLOAT(lv1->rc.x), ay = FIXED2FLOAT(lv1->rc.y);   // [rc4l] the copy's, which a polyobject's blend moves
+		const float bx = FIXED2FLOAT(lv2->rc.x), by = FIXED2FLOAT(lv2->rc.y);
 		float segLeft = 0.f, segRight = 1.f;
 		if (seg->sidedef->rc.Flags & WALLF_POLYOBJ)
 			ComputePolyobjSegFractions(ax, ay, bx, by, FIXED2FLOAT(seg->v1->x), FIXED2FLOAT(seg->v1->y),

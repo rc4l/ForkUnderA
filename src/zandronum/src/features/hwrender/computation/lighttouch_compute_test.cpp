@@ -76,11 +76,10 @@ TEST(ComputeDynLightColor, AnAdditiveLightIsAFifthAsBright)
 
 TEST(ComputeLightLinksStale, AnyChangeOfLightPlaceOrReach)
 {
-	int a, b;
-	const zx::hwrender::LightLinkKey kept = { &a, 1, 2, 3, 64.f };
+	const zx::hwrender::LightLinkKey kept = { 7u, 1, 2, 3, 64.f };
 	zx::hwrender::LightLinkKey now = kept;
 	EXPECT_FALSE(zx::hwrender::ComputeLightLinksStale(kept, now));
-	now.light = &b; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
+	now.light = 8u; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
 	now.x = 9; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
 	now.y = 9; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;
 	now.z = 9; EXPECT_TRUE(zx::hwrender::ComputeLightLinksStale(kept, now)); now = kept;

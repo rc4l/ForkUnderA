@@ -37,6 +37,7 @@ std::atomic<uint64_t> g_stressCount(0);
 
 std::atomic<int> g_conflicts(0);
 std::atomic<const char *> g_firstViolation(nullptr);
+std::atomic<const SeamSite *> g_firstViolationSite(nullptr);
 std::atomic<const char *> g_firstViolationThread(nullptr);
 std::atomic<int> g_nestedLocks(0);
 std::atomic<const char *> g_firstNested(nullptr);
@@ -112,8 +113,8 @@ Phase CurrentPhase()
 	return Phase{ g_gameRunning.load(std::memory_order_relaxed), g_mainInHandoff.load(std::memory_order_relaxed) };
 }
 
-SeamSite::SeamSite(const char *n, Owner o, bool timed)
-	: index(Registry().Declare(n, o)), name(n), owner(o),
+SeamSite::SeamSite(const char *n, Owner o, bool timed, const char *f, int l)
+	: index(Registry().Declare(n, o)), name(n), function(f), line(l), owner(o),
 	  counter(timed ? zx::telemetry::Register(zx::telemetry::CounterSpec{ n, "ms", zx::telemetry::CounterKind::Time, 0 }) : -1)
 {
 	if (index < 0) g_conflicts.fetch_add(1);
@@ -122,13 +123,18 @@ SeamSite::SeamSite(const char *n, Owner o, bool timed)
 SeamScope::SeamScope(const SeamSite &site) : m_outer(nullptr), m_start(0), m_site(&site)
 {
 	const bool onMain = OnMainThread(), onGame = OnGameThread();
-	const bool allowed = ComputeOwnerAllows(site.owner, onMain, onGame, CurrentPhase());
+	// [rc4l] Before NoteMainThread, as during static initialisation, no thread is the main one yet, so nothing is judged.
+	const bool started = g_mainThread.load(std::memory_order_relaxed) != std::thread::id();
+	const bool allowed = !started || ComputeOwnerAllows(site.owner, onMain, onGame, CurrentPhase());
 	if (site.index >= 0) Registry().Enter(site.index, allowed);
 	if (!allowed)
 	{
 		const char *none = nullptr;
 		if (g_firstViolation.compare_exchange_strong(none, site.name))
+		{
 			g_firstViolationThread.store(onMain ? "main" : onGame ? "game" : "another");
+			g_firstViolationSite.store(&site);
+		}
 	}
 	const int slot = Slot();
 	if (slot >= 0)
@@ -188,7 +194,8 @@ CCMD(fua_seams)
 	Printf("%s", zx::handoff::ComputeSeamTable(zx::handoff::Registry()).c_str());
 	const char *first = zx::handoff::g_firstViolation.load();
 	Printf("%llu violations", (unsigned long long)zx::handoff::SeamViolations());
-	if (first != nullptr) Printf(", the first in %s on the %s thread", first, zx::handoff::g_firstViolationThread.load());
+	const zx::handoff::SeamSite *site = zx::handoff::g_firstViolationSite.load();
+	if (first != nullptr) Printf(", the first in %s on the %s thread in %s:%d", first, zx::handoff::g_firstViolationThread.load(), site ? site->function : "?", site ? site->line : 0);
 	Printf("; %d locks taken while holding another", zx::handoff::g_nestedLocks.load());
 	if (zx::handoff::g_firstNested.load() != nullptr) Printf(" (first %s)", zx::handoff::g_firstNested.load());
 	Printf("; %d seams declared with a second owner\n", zx::handoff::g_conflicts.load());

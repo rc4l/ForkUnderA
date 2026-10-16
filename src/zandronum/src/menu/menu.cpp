@@ -33,6 +33,7 @@
 */
 
 #include "doomdef.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
 #include "doomstat.h"
 #include "c_dispatch.h"
 #include "d_gui.h"
@@ -451,6 +452,12 @@ void M_ReleaseMenuButtons ()
 
 bool M_StartControlPanel (bool makeSound, bool allowRedirect)
 {
+	// [rc4l] features/handoff: the menus are the main thread's, so a tic on its own thread opens them in the handoff.
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t b) { M_StartControlPanel (a != 0, b != 0); }, makeSound, allowRedirect });
+		return true;
+	}
 	// intro might call this repeatedly
 	if (DMenu::CurrentMenu != NULL)
 		return false;
@@ -516,6 +523,11 @@ void M_ActivateMenu(DMenu *menu)
 
 void M_SetMenu(FName menu, int param)
 {
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t b) { M_SetMenu (FName (ENamedName (a)), int (b)); }, intptr_t (menu.GetIndex ()), param });
+		return;
+	}
 	// some menus need some special treatment
 	switch (menu)
 	{
@@ -1165,6 +1177,11 @@ void M_Drawer (void)
 
 void M_ClearMenus ()
 {
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { M_ClearMenus (); }, 0, 0 });
+		return;
+	}
 	M_DemoNoPlay = false;
 	if (DMenu::CurrentMenu != NULL)
 	{

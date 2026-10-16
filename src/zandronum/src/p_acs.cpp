@@ -36,6 +36,7 @@
 */
 
 #include <assert.h>
+#include "features/handoff/snapshot.h"   // [rc4l] TicScreenWidth, TicScreenHeight
 
 #include "templates.h"
 #include "doomdef.h"
@@ -12543,7 +12544,7 @@ scriptwait:
 			}
 			else
 			{
-				PushToStack (SCREENWIDTH);
+				PushToStack (zx::handoff::TicScreenWidth ());   // [rc4l] as the handoff took it before the tic
 			}
 			break;
 
@@ -12564,7 +12565,7 @@ scriptwait:
 			}
 			else
 			{
-				PushToStack (SCREENHEIGHT);
+				PushToStack (zx::handoff::TicScreenHeight ());
 			}
 			break;
 

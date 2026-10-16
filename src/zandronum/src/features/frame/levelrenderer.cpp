@@ -7,6 +7,7 @@
 #include "features/viewsetup/computation/viewsetup_compute.h"  // [rc4l] ComputeMaxViewPitch
 #include "features/levelmesh/wallcache.h"                      // [rc4l] AllocForLevel, FreeLevel
 #include "features/gamecopy/gamecopy.h"                         // [rc4l] InitLevel
+#include "features/gamecopy/actors.h"                           // [rc4l] the camera texture's viewpoint record
 #include "features/levelmesh/staticmesh.h"                     // [rc4l] MeshInitForLevel, MeshFreeLevel
 #include "features/visibility/viswalk.h"                       // [rc4l] ForgetWalk
 #include "r_state.h"                                           // [rc4l] numsegs
@@ -94,8 +95,9 @@ int FLevelRenderer::GetMaxViewPitch(bool down)
 
 void FLevelRenderer::Init() { gl_ParseDefs(); }
 
-void RenderBackendCamera(zx::materials::MaterialRef mat, AActor *viewpoint, int fov)
+void RenderBackendCamera(zx::materials::MaterialRef mat, int record, int fov)
 {
+	const zx::gamecopy::ActorRecord *const viewpoint = zx::gamecopy::Record(record);
 	if (mat == NULL || viewpoint == NULL) return;
 	int width, height, storedW, storedH;
 	zx::materials::MaterialRenderSize(mat, width, height);

@@ -2,6 +2,8 @@
 // Copyright (C) 2026 rc4l
 
 #include "tables.h"
+#include "features/gamecopy/lights.h"   // [rc4l] whether the level has a dynamic light
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/viewsetup/viewsetup.h"
 #include "features/gamecopy/players.h"   // [rc4l] the records a view is set up from
 #include "features/viewsetup/computation/viewsetup_compute.h"
@@ -39,7 +41,7 @@ namespace zx { namespace viewsetup {
 static_assert(area_normal == kAreaNormal && area_below == kAreaBelow && area_above == kAreaAbove && area_default == kAreaDefault,
 	"area_t must match viewsetup_compute.h");
 
-static ViewSetup g_view = { NULL, NULL, 0.f, 0.f, 90.f, 1.333333f, 1.333333f, 0xffffffffu, 270.f, 1.f, 0.f, 0.f, 0.f, false };
+static ViewSetup g_view = { NULL, NULL, -1, 0.f, 0.f, 90.f, 1.333333f, 1.333333f, 0xffffffffu, 270.f, 1.f, 0.f, 0.f, 0.f, false };
 
 // [rc4l] The sprite order index InstallSpriteView hands out, from zero each view as GL's CreateScene starts gl_spriteindex.
 static int g_spriteIndex = 0;
@@ -53,10 +55,11 @@ void SetupView(const zx::gamecopy::ActorRecord *camera, const FViewLens &lens, l
 	g_view.ratio = lens.ratio;
 	g_view.fovRatio = lens.fovRatio;
 	ComputeViewAngleVector(viewangle, g_view.yaw, g_view.vectorX, g_view.vectorY);
-	g_view.sky1Pos = ComputeSkyScroll(frameMS, level.skyspeed1);
-	g_view.sky2Pos = ComputeSkyScroll(frameMS, level.skyspeed2);
-	TThinkerIterator<ADynamicLight> lights(STAT_DLIGHT);
-	g_view.dynamicLights = lights.Next() != NULL;
+	g_view.sky1Pos = ComputeSkyScroll(frameMS, zx::gamecopy::Level().skyspeed1);
+	g_view.sky2Pos = ComputeSkyScroll(frameMS, zx::gamecopy::Level().skyspeed2);
+	int lights;
+	zx::gamecopy::Lights(lights);
+	g_view.dynamicLights = lights > 0;
 	// [rc4l] The playsim treats pitch as 1:1, so it is scaled for the pixel stretch the view is drawn with.
 	g_view.pitch = ComputeStretchedPitch(viewpitch, glset.pixelstretch);
 	g_view.roll = (float)(camera->roll >> ANGLETOFINESHIFT) * 360.0f / FINEANGLES;
@@ -68,6 +71,7 @@ void SetupView(const zx::gamecopy::ActorRecord *camera, const FViewLens &lens, l
 		me != NULL && me->bSpectating, me != NULL && (me->cheats & CF_CHASECAM) != 0, r_deathcamera, camera->health <= 0,
 		zx::gamecopy::IndexOf(camera) == its->mo);
 	g_view.viewActor = outside ? NULL : camera->who;
+	g_view.viewRecord = outside ? -1 : zx::gamecopy::IndexOf(camera);
 }
 
 const ViewSetup &CurrentView() { return g_view; }
@@ -75,9 +79,9 @@ const ViewSetup &CurrentView() { return g_view; }
 static_assert(CM_DEFAULT == kCmDefault && CM_FIRSTSPECIALCOLORMAP == kCmFirstSpecial && CM_FOGLAYER == kCmFogLayer && CM_LITE == kCmLite && CM_TORCH == kCmTorch &&
 	NOFIXEDCOLORMAP == kNoFixedColormap && INVERSECOLORMAP == kInverseColormap, "the colormap values must match viewsetup_compute.h");
 
-int FixedColormap(player_t *player)
+int FixedColormap(int player)
 {
-	const zx::gamecopy::ActorRecord *const camera = zx::gamecopy::CameraOf(int(player - players));
+	const zx::gamecopy::ActorRecord *const camera = zx::gamecopy::CameraOf(player);
 	const zx::gamecopy::PlayerRecord *const cplayer = camera != NULL ? zx::gamecopy::Player(camera->playerIndex) : NULL;
 	FixedColormapIn in = { cplayer != NULL, false, kNoFixedColormap, -1, kNoLightPower };
 	if (cplayer != NULL)
@@ -107,13 +111,12 @@ void TurnView(unsigned viewAngle)
 	R_SetViewAngle();
 }
 
-void SetViewArea(const void *viewActor)
+void SetViewArea(int viewRecord)
 {
 	// [rc4l] The render sector suits the eye's place in a hardware view better than the sector it stands in.
 	viewsector = R_PointInSubsector(viewx, viewy)->render_sector;
 	// [rc4l] [AK] A spectator without physical restrictions may pass through floors and ceilings.
-	const zx::gamecopy::ActorRecord *const viewRec = zx::gamecopy::RecordOf(static_cast<const AActor *>(viewActor));
-	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(zx::gamecopy::IndexOf(viewRec));
+	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(viewRecord);
 	if (source == NULL || !source->unrestricted)
 		viewz = fixed_t::FromRaw(ComputeClampedViewZ(viewz.Raw(), viewsector->rc.floorplane.ZatPoint(viewx, viewy).Raw(),
 			viewsector->rc.ceilingplane.ZatPoint(viewx, viewy).Raw()));
@@ -157,17 +160,17 @@ void ViewCameraFromEngine(zx::hwrender::BackendCamera &c)
 	c.pixelStretch = glset.pixelstretch;
 }
 
-// [rc4l] The camera the last frame was drawn from.
-static const void *g_lastCamera = NULL;
+// [rc4l] The render copy id of the camera the last frame was drawn from.
+static unsigned int g_lastCamera = 0;
 
-bool CameraChanged(const void *camera)
+bool CameraChanged(unsigned int camera)
 {
 	if (camera == g_lastCamera) return false;
 	g_lastCamera = camera;
 	return true;
 }
 
-void ForgetCamera() { g_lastCamera = NULL; }
+void ForgetCamera() { g_lastCamera = 0; }
 
 bool SpritesTakeDynamicLight()
 {

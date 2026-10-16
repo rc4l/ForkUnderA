@@ -2,6 +2,10 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/visibility/viswalk.h"
+#include "features/gamecopy/decals.h"   // [rc4l] which sides carry decals
+#include "features/gamecopy/polyobjs.h"   // [rc4l] the polyobject BSPs the fill copied
+#include "features/gamecopy/seen.h"   // [rc4l] the seen bits the walk marks
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/gamecopy/actors.h"   // [rc4l] the actor records a portal view hands out
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
@@ -34,7 +38,7 @@
 #include "p_3dfloors.h"                     // [rc4l] F3DFloor, a 3D floor's control sector
 #include "c_console.h"                      // [rc4l] C_ShouldForceInterpolation
 #include "p_local.h"                        // [rc4l] P_PointOnLineSide, a mirror's clip
-#include "p_effect.h"                       // [rc4l] ParticlesInSubsec, which subsectors have particles to hand over
+#include "features/gamecopy/particles.h"   // [rc4l] which subsectors have particles to hand over
 #include "po_man.h"                         // [rc4l] polyobjects, whose BSPs a sliced walk builds first
 
 #include "r_defs.h"
@@ -79,7 +83,7 @@ namespace {
 struct PortalView
 {
 	FPortal *stack;
-	ASkyViewpoint *skybox;
+	int skybox;   // [rc4l] the skybox's record, -1 for none
 	line_t *mirror;
 	int slot;
 	std::vector<long long> lines;
@@ -92,7 +96,7 @@ struct WalkSpec
 	int slot;                         // [rc4l] the walk-bit slot it marks, or -1
 	int skyList;                      // [rc4l] the kSkyCapture* list its sky surfaces fill
 	bool player;                      // [rc4l] the player's own walk: stacked walls, and the flats pass that gives stacked views their subsectors
-	const void *viewActor;            // [rc4l] who GL's mViewActor is, whose own skybox is not entered
+	int viewRecord;                   // [rc4l] the record of who GL's mViewActor is, whose own skybox is not entered, -1 for none
 	std::vector<PortalView> *portals; // [rc4l] where the skyboxes (and for the player the stacked views) it looks into go, or NULL
 	const unsigned char *covered;     // [rc4l] a stacked view's covered subsectors, unclipped on reaching them, or NULL
 	const unsigned char *nodeCovered; // [rc4l] and the nodes over them, entered whatever the clipper says
@@ -101,6 +105,15 @@ struct WalkSpec
 };
 
 WalkSpec g_spec;
+// [rc4l] P_PointOnLineSide against the copy's vertices, which a polyobject moves.
+bool BehindLine(fixed_t x, fixed_t y, const line_t *line)
+{
+	const fixed_t x1 = line->v1->rc.x, y1 = line->v1->rc.y;
+	return DMulScale32(y - y1, line->v2->rc.x - x1, x1 - x, line->v2->rc.y - y1) > 0;
+}
+// [rc4l] The skyboxes whose walks are in progress, never entered again from inside, kept here rather than as GL's MF_JUSTHIT on the live actor.
+std::vector<int> g_walkingSkyboxes;
+bool WalkingSkybox(int record) { return std::find(g_walkingSkyboxes.begin(), g_walkingSkyboxes.end(), record) != g_walkingSkyboxes.end(); }
 // [rc4l] The walk makes sky surfaces, stacked walls or portals, so it builds each linedef's walls once.
 bool g_deriving = false;
 // [rc4l] The clipper a walk starts from, which each of its slices copies.
@@ -169,7 +182,7 @@ void SeeSector(const sector_t *s)
 	g_sectorSeen.Store(i, g_seenFrame);
 	const sector_t &real = sectors[i];
 	if (real.e == NULL) return;
-	for (unsigned k = 0; k < real.e->XFloor.ffloors.Size(); k++) SeeSector(real.e->XFloor.ffloors[k]->model);
+	for (unsigned k = 0; k < real.e->rcXFloor.ffloors.Size(); k++) SeeSector(real.e->rcXFloor.ffloors[k]->model);
 }
 
 // [rc4l] gl_CheckClip's question, with the heights read from the planes as GL reads them.
@@ -234,7 +247,7 @@ subsector_t *g_sub;
 sector_t *g_sector;
 
 // [rc4l] The walk's portal for a stacked plane or a skybox, made the first time it is met, as GetGLPortal and FindPortal make GL's.
-PortalView &PortalFor(FPortal *stack, ASkyViewpoint *skybox, line_t *mirror = NULL)
+PortalView &PortalFor(FPortal *stack, int skybox, line_t *mirror = NULL)
 {
 	std::vector<PortalView> &list = *g_spec.portals;
 	for (size_t i = 0; i < list.size(); i++)
@@ -265,7 +278,7 @@ struct SkyEvent
 	float x1, y1, x2, y2;
 	float zb[2], zt[2];      // [rc4l] a wall's bottom and top, or a hole's floor and ceiling
 	FPortal *portal;         // [rc4l] a stacked wall's portal
-	ASkyViewpoint *skybox;   // [rc4l] the skybox a sky wall shows, or NULL
+	int skybox;              // [rc4l] the record of the skybox a sky wall shows, -1 for none
 	line_t *mirror;
 	int special;             // [rc4l] a sky wall's line special
 	bool sheen;              // [rc4l] whether a mirror's sheen is drawn, in `light` and `cm`
@@ -297,8 +310,9 @@ void SkyPlane(sector_t *sector, int plane, float x1, float y1, float x2, float y
 		return;
 	}
 	if (sector->rc.GetTexture(plane) != skyflatnum) return;
-	ASkyViewpoint *skybox = sector->GetSkyBox(plane);
-	if (r_noskyboxes || skybox == NULL || g_spec.viewActor == skybox || (skybox->flags & MF_JUSTHIT)) skybox = NULL;
+	// [rc4l] The copy's record of the skybox, and never one being walked already, which GL marks with MF_JUSTHIT on the live actor.
+	int skybox = zx::gamecopy::SkyBoxOf(sector, plane);
+	if (r_noskyboxes || skybox < 0 || g_spec.viewRecord == skybox || WalkingSkybox(skybox)) skybox = -1;
 	SkyEvent &e = PushSkyEvent(out, SkyEvent::kSkyWall, x1, y1, x2, y2, q.zbottom, q.ztop);
 	e.skybox = skybox;
 	e.special = special;
@@ -317,15 +331,15 @@ void ApplySkyEvent(const SkyEvent &e)
 	{
 	case SkyEvent::kStackWall:
 	{
-		PortalView &p = PortalFor(e.portal, NULL);
+		PortalView &p = PortalFor(e.portal, -1);
 		const int slot = zx::levelmesh::AddStackWall(e.portal, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt);
 		if (slot >= 0) p.slot = slot;
 		AddPortalLine(p, e.x1, e.y1, e.x2, e.y2);
 		break;
 	}
 	case SkyEvent::kSkyWall:
-		if (e.skybox != NULL && g_spec.portals != NULL) AddPortalLine(PortalFor(NULL, e.skybox), e.x1, e.y1, e.x2, e.y2);
-		if (g_spec.player && e.skybox == NULL && !g_skyFadeSeen) { g_skyFadeSeen = true; g_skyFade = e.fade; }
+		if (e.skybox >= 0 && g_spec.portals != NULL) AddPortalLine(PortalFor(NULL, e.skybox), e.x1, e.y1, e.x2, e.y2);
+		if (g_spec.player && e.skybox < 0 && !g_skyFadeSeen) { g_skyFadeSeen = true; g_skyFade = e.fade; }
 		// [rc4l] A horizon line's sky belongs to features/horizon, which builds it for every eye height.
 		if (!zx::horizon::OwnsSky(e.special)) zx::levelmesh::AddViewSkyQuad(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt, e.skybox, zx::hwrender::ComputeSkyQuadKey(e.sky));
 		break;
@@ -333,7 +347,7 @@ void ApplySkyEvent(const SkyEvent &e)
 		zx::levelmesh::AddViewSkyHole(g_spec.skyList, e.x1, e.y1, e.x2, e.y2, e.zb, e.zt);
 		break;
 	default:
-		AddPortalLine(PortalFor(NULL, NULL, e.mirror), e.x1, e.y1, e.x2, e.y2);
+		AddPortalLine(PortalFor(NULL, -1, e.mirror), e.x1, e.y1, e.x2, e.y2);
 		// [rc4l] GL takes a sheen's light from the player's walk alone.
 		if (e.sheen && g_spec.player) zx::levelmesh::AddMirrorSheen(int(e.mirror - lines), e.light, e.cm);
 		break;
@@ -348,10 +362,10 @@ void NoteMirror(seg_t *seg, sector_t *fs, subsector_t *sub, float x1, float y1, 
 	FColormap cm;
 	cm = fs->rc.ColorMap;
 	const int baseLight = gl_ClampLight(fs->rc.lightlevel);
-	const bool foggy = !gl_isBlack(cm.FadeColor) || (level.flags & LEVEL_HASFADETABLE);
+	const bool foggy = !gl_isBlack(cm.FadeColor) || (zx::gamecopy::Level().flags & LEVEL_HASFADETABLE);
 	int rel = 0;
 	int light = gl_ClampLight(seg->sidedef->GetRcLightLevel(foggy, baseLight, false, &rel));
-	TArray<lightlist_t> &bands = sub->sector->e->XFloor.lightlist;
+	TArray<lightlist_t> &bands = sub->sector->e->rcXFloor.lightlist;
 	int band = zx::visibility::kSheenOwnLight;
 	if (bands.Size() > 0 && !gl_fixedcolormap)
 	{
@@ -378,7 +392,7 @@ void NoteMirror(seg_t *seg, sector_t *fs, subsector_t *sub, float x1, float y1, 
 		// [rc4l] GLWall::Put3DWall's light for the band.
 		const lightlist_t &l = bands[band];
 		const bool fadewall = l.caster && (l.caster->flags & FF_FADEWALLS) && !gl_isBlack(l.extra_colormap->Fade) && gl_isBlack(cm.FadeColor);
-		const bool own = l.p_lightlevel != &seg->sidedef->sector->lightlevel;
+		const bool own = l.p_lightlevel != &seg->sidedef->sector->rc.lightlevel;   // [rc4l] the copied band points at the copy's level
 		light = ComputeSheenBandLight(light, own, own ? gl_ClampLight(*l.p_lightlevel) : light, fadewall);
 		cm.CopyLightColor(l.extra_colormap);
 	}
@@ -405,7 +419,7 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 	if (seg->sidedef->rc.Flags & WALLF_POLYOBJ) { v1 = seg->v1; v2 = seg->v2; }
 	else if (seg->sidedef == seg->linedef->sidedef[0]) { v1 = seg->linedef->v1; v2 = seg->linedef->v2; }
 	else { v1 = seg->linedef->v2; v2 = seg->linedef->v1; }
-	const float x1 = FIXED2FLOAT(v1->x), y1 = FIXED2FLOAT(v1->y), x2 = FIXED2FLOAT(v2->x), y2 = FIXED2FLOAT(v2->y);
+	const float x1 = FIXED2FLOAT(v1->rc.x), y1 = FIXED2FLOAT(v1->rc.y), x2 = FIXED2FLOAT(v2->rc.x), y2 = FIXED2FLOAT(v2->rc.y);   // [rc4l] the copy's
 	float zfloor[2], zceil[2];
 	if (fs->rc.floorplane.a | fs->rc.floorplane.b)
 	{
@@ -490,7 +504,7 @@ void DeriveSkyWalls(seg_t *seg, sector_t *fs, sector_t *bs, subsector_t *sub, st
 }
 
 // [rc4l] GLMirrorPortal::ClipSeg and ClipSubsector: in a mirror's walk, whatever lies wholly behind the mirror.
-bool BehindMirror(const vertex_t *v) { return P_PointOnLineSide(v->x, v->y, g_spec.mirror) != 0; }
+bool BehindMirror(const vertex_t *v) { return BehindLine(v->rc.x, v->rc.y, g_spec.mirror); }
 
 bool SubsectorBehindMirror(subsector_t *sub)
 {
@@ -523,10 +537,10 @@ struct Slice
 	// [rc4l] The first line into a height transfer it saw, by walk key, which decides the walk's view area.
 	unsigned long long firstTransfer;
 	seg_t *firstTransferSeg;
-	// [rc4l] The flag fields of lines to map, and of subsectors and sectors to mark seen, applied once the walk is final.
-	std::vector<DWORD *> mapLines;
-	std::vector<int *> drawnSubs;
-	std::vector<WORD *> drawnSectors;
+	// [rc4l] The lines to map and the subsectors and sectors to mark seen, marked once the walk is final.
+	std::vector<int> mapLines;
+	std::vector<int> drawnSubs;
+	std::vector<int> drawnSectors;
 	// [rc4l] The node children it passed over though a seg under them showed in it, and those it entered only because it was told to.
 	std::vector<LeakBox> leaks;
 	// [rc4l] The sidedefs it saw that carry decals, each as often as a seg of it showed.
@@ -580,12 +594,12 @@ unsigned long long WalkKey(int rank, int pos)
 
 int KeyRank(unsigned long long key) { return int((key >> 16) & 0xffffff); }
 
-// [rc4l] Set a flag in an engine field now, or, from a lane, keep the field for after the walk; one already set costs a read.
-template <class T, class U> void SetFlag(T &field, U bit, bool direct, std::vector<T *> &later)
+// [rc4l] Marks a subsector, sector or line seen now, or, from a lane, keeps it for after the walk; the renderer's own bits, which features/gamecopy merges into the live map between tics.
+void SetSeen(zx::gamecopy::SeenKind kind, int index, bool direct, std::vector<int> &later)
 {
-	if (field & bit) return;
-	if (direct) field = T(field | bit);
-	else later.push_back(&field);
+	if (zx::gamecopy::Seen(kind, index)) return;
+	if (direct) zx::gamecopy::MarkSeen(kind, index);
+	else later.push_back(index);
 }
 
 // [rc4l] A slice's walk on one lane: the slice, the lane's vertex angles, and whether it is the walk's only slice, on the main thread, which marks what it sees itself and keeps its own view area; slices instead switch from `initial` to `switchTo` at `switchKey`, where the walk found its first line into a height transfer.
@@ -598,16 +612,17 @@ struct ClipWalk
 	area_t initial, switchTo;
 };
 
+// [rc4l] From the copy's vertices, which a polyobject's blend moves.
 unsigned ClipAngle(const ClipWalk &w, vertex_t *v)
 {
 	const ptrdiff_t i = v - vertexes;
 	if (i < 0 || i >= numvertexes)
-		return ComputePseudoAngle((double)(v->x - g_viewx).Raw(), (double)(v->y - g_viewy).Raw());
+		return ComputePseudoAngle((double)(v->rc.x - g_viewx).Raw(), (double)(v->rc.y - g_viewy).Raw());
 	VertAngle &va = w.angles[i];
 	if (va.stamp != g_walkStamp)
 	{
 		va.stamp = g_walkStamp;
-		va.angle = ComputePseudoAngle((double)(v->x - g_viewx).Raw(), (double)(v->y - g_viewy).Raw());
+		va.angle = ComputePseudoAngle((double)(v->rc.x - g_viewx).Raw(), (double)(v->rc.y - g_viewy).Raw());
 	}
 	return va.angle;
 }
@@ -655,15 +670,16 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 	if (!polyPass && seg->sidedef != NULL && (seg->sidedef->rc.Flags & WALLF_POLYOBJ)) return;
 	if (seg->sidedef == NULL)
 	{
-		if (!drawn && slice.clip.SafeCheckRange(startAngle, endAngle)) { drawn = true; SetFlag(sub->flags, SSECF_DRAWN, w.direct, slice.drawnSubs); }
+		if (!drawn && slice.clip.SafeCheckRange(startAngle, endAngle)) { drawn = true; SetSeen(zx::gamecopy::kSeenSubsector, int(sub - subsectors), w.direct, slice.drawnSubs); }
 		return;
 	}
 	if (!slice.clip.SafeCheckRange(startAngle, endAngle)) return;
 	slice.open++;
-	if (!drawn) { drawn = true; SetFlag(sub->flags, SSECF_DRAWN, w.direct, slice.drawnSubs); }
+	if (!drawn) { drawn = true; SetSeen(zx::gamecopy::kSeenSubsector, int(sub - subsectors), w.direct, slice.drawnSubs); }
 	const int side = int(seg->sidedef - sides);
 	g_sideWalked.Store(side, g_walkStamp);
-	if (seg->sidedef->AttachedDecals != NULL) slice.decalSides.push_back(side);
+	int decals;
+	if (zx::gamecopy::SideDecals(side, decals) != NULL) slice.decalSides.push_back(side);
 	if (g_sideSeen.Load(side) != g_seenFrame)
 	{
 		g_sideSeen.Store(side, g_seenFrame);
@@ -695,7 +711,7 @@ void ClipSeg(ClipWalk &w, seg_t *seg, bool polyPass, subsector_t *sub, sector_t 
 	// [rc4l] A two-sided line inside one sector with no middle texture shows nothing, and GL leaves it unmapped.
 	if (seg->backsector != NULL && !polyobj && front->sectornum == seg->backsector->sectornum && !HasTexture(seg->sidedef, side_t::mid)) return;
 	// [rc4l] The automap reveals what the player has seen.
-	SetFlag(seg->linedef->flags, ML_MAPPED, w.direct, slice.mapLines);   // [rc4l] the live line, which the automap, saves and bots read
+	SetSeen(zx::gamecopy::kSeenLine, int(seg->linedef - lines), w.direct, slice.mapLines);   // [rc4l] which the automap, saves and bots read
 	if (!g_deriving) return;
 	if (!polyobj) NoteLineSeg(int(seg->linedef - lines), key, w.direct);
 	if (!SkyWallsPossible(seg, front)) return;
@@ -732,8 +748,9 @@ void ClipPolyNode(ClipWalk &w, void *node, subsector_t *sub, sector_t *front, in
 	}
 	const subsector_t *leaf = (subsector_t *)((BYTE *)node - 1);
 	seg_t *line = leaf->firstline;
+	const FMiniBSP *const poly = zx::gamecopy::PolyBSPOf(int(sub - subsectors));
 	for (int count = leaf->numlines; count--; line++)
-		if (line->linedef) ClipSeg(w, line, true, sub, front, rank, pos[line - &sub->BSP->Segs[0]], drawn);
+		if (line->linedef) ClipSeg(w, line, true, sub, front, rank, pos[line - &poly->Segs[0]], drawn);
 }
 
 // [rc4l] The flats pass's part that needs no order: whether GL processes the subsector (SSRF_PROCESSED, read by ProcessSectorStacks), and whether its ordered part has anything to feed the stacked views.
@@ -774,22 +791,23 @@ void ClipSubsector(ClipWalk &w, subsector_t *sub, int rank)
 		for (int k = 0; k < fills; k++) SeeSector(&sectors[fill[k].model]);
 	}
 	if (w.direct && g_spec.slot >= 0) zx::levelmesh::NoteSlotVisible(g_spec.slot, si);
-	SetFlag(sector->MoreFlags, SECF_DRAWN, w.direct, slice.drawnSectors);   // [rc4l] the live sector, which the automap reads
+	SetSeen(zx::gamecopy::kSeenSector, int(sector - sectors), w.direct, slice.drawnSectors);   // [rc4l] which the automap reads
 	unsigned char flags = 0;
-	if (g_spec.particles != NULL && si < (int)ParticlesInSubsec.Size() && ParticlesInSubsec[si] != NO_PARTICLE) flags |= kSubParticles;
+	if (g_spec.particles != NULL && zx::gamecopy::FirstParticleIn(si) != NO_PARTICLE) flags |= kSubParticles;
 	sector_t fake;
 	sector_t *front = zx::fakeflat::RcFakeFlat(sector, &fake, slice.area, false);
-	bool drawn = (sub->flags & SSECF_DRAWN) != 0;
-	if (sub->polys != NULL)
+	bool drawn = zx::gamecopy::Seen(zx::gamecopy::kSeenSubsector, si);
+	// [rc4l] The render copy's polyobject BSP, which the fill linked and built between tics.
+	if (const FMiniBSP *const poly = zx::gamecopy::PolyBSPOf(si))
 	{
 		const std::vector<unsigned short> &pos = g_polyPos[si];
-		if (sub->BSP->Nodes.Size() == 0)
+		if (poly->Nodes.Size() == 0)
 		{
-			seg_t *line = sub->BSP->Subsectors[0].firstline;
-			for (int count = sub->BSP->Subsectors[0].numlines; count--; line++)
-				if (line->linedef) ClipSeg(w, line, true, sub, front, rank, pos[line - &sub->BSP->Segs[0]], drawn);
+			seg_t *line = poly->Subsectors[0].firstline;
+			for (int count = poly->Subsectors[0].numlines; count--; line++)
+				if (line->linedef) ClipSeg(w, line, true, sub, front, rank, pos[line - &poly->Segs[0]], drawn);
 		}
-		else ClipPolyNode(w, &sub->BSP->Nodes.Last(), sub, front, rank, pos, drawn);
+		else ClipPolyNode(w, const_cast<node_t *>(&poly->Nodes.Last()), sub, front, rank, pos, drawn);
 	}
 	else
 	{
@@ -880,8 +898,8 @@ void FlatsPass(subsector_t *sub, sector_t *sector)
 		if (flat->portals[sector_t::floor] != NULL && flat->rc.floorplane.ZatPoint(vx, vy) <= vz) g_planeStacks[sector_t::floor].push_back(real);
 		if (flat->portals[sector_t::ceiling] != NULL && flat->rc.ceilingplane.ZatPoint(vx, vy) >= vz) g_planeStacks[sector_t::ceiling].push_back(real);
 	}
-	if (flat->portals[sector_t::ceiling] != NULL) PortalFor(flat->portals[sector_t::ceiling], NULL).subs.push_back(sub);
-	if (flat->portals[sector_t::floor] != NULL) PortalFor(flat->portals[sector_t::floor], NULL).subs.push_back(sub);
+	if (flat->portals[sector_t::ceiling] != NULL) PortalFor(flat->portals[sector_t::ceiling], -1).subs.push_back(sub);
+	if (flat->portals[sector_t::floor] != NULL) PortalFor(flat->portals[sector_t::floor], -1).subs.push_back(sub);
 }
 
 // [rc4l] A slice's candidate and the slice it is in.
@@ -987,49 +1005,35 @@ bool AnyTransferInForce()
 	return false;
 }
 
-// [rc4l] A subsector's polyobject BSP, built where it is missing or stale, as AddPolyobjs builds it before walking it.
-void EnsurePolyBSP(subsector_t *sub)
-{
-	if (sub->BSP != NULL && !sub->BSP->bDirty) return;
-	sub->BuildPolyBSP();
-	for (unsigned i = 0; i < sub->BSP->Segs.Size(); i++)
-	{
-		sub->BSP->Segs[i].Subsector = sub;
-		sub->BSP->Segs[i].PartnerSeg = NULL;
-	}
-}
-
 // [rc4l] Number a polyobject BSP's segs in the order it is walked front to back from the eye.
-void NumberPolySegs(void *node, subsector_t *sub, std::vector<unsigned short> &pos, int &next)
+void NumberPolySegs(void *node, const FMiniBSP *poly, std::vector<unsigned short> &pos, int &next)
 {
 	while (!((size_t)node & 1))
 	{
 		node_t *bsp = (node_t *)node;
 		const int side = R_PointOnSide(viewx, viewy, bsp);
-		NumberPolySegs(bsp->children[side], sub, pos, next);
+		NumberPolySegs(bsp->children[side], poly, pos, next);
 		node = bsp->children[side ^ 1];
 	}
 	const subsector_t *leaf = (subsector_t *)((BYTE *)node - 1);
 	for (DWORD i = 0; i < leaf->numlines; i++)
-		if (leaf->firstline[i].linedef) pos[leaf->firstline + i - &sub->BSP->Segs[0]] = (unsigned short)next++;
+		if (leaf->firstline[i].linedef) pos[leaf->firstline + i - &poly->Segs[0]] = (unsigned short)next++;
 }
 
-// [rc4l] Every polyobject subsector's BSP built and its segs numbered from this walk's eye, before any slice enters one.
+// [rc4l] Every polyobject subsector's copied BSP with its segs numbered from this walk's eye, before any slice enters one.
 void PreparePolyobjs()
 {
 	g_polyPos.clear();
-	for (int i = 0; i < po_NumPolyobjs; i++)
-		for (FPolyNode *pn = polyobjs[i].subsectorlinks; pn != NULL; pn = pn->snext)
-		{
-			subsector_t *sub = pn->subsector;
-			EnsurePolyBSP(sub);
-			std::vector<unsigned short> &pos = g_polyPos[int(sub - subsectors)];
-			if (!pos.empty()) continue;
-			pos.assign(sub->BSP->Segs.Size() + 1, 0);
-			int next = 0;
-			if (sub->BSP->Nodes.Size() == 0) NumberPolySegs((BYTE *)&sub->BSP->Subsectors[0] + 1, sub, pos, next);
-			else NumberPolySegs(&sub->BSP->Nodes.Last(), sub, pos, next);
-		}
+	for (int si : zx::gamecopy::PolySubsectors())
+	{
+		const FMiniBSP *const poly = zx::gamecopy::PolyBSPOf(si);
+		std::vector<unsigned short> &pos = g_polyPos[si];
+		if (!pos.empty()) continue;
+		pos.assign(poly->Segs.Size() + 1, 0);
+		int next = 0;
+		if (poly->Nodes.Size() == 0) NumberPolySegs((BYTE *)&poly->Subsectors[0] + 1, poly, pos, next);
+		else NumberPolySegs(const_cast<node_t *>(&poly->Nodes.Last()), poly, pos, next);
+	}
 }
 
 // [rc4l] The per-level arrays sized and the BSP's coverage nodes, leaf counts and subsector sectors worked out, once a level.
@@ -1191,7 +1195,7 @@ void SignWalk(int count, std::vector<long long> &s)
 				memcpy(&xy, &ev.x1, sizeof(xy));
 				s.push_back(ev.kind);
 				s.push_back(xy);
-				s.push_back((long long)(size_t)ev.portal ^ (long long)(size_t)ev.skybox ^ (long long)(size_t)ev.mirror);
+				s.push_back((long long)(size_t)ev.portal ^ (long long)ev.skybox ^ (long long)(size_t)ev.mirror);
 				s.push_back(ev.light);
 			}
 		}
@@ -1219,7 +1223,7 @@ int RankOf(int si)
 bool TransferStillHolds(const seg_t *seg)
 {
 	return seg != NULL && seg >= segs && seg < segs + numsegs && seg->sidedef != NULL && !(seg->sidedef->rc.Flags & WALLF_POLYOBJ) &&
-		seg->backsector != NULL && seg->frontsector != seg->backsector && seg->Subsector != NULL && seg->Subsector->polys == NULL &&
+		seg->backsector != NULL && seg->frontsector != seg->backsector && seg->Subsector != NULL && zx::gamecopy::PolyBSPOf(int(seg->Subsector - subsectors)) == NULL &&
 		EntersTransfer(seg);
 }
 
@@ -1246,7 +1250,8 @@ bool ClipSwitchingAt(int count, const unsigned *bounds, seg_t *seg)
 		{
 			subsector_t *sub = seg->Subsector;
 			const int si = int(sub - subsectors);
-			const int pos = sub->polys != NULL ? g_polyPos[si][seg - &sub->BSP->Segs[0]] : int(seg - sub->firstline);
+			const FMiniBSP *const poly = zx::gamecopy::PolyBSPOf(si);
+			const int pos = poly != NULL ? g_polyPos[si][seg - &poly->Segs[0]] : int(seg - sub->firstline);
 			g_switchKey = WalkKey(RankOf(si), pos);
 			g_switchTo = AreaAcross(seg);
 		}
@@ -1352,9 +1357,9 @@ void Walk(const WalkSpec &spec, int count = 1, const unsigned *bounds = NULL)
 		for (int k = 0; k < count; k++)
 		{
 			const Slice &sl = g_slices[k];
-			for (size_t i = 0; i < sl.mapLines.size(); i++) *sl.mapLines[i] |= ML_MAPPED;
-			for (size_t i = 0; i < sl.drawnSubs.size(); i++) *sl.drawnSubs[i] |= SSECF_DRAWN;
-			for (size_t i = 0; i < sl.drawnSectors.size(); i++) *sl.drawnSectors[i] = WORD(*sl.drawnSectors[i] | SECF_DRAWN);
+			for (int i : sl.mapLines) zx::gamecopy::MarkSeen(zx::gamecopy::kSeenLine, i);
+			for (int i : sl.drawnSubs) zx::gamecopy::MarkSeen(zx::gamecopy::kSeenSubsector, i);
+			for (int i : sl.drawnSectors) zx::gamecopy::MarkSeen(zx::gamecopy::kSeenSector, i);
 		}
 		if (spec.slot >= 0)
 		{
@@ -1448,7 +1453,7 @@ void ProcessSectorStacks()
 				{
 					if (handled[h]->portalcoverage[plane].subsectors == NULL)
 						gl_BuildPortalCoverage(&handled[h]->portalcoverage[plane], handled[h], portal);
-					PortalFor(portal, NULL).subs.push_back(handled[h]);
+					PortalFor(portal, -1).subs.push_back(handled[h]);
 				}
 			}
 		}
@@ -1461,7 +1466,7 @@ line_t *g_viewMirror = NULL;
 const void *PortalViewActor() { return NULL; }
 void PortalViewVector(float &x, float &y) { x = zx::viewsetup::CurrentView().vectorX; y = zx::viewsetup::CurrentView().vectorY; }
 int PortalSpriteIndex() { return g_outerView->NextSpriteIndex(); }
-bool PortalRejects(fixed_t x, fixed_t y) { return g_viewMirror != NULL && P_PointOnLineSide(x, y, g_viewMirror) != 0; }
+bool PortalRejects(fixed_t x, fixed_t y) { return g_viewMirror != NULL && BehindLine(x, y, g_viewMirror); }
 bool PortalMirrors() { return g_viewMirror != NULL; }
 int PortalLightCount() { return g_outerView->DynamicLightCount(); }
 void PortalViewAngles(float &yaw, float &pitch) { yaw = zx::viewsetup::CurrentView().yaw; pitch = zx::viewsetup::CurrentView().pitch; }
@@ -1488,7 +1493,8 @@ void PortalSprites(void (*sprite)(const zx::gamecopy::ActorRecord &thing), line_
 // [rc4l] GLSkyboxPortal::DrawContents's walk: from the viewpoint where this frame finds it, turned as it has turned, the clipper opened only where its sky walls were seen from (seenX, seenY), into the skybox walk slot.
 void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 {
-	ASkyViewpoint *origin = p.skybox;
+	const zx::gamecopy::ActorRecord *const origin = zx::gamecopy::Record(p.skybox);
+	if (origin == NULL) return;
 	const fixed_t sx = viewx, sy = viewy, sz = viewz;
 	const angle_t sa = viewangle;
 	sector_t *const ssector = viewsector;
@@ -1503,16 +1509,16 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	const fixed_t ceilh = origin->Sector->rc.ceilingplane.ZatPoint(origin->x, origin->y);
 	if (viewz < floorh + 4 * FRACUNIT) viewz = floorh + 4 * FRACUNIT;
 	if (viewz > ceilh - 4 * FRACUNIT) viewz = ceilh - 4 * FRACUNIT;
-	origin->flags |= MF_JUSTHIT;
-	zx::viewsetup::SetViewArea(origin);
+	g_walkingSkyboxes.push_back(p.skybox);
+	zx::viewsetup::SetViewArea(p.skybox);
 	ComputeSeedPortal(g_clip, seenX, seenY, &p.lines[0], int(p.lines.size() / 4), viewangle - sa, viewangle, zx::viewsetup::CurrentView().frustumAngle);
 	{
 		const MapSectionScope sections;
 		MarkMapSectionBit(R_PointInSubsector(viewx, viewy)->mapsection);
-		const WalkSpec spec = { zx::levelmesh::kSkyboxWalkSlot, zx::levelmesh::kSkyCaptureNone, false, origin, NULL, NULL, NULL };
+		const WalkSpec spec = { zx::levelmesh::kSkyboxWalkSlot, zx::levelmesh::kSkyCaptureNone, false, p.skybox, NULL, NULL, NULL };
 		Walk(spec);
 	}
-	origin->flags &= ~MF_JUSTHIT;
+	g_walkingSkyboxes.pop_back();
 	viewx = sx; viewy = sy; viewz = sz;
 	viewangle = sa;
 	viewsector = ssector;
@@ -1547,7 +1553,7 @@ void WalkStack(const PortalView &p, const WalkHooks *hooks)
 	const int list = p.slot >= 0 ? zx::levelmesh::kSkyCaptureStack + p.slot : zx::levelmesh::kSkyCaptureNone;
 	if (list != zx::levelmesh::kSkyCaptureNone) zx::levelmesh::BeginViewSky(list);
 	std::vector<PortalView> skyboxes;
-	const WalkSpec spec = { zx::levelmesh::ComputeStackWalkSlot(p.slot), list, false, NULL, &skyboxes, numsubsectors > 0 ? &g_covered[0] : NULL,
+	const WalkSpec spec = { zx::levelmesh::ComputeStackWalkSlot(p.slot), list, false, -1, &skyboxes, numsubsectors > 0 ? &g_covered[0] : NULL,
 		numnodes > 0 ? &g_nodeCovered[0] : NULL };
 	Walk(spec);
 
@@ -1584,7 +1590,7 @@ void WalkMirror(const PortalView &p, const WalkHooks *hooks, long long eyeX, lon
 		ComputePseudoAngle(double((line->v1->x - viewx).Raw()), double((line->v1->y - viewy).Raw())));
 	// [rc4l] The skyboxes and the mirrors this reflection looks into.
 	std::vector<PortalView> seen;
-	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureMirror, false, NULL, &seen, NULL, NULL, line };
+	WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureMirror, false, -1, &seen, NULL, NULL, line };
 	Walk(spec);
 	const long long ex = viewx.Raw(), ey = viewy.Raw();
 	{
@@ -1635,6 +1641,13 @@ void CompareMain(const TArray<unsigned int> &glBits)
 }
 
 // [rc4l] The walk's sky surfaces and holes against GL's for the same frame, bit for bit.
+// [rc4l] The class of a skybox's record, for the sky check's note.
+const char *SkyboxName(int record)
+{
+	const zx::gamecopy::ActorRecord *const r = zx::gamecopy::Record(record);
+	return r != NULL ? r->type->TypeName.GetChars() : "none";
+}
+
 void CheckSky(zx::levelmesh::MainSkyState &gl, zx::levelmesh::MainSkyState &ours)
 {
 	g_skyCheck.checked++;
@@ -1647,8 +1660,8 @@ void CheckSky(zx::levelmesh::MainSkyState &gl, zx::levelmesh::MainSkyState &ours
 	if (!why) return;
 	if (zx::frame::ComputeOracleDiffer(g_skyCheck, 6))
 		zx::frame::ComputeOracleNote(g_skyCheck, "  %s: GL %u quads %u holes skybox %s, ours %u quads %u holes skybox %s\n", why, gl.quads.Size() / 6,
-			gl.holes.Size() / zx::levelmesh::kSkyHoleFloats, gl.viewpoint ? gl.viewpoint->GetClass()->TypeName.GetChars() : "none",
-			ours.quads.Size() / 6, ours.holes.Size() / zx::levelmesh::kSkyHoleFloats, ours.viewpoint ? ours.viewpoint->GetClass()->TypeName.GetChars() : "none");
+			gl.holes.Size() / zx::levelmesh::kSkyHoleFloats, SkyboxName(gl.viewpoint),
+			ours.quads.Size() / 6, ours.holes.Size() / zx::levelmesh::kSkyHoleFloats, SkyboxName(ours.viewpoint));
 }
 
 bool SameVertices(const TArray<zx::levelmesh::MeshVertex> &a, const TArray<zx::levelmesh::MeshVertex> &b)
@@ -1684,7 +1697,7 @@ void WalkView(bool publish, bool derive, const WalkHooks *hooks)
 	clock.Reset();
 	clock.Clock();
 	const WalkSpec spec = { publish ? zx::levelmesh::kMainWalkSlot : -1, derive ? zx::levelmesh::kSkyCaptureMain : zx::levelmesh::kSkyCaptureNone,
-		derive, zx::viewsetup::CurrentView().viewActor, derive ? &g_playerPortals : NULL, NULL, NULL, NULL, hooks != NULL ? hooks->particles : NULL };
+		derive, zx::viewsetup::CurrentView().viewRecord, derive ? &g_playerPortals : NULL, NULL, NULL, NULL, hooks != NULL ? hooks->particles : NULL };
 	if (publish) zx::levelmesh::BeginSlotVisibility(zx::levelmesh::kMainWalkSlot);
 	if (derive)
 	{
@@ -1758,7 +1771,7 @@ void WalkCameraSky()
 	MarkMapSectionBit(R_PointInSubsector(viewx, viewy)->mapsection);
 	g_clip.Clear();
 	ComputeSeedFrustum(g_clip, viewangle, zx::viewsetup::CurrentView().frustumAngle);
-	const WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureCamera, false, zx::viewsetup::CurrentView().viewActor, NULL, NULL, NULL, NULL, NULL };
+	const WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureCamera, false, zx::viewsetup::CurrentView().viewRecord, NULL, NULL, NULL, NULL, NULL };
 	Walk(spec);
 }
 

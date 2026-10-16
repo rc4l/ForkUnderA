@@ -17,6 +17,7 @@
 #include "features/hwrender/backendonly.h"
 #include "features/sprites/spritebuild.h"
 #include "features/gamecopy/actors.h"        // [rc4l] the actor records the sweep reads
+#include "features/gamecopy/particles.h"     // [rc4l] the particles the walks reach
 
 #include "actor.h"
 #include "c_cvars.h"
@@ -47,8 +48,8 @@ namespace {
 void WalkParticles(subsector_t *sub, sector_t *sector)
 {
 	if (!gl_render_things) return;
-	for (WORD i = ParticlesInSubsec[DWORD(sub - subsectors)]; i != NO_PARTICLE; i = Particles[i].snext)
-		zx::sprites::BuildParticle(&Particles[i], sector);
+	for (WORD i = zx::gamecopy::FirstParticleIn(int(sub - subsectors)); i != NO_PARTICLE; i = zx::gamecopy::CopiedParticle(i)->snext)
+		zx::sprites::BuildParticle(zx::gamecopy::CopiedParticle(i), zx::gamecopy::ParticleIdentity(i), sector);
 }
 
 // [rc4l] An actor a stacked view's or mirror's walk reached, its sprite or model derived inside that view.
@@ -134,7 +135,6 @@ void StandaloneScene()
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
 	if (walked)
 	{
-		PO_LinkToSubsectors();
 		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, fua_decalmode == 0 ? zx::levelmesh::BuildWallDecals : NULL };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(fua_vis_cull, true, &hooks);

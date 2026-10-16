@@ -127,9 +127,9 @@ void JobPool::ParallelFor(int count, IndexFn fn, void *user)
 	if (o != nullptr) o->waited(waitStart, o->now());
 }
 
-int ComputeAutoWorkers(int hardwareThreads, int cap)
+int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved)
 {
-	const int workers = hardwareThreads / 2 - 1;
+	const int workers = hardwareThreads / 2 - reserved;
 	if (workers <= 0) return 0;
 	return workers < cap ? workers : cap;
 }

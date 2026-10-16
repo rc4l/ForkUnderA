@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, parseCopyReport, parsePSpriteReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, parseCopyReport, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -93,7 +93,7 @@ test("the sprite report counts the actors derived beside GL and those that diffe
 });
 
 test("every fixture check is one entry the command line picks by name", () => {
-  assert.deepEqual(Object.keys(CHECKS).sort(), ["copycheck", "pspritecheck", "seencheck", "spritecheck", "vischeck"]);
+  assert.deepEqual(Object.keys(CHECKS).sort(), ["copycheck", "hudcheck", "pspritecheck", "seamcheck", "seencheck", "spritecheck", "vischeck"]);
   for (const run of Object.values(CHECKS)) assert.equal(typeof run, "function");
 });
 
@@ -113,6 +113,22 @@ test("the seen report counts the lines and sectors the walks marked on the live 
   const r = parseSeenReport("seen: 312 lines mapped, 40 sectors drawn");
   assert.deepEqual([r.walked, r.sectors, r.differed, r.found], [312, 40, 0, true]);
   assert.deepEqual([parseSeenReport("").found, parseSeenReport("").walked], [false, 0]);
+});
+
+test("the seam report counts the seams entered and takes the total violations, not a seam's own", () => {
+  const text = ["gc/object                        game data          235 entries        1 violations",
+    "copy/fill                        handoff            322 entries        0 violations",
+    "1 violations, the first in gc/object on the another thread; 0 locks taken while holding another; 0 seams declared with a second owner"].join("\n");
+  const r = parseSeamReport(text);
+  assert.deepEqual([r.walked, r.differed, r.first, r.found], [2, 1, "gc/object (another)", true]);
+  const clean = parseSeamReport("copy/fill  handoff  3 entries  0 violations\n0 violations; 0 locks taken while holding another");
+  assert.deepEqual([clean.walked, clean.differed, clean.first], [1, 0, ""]);
+  assert.equal(parseSeamReport("1 violations, the first in sound/channels on the main thread in S_StartSound:1234; 0 locks").first, "sound/channels (main, S_StartSound:1234)");
+  assert.equal(parseSeamReport("Unknown command").found, false);
+});
+
+test("the HUD check pauses at the picture tic and the half second before it", () => {
+  assert.deepEqual(hudTics({ tic: 320 }), [290, 305, 320]);
 });
 
 test("gtmod carries a mod's lumps, two maps and its probe script", async () => {

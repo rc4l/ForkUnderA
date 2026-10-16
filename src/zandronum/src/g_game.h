@@ -120,6 +120,11 @@ bool G_CheckDemoStatus (void);
 void G_WorldDone (void);
 
 void G_Ticker (void);
+// [rc4l] features/handoff: G_Ticker's halves around the playsim's tic, playsim true when it runs this tic.
+struct G_TickerPart { int state; bool playsim; };   // [rc4l] state is the gamestate_t the tic began in
+G_TickerPart G_TickerBegin ();
+void G_TickerPlaysim ();
+void G_TickerEnd (const G_TickerPart &part);
 bool G_Responder (event_t*	ev);
 
 void G_ScreenShot (char *filename);

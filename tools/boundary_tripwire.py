@@ -21,7 +21,7 @@ BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
 LINE_COMMENT = re.compile(r'//[^\n]*')
 STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 FIELD = re.compile(r'^\s*ZX_COPY_FIELD\(\s*(\w+)\s*,\s*(\w+)', re.M)
-RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER)_(FIELD|DERIVED)\((?:[^,()]+,)?\s*(\w+)\s*\)', re.M)
+RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER|LEVEL|DECAL)_(FIELD|DERIVED)\((?:[^,()]+,)?\s*(\w+)\s*\)', re.M)
 SEAM = re.compile(r'ZX_SEAM(?:_UNTIMED)?\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
 CODE = ('.cpp', '.h', '.c', '.mm')
 DOC_BEGIN = '<!-- boundary:begin (python3 tools/boundary_tripwire.py --doc writes this section) -->'
@@ -45,7 +45,7 @@ def in_set(rel, patterns):
 
 
 def table_rows(text):
-    """[rc4l] Every (kind, member) a field table declares: the map structures' lines, then the actor and player records' copied and worked-out members."""
+    """[rc4l] Every (kind, member) a field table declares: the map structures' lines, then the actor, player, level and decal records' copied and worked-out members."""
     rows = FIELD.findall(text)
     return rows + [(kind.lower() if what == 'FIELD' else '%s, worked out by the fill' % kind.lower(), name) for kind, what, name in RECORD_FIELD.findall(text)]
 
@@ -71,6 +71,29 @@ def selected(text):
     return text
 
 
+CCMD = re.compile(r'\bCCMD\s*\(\s*\w+\s*\)\s*\{')
+DECLARATION = re.compile(r'^[ \t]*(?:class|struct)[ \t]+\w+[ \t]*;|^[ \t]*(?:(?!(?:return|else|delete|throw|case|goto|new|do|co_return|co_yield)\b)[\w:<>]+[ \t*&]+)+\w+[ \t]*\([^;{}()]*(?:\([^;{}()]*\)[^;{}()]*)*\)[ \t]*(?:const[ \t]*)?;', re.M)
+
+
+def blanked(text, start, end):
+    """[rc4l] The text with [start, end) blanked, its line breaks kept."""
+    return text[:start] + re.sub(r'[^\n]', ' ', text[start:end]) + text[end:]
+
+
+def exempted(text, rule):
+    """[rc4l] The text without what reads nothing live: console command bodies, which run between tics, declarations, and what the rule's `exempt` patterns name, such as an interface's signatures."""
+    for m in reversed(list(CCMD.finditer(text))):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {'{': 1, '}': -1}.get(text[i], 0)
+            i += 1
+        text = blanked(text, m.start(), i)
+    for pattern in [DECLARATION] + [re.compile(p) for p in rule.get('exempt', [])]:
+        for m in reversed(list(pattern.finditer(text))):
+            text = blanked(text, m.start(), m.end())
+    return text
+
+
 def counts(rules, files):
     """[rc4l] {rule: {file: matches}} for every file each rule covers that matches at all."""
     out = {}
@@ -80,7 +103,7 @@ def counts(rules, files):
         for rel in sorted(files):
             if not rel.endswith(CODE) or not in_set(rel, rule['files']) or in_set(rel, rule.get('exclude', [])):
                 continue
-            text = selected(code_only(files[rel]))
+            text = exempted(selected(code_only(files[rel])), rule)
             n = sum(len(p.findall(text)) for p in patterns)
             if n:
                 hits[rel] = n

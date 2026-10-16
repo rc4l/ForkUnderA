@@ -38,6 +38,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <stddef.h>
+#include <atomic>   // [rc4l] features/handoff: a string's shared buffer is counted from both threads
 #include "tarray.h"
 #include "name.h"
 
@@ -54,7 +55,7 @@ struct FStringData
 {
 	unsigned int Len;		// Length of string, excluding terminating null
 	unsigned int AllocLen;	// Amount of memory allocated for string
-	int RefCount;			// < 0 means it's locked
+	std::atomic<int> RefCount;	// < 0 means it's locked; [rc4l] atomic, since copies of one string may be made and dropped on both threads
 	// char StrData[xxx];
 
 	char *Chars()
@@ -101,7 +102,7 @@ struct FNullStringData
 {
 	unsigned int Len;
 	unsigned int AllocLen;
-	int RefCount;
+	std::atomic<int> RefCount;	// [rc4l] laid out as FStringData's, which it stands in for
 	char Nothing[2];
 };
 

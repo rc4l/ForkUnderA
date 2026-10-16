@@ -102,6 +102,11 @@ export function playedOnce(n) {
   return n === 1 ? '' : n ? `the sound started ${n} times` : 'the sound never started';
 }
 
+// [rc4l] Why the game thread's check failed, or '': no tic ran on its own thread, or none of the shots it fired made a sound.
+export function threadedWithSound({ tics, sounds }) {
+  return !tics ? 'no tic ran on the game thread' : !sounds ? 'the shots fired on the game thread made no sound' : '';
+}
+
 // [rc4l] Why resizing held more of the GPU than one size does, or '': more screen-sized textures alive than before, past one more set of the screen's targets.
 export function heldOnce({ before, after }) {
   return after - before > 6 ? `${after - before} more screen-sized textures were held after the resizes (${before} before)` : '';
@@ -212,7 +217,9 @@ export const CHECKS = [
       const AC = window.AudioContext; window.AudioContext = class extends AC { constructor(...a) { super(...a); window.fuaAudio.push(this); } };
       const make = BaseAudioContext.prototype.createBufferSource; BaseAudioContext.prototype.createBufferSource = function (...a) { window.fuaBuffers++; return make.apply(this, a); };
     }`,
+    // [rc4l] Tics inline: this page is given no animation frame after the click's own, and a tic on the game thread resumes the level's sound a tic later, in the next.
     evaluate: inPage(`
+      Module.fuaCommand('fua_gamethread 0');
       const before = window.fuaAudio.map((c) => c.state);
       console.log('check: click');
       for (let i = 0; i < 50 && !window.fuaAudio.every((c) => c.state === 'running'); i++) ${pause(100)}
@@ -298,6 +305,29 @@ export const CHECKS = [
       return sounds.length ? sounds.filter((s) => s.id === sounds[0].id).length : 0;`),
     until: EVAL,
     expect: playedOnce,
+  },
+  // [rc4l] fua_gamethread: the tics run on a worker beside the page's frames, and the sounds a tic starts, here the pistol's, still play, started by the handoff on the page thread.
+  {
+    name: 'the game thread runs the tics and their sounds play',
+    autoplay: true,
+    init: WATCH_SOUNDS,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      Module.fuaCommand('fua_gamethread 1');
+      ${pause(1500)}
+      const from = window.fuaSounds.length;
+      Module.fuaCommand('+attack');
+      ${pause(1200)}
+      Module.fuaCommand('-attack');
+      ${pause(400)}
+      Module.fuaCommand('fua_gamethread_report');
+      ${pause(300)}
+      unhear();
+      const line = said.slice().reverse().find((l) => l.includes('game thread:')) || '';
+      const m = /game thread: (\\d+) tics/.exec(line);
+      return { tics: m ? Number(m[1]) : 0, sounds: window.fuaSounds.slice(from).length };`),
+    until: EVAL,
+    expect: threadedWithSound,
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {

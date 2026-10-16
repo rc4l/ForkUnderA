@@ -15,6 +15,7 @@
 // [rc4l] The overlay's geometry, its gate and the server's side, which every build has; GL's drawing is hitboxviz_gl.cpp, built only where GL is.
 
 #include "actor.h"
+#include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "c_cvars.h"
 #include "c_dispatch.h"   // CCMD
 #include "c_console.h"    // Printf
@@ -31,6 +32,7 @@
 #include "features/hitboxviz/computation/blastrecords_compute.h"
 #include "features/hitboxviz/computation/boxedges_compute.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferred
 
 EXTERN_CVAR(Bool, sv_cheats)
 
@@ -73,6 +75,8 @@ namespace
 	const unsigned int MAX_FRAME_VERTS = 200 * 1024;
 
 	BlastRecordStore s_blasts;
+	// [rc4l] The overlay draws the store every frame, so a blast a tic on the game thread makes is stored in the handoff.
+	zx::handoff::Deferred<BlastRecord> s_blastsMade([](const BlastRecord &r) { s_blasts.Push(r); });
 
 	// [rc4l] The backend's frame (CollectBackendFrame), in BackendLines' order, and whether it may draw.
 	TArray<Vertex3> s_backendVerts[kLineBatches];
@@ -179,7 +183,7 @@ void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor,
 
 void CollectBlasts(TArray<Vertex3> &dest)
 {
-	s_blasts.ExpireBefore(gametic);
+	s_blasts.ExpireBefore(zx::gamecopy::CopyTic());   // [rc4l] the tic the frame shows
 	if (cl_fua_hitbox_explosions)
 		BuildBlastGeometry(dest);
 }
@@ -232,12 +236,13 @@ void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedist
 	record.fulldamagedistance = fulldamagedistance;
 	record.expiryTic = gametic + BLAST_RECORD_LIFETIME_TICS;
 
-	s_blasts.Push(record);
+	s_blastsMade.Make(record);
 }
 
 void ClearBlasts()
 {
 	s_blasts.Clear();
+	s_blastsMade.Clear();
 }
 
 bool ServerDebugActive()

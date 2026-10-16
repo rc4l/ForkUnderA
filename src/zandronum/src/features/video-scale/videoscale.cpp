@@ -18,6 +18,7 @@
 #include "features/video-scale/videoscale.h"
 #include "doomstat.h"   // [rc4l] setsizeneeded
 #include "sbar.h"       // [rc4l] StatusBar
+#include "features/handoff/effects.h"   // [rc4l] BesideTic, QueueUI
 
 // The scale CVARs do NOT trigger a mode reset. A mode reset would destroy and recreate the window +
 // GL context (black flash + keyboard-focus loss on every slider tick). Instead the framebuffer's
@@ -93,8 +94,9 @@ void ResizeScreenInPlace(DSimpleCanvas *canvas, int w, int h)
 	// [rc4l] Mirrors upstream's V_OutputResized: no window or context is recreated, so there is no black flash or focus loss.
 	canvas->Resize(w, h);
 	V_RecalcVideoModeState(w, h, DisplayBits);
-	// [rc4l] The status bar caches ST_Y from SCREENHEIGHT, and a stale one sizes the 3D view taller than the buffer it draws into.
-	if (StatusBar != NULL) StatusBar->ScreenSizeChanged();
+	// [rc4l] The status bar caches ST_Y from SCREENHEIGHT, and a stale one sizes the 3D view taller than the buffer it draws into; it is the game's, so beside a tic it waits for the handoff.
+	if (zx::handoff::BesideTic()) zx::handoff::QueueUI({ [](intptr_t, intptr_t) { if (StatusBar != NULL) StatusBar->ScreenSizeChanged(); }, 0, 0 });
+	else if (StatusBar != NULL) StatusBar->ScreenSizeChanged();
 	setsizeneeded = true;
 }
 

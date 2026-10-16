@@ -31,9 +31,13 @@ void MCP_Crash_Init();
 // Bumped by the main thread every pass of the main loop. If it stops while the process is still
 // alive, the hang watchdog suspends that thread and writes its stack -- see mcp_crash.cpp.
 void MCP_Crash_NoteAlive();
+// [rc4l] Called once on the game thread so the hang watchdog can name it and watch its tics too.
+void MCP_Crash_NoteGameThread();
 
 // Marks the sim|render boundary for the coarse perf split (anchored before D_Display in D_DoomLoop).
 void MCP_RPC_MarkRender();
+// [rc4l] Ends perf.capture's frame at the top of every D_RunFrame, beside a tic on the game thread too.
+void MCP_RPC_FrameEnd();
 
 // Per-command RECEIVE bandwidth tally (anchored in the client's parse loop). svc = command id.
 void MCP_NetProf_Recv( int svc, int bytes );
@@ -54,7 +58,9 @@ inline void MCP_Bridge_Poll() {}
 inline void MCP_Bridge_TeeOutput(const char *) {}
 inline void MCP_Bridge_Shutdown() {}
 inline void MCP_Crash_Init() {}
+inline void MCP_Crash_NoteGameThread() {}
 inline void MCP_RPC_MarkRender() {}
+inline void MCP_RPC_FrameEnd() {}
 inline void MCP_NetProf_Recv( int, int ) {}
 inline void MCP_RPC_OverrideAxes( float * ) {}
 inline bool MCP_InputLocked() { return false; }

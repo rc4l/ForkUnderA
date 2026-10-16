@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/sprites/pspritebuild.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/sprites/spritebuild.h"
@@ -132,7 +133,7 @@ void LayerQuad(const PlayerRecord *player, const pspdef_t *psp, fixed_t sx, fixe
 	const ActorRecord *const mo = zx::gamecopy::Record(player->mo);
 	if (mo != NULL)
 	{
-		const zx::damagetint::TintSubject tint = { mo->who, mo->playerBody, mo->tintActive, mo->tintTexture };
+		const zx::damagetint::TintSubject tint = { mo->id, mo->playerBody, mo->tintActive, mo->tintTexture };
 		DamageTint_WeaponGradient(tint, mo->RenderStyle.BlendOp, mo->RenderStyle.Flags, fi.vt, fi.vb, q.tint);
 	}
 	Emit(q);
@@ -252,10 +253,10 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		if (floortex != NULL && floortex->isGlowing())
 			lightlevel = ComputeSpriteGlow(lightlevel, (int)(playermo->z - viewsector->rc.floorplane.ZatPoint(playermo->x, playermo->y)).Raw(),
 				floortex->gl_info.GlowHeight);
-		if (viewsector->e->XFloor.ffloors.Size() && !glset.nocoloredspritelighting)
+		if (viewsector->e->rcXFloor.ffloors.Size() && !glset.nocoloredspritelighting)
 		{
 			// [rc4l] The 3D floor band the eye is in lights and colours the weapon.
-			TArray<lightlist_t> &lightlist = viewsector->e->XFloor.lightlist;
+			TArray<lightlist_t> &lightlist = viewsector->e->rcXFloor.lightlist;
 			for (unsigned i = 0; i < lightlist.Size(); i++)
 			{
 				if (zx::levelmesh::LightListBottom(viewsector, i, viewx, viewy) < player->viewz)
@@ -273,7 +274,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		}
 	}
 	// [rc4l] Korshun: bright fog draws the weapon fullbright, keeping its light colour.
-	if (glset.brightfog && ((level.flags & LEVEL_HASFADETABLE) || cm.FadeColor != 0)) lightlevel = 255;
+	if (glset.brightfog && ((zx::gamecopy::Level().flags & LEVEL_HASFADETABLE) || cm.FadeColor != 0)) lightlevel = 255;
 
 	visstyle_t vis;
 	memset(&vis, 0, sizeof(vis));

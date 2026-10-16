@@ -85,7 +85,9 @@
 #include "features/viewsetup/computation/viewsetup_compute.h"
 #include "features/fua-caching/fua_caching.h"
 #include "features/frame/levelrenderer.h"   // [rc4l] FLevelRenderer
-#include "features/frame/playerview.h"      // [rc4l] BeginViewpoint, EndViewpoint, MarkMapSection
+#include "features/frame/playerview.h"      // [rc4l] SetViewpointUp, EndViewpoint, MarkMapSection
+#include "features/levelmesh/flatmesh.h"     // [rc4l] MainView, SetMainView
+#include "features/gamecopy/players.h"       // [rc4l] the view actor's record and the eye's HUD model
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -133,7 +135,7 @@ angle_t FGLRenderer::FrustumAngle()
 void FGLRenderer::SetViewArea()
 {
 	// [rc4l] features/viewsetup places the eye and finds its area, for a frame GL draws or not.
-	zx::viewsetup::SetViewArea(mViewActor);
+	zx::viewsetup::SetViewArea(zx::gamecopy::IndexOf(zx::gamecopy::RecordOf(mViewActor)));
 }
 
 //-----------------------------------------------------------------------------
@@ -635,7 +637,10 @@ void FGLRenderer::EndDrawScene(sector_t * viewsector)
 	// [BB] HUD models need to be rendered here. Make sure that
 	// DrawPlayerSprites is only called once. Either to draw
 	// HUD models or to draw the weapon sprites.
-	const bool renderHUDModel = gl_IsHUDModelForPlayerAvailable( players[consoleplayer].camera->player );
+	// [rc4l] features/gamecopy: whether the eye's player draws a HUD model, as the fill found it.
+	const zx::gamecopy::ActorRecord *const eye = zx::gamecopy::CameraOf(consoleplayer);
+	const zx::gamecopy::PlayerRecord *const eyePlayer = eye != NULL ? zx::gamecopy::Player(eye->playerIndex) : NULL;
+	const bool renderHUDModel = eyePlayer != NULL && eyePlayer->hudModel;
 	if ( renderHUDModel )
 	{
 		// [BB] The HUD model should be drawn over everything else already drawn.
@@ -693,7 +698,7 @@ void FGLRenderer::ProcessScene(bool toscreen)
 void FGLRenderer::SetFixedColormap (player_t *player)
 {
 	// [rc4l] features/viewsetup works the fixed colormap out, for a frame GL draws or not.
-	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
+	gl_fixedcolormap = zx::viewsetup::FixedColormap(int(player - players));
 	gl_RenderState.SetFixedColormap(gl_fixedcolormap);
 }
 
@@ -744,11 +749,21 @@ static void PrintViewStateIfArmed()
 		static_cast<OpenGLFrameBuffer*>(screen)->GetTrueHeight());
 }
 
+// [rc4l] GL's viewpoint from the live camera, which it reads while tics run inline: the frame set up from it, then features/frame's view area and viewsetup.
+static bool BeginGLViewpoint (AActor *camera, const FViewLens &lens, bool mainview, bool toscreen)
+{
+	const bool saved = zx::levelmesh::MainView ();
+	zx::levelmesh::SetMainView (mainview);
+	R_SetupFrame (camera);
+	zx::frame::SetViewpointUp (lens, mainview, toscreen);
+	return saved;
+}
+
 sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, float fov, float ratio, float fovratio, bool mainview, bool toscreen)
 {
 	// [rc4l] features/frame sets the viewpoint up as a frame without GL does: which view the walks belong to, the camera, the view area and features/viewsetup's view through GL's lens.
 	const FViewLens lens = { fov, ratio, fovratio };
-	const bool savedMainview = zx::frame::BeginViewpoint(camera, lens, mainview, toscreen);
+	const bool savedMainview = BeginGLViewpoint(camera, lens, mainview, toscreen);
 	sector_t * retval;
 	const zx::viewsetup::ViewSetup &view = zx::viewsetup::CurrentView();
 	mAngles.Pitch = view.pitch;
@@ -1032,6 +1047,7 @@ void FGLInterface::WriteSavePic (player_t *player, FILE *file, int width, int he
 
 void FGLInterface::BeginFrame(player_t *)
 {
+	P_FindParticleSubsectors();   // [rc4l] GL draws the live particles; the backend draws the render copy's
 	GLRenderer->BeginFrame();
 }
 

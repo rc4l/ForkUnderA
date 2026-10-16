@@ -83,8 +83,8 @@ private:
 	std::atomic<bool> m_stop;
 };
 
-// [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the caller, at most `cap`, none on a machine with two or fewer.
-int ComputeAutoWorkers(int hardwareThreads, int cap);
+// [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the `reserved` threads that run beside it (the caller, and the game thread when it is on), at most `cap`, none when that leaves none.
+int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved);
 
 }} // namespace zx::jobs
 

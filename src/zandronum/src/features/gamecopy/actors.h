@@ -33,8 +33,18 @@ int IndexOf(const ActorRecord *r);
 const ActorRecord *RecordOf(const AActor *actor);
 // [rc4l] The live actor a record names, for an interface that takes one and looks its record up again; never read through.
 inline AActor *LiveOf(const ActorRecord *r) { return r != NULL ? static_cast<AActor *>(const_cast<void *>(r->who)) : NULL; }
+// [rc4l] The record of the actor with this id in the last fill, NULL (counted in copy/stale_ids) when it is gone.
+const ActorRecord *RecordById(unsigned int id);
+// [rc4l] The tic the copy was taken at, -1 before the level's first fill.
+int CopyTic();
+// [rc4l] Which level the copy is of, a count that moves on with each level started.
+int CopyLevel();
 // [rc4l] The first record in a sector's actor list, as its thinglist orders them, -1 for none.
 int FirstActorIn(const sector_t *sector);
+// [rc4l] The record of the sky viewpoint a sector's floor or ceiling shows, as GetSkyBox finds it, -1 for none.
+int SkyBoxOf(const sector_t *sector, int plane);
+// [rc4l] The record of the level's default sky viewpoint, -1 for none.
+int DefaultSkyBox();
 // [rc4l] GetBobOffset for a record, ticfrac of the way through its tic.
 fixed_t BobOffset(const ActorRecord &a, fixed_t ticfrac);
 

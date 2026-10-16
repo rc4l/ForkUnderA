@@ -30,7 +30,7 @@ void BuildSprite(const zx::gamecopy::ActorRecord &thing);
 void BuildSprites(const zx::gamecopy::ActorRecord *const *things, int count);
 
 // [rc4l] Derive a particle in `sector` (as GL's walk sees it) into the dynamic stream, noted for the check likewise.
-void BuildParticle(particle_t *particle, sector_t *sector);
+void BuildParticle(particle_t *particle, const void *who, sector_t *sector);
 
 // [rc4l] With fua_sprite_check on, what GL drew for an actor or a particle, its `count` vertices with it, so the derivation can be compared against it.
 void NoteGLSprite(const void *who, bool particle, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *verts, int count);

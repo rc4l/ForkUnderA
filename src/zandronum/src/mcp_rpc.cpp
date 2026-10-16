@@ -242,12 +242,10 @@ void MCP_SimPreTic()
 	}
 }
 
-void MCP_RPC_Tick()
+// [rc4l] Every frame, beside a tic on the game thread too, while the bridge's poll waits for the handoff.
+void MCP_RPC_FrameEnd()
 {
-	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
-
-	// Perf frame accounting. This Tick runs at the TOP of D_DoomLoop, i.e. the end of the frame that
-	// just finished, so record that frame's total/sim/render times if a capture is running.
+	// Perf frame accounting at the top of D_RunFrame, i.e. the end of the frame that just finished.
 	{
 		PerfClock::time_point now = PerfClock::now();
 		if ( g_haveFrameStart && g_perfCapturing )
@@ -301,6 +299,11 @@ void MCP_RPC_Tick()
 		g_haveFrameStart = true;
 		g_haveRenderMark = false;
 	}
+}
+
+void MCP_RPC_Tick()
+{
+	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
 
 	// GPU profiler (gl.timers): the render-thread anchors accumulate timer-query results across frames;
 	// when a capture completes, its report is waiting here and goes out as a "glperf" event, mirroring
