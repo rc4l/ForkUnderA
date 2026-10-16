@@ -87,9 +87,9 @@ const MOD_TID = { sky: 20, camera: 21, screen: 22, lamp: 23, quake: 24 };
 // [rc4l] The map variables gtmod's script keeps what it read in, which the trace's ACS fingerprint holds.
 const MOD_VAR = { tic: 0, set: 1, alias: 2, command: 3, screenWidth: 4, renderCvar: 5, justHit: 6, camera: 7, floorZ: 8, gravity: 9 };
 
-// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, changes gravity from the console, quakes, sets the mugshot, fades a HUD message and exits the level.
+// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, sets a render cvar and the gravity from the console, quakes, sets the mugshot, fades a HUD message, autosaves and exits the level.
 export function gtmodScript() {
-  const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity"];
+  const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity", "r_drawfuzz 1"];
   const s = new AcsScript();
   const read = (cvar, v) => s.emit(PCD.PUSHNUMBER, cvar, PCD.GETCVAR, PCD.ASSIGNMAPVAR, v);
   const at = (tic, words) => {
@@ -113,9 +113,11 @@ export function gtmodScript() {
   read(10, MOD_VAR.gravity);
   s.emit(...callFunc(ACSF.PlaySound, [MOD_TID.lamp, 6, 2, 65536, 1]), PCD.DROP);
   at(100, callSpecial(SPECIAL.Thing_Remove, [MOD_TID.camera]));
+  at(150, consoleCommand(11));
   at(200, consoleCommand(7));
   at(250, [...callSpecial(SPECIAL.Radius_Quake, [3, 30, 0, 12, MOD_TID.quake]), PCD.PUSHNUMBER, 9, PCD.SETMUGSHOTSTATE]);
   at(300, hudMessage(8, { type: 1, id: 2, color: 4, x: 0.5, y: 0.3, hold: 1, fade: 2 }));
+  at(400, callSpecial(SPECIAL.Autosave, [0]));
   at(560, callSpecial(SPECIAL.Exit_Normal, [0]));
   s.emit(PCD.DELAYDIRECT, 1).jump(PCD.GOTO, "loop");
   return acs0(s.words(), strings);
@@ -307,6 +309,47 @@ export async function traceFixture(f, out, { engine, store, dir = fixtureDir(), 
   } finally {
     await stopInstance(inst);
   }
+}
+
+// [rc4l] A savegame one engine writes and every engine loads: the fixture's map played saveTic tics with nobody pressing anything and saved, then loaded and traced tics tics by each reader, each reader's trace held to the first's; one result per later reader.
+export async function saveCompatFixture(f, { writer, readers, names = readers, store, dir = fixtureDir(), saveTic = 300, tics = 300, log = () => {} }) {
+  const { files, missing } = fixtureFiles(f, dir, store);
+  if (missing.length) throw new Error(`${f.name} needs ${missing.join(", ")}, not in ${store}`);
+  const iwad = fixtureIwad(f, store, path.dirname(writer));
+  const extraArgs = files.length ? ["-file", ...files] : [];
+  const tag = `${f.name}-${process.pid}`;
+  const save = path.join(os.tmpdir(), `fuactl-save-${tag}.zds`).replace(/\\/g, "/");
+  fs.rmSync(save, { force: true });
+  const inst = await launchInstance({ engine: writer, iwad, map: f.map, engineDefault: true, cvars: RUN_UNFOCUSED, extraArgs });
+  let c = null;
+  try {
+    c = await attach(inst);
+    await waitInLevel(c, 60000);
+    await waitLevelTime(c, saveTic);
+    await exec(c, `save "${save}"`);
+    await waitForFile(save, 30000, inst.proc);
+  } finally {
+    if (c) c.close();
+    await stopInstance(inst);
+  }
+  const traces = [];
+  for (const engine of readers) {
+    const out = path.join(os.tmpdir(), `fuactl-load-${tag}-${traces.length}.trace`);
+    fs.rmSync(out, { force: true });
+    const r = await launchInstance({ engine, iwad, engineDefault: true, cvars: RUN_UNFOCUSED, extraArgs, loadgame: save,
+      postMap: [`fua_simtrace ${tics} "${out.replace(/\\/g, "/")}"`] });
+    try {
+      log(`${f.name}: ${names[traces.length]} loads the save and traces ${tics} tics`);
+      await waitForFile(out, 60000 + tics * 150, r.proc);
+      traces.push(parseSimTrace(fs.readFileSync(out, "utf8")));
+    } finally {
+      await stopInstance(r);
+    }
+  }
+  return traces.slice(1).map((t, i) => {
+    const d = diffSimTraces(traces[0], t);
+    return { name: `${f.name}: loaded by ${names[i + 1]} against ${names[0]}`, same: d.same, lines: describeSimTraceDiff(d) };
+  });
 }
 
 // [rc4l] Traces each fixture and holds it to its saved baseline, saving the baseline when there is none or update asks; returns one result per fixture.

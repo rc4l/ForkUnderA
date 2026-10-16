@@ -64,3 +64,12 @@ test("a level started again numbers its tics apart, so it compares with its own 
   assert.deepEqual(describeSimTraceDiff(d), ["the sim parts at tic 2 of level 2: fingerprint 4 against 8"]);
   assert.equal(formatTic(7), "7");
 });
+
+test("a frame-dependent kind that parts is told but does not fail the comparison", () => {
+  const a = "10 H 1\n10 L 5\n10 R 3\n";
+  const d = diffSimTraces(parseSimTrace(a), parseSimTrace(a.replace("10 L 5", "10 L 6")));
+  assert.equal(d.same, true);
+  assert.deepEqual(describeSimTraceDiff(d), [
+    "the traces agree: 1 tics hashed alike (with random streams), 0 events in the same order",
+    "the seen bits part at tic 10, which the frames between tics set, so it is not judged"]);
+});

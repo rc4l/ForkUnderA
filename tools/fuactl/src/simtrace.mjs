@@ -2,6 +2,8 @@
 
 // [rc4l] The fingerprint kinds a trace line can carry, H the world and the rest what mcp_simtrace.cpp folds apart from it.
 export const KINDS = { H: "sim", R: "random streams", A: "ACS variables", P: "players", L: "seen bits", T: "lights, sequences and quakes" };
+// [rc4l] Kinds that differ between two runs of one build, since the frames drawn between tics set them, so a difference is told and not judged.
+export const FRAME_DEPENDENT = new Set(["L"]);
 
 // [rc4l] Each level's tics are numbered from the start again, so a tic past the first level keeps apart as this many tics later.
 const LEVEL_SPAN = 10000000;
@@ -57,16 +59,19 @@ export function diffSimTraces(a, b) {
     if (a.events[i] !== b.events[i]) { firstEvent = { index: i, a: a.events[i] ?? null, b: b.events[i] ?? null }; break; }
   }
   const compared = Object.keys(KINDS).filter((k) => a.kinds.has(k) && b.kinds.has(k));
-  return { tics, events: [a.events.length, b.events.length], firstTic, parts, compared, firstEvent, same: parts.length === 0 && !firstEvent };
+  const judged = parts.filter((p) => !FRAME_DEPENDENT.has(p.kind));
+  return { tics, events: [a.events.length, b.events.length], firstTic, parts, compared, firstEvent, same: judged.length === 0 && !firstEvent };
 }
 
 // [rc4l] The verdict tracediff prints, one line per finding.
 export function describeSimTraceDiff(d) {
-  if (d.same) {
-    const extra = d.compared.filter((k) => k !== "H").map((k) => KINDS[k]);
-    return [`the traces agree: ${d.tics} tics hashed alike${extra.length ? ` (with ${extra.join(", ")})` : ""}, ${d.events[0]} events in the same order`];
-  }
   const out = [];
+  if (d.same) {
+    const extra = d.compared.filter((k) => k !== "H" && !d.parts.some((p) => p.kind === k)).map((k) => KINDS[k]);
+    out.push(`the traces agree: ${d.tics} tics hashed alike${extra.length ? ` (with ${extra.join(", ")})` : ""}, ${d.events[0]} events in the same order`);
+    for (const p of d.parts) out.push(`the ${KINDS[p.kind]} part at tic ${formatTic(p.tic)}, which the frames between tics set, so it is not judged`);
+    return out;
+  }
   for (const p of d.parts) {
     out.push(p.kind === "H" ? `the sim parts at tic ${formatTic(p.tic)}: fingerprint ${p.a} against ${p.b}` : `the ${KINDS[p.kind]} part at tic ${formatTic(p.tic)}: ${p.a} against ${p.b}`);
   }

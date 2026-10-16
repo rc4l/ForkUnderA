@@ -178,7 +178,7 @@ const USAGE = `fuactl <command>
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   simtrace --port P [--token T] --out FILE [--tics N]   each tic's fingerprint and every damage, kill and spawn for the next N tics (sim.trace), into FILE; +fua_simtrace N FILE on a launch traces from its first tic
   tracediff A B   where two sim traces part: the first tic whose fingerprint differs and the first event that moved; exit 1 when they differ
-  fixture record|trace|check|pictures|vischeck|copycheck|spritecheck|pspritecheck|seencheck [NAME ...] [--engine PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE] [--tolerance T]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, hold each trace to its saved baseline, capture its views at a fixed tic and hold each to a saved PNG (largest 16-pixel block within T, default 2), or play it with GL beside the backend and every walk checked against GL's, or with the render copy held to the live game (fua_copy_check), or every actor's sprite or the weapon held to GL's (fua_sprite_check, fua_psprite_check); the first check or pictures run saves the baseline, exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
+  fixture record|trace|check|pictures|vischeck|copycheck|spritecheck|pspritecheck|seencheck|savecompat [NAME ...] [--engine PATH] [--before PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE] [--tolerance T]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, hold each trace to its saved baseline, capture its views at a fixed tic and hold each to a saved PNG (largest 16-pixel block within T, default 2), or play it with GL beside the backend and every walk checked against GL's, or with the render copy held to the live game (fua_copy_check), or every actor's sprite or the weapon held to GL's (fua_sprite_check, fua_psprite_check), or the seen bits counted on Vulkan alone (seencheck), or a save each of --before and --engine writes loaded by both and their traces held together (savecompat); the first check or pictures run saves the baseline, exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
@@ -779,7 +779,7 @@ async function main() {
     }
     case "fixture": {
       const [what, ...names] = rest;
-      if (!["record", "trace", "check", "pictures"].includes(what) && !fixtures.CHECKS[what]) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
+      if (!["record", "trace", "check", "pictures", "savecompat"].includes(what) && !fixtures.CHECKS[what]) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
       const list = fixtures.pickFixtures(names);
       const opts = { engine: engineOf(flags), store: presetDirs(flags).storeDir, cvars: shot.parseCvarFlag(flags.cvar) || {}, update: !!flags.update,
         log: (m) => console.error(`[fixture] ${m}`) };
@@ -790,6 +790,20 @@ async function main() {
           const out = flags.out && list.length === 1 ? path.resolve(String(flags.out)) : path.join(fixtures.fixtureDir(), `${f.name}.latest.trace`);
           console.log(`${f.name}: ${await fixtures.traceFixture(f, out, opts)}`);
         }
+      } else if (what === "savecompat") {
+        // [rc4l] Each engine writes a save the other then loads too, so a save carries across a change either way.
+        if (!flags.before) { console.error("fixture savecompat needs --before PATH, the engine to hold the --engine one to"); process.exit(2); }
+        const after = opts.engine || resolveEngine(), before = String(flags.before);
+        let failed = false;
+        for (const f of list) {
+          for (const [writer, readers, names] of [[before, [before, after], ["before", "after"]], [after, [after, before], ["after", "before"]]]) {
+            for (const r of await fixtures.saveCompatFixture(f, { ...opts, writer, readers, names: names.map((n) => `${n} (saved by ${names[0]})`) })) {
+              for (const line of r.lines) console.log(`${r.name}: ${line}`);
+              if (!r.same) failed = true;
+            }
+          }
+        }
+        if (failed) process.exit(1);
       } else if (what === "check") {
         const results = await fixtures.checkFixtures(list, opts);
         for (const r of results) for (const line of r.lines) console.log(`${r.name}: ${line}`);

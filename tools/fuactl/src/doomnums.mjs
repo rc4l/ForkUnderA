@@ -13,6 +13,7 @@ export const SPECIAL = Object.freeze({
   Light_ChangeToValue: 112,
   Light_Glow: 114,
   Radius_Quake: 120,
+  Autosave: 15,
   Thing_Remove: 132,
   Sector_SetPlaneReflection: 159,
   Sector_Set3DFloor: 160,

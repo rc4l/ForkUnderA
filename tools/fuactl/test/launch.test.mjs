@@ -450,6 +450,13 @@ test("a demo launch plays the demo instead of loading a map first", () => {
   assert.deepEqual(args.slice(-3), ["+fua_simtrace", "70", "t.txt"]);
 });
 
+test("a savegame launch loads the save instead of a map, its trace armed after", () => {
+  const args = engineArgs({ loadgame: "C:/f/gtmod.zds", postMap: ["fua_simtrace 70 t.txt"] }, "x.ini");
+  assert.ok(!args.includes("+map"));
+  assert.equal(args[args.indexOf("-loadgame") + 1], "C:/f/gtmod.zds");
+  assert.deepEqual(args.slice(-3), ["+fua_simtrace", "70", "t.txt"]);
+});
+
 test("a post-map command goes to the engine word by word, quotes dropped", () => {
   assert.deepEqual(commandWords('recordmap "C:/a b/f.lmp" MAP01'), ["recordmap", "C:/a b/f.lmp", "MAP01"]);
   assert.deepEqual(commandWords("god"), ["god"]);

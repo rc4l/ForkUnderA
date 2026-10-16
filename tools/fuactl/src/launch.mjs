@@ -197,6 +197,8 @@ export function engineArgs(opts = {}, configPath) {
   else if (opts.playdemo) args.push("-playdemo", opts.playdemo);
   // [rc4l] A recording starts with the game the engine itself starts (-record with -warp), since a +recordmap on the command line is dropped and a +map after -record loads the level twice.
   else if (opts.record) args.push("-record", opts.record, "-warp", String(warpNumber(opts.map || "MAP01")));
+  // [rc4l] A savegame brings its own level, as a demo does.
+  else if (opts.loadgame) args.push("-loadgame", opts.loadgame);
   else args.push("+map", opts.map || "MAP01");
 
   // [rc4l] ...and anything that only means something once a level EXISTS goes after it.
