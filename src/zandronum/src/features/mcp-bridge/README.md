@@ -24,6 +24,7 @@ byte-identical and simply vanish.
 - **Loopback only**: binds `127.0.0.1`.
 - **Token**: if `ZANDRONUM_BRIDGE_TOKEN` is set, a client must present it before any command runs, so no
   other local process can drive an armed bridge.
+- **Any number of clients**: each connection has its own reader thread and token check; a reply goes to the client that asked, while events and console output go to every authed one.
 - **Self-supervised lifecycle** (see below).
 
 ## Files
@@ -36,6 +37,7 @@ byte-identical and simply vanish.
 | `mcp_crash.cpp` / `mcp_event.cpp` / `mcp_hud.cpp` / `mcp_renderinfo.cpp` | Backends: crash backtrace, input injection, HUD/frame capture, renderer info. |
 | `mcp_glperf.{h,cpp}` | **GPU render profiler** (`gl.timers` / `renderer.info`). GL_TIMESTAMP timer queries around the render passes, read back through a multi-frame ring so the CPU never stalls on the pipeline. `mcp_glperf.h` is inline no-ops when the bridge is off; the GL glue also has a `NO_GL` (server) fallback. |
 | `computation/mcprpc_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core: NDJSON framing, JSON field extraction, the FNV state-hash mixer, step planning. Strings are escaped by `features/json`, and frame times summed up by `features/perfstats`. |
+| `computation/bridgeclient_compute.{h,cpp,_test.cpp}` | Pure, unit-tested reading of one connection: its line framing, its token gate and its hello. |
 | `computation/glperf_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of the GPU profiler: ring-slot math, timestamp→ms + span validity, the all-zero "driver can't time" verdict, and report-JSON assembly. |
 | `computation/ticprof_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of `perf.ticprof`: which `features/telemetry` zones a tic is split into, each tic's phases from their totals, and the event's JSON. |
 

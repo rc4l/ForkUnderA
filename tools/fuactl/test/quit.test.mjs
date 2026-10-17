@@ -103,7 +103,7 @@ test("a locked instance that crashed reports its crash log, and one that failed 
   }
 });
 
-// [rc4l] The bridge serves one client at a time, and a probe left open after its question timed out kept every later one waiting until the launch gave up.
+// [rc4l] A probe left open after its question timed out kept every later one waiting on a one-client bridge, and still holds a reader thread on this one.
 test("waiting for a level closes every probe, the ones whose question failed too", async () => {
   const open = new Set();
   let n = 0;

@@ -3,6 +3,11 @@ import net from "node:net";
 import { drainLines, frameRequest, classify } from "./proto.mjs";
 import { scaled } from "./timeouts.mjs";
 
+// [rc4l] Why a connection got no hello: the engine took it but never greeted it, which an older bridge also did to every client but its first.
+export function helloTimeoutMessage(timeoutMs) {
+  return `hello timeout: the engine took the connection but sent no hello within ${Math.round(timeoutMs / 100) / 10} s; it is still starting, hung (\`fuactl hang --port P\` says where), or an older build whose bridge serves one client at a time and is busy with another`;
+}
+
 export class BridgeClient {
   constructor() {
     this.sock = null;
@@ -58,7 +63,7 @@ export class BridgeClient {
   waitHello(timeoutMs = scaled(8000)) {
     if (this.hello) return Promise.resolve(this.hello);
     return new Promise((resolve, reject) => {
-      const to = setTimeout(() => reject(new Error("hello timeout")), timeoutMs);
+      const to = setTimeout(() => reject(new Error(helloTimeoutMessage(timeoutMs))), timeoutMs);
       this._helloWaiters.push((m) => { clearTimeout(to); resolve(m); });
     });
   }

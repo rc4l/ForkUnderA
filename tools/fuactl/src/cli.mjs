@@ -115,7 +115,7 @@ function presetDirs(flags) {
 }
 
 async function connectTarget(flags, usage) {
-  // [rc4l] Every command waits out a launch still checking its world on its port, so a poll started right after `play` cannot kill it.
+  // [rc4l] Every command waits out a launch still checking its world on its port, so it acts on the world `play` set up, with the token it wrote.
   const port = flags.port || (sessionTarget(flags) || {}).port;
   if (port && await shot.awaitLaunch(SESSION(), port)) console.error(`waited for the launch on port ${port}`);
   const t = targetOf(flags, usage);
@@ -1064,7 +1064,7 @@ async function main() {
     // [rc4l] `fuactl ready` -- wait until an instance answers, instead of a hand-rolled poll after every launch.
     case "ready": {
       const deadline = Date.now() + 1000 * (Number(flags.timeout) || 120);
-      // [rc4l] The bridge serves only its newest client, so this tries only a live session's token (liveTarget), read again each round: connecting early knocked a launch still checking its world off the bridge, and it died.
+      // [rc4l] Only a live session's token (liveTarget), read again each round, since a launch still checking its world has not written its token yet.
       let failure = null;
       for (;;) {
         const t = sessionTarget(flags);

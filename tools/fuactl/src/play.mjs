@@ -90,7 +90,7 @@ export function resolvePreset(catalogueDir, storeDir, id, variantId) {
 // appeared and it spun until something else timed out, with the reason already printed and going
 // nowhere. A launch that is not going to work should say so in seconds.
 //
-// [rc4l] Each probe's connection is closed whatever happens to it, since the bridge serves one client at a time and a probe left open after a timeout kept every later one waiting.
+// [rc4l] Each probe's connection is closed whatever happens to it, since a probe left open after a timeout holds a reader thread in the engine until fuactl exits.
 export async function waitInLevel(inst, { timeoutMs = 90000, pollMs = 250, connect = (port, token) => bridgeConnect(port, token, { connectMs: 1500, helloMs: 3000 }) } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

@@ -203,7 +203,7 @@ test("a play session records the binary it launched and its engine's process", (
   assert.equal(readSession(path.join(dir, "absent")), null);
 });
 
-// [rc4l] ready connected with a dead launch's token, or none, while play still checked the new engine's world, and the bridge's newest client knocked play off it.
+// [rc4l] ready connected with a dead launch's token, or none, while play still checked the new engine's world, and once knocked play off a one-client bridge.
 test("ready connects only with a token whose engine is still running", () => {
   const alive = (pid) => pid === 7;
   assert.equal(liveTarget({ port: 7799, token: "t", pid: 7 }, alive), true);
@@ -320,7 +320,7 @@ test("a launch clears the session files that name its port and leaves another po
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// [rc4l] A `rpc sim.tic` poll started beside `play` took the single-client bridge mid-handshake, four times in one session, and the launch died with "hello timeout".
+// [rc4l] A `rpc sim.tic` poll started beside `play` killed the launch on a one-client bridge four times in one session, and still must not act before the launch has set the world up.
 test("a command waits while a launch on its port checks its world, and not for a dead or finished one", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "launching-"));
   const shared = path.join(dir, ".play-session");

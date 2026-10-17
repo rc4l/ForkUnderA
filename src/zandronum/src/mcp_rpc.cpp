@@ -54,8 +54,10 @@
 #include "features/json/computation/json_compute.h"
 #include "features/telemetry/telemetry.h"
 
-// From mcp_bridge.cpp -- send one framed NDJSON line to the connected client (thread-safe).
+// From mcp_bridge.cpp -- send one framed NDJSON line to every connected client (thread-safe).
 void MCP_Bridge_SendJson( const char *json );
+// [rc4l] From mcp_bridge.cpp, the line answering the request being dispatched, sent to its client alone.
+void MCP_Bridge_Reply( const char *json );
 // From mcp_event.cpp -- post a synthetic input event.
 void MCP_PostInputEvent( int type, int subtype, int data1, int data2 );
 
@@ -127,12 +129,12 @@ namespace
 	void SendOk( long id, const std::string &body )
 	{
 		if ( id < 0 ) return; // fire-and-forget request wants no reply
-		MCP_Bridge_SendJson( BuildOkResponse( id, body ).c_str() );
+		MCP_Bridge_Reply( BuildOkResponse( id, body ).c_str() );
 	}
 	void SendErr( long id, const std::string &msg )
 	{
 		if ( id < 0 ) return;
-		MCP_Bridge_SendJson( BuildErrResponse( id, msg ).c_str() );
+		MCP_Bridge_Reply( BuildErrResponse( id, msg ).c_str() );
 	}
 	void EmitEvent( const char *name, const std::string &data )
 	{
