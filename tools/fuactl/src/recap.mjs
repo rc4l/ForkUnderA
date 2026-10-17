@@ -53,11 +53,28 @@ export function slowSecondsGrew(seconds, { fast = null, slow = null, limit = 25,
     .filter(([, a, b]) => b - a > 0).sort((x, y) => (y[2] - y[1]) - (x[2] - x[1])).slice(0, limit);
 }
 
+// [rc4l] The frames slower than ms, how far apart they came, and whether at a steady beat (every gap within a tenth of the median), which is a timer's work rather than the game's.
+export function slowFrameRhythm(rows, ms = 20) {
+  const at = [];
+  let t = 0;
+  for (const r of rows) {
+    if ((r["frame/ms"] || 0) > ms) at.push(t);
+    t += r["frame/ms"] || 0;
+  }
+  const gaps = at.slice(1).map((x, i) => x - at[i]);
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const steady = gaps.length >= 3 && gaps.filter((g) => Math.abs(g - median) <= median * 0.1).length >= gaps.length * 0.8;
+  return { count: at.length, medianGapMs: median, steady };
+}
+
 // [rc4l] The recap as lines: a row a second, then what the slow seconds spent more on.
 export function formatRecap(seconds, grew) {
   const n = (v) => v.toFixed(2).padStart(7);
   const lines = ["sec   fps  tics  thread  held    p50ms    p99ms    maxms"];
   seconds.forEach((s, i) => lines.push(`${String(i).padStart(3)} ${String(s.fps).padStart(5)} ${String(s.tics).padStart(5)} ${String(s.threaded).padStart(7)} ${String(s.held).padStart(5)}  ${n(s.p50)}  ${n(s.p99)}  ${n(s.max)}`));
+  const rhythm = slowFrameRhythm(seconds.flatMap((s) => s.frames));
+  if (rhythm.count) lines.push("", `${rhythm.count} frames over 20 ms, ${Math.round(rhythm.medianGapMs)} ms apart at the median${rhythm.steady ? ", at a steady beat: something on a timer, which sample --stacks will name" : ""}`);
   lines.push("", "grew a frame from the fast seconds to the slow ones:", `${"counter".padEnd(40)} ${"fast".padStart(10)} ${"slow".padStart(10)}`);
   for (const [k, a, b] of grew) lines.push(`${k.padEnd(40)} ${a.toFixed(3).padStart(10)} ${b.toFixed(3).padStart(10)}`);
   return lines;

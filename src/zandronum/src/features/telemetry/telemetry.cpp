@@ -473,7 +473,11 @@ void FrameMark()
 	if (r.lastMarkNs != 0) Set(r.frameMs, (now - r.lastMarkNs) / 1e6);
 	if (r.secondStartNs == 0) r.secondStartNs = now;
 	const int n = r.count.load(std::memory_order_acquire);
-	for (int i = 0; i < n; i++) r.row[i] = (float)Sample(r.slots[i], nowMs);
+	{
+		// [rc4l] The gauges' reads timed, since a slow one stalls every frame it falls due in and no other region would name it.
+		ZX_ZONE("telemetry/gauges");
+		for (int i = 0; i < n; i++) r.row[i] = (float)Sample(r.slots[i], nowMs);
+	}
 	r.frames.Push(r.frameIndex, r.row, n);
 	for (int i = 0; i < n; i++)
 	{

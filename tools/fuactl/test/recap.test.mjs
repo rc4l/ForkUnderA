@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { captureSeconds, formatRecap, parseCaptureCsv, slowSecondsGrew } from "../src/recap.mjs";
+import { captureSeconds, formatRecap, parseCaptureCsv, slowFrameRhythm, slowSecondsGrew } from "../src/recap.mjs";
+
+// [rc4l] A 50 ms frame every 500 ms was the heap walk behind a gauge; slow frames at a steady beat say a timer, not the game.
+test("slow frames at a steady beat are told apart from scattered ones", () => {
+  const frames = (pattern) => pattern.map((ms) => ({ "frame/ms": ms }));
+  const beat = frames(Array.from({ length: 2000 }, (_, i) => (i % 100 === 99 ? 50 : 4.5)));
+  const r = slowFrameRhythm(beat);
+  assert.equal(r.count, 20);
+  assert.ok(Math.abs(r.medianGapMs - 495.5) < 1, String(r.medianGapMs));
+  assert.equal(r.steady, true);
+  const scattered = slowFrameRhythm(frames([4, 30, 4, 4, 4, 4, 4, 4, 30, 30, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 30]));
+  assert.equal(scattered.count, 4);
+  assert.equal(scattered.steady, false);
+  assert.deepEqual(slowFrameRhythm(frames([4, 4])), { count: 0, medianGapMs: 0, steady: false });
+  const lines = formatRecap(captureSeconds(beat), []);
+  assert.ok(lines.some((l) => /^\d+ frames over 20 ms, 49\d ms apart at the median, at a steady beat/.test(l)), lines.join("\n"));
+});
 
 // [rc4l] A capture of n frames each frameMs long with a GPU time, one tic a frame threaded.
 function capture(n, frameMs, gpuMs) {

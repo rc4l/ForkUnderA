@@ -42,6 +42,7 @@ node src/cli.mjs walkcheck --port 7799 --runs 8      # W held: no frame steps ba
 - A fault tied to what the player did: `window --activate 0|1 --port P` tells the instance it was alt-tabbed away or
   back with nothing on the desktop moved; `toggleconsole` and the menu are console commands. Reproduce their state
   exactly: the sound violations that brought in the per-site report needed the console open, not a fight.
+- From a player's save, `load` first and send everything else after the level is up: a command chained after `load ...; wait N` dies with the level's thinkers, and `god` or a setting silently never happens.
 - Frame rate in a fight: `record --seconds 120 --name X --recap` while they play, which prints frames, tics on the
   thread and held frames a second and what the slow seconds spent more on. In single-player the console and menus
   pause the game, so a paused frame capped at the tic rate is not a slowdown.

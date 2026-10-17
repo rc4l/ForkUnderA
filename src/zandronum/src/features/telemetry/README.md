@@ -1,5 +1,7 @@
 # telemetry
 
+What runs in players' builds, what each diagnostic costs and the rules for adding one: `docs/diagnostics.md`.
+
 One registry every feature reports its performance through. Counters are named `group/name` and read or fed once a frame. Timed regions work on any thread. A flight recorder keeps the last frames and seconds (`kFrameRows` and `kSecondRows` in `telemetry.cpp`). Console commands, files and the bridge read it, on every platform the engine builds for. `fua_stats` lists every counter there is, so this file names groups and where they come from rather than each counter.
 
 - `telemetry.h`/`.cpp`, the registry:
