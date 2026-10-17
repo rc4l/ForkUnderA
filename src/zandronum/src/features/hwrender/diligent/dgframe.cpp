@@ -332,6 +332,9 @@ int BackendMaxTextureSize()
 	return dev != NULL ? (int)dev->GetAdapterInfo().Texture.MaxTexture2DDimension : 0;
 }
 
+// [rc4l] The offscreen target's making the last picture was drawn into, so an empty overlay knows whether there is one to keep.
+static unsigned int g_paintedGen = 0;
+
 // [rc4l] The 2D layer alone over black: the console, the menus, the title and the intermission, with no world under them.
 static void DrawOverlay(bool present)
 {
@@ -342,9 +345,11 @@ static void DrawOverlay(bool present)
 	if (sd.Width == 0 || sd.Height == 0) return;
 	Diligent::ITextureView *rtv = FrameRTV();
 	ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	// [rc4l] A wipe under way is the picture under the console and menus.
+	// [rc4l] A wipe under way is the picture under the console and menus, and an overlay with nothing to draw keeps the last picture, since the intermission draws nothing once Use is pressed and clearing it presented black frames the next map then melted in from.
+	int quads = 0;
+	zx::draw2d::Quads2D(quads);
 	if (WipeActive()) WipeDraw(ctx);
-	else
+	else if (!zx::frame::ComputeOverlayKeepsPicture(FrameOffscreen(), g_paintedGen == FrameGeneration(), quads))
 	{
 		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 		ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -364,6 +369,7 @@ static void DrawBackendFrame(bool present)
 		DrawSceneOnce(present, true);
 	}
 	else DrawOverlay(present);
+	g_paintedGen = FrameGeneration();
 }
 
 void WipeEnd()

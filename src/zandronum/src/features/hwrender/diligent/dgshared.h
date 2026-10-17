@@ -91,6 +91,8 @@ bool FrameOffscreen();
 Diligent::ITextureView *FrameRTV();
 Diligent::ITextureView *FrameDSV();
 Diligent::ITexture *FrameTexture();
+// [rc4l] Which making of the offscreen target this is, so a picture drawn into an earlier one is not taken for this one's.
+unsigned int FrameGeneration();
 int FrameWidth();
 int FrameHeight();
 void FinishFrame(Diligent::IDeviceContext *ctx);
