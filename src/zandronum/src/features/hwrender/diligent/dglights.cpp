@@ -18,7 +18,6 @@
 #include "features/gamecopy/lights.h"   // [rc4l] the light records
 #include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
-#include "features/telemetry/telemetry.h"   // [rc4l] lights/cluster_overflow
 #include "p_local.h"
 #include "doomstat.h"
 #include "c_cvars.h"
@@ -53,7 +52,6 @@ static unsigned int g_lightIndexCapacity = 0;  // entries
 static int g_clusterCells = 0;                 // cells actually in use this frame
 static int g_clusterRefs = 0;                  // light-in-cell entries this frame, for the stats
 static int g_clusterTruncated = 0;             // cells that did not fit, this frame
-static int g_clusterOverflow = 0;              // cells this frame's grid needed past the table, 0 when it fit
 static bool g_clusterBindFailed = false;
 
 // The lights of this frame as the shader will see them: eight floats each, position (x, z, y),
@@ -86,10 +84,10 @@ bool EnsureLightBuffers(FString &err)
 			!CreateStructuredBuffer("fua light link ids", sizeof(unsigned), kLightTouchIdCapacity, NULL, g_lightTouchIdBuf))
 		{ err = "light link buffer creation failed"; return false; }
 	}
-	// [rc4l] The cluster table and its index list, created once (a buffer recreated mid-frame leaves every SRB pointing at the freed one) for the grid of an 8K frame.
+	// [rc4l] The cluster table and its index list, created once (a buffer recreated mid-frame leaves every SRB pointing at the freed one) for the grid every frame has.
 	if (!g_clusterBuf)
 	{
-		g_clusterCapacity = (unsigned)zx::hwrender::ComputeClusterCapacity(zx::hwrender::kClusterMaxScreenW, zx::hwrender::kClusterMaxScreenH);
+		g_clusterCapacity = zx::hwrender::kClusterCells;
 		if (!CreateStructuredBuffer("fua cluster table", 8, g_clusterCapacity, NULL, g_clusterBuf))
 		{ err = "cluster table creation failed"; return false; }
 	}
@@ -98,7 +96,7 @@ bool EnsureLightBuffers(FString &err)
 		// [rc4l] A million entries, 4 MB, because a quarter of that was not enough and the shortfall
 		// was invisible. 4096 lights spread over a map bin to ~385k entries; 262144 truncated that
 		// and the picture went 85% wrong with nothing but a number in a stats line to say so.
-		g_lightIndexCapacity = (unsigned)zx::hwrender::ComputeClusterIndexCapacity((int)g_clusterCapacity);
+		g_lightIndexCapacity = 1048576;
 		if (!CreateStructuredBuffer("fua cluster light indices", 4, g_lightIndexCapacity, NULL, g_lightIndexBuf))
 		{ err = "cluster index buffer creation failed"; return false; }
 	}
@@ -138,12 +136,6 @@ void AppendLightStats(FString &report)
 		FString trunc;
 		trunc.Format(" | WARNING: cluster index buffer full, %d cells truncated", g_clusterTruncated);
 		report += trunc;
-	}
-	if (g_clusterOverflow > 0)
-	{
-		FString over;
-		over.Format(" | WARNING: the frame needs %d cluster cells and the table holds %u, so every pixel loops over every light", g_clusterOverflow, g_clusterCapacity);
-		report += over;
 	}
 	if (g_clusterBindFailed) report += " | WARNING: ClusterTable not bound";
 	if (g_lightBindFailed) report += " | WARNING: LightBuffer not bound";
@@ -293,7 +285,6 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	g_clusterCells = 0;
 	g_clusterRefs = 0;
 	g_clusterTruncated = 0;
-	g_clusterOverflow = 0;
 	if (!fua_dg_clusters || !g_clusterBuf || !g_lightIndexBuf || g_lightCount <= 0) return;
 
 	if (GetSwapChain() == NULL) return;
@@ -308,14 +299,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 		zx::hwrender::ComputeGridForScreen(FrameWidth(), FrameHeight(),
 			zx::hwrender::kClusterZNear, zx::hwrender::kClusterZFar);
 	const int cells = zx::hwrender::ComputeClusterCount(grid);
-	if ((unsigned)cells > g_clusterCapacity)
-	{
-		// [rc4l] Too big a frame for the table: every pixel loops over every light, so it is counted and named rather than silent.
-		g_clusterOverflow = cells;
-		ZX_COUNT("lights/cluster_overflow", "frames", 1);
-		return;
-	}
-	if (cells <= 0) return;
+	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;
 
 	static TArray<unsigned int> counts, offsets, table, indices;
 	counts.Resize((unsigned)cells);
