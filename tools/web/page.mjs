@@ -24,7 +24,10 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01') {
       const started = async (from, title) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith(title)); t++) ${pause(100)} };
       const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
       const steps = ${JSON.stringify(soakSteps(action, map))};
+      // [rc4l] The page's WebGPU objects by label at the start and the end, so a failing soak shows which ones it kept.
+      const held = (when) => console.log('soak gpu ' + when + ': ' + (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText().replace(/\\n/g, '; ') : 'no ledger'));
       Module.fuaCommand('fua_soak begin');
+      held('start');
       for (let i = 0; i < ${cycles}; i++) {
         for (const step of steps) {
           const from = said.length;
@@ -38,6 +41,7 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01') {
         await collect();
         Module.fuaCommand('fua_soak mark');
       }
+      held('end');
       Module.fuaCommand('fua_soak verdict 1 json');
       unhear();
       return lastJson('{"pass"', {});`);
