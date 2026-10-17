@@ -12,7 +12,7 @@
 class AActor;
 struct player_t;
 
-namespace zx { namespace damagetint {
+namespace zx { namespace gamecopy {
 
 // [rc4l] What the tint needs of an actor: whose it is, whether it is a player's own body, and whether its floor hurts it unprotected and which floor that is.
 struct TintSubject
@@ -30,6 +30,10 @@ int FloorDamage(AActor *actor, FTextureID &texOut);
 // [rc4l] Whether a radsuit, invulnerability or god mode keeps the floor from hurting the player.
 bool DamageNegated(player_t *player);
 
-}} // namespace zx::damagetint
+}} // namespace zx::gamecopy
+
+// [rc4l] How much a sector's special/damage config hurts per cycle (0 = harmless), the complete mirror of P_PlayerInSpecialSector's tables, for the bridge's world.sectors query.
+struct sector_t;
+int DamageTint_SectorDamage( const sector_t *sec );
 
 #endif // ZX_TINTSUBJECT_H

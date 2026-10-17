@@ -20,6 +20,7 @@
 #include "r_data/renderstyle.h"
 #include "p_local.h"
 #include "p_3dfloors.h"
+#include "p_terrain.h"
 #include "c_dispatch.h"
 #include "textures/textures.h"
 #include "bitmap.h"
@@ -28,9 +29,10 @@
 
 #include "features/damage-tint/computation/damagetint_compute.h"
 #include "features/damage-tint/damagetint.h"
-#include "features/damage-tint/tintsubject.h"
+#include "features/gamecopy/tintsubject.h"
 
 using namespace zx::damagetint;
+using zx::gamecopy::TintSubject;
 
 #ifndef NO_GL
 
@@ -275,13 +277,62 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 	return PalEntry( (BYTE)( pct * 255 / 100 ), avg.r, avg.g, avg.b );
 }
 
+CCMD( fua_tintdebug )
+{
+	if ( gamestate != GS_LEVEL || consoleplayer < 0 || !playeringame[consoleplayer] )
+		return;
+	AActor *mo = players[consoleplayer].mo;
+	if ( mo == NULL || mo->Sector == NULL )
+		return;
+	sector_t *sec = mo->Sector;
+	fixed_t fz = sec->floorplane.ZatPoint( mo->x, mo->y );
+	FTextureID dbgTex;
+	dbgTex.SetInvalid();
+	int terrain = P_GetThingFloorType( mo );
+	Printf( "sector #%d  special=%d (0x%x)  damage=%d  computed=%d  terrain=%d(dmg %d)\n",
+		(int)( sec - sectors ), sec->special, sec->special, sec->damage, zx::gamecopy::FloorDamage( mo, dbgTex ),
+		terrain, Terrains[terrain].DamageAmount );
+	Printf( "z=%d floorz=%d planez=%d onfloor=%d waterlevel=%d protected=%d 3dfloors=%d\n",
+		(int)( mo->z >> FRACBITS ), (int)( mo->floorz >> FRACBITS ), (int)( fz >> FRACBITS ),
+		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && zx::gamecopy::DamageNegated( mo->player )),
+		sec->e ? (int)sec->e->XFloor.ffloors.Size() : 0 );
+	float intensity;
+	int lastTic;
+	if ( DamageTint_Ramp( mo->rcSerial, intensity, lastTic ))
+		Printf( "intensity=%.2f lastTic=%d (now %d)\n", intensity, lastTic, level.time );
+	else
+		Printf( "no ramp entry yet\n" );
+
+	// Histogram of nonzero specials with a sample position for each.
+	TMap<int, int> counts;
+	TMap<int, int> sample;
+	for ( int i = 0; i < numsectors; ++i )
+	{
+		int sp = sectors[i].special;
+		if ( sp == 0 && sectors[i].damage == 0 ) continue;
+		int key = sp;
+		if ( int *c = counts.CheckKey( key )) ++*c;
+		else { counts.Insert( key, 1 ); sample.Insert( key, i ); }
+	}
+	TMap<int, int>::Iterator it( counts );
+	TMap<int, int>::Pair *p;
+	while ( it.NextPair( p ))
+	{
+		int si = *sample.CheckKey( p->Key );
+		sector_t &s = sectors[si];
+		Printf( "special %d (0x%x): %d sectors, dmg-> %d, e.g. #%d near (%d,%d)\n",
+			p->Key, p->Key, p->Value, DamageTint_SectorDamage( &s ), si,
+			(int)( s.soundorg[0] >> FRACBITS ), (int)( s.soundorg[1] >> FRACBITS ));
+	}
+}
+
 #else // NO_GL -- dedicated server: no renderer, no tint; nothing references these there.
 
 #include "features/damage-tint/damagetint.h"
-bool DamageTint_BeginSpriteGlow( const zx::damagetint::TintSubject &, int, DWORD, float, float ) { return false; }
+bool DamageTint_BeginSpriteGlow( const zx::gamecopy::TintSubject &, int, DWORD, float, float ) { return false; }
 void DamageTint_EndSpriteGlow() {}
-bool DamageTint_SpriteGradient( const zx::damagetint::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
-bool DamageTint_WeaponGradient( const zx::damagetint::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
+bool DamageTint_SpriteGradient( const zx::gamecopy::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
+bool DamageTint_WeaponGradient( const zx::gamecopy::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
 bool DamageTint_Armed2D( zx::damagetint::TintGradient & ) { return false; }
 PalEntry DamageTint_Blend( PalEntry, int ) { return PalEntry( 255, 255, 255, 255 ); }
 PalEntry DamageTint_FaceOverlay( float *cov, bool *glow ) { if ( cov ) *cov = 0.0f; if ( glow ) *glow = false; return PalEntry( 0 ); }

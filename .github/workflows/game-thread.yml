@@ -41,10 +41,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 xvfb
 
       - name: Build with ThreadSanitizer and the bridge
+        shell: bash
         env:
           ZX_TSAN: "1"
           ZX_MCP_BRIDGE: "1"
-        run: ./linux_compile.sh --install-deps 2>&1 | tail -40
+        run: ./linux_compile.sh --install-deps --no-package 2>&1 | tail -40
 
       # [rc4l] Races only the engine's own code makes are judged; the drivers and libraries it calls into keep their own.
       - name: Record and trace the template fixture

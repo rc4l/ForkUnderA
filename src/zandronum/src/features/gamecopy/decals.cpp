@@ -3,7 +3,6 @@
 
 #include "features/gamecopy/decals.h"
 #include "features/telemetry/telemetry.h"
-#include "features/levelmesh/projdecals.h"   // [rc4l] CopyProjectedDecalOwners
 
 #include "r_defs.h"
 #include "r_state.h"
@@ -54,7 +53,6 @@ void FillDecals()
 		g_count[i] = (int)g_decals.size() - g_first[i];
 	}
 	ZX_COUNT("copy/decals", "decals", g_decals.size());
-	zx::levelmesh::CopyProjectedDecalOwners();
 }
 
 }} // namespace zx::gamecopy

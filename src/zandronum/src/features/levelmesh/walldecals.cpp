@@ -6,7 +6,7 @@
 #include "features/levelmesh/flatmesh.h"                       // [rc4l] RegisterDecal
 #include "features/levelmesh/wallcache.h"                      // [rc4l] the bake's parts and bands
 #include "features/materials/materials.h"
-#include "features/dynlights/pointlight.h"   // [rc4l] PointDynamicLight
+#include "features/levelmesh/pointlight.h"   // [rc4l] PointDynamicLight
 #include "features/viewsetup/viewsetup.h"   // [rc4l] SpritesTakeDynamicLight
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeSpriteBlendMode
 
@@ -99,7 +99,7 @@ void BuildDecal(const zx::gamecopy::DecalRecord *decal, side_t *side, const seg_
 	{
 		fixed_t x, y;
 		zx::gamecopy::DecalXY(*decal, side, x, y);
-		zx::dynlights::PointDynamicLight(x, y, FLOAT2FIXED(top), seg->Subsector, dyn);
+		zx::levelmesh::PointDynamicLight(x, y, FLOAT2FIXED(top), seg->Subsector, dyn);
 	}
 	MeshVertex quad[4];
 	for (int i = 0; i < 4; i++) quad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);

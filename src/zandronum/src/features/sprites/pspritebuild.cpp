@@ -6,7 +6,7 @@
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/sprites/spritebuild.h"
-#include "features/dynlights/pointlight.h"   // [rc4l] ActorDynamicLight
+#include "features/levelmesh/pointlight.h"   // [rc4l] ActorDynamicLight
 #include "features/sprites/computation/pspritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeWeaponStyle
@@ -45,7 +45,7 @@
 #include "features/rendersettings/colormap.h"   // [rc4l] FColormap
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 #include "features/gamecopy/players.h"   // [rc4l] the player records the weapon is drawn from
-#include "features/damage-tint/tintsubject.h"   // [rc4l] TintSubject
+#include "features/gamecopy/tintsubject.h"   // [rc4l] TintSubject
 #include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_WeaponGradient
 EXTERN_CVAR(Int, screenblocks)
 
@@ -133,7 +133,7 @@ void LayerQuad(const PlayerRecord *player, const pspdef_t *psp, fixed_t sx, fixe
 	const ActorRecord *const mo = zx::gamecopy::Record(player->mo);
 	if (mo != NULL)
 	{
-		const zx::damagetint::TintSubject tint = { mo->id, mo->playerBody, mo->tintActive, mo->tintTexture };
+		const zx::gamecopy::TintSubject tint = { mo->id, mo->playerBody, mo->tintActive, mo->tintTexture };
 		DamageTint_WeaponGradient(tint, mo->RenderStyle.BlendOp, mo->RenderStyle.Flags, fi.vt, fi.vb, q.tint);
 	}
 	Emit(q);
@@ -334,7 +334,7 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 		}
 		else
 		{
-			if (zx::viewsetup::SpritesTakeDynamicLight()) { dyn[0] = dyn[1] = dyn[2] = 0.f; zx::dynlights::ActorLight(*playermo, dyn); }
+			if (zx::viewsetup::SpritesTakeDynamicLight()) { dyn[0] = dyn[1] = dyn[2] = 0.f; zx::levelmesh::ActorLight(*playermo, dyn); }
 			// [rc4l] gl_SetColor for a weapon: white under a fixed colormap, else the light colour at the weapon's light level.
 			if (gl_fixedcolormap != CM_DEFAULT) rgba[0] = rgba[1] = rgba[2] = 1.f;
 			else

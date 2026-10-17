@@ -16,7 +16,7 @@
 #include "features/gamecopy/computation/recordlinks_compute.h"
 #include "features/gamecopy/computation/filldue_compute.h"
 #include "features/gamecopy/computation/serial_compute.h"
-#include "features/damage-tint/tintsubject.h"
+#include "features/gamecopy/tintsubject.h"
 #include "features/frame/computation/oracle_compute.h"
 #include "features/handoff/seam.h"
 #include "features/telemetry/telemetry.h"
@@ -619,7 +619,7 @@ void TakeActor(AActor &live, ActorRecord &out)
 	out.bobTic = live.FloatBobPhase + level.maptime;
 	out.attackRadius = live.GetAttackRadius();
 	out.attackHeight = live.GetAttackHeight();
-	const zx::damagetint::TintSubject tint = zx::damagetint::TintSubjectOf(&live);
+	const zx::gamecopy::TintSubject tint = zx::gamecopy::TintSubjectOf(&live);
 	out.playerBody = tint.playerBody;
 	out.tintActive = tint.active;
 	out.tintTexture = tint.texture;

@@ -3,10 +3,10 @@
 //
 // [rc4l] The handoff loop: each tic is the handoff's work before it, the playsim's tic on the schedule fua_gamethread picks, and the handoff's work after it, every part a seam.
 
-#ifndef ZX_HANDOFF_LOOP_H
-#define ZX_HANDOFF_LOOP_H
+#ifndef ZX_GAMELOOP_LOOP_H
+#define ZX_GAMELOOP_LOOP_H
 
-namespace zx { namespace handoff {
+namespace zx { namespace gameloop {
 
 // [rc4l] One tic as TryRunTics runs it: the console and menu tickers, tic-scheduled RPCs and the seen bits before it, G_Ticker's halves around the playsim, and the profiler, trace, gametic, input and render copy after it.
 void RunTic();
@@ -23,6 +23,6 @@ int HeldFrames();
 void FrameBegins();
 void FrameEnds();
 
-}} // namespace zx::handoff
+}} // namespace zx::gameloop
 
 #endif // ZX_HANDOFF_LOOP_H

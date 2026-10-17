@@ -11,7 +11,7 @@
 struct subsector_t;
 namespace zx { namespace gamecopy { struct ActorRecord; } }
 
-namespace zx { namespace dynlights {
+namespace zx { namespace levelmesh {
 
 // [rc4l] The dynamic light at a point in a subsector, added to out, but not from a light self carries that does not light it.
 void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void *self, float out[3]);
@@ -22,6 +22,6 @@ void ActorLight(const zx::gamecopy::ActorRecord &self, float out[3]);
 // [rc4l] The dynamic light at a point, from zero, and none without a subsector.
 void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, float out[3]);
 
-}} // namespace zx::dynlights
+}} // namespace zx::levelmesh
 
 #endif // ZX_POINTLIGHT_H

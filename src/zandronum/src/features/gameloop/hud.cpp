@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/handoff/hud.h"
+#include "features/gameloop/hud.h"
 #include "features/handoff/seam.h"
 #include "features/draw2d/record.h"
 #include "features/frame/framedriver.h"   // [rc4l] GLDrawsFrame
@@ -13,7 +13,9 @@
 // [rc4l] Off draws the HUD live every frame, as GL does, so a scenario can hold the recording to it.
 CVAR(Bool, fua_hud_record, true, 0)
 
-namespace zx { namespace handoff {
+namespace zx { namespace gameloop {
+
+using namespace zx::handoff;
 
 namespace {
 
@@ -46,4 +48,4 @@ bool ReplayHUD()
 	return true;
 }
 
-}} // namespace zx::handoff
+}} // namespace zx::gameloop

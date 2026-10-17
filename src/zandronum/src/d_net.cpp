@@ -26,7 +26,7 @@
 //-----------------------------------------------------------------------------
 
 #include <stddef.h>
-#include "features/handoff/loop.h"   // [rc4l] RunTic
+#include "features/gameloop/loop.h"   // [rc4l] RunTic
 
 #include "version.h"
 #include "menu/menu.h"
@@ -1920,7 +1920,7 @@ void TryRunTics (void)
 			}
 			if (debugfile) fprintf (debugfile, "run tic %d\n", gametic);
 			// [rc4l] features/handoff: the handoff's work, the playsim's tic and the handoff's work again.
-			zx::handoff::RunTic ();
+			zx::gameloop::RunTic ();
 		}
 		S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
 	}

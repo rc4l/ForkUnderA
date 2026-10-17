@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/handoff/computation/threadedtic_compute.h"
+#include "features/gameloop/computation/threadedtic_compute.h"
 
 #include <gtest/gtest.h>
 
-using zx::handoff::ComputeTakeBackDue;
-using zx::handoff::ComputeThreadedTic;
-using zx::handoff::ThreadedTicIn;
+using zx::gameloop::ComputeTakeBackDue;
+using zx::gameloop::ComputeThreadedTic;
+using zx::gameloop::ThreadedTicIn;
 
 namespace {
 const ThreadedTicIn kOn = { true, true, false, false, false, false, false, false, false, false, false };

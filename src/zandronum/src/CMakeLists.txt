@@ -1641,7 +1641,7 @@ add_executable( zdoom WIN32
 	# [rc4l] Generated, and listed so the custom command above runs for this target, offline builds included, whose wad search reads it.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/damage-tint/damagetint.cpp
-	features/damage-tint/tintsubject.cpp
+	features/gamecopy/tintsubject.cpp
 	features/global-header/zx_globalheader.cpp
 	features/menu-focus/zx_focusglow.cpp
 	features/global-header/computation/globalheader_compute.cpp
@@ -1667,7 +1667,7 @@ add_executable( zdoom WIN32
 	features/models/md3model.cpp
 	features/models/voxelmodel.cpp
 	features/dynlights/a_dynlight.cpp
-	features/dynlights/pointlight.cpp
+	features/levelmesh/pointlight.cpp
 	features/gldefs/lightsettings.cpp
 	features/dynlights/cycler.cpp
 	features/materials/spriteframe.cpp
@@ -1720,8 +1720,8 @@ add_executable( zdoom WIN32
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
 	features/handoff/seam.cpp
-	features/handoff/loop.cpp
-	features/handoff/hud.cpp
+	features/gameloop/loop.cpp
+	features/gameloop/hud.cpp
 	features/handoff/effects.cpp
 	features/handoff/snapshot.cpp
 	features/handoff/gamethread.cpp

@@ -20,7 +20,7 @@ never reads what that tic is changing.
 - `r_utility.cpp`: `R_SetupFrameFromRecord` sets a view up from a record alone (GL's `R_SetupFrame` takes an actor
   and also moves the live game and bumps `validcount`); the copied light lists and height transfers set the blend;
   `R_ClearPastViewer` works by id; `FRenderer::RenderCameraRecord` draws a camera texture from a record.
-- `d_main.cpp` `D_PrepareDisplay` and `features/handoff/loop.cpp` `AfterTic`: `FillMap` between tics.
+- `d_main.cpp` `D_PrepareDisplay` and `features/gameloop/loop.cpp` `AfterTic`: `FillMap` between tics.
 - `features/frame/playerview.cpp`: `BeginRecordViewpoint`, and the camera textures from `CameraTextures`.
 - `gl/scene/gl_scene.cpp` `FGLInterface::BeginFrame`: GL finds its live particles' subsectors itself.
 - `p_effect.h`: guarded, and `ActiveParticles` declared for the particle copy.
@@ -54,6 +54,8 @@ never reads what that tic is changing.
   kept beside them, and blended with their models' planes; `GetPlaneLight` and `HeightSecOf` read them.
 - `lights.cpp`: every dynamic light and each subsector's light list, its links kept while it stands still.
 - `particles.cpp`, `decals.cpp`: the particles with their subsector lists, and each side's wall decals.
+- `tintsubject.cpp`: features/damage-tint's game half, read into each actor record: the sector damage table and
+  whether an actor's floor hurts it unprotected (`TintSubjectOf`).
 - `level.h`: the level's clocks, flags, sky scroll, fog and skies (`ZX_LEVEL_FIELD` lines in `fields.h`).
 - `seen.cpp`: the seen bits the walks mark, kept by the renderer and merged into the live map before each tic
   (`ApplySeen`) and at each fill (`MergeSeen`), which also takes back what a load or reset changed.
@@ -85,17 +87,17 @@ Seams:
 - `copy/blend` (Main), `features/gamecopy/gamecopy.cpp`
 - `copy/fill` (Handoff), `features/gamecopy/gamecopy.cpp`
 - `copy/seen` (Handoff), `features/gamecopy/seen.cpp`
-- `handoff/after_tic` (Handoff), `features/handoff/loop.cpp`
-- `handoff/before_tic` (Handoff), `features/handoff/loop.cpp`
+- `handoff/after_tic` (Handoff), `features/gameloop/loop.cpp`
+- `handoff/before_tic` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/effects` (Handoff), `features/handoff/effects.cpp`
-- `handoff/hud_record` (Handoff), `features/handoff/hud.cpp`
+- `handoff/hud_record` (Handoff), `features/gameloop/hud.cpp`
 - `handoff/snapshot` (Handoff), `features/handoff/snapshot.cpp`
-- `handoff/ticker_begin` (Handoff), `features/handoff/loop.cpp`
-- `handoff/ticker_end` (Handoff), `features/handoff/loop.cpp`
+- `handoff/ticker_begin` (Handoff), `features/gameloop/loop.cpp`
+- `handoff/ticker_end` (Handoff), `features/gameloop/loop.cpp`
 - `sound/channels` (GameData), `s_sound.cpp`
 - `sound/deferred` (Handoff), `s_sound.cpp`
 - `sound/music` (GameData), `s_sound.cpp`
-- `tic/playsim` (GameThread), `features/handoff/loop.cpp`
+- `tic/playsim` (GameThread), `features/gameloop/loop.cpp`
 - `wad/read` (Main), `resourcefiles/resourcefile.cpp`
 - `wad/read` (Main), `w_wad.cpp`
 - `wipe/randoms` (Idle), `features/wipe/wiperandoms.cpp`

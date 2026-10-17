@@ -6,6 +6,7 @@
 #ifndef ZX_HANDOFF_EFFECTS_H
 #define ZX_HANDOFF_EFFECTS_H
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -52,7 +53,7 @@ private:
 	static void ApplyAll(intptr_t self, intptr_t)
 	{
 		Deferred *d = (Deferred *)self;
-		for (size_t i = 0; i < d->m_pending.size(); i++) d->m_apply(d->m_pending[i]);
+		for (std::size_t i = 0; i < d->m_pending.size(); i++) d->m_apply(d->m_pending[i]);
 		d->m_pending.clear();
 	}
 

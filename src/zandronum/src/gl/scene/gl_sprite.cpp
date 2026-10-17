@@ -72,7 +72,7 @@ const zx::viewsetup::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/g
 #include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
 #include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
 #include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
-#include "features/damage-tint/tintsubject.h"	// [rc4l] TintSubjectOf
+#include "features/gamecopy/tintsubject.h"	// [rc4l] TintSubjectOf
 
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 EXTERN_CVAR(Bool, r_usecolorblending)
@@ -196,7 +196,7 @@ void GLSprite::Draw(int pass)
 
 	// [rc4l] features/damage-tint: players on damaging floors glow with the floor's color from the
 	// feet up; no-op unless the actor qualifies. Must be unwound after the draw (end of Draw).
-	bool damagetintglow = DamageTint_BeginSpriteGlow(zx::damagetint::TintSubjectOf(actor), RenderStyle.BlendOp, RenderStyle.Flags, vt, vb);
+	bool damagetintglow = DamageTint_BeginSpriteGlow(zx::gamecopy::TintSubjectOf(actor), RenderStyle.BlendOp, RenderStyle.Flags, vt, vb);
 
 	if (gl_isBlack(Colormap.FadeColor)) foglevel=lightlevel;
 

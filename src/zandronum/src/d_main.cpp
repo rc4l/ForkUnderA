@@ -177,8 +177,8 @@
 #include "features/handoff/seam.h"   // [rc4l] NoteMainThread
 #include "features/gamecopy/gamecopy.h"   // [rc4l] FillMap
 #include "features/gamecopy/players.h"    // [rc4l] the eye's FOV
-#include "features/handoff/loop.h"       // [rc4l] FrameBegins, FrameEnds
-#include "features/handoff/hud.h"        // [rc4l] RecordHUD, ReplayHUD
+#include "features/gameloop/loop.h"       // [rc4l] FrameBegins, FrameEnds
+#include "features/gameloop/hud.h"        // [rc4l] RecordHUD, ReplayHUD
 #include "features/handoff/gamethread.h" // [rc4l] TicInFlight
 #include "p_local.h"
 
@@ -971,7 +971,7 @@ void D_DisplayBesideTic ()
 {
 	s_displayPrepared = true;
 	s_inputTaken = true;
-	zx::handoff::FrameBegins ();
+	zx::gameloop::FrameBegins ();
 	{
 		const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
 		{
@@ -981,7 +981,7 @@ void D_DisplayBesideTic ()
 		MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 		D_Display ();
 	}
-	zx::handoff::FrameEnds ();
+	zx::gameloop::FrameEnds ();
 }
 
 void D_PrepareDisplay (bool input)
@@ -1012,8 +1012,8 @@ void D_PrepareDisplay (bool input)
 		R_ExecuteSetViewSize ();
 	}
 	// [rc4l] The level's HUD, recorded for a frame without GL to replay; D_Display draws it there only after a tic.
-	const zx::handoff::HudKey hudKey = { gametic, SCREENWIDTH, SCREENHEIGHT, viewheight, (int)screenblocks, automapactive, viewactive, (bool)hud_althud, DrawFSHUD };
-	zx::handoff::RecordHUD ((gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) && gametic != 0 && StatusBar != NULL, hudKey, D_DrawLevelHUD);
+	const zx::gameloop::HudKey hudKey = { gametic, SCREENWIDTH, SCREENHEIGHT, viewheight, (int)screenblocks, automapactive, viewactive, (bool)hud_althud, DrawFSHUD };
+	zx::gameloop::RecordHUD ((gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) && gametic != 0 && StatusBar != NULL, hudKey, D_DrawLevelHUD);
 	s_displayPrepared = true;
 }
 
@@ -1210,7 +1210,7 @@ drawfullconsole:
 			}
 
 			// [rc4l] features/handoff: a frame without GL replays the HUD the handoff drew, which reads the game only between tics.
-			if (!zx::handoff::ReplayHUD ())
+			if (!zx::gameloop::ReplayHUD ())
 			{
 				D_DrawLevelHUD ();
 			}
@@ -1337,7 +1337,7 @@ drawfullconsole:
 	else
 	{
 		// [rc4l] features/handoff: a wipe holds the tics back until it ends, so it runs as the handoff does.
-		zx::handoff::FrameEnds ();
+		zx::gameloop::FrameEnds ();
 		// wipe update
 		GSnd->SetSfxPaused(true, 1);
 		I_FreezeTime(true);
@@ -1501,13 +1501,13 @@ void D_RunFrame ()
 			// and returns normally; see D_RequestRestart.
 			if (s_restartRequested)
 			{
-				zx::handoff::FinishInFlight ();   // [rc4l] features/handoff: never unwind beside a running tic
+				zx::gameloop::FinishInFlight ();   // [rc4l] features/handoff: never unwind beside a running tic
 				s_restartRequested = false;
 				throw CRestartException();
 			}
 
 			// [rc4l] features/handoff: a quit takes the game back from a tic in flight first.
-			if (zx::mainloop::QuitPending ()) zx::handoff::FinishInFlight ();
+			if (zx::mainloop::QuitPending ()) zx::gameloop::FinishInFlight ();
 			zx::mainloop::FinishPendingQuit ();
 
 			// [rc4l] A wipe a stepped loop is running takes the whole frame, as D_Display's own loop does on the desktop.
@@ -1585,7 +1585,7 @@ void D_RunFrame ()
 			default:
 
 				// [rc4l] features/handoff: fua_gamethread's schedule, a tic's playsim on the game thread and this frame drawn beside it.
-				if (zx::handoff::GameThreadFrame ())
+				if (zx::gameloop::GameThreadFrame ())
 				{
 					break;
 				}
@@ -1638,12 +1638,12 @@ void D_RunFrame ()
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				// [rc4l] features/handoff: the frame's touches of the game in the handoff, then the frame, which may touch none.
 				D_PrepareDisplay (true);
-				zx::handoff::FrameBegins ();
+				zx::gameloop::FrameBegins ();
 				{
 					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
 					D_Display ();
 				}
-				zx::handoff::FrameEnds ();
+				zx::gameloop::FrameEnds ();
 				break;
 			}
 		}

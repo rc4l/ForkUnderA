@@ -42,7 +42,7 @@
 #include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
 #include "mcp_sample.h"
 #include "textures/textures.h"
-#include "features/damage-tint/damagetint.h"
+#include "features/gamecopy/tintsubject.h"   // [rc4l] DamageTint_SectorDamage
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 

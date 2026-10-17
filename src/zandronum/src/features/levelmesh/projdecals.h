@@ -79,7 +79,7 @@ void SpawnProjectedDecalHere(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fi
 void SpawnProjectedDecalOnLine(const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z,
                                line_t *hitLine);
 
-// [rc4l] Each mark's owner's alpha, copied in the handoff with the render copy's decals; a mark made or forgotten by a tic on the game thread waits for the handoff too.
+// [rc4l] Each mark's owner's alpha, copied in the handoff after each tic; a mark made or forgotten by a tic on the game thread waits for the handoff too.
 void CopyProjectedDecalOwners();
 
 // The engine is destroying this decal -- drop whatever was projected for it.

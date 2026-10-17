@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] features/damage-tint's game half, reading the live game between tics: the sector damage table, an actor's floor damage and protection, and fua_tintdebug.
+// [rc4l] features/damage-tint's game half, read into the render copy between tics: the sector damage table and an actor's floor damage and protection.
 
 #include "doomtype.h"
 #include "doomstat.h"
@@ -16,8 +16,7 @@
 #include "a_artifacts.h"
 #include "c_dispatch.h"
 
-#include "features/damage-tint/damagetint.h"
-#include "features/damage-tint/tintsubject.h"
+#include "features/gamecopy/tintsubject.h"
 
 // ---------------------------------------------------------------------------------------------
 // Sim-side (compiled everywhere, including dedicated servers): the sector damage table, exported
@@ -87,7 +86,7 @@ int DamageTint_SectorDamage( const sector_t *sec )
 	return SectorSpecialDamage( sec );
 }
 
-namespace zx { namespace damagetint {
+namespace zx { namespace gamecopy {
 
 // The complete "is this actor's floor hurting them" check across all four systems: base-sector
 // specials, TERRAIN flat damage, and 3D-floor contact (whose top texture then supplies the tint
@@ -170,61 +169,5 @@ TintSubject TintSubjectOf( AActor *actor )
 	return s;
 }
 
-}} // namespace zx::damagetint
+}} // namespace zx::gamecopy
 
-#ifndef NO_GL
-
-using namespace zx::damagetint;
-
-// Diagnostic: why is (or isn't) the tint firing right here? Also prints a histogram of every
-// nonzero sector special on the map so an uncovered damaging special is immediately visible.
-CCMD( fua_tintdebug )
-{
-	if ( gamestate != GS_LEVEL || consoleplayer < 0 || !playeringame[consoleplayer] )
-		return;
-	AActor *mo = players[consoleplayer].mo;
-	if ( mo == NULL || mo->Sector == NULL )
-		return;
-	sector_t *sec = mo->Sector;
-	fixed_t fz = sec->floorplane.ZatPoint( mo->x, mo->y );
-	FTextureID dbgTex;
-	dbgTex.SetInvalid();
-	int terrain = P_GetThingFloorType( mo );
-	Printf( "sector #%d  special=%d (0x%x)  damage=%d  computed=%d  terrain=%d(dmg %d)\n",
-		(int)( sec - sectors ), sec->special, sec->special, sec->damage, FloorDamage( mo, dbgTex ),
-		terrain, Terrains[terrain].DamageAmount );
-	Printf( "z=%d floorz=%d planez=%d onfloor=%d waterlevel=%d protected=%d 3dfloors=%d\n",
-		(int)( mo->z >> FRACBITS ), (int)( mo->floorz >> FRACBITS ), (int)( fz >> FRACBITS ),
-		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && DamageNegated( mo->player )),
-		sec->e ? (int)sec->e->XFloor.ffloors.Size() : 0 );
-	float intensity;
-	int lastTic;
-	if ( DamageTint_Ramp( mo->rcSerial, intensity, lastTic ))
-		Printf( "intensity=%.2f lastTic=%d (now %d)\n", intensity, lastTic, level.time );
-	else
-		Printf( "no ramp entry yet\n" );
-
-	// Histogram of nonzero specials with a sample position for each.
-	TMap<int, int> counts;
-	TMap<int, int> sample;
-	for ( int i = 0; i < numsectors; ++i )
-	{
-		int sp = sectors[i].special;
-		if ( sp == 0 && sectors[i].damage == 0 ) continue;
-		int key = sp;
-		if ( int *c = counts.CheckKey( key )) ++*c;
-		else { counts.Insert( key, 1 ); sample.Insert( key, i ); }
-	}
-	TMap<int, int>::Iterator it( counts );
-	TMap<int, int>::Pair *p;
-	while ( it.NextPair( p ))
-	{
-		int si = *sample.CheckKey( p->Key );
-		sector_t &s = sectors[si];
-		Printf( "special %d (0x%x): %d sectors, dmg-> %d, e.g. #%d near (%d,%d)\n",
-			p->Key, p->Key, p->Value, SectorSpecialDamage( &s ), si,
-			(int)( s.soundorg[0] >> FRACBITS ), (int)( s.soundorg[1] >> FRACBITS ));
-	}
-}
-
-#endif // NO_GL

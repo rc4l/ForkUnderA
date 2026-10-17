@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# [rc4l] Telemetry tripwire: every counter features/telemetry registers is named "group/name" in lower case, given as a string literal, no two ZX_ZONE sites share a name, which would add two different scopes into one timing, and every zone perf.ticprof reads is still timed.
+# [rc4l] Telemetry tripwire: every counter features/telemetry registers is named "group/name" in lower case, given as a string literal, no two ZX_ZONE or timed ZX_SEAM sites share a name, which would add two different scopes into one timing, and every zone perf.ticprof reads is still timed.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENGINE_SRC="$ROOT/src/zandronum/src"
@@ -23,7 +23,8 @@ if [ -n "$bad" ]; then
     failed=1
 fi
 
-dupes=$(echo "$sites" | grep -oE "(ZX_ZONE|ZX_SEAM_UNTIMED|ZX_SEAM)[[:space:]]*\([[:space:]]*\"$NAME\"" | grep -oE "\"$NAME\"" | sort | uniq -d)
+# [rc4l] An untimed seam registers no timing, so one name may mark every entry to the same shared state (the sound channels, the collector).
+dupes=$(echo "$sites" | grep -oE "(ZX_ZONE|ZX_SEAM)[[:space:]]*\([[:space:]]*\"$NAME\"" | grep -oE "\"$NAME\"" | sort | uniq -d)
 if [ -n "$dupes" ]; then
     echo "TELEMETRY TRIPWIRE: ZX_ZONE or ZX_SEAM names used at more than one site:" >&2
     echo "$dupes" >&2

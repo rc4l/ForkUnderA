@@ -4,7 +4,7 @@
 #include "features/sprites/spritebuild.h"
 #include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "features/gamecopy/players.h"   // [rc4l] CameraOf
-#include "features/damage-tint/tintsubject.h"   // [rc4l] TintSubject
+#include "features/gamecopy/tintsubject.h"   // [rc4l] TintSubject
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 #include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
@@ -47,7 +47,7 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
 #include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
-#include "features/dynlights/pointlight.h"
+#include "features/levelmesh/pointlight.h"
 
 #include <string.h>
 #include <map>
@@ -285,7 +285,7 @@ SpriteDrawLook SpriteDrawLookAt(const SpriteStyle &style, float trans, const FCo
 static void DrawLight(const ActorRecord *thing, const Look &l, float dyn[3])
 {
 	dyn[0] = dyn[1] = dyn[2] = 0.f;
-	if (l.so.style.blendOp != kOpShadow && !l.fullbright && zx::viewsetup::SpritesTakeDynamicLight()) zx::dynlights::ActorLight(*thing, dyn);
+	if (l.so.style.blendOp != kOpShadow && !l.fullbright && zx::viewsetup::SpritesTakeDynamicLight()) zx::levelmesh::ActorLight(*thing, dyn);
 }
 
 // [rc4l] GL's ThingColor: a stencil actor's fill, else white.
@@ -456,7 +456,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	if (xyDraw || roll) view.ViewAngles(viewYaw, viewPitch);
 	const float rollDegrees = roll ? zx::ComputeSpriteRollDegrees(thing->PrevRoll, thing->roll, frac.Raw()) : 0.f;
 	const int rel = fullbright ? 0 : getExtraLight();
-	const zx::damagetint::TintSubject tint = { thing->id, thing->playerBody, thing->tintActive, thing->tintTexture };
+	const zx::gamecopy::TintSubject tint = { thing->id, thing->playerBody, thing->tintActive, thing->tintTexture };
 
 	int drawn = 0;
 	for (int i = 0; i < nbands && drawn < max; i++)
@@ -588,7 +588,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, ComputePlainDrawLook(trans), color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
-		zx::dynlights::PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
+		zx::levelmesh::PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
 	mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	mp.cpuLight = true;
 	mp.normX = mp.normY = mp.normZ = 0.f;

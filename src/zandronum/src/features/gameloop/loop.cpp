@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/handoff/loop.h"
+#include "features/gameloop/loop.h"
 #include "features/handoff/seam.h"
 #include "features/handoff/effects.h"
 #include "features/handoff/snapshot.h"
 #include "features/handoff/gamethread.h"
-#include "features/handoff/computation/threadedtic_compute.h"
+#include "features/gameloop/computation/threadedtic_compute.h"
 #include "features/gamecopy/gamecopy.h"
 #include "features/gamecopy/seen.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] CopyProjectedDecalOwners
 #include "features/frame/framedriver.h"   // [rc4l] GLDrawsFrame
 #include "features/telemetry/telemetry.h"
 
@@ -34,7 +35,9 @@ extern bool singletics;
 extern bool advancedemo;
 extern gamestate_t wipegamestate;
 
-namespace zx { namespace handoff {
+namespace zx { namespace gameloop {
+
+using namespace zx::handoff;
 
 namespace {
 
@@ -84,6 +87,7 @@ void AfterTic()
 	NetUpdate ();	// check for new console commands
 	// [rc4l] The render copy of what this tic left, before any frame draws beside the next.
 	zx::gamecopy::FillMap ();
+	zx::levelmesh::CopyProjectedDecalOwners ();
 }
 
 // [rc4l] Whether the next tic's playsim may run on the game thread now.
@@ -220,10 +224,10 @@ void FrameEnds()
 	SetMainInHandoff (true);
 }
 
-}} // namespace zx::handoff
+}} // namespace zx::gameloop
 
 // [rc4l] How many tics ran on the game thread and how many frames beside one held positions, since the start.
 CCMD(fua_gamethread_report)
 {
-	Printf ("game thread: %d tics on its own thread, %d frames held\n", zx::handoff::ThreadedTics (), zx::handoff::HeldFrames ());
+	Printf ("game thread: %d tics on its own thread, %d frames held\n", zx::gameloop::ThreadedTics (), zx::gameloop::HeldFrames ());
 }

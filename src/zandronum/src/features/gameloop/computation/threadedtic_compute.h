@@ -6,7 +6,7 @@
 #ifndef ZX_THREADEDTIC_COMPUTE_H
 #define ZX_THREADEDTIC_COMPUTE_H
 
-namespace zx { namespace handoff {
+namespace zx { namespace gameloop {
 
 // [rc4l] What decides a tic's schedule.
 struct ThreadedTicIn
@@ -37,6 +37,6 @@ inline bool ComputeTakeBackDue(bool finished, int now, int inFlight)
 	return finished && now >= inFlight + 2;
 }
 
-}} // namespace zx::handoff
+}} // namespace zx::gameloop
 
 #endif // ZX_THREADEDTIC_COMPUTE_H

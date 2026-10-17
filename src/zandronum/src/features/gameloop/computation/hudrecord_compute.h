@@ -6,7 +6,7 @@
 #ifndef ZX_HUDRECORD_COMPUTE_H
 #define ZX_HUDRECORD_COMPUTE_H
 
-namespace zx { namespace handoff {
+namespace zx { namespace gameloop {
 
 // [rc4l] What a HUD recording was made under.
 struct HudKey
@@ -25,6 +25,6 @@ inline bool ComputeHUDRecordDue(bool valid, const HudKey &made, const HudKey &no
 		made.viewActive != now.viewActive || made.altHud != now.altHud || made.fullscreenHud != now.fullscreenHud;
 }
 
-}} // namespace zx::handoff
+}} // namespace zx::gameloop
 
 #endif // ZX_HUDRECORD_COMPUTE_H

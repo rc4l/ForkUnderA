@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/dynlights/pointlight.h"
+#include "features/levelmesh/pointlight.h"
 #include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "features/gamecopy/lights.h"   // [rc4l] the light records and each subsector's light list
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeDynLightColor
@@ -15,7 +15,7 @@
 EXTERN_CVAR(Float, r_lights_size)
 EXTERN_CVAR(Float, r_lights_intensity)
 
-namespace zx { namespace dynlights {
+namespace zx { namespace levelmesh {
 
 // [rc4l] gl_SetDynSpriteLight: the dynamic light at a point in a subsector, from the render copy's lights linked there in its light list's order, but not from a light `self` carries that does not light it.
 void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void *self, float out[3])
@@ -49,4 +49,4 @@ void PointDynamicLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, flo
 	if (subsec != NULL) PointLight(x, y, z, subsec, NULL, out);
 }
 
-}} // namespace zx::dynlights
+}} // namespace zx::levelmesh
