@@ -50,7 +50,7 @@ export function parseCvarFlag(text) {
   }));
 }
 
-// [rc4l] The map and wads a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, and the names it could not find.
+// [rc4l] The map, wads and view a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, the names it could not find, and its view or null.
 export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(storeDir) ? fs.readdirSync(storeDir) : []) {
   const db = JSON.parse(fs.readFileSync(spotsPath, "utf8"));
   const s = db.spots[name];
@@ -62,7 +62,7 @@ export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(st
     const hit = byName.get(wad.toLowerCase());
     if (hit) files.push(path.join(storeDir, hit)); else missing.push(wad);
   }
-  return { map: s.map, files, missing };
+  return { map: s.map, files, missing, view: s.view || null };
 }
 
 // [rc4l] Remove the session files that name port, since a launch there is about to mint a new token and `ready` would wait out its timeout on the old one; returns the files removed.

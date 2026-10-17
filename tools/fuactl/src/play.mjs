@@ -170,6 +170,44 @@ export async function verifyWorld(c, { exec }) {
   return report;
 }
 
+// [rc4l] The render size, render scale and field of view an instance shows, which frame a picture as much as its camera does.
+export async function readView(c, { exec }) {
+  const { width, height } = await c.rpc("input.windowpoint", { x: 0, y: 0 });
+  const value = async (name) => { const m = /"[^"]+" is "([^"]*)"/.exec(await exec(c, name, { quietMs: 120 })); return m ? Number(m[1]) : null; };
+  return { width, height, scale: await value("vid_scalefactor"), fov: await value("fov") };
+}
+
+// [rc4l] The window client size vid_setsize takes for a view: its render size over its render scale.
+export function windowForView({ width, height, scale }) {
+  const s = scale > 0 ? scale : 1;
+  return { w: Math.round(width / s), h: Math.round(height / s) };
+}
+
+// [rc4l] The view a --res window size is at a render scale, since --res sizes the window and a view is what renders in it.
+export function viewForWindow(w, h, scale) {
+  const s = scale > 0 ? scale : 1;
+  return { width: Math.round(w * s), height: Math.round(h * s) };
+}
+
+// [rc4l] Whether a view read back is the one asked for, its size to the pixel a scale rounds by, and its scale and FOV when it names them.
+export function sameView(want, got) {
+  const near = (a, b) => Math.abs(a - b) <= 1;
+  return near(got.width, want.width) && near(got.height, want.height)
+    && (want.scale == null || got.scale === want.scale) && (want.fov == null || got.fov === want.fov);
+}
+
+// [rc4l] Sets an instance to a view (scale and FOV, then the window through vid_setsize) and reads back what it got, since a launch's size snaps to a mode the engine knows and 900x900 came up 1280x960.
+export async function fitView(c, view, cap, { tries = 20, now = null } = {}) {
+  let got = now || await readView(c, cap);
+  if (sameView(view, got)) return { want: view, got, ok: true };
+  if (view.scale != null) await cap.exec(c, `vid_scalefactor ${view.scale}`, { quietMs: 120 });
+  if (view.fov != null) await cap.exec(c, `fov ${view.fov}`, { quietMs: 120 });
+  const { w, h } = windowForView(view);
+  await cap.exec(c, `vid_setsize ${w} ${h}`, { quietMs: 120 });
+  for (let i = 0; i < tries && !sameView(view, got = await readView(c, cap)); i++) await cap.sleep(100);
+  return { want: view, got, ok: sameView(view, got) };
+}
+
 // [rc4l] The engine arguments past the cvars: each wad as -file, and -vulkan when the launch runs with no GL at all, or -webgpu for the same backend on WebGPU.
 export function playArgs(files, { noGl = false, webgpu = false } = {}) {
   return [...files.flatMap((f) => ["-file", f]), ...(webgpu ? ["-webgpu"] : noGl ? ["-vulkan"] : [])];
@@ -239,7 +277,13 @@ async function launchChecked(opts, port) {
     try {
       const cheats = [];
       for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
-      world = { cheats, cvars: await verifyWorld(c, cap) };
+      world = { cheats, cvars: await verifyWorld(c, cap), view: null };
+      // [rc4l] The --res window or the view a spot was seen in, set and read back, since the ini's size snaps to a known mode.
+      if ((opts.width && opts.height) || opts.view) {
+        const now = await readView(c, cap);
+        const view = opts.width && opts.height ? viewForWindow(Number(opts.width), Number(opts.height), now.scale) : opts.view;
+        world.view = await fitView(c, view, cap, { now });
+      }
       // [rc4l] opts.at (x, y, z, angle, pitch) stands the player there before anyone is told the instance is up.
       if (opts.at) await standAt(c, opts.at);
     } finally { c.close(); }

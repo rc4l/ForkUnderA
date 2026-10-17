@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, WATCH_LEVEL, inPage, pause, repeatedSounds, soakInPage } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, inPage, pause, repeatedSounds, soakInPage, framePacing } from '../page.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -76,4 +76,35 @@ test('the level watch splices one analyser per context in front of the output an
   assert.equal(win.fuaLevel.mean(), 0.5);
   win.fuaLevel.reset();
   assert.equal(win.fuaLevel.mean(), 0);
+});
+
+test('page code asks a command and gets back only what it printed', async () => {
+  const original = console.log;
+  console.log = () => {};
+  const Module = { fuaCommand: (t) => console.log(`ran ${t}`) };
+  try {
+    const run = new Function('Module', `return (async () => { ${HEAR_CONSOLE}
+      console.log('before');
+      const got = await ask('currentpos', 5);
+      unhear();
+      return got; })();`);
+    assert.deepEqual(await run(Module), ['ran currentpos']);
+  } finally { console.log = original; }
+});
+
+test('frame pacing gives the median, p99 and longest gap and counts the hitches', () => {
+  const times = [0];
+  for (let i = 1; i <= 100; i++) times.push(times[i - 1] + (i === 50 ? 60 : i === 80 ? 25 : 4));
+  assert.equal(framePacing(times), 'frames: 100, interval median 4.00 p99 60.00 max 60.0 ms, over 20 ms 2, over 50 ms 1');
+  assert.equal(framePacing([5]), 'frames: none drawn');
+  assert.equal(framePacing([]), 'frames: none drawn');
+});
+
+test('the frame watch keeps each frame time the browser hands it', () => {
+  const pending = [];
+  const window = {};
+  new Function('window', 'requestAnimationFrame', WATCH_FRAMES)(window, (f) => pending.push(f));
+  for (const t of [16, 33, 50]) pending.shift()(t);
+  assert.deepEqual(window.fuaFrames, [16, 33, 50]);
+  assert.equal(pending.length, 1);
 });

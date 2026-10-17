@@ -25,7 +25,9 @@ That writes one record into `tools/fuactl/spots.json` holding the camera at full
 (`x, y, z, angle, pitch`), the `map`, the `loaded` wad set — IWAD plus every PWAD **with its md5**,
 read from the engine's own `wads` command rather than from what the launch intended — and the
 `renderer` cvars that change the picture (`fua_vulkan`, `fua_dg_standalone`, `fua_dg_embed`,
-`fua_dg_skyportal`, `gl_wallmesh`), and `backend: "vulkan"` when the launch had no GL at all.
+`fua_dg_skyportal`, `gl_wallmesh`), and `backend: "vulkan"` when the launch had no GL at all, and the
+`view` (render size, `vid_scalefactor` and `fov`), which `play --spot` sets again with `vid_setsize`, since
+a fault seen only at a square size or a wide FOV does not show in another window.
 
 **Capture before touching anything.** Do not warp, unpause, toggle a cvar or rebuild first: the
 vantage is whatever they are looking at right now, and every one of those actions can change it.

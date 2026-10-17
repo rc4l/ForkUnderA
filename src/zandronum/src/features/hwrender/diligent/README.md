@@ -16,7 +16,7 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 |---|---|
 | `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants |
 | `dgpipelines.cpp` | the world pipelines and their material bindings: bindless array, slots, animated slots |
-| `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches |
+| `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches; a surface that changes material or pass (a switch, a lowering floor) moves to an appended batch, and the whole scene is rebuilt only when the change list overflows or a translucent surface changes (`ComputeRebatchPlan`) |
 | `dgdynamic.cpp` | sprites, models and decals each frame, and the sorted translucent pass |
 | `dgviews.cpp` | line mirrors (raster and ray-traced), reflective planes, stacked sectors |
 | `dgsky.cpp`, `dglights.cpp`, `dg2d.cpp`, `dgdecals.cpp`, `dghorizon.cpp` | sky and portals, dynamic lights, 2D, projected decals, horizon lines |

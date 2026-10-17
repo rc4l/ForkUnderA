@@ -335,7 +335,7 @@ export const CHECKS = [
     focused: true,
     evaluate: inPage(`
       ${HEAR_CONSOLE}
-      const cvar = async (name) => { const from = said.length; Module.fuaCommand(name); ${pause(200)} const m = /is "([^"]*)"/.exec(said.slice(from).join(' ')); return m ? Number(m[1]) : NaN; };
+      const cvar = async (name) => { const m = /is "([^"]*)"/.exec((await ask(name, 200)).join(' ')); return m ? Number(m[1]) : NaN; };
       const apart = async () => {
         const r = document.getElementById('canvas').getBoundingClientRect();
         return Math.max(Math.abs((await cvar('vid_defwidth')) - r.width), Math.abs((await cvar('vid_defheight')) - r.height));
@@ -389,10 +389,7 @@ export const CHECKS = [
     evaluate: inPage(`
       ${HEAR_CONSOLE}
       const at = async () => {
-        const from = said.length;
-        Module.fuaCommand('currentpos');
-        ${pause(300)}
-        const m = /\\((-?[\\d.]+),(-?[\\d.]+)/.exec(said.slice(from).find((l) => l.includes('position')) || '');
+        const m = /\\((-?[\\d.]+),(-?[\\d.]+)/.exec((await ask('currentpos')).find((l) => l.includes('position')) || '');
         return m ? [Number(m[1]), Number(m[2])] : null;
       };
       document.getElementById('canvas').focus();

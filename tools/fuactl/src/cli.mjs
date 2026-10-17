@@ -13,7 +13,7 @@ import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
-import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
+import { play, quitInstance, defaultPwadStore, resolvePreset, readView } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
 import { activateEngineWindows, engineWindows, resizeEngineWindow } from "./window.mjs";
@@ -95,11 +95,13 @@ async function captureSpot(c, name, note, file = SPOTS) {
   // [rc4l] Whether the launch had GL at all, which no cvar says: "vulkan" for a -vulkan launch.
   const backend = launchRenderer(await cap.exec(c, "dumprenderer", { quietMs: 300, maxMs: 6000 }).catch(() => ""));
   if (backend) renderer.backend = backend;
+  // [rc4l] The view's shape, since a fault seen only at a square size or a wide FOV does not show in another window (#58).
+  const view = await readView(c, cap).catch(() => null);
   const db = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { spots: {} };
   db.spots[name] = Object.assign({}, db.spots[name], {
     map: cam.map, ...shot.atFromCamera(cam),
     shows: note || (db.spots[name] && db.spots[name].shows) || "recorded from a live session",
-    loaded, renderer,
+    loaded, renderer, ...(view ? { view } : {}),
   });
   fs.writeFileSync(file, JSON.stringify(db, null, 2) + "\n");
   console.error(`saved spot ${name}`);
@@ -189,7 +191,7 @@ const USAGE = `fuactl <command>
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
   walkcheck --port P [--runs N] [--seconds S] [--spot S | --at x,y,z --face yaw,pitch]   the W key held as a player holds it from the spot, N runs of S seconds each traced (fua_viewtrace): exit 1 when any frame stepped back or lurched ahead of the steady speed, a view that rubber-bands
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window, sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
@@ -1275,9 +1277,11 @@ async function main() {
         flags.file = flags.file || (sl.files.length ? sl.files.join(",") : undefined);
       };
       // [rc4l] --spot: the spot's launch, and the player stood there once it is up.
-      let spotAt = null;
+      let spotAt = null, spotView = null;
       if (flags.spot) {
-        takeLaunch(`spot ${flags.spot}`, shot.spotLaunch(SPOTS, String(flags.spot), store));
+        const sl = shot.spotLaunch(SPOTS, String(flags.spot), store);
+        takeLaunch(`spot ${flags.spot}`, sl);
+        spotView = sl.view;
         spotAt = shot.cameraFromFlags({ spot: flags.spot }, SPOTS);
       }
       // [rc4l] --unpark: what `quit --park` filed for --port, side by side again if it was.
@@ -1286,6 +1290,7 @@ async function main() {
         if (!flags.port || !fs.existsSync(park)) { console.error(`nothing parked for port ${flags.port}: run quit --park --port P first`); process.exit(2); }
         const pl = shot.parkedLaunch(park, store);
         takeLaunch("the parked instance", pl);
+        spotView = pl.view;
         flags["side-by-side"] = flags["side-by-side"] || pl.sideBySide;
         flags["no-gl"] = flags["no-gl"] || pl.noGl;
         spotAt = pl.at;
@@ -1301,7 +1306,7 @@ async function main() {
         gl: !!flags.gl, noGl: !!flags["no-gl"] || !!flags.webgpu, webgpu: !!flags.webgpu, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
-        at: spotAt,
+        at: spotAt, view: spotView,
         sessionFile,
       });
       // [rc4l] The world contract, printed. Each of these has silently invalidated a measurement,
@@ -1313,6 +1318,8 @@ async function main() {
       for (const cv of inst.world.cvars) {
         console.log(`  ${cv.ok ? "ok " : "BAD"} ${cv.name} = ${cv.actual}${cv.ok ? "" : `   (wanted ${cv.expected})`}`);
       }
+      const v = inst.world.view;
+      if (v) console.log(`  ${v.ok ? "ok " : "BAD"} view ${v.got.width}x${v.got.height} scale ${v.got.scale} fov ${v.got.fov}${v.ok ? "" : `   (wanted ${v.want.width}x${v.want.height})`}`);
       console.log(`\n  ready -- the window is showing the ${flags.gl ? "GL" : "VULKAN"} render.`);
       if (!flags.lock) console.log("  mouse and keyboard work normally.");
       console.log(`  fua_vulkan 0 / 1 in the console is a live A/B against GL.\n`);

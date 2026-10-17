@@ -4,18 +4,33 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, HEAR_CONSOLE, inPage, pause, repeatedSounds, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, repeatedSounds, soakInPage, framePacing } from './page.mjs';
 
-// [rc4l] A run as steps: "god; give all; wait 1000; +attack" is console lines with waits in milliseconds between them.
+// [rc4l] What a run's look steps print, each about the time since the run began or the last look of its kind: "frames" the browser's frame pacing, "level" what the audio output carried.
+const LOOKS = {
+  frames: 'console.log(framePacing(window.fuaFrames.slice(framesFrom))); framesFrom = window.fuaFrames.length;',
+  level: "console.log('level: ' + window.fuaLevel.mean().toFixed(4) + ' RMS'); window.fuaLevel.reset();",
+};
+
+// [rc4l] A run as steps: "god; wait 1000; +attack; wait 4000; frames" is console lines with waits in milliseconds between them and looks at what the page did.
 export function parseRun(text) {
   return String(text || '').split(';').map((s) => s.trim()).filter(Boolean)
-    .map((s) => (/^wait \d+$/.test(s) ? { wait: Number(s.slice(5)) } : { command: s }));
+    .map((s) => (/^wait \d+$/.test(s) ? { wait: Number(s.slice(5)) } : LOOKS[s] ? { look: s } : { command: s }));
 }
 
-// [rc4l] The page code a run is: each command through Module.fuaCommand, each wait a pause, then what the steps printed and what the watches saw since the first step.
+// [rc4l] One step as page code.
+function stepCode(s) {
+  if (s.wait !== undefined) return pause(s.wait);
+  return s.look ? LOOKS[s.look] : `Module.fuaCommand(${JSON.stringify(s.command)});`;
+}
+
+// [rc4l] The page code a run is: each command through Module.fuaCommand, each wait a pause, each look printed, then what the steps printed and what the watches saw since the first step.
 export function runScript(steps) {
-  const body = steps.map((s) => (s.wait !== undefined ? pause(s.wait) : `Module.fuaCommand(${JSON.stringify(s.command)});`)).join('\n');
+  const body = steps.map(stepCode).join('\n');
   return inPage(`const from = window.fuaSounds.length, heldBefore = window.fuaHeld.size;
+    let framesFrom = window.fuaFrames.length;
+    window.fuaLevel.reset();
+    ${framePacing.toString()}
     ${HEAR_CONSOLE}
     ${body}
     unhear();
@@ -58,7 +73,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const server = createServer(dir).listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
   const { matched, lines } = await smoke({ url: `http://127.0.0.1:${server.address().port}/?${query}`, seconds, software, autoplay,
-    init: `${WATCH_SOUNDS}\n${WATCH_TEXTURES}`, evaluate: soak ? soakInPage(soak, cycles, settle, queryMap(query)) : runScript(parseRun(run)),
+    focus: true, init: `${WATCH_SOUNDS}\n${WATCH_TEXTURES}\n${WATCH_FRAMES}\n${WATCH_LEVEL}`, evaluate: soak ? soakInPage(soak, cycles, settle, queryMap(query)) : runScript(parseRun(run)),
     until: '^\\[eval\\]', after: 1, onLine: () => {} });
   server.close();
   if (!matched || matched.startsWith('[eval] threw')) { console.error(matched || 'the page never finished the run'); process.exit(1); }

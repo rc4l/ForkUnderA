@@ -269,12 +269,13 @@ test("a spot launches its map with its wads found by name in the store, and name
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "spotlaunch-"));
   const spots = path.join(dir, "spots.json");
   fs.writeFileSync(spots, JSON.stringify({ spots: { s: { map: "WDI04", x: 0, y: 0, z: 0, angle: 0,
-    loaded: { iwad: "doom2.wad", pwads: ["Whodunit_Fixed2.pk3 fc8a", "wdi_touchupv9.11.wad 2ccc", "gone.pk3"] } }, bare: { map: "MAP01" } } }));
+    loaded: { iwad: "doom2.wad", pwads: ["Whodunit_Fixed2.pk3 fc8a", "wdi_touchupv9.11.wad 2ccc", "gone.pk3"] } }, bare: { map: "MAP01", view: { width: 900, height: 900, scale: 1, fov: 90 } } } }));
   const r = spotLaunch(spots, "s", "/store", ["whodunit_fixed2.pk3", "WDI_TOUCHUPV9.11.WAD", "other.wad"]);
   assert.equal(r.map, "WDI04");
   assert.deepEqual(r.files, [path.join("/store", "whodunit_fixed2.pk3"), path.join("/store", "WDI_TOUCHUPV9.11.WAD")]);
   assert.deepEqual(r.missing, ["gone.pk3"]);
-  assert.deepEqual(spotLaunch(spots, "bare", path.join(dir, "nowhere")), { map: "MAP01", files: [], missing: [] });
+  assert.equal(r.view, null, "a spot saved before views were recorded");
+  assert.deepEqual(spotLaunch(spots, "bare", path.join(dir, "nowhere")), { map: "MAP01", files: [], missing: [], view: { width: 900, height: 900, scale: 1, fov: 90 } });
   assert.throws(() => spotLaunch(spots, "nope", "/store", []), /no such spot: nope/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
