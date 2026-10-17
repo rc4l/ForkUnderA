@@ -257,9 +257,10 @@ export const CHECKS = [
     expect: heldOnce,
   },
   // [rc4l] Each level load uploads the level and its textures again, and a browser frees a released buffer only when its garbage collector runs; Firefox ran out of GPU memory on a map loaded the third time.
+  // [rc4l] Judged after three levels, since the page's heap settles over the first few (the sprite atlas keeps its pages from one to the next) and flat after; twelve reloads showed no growth past them.
   {
     name: 'reloading the level holds no more memory',
-    evaluate: soakInPage('reload', 7, 2500),
+    evaluate: soakInPage('reload', 9, 2500, 'MAP01', 3),
     until: EVAL,
     expect: soakHeld,
   },

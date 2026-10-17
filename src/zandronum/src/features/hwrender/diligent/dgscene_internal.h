@@ -240,6 +240,7 @@ struct DynRun
 	int          onMirror;     // [rc4l] a decal on this line mirror's face, drawn over its surface by DrawMirrorFaceDecals, or -1
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
+	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
 };
 
 // [rc4l] The array's size on this device (ComputeMaterialSlotCapacity), which CompileShader hands every shader as FUA_MAT_SLOTS; 0 means a binding per material.
@@ -324,7 +325,7 @@ struct SceneStats
 	int     dynByBlend[4] = {};                     // [rc4l] per blend mode: opaque, translucent, additive, fuzz
 	double  dynBuildMs = 0.0;                       // [rc4l] the dynamic stream's cost, which no other clock covers
 	int     animSwaps = 0;                          // [rc4l] animation frame swaps since load
-	int     dynBindless = 0, dynPerMaterial = 0, dynMirrorRuns = 0;
+	int     dynBindless = 0, dynPerMaterial = 0, dynMirrorRuns = 0, dynAtlas = 0;
 	int     dynSlotRefused = 0, dynSlotNoMaterial = 0, dynSlotSeen = 0, dynSlotMax = 0;
 	int     dynSlotUnfilled = 0, dynSlotUnfilledTotal = 0;   // [rc4l] dynamic slots past the array's fill this frame and since load
 	// [rc4l] Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
@@ -397,6 +398,17 @@ Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
 const TArray<MatSlot> &MaterialSlots();
 int FilledSlotCount();
 void MarkMaterialSlotsCurrent();
+
+// [rc4l] The sprite atlas (dgatlas.cpp): sprites on the per-material path drawn from shared pages, an entry's rectangle in texels on its page.
+struct AtlasEntry { int page, x, y, w, h; };
+bool AtlasActive();
+int AtlasPageSize();
+// [rc4l] Where a material's image sits on a page, placing it the first time, NULL when it may not or does not fit; sprite says the piece is a flat sprite.
+const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite);
+Diligent::IShaderResourceBinding *AtlasSRB(Diligent::IPipelineState *pso, int page);
+// [rc4l] How many images the pages hold, and how many pages.
+int AtlasEntries(int &pages);
+void ReleaseAtlasSRBs();
 
 // [rc4l] The per-frame stream (dgdynamic.cpp).
 void BuildDynamic(Diligent::IDeviceContext *ctx);

@@ -16,6 +16,7 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 |---|---|
 | `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants |
 | `dgpipelines.cpp` | the world pipelines and their material bindings: bindless array, slots, animated slots |
+| `dgatlas.cpp` | the sprite atlas: on the path with a binding per material (WebGPU, or `fua_dg_bindless 0`) and point sampling without mipmaps (`r_texture_filter 0`), sprites draw from shared 2048-texel pages with their texture coordinates moved onto them, so the sorted pass binds a page rather than a texture a sprite (`computation/spriteatlas_compute`; `fua_dg_spriteatlas 0` for the A/B; scenario `spriteatlas`) |
 | `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches; a surface that changes material or pass (a switch, a lowering floor) moves to an appended batch, and the whole scene is rebuilt only when the change list overflows or a translucent surface changes (`ComputeRebatchPlan`) |
 | `dgdynamic.cpp` | sprites, models and decals each frame, and the sorted translucent pass |
 | `dgviews.cpp` | line mirrors (raster and ray-traced), reflective planes, stacked sectors |

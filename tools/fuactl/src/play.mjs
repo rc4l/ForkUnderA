@@ -279,8 +279,9 @@ async function launchChecked(opts, port) {
       for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
       world = { cheats, cvars: await verifyWorld(c, cap), view: null };
       // [rc4l] The --res window or the view a spot was seen in, set and read back, since the ini's size snaps to a known mode.
-      if ((opts.width && opts.height) || opts.view) {
-        const now = await readView(c, cap);
+      // [rc4l] An engine older than input.windowpoint (an old binary under A/B) launches unsized rather than not at all.
+      const now = (opts.width && opts.height) || opts.view ? await readView(c, cap).catch(() => null) : null;
+      if (now) {
         const view = opts.width && opts.height ? viewForWindow(Number(opts.width), Number(opts.height), now.scale) : opts.view;
         world.view = await fitView(c, view, cap, { now });
       }

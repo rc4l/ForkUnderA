@@ -42,7 +42,7 @@ void ReleaseLevelResources()
 
 void ForgetBackendTextures()
 {
-	if (GetDevice() != nullptr) ReleaseLevelResources();
+	if (GetDevice() != nullptr) { ReleaseLevelResources(); ResetAtlas(); }
 }
 
 // [rc4l] Bake this level from the map and upload it, once, without anyone typing anything.

@@ -126,6 +126,11 @@ void DynStats(FString &report)
 		g_stats.dynSlotSeen, g_stats.dynSlotMax, g_stats.dynSlotRefused, g_stats.dynSlotNoMaterial, g_stats.dynSlotUnfilled, g_stats.dynSlotUnfilledTotal);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_stats.dynBindless, g_stats.dynPerMaterial, g_stats.fillState);
+	{
+		int pages = 0;
+		const int placed = AtlasEntries(pages);
+		cull.AppendFormat(", sprite atlas %s: %d draws from it, %d images on %d pages", AtlasActive() ? "on" : "off", g_stats.dynAtlas, placed, pages);
+	}
 	cull.AppendFormat(", sky surfaces: %d draws since load", SkyDraws());
 	cull.AppendFormat(", runs from mirror walks: %d", g_stats.dynMirrorRuns);
 	cull.AppendFormat(", dyn build %.3f ms", g_stats.dynBuildMs);

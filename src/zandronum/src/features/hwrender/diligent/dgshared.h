@@ -101,6 +101,8 @@ void ReleaseFrameTarget();
 void ReleaseFrameFence();
 // [rc4l] Everything a level owned on the GPU (dgframe.cpp), for a level change and for shutdown's report of what is still held.
 void ReleaseLevelResources();
+// [rc4l] The sprite atlas's pages and images dropped (dgatlas.cpp), which outlive a level and go only when the engine's pixels change or the backend stops.
+void ResetAtlas();
 
 // [rc4l] GL draws its views with GL_DEPTH_CLAMP, keeping a surface nearer than the near plane at the near depth instead of cutting it away; a pipeline drawing the world asks for the same when the device can.
 void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp);

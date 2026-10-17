@@ -43,6 +43,7 @@ test('a soak in the page runs each cycle\'s steps, waits for the title of each l
   assert.match(reload, /fua_soak verdict 1 json/);
   assert.match(reload, /window\.gc\(\)/);
   assert.match(soakInPage('reload', 1, 10, 'MAP11'), /"text":"map MAP11","map":"MAP11"/);
+  assert.match(soakInPage('reload', 9, 10, 'MAP01', 3), /fua_soak verdict 3 json/);
   assert.match(soakInPage('map MAP02|map MAP01', 1, 10), /\[\{"text":"map MAP02","map":"MAP02"\},\{"text":"map MAP01","map":"MAP01"\}\]/);
   assert.match(soakInPage('vid_setmode 640 480', 1, 10), /\[\{"text":"vid_setmode 640 480","map":null\}\]/);
   const resize = soakInPage('check: resize 900x700|check: resize 1280x900', 2, 10);
