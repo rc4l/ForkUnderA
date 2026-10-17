@@ -58,11 +58,11 @@ Copies the module, the page and the data the page writes into the engine's file 
 ## probe.mjs
 
 ```bash
-node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N]
+node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N] [--browser chrome|firefox]
 node tools/web/probe.mjs [dist-web] [--query Q] --soak reload|TEXT [--cycles N] [--settle MS] [--seconds N]
 ```
 
-Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: what the lines printed, each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. Two steps look rather than act: `frames` prints the browser's frame pacing since the last `frames` (median, p99 and longest gap, and the gaps over 20 and 50 ms), and `level` the RMS the audio output carried since the last `level`. The page has the focus, as a player's does.
+Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: what the lines printed, each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. Two steps look rather than act: `frames` prints the browser's frame pacing since the last `frames` (median, p99 and longest gap, and the gaps over 20 and 50 ms), and `level` the RMS the audio output carried since the last `level`. The page has the focus, as a player's does. `--browser firefox` plays it in Firefox instead (`firefox.mjs`, over WebDriver BiDi): headless Firefox offers no WebGPU adapter, so its window opens and is moved off the screen, silent.
 
 `--soak` instead repeats an action on the query's map (`reload` loads it again; other text is console lines separated by `|`, and a `check: resize WxH` line resizes the page), marks memory after each, and prints the engine's `fua_soak` verdict, exiting 1 when something kept growing. Chrome runs with `--expose-gc`, so each mark comes after the page's garbage is collected.
 

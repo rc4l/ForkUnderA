@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke } from './smoke.mjs';
+import { smokeFirefox } from './firefox.mjs';
 import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, repeatedSounds, soakInPage, framePacing } from './page.mjs';
 
 // [rc4l] What a run's look steps print, each about the time since the run began or the last look of its kind: "frames" the browser's frame pacing, "level" what the audio output carried.
@@ -68,11 +69,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const on = (name) => { const i = args.indexOf(name); return i >= 0 && args.splice(i, 1).length > 0; };
   const query = flag('--query', 'map=MAP01'), run = flag('--run', ''), seconds = Number(flag('--seconds', 120));
   const soak = flag('--soak', ''), cycles = Number(flag('--cycles', 6)), settle = Number(flag('--settle', 4000));
-  const autoplay = on('--autoplay'), software = on('--software');
+  const autoplay = on('--autoplay'), software = on('--software'), browser = flag('--browser', 'chrome');
   const dir = path.resolve(args[0] ?? 'dist-web');
   const server = createServer(dir).listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
-  const { matched, lines } = await smoke({ url: `http://127.0.0.1:${server.address().port}/?${query}`, seconds, software, autoplay,
+  const { matched, lines } = await (browser === 'firefox' ? smokeFirefox : smoke)({ url: `http://127.0.0.1:${server.address().port}/?${query}`, seconds, software, autoplay,
     focus: true, init: `${WATCH_SOUNDS}\n${WATCH_TEXTURES}\n${WATCH_FRAMES}\n${WATCH_LEVEL}`, evaluate: soak ? soakInPage(soak, cycles, settle, queryMap(query)) : runScript(parseRun(run)),
     until: '^\\[eval\\]', after: 1, onLine: () => {} });
   server.close();
