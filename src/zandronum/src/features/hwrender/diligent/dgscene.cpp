@@ -193,10 +193,7 @@ CVAR(Bool, fua_dg_mergedraws, true, 0)
 // rebuilding thirteen bindings, and a binding the GPU is still reading is its own kind of wrong.
 CVAR(Bool, fua_dg_bindless_anim, true, 0)
 
-// [rc4l] The shader spells 32, 18 and 24 out, because a GLSL string cannot read a C++ constant. This is
-// the tie: change the grid and the build stops until the shader has been changed with it. A tile
-// size that disagrees between the binning pass and the lookup is a grid where every cell holds the
-// wrong lights, and it shows up as nothing more alarming than "the lighting is a bit off there".
+// [rc4l] The shader spells 32, 18 and 24 out since a GLSL string cannot read a C++ constant, so a grid change stops the build until the shader changes with it.
 static_assert(zx::hwrender::kClusterTilesX == 32 && zx::hwrender::kClusterTilesY == 18 && zx::hwrender::kClusterSlices == 24,
 	"the cluster grid changed: update the 32, 18 and 24 in FUA_LIGHT_GLSL to match.");
 
