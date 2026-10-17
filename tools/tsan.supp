@@ -15,3 +15,10 @@ called_from_lib:libgallium
 race:libvulkan_lvp.so
 race:libLLVM
 race:libopenal.so
+called_from_lib:libXext.so
+called_from_lib:libSDL2
+called_from_lib:libvulkan.so
+mutex:libXext.so
+mutex:libSDL2
+deadlock:libgcc_s.so
+deadlock:libvulkan.so
