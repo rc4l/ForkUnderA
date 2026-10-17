@@ -84,3 +84,25 @@ export function repeatedSounds(sounds) {
   }
   return [...byId.values()].filter((b) => b.times.length > 1);
 }
+
+// [rc4l] What the page's audio output carries, through an analyser spliced in front of each context's destination and sampled every 20 ms, so window.fuaLevel.mean() is its RMS since window.fuaLevel.reset() and a check hears a sound rather than only seeing it start.
+export const WATCH_LEVEL = `window.fuaLevel = {
+    taps: [],
+    reset() { for (const t of this.taps) { t.sum = 0; t.n = 0; } },
+    mean() { let s = 0, n = 0; for (const t of this.taps) { s += t.sum; n += t.n; } return n ? s / n : 0; },
+  }; {
+    const connect = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (target, ...rest) {
+      if (!(target instanceof AudioDestinationNode)) return connect.call(this, target, ...rest);
+      let tap = window.fuaLevel.taps.find((t) => t.ctx === this.context);
+      if (!tap) {
+        const an = this.context.createAnalyser();
+        an.fftSize = 2048;
+        connect.call(an, target);
+        tap = { ctx: this.context, an, buf: new Float32Array(2048), sum: 0, n: 0 };
+        window.fuaLevel.taps.push(tap);
+        setInterval(() => { an.getFloatTimeDomainData(tap.buf); let s = 0; for (const v of tap.buf) s += v * v; tap.sum += Math.sqrt(s / tap.buf.length); tap.n++; }, 20);
+      }
+      return connect.call(this, tap.an, ...rest);
+    };
+  }`;

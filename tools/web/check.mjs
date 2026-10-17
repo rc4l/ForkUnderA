@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
@@ -329,6 +329,49 @@ export const CHECKS = [
     until: EVAL,
     expect: threadedWithSound,
   },
+  // [rc4l] SDL scales mouse motion by its window over the canvas, axis by axis, and learned the canvas's size only from the window's resize event, so fullscreen left the axes scaled apart; its window must match the canvas there and after.
+  {
+    name: 'the mouse is scaled alike on both axes through fullscreen',
+    focused: true,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      const cvar = async (name) => { const from = said.length; Module.fuaCommand(name); ${pause(200)} const m = /is "([^"]*)"/.exec(said.slice(from).join(' ')); return m ? Number(m[1]) : NaN; };
+      const apart = async () => {
+        const r = document.getElementById('canvas').getBoundingClientRect();
+        return Math.max(Math.abs((await cvar('vid_defwidth')) - r.width), Math.abs((await cvar('vid_defheight')) - r.height));
+      };
+      ${pause(1500)}
+      console.log('check: click fullscreen');
+      ${pause(1500)}
+      const entered = !!document.fullscreenElement;
+      const full = await apart();
+      await document.exitFullscreen().catch(() => {});
+      ${pause(1500)}
+      const back = await apart();
+      unhear();
+      return { entered, full, back };`),
+    until: EVAL,
+    expect: ({ entered, full, back }) => (!entered ? 'the page never went fullscreen'
+      : full <= 1 && back <= 1 ? '' : `SDL's window was ${full.toFixed(1)} px off the canvas in fullscreen and ${back.toFixed(1)} after`),
+  },
+  // [rc4l] A sound a tic on the game thread started kept no rolloff for its later start, so everything heard from a distance came out silent while every start still counted; shooters across the room must be heard.
+  {
+    name: 'sounds the game thread starts are heard at a distance',
+    autoplay: true,
+    init: WATCH_LEVEL,
+    evaluate: inPage(`
+      Module.fuaCommand('fua_gamethread 1');
+      Module.fuaCommand('god');
+      Module.fuaCommand('snd_musicvolume 0');
+      ${pause(1000)}
+      for (const m of ['ShotgunGuy', 'ShotgunGuy', 'ChaingunGuy']) Module.fuaCommand('summon ' + m + ' 256 0');
+      ${pause(1500)}
+      window.fuaLevel.reset();
+      ${pause(4000)}
+      return Number(window.fuaLevel.mean().toFixed(4));`),
+    until: EVAL,
+    expect: (rms) => (rms > 0.05 ? '' : `shooters across the room came out at ${rms} RMS`),
+  },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {
     name: 'game keys stay in the game',
@@ -339,6 +382,29 @@ export const CHECKS = [
       return document.activeElement ? document.activeElement.id || document.activeElement.tagName : null;`),
     until: EVAL,
     expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
+  },
+  // [rc4l] Game keys did nothing until a frame off the game thread's schedule built SDL's key table, which fullscreen happened to cause; holding up must move the player.
+  {
+    name: 'a game key moves the player',
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      const at = async () => {
+        const from = said.length;
+        Module.fuaCommand('currentpos');
+        ${pause(300)}
+        const m = /\\((-?[\\d.]+),(-?[\\d.]+)/.exec(said.slice(from).find((l) => l.includes('position')) || '');
+        return m ? [Number(m[1]), Number(m[2])] : null;
+      };
+      document.getElementById('canvas').focus();
+      ${pause(5000)}
+      const a = await at();
+      console.log('check: hold ArrowUp 900');
+      ${pause(1500)}
+      const b = await at();
+      unhear();
+      return a && b ? Math.round(Math.hypot(b[0] - a[0], b[1] - a[1])) : -1;`),
+    until: EVAL,
+    expect: (moved) => (moved > 32 ? '' : `holding up moved the player ${moved} units`),
   },
   // [rc4l] A save's picture reads back a frame or two after the save is written, and goes into it then; a software adapter can take several seconds, so the check waits for it.
   {
@@ -489,7 +555,7 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const logFile = path.join(shots, `check-${i}-chrome.log`);
-      const { matched, lines, version } = await smoke({ url, profile, seconds, software, autoplay: !!c.autoplay, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      const { matched, lines, version } = await smoke({ url, profile, seconds, software, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       if (i === 0) onResult(`browser: ${version}`);
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
