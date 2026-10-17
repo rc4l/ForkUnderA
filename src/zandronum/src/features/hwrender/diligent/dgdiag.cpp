@@ -161,8 +161,8 @@ void DynStats(FString &report)
 		g_stats.geomRepaints, g_stats.repaintRuns);
 	report += why;
 	FString patches;
-	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d new, %d resized, %d revived) (%d verts, %d%% of slack)",
-		g_stats.geomPatches, g_stats.geomPatchVerts, g_stats.geomAppends, g_stats.appendNoSlot, g_stats.appendResized, g_stats.slotRevived, g_scene.appendedVerts,
+	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d new, %d resized, %d rebatched, %d revived) (%d verts, %d%% of slack)",
+		g_stats.geomPatches, g_stats.geomPatchVerts, g_stats.geomAppends, g_stats.appendNoSlot, g_stats.appendResized, g_stats.appendRebatched, g_stats.slotRevived, g_scene.appendedVerts,
 		g_scene.vbCapacity ? (int)(100.0 * g_scene.appendedVerts / (g_scene.vbCapacity / 8.0)) : 0);
 	report += patches;
 	report += geo;

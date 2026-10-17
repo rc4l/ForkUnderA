@@ -6,6 +6,7 @@ export const SPECIAL = Object.freeze({
   Line_Horizon: 9,
   Door_Raise: 12,
   Transfer_WallLight: 16,
+  Floor_LowerToLowest: 21,
   Floor_RaiseByValue: 23,
   Plat_PerpetualRaise: 60,
   FloorAndCeiling_RaiseByValue: 96,

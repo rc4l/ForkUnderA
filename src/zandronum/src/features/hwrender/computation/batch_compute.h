@@ -24,6 +24,10 @@ void ComputeGroupByKey(const uint64_t *keys, int count, std::vector<int> &order,
 // [rc4l] Whether a re-baked piece can stay in the batch it was built into: the same material, or another frame of the same base texture, which the batch re-resolves from that base every frame anyway; a switch changes the base too.
 bool ComputeStaysInBatch(const void *pieceMaterial, const void *pieceBase, const void *batchMaterial, const void *batchBase);
 
+// [rc4l] What a backend does about the pieces that moved between batches: nothing, append each into a batch of its own, or rebuild the scene when the list was cut short or one is translucent, which is sorted by distance and cannot be appended.
+enum class RebatchPlan { None, Append, Rebuild };
+RebatchPlan ComputeRebatchPlan(int pieces, bool overflowed, int translucent);
+
 } // namespace hwrender
 
 #endif // ZX_HWRENDER_BATCH_COMPUTE_H

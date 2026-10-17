@@ -310,7 +310,7 @@ struct SceneStats
 	int     geomUpdates = 0, geomRebuilds = 0;      // [rc4l] scene rebuilds this frame and since load, because the world moved
 	unsigned int lastDirtyLo = 0, lastDirtyHi = 0;
 	int     geomPatches = 0, geomPatchVerts = 0;    // [rc4l] patches and the vertices they moved, which tell nudged from rewritten
-	int     geomAppends = 0, appendNoSlot = 0, appendResized = 0, slotRevived = 0;   // [rc4l] pieces put on the end, and why
+	int     geomAppends = 0, appendNoSlot = 0, appendResized = 0, slotRevived = 0, appendRebatched = 0;   // [rc4l] pieces put on the end, and why
 	int     geomRepaints = 0, repaintRuns = 0;
 	int     fRepaints = 0, fRuns = 0, fPatchVerts = 0, fPatches = 0;   // [rc4l] what THIS frame did, so a p99 can be attributed
 	int     batchesDrawn = 0, worldDraws = 0;       // [rc4l] batches drawn, and the draw CALLS that took

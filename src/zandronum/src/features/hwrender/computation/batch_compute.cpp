@@ -11,6 +11,13 @@ bool ComputeStaysInBatch(const void *pieceMaterial, const void *pieceBase, const
 	return pieceMaterial == batchMaterial || (pieceBase != nullptr && pieceBase == batchBase);
 }
 
+RebatchPlan ComputeRebatchPlan(int pieces, bool overflowed, int translucent)
+{
+	if (overflowed) return RebatchPlan::Rebuild;
+	if (pieces <= 0) return RebatchPlan::None;
+	return translucent > 0 ? RebatchPlan::Rebuild : RebatchPlan::Append;
+}
+
 int ComputeBatchRuns(const uint64_t *keys, int count, BatchRun *outRuns, int maxRuns)
 {
 	int runs = 0;
