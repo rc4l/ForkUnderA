@@ -52,6 +52,7 @@ jobs:
         env:
           TSAN_OPTIONS: "log_path=${{ github.workspace }}/tsan suppressions=${{ github.workspace }}/tools/tsan.supp halt_on_error=0 second_deadlock_stack=1"
           FUACTL_ENGINE: ${{ github.workspace }}/build-linux/forkundera
+          FUACTL_TIMEOUT_SCALE: "20"
         run: |
           set -e
           cd tools/fuactl

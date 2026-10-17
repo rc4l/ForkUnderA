@@ -1,6 +1,7 @@
 // BridgeClient: an RPC/event connection to a running engine's native bridge (loopback NDJSON v2).
 import net from "node:net";
 import { drainLines, frameRequest, classify } from "./proto.mjs";
+import { scaled } from "./timeouts.mjs";
 
 export class BridgeClient {
   constructor() {
@@ -13,7 +14,7 @@ export class BridgeClient {
     this._helloWaiters = [];
   }
 
-  connect(port, { host = "127.0.0.1", token = null, timeoutMs = 8000 } = {}) {
+  connect(port, { host = "127.0.0.1", token = null, timeoutMs = scaled(8000) } = {}) {
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => reject(new Error(`connect timeout on ${host}:${port}`)), timeoutMs);
       this.sock = net.createConnection({ host, port }, () => {
@@ -54,7 +55,7 @@ export class BridgeClient {
     }
   }
 
-  waitHello(timeoutMs = 8000) {
+  waitHello(timeoutMs = scaled(8000)) {
     if (this.hello) return Promise.resolve(this.hello);
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => reject(new Error("hello timeout")), timeoutMs);
@@ -64,7 +65,7 @@ export class BridgeClient {
 
   onEvent(fn) { this.eventHandlers.push(fn); return () => { const i = this.eventHandlers.indexOf(fn); if (i >= 0) this.eventHandlers.splice(i, 1); }; }
 
-  rpc(cmd, args, timeoutMs = 8000) {
+  rpc(cmd, args, timeoutMs = scaled(8000)) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => { this.pending.delete(id); reject(new Error(`rpc timeout: ${cmd}`)); }, timeoutMs);
@@ -77,7 +78,7 @@ export class BridgeClient {
   }
 
   // Wait for a specific event once.
-  waitEvent(name, timeoutMs = 15000) {
+  waitEvent(name, timeoutMs = scaled(15000)) {
     return new Promise((resolve, reject) => {
       const to = setTimeout(() => reject(new Error(`event timeout: ${name}`)), timeoutMs);
       const h = (event, data) => {

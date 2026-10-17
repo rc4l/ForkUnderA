@@ -13,6 +13,7 @@ import { exec as execOut, sleep, waitInLevel } from "./capture.mjs";
 import { captureVulkan, standAt } from "./shot.mjs";
 import { boxDiff, boxDiffMax, decodePNG } from "./pngcore.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
+import { scaled } from "./timeouts.mjs";
 
 const ARENA = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 160 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -275,7 +276,7 @@ export async function recordFixture(f, { engine, store, dir = fixtureDir(), log 
   let c = null;
   try {
     c = await attach(inst);
-    await waitInLevel(c, 60000);
+    await waitInLevel(c, scaled(60000));
     log(`${f.name}: recording ${f.tics} tics`);
     await driveFight(c, f.recordTics || f.tics);
     await exec(c, "stop");
@@ -324,7 +325,7 @@ export async function saveCompatFixture(f, { writer, readers, names = readers, s
   let c = null;
   try {
     c = await attach(inst);
-    await waitInLevel(c, 60000);
+    await waitInLevel(c, scaled(60000));
     await waitLevelTime(c, saveTic);
     await exec(c, `save "${save}"`);
     await waitForFile(save, 30000, inst.proc);
@@ -408,11 +409,11 @@ async function playTo(f, { engine, store, dir, cvars, gl = false }) {
   // [rc4l] No console notices either, since a capture's own "wrote <file>" would land in the next one with its path and process id.
   const inst = await launchDemo(f, { engine, store, dir, cvars: { fua_debug_frameclock: 1000, con_notifylines: 0, ...cvars }, gl });
   const c = await attach(inst);
-  await waitInLevel(c, 60000);
+  await waitInLevel(c, scaled(60000));
   return { inst, c };
 }
 
-async function waitLevelTime(c, tic, { paused = false, timeoutMs = 120000 } = {}) {
+async function waitLevelTime(c, tic, { paused = false, timeoutMs = scaled(120000) } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const t = await c.rpc("sim.tic");

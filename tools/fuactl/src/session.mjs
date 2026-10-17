@@ -6,9 +6,10 @@ import { BridgeClient } from "./client.mjs";
 import { waitInLevel, sleep } from "./capture.mjs";
 import { desyncVerdict } from "./proto.mjs";
 import { sampleProcess } from "./sample.mjs";
+import { timeoutScale } from "./timeouts.mjs";
 
 
-export async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
+export async function attach(inst, { retries = Math.round(60 * timeoutScale()), delayMs = 500 } = {}) {
   // The engine takes a few seconds to boot and bind its bridge port; retry ECONNREFUSED until it's up.
   for (let i = 0; ; i++) {
     const c = new BridgeClient();

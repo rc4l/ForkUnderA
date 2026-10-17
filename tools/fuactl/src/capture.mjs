@@ -15,6 +15,7 @@
 // are only testable apart.
 import fs from "node:fs";
 import path from "node:path";
+import { scaled } from "./timeouts.mjs";
 
 // [rc4l] Waits ms milliseconds; every module that waits on an engine takes it from here.
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -63,7 +64,7 @@ export async function capturePerf(c, { frames = 300, warmup = 0 } = {}) {
   return done;
 }
 
-export async function waitInLevel(c, timeoutMs = 20000) {
+export async function waitInLevel(c, timeoutMs = scaled(20000)) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const t = await c.rpc("sim.tic").catch(() => ({}));
