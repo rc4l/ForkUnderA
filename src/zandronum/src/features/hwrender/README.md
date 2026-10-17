@@ -22,7 +22,9 @@ A launch draws with the backend alone, with no GL context at all (every client b
 player chose GL: `vid_backend` (the video mode menu's Renderer, "Vulkan (Recommended)" or "GL (Legacy)", read
 at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`).
 `ComputeVidBackendFor` keeps it to what the build can honour: a browser's build, whose only renderer is WebGPU,
-always reads WebGPU, and `vid_backend_choosable` is false there, which greys the menu's Renderer out. When
+always reads WebGPU, and `vid_backend_choosable` is false there, which greys the menu's Renderer out. The
+value the renderer was chosen from is kept in `vid_backend_launched`, and the menu's `RestartOption` row says beside
+its value that the game must restart once the two differ (`menu/restartnote_compute`). When
 Vulkan was chosen and its device does not start, the launch says why on the console and draws with GL instead
 (`BackendDeviceStarts`). `I_CreateRenderer`
 installs `features/frame`'s `FBackendRenderer` (`features/frame/backendrenderer.cpp`), whose `RenderView` is

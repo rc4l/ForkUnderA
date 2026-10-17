@@ -30,6 +30,7 @@
 #include "zstring.h"
 #include "m_cheat.h"
 #include "d_protocol.h"
+#include "v_video.h"   // [rc4l] screen, for input.windowpoint
 #include "mcp_hud.h"
 #include "mcp_glperf.h"
 #include "mcp_ticprof.h"
@@ -372,7 +373,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
-			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
+			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\",\"player.camera\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
@@ -745,6 +746,17 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		std::string body = "{\"requested\":{\"yaw\":" + std::to_string( yaw ) + ",\"pitch\":" + std::to_string( pitch )
 			+ "},\"angle_deg\":" + std::to_string( angleDeg ) + "}";
 		SendOk( id, body );
+	}
+	else if ( cmd == "input.windowpoint" )
+	{
+		// [rc4l] Where a window pixel lands in render pixels as Windows' mouse handler maps it, so a scenario checks menu hover at a render scale without OS input.
+		long x = 0, y = 0;
+		GetInt( args, "x", x );
+		GetInt( args, "y", y );
+		int mx = (int)x, my = (int)y;
+		if ( screen != NULL ) screen->ScaleCoordsFromWindow( mx, my );
+		SendOk( id, "{\"x\":" + I( mx ) + ",\"y\":" + I( my ) + ",\"width\":" + I( screen != NULL ? screen->GetWidth() : 0 )
+			+ ",\"height\":" + I( screen != NULL ? screen->GetHeight() : 0 ) + "}" );
 	}
 	else if ( cmd == "perf.capture" )
 	{

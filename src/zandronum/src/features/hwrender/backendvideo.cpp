@@ -53,6 +53,9 @@ CUSTOM_CVAR(Int, vid_backend, zx::hwrender::ComputeVidBackendFor(zx::hwrender::k
 // [rc4l] Whether the video menu's renderer can be changed, which a browser's build, drawing only with WebGPU, greys out.
 CVAR(Bool, vid_backend_choosable, zx::hwrender::ComputeVidBackendChoosable(kVulkanBuilt, kWebGPUBuilt), CVAR_NOSET)
 
+// [rc4l] The vid_backend this launch's renderer was chosen from, which the video menu compares against to say a change waits for a restart.
+CVAR(Int, vid_backend_launched, -1, CVAR_NOSET)
+
 EXTERN_CVAR(Bool, fua_vulkan)
 EXTERN_CVAR(Bool, fua_dg_standalone)
 EXTERN_CVAR(Bool, fua_dg_embed)
@@ -88,6 +91,9 @@ bool BackendOnly()
 		const bool argBackend = Args->CheckParm("-vulkan") != 0 || Args->CheckParm("-webgpu") != 0;
 		const bool wants = ComputeWantsBackendOnly(vid_backend, argBackend, Args->CheckParm("-gl") != 0, built);
 		g_backendOnly = (wants && BackendDeviceStarts()) ? 1 : 0;
+		UCVarValue chosen;
+		chosen.Int = vid_backend;
+		vid_backend_launched.ForceSet(chosen, CVAR_Int);
 	}
 	return g_backendOnly == 1;
 }
@@ -167,6 +173,9 @@ public:
 		zx::viewsetup::ForgetCamera();
 		zx::materials::GenerateGlobalBrightmap();
 	}
+
+	// [rc4l] Window pixels to the render pixels the menu hit-tests in, as GL's frame buffer maps them, since a scaled screen is stretched over the whole client.
+	void ScaleCoordsFromWindow(int &x, int &y) { zx::ScaleWindowPointToRender(mClientW, mClientH, GetWidth(), GetHeight(), x, y); }
 
 	// [rc4l] 2D is recorded rather than drawn, so there is no state to set up for it.
 	bool Begin2D(bool) { return true; }

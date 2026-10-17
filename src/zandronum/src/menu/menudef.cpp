@@ -1669,8 +1669,10 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			FOptionMenuItem *it = new FOptionMenuItemSubmenu(label, sc.String);
 			desc->mItems.Push(it);
 		}
-		else if (sc.Compare("Option"))
+		// [rc4l] RestartOption is an Option with the cvar holding its launch value after the values, for a setting that waits for a restart.
+		else if (sc.Compare("Option") || sc.Compare("RestartOption"))
 		{
+			const bool restart = sc.Compare("RestartOption");
 			sc.MustGetString();
 			FString label = sc.String;
 			sc.MustGetStringName(",");
@@ -1679,6 +1681,13 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			sc.MustGetStringName(",");
 			sc.MustGetString();
 			FString values = sc.String;
+			FString launch;
+			if (restart)
+			{
+				sc.MustGetStringName(",");
+				sc.MustGetString();
+				launch = sc.String;
+			}
 			FString check;
 			int center = 0;
 			if (sc.CheckString(","))
@@ -1691,7 +1700,8 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 					center = sc.Number;
 				}
 			}
-			FOptionMenuItem *it = new FOptionMenuItemOption(label, cvar, values, check, center);
+			FOptionMenuItem *it = restart ? new FOptionMenuItemRestartOption(label, cvar, values, launch, check, center)
+				: new FOptionMenuItemOption(label, cvar, values, check, center);
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("Command"))

@@ -231,11 +231,45 @@ async function eachLaunch({ name, wad, maps, sides, iwad = FREEDOOM2, port = 779
 export function compareQuit(opts) {
   return eachLaunch(opts, async (c, inst, label) => {
     await cap.waitTics(c, opts.settleTics ?? 70);
-    // [rc4l] Over the scenario's own connection, the bridge's only one; the engine leaves before it answers.
+    // [rc4l] Over the scenario's own connection, whose answer never comes since the engine leaves first.
     await c.rpc("console.exec", { text: "quit" }).catch(() => {});
     const gone = await exited(inst.proc, 15000);
     return judgeQuit(label, { gone, crashed: fs.existsSync(`${inst.log}.crash`) });
   });
+}
+
+// [rc4l] Each side launched on each map and judged by the scenario's own judgeLaunch(c, inst, label), for a check one bridge answer settles.
+export function compareEachLaunch(opts) {
+  return eachLaunch(opts, (c, inst, label) => opts.judgeLaunch(c, inst, label));
+}
+
+// [rc4l] Where the engine put a window pixel (input.windowpoint) against the render pixel under it, failing too on a render size that says the scale never took.
+export function judgeWindowPoint(label, got, want) {
+  const ok = got.width === want.width && got.height === want.height && Math.abs(got.x - want.x) <= 1 && Math.abs(got.y - want.y) <= 1;
+  const text = `window ${want.from.join(",")} at render ${got.x},${got.y} of ${got.width}x${got.height}, want ${want.x},${want.y} of ${want.width}x${want.height}`;
+  return { line: `${ok ? "PASS" : "FAIL"} ${label}: ${text}`, failed: ok ? 0 : 1 };
+}
+
+// [rc4l] Menu reads (ui.mjs readMenu) before a row's value changed, after, and after changing back, passing when note sits clear of the row's text in its band only while changed and no absent text shows.
+export function judgeNoteBeside(label, { before, changed, back }, { row, note, absent = [] }) {
+  const texts = (read) => read.texts || [];
+  const find = (read, text) => texts(read).find((t) => t.text.includes(text));
+  const problems = [];
+  const r = find(changed, row);
+  const n = find(changed, note);
+  if (!r) problems.push(`no "${row}" row`);
+  else if (!n) problems.push("no note after the change");
+  else {
+    // [rc4l] A row's band runs from its top to the next row's, so a smaller note centred on it is still beside it.
+    const next = Math.min(Infinity, ...texts(changed).filter((t) => t !== n && t.y > r.y + 3).map((t) => t.y));
+    if (n.y < r.y - 3 || n.y >= next || n.x <= r.x) problems.push("the note is on a line of its own");
+    else if (texts(changed).some((t) => t !== n && t.y >= r.y - 3 && t.y < next && t.x < n.x && t.x + t.w > n.x)) problems.push("the note overlaps the row");
+  }
+  if (find(before, note)) problems.push("the note shows before any change");
+  if (find(back, note)) problems.push("the note still shows after changing back");
+  for (const text of absent) if ([before, changed, back].some((read) => find(read, text))) problems.push(`"${text}" still shows`);
+  return problems.length ? { line: `FAIL ${label}: ${problems.join("; ")}`, failed: 1 }
+    : { line: `PASS ${label}: "${note}" beside "${row}" only while changed`, failed: 0 };
 }
 
 // [rc4l] A soak's verdict (telemetry.mjs runSoak) as a scenario line: what kept growing and by how much a cycle, as the engine says, or how many counters held.
@@ -421,4 +455,4 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 }
 
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
-for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak]) compare.judgedAlone = true;
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch]) compare.judgedAlone = true;

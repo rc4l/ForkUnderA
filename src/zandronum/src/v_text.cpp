@@ -226,7 +226,7 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	// VirtualToRealCoords; we re-read the same tags and run the same mapping. Gated so release builds get
 	// no tee at all. The scan mirrors the loop above -- one DWORD per tag, TAG_MORE chains lists.
 	{
-		int teeVW = Width, teeVH = Height;
+		int teeVW = Width, teeVH = Height, teeScale = 1;
 		bool teeKeep = false, teeClean = false;
 		va_list tt;
 #ifndef NO_VA_COPY
@@ -252,6 +252,9 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 			else if ( t == DTA_VirtualHeight ) teeVH = (int) v;
 			else if ( t == DTA_KeepRatio )     teeKeep = ( v != 0 );
 			else if ( ( t == DTA_Clean || t == DTA_320x200 ) && v ) teeClean = true;
+			// [rc4l] The option menus draw at the clean scale in screen coordinates, which multiplies only the text's width.
+			else if ( t == DTA_CleanNoMove_1 && v ) teeScale = CleanXfac_1;
+			else if ( t == DTA_CleanNoMove && v ) teeScale = CleanXfac;
 		}
 		va_end( tt );
 
@@ -259,7 +262,7 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 
 		// Map the string's origin AND its width to screen pixels, so a driver can aim for the label's
 		// centre -- the text-start alone sits at a row's clickable edge and a click there can miss.
-		int sx = x, sy = y, sw = font->StringWidth( string ), sh = 1;
+		int sx = x, sy = y, sw = font->StringWidth( string ) * teeScale, sh = 1;
 		if ( teeVW != Width || teeVH != Height )
 			VirtualToRealCoordsInt( sx, sy, sw, sh, teeVW, teeVH, false, !teeKeep );
 		MCP_HUD_TeeText( sx, sy, sw, string );

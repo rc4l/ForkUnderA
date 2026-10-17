@@ -2156,26 +2156,23 @@ OptionMenu VideoModeMenu
 		Option "Retina/HiDPI support", "vid_hidpi", "YesNo"
 	}
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
+	// [rc4l] The renderer is chosen at launch, so a change says beside it that the game must restart.
 	IfOption(Mac)
 	{
-		Option "Renderer",			"vid_backend", "BackendsMac"
+		RestartOption "Renderer",		"vid_backend", "BackendsMac", "vid_backend_launched"
 	}
 	IfOption(Windows)
 	{
-		Option "Renderer",			"vid_backend", "Backends"
+		RestartOption "Renderer",		"vid_backend", "Backends", "vid_backend_launched"
 	}
 	IfOption(Unix)
 	{
-		Option "Renderer",			"vid_backend", "Backends"
+		RestartOption "Renderer",		"vid_backend", "Backends", "vid_backend_launched"
 	}
 	// [rc4l] A browser draws only through its own WebGPU, so its renderer is shown greyed out.
 	IfOption(Web)
 	{
 		Option "Renderer",			"vid_backend", "BackendsWeb", "vid_backend_choosable"
-	}
-	else
-	{
-		StaticText "(the renderer changes on the next launch)"
 	}
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"

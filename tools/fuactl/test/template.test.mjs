@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareEachLaunch, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -246,6 +246,42 @@ test("a quit passes only when the engine left cleanly", () => {
   assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: null, signal: "SIGKILL" }, crashed: false }), { line: "FAIL MAP01 vk: the engine exited with SIGKILL", failed: 1 });
 });
 
+// [rc4l] The backend left window pixels unscaled, so at vid_scalefactor 0.5 every menu hover landed twice as far in.
+test("a window point passes only at the render pixel under it, in a frame the scale took", () => {
+  const want = { from: [1000, 600], x: 500, y: 300, width: 640, height: 360 };
+  assert.deepEqual(judgeWindowPoint("MAP01 vk", { x: 500, y: 301, width: 640, height: 360 }, want), { line: "PASS MAP01 vk: window 1000,600 at render 500,301 of 640x360, want 500,300 of 640x360", failed: 0 });
+  assert.equal(judgeWindowPoint("MAP01 vk", { x: 1000, y: 600, width: 640, height: 360 }, want).failed, 1);
+  assert.equal(judgeWindowPoint("MAP01 vk", { x: 500, y: 300, width: 1280, height: 720 }, want).failed, 1, "the scale never took");
+  assert.equal(judgeWindowPoint("MAP01 vk", { x: 500, y: 300, width: 640, height: 400 }, want).failed, 1);
+});
+
+// [rc4l] The renderer's "changes on the next launch" took a line of its own; the restart note belongs beside the row, and only once it was changed.
+test("a note passes only beside its row and only while the row is changed", () => {
+  const read = (...rows) => ({ texts: rows.flatMap(([y, ...parts]) => parts.map(([x, text]) => ({ x, y, w: 10, text }))) });
+  const spec = { row: "Renderer", note: "(restart", absent: ["next launch"] };
+  const plain = read([100, [300, "Fullscreen"], [500, "Yes"]], [130, [300, "Renderer"], [500, "Vulkan (Recommended)"]], [160, [300, "Aspect"]]);
+  const noted = read([100, [300, "Fullscreen"]], [130, [300, "Renderer"], [500, "GL (Legacy)"], [700, "(restart the game to apply)"]], [160, [300, "Aspect"]]);
+  assert.deepEqual(judgeNoteBeside("MAP01 vk", { before: plain, changed: noted, back: plain }, spec),
+    { line: 'PASS MAP01 vk: "(restart" beside "Renderer" only while changed', failed: 0 });
+  const centred = read([130, [300, "Renderer"], [500, "Vulkan (Recommended)"]], [139, [900, "(restart)"]], [160, [300, "Aspect"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: centred, back: plain }, spec).failed, 0, "a smaller note centred on the row");
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: plain, back: plain }, spec).line, "FAIL MAP01 vk: no note after the change");
+  const ownLine = read([130, [300, "Renderer"], [500, "GL (Legacy)"]], [160, [300, "(restart the game to apply)"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: ownLine, back: plain }, spec).line, "FAIL MAP01 vk: the note is on a line of its own");
+  const over = { texts: [{ x: 300, y: 130, w: 60, text: "Renderer" }, { x: 500, y: 130, w: 330, text: "GL (Legacy)" }, { x: 800, y: 130, w: 400, text: "(restart to apply)" }] };
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: over, back: plain }, spec).line, "FAIL MAP01 vk: the note overlaps the row");
+  const clear = { texts: [{ x: 300, y: 130, w: 60, text: "Renderer" }, { x: 500, y: 130, w: 300, text: "GL (Legacy)" }, { x: 800, y: 130, w: 400, text: "(restart to apply)" }] };
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: clear, back: plain }, spec).failed, 0, "touching is not overlapping");
+  const leftOf = read([130, [300, "Renderer"], [200, "(restart)"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: leftOf, back: plain }, spec).failed, 1);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: noted, changed: noted, back: noted }, spec).line,
+    "FAIL MAP01 vk: the note shows before any change; the note still shows after changing back");
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: read(), changed: read(), back: read() }, spec).line, 'FAIL MAP01 vk: no "Renderer" row');
+  const old = read([130, [300, "Renderer"], [500, "GL (Legacy)"], [700, "(restart to apply)"]], [160, [300, "(the renderer changes on the next launch)"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: old, back: plain }, spec).line, 'FAIL MAP01 vk: "next launch" still shows');
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: {}, changed: noted, back: {} }, { row: "Renderer", note: "(restart" }).failed, 0);
+});
+
 // [rc4l] A new game leaked every player's userinfo cvars, about 1,400 allocations a level load, until a soak named them.
 test("a soak passes only when the engine judged counters and none kept growing", () => {
   assert.deepEqual(judgeSoak("MAP01 vk", { pass: true, marks: 6, judged: 44, grew: [] }), { line: "PASS MAP01 vk: 44 counters held over 6 marks", failed: 0 });
@@ -256,7 +292,7 @@ test("a soak passes only when the engine judged counters and none kept growing",
 });
 
 test("only the comparisons that judge a launch against itself are marked so", () => {
-  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone && compareSoak.judgedAlone);
+  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone && compareSoak.judgedAlone && compareEachLaunch.judgedAlone);
   assert.ok(!compareSameFrame.judgedAlone);
 });
 
