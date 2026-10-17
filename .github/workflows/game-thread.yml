@@ -51,15 +51,6 @@ jobs:
           ZX_MCP_BRIDGE: "1"
         run: ./linux_compile.sh --install-deps --no-package 2>&1 | tail -40
 
-      # [rc4l] One start of the instrumented engine under gdb, which prints every thread's stack if it crashes before the fixtures can attach.
-      - name: Start under gdb
-        continue-on-error: true
-        env:
-          TSAN_OPTIONS: "suppressions=${{ github.workspace }}/tools/tsan.supp halt_on_error=0"
-        run: |
-          timeout 900 xvfb-run -a -s "-screen 0 1280x720x24" gdb -batch -ex "set pagination off" -ex "handle SIGUSR1 SIGUSR2 SIGPIPE SIG32 SIG33 SIG34 nostop noprint pass" -ex run -ex "thread apply all bt 40" \
-            --args build-linux/forkundera -iwad tools/freedoom/freedoom2.wad -nosound +map MAP01 +wait 200 +quit 2>&1 | tail -400
-
       # [rc4l] Races only the engine's own code makes are judged; the drivers and libraries it calls into keep their own.
       - name: Record and trace the template fixture
         env:
