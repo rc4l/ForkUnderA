@@ -53,7 +53,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 - `d_net.cpp` `TryRunTics`, `g_game.cpp` `G_Ticker` and `p_tick.cpp` `P_Ticker`: the `sim/` zones and `TicMark`, which the bridge's `perf.ticprof` reads (`features/mcp-bridge/computation/ticprof_compute.h` names them).
 - `dthinker.cpp` `TickThinkers`: with `fua_telemetry_thinkers 1`, each thinker's tick by class, as the breakdown `sim/thinker/`.
 - `features/visibility/viswalk.cpp`: the `vis/` zones.
-- `features/gamecopy/`: the fill's `copy/` zones and counts (actors, lights, particles, decals, polyobject
+- `features/gamecopy/`: the fill's `copy/` zones and counts (seen bits, sectors, sides and their scan and take,
+  3D floors, polyobjects, actors, lights, particles, decals, views, interpolations, sides taken, polyobject
   subsectors) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
   `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace.
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones.

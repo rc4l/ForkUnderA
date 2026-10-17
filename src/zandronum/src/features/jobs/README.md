@@ -7,7 +7,9 @@ The engine's one pool of worker threads, for work a frame splits across cores.
   lock, and the call returns once every index has run. An idle worker polls for the next job for a short
   spin and then sleeps, so a job a frame later wakes a spinning worker at once. A worker that wakes after a
   job has closed leaves without touching it, so the caller never waits on a sleeper.
-  `ComputeAutoWorkers` is the default count: half the logical processors less the caller, at most 7.
+  `ParallelChunks(count, chunk, fn)` runs `fn(lo, hi, lane)` over `[0, count)` in chunks of at most `chunk`
+  items, its bounds from `ComputeChunkCount` and `ComputeChunkBounds`, so a scan splits without working them
+  out itself. `ComputeAutoWorkers` is the default count: half the logical processors less the caller, at most 7.
   A `JobObserver` (`SetJobObserver`) hears each worker start, each lane's run and the caller's wait, for
   `features/telemetry`.
 - `computation/sharedarray_compute`: `SharedArray`, an array of relaxed atomics that a job's lanes mark at

@@ -32,6 +32,7 @@
 #include "g_shared/a_sharedglobal.h"
 #include "r_utility.h"
 #include "v_palette.h"
+#include "features/jobs/jobs.h"   // [rc4l] the change scans split across the pool
 #include "g_level.h"
 #include "g_game.h"   // [rc4l] GAME_GetEndLevelDelay
 #include "p_local.h"
@@ -336,29 +337,49 @@ void Bump(sector_t &s, int change)
 	if (change & kLook) s.rcLook++;
 }
 
+// [rc4l] Items each pool lane compares at a time.
+static const int kScanChunk = 2048;
+
+// [rc4l] Each of count items' change worked out across the job pool, since on Sunder MAP16 the sector and side scans alone were 2.4 ms of a tic's handoff; it only reads, so the copy is taken afterwards on this thread.
+template <class Change> static void ScanChanges(int count, std::vector<int> &out, Change change)
+{
+	out.resize(count > 0 ? count : 0);
+	auto scan = [&](int lo, int hi, int) { for (int i = lo; i < hi; i++) out[i] = change(i); };
+	zx::jobs::Pool().ParallelChunks(count, kScanChunk, scan);
+}
+
 void FillSectors()
 {
+	static std::vector<int> changes;
+	ScanChanges(numsectors, changes, [](int i) { return SectorChange(sectors[i]); });
 	for (int i = 0; i < numsectors; i++)
 	{
-		sector_t &s = sectors[i];
-		const int change = SectorChange(s);
-		if (change == 0) continue;
-		TakeSector(s);
-		Bump(s, change);
+		if (changes[i] == 0) continue;
+		TakeSector(sectors[i]);
+		Bump(sectors[i], changes[i]);
 	}
 }
 
 void FillSides()
 {
+	static std::vector<int> sideChanges, lineChanges;
+	{
+		ZX_ZONE("copy/side_scan");
+		ScanChanges(numsides, sideChanges, [](int i) { return SideChange(sides[i]); });
+		ScanChanges(numlines, lineChanges, [](int i) { return LineChange(lines[i]); });
+	}
+	ZX_ZONE("copy/side_take");
+	int taken = 0;
 	for (int i = 0; i < numsides; i++)
 	{
-		side_t &d = sides[i];
-		if (SideChange(d) == 0) continue;
-		TakeSide(d);
-		d.rcShape++;
+		if (sideChanges[i] == 0) continue;
+		TakeSide(sides[i]);
+		sides[i].rcShape++;
+		taken++;
 	}
+	ZX_COUNT("copy/sides_taken", "sides", taken);
 	for (int i = 0; i < numlines; i++)
-		if (LineChange(lines[i]) != 0) TakeLine(lines[i]);
+		if (lineChanges[i] != 0) TakeLine(lines[i]);
 }
 
 // [rc4l] Only a polyobject's vertices move; one that moved reshapes the polyobject's every side.
@@ -785,22 +806,20 @@ void FillNow()
 {
 	g_filledTic = gametic;
 	ZX_SEAM("copy/fill", Handoff);
-	MergeSeen();
-	FillSectors();
-	FillXFloors();
-	FillSides();
-	FillPolyobjects();
-	FillPolyBSPs();
+	// [rc4l] Each step timed on its own, since on Sunder MAP16 the fill was 5 ms a tic and only the actor, light, decal and particle steps said where.
+	{ ZX_ZONE("copy/seen_merge"); MergeSeen(); }
+	{ ZX_ZONE("copy/sector_fill"); FillSectors(); }
+	{ ZX_ZONE("copy/xfloor_fill"); FillXFloors(); }
+	{ ZX_ZONE("copy/side_fill"); FillSides(); }
+	{ ZX_ZONE("copy/polyobj_fill"); FillPolyobjects(); FillPolyBSPs(); }
 	TakeLevel(g_level_);
 	FillActors();
 	FillLights();
 	FillParticles();
 	FillDecals();
-	FillSkyBoxes();
-	FillPlayers();
-	FillViewSources();
+	{ ZX_ZONE("copy/view_fill"); FillSkyBoxes(); FillPlayers(); FillViewSources(); }
 	g_gathering.Clear();
-	interpolator.CopyForRender();
+	{ ZX_ZONE("copy/interp_fill"); interpolator.CopyForRender(); }
 	g_blends.planes.swap(g_gathering.planes);
 	g_blends.scrolls.swap(g_gathering.scrolls);
 	g_blends.walls.swap(g_gathering.walls);

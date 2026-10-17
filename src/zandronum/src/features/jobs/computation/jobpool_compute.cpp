@@ -7,6 +7,21 @@
 
 namespace zx { namespace jobs {
 
+int ComputeChunkCount(int count, int chunk)
+{
+	if (count <= 0) return 0;
+	if (chunk <= 0) return 1;
+	return (count + chunk - 1) / chunk;
+}
+
+void ComputeChunkBounds(int count, int chunk, int index, int &lo, int &hi)
+{
+	if (chunk <= 0) { lo = 0; hi = count > 0 ? count : 0; return; }
+	lo = index * chunk;
+	hi = lo + chunk < count ? lo + chunk : count;
+	if (lo > hi) lo = hi;
+}
+
 namespace {
 
 std::atomic<const JobObserver *> g_observer{ nullptr };
