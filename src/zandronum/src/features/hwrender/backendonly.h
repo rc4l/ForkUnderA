@@ -23,6 +23,9 @@ bool BackendOnly();
 // [rc4l] Whether the backend's device comes up, saying why on the console when it does not, so the launch falls back to GL (Legacy).
 bool BackendDeviceStarts();
 
+// [rc4l] What Diligent's own threads reported, put on the console by the main thread; each frame does it.
+void PrintDiligentMessages();
+
 // [rc4l] Set the launch up for it before any video exists: the backend switched on, standalone and embedded, and GL's capability flags as a modern card has them.
 void BeginBackendOnly();
 

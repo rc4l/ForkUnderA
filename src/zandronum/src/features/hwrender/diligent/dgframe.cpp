@@ -379,6 +379,7 @@ void WipeEnd()
 
 void PresentBackendOnly(bool present)
 {
+	PrintDiligentMessages();
 	const bool ready = AdvanceLevelScene();
 	const bool world = g_worldViewThisFrame && ready && SceneDrawable();
 	g_worldViewThisFrame = false;
