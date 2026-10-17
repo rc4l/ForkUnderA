@@ -38,6 +38,8 @@ void RunOrQueue(const UIEffect &effect);
 
 // [rc4l] Every queued print and UI effect, in order; the handoff's, after each tic.
 void DrainEffects();
+// [rc4l] How many changes the main thread made to game data beside a tic have run since the start, the only ones between a tic's end and its copy.
+unsigned EffectsRun();
 
 // [rc4l] Values a tic makes for the main thread's state, applied at once inline and, from a tic on its own thread, in the handoff in the tic's order.
 template <typename T>

@@ -87,6 +87,7 @@
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/fov-interp/computation/fovinterp_compute.h"
 #include "features/quake-movement/quakemove.h"
+#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -4516,6 +4517,7 @@ void P_UnPredictPlayer ()
 
 			// The thinglist is just a pointer chain. We are restoring the exact same things, so we can NULL the head safely
 			sec->thinglist = NULL;
+			zx::gamecopy::NoteActorLists();
 
 			for (i = PredictionSectorListBackup.Size(); i-- > 0;)
 			{

@@ -21,6 +21,18 @@ never reads what that tic is changing.
   and also moves the live game and bumps `validcount`); the copied light lists and height transfers set the blend;
   `R_ClearPastViewer` works by id; `FRenderer::RenderCameraRecord` draws a camera texture from a record.
 - `d_main.cpp` `D_PrepareDisplay` and `features/gameloop/loop.cpp` `AfterTic`: `FillMap` between tics.
+- `features/gameloop/loop.cpp` `Playsim`: `ScanAtTicEnd`, the sectors, sides and lines the tic changed found on the
+  thread that ran it against the states the copy last took (`g_sectorTaken`, `g_sideTaken`, `g_lineTaken`), so the
+  fill compares only those, what the frames blended and what they marked seen (`computation/prescan_compute`). A
+  main-thread change to game data made beside the tic (`features/handoff/effects.cpp` `EffectsRun`) or a new level
+  turns the fill back to the whole map. The same scan lists the actors in thinker order with each sector's links,
+  each subsector's lights, the sides holding decals and the seen bits; the actor list and light lists are taken only
+  when no thinker or actor joined or left a list since (`actorlists.h` `NoteActorLists`, called from
+  `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`, `p_maputl.cpp` `UnlinkFromWorld` and
+  `LinkToWorld`, `p_user.cpp`'s prediction restore), since the medals ticked after the playsim spawn icons.
+  The actor records are taken across the job pool. `fua_copy_prescan_check` holds each such fill to the whole-map
+  scan it spared (`fuactl fixture prescancheck`, with tics on the game thread).
+- `actor.h`: `AActor::rcListed`, an actor's place in the list the tic's end made.
 - `features/frame/playerview.cpp`: `BeginRecordViewpoint`, and the camera textures from `CameraTextures`.
 - `gl/scene/gl_scene.cpp` `FGLInterface::BeginFrame`: GL finds its live particles' subsectors itself.
 - `p_effect.h`: guarded, and `ActiveParticles` declared for the particle copy.

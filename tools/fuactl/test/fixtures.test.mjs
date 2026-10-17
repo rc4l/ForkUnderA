@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, parseCopyReport, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -93,7 +93,7 @@ test("the sprite report counts the actors derived beside GL and those that diffe
 });
 
 test("every fixture check is one entry the command line picks by name", () => {
-  assert.deepEqual(Object.keys(CHECKS).sort(), ["copycheck", "hudcheck", "pspritecheck", "seamcheck", "seencheck", "spritecheck", "vischeck"]);
+  assert.deepEqual(Object.keys(CHECKS).sort(), ["copycheck", "hudcheck", "prescancheck", "pspritecheck", "seamcheck", "seencheck", "spritecheck", "vischeck"]);
   for (const run of Object.values(CHECKS)) assert.equal(typeof run, "function");
 });
 
@@ -139,4 +139,11 @@ test("gtmod carries a mod's lumps, two maps and its probe script", async () => {
   for (const n of ["MAPINFO", "CVARINFO", "KEYCONF", "DECORATE", "GLDEFS", "SBARINFO", "ANIMDEFS", "MAP01", "BEHAVIOR", "MAP02"]) assert.ok(names.includes(n), n);
   assert.equal(gtmodScript().toString("latin1", 0, 4), "ACS\0");
   assert.ok(FIXTURES.some((f) => f.name === "gtmod" && f.build === buildGameThreadModWad));
+});
+
+test("the tic's end scan report gives the fills held to the whole-map scan and what it missed", () => {
+  const r = parsePrescanReport("prescan: 412 fills checked, 398 with the actor list, 2 missed\n  side 17 changed after the tic's end scan or past it\n");
+  assert.deepEqual([r.walked, r.listed, r.differed, r.found], [412, 398, 2, true]);
+  assert.deepEqual([parsePrescanReport("").found, parsePrescanReport("").walked], [false, 0]);
+  assert.equal(CHECKS.prescancheck, prescanCheckFixture);
 });

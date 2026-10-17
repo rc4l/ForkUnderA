@@ -31,7 +31,11 @@ const LightRecord *Lights(int &count);
 const int *SubsectorLights(int subsector, int &count);
 
 // [rc4l] Takes every light and each subsector's light list, a light's links kept while it stands where it was linked; part of the fill.
-void FillLights();
+void FillLights(bool listed);
+// [rc4l] As a tic ends: each subsector's lights listed, for a fill to take when no light came or went since.
+void ScanLights();
+// [rc4l] Whether the subsector lights the tic's end listed differ from the game's now, for fua_copy_prescan_check.
+bool LightListsMissed();
 // [rc4l] Forgets the last level's lights.
 void InitLights();
 

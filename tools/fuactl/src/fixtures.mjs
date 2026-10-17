@@ -577,9 +577,21 @@ export async function seamCheckFixture(f, opts = {}) {
     describe: (r) => (r.found ? `${r.walked} seams entered, ${r.differed} violations${r.first ? `, the first in ${r.first}` : ""}${r.sites.length ? `; most: ${r.sites.slice(0, 3).join("; ")}` : ""}` : "the seams were not listed") });
 }
 
+// [rc4l] The numbers fua_copy_prescan_report gives: the fills that took the tic's end scan and were held to the whole-map scan, how many took its actor list too, and what it missed.
+export function parsePrescanReport(text) {
+  const m = /prescan: (\d+) fills checked, (\d+) with the actor list, (\d+) missed/.exec(text);
+  return { walked: m ? Number(m[1]) : 0, listed: m ? Number(m[2]) : 0, differed: m ? Number(m[3]) : 0, found: !!m, text };
+}
+
+// [rc4l] A fixture's demo on Vulkan alone, its tics on the game thread, each fill that took the tic's end scan held to the whole-map scan it spared (fua_copy_prescan_check), which fua_copy_check cannot do since it runs tics inline.
+export async function prescanCheckFixture(f, opts = {}) {
+  return reportCheck(f, { ...opts, check: { fua_copy_prescan_check: 1 }, gl: false, report: "fua_copy_prescan_report", parse: parsePrescanReport,
+    describe: (r) => (r.found ? `${r.walked} fills held to the whole-map scan (${r.listed} with the actor list), ${r.differed} missed` : "no fill took the tic's end scan") });
+}
+
 // [rc4l] The checks a fixture's demo can be played under, each judged by its own report.
 export const CHECKS = { vischeck: visCheckFixture, copycheck: copyCheckFixture, spritecheck: spriteCheckFixture, pspritecheck: pspriteCheckFixture, seencheck: seenCheckFixture,
-  hudcheck: hudCheckFixture, seamcheck: seamCheckFixture };
+  hudcheck: hudCheckFixture, seamcheck: seamCheckFixture, prescancheck: prescanCheckFixture };
 
 // [rc4l] A fixture's demo played with a check's cvars on to its picture tic, then judged by the report the check prints: clean when it compared something and nothing differed; `paused` judges only the frames drawn paused there, from each of the views `views` picks.
 async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, paused = false, views = (spec) => spec.views, report, parse, describe,

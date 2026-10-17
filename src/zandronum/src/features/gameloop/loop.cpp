@@ -73,6 +73,8 @@ void Playsim()
 {
 	ZX_SEAM("tic/playsim", GameThread);
 	G_TickerPlaysim ();
+	// [rc4l] Found while the frames still draw, so the handoff takes only what changed.
+	zx::gamecopy::ScanAtTicEnd ();
 }
 
 void TickerEnd()

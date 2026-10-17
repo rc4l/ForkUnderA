@@ -1750,6 +1750,7 @@ add_executable( zdoom WIN32
 	features/handoff/computation/asks_compute.cpp
 	features/handoff/computation/queue_compute.cpp
 	features/gamecopy/computation/blend_compute.cpp
+	features/gamecopy/computation/prescan_compute.cpp
 	features/wipe/computation/wipe_compute.cpp
 	features/surfaces/computation/skywall_compute.cpp
 	features/sprites/computation/spritestyle_compute.cpp

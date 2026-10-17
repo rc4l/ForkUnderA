@@ -16,6 +16,7 @@ namespace {
 
 std::vector<unsigned char> g_bits[kSeenKinds];
 std::vector<int> g_marked[kSeenKinds];   // [rc4l] what the walks marked since the last merge
+std::vector<unsigned char> g_scanned[kSeenKinds];   // [rc4l] the live map's bits as the tic ended
 
 bool LiveSeen(SeenKind kind, int i)
 {
@@ -78,10 +79,46 @@ void ApplySeen()
 	}
 }
 
-void MergeSeen()
+void ScanSeen()
 {
+	for (int k = 0; k < kSeenKinds; k++)
+	{
+		const SeenKind kind = SeenKind(k);
+		const int n = CountOf(kind);
+		g_scanned[k].resize(n);
+		for (int i = 0; i < n; i++) g_scanned[k][i] = LiveSeen(kind, i);
+	}
+}
+
+int SeenMissed()
+{
+	int missed = 0;
+	for (int k = 0; k < kSeenKinds; k++)
+	{
+		const SeenKind kind = SeenKind(k);
+		const int n = CountOf(kind);
+		for (int i = 0; i < n; i++) if (Seen(kind, i) != LiveSeen(kind, i)) missed++;
+	}
+	return missed;
+}
+
+void MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &linesSet)
+{
+	sectorsSet = g_marked[kSeenSector];
+	linesSet = g_marked[kSeenLine];
+	bool whole = true;
+	for (int k = 0; k < kSeenKinds; k++) whole &= g_scanned[k].size() == (size_t)CountOf(SeenKind(k));
+	if (!scanned || !whole)
+	{
+		ApplySeen();
+		TakeLive();
+		return;
+	}
+	// [rc4l] The bits the tic's end read, with what the frames marked since, are the live map's once ApplySeen sets those.
+	for (int k = 0; k < kSeenKinds; k++)
+		for (int i : g_marked[k]) if (i >= 0 && i < (int)g_scanned[k].size()) g_scanned[k][i] = 1;
 	ApplySeen();
-	TakeLive();
+	for (int k = 0; k < kSeenKinds; k++) g_bits[k].swap(g_scanned[k]);
 }
 
 void InitSeen()

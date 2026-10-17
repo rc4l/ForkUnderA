@@ -16,6 +16,9 @@
 #include "features/gamecopy/computation/recordlinks_compute.h"
 #include "features/gamecopy/computation/filldue_compute.h"
 #include "features/gamecopy/computation/serial_compute.h"
+#include "features/gamecopy/computation/prescan_compute.h"
+#include "features/handoff/effects.h"   // [rc4l] EffectsRun, Deferring
+#include "features/gamecopy/actorlists.h"
 #include "features/gamecopy/tintsubject.h"
 #include "features/frame/computation/oracle_compute.h"
 #include "features/handoff/seam.h"
@@ -44,6 +47,7 @@
 #include "r_data/r_translate.h"
 #include "textures/textures.h"
 
+#include <algorithm>
 #include <cstring>
 #include <type_traits>
 #include <unordered_map>
@@ -51,8 +55,12 @@
 
 // [rc4l] Holds the render copy to the live game while tics run inline: before each frame's views, and after each view's interpolations.
 CVAR(Bool, fua_copy_check, false, 0)
+// [rc4l] Holds each fill that took the tic's end scan to the whole-map scan it spared, counting what the scan missed, for fuactl fixture prescancheck.
+CVAR(Bool, fua_copy_prescan_check, false, 0)
 
 namespace zx { namespace gamecopy {
+
+unsigned int g_actorLists = 0;
 
 namespace {
 
@@ -189,11 +197,12 @@ static_assert(sizeof(SideListed) == sizeof(SideState), "fields.h and SideState l
 static_assert(sizeof(LineListed) == sizeof(LineState), "fields.h and LineState list different members");
 static_assert(sizeof(VertexListed) == sizeof(VertexState), "fields.h and VertexState list different members");
 
-int SectorChange(const sector_t &s)
+// [rc4l] How a live structure differs from a state it was taken in: its copy, or the scan's record of the copy as last taken.
+int SectorChangeFrom(const SectorState &c, const sector_t &s)
 {
 	int change = 0;
 #define ZX_COPY_FIELD(kind, member, group) ZX_CHANGE_##kind(member, group)
-#define ZX_CHANGE_sector(m, g) change |= Change##g(s.rc.m, s.m);
+#define ZX_CHANGE_sector(m, g) change |= Change##g(c.m, s.m);
 #define ZX_CHANGE_side(m, g)
 #define ZX_CHANGE_line(m, g)
 #define ZX_CHANGE_vertex(m, g)
@@ -201,11 +210,11 @@ int SectorChange(const sector_t &s)
 #undef ZX_CHANGE_sector
 #undef ZX_CHANGE_side
 #define ZX_CHANGE_sector(m, g)
-#define ZX_CHANGE_side(m, g) change |= Change##g(d.rc.m, d.m);
+#define ZX_CHANGE_side(m, g) change |= Change##g(c.m, d.m);
 	return change;
 }
 
-int SideChange(const side_t &d)
+int SideChangeFrom(const SideState &c, const side_t &d)
 {
 	int change = 0;
 #include "features/gamecopy/fields.h"
@@ -214,9 +223,9 @@ int SideChange(const side_t &d)
 #undef ZX_CHANGE_side
 #undef ZX_CHANGE_line
 #define ZX_CHANGE_side(m, g)
-#define ZX_CHANGE_line(m, g) change |= Change##g(l.rc.m, l.m);
+#define ZX_CHANGE_line(m, g) change |= Change##g(c.m, l.m);
 
-int LineChange(const line_t &l)
+int LineChangeFrom(const LineState &c, const line_t &l)
 {
 	int change = 0;
 #include "features/gamecopy/fields.h"
@@ -233,6 +242,10 @@ int VertexChange(const vertex_t &v)
 #include "features/gamecopy/fields.h"
 	return change;
 }
+
+int SectorChange(const sector_t &s) { return SectorChangeFrom(s.rc, s); }
+int SideChange(const side_t &d) { return SideChangeFrom(d.rc, d); }
+int LineChange(const line_t &l) { return LineChangeFrom(l.rc, l); }
 #undef ZX_COPY_FIELD
 #undef ZX_CHANGE_sector
 #undef ZX_CHANGE_side
@@ -348,38 +361,105 @@ template <class Change> static void ScanChanges(int count, std::vector<int> &out
 	zx::jobs::Pool().ParallelChunks(count, kScanChunk, scan);
 }
 
-void FillSectors()
+// [rc4l] The map as the copy last took it, which a scan beside the frames compares against, since the frames blend the copy itself.
+std::vector<SectorState> g_sectorTaken;
+std::vector<SideState> g_sideTaken;
+std::vector<LineState> g_lineTaken;
+
+// [rc4l] Every item's state as the copy holds it now kept for the next scan, as a level starts.
+void KeepAllTaken()
 {
-	static std::vector<int> changes;
-	ScanChanges(numsectors, changes, [](int i) { return SectorChange(sectors[i]); });
-	for (int i = 0; i < numsectors; i++)
-	{
-		if (changes[i] == 0) continue;
-		TakeSector(sectors[i]);
-		Bump(sectors[i], changes[i]);
-	}
+	g_sectorTaken.resize(numsectors);
+	g_sideTaken.resize(numsides);
+	g_lineTaken.resize(numlines);
+	for (int i = 0; i < numsectors; i++) g_sectorTaken[i] = sectors[i].rc;
+	for (int i = 0; i < numsides; i++) g_sideTaken[i] = sides[i].rc;
+	for (int i = 0; i < numlines; i++) g_lineTaken[i] = lines[i].rc;
 }
 
-void FillSides()
+// [rc4l] What the last tic changed of the map, found as it ended, and when.
+struct Prescan
 {
-	static std::vector<int> sideChanges, lineChanges;
+	PrescanStamp stamp;
+	std::vector<int> sectors, sides, lines;
+};
+Prescan g_prescan;
+unsigned g_fills = 0;   // [rc4l] fills since the start, which a scan is stamped with
+const std::vector<int> kNoneScanned;
+
+// [rc4l] The indices of count items that changed: across the pool on the main thread, one by one on the game thread, which leaves the pool to the frames.
+template <class Changed> static void ListChanges(int count, std::vector<int> &out, Changed changed)
+{
+	out.clear();
+	if (zx::handoff::Deferring())
 	{
-		ZX_ZONE("copy/side_scan");
-		ScanChanges(numsides, sideChanges, [](int i) { return SideChange(sides[i]); });
-		ScanChanges(numlines, lineChanges, [](int i) { return LineChange(lines[i]); });
+		for (int i = 0; i < count; i++) if (changed(i)) out.push_back(i);
+		return;
 	}
-	ZX_ZONE("copy/side_take");
-	int taken = 0;
-	for (int i = 0; i < numsides; i++)
+	static std::vector<int> flags;
+	ScanChanges(count, flags, [&](int i) { return changed(i) ? 1 : 0; });
+	for (int i = 0; i < count; i++) if (flags[i]) out.push_back(i);
+}
+
+// [rc4l] Sector i taken if it changed, and the state its copy is in now kept for the next scan.
+void FillSector(int i, int change)
+{
+	if (change != 0) { TakeSector(sectors[i]); Bump(sectors[i], change); }
+	g_sectorTaken[i] = sectors[i].rc;
+}
+
+// [rc4l] The sectors that changed taken, of the candidates alone when the tic's end scanned the map and else of every one, the candidates' kept states refreshed either way since a blended copy can match the game untaken.
+void FillSectors(const std::vector<int> &candidates, bool scanned)
+{
+	if (scanned)
 	{
-		if (sideChanges[i] == 0) continue;
-		TakeSide(sides[i]);
-		sides[i].rcShape++;
-		taken++;
+		for (int i : candidates) FillSector(i, SectorChange(sectors[i]));
+		return;
+	}
+	static std::vector<int> changes;
+	ScanChanges(numsectors, changes, [](int i) { return SectorChange(sectors[i]); });
+	for (int i = 0; i < numsectors; i++) if (changes[i] != 0) FillSector(i, changes[i]);
+	for (int i : candidates) g_sectorTaken[i] = sectors[i].rc;
+}
+
+// [rc4l] Side i taken if it changed, and its copy's state kept; true when taken.
+bool FillSide(int i, int change)
+{
+	if (change != 0) { TakeSide(sides[i]); sides[i].rcShape++; }
+	g_sideTaken[i] = sides[i].rc;
+	return change != 0;
+}
+
+void FillLine(int i, int change)
+{
+	if (change != 0) TakeLine(lines[i]);
+	g_lineTaken[i] = lines[i].rc;
+}
+
+// [rc4l] FillSectors for the sides and the lines.
+void FillSides(const std::vector<int> &sideCandidates, const std::vector<int> &lineCandidates, bool scanned)
+{
+	int taken = 0;
+	if (scanned)
+	{
+		ZX_ZONE("copy/side_take");
+		for (int i : sideCandidates) taken += FillSide(i, SideChange(sides[i]));
+		for (int i : lineCandidates) FillLine(i, LineChange(lines[i]));
+	}
+	else
+	{
+		static std::vector<int> sideChanges, lineChanges;
+		{
+			ZX_ZONE("copy/side_scan");
+			ScanChanges(numsides, sideChanges, [](int i) { return SideChange(sides[i]); });
+			ScanChanges(numlines, lineChanges, [](int i) { return LineChange(lines[i]); });
+		}
+		for (int i = 0; i < numsides; i++) if (sideChanges[i] != 0) taken += FillSide(i, sideChanges[i]);
+		for (int i = 0; i < numlines; i++) if (lineChanges[i] != 0) FillLine(i, lineChanges[i]);
+		for (int i : sideCandidates) g_sideTaken[i] = sides[i].rc;
+		for (int i : lineCandidates) g_lineTaken[i] = lines[i].rc;
 	}
 	ZX_COUNT("copy/sides_taken", "sides", taken);
-	for (int i = 0; i < numlines; i++)
-		if (lineChanges[i] != 0) TakeLine(lines[i]);
 }
 
 // [rc4l] Only a polyobject's vertices move; one that moved reshapes the polyobject's every side.
@@ -409,30 +489,75 @@ std::unordered_map<unsigned int, int> g_byId;   // [rc4l] each id's record, buil
 bool g_byIdBuilt = false;
 int g_level = 0;   // [rc4l] which level the copy is of
 
-// [rc4l] Every actor in thinker order, then each sector's records linked in its thinglist's order.
-void FillActors()
+// [rc4l] Actors each pool lane takes at a time.
+static const int kActorChunk = 256;
+
+// [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
+void ListActors(std::vector<AActor *> &out)
 {
-	ZX_ZONE("copy/actor_fill");   // [rc4l] the actor records taken
-	g_actors.clear();
-	g_byIdBuilt = false;
+	out.clear();
 	TThinkerIterator<AActor> it;
 	for (AActor *a; (a = it.Next()) != NULL; )
 	{
-		a->rcRecord = (int)g_actors.size();
-		g_actors.emplace_back();
-		TakeActor(*a, g_actors.back());
+		if (a->rcSerial == kNoId) a->rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
+		out.push_back(a);
 	}
-	g_firstIn.resize(numsectors);
+}
+
+// [rc4l] Each sector's actors linked by their places in list, in its thinglist's order: its first in firstIn, each one's next in next.
+void LinkListed(const std::vector<AActor *> &list, std::vector<int> &firstIn, std::vector<int> &next)
+{
+	for (size_t i = 0; i < list.size(); i++) list[i]->rcListed = (int)i;
+	firstIn.resize(numsectors);
+	next.assign(list.size(), -1);
 	RecordLinks links;
-	for (int i = 0; i < numsectors; i++)
+	for (int s = 0; s < numsectors; s++)
 	{
-		links.Begin(g_firstIn[i]);
-		for (AActor *a = sectors[i].thinglist; a != NULL; a = a->snext)
+		links.Begin(firstIn[s]);
+		for (AActor *a = sectors[s].thinglist; a != NULL; a = a->snext)
 		{
-			const int r = a->rcRecord;
-			if (ComputeHoldsRecord(r, (int)g_actors.size()) && g_actors[r].who == a) links.Add(r, g_actors[r].nextInSector);
+			const int r = a->rcListed;
+			if (ComputeHoldsRecord(r, (int)list.size()) && list[r] == a) links.Add(r, next[r]);
 		}
 	}
+}
+
+std::vector<AActor *> g_listed;                    // [rc4l] the actors as the tic ended, in thinker order
+std::vector<int> g_listedFirstIn, g_listedNext;   // [rc4l] and each sector's list of them
+
+// [rc4l] Every actor in thinker order, then each sector's records linked in its thinglist's order, the list and links the tic's end made when they still hold (listed).
+void FillActors(bool listed)
+{
+	ZX_ZONE("copy/actor_fill");   // [rc4l] the actor records taken
+	g_byIdBuilt = false;
+	static std::vector<AActor *> live;
+	static std::vector<int> next;
+	if (listed)
+	{
+		live.swap(g_listed);
+		next.swap(g_listedNext);
+		g_firstIn.swap(g_listedFirstIn);
+	}
+	else
+	{
+		{ ZX_ZONE("copy/actor_list"); ListActors(live); }
+		{ ZX_ZONE("copy/actor_link"); LinkListed(live, g_firstIn, next); }
+	}
+	// [rc4l] The camera's read barrier settled before the lanes read it, since one finding it destroyed clears it.
+	AActor *const camera = players[consoleplayer].camera;
+	(void)camera;
+	g_actors.resize(live.size());
+	// [rc4l] Taken across the pool, each lane writing only its own actors and records, since Sunder MAP11's 6,029 took 0.9 ms of a browser's handoff.
+	ZX_ZONE("copy/actor_take");
+	auto take = [](int lo, int hi, int) {
+		for (int i = lo; i < hi; i++)
+		{
+			live[i]->rcRecord = i;
+			TakeActor(*live[i], g_actors[i]);
+			g_actors[i].nextInSector = next[i];
+		}
+	};
+	zx::jobs::Pool().ParallelChunks((int)live.size(), kActorChunk, take);
 	ZX_COUNT("copy/actors", "actors", g_actors.size());
 }
 
@@ -776,6 +901,8 @@ void InitLevel()
 	for (int i = 0; i < numvertexes; i++) { TakeVertex(vertexes[i]); vertexes[i].rcDirty = true; }
 	g_blends.Clear();
 	g_gathering.Clear();
+	KeepAllTaken();
+	g_prescan.stamp.found = false;
 	g_actors.clear();
 	g_byIdBuilt = false;
 	g_level++;
@@ -802,21 +929,97 @@ void FillMap()
 	if (ComputeFillDue(gametic, g_filledTic, NETWORK_InClientMode())) FillNow();
 }
 
+zx::frame::OracleTally g_prescanCheck;   // [rc4l] fua_copy_prescan_check's count since the last report
+int g_prescanListed = 0;                 // [rc4l] and how many of its fills took the actor list too
+
+// [rc4l] One thing the tic's end scan missed counted, the first few described.
+void PrescanMissed(const char *what, int index)
+{
+	if (zx::frame::ComputeOracleDiffer(g_prescanCheck, 6)) zx::frame::ComputeOracleNote(g_prescanCheck, "  %s %d changed after the tic's end scan or past it\n", what, index);
+}
+
+// [rc4l] An item the whole-map scan would take that is no candidate, an actor list or sector links unlike the game's now, a side holding decals the scan did not find, a seen bit unlike the live map's.
+void CheckPrescan(const std::vector<int> &sectorCandidates, const std::vector<int> &sideCandidates, const std::vector<int> &lineCandidates, bool listed)
+{
+	g_prescanCheck.checked++;
+	for (int i = 0; i < numsectors; i++)
+		if (SectorChange(sectors[i]) != 0 && !std::binary_search(sectorCandidates.begin(), sectorCandidates.end(), i)) PrescanMissed("sector", i);
+	for (int i = 0; i < numsides; i++)
+		if (SideChange(sides[i]) != 0 && !std::binary_search(sideCandidates.begin(), sideCandidates.end(), i)) PrescanMissed("side", i);
+	for (int i = 0; i < numlines; i++)
+		if (LineChange(lines[i]) != 0 && !std::binary_search(lineCandidates.begin(), lineCandidates.end(), i)) PrescanMissed("line", i);
+	const int decals = DecalSidesMissed();
+	if (decals > 0) PrescanMissed("sides holding decals, count", decals);
+	const int seen = SeenMissed();
+	if (seen > 0) PrescanMissed("seen bits, count", seen);
+	if (listed && LightListsMissed()) PrescanMissed("subsector light lists, subsectors", numsubsectors);
+	if (!listed) return;
+	g_prescanListed++;
+	static std::vector<AActor *> now;
+	static std::vector<int> firstIn, next;
+	now.clear();
+	TThinkerIterator<AActor> it;
+	for (AActor *a; (a = it.Next()) != NULL; ) now.push_back(a);
+	if (now != g_listed) { PrescanMissed("actor list, length", (int)now.size()); return; }
+	LinkListed(now, firstIn, next);
+	if (firstIn != g_listedFirstIn || next != g_listedNext) PrescanMissed("sector links, actors", (int)now.size());
+}
+
+// [rc4l] When a scan is found or a fill is taken: this fill of this level after this many effects, over the map as it is.
+PrescanStamp StampNow(bool found)
+{
+	const PrescanStamp s = { found, g_fills, g_level, zx::handoff::EffectsRun(), g_actorLists, numsectors, numsides, numlines };
+	return s;
+}
+
+void ScanAtTicEnd()
+{
+	ZX_ZONE("copy/prescan");
+	g_prescan.stamp.found = false;
+	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) return;
+	ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; });
+	ListChanges(numsides, g_prescan.sides, [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; });
+	ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; });
+	ListActors(g_listed);
+	LinkListed(g_listed, g_listedFirstIn, g_listedNext);
+	ScanDecalSides();
+	ScanSeen();
+	ScanLights();
+	g_prescan.stamp = StampNow(true);
+}
+
 void FillNow()
 {
 	g_filledTic = gametic;
 	ZX_SEAM("copy/fill", Handoff);
+	// [rc4l] Whether the tic's end found the map's changes, which spares the handoff comparing the whole map (Sunder MAP16's 62,000 sides) while the frames wait.
+	const bool scanned = ComputePrescanFresh(g_prescan.stamp, StampNow(true), NETWORK_InClientMode());
+	const bool listed = ComputeActorScanFresh(g_prescan.stamp, StampNow(true), NETWORK_InClientMode());
+	g_prescan.stamp.found = false;
+	g_fills++;
+	ZX_COUNT("copy/prescanned", "fills", scanned ? 1 : 0);
+	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) KeepAllTaken();
+	static std::vector<int> seenSectors, seenLines, blendedSectors, blendedSides, sectorCandidates, sideCandidates, lineCandidates;
 	// [rc4l] Each step timed on its own, since on Sunder MAP16 the fill was 5 ms a tic and only the actor, light, decal and particle steps said where.
-	{ ZX_ZONE("copy/seen_merge"); MergeSeen(); }
-	{ ZX_ZONE("copy/sector_fill"); FillSectors(); }
+	{ ZX_ZONE("copy/seen_merge"); MergeSeen(scanned, seenSectors, seenLines); }
+	blendedSectors.clear();
+	blendedSides.clear();
+	for (const PlaneBlend &b : g_blends.planes) blendedSectors.push_back(b.sector);
+	for (const ScrollBlend &b : g_blends.scrolls) blendedSectors.push_back(b.sector);
+	for (const WallBlend &b : g_blends.walls) blendedSides.push_back(b.side);
+	ComputeTakeCandidates(scanned ? g_prescan.sectors : kNoneScanned, blendedSectors, seenSectors, numsectors, sectorCandidates);
+	ComputeTakeCandidates(scanned ? g_prescan.sides : kNoneScanned, blendedSides, kNoneScanned, numsides, sideCandidates);
+	ComputeTakeCandidates(scanned ? g_prescan.lines : kNoneScanned, kNoneScanned, seenLines, numlines, lineCandidates);
+	if (fua_copy_prescan_check && scanned) CheckPrescan(sectorCandidates, sideCandidates, lineCandidates, listed);
+	{ ZX_ZONE("copy/sector_fill"); FillSectors(sectorCandidates, scanned); }
 	{ ZX_ZONE("copy/xfloor_fill"); FillXFloors(); }
-	{ ZX_ZONE("copy/side_fill"); FillSides(); }
+	{ ZX_ZONE("copy/side_fill"); FillSides(sideCandidates, lineCandidates, scanned); }
 	{ ZX_ZONE("copy/polyobj_fill"); FillPolyobjects(); FillPolyBSPs(); }
 	TakeLevel(g_level_);
-	FillActors();
-	FillLights();
+	FillActors(listed);
+	FillLights(listed);
 	FillParticles();
-	FillDecals();
+	FillDecals(scanned);
 	{ ZX_ZONE("copy/view_fill"); FillSkyBoxes(); FillPlayers(); FillViewSources(); }
 	g_gathering.Clear();
 	{ ZX_ZONE("copy/interp_fill"); interpolator.CopyForRender(); }
@@ -1005,6 +1208,16 @@ CCMD(fua_seen_count)
 	for (int i = 0; i < numlines; i++) if (lines[i].flags & ML_MAPPED) mapped++;
 	for (int i = 0; i < numsectors; i++) if (sectors[i].MoreFlags & SECF_DRAWN) drawn++;
 	Printf("seen: %d lines mapped, %d sectors drawn\n", mapped, drawn);
+}
+
+// [rc4l] What fua_copy_prescan_check found since the last report.
+CCMD(fua_copy_prescan_report)
+{
+	using namespace zx::gamecopy;
+	Printf("prescan: %d fills checked, %d with the actor list, %d missed\n%s", g_prescanCheck.checked, g_prescanListed, g_prescanCheck.differed,
+		g_prescanCheck.firsts.c_str());
+	zx::frame::ComputeOracleReset(g_prescanCheck);
+	g_prescanListed = 0;
 }
 
 // [rc4l] What fua_copy_check found since the last report: the copy against the live game before the views, and its blends against the interpolations.

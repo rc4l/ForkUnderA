@@ -1389,6 +1389,7 @@ public:
 	angle_t PrevAngle;
 	angle_t PrevRoll;	// [rc4l] +ROLLSPRITE interpolation, mirrors PrevAngle
 	int rcRecord;		// [rc4l] features/gamecopy: this actor's record in the render copy, written between tics only
+	int rcListed;		// [rc4l] features/gamecopy: its place in the actor list a tic's end made, read only to link that list
 	unsigned int rcSerial;	// [rc4l] features/gamecopy: this actor's id, given by the first fill that takes it and never reused
 
 	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.

@@ -23,8 +23,12 @@ const DecalRecord *SideDecals(int side, int &count);
 // [rc4l] DBaseDecal::GetXY on the copy: where along its side a decal sits.
 void DecalXY(const DecalRecord &decal, const side_t *side, fixed_t &x, fixed_t &y);
 
-// [rc4l] Takes every side's decals; part of the fill.
-void FillDecals();
+// [rc4l] As a tic ends: the sides holding decals found, for the next fill to take alone.
+void ScanDecalSides();
+// [rc4l] The sides holding decals now that the tic's end did not find, for fua_copy_prescan_check.
+int DecalSidesMissed();
+// [rc4l] Takes every side's decals, or with scanned those of the sides the tic's end found; part of the fill.
+void FillDecals(bool scanned);
 
 }} // namespace zx::gamecopy
 

@@ -22,6 +22,7 @@ struct Effect
 	int printlevel;
 	std::string text;
 	UIEffect ui;
+	bool besideTic;   // [rc4l] the main thread's change to game data, made while a tic ran
 };
 
 zx::Queue<Effect> &Effects()
@@ -49,10 +50,21 @@ bool QueuedForHandoff(const UIEffect &effect)
 	return true;
 }
 
+// [rc4l] A UI effect queued, marked as the main thread's when it is.
+static void PushUI(const UIEffect &effect, bool besideTic)
+{
+	Effect e;
+	e.print = false;
+	e.printlevel = 0;
+	e.ui = effect;
+	e.besideTic = besideTic;
+	Effects().Push(std::move(e));
+}
+
 bool QueuedBesideTic(const UIEffect &effect)
 {
 	if (!BesideTic()) return false;
-	QueueUI(effect);
+	PushUI(effect, true);
 	return true;
 }
 
@@ -68,17 +80,16 @@ void QueuePrint(int printlevel, const char *text)
 	e.printlevel = printlevel;
 	e.text = text;
 	e.ui = UIEffect();
+	e.besideTic = false;
 	Effects().Push(std::move(e));
 }
 
 void QueueUI(const UIEffect &effect)
 {
-	Effect e;
-	e.print = false;
-	e.printlevel = 0;
-	e.ui = effect;
-	Effects().Push(std::move(e));
+	PushUI(effect, false);
 }
+
+static unsigned g_effectsRun = 0;
 
 void DrainEffects()
 {
@@ -86,8 +97,13 @@ void DrainEffects()
 	Effects().Drain([](const Effect &e)
 	{
 		if (e.print) PrintString(e.printlevel, e.text.c_str());
-		else e.ui.run(e.ui.a, e.ui.b);
+		else { e.ui.run(e.ui.a, e.ui.b); if (e.besideTic) g_effectsRun++; }
 	});
+}
+
+unsigned EffectsRun()
+{
+	return g_effectsRun;
 }
 
 }} // namespace zx::handoff

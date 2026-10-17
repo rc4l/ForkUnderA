@@ -20,6 +20,30 @@ std::vector<LightRecord> g_lights;
 std::vector<int> g_subFirst, g_subCount;   // [rc4l] each subsector's run in g_subLights
 std::vector<int> g_subLights;
 std::unordered_map<const ADynamicLight *, int> g_indexOf;   // [rc4l] each live light's place in g_lights, this fill only
+std::vector<int> g_scanFirst, g_scanCount, g_scanLights;   // [rc4l] each subsector's lights as the tic ended
+
+// [rc4l] Each subsector's lights in its light list's order, the order GL sums a sprite's light in, each by its light's place in thinker order.
+void ListSubsectorLights(std::vector<int> &first, std::vector<int> &count, std::vector<int> &out)
+{
+	static std::unordered_map<const void *, int> placeOf;
+	placeOf.clear();
+	int n = 0;
+	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
+	for (ADynamicLight *light; (light = it.Next()) != NULL; ) placeOf[light] = n++;
+	first.assign(numsubsectors, 0);
+	count.assign(numsubsectors, 0);
+	out.clear();
+	for (int s = 0; s < numsubsectors; s++)
+	{
+		first[s] = (int)out.size();
+		for (FLightNode *node = subsectors[s].lighthead; node != NULL; node = node->nextLight)
+		{
+			const auto i = placeOf.find(node->lightsource);
+			if (i != placeOf.end()) out.push_back(i->second);
+		}
+		count[s] = (int)out.size() - first[s];
+	}
+}
 
 // [rc4l] The ids a light is linked to, as PieceStackId names surfaces.
 void CollectLinks(ADynamicLight *light, std::vector<unsigned> &out)
@@ -55,11 +79,25 @@ void InitLights()
 	g_subLights.clear();
 }
 
-void FillLights()
+void ScanLights()
+{
+	ListSubsectorLights(g_scanFirst, g_scanCount, g_scanLights);
+}
+
+bool LightListsMissed()
+{
+	static std::vector<int> first, count, out;
+	ListSubsectorLights(first, count, out);
+	return first != g_scanFirst || count != g_scanCount || out != g_scanLights;
+}
+
+void FillLights(bool listed)
 {
 	ZX_ZONE("copy/light_fill");   // [rc4l] the light records and subsector light lists taken
 	size_t n = 0;
 	g_indexOf.clear();
+	{
+	ZX_ZONE("copy/light_records");
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
 	for (ADynamicLight *light; (light = it.Next()) != NULL; n++)
 	{
@@ -82,19 +120,18 @@ void FillLights()
 		g_indexOf[light] = (int)n;
 	}
 	g_lights.resize(n);
-	// [rc4l] Each subsector's lights in its light list's order, the order GL sums a sprite's light in.
-	g_subFirst.assign(numsubsectors, 0);
-	g_subCount.assign(numsubsectors, 0);
-	g_subLights.clear();
-	for (int s = 0; s < numsubsectors; s++)
+	}
+	// [rc4l] The lists the tic's end made when no light came or went since, which on Sunder MAP16 spared walking every subsector in the handoff.
+	if (listed && (int)g_scanFirst.size() == numsubsectors)
 	{
-		g_subFirst[s] = (int)g_subLights.size();
-		for (FLightNode *node = subsectors[s].lighthead; node != NULL; node = node->nextLight)
-		{
-			const auto i = g_indexOf.find(node->lightsource);
-			if (i != g_indexOf.end()) g_subLights.push_back(i->second);
-		}
-		g_subCount[s] = (int)g_subLights.size() - g_subFirst[s];
+		g_subFirst.swap(g_scanFirst);
+		g_subCount.swap(g_scanCount);
+		g_subLights.swap(g_scanLights);
+	}
+	else
+	{
+		ZX_ZONE("copy/light_lists");
+		ListSubsectorLights(g_subFirst, g_subCount, g_subLights);
 	}
 	ZX_COUNT("copy/lights", "lights", n);
 }

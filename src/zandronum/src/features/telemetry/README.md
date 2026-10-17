@@ -54,8 +54,10 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 - `dthinker.cpp` `TickThinkers`: with `fua_telemetry_thinkers 1`, each thinker's tick by class, as the breakdown `sim/thinker/`.
 - `features/visibility/viswalk.cpp`: the `vis/` zones.
 - `features/gamecopy/`: the fill's `copy/` zones and counts (seen bits, sectors, sides and their scan and take,
-  3D floors, polyobjects, actors, lights, particles, decals, views, interpolations, sides taken, polyobject
-  subsectors) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
+  3D floors, polyobjects, actors with their list, take and links, lights with their records and subsector lists,
+  particles, decals, views, interpolations,
+  sides taken, polyobject subsectors), `copy/prescan` (the tic-end scan, on the game thread when tics run there),
+  `copy/prescanned` (fills that used it) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
   `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace.
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones.
 - `features/jobs/jobs.cpp`: a `JobObserver` (`jobpool_compute.h`) on telemetry's clock times the `jobs/` regions and names each worker "job N".
