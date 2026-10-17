@@ -40,6 +40,10 @@ jobs:
       - name: Software Vulkan and a display
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 xvfb gdb
 
+      # [rc4l] ThreadSanitizer cannot map its shadow memory beside the runner kernel's full mmap randomisation.
+      - name: Address space ThreadSanitizer can use
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
       - name: Build with ThreadSanitizer and the bridge
         shell: bash
         env:
@@ -57,7 +61,7 @@ jobs:
         run: |
           set -e
           # [rc4l] Every five minutes, each running engine's threads as gdb sees them, so a hang names where it waits.
-          ( while sleep 300; do for p in $(pgrep -f build-linux/forkundera); do echo "== $(date -u +%T) stacks of $p"; sudo gdb -p "$p" -batch -ex "thread apply all bt 30" 2>/dev/null | head -600; done; done ) > "$RUNNER_TEMP/stacks.txt" 2>&1 &
+          ( while sleep 240; do ps -eo pid,etime,stat,args | grep -i '[f]orkundera'; for p in $(pgrep -f '[f]orkundera'); do echo "== $(date -u +%T) stacks of $p"; sudo gdb -p "$p" -batch -ex "thread apply all bt 30" 2>/dev/null | head -600; done; done ) > "$RUNNER_TEMP/stacks.txt" 2>&1 &
           cd tools/fuactl
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture record gtfix
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=0 --out "$RUNNER_TEMP/inline.trace"
