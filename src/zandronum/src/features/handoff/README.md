@@ -17,17 +17,17 @@ sends out goes through a queue. This folder is the low layer any feature may use
   `Idle` (the main thread while no tic runs, drawing or not) and `Any`. Until the loop sets the phase, the main
   thread counts as always in the handoff.
 - `effects.cpp`: what a tic on its own thread does to the main thread's state, queued in order and done in the
-  handoff after it: prints (`PrintString`) and UI effects (`AM_Stop`, `C_HideConsole`, `M_StartControlPanel`,
-  `M_SetMenu`, `M_ClearMenus`, `R_ResetViewInterpolation`, `R_ClearPastViewer`, the Strife conversation's menu,
-  `R_InitSkyMap` for ACS `ChangeSky`, `R_BuildPlayerTranslation`, and the end of a centering view's `LocalViewPitch`).
+  handoff after it: prints (`QueuePrint`) and UI effects (`QueueUI`). A function that acts on the main thread's
+  state queues itself in one line, `if (QueuedForHandoff ({ ... })) return;` (`QueuedBesideTic` for a frame beside a
+  tic), and a single action runs or queues with `RunOrQueue`; the generated list below names every file that does.
   `Deferred<T>` does the same for values a tic makes for a store the frame reads: the projected decals' marks and
   forgotten owners (`features/levelmesh/projdecals.cpp`, whose marks load their pictures) and the hitbox overlay's
   blasts (`features/hitboxviz`); `wad/read` makes any lump read from the game thread a violation.
 - `gamethread.cpp`: the worker that runs a tic's playsim (`StartOnGameThread`, `TakeBack`, `TicInFlight`); what it
-  throws is rethrown on the main thread when the tic is taken back. `AskMain` has the main thread run a call whose
-  answer the tic needs at once and waits for it, up to a frame (`ServeAsks` each frame beside a tic, and while waiting
-  on one; `handoff/asks` counts them): `V_GetFont` loads a font that way, after looking among the fonts loaded before
-  the tic (`V_FontsForTic`), since loading one adds the textures and fonts a frame reads.
+  throws is rethrown on the main thread when the tic is taken back. `AskMain` (`AskMainFor` with a lambda) has the
+  main thread run a call whose answer the tic needs at once and waits for it, up to a frame (`ServeAsks` each frame
+  beside a tic, and while waiting on one; `handoff/asks` counts them), as `V_GetFont` loads a font not among those
+  loaded before the tic (`V_FontsForTic`).
 - `snapshot.cpp`: the screen's size for ACS `GetScreenWidth`/`GetScreenHeight`, taken before each tic.
 - The sound seam (`s_sound.cpp`): a tic on its own thread keeps the channels' bookkeeping, so a sound it starts
   counts as playing for the rest of the tic, but asks nothing of the device; its starts (loaded then), stops and
@@ -59,10 +59,7 @@ declares counts as a crossing too, since that is how queue #51's rubber band got
 
 - `d_main.cpp` `D_DoomMain`: `NoteMainThread` first, so every seam's check knows which thread is main.
 - `mcp_crash.cpp`: the hang watchdog watches the game thread's heartbeat while a tic is in flight.
-- `v_font.cpp` `V_GetFont`: from a tic on its own thread, a font loaded before the tic or one `AskMain` loads.
-- `r_sky.cpp` `R_InitSkyMap` and `r_data/r_translate.cpp` `R_BuildPlayerTranslation` queue themselves from a tic on
-  its own thread.
-- `p_user.cpp` `P_PlayerThink`: a finished centering zeroes `LocalViewPitch` in the handoff.
+- Every file that queues work for the handoff or asks the main thread, listed by helper in the generated section.
 - `mcp_crash.cpp`: every crash, abort and hang file names the seam each thread was in (`seams:` line), which
   `fuactl crashes` prints.
 - `features/crashreport/zx_crashreport.cpp` `zx_before_send`: the `zx_seam_main` and `zx_seam_game` tags.
@@ -113,4 +110,13 @@ Seams:
 - `wad/read` (Main), `resourcefiles/resourcefile.cpp`
 - `wad/read` (Main), `w_wad.cpp`
 - `wipe/randoms` (Idle), `features/wipe/wiperandoms.cpp`
+
+Handed to the handoff, by helper:
+
+- `AskMainFor`: `p_acs.cpp`, `v_font.cpp`
+- `QueuePrint`: `c_console.cpp`
+- `QueueUI`: `s_sound.cpp`
+- `QueuedBesideTic`: `features/video-scale/videoscale.cpp`, `s_sound.cpp`
+- `QueuedForHandoff`: `am_map.cpp`, `c_console.cpp`, `menu/menu.cpp`, `r_data/r_translate.cpp`, `r_sky.cpp`, `r_utility.cpp`, `s_sound.cpp`
+- `RunOrQueue`: `p_conversation.cpp`, `p_user.cpp`
 <!-- boundary:end -->

@@ -22,6 +22,12 @@ SeamRegistry &Registry()
 	return registry;
 }
 
+ViolationSites &Violations()
+{
+	static ViolationSites sites;
+	return sites;
+}
+
 std::atomic<std::thread::id> g_mainThread;
 std::atomic<std::thread::id> g_gameThread;
 std::atomic<bool> g_gameRunning(false);
@@ -129,6 +135,7 @@ SeamScope::SeamScope(const SeamSite &site) : m_outer(nullptr), m_start(0), m_sit
 	if (site.index >= 0) Registry().Enter(site.index, allowed);
 	if (!allowed)
 	{
+		Violations().Count(&site, site.name, site.function, site.line, onMain ? 0 : onGame ? 1 : 2, CurrentPhase());
 		const char *none = nullptr;
 		if (g_firstViolation.compare_exchange_strong(none, site.name))
 		{
@@ -199,4 +206,5 @@ CCMD(fua_seams)
 	Printf("; %d locks taken while holding another", zx::handoff::g_nestedLocks.load());
 	if (zx::handoff::g_firstNested.load() != nullptr) Printf(" (first %s)", zx::handoff::g_firstNested.load());
 	Printf("; %d seams declared with a second owner\n", zx::handoff::g_conflicts.load());
+	Printf("%s", zx::handoff::Violations().Table().c_str());
 }

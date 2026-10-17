@@ -34,6 +34,8 @@ extern bool				LocalKeyboardTurner;	// [RH] The local player used the keyboard t
 extern float			WidescreenRatio;
 
 extern fixed_t			r_TicFrac;
+// [rc4l] The blend actors are drawn at this frame, r_TicFrac or a whole tic while the console forces it, worked out once on the main thread since the sprite build runs on the job threads.
+extern fixed_t			r_ActorFrac;
 extern DWORD			r_FrameTime;
 // [rc4l] The lens the frame's player view is drawn with, worked out once a frame before any renderer draws it.
 struct FViewLens { float fov, ratio, fovRatio; };

@@ -33,7 +33,7 @@
 */
 
 #include <assert.h>
-#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
+#include "features/handoff/effects.h"   // [rc4l] RunOrQueue
 
 #include "actor.h"
 #include "p_conversation.h"
@@ -1211,14 +1211,7 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 	if (NETWORK_GetState() != NETSTATE_SERVER && pc->player == &players[consoleplayer])
 	{
 		// [rc4l] features/handoff: the menu is the main thread's, so a tic on its own thread shows it in the handoff.
-		if (zx::handoff::Deferring ())
-		{
-			zx::handoff::QueueUI ({ ShowConversation, intptr_t (CurNode), gametic + 20 });
-		}
-		else
-		{
-			ShowConversation (intptr_t (CurNode), gametic + 20);
-		}
+		zx::handoff::RunOrQueue ({ ShowConversation, intptr_t (CurNode), gametic + 20 });
 	}
 }
 

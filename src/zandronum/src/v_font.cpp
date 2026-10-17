@@ -331,10 +331,10 @@ FFont *V_GetFont(const char *name)
 		{
 			if (stricmp (TicFonts[i]->Name, name) == 0) return TicFonts[i];
 		}
-		struct Ask { const char *name; FFont *font; } ask = { name, NULL };
-		zx::handoff::AskMain ([](void *p) { Ask &a = *(Ask *)p; a.font = V_GetFont (a.name); }, &ask);
-		if (ask.font != NULL) TicFonts.Push (ask.font);
-		return ask.font;
+		FFont *loaded = NULL;
+		zx::handoff::AskMainFor ([&] { loaded = V_GetFont (name); });
+		if (loaded != NULL) TicFonts.Push (loaded);
+		return loaded;
 	}
 	FFont *font = FFont::FindFont (name);
 	if (font == NULL)

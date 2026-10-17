@@ -16,7 +16,8 @@ import * as cap from "./capture.mjs";
 import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
-import { engineWindows, resizeEngineWindow } from "./window.mjs";
+import { activateEngineWindows, engineWindows, resizeEngineWindow } from "./window.mjs";
+import { captureSeconds, formatRecap, parseCaptureCsv, slowSecondsGrew } from "./recap.mjs";
 import * as shot from "./shot.mjs";
 import * as fixtures from "./fixtures.mjs";
 import { sweepDirFor } from "./shot.mjs";
@@ -205,7 +206,7 @@ const USAGE = `fuactl <command>
   costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]   what a frame costs at one view of a running instance: frame p50/p99, GPU and submit time, the world passes and phases, the walk's clipping, batches and sprites (the performance scope's step 0)
   abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
-  window [--shot gl|vk --out FILE] [--resize WxH [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, and with --resize the instance's game window sized as dragging its corner does
+  window [--shot gl|vk --out FILE] [--resize WxH [--port P]] [--activate 0|1 [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, with --resize the instance's game window sized as dragging its corner does, and with --activate the instance told it was alt-tabbed away (0) or back (1), with nothing on the desktop moved
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
@@ -217,7 +218,8 @@ const USAGE = `fuactl <command>
   continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
   console <text...> [--port P]       run one console command on an instance and print what it printed
   stats [PREFIX] [--json | --watch] [--port P]   the engine's telemetry counters (fua_stats) whose names start with PREFIX: last, mean, p99 and max over the last frames; --watch puts them on screen
-  record [--seconds N] [--name NAME] [--port P]   every counter each frame and every timed region on every thread for N seconds (fua_capture), as a CSV and a trace Perfetto opens, under the engine's telemetry/
+  record [--seconds N] [--name NAME] [--port P] [--recap]   every counter each frame and every timed region on every thread for N seconds (fua_capture), as a CSV and a trace Perfetto opens, under the engine's telemetry/; --recap prints recap of it
+  recap NAME|FILE.csv [--engine PATH]   a recording read back: a row a second (frames, tics and those on the game thread, held frames, frame time p50/p99/max), then the counters its slowest quarter of seconds spent more on a frame than its fastest
   flight [NAME] [--port P]           write the flight recorder (the last frames, seconds and hitches) under the engine's telemetry/ and print its summary
   hitches [N] [--port P]             the last N slow frames, each with the timed regions it spent most in
   memsnap [NAME] [--port P]          keep every memory gauge and tag under NAME for memdiff
@@ -227,6 +229,12 @@ const USAGE = `fuactl <command>
   perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
+
+// [rc4l] A recording's recap printed: a row a second, then what its slow seconds spent more on.
+function printRecap(file) {
+  const seconds = captureSeconds(parseCaptureCsv(fs.readFileSync(file, "utf8")));
+  for (const line of formatRecap(seconds, slowSecondsGrew(seconds))) console.log(line);
+}
 
 async function main() {
   // [rc4l] A reader that stops early (`| head`) closes the pipe, which ends the command rather than crashing it.
@@ -427,6 +435,14 @@ async function main() {
     // [rc4l] `fuactl window` -- the windows as Windows sees them and what one shows, instead of PowerShell beside the tool.
     case "window": {
       if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error(usageFor(USAGE, "window")); process.exit(2); }
+      if (flags.activate !== undefined) {
+        const active = String(flags.activate);
+        if (active !== "0" && active !== "1") { console.error(usageFor(USAGE, "window")); process.exit(2); }
+        const told = activateEngineWindows(sessionPid(flags), active === "1");
+        console.log(told ? `told ${told} window(s) the game was switched ${active === "1" ? "back to" : "away from"}` : "no window for that instance");
+        if (!told) process.exit(1);
+        break;
+      }
       if (flags.resize) {
         const [w, h] = String(flags.resize).split("x").map(Number);
         if (!(w > 0 && h > 0)) { console.error(usageFor(USAGE, "window")); process.exit(2); }
@@ -1082,8 +1098,18 @@ async function main() {
       await withUi(flags, async (c) => {
         process.stdout.write(await cap.exec(c, `fua_capture start ${name}`.trim()));
         await cap.sleep(seconds * 1000);
-        process.stdout.write(await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 }));
+        const stopped = await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 });
+        process.stdout.write(stopped);
+        const csv = /wrote (\S+\.csv)/.exec(stopped);
+        if (flags.recap && csv) printRecap(csv[1]);
       });
+      break;
+    }
+    case "recap": {
+      if (!rest[0]) { console.error(usageFor(USAGE, "recap")); process.exit(2); }
+      const file = rest[0].endsWith(".csv") ? rest[0] : path.join(path.dirname(engineOf(flags)), "telemetry", `${rest[0]}.csv`);
+      if (!fs.existsSync(file)) { console.error(`recap: no recording at ${file}`); process.exit(1); }
+      printRecap(file);
       break;
     }
     case "soak": {

@@ -60,7 +60,7 @@ jobs:
           FUACTL_ENGINE_ARGS: "-nosound"
         run: |
           set -e
-          # [rc4l] Every four minutes, each running engine's main thread in full and then every thread, so a hang names where it waits.
+          # [rc4l] Now and then, each running engine's main thread in full and then every thread, so a hang names where it waits.
           ( while sleep 240; do ps -eo pid,etime,stat,args | grep -i '[f]orkundera'; for p in $(pgrep -f '[f]orkundera'); do echo "== $(date -u +%T) stacks of $p"; sudo gdb -p "$p" -batch -ex "thread apply 1 bt 80" -ex "thread apply all bt 12" 2>/dev/null | head -900; done; done ) > "$RUNNER_TEMP/stacks.txt" 2>&1 &
           cd tools/fuactl
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture record gtfix

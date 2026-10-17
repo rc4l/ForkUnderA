@@ -31,7 +31,7 @@
 
 #include <stdlib.h>
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
-#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
+#include "features/handoff/effects.h"   // [rc4l] QueuedForHandoff
 #include <math.h>
 
 #include "templates.h"
@@ -58,6 +58,7 @@
 #include "features/gamecopy/xfloors.h"    // [rc4l] the copied light lists and height transfers
 #include "features/gamecopy/level.h"      // [rc4l] the copied level flags a view is held by
 #include "v_palette.h"
+#include "c_console.h"   // [rc4l] C_ShouldForceInterpolation
 #include "features/fixed64/computation/finetable_compute.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "po_man.h"
@@ -143,6 +144,7 @@ fixed_t 		viewsin, viewtansin;
 AActor			*camera;	// [RH] camera to draw from. doesn't have to be a player
 
 fixed_t			r_TicFrac;			// [RH] Fractional tic to render
+fixed_t			r_ActorFrac;		// [rc4l] the blend actors are drawn at this frame
 DWORD			r_FrameTime;		// [RH] Time this frame started drawing (in ms)
 FViewLens		r_viewLens = { 90.f, 4.f / 3.f, 1.f };
 unsigned		r_frameSerial;
@@ -694,11 +696,7 @@ static void R_InterpolateView (const zx::gamecopy::PlayerRecord *player, const z
 void R_ResetViewInterpolation ()
 {
 	// [rc4l] features/handoff: the view's interpolation is the main thread's, so a tic on its own thread resets it in the handoff.
-	if (zx::handoff::Deferring ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { R_ResetViewInterpolation (); }, 0, 0 });
-		return;
-	}
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { R_ResetViewInterpolation (); }, 0, 0 })) return;
 	NoInterpolateView = true;
 }
 
@@ -764,11 +762,7 @@ void R_FreePastViewers ()
 void R_ClearPastViewer (AActor *actor)
 {
 	// [rc4l] features/handoff: a tic on its own thread forgets the camera's past views in the handoff, by the actor's id.
-	if (zx::handoff::Deferring ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t) { R_ClearPastViewerId ((unsigned int)a); }, intptr_t (actor != NULL ? actor->rcSerial : 0u), 0 });
-		return;
-	}
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t) { R_ClearPastViewerId ((unsigned int)a); }, intptr_t (actor != NULL ? actor->rcSerial : 0u), 0 })) return;
 	R_ClearPastViewerId (actor != NULL ? actor->rcSerial : 0u);
 }
 
@@ -950,6 +944,7 @@ void R_SetupFrameFromRecord (int record, bool interpolateLive)
 	{
 		r_TicFrac = FRACUNIT;
 	}
+	r_ActorFrac = C_ShouldForceInterpolation () ? FRACUNIT : r_TicFrac;
 
 	R_InterpolateView (player, cam, camIndex, r_TicFrac, iview);
 

@@ -63,7 +63,7 @@
 #include "features/fua-caching/fua_caching.h"
 #include "features/telemetry/telemetry.h"
 #include "features/handoff/seam.h"   // [rc4l] the channels and music are game data
-#include "features/handoff/effects.h"   // [rc4l] Deferring
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI, QueuedForHandoff, QueuedBesideTic
 
 #include <vector>
 
@@ -1988,11 +1988,7 @@ void S_PauseSound (bool notmusic, bool notsfx)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	// [rc4l] features/handoff: a tic on its own thread pauses the device in the handoff, as it changes the music.
-	if (zx::handoff::Deferring ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t b) { S_PauseSound (a != 0, b != 0); }, notmusic, notsfx });
-		return;
-	}
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t b) { S_PauseSound (a != 0, b != 0); }, notmusic, notsfx })) return;
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -2020,11 +2016,7 @@ void S_ResumeSound (bool notsfx)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	// [rc4l] features/handoff: a tic on its own thread resumes the device in the handoff, as it changes the music.
-	if (zx::handoff::Deferring ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t) { S_ResumeSound (a != 0); }, notsfx, 0 });
-		return;
-	}
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t) { S_ResumeSound (a != 0); }, notsfx, 0 })) return;
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -2125,11 +2117,7 @@ static bool sound_BackgroundPauseWanted( int state )
 void S_SetSoundPaused (int state)
 {
 	// [rc4l] A focus change while a tic runs on the game thread waits for the handoff, since it sets the game's paused.
-	if (zx::handoff::BesideTic ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t) { S_SetSoundPaused (int (a)); }, state, 0 });
-		return;
-	}
+	if (zx::handoff::QueuedBesideTic ({ [](intptr_t a, intptr_t) { S_SetSoundPaused (int (a)); }, state, 0 })) return;
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	const bool bBackgroundPause = sound_BackgroundPauseWanted( state );
 
@@ -3080,11 +3068,7 @@ int S_GetMusic (char **name)
 void S_StopMusic (bool force)
 {
 	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
-	if (zx::handoff::Deferring ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t) { S_StopMusic (a != 0); }, force, 0 });
-		return;
-	}
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t) { S_StopMusic (a != 0); }, force, 0 })) return;
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;

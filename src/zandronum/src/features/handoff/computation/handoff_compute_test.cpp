@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <set>
 #include <string>
 
@@ -115,6 +116,27 @@ TEST(SeamRegistry, ANameIsDeclaredOnceAndAnotherOwnerConflicts)
 	EXPECT_EQ(2, r.Size());
 	EXPECT_EQ("sound/device", r.At(b).name);
 	EXPECT_EQ(Owner::Main, r.At(b).owner);
+}
+
+// [rc4l] A site's disallowed entries are counted apart by thread and phase, the most entered listed first.
+TEST(ViolationSites, ASiteIsCountedPerThreadAndPhaseMostFirst)
+{
+	ViolationSites v;
+	EXPECT_EQ("", v.Table());
+	int a = 0, b = 0;
+	const Phase running = { true, false }, between = { false, true };
+	v.Count(&a, "sound/channels", "S_PauseSound", 1989, 2, between);
+	v.Count(&b, "sound/channels", "S_StartSound", 914, 1, running);
+	v.Count(&b, "sound/channels", "S_StartSound", 914, 1, running);
+	v.Count(&b, "sound/channels", "S_StartSound", 914, 1, between);
+	v.Count(&b, "sound/channels", "S_StartSound", 914, 0, between);
+	v.Count(&b, "sound/channels", "S_StartSound", 914, 1, Phase{ true, true });
+	const std::string t = v.Table();
+	EXPECT_EQ(0u, t.find("  violated sound/channels in S_StartSound:914 by the game thread, a tic running, main thread drawing: 2\n"));
+	EXPECT_NE(std::string::npos, t.find("S_PauseSound:1989 by the another thread, no tic running, main thread in the handoff: 1"));
+	EXPECT_NE(std::string::npos, t.find("S_StartSound:914 by the main thread, no tic running, main thread in the handoff: 1"));
+	EXPECT_NE(std::string::npos, t.find("S_StartSound:914 by the game thread, a tic running, main thread in the handoff: 1"));
+	EXPECT_EQ(6, (int)std::count(t.begin(), t.end(), '\n') + 1);
 }
 
 TEST(SeamRegistry, EntriesAndViolationsAreCounted)

@@ -29,6 +29,13 @@ struct UIEffect
 };
 void QueueUI(const UIEffect &effect);
 
+// [rc4l] Queues effect for the handoff when the caller is a tic on its own thread, true so the caller stops there, false when it may act at once.
+bool QueuedForHandoff(const UIEffect &effect);
+// [rc4l] The same for the main thread drawing beside a tic, whose changes to game data wait for the handoff too.
+bool QueuedBesideTic(const UIEffect &effect);
+// [rc4l] Runs effect at once, or from a tic on its own thread in the handoff.
+void RunOrQueue(const UIEffect &effect);
+
 // [rc4l] Every queued print and UI effect, in order; the handoff's, after each tic.
 void DrainEffects();
 

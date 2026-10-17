@@ -42,6 +42,25 @@ bool BesideTic()
 	return ComputeBesideTic(OnMainThread(), OnGameThread(), CurrentPhase());
 }
 
+bool QueuedForHandoff(const UIEffect &effect)
+{
+	if (!Deferring()) return false;
+	QueueUI(effect);
+	return true;
+}
+
+bool QueuedBesideTic(const UIEffect &effect)
+{
+	if (!BesideTic()) return false;
+	QueueUI(effect);
+	return true;
+}
+
+void RunOrQueue(const UIEffect &effect)
+{
+	if (!QueuedForHandoff(effect)) effect.run(effect.a, effect.b);
+}
+
 void QueuePrint(int printlevel, const char *text)
 {
 	Effect e;

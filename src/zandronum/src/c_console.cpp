@@ -33,7 +33,7 @@
 */
 
 #include "templates.h"
-#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueuePrint, QueuedForHandoff
 #include "mcp_bridge.h"
 #include "features/server-hosting/zx_hosting.h" // [rc4l] HostChildEcho
 #include "p_setup.h"
@@ -1468,11 +1468,7 @@ void C_ToggleConsole ()
 void C_HideConsole ()
 {
 	// [rc4l] features/handoff: the console is the main thread's, so a tic on its own thread hides it in the handoff.
-	if (zx::handoff::Deferring ())
-	{
-		zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { C_HideConsole (); }, 0, 0 });
-		return;
-	}
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { C_HideConsole (); }, 0, 0 })) return;
 	// [Leo] Don't let the console close while requesting/receiving a snapshot.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) ||
 		( NETWORK_InClientMode() && ( CLIENT_GetConnectionState() != CTS_ACTIVE )))
@@ -2418,7 +2414,8 @@ unsigned int C_GetMessageLevel()
 //
 bool C_ShouldForceInterpolation()
 {
-	if (gamestate == GS_INTERMISSION || paused || P_CheckTickerPaused())
+	// [rc4l] features/gameloop: P_TickerPausedNow, since frames ask this too and P_CheckTickerPaused pauses the sound.
+	if (gamestate == GS_INTERMISSION || paused || P_TickerPausedNow())
 	{
 		if (con_interpolate && (ConsoleState == c_falling || ConsoleState == c_rising))
 			return true;

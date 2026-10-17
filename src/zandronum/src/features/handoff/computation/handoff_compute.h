@@ -63,6 +63,28 @@ private:
 // [rc4l] The seams as a listing prints them, one per line: name, owner, entries and violations.
 std::string ComputeSeamTable(const SeamRegistry &registry);
 
+// [rc4l] Where disallowed threads entered seams, a row per site, thread and phase, so a report names the code and the thread.
+class ViolationSites
+{
+public:
+	// [rc4l] Counts a disallowed entry into seam at function:line (the site's identity being `site`), by thread 0 main, 1 game or 2 any other, in phase.
+	void Count(const void *site, const char *seam, const char *function, int line, int thread, Phase phase);
+	// [rc4l] The rows, the most entered first: seam, function:line, which thread, whether a tic ran and the main thread was in the handoff, and how often.
+	std::string Table() const;
+
+private:
+	struct Row
+	{
+		const void *site;
+		std::string seam, where;
+		int thread;
+		Phase phase;
+		uint64_t count;
+	};
+	mutable std::mutex m_mutex;
+	std::deque<Row> m_rows;
+};
+
 }} // namespace zx::handoff
 
 #endif // ZX_HANDOFF_COMPUTE_H

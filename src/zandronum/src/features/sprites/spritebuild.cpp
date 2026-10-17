@@ -176,7 +176,7 @@ static bool SubjectOf(const ActorRecord *thing, Subject &s)
 	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7)))) return false;
 	if (!view.PortalIsMirror() && thing->cameraIcon) return false;
 
-	s.frac = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
+	s.frac = r_ActorFrac;
 	s.thingx = thing->PrevX + FixedMul(s.frac, thing->x - thing->PrevX);
 	s.thingy = thing->PrevY + FixedMul(s.frac, thing->y - thing->PrevY);
 	s.thingz = thing->PrevZ + FixedMul(s.frac, thing->z - thing->PrevZ);

@@ -564,14 +564,17 @@ export async function hudCheckFixture(f, { engine, store, dir = fixtureDir(), cv
 // [rc4l] What fua_seams prints: each seam entered (a table line with its entries) and the entries a thread its owner does not allow made, with the first such seam.
 export function parseSeamReport(text) {
   const total = /^(\d+) violations(?:, the first in (\S+) on the (\w+) thread(?: in (\S+?)[;\s])?)?/m.exec(text);
-  const entered = String(text).split(/\r?\n/).filter((l) => /^\s*\S+\/\S+\s/.test(l)).length;
-  return { walked: entered, differed: total ? Number(total[1]) : 0, first: total && total[2] ? `${total[2]} (${total[3]}${total[4] ? `, ${total[4]}` : ""})` : "", found: !!total, text };
+  const lines = String(text).split(/\r?\n/);
+  const entered = lines.filter((l) => /^\s*\S+\/\S+\s/.test(l)).length;
+  // [rc4l] fua_seams' own rows of where disallowed threads entered, the most entered first.
+  const sites = lines.filter((l) => /^\s+violated /.test(l)).map((l) => l.trim().replace(/^violated /, ""));
+  return { walked: entered, differed: total ? Number(total[1]) : 0, first: total && total[2] ? `${total[2]} (${total[3]}${total[4] ? `, ${total[4]}` : ""})` : "", sites, found: !!total, text };
 }
 
 // [rc4l] A fixture's demo played to its picture tic on Vulkan alone, judged by fua_seams: no frame touched game data and no tic the main thread's state, outside the handoff.
 export async function seamCheckFixture(f, opts = {}) {
   return reportCheck(f, { ...opts, check: {}, gl: false, report: "fua_seams", parse: parseSeamReport,
-    describe: (r) => (r.found ? `${r.walked} seams entered, ${r.differed} violations${r.first ? `, the first in ${r.first}` : ""}` : "the seams were not listed") });
+    describe: (r) => (r.found ? `${r.walked} seams entered, ${r.differed} violations${r.first ? `, the first in ${r.first}` : ""}${r.sites.length ? `; most: ${r.sites.slice(0, 3).join("; ")}` : ""}` : "the seams were not listed") });
 }
 
 // [rc4l] The checks a fixture's demo can be played under, each judged by its own report.

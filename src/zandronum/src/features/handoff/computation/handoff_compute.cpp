@@ -3,6 +3,7 @@
 
 #include "features/handoff/computation/handoff_compute.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace zx { namespace handoff {
@@ -95,6 +96,40 @@ std::string ComputeSeamTable(const SeamRegistry &registry)
 		const SeamInfo &info = registry.At(i);
 		snprintf(line, sizeof(line), "%-32s %-9s %12llu entries %8llu violations\n", info.name.c_str(), ComputeOwnerName(info.owner),
 			(unsigned long long)info.entries.load(), (unsigned long long)info.violations.load());
+		out += line;
+	}
+	return out;
+}
+
+void ViolationSites::Count(const void *site, const char *seam, const char *function, int line, int thread, Phase phase)
+{
+	std::lock_guard<std::mutex> hold(m_mutex);
+	for (Row &r : m_rows)
+	{
+		if (r.site == site && r.thread == thread && r.phase.gameRunning == phase.gameRunning && r.phase.mainInHandoff == phase.mainInHandoff)
+		{
+			r.count++;
+			return;
+		}
+	}
+	char where[160];
+	snprintf(where, sizeof(where), "%s:%d", function, line);
+	m_rows.push_back(Row{ site, seam, where, thread, phase, 1 });
+}
+
+std::string ViolationSites::Table() const
+{
+	std::lock_guard<std::mutex> hold(m_mutex);
+	std::deque<const Row *> rows;
+	for (const Row &r : m_rows) rows.push_back(&r);
+	std::stable_sort(rows.begin(), rows.end(), [](const Row *a, const Row *b) { return a->count > b->count; });
+	static const char *const kThreads[] = { "main", "game", "another" };
+	std::string out;
+	char line[320];
+	for (const Row *r : rows)
+	{
+		snprintf(line, sizeof(line), "  violated %s in %s by the %s thread, %s, main thread %s: %llu\n", r->seam.c_str(), r->where.c_str(), kThreads[r->thread],
+			r->phase.gameRunning ? "a tic running" : "no tic running", r->phase.mainInHandoff ? "in the handoff" : "drawing", (unsigned long long)r->count);
 		out += line;
 	}
 	return out;

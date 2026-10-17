@@ -115,7 +115,10 @@ class BoundaryTripwire(unittest.TestCase):
 
     def test_the_generated_section_lists_the_table_and_the_seams(self):
         rule = dict(RENDER, fields={'table': 'features/gamecopy/fields.h', 'types': ['sector']})
-        files = {'features/gamecopy/fields.h': TABLE, 'a.cpp': 'ZX_SEAM("copy/fill", Handoff);'}
+        files = {'features/gamecopy/fields.h': TABLE, 'a.cpp': 'ZX_SEAM("copy/fill", Handoff);',
+                 'r_sky.cpp': 'if (zx::handoff::QueuedForHandoff ({ f, 0, 0 })) return; // zx::handoff::AskMain (f, 0);',
+                 'v_font.cpp': 'zx::handoff::AskMainFor ([&] { g(); }); zx::handoff::QueuedForHandoff ({ h, 0, 0 });',
+                 'features/handoff/effects.cpp': 'zx::handoff::QueueUI (e);', 'x_test.cpp': 'zx::handoff::RunOrQueue (e);'}
         text = doc(files, [rule, RENDER])
         self.assertIn('- sector: `floorplane`', text)
         self.assertIn('- actor: `angle`, `sprite`', text)
@@ -126,6 +129,11 @@ class BoundaryTripwire(unittest.TestCase):
         self.assertIn('- level, worked out by the fill: `sky1`', text)
         self.assertIn('- decal: `Alpha`', text)
         self.assertIn('- `copy/fill` (Handoff), `a.cpp`', text)
+        self.assertIn('- `AskMainFor`: `v_font.cpp`', text)
+        self.assertIn('- `QueuedForHandoff`: `r_sky.cpp`, `v_font.cpp`', text)
+        self.assertNotIn('`AskMain`:', text)
+        self.assertNotIn('QueueUI', text)
+        self.assertNotIn('RunOrQueue', text)
 
     def test_a_readme_with_markers_is_stale_until_rewritten(self):
         self.assertIsNone(with_doc('no markers', 'x'))

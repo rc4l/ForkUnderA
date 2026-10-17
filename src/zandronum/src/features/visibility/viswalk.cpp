@@ -1499,7 +1499,7 @@ void WalkSkybox(const PortalView &p, long long seenX, long long seenY)
 	const angle_t sa = viewangle;
 	sector_t *const ssector = viewsector;
 	const area_t sarea = in_area;
-	const fixed_t frac = C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac;
+	const fixed_t frac = r_ActorFrac;
 	viewx = origin->PrevX + FixedMul(frac, origin->x - origin->PrevX);
 	viewy = origin->PrevY + FixedMul(frac, origin->y - origin->PrevY);
 	viewz = origin->PrevZ + FixedMul(frac, origin->z - origin->PrevZ);

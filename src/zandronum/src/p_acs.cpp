@@ -12089,9 +12089,10 @@ scriptwait:
 		case PCD_PLAYMOVIE:
 			{
 				// [rc4l] features/handoff: a movie plays in the main thread's window, which a tic on its own thread asks for and waits on.
-				struct Ask { const char *name; int result; } ask = { FBehavior::StaticLookupString (STACK(1)), MOVIE_Failed };
-				zx::handoff::AskMain ([](void *p) { Ask &a = *(Ask *)p; a.result = I_PlayMovie (a.name); }, &ask);
-				STACK(1) = ask.result;
+				const char *movie = FBehavior::StaticLookupString (STACK(1));
+				int result = MOVIE_Failed;
+				zx::handoff::AskMainFor ([&] { result = I_PlayMovie (movie); });
+				STACK(1) = result;
 			}
 			break;
 

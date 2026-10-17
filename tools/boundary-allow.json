@@ -20,10 +20,10 @@
   "p_spec.cpp": 1,
   "p_teleport.cpp": 1,
   "p_tick.cpp": 5,
-  "p_user.cpp": 26
+  "p_user.cpp": 25
  },
  "renderer-reads-the-copy": {
   "features/frame/levelrenderer.cpp": 2,
-  "r_utility.cpp": 11
+  "r_utility.cpp": 12
  }
 }

@@ -21,7 +21,7 @@
     {"name": "write-and-undo interpolation", "regex": "\\binterpolator\\s*\\."},
     {"name": "shared visit stamp", "regex": "\\bvalidcount\\b"},
     {"name": "game randomness", "regex": "\\bM_Random\\b|\\bpr_\\w+\\s*\\("},
-    {"name": "game function", "regex": "\\bP_(?!AproxDistance\\b)[A-Z]\\w*\\s*\\("},
+    {"name": "game function", "regex": "\\bP_(?!AproxDistance\\b)[A-Z]\\w*\\s*\\(|\\bC_ShouldForceInterpolation\\s*\\("},
     {"name": "live level state", "regex": "\\blevel\\s*\\.\\s*(flags|flags2|time|maptime|totaltime|fadeto|outsidefog|skyspeed1|skyspeed2|DefaultSkybox)\\b"},
     {"name": "live map accessor", "regex": "(?<!\\brc)(?<!TexMan)(?:\\.|->)\\s*(?:GetTexture\\s*\\((?!\\s*\\))|(?:GetPlaneTexZ|GetLightLevel|GetTextureXOffset|GetTextureYOffset|GetTextureXScale|GetTextureYScale|GetXOffset|GetYOffset|GetXScale|GetYScale|GetAngle|GetAlpha|GetFloorLight|GetCeilingLight|GetLight|GetGlow|GetReflect|GetSpecialColor)\\s*\\()"}
    ],

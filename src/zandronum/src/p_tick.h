@@ -37,6 +37,8 @@ void P_Ticker (void);
 extern bool p_NoInterpolate;
 
 bool P_CheckTickerPaused ();
+// [rc4l] features/gameloop: whether the tic is paused for a demo, a menu or the console, without pausing the sound as P_CheckTickerPaused does.
+bool P_TickerPausedNow ();
 
 
 #endif

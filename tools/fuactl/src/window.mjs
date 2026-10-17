@@ -37,6 +37,7 @@ public class FuaWin {
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint f);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int ht, bool repaint);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
 }
 "@`;
@@ -81,6 +82,16 @@ $r = New-Object FuaWin+RECT; [void][FuaWin]::GetWindowRect($h, [ref]$r)
 `;
 }
 
+// [rc4l] The script that tells windows hwnds their application was switched to (active) or away from, as alt-tab does, printing "POSTED|n"; nothing on the desktop moves.
+export function activateScript(hwnds, active) {
+  const posts = hwnds.map((h) => `$n += [int][FuaWin]::PostMessage([IntPtr]${Number(h)}, 0x001C, [IntPtr]${active ? 1 : 0}, [IntPtr]::Zero)`).join("\n");
+  return `${USER32}
+$n = 0
+${posts}
+"POSTED|{0}" -f $n
+`;
+}
+
 // [rc4l] Process pid's game window among windows: GL's when it has one, since the backend's view sits inside it, else the backend's own.
 export function gameWindowOf(windows, pid) {
   const own = windows.filter((w) => w.pid === pid && w.kind);
@@ -97,6 +108,14 @@ function runPowerShell(script) {
 export function resizeEngineWindow(pid, width, height) {
   const target = gameWindowOf(engineWindows().windows, pid);
   return !!target && runPowerShell(resizeScript(target.hwnd, width, height)).includes("SIZED|1");
+}
+
+// [rc4l] Tells every window of process pid its application was switched to or away from, as alt-tab does; the windows told.
+export function activateEngineWindows(pid, active) {
+  const own = engineWindows().windows.filter((w) => w.pid === pid);
+  if (!own.length) return 0;
+  const line = runPowerShell(activateScript(own.map((w) => w.hwnd), active)).split(/\r?\n/).find((l) => l.startsWith("POSTED|")) || "";
+  return Number(line.split("|")[1]) || 0;
 }
 
 // [rc4l] The engine's windows, and with shot ("gl" or "vk") the first of that kind captured to out.

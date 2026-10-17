@@ -25,6 +25,7 @@ RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER|LEVEL|DECAL)_(FIELD|DERIVED)\((
 SEAM = re.compile(r'ZX_SEAM(?:_UNTIMED)?\s*\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
 EXTERN = re.compile(r'^[ \t]*extern[ \t]+((?:[\w:<>]+[ \t*&]+)+)([^;(){}]+);', re.M)
 CODE = ('.cpp', '.h', '.c', '.mm')
+HANDOFF_CALL = re.compile(r'\bzx::handoff::(QueuedForHandoff|QueuedBesideTic|RunOrQueue|AskMainFor|AskMain|QueuePrint|QueueUI)\s*\(')
 DOC_BEGIN = '<!-- boundary:begin (python3 tools/boundary_tripwire.py --doc writes this section) -->'
 DOC_END = '<!-- boundary:end -->'
 
@@ -176,6 +177,17 @@ def seams(files):
     return sorted(found)
 
 
+def handoff_calls(files):
+    """[rc4l] Every file outside features/handoff that hands work to the handoff, by helper: {helper: [file, ...]}, sorted."""
+    found = {}
+    for rel, text in files.items():
+        if not rel.endswith(CODE) or rel.endswith('_test.cpp') or rel.startswith('features/handoff/'):
+            continue
+        for helper in HANDOFF_CALL.findall(code_only(text)):
+            found.setdefault(helper, set()).add(rel)
+    return {helper: sorted(rels) for helper, rels in sorted(found.items())}
+
+
 def doc(files, rules):
     """[rc4l] The generated section: what the copy carries from the field tables, and every seam with its owner."""
     lines = ['## What crosses the boundary', '', 'Generated from the field tables and the `ZX_SEAM` declarations; do not edit by hand.', '']
@@ -193,6 +205,11 @@ def doc(files, rules):
     lines.append('')
     for name, owner, rel in seams(files):
         lines.append('- `%s` (%s), `%s`' % (name, owner, rel))
+    lines.append('')
+    lines.append('Handed to the handoff, by helper:')
+    lines.append('')
+    for helper, rels in handoff_calls(files).items():
+        lines.append('- `%s`: %s' % (helper, ', '.join('`%s`' % r for r in rels)))
     return '\n'.join(lines) + '\n'
 
 

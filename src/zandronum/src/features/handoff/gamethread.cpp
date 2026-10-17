@@ -125,6 +125,11 @@ bool GameThreadAsking()
 	return g_asking.load();
 }
 
+uint64_t AsksServed()
+{
+	return g_asks.Served();
+}
+
 void ServeAsks()
 {
 	if (g_asks.Serve()) ZX_COUNT("handoff/asks", "asks", 1);

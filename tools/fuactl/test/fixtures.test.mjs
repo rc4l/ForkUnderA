@@ -118,11 +118,13 @@ test("the seen report counts the lines and sectors the walks marked on the live 
 test("the seam report counts the seams entered and takes the total violations, not a seam's own", () => {
   const text = ["gc/object                        game data          235 entries        1 violations",
     "copy/fill                        handoff            322 entries        0 violations",
-    "1 violations, the first in gc/object on the another thread; 0 locks taken while holding another; 0 seams declared with a second owner"].join("\n");
+    "1 violations, the first in gc/object on the another thread; 0 locks taken while holding another; 0 seams declared with a second owner",
+    "  violated gc/object in DObject:456 by the main thread, no tic running, main thread drawing: 1"].join("\n");
   const r = parseSeamReport(text);
   assert.deepEqual([r.walked, r.differed, r.first, r.found], [2, 1, "gc/object (another)", true]);
+  assert.deepEqual(r.sites, ["gc/object in DObject:456 by the main thread, no tic running, main thread drawing: 1"]);
   const clean = parseSeamReport("copy/fill  handoff  3 entries  0 violations\n0 violations; 0 locks taken while holding another");
-  assert.deepEqual([clean.walked, clean.differed, clean.first], [1, 0, ""]);
+  assert.deepEqual([clean.walked, clean.differed, clean.first, clean.sites], [1, 0, "", []]);
   assert.equal(parseSeamReport("1 violations, the first in sound/channels on the main thread in S_StartSound:1234; 0 locks").first, "sound/channels (main, S_StartSound:1234)");
   assert.equal(parseSeamReport("Unknown command").found, false);
 });
