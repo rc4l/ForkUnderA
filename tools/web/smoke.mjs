@@ -59,17 +59,20 @@ export function formatEval(result) {
 }
 
 // [rc4l] The keys a page may ask smoke to press, with the codes Chrome's input events want.
-export const KEYS = { Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 }, Enter: { code: 'Enter', keyCode: 13 } };
+export const KEYS = { Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 }, Enter: { code: 'Enter', keyCode: 13 }, ArrowUp: { code: 'ArrowUp', keyCode: 38 } };
 
-// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle, "check: press KEY" presses one of KEYS, "check: resize WxH" makes the window that size (fuactl's resizeAsked, which a desktop soak takes too); null for any other line.
+// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle and "check: click ID" the element with that id, "check: press KEY" presses one of KEYS, "check: hold KEY MS" holds one that long, "check: resize WxH" makes the window that size (fuactl's resizeAsked, which a desktop soak takes too); null for any other line.
 export function inputAsked(line) {
   if (!line.startsWith('[log] ')) return null;
   const size = resizeAsked(line.slice(6));
   if (size) return { resize: size };
-  const m = /^\[log\] check: (click|press (\S+))$/.exec(line);
+  const m = /^\[log\] check: (?:click(?: (?<target>[\w-]+))?|press (?<press>\S+)|hold (?<hold>\S+) (?<ms>\d+))$/.exec(line);
   if (!m) return null;
-  if (!m[2]) return { click: true };
-  return KEYS[m[2]] ? { key: m[2], ...KEYS[m[2]] } : null;
+  const { target, press, hold, ms } = m.groups;
+  if (!press && !hold) return target ? { click: true, target } : { click: true };
+  const key = press || hold;
+  if (!KEYS[key]) return null;
+  return hold ? { key, ...KEYS[key], holdMs: Number(ms) } : { key, ...KEYS[key] };
 }
 
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -120,7 +123,7 @@ export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
 }
 
 // [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, focus = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
@@ -163,14 +166,24 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
         return;
       }
       if (asked.click) {
-        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: 640, y: 360, button: 'left', clickCount: 1 });
+        let at = { x: 640, y: 360 };
+        if (asked.target) {
+          const r = await send('Runtime.evaluate', { expression: `(() => { const b = document.getElementById(${JSON.stringify(asked.target)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`, returnByValue: true });
+          at = r.result?.result?.value ?? at;
+        }
+        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, ...at, button: 'left', clickCount: 1 });
         return;
       }
-      for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: asked.key, code: asked.code, windowsVirtualKeyCode: asked.keyCode });
+      const key = (type) => send('Input.dispatchKeyEvent', { type, key: asked.key, code: asked.code, windowsVirtualKeyCode: asked.keyCode });
+      await key('keyDown');
+      if (asked.holdMs) await pause(asked.holdMs);
+      await key('keyUp');
     };
     await send('Runtime.enable');
     await send('Log.enable');
     await send('Page.enable');
+    // [rc4l] A focused page, as a player's is: headless Chrome's fullscreen otherwise resizes the whole viewport, which hid a canvas resized without a resize event.
+    if (focus) await send('Emulation.setFocusEmulationEnabled', { enabled: true });
     if (init) await send('Page.addScriptToEvaluateOnNewDocument', { source: init });
     if (downloadDir) await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadDir });
     await send('Page.navigate', { url });

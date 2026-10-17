@@ -17,7 +17,7 @@ namespace zx
 {
 
 // Fill `out` with the body of GET https://<host><path> on a 2xx; return false (with out emptied) on
-// any error, timeout, or non-2xx. Blocking: call it from a worker thread, never the game thread.
+// any error, timeout, or non-2xx. Blocking: call it from a worker thread, never the main thread.
 bool HttpsGet( const char *host, const char *path, char *out, int outSize );
 
 } // namespace zx

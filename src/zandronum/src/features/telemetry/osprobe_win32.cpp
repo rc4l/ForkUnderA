@@ -107,7 +107,7 @@ std::string SymbolName(HANDLE proc, void *address)
 
 } // namespace
 
-void ReadOs(OsReadings &out)
+void ReadOs(OsReadings &out, bool walkHeaps)
 {
 	static const MemoryInfoFn memoryInfo = Export<MemoryInfoFn>("kernel32.dll", "K32GetProcessMemoryInfo");
 	static const HeapSummaryFn heapSummary = Export<HeapSummaryFn>("kernel32.dll", "HeapSummary");
@@ -121,6 +121,8 @@ void ReadOs(OsReadings &out)
 	}
 	DWORD handles = 0;
 	if (GetProcessHandleCount(GetCurrentProcess(), &handles)) out.handles = (double)handles;
+	out.gpuProcessBytes = DxgiProcessBytes();
+	if (!walkHeaps) return;
 	// [rc4l] One heap's summary, false where Windows cannot give it.
 	const auto summarize = [](HANDLE h, HeapSummaryRecord &rec) { rec = {}; rec.cb = sizeof(rec); return heapSummary != NULL && heapSummary(h, 0, &rec) != FALSE; };
 	HeapSummaryRecord heap;
@@ -137,7 +139,6 @@ void ReadOs(OsReadings &out)
 			out.heapsCommittedBytes += (double)heap.cbCommitted;
 		}
 	}
-	out.gpuProcessBytes = DxgiProcessBytes();
 }
 
 const char *OsProbeName()

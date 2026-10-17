@@ -11,7 +11,7 @@
 
 namespace {
 
-AActor *GLViewActor() { return GLRenderer->mViewActor; }
+const void *GLViewActor() { return GLRenderer->mViewActor; }
 
 void GLViewVector(float &x, float &y)
 {

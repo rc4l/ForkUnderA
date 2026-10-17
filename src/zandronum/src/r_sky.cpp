@@ -38,6 +38,8 @@
 #include "r_utility.h"
 #include "v_text.h"
 #include "gi.h"
+#include "features/handoff/effects.h"   // [rc4l] QueuedForHandoff
+#include "features/handoff/seam.h"   // [rc4l] sky/map
 
 //
 // sky mapping
@@ -70,6 +72,9 @@ fixed_t			freelookviewheight;
 
 void R_InitSkyMap ()
 {
+	// [rc4l] features/handoff: the sky's scale is the renderer's, so ACS ChangeSky in a tic on its own thread works it out in the handoff.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { R_InitSkyMap (); }, 0, 0 })) return;
+	ZX_SEAM_UNTIMED ("sky/map", Main);   // [rc4l] features/handoff: only the main thread sets the renderer's sky scale
 	int skyheight;
 	FTexture *skytex1, *skytex2;
 

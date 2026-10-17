@@ -619,6 +619,18 @@ static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
 	return true;
 }
 
+// [rc4l] A piece that changed material or pass taken out of the batch it was built into and put on the end in one of its own, false when it cannot be appended and only a rebuild will do.
+static bool MovePieceToNewBatch(Diligent::IDeviceContext *ctx, const zx::levelmesh::MeshPiece &p,
+	const zx::levelmesh::MeshVertex *src)
+{
+	unsigned int *slotIdx = g_slotByOffset.CheckKey(p.range.offset);
+	if (slotIdx != NULL && *slotIdx < g_vbSlots.Size() && g_vbSlots[*slotIdx].count > 0) RetireSlot(ctx, g_vbSlots[*slotIdx]);
+	if (p.range.count == 0) return true;
+	if (!AppendPiece(ctx, p, src)) return false;
+	g_stats.appendRebatched++;
+	return true;
+}
+
 static void NoteBail(const zx::levelmesh::MeshPiece &p)
 {
 	// [rc4l] Where it is in map units, so the line it came from can be looked up.
@@ -647,11 +659,26 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 		const unsigned int rebatch = zx::levelmesh::MeshRebatchRevision();
 		if (rebatch != g_builtRebatchRev)
 		{
-			// A surface that changed material or pass is in the wrong batch, and only a rebuild can
-			// move it. Rare: it takes a switch, a door opening, or a sector changing its flat.
+			// [rc4l] A surface that changed material or pass (a switch, a door, a flat swap) is moved to a batch of its own, since rebuilding the whole scene for it was a 57 ms frame on Sunder MAP16.
 			g_builtRebatchRev = rebatch;
+			const unsigned int *list = NULL;
+			int count = 0, np = 0, translucent = 0;
+			bool overflowed = false;
+			zx::levelmesh::MeshTakeRebatches(list, count, overflowed);
+			const zx::levelmesh::MeshPiece *all = zx::levelmesh::MeshPieces(np);
+			for (int i = 0; i < count; i++) if ((int)list[i] < np && all[list[i]].blendMode != 0) translucent++;
+			const ::hwrender::RebatchPlan plan = ::hwrender::ComputeRebatchPlan(count, overflowed, translucent);
+			bool rebuild = (plan == ::hwrender::RebatchPlan::Rebuild);
+			if (plan == ::hwrender::RebatchPlan::Append)
+			{
+				int srcCount = 0;
+				const zx::levelmesh::MeshVertex *verts = zx::levelmesh::MeshVertexData(srcCount);
+				for (int i = 0; i < count && !rebuild; i++)
+					if ((int)list[i] < np && !MovePieceToNewBatch(ctx, all[list[i]], verts)) rebuild = true;
+			}
+			zx::levelmesh::MeshClearRebatches();
 			FString err;
-			if (BuildSceneBuffer(err))
+			if (rebuild && BuildSceneBuffer(err))
 			{
 				g_stats.geomRebuilds++;
 				g_scene.verts = (int)g_scene.cpuVerts.Size();
@@ -852,7 +879,13 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 					// and a rebuild is the only thing that can move a piece between batches.
 					if (slot.batch < g_scene.batches.Size() && !::hwrender::ComputeStaysInBatch(p->material, p->baseTex,
 							g_scene.batches[slot.batch].material, g_scene.batches[slot.batch].baseTex))
-						{ g_stats.bailMaterial++; NoteBail(*p); bailed = true; break; }
+					{
+						// [rc4l] An opaque one moves to a batch of its own; a translucent one is sorted by distance and still needs the rebuild.
+						if (blendedNow || slot.blended || !MovePieceToNewBatch(ctx, *p, src))
+							{ g_stats.bailMaterial++; NoteBail(*p); bailed = true; break; }
+						patched++;
+						continue;
+					}
 					// [rc4l] The record is rewritten in place and the index does not move.
 					//
 					// A door's shading changes as it moves -- its light level, and on a slope its normal --

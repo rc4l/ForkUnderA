@@ -35,6 +35,7 @@
 */
 
 #include "doomtype.h"
+#include "features/handoff/seam.h"   // [rc4l] texture/grow
 #include "doomstat.h"
 #include "w_wad.h"
 #include "templates.h"
@@ -373,6 +374,12 @@ void FTextureManager::UnloadAll ()
 //
 //==========================================================================
 
+void FTextureManager::ReserveHeadroom (unsigned int amount)
+{
+	Textures.Grow (amount);
+	Translation.Grow (amount);
+}
+
 FTextureID FTextureManager::AddTexture (FTexture *texture)
 {
 	int bucket;
@@ -404,6 +411,11 @@ FTextureID FTextureManager::AddTexture (FTexture *texture)
 	}
 
 	TextureHash hasher = { texture, hash };
+	// [rc4l] features/handoff: a push past the headroom moves the array a frame may be reading, which only the main thread may do while no tic runs.
+	if (Textures.Size () >= Textures.Capacity ())
+	{
+		ZX_SEAM_UNTIMED ("texture/grow", Idle);
+	}
 	int trans = Textures.Push (hasher);
 	Translation.Push (trans);
 	if (bucket >= 0) HashFirst[bucket] = trans;

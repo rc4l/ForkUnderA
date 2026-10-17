@@ -26,6 +26,9 @@
 
 
 #include <string.h>
+#include "features/gamecopy/level.h"   // [rc4l] the level as the copy holds it
+#include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
+#include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -1006,6 +1009,29 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 //[Graf Zahl] This really helps if the mouse update rate can't be increased!
 CVAR (Bool,		smooth_mouse,	false,	CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 
+// [rc4l] features/handoff: what turning reads of the console player, live in the handoff and from the render copy beside a running tic, where a mouse move still turns the view.
+struct G_TurnPlayer { bool scales; float fovScale; bool spectating; bool freelook; };
+static G_TurnPlayer G_TurnPlayerNow ()
+{
+	G_TurnPlayer t;
+	if (zx::handoff::TicInFlight ())
+	{
+		const zx::gamecopy::PlayerRecord *const p = zx::gamecopy::Player (consoleplayer);
+		t.scales = p != NULL && p->playerstate != PST_DEAD && p->hasWeapon && p->weaponFOVScale > 0;
+		t.fovScale = p != NULL ? p->weaponFOVScale : 1.f;
+		t.spectating = p != NULL && p->bSpectating;
+		// [rc4l] FLevelLocals::IsFreelookAllowed on the copy's flags, dmflags being the main thread's.
+		t.freelook = (dmflags & DF_NO_FREELOOK) ? false : (dmflags & DF_YES_FREELOOK) ? true : !(zx::gamecopy::Level ().flags & LEVEL_FREELOOK_NO);
+		return t;
+	}
+	player_t &p = players[consoleplayer];
+	t.scales = p.playerstate != PST_DEAD && p.ReadyWeapon != NULL && p.ReadyWeapon->FOVScale > 0;
+	t.fovScale = t.scales ? p.ReadyWeapon->FOVScale : 1.f;
+	t.spectating = p.bSpectating;
+	t.freelook = level.IsFreelookAllowed ();
+	return t;
+}
+
 void G_AddViewPitch (int look, bool mouse)
 {
 	if (gamestate == GS_TITLELEVEL)
@@ -1013,15 +1039,14 @@ void G_AddViewPitch (int look, bool mouse)
 		return;
 	}
 	look <<= 16;
-	if (players[consoleplayer].playerstate != PST_DEAD &&		// No adjustment while dead.
-		players[consoleplayer].ReadyWeapon != NULL &&			// No adjustment if no weapon.
-		players[consoleplayer].ReadyWeapon->FOVScale > 0)		// No adjustment if it is non-positive.
+	const G_TurnPlayer turner = G_TurnPlayerNow ();
+	if (turner.scales)		// No adjustment while dead, with no weapon, or with a non-positive scale.
 	{
-		look = int(look * players[consoleplayer].ReadyWeapon->FOVScale);
+		look = int(look * turner.fovScale);
 	}
 	// [BB] Allow spectators to freelook no matter what. Note: This probably causes some
 	// sky rendering errors in software mode.
-	if (!level.IsFreelookAllowed() && ( players[consoleplayer].bSpectating == false ) && ( CLIENTDEMO_IsInFreeSpectateMode() == false ))
+	if (!turner.freelook && ( turner.spectating == false ) && ( CLIENTDEMO_IsInFreeSpectateMode() == false ))
 	{
 		LocalViewPitch = 0;
 	}
@@ -1062,11 +1087,10 @@ void G_AddViewAngle (int yaw, bool mouse)
 		return;
 	}
 	yaw <<= 16;
-	if (players[consoleplayer].playerstate != PST_DEAD &&	// No adjustment while dead.
-		players[consoleplayer].ReadyWeapon != NULL &&		// No adjustment if no weapon.
-		players[consoleplayer].ReadyWeapon->FOVScale > 0)	// No adjustment if it is non-positive.
+	const G_TurnPlayer turner = G_TurnPlayerNow ();
+	if (turner.scales)	// No adjustment while dead, with no weapon, or with a non-positive scale.
 	{
-		yaw = int(yaw * players[consoleplayer].ReadyWeapon->FOVScale);
+		yaw = int(yaw * turner.fovScale);
 	}
 	LocalViewAngle -= yaw;
 	if (yaw != 0)
@@ -1500,7 +1524,24 @@ bool G_Responder (event_t *ev)
 extern FTexture *Page;
 
 
+// [rc4l] features/handoff: G_Ticker in two halves around the playsim's tic, which is all a game thread runs.
 void G_Ticker ()
+{
+	const G_TickerPart part = G_TickerBegin ();
+	if (part.playsim)
+	{
+		G_TickerPlaysim ();
+	}
+	G_TickerEnd (part);
+}
+
+void G_TickerPlaysim ()
+{
+	ZX_ZONE ("sim/pticker"); // [rc4l] the playsim's tic in features/telemetry, which perf.ticprof reads too
+	P_Ticker ();
+}
+
+G_TickerPart G_TickerBegin ()
 {
 	int i;
 	gamestate_t	oldgamestate;
@@ -1805,6 +1846,7 @@ void G_Ticker ()
 	}
 
 	// do main actions
+	G_TickerPart part = { gamestate, false };
 	switch (gamestate)
 	{
 	case GS_LEVEL:
@@ -1977,13 +2019,24 @@ void G_Ticker ()
 		// [BB] Don't call P_Ticker on the server if there are no players.
 		// This significantly reduces CPU usage on maps with many monsters
 		// (of course only as long as there are no connected clients).
-		if ( ( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( SERVER_CalcNumConnectedClients() > 0 ) )
-		{
-			{
-				ZX_ZONE ("sim/pticker"); // [rc4l] the playsim's tic in features/telemetry, which perf.ticprof reads too
-				P_Ticker ();
-			}
-		}
+		part.playsim = ( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( SERVER_CalcNumConnectedClients() > 0 );
+		break;
+
+	case GS_TITLELEVEL:
+		part.playsim = true;
+		break;
+
+	default:
+		break;
+	}
+	return part;
+}
+
+void G_TickerEnd (const G_TickerPart &part)
+{
+	switch (part.state)
+	{
+	case GS_LEVEL:
 		AM_Ticker ();
 
 		// Tick the medal system.
@@ -1998,10 +2051,6 @@ void G_Ticker ()
 				ANNOUNCER_PlayEntry( cl_announcer, pszWelcomeSound );
 		}
 
-		break;
-
-	case GS_TITLELEVEL:
-		P_Ticker ();
 		break;
 
 	case GS_INTERMISSION:

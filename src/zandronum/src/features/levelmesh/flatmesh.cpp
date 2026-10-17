@@ -23,7 +23,8 @@
 #include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane
 #include "features/materials/materials.h"
 #include "tarray.h"
-#include "p_3dfloors.h"   // F3DFloor, P_GetPlaneLight
+#include "p_3dfloors.h"   // F3DFloor
+#include "features/gamecopy/xfloors.h"   // [rc4l] the copied 3D floors and light lists
 #include "r_sky.h"   // skyflatnum
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat
@@ -179,7 +180,7 @@ struct FlatSource
 	GLSectorPlane plane;
 	float         dz;
 	const void   *gltexture;   // [rc4l] a features/materials MaterialRef
-	int           lightlevel;
+	int           light;   // [rc4l] its light level
 	FColormap     Colormap;
 	float         alpha;
 	ERenderStyle  renderstyle;
@@ -254,7 +255,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	// rest of the time all of that arrives at the bytes already sitting in the buffer.
 	FlatStamp now;
 	{
-		const secplane_t &pl = flat.plane.plane;
+		const secplane_core_t &pl = flat.plane.plane;
 		now.pa = pl.a.Raw(); now.pb = pl.b.Raw(); now.pc = pl.c.Raw(); now.pd = pl.d.Raw();
 		now.dz = flat.dz;
 		now.xoffs = flat.plane.xoffs.Raw(); now.yoffs = flat.plane.yoffs.Raw();
@@ -262,7 +263,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		now.angle = flat.plane.angle;
 		now.material = flat.gltexture;
 		now.baseTex = TexMan[flat.plane.texture];
-		now.lightLevel = flat.lightlevel;
+		now.lightLevel = flat.light;
 		now.extraLight = getExtraLight();
 		now.lightColor = flat.Colormap.LightColor.d;
 		now.fadeColor = flat.Colormap.FadeColor.d;
@@ -312,7 +313,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		// Mirrors GLFlat::DrawSubsector for the positions, and gl_SetPlaneTextureRotation for the texture
 		// coordinates -- which this used to skip entirely, baking the bare (x/64, -y/64) that is only
 		// right for an unoffset, unscaled, unrotated 64x64 flat.
-		const secplane_t &p = flat.plane.plane;
+		const secplane_core_t &p = flat.plane.plane;
 		const bool sloped = (p.a | p.b) != 0;
 		const float zc = sloped ? 0.0f : (FIXED2FLOAT(p.Zat0()) + flat.dz);
 
@@ -368,7 +369,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	// exactly like a light that is out of range. Measured on dbab02 as a corridor ceiling that took
 	// no plasma light at all while GL lit it.
 	{
-		const secplane_t &pl = flat.plane.plane;
+		const secplane_core_t &pl = flat.plane.plane;
 		// [rc4l] Baked through lightside_compute, where the derivation is unit-tested against
 		// gl_flats.cpp's own form of the same test. The two have to agree exactly, including for a
 		// light lying ON the surface, and they did not.
@@ -379,11 +380,11 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		zx::hwrender::ComputeMeshPlane(sp, ceiling, n, NULL);
 		mp.normX = n[0]; mp.normY = n[1]; mp.normZ = n[2];
 	}
-	mp.lightLevel = flat.lightlevel;
+	mp.lightLevel = flat.light;
 	mp.lightColor = flat.Colormap.LightColor.d;
 	mp.fadeColor = flat.Colormap.FadeColor.d;
 	// GLFlat::Draw's GLPASS_PLAIN arm, with its `rel = getExtraLight()`.
-	CaptureLevelShading(flat.lightlevel, getExtraLight(), flat.Colormap, mp);
+	CaptureLevelShading(flat.light, getExtraLight(), flat.Colormap, mp);
 
 	// [rc4l] Flats are NOT all opaque, and 3D floors are where that shows.
 	//
@@ -446,7 +447,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	if (model == NULL || sub == NULL) return;
 	sector_t *from = planeFrom != NULL ? planeFrom : model;
 	FlatSource f;
-	f.plane.GetFromSector(from, whichPlane);
+	f.plane.GetFromCopy(from, whichPlane);
 	// The sky is not a surface: GLFlat::Process returns before making one, and the sky pass draws it.
 	if (f.plane.texture == skyflatnum) return;
 	f.gltexture = zx::materials::MaterialForTextureId(f.plane.texture);
@@ -455,7 +456,7 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	// GLFlat::Process's own rule, and the reason a transfer-heights door's floor does not z-fight
 	// with the one it sits on.
 	f.dz = (whichPlane == sector_t::floor && from->transdoor) ? -1.f : 0.f;
-	f.lightlevel = lightlevel;
+	f.light = lightlevel;
 	f.Colormap = cm;
 	f.alpha = alpha;
 	f.renderstyle = style;
@@ -482,15 +483,15 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	if (pr.copied) return;
 	// [rc4l] Lit by which plane it is, not by which way it faces: the water's underside reading the light under it came out the script's blue.
 	const FFFaceLight fl = ComputeFFFaceLight(top, ceiling, (rover->flags & FF_FOG) != 0, (rover->flags & FF_FIX) != 0);
-	lightlist_t *light = P_GetPlaneLight(real, pr.plane, fl.lightBelow);
+	lightlist_t *light = zx::gamecopy::GetPlaneLight(real, *pr.plane, fl.lightBelow);
 	int lightlevel = *light->p_lightlevel;
 
 	FColormap cm;
-	cm = real->ColorMap;
+	cm = real->rc.ColorMap;
 	if (rover->flags & FF_FOG) cm.LightColor = (light->extra_colormap)->Fade;
 	else cm.CopyLightColor(light->extra_colormap);
 	// ProcessSector overrides the fade with the sector's own for every 3D floor face it puts.
-	cm.FadeColor = real->ColorMap->Fade;
+	cm.FadeColor = real->rc.ColorMap->Fade;
 
 	float alpha = rover->alpha / 255.0f;
 	ERenderStyle style = (rover->flags & FF_ADDITIVETRANS) ? STYLE_Add : STYLE_Translucent;
@@ -499,8 +500,8 @@ static void Bake3DFace(subsector_t *sub, sector_t *real, F3DFloor *rover, bool t
 	// light list is not the answer.
 	if (fl.modelLight)
 	{
-		lightlevel = gl_ClampLight(rover->model->lightlevel);
-		cm = rover->GetColormap();
+		lightlevel = gl_ClampLight(rover->model->rc.lightlevel);
+		cm = zx::gamecopy::XFloorColormap(rover);
 	}
 
 	BakeOnePlane(sub, pr.model, pr.isceiling, ceiling, lightlevel, cm, alpha, style);
@@ -513,17 +514,17 @@ static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool 
 	// [rc4l] A height transfer draws its control sector's planes, and under or over them that sector's textures, light and colour.
 	sector_t transfer;
 	sector_t *src = fake ? real : zx::fakeflat::TransferSector(real, &transfer, false);
-	int ll = gl_ClampLight(ceiling ? src->GetCeilingLight() : src->GetFloorLight());
+	int ll = gl_ClampLight(ceiling ? src->rc.GetCeilingLight() : src->rc.GetFloorLight());
 	FColormap cm;
-	cm = src->ColorMap;
-	const float alpha = ComputePlaneAlpha(src->portals[which] != NULL, FIXED2FLOAT(src->GetAlpha(which)), src->GetReflect(which));
+	cm = src->rc.ColorMap;
+	const float alpha = ComputePlaneAlpha(src->portals[which] != NULL, FIXED2FLOAT(src->rc.GetAlpha(which)), src->rc.GetReflect(which));
 	// [rc4l] GL reflects a plane with no portal stack on it, and a fully reflective one still needs the surface the reflection is painted on.
-	const bool reflects = src->GetReflect(which) > 0 && src->portals[which] == NULL;
-	if (real->e != NULL && real->e->XFloor.ffloors.Size() != 0)
+	const bool reflects = src->rc.GetReflect(which) > 0 && src->portals[which] == NULL;
+	if (real->e != NULL && real->e->rcXFloor.ffloors.Size() != 0)
 	{
-		lightlist_t *light = P_GetPlaneLight(real, ceiling ? &real->ceilingplane : &real->floorplane, ceiling);
-		if (ComputePlaneTakesBandLight(ceiling, (real->GetFlags(which) & PLANEF_ABSLIGHTING) != 0, light->fromsector,
-				light->p_lightlevel == &real->lightlevel))
+		lightlist_t *light = zx::gamecopy::GetPlaneLight(real, ceiling ? real->rc.ceilingplane : real->rc.floorplane, ceiling);
+		if (ComputePlaneTakesBandLight(ceiling, (real->rc.GetFlags(which) & PLANEF_ABSLIGHTING) != 0, light->fromsector,
+				light->p_lightlevel == &real->rc.lightlevel))
 			ll = *light->p_lightlevel;
 		cm.CopyLightColor(light->extra_colormap);
 	}
@@ -538,9 +539,9 @@ void RefreshTransferArea()
 	// [rc4l] The render sector, as SetViewArea takes it.
 	sector_t *vs = R_PointInSubsector(viewx, viewy)->render_sector;
 	sector_t *hs = vs != NULL ? vs->heightsec : NULL;
-	const bool has = hs != NULL && !(hs->MoreFlags & SECF_IGNOREHEIGHTSEC);
-	const int area = ComputeViewArea(has, FIXED2FLOAT(viewz), has ? FIXED2FLOAT(hs->floorplane.ZatPoint(viewx, viewy)) : 0.f,
-		has ? FIXED2FLOAT(hs->ceilingplane.ZatPoint(viewx, viewy)) : 0.f, has && (hs->MoreFlags & SECF_FAKEFLOORONLY) != 0);
+	const bool has = hs != NULL && !(hs->rc.MoreFlags & SECF_IGNOREHEIGHTSEC);
+	const int area = ComputeViewArea(has, FIXED2FLOAT(viewz), has ? FIXED2FLOAT(hs->rc.floorplane.ZatPoint(viewx, viewy)) : 0.f,
+		has ? FIXED2FLOAT(hs->rc.ceilingplane.ZatPoint(viewx, viewy)) : 0.f, has && (hs->rc.MoreFlags & SECF_FAKEFLOORONLY) != 0);
 	if (!zx::fakeflat::SetTransferArea(area)) return;
 	for (int i = 0; i < numsectors; i++)
 		if (zx::fakeflat::ViewDependent(&sectors[i])) BakeFlatsForSector(i);
@@ -556,7 +557,7 @@ static int BakeFlatsForSubsector(subsector_t *sub)
 		sector_t *real = &sectors[ComputeFlatSector(sub->render_sector != NULL ? sub->render_sector->sectornum : -1,
 			sub->sector->sectornum)];
 		if (real->e == NULL) return 0;
-		extsector_t::xfloor &x = real->e->XFloor;
+		extsector_t::xfloorcopy &x = real->e->rcXFloor;
 
 		// [rc4l] The sector's own floor and ceiling.
 		made += BakeSectorPlane(sub, real, false, false);
@@ -674,7 +675,7 @@ int BakeFlatsForSector(int sectorIndex)
 static int g_particlesThisFrame = 0;
 static int g_skyQuadsCaptured = 0;
 static TArray<int> g_skyWalks;   // [rc4l] Walks per list, so a second walk per frame shows up as a count.
-static AActor *g_skyViewpoint = NULL;
+static int g_skyViewpoint = -1;   // [rc4l] the record of the skybox the visible sky surfaces name, -1 for none
 // [rc4l] The player's view was walked outside GL this frame (features/visibility), and its slot holds what that walk reached.
 static bool g_mainVisibility = false;
 // [rc4l] The portal views (stacked views, skybox walks, line mirrors) came from a visibility walk since GL last walked.
@@ -910,7 +911,7 @@ static void ForgetFrameWalks()
 	g_mainVisibility = false;
 	g_portalViewsDerived = false;
 	for (int s = 0; s < g_walkSlots; s++) g_slotNeedsClear[s] = true;
-	g_skyViewpoint = NULL;
+	g_skyViewpoint = -1;
 	g_skyHoles.Clear();
 	g_skyboxWalked = false;
 	g_stackUsed = 0;
@@ -1075,8 +1076,8 @@ void PrintSkyWalkNotes()
 	}
 }
 
-// The viewpoint the visible sky surfaces name; NULL until a walk has produced one.
-AActor *SkyQuadViewpoint() { return g_skyViewpoint; }
+// [rc4l] The record of the viewpoint the visible sky surfaces name; -1 until a walk has produced one.
+int SkyQuadViewpoint() { return g_skyViewpoint; }
 
 const MeshVertex *SkyQuadVertices(int &count, int list)
 {
@@ -1141,10 +1142,10 @@ static void PushSkyQuad(int list, float x1, float y1, float x2, float y2, const 
 // walk reaches, so the set carries GL VISIBILITY with it. Deriving them from the map was tried
 // three ways and every one over-emitted -- on the reported vantage GL produces sky quads for FOUR
 // linedefs where the map has thousands of sky segs. See docs/skybleed-scope.md.
-void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int skyKey)
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, int viewpoint, int skyKey)
 {
 	if (!fua_mesh_sky || !HasSkyList(list)) return;
-	if (viewpoint != NULL && ComputeTakesSkyViewpoint(list, g_skyViewpoint != NULL)) g_skyViewpoint = viewpoint;
+	if (viewpoint >= 0 && ComputeTakesSkyViewpoint(list, g_skyViewpoint >= 0)) g_skyViewpoint = viewpoint;
 	PushSkyQuad(list, x1, y1, x2, y2, zb, zt, skyKey);
 }
 
@@ -1170,7 +1171,7 @@ void BeginViewSky(int list)
 	if (!HasSkyList(list)) return;
 	g_skyVerts[list].Clear();
 	if (list != kSkyCaptureMain) return;
-	g_skyViewpoint = NULL;
+	g_skyViewpoint = -1;
 	g_skyHoles.Clear();
 }
 

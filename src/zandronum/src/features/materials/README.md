@@ -43,7 +43,7 @@ largest), which GL sets from its context and a launch without GL from the backen
 and `CreateTranslationPalette`, and the backend's sky reads a GLDEFS sky box's faces from it (`SkyBoxFacesOf`).
 
 `MaterialIfMade` answers without making a material, so a worker thread may ask; the sprite batch hands a
-sprite whose material is not made yet back to the game thread.
+sprite whose material is not made yet back to the main thread.
 
 It also keeps glstuff's round and smooth particle pictures and the mirror sheen
 (`ParticleTexture`, `MirrorSheenTexture`), which GL created for itself at startup.

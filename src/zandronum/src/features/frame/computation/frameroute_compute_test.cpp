@@ -90,3 +90,12 @@ TEST(FrameRoute, EachKindDrawsOnItsHalfOfTheRoute)
 	EXPECT_TRUE(ComputeKindDraws(r, kRendererBackend));
 	EXPECT_EQ(kRendererBackend, ComputeSavePicKind(r));
 }
+
+// [rc4l] The intermission draws nothing once Use is pressed, and the backend cleared those frames to black, so the next map melted in from black.
+TEST(FrameRoute, AnEmptyOverlayKeepsAPaintedOffscreenPicture)
+{
+	EXPECT_TRUE(zx::frame::ComputeOverlayKeepsPicture(true, true, 0));
+	EXPECT_FALSE(zx::frame::ComputeOverlayKeepsPicture(true, true, 3));
+	EXPECT_FALSE(zx::frame::ComputeOverlayKeepsPicture(true, false, 0));
+	EXPECT_FALSE(zx::frame::ComputeOverlayKeepsPicture(false, true, 0));
+}

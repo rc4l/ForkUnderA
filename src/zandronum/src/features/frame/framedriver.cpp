@@ -8,16 +8,24 @@
 #include "features/viewsetup/viewsetup.h"   // [rc4l] InstallSpriteView
 
 #include "textures/textures.h"
+#include "d_player.h"   // [rc4l] players, whose number a frame is drawn for
 
 namespace zx { namespace frame {
 
 namespace {
 
+// [rc4l] Which kinds the launch's driver holds, for GLDrawsFrame.
+bool g_driverHasGL = false, g_driverHasBackend = false;
+
 struct FFrameDriver : public FLevelRenderer
 {
 	std::vector<DrivenRenderer> renderers;
 
-	explicit FFrameDriver(const std::vector<DrivenRenderer> &r) : renderers(r) {}
+	explicit FFrameDriver(const std::vector<DrivenRenderer> &r) : renderers(r)
+	{
+		g_driverHasGL = Has(kRendererGL);
+		g_driverHasBackend = Has(kRendererBackend);
+	}
 	~FFrameDriver()
 	{
 		for (const DrivenRenderer &d : renderers) delete d.renderer;
@@ -45,7 +53,7 @@ struct FFrameDriver : public FLevelRenderer
 	{
 		const FrameRoute r = Route();
 		Drawing(r, [&](FRenderer *x) { x->BeginFrame(player); });
-		BeginPlayerFrame(player);
+		BeginPlayerFrame(int(player - players));
 		Drawing(r, [&](FRenderer *x) { x->RenderView(player); });
 	}
 
@@ -63,6 +71,11 @@ struct FFrameDriver : public FLevelRenderer
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov)
 	{
 		Drawing(Route(), [&](FRenderer *x) { x->RenderTextureView(tex, viewpoint, fov); });
+	}
+
+	void RenderCameraRecord(FCanvasTexture *tex, int record, int fov)
+	{
+		Drawing(Route(), [&](FRenderer *x) { x->RenderCameraRecord(tex, record, fov); });
 	}
 
 	void ClearBuffer(int color) { Drawing(Route(), [&](FRenderer *x) { x->ClearBuffer(color); }); }
@@ -89,5 +102,10 @@ struct FFrameDriver : public FLevelRenderer
 } // namespace
 
 FRenderer *CreateFrameDriver(const std::vector<DrivenRenderer> &renderers) { return new FFrameDriver(renderers); }
+
+bool GLDrawsFrame()
+{
+	return (g_driverHasGL || g_driverHasBackend) && zx::hwrender::FrameRouteNow(g_driverHasGL, g_driverHasBackend).glDraws;
+}
 
 }} // namespace zx::frame

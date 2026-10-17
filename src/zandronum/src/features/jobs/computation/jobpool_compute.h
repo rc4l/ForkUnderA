@@ -27,6 +27,12 @@ struct JobObserver
 // [rc4l] Sets the observer every pool reports to, NULL for none.
 void SetJobObserver(const JobObserver *observer);
 
+// [rc4l] How many chunks of at most chunk items cover count items, none for nothing to do.
+int ComputeChunkCount(int count, int chunk);
+
+// [rc4l] The items [lo, hi) chunk number index covers, the last one cut short at count.
+void ComputeChunkBounds(int count, int chunk, int index, int &lo, int &hi);
+
 class JobPool
 {
 public:
@@ -53,6 +59,18 @@ public:
 	template <class F> void ParallelFor(int count, F &f)
 	{
 		ParallelFor(count, &Trampoline<F>, &f);
+	}
+
+	// [rc4l] Run f(lo, hi, lane) over [0, count) in chunks of at most chunk items, so a caller splits a scan without working the bounds out itself.
+	template <class F> void ParallelChunks(int count, int chunk, F &f)
+	{
+		struct Chunks
+		{
+			F &f;
+			int count, chunk;
+			void operator()(int index, int lane) const { int lo, hi; ComputeChunkBounds(count, chunk, index, lo, hi); f(lo, hi, lane); }
+		} chunks = { f, count, chunk };
+		ParallelFor(ComputeChunkCount(count, chunk), chunks);
 	}
 
 private:
@@ -83,8 +101,8 @@ private:
 	std::atomic<bool> m_stop;
 };
 
-// [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the caller, at most `cap`, none on a machine with two or fewer.
-int ComputeAutoWorkers(int hardwareThreads, int cap);
+// [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the `reserved` threads that run beside it (the caller, and the game thread when it is on), at most `cap`, none when that leaves none.
+int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved);
 
 }} // namespace zx::jobs
 

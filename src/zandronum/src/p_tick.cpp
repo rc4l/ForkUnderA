@@ -44,6 +44,7 @@
 #include "astar.h"
 #include "botpath.h"
 #include "features/telemetry/telemetry.h"
+#include "features/gameloop/computation/tickerpause_compute.h"   // [rc4l] ComputeMenuPausesTicker
 
 extern gamestate_t wipegamestate;
 
@@ -57,6 +58,25 @@ extern gamestate_t wipegamestate;
 //
 //==========================================================================
 
+// [rc4l] features/gameloop: whether a menu or the console pauses the tic, asked without pausing the sound.
+static bool P_MenuPausesTicker ()
+{
+	const bool menuPauses = menuactive != MENU_Off && menuactive != MENU_OnNoPause;
+	const bool consoleDown = ConsoleState == c_down || ConsoleState == c_falling;
+	// [rc4l] Nothing pauses, so the live player is left unread, as a frame beside a tic asks this too.
+	if (!menuPauses && !consoleDown)
+		return false;
+	const zx::gameloop::TickerPauseIn in = { NETWORK_GetState( ) == NETSTATE_CLIENT, gamestate == GS_TITLELEVEL, menuPauses, consoleDown,
+		demoplayback || demorecording || CLIENTDEMO_IsPlaying( ) || CLIENTDEMO_IsRecording( ), players[consoleplayer].viewz == 1,
+		wipegamestate != gamestate };
+	return zx::gameloop::ComputeMenuPausesTicker (in);
+}
+
+bool P_TickerPausedNow ()
+{
+	return CLIENTDEMO_IsPaused( ) || P_MenuPausesTicker ();
+}
+
 bool P_CheckTickerPaused ()
 {
 	// [BB] A paused demo always pauses the ticker.
@@ -64,16 +84,7 @@ bool P_CheckTickerPaused ()
 		return true;
 
 	// pause if in menu or console and at least one tic has been run
-	if (( NETWORK_GetState( ) != NETSTATE_CLIENT )
-		 && gamestate != GS_TITLELEVEL
-		 && ((menuactive != MENU_Off && menuactive != MENU_OnNoPause) ||
-			 ConsoleState == c_down || ConsoleState == c_falling)
-		 && !demoplayback
-		 && !demorecording
-		 && CLIENTDEMO_IsPlaying( ) == false
-		 && CLIENTDEMO_IsRecording( ) == false
-		 && players[consoleplayer].viewz != 1
-		 && wipegamestate == gamestate)
+	if (P_MenuPausesTicker ())
 	{
 		S_PauseSound (!(level.flags2 & LEVEL2_PAUSE_MUSIC_IN_MENUS), false);
 		return true;
@@ -83,7 +94,10 @@ bool P_CheckTickerPaused ()
 
 //
 // P_Ticker
-//
+//
+// [rc4l] features/gameloop: r_NoInterpolate as the tic leaves it, which the handoff gives the renderer, since the tic may run beside a frame.
+bool p_NoInterpolate = true;
+
 void P_Ticker (void)
 {
 	int i;
@@ -103,7 +117,7 @@ void P_Ticker (void)
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 	{
 		interpolator.UpdateInterpolations ();
-		r_NoInterpolate = true;
+		p_NoInterpolate = true;
 
 		if (!demoplayback)
 		{
@@ -123,7 +137,7 @@ void P_Ticker (void)
 			// [AK] We don't want to disable interpolation in offline games if the
 			// console is being lowered and is supposed to be interpolated.
 			if (C_ShouldForceInterpolation())
-				r_NoInterpolate = false;
+				p_NoInterpolate = false;
 
 			return;
 		}
@@ -166,7 +180,7 @@ void P_Ticker (void)
 		P_ResetSpawnCounters (); // [BC]
 
 		// Since things will be moving, it's okay to interpolate them in the renderer.
-		r_NoInterpolate = false;
+		p_NoInterpolate = false;
 
 		// Don't run particles while in freeze mode.
 		if ( !(level.flags2 & LEVEL2_FROZEN) )

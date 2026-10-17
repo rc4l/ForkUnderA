@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { windowKind, parseWindowLines, shotScript, resizeScript, gameWindowOf } from "../src/window.mjs";
+import { windowKind, parseWindowLines, shotScript, resizeScript, gameWindowOf, activateScript } from "../src/window.mjs";
 
 // [rc4l] Queue #41 was read off a hung GL window and a minimized backend one, with PowerShell written beside the tool each time.
 test("a window is GL's or the backend's by its title", () => {
@@ -23,6 +23,14 @@ test("a capture names the window and quotes the path PowerShell's way", () => {
   const s = shotScript("123", "C:/it's here/a.png");
   assert.match(s, /\[IntPtr\]123/);
   assert.match(s, /Save\('C:\/it''s here\/a\.png'\)/);
+});
+
+test("an alt-tab is told to each of the instance's windows, away or back, and counted", () => {
+  const away = activateScript(["11", "22"], false);
+  assert.match(away, /PostMessage\(\[IntPtr\]11, 0x001C, \[IntPtr\]0, \[IntPtr\]::Zero\)/);
+  assert.match(away, /PostMessage\(\[IntPtr\]22, 0x001C, \[IntPtr\]0, /);
+  assert.match(away, /"POSTED\|\{0\}" -f \$n/);
+  assert.match(activateScript(["11"], true), /PostMessage\(\[IntPtr\]11, 0x001C, \[IntPtr\]1, /);
 });
 
 test("a resize keeps the window where it stands and sizes the instance's game window", () => {

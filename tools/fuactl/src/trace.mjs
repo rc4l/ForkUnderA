@@ -110,3 +110,28 @@ export async function recordViewTrace(c, { seconds = 10, out, exec, wait = (ms) 
   if (!exists(out)) throw new Error(`fua_viewtrace wrote nothing to ${out}: is the engine drawing (an unfocused Vulkan-only window may not be)?`);
   return parseViewTrace(read(out));
 }
+
+// [rc4l] The back steps and lurches a fua_viewtrace report counts, or null when the text has no report.
+export function parseViewTraceMoves(text) {
+  const m = /(\d+) frames stepped back against the way the view was moving, (\d+) lurched/.exec(String(text));
+  return m ? { back: Number(m[1]), lurch: Number(m[2]) } : null;
+}
+
+// [rc4l] Runs of the W key held down as a player holds it, each traced for `seconds` from `start` (standAt's spot), and what each run's view did: back steps and lurches, both zero for a view that moves as steadily as the game does.
+export async function walkCheck(c, { runs = 3, seconds = 4, start, exec, standAt, wait = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  await exec(c, "bind w +forward");
+  const results = [];
+  for (let i = 0; i < runs; i++) {
+    if (start) await standAt(c, start);
+    await c.rpc("input.event", { evtype: 1, data1: 17 });
+    try {
+      await wait(400);
+      await exec(c, "fua_viewtrace 300000");
+      await wait(seconds * 1000);
+      results.push(parseViewTraceMoves(await exec(c, "fua_viewtrace end")));
+    } finally {
+      await c.rpc("input.event", { evtype: 2, data1: 17 });
+    }
+  }
+  return results;
+}

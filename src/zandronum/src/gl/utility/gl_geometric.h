@@ -125,7 +125,7 @@ public:
    void Init(float *v1, float *v2, float *v3);
    void Init(float a, float b, float c, float d);
    void Init(float *verts, int numVerts);
-   void Set(secplane_t &plane);
+   void Set(const secplane_core_t &plane);
    float DistToPoint(float x, float y, float z);
    bool PointOnSide(float x, float y, float z);
    bool PointOnSide(Vector &v) { return PointOnSide(v.X(), v.Y(), v.Z()); }

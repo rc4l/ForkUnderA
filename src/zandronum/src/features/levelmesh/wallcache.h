@@ -90,8 +90,10 @@ MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat)
 // [rc4l] Whether seg's line draws no wall of its own, as a horizon or a line mirror does.
 bool LineDrawsNoWall(const seg_t *seg);
 
-// [rc4l] gl_RecalcVertexHeights: the heights of the planes meeting at v, which r_seamless splits wall ends at, worked out again.
+// [rc4l] gl_RecalcVertexHeights: the heights of the planes meeting at v, which r_seamless splits wall ends at, worked out again from the render copy.
 void RecalcVertexHeights(vertex_t *v);
+// [rc4l] The same from the live planes, for GL.
+void RecalcLiveVertexHeights(vertex_t *v);
 
 // [rc4l] Whether seg's line is a line mirror, which draws its reflection where the wall would be.
 bool LineIsMirror(const seg_t *seg);
@@ -157,16 +159,16 @@ void InvalidateAll();
 // [rc4l] The kSkyCapture* list the GL walk in progress fills, which BeginSkyWalk picked.
 int WalkSkyList();
 int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.
-AActor *SkyQuadViewpoint();
+int SkyQuadViewpoint();
 // [rc4l] A GL walk starting at this portal depth, for the main view or a camera texture; returns the kSkyCapture* list it fills.
 int BeginSkyWalk();
 // [rc4l] A view's sky: start kSkyCapture* list `list` afresh (the player's with its skybox and holes), then add each sky wall, with the skybox it names (NULL for a plain sky), and each sky hole, an untextured one-sided wall's span its full-screen sky shows through.
 void BeginViewSky(int list);
 // [rc4l] skyKey is the sector's sky as ComputeSkyQuadKey numbers it, 0 for the level's.
-void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, AActor *viewpoint, int skyKey);
+void AddViewSkyQuad(int list, float x1, float y1, float x2, float y2, const float *zb, const float *zt, int viewpoint, int skyKey);
 void AddViewSkyHole(int list, float x1, float y1, float x2, float y2, const float *zfloor, const float *zceil);
 // [rc4l] The player's sky surfaces, holes and skybox, exchanged with `other`, so a second derivation can be compared against the first.
-struct MainSkyState { TArray<MeshVertex> quads; TArray<float> holes; AActor *viewpoint = nullptr; };
+struct MainSkyState { TArray<MeshVertex> quads; TArray<float> holes; int viewpoint = -1; };
 void SwapMainSky(MainSkyState &other);
 // [rc4l] Drop everything GL's walks captured, at level unload, since a backend frame before the next level's first walk would otherwise draw the old level's sky from its freed SkyViewpoint.
 void ForgetWalks();

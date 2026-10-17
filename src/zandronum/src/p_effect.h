@@ -31,6 +31,10 @@
 **
 */
 
+// [rc4l] Guarded, since features/gamecopy's particle copy includes it beside files that already do.
+#ifndef __P_EFFECT_H__
+#define __P_EFFECT_H__
+
 #include "vectors.h"
 #include "tables.h"
 
@@ -71,6 +75,7 @@ struct particle_t
 
 extern particle_t *Particles;
 extern TArray<WORD>		ParticlesInSubsec;
+extern WORD				ActiveParticles;   // [rc4l] the first active particle, which features/gamecopy copies the list from
 
 const WORD NO_PARTICLE = 0xffff;
 
@@ -98,3 +103,5 @@ void P_DrawRailTrail (AActor *source, const FVector3 &start, const FVector3 &end
 void P_DrawSplash (int count, fixed_t x, fixed_t y, fixed_t z, angle_t angle, int kind);
 void P_DrawSplash2 (int count, fixed_t x, fixed_t y, fixed_t z, angle_t angle, int updown, int kind);
 void P_DisconnectEffect (AActor *actor);
+
+#endif // __P_EFFECT_H__

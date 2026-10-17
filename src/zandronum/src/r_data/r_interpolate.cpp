@@ -40,6 +40,7 @@
 #include "i_system.h"
 #include "po_man.h"
 #include "farchive.h"
+#include "features/gamecopy/gamecopy.h"   // [rc4l] CopyForRender
 
 //==========================================================================
 //
@@ -66,6 +67,7 @@ public:
 	void UpdateInterpolation();
 	void Restore();
 	void Interpolate(fixed_t smoothratio);
+	void CopyForRender() const;
 	void Serialize(FArchive &arc);
 	size_t PointerSubstitution (DObject *old, DObject *notOld);
 	size_t PropagateMark();
@@ -94,6 +96,7 @@ public:
 	void UpdateInterpolation();
 	void Restore();
 	void Interpolate(fixed_t smoothratio);
+	void CopyForRender() const;
 	void Serialize(FArchive &arc);
 };
 
@@ -121,6 +124,7 @@ public:
 	void UpdateInterpolation();
 	void Restore();
 	void Interpolate(fixed_t smoothratio);
+	void CopyForRender() const;
 	void Serialize(FArchive &arc);
 };
 
@@ -147,6 +151,7 @@ public:
 	void UpdateInterpolation();
 	void Restore();
 	void Interpolate(fixed_t smoothratio);
+	void CopyForRender() const;
 	void Serialize(FArchive &arc);
 };
 
@@ -264,6 +269,11 @@ void FInterpolator::DoInterpolations(fixed_t smoothratio)
 //
 //
 //==========================================================================
+
+void FInterpolator::CopyForRender() const
+{
+	for (DInterpolation *probe = Head; probe != NULL; probe = probe->Next) probe->CopyForRender();
+}
 
 void FInterpolator::RestoreInterpolations()
 {
@@ -497,6 +507,13 @@ void DSectorPlaneInterpolation::Interpolate(fixed_t smoothratio)
 //
 //==========================================================================
 
+void DSectorPlaneInterpolation::CopyForRender() const
+{
+	const int pos = ceiling ? sector_t::ceiling : sector_t::floor;
+	zx::gamecopy::GatheringBlends().planes.push_back({ int(sector - sectors), ceiling, oldheight,
+		ceiling ? sector->ceilingplane.d : sector->floorplane.d, oldtexz, sector->GetPlaneTexZ(pos) });
+}
+
 void DSectorPlaneInterpolation::Serialize(FArchive &arc)
 {
 	Super::Serialize(arc);
@@ -622,6 +639,12 @@ void DSectorScrollInterpolation::Interpolate(fixed_t smoothratio)
 //
 //==========================================================================
 
+void DSectorScrollInterpolation::CopyForRender() const
+{
+	zx::gamecopy::GatheringBlends().scrolls.push_back({ int(sector - sectors), ceiling, oldx, sector->GetXOffset(ceiling),
+		oldy, sector->GetYOffset(ceiling, false) });
+}
+
 void DSectorScrollInterpolation::Serialize(FArchive &arc)
 {
 	Super::Serialize(arc);
@@ -705,6 +728,12 @@ void DWallScrollInterpolation::Interpolate(fixed_t smoothratio)
 //
 //
 //==========================================================================
+
+void DWallScrollInterpolation::CopyForRender() const
+{
+	zx::gamecopy::GatheringBlends().walls.push_back({ int(side - sides), part, oldx, side->GetTextureXOffset(part),
+		oldy, side->GetTextureYOffset(part) });
+}
 
 void DWallScrollInterpolation::Serialize(FArchive &arc)
 {
@@ -812,6 +841,20 @@ void DPolyobjInterpolation::Interpolate(fixed_t smoothratio)
 //
 //
 //==========================================================================
+
+void DPolyobjInterpolation::CopyForRender() const
+{
+	zx::gamecopy::PolyBlend blend;
+	for (unsigned int i = 0; i < poly->Vertices.Size(); i++)
+	{
+		blend.vertex.push_back(int(poly->Vertices[i] - vertexes));
+		blend.oldXY.push_back(oldverts[i*2]);
+		blend.oldXY.push_back(oldverts[i*2+1]);
+		blend.curXY.push_back(poly->Vertices[i]->x);
+		blend.curXY.push_back(poly->Vertices[i]->y);
+	}
+	zx::gamecopy::GatheringBlends().polys.push_back(blend);
+}
 
 void DPolyobjInterpolation::Serialize(FArchive &arc)
 {

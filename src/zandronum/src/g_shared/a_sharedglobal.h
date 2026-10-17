@@ -155,6 +155,18 @@ struct FQuakeJiggers
 	int RelOffsetX, RelOffsetY, RelOffsetZ;
 };
 
+// [rc4l] What a quake's shake is worked out from, taken between tics by features/gamecopy so a frame shakes the view at its own point through the tic.
+struct FQuakeState
+{
+	int Countdown, CountdownStart, Flags;
+	int IntensityX, IntensityY, IntensityZ;	// [rc4l] raw integer intensities
+	float WaveSpeedX, WaveSpeedY, WaveSpeedZ;
+
+	int GetModIntensity(int intensity) const;
+	// [rc4l] Reads r_TicFrac, the frame's point through the tic.
+	int GetModWave(double waveMultiplier) const;
+};
+
 class DEarthquake : public DThinker
 {
 	DECLARE_CLASS (DEarthquake, DThinker)
@@ -178,9 +190,14 @@ public:
 	// [rc4l] upstream declares these fixed_t and defines them int-valued, which only compiles because
 	// its fixed_t IS int. Ours is the strong zx::Fixed, so they are int here -- matching FQuakeJiggers,
 	// which stores ints -- and the conversion happens once, at the QuakePower call in r_utility.
-	int GetModIntensity(int intensity) const;
-	int GetModWave(double waveMultiplier) const;
+	FQuakeState State() const;
+	int GetModIntensity(int intensity) const { return State().GetModIntensity(intensity); }
+	int GetModWave(double waveMultiplier) const { return State().GetModWave(waveMultiplier); }
 
+	// [rc4l] The quakes shaking a viewer, in thinker order, none for a noclipping player.
+	static void StaticGetQuakes(AActor *viewer, TArray<FQuakeState> &quakes);
+	// [rc4l] Their combined shake into the pre-zeroed jiggers, and how many there are.
+	static int StaticQuakeIntensities(const TArray<FQuakeState> &quakes, FQuakeJiggers &jiggers);
 	static int StaticGetQuakeIntensities(AActor *viewer, FQuakeJiggers &jiggers);
 
 private:

@@ -7,6 +7,21 @@
 
 namespace zx { namespace jobs {
 
+int ComputeChunkCount(int count, int chunk)
+{
+	if (count <= 0) return 0;
+	if (chunk <= 0) return 1;
+	return (count + chunk - 1) / chunk;
+}
+
+void ComputeChunkBounds(int count, int chunk, int index, int &lo, int &hi)
+{
+	if (chunk <= 0) { lo = 0; hi = count > 0 ? count : 0; return; }
+	lo = index * chunk;
+	hi = lo + chunk < count ? lo + chunk : count;
+	if (lo > hi) lo = hi;
+}
+
 namespace {
 
 std::atomic<const JobObserver *> g_observer{ nullptr };
@@ -127,9 +142,9 @@ void JobPool::ParallelFor(int count, IndexFn fn, void *user)
 	if (o != nullptr) o->waited(waitStart, o->now());
 }
 
-int ComputeAutoWorkers(int hardwareThreads, int cap)
+int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved)
 {
-	const int workers = hardwareThreads / 2 - 1;
+	const int workers = hardwareThreads / 2 - reserved;
 	if (workers <= 0) return 0;
 	return workers < cap ? workers : cap;
 }

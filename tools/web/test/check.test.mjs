@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -187,4 +187,10 @@ test('the canvas is configured exactly once without a resize', () => {
   assert.equal(configuredOnce(1), '');
   assert.equal(configuredOnce(2), 'the canvas was configured 2 times');
   assert.equal(configuredOnce(0), 'the canvas was configured 0 times');
+});
+
+test('the game thread check needs tics on the thread and a sound from them', () => {
+  assert.equal(threadedWithSound({ tics: 40, sounds: 3 }), '');
+  assert.equal(threadedWithSound({ tics: 0, sounds: 3 }), 'no tic ran on the game thread');
+  assert.equal(threadedWithSound({ tics: 40, sounds: 0 }), 'the shots fired on the game thread made no sound');
 });

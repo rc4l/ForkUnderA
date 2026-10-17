@@ -14,6 +14,7 @@ namespace {
 
 Diligent::RefCntAutoPtr<Diligent::ITexture> g_frameColor, g_frameDepth;
 int g_frameW = 0, g_frameH = 0;
+unsigned int g_frameGen = 0;   // [rc4l] bumped each time the target is made, whose contents start undefined
 Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_blitPSO;
 Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_blitSRB;
 
@@ -52,6 +53,7 @@ bool EnsureFrameTarget()
 	}
 	g_frameW = w;
 	g_frameH = h;
+	g_frameGen++;
 	return true;
 }
 
@@ -100,6 +102,8 @@ void FinishFrame(Diligent::IDeviceContext *ctx)
 	draw.NumVertices = 3;
 	ctx->Draw(draw);
 }
+
+unsigned int FrameGeneration() { return g_frameGen; }
 
 Diligent::ITexture *FrameTexture()
 {

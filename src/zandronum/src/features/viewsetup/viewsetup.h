@@ -10,6 +10,7 @@
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] BackendCamera
 
 class AActor;
+namespace zx { namespace gamecopy { struct ActorRecord; } }
 struct player_t;
 struct FViewLens;
 
@@ -17,8 +18,9 @@ namespace zx { namespace viewsetup {
 
 struct ViewSetup
 {
-	AActor  *camera;
-	AActor  *viewActor;      // [rc4l] the actor the eye is in, not drawn; none in the chase camera or a dead player's death camera
+	const zx::gamecopy::ActorRecord *camera;
+	const void *viewActor;   // [rc4l] who the eye is in, not drawn; none in the chase camera or a dead player's death camera
+	int viewRecord;          // [rc4l] its record in the render copy, -1 for none
 	float    pitch, roll;    // [rc4l] degrees, the pitch stretched by the level's pixel ratio
 	float    fov;            // [rc4l] degrees across
 	float    ratio, fovRatio;   // [MobiusU9B] the lens's width over height (a forced aspect ratio's, not the window's) and the ratio its vertical field of view is derived with
@@ -30,16 +32,16 @@ struct ViewSetup
 };
 
 // [rc4l] Set the view up from the camera R_SetupFrame placed, through `lens` and at the frame's clock; call once a viewpoint, after R_SetupFrame.
-void SetupView(AActor *camera, const FViewLens &lens, long frameMS);
+void SetupView(const zx::gamecopy::ActorRecord *camera, const FViewLens &lens, long frameMS);
 
 // [rc4l] SetViewAngle: turn the view to `viewAngle`, as a mirror's walk turns it and back, R_SetViewAngle with it.
 void TurnView(unsigned viewAngle);
 
-// [rc4l] SetViewArea: the render sector the eye is in, the eye kept inside it unless `viewActor` is an unrestricted spectator, and the area against a height transfer.
-void SetViewArea(AActor *viewActor);
+// [rc4l] SetViewArea: the render sector the eye is in, the eye kept inside it unless the actor of record `viewRecord` is an unrestricted spectator, and the area against a height transfer.
+void SetViewArea(int viewRecord);
 
-// [rc4l] SetFixedColormap: the colormap the player's powers fix the view in (invulnerability's inverse, which also clears extralight, a special one, light amplification or a torch), or CM_DEFAULT.
-int FixedColormap(player_t *player);
+// [rc4l] SetFixedColormap: the colormap player number `player`'s powers fix the view in (invulnerability's inverse, which also clears extralight, a special one, light amplification or a torch), or CM_DEFAULT.
+int FixedColormap(int player);
 
 // [rc4l] What GL's shader and the backend's do to a texel under `colormap`, from its special colormap and r_enhanced_nightvision.
 FixedColormapShade FixedColormapShadeFor(int colormap);
@@ -54,7 +56,7 @@ const ViewSetup &CurrentView();
 void ViewCameraFromEngine(zx::hwrender::BackendCamera &c);
 
 // [rc4l] Whether the camera differs from the last frame's, remembering it, so a new one starts uninterpolated instead of sweeping across from the old.
-bool CameraChanged(AActor *camera);
+bool CameraChanged(unsigned int camera);
 
 // [rc4l] Forget the last camera, so the next frame starts uninterpolated (a new frame buffer, a game restart).
 void ForgetCamera();

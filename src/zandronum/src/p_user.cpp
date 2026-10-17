@@ -31,6 +31,7 @@
 #include "templates.h"
 #include "doomdef.h"
 #include "d_event.h"
+#include "features/handoff/effects.h"   // [rc4l] RunOrQueue
 #include "p_local.h"
 #include "doomstat.h"
 #include "s_sound.h"
@@ -86,6 +87,7 @@
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/fov-interp/computation/fovinterp_compute.h"
 #include "features/quake-movement/quakemove.h"
+#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -4130,7 +4132,8 @@ void P_PlayerThink (player_t *player)
 				player->centering = false;
 				if (player - players == consoleplayer)
 				{
-					LocalViewPitch = 0;
+					// [rc4l] features/handoff: the look the player has not yet sent is the main thread's, so a tic on its own thread clears it in the handoff.
+					zx::handoff::RunOrQueue ({ [](intptr_t, intptr_t) { LocalViewPitch = 0; }, 0, 0 });
 				}
 			}
 		}
@@ -4514,6 +4517,7 @@ void P_UnPredictPlayer ()
 
 			// The thinglist is just a pointer chain. We are restoring the exact same things, so we can NULL the head safely
 			sec->thinglist = NULL;
+			zx::gamecopy::NoteActorLists();
 
 			for (i = PredictionSectorListBackup.Size(); i-- > 0;)
 			{

@@ -20,7 +20,8 @@ against the actor's own floor plane) — per-pixel falloff on the GPU, no new sh
 
 | file | role |
 |------|------|
-| `damagetint.h/.cpp` | Engine glue: eligibility (players, damaging floor, no radsuit), per-actor intensity ramps, per-texture average-color cache, the two render hooks. `NO_GL` builds get inert stubs. |
+| `damagetint.h/.cpp` | Engine glue: per-actor intensity ramps, per-texture average-color cache, the render hooks. `NO_GL` builds get inert stubs. |
+| `features/gamecopy/tintsubject.h/.cpp` | The game half, read between tics into the render copy: the sector damage table and whether an actor's floor hurts it unprotected (`TintSubjectOf`); `fua_tintdebug` stays in `damagetint.cpp`. |
 | `computation/damagetint_compute.{h,cpp,_test.cpp}` | Pure math: ramp step, damage-cycle pulse, effective strength, white→floor channel blend. 100% unit coverage. |
 
 ## Cvars
@@ -41,7 +42,7 @@ against the actor's own floor plane) — per-pixel falloff on the GPU, no new sh
    (`DamageTint_SpriteGradient` per band into `MeshPiece::tint`), `features/sprites/pspritebuild.cpp`
    (`DamageTint_WeaponGradient` into `Quad2D::tint`) and `features/draw2d/record2d.cpp`
    (`DamageTint_Armed2D` for the face); the shaders' `fuaDamageTint` is `ComputeTintTexel`.
-5. `CMakeLists.txt` — `features/damage-tint/damagetint.cpp` in the zdoom source list (no
+5. `CMakeLists.txt` — `features/damage-tint/damagetint.cpp` and `features/gamecopy/tintsubject.cpp` in the zdoom source list (no
    IMPLEMENT_CLASS, so ordering is irrelevant; kept with the other features).
 
 ## Known trade-offs

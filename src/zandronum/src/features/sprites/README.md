@@ -65,7 +65,7 @@ neither there.
 ## In-engine hooks
 
 - `features/frame/standaloneframe.cpp`, the sprite sweep: `BuildSprites` for the actors in view, derived in
-  chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the game thread)
+  chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the main thread)
   and appended in sweep order, or one at a time with a check on; `BuildSprite` for each actor a stacked
   view's or mirror's walk reaches; `BuildParticle` for each particle the player's walk reaches.
 - `features/sidebyside/glchecks.cpp`: GL's sprites, models and weapon as GL reports them, for the checks.
@@ -75,7 +75,7 @@ neither there.
   `CaptureModelSurface` hands each piece to the listener `spritebuild.cpp` installs (`HearModelPiece`),
   which notes GL's surfaces for the check (`NoteGLSprite`) and holds a checked derived model's
   (`NoteDerivedSprite`). A sprite's frame is `features/materials/spriteframe`, and the dynamic light on it
-  `features/dynlights/pointlight`.
+  `features/levelmesh/pointlight`.
 - `gl/models/gl_models.cpp` `gl_RenderModel` and `gl_RenderFrameModels`: `ModelPoseFor` with
   `ComputeModelMatrix`, `NextModelFrame`, and each slot's surfaces and blend from `ModelSlotSurfaces`.
 - `features/models/md2model.cpp`, `md3model.cpp`, `voxelmodel.cpp`: `FrameSurfaces`, each model's

@@ -57,6 +57,7 @@
 // HEADER FILES ------------------------------------------------------------
 
 #include "dobject.h"
+#include "features/handoff/seam.h"   // [rc4l] gc seams
 #include "templates.h"
 //#include "b_bot.h"
 #include "p_local.h"
@@ -442,6 +443,7 @@ static size_t SingleStep()
 
 void Step()
 {
+	ZX_SEAM_UNTIMED ("gc/collect", GameData);   // [rc4l] features/handoff: the collector steps in a tic's thinker loop or between tics, never beside a running one
 	size_t lim = (GCSTEPSIZE/100) * StepMul;
 	size_t olim;
 	if (lim == 0)
@@ -484,6 +486,7 @@ void Step()
 
 void FullGC()
 {
+	ZX_SEAM_UNTIMED ("gc/full", Handoff);
 	if (State <= GCS_Propagate)
 	{
 		// Reset sweep mark to sweep all elements (returning them to white)

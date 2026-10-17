@@ -36,6 +36,9 @@
 #include "name.h"
 #include "c_dispatch.h"
 #include "c_console.h"
+#include "features/handoff/computation/lock_compute.h"   // [rc4l] the table both threads name things in
+
+#include <vector>
 
 // MACROS ------------------------------------------------------------------
 
@@ -88,12 +91,21 @@ static const char *PredefinedNames[] =
 //
 //==========================================================================
 
+// [rc4l] features/handoff: lookups and additions take one lock, made on first use since names are made during static initialisation.
+static zx::Lock &NamesLock ()
+{
+	static zx::Lock lock ("names");
+	return lock;
+}
+
 int FName::NameManager::FindName (const char *text, bool noCreate)
 {
+	// [rc4l] The first call, during static initialisation, fills the table by calling back in, so it comes before the lock.
 	if (!Inited)
 	{
 		InitBuckets ();
 	}
+	zx::LockScope hold (NamesLock ());
 
 	if (text == NULL)
 	{
@@ -132,10 +144,12 @@ int FName::NameManager::FindName (const char *text, bool noCreate)
 
 int FName::NameManager::FindName (const char *text, size_t textLen, bool noCreate)
 {
+	// [rc4l] The first call, during static initialisation, fills the table by calling back in, so it comes before the lock.
 	if (!Inited)
 	{
 		InitBuckets ();
 	}
+	zx::LockScope hold (NamesLock ());
 
 	if (text == NULL)
 	{
@@ -218,9 +232,14 @@ int FName::NameManager::AddName (const char *text, unsigned int hash, unsigned i
 	{
 		// If no names have been defined yet, make the first allocation
 		// large enough to hold all the predefined names.
-		MaxNames += MaxNames == 0 ? countof(PredefinedNames) + NAME_GROW_AMOUNT : NAME_GROW_AMOUNT;
+		// [rc4l] features/handoff: grown into a new array, doubling, with the old one kept, so a thread reading a name's text through the old array never reads freed memory.
+		MaxNames = MaxNames == 0 ? countof(PredefinedNames) + NAME_GROW_AMOUNT : MaxNames * 2;
 
-		NameArray = (NameEntry *)M_Realloc (NameArray, MaxNames * sizeof(NameEntry));
+		NameEntry *grown = (NameEntry *)M_Malloc (MaxNames * sizeof(NameEntry));
+		if (NumNames > 0) memcpy (grown, NameArray, NumNames * sizeof(NameEntry));
+		static std::vector<NameEntry *> retired;
+		if (NameArray != NULL) retired.push_back (NameArray);
+		NameArray = grown;
 	}
 
 	NameArray[NumNames].Text = textstore;

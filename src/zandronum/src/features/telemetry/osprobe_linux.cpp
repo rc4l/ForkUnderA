@@ -28,7 +28,7 @@ double HeapInUse()
 
 } // namespace
 
-void ReadOs(OsReadings &out)
+void ReadOs(OsReadings &out, bool walkHeaps)
 {
 	const std::string status = zx::ComputeFileText("/proc/self/status");
 	out.privateBytes = ComputeStatusField(status, "RssAnon");
@@ -42,7 +42,7 @@ void ReadOs(OsReadings &out)
 		closedir(fds);
 		out.handles = n - 1.0;
 	}
-	out.heapBytes = HeapInUse();
+	if (walkHeaps) out.heapBytes = HeapInUse();
 }
 
 const char *OsProbeName()

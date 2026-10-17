@@ -105,6 +105,8 @@ class player_t;
 
 void V_AddBlend (float r, float g, float b, float a, float v_blend[4]);
 void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int maxpainblend);
+// [rc4l] V_AddPlayerBlend's blends one by one, for features/gamecopy; false for a player without a body.
+bool V_PlayerBlendLayers (player_t *CPlayer, float maxinvalpha, int maxpainblend, void (*add) (void *ctx, float r, float g, float b, float a), void *ctx, float &cap);
 
 
 // Colorspace conversion RGB <-> HSV

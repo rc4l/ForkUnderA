@@ -38,6 +38,9 @@ bool ComputeKindDraws(const FrameRoute &route, int kind);
 // [rc4l] The kind whose picture a save takes on `route`.
 int ComputeSavePicKind(const FrameRoute &route);
 
+// [rc4l] Whether a 2D-only frame with nothing recorded keeps the last picture, as GL's undrawn back buffer does, instead of clearing to black: only an offscreen target painted since it was made has one to keep.
+bool ComputeOverlayKeepsPicture(bool offscreen, bool painted, int quads2D);
+
 }} // namespace zx::frame
 
 #endif // ZX_FRAMEROUTE_COMPUTE_H

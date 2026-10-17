@@ -24,6 +24,9 @@ struct DrivenRenderer
 // [rc4l] The driver over `renderers`, any number of each kind, called in this order; it owns them.
 FRenderer *CreateFrameDriver(const std::vector<DrivenRenderer> &renderers);
 
+// [rc4l] Whether GL draws this frame in the launch's driver, false before it is made.
+bool GLDrawsFrame();
+
 // [rc4l] The renderer the backend draws the world with, in a launch without GL or beside it (backendrenderer.cpp).
 FRenderer *CreateBackendRenderer();
 

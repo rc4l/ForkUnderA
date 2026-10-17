@@ -17,6 +17,8 @@ class AActor;
 #include <string>
 
 void MCP_SimTrace_Arm( int tics, const char *path );
+// [rc4l] The sim's fingerprint: level clock, optionally every RNG stream, each actor's transform, motion, health and animation, and each sector's planes and light; lights are left out, their population following the renderer.
+unsigned long long MCP_StateHash( bool withRng );
 void MCP_SimTrace_TicDone();                       // advances/finishes the capture window
 void MCP_SimTrace_Damage( AActor *target, AActor *inflictor, int damage );
 void MCP_SimTrace_Kill( AActor *victim, AActor *source );

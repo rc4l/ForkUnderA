@@ -40,11 +40,14 @@ const bool s_pageTags = (RegisterBreakdown("gpu/page/", PageGpuTags), true);
 
 } // namespace
 
-void ReadOs(OsReadings &out)
+void ReadOs(OsReadings &out, bool walkHeaps)
 {
 	out.residentBytes = (double)emscripten_get_heap_size();
-	const struct mallinfo mi = mallinfo();
-	out.heapBytes = (double)mi.uordblks;
+	if (walkHeaps)
+	{
+		const struct mallinfo mi = mallinfo();
+		out.heapBytes = (double)mi.uordblks;
+	}
 	out.gpuProcessBytes = fua_page_gpu_bytes();
 	out.jsHeapBytes = fua_page_js_heap_bytes();
 }

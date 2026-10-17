@@ -7,6 +7,7 @@
 #define ZX_HITBOXVIZ_INTERNAL_H
 
 #include "tarray.h"
+#include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "features/hitboxviz/computation/boxedges_compute.h"   // [rc4l] Vertex3
 
 class AActor;
@@ -17,7 +18,7 @@ namespace zx { namespace hitboxviz {
 bool IsOfflineGame();
 
 // [rc4l] One actor's boxes into `physical` and `attack`, viewActor being the one the camera is attached to.
-void AppendActor(AActor *thing, AActor *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack);
+void AppendActor(const zx::gamecopy::ActorRecord &thing, const void *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack);
 
 // [rc4l] The blasts still alive at this tic as wireframe into `dest`, when explosions are shown at all.
 void CollectBlasts(TArray<Vertex3> &dest);

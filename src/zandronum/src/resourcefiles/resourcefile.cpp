@@ -35,6 +35,7 @@
 */
 
 #include "resourcefile.h"
+#include "features/handoff/seam.h"   // [rc4l] wad/read
 #include "cmdlib.h"
 #include "w_wad.h"
 #include "doomerrors.h"
@@ -222,6 +223,7 @@ FileReader *FResourceLump::NewReader()
 
 void *FResourceLump::CacheLump()
 {
+	ZX_SEAM_UNTIMED("wad/read", Main);   // [rc4l] features/handoff: an archive has one reader, so only the main thread reads lumps
 	if (Cache != NULL)
 	{
 		if (RefCount > 0) RefCount++;

@@ -47,6 +47,7 @@
 #include "cl_demo.h"
 #include "doomstat.h"
 #include "features/telemetry/telemetry.h"
+#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 
 
 static cycle_t ThinkCycles;
@@ -61,6 +62,7 @@ bool DThinker::bSerialOverride = false;
 
 void FThinkerList::AddTail(DThinker *thinker)
 {
+	zx::gamecopy::NoteActorLists();
 	assert(thinker->PrevThinker == NULL && thinker->NextThinker == NULL);
 	assert(!(thinker->ObjectFlags & OF_EuthanizeMe));
 	if (Sentinel == NULL)
@@ -248,6 +250,7 @@ void DThinker::Destroy ()
 
 void DThinker::Remove()
 {
+	zx::gamecopy::NoteActorLists();
 	if (this == NextToThink)
 	{
 		NextToThink = NextThinker;

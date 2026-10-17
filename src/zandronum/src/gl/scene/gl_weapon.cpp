@@ -59,7 +59,8 @@
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "computation/psprite_overlay_compute.h"
-#include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor weapon tint
+#include "features/damage-tint/damagetint.h"
+#include "features/gamecopy/tintsubject.h"   // [rc4l] TintSubjectOf	// [rc4l] damaging-floor weapon tint
 #include "features/draw2d/computation/quad2d_compute.h"	// [rc4l] a layer's 2D blend
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
@@ -208,7 +209,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	// per-pixel multiplicative gradient -- full tint at the weapon's bottom edge (fV2), fading to
 	// none at the coverage point. Cleared right after the draw.
 	zx::damagetint::TintGradient dt = zx::damagetint::TintGradient();
-	if (DamageTint_WeaponGradient(player->mo, player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, fV1, fV2, dt))
+	if (DamageTint_WeaponGradient(zx::gamecopy::TintSubjectOf(player->mo), player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, fV1, fV2, dt))
 		gl_RenderState.SetDamageTint(dt.r, dt.g, dt.b, dt.strength, dt.top, dt.bottom, dt.glow);
 	gl_RenderState.Apply();
 

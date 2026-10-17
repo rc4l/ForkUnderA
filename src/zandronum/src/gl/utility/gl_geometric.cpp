@@ -225,7 +225,7 @@ void Plane::Init(float a, float b, float c, float d)
 }
 
 
-void Plane::Set(secplane_t &plane)
+void Plane::Set(const secplane_core_t &plane)
 {
    float a, b, c, d;
 

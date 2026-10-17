@@ -680,17 +680,17 @@ FSpriteModelFrame * gl_FindModelFrame(const PClass * ti, int sprite, int frame, 
 
 //===========================================================================
 //
-// gl_IsHUDModelForPlayerAvailable
+// gl_IsHUDModelFor
 //
 //===========================================================================
 
-bool gl_IsHUDModelForPlayerAvailable (player_t * player)
+// [rc4l] Whether MODELDEF draws this weapon in this state as a HUD model, the fill asking it of a player's ready weapon.
+bool gl_IsHUDModelFor (const PClass *weapon, FState *state)
 {
-	if ( (player == NULL) || (player->ReadyWeapon == NULL) || (player->psprites[ps_weapon].state == NULL) )
+	if ( weapon == NULL || state == NULL )
 		return false;
 
-	FState* state = player->psprites[ps_weapon].state;
-	FSpriteModelFrame *smf = gl_FindModelFrame(player->ReadyWeapon->GetClass(), state->sprite, state->GetFrame(), false);
+	FSpriteModelFrame *smf = gl_FindModelFrame(weapon, state->sprite, state->GetFrame(), false);
 	return ( smf != NULL );
 }
 

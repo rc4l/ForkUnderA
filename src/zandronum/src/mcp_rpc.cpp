@@ -1,7 +1,7 @@
 //
 // mcp_rpc.cpp -- the "programmable engine" RPC dispatch for the native MCP bridge (ENGINE-FACING).
 //
-// mcp_bridge.cpp owns the socket and queue and hands each request here on the GAME THREAD (so every
+// mcp_bridge.cpp owns the socket and queue and hands each request here on the MAIN THREAD (so every
 // handler touches engine state safely). Wire framing is the tested pure core in
 // features/mcp-bridge/computation/mcprpc_compute. Compiled only when FUA_MCP_BRIDGE is defined.
 //
@@ -30,6 +30,7 @@
 #include "zstring.h"
 #include "m_cheat.h"
 #include "d_protocol.h"
+#include "v_video.h"   // [rc4l] screen, for input.windowpoint
 #include "mcp_hud.h"
 #include "mcp_glperf.h"
 #include "mcp_ticprof.h"
@@ -42,7 +43,7 @@
 #include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
 #include "mcp_sample.h"
 #include "textures/textures.h"
-#include "features/damage-tint/damagetint.h"
+#include "features/gamecopy/tintsubject.h"   // [rc4l] DamageTint_SectorDamage
 
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
 
@@ -54,8 +55,10 @@
 #include "features/json/computation/json_compute.h"
 #include "features/telemetry/telemetry.h"
 
-// From mcp_bridge.cpp -- send one framed NDJSON line to the connected client (thread-safe).
+// From mcp_bridge.cpp -- send one framed NDJSON line to every connected client (thread-safe).
 void MCP_Bridge_SendJson( const char *json );
+// [rc4l] From mcp_bridge.cpp, the line answering the request being dispatched, sent to its client alone.
+void MCP_Bridge_Reply( const char *json );
 // From mcp_event.cpp -- post a synthetic input event.
 void MCP_PostInputEvent( int type, int subtype, int data1, int data2 );
 
@@ -127,12 +130,12 @@ namespace
 	void SendOk( long id, const std::string &body )
 	{
 		if ( id < 0 ) return; // fire-and-forget request wants no reply
-		MCP_Bridge_SendJson( BuildOkResponse( id, body ).c_str() );
+		MCP_Bridge_Reply( BuildOkResponse( id, body ).c_str() );
 	}
 	void SendErr( long id, const std::string &msg )
 	{
 		if ( id < 0 ) return;
-		MCP_Bridge_SendJson( BuildErrResponse( id, msg ).c_str() );
+		MCP_Bridge_Reply( BuildErrResponse( id, msg ).c_str() );
 	}
 	void EmitEvent( const char *name, const std::string &data )
 	{
@@ -182,27 +185,7 @@ namespace
 	// traces with "diverging" hashes on the Complex Doom kill storm).
 	QWORD StateHash( bool withRng )
 	{
-		uint64_t h = FnvInit();
-		h = FnvMixU64( h, (uint64_t)level.time );
-		if ( withRng )
-			h = FnvMixU64( h, (uint64_t)FRandom::StaticSumSeeds() );
-		if ( InLevel() )
-		{
-			const PClass *lightcls = PClass::FindClass( "DynamicLight" );
-			TThinkerIterator<AActor> it;
-			AActor *mo;
-			while ( ( mo = it.Next() ) != NULL )
-			{
-				if ( lightcls != NULL && mo->IsKindOf( lightcls ) )
-					continue;
-				h = FnvMixU64( h, (uint64_t)mo->x );
-				h = FnvMixU64( h, (uint64_t)mo->y );
-				h = FnvMixU64( h, (uint64_t)mo->z );
-				h = FnvMixU64( h, (uint64_t)mo->angle );
-				h = FnvMixU64( h, (uint64_t)mo->health );
-			}
-		}
-		return (QWORD)h;
+		return MCP_StateHash( withRng );
 	}
 
 	std::string ActorJson( AActor *mo )
@@ -262,12 +245,10 @@ void MCP_SimPreTic()
 	}
 }
 
-void MCP_RPC_Tick()
+// [rc4l] Every frame, beside a tic on the game thread too, while the bridge's poll waits for the handoff.
+void MCP_RPC_FrameEnd()
 {
-	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
-
-	// Perf frame accounting. This Tick runs at the TOP of D_DoomLoop, i.e. the end of the frame that
-	// just finished, so record that frame's total/sim/render times if a capture is running.
+	// Perf frame accounting at the top of D_RunFrame, i.e. the end of the frame that just finished.
 	{
 		PerfClock::time_point now = PerfClock::now();
 		if ( g_haveFrameStart && g_perfCapturing )
@@ -321,6 +302,11 @@ void MCP_RPC_Tick()
 		g_haveFrameStart = true;
 		g_haveRenderMark = false;
 	}
+}
+
+void MCP_RPC_Tick()
+{
+	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
 
 	// GPU profiler (gl.timers): the render-thread anchors accumulate timer-query results across frames;
 	// when a capture completes, its report is waiting here and goes out as a "glperf" event, mirroring
@@ -387,7 +373,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
-			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\","
+			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\",\"player.camera\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
@@ -761,6 +747,17 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			+ "},\"angle_deg\":" + std::to_string( angleDeg ) + "}";
 		SendOk( id, body );
 	}
+	else if ( cmd == "input.windowpoint" )
+	{
+		// [rc4l] Where a window pixel lands in render pixels as Windows' mouse handler maps it, so a scenario checks menu hover at a render scale without OS input.
+		long x = 0, y = 0;
+		GetInt( args, "x", x );
+		GetInt( args, "y", y );
+		int mx = (int)x, my = (int)y;
+		if ( screen != NULL ) screen->ScaleCoordsFromWindow( mx, my );
+		SendOk( id, "{\"x\":" + I( mx ) + ",\"y\":" + I( my ) + ",\"width\":" + I( screen != NULL ? screen->GetWidth() : 0 )
+			+ ",\"height\":" + I( screen != NULL ? screen->GetHeight() : 0 ) + "}" );
+	}
 	else if ( cmd == "perf.capture" )
 	{
 		long frames = 120, warmup = 3;
@@ -793,7 +790,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	}
 	else if ( cmd == "perf.sample" )
 	{
-		// Flat self-time profile of the game thread: which functions the CPU was actually inside.
+		// Flat self-time profile of the main thread: which functions the CPU was actually inside.
 		// Runs on its own thread, so this returns at once and the table arrives as a "sample" event.
 		// Bracket it with sim.pause/sim.step to attribute the samples to a known tic range, which is
 		// the thing an external sampler cannot do.

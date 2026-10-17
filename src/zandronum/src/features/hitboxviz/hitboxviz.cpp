@@ -15,6 +15,7 @@
 // [rc4l] The overlay's geometry, its gate and the server's side, which every build has; GL's drawing is hitboxviz_gl.cpp, built only where GL is.
 
 #include "actor.h"
+#include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "c_cvars.h"
 #include "c_dispatch.h"   // CCMD
 #include "c_console.h"    // Printf
@@ -31,6 +32,7 @@
 #include "features/hitboxviz/computation/blastrecords_compute.h"
 #include "features/hitboxviz/computation/boxedges_compute.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferred
 
 EXTERN_CVAR(Bool, sv_cheats)
 
@@ -73,6 +75,8 @@ namespace
 	const unsigned int MAX_FRAME_VERTS = 200 * 1024;
 
 	BlastRecordStore s_blasts;
+	// [rc4l] The overlay draws the store every frame, so a blast a tic on the game thread makes is stored in the handoff.
+	zx::handoff::Deferred<BlastRecord> s_blastsMade([](const BlastRecord &r) { s_blasts.Push(r); });
 
 	// [rc4l] The backend's frame (CollectBackendFrame), in BackendLines' order, and whether it may draw.
 	TArray<Vertex3> s_backendVerts[kLineBatches];
@@ -135,14 +139,15 @@ bool IsOfflineGame()
 	return ( NETWORK_InClientMode( ) == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER );
 }
 
-void AppendActor(AActor *thing, AActor *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack)
+void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack)
 {
 	// The actor the camera is attached to. Skipping it matches what the sprite path does, and in
 	// plain first person it only hides a wireframe you are standing inside -- but it also hides the
 	// box of whoever a spectator is following, since spectating attaches the camera to that
 	// player's body. That is precisely the box you want when watching someone, so this is a toggle
 	// rather than an unconditional skip.
-	if (thing == viewActor && !cl_fua_hitbox_self)
+	const zx::gamecopy::ActorRecord *thing = &record;
+	if (thing->who == viewActor && !cl_fua_hitbox_self)
 		return;
 
 	const bool isMissile = !!(thing->flags & MF_MISSILE);
@@ -165,8 +170,8 @@ void AppendActor(AActor *thing, AActor *viewActor, TArray<Vertex3> &physical, TA
 	// otherwise every actor would be outlined twice in two colours.
 	if (cl_fua_hitbox_attackbox)
 	{
-		const fixed_t attackRadius = thing->GetAttackRadius();
-		const fixed_t attackHeight = thing->GetAttackHeight();
+		const fixed_t attackRadius = thing->attackRadius;
+		const fixed_t attackHeight = thing->attackHeight;
 
 		if (attackRadius != thing->radius || attackHeight != thing->height)
 		{
@@ -178,21 +183,23 @@ void AppendActor(AActor *thing, AActor *viewActor, TArray<Vertex3> &physical, TA
 
 void CollectBlasts(TArray<Vertex3> &dest)
 {
-	s_blasts.ExpireBefore(gametic);
+	s_blasts.ExpireBefore(zx::gamecopy::CopyTic());   // [rc4l] the tic the frame shows
 	if (cl_fua_hitbox_explosions)
 		BuildBlastGeometry(dest);
 }
 
-void CollectBackendFrame(AActor *viewActor, const int *sectorList, int count)
+void CollectBackendFrame(const void *viewActor, const int *sectorList, int count)
 {
 	for (int k = 0; k < kLineBatches; k++)
 		s_backendVerts[k].Clear();
 	s_backendActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
 	if (!s_backendActive)
 		return;
+	int records;
+	const zx::gamecopy::ActorRecord *actors = zx::gamecopy::Actors(records);
 	for (int i = 0; i < count; i++)
-		for (AActor *thing = sectors[sectorList[i]].thinglist; thing != NULL; thing = thing->snext)
-			AppendActor(thing, viewActor, s_backendVerts[0], s_backendVerts[1]);
+		for (int r = zx::gamecopy::FirstActorIn(&sectors[sectorList[i]]); r >= 0; r = actors[r].nextInSector)
+			AppendActor(actors[r], viewActor, s_backendVerts[0], s_backendVerts[1]);
 	CollectBlasts(s_backendVerts[2]);
 }
 
@@ -229,12 +236,13 @@ void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedist
 	record.fulldamagedistance = fulldamagedistance;
 	record.expiryTic = gametic + BLAST_RECORD_LIFETIME_TICS;
 
-	s_blasts.Push(record);
+	s_blastsMade.Make(record);
 }
 
 void ClearBlasts()
 {
 	s_blasts.Clear();
+	s_blastsMade.Clear();
 }
 
 bool ServerDebugActive()

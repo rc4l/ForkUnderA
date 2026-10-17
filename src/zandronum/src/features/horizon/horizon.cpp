@@ -11,7 +11,8 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_sky.h"                        // skyflatnum
-#include "p_3dfloors.h"                   // P_GetPlaneLight
+#include "p_3dfloors.h"
+#include "features/gamecopy/xfloors.h"   // [rc4l] the copied light lists
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/materials/materials.h"
 #include "features/surfaces/sectorplane.h"   // [rc4l] GLSectorPlane
@@ -91,7 +92,7 @@ static void RescanIfNeeded()
 static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 {
 	GLSectorPlane sp;
-	sp.GetFromSector(sec, which);
+	sp.GetFromCopy(sec, which);
 	out.valid = true;
 	out.z = FIXED2FLOAT(sp.texheight);
 	out.shade = zx::levelmesh::MeshPiece();
@@ -111,13 +112,13 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 	out.uv = zx::levelmesh::ComputePlaneUVAffine(t);
 
 	const bool ceiling = (which == sector_t::ceiling);
-	int lightlevel = gl_ClampLight(ceiling ? sec->GetCeilingLight() : sec->GetFloorLight());
+	int lightlevel = gl_ClampLight(ceiling ? sec->rc.GetCeilingLight() : sec->rc.GetFloorLight());
 	FColormap cm;
-	cm = sec->ColorMap;
-	if (sec->e != NULL && sec->e->XFloor.ffloors.Size())
+	cm = sec->rc.ColorMap;
+	if (sec->e != NULL && sec->e->rcXFloor.ffloors.Size())
 	{
-		lightlist_t *light = P_GetPlaneLight(sec, ceiling ? &sec->ceilingplane : &sec->floorplane, ceiling);
-		if (!(sec->GetFlags(which) & PLANEF_ABSLIGHTING)) lightlevel = gl_ClampLight(*light->p_lightlevel);
+		lightlist_t *light = zx::gamecopy::GetPlaneLight(sec, ceiling ? sec->rc.ceilingplane : sec->rc.floorplane, ceiling);
+		if (!(sec->rc.GetFlags(which) & PLANEF_ABSLIGHTING)) lightlevel = gl_ClampLight(*light->p_lightlevel);
 		cm.LightColor = (light->extra_colormap)->Color;
 	}
 	int level, rel;
@@ -143,10 +144,10 @@ void UpdateHorizons()
 		const vertex_t *b = back ? ln.v1 : ln.v2;
 		w.x1 = FIXED2FLOAT(a->x); w.y1 = FIXED2FLOAT(a->y);
 		w.x2 = FIXED2FLOAT(b->x); w.y2 = FIXED2FLOAT(b->y);
-		w.floorZ = FIXED2FLOAT(sec->GetPlaneTexZ(sector_t::floor));
-		w.ceilingZ = FIXED2FLOAT(sec->GetPlaneTexZ(sector_t::ceiling));
-		const bool floorSky = sec->GetTexture(sector_t::floor) == skyflatnum;
-		const bool ceilingSky = sec->GetTexture(sector_t::ceiling) == skyflatnum;
+		w.floorZ = FIXED2FLOAT(sec->rc.GetPlaneTexZ(sector_t::floor));
+		w.ceilingZ = FIXED2FLOAT(sec->rc.GetPlaneTexZ(sector_t::ceiling));
+		const bool floorSky = sec->rc.GetTexture(sector_t::floor) == skyflatnum;
+		const bool ceilingSky = sec->rc.GetTexture(sector_t::ceiling) == skyflatnum;
 		const HorizonHalves halves = ComputeHorizonHalves(floorSky, ceilingSky);
 		const HorizonSpan span = ComputeHorizonWindowSpan(w.floorZ, w.ceilingZ, floorSky, ceilingSky);
 		w.bottom = span.bottom;

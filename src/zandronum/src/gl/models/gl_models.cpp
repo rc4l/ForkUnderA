@@ -57,7 +57,8 @@
 #include "gl/models/gl_models.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_observer.h"
-#include "features/sprites/modelbuild.h"   // [rc4l] the pose and frame blend the backend's derived models share
+#include "features/sprites/modelbuild.h"
+#include "features/gamecopy/actors.h"   // [rc4l] the record a model's pose reads   // [rc4l] the pose and frame blend the backend's derived models share
 #include "features/sprites/computation/modelpose_compute.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_geometric.h"
@@ -251,7 +252,9 @@ void gl_RenderModel(GLSprite * spr)
 
 	// [rc4l] Model space to world space (turn, pitch, roll, MODELDEF spin, scale, offsets, rotations and pixel stretch) comes from features/sprites so the backend's derived models stand exactly where GL's do.
 	zx::sprites::ModelPose pose;
-	zx::sprites::ModelPoseFor(spr->actor, smf, spr->x, spr->y, spr->z, pose);
+	zx::gamecopy::ActorRecord record;
+	zx::gamecopy::TakeActor(*spr->actor, record);
+	zx::sprites::ModelPoseFor(record, smf, spr->x, spr->y, spr->z, pose);
 	float modelToWorld[16];
 	zx::sprites::ComputeModelMatrix(pose, modelToWorld);
 	gl_RenderState.mModelMatrix.loadMatrix(modelToWorld);

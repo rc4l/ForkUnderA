@@ -3,14 +3,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// [rc4l] A crash file's gist: why it stopped (the reason or the exception code) and its first frames, from the fault stack where it has one.
+// [rc4l] A crash file's gist: why it stopped (the reason or the exception code), the seam each thread was in, and its first frames, from the fault stack where it has one.
 export function summarizeCrash(text, frames = 4) {
   const lines = String(text).split(/\r?\n/);
   const why = lines.find((l) => /^(reason|code):/.test(l)) || lines.find((l) => l.startsWith("===")) || "";
+  const seams = (lines.find((l) => l.startsWith("seams:")) || "").replace(/^seams:\s*/, "");
   const from = lines.findIndex((l) => l.startsWith("fault stack:"));
   const start = from >= 0 ? from : lines.findIndex((l) => l.startsWith("backtrace:"));
   const stack = start >= 0 ? lines.slice(start + 1).filter((l) => /^\s+#\d+/.test(l)).slice(0, frames).map((l) => l.trim()) : [];
-  return { why: why.trim(), stack };
+  return { why: why.trim(), seams, stack };
 }
 
 // [rc4l] The crash files under dir's fuactl folders changed since sinceMs, newest first.

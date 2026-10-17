@@ -98,6 +98,9 @@ The FON2 header is followed by variable length data:
 // [BC] New #includes.
 #include "network.h"
 #include "c_console.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring
+#include "features/handoff/gamethread.h"   // [rc4l] AskMain
+#include "features/handoff/seam.h"   // [rc4l] font/load
 
 // MACROS ------------------------------------------------------------------
 
@@ -310,11 +313,33 @@ static int stripaccent(int code)
 	return code;
 }
 
+// [rc4l] features/handoff: the fonts loaded before the tic, which a tic on its own thread looks in, since a frame beside it may be loading another.
+static TArray<FFont *> TicFonts;
+
+void V_FontsForTic ()
+{
+	TicFonts.Clear ();
+	for (FFont *font = FFont::FirstFont; font != NULL; font = font->Next) TicFonts.Push (font);
+}
+
 FFont *V_GetFont(const char *name)
 {
+	// [rc4l] features/handoff: a font not loaded before the tic is loaded by the main thread, since loading one adds the textures and fonts a frame reads.
+	if (zx::handoff::Deferring ())
+	{
+		for (unsigned i = 0; name != NULL && i < TicFonts.Size (); i++)
+		{
+			if (stricmp (TicFonts[i]->Name, name) == 0) return TicFonts[i];
+		}
+		FFont *loaded = NULL;
+		zx::handoff::AskMainFor ([&] { loaded = V_GetFont (name); });
+		if (loaded != NULL) TicFonts.Push (loaded);
+		return loaded;
+	}
 	FFont *font = FFont::FindFont (name);
 	if (font == NULL)
 	{
+		ZX_SEAM_UNTIMED ("font/load", Main);   // [rc4l] features/handoff: a font is made on the main thread, inline or asked for, since it adds what a frame draws with
 		int lump = -1;
 
 		lump = Wads.CheckNumForFullName(name, true);
@@ -2750,6 +2775,7 @@ void V_ClearFonts()
 		delete FFont::FirstFont;
 	}
 	FFont::FirstFont = NULL;
+	TicFonts.Clear ();
 	SmallFont = SmallFont2 = BigFont = ConFont = IntermissionFont = NULL;
 }
 

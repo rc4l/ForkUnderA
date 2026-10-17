@@ -4,6 +4,7 @@
 // [rc4l] The screen wipes in a launch without GL: the last frame and the new one kept as pictures, and each tic's mix of them drawn under the console and menus, as GL's wipers draw it (features/wipe works the mix out).
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/wipe/wiperandoms.h"   // [rc4l] DrawMeltRandoms
 #include "features/wipe/computation/wipe_compute.h"
 
 #include "f_wipe.h"     // [rc4l] the wipe types and wipe_CalcBurn, the fire the burn's mask is taken from
@@ -216,7 +217,7 @@ bool WipeStart(int type)
 	if (type == wipe_Melt)
 	{
 		unsigned char randoms[zx::wipe::kMeltColumns];
-		for (int i = 0; i < zx::wipe::kMeltColumns; i++) randoms[i] = (unsigned char)M_Random();
+		zx::wipe::DrawMeltRandoms(randoms, zx::wipe::kMeltColumns);
 		zx::wipe::ComputeMeltStart(randoms, g_melt);
 	}
 	g_end.Release();

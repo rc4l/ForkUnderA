@@ -29,7 +29,7 @@ int64_t TimedNs(Counter c);
 
 // [rc4l] Adds amount to this frame's value of a total or a timing, from any thread.
 void Add(Counter c, double amount);
-// [rc4l] Sets this frame's value of a total or a timing, or a gauge's level until the next Set, from the game thread.
+// [rc4l] Sets this frame's value of a total or a timing, or a gauge's level until the next Set, from the main thread.
 void Set(Counter c, double value);
 
 // [rc4l] A breakdown snapshots and fua_stats list beside the counters: readings a feature makes on request, such as memory by tag; soaked false keeps a diagnostic that restates another reading out of a soak's verdict.

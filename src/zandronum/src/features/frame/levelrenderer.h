@@ -30,7 +30,7 @@ struct FLevelRenderer : public FRenderer
 };
 
 // [rc4l] A camera texture's view handed to the backend, which draws it into its own target whichever renderer drew the screen.
-void RenderBackendCamera(zx::materials::MaterialRef mat, AActor *viewpoint, int fov);
+void RenderBackendCamera(zx::materials::MaterialRef mat, int record, int fov);
 
 }} // namespace zx::frame
 

@@ -729,7 +729,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 			// point, so the float form is z = -(Ax + By + D)/C and 1/C is stored ready to multiply.
 			// Storing a height instead only works for a level plane, and got every small mark on a
 			// slope placed far enough off the surface to disappear.
-			const secplane_t *pl[2] = { &sec.floorplane, &sec.ceilingplane };
+			const secplane_core_t *pl[2] = { &sec.rc.floorplane, &sec.rc.ceilingplane };
 			for (int q = 0; q < 2; q++)
 			{
 				const float C = FIXED2FLOAT(pl[q]->c);

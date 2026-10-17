@@ -72,7 +72,7 @@ clipper is GL's seeded with the frustum and blocked outside its own share of the
 the slices see is what one walk sees (`computation/walkslices_compute`, tested against one walk on random
 walls). Each subsector is numbered by its place in the front-to-back order from the eye (`ComputeLeafCounts`),
 and a slice marks what it reaches in shared stamp arrays rather than lists, so nothing needs merging. What only
-walk order decides is applied afterwards on the game thread, rank by rank: the order sectors were first reached
+walk order decides is applied afterwards on the main thread, rank by rank: the order sectors were first reached
 in, the particles, each line's first seen seg's sky and stacked walls (worked out on the lanes as events and
 only appended here), and the flats pass that feeds the stacked views. The edges move walk to walk so the slices
 carry about equal work (`ComputeBalancedSlices`, `fua_vis_balance`).

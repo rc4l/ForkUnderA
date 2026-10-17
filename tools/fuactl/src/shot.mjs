@@ -50,7 +50,7 @@ export function parseCvarFlag(text) {
   }));
 }
 
-// [rc4l] The map and wads a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, and the names it could not find.
+// [rc4l] The map, wads and view a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, the names it could not find, and its view or null.
 export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(storeDir) ? fs.readdirSync(storeDir) : []) {
   const db = JSON.parse(fs.readFileSync(spotsPath, "utf8"));
   const s = db.spots[name];
@@ -62,7 +62,7 @@ export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(st
     const hit = byName.get(wad.toLowerCase());
     if (hit) files.push(path.join(storeDir, hit)); else missing.push(wad);
   }
-  return { map: s.map, files, missing };
+  return { map: s.map, files, missing, view: s.view || null };
 }
 
 // [rc4l] Remove the session files that name port, since a launch there is about to mint a new token and `ready` would wait out its timeout on the old one; returns the files removed.
@@ -78,7 +78,7 @@ export function clearPortSessions(sessionFile, port) {
 // [rc4l] The file a play launch on port holds while it checks its world, naming the fuactl process doing it (gitignored with the session files).
 export function launchFileFor(sessionFile, port) { return `${sessionFileFor(sessionFile, port)}.launching`; }
 
-// [rc4l] Runs fn with port's launch file held, so a command started meanwhile waits for it (awaitLaunch) instead of knocking it off the bridge.
+// [rc4l] Runs fn with port's launch file held, so a command started meanwhile waits for it (awaitLaunch) instead of acting on a world still being set up.
 export async function holdingLaunchFile(sessionFile, port, fn, pid = process.pid) {
   const file = launchFileFor(sessionFile, port);
   fs.writeFileSync(file, `PORT=${port}\nPID=${pid}\n`);
@@ -91,7 +91,7 @@ export function launchInProgress(file, isAlive = pidAlive) {
   return !!(s && s.pid && isAlive(s.pid));
 }
 
-// [rc4l] Waits up to timeoutMs while a launch checks its world on port, because the bridge serves only its newest client and connecting then killed the launch with "hello timeout"; true if it waited.
+// [rc4l] Waits up to timeoutMs while a launch checks its world on port, since its token is written and its player stood in place only once that is done; true if it waited.
 export async function awaitLaunch(sessionFile, port, { timeoutMs = 120000, pollMs = 250, isAlive = pidAlive } = {}) {
   const file = launchFileFor(sessionFile, port);
   let waited = false;
@@ -129,7 +129,7 @@ export function pidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
 }
 
-// [rc4l] Whether `ready` may connect to a target: it has a token, and the engine its session names is alive, since the bridge serves only its newest client and a stale session's token would knock a launch still checking its world off it.
+// [rc4l] Whether `ready` may connect to a target: it has a token, and the engine its session names is alive, since a dead launch's token is refused by the engine that replaced it.
 export function liveTarget(t, isAlive = pidAlive) {
   return !!(t && t.token && (!t.pid || isAlive(t.pid)));
 }

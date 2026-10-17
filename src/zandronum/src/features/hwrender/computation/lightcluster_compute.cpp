@@ -36,14 +36,21 @@ void ComputeTileForNdc(const ClusterGrid &g, float ndcX, float ndcY, int *tileX,
 	// [rc4l] Clamped as floats first, since a corner pulled onto the near plane can project far past any int.
 	const float fragX = fminf(fmaxf((ndcX * 0.5f + 0.5f) * (float)g.screenW, -1.f), (float)g.screenW);
 	const float fragY = fminf(fmaxf((0.5f - ndcY * 0.5f) * (float)g.screenH, -1.f), (float)g.screenH);
-	*tileX = Clamp((int)floorf(fragX / (float)kClusterTilePixels), 0, g.tilesX - 1);
-	*tileY = Clamp((int)floorf(fragY / (float)kClusterTilePixels), 0, g.tilesY - 1);
+	*tileX = Clamp((int)floorf(fragX / (float)g.tileW), 0, g.tilesX - 1);
+	*tileY = Clamp((int)floorf(fragY / (float)g.tileH), 0, g.tilesY - 1);
 }
 
 int ComputeClusterCount(const ClusterGrid &g)
 {
 	if (g.tilesX <= 0 || g.tilesY <= 0 || g.slices <= 0) return 0;
 	return g.tilesX * g.tilesY * g.slices;
+}
+
+int ComputeClusterTileSize(int screen, int tiles)
+{
+	if (tiles < 1) tiles = 1;
+	const int size = (screen + tiles - 1) / tiles;
+	return size < 1 ? 1 : size;
 }
 
 int ComputeSliceForDepth(const ClusterGrid &g, float viewZ)
@@ -152,10 +159,10 @@ ClusterRange ComputeLightClusters(const ClusterGrid &g, const float viewPos[3], 
 ClusterGrid ComputeGridForScreen(int screenW, int screenH, float zNear, float zFar)
 {
 	ClusterGrid g;
-	g.tilesX = (screenW + kClusterTilePixels - 1) / kClusterTilePixels;
-	g.tilesY = (screenH + kClusterTilePixels - 1) / kClusterTilePixels;
-	if (g.tilesX < 1) g.tilesX = 1;
-	if (g.tilesY < 1) g.tilesY = 1;
+	g.tilesX = kClusterTilesX;
+	g.tilesY = kClusterTilesY;
+	g.tileW = ComputeClusterTileSize(screenW, kClusterTilesX);
+	g.tileH = ComputeClusterTileSize(screenH, kClusterTilesY);
 	g.slices = kClusterSlices;
 	g.screenW = screenW;
 	g.screenH = screenH;

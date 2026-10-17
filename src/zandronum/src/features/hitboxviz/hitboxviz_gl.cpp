@@ -113,7 +113,9 @@ void CollectActor(AActor *thing)
 {
 	if (!s_frameActive || thing == NULL)
 		return;
-	AppendActor(thing, GLRenderer->mViewActor, s_physicalVerts, s_attackVerts);
+	zx::gamecopy::ActorRecord record;
+	zx::gamecopy::TakeActor(*thing, record);
+	AppendActor(record, GLRenderer->mViewActor, s_physicalVerts, s_attackVerts);
 }
 
 void Draw()

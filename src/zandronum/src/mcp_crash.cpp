@@ -17,6 +17,8 @@
 // never clash with the engine's types.
 //
 #include "mcp_bridge.h"
+#include "features/handoff/gamethread.h"   // [rc4l] the game thread the watchdog watches
+#include "features/handoff/seam.h"   // [rc4l] the seam each thread was in
 
 // [rc4l] Pure decision helper for chaining to the fatal-signal handler that was installed before
 // ours (on a shipped build that is sentry-native's). Declares only an enum + one function in
@@ -48,6 +50,15 @@
 namespace
 {
 	char g_crashPath[1024] = { 0 };
+
+	// [rc4l] The crash file's line naming the seam each thread was in, from a static buffer so a crash handler can print it without allocating.
+	const char *SeamLine()
+	{
+		static char line[256];
+		const char *mainSeam = zx::handoff::CurrentSeam( false ), *gameSeam = zx::handoff::CurrentSeam( true );
+		snprintf( line, sizeof( line ), "seams: main %s, game %s\n", mainSeam ? mainSeam : "none", gameSeam ? gameSeam : "none" );
+		return line;
+	}
 	bool g_installed = false;
 
 	// Resolve where to write the crash log: an explicit ZANDRONUM_CRASH_LOG wins;
@@ -116,10 +127,10 @@ namespace
 		FILE *f = fopen( g_crashPath, "w" );
 		if ( f )
 		{
-			fprintf( f, "=== MCP ENGINE CRASH ===\ncode: 0x%08lx\nfault_addr: %p\npid: %lu\n\nbacktrace:\n",
+			fprintf( f, "=== MCP ENGINE CRASH ===\ncode: 0x%08lx\nfault_addr: %p\npid: %lu\n%s\nbacktrace:\n",
 				(unsigned long)( info ? info->ExceptionRecord->ExceptionCode : 0 ),
 				info ? (void *)info->ExceptionRecord->ExceptionAddress : (void *)0,
-				(unsigned long)GetCurrentProcessId() );
+				(unsigned long)GetCurrentProcessId(), SeamLine() );
 
 			void *frames[128];
 			USHORT n = CaptureStackBackTrace( 0, 128, frames, NULL );
@@ -180,8 +191,8 @@ namespace
 		{
 			char hdr[256];
 			int n = snprintf( hdr, sizeof( hdr ),
-				"=== MCP ENGINE CRASH ===\nsignal: %d %s\nfault_addr: %p\npid: %d\n\nbacktrace:\n",
-				sig, SignalName( sig ), si ? si->si_addr : (void *)0, (int)getpid() );
+				"=== MCP ENGINE CRASH ===\nsignal: %d %s\nfault_addr: %p\npid: %d\n%s\nbacktrace:\n",
+				sig, SignalName( sig ), si ? si->si_addr : (void *)0, (int)getpid(), SeamLine() );
 			if ( n > 0 )
 			{
 				ssize_t w = write( fd, hdr, (size_t)n );
@@ -244,8 +255,8 @@ void WriteAbortReport( const char *why )
 {
 	FILE *f = fopen( g_crashPath, "w" );
 	if ( f == NULL ) return;
-	fprintf( f, "=== MCP ENGINE ABORT ===\nreason: %s\npid: %lu\n\nbacktrace:\n",
-		why ? why : "(none)", (unsigned long)GetCurrentProcessId() );
+	fprintf( f, "=== MCP ENGINE ABORT ===\nreason: %s\npid: %lu\n%s\nbacktrace:\n",
+		why ? why : "(none)", (unsigned long)GetCurrentProcessId(), SeamLine() );
 	void *frames[128];
 	USHORT n = CaptureStackBackTrace( 0, 128, frames, NULL );
 	HANDLE proc = GetCurrentProcess();
@@ -293,15 +304,16 @@ void WriteAbortReport( const char *why )
 // [rc4l] A HANG reports too, because the engine does not always die -- sometimes it spins.
 //
 // Every handler above catches a process that STOPS. The failure that actually cost this session was
-// a process that kept running: after ~21 map changes the game thread went into an infinite loop
+// a process that kept running: after ~21 map changes the main thread went into an infinite loop
 // during level setup, the bridge stopped answering, the harness gave up, and only then did the
 // watchdog reap it -- so it looked exactly like a silent crash and no handler ever fired.
 //
-// The game thread bumps a heartbeat every pass of the main loop. If it stops bumping while the
+// The main thread bumps a heartbeat every pass of the main loop. If it stops bumping while the
 // process is still alive, this suspends it, walks its stack with dbghelp and writes the same report
 // a crash would. A spinning thread cannot be asked what it is doing; it has to be taken and read.
 volatile LONG   g_heartbeat = 0;
 HANDLE          g_mainThread = NULL;
+HANDLE          g_gameThread = NULL;   // [rc4l] features/handoff: the thread running tics beside the main one, once there is one
 volatile LONG   g_hangReported = 0;
 
 void WriteThreadStack( HANDLE thread, const char *why )
@@ -311,8 +323,8 @@ void WriteThreadStack( HANDLE thread, const char *why )
 
 	FILE *f = fopen( g_crashPath, "w" );
 	if ( f == NULL ) return;
-	fprintf( f, "=== MCP ENGINE HANG ===\nreason: %s\npid: %lu\n\nstuck thread backtrace:\n",
-		why, (unsigned long)GetCurrentProcessId() );
+	fprintf( f, "=== MCP ENGINE HANG ===\nreason: %s\npid: %lu\n%s\nstuck thread backtrace:\n",
+		why, (unsigned long)GetCurrentProcessId(), SeamLine() );
 
 	SuspendThread( thread );
 	CONTEXT ctx;
@@ -359,9 +371,19 @@ void HangWatchdog()
 {
 	LONG last = -1;
 	int stalls = 0;
+	uint64_t lastGame = 0;
+	int gameStalls = 0;
 	for ( ;; )
 	{
 		Sleep( 5000 );
+		// [rc4l] features/handoff: a tic in flight on the game thread that stops passing its seams is a hang of its own, which the main thread's heartbeat would not show.
+		const uint64_t game = zx::handoff::Heartbeat( true );
+		if ( g_gameThread == NULL || !zx::handoff::TicInFlight() || zx::handoff::GameThreadDone() || zx::handoff::GameThreadAsking() || game != lastGame ) { lastGame = game; gameStalls = 0; }
+		else if ( ++gameStalls >= 6 )
+		{
+			WriteThreadStack( g_gameThread, "game thread stalled for 30s in a tic" );
+			return;
+		}
 		const LONG now = g_heartbeat;
 		if ( now != last ) { last = now; stalls = 0; continue; }
 		// Level loads legitimately block the main loop, so only a LONG stall counts.
@@ -440,7 +462,18 @@ void AbortHandler( int )
 }
 #endif // _WIN32
 
-// The game thread's proof of life. Cheap enough for the main loop: one interlocked increment.
+// [rc4l] features/handoff: the game thread arms its own stack guarantee and hands the watchdog a handle it can read a hang off.
+void MCP_Crash_NoteGameThread()
+{
+#ifdef _WIN32
+	ULONG guarantee = 65536;
+	SetThreadStackGuarantee( &guarantee );
+	DuplicateHandle( GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_gameThread,
+		0, FALSE, DUPLICATE_SAME_ACCESS );
+#endif
+}
+
+// The main thread's proof of life. Cheap enough for the main loop: one interlocked increment.
 void MCP_Crash_NoteAlive()
 {
 #ifdef _WIN32
@@ -470,7 +503,7 @@ void MCP_Crash_Init()
 	AddVectoredExceptionHandler( 1 /* first */, MCP_VectoredFilter );
 	_set_invalid_parameter_handler( InvalidParameterHandler );
 	_set_purecall_handler( PureCallHandler );
-	// A real handle to the thread that armed this -- the game thread -- so a hang can be read off it.
+	// A real handle to the thread that armed this -- the main thread -- so a hang can be read off it.
 	DuplicateHandle( GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_mainThread,
 		0, FALSE, DUPLICATE_SAME_ACCESS );
 	std::thread( HangWatchdog ).detach();

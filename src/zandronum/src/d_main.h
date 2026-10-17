@@ -73,6 +73,9 @@ bool D_WipeRunning ();
 
 
 void D_Display ();
+void D_PrepareDisplay (bool input);
+void D_DisplayBesideTic ();
+void D_RunHandoffWork ();   // [rc4l] features/handoff: the loop's work that needs no tic in flight   // [rc4l] features/handoff: a frame from the copy and the recorded HUD, taking no input   // [rc4l] features/handoff: what a frame needs of the game, done between tics, input the frame's too
 
 
 //

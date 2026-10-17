@@ -48,8 +48,9 @@ struct ClusterGrid
 	// projY = 1 / tan(fovY / 2), projX = projY / aspect.
 	float projX, projY;
 
-	// [rc4l] The pixels the shader cuts into kClusterTilePixels tiles, counted from the top-left as gl_FragCoord is under Vulkan.
+	// [rc4l] The pixels the shader cuts into tiles, counted from the top-left as gl_FragCoord is under Vulkan, and each tile's size in them.
 	int   screenW, screenH;
+	int   tileW, tileH;
 };
 
 // Cells in the whole grid. Cluster indices run 0..count-1.
@@ -114,12 +115,19 @@ int ComputeClusterForPoint(const ClusterGrid &g, const float viewPos[3]);
 ClusterRange ComputeLightClustersFromMVP(const ClusterGrid &g, const float mvp[16],
 	const float worldPos[3], float radius);
 
-// Tile size in pixels and depth slices, shared by the binning pass and the shader.
+// Tiles across and down and depth slices, shared by the binning pass and the shader.
 //
 // Compile-time constants rather than variables because both sides must agree on the grid, and the
 // shader -- a GLSL string that cannot read a C++ value -- spells them out. dgscene.cpp asserts the
 // two against each other, which only works if these are constant expressions.
-enum { kClusterTilePixels = 64, kClusterSlices = 24 };
+// [rc4l] The grid is the same number of cells at every resolution, as DOOM (2016)'s was, so its table never outgrows its buffer and a tile's pixels follow the screen.
+enum { kClusterTilesX = 32, kClusterTilesY = 18, kClusterSlices = 24 };
+
+// [rc4l] The cells in every frame's grid, which the cluster table is made to hold.
+enum { kClusterCells = kClusterTilesX * kClusterTilesY * kClusterSlices };
+
+// [rc4l] A tile's size in pixels when `screen` pixels are cut into `tiles` tiles, rounded up so the last tile reaches the edge.
+int ComputeClusterTileSize(int screen, int tiles);
 
 // [rc4l] The depth range the slices cover, in map units: the binning pass and the scene constants read the same two numbers.
 const float kClusterZNear = 5.f;

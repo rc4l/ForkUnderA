@@ -467,6 +467,7 @@ public:
 
 	FTextureID CreateTexture (int lumpnum, int usetype=FTexture::TEX_Any);	// Also calls AddTexture
 	FTextureID AddTexture (FTexture *texture);
+	void ReserveHeadroom (unsigned int amount);   // [rc4l] room for amount more textures before the arrays move, made between tics
 	FTextureID GetDefaultTexture() const { return DefaultTexture; }
 
 	void LoadTextureX(int wadnum);
@@ -622,6 +623,7 @@ public:
 	void Unload ();
 	bool CheckModified ();
 	void NeedUpdate() { bNeedsUpdate=true; }
+	bool NeedsUpdate() const { return bNeedsUpdate; }   // [rc4l] whether a frame shows it, so its camera's view is drawn
 	void SetUpdated() { bNeedsUpdate = false; bDidUpdate = true; bFirstUpdate = false; }
 	DSimpleCanvas *GetCanvas() { return Canvas; }
 	void MakeTexture ();

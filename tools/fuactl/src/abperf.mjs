@@ -21,6 +21,23 @@ export function cvarValueOf(reply, name) {
   return m ? m[1] : null;
 }
 
+// [rc4l] The "name value" pairs a setting assigns to cvars, as {name: value}, a bare command or a non-cvar name (no baseline) left out.
+export function settingValues(setting, baselines) {
+  const out = {};
+  for (const part of String(setting).split(";")) {
+    const w = part.trim().split(/\s+/);
+    if (w.length >= 2 && w[0] && baselines[w[0]] != null) out[w[0]] = w.slice(1).join(" ");
+  }
+  return out;
+}
+
+// [rc4l] The cvars a setting asked for that read back otherwise, as "name reads got, not want"; a number compared as one, so 0.5 and 0.500000 agree.
+export function unappliedSettings(wanted, readBack) {
+  const same = (a, b) => (a === b) || (a !== "" && b !== "" && !Number.isNaN(Number(a)) && Number(a) === Number(b)) ||
+    (["true", "1"].includes(a) && ["true", "1"].includes(b)) || (["false", "0"].includes(a) && ["false", "0"].includes(b));
+  return Object.entries(wanted).filter(([n, v]) => !same(String(readBack[n] ?? ""), String(v))).map(([n, v]) => `${n} reads ${readBack[n] ?? "nothing"}, not ${v}`);
+}
+
 // [rc4l] Each setting's console line with every other setting's cvars put back to where they started first, so a setting measures only itself and never one left over.
 export function isolatedLines(settings, baselines) {
   const all = [...new Set(settings.flatMap(settingNames))].filter((n) => baselines[n] != null);
@@ -58,6 +75,12 @@ export async function abPerf(c, settings, { rounds = 3, frames = 400, settleTics
     for (const { round, setting } of perfSchedule(settings, rounds)) {
       await cap.exec(c, lines[settings.indexOf(setting)]);
       await cap.waitTics(c, settleTics);
+      // [rc4l] A setting that never took (a command after a load's wait is dropped with the level's thinkers) measures nothing, so it fails here instead.
+      const wanted = settingValues(setting, baselines);
+      const readBack = {};
+      for (const name of Object.keys(wanted)) readBack[name] = cvarValueOf(await cap.exec(c, name), name);
+      const missed = unappliedSettings(wanted, readBack);
+      if (missed.length) throw new Error(`abperf: "${setting}" did not take: ${missed.join("; ")}`);
       const report = await cap.capturePerf(c, { frames });
       const row = { round, setting, p50: report.total.p50_ms, p99: report.total.p99_ms };
       rows.push(row);

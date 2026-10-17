@@ -130,6 +130,17 @@ function crc32(buf) {
 
 // [rc4l] Mean |d| over a box (fractions x0,y0,x1,y1) in block means, so sub-pixel framing between renderers averages out (block 1 is per pixel).
 export function boxDiff(a, b, box, block = 16) {
+  const d = blockDiffs(a, b, box, block);
+  return d.reduce((s, v) => s + v, 0) / Math.max(d.length, 1);
+}
+
+// [rc4l] The largest block's |d| over a box, which a change confined to one corner of the frame cannot hide in the mean.
+export function boxDiffMax(a, b, box, block = 16) {
+  return blockDiffs(a, b, box, block).reduce((m, v) => Math.max(m, v), 0);
+}
+
+// [rc4l] Each block's mean |d| over a box, row by row.
+export function blockDiffs(a, b, box, block = 16) {
   // [rc4l] Pixel coordinates passed by mistake made a box hundreds of frames wide, and the walk over it never came back.
   if (box.some((v) => !(v >= 0 && v <= 1))) throw new Error(`box is fractions of the frame, 0..1: ${box.join(",")}`);
   const x0 = Math.floor(box[0] * a.w), y0 = Math.floor(box[1] * a.h);
@@ -143,13 +154,12 @@ export function boxDiff(a, b, box, block = 16) {
     }
     return s.map((v) => v / Math.max(n, 1));
   };
-  let sum = 0, n = 0;
+  const out = [];
   for (let by = y0; by < y1; by += block) for (let bx = x0; bx < x1; bx += block) {
     const ma = mean(a, bx, by), mb = mean(b, bx, by);
-    sum += (Math.abs(ma[0] - mb[0]) + Math.abs(ma[1] - mb[1]) + Math.abs(ma[2] - mb[2])) / 3;
-    n++;
+    out.push((Math.abs(ma[0] - mb[0]) + Math.abs(ma[1] - mb[1]) + Math.abs(ma[2] - mb[2])) / 3);
   }
-  return sum / Math.max(n, 1);
+  return out;
 }
 
 // [rc4l] A box of fractions' brightness ((r+g+b)/3) as its least, greatest and mean, and each channel's mean, since a colour cast is invisible in brightness.

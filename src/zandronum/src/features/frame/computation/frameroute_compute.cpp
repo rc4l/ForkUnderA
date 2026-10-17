@@ -21,6 +21,11 @@ bool ComputeKindDraws(const FrameRoute &route, int kind)
 	return kind == kRendererGL ? route.glDraws : route.backendDraws;
 }
 
+bool ComputeOverlayKeepsPicture(bool offscreen, bool painted, int quads2D)
+{
+	return offscreen && painted && quads2D <= 0;
+}
+
 int ComputeSavePicKind(const FrameRoute &route)
 {
 	return route.savePicFromBackend ? kRendererBackend : kRendererGL;

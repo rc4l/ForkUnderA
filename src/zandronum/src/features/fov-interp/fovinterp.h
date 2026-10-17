@@ -9,11 +9,9 @@
 #ifndef ZX_FOVINTERP_H
 #define ZX_FOVINTERP_H
 
-struct player_t;
-
-// The FOV to render this frame for `player`, in degrees, already clamped to R_SetFOV's range.
+// [rc4l] The FOV to render this frame for player number `player` (-1 for none), in degrees, already clamped to R_SetFOV's range.
 // Equals the player's current FOV plus the fraction of the next simulation step that the current
 // sub-tic position calls for, and freezes at the simulated value while paused or in a menu.
-float FOV_InterpolatedForFrame(player_t *player);
+float FOV_InterpolatedForFrame(int player);
 
 #endif // ZX_FOVINTERP_H

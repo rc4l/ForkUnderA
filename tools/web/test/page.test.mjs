@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, inPage, pause, repeatedSounds, soakInPage } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, inPage, pause, repeatedSounds, soakInPage, framePacing } from '../page.mjs';
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
@@ -48,4 +48,63 @@ test('a soak in the page runs each cycle\'s steps, waits for the title of each l
   const resize = soakInPage('check: resize 900x700|check: resize 1280x900', 2, 10);
   assert.match(resize, /if \(step\.text\.startsWith\('check: '\)\) console\.log\(step\.text\);\s+else Module\.fuaCommand\(step\.text\);/);
   assert.match(resize, /"text":"check: resize 900x700","map":null/);
+});
+
+// [rc4l] Sounds a tic on the game thread started all started and were silent, which counting starts never saw; the level watch hears the output itself.
+test('the level watch splices one analyser per context in front of the output and averages what it carries', () => {
+  class Node { constructor(ctx) { this.context = ctx; this.links = []; } connect(target) { this.links.push(target); return target; } }
+  class Destination extends Node {}
+  const ctx = { createAnalyser: () => Object.assign(new Node(ctx), { getFloatTimeDomainData: (buf) => buf.fill(0.5) }) };
+  const ticks = [];
+  const win = {};
+  new Function('window', 'AudioNode', 'AudioDestinationNode', 'setInterval', WATCH_LEVEL)(win, Node, Destination, (fn) => ticks.push(fn));
+  const out = new Destination(ctx);
+  const a = new Node(ctx);
+  const b = new Node(ctx);
+  const gain = new Node(ctx);
+  a.connect(out);
+  b.connect(out);
+  a.connect(gain);
+  assert.equal(win.fuaLevel.taps.length, 1);
+  const analyser = win.fuaLevel.taps[0].an;
+  assert.deepEqual(a.links, [analyser, gain]);
+  assert.deepEqual(b.links, [analyser]);
+  assert.deepEqual(analyser.links, [out]);
+  assert.equal(win.fuaLevel.mean(), 0);
+  ticks[0]();
+  ticks[0]();
+  assert.equal(win.fuaLevel.mean(), 0.5);
+  win.fuaLevel.reset();
+  assert.equal(win.fuaLevel.mean(), 0);
+});
+
+test('page code asks a command and gets back only what it printed', async () => {
+  const original = console.log;
+  console.log = () => {};
+  const Module = { fuaCommand: (t) => console.log(`ran ${t}`) };
+  try {
+    const run = new Function('Module', `return (async () => { ${HEAR_CONSOLE}
+      console.log('before');
+      const got = await ask('currentpos', 5);
+      unhear();
+      return got; })();`);
+    assert.deepEqual(await run(Module), ['ran currentpos']);
+  } finally { console.log = original; }
+});
+
+test('frame pacing gives the median, p99 and longest gap and counts the hitches', () => {
+  const times = [0];
+  for (let i = 1; i <= 100; i++) times.push(times[i - 1] + (i === 50 ? 60 : i === 80 ? 25 : 4));
+  assert.equal(framePacing(times), 'frames: 100, interval median 4.00 p99 60.00 max 60.0 ms, over 20 ms 2, over 50 ms 1');
+  assert.equal(framePacing([5]), 'frames: none drawn');
+  assert.equal(framePacing([]), 'frames: none drawn');
+});
+
+test('the frame watch keeps each frame time the browser hands it', () => {
+  const pending = [];
+  const window = {};
+  new Function('window', 'requestAnimationFrame', WATCH_FRAMES)(window, (f) => pending.push(f));
+  for (const t of [16, 33, 50]) pending.shift()(t);
+  assert.deepEqual(window.fuaFrames, [16, 33, 50]);
+  assert.equal(pending.length, 1);
 });

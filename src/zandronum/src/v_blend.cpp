@@ -99,13 +99,14 @@ void V_AddBlend (float r, float g, float b, float a, float v_blend[4])
 //
 //---------------------------------------------------------------------------
 
-void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int maxpainblend)
+// [rc4l] features/gamecopy: each blend V_AddPlayerBlend adds, handed to add in order with the alpha it caps them at for the render copy to add again, false for a player without a body.
+bool V_PlayerBlendLayers (player_t *CPlayer, float maxinvalpha, int maxpainblend, void (*add) (void *ctx, float r, float g, float b, float a), void *ctx, float &cap)
 {
 	int cnt;
 
 	// [BC] The player may not have a body between intermission-less maps.
 	if ( CPlayer->mo == NULL )
-		return;
+		return false;
 
 	// [RH] All powerups can affect the screen blending now
 	for (AInventory *item = CPlayer->mo->Inventory; item != NULL; item = item->Inventory)
@@ -113,7 +114,7 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 		PalEntry color = item->GetBlend ();
 		if (color.a != 0)
 		{
-			V_AddBlend (color.r/255.f, color.g/255.f, color.b/255.f, color.a/255.f, blend);
+			add (ctx, color.r/255.f, color.g/255.f, color.b/255.f, color.a/255.f);
 			if (color.a/255.f > maxinvalpha) maxinvalpha = color.a/255.f;
 		}
 	}
@@ -121,8 +122,8 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 	{
 		cnt = CPlayer->bonuscount << 3;
 		
-		V_AddBlend (RPART(gameinfo.pickupcolor)/255.f, GPART(gameinfo.pickupcolor)/255.f, 
-					BPART(gameinfo.pickupcolor)/255.f, cnt > 128 ? 0.5f : cnt / 255.f, blend);
+		add (ctx, RPART(gameinfo.pickupcolor)/255.f, GPART(gameinfo.pickupcolor)/255.f, 
+					BPART(gameinfo.pickupcolor)/255.f, cnt > 128 ? 0.5f : cnt / 255.f);
 	}
 
 	PalEntry painFlash = CPlayer->mo->DamageFade;
@@ -142,7 +143,7 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 			if (cnt > maxpainblend)
 				cnt = maxpainblend;
 
-			V_AddBlend (painFlash.r / 255.f, painFlash.g / 255.f, painFlash.b / 255.f, cnt / 255.f, blend);
+			add (ctx, painFlash.r / 255.f, painFlash.g / 255.f, painFlash.b / 255.f, cnt / 255.f);
 		}
 	}
 
@@ -158,11 +159,11 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 		cnt = MIN (CPlayer->poisoncount, 64);
 		if (paletteflash & PF_POISON)
 		{
-			V_AddBlend(44/255.f, 92/255.f, 36/255.f, ((cnt + 7) >> 3) * 0.1f, blend);
+			add (ctx, 44/255.f, 92/255.f, 36/255.f, ((cnt + 7) >> 3) * 0.1f);
 		}
 		else
 		{
-			V_AddBlend (0.04f, 0.2571f, 0.f, cnt/93.2571428571f, blend);
+			add (ctx, 0.04f, 0.2571f, 0.f, cnt/93.2571428571f);
 		}
 
 	}
@@ -178,11 +179,11 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 				if (level.info != NULL && level.info->HazardFlash >= 0)
 				{
 					int c = level.info->HazardFlash;
-					V_AddBlend (((c>>16)&0xff)/255.f, ((c>>8)&0xff)/255.f, (c&0xff)/255.f, 0.125f, blend);
+					add (ctx, ((c>>16)&0xff)/255.f, ((c>>8)&0xff)/255.f, (c&0xff)/255.f, 0.125f);
 				}
 				else
 				{
-					V_AddBlend (0.f, 1.f, 0.f, 0.125f, blend);
+					add (ctx, 0.f, 1.f, 0.f, 0.125f);
 				}
 			}
 		}
@@ -192,11 +193,11 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 			if (level.info != NULL && level.info->HazardColor >= 0)
 			{
 				int c = level.info->HazardColor;
-				V_AddBlend (((c>>16)&0xff)/255.f, ((c>>8)&0xff)/255.f, (c&0xff)/255.f, cnt/93.2571428571f, blend);
+				add (ctx, ((c>>16)&0xff)/255.f, ((c>>8)&0xff)/255.f, (c&0xff)/255.f, cnt/93.2571428571f);
 			}
 			else
 			{
-				V_AddBlend (0.f, 0.2571f, 0.f, cnt/93.2571428571f, blend);
+				add (ctx, 0.f, 0.2571f, 0.f, cnt/93.2571428571f);
 			}
 		}
 	}
@@ -205,14 +206,28 @@ void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int
 	{
 		if (paletteflash & PF_ICE)
 		{
-			V_AddBlend(0.f, 0.f, 224/255.f, 0.5f, blend);
+			add (ctx, 0.f, 0.f, 224/255.f, 0.5f);
 		}
 		else
 		{
-			V_AddBlend (0.25f, 0.25f, 0.853f, 0.4f, blend);
+			add (ctx, 0.25f, 0.25f, 0.853f, 0.4f);
 		}		
 	}
 
+	cap = maxinvalpha;
+	return true;
+}
+
+static void AddInto (void *blend, float r, float g, float b, float a)
+{
+	V_AddBlend (r, g, b, a, (float *)blend);
+}
+
+void V_AddPlayerBlend (player_t *CPlayer, float blend[4], float maxinvalpha, int maxpainblend)
+{
+	float cap;
+	if (!V_PlayerBlendLayers (CPlayer, maxinvalpha, maxpainblend, AddInto, blend, cap))
+		return;
 	// cap opacity if desired
-	if (blend[3] > maxinvalpha) blend[3] = maxinvalpha;
+	if (blend[3] > cap) blend[3] = cap;
 }

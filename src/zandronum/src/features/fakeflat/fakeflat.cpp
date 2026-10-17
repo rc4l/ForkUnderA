@@ -45,6 +45,7 @@
 #include "r_defs.h"
 #include "c_cvars.h"
 #include "features/fakeflat/fakeflat.h"
+#include "features/gamecopy/select.h"   // [rc4l] LiveSel, CopySel
 
 
 //==========================================================================
@@ -54,8 +55,10 @@
 //==========================================================================
 CVAR(Bool, gltest_slopeopt, false, 0)
 
-bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsector)
+template <class Sel> static bool CheckClipOf(side_t * sidedef, sector_t * frontsectorptr, sector_t * backsectorptr)
 {
+	const auto &frontsector_ = Sel::Of(frontsectorptr), &backsector_ = Sel::Of(backsectorptr);
+	const auto &sidedef_ = Sel::Of(sidedef);
 	line_t *linedef = sidedef->linedef;
 	fixed_t bs_floorheight1;
 	fixed_t bs_floorheight2;
@@ -71,8 +74,8 @@ bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsecto
 
 	// Lines with stacked sectors must never block!
 
-	if (backsector->portals[sector_t::ceiling] != NULL || backsector->portals[sector_t::floor] != NULL ||
-		frontsector->portals[sector_t::ceiling] != NULL || frontsector->portals[sector_t::floor] != NULL)
+	if (backsectorptr->portals[sector_t::ceiling] != NULL || backsectorptr->portals[sector_t::floor] != NULL ||
+		frontsectorptr->portals[sector_t::ceiling] != NULL || frontsectorptr->portals[sector_t::floor] != NULL)
 	{
 		return false;
 	}
@@ -80,64 +83,64 @@ bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsecto
 	// on large levels this distinction can save some time
 	// That's a lot of avoided multiplications if there's a lot to see!
 
-	if (frontsector->ceilingplane.a | frontsector->ceilingplane.b)
+	if (frontsector_.ceilingplane.a | frontsector_.ceilingplane.b)
 	{
-		fs_ceilingheight1=frontsector->ceilingplane.ZatPoint(linedef->v1);
-		fs_ceilingheight2=frontsector->ceilingplane.ZatPoint(linedef->v2);
+		fs_ceilingheight1=frontsector_.ceilingplane.ZatPoint(linedef->v1);
+		fs_ceilingheight2=frontsector_.ceilingplane.ZatPoint(linedef->v2);
 	}
 	else
 	{
-		fs_ceilingheight2=fs_ceilingheight1=frontsector->ceilingplane.d;
+		fs_ceilingheight2=fs_ceilingheight1=frontsector_.ceilingplane.d;
 	}
 
-	if (frontsector->floorplane.a | frontsector->floorplane.b)
+	if (frontsector_.floorplane.a | frontsector_.floorplane.b)
 	{
-		fs_floorheight1=frontsector->floorplane.ZatPoint(linedef->v1);
-		fs_floorheight2=frontsector->floorplane.ZatPoint(linedef->v2);
+		fs_floorheight1=frontsector_.floorplane.ZatPoint(linedef->v1);
+		fs_floorheight2=frontsector_.floorplane.ZatPoint(linedef->v2);
 	}
 	else
 	{
-		fs_floorheight2=fs_floorheight1=-frontsector->floorplane.d;
+		fs_floorheight2=fs_floorheight1=-frontsector_.floorplane.d;
 	}
 	
-	if (backsector->ceilingplane.a | backsector->ceilingplane.b)
+	if (backsector_.ceilingplane.a | backsector_.ceilingplane.b)
 	{
-		bs_ceilingheight1=backsector->ceilingplane.ZatPoint(linedef->v1);
-		bs_ceilingheight2=backsector->ceilingplane.ZatPoint(linedef->v2);
+		bs_ceilingheight1=backsector_.ceilingplane.ZatPoint(linedef->v1);
+		bs_ceilingheight2=backsector_.ceilingplane.ZatPoint(linedef->v2);
 	}
 	else
 	{
-		bs_ceilingheight2=bs_ceilingheight1=backsector->ceilingplane.d;
+		bs_ceilingheight2=bs_ceilingheight1=backsector_.ceilingplane.d;
 	}
 
-	if (backsector->floorplane.a | backsector->floorplane.b)
+	if (backsector_.floorplane.a | backsector_.floorplane.b)
 	{
-		bs_floorheight1=backsector->floorplane.ZatPoint(linedef->v1);
-		bs_floorheight2=backsector->floorplane.ZatPoint(linedef->v2);
+		bs_floorheight1=backsector_.floorplane.ZatPoint(linedef->v1);
+		bs_floorheight2=backsector_.floorplane.ZatPoint(linedef->v2);
 	}
 	else
 	{
-		bs_floorheight2=bs_floorheight1=-backsector->floorplane.d;
+		bs_floorheight2=bs_floorheight1=-backsector_.floorplane.d;
 	}
 
 	// now check for closed sectors!
 	if (bs_ceilingheight1<=fs_floorheight1 && bs_ceilingheight2<=fs_floorheight2) 
 	{
-		FTexture * tex = TexMan(sidedef->GetTexture(side_t::top));
+		FTexture * tex = TexMan(sidedef_.GetTexture(side_t::top));
 		if (!tex || tex->UseType==FTexture::TEX_Null) return false;
-		if (backsector->GetTexture(sector_t::ceiling)==skyflatnum && 
-			frontsector->GetTexture(sector_t::ceiling)==skyflatnum) return false;
+		if (backsector_.GetTexture(sector_t::ceiling)==skyflatnum && 
+			frontsector_.GetTexture(sector_t::ceiling)==skyflatnum) return false;
 		return true;
 	}
 
 	if (fs_ceilingheight1<=bs_floorheight1 && fs_ceilingheight2<=bs_floorheight2) 
 	{
-		FTexture * tex = TexMan(sidedef->GetTexture(side_t::bottom));
+		FTexture * tex = TexMan(sidedef_.GetTexture(side_t::bottom));
 		if (!tex || tex->UseType==FTexture::TEX_Null) return false;
 
 		// properly render skies (consider door "open" if both floors are sky):
-		if (backsector->GetTexture(sector_t::ceiling)==skyflatnum && 
-			frontsector->GetTexture(sector_t::ceiling)==skyflatnum) return false;
+		if (backsector_.GetTexture(sector_t::ceiling)==skyflatnum && 
+			frontsector_.GetTexture(sector_t::ceiling)==skyflatnum) return false;
 		return true;
 	}
 
@@ -146,17 +149,17 @@ bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsecto
 		// preserve a kind of transparent door/lift special effect:
 		if (bs_ceilingheight1 < fs_ceilingheight1 || bs_ceilingheight2 < fs_ceilingheight2) 
 		{
-			FTexture * tex = TexMan(sidedef->GetTexture(side_t::top));
+			FTexture * tex = TexMan(sidedef_.GetTexture(side_t::top));
 			if (!tex || tex->UseType==FTexture::TEX_Null) return false;
 		}
 		if (bs_floorheight1 > fs_floorheight1 || bs_floorheight2 > fs_floorheight2)
 		{
-			FTexture * tex = TexMan(sidedef->GetTexture(side_t::bottom));
+			FTexture * tex = TexMan(sidedef_.GetTexture(side_t::bottom));
 			if (!tex || tex->UseType==FTexture::TEX_Null) return false;
 		}
-		if (backsector->GetTexture(sector_t::ceiling)==skyflatnum && 
-			frontsector->GetTexture(sector_t::ceiling)==skyflatnum) return false;
-		if (backsector->GetTexture(sector_t::floor)==skyflatnum && frontsector->GetTexture(sector_t::floor)
+		if (backsector_.GetTexture(sector_t::ceiling)==skyflatnum && 
+			frontsector_.GetTexture(sector_t::ceiling)==skyflatnum) return false;
+		if (backsector_.GetTexture(sector_t::floor)==skyflatnum && frontsector_.GetTexture(sector_t::floor)
 			==skyflatnum) return false;
 		return true;
 	}
@@ -170,18 +173,18 @@ bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsecto
 //
 //==========================================================================
 
-void gl_CheckViewArea(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_t *backsector)
+template <class Sel> static void CheckViewAreaOf(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_t *backsector)
 {
 	if (in_area==area_default && 
-		(backsector->heightsec && !(backsector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC)) &&
-		(!frontsector->heightsec || frontsector->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC))
+		(backsector->heightsec && !(Sel::Of(backsector->heightsec).MoreFlags & SECF_IGNOREHEIGHTSEC)) &&
+		(!frontsector->heightsec || Sel::Of(frontsector->heightsec).MoreFlags & SECF_IGNOREHEIGHTSEC))
 	{
 		sector_t * s = backsector->heightsec;
 
-		fixed_t cz1 = frontsector->ceilingplane.ZatPoint(v1);
-		fixed_t cz2 = frontsector->ceilingplane.ZatPoint(v2);
-		fixed_t fz1 = s->floorplane.ZatPoint(v1);
-		fixed_t fz2 = s->floorplane.ZatPoint(v2);
+		fixed_t cz1 = Sel::Of(frontsector).ceilingplane.ZatPoint(v1);
+		fixed_t cz2 = Sel::Of(frontsector).ceilingplane.ZatPoint(v2);
+		fixed_t fz1 = Sel::Of(s).floorplane.ZatPoint(v1);
+		fixed_t fz2 = Sel::Of(s).floorplane.ZatPoint(v2);
 
 		// allow some tolerance in case slopes are involved
 		if (cz1 <= fz1 + FRACUNIT/100 && cz2<=fz2 + FRACUNIT/100) 
@@ -198,20 +201,22 @@ void gl_CheckViewArea(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_
 // by hardware rendering
 //
 //==========================================================================
-sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool back)
+template <class Sel> static sector_t * FakeFlatOf(sector_t * sec, sector_t * dest, area_t in_area, bool back)
 {
-	if (!sec->heightsec || sec->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC || sec->heightsec==sec) 
+	if (!sec->heightsec || Sel::Of(sec->heightsec).MoreFlags & SECF_IGNOREHEIGHTSEC || sec->heightsec==sec) 
 	{
 		// check for backsectors with the ceiling lower than the floor. These will create
 		// visual glitches because upper amd lower textures overlap.
-		if (back && sec->planes[sector_t::floor].TexZ > sec->planes[sector_t::ceiling].TexZ)
+		const auto &S = Sel::Of(sec);
+		if (back && S.planes[sector_t::floor].TexZ > S.planes[sector_t::ceiling].TexZ)
 		{
-			if (!(sec->floorplane.a | sec->floorplane.b | sec->ceilingplane.a | sec->ceilingplane.b))
+			if (!(S.floorplane.a | S.floorplane.b | S.ceilingplane.a | S.ceilingplane.b))
 			{
 				*dest = *sec;
-				dest->ceilingplane=sec->floorplane;
-				dest->ceilingplane.FlipVert();
-				dest->planes[sector_t::ceiling].TexZ = dest->planes[sector_t::floor].TexZ;
+				auto &D = Sel::Of(dest);
+				D.ceilingplane=S.floorplane;
+				D.ceilingplane.FlipVert();
+				D.planes[sector_t::ceiling].TexZ = D.planes[sector_t::floor].TexZ;
 				return dest;
 			}
 		}
@@ -227,10 +232,10 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 
 	if (in_area==area_above)
 	{
-		if (sec->heightsec->MoreFlags&SECF_FAKEFLOORONLY /*|| sec->GetTexture(sector_t::ceiling)==skyflatnum*/) in_area=area_normal;
+		if (Sel::Of(sec->heightsec).MoreFlags&SECF_FAKEFLOORONLY /*|| sec->GetTexture(sector_t::ceiling)==skyflatnum*/) in_area=area_normal;
 	}
 
-	int diffTex = (sec->heightsec->MoreFlags & SECF_CLIPFAKEPLANES);
+	int diffTex = (Sel::Of(sec->heightsec).MoreFlags & SECF_CLIPFAKEPLANES);
 	sector_t * s = sec->heightsec;
 	
 #if 0
@@ -238,29 +243,32 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 #else
 	memcpy(dest, sec, sizeof(sector_t));
 #endif
+	auto &D = Sel::Of(dest);
+	const auto &S = Sel::Of(sec);
+	const auto &Src = Sel::Of(s);
 
 	// Replace floor and ceiling height with control sector's heights.
 	if (diffTex)
 	{
-		if (s->floorplane.CopyPlaneIfValid (&dest->floorplane, &sec->ceilingplane))
+		if (Src.floorplane.CopyPlaneIfValid (&D.floorplane, &S.ceilingplane))
 		{
-			dest->SetTexture(sector_t::floor, s->GetTexture(sector_t::floor), false);
-			dest->SetPlaneTexZ(sector_t::floor, s->GetPlaneTexZ(sector_t::floor));
+			Sel::SetTexture(dest, sector_t::floor, Src.GetTexture(sector_t::floor));
+			Sel::SetPlaneTexZ(dest, sector_t::floor, Src.GetPlaneTexZ(sector_t::floor));
 			dest->vboindex[sector_t::floor] = sec->vboindex[sector_t::vbo_fakefloor];
 			dest->vboheight[sector_t::floor] = s->vboheight[sector_t::floor];
 		}
-		else if (s->MoreFlags & SECF_FAKEFLOORONLY)
+		else if (Src.MoreFlags & SECF_FAKEFLOORONLY)
 		{
 			if (in_area==area_below)
 			{
-				dest->ColorMap=s->ColorMap;
-				if (!(s->MoreFlags & SECF_NOFAKELIGHT))
+				D.ColorMap=Src.ColorMap;
+				if (!(Src.MoreFlags & SECF_NOFAKELIGHT))
 				{
-					dest->lightlevel  = s->lightlevel;
-					dest->SetPlaneLight(sector_t::floor, s->GetPlaneLight(sector_t::floor));
-					dest->SetPlaneLight(sector_t::ceiling, s->GetPlaneLight(sector_t::ceiling));
-					dest->ChangeFlags(sector_t::floor, -1, s->GetFlags(sector_t::floor));
-					dest->ChangeFlags(sector_t::ceiling, -1, s->GetFlags(sector_t::ceiling));
+					D.lightlevel  = Src.lightlevel;
+					D.planes[sector_t::floor].Light = Src.GetPlaneLight(sector_t::floor);
+					D.planes[sector_t::ceiling].Light = Src.GetPlaneLight(sector_t::ceiling);
+					D.planes[sector_t::floor].Flags = Src.GetFlags(sector_t::floor);
+					D.planes[sector_t::ceiling].Flags = Src.GetFlags(sector_t::ceiling);
 				}
 				return dest;
 			}
@@ -269,29 +277,29 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 	}
 	else
 	{
-		dest->SetPlaneTexZ(sector_t::floor, s->GetPlaneTexZ(sector_t::floor));
-		dest->floorplane   = s->floorplane;
+		Sel::SetPlaneTexZ(dest, sector_t::floor, Src.GetPlaneTexZ(sector_t::floor));
+		D.floorplane   = Src.floorplane;
 
 		dest->vboindex[sector_t::floor] = sec->vboindex[sector_t::vbo_fakefloor];
 		dest->vboheight[sector_t::floor] = s->vboheight[sector_t::floor];
 	}
 
-	if (!(s->MoreFlags&SECF_FAKEFLOORONLY))
+	if (!(Src.MoreFlags&SECF_FAKEFLOORONLY))
 	{
 		if (diffTex)
 		{
-			if (s->ceilingplane.CopyPlaneIfValid (&dest->ceilingplane, &sec->floorplane))
+			if (Src.ceilingplane.CopyPlaneIfValid (&D.ceilingplane, &S.floorplane))
 			{
-				dest->SetTexture(sector_t::ceiling, s->GetTexture(sector_t::ceiling), false);
-				dest->SetPlaneTexZ(sector_t::ceiling, s->GetPlaneTexZ(sector_t::ceiling));
+				Sel::SetTexture(dest, sector_t::ceiling, Src.GetTexture(sector_t::ceiling));
+				Sel::SetPlaneTexZ(dest, sector_t::ceiling, Src.GetPlaneTexZ(sector_t::ceiling));
 				dest->vboindex[sector_t::ceiling] = sec->vboindex[sector_t::vbo_fakeceiling];
 				dest->vboheight[sector_t::ceiling] = s->vboheight[sector_t::ceiling];
 			}
 		}
 		else
 		{
-			dest->ceilingplane  = s->ceilingplane;
-			dest->SetPlaneTexZ(sector_t::ceiling, s->GetPlaneTexZ(sector_t::ceiling));
+			D.ceilingplane  = Src.ceilingplane;
+			Sel::SetPlaneTexZ(dest, sector_t::ceiling, Src.GetPlaneTexZ(sector_t::ceiling));
 			dest->vboindex[sector_t::ceiling] = sec->vboindex[sector_t::vbo_fakeceiling];
 			dest->vboheight[sector_t::ceiling] = s->vboheight[sector_t::ceiling];
 		}
@@ -299,12 +307,12 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 
 	if (in_area==area_below)
 	{
-		dest->ColorMap=s->ColorMap;
-		dest->SetPlaneTexZ(sector_t::floor, sec->GetPlaneTexZ(sector_t::floor));
-		dest->SetPlaneTexZ(sector_t::ceiling, s->GetPlaneTexZ(sector_t::floor));
-		dest->floorplane=sec->floorplane;
-		dest->ceilingplane=s->floorplane;
-		dest->ceilingplane.FlipVert();
+		D.ColorMap=Src.ColorMap;
+		Sel::SetPlaneTexZ(dest, sector_t::floor, S.GetPlaneTexZ(sector_t::floor));
+		Sel::SetPlaneTexZ(dest, sector_t::ceiling, Src.GetPlaneTexZ(sector_t::floor));
+		D.floorplane=S.floorplane;
+		D.ceilingplane=Src.floorplane;
+		D.ceilingplane.FlipVert();
 
 		dest->vboindex[sector_t::floor] = sec->vboindex[sector_t::floor];
 		dest->vboheight[sector_t::floor] = sec->vboheight[sector_t::floor];
@@ -314,50 +322,50 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 
 		dest->portals[sector_t::ceiling] = NULL;
 
-		if (!(s->MoreFlags & SECF_NOFAKELIGHT))
+		if (!(Src.MoreFlags & SECF_NOFAKELIGHT))
 		{
-			dest->lightlevel  = s->lightlevel;
+			D.lightlevel  = Src.lightlevel;
 		}
 
 		if (!back)
 		{
-			dest->SetTexture(sector_t::floor, diffTex ? sec->GetTexture(sector_t::floor) : s->GetTexture(sector_t::floor), false);
-			dest->planes[sector_t::floor].xform = s->planes[sector_t::floor].xform;
+			Sel::SetTexture(dest, sector_t::floor, diffTex ? S.GetTexture(sector_t::floor) : Src.GetTexture(sector_t::floor));
+			D.planes[sector_t::floor].xform = Src.planes[sector_t::floor].xform;
 
-			//dest->ceilingplane		= s->floorplane;
+			//D.ceilingplane		= Src.floorplane;
 			
-			if (s->GetTexture(sector_t::ceiling) == skyflatnum) 
+			if (Src.GetTexture(sector_t::ceiling) == skyflatnum) 
 			{
-				dest->SetTexture(sector_t::ceiling, dest->GetTexture(sector_t::floor), false);
-				//dest->floorplane			= dest->ceilingplane;
-				//dest->floorplane.FlipVert ();
-				//dest->floorplane.ChangeHeight (+1);
-				dest->planes[sector_t::ceiling].xform = dest->planes[sector_t::floor].xform;
+				Sel::SetTexture(dest, sector_t::ceiling, D.GetTexture(sector_t::floor));
+				//D.floorplane			= D.ceilingplane;
+				//D.floorplane.FlipVert ();
+				//D.floorplane.ChangeHeight (+1);
+				D.planes[sector_t::ceiling].xform = D.planes[sector_t::floor].xform;
 
 			} 
 			else 
 			{
-				dest->SetTexture(sector_t::ceiling, diffTex ? s->GetTexture(sector_t::floor) : s->GetTexture(sector_t::ceiling), false);
-				dest->planes[sector_t::ceiling].xform = s->planes[sector_t::ceiling].xform;
+				Sel::SetTexture(dest, sector_t::ceiling, diffTex ? Src.GetTexture(sector_t::floor) : Src.GetTexture(sector_t::ceiling));
+				D.planes[sector_t::ceiling].xform = Src.planes[sector_t::ceiling].xform;
 			}
 			
-			if (!(s->MoreFlags & SECF_NOFAKELIGHT))
+			if (!(Src.MoreFlags & SECF_NOFAKELIGHT))
 			{
-				dest->SetPlaneLight(sector_t::floor, s->GetPlaneLight(sector_t::floor));
-				dest->SetPlaneLight(sector_t::ceiling, s->GetPlaneLight(sector_t::ceiling));
-				dest->ChangeFlags(sector_t::floor, -1, s->GetFlags(sector_t::floor));
-				dest->ChangeFlags(sector_t::ceiling, -1, s->GetFlags(sector_t::ceiling));
+				D.planes[sector_t::floor].Light = Src.GetPlaneLight(sector_t::floor);
+				D.planes[sector_t::ceiling].Light = Src.GetPlaneLight(sector_t::ceiling);
+				D.planes[sector_t::floor].Flags = Src.GetFlags(sector_t::floor);
+				D.planes[sector_t::ceiling].Flags = Src.GetFlags(sector_t::ceiling);
 			}
 		}
 	}
 	else if (in_area == area_above)
 	{
-		dest->ColorMap = s->ColorMap;
-		dest->SetPlaneTexZ(sector_t::ceiling, sec->GetPlaneTexZ(sector_t::ceiling));
-		dest->SetPlaneTexZ(sector_t::floor, s->GetPlaneTexZ(sector_t::ceiling));
-		dest->ceilingplane = sec->ceilingplane;
-		dest->floorplane = s->ceilingplane;
-		dest->floorplane.FlipVert();
+		D.ColorMap = Src.ColorMap;
+		Sel::SetPlaneTexZ(dest, sector_t::ceiling, S.GetPlaneTexZ(sector_t::ceiling));
+		Sel::SetPlaneTexZ(dest, sector_t::floor, Src.GetPlaneTexZ(sector_t::ceiling));
+		D.ceilingplane = S.ceilingplane;
+		D.floorplane = Src.ceilingplane;
+		D.floorplane.FlipVert();
 
 		dest->vboindex[sector_t::floor] = sec->vboindex[sector_t::vbo_fakeceiling];
 		dest->vboheight[sector_t::floor] = s->vboheight[sector_t::ceiling];
@@ -367,35 +375,73 @@ sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool bac
 
 		dest->portals[sector_t::floor] = NULL;
 
-		if (!(s->MoreFlags & SECF_NOFAKELIGHT))
+		if (!(Src.MoreFlags & SECF_NOFAKELIGHT))
 		{
-			dest->lightlevel  = s->lightlevel;
+			D.lightlevel  = Src.lightlevel;
 		}
 
 		if (!back)
 		{
-			dest->SetTexture(sector_t::ceiling, diffTex ? sec->GetTexture(sector_t::ceiling) : s->GetTexture(sector_t::ceiling), false);
-			dest->SetTexture(sector_t::floor, s->GetTexture(sector_t::ceiling), false);
-			dest->planes[sector_t::ceiling].xform = dest->planes[sector_t::floor].xform = s->planes[sector_t::ceiling].xform;
+			Sel::SetTexture(dest, sector_t::ceiling, diffTex ? S.GetTexture(sector_t::ceiling) : Src.GetTexture(sector_t::ceiling));
+			Sel::SetTexture(dest, sector_t::floor, Src.GetTexture(sector_t::ceiling));
+			D.planes[sector_t::ceiling].xform = D.planes[sector_t::floor].xform = Src.planes[sector_t::ceiling].xform;
 			
-			if (s->GetTexture(sector_t::floor) != skyflatnum)
+			if (Src.GetTexture(sector_t::floor) != skyflatnum)
 			{
-				dest->SetTexture(sector_t::floor, s->GetTexture(sector_t::floor), false);
-				dest->planes[sector_t::floor].xform = s->planes[sector_t::floor].xform;
+				Sel::SetTexture(dest, sector_t::floor, Src.GetTexture(sector_t::floor));
+				D.planes[sector_t::floor].xform = Src.planes[sector_t::floor].xform;
 			}
 			
-			if (!(s->MoreFlags & SECF_NOFAKELIGHT))
+			if (!(Src.MoreFlags & SECF_NOFAKELIGHT))
 			{
-				dest->lightlevel  = s->lightlevel;
-				dest->SetPlaneLight(sector_t::floor, s->GetPlaneLight(sector_t::floor));
-				dest->SetPlaneLight(sector_t::ceiling, s->GetPlaneLight(sector_t::ceiling));
-				dest->ChangeFlags(sector_t::floor, -1, s->GetFlags(sector_t::floor));
-				dest->ChangeFlags(sector_t::ceiling, -1, s->GetFlags(sector_t::ceiling));
+				D.lightlevel  = Src.lightlevel;
+				D.planes[sector_t::floor].Light = Src.GetPlaneLight(sector_t::floor);
+				D.planes[sector_t::ceiling].Light = Src.GetPlaneLight(sector_t::ceiling);
+				D.planes[sector_t::floor].Flags = Src.GetFlags(sector_t::floor);
+				D.planes[sector_t::ceiling].Flags = Src.GetFlags(sector_t::ceiling);
 			}
 		}
 	}
 	return dest;
 }
+
+
+using zx::gamecopy::LiveSel;
+using zx::gamecopy::CopySel;
+
+bool gl_CheckClip(side_t * sidedef, sector_t * frontsector, sector_t * backsector)
+{
+	return CheckClipOf<LiveSel>(sidedef, frontsector, backsector);
+}
+
+void gl_CheckViewArea(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_t *backsector)
+{
+	CheckViewAreaOf<LiveSel>(v1, v2, frontsector, backsector);
+}
+
+sector_t * gl_FakeFlat(sector_t * sec, sector_t * dest, area_t in_area, bool back)
+{
+	return FakeFlatOf<LiveSel>(sec, dest, in_area, back);
+}
+
+namespace zx { namespace fakeflat {
+
+bool RcCheckClip(side_t *sidedef, sector_t *frontsector, sector_t *backsector)
+{
+	return CheckClipOf<CopySel>(sidedef, frontsector, backsector);
+}
+
+void RcCheckViewArea(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_t *backsector)
+{
+	CheckViewAreaOf<CopySel>(v1, v2, frontsector, backsector);
+}
+
+sector_t *RcFakeFlat(sector_t *sec, sector_t *dest, area_t in_area, bool back)
+{
+	return FakeFlatOf<CopySel>(sec, dest, in_area, back);
+}
+
+}} // namespace zx::fakeflat
 
 #include "features/levelmesh/computation/flatmesh_compute.h"   // [rc4l] kViewArea
 
@@ -407,7 +453,7 @@ static_assert(area_normal == zx::levelmesh::kViewAreaNormal && area_below == zx:
 
 bool ViewDependent(const sector_t *s)
 {
-	return s->heightsec != NULL && s->heightsec != s && !(s->heightsec->MoreFlags & SECF_IGNOREHEIGHTSEC);
+	return s->heightsec != NULL && s->heightsec != s && !(s->heightsec->rc.MoreFlags & SECF_IGNOREHEIGHTSEC);
 }
 
 bool SetTransferArea(int area)
@@ -419,7 +465,7 @@ bool SetTransferArea(int area)
 
 sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back)
 {
-	return (s != NULL && ViewDependent(s)) ? gl_FakeFlat(s, scratch, (area_t)g_transferArea, back) : s;
+	return (s != NULL && ViewDependent(s)) ? RcFakeFlat(s, scratch, (area_t)g_transferArea, back) : s;
 }
 
 }} // namespace zx::fakeflat

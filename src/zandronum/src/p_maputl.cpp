@@ -49,6 +49,7 @@
 // [Leo] Zandronum includes
 #include "v_text.h"
 #include "sv_main.h"
+#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 
 static AActor *RoughBlockCheck (AActor *mo, int index, void *);
 
@@ -270,6 +271,7 @@ void AActor::UnlinkFromWorld ()
 		// pointers, allows head node pointers to be treated like everything else
 		AActor **prev = sprev;
 		AActor  *next = snext;
+		zx::gamecopy::NoteActorLists();
 
 		if (prev != NULL)	// prev will be NULL if this actor gets deleted due to cleaning up from a broken savegame
 		{
@@ -374,6 +376,7 @@ void AActor::LinkToWorld (sector_t *sec)
 			next->sprev = &snext;
 		sprev = link;
 		*link = this;
+		zx::gamecopy::NoteActorLists();
 
 		// phares 3/16/98
 		//

@@ -44,7 +44,11 @@ A report from the browser build reproduces in headless Chrome rather than an eng
 `node tools/web/stage.mjs build-web <dir> --wads <iwad>,<map>` stages a page with their wads, and
 `node tools/web/probe.mjs <dir> --query "iwad=...&file=...&map=..." --run "god; wait 1000; +attack"
 [--autoplay]` plays it, listing what the commands printed, the sounds it started (and any started again), the
-screen textures it held and its WebGPU errors; `--soak reload` instead reloads the map and prints what kept growing. The probe's Chrome is always muted, and a minimal template map isolates the fault
+screen textures it held and its WebGPU errors; `--soak reload` instead reloads the map and prints what kept growing.
+Two look steps measure what a player feels: `frames` prints the browser's frame pacing (median, p99, max, gaps
+over 20 and 50 ms) since the last `frames`, and `level` what the audio output carried (RMS, with
+`--autoplay`). A run like `"god; warp X Y; fua_debug_orbit 25; wait 2000; frames; wait 5000; frames"` is a
+frame-rate report's repro, so a one-off Chrome script is never needed. The probe's Chrome is always muted, and a minimal template map isolates the fault
 better than their mod's busy map.
 
 1. **Read it.** `queue next`. The spot's `loaded` says which wads the map needs; launching without them
@@ -58,8 +62,10 @@ better than their mod's busy map.
    node src/cli.mjs shot <tag> --spot <spot> --port 7799
    ```
 
-   `play --spot` takes the spot's map and wads (by name, from `FUACTL_PWADS` or `--store`) and stands
-   the player there. Reproduce it two ways: loaded directly, and reached the way the user did, with
+   `play --spot` takes the spot's map and wads (by name, from `FUACTL_PWADS` or `--store`), sizes the
+   window to the spot's `view` (render size, scale, FOV; the launch prints `ok view` or `BAD view`) and
+   stands the player there. A spot with no `view` predates it: ask what size their window was before
+   chasing a fault that depends on the frame's shape (#58). Reproduce it two ways: loaded directly, and reached the way the user did, with
    `travel --to <MAP>` (`nextmap` until there) from where they started. Note which route shows it,
    since a fault only one shows is a level-change bug. When it does not show, try `play --no-gl`: a
    fault only `--no-gl` shows is in the GL-free path. Check it is the fault they reported and not a

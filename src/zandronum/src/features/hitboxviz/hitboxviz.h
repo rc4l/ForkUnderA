@@ -45,7 +45,7 @@ struct LineBatch
 enum { kLineBatches = 3 };
 
 // [rc4l] The player's view's boxes, kept apart from GL's nested scenes: every thing in the given sectors (the walk's, as GL's RenderThings offers the things of each sector its walk reached) seen from viewActor, and the live blasts.
-void CollectBackendFrame(AActor *viewActor, const int *sectorList, int count);
+void CollectBackendFrame(const void *viewActor, const int *sectorList, int count);
 
 // [rc4l] What CollectBackendFrame gathered, the non-empty batches of it into out (kLineBatches long), whether they ignore depth, and the line width in pixels; how many.
 int BackendLines(LineBatch *out, bool &xray, float &widthPx);

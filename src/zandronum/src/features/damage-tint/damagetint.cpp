@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] features/damage-tint glue: eligibility (players on damaging floors, minus radsuits),
-// per-actor intensity ramps, the per-texture floor-color cache, and the two render hooks. All the
-// arithmetic lives in computation/damagetint_compute (unit-tested); this file is engine plumbing.
+// [rc4l] features/damage-tint's render half, the ramps, floor colours and hooks, with whether a floor hurts an actor read between tics by tintsubject.cpp and the arithmetic in computation/damagetint_compute.
 //
 // Render-side only by design: nothing here writes sector_t, AActor, or anything a savegame, demo,
 // netcode, or ACS script can observe. Sector_SetColor etc. are irrelevant to it -- the tint reads
@@ -11,6 +9,8 @@
 // win automatically via the blend-op gate.
 
 #include "gl/system/gl_system.h"
+#include "features/gamecopy/players.h"   // [rc4l] the console player's body record
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "doomtype.h"
 #include "doomstat.h"
 #include "g_level.h"
@@ -18,11 +18,9 @@
 #include "d_player.h"
 #include "r_defs.h"
 #include "r_data/renderstyle.h"
-#include "p_lnspec.h"
 #include "p_local.h"
-#include "p_terrain.h"
 #include "p_3dfloors.h"
-#include "a_artifacts.h"
+#include "p_terrain.h"
 #include "c_dispatch.h"
 #include "textures/textures.h"
 #include "bitmap.h"
@@ -31,76 +29,10 @@
 
 #include "features/damage-tint/computation/damagetint_compute.h"
 #include "features/damage-tint/damagetint.h"
+#include "features/gamecopy/tintsubject.h"
 
 using namespace zx::damagetint;
-
-// ---------------------------------------------------------------------------------------------
-// Sim-side (compiled everywhere, including dedicated servers): the sector damage table, exported
-// for the bridge's world.sectors query and shared by the render hooks below.
-// ---------------------------------------------------------------------------------------------
-
-namespace
-{
-	// How much a sector's special/damage config hurts. Mirrors P_PlayerInSpecialSector completely:
-	// the generic damage field, every translated named special (65..255) that damages or feeds the
-	// Strife hazard counter, MBF21 death bits, and Boom's generalized damage bits.
-	int SectorSpecialDamage( const sector_t *sec )
-	{
-		if ( sec == NULL )
-			return 0;
-		if ( sec->damage > 0 )
-			return sec->damage;
-
-		int special = sec->special & ~SECRET_MASK;
-		if ( special == 0 )
-			return 0;
-
-		if ( special >= dLight_Flicker && special <= 255 )
-		{
-			switch ( special )
-			{
-			case dDamage_Nukage:
-			case dDamage_LavaWimpy:
-			case dScroll_EastLavaDamage:
-			case sLight_Strobe_Hurt:
-				return 5;
-			case hDamage_Sludge:
-				return 4;
-			case dDamage_Hellslime:
-				return 10;
-			case dDamage_LavaHefty:
-				return 8;
-			case dDamage_SuperHellslime:
-			case dLight_Strobe_Hurt:
-			case dDamage_End:
-				return 20;
-			case sDamage_Hellslime:
-				return 2;  // Strife hazard buildup
-			case sDamage_SuperHellslime:
-				return 4;  // Strife hazard buildup
-			case Damage_InstantDeath:
-				return 999;
-			}
-			return 0;
-		}
-
-		if ( special & DEATH_MASK )
-			return 999; // MBF21 death bits: every variant is lethal
-
-		switch ( special & DAMAGE_MASK )
-		{
-		case 0x0100: return 5;
-		case 0x0200: return 10;
-		case 0x0300: return 20;
-		}
-		return 0;
-	}
-} // namespace
-
-int DamageTint_SectorDamage( const sector_t *sec )
-{
-	return SectorSpecialDamage( sec );
-}
+using zx::gamecopy::TintSubject;
 
 #ifndef NO_GL
 
@@ -131,7 +63,7 @@ namespace
 		int      lastTic;
 		PalEntry color; // latched while active, so a fade-out keeps the pool's color
 	};
-	TMap<AActor *, TintState> g_state;
+	TMap<unsigned int, TintState> g_state;
 	TMap<int, PalEntry> g_avgCache; // floor texture id -> average color
 
 	PalEntry FloorAverageColor( FTextureID id )
@@ -158,81 +90,10 @@ namespace
 		return avg;
 	}
 
-	// The complete "is this actor's floor hurting them" check across all four systems: base-sector
-	// specials, TERRAIN flat damage, and 3D-floor contact (whose top texture then supplies the tint
-	// color). Also owns the on-the-floor gate, mirroring the respective damage code's own tests.
-	int FloorDamage( AActor *actor, FTextureID &texOut )
+	// [rc4l] Advance (and occasionally prune) the per-actor ramp, keyed on the actor's render copy id, which no later actor reuses.
+	float UpdateIntensity( unsigned int actor, bool active, PalEntry activeColor, PalEntry &colorOut )
 	{
-		sector_t *sec = actor->Sector;
-		if ( sec == NULL )
-			return 0;
-		texOut = sec->GetTexture( sector_t::floor );
-
-		if ( actor->z == sec->floorplane.ZatPoint( actor->x, actor->y ) || actor->waterlevel )
-		{
-			int dmg = SectorSpecialDamage( sec );
-			if ( dmg > 0 )
-				return dmg;
-			// TERRAIN: flat-based damage (Heretic/Hexen lava, custom TERRAIN definitions).
-			int terrain = P_GetThingFloorType( actor );
-			if ( Terrains[terrain].DamageAmount > 0 )
-				return Terrains[terrain].DamageAmount;
-			return 0;
-		}
-
-		// Off the base floor: standing on (or wading in) a 3D floor? Mirrors
-		// P_PlayerOnSpecial3DFloor's contact test; the model sector carries the special.
-		if ( sec->e != NULL )
-		{
-			for ( unsigned int i = 0; i < sec->e->XFloor.ffloors.Size(); ++i )
-			{
-				F3DFloor *rover = sec->e->XFloor.ffloors[i];
-				if ( !( rover->flags & FF_EXISTS ) || ( rover->flags & FF_FIX ))
-					continue;
-				if ( rover->flags & FF_SOLID )
-				{
-					if ( actor->z != rover->top.plane->ZatPoint( actor->x, actor->y ))
-						continue;
-				}
-				else
-				{
-					if ( actor->z > rover->top.plane->ZatPoint( actor->x, actor->y )
-						|| actor->z + actor->height < rover->bottom.plane->ZatPoint( actor->x, actor->y ))
-						continue;
-				}
-				int dmg = SectorSpecialDamage( rover->model );
-				if ( dmg > 0 )
-				{
-					if ( rover->top.texture != NULL )
-						texOut = *rover->top.texture;
-					return dmg;
-				}
-				break;
-			}
-		}
-		return 0;
-	}
-
-	// Any damage-negating state: radsuit (and subclasses), invulnerability power/flag, god mode.
-	// The tint doesn't vanish for these -- it switches to the protected GLOW.
-	bool DamageNegated( player_t *player )
-	{
-		if ( player->cheats & CF_GODMODE )
-			return true;
-		if ( player->mo->flags2 & MF2_INVULNERABLE )
-			return true;
-		for ( AInventory *item = player->mo->Inventory; item != NULL; item = item->Inventory )
-			if ( item->IsKindOf( RUNTIME_CLASS( APowerIronFeet ))
-				|| item->IsKindOf( RUNTIME_CLASS( APowerInvulnerable )))
-				return true;
-		return false;
-	}
-
-	// Advance (and occasionally prune) the per-actor ramp. Keyed on the actor pointer; an address
-	// reused by a new actor can inherit at most one frame of stale fade-out -- cosmetic only.
-	float UpdateIntensity( AActor *actor, bool active, PalEntry activeColor, PalEntry &colorOut )
-	{
-		TintState st = { 0.0f, level.time, PalEntry( 255, 255, 255 ) };
+		TintState st = { 0.0f, zx::gamecopy::Level().time, PalEntry( 255, 255, 255 ) };
 		if ( TintState *hit = g_state.CheckKey( actor ))
 			st = *hit;
 		if ( active )
@@ -241,25 +102,25 @@ namespace
 
 		// A lastTic from the future means the level changed under us (the clock restarted and the
 		// actor address was recycled) -- start this entry over instead of freezing its ramp.
-		if ( st.lastTic > level.time )
+		if ( st.lastTic > zx::gamecopy::Level().time )
 		{
 			st.intensity = 0.0f;
-			st.lastTic = level.time;
+			st.lastTic = zx::gamecopy::Level().time;
 		}
 
-		st.intensity = RampStep( st.intensity, active, level.time - st.lastTic, RISE_TICS, FALL_TICS );
-		st.lastTic = level.time;
+		st.intensity = RampStep( st.intensity, active, zx::gamecopy::Level().time - st.lastTic, RISE_TICS, FALL_TICS );
+		st.lastTic = zx::gamecopy::Level().time;
 		g_state.Insert( actor, st );
 
 		static int lastSweep = -1;
-		if ( level.time < lastSweep || level.time - lastSweep > 128 )
+		if ( zx::gamecopy::Level().time < lastSweep || zx::gamecopy::Level().time - lastSweep > 128 )
 		{
-			lastSweep = level.time;
-			TArray<AActor *> stale;
-			TMap<AActor *, TintState>::Iterator it( g_state );
-			TMap<AActor *, TintState>::Pair *pair;
+			lastSweep = zx::gamecopy::Level().time;
+			TArray<unsigned int> stale;
+			TMap<unsigned int, TintState>::Iterator it( g_state );
+			TMap<unsigned int, TintState>::Pair *pair;
 			while ( it.NextPair( pair ))
-				if ( pair->Value.lastTic > level.time || level.time - pair->Value.lastTic > 70 )
+				if ( pair->Value.lastTic > zx::gamecopy::Level().time || zx::gamecopy::Level().time - pair->Value.lastTic > 70 )
 					stale.Push( pair->Key );
 			for ( unsigned int i = 0; i < stale.Size(); ++i )
 				g_state.Remove( stale[i] );
@@ -270,35 +131,28 @@ namespace
 	// Shared qualification + strength for the hooks. Returns the effective percent (0 = no tint),
 	// the tint color, and whether it should render as the protected GLOW (radsuit/invuln/god on a
 	// damaging floor) instead of the taking-damage stain.
-	int TintStrength( AActor *actor, int blendOp, DWORD styleFlags, int basePct, PalEntry &avgOut, bool &glowOut )
+	int TintStrength( const TintSubject &s, int blendOp, DWORD styleFlags, int basePct, PalEntry &avgOut, bool &glowOut )
 	{
 		glowOut = false;
-		if ( basePct <= 0 || gamestate != GS_LEVEL || actor == NULL )
+		if ( basePct <= 0 || gamestate != GS_LEVEL || s.id == 0 )
 			return 0;
-		if ( actor->player == NULL || actor->player->mo != actor )
+		if ( !s.playerBody )
 			return 0; // players only: floor damage is a player mechanic
 		if ( blendOp != STYLEOP_Add || ( styleFlags & STYLEF_ColorIsFixed ))
 			return 0; // stencil/shaded/fuzz/subtractive styles own their look
 
-		// FloorDamage owns the on-the-floor gates, mirroring each damage system's own test (base
-		// floor plane / water / 3D-floor contact) -- ledge-hanging neither damages nor tints. Any
-		// damage-negating state (radsuit and variants, invulnerability, god) means you look
-		// normal: no tint at all. (glowOut stays wired for a possible future protected-aura mode
-		// -- the shader supports it -- but nothing sets it today.)
-		FTextureID tintTex;
-		tintTex.SetInvalid();
-		bool active = FloorDamage( actor, tintTex ) > 0
-			&& !DamageNegated( actor->player );
+		// [rc4l] The subject is active only when tintsubject.cpp found its floor hurting it unprotected, and nothing sets glowOut today.
+		const bool active = s.active;
 
 		PalEntry activeColor( 255, 255, 255 );
 		if ( active )
-			activeColor = FloorAverageColor( tintTex );
+			activeColor = FloorAverageColor( s.texture );
 
-		float intensity = UpdateIntensity( actor, active, activeColor, avgOut );
+		float intensity = UpdateIntensity( s.id, active, activeColor, avgOut );
 		if ( intensity <= 0.02f )
 			return 0;
 
-		float pulse = active ? PulseFactor( level.time & 31, PULSE_PEAK, PULSE_DECAY ) : 1.0f;
+		float pulse = active ? PulseFactor( zx::gamecopy::Level().time & 31, PULSE_PEAK, PULSE_DECAY ) : 1.0f;
 		return EffectivePct( basePct, intensity, pulse );
 	}
 } // namespace
@@ -306,11 +160,11 @@ namespace
 namespace
 {
 	// [rc4l] An actor's gradient at its hook's strength and coverage cvars: full at the larger V, as the sprite, weapon and face all take it.
-	bool Gradient( AActor *actor, int blendOp, DWORD styleFlags, int basePct, int coveragePct, float vt, float vb, TintGradient &out )
+	bool Gradient( const TintSubject &s, int blendOp, DWORD styleFlags, int basePct, int coveragePct, float vt, float vb, TintGradient &out )
 	{
 		PalEntry avg;
 		bool glow;
-		const int pct = TintStrength( actor, blendOp, styleFlags, basePct, avg, glow );
+		const int pct = TintStrength( s, blendOp, styleFlags, basePct, avg, glow );
 		const int cov = clamp<int>( coveragePct, 0, 100 );
 		if ( pct <= 0 || cov <= 0 )
 			return false;
@@ -328,25 +182,35 @@ namespace
 	bool g_armed2DOn = false;
 } // namespace
 
-bool DamageTint_SpriteGradient( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb, TintGradient &out )
+bool DamageTint_SpriteGradient( const TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, TintGradient &out )
 {
-	return Gradient( actor, blendOp, styleFlags, cl_damagetint, cl_damagetint_coverage, vt, vb, out );
+	return Gradient( s, blendOp, styleFlags, cl_damagetint, cl_damagetint_coverage, vt, vb, out );
 }
 
-bool DamageTint_WeaponGradient( AActor *playermo, int blendOp, DWORD styleFlags, float vt, float vb, TintGradient &out )
+bool DamageTint_WeaponGradient( const TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, TintGradient &out )
 {
-	return Gradient( playermo, blendOp, styleFlags, cl_damagetint_weapon, cl_damagetint_weapon_coverage, vt, vb, out );
+	return Gradient( s, blendOp, styleFlags, cl_damagetint_weapon, cl_damagetint_weapon_coverage, vt, vb, out );
 }
 
-bool DamageTint_BeginSpriteGlow( AActor *actor, int blendOp, DWORD styleFlags, float vt, float vb )
+bool DamageTint_BeginSpriteGlow( const TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb )
 {
 	// Per-pixel gradient across the sprite's vertical texture span: full tint at the feet (the
 	// larger V), fading to none at the coverage point. Same shader path as the weapon and
 	// mugshot, so it reads identically on any clothing color; protected players glow instead.
 	TintGradient g;
-	if ( !DamageTint_SpriteGradient( actor, blendOp, styleFlags, vt, vb, g ))
+	if ( !DamageTint_SpriteGradient( s, blendOp, styleFlags, vt, vb, g ))
 		return false;
 	SetGLTint( g );
+	return true;
+}
+
+bool DamageTint_Ramp( unsigned int id, float &intensity, int &lastTic )
+{
+	const TintState *st = g_state.CheckKey( id );
+	if ( st == NULL )
+		return false;
+	intensity = st->intensity;
+	lastTic = st->lastTic;
 	return true;
 }
 
@@ -385,8 +249,34 @@ bool DamageTint_Armed2D( TintGradient &out )
 	return true;
 }
 
-// Diagnostic: why is (or isn't) the tint firing right here? Also prints a histogram of every
-// nonzero sector special on the map so an uncovered damaging special is immediately visible.
+PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
+{
+	if ( coverageFracOut != NULL )
+		*coverageFracOut = 0.0f;
+	if ( glowOut != NULL )
+		*glowOut = false;
+	// [rc4l] The console player's body as the render copy holds it, none when the copy has no such player.
+	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player( consoleplayer );
+	if ( me == NULL )
+		return PalEntry( 0 );
+	const zx::gamecopy::ActorRecord *const mo = me != NULL ? zx::gamecopy::Record( me->mo ) : NULL;
+	const TintSubject subject = { mo != NULL ? mo->id : 0u, mo != NULL && mo->playerBody, mo != NULL && mo->tintActive, mo != NULL ? mo->tintTexture : FTextureID() };
+	PalEntry avg;
+	bool glow;
+	// The mugshot has no render style; qualify with the neutral style so only the floor state decides.
+	int pct = TintStrength( subject, STYLEOP_Add, 0, cl_damagetint_face, avg, glow );
+	if ( pct <= 0 )
+		return PalEntry( 0 );
+	int cov = clamp<int>( cl_damagetint_face_coverage, 0, 100 );
+	if ( cov <= 0 )
+		return PalEntry( 0 );
+	if ( coverageFracOut != NULL )
+		*coverageFracOut = cov / 100.0f;
+	if ( glowOut != NULL )
+		*glowOut = glow;
+	return PalEntry( (BYTE)( pct * 255 / 100 ), avg.r, avg.g, avg.b );
+}
+
 CCMD( fua_tintdebug )
 {
 	if ( gamestate != GS_LEVEL || consoleplayer < 0 || !playeringame[consoleplayer] )
@@ -400,14 +290,16 @@ CCMD( fua_tintdebug )
 	dbgTex.SetInvalid();
 	int terrain = P_GetThingFloorType( mo );
 	Printf( "sector #%d  special=%d (0x%x)  damage=%d  computed=%d  terrain=%d(dmg %d)\n",
-		(int)( sec - sectors ), sec->special, sec->special, sec->damage, FloorDamage( mo, dbgTex ),
+		(int)( sec - sectors ), sec->special, sec->special, sec->damage, zx::gamecopy::FloorDamage( mo, dbgTex ),
 		terrain, Terrains[terrain].DamageAmount );
 	Printf( "z=%d floorz=%d planez=%d onfloor=%d waterlevel=%d protected=%d 3dfloors=%d\n",
 		(int)( mo->z >> FRACBITS ), (int)( mo->floorz >> FRACBITS ), (int)( fz >> FRACBITS ),
-		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && DamageNegated( mo->player )),
+		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && zx::gamecopy::DamageNegated( mo->player )),
 		sec->e ? (int)sec->e->XFloor.ffloors.Size() : 0 );
-	if ( TintState *st = g_state.CheckKey( mo ))
-		Printf( "intensity=%.2f lastTic=%d (now %d)\n", st->intensity, st->lastTic, level.time );
+	float intensity;
+	int lastTic;
+	if ( DamageTint_Ramp( mo->rcSerial, intensity, lastTic ))
+		Printf( "intensity=%.2f lastTic=%d (now %d)\n", intensity, lastTic, level.time );
 	else
 		Printf( "no ramp entry yet\n" );
 
@@ -429,43 +321,18 @@ CCMD( fua_tintdebug )
 		int si = *sample.CheckKey( p->Key );
 		sector_t &s = sectors[si];
 		Printf( "special %d (0x%x): %d sectors, dmg-> %d, e.g. #%d near (%d,%d)\n",
-			p->Key, p->Key, p->Value, SectorSpecialDamage( &s ), si,
+			p->Key, p->Key, p->Value, DamageTint_SectorDamage( &s ), si,
 			(int)( s.soundorg[0] >> FRACBITS ), (int)( s.soundorg[1] >> FRACBITS ));
 	}
-}
-
-PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
-{
-	if ( coverageFracOut != NULL )
-		*coverageFracOut = 0.0f;
-	if ( glowOut != NULL )
-		*glowOut = false;
-	if ( consoleplayer < 0 || consoleplayer >= MAXPLAYERS || !playeringame[consoleplayer] )
-		return PalEntry( 0 );
-	AActor *mo = players[consoleplayer].mo;
-	PalEntry avg;
-	bool glow;
-	// The mugshot has no render style; qualify with the neutral style so only the floor state decides.
-	int pct = TintStrength( mo, STYLEOP_Add, 0, cl_damagetint_face, avg, glow );
-	if ( pct <= 0 )
-		return PalEntry( 0 );
-	int cov = clamp<int>( cl_damagetint_face_coverage, 0, 100 );
-	if ( cov <= 0 )
-		return PalEntry( 0 );
-	if ( coverageFracOut != NULL )
-		*coverageFracOut = cov / 100.0f;
-	if ( glowOut != NULL )
-		*glowOut = glow;
-	return PalEntry( (BYTE)( pct * 255 / 100 ), avg.r, avg.g, avg.b );
 }
 
 #else // NO_GL -- dedicated server: no renderer, no tint; nothing references these there.
 
 #include "features/damage-tint/damagetint.h"
-bool DamageTint_BeginSpriteGlow( AActor *, int, DWORD, float, float ) { return false; }
+bool DamageTint_BeginSpriteGlow( const zx::gamecopy::TintSubject &, int, DWORD, float, float ) { return false; }
 void DamageTint_EndSpriteGlow() {}
-bool DamageTint_SpriteGradient( AActor *, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
-bool DamageTint_WeaponGradient( AActor *, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
+bool DamageTint_SpriteGradient( const zx::gamecopy::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
+bool DamageTint_WeaponGradient( const zx::gamecopy::TintSubject &, int, DWORD, float, float, zx::damagetint::TintGradient & ) { return false; }
 bool DamageTint_Armed2D( zx::damagetint::TintGradient & ) { return false; }
 PalEntry DamageTint_Blend( PalEntry, int ) { return PalEntry( 255, 255, 255, 255 ); }
 PalEntry DamageTint_FaceOverlay( float *cov, bool *glow ) { if ( cov ) *cov = 0.0f; if ( glow ) *glow = false; return PalEntry( 0 ); }

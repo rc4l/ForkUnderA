@@ -6,7 +6,7 @@
 #ifndef ZX_MODELBUILD_H
 #define ZX_MODELBUILD_H
 
-class AActor;
+namespace zx { namespace gamecopy { struct ActorRecord; } }
 struct PClass;
 struct FState;
 struct FSpriteModelFrame;
@@ -18,7 +18,7 @@ namespace zx { namespace sprites {
 struct ModelPose;
 
 // [rc4l] What gl_RenderModel turns into the model's matrix, for an actor standing at (x, y, z) after interpolation and bob.
-void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &pose);
+void ModelPoseFor(const zx::gamecopy::ActorRecord &actor, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &pose);
 
 // [rc4l] The frame a model blends toward and how far, as gl_RenderFrameModels finds them; NULL when it does not blend.
 FSpriteModelFrame *NextModelFrame(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, double &inter);

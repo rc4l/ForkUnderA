@@ -35,3 +35,15 @@ test('the report lists the sounds, flags the repeats, and gives the textures and
     '[log] WebGPU error: Out of Memory',
   ]);
 });
+
+// [rc4l] Seven one-off browser scripts each copied a Chrome harness to time frames or hear the output, for want of these two steps.
+test('a run looks at the frame pacing and the audio level since its last look', () => {
+  const steps = parseRun('god; wait 4000; frames; level; +attack; frames');
+  assert.deepEqual(steps, [{ command: 'god' }, { wait: 4000 }, { look: 'frames' }, { look: 'level' }, { command: '+attack' }, { look: 'frames' }]);
+  const js = runScript(steps);
+  assert.match(js, /let framesFrom = window\.fuaFrames\.length;/);
+  assert.match(js, /function framePacing\(times\)/);
+  assert.equal(js.match(/framesFrom = window\.fuaFrames\.length;/g).length, 3);
+  assert.match(js, /window\.fuaLevel\.mean\(\)\.toFixed\(4\) \+ ' RMS'\); window\.fuaLevel\.reset\(\);/);
+  assert.doesNotMatch(js, /fuaCommand\("frames"\)/);
+});

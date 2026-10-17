@@ -198,7 +198,7 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 		const sector_t &s = sectors[b.mirrorSector];
 		zx::hwrender::MirrorPlane p;
 		p.ceiling = b.mirrorCeiling;
-		p.z = FIXED2FLOAT((b.mirrorCeiling ? s.ceilingplane : s.floorplane).ZatPoint(viewx, viewy));
+		p.z = FIXED2FLOAT((b.mirrorCeiling ? s.rc.ceilingplane : s.rc.floorplane).ZatPoint(viewx, viewy));
 		zx::hwrender::ComputePlaneMirrorSlot(&planes[0], planeCount, maxSlots, p);
 		if (!zx::hwrender::ComputePlaneMirrorFaces(b.mirrorCeiling, p.z, vz)) continue;
 		const float mn[3] = { b.minX, b.minY, b.minZ }, mx[3] = { b.maxX, b.maxY, b.maxZ };

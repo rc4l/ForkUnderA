@@ -30,6 +30,15 @@ bool SetTransferArea(int area);
 // [rc4l] s as the backend's view sees it: through a height transfer for that view area (gl_FakeFlat), else s itself.
 sector_t *TransferSector(sector_t *s, sector_t *scratch, bool back);
 
+// [rc4l] gl_CheckClip, gl_CheckViewArea and gl_FakeFlat reading the render copy, for the backend; the gl_ ones read the live structures, for GL.
+bool RcCheckClip(side_t *sidedef, sector_t *frontsector, sector_t *backsector);
+void RcCheckViewArea(vertex_t *v1, vertex_t *v2, sector_t *frontsector, sector_t *backsector);
+sector_t *RcFakeFlat(sector_t *sec, sector_t *dest, area_t in_area, bool back);
+inline sector_t *RcFakeFlat(sector_t *sec, sector_t *dest, bool back)
+{
+	return RcFakeFlat(sec, dest, in_area, back);
+}
+
 }} // namespace zx::fakeflat
 
 #endif // ZX_FAKEFLAT_H

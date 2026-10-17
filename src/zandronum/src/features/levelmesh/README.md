@@ -69,6 +69,9 @@ yet. Scenario `walldecal`.
   `SetStackViewCapacity`, one stacked view per portal the level has. The walk slots follow it (the player's walk
   0, the skybox walk 1, the views from 2; `ComputeWalkSlots`), and so do the sky lists and the backend's pool of
   stacked-view targets, all made at level start so no view waits on a slot or a target mid-game.
+- `pointlight.h`/`.cpp`: the dynamic light on a point or an actor as GL's `gl_SetDynSpriteLight` sums it
+  (`PointLight`, `ActorLight`, `PointDynamicLight`), from the render copy's lights, for sprites, particles, the
+  weapon and decals.
 - `features/sidebyside/glchecks.cpp`: what GL reports to its observer (`gl/scene/gl_observer.h`), for the
   checks against GL only, read off GL's types there and handed over through the same calls the walks use.
   That is GL's scenes (`EnterScene`/`LeaveScene`), walks (`BeginSkyWalk`, `NoteWalkedSubsector`/`NoteWalkedSide`,

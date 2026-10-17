@@ -40,6 +40,7 @@ void NoteWorldView() {}
 void ForgetBackendTextures() {}
 void SettleLevelScene() {}
 void PresentBackendOnly(bool) {}
+void PrintDiligentMessages() {}
 unsigned char *ReadBackendFrame(int &, int &) { return NULL; }
 unsigned char *RenderSavePicture(int, int, float) { return NULL; }
 bool RenderSavePictureLater(int, int, float, std::function<void(const unsigned char *, int, int)>) { return false; }

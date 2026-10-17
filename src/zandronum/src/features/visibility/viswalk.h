@@ -6,9 +6,9 @@
 #ifndef ZX_VISWALK_H
 #define ZX_VISWALK_H
 
-class AActor;
 struct subsector_t;
 struct sector_t;
+namespace zx { namespace gamecopy { struct ActorRecord; } }
 
 namespace zx { namespace visibility {
 
@@ -16,7 +16,7 @@ namespace zx { namespace visibility {
 struct WalkHooks
 {
 	void (*particles)(subsector_t *sub, sector_t *sector);
-	void (*sprite)(AActor *thing);
+	void (*sprite)(const zx::gamecopy::ActorRecord &thing);
 	void (*decals)(const int *sides, int count);
 };
 

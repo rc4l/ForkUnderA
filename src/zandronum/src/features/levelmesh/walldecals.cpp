@@ -6,11 +6,11 @@
 #include "features/levelmesh/flatmesh.h"                       // [rc4l] RegisterDecal
 #include "features/levelmesh/wallcache.h"                      // [rc4l] the bake's parts and bands
 #include "features/materials/materials.h"
-#include "features/dynlights/pointlight.h"   // [rc4l] PointDynamicLight
+#include "features/levelmesh/pointlight.h"   // [rc4l] PointDynamicLight
 #include "features/viewsetup/viewsetup.h"   // [rc4l] SpritesTakeDynamicLight
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeSpriteBlendMode
 
-#include "a_sharedglobal.h"   // [rc4l] DBaseDecal
+#include "features/gamecopy/decals.h"   // [rc4l] the decals as the render copy holds them
 #include "actor.h"            // [rc4l] RF_*
 #include "doomdata.h"         // [rc4l] ML_*
 #include "r_defs.h"
@@ -33,25 +33,25 @@ static_assert((RF_RELUPPER >> 8) == kDecalRelUpper && (RF_RELLOWER >> 8) == kDec
 namespace {
 
 // [rc4l] The planes' texture heights a decal on seg's part hangs from, the front plane a 3D floor's model sector for a mid-clipped one, as DrawDecal picks them.
-DecalHeightIn HeightIn(const DBaseDecal *decal, const seg_t *seg, int part)
+DecalHeightIn HeightIn(const zx::gamecopy::DecalRecord *decal, const seg_t *seg, int part)
 {
 	const sector_t *front = (decal->RenderFlags & RF_CLIPMASK) == RF_CLIPMID ? decal->Sector : seg->frontsector;
 	const sector_t *back = seg->backsector;
 	DecalHeightIn in;
 	in.rel = int((decal->RenderFlags & RF_RELMASK) >> 8);
 	in.part = part;
-	in.unpegTop = (seg->linedef->flags & ML_DONTPEGTOP) != 0;
-	in.unpegBottom = (seg->linedef->flags & ML_DONTPEGBOTTOM) != 0;
+	in.unpegTop = (seg->linedef->rc.flags & ML_DONTPEGTOP) != 0;
+	in.unpegBottom = (seg->linedef->rc.flags & ML_DONTPEGBOTTOM) != 0;
 	in.z = FIXED2DBL(decal->Z);
-	in.frontCeiling = FIXED2DBL(front->GetPlaneTexZ(sector_t::ceiling));
-	in.frontFloor = FIXED2DBL(front->GetPlaneTexZ(sector_t::floor));
-	in.backCeiling = back != NULL ? FIXED2DBL(back->GetPlaneTexZ(sector_t::ceiling)) : 0.0;
-	in.backFloor = back != NULL ? FIXED2DBL(back->GetPlaneTexZ(sector_t::floor)) : 0.0;
+	in.frontCeiling = FIXED2DBL(front->rc.GetPlaneTexZ(sector_t::ceiling));
+	in.frontFloor = FIXED2DBL(front->rc.GetPlaneTexZ(sector_t::floor));
+	in.backCeiling = back != NULL ? FIXED2DBL(back->rc.GetPlaneTexZ(sector_t::ceiling)) : 0.0;
+	in.backFloor = back != NULL ? FIXED2DBL(back->rc.GetPlaneTexZ(sector_t::floor)) : 0.0;
 	return in;
 }
 
 // [rc4l] One decal on one band of one part, registered as DrawDecal would draw it there.
-void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, const zx::surfaces::DerivedWallSpan &d,
+void BuildDecal(const zx::gamecopy::DecalRecord *decal, side_t *side, const seg_t *seg, int part, const zx::surfaces::DerivedWallSpan &d,
 	const zx::surfaces::DerivedWallLight &dl, const FColormap &partColormap, const PartBand &band, int onMirror)
 {
 	if (decal->RenderFlags & RF_INVISIBLE) return;
@@ -98,8 +98,8 @@ void BuildDecal(DBaseDecal *decal, side_t *side, const seg_t *seg, int part, con
 	if (lit)
 	{
 		fixed_t x, y;
-		decal->GetXY(side, x, y);
-		zx::dynlights::PointDynamicLight(x, y, FLOAT2FIXED(top), seg->Subsector, dyn);
+		zx::gamecopy::DecalXY(*decal, side, x, y);
+		zx::levelmesh::PointDynamicLight(x, y, FLOAT2FIXED(top), seg->Subsector, dyn);
 	}
 	MeshVertex quad[4];
 	for (int i = 0; i < 4; i++) quad[i].Set(dv[i].x, dv[i].z, dv[i].y, dv[i].u, dv[i].v);
@@ -118,7 +118,9 @@ void BuildWallDecals(const int *sideList, int count)
 	for (int i = 0; i < count; i++)
 	{
 		side_t *side = &sides[sideList[i]];
-		if (side->AttachedDecals == NULL) continue;
+		int decals;
+		const zx::gamecopy::DecalRecord *const decal0 = zx::gamecopy::SideDecals(sideList[i], decals);
+		if (decal0 == NULL) continue;
 		const int segIndex = SideOwnerSeg(sideList[i]);
 		if (segIndex < 0) continue;
 		const seg_t *seg = &segs[segIndex];
@@ -148,8 +150,8 @@ void BuildWallDecals(const int *sideList, int count)
 			const int n = DerivedPartBands(seg, d, dl, bands);
 			// [rc4l] Each band is a wall piece of its own in GL, which draws every decal of the side on it in turn.
 			for (int b = 0; b < n; b++)
-				for (DBaseDecal *decal = side->AttachedDecals; decal != NULL; decal = decal->WallNext)
-					BuildDecal(decal, side, seg, part, d, dl, partColormap, bands[b], onMirror);
+				for (int k = 0; k < decals; k++)
+					BuildDecal(&decal0[k], side, seg, part, d, dl, partColormap, bands[b], onMirror);
 		}
 		// [rc4l] ...and on each face the back sector's 3D floors put on this side, which GL draws with the plain walls unless the slab is fog, blends, or its texture is masked.
 		FFFace faces[kMaxFFFaces];
@@ -171,8 +173,8 @@ void BuildWallDecals(const int *sideList, int count)
 			band.lightLevel = f.light;
 			band.lightFrom = f.lightFrom;
 			band.lightEntry = f.lightIndex;
-			for (DBaseDecal *decal = side->AttachedDecals; decal != NULL; decal = decal->WallNext)
-				BuildDecal(decal, side, seg, kPartMiddle, d, dl, partColormap, band, onMirror);
+			for (int k = 0; k < decals; k++)
+				BuildDecal(&decal0[k], side, seg, kPartMiddle, d, dl, partColormap, band, onMirror);
 		}
 	}
 }

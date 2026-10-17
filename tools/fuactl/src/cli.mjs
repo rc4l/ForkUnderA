@@ -13,18 +13,20 @@ import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
-import { play, quitInstance, defaultPwadStore, resolvePreset } from "./play.mjs";
+import { play, quitInstance, defaultPwadStore, resolvePreset, readView } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
-import { engineWindows, resizeEngineWindow } from "./window.mjs";
+import { activateEngineWindows, engineWindows, resizeEngineWindow } from "./window.mjs";
+import { captureSeconds, formatRecap, parseCaptureCsv, slowSecondsGrew } from "./recap.mjs";
 import * as shot from "./shot.mjs";
+import * as fixtures from "./fixtures.mjs";
 import { sweepDirFor } from "./shot.mjs";
 import * as sweepMod from "./sweep.mjs";
 import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, webgpuOptions, launchRenderer } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, matrixSets, matrixAdjust, webgpuOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
@@ -38,6 +40,7 @@ import { runCoverage } from "./coverage.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { recentCrashes, summarizeCrash } from "./crashes.mjs";
+import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
 import fs from "node:fs";
@@ -92,11 +95,13 @@ async function captureSpot(c, name, note, file = SPOTS) {
   // [rc4l] Whether the launch had GL at all, which no cvar says: "vulkan" for a -vulkan launch.
   const backend = launchRenderer(await cap.exec(c, "dumprenderer", { quietMs: 300, maxMs: 6000 }).catch(() => ""));
   if (backend) renderer.backend = backend;
+  // [rc4l] The view's shape, since a fault seen only at a square size or a wide FOV does not show in another window (#58).
+  const view = await readView(c, cap).catch(() => null);
   const db = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { spots: {} };
   db.spots[name] = Object.assign({}, db.spots[name], {
     map: cam.map, ...shot.atFromCamera(cam),
     shows: note || (db.spots[name] && db.spots[name].shows) || "recorded from a live session",
-    loaded, renderer,
+    loaded, renderer, ...(view ? { view } : {}),
   });
   fs.writeFileSync(file, JSON.stringify(db, null, 2) + "\n");
   console.error(`saved spot ${name}`);
@@ -112,7 +117,7 @@ function presetDirs(flags) {
 }
 
 async function connectTarget(flags, usage) {
-  // [rc4l] Every command waits out a launch still checking its world on its port, so a poll started right after `play` cannot kill it.
+  // [rc4l] Every command waits out a launch still checking its world on its port, so it acts on the world `play` set up, with the token it wrote.
   const port = flags.port || (sessionTarget(flags) || {}).port;
   if (port && await shot.awaitLaunch(SESSION(), port)) console.error(`waited for the launch on port ${port}`);
   const t = targetOf(flags, usage);
@@ -174,6 +179,9 @@ const USAGE = `fuactl <command>
   screen --port P [--token T] [--seconds N] [--orbit DEG] [--period S] [--class WINDOWCLASS] [--pid N]   what reaches the screen of a running instance (Windows): new images shown, refreshes repeated and stalls a second, from the compositor's own frames, with the aim orbiting so every refresh should bring a new image; with the engine's own frames lined up against them, how old each image's content was when it was seen and how much that changed (judder)
   fps --map M [--iwad W] [--file a.wad,...] [--modes gl,embed,vulkan] [--res WxH] [--rounds N] [--frames N] [--warmup N] [--vsync] [--sample SEC] [--no-shot] [--engine PATH] [--port P] [--cvar k=v] [--label L]   frame rate under GL alone, the backend in the GL launch and the backend alone, each a locked launch of its own, one at a time; notes a median that sits on a display refresh
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
+  simtrace --port P [--token T] --out FILE [--tics N]   each tic's fingerprint and every damage, kill and spawn for the next N tics (sim.trace), into FILE; +fua_simtrace N FILE on a launch traces from its first tic
+  tracediff A B   where two sim traces part: the first tic whose fingerprint differs and the first event that moved; exit 1 when they differ
+  fixture record|trace|check|pictures|vischeck|copycheck|spritecheck|pspritecheck|seencheck|hudcheck|seamcheck|prescancheck|savecompat [NAME ...] [--engine PATH] [--before PATH] [--store DIR] [--cvar k=v,...] [--update] [--out FILE] [--tolerance T]   the game-thread fixture set (fixtures.mjs: a generated map with every tricky ingredient, stock maps, Sunder MAP11): record each one's ticcmd demo, trace its playback tic by tic, hold each trace to its saved baseline, capture its views at a fixed tic and hold each to a saved PNG (largest 16-pixel block within T, default 2), or play it with GL beside the backend and every walk checked against GL's, or with the render copy held to the live game (fua_copy_check), or every actor's sprite or the weapon held to GL's (fua_sprite_check, fua_psprite_check), or the seen bits counted on Vulkan alone (seencheck), or the HUD the handoff recorded held to the live one at three paused tics (hudcheck), or no seam entered by a thread its owner does not allow (seamcheck), or each fill the tic's end scan spared held to the whole-map scan with tics on the game thread (prescancheck), or a save each of --before and --engine writes loaded by both and their traces held together (savecompat); the first check or pictures run saves the baseline, exit 1 on a difference; demos and baselines live in ~/.forkundera/fixtures; FUACTL_TIMEOUT_SCALE=N stretches every wait for a slower engine, such as one built with ThreadSanitizer
   bench --port P --scenario F.json [--runs N] [--metric total.p99_ms]   repeat a scenario, report median + spread, discard runs whose expectations failed
   lines --port P [--special N] [--door] [--use] [--cross] [--tag N] [--texture NAME] [--limit N]   query linedefs; prints a stand position and facing for each match
   here --port P [--token T] [--save NAME] [--note TEXT]   the live camera (position + facing, full precision) and what the crosshair is on; --save records it in spots.json as a named repro
@@ -181,8 +189,9 @@ const USAGE = `fuactl <command>
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the Diligent frame benchmark (fua_diligent_bench), and with --scale a GPU-time probe at 1x..100x the visible geometry
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
+  walkcheck --port P [--runs N] [--seconds S] [--spot S | --at x,y,z --face yaw,pitch]   the W key held as a player holds it from the spot, N runs of S seconds each traced (fua_viewtrace): exit 1 when any frame stepped back or lurched ahead of the steady speed, a view that rubber-bands
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window, sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
@@ -191,7 +200,7 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu] [--matrix k=a,b]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -199,7 +208,7 @@ const USAGE = `fuactl <command>
   costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]   what a frame costs at one view of a running instance: frame p50/p99, GPU and submit time, the world passes and phases, the walk's clipping, batches and sprites (the performance scope's step 0)
   abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
   shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
-  window [--shot gl|vk --out FILE] [--resize WxH [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, and with --resize the instance's game window sized as dragging its corner does
+  window [--shot gl|vk --out FILE] [--resize WxH [--port P]] [--activate 0|1 [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, with --resize the instance's game window sized as dragging its corner does, and with --activate the instance told it was alt-tabbed away (0) or back (1), with nothing on the desktop moved
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
   doorshot <tag> [--port P] [--at x,y,z --face yaw] [--mid TICS]   a door caught MID-SWING in both renderers, plus a before pair
@@ -211,7 +220,8 @@ const USAGE = `fuactl <command>
   continue --port P [--token T] [--expect shown|hidden]   what the Continue button is offering, and whether it is on the bar
   console <text...> [--port P]       run one console command on an instance and print what it printed
   stats [PREFIX] [--json | --watch] [--port P]   the engine's telemetry counters (fua_stats) whose names start with PREFIX: last, mean, p99 and max over the last frames; --watch puts them on screen
-  record [--seconds N] [--name NAME] [--port P]   every counter each frame and every timed region on every thread for N seconds (fua_capture), as a CSV and a trace Perfetto opens, under the engine's telemetry/
+  record [--seconds N] [--name NAME] [--port P] [--recap]   every counter each frame and every timed region on every thread for N seconds (fua_capture), as a CSV and a trace Perfetto opens, under the engine's telemetry/; --recap prints recap of it
+  recap NAME|FILE.csv [--engine PATH]   a recording read back: a row a second (frames, tics and those on the game thread, held frames, frame time p50/p99/max), then the counters its slowest quarter of seconds spent more on a frame than its fastest
   flight [NAME] [--port P]           write the flight recorder (the last frames, seconds and hitches) under the engine's telemetry/ and print its summary
   hitches [N] [--port P]             the last N slow frames, each with the timed regions it spent most in
   memsnap [NAME] [--port P]          keep every memory gauge and tag under NAME for memdiff
@@ -221,6 +231,12 @@ const USAGE = `fuactl <command>
   perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
+
+// [rc4l] A recording's recap printed: a row a second, then what its slow seconds spent more on.
+function printRecap(file) {
+  const seconds = captureSeconds(parseCaptureCsv(fs.readFileSync(file, "utf8")));
+  for (const line of formatRecap(seconds, slowSecondsGrew(seconds))) console.log(line);
+}
 
 async function main() {
   // [rc4l] A reader that stops early (`| head`) closes the pipe, which ends the command rather than crashing it.
@@ -380,17 +396,23 @@ async function main() {
         : flags.side ? sideAdjust(String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
       let failed = 0, skipped = 0;
-      for (const f of files) {
-        const url = pathToFileURL(path.join(dir, f)).href;
-        await import(url);
-        const run = scenarioRun(url, adjust);
-        if (!run) continue;
-        let out;
-        // [rc4l] A scenario that throws is one failure, not the end of the run.
-        try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
-        for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${f.slice(0, -4).padEnd(18)} ${l}`);
-        if (out.skipped) skipped++;
-        if (out.code !== 0) failed++;
+      // [rc4l] --matrix k=a,b runs the suite once per value with the cvar on every side, the label naming which run a line came from.
+      const runs = flags.matrix ? matrixSets(flags.matrix).map((set) => ({ label: Object.entries(set).map(([k, v]) => `${k}=${v}`).join(" "), adjust: matrixAdjust(set, adjust) }))
+        : [{ label: "", adjust }];
+      for (const r of runs) {
+        if (r.label) console.log(`-- ${r.label}`);
+        for (const f of files) {
+          const url = pathToFileURL(path.join(dir, f)).href;
+          await import(url);
+          const run = scenarioRun(url, r.adjust);
+          if (!run) continue;
+          let out;
+          // [rc4l] A scenario that throws is one failure, not the end of the run.
+          try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
+          for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${(r.label ? `${r.label} ` : "") + f.slice(0, -4).padEnd(18)} ${l}`);
+          if (out.skipped) skipped++;
+          if (out.code !== 0) failed++;
+        }
       }
       const ran = skipped ? ` (${skipped} skipped)` : "";
       console.log(failed ? `${failed} scenario(s) failed${ran}` : `every scenario within its limits${ran}`);
@@ -415,6 +437,14 @@ async function main() {
     // [rc4l] `fuactl window` -- the windows as Windows sees them and what one shows, instead of PowerShell beside the tool.
     case "window": {
       if (flags.shot && !["gl", "vk"].includes(String(flags.shot))) { console.error(usageFor(USAGE, "window")); process.exit(2); }
+      if (flags.activate !== undefined) {
+        const active = String(flags.activate);
+        if (active !== "0" && active !== "1") { console.error(usageFor(USAGE, "window")); process.exit(2); }
+        const told = activateEngineWindows(sessionPid(flags), active === "1");
+        console.log(told ? `told ${told} window(s) the game was switched ${active === "1" ? "back to" : "away from"}` : "no window for that instance");
+        if (!told) process.exit(1);
+        break;
+      }
       if (flags.resize) {
         const [w, h] = String(flags.resize).split("x").map(Number);
         if (!(w > 0 && h > 0)) { console.error(usageFor(USAGE, "window")); process.exit(2); }
@@ -703,6 +733,17 @@ async function main() {
       console.log(JSON.stringify(analysis, null, 2));
       break;
     }
+    // [rc4l] `fuactl walkcheck` -- the W key held as a player holds it, every frame's view judged: it never steps back or lurches ahead of the game's steady speed.
+    case "walkcheck": {
+      if (!flags.port) { console.error(usageFor(USAGE, "walkcheck")); process.exit(2); }
+      const start = flags.at || flags.spot ? shot.cameraFromFlags(flags, SPOTS) : null;
+      const runs = await withUi(flags, (c) => trace.walkCheck(c, { runs: num(flags.runs) ?? 3, seconds: num(flags.seconds) ?? 4, start, exec: cap.exec, standAt: shot.standAt }));
+      runs.forEach((r, i) => console.error(`[walkcheck] run ${i + 1}: ${r ? `${r.back} back steps, ${r.lurch} lurches` : "no report"}`));
+      const bad = runs.filter((r) => !r || r.back > 0 || r.lurch > 0).length;
+      console.log(JSON.stringify({ runs, bad }));
+      if (bad) process.exit(1);
+      break;
+    }
     case "present": {
       const exe = present.ensurePresentMon({ log: (m) => console.error(`[present] ${m}`) });
       const seconds = num(flags.seconds) ?? 15;
@@ -744,6 +785,67 @@ async function main() {
       const worst = [...tics].sort((a, b) => (b.total || 0) - (a.total || 0))[0];
       if (worst) console.error(`[ticprof] worst tic ${worst.total}ms (P_Ticker ${worst.pticker} / thinkers ${worst.thinkers} / effects ${worst.effects})`);
       console.log(JSON.stringify(report, null, 2));
+      break;
+    }
+    case "simtrace": {
+      if (!flags.port || !flags.out) { console.error("usage: fuactl simtrace --port P [--token T] --out FILE [--tics N]"); process.exit(2); }
+      const tics = num(flags.tics) ?? 350;
+      const out = path.resolve(String(flags.out));
+      const report = await withUi(flags, async (c) => {
+        const done = c.waitEvent("trace", 60000 + tics * 200);
+        await c.rpc("sim.trace", { tics, path: out });
+        return done;
+      });
+      console.log(JSON.stringify(report));
+      break;
+    }
+    case "tracediff": {
+      if (rest.length < 2) { console.error(usageFor(USAGE, "tracediff")); process.exit(2); }
+      const [a, b] = rest.slice(0, 2).map((f) => parseSimTrace(fs.readFileSync(String(f), "utf8")));
+      const d = diffSimTraces(a, b);
+      for (const line of describeSimTraceDiff(d)) console.log(line);
+      if (!d.same) process.exit(1);
+      break;
+    }
+    case "fixture": {
+      const [what, ...names] = rest;
+      if (!["record", "trace", "check", "pictures", "savecompat"].includes(what) && !fixtures.CHECKS[what]) { console.error(usageFor(USAGE, "fixture")); process.exit(2); }
+      const list = fixtures.pickFixtures(names);
+      const opts = { engine: engineOf(flags), store: presetDirs(flags).storeDir, cvars: shot.parseCvarFlag(flags.cvar) || {}, update: !!flags.update,
+        log: (m) => console.error(`[fixture] ${m}`) };
+      if (what === "record") {
+        for (const f of list) console.log(`${f.name}: ${await fixtures.recordFixture(f, opts)}`);
+      } else if (what === "trace") {
+        for (const f of list) {
+          const out = flags.out && list.length === 1 ? path.resolve(String(flags.out)) : path.join(fixtures.fixtureDir(), `${f.name}.latest.trace`);
+          console.log(`${f.name}: ${await fixtures.traceFixture(f, out, opts)}`);
+        }
+      } else if (what === "savecompat") {
+        // [rc4l] Each engine writes a save the other then loads too, so a save carries across a change either way.
+        if (!flags.before) { console.error("fixture savecompat needs --before PATH, the engine to hold the --engine one to"); process.exit(2); }
+        const after = opts.engine || resolveEngine(), before = String(flags.before);
+        let failed = false;
+        for (const f of list) {
+          for (const [writer, readers, names] of [[before, [before, after], ["before", "after"]], [after, [after, before], ["after", "before"]]]) {
+            for (const r of await fixtures.saveCompatFixture(f, { ...opts, writer, readers, names: names.map((n) => `${n} (saved by ${names[0]})`) })) {
+              for (const line of r.lines) console.log(`${r.name}: ${line}`);
+              if (!r.same) failed = true;
+            }
+          }
+        }
+        if (failed) process.exit(1);
+      } else if (what === "check") {
+        const results = await fixtures.checkFixtures(list, opts);
+        for (const r of results) for (const line of r.lines) console.log(`${r.name}: ${line}`);
+        if (results.some((r) => r.same === false)) process.exit(1);
+      } else {
+        // [rc4l] Pictures and the walk check run one fixture at a time, each its own launch.
+        const run = what === "pictures" ? (f) => fixtures.pictureFixture(f, { ...opts, tolerance: num(flags.tolerance) ?? 2 })
+          : async (f) => [await fixtures.CHECKS[what](f, opts)];
+        let failed = false;
+        for (const f of list) for (const r of await run(f)) { console.log(`${r.name}: ${r.line}`); if (r.same === false) failed = true; }
+        if (failed) process.exit(1);
+      }
       break;
     }
     case "bench": {
@@ -915,9 +1017,10 @@ async function main() {
       const hours = flags.hours && flags.hours !== true ? Number(flags.hours) : 24;
       const found = recentCrashes(Date.now() - hours * 3600 * 1000);
       for (const c of found) {
-        const { why, stack } = summarizeCrash(fs.readFileSync(c.file, "utf8"));
+        const { why, seams, stack } = summarizeCrash(fs.readFileSync(c.file, "utf8"));
         console.log(`${new Date(c.at).toISOString()} ${c.file}
   ${why}`);
+        if (seams) console.log(`  seams: ${seams}`);
         for (const f of stack) console.log(`    ${f}`);
       }
       console.log(`${found.length} crash file(s) in the last ${hours} hour(s)`);
@@ -963,7 +1066,7 @@ async function main() {
     // [rc4l] `fuactl ready` -- wait until an instance answers, instead of a hand-rolled poll after every launch.
     case "ready": {
       const deadline = Date.now() + 1000 * (Number(flags.timeout) || 120);
-      // [rc4l] The bridge serves only its newest client, so this tries only a live session's token (liveTarget), read again each round: connecting early knocked a launch still checking its world off the bridge, and it died.
+      // [rc4l] Only a live session's token (liveTarget), read again each round, since a launch still checking its world has not written its token yet.
       let failure = null;
       for (;;) {
         const t = sessionTarget(flags);
@@ -997,8 +1100,18 @@ async function main() {
       await withUi(flags, async (c) => {
         process.stdout.write(await cap.exec(c, `fua_capture start ${name}`.trim()));
         await cap.sleep(seconds * 1000);
-        process.stdout.write(await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 }));
+        const stopped = await cap.exec(c, "fua_capture stop", { quietMs: 600, maxMs: 60000 });
+        process.stdout.write(stopped);
+        const csv = /wrote (\S+\.csv)/.exec(stopped);
+        if (flags.recap && csv) printRecap(csv[1]);
       });
+      break;
+    }
+    case "recap": {
+      if (!rest[0]) { console.error(usageFor(USAGE, "recap")); process.exit(2); }
+      const file = rest[0].endsWith(".csv") ? rest[0] : path.join(path.dirname(engineOf(flags)), "telemetry", `${rest[0]}.csv`);
+      if (!fs.existsSync(file)) { console.error(`recap: no recording at ${file}`); process.exit(1); }
+      printRecap(file);
       break;
     }
     case "soak": {
@@ -1164,9 +1277,11 @@ async function main() {
         flags.file = flags.file || (sl.files.length ? sl.files.join(",") : undefined);
       };
       // [rc4l] --spot: the spot's launch, and the player stood there once it is up.
-      let spotAt = null;
+      let spotAt = null, spotView = null;
       if (flags.spot) {
-        takeLaunch(`spot ${flags.spot}`, shot.spotLaunch(SPOTS, String(flags.spot), store));
+        const sl = shot.spotLaunch(SPOTS, String(flags.spot), store);
+        takeLaunch(`spot ${flags.spot}`, sl);
+        spotView = sl.view;
         spotAt = shot.cameraFromFlags({ spot: flags.spot }, SPOTS);
       }
       // [rc4l] --unpark: what `quit --park` filed for --port, side by side again if it was.
@@ -1175,6 +1290,7 @@ async function main() {
         if (!flags.port || !fs.existsSync(park)) { console.error(`nothing parked for port ${flags.port}: run quit --park --port P first`); process.exit(2); }
         const pl = shot.parkedLaunch(park, store);
         takeLaunch("the parked instance", pl);
+        spotView = pl.view;
         flags["side-by-side"] = flags["side-by-side"] || pl.sideBySide;
         flags["no-gl"] = flags["no-gl"] || pl.noGl;
         spotAt = pl.at;
@@ -1190,7 +1306,7 @@ async function main() {
         gl: !!flags.gl, noGl: !!flags["no-gl"] || !!flags.webgpu, webgpu: !!flags.webgpu, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
-        at: spotAt,
+        at: spotAt, view: spotView,
         sessionFile,
       });
       // [rc4l] The world contract, printed. Each of these has silently invalidated a measurement,
@@ -1202,6 +1318,8 @@ async function main() {
       for (const cv of inst.world.cvars) {
         console.log(`  ${cv.ok ? "ok " : "BAD"} ${cv.name} = ${cv.actual}${cv.ok ? "" : `   (wanted ${cv.expected})`}`);
       }
+      const v = inst.world.view;
+      if (v) console.log(`  ${v.ok ? "ok " : "BAD"} view ${v.got.width}x${v.got.height} scale ${v.got.scale} fov ${v.got.fov}${v.ok ? "" : `   (wanted ${v.want.width}x${v.want.height})`}`);
       console.log(`\n  ready -- the window is showing the ${flags.gl ? "GL" : "VULKAN"} render.`);
       if (!flags.lock) console.log("  mouse and keyboard work normally.");
       console.log(`  fua_vulkan 0 / 1 in the console is a live A/B against GL.\n`);

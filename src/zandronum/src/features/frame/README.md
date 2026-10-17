@@ -78,6 +78,8 @@ screen itself):
 - `features/levelmesh/captureshading.cpp`, `features/sprites/spritebuild.cpp`, `pspritebuild.cpp` and
   `features/visibility/viswalk.cpp`: an `OracleTally` each for their check against GL.
 - `d_main.cpp` `D_DoomLoop`: `DebugFrameStall` after the tics run, `DebugOrbit` before the frame is drawn.
+- `d_main.cpp` `D_Display`: `FrameClock` for the animated textures and sky scroll, so `fua_debug_frameclock` pins
+  them with the warps and a capture does not depend on when it was taken.
 - `fua_viewtrace`'s mouse columns: `win32/i_mouse.cpp` `FRawMouse::ProcessRawInput` (`NoteRawMouse`), `Grab`
   and `Ungrab` (`NoteMouseGrabbed`); `win32/i_input.cpp` `WM_ACTIVATEAPP` (`NoteAppActive`); `d_main.cpp`
   `D_PostEvent` (`NoteMouseEvent`).

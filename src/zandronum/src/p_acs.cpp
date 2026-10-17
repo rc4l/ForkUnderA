@@ -36,6 +36,8 @@
 */
 
 #include <assert.h>
+#include "features/handoff/snapshot.h"   // [rc4l] TicScreenWidth, TicScreenHeight
+#include "features/handoff/gamethread.h"   // [rc4l] AskMain
 
 #include "templates.h"
 #include "doomdef.h"
@@ -12085,7 +12087,13 @@ scriptwait:
 			break;
 
 		case PCD_PLAYMOVIE:
-			STACK(1) = I_PlayMovie (FBehavior::StaticLookupString (STACK(1)));
+			{
+				// [rc4l] features/handoff: a movie plays in the main thread's window, which a tic on its own thread asks for and waits on.
+				const char *movie = FBehavior::StaticLookupString (STACK(1));
+				int result = MOVIE_Failed;
+				zx::handoff::AskMainFor ([&] { result = I_PlayMovie (movie); });
+				STACK(1) = result;
+			}
 			break;
 
 		case PCD_SETACTORPOSITION:
@@ -12543,7 +12551,7 @@ scriptwait:
 			}
 			else
 			{
-				PushToStack (SCREENWIDTH);
+				PushToStack (zx::handoff::TicScreenWidth ());   // [rc4l] as the handoff took it before the tic
 			}
 			break;
 
@@ -12564,7 +12572,7 @@ scriptwait:
 			}
 			else
 			{
-				PushToStack (SCREENHEIGHT);
+				PushToStack (zx::handoff::TicScreenHeight ());
 			}
 			break;
 
@@ -13865,6 +13873,7 @@ int ACS_GetTranslationIndex( FRemapTable *pTranslation )
 // (features/mcp-bridge) and are compiled out of release builds, so a shipped binary carries no MCP
 // surface at all. Gate matches -DFUA_MCP_BRIDGE.
 #ifdef FUA_MCP_BRIDGE
+#include "features/mcp-bridge/computation/mcprpc_compute.h"   // [rc4l] FnvInit, FnvMixU64
 // ==== MCP_ACSVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
 // Read/write ACS world and global variables by index. World vars are a
 // file-static array in p_acs.cpp, so these commands live here (appended) rather
@@ -14034,4 +14043,30 @@ CCMD( dumpfunctions )
 	}
 }
 // ==== end MCP_SCRIPTS ====
+
+// [rc4l] features/mcp-bridge's sim trace: every ACS variable a script can read (world, global, their arrays, each module's map variables), so a trace shows a script that saw something different.
+unsigned long long ACS_StateHash ()
+{
+	uint64_t h = zx::mcp::FnvInit();
+	for ( int i = 0; i < NUM_WORLDVARS; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)ACS_WorldVars[i] );
+	for ( int i = 0; i < NUM_GLOBALVARS; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)ACS_GlobalVars[i] );
+	const auto mixArray = [&h]( const FWorldGlobalArray &arr )
+	{
+		FWorldGlobalArray::ConstIterator it( arr );
+		const FWorldGlobalArray::Pair *pair;
+		while ( it.NextPair( pair ) )
+		{
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)pair->Key );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)pair->Value );
+		}
+	};
+	for ( int i = 0; i < NUM_WORLDVARS; i++ ) mixArray( ACS_WorldArrays[i] );
+	for ( int i = 0; i < NUM_GLOBALVARS; i++ ) mixArray( ACS_GlobalArrays[i] );
+	for ( int lib = 0; FBehavior::StaticGetModule( lib ) != NULL; lib++ )
+	{
+		FBehavior *m = FBehavior::StaticGetModule( lib );
+		for ( int i = 0; i < NUM_MAPVARS; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)( m->MapVars[i] != NULL ? *m->MapVars[i] : 0 ) );
+	}
+	return h;
+}
 #endif // FUA_MCP_BRIDGE

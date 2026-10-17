@@ -274,7 +274,7 @@ void MeshRegisterPiece(const MeshPiece &piece);
 // features/surfaces/computation/surfacechange_compute.h.
 //
 // A REBATCH means a surface no longer belongs where it is -- a different material, pass, palette or
-// range -- and moving one between batches is not something a patch can express, so it is a rebuild.
+// range -- and a backend moves the listed pieces into batches of their own (MeshTakeRebatches).
 // A REPAINT means the surface is in the right place with the wrong shading baked into it, which
 // since the shading moved into a per-piece record is a sixty-four byte upload.
 //
@@ -284,6 +284,9 @@ unsigned int MeshRebatchRevision();
 unsigned int MeshRepaintRevision();
 void MeshTakeRepaints(const unsigned int *&list, int &count);
 void MeshClearRepaints();
+// [rc4l] The pieces that moved between batches since the last clear, by index, and whether the list was cut short, so a backend moves just those instead of rebuilding.
+void MeshTakeRebatches(const unsigned int *&list, int &count, bool &overflowed);
+void MeshClearRebatches();
 const MeshPiece *MeshPieces(int &count);
 
 // The registered piece at a vertex offset, or NULL. Lets a caller re-shade a surface without

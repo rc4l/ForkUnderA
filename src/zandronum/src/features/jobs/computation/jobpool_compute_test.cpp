@@ -145,12 +145,15 @@ TEST(JobPool, StopsWorkersWhetherSpinningOrAsleep)
 
 TEST(JobPool, AutoWorkersTakeHalfTheMachineLessTheCallerUpToTheCap)
 {
-	EXPECT_EQ(0, ComputeAutoWorkers(1, 7));
-	EXPECT_EQ(0, ComputeAutoWorkers(2, 7));
-	EXPECT_EQ(1, ComputeAutoWorkers(4, 7));
-	EXPECT_EQ(3, ComputeAutoWorkers(8, 7));
-	EXPECT_EQ(7, ComputeAutoWorkers(32, 7));
-	EXPECT_EQ(0, ComputeAutoWorkers(32, 0));
+	EXPECT_EQ(0, ComputeAutoWorkers(1, 7, 1));
+	EXPECT_EQ(0, ComputeAutoWorkers(2, 7, 1));
+	EXPECT_EQ(1, ComputeAutoWorkers(4, 7, 1));
+	EXPECT_EQ(3, ComputeAutoWorkers(8, 7, 1));
+	EXPECT_EQ(7, ComputeAutoWorkers(32, 7, 1));
+	EXPECT_EQ(0, ComputeAutoWorkers(32, 0, 1));
+	// [rc4l] The game thread takes a core of its own from the pool.
+	EXPECT_EQ(2, ComputeAutoWorkers(8, 7, 2));
+	EXPECT_EQ(0, ComputeAutoWorkers(4, 7, 2));
 }
 
 namespace {
@@ -183,4 +186,33 @@ TEST(JobPool, TheObserverHearsWorkersRunsAndTheWait)
 	EXPECT_GT(s_ranTicks.load(), 0);
 	EXPECT_GE(s_started.load(), 1);
 	EXPECT_LE(s_started.load(), 2);
+}
+
+// [rc4l] The copy's change scans split 62,000 sides into chunks; every item must fall in exactly one.
+TEST(JobPool, ChunksCoverEveryItemOnce)
+{
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(0, 512), 0);
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(-3, 512), 0);
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(1, 512), 1);
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(512, 512), 1);
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(513, 512), 2);
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(10, 0), 1);
+	int lo = -1, hi = -1;
+	zx::jobs::ComputeChunkBounds(1030, 512, 2, lo, hi);
+	EXPECT_EQ(lo, 1024);
+	EXPECT_EQ(hi, 1030);
+	zx::jobs::ComputeChunkBounds(1030, 512, 5, lo, hi);
+	EXPECT_EQ(lo, hi);
+	zx::jobs::ComputeChunkBounds(10, 0, 0, lo, hi);
+	EXPECT_EQ(lo, 0);
+	EXPECT_EQ(hi, 10);
+	zx::jobs::ComputeChunkBounds(-4, 0, 0, lo, hi);
+	EXPECT_EQ(hi, 0);
+
+	JobPool pool(3, 0);
+	std::vector<std::atomic<int>> seen(2049);
+	struct Mark { std::vector<std::atomic<int>> &seen; void operator()(int a, int b, int) const { for (int i = a; i < b; i++) seen[i]++; } } mark = { seen };
+	pool.ParallelChunks(2049, 100, mark);
+	for (int i = 0; i < 2049; i++) EXPECT_EQ(seen[i].load(), 1) << i;
+	pool.ParallelChunks(0, 100, mark);
 }

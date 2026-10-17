@@ -69,6 +69,7 @@
 #include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
 #include "features/draw2d/record.h"
+#include "features/frame/playerview.h"   // [rc4l] FrameClock
 #include "features/hwrender/backendonly.h"
 #include "features/continue/zx_continue.h"
 #include "features/identity/zx_identity.h"
@@ -173,6 +174,12 @@
 #include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
 #include "features/frame/viewtrace.h"   // [rc4l] NoteMouseEvent
 #include "features/framephase/framephase.h"   // [rc4l] FrameBoundary and the main loop's phases
+#include "features/handoff/seam.h"   // [rc4l] NoteMainThread
+#include "features/gamecopy/gamecopy.h"   // [rc4l] FillMap
+#include "features/gamecopy/players.h"    // [rc4l] the eye's FOV
+#include "features/gameloop/loop.h"       // [rc4l] FrameBegins, FrameEnds
+#include "features/gameloop/hud.h"        // [rc4l] RecordHUD, ReplayHUD
+#include "features/handoff/gamethread.h" // [rc4l] TicInFlight
 #include "p_local.h"
 
 
@@ -900,6 +907,123 @@ static unsigned int s_wipeStart;
 static bool s_wipeHw2d;
 static bool s_wiping;
 
+// [rc4l] The level's HUD: the status bar and what draws over and beside it, the scoreboard, the speedometer and the medals, all read from the live game.
+static void D_DrawLevelHUD ()
+{
+	if (hud_althud && viewheight == SCREENHEIGHT && screenblocks > 10)
+	{
+		StatusBar->DrawBottomStuff (HUD_AltHud);
+		if (DrawFSHUD || automapactive) DrawHUD();
+		StatusBar->Draw (HUD_AltHud);
+		StatusBar->DrawTopStuff (HUD_AltHud);
+	}
+	else 
+	if (viewheight == SCREENHEIGHT && viewactive && screenblocks > 10)
+	{
+		EHudState state = DrawFSHUD ? HUD_Fullscreen : HUD_None;
+		StatusBar->DrawBottomStuff (state);
+		StatusBar->Draw (state);
+		StatusBar->DrawTopStuff (state);
+	}
+	else
+	{
+		StatusBar->DrawBottomStuff (HUD_StatusBar);
+		StatusBar->Draw (HUD_StatusBar);
+		StatusBar->DrawTopStuff (HUD_StatusBar);
+	}
+
+	if ( viewactive )
+	{
+		// [BC] Handle rendering for the possession module.
+		POSSESSION_Render( );
+
+		// [BC] Render the scoreboard [BB] respecting free spectate mode.
+		// [MobiusU9B] Hoisted so the speedometer reads the same player the HUD shows.
+		const ULONG ulDisplayPlayer = CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer;
+		HUD_Render( ulDisplayPlayer );
+
+		// [MobiusU9B] The speedometer, see features/speedometer/README.md.
+		zx::speedometer::Draw( ulDisplayPlayer );
+
+		// Render any medals the player might have been awarded.
+		MEDAL_Render( );
+	}
+}
+
+// [rc4l] features/handoff: what a frame needs of the game, done between tics: the render copy of the tics just run, its check, and the console player's camera, which a player naming none sees through its body.
+static bool s_displayPrepared = false;
+static bool s_inputTaken = false;   // [rc4l] the handoff took the frame's input, which D_Display would otherwise take mid-frame
+
+// [rc4l] features/handoff: the main loop's work that may load wads, maps or a server or answer an RPC about the game, so only with no tic in flight: at the top of a frame, or in the handoff that takes one back.
+void D_RunHandoffWork ()
+{
+	zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
+	zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
+	zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
+	zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
+	zx::Continue_Tick(); // [rc4l] finishes a Continue that had to reload the WAD set first
+	zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
+	MCP_Bridge_Poll();
+}
+
+// [rc4l] features/handoff: a frame drawn beside a tic, or after the handoff prepared it and took the input: it reads only the copy and the recorded HUD.
+// [rc4l] A frame's input, the window's messages and the debug orbit, the same on both schedules, since the game thread's frames had no orbit and measured a still view.
+static void D_FrameInput ()
+{
+	{
+		const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
+		I_StartTic ();
+	}
+	zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
+}
+
+void D_DisplayBesideTic ()
+{
+	s_displayPrepared = true;
+	s_inputTaken = true;
+	zx::gameloop::FrameBegins ();
+	{
+		const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+		D_FrameInput ();
+		MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
+		D_Display ();
+	}
+	zx::gameloop::FrameEnds ();
+}
+
+void D_PrepareDisplay (bool input)
+{
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+	if (input)
+	{
+		const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );   // [rc4l] it reads the window's messages, the mouse among them
+		NetUpdate ();			// send out any new accumulation
+	}
+	s_inputTaken = input;
+	zx::gamecopy::FillMap ();
+	zx::gamecopy::CheckBeforeViews ();
+	if (players[consoleplayer].camera == NULL)
+	{
+		players[consoleplayer].camera = players[consoleplayer].mo;
+	}
+	// [rc4l] The status bar's blend of the view, which reads the player, before D_Display draws it.
+	if ((gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) && gametic != 0 && (automapactive || viewactive) && StatusBar != NULL)
+	{
+		float blend[4] = { 0, 0, 0, 0 };
+		StatusBar->BlendView (blend);
+	}
+	// [rc4l] A resized screen's view first, so the HUD recorded next, the crosshair among it, is never the new screen around the old view.
+	if (setsizeneeded && StatusBar != NULL && !zx::handoff::TicInFlight ())
+	{
+		R_ExecuteSetViewSize ();
+	}
+	// [rc4l] The level's HUD, recorded for a frame without GL to replay; D_Display draws it there only after a tic.
+	const zx::gameloop::HudKey hudKey = { gametic, SCREENWIDTH, SCREENHEIGHT, viewheight, (int)screenblocks, automapactive, viewactive, (bool)hud_althud, DrawFSHUD };
+	zx::gameloop::RecordHUD ((gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) && gametic != 0 && StatusBar != NULL, hudKey, D_DrawLevelHUD);
+	s_displayPrepared = true;
+}
+
 void D_Display ()
 {
 	bool wipe;
@@ -908,6 +1032,15 @@ void D_Display ()
 	// [BC] No need for servers to do this.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
+
+	// [rc4l] A loop without a handoff of its own prepares the frame here.
+	if (!s_displayPrepared)
+	{
+		D_PrepareDisplay (false);
+	}
+	s_displayPrepared = false;
+	const bool inputTaken = s_inputTaken;
+	s_inputTaken = false;
 
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling
@@ -923,19 +1056,17 @@ void D_Display ()
 	cycles.Reset();
 	cycles.Clock();
 
-	if (players[consoleplayer].camera == NULL)
-	{
-		players[consoleplayer].camera = players[consoleplayer].mo;
-	}
-
 	if (viewactive)
 	{
-		R_SetFOV (players[consoleplayer].camera && players[consoleplayer].camera->player ?
-			players[consoleplayer].camera->player->FOV : 90.f);
+		// [rc4l] features/gamecopy: the FOV of whose eyes the console player sees through, as the copy took it.
+		const zx::gamecopy::ActorRecord *const eye = zx::gamecopy::CameraOf (consoleplayer);
+		const zx::gamecopy::PlayerRecord *const eyePlayer = eye != NULL ? zx::gamecopy::Player (eye->playerIndex) : NULL;
+		R_SetFOV (eyePlayer != NULL ? eyePlayer->FOV : 90.f);
 	}
 
 	// [RH] change the screen mode if needed
-	if (setmodeneeded)
+	// [rc4l] features/handoff: not beside a tic, since the status bar the mode change resizes is the tic's.
+	if (setmodeneeded && !zx::handoff::TicInFlight ())
 	{
 		// Change screen mode.
 		if (Video->SetResolution (NewWidth, NewHeight, NewBits))
@@ -960,11 +1091,11 @@ void D_Display ()
 	RenderTarget = screen;
 
 	// change the view size if needed
-	if (setsizeneeded && StatusBar != NULL)
+	if (setsizeneeded && StatusBar != NULL && !zx::handoff::TicInFlight ())
 	{
 		R_ExecuteSetViewSize ();
 	}
-	setmodeneeded = false;
+	if (!zx::handoff::TicInFlight ()) setmodeneeded = false;
 
 	if (screen->Lock (false))
 	{
@@ -1013,7 +1144,8 @@ void D_Display ()
 	hw2d = false;
 
 	{
-		unsigned int nowtime = I_FPSTime();
+		// [rc4l] Pinned with the backend's warps when a capture sets fua_debug_frameclock.
+		unsigned int nowtime = zx::frame::FrameClock(I_FPSTime());
 		TexMan.UpdateAnimations(nowtime);
 		R_UpdateSky(nowtime);
 		switch (gamestate)
@@ -1047,18 +1179,15 @@ drawfullconsole:
 			// This happens for example if you start a new game, while being on a server.
 			if (automapactive || viewactive)
 			{
-				if (StatusBar != NULL)
-				{
-					float blend[4] = { 0, 0, 0, 0 };
-					StatusBar->BlendView (blend);
-				}
 				screen->SetBlendingRect(viewwindowx, viewwindowy,
 					viewwindowx + viewwidth, viewwindowy + viewheight);
 				// [BB] Zandronum handles prediction differently.
 				//P_PredictPlayer(&players[consoleplayer]);
 				// [BB] This check shouldn't be necessary, but should completely prevent
 				// the "tried to render NULL actor" errors.
-				if ( (players[consoleplayer].mo != NULL) && (players[consoleplayer].camera != NULL) )
+				// [rc4l] features/gamecopy: the console player's body and camera as the copy holds them.
+				const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player (consoleplayer);
+				if ( me != NULL && me->mo >= 0 && zx::gamecopy::CameraOf (consoleplayer) != NULL )
 					Renderer->RenderView(&players[consoleplayer]);
 				// [BB] Zandronum handles prediction differently.
 				//P_UnPredictPlayer();
@@ -1087,43 +1216,10 @@ drawfullconsole:
 				V_RefreshViewBorder ();
 			}
 
-			if (hud_althud && viewheight == SCREENHEIGHT && screenblocks > 10)
+			// [rc4l] features/handoff: a frame without GL replays the HUD the handoff drew, which reads the game only between tics.
+			if (!zx::gameloop::ReplayHUD ())
 			{
-				StatusBar->DrawBottomStuff (HUD_AltHud);
-				if (DrawFSHUD || automapactive) DrawHUD();
-				StatusBar->Draw (HUD_AltHud);
-				StatusBar->DrawTopStuff (HUD_AltHud);
-			}
-			else 
-			if (viewheight == SCREENHEIGHT && viewactive && screenblocks > 10)
-			{
-				EHudState state = DrawFSHUD ? HUD_Fullscreen : HUD_None;
-				StatusBar->DrawBottomStuff (state);
-				StatusBar->Draw (state);
-				StatusBar->DrawTopStuff (state);
-			}
-			else
-			{
-				StatusBar->DrawBottomStuff (HUD_StatusBar);
-				StatusBar->Draw (HUD_StatusBar);
-				StatusBar->DrawTopStuff (HUD_StatusBar);
-			}
-
-			if ( viewactive )
-			{
-				// [BC] Handle rendering for the possession module.
-				POSSESSION_Render( );
-
-				// [BC] Render the scoreboard [BB] respecting free spectate mode.
-				// [MobiusU9B] Hoisted so the speedometer reads the same player the HUD shows.
-				const ULONG ulDisplayPlayer = CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer;
-				HUD_Render( ulDisplayPlayer );
-
-				// [MobiusU9B] The speedometer, see features/speedometer/README.md.
-				zx::speedometer::Draw( ulDisplayPlayer );
-
-				// Render any medals the player might have been awarded.
-				MEDAL_Render( );
+				D_DrawLevelHUD ();
 			}
 
 			// Render chat prompt.
@@ -1214,6 +1310,7 @@ drawfullconsole:
 
 	if (!wipe || NoWipe < 0)
 	{
+		if (!inputTaken)
 		{
 			const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );   // [rc4l] it reads the window's messages, the mouse among them
 			NetUpdate ();			// send out any new accumulation
@@ -1246,6 +1343,8 @@ drawfullconsole:
 	}
 	else
 	{
+		// [rc4l] features/handoff: a wipe holds the tics back until it ends, so it runs as the handoff does.
+		zx::gameloop::FrameEnds ();
 		// wipe update
 		GSnd->SetSfxPaused(true, 1);
 		I_FreezeTime(true);
@@ -1371,6 +1470,16 @@ void D_ErrorCleanup ()
 // [rc4l] The last tic I_StartFrame ran for, reset each time the loop is entered.
 static int s_lastTic;
 
+// [rc4l] Frame-synchronous IO once for each new tic on either schedule, since the game thread's frames skipped it and left SDL's key table unbuilt and the pads unread in a level.
+static void D_StartFrameIO ()
+{
+	if (gametic > s_lastTic)
+	{
+		s_lastTic = gametic;
+		I_StartFrame ();
+	}
+}
+
 void D_DoomLoop ()
 {
 	s_lastTic = 0;
@@ -1409,10 +1518,13 @@ void D_RunFrame ()
 			// and returns normally; see D_RequestRestart.
 			if (s_restartRequested)
 			{
+				zx::gameloop::FinishInFlight ();   // [rc4l] features/handoff: never unwind beside a running tic
 				s_restartRequested = false;
 				throw CRestartException();
 			}
 
+			// [rc4l] features/handoff: a quit takes the game back from a tic in flight first.
+			if (zx::mainloop::QuitPending ()) zx::gameloop::FinishInFlight ();
 			zx::mainloop::FinishPendingQuit ();
 
 			// [rc4l] A wipe a stepped loop is running takes the whole frame, as D_Display's own loop does on the desktop.
@@ -1422,14 +1534,13 @@ void D_RunFrame ()
 				return;
 			}
 
-			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
-			zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
-			zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
-			zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
-			zx::Continue_Tick(); // [rc4l] finishes a Continue that had to reload the WAD set first
-			zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
 			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
-			MCP_Bridge_Poll();
+			MCP_RPC_FrameEnd();   // [rc4l] perf.capture's frame, which the bridge's poll below skips while a tic is in flight
+			// [rc4l] features/handoff: what may load wads, maps or a server, or answer an RPC about the game, waits for the handoff.
+			if (!zx::handoff::TicInFlight ())
+			{
+				D_RunHandoffWork ();
+			}
 			switch ( NETWORK_GetState( ))
 			{
 			case NETSTATE_CLIENT:
@@ -1442,11 +1553,7 @@ void D_RunFrame ()
 					CLIENT_GetPackets( );
 
 				// frame syncronous IO operations
-				if (gametic > s_lastTic)
-				{
-					s_lastTic = gametic;
-					I_StartFrame ();
-				}
+				D_StartFrameIO ();
 
 				// Run at least 1 tick.
 				{
@@ -1491,11 +1598,17 @@ void D_RunFrame ()
 			default:
 
 				// frame syncronous IO operations
-				if (gametic > s_lastTic)
+				D_StartFrameIO ();
+
+				// [rc4l] The server registries asked once a few seconds in and the browser's clocks pumped every frame on either schedule, so the list is there when the menu opens.
+				BROWSER_BackgroundTick( );
+
+				// [rc4l] features/handoff: fua_gamethread's schedule, a tic's playsim on the game thread and this frame drawn beside it.
+				if (zx::gameloop::GameThreadFrame ())
 				{
-					s_lastTic = gametic;
-					I_StartFrame ();
+					break;
 				}
+
 				
 				// process one or more tics
 				if (singletics)
@@ -1524,22 +1637,17 @@ void D_RunFrame ()
 					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}
 
-				// [rc4l] Asks the server registries once, a few seconds in, and pumps the browser's
-				// clocks. Here rather than in the browser menu so the list is already there when the
-				// menu opens, and so a reply has somewhere to land while it is shut.
-				BROWSER_BackgroundTick( );
-
 				// Update display, next frame, with current state.
-				{
-					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
-					I_StartTic ();
-				}
-				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
+				D_FrameInput ();
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
+				// [rc4l] features/handoff: the frame's touches of the game in the handoff, then the frame, which may touch none.
+				D_PrepareDisplay (true);
+				zx::gameloop::FrameBegins ();
 				{
 					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
 					D_Display ();
 				}
+				zx::gameloop::FrameEnds ();
 				break;
 			}
 		}
@@ -3051,6 +3159,7 @@ static void FinalGC()
 
 void D_DoomMain (void)
 {
+	zx::handoff::NoteMainThread();   // [rc4l] before any seam, so their thread checks know which thread is main
 	int p;
 	const char *v;
 	const char *wad;

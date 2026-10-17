@@ -10,7 +10,7 @@
 
 namespace zx { namespace jobs {
 
-// [rc4l] The pool, its workers set by fua_jobs_threads (-1 picks by the machine) and resized on the next call after it changes; call it only from the game thread, between jobs.
+// [rc4l] The pool, its workers set by fua_jobs_threads (-1 picks by the machine) and resized on the next call after it changes; call it only from the main thread, between jobs.
 JobPool &Pool();
 
 }} // namespace zx::jobs

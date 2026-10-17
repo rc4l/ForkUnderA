@@ -188,7 +188,7 @@ namespace
 #ifndef NO_GL
 		if (currentrenderer == 1)
 		{
-			return zx::crosshair::ComputeGLReticleProjection(FOV_InterpolatedForFrame(&players[consoleplayer]), WidescreenRatio,
+			return zx::crosshair::ComputeGLReticleProjection(FOV_InterpolatedForFrame(consoleplayer), WidescreenRatio,
 				viewwidth, zx::crosshair::ComputeGLViewportHeight(screenblocks, SCREENHEIGHT), glset.pixelstretch);
 		}
 #endif
