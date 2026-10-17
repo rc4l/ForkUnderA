@@ -121,6 +121,15 @@ ClusterRange ComputeLightClustersFromMVP(const ClusterGrid &g, const float mvp[1
 // two against each other, which only works if these are constant expressions.
 enum { kClusterTilePixels = 64, kClusterSlices = 24 };
 
+// [rc4l] The largest frame the cluster table is made for, 8K; a frame past it would make every pixel loop over every light.
+enum { kClusterMaxScreenW = 7680, kClusterMaxScreenH = 4320 };
+
+// [rc4l] The cells the cluster table needs for the grid of a screenW by screenH frame.
+int ComputeClusterCapacity(int screenW, int screenH);
+
+// [rc4l] The light index entries a table of `cells` cells is given, sixteen a cell and never under a million.
+int ComputeClusterIndexCapacity(int cells);
+
 // [rc4l] The depth range the slices cover, in map units: the binning pass and the scene constants read the same two numbers.
 const float kClusterZNear = 5.f;
 const float kClusterZFar = 8192.f;

@@ -46,6 +46,17 @@ int ComputeClusterCount(const ClusterGrid &g)
 	return g.tilesX * g.tilesY * g.slices;
 }
 
+int ComputeClusterCapacity(int screenW, int screenH)
+{
+	return ComputeClusterCount(ComputeGridForScreen(screenW, screenH, kClusterZNear, kClusterZFar));
+}
+
+int ComputeClusterIndexCapacity(int cells)
+{
+	const int perCell = cells * 16;
+	return perCell > 1048576 ? perCell : 1048576;
+}
+
 int ComputeSliceForDepth(const ClusterGrid &g, float viewZ)
 {
 	if (g.slices <= 1) return 0;

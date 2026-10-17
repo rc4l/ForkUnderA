@@ -459,3 +459,23 @@ TEST(LightCluster, NoSlicesCoverTheWholeRange)
 	EXPECT_FLOAT_EQ(g.zNear, n);
 	EXPECT_FLOAT_EQ(g.zFar, f);
 }
+
+// [rc4l] A 2560x1440 frame needs 22080 cells, which the old 16384-cell table could not hold, so every pixel looped over every light and a big fight took 12 ms of GPU instead of 0.3.
+TEST(LightCluster, TheTableHoldsTheGridOfEveryFrameUpTo8K)
+{
+	EXPECT_EQ(30 * 17 * kClusterSlices, ComputeClusterCapacity(1920, 1080));
+	EXPECT_EQ(40 * 23 * kClusterSlices, ComputeClusterCapacity(2560, 1440));
+	EXPECT_EQ(60 * 34 * kClusterSlices, ComputeClusterCapacity(3840, 2160));
+	const int table = ComputeClusterCapacity(kClusterMaxScreenW, kClusterMaxScreenH);
+	EXPECT_EQ(120 * 68 * kClusterSlices, table);
+	for (int w = 640; w <= kClusterMaxScreenW; w += 160)
+		EXPECT_LE(ComputeClusterCapacity(w, w * 9 / 16), table);
+}
+
+// [rc4l] The index list grows with the table, sixteen entries a cell, and never drops below the million a small screen was given.
+TEST(LightCluster, TheIndexListGrowsWithTheTable)
+{
+	EXPECT_EQ(1048576, ComputeClusterIndexCapacity(0));
+	EXPECT_EQ(1048576, ComputeClusterIndexCapacity(65536));
+	EXPECT_EQ(120 * 68 * kClusterSlices * 16, ComputeClusterIndexCapacity(120 * 68 * kClusterSlices));
+}

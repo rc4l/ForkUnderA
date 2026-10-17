@@ -40,6 +40,7 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 ## Found with it
 
 - Every new game leaked each player's userinfo CVars, because `TMap::TransferFrom` replaced them without deleting them (`userinfo_t::TransferFrom`), found with `fua_allocsites`.
+- Above 1080p the light cluster table overflowed and every pixel looped over every dynamic light: a Sunder MAP11 fight spent about 25 times the GPU time on the world that it needed once the table held the grid, found by `record` per setting from the player's save and a cliff between two window sizes either side of 16384 cells.
 - A browser numbers WebGPU textures and buffers apart, so a buffer sharing a kept texture's handle was left for the garbage collector (queue #48), found by comparing `gpu/page/` with `gpu/mem/tag/`.
 - A `wad_reload` restart leaked what startup makes and only exit freed: actor light lists, the Huffman codec, the client's net buffer, weapon order entries and the startup screen; a music change leaked its reader and WAD handle, and a sound load a reader; the backend kept its textures for freed materials at the title. Found by soaking reloads and diffing two `fua_allocsites` reports.
 
@@ -59,6 +60,7 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   - `dgscene.cpp`, `dg2d.cpp`, `dgsky.cpp`, `dgviews.cpp` and `dgdynamic.cpp`: the `draw/` and `scene/` zones and the `frame/vsync` gauge.
   - `dgframe.cpp` and `dgupload.cpp`: the `load/` zones, the present interval and `fua_frametimes`'s per-frame parts under `frame/` and `levelmesh/`, and the scene buffer's rebuilds.
   - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries.
+  - `dglights.cpp`: `lights/cluster_overflow`, the frames whose light cluster grid did not fit its table, each one lit by every light at every pixel.
   - `dgmemory.cpp`: every texture and buffer made through `CreateDeviceTexture`/`CreateDeviceBuffer`, under `gpu/mem/` and the breakdown `gpu/mem/tag/`. At shutdown it reports what is still held.
   - `dgdevice_vk.cpp`: `VK_EXT_memory_budget` under `gpu/vk_`, the device's heaps and the host's apart.
   - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`: the shaders and pipelines made, under `gpu/made/`.
