@@ -35,8 +35,8 @@ struct OsReadings
 	double jsHeapBytes = -1.0;
 };
 
-// [rc4l] Takes every reading this platform can; cheap enough for a few times a second.
-void ReadOs(OsReadings &out);
+// [rc4l] Takes every reading this platform can, the allocator's heaps only with walkHeaps, since walking them holds their locks for tens of milliseconds once a level fills them.
+void ReadOs(OsReadings &out, bool walkHeaps);
 
 // [rc4l] Which probe this build has, for fua_stats' header.
 const char *OsProbeName();

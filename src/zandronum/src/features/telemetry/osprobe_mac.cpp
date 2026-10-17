@@ -12,7 +12,7 @@
 
 namespace zx { namespace telemetry {
 
-void ReadOs(OsReadings &out)
+void ReadOs(OsReadings &out, bool walkHeaps)
 {
 	task_vm_info_data_t vm = {};
 	mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
@@ -32,6 +32,7 @@ void ReadOs(OsReadings &out)
 	}
 	const int fdBytes = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, NULL, 0);
 	if (fdBytes > 0) out.handles = (double)(fdBytes / PROC_PIDLISTFD_SIZE);
+	if (!walkHeaps) return;
 	malloc_statistics_t heap = {};
 	malloc_zone_statistics(NULL, &heap);
 	out.heapBytes = (double)heap.size_in_use;

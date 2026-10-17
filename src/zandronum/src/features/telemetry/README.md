@@ -20,7 +20,7 @@ One registry every feature reports its performance through. Counters are named `
   - It counts the allocations live and made each frame.
   - `fua_allocsites start | report [n] | stop` records each new allocation's call stack from then on. A report lists the stacks still holding the most, named through the platform's symbols.
 - `census.cpp`: what the level and the engine's tables hold, the audio channels in use, and the engine's own heap (`GC::AllocBytes`).
-- `osprobe.h`, one file per platform that CMake picks (`FUA_TELEMETRY_PROBE`). A reading a platform cannot take stays negative and shows as `n/a`:
+- `osprobe.h`, one file per platform that CMake picks (`FUA_TELEMETRY_PROBE`). A reading a platform cannot take stays negative and shows as `n/a`. The heap readings (`mem/heap_bytes`, `mem/all_heaps_bytes`, `mem/heaps_committed_bytes`) walk the allocator's heaps under their locks, which in a big level stalled a frame for about 50 ms twice a second, so they are taken only for a soak, a `fua_memsnap`/`fua_memdiff`, or with `fua_telemetry_heaps 1`, and read `n/a` otherwise:
   - Windows: memory counters, handles, the process heap's summary and every heap's (allocated and committed, so fragmentation shows as their gap), DXGI's per-process video memory, and the breakdown `mem/win/`, committed memory by kind (private read-write, executable, other, mapped), which places growth outside every heap. Stacks come from `RtlCaptureStackBackTrace` and names from dbghelp, whose session `SymbolNames` opens per call under `DbgHelpLock`, which the bridge's sampler holds too.
   - Linux: `/proc/self/status` (read through `features/fileio`), open descriptors and glibc's heap statistics.
   - macOS: the task's VM info, threads, descriptors and the malloc zones.
@@ -40,6 +40,7 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 ## Found with it
 
 - Every new game leaked each player's userinfo CVars, because `TMap::TransferFrom` replaced them without deleting them (`userinfo_t::TransferFrom`), found with `fua_allocsites`.
+- A frame of about 50 ms every 500 ms while flying a Sunder MAP11 fight was the probe walking every heap for its gauges on the main thread, found by `record` (the slow frames 500 ms apart, no timed region covering them) and then `sample --stacks` (`HeapSummary` under `FrameMark`).
 - Above 1080p the light cluster table overflowed and every pixel looped over every dynamic light: a Sunder MAP11 fight spent about 25 times the GPU time on the world that it needed, found by `record` per setting from the player's save and a cliff between two window sizes; the grid is now the same cells at every resolution.
 - A browser numbers WebGPU textures and buffers apart, so a buffer sharing a kept texture's handle was left for the garbage collector (queue #48), found by comparing `gpu/page/` with `gpu/mem/tag/`.
 - A `wad_reload` restart leaked what startup makes and only exit freed: actor light lists, the Huffman codec, the client's net buffer, weapon order entries and the startup screen; a music change leaked its reader and WAD handle, and a sound load a reader; the backend kept its textures for freed materials at the title. Found by soaking reloads and diffing two `fua_allocsites` reports.
