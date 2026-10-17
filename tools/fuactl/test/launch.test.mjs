@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -470,4 +470,10 @@ test("a recording launch records the game the engine starts on the map, without 
   assert.deepEqual(args.slice(at, at + 4), ["-record", "C:/f/gtfix.lmp", "-warp", "4"]);
   assert.equal(warpNumber("map11"), 11);
   assert.throws(() => warpNumber("E1M1"), /MAPxx/);
+});
+
+test("FUACTL_ENGINE_ARGS adds its arguments to every launch", () => {
+  assert.deepEqual(envEngineArgs({ FUACTL_ENGINE_ARGS: " -nosound  +set foo 1 " }), ["-nosound", "+set", "foo", "1"]);
+  assert.deepEqual(envEngineArgs({}), []);
+  assert.ok(engineArgs({ env: { FUACTL_ENGINE_ARGS: "-nosound" } }, "x.ini").includes("-nosound"));
 });

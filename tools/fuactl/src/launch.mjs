@@ -142,6 +142,11 @@ export function commandWords(text) {
   return [...String(text).matchAll(/"([^"]*)"|(\S+)/g)].map((m) => (m[1] !== undefined ? m[1] : m[2]));
 }
 
+// [rc4l] Engine arguments every launch takes from FUACTL_ENGINE_ARGS, space-separated, such as -nosound where a runner has no sound device.
+export function envEngineArgs(env = process.env) {
+  return String((env && env.FUACTL_ENGINE_ARGS) || "").split(/\s+/).filter(Boolean);
+}
+
 export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
@@ -182,6 +187,7 @@ export function engineArgs(opts = {}, configPath) {
     for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
+  args.push(...envEngineArgs(opts.env));
   // [rc4l] The engine's own default is now Vulkan alone (vid_backend 1), so a harness launch asks for GL unless it asked for -vulkan, -webgpu or the engine's own choice (engineDefault).
   if (!args.includes("-vulkan") && !args.includes("-webgpu") && !opts.engineDefault) args.push("-gl");
 
