@@ -1241,6 +1241,8 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		chan->Pitch = pitch;
 		chan->Priority = basepriority;
 		chan->DistanceScale = attenuation;
+		// [rc4l] Kept for a later start, since a channel started without the device (a tic on the game thread's, or a loop with no voice) has no rolloff of the device's, and S_RestartSound played every positional sound with none, silent.
+		chan->Rolloff = *rolloff;
 		chan->SourceType = type;
 		switch (type)
 		{

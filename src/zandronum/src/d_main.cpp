@@ -967,6 +967,16 @@ void D_RunHandoffWork ()
 }
 
 // [rc4l] features/handoff: a frame drawn beside a tic, or after the handoff prepared it and took the input: it reads only the copy and the recorded HUD.
+// [rc4l] A frame's input, the window's messages and the debug orbit, the same on both schedules, since the game thread's frames had no orbit and measured a still view.
+static void D_FrameInput ()
+{
+	{
+		const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
+		I_StartTic ();
+	}
+	zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
+}
+
 void D_DisplayBesideTic ()
 {
 	s_displayPrepared = true;
@@ -974,10 +984,7 @@ void D_DisplayBesideTic ()
 	zx::gameloop::FrameBegins ();
 	{
 		const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
-		{
-			const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
-			I_StartTic ();
-		}
+		D_FrameInput ();
 		MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 		D_Display ();
 	}
@@ -1463,6 +1470,16 @@ void D_ErrorCleanup ()
 // [rc4l] The last tic I_StartFrame ran for, reset each time the loop is entered.
 static int s_lastTic;
 
+// [rc4l] Frame-synchronous IO once for each new tic on either schedule, since the game thread's frames skipped it and left SDL's key table unbuilt and the pads unread in a level.
+static void D_StartFrameIO ()
+{
+	if (gametic > s_lastTic)
+	{
+		s_lastTic = gametic;
+		I_StartFrame ();
+	}
+}
+
 void D_DoomLoop ()
 {
 	s_lastTic = 0;
@@ -1536,11 +1553,7 @@ void D_RunFrame ()
 					CLIENT_GetPackets( );
 
 				// frame syncronous IO operations
-				if (gametic > s_lastTic)
-				{
-					s_lastTic = gametic;
-					I_StartFrame ();
-				}
+				D_StartFrameIO ();
 
 				// Run at least 1 tick.
 				{
@@ -1584,18 +1597,18 @@ void D_RunFrame ()
 				break;
 			default:
 
+				// frame syncronous IO operations
+				D_StartFrameIO ();
+
+				// [rc4l] The server registries asked once a few seconds in and the browser's clocks pumped every frame on either schedule, so the list is there when the menu opens.
+				BROWSER_BackgroundTick( );
+
 				// [rc4l] features/handoff: fua_gamethread's schedule, a tic's playsim on the game thread and this frame drawn beside it.
 				if (zx::gameloop::GameThreadFrame ())
 				{
 					break;
 				}
 
-				// frame syncronous IO operations
-				if (gametic > s_lastTic)
-				{
-					s_lastTic = gametic;
-					I_StartFrame ();
-				}
 				
 				// process one or more tics
 				if (singletics)
@@ -1624,17 +1637,8 @@ void D_RunFrame ()
 					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}
 
-				// [rc4l] Asks the server registries once, a few seconds in, and pumps the browser's
-				// clocks. Here rather than in the browser menu so the list is already there when the
-				// menu opens, and so a reply has somewhere to land while it is shut.
-				BROWSER_BackgroundTick( );
-
 				// Update display, next frame, with current state.
-				{
-					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
-					I_StartTic ();
-				}
-				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
+				D_FrameInput ();
 				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
 				// [rc4l] features/handoff: the frame's touches of the game in the handoff, then the frame, which may touch none.
 				D_PrepareDisplay (true);
