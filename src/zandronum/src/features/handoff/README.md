@@ -18,12 +18,16 @@ sends out goes through a queue. This folder is the low layer any feature may use
   thread counts as always in the handoff.
 - `effects.cpp`: what a tic on its own thread does to the main thread's state, queued in order and done in the
   handoff after it: prints (`PrintString`) and UI effects (`AM_Stop`, `C_HideConsole`, `M_StartControlPanel`,
-  `M_SetMenu`, `M_ClearMenus`, `R_ResetViewInterpolation`, `R_ClearPastViewer`, the Strife conversation's menu).
+  `M_SetMenu`, `M_ClearMenus`, `R_ResetViewInterpolation`, `R_ClearPastViewer`, the Strife conversation's menu,
+  `R_InitSkyMap` for ACS `ChangeSky`, `R_BuildPlayerTranslation`, and the end of a centering view's `LocalViewPitch`).
   `Deferred<T>` does the same for values a tic makes for a store the frame reads: the projected decals' marks and
   forgotten owners (`features/levelmesh/projdecals.cpp`, whose marks load their pictures) and the hitbox overlay's
   blasts (`features/hitboxviz`); `wad/read` makes any lump read from the game thread a violation.
 - `gamethread.cpp`: the worker that runs a tic's playsim (`StartOnGameThread`, `TakeBack`, `TicInFlight`); what it
-  throws is rethrown on the main thread when the tic is taken back.
+  throws is rethrown on the main thread when the tic is taken back. `AskMain` has the main thread run a call whose
+  answer the tic needs at once and waits for it, up to a frame (`ServeAsks` each frame beside a tic, and while waiting
+  on one; `handoff/asks` counts them): `V_GetFont` loads a font that way, after looking among the fonts loaded before
+  the tic (`V_FontsForTic`), since loading one adds the textures and fonts a frame reads.
 - `snapshot.cpp`: the screen's size for ACS `GetScreenWidth`/`GetScreenHeight`, taken before each tic.
 - The sound seam (`s_sound.cpp`): a tic on its own thread keeps the channels' bookkeeping, so a sound it starts
   counts as playing for the rest of the tic, but asks nothing of the device; its starts (loaded then), stops and
@@ -35,21 +39,30 @@ sends out goes through a queue. This folder is the low layer any feature may use
   and `D_PrepareDisplay` sets the new view up before it records the HUD.
 - Seams on shared engine state: `sound/channels` and `sound/music` (s_sound.cpp, game data), `gc/object`
   (every `DObject`, game data), `gc/collect` and `gc/full`, `texture/grow` (a texture added past the headroom,
-  idle only) and `wipe/randoms`. `fuactl fixture seamcheck` fails a fixture on any violation.
+  idle only), `wipe/randoms`, and the main thread's own `font/load`, `sky/map` and `translation/player`, which a
+  tic reaches only through `AskMain` or the UI effects. `fuactl fixture seamcheck` fails a fixture on any
+  violation; gtmod loads a font and changes the sky from a tic so it does.
 - Shared engine data both threads read: `FString` buffers are counted atomically, and the name table takes a lock
   and keeps every array it outgrew (`name.cpp`).
 - `computation/lock_compute`: `zx::Lock`, the one lock for state both threads touch, named, counting the takes that
   waited, and reporting a thread that takes one while it holds another, so no two can be taken in opposite orders.
 - `computation/queue_compute`: `zx::Queue<T>`, the one queue that carries work between the threads: values only,
   drained oldest first, each listed with its depth and high-water mark.
+- `computation/asks_compute`: `Asks`, the call one thread hands another and waits on, served while the serving thread
+  waits on the asker too, rethrowing what the call threw to the asker.
 
 Rules the boundary keeps are in `tools/boundary-rules.json`, checked by `tools/boundary_tripwire.py` against
-allowances in `tools/boundary-allow.json` that may only shrink.
+allowances in `tools/boundary-allow.json` that may only shrink; game code setting any variable a renderer header
+declares counts as a crossing too, since that is how queue #51's rubber band got in.
 
 ## In-engine hooks
 
 - `d_main.cpp` `D_DoomMain`: `NoteMainThread` first, so every seam's check knows which thread is main.
 - `mcp_crash.cpp`: the hang watchdog watches the game thread's heartbeat while a tic is in flight.
+- `v_font.cpp` `V_GetFont`: from a tic on its own thread, a font loaded before the tic or one `AskMain` loads.
+- `r_sky.cpp` `R_InitSkyMap` and `r_data/r_translate.cpp` `R_BuildPlayerTranslation` queue themselves from a tic on
+  its own thread.
+- `p_user.cpp` `P_PlayerThink`: a finished centering zeroes `LocalViewPitch` in the handoff.
 - `mcp_crash.cpp`: every crash, abort and hang file names the seam each thread was in (`seams:` line), which
   `fuactl crashes` prints.
 - `features/crashreport/zx_crashreport.cpp` `zx_before_send`: the `zx_seam_main` and `zx_seam_game` tags.
@@ -66,7 +79,7 @@ Copied by `features/gamecopy/fields.h`:
 - actor, worked out by the fill: `who`, `id`, `type`, `target`, `nextInSector`, `shownSprite`, `shownScaleX`, `shownScaleY`, `visible`, `isPlayer`, `playerIndex`, `inventory`, `cameraIcon`, `bobTic`, `attackRadius`, `attackHeight`, `playerBody`, `tintActive`, `tintTexture`
 - decal: `LeftDistance`, `Z`, `ScaleX`, `ScaleY`, `Alpha`, `AlphaColor`, `Translation`, `PicNum`, `RenderFlags`, `RenderStyle`, `Sector`
 - level: `time`, `maptime`, `flags`, `flags2`, `skyspeed1`, `skyspeed2`, `fadeto`, `outsidefog`
-- level, worked out by the fill: `sky1`, `sky2`
+- level, worked out by the fill: `sky1`, `sky2`, `endLevelDelay`
 - line: `flags`, `special`, `Alpha`, `args`
 - player: `viewz`, `playerstate`, `cheats`, `bSpectating`, `extralight`, `fixedcolormap`, `fixedlightlevel`, `DesiredFOV`, `FOV`, `centering`, `MinPitch`, `MaxPitch`, `timefreezer`, `BlendR`, `BlendG`, `BlendB`, `BlendA`
 - player, worked out by the fill: `who`, `number`, `mo`, `camera`, `lightPower`, `hasWeapon`, `weaponFOVScale`, `weaponType`, `weaponYAdjust`, `hudModel`, `bobIn`, `layers`, `screenBlend`
@@ -79,6 +92,10 @@ Seams:
 - `copy/blend` (Main), `features/gamecopy/gamecopy.cpp`
 - `copy/fill` (Handoff), `features/gamecopy/gamecopy.cpp`
 - `copy/seen` (Handoff), `features/gamecopy/seen.cpp`
+- `font/load` (Main), `v_font.cpp`
+- `gc/collect` (GameData), `dobjgc.cpp`
+- `gc/full` (Handoff), `dobjgc.cpp`
+- `gc/object` (GameData), `dobject.cpp`
 - `handoff/after_tic` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/before_tic` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/effects` (Handoff), `features/handoff/effects.cpp`
@@ -86,10 +103,13 @@ Seams:
 - `handoff/snapshot` (Handoff), `features/handoff/snapshot.cpp`
 - `handoff/ticker_begin` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/ticker_end` (Handoff), `features/gameloop/loop.cpp`
+- `sky/map` (Main), `r_sky.cpp`
 - `sound/channels` (GameData), `s_sound.cpp`
 - `sound/deferred` (Handoff), `s_sound.cpp`
 - `sound/music` (GameData), `s_sound.cpp`
+- `texture/grow` (Idle), `textures/texturemanager.cpp`
 - `tic/playsim` (GameThread), `features/gameloop/loop.cpp`
+- `translation/player` (Main), `r_data/r_translate.cpp`
 - `wad/read` (Main), `resourcefiles/resourcefile.cpp`
 - `wad/read` (Main), `w_wad.cpp`
 - `wipe/randoms` (Idle), `features/wipe/wiperandoms.cpp`

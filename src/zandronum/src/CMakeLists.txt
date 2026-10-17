@@ -1747,6 +1747,7 @@ add_executable( zdoom WIN32
 	features/jobs/computation/jobpool_compute.cpp
 	features/handoff/computation/handoff_compute.cpp
 	features/handoff/computation/lock_compute.cpp
+	features/handoff/computation/asks_compute.cpp
 	features/handoff/computation/queue_compute.cpp
 	features/gamecopy/computation/blend_compute.cpp
 	features/wipe/computation/wipe_compute.cpp

@@ -186,6 +186,7 @@ const USAGE = `fuactl <command>
   ui <action> [args] --port P [--token T]   drive the UI: read (menu as text), find <label>, nav <keys>, click <x> <y>, drag, type <text>, look --yaw D --pitch D, screenshot [name], exec <ccmd>
   diligent --port P [--frames N] [--shot FILE] [--sweep DIR]   drive the Diligent (Vulkan) backend: bake the level mesh, upload geometry, optional swapchain screenshot, optional debug-view sweep (lm0..lm4.png in DIR), the Diligent frame benchmark (fua_diligent_bench), and with --scale a GPU-time probe at 1x..100x the visible geometry
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
+  walkcheck --port P [--runs N] [--seconds S] [--spot S | --at x,y,z --face yaw,pitch]   the W key held as a player holds it from the spot, N runs of S seconds each traced (fua_viewtrace): exit 1 when any frame stepped back or lurched ahead of the steady speed, a view that rubber-bands
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
   play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
@@ -712,6 +713,17 @@ async function main() {
       for (const line of trace.formatViewTrace(analysis)) console.error(`[trace] ${line}`);
       console.error(`[trace] every frame: ${out}`);
       console.log(JSON.stringify(analysis, null, 2));
+      break;
+    }
+    // [rc4l] `fuactl walkcheck` -- the W key held as a player holds it, every frame's view judged: it never steps back or lurches ahead of the game's steady speed.
+    case "walkcheck": {
+      if (!flags.port) { console.error(usageFor(USAGE, "walkcheck")); process.exit(2); }
+      const start = flags.at || flags.spot ? shot.cameraFromFlags(flags, SPOTS) : null;
+      const runs = await withUi(flags, (c) => trace.walkCheck(c, { runs: num(flags.runs) ?? 3, seconds: num(flags.seconds) ?? 4, start, exec: cap.exec, standAt: shot.standAt }));
+      runs.forEach((r, i) => console.error(`[walkcheck] run ${i + 1}: ${r ? `${r.back} back steps, ${r.lurch} lurches` : "no report"}`));
+      const bad = runs.filter((r) => !r || r.back > 0 || r.lurch > 0).length;
+      console.log(JSON.stringify({ runs, bad }));
+      if (bad) process.exit(1);
       break;
     }
     case "present": {

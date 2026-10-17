@@ -3,13 +3,15 @@
 # Copyright (C) 2026 rc4l
 #
 # [rc4l] Tests for the boundary tripwire on made-up trees, stdlib only: python3 tools/boundary_tripwire_test.py
+import json
 import os
+import re
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc, exempted, field_patterns, in_set,  # noqa: E402
-                               lowered, seams, stale_docs, with_doc)
+from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc, exempted, extern_names, field_patterns, in_set,  # noqa: E402
+                               lowered, seams, stale_docs, with_doc, write_patterns)
 
 NL = '\n'
 
@@ -67,6 +69,28 @@ class BoundaryTripwire(unittest.TestCase):
                  'features/sprites/b.cpp': 'void G(sector_t *sec) { auto &S = Sel::Of(sec); h(S.floorplane); }'}
         self.assertEqual(counts([rule], files), {'render': {'features/sprites/a.cpp': 2, 'features/sprites/b.cpp': 1}})
 
+    def test_a_renderer_headers_variables_set_by_game_code_count_as_crossings(self):
+        rule = {'name': 'game', 'files': ['p_*.cpp'], 'writes': {'headers': ['r_*.h', 'gl/'], 'exclude': ['gl/skip.h'], 'unpatterned': ['validcount']}}
+        files = {'r_view.h': ('extern fixed_t viewx, *viewy;' + NL + 'extern const int limit;' + NL + 'extern void R_Do(int a);' + NL +
+                              'extern "C" int cfunc;' + NL + 'extern BYTE table[4];' + NL + 'extern int validcount;' + NL + '// extern int commented;' + NL),
+                 'gl/gl_x.h': 'extern TArray<FTexture *> glTextures;', 'gl/skip.h': 'extern int skipped;', 'p_x.h': 'extern int gamevar;',
+                 'p_a.cpp': ('viewx = 1; a.viewy = 2; p->viewx = 3; if (viewy == 4) {} viewy += 1; ++viewx; table[0] = 1;' + NL +
+                             'limit = 2; validcount++; R_Do(1); gamevar = 1; ns::viewx = 5; glTextures = x; if (viewx >= 2 || viewx <= 1) {} viewy--;' + NL +
+                             'skipped = 1; viewyz = 1; b = viewx;' + NL)}
+        self.assertEqual(extern_names(rule, files), ['cfunc', 'glTextures', 'table', 'viewx', 'viewy'])
+        self.assertEqual(counts([rule], files), {'game': {'p_a.cpp': 5}})
+        self.assertEqual(write_patterns({'name': 'none', 'files': []}, files), [])
+        self.assertEqual(write_patterns(dict(rule, writes={'headers': ['nothing.h']}), files), [])
+
+    def test_the_renderer_rule_counts_a_live_sector_or_side_read_through_its_accessors(self):
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'boundary-rules.json'), encoding='utf-8') as f:
+            rule = [r for r in json.load(f)['rules'] if r['name'] == 'renderer-reads-the-copy'][0]
+        accessor = re.compile([p for p in rule['patterns'] if p['name'] == 'live map accessor'][0]['regex'])
+        live = 'sides[i].GetTexture(part); sec->GetFloorLight(); s->GetTextureXOffset(side_t::mid); f(sector.GetPlaneTexZ(sector_t::floor));'
+        copied = 's->rc.GetTexture(side_t::top); sec.rc.GetFloorLight(); rtv->GetTexture(); TexMan.GetTexture(name, use); tex->GetScaledWidth();'
+        self.assertEqual(len(accessor.findall(live)), 4)
+        self.assertEqual(accessor.findall(copied), [])
+
     def test_a_crossing_beyond_its_allowance_fails_and_one_below_asks_to_lower_it(self):
         found = {'render': {'a.cpp': 3, 'b.cpp': 1, 'new.cpp': 1}}
         allow = {'render': {'a.cpp': 2, 'b.cpp': 4, 'gone.cpp': 1}}
@@ -83,10 +107,11 @@ class BoundaryTripwire(unittest.TestCase):
         self.assertEqual(lowered(found, allow), {'render': {'a.cpp': 2, 'b.cpp': 1}})
 
     def test_seams_are_listed_once_with_their_owner_outside_tests(self):
-        files = {'a.cpp': 'ZX_SEAM("copy/fill", Handoff); ZX_SEAM_UNTIMED("sound/device", Main);',
+        files = {'a.cpp': 'ZX_SEAM("copy/fill", Handoff); ZX_SEAM_UNTIMED("sound/device", Main); ZX_SEAM_UNTIMED ("texture/grow", Idle);',
                  'b.cpp': 'ZX_SEAM("copy/fill", Handoff);', 'a_test.cpp': 'ZX_SEAM("x/y", Main);',
                  'features/handoff/seam.h': 'ZX_SEAM("doc/example", Main)'}
-        self.assertEqual(seams(files), [('copy/fill', 'Handoff', 'a.cpp'), ('copy/fill', 'Handoff', 'b.cpp'), ('sound/device', 'Main', 'a.cpp')])
+        self.assertEqual(seams(files), [('copy/fill', 'Handoff', 'a.cpp'), ('copy/fill', 'Handoff', 'b.cpp'), ('sound/device', 'Main', 'a.cpp'),
+                                        ('texture/grow', 'Idle', 'a.cpp')])
 
     def test_the_generated_section_lists_the_table_and_the_seams(self):
         rule = dict(RENDER, fields={'table': 'features/gamecopy/fields.h', 'types': ['sector']})

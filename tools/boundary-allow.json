@@ -1,25 +1,29 @@
 {
  "game-leaves-the-renderer-alone": {
   "features/dynlights/a_dynlight.cpp": 5,
-  "g_game.cpp": 9,
-  "g_level.cpp": 7,
+  "g_game.cpp": 23,
+  "g_level.cpp": 13,
   "g_shared/a_artifacts.cpp": 7,
   "g_shared/a_decals.cpp": 4,
   "g_shared/a_quake.cpp": 1,
   "medal.cpp": 7,
   "p_3dfloors.cpp": 3,
-  "p_acs.cpp": 22,
+  "p_acs.cpp": 28,
+  "p_buildmap.cpp": 2,
   "p_conversation.cpp": 31,
   "p_effect.cpp": 1,
   "p_glnodes.cpp": 4,
   "p_interaction.cpp": 1,
   "p_map.cpp": 8,
   "p_mobj.cpp": 4,
-  "p_setup.cpp": 6,
+  "p_setup.cpp": 7,
   "p_spec.cpp": 1,
   "p_teleport.cpp": 1,
   "p_tick.cpp": 5,
-  "p_user.cpp": 21
+  "p_user.cpp": 26
  },
- "renderer-reads-the-copy": {}
+ "renderer-reads-the-copy": {
+  "features/frame/levelrenderer.cpp": 2,
+  "r_utility.cpp": 11
+ }
 }

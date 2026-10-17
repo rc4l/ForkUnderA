@@ -378,7 +378,7 @@ void HangWatchdog()
 		Sleep( 5000 );
 		// [rc4l] features/handoff: a tic in flight on the game thread that stops passing its seams is a hang of its own, which the main thread's heartbeat would not show.
 		const uint64_t game = zx::handoff::Heartbeat( true );
-		if ( g_gameThread == NULL || !zx::handoff::TicInFlight() || zx::handoff::GameThreadDone() || game != lastGame ) { lastGame = game; gameStalls = 0; }
+		if ( g_gameThread == NULL || !zx::handoff::TicInFlight() || zx::handoff::GameThreadDone() || zx::handoff::GameThreadAsking() || game != lastGame ) { lastGame = game; gameStalls = 0; }
 		else if ( ++gameStalls >= 6 )
 		{
 			WriteThreadStack( g_gameThread, "game thread stalled for 30s in a tic" );

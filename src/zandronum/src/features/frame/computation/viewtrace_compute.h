@@ -45,6 +45,10 @@ struct ViewTraceSample
 	bool paused;           // [rc4l] the game was paused
 	bool menu;             // [rc4l] a menu was up
 	bool console;          // [rc4l] the console was down or coming down
+	float x, y;            // [rc4l] the view's position in map units
+	float frac;            // [rc4l] the fraction of a tic the view was blended to
+	int clock;             // [rc4l] the clock tic the frame was drawn in
+	unsigned ticNext;      // [rc4l] when the tic the blend is anchored to ends, in the clock's milliseconds
 };
 
 struct ViewTraceSummary
@@ -68,6 +72,12 @@ const double kLongGapMs = 20.0;
 
 // [rc4l] The summary of `n` frames in order; a view that turns between tics spreads its turning over every frame, one that turns only at tics puts it all on the tic frames.
 ViewTraceSummary ComputeViewTraceSummary(const ViewTraceSample *s, int n);
+
+// [rc4l] Frames whose view moved back against the way the frame before moved it by more than `minMove` map units, a rubber band while the player keeps moving.
+int ComputeViewBackSteps(const ViewTraceSample *s, int n, float minMove);
+
+// [rc4l] Frames whose view jumped further than the trace's own steady speed carries it in that frame by more than half a tic of travel, a view that held still and then lurched to catch up.
+int ComputeViewLurches(const ViewTraceSample *s, int n);
 
 // [rc4l] The turn from angle `from` to `to` in degrees, the short way round.
 double ComputeTurnDegrees(unsigned from, unsigned to);

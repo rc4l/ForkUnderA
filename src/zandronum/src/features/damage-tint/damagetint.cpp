@@ -255,10 +255,10 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 		*coverageFracOut = 0.0f;
 	if ( glowOut != NULL )
 		*glowOut = false;
-	if ( consoleplayer < 0 || consoleplayer >= MAXPLAYERS || !playeringame[consoleplayer] )
-		return PalEntry( 0 );
-	// [rc4l] The console player's body as the render copy holds it.
+	// [rc4l] The console player's body as the render copy holds it, none when the copy has no such player.
 	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player( consoleplayer );
+	if ( me == NULL )
+		return PalEntry( 0 );
 	const zx::gamecopy::ActorRecord *const mo = me != NULL ? zx::gamecopy::Record( me->mo ) : NULL;
 	const TintSubject subject = { mo != NULL ? mo->id : 0u, mo != NULL && mo->playerBody, mo != NULL && mo->tintActive, mo != NULL ? mo->tintTexture : FTextureID() };
 	PalEntry avg;

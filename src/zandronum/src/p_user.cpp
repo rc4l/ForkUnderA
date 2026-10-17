@@ -31,6 +31,7 @@
 #include "templates.h"
 #include "doomdef.h"
 #include "d_event.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI
 #include "p_local.h"
 #include "doomstat.h"
 #include "s_sound.h"
@@ -4130,7 +4131,9 @@ void P_PlayerThink (player_t *player)
 				player->centering = false;
 				if (player - players == consoleplayer)
 				{
-					LocalViewPitch = 0;
+					// [rc4l] features/handoff: the look the player has not yet sent is the main thread's, so a tic on its own thread clears it in the handoff.
+					if (zx::handoff::Deferring ()) zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { LocalViewPitch = 0; }, 0, 0 });
+					else LocalViewPitch = 0;
 				}
 			}
 		}

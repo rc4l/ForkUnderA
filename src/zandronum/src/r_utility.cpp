@@ -56,6 +56,7 @@
 #include "features/gamecopy/gamecopy.h"   // [rc4l] BlendMap
 #include "features/gamecopy/players.h"    // [rc4l] the records a view is set up from
 #include "features/gamecopy/xfloors.h"    // [rc4l] the copied light lists and height transfers
+#include "features/gamecopy/level.h"      // [rc4l] the copied level flags a view is held by
 #include "v_palette.h"
 #include "features/fixed64/computation/finetable_compute.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
@@ -633,8 +634,9 @@ static void R_InterpolateView (const zx::gamecopy::PlayerRecord *player, const z
 		( CLIENT_GetServerLagging( ) == false ) &&
 		( CLIENT_GetClientLagging( ) == false ) &&
 		( CLIENTDEMO_IsPlaying( ) == false ) &&
-		( GAME_GetEndLevelDelay( ) == false ) &&
-		( ~level.flags2 & LEVEL2_FROZEN || player->timefreezer != 0 ))
+		// [rc4l] features/gamecopy: the level as the copy holds it, since a tic on its own thread may be changing the live one.
+		!zx::gamecopy::Level().endLevelDelay &&
+		( ~zx::gamecopy::Level().flags2 & LEVEL2_FROZEN || player->timefreezer != 0 ))
 	{
 		// [rc4l] features/handoff: beside a running tic the copy is a tic behind, so the turn of the ticcmds built since it was taken is added, or the view would snap back each tic.
 		int pendingYaw = 0, pendingPitch = 0;

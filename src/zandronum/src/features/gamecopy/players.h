@@ -58,6 +58,7 @@ struct CameraTexture
 	FCanvasTexture *texture;
 	int record;
 	int fov;
+	FTextureID picnum;   // [rc4l] the texture id the map's sides and planes name it by
 };
 
 // [rc4l] The camera textures as the last fill took them, in the list's order.

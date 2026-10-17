@@ -79,7 +79,7 @@ namespace
 	bool                     g_initialized = false;
 	std::atomic<bool>        g_enabled( false );
 	mcp_socket_t             g_listen      = MCP_INVALID_SOCKET;
-	mcp_socket_t             g_client      = MCP_INVALID_SOCKET;
+	std::atomic<mcp_socket_t> g_client( MCP_INVALID_SOCKET );  // [rc4l] atomic, since any thread printing checks it before taking the send lock
 	std::mutex               g_qlock;     // guards g_inbound + g_rxbuf
 	std::mutex               g_sendlock;  // serialises writes to g_client
 	std::deque<zx::mcp::RpcRequest> g_inbound;

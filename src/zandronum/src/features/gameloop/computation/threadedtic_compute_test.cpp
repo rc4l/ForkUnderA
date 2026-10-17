@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+using zx::gameloop::ComputeHeldFrame;
 using zx::gameloop::ComputeTakeBackDue;
 using zx::gameloop::ComputeThreadedTic;
 using zx::gameloop::ThreadedTicIn;
@@ -33,15 +34,23 @@ TEST(ThreadedTic, AnythingThatReadsTheLiveGameOrHoldsTicsBackRunsInline)
 	in = kOn; in.resizePending = true; EXPECT_FALSE(ComputeThreadedTic(in));
 }
 
+// [rc4l] Started in clock tic 11 and finished at once, it waits for clock tic 12: taken back inside 11, its result showed with the blend already at the slot's end and the view lurched a tic, then stepped back (queue #51).
 TEST(ThreadedTic, ATicIsTakenBackOnTheBoundaryAfterTheOneItStartedIn)
 {
-	// [rc4l] Started at gametic 10, in clock tic 11.
-	EXPECT_FALSE(ComputeTakeBackDue(true, 11, 10));
-	EXPECT_TRUE(ComputeTakeBackDue(true, 12, 10));
-	EXPECT_TRUE(ComputeTakeBackDue(true, 14, 10));
+	EXPECT_FALSE(ComputeTakeBackDue(true, 11, 11));
+	EXPECT_TRUE(ComputeTakeBackDue(true, 12, 11));
+	EXPECT_TRUE(ComputeTakeBackDue(true, 14, 11));
 }
 
 TEST(ThreadedTic, AnUnfinishedTicIsNeverTakenBack)
 {
-	EXPECT_FALSE(ComputeTakeBackDue(false, 20, 10));
+	EXPECT_FALSE(ComputeTakeBackDue(false, 20, 11));
+}
+
+// [rc4l] A frame holds only once its tic is due back and still running.
+TEST(ThreadedTic, AFrameHoldsOnlyPastTheBoundaryWithTheTicStillRunning)
+{
+	EXPECT_FALSE(ComputeHeldFrame(false, 11, 11));
+	EXPECT_TRUE(ComputeHeldFrame(false, 12, 11));
+	EXPECT_FALSE(ComputeHeldFrame(true, 12, 11));
 }

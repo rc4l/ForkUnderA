@@ -37,6 +37,7 @@
 
 #include <assert.h>
 #include "features/handoff/snapshot.h"   // [rc4l] TicScreenWidth, TicScreenHeight
+#include "features/handoff/gamethread.h"   // [rc4l] AskMain
 
 #include "templates.h"
 #include "doomdef.h"
@@ -12086,7 +12087,12 @@ scriptwait:
 			break;
 
 		case PCD_PLAYMOVIE:
-			STACK(1) = I_PlayMovie (FBehavior::StaticLookupString (STACK(1)));
+			{
+				// [rc4l] features/handoff: a movie plays in the main thread's window, which a tic on its own thread asks for and waits on.
+				struct Ask { const char *name; int result; } ask = { FBehavior::StaticLookupString (STACK(1)), MOVIE_Failed };
+				zx::handoff::AskMain ([](void *p) { Ask &a = *(Ask *)p; a.result = I_PlayMovie (a.name); }, &ask);
+				STACK(1) = ask.result;
+			}
 			break;
 
 		case PCD_SETACTORPOSITION:

@@ -25,6 +25,9 @@
 #include "i_system.h"
 #include "menu/menu.h"
 #include "s_sound.h"
+#include "p_tick.h"   // [rc4l] p_NoInterpolate
+#include "r_utility.h"   // [rc4l] r_NoInterpolate
+#include "v_font.h"   // [rc4l] V_FontsForTic
 #include "mcp_ticprof.h"   // [ForkUnderA] MCP_SimPreTic, MCP_TicProf_TicDone
 #include "mcp_simtrace.h"  // [ForkUnderA] MCP_SimTrace_TicDone
 
@@ -42,7 +45,7 @@ using namespace zx::handoff;
 namespace {
 
 G_TickerPart g_part;    // [rc4l] the tic in flight between its two halves
-int g_inFlightTic = 0;  // [rc4l] gametic when it started
+int g_startedAt = 0;  // [rc4l] the clock tic it started in, which the take-back and the frame's blend are both counted on
 int64_t g_startedNs = 0;   // [rc4l] when it started, for handoff/show_delay
 int g_threadedTics = 0, g_heldFrames = 0;   // [rc4l] for fua_gamethread_report
 
@@ -62,6 +65,8 @@ void TickerBegin()
 {
 	ZX_SEAM("handoff/ticker_begin", Handoff);
 	g_part = G_TickerBegin ();
+	p_NoInterpolate = r_NoInterpolate;
+	V_FontsForTic ();
 }
 
 void Playsim()
@@ -73,6 +78,8 @@ void Playsim()
 void TickerEnd()
 {
 	ZX_SEAM("handoff/ticker_end", Handoff);
+	// [rc4l] Whether the tic moved anything, given to the renderer only now: written from the game thread it froze a frame drawn beside the tic at the full blend, and the view lurched a tic and stepped back (queue #51).
+	if (g_part.playsim) r_NoInterpolate = p_NoInterpolate;
 	G_TickerEnd (g_part);
 }
 
@@ -153,10 +160,13 @@ bool GameThreadFrame()
 {
 	if (TicInFlight ())
 	{
-		if (!ComputeTakeBackDue (GameThreadDone (), I_GetTime (false), g_inFlightTic))
+		ServeAsks ();
+		const bool finished = GameThreadDone ();
+		const int now = I_GetTime (false);
+		if (!ComputeTakeBackDue (finished, now, g_startedAt))
 		{
 			// [rc4l] A frame beside the tic, from the copy and the HUD the handoff recorded, positions held when the tic runs past its boundary.
-			if (I_GetTime (false) >= g_inFlightTic + 2) { ZX_COUNT ("handoff/held_frames", "frames", 1); g_heldFrames++; }
+			if (ComputeHeldFrame (finished, now, g_startedAt)) { ZX_COUNT ("handoff/held_frames", "frames", 1); g_heldFrames++; }
 			D_DisplayBesideTic ();
 			return true;
 		}
@@ -175,7 +185,7 @@ bool GameThreadFrame()
 		TickerBegin ();
 		if (g_part.playsim && ThreadedNow ())
 		{
-			g_inFlightTic = gametic;
+			g_startedAt = I_GetTime (false);
 			g_startedNs = zx::telemetry::NowNs ();
 			ZX_COUNT ("handoff/threaded_tics", "tics", 1);
 			g_threadedTics++;

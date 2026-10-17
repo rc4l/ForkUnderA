@@ -18,6 +18,7 @@
 #include "features/sprites/spritebuild.h"
 #include "features/gamecopy/actors.h"        // [rc4l] the actor records the sweep reads
 #include "features/gamecopy/particles.h"     // [rc4l] the particles the walks reach
+#include "features/gamecopy/players.h"       // [rc4l] the camera textures the copy holds
 
 #include "actor.h"
 #include "c_cvars.h"
@@ -26,7 +27,6 @@
 #include "po_man.h"
 #include "r_defs.h"
 #include "r_state.h"   // [rc4l] subsectors
-#include "r_utility.h"   // [rc4l] FCanvasTextureInfo
 #include "textures/textures.h"
 
 #include <vector>
@@ -96,25 +96,26 @@ void SweepActors()
 // [rc4l] The camera textures on what the player's walk saw, drawn again next frame, as GL's binding one marks it; the rest keep their last picture, as GL's do.
 void MarkSeenCameraTextures(const zx::levelmesh::WalkedThisFrame &walked)
 {
-	static std::vector<FCanvasTextureInfo *> infos;
+	static std::vector<FCanvasTexture *> canvases;
 	static std::vector<int> cameras, textures;
 	static std::vector<unsigned char> seen;
-	infos.clear();
+	canvases.clear();
 	cameras.clear();
-	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next)
-		if (p->Texture != NULL) { infos.push_back(p); cameras.push_back(p->PicNum.GetIndex()); }
+	// [rc4l] features/gamecopy: the cameras and the map's textures as the copy holds them, since ACS SetCameraToTexture and a switch change the live ones from a tic beside this frame.
+	for (const zx::gamecopy::CameraTexture &c : zx::gamecopy::CameraTextures())
+		if (c.texture != NULL) { canvases.push_back(c.texture); cameras.push_back(c.picnum.GetIndex()); }
 	if (cameras.empty()) return;
 	textures.clear();
 	for (int i = 0; i < walked.sideCount; i++)
-		for (int part = side_t::top; part <= side_t::bottom; part++) textures.push_back(sides[walked.sides[i]].GetTexture(part).GetIndex());
+		for (int part = side_t::top; part <= side_t::bottom; part++) textures.push_back(sides[walked.sides[i]].rc.GetTexture(part).GetIndex());
 	for (int i = 0; i < walked.sectorCount; i++)
 	{
-		textures.push_back(sectors[walked.sectors[i]].GetTexture(sector_t::floor).GetIndex());
-		textures.push_back(sectors[walked.sectors[i]].GetTexture(sector_t::ceiling).GetIndex());
+		textures.push_back(sectors[walked.sectors[i]].rc.GetTexture(sector_t::floor).GetIndex());
+		textures.push_back(sectors[walked.sectors[i]].rc.GetTexture(sector_t::ceiling).GetIndex());
 	}
 	ComputeCamerasSeen(cameras, textures, seen);
-	for (size_t i = 0; i < infos.size(); i++)
-		if (seen[i]) infos[i]->Texture->NeedUpdate();
+	for (size_t i = 0; i < canvases.size(); i++)
+		if (seen[i]) canvases[i]->NeedUpdate();
 }
 
 } // namespace

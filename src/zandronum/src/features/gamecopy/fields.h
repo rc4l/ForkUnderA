@@ -170,6 +170,7 @@ ZX_LEVEL_FIELD(fadeto)
 ZX_LEVEL_FIELD(outsidefog)
 ZX_LEVEL_DERIVED(FTextureID, sky1)           // [rc4l] sky1texture, which ChangeSky sets
 ZX_LEVEL_DERIVED(FTextureID, sky2)
+ZX_LEVEL_DERIVED(bool, endLevelDelay)        // [rc4l] a game mode's pause before the next level, which holds the view still
 
 #ifdef ZX_COPY_FIELD_DEFAULTED
 #undef ZX_COPY_FIELD

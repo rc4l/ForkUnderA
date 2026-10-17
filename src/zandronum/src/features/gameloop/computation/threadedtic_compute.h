@@ -31,10 +31,16 @@ inline bool ComputeThreadedTic(const ThreadedTicIn &in)
 		!in.advanceDemo && !in.singleTics && !in.copyCheck && !in.resizePending;
 }
 
-// [rc4l] Whether a tic in flight since gametic `inFlight` is taken back now, at clock tic `now`: it has finished, and the grid tic after the one it started in has come, so its result starts showing on the tic boundary as an inline tic's would one tic earlier.
-inline bool ComputeTakeBackDue(bool finished, int now, int inFlight)
+// [rc4l] Whether a tic started in clock tic `startedAt` is taken back now, at clock tic `now`: it has finished and a later clock tic has come, so its result starts showing on a tic boundary, where the frame's blend is anchored, never part way through the slot it started in.
+inline bool ComputeTakeBackDue(bool finished, int now, int startedAt)
 {
-	return finished && now >= inFlight + 2;
+	return finished && now > startedAt;
+}
+
+// [rc4l] Whether a frame drawn at clock tic `now` holds positions, its tic due back and not finished.
+inline bool ComputeHeldFrame(bool finished, int now, int startedAt)
+{
+	return !finished && now > startedAt;
 }
 
 }} // namespace zx::gameloop

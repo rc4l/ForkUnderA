@@ -48,6 +48,8 @@
 #include "r_data/colormaps.h"
 #include "farchive.h"
 #include "d_player.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring
+#include "features/handoff/seam.h"   // [rc4l] translation/player
 
 #include "gi.h"
 #include "stats.h"
@@ -1122,6 +1124,13 @@ void R_BuildAllPlayerTranslations()
 
 void R_BuildPlayerTranslation (int player)
 {
+	// [rc4l] features/handoff: a tic on its own thread rebuilds a player's colours in the handoff, since a frame beside it draws with them.
+	if (zx::handoff::Deferring ())
+	{
+		zx::handoff::QueueUI ({ [](intptr_t p, intptr_t) { R_BuildPlayerTranslation (int (p)); }, player, 0 });
+		return;
+	}
+	ZX_SEAM_UNTIMED ("translation/player", Main);   // [rc4l] features/handoff: only the main thread rebuilds the colours a frame draws players with
 	float h, s, v;
 	FPlayerColorSet *colorset;
 

@@ -24,6 +24,11 @@ HUD recorded for the frames drawn beside it. It sits above `features/gamecopy`, 
   with the render copy, so a frame beside a tic never reads an engine decal.
 - A pending mode or view size change (`setmodeneeded`, `setsizeneeded`) keeps the next tic inline, so a frame with
   no tic in flight applies it; `fua_gamethread_report` prints the tics run on the thread and the frames held.
+- `P_Ticker` leaves whether the tic moved anything in `p_NoInterpolate`, which `TickerEnd` gives the renderer's
+  `r_NoInterpolate` with the tic taken back; set from the game thread it froze a frame beside the tic at the full
+  blend, and the view lurched a tic and stepped back (queue #51). A tic is taken back on the clock tic after the
+  one it started in, where the frame's blend is anchored. Before each tic `TickerBegin` notes the loaded fonts
+  (`V_FontsForTic`), and each frame beside one serves what it asked the main thread for (`ServeAsks`).
 
 ## In-engine hooks
 
@@ -35,5 +40,7 @@ HUD recorded for the frames drawn beside it. It sits above `features/gamecopy`, 
 - `g_game.cpp` `G_AddViewAngle`/`G_AddViewPitch`: beside a tic they read the console player and level from the copy.
 - `features/jobs/jobs.cpp`: the pool leaves a core for the game thread when it is on.
 - `g_game.cpp` `G_Ticker`: `G_TickerBegin`, `G_TickerPlaysim` and `G_TickerEnd`, the playsim's tic split out.
+- `p_tick.cpp` `P_Ticker`: sets `p_NoInterpolate` where it set `r_NoInterpolate`; `cl_demo.cpp`'s skipped tics hand
+  it over the same way.
 - `d_main.cpp` `D_RunFrame`'s single-player branch: `D_PrepareDisplay` (the render copy, its check and the console
   player's camera) in the handoff, then `D_Display` between `FrameBegins` and `FrameEnds`.

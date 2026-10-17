@@ -83,7 +83,10 @@ bool P_CheckTickerPaused ()
 
 //
 // P_Ticker
-//
+//
+// [rc4l] features/gameloop: r_NoInterpolate as the tic leaves it, which the handoff gives the renderer, since the tic may run beside a frame.
+bool p_NoInterpolate = true;
+
 void P_Ticker (void)
 {
 	int i;
@@ -103,7 +106,7 @@ void P_Ticker (void)
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 	{
 		interpolator.UpdateInterpolations ();
-		r_NoInterpolate = true;
+		p_NoInterpolate = true;
 
 		if (!demoplayback)
 		{
@@ -123,7 +126,7 @@ void P_Ticker (void)
 			// [AK] We don't want to disable interpolation in offline games if the
 			// console is being lowered and is supposed to be interpolated.
 			if (C_ShouldForceInterpolation())
-				r_NoInterpolate = false;
+				p_NoInterpolate = false;
 
 			return;
 		}
@@ -166,7 +169,7 @@ void P_Ticker (void)
 		P_ResetSpawnCounters (); // [BC]
 
 		// Since things will be moving, it's okay to interpolate them in the renderer.
-		r_NoInterpolate = false;
+		p_NoInterpolate = false;
 
 		// Don't run particles while in freeze mode.
 		if ( !(level.flags2 & LEVEL2_FROZEN) )

@@ -22,7 +22,8 @@ LINE_COMMENT = re.compile(r'//[^\n]*')
 STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 FIELD = re.compile(r'^\s*ZX_COPY_FIELD\(\s*(\w+)\s*,\s*(\w+)', re.M)
 RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER|LEVEL|DECAL)_(FIELD|DERIVED)\((?:[^,()]+,)?\s*(\w+)\s*\)', re.M)
-SEAM = re.compile(r'ZX_SEAM(?:_UNTIMED)?\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
+SEAM = re.compile(r'ZX_SEAM(?:_UNTIMED)?\s*\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
+EXTERN = re.compile(r'^[ \t]*extern[ \t]+((?:[\w:<>]+[ \t*&]+)+)([^;(){}]+);', re.M)
 CODE = ('.cpp', '.h', '.c', '.mm')
 DOC_BEGIN = '<!-- boundary:begin (python3 tools/boundary_tripwire.py --doc writes this section) -->'
 DOC_END = '<!-- boundary:end -->'
@@ -58,6 +59,35 @@ def field_patterns(rule, files):
     table = files.get(spec['table'], '')
     names = sorted({name for kind, name in table_rows(table) if kind in spec['types'] and name not in spec.get('unpatterned', [])})
     return [{'name': 'live %s' % name, 'regex': r'(?<!\brc)(?:\.|->)\s*%s\b' % name} for name in names]
+
+
+def extern_names(rule, files):
+    """[rc4l] For a rule naming `writes` headers, the variables they declare extern, comma lists split, const and `unpatterned` names left out."""
+    spec = rule.get('writes')
+    if not spec:
+        return []
+    names = set()
+    for rel in files:
+        if not rel.endswith('.h') or not in_set(rel, spec['headers']) or in_set(rel, spec.get('exclude', [])):
+            continue
+        for m in EXTERN.finditer(code_only(files[rel])):
+            if re.search(r'\bconst\b', m.group(1)):
+                continue
+            for part in m.group(2).split(','):
+                name = re.match(r'[\s*&]*(\w+)', part)
+                if name:
+                    names.add(name.group(1))
+    return sorted(names - set(spec.get('unpatterned', [])))
+
+
+def write_patterns(rule, files):
+    """[rc4l] For a rule naming `writes` headers, one pattern for any of their variables set, by assignment, compound assignment or increment, other than as some object's member."""
+    names = extern_names(rule, files)
+    if not names:
+        return []
+    alt = '|'.join(names)
+    regex = r'(?<![\w.>:])(?:%s)\s*(?:<<|>>|[-+*/%%|&^])?=(?!=)|(?:\+\+|--)\s*(?:%s)\b|(?<![\w.>:])(?:%s)\s*(?:\+\+|--)' % (alt, alt, alt)
+    return [{'name': 'renderer global written', 'regex': regex}]
 
 
 def selected(text):
@@ -98,7 +128,7 @@ def counts(rules, files):
     """[rc4l] {rule: {file: matches}} for every file each rule covers that matches at all."""
     out = {}
     for rule in rules:
-        patterns = [re.compile(p['regex']) for p in rule.get('patterns', []) + field_patterns(rule, files)]
+        patterns = [re.compile(p['regex']) for p in rule.get('patterns', []) + field_patterns(rule, files) + write_patterns(rule, files)]
         hits = {}
         for rel in sorted(files):
             if not rel.endswith(CODE) or not in_set(rel, rule['files']) or in_set(rel, rule.get('exclude', [])):

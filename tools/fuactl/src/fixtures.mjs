@@ -88,9 +88,10 @@ const MOD_TID = { sky: 20, camera: 21, screen: 22, lamp: 23, quake: 24 };
 // [rc4l] The map variables gtmod's script keeps what it read in, which the trace's ACS fingerprint holds.
 const MOD_VAR = { tic: 0, set: 1, alias: 2, command: 3, screenWidth: 4, renderCvar: 5, justHit: 6, camera: 7, floorZ: 8, gravity: 9 };
 
-// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, sets a render cvar and the gravity from the console, quakes, sets the mugshot, fades a HUD message, autosaves and exits the level.
+// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, sets a render cvar and the gravity from the console, quakes, sets the mugshot, writes a HUD message in a font no one loaded yet, changes the sky, fades a HUD message, autosaves and exits the level.
 export function gtmodScript() {
-  const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity", "r_drawfuzz 1"];
+  const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity", "r_drawfuzz 1",
+    "STKEYS0", "a", "SKY3"];
   const s = new AcsScript();
   const read = (cvar, v) => s.emit(PCD.PUSHNUMBER, cvar, PCD.GETCVAR, PCD.ASSIGNMAPVAR, v);
   const at = (tic, words) => {
@@ -117,6 +118,9 @@ export function gtmodScript() {
   at(150, consoleCommand(11));
   at(200, consoleCommand(7));
   at(250, [...callSpecial(SPECIAL.Radius_Quake, [3, 30, 0, 12, MOD_TID.quake]), PCD.PUSHNUMBER, 9, PCD.SETMUGSHOTSTATE]);
+  // [rc4l] A font loaded from a tic reads its lump and adds a font and textures a frame draws with, and a new sky sets the renderer's sky scale, both the main thread's work.
+  at(270, [PCD.PUSHNUMBER, 12, PCD.SETFONT, ...hudMessage(13, { id: 3, x: 0.2, y: 0.7, hold: 2 })]);
+  at(290, [PCD.PUSHNUMBER, 14, PCD.PUSHNUMBER, 14, PCD.CHANGESKY]);
   at(300, hudMessage(8, { type: 1, id: 2, color: 4, x: 0.5, y: 0.3, hold: 1, fade: 2 }));
   at(400, callSpecial(SPECIAL.Autosave, [0]));
   at(560, callSpecial(SPECIAL.Exit_Normal, [0]));

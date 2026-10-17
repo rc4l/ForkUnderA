@@ -29,6 +29,8 @@ never reads what that tic is changing.
 
 - `d_main.cpp` `D_Display`: `FillMap` and `CheckBeforeViews`, after the server's early return.
 - `r_utility.cpp` `R_SetupFrame`: `BlendMap` and `CheckAfterInterpolation` after `DoInterpolations`.
+- `r_utility.cpp` `R_InterpolateView`: a frozen level and a game mode's end-of-level pause from the copied level
+  (`flags2`, `endLevelDelay`).
 - `features/frame/levelrenderer.cpp` `PreprocessLevel`: `InitLevel`.
 - `r_data/r_interpolate.cpp`: each interpolation's `CopyForRender` adds its blend.
 - `r_defs.h`: the `rc` state on sectors, sides, lines and vertices and their change counters.
@@ -74,7 +76,7 @@ Copied by `features/gamecopy/fields.h`:
 - actor, worked out by the fill: `who`, `id`, `type`, `target`, `nextInSector`, `shownSprite`, `shownScaleX`, `shownScaleY`, `visible`, `isPlayer`, `playerIndex`, `inventory`, `cameraIcon`, `bobTic`, `attackRadius`, `attackHeight`, `playerBody`, `tintActive`, `tintTexture`
 - decal: `LeftDistance`, `Z`, `ScaleX`, `ScaleY`, `Alpha`, `AlphaColor`, `Translation`, `PicNum`, `RenderFlags`, `RenderStyle`, `Sector`
 - level: `time`, `maptime`, `flags`, `flags2`, `skyspeed1`, `skyspeed2`, `fadeto`, `outsidefog`
-- level, worked out by the fill: `sky1`, `sky2`
+- level, worked out by the fill: `sky1`, `sky2`, `endLevelDelay`
 - line: `flags`, `special`, `Alpha`, `args`
 - player: `viewz`, `playerstate`, `cheats`, `bSpectating`, `extralight`, `fixedcolormap`, `fixedlightlevel`, `DesiredFOV`, `FOV`, `centering`, `MinPitch`, `MaxPitch`, `timefreezer`, `BlendR`, `BlendG`, `BlendB`, `BlendA`
 - player, worked out by the fill: `who`, `number`, `mo`, `camera`, `lightPower`, `hasWeapon`, `weaponFOVScale`, `weaponType`, `weaponYAdjust`, `hudModel`, `bobIn`, `layers`, `screenBlend`
@@ -87,6 +89,10 @@ Seams:
 - `copy/blend` (Main), `features/gamecopy/gamecopy.cpp`
 - `copy/fill` (Handoff), `features/gamecopy/gamecopy.cpp`
 - `copy/seen` (Handoff), `features/gamecopy/seen.cpp`
+- `font/load` (Main), `v_font.cpp`
+- `gc/collect` (GameData), `dobjgc.cpp`
+- `gc/full` (Handoff), `dobjgc.cpp`
+- `gc/object` (GameData), `dobject.cpp`
 - `handoff/after_tic` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/before_tic` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/effects` (Handoff), `features/handoff/effects.cpp`
@@ -94,10 +100,13 @@ Seams:
 - `handoff/snapshot` (Handoff), `features/handoff/snapshot.cpp`
 - `handoff/ticker_begin` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/ticker_end` (Handoff), `features/gameloop/loop.cpp`
+- `sky/map` (Main), `r_sky.cpp`
 - `sound/channels` (GameData), `s_sound.cpp`
 - `sound/deferred` (Handoff), `s_sound.cpp`
 - `sound/music` (GameData), `s_sound.cpp`
+- `texture/grow` (Idle), `textures/texturemanager.cpp`
 - `tic/playsim` (GameThread), `features/gameloop/loop.cpp`
+- `translation/player` (Main), `r_data/r_translate.cpp`
 - `wad/read` (Main), `resourcefiles/resourcefile.cpp`
 - `wad/read` (Main), `w_wad.cpp`
 - `wipe/randoms` (Idle), `features/wipe/wiperandoms.cpp`

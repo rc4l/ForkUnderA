@@ -135,6 +135,9 @@ protected:
 
 	friend void V_ClearFonts();
 	friend void V_RetranslateFonts();
+	// [rc4l] features/handoff: the fonts a tic on its own thread looks in, by name.
+	friend void V_FontsForTic();
+	friend FFont *V_GetFont(const char *);
 
 	friend FArchive &SerializeFFontPtr (FArchive &arc, FFont* &font);
 };
@@ -148,6 +151,8 @@ EColorRange V_FindFontColor (FName name);
 PalEntry V_LogColorFromColorRange (EColorRange range);
 EColorRange V_ParseFontColor (const BYTE *&color_value, int normalcolor, int boldcolor);
 FFont *V_GetFont(const char *);
+// [rc4l] features/handoff: notes the fonts loaded so far, which a tic on its own thread finds fonts among, before each tic.
+void V_FontsForTic();
 void V_InitFontColors();
 void V_RetranslateFonts();
 

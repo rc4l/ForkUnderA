@@ -35,6 +35,8 @@ void Report()
 		r.maxStepDeg, r.maxStillMs, r.mouseOnlyFrames);
 	Printf("  %d gaps of %.0f ms or more between turning frames, each ended by a turn of %.2f deg against %.2f deg on a turning frame\n",
 		r.longGaps, kLongGapMs, r.stepAfterGapDeg, r.meanStepDeg);
+	Printf("  %d frames stepped back against the way the view was moving, %d lurched ahead of its steady speed\n",
+		ComputeViewBackSteps(g_trace.data(), (int)g_trace.size(), 0.25f), ComputeViewLurches(g_trace.data(), (int)g_trace.size()));
 	if (g_csv.Len() > 0)
 	{
 		FILE *f = fopen(g_csv.GetChars(), "w");
@@ -73,6 +75,11 @@ void NoteMainView()
 	ViewTraceSample s;
 	s.us = zx::framephase::NowUs();
 	s.angle = (unsigned)viewangle;
+	s.x = FIXED2FLOAT(viewx);
+	s.y = FIXED2FLOAT(viewy);
+	s.frac = FIXED2FLOAT(r_TicFrac);
+	s.clock = I_GetTime (false);
+	s.ticNext = r_FrameTime;
 	s.localAngle = (unsigned)LocalViewAngle;
 	s.gametic = zx::gamecopy::CopyTic();   // [rc4l] the tic the frame shows
 	const float *phases = zx::framephase::LastFramePhases();

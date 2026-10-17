@@ -33,6 +33,7 @@
 #include "r_utility.h"
 #include "v_palette.h"
 #include "g_level.h"
+#include "g_game.h"   // [rc4l] GAME_GetEndLevelDelay
 #include "p_local.h"
 #include "po_man.h"
 #include "r_defs.h"
@@ -455,6 +456,7 @@ void TakeLevel(LevelRecord &out)
 #undef ZX_LEVEL_FIELD
 	out.sky1 = sky1texture;
 	out.sky2 = sky2texture;
+	out.endLevelDelay = GAME_GetEndLevelDelay () != 0;
 }
 
 const char *LevelDiffers(const LevelRecord &a, const LevelRecord &b)
@@ -563,7 +565,7 @@ void FillViewSources()
 	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next)
 	{
 		add(p->Viewpoint);
-		const CameraTexture c = { p->Texture, RecordIndexOf(p->Viewpoint), p->FOV };
+		const CameraTexture c = { p->Texture, RecordIndexOf(p->Viewpoint), p->FOV, p->PicNum };
 		g_cameras.push_back(c);
 	}
 }

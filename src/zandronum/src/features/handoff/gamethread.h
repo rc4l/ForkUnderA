@@ -18,6 +18,12 @@ void WaitForGameThread();
 bool TicInFlight();
 // [rc4l] Marks the work in flight taken back by the handoff, rethrowing on this thread what the work threw, as an error inline would have.
 void TakeBack();
+// [rc4l] Runs fn(arg) on the main thread, at once inline or, from a tic on its own thread, by asking and waiting up to a frame, for work only the main thread may do whose answer the tic needs now.
+void AskMain(void (*fn)(void *), void *arg);
+// [rc4l] Runs what the game thread asked for and waits on, which the main thread does every frame beside a tic.
+void ServeAsks();
+// [rc4l] Whether the game thread is waiting on an ask, which the hang watchdog leaves to the main thread's own check.
+bool GameThreadAsking();
 
 }} // namespace zx::handoff
 
