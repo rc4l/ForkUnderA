@@ -250,6 +250,7 @@ async function driveFight(c, tics) {
 
 // [rc4l] Waits for a file a run writes when it finishes, until it has stopped growing, or throws after timeoutMs.
 async function waitForFile(file, timeoutMs, proc) {
+  timeoutMs = scaled(timeoutMs);
   const deadline = Date.now() + timeoutMs;
   let last = -1;
   while (Date.now() < deadline) {
@@ -258,7 +259,7 @@ async function waitForFile(file, timeoutMs, proc) {
       if (size > 0 && size === last) return;
       last = size;
     }
-    if (proc && proc.exitCode != null) throw new Error(`the engine exited before writing ${file}`);
+    if (proc && (proc.exitCode != null || proc.signalCode)) throw new Error(`the engine ${proc.signalCode ? `was killed by ${proc.signalCode}` : "exited"} before writing ${file}`);
     await sleep(250);
   }
   throw new Error(`${file} was not written within ${Math.round(timeoutMs / 1000)} s`);
