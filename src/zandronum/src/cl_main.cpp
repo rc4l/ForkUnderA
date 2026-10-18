@@ -147,6 +147,7 @@
 #include "wi_stuff.h"
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -2416,7 +2417,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 					const FDecalTemplate* tpl = DecalLibrary.GetDecalByName( decalName );
 
 					if ( actor && tpl )
-						ShootDecal( tpl, actor, actor->Sector, actor->x, actor->y, z, angle, tracedist, permanent );
+						zx::decals::ShootMark( tpl, actor, actor->Sector, actor->x, actor->y, z, angle, tracedist, permanent, zx::decals::kSourceScript );
 				}
 				break;
 

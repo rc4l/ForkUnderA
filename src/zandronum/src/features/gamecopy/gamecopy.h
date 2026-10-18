@@ -18,6 +18,8 @@ void FillNow();
 void ScanAtTicEnd();
 // [rc4l] A new level: every copy taken whole and its counters started over.
 void InitLevel();
+// [rc4l] The level's data is about to be freed: no list keeps an index into it, and nothing is filled until the next InitLevel.
+void ForgetLevel();
 // [rc4l] Moves the copy's moving planes, scrolls and polyobjects to smoothratio of the way through the last tic, as the interpolations move the live game for one view.
 void BlendMap(zx::Fixed smoothratio);
 // [rc4l] Where each interpolation adds its values at the start and end of the tic while FillMap gathers them.

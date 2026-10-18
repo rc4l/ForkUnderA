@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -146,4 +146,11 @@ test("the tic's end scan report gives the fills held to the whole-map scan and w
   assert.deepEqual([r.walked, r.listed, r.differed, r.found], [412, 398, 2, true]);
   assert.deepEqual([parsePrescanReport("").found, parsePrescanReport("").walked], [false, 0]);
   assert.equal(CHECKS.prescancheck, prescanCheckFixture);
+});
+
+// [rc4l] An older engine stopped on a class it did not know and never traced; the line saying so is what savecompat reports.
+test("a refused load is told by the last line of the log naming why", () => {
+  assert.equal(loadRefusal(["loading", "Unknown class 'FlatDecal'", "more"].join(String.fromCharCode(13, 10))), "Unknown class 'FlatDecal'");
+  assert.equal(loadRefusal("Savegame is from an incompatible version: 4525 (4524 is the newest supported)"), "Savegame is from an incompatible version: 4525 (4524 is the newest supported)");
+  assert.equal(loadRefusal("all fine"), null);
 });

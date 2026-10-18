@@ -8,11 +8,11 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] Its bits, which the scene shaders test by these same values: single flags, then the fuzz shader in bits 7-9 and the culled faces in bits 11-12.
+// [rc4l] Its bits, which the scene shaders test by these same values: single flags, then the fuzz shader in bits 7-9, the culled faces in bits 11-12 and a surface refusing marks in bit 14.
 enum
 {
 	kTexFlagStencil = 1, kTexFlagAlphaTest = 2, kTexFlagHud = 4, kTexFlagLevel = 8, kTexFlagInverse = 16, kTexFlagColorBlend = 32,
-	kTexFlagFogLayer = 64, kTexFlagFogBoundary = 1024, kTexFlagFogPass = 8192,
+	kTexFlagFogLayer = 64, kTexFlagFogBoundary = 1024, kTexFlagFogPass = 8192, kTexFlagNoMarks = 16384,
 	kTexFlagFuzzShift = 7, kTexFlagFuzzMask = 7, kTexFlagCullShift = 11, kTexFlagCullMask = 3,
 };
 
@@ -24,6 +24,7 @@ struct PieceTexInputs
 	bool fogBoundary;
 	int cullFace;
 	bool fogPass;
+	bool noMarks;   // [rc4l] features/decals' surface rule refuses marks on it, which the G-buffer carries for the decal pass
 };
 
 // [rc4l] The texFlags for those inputs, the fuzz shader and culled faces each kept to its own bits.

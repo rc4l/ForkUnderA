@@ -13,6 +13,7 @@ static_assert(zx::levelmesh::kMainWalkSlot == 0, "FUA_MAIN_WALK_SLOT_STR spells 
 static_assert(zx::hwrender::kTexFlagStencil == 1 && zx::hwrender::kTexFlagAlphaTest == 2 && zx::hwrender::kTexFlagHud == 4 &&
 	zx::hwrender::kTexFlagLevel == 8 && zx::hwrender::kTexFlagInverse == 16 && zx::hwrender::kTexFlagColorBlend == 32 &&
 	zx::hwrender::kTexFlagFogLayer == 64 && zx::hwrender::kTexFlagFogBoundary == 1024 && zx::hwrender::kTexFlagFogPass == 8192 &&
+	zx::hwrender::kTexFlagNoMarks == 16384 &&
 	zx::hwrender::kTexFlagFuzzShift == 7 && zx::hwrender::kTexFlagFuzzMask == 7 && zx::hwrender::kTexFlagCullShift == 11 &&
 	zx::hwrender::kTexFlagCullMask == 3, "the scene shaders test texFlags by these values");
 static const char *kSceneVS =
@@ -542,7 +543,8 @@ static const char *kScenePSGBuffer =
 	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
 	   the decal pass uses this to lay axes into a plane and to ask how far a surface is from the
 	   impact, and neither needs better than a degree or so. */
-	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0);\n"
+	/* [rc4l] Alpha says what the decal pass may paint: 1 a surface that takes marks, 0.75 one features/decals refuses (texFlags 16384), 0 nothing drawn. */
+	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, (int(vTexFlags + 0.5) & 16384) != 0 ? 0.75 : 1.0);\n"
 	"}\n";
 
 static const char *kScenePSTrans =

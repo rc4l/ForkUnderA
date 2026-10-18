@@ -12,22 +12,28 @@ struct side_t;
 struct F3DFloor;
 
 void P_SpawnDirt (AActor *actor, fixed_t radius);
-class DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *sec, fixed_t x, fixed_t y, fixed_t z, angle_t angle, fixed_t tracedist, bool permanent);
+
+// [rc4l] features/decals makes every decal, through the one class these befriend, so no caller can place a mark around its rules.
+namespace zx { namespace decals { class Maker; } }
 
 class DBaseDecal : public DThinker
 {
 	DECLARE_CLASS (DBaseDecal, DThinker)
 	HAS_OBJECT_POINTERS
-public:
+	friend class zx::decals::Maker;
+protected:
 	DBaseDecal ();
 	DBaseDecal (fixed_t z);
 	DBaseDecal (int statnum, fixed_t z);
 	DBaseDecal (const AActor *actor);
 	DBaseDecal (const DBaseDecal *basis);
 
+public:
 	void Serialize (FArchive &arc);
 	void Destroy ();
 	FTextureID StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor * ffloor);
+	// [rc4l] The texture of the tier a decal at (x, y, z) on wall sticks to, the one features/decals judges; invalid in a two-sided line's open span.
+	static FTextureID TierTexture (const side_t *wall, fixed_t x, fixed_t y, fixed_t z, const F3DFloor *ffloor);
 	fixed_t GetRealZ (const side_t *wall) const;
 	// [rc4l] features/levelmesh: the same resolution without a decal object, so the backend can ask
 	// again every frame instead of once at spawn. See RealZOnWall.
@@ -64,25 +70,18 @@ protected:
 class DImpactDecal : public DBaseDecal
 {
 	DECLARE_CLASS (DImpactDecal, DBaseDecal)
+	friend class zx::decals::Maker;
 public:
-	DImpactDecal (fixed_t z);
-	DImpactDecal (side_t *wall, const FDecalTemplate *templ);
-
-	static DImpactDecal *StaticCreate (const char *name, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color=0);
-	static DImpactDecal *StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color=0);
-
-	void BeginPlay ();
 	void Destroy ();
 
 	void Serialize (FArchive &arc);
 	static void SerializeTime (FArchive &arc);
 
 protected:
+	DImpactDecal ();
+	DImpactDecal (fixed_t z);
 	DBaseDecal *CloneSelf (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor) const;
 	static void CheckMax ();
-
-private:
-	DImpactDecal();
 };
 
 class ATeleportFog : public AActor

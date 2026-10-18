@@ -9,7 +9,7 @@ RailEndpointSpawn ComputeRailEndpointSpawn(int traceHitType)
 	out.puff = (traceHitType == ZX_TRACE_HitWall
 		|| traceHitType == ZX_TRACE_HitFloor
 		|| traceHitType == ZX_TRACE_HitCeiling);
-	out.decal = (traceHitType == ZX_TRACE_HitWall);
+	out.decal = out.puff;   // [rc4l] features/decals marks any surface and refuses what refuses, sky flats included
 	out.skyGuard = (traceHitType == ZX_TRACE_HitFloor
 		|| traceHitType == ZX_TRACE_HitCeiling);
 	return out;

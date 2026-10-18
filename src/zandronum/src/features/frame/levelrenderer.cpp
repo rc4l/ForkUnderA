@@ -6,7 +6,7 @@
 #include "features/hwrender/backendonly.h"
 #include "features/viewsetup/computation/viewsetup_compute.h"  // [rc4l] ComputeMaxViewPitch
 #include "features/levelmesh/wallcache.h"                      // [rc4l] AllocForLevel, FreeLevel
-#include "features/gamecopy/gamecopy.h"                         // [rc4l] InitLevel
+#include "features/gamecopy/gamecopy.h"                         // [rc4l] InitLevel, ForgetLevel
 #include "features/gamecopy/actors.h"                           // [rc4l] the camera texture's viewpoint record
 #include "features/levelmesh/staticmesh.h"                     // [rc4l] MeshInitForLevel, MeshFreeLevel
 #include "features/visibility/viswalk.h"                       // [rc4l] ForgetWalk
@@ -75,9 +75,10 @@ void FLevelRenderer::PreprocessLevel()
 	zx::levelmesh::MeshInitForLevel();
 }
 
-// [rc4l] The backend's mesh, bake state and walks go first, while the level they point into is still whole.
+// [rc4l] The render copy and the backend's mesh, bake state and walks go first, while the level they point into is still whole.
 void FLevelRenderer::CleanLevelData()
 {
+	zx::gamecopy::ForgetLevel();
 	zx::levelmesh::FreeLevel();
 	zx::visibility::ForgetWalk();
 	zx::levelmesh::MeshFreeLevel();

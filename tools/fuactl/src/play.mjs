@@ -24,7 +24,23 @@ import { sleep } from "./capture.mjs";
 // freelook OFF. It is `2` that enables it. sv_nofreeaim decides whether a projectile follows the
 // crosshair or is auto-aimed at whatever is nearest -- the difference between hitting a wall/floor
 // join on purpose and hitting it by luck.
-export function playCvars({ gl = false, sideBySide = false, rt = false, monsters = false, lock = false, extra = {} } = {}) {
+// [rc4l] A launch's renderers, as players run it unless it asks otherwise: Vulkan alone, GL alone (gl), the backend beside GL in one process for comparing the two (glBeside, which side by side implies), or WebGPU.
+export const MODES = Object.freeze({ vulkan: "vulkan", gl: "gl", beside: "beside", webgpu: "webgpu" });
+export function launchMode({ gl = false, glBeside = false, sideBySide = false, webgpu = false } = {}) {
+  if (webgpu) return MODES.webgpu;
+  if (gl) return MODES.gl;
+  return glBeside || sideBySide ? MODES.beside : MODES.vulkan;
+}
+
+// [rc4l] How a mode is said at launch, so a session never leaves which renderers it runs to be guessed.
+export function describeMode(mode, sideBySide = false) {
+  if (mode === MODES.gl) return "GL alone";
+  if (mode === MODES.webgpu) return "WebGPU alone (no GL), as the browser runs it";
+  if (mode === MODES.beside) return `GL with the Vulkan backend beside it${sideBySide ? " in its own window" : ""}, for comparing the two`;
+  return "Vulkan alone (no GL), as players run it";
+}
+
+export function playCvars({ gl = false, glBeside = false, sideBySide = false, rt = false, monsters = false, lock = false, extra = {} } = {}) {
   const cv = {
     sv_nofreelook: 0, sv_freelook: 2, freelook: 1,
     sv_nofreeaim: 0, autoaim: 0,
@@ -41,7 +57,7 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   // Its own window beside the engine's instead of embedded, so both renderers are on screen at
   // once. Easier to point at a difference than toggling and trying to remember the other one.
   // [rc4l] GL draws whenever the backend's window is its own, so nothing else is needed for both to be live.
-  if (sideBySide) cv.fua_dg_embed = 0;
+  if (sideBySide && launchMode({ gl, glBeside, sideBySide }) === MODES.beside) cv.fua_dg_embed = 0;
   // Ray-traced reflections must be on at LAUNCH: the acceleration structure is built at scene
   // upload, which has already happened by the time a level is playable, so setting it later leaves
   // nothing for the rays to hit.
@@ -208,9 +224,10 @@ export async function fitView(c, view, cap, { tries = 20, now = null } = {}) {
   return { want: view, got, ok: sameView(view, got) };
 }
 
-// [rc4l] The engine arguments past the cvars: each wad as -file, and -vulkan when the launch runs with no GL at all, or -webgpu for the same backend on WebGPU.
-export function playArgs(files, { noGl = false, webgpu = false } = {}) {
-  return [...files.flatMap((f) => ["-file", f]), ...(webgpu ? ["-webgpu"] : noGl ? ["-vulkan"] : [])];
+// [rc4l] The engine arguments past the cvars: each wad as -file, then the mode's own, so the launch never rests on the engine's default or the config's vid_backend.
+export function playArgs(files, mode = MODES.vulkan) {
+  const own = { [MODES.vulkan]: "-vulkan", [MODES.webgpu]: "-webgpu", [MODES.gl]: "-gl", [MODES.beside]: "-gl" }[mode];
+  return [...files.flatMap((f) => ["-file", f]), own];
 }
 
 // [rc4l] Whether an engine still answers on port once a closing one has had graceMs to go.
@@ -253,7 +270,7 @@ async function launchChecked(opts, port) {
     allowOsInput: !opts.lock,
     // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
     width: opts.width, height: opts.height,
-    extraArgs: playArgs(files, { noGl: opts.noGl, webgpu: opts.webgpu }),
+    extraArgs: playArgs(files, launchMode(opts)),
     cvars: playCvars(opts),
     engine: opts.engine,
   });
@@ -277,7 +294,11 @@ async function launchChecked(opts, port) {
     try {
       const cheats = [];
       for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
-      world = { cheats, cvars: await verifyWorld(c, cap), view: null };
+      world = { cheats, cvars: await verifyWorld(c, cap), view: null, mode: null };
+      // [rc4l] The renderers the engine reports running, held to the mode asked for, since the launch's flags are only a request.
+      const want = launchMode(opts);
+      const got = cap.launchModeOf(await cap.exec(c, cap.RENDERER_PROBE, { quietMs: 300 }));
+      world.mode = { want, got, ok: got === want };
       // [rc4l] The --res window or the view a spot was seen in, set and read back, since the ini's size snaps to a known mode.
       // [rc4l] An engine older than input.windowpoint (an old binary under A/B) launches unsized rather than not at all.
       const now = (opts.width && opts.height) || opts.view ? await readView(c, cap).catch(() => null) : null;

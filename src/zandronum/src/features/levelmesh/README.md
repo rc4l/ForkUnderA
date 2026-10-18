@@ -53,8 +53,9 @@ reaches something that moved, relit or scrolled; GL's walk fills nothing. GL kee
 `GLWall`s in `gl/scene/gl_wallcache.cpp`, keyed on the same dirty counters.
 
 The dynamic stream is refilled each frame for each view: sprites, models and particles from
-`features/sprites`, projected decals (`projdecals.cpp`), and with `fua_decalmode 0` the decals glued to
-walls (`walldecals.cpp`). Those are built for the sidedefs each view's walk saw, on each plain wall piece
+`features/sprites`, the floor and ceiling marks `features/decals` makes, projected from the render copy's records
+(`projdecals.cpp`, each mark's box worked out again only when its picture, size or place changes), and the decals
+glued to walls (`walldecals.cpp`). Those are built for the sidedefs each view's walk saw, on each plain wall piece
 GL would draw them on, a light band at a time: `computation/walldecal_compute` is `GLWall::DrawDecal`'s
 height, quad and clipping, and `DerivedPartBands` the bake's own band split and light. A stacked view's or
 mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptureView`). Decals on a 3D

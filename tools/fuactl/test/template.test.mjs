@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareEachLaunch, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareEachLaunch, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -198,13 +198,6 @@ test("a run-wide side change skips a scenario without that side instead of endin
   assert.deepEqual(why, { lines: ["skipped: it needs ray tracing"], code: 0, skipped: true });
 });
 
-test("--standalone runs a scenario's own standalone side, else its Vulkan side with standalone on, else nothing", () => {
-  const own = { name: "own", sides: [{ name: "gl", gl: true }, { name: "standalone", cvars: { fua_dg_standalone: 1 } }] };
-  assert.equal(standaloneOptions(own), own);
-  assert.deepEqual(standaloneOptions({ name: "pair" }).sides, [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { fua_dg_standalone: 1 } }]);
-  assert.equal(standaloneOptions({ name: "ab", sides: [{ name: "flat" }, { name: "clustered" }] }), null);
-});
-
 test("the backend's API is read from dumprenderer", () => {
   assert.equal(launchBackendApi("MCP_RENDERER\nrenderer=vulkan\nbackend_api=WebGPU\n"), "WebGPU");
   assert.equal(launchBackendApi("renderer=opengl\n"), null);
@@ -304,6 +297,7 @@ test("a WebGPU run of a quit runs on WebGPU alone", () => {
 test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {
   assert.match(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame).skip, /a WebGPU launch has no GL/);
   assert.match(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }).skip, /needs ray tracing/);
+  assert.match(webgpuOptions({ name: "wipe", boxes: {}, needs: ["readback"] }, compareEachLaunch).skip, /reads each presented frame back/);
 });
 
 // [rc4l] A capture sequence names its frames, and each box the two it is judged between.
@@ -341,4 +335,17 @@ test("a matrix names one cvar set per value, each laid on every side over the ru
   assert.equal(matrixAdjust({ y: "1" }, () => null)(opts), null);
   assert.deepEqual(matrixAdjust({ y: "1" }, () => ({ skip: "why" }))(opts), { skip: "why" });
   assert.deepEqual(matrixAdjust({ y: "1" })(opts).sides[0].cvars, { y: "1" });
+});
+
+// [rc4l] Only a side judged against GL in one frame runs the backend beside GL; every other Vulkan side runs as players do.
+test("a side runs the backend beside GL only when GL's frame or both renderers' one frame judge it, or it asks", () => {
+  assert.equal(sideBesideGl({ name: "vk" }), false);
+  assert.equal(sideBesideGl({ name: "vk", noGl: true }), false);
+  assert.equal(sideBesideGl({ name: "standalone", cvars: { fua_dg_standalone: 1 } }), false);
+  assert.equal(sideBesideGl({ name: "blanked", frame: "gl" }), true);
+  assert.equal(sideBesideGl({ name: "pair", glDraws: true }), true);
+  assert.equal(sideBesideGl({ name: "x", glBeside: true }), true);
+  assert.equal(sideBesideGl({ name: "gl", gl: true, frame: "gl" }), false, "GL alone has no backend to sit beside");
+  assert.equal(sideBesideGl({ name: "wgpu", webgpu: true, glDraws: true }), false, "a WebGPU launch has no GL");
+  assert.equal(sideBesideGl(), false);
 });

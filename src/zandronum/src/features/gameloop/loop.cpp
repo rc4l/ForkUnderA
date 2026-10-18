@@ -9,7 +9,6 @@
 #include "features/gameloop/computation/threadedtic_compute.h"
 #include "features/gamecopy/gamecopy.h"
 #include "features/gamecopy/seen.h"
-#include "features/levelmesh/projdecals.h"   // [rc4l] CopyProjectedDecalOwners
 #include "features/frame/framedriver.h"   // [rc4l] GLDrawsFrame
 #include "features/telemetry/telemetry.h"
 
@@ -96,7 +95,6 @@ void AfterTic()
 	NetUpdate ();	// check for new console commands
 	// [rc4l] The render copy of what this tic left, before any frame draws beside the next.
 	zx::gamecopy::FillMap ();
-	zx::levelmesh::CopyProjectedDecalOwners ();
 }
 
 // [rc4l] Whether the next tic's playsim may run on the game thread now.

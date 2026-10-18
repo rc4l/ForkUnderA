@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -275,7 +275,7 @@ test("a spot launches its map with its wads found by name in the store, and name
   assert.deepEqual(r.files, [path.join("/store", "whodunit_fixed2.pk3"), path.join("/store", "WDI_TOUCHUPV9.11.WAD")]);
   assert.deepEqual(r.missing, ["gone.pk3"]);
   assert.equal(r.view, null, "a spot saved before views were recorded");
-  assert.deepEqual(spotLaunch(spots, "bare", path.join(dir, "nowhere")), { map: "MAP01", files: [], missing: [], view: { width: 900, height: 900, scale: 1, fov: 90 } });
+  assert.deepEqual(spotLaunch(spots, "bare", path.join(dir, "nowhere")), { map: "MAP01", files: [], missing: [], view: { width: 900, height: 900, scale: 1, fov: 90 }, mode: null, sideBySide: false });
   assert.throws(() => spotLaunch(spots, "nope", "/store", []), /no such spot: nope/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -297,12 +297,12 @@ test("a parked instance relaunches at its camera with its wads, side by side whe
   assert.equal(parkedLaunch(park, "/store", []).sideBySide, false);
   fs.writeFileSync(park, JSON.stringify(record(undefined)));
   assert.equal(parkedLaunch(park, "/store", []).sideBySide, false);
-  assert.equal(parkedLaunch(park, "/store", []).noGl, false);
+  assert.equal(parkedLaunch(park, "/store", []).mode, null);
   // [rc4l] A -vulkan launch comes back without GL, since dumprenderer's backend was filed with it.
   const vk = record("true");
   vk.spots[PARKED].renderer.backend = "vulkan";
   fs.writeFileSync(park, JSON.stringify(vk));
-  assert.equal(parkedLaunch(park, "/store", []).noGl, true);
+  assert.equal(parkedLaunch(park, "/store", []).mode, "vulkan");
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -396,12 +396,25 @@ test("a --res flag is a width and height, and an absent one leaves both to the l
   assert.deepEqual(resFlag(true), { width: undefined, height: undefined });
 });
 
-test("a launch draws with GL unless it asks for -vulkan, since the engine's default is Vulkan alone", () => {
-  assert.ok(engineArgs({}, "x.ini").includes("-gl"));
+test("a launch runs as players do, the engine's own choice, and asks for GL only when told to", () => {
+  assert.ok(!engineArgs({}, "x.ini").includes("-gl"));
   const vk = engineArgs({ extraArgs: ["-vulkan"] }, "x.ini");
   assert.ok(vk.includes("-vulkan"));
   assert.ok(!vk.includes("-gl"));
-  assert.ok(!engineArgs({ engineDefault: true }, "x.ini").includes("-gl"));
+  assert.equal(engineArgs({ gl: true }, "x.ini").filter((a) => a === "-gl").length, 1);
+  assert.equal(engineArgs({ gl: true, extraArgs: ["-gl"] }, "x.ini").filter((a) => a === "-gl").length, 1, "asked twice, passed once");
+});
+
+// [rc4l] play --spot and --unpark launch again in the mode a report was seen in.
+test("a spot's mode is the one it saved, else no GL is Vulkan alone, an own backend window or fua_vulkan on is GL beside, else GL alone", () => {
+  assert.equal(spotMode(undefined), null);
+  assert.equal(spotMode({}), null);
+  assert.equal(spotMode({ mode: "webgpu", backend: "vulkan" }), "webgpu");
+  assert.equal(spotMode({ backend: "vulkan", fua_vulkan: "true" }), "vulkan");
+  assert.equal(spotMode({ backend: "opengl", fua_dg_embed: "false" }), "beside");
+  assert.equal(spotMode({ backend: "opengl", fua_vulkan: "true", fua_dg_embed: "true" }), "beside");
+  assert.equal(spotMode({ fua_vulkan: "1" }), "beside");
+  assert.equal(spotMode({ backend: "opengl", fua_vulkan: "false" }), "gl");
 });
 
 // [rc4l] The staged binary's symbols went stale while its exe moved on, so samples and crashes of it named no function.

@@ -44,6 +44,7 @@ never reads what that tic is changing.
 - `r_utility.cpp` `R_InterpolateView`: a frozen level and a game mode's end-of-level pause from the copied level
   (`flags2`, `endLevelDelay`).
 - `features/frame/levelrenderer.cpp` `PreprocessLevel`: `InitLevel`.
+- `features/frame/levelrenderer.cpp` `CleanLevelData`: `ForgetLevel`, so the full console a level is freed for (endgame, a client leaving) fills nothing from it. Scenario `endgame`.
 - `r_data/r_interpolate.cpp`: each interpolation's `CopyForRender` adds its blend.
 - `r_defs.h`: the `rc` state on sectors, sides, lines and vertices and their change counters.
 - `actor.h`: `AActor::rcRecord` (its record, written between tics only) and `BobOffsetAt`.
@@ -87,6 +88,7 @@ Copied by `features/gamecopy/fields.h`:
 - actor: `x`, `y`, `z`, `PrevX`, `PrevY`, `PrevZ`, `velx`, `vely`, `velz`, `angle`, `PrevAngle`, `pitch`, `roll`, `PrevRoll`, `sprite`, `frame`, `scaleX`, `scaleY`, `RenderStyle`, `renderflags`, `alpha`, `fillcolor`, `Translation`, `flags`, `flags2`, `flags3`, `flags5`, `state`, `tics`, `radius`, `height`, `floorclip`, `floorz`, `ceilingz`, `Speed`, `Sector`, `subsector`, `reactiontime`, `health`
 - actor, worked out by the fill: `who`, `id`, `type`, `target`, `nextInSector`, `shownSprite`, `shownScaleX`, `shownScaleY`, `visible`, `isPlayer`, `playerIndex`, `inventory`, `cameraIcon`, `bobTic`, `attackRadius`, `attackHeight`, `playerBody`, `tintActive`, `tintTexture`
 - decal: `LeftDistance`, `Z`, `ScaleX`, `ScaleY`, `Alpha`, `AlphaColor`, `Translation`, `PicNum`, `RenderFlags`, `RenderStyle`, `Sector`
+- flatdecal: `ContactX`, `ContactY`, `ContactZ`, `Normal`, `Travel`, `AnchorSector`, `AnchorPlane`, `AnchorOffset`
 - level: `time`, `maptime`, `flags`, `flags2`, `skyspeed1`, `skyspeed2`, `fadeto`, `outsidefog`
 - level, worked out by the fill: `sky1`, `sky2`, `endLevelDelay`
 - line: `flags`, `special`, `Alpha`, `args`

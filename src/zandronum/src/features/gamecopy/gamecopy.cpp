@@ -69,6 +69,7 @@ enum { kShape = 1, kPlacement = 2, kLook = 4 };
 
 Blends g_blends;      // [rc4l] what frames blend, from the last fill
 int g_filledTic = -1;   // [rc4l] the tic the copy was last taken at, -1 for none this level
+bool g_levelLoaded = false;   // [rc4l] whether a level is set up for the copy to read, from InitLevel until ForgetLevel
 Blends g_gathering;   // [rc4l] what the interpolations add while a fill gathers
 zx::frame::OracleTally g_before, g_after;
 
@@ -895,6 +896,7 @@ fixed_t BobOffset(const ActorRecord &a, fixed_t ticfrac)
 
 void InitLevel()
 {
+	g_levelLoaded = true;
 	for (int i = 0; i < numsectors; i++) { TakeSector(sectors[i]); sectors[i].rcShape = sectors[i].rcPlacement = sectors[i].rcLook = 0; }
 	for (int i = 0; i < numsides; i++) { TakeSide(sides[i]); sides[i].rcShape = 0; }
 	for (int i = 0; i < numlines; i++) TakeLine(lines[i]);
@@ -922,6 +924,15 @@ void InitLevel()
 	// [rc4l] features/handoff: room for what a level's scripts add while its tics run, so the arrays a frame reads do not move under it.
 	TexMan.ReserveHeadroom(1024);
 	for (int i = 0; i < NUM_TRANSLATION_TABLES; i++) translationtables[i].Grow(256);
+}
+
+void ForgetLevel()
+{
+	g_levelLoaded = false;
+	ForgetXFloors();
+	InitPolyBSPs();
+	InitLights();
+	g_firstIn.clear();
 }
 
 void FillMap()
@@ -990,6 +1001,8 @@ void ScanAtTicEnd()
 
 void FillNow()
 {
+	// [rc4l] Between a level's data being freed and the next set up, as at the full console endgame leaves, there is nothing to copy.
+	if (!g_levelLoaded) return;
 	g_filledTic = gametic;
 	ZX_SEAM("copy/fill", Handoff);
 	// [rc4l] Whether the tic's end found the map's changes, which spares the handoff comparing the whole map (Sunder MAP16's 62,000 sides) while the frames wait.

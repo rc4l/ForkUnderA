@@ -129,6 +129,7 @@
 
 #include "g_hub.h"
 #include "features/telemetry/telemetry.h"
+#include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -4745,16 +4746,19 @@ void G_DoLoadGame ()
 	}
 
 	SaveVersion = 0;
+	// [rc4l] Newer saves too, whose classes and fields this build cannot know (computation/saveversion_compute).
+	int saveVerdict = kSaveVersionTooOld;
 	if (!M_GetPNGText (png, "ZDoom Save Version", sigcheck, 20) ||
 		0 != strncmp (sigcheck, SAVESIG, 9) ||		// ZDOOMSAVE is the first 9 chars
-		(SaveVersion = atoi (sigcheck+9)) < MINSAVEVER)
+		(saveVerdict = ComputeSaveVersionVerdict (SaveVersion = atoi (sigcheck+9), MINSAVEVER, SAVEVER)) != kSaveVersionReadable)
 	{
 		delete png;
 		fclose (stdfile);
 		Printf ("Savegame is from an incompatible version");
 		if (SaveVersion != 0)
 		{
-			Printf(": %d (%d is the oldest supported)", SaveVersion, MINSAVEVER);
+			if (saveVerdict == kSaveVersionTooNew) Printf(": %d (%d is the newest supported)", SaveVersion, SAVEVER);
+			else Printf(": %d (%d is the oldest supported)", SaveVersion, MINSAVEVER);
 		}
 		Printf("\n");
 		return;

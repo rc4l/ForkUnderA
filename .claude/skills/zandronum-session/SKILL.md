@@ -37,12 +37,14 @@ user's. `play` refuses a port an engine still answers on (quit it, or launch wit
 launch can no longer wipe the first one's session file. `quit --port P` stops an instance whose launcher
 died and left no token, as `reap --kill` stops every such orphan; never stop engines by process name.
 
-- `play` is the launch to use: Vulkan on, freelook, no monsters, cheats verified. `--lock` keeps the
-  engine off the user's mouse and keyboard — always on your own launches, never on one the user plays.
+- `play` is the launch to use: Vulkan alone as players run it, freelook, no monsters, cheats verified,
+  and the renderers it really got printed (`ok renderers: ...`). `--lock` keeps the engine off the user's
+  mouse and keyboard — always on your own launches, never on one the user plays.
 - Pick a port of your own (7799, 7796, ...), never the one the user's instance is on.
 - `--file a.pk3,b.wad` for pwads, `--iwad` for another IWAD (an absolute path works), `--gl` for GL
-  only, `--no-gl` for Vulkan with no GL context at all (`-vulkan`; `ui exec dumprenderer` says
-  `renderer=vulkan`), `--side-by-side` for the user's two-window session (see `fua-side-by-side`), `--rt` for ray-traced
+  alone, `--gl-beside` for the backend beside GL in one process, which only the GL/Vulkan comparisons
+  need (`shot` pairs, `fua_*_check`, the live `fua_vulkan 0/1` toggle) and players never run, `--side-by-side`
+  for that with its own window (see `fua-side-by-side`), `--webgpu`, `--rt` for ray-traced
   mirrors, which must be on when the scene is uploaded (or set `fua_dg_rtmirrors 1` and run
   `fua_diligent_scene`).
 - A `--lock` launch is never focused, so it keeps its world running (`i_pauseinbackground 0`), but its
@@ -54,10 +56,13 @@ died and left no token, as `reap --kill` stops every such orphan; never stop eng
 - It stays up until stopped. Quit by port: `quit --port P [--token T]`, which waits for the port to close. Never `reap --kill` or
   `reap --all` — the registry is shared with other sessions — and never kill by process name
   (`Stop-Process -Name`, `pkill`), which takes the user's instance and other harnesses with it.
-- `fua_dg_standalone` defaults on and only decides whether GL also draws: set it to 0 in an embedded
-  launch for a GL/Vulkan pair, or GL's half is a still frame. The Vulkan picture is derived the same way
-  at either value, and a side-by-side launch or any `fua_*_check 1` keeps GL drawing by itself. A
-  `--no-gl` launch has no GL at all.
+- `fua_dg_standalone` matters only beside GL: it defaults on and decides whether GL also draws, so set
+  it to 0 there for a GL/Vulkan pair. The Vulkan picture is derived the same way at either value, and a
+  side-by-side launch or any `fua_*_check 1` keeps GL drawing by itself. A launch without GL (the
+  default) has none, and `shot` there gives Vulkan's half alone and says why.
+- GL beside the backend is a comparison rig, not a way to play: its Vulkan window is presented only by
+  `LiveFrame`, so a wipe never reaches the screen there (`features/hwrender/README.md`). Reproduce a
+  player's report without GL first.
 
 ## Drive
 
@@ -73,7 +78,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | where the camera is; save it as a spot | `here [--save NAME --note TEXT]` (see `fua-capture-spot`) |
 | stand at a saved spot | `goto --spot NAME` |
 | does a render cvar change the picture | `ab <cvar> <a> <b> --spot NAME [--box x0,y0,x1,y1]` |
-| matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch`; `--same-frame` takes both from one engine frame (an ANIMDEFS texture animates on the clock even paused); in a `--no-gl` launch `screenshot` reads back the swapchain, so both halves are Vulkan |
+| matched GL/Vulkan pair, sim frozen | `shot <tag> --spot NAME` or `--at x,y,z --face yaw,pitch`; `--same-frame` takes both from one engine frame (an ANIMDEFS texture animates on the clock even paused); a launch with no GL frame (Vulkan alone, or GL beside at `fua_dg_standalone 1`) gives Vulkan's half alone and says why |
 | the engine's windows as Windows sees them, and what one really shows | `window [--shot gl\|vk --out FILE]`: minimized, not responding, position; the shot comes from the compositor, not GL's own buffer |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch`; `--pixel x,y --size WxH` aims through a capture's pixel, from the live camera when no `--spot`/`--at` is given |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
@@ -90,7 +95,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | the game thread: traces, seams, HUD and copy held under both schedules | `fixture check\|seamcheck\|hudcheck\|copycheck\|pictures` (the `game-thread` skill) |
 | every frame of a running instance: length, phases, mouse input, focus | `trace --port P [--seconds N]`: frame lengths apart from tic waits, what the slow frames spent more on, where it waited paused or unfocused, mouse messages and gaps; the CSV is kept |
 | what reaches the SCREEN of one window, by its pixels | `screen --port P [--seconds N] [--orbit DEG]`: new images shown and stalls a second from the compositor's output (DXGI Desktop Duplication), the aim orbiting via `fua_debug_orbit`, with the engine's frames lined up for how old each image was when shown. It reads the compositor, so a stalling one reads as the game's judder (check `present`), and the window must be on top. vid_fps counts frames drawn, not shown |
-| frame rate under GL alone, the backend in the GL launch, and `--no-gl` | `fps --map M [--iwad W] [--file ...] [--res WxH] [--modes gl,embed,vulkan] [--engine PATH]`: one locked launch per mode in turn, warmed, three rounds, and a shot of what each window shows |
+| frame rate under GL alone, the backend beside GL, and the backend alone | `fps --map M [--iwad W] [--file ...] [--res WxH] [--modes gl,beside,vulkan] [--engine PATH]`: one locked launch per mode in turn, warmed, three rounds, and a shot of what each window shows |
 | what a setting costs | `abperf "<setting>" "<setting>" ... [--rounds N] [--spot S \| --at --face]`: p50/p99 under each console setting inside one session, the others' cvars put back before each, judged against the first within each round; separate launches drift 30% |
 | what a frame costs at a view (Vulkan) | `costs --port P [--spot S \| --at --face]`: frame p50/p99, GPU and submit time (`fua_diligent_bench`), the world passes and phases, the walk's clipping, batches and sprites; the step-0 table of `docs/hwrender-performance-scope.md` is these columns |
 | any timing, count or memory reading the engine keeps, on any platform | `stats [PREFIX]`, `hitches`, `record`, `flight`, `memsnap`/`memdiff`, `soak`, `perfgate` (`features/telemetry`; the `perf-telemetry` skill says which to reach for) |
@@ -120,8 +125,8 @@ apart, which reads ~13 per pixel on a bright tiled floor while both are right.
 
 ## Captures lie under these conditions
 
-- **Another engine window on screen.** GL reads its picture back from its window, and where another
-  window covers it the pixels are undefined. `shot` warns when more than one engine is running.
+- **Another engine window on screen.** GL (alone or beside) reads its picture back from its window, and
+  where another window covers it the pixels are undefined. `shot` warns when more than one engine is running.
 - **Vulkan on, some skybox maps.** GL captures on the horizon template's MAP02 came back stale, black
   or scrambled run to run in old and new builds alike; take GL references from a `--gl` launch there.
 - **A minimized engine window.** GL reads back blank; `shot` asks `fua_window_restore` and tries again.

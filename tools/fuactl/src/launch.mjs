@@ -188,8 +188,8 @@ export function engineArgs(opts = {}, configPath) {
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
   args.push(...envEngineArgs(opts.env));
-  // [rc4l] The engine's own default is now Vulkan alone (vid_backend 1), so a harness launch asks for GL unless it asked for -vulkan, -webgpu or the engine's own choice (engineDefault).
-  if (!args.includes("-vulkan") && !args.includes("-webgpu") && !opts.engineDefault) args.push("-gl");
+  // [rc4l] A harness launch runs as players do, the engine's own choice (Vulkan alone), unless it asks for GL (gl), alone or with the backend beside it as fua_vulkan says.
+  if (opts.gl && !args.includes("-gl")) args.push("-gl");
 
   // [rc4l] The map goes LAST, because the engine runs `+` commands in the order they appear.
   //

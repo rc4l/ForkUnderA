@@ -25,7 +25,8 @@ That writes one record into `tools/fuactl/spots.json` holding the camera at full
 (`x, y, z, angle, pitch`), the `map`, the `loaded` wad set — IWAD plus every PWAD **with its md5**,
 read from the engine's own `wads` command rather than from what the launch intended — and the
 `renderer` cvars that change the picture (`fua_vulkan`, `fua_dg_standalone`, `fua_dg_embed`,
-`fua_dg_skyportal`, `gl_wallmesh`), and `backend: "vulkan"` when the launch had no GL at all, and the
+`fua_dg_skyportal`, `gl_wallmesh`), `backend: "vulkan"` when the launch had no GL at all, the `mode` it
+ran (`vulkan`, `webgpu`, `gl` or `beside`), which `play --spot` launches again, and the
 `view` (render size, `vid_scalefactor` and `fov`), which `play --spot` sets again with `vid_setsize`, since
 a fault seen only at a square size or a wide FOV does not show in another window.
 
@@ -56,7 +57,8 @@ different wad set is a different picture wearing the same name.
   MAP01, and it renders perfectly — so every number taken there looks valid and is worthless. Relaunch
   with the same set the spot's `loaded` lists, via `--preset <id>` or `--file`; see `fua-side-by-side`.
 - **Never shoot from their instance.** Launch your own `--lock` instance on your own port with the
-  same wads, set `fua_dg_standalone 0` so GL draws for the pair (the Vulkan half is the same at either
-  value), and shoot `--spot <name>` there; leave theirs alone to look at.
+  same wads (`play --spot` runs the spot's own mode), and shoot `--spot <name>` there; leave theirs alone
+  to look at. For a GL/Vulkan pair add `--gl-beside --cvar fua_dg_standalone=0` so GL draws for it (the
+  Vulkan half is the same at either value); without GL, `shot` gives Vulkan's half and says why.
 - **Close other engine windows first.** A GL capture is read back out of the window, and under another
   window it comes back black or scrambled — which looks like the renderer, not the tool.

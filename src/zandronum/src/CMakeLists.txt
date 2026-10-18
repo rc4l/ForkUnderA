@@ -1733,6 +1733,9 @@ add_executable( zdoom WIN32
 	features/gamecopy/seen.cpp
 	features/gamecopy/polyobjs.cpp
 	features/wipe/wiperandoms.cpp
+	features/wipe/wipetrace.cpp
+	features/decals/decals.cpp
+	features/decals/flatdecal.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
 	features/viewsetup/viewsetup.cpp
@@ -1752,6 +1755,8 @@ add_executable( zdoom WIN32
 	features/gamecopy/computation/blend_compute.cpp
 	features/gamecopy/computation/prescan_compute.cpp
 	features/wipe/computation/wipe_compute.cpp
+	features/wipe/computation/wipetrace_compute.cpp
+	features/decals/computation/markrules_compute.cpp
 	features/surfaces/computation/skywall_compute.cpp
 	features/sprites/computation/spritestyle_compute.cpp
 	features/sprites/computation/spritequad_compute.cpp

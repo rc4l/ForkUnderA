@@ -194,6 +194,11 @@ void InitXFloors()
 	FillXFloors();
 }
 
+void ForgetXFloors()
+{
+	g_sectors.clear();
+}
+
 void FillXFloors()
 {
 	for (SectorXFloors &x : g_sectors)

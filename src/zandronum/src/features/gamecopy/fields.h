@@ -4,7 +4,7 @@
 // [rc4l] The one declaration of what the renderer reads of the game, each line a member of a map structure's state (SectorState, SideState, LineState, VertexState in r_defs.h) or of an actor record, from which come the copy's comparison and fill, fua_copy_check, the size check that keeps this list and the structs in step, and the boundary tripwire's patterns for reading a member live.
 
 // [rc4l] ZX_COPY_FIELD(kind, member, group): group is what a change means to the renderer's caches, Shape (walls re-baked), Look (re-checked, re-baked only if the picture changed) or Plane (a plane's placement re-bakes its flats, anything else its walls), and the list has no include guard since each use expands it with the lines it reads defined.
-// [rc4l] ZX_ACTOR_FIELD(member) is an actor member each actor record copies, ZX_ACTOR_DERIVED(type, member) a value the fill works out from the game for it, ZX_PLAYER_*, ZX_LEVEL_* and ZX_DECAL_FIELD the same for a player record, the level's and a wall decal's, and a line kind a use leaves undefined expands to nothing.
+// [rc4l] ZX_ACTOR_FIELD(member) is an actor member each actor record copies, ZX_ACTOR_DERIVED(type, member) a value the fill works out from the game for it, ZX_PLAYER_*, ZX_LEVEL_*, ZX_DECAL_FIELD and ZX_FLATDECAL_FIELD the same for a player record, the level's, a decal's and a floor or ceiling mark's own, and a line kind a use leaves undefined expands to nothing.
 
 #ifndef ZX_COPY_FIELD
 #define ZX_COPY_FIELD(kind, member, group)
@@ -29,6 +29,10 @@
 #ifndef ZX_DECAL_FIELD
 #define ZX_DECAL_FIELD(member)
 #define ZX_DECAL_FIELD_DEFAULTED
+#endif
+#ifndef ZX_FLATDECAL_FIELD
+#define ZX_FLATDECAL_FIELD(member)
+#define ZX_FLATDECAL_FIELD_DEFAULTED
 #endif
 #ifndef ZX_LEVEL_FIELD
 #define ZX_LEVEL_FIELD(member)
@@ -160,6 +164,15 @@ ZX_DECAL_FIELD(RenderFlags)
 ZX_DECAL_FIELD(RenderStyle)
 ZX_DECAL_FIELD(Sector)
 
+ZX_FLATDECAL_FIELD(ContactX)
+ZX_FLATDECAL_FIELD(ContactY)
+ZX_FLATDECAL_FIELD(ContactZ)
+ZX_FLATDECAL_FIELD(Normal)
+ZX_FLATDECAL_FIELD(Travel)
+ZX_FLATDECAL_FIELD(AnchorSector)
+ZX_FLATDECAL_FIELD(AnchorPlane)
+ZX_FLATDECAL_FIELD(AnchorOffset)
+
 ZX_LEVEL_FIELD(time)
 ZX_LEVEL_FIELD(maptime)
 ZX_LEVEL_FIELD(flags)
@@ -195,6 +208,10 @@ ZX_LEVEL_DERIVED(bool, endLevelDelay)        // [rc4l] a game mode's pause befor
 #ifdef ZX_DECAL_FIELD_DEFAULTED
 #undef ZX_DECAL_FIELD
 #undef ZX_DECAL_FIELD_DEFAULTED
+#endif
+#ifdef ZX_FLATDECAL_FIELD_DEFAULTED
+#undef ZX_FLATDECAL_FIELD
+#undef ZX_FLATDECAL_FIELD_DEFAULTED
 #endif
 #ifdef ZX_LEVEL_FIELD_DEFAULTED
 #undef ZX_LEVEL_FIELD

@@ -1,12 +1,14 @@
 ---
 name: fua-side-by-side
-description: Launch ForkUnderA with GL and the Diligent (Vulkan) backend in two windows of one process, for the user to play and A/B by eye. Use when the user asks to see a map side by side, compare GL against Vulkan live, or "launch the build for me".
+description: Launch ForkUnderA with GL and the Diligent (Vulkan) backend in two windows of one process, for the user to A/B the two by eye. Use only when the user asks to see a map side by side or compare GL against Vulkan live; for "launch the build for me" or a build to play, launch `play` with no renderer flag, which runs Vulkan alone as players do.
 ---
 
 # Side-by-side GL / Vulkan for the user
 
 One process, two top-level windows: GL's own window plus the Diligent (Vulkan) window. The user drives
-it with mouse and keyboard and A/Bs the two. On Linux and macOS the backend opens its own window beside
+it with mouse and keyboard and A/Bs the two. It is a comparison rig, not the game players run: GL owns
+the frame loop there and the Vulkan window is presented only at the end of a normal frame, so wipes
+never reach it. A build for the user to play is `play --port 7801` with no renderer flag (Vulkan alone). On Linux and macOS the backend opens its own window beside
 GL's rather than inside it, since neither nests one window in another; that path is built by CI and has
 not been run on those platforms yet.
 
@@ -25,8 +27,8 @@ or `--store`) and stands the player there.
 
 **Closing it for an exclusive run** (`scenarios`, a template comparison): `quit --park --port 7801` files
 their camera, wads and renderer first, and afterwards `play --unpark --port 7801 --store <wad folder>`
-(backgrounded as above) brings it back at that camera, side by side again, or without GL if it was a
-`--no-gl` launch.
+(backgrounded as above) brings it back at that camera in the mode it ran: side by side again, or Vulkan
+alone if it had no GL.
 
 - **A pwad map needs its wads.** Without them the map silently does not exist and the engine sits in
   the IWAD's MAP01 — which looks like a real level, renders fine, and quietly invalidates every
@@ -34,9 +36,10 @@ their camera, wads and renderer first, and afterwards `play --unpark --port 7801
   wdi/wdiex maps), which loads its files in catalogue order from the download store; add
   `--store DIR` (or set `FUACTL_PWADS`) when they live elsewhere. A missing one is named; fetch it
   with `fua_download <file>` in the console.
-- `--side-by-side` sets `fua_dg_embed 0`, which un-nests the Vulkan window, and GL draws whenever that
-  window is separate (`ComputeFrameRoute`), so both windows are live. The Vulkan window is the same derived
-  frame players get; `--no-gl` has no GL window, so never combine it with `--side-by-side`.
+- `--side-by-side` launches GL with the backend beside it (`--gl-beside`) and sets `fua_dg_embed 0`,
+  which un-nests the Vulkan window, and GL draws whenever that window is separate (`ComputeFrameRoute`),
+  so both windows are live. The Vulkan window draws the same derived scene players get, but not their
+  frame loop (no wipes).
 - `play` runs the **staged** `dist-windows/forkundera.exe`, so restage a fix before relaunching the user's
   session. Your own instance on a fresh build takes `FUACTL_ENGINE=F:/ForkUnderA/build-win/Release/forkundera.exe`,
   and `shot`/`ab`/`burst`/`motion --port P` find its `sweep/` from the binary its play session recorded.
@@ -90,7 +93,8 @@ The tail of the command line names the map, which is the quickest way to tell tw
 - `play --rt` for ray-traced mirrors: tracing is chosen when the scene is uploaded, so it is a launch flag (or `fua_dg_rtmirrors 1` then `fua_diligent_scene`).
 - `fuactl shot` does **not** work against a side-by-side instance: the un-embedded Vulkan window hands
   back a 1x1 PNG and the tool refuses it. For pixel work launch a SECOND instance without
-  `--side-by-side`, with `--lock`, on your own port, and shoot there — theirs stays untouched to look
-  at. Set `fua_dg_standalone 0` on that embedded instance, or GL's half of the pair is a dead buffer.
+  `--side-by-side`, with `--gl-beside --lock`, on your own port, and shoot there — theirs stays untouched
+  to look at. Set `fua_dg_standalone 0` on that instance, or `shot` gives Vulkan's half alone and says GL
+  is not drawing.
 - To aim both at the same place, save the vantage first with the `fua-capture-spot` skill and shoot
   `--spot <name>`.

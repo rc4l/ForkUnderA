@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] The render copy's wall decals: each side's decals as values, taken between tics, since a tic spawns, fades and destroys decals while a frame draws.
+// [rc4l] The render copy's decals: each side's wall decals and every floor and ceiling mark as values, taken between tics, since a tic spawns, fades and destroys decals while a frame draws.
 
 #ifndef ZX_GAMECOPY_DECALS_H
 #define ZX_GAMECOPY_DECALS_H
 
 #include "g_shared/a_sharedglobal.h"   // [rc4l] DBaseDecal
+#include "features/decals/flatdecal.h"   // [rc4l] DFlatDecal
+
+#include <vector>
 
 namespace zx { namespace gamecopy {
 
@@ -17,6 +20,20 @@ struct DecalRecord
 #include "features/gamecopy/fields.h"
 #undef ZX_DECAL_FIELD
 };
+
+// [rc4l] A floor or ceiling mark (features/decals' DFlatDecal) as the renderer reads it: a decal's members and its own, declared once in fields.h, and which mark it is.
+struct FlatDecalRecord
+{
+	const void *who;   // [rc4l] identity only, for a cache of what is worked out from it
+#define ZX_DECAL_FIELD(member) decltype(DBaseDecal::member) member;
+#define ZX_FLATDECAL_FIELD(member) decltype(DFlatDecal::member) member;
+#include "features/gamecopy/fields.h"
+#undef ZX_FLATDECAL_FIELD
+#undef ZX_DECAL_FIELD
+};
+
+// [rc4l] Every floor and ceiling mark as the last fill took them, oldest first.
+const std::vector<FlatDecalRecord> &FlatDecals();
 
 // [rc4l] A side's decals in its list's order, NULL when it has none.
 const DecalRecord *SideDecals(int side, int &count);

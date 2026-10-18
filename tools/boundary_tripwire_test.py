@@ -20,7 +20,7 @@ RENDER = {'name': 'render', 'files': ['features/sprites/'], 'exclude': ['*/compu
 TABLE = ('ZX_COPY_FIELD(sector, floorplane, secplane_t)\nZX_COPY_FIELD(side, textures, part)\nZX_COPY_FIELD(actor, angle, angle_t)\n'
          '#define ZX_ACTOR_FIELD(member)\nZX_ACTOR_FIELD(sprite)\nZX_ACTOR_DERIVED(const void *, who)   // [rc4l] note\n'
          'ZX_PLAYER_FIELD(viewz)\nZX_PLAYER_DERIVED(std::vector<pspdef_t>, layers)\nZX_LEVEL_FIELD(time)\nZX_LEVEL_DERIVED(FTextureID, sky1)\n'
-         'ZX_DECAL_FIELD(Alpha)\n')
+         'ZX_DECAL_FIELD(Alpha)\nZX_FLATDECAL_FIELD(ContactZ)\n')
 
 
 class BoundaryTripwire(unittest.TestCase):
@@ -128,6 +128,7 @@ class BoundaryTripwire(unittest.TestCase):
         self.assertIn('- level: `time`', text)
         self.assertIn('- level, worked out by the fill: `sky1`', text)
         self.assertIn('- decal: `Alpha`', text)
+        self.assertIn('- flatdecal: `ContactZ`', text)
         self.assertIn('- `copy/fill` (Handoff), `a.cpp`', text)
         self.assertIn('- `AskMainFor`: `v_font.cpp`', text)
         self.assertIn('- `QueuedForHandoff`: `r_sky.cpp`, `v_font.cpp`', text)

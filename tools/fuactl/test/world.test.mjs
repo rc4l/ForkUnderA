@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ensureCheat, verifyWorld, playCvars, playArgs, sameCvarValue, CHEATS, readView, windowForView, viewForWindow, sameView, fitView } from "../src/play.mjs";
+import { ensureCheat, verifyWorld, playCvars, playArgs, launchMode, describeMode, MODES, sameCvarValue, CHEATS, readView, windowForView, viewForWindow, sameView, fitView } from "../src/play.mjs";
 import { engineArgs } from "../src/launch.mjs";
 
 // A stand-in engine: answers console commands from a script of replies, and records what it was asked.
@@ -80,11 +80,27 @@ test("the hands-on build asks for no monsters and for freelook enabled", () => {
   assert.equal(playCvars({ extra: { fua_dg_standalone: "0" } }).fua_dg_standalone, "0");
 });
 
-test("--no-gl launches with -vulkan after the wads, and without it nothing extra", () => {
-  assert.deepEqual(playArgs(["a.pk3", "b.wad"]), ["-file", "a.pk3", "-file", "b.wad"]);
-  assert.deepEqual(playArgs(["a.pk3"], { noGl: true }), ["-file", "a.pk3", "-vulkan"]);
-  assert.deepEqual(playArgs([], { noGl: true }), ["-vulkan"]);
-  assert.deepEqual(playArgs(["a.pk3"], { noGl: true, webgpu: true }), ["-file", "a.pk3", "-webgpu"]);
+test("every launch names its renderers after the wads: -vulkan by default, -gl for GL alone or beside, -webgpu", () => {
+  assert.deepEqual(playArgs(["a.pk3", "b.wad"]), ["-file", "a.pk3", "-file", "b.wad", "-vulkan"]);
+  assert.deepEqual(playArgs([], MODES.gl), ["-gl"]);
+  assert.deepEqual(playArgs(["a.pk3"], MODES.beside), ["-file", "a.pk3", "-gl"]);
+  assert.deepEqual(playArgs(["a.pk3"], MODES.webgpu), ["-file", "a.pk3", "-webgpu"]);
+});
+
+// [rc4l] GL beside the backend is asked for, never the default, since players never run it.
+test("a launch is Vulkan alone unless it asks for GL alone, GL beside (which side by side implies) or WebGPU", () => {
+  assert.equal(launchMode({}), MODES.vulkan);
+  assert.equal(launchMode({ noGl: true }), MODES.vulkan);
+  assert.equal(launchMode({ glBeside: true }), MODES.beside);
+  assert.equal(launchMode({ sideBySide: true }), MODES.beside);
+  assert.equal(launchMode({ gl: true, sideBySide: true }), MODES.gl);
+  assert.equal(launchMode({ webgpu: true, gl: true }), MODES.webgpu);
+  assert.equal(describeMode(MODES.vulkan), "Vulkan alone (no GL), as players run it");
+  assert.match(describeMode(MODES.beside, true), /beside it in its own window, for comparing the two$/);
+  assert.match(describeMode(MODES.beside), /beside it, for comparing/);
+  assert.equal(describeMode(MODES.gl), "GL alone");
+  assert.match(describeMode(MODES.webgpu), /^WebGPU alone/);
+  assert.equal(playCvars({ gl: true, sideBySide: true }).fua_dg_embed, undefined, "GL alone has no backend window to un-embed");
 });
 
 test("cheats run AFTER the map, cvars BEFORE it", () => {

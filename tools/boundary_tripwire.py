@@ -21,7 +21,7 @@ BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
 LINE_COMMENT = re.compile(r'//[^\n]*')
 STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 FIELD = re.compile(r'^\s*ZX_COPY_FIELD\(\s*(\w+)\s*,\s*(\w+)', re.M)
-RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER|LEVEL|DECAL)_(FIELD|DERIVED)\((?:[^,()]+,)?\s*(\w+)\s*\)', re.M)
+RECORD_FIELD = re.compile(r'^\s*ZX_(ACTOR|PLAYER|LEVEL|DECAL|FLATDECAL)_(FIELD|DERIVED)\((?:[^,()]+,)?\s*(\w+)\s*\)', re.M)
 SEAM = re.compile(r'ZX_SEAM(?:_UNTIMED)?\s*\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)')
 EXTERN = re.compile(r'^[ \t]*extern[ \t]+((?:[\w:<>]+[ \t*&]+)+)([^;(){}]+);', re.M)
 CODE = ('.cpp', '.h', '.c', '.mm')
@@ -47,7 +47,7 @@ def in_set(rel, patterns):
 
 
 def table_rows(text):
-    """[rc4l] Every (kind, member) a field table declares: the map structures' lines, then the actor, player, level and decal records' copied and worked-out members."""
+    """[rc4l] Every (kind, member) a field table declares: the map structures' lines, then the actor, player, level, decal and flat decal records' copied and worked-out members."""
     rows = FIELD.findall(text)
     return rows + [(kind.lower() if what == 'FIELD' else '%s, worked out by the fill' % kind.lower(), name) for kind, what, name in RECORD_FIELD.findall(text)]
 

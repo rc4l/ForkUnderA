@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -33,6 +33,14 @@ test("one OPEN script at the start of the code, and its strings in the table aft
 test("a closed script is numbered without the OPEN thousand, so puke can run it", () => {
   const { scripts } = parse(acs0([PCD.TERMINATE], [], { open: false, number: 2 }));
   assert.deepEqual(scripts, [{ number: 2, address: 8, args: 0 }]);
+});
+
+test("several scripts lie end to end, each directory entry at its own code", () => {
+  const buf = acsScripts([{ code: [PCD.PUSHNUMBER, 1, PCD.TERMINATE] }, { code: [PCD.TERMINATE], open: false, number: 2 }], ["S"]);
+  const { scripts, strings } = parse(buf);
+  assert.deepEqual(scripts, [{ number: 1001, address: 8, args: 0 }, { number: 2, address: 20, args: 0 }]);
+  assert.deepEqual(strings, ["S"]);
+  assert.equal(buf.readInt32LE(20), PCD.TERMINATE);
 });
 
 test("a special's arguments are pushed in order, then LSPECn names the special", () => {

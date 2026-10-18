@@ -4,12 +4,14 @@ import { FPS_MODES, fpsModes, fpsRow, formatFpsRow, fpsShot, runFps } from "../s
 
 const report = (p50, p99) => ({ total: { p50_ms: p50, p99_ms: p99 } });
 
-test("the modes default to all three in order, keep a flag's order, and refuse one that does not exist", () => {
-  assert.deepEqual(fpsModes(undefined), ["gl", "embed", "vulkan"]);
-  assert.deepEqual(fpsModes(true), ["gl", "embed", "vulkan"]);
+test("the modes default to all three in order, keep a flag's order under their own names, and refuse one that does not exist", () => {
+  assert.deepEqual(fpsModes(undefined), ["gl", "beside", "vulkan"]);
+  assert.deepEqual(fpsModes(true), ["gl", "beside", "vulkan"]);
+  assert.deepEqual(fpsModes("embed,vulkan"), ["beside", "vulkan"]);   // [rc4l] the old name for GL beside
   assert.deepEqual(fpsModes("vulkan, gl"), ["vulkan", "gl"]);
   assert.throws(() => fpsModes("gl,dx12"), /unknown fps mode dx12/);
-  assert.deepEqual(FPS_MODES.vulkan, { noGl: true });
+  assert.deepEqual(FPS_MODES.vulkan, {});   // [rc4l] a launch runs as players do unless it asks for GL
+  assert.deepEqual(FPS_MODES.beside, { glBeside: true });
   assert.deepEqual(FPS_MODES.gl, { gl: true });
 });
 
@@ -57,7 +59,7 @@ test("each mode is its own launch, warmed and measured round by round, then shot
   };
   const rows = await runFps({ modes: ["gl", "vulkan"], rounds: 2, frames: 600, warmup: 300, vsync: false, shot: true, sample: 3, label: "t",
     launch: { map: "MAP10", port: 7799 } }, deps);
-  assert.deepEqual(launches, [{ map: "MAP10", port: 7799, gl: true }, { map: "MAP10", port: 7799, noGl: true }]);
+  assert.deepEqual(launches, [{ map: "MAP10", port: 7799, gl: true }, { map: "MAP10", port: 7799 }]);
   assert.deepEqual(commands.slice(0, 3), ["fua_render_in_background 1", "vid_vsync 0", "dumprenderer"]);
   assert.deepEqual(captures.slice(0, 3), [{ frames: 600, warmup: 300 }, { frames: 600, warmup: 60 }, { frames: 600, warmup: 60 }]);
   assert.equal(rows[0].p50_ms, 2.25);   // [rc4l] the warm-up round's 2.1 is thrown away; the median of 2.2 and 2.3 is kept

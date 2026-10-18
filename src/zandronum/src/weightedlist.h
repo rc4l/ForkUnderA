@@ -66,7 +66,9 @@ class TWeightedList
 		}
 
 		void AddEntry (T value, WORD weight);
-		T PickEntry () const;
+		T PickEntry () const { return PickEntry (RandomClass); }
+		// [rc4l] The same pick from another stream, for a choice the renderer makes without moving the game's.
+		T PickEntry (FRandom &rng) const;
 		void ReplaceValues (T oldval, T newval);
 
 	private:
@@ -102,9 +104,9 @@ void TWeightedList<T>::AddEntry (T value, WORD weight)
 }
 
 template<class T>
-T TWeightedList<T>::PickEntry () const
+T TWeightedList<T>::PickEntry (FRandom &rng) const
 {
-	BYTE randomnum = RandomClass();
+	BYTE randomnum = rng();
 	Choice<T> *choice = Choices;
 
 	while (choice != NULL && randomnum > choice->RandomVal)

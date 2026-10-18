@@ -12,6 +12,8 @@ namespace zx { namespace gamecopy {
 
 // [rc4l] Which sectors carry 3D floors or a light list, found once a level is set up.
 void InitXFloors();
+// [rc4l] The level is going: no sector is listed, so nothing reads a freed sector's 3D floors.
+void ForgetXFloors();
 // [rc4l] Copies each such sector's 3D floors and light list into rcXFloor, bumping its rcShape where they changed; between tics, after the sectors' own copy.
 void FillXFloors();
 // [rc4l] Moves the copied 3D floors' planes and light bands to their models' blended planes.

@@ -100,6 +100,7 @@
 #include "domination.h" // [TRSR]
 
 #include "g_shared/a_pickups.h"
+#include "features/decals/decals.h"   // [rc4l] ShootMark, the script's decal
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -6020,7 +6021,7 @@ static bool DoSpawnDecal(AActor *actor, const FDecalTemplate *tpl, int flags, an
 		DBaseDecal* operator() ( const FDecalTemplate *tpl, AActor *basisactor, sector_t *sec, fixed_t x, fixed_t y,
 			fixed_t z, angle_t angle, fixed_t tracedist, bool permanent )
 		{
-			DBaseDecal* decal = ::ShootDecal( tpl, basisactor, sec, x, y, z, angle, tracedist, permanent );
+			DBaseDecal* decal = zx::decals::ShootMark( tpl, basisactor, sec, x, y, z, angle, tracedist, permanent, zx::decals::kSourceScript );
 
 			if ( decal && NETWORK_GetState() == NETSTATE_SERVER )
 				SERVERCOMMANDS_ShootDecal( tpl, basisactor, z, angle, tracedist, permanent );

@@ -56,6 +56,7 @@ public:
 	int mPlaneMirrorCount;
 	int mLightCount;
 	float mCurrentFoV;
+	float mCurrentRatio, mCurrentFovRatio;   // [rc4l] the viewpoint's lens, which FrustumAngle covers the corners of
 	AActor *mViewActor;
 	FShaderManager *mShaderManager;
 	FSamplerManager *mSamplerManager;

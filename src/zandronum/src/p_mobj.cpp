@@ -38,8 +38,7 @@
 #include "m_random.h"
 #include "doomdef.h"
 #include "p_local.h"
-#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
-EXTERN_CVAR (Bool, fua_decal_log)
+#include "features/decals/decals.h"   // [rc4l] a missile's mark
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -1691,12 +1690,6 @@ bool AActor::Massacre ()
 
 void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOnClient ) // [RK] Added bExplodeOnClient
 {
-	// [rc4l] TEMPORARY: what line the explosion was handed, and where it came from.
-	if ( fua_decal_log && mo != NULL )
-		Printf( "explode: line %d  BlockingLine %d\n",
-			line != NULL ? (int)( line - lines ) : -1,
-			mo->BlockingLine != NULL ? (int)( mo->BlockingLine - lines ) : -1,
-			-1 );
 	if (mo->flags3 & MF3_EXPLOCOUNT)
 	{
 		if (++mo->special2 < mo->special1)
@@ -1704,13 +1697,8 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 			return;
 		}
 	}
-	// [rc4l] features/levelmesh: keep the direction of travel before it is thrown away.
-	//
-	// The decal is created a hundred lines further on, by which time the velocity is zero, and a
-	// projected mark is nothing without the direction: it is what makes an angled hit leave an
-	// angled mark. PrevX/PrevY are not a substitute -- they are already synced to the final
-	// position, so their difference is zero and anything derived from it silently does nothing.
-	zx::levelmesh::SetImpactContext (mo->velx, mo->vely, mo->velz, mo->radius);
+	// [rc4l] features/decals: how it was moving, for an angled mark, before the velocity is thrown away.
+	const fixed_t fuaVelX = mo->velx, fuaVelY = mo->vely, fuaVelZ = mo->velz;
 
 	mo->velx = mo->vely = mo->velz = 0;
 	mo->effects = 0;		// [RH]
@@ -1753,113 +1741,8 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 		return;
 	}
 
-	// [rc4l] features/levelmesh: a missile that dies against a FLOOR or CEILING marks it too.
-	//
-	// The branch below only fires for `line != NULL`, so a rocket that lands on the ground has never
-	// left anything behind -- which is not a rendering gap, it is a gap in the game: Doom only ever
-	// decalled walls, because a glued quad has a sidedef to be glued to and a floor does not. A
-	// projection has no such requirement; it prints on whatever is inside its box.
-	//
-	// `line` is NULL both for a plane hit and for an actor hit, so the plane is identified by where
-	// the missile came to rest. A missile does not stop exactly on the plane it struck, so this is a
-	// proximity question rather than an equality one.
-	if (line == NULL && target == NULL && cl_missiledecals && mo->DecalGenerator != NULL &&
-		NETWORK_GetState( ) != NETSTATE_SERVER)
-	{
-		const fixed_t kSlack = 4 * FRACUNIT;
-		const bool onFloor = (mo->z <= mo->floorz + kSlack);
-		const bool onCeiling = (mo->z + mo->height >= mo->ceilingz - kSlack);
-		if (onFloor || onCeiling)
-		{
-			const float up[3] = { 0.f, 0.f, 1.f };
-			const float down[3] = { 0.f, 0.f, -1.f };
-			zx::levelmesh::SpawnProjectedDecalHere (mo->DecalGenerator->GetDecal (),
-				mo->x, mo->y, onCeiling ? mo->ceilingz : mo->floorz, onCeiling ? down : up);
-		}
-	}
-
-	if (line != NULL && cl_missiledecals)
-	{
-		int side = P_PointOnLineSide (mo->x, mo->y, line);
-		if (line->sidedef[side] == NULL)
-			side ^= 1;
-		if (line->sidedef[side] != NULL)
-		{
-			FDecalBase *base = mo->DecalGenerator;
-			if (base != NULL)
-			{
-				// Find the nearest point on the line, and stick a decal there
-				fixed_t x, y, z;
-				SQWORD num, den;
-
-				den = (SQWORD)((SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy);
-				if (den != 0)
-				{
-					SDWORD frac;
-
-					num = (SQWORD)((SQWORD)(mo->x-line->v1->x)*line->dx+(SQWORD)(mo->y-line->v1->y)*line->dy);
-					if (num <= 0)
-					{
-						frac = 0;
-					}
-					else if (num >= den)
-					{
-						frac = 1<<30;
-					}
-					else
-					{
-						frac = (SDWORD)(num / (den>>30));
-					}
-
-					x = line->v1->x + MulScale30 (line->dx, frac);
-					y = line->v1->y + MulScale30 (line->dy, frac);
-					z = mo->z;
-
-					F3DFloor * ffloor=NULL;
-#ifdef _3DFLOORS
-					if (line->sidedef[side^1] != NULL)
-					{
-						sector_t * backsector = line->sidedef[side^1]->sector;
-						extsector_t::xfloor &xf = backsector->e->XFloor;
-						// find a 3D-floor to stick to
-						for(unsigned int i=0;i<xf.ffloors.Size();i++)
-						{
-							F3DFloor * rover=xf.ffloors[i];
-
-							if ((rover->flags&(FF_EXISTS|FF_SOLID|FF_RENDERSIDES))==(FF_EXISTS|FF_SOLID|FF_RENDERSIDES))
-							{
-								if (z<=rover->top.plane->ZatPoint(x, y) && z>=rover->bottom.plane->ZatPoint( x, y))
-								{
-									ffloor=rover;
-									break;
-								}
-							}
-						}
-					}
-#endif
-
-					// [BC] Servers don't need to spawn decals.
-					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
-					{
-						// [rc4l] Whether a MISSILE managed to stick a mark, and where it tried.
-						//
-						// A missile decals from its own z, not from a traced hit point, so it can land in the
-						// open span of a two-sided line -- between the textures -- where StickToWall has
-						// nothing to stick to and vanilla makes no decal at all. A hitscan aimed at the same
-						// wall stops exactly on a texture and marks it, so the wall looks like it takes some
-						// weapons and refuses others.
-						DBaseDecal *fuaMade = DImpactDecal::StaticCreate (base->GetDecal (),
-							x, y, z, line->sidedef[side], ffloor);
-						if (fua_decal_log)
-							Printf ("missile decal: z %.1f  line %d side %d  ffloor %d  -> %s\n",
-								FIXED2FLOAT (z), (int)(line - lines), side, ffloor != NULL ? 1 : 0,
-								fuaMade != NULL ? "stuck" : "REFUSED (nothing to stick to at that height)");
-						zx::levelmesh::ClearImpactContext ();
-					}
-				}
-			}
-		}
-	}
+	// [rc4l] features/decals: its mark, on the line it struck or the floor or ceiling it came to rest against.
+	zx::decals::MarkMissile (mo, line, target, fuaVelX, fuaVelY, fuaVelZ);
 
 	// play the sound before changing the state, so that AActor::Destroy can call S_RelinkSounds on it and the death state can override it.
 	if (mo->DeathSound)

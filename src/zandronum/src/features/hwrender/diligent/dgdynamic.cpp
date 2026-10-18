@@ -424,7 +424,7 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 			// [rc4l] The surface left its own constants in the scene block, so the player's go back before the first decal.
 			{
 				Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-				WriteSceneConstants(&cb[0], nullptr, (float)FrameWidth(), (float)FrameHeight(),
+				WriteSceneConstants(&cb[0], nullptr, (float)PassWidth(), (float)PassHeight(),
 					BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 			}
 			Diligent::IBuffer *vbs[] = { g_dynVB };

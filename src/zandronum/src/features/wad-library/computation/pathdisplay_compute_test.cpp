@@ -51,7 +51,7 @@ TEST(PathDisplayTest, APathThatFitsIsOneLine)
 // [rc4l] Nothing may be dropped: the whole path rejoined has to be the path that went in.
 TEST(PathDisplayTest, WrappingLosesNothing)
 {
-	const std::string path = "/Users/username/Documents/GZDoom/wads/doom/av.wad";
+	const std::string path = "/Volumes/gamesx/Documents/GZDoom/wads/doom/av.wad";
 	const std::vector<std::string> lines = Wrap(path, 16);
 
 	std::string rejoined;
@@ -65,7 +65,7 @@ TEST(PathDisplayTest, WrappingLosesNothing)
 TEST(PathDisplayTest, NoLineExceedsTheWidth)
 {
 	const std::vector<std::string> lines =
-		Wrap("/Users/username/Documents/GZDoom/wads/doom/av.wad", 16);
+		Wrap("/Volumes/gamesx/Documents/GZDoom/wads/doom/av.wad", 16);
 
 	for (size_t i = 0; i < lines.size(); ++i)
 		EXPECT_LE(Monospace(lines[i].c_str(), NULL), 16) << "line " << i << ": " << lines[i];
@@ -172,7 +172,7 @@ TEST(PathDisplayTest, FoundWithNoPathIsTreatedAsMissing)
 TEST(PathDisplayTest, ALongPathArrivesAsSeveralLines)
 {
 	const std::string tip = ComputePathTip(PathTipState::Found,
-		"/Users/username/Documents/GZDoom/wads/doom/av.wad", 16, Monospace, NULL);
+		"/Volumes/gamesx/Documents/GZDoom/wads/doom/av.wad", 16, Monospace, NULL);
 
 	int newlines = 0;
 	for (size_t i = 0; i < tip.size(); ++i)
@@ -191,5 +191,5 @@ TEST(PathDisplayTest, ALongPathArrivesAsSeveralLines)
 			rejoined += tip[i];
 	}
 
-	EXPECT_EQ("/Users/username/Documents/GZDoom/wads/doom/av.wad", rejoined);
+	EXPECT_EQ("/Volumes/gamesx/Documents/GZDoom/wads/doom/av.wad", rejoined);
 }

@@ -56,6 +56,62 @@ export async function exec(c, text, { quietMs = 220, maxMs = 4000 } = {}) {
   return out;
 }
 
+// [rc4l] The renderer `dumprenderer` names, or null when it printed none.
+export function launchRenderer(text) {
+  const m = /renderer=(\w+)/.exec(String(text || ""));
+  return m ? m[1] : null;
+}
+
+// [rc4l] The API `dumprenderer` says the backend's device runs on ("Vulkan", "WebGPU"), or null when it printed none.
+export function launchBackendApi(text) {
+  const m = /backend_api=(\w+)/.exec(String(text || ""));
+  return m ? m[1] : null;
+}
+
+// [rc4l] A cvar's value as the console echoes it ("name" is "value"), or null when it was not echoed.
+export function echoedCvar(text, name) {
+  const m = new RegExp(`"${name}" is "([^"]*)"`).exec(String(text || ""));
+  return m ? m[1] : null;
+}
+
+const on = (v) => v === "true" || v === "1";
+
+// [rc4l] The console line whose answer RENDERER_REPORT reads: the renderer, the backend's API, and the two cvars that say whether GL draws beside it.
+export const RENDERER_PROBE = "dumprenderer; fua_vulkan; fua_dg_standalone";
+
+// [rc4l] The mode play.mjs names that a launch reports running, from RENDERER_PROBE's answer: no GL is Vulkan or WebGPU alone, GL with the backend on is GL beside it, else GL alone; null when it said nothing.
+export function launchModeOf(text) {
+  const renderer = launchRenderer(text);
+  if (renderer === "vulkan") return launchBackendApi(text) === "WebGPU" ? "webgpu" : "vulkan";
+  if (renderer === "opengl") return on(echoedCvar(text, "fua_vulkan")) ? "beside" : "gl";
+  return null;
+}
+
+// [rc4l] Whether a launch in mode has a GL frame to read: GL alone, or GL beside the backend while it still draws the world (standalone off); else the reason and how to get one.
+export function glFrameFor(mode, standalone) {
+  if (mode === "gl" || (mode === "beside" && !standalone)) return { ok: true, why: "" };
+  if (mode === "beside") return { ok: false, why: "GL is not drawing the world (fua_dg_standalone 1): set it to 0 for a GL frame" };
+  return { ok: false, why: `this launch has no GL (${mode ? `${mode} alone` : "no renderer reported"}): relaunch with --gl-beside for GL beside the backend` };
+}
+
+// [rc4l] glFrameFor from RENDERER_PROBE's answer.
+export function glFrameOf(text) {
+  return glFrameFor(launchModeOf(text), on(echoedCvar(text, "fua_dg_standalone")));
+}
+
+// [rc4l] Each connection's launch mode, which never changes while it runs; only GL beside is asked again, since its standalone cvar can.
+const knownModes = new WeakMap();
+
+// [rc4l] launchModeOf and glFrameOf for a running instance, from at most one console round trip.
+export async function rendererReport(c) {
+  const known = knownModes.get(c);
+  if (known && known !== "beside") return { mode: known, gl: glFrameFor(known, false) };
+  const text = await exec(c, RENDERER_PROBE, { quietMs: 300 });
+  const mode = launchModeOf(text);
+  if (mode) knownModes.set(c, mode);
+  return { mode, gl: glFrameOf(text) };
+}
+
 // [rc4l] Wait until the instance is playing a level, which a map change leaves for a while; returns the sim.tic reply.
 // [rc4l] The engine's frametime distribution over the next `frames` frames, as the perf event reports it.
 export async function capturePerf(c, { frames = 300, warmup = 0 } = {}) {

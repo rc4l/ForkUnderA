@@ -2,7 +2,7 @@
 import path from "node:path";
 import * as ui from "./ui.mjs";
 import { exec, waitTics } from "./capture.mjs";
-import { captureVulkan, sweepDirFor } from "./shot.mjs";
+import { captureVulkan, sweepDirFor, requireGlFrame } from "./shot.mjs";
 import { decodePNG, px } from "./pngcore.mjs";
 
 export const RED = [255, 0, 0], GREEN = [0, 255, 0];
@@ -47,6 +47,7 @@ export async function bisectSector(count, look) {
 
 // [rc4l] bisectSector on a live instance, reading pixel (x, y) of side's capture ("gl" or "vk"); the sectors keep their paint afterwards.
 export async function sectorOf(c, { side = "gl", x, y, engineBin, log = () => {} }) {
+  if (side !== "vk") await requireGlFrame(c);
   const count = sectorCountFrom(await exec(c, "fua_sector_color -1 0 0 0"));
   if (!count) throw new Error("no sector count: this binary has no fua_sector_color");
   await c.rpc("sim.resume", {}).catch(() => {});

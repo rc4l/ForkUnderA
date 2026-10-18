@@ -124,7 +124,8 @@ FGLObserver		*gl_observer = NULL;
 angle_t FGLRenderer::FrustumAngle()
 {
 	// [rc4l] features/viewsetup, which the walks without GL read too.
-	return zx::viewsetup::ComputeFrustumAngle(mAngles.Pitch, mCurrentFoV, AspectMultiplier(WidescreenRatio));
+	const zx::viewsetup::FrustumIn frustum = { mAngles.Pitch, mAngles.Roll, mCurrentFoV, mCurrentRatio, mCurrentFovRatio, AspectMultiplier(WidescreenRatio) };
+	return zx::viewsetup::ComputeFrustumAngle(frustum);
 }
 
 //-----------------------------------------------------------------------------
@@ -792,6 +793,8 @@ sector_t * FGLRenderer::RenderViewpoint (AActor * camera, GL_IRECT * bounds, flo
 		eye->SetUp();
 		SetViewport(bounds);
 		mCurrentFoV = fov;
+		mCurrentRatio = ratio;
+		mCurrentFovRatio = fovratio;
 		SetProjection( eye->GetProjection(fov, ratio, fovratio) );
 		SetViewAngle(viewangle);
 		eye->GetViewShift(GLRenderer->mAngles.Yaw, viewShift);

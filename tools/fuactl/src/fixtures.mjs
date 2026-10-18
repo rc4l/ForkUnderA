@@ -73,7 +73,7 @@ export function buildGameThreadFixtureWad() {
   return wad([{ name: "ANIMDEFS", data: ANIMDEFS }, ...mapLumps("MAP01", m, { behavior })]);
 }
 
-// [rc4l] gtmod's lumps a mod brings, each one a thing the game thread could reorder: a mod cvar and a KEYCONF alias setting it, a lamp whose frames attach a GLDEFS light, a status bar that interpolates and draws the mugshot, two maps chained by MAPINFO, and a camera texture.
+// [rc4l] gtmod's lumps a mod brings, each one a thing the game thread could reorder: a mod cvar and a KEYCONF alias setting it, a lamp whose frames attach a GLDEFS light, a status bar that interpolates and draws the mugshot, two maps chained by MAPINFO, a camera texture, and a TERRAIN liquid whose splash throws chunks.
 const MOD_LUMPS = {
   MAPINFO: 'map MAP01 "gtmod one"\n{\n\tnext = "MAP02"\n\tnointermission\n\tsky1 = "SKY1", 0\n}\nmap MAP02 "gtmod two"\n{\n\tnext = "MAP01"\n\tsky1 = "SKY1", 0\n}\n',
   CVARINFO: "server int gtm_probe = 0;\n",
@@ -82,13 +82,14 @@ const MOD_LUMPS = {
   GLDEFS: "pointlight GTMLIGHT\n{\n\tcolor 1.0 0.4 0.1\n\tsize 48\n}\nobject GtmLamp\n{\n\tframe TLMPA { light GTMLIGHT }\n\tframe TLMPC { light GTMLIGHT }\n}\n",
   SBARINFO: 'base Doom;\nheight 32;\nstatusbar normal\n{\n\tdrawimage "STBAR", 0, 168;\n\tdrawnumber 3, BIGFONT, untranslated, health, interpolate(3), 90, 171;\n\tdrawmugshot "STF", 5, 143, 168;\n}\n',
   ANIMDEFS: "cameratexture GTMCAM 256 128 fit 128 64\n",
+  TERRAIN: "splash GtmWater\n{\n\tsmallclass WaterSplashBase\n\tsmallclip 12\n\tbaseclass WaterSplashBase\n\tchunkclass WaterSplash\n\tchunkxvelshift 8\n\tchunkyvelshift 8\n\tchunkzvelshift 8\n\tchunkbasezvel 2\n\tsound world/watersplash\n}\nterrain GtmWater\n{\n\tsplash GtmWater\n\tfootclip 10\n\tliquid\n}\nfloor FWATER1 GtmWater\n",
 };
 // [rc4l] The things gtmod's script names by tid.
-const MOD_TID = { sky: 20, camera: 21, screen: 22, lamp: 23, quake: 24 };
+const MOD_TID = { sky: 20, camera: 21, screen: 22, lamp: 23, quake: 24, pool: 25 };
 // [rc4l] The map variables gtmod's script keeps what it read in, which the trace's ACS fingerprint holds.
 const MOD_VAR = { tic: 0, set: 1, alias: 2, command: 3, screenWidth: 4, renderCvar: 5, justHit: 6, camera: 7, floorZ: 8, gravity: 9 };
 
-// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, sets a render cvar and the gravity from the console, quakes, sets the mugshot, writes a HUD message in a font no one loaded yet, changes the sky, fades a HUD message, autosaves and exits the level.
+// [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, sets a render cvar and the gravity from the console, quakes, sets the mugshot, writes a HUD message in a font no one loaded yet, changes the sky, fades a HUD message, shoots the liquid, autosaves and exits the level.
 export function gtmodScript() {
   const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity", "r_drawfuzz 1",
     "STKEYS0", "a", "SKY3"];
@@ -122,13 +123,15 @@ export function gtmodScript() {
   at(270, [PCD.PUSHNUMBER, 12, PCD.SETFONT, ...hudMessage(13, { id: 3, x: 0.2, y: 0.7, hold: 2 })]);
   at(290, [PCD.PUSHNUMBER, 14, PCD.PUSHNUMBER, 14, PCD.CHANGESKY]);
   at(300, hudMessage(8, { type: 1, id: 2, color: 4, x: 0.5, y: 0.3, hold: 1, fade: 2 }));
+  // [rc4l] A hitscan into a liquid makes a puff, a splash and its chunks, which a shot's mark once stood in for.
+  at(320, [...callFunc(ACSF.LineAttack, [MOD_TID.pool, 0, 13107, 0]), PCD.DROP]);
   at(400, callSpecial(SPECIAL.Autosave, [0]));
   at(560, callSpecial(SPECIAL.Exit_Normal, [0]));
   s.emit(PCD.DELAYDIRECT, 1).jump(PCD.GOTO, "loop");
   return acs0(s.words(), strings);
 }
 
-// [rc4l] gtmod: a mod's content in one arena, its sky drawn through a skybox, a lamp, a moving floor, a camera texture, a camera the script removes, monsters, and a second map the script exits to.
+// [rc4l] gtmod: a mod's content in one arena, its sky drawn through a skybox, a lamp, a moving floor, a camera texture, a camera the script removes, a sealed pool the script shoots into, monsters, and a second map the script exits to.
 export function buildGameThreadModWad() {
   const m = new UdmfMap();
   const arena = m.room(0, 0, 2048, 1024, { ...ARENA, textureceiling: "F_SKY1", id: TAG.arena }, (edge) => ({
@@ -137,6 +140,9 @@ export function buildGameThreadModWad() {
   // [rc4l] The skybox, sealed away, its viewpoint picked for the arena's sky.
   m.room(4096, 0, 4352, 256, { ...ARENA, lightlevel: 255 }, () => ({ side: WALL }));
   m.thing({ x: 4224, y: 128, height: 64, type: THING.SkyViewpoint, id: MOD_TID.sky });
+  // [rc4l] The pool, sealed away too, with the spot the script shoots from above its water.
+  m.room(4608, 0, 4864, 256, { ...ARENA, texturefloor: "FWATER1", lightlevel: 255 }, () => ({ side: WALL }));
+  m.thing({ x: 4736, y: 128, height: 128, angle: 0, type: THING.MapSpot, id: MOD_TID.pool });
   m.thing({ x: 64, y: 64, type: THING.SkyPicker, arg0: MOD_TID.sky });
   m.thing({ x: 128, y: 512, angle: 0, type: 1 });
   m.thing({ x: 1000, y: 512, type: 30001, id: MOD_TID.lamp });
@@ -253,11 +259,14 @@ async function driveFight(c, tics) {
 }
 
 // [rc4l] Waits for a file a run writes when it finishes, until it has stopped growing, or throws after timeoutMs.
-async function waitForFile(file, timeoutMs, proc) {
+// [rc4l] ...or throws at once with what giveUp() returns, when it returns something.
+async function waitForFile(file, timeoutMs, proc, giveUp = () => null) {
   timeoutMs = scaled(timeoutMs);
   const deadline = Date.now() + timeoutMs;
   let last = -1;
   while (Date.now() < deadline) {
+    const why = giveUp();
+    if (why) throw new Error(why);
     if (fs.existsSync(file)) {
       const size = fs.statSync(file).size;
       if (size > 0 && size === last) return;
@@ -276,7 +285,7 @@ export async function recordFixture(f, { engine, store, dir = fixtureDir(), log 
   const demo = path.join(dir, `${f.name}.lmp`);
   fs.rmSync(demo, { force: true });
   const iwad = fixtureIwad(f, store, path.dirname(engine || resolveEngine()));
-  const inst = await launchInstance({ engine, iwad, map: f.map, engineDefault: true, cvars: RUN_UNFOCUSED,
+  const inst = await launchInstance({ engine, iwad, map: f.map, cvars: RUN_UNFOCUSED,
     extraArgs: files.length ? ["-file", ...files] : [], record: demo.replace(/\\/g, "/") });
   let c = null;
   try {
@@ -300,7 +309,7 @@ async function launchDemo(f, { engine, store, dir, cvars = {}, gl = false, postM
   const { files, missing } = fixtureFiles(f, dir, store);
   if (missing.length) throw new Error(`${f.name} needs ${missing.join(", ")}, not in ${store}`);
   const iwad = fixtureIwad(f, store, path.dirname(engine || resolveEngine()));
-  return launchInstance({ engine, iwad, engineDefault: !gl, cvars: { ...RUN_UNFOCUSED, ...cvars }, extraArgs: files.length ? ["-file", ...files] : [],
+  return launchInstance({ engine, iwad, gl, cvars: { ...RUN_UNFOCUSED, ...cvars }, extraArgs: files.length ? ["-file", ...files] : [],
     playdemo: demo.replace(/\\/g, "/"), postMap });
 }
 
@@ -317,6 +326,12 @@ export async function traceFixture(f, out, { engine, store, dir = fixtureDir(), 
   }
 }
 
+// [rc4l] Why an engine did not load a save, from its log: the last line naming the cause, or null when none does.
+export function loadRefusal(logText) {
+  const said = String(logText).split(/\r?\n/).filter((l) => /Unknown class|incompatible version|needs these wads|Bad savegame|not a savegame/i.test(l));
+  return said.length ? said[said.length - 1].trim() : null;
+}
+
 // [rc4l] A savegame one engine writes and every engine loads: the fixture's map played saveTic tics with nobody pressing anything and saved, then loaded and traced tics tics by each reader, each reader's trace held to the first's; one result per later reader.
 export async function saveCompatFixture(f, { writer, readers, names = readers, store, dir = fixtureDir(), saveTic = 300, tics = 300, log = () => {} }) {
   const { files, missing } = fixtureFiles(f, dir, store);
@@ -326,7 +341,7 @@ export async function saveCompatFixture(f, { writer, readers, names = readers, s
   const tag = `${f.name}-${process.pid}`;
   const save = path.join(os.tmpdir(), `fuactl-save-${tag}.zds`).replace(/\\/g, "/");
   fs.rmSync(save, { force: true });
-  const inst = await launchInstance({ engine: writer, iwad, map: f.map, engineDefault: true, cvars: RUN_UNFOCUSED, extraArgs });
+  const inst = await launchInstance({ engine: writer, iwad, map: f.map, cvars: RUN_UNFOCUSED, extraArgs });
   let c = null;
   try {
     c = await attach(inst);
@@ -342,19 +357,26 @@ export async function saveCompatFixture(f, { writer, readers, names = readers, s
   for (const engine of readers) {
     const out = path.join(os.tmpdir(), `fuactl-load-${tag}-${traces.length}.trace`);
     fs.rmSync(out, { force: true });
-    const r = await launchInstance({ engine, iwad, engineDefault: true, cvars: RUN_UNFOCUSED, extraArgs, loadgame: save,
+    const r = await launchInstance({ engine, iwad, cvars: RUN_UNFOCUSED, extraArgs, loadgame: save,
       postMap: [`fua_simtrace ${tics} "${out.replace(/\\/g, "/")}"`] });
+    // [rc4l] A reader refusing the save says why in its log, which a timeout alone hid.
+    const refusal = () => (fs.existsSync(r.log) ? loadRefusal(fs.readFileSync(r.log, "utf8")) : null);
     try {
       log(`${f.name}: ${names[traces.length]} loads the save and traces ${tics} tics`);
-      await waitForFile(out, 60000 + tics * 150, r.proc);
-      traces.push(parseSimTrace(fs.readFileSync(out, "utf8")));
+      await waitForFile(out, 60000 + tics * 150, r.proc, refusal);
+      traces.push({ trace: parseSimTrace(fs.readFileSync(out, "utf8")) });
+    } catch (e) {
+      traces.push({ refused: refusal() || e.message });
     } finally {
       await stopInstance(r);
     }
   }
   return traces.slice(1).map((t, i) => {
-    const d = diffSimTraces(traces[0], t);
-    return { name: `${f.name}: loaded by ${names[i + 1]} against ${names[0]}`, same: d.same, lines: describeSimTraceDiff(d) };
+    const name = `${f.name}: loaded by ${names[i + 1]} against ${names[0]}`;
+    const refused = traces[0].refused ? [names[0], traces[0].refused] : t.refused ? [names[i + 1], t.refused] : null;
+    if (refused) return { name, same: false, lines: [`${refused[0]} did not load the save: ${refused[1]}`] };
+    const d = diffSimTraces(traces[0].trace, t.trace);
+    return { name, same: d.same, lines: describeSimTraceDiff(d) };
   });
 }
 

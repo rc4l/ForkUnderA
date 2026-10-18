@@ -7,12 +7,15 @@ import { launchRenderer } from "./template.mjs";
 import { percentile, refreshBoundHz, refreshNote } from "./stats.mjs";
 import { sampleProcess } from "./sample.mjs";
 
-// [rc4l] Each mode's launch: GL alone, the backend inside the GL launch, and the backend with no GL context.
-export const FPS_MODES = { gl: { gl: true }, embed: {}, vulkan: { noGl: true } };
+// [rc4l] Each mode's launch: GL alone, the backend beside GL in one process, and the backend alone as players run it.
+export const FPS_MODES = { gl: { gl: true }, beside: { glBeside: true }, vulkan: {} };
 
-// [rc4l] The modes a --modes flag names, in its order, or every mode when it names none.
+// [rc4l] Old names a --modes flag may still use.
+const FPS_ALIASES = { embed: "beside" };
+
+// [rc4l] The modes a --modes flag names, in its order and under their own names, or every mode when it names none.
 export function fpsModes(flag) {
-  const modes = flag && flag !== true ? String(flag).split(",").map((s) => s.trim()).filter(Boolean) : Object.keys(FPS_MODES);
+  const modes = flag && flag !== true ? String(flag).split(",").map((s) => s.trim()).filter(Boolean).map((m) => FPS_ALIASES[m] || m) : Object.keys(FPS_MODES);
   const bad = modes.filter((m) => !(m in FPS_MODES));
   if (bad.length) throw new Error(`unknown fps mode ${bad.join(", ")} (modes: ${Object.keys(FPS_MODES).join(", ")})`);
   return modes;
@@ -37,7 +40,7 @@ export function formatFpsRow(row) {
     + `p99 ${row.p99_ms.toFixed(3)} ms  (rounds ${row.rounds.map((v) => v.toFixed(3)).join(", ")})${note ? `  ${note}` : ""}${shot}`;
 }
 
-// [rc4l] Where a mode's shot lands and the command that takes it: GL's buffer for GL alone, else the backend's swapchain, as GL's buffer under embed is a stale frame beneath the backend's window.
+// [rc4l] Where a mode's shot lands and the command that takes it: GL's buffer for GL alone, else the backend's swapchain, as GL's buffer beside the backend is a stale frame beneath its window.
 export function fpsShot(mode, engine, label) {
   const name = `sweep/fps_${label}_${mode}`;
   const file = path.join(path.dirname(engine), `${name}.png`).replace(/\\/g, "/");

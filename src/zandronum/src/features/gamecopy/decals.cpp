@@ -7,6 +7,10 @@
 
 #include "r_defs.h"
 #include "r_state.h"
+#include "dthinker.h"
+#include "statnums.h"
+
+#include <string.h>
 
 #include <algorithm>
 #include <vector>
@@ -21,6 +25,7 @@ std::vector<std::vector<DecalRecord>> g_chunks;   // [rc4l] each pool chunk's de
 const int kChunk = 4096;   // [rc4l] sides a pool lane walks at a time
 std::vector<int> g_scannedSides;   // [rc4l] the sides holding decals as the tic ended
 std::vector<int> g_withDecals;     // [rc4l] the sides the last fill took decals from
+std::vector<FlatDecalRecord> g_flats;   // [rc4l] the floor and ceiling marks
 
 // [rc4l] Side i's decals appended to out, as records.
 void TakeSideDecals(int i, std::vector<DecalRecord> &out)
@@ -35,7 +40,28 @@ void TakeSideDecals(int i, std::vector<DecalRecord> &out)
 	}
 }
 
+// [rc4l] Every floor and ceiling mark, oldest first, as records.
+void TakeFlatDecals()
+{
+	g_flats.clear();
+	TThinkerIterator<DFlatDecal> it(STAT_AUTODECAL);
+	DFlatDecal *d;
+	while ((d = it.Next()) != NULL)
+	{
+		g_flats.emplace_back();
+		FlatDecalRecord &r = g_flats.back();
+		r.who = d;
+#define ZX_DECAL_FIELD(m) r.m = d->m;
+#define ZX_FLATDECAL_FIELD(m) memcpy(&r.m, &d->m, sizeof(r.m));
+#include "features/gamecopy/fields.h"
+#undef ZX_FLATDECAL_FIELD
+#undef ZX_DECAL_FIELD
+	}
+}
+
 } // namespace
+
+const std::vector<FlatDecalRecord> &FlatDecals() { return g_flats; }
 
 const DecalRecord *SideDecals(int side, int &count)
 {
@@ -68,7 +94,8 @@ int DecalSidesMissed()
 
 void FillDecals(bool scanned)
 {
-	ZX_ZONE("copy/decal_fill");   // [rc4l] the wall decals taken
+	ZX_ZONE("copy/decal_fill");   // [rc4l] the wall decals taken, and the floor and ceiling marks
+	TakeFlatDecals();
 	g_decals.clear();
 	if (scanned && (int)g_count.size() == numsides)
 	{

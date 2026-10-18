@@ -12,13 +12,6 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] A frame drawn without presenting, submitted and finished as Present does both, so its dynamic memory is recycled.
-static void EndUnpresentedFrame(Diligent::IDeviceContext *ctx)
-{
-	ctx->Flush();
-	ctx->FinishFrame();
-}
-
 // [rc4l] `n` frames of the scene drawn and finished without presenting.
 static void DrawUnpresentedFrames(int n)
 {

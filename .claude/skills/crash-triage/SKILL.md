@@ -63,8 +63,9 @@ AGENTS.md: write a failing test that proves the crash, then fix it so the test p
 3. Drive the exact scenario that crashed with fuactl (see `zandronum-session`) — same iwad, map,
    bots, sequence — and confirm it **survives well past that point** (`node src/cli.mjs ls`, or
    `Get-CimInstance Win32_Process -Filter "Name='forkundera.exe'"`, for ~20s past the trigger).
-4. A render crash that only a `--no-gl` launch shows is a GL-context dependency: model vertex buffers
-   once called a null `glGenBuffers` there. Give it a scenario with a `noGl` side (`template-maps`).
+4. A render crash that only a launch without GL shows (`play`'s default, as players run it) is a
+   GL-context dependency: model vertex buffers once called a null `glGenBuffers` there. Give it a scenario
+   whose Vulkan side runs without GL, which every side does unless it asks for GL (`template-maps`).
 
 ## 5. Write Who/What/Where/Why on the issue, then close
 Post one comment, four short paragraphs, **~3 sentences each**:

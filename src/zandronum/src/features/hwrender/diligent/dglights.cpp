@@ -296,7 +296,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	// last slice, which is correct rather than approximate: a light 8000 units away is not lighting
 	// you either way.
 	const zx::hwrender::ClusterGrid grid =
-		zx::hwrender::ComputeGridForScreen(FrameWidth(), FrameHeight(),
+		zx::hwrender::ComputeGridForScreen(PassWidth(), PassHeight(),
 			zx::hwrender::kClusterZNear, zx::hwrender::kClusterZFar);
 	const int cells = zx::hwrender::ComputeClusterCount(grid);
 	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;

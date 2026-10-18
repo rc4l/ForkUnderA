@@ -1104,16 +1104,12 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 		WithEye(reflected, [] { BuildMVP(g_mvp); });
 	}
 	RenderViewSkyLooks(ctx, false, -1, true, g_mirrorW, g_mirrorH);
-	auto *rtv = pic->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	auto *dsv = pic->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
 	g_pass.clipPlane[0] = m.nx; g_pass.clipPlane[1] = 0.f; g_pass.clipPlane[2] = m.ny;
 	g_pass.clipPlane[3] = -m.d;
 	if (g_pass.clipPlane[3] == 0.f) g_pass.clipPlane[3] = 0.0001f;   // w == 0 means "off"
-	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	BeginPassTargets(ctx, ViewPassTargets(pic->color, pic->depth, FrameViewNormal()), clear);
 	// [rc4l] The view this reflection is, by its mirrors from the player outward, whose walk's sprites, models and decals it draws.
 	static std::vector<int> path;
 	zx::hwrender::ComputeRootPath(node, [](int n) { return g_mirrorNodes[n].parent; }, path);

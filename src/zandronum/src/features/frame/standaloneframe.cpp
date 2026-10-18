@@ -8,7 +8,6 @@
 #include "features/levelmesh/staticmesh.h"     // [rc4l] DynClear
 #include "features/hitboxviz/hitboxviz.h"         // [rc4l] CollectBackendFrame
 #include "features/levelmesh/flatmesh.h"       // [rc4l] PlayerWalkActive, ClearSprites, RecordSpriteSweep
-#include "features/levelmesh/projdecals.h"     // [rc4l] UpdateProjectedDecals
 #include "features/levelmesh/wallcache.h"      // [rc4l] InvalidateMovedSectors
 #include "features/framephase/framephase.h"     // [rc4l] the walk, rebake and actor phases
 #include "features/levelmesh/walldecals.h"     // [rc4l] BuildWallDecals
@@ -38,7 +37,6 @@ CVAR(Bool, fua_vis_cull, true, 0)
 EXTERN_CVAR(Bool, fua_sprite_check)
 EXTERN_CVAR(Bool, fua_shading_check)
 EXTERN_CVAR(Bool, gl_render_things)
-EXTERN_CVAR(Int, fua_decalmode)
 
 namespace zx { namespace frame {
 
@@ -129,14 +127,13 @@ void StandaloneScene()
 	{
 		zx::levelmesh::DynClear();
 		zx::levelmesh::ClearSprites();
-		zx::levelmesh::UpdateProjectedDecals();
 	}
 	zx::horizon::UpdateHorizons();
 	// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
 	if (walked)
 	{
-		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, fua_decalmode == 0 ? zx::levelmesh::BuildWallDecals : NULL };
+		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(fua_vis_cull, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);

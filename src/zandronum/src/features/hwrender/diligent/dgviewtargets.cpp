@@ -24,6 +24,16 @@ struct ViewTarget
 
 // [rc4l] The depth every view target is rendered with, one view at a time, since a view's picture is all that outlives its render.
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_viewDepth;
+// [rc4l] And the normals their G-buffer writes and their decal pass reads, at the frame's size like every view but a camera's.
+static Diligent::RefCntAutoPtr<Diligent::ITexture> g_viewNormal;
+
+Diligent::ITexture *FrameViewNormal()
+{
+	const int w = FrameWidth(), h = FrameHeight();
+	if (g_viewNormal && (int)g_viewNormal->GetDesc().Width == w && (int)g_viewNormal->GetDesc().Height == h) return g_viewNormal;
+	if (!CreateNormalTarget(w, h, "fua view", g_viewNormal)) return NULL;
+	return g_viewNormal;
+}
 
 // [rc4l] Makes a target's picture at the window's size, and its binding on pso's texture variable, whenever it has none at that size.
 static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const char *var, const char *name)
@@ -69,12 +79,8 @@ static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
 	BuildMVP(g_mvp);
 	// [rc4l] A stacked view's other skies from its own walk's, a plane mirror's from the player's and the mirrors'.
 	RenderViewSkyLooks(ctx, false, g_pass.stackSlot, g_pass.stackSlot < 0, t.w, t.h);
-	auto *rtv = t.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	auto *dsv = depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
-	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	BeginPassTargets(ctx, ViewPassTargets(t.color, depth, FrameViewNormal()), clear);
 	DrawWorld(ctx);
 	ForgetViewSkyLooks();
 }
@@ -99,6 +105,7 @@ void ReleasePlaneMirrors()
 	g_pm.Clear();
 	g_pmPSO.Release();
 	g_viewDepth.Release();
+	g_viewNormal.Release();
 	g_pmUsed = 0;
 }
 
@@ -213,8 +220,6 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 	const int sp = viewpitch;
 	float savedMVP[16];
 	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
-	const bool savedGBuf = g_pass.gbufBound;
-	g_pass.gbufBound = false;
 	for (int k = 0; k < g_pmUsed; k++)
 	{
 		viewz = FLOAT2FIXED(zx::hwrender::ComputePlaneMirrorEyeZ(slots[k].z, vz));
@@ -226,7 +231,6 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx)
 	viewpitch = sp;
 	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
 	g_pass.clipPlane[0] = g_pass.clipPlane[1] = g_pass.clipPlane[2] = g_pass.clipPlane[3] = 0.f;
-	g_pass.gbufBound = savedGBuf;
 	for (int k = 0; k < g_pmUsed; k++) HandOverViewTarget(ctx, g_pm[k]);
 }
 
@@ -266,6 +270,7 @@ void ReleaseStackPortals()
 {
 	g_stack.Clear();
 	g_viewDepth.Release();
+	g_viewNormal.Release();
 	g_stackShowSRB.Release();
 	g_stackSurfPSO.Release();
 	g_stackDrawn = 0;
@@ -305,8 +310,6 @@ void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	const fixed_t sx = viewx, sy = viewy;
 	float savedMVP[16];
 	for (int k = 0; k < 16; k++) savedMVP[k] = g_mvp[k];
-	const bool savedGBuf = g_pass.gbufBound;
-	g_pass.gbufBound = false;
 	for (int k = 0; k < n; k++)
 	{
 		const zx::levelmesh::StackViewInfo v = zx::levelmesh::StackView(k);
@@ -320,7 +323,6 @@ void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	g_pass.stackSlot = -1;
 	viewx = sx; viewy = sy;
 	for (int k = 0; k < 16; k++) g_mvp[k] = savedMVP[k];
-	g_pass.gbufBound = savedGBuf;
 	for (int k = 0; k < g_stackDrawn; k++) HandOverViewTarget(ctx, g_stack[k]);
 }
 

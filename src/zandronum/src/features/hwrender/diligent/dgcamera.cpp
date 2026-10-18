@@ -25,6 +25,8 @@ struct CameraTarget
 	Diligent::ITextureView *rtv, *dsv, *srv;
 	// [rc4l] Where the world pass draws, top row first, before it is copied into color the way GL keeps it.
 	Diligent::RefCntAutoPtr<Diligent::ITexture> scratch;
+	// [rc4l] The normals its world pass writes and its decal pass reads, at the picture's size.
+	Diligent::RefCntAutoPtr<Diligent::ITexture> normal;
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> flipSRB;
 };
 static TArray<CameraTarget *> g_cameraTargets;
@@ -74,6 +76,8 @@ static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 
 	if (!CreateViewTextures(w, h, "fua camera", c->scratch, c->depth) || !CreateColorTarget(w, h, "fua camera flipped", c->color))
 	{ delete c; return NULL; }
+	// [rc4l] Without normals the camera's picture still draws, only without its marks.
+	CreateNormalTarget(w, h, "fua camera", c->normal);
 	c->rtv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	c->srv = c->color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
 	c->dsv = c->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
@@ -151,17 +155,13 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa; viewpitch = sp;
 	RenderViewSkyLooks(ctx, true, -1, false, w, h);
 
-	Diligent::ITextureView *rtv = cam->scratch->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	ctx->SetRenderTargets(1, &rtv, cam->dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+	BeginPassTargets(ctx, ViewPassTargets(cam->scratch, cam->depth, cam->normal), clear);
 	Diligent::Viewport vp;
 	vp.TopLeftX = 0; vp.TopLeftY = 0;
 	vp.Width = (float)w; vp.Height = (float)h;
 	vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
 	ctx->SetViewports(1, &vp, (Diligent::Uint32)w, (Diligent::Uint32)h);
-	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(cam->dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// [rc4l] GL renders a camera texture during its own frame, before the backend's, so the frame-wide jobs run for it as they always have.
 	g_frame.serial++;

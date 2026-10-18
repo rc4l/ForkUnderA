@@ -63,7 +63,8 @@ void SetupView(const zx::gamecopy::ActorRecord *camera, const FViewLens &lens, l
 	// [rc4l] The playsim treats pitch as 1:1, so it is scaled for the pixel stretch the view is drawn with.
 	g_view.pitch = ComputeStretchedPitch(viewpitch, glset.pixelstretch);
 	g_view.roll = (float)(camera->roll >> ANGLETOFINESHIFT) * 360.0f / FINEANGLES;
-	g_view.frustumAngle = ComputeFrustumAngle(g_view.pitch, fov, AspectMultiplier(WidescreenRatio));
+	const FrustumIn frustum = { g_view.pitch, g_view.roll, fov, lens.ratio, lens.fovRatio, AspectMultiplier(WidescreenRatio) };
+	g_view.frustumAngle = ComputeFrustumAngle(frustum);
 	// [rc4l] The chase camera (consoleplayer only, never in free spectate) and a dead player's death camera see the player's own body.
 	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
 	const zx::gamecopy::PlayerRecord *const its = zx::gamecopy::Player(camera->playerIndex);

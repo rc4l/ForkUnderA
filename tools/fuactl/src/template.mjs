@@ -6,8 +6,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as cap from "./capture.mjs";
 import * as shot from "./shot.mjs";
 import * as ui from "./ui.mjs";
-import { withLockedInstance } from "./play.mjs";
-import { resolveEngine, engineProcessCount, exited, slashed } from "./launch.mjs";
+import { withLockedInstance, launchMode, describeMode } from "./play.mjs";
+import { resolveEngine, engineProcessCount, exited, slashed, launchInstance, stopInstance } from "./launch.mjs";
+import { attach } from "./session.mjs";
+import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
 
@@ -61,33 +63,24 @@ export function judge(map, frames, boxes, size = [1280, 720], [a, b] = ["gl", "v
   return { lines, failed };
 }
 
-// [rc4l] The renderer `dumprenderer` names, or null when it printed none.
-export function launchRenderer(text) {
-  const m = /renderer=(\w+)/.exec(String(text || ""));
-  return m ? m[1] : null;
-}
-
-// [rc4l] The API `dumprenderer` says the backend's device runs on ("Vulkan", "WebGPU"), or null when it printed none.
-export function launchBackendApi(text) {
-  const m = /backend_api=(\w+)/.exec(String(text || ""));
-  return m ? m[1] : null;
-}
+export { launchRenderer, launchBackendApi } from "./capture.mjs";
 
 // [rc4l] One locked launch of the wad with the side's settings applied, handed to `body` and always torn down; its launchCvars go on the command line, for what must hold from the level's upload, where its cvars are set once the level is up.
+// [rc4l] Whether a side runs the backend beside GL in one process: one judged by GL's frame beside the backend's wall mesh (frame "gl"), by both renderers from one frame (glDraws), or one that asks (glBeside); every other Vulkan side runs as players do, without GL.
+export function sideBesideGl(side = {}) {
+  return !side.gl && !side.webgpu && (side.frame === "gl" || !!side.glDraws || !!side.glBeside);
+}
+
 function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
-  return withLockedInstance({ port, map, iwad, file: wadPath, gl, noGl: !!side.noGl, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c, inst) => {
-    // [rc4l] A side without GL must really have none: a binary that ignores -vulkan would pass as GL beside an embedded backend.
-    if (side.noGl) {
-      const report = await cap.exec(c, "dumprenderer");
-      const renderer = launchRenderer(report);
-      if (renderer !== "vulkan") throw new Error(`side ${side.name} asked for no GL and the launch reports ${renderer || "no renderer"}`);
-      // [rc4l] And a WebGPU side really runs on WebGPU, since a device that fails falls back to Vulkan and would pass as itself.
-      const api = launchBackendApi(report);
-      if (side.webgpu && api !== "WebGPU") throw new Error(`side ${side.name} asked for WebGPU and the launch reports ${api || "no backend API"}`);
-    }
+  const glBeside = sideBesideGl(side);
+  const want = launchMode({ gl, glBeside, webgpu: !!side.webgpu });
+  return withLockedInstance({ port, map, iwad, file: wadPath, gl, glBeside, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c, inst) => {
+    // [rc4l] A side really runs the renderers it asked for: a binary that ignored -vulkan would pass as GL beside the backend, and a WebGPU device that failed falls back to Vulkan.
+    const got = cap.launchModeOf(await cap.exec(c, cap.RENDERER_PROBE, { quietMs: 300 }));
+    if (got !== want) throw new Error(`side ${side.name} asked for ${describeMode(want)} and the launch reports ${got ? describeMode(got) : "no renderer"}`);
     await cap.exec(c, "r_drawplayersprites 0");
-    // [rc4l] A Vulkan side derives its own scene, as players run it, rather than taking GL's walk; one judged by GL's frame, or by both renderers' from one frame (glDraws), keeps GL drawing.
-    if (!gl && !side.noGl) await cap.exec(c, `fua_dg_standalone ${side.frame === "gl" || side.glDraws ? 0 : 1}`);
+    // [rc4l] Beside GL the backend derives its own scene, as players run it, unless the side is judged by GL's frame or by both renderers' from one frame (glDraws), which keeps GL drawing.
+    if (glBeside) await cap.exec(c, `fua_dg_standalone ${side.frame === "gl" || side.glDraws ? 0 : 1}`);
     for (const line of sideCommands(side)) await cap.exec(c, line);
     await cap.waitTics(c, 10);
     return body(c, inst);
@@ -100,7 +93,7 @@ export function pairFrame(side, pair) {
 }
 
 // [rc4l] Stand at a vantage and take one side's frame; GL alone comes from a Vulkan-off launch, the one reliable GL reference.
-async function grab(c, exe, tag, at, side) {
+export async function grab(c, exe, tag, at, side) {
   await c.rpc("sim.resume", {}).catch(() => {});
   await c.rpc("player.setpos", at);
   await cap.waitTics(c, 15);
@@ -113,7 +106,7 @@ async function grab(c, exe, tag, at, side) {
 export async function compareTemplate({ name, wad, maps, vantages, boxes, sides = GL_VS_VULKAN, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720] }) {
   // [rc4l] GL reads its frame back out of the window, so another engine on top can make it garbage.
-  const others = sides.some((sd) => sd.gl) ? engineProcessCount() : 0;
+  const others = sides.some((sd) => sd.gl || sideBesideGl(sd)) ? engineProcessCount() : 0;
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = slashed(resolveEngine());
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
@@ -175,12 +168,6 @@ export function sideAdjust(sideName, cvars) {
   return (opts) => ((opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);
 }
 
-// [rc4l] A scenario as players run it: its own standalone side when it has one, else its Vulkan side with standalone on, else null.
-export function standaloneOptions(opts) {
-  if ((opts.sides || GL_VS_VULKAN).some((s) => s.name === "standalone")) return opts;
-  return sideAdjust("vk", { fua_dg_standalone: 1 })(opts);
-}
-
 // [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
 export const WEBGPU_CEILING = 1.5;
 
@@ -188,6 +175,7 @@ export const WEBGPU_CEILING = 1.5;
 export function webgpuOptions(opts, compare = compareTemplate) {
   if (compare === compareSameFrame) return { skip: "it judges GL and the backend in one frame, and a WebGPU launch has no GL" };
   if ((opts.needs || []).includes("raytracing")) return { skip: "it needs ray tracing, which WebGPU lacks" };
+  if ((opts.needs || []).includes("readback")) return { skip: "it reads each presented frame back at once, which WebGPU does only later" };
   const vk = (opts.sides || GL_VS_VULKAN).find((s) => !s.gl && s.frame !== "gl");
   if (!vk) return null;
   const { frame, glDraws, ...rest } = vk;
@@ -241,6 +229,48 @@ export function compareQuit(opts) {
 // [rc4l] Each side launched on each map and judged by the scenario's own judgeLaunch(c, inst, label), for a check one bridge answer settles.
 export function compareEachLaunch(opts) {
   return eachLaunch(opts, (c, inst, label) => opts.judgeLaunch(c, inst, label));
+}
+
+// [rc4l] Each map hosted by a server with the scenario's wad and joined by a client of each side playing it, both locked, judged together by judgeHosted(server, client, label): for what a netgame splits between the two, such as what only a client draws.
+export async function compareHosted({ name, wad, maps, sides = [{ name: "vk" }], iwad = FREEDOOM2, port = 7796, gamePort = 10790, judgeHosted }) {
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) for (const side of sides) {
+    const label = `${map} ${side.name} hosted`;
+    const insts = [], conns = [];
+    try {
+      // [rc4l] -port on the command line, since a +port cvar is ignored, and cheats set at launch, since a later change never reaches a joined client.
+      const server = await launchInstance({ port, iwad, map, extraArgs: ["-file", wadPath, "-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0", "+sv_cheats", "1"] });
+      insts.push(server);
+      const sc = await attach(server);
+      conns.push(sc);
+      await cap.waitInLevel(sc, scaled(60000));
+      const client = await launchInstance({ port: port + 1, iwad, extraArgs: ["-file", wadPath, ...(side.webgpu ? ["-webgpu"] : [])], connect: `127.0.0.1:${gamePort}`, cvars: { fua_render_in_background: 1 } });
+      insts.push(client);
+      const cc = await attach(client);
+      conns.push(cc);
+      await cap.waitInLevel(cc, scaled(60000));
+      const want = launchMode({ webgpu: !!side.webgpu });
+      const got = cap.launchModeOf(await cap.exec(cc, cap.RENDERER_PROBE, { quietMs: 300 }));
+      if (got !== want) throw new Error(`side ${side.name} asked for ${describeMode(want)} and the client reports ${got ? describeMode(got) : "no renderer"}`);
+      // [rc4l] A client arrives a spectator, which neither moves nor fires.
+      await cap.exec(cc, "join");
+      await cap.waitTics(cc, 35);
+      const r = await judgeHosted(sc, cc, label);
+      lines.push(r.line);
+      failed += r.failed;
+    } catch (e) {
+      const crashed = insts.find((i) => fs.existsSync(`${i.log}.crash`));
+      lines.push(`FAIL ${label}: ${crashed ? `engine crashed -- ${crashed.log}.crash` : e.message}`);
+      failed++;
+    } finally {
+      for (const c of conns) c.close();
+      for (const i of insts.reverse()) await stopInstance(i);
+    }
+  }
+  return { lines, failed };
 }
 
 // [rc4l] Where the engine put a window pixel (input.windowpoint) against the render pixel under it, failing too on a render size that says the scale never took.
@@ -455,4 +485,4 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 }
 
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
-for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch]) compare.judgedAlone = true;
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch, compareHosted]) compare.judgedAlone = true;

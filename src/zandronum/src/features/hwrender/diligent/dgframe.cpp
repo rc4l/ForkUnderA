@@ -389,7 +389,12 @@ void PresentBackendOnly(bool present)
 	const bool ready = AdvanceLevelScene();
 	const bool world = g_worldViewThisFrame && ready && SceneDrawable();
 	g_worldViewThisFrame = false;
-	if (!present) return;
+	// [rc4l] A window not presented to still drew its camera textures this frame, whose dynamic memory only a finished frame gives back (queue #49).
+	if (!present)
+	{
+		if (auto *ctx = GetContext()) EndUnpresentedFrame(ctx);
+		return;
+	}
 	zx::hwrender::GLFrameDone();
 	g_lastFrameWorld = world;
 	FollowBackendSurface();

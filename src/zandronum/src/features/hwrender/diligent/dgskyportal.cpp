@@ -11,6 +11,8 @@ namespace zx { namespace hwrender {
 
 // [rc4l] ZDoom's other skybox is a place, an ASkyViewpoint whose view of the world is the sky, rendered like a mirror into a picture painted first as the frame's background.
 static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalColor, g_skyPortalDepth;
+// [rc4l] The normals the skybox view's G-buffer writes and its decal pass reads, at its own scale.
+static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalNormal;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPortalPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyPortalSRB;
 static int  g_skyPortalW = 0, g_skyPortalH = 0;
@@ -232,10 +234,12 @@ bool EnsureSkyPortalResources()
 	{
 		g_skyPortalColor.Release();
 		g_skyPortalDepth.Release();
+		g_skyPortalNormal.Release();
 		g_skyPortalSRB.Release();
 		g_skySurfPSO.Release();
 		g_skySurfSRB.Release();
 		if (!CreateViewTextures(w, h, "fua sky portal", g_skyPortalColor, g_skyPortalDepth)) return false;
+		CreateNormalTarget(w, h, "fua sky portal", g_skyPortalNormal);
 		g_skyPortalW = w; g_skyPortalH = h;
 	}
 
@@ -310,11 +314,8 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	BuildMVP(g_mvp);
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
-	ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
-	ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(pdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	BeginPassTargets(ctx, ViewPassTargets(g_skyPortalColor, g_skyPortalDepth, g_skyPortalNormal), clearCol);
 	{
 		Diligent::Viewport vp;
 		vp.TopLeftX = 0; vp.TopLeftY = 0;
@@ -460,6 +461,7 @@ void ReleaseSkyPortal()
 	g_skyPortalPSO.Release();
 	g_skyPortalColor.Release();
 	g_skyPortalDepth.Release();
+	g_skyPortalNormal.Release();
 	g_skyPortalW = g_skyPortalH = 0;
 	g_skyOccluderSRB.Release();
 	g_skyOccluderPSO.Release();

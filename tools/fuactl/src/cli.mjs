@@ -13,7 +13,7 @@ import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
-import { play, quitInstance, defaultPwadStore, resolvePreset, readView } from "./play.mjs";
+import { play, quitInstance, defaultPwadStore, resolvePreset, readView, MODES, describeMode } from "./play.mjs";
 import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
 import { activateEngineWindows, engineWindows, resizeEngineWindow } from "./window.mjs";
@@ -26,7 +26,7 @@ import { png } from "./png.mjs";
 import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
-import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, standaloneOptions, matrixSets, matrixAdjust, webgpuOptions, launchRenderer } from "./template.mjs";
+import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, matrixSets, matrixAdjust, webgpuOptions, launchRenderer } from "./template.mjs";
 import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
@@ -92,9 +92,12 @@ async function captureSpot(c, name, note, file = SPOTS) {
     const v = shot.cvarValueFrom(await cap.exec(c, cv, { quietMs: 300, maxMs: 6000 }).catch(() => ""));
     if (v !== null) renderer[cv] = v;
   }
-  // [rc4l] Whether the launch had GL at all, which no cvar says: "vulkan" for a -vulkan launch.
-  const backend = launchRenderer(await cap.exec(c, "dumprenderer", { quietMs: 300, maxMs: 6000 }).catch(() => ""));
+  // [rc4l] Whether the launch had GL at all, which no cvar says ("vulkan" for none), and the mode it ran, which play --spot and --unpark launch again.
+  const probe = await cap.exec(c, cap.RENDERER_PROBE, { quietMs: 300, maxMs: 6000 }).catch(() => "");
+  const backend = launchRenderer(probe);
   if (backend) renderer.backend = backend;
+  const mode = cap.launchModeOf(probe);
+  if (mode) renderer.mode = mode;
   // [rc4l] The view's shape, since a fault seen only at a square size or a wide FOV does not show in another window (#58).
   const view = await readView(c, cap).catch(() => null);
   const db = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { spots: {} };
@@ -158,7 +161,7 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--play]   launch one supervised bridge instance (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL) (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
@@ -177,7 +180,7 @@ const USAGE = `fuactl <command>
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
   capture --port P [--frames N] [--warmup M]   frametime distribution (p50/p95/p99/max, sim vs render split)
   screen --port P [--token T] [--seconds N] [--orbit DEG] [--period S] [--class WINDOWCLASS] [--pid N]   what reaches the screen of a running instance (Windows): new images shown, refreshes repeated and stalls a second, from the compositor's own frames, with the aim orbiting so every refresh should bring a new image; with the engine's own frames lined up against them, how old each image's content was when it was seen and how much that changed (judder)
-  fps --map M [--iwad W] [--file a.wad,...] [--modes gl,embed,vulkan] [--res WxH] [--rounds N] [--frames N] [--warmup N] [--vsync] [--sample SEC] [--no-shot] [--engine PATH] [--port P] [--cvar k=v] [--label L]   frame rate under GL alone, the backend in the GL launch and the backend alone, each a locked launch of its own, one at a time; notes a median that sits on a display refresh
+  fps --map M [--iwad W] [--file a.wad,...] [--modes gl,beside,vulkan] [--res WxH] [--rounds N] [--frames N] [--warmup N] [--vsync] [--sample SEC] [--no-shot] [--engine PATH] [--port P] [--cvar k=v] [--label L]   frame rate under GL alone, the backend beside GL (beside, or its old name embed) and the backend alone, each a locked launch of its own, one at a time; notes a median that sits on a display refresh
   ticprof --port P [--tics N]          per-tic sim phase split (P_Ticker / thinkers / effects / specials)
   simtrace --port P [--token T] --out FILE [--tics N]   each tic's fingerprint and every damage, kill and spawn for the next N tics (sim.trace), into FILE; +fua_simtrace N FILE on a launch traces from its first tic
   tracediff A B   where two sim traces part: the first tic whose fingerprint differs and the first event that moved; exit 1 when they differ
@@ -191,7 +194,7 @@ const USAGE = `fuactl <command>
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
   walkcheck --port P [--runs N] [--seconds S] [--spot S | --at x,y,z --face yaw,pitch]   the W key held as a player holds it from the spot, N runs of S seconds each traced (fua_viewtrace): exit 1 when any frame stepped back or lurched ahead of the steady speed, a view that rubber-bands
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --no-gl | --webgpu] [--side-by-side] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan live in the window, sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --gl-beside | --side-by-side | --webgpu] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan alone as players run it unless --gl (GL alone), --gl-beside (the backend beside GL, to compare the two; --side-by-side gives it its own window) or --webgpu asks otherwise, or the mode a --spot or --unpark was recorded in; --no-gl is the default spelled out; sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
@@ -200,14 +203,14 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--standalone | --webgpu] [--matrix k=a,b]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); --standalone runs each as players do: its own standalone side, else its vk side with fua_dg_standalone 1, else skipped; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
   ab <cvar> <a> <b> [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1]   Vulkan under each value in ONE paused frame, plus a repeat as the noise floor
   costs [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--frames N] [--rounds N] [--bench N]   what a frame costs at one view of a running instance: frame p50/p99, GPU and submit time, the world passes and phases, the walk's clipping, batches and sprites (the performance scope's step 0)
   abperf "<setting>" "<setting>" ... [--rounds N] [--frames N] [--spot NAME | --at x,y,z --face yaw,pitch]   frame time (p50/p99) under each console setting in turn inside one running session, round by round, each judged against the first within its round (default 3 rounds)
-  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture
+  shot <tag> [--port P] [--spot NAME | --at x,y,z --face yaw,pitch] [--force] [--same-frame]   matched GL/Vulkan pair from a running instance, one camera, sim frozen; --same-frame takes both from one engine frame, for an animated texture; a launch with no GL frame (Vulkan alone, or GL beside at fua_dg_standalone 1) gives Vulkan's alone and says why
   window [--shot gl|vk --out FILE] [--resize WxH [--port P]] [--activate 0|1 [--port P]]   the engine's windows as Windows sees them (minimized, hung, where), with --shot what that window really shows, read from the compositor rather than GL's own buffer, with --resize the instance's game window sized as dragging its corner does, and with --activate the instance told it was alt-tabbed away (0) or back (1), with nothing on the desktop moved
   shoot [--port P] --tag T --at x,y,z --face yaw,pitch [--look x,y,z] [--weapon W] [--map M] [--after TICS]   fire at a junction and capture a GL/Vulkan pair (--look frames a point, --after catches transient effects before they fade)
   sweep [--maps "MAP01 MAP07"] [--port P]   matched pairs across several maps, ranked by how much the renderers disagree
@@ -299,7 +302,9 @@ async function main() {
         // [rc4l] --cvar name=value, repeatable as a comma-separated list. Applied before the map
         // loads, which is the only time some of them take effect (sv_nomonsters being the one that
         // matters for hands-off testing).
-        cvars: shot.parseCvarFlag(flags.cvar),
+        cvars: { ...(flags["gl-beside"] ? { fua_vulkan: 1 } : {}), ...(shot.parseCvarFlag(flags.cvar) || {}) },
+        // [rc4l] Vulkan alone as players run it, unless --gl (GL alone) or --gl-beside (the backend beside GL) asks for GL.
+        gl: !!flags.gl || !!flags["gl-beside"],
       });
       console.log(`launched pid=${inst.pid} port=${inst.port} token=${inst.token}`);
       // Where to look when it dies. The bridge log is the console; the stdio log is how it died.
@@ -392,7 +397,7 @@ async function main() {
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
       // [rc4l] --side S --cvar k=v runs a scenario with one side changed, to show a regression test fails under the behaviour it guards against.
-      const adjust = flags.webgpu ? webgpuOptions : flags.standalone ? standaloneOptions
+      const adjust = flags.webgpu ? webgpuOptions
         : flags.side ? sideAdjust(String(flags.side), shot.parseCvarFlag(flags.cvar) || {}) : undefined;
       console.log(`engine ${resolveEngine()}`);
       let failed = 0, skipped = 0;
@@ -1242,6 +1247,7 @@ async function main() {
       const c = await connectTarget(flags);
       try {
         const out = await shot.shotPair(c, tag, { at, engineBin: engineOf(flags), sameFrame: !!flags["same-frame"] });
+        if (out.glWhy) console.error(`[shot] Vulkan only, no GL half: ${out.glWhy}`);
         console.log(JSON.stringify(out, null, 2));
         if (!out.gl || !out.vk) process.exitCode = 1;
       } finally { c.close(); }
@@ -1277,11 +1283,13 @@ async function main() {
         flags.file = flags.file || (sl.files.length ? sl.files.join(",") : undefined);
       };
       // [rc4l] --spot: the spot's launch, and the player stood there once it is up.
-      let spotAt = null, spotView = null;
+      let spotAt = null, spotView = null, spotMode = null, spotSideBySide = false;
       if (flags.spot) {
         const sl = shot.spotLaunch(SPOTS, String(flags.spot), store);
         takeLaunch(`spot ${flags.spot}`, sl);
         spotView = sl.view;
+        spotMode = sl.mode;
+        spotSideBySide = sl.sideBySide;
         spotAt = shot.cameraFromFlags({ spot: flags.spot }, SPOTS);
       }
       // [rc4l] --unpark: what `quit --park` filed for --port, side by side again if it was.
@@ -1291,10 +1299,15 @@ async function main() {
         const pl = shot.parkedLaunch(park, store);
         takeLaunch("the parked instance", pl);
         spotView = pl.view;
-        flags["side-by-side"] = flags["side-by-side"] || pl.sideBySide;
-        flags["no-gl"] = flags["no-gl"] || pl.noGl;
+        spotMode = pl.mode;
+        spotSideBySide = pl.sideBySide;
         spotAt = pl.at;
       }
+      // [rc4l] The renderers: a flag's, else the spot's or the parked launch's, else Vulkan alone as players run it.
+      const asked = flags.gl ? MODES.gl : flags.webgpu ? MODES.webgpu
+        : flags["gl-beside"] || flags["side-by-side"] ? MODES.beside : flags["no-gl"] ? MODES.vulkan : null;
+      const mode = asked || spotMode || MODES.vulkan;
+      const sideBySide = !!flags["side-by-side"] || (!asked && spotSideBySide);
       const inst = await play({
         port: flags.port ? Number(flags.port) : undefined,
         token: flags.token || undefined,
@@ -1303,7 +1316,7 @@ async function main() {
         ...presetDirs(flags),
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         ...resFlag(flags.res),
-        gl: !!flags.gl, noGl: !!flags["no-gl"] || !!flags.webgpu, webgpu: !!flags.webgpu, sideBySide: !!flags["side-by-side"], rt: !!flags.rt,
+        gl: mode === MODES.gl, glBeside: mode === MODES.beside, webgpu: mode === MODES.webgpu, sideBySide, rt: !!flags.rt,
         monsters: !!flags.monsters, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
         at: spotAt, view: spotView,
@@ -1320,11 +1333,19 @@ async function main() {
       }
       const v = inst.world.view;
       if (v) console.log(`  ${v.ok ? "ok " : "BAD"} view ${v.got.width}x${v.got.height} scale ${v.got.scale} fov ${v.got.fov}${v.ok ? "" : `   (wanted ${v.want.width}x${v.want.height})`}`);
-      console.log(`\n  ready -- the window is showing the ${flags.gl ? "GL" : "VULKAN"} render.`);
+      const m = inst.world.mode;
+      console.log(`  ${m.ok ? "ok " : "BAD"} renderers: ${m.got ? describeMode(m.got, sideBySide) : "none reported"}${m.ok ? "" : `   (wanted ${describeMode(m.want, sideBySide)})`}`);
+      console.log(`\n  ready -- ${describeMode(mode, sideBySide)}.`);
       if (!flags.lock) console.log("  mouse and keyboard work normally.");
-      console.log(`  fua_vulkan 0 / 1 in the console is a live A/B against GL.\n`);
-      console.log(`  PORT=${inst.port} TOKEN=${inst.token}   (also in ${sessionFile})`);
-      console.log(`  capture a pair:  fuactl shot <tag> --port ${inst.port} --token ${inst.token}`);
+      // [rc4l] The comparisons only GL beside the backend has, and how to get them otherwise.
+      if (mode === MODES.beside) {
+        console.log(`  fua_vulkan 0 / 1 in the console is a live A/B against GL.\n`);
+        console.log(`  PORT=${inst.port} TOKEN=${inst.token}   (also in ${sessionFile})`);
+        console.log(`  capture a pair:  fuactl shot <tag> --port ${inst.port} --token ${inst.token}   (GL draws for it at fua_dg_standalone 0)`);
+      } else {
+        console.log(`  PORT=${inst.port} TOKEN=${inst.token}   (also in ${sessionFile})`);
+        if (mode !== MODES.gl) console.log("  for GL beside it, to compare the two: relaunch with --gl-beside");
+      }
       console.log(`\n  ctrl-C here to quit.`);
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
       await new Promise(() => {});

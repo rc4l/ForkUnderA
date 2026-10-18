@@ -7,6 +7,8 @@
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeUploadChunks
 #include "features/telemetry/telemetry.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
+#include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
 
 namespace zx { namespace hwrender {
 
@@ -79,7 +81,12 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	pd.tint[0] = p.tint.r; pd.tint[1] = p.tint.g; pd.tint[2] = p.tint.b; pd.tint[3] = p.tint.strength;
 	pd.tintRange[0] = p.tint.top; pd.tintRange[1] = p.tint.bottom; pd.tintRange[2] = p.tint.glow ? 1.f : 0.f; pd.tintRange[3] = 0.f;
 	pd.scrollU = p.scrollU; pd.scrollV = p.scrollV;
-	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass };
+	// [rc4l] features/decals' surface rule for a level piece, by its base texture and, for a wall, its side's flags as the copy holds them.
+	const FTexture *base = static_cast<const FTexture *>(p.baseTex);
+	const bool wallPiece = p.linkId >= numsubsectors && p.linkId - numsubsectors < numsides;
+	const bool noMarks = inMesh && base != NULL &&
+		zx::decals::SurfaceRefusesMarks(base->id, wallPiece, wallPiece ? sides[p.linkId - numsubsectors].rc.Flags : 0);
+	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass, noMarks };
 	pd.texFlags = (float)zx::hwrender::ComputePieceTexFlags(tex);
 }
 

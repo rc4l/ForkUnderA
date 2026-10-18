@@ -23,13 +23,37 @@ float ComputeStretchedPitch(unsigned viewPitch, float pixelStretch)
 	return (float)(asin(angy / alen) * 180.f / kPi);
 }
 
-unsigned ComputeFrustumAngle(float pitchDeg, float fovDeg, int aspectMultiplier)
+// [rc4l] The widest heading either side, in degrees, of a ray through a corner of the lens's screen once rolled and pitched, or -1 when one points behind the eye.
+static double CornerHeading(const FrustumIn &in)
 {
-	const float tilt = fabsf(pitchDeg);
-	if (tilt > 46.0f) return 0xffffffffu;
-	const double angle = 2.0 + (45.0 + (tilt / 1.9)) * fovDeg * 48.0 / aspectMultiplier / 90.0;
-	const unsigned a1 = ComputeXsRoundToUInt(angle / 180. * 2147483648.0);
-	return a1 >= 0x80000000u ? 0xffffffffu : a1;
+	const double rad = kPi / 180.0;
+	const double ty = tan(in.fovDeg * 0.5 * rad) / in.fovRatio, tx = ty * in.ratio;
+	const double cp = cos(fabs(in.pitchDeg) * rad), sp = sin(fabs(in.pitchDeg) * rad);
+	const double cr = cos(in.rollDeg * rad), sr = sin(in.rollDeg * rad);
+	double widest = 0.0;
+	for (int corner = 0; corner < 4; corner++)
+	{
+		const double x = (corner & 1) ? tx : -tx, y = (corner & 2) ? ty : -ty;
+		const double across = x * cr - y * sr, up = x * sr + y * cr;
+		const double ahead = cp - up * sp;
+		if (ahead <= 0.0) return -1.0;
+		const double heading = atan2(fabs(across), ahead) / rad;
+		if (heading > widest) widest = heading;
+	}
+	return widest;
+}
+
+unsigned ComputeFrustumAngle(const FrustumIn &in)
+{
+	const float tilt = fabsf(in.pitchDeg);
+	if (tilt > 46.0f || in.fovDeg >= 180.0f) return 0xffffffffu;
+	const double corner = CornerHeading(in);
+	if (corner < 0.0) return 0xffffffffu;
+	// [rc4l] GL's estimate stays the least the angle may be, and the corners plus its 2 degree margin cover the 4:3 lens pitched past about 30 degrees it fell short on (queue #58).
+	const double estimate = 2.0 + (45.0 + (tilt / 1.9)) * in.fovDeg * 48.0 / in.aspectMultiplier / 90.0;
+	const double angle = estimate > corner + 2.0 ? estimate : corner + 2.0;
+	const double bams = angle / 180. * 2147483648.0;
+	return bams >= 2147483647.5 ? 0xffffffffu : ComputeXsRoundToUInt(bams);
 }
 
 float ComputeSkyScroll(long frameMS, float skySpeed)

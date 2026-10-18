@@ -86,6 +86,7 @@
 #include "v_video.h"
 #include "intermission/intermission.h"
 #include "f_wipe.h"
+#include "features/wipe/wipetrace.h"   // [rc4l] NoteWipeStarted
 #include "m_argv.h"
 #include "m_misc.h"
 #include "menu/menu.h"
@@ -1134,6 +1135,7 @@ void D_Display ()
 			wipe = screen->WipeStartScreen (wipe_Melt);
 			break;
 		}
+		if (wipe) zx::wipe::NoteWipeStarted ();   // [rc4l] features/wipe's trace counts every wipe begun, presented or not
 		wipegamestate = gamestate;
 	}
 	else

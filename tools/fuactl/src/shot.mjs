@@ -9,7 +9,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
-import { exec, waitTics, sleep } from "./capture.mjs";
+import { exec, waitTics, sleep, rendererReport } from "./capture.mjs";
 import { engineProcessCount, slashed } from "./launch.mjs";
 import { decodePNG, isBlankImage, boxMean } from "./pngcore.mjs";
 
@@ -50,7 +50,21 @@ export function parseCvarFlag(text) {
   }));
 }
 
-// [rc4l] The map, wads and view a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, the names it could not find, and its view or null.
+// [rc4l] Whether a renderer record's backend window was its own, beside GL's rather than embedded in it.
+const unembedded = (renderer) => ["false", "0"].includes(String((renderer && renderer.fua_dg_embed) ?? ""));
+
+// [rc4l] The mode a spot's launch ran (play.mjs's MODES) from its renderer record: the mode it saved, else no GL as Vulkan alone, else GL beside the backend while its window was its own or fua_vulkan was on, else GL alone; null with no record.
+export function spotMode(renderer) {
+  if (!renderer) return null;
+  if (renderer.mode) return renderer.mode;
+  if (renderer.backend === "vulkan") return "vulkan";
+  if (unembedded(renderer)) return "beside";
+  const vulkan = renderer.fua_vulkan === undefined ? null : String(renderer.fua_vulkan);
+  if (vulkan === null) return null;
+  return vulkan === "true" || vulkan === "1" ? "beside" : "gl";
+}
+
+// [rc4l] The map, wads, view and mode a spot was recorded with, its wads found by name (any case) in storeDir: files in load order, the names it could not find, its view or null, its mode or null, and whether its backend window was its own.
 export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(storeDir) ? fs.readdirSync(storeDir) : []) {
   const db = JSON.parse(fs.readFileSync(spotsPath, "utf8"));
   const s = db.spots[name];
@@ -62,7 +76,8 @@ export function spotLaunch(spotsPath, name, storeDir, listing = fs.existsSync(st
     const hit = byName.get(wad.toLowerCase());
     if (hit) files.push(path.join(storeDir, hit)); else missing.push(wad);
   }
-  return { map: s.map, files, missing, view: s.view || null };
+  const mode = spotMode(s.renderer);
+  return { map: s.map, files, missing, view: s.view || null, mode, sideBySide: mode === "beside" && unembedded(s.renderer) };
 }
 
 // [rc4l] Remove the session files that name port, since a launch there is about to mint a new token and `ready` would wait out its timeout on the old one; returns the files removed.
@@ -103,12 +118,9 @@ export async function awaitLaunch(sessionFile, port, { timeoutMs = 120000, pollM
 export const PARKED = "parked";
 export function parkFileFor(sessionFile, port) { return `${sessionFileFor(sessionFile, port)}.park`; }
 
-// [rc4l] How `play --unpark` relaunches a parked instance: spotLaunch's map and wads, its camera, whether its Vulkan window was un-embedded, and whether it had no GL.
+// [rc4l] How `play --unpark` relaunches a parked instance: spotLaunch's map, wads, view and mode, and its camera.
 export function parkedLaunch(parkPath, storeDir, listing) {
-  const s = JSON.parse(fs.readFileSync(parkPath, "utf8")).spots[PARKED];
-  const embed = String((s && s.renderer && s.renderer.fua_dg_embed) ?? "");
-  return { ...spotLaunch(parkPath, PARKED, storeDir, listing), at: readSpot(parkPath, PARKED),
-    sideBySide: embed === "false" || embed === "0", noGl: !!(s && s.renderer && s.renderer.backend === "vulkan") };
+  return { ...spotLaunch(parkPath, PARKED, storeDir, listing), at: readSpot(parkPath, PARKED) };
 }
 
 // [rc4l] Which instance a command means: --port and --token, else the last play session's.
@@ -222,11 +234,20 @@ export function atFromCamera(cam) { return { x: cam.x, y: cam.y, z: cam.z, angle
 // [rc4l] The console line that captures both renderers in one engine frame, for a picture that changes between two (an ANIMDEFS texture runs on the clock, paused or not).
 export function sameFrameCommand(tag, vkFile) { return `screenshot sweep/${tag}_gl; fua_diligent_shot ${vkFile}`; }
 
+// [rc4l] Throws the reason a launch has no GL frame to read, so a GL capture refuses instead of reading a dead buffer.
+export async function requireGlFrame(c) {
+  const frame = (await rendererReport(c)).gl;
+  if (!frame.ok) throw new Error(frame.why);
+}
+
 // [rc4l] Both renderers' frames into outDir as <tag>_gl.png and <tag>_vk.png, the sim already paused; sameFrame takes them from one engine frame.
 async function capturePausedPair(c, tag, { engineBin, outDir, sameFrame = false }) {
   const gl = path.posix.join(outDir, `${tag}_gl.png`);
   const vk = path.posix.join(outDir, `${tag}_vk.png`);
   for (const f of [gl, vk]) { try { fs.rmSync(f, { force: true }); } catch { /* fine */ } }
+  // [rc4l] A launch with no GL frame gives its Vulkan half and says why there is no GL one, rather than reading a dead buffer as GL.
+  const frame = (await rendererReport(c)).gl;
+  if (!frame.ok) return { gl: null, vk: await captureVulkan(c, vk), glWhy: frame.why };
   if (sameFrame) {
     await exec(c, sameFrameCommand(tag, vk));
     const gotGl = await waitForFile(gl);
@@ -296,6 +317,7 @@ export async function captureSteps(c, { tag, hold, count = 8, engineBin, outDir 
 
 // [rc4l] count captures from one renderer as fast as it gives them, sim RUNNING, each with its time and box mean: an animation's rate, or a light a pause would hide.
 export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 1], engineBin, outDir = null, tag = "burst" }) {
+  if (side === "gl") await requireGlFrame(c);
   outDir = outDir || sweepDirFor(engineBin);
   fs.mkdirSync(outDir, { recursive: true });
   await c.rpc("sim.resume", {}).catch(() => {});
@@ -313,6 +335,7 @@ export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 
 
 // [rc4l] At `at` with the sim RUNNING, a capture after each step in turn, once its commands have run and its waitMs passed: Vulkan's, and GL's too when gl is set, by the step's name; a command is a console line, a number of ms to wait, or a camera ({x, y, z, angle, pitch}) to stand at.
 export async function captureSequence(c, { at = null, engineBin, outDir, tag = "sequence", steps, gl = false }) {
+  if (gl) await requireGlFrame(c);
   outDir = outDir || sweepDirFor(engineBin);
   fs.mkdirSync(outDir, { recursive: true });
   if (at) await moveTo(c, at);

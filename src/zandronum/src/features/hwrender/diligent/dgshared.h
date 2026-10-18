@@ -125,6 +125,13 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso, 
 Diligent::ITextureView *SceneDepthSRV();
 Diligent::ITextureView *SceneNormalSRV();
 Diligent::ITextureView *SceneDepthDSV();
+// [rc4l] The targets of the pass being drawn (BeginPassTargets): its colour and depth, the depth and normals its decal pass reads (null for a view without them), and its size, the frame's before any pass set one.
+Diligent::ITextureView *PassColorRTV();
+Diligent::ITextureView *PassDepthDSV();
+Diligent::ITextureView *PassDepthSRV();
+Diligent::ITextureView *PassNormalSRV();
+int PassWidth();
+int PassHeight();
 
 // The scene's own constant buffer -- uMVP and friends -- and this frame's view-projection, which a
 // pass needs in order to invert it and turn a depth sample back into a world position.

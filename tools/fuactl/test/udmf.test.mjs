@@ -69,6 +69,34 @@ test("a block's lines take their own properties per edge", () => {
   assert.match(m.textmap(), /alpha = 0\.5;/);
 });
 
+test("a shape is a two-sided sector of any outline inside another, on every line's front", () => {
+  const m = new UdmfMap();
+  const outer = m.room(0, 0, 256, 256, { heightfloor: 0 });
+  const inner = m.shape([[64, 64], [96, 192], [192, 160]], { heightfloor: 0 }, outer);
+  const lines = m.lines.slice(4);
+  assert.equal(lines.length, 3);
+  for (const l of lines) {
+    const a = m.vertices[l.v1], b = m.vertices[l.v2];
+    const cross = (b.x - a.x) * (139 - a.y) - (b.y - a.y) * (117 - a.x);
+    assert.ok(cross < 0, `shape line ${a.x},${a.y} -> ${b.x},${b.y} faces away from the shape`);
+    assert.equal(m.sides[l.sidefront].sector, inner);
+    assert.equal(m.sides[l.sideback].sector, outer);
+  }
+});
+
+test("the frustum corner's patch lies past GL's estimate and inside what the corner sees, and its verdict wants the patch's colour", async () => {
+  const { buildFrustumCornerWad, PATCH, judgeFrustumCorner } = await import("../scenarios/frustumcorner.mjs");
+  assert.ok(buildFrustumCornerWad().length > 0);
+  for (const [x, y] of PATCH) {
+    const heading = Math.atan2(x, y) * 180 / Math.PI;
+    assert.ok(heading > 71 && heading < 90, `patch point ${x},${y} at ${heading.toFixed(1)} degrees`);
+  }
+  const patch = { mean: 29, r: 0, g: 0, b: 86 };
+  assert.equal(judgeFrustumCorner("x", { r: 2, g: 3, b: 80 }, patch).failed, 0);
+  assert.match(judgeFrustumCorner("x", { r: 55, g: 55, b: 55 }, patch).line, /^FAIL x: the walk cut the corner/);
+  assert.match(judgeFrustumCorner("x", patch, { mean: 3, r: 3, g: 3, b: 3 }).line, /^FAIL x: the patch is not drawn/);
+});
+
 test("a self-referencing square puts both sides of every line in its own new sector", () => {
   const m = new UdmfMap();
   m.room(0, 0, 256, 256, { heightfloor: 0 });
@@ -424,4 +452,30 @@ test("a pk3 that is not one, or whose file was changed, is refused", () => {
   const buf = pk3([{ name: "a.txt", data: "abc" }]);
   buf[30 + "a.txt".length] ^= 1;
   assert.throws(() => readPk3(buf), /a\.txt: CRC mismatch/);
+});
+
+test("the wipe scenario reads fua_wipe_report and fails a wipe never presented, a cut, a wrong start or end, and the old map before the second", async () => {
+  const { buildWipeWad, parseWipeReport, wipeFault, judgeWipes } = await import("../scenarios/wipe.mjs");
+  assert.ok(buildWipeWad().length > 0);
+  assert.equal(parseWipeReport("Unknown command"), null);
+  const melt = (span) => ({ frames: 10, span, sinceLast: -1, toBefore: [1, 10, 20, 30, 40, 50, 60, 70, 80, 90], toAfter: [90, 80, 70, 60, 50, 40, 30, 20, 10, 1] });
+  const text = "wipes started 2, presented 2\nwipe 1: 3 frames, before to after 50.00, before to the last wipe's after -1.00\n  frame 1: 2.00 from before, 48.00 from after\n  frame 2: 25.00 from before, 25.00 from after\n"
+    + "  frame 3: 49.00 from before, 1.00 from after\nwipe 2: 0 frames, before to after 40.00, before to the last wipe's after 3.50\n";
+  const r = parseWipeReport(text);
+  assert.deepEqual([r.started, r.presented, r.wipes.length], [2, 2, 2]);
+  assert.deepEqual(r.wipes[0], { frames: 3, span: 50, sinceLast: -1, toBefore: [2, 25, 49], toAfter: [48, 25, 1] });
+  assert.equal(r.wipes[1].sinceLast, 3.5);
+  assert.equal(wipeFault(melt(100)), null);
+  assert.match(wipeFault({ ...melt(100), frames: 3 }), /3 frames presented/);
+  assert.match(wipeFault(melt(2)), /two ends look alike/);
+  assert.match(wipeFault({ ...melt(100), toBefore: [60, ...melt(100).toBefore.slice(1)] }), /did not start there/);
+  assert.match(wipeFault({ ...melt(100), toAfter: [...melt(100).toAfter.slice(0, 9), 60] }), /did not end there/);
+  assert.match(wipeFault({ ...melt(100), toBefore: [1, 1, 1, 1, 1, 99, 99, 99, 99, 99], toAfter: [99, 99, 99, 99, 99, 1, 1, 1, 1, 1] }), /cut rather than melted/);
+  const good = { started: 2, presented: 2, wipes: [melt(100), { ...melt(80), sinceLast: 10 }] };
+  assert.equal(judgeWipes("x", good).failed, 0);
+  assert.match(judgeWipes("x", good).line, /^PASS x: wipe 1 10 frames, wipe 2 10 frames$/);
+  assert.match(judgeWipes("x", null).line, /no fua_wipe_report answer/);
+  assert.match(judgeWipes("x", { started: 2, presented: 0, wipes: [] }).line, /2 of 2 wipes never reached the screen/);
+  assert.match(judgeWipes("x", { started: 1, presented: 1, wipes: [melt(100)] }).line, /1 wipes began/);
+  assert.match(judgeWipes("x", { ...good, wipes: [melt(100), { ...melt(80), sinceLast: 70 }] }).line, /the old map showed through/);
 });

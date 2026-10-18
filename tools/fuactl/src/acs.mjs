@@ -5,31 +5,44 @@ import { Buffer } from "node:buffer";
 export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, ASSIGNMAPVAR: 26, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
-  GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266 };
+  GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
+  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SetCVar: 53, PlaySound: 61, CheckFlag: 75 };
+export const ACSF = { SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75 };
 
 // [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
 export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
+  return acsScripts([{ code, open, number }], strings);
+}
+
+// [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings.
+export function acsScripts(scripts, strings = []) {
+  const code = scripts.flatMap((s) => s.code);
   const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
   const strStart = 8 + 4 * code.length;
   const strLen = strBytes.reduce((n, b) => n + b.length, 0);
   const dirOffset = strStart + Math.ceil(strLen / 4) * 4;
-  const out = Buffer.alloc(dirOffset + 4 + 12 + 4 + 4 * strings.length);
+  const out = Buffer.alloc(dirOffset + 4 + 12 * scripts.length + 4 + 4 * strings.length);
   out.write("ACS\0", 0, "latin1");
   out.writeInt32LE(dirOffset, 4);
   code.forEach((w, i) => out.writeInt32LE(w, 8 + 4 * i));
   const offsets = [];
   let at = strStart;
   for (const b of strBytes) { b.copy(out, at); offsets.push(at); at += b.length; }
-  // [rc4l] The directory: one script, its type in the thousands (1001 is script 1 of type OPEN), then the string table after it.
-  out.writeInt32LE(1, dirOffset);
-  out.writeInt32LE((open ? 1000 : 0) + number, dirOffset + 4);
-  out.writeInt32LE(8, dirOffset + 8);
-  out.writeInt32LE(0, dirOffset + 12);
-  out.writeInt32LE(strings.length, dirOffset + 16);
-  offsets.forEach((o, i) => out.writeInt32LE(o, dirOffset + 20 + 4 * i));
+  // [rc4l] The directory: each script, its type in the thousands (1001 is script 1 of type OPEN) and where its code starts, then the string table after it.
+  out.writeInt32LE(scripts.length, dirOffset);
+  let address = 8;
+  scripts.forEach((s, i) => {
+    const entry = dirOffset + 4 + 12 * i;
+    out.writeInt32LE((s.open ?? true ? 1000 : 0) + (s.number ?? 1), entry);
+    out.writeInt32LE(address, entry + 4);
+    out.writeInt32LE(0, entry + 8);
+    address += 4 * s.code.length;
+  });
+  const table = dirOffset + 4 + 12 * scripts.length;
+  out.writeInt32LE(strings.length, table);
+  offsets.forEach((o, i) => out.writeInt32LE(o, table + 4 + 4 * i));
   return out;
 }
 

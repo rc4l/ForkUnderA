@@ -80,6 +80,7 @@
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
 #include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
 #include "features/telemetry/telemetry.h"
+#include "features/decals/decals.h"   // [rc4l] MarkSpray
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
@@ -2368,12 +2369,7 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 				vx, vy, vz, 172*FRACUNIT, 0, ML_BLOCKEVERYTHING, players[player].mo,
 				trace, TRACE_NoSky))
 			{
-				if (trace.HitType == TRACE_HitWall)
-				{
-					DImpactDecal::StaticCreate (s,
-						trace.X, trace.Y, trace.Z,
-						trace.Line->sidedef[trace.Side], NULL);
-				}
+				zx::decals::MarkSpray (s, trace);
 			}
 		}
 		break;
