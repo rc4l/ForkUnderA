@@ -63,6 +63,10 @@ jobs:
           # [rc4l] Now and then, each running engine's main thread in full and then every thread, so a hang names where it waits.
           ( while sleep 240; do ps -eo pid,etime,stat,args | grep -i '[f]orkundera'; for p in $(pgrep -f '[f]orkundera'); do echo "== $(date -u +%T) stacks of $p"; sudo gdb -p "$p" -batch -ex "thread apply 1 bt 80" -ex "thread apply all bt 12" 2>/dev/null | head -900; done; done ) > "$RUNNER_TEMP/stacks.txt" 2>&1 &
           cd tools/fuactl
+          # [rc4l] The fixtures folder as fuactl writes it, then every 5 s while the recording runs, since one run's engine found neither its wad nor the folder.
+          node --input-type=module -e 'import { FIXTURES, fixtureDir, fixtureFiles } from "./src/fixtures.mjs"; const f = FIXTURES.find((x) => x.name === "gtfix"); console.log(fixtureFiles(f, fixtureDir(), null).files);'
+          ls -la "$HOME/.forkundera/fixtures"
+          ( while sleep 5; do echo "== $(date -u +%T)"; ls -la "$HOME/.forkundera/fixtures" 2>&1; done ) > "$RUNNER_TEMP/fixtures.txt" 2>&1 &
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture record gtfix
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=0 --out "$RUNNER_TEMP/inline.trace"
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=1,fua_gamethread_stress=200 --out "$RUNNER_TEMP/thread.trace"
@@ -77,6 +81,7 @@ jobs:
           ls -la "$HOME/.forkundera" "$HOME/.forkundera/fixtures" 2>&1 || true
           for f in /tmp/fuactl-*/engine-*.log; do echo "== head $f"; head -60 "$f"; done
           for f in /tmp/fuactl-*/engine-*.log*; do echo "== $f"; tail -80 "$f"; done
+          cat "$RUNNER_TEMP/fixtures.txt" 2>/dev/null | head -400 || true
           cat "$RUNNER_TEMP/stacks.txt" 2>/dev/null | head -2000 || true
 
       # [rc4l] Every report whole, and the hang stacks, since the job prints only each report file's head.
