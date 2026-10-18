@@ -882,7 +882,7 @@ void R_SetupFrameFromRecord (int record, bool interpolateLive)
 	// [BB] consoleplayer should be able to toggle the chase cam.
 	// [AK] Don't use the chase cam if they're in free spectate mode.
 	if (player != NULL && gamestate != GS_TITLELEVEL &&
-		(CLIENTDEMO_IsInFreeSpectateMode() == false) &&
+		!zx::gamecopy::Level().freeSpectate &&
 		(cam->playerIndex != consoleplayer || me == NULL || me->bSpectating == false) &&
 		((me != NULL && (me->cheats & CF_CHASECAM)) || (r_deathcamera && cam->health <= 0)) &&
 		source != NULL && source->chased)

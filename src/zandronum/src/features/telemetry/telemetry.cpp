@@ -107,6 +107,7 @@ struct Registry
 	std::string watchPrefix;
 	std::string crashSummary = "telemetry: no frames yet\n";
 	void (*offer)(const char *) = nullptr;
+	bool (*gameReadable)() = nullptr;
 	void (*summaryListener)(const char *) = nullptr;
 	OsReadings os;
 	// [rc4l] The OS probe runs at most a few times a second however many gauges ask.
@@ -516,6 +517,16 @@ void FrameMark()
 void SetFileOfferer(void (*offer)(const char *path))
 {
 	R().offer = offer;
+}
+
+void SetGameReadable(bool (*readable)())
+{
+	R().gameReadable = readable;
+}
+
+bool GameReadable()
+{
+	return R().gameReadable == nullptr || R().gameReadable();
 }
 
 std::string StatsJson(const char *prefix)

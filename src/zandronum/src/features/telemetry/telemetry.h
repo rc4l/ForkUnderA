@@ -88,6 +88,10 @@ void NameThisThread(const char *name);
 // [rc4l] Who hands a file the registry wrote to the player, which a browser's host does by downloading it; NULL prints its path.
 void SetFileOfferer(void (*offer)(const char *path));
 
+// [rc4l] Whether the game's own state may be read now, which a gauge counting thinkers asks; the handoff installs it, since a tic in flight owns that state, and none installed means always.
+void SetGameReadable(bool (*readable)());
+bool GameReadable();
+
 // [rc4l] The counters whose names start with prefix as fua_stats json prints them, for the bridge's perf.counters.
 std::string StatsJson(const char *prefix);
 

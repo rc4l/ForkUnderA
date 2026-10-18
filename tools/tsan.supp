@@ -28,3 +28,6 @@ mutex:libXrandr.so
 called_from_lib:libdbus-1.so
 deadlock:libdbus-1.so
 mutex:libgcc_s.so
+mutex:libXi.so
+# [rc4l] Diligent's device, destroyed at shutdown after the threads that locked its queues.
+mutex:VulkanUtilities::LogicalDevice::~LogicalDevice

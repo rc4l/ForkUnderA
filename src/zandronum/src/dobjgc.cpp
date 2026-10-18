@@ -138,7 +138,7 @@ extern DThinker *NextToThink;
 
 namespace GC
 {
-size_t AllocBytes;
+std::atomic<size_t> AllocBytes;
 size_t Threshold;
 size_t Estimate;
 DObject *Gray;

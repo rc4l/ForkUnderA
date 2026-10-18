@@ -90,7 +90,7 @@ Copied by `features/gamecopy/fields.h`:
 - decal: `LeftDistance`, `Z`, `ScaleX`, `ScaleY`, `Alpha`, `AlphaColor`, `Translation`, `PicNum`, `RenderFlags`, `RenderStyle`, `Sector`
 - flatdecal: `ContactX`, `ContactY`, `ContactZ`, `Normal`, `Travel`, `AnchorSector`, `AnchorPlane`, `AnchorOffset`
 - level: `time`, `maptime`, `flags`, `flags2`, `skyspeed1`, `skyspeed2`, `fadeto`, `outsidefog`
-- level, worked out by the fill: `sky1`, `sky2`, `endLevelDelay`
+- level, worked out by the fill: `sky1`, `sky2`, `endLevelDelay`, `freeSpectate`
 - line: `flags`, `special`, `Alpha`, `args`
 - player: `viewz`, `playerstate`, `cheats`, `bSpectating`, `extralight`, `fixedcolormap`, `fixedlightlevel`, `DesiredFOV`, `FOV`, `centering`, `MinPitch`, `MaxPitch`, `timefreezer`, `BlendR`, `BlendG`, `BlendB`, `BlendA`
 - player, worked out by the fill: `who`, `number`, `mo`, `camera`, `lightPower`, `hasWeapon`, `weaponFOVScale`, `weaponType`, `weaponYAdjust`, `hudModel`, `bobIn`, `layers`, `screenBlend`

@@ -61,7 +61,12 @@ void GameThreadMain()
 
 void StartOnGameThread(void (*work)())
 {
-	if (g_thread == nullptr) g_thread = new std::thread(GameThreadMain);
+	if (g_thread == nullptr)
+	{
+		// [rc4l] Telemetry's gauges leave the game alone while this thread runs a tic.
+		zx::telemetry::SetGameReadable([] { return !TicInFlight(); });
+		g_thread = new std::thread(GameThreadMain);
+	}
 	{
 		std::lock_guard<std::mutex> hold(g_mutex);
 		g_done.store(false, std::memory_order_relaxed);

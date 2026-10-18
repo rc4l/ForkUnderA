@@ -38,6 +38,7 @@
 #include "features/jobs/jobs.h"   // [rc4l] the change scans split across the pool
 #include "g_level.h"
 #include "g_game.h"   // [rc4l] GAME_GetEndLevelDelay
+#include "cl_demo.h"   // [rc4l] CLIENTDEMO_IsInFreeSpectateMode
 #include "p_local.h"
 #include "po_man.h"
 #include "r_defs.h"
@@ -604,6 +605,7 @@ void TakeLevel(LevelRecord &out)
 	out.sky1 = sky1texture;
 	out.sky2 = sky2texture;
 	out.endLevelDelay = GAME_GetEndLevelDelay () != 0;
+	out.freeSpectate = CLIENTDEMO_IsInFreeSpectateMode ();
 }
 
 const char *LevelDiffers(const LevelRecord &a, const LevelRecord &b)

@@ -17,7 +17,7 @@ One registry every feature reports its performance through. Counters are named `
     - `fua_hitches [n]`: the last slow frames.
     - `fua_memsnap [name]` and `fua_memdiff [a] [b]`: every gauge and breakdown kept under a name, and what changed between two snapshots or between one and now.
     - `fua_soak begin | mark | verdict [warmup] [json] [-prefix ...]`: a mark after each repetition of an action, and whether any count of bytes, objects, handles or threads kept growing past the warm-up (`ComputeSoakVerdict`). A counter registered with `CounterSpec::soaked` false, such as a peak or the heaps' committed bytes, which settle rather than leak, is not judged, and neither is a reading under a `-prefix`. The JSON carries each growth's line and the whole report.
-  - Output: `SetFileOfferer` hands a written file to the player, which a browser does as a download. `SetSummaryListener` hears the last minute's frame times and memory each second, for a crash report.
+  - Output: `SetFileOfferer` hands a written file to the player, which a browser does as a download. `SetSummaryListener` hears the last minute's frame times and memory each second, for a crash report. `SetGameReadable`, which the handoff installs, says when the game's own state may be read; the census's thinker counts keep their last value while a tic is in flight.
 - `allocwatch.cpp` replaces the global `operator new`/`delete` (still `malloc` and `free` underneath):
   - It counts the allocations live and made each frame.
   - `fua_allocsites start | report [n] | stop` records each new allocation's call stack from then on. A report lists the stacks still holding the most, named through the platform's symbols.
