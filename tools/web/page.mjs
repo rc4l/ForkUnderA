@@ -24,10 +24,12 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) 
       ${HEAR_CONSOLE}
       const started = async (from, title) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith(title)); t++) ${pause(100)} };
       const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
+      // [rc4l] A mark asked for during a wipe is taken once it ends, so each waits for its line.
+      const marked = async (n) => { for (let t = 0; t < 1200 && !said.some((l) => l.trim() === 'telemetry: soak mark ' + n); t++) ${pause(100)} };
       const steps = ${JSON.stringify(soakSteps(action, map))};
       // [rc4l] The page's WebGPU objects by label at the start and the end, so a failing soak shows which ones it kept.
       const held = (when) => console.log('soak gpu ' + when + ': ' + (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText().replace(/\\n/g, '; ') : 'no ledger'));
-      // [rc4l] And by label as numbers, taken once the warm-up is over and again at the end, so the verdict names what grew.
+      // [rc4l] And by label as numbers, taken at the first mark the verdict judges and again at the end, so the verdict names what grew.
       const ledger = () => { const m = {}; for (const l of (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText() : '').split('\\n')) { const [tag, b] = l.split('\\t'); if (b !== undefined) m[tag || '(unnamed)'] = Number(b); } return m; };
       let base = ledger();
       Module.fuaCommand('fua_soak begin');
@@ -44,7 +46,8 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) 
         ${pause(settleMs)}
         await collect();
         Module.fuaCommand('fua_soak mark');
-        if (i === ${warmup} - 1) base = ledger();
+        await marked(i + 1);
+        if (i === ${warmup}) base = ledger();
       }
       held('end');
       const end = ledger();

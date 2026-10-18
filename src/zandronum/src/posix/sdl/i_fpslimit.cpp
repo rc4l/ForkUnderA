@@ -45,13 +45,7 @@
 EXTERN_CVAR(Int, vid_maxfps);
 
 // [rc4l] A ThreadSanitizer build cannot follow the thread glibc starts for a SIGEV_THREAD timer, whose first malloc crashes, so it runs uncapped.
-#if defined(__SANITIZE_THREAD__)
-#define ZX_THREAD_SANITIZER 1
-#elif defined(__has_feature)
-#if __has_feature(thread_sanitizer)
-#define ZX_THREAD_SANITIZER 1
-#endif
-#endif
+#include "features/sanitizer/sanitizer.h"
 
 #if !defined(__APPLE__) && !defined(ZX_THREAD_SANITIZER)
 Semaphore FPSLimitSemaphore;

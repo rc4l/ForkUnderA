@@ -982,7 +982,8 @@ CUSTOM_CVAR(Int, r_fakecontrast, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 //==========================================================================
 
 // [rc4l] A side's light from its flags and light, live or its render copy's, and its line's slope.
-static int SideLightLevel (int Flags, int Light, const line_t *linedef, bool foggy, int baselight, bool noabsolute, int *pfakecontrast)
+// [rc4l] The light a side shows, its fake contrast from the line's direction (dx, dy), which a polyobject turning changes.
+static int SideLightLevel (int Flags, int Light, fixed_t dx, fixed_t dy, bool foggy, int baselight, bool noabsolute, int *pfakecontrast)
 {
 	if (!noabsolute && (Flags & WALLF_ABSLIGHTING))
 	{
@@ -1000,19 +1001,19 @@ static int SideLightLevel (int Flags, int Light, const line_t *linedef, bool fog
 		{
 			int rel;
 			if (((level.flags2 & LEVEL2_SMOOTHLIGHTING) || (Flags & WALLF_SMOOTHLIGHTING) || r_fakecontrast == 2) &&
-				linedef->dx != 0)
+				dx != 0)
 			{
 				rel = xs_RoundToInt // OMG LEE KILLOUGH LIVES! :/
 					(
 						level.WallHorizLight
-						+ fabs(atan(double(linedef->dy) / (double)(linedef->dx)) / 1.57079)
+						+ fabs(atan(double(dy) / (double)(dx)) / 1.57079)
 						* (level.WallVertLight - level.WallHorizLight)
 					);
 			}
 			else
 			{
-				rel = linedef->dx == 0 ? level.WallVertLight : 
-					  linedef->dy == 0 ? level.WallHorizLight : 0;
+				rel = dx == 0 ? level.WallVertLight : 
+					  dy == 0 ? level.WallHorizLight : 0;
 			}
 			if (pfakecontrast != NULL)
 			{
@@ -1033,11 +1034,12 @@ static int SideLightLevel (int Flags, int Light, const line_t *linedef, bool fog
 
 int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
 {
-	return SideLightLevel (Flags, Light, linedef, foggy, baselight, noabsolute, pfakecontrast);
+	return SideLightLevel (Flags, Light, linedef->dx, linedef->dy, foggy, baselight, noabsolute, pfakecontrast);
 }
 
 int side_t::GetRcLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
 {
-	return SideLightLevel (rc.Flags, rc.Light, linedef, foggy, baselight, noabsolute, pfakecontrast);
+	// [rc4l] The direction from the copy's ends, which a polyobject's turn moves between tics and its live line a tic in flight is changing.
+	return SideLightLevel (rc.Flags, rc.Light, linedef->v2->rc.x - linedef->v1->rc.x, linedef->v2->rc.y - linedef->v1->rc.y, foggy, baselight, noabsolute, pfakecontrast);
 }
 

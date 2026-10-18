@@ -104,6 +104,8 @@ struct Registry
 	std::map<std::string, std::vector<Reading>> snaps;
 	std::vector<std::vector<Reading>> soakMarks;
 	bool soaking = false;   // [rc4l] from fua_soak begin to its verdict, while the heaps are walked
+	bool markWaiting = false;   // [rc4l] a soak mark asked for while the engine was not ready for one
+	bool (*soakReady)() = nullptr;
 	std::string watchPrefix;
 	std::string crashSummary = "telemetry: no frames yet\n";
 	void (*offer)(const char *) = nullptr;
@@ -352,6 +354,20 @@ void ReadEverythingNow()
 		if (r.slots[i].kind == CounterKind::Gauge && r.slots[i].read != nullptr) ReadGauge(r.slots[i]);
 }
 
+bool SoakReady(const Registry &r)
+{
+	return r.soakReady == nullptr || r.soakReady();
+}
+
+// [rc4l] A soak mark: every gauge read now, kept, and its number printed, which a harness waits for.
+void TakeSoakMark(Registry &r)
+{
+	r.markWaiting = false;
+	ReadEverythingNow();
+	r.soakMarks.push_back(Snapshot(true));
+	Printf("telemetry: soak mark %d\n", (int)r.soakMarks.size());
+}
+
 double OsPrivate() { return Os().privateBytes; }
 double OsResident() { return Os().residentBytes; }
 double OsPeak() { return Os().peakBytes; }
@@ -512,11 +528,17 @@ void FrameMark()
 	}
 	r.frameIndex++;
 	r.lastMarkNs = now;
+	if (r.markWaiting && SoakReady(r)) TakeSoakMark(r);
 }
 
 void SetFileOfferer(void (*offer)(const char *path))
 {
 	R().offer = offer;
+}
+
+void SetSoakReady(bool (*ready)())
+{
+	R().soakReady = ready;
 }
 
 void SetGameReadable(bool (*readable)())
@@ -628,8 +650,9 @@ CCMD(fua_soak)
 {
 	Registry &r = R();
 	const std::string what = argv.argc() > 1 ? argv[1] : "";
-	if (what == "begin") { r.soakMarks.clear(); r.soaking = true; Printf("telemetry: soak begun\n"); return; }
-	if (what == "mark") { ReadEverythingNow(); r.soakMarks.push_back(Snapshot(true)); Printf("telemetry: soak mark %d\n", (int)r.soakMarks.size()); return; }
+	if (what == "begin") { r.soakMarks.clear(); r.soaking = true; r.markWaiting = false; Printf("telemetry: soak begun\n"); return; }
+	if (what == "mark" && !SoakReady(r)) { r.markWaiting = true; Printf("telemetry: soak mark %d waits until the engine is ready for it\n", (int)r.soakMarks.size() + 1); return; }
+	if (what == "mark") { TakeSoakMark(r); return; }
 	if (what != "verdict") { Printf("usage: fua_soak begin | mark | verdict [warmup] [json] [-prefix ...]\n"); return; }
 	std::vector<std::string> args;
 	for (int i = 2; i < argv.argc(); i++) args.push_back(argv[i]);

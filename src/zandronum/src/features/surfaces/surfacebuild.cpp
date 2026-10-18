@@ -406,8 +406,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		const float bx = FIXED2FLOAT(lv2->rc.x), by = FIXED2FLOAT(lv2->rc.y);
 		float segLeft = 0.f, segRight = 1.f;
 		if (seg->sidedef->rc.Flags & WALLF_POLYOBJ)
-			ComputePolyobjSegFractions(ax, ay, bx, by, FIXED2FLOAT(seg->v1->x), FIXED2FLOAT(seg->v1->y),
-				FIXED2FLOAT(seg->v2->x), FIXED2FLOAT(seg->v2->y), segLeft, segRight);
+			ComputePolyobjSegFractions(ax, ay, bx, by, FIXED2FLOAT(seg->v1->rc.x), FIXED2FLOAT(seg->v1->rc.y),
+				FIXED2FLOAT(seg->v2->rc.x), FIXED2FLOAT(seg->v2->rc.y), segLeft, segRight);
 		const float fracLeft = segLeft + pinch.fracLeft * (segRight - segLeft);
 		const float fracRight = segLeft + pinch.fracRight * (segRight - segLeft);
 		const float ul = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(

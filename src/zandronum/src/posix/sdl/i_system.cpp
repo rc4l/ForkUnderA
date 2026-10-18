@@ -40,6 +40,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <errno.h>
+#include <atomic>
 #ifndef NO_GTK
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
@@ -130,12 +132,14 @@ void I_EndRead(void)
 
 static DWORD TicStart;
 static DWORD BaseTime;
-static int TicFrozen;
+// [rc4l] Atomic, since the alarm handler reads it on whichever thread the signal lands on.
+static std::atomic<int> TicFrozen;
 
 // Signal based timer.
 static Semaphore timerWait;
-static int tics;
-static DWORD sig_start;
+// [rc4l] Atomic and lock-free, so the alarm handler can write them from any thread while the loop reads them.
+static std::atomic<int> tics;
+static std::atomic<DWORD> sig_start;
 
 void I_SelectTimer();
 
@@ -255,10 +259,13 @@ int I_WaitForTicSelect (int prevtic)
 //
 void I_HandleAlarm (int sig)
 {
+	// [rc4l] The interrupted code's errno survives the clock and semaphore calls below.
+	const int interrupted = errno;
 	if(!TicFrozen)
 		tics++;
 	sig_start = SDL_GetTicks();
 	SEMAPHORE_SIGNAL(timerWait)
+	errno = interrupted;
 }
 
 //

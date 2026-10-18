@@ -92,6 +92,9 @@ void SetFileOfferer(void (*offer)(const char *path));
 void SetGameReadable(bool (*readable)());
 bool GameReadable();
 
+// [rc4l] Whether a soak mark may be taken now, which d_main installs: not while a wipe holds both screens' copies, so a mark asked for then is taken once it ends; none installed means always.
+void SetSoakReady(bool (*ready)());
+
 // [rc4l] The counters whose names start with prefix as fua_stats json prints them, for the bridge's perf.counters.
 std::string StatsJson(const char *prefix);
 

@@ -87,6 +87,7 @@
 #include "intermission/intermission.h"
 #include "f_wipe.h"
 #include "features/wipe/wipetrace.h"   // [rc4l] NoteWipeStarted
+#include "features/telemetry/telemetry.h"   // [rc4l] SetSoakReady
 #include "m_argv.h"
 #include "m_misc.h"
 #include "menu/menu.h"
@@ -1405,6 +1406,9 @@ bool D_WipeRunning ()
 {
 	return s_wiping;
 }
+
+// [rc4l] A soak mark waits out a running wipe, whose copies of both screens would read as memory kept.
+static const bool s_soakReadyInstalled = (zx::telemetry::SetSoakReady ([] { return !D_WipeRunning (); }), true);
 
 //==========================================================================
 //

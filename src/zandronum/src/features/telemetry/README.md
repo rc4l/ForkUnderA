@@ -17,8 +17,8 @@ One registry every feature reports its performance through. Counters are named `
     - `fua_hitches [n]`: the last slow frames.
     - `fua_memsnap [name]` and `fua_memdiff [a] [b]`: every gauge and breakdown kept under a name, and what changed between two snapshots or between one and now.
     - `fua_soak begin | mark | verdict [warmup] [json] [-prefix ...]`: a mark after each repetition of an action, and whether any count of bytes, objects, handles or threads kept growing past the warm-up (`ComputeSoakVerdict`). A counter registered with `CounterSpec::soaked` false, such as a peak or the heaps' committed bytes, which settle rather than leak, is not judged, and neither is a reading under a `-prefix`. The JSON carries each growth's line and the whole report.
-  - Output: `SetFileOfferer` hands a written file to the player, which a browser does as a download. `SetSummaryListener` hears the last minute's frame times and memory each second, for a crash report. `SetGameReadable`, which the handoff installs, says when the game's own state may be read; the census's thinker counts keep their last value while a tic is in flight.
-- `allocwatch.cpp` replaces the global `operator new`/`delete` (still `malloc` and `free` underneath):
+  - Output: `SetFileOfferer` hands a written file to the player, which a browser does as a download. `SetSummaryListener` hears the last minute's frame times and memory each second, for a crash report. `SetGameReadable`, which the handoff installs, says when the game's own state may be read; the census's thinker counts keep their last value while a tic is in flight. `SetSoakReady`, which `d_main.cpp` installs, holds a soak mark asked for during a wipe until the wipe ends, since its copies of both screens would read as memory kept; the browser's soak waits for each mark's line.
+- `allocwatch.cpp` replaces the global `operator new`/`delete` (still `malloc` and `free` underneath), except in a ThreadSanitizer build (`features/sanitizer`):
   - It counts the allocations live and made each frame.
   - `fua_allocsites start | report [n] | stop` records each new allocation's call stack from then on. A report lists the stacks still holding the most, named through the platform's symbols.
 - `census.cpp`: what the level and the engine's tables hold, the audio channels in use, and the engine's own heap (`GC::AllocBytes`).
@@ -73,5 +73,6 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 - `network.cpp`: the `net/` totals. `files.cpp` `FileReader::Read`: `io/read_bytes`.
 - `features/crashreport/zx_crashreport.cpp`: the summary goes into the Sentry extras, throttled. `features/web/webcrash.cpp` hands it to the page for `web/crashreport.js`.
 - `features/web/webhost.cpp`: the file offerer downloads what the registry writes (`Module.fuaOfferFile`).
+- `d_main.cpp`: `SetSoakReady` from `D_WipeRunning`.
 - `mcp_rpc.cpp` `perf.counters`: every counter, as `fua_stats json` gives it. `mcp_sample.cpp`: holds `DbgHelpLock` around its dbghelp session.
 - `src/CMakeLists.txt`: `telemetry.cpp`, `allocwatch.cpp` and `census.cpp` in the engine's sources, and the probe in `SYSTEM_SOURCES`.

@@ -1130,10 +1130,11 @@ void M_Ticker (void)
 void M_Drawer (void) 
 {
 	player_t *player = &players[consoleplayer];
-	AActor *camera = player->camera;
 	PalEntry fade = 0;
 
-	if (!screen->Accel2D && camera != NULL && (gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL))
+	// [rc4l] The camera read only where the software fade needs it, since reading it touches the pawn a tic on the game thread is ticking.
+	AActor *camera = !screen->Accel2D && (gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) ? (AActor *)player->camera : NULL;
+	if (camera != NULL)
 	{
 		if (camera->player != NULL)
 		{

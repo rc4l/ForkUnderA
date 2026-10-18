@@ -51,6 +51,34 @@ test('a soak in the page runs each cycle\'s steps, waits for the title of each l
   assert.match(resize, /"text":"check: resize 900x700","map":null/);
 });
 
+// [rc4l] A slow adapter was still melting the screen when a mark was asked for, so the wipe's two screen copies read as memory kept; the engine takes such a mark once the wipe ends.
+test('a soak in the page waits for each mark the engine takes late, and names what grew from the first judged mark', async () => {
+  let wipe = 0, marks = 0, kept = 0;
+  const timers = [];
+  const later = (ms, f) => timers.push(setTimeout(f, ms));
+  const Module = {
+    fuaGpuLedger: { tagText: () => `fua scene VB\t${1000 + kept}\nfua wipe start\t${wipe}` },
+    fuaCommand(text) {
+      if (text === 'map MAP01') { wipe = 4000000; kept += 100000; later(250, () => { wipe = 0; }); console.log('MAP01 - entryway'); }
+      if (text === 'fua_soak mark') later(300, () => console.log(`telemetry: soak mark ${++marks}`));
+      if (text.startsWith('fua_soak verdict')) console.log(`{"pass":true,"marks":${marks}}`);
+    },
+  };
+  globalThis.window = { Module };
+  globalThis.Module = Module;
+  const log = console.log;
+  console.log = () => {};
+  try {
+    const result = await eval(soakInPage('reload', 3, 10, 'MAP01', 1));
+    assert.deepEqual(result, { pass: true, marks: 3, kept: ['fua scene VB +98 KB'] });
+  } finally {
+    console.log = log;
+    for (const t of timers) clearTimeout(t);
+    delete globalThis.window;
+    delete globalThis.Module;
+  }
+});
+
 // [rc4l] Sounds a tic on the game thread started all started and were silent, which counting starts never saw; the level watch hears the output itself.
 test('the level watch splices one analyser per context in front of the output and averages what it carries', () => {
   class Node { constructor(ctx) { this.context = ctx; this.links = []; } connect(target) { this.links.push(target); return target; } }
