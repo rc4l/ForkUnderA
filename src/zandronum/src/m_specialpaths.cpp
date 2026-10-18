@@ -494,25 +494,8 @@ FString GetUserFile (const char *file)
 			I_FatalError ("~/.config must be a directory");
 		}
 
-		// This can be removed after a release or two
-		// Transfer the old zdoom directory to the new location
-		bool moved = false;
-// [BB] Don't move the config if we are using a beta build.
-#if ( BUILD_ID == BUILD_RELEASE )
-		FString oldpath = NicePath("~/." GAMENAMELOWERCASE "/");
-		if (stat (oldpath, &extrainfo) != -1)
-		{
-			if (rename(oldpath, path) == -1)
-			{
-				I_Error ("Failed to move old " GAMENAMELOWERCASE " directory (%s) to new location (%s).",
-					oldpath.GetChars(), path.GetChars());
-			}
-			else
-				moved = true;
-		}
-#endif
-
-		if (!moved && mkdir (path, S_IRUSR | S_IWUSR | S_IXUSR) == -1)
+		// [rc4l] No move of ~/.forkundera here, which ZDoom's first run made of its own old folder: this fork never kept its config there, and that folder is the bridge's instance registry and its tools' fixtures and baselines, which the move carried off on a runner's first launch.
+		if (mkdir (path, S_IRUSR | S_IWUSR | S_IXUSR) == -1)
 		{
 			I_FatalError ("Failed to create %s directory:\n%s",
 				path.GetChars(), strerror (errno));

@@ -15,7 +15,6 @@
 #include "doomstat.h"
 #include "r_utility.h"   // [rc4l] viewpitch
 #include "v_video.h"     // [rc4l] AspectMultiplier, WidescreenRatio
-#include "cl_demo.h"     // [rc4l] CLIENTDEMO_IsInFreeSpectateMode
 #include "c_cvars.h"
 #include "dthinker.h"
 #include "g_level.h"
@@ -68,7 +67,7 @@ void SetupView(const zx::gamecopy::ActorRecord *camera, const FViewLens &lens, l
 	// [rc4l] The chase camera (consoleplayer only, never in free spectate) and a dead player's death camera see the player's own body.
 	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
 	const zx::gamecopy::PlayerRecord *const its = zx::gamecopy::Player(camera->playerIndex);
-	const bool outside = its != NULL && ComputeSeesOwnBody(true, CLIENTDEMO_IsInFreeSpectateMode(), camera->playerIndex == consoleplayer,
+	const bool outside = its != NULL && ComputeSeesOwnBody(true, zx::gamecopy::Level().freeSpectate, camera->playerIndex == consoleplayer,
 		me != NULL && me->bSpectating, me != NULL && (me->cheats & CF_CHASECAM) != 0, r_deathcamera, camera->health <= 0,
 		zx::gamecopy::IndexOf(camera) == its->mo);
 	g_view.viewActor = outside ? NULL : camera->who;

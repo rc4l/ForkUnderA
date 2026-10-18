@@ -104,11 +104,12 @@ namespace
 		std::shared_ptr<Client> from;
 		zx::mcp::RpcRequest     req;
 	};
-	std::mutex               g_qlock;     // [rc4l] guards g_inbound
-	std::mutex               g_sendlock;  // [rc4l] guards g_clients, each Client's flags and every write to one
-	std::vector<std::shared_ptr<Client>> g_clients;
+	// [rc4l] The state the detached client threads share is never destroyed, since one can still be running when exit() destroys statics.
+	std::mutex               &g_qlock = *new std::mutex();     // [rc4l] guards g_inbound
+	std::mutex               &g_sendlock = *new std::mutex();  // [rc4l] guards g_clients, each Client's flags and every write to one
+	std::vector<std::shared_ptr<Client>> &g_clients = *new std::vector<std::shared_ptr<Client>>();
 	std::atomic<int>         g_listeners( 0 );  // [rc4l] authed open connections, so a print nobody hears builds no event
-	std::deque<Inbound>      g_inbound;
+	std::deque<Inbound>      &g_inbound = *new std::deque<Inbound>();
 	std::shared_ptr<Client>  g_replyTo;   // [rc4l] main thread only: whose request is being dispatched
 	std::string              g_pidfilePath;
 

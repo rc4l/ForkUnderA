@@ -28,7 +28,7 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) 
       // [rc4l] The page's WebGPU objects by label at the start and the end, so a failing soak shows which ones it kept.
       const held = (when) => console.log('soak gpu ' + when + ': ' + (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText().replace(/\\n/g, '; ') : 'no ledger'));
       // [rc4l] And by label as numbers, taken once the warm-up is over and again at the end, so the verdict names what grew.
-      const ledger = () => { const m = {}; for (const l of (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText() : '').split('\\n')) { const [tag, b] = l.split('\\t'); if (tag) m[tag] = Number(b); } return m; };
+      const ledger = () => { const m = {}; for (const l of (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText() : '').split('\\n')) { const [tag, b] = l.split('\\t'); if (b !== undefined) m[tag || '(unnamed)'] = Number(b); } return m; };
       let base = ledger();
       Module.fuaCommand('fua_soak begin');
       held('start');
