@@ -370,14 +370,20 @@ export const CHECKS = [
       Module.fuaCommand('god');
       Module.fuaCommand('snd_musicvolume 0');
       ${pause(1000)}
+      // [rc4l] A sound with no distance first, then quiet again before the shooters come.
+      window.fuaLevel.reset();
+      Module.fuaCommand('playsound brain/cube');
+      for (const end = Date.now() + 10000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
+      const control = Number(window.fuaLevel.peak().toFixed(4));
+      ${pause(3000)}
       for (const m of ['ShotgunGuy', 'ShotgunGuy', 'ChaingunGuy']) Module.fuaCommand('summon ' + m + ' 256 0');
       ${pause(1500)}
       window.fuaLevel.reset();
       // [rc4l] Listened to until a shot is heard or twenty seconds pass, since a software adapter runs the shooters' tics a frame of a second or more apart.
       for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
-      return { peak: Number(window.fuaLevel.peak().toFixed(4)), contexts: window.fuaLevel.contexts() };`),
+      return { control, peak: Number(window.fuaLevel.peak().toFixed(4)), contexts: window.fuaLevel.contexts() };`),
     until: EVAL,
-    expect: ({ peak, contexts }) => (peak > 0.05 ? '' : `shooters across the room came out at ${peak} RMS at most (audio ${JSON.stringify(contexts)})`),
+    expect: (heard) => heardAtDistance(heard),
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {
@@ -541,14 +547,21 @@ export const CHECKS = [
   },
 ];
 
-// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError).
+// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError); an expect answering { skip } is a check this browser cannot judge, with the reason.
 export function judge(check, matched, img = null, lines = []) {
   if (!matched) return { ok: false, reason: `no line matched /${check.until}/` };
   if (matched.startsWith('[eval] threw')) return { ok: false, reason: matched.slice('[eval] '.length) };
   const reason = (check.deviceError ? '' : gpuError(lines))
     || (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))
     || (check.expectShot && (img ? check.expectShot(img) : 'no screenshot'));
+  if (reason && reason.skip) return { ok: true, skip: reason.skip };
   return reason ? { ok: false, reason } : { ok: true };
+}
+
+// [rc4l] Shooters across the room heard, judged only where a sound with no distance (control) was heard at all: a runner whose browser makes no sound cannot tell a silent distance from silence.
+export function heardAtDistance({ control, peak, contexts }) {
+  if (!(control > 0.05)) return { skip: `the page made no sound at all, a sound with no distance peaking at ${control} RMS (audio ${JSON.stringify(contexts)})` };
+  return peak > 0.05 ? '' : `shooters across the room came out at ${peak} RMS at most, while a sound with no distance peaked at ${control}`;
 }
 
 // [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.
@@ -568,8 +581,8 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       const { matched, lines, version } = await smoke({ url, profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       if (i === 0) onResult(`browser: ${version}`);
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
-      const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
-      onResult(`${ok ? 'PASS' : 'FAIL'} ${c.name}${ok ? '' : ': ' + reason}`);
+      const { ok, reason, skip } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
+      onResult(`${skip ? 'SKIP' : ok ? 'PASS' : 'FAIL'} ${c.name}${skip ? ': ' + skip : ok ? '' : ': ' + reason}`);
       if (!ok) {
         failed++;
         for (const line of lines.slice(-20)) onResult(`  ${line}`);

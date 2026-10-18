@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -193,4 +193,13 @@ test('the game thread check needs tics on the thread and a sound from them', () 
   assert.equal(threadedWithSound({ tics: 40, sounds: 3 }), '');
   assert.equal(threadedWithSound({ tics: 0, sounds: 3 }), 'no tic ran on the game thread');
   assert.equal(threadedWithSound({ tics: 40, sounds: 0 }), 'the shots fired on the game thread made no sound');
+});
+
+// [rc4l] A CI runner's browser rendered silence for every sound, so distance is judged only where a sound with no distance was heard.
+test('distant shooters are judged only where a sound with no distance was heard', () => {
+  assert.equal(heardAtDistance({ control: 0.3, peak: 0.2, contexts: [] }), '');
+  assert.match(heardAtDistance({ control: 0.3, peak: 0, contexts: [] }), /shooters across the room came out at 0 RMS at most/);
+  assert.match(heardAtDistance({ control: 0, peak: 0, contexts: [{ state: 'running', time: 3 }] }).skip, /made no sound at all/);
+  const check = { until: 'x', expect: heardAtDistance };
+  assert.deepEqual(judge(check, '[eval] {"control":0,"peak":0,"contexts":[]}'), { ok: true, skip: 'the page made no sound at all, a sound with no distance peaking at 0 RMS (audio [])' });
 });

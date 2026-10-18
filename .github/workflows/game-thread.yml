@@ -73,8 +73,22 @@ jobs:
       - name: Engine logs
         if: failure()
         run: |
+          # [rc4l] What the engine could see of the fixtures, and how it began, since a recording once loaded the IWAD's own map and could not write its demo.
+          ls -la "$HOME/.forkundera" "$HOME/.forkundera/fixtures" 2>&1 || true
+          for f in /tmp/fuactl-*/engine-*.log; do echo "== head $f"; head -60 "$f"; done
           for f in /tmp/fuactl-*/engine-*.log*; do echo "== $f"; tail -80 "$f"; done
           cat "$RUNNER_TEMP/stacks.txt" 2>/dev/null | head -2000 || true
+
+      # [rc4l] Every report whole, and the hang stacks, since the job prints only each report file's head.
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsan-reports
+          path: |
+            tsan.*
+            ${{ runner.temp }}/stacks.txt
+          if-no-files-found: ignore
 
       - name: No race in the engine's own code
         if: always()
