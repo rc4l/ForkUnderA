@@ -35,7 +35,7 @@ void MCP_GLPerf_ZoneBegin( int zone );
 void MCP_GLPerf_ZoneEnd( int zone );
 void MCP_GLPerf_FrameEnd();       // after 2D, before the buffer swap (OpenGLFrameBuffer::Update)
 
-// --- Control (called from mcp_rpc.cpp on the game thread) -------------------
+// --- Control (called from mcp_rpc.cpp on the main thread) -------------------
 // Arm a capture of `frames` presented frames, discarding the first `warmup` (one-time scene-change
 // costs). The report is delivered asynchronously via MCP_GLPerf_ReportReady, polled once per tic.
 void MCP_GLPerf_BeginCapture( int frames, int warmup );

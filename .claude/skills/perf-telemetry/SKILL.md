@@ -21,8 +21,9 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 
 - Each row gives last, mean, p99 and max over the recent frames. A stutter is a p99 far above the mean. No average shows one.
 - `fua_telemetry_thinkers 1` adds per-class thinker time under `sim/thinker/`.
-- `record --seconds 10 --name X` writes every counter for every frame, plus every timed region on every thread, under the engine's `telemetry/` folder. Open `X-trace.json` in Perfetto to see the job lanes against the game thread.
-- To compare two settings, `abperf` them inside one session. Never compare two launches.
+- `record --seconds 10 --name X` writes every counter for every frame, plus every timed region on every thread, under the engine's `telemetry/` folder. `--recap` (or `recap X` later) reads it back: frames, tics on the game thread and held frames each second, then the counters the slowest quarter of seconds spent more on than the fastest. Open `X-trace.json` in Perfetto to see the job lanes against the game thread.
+- To compare two settings, `abperf` them inside one session. Never compare two launches. It reads each setting back before measuring and fails on one that did not take; never chain a setting after `load ...; wait N`, since a load drops every waiting command with the level's thinkers.
+- `docs/diagnostics.md` says which diagnostics reach players, what each costs, and the rules for adding one.
 - To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. `compare a.json b.json` sets two `stats --json` files side by side.
 - A frame time that drops for no reason is an empty world until a shot proves otherwise.
 
@@ -42,6 +43,8 @@ node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allo
   - Self-hosting: `--action "fua_hostmap MAP01"`. A server: launch one with `launch --arg "-host,-port,10670"`, then `soak --port <client> --judge-port <server> --judge-token T --action "connect 127.0.0.1:10670|disconnect"` judges the server while the client joins and leaves.
   - Resizing: `--action "check: resize 900x700|check: resize 1340x860"` sizes the game window from outside as a drag does (`window --resize WxH` once), since `vid_setmode` leaves a window's size alone; fullscreen: `--action "fullscreen 1|fullscreen 0"`, which covers the user's screen while it runs.
 - Turn on `fua_render_in_background` for a soak (scenarios do): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
+- The heap gauges read `n/a` in plain `stats`, since walking the heaps stalls frames; a soak and `memsnap`/`memdiff` read them fresh, and `fua_telemetry_heaps 1` keeps them live.
+- A slow frame at a fixed interval that no timed region covers is something periodic on the main thread, such as a gauge's read: `record`, find the interval between slow frames, then `sample --stacks` while it happens.
 - Private bytes settle over the first sixty or so restarts (the heap's commit and the driver's caches) and level off; judge a restart soak with `--ignore mem/private_bytes` and live allocations, heap bytes, GPU memory and handles, or run eighty restarts and watch the plateau. `mem/win/` and `mem/heaps_committed_bytes` say whether growth sits in a heap or outside every one.
 - A soak judges every gauge and breakdown reading in bytes, objects, handles or threads, the backend's GPU memory by tag and in a browser what the page holds among them, except those registered with `soaked` false, such as a peak, which only ever grows. Its verdict names each counter that grew and by how much a cycle.
 - `fua_allocsites` lists the allocations of the current level too, so one report proves little; `--sites` diffs two, where a leak's stack grows with every cycle and the level's stay put.
@@ -56,7 +59,7 @@ node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allo
 Headless Chrome (always muted) reproduces what the page holds:
 
 - `node tools/web/check.mjs dist-web --only "holds no more memory"` runs the reload soak.
-- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
+- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. The run steps `frames` (the browser's frame pacing since the last one) and `level` (the audio output's RMS) measure what a player sees and hears; `fua_debug_orbit 25` turns the aim for repeatable motion. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
 - A `wad_reload` reloads the page; nothing in the engine survives that, so what to watch across reloads is the page's stored data (`navigator.storage.estimate()`), which holds the config and the player's WADs.
 - The check "lets go of" compares the page's view with the engine's.
 - Headless Firefox has no WebGPU. When a Firefox player reports a problem, ask them to type these in the console and paste what they print:

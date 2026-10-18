@@ -6,13 +6,14 @@
 // headers -- the platform networking headers would clash with the engine's types -- and forwards the
 // few entry points it needs. All the actual "programmable engine" logic (determinism, state, sessions)
 // lives in mcp_rpc.cpp, which IS engine-facing. Wire framing is the tested pure core in
-// features/mcp-bridge/computation/mcprpc_compute.
+// features/mcp-bridge/computation/mcprpc_compute, and each connection's reading in bridgeclient_compute.
 //
 // Compiled ONLY when FUA_MCP_BRIDGE is defined (dev/test builds). Runtime opt-in: the listener starts
 // only when ZANDRONUM_BRIDGE_PORT is set, binds 127.0.0.1 only.
 //
 #include "mcp_bridge.h"
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
+#include "features/mcp-bridge/computation/bridgeclient_compute.h"
 
 // --- Portable socket shim ---------------------------------------------------
 #ifdef _WIN32
@@ -22,6 +23,7 @@
   typedef SOCKET mcp_socket_t;
   #define MCP_INVALID_SOCKET INVALID_SOCKET
   #define mcp_close_socket   closesocket
+  #define MCP_SHUT_BOTH      SD_BOTH
   #pragma comment(lib, "ws2_32.lib")   // MSVC-only directive; ignored by GCC/Clang
 #else
   #include <sys/socket.h>
@@ -38,6 +40,9 @@
 #include <chrono>
 #include <atomic>
 #include <deque>
+#include <memory>
+#include <vector>
+#include <algorithm>
 #include <string>
 #include <csignal>   // sig_atomic_t (portable; POSIX also gets sigaction via <signal.h> above)
 #include <stdlib.h>
@@ -46,9 +51,9 @@
 #include "features/json/computation/json_compute.h"
 
 // --- Engine entry points (implemented in mcp_rpc.cpp / mcp_crash.cpp) --------
-// Run one queued RPC request on the game thread and send its response. args is the raw JSON "args".
+// Run one queued RPC request on the main thread and send its response. args is the raw JSON "args".
 void MCP_RPC_Dispatch( long id, const char *cmd, const char *args );
-// Per-frame housekeeping on the game thread (step re-freeze, event pumping, HUD frame capture).
+// Per-frame housekeeping on the main thread (step re-freeze, event pumping, HUD frame capture).
 void MCP_RPC_Tick();
 
 #ifdef _WIN32
@@ -72,6 +77,13 @@ void MCP_RPC_Tick();
 #ifndef _WIN32
   #define MCP_INVALID_SOCKET (-1)
   #define mcp_close_socket   ::close
+  #define MCP_SHUT_BOTH      SHUT_RDWR
+#endif
+// [rc4l] A write to a client that hung up raises SIGPIPE on Linux and macOS, which kills the engine, so each send and socket opts out.
+#ifdef MSG_NOSIGNAL
+  #define MCP_SEND_FLAGS MSG_NOSIGNAL
+#else
+  #define MCP_SEND_FLAGS 0
 #endif
 
 namespace
@@ -79,14 +91,29 @@ namespace
 	bool                     g_initialized = false;
 	std::atomic<bool>        g_enabled( false );
 	mcp_socket_t             g_listen      = MCP_INVALID_SOCKET;
-	mcp_socket_t             g_client      = MCP_INVALID_SOCKET;
-	std::mutex               g_qlock;     // guards g_inbound + g_rxbuf
-	std::mutex               g_sendlock;  // serialises writes to g_client
-	std::deque<zx::mcp::RpcRequest> g_inbound;
-	std::string              g_rxbuf;
+	// [rc4l] One connection, read by its own thread and written to under g_sendlock.
+	struct Client
+	{
+		mcp_socket_t sock   = MCP_INVALID_SOCKET;
+		bool         open   = true;
+		bool         authed = false;
+	};
+	// [rc4l] A request and the connection its reply goes back to.
+	struct Inbound
+	{
+		std::shared_ptr<Client> from;
+		zx::mcp::RpcRequest     req;
+	};
+	// [rc4l] The state the detached client threads share is never destroyed, since one can still be running when exit() destroys statics.
+	std::mutex               &g_qlock = *new std::mutex();     // [rc4l] guards g_inbound
+	std::mutex               &g_sendlock = *new std::mutex();  // [rc4l] guards g_clients, each Client's flags and every write to one
+	std::vector<std::shared_ptr<Client>> &g_clients = *new std::vector<std::shared_ptr<Client>>();
+	std::atomic<int>         g_listeners( 0 );  // [rc4l] authed open connections, so a print nobody hears builds no event
+	std::deque<Inbound>      &g_inbound = *new std::deque<Inbound>();
+	std::shared_ptr<Client>  g_replyTo;   // [rc4l] main thread only: whose request is being dispatched
 	std::string              g_pidfilePath;
 
-	// Set by the SIGTERM/SIGINT handler; honoured on the game thread so GL/Cocoa teardown runs
+	// Set by the SIGTERM/SIGINT handler; honoured on the main thread so GL/Cocoa teardown runs
 	// on the main thread between frames -- a clean exit(0) instead of a mid-render hard kill that
 	// wedges the macOS window server.
 	volatile sig_atomic_t    g_quitRequested = 0;
@@ -115,7 +142,6 @@ namespace
 		const char *env = getenv( "ZANDRONUM_BRIDGE_TOKEN" );
 		return ( env && env[0] ) ? env : NULL;
 	}
-	bool g_authed = false; // per-connection: has the client presented the token (if one is required)?
 
 	void RemovePidfile()
 	{
@@ -172,20 +198,59 @@ namespace
 #endif
 }
 
-// Send one framed JSON line to the connected client. Thread-safe; called from the game thread
-// (responses/events) and the listen thread (hello). Public so mcp_rpc.cpp can emit results/events.
+namespace
+{
+	// [rc4l] Marks a connection gone and wakes its reader, which closes the socket; the caller holds g_sendlock.
+	void CloseLocked( Client &c )
+	{
+		if ( !c.open ) return;
+		c.open = false;
+		if ( c.authed ) --g_listeners;
+		shutdown( c.sock, MCP_SHUT_BOTH );
+	}
+
+	// [rc4l] Counts a connection as listening once it has shown the token; the caller holds g_sendlock.
+	void SetAuthedLocked( Client &c, bool authed )
+	{
+		if ( !c.open || !authed || c.authed ) return;
+		c.authed = true;
+		++g_listeners;
+	}
+
+	// [rc4l] Writes one framed line to one connection, closing it on a failed write; the caller holds g_sendlock.
+	void SendLocked( Client &c, const std::string &wire )
+	{
+		for ( size_t off = 0; c.open && off < wire.size(); )
+		{
+			int n = (int)send( c.sock, wire.c_str() + off, (int)( wire.size() - off ), MCP_SEND_FLAGS );
+			if ( n <= 0 ) CloseLocked( c );
+			else off += (size_t)n;
+		}
+	}
+
+	std::string Framed( const char *json )
+	{
+		std::string wire = json;
+		wire.push_back( '\n' );
+		return wire;
+	}
+}
+
+// [rc4l] Sends one framed JSON line to every authed connection, from any thread; replies go through MCP_Bridge_Reply.
 void MCP_Bridge_SendJson( const char *json )
 {
+	const std::string wire = Framed( json );
 	std::lock_guard<std::mutex> lk( g_sendlock );
-	mcp_socket_t s = g_client;
-	if ( s == MCP_INVALID_SOCKET ) return;
-	std::string wire = json;
-	wire.push_back( '\n' );
-	if ( send( s, wire.c_str(), (int)wire.size(), 0 ) < 0 )
-	{
-		mcp_close_socket( s );
-		g_client = MCP_INVALID_SOCKET;
-	}
+	for ( const std::shared_ptr<Client> &c : g_clients )
+		if ( c->authed ) SendLocked( *c, wire );
+}
+
+// [rc4l] Sends one framed JSON line to the connection whose request the main thread is dispatching.
+void MCP_Bridge_Reply( const char *json )
+{
+	if ( g_replyTo == nullptr ) return;
+	std::lock_guard<std::mutex> lk( g_sendlock );
+	SendLocked( *g_replyTo, Framed( json ) );
 }
 
 namespace
@@ -220,7 +285,7 @@ namespace
 				fprintf( stderr, "fua: bridge watchdog -- supervising process %d is gone, quitting\n",
 					parentPid );
 				fflush( stderr );
-				// Ask for a CLEAN quit first (game thread runs GL/Cocoa teardown), then hard-exit as a
+				// Ask for a CLEAN quit first (main thread runs GL/Cocoa teardown), then hard-exit as a
 				// last resort if the loop is wedged and doesn't honour the flag within a grace window.
 				g_quitRequested = 1;
 				std::this_thread::sleep_for( std::chrono::milliseconds( 3000 ) );
@@ -233,6 +298,41 @@ namespace
 		}
 	}
 
+	// [rc4l] Reads one connection until it closes, queueing its requests for the main thread with itself as the reply's address.
+	void ClientThread( std::shared_ptr<Client> c )
+	{
+		zx::mcp::ClientFeed feed = zx::mcp::ComputeClientOpen( BridgeToken() );
+		{
+			std::lock_guard<std::mutex> lk( g_sendlock );
+			SendLocked( *c, Framed( zx::mcp::ComputeClientHello( mcp_getpid(), !feed.authed ).c_str() ) );
+			SetAuthedLocked( *c, feed.authed );
+		}
+
+		char buf[2048];
+		for ( ;; )
+		{
+			int n = (int)recv( c->sock, buf, sizeof( buf ), 0 );
+			if ( n <= 0 ) break;
+			zx::mcp::FeedResult got = zx::mcp::ComputeClientFeed( feed, buf, (size_t)n, BridgeToken() );
+			{
+				std::lock_guard<std::mutex> lk( g_sendlock );
+				SetAuthedLocked( *c, feed.authed );
+				for ( const std::string &reply : got.replies ) SendLocked( *c, Framed( reply.c_str() ) );
+			}
+			std::lock_guard<std::mutex> lk( g_qlock );
+			for ( const zx::mcp::RpcRequest &req : got.requests ) g_inbound.push_back( Inbound{ c, req } );
+		}
+
+		{
+			std::lock_guard<std::mutex> lk( g_sendlock );
+			CloseLocked( *c );
+			auto it = std::find( g_clients.begin(), g_clients.end(), c );
+			if ( it != g_clients.end() ) g_clients.erase( it );
+		}
+		mcp_close_socket( c->sock );
+	}
+
+	// [rc4l] Gives every connection its own reader, so a second fuactl beside a running one is served instead of waiting in the backlog.
 	void ListenThread()
 	{
 		for ( ;; )
@@ -243,62 +343,17 @@ namespace
 				std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
 				continue;
 			}
-
+#ifdef SO_NOSIGPIPE
+			int one = 1;
+			setsockopt( s, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof( one ) );
+#endif
+			std::shared_ptr<Client> c = std::make_shared<Client>();
+			c->sock = s;
 			{
 				std::lock_guard<std::mutex> lk( g_sendlock );
-				if ( g_client != MCP_INVALID_SOCKET ) mcp_close_socket( g_client );
-				g_client = s;
+				g_clients.push_back( c );
 			}
-			{
-				std::lock_guard<std::mutex> lk( g_qlock );
-				g_rxbuf.clear();
-			}
-			g_authed = ( BridgeToken() == NULL ); // no token required => already authed
-
-			char hello[320];
-			snprintf( hello, sizeof( hello ),
-				"{\"t\":\"hello\",\"engine\":\"forkundera\",\"bridge\":\"2.0.0\",\"pid\":%d,"
-				"\"auth\":%s,\"caps\":[\"rpc\",\"events\",\"determinism\",\"snapshot\",\"session\"]}",
-				mcp_getpid(), g_authed ? "false" : "true" ); // auth:false means "token still required"
-			MCP_Bridge_SendJson( hello );
-
-			char buf[2048];
-			for ( ;; )
-			{
-				int n = (int)recv( s, buf, sizeof( buf ), 0 );
-				if ( n <= 0 ) break;
-				std::lock_guard<std::mutex> lk( g_qlock );
-				g_rxbuf.append( buf, n );
-				size_t nl;
-				while ( ( nl = g_rxbuf.find( '\n' ) ) != std::string::npos )
-				{
-					std::string line = g_rxbuf.substr( 0, nl );
-					g_rxbuf.erase( 0, nl + 1 );
-
-					// Token gate: the first message must be {"cmd":"auth","args":{"token":"..."}}.
-					if ( !g_authed )
-					{
-						std::string tok;
-						if ( zx::mcp::GetStr( line, "token", tok ) )
-						{
-							const char *want = BridgeToken();
-							if ( want && tok == want ) { g_authed = true; MCP_Bridge_SendJson( "{\"t\":\"authed\"}" ); }
-							else MCP_Bridge_SendJson( "{\"t\":\"error\",\"error\":\"bad token\"}" );
-						}
-						continue; // drop everything until authed
-					}
-
-					zx::mcp::RpcRequest req = zx::mcp::ParseRequest( line );
-					if ( req.valid )
-						g_inbound.push_back( req );
-				}
-			}
-
-			{
-				std::lock_guard<std::mutex> lk( g_sendlock );
-				if ( g_client == s ) g_client = MCP_INVALID_SOCKET;
-			}
-			mcp_close_socket( s );
+			std::thread( ClientThread, c ).detach();
 		}
 	}
 
@@ -332,7 +387,7 @@ namespace
 		inet_pton( AF_INET, "127.0.0.1", &addr.sin_addr ); // loopback only
 
 		if ( bind( g_listen, (sockaddr *)&addr, sizeof( addr ) ) < 0 ||
-			 listen( g_listen, 1 ) < 0 )
+			 listen( g_listen, 8 ) < 0 )
 		{
 			mcp_close_socket( g_listen );
 			g_listen = MCP_INVALID_SOCKET;
@@ -363,14 +418,16 @@ void MCP_Bridge_Poll()
 
 	for ( ;; )
 	{
-		zx::mcp::RpcRequest req;
-		bool have = false;
+		Inbound in;
 		{
 			std::lock_guard<std::mutex> lk( g_qlock );
-			if ( !g_inbound.empty() ) { req = g_inbound.front(); g_inbound.pop_front(); have = true; }
+			if ( g_inbound.empty() ) break;
+			in = g_inbound.front();
+			g_inbound.pop_front();
 		}
-		if ( !have ) break;
-		MCP_RPC_Dispatch( req.id, req.cmd.c_str(), req.args.c_str() );
+		g_replyTo = in.from;
+		MCP_RPC_Dispatch( in.req.id, in.req.cmd.c_str(), in.req.args.c_str() );
+		g_replyTo.reset();
 	}
 }
 
@@ -379,7 +436,7 @@ void MCP_Bridge_TeeOutput( const char *text )
 	if ( text == NULL ) return;
 	MCP_Crash_Init();
 	LogWrite( text );
-	if ( !g_enabled || g_client == MCP_INVALID_SOCKET ) return;
+	if ( !g_enabled || g_listeners == 0 ) return;
 	std::string data = "{\"text\":" + zx::json::ComputeJsonQuoted( text ) + "}";
 	MCP_Bridge_SendJson( zx::mcp::BuildEvent( "out", data ).c_str() );
 }
@@ -387,7 +444,7 @@ void MCP_Bridge_TeeOutput( const char *text )
 void MCP_Bridge_Shutdown()
 {
 	std::lock_guard<std::mutex> lk( g_sendlock );
-	if ( g_client != MCP_INVALID_SOCKET ) { mcp_close_socket( g_client ); g_client = MCP_INVALID_SOCKET; }
+	for ( const std::shared_ptr<Client> &c : g_clients ) CloseLocked( *c );
 	if ( g_listen != MCP_INVALID_SOCKET ) { mcp_close_socket( g_listen ); g_listen = MCP_INVALID_SOCKET; }
 	RemovePidfile();
 }

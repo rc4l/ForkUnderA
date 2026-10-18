@@ -18,6 +18,7 @@ ContinueShowInputs Single()
 	in.saveFileExists = true;
 	in.saveVersion = 4512;
 	in.minSaveVersion = 4507;
+	in.maxSaveVersion = 4524;
 	return in;
 }
 
@@ -65,6 +66,16 @@ TEST(ContinueShow, ASnapshotThisBuildCannotReadHidesIt)
 	ContinueShowInputs in = Single();
 	in.saveVersion = 4506;
 	EXPECT_FALSE(ContinueIsShown(in));
+}
+
+// [rc4l] G_DoLoadGame refuses a save newer than its build, so offering one would end at the torn-down menu.
+TEST(ContinueShow, ASnapshotFromANewerBuildHidesIt)
+{
+	ContinueShowInputs in = Single();
+	in.saveVersion = in.maxSaveVersion + 1;
+	EXPECT_FALSE(ContinueIsShown(in));
+	in.saveVersion = in.maxSaveVersion;
+	EXPECT_TRUE(ContinueIsShown(in));
 }
 
 TEST(ContinueShow, ASnapshotExactlyAtTheMinimumStillShows)

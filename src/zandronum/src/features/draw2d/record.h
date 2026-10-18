@@ -8,6 +8,8 @@
 
 #include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] Quad2D
 
+#include <vector>
+
 namespace zx { namespace draw2d {
 
 // [rc4l] A 2D draw for both windows, GL's alone (the backend skips it) or the backend's alone (GL draws it with colour writes off).
@@ -20,6 +22,12 @@ void Clear2D();
 
 // [rc4l] Record one quad, allocation-free once the list has settled at its high-water mark.
 void Record2D(const Quad2D &q);
+
+// [rc4l] Records into `into` instead of the frame's list until EndCapture2D, for 2D drawn once and replayed into later frames.
+void BeginCapture2D(std::vector<Quad2D> &into);
+void EndCapture2D();
+// [rc4l] Records captured quads into this frame's list, each for the windows it was captured for.
+void Replay2D(const std::vector<Quad2D> &quads);
 
 // [rc4l] This frame's quads in submission order, which is the draw order, since 2D is painted back to front.
 const Quad2D *Quads2D(int &count);

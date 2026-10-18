@@ -12,22 +12,28 @@ struct side_t;
 struct F3DFloor;
 
 void P_SpawnDirt (AActor *actor, fixed_t radius);
-class DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *sec, fixed_t x, fixed_t y, fixed_t z, angle_t angle, fixed_t tracedist, bool permanent);
+
+// [rc4l] features/decals makes every decal, through the one class these befriend, so no caller can place a mark around its rules.
+namespace zx { namespace decals { class Maker; } }
 
 class DBaseDecal : public DThinker
 {
 	DECLARE_CLASS (DBaseDecal, DThinker)
 	HAS_OBJECT_POINTERS
-public:
+	friend class zx::decals::Maker;
+protected:
 	DBaseDecal ();
 	DBaseDecal (fixed_t z);
 	DBaseDecal (int statnum, fixed_t z);
 	DBaseDecal (const AActor *actor);
 	DBaseDecal (const DBaseDecal *basis);
 
+public:
 	void Serialize (FArchive &arc);
 	void Destroy ();
 	FTextureID StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor * ffloor);
+	// [rc4l] The texture of the tier a decal at (x, y, z) on wall sticks to, the one features/decals judges; invalid in a two-sided line's open span.
+	static FTextureID TierTexture (const side_t *wall, fixed_t x, fixed_t y, fixed_t z, const F3DFloor *ffloor);
 	fixed_t GetRealZ (const side_t *wall) const;
 	// [rc4l] features/levelmesh: the same resolution without a decal object, so the backend can ask
 	// again every frame instead of once at spawn. See RealZOnWall.
@@ -64,25 +70,18 @@ protected:
 class DImpactDecal : public DBaseDecal
 {
 	DECLARE_CLASS (DImpactDecal, DBaseDecal)
+	friend class zx::decals::Maker;
 public:
-	DImpactDecal (fixed_t z);
-	DImpactDecal (side_t *wall, const FDecalTemplate *templ);
-
-	static DImpactDecal *StaticCreate (const char *name, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color=0);
-	static DImpactDecal *StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color=0);
-
-	void BeginPlay ();
 	void Destroy ();
 
 	void Serialize (FArchive &arc);
 	static void SerializeTime (FArchive &arc);
 
 protected:
+	DImpactDecal ();
+	DImpactDecal (fixed_t z);
 	DBaseDecal *CloneSelf (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor) const;
 	static void CheckMax ();
-
-private:
-	DImpactDecal();
 };
 
 class ATeleportFog : public AActor
@@ -155,6 +154,18 @@ struct FQuakeJiggers
 	int RelOffsetX, RelOffsetY, RelOffsetZ;
 };
 
+// [rc4l] What a quake's shake is worked out from, taken between tics by features/gamecopy so a frame shakes the view at its own point through the tic.
+struct FQuakeState
+{
+	int Countdown, CountdownStart, Flags;
+	int IntensityX, IntensityY, IntensityZ;	// [rc4l] raw integer intensities
+	float WaveSpeedX, WaveSpeedY, WaveSpeedZ;
+
+	int GetModIntensity(int intensity) const;
+	// [rc4l] Reads r_TicFrac, the frame's point through the tic.
+	int GetModWave(double waveMultiplier) const;
+};
+
 class DEarthquake : public DThinker
 {
 	DECLARE_CLASS (DEarthquake, DThinker)
@@ -178,9 +189,14 @@ public:
 	// [rc4l] upstream declares these fixed_t and defines them int-valued, which only compiles because
 	// its fixed_t IS int. Ours is the strong zx::Fixed, so they are int here -- matching FQuakeJiggers,
 	// which stores ints -- and the conversion happens once, at the QuakePower call in r_utility.
-	int GetModIntensity(int intensity) const;
-	int GetModWave(double waveMultiplier) const;
+	FQuakeState State() const;
+	int GetModIntensity(int intensity) const { return State().GetModIntensity(intensity); }
+	int GetModWave(double waveMultiplier) const { return State().GetModWave(waveMultiplier); }
 
+	// [rc4l] The quakes shaking a viewer, in thinker order, none for a noclipping player.
+	static void StaticGetQuakes(AActor *viewer, TArray<FQuakeState> &quakes);
+	// [rc4l] Their combined shake into the pre-zeroed jiggers, and how many there are.
+	static int StaticQuakeIntensities(const TArray<FQuakeState> &quakes, FQuakeJiggers &jiggers);
 	static int StaticGetQuakeIntensities(AActor *viewer, FQuakeJiggers &jiggers);
 
 private:

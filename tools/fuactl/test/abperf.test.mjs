@@ -1,6 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { perfSchedule, perfVerdicts, settingNames, cvarValueOf, isolatedLines } from "../src/abperf.mjs";
+import { perfSchedule, perfVerdicts, settingNames, cvarValueOf, isolatedLines, settingValues, unappliedSettings } from "../src/abperf.mjs";
+
+// [rc4l] A setting chained after a load's wait was dropped with the level's thinkers, and four A/Bs measured settings that never took.
+test("a setting is read back before it is measured, and one that did not take is named", () => {
+  const baselines = { fua_dg_dynlights: "true", vid_scalefactor: "1", load: null, wait: null };
+  assert.deepEqual(settingValues("load heavy; wait 3; god; fua_dg_dynlights 0; vid_scalefactor 0.5", baselines), { fua_dg_dynlights: "0", vid_scalefactor: "0.5" });
+  assert.deepEqual(unappliedSettings({ fua_dg_dynlights: "0", vid_scalefactor: "0.5" }, { fua_dg_dynlights: "false", vid_scalefactor: "0.500000" }), []);
+  assert.deepEqual(unappliedSettings({ fua_dg_dynlights: "0", vid_scalefactor: "0.5" }, { fua_dg_dynlights: "true", vid_scalefactor: "1" }),
+    ["fua_dg_dynlights reads true, not 0", "vid_scalefactor reads 1, not 0.5"]);
+  assert.deepEqual(unappliedSettings({ r_particles: "1" }, { r_particles: "true" }), []);
+  assert.deepEqual(unappliedSettings({ name: "player" }, {}), ["name reads nothing, not player"]);
+});
 
 // [rc4l] Queue #42's cost was found by switching settings inside one session, after separate launches drifted 30%.
 test("every setting is measured once per round, so drift falls on all of them", () => {

@@ -65,6 +65,8 @@ struct FRenderer
 	virtual void SetupFrame(player_t *player) {}
 	virtual void CopyStackedViewParameters() {}
 	virtual void RenderTextureView (FCanvasTexture *tex, AActor *viewpoint, int fov) = 0;
+	// [rc4l] features/gamecopy: a camera texture's view from the render copy's record of its viewpoint, by default RenderTextureView from the live actor.
+	virtual void RenderCameraRecord (FCanvasTexture *tex, int record, int fov);
 	virtual sector_t *FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back) = 0;
 	virtual void SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog) {}
 	virtual void PreprocessLevel() {}

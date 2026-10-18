@@ -4,6 +4,7 @@
 #include <stddef.h>   // offsetof, for the cached-record guard
 #include "features/fakeflat/fakeflat.h"   // [rc4l] ViewDependent
 #include "features/levelmesh/wallcache.h"
+#include "features/gamecopy/select.h"   // [rc4l] LiveSel, CopySel
 #include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] SideLook, SectorLook
 #include "features/levelmesh/captureshading.h"
 #include "features/levelmesh/flatmesh.h"
@@ -13,6 +14,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "p_3dfloors.h"   // F3DFloor, for the 3D floor wall faces
+#include "features/gamecopy/xfloors.h"   // [rc4l] the copied 3D floors and light lists
 #include "features/levelmesh/computation/lightband_compute.h"   // [rc4l] BandPlane, the band boundaries in map units
 #include "doomdata.h"
 #include "r_sky.h"   // skyflatnum, for the sky surfaces
@@ -99,7 +101,7 @@ void AllocForLevel(int numsegs)
 	if (numsides > 0)
 	{
 		g_sideDirty.Resize(numsides);
-		for (int i = 0; i < numsides; i++) g_sideDirty[i] = sides[i].fua_dirty;
+		for (int i = 0; i < numsides; i++) g_sideDirty[i] = sides[i].rcShape;
 	}
 	if (numsectors > 0)
 	{
@@ -108,8 +110,8 @@ void AllocForLevel(int numsegs)
 		g_sectorSegs.Resize(numsectors);
 		for (int i = 0; i < numsectors; i++)
 		{
-			g_sectorDirty[i] = sectors[i].fua_dirty;
-			g_sectorPlacement[i] = sectors[i].fua_placement;
+			g_sectorDirty[i] = sectors[i].rcShape;
+			g_sectorPlacement[i] = sectors[i].rcPlacement;
 			g_sectorSegs[i].Clear();
 		}
 		for (int i = 0; i < numsegs; i++)
@@ -191,24 +193,37 @@ bool DerivedPart(const seg_t *seg, int part, zx::surfaces::DerivedWallSpan &d, b
 
 MidTextureBlend LineMidBlend(const line_t *line, zx::materials::MaterialRef mat)
 {
-	return ComputeMidTextureBlend(FIXED2FLOAT(line->Alpha), (line->flags & ML_ADDTRANS) != 0, zx::materials::MaterialTransparent(mat));
+	return ComputeMidTextureBlend(FIXED2FLOAT(line->rc.Alpha), (line->rc.flags & ML_ADDTRANS) != 0, zx::materials::MaterialTransparent(mat));
 }
 
 bool LineIsMirror(const seg_t *seg)
 {
-	return ComputeIsMirrorWall(seg->linedef->special, seg->backsector == NULL, r_mirrors);
+	return ComputeIsMirrorWall(seg->linedef->rc.special, seg->backsector == NULL, r_mirrors);
 }
 
-void RecalcVertexHeights(vertex_t *v)
+// [rc4l] The heights of the planes meeting at v, from each sector's state as Sel picks it.
+template <class Sel> static void VertexHeightsFrom(vertex_t *v)
 {
 	static TArray<float> planes;
 	planes.Resize(v->numsectors * 2);
 	for (int i = 0; i < v->numsectors; i++)
 	{
-		planes[2 * i] = FIXED2FLOAT(v->sectors[i]->ceilingplane.ZatPoint(v));
-		planes[2 * i + 1] = FIXED2FLOAT(v->sectors[i]->floorplane.ZatPoint(v));
+		const auto &s = Sel::Of(v->sectors[i]);
+		planes[2 * i] = FIXED2FLOAT(s.ceilingplane.ZatPoint(v));
+		planes[2 * i + 1] = FIXED2FLOAT(s.floorplane.ZatPoint(v));
 	}
 	v->numheights = v->numsectors > 0 ? ComputeVertexHeights(&planes[0], v->numsectors * 2, v->heightlist) : 0;
+}
+
+void RecalcVertexHeights(vertex_t *v)
+{
+	VertexHeightsFrom<zx::gamecopy::CopySel>(v);
+	v->rcDirty = false;
+}
+
+void RecalcLiveVertexHeights(vertex_t *v)
+{
+	VertexHeightsFrom<zx::gamecopy::LiveSel>(v);
 	v->dirty = false;
 }
 
@@ -231,11 +246,11 @@ static SeamSplits SeamSplitsOf(const seg_t *seg, float fracLeft, float fracRight
 	SeamSplits s = NoSeams();
 	s.fracLeft = fracLeft;
 	s.fracRight = fracRight;
-	if (!r_seamless || !takes || (seg->sidedef->Flags & WALLF_POLYOBJ)) return s;
+	if (!r_seamless || !takes || (seg->sidedef->rc.Flags & WALLF_POLYOBJ)) return s;
 	vertex_t *v1 = seg->linedef->v1, *v2 = seg->linedef->v2;
 	if (seg->sidedef != seg->linedef->sidedef[0]) { vertex_t *t = v1; v1 = v2; v2 = t; }
-	if (v1->dirty) RecalcVertexHeights(v1);
-	if (v2->dirty) RecalcVertexHeights(v2);
+	if (v1->rcDirty) RecalcVertexHeights(v1);
+	if (v2->rcDirty) RecalcVertexHeights(v2);
 	s.leftHeights = v1->heightlist; s.leftCount = v1->numheights;
 	s.rightHeights = v2->heightlist; s.rightCount = v2->numheights;
 	const side_t *sd = seg->sidedef;
@@ -276,7 +291,7 @@ static bool StoreWallFan(MeshRange &range, const SeamVertex corners[4], const Se
 
 bool LineDrawsNoWall(const seg_t *seg)
 {
-	return zx::horizon::ComputeIsHorizonLine(seg->linedef->special) || LineIsMirror(seg);
+	return zx::horizon::ComputeIsHorizonLine(seg->linedef->rc.special) || LineIsMirror(seg);
 }
 
 static bool SegOwnsItsSide(int segIndex)
@@ -303,7 +318,7 @@ static const int kMaxFFBlocks = kFogSheetSlot - kFFSlot0;
 
 
 // [rc4l] An engine plane in map units for the pure band helpers; reading one through FLOAT2FIXED's ints once took the double ZatPoint and lost a factor of 65536.
-static zx::levelmesh::BandPlane ToBandPlane(const secplane_t &p)
+static zx::levelmesh::BandPlane ToBandPlane(const secplane_core_t &p)
 {
 	return zx::levelmesh::ComputeBandPlaneFromFixed((double)p.a, (double)p.b, (double)p.ic, (double)p.d);
 }
@@ -320,7 +335,7 @@ static void BandBottoms(const TArray<lightlist_t> &lights, int nLights, float x1
 static int BandLights(const seg_t *seg, const TArray<lightlist_t> *&lights)
 {
 	const sector_t *front = seg->frontsector;
-	lights = (front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+	lights = (front != NULL && front->e != NULL) ? &front->e->rcXFloor.lightlist : NULL;
 	const int n = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
 	return n > kBandsPerPart ? kBandsPerPart : n;
 }
@@ -328,7 +343,7 @@ static int BandLights(const seg_t *seg, const TArray<lightlist_t> *&lights)
 // [rc4l] Put3DWall's rule for a band lit by `ll`: its level unless it points back at the wall's own sector, and then the wall's.
 static int BandLightLevel(const lightlist_t &ll, const seg_t *seg, int wallLevel)
 {
-	return ll.p_lightlevel != &seg->sidedef->sector->lightlevel ? gl_ClampLight(*ll.p_lightlevel) : wallLevel;
+	return ll.p_lightlevel != &seg->sidedef->sector->rc.lightlevel ? gl_ClampLight(*ll.p_lightlevel) : wallLevel;
 }
 
 int DerivedPartBands(const seg_t *seg, const zx::surfaces::DerivedWallSpan &d, const zx::surfaces::DerivedWallLight &dl, PartBand *out)
@@ -387,9 +402,9 @@ static void ToFFRover(F3DFloor *rover, float x0, float y0, float x1, float y1, z
 bool FFFaceTexture(const seg_t *seg, const F3DFloor *rover, FTextureID &texid, int &texpos)
 {
 	const side_t *mastersd = (rover->master != NULL) ? rover->master->sidedef[0] : NULL;
-	if (rover->flags & FF_UPPERTEXTURE)      { texid = seg->sidedef->GetTexture(side_t::top);    texpos = side_t::top; }
-	else if (rover->flags & FF_LOWERTEXTURE) { texid = seg->sidedef->GetTexture(side_t::bottom); texpos = side_t::bottom; }
-	else if (mastersd != NULL)               { texid = mastersd->GetTexture(side_t::mid);        texpos = side_t::mid; }
+	if (rover->flags & FF_UPPERTEXTURE)      { texid = seg->sidedef->rc.GetTexture(side_t::top);    texpos = side_t::top; }
+	else if (rover->flags & FF_LOWERTEXTURE) { texid = seg->sidedef->rc.GetTexture(side_t::bottom); texpos = side_t::bottom; }
+	else if (mastersd != NULL)               { texid = mastersd->rc.GetTexture(side_t::mid);        texpos = side_t::mid; }
 	else return false;
 	return true;
 }
@@ -397,7 +412,7 @@ bool FFFaceTexture(const seg_t *seg, const F3DFloor *rover, FTextureID &texid, i
 int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, FFFace *out, int max)
 {
 	if (seg->backsector == NULL || seg->backsector->e == NULL || seg->frontsector == NULL) return 0;
-	const TArray<F3DFloor *> &ff = seg->backsector->e->XFloor.ffloors;
+	const TArray<F3DFloor *> &ff = seg->backsector->e->rcXFloor.ffloors;
 	if (ff.Size() == 0) return 0;
 	if (max > kMaxFFFaces) max = kMaxFFFaces;
 
@@ -411,14 +426,14 @@ int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, F
 	struct { float x1, y1, x2, y2; float ztop[2]; float zbottom[2]; } mid;
 	const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 	if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-	mid.x1 = FIXED2FLOAT(lv1->x); mid.y1 = FIXED2FLOAT(lv1->y);
-	mid.x2 = FIXED2FLOAT(lv2->x); mid.y2 = FIXED2FLOAT(lv2->y);
+	mid.x1 = FIXED2FLOAT(lv1->rc.x); mid.y1 = FIXED2FLOAT(lv1->rc.y);   // [rc4l] the copy's, which a polyobject's blend moves
+	mid.x2 = FIXED2FLOAT(lv2->rc.x); mid.y2 = FIXED2FLOAT(lv2->rc.y);
 	const sector_t *fs = seg->frontsector, *bs = seg->backsector;
 	float fch[2], bch[2], ffh[2], bfh[2];
-	fch[0] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(lv1)); fch[1] = FIXED2FLOAT(fs->ceilingplane.ZatPoint(lv2));
-	bch[0] = FIXED2FLOAT(bs->ceilingplane.ZatPoint(lv1)); bch[1] = FIXED2FLOAT(bs->ceilingplane.ZatPoint(lv2));
-	ffh[0] = FIXED2FLOAT(fs->floorplane.ZatPoint(lv1));   ffh[1] = FIXED2FLOAT(fs->floorplane.ZatPoint(lv2));
-	bfh[0] = FIXED2FLOAT(bs->floorplane.ZatPoint(lv1));   bfh[1] = FIXED2FLOAT(bs->floorplane.ZatPoint(lv2));
+	fch[0] = FIXED2FLOAT(fs->rc.ceilingplane.ZatPoint(lv1)); fch[1] = FIXED2FLOAT(fs->rc.ceilingplane.ZatPoint(lv2));
+	bch[0] = FIXED2FLOAT(bs->rc.ceilingplane.ZatPoint(lv1)); bch[1] = FIXED2FLOAT(bs->rc.ceilingplane.ZatPoint(lv2));
+	ffh[0] = FIXED2FLOAT(fs->rc.floorplane.ZatPoint(lv1));   ffh[1] = FIXED2FLOAT(fs->rc.floorplane.ZatPoint(lv2));
+	bfh[0] = FIXED2FLOAT(bs->rc.floorplane.ZatPoint(lv1));   bfh[1] = FIXED2FLOAT(bs->rc.floorplane.ZatPoint(lv2));
 	if (fch[0] < bch[0] && fch[1] < bch[1]) { mid.ztop[0] = fch[0]; mid.ztop[1] = fch[1]; }
 	else                                    { mid.ztop[0] = bch[0]; mid.ztop[1] = bch[1]; }
 	if (ffh[0] > bfh[0] && ffh[1] > bfh[1]) { mid.zbottom[0] = ffh[0]; mid.zbottom[1] = ffh[1]; }
@@ -452,9 +467,9 @@ int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, F
 	// [rc4l] This side's own slabs, which take away the water a neighbour's water would wall off, as GL's ClipFFloors does.
 	zx::surfaces::FFRover nearRovers[kMaxFFFaces];
 	int nn = 0;
-	for (unsigned k = 0; fs->e != NULL && k < fs->e->XFloor.ffloors.Size() && nn < max; k++)
+	for (unsigned k = 0; fs->e != NULL && k < fs->e->rcXFloor.ffloors.Size() && nn < max; k++)
 	{
-		F3DFloor *rover = fs->e->XFloor.ffloors[k];
+		F3DFloor *rover = fs->e->rcXFloor.ffloors[k];
 		if (rover != NULL && (rover->flags & FF_EXISTS))
 			ToFFRover(rover, mid.x1, mid.y1, mid.x2, mid.y2, nearRovers[nn++]);
 	}
@@ -480,7 +495,7 @@ int DerivedFFFaces(const seg_t *seg, const zx::surfaces::DerivedWallLight &dl, F
 		{
 			const lightlist_t &ll = (*lights)[bb[0].lightIndex];
 			f.lightIndex = bb[0].lightIndex;
-			if (ll.p_lightlevel != &seg->sidedef->sector->lightlevel) f.light = gl_ClampLight(*ll.p_lightlevel);
+			if (ll.p_lightlevel != &seg->sidedef->sector->rc.lightlevel) f.light = gl_ClampLight(*ll.p_lightlevel);
 			f.lightFrom = ll.extra_colormap;
 		}
 	}
@@ -507,7 +522,7 @@ static int g_reshadeFF = 0, g_reshadeNoLight = 0, g_reshadeNotOwner = 0, g_resha
 // never baked, one carrying 3D-floor pieces (whose light comes from an F3DFloor, not the band list),
 // or one whose stored piece has gone. The caller falls back to the full bake, which is always right.
 // [rc4l] A plane as GL hands it to the glow shader: a, b, 1/c and d.
-static void GlowPlaneOf(const secplane_t &p, float out[4])
+static void GlowPlaneOf(const secplane_core_t &p, float out[4])
 {
 	out[0] = FIXED2FLOAT(p.a); out[1] = FIXED2FLOAT(p.b); out[2] = FIXED2FLOAT(p.ic); out[3] = FIXED2FLOAT(p.d);
 }
@@ -517,12 +532,12 @@ static void BakeWallGlow(MeshPiece &mp, sector_t *sec, int lightLevel, unsigned 
 {
 	for (int i = 0; i < 4; i++) mp.glowTop[i] = mp.glowBottom[i] = 0.f;
 	if (sec == NULL || !zx::levelmesh::ComputeWallTakesGlow(lightColor, lightLevel)) return;
-	FTexture *top = TexMan[sec->GetTexture(sector_t::ceiling)];
-	FTexture *bottom = TexMan[sec->GetTexture(sector_t::floor)];
+	FTexture *top = TexMan[sec->rc.GetTexture(sector_t::ceiling)];
+	FTexture *bottom = TexMan[sec->rc.GetTexture(sector_t::floor)];
 	if (top != NULL && top->isGlowing()) { top->GetGlowColor(mp.glowTop); mp.glowTop[3] = (float)top->gl_info.GlowHeight; }
 	if (bottom != NULL && bottom->isGlowing()) { bottom->GetGlowColor(mp.glowBottom); mp.glowBottom[3] = (float)bottom->gl_info.GlowHeight; }
-	GlowPlaneOf(sec->ceilingplane, mp.glowTopPlane);
-	GlowPlaneOf(sec->floorplane, mp.glowBottomPlane);
+	GlowPlaneOf(sec->rc.ceilingplane, mp.glowTopPlane);
+	GlowPlaneOf(sec->rc.floorplane, mp.glowBottomPlane);
 }
 
 static int ReshadeSegFromMap(int segIndex)
@@ -602,8 +617,8 @@ static bool BakeFloodPiece(MeshRange &range, const zx::surfaces::DerivedWallSpan
 	const sector_t *sec = d.floodSector;
 	const void *mat = d.material;
 	FColormap cm;
-	cm = sec->ColorMap;
-	int lightLevel = d.floodCeiling ? sec->GetCeilingLight() : sec->GetFloorLight();
+	cm = sec->rc.ColorMap;
+	int lightLevel = d.floodCeiling ? sec->rc.GetCeilingLight() : sec->rc.GetFloorLight();
 	if (lightLevel < 0) lightLevel = -lightLevel;   // [rc4l] DrawFloodedPlane takes abs() of it
 	ApplyFullbright(mat, cm, lightLevel);
 	MeshPiece mp;
@@ -630,14 +645,14 @@ static zx::levelmesh::SideLook SideLookOf(const side_t &sd)
 	zx::levelmesh::SideLook l;
 	for (int p = 0; p < 3; p++)
 	{
-		l.tex[p] = sd.GetTexture(p).GetIndex();
-		l.xoff[p] = sd.GetTextureXOffset(p).Raw();
-		l.yoff[p] = sd.GetTextureYOffset(p).Raw();
-		l.xscale[p] = sd.GetTextureXScale(p).Raw();
-		l.yscale[p] = sd.GetTextureYScale(p).Raw();
+		l.tex[p] = sd.rc.GetTexture(p).GetIndex();
+		l.xoff[p] = sd.rc.GetTextureXOffset(p).Raw();
+		l.yoff[p] = sd.rc.GetTextureYOffset(p).Raw();
+		l.xscale[p] = sd.rc.GetTextureXScale(p).Raw();
+		l.yscale[p] = sd.rc.GetTextureYScale(p).Raw();
 	}
-	l.light = sd.Light;
-	l.flags = sd.Flags;
+	l.light = sd.rc.Light;
+	l.flags = sd.rc.Flags;
 	return l;
 }
 
@@ -676,7 +691,7 @@ static bool RescrollSide(int sideIndex)
 	for (int part = 0; part < 3; part++)
 	{
 		const int tp = kPartTexpos[part];
-		const void *base = TexMan.ByIndex(sd.GetTexture(tp).GetIndex());
+		const void *base = TexMan.ByIndex(sd.rc.GetTexture(tp).GetIndex());
 		for (int k = 0; k < kBandsPerPart; k++)
 		{
 			const MeshRange &r = sc.pieces[part * kBandsPerPart + k].range;
@@ -685,10 +700,10 @@ static bool RescrollSide(int sideIndex)
 			if (p == NULL || p->baseTex != base) return false;   // [rc4l] a gap filled with another texture
 		}
 		if (baked.xoff[tp] == now.xoff[tp] && baked.yoff[tp] == now.yoff[tp]) continue;
-		const void *mat = zx::materials::MaterialForTextureId(sd.GetTexture(tp));
+		const void *mat = zx::materials::MaterialForTextureId(sd.rc.GetTexture(tp));
 		if (mat == NULL) return false;
 		FTexCoordInfo tci;
-		zx::materials::MaterialTexCoordInfo(mat, &tci, sd.GetTextureXScale(tp), sd.GetTextureYScale(tp));
+		zx::materials::MaterialTexCoordInfo(mat, &tci, sd.rc.GetTextureXScale(tp), sd.rc.GetTextureYScale(tp));
 		if (tci.mRenderHeight == 0) return false;
 		du[part] = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(fixed_t::FromRaw(now.xoff[tp]))))
 			- tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(fixed_t::FromRaw(baked.xoff[tp]))));
@@ -714,7 +729,7 @@ static bool RescrollSide(int sideIndex)
 // [rc4l] Whether a missing upper or lower: no texture, or the null one.
 static bool PartMissing(const side_t *side, int part)
 {
-	FTexture *tex = TexMan(side->GetTexture(part));
+	FTexture *tex = TexMan(side->rc.GetTexture(part));
 	return tex == NULL || tex->UseType == FTexture::TEX_Null;
 }
 
@@ -722,26 +737,26 @@ static bool PartMissing(const side_t *side, int part)
 static bool BakeFogSheet(const seg_t *seg, MeshRange &range, const zx::surfaces::DerivedWallLight &dl, FDynamicColormap *cmFrom)
 {
 	sector_t *front = seg->frontsector, *back = seg->backsector;
-	if (back == NULL || (seg->sidedef->Flags & WALLF_POLYOBJ)) return false;
+	if (back == NULL || (seg->sidedef->rc.Flags & WALLF_POLYOBJ)) return false;
 	const zx::levelmesh::FogRules rules = { outsidefogdensity, outsidefogcolor.d, fogdensity, (glset.lightmode & 4) != 0 };
-	const zx::levelmesh::FogSide fs = { front->ColorMap->Fade.d & 0xffffff, front->lightlevel };
-	const zx::levelmesh::FogSide bs = { back->ColorMap->Fade.d & 0xffffff, back->lightlevel };
+	const zx::levelmesh::FogSide fs = { front->rc.ColorMap->Fade.d & 0xffffff, front->rc.lightlevel };
+	const zx::levelmesh::FogSide bs = { back->rc.ColorMap->Fade.d & 0xffffff, back->rc.lightlevel };
 	if (!zx::levelmesh::ComputeFogBoundary(fs, bs, rules, front == back)) return false;
 
 	// [rc4l] The whole linedef, in the order its side is drawn, as GLWall::Process takes an ordinary wall.
 	const line_t *line = seg->linedef;
 	const bool frontSide = seg->sidedef == line->sidedef[0];
 	const vertex_t *va = frontSide ? line->v1 : line->v2, *vb = frontSide ? line->v2 : line->v1;
-	const float x1 = FIXED2FLOAT(va->x), y1 = FIXED2FLOAT(va->y), x2 = FIXED2FLOAT(vb->x), y2 = FIXED2FLOAT(vb->y);
+	const float x1 = FIXED2FLOAT(va->rc.x), y1 = FIXED2FLOAT(va->rc.y), x2 = FIXED2FLOAT(vb->rc.x), y2 = FIXED2FLOAT(vb->rc.y);   // [rc4l] the copy's
 	zx::levelmesh::MidOpeningIn in;
-	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->ceilingplane), x1, y1, x2, y2, in.frontCeiling);
-	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->floorplane), x1, y1, x2, y2, in.frontFloor);
-	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(back->ceilingplane), x1, y1, x2, y2, in.backCeiling);
-	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(back->floorplane), x1, y1, x2, y2, in.backFloor);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->rc.ceilingplane), x1, y1, x2, y2, in.frontCeiling);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(front->rc.floorplane), x1, y1, x2, y2, in.frontFloor);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(back->rc.ceilingplane), x1, y1, x2, y2, in.backCeiling);
+	zx::levelmesh::ComputeBandBottomAtEnds(ToBandPlane(back->rc.floorplane), x1, y1, x2, y2, in.backFloor);
 	in.upperMissing = PartMissing(seg->sidedef, side_t::top);
 	in.lowerMissing = PartMissing(seg->sidedef, side_t::bottom);
-	in.frontCeilingSky = front->GetTexture(sector_t::ceiling) == skyflatnum;
-	in.backCeilingSky = back->GetTexture(sector_t::ceiling) == skyflatnum;
+	in.frontCeilingSky = front->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+	in.backCeilingSky = back->rc.GetTexture(sector_t::ceiling) == skyflatnum;
 	float top[2], bottom[2];
 	if (!zx::levelmesh::ComputeFogSheetOpening(in, top, bottom)) return false;
 
@@ -806,7 +821,7 @@ int BakeSegFromMap(int segIndex)
 	sc.hasOwnLitPiece = false;   // [rc4l] set below; a fog boundary or a flood is a piece a reshade cannot redo
 	const sector_t *front = seg->frontsector;
 	const TArray<lightlist_t> *lights =
-		(front != NULL && front->e != NULL) ? &front->e->XFloor.lightlist : NULL;
+		(front != NULL && front->e != NULL) ? &front->e->rcXFloor.lightlist : NULL;
 	int nLights = (fua_surface_bands && lights != NULL) ? (int)lights->Size() : 0;
 	if (nLights > kBandsPerPart) nLights = kBandsPerPart;
 
@@ -953,7 +968,7 @@ int BakeSegFromMap(int segIndex)
 			{
 				// The fog plane defines the light, not the front sector -- GL's own comment.
 				lightlist_t *fl = (rover->target != NULL && rover->top.plane != NULL) ?
-					P_GetPlaneLight(rover->target, rover->top.plane, true) : NULL;
+					zx::gamecopy::GetPlaneLight(rover->target, *rover->top.plane, true) : NULL;
 				if (fl == NULL || fl->extra_colormap == NULL) { MeshSquash(range); continue; }
 
 				// [rc4l] A colour layer RenderTranslucentWall draws unsplit.
@@ -1000,23 +1015,23 @@ int BakeSegFromMap(int segIndex)
 			FTexCoordInfo tci;
 			const side_t *scalesd = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ?
 				seg->sidedef : mastersd;
-			zx::materials::MaterialTexCoordInfo(fmat, &tci, scalesd->GetTextureXScale((side_t::ETexpart)texpos),
-				scalesd->GetTextureYScale((side_t::ETexpart)texpos));
+			zx::materials::MaterialTexCoordInfo(fmat, &tci, scalesd->rc.GetTextureXScale((side_t::ETexpart)texpos),
+				scalesd->rc.GetTextureYScale((side_t::ETexpart)texpos));
 			if (tci.mRenderHeight == 0) { MeshSquash(range); continue; }
 
 			// u: the master's x offset plus this sidedef's, over the line's texel length -- the
 			// same pair BuildFFBlock adds together.
 			const float toU = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ? 0.f :
-				FIXED2FLOAT(tci.TextureOffset(mastersd->GetTextureXOffset(side_t::mid)));
+				FIXED2FLOAT(tci.TextureOffset(mastersd->rc.GetTextureXOffset(side_t::mid)));
 			const float ul = tci.FloatToTexU(toU +
-				FIXED2FLOAT(tci.TextureOffset(seg->sidedef->GetTextureXOffset(side_t::mid))));
+				FIXED2FLOAT(tci.TextureOffset(seg->sidedef->rc.GetTextureXOffset(side_t::mid))));
 			const float uR = ul + tci.FloatToTexU(seg->sidedef->TexelLength);
 
 			// v: measured DOWN from the slab's own texture height, which is the plane's, not the
 			// wall's -- a 3D floor's texture hangs off the slab and not off the sector.
 			float toV = (rover->flags & (FF_UPPERTEXTURE | FF_LOWERTEXTURE)) ? 0.f :
-				FIXED2FLOAT(tci.RowOffset(mastersd->GetTextureYOffset(side_t::mid)));
-			toV += FIXED2FLOAT(tci.RowOffset(seg->sidedef->GetTextureYOffset(side_t::mid)));
+				FIXED2FLOAT(tci.RowOffset(mastersd->rc.GetTextureYOffset(side_t::mid)));
+			toV += FIXED2FLOAT(tci.RowOffset(seg->sidedef->rc.GetTextureYOffset(side_t::mid)));
 			const float texh = FIXED2FLOAT(*rover->top.texheight);
 			const float vt0 = tci.FloatToTexV(toV + texh - f.top[0]);
 			const float vt1 = tci.FloatToTexV(toV + texh - f.top[1]);
@@ -1250,12 +1265,12 @@ static void RebakeSectorFlats(int sector)
 static SectorLook LookOf(const sector_t &s)
 {
 	SectorLook l;
-	l.light = s.lightlevel;
-	l.floorD = s.floorplane.d.Raw();
-	l.ceilD = s.ceilingplane.d.Raw();
-	l.floorPic = s.GetTexture(sector_t::floor).GetIndex();
-	l.ceilPic = s.GetTexture(sector_t::ceiling).GetIndex();
-	l.colormap = s.ColorMap;
+	l.light = s.rc.lightlevel;
+	l.floorD = s.rc.floorplane.d.Raw();
+	l.ceilD = s.rc.ceilingplane.d.Raw();
+	l.floorPic = s.rc.GetTexture(sector_t::floor).GetIndex();
+	l.ceilPic = s.rc.GetTexture(sector_t::ceiling).GetIndex();
+	l.colormap = s.rc.ColorMap;
 	return l;
 }
 
@@ -1263,7 +1278,7 @@ static SectorLook LookOf(const sector_t &s)
 static void InvalidateSector(int s, TArray<int> &fillMoved)
 {
 	if (s < 0 || s >= numsectors || (unsigned)s >= g_sectorDirty.Size()) return;
-	if (!ComputeTakeChange(g_sectorDirty[s], sectors[s].fua_dirty)) return;
+	if (!ComputeTakeChange(g_sectorDirty[s], sectors[s].rcShape)) return;
 	g_movedThisFrame++;
 	// [rc4l] fua_dirty says only that a setter ran (SetLightLevel, ChangeLightLevel, SetTexture, SetPlaneTexZ, ChangePlaneTexZ, SetColor, SetFade), and a strobe re-asserts its held level every tic, so a sector whose look did not change is skipped.
 	const SectorLook now = LookOf(sectors[s]);
@@ -1288,7 +1303,7 @@ static void InvalidateSector(int s, TArray<int> &fillMoved)
 static void InvalidateSide(int i, TArray<int> &fillSides)
 {
 	if (i < 0 || i >= numsides || (unsigned)i >= g_sideDirty.Size()) return;
-	if (!ComputeTakeChange(g_sideDirty[i], sides[i].fua_dirty)) return;
+	if (!ComputeTakeChange(g_sideDirty[i], sides[i].rcShape)) return;
 	if (zx::levelmesh::SideTexturesChanged(i)) fillSides.Push(i);
 	if (RescrollSide(i)) { g_sidesRescrolled++; return; }
 	for (int k = 0; k < sides[i].numsegs; k++) RebakeChangedSeg(int(sides[i].segs[k] - segs), true);
@@ -1298,7 +1313,7 @@ static void InvalidateSide(int i, TArray<int> &fillSides)
 static void ReplaceSectorFlats(int s)
 {
 	if (s < 0 || s >= numsectors || (unsigned)s >= g_sectorPlacement.Size()) return;
-	if (ComputeTakeChange(g_sectorPlacement[s], sectors[s].fua_placement)) ForSectorAndTargets(s, RebakeSectorFlats);
+	if (ComputeTakeChange(g_sectorPlacement[s], sectors[s].rcPlacement)) ForSectorAndTargets(s, RebakeSectorFlats);
 }
 
 // [rc4l] Re-bakes from the map every seg and flat of a sector whose look changed, visible or not, so a moved far face never keeps its old quad.

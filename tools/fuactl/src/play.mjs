@@ -24,7 +24,23 @@ import { sleep } from "./capture.mjs";
 // freelook OFF. It is `2` that enables it. sv_nofreeaim decides whether a projectile follows the
 // crosshair or is auto-aimed at whatever is nearest -- the difference between hitting a wall/floor
 // join on purpose and hitting it by luck.
-export function playCvars({ gl = false, sideBySide = false, rt = false, monsters = false, lock = false, extra = {} } = {}) {
+// [rc4l] A launch's renderers, as players run it unless it asks otherwise: Vulkan alone, GL alone (gl), the backend beside GL in one process for comparing the two (glBeside, which side by side implies), or WebGPU.
+export const MODES = Object.freeze({ vulkan: "vulkan", gl: "gl", beside: "beside", webgpu: "webgpu" });
+export function launchMode({ gl = false, glBeside = false, sideBySide = false, webgpu = false } = {}) {
+  if (webgpu) return MODES.webgpu;
+  if (gl) return MODES.gl;
+  return glBeside || sideBySide ? MODES.beside : MODES.vulkan;
+}
+
+// [rc4l] How a mode is said at launch, so a session never leaves which renderers it runs to be guessed.
+export function describeMode(mode, sideBySide = false) {
+  if (mode === MODES.gl) return "GL alone";
+  if (mode === MODES.webgpu) return "WebGPU alone (no GL), as the browser runs it";
+  if (mode === MODES.beside) return `GL with the Vulkan backend beside it${sideBySide ? " in its own window" : ""}, for comparing the two`;
+  return "Vulkan alone (no GL), as players run it";
+}
+
+export function playCvars({ gl = false, glBeside = false, sideBySide = false, rt = false, monsters = false, lock = false, extra = {} } = {}) {
   const cv = {
     sv_nofreelook: 0, sv_freelook: 2, freelook: 1,
     sv_nofreeaim: 0, autoaim: 0,
@@ -41,7 +57,7 @@ export function playCvars({ gl = false, sideBySide = false, rt = false, monsters
   // Its own window beside the engine's instead of embedded, so both renderers are on screen at
   // once. Easier to point at a difference than toggling and trying to remember the other one.
   // [rc4l] GL draws whenever the backend's window is its own, so nothing else is needed for both to be live.
-  if (sideBySide) cv.fua_dg_embed = 0;
+  if (sideBySide && launchMode({ gl, glBeside, sideBySide }) === MODES.beside) cv.fua_dg_embed = 0;
   // Ray-traced reflections must be on at LAUNCH: the acceleration structure is built at scene
   // upload, which has already happened by the time a level is playable, so setting it later leaves
   // nothing for the rays to hit.
@@ -90,7 +106,7 @@ export function resolvePreset(catalogueDir, storeDir, id, variantId) {
 // appeared and it spun until something else timed out, with the reason already printed and going
 // nowhere. A launch that is not going to work should say so in seconds.
 //
-// [rc4l] Each probe's connection is closed whatever happens to it, since the bridge serves one client at a time and a probe left open after a timeout kept every later one waiting.
+// [rc4l] Each probe's connection is closed whatever happens to it, since a probe left open after a timeout holds a reader thread in the engine until fuactl exits.
 export async function waitInLevel(inst, { timeoutMs = 90000, pollMs = 250, connect = (port, token) => bridgeConnect(port, token, { connectMs: 1500, helloMs: 3000 }) } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -170,9 +186,48 @@ export async function verifyWorld(c, { exec }) {
   return report;
 }
 
-// [rc4l] The engine arguments past the cvars: each wad as -file, and -vulkan when the launch runs with no GL at all, or -webgpu for the same backend on WebGPU.
-export function playArgs(files, { noGl = false, webgpu = false } = {}) {
-  return [...files.flatMap((f) => ["-file", f]), ...(webgpu ? ["-webgpu"] : noGl ? ["-vulkan"] : [])];
+// [rc4l] The render size, render scale and field of view an instance shows, which frame a picture as much as its camera does.
+export async function readView(c, { exec }) {
+  const { width, height } = await c.rpc("input.windowpoint", { x: 0, y: 0 });
+  const value = async (name) => { const m = /"[^"]+" is "([^"]*)"/.exec(await exec(c, name, { quietMs: 120 })); return m ? Number(m[1]) : null; };
+  return { width, height, scale: await value("vid_scalefactor"), fov: await value("fov") };
+}
+
+// [rc4l] The window client size vid_setsize takes for a view: its render size over its render scale.
+export function windowForView({ width, height, scale }) {
+  const s = scale > 0 ? scale : 1;
+  return { w: Math.round(width / s), h: Math.round(height / s) };
+}
+
+// [rc4l] The view a --res window size is at a render scale, since --res sizes the window and a view is what renders in it.
+export function viewForWindow(w, h, scale) {
+  const s = scale > 0 ? scale : 1;
+  return { width: Math.round(w * s), height: Math.round(h * s) };
+}
+
+// [rc4l] Whether a view read back is the one asked for, its size to the pixel a scale rounds by, and its scale and FOV when it names them.
+export function sameView(want, got) {
+  const near = (a, b) => Math.abs(a - b) <= 1;
+  return near(got.width, want.width) && near(got.height, want.height)
+    && (want.scale == null || got.scale === want.scale) && (want.fov == null || got.fov === want.fov);
+}
+
+// [rc4l] Sets an instance to a view (scale and FOV, then the window through vid_setsize) and reads back what it got, since a launch's size snaps to a mode the engine knows and 900x900 came up 1280x960.
+export async function fitView(c, view, cap, { tries = 20, now = null } = {}) {
+  let got = now || await readView(c, cap);
+  if (sameView(view, got)) return { want: view, got, ok: true };
+  if (view.scale != null) await cap.exec(c, `vid_scalefactor ${view.scale}`, { quietMs: 120 });
+  if (view.fov != null) await cap.exec(c, `fov ${view.fov}`, { quietMs: 120 });
+  const { w, h } = windowForView(view);
+  await cap.exec(c, `vid_setsize ${w} ${h}`, { quietMs: 120 });
+  for (let i = 0; i < tries && !sameView(view, got = await readView(c, cap)); i++) await cap.sleep(100);
+  return { want: view, got, ok: sameView(view, got) };
+}
+
+// [rc4l] The engine arguments past the cvars: each wad as -file, then the mode's own, so the launch never rests on the engine's default or the config's vid_backend.
+export function playArgs(files, mode = MODES.vulkan) {
+  const own = { [MODES.vulkan]: "-vulkan", [MODES.webgpu]: "-webgpu", [MODES.gl]: "-gl", [MODES.beside]: "-gl" }[mode];
+  return [...files.flatMap((f) => ["-file", f]), own];
 }
 
 // [rc4l] Whether an engine still answers on port once a closing one has had graceMs to go.
@@ -215,7 +270,7 @@ async function launchChecked(opts, port) {
     allowOsInput: !opts.lock,
     // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
     width: opts.width, height: opts.height,
-    extraArgs: playArgs(files, { noGl: opts.noGl, webgpu: opts.webgpu }),
+    extraArgs: playArgs(files, launchMode(opts)),
     cvars: playCvars(opts),
     engine: opts.engine,
   });
@@ -239,7 +294,18 @@ async function launchChecked(opts, port) {
     try {
       const cheats = [];
       for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
-      world = { cheats, cvars: await verifyWorld(c, cap) };
+      world = { cheats, cvars: await verifyWorld(c, cap), view: null, mode: null };
+      // [rc4l] The renderers the engine reports running, held to the mode asked for, since the launch's flags are only a request.
+      const want = launchMode(opts);
+      const got = cap.launchModeOf(await cap.exec(c, cap.RENDERER_PROBE, { quietMs: 300 }));
+      world.mode = { want, got, ok: got === want };
+      // [rc4l] The --res window or the view a spot was seen in, set and read back, since the ini's size snaps to a known mode.
+      // [rc4l] An engine older than input.windowpoint (an old binary under A/B) launches unsized rather than not at all.
+      const now = (opts.width && opts.height) || opts.view ? await readView(c, cap).catch(() => null) : null;
+      if (now) {
+        const view = opts.width && opts.height ? viewForWindow(Number(opts.width), Number(opts.height), now.scale) : opts.view;
+        world.view = await fitView(c, view, cap, { now });
+      }
       // [rc4l] opts.at (x, y, z, angle, pitch) stands the player there before anyone is told the instance is up.
       if (opts.at) await standAt(c, opts.at);
     } finally { c.close(); }

@@ -11,8 +11,11 @@ namespace zx { namespace viewsetup {
 // [rc4l] viewpitch (BAM) as a pitch in degrees once the level's pixel stretch is applied, as the playsim's 1:1 pitch looks on stretched pixels.
 float ComputeStretchedPitch(unsigned viewPitch, float pixelStretch);
 
-// [rc4l] FrustumAngle: half the angle the view can see either side of its heading, widened for a tilted view, or 2^32-1 for one pitched past 46 degrees or past half a turn.
-unsigned ComputeFrustumAngle(float pitchDeg, float fovDeg, int aspectMultiplier);
+// [rc4l] What the walks' frustum half-angle is worked out from: the view's stretched pitch and roll and the lens's field of view across in degrees, its width over height and fov ratio, and GL's aspect multiplier.
+struct FrustumIn { float pitchDeg, rollDeg, fovDeg, ratio, fovRatio; int aspectMultiplier; };
+
+// [rc4l] FrustumAngle: half the angle the view can see either side of its heading, GL's estimate or the widest heading through the screen's corners if that is wider, or 2^32-1 for a view that sees all round.
+unsigned ComputeFrustumAngle(const FrustumIn &in);
 
 // [rc4l] How far a sky layer has scrolled at the frame's clock, in degrees, as RenderViewpoint keeps mSky1Pos and mSky2Pos.
 float ComputeSkyScroll(long frameMS, float skySpeed);

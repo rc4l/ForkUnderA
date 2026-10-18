@@ -73,7 +73,8 @@ class FDecalGroup : public FDecalBase
 
 public:
 	FDecalGroup () : Choices (pr_decalchoice) {}
-	const FDecalTemplate *GetDecal () const;
+	const FDecalTemplate *GetDecal () const { return GetDecalWith (pr_decalchoice); }
+	const FDecalTemplate *GetDecalWith (FRandom &choice) const;
 	void ReplaceDecalRef (FDecalBase *from, FDecalBase *to)
 	{
 		Choices.ReplaceValues(from, to);
@@ -104,16 +105,6 @@ struct FDecalAnimator
 	FDecalAnimator (const char *name);
 	virtual ~FDecalAnimator ();
 	virtual DThinker *CreateThinker (DBaseDecal *actor, side_t *wall) const = 0;
-
-	// [rc4l] How this animator will fade a decal, asked directly rather than by type-testing.
-	//
-	// A dynamic_cast looked like the natural way to spot a fader, and it takes the engine down: this
-	// is built without RTTI, so __RTDynamicCast throws __non_rtti_object on the first decal spawned
-	// -- fire one rocket, lose the engine. A virtual costs a pointer and cannot be got wrong.
-	//
-	// Only a projected decal with no engine decal behind it needs this: a mark on a floor, where
-	// vanilla creates nothing to read an alpha from. See zx::levelmesh::SpawnProjectedDecalHere.
-	virtual bool GetFadeTiming (int &decayStartTics, int &decayTimeTics) const { (void)decayStartTics; (void)decayTimeTics; return false; }
 
 	FName Name;
 };
@@ -146,12 +137,6 @@ struct FDecalFaderAnim : public FDecalAnimator
 {
 	FDecalFaderAnim (const char *name) : FDecalAnimator (name) {}
 	DThinker *CreateThinker (DBaseDecal *actor, side_t *wall) const;
-	bool GetFadeTiming (int &decayStartTics, int &decayTimeTics) const
-	{
-		decayStartTics = DecayStart;
-		decayTimeTics = DecayTime;
-		return true;
-	}
 
 	int DecayStart;
 	int DecayTime;
@@ -1054,6 +1039,11 @@ FDecalBase::~FDecalBase ()
 
 void FDecalTemplate::ApplyToDecal (DBaseDecal *decal, side_t *wall) const
 {
+	ApplyToDecal (decal, wall, pr_decal);
+}
+
+void FDecalTemplate::ApplyToDecal (DBaseDecal *decal, side_t *wall, FRandom &flips) const
+{
 	if (RenderStyle.Flags & STYLEF_ColorIsFixed)
 	{
 		decal->SetShade (ShadeColor);
@@ -1068,7 +1058,7 @@ void FDecalTemplate::ApplyToDecal (DBaseDecal *decal, side_t *wall) const
 		(decal->RenderFlags & (RF_RELMASK|RF_CLIPMASK|RF_INVISIBLE|RF_ONESIDED));
 	if (RenderFlags & (DECAL_RandomFlipX|DECAL_RandomFlipY))
 	{
-		decal->RenderFlags ^= pr_decal() &
+		decal->RenderFlags ^= flips() &
 			((RenderFlags & (DECAL_RandomFlipX|DECAL_RandomFlipY)) >> 8);
 	}
 	if (Animator != NULL)
@@ -1140,9 +1130,9 @@ FDecalLib::FTranslation *FDecalLib::FTranslation::LocateTranslation (DWORD start
 	return trans;
 }
 
-const FDecalTemplate *FDecalGroup::GetDecal () const
+const FDecalTemplate *FDecalGroup::GetDecalWith (FRandom &choice) const
 {
-	const FDecalBase *decal = Choices.PickEntry ();
+	const FDecalBase *decal = Choices.PickEntry (choice);
 	const FDecalBase *remember = decal;
 
 	// Repeatedly GetDecal() until the result is constant, since
@@ -1152,7 +1142,7 @@ const FDecalTemplate *FDecalGroup::GetDecal () const
 		do
 		{
 			remember = decal;
-			decal = decal->GetDecal ();
+			decal = decal->GetDecalWith (choice);
 		} while (decal != NULL && decal != remember);
 	}
 	return static_cast<const FDecalTemplate *>(remember);
@@ -1202,17 +1192,6 @@ void DDecalFader::Tick ()
 		int fadeDistance = TimeToEndDecay - TimeToStartDecay;
 		TheDecal->Alpha = Scale (StartTrans, distanceToEnd, fadeDistance);
 	}
-}
-
-// [rc4l] A fader's timing, for a mark that has to fade itself.
-//
-// Only faders answer. The other animators -- stretchers, sliders, colour changers -- do not remove
-// the decal or touch its alpha, so there is nothing here for them, and pretending otherwise faded
-// out marks that are meant to be permanent.
-bool GetDecalFadeTiming (const FDecalAnimator *anim, int &decayStartTics, int &decayTimeTics)
-{
-	if (anim == NULL) return false;
-	return anim->GetFadeTiming (decayStartTics, decayTimeTics);
 }
 
 DThinker *FDecalFaderAnim::CreateThinker (DBaseDecal *actor, side_t *wall) const

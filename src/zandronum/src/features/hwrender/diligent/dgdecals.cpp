@@ -32,7 +32,6 @@
 
 #include <math.h>
 
-EXTERN_CVAR(Int, fua_decalmode)
 
 // [rc4l] ASPECT CORRECTION: how much of the projection's stretch to undo, 0 to 1.
 //
@@ -53,8 +52,8 @@ EXTERN_CVAR(Int, fua_decalmode)
 //
 // The argument for 0 was the KINK: aspect correction reads the picture in the receiving surface's
 // own plane, so it steps where the normal steps, at a corner. A mark on a floor stays on one plane
-// and has no corner to step at, and walls do not come through here unless fua_decalmode is turned
-// on -- so the case the kink was feared for is the case this default does not touch.
+// and has no corner to step at, and walls never come through here -- so the case the kink was feared
+// for is the case this default does not touch.
 CVAR(Float, fua_decal_aspect, 1.0f, CVAR_ARCHIVE)
 
 // [rc4l] How square-on a surface must be to receive any of the mark. See the pixel shader.
@@ -228,7 +227,8 @@ static const char *kDeferredDecalPS =
 	   two-pixel sliver there was no neighbourhood to sample, and at a grazing angle it was a
 	   difference of nearly-equal large numbers. Alpha zero means nothing was drawn here. */
 	"    vec4 gbuf = texture(sampler2D(uSceneNormal, uSceneNormal_sampler), uv);\n"
-	"    if (gbuf.a < 0.5) discard;\n"
+	/* [rc4l] And alpha 0.75 is a surface features/decals refuses marks on, an animated wall or a liquid flat beside the mark. */
+	"    if (gbuf.a < 0.875) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
 	/* [rc4l] How square-on a surface must be to receive any of the mark, as a cosine.
 	
@@ -557,10 +557,11 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	if (n <= 0 || decals == NULL) { g_ddBail = "nothing registered"; return; }
 	if (!EnsureDeferredDecalPass()) return;
 
-	Diligent::ITextureView *depthSRV = SceneDepthSRV();
-	Diligent::ITextureView *normalSRV = SceneNormalSRV();
-	if (!depthSRV) { g_ddBail = "no scene depth"; return; }
-	if (!normalSRV) { g_ddBail = "no scene normal"; return; }
+	// [rc4l] The pass's own depth and normals, so a mirror's, a stacked view's and a camera's marks land on what that view drew.
+	Diligent::ITextureView *depthSRV = PassDepthSRV();
+	Diligent::ITextureView *normalSRV = PassNormalSRV();
+	if (!depthSRV) { g_ddBail = "no depth for this view"; return; }
+	if (!normalSRV) { g_ddBail = "no normals for this view"; return; }
 
 	float invMVP[16];
 	if (!ComputeInvertMatrix4(SceneMVP(), invMVP)) { g_ddBail = "view matrix not invertible"; return; }
@@ -729,7 +730,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 			// point, so the float form is z = -(Ax + By + D)/C and 1/C is stored ready to multiply.
 			// Storing a height instead only works for a level plane, and got every small mark on a
 			// slope placed far enough off the surface to disappear.
-			const secplane_t *pl[2] = { &sec.floorplane, &sec.ceilingplane };
+			const secplane_core_t *pl[2] = { &sec.rc.floorplane, &sec.rc.ceilingplane };
 			for (int q = 0; q < 2; q++)
 			{
 				const float C = FIXED2FLOAT(pl[q]->c);
@@ -747,7 +748,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		&all[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// The depth buffer comes off the render target for this pass -- it is being READ.
-	Diligent::ITextureView *rtv = GetSwapChain() ? FrameRTV() : NULL;
+	Diligent::ITextureView *rtv = PassColorRTV();
 	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// [rc4l] One draw per blend pass for the whole level, since each mark's record carries its texture slot and only the fixed-function blend breaks a draw (dbab04's 43 plasma marks were 21 draws).
@@ -798,7 +799,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	}
 
 
-	if (rtv) ctx->SetRenderTargets(1, &rtv, SceneDepthDSV(),
+	if (rtv) ctx->SetRenderTargets(1, &rtv, PassDepthDSV(),
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 

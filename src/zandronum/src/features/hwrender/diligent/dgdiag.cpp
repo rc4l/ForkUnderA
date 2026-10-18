@@ -12,13 +12,6 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] A frame drawn without presenting, submitted and finished as Present does both, so its dynamic memory is recycled.
-static void EndUnpresentedFrame(Diligent::IDeviceContext *ctx)
-{
-	ctx->Flush();
-	ctx->FinishFrame();
-}
-
 // [rc4l] `n` frames of the scene drawn and finished without presenting.
 static void DrawUnpresentedFrames(int n)
 {
@@ -126,6 +119,11 @@ void DynStats(FString &report)
 		g_stats.dynSlotSeen, g_stats.dynSlotMax, g_stats.dynSlotRefused, g_stats.dynSlotNoMaterial, g_stats.dynSlotUnfilled, g_stats.dynSlotUnfilledTotal);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
 		g_stats.dynBindless, g_stats.dynPerMaterial, g_stats.fillState);
+	{
+		int pages = 0;
+		const int placed = AtlasEntries(pages);
+		cull.AppendFormat(", sprite atlas %s: %d draws from it, %d images on %d pages", AtlasActive() ? "on" : "off", g_stats.dynAtlas, placed, pages);
+	}
 	cull.AppendFormat(", sky surfaces: %d draws since load", SkyDraws());
 	cull.AppendFormat(", runs from mirror walks: %d", g_stats.dynMirrorRuns);
 	cull.AppendFormat(", dyn build %.3f ms", g_stats.dynBuildMs);
@@ -161,8 +159,8 @@ void DynStats(FString &report)
 		g_stats.geomRepaints, g_stats.repaintRuns);
 	report += why;
 	FString patches;
-	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d new, %d resized, %d revived) (%d verts, %d%% of slack)",
-		g_stats.geomPatches, g_stats.geomPatchVerts, g_stats.geomAppends, g_stats.appendNoSlot, g_stats.appendResized, g_stats.slotRevived, g_scene.appendedVerts,
+	patches.Format(" | %d geometry patches (%d verts moved), %d appends (%d new, %d resized, %d rebatched, %d revived) (%d verts, %d%% of slack)",
+		g_stats.geomPatches, g_stats.geomPatchVerts, g_stats.geomAppends, g_stats.appendNoSlot, g_stats.appendResized, g_stats.appendRebatched, g_stats.slotRevived, g_scene.appendedVerts,
 		g_scene.vbCapacity ? (int)(100.0 * g_scene.appendedVerts / (g_scene.vbCapacity / 8.0)) : 0);
 	report += patches;
 	report += geo;
@@ -307,7 +305,7 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 			// red/blue inversion that still looked like a plausible Doom scene, just cooler.
 			const bool bgra = (bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM ||
 			                   bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
-			// [rc4l] Handed over as the image holds it, for the encoder's scaler to convert: swizzling every pixel to RGB here cost the game thread about 1.3 ms a capture at 1280x800.
+			// [rc4l] Handed over as the image holds it, for the encoder's scaler to convert: swizzling every pixel to RGB here cost the main thread about 1.3 ms a capture at 1280x800.
 			const int format = bgra ? zx::kReplayBGRA : zx::kReplayRGBA;
 			// Already top-down, so a positive pitch.
 			(primary ? zx::replay::SubmitFrame : zx::replay::SubmitFrameVulkan)((const unsigned char *)mapped.pData, w, h, (int)mapped.Stride, format);

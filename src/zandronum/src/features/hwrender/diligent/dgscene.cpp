@@ -8,6 +8,7 @@
 #include "features/hwrender/computation/shaderdump_compute.h"
 #include "features/hwrender/computation/layoutvars_compute.h"
 #include "features/mainloop/mainloop.h"   // [rc4l] Stepped, a browser pacing the frames
+#include "features/wipe/wipetrace.h"   // [rc4l] fua_wipe_trace
 #include "cmdlib.h"   // [rc4l] CreatePath
 #include "features/framephase/framephase.h"   // [rc4l] the backend, upload, lights and present phases
 #include "c_dispatch.h"
@@ -193,17 +194,13 @@ CVAR(Bool, fua_dg_mergedraws, true, 0)
 // rebuilding thirteen bindings, and a binding the GPU is still reading is its own kind of wrong.
 CVAR(Bool, fua_dg_bindless_anim, true, 0)
 
-// [rc4l] The shader spells 64 and 24 out, because a GLSL string cannot read a C++ constant. This is
-// the tie: change the grid and the build stops until the shader has been changed with it. A tile
-// size that disagrees between the binning pass and the lookup is a grid where every cell holds the
-// wrong lights, and it shows up as nothing more alarming than "the lighting is a bit off there".
-static_assert(zx::hwrender::kClusterTilePixels == 64 && zx::hwrender::kClusterSlices == 24,
-	"the cluster grid changed: update the 64 and 24 in FUA_LIGHT_GLSL to match.");
+// [rc4l] The shader spells 32, 18 and 24 out since a GLSL string cannot read a C++ constant, so a grid change stops the build until the shader changes with it.
+static_assert(zx::hwrender::kClusterTilesX == 32 && zx::hwrender::kClusterTilesY == 18 && zx::hwrender::kClusterSlices == 24,
+	"the cluster grid changed: update the 32, 18 and 24 in FUA_LIGHT_GLSL to match.");
 
 // [rc4l] Which of the three ways a mark is drawn -- see projdecals.h. Declared at file scope, not
 // inside zx::hwrender: a cvar lives in the global namespace, and an EXTERN_CVAR inside a namespace
 // declares a DIFFERENT symbol that links against nothing.
-EXTERN_CVAR(Int, fua_decalmode)
 
 // [rc4l] A directory every composed shader is written into as it compiles, to check each against the WebGPU conversion off the engine.
 CVAR(String, fua_dg_shaderdump, "", 0)
@@ -388,7 +385,8 @@ bool CreateDepthTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 	dd.Width = (Diligent::Uint32)w; dd.Height = (Diligent::Uint32)h;
 	dd.Format = swap->GetDesc().DepthBufferFormat;
 	dd.MipLevels = 1;
-	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL;
+	// [rc4l] Readable too, for the decal pass of the view it is drawn with.
+	dd.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
 	depth.Release();
 	CreateDeviceTexture(dd, nullptr, &depth);
 	return depth.RawPtr() != nullptr;
@@ -543,21 +541,70 @@ Diligent::ITextureView *EnsureSceneDepth()
 	td.BindFlags = Diligent::BIND_DEPTH_STENCIL | Diligent::BIND_SHADER_RESOURCE;
 	CreateDeviceTexture(td, nullptr, &g_sceneDepth);
 	if (!g_sceneDepth) { g_sceneDepthW = g_sceneDepthH = 0; return NULL; }
-	{
-		// The G-buffer shares the depth's lifetime and size: they are read together, one fragment at
-		// a time, and a mismatch between them would be a reconstruction against the wrong surface.
-		Diligent::TextureDesc nd;
-		nd.Name = "fua scene normal";
-		nd.Type = Diligent::RESOURCE_DIM_TEX_2D;
-		nd.Width = fw; nd.Height = fh;
-		nd.MipLevels = 1;
-		nd.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
-		nd.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
-		CreateDeviceTexture(nd, nullptr, &g_sceneNormal);
-	}
+	// The G-buffer shares the depth's lifetime and size: they are read together, one fragment at
+	// a time, and a mismatch between them would be a reconstruction against the wrong surface.
+	CreateNormalTarget(fw, fh, "fua scene", g_sceneNormal);
 	g_sceneDepthW = fw; g_sceneDepthH = fh;
 	return g_sceneDepth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 }
+
+bool CreateNormalTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &normal)
+{
+	if (!GetDevice() || w <= 0 || h <= 0) return false;
+	FString normalName;
+	normalName.Format("%s normal", name);
+	Diligent::TextureDesc nd;
+	nd.Name = normalName.GetChars();
+	nd.Type = Diligent::RESOURCE_DIM_TEX_2D;
+	nd.Width = (Diligent::Uint32)w; nd.Height = (Diligent::Uint32)h;
+	nd.MipLevels = 1;
+	nd.Format = Diligent::TEX_FORMAT_RGBA8_UNORM;
+	nd.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
+	normal.Release();
+	CreateDeviceTexture(nd, nullptr, &normal);
+	return normal.RawPtr() != nullptr;
+}
+
+void BeginPassTargets(Diligent::IDeviceContext *ctx, const PassTargets &targets, const float clear[4])
+{
+	g_pass.targets = targets;
+	g_pass.gbufBound = targets.normal != nullptr;
+	Diligent::ITextureView *bound[2] = { targets.color, targets.normal };
+	ctx->SetRenderTargets(g_pass.gbufBound ? 2 : 1, bound, targets.depth, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->ClearRenderTarget(targets.color, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	if (g_pass.gbufBound)
+	{
+		// Zero means "nothing drew here", which decodes to a zero-length normal -- and the decal pass
+		// treats that as a surface it knows nothing about rather than one facing a particular way.
+		const float clearN[4] = { 0.5f, 0.5f, 0.5f, 0.0f };
+		ctx->ClearRenderTarget(targets.normal, clearN, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	}
+	ctx->ClearDepthStencil(targets.depth, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+}
+
+PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal)
+{
+	PassTargets t;
+	t.color = color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	t.depth = depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
+	t.w = (int)color->GetDesc().Width;
+	t.h = (int)color->GetDesc().Height;
+	// [rc4l] A normal target of another size would be read at the wrong texels, so the view draws no marks instead.
+	if (normal != NULL && (int)normal->GetDesc().Width == t.w && (int)normal->GetDesc().Height == t.h)
+	{
+		t.normal = normal->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+		t.normalRead = normal->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+		t.depthRead = depth->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
+	}
+	return t;
+}
+
+int PassWidth() { return g_pass.targets.w > 0 ? g_pass.targets.w : FrameWidth(); }
+int PassHeight() { return g_pass.targets.h > 0 ? g_pass.targets.h : FrameHeight(); }
+Diligent::ITextureView *PassColorRTV() { return g_pass.targets.color; }
+Diligent::ITextureView *PassDepthDSV() { return g_pass.targets.depth; }
+Diligent::ITextureView *PassDepthSRV() { return g_pass.targets.depthRead; }
+Diligent::ITextureView *PassNormalSRV() { return g_pass.targets.normalRead; }
 
 static Diligent::ITextureView *SceneNormalRTV()
 {
@@ -630,27 +677,21 @@ void DrawSceneOnce(bool present, bool pump)
 		RenderPlaneMirrors(ctx);
 		RenderMirrors(ctx);
 
-		auto *rtv = FrameRTV();
-		Diligent::ITextureView *dsv = EnsureSceneDepth();
-		if (!dsv) dsv = FrameDSV();
 		// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
 		// colour alone before the decals, which read the G-buffer rather than write it.
-		Diligent::ITextureView *nrm = SceneNormalRTV();
-		g_pass.gbufBound = (nrm != NULL);
-		Diligent::ITextureView *targets[2] = { rtv, nrm };
-		ctx->SetRenderTargets(g_pass.gbufBound ? 2 : 1, targets,
-			dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-		ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		if (g_pass.gbufBound)
+		PassTargets screen;
+		screen.color = FrameRTV();
+		screen.depth = EnsureSceneDepth();
+		screen.w = FrameWidth(); screen.h = FrameHeight();
+		if (screen.depth)
 		{
-			// Zero means "nothing drew here", which decodes to a zero-length normal -- and the decal pass
-			// treats that as a surface it knows nothing about rather than one facing a particular way.
-			const float clearN[4] = { 0.5f, 0.5f, 0.5f, 0.0f };
-			ctx->ClearRenderTarget(nrm, clearN, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			screen.normal = SceneNormalRTV();
+			screen.depthRead = SceneDepthSRV();
+			screen.normalRead = screen.normal ? SceneNormalSRV() : NULL;
 		}
-		ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		else screen.depth = FrameDSV();
+		const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
+		BeginPassTargets(ctx, screen, clear);
 
 		g_pass.mainView = true;
 		if (eye == 0) BeginGpuPass(ctx, kGpuWorld);
@@ -714,6 +755,26 @@ void ReleaseFrameFence()
 	g_frameSignalled = 0;
 }
 
+// [rc4l] features/wipe's trace of what is about to be presented, read back whole, so only while fua_wipe_trace is on.
+static void TraceWipeFrame()
+{
+	int w = 0, h = 0, format = 0;
+	bool bgra = false;
+	FString report;
+	unsigned char *rgb = ReadBackBuffer(w, h, format, bgra, report);
+	if (rgb == NULL) return;
+	zx::wipe::TracePresented(rgb, w, h);
+	delete[] rgb;
+}
+
+void EndUnpresentedFrame(Diligent::IDeviceContext *ctx)
+{
+	ctx->Flush();
+	ctx->FinishFrame();
+	SignalFrame(ctx);
+	PaceFrames();
+}
+
 void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, bool pump)
 {
 #ifdef ZX_ENABLE_REPLAY
@@ -722,6 +783,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 #else
 	(void)ctx;
 #endif
+	if (zx::wipe::TraceWanted()) TraceWipeFrame();
 	g_stats.lastFramePasses = g_framePasses; g_stats.lastFrameWorldMs = g_frameWorldMs;
 	g_stats.lastFramePassList = g_framePassList;
 	for (int k = 0; k < 6; k++) { g_stats.lastFramePhase[k] = g_framePhase[k]; g_framePhase[k] = 0.0; }
@@ -860,10 +922,11 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 }
 
 // [rc4l] The main view's targets: the frame's colour and the scene's depth, with the G-buffer's normal beside them when `normal`.
+// [rc4l] The pass's own colour and depth, with its normals when asked.
 static void BindWorldTargets(Diligent::IDeviceContext *ctx, bool normal)
 {
-	Diligent::ITextureView *targets[2] = { FrameRTV(), SceneNormalRTV() };
-	ctx->SetRenderTargets(normal ? 2 : 1, targets, SceneDepthDSV(), Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::ITextureView *targets[2] = { g_pass.targets.color, g_pass.targets.normal };
+	ctx->SetRenderTargets(normal && g_pass.targets.normal ? 2 : 1, targets, g_pass.targets.depth, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
 void DrawWorld(Diligent::IDeviceContext *ctx)
@@ -897,7 +960,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		WriteSceneConstants(&cb[0], g_pass.clipPlane, (float)FrameWidth(), (float)FrameHeight(),
+		WriteSceneConstants(&cb[0], g_pass.clipPlane, (float)PassWidth(), (float)PassHeight(),
 			BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
 
@@ -1020,25 +1083,14 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// pipeline after this point declares a single attachment.
 	if (g_pass.gbufBound)
 	{
-		Diligent::ITextureView *rtvNow = GetSwapChain() ? FrameRTV() : NULL;
-		if (rtvNow) ctx->SetRenderTargets(1, &rtvNow, SceneDepthDSV(),
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		BindWorldTargets(ctx, false);
 		g_pass.gbufBound = false;
 	}
 
 	// [rc4l] Decals mark surfaces, so they go with the surfaces -- after the world and before the
 	// sprites. Anything standing in front of a mark is then drawn over it because it is in a LATER
 	// pass, which is a fact about the frame rather than something a sort has to rediscover.
-	// [rc4l] The SAME question the spawn side asks, which it was not.
-	//
-	// A mark is made when ProjectedDecalsActive() says so -- fua_decalmode for walls OR
-	// fua_decal_flats for floors and ceilings -- and was drawn only when fua_decalmode was set. So
-	// with the default decalmode a floor mark was built, stored, aged and faded, and never once
-	// drawn: fua_projdecals_stats reported ten live decals against a pass that ran zero boxes in
-	// zero draws. fua_decal_flats could not produce a visible mark on its own, which is the whole
-	// of what that switch is for.
-	//
-	// Two gates on one feature will drift; there is now one, and both sides call it.
+	// [rc4l] The floor and ceiling marks features/decals made, whenever there are any.
 	if (zx::levelmesh::ProjectedDecalsActive()) DrawDeferredDecals(ctx);
 
 	// [rc4l] Sprites were built in PrepareFrame and draw in the sorted pass below, except the solid ones, which belong with the world: a model has to occlude itself.

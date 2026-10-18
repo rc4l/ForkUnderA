@@ -176,13 +176,13 @@ void DEarthquake::Tick ()
 	}
 }
 
-int DEarthquake::GetModWave(double waveMultiplier) const
+int FQuakeState::GetModWave(double waveMultiplier) const
 {
 	//QF_WAVE converts intensity into amplitude and unlocks a new property, the wave length.
 	//This is, in short, waves per second (full cycles, mind you, from 0 to 360.)
 	//Named waveMultiplier because that's as the name implies: adds more waves per second.
 
-	double time = m_Countdown - FIXED2DBL(r_TicFrac);
+	double time = Countdown - FIXED2DBL(r_TicFrac);
 	return FLOAT2FIXED(sin(waveMultiplier * time * (M_PI * 2 / TICRATE)));
 }
 
@@ -194,34 +194,34 @@ int DEarthquake::GetModWave(double waveMultiplier) const
 //
 //==========================================================================
 
-int DEarthquake::GetModIntensity(int intensity) const
+int FQuakeState::GetModIntensity(int intensity) const
 {
-	assert(m_CountdownStart >= m_Countdown);
+	assert(CountdownStart >= Countdown);
 	intensity += intensity;		// always doubled
 
-	if (m_Flags & (QF_SCALEDOWN | QF_SCALEUP))
+	if (Flags & (QF_SCALEDOWN | QF_SCALEUP))
 	{
 		int scalar;
-		if ((m_Flags & (QF_SCALEDOWN | QF_SCALEUP)) == (QF_SCALEDOWN | QF_SCALEUP))
+		if ((Flags & (QF_SCALEDOWN | QF_SCALEUP)) == (QF_SCALEDOWN | QF_SCALEUP))
 		{
-			scalar = (m_Flags & QF_MAX) ? MAX(m_Countdown, m_CountdownStart - m_Countdown)
-				: MIN(m_Countdown, m_CountdownStart - m_Countdown);
+			scalar = (Flags & QF_MAX) ? MAX(Countdown, CountdownStart - Countdown)
+				: MIN(Countdown, CountdownStart - Countdown);
 
-			if (m_Flags & QF_FULLINTENSITY)
+			if (Flags & QF_FULLINTENSITY)
 			{
 				scalar *= 2;
 			}
 		}
-		else if (m_Flags & QF_SCALEDOWN)
+		else if (Flags & QF_SCALEDOWN)
 		{
-			scalar = m_Countdown;
+			scalar = Countdown;
 		}
 		else			// QF_SCALEUP
 		{
-			scalar = m_CountdownStart - m_Countdown;
+			scalar = CountdownStart - Countdown;
 		}
-		assert(m_CountdownStart > 0);
-		intensity = Scale(intensity, scalar, m_CountdownStart);
+		assert(CountdownStart > 0);
+		intensity = Scale(intensity, scalar, CountdownStart);
 	}
 	return intensity;
 }
@@ -237,16 +237,31 @@ int DEarthquake::GetModIntensity(int intensity) const
 //
 //==========================================================================
 
-int DEarthquake::StaticGetQuakeIntensities(AActor *victim, FQuakeJiggers &jiggers)
+FQuakeState DEarthquake::State() const
 {
+	FQuakeState s;
+	s.Countdown = m_Countdown;
+	s.CountdownStart = m_CountdownStart;
+	s.Flags = m_Flags;
+	s.IntensityX = m_IntensityX.Raw();
+	s.IntensityY = m_IntensityY.Raw();
+	s.IntensityZ = m_IntensityZ.Raw();
+	s.WaveSpeedX = m_WaveSpeedX;
+	s.WaveSpeedY = m_WaveSpeedY;
+	s.WaveSpeedZ = m_WaveSpeedZ;
+	return s;
+}
+
+void DEarthquake::StaticGetQuakes(AActor *victim, TArray<FQuakeState> &quakes)
+{
+	quakes.Clear();
 	if (victim->player != NULL && (victim->player->cheats & CF_NOCLIP))
 	{
-		return 0;
+		return;
 	}
 
 	TThinkerIterator<DEarthquake> iterator(STAT_EARTHQUAKE);
 	DEarthquake *quake;
-	int count = 0;
 
 	while ( (quake = iterator.Next()) != NULL)
 	{
@@ -256,55 +271,69 @@ int DEarthquake::StaticGetQuakeIntensities(AActor *victim, FQuakeJiggers &jigger
 				victim->y - quake->m_Spot->y);
 			if (dist < quake->m_TremorRadius)
 			{
-				++count;
-				// [rc4l] the members are fixed_t-typed but hold raw integer intensities (upstream
-				// conflates the two); pass the raw bits so the int-valued maths below is honest.
-				int x = quake->GetModIntensity(quake->m_IntensityX.Raw());
-				int y = quake->GetModIntensity(quake->m_IntensityY.Raw());
-				int z = quake->GetModIntensity(quake->m_IntensityZ.Raw());
-				if (!(quake->m_Flags & QF_WAVE))
-				{
-					if (quake->m_Flags & QF_RELATIVE)
-					{
-						jiggers.RelIntensityX = MAX(x, jiggers.RelIntensityX);
-						jiggers.RelIntensityY = MAX(y, jiggers.RelIntensityY);
-						jiggers.RelIntensityZ = MAX(z, jiggers.RelIntensityZ);
-					}
-					else
-					{
-						jiggers.IntensityX = MAX(x, jiggers.IntensityX);
-						jiggers.IntensityY = MAX(y, jiggers.IntensityY);
-						jiggers.IntensityZ = MAX(z, jiggers.IntensityZ);
-					}
-				}
-				else
-				{
-					int mx = FixedMul(fixed_t::FromRaw(x), fixed_t::FromRaw(quake->GetModWave(quake->m_WaveSpeedX))).Raw();
-					int my = FixedMul(fixed_t::FromRaw(y), fixed_t::FromRaw(quake->GetModWave(quake->m_WaveSpeedY))).Raw();
-					int mz = FixedMul(fixed_t::FromRaw(z), fixed_t::FromRaw(quake->GetModWave(quake->m_WaveSpeedZ))).Raw();
-
-					// [RH] This only gives effect to the last sine quake. I would
-					// prefer if some way was found to make multiples coexist
-					// peacefully, but just summing them together is undesirable
-					// because they could cancel each other out depending on their
-					// relative phases.
-					if (quake->m_Flags & QF_RELATIVE)
-					{
-						jiggers.RelOffsetX = mx;
-						jiggers.RelOffsetY = my;
-						jiggers.RelOffsetZ = mz;
-					}
-					else
-					{
-						jiggers.OffsetX = mx;
-						jiggers.OffsetY = my;
-						jiggers.OffsetZ = mz;
-					}
-				}
+				quakes.Push(quake->State());
 			}
 		}
 	}
-	return count;
+}
+
+int DEarthquake::StaticQuakeIntensities(const TArray<FQuakeState> &quakes, FQuakeJiggers &jiggers)
+{
+	for (unsigned i = 0; i < quakes.Size(); i++)
+	{
+		const FQuakeState *quake = &quakes[i];
+		// [rc4l] The intensities are raw integers, which upstream kept in fixed_t members, so the maths below stays int-valued.
+		int x = quake->GetModIntensity(quake->IntensityX);
+		int y = quake->GetModIntensity(quake->IntensityY);
+		int z = quake->GetModIntensity(quake->IntensityZ);
+		if (!(quake->Flags & QF_WAVE))
+		{
+			if (quake->Flags & QF_RELATIVE)
+			{
+				jiggers.RelIntensityX = MAX(x, jiggers.RelIntensityX);
+				jiggers.RelIntensityY = MAX(y, jiggers.RelIntensityY);
+				jiggers.RelIntensityZ = MAX(z, jiggers.RelIntensityZ);
+			}
+			else
+			{
+				jiggers.IntensityX = MAX(x, jiggers.IntensityX);
+				jiggers.IntensityY = MAX(y, jiggers.IntensityY);
+				jiggers.IntensityZ = MAX(z, jiggers.IntensityZ);
+			}
+		}
+		else
+		{
+			int mx = FixedMul(fixed_t::FromRaw(x), fixed_t::FromRaw(quake->GetModWave(quake->WaveSpeedX))).Raw();
+			int my = FixedMul(fixed_t::FromRaw(y), fixed_t::FromRaw(quake->GetModWave(quake->WaveSpeedY))).Raw();
+			int mz = FixedMul(fixed_t::FromRaw(z), fixed_t::FromRaw(quake->GetModWave(quake->WaveSpeedZ))).Raw();
+
+			// [RH] This only gives effect to the last sine quake. I would
+			// prefer if some way was found to make multiples coexist
+			// peacefully, but just summing them together is undesirable
+			// because they could cancel each other out depending on their
+			// relative phases.
+			if (quake->Flags & QF_RELATIVE)
+			{
+				jiggers.RelOffsetX = mx;
+				jiggers.RelOffsetY = my;
+				jiggers.RelOffsetZ = mz;
+			}
+			else
+			{
+				jiggers.OffsetX = mx;
+				jiggers.OffsetY = my;
+				jiggers.OffsetZ = mz;
+			}
+		}
+	}
+	return (int)quakes.Size();
+}
+
+int DEarthquake::StaticGetQuakeIntensities(AActor *victim, FQuakeJiggers &jiggers)
+{
+	TArray<FQuakeState> quakes;
+	StaticGetQuakes(victim, quakes);
+	return StaticQuakeIntensities(quakes, jiggers);
 }
 
 //==========================================================================

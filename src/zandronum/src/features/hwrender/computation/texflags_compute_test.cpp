@@ -11,7 +11,7 @@ namespace {
 
 PieceTexInputs None()
 {
-	PieceTexInputs in = { false, false, false, false, false, false, false, 0, false, 0, false };
+	PieceTexInputs in = { false, false, false, false, false, false, false, 0, false, 0, false, false };
 	return in;
 }
 
@@ -30,6 +30,7 @@ TEST(TexFlags, EachFlagIsTheBitTheShadersTest)
 	in = None(); in.fogLayer = true; EXPECT_EQ(64u, ComputePieceTexFlags(in));
 	in = None(); in.fogBoundary = true; EXPECT_EQ(1024u, ComputePieceTexFlags(in));
 	in = None(); in.fogPass = true; EXPECT_EQ(8192u, ComputePieceTexFlags(in));
+	in = None(); in.noMarks = true; EXPECT_EQ(16384u, ComputePieceTexFlags(in));
 }
 
 // [rc4l] The fuzz shader and the culled faces each read back from their own bits, and a value too big for its field cannot spill into the next.

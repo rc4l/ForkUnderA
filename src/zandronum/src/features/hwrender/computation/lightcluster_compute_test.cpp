@@ -44,7 +44,7 @@ const float *At(float x, float y, float z)
 
 TEST(LightCluster, CountIsTheProduct)
 {
-	EXPECT_EQ(16 * 10 * kClusterSlices, ComputeClusterCount(Grid()));
+	EXPECT_EQ((int)kClusterCells, ComputeClusterCount(Grid()));
 }
 
 // Slices are exponential: each covers a constant RATIO of depth, so the first few are small and the
@@ -98,9 +98,9 @@ TEST(LightCluster, DegenerateRangeDoesNotProduceNonsense)
 	EXPECT_EQ(0, ComputeSliceForDepth(g, 50.f));
 }
 
-// A point dead ahead is in the middle of the screen. With an even tile count the middle falls on the
-// boundary between two tiles, and floor puts it in the one below and to the right -- stated here so a
-// later change to the rounding is a failing test rather than a shifted light.
+// A point dead ahead is in the middle pixel of the screen, and lands in the tile that holds it. On a
+// tile boundary floor puts it in the one below and to the right -- stated here so a later change to
+// the rounding is a failing test rather than a shifted light.
 TEST(LightCluster, PointOnTheViewAxisLandsInTheMiddle)
 {
 	const ClusterGrid g = Grid();
@@ -109,8 +109,8 @@ TEST(LightCluster, PointOnTheViewAxisLandsInTheMiddle)
 	const int slice = c / (g.tilesX * g.tilesY);
 	const int ty = (c - slice * g.tilesX * g.tilesY) / g.tilesX;
 	const int tx = c % g.tilesX;
-	EXPECT_EQ(g.tilesX / 2, tx);
-	EXPECT_EQ(g.tilesY / 2, ty);
+	EXPECT_EQ((g.screenW / 2) / g.tileW, tx);
+	EXPECT_EQ((g.screenH / 2) / g.tileH, ty);
 	EXPECT_EQ(ComputeSliceForDepth(g, 100.f), slice);
 }
 
@@ -250,7 +250,7 @@ void Projection(float *m, float fovY, float aspect, float zn, float zf)
 	m[14] = (zf * zn) / (zn - zf);
 }
 
-// [rc4l] The tile the shader reads for a point: Vulkan rasterises NDC +y at the TOP (gl_FragCoord.y 0), and fuaDynLight cuts 64-pixel tiles from there.
+// [rc4l] The tile the shader reads for a point: Vulkan rasterises NDC +y at the TOP (gl_FragCoord.y 0), and fuaDynLight cuts the screen into 32 by 18 tiles from there.
 void ShaderTile(const float mvp[16], const float p[3], int w, int h, int *tx, int *ty, float *clipW)
 {
 	*clipW = mvp[3] * p[0] + mvp[7] * p[1] + mvp[11] * p[2] + mvp[15];
@@ -258,8 +258,8 @@ void ShaderTile(const float mvp[16], const float p[3], int w, int h, int *tx, in
 	const float ndcY = (mvp[1] * p[0] + mvp[5] * p[1] + mvp[9] * p[2] + mvp[13]) / *clipW;
 	const float fragX = (ndcX * 0.5f + 0.5f) * (float)w;
 	const float fragY = (0.5f - ndcY * 0.5f) * (float)h;
-	*tx = (int)fragX / kClusterTilePixels;
-	*ty = (int)fragY / kClusterTilePixels;
+	*tx = (int)fragX / ((w + 31) / 32);
+	*ty = (int)fragY / ((h + 17) / 18);
 }
 
 } // namespace
@@ -267,13 +267,15 @@ void ShaderTile(const float mvp[16], const float p[3], int w, int h, int *tx, in
 TEST(LightCluster, GridForScreenCoversIt)
 {
 	const ClusterGrid g = ComputeGridForScreen(1024, 640, 5.f, 8000.f);
-	EXPECT_EQ(1024 / kClusterTilePixels, g.tilesX);
-	EXPECT_EQ(640 / kClusterTilePixels, g.tilesY);
+	EXPECT_EQ(32, g.tilesX);
+	EXPECT_EQ(18, g.tilesY);
+	EXPECT_EQ(32, g.tileW);
+	EXPECT_EQ(36, g.tileH);
 	EXPECT_EQ(kClusterSlices, g.slices);
 	// A screen that does not divide evenly still has to be covered to its last pixel.
 	const ClusterGrid odd = ComputeGridForScreen(1000, 601, 5.f, 8000.f);
-	EXPECT_GE(odd.tilesX * kClusterTilePixels, 1000);
-	EXPECT_GE(odd.tilesY * kClusterTilePixels, 601);
+	EXPECT_GE(odd.tilesX * odd.tileW, 1000);
+	EXPECT_GE(odd.tilesY * odd.tileH, 601);
 }
 
 // The two paths are the same question in two coordinate systems, and they have to answer it the
@@ -400,7 +402,7 @@ TEST(LightCluster, MatrixPathCoversPointsInsideAStraddlingLight)
 // [rc4l] A light above eye level lit only the tile rows it would have reached upside down: the CPU numbered rows from the bottom, the shader from the top.
 TEST(LightCluster, EveryFragmentInsideALightReadsATileTheLightClaimed)
 {
-	const int w = 1280, h = 720;   // [rc4l] 720 is not a multiple of 64, so rows spread evenly over it drift from the shader's too.
+	const int w = 1280, h = 720;   // [rc4l] The template map's frame.
 	const ClusterGrid g = ComputeGridForScreen(w, h, 5.f, 8192.f);
 	float mvp[16];
 	Projection(mvp, 74.f * 3.14159265f / 180.f, (float)w / (float)h, 5.f, 65536.f);
@@ -439,10 +441,10 @@ TEST(LightCluster, NdcLandsInTheTileTheShaderReads)
 	ComputeTileForNdc(g, -1.f, 1.f, &tx, &ty);
 	EXPECT_EQ(0, tx); EXPECT_EQ(0, ty);
 	ComputeTileForNdc(g, 0.999f, -0.999f, &tx, &ty);
-	EXPECT_EQ(19, tx); EXPECT_EQ(11, ty);
-	// [rc4l] 130 pixels down is row 2 of the shader's 64-pixel rows; twelve rows spread evenly over 720 called it row 9, counted from the bottom.
+	EXPECT_EQ(31, tx); EXPECT_EQ(17, ty);
+	// [rc4l] 130 pixels down is row 3 of the shader's 40-pixel rows at 720; counted from the bottom it would be row 14.
 	ComputeTileForNdc(g, 0.f, 1.f - 2.f * 130.f / 720.f, &tx, &ty);
-	EXPECT_EQ(10, tx); EXPECT_EQ(2, ty);
+	EXPECT_EQ(16, tx); EXPECT_EQ(3, ty);
 	ComputeTileForNdc(g, -1e30f, 1e30f, &tx, &ty);
 	EXPECT_EQ(0, tx); EXPECT_EQ(0, ty);
 	ComputeTileForNdc(g, 1e30f, -1e30f, &tx, &ty);
@@ -458,4 +460,20 @@ TEST(LightCluster, NoSlicesCoverTheWholeRange)
 	ComputeSliceDepthRange(g, 0, &n, &f);
 	EXPECT_FLOAT_EQ(g.zNear, n);
 	EXPECT_FLOAT_EQ(g.zFar, f);
+}
+
+// [rc4l] 64-pixel tiles made a 2560x1440 grid 22080 cells, past its 16384-cell table, so every pixel looped over every light and a big fight took 25 times the GPU time; the cells are now the same at every size.
+TEST(LightCluster, EveryFrameHasTheSameCellsAndTheTilesCoverIt)
+{
+	const int sizes[][2] = { { 640, 400 }, { 1920, 1080 }, { 2560, 1440 }, { 3440, 1440 }, { 3840, 2160 }, { 7680, 4320 }, { 1000, 601 } };
+	for (const auto &s : sizes)
+	{
+		const ClusterGrid g = ComputeGridForScreen(s[0], s[1], kClusterZNear, kClusterZFar);
+		EXPECT_EQ((int)kClusterCells, ComputeClusterCount(g)) << s[0] << "x" << s[1];
+		EXPECT_GE(g.tilesX * g.tileW, s[0]); EXPECT_LT((g.tilesX - 1) * g.tileW, s[0]);
+		EXPECT_GE(g.tilesY * g.tileH, s[1]); EXPECT_LT((g.tilesY - 1) * g.tileH, s[1]);
+	}
+	EXPECT_EQ(80, ComputeClusterTileSize(2560, 32));
+	EXPECT_EQ(1, ComputeClusterTileSize(0, 32));
+	EXPECT_EQ(5, ComputeClusterTileSize(5, 0));
 }

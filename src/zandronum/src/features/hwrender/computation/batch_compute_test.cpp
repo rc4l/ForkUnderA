@@ -82,3 +82,14 @@ TEST(BatchCompute, AnotherFrameOfTheSameBaseStaysButANewTextureDoesNot)
 	EXPECT_TRUE(ComputeStaysInBatch(&frame1, nullptr, &frame1, nullptr));
 }
 } // namespace
+
+// [rc4l] A gun switch on Sunder MAP16 rebuilt the whole scene, a 57 ms frame, when only its own piece had changed batch.
+TEST(Batch, RebatchedPiecesAreAppendedUnlessOneIsTranslucentOrTheListWasCut)
+{
+	EXPECT_EQ(hwrender::ComputeRebatchPlan(0, false, 0), hwrender::RebatchPlan::None);
+	EXPECT_EQ(hwrender::ComputeRebatchPlan(1, false, 0), hwrender::RebatchPlan::Append);
+	EXPECT_EQ(hwrender::ComputeRebatchPlan(40, false, 0), hwrender::RebatchPlan::Append);
+	EXPECT_EQ(hwrender::ComputeRebatchPlan(3, false, 1), hwrender::RebatchPlan::Rebuild);
+	EXPECT_EQ(hwrender::ComputeRebatchPlan(8192, true, 0), hwrender::RebatchPlan::Rebuild);
+	EXPECT_EQ(hwrender::ComputeRebatchPlan(0, true, 0), hwrender::RebatchPlan::Rebuild);
+}

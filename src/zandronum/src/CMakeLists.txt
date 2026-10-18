@@ -1641,6 +1641,7 @@ add_executable( zdoom WIN32
 	# [rc4l] Generated, and listed so the custom command above runs for this target, offline builds included, whose wad search reads it.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/damage-tint/damagetint.cpp
+	features/gamecopy/tintsubject.cpp
 	features/global-header/zx_globalheader.cpp
 	features/menu-focus/zx_focusglow.cpp
 	features/global-header/computation/globalheader_compute.cpp
@@ -1666,7 +1667,7 @@ add_executable( zdoom WIN32
 	features/models/md3model.cpp
 	features/models/voxelmodel.cpp
 	features/dynlights/a_dynlight.cpp
-	features/dynlights/pointlight.cpp
+	features/levelmesh/pointlight.cpp
 	features/gldefs/lightsettings.cpp
 	features/dynlights/cycler.cpp
 	features/materials/spriteframe.cpp
@@ -1718,6 +1719,23 @@ add_executable( zdoom WIN32
 	features/frame/backendrenderer.cpp
 	features/visibility/viswalk.cpp
 	features/jobs/jobs.cpp
+	features/handoff/seam.cpp
+	features/gameloop/loop.cpp
+	features/gameloop/hud.cpp
+	features/handoff/effects.cpp
+	features/handoff/snapshot.cpp
+	features/handoff/gamethread.cpp
+	features/gamecopy/gamecopy.cpp
+	features/gamecopy/xfloors.cpp
+	features/gamecopy/lights.cpp
+	features/gamecopy/particles.cpp
+	features/gamecopy/decals.cpp
+	features/gamecopy/seen.cpp
+	features/gamecopy/polyobjs.cpp
+	features/wipe/wiperandoms.cpp
+	features/wipe/wipetrace.cpp
+	features/decals/decals.cpp
+	features/decals/flatdecal.cpp
 	features/draw2d/draw2d.cpp
 	features/draw2d/screenblend.cpp
 	features/viewsetup/viewsetup.cpp
@@ -1730,7 +1748,15 @@ add_executable( zdoom WIN32
 	features/visibility/computation/mirrorview_compute.cpp
 	features/visibility/computation/walkslices_compute.cpp
 	features/jobs/computation/jobpool_compute.cpp
+	features/handoff/computation/handoff_compute.cpp
+	features/handoff/computation/lock_compute.cpp
+	features/handoff/computation/asks_compute.cpp
+	features/handoff/computation/queue_compute.cpp
+	features/gamecopy/computation/blend_compute.cpp
+	features/gamecopy/computation/prescan_compute.cpp
 	features/wipe/computation/wipe_compute.cpp
+	features/wipe/computation/wipetrace_compute.cpp
+	features/decals/computation/markrules_compute.cpp
 	features/surfaces/computation/skywall_compute.cpp
 	features/sprites/computation/spritestyle_compute.cpp
 	features/sprites/computation/spritequad_compute.cpp
@@ -1744,6 +1770,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/frameroute_compute.cpp
 	features/frame/computation/viewtrace_compute.cpp
 	features/frame/computation/framestall_compute.cpp
+	features/frame/computation/frameclock_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
 	features/dynlights/computation/nodeindex_compute.cpp
@@ -1798,6 +1825,7 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/planemirror_compute.cpp
 	features/hwrender/computation/skyportal_compute.cpp
 	features/hwrender/computation/batch_compute.cpp
+	features/hwrender/computation/spriteatlas_compute.cpp
 	features/hwrender/computation/growbuffer_compute.cpp
 	features/hwrender/computation/backendview_compute.cpp
 	features/hwrender/computation/wideline_compute.cpp
@@ -1942,7 +1970,7 @@ if( EMSCRIPTEN )
 		"SHELL: -s ALLOW_MEMORY_GROWTH=1"
 		"SHELL: -s INITIAL_MEMORY=256MB"
 		"SHELL: -s STACK_SIZE=8MB"
-		"SHELL: -s PTHREAD_POOL_SIZE=8"
+		"SHELL: -s PTHREAD_POOL_SIZE=9"   # [rc4l] the job pool's workers and the game thread
 		"SHELL: -s EXIT_RUNTIME=0"
 		"SHELL: -s INVOKE_RUN=0"
 		"SHELL: -s FORCE_FILESYSTEM=1"
@@ -2081,7 +2109,7 @@ endif()
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
-	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgatlas.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
 	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
 	if( EMSCRIPTEN )
 		# [rc4l] The browser's canvas, drawn on through WebGPU alone.

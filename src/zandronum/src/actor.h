@@ -1041,7 +1041,12 @@ public:
 		 {
 			 return 0;
 		 }
-		 return finesine[(int)(MulScale22(((FloatBobPhase + level.maptime) << FRACBITS) + ticfrac, FINEANGLES) & FINEMASK)] * 8;
+		 return BobOffsetAt(FloatBobPhase + level.maptime, ticfrac);
+	}
+	// [rc4l] The float bob at a tic of its phase, ticfrac of the way through it, which features/gamecopy's actor records read too.
+	static fixed_t BobOffsetAt(int phaseTic, fixed_t ticfrac)
+	{
+		 return finesine[(int)(MulScale22((phaseTic << FRACBITS) + ticfrac, FINEANGLES) & FINEMASK)] * 8;
 	}
 
 	// Enter the crash state
@@ -1383,6 +1388,9 @@ public:
 	fixed_t PrevX, PrevY, PrevZ;
 	angle_t PrevAngle;
 	angle_t PrevRoll;	// [rc4l] +ROLLSPRITE interpolation, mirrors PrevAngle
+	int rcRecord;		// [rc4l] features/gamecopy: this actor's record in the render copy, written between tics only
+	int rcListed;		// [rc4l] features/gamecopy: its place in the actor list a tic's end made, read only to link that list
+	unsigned int rcSerial;	// [rc4l] features/gamecopy: this actor's id, given by the first fill that takes it and never reused
 
 	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.
 	int	lastNetXUpdateTic, lastNetYUpdateTic, lastNetZUpdateTic, lastNetVelXUpdateTic, lastNetVelYUpdateTic, lastNetVelZUpdateTic, lastNetMovedirUpdateTic;

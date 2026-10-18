@@ -82,6 +82,13 @@ export class UdmfMap {
     return s;
   }
 
+  // [rc4l] A sector of any convex outline standing inside another, its points clockwise so the shape is on every line's front.
+  shape(points, sectorProps, outerSector) {
+    const s = this.sector(sectorProps);
+    points.forEach(([ax, ay], i) => { const [bx, by] = points[(i + 1) % points.length]; this.opening(ax, ay, bx, by, s, outerSector); });
+    return s;
+  }
+
   // [rc4l] A square of self-referencing lines, both sides in one new sector, the trick that hides a sector inside another; GL draws what it encloses as the surrounding sector.
   selfRef(x0, y0, x1, y1, sectorProps) {
     const s = this.sector(sectorProps);

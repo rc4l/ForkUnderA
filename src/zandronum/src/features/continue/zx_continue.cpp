@@ -457,6 +457,7 @@ static bool RecordUsable( const ContinueRecord &rec )
 	in.recordParsed = ( rec.kind != ContinueKind::None );
 	in.kind = rec.kind;
 	in.minSaveVersion = MINSAVEVER;
+	in.maxSaveVersion = SAVEVER;
 
 	if ( rec.kind == ContinueKind::Single )
 	{

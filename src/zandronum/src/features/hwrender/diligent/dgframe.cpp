@@ -4,6 +4,7 @@
 // [rc4l] The frame driver: arming a level for the backend, the per-frame entry point, and the present-to-present clock fua_frametimes reads.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/draw2d/record.h"   // [rc4l] Clear2D
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/computation/levelsetup_compute.h"
@@ -41,7 +42,7 @@ void ReleaseLevelResources()
 
 void ForgetBackendTextures()
 {
-	if (GetDevice() != nullptr) ReleaseLevelResources();
+	if (GetDevice() != nullptr) { ReleaseLevelResources(); ResetAtlas(); }
 }
 
 // [rc4l] Bake this level from the map and upload it, once, without anyone typing anything.
@@ -135,7 +136,7 @@ void RecordPresentInterval()
 		fp.repaints   = g_stats.fRepaints;
 		fp.runs       = g_stats.fRuns;
 		fp.patchVerts = g_stats.fPatchVerts;
-		fp.ticked     = (level.time != g_lastLevelTime);
+		fp.ticked     = (zx::gamecopy::Level().time != g_lastLevelTime);
 		// [rc4l] The same parts as features/telemetry counters, so a capture or a flight dump carries them beside the frame.
 		static const zx::telemetry::Counter parts[] = {
 			zx::telemetry::Register(zx::telemetry::CounterSpec{ "levelmesh/invalidate_ms", "ms", zx::telemetry::CounterKind::Time, 0 }),
@@ -148,7 +149,7 @@ void RecordPresentInterval()
 		zx::telemetry::Set(parts[2], fp.repaints);
 		zx::telemetry::Set(parts[3], fp.runs);
 		zx::telemetry::Set(parts[4], fp.patchVerts);
-		g_lastLevelTime = level.time;
+		g_lastLevelTime = zx::gamecopy::Level().time;
 		g_stats.fRepaints = g_stats.fRuns = g_stats.fPatchVerts = g_stats.fPatches = 0;
 		g_frameHead = (g_frameHead + 1) % kFrameRing;
 		if (g_frameCount < kFrameRing) g_frameCount++;
@@ -331,6 +332,9 @@ int BackendMaxTextureSize()
 	return dev != NULL ? (int)dev->GetAdapterInfo().Texture.MaxTexture2DDimension : 0;
 }
 
+// [rc4l] The offscreen target's making the last picture was drawn into, so an empty overlay knows whether there is one to keep.
+static unsigned int g_paintedGen = 0;
+
 // [rc4l] The 2D layer alone over black: the console, the menus, the title and the intermission, with no world under them.
 static void DrawOverlay(bool present)
 {
@@ -341,9 +345,11 @@ static void DrawOverlay(bool present)
 	if (sd.Width == 0 || sd.Height == 0) return;
 	Diligent::ITextureView *rtv = FrameRTV();
 	ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	// [rc4l] A wipe under way is the picture under the console and menus.
+	// [rc4l] A wipe under way is the picture under the console and menus, and an overlay with nothing to draw keeps the last picture, since the intermission draws nothing once Use is pressed and clearing it presented black frames the next map then melted in from.
+	int quads = 0;
+	zx::draw2d::Quads2D(quads);
 	if (WipeActive()) WipeDraw(ctx);
-	else
+	else if (!zx::frame::ComputeOverlayKeepsPicture(FrameOffscreen(), g_paintedGen == FrameGeneration(), quads))
 	{
 		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 		ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
@@ -363,6 +369,7 @@ static void DrawBackendFrame(bool present)
 		DrawSceneOnce(present, true);
 	}
 	else DrawOverlay(present);
+	g_paintedGen = FrameGeneration();
 }
 
 void WipeEnd()
@@ -378,10 +385,16 @@ void WipeEnd()
 
 void PresentBackendOnly(bool present)
 {
+	PrintDiligentMessages();
 	const bool ready = AdvanceLevelScene();
 	const bool world = g_worldViewThisFrame && ready && SceneDrawable();
 	g_worldViewThisFrame = false;
-	if (!present) return;
+	// [rc4l] A window not presented to still drew its camera textures this frame, whose dynamic memory only a finished frame gives back (queue #49).
+	if (!present)
+	{
+		if (auto *ctx = GetContext()) EndUnpresentedFrame(ctx);
+		return;
+	}
 	zx::hwrender::GLFrameDone();
 	g_lastFrameWorld = world;
 	FollowBackendSurface();

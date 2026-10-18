@@ -6,6 +6,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/telemetry/osprobe.h"
 #include "features/telemetry/computation/allocsites_compute.h"
+#include "features/sanitizer/sanitizer.h"
 
 #include "c_dispatch.h"
 #include "doomtype.h"
@@ -55,6 +56,8 @@ const bool s_registered = (
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "mem/allocations_per_frame", "allocations", zx::telemetry::CounterKind::Gauge, 0 }, AllocationsThisFrame),
 	true);
 
+// [rc4l] A ThreadSanitizer build keeps the sanitizer's own operator new and delete, so a library's allocations are judged by its suppressions rather than as the engine's.
+#if !defined(ZX_THREAD_SANITIZER)
 void Record(void *p, std::size_t size)
 {
 	void *frames[AllocTable::kFrames];
@@ -84,6 +87,7 @@ void Free(void *p)
 	}
 	std::free(p);
 }
+#endif
 
 // [rc4l] Puts a new table in place of the old one (none to stop) and frees the old one once nobody can be using it.
 void SwapSites(AllocTable *next)
@@ -98,6 +102,7 @@ void SwapSites(AllocTable *next)
 
 } // namespace
 
+#if !defined(ZX_THREAD_SANITIZER)
 void *operator new(std::size_t size)
 {
 	void *p = Allocate(size);
@@ -120,6 +125,7 @@ void operator delete(void *p, std::size_t) noexcept { Free(p); }
 void operator delete[](void *p, std::size_t) noexcept { Free(p); }
 void operator delete(void *p, const std::nothrow_t &) noexcept { Free(p); }
 void operator delete[](void *p, const std::nothrow_t &) noexcept { Free(p); }
+#endif
 
 // [rc4l] Where the allocations still live were made: start records each new allocation's stack from then on, report lists the stacks holding the most, and stop ends it.
 CCMD(fua_allocsites)

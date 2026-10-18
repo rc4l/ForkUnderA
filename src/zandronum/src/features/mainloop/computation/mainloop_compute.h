@@ -17,6 +17,12 @@ unsigned ComputeVblMilliseconds(int count);
 // [rc4l] Whether the millisecond clock at `now` has reached `deadline`, across a wrap of the clock.
 bool ComputeDeadlinePassed(unsigned deadline, unsigned now);
 
+// [rc4l] Frames begun since the last wipe ended, counted up to the two at which the engine is at rest again.
+int ComputeFramesSinceWipe(int frames);
+
+// [rc4l] Whether the engine is at rest after a wipe: none running, and a whole frame drawn since one ended, whose present destroys the screens it let go of.
+bool ComputeAtRestAfterWipe(bool wiping, int framesSinceWipe);
+
 }} // namespace zx::mainloop
 
 #endif // ZX_MAINLOOP_COMPUTE_H

@@ -121,6 +121,8 @@ void D_QuitNetGame (void);
 
 //? how many ticks to run?
 void TryRunTics (void);
+int Net_TicsDue (void);
+void Net_PendingLocalTurn (int fromTic, int &yaw, int &pitch);   // [rc4l] features/handoff: the turn built and not yet shown   // [rc4l] features/handoff: the tics due now, input taken, none run
 
 //Use for checking to see if the netgame has stalled
 void Net_CheckLastReceived(int);

@@ -30,6 +30,8 @@
 // HEADER FILES ------------------------------------------------------------
 
 #include <stdlib.h>
+#include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
+#include "features/handoff/effects.h"   // [rc4l] QueuedForHandoff
 #include <math.h>
 
 #include "templates.h"
@@ -51,7 +53,12 @@
 #include "r_data/r_translate.h"
 #include "p_3dmidtex.h"
 #include "r_data/r_interpolate.h"
+#include "features/gamecopy/gamecopy.h"   // [rc4l] BlendMap
+#include "features/gamecopy/players.h"    // [rc4l] the records a view is set up from
+#include "features/gamecopy/xfloors.h"    // [rc4l] the copied light lists and height transfers
+#include "features/gamecopy/level.h"      // [rc4l] the copied level flags a view is held by
 #include "v_palette.h"
+#include "c_console.h"   // [rc4l] C_ShouldForceInterpolation
 #include "features/fixed64/computation/finetable_compute.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "po_man.h"
@@ -80,7 +87,7 @@ extern FSpecialColormap*realfixedcolormap;
 
 struct InterpolationViewer
 {
-	AActor *ViewActor;
+	unsigned int ViewId;	// [rc4l] the camera's render copy id, which no later actor reuses
 	int otic;
 	fixed_t oviewx, oviewy, oviewz;
 	fixed_t nviewx, nviewy, nviewz;
@@ -90,8 +97,9 @@ struct InterpolationViewer
 
 // PRIVATE DATA DECLARATIONS -----------------------------------------------
 static TArray<InterpolationViewer> PastViewers;
-static FRandom pr_torchflicker ("TorchFlicker");
-static FRandom pr_hom;
+bool r_liveInterpolated;   // [rc4l] the last R_SetupFrame moved the live game, which EndViewpoint puts back
+static FRandom rr_torchflicker ("TorchFlicker");   // [rc4l] rr_: streams only the renderer draws from, never the game
+static FRandom rr_hom;
 static bool NoInterpolateView;
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
@@ -136,6 +144,7 @@ fixed_t 		viewsin, viewtansin;
 AActor			*camera;	// [RH] camera to draw from. doesn't have to be a player
 
 fixed_t			r_TicFrac;			// [RH] Fractional tic to render
+fixed_t			r_ActorFrac;		// [rc4l] the blend actors are drawn at this frame
 DWORD			r_FrameTime;		// [RH] Time this frame started drawing (in ms)
 FViewLens		r_viewLens = { 90.f, 4.f / 3.f, 1.f };
 unsigned		r_frameSerial;
@@ -592,7 +601,8 @@ static void R_Shutdown ()
 //CVAR (Int, tf, 0, 0)
 EXTERN_CVAR (Bool, cl_noprediction)
 
-void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *iview)
+// [rc4l] features/gamecopy: from the camera's and its player's records, cam the camera's record and camIndex its index.
+static void R_InterpolateView (const zx::gamecopy::PlayerRecord *player, const zx::gamecopy::ActorRecord *cam, int camIndex, fixed_t frac, InterpolationViewer *iview)
 {
 //	frac = tf;
 	if (NoInterpolateView)
@@ -607,16 +617,17 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 	viewx = iview->oviewx + FixedMul (frac, iview->nviewx - iview->oviewx);
 	viewy = iview->oviewy + FixedMul (frac, iview->nviewy - iview->oviewy);
 	viewz = iview->oviewz + FixedMul (frac, iview->nviewz - iview->oviewz);
+	const zx::gamecopy::ActorRecord *body = player != NULL ? zx::gamecopy::Record(player->mo) : NULL;
 	if (player != NULL &&
 		!(player->cheats & CF_INTERPVIEW) &&
-		player - players == consoleplayer &&
-		camera == player->mo &&
+		player->number == consoleplayer &&
+		camIndex == player->mo &&
 		!demoplayback &&
-		iview->nviewx == camera->x &&
-		iview->nviewy == camera->y && 
+		iview->nviewx == cam->x &&
+		iview->nviewy == cam->y &&
 		!(player->cheats & (CF_TOTALLYFROZEN|CF_FROZEN)) &&
 		player->playerstate == PST_LIVE &&
-		player->mo->reactiontime == 0 &&
+		body != NULL && body->reactiontime == 0 &&
 		!NoInterpolateView &&
 		!paused &&
 		( NETWORK_GetState( ) != NETSTATE_CLIENT || !cl_noprediction) &&
@@ -625,12 +636,16 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 		( CLIENT_GetServerLagging( ) == false ) &&
 		( CLIENT_GetClientLagging( ) == false ) &&
 		( CLIENTDEMO_IsPlaying( ) == false ) &&
-		( GAME_GetEndLevelDelay( ) == false ) &&
-		( ~level.flags2 & LEVEL2_FROZEN || player->timefreezer != 0 ))
+		// [rc4l] features/gamecopy: the level as the copy holds it, since a tic on its own thread may be changing the live one.
+		!zx::gamecopy::Level().endLevelDelay &&
+		( ~zx::gamecopy::Level().flags2 & LEVEL2_FROZEN || player->timefreezer != 0 ))
 	{
-		viewangle = iview->nviewangle + (LocalViewAngle & 0xFFFF0000);
+		// [rc4l] features/handoff: beside a running tic the copy is a tic behind, so the turn of the ticcmds built since it was taken is added, or the view would snap back each tic.
+		int pendingYaw = 0, pendingPitch = 0;
+		if (zx::handoff::TicInFlight ()) Net_PendingLocalTurn (zx::gamecopy::CopyTic (), pendingYaw, pendingPitch);
+		viewangle = iview->nviewangle + (LocalViewAngle & 0xFFFF0000) + pendingYaw;
 
-		fixed_t delta = player->centering ? 0 : -(signed)(LocalViewPitch & 0xFFFF0000);
+		fixed_t delta = player->centering ? 0 : -(signed)(LocalViewPitch & 0xFFFF0000) - pendingPitch;
 
 		viewpitch = iview->nviewpitch;
 		if (delta > 0)
@@ -680,6 +695,8 @@ void R_InterpolateView (player_t *player, fixed_t frac, InterpolationViewer *ivi
 
 void R_ResetViewInterpolation ()
 {
+	// [rc4l] features/handoff: the view's interpolation is the main thread's, so a tic on its own thread resets it in the handoff.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { R_ResetViewInterpolation (); }, 0, 0 })) return;
 	NoInterpolateView = true;
 }
 
@@ -706,19 +723,19 @@ void R_SetViewAngle ()
 //
 //==========================================================================
 
-static InterpolationViewer *FindPastViewer (AActor *actor)
+static InterpolationViewer *FindPastViewer (unsigned int actor)
 {
 	for (unsigned int i = 0; i < PastViewers.Size(); ++i)
 	{
-		if (PastViewers[i].ViewActor == actor)
+		if (PastViewers[i].ViewId == actor)
 		{
 			return &PastViewers[i];
 		}
 	}
 
 	// Not found, so make a new one
-	InterpolationViewer iview = { NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-	iview.ViewActor = actor;
+	InterpolationViewer iview = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	iview.ViewId = actor;
 	iview.otic = -1;
 	return &PastViewers[PastViewers.Push (iview)];
 }
@@ -744,9 +761,17 @@ void R_FreePastViewers ()
 
 void R_ClearPastViewer (AActor *actor)
 {
+	// [rc4l] features/handoff: a tic on its own thread forgets the camera's past views in the handoff, by the actor's id.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t) { R_ClearPastViewerId ((unsigned int)a); }, intptr_t (actor != NULL ? actor->rcSerial : 0u), 0 })) return;
+	R_ClearPastViewerId (actor != NULL ? actor->rcSerial : 0u);
+}
+
+// [rc4l] R_ClearPastViewer by the render copy id of the camera.
+void R_ClearPastViewerId (unsigned int id)
+{
 	for (unsigned int i = 0; i < PastViewers.Size(); ++i)
 	{
-		if (PastViewers[i].ViewActor == actor)
+		if (id != 0 && PastViewers[i].ViewId == id)
 		{
 			// Found it, so remove it.
 			if (i == PastViewers.Size())
@@ -783,42 +808,65 @@ static fixed_t QuakePower(fixed_t factor, fixed_t intensity, fixed_t offset)
 	{
 		// [rc4l] strong fixed_t: the RNG takes a raw int modulus and returns raw bits, where
 		// upstream's plain int did both implicitly.
-		randumb = fixed_t::FromRaw(pr_torchflicker(intensity.Raw() * 2)) - intensity;
+		randumb = fixed_t::FromRaw(rr_torchflicker(intensity.Raw() * 2)) - intensity;
 	}
 	return FixedMul(factor, randumb + offset);
 }
 
+// [rc4l] features/gamecopy: GL names the actor it views from, whose record a view asked for before this level's first fill takes then.
 void R_SetupFrame (AActor *actor)
 {
 	if (actor == NULL)
 	{
 		I_Error ("Tried to render from a NULL actor.");
 	}
+	if (zx::gamecopy::RecordOf(actor) == NULL)
+	{
+		zx::gamecopy::FillNow ();
+	}
+	R_SetupFrameFromRecord (zx::gamecopy::IndexOf(zx::gamecopy::RecordOf(actor)), true);
+	// [rc4l] GL's walks stamp what they visit with the validcount the game shares; the backend keeps its own stamps.
+	validcount++;
+}
 
-	player_t *player = actor->player;
+// [rc4l] features/gamecopy: puts back what the last R_SetupFrame moved of the live game, if it moved any.
+void R_RestoreLiveInterpolation ()
+{
+	if (r_liveInterpolated)
+	{
+		interpolator.RestoreInterpolations ();
+	}
+	r_liveInterpolated = false;
+}
+
+// [rc4l] features/gamecopy: the view comes from the render copy's records alone, so a frame drawn beside a running tic never reads a live actor; interpolateLive also moves the live game as GL draws it.
+void R_SetupFrameFromRecord (int record, bool interpolateLive)
+{
+	const zx::gamecopy::ActorRecord *actorRec = zx::gamecopy::Record(record);
+	if (actorRec == NULL)
+	{
+		I_Error ("Tried to render from an actor the render copy does not hold.");
+	}
+	const zx::gamecopy::PlayerRecord *player = zx::gamecopy::Player(actorRec->playerIndex);
 	unsigned int newblend;
 	InterpolationViewer *iview;
 	bool usingFreeChasecam = false; // [AK]
 
-	if (player != NULL && player->mo == actor)
-	{	// [RH] Use camera instead of viewplayer
-		camera = player->camera;
-		if (camera == NULL)
-		{
-			camera = player->camera = player->mo;
-		}
-	}
-	else
-	{
-		camera = actor;
-	}
+	// [RH] Use camera instead of viewplayer; the fill gave a player without one its body.
+	const int camIndex = (player != NULL && zx::gamecopy::Record(player->mo) == actorRec) ? player->camera : zx::gamecopy::IndexOf(actorRec);
+	const zx::gamecopy::ActorRecord *const cam = zx::gamecopy::Record(camIndex);
 
-	if (camera == NULL)
+	if (cam == NULL)
 	{
 		I_Error ("You lost your body. Bad dehacked work is likely to blame.");
 	}
+	camera = zx::gamecopy::LiveOf(cam);
+	zx::gamecopy::SetViewCamera(camIndex);
+	const zx::gamecopy::PlayerRecord *const camPlayer = zx::gamecopy::Player(cam->playerIndex);
+	const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player(consoleplayer);
+	const zx::gamecopy::ViewSource *const source = zx::gamecopy::ViewSourceOf(camIndex);
 
-	iview = FindPastViewer (camera);
+	iview = FindPastViewer (cam->id);
 
 	int nowtic = I_GetTime (false);
 	if (iview->otic != -1 && nowtic > iview->otic)
@@ -834,12 +882,16 @@ void R_SetupFrame (AActor *actor)
 	// [BB] consoleplayer should be able to toggle the chase cam.
 	// [AK] Don't use the chase cam if they're in free spectate mode.
 	if (player != NULL && gamestate != GS_TITLELEVEL &&
-		(CLIENTDEMO_IsInFreeSpectateMode() == false) && 
-		(camera->player - players != consoleplayer || players[consoleplayer].bSpectating == false) &&
-		((/*player->*/players[consoleplayer].cheats & CF_CHASECAM) || (r_deathcamera && camera->health <= 0)))
+		!zx::gamecopy::Level().freeSpectate &&
+		(cam->playerIndex != consoleplayer || me == NULL || me->bSpectating == false) &&
+		((me != NULL && (me->cheats & CF_CHASECAM)) || (r_deathcamera && cam->health <= 0)) &&
+		source != NULL && source->chased)
 	{
-		// [RH] Use chasecam view
-		P_AimCamera (camera, iview->nviewx, iview->nviewy, iview->nviewz, viewsector);
+		// [RH] Use chasecam view, aimed between tics.
+		iview->nviewx = source->chaseX;
+		iview->nviewy = source->chaseY;
+		iview->nviewz = source->chaseZ;
+		viewsector = source->chaseSector;
 		r_showviewer = true;
 
 		// [AK] Check if we're supposed to be using the free chasecam.
@@ -847,10 +899,10 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		iview->nviewx = camera->x;
-		iview->nviewy = camera->y;
-		iview->nviewz = camera->player ? camera->player->viewz : camera->z + camera->GetClass()->Meta.GetMetaFixed(AMETA_CameraHeight);
-		viewsector = camera->Sector;
+		iview->nviewx = cam->x;
+		iview->nviewy = cam->y;
+		iview->nviewz = camPlayer != NULL ? camPlayer->viewz : cam->z + cam->type->Meta.GetMetaFixed(AMETA_CameraHeight);
+		viewsector = cam->Sector;
 		r_showviewer = false;
 	}
 
@@ -858,11 +910,11 @@ void R_SetupFrame (AActor *actor)
 	// distance from the actor we're spying on.
 	if (usingFreeChasecam)
 	{
-		float fX = FIXED2FLOAT(camera->x - iview->nviewx);
-		float fY = FIXED2FLOAT(camera->y - iview->nviewy);
+		float fX = FIXED2FLOAT(cam->x - iview->nviewx);
+		float fY = FIXED2FLOAT(cam->y - iview->nviewy);
 		float fDist = sqrt(fX * fX + fY * fY);
 
-		fixed_t deltaZ = camera->z - camera->floorclip + camera->height + static_cast<fixed_t>(chase_height * FRACUNIT);
+		fixed_t deltaZ = cam->z - cam->floorclip + cam->height + static_cast<fixed_t>(chase_height * FRACUNIT);
 		deltaZ -= iview->nviewz;
 
 		// [AK] Calculate the angle. Keep in mind that the pitch's sign is reversed (i.e. up is negative)!
@@ -870,16 +922,16 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		iview->nviewpitch = (int)(camera->pitch);
+		iview->nviewpitch = (int)(cam->pitch);
 	}
 
-	if (camera->player != 0)
+	if (camPlayer != NULL)
 	{
-		player = camera->player;
+		player = camPlayer;
 	}
 
 	// [AK] If we're using the free chasecam, use our own angle instead of the actor's who we're spying.
-	iview->nviewangle = usingFreeChasecam ? FreeChasecam::cameraAngle : camera->angle;
+	iview->nviewangle = usingFreeChasecam ? FreeChasecam::cameraAngle : cam->angle;
 
 	if (iview->otic == -1 || r_NoInterpolate)
 	{
@@ -892,8 +944,9 @@ void R_SetupFrame (AActor *actor)
 	{
 		r_TicFrac = FRACUNIT;
 	}
+	r_ActorFrac = C_ShouldForceInterpolation () ? FRACUNIT : r_TicFrac;
 
-	R_InterpolateView (player, r_TicFrac, iview);
+	R_InterpolateView (player, cam, camIndex, r_TicFrac, iview);
 
 #ifdef TEST_X
 	viewx = TEST_X;
@@ -904,19 +957,29 @@ void R_SetupFrame (AActor *actor)
 
 	R_SetViewAngle ();
 
-	interpolator.DoInterpolations (r_TicFrac);
+	// [rc4l] fua_copy_check moves the live game for a view GL does not draw too, so the copy's blends have something to be held to.
+	r_liveInterpolated = interpolateLive || zx::gamecopy::CopyCheckOn ();
+	if (r_liveInterpolated)
+	{
+		interpolator.DoInterpolations (r_TicFrac);
+	}
+	zx::gamecopy::BlendMap (r_TicFrac);   // [rc4l] the render copy moved as the live game is for GL
+	if (r_liveInterpolated)
+	{
+		zx::gamecopy::CheckAfterInterpolation ();
+	}
 
 	// Keep the view within the sector's floor and ceiling
 	// [AK] Allow spectators without physical restrictions to pass through floors/ceilings.
-	if (P_IsSpectatorUnrestricted(camera) == false)
+	if (source == NULL || source->unrestricted == false)
 	{
-		fixed_t theZ = viewsector->ceilingplane.ZatPoint (viewx, viewy) - 4*FRACUNIT;
+		fixed_t theZ = viewsector->rc.ceilingplane.ZatPoint (viewx, viewy) - 4*FRACUNIT;
 		if (viewz > theZ)
 		{
 			viewz = theZ;
 		}
 
-		theZ = viewsector->floorplane.ZatPoint (viewx, viewy) + 4*FRACUNIT;
+		theZ = viewsector->rc.floorplane.ZatPoint (viewx, viewy) + 4*FRACUNIT;
 		if (viewz < theZ)
 		{
 			viewz = theZ;
@@ -924,25 +987,25 @@ void R_SetupFrame (AActor *actor)
 	}
 
 	// [AK] Don't apply earthquake effects to free-roaming spectators.
-	if (!paused && ((camera->player == nullptr) || (camera->player->bSpectating == false)))
+	if (!paused && ((camPlayer == nullptr) || (camPlayer->bSpectating == false)))
 	{
-		// [rc4l] uzdoom@e29b8b209 -- per-axis quakes with QF_WAVE. The [AK] spectator guard above is ours.
+		// [rc4l] uzdoom@e29b8b209's per-axis quakes with QF_WAVE, found between tics and summed at the frame's point through the tic, under our [AK] spectator guard.
 		FQuakeJiggers jiggers = { 0, };
 
-		if (DEarthquake::StaticGetQuakeIntensities(camera, jiggers) > 0)
+		if (source != NULL && DEarthquake::StaticQuakeIntensities(source->quakes, jiggers) > 0)
 		{
 			fixed_t quakefactor = FLOAT2FIXED(r_quakeintensity);
 
 			if ((jiggers.RelIntensityX | jiggers.RelOffsetX) != 0)
 			{
-				int ang = (camera->angle) >> ANGLETOFINESHIFT;
+				int ang = (cam->angle) >> ANGLETOFINESHIFT;
 				fixed_t power = QuakePower(quakefactor, jiggers.RelIntensityX, jiggers.RelOffsetX);
 				viewx += FixedMul(finecosine[ang], power);
 				viewy += FixedMul(finesine[ang], power);
 			}
 			if ((jiggers.RelIntensityY | jiggers.RelOffsetY) != 0)
 			{
-				int ang = (camera->angle + ANG90) >> ANGLETOFINESHIFT;
+				int ang = (cam->angle + ANG90) >> ANGLETOFINESHIFT;
 				fixed_t power = QuakePower(quakefactor, jiggers.RelIntensityY, jiggers.RelOffsetY);
 				viewx += FixedMul(finecosine[ang], power);
 				viewy += FixedMul(finesine[ang], power);
@@ -968,20 +1031,21 @@ void R_SetupFrame (AActor *actor)
 		}
 	}
 
-	extralight = camera->player ? camera->player->extralight : 0;
+	extralight = camPlayer != NULL ? camPlayer->extralight : 0;
 
 	// killough 3/20/98, 4/4/98: select colormap based on player status
 	// [RH] Can also select a blend
 	newblend = 0;
 
-	TArray<lightlist_t> &lightlist = viewsector->e->XFloor.lightlist;
+	// [rc4l] features/gamecopy: the copied light list and height transfer.
+	TArray<lightlist_t> &lightlist = viewsector->e->rcXFloor.lightlist;
 	if (lightlist.Size() > 0)
 	{
 		for(unsigned int i = 0; i < lightlist.Size(); i++)
 		{
-			secplane_t *plane;
+			const secplane_core_t *plane;
 			int viewside;
-			plane = (i < lightlist.Size()-1) ? &lightlist[i+1].plane : &viewsector->floorplane;
+			plane = (i < lightlist.Size()-1) ? &lightlist[i+1].plane : &viewsector->rc.floorplane;
 			viewside = plane->PointOnSide(viewx, viewy, viewz);
 			// Reverse the direction of the test if the plane was downward facing.
 			// We want to know if the view is above it, whatever its orientation may be.
@@ -1001,12 +1065,12 @@ void R_SetupFrame (AActor *actor)
 	}
 	else
 	{
-		const sector_t *s = viewsector->GetHeightSec();
+		const sector_t *s = zx::gamecopy::HeightSecOf(viewsector);
 		if (s != NULL)
 		{
-			newblend = s->floorplane.PointOnSide(viewx, viewy, viewz) < 0
+			newblend = s->rc.floorplane.PointOnSide(viewx, viewy, viewz) < 0
 				? s->bottommap
-				: s->ceilingplane.PointOnSide(viewx, viewy, viewz) < 0
+				: s->rc.ceilingplane.PointOnSide(viewx, viewy, viewz) < 0
 				? s->topmap
 				: s->midmap;
 			if (APART(newblend) == 0 && newblend >= numfakecmaps)
@@ -1037,9 +1101,7 @@ void R_SetupFrame (AActor *actor)
 	}
 
 	Renderer->CopyStackedViewParameters();
-	Renderer->SetupFrame(player);
-
-	validcount++;
+	Renderer->SetupFrame(player != NULL ? &players[player->number] : NULL);
 
 	if (RenderTarget == screen && r_clearbuffer != 0)
 	{
@@ -1064,7 +1126,7 @@ void R_SetupFrame (AActor *actor)
 		}
 		else
 		{
-			color = pr_hom();
+			color = rr_hom();
 		}
 		Renderer->ClearBuffer(color);
 	}
@@ -1128,6 +1190,12 @@ void FCanvasTextureInfo::Add (AActor *viewpoint, FTextureID picnum, int fov)
 // Updates all canvas textures that were visible in the last frame.
 //
 //==========================================================================
+
+// [rc4l] features/gamecopy: GL and any renderer without its own draw a camera texture's view from the live actor the record names.
+void FRenderer::RenderCameraRecord (FCanvasTexture *tex, int record, int fov)
+{
+	RenderTextureView (tex, zx::gamecopy::LiveOf (zx::gamecopy::Record (record)), fov);
+}
 
 void FCanvasTextureInfo::UpdateAll ()
 {

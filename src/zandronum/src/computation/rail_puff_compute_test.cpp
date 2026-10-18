@@ -13,15 +13,15 @@ TEST(RailPuff, WallSpawnsPuffAndDecalNoSkyGuard)
 	EXPECT_FALSE(s.skyGuard); // walls don't need the sky-flat guard
 }
 
-// [rc4l] The change: floor/ceiling hits now spawn the puff (they didn't before) -- but no decal
-// (flats don't take wall decals) -- and the caller must apply the sky-flat guard.
-TEST(RailPuff, FloorAndCeilingSpawnPuffNoDecalWithSkyGuard)
+// [rc4l] The change: floor/ceiling hits now spawn the puff (they didn't before) and the mark, which
+// features/decals judges like a shot's -- and the caller must apply the sky-flat guard.
+TEST(RailPuff, FloorAndCeilingSpawnPuffAndMarkWithSkyGuard)
 {
 	for (int hit : {ZX_TRACE_HitFloor, ZX_TRACE_HitCeiling})
 	{
 		const RailEndpointSpawn s = ComputeRailEndpointSpawn(hit);
 		EXPECT_TRUE(s.puff) << "floor/ceiling should now spawn a rail puff";
-		EXPECT_FALSE(s.decal) << "flats must not get a wall decal";
+		EXPECT_TRUE(s.decal) << "a flat takes the mark a shot's does";
 		EXPECT_TRUE(s.skyGuard) << "floor/ceiling must guard against a sky flat";
 	}
 }

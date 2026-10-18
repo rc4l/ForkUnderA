@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -136,6 +136,7 @@ test('a soak passes on the engine verdict and otherwise names what grew', () => 
   assert.equal(soakHeld({ pass: true, marks: 7, judged: 40, grew: [] }), '');
   const grew = [{ name: 'gpu/process_bytes', text: 'gpu/process_bytes grew 18.0 MB a cycle (90.0 MB over 5 cycles)' }, { name: 'mem/heap_bytes', text: 'mem/heap_bytes grew 1.0 MB a cycle (5.0 MB over 5 cycles)' }];
   assert.equal(soakHeld({ pass: false, marks: 7, judged: 40, grew }), 'kept growing with each repeat: gpu/process_bytes grew 18.0 MB a cycle (90.0 MB over 5 cycles); mem/heap_bytes grew 1.0 MB a cycle (5.0 MB over 5 cycles)');
+  assert.match(soakHeld({ pass: false, marks: 7, judged: 40, grew, kept: ['fua material +1700 KB'] }), /; the page's WebGPU objects grew in: fua material \+1700 KB$/);
   assert.equal(soakHeld({ pass: false, marks: 2, judged: 0, grew: [] }), 'the soak judged nothing (2 marks, 0 counters)');
   assert.equal(soakHeld({}), 'the soak judged nothing (undefined marks, undefined counters)');
 });
@@ -187,4 +188,19 @@ test('the canvas is configured exactly once without a resize', () => {
   assert.equal(configuredOnce(1), '');
   assert.equal(configuredOnce(2), 'the canvas was configured 2 times');
   assert.equal(configuredOnce(0), 'the canvas was configured 0 times');
+});
+
+test('the game thread check needs tics on the thread and a sound from them', () => {
+  assert.equal(threadedWithSound({ tics: 40, sounds: 3 }), '');
+  assert.equal(threadedWithSound({ tics: 0, sounds: 3 }), 'no tic ran on the game thread');
+  assert.equal(threadedWithSound({ tics: 40, sounds: 0 }), 'the shots fired on the game thread made no sound');
+});
+
+// [rc4l] A CI runner's browser rendered silence for every sound, so distance is judged only where a sound with no distance was heard.
+test('distant shooters are judged only where a sound with no distance was heard', () => {
+  assert.equal(heardAtDistance({ control: 0.3, peak: 0.2, contexts: [] }), '');
+  assert.match(heardAtDistance({ control: 0.3, peak: 0, contexts: [] }), /shooters across the room came out at 0 RMS at most/);
+  assert.match(heardAtDistance({ control: 0, peak: 0, contexts: [{ state: 'running', time: 3 }] }).skip, /made no sound at all/);
+  const check = { until: 'x', expect: heardAtDistance };
+  assert.deepEqual(judge(check, '[eval] {"control":0,"peak":0,"contexts":[]}'), { ok: true, skip: 'the page made no sound at all, a sound with no distance peaking at 0 RMS (audio [])' });
 });

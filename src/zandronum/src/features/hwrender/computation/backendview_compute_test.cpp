@@ -225,9 +225,10 @@ BackendCamera LevelCamera(float fov, float ratio)
 }
 
 // [MobiusU9B] Across the screen, as normalised device x, where a wall at the player's walk's frustum edge lands, the edge held short of square on so it stays ahead.
-float WalkEdgeX(const BackendCamera &c, float fov, int multiplier)
+float WalkEdgeX(const BackendCamera &c, float fov, float ratio, int multiplier)
 {
-	const double walk = zx::viewsetup::ComputeFrustumAngle(0.f, fov, multiplier) / 2147483648.0 * 180.0;
+	const zx::viewsetup::FrustumIn lens = { 0.f, 0.f, fov, ratio, zx::viewsetup::ComputeFovRatio(ratio, ratio < 1.333f), multiplier };
+	const double walk = zx::viewsetup::ComputeFrustumAngle(lens) / 2147483648.0 * 180.0;
 	const float edge = (float)(walk < 89.0 ? walk : 89.0) * kDeg;
 	float ndc[3];
 	Project(c, 1000.f * cosf(edge), 1000.f * sinf(edge), 0.f, ndc);
@@ -257,11 +258,11 @@ TEST(ComputeCameraLens, TheWalksFrustumCoversThePicture)
 {
 	for (const LensRatio &r : kRatios)
 		for (float fov : { 75.f, 90.f, 110.f, 120.f })
-			EXPECT_GE(WalkEdgeX(LevelCamera(fov, r.ratio), fov, r.multiplier), 1.f) << r.ratio << " at " << fov;
+			EXPECT_GE(WalkEdgeX(LevelCamera(fov, r.ratio), fov, r.ratio, r.multiplier), 1.f) << r.ratio << " at " << fov;
 }
 
 // [MobiusU9B] The bug this lens fixed: a forced 4:3 walk (47 degrees) under a projection shaped like the 16:9 window stopped short of the screen's edges, and Vulkan drew sky there.
 TEST(ComputeCameraLens, AWindowShapedProjectionOutranAForcedWalk)
 {
-	EXPECT_LT(WalkEdgeX(LevelCamera(90.f, 16.f / 9.f), 90.f, 48), 0.85f);
+	EXPECT_LT(WalkEdgeX(LevelCamera(90.f, 16.f / 9.f), 90.f, 4.f / 3.f, 48), 0.85f);
 }

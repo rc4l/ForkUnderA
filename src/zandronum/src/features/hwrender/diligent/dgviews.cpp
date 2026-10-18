@@ -4,6 +4,7 @@
 // [rc4l] Line mirrors, raster and ray-traced, drawn into pictures of their own; reflective planes and stacked sectors are in dgviewtargets.cpp.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
@@ -374,7 +375,7 @@ void CollectMirrors()
 		const vertex_t *ends[4] = { ln->v1, ln->v1, ln->v2, ln->v2 };
 		for (int k = 0; k < 4; k++)
 		{
-			const secplane_t &plane = (k == 0 || k == 3) ? ln->frontsector->floorplane : ln->frontsector->ceilingplane;
+			const secplane_core_t &plane = (k == 0 || k == 3) ? ln->frontsector->rc.floorplane : ln->frontsector->rc.ceilingplane;
 			m.corners[k][0] = FIXED2FLOAT(ends[k]->x);
 			m.corners[k][1] = FIXED2FLOAT(plane.ZatPoint(ends[k]->x, ends[k]->y));
 			m.corners[k][2] = FIXED2FLOAT(ends[k]->y);
@@ -904,7 +905,7 @@ bool EnsureMirrorResources()
 			// a render pass open, and this may have to upload the texture.
 			if (auto *v2 = g_mirrorSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSky"))
 			{
-				FTexture *rawSky = sky1texture.isValid() ? TexMan(sky1texture) : NULL;
+				FTexture *rawSky = zx::gamecopy::Level().sky1.isValid() ? TexMan(zx::gamecopy::Level().sky1) : NULL;
 				const void *skyMat = zx::materials::MaterialForTexture(rawSky);
 				Diligent::IDeviceObject *srv = GetMaterialSRV(skyMat, 0);
 				v2->Set(srv ? srv : GetMaterialSRV(NULL, 0));
@@ -1103,16 +1104,12 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 		WithEye(reflected, [] { BuildMVP(g_mvp); });
 	}
 	RenderViewSkyLooks(ctx, false, -1, true, g_mirrorW, g_mirrorH);
-	auto *rtv = pic->color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-	auto *dsv = pic->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	// Clip to the mirror's own plane, in MESH space: x and z there are the map's x and y.
 	g_pass.clipPlane[0] = m.nx; g_pass.clipPlane[1] = 0.f; g_pass.clipPlane[2] = m.ny;
 	g_pass.clipPlane[3] = -m.d;
 	if (g_pass.clipPlane[3] == 0.f) g_pass.clipPlane[3] = 0.0001f;   // w == 0 means "off"
-	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	BeginPassTargets(ctx, ViewPassTargets(pic->color, pic->depth, FrameViewNormal()), clear);
 	// [rc4l] The view this reflection is, by its mirrors from the player outward, whose walk's sprites, models and decals it draws.
 	static std::vector<int> path;
 	zx::hwrender::ComputeRootPath(node, [](int n) { return g_mirrorNodes[n].parent; }, path);

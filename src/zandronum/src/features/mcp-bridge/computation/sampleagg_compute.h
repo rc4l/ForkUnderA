@@ -3,7 +3,7 @@
 //
 // [rc4l] The pure half of the sampling profiler: folding raw hits into a ranked table.
 //
-// A sampler interrupts the game thread N times a second and writes down where it was. That part is
+// A sampler interrupts the main thread N times a second and writes down where it was. That part is
 // per-platform and full of handles. THIS part -- counting, ranking, turning counts into percentages
 // and writing the report -- is the same everywhere and is where the arithmetic can actually be
 // wrong, so it lives here where it can be tested without a running engine.

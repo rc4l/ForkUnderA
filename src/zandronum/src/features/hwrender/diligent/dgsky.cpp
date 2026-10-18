@@ -4,6 +4,7 @@
 // [rc4l] The level's sky: GL's dome or skybox and the fade, with the skybox portal in dgskyportal.cpp and other skies' pictures in dgskylooks.cpp.
 
 #include "features/hwrender/diligent/dgsky_internal.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/viewsetup/viewsetup.h"   // [rc4l] the sky's scroll this frame
 #include "g_level.h"   // [rc4l] level.flags, the double and swapped skies
 #include "r_sky.h"     // [rc4l] sky1texture and sky2texture
@@ -417,22 +418,22 @@ zx::hwrender::SkyLook LookOfSky(int sectorSky)
 	if ((sectorSky & zx::hwrender::kSkyFlatFlag) && line >= 0 && line < numlines && lines[line].sidedef[0] != NULL)
 	{
 		const side_t *s = lines[line].sidedef[0];
-		const FTextureID top = s->GetTexture(side_t::top), bottom = s->GetTexture(side_t::bottom);
+		const FTextureID top = s->rc.GetTexture(side_t::top), bottom = s->rc.GetTexture(side_t::bottom);
 		in.lineTop = top.GetIndex(); in.lineBottom = bottom.GetIndex();
 		in.lineTopDraws = SkyTextureDraws(top);
 		in.lineBottomValid = bottom.isValid();
 		in.lineBottomDraws = SkyTextureDraws(bottom);
 		// [rc4l] ANGLE_TO_FLOAT: the x offset read as an angle, in degrees.
-		in.lineTopX = (float)(s->GetTextureXOffset(side_t::top).Raw() * 180. / ANGLE_180);
-		in.lineBottomX = (float)(s->GetTextureXOffset(side_t::bottom).Raw() * 180. / ANGLE_180);
-		in.lineTopY = FIXED2FLOAT(s->GetTextureYOffset(side_t::top));
-		in.lineBottomY = FIXED2FLOAT(s->GetTextureYOffset(side_t::bottom));
+		in.lineTopX = (float)(s->rc.GetTextureXOffset(side_t::top).Raw() * 180. / ANGLE_180);
+		in.lineBottomX = (float)(s->rc.GetTextureXOffset(side_t::bottom).Raw() * 180. / ANGLE_180);
+		in.lineTopY = FIXED2FLOAT(s->rc.GetTextureYOffset(side_t::top));
+		in.lineBottomY = FIXED2FLOAT(s->rc.GetTextureYOffset(side_t::bottom));
 		in.lineMirrored = !lines[line].args[2];
 	}
-	in.swapSkies = (level.flags & LEVEL_SWAPSKIES) != 0;
-	in.doubleSky = (level.flags & LEVEL_DOUBLESKY) != 0;
-	in.sky1 = sky1texture.GetIndex();
-	in.sky2 = sky2texture.GetIndex();
+	in.swapSkies = (zx::gamecopy::Level().flags & LEVEL_SWAPSKIES) != 0;
+	in.doubleSky = (zx::gamecopy::Level().flags & LEVEL_DOUBLESKY) != 0;
+	in.sky1 = zx::gamecopy::Level().sky1.GetIndex();
+	in.sky2 = zx::gamecopy::Level().sky2.GetIndex();
 	in.sky1Pos = zx::viewsetup::CurrentView().sky1Pos;
 	in.sky2Pos = zx::viewsetup::CurrentView().sky2Pos;
 	return zx::hwrender::ComputeSkyLook(in);

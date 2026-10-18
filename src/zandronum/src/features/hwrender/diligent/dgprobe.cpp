@@ -27,6 +27,10 @@
 #include "DebugOutput.h"
 #include "m_argv.h"
 #include "features/hwrender/computation/backendchoice_compute.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] PrintDiligentMessages
+#include "features/handoff/seam.h"   // [rc4l] OnMainThread
+#include "features/handoff/computation/queue_compute.h"
+#include <string>
 #include "features/hwrender/diligent/dgdevice.h"
 #include "features/hwrender/diligent/dgmemory.h"   // [rc4l] every texture and buffer counted by tag
 
@@ -77,6 +81,13 @@ const DeviceApi *ChosenDeviceApi()
 // reason this callback exists.
 CVAR(Bool, fua_dg_verbose, false, 0)
 
+// [rc4l] Messages from Diligent's own threads (its thread pool names each worker through this callback), kept for the main thread, whose console it is.
+static zx::Queue<std::string> &DiligentMessages()
+{
+	static zx::Queue<std::string> queue("hwrender/diligent_messages");
+	return queue;
+}
+
 static void DiligentDebugMessage(Diligent::DEBUG_MESSAGE_SEVERITY sev, const Diligent::Char *msg,
                                  const Diligent::Char *func, const Diligent::Char *file, int line)
 {
@@ -84,7 +95,19 @@ static void DiligentDebugMessage(Diligent::DEBUG_MESSAGE_SEVERITY sev, const Dil
 	const char *tag = (sev == Diligent::DEBUG_MESSAGE_SEVERITY_ERROR ||
 	                   sev == Diligent::DEBUG_MESSAGE_SEVERITY_FATAL_ERROR) ? "ERROR" :
 	                  (sev == Diligent::DEBUG_MESSAGE_SEVERITY_WARNING) ? "warn" : "info";
-	Printf("[Diligent %s] %s\n", tag, msg ? msg : "(null)");
+	const std::string text = std::string("[Diligent ") + tag + "] " + (msg ? msg : "(null)") + "\n";
+	if (!zx::handoff::OnMainThread())
+	{
+		DiligentMessages().Push(text);
+		return;
+	}
+	zx::hwrender::PrintDiligentMessages();
+	Printf("%s", text.c_str());
+}
+
+void PrintDiligentMessages()
+{
+	DiligentMessages().Drain([](const std::string &text) { Printf("%s", text.c_str()); });
 }
 
 static const char *AdapterTypeName(Diligent::ADAPTER_TYPE t)

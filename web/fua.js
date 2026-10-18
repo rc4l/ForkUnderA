@@ -18,6 +18,10 @@
     consoleEl.textContent += text + '\n';
     if (consoleEl.textContent.length > 200000) consoleEl.textContent = consoleEl.textContent.slice(-100000);
   }
+  // [rc4l] The engine's pointer lock requests, refusals logged instead of thrown into its frame (pointer.js).
+  FuaPointer.guard(canvas, log);
+  // [rc4l] SDL told of every change of the canvas's size, so the mouse is scaled alike on both axes (pointer.js).
+  FuaPointer.followSize(canvas, window, window.ResizeObserver);
 
   // [rc4l] A file the player saves from the page: a crash report, a screenshot or a telemetry file.
   function download(blob, name) {

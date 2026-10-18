@@ -21,4 +21,14 @@ bool ComputeDeadlinePassed(unsigned deadline, unsigned now)
 	return (int)(now - deadline) >= 0;
 }
 
+int ComputeFramesSinceWipe(int frames)
+{
+	return frames < 2 ? frames + 1 : 2;
+}
+
+bool ComputeAtRestAfterWipe(bool wiping, int framesSinceWipe)
+{
+	return !wiping && framesSinceWipe >= 2;
+}
+
 }} // namespace zx::mainloop

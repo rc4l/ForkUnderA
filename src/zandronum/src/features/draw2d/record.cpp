@@ -15,6 +15,7 @@ static TArray<Quad2D> g_quads;
 static unsigned int   g_gen = 1;
 static int            g_screenW = 0, g_screenH = 0;
 static int            g_target = k2DBoth;
+static std::vector<Quad2D> *g_capture = NULL;   // [rc4l] where quads go while a capture runs
 
 void Set2DTarget(int target) { g_target = target; }
 int  Get2DTarget() { return g_target; }
@@ -27,8 +28,35 @@ void Clear2D()
 	g_screenW = g_screenH = 0;
 }
 
+void BeginCapture2D(std::vector<Quad2D> &into)
+{
+	into.clear();
+	g_capture = &into;
+}
+
+void EndCapture2D()
+{
+	g_capture = NULL;
+}
+
+void Replay2D(const std::vector<Quad2D> &quads)
+{
+	const int target = g_target;
+	for (const Quad2D &q : quads)
+	{
+		g_target = q.target;
+		Record2D(q);
+	}
+	g_target = target;
+}
+
 void Record2D(const Quad2D &q)
 {
+	if (g_capture != NULL)
+	{
+		if (g_capture->size() < 65536) { g_capture->push_back(q); g_capture->back().target = g_target; }
+		return;
+	}
 	// [rc4l] A ceiling far past a busy frame's few thousand quads, as the sprite stream has one since an unbounded level mesh once took the process to 47 GB.
 	if (g_quads.Size() >= 65536) return;
 

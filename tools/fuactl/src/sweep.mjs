@@ -46,7 +46,7 @@ export async function sweep({
 } = {}) {
   fs.mkdirSync(outDir, { recursive: true });
   const inst = await launchInstance({
-    port, iwad, map: maps[0], cvars: { sv_nomonsters: 1, fua_vulkan: 1 },
+    port, iwad, map: maps[0], gl: true, cvars: { sv_nomonsters: 1, fua_vulkan: 1 },
   });
   const c = new BridgeClient();
   const pairs = [];

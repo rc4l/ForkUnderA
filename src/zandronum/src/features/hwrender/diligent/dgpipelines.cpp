@@ -492,6 +492,8 @@ void RefreshBindless()
 // See the CCMD: drop everything keyed on an FMaterial address and let it all be made again.
 void FlushTextureCache()
 {
+	// [rc4l] The engine's pixels changed (hqresize, hires), so the atlas's copies of them go too.
+	ResetAtlas();
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();
 	for (unsigned b = 0; b < g_scene.batches.Size(); b++) g_scene.batches[b].srb = NULL;
@@ -563,6 +565,7 @@ void ForgetMaterialSRBs(const void *material)
 
 void ReleaseMaterialSRBs()
 {
+	ReleaseAtlasSRBs();
 	ForgetBatchSRBs();
 	for (unsigned i = 0; i < g_matSRBs.Size(); i++)
 		if (g_matSRBs[i].srb) g_matSRBs[i].srb->Release();

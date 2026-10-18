@@ -66,6 +66,7 @@
 #include "networkshared.h"
 #include "p_local.h"
 #include "p_tick.h"
+#include "r_utility.h"   // [rc4l] r_NoInterpolate
 // [rc4l] r_draw.h removed (GL-only build); this file does not use it.
 #include "r_state.h"
 #include "sbar.h"
@@ -540,7 +541,9 @@ void CLIENTDEMO_ReadPacket( void )
 				if ( g_ulTicsToSkip > 0 )
 				{
 					// [BB] When skipping a tic, we still need to process the current ticcmd_t.
+					p_NoInterpolate = r_NoInterpolate;
 					P_Ticker ();
+					r_NoInterpolate = p_NoInterpolate;
 					--g_ulTicsToSkip;
 				}
 			}

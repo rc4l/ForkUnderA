@@ -18,9 +18,8 @@ so every module that lit a sprite or a wall included GL's headers to see a light
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 
-- `pointlight.h`/`.cpp`: the dynamic light on a point or an actor as GL's `gl_SetDynSpriteLight` sums it
-  (`PointLight`, `ActorLight`, `ActorDynamicLight`, `PointDynamicLight`), for sprites, particles, the weapon
-  and decals; moved from `features/sprites/spritebuild.cpp`, so a decal reads it without the sprites.
+- The renderer's point lights, which read the render copy's lights, are `features/levelmesh/pointlight`, so this
+  game-side feature never includes the copy that reads it.
 
 The light settings both renderers read are `features/gldefs/lightsettings.cpp`, since changing one remakes the
 attached lights there; `dynlight.h` declares them.

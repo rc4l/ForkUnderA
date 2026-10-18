@@ -428,7 +428,8 @@ static bool HUD_CanIdentifyFrom( player_t *pPlayer )
 	if (( pPlayer->bSpectating ) && ( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ))
 		return ( false );
 
-	return ( camera != NULL );
+	// [rc4l] features/handoff: the console player's camera as the game has it, since the HUD is drawn between tics, where the renderer's view is the last frame's.
+	return ( players[consoleplayer].camera != NULL );
 }
 
 //*****************************************************************************
@@ -453,7 +454,7 @@ static bool HUD_BuildTargetText( player_t *pPlayer, zx::crosshair::TargetText &t
 		return ( false );
 
 	// Search for a player or monster directly in front of the camera. If none are found, exit.
-	AActor *pTargetActor = HUD_ScanForTarget( camera );
+	AActor *pTargetActor = HUD_ScanForTarget( players[consoleplayer].camera );
 
 	// [CK] If the actor shouldn't be identified from decorate flags, ignore them.
 	if (( pTargetActor == NULL ) || (( pTargetActor->STFlags & STFL_DONTIDENTIFYTARGET ) != 0 ))
@@ -556,7 +557,7 @@ static bool HUD_BuildTargetText( player_t *pPlayer, zx::crosshair::TargetText &t
 	if ( lines.ghost )
 		targetInfoMsg += "\n" TEXTCOLOR_DARKGRAY "Is a ghost";
 
-	if ( pTargetActor->IsFriend( camera ))
+	if ( pTargetActor->IsFriend( players[consoleplayer].camera ))
 	{
 		if ( lines.allyEnemy )
 			targetInfoMsg += "\n" TEXTCOLOR_DARKGREEN "Ally";
@@ -590,7 +591,7 @@ void HUD_DrawTargetName( player_t *pPlayer )
 	}
 
 	// [MobiusU9B] Everything beside the crosshair, the actor name included, is drawn every frame by features/crosshair.
-	zx::crosshair::DrawBesideCrosshair( bCanIdentify ? camera : NULL, ( bFound && bBesideCrosshair ) ? &target : NULL );
+	zx::crosshair::DrawBesideCrosshair( bCanIdentify ? players[consoleplayer].camera : NULL, ( bFound && bBesideCrosshair ) ? &target : NULL );
 }
 
 //*****************************************************************************

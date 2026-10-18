@@ -19,7 +19,7 @@ namespace zx { namespace sprites {
 void BuildPlayerSprites(sector_t *viewsector, int viewArea, bool hudModels = false);
 
 // [rc4l] The targeter's three layers, drawn only from the player's own eye (`viewActor`).
-void BuildTargeterSprites(AActor *viewActor);
+void BuildTargeterSprites(const void *viewActor);
 
 // [rc4l] With fua_psprite_check on, a quad GL's DrawPSprite recorded, so the derivation can be compared against it.
 void NoteGLPSprite(const zx::draw2d::Quad2D &q);

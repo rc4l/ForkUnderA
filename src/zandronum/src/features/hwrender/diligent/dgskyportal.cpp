@@ -5,12 +5,14 @@
 
 #include "features/hwrender/diligent/dgsky_internal.h"
 #include <vector>
-#include "g_level.h"   // [rc4l] level.DefaultSkybox
+#include "features/gamecopy/players.h"   // [rc4l] the sky viewpoints as the render copy holds them
 
 namespace zx { namespace hwrender {
 
 // [rc4l] ZDoom's other skybox is a place, an ASkyViewpoint whose view of the world is the sky, rendered like a mirror into a picture painted first as the frame's background.
 static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalColor, g_skyPortalDepth;
+// [rc4l] The normals the skybox view's G-buffer writes and its decal pass reads, at its own scale.
+static Diligent::RefCntAutoPtr<Diligent::ITexture>       g_skyPortalNormal;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_skyPortalPSO;
 static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_skyPortalSRB;
 static int  g_skyPortalW = 0, g_skyPortalH = 0;
@@ -21,17 +23,17 @@ static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_skySurfVB;
 static unsigned int g_skySurfVBCapacity = 0;
 
 // [rc4l] The one skybox this frame's sky comes from, or NULL for an ordinary sky, since rendering one per sector multiplies a full scene render by the count (docs/tdr-crash-after-map-loads.md).
-static ASkyViewpoint *CurrentSkyViewpoint()
+static const zx::gamecopy::ActorRecord *CurrentSkyViewpoint()
 {
 	if (!fua_dg_skyportal) return NULL;
 	// [rc4l] The viewpoint the visible sky surfaces name comes first, since the camera sector's shows the right city from the wrong room on a map with several skyboxes.
-	ASkyViewpoint *fromWalls = (ASkyViewpoint *)zx::levelmesh::SkyQuadViewpoint();
+	const zx::gamecopy::ActorRecord *fromWalls = zx::gamecopy::Record(zx::levelmesh::SkyQuadViewpoint());
 	if (fromWalls != NULL) return fromWalls;
-	sector_t *sec = (consoleplayer >= 0 && players[consoleplayer].camera != NULL)
-		? players[consoleplayer].camera->Sector : NULL;
+	const zx::gamecopy::ActorRecord *const camera = zx::gamecopy::CameraOf(consoleplayer);
+	sector_t *sec = camera != NULL ? camera->Sector : NULL;
 	// [rc4l] A stacked ceiling's "skybox" is the stack's anchor, as GLWall::SkyPlane knows, and a sky rendered from it is the town seen from a rooftop.
-	ASkyViewpoint *sb = (sec != NULL && sec->portals[sector_t::ceiling] == NULL) ? sec->GetSkyBox(sector_t::ceiling) : NULL;
-	if (sb == NULL) sb = level.DefaultSkybox;
+	const zx::gamecopy::ActorRecord *sb = (sec != NULL && sec->portals[sector_t::ceiling] == NULL) ? zx::gamecopy::Record(zx::gamecopy::SkyBoxOf(sec, sector_t::ceiling)) : NULL;
+	if (sb == NULL) sb = zx::gamecopy::Record(zx::gamecopy::DefaultSkyBox());
 	return sb;
 }
 
@@ -232,10 +234,12 @@ bool EnsureSkyPortalResources()
 	{
 		g_skyPortalColor.Release();
 		g_skyPortalDepth.Release();
+		g_skyPortalNormal.Release();
 		g_skyPortalSRB.Release();
 		g_skySurfPSO.Release();
 		g_skySurfSRB.Release();
 		if (!CreateViewTextures(w, h, "fua sky portal", g_skyPortalColor, g_skyPortalDepth)) return false;
+		CreateNormalTarget(w, h, "fua sky portal", g_skyPortalNormal);
 		g_skyPortalW = w; g_skyPortalH = h;
 	}
 
@@ -268,7 +272,7 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 {
 	g_skyPortalActive = false;
 	if (!fua_dg_skyportal) return false;
-	ASkyViewpoint *sb = CurrentSkyViewpoint();
+	const zx::gamecopy::ActorRecord *sb = CurrentSkyViewpoint();
 	if (sb == NULL) return false;
 	if (!EnsureSkyPortalResources()) return false;
 
@@ -297,8 +301,8 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	// [rc4l] The eye never sits inside the skybox room's floor or ceiling.
 	if (sb->Sector != NULL)
 	{
-		const fixed_t fl = sb->Sector->floorplane.ZatPoint(sb->x, sb->y);
-		const fixed_t ce = sb->Sector->ceilingplane.ZatPoint(sb->x, sb->y);
+		const fixed_t fl = sb->Sector->rc.floorplane.ZatPoint(sb->x, sb->y);
+		const fixed_t ce = sb->Sector->rc.ceilingplane.ZatPoint(sb->x, sb->y);
 		if (viewz < fl + 4 * FRACUNIT) viewz = fl + 4 * FRACUNIT;
 		if (viewz > ce - 4 * FRACUNIT) viewz = ce - 4 * FRACUNIT;
 	}
@@ -310,11 +314,8 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	BuildMVP(g_mvp);
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
-	ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
-	ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	ctx->ClearDepthStencil(pdsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	BeginPassTargets(ctx, ViewPassTargets(g_skyPortalColor, g_skyPortalDepth, g_skyPortalNormal), clearCol);
 	{
 		Diligent::Viewport vp;
 		vp.TopLeftX = 0; vp.TopLeftY = 0;
@@ -410,7 +411,7 @@ static void GatherSkySurfaces(TArray<SceneVertex> &sv)
 		? zx::horizon::HorizonSkyVertices(nhorizon, eye[1]) : NULL;
 	if (src == NULL) nverts = 0;
 	if (hsrc == NULL) nhorizon = 0;
-	// [rc4l] Sized once and filled, as a Push a vertex was 3% of a Sunder MAP14 frame's game thread.
+	// [rc4l] Sized once and filled, as a Push a vertex was 3% of a Sunder MAP14 frame's main thread.
 	sv.Resize((unsigned)(nverts + nhorizon));
 	SceneVertex *out = sv.Size() > 0 ? &sv[0] : NULL;
 	for (int i = 0; i < nverts; i++) out[i] = ToSceneVertex(src[i], 0);
@@ -460,6 +461,7 @@ void ReleaseSkyPortal()
 	g_skyPortalPSO.Release();
 	g_skyPortalColor.Release();
 	g_skyPortalDepth.Release();
+	g_skyPortalNormal.Release();
 	g_skyPortalW = g_skyPortalH = 0;
 	g_skyOccluderSRB.Release();
 	g_skyOccluderPSO.Release();

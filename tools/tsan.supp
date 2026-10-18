@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+#
+# [rc4l] ThreadSanitizer suppressions for the game thread's CI job (.github/workflows/game-thread.yml): races inside the
+# drivers and libraries the engine calls into, which keep their own locking, never the engine's own code.
+called_from_lib:libvulkan_lvp.so
+called_from_lib:libLLVM
+called_from_lib:libopenal.so
+called_from_lib:libasound.so
+called_from_lib:libpulse.so
+called_from_lib:libX11.so
+called_from_lib:libxcb.so
+called_from_lib:libGLX_mesa.so
+called_from_lib:libgallium
+race:libvulkan_lvp.so
+race:libLLVM
+race:libopenal.so
+called_from_lib:libXext.so
+called_from_lib:libSDL2
+called_from_lib:libvulkan.so
+mutex:libXext.so
+mutex:libSDL2
+deadlock:libgcc_s.so
+deadlock:libvulkan.so
+# [rc4l] X's randr extension and the session bus, which SDL calls at start, and libgcc's unwinder registry, each with its own locking.
+called_from_lib:libXrandr.so
+mutex:libXrandr.so
+called_from_lib:libdbus-1.so
+deadlock:libdbus-1.so
+mutex:libgcc_s.so
+mutex:libXi.so
+# [rc4l] Diligent's device, destroyed at shutdown after the threads that locked its queues.
+mutex:VulkanUtilities::LogicalDevice::~LogicalDevice

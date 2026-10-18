@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ensureCheat, verifyWorld, playCvars, playArgs, sameCvarValue, CHEATS } from "../src/play.mjs";
+import { ensureCheat, verifyWorld, playCvars, playArgs, launchMode, describeMode, MODES, sameCvarValue, CHEATS, readView, windowForView, viewForWindow, sameView, fitView } from "../src/play.mjs";
 import { engineArgs } from "../src/launch.mjs";
 
 // A stand-in engine: answers console commands from a script of replies, and records what it was asked.
@@ -80,11 +80,27 @@ test("the hands-on build asks for no monsters and for freelook enabled", () => {
   assert.equal(playCvars({ extra: { fua_dg_standalone: "0" } }).fua_dg_standalone, "0");
 });
 
-test("--no-gl launches with -vulkan after the wads, and without it nothing extra", () => {
-  assert.deepEqual(playArgs(["a.pk3", "b.wad"]), ["-file", "a.pk3", "-file", "b.wad"]);
-  assert.deepEqual(playArgs(["a.pk3"], { noGl: true }), ["-file", "a.pk3", "-vulkan"]);
-  assert.deepEqual(playArgs([], { noGl: true }), ["-vulkan"]);
-  assert.deepEqual(playArgs(["a.pk3"], { noGl: true, webgpu: true }), ["-file", "a.pk3", "-webgpu"]);
+test("every launch names its renderers after the wads: -vulkan by default, -gl for GL alone or beside, -webgpu", () => {
+  assert.deepEqual(playArgs(["a.pk3", "b.wad"]), ["-file", "a.pk3", "-file", "b.wad", "-vulkan"]);
+  assert.deepEqual(playArgs([], MODES.gl), ["-gl"]);
+  assert.deepEqual(playArgs(["a.pk3"], MODES.beside), ["-file", "a.pk3", "-gl"]);
+  assert.deepEqual(playArgs(["a.pk3"], MODES.webgpu), ["-file", "a.pk3", "-webgpu"]);
+});
+
+// [rc4l] GL beside the backend is asked for, never the default, since players never run it.
+test("a launch is Vulkan alone unless it asks for GL alone, GL beside (which side by side implies) or WebGPU", () => {
+  assert.equal(launchMode({}), MODES.vulkan);
+  assert.equal(launchMode({ noGl: true }), MODES.vulkan);
+  assert.equal(launchMode({ glBeside: true }), MODES.beside);
+  assert.equal(launchMode({ sideBySide: true }), MODES.beside);
+  assert.equal(launchMode({ gl: true, sideBySide: true }), MODES.gl);
+  assert.equal(launchMode({ webgpu: true, gl: true }), MODES.webgpu);
+  assert.equal(describeMode(MODES.vulkan), "Vulkan alone (no GL), as players run it");
+  assert.match(describeMode(MODES.beside, true), /beside it in its own window, for comparing the two$/);
+  assert.match(describeMode(MODES.beside), /beside it, for comparing/);
+  assert.equal(describeMode(MODES.gl), "GL alone");
+  assert.match(describeMode(MODES.webgpu), /^WebGPU alone/);
+  assert.equal(playCvars({ gl: true, sideBySide: true }).fua_dg_embed, undefined, "GL alone has no backend window to un-embed");
 });
 
 test("cheats run AFTER the map, cvars BEFORE it", () => {
@@ -117,4 +133,73 @@ test("a launch that fails after the engine started stops the engine and rethrows
   assert.deepEqual(stopped, [7796]);
   assert.equal(await stoppingOnFailure({ port: 7797 }, async (inst) => inst.port, stop), 7797);
   assert.deepEqual(stopped, [7796]);
+});
+
+// [rc4l] A stand-in engine with a window: vid_setsize and the scale cvar change the render size input.windowpoint reports, as the engine does a frame later.
+function viewEngine({ width, height, scale = 1, fov = 90, snaps = false }) {
+  const st = { width, height, scale, fov, asked: [] };
+  const c = { rpc: async (cmd) => { assert.equal(cmd, "input.windowpoint"); return { x: 0, y: 0, width: st.width, height: st.height }; } };
+  const exec = async (_c, text) => {
+    st.asked.push(text);
+    const [name, ...a] = text.split(" ");
+    if (name === "vid_scalefactor" && a.length) st.scale = Number(a[0]);
+    else if (name === "fov" && a.length) st.fov = Number(a[0]);
+    else if (name === "vid_setsize" && !snaps) { st.width = Math.round(Number(a[0]) * st.scale); st.height = Math.round(Number(a[1]) * st.scale); }
+    else if (name === "vid_scalefactor") return `"vid_scalefactor" is "${st.scale}"\n`;
+    else if (name === "fov") return `"fov" is "${st.fov}"\n`;
+    return "";
+  };
+  return { c, cap: { exec, sleep: async () => {} }, st };
+}
+
+test("a view is read as its render size, scale and FOV", async () => {
+  const { c, cap } = viewEngine({ width: 900, height: 900, scale: 0.5, fov: 110 });
+  assert.deepEqual(await readView(c, cap), { width: 900, height: 900, scale: 0.5, fov: 110 });
+  const silent = { exec: async () => "" };
+  assert.deepEqual(await readView(c, silent), { width: 900, height: 900, scale: null, fov: null });
+});
+
+test("a view's window is its render size over its scale", () => {
+  assert.deepEqual(windowForView({ width: 900, height: 900, scale: 0.5 }), { w: 1800, h: 1800 });
+  assert.deepEqual(windowForView({ width: 1280, height: 720 }), { w: 1280, h: 720 });
+  assert.deepEqual(windowForView({ width: 1280, height: 720, scale: 0 }), { w: 1280, h: 720 });
+});
+
+test("a view read back matches to the pixel a scale rounds by, and on the scale and FOV it names", () => {
+  const want = { width: 900, height: 900, scale: 1, fov: 90 };
+  assert.ok(sameView(want, { width: 901, height: 899, scale: 1, fov: 90 }));
+  assert.ok(!sameView(want, { width: 1280, height: 960, scale: 1, fov: 90 }));
+  assert.ok(!sameView(want, { width: 900, height: 900, scale: 0.5, fov: 90 }));
+  assert.ok(!sameView(want, { width: 900, height: 900, scale: 1, fov: 110 }));
+  assert.ok(sameView({ width: 900, height: 900 }, { width: 900, height: 900, scale: 0.5, fov: 110 }), "a bare size checks the size alone");
+});
+
+// [rc4l] 900x900 in the ini came up 1280x960, a mode the engine knew, and a square-only report could not be replayed.
+test("a launch's snapped size is set to the view asked for and read back", async () => {
+  const { c, cap, st } = viewEngine({ width: 1280, height: 960 });
+  const r = await fitView(c, { width: 900, height: 900, scale: 0.5, fov: 100 }, cap);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.got, { width: 900, height: 900, scale: 0.5, fov: 100 });
+  assert.ok(st.asked.includes("vid_setsize 1800 1800"));
+});
+
+test("a view already showing is left alone, and one that will not take is reported", async () => {
+  const same = viewEngine({ width: 1280, height: 720 });
+  assert.equal((await fitView(same.c, { width: 1280, height: 720 }, same.cap)).ok, true);
+  assert.ok(!same.st.asked.some((t) => t.startsWith("vid_setsize")));
+  const stuck = viewEngine({ width: 1280, height: 960, snaps: true });
+  const r = await fitView(stuck.c, { width: 900, height: 900 }, stuck.cap, { tries: 2 });
+  assert.equal(r.ok, false);
+  assert.deepEqual([r.got.width, r.got.height], [1280, 960]);
+});
+
+// [rc4l] A scenario's 1280x720 window at render scale 0.5 renders 640x360, which a size compared as a render size never matched.
+test("a --res window is the view it renders at its scale, and a view read once is not read again", async () => {
+  assert.deepEqual(viewForWindow(1280, 720, 0.5), { width: 640, height: 360 });
+  assert.deepEqual(viewForWindow(900, 900, null), { width: 900, height: 900 });
+  const { c, cap, st } = viewEngine({ width: 640, height: 360, scale: 0.5 });
+  const now = { width: 640, height: 360, scale: 0.5, fov: 90 };
+  const r = await fitView(c, viewForWindow(1280, 720, now.scale), cap, { now });
+  assert.equal(r.ok, true);
+  assert.deepEqual(st.asked, [], "nothing asked of an engine already at the view");
 });

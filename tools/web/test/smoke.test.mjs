@@ -57,8 +57,16 @@ test('an evaluation prints its value as JSON, or what it threw', () => {
 
 test('a page asks for a click or a key it knows with a console line', () => {
   assert.deepEqual(inputAsked('[log] check: click'), { click: true });
+  assert.deepEqual(inputAsked('[log] check: click fullscreen'), { click: true, target: 'fullscreen' });
+  assert.equal(inputAsked('[log] check: click two words'), null);
   assert.deepEqual(inputAsked('[log] check: press Tab'), { key: 'Tab', code: 'Tab', keyCode: 9 });
   assert.equal(inputAsked('[log] check: press F13'), null);
+  assert.deepEqual(inputAsked('[log] check: hold ArrowUp 900'), { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, holdMs: 900 });
+  assert.equal(inputAsked('[log] check: hold F13 900'), null);
+  assert.equal(inputAsked('[log] check: hold ArrowUp'), null);
+  assert.deepEqual(inputAsked('[log] check: down ArrowUp'), { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, phase: 'down' });
+  assert.deepEqual(inputAsked('[log] check: up ArrowUp'), { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, phase: 'up' });
+  assert.equal(inputAsked('[log] check: down F13'), null);
   assert.equal(inputAsked('[log] something else'), null);
   assert.deepEqual(inputAsked('[log] check: resize 900x700'), { resize: [900, 700] });
 });

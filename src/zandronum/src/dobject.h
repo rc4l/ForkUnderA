@@ -35,6 +35,7 @@
 #define __DOBJECT_H__
 
 #include <stdlib.h>
+#include <atomic>
 #include "doomtype.h"
 
 struct PClass;
@@ -237,7 +238,8 @@ namespace GC
 	};
 
 	// Number of bytes currently allocated through M_Malloc/M_Realloc.
-	extern size_t AllocBytes;
+	// [rc4l] Atomic, since the game thread and the main thread both allocate.
+	extern std::atomic<size_t> AllocBytes;
 
 	// Amount of memory to allocate before triggering a collection.
 	extern size_t Threshold;

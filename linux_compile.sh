@@ -109,8 +109,16 @@ if [ "${ZX_MCP_BRIDGE:-0}" = "1" ]; then
   echo "==> MCP bridge: ENABLED (dev build -- do not ship)"
 fi
 
+# [rc4l] ZX_TSAN=1 builds with ThreadSanitizer, for the game thread's CI job; never for a release.
+TSAN_ARGS=()
+if [ "${ZX_TSAN:-0}" = "1" ]; then
+  echo "==> ThreadSanitizer build (ZX_TSAN=1) -- do not ship"
+  TSAN_ARGS=( -DCMAKE_CXX_FLAGS="-fsanitize=thread -g -O1" -DCMAKE_C_FLAGS="-fsanitize=thread -g -O1"
+              -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread )
+fi
+
 cmake -S src/zandronum --preset "linux-$PROFILE" \
-  "${BRIDGE_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}"
+  "${BRIDGE_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}" "${TSAN_ARGS[@]}"
 
 echo "==> Building"
 # [rc4l] ZX_KEEP_GOING=1 compiles past a failing file, so one run reports every compile error.

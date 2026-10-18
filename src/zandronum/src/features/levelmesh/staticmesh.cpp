@@ -208,6 +208,7 @@ void MeshInitForLevel()
 	g_pieces = g_reallocs = 0;
 	g_pieceList.Clear();
 	g_pieceByOffset.Clear();
+	MeshClearRebatches();
 }
 
 void MeshFreeLevel()
@@ -406,6 +407,9 @@ static int g_layoutNew = 0, g_layoutResized = 0, g_layoutRebatched = 0;
 // MeshRegisterPiece and features/surfaces/computation/surfacechange_compute.h.
 static unsigned int g_rebatchRevision = 0, g_repaintRevision = 0;
 static TArray<unsigned int> g_repaints;
+// [rc4l] The pieces that moved between batches since the backend last looked, and whether more did than the list holds.
+static TArray<unsigned int> g_rebatches;
+static bool g_rebatchesOverflowed = false;
 void MeshLayoutReasons(int &added, int &resized, int &rebatched)
 { added = g_layoutNew; resized = g_layoutResized; rebatched = g_layoutRebatched; }
 unsigned int MeshLayoutGeneration() { return g_layoutGen; }
@@ -471,6 +475,8 @@ void MeshRegisterPiece(const MeshPiece &piece)
 			g_layoutGen++;
 			g_layoutRebatched++;
 			g_rebatchRevision++;
+			if (g_rebatches.Size() < 8192) g_rebatches.Push(*found);
+			else g_rebatchesOverflowed = true;
 		}
 		else if (what == zx::surfaces::kSurfaceRepaint)
 		{
@@ -501,6 +507,19 @@ void MeshTakeRepaints(const unsigned int *&list, int &count)
 }
 
 void MeshClearRepaints() { g_repaints.Clear(); }
+
+void MeshTakeRebatches(const unsigned int *&list, int &count, bool &overflowed)
+{
+	count = (int)g_rebatches.Size();
+	list = count ? &g_rebatches[0] : 0;
+	overflowed = g_rebatchesOverflowed;
+}
+
+void MeshClearRebatches()
+{
+	g_rebatches.Clear();
+	g_rebatchesOverflowed = false;
+}
 
 // [rc4l] The registered piece at a vertex offset, or NULL.
 //
@@ -587,6 +606,7 @@ void MeshClearPieces()
 	g_layoutGen++;
 	g_pieceList.Clear();
 	g_pieceByOffset.Clear();
+	MeshClearRebatches();
 }
 
 const MeshVertex *MeshVertexData(int &count)

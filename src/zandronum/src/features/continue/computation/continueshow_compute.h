@@ -40,11 +40,12 @@ struct ContinueShowInputs
 	bool saveFileExists;	// Single: the snapshot the record points at is still on disk
 	int saveVersion;		// Single: the version stamped in that snapshot
 	int minSaveVersion;		// this build's MINSAVEVER
+	int maxSaveVersion;		// [rc4l] this build's SAVEVER, since a newer snapshot is refused too
 	ServerProbe probe;		// Server: what we know about the address
 
 	ContinueShowInputs()
 		: recordParsed(false), kind(ContinueKind::None), saveFileExists(false),
-		  saveVersion(0), minSaveVersion(0), probe(ServerProbe::Unknown) {}
+		  saveVersion(0), minSaveVersion(0), maxSaveVersion(0), probe(ServerProbe::Unknown) {}
 };
 
 enum class ContinueVisibility

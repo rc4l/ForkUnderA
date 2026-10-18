@@ -1,14 +1,23 @@
 // Session orchestration: stand up N engine instances, drive them in lockstep, and assert cross-
 // instance invariants. This is the "programmable engine" thesis in code -- deterministic sim +
 // multi-instance + desync detection, none of which a console-scraping bolt-on could do.
-import { launchInstance, stopInstance } from "./launch.mjs";
+import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { waitInLevel, sleep } from "./capture.mjs";
 import { desyncVerdict } from "./proto.mjs";
 import { sampleProcess } from "./sample.mjs";
+import { timeoutScale } from "./timeouts.mjs";
 
 
-async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
+// [rc4l] Why an engine is gone before its bridge came up, an exit code or the signal that killed it, or null while it runs.
+export function goneBeforeBridge(proc) {
+  if (!proc) return null;
+  if (proc.exitCode != null) return `engine exited (${describeExit(proc.exitCode)}) before bridge came up`;
+  if (proc.signalCode) return `engine was killed by ${proc.signalCode} before bridge came up`;
+  return null;
+}
+
+export async function attach(inst, { retries = Math.round(60 * timeoutScale()), delayMs = 500 } = {}) {
   // The engine takes a few seconds to boot and bind its bridge port; retry ECONNREFUSED until it's up.
   for (let i = 0; ; i++) {
     const c = new BridgeClient();
@@ -19,7 +28,8 @@ async function attach(inst, { retries = 60, delayMs = 500 } = {}) {
     } catch (e) {
       c.close();
       if (i >= retries || !/ECONNREFUSED|timeout/.test(e.message)) throw e;
-      if (inst.proc && inst.proc.exitCode != null) throw new Error("engine exited before bridge came up");
+      const gone = goneBeforeBridge(inst.proc);
+      if (gone) throw new Error(gone);
       await sleep(delayMs);
     }
   }

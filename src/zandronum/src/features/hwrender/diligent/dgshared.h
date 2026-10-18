@@ -91,6 +91,8 @@ bool FrameOffscreen();
 Diligent::ITextureView *FrameRTV();
 Diligent::ITextureView *FrameDSV();
 Diligent::ITexture *FrameTexture();
+// [rc4l] Which making of the offscreen target this is, so a picture drawn into an earlier one is not taken for this one's.
+unsigned int FrameGeneration();
 int FrameWidth();
 int FrameHeight();
 void FinishFrame(Diligent::IDeviceContext *ctx);
@@ -99,6 +101,8 @@ void ReleaseFrameTarget();
 void ReleaseFrameFence();
 // [rc4l] Everything a level owned on the GPU (dgframe.cpp), for a level change and for shutdown's report of what is still held.
 void ReleaseLevelResources();
+// [rc4l] The sprite atlas's pages and images dropped (dgatlas.cpp), which outlive a level and go only when the engine's pixels change or the backend stops.
+void ResetAtlas();
 
 // [rc4l] GL draws its views with GL_DEPTH_CLAMP, keeping a surface nearer than the near plane at the near depth instead of cutting it away; a pipeline drawing the world asks for the same when the device can.
 void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp);
@@ -121,6 +125,13 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso, 
 Diligent::ITextureView *SceneDepthSRV();
 Diligent::ITextureView *SceneNormalSRV();
 Diligent::ITextureView *SceneDepthDSV();
+// [rc4l] The targets of the pass being drawn (BeginPassTargets): its colour and depth, the depth and normals its decal pass reads (null for a view without them), and its size, the frame's before any pass set one.
+Diligent::ITextureView *PassColorRTV();
+Diligent::ITextureView *PassDepthDSV();
+Diligent::ITextureView *PassDepthSRV();
+Diligent::ITextureView *PassNormalSRV();
+int PassWidth();
+int PassHeight();
 
 // The scene's own constant buffer -- uMVP and friends -- and this frame's view-projection, which a
 // pass needs in order to invert it and turn a depth sample back into a world position.

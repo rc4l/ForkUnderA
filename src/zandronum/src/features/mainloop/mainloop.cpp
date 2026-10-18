@@ -34,6 +34,11 @@ void Quit(int vbls)
 	g_quitAt = I_MSTime() + ComputeVblMilliseconds(vbls);
 }
 
+bool QuitPending()
+{
+	return g_quitPending;
+}
+
 void FinishPendingQuit()
 {
 	if (!g_quitPending || !ComputeDeadlinePassed(g_quitAt, I_MSTime())) return;

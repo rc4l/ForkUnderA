@@ -13,6 +13,7 @@ static_assert(zx::levelmesh::kMainWalkSlot == 0, "FUA_MAIN_WALK_SLOT_STR spells 
 static_assert(zx::hwrender::kTexFlagStencil == 1 && zx::hwrender::kTexFlagAlphaTest == 2 && zx::hwrender::kTexFlagHud == 4 &&
 	zx::hwrender::kTexFlagLevel == 8 && zx::hwrender::kTexFlagInverse == 16 && zx::hwrender::kTexFlagColorBlend == 32 &&
 	zx::hwrender::kTexFlagFogLayer == 64 && zx::hwrender::kTexFlagFogBoundary == 1024 && zx::hwrender::kTexFlagFogPass == 8192 &&
+	zx::hwrender::kTexFlagNoMarks == 16384 &&
 	zx::hwrender::kTexFlagFuzzShift == 7 && zx::hwrender::kTexFlagFuzzMask == 7 && zx::hwrender::kTexFlagCullShift == 11 &&
 	zx::hwrender::kTexFlagCullMask == 3, "the scene shaders test texFlags by these values");
 static const char *kSceneVS =
@@ -326,21 +327,21 @@ static const char *kSceneVS =
 	   ComputeLightClustersFromMVP slices the light by on the CPU. Two sides agreeing because they
 	   read the same number is worth more than two sides computing numbers that ought to match.
 
-	   The 64 and 24 are kClusterTilePixels and kClusterSlices; a static_assert keeps them honest. */ \
+	   The 32, 18 and 24 are kClusterTilesX, kClusterTilesY and kClusterSlices; a static_assert keeps them honest. */ \
 	"    int first = 0;\n" \
 	"    int count = n;\n" \
 	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
 	"    if (clustered) {\n" \
-	"        int tilesX = int((uScreen.x + 63.0) / 64.0);\n" \
-	"        int tilesY = int((uScreen.y + 63.0) / 64.0);\n" \
-	"        int tx = clamp(int(gl_FragCoord.x) / 64, 0, tilesX - 1);\n" \
-	"        int ty = clamp(int(gl_FragCoord.y) / 64, 0, tilesY - 1);\n" \
+	"        int tileW = max((int(uScreen.x) + 31) / 32, 1);\n" \
+	"        int tileH = max((int(uScreen.y) + 17) / 18, 1);\n" \
+	"        int tx = clamp(int(gl_FragCoord.x) / tileW, 0, 31);\n" \
+	"        int ty = clamp(int(gl_FragCoord.y) / tileH, 0, 17);\n" \
 	"        float depth = 1.0 / gl_FragCoord.w;\n" \
 	"        int slice = 0;\n" \
 	"        if (depth > uLightParams.z)\n" \
 	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \
 	"                log(uLightParams.w / uLightParams.z) * 24.0)), 0, 23);\n" \
-	"        uvec2 cell = ClusterTableIn.clusterCells[(slice * tilesY + ty) * tilesX + tx];\n" \
+	"        uvec2 cell = ClusterTableIn.clusterCells[(slice * 18 + ty) * 32 + tx];\n" \
 	"        first = int(cell.x);\n" \
 	"        count = int(cell.y);\n" \
 	/* [rc4l] CLAMP the loop bound. It comes out of a buffer, and a buffer can be stale.\
@@ -542,7 +543,8 @@ static const char *kScenePSGBuffer =
 	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
 	   the decal pass uses this to lay axes into a plane and to ask how far a surface is from the
 	   impact, and neither needs better than a degree or so. */
-	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, 1.0);\n"
+	/* [rc4l] Alpha says what the decal pass may paint: 1 a surface that takes marks, 0.75 one features/decals refuses (texFlags 16384), 0 nothing drawn. */
+	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, (int(vTexFlags + 0.5) & 16384) != 0 ? 0.75 : 1.0);\n"
 	"}\n";
 
 static const char *kScenePSTrans =

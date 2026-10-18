@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, launchRenderer, sideAdjust, standaloneOptions, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareEachLaunch, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -198,13 +198,6 @@ test("a run-wide side change skips a scenario without that side instead of endin
   assert.deepEqual(why, { lines: ["skipped: it needs ray tracing"], code: 0, skipped: true });
 });
 
-test("--standalone runs a scenario's own standalone side, else its Vulkan side with standalone on, else nothing", () => {
-  const own = { name: "own", sides: [{ name: "gl", gl: true }, { name: "standalone", cvars: { fua_dg_standalone: 1 } }] };
-  assert.equal(standaloneOptions(own), own);
-  assert.deepEqual(standaloneOptions({ name: "pair" }).sides, [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { fua_dg_standalone: 1 } }]);
-  assert.equal(standaloneOptions({ name: "ab", sides: [{ name: "flat" }, { name: "clustered" }] }), null);
-});
-
 test("the backend's API is read from dumprenderer", () => {
   assert.equal(launchBackendApi("MCP_RENDERER\nrenderer=vulkan\nbackend_api=WebGPU\n"), "WebGPU");
   assert.equal(launchBackendApi("renderer=opengl\n"), null);
@@ -246,6 +239,42 @@ test("a quit passes only when the engine left cleanly", () => {
   assert.deepEqual(judgeQuit("MAP01 vk", { gone: { code: null, signal: "SIGKILL" }, crashed: false }), { line: "FAIL MAP01 vk: the engine exited with SIGKILL", failed: 1 });
 });
 
+// [rc4l] The backend left window pixels unscaled, so at vid_scalefactor 0.5 every menu hover landed twice as far in.
+test("a window point passes only at the render pixel under it, in a frame the scale took", () => {
+  const want = { from: [1000, 600], x: 500, y: 300, width: 640, height: 360 };
+  assert.deepEqual(judgeWindowPoint("MAP01 vk", { x: 500, y: 301, width: 640, height: 360 }, want), { line: "PASS MAP01 vk: window 1000,600 at render 500,301 of 640x360, want 500,300 of 640x360", failed: 0 });
+  assert.equal(judgeWindowPoint("MAP01 vk", { x: 1000, y: 600, width: 640, height: 360 }, want).failed, 1);
+  assert.equal(judgeWindowPoint("MAP01 vk", { x: 500, y: 300, width: 1280, height: 720 }, want).failed, 1, "the scale never took");
+  assert.equal(judgeWindowPoint("MAP01 vk", { x: 500, y: 300, width: 640, height: 400 }, want).failed, 1);
+});
+
+// [rc4l] The renderer's "changes on the next launch" took a line of its own; the restart note belongs beside the row, and only once it was changed.
+test("a note passes only beside its row and only while the row is changed", () => {
+  const read = (...rows) => ({ texts: rows.flatMap(([y, ...parts]) => parts.map(([x, text]) => ({ x, y, w: 10, text }))) });
+  const spec = { row: "Renderer", note: "(restart", absent: ["next launch"] };
+  const plain = read([100, [300, "Fullscreen"], [500, "Yes"]], [130, [300, "Renderer"], [500, "Vulkan (Recommended)"]], [160, [300, "Aspect"]]);
+  const noted = read([100, [300, "Fullscreen"]], [130, [300, "Renderer"], [500, "GL (Legacy)"], [700, "(restart the game to apply)"]], [160, [300, "Aspect"]]);
+  assert.deepEqual(judgeNoteBeside("MAP01 vk", { before: plain, changed: noted, back: plain }, spec),
+    { line: 'PASS MAP01 vk: "(restart" beside "Renderer" only while changed', failed: 0 });
+  const centred = read([130, [300, "Renderer"], [500, "Vulkan (Recommended)"]], [139, [900, "(restart)"]], [160, [300, "Aspect"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: centred, back: plain }, spec).failed, 0, "a smaller note centred on the row");
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: plain, back: plain }, spec).line, "FAIL MAP01 vk: no note after the change");
+  const ownLine = read([130, [300, "Renderer"], [500, "GL (Legacy)"]], [160, [300, "(restart the game to apply)"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: ownLine, back: plain }, spec).line, "FAIL MAP01 vk: the note is on a line of its own");
+  const over = { texts: [{ x: 300, y: 130, w: 60, text: "Renderer" }, { x: 500, y: 130, w: 330, text: "GL (Legacy)" }, { x: 800, y: 130, w: 400, text: "(restart to apply)" }] };
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: over, back: plain }, spec).line, "FAIL MAP01 vk: the note overlaps the row");
+  const clear = { texts: [{ x: 300, y: 130, w: 60, text: "Renderer" }, { x: 500, y: 130, w: 300, text: "GL (Legacy)" }, { x: 800, y: 130, w: 400, text: "(restart to apply)" }] };
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: clear, back: plain }, spec).failed, 0, "touching is not overlapping");
+  const leftOf = read([130, [300, "Renderer"], [200, "(restart)"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: leftOf, back: plain }, spec).failed, 1);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: noted, changed: noted, back: noted }, spec).line,
+    "FAIL MAP01 vk: the note shows before any change; the note still shows after changing back");
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: read(), changed: read(), back: read() }, spec).line, 'FAIL MAP01 vk: no "Renderer" row');
+  const old = read([130, [300, "Renderer"], [500, "GL (Legacy)"], [700, "(restart to apply)"]], [160, [300, "(the renderer changes on the next launch)"]]);
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: plain, changed: old, back: plain }, spec).line, 'FAIL MAP01 vk: "next launch" still shows');
+  assert.equal(judgeNoteBeside("MAP01 vk", { before: {}, changed: noted, back: {} }, { row: "Renderer", note: "(restart" }).failed, 0);
+});
+
 // [rc4l] A new game leaked every player's userinfo cvars, about 1,400 allocations a level load, until a soak named them.
 test("a soak passes only when the engine judged counters and none kept growing", () => {
   assert.deepEqual(judgeSoak("MAP01 vk", { pass: true, marks: 6, judged: 44, grew: [] }), { line: "PASS MAP01 vk: 44 counters held over 6 marks", failed: 0 });
@@ -256,7 +285,7 @@ test("a soak passes only when the engine judged counters and none kept growing",
 });
 
 test("only the comparisons that judge a launch against itself are marked so", () => {
-  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone && compareSoak.judgedAlone);
+  assert.ok(compareCounter.judgedAlone && compareOverTime.judgedAlone && compareSequence.judgedAlone && compareQuit.judgedAlone && compareSoak.judgedAlone && compareEachLaunch.judgedAlone);
   assert.ok(!compareSameFrame.judgedAlone);
 });
 
@@ -268,6 +297,7 @@ test("a WebGPU run of a quit runs on WebGPU alone", () => {
 test("a WebGPU run skips what WebGPU cannot do: GL beside it in one frame, or ray tracing", () => {
   assert.match(webgpuOptions({ name: "sameframe", boxes: {} }, compareSameFrame).skip, /a WebGPU launch has no GL/);
   assert.match(webgpuOptions({ name: "rt", boxes: {}, needs: ["raytracing"] }).skip, /needs ray tracing/);
+  assert.match(webgpuOptions({ name: "wipe", boxes: {}, needs: ["readback"] }, compareEachLaunch).skip, /reads each presented frame back/);
 });
 
 // [rc4l] A capture sequence names its frames, and each box the two it is judged between.
@@ -291,4 +321,31 @@ test("a WebGPU run of a capture sequence runs on WebGPU alone with its boxes as 
   const w = webgpuOptions({ name: "sequence", boxes }, compareSequence);
   assert.deepEqual(w.sides, [{ name: "wgpu", gl: false, noGl: true, webgpu: true }]);
   assert.equal(w.boxes, boxes);
+});
+
+test("a matrix names one cvar set per value, each laid on every side over the run's own adjustment", () => {
+  assert.deepEqual(matrixSets("fua_gamethread=0,1"), [{ fua_gamethread: "0" }, { fua_gamethread: "1" }]);
+  assert.throws(() => matrixSets("nonsense"), /cvar=a,b/);
+  const opts = { name: "t", sides: [{ name: "gl", gl: true }, { name: "vk", gl: false, cvars: { x: "2" } }] };
+  const every = withEverySideCvars(opts, { y: "1" });
+  assert.deepEqual(every.sides.map((s) => s.cvars), [{ y: "1" }, { x: "2", y: "1" }]);
+  assert.deepEqual(withEverySideCvars({ name: "d" }, { y: "1" }).sides.map((s) => s.cvars.y), GL_VS_VULKAN.map(() => "1"));
+  const run = matrixAdjust({ y: "1" }, sideAdjust("vk", { z: "3" }));
+  assert.deepEqual(run(opts).sides[1].cvars, { x: "2", z: "3", y: "1" });
+  assert.equal(matrixAdjust({ y: "1" }, () => null)(opts), null);
+  assert.deepEqual(matrixAdjust({ y: "1" }, () => ({ skip: "why" }))(opts), { skip: "why" });
+  assert.deepEqual(matrixAdjust({ y: "1" })(opts).sides[0].cvars, { y: "1" });
+});
+
+// [rc4l] Only a side judged against GL in one frame runs the backend beside GL; every other Vulkan side runs as players do.
+test("a side runs the backend beside GL only when GL's frame or both renderers' one frame judge it, or it asks", () => {
+  assert.equal(sideBesideGl({ name: "vk" }), false);
+  assert.equal(sideBesideGl({ name: "vk", noGl: true }), false);
+  assert.equal(sideBesideGl({ name: "standalone", cvars: { fua_dg_standalone: 1 } }), false);
+  assert.equal(sideBesideGl({ name: "blanked", frame: "gl" }), true);
+  assert.equal(sideBesideGl({ name: "pair", glDraws: true }), true);
+  assert.equal(sideBesideGl({ name: "x", glBeside: true }), true);
+  assert.equal(sideBesideGl({ name: "gl", gl: true, frame: "gl" }), false, "GL alone has no backend to sit beside");
+  assert.equal(sideBesideGl({ name: "wgpu", webgpu: true, glDraws: true }), false, "a WebGPU launch has no GL");
+  assert.equal(sideBesideGl(), false);
 });

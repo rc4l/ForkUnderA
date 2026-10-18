@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND } from "../src/capture.mjs";
+import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND, launchModeOf, glFrameOf, glFrameFor, echoedCvar, rendererReport, RENDERER_PROBE } from "../src/capture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // This tool's own directory -- NOT tools/, which holds unrelated CI tripwires that drive nothing.
@@ -83,4 +83,57 @@ test("sleep waits about as long as it is asked, and a slow command waits longer 
   await sleep(20);
   assert.ok(Date.now() - started >= 15);
   assert.ok(SLOW_COMMAND.quietMs > 220 && SLOW_COMMAND.maxMs > 4000);
+});
+
+// [rc4l] An engine that answers each console line with what `answer` gives, counting the lines asked.
+function answering(answer) {
+  let handler = null, asked = 0;
+  return {
+    asked: () => asked,
+    onEvent(h) { handler = h; return () => { handler = null; }; },
+    async rpc(_method, { text }) { asked++; if (handler) handler("out", { text: answer(text) }); return {}; },
+  };
+}
+
+const REPORT = (renderer, api, vulkan, standalone) =>
+  `MCP_RENDERER\nrenderer=${renderer}\nbackend_api=${api}\n"fua_vulkan" is "${vulkan}"\n"fua_dg_standalone" is "${standalone}"\n`;
+
+test("a launch's mode is read from dumprenderer and fua_vulkan: no GL is Vulkan or WebGPU alone, GL with the backend on is GL beside", () => {
+  assert.equal(launchModeOf(REPORT("vulkan", "Vulkan", "true", "true")), "vulkan");
+  assert.equal(launchModeOf(REPORT("vulkan", "WebGPU", "true", "true")), "webgpu");
+  assert.equal(launchModeOf(REPORT("opengl", "Vulkan", "true", "false")), "beside");
+  assert.equal(launchModeOf(REPORT("opengl", "Vulkan", "false", "true")), "gl");
+  assert.equal(launchModeOf("Unknown command"), null);
+  assert.equal(echoedCvar(REPORT("opengl", "Vulkan", "1", "0"), "fua_dg_standalone"), "0");
+  assert.equal(echoedCvar("", "fua_vulkan"), null);
+  assert.equal(RENDERER_PROBE, "dumprenderer; fua_vulkan; fua_dg_standalone");
+});
+
+test("a GL frame exists for GL alone or GL drawing beside the backend, and otherwise the reason says how to get one", () => {
+  assert.deepEqual(glFrameOf(REPORT("opengl", "Vulkan", "false", "true")), { ok: true, why: "" });
+  assert.deepEqual(glFrameOf(REPORT("opengl", "Vulkan", "true", "false")), { ok: true, why: "" });
+  const standalone = glFrameOf(REPORT("opengl", "Vulkan", "true", "true"));
+  assert.equal(standalone.ok, false);
+  assert.match(standalone.why, /fua_dg_standalone 1/);
+  const none = glFrameOf(REPORT("vulkan", "Vulkan", "true", "true"));
+  assert.equal(none.ok, false);
+  assert.match(none.why, /no GL \(vulkan alone\).*--gl-beside/);
+  assert.match(glFrameFor(null, false).why, /no renderer reported/);
+});
+
+test("a connection's mode is asked once, except GL beside, whose standalone cvar can change", async () => {
+  const vk = answering(() => REPORT("vulkan", "Vulkan", "true", "true"));
+  assert.equal((await rendererReport(vk)).mode, "vulkan");
+  assert.equal((await rendererReport(vk)).gl.ok, false);
+  assert.equal(vk.asked(), 1);
+  let standalone = "true";
+  const beside = answering(() => REPORT("opengl", "Vulkan", "true", standalone));
+  assert.equal((await rendererReport(beside)).gl.ok, false);
+  standalone = "false";
+  assert.equal((await rendererReport(beside)).gl.ok, true);
+  assert.equal(beside.asked(), 2);
+  const silent = answering(() => "");
+  assert.equal((await rendererReport(silent)).mode, null);
+  await rendererReport(silent);
+  assert.equal(silent.asked(), 2, "an engine that named no renderer is asked again");
 });

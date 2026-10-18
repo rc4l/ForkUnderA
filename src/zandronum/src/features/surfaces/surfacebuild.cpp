@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "doomtype.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_sky.h"   // skyflatnum, for the lower texture's sky reference
@@ -51,17 +52,17 @@ void HeightsAt(const seg_t *seg, fixed_t x, fixed_t y, WallHeights &out)
 	sector_t fs, bs;
 	const sector_t *front = zx::fakeflat::TransferSector(seg->frontsector, &fs, false);
 	const sector_t *back = seg->backsector != NULL ? zx::fakeflat::TransferSector(seg->backsector, &bs, true) : NULL;
-	out.frontFloor   = FIXED2FLOAT(front->floorplane.ZatPoint(x, y));
-	out.frontCeiling = FIXED2FLOAT(front->ceilingplane.ZatPoint(x, y));
+	out.frontFloor   = FIXED2FLOAT(front->rc.floorplane.ZatPoint(x, y));
+	out.frontCeiling = FIXED2FLOAT(front->rc.ceilingplane.ZatPoint(x, y));
 	out.twoSided = (back != NULL);
-	out.frontCeilingSky = front->GetTexture(sector_t::ceiling) == skyflatnum;
-	out.frontFloorSky   = front->GetTexture(sector_t::floor)   == skyflatnum;
+	out.frontCeilingSky = front->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+	out.frontFloorSky   = front->rc.GetTexture(sector_t::floor)   == skyflatnum;
 	if (back != NULL)
 	{
-		out.backFloor   = FIXED2FLOAT(back->floorplane.ZatPoint(x, y));
-		out.backCeiling = FIXED2FLOAT(back->ceilingplane.ZatPoint(x, y));
-		out.backCeilingSky = back->GetTexture(sector_t::ceiling) == skyflatnum;
-		out.backFloorSky   = back->GetTexture(sector_t::floor)   == skyflatnum;
+		out.backFloor   = FIXED2FLOAT(back->rc.floorplane.ZatPoint(x, y));
+		out.backCeiling = FIXED2FLOAT(back->rc.ceilingplane.ZatPoint(x, y));
+		out.backCeilingSky = back->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+		out.backFloorSky   = back->rc.GetTexture(sector_t::floor)   == skyflatnum;
 	}
 	else
 	{
@@ -150,14 +151,14 @@ bool BuildDerivedWallLight(const seg_t *seg, DerivedWallLight &out, FDynamicColo
 	// What comes back here is the wall's OWN light -- band zero, which SplitWall also leaves alone.
 	// The bands below it are the caller's to apply, from wallbands_compute.
 
-	colormap = front->ColorMap;
+	colormap = front->rc.ColorMap;
 	// Transcribed from GLWall::Process, which is the only place this is written down. gl_ClampLight
 	// and GetLightLevel are the engine's; the shape of the rellight clamp is not obvious and is not
 	// re-derived here on purpose.
 	int rel = 0;
-	const int orglightlevel = gl_ClampLight(front->lightlevel);
-	const bool foggy = (!gl_isBlack(front->ColorMap->Fade) || (level.flags & LEVEL_HASFADETABLE));
-	out.lightLevel = gl_ClampLight(seg->sidedef->GetLightLevel(foggy, orglightlevel, false, &rel));
+	const int orglightlevel = gl_ClampLight(front->rc.lightlevel);
+	const bool foggy = (!gl_isBlack(front->rc.ColorMap->Fade) || (zx::gamecopy::Level().flags & LEVEL_HASFADETABLE));
+	out.lightLevel = gl_ClampLight(seg->sidedef->GetRcLightLevel(foggy, orglightlevel, false, &rel));
 	if (orglightlevel >= 253)                    out.relLight = 0;   // fake contrast is invisible here
 	else if (out.lightLevel - rel > 256)         out.relLight = 256 - out.lightLevel + rel;
 	else                                         out.relLight = rel;
@@ -170,9 +171,9 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	if (seg == NULL || seg->sidedef == NULL || seg->linedef == NULL ||
 	    seg->frontsector == NULL) return false;
 	// [rc4l] A horizon line has no wall parts: GLWall::Process hands it to DoHorizon and returns.
-	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->special)) return false;
+	if (zx::horizon::ComputeIsHorizonLine(seg->linedef->rc.special)) return false;
 	// [rc4l] Nor has a mirror: GLWall::DoMidTexture makes its face RENDERWALL_MIRROR, which the backend's mirror pass draws.
-	if (!mirrorFace && renderType == RENDERWALL_M1S && zx::levelmesh::ComputeIsMirrorWall(seg->linedef->special, true, r_mirrors)) return false;
+	if (!mirrorFace && renderType == RENDERWALL_M1S && zx::levelmesh::ComputeIsMirrorWall(seg->linedef->rc.special, true, r_mirrors)) return false;
 
 	int texpos = side_t::mid;
 	if (!PartOf(renderType, texpos)) { g_fbSpecial++; g_fellBack++; return false; }
@@ -180,7 +181,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	const bool twoSidedMid = (renderType == RENDERWALL_M2S || renderType == RENDERWALL_M2SNF);
 	if (twoSidedMid && seg->backsector == NULL) { g_fbMiddle++; g_fellBack++; return false; }
 
-	const void *mat = zx::materials::MaterialForTextureId(seg->sidedef->GetTexture((side_t::ETexpart)texpos));
+	const void *mat = zx::materials::MaterialForTextureId(seg->sidedef->rc.GetTexture((side_t::ETexpart)texpos));
 	// [rc4l] The sector flat a gap is filled with, by its BASE id, so an animated floor keeps animating there.
 	FTextureID gapTex;
 	gapTex.SetInvalid();
@@ -197,32 +198,32 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	{
 		sector_t *fs = seg->frontsector, *bs = seg->backsector;
 		const bool ceilingPart = (renderType == RENDERWALL_TOP);
-		const secplane_t &fp = ceilingPart ? fs->ceilingplane : fs->floorplane;
-		const secplane_t &bp = ceilingPart ? bs->ceilingplane : bs->floorplane;
+		const secplane_core_t &fp = ceilingPart ? fs->rc.ceilingplane : fs->rc.floorplane;
+		const secplane_core_t &bp = ceilingPart ? bs->rc.ceilingplane : bs->rc.floorplane;
 		const int which = ceilingPart ? sector_t::ceiling : sector_t::floor;
 		const subsector_t *sub = seg->Subsector;
 		zx::surfaces::GapInputs g = {};
 		g.top = ceilingPart;
 		g.sloped = (fp.a | fp.b | bp.a | bp.b) != 0;
-		g.frontSky = fs->GetTexture(which) == skyflatnum;
-		g.backSky = bs->GetTexture(which) == skyflatnum;
+		g.frontSky = fs->rc.GetTexture(which) == skyflatnum;
+		g.backSky = bs->rc.GetTexture(which) == skyflatnum;
 		g.backPortal = bs->portals[which] != NULL;
 		g.transdoor = bs->transdoor;
-		g.polyobj = (seg->sidedef->Flags & WALLF_POLYOBJ) != 0;
-		g.fixAbuse = bs->e != NULL && bs->e->XFloor.ffloors.Size() != 0 &&
-			(bs->e->XFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
+		g.polyobj = (seg->sidedef->rc.Flags & WALLF_POLYOBJ) != 0;
+		g.fixAbuse = bs->e != NULL && bs->e->rcXFloor.ffloors.Size() != 0 &&
+			(bs->e->rcXFloor.ffloors[0]->flags & (FF_FIX | FF_SEETHROUGH)) == FF_FIX;
 		g.fakeFlat = sub == NULL || sub->render_sector != sub->sector || fs != sub->sector;
 		g.hasPartner = seg->PartnerSeg != NULL && seg->PartnerSeg->Subsector != NULL &&
 			!(seg->PartnerSeg->Subsector->hacked & 4);
 		const int fill = zx::surfaces::ComputeGapFill(g);
 		if (fill == zx::surfaces::kGapFrontFlat)
 		{
-			gapTex = fs->GetTexture(which);
+			gapTex = fs->rc.GetTexture(which);
 			mat = zx::materials::MaterialForTextureId(gapTex);
 		}
 		else if (fill == zx::surfaces::kGapFlood)
 		{
-			gapTex = bs->GetTexture(which);
+			gapTex = bs->rc.GetTexture(which);
 			mat = zx::materials::MaterialForTextureId(gapTex);
 			if (mat != NULL)
 			{
@@ -244,8 +245,8 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	if (mat == NULL) { g_fbNoTexture++; g_fellBack++; return false; }
 
 	FTexCoordInfo tci;
-	zx::materials::MaterialTexCoordInfo(mat, &tci, seg->sidedef->GetTextureXScale((side_t::ETexpart)texpos),
-		seg->sidedef->GetTextureYScale((side_t::ETexpart)texpos));
+	zx::materials::MaterialTexCoordInfo(mat, &tci, seg->sidedef->rc.GetTextureXScale((side_t::ETexpart)texpos),
+		seg->sidedef->rc.GetTextureYScale((side_t::ETexpart)texpos));
 	const float th = (float)tci.mRenderHeight;
 	if (th == 0.f) { g_fbNoTexture++; g_fellBack++; return false; }
 
@@ -257,7 +258,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// to, and texture Z is the whole of alignment.
 	const sector_t *rf = &sectors[seg->frontsector->sectornum];
 	const sector_t *rb = seg->backsector ? &sectors[seg->backsector->sectornum] : NULL;
-	const int lineFlags = seg->linedef->flags;
+	const int lineFlags = seg->linedef->rc.flags;
 
 	bool pegged = false;
 	float refCeil = 0.f, refFloor = 0.f, vOffset = 0.f;
@@ -265,22 +266,22 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	{
 		if (rb == NULL) { g_fbNoSpan++; g_fellBack++; return false; }
 		pegged = (lineFlags & ML_DONTPEGTOP) == 0;
-		refCeil = FIXED2FLOAT(rf->GetPlaneTexZ(sector_t::ceiling));
-		refFloor = FIXED2FLOAT(rb->GetPlaneTexZ(sector_t::ceiling));
+		refCeil = FIXED2FLOAT(rf->rc.GetPlaneTexZ(sector_t::ceiling));
+		refFloor = FIXED2FLOAT(rb->rc.GetPlaneTexZ(sector_t::ceiling));
 	}
 	else if (renderType == RENDERWALL_BOTTOM)
 	{
 		if (rb == NULL) { g_fbNoSpan++; g_fellBack++; return false; }
 		pegged = (lineFlags & ML_DONTPEGBOTTOM) != 0;
-		refCeil = FIXED2FLOAT(rb->GetPlaneTexZ(sector_t::floor));
-		refFloor = FIXED2FLOAT(rf->GetPlaneTexZ(sector_t::floor));
+		refCeil = FIXED2FLOAT(rb->rc.GetPlaneTexZ(sector_t::floor));
+		refFloor = FIXED2FLOAT(rf->rc.GetPlaneTexZ(sector_t::floor));
 		// [rc4l] The lower texture's extra term, which no other part has: a pegged lower continues
 		// the picture down from the wall above it, so its reference reaches to the front sector's
 		// ceiling -- and under sky on both sides, to the back sector's.
-		const bool bothSky = rf->GetTexture(sector_t::ceiling) == skyflatnum &&
-			rb->GetTexture(sector_t::ceiling) == skyflatnum;
-		vOffset = FIXED2FLOAT(rf->GetPlaneTexZ(sector_t::floor) -
-			(bothSky ? rb->GetPlaneTexZ(sector_t::ceiling) : rf->GetPlaneTexZ(sector_t::ceiling)));
+		const bool bothSky = rf->rc.GetTexture(sector_t::ceiling) == skyflatnum &&
+			rb->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+		vOffset = FIXED2FLOAT(rf->rc.GetPlaneTexZ(sector_t::floor) -
+			(bothSky ? rb->rc.GetPlaneTexZ(sector_t::ceiling) : rf->rc.GetPlaneTexZ(sector_t::ceiling)));
 	}
 	else if (twoSidedMid)
 	{
@@ -291,35 +292,35 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		pegged = false;
 		if (lineFlags & ML_DONTPEGBOTTOM)
 		{
-			const float bottomRef = FIXED2FLOAT(MAX(rf->GetPlaneTexZ(sector_t::floor),
-				rb->GetPlaneTexZ(sector_t::floor)));
+			const float bottomRef = FIXED2FLOAT(MAX(rf->rc.GetPlaneTexZ(sector_t::floor),
+				rb->rc.GetPlaneTexZ(sector_t::floor)));
 			refCeil = bottomRef + th;
 			refFloor = bottomRef;
 		}
 		else
 		{
-			refCeil = FIXED2FLOAT(MIN(rf->GetPlaneTexZ(sector_t::ceiling),
-				rb->GetPlaneTexZ(sector_t::ceiling)));
+			refCeil = FIXED2FLOAT(MIN(rf->rc.GetPlaneTexZ(sector_t::ceiling),
+				rb->rc.GetPlaneTexZ(sector_t::ceiling)));
 			refFloor = refCeil - th;
 		}
 	}
 	else   // one-sided middle
 	{
 		pegged = (lineFlags & ML_DONTPEGBOTTOM) != 0;
-		refCeil = FIXED2FLOAT(rf->GetPlaneTexZ(sector_t::ceiling));
-		refFloor = FIXED2FLOAT(rf->GetPlaneTexZ(sector_t::floor));
+		refCeil = FIXED2FLOAT(rf->rc.GetPlaneTexZ(sector_t::ceiling));
+		refFloor = FIXED2FLOAT(rf->rc.GetPlaneTexZ(sector_t::floor));
 	}
 
 	const float rowOfs = FIXED2FLOAT(tci.RowOffset(
-		seg->sidedef->GetTextureYOffset((side_t::ETexpart)texpos)));
+		seg->sidedef->rc.GetTextureYOffset((side_t::ETexpart)texpos)));
 	const float texTop = ComputeTextureTop(refCeil, refFloor, th, pegged, rowOfs, vOffset);
 
 	// Both ends, so a slope stays a slope. Evaluated at the LINE's vertices rather than the seg's,
 	// because that is the span GL draws -- see the fracleft note below.
 	const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 	if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-	const fixed_t px[2] = { lv1->x, lv2->x };
-	const fixed_t py[2] = { lv1->y, lv2->y };
+	const fixed_t px[2] = { lv1->rc.x, lv2->rc.x };   // [rc4l] the copy's, which a polyobject's blend moves
+	const fixed_t py[2] = { lv1->rc.y, lv2->rc.y };
 	// Both ends' heights first: the upper's and the lower's clamps are decided by the pair, not by
 	// each end on its own -- see SpanBothEnds.
 	WallHeights hEnd[2];
@@ -337,11 +338,11 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 		c.texTop = texTop;
 		c.texBottom = texTop - th;
 		const side_t *sd = seg->sidedef;
-		c.hasUpper = NonNullTexture(sd->GetTexture(side_t::top));
-		c.hasLower = NonNullTexture(sd->GetTexture(side_t::bottom));
-		c.frontCeilingSky = seg->frontsector->GetTexture(sector_t::ceiling) == skyflatnum;
-		c.backCeilingSky = seg->backsector->GetTexture(sector_t::ceiling) == skyflatnum;
-		c.wrap = (lineFlags & ML_WRAP_MIDTEX) != 0 || (sd->Flags & WALLF_WRAP_MIDTEX) != 0;
+		c.hasUpper = NonNullTexture(sd->rc.GetTexture(side_t::top));
+		c.hasLower = NonNullTexture(sd->rc.GetTexture(side_t::bottom));
+		c.frontCeilingSky = seg->frontsector->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+		c.backCeilingSky = seg->backsector->rc.GetTexture(sector_t::ceiling) == skyflatnum;
+		c.wrap = (lineFlags & ML_WRAP_MIDTEX) != 0 || (sd->rc.Flags & WALLF_WRAP_MIDTEX) != 0;
 		// GL clips to planes unless both sides really are the same sector with nothing forcing it.
 		c.clipToPlanes = (rf != rb) || c.wrap || rf->GetHeightSec() != NULL;
 		WallPart p0, p1;
@@ -401,16 +402,16 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	{
 		const vertex_t *lv1 = seg->linedef->v1, *lv2 = seg->linedef->v2;
 		if (seg->sidedef != seg->linedef->sidedef[0]) { lv1 = seg->linedef->v2; lv2 = seg->linedef->v1; }
-		const float ax = FIXED2FLOAT(lv1->x), ay = FIXED2FLOAT(lv1->y);
-		const float bx = FIXED2FLOAT(lv2->x), by = FIXED2FLOAT(lv2->y);
+		const float ax = FIXED2FLOAT(lv1->rc.x), ay = FIXED2FLOAT(lv1->rc.y);   // [rc4l] the copy's, which a polyobject's blend moves
+		const float bx = FIXED2FLOAT(lv2->rc.x), by = FIXED2FLOAT(lv2->rc.y);
 		float segLeft = 0.f, segRight = 1.f;
-		if (seg->sidedef->Flags & WALLF_POLYOBJ)
-			ComputePolyobjSegFractions(ax, ay, bx, by, FIXED2FLOAT(seg->v1->x), FIXED2FLOAT(seg->v1->y),
-				FIXED2FLOAT(seg->v2->x), FIXED2FLOAT(seg->v2->y), segLeft, segRight);
+		if (seg->sidedef->rc.Flags & WALLF_POLYOBJ)
+			ComputePolyobjSegFractions(ax, ay, bx, by, FIXED2FLOAT(seg->v1->rc.x), FIXED2FLOAT(seg->v1->rc.y),
+				FIXED2FLOAT(seg->v2->rc.x), FIXED2FLOAT(seg->v2->rc.y), segLeft, segRight);
 		const float fracLeft = segLeft + pinch.fracLeft * (segRight - segLeft);
 		const float fracRight = segLeft + pinch.fracRight * (segRight - segLeft);
 		const float ul = tci.FloatToTexU(FIXED2FLOAT(tci.TextureOffset(
-			seg->sidedef->GetTextureXOffset((side_t::ETexpart)texpos))));
+			seg->sidedef->rc.GetTextureXOffset((side_t::ETexpart)texpos))));
 		const float texLength = tci.FloatToTexU(seg->sidedef->TexelLength);
 		out.uLeft = ul + texLength * fracLeft;
 		out.uRight = ul + texLength * fracRight;
@@ -431,7 +432,7 @@ bool BuildDerivedWallSpan(const seg_t *seg, int renderType, DerivedWallSpan &out
 	// downstream keys a batch on this, so an animated wall then looked like it had moved to a
 	// different batch several times a second: 311,437 rebatches on dbab04, each one a full scene
 	// rebuild. ByIndex skips the translation, which is what MeshPiece::baseTex says it wants.
-	out.baseTex = TexMan.ByIndex((gapTex.isValid() ? gapTex : seg->sidedef->GetTexture((side_t::ETexpart)texpos)).GetIndex());
+	out.baseTex = TexMan.ByIndex((gapTex.isValid() ? gapTex : seg->sidedef->rc.GetTexture((side_t::ETexpart)texpos)).GetIndex());
 	if (out.baseTex == NULL || ((FTexture *)out.baseTex)->Name.Len() == 0)
 		out.baseTex = (mat != NULL) ? (const void *)zx::materials::MaterialTexture(mat) : NULL;
 	out.valid = true;

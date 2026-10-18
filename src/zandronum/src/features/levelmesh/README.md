@@ -53,8 +53,9 @@ reaches something that moved, relit or scrolled; GL's walk fills nothing. GL kee
 `GLWall`s in `gl/scene/gl_wallcache.cpp`, keyed on the same dirty counters.
 
 The dynamic stream is refilled each frame for each view: sprites, models and particles from
-`features/sprites`, projected decals (`projdecals.cpp`), and with `fua_decalmode 0` the decals glued to
-walls (`walldecals.cpp`). Those are built for the sidedefs each view's walk saw, on each plain wall piece
+`features/sprites`, the floor and ceiling marks `features/decals` makes, projected from the render copy's records
+(`projdecals.cpp`, each mark's box worked out again only when its picture, size or place changes), and the decals
+glued to walls (`walldecals.cpp`). Those are built for the sidedefs each view's walk saw, on each plain wall piece
 GL would draw them on, a light band at a time: `computation/walldecal_compute` is `GLWall::DrawDecal`'s
 height, quad and clipping, and `DerivedPartBands` the bake's own band split and light. A stacked view's or
 mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptureView`). Decals on a 3D
@@ -69,6 +70,9 @@ yet. Scenario `walldecal`.
   `SetStackViewCapacity`, one stacked view per portal the level has. The walk slots follow it (the player's walk
   0, the skybox walk 1, the views from 2; `ComputeWalkSlots`), and so do the sky lists and the backend's pool of
   stacked-view targets, all made at level start so no view waits on a slot or a target mid-game.
+- `pointlight.h`/`.cpp`: the dynamic light on a point or an actor as GL's `gl_SetDynSpriteLight` sums it
+  (`PointLight`, `ActorLight`, `PointDynamicLight`), from the render copy's lights, for sprites, particles, the
+  weapon and decals.
 - `features/sidebyside/glchecks.cpp`: what GL reports to its observer (`gl/scene/gl_observer.h`), for the
   checks against GL only, read off GL's types there and handed over through the same calls the walks use.
   That is GL's scenes (`EnterScene`/`LeaveScene`), walks (`BeginSkyWalk`, `NoteWalkedSubsector`/`NoteWalkedSide`,

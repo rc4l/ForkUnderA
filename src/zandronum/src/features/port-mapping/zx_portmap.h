@@ -16,7 +16,7 @@
 // Mapping one and not the other produces a server that works while downloads mysteriously fail --
 // which reads as a bug in the downloader and is really half a port forward.
 //
-// EVERYTHING IS OFF THE GAME THREAD. Discovery waits seconds for routers to answer, and the frame
+// EVERYTHING IS OFF THE MAIN THREAD. Discovery waits seconds for routers to answer, and the frame
 // does not stop for that.
 
 #ifndef ZX_PORTMAP_H

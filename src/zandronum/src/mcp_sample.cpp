@@ -31,15 +31,13 @@ namespace
 // [rc4l] The sampler thread touches NOTHING of the engine: no globals, no cvars, no Printf, and no
 // FString (its default constructor bumps a non-atomic refcount on a shared NullString). Plain
 // std::string and the compute unit only. The finished report crosses back through this mutex and is
-// picked up by the game thread in MCP_Sample_ReportReady.
+// picked up by the main thread in MCP_Sample_ReportReady.
 std::mutex g_lock;
 std::string g_report;
 bool g_ready = false;
 bool g_running = false;
 
-// [rc4l] The game thread's leveltime, published for the sampler to stamp onto each sample. Atomic
-// and one-way: the worker reads, never writes, and never touches level.time itself -- reading an
-// engine global from another thread is exactly what the bridge's threading contract forbids.
+// [rc4l] The main thread's leveltime, published one way for the sampler to stamp onto each sample, since the sampler may not read level.time itself.
 std::atomic<int> g_publishedTic( 0 );
 
 #ifdef _WIN32
@@ -141,7 +139,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	const double budget = ( seconds > 0.0 ) ? seconds : 1.0;
 	double elapsed = 0.0;
 
-	// [rc4l] Room for every sample up front, since growing a vector while the game thread is suspended can wait on a heap lock that thread holds.
+	// [rc4l] Room for every sample up front, since growing a vector while the main thread is suspended can wait on a heap lock that thread holds.
 	const size_t capacity = (size_t)( budget * ( hz > 0 ? hz : 1000 ) * 1.25 ) + 64;
 	pcs.reserve( capacity );
 	tics.reserve( capacity );
@@ -199,8 +197,8 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	if ( timer != NULL )
 		CloseHandle( timer );
 
-	// The game thread runs freely again from here; everything below is bookkeeping.
-	// [rc4l] dbghelp is one per process and not thread-safe, so the session holds the lock features/telemetry's SymbolNames takes on the game thread.
+	// The main thread runs freely again from here; everything below is bookkeeping.
+	// [rc4l] dbghelp is one per process and not thread-safe, so the session holds the lock features/telemetry's SymbolNames takes on the main thread.
 	std::unique_lock<std::mutex> symbols( zx::telemetry::DbgHelpLock( ));
 	HANDLE proc = GetCurrentProcess( );
 	SymSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS );
@@ -268,7 +266,7 @@ bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMi
 		g_ready = false;
 	}
 
-	// A real handle for the CALLING thread, which is the game thread: GetCurrentThread returns a
+	// A real handle for the CALLING thread, which is the main thread: GetCurrentThread returns a
 	// pseudo-handle that means "whoever is asking", so handing it to another thread would have the
 	// sampler suspend ITSELF. The duplicate is closed by the run.
 	HANDLE thread = NULL;
@@ -281,7 +279,7 @@ bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMi
 		return false;
 	}
 
-	// [rc4l] The top of the game thread's stack, read here on that thread, which bounds every walk of it.
+	// [rc4l] The top of the main thread's stack, read here on that thread, which bounds every walk of it.
 	ULONG_PTR stackLow = 0, stackHigh = 0;
 	GetCurrentThreadStackLimits( &stackLow, &stackHigh );
 

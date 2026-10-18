@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/continue/computation/continueshow_compute.h"
+#include "computation/saveversion_compute.h"
 
 namespace zx
 {
@@ -18,7 +19,7 @@ ContinueVisibility DecideContinueVisibility(const ContinueShowInputs &in)
 		// here rather than at load time, because by load time the WAD set has already been swapped.
 		if (in.saveFileExists == false)
 			return ContinueVisibility::Hidden;
-		if (in.saveVersion < in.minSaveVersion)
+		if (ComputeSaveVersionVerdict(in.saveVersion, in.minSaveVersion, in.maxSaveVersion) != kSaveVersionReadable)
 			return ContinueVisibility::Hidden;
 		return ContinueVisibility::Shown;
 

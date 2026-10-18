@@ -103,9 +103,13 @@ struct Registry
 	std::vector<TraceEvent> traceEvents;
 	std::map<std::string, std::vector<Reading>> snaps;
 	std::vector<std::vector<Reading>> soakMarks;
+	bool soaking = false;   // [rc4l] from fua_soak begin to its verdict, while the heaps are walked
+	bool markWaiting = false;   // [rc4l] a soak mark asked for while the engine was not ready for one
+	bool (*soakReady)() = nullptr;
 	std::string watchPrefix;
 	std::string crashSummary = "telemetry: no frames yet\n";
 	void (*offer)(const char *) = nullptr;
+	bool (*gameReadable)() = nullptr;
 	void (*summaryListener)(const char *) = nullptr;
 	OsReadings os;
 	// [rc4l] The OS probe runs at most a few times a second however many gauges ask.
@@ -165,6 +169,14 @@ int64_t TakeAdded(Slot &s)
 	return added;
 }
 
+// [rc4l] A gauge's read taken into its level, unavailable when it reads below zero.
+void ReadGauge(Slot &s)
+{
+	const double x = s.read();
+	s.available = x >= 0.0;
+	s.level = s.available ? x : 0.0;
+}
+
 double Sample(Slot &s, int64_t nowMs)
 {
 	double v = 0.0;
@@ -179,12 +191,7 @@ double Sample(Slot &s, int64_t nowMs)
 		if (s.hasSet) v = s.setValue;
 		break;
 	case CounterKind::Gauge:
-		if (s.read != nullptr && s.every.Due(nowMs))
-		{
-			const double x = s.read();
-			s.available = x >= 0.0;
-			s.level = s.available ? x : 0.0;
-		}
+		if (s.read != nullptr && s.every.Due(nowMs)) ReadGauge(s);
 		v = s.level;
 		break;
 	}
@@ -322,15 +329,43 @@ std::string HitchText(Registry &r, size_t limit)
 	return ComputeHitchText(r.hitches, Names(r.count.load(std::memory_order_acquire)), r.frameIndex, limit);
 }
 
-const OsReadings &Os()
+// [rc4l] Every heap walked for the heap gauges, which stalls a frame for tens of milliseconds twice a second in a big level, so only this or a soak asks for it.
+CVAR(Bool, fua_telemetry_heaps, false, 0)
+
+// [rc4l] The OS readings, at once with fresh, else no more than every osEvery; the heaps with them only when a soak, a snapshot or fua_telemetry_heaps wants them.
+const OsReadings &Os(bool fresh = false)
 {
 	Registry &r = R();
-	if (r.osEvery.Due(NowNs() / 1000000))
+	if (r.osEvery.Due(NowNs() / 1000000) || fresh)
 	{
 		r.os = OsReadings();
-		ReadOs(r.os);
+		ReadOs(r.os, fresh || r.soaking || fua_telemetry_heaps);
 	}
 	return r.os;
+}
+
+// [rc4l] The OS readings with the heaps and every gauge read now, for a snapshot or a soak mark that has to hold what this moment holds.
+void ReadEverythingNow()
+{
+	Os(true);
+	Registry &r = R();
+	const int n = r.count.load(std::memory_order_acquire);
+	for (int i = 0; i < n; i++)
+		if (r.slots[i].kind == CounterKind::Gauge && r.slots[i].read != nullptr) ReadGauge(r.slots[i]);
+}
+
+bool SoakReady(const Registry &r)
+{
+	return r.soakReady == nullptr || r.soakReady();
+}
+
+// [rc4l] A soak mark: every gauge read now, kept, and its number printed, which a harness waits for.
+void TakeSoakMark(Registry &r)
+{
+	r.markWaiting = false;
+	ReadEverythingNow();
+	r.soakMarks.push_back(Snapshot(true));
+	Printf("telemetry: soak mark %d\n", (int)r.soakMarks.size());
 }
 
 double OsPrivate() { return Os().privateBytes; }
@@ -455,7 +490,11 @@ void FrameMark()
 	if (r.lastMarkNs != 0) Set(r.frameMs, (now - r.lastMarkNs) / 1e6);
 	if (r.secondStartNs == 0) r.secondStartNs = now;
 	const int n = r.count.load(std::memory_order_acquire);
-	for (int i = 0; i < n; i++) r.row[i] = (float)Sample(r.slots[i], nowMs);
+	{
+		// [rc4l] The gauges' reads timed, since a slow one stalls every frame it falls due in and no other region would name it.
+		ZX_ZONE("telemetry/gauges");
+		for (int i = 0; i < n; i++) r.row[i] = (float)Sample(r.slots[i], nowMs);
+	}
 	r.frames.Push(r.frameIndex, r.row, n);
 	for (int i = 0; i < n; i++)
 	{
@@ -489,11 +528,27 @@ void FrameMark()
 	}
 	r.frameIndex++;
 	r.lastMarkNs = now;
+	if (r.markWaiting && SoakReady(r)) TakeSoakMark(r);
 }
 
 void SetFileOfferer(void (*offer)(const char *path))
 {
 	R().offer = offer;
+}
+
+void SetSoakReady(bool (*ready)())
+{
+	R().soakReady = ready;
+}
+
+void SetGameReadable(bool (*readable)())
+{
+	R().gameReadable = readable;
+}
+
+bool GameReadable()
+{
+	return R().gameReadable == nullptr || R().gameReadable();
 }
 
 std::string StatsJson(const char *prefix)
@@ -572,6 +627,7 @@ CCMD(fua_hitches)
 CCMD(fua_memsnap)
 {
 	const std::string name = argv.argc() > 1 ? argv[1] : "last";
+	ReadEverythingNow();
 	std::vector<Reading> &snap = R().snaps[name] = Snapshot();
 	Printf("telemetry: snapshot %s holds %d readings\n", name.c_str(), (int)snap.size());
 }
@@ -584,6 +640,7 @@ CCMD(fua_memdiff)
 	const std::string b = argv.argc() > 2 ? argv[2] : "";
 	for (const std::string &name : { a, b })
 		if (!name.empty() && r.snaps.count(name) == 0) { Printf("telemetry: no snapshot %s (fua_memsnap %s)\n", name.c_str(), name.c_str()); return; }
+	if (b.empty()) ReadEverythingNow();
 	const std::vector<DiffRow> rows = ComputeSnapshotDiff(r.snaps[a], b.empty() ? Snapshot() : r.snaps[b]);
 	Printf("%s", ComputeDiffTable(rows, 40).c_str());
 }
@@ -593,13 +650,15 @@ CCMD(fua_soak)
 {
 	Registry &r = R();
 	const std::string what = argv.argc() > 1 ? argv[1] : "";
-	if (what == "begin") { r.soakMarks.clear(); Printf("telemetry: soak begun\n"); return; }
-	if (what == "mark") { r.soakMarks.push_back(Snapshot(true)); Printf("telemetry: soak mark %d\n", (int)r.soakMarks.size()); return; }
+	if (what == "begin") { r.soakMarks.clear(); r.soaking = true; r.markWaiting = false; Printf("telemetry: soak begun\n"); return; }
+	if (what == "mark" && !SoakReady(r)) { r.markWaiting = true; Printf("telemetry: soak mark %d waits until the engine is ready for it\n", (int)r.soakMarks.size() + 1); return; }
+	if (what == "mark") { TakeSoakMark(r); return; }
 	if (what != "verdict") { Printf("usage: fua_soak begin | mark | verdict [warmup] [json] [-prefix ...]\n"); return; }
 	std::vector<std::string> args;
 	for (int i = 2; i < argv.argc(); i++) args.push_back(argv[i]);
 	const SoakVerdictArgs asked = ComputeSoakVerdictArgs(args);
 	const SoakVerdict verdict = ComputeSoakVerdict(r.soakMarks, asked.warmup, asked.ignore);
+	r.soaking = false;
 	Printf("%s", asked.json ? (ComputeSoakJson(verdict) + "\n").c_str() : ComputeSoakText(verdict).c_str());
 }
 

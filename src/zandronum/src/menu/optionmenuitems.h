@@ -33,6 +33,7 @@
 */
 
 #include <cfloat>
+#include "menu/restartnote_compute.h"
 
 void M_DrawConText (int color, int x, int y, const char *str);
 void M_SetVideoMode();
@@ -175,13 +176,28 @@ public:
 	virtual void SetSelection(int Selection) = 0;
 
 	//=============================================================================
+	bool IsGrayed()
+	{
+		// [TP] Also gray it if we cannot edit this cvar for some other reason.
+		return (mGrayCheck != NULL && !(mGrayCheck->GetGenericRep(CVAR_Bool).Bool)) || IsDisabled();
+	}
+
+	// [rc4l] The text the row shows for its current value, which Draw and a note beside it both measure.
+	const char *ValueText()
+	{
+		int Selection = GetSelection();
+		FOptionValues **opt = OptionValues.CheckKey(mValues);
+		if (Selection < 0 || opt == NULL || *opt == NULL)
+		{
+			return "Unknown";
+		}
+		return (*opt)->mValues[Selection].Text;
+	}
+
+	//=============================================================================
 	int Draw(FOptionMenuDescriptor *desc, int y, int indent, bool selected)
 	{
-		bool grayed = mGrayCheck != NULL && !(mGrayCheck->GetGenericRep(CVAR_Bool).Bool);
-
-		// [TP] Also gray it if we cannot edit this cvar for some other reason.
-		if ( IsDisabled() )
-			grayed = true;
+		bool grayed = IsGrayed();
 
 		if (mCenter)
 		{
@@ -190,19 +206,8 @@ public:
 		drawLabel(indent, y, selected? OptionSettings.mFontColorSelection : OptionSettings.mFontColor, grayed);
 
 		int overlay = grayed? MAKEARGB(96,48,0,0) : 0;
-		const char *text;
-		int Selection = GetSelection();
-		FOptionValues **opt = OptionValues.CheckKey(mValues);
-		if (Selection < 0 || opt == NULL || *opt == NULL)
-		{
-			text = "Unknown";
-		}
-		else
-		{
-			text = (*opt)->mValues[Selection].Text;
-		}
-		screen->DrawText (SmallFont, OptionSettings.mFontColorValue, indent + CURSORSPACE, y, 
-			text, DTA_CleanNoMove_1, true, DTA_ColorOverlay, overlay, TAG_DONE);
+		screen->DrawText (SmallFont, OptionSettings.mFontColorValue, indent + CURSORSPACE, y,
+			ValueText(), DTA_CleanNoMove_1, true, DTA_ColorOverlay, overlay, TAG_DONE);
 		return indent;
 	}
 
@@ -248,6 +253,7 @@ public:
 
 class FOptionMenuItemOption : public FOptionMenuItemOptionBase
 {
+protected:
 	// action is a CVAR
 	FBaseCVar *mCVar;
 public:
@@ -327,6 +333,49 @@ public:
 	bool IsServerCVar() const override
 	{
 		return mCVar && mCVar->IsServerCVar();
+	}
+};
+
+//=============================================================================
+//
+// [rc4l] An option that takes effect only after a restart: once its cvar differs from launchcvar, which holds the value the game started with in the same type, a white note beside the value says so.
+//
+//=============================================================================
+
+class FOptionMenuItemRestartOption : public FOptionMenuItemOption
+{
+	FBaseCVar *mLaunchCVar;
+public:
+
+	FOptionMenuItemRestartOption(const char *label, const char *menu, const char *values, const char *launchcvar, const char *graycheck, int center)
+		: FOptionMenuItemOption(label, menu, values, graycheck, center)
+	{
+		mLaunchCVar = FindCVar(launchcvar, NULL);
+	}
+
+	int Draw(FOptionMenuDescriptor *desc, int y, int indent, bool selected)
+	{
+		indent = FOptionMenuItemOption::Draw(desc, y, indent, selected);
+		if (mCVar == NULL || mLaunchCVar == NULL) return indent;
+		static const char *const wordings[] = { "(restart the game to apply)", "(restart to apply)", "(restart)" };
+		const int count = (int)(sizeof(wordings) / sizeof(wordings[0]));
+		int widths[count];
+		for (int i = 0; i < count; ++i) widths[i] = SmallFont->StringWidth(wordings[i]);
+		// [rc4l] The note starts a space after the value at its own scale, and stops one clean pixel short of the edge for the rounding below.
+		const int valueRight = indent + CURSORSPACE + SmallFont->StringWidth(ValueText()) * CleanXfac_1;
+		const int gap = SmallFont->StringWidth(" ");
+		const FString value = mCVar->GetGenericRep(CVAR_String).String;
+		const FString launched = mLaunchCVar->GetGenericRep(CVAR_String).String;
+		const zx::RestartNoteFit fit = zx::ComputeRestartNote(value, launched, !(mLaunchCVar->GetFlags() & CVAR_ISDEFAULT), IsGrayed(),
+			valueRight, gap, screen->GetWidth() - CleanXfac_1, CleanXfac_1, widths, count);
+		if (fit.wording < 0) return indent;
+		// [rc4l] A note smaller than the menu's text is drawn on a virtual screen that many times smaller, centred on the row, and kept to its ratio so a widescreen does not squeeze it toward the middle.
+		const int s = fit.scale;
+		const int left = valueRight + gap * s;
+		const int top = y + SmallFont->GetHeight() * (CleanYfac_1 - s) / 2;
+		screen->DrawText(SmallFont, CR_WHITE, (left + s - 1) / s, top / s, wordings[fit.wording],
+			DTA_VirtualWidth, screen->GetWidth() / s, DTA_VirtualHeight, screen->GetHeight() / s, DTA_KeepRatio, true, TAG_DONE);
+		return indent;
 	}
 };
 

@@ -29,7 +29,7 @@ int64_t TimedNs(Counter c);
 
 // [rc4l] Adds amount to this frame's value of a total or a timing, from any thread.
 void Add(Counter c, double amount);
-// [rc4l] Sets this frame's value of a total or a timing, or a gauge's level until the next Set, from the game thread.
+// [rc4l] Sets this frame's value of a total or a timing, or a gauge's level until the next Set, from the main thread.
 void Set(Counter c, double value);
 
 // [rc4l] A breakdown snapshots and fua_stats list beside the counters: readings a feature makes on request, such as memory by tag; soaked false keeps a diagnostic that restates another reading out of a soak's verdict.
@@ -87,6 +87,13 @@ void NameThisThread(const char *name);
 
 // [rc4l] Who hands a file the registry wrote to the player, which a browser's host does by downloading it; NULL prints its path.
 void SetFileOfferer(void (*offer)(const char *path));
+
+// [rc4l] Whether the game's own state may be read now, which a gauge counting thinkers asks; the handoff installs it, since a tic in flight owns that state, and none installed means always.
+void SetGameReadable(bool (*readable)());
+bool GameReadable();
+
+// [rc4l] Whether a soak mark may be taken now, which d_main installs: not while a wipe's copies of both screens live, so a mark asked for then is taken once they are gone; none installed means always.
+void SetSoakReady(bool (*ready)());
 
 // [rc4l] The counters whose names start with prefix as fua_stats json prints them, for the bridge's perf.counters.
 std::string StatsJson(const char *prefix);

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/sprites/modelbuild.h"
+#include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 
 #include "features/sprites/computation/modelpose_compute.h"
 #include "features/levelmesh/modelmesh.h"      // [rc4l] CaptureModelSurface
@@ -13,7 +14,7 @@
 #include "g_level.h"
 #include "i_system.h"
 #include "r_utility.h"
-#include "actor.h"
+#include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "info.h"
 
 // [rc4l] GL's model data and settings the derivation still reads, until model data leaves gl/ (P5).
@@ -24,8 +25,9 @@ EXTERN_CVAR(Bool, r_interpolate_model_frames)
 
 namespace zx { namespace sprites {
 
-void ModelPoseFor(const AActor *actor, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &p)
+void ModelPoseFor(const zx::gamecopy::ActorRecord &a, const FSpriteModelFrame *smf, float x, float y, float z, ModelPose &p)
 {
+	const zx::gamecopy::ActorRecord *actor = &a;
 	const float angle = ANGLE2FLOAT(actor->angle);
 	float pitch = 0, roll = 0;
 	if (smf->flags & MDL_PITCHFROMMOMENTUM)
@@ -70,7 +72,7 @@ FSpriteModelFrame *NextModelFrame(const FSpriteModelFrame *smf, const FState *cu
 	if (curState == nextState || !nextState) return NULL;
 	// [rc4l] [BB]/[JM] Tic fractions blend past 35 fps, but not while the tic counter is frozen.
 	float ticFraction = 0.;
-	if (ConsoleState == c_up && menuactive != MENU_On && !(level.flags2 & LEVEL2_FROZEN)) ticFraction = FIXED2FLOAT(I_GetTimeFrac(NULL));
+	if (ConsoleState == c_up && menuactive != MENU_On && !(zx::gamecopy::Level().flags2 & LEVEL2_FROZEN)) ticFraction = FIXED2FLOAT(I_GetTimeFrac(NULL));
 	// [rc4l] [BB] Most Doom monsters show a frame twice in a row in their see state.
 	bool before = false, after = false;
 	if (smf->flags & MDL_INTERPOLATEDOUBLEDFRAMES)

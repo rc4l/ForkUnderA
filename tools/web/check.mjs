@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
@@ -102,15 +102,21 @@ export function playedOnce(n) {
   return n === 1 ? '' : n ? `the sound started ${n} times` : 'the sound never started';
 }
 
+// [rc4l] Why the game thread's check failed, or '': no tic ran on its own thread, or none of the shots it fired made a sound.
+export function threadedWithSound({ tics, sounds }) {
+  return !tics ? 'no tic ran on the game thread' : !sounds ? 'the shots fired on the game thread made no sound' : '';
+}
+
 // [rc4l] Why resizing held more of the GPU than one size does, or '': more screen-sized textures alive than before, past one more set of the screen's targets.
 export function heldOnce({ before, after }) {
   return after - before > 6 ? `${after - before} more screen-sized textures were held after the resizes (${before} before)` : '';
 }
 
 // [rc4l] Why repeating an action kept memory, or '': the engine's soak verdict (fua_soak), which judges every count of bytes, objects, handles and threads it reads.
-export function soakHeld({ pass, marks, judged, grew }) {
+export function soakHeld({ pass, marks, judged, grew, kept }) {
   if (pass) return '';
-  return grew && grew.length ? `kept growing with each repeat: ${grew.map((g) => g.text).join('; ')}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
+  const labels = kept && kept.length ? `; the page's WebGPU objects grew in: ${kept.join(', ')}` : '';
+  return grew && grew.length ? `kept growing with each repeat: ${grew.map((g) => g.text).join('; ')}${labels}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
 }
 
 // [rc4l] Why the page held more of a tag than the engine (fua_stats json gpu/), or '': a buffer or texture the engine let go of and never destroyed, waiting on the garbage collector.
@@ -212,7 +218,9 @@ export const CHECKS = [
       const AC = window.AudioContext; window.AudioContext = class extends AC { constructor(...a) { super(...a); window.fuaAudio.push(this); } };
       const make = BaseAudioContext.prototype.createBufferSource; BaseAudioContext.prototype.createBufferSource = function (...a) { window.fuaBuffers++; return make.apply(this, a); };
     }`,
+    // [rc4l] Tics inline: this page is given no animation frame after the click's own, and a tic on the game thread resumes the level's sound a tic later, in the next.
     evaluate: inPage(`
+      Module.fuaCommand('fua_gamethread 0');
       const before = window.fuaAudio.map((c) => c.state);
       console.log('check: click');
       for (let i = 0; i < 50 && !window.fuaAudio.every((c) => c.state === 'running'); i++) ${pause(100)}
@@ -250,9 +258,10 @@ export const CHECKS = [
     expect: heldOnce,
   },
   // [rc4l] Each level load uploads the level and its textures again, and a browser frees a released buffer only when its garbage collector runs; Firefox ran out of GPU memory on a map loaded the third time.
+  // [rc4l] Judged after three levels, since the page's heap settles over the first few (the sprite atlas keeps its pages from one to the next) and flat after; twelve reloads showed no growth past them.
   {
     name: 'reloading the level holds no more memory',
-    evaluate: soakInPage('reload', 7, 2500),
+    evaluate: soakInPage('reload', 9, 2500, 'MAP01', 3),
     until: EVAL,
     expect: soakHeld,
   },
@@ -299,6 +308,84 @@ export const CHECKS = [
     until: EVAL,
     expect: playedOnce,
   },
+  // [rc4l] fua_gamethread: the tics run on a worker beside the page's frames, and the sounds a tic starts, here the pistol's, still play, started by the handoff on the page thread.
+  {
+    name: 'the game thread runs the tics and their sounds play',
+    autoplay: true,
+    init: WATCH_SOUNDS,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      Module.fuaCommand('fua_gamethread 1');
+      ${pause(1500)}
+      const from = window.fuaSounds.length;
+      Module.fuaCommand('+attack');
+      ${pause(1200)}
+      Module.fuaCommand('-attack');
+      ${pause(400)}
+      Module.fuaCommand('fua_gamethread_report');
+      ${pause(300)}
+      unhear();
+      const line = said.slice().reverse().find((l) => l.includes('game thread:')) || '';
+      const m = /game thread: (\\d+) tics/.exec(line);
+      return { tics: m ? Number(m[1]) : 0, sounds: window.fuaSounds.slice(from).length };`),
+    until: EVAL,
+    expect: threadedWithSound,
+  },
+  // [rc4l] SDL scales mouse motion by its window over the canvas, axis by axis, and learned the canvas's size only from the window's resize event, so fullscreen left the axes scaled apart; its window must match the canvas there and after.
+  {
+    name: 'the mouse is scaled alike on both axes through fullscreen',
+    focused: true,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      const cvar = async (name) => { const m = /is "([^"]*)"/.exec((await ask(name, 200)).join(' ')); return m ? Number(m[1]) : NaN; };
+      const apart = async () => {
+        const r = document.getElementById('canvas').getBoundingClientRect();
+        return Math.max(Math.abs((await cvar('vid_defwidth')) - r.width), Math.abs((await cvar('vid_defheight')) - r.height));
+      };
+      // [rc4l] Each read until it settles, since on a software adapter one frame can outlast any fixed wait and the canvas's new size reaches SDL a frame later.
+      const settled = async () => {
+        let d = await apart();
+        for (const end = Date.now() + 10000; d > 1 && Date.now() < end; d = await apart()) { ${pause(250)} }
+        return d;
+      };
+      ${pause(1500)}
+      console.log('check: click fullscreen');
+      for (const end = Date.now() + 10000; !document.fullscreenElement && Date.now() < end;) { ${pause(100)} }
+      const entered = !!document.fullscreenElement;
+      const full = await settled();
+      await document.exitFullscreen().catch(() => {});
+      const back = await settled();
+      unhear();
+      return { entered, full, back };`),
+    until: EVAL,
+    expect: ({ entered, full, back }) => (!entered ? 'the page never went fullscreen'
+      : full <= 1 && back <= 1 ? '' : `SDL's window was ${full.toFixed(1)} px off the canvas in fullscreen and ${back.toFixed(1)} after`),
+  },
+  // [rc4l] A sound a tic on the game thread started kept no rolloff for its later start, so everything heard from a distance came out silent while every start still counted; shooters across the room must be heard.
+  {
+    name: 'sounds the game thread starts are heard at a distance',
+    autoplay: true,
+    init: WATCH_LEVEL,
+    evaluate: inPage(`
+      Module.fuaCommand('fua_gamethread 1');
+      Module.fuaCommand('god');
+      Module.fuaCommand('snd_musicvolume 0');
+      ${pause(1000)}
+      // [rc4l] A sound with no distance first, then quiet again before the shooters come.
+      window.fuaLevel.reset();
+      Module.fuaCommand('playsound brain/cube');
+      for (const end = Date.now() + 10000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
+      const control = Number(window.fuaLevel.peak().toFixed(4));
+      ${pause(3000)}
+      for (const m of ['ShotgunGuy', 'ShotgunGuy', 'ChaingunGuy']) Module.fuaCommand('summon ' + m + ' 256 0');
+      ${pause(1500)}
+      window.fuaLevel.reset();
+      // [rc4l] Listened to until a shot is heard or twenty seconds pass, since a software adapter runs the shooters' tics a frame of a second or more apart.
+      for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
+      return { control, peak: Number(window.fuaLevel.peak().toFixed(4)), contexts: window.fuaLevel.contexts() };`),
+    until: EVAL,
+    expect: (heard) => heardAtDistance(heard),
+  },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {
     name: 'game keys stay in the game',
@@ -309,6 +396,32 @@ export const CHECKS = [
       return document.activeElement ? document.activeElement.id || document.activeElement.tagName : null;`),
     until: EVAL,
     expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
+  },
+  // [rc4l] Game keys did nothing until a frame off the game thread's schedule built SDL's key table, which fullscreen happened to cause; holding up must move the player.
+  {
+    name: 'a game key moves the player',
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      const at = async () => {
+        const m = /\\((-?[\\d.]+),(-?[\\d.]+)/.exec((await ask('currentpos')).find((l) => l.includes('position')) || '');
+        return m ? [Number(m[1]), Number(m[2])] : null;
+      };
+      document.getElementById('canvas').focus();
+      ${pause(5000)}
+      const a = await at();
+      // [rc4l] Held until the player moves or twenty seconds pass: a fixed hold came and went inside one frame of a software adapter, so the game saw a single tic of it.
+      console.log('check: down ArrowUp');
+      let moved = 0;
+      for (const end = Date.now() + 20000; a && moved <= 32 && Date.now() < end;) {
+        ${pause(500)}
+        const b = await at();
+        if (b) moved = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      }
+      console.log('check: up ArrowUp');
+      unhear();
+      return a ? Math.round(moved) : -1;`),
+    until: EVAL,
+    expect: (moved) => (moved > 32 ? '' : `holding up moved the player ${moved} units`),
   },
   // [rc4l] A save's picture reads back a frame or two after the save is written, and goes into it then; a software adapter can take several seconds, so the check waits for it.
   {
@@ -435,14 +548,21 @@ export const CHECKS = [
   },
 ];
 
-// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError).
+// [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError); an expect answering { skip } is a check this browser cannot judge, with the reason.
 export function judge(check, matched, img = null, lines = []) {
   if (!matched) return { ok: false, reason: `no line matched /${check.until}/` };
   if (matched.startsWith('[eval] threw')) return { ok: false, reason: matched.slice('[eval] '.length) };
   const reason = (check.deviceError ? '' : gpuError(lines))
     || (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))
     || (check.expectShot && (img ? check.expectShot(img) : 'no screenshot'));
+  if (reason && reason.skip) return { ok: true, skip: reason.skip };
   return reason ? { ok: false, reason } : { ok: true };
+}
+
+// [rc4l] Shooters across the room heard, judged only where a sound with no distance (control) was heard at all: a runner whose browser makes no sound cannot tell a silent distance from silence.
+export function heardAtDistance({ control, peak, contexts }) {
+  if (!(control > 0.05)) return { skip: `the page made no sound at all, a sound with no distance peaking at ${control} RMS (audio ${JSON.stringify(contexts)})` };
+  return peak > 0.05 ? '' : `shooters across the room came out at ${peak} RMS at most, while a sound with no distance peaked at ${control}`;
 }
 
 // [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.
@@ -450,7 +570,7 @@ export function selectChecks(checks, only) {
   return only ? checks.filter((c) => c.name.includes(only)) : checks;
 }
 
-export async function check({ url, checks = CHECKS, seconds = 60, software = false, onResult = console.log }) {
+export async function check({ url, checks = CHECKS, seconds = 60, software = false, throttle = 0, onResult = console.log }) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-'));
   const shots = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-shots-'));
   let failed = 0;
@@ -459,11 +579,11 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const logFile = path.join(shots, `check-${i}-chrome.log`);
-      const { matched, lines, version } = await smoke({ url, profile, seconds, software, autoplay: !!c.autoplay, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      const { matched, lines, version } = await smoke({ url, profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       if (i === 0) onResult(`browser: ${version}`);
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
-      const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
-      onResult(`${ok ? 'PASS' : 'FAIL'} ${c.name}${ok ? '' : ': ' + reason}`);
+      const { ok, reason, skip } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
+      onResult(`${skip ? 'SKIP' : ok ? 'PASS' : 'FAIL'} ${c.name}${skip ? ': ' + skip : ok ? '' : ': ' + reason}`);
       if (!ok) {
         failed++;
         for (const line of lines.slice(-20)) onResult(`  ${line}`);
@@ -481,7 +601,9 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
-  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only') ?? 'dist-web';
+  // [rc4l] --throttle N slows the page's own thread N times, as a slow runner's is, to reproduce CI's timing here.
+  const throttle = args.includes('--throttle') ? Number(args[args.indexOf('--throttle') + 1]) : 0;
+  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only' && args[i - 1] !== '--throttle') ?? 'dist-web';
   const checks = selectChecks(CHECKS, only);
   if (!checks.length) { console.error(`no check's name contains "${only}"`); process.exit(2); }
   const server = createServer(root).listen(0, '127.0.0.1');
@@ -490,7 +612,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     url: `http://127.0.0.1:${server.address().port}/?map=MAP01`,
     checks,
     software: args.includes('--software'),
-    seconds: args.includes('--software') ? 180 : 60,
+    throttle,
+    seconds: args.includes('--software') || throttle > 1 ? 180 : 60,
   });
   server.close();
   process.exit(failed ? 1 : 0);

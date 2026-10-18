@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <math.h>
+
 using namespace zx::viewsetup;
 
 TEST(ViewSetup, PitchStretchesWithThePixelRatio)
@@ -23,14 +26,84 @@ TEST(ViewSetup, PitchIsClampedToStraightUpAndDown)
 	EXPECT_FLOAT_EQ(ComputeStretchedPitch(0xB0000000u, 1.f), -90.f);   // [rc4l] past straight up
 }
 
-TEST(ViewSetup, TheFrustumWidensWithTiltAndOpensFullyPastIt)
+namespace {
+
+const double kRad = 3.14159265358979323846 / 180.0;
+
+// [rc4l] A lens and GL's aspect multiplier for it: 4:3, 5:4 (taller, with its own fov ratio), 16:9 and 21:9.
+struct Lens { float ratio, fovRatio; int multiplier; };
+const Lens kLenses[] = { { 4.f / 3.f, 1.333333f, 48 }, { 1.25f, 1.25f, 45 }, { 16.f / 9.f, 1.333333f, 36 }, { 7.f / 3.f, 1.333333f, 27 } };
+
+FrustumIn Through(const Lens &l, float pitch, float roll = 0.f, float fov = 90.f)
 {
-	const unsigned level = ComputeFrustumAngle(0.f, 90.f, 48);   // [rc4l] 4:3 at 90 degrees: 47 degrees either side
-	EXPECT_EQ(level, 0x216C16C1u);
-	EXPECT_GT(ComputeFrustumAngle(-20.f, 90.f, 48), level);
-	EXPECT_EQ(ComputeFrustumAngle(47.f, 90.f, 48), 0xffffffffu);
-	EXPECT_EQ(ComputeFrustumAngle(10.f, 400.f, 48), 0xffffffffu);  // [rc4l] a lens wide enough to pass half a turn sees everything
-	EXPECT_LT(ComputeFrustumAngle(0.f, 90.f, 64), level);          // [rc4l] a wider aspect's multiplier narrows it
+	const FrustumIn in = { pitch, roll, fov, l.ratio, l.fovRatio, l.multiplier };
+	return in;
+}
+
+double Degrees(unsigned bams) { return bams / 2147483648.0 * 180.0; }
+
+// [rc4l] The widest heading of a 9 by 9 grid of rays across the screen, rolled and then pitched by plain rotation, or -1 when one points behind the eye.
+double SampledHeading(const FrustumIn &in)
+{
+	const double ty = tan(in.fovDeg * 0.5 * kRad) / in.fovRatio, tx = ty * in.ratio;
+	double widest = 0.0;
+	for (int i = 0; i <= 8; i++)
+		for (int j = 0; j <= 8; j++)
+		{
+			const double sx = (i / 4.0 - 1.0) * tx, sy = (j / 4.0 - 1.0) * ty;
+			const double x = sx * cos(in.rollDeg * kRad) + sy * sin(in.rollDeg * kRad);
+			const double y = -sx * sin(in.rollDeg * kRad) + sy * cos(in.rollDeg * kRad);
+			const double ahead = cos(in.pitchDeg * kRad) + y * sin(in.pitchDeg * kRad);
+			if (ahead <= 0.0) return -1.0;
+			widest = std::max(widest, atan2(fabs(x), ahead) / kRad);
+		}
+	return widest;
+}
+
+} // namespace
+
+TEST(ViewSetup, ALevelFrustumIsGLsEstimate)
+{
+	const unsigned level = ComputeFrustumAngle(Through(kLenses[0], 0.f));   // [rc4l] 4:3 at 90 degrees: 47 degrees either side, never narrower
+	EXPECT_GE(level, 0x216C16C1u);
+	EXPECT_NEAR(Degrees(level), 47.0, 1e-4);
+	EXPECT_GT(ComputeFrustumAngle(Through(kLenses[0], -20.f)), level);
+	EXPECT_NEAR(Degrees(ComputeFrustumAngle(Through(kLenses[2], 0.f))), 62.0, 1e-6);   // [rc4l] 16:9's estimate, wider than its corners need
+}
+
+TEST(ViewSetup, TheFrustumOpensFullyWhenTheViewSeesAllRound)
+{
+	EXPECT_EQ(ComputeFrustumAngle(Through(kLenses[0], 47.f)), 0xffffffffu);              // [rc4l] GL's: pitched past 46 degrees
+	EXPECT_EQ(ComputeFrustumAngle(Through(kLenses[0], 10.f, 0.f, 400.f)), 0xffffffffu);  // [rc4l] a lens of half a turn or more
+	EXPECT_EQ(ComputeFrustumAngle(Through(kLenses[0], 40.f, 0.f, 150.f)), 0xffffffffu);  // [rc4l] pitched until the bottom corners point behind the eye
+	const Lens ultrawide = { 32.f / 9.f, 1.333333f, 18 };
+	EXPECT_EQ(ComputeFrustumAngle(Through(ultrawide, 0.f, 0.f, 150.f)), 0xffffffffu);    // [rc4l] an estimate past half a turn
+}
+
+// [rc4l] Queue #58: a 4:3 lens pitched 44 degrees (38.85 before the pixel stretch) sees 78.8 degrees out at its bottom corners, past GL's estimate of 70.2, which cut the corner out of the walk.
+TEST(ViewSetup, APitchedFrustumReachesTheScreensCorners)
+{
+	const double estimate = 2.0 + (45.0 + 44.0 / 1.9);
+	const double corner = atan2(1.0, cos(44.0 * kRad) - 0.75 * sin(44.0 * kRad)) / kRad;
+	const double angle = Degrees(ComputeFrustumAngle(Through(kLenses[0], 44.f)));
+	EXPECT_NEAR(angle, corner + 2.0, 1e-4);
+	EXPECT_GT(corner, estimate + 8.0);
+}
+
+// [rc4l] Whatever the lens, pitch and roll, the frustum reaches every ray the screen shows, and opens all round when one points behind the eye.
+TEST(ViewSetup, TheFrustumReachesEveryRayOnTheScreen)
+{
+	for (const Lens &l : kLenses)
+		for (float fov : { 75.f, 90.f, 110.f })
+			for (float pitch = -46.f; pitch <= 46.f; pitch += 2.f)
+				for (float roll : { 0.f, 20.f, -45.f, 90.f })
+				{
+					const FrustumIn in = Through(l, pitch, roll, fov);
+					const unsigned angle = ComputeFrustumAngle(in);
+					const double sampled = SampledHeading(in);
+					if (sampled < 0.0) EXPECT_EQ(angle, 0xffffffffu) << l.ratio << " fov " << fov << " pitch " << pitch << " roll " << roll;
+					else if (angle != 0xffffffffu) EXPECT_GE(Degrees(angle), sampled + 1.99) << l.ratio << " fov " << fov << " pitch " << pitch << " roll " << roll;
+				}
 }
 
 TEST(ViewSetup, TheSkyScrollsWithTheClockAndWraps)

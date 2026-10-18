@@ -8,7 +8,6 @@
 #include "features/levelmesh/staticmesh.h"     // [rc4l] DynClear
 #include "features/hitboxviz/hitboxviz.h"         // [rc4l] CollectBackendFrame
 #include "features/levelmesh/flatmesh.h"       // [rc4l] PlayerWalkActive, ClearSprites, RecordSpriteSweep
-#include "features/levelmesh/projdecals.h"     // [rc4l] UpdateProjectedDecals
 #include "features/levelmesh/wallcache.h"      // [rc4l] InvalidateMovedSectors
 #include "features/framephase/framephase.h"     // [rc4l] the walk, rebake and actor phases
 #include "features/levelmesh/walldecals.h"     // [rc4l] BuildWallDecals
@@ -16,6 +15,9 @@
 #include "features/visibility/viswalk.h"
 #include "features/hwrender/backendonly.h"
 #include "features/sprites/spritebuild.h"
+#include "features/gamecopy/actors.h"        // [rc4l] the actor records the sweep reads
+#include "features/gamecopy/particles.h"     // [rc4l] the particles the walks reach
+#include "features/gamecopy/players.h"       // [rc4l] the camera textures the copy holds
 
 #include "actor.h"
 #include "c_cvars.h"
@@ -24,7 +26,6 @@
 #include "po_man.h"
 #include "r_defs.h"
 #include "r_state.h"   // [rc4l] subsectors
-#include "r_utility.h"   // [rc4l] FCanvasTextureInfo
 #include "textures/textures.h"
 
 #include <vector>
@@ -36,7 +37,6 @@ CVAR(Bool, fua_vis_cull, true, 0)
 EXTERN_CVAR(Bool, fua_sprite_check)
 EXTERN_CVAR(Bool, fua_shading_check)
 EXTERN_CVAR(Bool, gl_render_things)
-EXTERN_CVAR(Int, fua_decalmode)
 
 namespace zx { namespace frame {
 
@@ -46,18 +46,18 @@ namespace {
 void WalkParticles(subsector_t *sub, sector_t *sector)
 {
 	if (!gl_render_things) return;
-	for (WORD i = ParticlesInSubsec[DWORD(sub - subsectors)]; i != NO_PARTICLE; i = Particles[i].snext)
-		zx::sprites::BuildParticle(&Particles[i], sector);
+	for (WORD i = zx::gamecopy::FirstParticleIn(int(sub - subsectors)); i != NO_PARTICLE; i = zx::gamecopy::CopiedParticle(i)->snext)
+		zx::sprites::BuildParticle(zx::gamecopy::CopiedParticle(i), zx::gamecopy::ParticleIdentity(i), sector);
 }
 
 // [rc4l] An actor a stacked view's or mirror's walk reached, its sprite or model derived inside that view.
-void PortalActor(AActor *thing)
+void PortalActor(const zx::gamecopy::ActorRecord &thing)
 {
 	zx::sprites::BuildSprite(thing);
 }
 
 // [rc4l] The actors the sweep keeps, reused frame to frame.
-std::vector<AActor *> g_swept;
+std::vector<const zx::gamecopy::ActorRecord *> g_swept;
 
 // [rc4l] The actors the frustum may hold, derived; taken from the thinker list, which is where they live, rather than found by a walk.
 void SweepActors()
@@ -67,10 +67,11 @@ void SweepActors()
 	const bool batch = !fua_sprite_check && !fua_shading_check;
 	g_swept.clear();
 	const float *mvp = zx::hwrender::SceneMVP();
-	TThinkerIterator<AActor> it;
-	AActor *thing;
-	while ((thing = it.Next()) != NULL)
+	int count;
+	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
+	for (int i = 0; i < count; i++)
 	{
+		const zx::gamecopy::ActorRecord *thing = &records[i];
 		seen++;
 		if (thing->Sector == NULL) { noSector++; continue; }
 		if (mvp != NULL)
@@ -84,7 +85,7 @@ void SweepActors()
 		}
 		processed++;
 		if (batch) g_swept.push_back(thing);
-		else zx::sprites::BuildSprite(thing);
+		else zx::sprites::BuildSprite(*thing);
 	}
 	if (!g_swept.empty()) zx::sprites::BuildSprites(&g_swept[0], (int)g_swept.size());
 	zx::levelmesh::RecordSpriteSweep(seen, noSector, behind, offScreen, processed);
@@ -93,25 +94,26 @@ void SweepActors()
 // [rc4l] The camera textures on what the player's walk saw, drawn again next frame, as GL's binding one marks it; the rest keep their last picture, as GL's do.
 void MarkSeenCameraTextures(const zx::levelmesh::WalkedThisFrame &walked)
 {
-	static std::vector<FCanvasTextureInfo *> infos;
+	static std::vector<FCanvasTexture *> canvases;
 	static std::vector<int> cameras, textures;
 	static std::vector<unsigned char> seen;
-	infos.clear();
+	canvases.clear();
 	cameras.clear();
-	for (FCanvasTextureInfo *p = FCanvasTextureInfo::GetList(); p != NULL; p = p->Next)
-		if (p->Texture != NULL) { infos.push_back(p); cameras.push_back(p->PicNum.GetIndex()); }
+	// [rc4l] features/gamecopy: the cameras and the map's textures as the copy holds them, since ACS SetCameraToTexture and a switch change the live ones from a tic beside this frame.
+	for (const zx::gamecopy::CameraTexture &c : zx::gamecopy::CameraTextures())
+		if (c.texture != NULL) { canvases.push_back(c.texture); cameras.push_back(c.picnum.GetIndex()); }
 	if (cameras.empty()) return;
 	textures.clear();
 	for (int i = 0; i < walked.sideCount; i++)
-		for (int part = side_t::top; part <= side_t::bottom; part++) textures.push_back(sides[walked.sides[i]].GetTexture(part).GetIndex());
+		for (int part = side_t::top; part <= side_t::bottom; part++) textures.push_back(sides[walked.sides[i]].rc.GetTexture(part).GetIndex());
 	for (int i = 0; i < walked.sectorCount; i++)
 	{
-		textures.push_back(sectors[walked.sectors[i]].GetTexture(sector_t::floor).GetIndex());
-		textures.push_back(sectors[walked.sectors[i]].GetTexture(sector_t::ceiling).GetIndex());
+		textures.push_back(sectors[walked.sectors[i]].rc.GetTexture(sector_t::floor).GetIndex());
+		textures.push_back(sectors[walked.sectors[i]].rc.GetTexture(sector_t::ceiling).GetIndex());
 	}
 	ComputeCamerasSeen(cameras, textures, seen);
-	for (size_t i = 0; i < infos.size(); i++)
-		if (seen[i]) infos[i]->Texture->NeedUpdate();
+	for (size_t i = 0; i < canvases.size(); i++)
+		if (seen[i]) canvases[i]->NeedUpdate();
 }
 
 } // namespace
@@ -125,15 +127,13 @@ void StandaloneScene()
 	{
 		zx::levelmesh::DynClear();
 		zx::levelmesh::ClearSprites();
-		zx::levelmesh::UpdateProjectedDecals();
 	}
 	zx::horizon::UpdateHorizons();
 	// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
 	if (walked)
 	{
-		PO_LinkToSubsectors();
-		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, fua_decalmode == 0 ? zx::levelmesh::BuildWallDecals : NULL };
+		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(fua_vis_cull, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);

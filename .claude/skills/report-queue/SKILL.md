@@ -44,7 +44,11 @@ A report from the browser build reproduces in headless Chrome rather than an eng
 `node tools/web/stage.mjs build-web <dir> --wads <iwad>,<map>` stages a page with their wads, and
 `node tools/web/probe.mjs <dir> --query "iwad=...&file=...&map=..." --run "god; wait 1000; +attack"
 [--autoplay]` plays it, listing what the commands printed, the sounds it started (and any started again), the
-screen textures it held and its WebGPU errors; `--soak reload` instead reloads the map and prints what kept growing. The probe's Chrome is always muted, and a minimal template map isolates the fault
+screen textures it held and its WebGPU errors; `--soak reload` instead reloads the map and prints what kept growing.
+Two look steps measure what a player feels: `frames` prints the browser's frame pacing (median, p99, max, gaps
+over 20 and 50 ms) since the last `frames`, and `level` what the audio output carried (RMS, with
+`--autoplay`). A run like `"god; warp X Y; fua_debug_orbit 25; wait 2000; frames; wait 5000; frames"` is a
+frame-rate report's repro, so a one-off Chrome script is never needed. The probe's Chrome is always muted, and a minimal template map isolates the fault
 better than their mod's busy map.
 
 1. **Read it.** `queue next`. The spot's `loaded` says which wads the map needs; launching without them
@@ -53,16 +57,20 @@ better than their mod's busy map.
 
    ```bash
    export FUACTL_ENGINE=F:/ForkUnderA/build-win/Release/forkundera.exe FUACTL_PWADS=<folder holding the spot's wads>
-   nohup node src/cli.mjs play --spot <spot> --lock --port 7799 --cvar fua_dg_standalone=0 > /tmp/mine.log 2>&1 &
+   nohup node src/cli.mjs play --spot <spot> --lock --port 7799 > /tmp/mine.log 2>&1 &
    node src/cli.mjs ready --port 7799
    node src/cli.mjs shot <tag> --spot <spot> --port 7799
    ```
 
-   `play --spot` takes the spot's map and wads (by name, from `FUACTL_PWADS` or `--store`) and stands
-   the player there. Reproduce it two ways: loaded directly, and reached the way the user did, with
+   `play --spot` takes the spot's map and wads (by name, from `FUACTL_PWADS` or `--store`), launches in
+   the mode the spot was seen in (Vulkan alone for a player's report; `ok renderers:` says which), sizes the
+   window to the spot's `view` (render size, scale, FOV; the launch prints `ok view` or `BAD view`) and
+   stands the player there. A spot with no `view` predates it: ask what size their window was before
+   chasing a fault that depends on the frame's shape (#58). Reproduce it two ways: loaded directly, and reached the way the user did, with
    `travel --to <MAP>` (`nextmap` until there) from where they started. Note which route shows it,
-   since a fault only one shows is a level-change bug. When it does not show, try `play --no-gl`: a
-   fault only `--no-gl` shows is in the GL-free path. Check it is the fault they reported and not a
+   since a fault only one shows is a level-change bug. For a GL/Vulkan pair relaunch with `--gl-beside
+   --cvar fua_dg_standalone=0`; a fault only Vulkan alone shows is in the path players run and GL beside
+   hides, and one only GL beside shows is the comparison rig's, not the game's. Check it is the fault they reported and not a
    cousin, and pin it to a pixel: `look --spot <spot> --pixel x,y` names the surface (and, under a
    floor, its subsector, sectors, textures and linked lights); `png --px`, `png --boxdiff` and
    `png --diffimg` compare captures (`reproducing-a-report`), and `sector-of --pixel x,y --side gl` names the
@@ -84,10 +92,10 @@ better than their mod's busy map.
 7. **Verify, all of it:** `build --no-stage --tests` (the engine and `zandrox_tests`, run, the user's binary
    left alone), `node --test`, the
    new scenario now passes, `coverage --since <ref>` holds every changed unit at 100% (`writing-tests`), and
-   `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe` is green (the suite already runs every Vulkan side standalone, as players do). Re-shoot the item's spot GL against Vulkan and look at it.
+   `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe` is green (the suite runs every Vulkan side without GL, as players do, except those judged against GL in one frame). Re-shoot the item's spot GL against Vulkan and look at it.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
 9. **Hand the build back:** `build` stages it (the exe, its `.pdb`, the pk3s and `catalogue/`),
-   relaunch their session (`play --unpark --port 7801` if you parked it, else `fua-side-by-side`), then take the next item.
+   relaunch their session (`play --unpark --port 7801` if you parked it, else `play --port 7801`, Vulkan alone; `fua-side-by-side` only when they asked to compare), then take the next item.
 
 ### When it will not reproduce
 
@@ -110,11 +118,11 @@ replaced usually still captures correctly. Fix what the audit finds, close the i
   Before running them, say in one line that you are closing their window and run
   `quit --park --port 7801`, which files their camera, wads and renderer first; afterwards
   `nohup node src/cli.mjs play --unpark --port 7801 --store <their wad folder> &` brings it back
-  there, side by side again.
+  there, in the mode it ran.
 - Reproducing in your locked 7799 instance can run beside theirs.
 - Quit engines by token (`quit --port P`) and never by process name, which kills theirs too.
-- `shot` cannot capture their side-by-side Vulkan window (it comes back 1x1), which is another
-  reason to reproduce in your own instance.
+- `shot` cannot capture a side-by-side Vulkan window (it comes back 1x1), which is another reason to
+  reproduce in your own instance.
 
 ## Reporting
 

@@ -28,7 +28,7 @@
 #include "RefCntAutoPtr.hpp"
 #include "NativeWindow.h"
 #include "features/hwrender/diligent/dgplatform.h"
-#include "features/hwrender/diligent/dgshared.h"   // [rc4l] ReleaseFrameFence, ReleaseLevelResources
+#include "features/hwrender/diligent/dgshared.h"   // [rc4l] ReleaseFrameFence, ReleaseLevelResources, ResetAtlas
 #include "features/hwrender/diligent/dgmemory.h"   // [rc4l] ReportHeldDeviceObjects
 #include "features/hwrender/diligent/dggputimer.h"   // [rc4l] ReleaseGpuPasses
 #include "features/hwrender/backendonly.h"   // [rc4l] ForgetBackendWindow
@@ -132,6 +132,7 @@ static void ShutdownBackend()
 {
 	// [rc4l] What is still held once the level's resources are gone is the backend's own (targets, pipelines, constants) or a leak, which the console log keeps.
 	ReleaseLevelResources();
+	ResetAtlas();
 	ReportHeldDeviceObjects("at shutdown, after the level's resources were released");
 	ReleaseGpuPasses();
 	ForgetBackendWindow(g_hwnd);

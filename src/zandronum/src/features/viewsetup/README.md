@@ -9,7 +9,9 @@ out for itself, and the walks read them back from `GLRenderer`; now both read `C
   backend's projection reads, so a forced aspect ratio is stretched across the window as GL stretches it
   and the walks' frustum covers the picture;
 - the actor the eye is in, which is not drawn (none in the chase camera or a dead player's death camera);
-- the walks' frustum half-angle (`FrustumAngle`), widened for a tilted view;
+- the walks' frustum half-angle (`FrustumAngle`): GL's estimate, or the widest heading through the lens's
+  screen corners once pitched and rolled if that is wider, since the estimate fell short of a 4:3 lens's
+  bottom corners pitched past about 30 degrees (queue #58);
 - the yaw and the vector the view faces (`SetViewAngle`), which `TurnView` turns for a mirror's walk;
 - how far the two sky layers have scrolled at the frame's clock (GL's `mSky1Pos` and `mSky2Pos`);
 - whether the level has a dynamic light.

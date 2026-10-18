@@ -1233,7 +1233,8 @@ void DBaseStatusBar::DrawCrosshair ()
 	// Don't draw the crosshair if there is none
 	// [rc4l] uzdoom@3af08f198: no crosshair once the camera's owner is dead -- the death camera
 	// has no weapon to aim.
-	if (CrosshairImage == NULL || gamestate == GS_TITLELEVEL || camera->health <= 0)
+	// [rc4l] features/handoff: the console player's camera as the game has it, since the HUD is drawn between tics.
+	if (CrosshairImage == NULL || gamestate == GS_TITLELEVEL || players[consoleplayer].camera == NULL || players[consoleplayer].camera->health <= 0)
 	{
 		return;
 	}

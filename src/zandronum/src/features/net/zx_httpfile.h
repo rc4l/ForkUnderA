@@ -11,7 +11,7 @@
 // of the established ones are http-only, and what actually protects us is that the file is validated
 // after it lands (see features/wad-download) rather than that the pipe was encrypted.
 //
-// Blocking: call it from a worker thread, never the game thread.
+// Blocking: call it from a worker thread, never the main thread.
 
 #ifndef ZX_HTTPFILE_H
 #define ZX_HTTPFILE_H

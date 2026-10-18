@@ -22,7 +22,9 @@ A launch draws with the backend alone, with no GL context at all (every client b
 player chose GL: `vid_backend` (the video mode menu's Renderer, "Vulkan (Recommended)" or "GL (Legacy)", read
 at startup), with `-vulkan` and `-gl` overriding it for one launch (`computation/backendchoice_compute`).
 `ComputeVidBackendFor` keeps it to what the build can honour: a browser's build, whose only renderer is WebGPU,
-always reads WebGPU, and `vid_backend_choosable` is false there, which greys the menu's Renderer out. When
+always reads WebGPU, and `vid_backend_choosable` is false there, which greys the menu's Renderer out. The
+value the renderer was chosen from is kept in `vid_backend_launched`, and the menu's `RestartOption` row says beside
+its value that the game must restart once the two differ (`menu/restartnote_compute`). When
 Vulkan was chosen and its device does not start, the launch says why on the console and draws with GL instead
 (`BackendDeviceStarts`). `I_CreateRenderer`
 installs `features/frame`'s `FBackendRenderer` (`features/frame/backendrenderer.cpp`), whose `RenderView` is
@@ -35,9 +37,23 @@ the frame, and every frame presented from its `Update` by `PresentBackendOnly`, 
 a frame that drew a view of it (the title, menus and console otherwise). The launch turns `fua_vulkan`,
 `fua_dg_standalone` and `fua_dg_embed` on, and puts the config's values back
 before it is written. An unfocused window is not presented to, as GL's is not, but its level still sets up.
-`backendonly.h` is the Diligent-free interface between them. `fuactl play --no-gl` launches one, `dumprenderer`
-says `renderer=vulkan` in one, and a scenario side with `noGl` runs as one (scenario `nogl`). Its frames are
-the instant replay's own stream, the menus' included (`PresentFrame` records every presented frame).
+`backendonly.h` is the Diligent-free interface between them. `fuactl play` launches one unless asked for GL,
+`dumprenderer` says `renderer=vulkan` in one, and every scenario's Vulkan side runs as one (scenario `nogl`). Its
+frames are the instant replay's own stream, the menus' included (`PresentFrame` records every presented frame).
+With `fua_wipe_trace 1`, `PresentFrame` also reads each frame back for `features/wipe`'s trace, which
+`fua_wipe_report` turns into each wipe's frames and how far each sits from the pictures before and after
+(scenario `wipe`).
+
+## The backend beside GL (for comparing the two)
+
+A GL launch with `fua_vulkan` on (`fuactl play --gl-beside`, or `--side-by-side` for its own window) draws the
+backend's frame into a window over GL's, or beside it, so the two can be compared in one process: `shot` pairs,
+the `fua_*_check` reports and the live `fua_vulkan 0/1` toggle need it. It is not the game players run. GL
+owns the frame loop there, and `LiveFrame` presents the backend's window only at the end of a normal frame,
+so a wipe, which `D_Display` runs in its own loop through GL's `WipeDo`, never reaches it (2 of 2 wipes in
+scenario `wipe` when moved beside GL), and the frames an intermission draws nothing on, once Use is pressed,
+show the previous map's world under them, since `LiveFrame` draws the world whatever the frame drew. A fault
+seen only beside GL belongs to this rig; reproduce a player's report without GL first.
 
 Its frame is drawn into an offscreen target at the screen's size (`diligent/dgtarget.cpp`) and drawn up to the
 window, linearly filtered, at present, as GL's scale buffer is, so `vid_scalefactor` and the scale modes render
@@ -96,7 +112,12 @@ the surfaces painted from it by screen position (`dgskyportal.cpp`), and other s
 (`dgskylooks.cpp`), sharing `dgsky_internal.h`. Line mirrors are `dgviews.cpp`; reflective planes and
 stacked views, drawn into pooled targets, are `dgviewtargets.cpp`.
 
-A frame's sprites, models and decals are laid out on the game thread (`computation/dynlayout_compute`, each
+Every pass `DrawWorld` draws binds its own targets through `BeginPassTargets` (`dgscene.cpp`): its colour,
+depth and normals, and its size, which the scene constants and the light grid take. A mirror, a reflective plane,
+a stacked view, the skybox and a camera texture each have a G-buffer of their own, so the decal pass marks what
+that view drew; it read the player's view's depth and normals before, and drew no floor mark in any other view.
+
+A frame's sprites, models and decals are laid out on the main thread (`computation/dynlayout_compute`, each
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 

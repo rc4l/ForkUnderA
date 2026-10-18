@@ -114,6 +114,7 @@ void ThreeSamples(ViewTraceSample *s)
 	s[0].us = 1000; s[0].gametic = 5;
 	s[1].us = 3000; s[1].gametic = 6; s[1].angle = 2 * kDeg; s[1].localAngle = 7;
 	s[1].mouse.messages = 2; s[1].mouse.dx = 3; s[1].mouse.dy = -1; s[1].mouse.toView = 2; s[1].grabbed = true; s[1].active = true;
+	s[1].x = 12.5f; s[1].y = -4.f; s[1].frac = 0.25f; s[1].clock = 9; s[1].ticNext = 120;
 	s[2].us = 4500; s[2].gametic = 6; s[2].angle = 2 * kDeg; s[2].presentAt = 3900; s[2].frameUs = 1600;
 	s[2].phases[zx::framephase::kPhaseSim] = 120.f; s[2].phases[zx::framephase::kPhaseWalk] = 800.f;
 }
@@ -135,8 +136,8 @@ TEST(ViewTraceCsv, TheHeaderNamesEveryColumn)
 	EXPECT_EQ((int)strlen(h), len);
 	EXPECT_EQ(0, strncmp(h, "us,deg,tic,local,view_at,present_at,frame_us,sim,walk,", 54));
 	EXPECT_NE(nullptr, strstr(h, ",flip,mouse_msgs,"));
-	EXPECT_EQ(std::string(",menu,console"), std::string(h + len - 13));
-	EXPECT_EQ(6 + zx::framephase::kPhaseCount + 11, Commas(h));
+	EXPECT_EQ(std::string(",menu,console,x,y,frac,clock,tic_next"), std::string(h + len - 37));
+	EXPECT_EQ(6 + zx::framephase::kPhaseCount + 16, Commas(h));
 }
 
 // [rc4l] A row is its own frame's view and mouse with the next sample's length, phases and present, which closed it.
@@ -149,7 +150,7 @@ TEST(ViewTraceCsv, ARowTakesItsPhasesFromTheSampleThatClosedIt)
 	ComputeViewTraceCsvRow(r, sizeof(r), s, 3, 1);
 	EXPECT_EQ(Commas(h), Commas(r));
 	EXPECT_EQ(0, strncmp(r, "2000,2.0000,1,7,3000,3900,1600,120,800,0,", 41)) << r;
-	EXPECT_EQ(std::string(",2,0,3,-1,2,0,1,1,0,0,0"), std::string(r + strlen(r) - 23)) << r;
+	EXPECT_EQ(std::string(",2,0,3,-1,2,0,1,1,0,0,0,12.500,-4.000,0.250,9,120"), std::string(r + strlen(r) - 49)) << r;
 }
 
 // [rc4l] The last sample has nothing after it, so its frame's length, phases and present are zero.
@@ -160,6 +161,40 @@ TEST(ViewTraceCsv, TheLastRowHasNoPhases)
 	char r[1024];
 	ComputeViewTraceCsvRow(r, sizeof(r), s, 3, 2);
 	EXPECT_EQ(0, strncmp(r, "3500,0.0000,0,0,4500,0,0,0,0,", 29)) << r;
+}
+
+// [rc4l] Walking forward never steps back; one frame drawn behind the frame before it is one back step, and standing still or turning around slowly are not.
+TEST(ViewTrace, AFrameDrawnBehindTheOneBeforeIsABackStep)
+{
+	ViewTraceSample s[6] = {};
+	const float xs[6] = { 0.f, 2.f, 4.f, 3.f, 5.f, 7.f };
+	for (int i = 0; i < 6; i++) s[i].x = xs[i];
+	EXPECT_EQ(1, ComputeViewBackSteps(s, 6, 0.25f));
+	const float walk[6] = { 0.f, 2.f, 4.f, 6.f, 6.f, 8.f };
+	for (int i = 0; i < 6; i++) s[i].x = walk[i];
+	EXPECT_EQ(0, ComputeViewBackSteps(s, 6, 0.25f));
+	const float jitter[6] = { 0.f, 0.1f, 0.f, 0.1f, 0.f, 0.1f };
+	for (int i = 0; i < 6; i++) s[i].x = jitter[i];
+	EXPECT_EQ(0, ComputeViewBackSteps(s, 6, 0.25f));
+	EXPECT_EQ(0, ComputeViewBackSteps(s, 2, 0.25f));
+}
+
+// [rc4l] A view walking 35 units a tic, drawn every 4 ms, steps 4.9 units; one that holds 24 ms and then catches up lurches once, at any frame length.
+TEST(ViewTrace, AViewThatHoldsAndCatchesUpLurches)
+{
+	ViewTraceSample s[40] = {};
+	for (int i = 0; i < 40; i++) { s[i].us = i * 4000; s[i].y = i * 4000 * 35.f * 35.f / 1000000.f; }
+	EXPECT_EQ(0, ComputeViewLurches(s, 40));
+	for (int i = 10; i < 16; i++) s[i].y = s[9].y;
+	EXPECT_EQ(1, ComputeViewLurches(s, 40));
+	EXPECT_EQ(0, ComputeViewLurches(s, 2));
+	ViewTraceSample still[4] = {};
+	for (int i = 0; i < 4; i++) still[i].us = i * 1000;
+	EXPECT_EQ(0, ComputeViewLurches(still, 4));
+	EXPECT_EQ(0, ComputeViewLurches(still, 1 + 0 * 3));
+	ViewTraceSample instant[3] = {};
+	instant[2].y = 5.f;
+	EXPECT_EQ(0, ComputeViewLurches(instant, 3));
 }
 
 TEST(ViewTraceCsv, ASmallBufferIsCutAndTerminated)

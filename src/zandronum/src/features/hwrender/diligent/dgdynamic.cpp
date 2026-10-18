@@ -4,6 +4,7 @@
 // [rc4l] The per-frame stream: sprites, models and decals, the solid ones drawn after the world and the translucent ones sorted into one pass with the world's.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
 #include "features/telemetry/telemetry.h"
@@ -115,7 +116,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	g_stats.blendSubmits = 0;
 	g_stats.dynSlotRefused = g_stats.dynSlotNoMaterial = g_stats.dynSlotSeen = g_stats.dynSlotMax = 0;
 	g_stats.dynSlotUnfilled = 0;
-	g_stats.dynBindless = g_stats.dynPerMaterial = 0;
+	g_stats.dynBindless = g_stats.dynPerMaterial = g_stats.dynAtlas = 0;
 	g_stats.dynByBlend[0] = g_stats.dynByBlend[1] = g_stats.dynByBlend[2] = g_stats.dynByBlend[3] = 0;
 	g_scene.dynReady = false;
 
@@ -203,12 +204,17 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		const unsigned nv = zx::hwrender::ComputeDynLayout(&order[0], npieces, &dynVerts[0], recordsLeft, layout);
 		static std::vector<PieceSlotSet> slots;
 		slots.resize(layout.size());
+		// [rc4l] Placed here, on this thread, since placing a sprite the first time uploads it.
+		static std::vector<const AtlasEntry *> atlased;
+		atlased.assign(layout.size(), NULL);
+		const bool atlas = AtlasActive();
 		g_stats.dynMirrorRuns = 0;
 		int records = 0;
 		for (size_t k = 0; k < layout.size(); k++)
 		{
 			const zx::levelmesh::MeshPiece &p = pieces[layout[k].piece];
 			slots[k] = PieceSlots(p, p.translation, false);
+			if (atlas) atlased[k] = AtlasFor(p.material, p.translation, p.quad && !p.depthBias && !p.solid && !p.hud && p.mirrorView < 0 && p.onMirror < 0);
 			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
 			if (layout[k].record >= 0) records++;
 		}
@@ -282,6 +288,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					r.onMirror = p.onMirror;
 					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 					r.lo = 1e30f; r.hi = -1e30f;
+					const AtlasEntry *ae = atlased[k];
+					r.atlasPage = ae != NULL ? ae->page : -1;
 					const unsigned int dynPieceIndex = slot.record >= 0 ? base + (unsigned)slot.record : lastRecord;
 					if (slot.record >= 0)
 					{
@@ -293,7 +301,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					for (unsigned v = 0; v < slot.count; v++)
 					{
 						const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
-						const SceneVertex dv = ToSceneVertex(src[p.range.offset + srcIndex], dynPieceIndex);
+						SceneVertex dv = ToSceneVertex(src[p.range.offset + srcIndex], dynPieceIndex);
+						if (ae != NULL) zx::hwrender::ComputeAtlasUV(ae->x, ae->y, ae->w, ae->h, AtlasPageSize(), AtlasPageSize(), dv.u, dv.v);
 						vb[slot.first + v] = dv;
 						if (dv.y < r.lo) r.lo = dv.y;
 						if (dv.y > r.hi) r.hi = dv.y;
@@ -352,6 +361,13 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 // culling on for translucent ones, to paper over having no depth sort. This is that pass: the
 // masked no-cull pipeline is already alpha-tested, already writes depth and already ignores winding,
 // which is the exact combination a model wants and the reason it needs no pipeline of its own.
+// [rc4l] A dynamic piece's binding on the per-material path: its atlas page's, else its material's.
+static Diligent::IShaderResourceBinding *DynSRB(Diligent::IPipelineState *pso, const DynRun &r)
+{
+	Diligent::IShaderResourceBinding *page = r.atlasPage >= 0 ? AtlasSRB(pso, r.atlasPage) : NULL;
+	return page != NULL ? page : GetMaterialSRB(pso, r.material, r.translation);
+}
+
 void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 {
 	if (!g_dynVB || g_scene.dynRuns.Size() == 0 || !g_pso.world[kWpMaskedNoCull]) return;
@@ -367,7 +383,7 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
 		auto *srb = WorldSRB(g_pso.world[kWpMaskedNoCull].RawPtr());
 		if (srb) g_stats.dynBindless++;
-		else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r.material, r.translation); }
+		else { g_stats.dynPerMaterial++; srb = DynSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r); }
 		if (!srb) continue;
 		if (!bound)
 		{
@@ -401,14 +417,14 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 		Diligent::IPipelineState *pso = g_pso.world[ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud)].RawPtr();
 		if (!pso) continue;
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
-		if (!srb) srb = GetMaterialSRB(pso, r.material, r.translation);
+		if (!srb) srb = DynSRB(pso, r);
 		if (!srb) continue;
 		if (!started)
 		{
 			// [rc4l] The surface left its own constants in the scene block, so the player's go back before the first decal.
 			{
 				Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-				WriteSceneConstants(&cb[0], nullptr, (float)FrameWidth(), (float)FrameHeight(),
+				WriteSceneConstants(&cb[0], nullptr, (float)PassWidth(), (float)PassHeight(),
 					BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 			}
 			Diligent::IBuffer *vbs[] = { g_dynVB };
@@ -489,7 +505,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			const int pipeline = ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud);
 			Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
 			auto *srb = WorldSRB(pso);
-			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = GetMaterialSRB(pso, r.material, r.translation); }
+			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = DynSRB(pso, r); }
+			if (r.atlasPage >= 0) g_stats.dynAtlas++;
 			if (!srb) continue;
 			BlendDraw d;
 			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;

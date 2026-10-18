@@ -780,7 +780,8 @@ void P_DrawRailTrail (AActor *source, const FVector3 &start, const FVector3 &end
 				point = start + r * dir;
 				dir.Z = dirz;
 
-				S_Sound (FLOAT2FIXED(point.X), FLOAT2FIXED(point.Y), viewz,
+				// [rc4l] features/handoff: the listener's eye height as the game has it, not the renderer's last view, which a frame may be changing.
+				S_Sound (FLOAT2FIXED(point.X), FLOAT2FIXED(point.Y), mo->player != NULL ? mo->player->viewz : mo->z,
 					CHAN_WEAPON, sound, 1, ATTN_NORM);
 			}
 		}

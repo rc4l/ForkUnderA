@@ -86,12 +86,13 @@ runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWa
 the engine it runs (the staged `dist-windows` one unless `FUACTL_ENGINE` names another) and each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
 can import the builder without launching anything. The whole set runs as one command,
 `node src/cli.mjs scenarios [name ...] [--engine build-win/Release/forkundera.exe]`, which prints only
-the boxes that did not pass and exits 1 if any scenario failed. It runs every Vulkan side standalone,
-as players do (`fua_dg_standalone 1`, except `frame: "gl"` and `glDraws` sides), so `scenarios
---standalone` adds nothing beyond a narrower set.
+the boxes that did not pass and exits 1 if any scenario failed. Every Vulkan side launches without GL,
+as players run it, and the harness fails a side whose `dumprenderer` disagrees; only a side judged
+against GL in one frame (`frame: "gl"`, `glDraws`, `compareSameFrame`) or one that sets `glBeside`
+launches the backend beside GL (`fua_dg_standalone 1` there, 0 for those judged by GL's frame).
 
 `compareTemplate` refuses to run while another engine is open (GL readback under another window is
-undefined), launches each map once per side — GL alone, then Vulkan with `fua_dg_standalone 1` (0 only for a side
+undefined), launches each map once per side — GL alone, then Vulkan alone (beside GL only for a side
 judged by GL's frame) — captures
 every vantage, and judges each box by `boxDiff`: mean |d| in 16-pixel block means, so the renderers'
 sub-pixel framing averages out while a block-sized fault stays loud. Its GL frames come from the
@@ -118,9 +119,10 @@ scenario without that side is skipped rather than ending the run. `standalonemov
 after the level is up, so the move is not baked in. A side that spawns facing away and then turns
 (`skymove`, `stackturn`, `skyboxturn`) catches a frame that reuses an earlier walk instead of walking itself.
 
-A side with `noGl: true` launches with `-vulkan`, which makes no GL context at all. The harness reads
-`dumprenderer` and fails the side unless it prints `renderer=vulkan`, since an old binary ignores the flag
-and runs GL; it leaves standalone on, the only frame such a launch has (`nogl.mjs`).
+A Vulkan side launches with `-vulkan`, which makes no GL context at all (`noGl: true` says so and changes
+nothing). The harness reads `dumprenderer` and fails the side unless it prints `renderer=vulkan`, since an
+old binary ignores the flag and runs GL (`nogl.mjs`). A frame read back from a launch without GL is
+Vulkan's alone: `shot` there returns no GL half and the reason, and a GL capture refuses.
 
 A box can name a `vantage`, when the vantages look at different parts of the frame. A model needs no
 assets: `kvxBox` and `voxelLumps` in `src/kvx.mjs` put a KVX voxel on every frame of a sprite.

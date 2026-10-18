@@ -17,6 +17,7 @@ unsigned ComputePieceTexFlags(const PieceTexInputs &in)
 	if (in.fogLayer) f |= kTexFlagFogLayer;
 	if (in.fogBoundary) f |= kTexFlagFogBoundary;
 	if (in.fogPass) f |= kTexFlagFogPass;
+	if (in.noMarks) f |= kTexFlagNoMarks;
 	f |= ((unsigned)in.fuzz & kTexFlagFuzzMask) << kTexFlagFuzzShift;
 	f |= ((unsigned)in.cullFace & kTexFlagCullMask) << kTexFlagCullShift;
 	return f;

@@ -808,30 +808,6 @@ bool sector_t::PlaneMoving(int pos)
 }
 
 
-int sector_t::GetFloorLight () const
-{
-	if (GetFlags(sector_t::floor) & PLANEF_ABSLIGHTING)
-	{
-		return GetPlaneLight(floor);
-	}
-	else
-	{
-		return ClampLight(lightlevel + GetPlaneLight(floor));
-	}
-}
-
-int sector_t::GetCeilingLight () const
-{
-	if (GetFlags(ceiling) & PLANEF_ABSLIGHTING)
-	{
-		return GetPlaneLight(ceiling);
-	}
-	else
-	{
-		return ClampLight(lightlevel + GetPlaneLight(ceiling));
-	}
-}
-
 
 ASkyViewpoint *sector_t::GetSkyBox(int which)
 {
@@ -874,7 +850,7 @@ sector_t *sector_t::GetHeightSec() const
 }
 
 
-bool secplane_t::CopyPlaneIfValid (secplane_t *dest, const secplane_t *opp) const
+bool secplane_core_t::CopyPlaneIfValid (secplane_core_t *dest, const secplane_core_t *opp) const
 {
 	bool copy = false;
 
@@ -1005,7 +981,9 @@ CUSTOM_CVAR(Int, r_fakecontrast, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 //
 //==========================================================================
 
-int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
+// [rc4l] A side's light from its flags and light, live or its render copy's, and its line's slope.
+// [rc4l] The light a side shows, its fake contrast from the line's direction (dx, dy), which a polyobject turning changes.
+static int SideLightLevel (int Flags, int Light, fixed_t dx, fixed_t dy, bool foggy, int baselight, bool noabsolute, int *pfakecontrast)
 {
 	if (!noabsolute && (Flags & WALLF_ABSLIGHTING))
 	{
@@ -1023,19 +1001,19 @@ int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfak
 		{
 			int rel;
 			if (((level.flags2 & LEVEL2_SMOOTHLIGHTING) || (Flags & WALLF_SMOOTHLIGHTING) || r_fakecontrast == 2) &&
-				linedef->dx != 0)
+				dx != 0)
 			{
 				rel = xs_RoundToInt // OMG LEE KILLOUGH LIVES! :/
 					(
 						level.WallHorizLight
-						+ fabs(atan(double(linedef->dy) / (double)(linedef->dx)) / 1.57079)
+						+ fabs(atan(double(dy) / (double)(dx)) / 1.57079)
 						* (level.WallVertLight - level.WallHorizLight)
 					);
 			}
 			else
 			{
-				rel = linedef->dx == 0 ? level.WallVertLight : 
-					  linedef->dy == 0 ? level.WallHorizLight : 0;
+				rel = dx == 0 ? level.WallVertLight : 
+					  dy == 0 ? level.WallHorizLight : 0;
 			}
 			if (pfakecontrast != NULL)
 			{
@@ -1049,8 +1027,19 @@ int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfak
 	}
 	if (!(Flags & WALLF_ABSLIGHTING) && (!foggy || (Flags & WALLF_LIGHT_FOG)))
 	{
-		baselight = clamp(baselight + this->Light, 0, 255);
+		baselight = clamp(baselight + Light, 0, 255);
 	}
 	return baselight;
+}
+
+int side_t::GetLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
+{
+	return SideLightLevel (Flags, Light, linedef->dx, linedef->dy, foggy, baselight, noabsolute, pfakecontrast);
+}
+
+int side_t::GetRcLightLevel (bool foggy, int baselight, bool noabsolute, int *pfakecontrast) const
+{
+	// [rc4l] The direction from the copy's ends, which a polyobject's turn moves between tics and its live line a tic in flight is changing.
+	return SideLightLevel (rc.Flags, rc.Light, linedef->v2->rc.x - linedef->v1->rc.x, linedef->v2->rc.y - linedef->v1->rc.y, foggy, baselight, noabsolute, pfakecontrast);
 }
 

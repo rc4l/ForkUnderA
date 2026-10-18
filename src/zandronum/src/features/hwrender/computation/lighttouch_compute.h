@@ -37,7 +37,7 @@ bool ComputeLightsDue(LightsStamp &kept, int tic, int generation, int flags, boo
 // [rc4l] What a light's links were collected for: the light, where it stood and how far it reached.
 struct LightLinkKey
 {
-	const void *light;
+	unsigned int light;   // [rc4l] the light's render copy id, which no later light reuses
 	long long x, y, z;
 	float radius;
 };

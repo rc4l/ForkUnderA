@@ -127,9 +127,17 @@ extern int viewpitch;
 
 namespace zx { namespace hwrender {
 
+// [rc4l] Where a pass draws: its colour and depth, the normals its G-buffer writes and the depth and normals the decal pass reads back (none for a pass without them), and its size.
+struct PassTargets
+{
+	Diligent::ITextureView *color = nullptr, *depth = nullptr, *normal = nullptr, *depthRead = nullptr, *normalRead = nullptr;
+	int w = 0, h = 0;
+};
+
 // [rc4l] What the pass being drawn is, and the state that follows from which: one record every pass sets and every draw reads, in place of eight globals.
 struct PassContext
 {
+	PassTargets targets;             // [rc4l] set by BeginPassTargets before each DrawWorld
 	bool  mainView = false;          // [rc4l] the player's own view, the only one that dumps its order or paints plane reflections
 	bool  inSkyPortal = false;       // [rc4l] the skybox portal rendering its own view, whose sky is part of the skybox image and is drawn
 	bool  inCameraPass = false;      // [rc4l] a camera texture, whose sky quads are its own walk's
@@ -240,6 +248,7 @@ struct DynRun
 	int          onMirror;     // [rc4l] a decal on this line mirror's face, drawn over its surface by DrawMirrorFaceDecals, or -1
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
+	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
 };
 
 // [rc4l] The array's size on this device (ComputeMaterialSlotCapacity), which CompileShader hands every shader as FUA_MAT_SLOTS; 0 means a binding per material.
@@ -310,7 +319,7 @@ struct SceneStats
 	int     geomUpdates = 0, geomRebuilds = 0;      // [rc4l] scene rebuilds this frame and since load, because the world moved
 	unsigned int lastDirtyLo = 0, lastDirtyHi = 0;
 	int     geomPatches = 0, geomPatchVerts = 0;    // [rc4l] patches and the vertices they moved, which tell nudged from rewritten
-	int     geomAppends = 0, appendNoSlot = 0, appendResized = 0, slotRevived = 0;   // [rc4l] pieces put on the end, and why
+	int     geomAppends = 0, appendNoSlot = 0, appendResized = 0, slotRevived = 0, appendRebatched = 0;   // [rc4l] pieces put on the end, and why
 	int     geomRepaints = 0, repaintRuns = 0;
 	int     fRepaints = 0, fRuns = 0, fPatchVerts = 0, fPatches = 0;   // [rc4l] what THIS frame did, so a p99 can be attributed
 	int     batchesDrawn = 0, worldDraws = 0;       // [rc4l] batches drawn, and the draw CALLS that took
@@ -324,7 +333,7 @@ struct SceneStats
 	int     dynByBlend[4] = {};                     // [rc4l] per blend mode: opaque, translucent, additive, fuzz
 	double  dynBuildMs = 0.0;                       // [rc4l] the dynamic stream's cost, which no other clock covers
 	int     animSwaps = 0;                          // [rc4l] animation frame swaps since load
-	int     dynBindless = 0, dynPerMaterial = 0, dynMirrorRuns = 0;
+	int     dynBindless = 0, dynPerMaterial = 0, dynMirrorRuns = 0, dynAtlas = 0;
 	int     dynSlotRefused = 0, dynSlotNoMaterial = 0, dynSlotSeen = 0, dynSlotMax = 0;
 	int     dynSlotUnfilled = 0, dynSlotUnfilledTotal = 0;   // [rc4l] dynamic slots past the array's fill this frame and since load
 	// [rc4l] Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
@@ -370,6 +379,8 @@ void DrawSceneOnce(bool present = true, bool pump = true);
 bool SceneDrawable();
 // [rc4l] Record, roll the frame's pass stats, present, and keep the window in step; the world's frames and the 2D-only ones alike.
 void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, bool pump);
+// [rc4l] A frame drawn without presenting, submitted, finished and paced as Present does all three, so the dynamic memory its passes used comes back.
+void EndUnpresentedFrame(Diligent::IDeviceContext *ctx);
 void PhaseReport(FString &out);
 
 // [rc4l] Pipelines and material bindings (dgpipelines.cpp).
@@ -397,6 +408,17 @@ Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
 const TArray<MatSlot> &MaterialSlots();
 int FilledSlotCount();
 void MarkMaterialSlotsCurrent();
+
+// [rc4l] The sprite atlas (dgatlas.cpp): sprites on the per-material path drawn from shared pages, an entry's rectangle in texels on its page.
+struct AtlasEntry { int page, x, y, w, h; };
+bool AtlasActive();
+int AtlasPageSize();
+// [rc4l] Where a material's image sits on a page, placing it the first time, NULL when it may not or does not fit; sprite says the piece is a flat sprite.
+const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite);
+Diligent::IShaderResourceBinding *AtlasSRB(Diligent::IPipelineState *pso, int page);
+// [rc4l] How many images the pages hold, and how many pages.
+int AtlasEntries(int &pages);
+void ReleaseAtlasSRBs();
 
 // [rc4l] The per-frame stream (dgdynamic.cpp).
 void BuildDynamic(Diligent::IDeviceContext *ctx);
@@ -469,6 +491,14 @@ extern float g_mvp[16];
 extern Diligent::RefCntAutoPtr<Diligent::IBuffer> g_cb;
 void BuildMVP(float *m);
 void DrawWorld(Diligent::IDeviceContext *ctx);
+// [rc4l] A pass's targets bound for DrawWorld and cleared: colour to clear, the normals to nothing drawn, depth to far, the G-buffer bound with them when the pass has one.
+void BeginPassTargets(Diligent::IDeviceContext *ctx, const PassTargets &targets, const float clear[4]);
+// [rc4l] An offscreen view's targets from its colour and depth textures and, for its marks, a normal texture of its size (NULL draws none).
+PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal);
+// [rc4l] The normals every frame-sized view shares, one view drawing at a time; NULL when it cannot be made.
+Diligent::ITexture *FrameViewNormal();
+// [rc4l] A w by h normal target the G-buffer writes and the decal pass reads.
+bool CreateNormalTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &normal);
 // [rc4l] A GL vertex (x, y, height) as the mesh stores it (x, height, y), tagged with its piece.
 SceneVertex ToSceneVertex(const zx::levelmesh::MeshVertex &sv, unsigned int pieceIndex);
 Diligent::ITextureView *EnsureSceneDepth();

@@ -15,6 +15,8 @@
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/dynlights/dynlight.h"
+#include "features/gamecopy/lights.h"   // [rc4l] the light records
+#include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "p_local.h"
 #include "doomstat.h"
@@ -82,15 +84,10 @@ bool EnsureLightBuffers(FString &err)
 			!CreateStructuredBuffer("fua light link ids", sizeof(unsigned), kLightTouchIdCapacity, NULL, g_lightTouchIdBuf))
 		{ err = "light link buffer creation failed"; return false; }
 	}
-	// [rc4l] The cluster table and its index list, sized for the largest grid a window can produce.
-	//
-	// Created once at a fixed capacity for the same reason the light buffer is: a buffer recreated
-	// mid-frame leaves every SRB pointing at the freed one. 8192 cells covers a 4K screen at 64-pixel
-	// tiles with 24 slices to spare, and the index list is sized for every light landing in a
-	// generous share of them.
+	// [rc4l] The cluster table and its index list, created once (a buffer recreated mid-frame leaves every SRB pointing at the freed one) for the grid every frame has.
 	if (!g_clusterBuf)
 	{
-		g_clusterCapacity = 16384;
+		g_clusterCapacity = zx::hwrender::kClusterCells;
 		if (!CreateStructuredBuffer("fua cluster table", 8, g_clusterCapacity, NULL, g_clusterBuf))
 		{ err = "cluster table creation failed"; return false; }
 	}
@@ -197,7 +194,7 @@ CCMD( fua_dg_lights )
 		if ( players[consoleplayer].mo != NULL && players[consoleplayer].mo->Sector != NULL )
 		{
 			const sector_t *sec = players[consoleplayer].mo->Sector;
-			const float ph = FIXED2FLOAT( sec->floorplane.ZatPoint( light->x, light->y ) );
+			const float ph = FIXED2FLOAT( sec->rc.floorplane.ZatPoint( light->x, light->y ) );
 			Printf( "          floor plane under the light %.3f vs light z %.3f -> GL %s\n",
 				ph, lz, ( ph > lz ) ? "DROPS it" : "keeps it" );
 		}
@@ -205,86 +202,51 @@ CCMD( fua_dg_lights )
 	}
 	Printf( "fua_dg_lights: %d active, player floor %.1f\n", n, floorz );
 }
-// [rc4l] The ids a light is linked to, as PieceStackId names surfaces: each subsector its flood reached, and numsubsectors plus each sidedef it lights.
-static void CollectLightLinks(ADynamicLight *light, std::vector<unsigned> &out)
-{
-	out.clear();
-	for (FLightNode *n = light->touching_subsectors; n != NULL; n = n->nextTarget)
-		if (n->targSubsector != NULL) out.push_back((unsigned)(n->targSubsector - subsectors));
-	for (FLightNode *n = light->touching_sides; n != NULL; n = n->nextTarget)
-		if (n->targLine != NULL) out.push_back((unsigned)(numsubsectors + (n->targLine - sides)));
-}
-
-// [rc4l] A light's links as last collected, sorted, with where it stood and how far it reached then: ADynamicLight relinks only when one of those changes, and walking every light's node lists each tic cost 4.7 ms on wdiex02's 767 lights.
-struct LightLinks
-{
-	const ADynamicLight *light;
-	fixed_t x, y, z;
-	float radius;
-	std::vector<unsigned> ids;
-};
-
-// [rc4l] The lights as last collected: each one's links, kept until it moves or changes reach, and what they were collected under.
+// [rc4l] The lights as last collected: the links each one touches and what they were collected under.
 struct LightCollection
 {
-	std::vector<LightLinks> links;
 	std::vector<const std::vector<unsigned> *> touched;
 	zx::hwrender::LightsStamp stamp;
 };
-static LightCollection g_collected = { {}, {}, { -1, -1, -1 } };
+static LightCollection g_collected = { {}, { -1, -1, -1 } };
 
-// [rc4l] Every active dynamic light in the level, collected into the shared storage buffer once per tic (see fuaDynLight in the shader for why there is no per-surface light list).
+// [rc4l] Every active dynamic light the render copy holds, collected into the shared storage buffer once per tic (see fuaDynLight in the shader for why there is no per-surface light list).
 void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 {
-	std::vector<LightLinks> &links = g_collected.links;
 	std::vector<const std::vector<unsigned> *> &touched = g_collected.touched;
-	// [rc4l] Once per tic: lights change only in the ticker, and every pass of a frame (mirrors, stacked views, sky, camera textures) reads the same ones.
+	// [rc4l] Once per fill: lights change only in the ticker, and every pass of a frame (mirrors, stacked views, sky, camera textures) reads the same ones.
 	const int flags = (fua_dg_dynlights ? 1 : 0) | (fua_dg_lightlinks ? 2 : 0);
 	bool newLevel = false;
-	if (!zx::hwrender::ComputeLightsDue(g_collected.stamp, gametic, zx::levelmesh::LevelGeneration(), flags, newLevel)) return;
-	if (newLevel) links.clear();
+	if (!zx::hwrender::ComputeLightsDue(g_collected.stamp, zx::gamecopy::CopyTic(), zx::levelmesh::LevelGeneration(), flags, newLevel)) return;
 	g_lightCount = 0;
 	touched.clear();
 	if (fua_dg_dynlights && g_lightBuf)
 	{
-		// [rc4l] Straight from the level's thinkers, not from the engine's per-surface light buffer.
-		// Same filters gl_GetLight applies: dormant lights are skipped, and a zero radius means off.
+		// [rc4l] The copy's light records, with the filters gl_GetLight applies: dormant lights are skipped, and a zero radius means off.
 		g_lightData.Clear();
-		TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
-		ADynamicLight *light;
-		while ((light = it.Next()) != NULL)
+		int count;
+		const zx::gamecopy::LightRecord *const lights = zx::gamecopy::Lights(count);
+		for (int i = 0; i < count; i++)
 		{
-			if (!light->IsActive()) continue;
-			const float radius = light->GetRadius() * r_lights_size;
+			const zx::gamecopy::LightRecord &light = lights[i];
+			if (!light.active) continue;
+			const float radius = light.radius * r_lights_size;
 			if (radius <= 0.f) continue;
 			if ((unsigned)g_lightCount >= g_lightBufCapacity / 2) break;
 
 			float rgb[3];
-			zx::hwrender::ComputeDynLightColor(light->GetRed(), light->GetGreen(), light->GetBlue(),
-				r_lights_additive || (light->flags4 & MF4_ADDITIVE), r_lights_intensity, rgb);
+			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, r_lights_additive || light.additive, r_lights_intensity, rgb);
 
 			// Same axis swap the mesh uses: (x, z, y).
-			g_lightData.Push(FIXED2FLOAT(light->x));
-			g_lightData.Push(FIXED2FLOAT(light->z));
-			g_lightData.Push(FIXED2FLOAT(light->y));
+			g_lightData.Push(FIXED2FLOAT(light.x));
+			g_lightData.Push(FIXED2FLOAT(light.z));
+			g_lightData.Push(FIXED2FLOAT(light.y));
 			g_lightData.Push(radius);
 			g_lightData.Push(rgb[0]);
 			g_lightData.Push(rgb[1]);
 			g_lightData.Push(rgb[2]);
-			g_lightData.Push(light->IsSubtractive() ? 1.0f : 0.0f);
-			if ((size_t)g_lightCount >= links.size()) links.resize(g_lightCount + 1);
-			LightLinks &ll = links[g_lightCount];
-			const zx::hwrender::LightLinkKey kept = { ll.light, ll.x.Raw(), ll.y.Raw(), ll.z.Raw(), ll.radius };
-			// [rc4l] Keyed on how far the light is linked (radius), not how far it lights (GetRadius), which a pulse changes every tic without relinking.
-			const zx::hwrender::LightLinkKey now = { light, light->x.Raw(), light->y.Raw(), light->z.Raw(), FIXED2FLOAT(light->radius) };
-			if (zx::hwrender::ComputeLightLinksStale(kept, now))
-			{
-				ll.light = light;
-				ll.x = light->x; ll.y = light->y; ll.z = light->z;
-				ll.radius = FIXED2FLOAT(light->radius);
-				CollectLightLinks(light, ll.ids);
-				zx::hwrender::ComputeSortedTouches(ll.ids);
-			}
+			g_lightData.Push(light.subtractive ? 1.0f : 0.0f);
+			touched.push_back(&light.links);
 			g_lightCount++;
 		}
 		if (g_lightCount > 0)
@@ -293,7 +255,6 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 			static std::vector<zx::hwrender::LightTouchRange> ranges;
 			static std::vector<unsigned> ids;
-			for (int i = 0; i < g_lightCount; i++) touched.push_back(&links[i].ids);
 			zx::hwrender::ComputeLightTouchLists(touched, kLightTouchIdCapacity, ranges, ids);
 			if (!fua_dg_lightlinks)
 				for (zx::hwrender::LightTouchRange &r : ranges) r.count = zx::hwrender::kLightTouchesAll;
@@ -335,7 +296,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	// last slice, which is correct rather than approximate: a light 8000 units away is not lighting
 	// you either way.
 	const zx::hwrender::ClusterGrid grid =
-		zx::hwrender::ComputeGridForScreen(FrameWidth(), FrameHeight(),
+		zx::hwrender::ComputeGridForScreen(PassWidth(), PassHeight(),
 			zx::hwrender::kClusterZNear, zx::hwrender::kClusterZFar);
 	const int cells = zx::hwrender::ComputeClusterCount(grid);
 	if (cells <= 0 || (unsigned)cells > g_clusterCapacity) return;

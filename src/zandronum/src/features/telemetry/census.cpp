@@ -24,14 +24,16 @@ bool InLevel()
 	return gamestate == GS_LEVEL;
 }
 
-// [rc4l] How many thinkers of class T the level holds.
+// [rc4l] How many thinkers of class T the level holds, counted only while no tic is in flight, since the game thread adds and ticks them then; the last count stands in meanwhile.
 template <class T> double CountThinkers()
 {
-	if (!InLevel()) return 0.0;
+	static double last = 0.0;
+	if (!InLevel()) return last = 0.0;
+	if (!zx::telemetry::GameReadable()) return last;
 	int n = 0;
 	TThinkerIterator<T> it;
 	while (it.Next() != NULL) n++;
-	return n;
+	return last = n;
 }
 
 double Sectors() { return InLevel() ? numsectors : 0.0; }

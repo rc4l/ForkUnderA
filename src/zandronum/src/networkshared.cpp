@@ -61,9 +61,10 @@
 //	VARIABLES
 
 // [BB] Are we measuring outbound traffic?
-static	bool	g_MeasuringOutboundTraffic = false;
+// [rc4l] Per thread: a measurement starts and stops around one actor's tick, which runs on the game thread while the main thread writes its own packets.
+static thread_local	bool	g_MeasuringOutboundTraffic = false;
 // [BB] Number of bytes sent by NETWORK_Write* since NETWORK_StartTrafficMeasurement() was called.
-static	int		g_OutboundBytesMeasured = 0;
+static thread_local	int		g_OutboundBytesMeasured = 0;
 
 //*****************************************************************************
 //

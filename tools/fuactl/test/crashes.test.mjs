@@ -25,12 +25,17 @@ backtrace:
   #1 MCP_VectoredFilter + 0x7c  [0x00007FF666E9742C]`;
 
 test("a crash file's gist is its code and the top of its fault stack", () => {
-  assert.deepEqual(summarizeCrash(CRASH, 2), { why: "code: 0xc0000005", stack: ["#0 FConsoleBuffer::AddText + 0x32  c_consolebuffer.cpp:102", "#1 AddToConsole + 0x171  c_console.cpp:766"] });
+  assert.deepEqual(summarizeCrash(CRASH, 2), { why: "code: 0xc0000005", seams: "", stack: ["#0 FConsoleBuffer::AddText + 0x32  c_consolebuffer.cpp:102", "#1 AddToConsole + 0x171  c_console.cpp:766"] });
 });
 
 test("an abort is summed up by its reason and its backtrace", () => {
-  assert.deepEqual(summarizeCrash(ABORT), { why: "reason: vectored: exception 0xc0000005 at 00007FFBB619DABF", stack: ["#0 WriteAbortReport + 0x94  [0x00007FF666E97534]", "#1 MCP_VectoredFilter + 0x7c  [0x00007FF666E9742C]"] });
-  assert.deepEqual(summarizeCrash("nothing"), { why: "", stack: [] });
+  assert.deepEqual(summarizeCrash(ABORT), { why: "reason: vectored: exception 0xc0000005 at 00007FFBB619DABF", seams: "", stack: ["#0 WriteAbortReport + 0x94  [0x00007FF666E97534]", "#1 MCP_VectoredFilter + 0x7c  [0x00007FF666E9742C]"] });
+  assert.deepEqual(summarizeCrash("nothing"), { why: "", seams: "", stack: [] });
+});
+
+test("a crash names the seam each thread was in", () => {
+  const text = CRASH.replace("pid: 31504\n", "pid: 31504\nseams: main copy/fill, game none\n");
+  assert.equal(summarizeCrash(text).seams, "main copy/fill, game none");
 });
 
 test("recent crash files are found in fuactl's folders, newest first, and older ones left out", () => {

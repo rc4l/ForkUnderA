@@ -7,7 +7,7 @@ namespace zx { namespace viewsetup {
 
 namespace {
 
-AActor *NullViewActor() { return NULL; }
+const void *NullViewActor() { return NULL; }
 void    NullViewVector(float &x, float &y) { x = 0.f; y = 0.f; }
 int     NullSpriteIndex() { return 0; }
 bool    NullPortalRejects(fixed_t, fixed_t) { return false; }
