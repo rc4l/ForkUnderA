@@ -61,17 +61,18 @@ export function formatEval(result) {
 // [rc4l] The keys a page may ask smoke to press, with the codes Chrome's input events want.
 export const KEYS = { Tab: { code: 'Tab', keyCode: 9 }, Escape: { code: 'Escape', keyCode: 27 }, Enter: { code: 'Enter', keyCode: 13 }, ArrowUp: { code: 'ArrowUp', keyCode: 38 } };
 
-// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle and "check: click ID" the element with that id, "check: press KEY" presses one of KEYS, "check: hold KEY MS" holds one that long, "check: resize WxH" makes the window that size (fuactl's resizeAsked, which a desktop soak takes too); null for any other line.
+// [rc4l] Input a page asks for with a console line, since only input from outside it counts as a person's: "check: click" clicks its middle and "check: click ID" the element with that id, "check: press KEY" presses one of KEYS, "check: hold KEY MS" holds one that long, "check: down KEY" and "check: up KEY" hold one until the page lets it go, "check: resize WxH" makes the window that size (fuactl's resizeAsked, which a desktop soak takes too); null for any other line.
 export function inputAsked(line) {
   if (!line.startsWith('[log] ')) return null;
   const size = resizeAsked(line.slice(6));
   if (size) return { resize: size };
-  const m = /^\[log\] check: (?:click(?: (?<target>[\w-]+))?|press (?<press>\S+)|hold (?<hold>\S+) (?<ms>\d+))$/.exec(line);
+  const m = /^\[log\] check: (?:click(?: (?<target>[\w-]+))?|press (?<press>\S+)|hold (?<hold>\S+) (?<ms>\d+)|(?<phase>down|up) (?<edge>\S+))$/.exec(line);
   if (!m) return null;
-  const { target, press, hold, ms } = m.groups;
-  if (!press && !hold) return target ? { click: true, target } : { click: true };
-  const key = press || hold;
+  const { target, press, hold, ms, phase, edge } = m.groups;
+  if (!press && !hold && !edge) return target ? { click: true, target } : { click: true };
+  const key = press || hold || edge;
   if (!KEYS[key]) return null;
+  if (edge) return { key, ...KEYS[key], phase };
   return hold ? { key, ...KEYS[key], holdMs: Number(ms) } : { key, ...KEYS[key] };
 }
 
@@ -123,7 +124,7 @@ export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
 }
 
 // [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, autoplay = false, focus = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
+export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, throttle = 0, autoplay = false, focus = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
@@ -175,6 +176,7 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
         return;
       }
       const key = (type) => send('Input.dispatchKeyEvent', { type, key: asked.key, code: asked.code, windowsVirtualKeyCode: asked.keyCode });
+      if (asked.phase) { await key(asked.phase === 'down' ? 'keyDown' : 'keyUp'); return; }
       await key('keyDown');
       if (asked.holdMs) await pause(asked.holdMs);
       await key('keyUp');
@@ -184,6 +186,8 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     await send('Page.enable');
     // [rc4l] A focused page, as a player's is: headless Chrome's fullscreen otherwise resizes the whole viewport, which hid a canvas resized without a resize event.
     if (focus) await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    // [rc4l] The page's thread slowed `throttle` times, as a slow runner's is.
+    if (throttle > 1) await send('Emulation.setCPUThrottlingRate', { rate: throttle });
     if (init) await send('Page.addScriptToEvaluateOnNewDocument', { source: init });
     if (downloadDir) await send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadDir });
     await send('Page.navigate', { url });

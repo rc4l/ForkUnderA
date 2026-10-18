@@ -86,11 +86,13 @@ export function repeatedSounds(sounds) {
   return [...byId.values()].filter((b) => b.times.length > 1);
 }
 
-// [rc4l] What the page's audio output carries, through an analyser spliced in front of each context's destination and sampled every 20 ms, so window.fuaLevel.mean() is its RMS since window.fuaLevel.reset() and a check hears a sound rather than only seeing it start.
+// [rc4l] What the page's audio output carries, through an analyser spliced in front of each context's destination and sampled every 20 ms, so window.fuaLevel.mean() is its RMS since window.fuaLevel.reset(), peak() its loudest sample and contexts() each context's state and clock, and a check hears a sound rather than only seeing it start.
 export const WATCH_LEVEL = `window.fuaLevel = {
     taps: [],
-    reset() { for (const t of this.taps) { t.sum = 0; t.n = 0; } },
+    reset() { for (const t of this.taps) { t.sum = 0; t.n = 0; t.max = 0; } },
     mean() { let s = 0, n = 0; for (const t of this.taps) { s += t.sum; n += t.n; } return n ? s / n : 0; },
+    peak() { let m = 0; for (const t of this.taps) m = Math.max(m, t.max); return m; },
+    contexts() { return this.taps.map((t) => ({ state: t.ctx.state, time: Number(t.ctx.currentTime.toFixed(2)) })); },
   }; {
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (target, ...rest) {
@@ -100,9 +102,9 @@ export const WATCH_LEVEL = `window.fuaLevel = {
         const an = this.context.createAnalyser();
         an.fftSize = 2048;
         connect.call(an, target);
-        tap = { ctx: this.context, an, buf: new Float32Array(2048), sum: 0, n: 0 };
+        tap = { ctx: this.context, an, buf: new Float32Array(2048), sum: 0, n: 0, max: 0 };
         window.fuaLevel.taps.push(tap);
-        setInterval(() => { an.getFloatTimeDomainData(tap.buf); let s = 0; for (const v of tap.buf) s += v * v; tap.sum += Math.sqrt(s / tap.buf.length); tap.n++; }, 20);
+        setInterval(() => { an.getFloatTimeDomainData(tap.buf); let s = 0; for (const v of tap.buf) s += v * v; const r = Math.sqrt(s / tap.buf.length); tap.sum += r; tap.n++; if (r > tap.max) tap.max = r; }, 20);
       }
       return connect.call(this, tap.an, ...rest);
     };

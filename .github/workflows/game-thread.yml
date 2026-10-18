@@ -82,4 +82,6 @@ jobs:
           shopt -s nullglob
           reports=( tsan.* )
           for f in "${reports[@]}"; do echo "== $f"; head -120 "$f"; done
+          # [rc4l] Every report's one-line summary, since a file holds many and only its head is printed.
+          [ ${#reports[@]} -gt 0 ] && grep -h "^SUMMARY: ThreadSanitizer" "${reports[@]}" | sort | uniq -c || true
           if [ ${#reports[@]} -gt 0 ]; then echo "ThreadSanitizer found ${#reports[@]} report file(s)"; exit 1; fi

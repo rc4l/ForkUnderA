@@ -55,7 +55,7 @@ test('a soak in the page runs each cycle\'s steps, waits for the title of each l
 test('the level watch splices one analyser per context in front of the output and averages what it carries', () => {
   class Node { constructor(ctx) { this.context = ctx; this.links = []; } connect(target) { this.links.push(target); return target; } }
   class Destination extends Node {}
-  const ctx = { createAnalyser: () => Object.assign(new Node(ctx), { getFloatTimeDomainData: (buf) => buf.fill(0.5) }) };
+  const ctx = { state: 'running', currentTime: 1.234, createAnalyser: () => Object.assign(new Node(ctx), { getFloatTimeDomainData: (buf) => buf.fill(0.5) }) };
   const ticks = [];
   const win = {};
   new Function('window', 'AudioNode', 'AudioDestinationNode', 'setInterval', WATCH_LEVEL)(win, Node, Destination, (fn) => ticks.push(fn));
@@ -75,8 +75,11 @@ test('the level watch splices one analyser per context in front of the output an
   ticks[0]();
   ticks[0]();
   assert.equal(win.fuaLevel.mean(), 0.5);
+  assert.equal(win.fuaLevel.peak(), 0.5);
+  assert.deepEqual(win.fuaLevel.contexts(), [{ state: 'running', time: 1.23 }]);
   win.fuaLevel.reset();
   assert.equal(win.fuaLevel.mean(), 0);
+  assert.equal(win.fuaLevel.peak(), 0);
 });
 
 test('page code asks a command and gets back only what it printed', async () => {

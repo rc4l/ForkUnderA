@@ -341,14 +341,19 @@ export const CHECKS = [
         const r = document.getElementById('canvas').getBoundingClientRect();
         return Math.max(Math.abs((await cvar('vid_defwidth')) - r.width), Math.abs((await cvar('vid_defheight')) - r.height));
       };
+      // [rc4l] Each read until it settles, since on a software adapter one frame can outlast any fixed wait and the canvas's new size reaches SDL a frame later.
+      const settled = async () => {
+        let d = await apart();
+        for (const end = Date.now() + 10000; d > 1 && Date.now() < end; d = await apart()) { ${pause(250)} }
+        return d;
+      };
       ${pause(1500)}
       console.log('check: click fullscreen');
-      ${pause(1500)}
+      for (const end = Date.now() + 10000; !document.fullscreenElement && Date.now() < end;) { ${pause(100)} }
       const entered = !!document.fullscreenElement;
-      const full = await apart();
+      const full = await settled();
       await document.exitFullscreen().catch(() => {});
-      ${pause(1500)}
-      const back = await apart();
+      const back = await settled();
       unhear();
       return { entered, full, back };`),
     until: EVAL,
@@ -368,10 +373,11 @@ export const CHECKS = [
       for (const m of ['ShotgunGuy', 'ShotgunGuy', 'ChaingunGuy']) Module.fuaCommand('summon ' + m + ' 256 0');
       ${pause(1500)}
       window.fuaLevel.reset();
-      ${pause(4000)}
-      return Number(window.fuaLevel.mean().toFixed(4));`),
+      // [rc4l] Listened to until a shot is heard or twenty seconds pass, since a software adapter runs the shooters' tics a frame of a second or more apart.
+      for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
+      return { peak: Number(window.fuaLevel.peak().toFixed(4)), contexts: window.fuaLevel.contexts() };`),
     until: EVAL,
-    expect: (rms) => (rms > 0.05 ? '' : `shooters across the room came out at ${rms} RMS`),
+    expect: ({ peak, contexts }) => (peak > 0.05 ? '' : `shooters across the room came out at ${peak} RMS at most (audio ${JSON.stringify(contexts)})`),
   },
   // [rc4l] Tab is the automap's, so the page keeps the browser from moving the focus off the game with it.
   {
@@ -396,11 +402,17 @@ export const CHECKS = [
       document.getElementById('canvas').focus();
       ${pause(5000)}
       const a = await at();
-      console.log('check: hold ArrowUp 900');
-      ${pause(1500)}
-      const b = await at();
+      // [rc4l] Held until the player moves or twenty seconds pass: a fixed hold came and went inside one frame of a software adapter, so the game saw a single tic of it.
+      console.log('check: down ArrowUp');
+      let moved = 0;
+      for (const end = Date.now() + 20000; a && moved <= 32 && Date.now() < end;) {
+        ${pause(500)}
+        const b = await at();
+        if (b) moved = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      }
+      console.log('check: up ArrowUp');
       unhear();
-      return a && b ? Math.round(Math.hypot(b[0] - a[0], b[1] - a[1])) : -1;`),
+      return a ? Math.round(moved) : -1;`),
     until: EVAL,
     expect: (moved) => (moved > 32 ? '' : `holding up moved the player ${moved} units`),
   },
@@ -544,7 +556,7 @@ export function selectChecks(checks, only) {
   return only ? checks.filter((c) => c.name.includes(only)) : checks;
 }
 
-export async function check({ url, checks = CHECKS, seconds = 60, software = false, onResult = console.log }) {
+export async function check({ url, checks = CHECKS, seconds = 60, software = false, throttle = 0, onResult = console.log }) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-'));
   const shots = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-shots-'));
   let failed = 0;
@@ -553,7 +565,7 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const logFile = path.join(shots, `check-${i}-chrome.log`);
-      const { matched, lines, version } = await smoke({ url, profile, seconds, software, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      const { matched, lines, version } = await smoke({ url, profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
       if (i === 0) onResult(`browser: ${version}`);
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
@@ -575,7 +587,9 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
-  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only') ?? 'dist-web';
+  // [rc4l] --throttle N slows the page's own thread N times, as a slow runner's is, to reproduce CI's timing here.
+  const throttle = args.includes('--throttle') ? Number(args[args.indexOf('--throttle') + 1]) : 0;
+  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only' && args[i - 1] !== '--throttle') ?? 'dist-web';
   const checks = selectChecks(CHECKS, only);
   if (!checks.length) { console.error(`no check's name contains "${only}"`); process.exit(2); }
   const server = createServer(root).listen(0, '127.0.0.1');
@@ -584,7 +598,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     url: `http://127.0.0.1:${server.address().port}/?map=MAP01`,
     checks,
     software: args.includes('--software'),
-    seconds: args.includes('--software') ? 180 : 60,
+    throttle,
+    seconds: args.includes('--software') || throttle > 1 ? 180 : 60,
   });
   server.close();
   process.exit(failed ? 1 : 0);

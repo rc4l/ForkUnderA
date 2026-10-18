@@ -22,3 +22,9 @@ mutex:libXext.so
 mutex:libSDL2
 deadlock:libgcc_s.so
 deadlock:libvulkan.so
+# [rc4l] X's randr extension and the session bus, which SDL calls at start, and libgcc's unwinder registry, each with its own locking.
+called_from_lib:libXrandr.so
+mutex:libXrandr.so
+called_from_lib:libdbus-1.so
+deadlock:libdbus-1.so
+mutex:libgcc_s.so

@@ -26,6 +26,7 @@
 
 
 #include <string.h>
+#include <errno.h>
 #include "features/gamecopy/level.h"   // [rc4l] the level as the copy holds it
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
@@ -5812,7 +5813,8 @@ bool G_CheckDemoStatus (void)
 		formlen = demobuffer + 4;
 		WriteLong (int(demo_p - demobuffer - 8), &formlen);
 
-		bool saved = M_WriteFile (demoname, demobuffer, int(demo_p - demobuffer)); 
+		bool saved = M_WriteFile (demoname, demobuffer, int(demo_p - demobuffer));
+		const int writeError = errno;
 		M_Free (demobuffer); 
 		demorecording = false;
 		stoprecording = false;
@@ -5822,7 +5824,8 @@ bool G_CheckDemoStatus (void)
 		}
 		else
 		{
-			Printf ("Demo %s could not be saved\n", demoname.GetChars());
+			// [rc4l] With the system's reason, since a demo a CI runner could not write said nothing of why.
+			Printf ("Demo %s could not be saved: %s\n", demoname.GetChars(), strerror (writeError));
 		}
 	}
 
