@@ -136,6 +136,7 @@ test('a soak passes on the engine verdict and otherwise names what grew', () => 
   assert.equal(soakHeld({ pass: true, marks: 7, judged: 40, grew: [] }), '');
   const grew = [{ name: 'gpu/process_bytes', text: 'gpu/process_bytes grew 18.0 MB a cycle (90.0 MB over 5 cycles)' }, { name: 'mem/heap_bytes', text: 'mem/heap_bytes grew 1.0 MB a cycle (5.0 MB over 5 cycles)' }];
   assert.equal(soakHeld({ pass: false, marks: 7, judged: 40, grew }), 'kept growing with each repeat: gpu/process_bytes grew 18.0 MB a cycle (90.0 MB over 5 cycles); mem/heap_bytes grew 1.0 MB a cycle (5.0 MB over 5 cycles)');
+  assert.match(soakHeld({ pass: false, marks: 7, judged: 40, grew, kept: ['fua material +1700 KB'] }), /; the page's WebGPU objects grew in: fua material \+1700 KB$/);
   assert.equal(soakHeld({ pass: false, marks: 2, judged: 0, grew: [] }), 'the soak judged nothing (2 marks, 0 counters)');
   assert.equal(soakHeld({}), 'the soak judged nothing (undefined marks, undefined counters)');
 });

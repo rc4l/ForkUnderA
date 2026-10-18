@@ -27,6 +27,9 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) 
       const steps = ${JSON.stringify(soakSteps(action, map))};
       // [rc4l] The page's WebGPU objects by label at the start and the end, so a failing soak shows which ones it kept.
       const held = (when) => console.log('soak gpu ' + when + ': ' + (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText().replace(/\\n/g, '; ') : 'no ledger'));
+      // [rc4l] And by label as numbers, taken once the warm-up is over and again at the end, so the verdict names what grew.
+      const ledger = () => { const m = {}; for (const l of (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText() : '').split('\\n')) { const [tag, b] = l.split('\\t'); if (tag) m[tag] = Number(b); } return m; };
+      let base = ledger();
       Module.fuaCommand('fua_soak begin');
       held('start');
       for (let i = 0; i < ${cycles}; i++) {
@@ -41,11 +44,14 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) 
         ${pause(settleMs)}
         await collect();
         Module.fuaCommand('fua_soak mark');
+        if (i === ${warmup} - 1) base = ledger();
       }
       held('end');
+      const end = ledger();
+      const kept = Object.keys(end).filter((t) => end[t] > (base[t] || 0) + 65536).map((t) => t + ' +' + Math.round((end[t] - (base[t] || 0)) / 1024) + ' KB');
       Module.fuaCommand('fua_soak verdict ${warmup} json');
       unhear();
-      return lastJson('{"pass"', {});`);
+      return Object.assign(lastJson('{"pass"', {}), { kept });`);
 }
 
 // [rc4l] Every audio buffer the page starts, in window.fuaSounds as { t, id, len }: the audio clock's time, the buffer's number by identity, and its length in seconds.

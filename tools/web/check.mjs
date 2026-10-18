@@ -113,9 +113,10 @@ export function heldOnce({ before, after }) {
 }
 
 // [rc4l] Why repeating an action kept memory, or '': the engine's soak verdict (fua_soak), which judges every count of bytes, objects, handles and threads it reads.
-export function soakHeld({ pass, marks, judged, grew }) {
+export function soakHeld({ pass, marks, judged, grew, kept }) {
   if (pass) return '';
-  return grew && grew.length ? `kept growing with each repeat: ${grew.map((g) => g.text).join('; ')}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
+  const labels = kept && kept.length ? `; the page's WebGPU objects grew in: ${kept.join(', ')}` : '';
+  return grew && grew.length ? `kept growing with each repeat: ${grew.map((g) => g.text).join('; ')}${labels}` : `the soak judged nothing (${marks} marks, ${judged} counters)`;
 }
 
 // [rc4l] Why the page held more of a tag than the engine (fua_stats json gpu/), or '': a buffer or texture the engine let go of and never destroyed, waiting on the garbage collector.

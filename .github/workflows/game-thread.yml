@@ -83,7 +83,7 @@ jobs:
           for f in /tmp/fuactl-*/engine-*.log; do echo "== head $f"; head -60 "$f"; done
           for f in /tmp/fuactl-*/engine-*.log*; do echo "== $f"; tail -80 "$f"; done
           cat "$RUNNER_TEMP/fixtures.txt" 2>/dev/null | head -400 || true
-          grep -n "forkundera" "$RUNNER_TEMP/strace.txt" 2>/dev/null | head -80 || true
+          grep -nE "forkundera|gtfix|fixtures" "$RUNNER_TEMP/strace.txt" 2>/dev/null | head -80 || true
           for p in $(grep "forkundera" "$RUNNER_TEMP/strace.txt" 2>/dev/null | grep -E "unlink|rmdir|rename" | awk '{print $1}' | sort -u | head -5); do echo "== pid $p"; grep -n "^$p " "$RUNNER_TEMP/strace.txt" | grep -E "execve|forkundera" | head -20; done
           cat "$RUNNER_TEMP/stacks.txt" 2>/dev/null | head -2000 || true
 
@@ -96,6 +96,7 @@ jobs:
           path: |
             tsan.*
             ${{ runner.temp }}/stacks.txt
+            ${{ runner.temp }}/strace.txt
           if-no-files-found: ignore
 
       - name: No race in the engine's own code
