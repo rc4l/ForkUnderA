@@ -907,6 +907,8 @@ CVAR (Flag, compat_noobituaries, zacompatflags, ZACOMPATF_NO_OBITUARIES);
 // [rc4l] A running wipe: when its last tic was drawn, the 2D state it started with, and whether one is running.
 static unsigned int s_wipeStart;
 static bool s_wipeHw2d;
+// [rc4l] Frames begun since the last wipe ended (features/mainloop's ComputeFramesSinceWipe).
+static int s_framesSinceWipe = 2;
 static bool s_wiping;
 
 // [rc4l] The level's HUD: the status bar and what draws over and beside it, the scoreboard, the speedometer and the medals, all read from the live game.
@@ -1398,6 +1400,7 @@ bool D_WipeStep ()
 		I_FreezeTime(false);
 		GSnd->SetSfxPaused(false, 1);
 		s_wiping = false;
+		s_framesSinceWipe = 0;
 	}
 	return done;
 }
@@ -1407,8 +1410,8 @@ bool D_WipeRunning ()
 	return s_wiping;
 }
 
-// [rc4l] A soak mark waits out a running wipe, whose copies of both screens would read as memory kept.
-static const bool s_soakReadyInstalled = (zx::telemetry::SetSoakReady ([] { return !D_WipeRunning (); }), true);
+// [rc4l] A soak mark waits out a running wipe and the frame after it, since its copies of both screens would read as memory kept.
+static const bool s_soakReadyInstalled = (zx::telemetry::SetSoakReady ([] { return zx::mainloop::ComputeAtRestAfterWipe (D_WipeRunning (), s_framesSinceWipe); }), true);
 
 //==========================================================================
 //
@@ -1540,6 +1543,7 @@ void D_RunFrame ()
 				return;
 			}
 
+			s_framesSinceWipe = zx::mainloop::ComputeFramesSinceWipe (s_framesSinceWipe);
 			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
 			MCP_RPC_FrameEnd();   // [rc4l] perf.capture's frame, which the bridge's poll below skips while a tic is in flight
 			// [rc4l] features/handoff: what may load wads, maps or a server, or answer an RPC about the game, waits for the handoff.

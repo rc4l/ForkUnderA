@@ -40,3 +40,20 @@ TEST(MainLoop, ADeadlinePassesAtItsMillisecond)
 	EXPECT_FALSE(ComputeDeadlinePassed(10, 0xFFFFFFF0u));
 	EXPECT_TRUE(ComputeDeadlinePassed(0xFFFFFFF0u, 10));
 }
+
+// [rc4l] The count stops at two, where the engine is at rest again, however long since the wipe.
+TEST(MainLoop, FramesSinceAWipeCountUpToTwo)
+{
+	EXPECT_EQ(1, ComputeFramesSinceWipe(0));
+	EXPECT_EQ(2, ComputeFramesSinceWipe(1));
+	EXPECT_EQ(2, ComputeFramesSinceWipe(2));
+}
+
+// [rc4l] A soak mark during a wipe, or in the frame after one before its present destroyed the wipe's screens, counted them as memory kept.
+TEST(MainLoop, AtRestOnlyAWholeFrameAfterAWipe)
+{
+	EXPECT_FALSE(ComputeAtRestAfterWipe(true, 2));
+	EXPECT_FALSE(ComputeAtRestAfterWipe(false, 0));
+	EXPECT_FALSE(ComputeAtRestAfterWipe(false, 1));
+	EXPECT_TRUE(ComputeAtRestAfterWipe(false, 2));
+}

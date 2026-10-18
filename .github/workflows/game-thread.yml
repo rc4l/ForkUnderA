@@ -98,4 +98,5 @@ jobs:
           for f in "${reports[@]}"; do echo "== $f"; head -120 "$f"; done
           # [rc4l] Every report's one-line summary, since a file holds many and only its head is printed.
           [ ${#reports[@]} -gt 0 ] && grep -h "^SUMMARY: ThreadSanitizer" "${reports[@]}" | sort | uniq -c || true
-          if [ ${#reports[@]} -gt 0 ]; then echo "ThreadSanitizer found ${#reports[@]} report file(s)"; exit 1; fi
+          # [rc4l] ThreadSanitizer notes when a library a suppression names unloads, which is no report; any other line in a file is one.
+          if [ ${#reports[@]} -gt 0 ] && grep -hv "matched against called_from_lib suppression .* is unloaded" "${reports[@]}" | grep -q .; then echo "ThreadSanitizer reported in ${#reports[@]} file(s)"; exit 1; fi
