@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { chromeArgs, devToolsPort, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly, retry } from '../smoke.mjs';
+import { scratch } from './scratch.mjs';
 
 test("Chrome's log is read for what it says about its GPU process, not for the page's console", () => {
   const log = [
@@ -72,7 +72,7 @@ test('a page asks for a click or a key it knows with a console line', () => {
 });
 
 test('a download has settled once a file is there and none is still being written', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-dl-'));
+  const dir = scratch('fua-dl-');
   assert.equal(await downloadsSettled(dir, { timeoutMs: 30, pollMs: 5 }), false);
   fs.writeFileSync(path.join(dir, 'shot.png.crdownload'), 'x');
   assert.equal(await downloadsSettled(dir, { timeoutMs: 30, pollMs: 5 }), false);
@@ -82,7 +82,7 @@ test('a download has settled once a file is there and none is still being writte
 });
 
 test('a scratch folder is removed, and one a process still holds is reported rather than thrown', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-remove-'));
+  const dir = scratch('fua-remove-');
   fs.writeFileSync(path.join(dir, 'f'), 'x');
   assert.equal(removeQuietly(dir), true);
   assert.equal(fs.existsSync(dir), false);

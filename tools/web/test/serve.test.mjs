@@ -1,15 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { contentType, resolveInRoot, createServer, ISOLATION_HEADERS } from '../serve.mjs';
-
-test('wasm and the page get their own types, anything else is bytes', () => {
-  assert.equal(contentType('a/forkundera.wasm'), 'application/wasm');
-  assert.equal(contentType('INDEX.HTML'), 'text/html; charset=utf-8');
-  assert.equal(contentType('fua_core.pk3'), 'application/octet-stream');
-});
+import { resolveInRoot, createServer } from '../serve.mjs';
+import { ISOLATION_HEADERS } from '../headers.mjs';
+import { scratch } from './scratch.mjs';
 
 test('a request resolves under root, a directory to its index, and an escape to nothing', () => {
   const root = path.resolve('/srv/web');
@@ -23,7 +18,7 @@ test('a request resolves under root, a directory to its index, and an escape to 
 });
 
 test('every response carries the isolation headers', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-serve-'));
+  const dir = scratch('fua-serve-');
   fs.writeFileSync(path.join(dir, 'index.html'), '<p>hi</p>');
   fs.mkdirSync(path.join(dir, 'sub'));
   fs.writeFileSync(path.join(dir, 'sub', 'index.html'), '<p>sub</p>');

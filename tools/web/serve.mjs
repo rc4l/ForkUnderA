@@ -4,29 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.wasm': 'application/wasm',
-  '.json': 'application/json; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.txt': 'text/plain; charset=utf-8',
-};
-
-// [rc4l] SharedArrayBuffer, which Emscripten's threads are built on, exists only in a cross-origin isolated page.
-export const ISOLATION_HEADERS = {
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Embedder-Policy': 'require-corp',
-  'Cross-Origin-Resource-Policy': 'same-origin',
-};
-
-export function contentType(file) {
-  return TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
-}
+import { ISOLATION_HEADERS, contentType } from './headers.mjs';
 
 // [rc4l] The file a request names under root, index.html for a directory, or null for anything that escapes root.
 export function resolveInRoot(root, urlPath) {
