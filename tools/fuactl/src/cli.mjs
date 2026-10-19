@@ -8,7 +8,7 @@ import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } fr
 import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
-import { sampleProcess } from "./sample.mjs";
+import { sampleProcess, sampleTable } from "./sample.mjs";
 import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
@@ -162,7 +162,7 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL) (stays up until Ctrl-C)
-  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows
+  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows; --table prints them as text
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
@@ -194,7 +194,7 @@ const USAGE = `fuactl <command>
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
   walkcheck --port P [--runs N] [--seconds S] [--spot S | --at x,y,z --face yaw,pitch]   the W key held as a player holds it from the spot, N runs of S seconds each traced (fua_viewtrace): exit 1 when any frame stepped back or lurched ahead of the steady speed, a view that rubber-bands
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --gl-beside | --side-by-side | --webgpu] [--rt] [--monsters] [--lock] [--res WxH]   a build to walk around in, Vulkan alone as players run it unless --gl (GL alone), --gl-beside (the backend beside GL, to compare the two; --side-by-side gives it its own window) or --webgpu asks otherwise, or the mode a --spot or --unpark was recorded in; --no-gl is the default spelled out; sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --gl-beside | --side-by-side | --webgpu] [--rt] [--monsters [--targetable]] [--lock] [--res WxH]   a build to walk around in, god and notarget on unless --targetable leaves monsters able to hear and chase the player, Vulkan alone as players run it unless --gl (GL alone), --gl-beside (the backend beside GL, to compare the two; --side-by-side gives it its own window) or --webgpu asks otherwise, or the mode a --spot or --unpark was recorded in; --no-gl is the default spelled out; sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
@@ -203,7 +203,7 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b]   run every template scenario (or the named ones) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -414,7 +414,8 @@ async function main() {
           let out;
           // [rc4l] A scenario that throws is one failure, not the end of the run.
           try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
-          for (const l of out.lines.filter((x) => !x.startsWith("PASS"))) console.log(`${(r.label ? `${r.label} ` : "") + f.slice(0, -4).padEnd(18)} ${l}`);
+          // [rc4l] Named scenarios print their passing boxes too, each with what it measured, which is what a new scenario's ceiling is set from.
+          for (const l of out.lines.filter((x) => rest.length > 0 || !x.startsWith("PASS"))) console.log(`${(r.label ? `${r.label} ` : "") + f.slice(0, -4).padEnd(18)} ${l}`);
           if (out.skipped) skipped++;
           if (out.code !== 0) failed++;
         }
@@ -625,7 +626,9 @@ async function main() {
       const r = flags.port
         ? await withUi(flags, (c) => sampleProcess(pid, { ...opts, conn: c }))
         : await sampleProcess(pid, opts);
-      console.log(JSON.stringify(r, null, 2));
+      // [rc4l] --table prints the shares as text, the JSON otherwise.
+      if (flags.table) console.log(sampleTable(r, { top: opts.top }).join("\n"));
+      else console.log(JSON.stringify(r, null, 2));
       break;
     }
     case "hang": {
@@ -1256,7 +1259,7 @@ async function main() {
     // [rc4l] `fuactl play` -- a build to walk around in, with the Vulkan view live in the window.
     //
     //   fuactl play [--port P] [--map M] [--iwad W] [--file a.pk3,b.pk3] [--preset ID --variant V]
-    //               [--gl] [--side-by-side] [--rt] [--monsters] [--lock]
+    //               [--gl] [--side-by-side] [--rt] [--monsters [--targetable]] [--lock]
     //
     // Stays up until Ctrl-C, and writes the port and token to .play-session so a capture taken
     // later can find this instance without depending on a pipe still existing.
@@ -1317,7 +1320,7 @@ async function main() {
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         ...resFlag(flags.res),
         gl: mode === MODES.gl, glBeside: mode === MODES.beside, webgpu: mode === MODES.webgpu, sideBySide, rt: !!flags.rt,
-        monsters: !!flags.monsters, lock: !!flags.lock,
+        monsters: !!flags.monsters, targetable: !!flags.targetable, lock: !!flags.lock,
         extra: shot.parseCvarFlag(flags.cvar) || {},
         at: spotAt, view: spotView,
         sessionFile,

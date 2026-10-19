@@ -86,7 +86,8 @@ runScenarioIfMain(import.meta.url, () => ({ name: "horizon", wad: buildHorizonWa
 the engine it runs (the staged `dist-windows` one unless `FUACTL_ENGINE` names another) and each box's verdict, and exits 0 (all under ceiling), 1 (failed), 2 (crashed) or 3 (refused) -- so a test
 can import the builder without launching anything. The whole set runs as one command,
 `node src/cli.mjs scenarios [name ...] [--engine build-win/Release/forkundera.exe]`, which prints only
-the boxes that did not pass and exits 1 if any scenario failed. Every Vulkan side launches without GL,
+the boxes that did not pass (every box with what it measured when scenarios are named, which is what a
+new ceiling is set from) and exits 1 if any scenario failed. Every Vulkan side launches without GL,
 as players run it, and the harness fails a side whose `dumprenderer` disagrees; only a side judged
 against GL in one frame (`frame: "gl"`, `glDraws`, `compareSameFrame`) or one that sets `glBeside`
 launches the backend beside GL (`fua_dg_standalone 1` there, 0 for those judged by GL's frame).

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ensureCheat, verifyWorld, playCvars, playArgs, launchMode, describeMode, MODES, sameCvarValue, CHEATS, readView, windowForView, viewForWindow, sameView, fitView } from "../src/play.mjs";
+import { ensureCheat, verifyWorld, playCvars, playArgs, launchMode, describeMode, MODES, sameCvarValue, CHEATS, playCheats, readView, windowForView, viewForWindow, sameView, fitView } from "../src/play.mjs";
 import { engineArgs } from "../src/launch.mjs";
 
 // A stand-in engine: answers console commands from a script of replies, and records what it was asked.
@@ -202,4 +202,11 @@ test("a --res window is the view it renders at its scale, and a view read once i
   const r = await fitView(c, viewForWindow(1280, 720, now.scale), cap, { now });
   assert.equal(r.ok, true);
   assert.deepEqual(st.asked, [], "nothing asked of an engine already at the view");
+});
+
+// [rc4l] A fight measured under notarget is monsters that never hear the gun, so --targetable leaves it off and god on.
+test("a launch turns on god and notarget, or god alone when targetable", () => {
+  assert.deepEqual(playCheats().map((ch) => ch.command), ["god", "notarget"]);
+  assert.deepEqual(playCheats({ targetable: false }).map((ch) => ch.command), ["god", "notarget"]);
+  assert.deepEqual(playCheats({ targetable: true }).map((ch) => ch.command), ["god"]);
 });

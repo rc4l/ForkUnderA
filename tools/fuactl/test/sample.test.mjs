@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTopOfStack, parseLinuxPerf, sampleProcess } from "../src/sample.mjs";
+import { parseTopOfStack, parseLinuxPerf, sampleProcess, sampleTable } from "../src/sample.mjs";
 
 // A fake spawn: returns canned {err,stdout,stderr} per invocation, recording the commands.
 function fakeRun(replies) {
@@ -170,4 +170,15 @@ test("parseLinuxPerf extracts symbol/dso/percent, hottest first", () => {
 test("parseLinuxPerf can filter to the engine binary", () => {
   const fns = parseLinuxPerf(PERF, { onlyBinary: "forkundera" });
   assert.deepEqual(fns.map((f) => f.symbol), ["P_MobjThinker", "FBlockThingsIterator::Next", "A_Chase"]);
+});
+
+// [rc4l] The JSON was read with one-off scripts twice while chasing nuts.wad's tic; the table is what they printed.
+test("a sample prints as self and inclusive shares, hottest first and cut at top", () => {
+  const report = { available: true, backend: "bridge", seconds: 15, samples: 9836,
+    functions: [{ symbol: "IDList<AActor>::getNewID", percent: 43.88 }, { symbol: "PIT_CheckThing", percent: 8.16 }],
+    inclusive: [{ symbol: "P_Ticker", percent: 82.81 }] };
+  assert.deepEqual(sampleTable(report, { top: 1 }), ["9836 samples over 15 s (bridge)", "self:", "  43.88%  IDList<AActor>::getNewID", "inclusive:", "  82.81%  P_Ticker"]);
+  assert.deepEqual(sampleTable({ ...report, inclusive: undefined }).slice(1), ["self:", "  43.88%  IDList<AActor>::getNewID", "   8.16%  PIT_CheckThing"]);
+  assert.deepEqual(sampleTable({ available: false, backend: "bridge", error: "perf.sample was refused" }), ["no sample: perf.sample was refused"]);
+  assert.deepEqual(sampleTable({ available: false, backend: "none" }), ["no sample: none"]);
 });

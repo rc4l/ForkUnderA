@@ -146,6 +146,11 @@ export const CHEATS = [
   { command: "notarget", onText: /MDK Mode ON|notarget.*ON/i, offText: /MDK Mode OFF|notarget.*OFF/i },
 ];
 
+// [rc4l] The cheats a launch turns on: god and notarget, or god alone when targetable, since a fight measured under notarget is monsters that never hear the gun.
+export function playCheats({ targetable = false } = {}) {
+  return targetable ? CHEATS.filter((ch) => ch.command !== "notarget") : CHEATS;
+}
+
 // [rc4l] Doom echoes booleans as "true"/"false" or as "1"/"0" depending on the cvar's type, and
 // which one a given cvar uses is not something to be memorised. The FIRST run of this check failed
 // on sv_nofreeaim purely because the expectation said "false" and the engine said "0" -- a correct
@@ -293,7 +298,7 @@ async function launchChecked(opts, port) {
     let world;
     try {
       const cheats = [];
-      for (const ch of CHEATS) cheats.push(await ensureCheat(c, ch, cap));
+      for (const ch of playCheats(opts)) cheats.push(await ensureCheat(c, ch, cap));
       world = { cheats, cvars: await verifyWorld(c, cap), view: null, mode: null };
       // [rc4l] The renderers the engine reports running, held to the mode asked for, since the launch's flags are only a request.
       const want = launchMode(opts);

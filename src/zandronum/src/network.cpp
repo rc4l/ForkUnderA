@@ -306,7 +306,8 @@ static void network_OpenSockets( USHORT usPort, bool bAllocateLANSocket )
 	g_usLocalPort = usPort;
 
 	// Allocate a socket, and attempt to bind it to the given port.
-	g_NetworkSocket = network_AllocateSocket( true, g_bSocketIsDualStack );
+	// [rc4l] v4 alone when -useip names an address, since a dual-stack socket binds every one and -useip went unheard: the harness's loopback instances asked Windows Firewall for access.
+	g_NetworkSocket = network_AllocateSocket( ulInAddr == INADDR_ANY, g_bSocketIsDualStack );
 	// [BB] If we can't allocate a socket, sending / receiving net packets won't work.
 	if ( g_NetworkSocket == INVALID_SOCKET )
 		network_Error( "NETWORK_Construct: Couldn't allocate socket. You will not be able to host or join servers.\n" );

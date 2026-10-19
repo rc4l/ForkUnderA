@@ -19,3 +19,12 @@ test("a connection that is never greeted says why it waited", async () => {
   }
   assert.match(helloTimeoutMessage(1500), /^hello timeout: .* within 1\.5 s; it is still starting, hung \(`fuactl hang --port P` says where\), or an older build whose bridge serves one client at a time/);
 });
+
+// [rc4l] nuts.wad with Complex Doom ran 6-second frames, and every rpc timed out with no hint of the stretch that fixed it.
+test("an rpc timeout names the command, the wait, the stretch and the hang check", async () => {
+  const { rpcTimeoutMessage } = await import("../src/client.mjs");
+  const m = rpcTimeoutMessage("console.exec", 8000);
+  assert.match(m, /^rpc timeout: console\.exec got no answer within 8 s/);
+  assert.match(m, /FUACTL_TIMEOUT_SCALE=N/);
+  assert.match(m, /fuactl hang --port P/);
+});
