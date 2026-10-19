@@ -69,7 +69,8 @@ CVAR( Bool, cl_fua_download, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 // so mirrors can be added and dead ones dropped by pull request, without editing C++. Unlike the IWAD
 // allowlist this one IS a CVAR: nothing here is a legal assertion, so a player replacing the list
 // entirely costs them nothing but their own downloads.
-CVAR( String, cl_fua_downloadsites, zx::kDefaultDownloadSites, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+// [rc4l] A script cannot choose where files come from or go (features/command-safety).
+CVAR( String, cl_fua_downloadsites, zx::kDefaultDownloadSites, CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOSETBYACS )
 
 // [rc4l] The shipped list as it stood when cl_fua_downloadsites was last merged, which is what lets
 // MergeDownloadSites tell a stale default from a mirror the player deleted on purpose.
@@ -77,7 +78,7 @@ CVAR( String, cl_fua_downloadsites_stamp, "", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
 
 // [rc4l] Empty means "the default directory" (DownloadDir below), which is the case that should need
 // no configuration.
-CVAR( String, cl_fua_download_dir, "", CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
+CVAR( String, cl_fua_download_dir, "", CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_NOSETBYACS )
 
 // [rc4l] A ceiling on one file, in megabytes. Not a bandwidth control -- there is no server bandwidth
 // to control -- but a bound on what a mirror can make us write to disk. Deliberately well above any

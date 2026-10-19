@@ -284,7 +284,8 @@ void MCP_SimTrace_TicDone()
 }
 
 // [rc4l] Arms the trace from the console or the command line, so a run started with +fua_simtrace is traced from its first tic.
-CCMD( fua_simtrace )
+// [rc4l] Unsafe, since it writes wherever it is told (features/command-safety).
+UNSAFE_CCMD( fua_simtrace )
 {
 	if ( argv.argc() < 3 )
 	{

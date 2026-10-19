@@ -131,6 +131,7 @@
 #include "g_hub.h"
 #include "features/telemetry/telemetry.h"
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -159,7 +160,8 @@ FIntCVar gameskill ("skill", 2, CVAR_SERVERINFO|CVAR_LATCH);
 CVAR (Bool, chasedemo, false, 0);
 CVAR (Bool, storesavepic, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, longsavemessages, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-CVAR (String, save_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] A script cannot point saves elsewhere (features/command-safety).
+CVAR (String, save_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOSETBYACS);
 // [rc4l] uzdoom@c339bb33c: freeze the clock across a save so the world does not advance
 // while the snapshot is being written.
 CVAR (Bool, cl_waitforsave, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
@@ -5311,9 +5313,9 @@ void G_WriteDemoTiccmd (ticcmd_t *cmd, int player, int buf)
 void G_RecordDemo (const char* name)
 {
 	usergame = false;
-	demoname = name;
+	// [rc4l] A demo is always a .lmp, whatever extension the name carries (features/command-safety).
+	demoname = zx::ComputeOwnExtension(name, {".lmp"}).c_str();
 	FixPathSeperator (demoname);
-	DefaultExtension (demoname, ".lmp");
 	maxdemosize = 0x20000;
 	demobuffer = (BYTE *)M_Malloc (maxdemosize);
 	demorecording = true; 

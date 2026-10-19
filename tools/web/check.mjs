@@ -448,14 +448,15 @@ export const CHECKS = [
     expect: (moved) => (moved > 32 ? '' : `holding up moved the player ${moved} units`),
   },
   // [rc4l] A save's picture reads back a frame or two after the save is written, and goes into it then; a software adapter can take several seconds, so the check waits for it.
+  // [rc4l] Saved by a bare name, as a player types it, which lands in the save directory the page keeps.
   {
     name: 'a save gets its picture',
-    evaluate: inPage(`${pause(2000)} Module.fuaCommand('save /home/web_user/checkpicture.zds');
-      const file = '/home/web_user/checkpicture.zds';
+    evaluate: inPage(`${pause(2000)} Module.fuaCommand('save checkpicture');
       let image = null;
       for (let i = 0; i < 40 && !(image && image.width > 1); i++) {
         ${pause(250)}
-        if (Module.FS.analyzePath(file).exists) image = await createImageBitmap(new Blob([Module.FS.readFile(file)], { type: 'image/png' })).catch(() => null);
+        const file = FuaHome.find(Module.FS, 'checkpicture.zds');
+        if (file) image = await createImageBitmap(new Blob([Module.FS.readFile(file)], { type: 'image/png' })).catch(() => null);
       }
       if (!image) return { found: false };
       const draw = new OffscreenCanvas(image.width, image.height).getContext('2d');
@@ -473,10 +474,10 @@ export const CHECKS = [
   {
     name: 'a save survives a reload and loads',
     evaluate: inPage(`
-      if (!Module.FS.analyzePath('/home/web_user/checkpicture.zds').exists) return { found: false };
+      if (!FuaHome.find(Module.FS, 'checkpicture.zds')) return { found: false };
       const log = document.getElementById('console');
       const before = log.textContent.length;
-      Module.fuaCommand('load /home/web_user/checkpicture.zds');
+      Module.fuaCommand('load checkpicture');
       ${pause(1500)}
       return { found: true, said: log.textContent.slice(before) };`),
     until: EVAL,

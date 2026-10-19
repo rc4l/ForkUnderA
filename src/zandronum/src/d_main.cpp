@@ -3900,10 +3900,6 @@ void D_DoomMain (void)
 
 UNSAFE_CCMD(restart)
 {
-	// [AK] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	// remove command line args that would get in the way during restart
 	Args->RemoveArgs("-iwad");
 	Args->RemoveArgs("-deh");

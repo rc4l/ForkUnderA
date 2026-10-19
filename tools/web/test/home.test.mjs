@@ -68,3 +68,21 @@ test('a store that fails is logged and answers false', async () => {
   assert.equal(await save(false), false);
   assert.deepEqual(page.logged, ['Saving failed: full']);
 });
+
+// [rc4l] A tree of folders (objects) and files (strings) as the engine's file system shows it.
+function treeFS(tree) {
+  const at = (path) => path.split('/').filter(Boolean).reduce((node, part) => node[part], tree);
+  return {
+    readdir: (dir) => ['.', '..', ...Object.keys(at(dir))],
+    stat: (path) => ({ mode: typeof at(path) === 'object' ? 1 : 0 }),
+    isDir: (mode) => mode === 1,
+  };
+}
+
+test('a file is found by name anywhere under the home, or not at all', () => {
+  const fs = treeFS({ home: { web_user: { '.config': { forkundera: { 'checkpicture.zds': 'x', 'forkundera.ini': 'y' } }, 'notes.txt': 'z' } } });
+  assert.equal(FuaHome.find(fs, 'checkpicture.zds'), FuaHome.HOME + '/.config/forkundera/checkpicture.zds');
+  assert.equal(FuaHome.find(fs, 'notes.txt'), FuaHome.HOME + '/notes.txt');
+  assert.equal(FuaHome.find(fs, 'missing.zds'), null);
+  assert.equal(FuaHome.find(fs, 'forkundera.ini', FuaHome.HOME + '/.config'), FuaHome.HOME + '/.config/forkundera/forkundera.ini');
+});

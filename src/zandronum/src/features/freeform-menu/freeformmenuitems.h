@@ -168,10 +168,13 @@ public:
 class FFreeformMenuItemCommand : public FFreeformMenuItemActionableBase
 {
 	bool mIsSafe;
+	// [rc4l] Runs its command in an unsafe context unless menudef trusts it (features/command-safety).
+	bool mUnsafe;
 public:
 	FFreeformMenuItemCommand() : FFreeformMenuItemActionableBase()
 	{
 		mIsSafe = false;
+		mUnsafe = true;
 	}
 
 	virtual FFreeformMenuItem* Clone();
@@ -181,6 +184,7 @@ public:
 	bool Activate();
 
 	void SetSafe(bool safe) { mIsSafe = safe; }
+	void SetUnsafe(bool unsafe) { mUnsafe = unsafe; }
 };
 
 

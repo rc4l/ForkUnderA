@@ -541,10 +541,6 @@ void C_UnbindAll ()
 
 UNSAFE_CCMD (unbindall)
 {
-	// [BC] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	C_UnbindAll ();
 }
 

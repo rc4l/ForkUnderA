@@ -55,6 +55,7 @@
 #include "doomerrors.h"
 
 #include "features/freeform-menu/freeformmenuitems.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeMenuCommandUnsafe
 #include "menu/menuplatform_compute.h"
 #include "optionmenuitems.h"
 
@@ -949,6 +950,7 @@ static void ParseFreeformMenuBody(FScanner &sc, FFreeformMenuDescriptor *desc, F
 			sc.MustGetStringName("{");
 			
 			FFreeformMenuItemCommand* it = new FFreeformMenuItemCommand();
+			bool confirmed = false;
 			while (!sc.CheckString("}"))
 			{
 				sc.MustGetString();
@@ -967,6 +969,7 @@ static void ParseFreeformMenuBody(FScanner &sc, FFreeformMenuDescriptor *desc, F
 				else if (sc.Compare("SafeCommand"))
 				{
 					it->SetSafe(true);
+					confirmed = true;
 				}
 				else if (sc.Compare("command"))
 				{
@@ -978,6 +981,7 @@ static void ParseFreeformMenuBody(FScanner &sc, FFreeformMenuDescriptor *desc, F
 					sc.ScriptError("Unknown keyword '%s'", sc.String);
 				}
 			}
+			it->SetUnsafe(zx::ComputeMenuCommandUnsafe(confirmed, Wads.GetLumpFile(sc.LumpNum), FWadCollection::IWAD_FILENUM));
 
 			addedItem = it;
 		}
@@ -1719,7 +1723,8 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			FString label = sc.String;
 			sc.MustGetStringName(",");
 			sc.MustGetString();
-			FOptionMenuItem *it = new FOptionMenuItemSafeCommand(label, sc.String);
+			FOptionMenuItem *it = new FOptionMenuItemSafeCommand(label, sc.String,
+				zx::ComputeMenuCommandUnsafe(true, Wads.GetLumpFile(sc.LumpNum), FWadCollection::IWAD_FILENUM));
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("Control") || sc.Compare("MapControl"))

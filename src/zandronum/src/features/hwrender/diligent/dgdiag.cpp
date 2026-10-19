@@ -519,7 +519,8 @@ CCMD( fua_diligent_scene )
 	Printf( "%s%s\n", ok ? "" : "FAILED: ", report.GetChars( ) );
 }
 
-CCMD( fua_diligent_shot )
+// [rc4l] Unsafe, since it writes wherever it is told (features/command-safety).
+UNSAFE_CCMD( fua_diligent_shot )
 {
 	const char *path = ( argv.argc( ) > 1 ) ? argv[1] : "fua_vk.png";
 	FString report;

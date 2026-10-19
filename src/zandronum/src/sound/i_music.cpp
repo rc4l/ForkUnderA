@@ -72,6 +72,7 @@ extern void ChildSigHandler (int signum);
 #include "templates.h"
 #include "stats.h"
 #include "timidity/timidity.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 #define GZIP_ID1		31
 #define GZIP_ID2		139
@@ -717,7 +718,8 @@ UNSAFE_CCMD (writeopl)
 		}
 		else
 		{
-			MusInfo *dumper = currSong->GetOPLDumper(argv[1]);
+			// [rc4l] A .dro name writes DOSBox's format and any other the RDOS one, and the file is always one of the two (features/command-safety).
+			MusInfo *dumper = currSong->GetOPLDumper(zx::ComputeOwnExtension(argv[1], {".raw", ".dro"}).c_str());
 			if (dumper == NULL)
 			{
 				Printf ("Current song cannot be saved as OPL data.\n");
@@ -755,7 +757,8 @@ UNSAFE_CCMD (writewave)
 		}
 		else
 		{
-			MusInfo *dumper = currSong->GetWaveDumper(argv[1], argv.argc() == 3 ? atoi(argv[2]) : 0);
+			// [rc4l] Always a .wav, whatever extension the name carries (features/command-safety).
+			MusInfo *dumper = currSong->GetWaveDumper(zx::ComputeOwnExtension(argv[1], {".wav"}).c_str(), argv.argc() == 3 ? atoi(argv[2]) : 0);
 			if (dumper == NULL)
 			{
 				Printf ("Current song cannot be saved as wave data.\n");
@@ -806,10 +809,12 @@ UNSAFE_CCMD (writemidi)
 	bool success;
 
 	static_cast<MIDIStreamer *>(currSong)->CreateSMF(midi, 1);
-	f = fopen(argv[1], "wb");
+	// [rc4l] Always a .mid, whatever extension the name carries (features/command-safety).
+	const std::string filename = zx::ComputeOwnExtension(argv[1], {".mid"});
+	f = fopen(filename.c_str(), "wb");
 	if (f == NULL)
 	{
-		Printf("Could not open %s.\n", argv[1]);
+		Printf("Could not open %s.\n", filename.c_str());
 		return;
 	}
 	success = (fwrite(&midi[0], 1, midi.Size(), f) == (size_t)midi.Size());
