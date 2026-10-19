@@ -1,0 +1,11 @@
+// [rc4l] The demo site's Worker, staged, deployed and checked as tools/web/README.md's demo/ section says.
+{
+  "name": "fua-demo",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-01-01",
+  // [rc4l] Every request runs the Worker, since a file served straight from the assets would miss the isolation headers.
+  "assets": { "directory": "site", "binding": "ASSETS", "run_worker_first": true },
+  "routes": [{ "pattern": "fua.cantstopscrolling.net", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}

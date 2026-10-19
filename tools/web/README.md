@@ -29,7 +29,7 @@ EMSDK=/path/to/emsdk ./web_run.sh [--no-build] [--no-open] [--port N] [query]
 node tools/web/serve.mjs <dir> [port]
 ```
 
-Serves a build from `localhost`. It sends wasm's MIME type, plus the cross-origin isolation headers that Emscripten threads need (COOP `same-origin`, COEP `require-corp`).
+Serves a build from `localhost`. It sends wasm's MIME type, plus the cross-origin isolation headers that Emscripten threads need (`ISOLATION_HEADERS` in `headers.mjs`, which the demo site's Worker sends too).
 
 ## smoke.mjs
 
@@ -54,6 +54,24 @@ node tools/web/stage.mjs [build-web] [dist-web] [--wads a.wad,b.wad]
 ```
 
 Copies the module, the page and the data the page writes into the engine's file system, with its manifest. `--wads` adds files of your own, such as an IWAD and a map the query then names (`?iwad=doom2.wad&file=map.wad&map=MAP01`).
+
+## demo/
+
+```bash
+node tools/web/demo/stage.mjs [dist-web]
+npx wrangler deploy -c tools/web/demo/wrangler.jsonc
+node tools/web/demo/verify.mjs [url] [--no-browser]
+```
+
+The demo site, a Cloudflare Worker serving a staged page under `/demo/` at the custom domain `wrangler.jsonc` names.
+- The Worker adds the cross-origin isolation headers to every response, which static hosts such as GitHub Pages cannot send.
+- Workers' static assets take no file over `ASSET_LIMIT` (`stage.mjs`), so the stage stores each larger one, such as Freedoom's IWAD, as `<name>.gz`, which the Worker sends gzipped for the browser to unpack.
+- `stage.mjs` writes into the folder `wrangler.jsonc` uploads. CI's `ForkUnderA-web` artifact is a staged page to start from (`gh run download <run> -n ForkUnderA-web -D <dir>`).
+- `verify.mjs` checks the deployed site against that folder as a player meets it, and exits 1 on any problem:
+  - the bare address redirects to the page, keeping its query;
+  - every file comes back isolated and unchanged, with a 304 for a revisit;
+  - Chrome starts the page twice on one profile.
+- `npx wrangler dev` from the folder serves the same thing locally. The Worker's logic is in `respond.mjs`, since its entry may export only its handler.
 
 ## probe.mjs
 

@@ -51,6 +51,11 @@ over 20 and 50 ms) since the last `frames`, and `level` what the audio output ca
 frame-rate report's repro, so a one-off Chrome script is never needed. The probe's Chrome is always muted, and a minimal template map isolates the fault
 better than their mod's busy map.
 
+A report from the demo site (`tools/web/demo`) is about the build last deployed there, served by its Worker
+rather than `serve.mjs`. `node tools/web/demo/verify.mjs` checks the live site against its stage first. It
+covers a revisit and a second browser visit, since a fault only a returning player sees is the browser's cache
+meeting the Worker (the first deploy's revisits got a 404 for Freedoom's IWAD).
+
 1. **Read it.** `queue next`. The spot's `loaded` says which wads the map needs; launching without them
    silently lands in the IWAD's MAP01 (`fua-side-by-side`, `fua-capture-spot`).
 2. **Reproduce in your own instance**, never theirs:

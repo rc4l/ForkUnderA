@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { firefoxProfile, formatLogEntry, formatBidiEval, offScreenScript } from '../firefox.mjs';
+import { scratch } from './scratch.mjs';
 
 // [rc4l] Headless Firefox offers no WebGPU adapter, so its window opens off the screen and silent, and stays unthrottled there.
 test('a fresh Firefox profile opens its window off the screen, silent and unthrottled', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ffprofile-'));
+  const dir = scratch('ffprofile-');
   firefoxProfile(dir);
   const store = JSON.parse(fs.readFileSync(path.join(dir, 'xulstore.json'), 'utf8'));
   assert.equal(store['chrome://browser/content/browser.xhtml']['main-window'].screenX, '-4000');

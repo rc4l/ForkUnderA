@@ -6,6 +6,16 @@ export function inPage(body) {
   return `(async () => { while (!(window.Module && Module.fuaCommand)) await new Promise((r) => setTimeout(r, 100)); ${body} })()`;
 }
 
+// [rc4l] Page code that waits until the engine answers commands or the page shows its error, and returns which, with whether the page is cross-origin isolated.
+export const STARTED = `(async () => {
+  for (;;) {
+    const panel = document.getElementById('error');
+    if (panel && !panel.hidden) return { isolated: crossOriginIsolated, error: document.getElementById('error-text').textContent };
+    if (window.Module && Module.fuaCommand) return { isolated: crossOriginIsolated, error: null };
+    await new Promise((r) => setTimeout(r, 100));
+  }
+})()`;
+
 // [rc4l] Page code that waits ms milliseconds.
 export const pause = (ms) => `await new Promise((r) => setTimeout(r, ${ms}));`;
 

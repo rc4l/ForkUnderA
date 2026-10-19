@@ -1,13 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { engineData, manifest, stage } from '../stage.mjs';
-
-function scratch() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'fua-stage-'));
-}
+import { scratch } from './scratch.mjs';
 
 test('the engine data is every pk3 in the build directory, in name order', () => {
   const dir = scratch();
