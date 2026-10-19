@@ -190,9 +190,9 @@ TEST(PcmDecode, ReadsOggVorbisToItsLength)
 	EXPECT_EQ(ReadAll(stream).size(), stream.frames);
 	ASSERT_TRUE(zx::ComputePcmSeek(stream, 100, false));
 	EXPECT_EQ(ReadAll(stream).size(), stream.frames - 100);
-	// [rc4l] Past the end, and past what stb_vorbis can count to.
+	// [rc4l] Past the end, and past what stb_vorbis can count to, asked in milliseconds so a 32-bit size_t (the browser's) reaches it too.
 	EXPECT_FALSE(zx::ComputePcmSeek(stream, static_cast<size_t>(stream.frames) + 5000, false));
-	EXPECT_FALSE(zx::ComputePcmSeek(stream, static_cast<size_t>(UINT_MAX) + 1, false));
+	EXPECT_FALSE(zx::ComputePcmSeek(stream, UINT_MAX, true));
 }
 
 TEST(PcmDecode, ReadsMp3WithAndWithoutATag)

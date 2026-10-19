@@ -26,10 +26,10 @@ features/frame/standaloneframe.cpp
 features/fua-caching/fua_warmup.cpp
 "
 
-# [rc4l] Files whose preprocessor lines test `pattern`, relative to SRC, one per line.
+# [rc4l] Files whose preprocessor lines test `pattern`, relative to SRC, one per line; a vendor/ folder keeps its library's own conditions.
 files_testing() {
   ( cd "$SRC" && grep -rlE "^[[:space:]]*#[[:space:]]*(if|ifdef|ifndef|elif).*($1)" $2 \
-      --include='*.cpp' --include='*.h' --include='*.c' --include='*.mm' 2>/dev/null ) | sed 's|^\./||' | sort
+      --exclude-dir=vendor --include='*.cpp' --include='*.h' --include='*.c' --include='*.mm' 2>/dev/null ) | sed 's|^\./||' | sort
 }
 
 failed=0
