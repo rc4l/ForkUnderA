@@ -68,6 +68,7 @@ extern HINSTANCE g_hInst;
 
 #include "mpg123_decoder.h"
 #include "sndfile_decoder.h"
+#include "features/sound-decoders/builtindecoder.h"   // [rc4l] BuiltinDecoder, CreateDecoder's last try
 
 #include "m_swap.h"
 #include "stats.h"
@@ -444,6 +445,14 @@ SoundDecoder *SoundRenderer::CreateDecoder(FileReader *reader)
 	delete decoder;
 	decoder = NULL;
 #endif
+	// [rc4l] features/sound-decoders: WAV, FLAC, Ogg Vorbis and MP3 where neither library is built or loads, as in the browser.
+	decoder = new BuiltinDecoder;
+	if (decoder->open(reader))
+		return decoder;
+	reader->Seek(pos, SEEK_SET);
+
+	delete decoder;
+	decoder = NULL;
 	return decoder;
 }
 

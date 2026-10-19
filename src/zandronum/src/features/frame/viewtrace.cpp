@@ -138,7 +138,8 @@ void ArmViewTrace(int frames, const char *csv)
 }} // namespace zx::frame
 
 // [rc4l] fua_viewtrace [frames] [file.csv]: record the next frames' main view (default 1000, 16 to 300000, minutes at any frame rate), say whether it turned between tics or only at them, and write every frame to the file when one is named; `fua_viewtrace end` reports early.
-CCMD( fua_viewtrace )
+// [rc4l] Unsafe, since it writes wherever it is told: a mod's menus, aliases and scripts cannot run it (features/command-safety).
+UNSAFE_CCMD( fua_viewtrace )
 {
 	if (argv.argc() > 1 && stricmp(argv[1], "end") == 0) { zx::frame::EndViewTrace(); return; }
 	const int n = argv.argc() > 1 ? atoi(argv[1]) : 1000;

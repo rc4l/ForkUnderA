@@ -35,7 +35,18 @@
     return save;
   }
 
-  const api = { HOME, EVERY_MS, mount, keeper };
+  // [rc4l] The first file called name under dir (the home when not given), or null: where the engine put a save, found without the page naming the engine's save directory.
+  function find(FS, name, dir = HOME) {
+    for (const entry of FS.readdir(dir)) {
+      if (entry === '.' || entry === '..') continue;
+      const path = dir + '/' + entry;
+      const found = FS.isDir(FS.stat(path).mode) ? find(FS, name, path) : entry === name ? path : null;
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const api = { HOME, EVERY_MS, mount, keeper, find };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FuaHome = api;
 })(typeof window !== 'undefined' ? window : globalThis);

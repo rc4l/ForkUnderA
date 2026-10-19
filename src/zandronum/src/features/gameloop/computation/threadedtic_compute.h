@@ -43,6 +43,12 @@ inline bool ComputeHeldFrame(bool finished, int now, int startedAt)
 	return !finished && now > startedAt;
 }
 
+// [rc4l] Whether a frame draws the tic a batch runs with `ticsAfter` more to come in it: only the last, so the tics before it leave the render copy's scan and fill to that one.
+inline bool ComputeTicDrawn(int ticsAfter)
+{
+	return ticsAfter <= 0;
+}
+
 }} // namespace zx::gameloop
 
 #endif // ZX_THREADEDTIC_COMPUTE_H

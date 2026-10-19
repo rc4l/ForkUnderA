@@ -8,6 +8,11 @@ export function helloTimeoutMessage(timeoutMs) {
   return `hello timeout: the engine took the connection but sent no hello within ${Math.round(timeoutMs / 100) / 10} s; it is still starting, hung (\`fuactl hang --port P\` says where), or an older build whose bridge serves one client at a time and is busy with another`;
 }
 
+// [rc4l] Why an rpc went unanswered: an engine in multi-second frames (a slaughter map catching up tics) answers only between them, and FUACTL_TIMEOUT_SCALE stretches every wait.
+export function rpcTimeoutMessage(cmd, timeoutMs) {
+  return `rpc timeout: ${cmd} got no answer within ${Math.round(timeoutMs / 100) / 10} s; an engine whose frames run seconds long answers only between them (FUACTL_TIMEOUT_SCALE=N stretches every wait), else \`fuactl hang --port P\` says where it is stuck`;
+}
+
 export class BridgeClient {
   constructor() {
     this.sock = null;
@@ -73,7 +78,7 @@ export class BridgeClient {
   rpc(cmd, args, timeoutMs = scaled(8000)) {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const to = setTimeout(() => { this.pending.delete(id); reject(new Error(`rpc timeout: ${cmd}`)); }, timeoutMs);
+      const to = setTimeout(() => { this.pending.delete(id); reject(new Error(rpcTimeoutMessage(cmd, timeoutMs))); }, timeoutMs);
       this.pending.set(id, {
         resolve: (r) => { clearTimeout(to); resolve(r); },
         reject: (e) => { clearTimeout(to); reject(e); },

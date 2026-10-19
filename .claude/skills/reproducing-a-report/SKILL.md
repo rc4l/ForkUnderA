@@ -134,6 +134,9 @@ usually three commands and it removes the entire class:
     notarget     # nothing comes looking
     kill monsters
 
+Unless the monsters are the report: a fight, a slaughter map's frame rate or anything hunting monsters do
+needs them hunting the player, so launch `play --monsters --targetable` (god on, notarget off).
+
 The general rule: the only thing allowed to differ between two captures is the one variable
 being compared. Everything else is held, not averaged over.
 

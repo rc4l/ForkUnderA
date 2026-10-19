@@ -14,17 +14,17 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 
 | File | What |
 |---|---|
-| `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants |
+| `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants; `UpdateBufferInPages` and `EnsureGrowingBuffer`, which every per-frame upload and grow-only buffer goes through |
 | `dgpipelines.cpp` | the world pipelines and their material bindings: bindless array, slots, animated slots |
 | `dgatlas.cpp` | the sprite atlas: on the path with a binding per material (WebGPU, or `fua_dg_bindless 0`) and point sampling without mipmaps (`r_texture_filter 0`), sprites draw from shared 2048-texel pages with their texture coordinates moved onto them, so the sorted pass binds a page rather than a texture a sprite (`computation/spriteatlas_compute`; `fua_dg_spriteatlas 0` for the A/B; scenario `spriteatlas`) |
-| `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches; a surface that changes material or pass (a switch, a lowering floor) moves to an appended batch, and the whole scene is rebuilt only when the change list overflows or a translucent surface changes (`ComputeRebatchPlan`) |
+| `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches; a surface that changes material or pass (a switch, a lowering floor) moves to an appended batch, and the whole scene is rebuilt only when the change list overflows or a translucent surface changes (`ComputeRebatchPlan`); the piece records grow before a frame's sprites outnumber the room behind the level's (`EnsureDynamicRecords`, `ComputePieceCapacity`; scenario `spritecrowd`) |
 | `dgdynamic.cpp` | sprites, models and decals each frame, and the sorted translucent pass |
 | `dgviews.cpp` | line mirrors (raster and ray-traced), reflective planes, stacked sectors |
 | `dgsky.cpp`, `dglights.cpp`, `dg2d.cpp`, `dgdecals.cpp`, `dghorizon.cpp` | sky and portals, dynamic lights, 2D, projected decals, horizon lines |
 | `dgcamera.cpp` | camera textures |
 | `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
 | `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
-| `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures, the swapchain, the device |
+| `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures (a mip chain only when the filter reads one, `ComputeMaterialMips`), the swapchain, the device |
 | `dgmemory.cpp`, `dggputimer.cpp` | `features/telemetry`'s GPU memory by tag and its per-pass GPU times |
 | `dgplatform.h`, `dgwin32.cpp`, `dgsdl.cpp`, `dgcocoa.mm` | each platform's window and the handles its Vulkan surface takes: an HWND; an X11 window or Wayland surface through SDL2; a CAMetalLayer view drawn through MoltenVK (`posix/cocoa/metalview.h`'s `CocoaMetalView`, shared with the engine's window), with the .app's own Vulkan loader |
 

@@ -479,3 +479,20 @@ test("the wipe scenario reads fua_wipe_report and fails a wipe never presented, 
   assert.match(judgeWipes("x", { started: 1, presented: 1, wipes: [melt(100)] }).line, /1 wipes began/);
   assert.match(judgeWipes("x", { ...good, wipes: [melt(100), { ...melt(80), sinceLast: 70 }] }).line, /the old map showed through/);
 });
+
+test("the command-safety template ships a script and both menu kinds trying atexit, and its verdict wants every route refused and writeini beside the config", async () => {
+  const { buildCommandSafetyWad, judgeCommandSafetyFrom } = await import("../scenarios/commandsafety.mjs");
+  const lumps = readWad(buildCommandSafetyWad());
+  const behavior = lumps.find((l) => l.name === "BEHAVIOR").data.toString("latin1");
+  const menudef = lumps.find((l) => l.name === "MENUDEF").data.toString("latin1");
+  assert.match(behavior, /atexit "echo fua-script-ran"/);
+  assert.match(menudef, /SafeCommand "Probe", "atexit \\"echo fua-option-ran\\""/);
+  assert.match(menudef, /FreeformMenu "FuaSafetyFree"[\s\S]*Command "atexit \\"echo fua-freeform-ran\\""/);
+  const saved = { file: "/cfg/---fua-commandsafety.ini", exists: true };
+  assert.equal(judgeCommandSafetyFrom("x", { listed: "Registered atexit commands:\n", refusals: 2, saved }).failed, 0);
+  assert.match(judgeCommandSafetyFrom("x", { listed: "echo fua-option-ran\n", refusals: 2, saved }).line, /the option registered an atexit command/);
+  assert.match(judgeCommandSafetyFrom("x", { listed: "", refusals: 1, saved }).line, /1 of the 2 menu items were refused/);
+  assert.match(judgeCommandSafetyFrom("x", { listed: "", refusals: 2, saved: null }).line, /writeini named no file/);
+  assert.match(judgeCommandSafetyFrom("x", { listed: "", refusals: 2, saved: { file: "../fua-commandsafety", exists: true } }).line, /writeini wrote \.\.\/fua-commandsafety/);
+  assert.match(judgeCommandSafetyFrom("x", { listed: "", refusals: 2, saved: { ...saved, exists: false } }).line, /which is not there/);
+});

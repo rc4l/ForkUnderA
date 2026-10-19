@@ -4996,11 +4996,11 @@ void IDList<T>::useID ( const unsigned short netID, T *actor )
 {
 	if ( isIndexValid ( netID ) )
 	{
-		if ( ( _entries[netID].bFree == false ) && ( _entries[netID].pActor != actor ) )
+		if ( ( zx::netids::ComputeIdFree ( _freeBits, netID ) == false ) && ( _entries[netID].pActor != actor ) )
 			SERVER_PrintWarning ( "IDList<T>::useID is using an already used ID.\n" );
 
-		_entries[netID].bFree = false;
 		_entries[netID].pActor = actor;
+		zx::netids::ComputeMarkId ( _freeBits, netID, false );
 	}
 }
 
@@ -5014,28 +5014,22 @@ unsigned short IDList<T>::getNewID( void )
 	// Actor's network ID is the first availible net ID.
 	unsigned short id = _firstFreeID;
 
-	do
+	// [rc4l] The next free one found in the bitmap rather than by walking every entry: a full table (nuts.wad with Complex Doom, 70,000 actors) read all 65,535 on each spawn, 44% of a tic (features/netids).
+	_firstFreeID = static_cast<unsigned short>( zx::netids::ComputeNextFreeId ( _freeBits, id ));
+	if ( _firstFreeID == id )
 	{
-		if ( _firstFreeID == ( std::numeric_limits<unsigned short>::max )( ))
-			_firstFreeID = 1;
-		else
-			_firstFreeID++;
-
-		if ( _firstFreeID == id )
+		// [BB] In case there is no free netID, the server has to abort the current game.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			// [BB] In case there is no free netID, the server has to abort the current game.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			{
-				// [BB] We can only spawn (MAX_NETID-2) actors with netID, because ID zero is reserved and
-				// we already check that a new ID for the next actor is available when assign a net ID.
-				Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", ( std::numeric_limits<unsigned short>::max )( ));
-				CountActors ( );
-				I_Error ("Network ID limit reached (>=%u actors)!\n", ( std::numeric_limits<unsigned short>::max )( ));
-			}
-
-			return ( 0 );
+			// [BB] We can only spawn (MAX_NETID-2) actors with netID, because ID zero is reserved and
+			// we already check that a new ID for the next actor is available when assign a net ID.
+			Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", ( std::numeric_limits<unsigned short>::max )( ));
+			CountActors ( );
+			I_Error ("Network ID limit reached (>=%u actors)!\n", ( std::numeric_limits<unsigned short>::max )( ));
 		}
-	} while ( _entries[_firstFreeID].bFree == false );
+
+		return ( 0 );
+	}
 
 	return ( id );
 }

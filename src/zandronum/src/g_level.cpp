@@ -259,7 +259,8 @@ CCMD (map)
 // [rc4l] uzdoom@eceb37aa6: start a map and record a demo of it in one step. Single-player
 // only -- Zandronum records client demos through CLIENTDEMO_*, a different path, so the
 // guard is on our network state rather than upstream's bare `netgame`.
-CCMD (recordmap)
+// [rc4l] Unsafe, since it writes the demo wherever it is told (features/command-safety).
+UNSAFE_CCMD (recordmap)
 {
 	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{

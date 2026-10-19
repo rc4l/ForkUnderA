@@ -86,6 +86,7 @@
 #include "survival.h"
 #include "m_cheat.h"
 #include "gamemode.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension, ComputeBareFileName
 
 extern FILE *Logfile;
 extern bool insave;
@@ -144,15 +145,16 @@ void StartLogging( const char *szFileName )
 	struct tm	*lt = localtime( &tNow );
 
 	// [BB] If sv_logfilenametimestamp, we append the current date/time to the logfile name.
+	// [rc4l] A log is always a .log, whatever name it was given (features/command-safety), and every copy is bounded.
 	if ( lt != NULL && sv_logfilenametimestamp )
-		sprintf( logfilename, "%s__%d_%02d_%02d-%02d_%02d_%02d.log", szFileName, lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
+		mysnprintf( logfilename, sizeof( logfilename ), "%s__%d_%02d_%02d-%02d_%02d_%02d.log", szFileName, lt->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec);
 	else
-		strncpy( logfilename, szFileName, 256 );
+		mysnprintf( logfilename, sizeof( logfilename ), "%s", zx::ComputeOwnExtension( szFileName, { ".log" } ).c_str( ));
 
 	if (( Logfile = fopen( logfilename, sv_logfile_append ? "a" : "w" )))
 	{
-		sprintf( g_szDesiredLogFilename, "%s", szFileName );
-		sprintf( g_szActualLogFilename, "%s", logfilename );
+		mysnprintf( g_szDesiredLogFilename, sizeof( g_szDesiredLogFilename ), "%s", szFileName );
+		mysnprintf( g_szActualLogFilename, sizeof( g_szActualLogFilename ), "%s", logfilename );
 		Printf( "Log started: %s, %s", g_szActualLogFilename, myasctime( ));
 	}
 	else
@@ -813,10 +815,6 @@ void execLogfile(const char *fn)
 
 UNSAFE_CCMD (logfile)
 {
-	// [BC/BB] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	// [BB] Zandronum handles logging differently.
 	if ( Logfile )
 		StopLogging( );
@@ -1021,10 +1019,6 @@ CCMD (error)
 
 UNSAFE_CCMD (error_fatal)
 {
-	// [BB] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	if (argv.argc() > 1)
 	{
 		char *textcopy = copystring (argv[1]);
@@ -1048,10 +1042,6 @@ UNSAFE_CCMD (error_fatal)
 #if !defined(_WIN32) || !defined(_DEBUG)
 UNSAFE_CCMD (crashout)
 {
-	// [BB] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	*(volatile int *)0 = 0;
 }
 #endif
@@ -1191,10 +1181,6 @@ CCMD (warp)
 
 UNSAFE_CCMD (load)
 {
-    // [BB] This function may not be used by ConsoleCommand.
-    if ( ACS_IsCalledFromConsoleCommand() )
-        return;
-
     if (argv.argc() != 2)
 	{
         Printf ("usage: load <filename>\n");
@@ -1207,6 +1193,12 @@ UNSAFE_CCMD (load)
 	}
 	FString fname = argv[1];
 	DefaultExtension (fname, ".zds");
+	// [rc4l] A bare name from the save directory, as uzdoom's load takes it, else from where it was given, where saves made before this went (features/command-safety).
+	if (zx::ComputeBareFileName (fname.GetChars ()))
+	{
+		const FString inSaves = G_BuildSaveName (fname, -1);
+		if (FileExists (inSaves)) fname = inSaves;
+	}
     G_LoadGame (fname);
 }
 
@@ -1220,18 +1212,16 @@ UNSAFE_CCMD (load)
 
 UNSAFE_CCMD (save)
 {
-    // [BB] This function may not be used by ConsoleCommand.
-    if ( ACS_IsCalledFromConsoleCommand() )
-        return;
-
     if (argv.argc() < 2 || argv.argc() > 3)
 	{
         Printf ("usage: save <filename> [description]\n");
         return;
     }
     // [rc4l] uzdoom@5d65b10ae -- these now live in G_SaveGame so every save path is checked.
-    FString fname = argv[1];
-	DefaultExtension (fname, ".zds");
+    // [rc4l] A save is always a .zds, whatever extension the name carries (features/command-safety).
+    FString fname = zx::ComputeOwnExtension(argv[1], {".zds"}).c_str();
+	// [rc4l] A bare name goes in the save directory, as uzdoom's save puts it: the browser's working directory is never kept, and `save complex` was lost on reload.
+	if (zx::ComputeBareFileName (fname.GetChars ())) fname = G_BuildSaveName (fname, -1);
 	G_SaveGame (fname, argv.argc() > 2 ? argv[2] : argv[1]);
 }
 

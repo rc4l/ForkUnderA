@@ -203,7 +203,8 @@ static_assert(zx::hwrender::kClusterTilesX == 32 && zx::hwrender::kClusterTilesY
 // declares a DIFFERENT symbol that links against nothing.
 
 // [rc4l] A directory every composed shader is written into as it compiles, to check each against the WebGPU conversion off the engine.
-CVAR(String, fua_dg_shaderdump, "", 0)
+// [rc4l] A script cannot choose where shaders are dumped (features/command-safety).
+CVAR(String, fua_dg_shaderdump, "", CVAR_NOSETBYACS)
 
 namespace zx { namespace hwrender {
 
@@ -404,6 +405,30 @@ bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Dilige
 	return true;
 }
 
+// [rc4l] The most one write sends, under either device's upload page, so writes share pages rather than each taking one its own size.
+static const size_t kUploadPageBytes = 1 << 20;
+
+void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
+{
+	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
+	{
+		ctx->UpdateBuffer(buf, offset + at, n, (const char *)data + at, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	});
+}
+
+bool EnsureGrowingBuffer(Diligent::RefCntAutoPtr<Diligent::IBuffer> &buf, unsigned int &capacity, unsigned int count, unsigned int stride,
+	unsigned int pad, const Diligent::BufferDesc &kind)
+{
+	if (zx::hwrender::ComputeBufferFits(buf != nullptr, capacity, count)) return true;
+	capacity = zx::hwrender::ComputeGrownCapacity(count, pad);
+	Diligent::BufferDesc bd = kind;
+	bd.Size = (Diligent::Uint64)capacity * stride;
+	buf.Release();
+	CreateDeviceBuffer(bd, nullptr, &buf);
+	if (!buf) { capacity = 0; return false; }
+	return true;
+}
+
 // [rc4l] Uploads count vertices of stride bytes into a grow-only vertex buffer, re-created at ComputeGrownCapacity when short; false if none can be had.
 //
 // USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data changes once per
@@ -411,19 +436,13 @@ bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Dilige
 bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
 	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name)
 {
-	if (!vb || capacity < count)
-	{
-		capacity = zx::hwrender::ComputeGrownCapacity(count, pad);
-		Diligent::BufferDesc bd;
-		bd.Name = name;
-		bd.Size = (Diligent::Uint64)capacity * stride;
-		bd.Usage = Diligent::USAGE_DEFAULT;
-		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-		vb.Release();
-		CreateDeviceBuffer(bd, nullptr, &vb);
-		if (!vb) { capacity = 0; return false; }
-	}
-	ctx->UpdateBuffer(vb, 0, (Diligent::Uint64)count * stride, data, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::BufferDesc kind;
+	kind.Name = name;
+	kind.Usage = Diligent::USAGE_DEFAULT;
+	kind.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+	if (!EnsureGrowingBuffer(vb, capacity, count, stride, pad, kind)) return false;
+	// [rc4l] In pages: nuts.wad's 57,000 sprites wrote 8 MB a frame in one piece, and a browser kept 96 MB of upload pages.
+	UpdateBufferInPages(ctx, vb, 0, (size_t)count * stride, data);
 	return true;
 }
 
@@ -646,12 +665,14 @@ void DrawSceneOnce(bool present, bool pump)
 		FString err;
 		if (!EnsureScenePipeline(err)) return;
 	}
-	// [rc4l] Textures the engine flushed (hqresize, hires, the texture format) are made again from the new pixels.
+	// [rc4l] Textures the engine flushed (hqresize, hires, the texture format) are made again from the new pixels, and all of them when the filter starts or stops reading mips.
 	{
 		static unsigned flushedSeen = zx::materials::TexturesFlushed();
-		if (flushedSeen != zx::materials::TexturesFlushed())
+		static bool madeWithMips = MaterialsWithMips();
+		if (flushedSeen != zx::materials::TexturesFlushed() || madeWithMips != MaterialsWithMips())
 		{
 			flushedSeen = zx::materials::TexturesFlushed();
+			madeWithMips = MaterialsWithMips();
 			FlushTextureCache();
 		}
 	}
@@ -872,6 +893,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 		const zx::framephase::Scope lightsPhase(zx::framephase::kPhaseLights);
 		g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	}
+	EnsureDynamicRecords();
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
 	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();

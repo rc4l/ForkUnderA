@@ -21,4 +21,9 @@ unsigned ComputeAnisotropy(const TextureFilter &filter, float setting)
 	return setting >= 16.f ? 16u : (unsigned)(setting + 0.5f);
 }
 
+bool ComputeMaterialMips(bool allowed, const TextureFilter &filter)
+{
+	return allowed && filter.mipmapped;
+}
+
 }} // namespace zx::hwrender

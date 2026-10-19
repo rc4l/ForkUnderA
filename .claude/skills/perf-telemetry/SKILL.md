@@ -9,6 +9,10 @@ Every timing and memory count the engine keeps is in one registry (`src/zandronu
 
 Run from `tools/fuactl` as `node src/cli.mjs …` against your own locked instance (`play --lock --port 7799`), never the user's.
 
+- A fight needs monsters that hear the gun. `play` turns god and notarget on, so launch it `--monsters --targetable` (god stays on) or run `notarget` and read back `notarget OFF`. Shooting at spawn under notarget measures idle monsters.
+- An engine whose frames run for seconds (a slaughter map catching up tics) answers an rpc only between frames. `FUACTL_TIMEOUT_SCALE=12` stretches every wait.
+- `sample --port 7799 --stacks --table` prints where the game thread's time went, self and inclusive, as text.
+
 ## What a frame costs
 
 ```bash

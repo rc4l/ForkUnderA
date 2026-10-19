@@ -746,9 +746,14 @@ void C_DoCommand (const char *cmd, int keynum)
 bool FOptionMenuItemCommand::Activate()
 {
 	S_Sound (CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE);
-	UnsafeExecutionScope scope(mUnsafe);
-	C_DoCommand(mAction);
+	C_DoMenuCommand(mAction, mUnsafe);
 	return true;
+}
+
+void C_DoMenuCommand (const char *cmd, bool unsafe)
+{
+	UnsafeExecutionScope scope(unsafe || UnsafeExecutionContext);
+	C_DoCommand(cmd);
 }
 
 void AddCommandString (char *cmd, int keynum)
@@ -1159,7 +1164,8 @@ void FConsoleCommand::Run (FCommandLine &argv, APlayerPawn *who, int key)
 
 void FUnsafeConsoleCommand::Run (FCommandLine &args, APlayerPawn *instigator, int key)
 {
-	if (UnsafeExecutionContext)
+	// [rc4l] A script's ConsoleCommand is a mod's too, so it is refused here once rather than in each unsafe command (features/command-safety).
+	if (UnsafeExecutionContext || ACS_IsCalledFromConsoleCommand())
 	{
 		Printf(TEXTCOLOR_RED "Cannot execute unsafe command " TEXTCOLOR_GOLD "%s\n", m_Name);
 		return;

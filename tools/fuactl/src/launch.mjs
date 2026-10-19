@@ -147,6 +147,12 @@ export function envEngineArgs(env = process.env) {
   return String((env && env.FUACTL_ENGINE_ARGS) || "").split(/\s+/).filter(Boolean);
 }
 
+// [rc4l] A harness launch's game socket on loopback (-useip 127.0.0.1), so Windows Firewall never asks about an instance only the harness talks to; one that hosts, joins, is played by hand or names its own address keeps every interface.
+export function loopbackArgs({ extraArgs = [], connect, allowOsInput } = {}) {
+  const ownNetwork = extraArgs.some((a) => a === "-host" || a === "-useip");
+  return ownNetwork || connect || allowOsInput ? [] : ["-useip", "127.0.0.1"];
+}
+
 export function engineArgs(opts = {}, configPath) {
   const args = ["-iwad", opts.iwad || "freedoom2.wad"];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
@@ -187,6 +193,7 @@ export function engineArgs(opts = {}, configPath) {
     for (const [k, v] of Object.entries(opts.cvars)) args.push("+set", k, String(v));
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
+  args.push(...loopbackArgs(opts));
   args.push(...envEngineArgs(opts.env));
   // [rc4l] A harness launch runs as players do, the engine's own choice (Vulkan alone), unless it asks for GL (gl), alone or with the backend beside it as fua_vulkan says.
   if (opts.gl && !args.includes("-gl")) args.push("-gl");

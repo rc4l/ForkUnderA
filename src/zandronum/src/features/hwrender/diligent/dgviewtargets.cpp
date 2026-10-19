@@ -284,14 +284,12 @@ void UploadWalkVisibility(Diligent::IDeviceContext *ctx)
 	const unsigned int *visBits = zx::levelmesh::StackVisibility(visWords);
 	g_scene.stackVisReady = visBits != NULL && g_scene.stackVisBuf && (unsigned int)visWords <= g_scene.stackVisCapacity;
 	if (g_scene.stackVisReady)
-		ctx->UpdateBuffer(g_scene.stackVisBuf, 0, (Diligent::Uint64)visWords * sizeof(unsigned int), visBits,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		UpdateBufferInPages(ctx, g_scene.stackVisBuf, 0, (size_t)visWords * sizeof(unsigned int), visBits);
 	int holes = 0;
 	const float *hole = zx::levelmesh::SkyHoles(holes);
 	g_scene.skyHoleCount = (g_scene.stackVisReady && hole != NULL && g_scene.skyHoleBuf) ? holes : 0;
 	if (g_scene.skyHoleCount > 0)
-		ctx->UpdateBuffer(g_scene.skyHoleBuf, 0, (Diligent::Uint64)g_scene.skyHoleCount * zx::levelmesh::kSkyHoleFloats * sizeof(float), hole,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		UpdateBufferInPages(ctx, g_scene.skyHoleBuf, 0, (size_t)g_scene.skyHoleCount * zx::levelmesh::kSkyHoleFloats * sizeof(float), hole);
 }
 
 // [rc4l] Before the frame and after the sky's picture, which each view paints behind its own world.

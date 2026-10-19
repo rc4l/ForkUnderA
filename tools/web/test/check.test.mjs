@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -147,6 +147,11 @@ test('a sound has to start once, not again after it ends', () => {
   assert.equal(playedOnce(0), 'the sound never started');
 });
 
+test('a sound of every format has to start', () => {
+  assert.equal(everyFormatPlayed({ FLAC: 1, 'Ogg Vorbis': 2, WAV: 1 }), '');
+  assert.equal(everyFormatPlayed({ FLAC: 0, 'Ogg Vorbis': 1, WAV: 0 }), 'nothing played in FLAC, WAV');
+});
+
 test('firing at the floor has to put a mark through the decal pass', () => {
   assert.equal(marked({ boxes: 3, draws: 1 }), '');
   assert.equal(marked({ boxes: 0, draws: 0 }), 'the decal pass drew no mark');
@@ -199,6 +204,8 @@ test('the game thread check needs tics on the thread and a sound from them', () 
 // [rc4l] A CI runner's browser rendered silence for every sound, so distance is judged only where a sound with no distance was heard.
 test('distant shooters are judged only where a sound with no distance was heard', () => {
   assert.equal(heardAtDistance({ control: 0.3, peak: 0.2, contexts: [] }), '');
+  assert.equal(heardAtDistance({ control: 0.0928, peak: 0.0475, contexts: [] }), '');
+  assert.match(heardAtDistance({ control: 0.0928, peak: 0.02, contexts: [] }), /came out at 0.02 RMS/);
   assert.match(heardAtDistance({ control: 0.3, peak: 0, contexts: [] }), /shooters across the room came out at 0 RMS at most/);
   assert.match(heardAtDistance({ control: 0, peak: 0, contexts: [{ state: 'running', time: 3 }] }).skip, /made no sound at all/);
   const check = { until: 'x', expect: heardAtDistance };

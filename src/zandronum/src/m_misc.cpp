@@ -82,12 +82,14 @@
 
 #include "menu/menu.h"
 #include "features/save-settings/computation/savesettings_compute.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeFileBeside, ComputeOwnExtension
 
 FGameConfigFile *GameConfig;
 
 CVAR(Bool, screenshot_quiet, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR(String, screenshot_type, "png", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
-CVAR(String, screenshot_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] A script cannot point screenshots elsewhere (features/command-safety).
+CVAR(String, screenshot_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOSETBYACS);
 EXTERN_CVAR(Bool, longsavemessages);
 
 static long ParseCommandLine (const char *args, int *argc, char **argv);
@@ -415,16 +417,26 @@ void M_SaveDefaultsFinal ()
 
 UNSAFE_CCMD (writeini)
 {
-	// [BB] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
-	const char *filename = (argv.argc() == 1) ? NULL : argv[1];
-	const bool saved = M_SaveDefaults (filename);
+	// [rc4l] A name writes a plain file beside the config and always an .ini, since a path let the config's text land anywhere (uzdoom@d82dfa8cb, uzdoom@2a44a21e6).
+	FString filename;
+	if (argv.argc() > 1)
+	{
+		filename = zx::ComputeFileBeside(GameConfig->GetPathName(), argv[1], ".ini").c_str();
+		if (filename.IsEmpty())
+		{
+			Printf ("writeini: \"%s\" leaves no file name\n", argv[1]);
+			return;
+		}
+	}
+	const bool saved = M_SaveDefaults (filename.IsEmpty() ? NULL : filename.GetChars());
 	const int err = errno;
 	if (!saved)
 	{
 		Printf ("Writing config failed: %s\n", strerror(err));
+	}
+	else if (filename.IsNotEmpty())
+	{
+		Printf ("Config saved to %s.\n", filename.GetChars());
 	}
 	else
 	{
@@ -723,8 +735,8 @@ void M_ScreenShot (const char *filename)
 	}
 	else
 	{
-		autoname = filename;
-		DefaultExtension (autoname, writepcx ? ".pcx" : ".png");
+		// [rc4l] A named screenshot is always a picture, whatever extension the name carries (features/command-safety).
+		autoname = zx::ComputeOwnExtension(filename, {writepcx ? ".pcx" : ".png"}).c_str();
 	}
 
 	// save the screenshot
@@ -783,12 +795,9 @@ void M_ScreenShot (const char *filename)
 	}
 }
 
-CCMD (screenshot)
+// [rc4l] Unsafe, since it writes wherever it is told: a mod's menus, aliases and scripts cannot run it, while a bound key still can.
+UNSAFE_CCMD (screenshot)
 {
-	// [BB] This function can overwrite arbitrary files and thus may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	if (argv.argc() == 1)
 		G_ScreenShot (NULL);
 	else

@@ -20,7 +20,8 @@ message-box ordering fix are ours.
 - `src/m_misc.cpp` — `writeini` opens the popup when a menu is active. From the console during play
   it only prints, as before.
 - `src/configfile.{h,cpp}` and `src/m_misc.cpp` — `FConfigFile::WriteConfigFileTo(path)` writes a
-  copy without touching the config's own path, and `M_SaveDefaults` uses it for `writeini <file>`.
+  copy without touching the config's own path, and `M_SaveDefaults` uses it for `writeini <name>`,
+  which `features/command-safety` keeps to a plain `.ini` beside the config.
   The old code swapped the path to the copy and then "restored" it to the copy too, so after one
   `writeini backup.ini` every later save, including this menu item and the save on exit, went to
   `backup.ini`. Upstream UZDoom still has that bug. Tested in `configfile_nettest.cpp`.

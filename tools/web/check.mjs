@@ -6,13 +6,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, inPage, pause, soakInPage } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
       const raf = window.requestAnimationFrame.bind(window);
       window.requestAnimationFrame = (f) => { frames++; return raf(f); };`;
+
+// [rc4l] How loud the shooters must come out against the sound with no distance: the bug left them silent, and their own peak follows which of them fire and when, so an absolute 0.05 failed a CI run at 0.0475 against 0.0928.
+export const HEARD_SHARE = 0.25;
 
 // [rc4l] The line smoke prints an evaluation's result on.
 const EVAL = '^\\[eval\\]';
@@ -100,6 +103,12 @@ export function stoppedOffered({ frames, shown, offered }) {
 // [rc4l] Why a sound played wrongly, or '': never started, or started again after it ended.
 export function playedOnce(n) {
   return n === 1 ? '' : n ? `the sound started ${n} times` : 'the sound never started';
+}
+
+// [rc4l] Why a format made no sound, or '': each format's command and how many sounds it started.
+export function everyFormatPlayed(started) {
+  const silent = Object.keys(started).filter((format) => !started[format]);
+  return silent.length ? `nothing played in ${silent.join(', ')}` : '';
 }
 
 // [rc4l] Why the game thread's check failed, or '': no tic ran on its own thread, or none of the shots it fired made a sound.
@@ -308,6 +317,24 @@ export const CHECKS = [
     until: EVAL,
     expect: playedOnce,
   },
+  // [rc4l] The browser build has no libsndfile or mpg123, so before features/sound-decoders every sound not in Doom's own format was silent, the engine's own secret, connect and taunt sounds among them.
+  {
+    name: 'FLAC, Ogg Vorbis and WAV sounds play',
+    autoplay: true,
+    init: WATCH_SOUNDS,
+    evaluate: inPage(`
+      ${pause(1500)}
+      const started = {};
+      for (const [format, command] of [['FLAC', 'playsound misc/secret'], ['Ogg Vorbis', 'playsound zandronum/connect'], ['WAV', 'taunt']]) {
+        const from = window.fuaSounds.length;
+        Module.fuaCommand(command);
+        ${pause(1500)}
+        started[format] = window.fuaSounds.slice(from).filter((s) => s.len >= ${PIECE_S}).length;
+      }
+      return started;`),
+    until: EVAL,
+    expect: everyFormatPlayed,
+  },
   // [rc4l] fua_gamethread: the tics run on a worker beside the page's frames, and the sounds a tic starts, here the pistol's, still play, started by the handoff on the page thread.
   {
     name: 'the game thread runs the tics and their sounds play',
@@ -381,7 +408,7 @@ export const CHECKS = [
       ${pause(1500)}
       window.fuaLevel.reset();
       // [rc4l] Listened to until a shot is heard or twenty seconds pass, since a software adapter runs the shooters' tics a frame of a second or more apart.
-      for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
+      for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= control * ${HEARD_SHARE};) { ${pause(250)} }
       return { control, peak: Number(window.fuaLevel.peak().toFixed(4)), contexts: window.fuaLevel.contexts() };`),
     until: EVAL,
     expect: (heard) => heardAtDistance(heard),
@@ -424,14 +451,15 @@ export const CHECKS = [
     expect: (moved) => (moved > 32 ? '' : `holding up moved the player ${moved} units`),
   },
   // [rc4l] A save's picture reads back a frame or two after the save is written, and goes into it then; a software adapter can take several seconds, so the check waits for it.
+  // [rc4l] Saved by a bare name, as a player types it, which lands in the save directory the page keeps.
   {
     name: 'a save gets its picture',
-    evaluate: inPage(`${pause(2000)} Module.fuaCommand('save /home/web_user/checkpicture.zds');
-      const file = '/home/web_user/checkpicture.zds';
+    evaluate: inPage(`${pause(2000)} Module.fuaCommand('save checkpicture');
       let image = null;
       for (let i = 0; i < 40 && !(image && image.width > 1); i++) {
         ${pause(250)}
-        if (Module.FS.analyzePath(file).exists) image = await createImageBitmap(new Blob([Module.FS.readFile(file)], { type: 'image/png' })).catch(() => null);
+        const file = FuaHome.find(Module.FS, 'checkpicture.zds');
+        if (file) image = await createImageBitmap(new Blob([Module.FS.readFile(file)], { type: 'image/png' })).catch(() => null);
       }
       if (!image) return { found: false };
       const draw = new OffscreenCanvas(image.width, image.height).getContext('2d');
@@ -449,10 +477,10 @@ export const CHECKS = [
   {
     name: 'a save survives a reload and loads',
     evaluate: inPage(`
-      if (!Module.FS.analyzePath('/home/web_user/checkpicture.zds').exists) return { found: false };
+      if (!FuaHome.find(Module.FS, 'checkpicture.zds')) return { found: false };
       const log = document.getElementById('console');
       const before = log.textContent.length;
-      Module.fuaCommand('load /home/web_user/checkpicture.zds');
+      Module.fuaCommand('load checkpicture');
       ${pause(1500)}
       return { found: true, said: log.textContent.slice(before) };`),
     until: EVAL,
@@ -562,7 +590,7 @@ export function judge(check, matched, img = null, lines = []) {
 // [rc4l] Shooters across the room heard, judged only where a sound with no distance (control) was heard at all: a runner whose browser makes no sound cannot tell a silent distance from silence.
 export function heardAtDistance({ control, peak, contexts }) {
   if (!(control > 0.05)) return { skip: `the page made no sound at all, a sound with no distance peaking at ${control} RMS (audio ${JSON.stringify(contexts)})` };
-  return peak > 0.05 ? '' : `shooters across the room came out at ${peak} RMS at most, while a sound with no distance peaked at ${control}`;
+  return peak > control * HEARD_SHARE ? '' : `shooters across the room came out at ${peak} RMS at most, while a sound with no distance peaked at ${control}`;
 }
 
 // [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.

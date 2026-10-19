@@ -50,3 +50,12 @@ TEST(TextureFilter, AnisotropyOnlyForALinearMipmappedFilter)
 	EXPECT_EQ(0u, ComputeAnisotropy({ true, false, true, true }, 8.f));
 	EXPECT_EQ(0u, ComputeAnisotropy({ true, true, true, false }, 8.f));
 }
+
+// [rc4l] nuts.wad with Complex Doom made 78 MB of sprite textures in a browser, each with a mip chain the default nearest filter never samples.
+TEST(TexFilterCompute, AMaterialHasMipsOnlyWhenTheFilterReadsThem)
+{
+	EXPECT_FALSE(zx::hwrender::ComputeMaterialMips(true, zx::hwrender::ComputeTextureFilter(0)));
+	EXPECT_FALSE(zx::hwrender::ComputeMaterialMips(true, zx::hwrender::ComputeTextureFilter(2)));
+	EXPECT_TRUE(zx::hwrender::ComputeMaterialMips(true, zx::hwrender::ComputeTextureFilter(4)));
+	EXPECT_FALSE(zx::hwrender::ComputeMaterialMips(false, zx::hwrender::ComputeTextureFilter(4)));
+}

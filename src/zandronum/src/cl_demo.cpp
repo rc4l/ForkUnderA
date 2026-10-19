@@ -77,6 +77,7 @@
 #include "network_enums.h"
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -176,9 +177,9 @@ void CLIENTDEMO_BeginRecording( const char *pszDemoName )
 		return;
 
 	// First, setup the demo name.
-	g_DemoName = pszDemoName;
+	// [rc4l] A client demo is always a .cld, whatever extension the name carries (features/command-safety).
+	g_DemoName = zx::ComputeOwnExtension( pszDemoName, { ".cld" } ).c_str( );
 	FixPathSeperator( g_DemoName );
-	DefaultExtension( g_DemoName, ".cld" );
 
 	// Allocate 128KB of memory for the demo buffer.
 	g_bDemoRecording = true;

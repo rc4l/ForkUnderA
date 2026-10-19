@@ -81,10 +81,11 @@ class FOptionMenuItemCommand : public FOptionMenuItemSubmenu
 {
 	bool mUnsafe;
 public:
-	FOptionMenuItemCommand(const char *label, const char *menu)
+	// [rc4l] Unsafe unless menudef trusts it (features/command-safety's ComputeMenuCommandUnsafe).
+	FOptionMenuItemCommand(const char *label, const char *menu, bool unsafe = true)
 		: FOptionMenuItemSubmenu(label, menu)
 	{
-		mUnsafe = true;
+		mUnsafe = unsafe;
 	}
 
 	// [BB] Moved implementation to c_dispatch.cpp
@@ -102,17 +103,17 @@ class FOptionMenuItemSafeCommand : public FOptionMenuItemCommand
 {
 	// action is a CCMD
 public:
-	FOptionMenuItemSafeCommand(const char *label, const char *menu)
-		: FOptionMenuItemCommand(label, menu)
+	FOptionMenuItemSafeCommand(const char *label, const char *menu, bool unsafe)
+		: FOptionMenuItemCommand(label, menu, unsafe)
 	{
 	}
 
 	bool MenuEvent (int mkey, bool fromcontroller)
 	{
+		// [rc4l] A confirmed command runs as the item's own, so a mod's menu cannot reach an unsafe command by asking first.
 		if (mkey == MKEY_MBYes)
 		{
-			C_DoCommand(mAction);
-			return true;
+			return FOptionMenuItemCommand::Activate();
 		}
 		return FOptionMenuItemCommand::MenuEvent(mkey, fromcontroller);
 	}

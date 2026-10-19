@@ -23,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputePlainFileName
 
 CUSTOM_CVAR(Bool, fua_telemetry, true, CVAR_ARCHIVE)
 {
@@ -597,7 +598,8 @@ CCMD(fua_capture)
 		return;
 	}
 	if (r.capturing) { Printf("telemetry: a capture is already running (fua_capture stop)\n"); return; }
-	r.captureName = argv.argc() > 2 ? argv[2] : "capture-" + Stamp();
+	// [rc4l] A plain name, so the files stay in telemetry/ (features/command-safety).
+	r.captureName = argv.argc() > 2 ? zx::ComputePlainFileName(argv[2]) : "capture-" + Stamp();
 	r.captureStartNs = NowNs();
 	r.capturing = true;
 	r.tracing = true;
@@ -608,7 +610,8 @@ CCMD(fua_capture)
 CCMD(fua_flightdump)
 {
 	Registry &r = R();
-	const std::string name = argv.argc() > 1 ? argv[1] : "flight-" + Stamp();
+	// [rc4l] A plain name, so the files stay in telemetry/ (features/command-safety).
+	const std::string name = argv.argc() > 1 ? zx::ComputePlainFileName(argv[1]) : "flight-" + Stamp();
 	const std::vector<std::string> names = Names(r.count.load(std::memory_order_acquire));
 	WriteFile(FilePath(name + "-frames.csv"), ComputeRingCsv(r.frames, names));
 	WriteFile(FilePath(name + "-seconds.csv"), ComputeRingCsv(r.seconds, ComputeSecondNames(names)));

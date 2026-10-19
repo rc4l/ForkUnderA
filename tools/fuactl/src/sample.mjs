@@ -85,6 +85,14 @@ function asRows(rows) {
   return (rows || []).map((f) => ({ symbol: f.symbol, binary: f.dso, samples: f.samples, percent: f.percent }));
 }
 
+// [rc4l] A sample as text: each function's share where the time landed, and with stacks the share it was anywhere on the stack of, hottest first.
+export function sampleTable(report, { top = 30 } = {}) {
+  const rows = (title, list) => [`${title}:`, ...(list || []).slice(0, top).map((f) => `${String(f.percent).padStart(7)}%  ${f.symbol}`)];
+  if (!report.available) return [`no sample: ${report.error || report.backend}`];
+  return [`${report.samples} samples over ${report.seconds} s (${report.backend})`, ...rows("self", report.functions),
+    ...(report.inclusive ? rows("inclusive", report.inclusive) : [])];
+}
+
 export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false) {
   const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0, ...(stacks ? { stacks: 1 } : {}) });
   if (!started) return { available: false, backend: "bridge", error: "perf.sample was refused", functions: [] };

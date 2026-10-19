@@ -95,7 +95,10 @@ add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
           "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
   COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt")
 
-add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_GEN_LISTS}")
+# [rc4l] features/sound-decoders: pcmdecode_compute.cpp calls the vendored decoders, built once here as in the engine, with their warnings off.
+set(ZX_SOUND_DECODERS "${ENGINE_SRC}/features/sound-decoders/vendor/decoders_vendor.cpp")
+set_source_files_properties("${ZX_SOUND_DECODERS}" PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}" "${ZX_GEN_LISTS}")
 target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so

@@ -84,7 +84,8 @@ better than their mod's busy map.
    compacted on long items; the queue does not.
 5. **Template regression first** (`template-maps`): the smallest generated map with just the one
    ingredient, as `scenarios/<name>.mjs`. It must FAIL on the current binary before you fix anything;
-   if it passes on both builds it tests nothing, so redesign it rather than ship it. When the fix keeps
+   if it passes on both builds it tests nothing, so redesign it rather than ship it. Run it on the old
+   binary more than once: a failure that hangs on heap order or timing passes some runs. When the fix keeps
    the old behaviour behind a cvar, `scenarios <name> --side S --cvar k=v` shows the failure instead.
 6. **Fix** following `AGENTS.md`: pure logic in `Compute*` helpers with colocated `*_test.cpp`
    (`writing-tests`), thin engine glue, GL hooks listed in the feature README, one-sentence

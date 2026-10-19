@@ -73,9 +73,16 @@
 #include "farchive.h"
 // [BB] New #includes.
 #include "deathmatch.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 CVAR(Int, savestatistics, 0, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-CVAR(String, statfile, "zdoomstat.txt", CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+// [rc4l] A script cannot point the statistics elsewhere, and the file is always a .txt (features/command-safety).
+CVAR(String, statfile, "zdoomstat.txt", CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOSETBYACS)
+
+static FString StatFileName()
+{
+	return zx::ComputeOwnExtension(statfile.GetGenericRep(CVAR_String).String, {".txt"}).c_str();
+}
 
 //==========================================================================
 //
@@ -201,7 +208,7 @@ static void ParseStatistics(const char *fn, TArray<FStatistics> &statlist)
 
 void ReadStatistics()
 {
-	ParseStatistics(statfile, EpisodeStatistics);
+	ParseStatistics(StatFileName(), EpisodeStatistics);
 }
 
 // ====================================================================
@@ -504,7 +511,7 @@ void STAT_ChangeLevel(const char *newl)
 
 				LevelStatEntry(es, lsection, infostring, LevelData[i].leveltime);
 			}
-			SaveStatistics(statfile, EpisodeStatistics);
+			SaveStatistics(StatFileName(), EpisodeStatistics);
 		}
 	}
 	else if (savestatistics == 2)	// todo: handle single level statistics.

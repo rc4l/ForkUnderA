@@ -19,6 +19,9 @@ than a list here.
 - **A frame never reads the live game.** It reads `features/gamecopy`'s copy (`Record`, `Player`, `Level`, a
   sector's or side's `.rc`). A value the frame needs once, such as whether the console forces the blend, is worked
   out once on the main thread (`r_ActorFrac`), never per sprite on the job threads.
+- **Only a tic a frame draws fills the copy.** Catch-up tics run back to back (`RunTic (drawn)`,
+  `ComputeTicDrawn`) leave the scan and fill to the last of the batch, which takes every change since; game code
+  inside a tic reads the copy only while a tic is in flight on the game thread.
 - **A query must not act.** `P_CheckTickerPaused` pauses the sound; frames ask `P_TickerPausedNow`. Before a frame
   calls a game helper, read what it calls.
 - **Mark the crossing.** `ZX_SEAM_UNTIMED ("group/name", Main)` on anything only the main thread may do turns every

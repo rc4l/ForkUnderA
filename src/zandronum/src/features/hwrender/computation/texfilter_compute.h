@@ -20,6 +20,9 @@ TextureFilter ComputeTextureFilter(int mode);
 // [rc4l] r_texture_filter_anisotropic as a sampler's anisotropy: the setting rounded, at most 16, for a filter that is linear both ways and mipmapped, else 0 (off), since nearest filtering keeps its pixels.
 unsigned ComputeAnisotropy(const TextureFilter &filter, float setting);
 
+// [rc4l] Whether a material is made with a mip chain: when mips are allowed (fua_dg_mips) and the filter reads past the first level.
+bool ComputeMaterialMips(bool allowed, const TextureFilter &filter);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_TEXFILTER_COMPUTE_H

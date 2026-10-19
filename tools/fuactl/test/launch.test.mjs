@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, loopbackArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -490,4 +490,16 @@ test("FUACTL_ENGINE_ARGS adds its arguments to every launch", () => {
   assert.deepEqual(envEngineArgs({ FUACTL_ENGINE_ARGS: " -nosound  +set foo 1 " }), ["-nosound", "+set", "foo", "1"]);
   assert.deepEqual(envEngineArgs({}), []);
   assert.ok(engineArgs({ env: { FUACTL_ENGINE_ARGS: "-nosound" } }, "x.ini").includes("-nosound"));
+});
+
+// [rc4l] Every harness launch bound its game socket to every interface, and Windows Firewall asked about each one; the user could not allow it.
+test("a harness launch keeps its game socket on loopback unless it hosts, joins, is played by hand or names its own address", () => {
+  assert.deepEqual(loopbackArgs({}), ["-useip", "127.0.0.1"]);
+  assert.deepEqual(loopbackArgs({ extraArgs: ["-file", "a.wad"] }), ["-useip", "127.0.0.1"]);
+  assert.deepEqual(loopbackArgs({ extraArgs: ["-host", "-port", "10670"] }), []);
+  assert.deepEqual(loopbackArgs({ extraArgs: ["-useip", "10.0.0.2"] }), []);
+  assert.deepEqual(loopbackArgs({ connect: "127.0.0.1:10670" }), []);
+  assert.deepEqual(loopbackArgs({ allowOsInput: true }), []);
+  const args = engineArgs({}, "x.ini");
+  assert.deepEqual(args.slice(args.indexOf("-useip"), args.indexOf("-useip") + 2), ["-useip", "127.0.0.1"]);
 });
