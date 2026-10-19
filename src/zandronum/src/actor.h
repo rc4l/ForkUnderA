@@ -50,6 +50,7 @@
 
 // [AK] Needed for std::numeric_limits in the IDList class.
 #include <limits>
+#include "features/netids/computation/netidsearch_compute.h"   // [rc4l] IDList's bitmap of free ids
 
 struct subsector_t;
 //
@@ -1601,19 +1602,20 @@ template <typename T>
 class IDList
 {
 private:
-	// List of all possible network ID's for an actor. Slot is true if it available for use.
+	// List of all possible network ID's for an actor.
 	typedef struct
 	{
-		// Is this node occupied, or free to be used by a new actor?
-		bool	bFree;
-
 		// If this node is occupied, this is the actor occupying it.
 		T	*pActor;
 
 	} IDNODE_t;
 
-	IDNODE_t _entries[ static_cast<unsigned int>(( std::numeric_limits<unsigned short>::max )( )) + 1];
+	IDNODE_t _entries[zx::netids::kIdCount];
+	// [rc4l] One entry and one bit for every value a net id can take.
+	static_assert ( zx::netids::kIdCount == static_cast<unsigned>(( std::numeric_limits<unsigned short>::max )( )) + 1, "a net id is an unsigned short" );
 	unsigned short _firstFreeID;
+	// [rc4l] Which ids are free, a bit each, the one record of it, so getNewID finds the next a word at a time (features/netids).
+	uint64_t _freeBits[zx::netids::kIdWords];
 
 	inline bool isIndexValid ( const unsigned short netID ) const
 	{
@@ -1636,8 +1638,8 @@ public:
 	{
 		if ( isIndexValid ( netID ) )
 		{
-			_entries[netID].bFree = true;
 			_entries[netID].pActor = NULL;
+			zx::netids::ComputeMarkId ( _freeBits, netID, true );
 		}
 	}
 
@@ -1648,7 +1650,7 @@ public:
 		if ( isIndexValid ( netID ) == false )
 			return ( NULL );
 
-		if (( _entries[netID].bFree == false ) && ( _entries[netID].pActor ))
+		if (( zx::netids::ComputeIdFree ( _freeBits, netID ) == false ) && ( _entries[netID].pActor ))
 			return ( _entries[netID].pActor );
 
 		return ( NULL );

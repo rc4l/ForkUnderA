@@ -54,3 +54,12 @@ TEST(ThreadedTic, AFrameHoldsOnlyPastTheBoundaryWithTheTicStillRunning)
 	EXPECT_TRUE(ComputeHeldFrame(false, 12, 11));
 	EXPECT_FALSE(ComputeHeldFrame(true, 12, 11));
 }
+
+// [rc4l] nuts.wad with Complex Doom caught up 34 tics a frame, and each scanned and filled the render copy that only the last one's frame draws.
+TEST(ThreadedTic, OnlyTheLastTicOfABatchIsDrawn)
+{
+	EXPECT_TRUE(zx::gameloop::ComputeTicDrawn(0));
+	EXPECT_FALSE(zx::gameloop::ComputeTicDrawn(1));
+	EXPECT_FALSE(zx::gameloop::ComputeTicDrawn(33));
+	EXPECT_TRUE(zx::gameloop::ComputeTicDrawn(-1));   // [rc4l] a lone tic outside any batch
+}

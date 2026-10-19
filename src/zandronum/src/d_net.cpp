@@ -27,6 +27,7 @@
 
 #include <stddef.h>
 #include "features/gameloop/loop.h"   // [rc4l] RunTic
+#include "features/gameloop/computation/threadedtic_compute.h"   // [rc4l] ComputeTicDrawn
 
 #include "version.h"
 #include "menu/menu.h"
@@ -1920,8 +1921,8 @@ void TryRunTics (void)
 				D_DoAdvanceDemo ();
 			}
 			if (debugfile) fprintf (debugfile, "run tic %d\n", gametic);
-			// [rc4l] features/handoff: the handoff's work, the playsim's tic and the handoff's work again.
-			zx::gameloop::RunTic ();
+			// [rc4l] features/handoff: the handoff's work, the playsim's tic and the handoff's work again, the render copy left to the last tic the frame draws.
+			zx::gameloop::RunTic (zx::gameloop::ComputeTicDrawn (counts));
 		}
 		S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
 	}

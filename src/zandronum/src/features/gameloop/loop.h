@@ -8,8 +8,8 @@
 
 namespace zx { namespace gameloop {
 
-// [rc4l] One tic as TryRunTics runs it: the console and menu tickers, tic-scheduled RPCs and the seen bits before it, G_Ticker's halves around the playsim, and the profiler, trace, gametic, input and render copy after it.
-void RunTic();
+// [rc4l] One tic as TryRunTics runs it: the console and menu tickers, tic-scheduled RPCs and the seen bits before it, G_Ticker's halves around the playsim, and the profiler, trace, gametic, input and, when a frame draws it (drawn), render copy after it.
+void RunTic(bool drawn);
 
 // [rc4l] fua_gamethread's single-player frame: a tic's playsim started on the game thread, a frame drawn beside one in flight, or the one in flight taken back on its boundary; false when this frame runs inline instead.
 bool GameThreadFrame();

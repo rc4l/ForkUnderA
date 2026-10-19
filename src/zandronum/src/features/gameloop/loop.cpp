@@ -68,12 +68,19 @@ void TickerBegin()
 	V_FontsForTic ();
 }
 
-void Playsim()
+// [rc4l] The playsim's tic, and when a frame draws it the render copy's scan at its end.
+void PlaysimTic(bool drawn)
 {
 	ZX_SEAM("tic/playsim", GameThread);
 	G_TickerPlaysim ();
 	// [rc4l] Found while the frames still draw, so the handoff takes only what changed.
-	zx::gamecopy::ScanAtTicEnd ();
+	if (drawn) zx::gamecopy::ScanAtTicEnd ();
+}
+
+// [rc4l] A tic on the game thread, which a frame always draws.
+void Playsim()
+{
+	PlaysimTic (true);
 }
 
 void TickerEnd()
@@ -84,7 +91,7 @@ void TickerEnd()
 	G_TickerEnd (g_part);
 }
 
-void AfterTic()
+void AfterTic(bool drawn)
 {
 	ZX_SEAM("handoff/after_tic", Handoff);
 	MCP_TicProf_TicDone ();
@@ -93,8 +100,8 @@ void AfterTic()
 	gametic++;
 	DrainEffects ();
 	NetUpdate ();	// check for new console commands
-	// [rc4l] The render copy of what this tic left, before any frame draws beside the next.
-	zx::gamecopy::FillMap ();
+	// [rc4l] The render copy of what this tic left, before any frame draws beside the next; a tic no frame draws leaves it to the next, which takes every change since.
+	if (drawn) zx::gamecopy::FillMap ();
 }
 
 // [rc4l] Whether the next tic's playsim may run on the game thread now.
@@ -116,7 +123,7 @@ void FinishTic()
 	SetGameRunning (false);
 	TakeBack ();
 	TickerEnd ();
-	AfterTic ();
+	AfterTic (true);
 	I_GetTime (true);
 	// [rc4l] The tic's sounds start now, on the boundary its picture starts showing on.
 	S_RunDeferredSounds ();
@@ -127,13 +134,13 @@ void FinishTic()
 void CatchUp(int tics)
 {
 	if (tics <= 0) return;
-	while (tics-- > 0) RunTic ();
+	while (tics-- > 0) RunTic (ComputeTicDrawn (tics));
 	S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
 }
 
 } // namespace
 
-void RunTic()
+void RunTic(bool drawn)
 {
 	BeforeTic ();
 	{
@@ -143,12 +150,12 @@ void RunTic()
 		{
 			NoteGameThread ();   // [rc4l] an inline tic's thread is the main one
 			SetGameRunning (true);
-			Playsim ();
+			PlaysimTic (drawn);
 			SetGameRunning (false);
 		}
 		TickerEnd ();
 	}
-	AfterTic ();
+	AfterTic (drawn);
 }
 
 void FinishInFlight()
@@ -202,7 +209,7 @@ bool GameThreadFrame()
 			SetGameRunning (false);
 		}
 		TickerEnd ();
-		AfterTic ();
+		AfterTic (true);
 		S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
 	}
 	else
