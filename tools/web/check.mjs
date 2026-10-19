@@ -14,6 +14,9 @@ const COUNT_FRAMES = `let frames = 0;
       const raf = window.requestAnimationFrame.bind(window);
       window.requestAnimationFrame = (f) => { frames++; return raf(f); };`;
 
+// [rc4l] How loud the shooters must come out against the sound with no distance: the bug left them silent, and their own peak follows which of them fire and when, so an absolute 0.05 failed a CI run at 0.0475 against 0.0928.
+export const HEARD_SHARE = 0.25;
+
 // [rc4l] The line smoke prints an evaluation's result on.
 const EVAL = '^\\[eval\\]';
 
@@ -405,7 +408,7 @@ export const CHECKS = [
       ${pause(1500)}
       window.fuaLevel.reset();
       // [rc4l] Listened to until a shot is heard or twenty seconds pass, since a software adapter runs the shooters' tics a frame of a second or more apart.
-      for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= 0.05;) { ${pause(250)} }
+      for (const end = Date.now() + 20000; Date.now() < end && window.fuaLevel.peak() <= control * ${HEARD_SHARE};) { ${pause(250)} }
       return { control, peak: Number(window.fuaLevel.peak().toFixed(4)), contexts: window.fuaLevel.contexts() };`),
     until: EVAL,
     expect: (heard) => heardAtDistance(heard),
@@ -587,7 +590,7 @@ export function judge(check, matched, img = null, lines = []) {
 // [rc4l] Shooters across the room heard, judged only where a sound with no distance (control) was heard at all: a runner whose browser makes no sound cannot tell a silent distance from silence.
 export function heardAtDistance({ control, peak, contexts }) {
   if (!(control > 0.05)) return { skip: `the page made no sound at all, a sound with no distance peaking at ${control} RMS (audio ${JSON.stringify(contexts)})` };
-  return peak > 0.05 ? '' : `shooters across the room came out at ${peak} RMS at most, while a sound with no distance peaked at ${control}`;
+  return peak > control * HEARD_SHARE ? '' : `shooters across the room came out at ${peak} RMS at most, while a sound with no distance peaked at ${control}`;
 }
 
 // [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.

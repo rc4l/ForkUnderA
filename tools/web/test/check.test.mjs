@@ -204,6 +204,8 @@ test('the game thread check needs tics on the thread and a sound from them', () 
 // [rc4l] A CI runner's browser rendered silence for every sound, so distance is judged only where a sound with no distance was heard.
 test('distant shooters are judged only where a sound with no distance was heard', () => {
   assert.equal(heardAtDistance({ control: 0.3, peak: 0.2, contexts: [] }), '');
+  assert.equal(heardAtDistance({ control: 0.0928, peak: 0.0475, contexts: [] }), '');
+  assert.match(heardAtDistance({ control: 0.0928, peak: 0.02, contexts: [] }), /came out at 0.02 RMS/);
   assert.match(heardAtDistance({ control: 0.3, peak: 0, contexts: [] }), /shooters across the room came out at 0 RMS at most/);
   assert.match(heardAtDistance({ control: 0, peak: 0, contexts: [{ state: 'running', time: 3 }] }).skip, /made no sound at all/);
   const check = { until: 'x', expect: heardAtDistance };
