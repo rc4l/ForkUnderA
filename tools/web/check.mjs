@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, inPage, pause, soakInPage } from './page.mjs';
 import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
@@ -100,6 +100,12 @@ export function stoppedOffered({ frames, shown, offered }) {
 // [rc4l] Why a sound played wrongly, or '': never started, or started again after it ended.
 export function playedOnce(n) {
   return n === 1 ? '' : n ? `the sound started ${n} times` : 'the sound never started';
+}
+
+// [rc4l] Why a format made no sound, or '': each format's command and how many sounds it started.
+export function everyFormatPlayed(started) {
+  const silent = Object.keys(started).filter((format) => !started[format]);
+  return silent.length ? `nothing played in ${silent.join(', ')}` : '';
 }
 
 // [rc4l] Why the game thread's check failed, or '': no tic ran on its own thread, or none of the shots it fired made a sound.
@@ -307,6 +313,24 @@ export const CHECKS = [
       return sounds.length ? sounds.filter((s) => s.id === sounds[0].id).length : 0;`),
     until: EVAL,
     expect: playedOnce,
+  },
+  // [rc4l] The browser build has no libsndfile or mpg123, so before features/sound-decoders every sound not in Doom's own format was silent, the engine's own secret, connect and taunt sounds among them.
+  {
+    name: 'FLAC, Ogg Vorbis and WAV sounds play',
+    autoplay: true,
+    init: WATCH_SOUNDS,
+    evaluate: inPage(`
+      ${pause(1500)}
+      const started = {};
+      for (const [format, command] of [['FLAC', 'playsound misc/secret'], ['Ogg Vorbis', 'playsound zandronum/connect'], ['WAV', 'taunt']]) {
+        const from = window.fuaSounds.length;
+        Module.fuaCommand(command);
+        ${pause(1500)}
+        started[format] = window.fuaSounds.slice(from).filter((s) => s.len >= ${PIECE_S}).length;
+      }
+      return started;`),
+    until: EVAL,
+    expect: everyFormatPlayed,
   },
   // [rc4l] fua_gamethread: the tics run on a worker beside the page's frames, and the sounds a tic starts, here the pistol's, still play, started by the handoff on the page thread.
   {

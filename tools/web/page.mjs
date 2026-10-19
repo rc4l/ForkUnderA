@@ -70,6 +70,9 @@ export const WATCH_SOUNDS = `window.fuaSounds = []; {
     };
   }`;
 
+// [rc4l] A stream's pieces (the music's, 71 ms each) are shorter than this, so a buffer at least this long is a sound.
+export const PIECE_S = 0.1;
+
 // [rc4l] The screen-sized textures the page holds, made and neither destroyed nor collected, in window.fuaHeld; the level's own, which a software adapter is still making, are far smaller.
 export const WATCH_TEXTURES = `window.fuaHeld = new Set(); {
     const collected = new FinalizationRegistry((id) => window.fuaHeld.delete(id));

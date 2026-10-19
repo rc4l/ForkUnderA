@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -145,6 +145,11 @@ test('a sound has to start once, not again after it ends', () => {
   assert.equal(playedOnce(1), '');
   assert.equal(playedOnce(2), 'the sound started 2 times');
   assert.equal(playedOnce(0), 'the sound never started');
+});
+
+test('a sound of every format has to start', () => {
+  assert.equal(everyFormatPlayed({ FLAC: 1, 'Ogg Vorbis': 2, WAV: 1 }), '');
+  assert.equal(everyFormatPlayed({ FLAC: 0, 'Ogg Vorbis': 1, WAV: 0 }), 'nothing played in FLAC, WAV');
 });
 
 test('firing at the floor has to put a mark through the decal pass', () => {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from './serve.mjs';
 import { smoke } from './smoke.mjs';
 import { smokeFirefox } from './firefox.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, HEAR_CONSOLE, inPage, pause, repeatedSounds, soakInPage, framePacing } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, inPage, pause, repeatedSounds, soakInPage, framePacing } from './page.mjs';
 
 // [rc4l] What a run's look steps print, each about the time since the run began or the last look of its kind: "frames" the browser's frame pacing, "level" what the audio output carried.
 const LOOKS = {
@@ -47,9 +47,6 @@ export function queryMap(query) {
 export function soakLines(verdict) {
   return String(verdict.report || 'the soak gave no verdict').trimEnd().split('\n');
 }
-
-// [rc4l] A stream's pieces (the music's, 71 ms each) are shorter than this, and are counted rather than listed.
-const PIECE_S = 0.1;
 
 // [rc4l] The report: what the steps printed, each sound started, any started again, the stream's pieces counted, the screen textures held before and after, and the first WebGPU errors.
 export function report({ said = [], sounds, heldBefore, heldAfter }, lines) {

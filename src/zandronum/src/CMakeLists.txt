@@ -1618,6 +1618,8 @@ add_executable( zdoom WIN32
 	${FUA_AUDIOSINK_SOURCES}
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
+	features/sound-decoders/builtindecoder.cpp
+	features/sound-decoders/vendor/decoders_vendor.cpp
 	features/freeform-menu/freeformmenu.cpp
 	features/video-scale/videoscale.cpp
 	features/windowed-video/windowedvideo.cpp
@@ -1867,6 +1869,9 @@ set_source_files_properties( ${NOT_COMPILED_SOURCE_FILES} PROPERTIES HEADER_FILE
 if( NO_OPENAL )
 	set_source_files_properties( features/openal-sound/oalsound.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
 endif( NO_OPENAL )
+
+# [rc4l] features/sound-decoders: the vendored decoders build with their warnings off, since that code is not ours.
+set_source_files_properties( features/sound-decoders/vendor/decoders_vendor.cpp PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>" )
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 	# [BL] Solaris requires these to be explicitly linked.
