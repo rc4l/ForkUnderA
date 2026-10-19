@@ -1,6 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, inPage, pause, repeatedSounds, soakInPage, framePacing } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, STARTED, inPage, pause, repeatedSounds, soakInPage, framePacing } from '../page.mjs';
+
+// [rc4l] STARTED run against a stand-in page: its error panel, its Module, and whether it is isolated.
+function runStarted({ errorShown = false, errorText = '', module = {}, isolated = true }) {
+  const elements = { error: { hidden: !errorShown }, 'error-text': { textContent: errorText } };
+  const document = { getElementById: (id) => elements[id] };
+  return new Function('document', 'window', 'Module', 'crossOriginIsolated', `return ${STARTED};`)(document, { Module: module }, module, isolated);
+}
+
+test('page code reports the page\'s error, or the engine answering, with whether the page is isolated', async () => {
+  assert.deepEqual(await runStarted({ errorShown: true, errorText: 'Could not fetch freedoom2.wad (404)', isolated: false }), { isolated: false, error: 'Could not fetch freedoom2.wad (404)' });
+  assert.deepEqual(await runStarted({ module: { fuaCommand() {} } }), { isolated: true, error: null });
+  const module = {};
+  setTimeout(() => { module.fuaCommand = () => {}; }, 150);
+  assert.deepEqual(await runStarted({ module }), { isolated: true, error: null });
+});
 
 test('page code waits for the engine to start before it runs', () => {
   const js = inPage('return 1;');
