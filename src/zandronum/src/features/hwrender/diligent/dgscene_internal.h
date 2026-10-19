@@ -274,6 +274,7 @@ struct SceneGeometry
 	TArray<ScenePieceData> pieces;
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> pieceBuf;
 	unsigned int pieceCapacity = 0;
+	unsigned int dynPeak = 0;                       // [rc4l] the most dynamic pieces a frame has had, which the buffer keeps records for
 	TArray<SceneBatch> batches;
 	TArray<int>  blendBatches;                      // [rc4l] the translucent batches, in build order
 	// [rc4l] The stacked views' subsector bits (ComputeMarkStackVisible), ready once this frame's are uploaded.
@@ -348,6 +349,8 @@ Diligent::IRenderDevice  *GetDevice();
 Diligent::ITextureView   *GetMaterialSRV(const void *materialPtr, int translation);
 Diligent::ITextureView   *GetBrightmapSRV(const void *materialPtr);
 int MaterialCount();
+// [rc4l] Whether materials are made with a mip chain now, which the frame makes them again for when it changes.
+bool MaterialsWithMips();
 bool MaterialIsMasked(const void *materialPtr);
 Diligent::IDeviceContext *GetContext();
 // [rc4l] A texture read back top-down as RGB the caller deletes, its channel order taken from its format; NULL with a reason in `report`.
@@ -445,6 +448,8 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 void ForgetBatchSRBs();
 void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
 void ReserveDynamicSlots();
+// [rc4l] Room in the piece buffer for this frame's dynamic pieces, made before anything is recorded.
+void EnsureDynamicRecords();
 bool SceneUpload(FString &report);
 
 // [rc4l] Mirrors (dgviews.cpp), and reflective planes and stacked views (dgviewtargets.cpp).

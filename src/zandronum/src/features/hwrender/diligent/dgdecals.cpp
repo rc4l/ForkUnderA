@@ -740,12 +740,10 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				planeData[si*8 + q*4 + 3] = (C != 0.f) ? (1.f / C) : 0.f;
 			}
 		}
-		ctx->UpdateBuffer(g_ddPlaneBuf, 0, (Diligent::Uint64)numsectors * 32, &planeData[0],
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		UpdateBufferInPages(ctx, g_ddPlaneBuf, 0, (size_t)numsectors * 32, &planeData[0]);
 	}
 
-	ctx->UpdateBuffer(g_ddInstBuf, 0, (Diligent::Uint64)all.Size() * sizeof(DeferredDecalInstance),
-		&all[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	UpdateBufferInPages(ctx, g_ddInstBuf, 0, (size_t)all.Size() * sizeof(DeferredDecalInstance), &all[0]);
 
 	// The depth buffer comes off the render target for this pass -- it is being READ.
 	Diligent::ITextureView *rtv = PassColorRTV();

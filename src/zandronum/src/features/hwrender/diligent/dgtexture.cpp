@@ -28,6 +28,7 @@
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture
 
 #include "features/materials/materials.h"
+#include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] ComputeMaterialMips
 #include "tarray.h"
 #include "c_cvars.h"
 
@@ -37,6 +38,7 @@
 // long vista aliases badly, and GL has always mipmapped. Off is the A/B for a cut-out texture that
 // has lost its shape at distance -- see the note at the CreateTexture below.
 CVAR(Bool, fua_dg_mips, true, CVAR_ARCHIVE)
+EXTERN_CVAR(Int, r_texture_filter)
 
 namespace zx { namespace hwrender {
 
@@ -95,6 +97,7 @@ static Diligent::ITextureView *EnsureWhite()
 
 // Upload one FMaterial into a Diligent texture, or return the cached view.
 Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation);
+bool MaterialsWithMips();
 
 // [rc4l] A 1x1 BLACK texture, which is what "this material has no brightmap" looks like.
 //
@@ -211,7 +214,8 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// [rc4l] BIND_RENDER_TARGET is required alongside SHADER_RESOURCE for GenerateMips -- Diligent
 	// builds the chain by rendering into each level. Without it CreateTexture fails outright and
 	// every material silently fell back to the white placeholder (a convincingly blank world).
-	td.BindFlags = Diligent::BIND_SHADER_RESOURCE | Diligent::BIND_RENDER_TARGET;
+	const bool mips = MaterialsWithMips();
+	td.BindFlags = mips ? Diligent::BIND_SHADER_RESOURCE | Diligent::BIND_RENDER_TARGET : Diligent::BIND_SHADER_RESOURCE;
 	// [rc4l] Mipmapped. Point-sampling a 64x64 Doom texture across a Sunder-sized vista aliases
 	// badly at distance -- the GL renderer has always mipmapped, so a port that does not is not
 	// comparable to look at. MipLevels 0 means "full chain"; GENERATE_MIPS lets the GPU build it.
@@ -223,8 +227,8 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	// keeps the lot or drops the lot. The RGB it averages in comes from the TRANSPARENT texels
 	// too, which carry whatever colour the palette left behind them and were never meant to be
 	// seen. See docs/mapbake-invalidation.md for the case that found this.
-	td.MipLevels = fua_dg_mips ? 0 : 1;
-	td.MiscFlags = fua_dg_mips ? Diligent::MISC_TEXTURE_FLAG_GENERATE_MIPS : Diligent::MISC_TEXTURE_FLAG_NONE;
+	td.MipLevels = mips ? 0 : 1;
+	td.MiscFlags = mips ? Diligent::MISC_TEXTURE_FLAG_GENERATE_MIPS : Diligent::MISC_TEXTURE_FLAG_NONE;
 
 	// [rc4l] Create EMPTY, then write mip 0 and let the GPU build the rest. Passing initial data here
 	// is what a single-mip texture does; with a full chain requested Diligent demands init data for
@@ -251,7 +255,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	delete[] buf;
 
 	e.srv = e.tex ? e.tex->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : EnsureWhite();
-	if (e.tex && e.srv && fua_dg_mips) GetContext()->GenerateMips(e.srv);
+	if (e.tex && e.srv && mips) GetContext()->GenerateMips(e.srv);
 	g_textures.Push(e);
 	return e.srv;
 }
@@ -264,6 +268,11 @@ void ReleaseMaterials()
 }
 
 int MaterialCount() { return (int)g_textures.Size(); }
+
+bool MaterialsWithMips()
+{
+	return zx::hwrender::ComputeMaterialMips(fua_dg_mips, zx::hwrender::ComputeTextureFilter((int)r_texture_filter));
+}
 
 // [rc4l] Whether this material needs alpha testing. It decides which pipeline draws it, and that
 // choice is worth real time: a `discard` in the fragment shader defeats early-Z, so an alpha-tested

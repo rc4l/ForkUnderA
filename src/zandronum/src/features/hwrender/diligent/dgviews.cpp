@@ -297,14 +297,12 @@ static void UpdateTracedSprites(Diligent::IDeviceContext *ctx)
 	records.Resize(head + n * kTracedSpriteFloats);
 	ComputeTracedSpriteHeader(steps > 0 ? &g_scene.tracedSteps[0] : NULL, steps, &records[0]);
 	for (unsigned i = 0; i < n; i++) ComputeTracedSpriteRecord(sprites[i], &records[head + i * kTracedSpriteFloats]);
-	ctx->UpdateBuffer(g_spriteRecords, 0, (Diligent::Uint64)records.Size() * sizeof(float), &records[0],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	UpdateBufferInPages(ctx, g_spriteRecords, 0, (size_t)records.Size() * sizeof(float), &records[0]);
 	if (n > 0)
 	{
 		boxes.Resize(n * 6);
 		for (unsigned i = 0; i < n; i++) ComputeTracedSpriteBox(sprites[i], &boxes[i * 6], &boxes[i * 6 + 3]);
-		ctx->UpdateBuffer(g_spriteBoxes, 0, (Diligent::Uint64)boxes.Size() * sizeof(float), &boxes[0],
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		UpdateBufferInPages(ctx, g_spriteBoxes, 0, (size_t)boxes.Size() * sizeof(float), &boxes[0]);
 		Diligent::BLASBuildBoundingBoxData data;
 		data.GeometryName = "sprites";
 		data.pBoxBuffer = g_spriteBoxes;

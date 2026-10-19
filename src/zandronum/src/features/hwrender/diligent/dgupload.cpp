@@ -4,7 +4,7 @@
 // [rc4l] The scene buffer: built from the level mesh sorted by material, and patched in place as pieces move, repaint or appear.
 
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputePieceShader
-#include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeUploadChunks
+#include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputePieceCapacity
 #include "features/telemetry/telemetry.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
@@ -134,16 +134,32 @@ static TArray<unsigned int> g_pendingRepaints;
 // Batches the last sorted build produced -- the figure appends are measured against.
 static int g_builtBatchCount = 0;
 
-// [rc4l] Diligent's upload page, its EngineCreateInfo default, which a browser's device keeps every one of once made.
-static const size_t kUploadPageBytes = 1 << 20;
 
-// [rc4l] A buffer's first bytes written in upload-page-sized pieces, so the pages a load needs add up to what it writes rather than to the next power of two of each write.
-static void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, size_t bytes, const void *data)
+// [rc4l] The piece records made again with room for want and the level's own written in, the old buffer kept when the new one cannot be had; the caller makes the pipelines again, since a static binding cannot follow a new buffer.
+static bool MakePieceBuffer(Diligent::IDeviceContext *ctx, unsigned int want)
 {
-	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
-	{
-		ctx->UpdateBuffer(buf, at, n, (const char *)data + at, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-	});
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> made;
+	if (!CreateStructuredBuffer("fua scene piece data", sizeof(ScenePieceData), want, NULL, made)) return false;
+	g_scene.pieceBuf = made;
+	g_scene.pieceCapacity = want;
+	if (ctx != NULL && g_scene.pieces.Size() > 0) UpdateBufferInPages(ctx, g_scene.pieceBuf, 0, g_scene.pieces.Size() * sizeof(ScenePieceData), &g_scene.pieces[0]);
+	return true;
+}
+
+// [rc4l] The piece buffer made bigger before this frame's dynamic pieces are laid out, when they outnumber the records behind the level's: past them each sprite drew with the last record's material, and nuts.wad's 10,600 monsters showed as rows of one wrong monster.
+void EnsureDynamicRecords()
+{
+	int count = 0;
+	zx::levelmesh::DynPieces(count);
+	const unsigned int dynamic = (unsigned int)count;
+	if (dynamic > g_scene.dynPeak) g_scene.dynPeak = dynamic;
+	auto *ctx = GetContext();
+	if (!g_scene.pieceBuf || ctx == NULL || zx::hwrender::ComputeBufferFits(true, g_scene.pieceCapacity, g_scene.pieces.Size() + dynamic)) return;
+	if (!MakePieceBuffer(ctx, zx::hwrender::ComputePieceCapacity(g_scene.pieces.Size(), g_scene.dynPeak))) return;
+	// [rc4l] A new buffer object, so the pipelines binding it statically are made again, as a level's upload does.
+	ReleaseScenePipelines();
+	FString err;
+	EnsureScenePipeline(err);
 }
 
 // [rc4l] Build the backend vertex buffer from the level mesh, and upload it.
@@ -348,13 +364,8 @@ static bool BuildSceneBuffer(FString &err)
 	const bool pieceBufferKept = g_scene.pieceBuf && g_scene.pieces.Size() <= g_scene.pieceCapacity;
 	if (!pieceBufferKept)
 	{
-		const unsigned int want = g_scene.pieces.Size() + g_scene.pieces.Size() / 2 + 4096;
-		if (!CreateStructuredBuffer("fua scene piece data", sizeof(ScenePieceData), want, NULL, g_scene.pieceBuf))
+		if (!MakePieceBuffer(GetContext(), zx::hwrender::ComputePieceCapacity(g_scene.pieces.Size(), g_scene.dynPeak)))
 		{ err = "piece data buffer creation failed"; return false; }
-		g_scene.pieceCapacity = want;
-		if (auto *ctx2 = GetContext())
-			if (g_scene.pieces.Size() > 0)
-				UpdateBufferInPages(ctx2, g_scene.pieceBuf, g_scene.pieces.Size() * sizeof(ScenePieceData), &g_scene.pieces[0]);
 	}
 	else if (auto *ctx3 = GetContext())
 	{
@@ -364,7 +375,7 @@ static bool BuildSceneBuffer(FString &err)
 		// times a minute, and making thirteen pipelines again each time is a stutter you can feel with
 		// the mouse. A buffer that still fits is kept, and only a bigger one costs a rebuild.
 		if (g_scene.pieces.Size() > 0)
-			UpdateBufferInPages(ctx3, g_scene.pieceBuf, g_scene.pieces.Size() * sizeof(ScenePieceData), &g_scene.pieces[0]);
+			UpdateBufferInPages(ctx3, g_scene.pieceBuf, 0, g_scene.pieces.Size() * sizeof(ScenePieceData), &g_scene.pieces[0]);
 	}
 	// [rc4l] The stacked views' bits follow the same rule: kept while this level's subsectors fit.
 	const unsigned int visWords = (unsigned int)zx::levelmesh::ComputeStackVisWords(numsubsectors + numsides, zx::levelmesh::WalkSlots());
@@ -385,7 +396,7 @@ static bool BuildSceneBuffer(FString &err)
 		if (!EnsureScenePipeline(perr)) { err = perr; return false; }
 	}
 	if (auto *ctx = GetContext())
-		UpdateBufferInPages(ctx, g_scene.vb, g_scene.cpuVerts.Size() * sizeof(SceneVertex), &g_scene.cpuVerts[0]);
+		UpdateBufferInPages(ctx, g_scene.vb, 0, g_scene.cpuVerts.Size() * sizeof(SceneVertex), &g_scene.cpuVerts[0]);
 
 	// [rc4l] Give every batch its own SRB now that the list is final. Sized once, so the RefCntAutoPtrs
 	// never move and the raw pointers handed to SceneBatch stay valid.

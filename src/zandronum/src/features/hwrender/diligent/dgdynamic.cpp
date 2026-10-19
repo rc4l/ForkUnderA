@@ -61,20 +61,12 @@ static TArray<Diligent::Uint32> g_blendIndices;
 static bool EnsureBlendIndexBuffer(Diligent::IRenderDevice *dev, unsigned int needed)
 {
 	if (dev == NULL || needed == 0) return false;
-	if (g_blendIB && g_blendIBCapacity >= needed) return true;
 	// Grown with slack, because a frame that needs one more index than the last must not reallocate.
-	unsigned int cap = g_blendIBCapacity ? g_blendIBCapacity : 4096;
-	while (cap < needed) cap *= 2;
-	g_blendIB.Release();
-	Diligent::BufferDesc bd;
-	bd.Name = "fua blend order";
-	bd.Size = (Diligent::Uint64)cap * sizeof(Diligent::Uint32);
-	bd.BindFlags = Diligent::BIND_INDEX_BUFFER;
-	bd.Usage = Diligent::USAGE_DEFAULT;
-	CreateDeviceBuffer(bd, NULL, &g_blendIB);
-	if (!g_blendIB) { g_blendIBCapacity = 0; return false; }
-	g_blendIBCapacity = cap;
-	return true;
+	Diligent::BufferDesc kind;
+	kind.Name = "fua blend order";
+	kind.BindFlags = Diligent::BIND_INDEX_BUFFER;
+	kind.Usage = Diligent::USAGE_DEFAULT;
+	return EnsureGrowingBuffer(g_blendIB, g_blendIBCapacity, needed, sizeof(Diligent::Uint32), 4096, kind);
 }
 
 // [rc4l] Draw this frame's dynamic geometry -- sprites.
@@ -328,10 +320,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// ...and the records they index, into the back of the shared piece buffer.
 		if (g_scene.pieceBuf && dynPieces.Size() > 0 &&
 		    g_scene.pieces.Size() + dynPieces.Size() <= g_scene.pieceCapacity)
-			ctx->UpdateBuffer(g_scene.pieceBuf,
-				(Diligent::Uint64)g_scene.pieces.Size() * sizeof(ScenePieceData),
-				(Diligent::Uint64)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0],
-				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			UpdateBufferInPages(ctx, g_scene.pieceBuf, (unsigned long long)g_scene.pieces.Size() * sizeof(ScenePieceData),
+				(size_t)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0]);
 	}
 	if (vb.Size() == 0 || !g_dynVB) return;
 	g_scene.dynReady = true;
@@ -622,8 +612,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			}
 			if (EnsureBlendIndexBuffer(GetDevice(), total))
 			{
-				ctx->UpdateBuffer(g_blendIB, 0, (Diligent::Uint64)total * sizeof(Diligent::Uint32),
-					&g_blendIndices[0], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+				UpdateBufferInPages(ctx, g_blendIB, 0, (size_t)total * sizeof(Diligent::Uint32), &g_blendIndices[0]);
 				ctx->SetIndexBuffer(g_blendIB, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 			}
 		}

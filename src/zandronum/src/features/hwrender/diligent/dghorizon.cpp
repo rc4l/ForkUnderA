@@ -8,7 +8,6 @@
 #include "RefCntAutoPtr.hpp"
 
 #include "features/hwrender/diligent/dgshared.h"
-#include "features/hwrender/computation/growbuffer_compute.h"
 #include "features/hwrender/diligent/dglight_glsl.h"
 #include "features/horizon/horizon.h"
 #include "features/horizon/computation/horizon_compute.h"
@@ -280,20 +279,13 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx)
 	verts.Clear();
 	for (unsigned i = 0; i < halves.Size(); i++) EmitHalf(halves[i], verts);
 
-	if (!g_hzVB || g_hzVBCapacity < verts.Size())
-	{
-		g_hzVBCapacity = zx::hwrender::ComputeGrownCapacity(verts.Size(), 64);
-		Diligent::BufferDesc bd;
-		bd.Name = "fua horizon VB";
-		bd.Size = (Diligent::Uint64)g_hzVBCapacity * sizeof(HorizonVertex);
-		// [rc4l] DYNAMIC, so filling it is a map rather than a copy -- this runs inside the frame's pass.
-		bd.Usage = Diligent::USAGE_DYNAMIC;
-		bd.BindFlags = Diligent::BIND_VERTEX_BUFFER;
-		bd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-		g_hzVB.Release();
-		CreateDeviceBuffer(bd, nullptr, &g_hzVB);
-		if (!g_hzVB) { g_hzVBCapacity = 0; return; }
-	}
+	Diligent::BufferDesc kind;
+	kind.Name = "fua horizon VB";
+	// [rc4l] DYNAMIC, so filling it is a map rather than a copy -- this runs inside the frame's pass.
+	kind.Usage = Diligent::USAGE_DYNAMIC;
+	kind.BindFlags = Diligent::BIND_VERTEX_BUFFER;
+	kind.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+	if (!EnsureGrowingBuffer(g_hzVB, g_hzVBCapacity, verts.Size(), sizeof(HorizonVertex), 64, kind)) return;
 	{
 		Diligent::MapHelper<HorizonVertex> m(ctx, g_hzVB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		memcpy((HorizonVertex *)m, &verts[0], verts.Size() * sizeof(HorizonVertex));
