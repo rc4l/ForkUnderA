@@ -244,7 +244,7 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **Camera textures on a binding per material:** the binding was made before the camera's first render and kept the white placeholder. WebGPU always draws this way, as does Vulkan past the array's cap; `cameratexpermaterial` covers it.
 - **Checks (13a, 13c, 13d, 13e):**
   - The gtests build with Emscripten, threads and wasm exceptions, and pass in Node (`test-web` in CI).
-  - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`, each named for what it guards, and any WebGPU error fails a check that did not make it on purpose. CI runs it after the web build, on SwiftShader's WebGPU.
+  - `tools/web/check.mjs` runs the page in headless Chrome against its `CHECKS`, each named for what it guards, and any WebGPU error fails a check that did not make it on purpose. It runs locally, since CI plays no game.
   - CI builds the web module (`build-web`, `_web.yml`) beside the tests rather than after them, its clang through ccache, and runs the tripwire. `test-js` runs the page modules' and tools' node tests.
   - `fuactl scenarios --webgpu` runs the suite on WebGPU against Vulkan.
 - **Next:**
@@ -257,4 +257,4 @@ Paths are relative to `src/zandronum/src/` unless noted. The order is deliberate
 - **14b.** The page loads with a progress bar, starts Freedoom (or the player's IWAD from the file panel), and reaches the title screen with music.
 - **14c.** A new game on MAP01 plays at the browser's frame rate with mouse look, sound and the HUD.
 - **14d.** A save survives a page reload, and the config keeps its changes.
-- **14e.** Every preset builds in CI, the WebGPU scenario side and the browser smoke test pass, and the coverage gate holds on every new `Compute*` unit.
+- **14e.** Every preset builds in CI, the WebGPU scenario side and the browser checks pass locally, and the coverage gate holds on every new `Compute*` unit.

@@ -98,8 +98,9 @@ Serves a staged build and runs `CHECKS` (in `check.mjs`, each named for what it 
 - It prints PASS or FAIL for each, with the console's last lines (and the screenshot, where the check judges one) for a failure, and exits 1 if any failed.
 - An error the page's WebGPU device reports fails whichever check it came in.
 - `--only TEXT` runs the checks whose names contain TEXT.
-- `--software` runs WebGPU on SwiftShader, for a machine with no GPU; CI's `build-web` job runs it that way.
-- `--browser firefox` runs the checks marked `firefox` in Firefox and skips the rest. Firefox's WebGPU is not Chrome's, and CI has no Firefox, so run it here after touching the shaders.
+- `--software` runs WebGPU on SwiftShader, for a machine with no GPU.
+- CI runs none of them, since it plays no game: run them here after changing the engine, the page or its shaders.
+- `--browser firefox` runs the checks marked `firefox` in Firefox and skips the rest, since Firefox's WebGPU is not Chrome's.
 - A check can carry its own map: `query` opens it with its own query, and `serveData(name, bytes)` (`page.mjs`) as its `init` serves the WAD as if staged; the light grid check plays `scenarios/pointlight.mjs`'s hall that way.
 
 ## webgpu-check

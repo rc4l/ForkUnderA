@@ -105,6 +105,7 @@ meeting the Worker (the first deploy's revisits got a 404 for Freedoom's IWAD).
    left alone), `node --test`, the
    new scenario now passes, `coverage --since <ref>` holds every changed unit at 100% (`writing-tests`), and
    `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe` is green (the suite runs every Vulkan side without GL, as players do, except those judged against GL in one frame). Re-shoot the item's spot GL against Vulkan and look at it.
+   For a browser item, `node tools/web/check.mjs <staged dir>` and `--browser firefox` too. CI plays no game, so the scenarios and these checks run only here.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
 9. **Hand the build back:** `build` stages it (the exe, its `.pdb`, the pk3s and `catalogue/`),
    relaunch their session (`play --unpark --port 7801` if you parked it, else `play --port 7801`, Vulkan alone; `fua-side-by-side` only when they asked to compare), then take the next item.

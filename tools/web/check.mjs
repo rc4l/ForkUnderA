@@ -84,7 +84,7 @@ export function configuredOnce(n) {
 // [rc4l] The pointlight scenario's hall, as the light grid check serves it to the page.
 const POINTLIGHT_WAD = 'fua-pointlight.wad';
 
-// [rc4l] The pointlight scenario's vantages the browser frames, its nearest and a middle one, since each frame takes seconds under CI's software WebGPU and the scenario covers the rest.
+// [rc4l] The pointlight scenario's vantages the browser frames, its nearest and a middle one, since each frame takes seconds under software WebGPU (--software) and the scenario covers the rest.
 export const LIGHT_VANTAGES = POINTLIGHT_VANTAGES.filter((v) => ['d600', 'd1500'].includes(v.name));
 
 // [rc4l] How much one block of the frame must change with the light on for the comparison to mean anything.
@@ -690,7 +690,7 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
-  // [rc4l] --throttle N slows the page's own thread N times, as a slow runner's is, to reproduce CI's timing here.
+  // [rc4l] --throttle N slows the page's own thread N times, as a slow machine's is.
   const throttle = args.includes('--throttle') ? Number(args[args.indexOf('--throttle') + 1]) : 0;
   // [rc4l] --browser firefox runs the checks marked firefox in Firefox (firefox.mjs), whose WebGPU differs from Chrome's.
   const browser = args.includes('--browser') ? args[args.indexOf('--browser') + 1] : 'chrome';
