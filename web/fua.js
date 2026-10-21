@@ -20,6 +20,8 @@
   }
   // [rc4l] The engine's pointer lock requests, refusals logged instead of thrown into its frame (pointer.js).
   FuaPointer.guard(canvas, log);
+  // [rc4l] Safari's lock notice sits in the window chrome and shrinks the page, so there the lock is taken in fullscreen, where it floats (pointer.js).
+  if (FuaPointer.fullscreenFirst(canvas, document, FuaPointer.noticeShiftsLayout(navigator))) log('Pointer lock: fullscreen first, since this browser\'s lock notice shifts the page');
   // [rc4l] SDL told of every change of the canvas's size, so the mouse is scaled alike on both axes (pointer.js).
   FuaPointer.followSize(canvas, window, window.ResizeObserver);
 

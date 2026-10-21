@@ -52,3 +52,55 @@ test('every change of the canvas size reaches SDL as a window resize', () => {
   assert.deepEqual(sent, ['resize', 'resize']);
   assert.equal(FuaPointer.followSize(canvas, win, undefined), null, 'no observer to watch with');
 });
+
+// [rc4l] Safari's lock notice is a bar in the window chrome, 47 rows off the page; Chrome's and Firefox's float over it.
+test('only Safari is read as a browser whose lock notice shifts the page', () => {
+  const ua = (userAgent) => ({ userAgent });
+  assert.equal(FuaPointer.noticeShiftsLayout(ua('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15')), true);
+  assert.equal(FuaPointer.noticeShiftsLayout(ua('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36')), false);
+  assert.equal(FuaPointer.noticeShiftsLayout(ua('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0')), false);
+  assert.equal(FuaPointer.noticeShiftsLayout(ua('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0')), false);
+  assert.equal(FuaPointer.noticeShiftsLayout(undefined), false);
+});
+
+test('where the notice shifts the page, a lock asked for in a window takes the canvas fullscreen in the same gesture and locks at once', async () => {
+  const seen = [];
+  const doc = { fullscreenElement: null, fullscreenEnabled: true };
+  const canvas = {
+    requestPointerLock() { seen.push('lock'); return Promise.resolve('locked'); },
+    requestFullscreen() { seen.push('fullscreen'); return Promise.resolve(); },
+  };
+  assert.equal(FuaPointer.fullscreenFirst(canvas, doc, true), true);
+  assert.equal(await canvas.requestPointerLock(), 'locked');
+  assert.deepEqual(seen, ['fullscreen', 'lock']);
+  doc.fullscreenElement = canvas;
+  seen.length = 0;
+  assert.equal(await canvas.requestPointerLock(), 'locked');
+  assert.deepEqual(seen, ['lock'], 'already fullscreen: the lock alone');
+});
+
+test('a fullscreen refused, or one the browser cannot offer, still asks for the lock', async () => {
+  const seen = [];
+  const refusing = { requestPointerLock() { seen.push('lock'); return 'asked'; }, requestFullscreen() { seen.push('fullscreen'); return Promise.reject(new Error('no gesture')); } };
+  FuaPointer.fullscreenFirst(refusing, { fullscreenElement: null }, true);
+  assert.equal(await refusing.requestPointerLock(), 'asked');
+  assert.deepEqual(seen, ['fullscreen', 'lock']);
+  seen.length = 0;
+  const old = { requestPointerLock() { seen.push('lock'); }, requestFullscreen() { seen.push('fullscreen'); } };
+  FuaPointer.fullscreenFirst(old, { fullscreenElement: null }, true);
+  old.requestPointerLock();
+  assert.deepEqual(seen, ['fullscreen', 'lock'], 'a fullscreen request with no promise is followed by the lock as well');
+  seen.length = 0;
+  const disabled = { requestPointerLock() { seen.push('lock'); }, requestFullscreen() { seen.push('fullscreen'); } };
+  FuaPointer.fullscreenFirst(disabled, { fullscreenElement: null, fullscreenEnabled: false }, true);
+  disabled.requestPointerLock();
+  assert.deepEqual(seen, ['lock'], 'fullscreen not allowed: the lock alone');
+});
+
+test('elsewhere, or without fullscreen to ask for, the lock is left as it is', () => {
+  const plain = { requestPointerLock() { return 'plain'; }, requestFullscreen() { throw new Error('not asked'); } };
+  assert.equal(FuaPointer.fullscreenFirst(plain, { fullscreenElement: null }, false), false);
+  assert.equal(plain.requestPointerLock(), 'plain');
+  assert.equal(FuaPointer.fullscreenFirst({ requestPointerLock() {} }, {}, true), false, 'no requestFullscreen');
+  assert.equal(FuaPointer.fullscreenFirst({}, {}, true), false, 'nothing to wrap');
+});
