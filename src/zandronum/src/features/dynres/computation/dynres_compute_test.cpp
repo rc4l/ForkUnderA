@@ -196,7 +196,7 @@ TEST(ComputeDynresStep, UntimedACpuBoundFrameNeverStepsDown)
 	EXPECT_EQ(0, Feed(DynresState(), Sample(-1, 25, 30), 16.6, steps, n, 500).step);
 }
 
-TEST(ComputeDynresStep, UntimedFramesOnBudgetClimbSlowly)
+TEST(ComputeDynresStep, UntimedAStepUpIsTriedAfterTheWait)
 {
 	float steps[kMaxDynresSteps];
 	const int n = ComputeDynresSteps(0.5f, false, steps);
@@ -207,19 +207,24 @@ TEST(ComputeDynresStep, UntimedFramesOnBudgetClimbSlowly)
 	EXPECT_EQ(1, up.step);
 	up = ComputeDynresStep(up, Sample(-1, 2, 16.6), 16.6, steps, n, t);
 	EXPECT_EQ(0, up.step);
-	// [rc4l] One late frame, as a display's timing jitters, does not start the count again, but a run of them does.
+	EXPECT_TRUE(up.trialUp);
+	EXPECT_DOUBLE_EQ(16.6, up.beforeMs);
+	// [rc4l] Frames on time at full scale keep it.
+	up = Feed(up, Sample(-1, 2, 16.6), 16.6, steps, n, t.settleFrames + t.trialFrames, t);
+	EXPECT_EQ(0, up.step);
+	EXPECT_EQ(0, up.trial);
+	// [rc4l] Late frames the CPU holds try a step up too, and keep it when the scale made them no longer, which is how a scale that changes nothing goes back to full.
 	DynresState held;
 	held.step = 1;
-	held = Feed(held, Sample(-1, 2, 16.6), 16.6, steps, n, 100, t);
-	held = ComputeDynresStep(held, Sample(-1, 25, 30), 16.6, steps, n, t);
-	EXPECT_EQ(101, held.roomFrames);
-	held = Feed(held, Sample(-1, 25, 30), 16.6, steps, n, 4, t);
-	EXPECT_EQ(0, held.roomFrames);
-	EXPECT_EQ(1, held.step);
+	held = Feed(held, Sample(-1, 25, 30), 16.6, steps, n, t.upFramesUntimed, t);
+	ASSERT_EQ(0, held.step);
+	held = Feed(held, Sample(-1, 25, 31), 16.6, steps, n, t.settleFrames + t.trialFrames, t);
+	EXPECT_EQ(0, held.step);
+	EXPECT_EQ(0, held.upWait);
 }
 
-// [rc4l] Without timings a step up is a guess, and one undone soon after makes the next guess wait twice as long, up to sixteen times.
-TEST(ComputeDynresStep, UntimedAStepUpSoonUndoneWaitsLongerNextTime)
+// [rc4l] Without timings a step up is a guess, and one that makes late frames longer is undone and makes the next guess wait twice as long, up to sixteen times.
+TEST(ComputeDynresStep, UntimedAStepUpThatLengthensLateFramesIsUndone)
 {
 	float steps[kMaxDynresSteps];
 	const int n = ComputeDynresSteps(0.5f, false, steps);
@@ -228,17 +233,32 @@ TEST(ComputeDynresStep, UntimedAStepUpSoonUndoneWaitsLongerNextTime)
 	s.step = 1;
 	for (int round = 1; round <= 6; round++)
 	{
-		// [rc4l] After the first, each step up also waits out the settle its step down began.
-		const int wait = std::max(s.upWait, t.upFramesUntimed) + (round == 1 ? 0 : t.settleFrames + t.trialFrames);
+		// [rc4l] After the first, each step up also waits out the settle its undoing began.
+		const int wait = std::max(s.upWait, t.upFramesUntimed) + (round == 1 ? 0 : t.settleFrames);
 		int frames = 0;
-		for (; s.step != 0 && frames < 10000; frames++) s = ComputeDynresStep(s, Sample(-1, 2, 16.6), 16.6, steps, n, t);
+		for (; s.step != 0 && frames < 10000; frames++) s = ComputeDynresStep(s, Sample(-1, 3, 20), 16.6, steps, n, t);
 		ASSERT_EQ(0, s.step) << "round " << round;
 		EXPECT_EQ(wait, frames) << "round " << round;
 		EXPECT_EQ(0, s.sinceUp);
-		s = Feed(s, Sample(-1, 3, 30), 16.6, steps, n, t.settleFrames + t.untimedMisses, t);
+		s = Feed(s, Sample(-1, 3, 30), 16.6, steps, n, t.settleFrames + t.trialFrames, t);
 		ASSERT_EQ(1, s.step) << "round " << round;
 		EXPECT_EQ(std::min(t.upFramesUntimed << round, t.upFramesUntimed * 16), s.upWait);
 	}
+}
+
+// [rc4l] A step up kept and then soon undone by frames waiting on the GPU doubles the next one's wait too.
+TEST(ComputeDynresStep, UntimedAStepDownSoonAfterAStepUpWaitsLongerNextTime)
+{
+	float steps[kMaxDynresSteps];
+	const int n = ComputeDynresSteps(0.5f, false, steps);
+	const DynresTuning t;
+	DynresState s;
+	s.step = 1;
+	s = Feed(s, Sample(-1, 3, 16.6), 16.6, steps, n, t.upFramesUntimed + t.settleFrames + t.trialFrames, t);
+	ASSERT_EQ(0, s.step);
+	s = Feed(s, Sample(-1, 3, 30), 16.6, steps, n, t.untimedMisses, t);
+	EXPECT_EQ(1, s.step);
+	EXPECT_EQ(t.upFramesUntimed * 2, s.upWait);
 	// [rc4l] A step down long after the last step up keeps the wait it had.
 	DynresState late;
 	late.step = 0;
@@ -248,15 +268,17 @@ TEST(ComputeDynresStep, UntimedAStepUpSoonUndoneWaitsLongerNextTime)
 	EXPECT_EQ(240, late.upWait);
 }
 
-TEST(ComputeShortIntervalMs, TheLowTenthWhichOneEarlyFrameCannotPullDown)
+TEST(ComputeMedianIntervalMs, NeitherOneEarlyFrameNorJitterPullsItShort)
 {
 	double ms[20];
 	for (int i = 0; i < 20; i++) ms[i] = 16.7;
 	ms[3] = 2.0;
-	EXPECT_DOUBLE_EQ(16.7, ComputeShortIntervalMs(ms, 20));
-	for (int i = 0; i < 10; i++) ms[i] = 33.4;
-	EXPECT_DOUBLE_EQ(16.7, ComputeShortIntervalMs(ms, 20));
-	EXPECT_DOUBLE_EQ(0.0, ComputeShortIntervalMs(ms, 0));
+	EXPECT_DOUBLE_EQ(16.7, ComputeMedianIntervalMs(ms, 20));
+	// [rc4l] A 480 Hz display's intervals jitter either side of 2.08 ms, whose low tenth read 540 Hz in Firefox.
+	for (int i = 0; i < 20; i++) ms[i] = i < 4 ? 1.85 : (i < 16 ? 2.08 : 2.31);
+	EXPECT_DOUBLE_EQ(2.08, ComputeMedianIntervalMs(ms, 20));
+	EXPECT_DOUBLE_EQ(480.0, ComputeRefreshFromIntervalMs(ComputeMedianIntervalMs(ms, 20)));
+	EXPECT_DOUBLE_EQ(0.0, ComputeMedianIntervalMs(ms, 0));
 }
 
 TEST(ComputeDynresStep, AStepPastAShortenedListComesBackInsideIt)
@@ -312,8 +334,10 @@ TEST(ComputeFrameRefreshHz, HoldsTheFastestRecentWindowThroughSlowFrames)
 	for (int i = 0; i < kRefreshFrames; i++) hz = ComputeFrameRefreshHz(r, 33.3);
 	EXPECT_EQ(kRefreshWindows, r.windows);
 	EXPECT_DOUBLE_EQ(30.0, hz);
-	// [rc4l] A faster window shows at once, before it is whole.
+	// [rc4l] A faster rate shows once it holds half the window, before the window is whole.
 	for (int i = 0; i < kRefreshFrames / 2; i++) hz = ComputeFrameRefreshHz(r, 1000.0 / 60);
+	EXPECT_DOUBLE_EQ(30.0, hz);
+	hz = ComputeFrameRefreshHz(r, 1000.0 / 60);
 	EXPECT_DOUBLE_EQ(60.0, hz);
 }
 
@@ -338,12 +362,12 @@ TEST(ComputeDynresStep, UntimedAStepDownThatShortensTheFramesIsKept)
 	// [rc4l] Frames still waiting on the GPU then step down again.
 	s = Feed(s, Sample(-1, 3, 26), 16.6, steps, n, t.untimedMisses, t);
 	EXPECT_EQ(2, s.step);
-	// [rc4l] Frames not a tenth shorter but no longer late keep it too.
+	// [rc4l] Frames that only cross the line onto time are not a tenth shorter, which jitter around it does too, so the step is undone.
 	DynresState onBudget = Feed(DynresState(), Sample(-1, 3, 26), 16.6, steps, n, t.untimedMisses, t);
 	ASSERT_EQ(1, onBudget.step);
 	onBudget = Feed(onBudget, Sample(-1, 3, 24), 16.6, steps, n, t.settleFrames + t.trialFrames, t);
-	EXPECT_EQ(1, onBudget.step);
-	EXPECT_DOUBLE_EQ(0.0, onBudget.refuseMs);
+	EXPECT_EQ(0, onBudget.step);
+	EXPECT_GT(onBudget.refuseMs, 0.0);
 }
 
 // [rc4l] Frames no shorter at the lower scale were not the GPU's, so the step down is undone and the next waits twice as long each time, up to sixteen times.
@@ -368,4 +392,60 @@ TEST(ComputeDynresStep, UntimedAStepDownThatDoesNotHelpIsUndone)
 		EXPECT_DOUBLE_EQ(wait, s.downWaitMs) << "round " << round;
 		EXPECT_DOUBLE_EQ(wait, s.refuseMs) << "round " << round;
 	}
+}
+
+TEST(ComputeFrameJudged, AnUntimedFrameOnlyWhileTheGameRunsFocused)
+{
+	EXPECT_TRUE(ComputeFrameJudged(true, false, false));
+	EXPECT_TRUE(ComputeFrameJudged(false, true, true));
+	EXPECT_FALSE(ComputeFrameJudged(false, false, true));
+	EXPECT_FALSE(ComputeFrameJudged(false, true, false));
+}
+
+// [rc4l] An open console drew once a tic and a page out of focus was slowed, which stepped a browser down to its lowest scale.
+TEST(ComputeDynresUnjudged, TheScaleHoldsAndItsRunsStartOver)
+{
+	float steps[kMaxDynresSteps];
+	const int n = ComputeDynresSteps(0.25f, true, steps);
+	const DynresTuning t;
+	DynresState s;
+	s.step = 1;
+	s.missStreak = 2;
+	s.roomFrames = 90;
+	s.frameAvgMs = 20.0;
+	s.settle = 3;
+	DynresState held = ComputeDynresUnjudged(s, 30);
+	EXPECT_EQ(1, held.step);
+	EXPECT_EQ(30, held.settle);
+	EXPECT_EQ(0, held.missStreak);
+	EXPECT_EQ(0, held.roomFrames);
+	EXPECT_DOUBLE_EQ(0.0, held.frameAvgMs);
+	s.settle = 40;
+	EXPECT_EQ(40, ComputeDynresUnjudged(s, 30).settle);
+	// [rc4l] Back in the game, the late frames of the pause count for nothing.
+	held = Feed(held, Sample(-1, 3, 30), 16.6, steps, n, 30, t);
+	EXPECT_EQ(1, held.step);
+	EXPECT_EQ(0, held.missStreak);
+}
+
+// [rc4l] The check's load ended at half scale with the wait at 1920 frames, which held it there for seconds.
+TEST(ComputeDynresStep, UntimedAWaitEarnedUnderLoadIsForgottenOnceFramesLighten)
+{
+	float steps[kMaxDynresSteps];
+	const int n = ComputeDynresSteps(0.5f, false, steps);
+	const DynresTuning t;
+	DynresState s;
+	s.step = 1;
+	s = Feed(s, Sample(-1, 3, 20), 16.6, steps, n, t.upFramesUntimed, t);
+	ASSERT_EQ(0, s.step);
+	s = Feed(s, Sample(-1, 3, 30), 16.6, steps, n, t.settleFrames + t.trialFrames, t);
+	ASSERT_EQ(1, s.step);
+	EXPECT_EQ(t.upFramesUntimed * 2, s.upWait);
+	EXPECT_DOUBLE_EQ(20.0, s.upFailMs);
+	// [rc4l] Lighter frames than the failed try's step up after the first wait again.
+	int frames = 0;
+	for (; s.step != 0 && frames < 10000; frames++) s = ComputeDynresStep(s, Sample(-1, 3, 16), 16.6, steps, n, t);
+	EXPECT_EQ(t.settleFrames + t.upFramesUntimed, frames);
+	EXPECT_EQ(0, s.upWait);
+	EXPECT_DOUBLE_EQ(0.0, s.upFailMs);
 }

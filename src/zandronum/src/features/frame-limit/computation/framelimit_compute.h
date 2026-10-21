@@ -20,6 +20,15 @@ long long ComputeFrameLimitSleepUs(long long deadlineUs, long long nowUs);
 // [rc4l] Whether a frame a browser offers at nowUs may be drawn for deadlineUs, one within toleranceUs counting, since a browser offers frames only at its refresh.
 bool ComputeSteppedFrameDue(long long deadlineUs, long long nowUs, long long toleranceUs);
 
+// [rc4l] The limit's one deadline, 0 for none, kept by whichever loop paces the frames.
+struct FrameLimiter { long long deadlineUs = 0; };
+
+// [rc4l] The deadline a desktop's present waits for at fps, advanced from the last, or 0 for no wait: with no limit, or in a browser, whose frames keep the deadline themselves (ComputeSteppedFrame).
+long long ComputePresentDeadline(FrameLimiter &l, long long nowUs, int fps, bool stepped);
+
+// [rc4l] Whether a frame a browser offers at nowUs is drawn under fps (0 for none), advancing the deadline when it is.
+bool ComputeSteppedFrame(FrameLimiter &l, long long nowUs, int fps, long long toleranceUs);
+
 }} // namespace zx::framelimit
 
 #endif // ZX_FRAMELIMIT_COMPUTE_H

@@ -105,7 +105,8 @@ one 128-bit number per draw (tested to agree with the rule on every pair of 576 
 integers rather than walking the rule.
 
 `vid_fps` gives each renderer its own frame time (`rendererrate.cpp`): the frame is split at `LiveFrame`, GL's
-part before it and the backend's after.
+part before it and the backend's after. Its fps is the frames drawn in the last whole second, which a limit or a
+browser's refresh holds, never what the frame time would allow.
 
 The sky is three files: the level's dome or box and the fade (`diligent/dgsky.cpp`), the skybox portal and
 the surfaces painted from it by screen position (`dgskyportal.cpp`), and other skies' pictures

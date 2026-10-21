@@ -51,18 +51,48 @@ TEST(ComputeSteppedFrameDue, ABrowserFrameWithinToleranceOfTheDeadlineIsDrawn)
 }
 
 // [rc4l] A 60 frame limit on a 144 Hz browser draws 60 of the 144 offered frames a second, not the 48 a period counted from each drawn frame would.
-TEST(ComputeSteppedFrameDue, ALimitBelowTheRefreshKeepsItsRate)
+TEST(ComputeSteppedFrame, ALimitBelowTheRefreshKeepsItsRate)
 {
 	const long long refresh = 1000000 / 144;
-	long long deadline = 0, drawn = 0;
+	FrameLimiter l;
+	int drawn = 0;
 	for (int i = 1; i <= 144; i++)
-	{
-		const long long now = i * refresh;
-		const long long next = ComputeFrameDeadline(deadline, now, 60);
-		if (!ComputeSteppedFrameDue(next, now, 2000)) continue;
-		deadline = next;
-		drawn++;
-	}
+		if (ComputeSteppedFrame(l, i * refresh, 60, 2000)) drawn++;
 	EXPECT_GE(drawn, 59);
 	EXPECT_LE(drawn, 61);
+}
+
+TEST(ComputeSteppedFrame, EveryFrameWithNoLimit)
+{
+	FrameLimiter l;
+	l.deadlineUs = 5000;
+	EXPECT_TRUE(ComputeSteppedFrame(l, 1000, 0, 2000));
+	EXPECT_EQ(0, l.deadlineUs);
+}
+
+TEST(ComputePresentDeadline, ADesktopPresentWaitsAPeriodAfterTheLast)
+{
+	FrameLimiter l;
+	EXPECT_EQ(1000000, ComputePresentDeadline(l, 1000000, 60, false));
+	EXPECT_EQ(1016666, ComputePresentDeadline(l, 1001000, 60, false));
+	EXPECT_EQ(1016666, l.deadlineUs);
+	// [rc4l] With no limit there is nothing to wait for, and the schedule starts over.
+	EXPECT_EQ(0, ComputePresentDeadline(l, 1002000, 0, false));
+	EXPECT_EQ(0, l.deadlineUs);
+}
+
+// [rc4l] A browser presents every frame it draws, and a present that reset the deadline made every frame due, so vid_maxfps limited nothing there.
+TEST(ComputePresentDeadline, ABrowsersPresentLeavesItsFramesDeadline)
+{
+	FrameLimiter l;
+	const long long refresh = 1000000 / 480;
+	int drawn = 0;
+	for (int i = 1; i <= 480; i++)
+	{
+		if (!ComputeSteppedFrame(l, i * refresh, 100, 2000)) continue;
+		drawn++;
+		EXPECT_EQ(0, ComputePresentDeadline(l, i * refresh, 100, true));
+	}
+	EXPECT_GE(drawn, 99);
+	EXPECT_LE(drawn, 101);
 }

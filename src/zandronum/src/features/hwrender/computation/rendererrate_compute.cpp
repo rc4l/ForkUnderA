@@ -23,7 +23,7 @@ void ComputeRateFrame(RendererRate &r, unsigned nowMs, double frameMs)
 		if (r.frames > 0)
 		{
 			r.shownMs = (int)(r.busyMs / r.frames + 0.5);
-			r.shownFps = r.busyMs > 0.0 ? (int)(r.frames * 1000.0 / r.busyMs + 0.5) : 0;
+			r.shownFps = r.frames;
 		}
 		r.second = second;
 		r.frames = 0;

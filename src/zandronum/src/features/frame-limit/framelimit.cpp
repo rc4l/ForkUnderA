@@ -28,7 +28,7 @@ namespace {
 // [rc4l] How early a browser's frame may come and still be drawn for its deadline.
 const long long kSteppedToleranceUs = 2000;
 
-long long g_deadlineUs = 0;
+FrameLimiter g_limiter;
 
 long long NowUs()
 {
@@ -44,31 +44,16 @@ int LimitFps()
 
 void WaitBeforePresent()
 {
-	const int fps = LimitFps();
-	if (fps <= 0 || zx::mainloop::Stepped())
-	{
-		g_deadlineUs = 0;
-		return;
-	}
+	const long long deadline = ComputePresentDeadline(g_limiter, NowUs(), LimitFps(), zx::mainloop::Stepped());
+	if (deadline <= 0) return;
 	ZX_ZONE("frame/limit_wait");
-	g_deadlineUs = ComputeFrameDeadline(g_deadlineUs, NowUs(), fps);
-	for (long long sleep = ComputeFrameLimitSleepUs(g_deadlineUs, NowUs()); sleep >= 0; sleep = ComputeFrameLimitSleepUs(g_deadlineUs, NowUs()))
+	for (long long sleep = ComputeFrameLimitSleepUs(deadline, NowUs()); sleep >= 0; sleep = ComputeFrameLimitSleepUs(deadline, NowUs()))
 		std::this_thread::sleep_for(std::chrono::microseconds(sleep));
 }
 
 bool SteppedFrameDue()
 {
-	const int fps = LimitFps();
-	if (fps <= 0)
-	{
-		g_deadlineUs = 0;
-		return true;
-	}
-	const long long now = NowUs();
-	const long long deadline = ComputeFrameDeadline(g_deadlineUs, now, fps);
-	if (!ComputeSteppedFrameDue(deadline, now, kSteppedToleranceUs)) return false;
-	g_deadlineUs = deadline;
-	return true;
+	return ComputeSteppedFrame(g_limiter, NowUs(), LimitFps(), kSteppedToleranceUs);
 }
 
 }} // namespace zx::framelimit

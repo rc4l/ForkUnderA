@@ -39,4 +39,24 @@ bool ComputeSteppedFrameDue(long long deadlineUs, long long nowUs, long long tol
 	return nowUs + toleranceUs >= deadlineUs;
 }
 
+long long ComputePresentDeadline(FrameLimiter &l, long long nowUs, int fps, bool stepped)
+{
+	if (stepped) return 0;
+	l.deadlineUs = fps > 0 ? ComputeFrameDeadline(l.deadlineUs, nowUs, fps) : 0;
+	return l.deadlineUs;
+}
+
+bool ComputeSteppedFrame(FrameLimiter &l, long long nowUs, int fps, long long toleranceUs)
+{
+	if (fps <= 0)
+	{
+		l.deadlineUs = 0;
+		return true;
+	}
+	const long long deadline = ComputeFrameDeadline(l.deadlineUs, nowUs, fps);
+	if (!ComputeSteppedFrameDue(deadline, nowUs, toleranceUs)) return false;
+	l.deadlineUs = deadline;
+	return true;
+}
+
 }} // namespace zx::framelimit

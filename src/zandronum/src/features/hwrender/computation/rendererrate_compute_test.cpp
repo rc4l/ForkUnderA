@@ -18,18 +18,18 @@ TEST(RendererRateCompute, AWholeSecondBecomesWhatIsShown)
 	EXPECT_EQ(0, r.shownMs);   // [rc4l] the second is still under way
 	ComputeRateFrame(r, 2100, 5.0);
 	EXPECT_EQ(3, r.shownMs);
-	EXPECT_EQ(333, r.shownFps);   // [rc4l] three frames of 3 ms each allow 333 a second
+	EXPECT_EQ(3, r.shownFps);   // [rc4l] three frames drawn, whatever their 3 ms each would allow
 	EXPECT_EQ(1, r.frames);
 	EXPECT_DOUBLE_EQ(5.0, r.busyMs);
 }
 
-TEST(RendererRateCompute, AnEmptyOrZeroCostSecondLeavesNoRateBehind)
+TEST(RendererRateCompute, AZeroCostSecondStillCountsItsFrames)
 {
 	RendererRate r = ComputeRateStart();
 	ComputeRateFrame(r, 5000, 0.0);
 	ComputeRateFrame(r, 6000, -1.0);   // [rc4l] a clock that stepped back counts as nothing
 	EXPECT_EQ(0, r.shownMs);
-	EXPECT_EQ(0, r.shownFps);
+	EXPECT_EQ(1, r.shownFps);
 	EXPECT_DOUBLE_EQ(0.0, r.busyMs);
 }
 

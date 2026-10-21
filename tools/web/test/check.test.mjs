@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -93,7 +93,7 @@ test('--only picks the checks whose names contain its text', () => {
 test('the checks run in the order a profile carries state through', () => {
   const names = CHECKS.map((c) => c.name);
   assert.ok(names.indexOf('quitting stops the loop and offers to play again') < names.indexOf('a reload keeps what was set before quitting'));
-  assert.ok(names.indexOf('leaving the page stores the config') < names.indexOf('a reload keeps what was set before leaving'));
+  assert.ok(names.indexOf('leaving the page stores the config without a word in the console') < names.indexOf('a reload keeps what was set before leaving'));
   assert.ok(names.indexOf('a save gets its picture') < names.indexOf('a save survives a reload and loads'));
 });
 
@@ -250,4 +250,29 @@ test('Firefox runs only the checks marked for it, and Chrome runs every one', ()
   assert.equal(notIn('chrome', {}), '');
   assert.equal(notIn('firefox', { firefox: true }), '');
   assert.equal(notIn('firefox', {}), 'it needs what only the Chrome driver does');
+});
+
+test('the frame limit holds the page near 16.7 ms at 60 and lets it run faster without', () => {
+  assert.equal(frameLimited({ held: 16.7, free: 2.08 }), '');
+  assert.equal(frameLimited({ held: 2.08, free: 2.08 }), 'vid_maxfps 60 left frames 2.08 ms apart');
+  assert.equal(frameLimited({ held: -1, free: 2.08 }), 'vid_maxfps 60 left frames -1 ms apart');
+  assert.equal(frameLimited({ held: 16.7, free: 16.7 }), 'with no limit frames were 16.7 ms apart');
+  assert.equal(frameLimited({ held: 16.7, free: -1 }), 'with no limit frames were -1 ms apart');
+});
+
+test('dynamic resolution in the page is judged at rest, under load, after it, and through the console and a blur', () => {
+  const good = { idle: 1, loaded: 0.5, after: 1, consoleHeld: true, blurHeld: true };
+  assert.equal(dynresFollows(good), '');
+  assert.equal(dynresFollows({ ...good, idle: 0.75 }), 'it drew at 0.75 with no load');
+  assert.equal(dynresFollows({ ...good, loaded: 1 }), 'it drew at 1 under GPU load');
+  assert.equal(dynresFollows({ ...good, loaded: -1 }), 'it drew at -1 under GPU load');
+  assert.equal(dynresFollows({ ...good, after: 0.25 }), 'it stayed at 0.25 once the load ended');
+  assert.equal(dynresFollows({ ...good, consoleHeld: false }), 'it read frames with the console up');
+  assert.equal(dynresFollows({ ...good, blurHeld: false }), 'it read frames with the window out of focus');
+});
+
+test('leaving the page stores the config and prints nothing', () => {
+  assert.equal(storedQuietly({ stored: true, said: '' }), '');
+  assert.equal(storedQuietly({ stored: false, said: '' }), 'the store failed');
+  assert.equal(storedQuietly({ stored: true, said: 'Config saved.\n' }), 'the console printed "Config saved."');
 });

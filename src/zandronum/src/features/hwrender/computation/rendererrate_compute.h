@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] vid_fps per renderer: GL and the backend share one loop and so one frame rate, and what tells them apart is how long each one's own frame takes.
+// [rc4l] vid_fps per renderer: the frames each drew in the last whole second, and how long its own part of a frame took, which is what tells GL and the backend apart in one loop.
 
 #ifndef ZX_RENDERERRATE_COMPUTE_H
 #define ZX_RENDERERRATE_COMPUTE_H
@@ -24,7 +24,7 @@ struct RendererRate
 // [rc4l] A rate with nothing counted yet.
 RendererRate ComputeRateStart();
 
-// [rc4l] A frame that took frameMs, ending at nowMs; a new second makes the one before it what is shown: its average ms and the frames a second that time allows.
+// [rc4l] A frame that took frameMs, ending at nowMs; a new second makes the one before it what is shown: its average ms and the frames it drew, never the frames that time would allow, which read 1000 where a browser showed 480.
 void ComputeRateFrame(RendererRate &r, unsigned nowMs, double frameMs);
 
 // [rc4l] Whether the renderer drew a frame within the last second, which is when its window is up to show a rate.

@@ -111,6 +111,29 @@ export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
 }
 
+// [rc4l] Why vid_maxfps went wrong in the page, or '': frames at a limit of 60 not some 16.7 ms apart, or no faster without it.
+export function frameLimited({ held, free }) {
+  if (!(held >= 15.5 && held <= 18.5)) return `vid_maxfps 60 left frames ${held} ms apart`;
+  if (!(free > 0 && free < 15)) return `with no limit frames were ${free} ms apart`;
+  return '';
+}
+
+// [rc4l] Why dynamic resolution went wrong in the page, or '': below full scale with no load, at full scale under GPU load, not back once it ended, or reading frames with the console up or the window out of focus.
+export function dynresFollows({ idle, loaded, after, consoleHeld, blurHeld }) {
+  if (idle !== 1) return `it drew at ${idle} with no load`;
+  if (!(loaded > 0 && loaded < 1)) return `it drew at ${loaded} under GPU load`;
+  if (after !== 1) return `it stayed at ${after} once the load ended`;
+  if (!consoleHeld) return 'it read frames with the console up';
+  if (!blurHeld) return 'it read frames with the window out of focus';
+  return '';
+}
+
+// [rc4l] Why leaving the page went wrong, or '': the store failing, or the console told of it, as it was each time the page was hidden.
+export function storedQuietly({ stored, said }) {
+  if (stored !== true) return 'the store failed';
+  return /Config saved/.test(said) ? 'the console printed "Config saved."' : '';
+}
+
 // [rc4l] Why a crash in a frame was handled wrongly, or '': not shown, no report offered, the loop going on, a report with no frame in the engine, or a build that may not send saying otherwise.
 export function crashOffered({ frames, shown, offered, status, stack }) {
   if (!shown.includes('checking a crash')) return 'the page did not show the crash';
@@ -275,6 +298,71 @@ export const CHECKS = [
       return at;`),
     until: EVAL,
     expect: gridMatches,
+  },
+  // [rc4l] A browser's present reset the deadline its frames kept, so every frame was due and the limit held nothing there.
+  {
+    name: 'vid_maxfps holds the page to its frame rate',
+    firefox: true,
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const apart = async () => {
+        const before = log.textContent.length;
+        Module.fuaCommand('fua_stats frame/present_ms');
+        ${pause(300)}
+        const m = /frame\\/present_ms\\s+ms\\s+[\\d.]+\\s+([\\d.]+)/.exec(log.textContent.slice(before));
+        return m ? Number(m[1]) : -1;
+      };
+      ${pause(3000)}
+      Module.fuaCommand('vid_maxfps 60');
+      ${pause(5000)}
+      const held = await apart();
+      Module.fuaCommand('vid_maxfps 0');
+      ${pause(3000)}
+      const free = await apart();
+      Module.fuaCommand('vid_maxfps 500');
+      return { held, free };`),
+    until: EVAL,
+    expect: frameLimited,
+  },
+  // [rc4l] A browser times no GPU, so its frames are what the scale follows, and an open console's once-a-tic frames or a page out of focus once stepped it to its lowest.
+  {
+    name: 'dynamic resolution steps down under GPU load and back after it, reading no frame with the console up or out of focus',
+    firefox: true,
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const report = async () => {
+        const before = log.textContent.length;
+        Module.fuaCommand('fua_dynres_report');
+        ${pause(200)}
+        const said = log.textContent.slice(before), m = /scale ([\\d.]+)/.exec(said);
+        return { scale: m ? Number(m[1]) : -1, held: /held while/.test(said) };
+      };
+      // [rc4l] A target the page meets at rest, since headless Chrome draws under the 480 Hz it reads and a lower scale there rightly helps.
+      Module.fuaCommand('vid_fua_dynres_target 60');
+      ${pause(4000)}
+      const idle = (await report()).scale;
+      Module.fuaCommand('fua_dg_gpuload 60000');
+      ${pause(8000)}
+      const loaded = (await report()).scale;
+      // [rc4l] Back within a few seconds, which a wait doubled under the load once held to many more.
+      Module.fuaCommand('fua_dg_gpuload 0');
+      ${pause(4000)}
+      const after = (await report()).scale;
+      Module.fuaCommand('toggleconsole');
+      ${pause(1000)}
+      const consoleHeld = (await report()).held;
+      Module.fuaCommand('toggleconsole');
+      ${pause(1000)}
+      // [rc4l] What an alt-tab sends the page.
+      window.dispatchEvent(new Event('blur'));
+      ${pause(1000)}
+      const blurHeld = (await report()).held;
+      window.dispatchEvent(new Event('focus'));
+      Module.fuaCommand('vid_fua_dynres_target 0');
+      ${pause(500)}
+      return { idle, loaded, after, consoleHeld, blurHeld };`),
+    until: EVAL,
+    expect: dynresFollows,
   },
   {
     name: 'the sound waits for a click and plays after one',
@@ -557,10 +645,16 @@ export const CHECKS = [
   },
   { name: 'a reload keeps what was set before quitting', evaluate: inPage(`Module.fuaCommand('screenblocks');`), until: '"screenblocks" is "11"' },
   {
-    name: 'leaving the page stores the config',
-    evaluate: inPage(`Module.fuaCommand('screenblocks 9'); window.dispatchEvent(new Event('pagehide')); return await Module.fuaSaving;`),
+    name: 'leaving the page stores the config without a word in the console',
+    evaluate: inPage(`
+      const log = document.getElementById('console'), before = log.textContent.length;
+      Module.fuaCommand('screenblocks 9');
+      window.dispatchEvent(new Event('pagehide'));
+      const stored = await Module.fuaSaving;
+      ${pause(300)}
+      return { stored, said: log.textContent.slice(before) };`),
     until: EVAL,
-    expect: (stored) => (stored === true ? '' : 'the store failed'),
+    expect: storedQuietly,
   },
   { name: 'a reload keeps what was set before leaving', evaluate: inPage(`Module.fuaCommand('screenblocks');`), until: '"screenblocks" is "9"' },
   {

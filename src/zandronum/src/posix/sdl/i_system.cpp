@@ -994,16 +994,13 @@ void I_OpenURL (const char *url)
 #endif
 }
 
-// [rc4l] The background-render switch's two platform questions.
-//
-// SDL's CanUpdate never refused on focus and nothing here drops the process priority, so on this
-// platform the switch has nothing left to do: the window reports active and the priority is left
-// alone. Defined so the shared caller does not have to know which platform it is on.
+// [rc4l] Whether the window has focus, which is when SDL gives it the keyboard, a browser page's included since its focus and blur events move it.
 bool I_WindowIsActive ()
 {
-	return true;
+	return SDL_GetKeyboardFocus () != NULL;
 }
 
+// [rc4l] Nothing here drops the process priority, so the background-render switch leaves it alone.
 void I_UpdateBackgroundPriority ()
 {
 }
