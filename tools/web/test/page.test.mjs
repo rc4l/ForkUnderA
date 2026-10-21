@@ -191,3 +191,18 @@ test('a WGSL swap rewrites every shader the page makes and leaves the rest of it
   assert.equal(new GPUDevice().createShaderModule({ label: 'scene', code: 'let d = (1.0f / gl_FragCoord.w); let e = (1.0f / gl_FragCoord.w);' }), 'module');
   assert.deepEqual(made, [{ label: 'scene', code: 'let d = (vPixelPos.w); let e = (vPixelPos.w);' }]);
 });
+
+test('a soak asked for heaps waits on a snapshot at its first judged mark and at its end, and one not asked takes none', () => {
+  const heap = soakInPage('reload', 9, 10, 'MAP01', 3, { heap: true });
+  assert.match(heap, /if \(i === 3\) \{ base = ledger\(\); await heapAt\('base'\); \}/);
+  assert.match(heap, /await heapAt\('end'\);\s+held\('end'\);/);
+  assert.match(heap, /window\.fuaHeapTaken !== label/);
+  assert.doesNotMatch(soakInPage('reload', 9, 10, 'MAP01', 3), /await heapAt/);
+});
+
+test('a soak asks the driver to collect before each mark, and collects itself when no driver answers', () => {
+  const js = soakInPage('reload', 3, 100);
+  assert.match(js, /console\.log\('check: gc ' \+ n\);/);
+  assert.match(js, /window\.fuaGcTaken !== n/);
+  assert.match(js, /if \(window\.fuaGcTaken !== n\) for \(let k = 0; k < 2 && window\.gc; k\+\+\)/);
+});

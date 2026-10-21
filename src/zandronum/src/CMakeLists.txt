@@ -1834,6 +1834,8 @@ add_executable( zdoom WIN32
 	features/hwrender/computation/batch_compute.cpp
 	features/hwrender/computation/spriteatlas_compute.cpp
 	features/hwrender/computation/growbuffer_compute.cpp
+	features/hwrender/computation/materialindex_compute.cpp
+	features/hwrender/computation/bindingkey_compute.cpp
 	features/hwrender/computation/backendview_compute.cpp
 	features/hwrender/computation/wideline_compute.cpp
 	features/hwrender/computation/skylook_compute.cpp

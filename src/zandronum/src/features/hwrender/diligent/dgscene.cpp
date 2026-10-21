@@ -409,11 +409,28 @@ bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Dilige
 // [rc4l] The most one write sends, under either device's upload page, so writes share pages rather than each taking one its own size.
 static const size_t kUploadPageBytes = 1 << 20;
 
+// [rc4l] The flush budget while an UploadFlushing lives on a browser's device, 0 otherwise, and what has gone since the last flush.
+static size_t g_uploadFlushBudget = 0;
+static size_t g_uploadSinceFlush = 0;
+
+UploadFlushing::UploadFlushing()
+{
+	Diligent::IRenderDevice *dev = GetDevice();
+	g_uploadFlushBudget = zx::hwrender::ComputeUploadFlushBudget(dev != NULL, dev != NULL && dev->GetDeviceInfo().Type == Diligent::RENDER_DEVICE_TYPE_WEBGPU);
+	g_uploadSinceFlush = 0;
+}
+
+UploadFlushing::~UploadFlushing()
+{
+	g_uploadFlushBudget = 0;
+}
+
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
 {
 	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
 	{
 		ctx->UpdateBuffer(buf, offset + at, n, (const char *)data + at, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, n, g_uploadFlushBudget)) ctx->Flush();
 	});
 }
 

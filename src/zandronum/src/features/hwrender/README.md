@@ -75,6 +75,13 @@ few times ran out of GPU memory first. Vulkan frees them itself. Textures' handl
 browser numbers each kind from one, and a buffer sharing a kept texture's number went unkept and waited on the
 collector (queue #48). Diligent's WebGPU device keeps every upload page it ever made, so the scene buffer is kept
 while the level fits it and its big writes go in upload-page-sized pieces (`kUploadPageBytes`, `dgupload.cpp`).
+Every page one frame needs stays in that pool, and a level goes up in one frame, as does a rebuild of it, so
+`SceneUpload` and `RefreshMovedGeometry` flush the context each time `kUploadFlushBytes` have gone while they run
+(`UploadFlushing`, `ComputeUploadFlushDue`): Sunder MAP11 kept 48 MB of pages a load and 96 MB after a save was
+loaded and flown around, and Firefox ran out of GPU memory.
+A material and translation are found in the texture cache and the slot table by `computation/materialindex_compute`,
+where a walk over thousands of Complex Doom sprite frames, for every slot of every binding refill, took 11% of a
+fight's frame.
 `features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
 Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
 

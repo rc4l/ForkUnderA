@@ -5,6 +5,7 @@
 
 #include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
 #include "features/hwshaders/computation/hwshader_compute.h"
+#include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
 
@@ -180,55 +181,24 @@ static int g_bindlessGen = -1;
 // half of it, and ten times what writing all the vertices costs.
 //
 // The table stays the source of truth: slot INDICES are what the shader reads, so they cannot move.
-// This only answers "which index" without walking. Open addressing, no allocation, cleared with the
+// This only answers "which index" without walking. Open addressing (computation/materialindex_compute), cleared with the
 // table it indexes -- there are exactly two places that mutate it and both are next to this comment.
-struct MatIndexEntry { const void *material; int translation; int slot; };
-const int kMatIndexSize = 16384;   // power of two, comfortably over kMaxMaterialSlots
-static MatIndexEntry g_matIndex[kMatIndexSize];
+static zx::hwrender::MaterialIndex g_matIndex;
 
-static inline unsigned MatIndexHash(const void *m, int t)
-{
-	unsigned long long h = (unsigned long long)(size_t)m;
-	h ^= (unsigned long long)(unsigned)t * 0x9E3779B97F4A7C15ull;
-	h ^= h >> 29; h *= 0xBF58476D1CE4E5B9ull; h ^= h >> 32;
-	return (unsigned)(h & (unsigned)(kMatIndexSize - 1));
-}
-
-// slot < 0 marks an empty bucket. NULL is a legitimate key -- it is the white slot -- so emptiness
-// cannot be spelled with the material pointer.
 static void MatIndexClear()
 {
-	for (int i = 0; i < kMatIndexSize; i++) g_matIndex[i].slot = -1;
+	zx::hwrender::ComputeMaterialIndexClear(g_matIndex);
 }
 
 static void MatIndexInsert(const void *material, int translation, int slot)
 {
-	unsigned i = MatIndexHash(material, translation);
-	for (int probe = 0; probe < kMatIndexSize; probe++)
-	{
-		if (g_matIndex[i].slot < 0)
-		{
-			g_matIndex[i].material = material;
-			g_matIndex[i].translation = translation;
-			g_matIndex[i].slot = slot;
-			return;
-		}
-		i = (i + 1) & (unsigned)(kMatIndexSize - 1);
-	}
+	zx::hwrender::ComputeMaterialIndexInsert(g_matIndex, material, translation, slot);
 }
 
 // -1 when absent.
 static int MatIndexFind(const void *material, int translation)
 {
-	unsigned i = MatIndexHash(material, translation);
-	for (int probe = 0; probe < kMatIndexSize; probe++)
-	{
-		const MatIndexEntry &e = g_matIndex[i];
-		if (e.slot < 0) return -1;
-		if (e.material == material && e.translation == translation) return e.slot;
-		i = (i + 1) & (unsigned)(kMatIndexSize - 1);
-	}
-	return -1;
+	return zx::hwrender::ComputeMaterialIndexFind(g_matIndex, material, translation);
 }
 
 void ResetMaterialSlots()

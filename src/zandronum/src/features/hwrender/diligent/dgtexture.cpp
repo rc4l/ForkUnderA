@@ -28,6 +28,7 @@
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture
 
 #include "features/materials/materials.h"
+#include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] ComputeMaterialMips
 #include "tarray.h"
 #include "c_cvars.h"
@@ -62,6 +63,14 @@ struct TexEntry
 };
 
 static TArray<TexEntry> g_textures;
+// [rc4l] Each texture's place in g_textures by material and translation, so a lookup does not walk thousands of sprite frames.
+static zx::hwrender::MaterialIndex g_textureIndex;
+
+static void KeepTexture(const TexEntry &e)
+{
+	zx::hwrender::ComputeMaterialIndexInsert(g_textureIndex, e.material, e.translation, (int)g_textures.Size());
+	g_textures.Push(e);
+}
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_white;
 static Diligent::ITextureView *g_whiteSRV = NULL;
 
@@ -188,9 +197,8 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 		}
 	}
 
-	for (unsigned i = 0; i < g_textures.Size(); i++)
-		if (g_textures[i].material == materialPtr && g_textures[i].translation == translation)
-			return g_textures[i].srv;
+	const int kept = zx::hwrender::ComputeMaterialIndexFind(g_textureIndex, materialPtr, translation);
+	if (kept >= 0) return g_textures[kept].srv;
 
 	auto *dev = GetDevice();
 	if (!dev) return EnsureWhite();
@@ -201,7 +209,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	if (buf == NULL)
 	{
 		TexEntry e; e.material = materialPtr; e.translation = translation; e.srv = EnsureWhite();
-		g_textures.Push(e);
+		KeepTexture(e);
 		return e.srv;
 	}
 
@@ -256,13 +264,14 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 
 	e.srv = e.tex ? e.tex->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : EnsureWhite();
 	if (e.tex && e.srv && mips) GetContext()->GenerateMips(e.srv);
-	g_textures.Push(e);
+	KeepTexture(e);
 	return e.srv;
 }
 
 void ReleaseMaterials()
 {
 	g_textures.Clear();
+	zx::hwrender::ComputeMaterialIndexClear(g_textureIndex);
 	g_whiteSRV = NULL;
 	g_white.Release();
 }

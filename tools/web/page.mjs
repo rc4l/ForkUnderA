@@ -28,14 +28,23 @@ export const HEAR_CONSOLE = `const said = [];
       const ask = async (command, ms = 300) => { const from = said.length; Module.fuaCommand(command); ${pause('ms')} return said.slice(from); };`;
 
 // [rc4l] Page code that repeats a soak action's steps (fuactl's soakSteps) cycles times on map, marking memory after each cycle once each level a step started has printed its title, or a moment has passed, and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict on the cycles after warmup.
-export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) {
+export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1, { heap = false } = {}) {
   return inPage(`
       ${pause(2000)}
       ${HEAR_CONSOLE}
       const started = async (from, title) => { for (let t = 0; t < 600 && !said.slice(from).some((l) => l.trim().toLowerCase().startsWith(title)); t++) ${pause(100)} };
-      const collect = async () => { for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} } };
+      // [rc4l] The driver collects as a heap snapshot does when it can (check: gc), since the page's gc() left about 800 KB a level reload a full collection takes, and the soak read it as growth (queue #69); else the page's own.
+      let gcs = 0;
+      const collect = async () => {
+        const n = ++gcs;
+        console.log('check: gc ' + n);
+        for (let t = 0; t < 30 && window.fuaGcTaken !== n; t++) ${pause(100)}
+        if (window.fuaGcTaken !== n) for (let k = 0; k < 2 && window.gc; k++) { window.gc(); ${pause(200)} }
+      };
       // [rc4l] A mark asked for during a wipe is taken once it ends, so each waits for its line.
       const marked = async (n) => { for (let t = 0; t < 1200 && !said.some((l) => l.trim() === 'telemetry: soak mark ' + n); t++) ${pause(100)} };
+      // [rc4l] A heap snapshot the driver takes (probe.mjs --heap), waited for since taking one stops the page.
+      const heapAt = async (label) => { console.log('check: heap ' + label); for (let t = 0; t < 1200 && window.fuaHeapTaken !== label; t++) ${pause(100)} };
       const steps = ${JSON.stringify(soakSteps(action, map))};
       // [rc4l] The page's WebGPU objects by label at the start and the end, so a failing soak shows which ones it kept.
       const held = (when) => console.log('soak gpu ' + when + ': ' + (Module.fuaGpuLedger ? Module.fuaGpuLedger.tagText().replace(/\\n/g, '; ') : 'no ledger'));
@@ -57,8 +66,9 @@ export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1) 
         await collect();
         Module.fuaCommand('fua_soak mark');
         await marked(i + 1);
-        if (i === ${warmup}) base = ledger();
+        if (i === ${warmup}) { base = ledger(); ${heap ? "await heapAt('base');" : ''} }
       }
+      ${heap ? "await heapAt('end');" : ''}
       held('end');
       const end = ledger();
       const kept = Object.keys(end).filter((t) => end[t] > (base[t] || 0) + 65536).map((t) => t + ' +' + Math.round((end[t] - (base[t] || 0)) / 1024) + ' KB');

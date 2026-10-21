@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resizeAsked } from '../fuactl/src/telemetry.mjs';
+import { heapSummary } from './heap.mjs';
 
 export const CHROME_CANDIDATES = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -66,9 +67,11 @@ export function inputAsked(line) {
   if (!line.startsWith('[log] ')) return null;
   const size = resizeAsked(line.slice(6));
   if (size) return { resize: size };
-  const m = /^\[log\] check: (?:click(?: (?<target>[\w-]+))?|press (?<press>\S+)|hold (?<hold>\S+) (?<ms>\d+)|(?<phase>down|up) (?<edge>\S+))$/.exec(line);
+  const m = /^\[log\] check: (?:click(?: (?<target>[\w-]+))?|press (?<press>\S+)|hold (?<hold>\S+) (?<ms>\d+)|(?<phase>down|up) (?<edge>\S+)|heap (?<heap>\w+)|gc (?<gc>\d+))$/.exec(line);
   if (!m) return null;
-  const { target, press, hold, ms, phase, edge } = m.groups;
+  const { target, press, hold, ms, phase, edge, heap, gc } = m.groups;
+  if (heap) return { heap };
+  if (gc) return { gc: Number(gc) };
   if (!press && !hold && !edge) return target ? { click: true, target } : { click: true };
   const key = press || hold || edge;
   if (!KEYS[key]) return null;
@@ -147,6 +150,9 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     const pending = new Map();
     let matched = null;
     let wake = () => {};
+    // [rc4l] Heap snapshots the page asked for (check: heap LABEL), each summed by heap.mjs, and the pieces of the one being taken.
+    const heaps = {};
+    let heapChunks = null;
     const take = line => {
       lines.push(line);
       onLine(line);
@@ -157,11 +163,30 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     ws.onmessage = ev => {
       const msg = JSON.parse(ev.data);
       if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); return; }
+      if (msg.method === 'HeapProfiler.addHeapSnapshotChunk') { if (heapChunks) heapChunks.push(msg.params.chunk); return; }
       const line = formatConsole(msg.method, msg.params ?? {});
       if (line !== null) take(line);
     };
     const send = (method, params = {}) => new Promise(res => { const n = ++id; pending.set(n, res); ws.send(JSON.stringify({ id: n, method, params })); });
     const act = async (asked) => {
+      // [rc4l] A snapshot after a collection, summed, then the page told it may go on.
+      if (asked.heap) {
+        await send('HeapProfiler.enable');
+        await send('HeapProfiler.collectGarbage');
+        heapChunks = [];
+        await send('HeapProfiler.takeHeapSnapshot', { reportProgress: false });
+        heaps[asked.heap] = heapSummary(JSON.parse(heapChunks.join('')));
+        heapChunks = null;
+        await send('Runtime.evaluate', { expression: `window.fuaHeapTaken = ${JSON.stringify(asked.heap)}` });
+        return;
+      }
+      // [rc4l] A collection as a heap snapshot makes one, which reaches garbage the page's own gc() leaves, then the page told it is done.
+      if (asked.gc) {
+        await send('HeapProfiler.enable');
+        await send('HeapProfiler.collectGarbage');
+        await send('Runtime.evaluate', { expression: `window.fuaGcTaken = ${asked.gc}` });
+        return;
+      }
       if (asked.resize) {
         await send('Emulation.setDeviceMetricsOverride', { width: asked.resize[0], height: asked.resize[1], deviceScaleFactor: 1, mobile: false });
         return;
@@ -205,7 +230,7 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
       if (r.result?.data) fs.writeFileSync(shot, Buffer.from(r.result.data, 'base64'));
     }
     ws.close();
-    return { matched, lines, version };
+    return { matched, lines, version, heaps };
   } finally {
     // [rc4l] Chrome is gone before this returns, so the next run can use the same profile and the last can remove it; its helper processes can take a moment longer, hence the retries.
     let gone = false;

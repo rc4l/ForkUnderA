@@ -56,3 +56,31 @@ TEST(GrowBufferCompute, APieceBufferFitsWhileTheLevelsAndTheFramesPiecesDo)
 	EXPECT_FALSE(ComputeBufferFits(true, 4384, 192 + 4193));
 	EXPECT_FALSE(ComputeBufferFits(true, 4384, 192 + 10600));
 }
+
+// [rc4l] A level's upload kept a page in a browser's pool for every 8 MB it sent in one frame, 96 MB on Sunder MAP11, and Firefox ran out of GPU memory.
+TEST(GrowBufferCompute, AFlushFallsDueEachTimeTheBudgetFills)
+{
+	size_t since = 0;
+	EXPECT_FALSE(zx::hwrender::ComputeUploadFlushDue(since, 3, 4));
+	EXPECT_EQ(3u, since);
+	EXPECT_TRUE(zx::hwrender::ComputeUploadFlushDue(since, 1, 4));
+	EXPECT_EQ(0u, since);
+	EXPECT_TRUE(zx::hwrender::ComputeUploadFlushDue(since, 9, 4));
+	EXPECT_EQ(0u, since);
+	// [rc4l] No budget, as on Vulkan, whose upload heap is a ring: never due.
+	EXPECT_FALSE(zx::hwrender::ComputeUploadFlushDue(since, 1u << 30, 0));
+	EXPECT_EQ(1u << 30, since);
+	int flushes = 0;
+	size_t pending = 0;
+	zx::hwrender::ComputeUploadChunks(48u << 20, 1u << 20, [&](size_t, size_t n) { if (zx::hwrender::ComputeUploadFlushDue(pending, n, zx::hwrender::kUploadFlushBytes)) flushes++; });
+	EXPECT_EQ(12, flushes);
+}
+
+// [rc4l] A level's first upload asked the device it had not yet made for its type, and every scenario's engine crashed.
+TEST(GrowBufferCompute, OnlyABrowsersMadeDeviceFlushes)
+{
+	EXPECT_EQ(0u, zx::hwrender::ComputeUploadFlushBudget(false, true));
+	EXPECT_EQ(0u, zx::hwrender::ComputeUploadFlushBudget(false, false));
+	EXPECT_EQ(0u, zx::hwrender::ComputeUploadFlushBudget(true, false));
+	EXPECT_EQ(zx::hwrender::kUploadFlushBytes, zx::hwrender::ComputeUploadFlushBudget(true, true));
+}

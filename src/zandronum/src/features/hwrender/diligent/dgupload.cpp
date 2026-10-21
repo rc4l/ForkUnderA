@@ -430,6 +430,8 @@ bool SceneUpload(FString &report)
 	if (screen != NULL) Fua_SetBackendWindowSize(screen->GetWidth(), screen->GetHeight());
 	if (!DiligentShowWindow(err)) { report = err; return false; }
 	if (!EnsureScenePipeline(err)) { report = err; return false; }
+	// [rc4l] The level goes up in one frame, and a browser's device would keep a page for every 8 MB of it; asked once the window has made the device.
+	UploadFlushing flushing;
 	if (!BuildSceneBuffer(err)) { report = err; return false; }
 
 	g_scene.verts = (int)g_scene.cpuVerts.Size();
@@ -662,6 +664,8 @@ static void NoteBail(const zx::levelmesh::MeshPiece &p)
 
 void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
+	// [rc4l] First in the frame's preparation, and a rebuild sends the level's piece records again in one frame.
+	UploadFlushing flushing;
 	if (!g_scene.vb || g_scene.cpuVerts.Size() == 0) return;
 
 	// [rc4l] Two questions, both answered by the mesh, neither of them "did a vertex move".

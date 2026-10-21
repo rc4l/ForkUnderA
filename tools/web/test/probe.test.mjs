@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { abLine, abShots, initFor, parseRun, parseSwap, queryMap, report, runScript, soakLines } from '../probe.mjs';
+import { abLine, abShots, initFor, loadSave, parseRun, parseSwap, queryMap, report, runScript, soakLines } from '../probe.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 
 test('a run is console lines with waits between them', () => {
@@ -90,4 +90,14 @@ test('the page starts with the watches, each WAD served and the swap, and only w
   const all = initFor({ wads: [{ name: 'q.wad', bytes: Buffer.from('PWAD') }], swap: { find: 'a', replace: 'b' } });
   assert.match(all, /const name = "q\.wad";/);
   assert.match(all, /createShaderModule/);
+});
+
+test('a save given to a run is written into the page home and loaded before its steps', () => {
+  const save = { name: 'fight.zds', bytes: Buffer.from('ZDS') };
+  assert.match(loadSave(save), /FuaHome\.HOME \+ '\/' \+ "fight\.zds"/);
+  assert.match(loadSave(save), /atob\("WkRT"\)/);
+  const js = runScript(parseRun('wait 50'), { save });
+  assert.ok(js.indexOf("fuaCommand('load ' + at)") > 0);
+  assert.ok(js.indexOf("fuaCommand('load ' + at)") < js.indexOf('setTimeout(r, 50)'));
+  assert.doesNotMatch(runScript(parseRun('wait 50')), /FuaHome\.HOME/);
 });
