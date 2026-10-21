@@ -35,6 +35,9 @@ EXTERN_CVAR(Bool, r_lights)
 EXTERN_CVAR(Bool, r_light_sprites)
 EXTERN_CVAR(Bool, r_enhanced_nightvision)
 
+// [rc4l] The narrowest field across a portrait screen is given (ComputePortraitFov), since carrying 4:3's vertical field across a phone's width alone leaves a tunnel.
+CVAR(Float, r_fua_portrait_fov, 65.f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+
 namespace zx { namespace viewsetup {
 
 static_assert(area_normal == kAreaNormal && area_below == kAreaBelow && area_above == kAreaAbove && area_default == kAreaDefault,
