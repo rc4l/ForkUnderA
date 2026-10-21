@@ -82,7 +82,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | the engine's windows as Windows sees them, and what one really shows | `window [--shot gl\|vk --out FILE]`: minimized, not responding, position; the shot comes from the compositor, not GL's own buffer |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch`; `--pixel x,y --size WxH` aims through a capture's pixel, from the live camera when no `--spot`/`--at` is given |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
-| a map's sectors, lines, specials, things and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--thing TYPE] [--scripts REGEX]` (9080 is a SkyViewpoint) |
+| a map's sectors, lines, specials, things and ACS source, from its files in any format | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--thing TYPE] [--scripts REGEX]` (9080 is a SkyViewpoint) |
 | does a region move over time (warp, scroller), Vulkan and GL | `motion --spot NAME --box x0,y0,x1,y1 [--interval MS]` |
 | compare two captures | `png --diff a b`, `png --boxdiff a b x0,y0,x1,y1 [block]`, `png --diffimg a b out` |
 | a box's brightness and channel means, several captures | `png --range a b ... [x0 y0 x1 y1]` |

@@ -49,7 +49,13 @@ Two look steps measure what a player feels: `frames` prints the browser's frame 
 over 20 and 50 ms) since the last `frames`, and `level` what the audio output carried (RMS, with
 `--autoplay`). A run like `"god; warp X Y; fua_debug_orbit 25; wait 2000; frames; wait 5000; frames"` is a
 frame-rate report's repro, so a one-off Chrome script is never needed. The probe's Chrome is always muted, and a minimal template map isolates the fault
-better than their mod's busy map.
+better than their mod's busy map: `--wad map.wad --query "file=map.wad&map=MAP01"` serves one to any staged build.
+
+Reproduce it in the reporter's browser too: `--browser firefox` plays it in a Firefox window off the screen, and
+Firefox's WebGPU is not Chrome's (queue #68 lit nothing far away in Firefox alone). A step `ab CVAR A B` frames the
+view at both values and prints how far apart they sit, which bisects a render switch in the browser the way `ab`
+does in an engine. `--wgsl "FIND=>REPLACE"` rewrites the page's shaders, which tries a shader fix on the reporter's
+build before anything is rebuilt.
 
 A report from the demo site (`tools/web/demo`) is about the build last deployed there, served by its Worker
 rather than `serve.mjs`. `node tools/web/demo/verify.mjs` checks the live site against its stage first. It

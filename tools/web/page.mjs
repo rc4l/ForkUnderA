@@ -142,3 +142,47 @@ export function framePacing(times) {
   const at = (p) => gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))];
   return `frames: ${gaps.length}, interval median ${at(0.5).toFixed(2)} p99 ${at(0.99).toFixed(2)} max ${gaps[gaps.length - 1].toFixed(1)} ms, over 20 ms ${gaps.filter((g) => g > 20).length}, over 50 ms ${gaps.filter((g) => g > 50).length}`;
 }
+
+// [rc4l] Page code defining grabFrame(), the next frame the engine draws as a base64 PNG, taken from the canvas just after it as the page's screenshot is, with the notify lines cleared first and no capture message (screenshot_quiet is left off).
+export const GRAB_FRAME = `const grabFrame = () => new Promise((resolve) => {
+        const canvas = Module.canvas;
+        canvas.toBlob = (_, type) => {
+          delete canvas.toBlob;
+          canvas.toBlob(async (blob) => {
+            Module.fuaCommand('screenshot_quiet 0');
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            let text = '';
+            for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+            resolve(btoa(text));
+          }, type);
+        };
+        Module.fuaCommand('clear');
+        Module.fuaCommand('screenshot_quiet 1');
+        Module.fuaCommand('screenshot');
+      });`;
+
+// [rc4l] Page code, for an init, that adds name to the files the page fetches through data/files.json and serves it from bytes, so a check can carry a map of its own without staging one.
+export function serveData(name, bytes) {
+  return `{
+      const name = ${JSON.stringify(name)};
+      const bytes = Uint8Array.from(atob(${JSON.stringify(Buffer.from(bytes).toString('base64'))}), (c) => c.charCodeAt(0));
+      const real = window.fetch.bind(window);
+      window.fetch = async (url, options) => {
+        const at = String(url);
+        if (at.endsWith('data/files.json')) return new Response(JSON.stringify([...(await (await real(url, options)).json()), { name, size: bytes.length }]));
+        if (at.endsWith('data/' + name)) return new Response(bytes);
+        return real(url, options);
+      };
+    }`;
+}
+
+// [rc4l] Page code, for an init, that replaces every find with replace in each WGSL shader the page makes, to try a shader change in a browser without building again.
+export function swapWgsl(find, replace) {
+  return `{
+      const real = GPUDevice.prototype.createShaderModule;
+      GPUDevice.prototype.createShaderModule = function (desc) {
+        if (desc && typeof desc.code === 'string') desc = { ...desc, code: desc.code.split(${JSON.stringify(find)}).join(${JSON.stringify(replace)}) };
+        return real.call(this, desc);
+      };
+    }`;
+}

@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { retry, removeQuietly } from './smoke.mjs';
+import { smoke, retry, removeQuietly } from './smoke.mjs';
 
 export const FIREFOX_CANDIDATES = [
   'C:/Program Files/Mozilla Firefox/firefox.exe',
@@ -54,6 +54,13 @@ export function formatLogEntry(p) {
 export function formatBidiEval(r) {
   if (!r || r.type === 'exception') return `[eval] threw ${(r && r.exceptionDetails && r.exceptionDetails.text) || 'unknown'}`;
   return `[eval] ${r.result && r.result.type === 'string' ? r.result.value : 'null'}`;
+}
+
+// [rc4l] The run a browser's pages get, smoke for Chrome and smokeFirefox for Firefox; any other name is a mistake worth stopping on.
+export function smokeIn(browser) {
+  if (browser === 'chrome') return smoke;
+  if (browser === 'firefox') return smokeFirefox;
+  throw new Error(`no driver for the browser "${browser}": chrome or firefox`);
 }
 
 // [rc4l] What smoke takes and gives, for the options a probe uses: init before the page's scripts, evaluate `after` seconds in, until the first line matching until.

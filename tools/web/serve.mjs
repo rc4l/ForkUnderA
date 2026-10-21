@@ -31,6 +31,13 @@ export function createServer(root) {
   });
 }
 
+// [rc4l] A server for root on a free localhost port, and the origin to ask it at.
+export async function serveLocally(root) {
+  const server = createServer(root);
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { server, origin: `http://127.0.0.1:${server.address().port}` };
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = process.argv[2] ?? '.';
   const port = Number(process.argv[3] ?? 8080);

@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// [rc4l] The browser build's checks in headless Chrome, in order on one profile: it boots and draws, and a setting survives quitting, leaving and reloading the page.
+// [rc4l] The browser build's checks in headless Chrome, in order on one profile (or those marked firefox in Firefox): it boots and draws, and a setting survives quitting, leaving and reloading the page.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from './serve.mjs';
-import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, inPage, pause, soakInPage } from './page.mjs';
-import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
+import { serveLocally } from './serve.mjs';
+import { gpuLogLines, removeQuietly } from './smoke.mjs';
+import { smokeIn } from './firefox.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
+import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
@@ -77,6 +79,25 @@ export function gpuError(lines) {
 // [rc4l] Why the canvas was configured wrongly, or '': never, or again after the first time with nothing resized.
 export function configuredOnce(n) {
   return n === 1 ? '' : `the canvas was configured ${n} times`;
+}
+
+// [rc4l] The pointlight scenario's hall, as the light grid check serves it to the page.
+const POINTLIGHT_WAD = 'fua-pointlight.wad';
+
+// [rc4l] How much one block of the frame must change with the light on for the comparison to mean anything.
+export const LIT_FLOOR = 4;
+
+// [rc4l] Why the light grid check failed, or '': at each vantage the light changed the frame, and the grid drew what no grid draws, judged as the pointlight scenario judges it.
+export function gridMatches(at) {
+  const { box, ceiling } = POINTLIGHT_BOXES.MAP01.frame;
+  for (const { name, grid, none, dark } of at) {
+    const [g, n, d] = [grid, none, dark].map((b64) => decodePNGBytes(Buffer.from(b64, 'base64')));
+    const lit = boxDiffMax(n, d, box);
+    if (!(lit >= LIT_FLOOR)) return `at ${name} the light changed no block by more than ${lit.toFixed(2)}, so it never drew`;
+    const off = boxDiff(g, n, box);
+    if (!(off <= ceiling)) return `at ${name} the light grid drew ${off.toFixed(3)} away from no grid, over ${ceiling}`;
+  }
+  return '';
 }
 
 // [rc4l] Why firing at the floor went wrong, or '': the decal pass drawing no mark, which would leave it untried.
@@ -220,6 +241,27 @@ export const CHECKS = [
       return seen;`),
     until: EVAL,
     expect: marked,
+  },
+  // [rc4l] Firefox's WebGPU gave gl_FragCoord.w as w rather than 1/w, so every fragment read the light grid's nearest depth slice and a distant light lit nothing (queue #68).
+  {
+    name: 'a distant light draws the same through the light grid as without it',
+    firefox: true,
+    query: `file=${POINTLIGHT_WAD}&map=MAP01`,
+    init: serveData(POINTLIGHT_WAD, buildPointlightWad()),
+    evaluate: inPage(`${GRAB_FRAME}
+      const frame = async (command) => { Module.fuaCommand(command); ${pause(300)} return grabFrame(); };
+      ${pause(3000)}
+      const at = [];
+      for (const v of ${JSON.stringify(POINTLIGHT_VANTAGES.map(({ name, at: { x, y } }) => ({ name, x, y })))}) {
+        Module.fuaCommand('warp ' + v.x + ' ' + v.y);
+        ${pause(1000)}
+        at.push({ name: v.name, grid: await frame('fua_dg_clusters 1'), none: await frame('fua_dg_clusters 0'), dark: await frame('fua_dg_dynlights 0') });
+        Module.fuaCommand('fua_dg_dynlights 1');
+        Module.fuaCommand('fua_dg_clusters 1');
+      }
+      return at;`),
+    until: EVAL,
+    expect: gridMatches,
   },
   {
     name: 'the sound waits for a click and plays after one',
@@ -598,24 +640,40 @@ export function selectChecks(checks, only) {
   return only ? checks.filter((c) => c.name.includes(only)) : checks;
 }
 
-export async function check({ url, checks = CHECKS, seconds = 60, software = false, throttle = 0, onResult = console.log }) {
+// [rc4l] The page a check opens: the run's own, or the run's with the check's query in place of its own.
+export function checkUrl(url, c) {
+  if (!c.query) return url;
+  const u = new URL(url);
+  u.search = c.query;
+  return u.href;
+}
+
+// [rc4l] Why a check does not run in this browser, or '': the Firefox driver has no input, screenshot or carried profile, so only a check marked firefox runs there.
+export function notIn(browser, c) {
+  return browser === 'firefox' && !c.firefox ? 'it needs what only the Chrome driver does' : '';
+}
+
+export async function check({ url, checks = CHECKS, seconds = 60, software = false, throttle = 0, browser = 'chrome', onResult = console.log }) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-'));
   const shots = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-shots-'));
-  let failed = 0;
+  const run = smokeIn(browser);
+  let failed = 0, named = false;
   try {
     for (const [i, c] of checks.entries()) {
+      const elsewhere = notIn(browser, c);
+      if (elsewhere) { onResult(`SKIP ${c.name}: ${elsewhere}`); continue; }
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const logFile = path.join(shots, `check-${i}-chrome.log`);
-      const { matched, lines, version } = await smoke({ url, profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
-      if (i === 0) onResult(`browser: ${version}`);
+      const { matched, lines, version } = await run({ url: checkUrl(url, c), profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      if (!named) { onResult(`browser: ${version}`); named = true; }
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason, skip } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
       onResult(`${skip ? 'SKIP' : ok ? 'PASS' : 'FAIL'} ${c.name}${skip ? ': ' + skip : ok ? '' : ': ' + reason}`);
       if (!ok) {
         failed++;
-        for (const line of lines.slice(-20)) onResult(`  ${line}`);
-        for (const line of gpuLogLines(fs.readFileSync(logFile, 'utf8'))) onResult(`  [chrome] ${line}`);
+        for (const line of lines.slice(-20)) onResult(`  ${line.slice(0, 300)}`);
+        if (fs.existsSync(logFile)) for (const line of gpuLogLines(fs.readFileSync(logFile, 'utf8'))) onResult(`  [chrome] ${line}`);
         if (shot || downloadDir) onResult(`  screenshot: ${shot || downloadDir}`);
       }
     }
@@ -631,16 +689,18 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
   // [rc4l] --throttle N slows the page's own thread N times, as a slow runner's is, to reproduce CI's timing here.
   const throttle = args.includes('--throttle') ? Number(args[args.indexOf('--throttle') + 1]) : 0;
-  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only' && args[i - 1] !== '--throttle') ?? 'dist-web';
+  // [rc4l] --browser firefox runs the checks marked firefox in Firefox (firefox.mjs), whose WebGPU differs from Chrome's.
+  const browser = args.includes('--browser') ? args[args.indexOf('--browser') + 1] : 'chrome';
+  const root = args.find((a, i) => !a.startsWith('--') && !['--only', '--throttle', '--browser'].includes(args[i - 1])) ?? 'dist-web';
   const checks = selectChecks(CHECKS, only);
   if (!checks.length) { console.error(`no check's name contains "${only}"`); process.exit(2); }
-  const server = createServer(root).listen(0, '127.0.0.1');
-  await new Promise((r) => server.once('listening', r));
+  const { server, origin } = await serveLocally(root);
   const failed = await check({
-    url: `http://127.0.0.1:${server.address().port}/?map=MAP01`,
+    url: `${origin}/?map=MAP01`,
     checks,
     software: args.includes('--software'),
     throttle,
+    browser,
     seconds: args.includes('--software') || throttle > 1 ? 180 : 60,
   });
   server.close();

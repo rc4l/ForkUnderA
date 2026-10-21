@@ -21,7 +21,8 @@ Get the fault on your own screen in the reporter's map (`reproducing-a-report`),
 made of: which line special, sector flag, sky type, texture setup. Ask the engine rather than guess —
 `fuactl line <index>` / `line --at X,Y`, `look`, `rpc state.actors`, the engine's own logs
 (`fua_sky_log` named the horizon lines) -- and the map's own files: `fuactl mapdata <MAP> --preset ID
---sector N --scripts REGEX` found wdiexsec's reflective floor in its OPEN script. The template
+--sector N --scripts REGEX` found wdiexsec's reflective floor in its OPEN script, and `--file freedoom2.wad
+--special 11 --thing 2018` reads a Doom- or Hexen-format map the same way. The template
 reproduces THAT, nothing else.
 
 ## 2. Build the map with `src/udmf.mjs`
@@ -184,6 +185,12 @@ goes on.
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
 unrelated difference gets its own ceiling (MAP01's dome reads ~10 in both builds; the horizon box ~2).
 
+A fault only the browser build shows becomes a check in `tools/web/check.mjs` that plays the scenario's own map:
+`query` opens the page on it and `serveData(name, buildWad())` as the check's `init` serves it as if staged, its
+frames come back through `GRAB_FRAME` and are judged in Node with the scenario's `BOXES` by `boxDiff`. Mark it
+`firefox: true` when it can run in Firefox (`check.mjs --browser firefox`), since a browser's WebGPU can differ
+where no engine does: the light grid check plays `pointlight.mjs`'s hall, and only Firefox failed it.
+
 ## 5. Prove it catches the bug
 
 Keep a copy of the old `dist-windows/forkundera.exe` before staging the fix (see `zandronum-rebuild`),
@@ -207,6 +214,6 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 
 Every scenario opens with a one-line `// [rc4l]` summary of what it proves, so the list is generated
 rather than kept here: `head -qn1 tools/fuactl/scenarios/*.mjs`.
-| `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
+| `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines, things and scripts (UDMF, Doom or Hexen format), to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

@@ -173,7 +173,7 @@ const USAGE = `fuactl <command>
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
-  travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, the way a player reached it
+  travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, pressing use through each intermission, the way a player reached it
   quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; one that refuses (no token) and whose launcher is gone is stopped as \`reap --kill\` would; exit 1 if it would not go; --park files its camera, wads and renderer first
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
@@ -200,7 +200,7 @@ const USAGE = `fuactl <command>
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
   privacy [--since REF | --staged]   what a change adds since REF (default HEAD, untracked files included), or what is staged, that could identify its author: a home folder's path, an email address, this machine's user or host name, or a pattern in ~/.forkundera/private-patterns.txt; exit 1 on any
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
-  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
+  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a level's summary (UDMF, Doom or Hexen format), sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
   scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
@@ -513,7 +513,7 @@ async function main() {
           if (Date.now() > until) { console.error(`nextmap left the instance on ${was}`); process.exit(1); }
           await new Promise((r) => setTimeout(r, 250));
         }
-        await cap.waitInLevel(c, 60000);
+        await cap.waitInLevel(c, 60000, { pressThrough: true });
       }
       console.log(`on ${want} after ${hops} nextmap(s)`);
       c.close();

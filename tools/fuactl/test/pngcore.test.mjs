@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decodePNG, px, writePNG, encodePNG, cropImage, boxDiff, boxDiffMax, blockDiffs, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox, boxArgs } from "../src/pngcore.mjs";
+import { decodePNG, decodePNGBytes, px, writePNG, encodePNG, cropImage, boxDiff, boxDiffMax, blockDiffs, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox, boxArgs } from "../src/pngcore.mjs";
 
 // [rc4l] A w x h RGB image whose pixel colour is f(x, y), written and read back through the real codec.
 function image(w, h, f) {
@@ -13,6 +13,12 @@ function image(w, h, f) {
   writePNG(file, w, h, rgb);
   return decodePNG(file);
 }
+
+test("a PNG in memory decodes as its file would", () => {
+  const rgb = Buffer.from([10, 20, 30, 200, 100, 0]);
+  const img = decodePNGBytes(encodePNG(2, 1, rgb));
+  assert.deepEqual([img.w, img.h, px(img, 0, 0), px(img, 1, 0)], [2, 1, [10, 20, 30], [200, 100, 0]]);
+});
 
 test("a written PNG reads back pixel for pixel", () => {
   const img = image(5, 3, (x, y) => [x * 40, y * 80, 7]);

@@ -56,6 +56,34 @@ export function findMapLumps(files, mapName) {
   return found;
 }
 
+// [rc4l] A binary-format map's lumps in the shape parseUdmf gives, Hexen's layout when it carries a BEHAVIOR lump and Doom's otherwise, so every question mapdata answers works on both.
+export function binaryMap(lumps) {
+  const hexen = lumps.has("BEHAVIOR");
+  const rows = (name, size, read) => {
+    const b = lumps.get(name) || Buffer.alloc(0), out = [];
+    for (let o = 0; o + size <= b.length; o += size) out.push(read(b, o));
+    return out;
+  };
+  const name8 = (b, o) => b.toString("latin1", o, o + 8).replace(/\0.*$/, "");
+  const side = (v) => (v === 0xffff ? undefined : v);
+  const args = (b, o) => Object.fromEntries([0, 1, 2, 3, 4].map((i) => [`arg${i}`, b[o + i]]));
+  return {
+    namespace: hexen ? "hexen (binary)" : "doom (binary)",
+    vertex: rows("VERTEXES", 4, (b, o) => ({ x: b.readInt16LE(o), y: b.readInt16LE(o + 2) })),
+    linedef: rows("LINEDEFS", hexen ? 16 : 14, (b, o) => ({ v1: b.readUInt16LE(o), v2: b.readUInt16LE(o + 2), flags: b.readUInt16LE(o + 4),
+      ...(hexen ? { special: b[o + 6], ...args(b, o + 7) } : { special: b.readUInt16LE(o + 6), id: b.readUInt16LE(o + 8) }),
+      sidefront: side(b.readUInt16LE(o + (hexen ? 12 : 10))), sideback: side(b.readUInt16LE(o + (hexen ? 14 : 12))) })),
+    sidedef: rows("SIDEDEFS", 30, (b, o) => ({ offsetx: b.readInt16LE(o), offsety: b.readInt16LE(o + 2), texturetop: name8(b, o + 4),
+      texturebottom: name8(b, o + 12), texturemiddle: name8(b, o + 20), sector: b.readUInt16LE(o + 28) })),
+    sector: rows("SECTORS", 26, (b, o) => ({ heightfloor: b.readInt16LE(o), heightceiling: b.readInt16LE(o + 2), texturefloor: name8(b, o + 4),
+      textureceiling: name8(b, o + 12), lightlevel: b.readInt16LE(o + 20), special: b.readUInt16LE(o + 22), id: b.readUInt16LE(o + 24) })),
+    thing: rows("THINGS", hexen ? 20 : 10, (b, o) => (hexen
+      ? { id: b.readInt16LE(o), x: b.readInt16LE(o + 2), y: b.readInt16LE(o + 4), height: b.readInt16LE(o + 6), angle: b.readInt16LE(o + 8),
+        type: b.readUInt16LE(o + 10), flags: b.readUInt16LE(o + 12), special: b[o + 14], ...args(b, o + 15) }
+      : { x: b.readInt16LE(o), y: b.readInt16LE(o + 2), angle: b.readInt16LE(o + 4), type: b.readUInt16LE(o + 6), flags: b.readUInt16LE(o + 8) })),
+  };
+}
+
 // [rc4l] What a question about a map needs first: its size, which line specials it uses and how often, and how much of it is open sky.
 export function summarizeMap(udmf) {
   const specials = {};
@@ -104,8 +132,7 @@ export function grepScripts(text, pattern) {
 // [rc4l] Everything `fuactl mapdata` prints, from the map's lumps and the sectors, lines, special and script pattern asked about.
 export function mapReport(found, { sectors = [], lines = [], scripts = null, special = null, tag = null, things = [] } = {}) {
   const textmap = found.lumps.get("TEXTMAP");
-  if (!textmap) throw new Error(`${found.file} holds the map in binary format; mapdata reads UDMF only`);
-  const udmf = parseUdmf(textmap.toString("latin1"));
+  const udmf = textmap ? parseUdmf(textmap.toString("latin1")) : binaryMap(found.lumps);
   const source = found.lumps.get("SCRIPTS");
   return {
     file: found.file,
