@@ -3,7 +3,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { quitInstance, withLockedInstance, portStillAnswers, play, waitInLevel } from "../src/play.mjs";
+import { quitInstance, withLockedInstance, portStillAnswers, play, waitInLevel, crashedError } from "../src/play.mjs";
+
+test("a crash file turns a launch's error into its path, why it stopped and its first frames; no file leaves the error alone", () => {
+  const text = "=== MCP ENGINE CRASH ===\nsignal: 11 SIGSEGV\npid: 1\n\nbacktrace:\n0   forkundera   0x1 _Z16Cmd_dumprenderer + 280\n";
+  const _fs = { existsSync: (p) => p === "/l/engine-7799.log.crash", readFileSync: () => text };
+  const e = crashedError({ log: "/l/engine-7799.log" }, new Error("bridge closed"), _fs);
+  assert.equal(e.message, "engine crashed -- /l/engine-7799.log.crash\n  signal: 11 SIGSEGV\n  0   forkundera   0x1 _Z16Cmd_dumprenderer + 280");
+  const plain = new Error("bridge closed");
+  assert.equal(crashedError({ log: "/l/other.log" }, plain, _fs), plain);
+  assert.equal(crashedError(null, plain, _fs), plain);
+});
 
 // [rc4l] A second launch on a busy port cleared the first's session file, and that engine could no longer be quit by its token.
 test("a port an engine still answers on is in use, and one that closes within the grace is not", async () => {

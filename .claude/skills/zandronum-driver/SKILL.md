@@ -15,26 +15,19 @@ The overview is `README.fuactl.md`; the full RPC list is `src/zandronum/src/feat
 
 - **Node.js**, then `cd tools/fuactl && npm install`.
 - **A bridge-enabled engine.** Release builds contain no bridge at all, so launching one fails with
-  "bridge port never opened". Build a dev engine:
-
-  | OS | Command |
-  |---|---|
-  | macOS | `ZX_MCP_BRIDGE=1 ./mac_compile.sh` |
-  | Linux | `ZX_MCP_BRIDGE=1 ./linux_compile.sh` |
-  | Windows | `$env:ZX_MCP_BRIDGE=1; .\windows_compile.ps1 -SkipDeps` (or `windows_build.ps1`) |
-
-  The flag is a compile definition on the whole engine, so switching it on or off rebuilds
-  everything. Never hand a bridge build to players.
-- `npx fuactl doctor` checks that the engine fuactl will use is bridge-enabled and newer than the source.
-- fuactl uses the staged binary at `build/ForkUnderA.app/Contents/MacOS/forkundera`,
-  `dist-windows/forkundera.exe` or `dist-linux/forkundera`. Set `FUACTL_ENGINE` to use another.
+  "bridge port never opened". The per-OS build command and where the staged binary lands are the
+  `zandronum-rebuild` skill's table (one place, so this one cannot drift from it). The flag is a
+  compile definition on the whole engine, so switching it on or off rebuilds everything. Never hand
+  a bridge build to players.
+- `npx fuactl doctor` checks that the engine fuactl will use is bridge-enabled, newer than the source,
+  has `iwads/` beside it, and that the Diligent submodule is checked out.
+- Set `FUACTL_ENGINE` to run a binary other than the staged one.
 
 ## Rebuild before you launch
 
-After any code or `wadsrc/` change, rebuild with the fail-closed script for your OS:
-`mac_build_run.sh` or `windows_build_run.ps1`. They stop on a bad build, repack stale pk3s and check
-the staged binary. A hand-rolled `cmake --build --target zdoom` never rebuilds the pk3, so you end up
-driving a stale engine and debugging the wrong layer.
+After any code or `wadsrc/` change, rebuild as the `zandronum-rebuild` skill says. A hand-rolled
+`cmake --build --target zdoom` never rebuilds the pk3, so you end up driving a stale engine and
+debugging the wrong layer.
 
 ## Launch
 
