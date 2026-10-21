@@ -18,8 +18,7 @@
 #include "gl/system/gl_interface.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 #include "features/mcp-bridge/computation/renderinfo_compute.h"   // [rc4l] ComputeRendererName, ComputeGlLive
-#include "features/viewsetup/computation/viewsetup_compute.h"     // [rc4l] ComputeVerticalFov
-#include "r_utility.h"   // [rc4l] r_viewLens
+#include "features/viewsetup/viewsetup.h"   // [rc4l] PrintLens
 #if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
 #include "gl/system/gl_system.h"
 #include "sdlglvideo.h"
@@ -75,9 +74,7 @@ CCMD( dumprenderer )
 #endif
 
 	// [rc4l] The lens the renderers draw with, so a portrait check can read the field of view it got (features/viewsetup).
-	Printf( "view_fov=%.2f\n", r_viewLens.fov );
-	Printf( "view_vfov=%.2f\n", zx::viewsetup::ComputeVerticalFov( r_viewLens.fov, r_viewLens.fovRatio ) );
-	Printf( "view_ratio=%.4f\n", r_viewLens.ratio );
+	zx::viewsetup::PrintLens( );
 	Printf( "view_x=%d\n", viewwindowx );
 	Printf( "view_y=%d\n", viewwindowy );
 	Printf( "view_width=%d\n", viewwidth );
