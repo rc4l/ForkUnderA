@@ -31,6 +31,9 @@ void SetFullscreen(bool) {}
 
 bool MouseHeld() { return true; }
 
+// [rc4l] A desktop's SDL window has no touch screen the overlay reads; a handheld host would fill this from SDL's finger events.
+bool ReadTouch(TouchPointer *, int, int &count, TouchView &) { count = 0; return false; }
+
 void ShowFatal(const char *) {}
 
 bool CanAskForIWad() { return true; }
