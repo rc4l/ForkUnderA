@@ -7,6 +7,7 @@
 #include "features/hwrender/diligent/dgshared.h"   // [rc4l] GetDevice
 #include "features/hwrender/computation/queryring_compute.h"
 #include "features/telemetry/telemetry.h"
+#include "features/dynres/dynres.h"   // [rc4l] WantsGpuTime
 
 #include "RenderDevice.h"
 #include "Query.h"
@@ -24,6 +25,7 @@ struct PassTimer
 	Diligent::RefCntAutoPtr<Diligent::IQuery> queries[QueryRing::kSlots];
 	int open = -1;
 	bool unsupported = false;
+	double lastMs = -1.0;
 };
 
 PassTimer g_passes[kGpuPasses] = { { "gpu/frame_ms" }, { "gpu/world_ms" }, { "gpu/2d_ms" } };
@@ -53,7 +55,9 @@ bool Ready(PassTimer &t)
 void BeginGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass)
 {
 	PassTimer &t = g_passes[pass];
-	if (!zx::telemetry::g_enabled || t.open >= 0 || !Ready(t)) return;
+	// [rc4l] features/dynres reads the frame's time with telemetry off too.
+	const bool wanted = zx::telemetry::g_enabled || (pass == kGpuFrame && zx::dynres::WantsGpuTime());
+	if (!wanted || t.open >= 0 || !Ready(t)) return;
 	t.open = t.ring.Begin();
 	if (t.open >= 0 && t.queries[t.open]) ctx->BeginQuery(t.queries[t.open]);
 }
@@ -75,7 +79,8 @@ void CollectGpuPasses()
 			Diligent::QueryDataDuration d;
 			if (!t.queries[slot]) return true;
 			if (!t.queries[slot]->GetData(&d, sizeof(d))) return false;
-			zx::telemetry::Set(t.counter, ComputeQueryMs(d.Duration, d.Frequency));
+			t.lastMs = ComputeQueryMs(d.Duration, d.Frequency);
+			zx::telemetry::Set(t.counter, t.lastMs);
 			return true;
 		});
 	}
@@ -88,7 +93,13 @@ void ReleaseGpuPasses()
 		for (Diligent::RefCntAutoPtr<Diligent::IQuery> &q : t.queries) q.Release();
 		t.ring = QueryRing();
 		t.open = -1;
+		t.lastMs = -1.0;
 	}
+}
+
+double LastGpuPassMs(GpuPass pass)
+{
+	return g_passes[pass].lastMs;
 }
 
 }} // namespace zx::hwrender

@@ -49,6 +49,8 @@ died and left no token, as `reap --kill` stops every such orphan; never stop eng
   `fua_diligent_scene`).
 - A `--lock` launch is never focused, so it keeps its world running (`i_pauseinbackground 0`), but its
   window presents only with `fua_render_in_background 1`: set it before timing frames or recording clips.
+- A `--lock` launch also starts with dynamic resolution off (`vid_fua_dynres 0`), so its frames are drawn at
+  full scale whatever the GPU's load; set it to 1 to see what a player gets.
 - `--preset ID [--variant V]` loads a `catalogue/<ID>/addon.json` wad set from the download store
   (`--store DIR`, else `FUACTL_PWADS`, else the engine's own `pwads/` folder). A missing file is named;
   fetch it with `fua_download <file>` in the engine console.

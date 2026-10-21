@@ -1,4 +1,4 @@
-// [rc4l] A floor mark that must survive the video settings changing under it, Vulkan captured after each step: exit 0 when a rocket's scorch appears and looks the same after a window resize (which rebuilds the scene's targets, as fullscreen and back does), a render scale and an aspect change.
+// [rc4l] A floor mark that must survive the video settings changing under it, Vulkan captured after each step: exit 0 when a rocket's scorch appears and looks the same after a window resize (which rebuilds the scene's targets, as fullscreen and back does), a render scale, an aspect change and the scene drawn at half scale (features/dynres).
 //
 // usage:  node scenarios/decalresize.mjs [port]
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -28,6 +28,8 @@ export const STEPS = [
   { name: "resized", commands: changed("vid_setsize 1024 600", "vid_setsize 1280 720") },
   { name: "scaled", commands: changed("vid_scalefactor 0.5", "vid_scalefactor 1") },
   { name: "aspect", commands: changed("vid_aspect 3", "vid_aspect 0") },
+  // [rc4l] Last, since it stays at half scale: the decal pass reads the depth and normals at their own texels, which a half-scale scene fills only the top left of.
+  { name: "half", commands: ["fua_dg_dynres_force 0.5", 1500] },
 ];
 
 const AT_MARKS = [0.41, 0.39, 0.57, 0.51];
@@ -36,6 +38,7 @@ export const BOXES = { MAP01: {
   resized: { box: AT_MARKS, pair: ["marked", "resized"], ceiling: 0.5 },
   scaled: { box: AT_MARKS, pair: ["marked", "scaled"], ceiling: 0.5 },
   aspect: { box: AT_MARKS, pair: ["marked", "aspect"], ceiling: 0.5 },
+  half: { box: AT_MARKS, pair: ["marked", "half"], ceiling: 1 },
 } };
 
 runScenarioIfMain(import.meta.url, () => ({ name: "decalresize", wad: buildDecalResizeWad(), maps: ["MAP01"],

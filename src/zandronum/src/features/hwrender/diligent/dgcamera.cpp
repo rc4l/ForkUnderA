@@ -156,7 +156,7 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 	RenderViewSkyLooks(ctx, true, -1, false, w, h);
 
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	BeginPassTargets(ctx, ViewPassTargets(cam->scratch, cam->depth, cam->normal), clear);
+	BeginPassTargets(ctx, ViewPassTargets(cam->scratch, cam->depth, cam->normal, false), clear);
 	Diligent::Viewport vp;
 	vp.TopLeftX = 0; vp.TopLeftY = 0;
 	vp.Width = (float)w; vp.Height = (float)h;

@@ -56,6 +56,7 @@
 
 #include "win32iface.h"
 #include "v_palette.h"
+#include "features/frame-limit/framelimit.h"   // [rc4l] WaitBeforePresent
 
 // MACROS ------------------------------------------------------------------
 
@@ -1197,10 +1198,7 @@ void DDrawFB::Update ()
 	LockCount = 0;
 	UpdatePending = false;
 
-	if (FPSLimitEvent != NULL)
-	{
-		WaitForSingleObject(FPSLimitEvent, 1000);
-	}
+	zx::framelimit::WaitBeforePresent();
 	if (!Windowed && AppActive && !SessionState /*&& !UseBlitter && !MustBuffer*/)
 	{
 		HRESULT hr = PrimarySurf->Flip (NULL, FlipFlags);

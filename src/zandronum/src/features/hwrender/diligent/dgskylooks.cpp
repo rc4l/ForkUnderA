@@ -57,8 +57,11 @@ static int FindSkyKey(const SkyLookSet &set, int key)
 }
 
 // [rc4l] The looks other than the level's that `lists` show, drawn into `set`'s pictures at w by h from the eye in g_mvp; false when there are none.
-static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const int *lists, int listCount, int w, int h)
+static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const int *lists, int listCount, int w, int h, bool screenView)
 {
+	// [rc4l] A look of the screen draws in the scene's pixels at the top left of its w by h picture, as the pass that paints it reads it.
+	const bool scaled = screenView && w == FrameWidth() && h == FrameHeight();
+	const int viewW = scaled ? SceneWidth() : w, viewH = scaled ? SceneHeight() : h;
 	set.count = 0;
 	set.keys.Clear();
 	set.listCount = listCount;
@@ -85,7 +88,7 @@ static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const 
 	// [rc4l] The pass's matrix and the frame's colormap, which the dome shaders read from the scene block.
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
-		WriteSceneConstants(&cb[0], nullptr, (float)w, (float)h, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
+		WriteSceneConstants(&cb[0], nullptr, (float)viewW, (float)viewH, BindlessActive() ? (float)MaterialSlotCount() : 0.f);
 	}
 	const bool depthFits = set.depth && (int)set.depth->GetDesc().Width == w && (int)set.depth->GetDesc().Height == h;
 	if (!depthFits && !CreateDepthTarget(w, h, "fua sky look", set.depth)) { set.count = 0; return false; }
@@ -101,6 +104,10 @@ static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const 
 		auto *prtv = pic.color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 		auto *pdsv = set.depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 		ctx->SetRenderTargets(1, &prtv, pdsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		Diligent::Viewport vp;
+		vp.Width = (float)viewW; vp.Height = (float)viewH;
+		vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
+		ctx->SetViewports(1, &vp, (Diligent::Uint32)w, (Diligent::Uint32)h);
 		const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
 		ctx->ClearRenderTarget(prtv, clearCol, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 		const zx::hwrender::SkyLook &look = set.looks[p];
@@ -123,7 +130,7 @@ static void HandOverLookSet(Diligent::IDeviceContext *ctx, const SkyLookSet &set
 void RenderSkyLooks(Diligent::IDeviceContext *ctx)
 {
 	const int lists[1] = { zx::levelmesh::kSkyCaptureMain };
-	if (!RenderLookSet(ctx, g_mainLooks, lists, 1, FrameWidth(), FrameHeight())) return;
+	if (!RenderLookSet(ctx, g_mainLooks, lists, 1, FrameWidth(), FrameHeight(), true)) return;
 	auto *brtv = FrameRTV();
 	Diligent::ITextureView *bdsv = EnsureSceneDepth();
 	if (!bdsv) bdsv = FrameDSV();
@@ -145,7 +152,7 @@ void RenderViewSkyLooks(Diligent::IDeviceContext *ctx, bool cameraPass, int stac
 	}
 	int lists[2];
 	const int n = zx::levelmesh::ComputeSkyLookLists(cameraPass, stackSlot, mirrorPass, lists);
-	if (!RenderLookSet(ctx, *set, lists, n, w, h)) return;
+	if (!RenderLookSet(ctx, *set, lists, n, w, h, !cameraPass)) return;
 	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	HandOverLookSet(ctx, *set);
 	g_activeViewLooks = set;

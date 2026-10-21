@@ -279,40 +279,6 @@ void I_ClosestResolution (int *width, int *height, int bits)
 	}
 }
 
-//==========================================================================
-//
-// SetFPSLimit
-//
-// Initializes an event timer to fire at a rate of <limit>/sec. The video
-// update will wait for this timer to trigger before updating.
-//
-// Pass 0 as the limit for unlimited.
-// Pass a negative value for the limit to use the value of vid_maxfps.
-//
-//==========================================================================
-
-EXTERN_CVAR(Int, vid_maxfps);
-EXTERN_CVAR(Bool, cl_capfps);
-
-
-// [rc4l] Default 500 to match upstream UZDoom/GZDoom (was 200). vsync and cl_capfps are already off
-// by default like upstream; this was the only framerate-cap divergence. 0 = uncapped, clamp [35,1000].
-CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	if (vid_maxfps < TICRATE && vid_maxfps != 0)
-	{
-		vid_maxfps = TICRATE;
-	}
-	else if (vid_maxfps > 1000)
-	{
-		vid_maxfps = 1000;
-	}
-	else if (cl_capfps == 0)
-	{
-		I_SetFPSLimit(vid_maxfps);
-	}
-}
-
 // [rc4l] No call at game start in any build: the screen is already made in this mode, and a call then rebuilt the window and swapchain on the first frame, which zeroes a browser's canvas.
 CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
 {

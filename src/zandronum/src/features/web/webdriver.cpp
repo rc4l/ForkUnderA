@@ -5,6 +5,8 @@
 
 #include "features/web/webdriver.h"
 #include "features/mainloop/mainloop.h"
+#include "features/frame-limit/framelimit.h"
+#include "features/framephase/framephase.h"
 #include "features/web/computation/webargs_compute.h"
 #include "d_main.h"   // [rc4l] CRestartException
 #include "doomerrors.h"
@@ -26,8 +28,14 @@ static void FatalExit(CDoomError &error)
 	exit(-1);
 }
 
+static long long g_frameEndUs = 0;
+
 static void Frame()
 {
+	// [rc4l] features/frame-limit: a browser offers a frame each refresh, and one not yet due under vid_maxfps or cl_capfps is skipped.
+	if (!zx::framelimit::SteppedFrameDue()) return;
+	// [rc4l] The wait for this animation frame is a browser's wait to present, counted in that phase as a desktop's vsync is.
+	if (g_frameEndUs > 0) zx::framephase::AddPhase(zx::framephase::kPhasePresent, g_frameEndUs, zx::framephase::NowUs());
 	try
 	{
 		g_frame();
@@ -45,6 +53,7 @@ static void Frame()
 	{
 		FatalExit(error);
 	}
+	g_frameEndUs = zx::framephase::NowUs();
 }
 
 // [rc4l] The browser calls Frame once an animation frame, which is also when Diligent presents.

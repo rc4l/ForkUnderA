@@ -18,6 +18,8 @@ void EndGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass);
 void CollectGpuPasses();
 // [rc4l] Drops the queries before the device goes.
 void ReleaseGpuPasses();
+// [rc4l] The newest finished time of the pass in ms, below 0 until one has finished or where the device has no duration queries.
+double LastGpuPassMs(GpuPass pass);
 
 }} // namespace zx::hwrender
 

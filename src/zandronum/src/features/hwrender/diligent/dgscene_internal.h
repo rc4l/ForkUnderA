@@ -498,8 +498,8 @@ void BuildMVP(float *m);
 void DrawWorld(Diligent::IDeviceContext *ctx);
 // [rc4l] A pass's targets bound for DrawWorld and cleared: colour to clear, the normals to nothing drawn, depth to far, the G-buffer bound with them when the pass has one.
 void BeginPassTargets(Diligent::IDeviceContext *ctx, const PassTargets &targets, const float clear[4]);
-// [rc4l] An offscreen view's targets from its colour and depth textures and, for its marks, a normal texture of its size (NULL draws none).
-PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal);
+// [rc4l] An offscreen view's targets from its colour and depth textures and, for its marks, a normal texture of its size (NULL draws none); a screenView of the frame's size draws at the scene's scale.
+PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal, bool screenView);
 // [rc4l] The normals every frame-sized view shares, one view drawing at a time; NULL when it cannot be made.
 Diligent::ITexture *FrameViewNormal();
 // [rc4l] A w by h normal target the G-buffer writes and the decal pass reads.

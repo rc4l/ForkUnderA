@@ -640,8 +640,10 @@ static const char *kMirrorPlanarPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
-	"    vec2 uv = gl_FragCoord.xy / vec2(textureSize(sampler2D(uTex, uTex_sampler), 0));\n"
-	"    outColor = vec4(min(texture(sampler2D(uTex, uTex_sampler), vec2(1.0 - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
+	"    vec2 size = vec2(textureSize(sampler2D(uTex, uTex_sampler), 0));\n"
+	"    vec2 uv = gl_FragCoord.xy / size;\n"
+	/* [rc4l] Flipped across the pass's own width, uScreen.x, since below full scale the reflection fills only the left of its picture (features/dynres). */
+	"    outColor = vec4(min(texture(sampler2D(uTex, uTex_sampler), vec2(uScreen.x / size.x - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
 	"}\n";
 
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
@@ -1107,7 +1109,7 @@ static void RenderMirrorNode(Diligent::IDeviceContext *ctx, unsigned i, int leve
 	g_pass.clipPlane[3] = -m.d;
 	if (g_pass.clipPlane[3] == 0.f) g_pass.clipPlane[3] = 0.0001f;   // w == 0 means "off"
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	BeginPassTargets(ctx, ViewPassTargets(pic->color, pic->depth, FrameViewNormal()), clear);
+	BeginPassTargets(ctx, ViewPassTargets(pic->color, pic->depth, FrameViewNormal(), true), clear);
 	// [rc4l] The view this reflection is, by its mirrors from the player outward, whose walk's sprites, models and decals it draws.
 	static std::vector<int> path;
 	zx::hwrender::ComputeRootPath(node, [](int n) { return g_mirrorNodes[n].parent; }, path);

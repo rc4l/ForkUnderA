@@ -52,6 +52,3 @@ bool CaptureFrameLater(const char *path)
 }
 
 }} // namespace zx::sdlhost
-
-// [rc4l] The page's animation frame paces the frames, and a browser has no POSIX timers, so there is nothing to limit (posix/sdl/i_fpslimit.cpp on a desktop).
-void I_SetFPSLimit(int) {}

@@ -72,6 +72,7 @@
 #include "v_palette.h"
 #include "w_wad.h"
 #include "r_data/colormaps.h"
+#include "features/frame-limit/framelimit.h"   // [rc4l] WaitBeforePresent
 
 // MACROS ------------------------------------------------------------------
 
@@ -1205,11 +1206,7 @@ void D3DFB::Flip()
 			BlockSurface[BlockNum]->UnlockRect();
 		}
 	}
-	// Limiting the frame rate is as simple as waiting for the timer to signal this event.
-	if (FPSLimitEvent != NULL)
-	{
-		WaitForSingleObject(FPSLimitEvent, 1000);
-	}
+	zx::framelimit::WaitBeforePresent();
 	D3DDevice->Present(NULL, NULL, NULL, NULL);
 	InScene = false;
 

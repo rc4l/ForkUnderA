@@ -97,6 +97,19 @@ int FrameWidth();
 int FrameHeight();
 void FinishFrame(Diligent::IDeviceContext *ctx);
 void ReleaseFrameTarget();
+// [rc4l] features/dynres: the frame's scene scale, asked once a frame before its first 3D pass; mayScale false holds full scale.
+void BeginSceneFrame(bool mayScale);
+// [rc4l] Whether this frame's 3D is drawn below full scale, into the top left SceneWidth by SceneHeight of every screen-sized target.
+bool SceneScaled();
+int SceneWidth();
+int SceneHeight();
+// [rc4l] Where the player's view draws: the scene target below full scale, else the frame itself.
+Diligent::ITextureView *SceneRTV();
+// [rc4l] The scene painted over the whole frame, before the 2D, when it was drawn below full scale.
+void UpscaleScene(Diligent::IDeviceContext *ctx);
+// [rc4l] fua_dg_gpuload's work over the scene's pixels (dggpuload.cpp), and its pipeline let go at shutdown.
+void DrawGpuLoad(Diligent::IDeviceContext *ctx);
+void ReleaseGpuLoad();
 // [rc4l] The frame fence released at the backend's shutdown (dgwindow.cpp), while the console its destructor reports to is still there.
 void ReleaseFrameFence();
 // [rc4l] Everything a level owned on the GPU (dgframe.cpp), for a level change and for shutdown's report of what is still held.
@@ -128,6 +141,8 @@ Diligent::ITextureView *SceneDepthDSV();
 // [rc4l] The targets of the pass being drawn (BeginPassTargets): its colour and depth, the depth and normals its decal pass reads (null for a view without them), and its size, the frame's before any pass set one.
 Diligent::ITextureView *PassColorRTV();
 Diligent::ITextureView *PassDepthDSV();
+// [rc4l] The pass's own viewport, its w by h at the top left of its targets, set again after anything binds them, since binding resets it to the whole target.
+void ApplyPassViewport(Diligent::IDeviceContext *ctx);
 Diligent::ITextureView *PassDepthSRV();
 Diligent::ITextureView *PassNormalSRV();
 int PassWidth();

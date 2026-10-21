@@ -62,10 +62,12 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones.
 - `features/jobs/jobs.cpp`: a `JobObserver` (`jobpool_compute.h`) on telemetry's clock times the `jobs/` regions and names each worker "job N".
 - `features/hwrender/rendererrate.cpp`: vid_fps's split, under `frame/`.
+- `features/frame-limit/framelimit.cpp`: the `frame/limit_wait` zone, the wait before a present that `vid_maxfps` or `cl_capfps` holds.
+- `features/dynres/dynres.cpp`: `frame/dynres_scale`, `frame/dynres_budget_ms` and `frame/dynres_changes`, none of them soaked.
 - `features/hwrender/diligent/`:
   - `dgscene.cpp`, `dg2d.cpp`, `dgsky.cpp`, `dgviews.cpp` and `dgdynamic.cpp`: the `draw/` and `scene/` zones and the `frame/vsync` gauge.
   - `dgframe.cpp` and `dgupload.cpp`: the `load/` zones, the present interval and `fua_frametimes`'s per-frame parts under `frame/` and `levelmesh/`, and the scene buffer's rebuilds.
-  - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries.
+  - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries; the frame's is timed for `features/dynres` with telemetry off too.
   - `dgmemory.cpp`: every texture and buffer made through `CreateDeviceTexture`/`CreateDeviceBuffer`, under `gpu/mem/` and the breakdown `gpu/mem/tag/`. At shutdown it reports what is still held.
   - `dgdevice_vk.cpp`: `VK_EXT_memory_budget` under `gpu/vk_`, the device's heaps and the host's apart.
   - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`: the shaders and pipelines made, under `gpu/made/`.

@@ -88,7 +88,6 @@ void DoBlending (const PalEntry *from, PalEntry *to, int count, int r, int g, in
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
-static void StopFPSLimit();
 
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
 
@@ -101,40 +100,20 @@ extern bool VidResizing;
 
 EXTERN_CVAR (Bool, fullscreen)
 EXTERN_CVAR (Float, Gamma)
-EXTERN_CVAR (Bool, cl_capfps)
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
 
 static HMODULE D3D9_dll;
 static HMODULE DDraw_dll;
-static UINT FPSLimitTimer;
 
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
 IDirectDraw2 *DDraw;
 IDirect3D9 *D3D;
 IDirect3DDevice9 *D3Device;
-HANDLE FPSLimitEvent;
 
 CVAR (Bool, vid_forceddraw, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR (Int, vid_adapter, 1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-// [rc4l] Default 500 to match upstream UZDoom/GZDoom (was 200). vsync and cl_capfps are already off
-// by default like upstream; this was the only framerate-cap divergence. 0 = uncapped, clamp [35,1000].
-CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	if (vid_maxfps < TICRATE && vid_maxfps != 0)
-	{
-		vid_maxfps = TICRATE;
-	}
-	else if (vid_maxfps > 1000)
-	{
-		vid_maxfps = 1000;
-	}
-	else if (cl_capfps == 0)
-	{
-		I_SetFPSLimit(vid_maxfps);
-	}
-}
 
 #if VID_FILE_DEBUG
 FILE *dbg;
@@ -737,74 +716,3 @@ void Win32Video::SetWindowedScale (float scale)
 	// FIXME
 }
 
-//==========================================================================
-//
-// SetFPSLimit
-//
-// Initializes an event timer to fire at a rate of <limit>/sec. The video
-// update will wait for this timer to trigger before updating.
-//
-// Pass 0 as the limit for unlimited.
-// Pass a negative value for the limit to use the value of vid_maxfps.
-//
-//==========================================================================
-
-void I_SetFPSLimit(int limit)
-{
-	if (limit < 0)
-	{
-		limit = vid_maxfps;
-	}
-	// Kill any leftover timer.
-	if (FPSLimitTimer != 0)
-	{
-		timeKillEvent(FPSLimitTimer);
-		FPSLimitTimer = 0;
-	}
-	if (limit == 0)
-	{ // no limit
-		if (FPSLimitEvent != NULL)
-		{
-			CloseHandle(FPSLimitEvent);
-			FPSLimitEvent = NULL;
-		}
-		DPrintf("FPS timer disabled\n");
-	}
-	else
-	{
-		if (FPSLimitEvent == NULL)
-		{
-			FPSLimitEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
-			if (FPSLimitEvent == NULL)
-			{ // Could not create event, so cannot use timer.
-				Printf("Failed to create FPS limitter event\n");
-				return;
-			}
-		}
-		atterm(StopFPSLimit);
-		// Set timer event as close as we can to limit/sec, in milliseconds.
-		UINT period = 1000 / limit;
-		FPSLimitTimer = timeSetEvent(period, 0, (LPTIMECALLBACK)FPSLimitEvent, 0, TIME_PERIODIC | TIME_CALLBACK_EVENT_SET);
-		if (FPSLimitTimer == 0)
-		{
-			CloseHandle(FPSLimitEvent);
-			FPSLimitEvent = NULL;
-			Printf("Failed to create FPS limitter timer\n");
-			return;
-		}
-		DPrintf("FPS timer set to %u ms\n", period);
-	}
-}
-
-//==========================================================================
-//
-// StopFPSLimit
-//
-// Used for cleanup during application shutdown.
-//
-//==========================================================================
-
-static void StopFPSLimit()
-{
-	I_SetFPSLimit(0);
-}

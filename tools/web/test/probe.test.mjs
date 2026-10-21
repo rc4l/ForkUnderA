@@ -65,6 +65,9 @@ test('an ab step frames a cvar at two values, sets it back, and reports how far 
   assert.match(js, /Module\.fuaCommand\("fua_dg_clusters 1"\);/);
   assert.match(js, /Module\.fuaCommand\("fua_dg_clusters 0"\);/);
   assert.match(js, /abs\.push\(\{ cvar: "fua_dg_clusters", a: "1", b: "0", frames: \[first, second\] \}\);/);
+  // [rc4l] At full scale, so a slow adapter's dynamic resolution cannot change the scale between the two frames, unless the scale is what is compared.
+  assert.match(js, /fua_dg_dynres_force 1/);
+  assert.doesNotMatch(runScript(parseRun('ab fua_dg_dynres_force 1 0.5')), /fuaCommand\('fua_dg_dynres_force 1'\);/);
   const ab = { cvar: 'fua_dg_clusters', a: '1', b: '0', frames: [frame(10), frame(90)] };
   assert.equal(abLine(ab), 'ab fua_dg_clusters 1 vs 0: mean|d| 40.000, largest block 80.00');
   assert.deepEqual(report({ said: [], sounds: [], heldBefore: 0, heldAfter: 0, abs: [ab] }, [])[0], abLine(ab));

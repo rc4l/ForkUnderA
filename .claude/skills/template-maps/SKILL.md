@@ -191,6 +191,11 @@ frames come back through `GRAB_FRAME` and are judged in Node with the scenario's
 `firefox: true` when it can run in Firefox (`check.mjs --browser firefox`), since a browser's WebGPU can differ
 where no engine does: the light grid check plays `pointlight.mjs`'s hall, and only Firefox failed it.
 
+A pass that draws or reads screen-sized pictures must land at half scale where it does at full
+(`features/dynres`): `FULL_VS_HALF` (`src/template.mjs`) are Vulkan sides pinned at each, and `dynresmirror.mjs`,
+`dynressky.mjs` and `dynresstack.mjs` are the pattern, an existing scenario's map judged with a `floor` that
+proves the half side really drew below full scale.
+
 ## 5. Prove it catches the bug
 
 Keep a copy of the old `dist-windows/forkundera.exe` before staging the fix (see `zandronum-rebuild`),

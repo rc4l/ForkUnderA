@@ -24,13 +24,16 @@ export function parseRun(text) {
   });
 }
 
-// [rc4l] An ab step as page code: a frame with the cvar at a and one at b, kept in abs, and the cvar set back to what it was.
+// [rc4l] An ab step as page code: a frame with the cvar at a and one at b at full scale, kept in abs, and the cvar set back to what it was; a dynamic resolution cvar is compared as it is, the scale being what it changes.
 function abCode({ cvar, a, b }) {
+  const pin = !/dynres/.test(cvar);
   return `{
       const was = (/" is "([^"]*)"/.exec((await ask(${JSON.stringify(cvar)})).join(' ')) || [])[1];
+      ${pin ? "Module.fuaCommand('fua_dg_dynres_force 1');" : ''}
       Module.fuaCommand(${JSON.stringify(`${cvar} ${a}`)}); ${pause(300)} const first = await grabFrame();
       Module.fuaCommand(${JSON.stringify(`${cvar} ${b}`)}); ${pause(300)} const second = await grabFrame();
       if (was !== undefined) Module.fuaCommand(${JSON.stringify(cvar)} + ' "' + was + '"');
+      ${pin ? "Module.fuaCommand('fua_dg_dynres_force 0');" : ''}
       abs.push({ cvar: ${JSON.stringify(cvar)}, a: ${JSON.stringify(a)}, b: ${JSON.stringify(b)}, frames: [first, second] });
     }`;
 }
