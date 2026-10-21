@@ -20,6 +20,8 @@
 
 #include "c_cvars.h"
 #include "d_player.h"
+
+EXTERN_CVAR(Float, r_fua_portrait_fov)   // [rc4l] features/viewsetup
 #include "doomstat.h"
 #include "i_system.h"
 #include "p_effect.h"
@@ -73,8 +75,8 @@ void BeginPlayerFrame(int player)
 	r_viewLens.ratio = WidescreenRatio;
 	r_viewLens.fovRatio = zx::viewsetup::ComputeFovRatio(r_viewLens.ratio, AspectTallerThanWide(r_viewLens.ratio));
 	gl_fixedcolormap = zx::viewsetup::FixedColormap(player);
-	// [rc4l] fov-interp: the sub-tic position of the zoom P_PlayerThink is about to take.
-	r_viewLens.fov = FOV_InterpolatedForFrame(player);
+	// [rc4l] fov-interp: the sub-tic position of the zoom P_PlayerThink is about to take, carried across a portrait screen's width from 4:3's vertical field (ComputePortraitFov).
+	r_viewLens.fov = zx::viewsetup::ComputePortraitFov(FOV_InterpolatedForFrame(player), r_viewLens.ratio, r_fua_portrait_fov);
 }
 
 bool BeginRecordViewpoint(int record, const FViewLens &lens, bool mainview, bool toscreen)

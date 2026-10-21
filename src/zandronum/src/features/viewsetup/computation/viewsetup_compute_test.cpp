@@ -146,6 +146,24 @@ TEST(ViewSetup, TheFovRatioIsFourThirdsUnlessTheScreenIsTall)
 	EXPECT_FLOAT_EQ(ComputeFovRatio(1.25f, true), 1.25f);
 }
 
+// [rc4l] A phone held upright kept the 90-degree field across its narrow width, a fisheye floor and ceiling; the field is carried over from 4:3's vertical one instead.
+TEST(ViewSetup, APortraitScreenKeepsTheFourThirdsVerticalFieldAcrossItsWidth)
+{
+	EXPECT_FLOAT_EQ(ComputePortraitFov(90.f, 16.f / 9.f, 65.f), 90.f);   // [rc4l] wide: untouched
+	EXPECT_FLOAT_EQ(ComputePortraitFov(90.f, 1.25f, 65.f), 90.f);        // [rc4l] 5:4 is not portrait
+	EXPECT_FLOAT_EQ(ComputePortraitFov(90.f, 1.f, 65.f), 90.f);          // [rc4l] square is not portrait
+	EXPECT_NEAR(ComputePortraitFov(90.f, 0.999f, 50.f), 73.70f, 0.05f);  // [rc4l] just under square: the 4:3 vertical field itself
+	EXPECT_NEAR(ComputePortraitFov(90.f, 0.75f, 50.f), 58.72f, 0.01f);   // [rc4l] 3:4, above the floor
+	EXPECT_FLOAT_EQ(ComputePortraitFov(90.f, 0.52f, 65.f), 65.f);        // [rc4l] a phone: floored
+	EXPECT_FLOAT_EQ(ComputePortraitFov(60.f, 0.52f, 65.f), 60.f);        // [rc4l] the floor never widens past what was asked
+}
+
+TEST(ViewSetup, TheVerticalFieldFollowsSetProjection)
+{
+	EXPECT_FLOAT_EQ(ComputeVerticalFov(90.f, 1.333333f), 73.739784f);
+	EXPECT_FLOAT_EQ(ComputeVerticalFov(65.f, 0.52f), 101.55485f);
+}
+
 TEST(ComputeMaxViewPitch, TheSoftwareLimitsOnlyWhenForced)
 {
 	EXPECT_EQ(90, zx::viewsetup::ComputeMaxViewPitch(true, false, true, 90));

@@ -28,7 +28,8 @@ against a height transfer (`in_area`), for GL's view and a skybox's walk alike. 
 player's fixed colormap as GL's `SetFixedColormap` picks it (`ComputeFixedColormap`), `FixedColormapShadeFor`
 what main.fp then does to every texel (`ComputeFixedColormapShade`: a special colormap's ramp, light
 amplification's or a torch's tint), and `ComputeFovRatio`
-the lens's ratio; `ComputeSeesOwnBody` is the chase and death camera's test, and `ComputeMaxViewPitch`
+the lens's ratio, `ComputePortraitFov` the field across a portrait screen (4:3's vertical field carried over the narrow
+width, no narrower than `r_fua_portrait_fov`) and `ComputeVerticalFov` the vertical field a lens shows; `ComputeSeesOwnBody` is the chase and death camera's test, and `ComputeMaxViewPitch`
 Zandronum's pitch limits.
 
 `computation/viewsetup_compute` holds the pitch, frustum, sky scroll, view vector, view area, eye
@@ -44,7 +45,7 @@ clamp and fixed colormap arithmetic, tested.
 - `features/visibility/viswalk.cpp`: the player's view actor, every walk's frustum, a skybox walk's
   `SetViewArea` and a mirror walk's `TurnView`, and the view vector and angles inside a portal view.
 - `features/hwrender/diligent/dgsky.cpp`: the sky's scroll.
-- `features/frame/playerview.cpp` `BeginPlayerFrame` and `BeginViewpoint`: `FixedColormap`, `ComputeFovRatio`,
+- `features/frame/playerview.cpp` `BeginPlayerFrame` and `BeginViewpoint`: `FixedColormap`, `ComputeFovRatio`, `ComputePortraitFov`,
   `SetViewArea` and `SetupView`, for GL's frame and a launch without GL alike; GL's `SetFixedColormap` (the
   save picture) calls `FixedColormap` too.
 - `gl/renderer/gl_renderstate.cpp` `FRenderState::ApplyShader`: the fixed colormap uniforms from `FixedColormapShadeFor`.

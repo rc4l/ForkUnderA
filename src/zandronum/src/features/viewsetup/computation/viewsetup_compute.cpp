@@ -124,6 +124,22 @@ float ComputeFovRatio(float ratio, bool tallerThanWide)
 	return tallerThanWide ? ratio : 1.333333f;
 }
 
+float ComputePortraitFov(float fovDeg, float ratio, float floorDeg)
+{
+	if (ratio >= 1.f) return fovDeg;
+	const double rad = M_PI / 180.0;
+	// [rc4l] On 4:3 the vertical half-tangent is three quarters of the horizontal one; across a portrait width the fov ratio is the ratio itself, so the same vertical field needs this across.
+	const double across = 2.0 * atan(tan(fovDeg * 0.5 * rad) * 0.75 * ratio) / rad;
+	const double floored = across > floorDeg ? across : floorDeg;
+	return (float)(floored < fovDeg ? floored : fovDeg);
+}
+
+float ComputeVerticalFov(float fovDeg, float fovRatio)
+{
+	const double rad = M_PI / 180.0;
+	return (float)(2.0 * atan(tan(fovDeg * 0.5 * rad) / fovRatio) / rad);
+}
+
 int ComputeViewArea(bool transfer, long long viewZ, long long transferFloorZ, long long transferCeilingZ, bool fakeFloorOnly)
 {
 	if (!transfer) return kAreaDefault;

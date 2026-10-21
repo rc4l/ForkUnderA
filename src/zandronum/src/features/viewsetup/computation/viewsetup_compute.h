@@ -26,6 +26,12 @@ void ComputeViewAngleVector(unsigned viewAngle, float &yaw, float &vectorX, floa
 // [rc4l] RenderView's fov ratio: 4:3 unless the screen is taller than wide, when it is the screen's own.
 float ComputeFovRatio(float ratio, bool tallerThanWide);
 
+// [rc4l] The field of view across a portrait screen (width over height under 1): the vertical field the requested fov shows on 4:3, carried across the narrow width, no narrower than floorDeg and never wider than fovDeg; a wider screen keeps fovDeg.
+float ComputePortraitFov(float fovDeg, float ratio, float floorDeg);
+
+// [rc4l] The vertical field of view a lens shows, as SetProjection derives it from the field across and the fov ratio.
+float ComputeVerticalFov(float fovDeg, float fovRatio);
+
 // [rc4l] gl_colormap.h's and colormaps.h's values the fixed colormap choice reads (viewsetup.cpp asserts they match).
 enum { kCmDefault = 0, kCmFirstSpecial = 1, kCmFogLayer = 0x10000000, kCmLite = 0x20000000, kCmTorch = 0x20000010, kNoFixedColormap = -1, kInverseColormap = 0 };
 // [rc4l] The light power a player carries, the last in the inventory winning.
