@@ -51,7 +51,33 @@ function diff(a, b, tol) {
 // SECOND tool by hand -- and the two drifted: pngstats grew a --diffimg and an --align that fuactl
 // knew nothing about, and both were duplicated by someone who could not see them from the CLI.
 // One tool, one surface: `fuactl png <mode> ...`.
+// [rc4l] Each mode's shape and how many words it needs after the mode, since a file missing from the middle of `--crop` used to surface as the decoder's own "path must be a string".
+export const PNG_USAGE = {
+  "--tint": [2, "<a.png> <b.png> [x0 y0 x1 y1] [minLum] [maxDelta]"],
+  "--px": [2, "x,y[;x,y...] <a.png> [b.png ...]"],
+  "--boxdiff": [3, "<a.png> <b.png> <x0,y0,x1,y1 | x0 y0 x1 y1> [block]"],
+  "--range": [1, "<a.png> [b.png ...] [x0 y0 x1 y1]"],
+  "--sub": [3, "<before.png> <after.png> <out.png> [gain]"],
+  "--diffimg": [3, "<a.png> <b.png> <out.png>"],
+  "--align": [2, "<a.png> <b.png>"],
+  "--crop": [6, "<in.png> <out.png> x0 y0 x1 y1 [zoom]"],
+  "--blob": [1, "<in.png> [x0 y0 x1 y1]"],
+  "--diffblob": [2, "<before.png> <after.png> [x0 y0 x1 y1]"],
+  "--extent": [1, "<in.png> [x0 y0 x1 y1]"],
+  "--rows": [1, "<in.png> [x0 x1] [topN]"],
+  "--diff": [2, "<a.png> <b.png> [a2.png b2.png ...]"],
+};
+
+// [rc4l] The usage line for a known mode given too few words, else null.
+export function pngShortUsage(args, usage = PNG_USAGE) {
+  const u = usage[args[0]];
+  if (!u || args.length - 1 >= u[0]) return null;
+  return `usage: fuactl png ${args[0]} ${u[1]}`;
+}
+
 export function png(args) {
+const short = pngShortUsage(args);
+if (short) { console.error(short); process.exit(2); }
 
 // [rc4l] Compare two frames on the SURFACE, with everything painted onto it masked out.
 //

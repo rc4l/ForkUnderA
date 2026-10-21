@@ -142,16 +142,33 @@ test("doctorEngine: a bridge-less build is the headline problem", () => {
 });
 
 test("doctorEngine: a bridge build with no source dir has no problems", () => {
-  const _fs = fakeFs({ files: { "/e/zandronum": { data: `armed via ${BRIDGE_MARKER} at startup`, mtime: 1000 } } });
+  const _fs = fakeFs({ files: { "/e/zandronum": { data: `armed via ${BRIDGE_MARKER} at startup`, mtime: 1000 }, "/e/iwads": { data: "", mtime: 1 } } });
   const r = doctorEngine({ exe: "/e/zandronum", _fs });
   assert.equal(r.hasBridge, true);
   assert.deepEqual(r.problems, []);
+});
+
+// [rc4l] The mac bundle shipped without iwads/ for weeks: its one machine had a doom2.wad of its own.
+test("doctorEngine: a staged build with no iwads/ beside it is a problem", () => {
+  const _fs = fakeFs({ files: { "/e/zandronum": { data: BRIDGE_MARKER, mtime: 1000 } } });
+  const r = doctorEngine({ exe: "/e/zandronum", _fs });
+  assert.equal(r.problems.length, 1);
+  assert.match(r.problems[0], /no iwads\/ beside \/e\/zandronum/);
+});
+
+test("doctorEngine: a repo without the Diligent submodule is named before the engine is looked at", () => {
+  const _fs = fakeFs({ files: { "/r/deps/DiligentCore/CMakeLists.txt": { data: "", mtime: 1 } } });
+  assert.deepEqual(doctorEngine({ exe: null, repoRoot: "/r", _fs }).problems, ["no engine path -- set FUACTL_ENGINE (fuactl) or ZANDRONUM_EXE (MCP)"]);
+  const r = doctorEngine({ exe: null, repoRoot: "/other", _fs });
+  assert.match(r.problems[0], /git submodule update --init --recursive deps\/DiligentCore/);
+  assert.equal(r.problems.length, 2);
 });
 
 test("doctorEngine: a binary older than the source is reported stale", () => {
   const _fs = fakeFs({
     files: {
       "/e/zandronum": { data: BRIDGE_MARKER, mtime: 1000 },
+      "/e/iwads": { data: "", mtime: 1 },
       "/src/am_map.cpp": { data: "x", mtime: 5000 },
     },
     dirs: { "/src": [{ name: "am_map.cpp", isDirectory: () => false }] },

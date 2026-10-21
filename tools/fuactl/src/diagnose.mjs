@@ -157,8 +157,17 @@ export function newestMtime(dir, { _fs = fs } = {}) {
 
 // Report whether the configured engine binary can be driven at all, and whether it predates the
 // source. Reads the binary once and looks for the bridge's env-var string.
-export function doctorEngine({ exe = null, label = "engine", srcDir = null, _fs = fs } = {}) {
+// [rc4l] Whether a path is there, through the injected fs so the tests' fake answers it.
+function exists(_fs, p) {
+  try { _fs.statSync(p); return true; } catch { return false; }
+}
+
+export function doctorEngine({ exe = null, label = "engine", srcDir = null, repoRoot = null, _fs = fs } = {}) {
   const out = { label, exe, exists: false, hasBridge: false, mtimeMs: null, newestSourceMtimeMs: null, stale: false, problems: [] };
+  // [rc4l] The Diligent submodule is the first thing a fresh checkout's configure stops on, so it is named here before any build is tried.
+  if (repoRoot && !exists(_fs, path.join(repoRoot, "deps", "DiligentCore", "CMakeLists.txt"))) {
+    out.problems.push("deps/DiligentCore is not checked out, so the engine will not configure: run `git submodule update --init --recursive deps/DiligentCore`");
+  }
   if (!exe) {
     out.problems.push("no engine path -- set FUACTL_ENGINE (fuactl) or ZANDRONUM_EXE (MCP)");
     return out;
@@ -178,6 +187,10 @@ export function doctorEngine({ exe = null, label = "engine", srcDir = null, _fs 
     out.problems.push(
       "this build has no MCP bridge, so nothing can drive it (launches fail with 'bridge port never opened'). Rebuild with: ZX_MCP_BRIDGE=1 ./mac_compile.sh",
     );
+  }
+  // [rc4l] The IWADs ship in iwads/ beside the binary on every platform; a bundle without it ran only on a machine that already had a doom2.wad.
+  if (!exists(_fs, path.join(path.dirname(exe), "iwads"))) {
+    out.problems.push(`no iwads/ beside ${exe} -- the staged build shipped no Freedoom, so a machine without its own IWAD cannot start it`);
   }
 
   if (srcDir) {
