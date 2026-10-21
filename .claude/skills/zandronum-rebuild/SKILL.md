@@ -15,6 +15,10 @@ dedicated server; `-DFUA_DILIGENT=OFF` builds GL (Legacy) alone.
 | macOS | `ZX_MCP_BRIDGE=1 ./mac_compile.sh` | `build/ForkUnderA.app/Contents/MacOS/forkundera` |
 | Linux | `cmake -S src/zandronum -B build-linux -DFUA_MCP_BRIDGE=ON` once (it stays in the cache), then `./linux_compile.sh --no-package` | `FUACTL_ENGINE=<repo>/build-linux/forkundera`, or copy it to `dist-linux/forkundera` |
 
+Every client build needs `deps/DiligentCore` checked out (`git submodule update --init --recursive
+deps/DiligentCore`); `mac_compile.sh` does it itself, and `fuactl doctor` names it when missing. The
+Windows and Linux scripts stop at configure with the same instruction.
+
 ## Windows: fuactl build
 
 ```bash
