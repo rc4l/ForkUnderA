@@ -17,6 +17,7 @@
 #include "st_stuff.h"
 #include "gl/system/gl_interface.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
+#include "features/mcp-bridge/computation/renderinfo_compute.h"   // [rc4l] ComputeRendererName, ComputeGlLive
 #if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
 #include "gl/system/gl_system.h"
 #include "sdlglvideo.h"
@@ -36,7 +37,8 @@ CCMD( dumprenderer )
 {
 	Printf( "MCP_RENDERER\n" );
 	// [rc4l] A launch without GL (-vulkan) still has vid_renderer 1, so it is asked directly.
-	Printf( "renderer=%s\n", zx::hwrender::BackendOnly( ) ? "vulkan" : currentrenderer == 1 ? "opengl" : "software" );
+	const bool glLive = zx::mcp::ComputeGlLive( currentrenderer, zx::hwrender::BackendOnly( ) );
+	Printf( "renderer=%s\n", zx::mcp::ComputeRendererName( zx::hwrender::BackendOnly( ), currentrenderer ) );
 	// [rc4l] Which API that backend's device runs on, so a -webgpu launch that came up on Vulkan says so.
 	Printf( "backend_api=%s\n", zx::hwrender::BackendApiName( ) );
 
@@ -51,7 +53,8 @@ CCMD( dumprenderer )
 	// the window at a fraction of its size -- see the invariant in posix/README.md -- and there
 	// was no way to see that from inside the engine, which is why it is reported here.
 #if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
-	if ( screen != NULL && currentrenderer == 1 )
+	// [rc4l] A Vulkan-alone launch keeps currentrenderer at 1 but has no GL framebuffer or context, so these casts and GL calls segfault there.
+	if ( screen != NULL && glLive )
 	{
 		SDLGLFB *const fb = static_cast<SDLGLFB *>( screen );
 		Printf( "client_width=%d\n", fb->GetClientWidth() );
@@ -78,7 +81,7 @@ CCMD( dumprenderer )
 	// [rc4l] The gl RenderContext lives in gl/system/gl_interface.cpp, which SERVERONLY does not
 	// compile (it implies NO_GL), so referencing it unconditionally fails the server link.
 #ifndef NO_GL
-	if ( currentrenderer == 1 && gl.vendorstring != NULL )
+	if ( glLive && gl.vendorstring != NULL )
 	{
 		Printf( "gl_vendor=%s\n", gl.vendorstring );
 		Printf( "gl_shadermodel=%u\n", gl.shadermodel );
