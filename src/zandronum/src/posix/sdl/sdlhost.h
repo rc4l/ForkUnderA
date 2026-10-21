@@ -34,6 +34,15 @@ bool CanAskForIWad();
 // [rc4l] Whether the host saves this frame's picture as a PNG named like path once it is drawn: a page's canvas holds the frame only until its task ends, so the page copies it after the frame, where a desktop reads it back at once.
 bool CaptureFrameLater(const char *path);
 
+// [rc4l] One pointer on the host's touch screen, in canvas pixels: where it is, where it landed (a flick before the first read keeps its origin), and `ended` once it lifted since the last read, so a tap between two reads is still seen.
+struct TouchPointer { int id; float x, y, ox, oy; bool ended; };
+
+// [rc4l] The view the pointers are on: its size in canvas pixels, the safe-area insets inside it, and whether it is taller than wide.
+struct TouchView { int width, height; float insetLeft, insetTop, insetRight, insetBottom; bool portrait; };
+
+// [rc4l] The pointers on the host's touch screen since the last read, up to `max` of them, and the view they are on; false where the host has no touch screen (features/touch-input).
+bool ReadTouch(TouchPointer *out, int max, int &count, TouchView &view);
+
 }} // namespace zx::sdlhost
 
 #endif // ZX_SDLHOST_H

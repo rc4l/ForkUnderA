@@ -3,6 +3,7 @@
 #include "doomdef.h"
 #include "templates.h"
 #include "m_joy.h"
+#include "features/touch-input/touchjoystick.h"   // [rc4l] the on-screen stick as a joystick
 
 // Very small deadzone so that floating point magic doesn't happen
 #define MIN_DEADZONE 0.000001f
@@ -285,6 +286,8 @@ void I_GetJoysticks(TArray<IJoystickConfig *> &sticks)
 	sticks.Clear();
 
 	JoystickManager->GetDevices(sticks);
+	// [rc4l] The on-screen stick, once a touch screen has been seen (features/touch-input).
+	if (zx::touch::Device() != NULL) sticks.Push(zx::touch::Device());
 }
 
 void I_GetAxes(float axes[NUM_JOYAXIS])
@@ -297,6 +300,7 @@ void I_GetAxes(float axes[NUM_JOYAXIS])
 	{
 		JoystickManager->AddAxes(axes);
 	}
+	zx::touch::AddAxes(axes);   // [rc4l] the on-screen stick, which use_joystick (off by default) does not govern (features/touch-input)
 }
 
 void I_ProcessJoysticks()
