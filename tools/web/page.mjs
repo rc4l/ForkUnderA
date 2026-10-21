@@ -186,3 +186,11 @@ export function swapWgsl(find, replace) {
       };
     }`;
 }
+
+// [rc4l] Page code that sends a finger to the canvas as the page's touch host sees one: touch(id, 'down' | 'move' | 'up', fx, fy) at fractions of the canvas, and tap(id, fx, fy) a press and release.
+export const TOUCH = `const touch = (id, type, fx, fy) => {
+        const c = document.getElementById('canvas');
+        const r = c.getBoundingClientRect();
+        c.dispatchEvent(new PointerEvent('pointer' + type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: r.left + fx * r.width, clientY: r.top + fy * r.height, bubbles: true, cancelable: true }));
+      };
+      const tap = (id, fx, fy) => { touch(id, 'down', fx, fy); touch(id, 'up', fx, fy); };`;
