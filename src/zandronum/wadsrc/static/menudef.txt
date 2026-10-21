@@ -408,11 +408,40 @@ OptionMenu "FUAOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
 	Submenu "Damage Tint",				"FUADamageTintOptions"
 	Submenu "Speedometer",				"FUASpeedometerOptions"
+	// [rc4l] features/touch-input: the on-screen controls a touch screen shows in play, a browser's today.
+	IfOption(Web)
+	{
+		Submenu "Touch Controls",			"FUATouchOptions"
+	}
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
 	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
 	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
+}
+
+// [rc4l] features/touch-input: the on-screen controls, shown in play alone; their places come from the FUATOUCH lump.
+OptionValue "FuaTouchModes"
+{
+	0, "Off"
+	1, "On"
+	2, "Auto"
+}
+
+OptionMenu "FUATouchOptions"
+{
+	Title "TOUCH CONTROLS"
+	StaticText "On-screen controls for a touch screen, shown in play.", 1
+	StaticText "Auto shows them after a touch and hides them after a key.", 1
+	StaticText " "
+	Option "Show controls",			"fua_touch",			"FuaTouchModes"
+	Slider "Control size",			"fua_touch_size",		0.5, 2.0, 0.1, 1
+	Slider "Control opacity",		"fua_touch_opacity",	0.1, 1.0, 0.05, 2
+	Slider "Look sensitivity",		"fua_touch_look",		0.25, 4.0, 0.25, 2
+	Option "Invert look",			"fua_touch_invert",		"OnOff"
+	Option "Left-handed",			"fua_touch_lefthanded",	"OnOff"
+	StaticText " "
+	StaticText "The stick's dead zone and axes are in Joystick options.", 1
 }
 
 // [rc4l] features/damage-tint: players on damaging floors pick up the floor's color -- a glow
