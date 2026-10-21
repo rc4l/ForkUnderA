@@ -87,3 +87,4 @@ build-hosttools/
 # The demo site's stage (tools/web/demo), and the cache wrangler leaves wherever it runs
 tools/web/demo/site/
 .wrangler/
+build-tests-*/

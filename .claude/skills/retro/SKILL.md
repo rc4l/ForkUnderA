@@ -60,4 +60,4 @@ how things "usually are".
 | 4/5 | `dumprenderer` decided "GL is live" twice, untested | `ComputeGlLive`, `ComputeRendererName` + test |
 | 5 | three platform scripts each list what ships; mac's lacked `iwads/` | `doctor` checks `iwads/` beside the binary |
 | 6 | a memory described the old MCP server's fixed port | rewritten for fuactl |
-| 1 | `writing-tests`' own build command lost the test binary to CMake's 5 s discovery timeout on a cold sanitized build | `DISCOVERY_TIMEOUT 120` on every `gtest_discover_tests` |
+| 2 | `writing-tests`' sanitized build command hangs on macOS 26: Apple clang 17's ASan runtime deadlocks in its own init, and CMake's discovery step then deletes the binary | the skill names Homebrew LLVM for the sanitized build there (a longer discovery timeout was the first, wrong guess: sample the hung process before raising a timeout) |
