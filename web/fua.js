@@ -20,6 +20,8 @@
   }
   // [rc4l] The engine's pointer lock requests, refusals logged instead of thrown into its frame (pointer.js).
   FuaPointer.guard(canvas, log);
+  // [rc4l] Safari's lock notice sits in the window chrome and shrinks the page, so there the lock is taken in fullscreen, where it floats (pointer.js).
+  if (FuaPointer.fullscreenFirst(canvas, document, FuaPointer.noticeShiftsLayout(navigator))) log('Pointer lock: fullscreen first, since this browser\'s lock notice shifts the page');
   // [rc4l] SDL told of every change of the canvas's size, so the mouse is scaled alike on both axes (pointer.js).
   FuaPointer.followSize(canvas, window, window.ResizeObserver);
 
@@ -186,4 +188,21 @@
 
   document.getElementById('fullscreen').addEventListener('click', () => canvas.requestFullscreen());
   again.addEventListener('click', () => location.reload());
+
+  // [rc4l] Touch play: the pointers forwarded to the engine's own controls (touch.js, features/touch-input), the footer folded to a row, and the game kept a landscape strip in portrait when ?strip asks (layout.js).
+  const touch = FuaTouch.install(canvas, Module, { logic: FuaTouchLogic });
+  const main = document.querySelector('main');
+  const footer = document.querySelector('footer');
+  const strip = FuaLayout.stripAspect(location.search);
+  const layOut = () => {
+    document.body.classList.toggle('fua-touch', !!touch.state.active);
+    const l = FuaLayout.computeLayout(window.innerWidth, window.innerHeight, { aspect: strip, footer: footer.offsetHeight });
+    main.style.flex = l.mainHeight === null ? '' : '0 0 auto';
+    main.style.height = l.mainHeight === null ? '' : l.mainHeight + 'px';
+  };
+  window.addEventListener('resize', layOut);
+  canvas.addEventListener('pointerdown', layOut);
+  window.addEventListener('keydown', layOut);
+  document.getElementById('more').addEventListener('click', () => { document.body.classList.toggle('fua-footer-open'); layOut(); });
+  layOut();
 })();

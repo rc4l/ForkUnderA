@@ -768,7 +768,7 @@ set( PLAT_MAC_SOURCES
 if( WIN32 )
 	set( SYSTEM_SOURCES_DIR win32 )
 	set( SYSTEM_BACKEND_DIR win32 )
-	set( SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} )
+	set( SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} features/touch-input/touchhost_none.cpp )   # [rc4l] no touch screen here: the host seam's ReadTouch says so, outside the PLAT lists since another platform's list is header-only
 	set( OTHER_SYSTEM_SOURCES ${PLAT_SDL_SOURCES} ${PLAT_MAC_SOURCES} )
 	
 	if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" )
@@ -807,7 +807,7 @@ else( WIN32 )
 
 	if( APPLE AND ZX_COCOA_BACKEND )
 		set( SYSTEM_BACKEND_DIR posix/cocoa )
-		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_COCOA_SOURCES} ${PLAT_MAC_SOURCES} )
+		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_COCOA_SOURCES} ${PLAT_MAC_SOURCES} features/touch-input/touchhost_none.cpp )   # [rc4l] no touch screen here (ReadTouch)
 		set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_SDL_SOURCES} )
 		add_definitions( -DZX_COCOA_BACKEND )
 		# ObjC++ here is manual retain/release, matching upstream and the zandrox_tests_objc target.
@@ -1637,6 +1637,10 @@ add_executable( zdoom WIN32
 	features/iwad-registry/zx_iwadregistry.cpp
 	${ONLINE_SOURCES}
 	features/net/zx_offline.cpp
+	# [rc4l] The on-screen controls a touch screen's host feeds (features/touch-input).
+	features/touch-input/touchjoystick.cpp
+	features/touch-input/touchdef.cpp
+	features/touch-input/touchoverlay.cpp
 	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp

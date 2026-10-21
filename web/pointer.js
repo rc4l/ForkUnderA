@@ -28,7 +28,27 @@
     return observer;
   }
 
-  const api = { guard, followSize };
+  // [rc4l] Whether this browser puts its pointer-lock notice in the window's chrome, which takes 47 rows from the page and re-lays the game out (Safari); Chrome and Firefox float theirs over the page.
+  function noticeShiftsLayout(navigator) {
+    const ua = (navigator && navigator.userAgent) || '';
+    return /Safari\//.test(ua) && !/Chrom|Edg|OPR|Firefox/.test(ua);
+  }
+
+  // [rc4l] A lock asked for outside fullscreen takes the canvas fullscreen in the same gesture, where the notice floats over the page instead of shrinking it; Safari refuses a lock asked for after the fullscreen promise, the gesture being spent by then.
+  function fullscreenFirst(element, doc, wanted) {
+    const request = element.requestPointerLock;
+    if (!wanted || typeof request !== 'function' || typeof element.requestFullscreen !== 'function') return false;
+    element.requestPointerLock = function (...args) {
+      if (!doc.fullscreenElement && doc.fullscreenEnabled !== false) {
+        const entering = element.requestFullscreen();
+        if (entering && typeof entering.catch === 'function') entering.catch(() => {});
+      }
+      return request.apply(this, args);
+    };
+    return true;
+  }
+
+  const api = { guard, followSize, noticeShiftsLayout, fullscreenFirst };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.FuaPointer = api;
 })(typeof window !== 'undefined' ? window : globalThis);

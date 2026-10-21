@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { serveLocally } from './serve.mjs';
 import { gpuLogLines, removeQuietly } from './smoke.mjs';
 import { smokeIn } from './firefox.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, TOUCH, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { wad } from '../fuactl/src/udmf.mjs';
 import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
 import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
 
@@ -190,6 +191,67 @@ const COUNT_ZERO_CANVAS = `window.fuaZeroCanvas = 0;
     const d = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, k);
     Object.defineProperty(HTMLCanvasElement.prototype, k, { configurable: true, get: d.get, set(v) { if (this.id === 'canvas' && !Number(v)) window.fuaZeroCanvas++; d.set.call(this, v); } });
   }`;
+
+
+// [rc4l] The touch checks: the page's touch host and the engine's on-screen controls (features/touch-input), forced on with ?touch=1 so a mouse-driven Chrome counts as a touch screen.
+const TOUCH_QUERY = 'map=MAP01&touch=1';
+const TOUCH_MOD_WAD = 'fua-touchmod.wad';
+
+// [rc4l] A mod's FUATOUCH lump: a button added, and fire moved and rekeyed, so a later lump is seen to replace by id.
+export function buildTouchModWad() {
+  return wad([{ name: 'FUATOUCH', data: 'button extra { key pad_x  at 0.50 0.50  size 60  label "X" }\nbutton fire { key pad_b  at 0.50 0.30  size 40 }\n' }]);
+}
+
+// [rc4l] The player's place and heading as currentpos prints them, or null.
+const WHERE = `const where = async () => {
+        const line = (await ask('currentpos')).find((l) => l.includes('position')) || '';
+        const m = /\\((-?[\\d.]+),(-?[\\d.]+),(-?[\\d.]+)\\), angle: (-?[\\d.]+)/.exec(line);
+        return m ? { x: Number(m[1]), y: Number(m[2]), angle: Number(m[4]) } : null;
+      };`;
+
+// [rc4l] What fua_touch_status printed, as numbers.
+const STATUS = `const status = async () => {
+        const line = (await ask('fua_touch_status')).find((l) => l.startsWith('touch ')) || '';
+        const n = (k) => { const w = line.split(' ').find((x) => x.startsWith(k + '=')); return w ? Number(w.slice(k.length + 1)) : -1; };
+        return { shown: n('shown'), buttons: n('buttons'), stick: n('stick'), rects: n('rects') };
+      };`;
+
+// [rc4l] Why the stick did not move the player, or ''.
+export function stickMoved(moved) {
+  return moved > 32 ? '' : `the stick moved the player ${moved} units`;
+}
+
+// [rc4l] Why the look drag did not turn the player, or '': the heading must change by more than a few degrees, wrapping at 360.
+export function lookTurned({ before, after }) {
+  if (before == null || after == null) return 'no heading was read';
+  const d = Math.abs(((after - before + 540) % 360) - 180);
+  return d > 5 ? '' : `the drag turned the player ${d.toFixed(1)} degrees`;
+}
+
+// [rc4l] Why the fire button did not fire, or '': it read as held, and a sound started while it was.
+export function buttonFired({ held, sounds }) {
+  if (held !== 1) return `fire read as buttons=${held} while held`;
+  return sounds > 0 ? '' : 'no sound started while fire was held';
+}
+
+// [rc4l] Why the overlay was not shown exactly in play, or '': each state's reading against what it should be.
+export function shownOnlyInPlay(readings) {
+  const wrong = Object.entries(readings).filter(([, v]) => v.got !== v.want).map(([k, v]) => `${k}: shown=${v.got}, wanted ${v.want}`);
+  return wrong.length ? wrong.join('; ') : '';
+}
+
+// [rc4l] Why the portrait lens is wrong, or '': the view taller than wide and the field across it at the floor (65 degrees by default).
+export function portraitLens({ ratio, fov }) {
+  if (!(ratio > 0 && ratio < 1)) return `the view's ratio read ${ratio}, not portrait`;
+  return Math.abs(fov - 65) < 1 ? '' : `the field across the portrait view read ${fov}, not the 65-degree floor`;
+}
+
+// [rc4l] Why a mod's lump did not take, or '': seven buttons laid out, the added one held under its place, and fire held under its new place.
+export function modLumpTook({ rects, extra, fire }) {
+  if (rects !== 7) return `${rects} buttons laid out, not the core's six and the mod's one`;
+  if (extra !== 64) return `the added button read as buttons=${extra}`;
+  return fire === 1 ? '' : `fire at its new place read as buttons=${fire}`;
+}
 
 export const CHECKS = [
   // [rc4l] Judged from the engine's screenshot, which the page downloads from the canvas just after a frame, since a browser's WebGPU reads nothing back at once; headless Chrome on Linux composites no WebGPU canvas into a screenshot of the page.
@@ -618,6 +680,156 @@ export const CHECKS = [
         event: event && { level: event.level, files: event.extra.load_order }, status: status.textContent };`),
     until: EVAL,
     expect: reportSent,
+  },
+
+  // [rc4l] features/touch-input, through the page's touch host (web/touch.js): the stick, from where the thumb lands, moves the player.
+  {
+    name: 'a touch stick moves the player',
+    query: TOUCH_QUERY,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      ${WHERE}
+      ${TOUCH}
+      ${pause(5000)}
+      const a = await where();
+      touch(1, 'down', 0.20, 0.75);
+      let moved = 0;
+      for (const end = Date.now() + 20000; a && moved <= 32 && Date.now() < end;) {
+        touch(1, 'move', 0.20, 0.45);
+        ${pause(300)}
+        const b = await where();
+        if (b) moved = Math.hypot(b.x - a.x, b.y - a.y);
+      }
+      touch(1, 'up', 0.20, 0.45);
+      unhear();
+      return a ? Math.round(moved) : -1;`),
+    until: EVAL,
+    expect: stickMoved,
+  },
+  {
+    name: 'a look drag turns the player',
+    query: TOUCH_QUERY,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      ${WHERE}
+      ${TOUCH}
+      ${pause(4000)}
+      const before = (await where() || {}).angle;
+      touch(2, 'down', 0.70, 0.40);
+      for (let i = 1; i <= 10; i++) { touch(2, 'move', 0.70 + i * 0.02, 0.40); ${pause(120)} }
+      touch(2, 'up', 0.90, 0.40);
+      ${pause(500)}
+      const after = (await where() || {}).angle;
+      unhear();
+      return { before, after };`),
+    until: EVAL,
+    expect: lookTurned,
+  },
+  {
+    name: 'a touch button fires the weapon',
+    query: TOUCH_QUERY,
+    init: WATCH_SOUNDS,
+    autoplay: true,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      ${STATUS}
+      ${TOUCH}
+      ${pause(4000)}
+      const before = window.fuaSounds.length;
+      touch(3, 'down', 0.90, 0.78);
+      ${pause(400)}
+      const held = (await status()).buttons;
+      ${pause(600)}
+      touch(3, 'up', 0.90, 0.78);
+      ${pause(600)}
+      unhear();
+      return { held, sounds: window.fuaSounds.length - before };`),
+    until: EVAL,
+    expect: buttonFired,
+  },
+  // [rc4l] In play alone: the menu, the console and the automap each take the overlay away, and a touch after each brings it back; a real key hides it until the next touch.
+  {
+    name: 'the touch overlay shows in play alone and comes back after a key',
+    query: TOUCH_QUERY,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      ${STATUS}
+      ${TOUCH}
+      ${pause(4000)}
+      const readings = {};
+      const read = async (name, want) => { ${pause(400)} readings[name] = { got: (await status()).shown, want }; };
+      tap(1, 0.20, 0.75);
+      await read('play', 1);
+      Module.fuaCommand('menu_main');
+      await read('menu', 0);
+      console.log('check: press Escape');
+      ${pause(400)}
+      tap(1, 0.20, 0.75);
+      await read('after the menu', 1);
+      Module.fuaCommand('togglemap');
+      await read('automap', 0);
+      Module.fuaCommand('togglemap');
+      tap(1, 0.20, 0.75);
+      await read('after the automap', 1);
+      Module.fuaCommand('toggleconsole');
+      await read('console', 0);
+      Module.fuaCommand('toggleconsole');
+      tap(1, 0.20, 0.75);
+      await read('after the console', 1);
+      // [rc4l] Escape opens the menu and Escape closes it, a key that leaves play as it was; Enter and Tab toggle the automap.
+      console.log('check: press Escape');
+      ${pause(400)}
+      console.log('check: press Escape');
+      await read('after a key', 0);
+      tap(1, 0.20, 0.75);
+      await read('after a touch again', 1);
+      unhear();
+      return readings;`),
+    until: EVAL,
+    expect: shownOnlyInPlay,
+  },
+  // [rc4l] features/viewsetup: a phone held upright keeps a playable field across its width rather than 90 degrees over a narrow canvas.
+  {
+    name: 'a portrait view keeps a playable field across its width',
+    query: TOUCH_QUERY,
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      ${pause(3000)}
+      console.log('check: resize 390x844');
+      ${pause(3000)}
+      const lines = await ask('fua_lens');
+      const num = (k) => { const l = lines.find((x) => x.startsWith(k + '=')); return l ? Number(l.slice(k.length + 1)) : NaN; };
+      unhear();
+      return { ratio: num('view_ratio'), fov: num('view_fov') };`),
+    until: EVAL,
+    expect: portraitLens,
+  },
+  // [rc4l] A mod's FUATOUCH lump layers on the core's: a button added, and one replaced by its id.
+  {
+    name: "a mod's FUATOUCH lump adds a button and replaces one by id",
+    query: `file=${TOUCH_MOD_WAD}&${TOUCH_QUERY}`,
+    init: serveData(TOUCH_MOD_WAD, buildTouchModWad()),
+    evaluate: inPage(`
+      ${HEAR_CONSOLE}
+      ${STATUS}
+      ${TOUCH}
+      ${pause(4000)}
+      tap(1, 0.20, 0.75);
+      ${pause(400)}
+      const rects = (await status()).rects;
+      touch(4, 'down', 0.50, 0.50);
+      ${pause(400)}
+      const extra = (await status()).buttons;
+      touch(4, 'up', 0.50, 0.50);
+      ${pause(400)}
+      touch(5, 'down', 0.50, 0.30);
+      ${pause(400)}
+      const fire = (await status()).buttons;
+      touch(5, 'up', 0.50, 0.30);
+      unhear();
+      return { rects, extra, fire };`),
+    until: EVAL,
+    expect: modLumpTook,
   },
 ];
 

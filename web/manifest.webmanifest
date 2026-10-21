@@ -1,0 +1,10 @@
+{
+  "name": "ForkUnderA",
+  "short_name": "ForkUnderA",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d0f12",
+  "theme_color": "#0d0f12",
+  "icons": []
+}
