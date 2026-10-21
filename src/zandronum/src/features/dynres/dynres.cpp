@@ -9,8 +9,11 @@
 #include "features/mainloop/mainloop.h"
 #include "features/telemetry/telemetry.h"
 
+#include "c_console.h"   // [rc4l] ConsoleState
 #include "c_cvars.h"
 #include "c_dispatch.h"
+#include "doomstat.h"    // [rc4l] paused, menuactive
+#include "i_system.h"    // [rc4l] I_WindowIsActive
 #include "zstring.h"
 
 #include <algorithm>
@@ -107,9 +110,12 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 	g_gpuTimed = gpuMs >= 0.0;
 	x.frameMs = zx::framephase::LastFrameUs() / 1000.0;
 	x.cpuMs = std::max(0.0, x.frameMs - phases[zx::framephase::kPhasePresent] / 1000.0);
+	const bool running = !paused && menuactive == MENU_Off && ConsoleState == c_up;
+	const bool judged = ComputeFrameJudged(g_gpuTimed, running, I_WindowIsActive());
 	DynresCaps caps;
-	caps.refreshHz = RefreshHz(x.frameMs);
-	caps.vsync = vid_vsync;
+	caps.refreshHz = judged ? RefreshHz(x.frameMs) : g_refreshHz;
+	// [rc4l] A browser holds every frame to its own pace whatever vid_vsync says.
+	caps.vsync = vid_vsync || zx::mainloop::Stepped();
 	caps.limitFps = zx::framelimit::LimitFps();
 	caps.targetFps = vid_fua_dynres_target;
 	g_budgetMs = ComputeFrameBudgetMs(caps);
@@ -125,6 +131,13 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 		g_state = DynresState();
 		g_state.settle = kLevelSettleFrames;
 		g_state.changes = changes;
+	}
+	if (!judged)
+	{
+		g_state = ComputeDynresUnjudged(g_state, kLevelSettleFrames);
+		g_held = "held while the game is paused, a menu or the console is up, or the window has no focus";
+		Publish();
+		return g_scale;
 	}
 	g_held = "";
 	float steps[kMaxDynresSteps];

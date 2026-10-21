@@ -21,10 +21,13 @@ adapted rather than ported:
 - `cl_capfps` limits to `TICRATE` here, where upstream skips the limit for it, because upstream's
   tic wait applies to every frame and ours does not.
 - A stepped loop (a browser, `features/mainloop`) cannot wait, so it skips an animation frame
-  that is not due yet, counting one within 2 ms of its deadline as due.
+  that is not due yet, counting one within 2 ms of its deadline as due. Its frames keep the
+  deadline alone and its present waits for nothing; a present that reset the deadline once made
+  every browser frame due, so the limit held nothing there.
 
-`computation/framelimit_compute` holds the decisions: which limit applies, each deadline, the
-sleep, and a browser frame's due test.
+`computation/framelimit_compute` holds the decisions on one `FrameLimiter`: which limit applies,
+a present's deadline (`ComputePresentDeadline`), the sleep, and a browser frame's turn
+(`ComputeSteppedFrame`).
 
 ## In-engine hooks
 

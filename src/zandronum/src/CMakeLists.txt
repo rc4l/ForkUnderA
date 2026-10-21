@@ -1985,7 +1985,7 @@ if( EMSCRIPTEN )
 		"SHELL: -s INVOKE_RUN=0"
 		"SHELL: -s FORCE_FILESYSTEM=1"
 		"SHELL: -s EXPORTED_RUNTIME_METHODS=callMain,ccall,FS,IDBFS"
-		"SHELL: -s EXPORTED_FUNCTIONS=_main,_fua_command"
+		"SHELL: -s EXPORTED_FUNCTIONS=_main,_fua_command,_fua_write_config"
 		"SHELL: -lidbfs.js"
 		"-Wl,--wrap=exit" )
 endif()

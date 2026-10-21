@@ -11,6 +11,7 @@
 #include "d_main.h"   // [rc4l] CRestartException
 #include "doomerrors.h"
 #include "m_argv.h"
+#include "m_misc.h"   // [rc4l] M_SaveDefaults
 #include "c_dispatch.h"   // [rc4l] AddCommandString
 #include "features/wadreload/zx_wadreload.h"   // [rc4l] PendingReloadMap
 #include <stdlib.h>
@@ -98,6 +99,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fua_command(const char *text)
 	{
 		FatalExit(error);
 	}
+}
+
+// [rc4l] The config written for the page's keeper as writeini writes it, but without the line writeini prints, which every hidden page repeated; 0 when it could not be.
+extern "C" EMSCRIPTEN_KEEPALIVE int fua_write_config()
+{
+	return M_SaveDefaults(NULL) ? 1 : 0;
 }
 
 void Fatal(const char *message)

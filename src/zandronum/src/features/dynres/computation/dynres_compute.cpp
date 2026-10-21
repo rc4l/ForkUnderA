@@ -35,15 +35,34 @@ template <typename T> T Doubled(T wait, T base)
 	return std::min(std::max(wait, base) * 2, base * 16);
 }
 
-// [rc4l] Untimed, from the frame alone: a run of frames that waited on the GPU steps down, kept only if the frames then shorten or are no longer late, and frames whose average is not late step up once a wait has passed; each wait doubles when its step is soon undone.
+// [rc4l] A step whose frames are judged against the frames before it.
+DynresState Trial(DynresState n, int step, bool up, const DynresTuning &t)
+{
+	const double before = n.frameAvgMs;
+	n = Stepped(n, step, t);
+	n.beforeMs = before;
+	n.trial = t.trialFrames;
+	n.trialUp = up;
+	return n;
+}
+
+// [rc4l] Untimed, from the frame alone: a run of frames that waited on the GPU steps down and a wait steps up, each judged once settled and undone unless the frames bear it out, so a scale that changes nothing goes back to full; each direction's wait doubles when its step is undone.
 DynresState UntimedStep(DynresState n, const DynresSample &x, double budgetMs, int count, const DynresTuning &t)
 {
 	n.frameAvgMs = n.frameAvgMs > 0.0 ? n.frameAvgMs + t.weight * (x.frameMs - n.frameAvgMs) : x.frameMs;
 	if (n.trial > 0)
 	{
 		if (--n.trial > 0) return n;
-		// [rc4l] Frames no shorter at the lower scale were not the GPU's, so the step is undone and the next waits.
-		if (n.frameAvgMs > n.beforeMs * t.trialGain && n.frameAvgMs > budgetMs * t.lateAt)
+		const bool late = n.frameAvgMs > budgetMs * t.lateAt;
+		// [rc4l] A step up that made late frames longer cost what the GPU could not give.
+		if (n.trialUp && late && n.frameAvgMs * t.trialGain > n.beforeMs)
+		{
+			n.upWait = Doubled(n.upWait, t.upFramesUntimed);
+			n.upFailMs = n.beforeMs;
+			return Stepped(n, n.step + 1, t);
+		}
+		// [rc4l] A step down that left the frames no shorter was not the GPU's to make, however near on time they came.
+		if (!n.trialUp && n.frameAvgMs > n.beforeMs * t.trialGain)
 		{
 			n.downWaitMs = Doubled(n.downWaitMs, t.refuseMs);
 			n.refuseMs = n.downWaitMs;
@@ -56,17 +75,15 @@ DynresState UntimedStep(DynresState n, const DynresSample &x, double budgetMs, i
 	if (n.missStreak >= t.untimedMisses && n.step + 1 < count && n.refuseMs <= 0.0)
 	{
 		if (n.sinceUp < t.upFramesUntimed) n.upWait = Doubled(n.upWait, t.upFramesUntimed);
-		const double before = n.frameAvgMs;
-		n = Stepped(n, n.step + 1, t);
-		n.beforeMs = before;
-		n.trial = t.trialFrames;
-		return n;
+		return Trial(n, n.step + 1, false, t);
 	}
-	if (n.step > 0)
+	// [rc4l] A wait earned under a heavier load is forgotten once the frames, settled, come a tenth under what they were then.
+	if (n.upFailMs > 0.0 && n.roomFrames >= t.settleFrames && n.frameAvgMs < n.upFailMs * t.trialGain)
 	{
-		n.roomFrames = n.frameAvgMs <= budgetMs * t.lateAt ? n.roomFrames + 1 : 0;
-		if (n.roomFrames >= std::max(n.upWait, t.upFramesUntimed)) return Stepped(n, n.step - 1, t);
+		n.upWait = 0;
+		n.upFailMs = 0.0;
 	}
+	if (n.step > 0 && ++n.roomFrames >= std::max(n.upWait, t.upFramesUntimed)) return Trial(n, n.step - 1, true, t);
 	return n;
 }
 
@@ -119,12 +136,27 @@ DynresState ComputeDynresStep(const DynresState &s, const DynresSample &x, doubl
 	return n;
 }
 
-double ComputeShortIntervalMs(const double *ms, int n)
+bool ComputeFrameJudged(bool timed, bool running, bool focused)
+{
+	return timed || (running && focused);
+}
+
+DynresState ComputeDynresUnjudged(const DynresState &s, int settleFrames)
+{
+	DynresState n = s;
+	n.settle = std::max(n.settle, settleFrames);
+	n.missStreak = 0;
+	n.roomFrames = 0;
+	n.frameAvgMs = 0.0;
+	return n;
+}
+
+double ComputeMedianIntervalMs(const double *ms, int n)
 {
 	if (n <= 0) return 0.0;
 	std::vector<double> sorted(ms, ms + n);
 	std::sort(sorted.begin(), sorted.end());
-	return sorted[n / 10];
+	return sorted[n / 2];
 }
 
 SceneRect ComputeSceneRect(int frameW, int frameH, float scale)
@@ -163,7 +195,7 @@ double ComputeFrameRefreshHz(FrameRefresh &r, double frameMs)
 		if (r.count < kRefreshFrames) r.count++;
 		r.sinceWindow++;
 	}
-	double hz = ComputeRefreshFromIntervalMs(ComputeShortIntervalMs(r.intervals, r.count));
+	double hz = ComputeRefreshFromIntervalMs(ComputeMedianIntervalMs(r.intervals, r.count));
 	if (r.sinceWindow >= kRefreshFrames)
 	{
 		r.sinceWindow = 0;
