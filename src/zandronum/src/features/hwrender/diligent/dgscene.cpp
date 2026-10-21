@@ -21,6 +21,7 @@
 #include "features/hwrender/diligent/dggputimer.h"   // [rc4l] gpu/frame_ms, gpu/world_ms, gpu/2d_ms
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
+#include "features/frame-limit/framelimit.h"   // [rc4l] WaitBeforePresent
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
@@ -814,6 +815,7 @@ void PresentFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swap, boo
 	SignalFrame(ctx);
 	{
 		const zx::framephase::Scope presentPhase(zx::framephase::kPhasePresent);
+		zx::framelimit::WaitBeforePresent();
 		swap->Present(zx::hwrender::ComputePresentInterval(vid_vsync, PagePaced()));
 		PaceFrames();
 	}

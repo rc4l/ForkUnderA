@@ -727,7 +727,6 @@ set( PLAT_WIN32_SOURCES ${PLAT_WIN32_SOURCES}
 set( PLAT_SDL_SOURCES
 	posix/sdl/crashcatcher.c
 	posix/sdl/hardware.cpp
-	posix/sdl/i_fpslimit.cpp
 	posix/sdl/i_input.cpp
 	posix/sdl/i_joystick.cpp
 	posix/sdl/i_main.cpp
@@ -818,7 +817,7 @@ else( WIN32 )
 		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_SDL_SOURCES} )
 		# [rc4l] A browser has no signals to catch a crash with, its frame loop and its frame pacing are the page's, and its host is the page (features/web/webhost.cpp for posix/sdl/sdlhost.h).
 		if( EMSCRIPTEN )
-			list( REMOVE_ITEM SYSTEM_SOURCES posix/sdl/crashcatcher.c posix/sdl/i_fpslimit.cpp posix/sdl/sdlhost_desktop.cpp )
+			list( REMOVE_ITEM SYSTEM_SOURCES posix/sdl/crashcatcher.c posix/sdl/sdlhost_desktop.cpp )
 			list( APPEND SYSTEM_SOURCES features/web/webdriver.cpp features/web/webcrash.cpp features/web/webhost.cpp )
 		endif()
 		if( APPLE )
@@ -1711,6 +1710,7 @@ add_executable( zdoom WIN32
 	features/frame/framestall.cpp
 	features/frame/debugorbit.cpp
 	features/framephase/framephase.cpp
+	features/frame-limit/framelimit.cpp
 	features/telemetry/telemetry.cpp
 	features/telemetry/allocwatch.cpp
 	features/telemetry/census.cpp
@@ -1775,6 +1775,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/frameclock_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
+	features/frame-limit/computation/framelimit_compute.cpp
 	features/dynlights/computation/nodeindex_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp
 	features/rendersettings/computation/forcedvideo_compute.cpp

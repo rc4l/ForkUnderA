@@ -12789,9 +12789,9 @@ ddc67fb1bcbc0e429a0cb3c7ba6ae15d74c4bfca	2019-03-26T03:54:01Z	- fix missing text
 0422f40d80d9a80c17fb9bab76205c12d82898af	2019-03-26T16:02:40Z	- restored calling OnRegister for event handlers after loading a savegame	pending		/
 0341a3d75ba05e0711ff9de20fc51ec12d0f6e74	2019-03-25T23:38:54Z	- made the gross railing hack for Strife a compatibility option and restricted it to MAP04	pending		/
 b40983be61b000f2570402787b898824c60e6c93	2019-03-26T07:48:10Z	- fixed bad Printf formatter.	pending		/
-9f758b0032a94182eecbef24c4ed53c65590830b	2019-03-26T09:40:43Z	- implement vid_maxfps	pending		/
+9f758b0032a94182eecbef24c4ed53c65590830b	2019-03-26T09:40:43Z	- implement vid_maxfps	adapted	adapted: the deadline wait before each present is features/frame-limit WaitBeforePresent, each deadline a period after the last, cl_capfps limiting to TICRATE since the game-thread loop skips TryRunTics' wait, and a browser skipping frames not yet due	/
 6078428b84ab2c9580d86623616357ff4798a492	2019-03-26T09:46:31Z	- fix typo in sleep	pending		/
-9f0f659db0d3c341d89eb31d551a8257aec5bc6f	2019-03-26T10:10:17Z	- remove old vid_maxfps implementations as they were garbage anyway and the new one works on all the platforms	pending		/
+9f0f659db0d3c341d89eb31d551a8257aec5bc6f	2019-03-26T10:10:17Z	- remove old vid_maxfps implementations as they were garbage anyway and the new one works on all the platforms	adapted	adapted: the Windows timer, posix/sdl/i_fpslimit.cpp, the Cocoa stub and their three vid_maxfps declarations removed for features/frame-limit's one	/
 4cc9880f501348ab7503699b422ffab88d264117	2019-03-26T12:08:59Z	Merge remote-tracking branch 'origin/master' into vulkan2	pending		/
 f4401d152553f86128b0dec0458baba6ab13f643	2019-03-26T16:30:44Z	- this option was in the wrong menu	pending		/
 15c6cba7acf52f5d87966eedd4a7d74f8b6100c0	2019-03-26T15:44:26Z	- updated LZMA SDK to version 19.00	pending		/

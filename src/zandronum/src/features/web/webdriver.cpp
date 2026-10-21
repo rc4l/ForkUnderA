@@ -5,6 +5,7 @@
 
 #include "features/web/webdriver.h"
 #include "features/mainloop/mainloop.h"
+#include "features/frame-limit/framelimit.h"
 #include "features/web/computation/webargs_compute.h"
 #include "d_main.h"   // [rc4l] CRestartException
 #include "doomerrors.h"
@@ -28,6 +29,8 @@ static void FatalExit(CDoomError &error)
 
 static void Frame()
 {
+	// [rc4l] features/frame-limit: a browser offers a frame each refresh, and one not yet due under vid_maxfps or cl_capfps is skipped.
+	if (!zx::framelimit::SteppedFrameDue()) return;
 	try
 	{
 		g_frame();
