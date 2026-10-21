@@ -1639,6 +1639,7 @@ add_executable( zdoom WIN32
 	features/net/zx_offline.cpp
 	# [rc4l] The on-screen controls a touch screen's host feeds (features/touch-input).
 	features/touch-input/touchjoystick.cpp
+	features/touch-input/touchdef.cpp
 	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
