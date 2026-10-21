@@ -40,6 +40,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <errno.h>
+#include <atomic>
 #ifndef NO_GTK
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
@@ -86,6 +88,7 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 #include "v_text.h"
+#include "sdlhost.h"   // [rc4l] ShowFatal, CanAskForIWad
 
 EXTERN_CVAR (String, language)
 
@@ -129,12 +132,14 @@ void I_EndRead(void)
 
 static DWORD TicStart;
 static DWORD BaseTime;
-static int TicFrozen;
+// [rc4l] Atomic, since the alarm handler reads it on whichever thread the signal lands on.
+static std::atomic<int> TicFrozen;
 
 // Signal based timer.
 static Semaphore timerWait;
-static int tics;
-static DWORD sig_start;
+// [rc4l] Atomic and lock-free, so the alarm handler can write them from any thread while the loop reads them.
+static std::atomic<int> tics;
+static std::atomic<DWORD> sig_start;
 
 void I_SelectTimer();
 
@@ -254,10 +259,13 @@ int I_WaitForTicSelect (int prevtic)
 //
 void I_HandleAlarm (int sig)
 {
+	// [rc4l] The interrupted code's errno survives the clock and semaphore calls below.
+	const int interrupted = errno;
 	if(!TicFrozen)
 		tics++;
 	sig_start = SDL_GetTicks();
 	SEMAPHORE_SIGNAL(timerWait)
+	errno = interrupted;
 }
 
 //
@@ -405,6 +413,8 @@ void STACK_ARGS I_FatalError (const char *error, ...)
 #ifdef __APPLE__
 		Mac_I_FatalError(errortext);
 #endif // __APPLE__
+		// [rc4l] A page has no stderr to look at, so its loop stops and the message shows on it.
+		zx::sdlhost::ShowFatal(errortext);
 		
 		// Record error to log (if logging)
 		if (Logfile)
@@ -652,6 +662,8 @@ int I_PickIWad (WadStuff *wads, int numwads, bool showwin, int defaultiwad)
 {
 	int i;
 
+	// [rc4l] A page has no dialog to ask with; it names the IWAD (-iwad) when the player picked one.
+	if (!zx::sdlhost::CanAskForIWad()) showwin = false;
 	if (!showwin)
 	{
 		return defaultiwad;
@@ -980,4 +992,18 @@ void I_OpenURL (const char *url)
 		waitpid(mid, &status, 0);
 	}
 #endif
+}
+
+// [rc4l] The background-render switch's two platform questions.
+//
+// SDL's CanUpdate never refused on focus and nothing here drops the process priority, so on this
+// platform the switch has nothing left to do: the window reports active and the priority is left
+// alone. Defined so the shared caller does not have to know which platform it is on.
+bool I_WindowIsActive ()
+{
+	return true;
+}
+
+void I_UpdateBackgroundPriority ()
+{
 }

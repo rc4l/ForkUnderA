@@ -59,7 +59,7 @@ ZxSampleFormat ComputeSampleFormat(int channelConfig, int sampleType);
 int ComputeChannelCount(int channelConfig);
 
 // [rc4l] Resolve the AL buffer format for a stream from its flags; float needs the
-// AL_EXT_FLOAT32 extension (hasFloat32Ext), and 32-bit-int streams are unsupported.
+// AL_EXT_float32 extension (hasFloat32Ext), and 32-bit-int streams are unsupported.
 int ComputeStreamFormat(int flags, bool hasFloat32Ext);
 
 // [rc4l] Frame size in bytes for a stream described by its flags.

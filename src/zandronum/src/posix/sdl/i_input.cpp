@@ -19,12 +19,16 @@
 #include "s_sound.h"
 // [BB] New #includes.
 #include "chat.h"
+#include "features/mouse-capture/computation/mousecapture_compute.h"
+#include "sdlhost.h"   // [rc4l] MouseHeld
 
 static void I_CheckGUICapture ();
 static void I_CheckNativeMouse ();
 
 bool GUICapture;
 static bool NativeMouse = true;
+// [rc4l] What the game does with the mouse this tic (ComputeMouseCapture), from I_CheckNativeMouse.
+static zx::MouseCapture MouseNow = { false, true, true };
 
 extern int paused;
 
@@ -32,9 +36,6 @@ CVAR (Bool,  use_mouse,				true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool,  m_noprescale,			false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool,	 m_filter,				false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool,  sdl_nokeyrepeat,		false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-
-// [EP] Allows to keep the sound turned on, when the client is not the active app.
-CVAR (Bool,	 cl_soundwhennotactive, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 EXTERN_CVAR (Bool, fullscreen)
 // [rc4l] windowed-video: the persisted windowed size (updated on window resize).
@@ -48,6 +49,9 @@ extern SDL_Surface *cursorSurface;
 extern SDL_Rect cursorBlit;
 
 #include "computation/keymap_compute.h"
+
+// [rc4l] The engine's window (posix/sdl/sdlvideo.cpp), which has no GL context to find it by in a launch without GL.
+SDL_Window *I_EngineWindow();
 
 // [rc4l] SDL2 keysyms for non-ASCII keys are >= 1<<30, so they cannot index a table; scancodes are a
 // dense, physically-positional enum, which is what DIK codes already are.
@@ -149,7 +153,7 @@ void I_ReleaseMouseCapture()
 
 static void CenterMouse ()
 {
-	SDL_WarpMouseInWindow (SDL_GL_GetCurrentWindow (), screen->GetWidth()/2, screen->GetHeight()/2);
+	SDL_WarpMouseInWindow (I_EngineWindow (), screen->GetWidth()/2, screen->GetHeight()/2);
 	SDL_PumpEvents ();
 	SDL_GetRelativeMouseState (NULL, NULL);
 }
@@ -182,8 +186,10 @@ static void MouseRead ()
 {
 	int x, y;
 
-	if (NativeMouse)
+	if (!MouseNow.readMotion)
 	{
+		// [rc4l] Motion while the window does not hold the mouse is dropped, so taking it back does not turn the view.
+		if (!NativeMouse) SDL_GetRelativeMouseState (NULL, NULL);
 		return;
 	}
 
@@ -244,7 +250,7 @@ static bool inGame()
 
 static void I_CheckNativeMouse ()
 {
-	SDL_Window *window = SDL_GL_GetCurrentWindow ();
+	SDL_Window *window = I_EngineWindow ();
 	const Uint32 flags = window != NULL ? SDL_GetWindowFlags (window) : 0;
 	bool focus = (flags & (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_SHOWN))
 			== (SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_SHOWN);
@@ -254,7 +260,6 @@ static void I_CheckNativeMouse ()
 	if (wantNative != NativeMouse)
 	{
 		NativeMouse = wantNative;
-		SDL_ShowCursor (wantNative ? cursorSurface == NULL : 0);
 		if (wantNative)
 		{
 			SDL_SetRelativeMouseMode (SDL_FALSE);
@@ -266,6 +271,11 @@ static void I_CheckNativeMouse ()
 			CenterMouse ();
 		}
 	}
+
+	const zx::MouseCapture now = zx::ComputeMouseCapture (!NativeMouse, !NativeMouse && zx::sdlhost::MouseHeld ());
+	if (now.showCursor != MouseNow.showCursor)
+		SDL_ShowCursor (now.showCursor ? cursorSurface == NULL : 0);
+	MouseNow = now;
 }
 
 void MessagePump (const SDL_Event &sev)
@@ -289,8 +299,9 @@ void MessagePump (const SDL_Event &sev)
 			{ // kill focus
 				FlushDIKState ();
 			}
-			if (( NETWORK_GetState() != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ))	// [EP]
-				S_SetSoundPaused(gain);
+			// [rc4l] Unconditional: S_SetSoundPaused answers i_pauseinbackground and
+			// i_soundinbackground itself now. Ported from uzdoom@12ed24d066a819a128a54e2359fd0e2d48f641fe.
+			S_SetSoundPaused(gain);
 		}
 		// [rc4l] windowed-video: the window was resized (dragged, or via vid_setsize). Persist the
 		// new size so it reopens the same, matching upstream's win_w/win_h. The render target itself
@@ -321,7 +332,8 @@ void MessagePump (const SDL_Event &sev)
 	case SDL_MOUSEMOTION:
 		if (!GUICapture)
 		{
-			if(sev.type != SDL_MOUSEMOTION)
+			// [rc4l] Not while the window does not hold the mouse: that click is the one taking it back.
+			if(sev.type != SDL_MOUSEMOTION && MouseNow.takeClicks)
 			{
 				event.type = sev.type == SDL_MOUSEBUTTONDOWN ? EV_KeyDown : EV_KeyUp;
 				/* These button mappings work with my Gentoo system using the
@@ -364,7 +376,7 @@ void MessagePump (const SDL_Event &sev)
 			// the drawable) also folds in any HiDPI point->pixel factor.
 			if (screen != NULL)
 			{
-				SDL_Window *win = SDL_GL_GetCurrentWindow ();
+				SDL_Window *win = I_EngineWindow ();
 				int ww = 0, wh = 0;
 				if (win != NULL) SDL_GetWindowSize (win, &ww, &wh);
 				if (ww > 0 && wh > 0)

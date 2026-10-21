@@ -54,32 +54,37 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_renderer.h"
 #include "gl/data/gl_data.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
+#include "gl/scene/gl_observer.h"
+#include "features/viewsetup/spriteview.h"   // [rc4l] SpriteViewProvider, which gl_spriteview.cpp answers
+const zx::viewsetup::SpriteViewProvider &gl_SpriteView();   // [rc4l] gl/scene/gl_spriteview.cpp
+#include "features/materials/materials.h"   // [rc4l] ParticleTexture
 #include "gl/utility/gl_clock.h"
 #include "gl/data/gl_vertexbuffer.h"
 // [BB] New #includes.
 #include "gamemode.h"
 #include "c_console.h"
+#include "features/sprite-roll/computation/spriteroll_compute.h"	// [rc4l]
+#include "features/sprites/computation/spritestyle_compute.h"	// [rc4l] kHw*, which hw_styleflags must match
+#include "features/damage-tint/damagetint.h"	// [rc4l] damaging-floor sprite glow
+#include "features/gamecopy/tintsubject.h"	// [rc4l] TintSubjectOf
 
-CVAR(Bool, gl_usecolorblending, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR(Bool, gl_spritebrightfog, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
-CVAR(Bool, gl_sprite_blend, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
-CVAR(Int, gl_spriteclip, 1, CVAR_ARCHIVE)
-CVAR(Float, gl_sclipthreshold, 10.0, CVAR_ARCHIVE)
-CVAR(Float, gl_sclipfactor, 1.8, CVAR_ARCHIVE)
-CVAR(Int, gl_particles_style, 2, CVAR_ARCHIVE | CVAR_GLOBALCONFIG) // 0 = square, 1 = round, 2 = smooth
-CVAR(Int, gl_billboard_mode, 0, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-CVAR(Bool, gl_billboard_particles, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-CVAR(Int, gl_enhanced_nv_stealth, 3, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-CUSTOM_CVAR(Int, gl_fuzztype, 0, CVAR_ARCHIVE)
-{
-	if (self < 0 || self > 7) self = 0;
-}
+EXTERN_CVAR(Bool, r_usecolorblending)
+EXTERN_CVAR(Bool, r_sprite_blend)
+EXTERN_CVAR(Int, r_spriteclip)
+EXTERN_CVAR(Float, r_sclipthreshold)
+EXTERN_CVAR(Float, r_sclipfactor)
+EXTERN_CVAR(Int, r_particles_style)
+EXTERN_CVAR(Int, r_billboard_mode)
+EXTERN_CVAR(Bool, r_billboard_particles)
+EXTERN_CVAR(Int, r_enhanced_nv_stealth)
+EXTERN_CVAR(Int, r_fuzztype)
 
 extern bool r_showviewer;
 EXTERN_CVAR (Float, transsouls)
@@ -94,6 +99,8 @@ enum HWRenderStyle
 	STYLEHW_Solid,			// drawn solid (needs special treatment for sprites)
 	STYLEHW_NoAlphaTest,	// disable alpha test
 };
+static_assert(STYLEHW_Normal == zx::sprites::kHwNormal && STYLEHW_Solid == zx::sprites::kHwSolid && STYLEHW_NoAlphaTest == zx::sprites::kHwNoAlphaTest,
+	"HWRenderStyle must match spritestyle_compute.h");
 
 
 void gl_SetRenderStyle(FRenderStyle style, bool drawopaque, bool allowcolorblending)
@@ -135,7 +142,7 @@ void GLSprite::Draw(int pass)
 
 		gl_SetRenderStyle(RenderStyle, false, 
 			// The rest of the needed checks are done inside gl_SetRenderStyle
-			trans > 1.f - FLT_EPSILON && gl_usecolorblending && gl_fixedcolormap == CM_DEFAULT && actor && 
+			trans > 1.f - FLT_EPSILON && r_usecolorblending && gl_fixedcolormap == CM_DEFAULT && actor && 
 			fullbright && gltexture && !gltexture->GetTransparent());
 
 		if (hw_styleflags == STYLEHW_NoAlphaTest)
@@ -144,7 +151,7 @@ void GLSprite::Draw(int pass)
 		}
 		else
 		{
-			gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+			gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 		}
 
 		if (RenderStyle.BlendOp == STYLEOP_Shadow)
@@ -168,7 +175,7 @@ void GLSprite::Draw(int pass)
 				minalpha*=factor;
 			}
 
-			gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+			gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 			gl_RenderState.SetColor(0.2f,0.2f,0.2f,fuzzalpha, Colormap.desaturation);
 			additivefog = true;
 		}
@@ -179,13 +186,17 @@ void GLSprite::Draw(int pass)
 	}
 	if (RenderStyle.BlendOp!=STYLEOP_Shadow)
 	{
-		if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && !fullbright)
+		if (r_lights && gl_SpriteView().DynamicLightCount() && !gl_fixedcolormap && !fullbright)
 		{
-			gl_SetDynSpriteLight(gl_light_sprites ? actor : NULL, gl_light_particles ? particle : NULL);
+			gl_SetDynSpriteLight(r_light_sprites ? actor : NULL, r_light_particles ? particle : NULL);
 		}
 		gl_SetColor(lightlevel, rel, Colormap, trans);
 	}
 	gl_RenderState.SetObjectColor(ThingColor);
+
+	// [rc4l] features/damage-tint: players on damaging floors glow with the floor's color from the
+	// feet up; no-op unless the actor qualifies. Must be unwound after the draw (end of Draw).
+	bool damagetintglow = DamageTint_BeginSpriteGlow(zx::gamecopy::TintSubjectOf(actor), RenderStyle.BlendOp, RenderStyle.Flags, vt, vb);
 
 	if (gl_isBlack(Colormap.FadeColor)) foglevel=lightlevel;
 
@@ -223,9 +234,16 @@ void GLSprite::Draw(int pass)
 	if (!modelframe)
 	{
 		// [BB] Billboard stuff
-		const bool drawWithXYBillboard = ( (particle && gl_billboard_particles) || (!(actor && actor->renderflags & RF_FORCEYBILLBOARD)
+		const bool drawWithXYBillboard = ( (particle && r_billboard_particles) || (!(actor && actor->renderflags & RF_FORCEYBILLBOARD)
 		                                   //&& GLRenderer->mViewActor != NULL
-		                                   && (gl_billboard_mode == 1 || (actor && actor->renderflags & RF_FORCEXYBILLBOARD ))) );
+		                                   && (r_billboard_mode == 1 || (actor && actor->renderflags & RF_FORCEXYBILLBOARD ))) );
+
+		// [rc4l] uzdoom: [Nash]/[fgsfds] +ROLLSPRITE rotates the billboard about the sight vector.
+		// Upstream's copy of this is float-sim (actor->Angles.Roll.Degrees); ours converts from the
+		// fixed-point angle_t instead. Interpolated against PrevRoll so the sprite turns smoothly
+		// between tics rather than stepping.
+		const bool drawRollSpriteActor = ( actor != NULL && ( actor->renderflags & RF_ROLLSPRITE ) );
+
 		gl_RenderState.Apply();
 
 		Vector v1;
@@ -233,7 +251,7 @@ void GLSprite::Draw(int pass)
 		Vector v3;
 		Vector v4;
 
-		if (drawWithXYBillboard)
+		if (drawWithXYBillboard || drawRollSpriteActor)
 		{
 			// Rotate the sprite about the vector starting at the center of the sprite
 			// triangle strip and with direction orthogonal to where the player is looking
@@ -241,12 +259,24 @@ void GLSprite::Draw(int pass)
 			float xcenter = (x1 + x2)*0.5;
 			float ycenter = (y1 + y2)*0.5;
 			float zcenter = (z1 + z2)*0.5;
-			float angleRad = DEG2RAD(270. - float(GLRenderer->mAngles.Yaw));
+			float viewYaw, viewPitch;
+			gl_SpriteView().ViewAngles(viewYaw, viewPitch);
+			float angleRad = DEG2RAD(270. - viewYaw);
 
 			Matrix3x4 mat;
 			mat.MakeIdentity();
 			mat.Translate(xcenter, zcenter, ycenter);
-			mat.Rotate(-sin(angleRad), 0, cos(angleRad), -GLRenderer->mAngles.Pitch);
+			if (drawWithXYBillboard)
+			{
+				mat.Rotate(-sin(angleRad), 0, cos(angleRad), -viewPitch);
+			}
+			if (drawRollSpriteActor)
+			{
+				mat.Rotate(cos(angleRad), 0, sin(angleRad),
+					zx::ComputeSpriteRollDegrees( actor->PrevRoll, actor->roll,
+						// [rc4l] strong fixed_t -> the unit takes the raw 16.16 bits.
+						( C_ShouldForceInterpolation() ? FRACUNIT : r_TicFrac ).Raw() ));
+			}
 			mat.Translate(-xcenter, -zcenter, -ycenter);
 			v1 = mat * Vector(x1, z1, y1);
 			v2 = mat * Vector(x2, z1, y2);
@@ -260,6 +290,15 @@ void GLSprite::Draw(int pass)
 			v3 = Vector(x1, z2, y1);
 			v4 = Vector(x2, z2, y2);
 		}
+
+		// [rc4l] The sprite's corners, for a check against GL's sprites.
+		if (gl_observer)
+		{
+			const float c1[3] = { v1[0], v1[1], v1[2] }, c2[3] = { v2[0], v2[1], v2[2] };
+			const float c3[3] = { v3[0], v3[1], v3[2] }, c4[3] = { v4[0], v4[1], v4[2] };
+			gl_observer->Sprite(*this, c1, c2, c3, c4);
+		}
+
 
 		FFlatVertex *ptr;
 		unsigned int offset, count;
@@ -288,6 +327,7 @@ void GLSprite::Draw(int pass)
 	}
 	else
 	{
+		// [rc4l] The model as GL draws it, its surfaces also reported to a check against GL (gl_observer).
 		gl_RenderModel(this);
 	}
 
@@ -298,6 +338,8 @@ void GLSprite::Draw(int pass)
 		gl_RenderState.BlendEquation(GL_FUNC_ADD);
 		gl_RenderState.SetTextureMode(TM_MODULATE);
 	}
+
+	if (damagetintglow) DamageTint_EndSpriteGlow(); // [rc4l] features/damage-tint
 
 	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.EnableTexture(true);
@@ -426,7 +468,7 @@ void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_
 	bool smarterclip = false; // Set to true if one condition triggers the test below
 	if (((thing->player || thing->flags3&MF3_ISMONSTER ||
 		thing->IsKindOf(RUNTIME_CLASS(AInventory))) && (thing->flags&MF_ICECORPSE ||
-		!(thing->flags&MF_CORPSE))) || (gl_spriteclip == 3 && (smarterclip = true)) || gl_spriteclip > 1)
+		!(thing->flags&MF_CORPSE))) || (r_spriteclip == 3 && (smarterclip = true)) || r_spriteclip > 1)
 	{
 		float btm = 1000000.0f;
 		float top = -1000000.0f;
@@ -477,33 +519,33 @@ void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_
 			// Reduce slightly clipping adjustment of corpses
 			if (thing->flags & MF_CORPSE || spriteheight > fabs(diffb))
 			{
-				float ratio = clamp<float>((fabs(diffb) * (float)gl_sclipfactor / (spriteheight + 1)), 0.5, 1.0);
+				float ratio = clamp<float>((fabs(diffb) * (float)r_sclipfactor / (spriteheight + 1)), 0.5, 1.0);
 				diffb *= ratio;
 			}
 			if (!diffb)
 			{
 				if (difft <= 0) difft = 0;
-				if (difft >= (float)gl_sclipthreshold)
+				if (difft >= (float)r_sclipthreshold)
 				{
 					// dumb copy of the above.
-					if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || difft > (float)gl_sclipthreshold)
+					if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || difft > (float)r_sclipthreshold)
 					{
 						difft = 0;
 					}
 				}
 				if (spriteheight > fabs(difft))
 				{
-					float ratio = clamp<float>((fabs(difft) * (float)gl_sclipfactor / (spriteheight + 1)), 0.5, 1.0);
+					float ratio = clamp<float>((fabs(difft) * (float)r_sclipfactor / (spriteheight + 1)), 0.5, 1.0);
 					difft *= ratio;
 				}
 				z2 -= difft;
 				z1 -= difft;
 			}
 		}
-		if (diffb <= (0 - (float)gl_sclipthreshold))	// such a large displacement can't be correct! 
+		if (diffb <= (0 - (float)r_sclipthreshold))	// such a large displacement can't be correct! 
 		{
 			// for living monsters standing on the floor allow a little more.
-			if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || diffb < (-1.8*(float)gl_sclipthreshold))
+			if (!(thing->flags3&MF3_ISMONSTER) || (thing->flags&MF_NOGRAVITY) || (thing->flags&MF_CORPSE) || diffb < (-1.8*(float)r_sclipthreshold))
 			{
 				diffb = 0;
 			}
@@ -524,7 +566,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	sector_t rs;
 	sector_t * rendersector;
 	// don't draw the thing that's used as camera (for viewshifts during quakes!)
-	if (thing==GLRenderer->mViewActor) return;
+	if (thing == gl_SpriteView().ViewActor()) return;
 
 	// Don't waste time projecting sprites that are definitely not visible.
 	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer())
@@ -542,7 +584,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha)) 
 	{
-		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !gl_enhanced_nightvision)
+		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision)
 			return; 
 	}
 
@@ -552,7 +594,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.
 	// TODO: Use the ONLYVISIBLEINMIRRORS actor flag from GZDoom when we support it.
-	if ((GLRenderer->mCurrentPortal == nullptr) || ((GLRenderer->mCurrentPortal->MirrorFlag == 0) && (GLRenderer->mCurrentPortal->PlaneMirrorFlag == 0)))
+	if (!gl_SpriteView().PortalIsMirror())
 	{
 		if (((players[consoleplayer].cheats & CF_CHASECAM) == false) && (players[consoleplayer].camera != nullptr))
 		{
@@ -583,16 +625,13 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	}
 
 	// don't draw first frame of a player missile
-	if (thing->flags&MF_MISSILE && thing->target==GLRenderer->mViewActor && GLRenderer->mViewActor != NULL)
+	const void *const viewActor = gl_SpriteView().ViewActor();
+	if (thing->flags&MF_MISSILE && static_cast<AActor *>(thing->target) == viewActor && viewActor != NULL)
 	{
 		if (P_AproxDistance(thingx-viewx, thingy-viewy) < thing->Speed ) return;
 	}
 
-	if (GLRenderer->mCurrentPortal)
-	{
-		int clipres = GLRenderer->mCurrentPortal->ClipPoint(thingx, thingy);
-		if (clipres == GLPortal::PClip_InFront) return;
-	}
+	if (gl_SpriteView().PortalRejectsPoint(thingx, thingy)) return;
 
 	player_t *player=&players[consoleplayer];
 	FloatRect r;
@@ -677,7 +716,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		
 		// Tests show that this doesn't look good for many decorations and corpses
 		// [RK] tests also show this looks terrible for floatbob items
-		if (spriteheight > 0 && gl_spriteclip > 0 && !(thing->flags2 & MF2_FLOATBOB) && (thing->renderflags & RF_SPRITETYPEMASK) == RF_FACESPRITE)
+		if (spriteheight > 0 && r_spriteclip > 0 && !(thing->flags2 & MF2_FLOATBOB) && (thing->renderflags & RF_SPRITETYPEMASK) == RF_FACESPRITE)
 		{
 			PerformSpriteClipAdjustment(thing, thingx, thingy, spriteheight);
 		}
@@ -687,8 +726,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		switch (thing->renderflags & RF_SPRITETYPEMASK)
 		{
 		case RF_FACESPRITE:
-			viewvecX = GLRenderer->mViewVector.X;
-			viewvecY = GLRenderer->mViewVector.Y;
+			gl_SpriteView().ViewVector(viewvecX, viewvecY);
 
 			x1 = x - viewvecY*leftfac;
 			x2 = x - viewvecY*rightfac;
@@ -740,16 +778,16 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// colormap stuff is a little more complicated here...
 	if (gl_fixedcolormap) 
 	{
-		if ((gl_enhanced_nv_stealth > 0 && gl_fixedcolormap == CM_LITE)		// Infrared powerup only
-			|| (gl_enhanced_nv_stealth == 2 && gl_fixedcolormap >= CM_TORCH)// Also torches
-			|| (gl_enhanced_nv_stealth == 3))								// Any fixed colormap
+		if ((r_enhanced_nv_stealth > 0 && gl_fixedcolormap == CM_LITE)		// Infrared powerup only
+			|| (r_enhanced_nv_stealth == 2 && gl_fixedcolormap >= CM_TORCH)// Also torches
+			|| (r_enhanced_nv_stealth == 3))								// Any fixed colormap
 			enhancedvision=true;
 
 		Colormap.Clear();
 
 		if (gl_fixedcolormap==CM_LITE)
 		{
-			if (gl_enhanced_nightvision &&
+			if (r_enhanced_nightvision &&
 				(thing->IsKindOf(RUNTIME_CLASS(AInventory)) || thing->flags3&MF3_ISMONSTER || thing->flags&MF_MISSILE || thing->flags&MF_CORPSE))
 			{
 				RenderStyle.Flags |= STYLEF_InvertSource;
@@ -800,11 +838,11 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		RenderStyle.CheckFuzz();
 		if (RenderStyle.BlendOp == STYLEOP_Fuzz)
 		{
-			if (gl_fuzztype != 0)
+			if (r_fuzztype != 0)
 			{
 				// Todo: implement shader selection here
 				RenderStyle = LegacyRenderStyles[STYLE_Translucent];
-				OverrideShader = gl_fuzztype + 4;
+				OverrideShader = r_fuzztype + 4;
 				trans = 0.99f;	// trans may not be 1 here
 				hw_styleflags |= STYLEHW_NoAlphaTest;
 			}
@@ -833,7 +871,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		trans=1.f;
 		
 
-		if (!gl_sprite_blend || modelframe)
+		if (!r_sprite_blend || modelframe)
 		{
 			RenderStyle.SrcAlpha = STYLEALPHA_One;
 			RenderStyle.DestAlpha = STYLEALPHA_Zero;
@@ -857,7 +895,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 		hw_styleflags = STYLEHW_NoAlphaTest;
  	}
 
-	if (enhancedvision && gl_enhanced_nightvision)
+	if (enhancedvision && r_enhanced_nightvision)
 	{
 		if (RenderStyle.BlendOp == STYLEOP_Shadow)
 		{
@@ -879,13 +917,13 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	// end of light calculation
 
 	actor=thing;
-	index = GLRenderer->gl_spriteindex++;
+	index = gl_SpriteView().NextSpriteIndex();
 	particle=NULL;
 	
 	const bool drawWithXYBillboard = ( !(actor->renderflags & RF_FORCEYBILLBOARD)
 									   && (actor->renderflags & RF_SPRITETYPEMASK) == RF_FACESPRITE
 									   && players[consoleplayer].camera
-									   && (gl_billboard_mode == 1 || actor->renderflags & RF_FORCEXYBILLBOARD ) );
+									   && (r_billboard_mode == 1 || actor->renderflags & RF_FORCEXYBILLBOARD ) );
 
 
 	if (drawWithXYBillboard || modelframe)
@@ -913,11 +951,7 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 
 void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int shade, int fakeside)
 {
-	if (GLRenderer->mCurrentPortal)
-	{
-		int clipres = GLRenderer->mCurrentPortal->ClipPoint(particle->x, particle->y);
-		if (clipres == GLPortal::PClip_InFront) return;
-	}
+	if (gl_SpriteView().PortalRejectsPoint(particle->x, particle->y)) return;
 
 	player_t *player=&players[consoleplayer];
 	
@@ -968,17 +1002,9 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	gltexture=NULL;
 
 	// [BB] Load the texture for round or smooth particles
-	if (gl_particles_style)
+	if (r_particles_style)
 	{
-		FTexture *lump = NULL;
-		if (gl_particles_style == 1)
-		{
-			lump = GLRenderer->glpart2;
-		}
-		else if (gl_particles_style == 2)
-		{
-			lump = GLRenderer->glpart;
-		}
+		FTexture *lump = zx::materials::ParticleTexture(r_particles_style);
 
 		if (lump != NULL)
 		{
@@ -1000,11 +1026,11 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	
 	float scalefac=particle->size/4.0f;
 	// [BB] The smooth particles are smaller than the other ones. Compensate for this here.
-	if (gl_particles_style==2)
+	if (r_particles_style==2)
 		scalefac *= 1.7;
 
-	float viewvecX = GLRenderer->mViewVector.X;
-	float viewvecY = GLRenderer->mViewVector.Y;
+	float viewvecX, viewvecY;
+	gl_SpriteView().ViewVector(viewvecX, viewvecY);
 
 	x1=x+viewvecY*scalefac;
 	x2=x-viewvecY*scalefac;
@@ -1019,7 +1045,7 @@ void GLSprite::ProcessParticle (particle_t *particle, sector_t *sector)//, int s
 	this->particle=particle;
 	
 	// [BB] Translucent particles have to be rendered without the alpha test.
-	if (gl_particles_style != 2 && trans>=1.0f-FLT_EPSILON) hw_styleflags = STYLEHW_Solid;
+	if (r_particles_style != 2 && trans>=1.0f-FLT_EPSILON) hw_styleflags = STYLEHW_Solid;
 	else hw_styleflags = STYLEHW_NoAlphaTest;
 
 	PutSprite(hw_styleflags != STYLEHW_Solid);

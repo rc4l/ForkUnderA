@@ -20,11 +20,6 @@ BrowserPhase ComputeBrowserPhase( bool waitingForRegistry, const BrowserCounts &
 	return BrowserPhase::Empty;
 }
 
-bool ComputeShowsProgress( bool waitingForRegistry, const BrowserCounts &counts )
-{
-	return waitingForRegistry || ( counts.waiting > 0 );
-}
-
 int ComputeSpinnerFrame( int tic, int frameCount, int ticsPerFrame )
 {
 	if (( frameCount <= 0 ) || ( ticsPerFrame <= 0 ))
@@ -78,6 +73,19 @@ RowWindow ComputeRowWindow( int total, int perPage, int selected, int currentFir
 	out.first = first;
 	out.count = ( total - first < perPage ) ? ( total - first ) : perPage;
 	return out;
+}
+
+int ComputeRestoredScroll( int remembered, int total, int perPage )
+{
+	if (( total <= 0 ) || ( perPage <= 0 ))
+		return 0;
+
+	const int maxFirst = ( total > perPage ) ? ( total - perPage ) : 0;
+	if ( remembered > maxFirst )
+		return maxFirst;
+	if ( remembered < 0 )
+		return 0;
+	return remembered;
 }
 
 int ComputeClampedSelection( int selected, int total )

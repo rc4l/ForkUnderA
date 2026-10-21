@@ -123,6 +123,11 @@ void CALLVOTE_Construct( void )
 //
 void CALLVOTE_ReadVoteInfo( void )
 {
+	// [rc4l] Re-read from scratch: g_VoteTypeDefinitions outlives a restart, so a wad_reload whose
+	// new set still carries a VOTEINFO lump used to re-add its vote types on top of the previous
+	// set's and die on the duplicate check below. See features/restart-reparse/README.md.
+	g_VoteTypeDefinitions.Clear( );
+
 	// [TP] Read custom vote definitions
 	int lump, lastlump = 0;
 	while ( ( lump = Wads.FindLump( "VOTEINFO", &lastlump ) ) != -1 )

@@ -25,6 +25,7 @@
 //-----------------------------------------------------------------------------
 
 #include <stdio.h>
+#include "features/handoff/effects.h"   // [rc4l] QueuedForHandoff
 
 #include "doomdef.h"
 #include "templates.h"
@@ -70,6 +71,7 @@
 #include "po_man.h"
 #include "a_keys.h"
 #include "r_data/colormaps.h"
+#include "features/fixed64/computation/parchment_wrap_compute.h"	// [rc4l] AM_ScrollParchment wrap
 
 // [BC] New #includes.
 #include "team.h"
@@ -1174,17 +1176,17 @@ static void AM_ScrollParchment (fixed_t dmapx, fixed_t dmapy)
 
 		if (backtex != NULL)
 		{
-			int pwidth = backtex->GetWidth() << MAPBITS;
-			int pheight = backtex->GetHeight() << MAPBITS;
+			// [rc4l] fixed64: this used to normalise the offsets with subtract-until-in-range
+			// loops, and mapxstart/mapystart are 64-bit fixed_t now. The first scroll after the
+			// automap opens is a delta against the FIXED_MAX sentinel in f_oldloc, i.e. ~1e18
+			// out of range, so those loops ran ~1e13 times and hung the engine dead on any wad
+			// with an AUTOPAGE background. It is a modulo; compute it as one. The tile sizes
+			// stay 64-bit too -- `GetWidth() << MAPBITS` in an int overflows for a big texture.
+			const int64_t pwidth = static_cast<int64_t>(backtex->GetWidth()) << MAPBITS;
+			const int64_t pheight = static_cast<int64_t>(backtex->GetHeight()) << MAPBITS;
 
-			while(mapxstart > 0)
-				mapxstart -= pwidth;
-			while(mapxstart <= -pwidth)
-				mapxstart += pwidth;
-			while(mapystart > 0)
-				mapystart -= pheight;
-			while(mapystart <= -pheight)
-				mapystart += pheight;
+			mapxstart = fixed_t::FromRaw(zx::WrapParchmentOffset(mapxstart.Raw(), pwidth));
+			mapystart = fixed_t::FromRaw(zx::WrapParchmentOffset(mapystart.Raw(), pheight));
 		}
 	}
 }
@@ -1374,6 +1376,8 @@ void AM_LevelInit ()
 
 void AM_Stop ()
 {
+	// [rc4l] features/handoff: the automap is the main thread's, so a tic on its own thread stops it in the handoff.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { AM_Stop (); }, 0, 0 })) return;
 	automapactive = false;
 	stopped = true;
 	V_SetBorderNeedRefresh();

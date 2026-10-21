@@ -235,8 +235,8 @@ Write-Status "Building ($Configuration)"
 & cmake --build $BuildDir --config $Configuration -- -m
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
-$exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
-if (-not (Test-Path $exe)) { throw "zandronum.exe missing - the build failed" }
+$exe = Join-Path $BuildDir "$Configuration\forkundera.exe"
+if (-not (Test-Path $exe)) { throw "forkundera.exe missing - the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) {
@@ -248,17 +248,34 @@ if ($NoPackage) {
 Write-Status "Packaging dist-windows/"
 $out = Join-Path $BuildDir $Configuration
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-Copy-Item "$out\zandronum.exe" $DistDir\
+Copy-Item "$out\forkundera.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
 # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD (BSD-3-clause, clause 2
 # requires the notice to accompany binary distributions).
-if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
-} else {
-    throw "tools/freedoom/freedoom2.wad missing - the zip would ship without a game"
+# Both phases: Phase 1 is what stands in for doom.wad, and the wildcard copy below would happily
+# ship half of them.
+foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
+    if (-not (Test-Path (Join-Path $ScriptRoot "tools\freedoom\$wad"))) {
+        throw "tools/freedoom/$wad missing - the zip would ship without a game to fall back on"
+    }
 }
+# [rc4l] Into iwads/ rather than loose beside the exe, the same layout windows_build.ps1 ships. The
+# engine learns the folder in features/wad-download/zx_wadsearch.cpp.
+$IwadDir = Join-Path $DistDir "iwads"
+New-Item -ItemType Directory -Force -Path $IwadDir | Out-Null
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $IwadDir\
+
+# The notice stays at the top level, where notices are read.
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
+
+# [rc4l] Our own base data, which this script did not ship at all until now -- so a zip built here
+# left Mega Man 8-bit Deathmatch unhostable while the one from windows_build.ps1 could host it.
+# Checked rather than copied blind, the same as the two above.
+if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
+    throw "tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py"
+}
+Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $IwadDir\
 
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and point at the source.
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
@@ -271,7 +288,7 @@ if (Get-ChildItem "$DistDir\*.dll" -ErrorAction SilentlyContinue) {
 }
 Write-Note "static build: no runtime DLLs in dist-windows"
 
-$zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
+$zip = Join-Path $ScriptRoot "ForkUnderA-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $zip -Force
 Write-Status "Done: $zip"

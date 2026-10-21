@@ -12,29 +12,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 MGOOOOOO
 
-// [MGOOOOOO] gl_system.h must come first: it defines __GL_PCH_H, which is what exposes
-// FFlatVertexBuffer's drawing methods (they need the system GL includes and the header cannot pull
-// those in itself without #define clashes). Same ordering the gl/ translation units use.
-#include "gl/system/gl_system.h"
+// [rc4l] The overlay's geometry, its gate and the server's side, which every build has; GL's drawing is hitboxviz_gl.cpp, built only where GL is.
 
 #include "actor.h"
+#include "features/gamecopy/actors.h"   // [rc4l] CopyTic
 #include "c_cvars.h"
 #include "c_dispatch.h"   // CCMD
 #include "c_console.h"    // Printf
 #include "d_player.h"     // players, consoleplayer
 #include "doomstat.h"     // gametic
+#include "r_defs.h"       // sector_t
+#include "r_state.h"      // sectors
 #include "network.h"      // NETWORK_GetState, NETWORK_InClientMode
 #include "r_utility.h"    // r_TicFrac
 #include "templates.h"
 
-#include "gl/renderer/gl_renderer.h"
-#include "gl/renderer/gl_renderstate.h"
-#include "gl/data/gl_vertexbuffer.h"
-
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/hitboxviz/hitboxviz_internal.h"
 #include "features/hitboxviz/computation/blastrecords_compute.h"
 #include "features/hitboxviz/computation/boxedges_compute.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferred
 
 EXTERN_CVAR(Bool, sv_cheats)
 
@@ -72,56 +70,19 @@ namespace zx { namespace hitboxviz {
 
 namespace
 {
-	// A single GL_LINES batch is written straight into the flat VBO's streaming region. GetBuffer()
-	// is unchecked and the buffer only keeps 500 vertices of slack past its wrap threshold, so
-	// batches are chunked well under that. 480 == 20 whole boxes, and is even, so no chunk boundary
-	// ever splits an edge in half.
-	const unsigned int VERTS_PER_DRAW = 480;
-
 	// Ceiling on per-frame geometry. A scene dense enough to hit this is already unreadable; drop
 	// the surplus rather than grow without bound.
 	const unsigned int MAX_FRAME_VERTS = 200 * 1024;
 
-	TArray<Vertex3> s_physicalVerts;
-	TArray<Vertex3> s_attackVerts;
-	TArray<Vertex3> s_blastVerts;
-
-	// [MGOOOOOO] Scenes nest: DrawScene runs CreateScene, then GLPortal::EndFrame -- which re-enters
-	// DrawScene once per visible portal (gl_portal.cpp:696/790/845/957) -- and only then
-	// RenderTranslucent. So collection for the outer view is already done when an inner view starts
-	// collecting, and a single flat buffer would let the outer view's boxes be drawn inside the
-	// portal (and then leave nothing for the outer view itself). Each scene instead marks where its
-	// own geometry starts and truncates back to that mark once drawn, which makes the pairing
-	// correct at any nesting depth.
-	struct SceneMark
-	{
-		unsigned int physical, attack, blast;
-	};
-	TArray<SceneMark> s_marks;
-
 	BlastRecordStore s_blasts;
+	// [rc4l] The overlay draws the store every frame, so a blast a tic on the game thread makes is stored in the handoff.
+	zx::handoff::Deferred<BlastRecord> s_blastsMade([](const BlastRecord &r) { s_blasts.Push(r); });
 
-	// Re-evaluated once per scene rather than per actor: a value that changed mid-frame would draw
-	// an inconsistent overlay.
-	bool s_frameActive = false;
-
-	// "Nobody else is in this game": not a client of someone's server, and not a server ourselves.
-	// This is the same condition CheckCheatmode uses to permit iddqd offline, and it deliberately
-	// includes NETSTATE_SINGLE_MULTIPLAYER -- an offline game merely emulating multiplayer (bots,
-	// an offline deathmatch) is still one machine with no rules to subvert.
-	//
-	// NETWORK_InClientMode() is also true while a client demo plays back, which is what we want:
-	// a recorded netgame keeps the netgame's gate rather than inheriting the viewer's offline
-	// status.
-	inline bool IsOfflineGame()
-	{
-		return ( NETWORK_InClientMode( ) == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER );
-	}
-
-	// GL_ALIASED_LINE_WIDTH_RANGE, queried lazily on first draw.
-	bool  s_lineRangeKnown = false;
-	float s_lineWidthMin = 1.f;
-	float s_lineWidthMax = 1.f;
+	// [rc4l] The backend's frame (CollectBackendFrame), in BackendLines' order, and whether it may draw.
+	TArray<Vertex3> s_backendVerts[kLineBatches];
+	bool s_backendActive = false;
+	// [rc4l] The widest line the backend draws, which has no driver range to ask since it draws quads.
+	const float BACKEND_MAX_LINE_WIDTH = 64.f;
 
 	inline void AppendVerts(TArray<Vertex3> &dest, const Vertex3 *verts, unsigned int count)
 	{
@@ -138,38 +99,9 @@ namespace
 		AppendVerts(dest, verts, BuildBoxEdges(cx, cy, bottomZ, radius, height, verts));
 	}
 
-	// Emits verts[begin .. end) as GL_LINES, chunked to stay inside the VBO's slack.
-	void DrawBatch(const TArray<Vertex3> &verts, unsigned int begin, PalEntry colour)
-	{
-		if (begin >= verts.Size())
-			return;
-
-		gl_RenderState.SetColorAlpha(colour, 1.f);
-		gl_RenderState.Apply();
-
-		unsigned int emitted = begin;
-		while (emitted < verts.Size())
-		{
-			const unsigned int remaining = verts.Size() - emitted;
-			const unsigned int chunk = remaining < VERTS_PER_DRAW ? remaining : VERTS_PER_DRAW;
-
-			FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-			for (unsigned int i = 0; i < chunk; ++i)
-			{
-				const Vertex3 &v = verts[emitted + i];
-				// FFlatVertex::Set takes (x, vertical, y) -- the middle argument is world z.
-				ptr->Set(v.x, v.z, v.y, 0.f, 0.f);
-				++ptr;
-			}
-			GLRenderer->mVBO->RenderCurrent(ptr, GL_LINES);
-
-			emitted += chunk;
-		}
-	}
-
 	// Turns the surviving blast records into wireframe: the outer region actually tested by
 	// P_RadiusAttack, the inner full-damage region, and a cross marking the blast's own height.
-	void BuildBlastGeometry()
+	void BuildBlastGeometry(TArray<Vertex3> &dest)
 	{
 		for (unsigned int i = 0; i < s_blasts.Count(); ++i)
 		{
@@ -177,48 +109,45 @@ namespace
 
 			const BlastPrism outer = ComputeBlastPrism(record.x, record.y, record.z,
 				static_cast<float>(record.distance));
-			AppendBox(s_blastVerts, outer.centerX, outer.centerY, outer.bottomZ, outer.radius, outer.height);
+			AppendBox(dest, outer.centerX, outer.centerY, outer.bottomZ, outer.radius, outer.height);
 
 			const int full = ClampFullDamageDistance(record.distance, record.fulldamagedistance);
 			if (full > 0)
 			{
 				const BlastPrism inner = ComputeBlastPrism(record.x, record.y, record.z,
 					static_cast<float>(full));
-				AppendBox(s_blastVerts, inner.centerX, inner.centerY, inner.bottomZ, inner.radius, inner.height);
+				AppendBox(dest, inner.centerX, inner.centerY, inner.bottomZ, inner.radius, inner.height);
 			}
 
 			Vertex3 marker[PLANE_MARKER_VERTS];
-			AppendVerts(s_blastVerts, marker, BuildPlaneMarker(record.x, record.y, record.z,
+			AppendVerts(dest, marker, BuildPlaneMarker(record.x, record.y, record.z,
 				outer.radius, marker));
 		}
 	}
+}	// anonymous namespace
+
+// "Nobody else is in this game": not a client of someone's server, and not a server ourselves.
+// This is the same condition CheckCheatmode uses to permit iddqd offline, and it deliberately
+// includes NETSTATE_SINGLE_MULTIPLAYER -- an offline game merely emulating multiplayer (bots,
+// an offline deathmatch) is still one machine with no rules to subvert.
+//
+// NETWORK_InClientMode() is also true while a client demo plays back, which is what we want:
+// a recorded netgame keeps the netgame's gate rather than inheriting the viewer's offline
+// status.
+bool IsOfflineGame()
+{
+	return ( NETWORK_InClientMode( ) == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER );
 }
 
-void BeginFrame()
+void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack)
 {
-	SceneMark mark;
-	mark.physical = s_physicalVerts.Size();
-	mark.attack   = s_attackVerts.Size();
-	mark.blast    = s_blastVerts.Size();
-	s_marks.Push(mark);
-
-	// Offline, the toggle alone is enough -- there is no server to protect and cheats are already
-	// permitted (iddqd works there with sv_cheats off). Online, sv_cheats is the sole authority.
-	// See vizgate_compute.h.
-	s_frameActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
-}
-
-void CollectActor(AActor *thing)
-{
-	if (!s_frameActive || thing == NULL)
-		return;
-
 	// The actor the camera is attached to. Skipping it matches what the sprite path does, and in
 	// plain first person it only hides a wireframe you are standing inside -- but it also hides the
 	// box of whoever a spectator is following, since spectating attaches the camera to that
 	// player's body. That is precisely the box you want when watching someone, so this is a toggle
 	// rather than an unconditional skip.
-	if (thing == GLRenderer->mViewActor && !cl_fua_hitbox_self)
+	const zx::gamecopy::ActorRecord *thing = &record;
+	if (thing->who == viewActor && !cl_fua_hitbox_self)
 		return;
 
 	const bool isMissile = !!(thing->flags & MF_MISSILE);
@@ -234,88 +163,64 @@ void CollectActor(AActor *thing)
 	const float cy = FIXED2FLOAT(thingy);
 	const float cz = FIXED2FLOAT(thingz);
 
-	AppendBox(s_physicalVerts, cx, cy, cz,
+	AppendBox(physical, cx, cy, cz,
 		FIXED2FLOAT(thing->radius), FIXED2FLOAT(thing->height));
 
 	// The attack box is only worth drawing where it actually differs from the movement box --
 	// otherwise every actor would be outlined twice in two colours.
 	if (cl_fua_hitbox_attackbox)
 	{
-		const fixed_t attackRadius = thing->GetAttackRadius();
-		const fixed_t attackHeight = thing->GetAttackHeight();
+		const fixed_t attackRadius = thing->attackRadius;
+		const fixed_t attackHeight = thing->attackHeight;
 
 		if (attackRadius != thing->radius || attackHeight != thing->height)
 		{
-			AppendBox(s_attackVerts, cx, cy, cz,
+			AppendBox(attack, cx, cy, cz,
 				FIXED2FLOAT(attackRadius), FIXED2FLOAT(attackHeight));
 		}
 	}
 }
 
-void Draw()
+void CollectBlasts(TArray<Vertex3> &dest)
 {
-	// The mark must be popped on every path out of here, or a scene that draws nothing would leave
-	// the stack unbalanced and desynchronise every subsequent scene.
-	if (s_marks.Size() == 0)
-		return;
-
-	const SceneMark mark = s_marks[s_marks.Size() - 1];
-	s_marks.Pop();
-
-	struct Truncate
-	{
-		const SceneMark &m;
-		~Truncate()
-		{
-			s_physicalVerts.Resize(m.physical);
-			s_attackVerts.Resize(m.attack);
-			s_blastVerts.Resize(m.blast);
-		}
-	} truncate = { mark };
-	(void)truncate;
-
-	if (!s_frameActive)
-		return;
-
-	s_blasts.ExpireBefore(gametic);
+	s_blasts.ExpireBefore(zx::gamecopy::CopyTic());   // [rc4l] the tic the frame shows
 	if (cl_fua_hitbox_explosions)
-		BuildBlastGeometry();
+		BuildBlastGeometry(dest);
+}
 
-	if (s_physicalVerts.Size() == mark.physical &&
-		s_attackVerts.Size() == mark.attack &&
-		s_blastVerts.Size() == mark.blast)
-	{
+void CollectBackendFrame(const void *viewActor, const int *sectorList, int count)
+{
+	for (int k = 0; k < kLineBatches; k++)
+		s_backendVerts[k].Clear();
+	s_backendActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
+	if (!s_backendActive)
 		return;
-	}
+	int records;
+	const zx::gamecopy::ActorRecord *actors = zx::gamecopy::Actors(records);
+	for (int i = 0; i < count; i++)
+		for (int r = zx::gamecopy::FirstActorIn(&sectors[sectorList[i]]); r >= 0; r = actors[r].nextInSector)
+			AppendActor(actors[r], viewActor, s_backendVerts[0], s_backendVerts[1]);
+	CollectBlasts(s_backendVerts[2]);
+}
 
-	if (!s_lineRangeKnown)
+int BackendLines(LineBatch *out, bool &xray, float &widthPx)
+{
+	xray = !!cl_fua_hitbox_xray;
+	widthPx = ResolveLineWidth(cl_fua_hitbox_linewidth, 1.f, BACKEND_MAX_LINE_WIDTH);
+	if (!s_backendActive)
+		return 0;
+	const unsigned int colours[kLineBatches] = { uint32(cl_fua_hitbox_color), uint32(cl_fua_hitbox_attackcolor), uint32(cl_fua_hitbox_blastcolor) };
+	int n = 0;
+	for (int k = 0; k < kLineBatches; k++)
 	{
-		// Wide lines are optional in a core profile; an out-of-range width raises GL_INVALID_VALUE
-		// and is ignored, so clamp to what the driver admits to supporting.
-		GLfloat range[2] = { 1.f, 1.f };
-		glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, range);
-		s_lineWidthMin = range[0];
-		s_lineWidthMax = range[1];
-		s_lineRangeKnown = true;
+		if (s_backendVerts[k].Size() == 0)
+			continue;
+		out[n].verts = &s_backendVerts[k][0];
+		out[n].count = s_backendVerts[k].Size();
+		out[n].rgb = colours[k] & 0xffffff;
+		n++;
 	}
-
-	const bool xray = !!cl_fua_hitbox_xray;
-
-	gl_RenderState.EnableTexture(false);
-	if (xray)
-		glDisable(GL_DEPTH_TEST);
-	glLineWidth(ResolveLineWidth(cl_fua_hitbox_linewidth, s_lineWidthMin, s_lineWidthMax));
-
-	DrawBatch(s_physicalVerts, mark.physical, PalEntry(uint32(cl_fua_hitbox_color)));
-	DrawBatch(s_attackVerts,   mark.attack,   PalEntry(uint32(cl_fua_hitbox_attackcolor)));
-	DrawBatch(s_blastVerts,    mark.blast,    PalEntry(uint32(cl_fua_hitbox_blastcolor)));
-
-	glLineWidth(1.f);
-	if (xray)
-		glEnable(GL_DEPTH_TEST);
-	gl_RenderState.EnableTexture(true);
-	gl_RenderState.SetColorAlpha(PalEntry(0xffffffff), 1.f);
-	gl_RenderState.Apply();
+	return n;
 }
 
 void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedistance)
@@ -331,12 +236,13 @@ void PushBlast(fixed_t x, fixed_t y, fixed_t z, int distance, int fulldamagedist
 	record.fulldamagedistance = fulldamagedistance;
 	record.expiryTic = gametic + BLAST_RECORD_LIFETIME_TICS;
 
-	s_blasts.Push(record);
+	s_blastsMade.Make(record);
 }
 
 void ClearBlasts()
 {
 	s_blasts.Clear();
+	s_blastsMade.Clear();
 }
 
 bool ServerDebugActive()

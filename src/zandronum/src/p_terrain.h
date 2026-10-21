@@ -49,11 +49,15 @@ public:
 
 	WORD operator [](FTextureID tex) const
 	{
+		// [rc4l] uzdoom@a5a17e45c: a texture created after the terrain table was sized indexes
+		// past the end of it, so bound-check before reading.
+		if ((unsigned)tex.GetIndex() >= Types.Size()) return DefaultTerrainType;
 		WORD type = Types[tex.GetIndex()];
 		return type == 0xffff? DefaultTerrainType : type;
 	}
 	WORD operator [](int texnum) const
 	{
+		if ((unsigned)texnum >= Types.Size()) return DefaultTerrainType;
 		WORD type = Types[texnum];
 		return type == 0xffff? DefaultTerrainType : type;
 	}

@@ -89,6 +89,9 @@ void AddCommandString (char *text, int keynum=0);
 // Process a single console command. Does not handle wait.
 void C_DoCommand (const char *cmd, int keynum=0);
 
+// [rc4l] A menu item's command, in an unsafe context when `unsafe` (features/command-safety); it never lifts one it already runs in.
+void C_DoMenuCommand (const char *cmd, bool unsafe);
+
 FExecList *C_ParseExecFile(const char *file, FExecList *source);
 void C_SearchForPullins(FExecList *exec, const char *file, class FCommandLine &args);
 bool C_ExecFile(const char *file);

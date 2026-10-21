@@ -15,6 +15,11 @@
 #include "d_main.h"   // CRestartException
 #include "g_level.h"  // G_DeferedInitNew
 #include "w_wad.h"    // Wads.CheckNumForName
+#include "gstrings.h"
+#include "p_local.h"
+#include "c_cvars.h"
+#include "features/fua-caching/fua_caching.h" // GStrings, for the restart reset
+#include "gi.h"       // DoomStartupInfo
 
 #include "features/wadreload/zx_wadreload.h"
 #include "features/wadreload/computation/wadreload_compute.h"
@@ -24,6 +29,11 @@
 FString StoredReloadMap;
 
 namespace zx { namespace wadreload {
+
+const char *PendingReloadMap()
+{
+	return StoredReloadMap.GetChars();
+}
 
 namespace {
 
@@ -81,7 +91,7 @@ bool FileHasBootPalette(const char *path)
 		// A WAD lump exposes its bare name; a pk3 entry also has a FullName ("PLAYPAL.pal", possibly
 		// in a subdirectory). Either matching is enough -- IsBootPaletteName handles basename + ext.
 		if (IsBootPaletteName(lump->Name) ||
-		    (lump->FullName != NULL && IsBootPaletteName(lump->FullName)))
+		    (lump->FullName.IsNotEmpty() && IsBootPaletteName(lump->FullName.GetChars())))
 			found = true;
 	}
 	delete rf;
@@ -160,20 +170,76 @@ bool WadLoadable(const char *path, FString &outWhy)
 	return true;
 }
 
-ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap)
+//==========================================================================
+//
+// [rc4l] ResetStartupStateForRestart -- see the header for why this is ours and lives here.
+//
+// Both items below are CORRECT for a normal boot. Neither owning function is changed: altering
+// FStringTable::FreeNonDehackedStrings or the `if (Name.IsEmpty())` guard in
+// FIWadManager::FindIWAD would change behaviour for everyone to fix a case only a restart reaches,
+// and would leave a permanent conflict in vendored files we re-sync from upstream. Doing it from
+// here costs one call site in d_main.cpp instead.
+//
+//==========================================================================
+
+void ResetStartupStateForRestart()
+{
+	// 1. LoadStrings keeps DEHACKED-set entries -- PassNum 0 survives FreeNonDehackedStrings -- so a
+	//    Dehacked patch beats a LANGUAGE lump. Right within one boot; wrong across a restart, where
+	//    the patch that set them is no longer loaded. Freedoom's DEHACKED renames the weapons, so
+	//    reloading onto doom2.wad kept Freedoom's weapon names on Doom's guns.
+	//
+	//    Clearing outright is safe HERE specifically: D_DoomMain calls GStrings.LoadStrings() and
+	//    then D_LoadDehLumps() further down, so the new WAD set's own patches re-apply after this.
+	GStrings.FlushAllForRestart();
+
+	// 2. DoomStartupInfo is filled from GAMEINFO and again by FIWadManager::FindIWAD, both guarded on
+	//    the field being empty, so the banner and title colours stayed on the PREVIOUS IWAD's: the
+	//    engine loaded doom2.wad (2919 lumps, confirmed in the log) and still announced itself as
+	//    Freedoom.
+	DoomStartupInfo.Name = "";
+	DoomStartupInfo.Song = "";
+	DoomStartupInfo.FgColor = 0;
+	DoomStartupInfo.BkColor = 0;
+	DoomStartupInfo.Type = FStartupInfo::DefaultStartup;
+
+	// 3. [rc4l] Flush caches that key on identities the rebuild invalidates: fua-caching's
+	//    DECORATE reference table (PClass pointers -- this one crashed for real in
+	//    GetReplacement), the FindStateByString memo (ClassIndex + FState pointers), and the
+	//    FindCVar memo (CVARINFO cvars are destroyed and recreated). Stale entries here would
+	//    hand the new WAD set pointers into the old one.
+	FUA_CachingReset();
+	P_ClearStateStringCache();
+	C_ClearCVarCache();
+}
+
+ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const char *startMap,
+	const char *connectAddress)
 {
 	const bool changingIwad = (iwad != NULL && iwad[0] != '\0');
 	const bool haveMap = (startMap != NULL && startMap[0] != '\0');
+	const bool haveConnect = (connectAddress != NULL && connectAddress[0] != '\0');
 
-	// 1. Skip the full re-init when the wanted set already matches what's loaded. If a map was asked
-	//    for, still honor it -- just switch maps directly (no teardown needed).
+	// 1. Skip the full re-init when the wanted set already matches what's loaded. If a map or a server
+	//    was asked for, still honor it -- just switch/connect directly (no teardown needed).
 	const FString        curIwadFS = CurrentIwad();
 	const TArray<FString> curFiles = CurrentFiles();
 	const FString wantIwadFS = changingIwad ? FString(iwad) : curIwadFS; // empty iwad => keep current
 	if (WantedMatchesLoaded(curIwadFS.GetChars(), ToStd(curFiles),
 	                        wantIwadFS.GetChars(), ToStd(pwads)))
 	{
-		if (haveMap)
+		if (haveConnect)
+		{
+			// [rc4l] Already running the server's WAD set, so joining costs nothing: connect in place
+			// rather than restarting the engine to arrive at the same state. This is the common case
+			// for hopping between servers on the same mod, and the difference the player sees is a
+			// couple of seconds against a full re-init.
+			Printf("wad_reload: WAD set unchanged; connecting to %s.\n", connectAddress);
+			FString cmd;
+			cmd.Format("connect %s", connectAddress);
+			C_DoCommand(cmd.GetChars());
+		}
+		else if (haveMap)
 		{
 			Printf("wad_reload: WAD set unchanged; switching to map %s.\n", startMap);
 			G_DeferedInitNew(startMap);
@@ -248,6 +314,10 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 		for (unsigned i = 0; i < pwads.Size(); ++i)
 			append.push_back(pwads[i].GetChars());
 	}
+	// [rc4l] -connect is in the strip list above precisely so a plain reload cannot silently rejoin
+	// the last server; putting it back here is what turns this call into "join". The engine's normal
+	// startup consumes it, so nothing extra has to survive the restart.
+	if (haveConnect) { append.push_back("-connect"); append.push_back(connectAddress); }
 
 	std::vector<std::string> newArgv = ComputeReloadArgv(curArgv, remove, append);
 
@@ -259,12 +329,17 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 	// empty to land on the title screen as a restart normally does.
 	StoredReloadMap = haveMap ? FString(startMap) : FString("");
 
-	if (haveMap)
+	if (haveConnect)
+		Printf("wad_reload: restarting onto the new WAD set, connecting to %s...\n", connectAddress);
+	else if (haveMap)
 		Printf("wad_reload: restarting onto the new WAD set, into map %s...\n", startMap);
 	else
 		Printf("wad_reload: restarting onto the new WAD set...\n");
-	throw CRestartException();
-	// not reached
+	// [rc4l] Request rather than throw. The throw used to happen right here, which meant it
+	// unwound from wherever the reload was asked for -- and on macOS that is inside AppKit's event
+	// dispatch, where a C++ exception cannot pass. D_DoomLoop throws it at a safe point instead.
+	D_RequestRestart();
+	return ReloadResult::Restarting;
 }
 
 }} // namespace zx::wadreload

@@ -30,6 +30,9 @@ struct FRenderer
 	// precache one texture
 	virtual void PrecacheTexture(FTexture *tex, int cache) = 0;
 
+	// [rc4l] The frame's start, before the camera textures it draws: a renderer clears what one frame of it keeps.
+	virtual void BeginFrame(player_t *player) {}
+
 	// render 3D view
 	virtual void RenderView(player_t *player) = 0;
 
@@ -38,6 +41,9 @@ struct FRenderer
 
 	// renders view to a savegame picture
 	virtual void WriteSavePic (player_t *player, FILE *file, int width, int height) = 0;
+
+	// [rc4l] The save WriteSavePic wrote its picture into is complete at path, for a renderer that puts the real picture in later.
+	virtual void SaveWritten (const char *path) {}
 
 	// draws player sprites with hardware acceleration (only useful for software rendering)
 	virtual void DrawRemainingPlayerSprites() {}
@@ -59,6 +65,8 @@ struct FRenderer
 	virtual void SetupFrame(player_t *player) {}
 	virtual void CopyStackedViewParameters() {}
 	virtual void RenderTextureView (FCanvasTexture *tex, AActor *viewpoint, int fov) = 0;
+	// [rc4l] features/gamecopy: a camera texture's view from the render copy's record of its viewpoint, by default RenderTextureView from the live actor.
+	virtual void RenderCameraRecord (FCanvasTexture *tex, int record, int fov);
 	virtual sector_t *FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back) = 0;
 	virtual void SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog) {}
 	virtual void PreprocessLevel() {}

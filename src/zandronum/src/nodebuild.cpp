@@ -125,12 +125,12 @@ void FNodeBuilder::BuildTree ()
 {
 	fixed_t bbox[4];
 
-	C_InitTicker ("Building BSP",(unsigned int)( FRACUNIT));
+	// [rc4l] uzdoom@9d846395b -- the BSP progress ticker drove the old console buffer's
+	// '\r' REPLACELINE path; the replacement buffer does not support rewriting a line in place.
 	HackSeg = DWORD_MAX;
 	HackMate = DWORD_MAX;
 	CreateNode (0, Segs.Size(), bbox);
 	CreateSubsectorsForReal ();
-	C_InitTicker (NULL, 0);
 }
 
 int FNodeBuilder::CreateNode (DWORD set, unsigned int count, fixed_t bbox[4])
@@ -199,10 +199,6 @@ int FNodeBuilder::CreateSubsector (DWORD set, fixed_t bbox[4])
 	}
 
 	SegsStuffed += count;
-	if ((SegsStuffed & ~127) != ((SegsStuffed - count) & ~127))
-	{
-		C_SetTicker (MulScale16 (SegsStuffed, (SDWORD)Segs.Size()));
-	}
 
 	D(Printf (PRINT_LOG, "bbox (%d,%d)-(%d,%d)\n", bbox[BOXLEFT]>>16, bbox[BOXBOTTOM]>>16, bbox[BOXRIGHT]>>16, bbox[BOXTOP]>>16));
 

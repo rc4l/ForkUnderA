@@ -26,23 +26,6 @@ OptionValue ZA_OverridePlayerColors
 	3.0, "Always"
 }
 
-OptionValue ZA_IdentifyTargetLevels
-{
-	0.0, "Off"
-	1.0, "Name"
-	2.0, "Health and armor"
-	3.0, "Weapon and ammo"
-	4.0, "Class and skin"
-}
-
-OptionValue ZA_IdentifyMonsterLevels
-{
-	0.0, "Off"
-	1.0, "Name"
-	2.0, "Drop items"
-	3.0, "Ghost"
-}
-
 OptionValue ZA_SpectatorMode
 {
 	0.0, "With physical restrictions"
@@ -56,8 +39,6 @@ OptionMenu ZA_MultiplayerOptions
 	SubMenu		"Offline Skirmish",		"ZA_SkirmishMenu"
 	SubMenu		"Browse servers",		"ZA_Browser"
 	StaticText	" "
-	SubMenu		"Log in",			"ZA_LoginMenu"
-	StaticText	" "
 	SubMenu		"Player list",			"ZA_PlayerListMenu"
 	SubMenu		"Call a vote",			"ZA_CallVote"
 	StaticText	" "
@@ -68,12 +49,6 @@ OptionMenu ZA_MultiplayerOptions
 	SubMenu		"Network Options",		"ZA_NetworkOptions"
 	Submenu		"Server settings",		"ZA_ServerSetupMenu"
 	StaticText	" "
-
-	// [AK] cl_autologin only exists in Windows.
-	IfOption( Windows )
-	{
-		Option	"Auto-login",			"cl_autologin",			"YesNo"
-	}
 
 	Option		"Start as spectator",		"cl_startasspectator",		"YesNo"
 	TextField	"Server password",		"cl_password"
@@ -88,8 +63,7 @@ OptionMenu ZA_MultiplayerOptions
 	Option		"Icons",			"cl_icons",			"OnOff"
 	Option		"Show ally icon",		"cl_showallyicon",		"ZA_ShowIcons",			"cl_icons"
 	Option		"Show enemy icon",		"cl_showenemyicon",		"ZA_ShowIcons",			"cl_icons"
-	Option		"Identify player level",	"cl_identifytarget",		"ZA_IdentifyTargetLevels"
-	Option		"Identify monster level",	"cl_identifymonsters",		"ZA_IdentifyMonsterLevels"
+	// [MobiusU9B] Identify player/monster level became the Target info toggles in HUD Options > Crosshair Options.
 	Option		"Show spawn spots",		"cl_showspawns",		"YesNo"
 	Option		"Free chasecam",		"cl_freechase",			"YesNo"
 	Option		"Teleport to spied player",	"cl_telespy",			"YesNo"
@@ -342,12 +316,8 @@ OptionValue ZA_ServerGamemode
 	16, "Domination"
 }
 
-OptionMenu ZA_ServerInfo
-{
-	Title "SERVER INFORMATION"
-	Class "ServerInfoMenu"
-	Indent 80
-}
+// [rc4l] ZA_ServerInfo / ServerInfoMenu removed with the pre-MVP browser: it was the old browser's
+// per-server detail pane and nothing else ever opened it. The MVP browser has no info pane by design.
 
 // [rc4l] The browser draws itself entirely -- rows, columns, spinner and all -- so this descriptor
 // carries no items. It exists only to name the class and give the menu system something to
@@ -685,29 +655,6 @@ OptionMenu ZA_WeaponSetup
 // LOGIN MENU
 //
 // =================================================================================================
-
-OptionMenu ZA_LoginMenu
-{
-	NetGameOnly
-	Title "LOG IN"
-	Indent 150
-
-	StaticText	"To create an account, visit:", 1
-	StaticText	"https://auth.zandronum.com/register"
-	StaticText	" "
-	StaticText	"--- NOTICE ---"
-	StaticText	"If the server is using their own auth host,", 1
-	StaticText	"you must register there instead.", 1
-	StaticText	" "
-	StaticText	"Contact the server host for more info.", 1
-	StaticText	" "
-	TextField	"Username",				"menu_authusername"
-	TextField	"Password",				"menu_authpassword"
-	StaticText	" "
-	Command		"Log in",				"menu_login"
-}
-
-// =================================================================================================
 //
 // Bot skill menu
 //
@@ -772,7 +719,6 @@ OptionMenu ZA_ServerSetupMenu
 	TextField	"Connect password",			"sv_password",				"sv_forcepassword"
 	Option		"Use join password",		"sv_forcejoinpassword",		"YesNo"
 	TextField	"Join password",			"sv_joinpassword",			"sv_forcejoinpassword"
-	Option		"Require login to join",	"sv_forcelogintojoin",		"YesNo"
 	StaticText	" "
 	Option		"Allow private chat",		"sv_allowprivatechat",			"ZA_AllowPrivateChat"
 	Option		"Allow voice chat",		"sv_allowvoicechat",			"ZA_AllowVoiceChat"

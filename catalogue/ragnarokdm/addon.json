@@ -1,0 +1,37 @@
+{
+  "name": "Ragnarok DM",
+  "summary": "Twenty-three arenas on Skulltag's weapons and runes.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "deathmatch",
+  "lives": 1,
+  "maxlives": 5,
+  "files": [
+    {
+      "name": "skulltag_content-3.2-beta2.pk3",
+      "md5": "41630bc75af4b51fe5d163fe4d434c6e"
+    },
+    {
+      "name": "ragnarokdm.pk3",
+      "md5": "ccd0a71b55efda3b20ea5007d6c75ac4"
+    },
+    {
+      "name": "ragnarokdm_zand3shotgunfix.wad",
+      "md5": "ac3e7500affb3ca7b7999f8674ae15da"
+    },
+    {
+      "name": "ragnarokmp.pk3",
+      "md5": "1f0db7810baa18e6799c64abbf911c5f"
+    },
+    {
+      "name": "zandrospree2rc2.pk3",
+      "md5": "25b2a3c4f46e50f4016b640119aefae6",
+      "provides": "spree"
+    }
+  ],
+  "teams": true,
+  "remixes": [
+    "ragnarokdm/dm",
+    "ragnarokdm/lms"
+  ]
+}

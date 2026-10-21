@@ -1508,16 +1508,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnProjectile)
 //==========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomMissile)
 {
-	ACTION_PARAM_START(6);
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_CLASS(ti, 0);
 	ACTION_PARAM_FIXED(SpawnHeight, 1);
 	ACTION_PARAM_INT(Spawnofs_XY, 2);
 	ACTION_PARAM_ANGLE(Angle, 3);
 	ACTION_PARAM_INT(flags, 4);
 	ACTION_PARAM_ANGLE(pitch, 5);
+	// [rc4l] uzdoom@91bfe4cce: aim at any pointer, not just target. ZX_SpawnProjectile already
+	// took a ptr; A_CustomMissile simply hardcoded AAPTR_TARGET, so this only exposes it.
+	ACTION_PARAM_INT(ptr, 6);
 
 	ZX_SpawnProjectile( self, ti, SpawnHeight, Spawnofs_XY, Angle, flags | CMF_BADPITCH, pitch,
-						AAPTR_TARGET );
+						ptr );
 }
 
 //==========================================================================
@@ -1536,7 +1539,7 @@ enum CBA_Flags
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 {
-	ACTION_PARAM_START(7);
+	ACTION_PARAM_START(8);
 	ACTION_PARAM_ANGLE(Spread_XY, 0);
 	ACTION_PARAM_ANGLE(Spread_Z, 1);
 	ACTION_PARAM_INT(NumBullets, 2);
@@ -1544,6 +1547,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 	ACTION_PARAM_CLASS(pufftype, 4);
 	ACTION_PARAM_FIXED(Range, 5);
 	ACTION_PARAM_INT(Flags, 6);
+	// [rc4l] uzdoom@91bfe4cce: aim at any pointer, not just target.
+	ACTION_PARAM_INT(ptr, 7);
+
+	AActor *ref = COPY_AAPTR(self, ptr);
 
 	if(Range==0) Range=MISSILERANGE;
 
@@ -1552,9 +1559,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomBulletAttack)
 	int bslope = 0;
 	int laflags = (Flags & CBAF_NORANDOMPUFFZ)? LAF_NORANDOMPUFFZ : 0;
 
-	if (self->target || (Flags & CBAF_AIMFACING))
+	if (ref != NULL || (Flags & CBAF_AIMFACING))
 	{
-		if (!(Flags & CBAF_AIMFACING)) A_FaceTarget (self);
+		// [rc4l] uzdoom@d7d022144: face the chosen pointer directly through A_Face, rather than
+		// going via A_FaceTarget which can only ever look at target.
+		if (!(Flags & CBAF_AIMFACING)) A_Face(self, ref);
 		bangle = self->angle;
 
 		if (!pufftype) pufftype = PClass::FindClass(NAME_BulletPuff);
@@ -1989,7 +1998,8 @@ enum
 static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Angle, const INTBOOL UseAmmo,
 							   const int SpawnOfs_XY, const fixed_t SpawnHeight, const INTBOOL AimAtAngle,
 							   const fixed_t PitchAdjust, const INTBOOL NoAutoAim = false,
-							   const INTBOOL TransferTranslation = false )
+							   const INTBOOL TransferTranslation = false,
+							   const bool CalledFromWeapon = true )
 {
 	if (!self->player) return;
 
@@ -1997,7 +2007,12 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 	AWeapon * weapon=player->ReadyWeapon;
 	AActor *linetarget;
 
-	if (UseAmmo && weapon)
+	// [rc4l] uzdoom@bc206f21a -- only use ammo when called from a weapon, not when an actor
+	// state or an inventory item calls this. ACTION_CALL_FROM_WEAPON() reads CallingState and
+	// statecall, which are only in scope inside DEFINE_ACTION_FUNCTION, so the callers evaluate
+	// it and pass the answer in. Upstream's modern A_FireProjectile gates the same way, on
+	// stateinfo.mStateType == STATE_Psprite.
+	if (UseAmmo && CalledFromWeapon && weapon)
 	{
 		if (!weapon->DepleteAmmo(weapon->bAltFire, true)) return;	// out of ammo
 	}
@@ -2056,7 +2071,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 	// calls it. Negates pitch to match upstream's deprecated wrapper (A_FireProjectile(..., -pitch)).
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   Flags & FPF_AIMATANGLE, -fixed_t::FromSignedBits(pitch),
-					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION );
+					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION,
+					   ACTION_CALL_FROM_WEAPON() );
 }
 
 //==========================================================================
@@ -2080,7 +2096,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireProjectile)
 
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch),
-					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION );
+					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION,
+					   ACTION_CALL_FROM_WEAPON() );
 }
 
 
@@ -2391,15 +2408,21 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 //
 //===========================================================================
 
-static void DoGiveInventory(AActor * receiver, DECLARE_PARAMINFO)
+// [rc4l] uzdoom@b69edbbec (the redo of the reverted uzdoom@a4c07a9ee) -- A_GiveToChildren and
+// A_GiveToSiblings share this code but take NO third parameter, so reading one consumed a
+// parameter that was never passed. use_aaptr makes the read conditional.
+static void DoGiveInventory(AActor * receiver, bool use_aaptr, DECLARE_PARAMINFO)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(2+use_aaptr);
 	ACTION_PARAM_CLASS(mi, 0);
 	ACTION_PARAM_INT(amount, 1);
 	bool	bNeedClientUpdate;
-	ACTION_PARAM_INT(setreceiver, 2);
 
-	COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	if (use_aaptr)
+	{
+		ACTION_PARAM_INT(setreceiver, 2);
+		COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	}
 
 	bool res=true;
 	// [BC] Don't jump here in client mode.
@@ -2455,12 +2478,12 @@ static void DoGiveInventory(AActor * receiver, DECLARE_PARAMINFO)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveInventory)
 {
-	DoGiveInventory(self, PUSH_PARAMINFO);
+	DoGiveInventory(self, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToTarget)
 {
-	DoGiveInventory(self->target, PUSH_PARAMINFO);
+	DoGiveInventory(self->target, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToChildren)
@@ -2470,7 +2493,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToChildren)
 
 	while ((mo = it.Next()))
 	{
-		if (mo->master == self) DoGiveInventory(mo, PUSH_PARAMINFO);
+		if (mo->master == self) DoGiveInventory(mo, false, PUSH_PARAMINFO);
 	}
 }
 
@@ -2483,7 +2506,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_GiveToSiblings)
 	{
 		while ((mo = it.Next()))
 		{
-			if (mo->master == self->master && mo != self) DoGiveInventory(mo, PUSH_PARAMINFO);
+			if (mo->master == self->master && mo != self) DoGiveInventory(mo, false, PUSH_PARAMINFO);
 		}
 	}
 }
@@ -2524,9 +2547,11 @@ enum
 	TIF_NOTAKEINFINITE = 1,
 };
 
-void DoTakeInventory(AActor * receiver, DECLARE_PARAMINFO)
+// [rc4l] uzdoom@b69edbbec -- same as DoGiveInventory: the ToChildren/ToSiblings entry points
+// pass no fourth parameter.
+void DoTakeInventory(AActor * receiver, bool use_aaptr, DECLARE_PARAMINFO)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(3+use_aaptr);
 	ACTION_PARAM_CLASS(item, 0);
 	ACTION_PARAM_INT(amount, 1);
 	ACTION_PARAM_INT(flags, 2);
@@ -2548,10 +2573,16 @@ void DoTakeInventory(AActor * receiver, DECLARE_PARAMINFO)
 			return;
 		}
 	}
-	ACTION_PARAM_INT(setreceiver, 3);
-	
-	if (!item) return;
-	COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	if (!item)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+	if (use_aaptr)
+	{
+		ACTION_PARAM_INT(setreceiver, 3);
+		COPY_AAPTR_NOT_NULL(receiver, receiver, setreceiver);
+	}
 
 	bool res = false;
 
@@ -2603,12 +2634,12 @@ void DoTakeInventory(AActor * receiver, DECLARE_PARAMINFO)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeInventory)
 {
-	DoTakeInventory(self, PUSH_PARAMINFO);
+	DoTakeInventory(self, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromTarget)
 {
-	DoTakeInventory(self->target, PUSH_PARAMINFO);
+	DoTakeInventory(self->target, true, PUSH_PARAMINFO);
 }	
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromChildren)
@@ -2618,7 +2649,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromChildren)
 
 	while ((mo = it.Next()))
 	{
-		if (mo->master == self) DoTakeInventory(mo, PUSH_PARAMINFO);
+		if (mo->master == self) DoTakeInventory(mo, false, PUSH_PARAMINFO);
 	}
 }
 
@@ -2631,7 +2662,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromSiblings)
 	{
 		while ((mo = it.Next()))
 		{
-			if (mo->master == self->master && mo != self) DoTakeInventory(mo, PUSH_PARAMINFO);
+			if (mo->master == self->master && mo != self) DoTakeInventory(mo, false, PUSH_PARAMINFO);
 		}
 	}
 }
@@ -2644,32 +2675,32 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_TakeFromSiblings)
 
 enum SIX_Flags
 {
-	SIXF_TRANSFERTRANSLATION	= 1 << 0,
-	SIXF_ABSOLUTEPOSITION		= 1 << 1,
-	SIXF_ABSOLUTEANGLE			= 1 << 2,
-	SIXF_ABSOLUTEVELOCITY		= 1 << 3,
-	SIXF_SETMASTER				= 1 << 4,
-	SIXF_NOCHECKPOSITION		= 1 << 5,
-	SIXF_TELEFRAG				= 1 << 6,
-	SIXF_CLIENTSIDE				= 1 << 7,	// only used by Skulldronum
-	SIXF_TRANSFERAMBUSHFLAG		= 1 << 8,
-	SIXF_TRANSFERPITCH			= 1 << 9,
-	SIXF_TRANSFERPOINTERS		= 1 << 10,
-	SIXF_USEBLOODCOLOR			= 1 << 11,
-	SIXF_CLEARCALLERTID			= 1 << 12,
-	SIXF_MULTIPLYSPEED			= 1 << 13,
-	SIXF_TRANSFERSCALE			= 1 << 14,
-	SIXF_TRANSFERSPECIAL		= 1 << 15,
-	SIXF_CLEARCALLERSPECIAL		= 1 << 16,
-	SIXF_TRANSFERSTENCILCOL		= 1 << 17,
-	// [rc4l] uzdoom@5c4ad9be6
-	SIXF_TRANSFERALPHA			= 1 << 18,
-	SIXF_TRANSFERRENDERSTYLE	= 1 << 19,
-	// [rc4l] uzdoom@0735cb955 + 68a5db3c8
-	SIXF_SETTARGET				= 1 << 20,
-	SIXF_SETTRACER				= 1 << 21,
-	SIXF_NOPOINTERS				= 1 << 22,
-	SIXF_ORIGINATOR				= 1 << 23,	// [rc4l] uzdoom@f766a1ab3
+	SIXF_TRANSFERTRANSLATION	= 0x00000001,
+	SIXF_ABSOLUTEPOSITION		= 0x00000002,
+	SIXF_ABSOLUTEANGLE			= 0x00000004,
+	SIXF_ABSOLUTEVELOCITY		= 0x00000008,
+	SIXF_SETMASTER				= 0x00000010,
+	SIXF_NOCHECKPOSITION		= 0x00000020,
+	SIXF_TELEFRAG				= 0x00000040,
+	SIXF_CLIENTSIDE				= 0x00000080,	// only used by Skulldronum
+	SIXF_TRANSFERAMBUSHFLAG		= 0x00000100,
+	SIXF_TRANSFERPITCH			= 0x00000200,
+	SIXF_TRANSFERPOINTERS		= 0x00000400,
+	SIXF_USEBLOODCOLOR			= 0x00000800,
+	SIXF_CLEARCALLERTID			= 0x00001000,
+	SIXF_MULTIPLYSPEED			= 0x00002000,
+	SIXF_TRANSFERSCALE			= 0x00004000,
+	SIXF_TRANSFERSPECIAL		= 0x00008000,
+	SIXF_CLEARCALLERSPECIAL		= 0x00010000,
+	SIXF_TRANSFERSTENCILCOL		= 0x00020000,
+	SIXF_TRANSFERALPHA			= 0x00040000,
+	SIXF_TRANSFERRENDERSTYLE	= 0x00080000,
+	SIXF_SETTARGET				= 0x00100000,
+	SIXF_SETTRACER				= 0x00200000,
+	SIXF_NOPOINTERS				= 0x00400000,
+	SIXF_ORIGINATOR				= 0x00800000,	// [rc4l] uzdoom@f766a1ab3
+	SIXF_TRANSFERSPRITEFRAME	= 0x01000000,	// [rc4l] uzdoom@b37a98689
+	SIXF_TRANSFERROLL			= 0x02000000,	// [rc4l] uzdoom@0f4bca860
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2821,6 +2852,20 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	if (flags & SIXF_TRANSFERRENDERSTYLE)
 	{
 		mo->RenderStyle = self->RenderStyle;
+	}
+
+	// [rc4l] uzdoom@b37a98689 -- lets a spawned actor inherit the caller's current sprite and frame,
+	// so a static prop can be made to match whatever the spawner was showing.
+	if (flags & SIXF_TRANSFERSPRITEFRAME)
+	{
+		mo->sprite = self->sprite;
+		mo->frame = self->frame;
+	}
+
+	// [rc4l] uzdoom@0f4bca860 -- roll renders here now (+ROLLSPRITE), so this is observable.
+	if (flags & SIXF_TRANSFERROLL)
+	{
+		mo->roll = self->roll;
 	}
 
 	return true;
@@ -3510,32 +3555,44 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeTo)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetScale)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_FIXED(scalex, 0);
 	ACTION_PARAM_FIXED(scaley, 1);
+	ACTION_PARAM_INT(ptr, 2);	// [rc4l] uzdoom@19b43d475
+
+	// [rc4l] uzdoom@19b43d475 -- `ref` is the actor actually acted on, so the Zandronum
+	// gate and broadcast below follow it rather than self; COPY_AAPTR must therefore run
+	// before the client guard, or a client could mutate an actor the server owns.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
 
 	// [EP] This is handled server-side.
-	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+	if ( NETWORK_InClientModeAndActorNotClientHandled( ref ) )
 		return;
 
 	// [EP] Save the previous scale values.
-	fixed_t savedScaleX = self->scaleX;
-	fixed_t savedScaleY = self->scaleY;
+	fixed_t savedScaleX = ref->scaleX;
+	fixed_t savedScaleY = ref->scaleY;
 
-	self->scaleX = scalex;
-	self->scaleY = scaley ? scaley : scalex;
+	ref->scaleX = scalex;
+	ref->scaleY = scaley ? scaley : scalex;
 
 	// [EP] Tell the clients to change the scale if anything changed.
-	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
+	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( ref ) == false ))
 	{
 		unsigned int scaleFlags = 0;
-		if ( savedScaleX != self->scaleX )
+		if ( savedScaleX != ref->scaleX )
 			scaleFlags |= ACTORSCALE_X;
-		if ( savedScaleY != self->scaleY )
+		if ( savedScaleY != ref->scaleY )
 			scaleFlags |= ACTORSCALE_Y;
 
 		if ( scaleFlags != 0 )
-			SERVERCOMMANDS_SetThingScale( self, scaleFlags );
+			SERVERCOMMANDS_SetThingScale( ref, scaleFlags );
 	}
 }
 
@@ -3631,6 +3688,145 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHitSize)
 	hitheight = ActorResize::ComputeResolvedDimension( hitheight, self->projectilepassheight );
 
 	self->SetHitSize( hitradius, hitheight );
+}
+
+//===========================================================================
+//
+// A_SetFloatBobPhase
+//
+// Changes the FloatBobPhase of the actor.
+//
+//===========================================================================
+
+// [rc4l] uzdoom@643d37ab7
+//===========================================================================
+//
+// A_QuakeEx
+//
+// Extended version of A_Quake. Takes individual axis into account and can
+// take a flag.
+//===========================================================================
+
+// [rc4l] uzdoom@7050d0322, settled by uzdoom@2827c13d0
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_QuakeEx)
+{
+	ACTION_PARAM_START(11);	// [rc4l] uzdoom@dca5f0e90..e29b8b209 -- QF_WAVE wave speeds
+	ACTION_PARAM_INT(intensityX, 0);
+	ACTION_PARAM_INT(intensityY, 1);
+	ACTION_PARAM_INT(intensityZ, 2);
+	ACTION_PARAM_INT(duration, 3);
+	ACTION_PARAM_INT(damrad, 4);
+	ACTION_PARAM_INT(tremrad, 5);
+	ACTION_PARAM_SOUND(sound, 6);
+	ACTION_PARAM_INT(flags, 7);
+	ACTION_PARAM_DOUBLE(mulWaveX, 8);
+	ACTION_PARAM_DOUBLE(mulWaveY, 9);
+	ACTION_PARAM_DOUBLE(mulWaveZ, 10);
+	P_StartQuakeXYZ(self, 0, intensityX, intensityY, intensityZ, duration, damrad, tremrad, sound, flags, mulWaveX, mulWaveY, mulWaveZ);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetFloatBobPhase)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(bob, 0);
+
+	//Respect float bob phase limits.
+	if (self && (bob >= 0 && bob <= 63))
+		self->FloatBobPhase = bob;
+}
+
+//===========================================================================
+// A_SetHealth
+//
+// Changes the health of the actor.
+// Takes a pointer as well.
+//===========================================================================
+
+// [rc4l] uzdoom@4fd87a1ce
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetHealth)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(health, 0);
+	ACTION_PARAM_INT(ptr, 1);
+
+	AActor *mobj = COPY_AAPTR(self, ptr);
+
+	if (!mobj)
+	{
+		return;
+	}
+
+	// [rc4l] Health is server-authoritative: a client must not set it itself or it will fight
+	// the server's value. The broadcasts below are what actually move it to the clients.
+	if ( NETWORK_InClientMode() )
+		return;
+
+	player_t *player = mobj->player;
+	if (player)
+	{
+		if (health <= 0)
+			player->mo->health = mobj->health = player->health = 1; //Copied from the buddha cheat.
+		else
+			player->mo->health = mobj->health = player->health = health;
+
+		// [rc4l] Tell the clients about the new health.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerHealth( player - players );
+	}
+	else if (mobj)
+	{
+		if (health <= 0)
+			mobj->health = 1;
+		else
+			mobj->health = health;
+
+		// [rc4l] Tell the clients about the new health.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetThingHealth( mobj );
+	}
+}
+
+//===========================================================================
+// A_ResetHealth
+//
+// Resets the actor's health to its default.
+// Takes a pointer as well.
+//===========================================================================
+
+// [rc4l] uzdoom@19b43d475, with uzdoom@d1cca79c3's SpawnHealth() folded in -- d1cca79c3 lands
+// three days later and only replaces GetDefault()->health with SpawnHealth(), which also honours
+// the actor's max-health modifiers. Taking the settled form rather than the value it replaced.
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ResetHealth)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_INT(ptr, 0);
+
+	AActor *mobj = COPY_AAPTR(self, ptr);
+
+	if (!mobj)
+	{
+		return;
+	}
+
+	// [rc4l] Server-authoritative, as with A_SetHealth.
+	if ( NETWORK_InClientMode() )
+		return;
+
+	player_t *player = mobj->player;
+	if (player && (player->mo->health > 0))
+	{
+		player->health = player->mo->health = player->mo->GetDefault()->health; //Copied from the resurrect cheat.
+
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetPlayerHealth( player - players );
+	}
+	else if (mobj && (mobj->health > 0))
+	{
+		mobj->health = mobj->SpawnHealth();
+
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVERCOMMANDS_SetThingHealth( mobj );
+	}
 }
 
 //===========================================================================
@@ -3813,7 +4009,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSight)
 // Useful for maps with many multi-actor special effects.
 //
 //===========================================================================
-static bool DoCheckSightOrRange(AActor *self, AActor *camera, double range)
+static bool DoCheckSightOrRange(AActor *self, AActor *camera, double range, bool twodi)	// [rc4l] uzdoom@ba3988290
 {
 	if (camera == NULL)
 	{
@@ -3836,7 +4032,9 @@ static bool DoCheckSightOrRange(AActor *self, AActor *camera, double range)
 	{
 		dz = 0;
 	}
-	if ((dx*dx) + (dy*dy) + (dz*dz) <= range)
+	// [rc4l] uzdoom@ba3988290 -- twodi drops the height term, so the check is a flat 2D radius.
+	double distance = (dx * dx) + (dy * dy) + (twodi == 0 ? (dz * dz) : 0);
+	if (distance <= range)
 	{ // Within range
 		return true;
 	}
@@ -3851,9 +4049,10 @@ static bool DoCheckSightOrRange(AActor *self, AActor *camera, double range)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSightOrRange)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	double range = EvalExpressionF(ParameterIndex+0, self);
 	ACTION_PARAM_STATE(jump, 1);
+	ACTION_PARAM_BOOL(twodi, 2);	// [rc4l] uzdoom@ba3988290
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
@@ -3863,13 +4062,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSightOrRange)
 		if (playeringame[i])
 		{
 			// Always check from each player.
-			if (DoCheckSightOrRange(self, players[i].mo, range))
+			if (DoCheckSightOrRange(self, players[i].mo, range, twodi))
 			{
 				return;
 			}
 			// If a player is viewing from a non-player, check that too.
 			if (players[i].camera != NULL && players[i].camera->player == NULL &&
-				DoCheckSightOrRange(self, players[i].camera, range))
+				DoCheckSightOrRange(self, players[i].camera, range, twodi))
 			{
 				return;
 			}
@@ -4027,6 +4226,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIf)
 // and take a flags word. Landed as the settled form rather than replaying the intermediate
 // states, since the consolidation rewrites what the first commit adds.
 //
+// [rc4l] uzdoom@5a472e815 -> 2c7a3f2eb -> f2551dced, settled form. A_Damage/Kill/Remove may be
+// narrowed by class OR by species, and either test may be inverted with the EX* flags.
+static bool DoCheckSpecies(AActor *mo, FName filterSpecies, bool exclude)
+{
+	// [rc4l] uzdoom@19cea0f62 -- GetSpecies() resolves the inherited species; reading mo->Species
+	// directly missed it. The old "mo->Species == NAME_None" early-true also made a speciesless
+	// actor satisfy every filter, including an exclude one.
+	FName actorSpecies = mo->GetSpecies();
+	if (filterSpecies == NAME_None) return true;
+	return exclude ? (actorSpecies != filterSpecies) : (actorSpecies == filterSpecies);
+}
+
+static bool DoCheckClass(AActor *mo, const PClass *filterClass, bool exclude)
+{
+	const PClass *actorClass = mo->GetClass();
+	if (filterClass == NULL) return true;
+	return exclude ? (actorClass != filterClass) : (actorClass == filterClass);
+}
+
 //===========================================================================
 enum KILS
 {
@@ -4034,21 +4252,30 @@ enum KILS
 	KILS_KILLMISSILES = 1 << 1,
 	KILS_NOMONSTERS =	1 << 2,
 	KILS_FOILBUDDHA =	1 << 3,	// [rc4l] uzdoom@a19620968
+	KILS_EXFILTER	=	1 << 4,	// [rc4l] uzdoom@5a472e815
+	KILS_EXSPECIES	=	1 << 5,
+	KILS_EITHER		=	1 << 6,	// [rc4l] uzdoom@f2551dced
 };
 
-static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags)
+static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags, const PClass *filter, FName species)
 {
+	// [rc4l] uzdoom@5a472e815 / f2551dced
+	bool filterpass = DoCheckClass(killtarget, filter, (flags & KILS_EXFILTER) ? true : false),
+		speciespass = DoCheckSpecies(killtarget, species, (flags & KILS_EXSPECIES) ? true : false);
+	if (!((flags & KILS_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
+		return;
+
 	// [rc4l] uzdoom@a19620968 folds the per-flag P_DamageMobj calls into one accumulated
 	// dmgFlags. THREE DEFECTS in that commit are deliberately not reproduced here: it wrote
 	// `if (KILS_FOILINVUL)` and `if (KILS_FOILBUDDHA)` without `flags &`, so both tested a
 	// non-zero constant and A_Kill* ALWAYS foiled invulnerability and buddha regardless of
 	// what the modder passed; and it checked `flags2 & MF7_BUDDHA`, the wrong flags word.
-	int dmgFlags = DMG_NO_ARMOR + DMG_NO_FACTOR;
+	int dmgFlags = DMG_NO_ARMOR | DMG_NO_FACTOR;
 
 	if (flags & KILS_FOILINVUL)
-		dmgFlags += DMG_FOILINVUL;
+		dmgFlags |= DMG_FOILINVUL;
 	if (flags & KILS_FOILBUDDHA)
-		dmgFlags += DMG_FOILBUDDHA;
+		dmgFlags |= DMG_FOILBUDDHA;
 
 	if ((killtarget->flags & MF_MISSILE) && (flags & KILS_KILLMISSILES))
 	{
@@ -4075,11 +4302,16 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
-	if (self->target != NULL) DoKill(self->target, self, damagetype, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->target != NULL)
+		DoKill(self->target, self, damagetype, flags, filter, species);
 }
 
 //===========================================================================
@@ -4089,11 +4321,16 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
-	if (self->tracer != NULL) DoKill(self->tracer, self, damagetype, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->tracer != NULL)
+		DoKill(self->tracer, self, damagetype, flags, filter, species);
 }
 
 //===========================================================================
@@ -4103,11 +4340,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
-	if (self->master != NULL) DoKill(self->master, self, damagetype, flags);
+	if (self->master != NULL)
+		DoKill(self->master, self, damagetype, flags, filter, species);
 }
 
 //===========================================================================
@@ -4117,16 +4357,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
 
 	while ( (mo = it.Next()) )
 	{
-		if (mo->master == self) DoKill(mo, self, damagetype, flags);
+		if (mo->master == self)
+			DoKill(mo, self, damagetype, flags, filter, species);
 	}
 }
 
@@ -4137,9 +4380,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_NAME(damagetype, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
@@ -4155,7 +4400,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self) DoKill(mo, self, damagetype, flags);
+			if (mo->master == self->master && mo != self)
+				DoKill(mo, self, damagetype, flags, filter, species);
 		}
 	}
 }
@@ -4517,6 +4763,11 @@ enum CLOF_flags
 
 	CLOFF_JUMP_ON_MISS =		0x200000,
 	CLOFF_AIM_VERT_NOOFFSET =	0x400000,
+
+	// [rc4l] uzdoom@465d9ab89: point the caller at whatever the trace hit.
+	CLOFF_SETTARGET =			0x800000,
+	CLOFF_SETMASTER =			0x1000000,
+	CLOFF_SETTRACER =			0x2000000,
 };
 
 struct LOFData
@@ -4759,6 +5010,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckLOF)
 		if (minrange > 0 && trace.Distance < minrange)
 		{
 			return;
+		}
+		// [rc4l] uzdoom@465d9ab89: adopt the actor the line of fire found, before jumping.
+		if ((trace.HitType == TRACE_HitActor) && (trace.Actor != NULL) && !lof_data.BadActor)
+		{
+			if (flags & CLOFF_SETTARGET)	self->target = trace.Actor;
+			if (flags & CLOFF_SETMASTER)	self->master = trace.Actor;
+			if (flags & CLOFF_SETTRACER)	self->tracer = trace.Actor;
 		}
 		ACTION_JUMP(jump, CLIENTUPDATE_FRAME );	// [EP] Since the actor's target is unknown on the client end, we need to send an update.
 	}
@@ -5024,26 +5282,35 @@ enum DMSS
 	DMSS_NOFACTOR			= 8,	// [rc4l] uzdoom@5030832df
 	DMSS_FOILBUDDHA			= 16,	// [rc4l] uzdoom@a19620968
 	DMSS_NOPROTECT			= 32,	// [rc4l] uzdoom@c01d1a800
+	DMSS_EXFILTER			= 64,	// [rc4l] uzdoom@5a472e815: invert the class test
+	DMSS_EXSPECIES			= 128,	// [rc4l] uzdoom@5a472e815: invert the species test
+	DMSS_EITHER				= 256,	// [rc4l] uzdoom@f2551dced: pass if EITHER test matches
 };
 
-static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags)
+static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags, const PClass *filter, FName species)
 {
+	// [rc4l] uzdoom@5a472e815 / f2551dced: narrow by class OR species, either test invertible.
+	bool filterpass = DoCheckClass(dmgtarget, filter, (flags & DMSS_EXFILTER) ? true : false),
+		speciespass = DoCheckSpecies(dmgtarget, species, (flags & DMSS_EXSPECIES) ? true : false);
+	if (!((flags & DMSS_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
+		return;
+
 	// [rc4l] uzdoom@a19620968 replaces the nested per-flag P_DamageMobj calls with one
 	// accumulated dmgFlags; the old MF2_INVULNERABLE guard goes with them, because
 	// DMG_FOILINVUL is now conditional and P_DamageMobj already honours invulnerability.
 	int dmgFlags = 0;
 	if (flags & DMSS_FOILINVUL)
-		dmgFlags += DMG_FOILINVUL;
+		dmgFlags |= DMG_FOILINVUL;
 	if (flags & DMSS_FOILBUDDHA)
-		dmgFlags += DMG_FOILBUDDHA;
-	if ((flags & DMSS_KILL) || (flags & DMSS_NOFACTOR)) //Kill implies NoFactor
-		dmgFlags += DMG_NO_FACTOR;
+		dmgFlags |= DMG_FOILBUDDHA;
+	if (flags & (DMSS_KILL | DMSS_NOFACTOR)) //Kill implies NoFactor
+		dmgFlags |= DMG_NO_FACTOR;
 	if (!(flags & DMSS_AFFECTARMOR) || (flags & DMSS_KILL)) //Kill overrides AffectArmor
-		dmgFlags += DMG_NO_ARMOR;
+		dmgFlags |= DMG_NO_ARMOR;
 	if (flags & DMSS_KILL) //Kill adds the value of the damage done to it. Allows for more controlled extreme death types.
 		amount += dmgtarget->health;
 	if (flags & DMSS_NOPROTECT) //Ignore PowerProtection.
-		dmgFlags += DMG_NO_PROTECT;
+		dmgFlags |= DMG_NO_PROTECT;
 
 	if (amount > 0)
 		P_DamageMobj(dmgtarget, self, self, amount, DamageType, dmgFlags); //Should wind up passing them through just fine.
@@ -5058,71 +5325,93 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
-	DoDamage(self, self, amount, DamageType, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	DoDamage(self, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
-	if (self->target != NULL) DoDamage(self->target, self, amount, DamageType, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->target != NULL)
+		DoDamage(self->target, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
-	if (self->tracer != NULL) DoDamage(self->tracer, self, amount, DamageType, flags);
+	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
+	// exactly this class. NULL (the default) means no filtering, as before.
+	if (self->tracer != NULL)
+		DoDamage(self->tracer, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageMaster)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
-	if (self->master != NULL) DoDamage(self->master, self, amount, DamageType, flags);
+	if (self->master != NULL)
+		DoDamage(self->master, self, amount, DamageType, flags, filter, species);
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageChildren)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
 
 	while ( (mo = it.Next()) )
 	{
-		if (mo->master == self) DoDamage(mo, self, amount, DamageType, flags);
+		if (mo->master == self)
+			DoDamage(mo, self, amount, DamageType, flags, filter, species);
 	}
 }
 
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
+	ACTION_PARAM_CLASS(filter, 3);
+	ACTION_PARAM_NAME(species, 4);
 
 	TThinkerIterator<AActor> it;
 	AActor *mo;
@@ -5131,7 +5420,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings)
 	{
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self) DoDamage(mo, self, amount, DamageType, flags);
+			if (mo->master == self->master && mo != self)
+				DoDamage(mo, self, amount, DamageType, flags, filter, species);
 		}
 	}
 }
@@ -5239,10 +5529,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 			if ( NETWORK_InClientMode() )
 				return;
 
-			DWORD *flagp = (DWORD*) (((char*)self) + fd->structoffset);
+			ActorFlags *flagp = (ActorFlags*) (((char*)self) + fd->structoffset);
 
 			// [EP] Store the old value in order to save bandwidth
-			DWORD oldflag = *flagp;
+			// [rc4l] uzdoom@ca012bc9b typed the flag words. This [BB] block identifies which word
+			// was touched by comparing addresses, and those are distinct types now, so the
+			// comparisons go through void* and the value is read as a raw integer.
+			const DWORD oldflag = flagp->GetValue();
 
 			// If these 2 flags get changed we need to update the blockmap and sector links.
 			bool linkchange = flagp == &self->flags && (fd->flagbit == MF_NOBLOCKMAP || fd->flagbit == MF_NOSECTOR);
@@ -5252,29 +5545,32 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 			if (linkchange) self->LinkToWorld();
 
 			// [BB] Let the clients know about the flag change.
-			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( *flagp != oldflag ) ) {
+			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( flagp->GetValue() != oldflag ) ) {
 				FlagSet flagset = FLAGSET_UNKNOWN;
-				if ( flagp == &self->flags )
+				if ( (void*)flagp == (void*)&self->flags )
 					flagset = FLAGSET_FLAGS;
-				else if ( flagp == &self->flags2 )
+				else if ( (void*)flagp == (void*)&self->flags2 )
 					flagset = FLAGSET_FLAGS2;
-				else if ( flagp == &self->flags3 )
+				else if ( (void*)flagp == (void*)&self->flags3 )
 					flagset = FLAGSET_FLAGS3;
-				else if ( flagp == &self->flags4 )
+				else if ( (void*)flagp == (void*)&self->flags4 )
 					flagset = FLAGSET_FLAGS4;
-				else if ( flagp == &self->flags5 )
+				else if ( (void*)flagp == (void*)&self->flags5 )
 					flagset = FLAGSET_FLAGS5;
-				else if ( flagp == &self->flags6 )
+				else if ( (void*)flagp == (void*)&self->flags6 )
 					flagset = FLAGSET_FLAGS6;
-				else if ( flagp == &self->flags7 )
+				else if ( (void*)flagp == (void*)&self->flags7 )
 					flagset = FLAGSET_FLAGS7;
 				// [MGOOOOOO] flags8 was never wired up here, so A_ChangeFlag on an MBF21 flag
 				// silently desynced clients. flags9 is ZandroX's own word (see actor.h MF9_*).
-				else if ( flagp == &self->flags8 )
+				else if ( (void*)flagp == (void*)&self->flags8 )
 					flagset = FLAGSET_FLAGS8;
-				else if ( flagp == &self->flags9 )
+				else if ( (void*)flagp == (void*)&self->flags9 )
 					flagset = FLAGSET_FLAGS9;
-				else if ( flagp == &self->STFlags )
+				// [rc4l] Movement-model flags (see actor.h MV_*).
+				else if ( (void*)flagp == (void*)&self->mvFlags )
+					flagset = FLAGSET_MVFLAGS;
+				else if ( (void*)flagp == (void*)&self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 
 				SERVERCOMMANDS_SetThingFlags( self, flagset );
@@ -5386,10 +5682,19 @@ enum RMVF_flags
 	RMVF_NOMONSTERS = 1 << 1,
 	RMVF_MISC = 1 << 2,
 	RMVF_EVERYTHING = 1 << 3,
+	RMVF_EXFILTER		= 1 << 4,	// [rc4l] uzdoom@5a472e815
+	RMVF_EXSPECIES		= 1 << 5,
+	RMVF_EITHER			= 1 << 6,	// [rc4l] uzdoom@f2551dced
 };
 
-static void DoRemove(AActor *removetarget, int flags)
+static void DoRemove(AActor *removetarget, int flags, const PClass *filter, FName species)
 {
+	// [rc4l] uzdoom@5a472e815 / f2551dced
+	bool filterpass = DoCheckClass(removetarget, filter, (flags & RMVF_EXFILTER) ? true : false),
+		speciespass = DoCheckSpecies(removetarget, species, (flags & RMVF_EXSPECIES) ? true : false);
+	if (!((flags & RMVF_EITHER) ? (filterpass || speciespass) : (filterpass && speciespass)))
+		return;
+
 	if ((flags & RMVF_EVERYTHING))
 	{
 		P_RemoveThing(removetarget);
@@ -5415,15 +5720,17 @@ static void DoRemove(AActor *removetarget, int flags)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTarget)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(flags, 0);
+	ACTION_PARAM_CLASS(filter, 1);
+	ACTION_PARAM_NAME(species, 2);
 
 	// [rc4l] uzdoom@3050ea9a6, with its copy-paste bug NOT reproduced: upstream tests
 	// self->master here while removing self->target, which null-derefs whenever master is
 	// set and target is not. Same class of slip as 96c6e7d9b, which they did fix.
 	if (self->target != NULL)
 	{
-		DoRemove(self->target, flags);
+		DoRemove(self->target, flags, filter, species);
 	}
 }
 
@@ -5434,12 +5741,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTarget)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTracer)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_INT(flags, 0);
+	ACTION_PARAM_CLASS(filter, 1);
+	ACTION_PARAM_NAME(species, 2);
 
 	if (self->tracer != NULL)
 	{
-		DoRemove(self->tracer, flags);
+		DoRemove(self->tracer, flags, filter, species);
 	}
 }
 
@@ -5448,11 +5757,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveTracer)
 // A_RemoveMaster
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION(AActor, A_RemoveMaster)
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveMaster)
 {
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_INT(flags, 0);
+	ACTION_PARAM_CLASS(filter, 1);
+	ACTION_PARAM_NAME(species, 2);
+
+	// [rc4l] uzdoom@a19620968 gave this the RMVF_ flags and routed it through DoRemove; that half
+	// had never landed here, so it was still the old parameterless P_RemoveThing form.
+	// uzdoom@e5a41a135 adds the optional class filter; NULL means no filtering.
 	if (self->master != NULL)
 	{
-		P_RemoveThing(self->master);
+		DoRemove(self->master, flags, filter, species);
 	}
 }
 
@@ -5465,15 +5782,17 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveChildren)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_BOOL(removeall,0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	while ((mo = it.Next()) != NULL)
 	{
 		if (mo->master == self && (mo->health <= 0 || removeall))
 		{
-			DoRemove(mo, flags);
+			DoRemove(mo, flags, filter, species);
 		}
 	}
 }
@@ -5487,9 +5806,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 {
 	TThinkerIterator<AActor> it;
 	AActor *mo;
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_BOOL(removeall,0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	if (self->master != NULL)
 	{
@@ -5497,7 +5818,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 		{
 			if (mo->master == self->master && mo != self && (mo->health <= 0 || removeall))
 			{
-				DoRemove(mo, flags);
+				DoRemove(mo, flags, filter, species);
 			}
 		}
 	}
@@ -5510,15 +5831,67 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RemoveSiblings)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Remove)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_INT(removee, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
 
 	AActor *reference = COPY_AAPTR(self, removee);
 
 	if (reference != NULL)
 	{
-		DoRemove(reference, flags);
+		DoRemove(reference, flags, filter, species);
+	}
+}
+
+//===========================================================================
+//
+// A_SetTeleFog
+//
+// Sets the teleport fog(s) for the calling actor.
+// Takes a name of the classes for the source and destination.
+//
+// [rc4l] uzdoom@30acb7200, at the settled form of uzdoom@4d5919044 (class
+// parameters rather than names) and uzdoom@d481ba7b5 (any Actor, not only a
+// TeleportFog descendant). The ACS half of this pair came across with the
+// original cluster; these two DECORATE actions did not, which left scripts able
+// to set an actor's telefog while DECORATE could not.
+//
+// Deliberately NOT server-gated. P_Teleport spawns the fog on the client too --
+// it guards only against a predicting client (p_teleport.cpp) -- and reads the
+// type straight off these two fields, which no SERVERCOMMANDS carries. Both
+// sides therefore have to reach the same value on their own, so this has to run
+// wherever the state runs. Gating it to the server would leave a client holding
+// the old type and spawning the wrong fog.
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTeleFog)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_CLASS(oldpos, 0);
+	ACTION_PARAM_CLASS(newpos, 1);
+
+	self->TeleFogSourceType = oldpos;
+	self->TeleFogDestType = newpos;
+}
+
+//===========================================================================
+//
+// A_SwapTeleFog
+//
+// Switches the source and dest telefogs around.
+//
+// [rc4l] Same cluster and the same reasoning about gating as A_SetTeleFog.
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION(AActor, A_SwapTeleFog)
+{
+	if ((self->TeleFogSourceType != self->TeleFogDestType)) //Does nothing if they're the same.
+	{
+		const PClass *temp = self->TeleFogSourceType;
+		self->TeleFogSourceType = self->TeleFogDestType;
+		self->TeleFogDestType = temp;
 	}
 }
 
@@ -5666,10 +6039,22 @@ enum
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetAngle)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_ANGLE(angle, 0);
 	ACTION_PARAM_INT(flags, 1)
-	self->SetAngle(angle, !!(flags & SPF_INTERPOLATE));
+	ACTION_PARAM_INT(ptr, 2);	// [rc4l] uzdoom@19b43d475
+
+	// [rc4l] uzdoom@19b43d475 -- `ref` is the actor actually acted on, so the Zandronum
+	// gate and broadcast below follow it rather than self; COPY_AAPTR must therefore run
+	// before the client guard, or a client could mutate an actor the server owns.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+	ref->SetAngle(angle, !!(flags & SPF_INTERPOLATE));
 }
 
 //===========================================================================
@@ -5682,18 +6067,30 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetAngle)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetPitch)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_ANGLE(pitch, 0);
 	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_INT(ptr, 2);	// [rc4l] uzdoom@19b43d475
 
-	if (self->player != NULL || (flags & SPF_FORCECLAMP))
+	// [rc4l] uzdoom@19b43d475 -- `ref` is the actor actually acted on, so the Zandronum
+	// gate and broadcast below follow it rather than self; COPY_AAPTR must therefore run
+	// before the client guard, or a client could mutate an actor the server owns.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+
+	if (ref->player != NULL || (flags & SPF_FORCECLAMP))
 	{ // clamp the pitch we set
 		int min, max;
 
-		if (self->player != NULL)
+		if (ref->player != NULL)
 		{
-			min = self->player->MinPitch;
-			max = self->player->MaxPitch;
+			min = ref->player->MinPitch;
+			max = ref->player->MaxPitch;
 		}
 		else
 		{
@@ -5702,7 +6099,37 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetPitch)
 		}
 		pitch = clamp<int>(pitch, min, max);
 	}
-	self->SetPitch(pitch, !!(flags & SPF_INTERPOLATE));
+	ref->SetPitch(pitch, !!(flags & SPF_INTERPOLATE));
+}
+
+//===========================================================================
+//
+// [Nash] A_SetRoll
+//
+// Set actor's roll (in degrees).
+//
+//===========================================================================
+
+// [rc4l] uzdoom@2b12db153
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetRoll)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_ANGLE(roll, 0);
+	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_INT(ptr, 2);	// [rc4l] uzdoom@301c061ec
+
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+	ref->SetRoll(roll, !!(flags & SPF_INTERPOLATE));
+
+	// [rc4l] Tell the clients: roll is rendered (+ROLLSPRITE) so they cannot derive it.
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		SERVERCOMMANDS_SetThingSpriteOrientation( ref, SPRITEORIENT_ROLL );
 }
 
 //===========================================================================
@@ -5715,29 +6142,41 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetPitch)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ScaleVelocity)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_FIXED(scale, 0);
+	ACTION_PARAM_INT(ptr, 1);	// [rc4l] uzdoom@19b43d475
+
+	// [rc4l] uzdoom@19b43d475 -- `ref` is the actor actually acted on, so the Zandronum
+	// gate and broadcast below follow it rather than self; COPY_AAPTR must therefore run
+	// before the client guard, or a client could mutate an actor the server owns.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
 
 	// [TP] This is handled by the server.
-	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+	if ( NETWORK_InClientModeAndActorNotClientHandled( ref ) )
 		return;
 
-	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
+	INTBOOL was_moving = (INTBOOL)(ref->velx | ref->vely | ref->velz);
 
-	self->velx = FixedMul(self->velx, scale);
-	self->vely = FixedMul(self->vely, scale);
-	self->velz = FixedMul(self->velz, scale);
+	ref->velx = FixedMul(ref->velx, scale);
+	ref->vely = FixedMul(ref->vely, scale);
+	ref->velz = FixedMul(ref->velz, scale);
 
 	// If the actor was previously moving but now is not, and is a player,
 	// update its player variables. (See A_Stop.)
 	if (was_moving)
 	{
-		CheckStopped(self);
+		CheckStopped(ref);
 	}
 
 	// [TP] Inform the clients about the velocity change.
-	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
-		SERVERCOMMANDS_MoveThingExact( self, CM_VELX|CM_VELY|CM_VELZ );
+	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( ref ) == false ))
+		SERVERCOMMANDS_MoveThingExact( ref, CM_VELX|CM_VELY|CM_VELZ );
 }
 
 //===========================================================================
@@ -5748,21 +6187,35 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ScaleVelocity)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeVelocity)
 {
-	ACTION_PARAM_START(4);
+	ACTION_PARAM_START(5);
 	ACTION_PARAM_FIXED(x, 0);
 	ACTION_PARAM_FIXED(y, 1);
 	ACTION_PARAM_FIXED(z, 2);
 	ACTION_PARAM_INT(flags, 3);
+	ACTION_PARAM_INT(ptr, 4);	// [rc4l] uzdoom@105a62cc2
+
+	// [rc4l] uzdoom@105a62cc2 -- the velocity change can now be aimed at a pointer, so `ref` is
+	// the actor actually mutated. Both Zandronum netcode sites follow `ref` rather than `self`:
+	// the client guard, because a client must not simulate whichever actor the server owns, and
+	// the broadcast, because it is ref's velocity the clients need. COPY_AAPTR therefore has to
+	// run BEFORE the guard, unlike the original which could test self immediately.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
 
 	// [TP] This is handled by the server.
-	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+	if ( NETWORK_InClientModeAndActorNotClientHandled( ref ) )
 		return;
 
-	INTBOOL was_moving = (INTBOOL)(self->velx | self->vely | self->velz);
+	INTBOOL was_moving = (INTBOOL)(ref->velx | ref->vely | ref->velz);
 
 	fixed_t vx = x, vy = y, vz = z;
-	fixed_t sina = finesine[self->angle >> ANGLETOFINESHIFT];
-	fixed_t cosa = finecosine[self->angle >> ANGLETOFINESHIFT];
+	fixed_t sina = finesine[ref->angle >> ANGLETOFINESHIFT];
+	fixed_t cosa = finecosine[ref->angle >> ANGLETOFINESHIFT];
 
 	if (flags & 1)	// relative axes - make x, y relative to actor's current angle
 	{
@@ -5771,25 +6224,25 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeVelocity)
 	}
 	if (flags & 2)	// discard old velocity - replace old velocity with new velocity
 	{
-		self->velx = vx;
-		self->vely = vy;
-		self->velz = vz;
+		ref->velx = vx;
+		ref->vely = vy;
+		ref->velz = vz;
 	}
 	else	// add new velocity to old velocity
 	{
-		self->velx += vx;
-		self->vely += vy;
-		self->velz += vz;
+		ref->velx += vx;
+		ref->vely += vy;
+		ref->velz += vz;
 	}
 
 	if (was_moving)
 	{
-		CheckStopped(self);
+		CheckStopped(ref);
 	}
 
 	// [TP] Inform the clients about the velocity change.
-	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
-		SERVERCOMMANDS_MoveThingExact( self, CM_VELX|CM_VELY|CM_VELZ );
+	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( ref ) == false ))
+		SERVERCOMMANDS_MoveThingExact( ref, CM_VELX|CM_VELY|CM_VELZ );
 }
 
 //===========================================================================
@@ -5912,20 +6365,43 @@ enum T_Flags
 	TF_TELEFRAG = 1, // Allow telefrag in order to teleport.
 	TF_RANDOMDECIDE = 2, // Randomly fail based on health. (A_Srcr2Decide)
 	TF_FORCED = 4, // [rc4l] uzdoom@938b54ccb: forget what is in the way. TF_TELEFRAG takes precedence.
+	// [rc4l] uzdoom@86b0065c0
+	TF_KEEPVELOCITY =	0x00000008, // Preserve velocity.
+	TF_KEEPANGLE =		0x00000010, // Keep angle.
+	TF_USESPOTZ =		0x00000020, // Set the z to the spot's z, instead of the floor.
+	TF_NOSRCFOG =		0x00000040, // Don't leave any fog behind when teleporting.
+	TF_NODESTFOG =		0x00000080, // Don't spawn any fog at the arrival position.
+	TF_USEACTORFOG =	0x00000100, // Use the actor's TeleFogSourceType/TeleFogDestType.
+	TF_NOJUMP =			0x00000200, // Don't jump after teleporting.
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 {
-	ACTION_PARAM_START(6);
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_STATE(TeleportState, 0);
 	ACTION_PARAM_CLASS(TargetType, 1);
 	ACTION_PARAM_CLASS(FogType, 2);
 	ACTION_PARAM_INT(Flags, 3);
 	ACTION_PARAM_FIXED(MinDist, 4);
 	ACTION_PARAM_FIXED(MaxDist, 5);
+	ACTION_PARAM_INT(ptr, 6);
 
 	// [BB] This is handled by the server.
 	if ( NETWORK_InClientMode() && ( ( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false ) )
+		return;
+
+	// [rc4l] uzdoom@1799ae91c: the actor that moves is now selectable; it defaults to the caller.
+	// The state jump at the end still belongs to the caller either way.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
+
+	// [rc4l] uzdoom@1799ae91c: NOTELEPORT was being ignored here.
+	if (ref->flags2 & MF2_NOTELEPORT)
 		return;
 
 	// Randomly choose not to teleport like A_Srcr2Decide.
@@ -5936,7 +6412,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 			192, 120, 120, 120, 64, 64, 32, 16, 0
 		};
 
-		unsigned int chanceindex = self->health / ((self->SpawnHealth()/8 == 0) ? 1 : self->SpawnHealth()/8);
+		unsigned int chanceindex = ref->health / ((ref->SpawnHealth()/8 == 0) ? 1 : ref->SpawnHealth()/8);
 
 		if (chanceindex >= countof(chance))
 		{
@@ -5959,22 +6435,33 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 
 	if (!TargetType) TargetType = PClass::FindClass("BossSpot");
 
-	AActor * spot = state->GetSpotWithMinMaxDistance(TargetType, self->x, self->y, MinDist, MaxDist);
+	AActor * spot = state->GetSpotWithMinMaxDistance(TargetType, ref->x, ref->y, MinDist, MaxDist);
 	if (spot == NULL) return;
 
-	fixed_t prevX = self->x;
-	fixed_t prevY = self->y;
-	fixed_t prevZ = self->z;
+	fixed_t prevX = ref->x;
+	fixed_t prevY = ref->y;
+	fixed_t prevZ = ref->z;
+	// [rc4l] uzdoom@c168761ed: land the actor at a height it actually fits at, rather than the
+	// spot's raw z. Dropping it into a floor or ceiling left the engine to unstick it, which cost
+	// the actor its velocity.
+	fixed_t aboveFloor = spot->z - spot->floorz;
+	fixed_t finalz = spot->floorz + aboveFloor;
+
+	if (spot->z + ref->height > spot->ceilingz)
+		finalz = spot->ceilingz - ref->height;
+	else if (spot->z < spot->floorz)
+		finalz = spot->floorz;
+
 	// [rc4l] uzdoom@938b54ccb: telefrag is tried first; TF_FORCED then moves the actor anyway if
 	// that did not work.
 	bool teleResult = false;
 
-	if (P_TeleportMove (self, spot->x, spot->y, spot->z, Flags & TF_TELEFRAG))
+	if (P_TeleportMove (ref, spot->x, spot->y, finalz, Flags & TF_TELEFRAG))
 		teleResult = true;
 
 	if (!teleResult && (Flags & TF_FORCED))
 	{
-		self->SetOrigin(spot->x, spot->y, spot->z);
+		ref->SetOrigin(spot->x, spot->y, finalz);
 		teleResult = true;
 	}
 
@@ -5982,16 +6469,75 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 	{
 		ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
-		if (FogType)
+		// [rc4l] uzdoom@86b0065c0: fog is now controllable per call -- suppress either end, or
+		// defer to the actor's own TeleFogSourceType/TeleFogDestType from the fog cluster.
+		// [rc4l] uzdoom@1799ae91c: an explicit fog type now points back at the actor that
+		// teleported, the same way P_SpawnTeleportFog's setTarget does, so a mod can react to who
+		// came through. The destination fog spawns at the destination -- upstream's own commit
+		// passed prevX/prevY/prevZ here, which put both fogs on the departure spot; the form
+		// upstream settled on (and has at HEAD) is the actor's position, which is what this uses.
+		AActor *fog1 = NULL, *fog2 = NULL;
+		if (FogType || (Flags & TF_USEACTORFOG))
 		{
-			Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
+			if (!(Flags & TF_NOSRCFOG))
+			{
+				if (Flags & TF_USEACTORFOG)
+					P_SpawnTeleportFog(ref, prevX, prevY, prevZ, true, true);
+				else
+				{
+					fog1 = Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
+					if (fog1 != NULL)
+					{
+						fog1->target = ref;
+
+						// [rc4l] the server owns the spawn; clients only draw what they are told.
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( fog1 );
+					}
+				}
+			}
+			if (!(Flags & TF_NODESTFOG))
+			{
+				if (Flags & TF_USEACTORFOG)
+					P_SpawnTeleportFog(ref, ref->x, ref->y, ref->z, false, true);
+				else
+				{
+					fog2 = Spawn(FogType, ref->x, ref->y, ref->z, ALLOW_REPLACE);
+					if (fog2 != NULL)
+					{
+						fog2->target = ref;
+
+						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+							SERVERCOMMANDS_SpawnThing( fog2 );
+					}
+				}
+			}
 		}
 
-		ACTION_JUMP(TeleportState, CLIENTUPDATE_FRAME);	// [BB] This may involve randomness.
+		if (Flags & TF_USESPOTZ)
+			ref->z = spot->z;
+		else
+			ref->z = ref->floorz;
 
-		self->z = self->floorz;
-		self->angle = spot->angle;
-		self->velx = self->vely = self->velz = 0;
+		if (!(Flags & TF_KEEPANGLE))
+			ref->angle = spot->angle;
+
+		if (!(Flags & TF_KEEPVELOCITY))
+			ref->velx = ref->vely = ref->velz = 0;
+
+		// [rc4l] the state jump below carries the caller's own update to clients, so when the actor
+		// that actually moved is a different one it would otherwise get no update at all until the
+		// server's next routine position broadcast -- long enough to be visible. Tell clients where
+		// it went.
+		if ( ( ref != self ) && ( NETWORK_GetState( ) == NETSTATE_SERVER ) )
+			SERVERCOMMANDS_MoveThingExact( ref, CM_X|CM_Y|CM_Z|CM_ANGLE|CM_VELX|CM_VELY|CM_VELZ );
+
+		// [rc4l] uzdoom@2a53ebb6b: the jump is last, and TF_NOJUMP skips it -- taking it earlier
+		// meant the z/angle/velocity work above never ran.
+		// [rc4l] uzdoom@1799ae91c: the jump only ever belongs to the calling actor, never to a
+		// pointer-selected one.
+		if (!(Flags & TF_NOJUMP))
+			ACTION_JUMP(TeleportState, CLIENTUPDATE_FRAME);	// [BB] This may involve randomness.
 	}
 }
 
@@ -6261,6 +6807,8 @@ enum WARPF
 	WARPF_TOFLOOR = 0x100,
 	WARPF_TESTONLY = 0x200,
 	WARPF_ABSOLUTEPOSITION = 0x400,	// [rc4l] uzdoom@68a5db3c8
+	WARPF_BOB				= 0x800,	// [rc4l] uzdoom@643d37ab7
+	WARPF_MOVEPTR			= 0x1000,
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
@@ -6277,22 +6825,35 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 
 	// [rc4l] uzdoom@b6f486202: initialise at declaration. The rotation branch below reads oldx
 	// before the assignment further down ever runs, so it was using an uninitialised value.
-	fixed_t	oldx = self->x;
-	fixed_t	oldy = self->y;
-	fixed_t	oldz = self->z;
+	fixed_t	oldx = 0, oldy = 0, oldz = 0;
 
 	// [BB] This is handled server-side.
 	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
 		return;
 
 	AActor *reference = COPY_AAPTR(self, destination_selector);
-	const MOVE_THING_DATA_s oldPositionData ( self ); // [TP]
 
+	//If there is no actor to warp to, fail.
 	if (!reference)
 	{
 		ACTION_SET_RESULT(false);
 		return;
 	}
+
+	// [rc4l] uzdoom@643d37ab7 -- WARPF_MOVEPTR inverts the operation: the POINTED actor is moved
+	// and the original caller only reports success. Everything below therefore acts on `caller`,
+	// which is why the [TP] position snapshot and the SERVERCOMMANDS broadcast at the end follow
+	// `caller` and not `self` -- otherwise the server would tell clients the wrong actor moved.
+	AActor *caller = self;
+
+	if (flags & WARPF_MOVEPTR)
+	{
+		AActor *temp = reference;
+		reference = caller;
+		caller = temp;
+	}
+
+	const MOVE_THING_DATA_s oldPositionData ( caller ); // [TP]
 
 	if (!(flags & WARPF_ABSOLUTEANGLE))
 	{
@@ -6304,9 +6865,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	// WARPF_TESTONLY below restores from oldx/oldy/oldz, and in absolute mode upstream never
 	// assigns them, so a TESTONLY absolute warp would restore a stale position (oldx is reused
 	// as a scratch temp just above). Both paths need the save.
-	oldx = self->x;
-	oldy = self->y;
-	oldz = self->z;
+	oldx = caller->x;
+	oldy = caller->y;
+	oldz = caller->z;
 
 	if (!(flags & WARPF_ABSOLUTEPOSITION))
 	{
@@ -6327,7 +6888,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 		{
 			// set correct xy
 
-			self->SetOrigin(
+			caller->SetOrigin(
 				reference->x + xofs,
 				reference->y + yofs,
 				reference->z);
@@ -6338,10 +6899,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 			if (zofs)
 			{
 				// extra unlink, link and environment calculation
-				self->SetOrigin(
-					self->x,
-					self->y,
-					self->floorz + zofs);
+				caller->SetOrigin(
+					caller->x,
+					caller->y,
+					caller->floorz + zofs);
 			}
 			else
 			{
@@ -6349,12 +6910,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 				// already identified floor
 
 				// A_Teleport does the same thing anyway
-				self->z = self->floorz;
+				caller->z = caller->floorz;
 			}
 		}
 		else
 		{
-			self->SetOrigin(
+			caller->SetOrigin(
 				reference->x + xofs,
 				reference->y + yofs,
 				reference->z + zofs);
@@ -6364,11 +6925,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	{
 		if (flags & WARPF_TOFLOOR)
 		{
-			self->SetOrigin(xofs, yofs, self->floorz + zofs);
+			caller->SetOrigin(xofs, yofs, caller->floorz + zofs);
 		}
 		else
 		{
-			self->SetOrigin(xofs, yofs, zofs);
+			caller->SetOrigin(xofs, yofs, zofs);
 		}
 	}
 	
@@ -6376,42 +6937,48 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	{
 		if (flags & WARPF_TESTONLY)
 		{
-			self->SetOrigin(oldx, oldy, oldz);
+			caller->SetOrigin(oldx, oldy, oldz);
 		}
 		else
 		{
-			self->angle = angle;
+			caller->angle = angle;
 
 			if (flags & WARPF_STOP)
 			{
-				self->velx = 0;
-				self->vely = 0;
-				self->velz = 0;
+				caller->velx = 0;
+				caller->vely = 0;
+				caller->velz = 0;
 			}
 
 			if (flags & WARPF_WARPINTERPOLATION)
 			{
-				self->PrevX += self->x - oldx;
-				self->PrevY += self->y - oldy;
-				self->PrevZ += self->z - oldz;
+				caller->PrevX += caller->x - oldx;
+				caller->PrevY += caller->y - oldy;
+				caller->PrevZ += caller->z - oldz;
 			}
 			else if (flags & WARPF_COPYINTERPOLATION)
 			{
-				self->PrevX = self->x + reference->PrevX - reference->x;
-				self->PrevY = self->y + reference->PrevY - reference->y;
-				self->PrevZ = self->z + reference->PrevZ - reference->z;
+				caller->PrevX = caller->x + reference->PrevX - reference->x;
+				caller->PrevY = caller->y + reference->PrevY - reference->y;
+				caller->PrevZ = caller->z + reference->PrevZ - reference->z;
 			}
 			else if (! (flags & WARPF_INTERPOLATE))
 			{
-				self->PrevX = self->x;
-				self->PrevY = self->y;
-				self->PrevZ = self->z;
+				caller->PrevX = caller->x;
+				caller->PrevY = caller->y;
+				caller->PrevZ = caller->z;
+			}
+
+			// [rc4l] uzdoom@643d37ab7
+			if ((flags & WARPF_BOB) && (reference->flags2 & MF2_FLOATBOB))
+			{
+				caller->z += reference->GetBobOffset();
 			}
 		}
 
 		// [BB] Inform the clients.
-		if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( self ) == false ))
-			SERVERCOMMANDS_MoveThingIfChanged( self, oldPositionData );
+		if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( caller ) == false ))
+			SERVERCOMMANDS_MoveThingIfChanged( caller, oldPositionData );
 
 		if (success_state)
 		{
@@ -6425,7 +6992,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 	}
 	else
 	{
-		self->SetOrigin(oldx, oldy, oldz);
+		caller->SetOrigin(oldx, oldy, oldz);
 		ACTION_SET_RESULT(false);
 	}
 
@@ -6688,9 +7255,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 
 		if (flags & RGF_CUBE)
 		{ // check if inside a cube
-			if (abs(thing->x - self->x) > distance ||
-				abs(thing->y - self->y) > distance ||
-				abs((thing->z + thing->height/2) - (self->z + self->height/2)) > distance)
+			// [rc4l] uzdoom@16ad440ad -- compare in doubles. Upstream took abs() of a fixed_t
+			// difference, which is the abs(unsigned)-style trap in fixed point: the subtraction
+			// can wrap before abs ever sees it. Both operands are cast explicitly because our
+			// fixed_t is the strong zx::Fixed, so casting only the left one leaves
+			// double - Fixed ambiguous.
+			if (fabs((double)thing->x - (double)self->x) > (double)distance ||
+				fabs((double)thing->y - (double)self->y) > (double)distance ||
+				fabs((double)(thing->z + thing->height/2) - (double)(self->z + self->height/2)) > (double)distance)
 			{
 				continue;
 			}
@@ -6704,7 +7276,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 				continue;
 			}
 		}
-		fixed_t dz = abs ((thing->z + thing->height/2) - (self->z + self->height/2));
 
 		if ((flags & RGF_NOSIGHT) || P_CheckSight (thing, self, SF_IGNOREVISIBILITY|SF_IGNOREWATERBOUNDARY))
 		{ // OK to give; target is in direct path, or the monster doesn't care about it being in line of sight.
@@ -6739,17 +7310,29 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_RadiusGive)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSpeed)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_FIXED(speed, 0);
+	ACTION_PARAM_INT(ptr, 1);	// [rc4l] uzdoom@19b43d475
+
+	// [rc4l] uzdoom@19b43d475 -- `ref` is the actor actually acted on, so the Zandronum
+	// gate and broadcast below follow it rather than self; COPY_AAPTR must therefore run
+	// before the client guard, or a client could mutate an actor the server owns.
+	AActor *ref = COPY_AAPTR(self, ptr);
+
+	if (!ref)
+	{
+		ACTION_SET_RESULT(false);
+		return;
+	}
 
 	// [rc4l] uzdoom@44683657f, adapted: Speed drives movement, so a client that never heard about
 	// the change predicts against the old value. Same shape APROP_Speed already uses in p_acs.cpp.
-	fixed_t oldSpeed = self->Speed;
+	fixed_t oldSpeed = ref->Speed;
 
-	self->Speed = speed;
+	ref->Speed = speed;
 
-	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldSpeed != self->Speed ) )
-		SERVERCOMMANDS_SetThingProperty( self, APROP_Speed );
+	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldSpeed != ref->Speed ) )
+		SERVERCOMMANDS_SetThingProperty( ref, APROP_Speed );
 }
 
 //==========================================================================

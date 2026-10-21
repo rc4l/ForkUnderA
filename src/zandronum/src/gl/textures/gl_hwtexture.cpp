@@ -234,7 +234,7 @@ unsigned int FHardwareTexture::CreateTexture(unsigned char * buffer, int w, int 
 
 	if (deletebuffer) free(buffer);
 
-	if (mipmap && TexFilter[gl_texture_filter].mipmapping)
+	if (mipmap && TexFilter[r_texture_filter].mipmapping)
 	{
 		glGenerateMipmap(GL_TEXTURE_2D);
 		glTex->mipmapped = true;
@@ -363,7 +363,7 @@ unsigned int FHardwareTexture::Bind(int texunit, int translation, bool needmipma
 		if (texunit != 0) glActiveTexture(GL_TEXTURE0 + texunit);
 		glBindTexture(GL_TEXTURE_2D, pTex->glTexID);
 		// Check if we need mipmaps on a texture that was creted without them.
-		if (needmipmap && !pTex->mipmapped && TexFilter[gl_texture_filter].mipmapping)
+		if (needmipmap && !pTex->mipmapped && TexFilter[r_texture_filter].mipmapping)
 		{
 			glGenerateMipmap(GL_TEXTURE_2D);
 			pTex->mipmapped = true;
@@ -392,7 +392,7 @@ void FHardwareTexture::UnbindAll()
 	{
 		Unbind(texunit);
 	}
-	FMaterial::ClearLastTexture();
+	gl_ClearLastMaterial();
 }
 
 //===========================================================================

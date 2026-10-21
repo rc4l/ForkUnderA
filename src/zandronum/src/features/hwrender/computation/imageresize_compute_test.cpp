@@ -79,3 +79,36 @@ TEST(ImageResize, RejectsDegenerateDimensions)
 }
 
 } // namespace
+
+namespace
+{
+
+TEST(ComputeNearestResize, TheSameSizeIsACopy)
+{
+	const unsigned char src[2 * 2 * 3] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+	unsigned char dst[2 * 2 * 3] = {};
+	zx::ComputeNearestResize(2, 2, src, 2, 2, dst, 3);
+	for (int i = 0; i < 12; i++) EXPECT_EQ(dst[i], src[i]);
+}
+
+TEST(ComputeNearestResize, UpscalingRepeatsEachPixel)
+{
+	const unsigned char src[2 * 1 * 3] = { 10, 20, 30, 40, 50, 60 };
+	unsigned char dst[4 * 2 * 3] = {};
+	zx::ComputeNearestResize(2, 1, src, 4, 2, dst, 3);
+	const unsigned char want[4 * 3] = { 10, 20, 30, 10, 20, 30, 40, 50, 60, 40, 50, 60 };
+	for (int row = 0; row < 2; row++)
+		for (int i = 0; i < 12; i++) EXPECT_EQ(dst[row * 12 + i], want[i]) << row << " " << i;
+}
+
+TEST(ComputeNearestResize, DownscalingTakesThePixelUnderEachCentre)
+{
+	// [rc4l] A 1024-wide frame for a 1280-wide screen and back is this ratio both ways; 4 to 2 keeps the second of each pair.
+	const unsigned char src[4 * 1 * 1] = { 1, 2, 3, 4 };
+	unsigned char dst[2] = {};
+	zx::ComputeNearestResize(4, 1, src, 2, 1, dst, 1);
+	EXPECT_EQ(dst[0], 2);
+	EXPECT_EQ(dst[1], 4);
+}
+
+} // namespace

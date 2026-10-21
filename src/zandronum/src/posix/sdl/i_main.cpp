@@ -65,6 +65,8 @@
 #include "r_utility.h"
 #include "doomstat.h"
 #include "za_misc.h"
+#include "features/mainloop/mainloop.h"   // [rc4l] SteppedLoopStarted
+#include "sdlhost.h"   // [rc4l] what a desktop and a page start differently
 
 // MACROS ------------------------------------------------------------------
 
@@ -75,7 +77,6 @@
 
 // EXTERNAL FUNCTION PROTOTYPES --------------------------------------------
 
-extern "C" int cc_install_handlers(int, char**, int, int*, const char*, int(*)(char*, char*));
 
 // PUBLIC FUNCTION PROTOTYPES ----------------------------------------------
 
@@ -237,12 +238,8 @@ void I_ShutdownJoysticks();
 
 int main (int argc, char **argv)
 {
-#if !defined (__APPLE__)
-	{
-		int s[4] = { SIGSEGV, SIGILL, SIGFPE, SIGBUS };
-		cc_install_handlers(argc, argv, 4, s, GAMENAMELOWERCASE "-crash.log", DoomSpecificInfo);
- 	}
-#endif // !__APPLE__
+	// [rc4l] A desktop's crash catcher, or a page's frame driver, which calls the loop once an animation frame.
+	zx::sdlhost::Start(argc, argv, call_terms, DoomSpecificInfo);
  	
 	// [SB] Moved ZDoom's version info down below for Zan's --version
 
@@ -266,6 +263,7 @@ int main (int argc, char **argv)
 	setlocale (LC_ALL, "C");
 
 	Args = new DArgs(argc, argv);
+	zx::sdlhost::AddArgs(Args);
 
 	// [SB] Zandronum version
 	if (ZA_PrintVersion())
@@ -293,7 +291,11 @@ int main (int argc, char **argv)
 	}
 	else
 	{
-		if (SDL_Init (SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_NOPARACHUTE|SDL_INIT_JOYSTICK) == -1)
+		// [rc4l] uzdoom@8e1b1aa20 -- video and joystick are initialised by their own subsystems now
+		// (I_InitGraphics, I_StartupJoysticks), because bringing SDL's video subsystem up this early
+		// conflicts with GUI toolkits on some systems. TIMER stays here: upstream moved it into
+		// I_InitTimer, which only exists in the Cocoa backend for us, so there is nowhere to defer it.
+		if (SDL_Init (SDL_INIT_TIMER|SDL_INIT_NOPARACHUTE) == -1)
 		{
 			fprintf (stderr, "Could not initialize SDL:\n%s\n", SDL_GetError());
 			return -1;
@@ -384,6 +386,11 @@ int main (int argc, char **argv)
 		I_StartupJoysticks();
 		C_InitConsole (80*8, 25*8, false);
 		D_DoomMain ();
+    }
+    catch (zx::mainloop::SteppedLoopStarted &)
+    {
+		// [rc4l] A browser's driver now calls the loop once a frame, so main returns and the runtime stays up.
+		return 0;
     }
     catch (class CDoomError &error)
     {

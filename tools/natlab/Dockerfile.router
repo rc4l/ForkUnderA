@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The fake home router. iptables and nothing else -- the kernel does the NAT, this image only
+# needs to be able to write the rules and then stay alive so its network namespace persists.
+FROM alpine:3.20
+
+# conntrack and tcpdump are for diagnosis only, and they earn their place: when a punch fires on both
+# sides and the joiner still cannot get in, the question is whether the router's DROP rule is eating
+# the packets -- which is a counter, not an inference.
+RUN apk add --no-cache iptables iproute2 conntrack-tools tcpdump
+
+COPY router.sh /router.sh
+RUN chmod +x /router.sh
+
+ENTRYPOINT ["/router.sh"]

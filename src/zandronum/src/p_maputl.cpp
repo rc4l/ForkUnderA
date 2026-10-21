@@ -49,6 +49,7 @@
 // [Leo] Zandronum includes
 #include "v_text.h"
 #include "sv_main.h"
+#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 
 static AActor *RoughBlockCheck (AActor *mo, int index, void *);
 
@@ -270,6 +271,7 @@ void AActor::UnlinkFromWorld ()
 		// pointers, allows head node pointers to be treated like everything else
 		AActor **prev = sprev;
 		AActor  *next = snext;
+		zx::gamecopy::NoteActorLists();
 
 		if (prev != NULL)	// prev will be NULL if this actor gets deleted due to cleaning up from a broken savegame
 		{
@@ -374,6 +376,7 @@ void AActor::LinkToWorld (sector_t *sec)
 			next->sprev = &snext;
 		sprev = link;
 		*link = this;
+		zx::gamecopy::NoteActorLists();
 
 		// phares 3/16/98
 		//
@@ -797,29 +800,39 @@ line_t *FBlockLinesIterator::Next()
 //
 //===========================================================================
 
+// [rc4l] The DynHash(0) initializers were removed: TArray(0) still calls
+// M_Malloc, so every iterator paid a malloc+free pair even though most
+// blocks fit in FixedHash and never touch DynHash. Dense blocks now lease a
+// hash block from a shared pool (returned by the destructor), so grown
+// capacity survives across iterators instead of being reallocated for every
+// crowded collision check. This is one of the hottest object constructions
+// in the sim, so both halves matter in mass-actor storms.
+
+TArray<TArray<FBlockThingsIterator::HashEntry> *> FBlockThingsIterator::DynHashPool;
+
 FBlockThingsIterator::FBlockThingsIterator()
-: DynHash(0)
 {
 	minx = maxx = 0;
 	miny = maxy = 0;
+	DynHash = NULL;
 	ClearHash();
 	block = NULL;
 }
 
 FBlockThingsIterator::FBlockThingsIterator(int _minx, int _miny, int _maxx, int _maxy)
-: DynHash(0)
 {
 	minx = _minx;
 	maxx = _maxx;
 	miny = _miny;
 	maxy = _maxy;
+	DynHash = NULL;
 	ClearHash();
 	Reset();
 }
 
 FBlockThingsIterator::FBlockThingsIterator(const FBoundingBox &box)
-: DynHash(0)
 {
+	DynHash = NULL;
 	maxy = GetSafeBlockY(box.Top() - bmaporgy);
 	miny = GetSafeBlockY(box.Bottom() - bmaporgy);
 	maxx = GetSafeBlockX(box.Right() - bmaporgx);
@@ -838,7 +851,18 @@ void FBlockThingsIterator::ClearHash()
 {
 	clearbuf(Buckets, countof(Buckets), -1);
 	NumFixedHash = 0;
-	DynHash.Clear();
+	if (DynHash != NULL)
+		DynHash->Clear();
+}
+
+FBlockThingsIterator::~FBlockThingsIterator()
+{
+	if (DynHash != NULL)
+	{
+		DynHash->Clear();
+		DynHashPool.Push(DynHash);
+		DynHash = NULL;
+	}
 }
 
 //===========================================================================
@@ -935,12 +959,25 @@ AActor *FBlockThingsIterator::Next(bool centeronly)
 					}
 					else
 					{
-						if (DynHash.Size() == 0)
+						if (DynHash == NULL)
 						{
-							DynHash.Grow(50);
+							// Lease a block; pooled ones keep their grown capacity.
+							if (DynHashPool.Size() > 0)
+							{
+								DynHash = DynHashPool[DynHashPool.Size() - 1];
+								DynHashPool.Delete(DynHashPool.Size() - 1);
+							}
+							else
+							{
+								DynHash = new TArray<HashEntry>;
+							}
 						}
-						i = DynHash.Reserve(1);
-						entry = &DynHash[i];
+						if (DynHash->Size() == 0 && DynHash->Max() == 0)
+						{
+							DynHash->Grow(50);
+						}
+						i = DynHash->Reserve(1);
+						entry = &(*DynHash)[i];
 						entry->Next = Buckets[hash];
 						Buckets[hash] = i + countof(FixedHash);
 					}

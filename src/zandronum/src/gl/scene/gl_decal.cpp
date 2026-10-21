@@ -51,9 +51,17 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_texture.h"
+#include "features/materials/textureinfo.h"
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_clock.h"
+
+
+// [rc4l] What a decal actually receives from the dynamic lights, per draw.
+//
+// "Decals should not be lit" and "decals are not being lit" look identical on screen, and only one
+// of them is a bug. This says which: whether the decal is a shaded alpha mask (whose own colour
+// multiplies the light, so a black one can never brighten) and what light reached it.
+CVAR(Bool, fua_decal_lightlog, false, 0)
 
 struct DecalVertex
 {
@@ -66,6 +74,7 @@ struct DecalVertex
 //
 //
 //==========================================================================
+
 void GLWall::DrawDecal(DBaseDecal *decal)
 {
 	line_t * line=seg->linedef;
@@ -294,12 +303,18 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 	}
 
 	// calculate dynamic light effect.
-	if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
+	float decalDyn[3] = { 0.f, 0.f, 0.f };
+	if (r_lights && GLRenderer->mLightCount && !gl_fixedcolormap && r_light_sprites)
 	{
 		// Note: This should be replaced with proper shader based lighting.
 		fixed_t x, y;
 		decal->GetXY(seg->sidedef, x, y);
 		gl_SetDynSpriteLight(NULL, x, y, zpos, sub);
+		gl_RenderState.GetDynLight(decalDyn[0], decalDyn[1], decalDyn[2]);
+		if (fua_decal_lightlog)
+			Printf("decal %s: shaded %d  alphaColor %06x  dynLight %.3f %.3f %.3f\n",
+				texture ? texture->Name.GetChars() : "?", decal->RenderStyle.Flags & STYLEF_RedIsAlpha ? 1 : 0,
+				(unsigned)decal->AlphaColor & 0xffffff, decalDyn[0], decalDyn[1], decalDyn[2]);
 	}
 
 	// alpha color only has an effect when using an alpha texture.
@@ -323,7 +338,7 @@ void GLWall::DrawDecal(DBaseDecal *decal)
 
 
 	// If srcalpha is one it looks better with a higher alpha threshold
-	if (decal->RenderStyle.SrcAlpha == STYLEALPHA_One) gl_RenderState.AlphaFunc(GL_GEQUAL, gl_mask_sprite_threshold);
+	if (decal->RenderStyle.SrcAlpha == STYLEALPHA_One) gl_RenderState.AlphaFunc(GL_GEQUAL, r_mask_sprite_threshold);
 	else gl_RenderState.AlphaFunc(GL_GREATER, 0.f);
 
 	gl_RenderState.Apply();

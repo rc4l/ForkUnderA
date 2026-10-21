@@ -71,7 +71,7 @@ if( WIN32 )
 		PATHS ENV DXSDK_DIR
 		PATH_SUFFIXES Include )
 	if( NOT XINPUT_INCLUDE_DIR )
-		message( SEND_ERROR "Could not find xinput.h. XInput will be disabled." )
+		message( WARNING "Could not find xinput.h. XInput will be disabled." )	# [rc4l] uzdoom@719dfbe5a -- a missing optional SDK header should not fail configuration
 		add_definitions( -DNO_XINPUT )
 	else( NOT XINPUT_INCLUDE_DIR )
 		include_directories( ${XINPUT_INCLUDE_DIR} )
@@ -133,6 +133,13 @@ else( WIN32 )
 			set( NO_SOUND ON )
 			set( NO_GTK ON )
 			set( NO_GL ON )
+			# [rc4l] NO_REPLAY is forced beside its own option() further down, NOT here, and the
+			# asymmetry is a trap rather than a style choice. The three switches above survive being
+			# set here only because their option() calls happen just above; option( NO_REPLAY ) is
+			# hundreds of lines below and would overwrite a plain set() with its OFF default, because
+			# CMP0077 is OLD under the CMAKE_POLICY_VERSION_MINIMUM=3.5 this project configures with.
+			# A set() here looks correct, changes nothing, and the only symptom is a headless binary
+			# still linking FFmpeg.
 			add_definitions ( -DSERVER_ONLY=1 )
 			set( ZDOOM_EXE_NAME ${ZDOOM_EXE_NAME}-server )
 		endif( SERVERONLY )
@@ -170,7 +177,11 @@ else( WIN32 )
 	# the instant-replay sink moved to AudioQueue, not the audio either. Linking it anyway would
 	# leave a dependency nothing calls, and SDL2main in particular would fight our own main() in
 	# posix/cocoa/i_main.mm for the entry point. Linux still needs both.
-	if( NOT ( APPLE AND ZX_COCOA_BACKEND ) )
+	if( EMSCRIPTEN )
+		# [rc4l] Emscripten's own SDL2 port, whose window is the page's canvas.
+		add_compile_options( -sUSE_SDL=2 )
+		set( ZDOOM_LIBS ${ZDOOM_LIBS} -sUSE_SDL=2 )
+	elseif( NOT ( APPLE AND ZX_COCOA_BACKEND ) )
 		find_package( SDL2 REQUIRED )
 		set( ZDOOM_LIBS ${ZDOOM_LIBS} SDL2::SDL2 SDL2::SDL2main )
 	endif()
@@ -218,7 +229,13 @@ endif( NOT NO_GL )
 
 
 if( NOT NO_OPENAL )
-	find_package( OpenAL )
+	if( EMSCRIPTEN )
+		# [rc4l] Emscripten's OpenAL is a JavaScript library over Web Audio, linked by name, with its headers in the sysroot.
+		set( OPENAL_INCLUDE_DIR "${EMSCRIPTEN_SYSROOT}/include/AL" )
+		set( OPENAL_LIBRARY -lopenal )
+	else()
+		find_package( OpenAL )
+	endif()
 	if( OPENAL_INCLUDE_DIR AND OPENAL_LIBRARY )
 		message( STATUS "OpenAL found at ${OPENAL_LIBRARY}" )
 		include_directories( ${OPENAL_INCLUDE_DIR} )
@@ -478,10 +495,11 @@ endif( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" S
 
 # MSVC Flags
 
-if( MSVC )
+# [rc4l] Only under Visual Studio, which hands cl many files at once; Ninja starts one cl per file already, and a compiler cache (sccache in CI) caches one file per call.
+if( MSVC AND CMAKE_GENERATOR MATCHES "Visual Studio" )
 	# [BB] Use object level parallelism for our main target.
 	set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP" )
-endif( MSVC )
+endif()
 
 # Check for functions that may or may not exist.
 
@@ -494,6 +512,11 @@ CHECK_FUNCTION_EXISTS( strupr STRUPR_EXISTS )
 if( NOT STRUPR_EXISTS )
 	add_definitions( -DNEED_STRUPR=1 )
 endif( NOT STRUPR_EXISTS )
+
+CHECK_FUNCTION_EXISTS( strlwr STRLWR_EXISTS )
+if( NOT STRLWR_EXISTS )
+	add_definitions( -DNEED_STRLWR=1 )
+endif( NOT STRLWR_EXISTS )
 
 CHECK_FUNCTION_EXISTS( stricmp STRICMP_EXISTS )
 if( NOT STRICMP_EXISTS )
@@ -575,6 +598,19 @@ endif ( NOT NO_OPENAL )
 # [rc4l] FUA instant replay: encode gameplay clips as H.264/MP4 via FFmpeg (libav*). Optional --
 # if the libraries aren't found the feature compiles as a no-capture stub (ZX_ENABLE_REPLAY off).
 option( NO_REPLAY "Disable the FUA instant-replay video feature" OFF )
+
+# [rc4l] The recorder captures the rendered frame, so a build with no renderer cannot use it. Left
+# alone, SERVERONLY linked libavcodec, libavformat, libavutil and libswscale for a feature it can
+# never reach, and every container had to install them to satisfy the loader.
+#
+# Forced HERE, immediately after the option(), and it has to be: option() creates the cache entry
+# from its own default, so anything set before this line is discarded under CMP0077 OLD. That is why
+# the SERVERONLY block cannot do what it does for NO_SOUND, NO_GTK and NO_GL.
+if( SERVERONLY )
+	set( NO_REPLAY ON )
+	message( STATUS "FUA replay: disabled for SERVERONLY -- a headless build has no frame to capture" )
+endif()
+
 if( NOT NO_REPLAY )
 	# First try pkg-config (macOS Homebrew, Linux distros).
 	find_package( PkgConfig QUIET )
@@ -608,20 +644,28 @@ if( NOT NO_REPLAY )
 	endif()
 endif()
 
-# [BB] We need OpenSSL for csrp.
-FIND_PACKAGE ( OpenSSL REQUIRED )
-include_directories( ${OPENSSL_INCLUDE_DIR} )
-set ( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENSSL_LIBRARIES} )
-if( WIN32 )
-	set ( ZDOOM_LIBS ${ZDOOM_LIBS} crypt32 )
-endif ( WIN32 )
+# [rc4l] OpenSSL for the accounts' Ed25519 and X25519 (features/identity/zx_identitycrypto_openssl.cpp), and nothing else.
+if ( ZX_ACCOUNTS )
+	FIND_PACKAGE ( OpenSSL REQUIRED )
+	include_directories( ${OPENSSL_INCLUDE_DIR} )
+	set ( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPENSSL_LIBRARIES} )
+	if( WIN32 )
+		set ( ZDOOM_LIBS ${ZDOOM_LIBS} crypt32 )
+	endif ( WIN32 )
+	set( ZX_IDENTITY_CRYPTO features/identity/zx_identitycrypto_openssl.cpp )
+else ( ZX_ACCOUNTS )
+	set( ZX_IDENTITY_CRYPTO features/identity/zx_identitycrypto_none.cpp )
+endif ( ZX_ACCOUNTS )
 
 # [AK] We need Opus for encoding/decoding VoIP audio packets, and RNNoise for noise suppression.
-if ( NOT NO_SOUND )
+# [rc4l] voicechat.cpp's stubs stand in under NO_VOIP: no sound, no OpenAL, or ZX_VOIP off.
+if ( NO_SOUND OR NO_OPENAL OR NOT ZX_VOIP )
+	add_definitions( -DNO_VOIP=1 )
+else ()
 	find_package( Opus REQUIRED )
 	include_directories( ${OPUS_INCLUDE_DIR} )
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPUS_LIBRARIES} rnnoise )
-endif ( NOT NO_SOUND )
+endif ()
 
 if( NOT DYN_FLUIDSYNTH)
 	if( FLUIDSYNTH_FOUND )
@@ -639,10 +683,10 @@ endif( NOT NO_GL )
 
 # Start defining source files for ZDoom
 set( PLAT_WIN32_SOURCES
-	gl/hqnx_asm/hq2x_asm.cpp
-	gl/hqnx_asm/hq3x_asm.cpp
-	gl/hqnx_asm/hq4x_asm.cpp
-	gl/hqnx_asm/hqnx_asm_Image.cpp
+	features/materials/hqnx_asm/hq2x_asm.cpp
+	features/materials/hqnx_asm/hq3x_asm.cpp
+	features/materials/hqnx_asm/hq4x_asm.cpp
+	features/materials/hqnx_asm/hqnx_asm_Image.cpp
 	win32/eaxedit.cpp
 	win32/fb_d3d9.cpp
 	win32/fb_d3d9_wipe.cpp
@@ -683,12 +727,16 @@ set( PLAT_WIN32_SOURCES ${PLAT_WIN32_SOURCES}
 set( PLAT_SDL_SOURCES
 	posix/sdl/crashcatcher.c
 	posix/sdl/hardware.cpp
+	posix/sdl/i_fpslimit.cpp
 	posix/sdl/i_input.cpp
 	posix/sdl/i_joystick.cpp
 	posix/sdl/i_main.cpp
 	posix/sdl/i_system.cpp
+	posix/sdl/sdlhost_desktop.cpp
+	posix/sdl/sdlvideo.cpp
 	posix/sdl/sdlglvideo.cpp
-	posix/sdl/st_start.cpp )
+	posix/sdl/st_start.cpp
+	features/app-icon/appicon.cpp )
 
 # [rc4l] Instant-replay audio sink: AudioQueue on macOS (the Cocoa backend removed SDL from the
 # engine), SDL on Linux and Windows where SDL is the platform layer anyway.
@@ -768,6 +816,11 @@ else( WIN32 )
 	else()
 		set( SYSTEM_BACKEND_DIR posix/sdl )
 		set( SYSTEM_SOURCES ${PLAT_POSIX_SOURCES} ${PLAT_SDL_SOURCES} )
+		# [rc4l] A browser has no signals to catch a crash with, its frame loop and its frame pacing are the page's, and its host is the page (features/web/webhost.cpp for posix/sdl/sdlhost.h).
+		if( EMSCRIPTEN )
+			list( REMOVE_ITEM SYSTEM_SOURCES posix/sdl/crashcatcher.c posix/sdl/i_fpslimit.cpp posix/sdl/sdlhost_desktop.cpp )
+			list( APPEND SYSTEM_SOURCES features/web/webdriver.cpp features/web/webcrash.cpp features/web/webhost.cpp )
+		endif()
 		if( APPLE )
 			set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${PLAT_MAC_SOURCES} )
 			set( OTHER_SYSTEM_SOURCES ${PLAT_WIN32_SOURCES} ${PLAT_COCOA_SOURCES} )
@@ -776,6 +829,18 @@ else( WIN32 )
 		endif()
 	endif()
 endif( WIN32 )
+
+# [rc4l] features/telemetry's probe of what the OS says about the process: one file per platform behind osprobe.h, none of them testing for a platform inside.
+if( WIN32 )
+	set( FUA_TELEMETRY_PROBE features/telemetry/osprobe_win32.cpp )
+elseif( EMSCRIPTEN )
+	set( FUA_TELEMETRY_PROBE features/telemetry/osprobe_web.cpp )
+elseif( APPLE )
+	set( FUA_TELEMETRY_PROBE features/telemetry/osprobe_mac.cpp features/telemetry/osprobe_stack_posix.cpp )
+else()
+	set( FUA_TELEMETRY_PROBE features/telemetry/osprobe_linux.cpp features/telemetry/osprobe_stack_posix.cpp )
+endif()
+set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${FUA_TELEMETRY_PROBE} )
 
 if( NO_ASM )
 	add_definitions( -DNOASM )
@@ -804,6 +869,35 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sc_man_scanner.h
 	COMMAND re2c --no-generation-date -s -o ${CMAKE_CURRENT_BINARY_DIR}/sc_man_scanner.h ${CMAKE_CURRENT_SOURCE_DIR}/sc_man_scanner.re
 	DEPENDS re2c ${CMAKE_CURRENT_SOURCE_DIR}/sc_man_scanner.re )
 
+# [rc4l] Compile the repo-root WAD-download lists into a header. iwadallowlist.txt and
+# waddownloadsites.txt are the single source of truth; generating rather than checking the header in
+# means the two cannot drift, and building it into the binary rather than reading it at runtime is
+# what keeps the IWAD allowlist a gate (a list a player or a mod could append to is not one).
+# See tools/gen-wadlists.cmake and features/wad-download/README.md.
+set( ZX_REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../.. )
+# waddirectories.txt is tagged per platform and filtered at generation time, so no runtime check.
+if( WIN32 )
+	set( ZX_WADLIST_PLATFORM windows )
+elseif( APPLE )
+	set( ZX_WADLIST_PLATFORM macos )
+else()
+	set( ZX_WADLIST_PLATFORM linux )
+endif()
+add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
+	COMMAND ${CMAKE_COMMAND}
+		-DIWAD_LIST=${ZX_REPO_ROOT}/config/iwadallowlist.txt
+		-DSITE_LIST=${ZX_REPO_ROOT}/config/waddownloadsites.txt
+		-DSUBST_LIST=${ZX_REPO_ROOT}/config/iwadsubstitutes.txt
+		-DDIR_LIST=${ZX_REPO_ROOT}/config/waddirectories.txt
+		-DPLATFORM=${ZX_WADLIST_PLATFORM}
+		-DOUT=${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
+		-P ${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
+	DEPENDS ${ZX_REPO_ROOT}/config/iwadallowlist.txt ${ZX_REPO_ROOT}/config/waddownloadsites.txt
+		${ZX_REPO_ROOT}/config/iwadsubstitutes.txt
+		${ZX_REPO_ROOT}/config/waddirectories.txt
+		${ZX_REPO_ROOT}/tools/gen-wadlists.cmake
+	COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt" )
+
 include_directories( ${CMAKE_CURRENT_BINARY_DIR} )
 
 if( SSE_MATTERS )
@@ -828,38 +922,26 @@ endif( DYN_FLUIDSYNTH )
 if( NOT NO_GL )
 	set( GL_SOURCES
 		gl/data/gl_data.cpp
-		gl/data/gl_portaldata.cpp
-		gl/data/gl_setup.cpp
 	gl/data/gl_matrix.cpp
 		gl/data/gl_vertexbuffer.cpp
-		gl/dynlights/a_dynlight.cpp
 		gl/utility/gl_clock.cpp
-		gl/utility/gl_cycler.cpp
 		gl/utility/gl_geometric.cpp
 		gl/renderer/gl_renderer.cpp
 		gl/renderer/gl_renderstate.cpp
 		gl/renderer/gl_lightdata.cpp
-		gl/hqnx/init.cpp
-		gl/hqnx/hq2x.cpp
-		gl/hqnx/hq3x.cpp
-		gl/hqnx/hq4x.cpp
 		gl/textures/gl_hwtexture.cpp
 		gl/textures/gl_texture.cpp
 		gl/textures/gl_material.cpp
-		gl/textures/gl_hirestex.cpp
-		gl/textures/gl_bitmap.cpp
 	gl/textures/gl_samplers.cpp
-		gl/textures/gl_translate.cpp
-		gl/textures/gl_hqresize.cpp
-		gl/textures/gl_skyboxtexture.cpp
 		gl/scene/gl_bsp.cpp
-		gl/scene/gl_fakeflat.cpp
+		gl/scene/gl_wallcache.cpp
 		gl/scene/gl_clipper.cpp
 		gl/scene/gl_decal.cpp
 		gl/scene/gl_drawinfo.cpp
 		gl/scene/gl_flats.cpp
 		gl/scene/gl_walls.cpp
 		gl/scene/gl_sprite.cpp
+	gl/scene/gl_spriteview.cpp
 		gl/scene/gl_skydome.cpp
 		gl/scene/gl_renderhacks.cpp
 		gl/scene/gl_weapon.cpp
@@ -874,8 +956,6 @@ if( NOT NO_GL )
 		gl/stereo3d/gl_stereo_leftright.cpp
 		gl/stereo3d/scoped_view_shifter.cpp
 		gl/stereo3d/gl_anaglyph.cpp
-		gl/dynlights/gl_dynlight.cpp
-		gl/dynlights/gl_glow.cpp
 		gl/dynlights/gl_dynlight1.cpp
 	gl/dynlights/gl_lightbuffer.cpp
 			gl/shaders/gl_shader.cpp
@@ -884,10 +964,13 @@ if( NOT NO_GL )
 		gl/system/gl_framebuffer.cpp
 		gl/system/gl_menu.cpp
 		gl/system/gl_wipe.cpp
-		gl/models/gl_models_md3.cpp
-		gl/models/gl_models_md2.cpp
 		gl/models/gl_models.cpp
-		gl/models/gl_voxels.cpp
+		# [rc4l] Side by side compares against GL's own frame (its window is an OpenGLFrameBuffer), so it goes wherever GL does.
+		features/sidebyside/sidebyside.cpp
+		features/sidebyside/glchecks.cpp
+		features/sidebyside/surfaceverify.cpp
+		# [rc4l] The hitbox overlay's GL drawing; its geometry and the backend's lines are features/hitboxviz/hitboxviz.cpp, which every build has.
+		features/hitboxviz/hitboxviz_gl.cpp
 	)
 else( NOT NO_GL )
 	set( GL_SOURCES posix/sdl/glstubs.cpp )
@@ -927,8 +1010,8 @@ file( GLOB HEADER_FILES
 	gl/api/*.h
 	gl/data/*.h
 	gl/dynlights/*.h
-	gl/hqnx/*.h
-	gl/hqnx_asm/*.h
+	features/materials/hqnx/*.h
+	features/materials/hqnx_asm/*.h
 	gl/models/*.h
 	gl/renderer/*.h
 	gl/scene/*.h
@@ -972,6 +1055,7 @@ set( NOT_COMPILED_SOURCE_FILES
 	g_heretic/a_knight.cpp
 	g_heretic/a_wizard.cpp
 	g_hexen/a_bats.cpp
+	g_hexen/a_flies.cpp
 	g_hexen/a_bishop.cpp
 	g_hexen/a_blastradius.cpp
 	g_hexen/a_boostarmor.cpp
@@ -1054,6 +1138,105 @@ set( NOT_COMPILED_SOURCE_FILES
 # if it doesn't exist yet.
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/network/servercommands.cpp PROPERTIES GENERATED TRUE )
 
+# [rc4l] The features that reach other machines, which a build with ZX_ONLINE off replaces with features/offline (see its README).
+set( ONLINE_SOURCES
+	features/identity/zx_identity.cpp
+	${ZX_IDENTITY_CRYPTO}
+	features/identity/zx_identitynet.cpp
+	features/net/zx_httpsget.cpp
+	features/net/zx_resolve.cpp
+	features/net/zx_httpfile.cpp
+	features/net/zx_httpfile_win.cpp
+	features/wad-library/zx_wadlibrary.cpp
+	features/wad-library/computation/wadlibrary_compute.cpp
+	features/wad-library/computation/loadorder_compute.cpp
+	features/wad-library/computation/pathdisplay_compute.cpp
+	features/wad-download/zx_waddownload.cpp
+	features/wad-download/zx_resolvejob.cpp
+	features/wad-download/computation/jobstate_compute.cpp
+	features/wad-download/computation/downloadplan_compute.cpp
+	features/wad-download/computation/iwadallow_compute.cpp
+	features/wad-download/computation/iwadsubstitute_compute.cpp
+	features/wad-download/computation/fileresolve_compute.cpp
+	features/wad-download/computation/wadstore_compute.cpp
+	features/port-mapping/zx_portmap.cpp
+	features/port-mapping/computation/ssdp_compute.cpp
+	features/port-mapping/computation/upnpsoap_compute.cpp
+	features/port-mapping/computation/natpmp_compute.cpp
+	features/server-hosting/zx_hosting.cpp
+	features/server-hosting/zx_hostprocess.cpp
+	features/server-hosting/zx_hostwatchdog.cpp
+	features/server-hosting/computation/hostargs_compute.cpp
+	features/server-hosting/computation/hostlifecycle_compute.cpp
+	features/server-hosting/computation/hostport_compute.cpp
+	features/server-hosting/computation/hoststatus_compute.cpp
+	features/net/computation/v6mapped_compute.cpp
+	features/net/computation/v6prefix_compute.cpp
+	features/server-hosting/computation/punchbroker_compute.cpp
+	features/server-hosting/zx_punchclient.cpp
+	features/server-browser/computation/mapselect_compute.cpp
+	features/server-browser/computation/toolgrid_compute.cpp
+	features/server-hosting/computation/hostfocus_compute.cpp
+	features/server-hosting/computation/hostsettings_compute.cpp
+	features/server-hosting/computation/reachprobe_compute.cpp
+	features/server-hosting/zx_reachprobe.cpp
+	features/server-hosting/zx_registrydirectory.cpp
+	features/addon-catalogue/zx_catalogue.cpp
+	features/addon-catalogue/computation/addonfile_compute.cpp
+	features/addon-catalogue/computation/iwadpick_compute.cpp
+	features/addon-catalogue/computation/pickerview_compute.cpp
+	features/addon-catalogue/computation/hostplan_compute.cpp
+	features/addon-catalogue/computation/compat_compute.cpp
+	features/wad-serve/zx_wadserve.cpp
+	features/wad-serve/computation/ratebucket_compute.cpp
+	features/wad-serve/computation/httpreq_compute.cpp
+	features/wad-serve/computation/servepolicy_compute.cpp
+	features/server-browser/browser.cpp #ST
+	features/server-browser/zx_serverbrowsermenu.cpp
+	features/server-browser/zx_joinserver.cpp
+	features/server-browser/computation/serverbrowser_compute.cpp
+	features/server-browser/computation/registrystatus_compute.cpp
+	features/server-browser/computation/browserchrome_compute.cpp
+	features/server-browser/computation/choicerow_compute.cpp
+	features/server-browser/computation/pointerdrag_compute.cpp
+	features/server-browser/computation/browserfocus_compute.cpp
+	features/server-browser/computation/browserhit_compute.cpp
+	features/server-browser/computation/dialog_compute.cpp
+	features/server-browser/computation/pillflow_compute.cpp
+	features/server-browser/computation/flagset_compute.cpp
+	features/server-browser/computation/customsave_compute.cpp
+	features/server-browser/computation/flaghelp_compute.cpp
+	features/server-browser/computation/maplist_compute.cpp
+	features/server-browser/computation/servervar_compute.cpp
+	features/server-browser/zx_customstore.cpp
+	features/server-browser/zx_mapscan.cpp
+	features/server-browser/zx_flagtable.cpp
+	features/server-browser/computation/glowtravel_compute.cpp
+	features/server-browser/computation/bytesize_compute.cpp
+	features/server-browser/computation/colortext_compute.cpp
+	features/server-browser/computation/joinplan_compute.cpp
+	features/server-browser/computation/geoiptable_compute.cpp
+	features/server-browser/computation/joinintent_compute.cpp
+	features/server-browser/computation/joinresume_compute.cpp
+	features/server-browser/computation/scrollbar_compute.cpp
+	features/server-browser/computation/replyrouting_compute.cpp
+	features/server-browser/computation/scrollview_compute.cpp
+	features/server-browser/computation/serversearch_compute.cpp
+	features/server-browser/computation/serversort_compute.cpp
+	features/server-browser/computation/versionrelation_compute.cpp
+	features/server-browser/computation/textinput_compute.cpp
+	features/server-browser/computation/tooltip_compute.cpp
+	features/server-browser/computation/stableline_compute.cpp
+	features/server-browser/computation/launcherfields_compute.cpp
+	features/launcher-protocol/computation/segmentreassembly_compute.cpp
+	features/updater/zx_updater.cpp
+	features/updater/zx_updater_net_win.cpp
+	features/federated-server-registry/zx_serverregistrylist.cpp
+	features/federated-server-registry/computation/serverregistrylist_compute.cpp
+)
+if( NOT ZX_ONLINE )
+	set( ONLINE_SOURCES features/offline/offlinestubs.cpp )
+endif()
 add_executable( zdoom WIN32
 	${HEADER_FILES}
 	${NOT_COMPILED_SOURCE_FILES}
@@ -1080,6 +1263,7 @@ add_executable( zdoom WIN32
 	c_bind.cpp
 	c_cmds.cpp
 	c_console.cpp
+	c_consolebuffer.cpp
 	c_cvars.cpp
 	c_dispatch.cpp
 	c_expr.cpp
@@ -1117,6 +1301,7 @@ add_executable( zdoom WIN32
 	files.cpp
 	g_game.cpp
 	g_hub.cpp
+	g_doomedmap.cpp
 	g_level.cpp
 	g_mapinfo.cpp
 	g_skill.cpp
@@ -1149,13 +1334,19 @@ add_executable( zdoom WIN32
 	name.cpp
 	network.cpp #ST
 	networkshared.cpp #ST
-	network/cl_auth.cpp #ZA
 	network/netcommand.cpp #ZA
 	network/nettraffic.cpp #ST
 	network/packetarchive.cpp #ZA
 	network/servercommands.cpp #ZA
-	network/srp.cpp #ZA
-	network/sv_auth.cpp #ZA
+	# [rc4l] Vendored Cephes portable math (from UZDoom common/thirdparty/math): bit-exact
+	# c_atan2 for the node builder, so GL node building is deterministic across platforms.
+	# Apple ARM libm's atan2 rounds differently from MSVC's, which flipped seg orderings at
+	# near-ties and assembled corrupt subsector rings (holes in floors/walls) on macOS only.
+	math/atan.c
+	math/const.c
+	math/isnan.c
+	math/mtherr.c
+	math/polevl.c
 	nodebuild.cpp
 	nodebuild_classify_nosse2.cpp
 	nodebuild_events.cpp
@@ -1427,6 +1618,8 @@ add_executable( zdoom WIN32
 	${FUA_AUDIOSINK_SOURCES}
 	features/openal-sound/sndfile_decoder.cpp
 	features/openal-sound/mpg123_decoder.cpp
+	features/sound-decoders/builtindecoder.cpp
+	features/sound-decoders/vendor/decoders_vendor.cpp
 	features/freeform-menu/freeformmenu.cpp
 	features/video-scale/videoscale.cpp
 	features/windowed-video/windowedvideo.cpp
@@ -1435,21 +1628,226 @@ add_executable( zdoom WIN32
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp
 	features/wadreload/zx_wadreload.cpp
-	features/net/zx_httpsget.cpp
-	features/server-browser/browser.cpp #ST
-	features/server-browser/browsermenu.cpp #ZA
-	features/server-browser/zx_serverbrowsermenu.cpp
-	features/server-browser/computation/serverbrowser_compute.cpp
-	features/updater/zx_updater.cpp
-	features/updater/zx_updater_net_win.cpp
-	features/federated-server-registry/zx_serverregistrylist.cpp
-	features/federated-server-registry/computation/serverregistrylist_compute.cpp
+	features/bot-save/zx_botsave.cpp
+	features/continue/zx_continue.cpp
+	features/host-command/zx_hostcommand.cpp
+	features/playerclass-fallback/zx_playerclassfallback.cpp
+	features/fua-caching/fua_caching.cpp
+	features/fua-caching/fua_warmup.cpp
+	features/iwad-registry/zx_iwadregistry.cpp
+	${ONLINE_SOURCES}
+	features/net/zx_offline.cpp
+	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
+	features/wad-download/zx_filehash.cpp
+	features/wad-download/zx_wadsearch.cpp
+	# [rc4l] Generated, and listed so the custom command above runs for this target, offline builds included, whose wad search reads it.
+	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
+	features/damage-tint/damagetint.cpp
+	features/gamecopy/tintsubject.cpp
+	features/global-header/zx_globalheader.cpp
+	features/menu-focus/zx_focusglow.cpp
+	features/global-header/computation/globalheader_compute.cpp
+	features/global-header/computation/headerreach_compute.cpp
+	features/panel-menu/panelmenu.cpp
+	features/panel-menu/computation/panelmenu_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
 	features/hitboxviz/computation/blastrecords_compute.cpp
 	features/hitboxviz/computation/vizgate_compute.cpp
+	features/levelmesh/levelmesh.cpp
+	features/levelmesh/wallcache.cpp
+	features/levelmesh/walldecals.cpp
+	features/rendersettings/rendersettings.cpp
+	features/rendersettings/mapoptions.cpp
+	features/rendersettings/computation/mapoptions_compute.cpp
+	features/levelprep/levelprep.cpp
+	features/gldefs/gldefs.cpp
+	features/gldefs/glow.cpp
+	features/fakeflat/fakeflat.cpp
+	features/models/modeldef.cpp
+	features/models/md2model.cpp
+	features/models/md3model.cpp
+	features/models/voxelmodel.cpp
+	features/dynlights/a_dynlight.cpp
+	features/levelmesh/pointlight.cpp
+	features/gldefs/lightsettings.cpp
+	features/dynlights/cycler.cpp
+	features/materials/spriteframe.cpp
+	features/stackportals/stackportals.cpp
+	features/materials/computation/texcoord_compute.cpp
+	features/materials/computation/materiallayout_compute.cpp
+	features/hwrender/rendererrate.cpp
+	features/draw2d/record.cpp
+	features/visibility/skyfog.cpp
+	features/viewsetup/spriteview.cpp
+	features/levelmesh/staticmesh.cpp
+	features/levelmesh/flatmesh.cpp
+	features/levelmesh/fakeplanes.cpp
+	features/levelmesh/projdecals.cpp
+	features/levelmesh/modelmesh.cpp
+	features/levelmesh/captureshading.cpp
+	features/materials/materials.cpp
+	features/materials/material.cpp
+	features/materials/textureinfo.cpp
+	features/materials/texturebitmap.cpp
+	features/materials/translationpalette.cpp
+	features/materials/skyboxtexture.cpp
+	features/materials/hqresize.cpp
+	features/materials/hirestex.cpp
+	features/materials/hqnx/init.cpp
+	features/materials/hqnx/hq2x.cpp
+	features/materials/hqnx/hq3x.cpp
+	features/materials/hqnx/hq4x.cpp
+	features/hwshaders/hwshaders.cpp
+	features/hwshaders/computation/hwshader_compute.cpp
+	features/sprites/spritebuild.cpp
+	features/sprites/modelbuild.cpp
+	features/sprites/pspritebuild.cpp
+	features/frame/standaloneframe.cpp
+	features/frame/playerview.cpp
+	features/frame/levelrenderer.cpp
+	features/frame/framedriver.cpp
+	features/frame/viewtrace.cpp
+	features/frame/framestall.cpp
+	features/frame/debugorbit.cpp
+	features/framephase/framephase.cpp
+	features/telemetry/telemetry.cpp
+	features/telemetry/allocwatch.cpp
+	features/telemetry/census.cpp
+	features/mainloop/mainloop.cpp
+	features/display/display.cpp
+	features/hwrender/backendvideo.cpp
+	features/draw2d/record2d.cpp
+	features/frame/backendrenderer.cpp
+	features/visibility/viswalk.cpp
+	features/jobs/jobs.cpp
+	features/handoff/seam.cpp
+	features/gameloop/loop.cpp
+	features/gameloop/hud.cpp
+	features/handoff/effects.cpp
+	features/handoff/snapshot.cpp
+	features/handoff/gamethread.cpp
+	features/gamecopy/gamecopy.cpp
+	features/gamecopy/xfloors.cpp
+	features/gamecopy/lights.cpp
+	features/gamecopy/particles.cpp
+	features/gamecopy/decals.cpp
+	features/gamecopy/seen.cpp
+	features/gamecopy/polyobjs.cpp
+	features/wipe/wiperandoms.cpp
+	features/wipe/wipetrace.cpp
+	features/decals/decals.cpp
+	features/decals/flatdecal.cpp
+	features/draw2d/draw2d.cpp
+	features/draw2d/screenblend.cpp
+	features/viewsetup/viewsetup.cpp
+	features/viewsetup/computation/viewsetup_compute.cpp
+	features/draw2d/computation/quad2d_compute.cpp
+	features/draw2d/computation/screenblend_compute.cpp
+	features/visibility/computation/clipranges_compute.cpp
+	features/visibility/computation/closedline_compute.cpp
+	features/visibility/computation/coverage_compute.cpp
+	features/visibility/computation/mirrorview_compute.cpp
+	features/visibility/computation/walkslices_compute.cpp
+	features/jobs/computation/jobpool_compute.cpp
+	features/handoff/computation/handoff_compute.cpp
+	features/handoff/computation/lock_compute.cpp
+	features/handoff/computation/asks_compute.cpp
+	features/handoff/computation/queue_compute.cpp
+	features/gamecopy/computation/blend_compute.cpp
+	features/gamecopy/computation/prescan_compute.cpp
+	features/wipe/computation/wipe_compute.cpp
+	features/wipe/computation/wipetrace_compute.cpp
+	features/decals/computation/markrules_compute.cpp
+	features/surfaces/computation/skywall_compute.cpp
+	features/sprites/computation/spritestyle_compute.cpp
+	features/sprites/computation/spritequad_compute.cpp
+	features/sprites/computation/spritelight_compute.cpp
+	features/sprites/computation/spriteclip_compute.cpp
+	features/sprites/computation/spriteframe_compute.cpp
+	features/sprites/computation/modelpose_compute.cpp
+	features/sprites/computation/pspritequad_compute.cpp
+	features/frame/computation/actorcull_compute.cpp
+	features/frame/computation/cameraseen_compute.cpp
+	features/frame/computation/frameroute_compute.cpp
+	features/frame/computation/viewtrace_compute.cpp
+	features/frame/computation/framestall_compute.cpp
+	features/frame/computation/frameclock_compute.cpp
+	features/frame/computation/debugorbit_compute.cpp
+	features/framephase/computation/framephase_compute.cpp
+	features/dynlights/computation/nodeindex_compute.cpp
+	features/cvar-alias/computation/cvaralias_compute.cpp
+	features/rendersettings/computation/forcedvideo_compute.cpp
+	features/display/computation/display_compute.cpp
+	features/draw2d/computation/flatfill_compute.cpp
+	features/levelmesh/computation/shading_compute.cpp
+	features/levelmesh/computation/surfacebudget_compute.cpp
+	features/levelmesh/computation/lightband_compute.cpp
+	features/levelmesh/computation/wallbatch_compute.cpp
+	features/levelmesh/computation/flatmesh_compute.cpp
+	features/levelmesh/computation/fakeplane_compute.cpp
+	features/levelmesh/computation/linequery_compute.cpp
+	features/levelmesh/computation/lookhits_compute.cpp
+	features/udmf-desaturation/computation/udmfdesaturation_compute.cpp
+	features/levelmesh/computation/packedcolor_compute.cpp
+	features/levelmesh/computation/decalproject_compute.cpp
+	features/levelmesh/computation/walldecal_compute.cpp
+	features/levelmesh/computation/wallcache_compute.cpp
+	features/surfaces/computation/wallgeom_compute.cpp
+	features/surfaces/computation/wallbands_compute.cpp
+	features/surfaces/computation/ffblocks_compute.cpp
+	features/surfaces/computation/gapfill_compute.cpp
+	features/surfaces/computation/walluv_compute.cpp
+	features/surfaces/computation/planegeom_compute.cpp
+	features/surfaces/computation/surfacechange_compute.cpp
+	features/surfaces/surfacebuild.cpp
+	features/surfaces/planeuv.cpp
+	features/horizon/horizon.cpp
+	features/horizon/computation/horizon_compute.cpp
+	features/glportal/computation/glportal_compute.cpp
+	# [rc4l] The decisions the Diligent backend used to make inline, where they can be tested.
+	features/hwrender/computation/surfaceorder_compute.cpp
+	features/hwrender/computation/passname_compute.cpp
+	features/hwrender/computation/mirrorsheen_compute.cpp
+	features/hwrender/computation/desaturate_compute.cpp
+	features/hwrender/computation/lightside_compute.cpp
+	features/hwrender/computation/walllight_compute.cpp
+	features/hwrender/computation/lightcluster_compute.cpp
+	features/hwrender/computation/warp_compute.cpp
+	features/hwrender/computation/sceneconstants_compute.cpp
+	features/hwrender/computation/scenebinding_compute.cpp
+	features/hwrender/computation/worldpipelines_compute.cpp
+	features/hwrender/computation/materialslots_compute.cpp
+	features/hwrender/computation/backendchoice_compute.cpp
+	features/hwrender/computation/fuzz_compute.cpp
+	features/levelmesh/computation/wallglow_compute.cpp
+	features/levelmesh/computation/fogboundary_compute.cpp
+	features/levelmesh/computation/seamless_compute.cpp
+	features/hwrender/computation/flood_compute.cpp
+	features/hwrender/computation/planemirror_compute.cpp
+	features/hwrender/computation/skyportal_compute.cpp
+	features/hwrender/computation/batch_compute.cpp
+	features/hwrender/computation/spriteatlas_compute.cpp
+	features/hwrender/computation/growbuffer_compute.cpp
+	features/hwrender/computation/backendview_compute.cpp
+	features/hwrender/computation/wideline_compute.cpp
+	features/hwrender/computation/skylook_compute.cpp
+	features/hwrender/computation/linemirror_compute.cpp
+	features/hwrender/computation/stereo_compute.cpp
+	features/hwrender/computation/dynlayout_compute.cpp
+	features/hwrender/computation/skyfog_compute.cpp
+	features/hwrender/computation/framepacing_compute.cpp
+	features/hwrender/computation/texfilter_compute.cpp
+	features/hwrender/computation/slotremap_compute.cpp
+	features/hwrender/computation/rendererrate_compute.cpp
+	features/hwrender/computation/lighttouch_compute.cpp
 	features/fov-interp/fovinterp.cpp
 	features/fov-interp/fovcvar.cpp
+	features/quake-movement/quakemove.cpp
+	features/quake-movement/elevatorjump.cpp
+	features/speedometer/speedometer.cpp
+	features/crosshair/crosshair.cpp
+	features/damage-taken/damagetaken.cpp
 	zzautozend.cpp
 )
 
@@ -1472,6 +1870,9 @@ if( NO_OPENAL )
 	set_source_files_properties( features/openal-sound/oalsound.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
 endif( NO_OPENAL )
 
+# [rc4l] features/sound-decoders: the vendored decoders build with their warnings off, since that code is not ours.
+set_source_files_properties( features/sound-decoders/vendor/decoders_vendor.cpp PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>" )
+
 if(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 	# [BL] Solaris requires these to be explicitly linked.
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} nsl socket)
@@ -1479,6 +1880,12 @@ endif(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
 
 # [BB] Added GeoIP, huffman & sqlite
 target_link_libraries( zdoom ${ZDOOM_LIBS} gdtoa dumb lzma GeoIP sqlite3 )
+
+# [rc4l] A browser reports its crashes from the page (features/web/webcrash.cpp, web/crashreport.js) to the same tracker, whose DSN only an official build hands it.
+if( EMSCRIPTEN )
+	set_source_files_properties( features/crashreport/zx_crashreport.cpp PROPERTIES HEADER_FILE_ONLY TRUE )
+	target_compile_definitions( zdoom PRIVATE "ZX_SENTRY_DSN=\"${ZX_SENTRY_DSN}\"" )
+endif()
 
 # [rc4l] sentry-native crash reporting (the `sentry` target propagates its own include dirs).
 if( ZX_ENABLE_SENTRY )
@@ -1554,12 +1961,29 @@ if( MSVC )
 	endif( NO_GENERATOR_EXPRESSIONS )
 endif( MSVC )
 
-if( NOT WIN32 )
+if( NOT WIN32 AND NOT EMSCRIPTEN )
 	FILE( WRITE ${CMAKE_CURRENT_BINARY_DIR}/link-make "if [ ! -e ${ZDOOM_OUTPUT_DIR}/${ZDOOM_EXE_NAME} ]; then ln -sf ${CMAKE_CURRENT_BINARY_DIR}/${ZDOOM_EXE_NAME} ${ZDOOM_OUTPUT_DIR}/${ZDOOM_EXE_NAME}; fi" )
 	add_custom_command( TARGET zdoom POST_BUILD
 		COMMAND chmod +x ${CMAKE_CURRENT_BINARY_DIR}/link-make
 		COMMAND /bin/sh -c ${CMAKE_CURRENT_BINARY_DIR}/link-make )
-endif( NOT WIN32 )
+endif( NOT WIN32 AND NOT EMSCRIPTEN )
+
+# [rc4l] The browser module: a heap that grows, a stack deep enough for the node builder, workers ready for the job pool (whose threads a page cannot start mid-frame), and main run by the page once its WebGPU device is ready.
+if( EMSCRIPTEN )
+	set_target_properties( zdoom PROPERTIES SUFFIX ".js" )
+	target_link_options( zdoom PRIVATE
+		"SHELL: -s ALLOW_MEMORY_GROWTH=1"
+		"SHELL: -s INITIAL_MEMORY=256MB"
+		"SHELL: -s STACK_SIZE=8MB"
+		"SHELL: -s PTHREAD_POOL_SIZE=9"   # [rc4l] the job pool's workers and the game thread
+		"SHELL: -s EXIT_RUNTIME=0"
+		"SHELL: -s INVOKE_RUN=0"
+		"SHELL: -s FORCE_FILESYSTEM=1"
+		"SHELL: -s EXPORTED_RUNTIME_METHODS=callMain,ccall,FS,IDBFS"
+		"SHELL: -s EXPORTED_FUNCTIONS=_main,_fua_command"
+		"SHELL: -lidbfs.js"
+		"-Wl,--wrap=exit" )
+endif()
 if( "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" )
 	# GCC misoptimizes this file
 	set_source_files_properties( oplsynth/fmopl.cpp PROPERTIES COMPILE_FLAGS "-fno-tree-dominator-opts -fno-tree-fre" )
@@ -1644,8 +2068,8 @@ source_group("OpenGL Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/
 source_group("OpenGL Renderer\\API" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/api/.+")
 source_group("OpenGL Renderer\\Data" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/data/.+")
 source_group("OpenGL Renderer\\Dynamic Lights" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/dynlights/.+")
-source_group("OpenGL Renderer\\HQ Resize" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/hqnx/.+")
-source_group("OpenGL Renderer\\HQ Resize Assembly version" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/hqnx_asm/.+")
+source_group("Materials\\HQ Resize" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/features/materials/hqnx/.+")
+source_group("Materials\\HQ Resize Assembly version" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/features/materials/hqnx_asm/.+")
 source_group("OpenGL Renderer\\Models" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/models/.+")
 source_group("OpenGL Renderer\\Renderer" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/renderer/.+")
 source_group("OpenGL Renderer\\Scene" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/gl/scene/.+")
@@ -1677,8 +2101,84 @@ source_group("Network\\Server" REGULAR_EXPRESSION "^${CMAKE_CURRENT_SOURCE_DIR}/
 source_group("Network\\Protocol\\Specs" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/.+\\.txt$")
 source_group("Network\\Protocol\\Generator" REGULAR_EXPRESSION "^${CMAKE_SOURCE_DIR}/protocolspec/generator/.+")
 
-# MCP dev bridge (overlay -- not committed upstream)
-target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_actorstate.cpp mcp_hud.cpp )
+# [rc4l] Native MCP "programmable engine" control bridge -- DEV/TEST ONLY, gated OFF by default so
+# release binaries ship without it (no remote-control surface). Enable with -DFUA_MCP_BRIDGE=ON.
+# mcp_bridge.cpp = transport/lifecycle (header-pure); mcp_rpc.cpp = typed RPC dispatch + determinism/
+# state/session handlers (engine-facing); the rest are reader/crash/input/hud backends.
+# [rc4l] Without the backend its entry points answer that there is none, so GL carries every frame.
+if( NOT FUA_DILIGENT )
+	target_sources( zdoom PRIVATE features/hwrender/backendstubs.cpp )
+endif()
+
+# [rc4l] Diligent (Vulkan) backend for the renderer swap -- see features/hwrender/diligent/.
+# The probe is the only consumer today; it proves the library links and a device creates in-process.
+if( FUA_DILIGENT )
+	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgatlas.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp )
+	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
+	if( EMSCRIPTEN )
+		# [rc4l] The browser's canvas, drawn on through WebGPU alone.
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgweb.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_WEB=1 PLATFORM_EMSCRIPTEN=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Emscripten )
+	elseif( WIN32 )
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgwin32.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_WIN32=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Win32 )
+	elseif( APPLE )
+		if( NOT ZX_COCOA_BACKEND )
+			message( FATAL_ERROR "The Vulkan backend on macOS draws through the Cocoa backend: configure with -DZX_COCOA_BACKEND=ON, or -DFUA_DILIGENT=OFF for GL alone." )
+		endif()
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgcocoa.mm )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_MACOS=1 PLATFORM_APPLE=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Apple )
+		set_source_files_properties( features/hwrender/diligent/dgcocoa.mm PROPERTIES COMPILE_OPTIONS "-fno-objc-arc" )
+		target_link_libraries( zdoom "-framework QuartzCore" "-framework Metal" )
+	else()
+		set( FUA_DILIGENT_PLATFORM_SOURCES features/hwrender/diligent/dgsdl.cpp )
+		set( FUA_DILIGENT_PLATFORM PLATFORM_LINUX=1 )
+		set( FUA_DILIGENT_PLATFORM_DIR Linux )
+	endif()
+	target_sources( zdoom PRIVATE ${FUA_DILIGENT_SOURCES} ${FUA_DILIGENT_PLATFORM_SOURCES} )
+	# [rc4l] Diligent's RefCountedObjectImpl.hpp uses std::align_val_t (aligned new), which is C++17.
+	# The engine compiles at C++14, and raising the whole tree for one dependency is exactly the kind
+	# of change that breaks something unrelated three files away -- so the bump is confined to the one
+	# translation unit that includes Diligent headers.
+	if( MSVC )
+		set_source_files_properties( ${FUA_DILIGENT_SOURCES} PROPERTIES COMPILE_FLAGS "/std:c++17" )
+	else()
+		set_source_files_properties( ${FUA_DILIGENT_SOURCES} PROPERTIES COMPILE_FLAGS "-std=c++17" )
+	endif()
+	target_compile_definitions( zdoom PRIVATE FUA_DILIGENT ${FUA_DILIGENT_PLATFORM} )
+	# [rc4l] Vulkan everywhere but the browser; volk for the entry points Diligent loaded, which dgdevice_vk.cpp reads the device's limits through.
+	if( NOT EMSCRIPTEN )
+		target_compile_definitions( zdoom PRIVATE FUA_DILIGENT_VULKAN )
+		target_link_libraries( zdoom Diligent-GraphicsEngineVk-static volk::volk Vulkan::Headers )
+	endif()
+	if( FUA_WEBGPU )
+		target_compile_definitions( zdoom PRIVATE FUA_WEBGPU )
+		target_link_libraries( zdoom Diligent-GraphicsEngineWebGPU-static )
+		target_include_directories( zdoom PRIVATE "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineWebGPU/interface" )
+		# [rc4l] webgpu.h for dgdevice_wgpu.cpp's own calls, which a browser build has from Emscripten.
+		if( NOT EMSCRIPTEN )
+			target_link_libraries( zdoom dawn_headers )
+		endif()
+	endif()
+	target_include_directories( zdoom PRIVATE
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngineVulkan/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsEngine/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Common/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Platforms/${FUA_DILIGENT_PLATFORM_DIR}/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsAccessories/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsTools/interface"
+		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )
+endif()
+
+if( FUA_MCP_BRIDGE )
+	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp mcp_sample.cpp )
+	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
+endif()
 
 # [rc4l] Pure Compute* helpers extracted for testability live in computation/ folders as
 # *_compute.cpp. They register no classes, so link order is irrelevant — pull them all in

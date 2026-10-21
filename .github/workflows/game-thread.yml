@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] The fixture's demo traced inline and on the game thread under ThreadSanitizer must agree tic by tic, with no race in the engine's own code.
+name: game thread
+
+on:
+  pull_request:
+    paths:
+      - 'src/zandronum/src/**'
+      - 'tools/fuactl/**'
+      - 'tools/tsan.supp'
+      - '.github/workflows/game-thread.yml'
+  workflow_dispatch:
+
+jobs:
+  tsan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: game-thread-tsan
+          max-size: 400M
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Software Vulkan and a display
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers libvulkan1 xvfb gdb
+
+      # [rc4l] ThreadSanitizer cannot map its shadow memory beside the runner kernel's full mmap randomisation.
+      - name: Address space ThreadSanitizer can use
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Build with ThreadSanitizer and the bridge
+        shell: bash
+        env:
+          ZX_TSAN: "1"
+          ZX_MCP_BRIDGE: "1"
+        run: ./linux_compile.sh --install-deps --no-package 2>&1 | tail -40
+
+      # [rc4l] Races only the engine's own code makes are judged; the drivers and libraries it calls into keep their own.
+      - name: Record and trace the template fixture
+        env:
+          TSAN_OPTIONS: "log_path=${{ github.workspace }}/tsan suppressions=${{ github.workspace }}/tools/tsan.supp halt_on_error=0 second_deadlock_stack=1 history_size=7"
+          FUACTL_ENGINE: ${{ github.workspace }}/build-linux/forkundera
+          FUACTL_TIMEOUT_SCALE: "20"
+          FUACTL_ENGINE_ARGS: "-nosound"
+        run: |
+          set -e
+          # [rc4l] Now and then, each running engine's main thread in full and then every thread, so a hang names where it waits.
+          ( while sleep 240; do ps -eo pid,etime,stat,args | grep -i '[f]orkundera'; for p in $(pgrep -f '[f]orkundera'); do echo "== $(date -u +%T) stacks of $p"; sudo gdb -p "$p" -batch -ex "thread apply 1 bt 80" -ex "thread apply all bt 12" 2>/dev/null | head -900; done; done ) > "$RUNNER_TEMP/stacks.txt" 2>&1 &
+          cd tools/fuactl
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture record gtfix
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=0 --out "$RUNNER_TEMP/inline.trace"
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture trace gtfix --cvar fua_gamethread=1,fua_gamethread_stress=200 --out "$RUNNER_TEMP/thread.trace"
+          node src/cli.mjs tracediff "$RUNNER_TEMP/inline.trace" "$RUNNER_TEMP/thread.trace"
+          xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture seamcheck gtfix --cvar fua_gamethread=1
+
+      # [rc4l] What the engines said before a run failed, since fuactl only reports that the bridge went away.
+      - name: Engine logs
+        if: failure()
+        run: |
+          # [rc4l] What the engine could see of the fixtures, and how it began, since a first launch once moved ~/.forkundera away and recorded on the IWAD's own map.
+          ls -la "$HOME/.forkundera" "$HOME/.forkundera/fixtures" 2>&1 || true
+          for f in /tmp/fuactl-*/engine-*.log; do echo "== head $f"; head -60 "$f"; done
+          for f in /tmp/fuactl-*/engine-*.log*; do echo "== $f"; tail -80 "$f"; done
+          cat "$RUNNER_TEMP/stacks.txt" 2>/dev/null | head -2000 || true
+
+      # [rc4l] Every report whole, and the hang stacks, since the job prints only each report file's head.
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsan-reports
+          path: |
+            tsan.*
+            ${{ runner.temp }}/stacks.txt
+          if-no-files-found: ignore
+
+      - name: No race in the engine's own code
+        if: always()
+        run: |
+          shopt -s nullglob
+          reports=( tsan.* )
+          for f in "${reports[@]}"; do echo "== $f"; head -120 "$f"; done
+          # [rc4l] Every report's one-line summary, since a file holds many and only its head is printed.
+          [ ${#reports[@]} -gt 0 ] && grep -h "^SUMMARY: ThreadSanitizer" "${reports[@]}" | sort | uniq -c || true
+          # [rc4l] ThreadSanitizer notes when a library a suppression names unloads, which is no report; any other line in a file is one.
+          if [ ${#reports[@]} -gt 0 ] && grep -hv "matched against called_from_lib suppression .* is unloaded" "${reports[@]}" | grep -q .; then echo "ThreadSanitizer reported in ${#reports[@]} file(s)"; exit 1; fi

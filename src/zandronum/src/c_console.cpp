@@ -33,7 +33,9 @@
 */
 
 #include "templates.h"
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueuePrint, QueuedForHandoff
 #include "mcp_bridge.h"
+#include "features/server-hosting/zx_hosting.h" // [rc4l] HostChildEcho
 #include "p_setup.h"
 #include <stdarg.h>
 #include <string.h>
@@ -81,14 +83,20 @@
 #include "st_hud.h"
 #include "r_utility.h"
 #include "p_tick.h"
-
-#define CONSOLESIZE	16384	// Number of characters to store in console
-#define CONSOLELINES 256	// Max number of lines of console text
-#define LINEMASK (CONSOLELINES-1)
+#include "c_consolebuffer.h"	// [rc4l] uzdoom@9d846395b
 
 #define LEFTMARGIN 8
 #define RIGHTMARGIN 8
 #define BOTTOMARGIN 12
+
+// [rc4l] uzdoom@9d846395b
+CUSTOM_CVAR(Int, con_buffersize, -1, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	// ensure a minimum size
+	if (self >= 0 && self < 128) self = 128;
+}
+
+FConsoleBuffer *conbuffer;	// [rc4l] uzdoom@9d846395b
 
 static void C_TabComplete (bool goForward);
 static bool C_TabCompleteList ();
@@ -108,6 +116,7 @@ extern FBaseCVar *CVars;
 extern FConsoleCommand *Commands[FConsoleCommand::HASH_SIZE];
 
 int			ConCols, PhysRows;
+int			ConWidth;	// [rc4l] uzdoom@9d846395b
 bool		vidactive = false;
 bool		cursoron = false;
 int			ConBottom, ConScroll, RowAdjust;
@@ -135,13 +144,7 @@ float g_rXScale, g_rYScale;
 // How tall is the smallfont, scaling considered?
 ULONG g_ulTextHeight;
 
-static char ConsoleBuffer[CONSOLESIZE];
-static char *Lines[CONSOLELINES];
-static char *TimeStamps[CONSOLELINES]; // [Leo]
-static bool LineJoins[CONSOLELINES];
-
 static int TopLine, InsertLine;
-static char *BufferRover = ConsoleBuffer;
 
 static void ClearConsole ();
 static void C_PasteText(FString clip, BYTE *buffer, int len);
@@ -290,7 +293,6 @@ static	bool	g_bPrintToRCONPlayer = true;
 
 // [BC] Add a new print level for OpenGL messages.
 // [AK] Added a new print level for private chat messages.
-#define PRINTLEVELS 7
 int PrintColors[PRINTLEVELS+2] = { CR_RED, CR_GOLD, CR_GRAY, CR_GREEN, CR_BRICK, CR_CYAN, CR_GOLD, CR_ORANGE };
 
 static void setmsgcolor (int index, int color);
@@ -427,9 +429,6 @@ void C_InitConback()
 	if ( Args->CheckParm( "-host" ))
 		return;
 
-	// [AK] Initialize the timestamps string array;
-	memset(TimeStamps, 0, sizeof(TimeStamps));
-
 	conback = TexMan.CheckForTexture ("CONBACK", FTexture::TEX_MiscPatch);
 
 	if (!conback.isValid())
@@ -459,78 +458,13 @@ void C_InitConsole (int width, int height, bool ingame)
 	{
 		cwidth = cheight = 8;
 	}
-	ConCols = (width - LEFTMARGIN - RIGHTMARGIN) / cwidth;
+	ConWidth = (width - LEFTMARGIN - RIGHTMARGIN);	// [rc4l] uzdoom@9d846395b
+	ConCols = ConWidth / cwidth;
 	PhysRows = height / cheight;
 
-	// If there is some text in the console buffer, reformat it
-	// for the new resolution.
-	if (TopLine != InsertLine)
-	{
-		// Note: Don't use new here, because we attach a handler to new in
-		// i_main.cpp that calls I_FatalError if the allocation fails,
-		// but we can gracefully handle such a condition here by just
-		// clearing the console buffer. (OTOH, what are the chances that
-		// any other memory allocations would succeed if we can't get
-		// these mallocs here?)
-
-		char *fmtBuff = (char *)malloc (CONSOLESIZE);
-		char **fmtLines = (char **)malloc (CONSOLELINES*sizeof(char*)*4);
-		int out = 0;
-
-		if (fmtBuff && fmtLines)
-		{
-			int in;
-			char *fmtpos;
-			bool newline = true;
-
-			fmtpos = fmtBuff;
-			memset (fmtBuff, 0, CONSOLESIZE);
-
-			for (in = TopLine; in != InsertLine; in = (in + 1) & LINEMASK)
-			{
-				size_t len = strlen (Lines[in]);
-
-				if (fmtpos + len + 2 - fmtBuff > CONSOLESIZE)
-				{
-					break;
-				}
-				if (newline)
-				{
-					newline = false;
-					fmtLines[out++] = fmtpos;
-				}
-				strcpy (fmtpos, Lines[in]);
-				fmtpos += len;
-				if (!LineJoins[in])
-				{
-					*fmtpos++ = '\n';
-					fmtpos++;
-					if (out == CONSOLELINES*4)
-					{
-						break;
-					}
-					newline = true;
-				}
-			}
-		}
-
-		ClearConsole ();
-
-		if (fmtBuff && fmtLines)
-		{
-			int i;
-
-			for (i = 0; i < out; i++)
-			{
-				AddToConsole (-1, fmtLines[i]);
-			}
-		}
-
-		if (fmtBuff)
-			free (fmtBuff);
-		if (fmtLines)
-			free (fmtLines);
-	}
+	// [rc4l] uzdoom@9d846395b -- the buffer re-wraps itself in FormatText(), so a resolution
+	// change no longer has to round-trip the whole scrollback through AddToConsole().
+	if (conbuffer == NULL) conbuffer = new FConsoleBuffer;
 
 	// [Dusk] Initialize NotifyStrings
 	NotifyStrings.Resize( con_notifylines );
@@ -641,6 +575,13 @@ void C_DeinitConsole ()
 		work = NULL;
 		worklen = 0;
 	}
+
+	// [rc4l] uzdoom@9d846395b
+	if (conbuffer != NULL)
+	{
+		delete conbuffer;
+		conbuffer = NULL;
+	}
 }
 
 static void ClearConsole ()
@@ -651,21 +592,12 @@ static void ClearConsole ()
 
 	RowAdjust = 0;
 	TopLine = InsertLine = 0;
-	BufferRover = ConsoleBuffer;
-	memset (ConsoleBuffer, 0, CONSOLESIZE);
-	memset (Lines, 0, sizeof(Lines));
-
-	// [AK] Delete all the timestamps.
-	for (int i = 0; i < CONSOLELINES; i++)
+	// [rc4l] uzdoom@9d846395b -- the buffer owns its own storage, including the [AK] timestamps
+	// that used to need freeing out of a parallel array here.
+	if (conbuffer != NULL)
 	{
-		if (TimeStamps[i] != NULL)
-		{
-			delete[] TimeStamps[i];
-		}
+		conbuffer->Clear();
 	}
-
-	memset (TimeStamps, 0, sizeof(TimeStamps));
-	memset (LineJoins, 0, sizeof(LineJoins));
 }
 
 static void setmsgcolor (int index, int color)
@@ -772,266 +704,67 @@ void CONSOLE_ShouldPrintToRCONPlayer( bool enable )
 	g_bPrintToRCONPlayer = enable;
 }
 
-static int FlushLines (const char *start, const char *stop)
+// [AK] The colour a given print level draws in. Was inline in AddToConsole()'s two places;
+// factored out because the timestamp and the clear-code rewrite both need it now.
+static int PrintLevelColor (int printlevel)
 {
-	int i;
-
-	for (i = TopLine; i != InsertLine; i = (i + 1) & LINEMASK)
-	{
-		if (Lines[i] < stop && Lines[i] + strlen (Lines[i]) > start)
-		{
-			Lines[i] = NULL;
-
-			// [AK] Delete this timestamp if used.
-			if (TimeStamps[i] != NULL)
-			{
-				delete[] TimeStamps[i];
-				TimeStamps[i] = NULL;
-			}
-		}
-		else
-		{
-			break;
-		}
-	}
-	return i;
-}
-
-// [Leo] Added an argument for adding timestamps to line entries.
-static void AddLine (const char *text, bool more, size_t len, char *timestamp)
-{
-	if (BufferRover + len + 1 - ConsoleBuffer > CONSOLESIZE)
-	{
-		TopLine = FlushLines (BufferRover, ConsoleBuffer + CONSOLESIZE);
-		BufferRover = ConsoleBuffer;
-	}
-	if (len >= CONSOLESIZE - 1)
-	{
-		text = text + len - CONSOLESIZE + 1;
-		len = CONSOLESIZE - 1;
-	}
-	TopLine = FlushLines (BufferRover, BufferRover + len + 1);
-	memcpy (BufferRover, text, len);
-	BufferRover[len] = 0;
-	Lines[InsertLine] = BufferRover;
-	BufferRover += len + 1;
-	LineJoins[InsertLine] = more;
-
-	// [AK] Delete the old timestamp if used, then add the new one if it exists.
-	if (TimeStamps[InsertLine] != NULL)
-	{
-		delete[] TimeStamps[InsertLine];
-	}
-
-	TimeStamps[InsertLine] = (timestamp == NULL) ? NULL : copystring(timestamp);
-	InsertLine = (InsertLine + 1) & LINEMASK;
-	if (InsertLine == TopLine)
-	{
-		TopLine = (TopLine + 1) & LINEMASK;
-	}
+	if (printlevel == PRINT_HIGH || printlevel < 0) return CR_TAN;
+	if (printlevel == 200) return CR_GREEN;
+	if (printlevel < PRINTLEVELS) return PrintColors[printlevel];
+	return CR_TAN;
 }
 
 void AddToConsole (int printlevel, const char *text)
 {
-	static enum
-	{
-		NEWLINE,
-		APPENDLINE,
-		REPLACELINE
-	} addtype = NEWLINE;
+	// [rc4l] uzdoom@9d846395b -- the ring buffer, its hand-rolled word wrap and the parallel
+	// TimeStamps[]/LineJoins[] arrays are all gone; FConsoleBuffer stores whole lines and
+	// re-wraps them in FormatText(). What stays here is the Zandronum-specific text massaging
+	// that upstream's AddText() knows nothing about.
 
-	char *work_p;
-	char *linestart;
-	char *timestamp = NULL; // [Leo]
-	FString cc('A' + char(CR_TAN));
-	int size, len;
-	int x;
-	int maxwidth;
-
-	if (ConsoleDrawing)
-	{
-		EnqueueConsoleText (false, printlevel, text);
-		return;
-	}
-
-	// [AK] Generate the timestamp "[HH:MM:SS] " if we want to show it in the console.
-	if (con_showtimestamps)
+	// [AK] Generate the timestamp "[HH:MM:SS] " if we want to show it in the console. It used to
+	// be stored beside the line and drawn separately; it is now prepended into the stored text,
+	// which is also how it gets accounted for in the wrap width. Only on a genuinely new line --
+	// otherwise an appended fragment would sprout a timestamp mid-line.
+	FString build;
+	if (con_showtimestamps && conbuffer->IsAtLineStart())
 	{
 		time_t clock;
 		time(&clock);
 		struct tm *lt = localtime (&clock);
-		char timestring[14];
-		sprintf(timestring, "\034i[%02d:%02d:%02d] ", lt->tm_hour, lt->tm_min, lt->tm_sec);
-		timestamp = timestring;
+		build.Format("%c%c[%02d:%02d:%02d] ", TEXTCOLOR_ESCAPE, 'i',
+			lt->tm_hour, lt->tm_min, lt->tm_sec);
+
+		// [rc4l] The timestamp carries its own colour code, so restore the print level's colour
+		// for the text itself -- AddText() only prepends one at the very front of the line.
+		build.AppendFormat("%c%c", TEXTCOLOR_ESCAPE, 'A' + PrintLevelColor(printlevel));
 	}
 
-	len = (int)strlen (text);
-	size = len + 20;
-
-	if (addtype != NEWLINE)
+	// [AK] A clear colour code resets to the default colour, which loses the print level's
+	// colour for the rest of the line; rewrite it to that colour instead.
+	const char *p = text;
+	while (*p != '\0')
 	{
-		InsertLine = (InsertLine - 1) & LINEMASK;
-		if (Lines[InsertLine] == NULL)
+		if (*p == TEXTCOLOR_ESCAPE && p[1] == '-')
 		{
-			InsertLine = (InsertLine + 1) & LINEMASK;
-			addtype = NEWLINE;
+			build.AppendFormat("%c%c", TEXTCOLOR_ESCAPE, 'A' + PrintLevelColor(printlevel));
+			p += 2;
 		}
 		else
 		{
-			BufferRover = Lines[InsertLine];
-		}
-	}
-	if (addtype == APPENDLINE)
-	{
-		size += (int)strlen (Lines[InsertLine]);
-	}
-	if (size > worklen)
-	{
-		work = (char *)M_Realloc (work, size);
-		worklen = size;
-	}
-	if (work == NULL)
-	{
-		static char oom[] = TEXTCOLOR_RED "*** OUT OF MEMORY ***";
-		work = oom;
-		worklen = 0;
-	}
-	else
-	{
-		if (addtype == APPENDLINE)
-		{
-			strcpy (work, Lines[InsertLine]);
-			strcat (work, text);
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				cc = CR_TAN;
-		}
-		else if (printlevel >= 0)
-		{
-			work[0] = TEXTCOLOR_ESCAPE;
-			work[1] = 'A' + (printlevel == PRINT_HIGH ? CR_TAN :
-						printlevel == 200 ? CR_GREEN :
-						printlevel < PRINTLEVELS ? PrintColors[printlevel] :
-						CR_TAN);
-			cc = work[1];
-			strcpy (work + 2, text);
-		}
-		else
-		{
-			strcpy (work, text);
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				cc = CR_TAN;
+			build += *p++;
 		}
 	}
 
-	work_p = linestart = work;
+	// [rc4l] AddText() inspects text[len-1] to pick up '\r'/'\n', so an empty string would read
+	// off the front of the buffer. The old ring buffer had the same hole in its addtype switch;
+	// there is no line to add either way, so bail.
+	if (build.IsEmpty())
+		return;
 
-	if (ConFont != NULL && screen != NULL)
-	{
-		x = 0;
-		maxwidth = screen->GetWidth() - LEFTMARGIN - RIGHTMARGIN;
-
-		while (*work_p)
-		{
-			if (*work_p == TEXTCOLOR_ESCAPE)
-			{
-				work_p++;
-				if (*work_p == '[')
-				{
-					char *start = work_p;
-					while (*work_p != ']' && *work_p != '\0')
-					{
-						work_p++;
-					}
-					if (*work_p != '\0')
-					{
-						work_p++;
-					}
-					cc = FString(start, work_p - start);
-				}
-				else if (*work_p != '\0')
-				{
-					// [AK] A clear color code is used, so change the code
-					// back to the corresponding message level's color.
-					if (*work_p == '-')
-					{
-						*work_p = 'A' + (printlevel == PRINT_HIGH ? CR_TAN :
-							printlevel == 200 ? CR_GREEN :
-							printlevel < 0 ? CR_TAN : 
-							printlevel < PRINTLEVELS ? PrintColors[printlevel] :
-							CR_TAN);
-					}
-					cc = *work_p++;
-				}
-				continue;
-			}
-			int w = ConFont->GetCharWidth (*work_p);
-			// [AK] Also take into account the width of the timestamp string, if there is one.
-			if (*work_p == '\n' || x + w + (timestamp != NULL ? ConFont->StringWidth(timestamp) : 0) > maxwidth)
-			{
-				AddLine (linestart, *work_p != '\n', work_p - linestart, timestamp); // [Leo]
-				if (*work_p == '\n')
-				{
-					x = 0;
-					work_p++;
-				}
-				else
-				{
-					x = w;
-				}
-				if (*work_p)
-				{
-					linestart = work_p - 1 - cc.Len();
-					if (linestart < work)
-					{
-						// The line start is outside the buffer. 
-						// Make space for the newly inserted stuff.
-						size_t movesize = work-linestart;
-						memmove(work + movesize, work, strlen(work)+1);
-						work_p += movesize;
-						linestart = work;
-					}
-					linestart[0] = TEXTCOLOR_ESCAPE;
-					strncpy (linestart + 1, cc, cc.Len());
-				}
-				else
-				{
-					linestart = work_p;
-				}
-			}
-			else
-			{
-				x += w;
-				work_p++;
-			}
-		}
-
-		if (*linestart)
-		{
-			AddLine (linestart, true, work_p - linestart, timestamp); // [Leo]
-		}
-	}
-	else
-	{
-		while (*work_p)
-		{
-			if (*work_p++ == '\n')
-			{
-				AddLine (linestart, false, work_p - linestart - 1, timestamp); // [Leo]
-				linestart = work_p;
-			}
-		}
-		if (*linestart)
-		{
-			AddLine (linestart, true, work_p - linestart, timestamp); // [Leo]
-		}
-	}
-
-	switch (text[len-1])
-	{
-	case '\r':	addtype = REPLACELINE;	break;
-	case '\n':	addtype = NEWLINE;		break;
-	default:	addtype = APPENDLINE;	break;
-	}
+	// [rc4l] NULL, not Logfile: PrintString() below still owns the log write, because
+	// Zandronum's version timestamps it ([BB] sv_logfiletimestamp) and runs before the
+	// PRINT_LOG check. Letting the buffer write it too would double every line.
+	conbuffer->AddText(printlevel, build, NULL);
 }
 
 void	SERVERCONSOLE_Print( char *pszString );
@@ -1049,6 +782,13 @@ int PrintString (int printlevel, const char *outline)
 	{
 		g_CaptureBuffer += outline;
 		return 0;
+	}
+
+	// [rc4l] features/handoff: the console is the main thread's, so a tic on its own thread prints in the handoff.
+	if ( zx::handoff::Deferring() )
+	{
+		zx::handoff::QueuePrint( printlevel, outline );
+		return static_cast<int>( strlen( outline ));
 	}
 
 	// [BB]: outline is const, it may NOT be altered! Since some of the functions below 
@@ -1129,8 +869,21 @@ int PrintString (int printlevel, const char *outline)
 	// [BB] If we are coming from I_Quit, Args is possibly already invalid.
 	if ( Args && Args->CheckParm( "-host" ))
 	{
+		// [rc4l] Tee to the MCP bridge before this branch's early return. Without it a -host server
+		// emits nothing to the bridge, so every driven command times out waiting for its completion
+		// marker and the authoritative half of a multiplayer test cannot be read at all.
+		if ( printlevel != PRINT_LOG )
+		{
+			MCP_Bridge_TeeOutput( outlinecopy );
+
+			// [rc4l] And up the pipe to the game that started us, for the same reason: this branch
+			// returns before I_PrintStr, so a hosted server is otherwise completely silent -- which
+			// is exactly the state in which its owner most needs to hear from it.
+			zx::HostChildEcho( outlinecopy );
+		}
+
 		if ( printlevel != PRINT_LOW )
-		{			
+		{
 			// [RC] Send this to any connected RCON clients.
 			SERVER_RCON_Print( outlinecopy );
 			// [AK] We shouldn't broadcast the same message twice for the player who issued an RCON command.
@@ -1273,6 +1026,12 @@ void C_Ticker ()
 
 	if (lasttic == 0)
 		lasttic = consoletic - 1;
+
+	// [rc4l] uzdoom@9d846395b
+	if (con_buffersize > 0)
+	{
+		conbuffer->ResizeBuffer(con_buffersize);
+	}
 
 	if (ConsoleState != c_up)
 	{
@@ -1591,46 +1350,22 @@ void C_DrawConsole (bool hw2d)
 
 	if (lines > 0)
 	{
+		// [rc4l] uzdoom@9d846395b -- the buffer re-wraps on demand and hands back flat lines, so
+		// the walk backwards through the ring is gone. The [AK] timestamps ride inside the text now.
+		conbuffer->FormatText(ConFont, ConWidth);
+		int consolelines = conbuffer->GetFormattedLineCount();
+		FBrokenLines **blines = conbuffer->GetLines();
+		FBrokenLines **printline = blines + consolelines - 1 - RowAdjust;
+
 		int bottomline = ConBottom - ConFont->GetHeight()*2 - 4;
-		int pos = (InsertLine - 1) & LINEMASK;
-		int i;
 
 		ConsoleDrawing = true;
 
-		for (i = RowAdjust; i; i--)
+		for (FBrokenLines **p = printline; p >= blines && lines > 0; p--, lines--)
 		{
-			if (pos == TopLine)
-			{
-				RowAdjust = RowAdjust - i;
-				break;
-			}
-			else
-			{
-				pos = (pos - 1) & LINEMASK;
-			}
+			screen->DrawText (ConFont, CR_TAN, LEFTMARGIN, offset + lines * ConFont->GetHeight(),
+				(*p)->Text, TAG_DONE);
 		}
-		pos++;
-		do
-		{
-			pos = (pos - 1) & LINEMASK;
-			if (Lines[pos] != NULL)
-			{
-				// [AK] Add the timestamp to the beginning of this line, if there is one.
-				int lineoffset = LEFTMARGIN;
-				if (TimeStamps[pos] != NULL)
-				{
-					screen->DrawText (ConFont, CR_TAN, lineoffset, offset + lines * ConFont->GetHeight(),
-						TimeStamps[pos], TAG_DONE);
-
-					lineoffset += ConFont->StringWidth(TimeStamps[pos]);
-				}
-
-				// [AK] Offset the rest of the line by on the width of the timestamp.
-				screen->DrawText (ConFont, CR_TAN, lineoffset, offset + lines * ConFont->GetHeight(),
-					Lines[pos], TAG_DONE);
-			}
-			lines--;
-		} while (pos != TopLine && lines > 0);
 
 		ConsoleDrawing = false;
 		DequeueConsoleText ();
@@ -1659,7 +1394,7 @@ void C_DrawConsole (bool hw2d)
 			{
 				// Indicate that the view has been scrolled up (10)
 				// and if we can scroll no further (12)
-				screen->DrawChar (ConFont, CR_GREEN, 0, bottomline, pos == TopLine ? 12 : 10, TAG_DONE);
+				screen->DrawChar (ConFont, CR_GREEN, 0, bottomline, RowAdjust == conbuffer->GetFormattedLineCount() ? 12 : 10, TAG_DONE);
 			}
 		}
 	}
@@ -1732,6 +1467,8 @@ void C_ToggleConsole ()
 
 void C_HideConsole ()
 {
+	// [rc4l] features/handoff: the console is the main thread's, so a tic on its own thread hides it in the handoff.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { C_HideConsole (); }, 0, 0 })) return;
 	// [Leo] Don't let the console close while requesting/receiving a snapshot.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) ||
 		( NETWORK_InClientMode() && ( CLIENT_GetConnectionState() != CTS_ACTIVE )))
@@ -1854,7 +1591,7 @@ static bool C_HandleKey (event_t *ev, BYTE *buffer, int len)
 				RowAdjust += (SCREENHEIGHT-4) /
 					((gamestate == GS_FULLCONSOLE || gamestate == GS_STARTUP) ? ConFont->GetHeight() : ConFont->GetHeight()*2) - 3;
 			}
-			else if (RowAdjust < CONSOLELINES)
+			else if (RowAdjust < conbuffer->GetFormattedLineCount())	// [rc4l] uzdoom@9d846395b
 			{ // Scroll console buffer up
 				if (ev->subtype == EV_GUI_WheelUp)
 				{
@@ -1863,6 +1600,11 @@ static bool C_HandleKey (event_t *ev, BYTE *buffer, int len)
 				else
 				{
 					RowAdjust++;
+				}
+				// [rc4l] uzdoom@9d846395b
+				if (RowAdjust > conbuffer->GetFormattedLineCount())
+				{
+					RowAdjust = conbuffer->GetFormattedLineCount();
 				}
 			}
 			break;
@@ -1897,7 +1639,7 @@ static bool C_HandleKey (event_t *ev, BYTE *buffer, int len)
 		case GK_HOME:
 			if (ev->data3 & GKM_CTRL)
 			{ // Move to top of console buffer
-				RowAdjust = CONSOLELINES;
+				RowAdjust = conbuffer->GetFormattedLineCount();	// [rc4l] uzdoom@9d846395b
 			}
 			else
 			{ // Move cursor to start of line
@@ -2672,7 +2414,8 @@ unsigned int C_GetMessageLevel()
 //
 bool C_ShouldForceInterpolation()
 {
-	if (gamestate == GS_INTERMISSION || paused || P_CheckTickerPaused())
+	// [rc4l] features/gameloop: P_TickerPausedNow, since frames ask this too and P_CheckTickerPaused pauses the sound.
+	if (gamestate == GS_INTERMISSION || paused || P_TickerPausedNow())
 	{
 		if (con_interpolate && (ConsoleState == c_falling || ConsoleState == c_rising))
 			return true;

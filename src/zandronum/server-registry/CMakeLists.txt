@@ -36,7 +36,7 @@ if( NOT STRNICMP_EXISTS )
    add_definitions( -Dstrnicmp=strncasecmp )
 endif( NOT STRNICMP_EXISTS )
 
-add_executable( zandrox-server-registry
+add_executable( forkundera-server-registry
 	main.cpp
 	network.cpp
 	${ZAN_DIR}/gitinfo.cpp
@@ -45,6 +45,23 @@ add_executable( zandrox-server-registry
 	# so has to link the definition explicitly or the build fails at link time, on Linux and macOS,
 	# in a target a Windows-only `zdoom` build never touches.
 	${ZAN_DIR}/features/fua-branding/computation/fua_version_compute.cpp
+	# [rc4l] The punch broker's decision half, shared with the engine so both ends agree about
+	# who may be introduced to whom.
+	${ZAN_DIR}/features/server-hosting/computation/punchbroker_compute.cpp
+	# [rc4l] Who may hold a reach cookie, and how many. Registry-only, since the registry is the one
+	# handing them out.
+	${ZAN_DIR}/features/federated-server-registry/computation/reachcookie_compute.cpp
+	# [rc4l] The dual-stack grouping rule, which only the registry applies.
+	${ZAN_DIR}/features/federated-server-registry/computation/servergroup_compute.cpp
+	# [rc4l] Reading the optional tail of an announce, where "absent" means the old behaviour.
+	${ZAN_DIR}/features/federated-server-registry/computation/announcefields_compute.cpp
+	# [rc4l] Whether presenting a cookie destroys it, which differs by what it is being presented FOR.
+	${ZAN_DIR}/features/federated-server-registry/computation/cookieclaim_compute.cpp
+	# [rc4l] networkshared.cpp unmaps ::ffff:a.b.c.d through this, so the registry needs it too.
+	${ZAN_DIR}/features/net/computation/v6mapped_compute.cpp
+	# [rc4l] And matches v6 bans through this one. The registry reads the same ban files and answers
+	# the same isIPInList question, so a v6 rule has to mean the same thing on both sides of the wire.
+	${ZAN_DIR}/features/net/computation/v6prefix_compute.cpp
 	${ZAN_DIR}/networkshared.cpp
 	${ZAN_DIR}/platform.cpp
 	${ZAN_DIR}/huffman/bitreader.cpp 
@@ -63,9 +80,9 @@ add_executable( zandrox-server-registry
 # build, and the guard would silently drop a dependency the engine needs. add_dependencies resolves
 # at generate time, so the forward reference below is fine.
 if( NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR )
-	add_dependencies( zandrox-server-registry revision_check )
+	add_dependencies( forkundera-server-registry revision_check )
 endif()
 
 if( WIN32 )
-	target_link_libraries( zandrox-server-registry ws2_32 winmm )
+	target_link_libraries( forkundera-server-registry ws2_32 winmm )
 endif( WIN32 )

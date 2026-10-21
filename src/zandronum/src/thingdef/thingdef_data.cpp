@@ -60,7 +60,7 @@ static TArray<FVariableInfo*> variables;
 #define DEFINE_DEPRECATED_FLAG(name) { DEPF_##name, #name, -1, 0 }
 #define DEFINE_DUMMY_FLAG(name) { DEPF_UNUSED, #name, -1, 0 }
 
-static FFlagDef ActorFlags[]=
+static FFlagDef ActorFlagDefs[]=
 {
 	DEFINE_FLAG(MF, PICKUP, APlayerPawn, flags),
 	DEFINE_FLAG(MF, SPECIAL, APlayerPawn, flags),
@@ -242,7 +242,10 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF7, ALWAYSTELEFRAG, AActor, flags7),
 	DEFINE_FLAG(MF7, WEAPONSPAWN, AActor, flags7),
 	DEFINE_FLAG(MF7, DONTTHRUST, AActor, flags7),
-	DEFINE_FLAG(MF7, ALLOWPAIN, AActor, flags7),	// [rc4l] uzdoom@2e085b231
+	DEFINE_FLAG(MF7, ALLOWPAIN, AActor, flags7),
+	DEFINE_FLAG(MF7, THRUREFLECT, AActor, flags7),	// [rc4l] uzdoom@e5340ad63
+	DEFINE_FLAG(MF7, MIRRORREFLECT, AActor, flags7),	// [rc4l] uzdoom@533ae9593
+	DEFINE_FLAG(MF7, AIMREFLECT, AActor, flags7),	// [rc4l] uzdoom@2e085b231
 	DEFINE_FLAG(MF7, CAUSEPAIN, AActor, flags7),	// [rc4l] uzdoom@b54b18c8c
 	DEFINE_FLAG(MF7, HARMFRIENDS, AActor, flags7),
 	DEFINE_FLAG(MF7, BUDDHA, AActor, flags7),
@@ -284,6 +287,22 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(MF9, RIPSOUNDNORESTART, AActor, flags9),
 	DEFINE_FLAG(MF9, USERIPSTATE, AActor, flags9),
 
+	// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: movement-model flags.
+	// Inert unless the pawn sets Player.MvType 1 -- see features/quake-movement/README.md.
+	DEFINE_FLAG(MV, CPMAIRCONTROL, AActor, mvFlags),
+	DEFINE_FLAG(MV, CROUCHSLIDE, AActor, mvFlags),
+	DEFINE_FLAG(MV, WALLJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, WALLJUMPV2, AActor, mvFlags),
+	DEFINE_FLAG(MV, DOUBLETAPJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, WALLCLIMB, AActor, mvFlags),
+	DEFINE_FLAG(MV, EDGEJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, SILENT, AActor, mvFlags),
+	DEFINE_FLAG(MV, ELEVATORJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, AIRWALLRUN, AActor, mvFlags),
+	DEFINE_FLAG(MV, USER4JUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, GROUNDSECONDJUMP, AActor, mvFlags),
+	DEFINE_FLAG(MV, ABSOLUTESECONDJUMP, AActor, mvFlags),
+
 	// [BC] New DECORATE flag defines here.
 	DEFINE_FLAG(STFL, BLUETEAM, AActor, STFlags),
 	DEFINE_FLAG(STFL, REDTEAM, AActor, STFlags),
@@ -319,6 +338,7 @@ static FFlagDef ActorFlags[]=
 	DEFINE_FLAG(RF, INVISIBLE, AActor, renderflags),
 	DEFINE_FLAG(RF, FORCEYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, FORCEXYBILLBOARD, AActor, renderflags),
+	DEFINE_FLAG(RF, ROLLSPRITE, AActor, renderflags),	// [rc4l] uzdoom
 
 	// Bounce flags
 	DEFINE_FLAG2(BOUNCE_Walls, BOUNCEONWALLS, AActor, BounceFlags),
@@ -363,7 +383,7 @@ static FFlagDef ActorFlags[]=
 	*/
 };
 
-static FFlagDef InventoryFlags[] =
+static FFlagDef InventoryFlagDefs[] =
 {
 	// Inventory flags
 	DEFINE_FLAG(IF, QUIET, AInventory, ItemFlags),
@@ -385,13 +405,14 @@ static FFlagDef InventoryFlags[] =
 	DEFINE_FLAG(IF, NOSCREENFLASH, AInventory, ItemFlags),
 	DEFINE_FLAG(IF, TOSSED, AInventory, ItemFlags),
 	DEFINE_FLAG(IF, ALWAYSRESPAWN, AInventory, ItemFlags),
+	DEFINE_FLAG(IF, TRANSFER, AInventory, ItemFlags),	// [rc4l] uzdoom@de4097cc7
 	// [BB] New ST flags.
 	DEFINE_FLAG(IF, FORCERESPAWNINSURVIVAL, AInventory, ItemFlags),
 
 	DEFINE_DEPRECATED_FLAG(PICKUPFLASH),
 	DEFINE_DEPRECATED_FLAG(INTERHUBSTRIP),};
 
-static FFlagDef WeaponFlags[] =
+static FFlagDef WeaponFlagDefs[] =
 {
 	// Weapon flags
 	DEFINE_FLAG(WIF, NOAUTOFIRE, AWeapon, WeaponFlags),
@@ -417,7 +438,7 @@ static FFlagDef WeaponFlags[] =
 	DEFINE_FLAG(WIF, ALT_USES_BOTH, AWeapon, WeaponFlags),
 };
 
-static FFlagDef PlayerPawnFlags[] =
+static FFlagDef PlayerPawnFlagDefs[] =
 {
 	// PlayerPawn flags
 	DEFINE_FLAG(PPF, NOTHRUSTWHENINVUL, APlayerPawn, PlayerFlags),
@@ -426,7 +447,7 @@ static FFlagDef PlayerPawnFlags[] =
 	DEFINE_FLAG(PPF, NOMORPHLIMITATIONS, APlayerPawn, PlayerFlags), // [Binary] Define +NOMORPHLIMITATIONS flag.
 };
 
-static FFlagDef PowerSpeedFlags[] =
+static FFlagDef PowerSpeedFlagDefs[] =
 {
 	// PowerSpeed flags
 	DEFINE_FLAG(PSF, NOTRAIL, APowerSpeed, SpeedFlags),
@@ -434,11 +455,11 @@ static FFlagDef PowerSpeedFlags[] =
 
 static const struct FFlagList { const PClass *Type; FFlagDef *Defs; int NumDefs; } FlagLists[] =
 {
-	{ RUNTIME_CLASS(AActor), 		ActorFlags,		countof(ActorFlags) },
-	{ RUNTIME_CLASS(AInventory), 	InventoryFlags,	countof(InventoryFlags) },
-	{ RUNTIME_CLASS(AWeapon), 		WeaponFlags,	countof(WeaponFlags) },
-	{ RUNTIME_CLASS(APlayerPawn),	PlayerPawnFlags,countof(PlayerPawnFlags) },
-	{ RUNTIME_CLASS(APowerSpeed),	PowerSpeedFlags,countof(PowerSpeedFlags) },
+	{ RUNTIME_CLASS(AActor), 		ActorFlagDefs,		countof(ActorFlagDefs) },
+	{ RUNTIME_CLASS(AInventory), 	InventoryFlagDefs,	countof(InventoryFlagDefs) },
+	{ RUNTIME_CLASS(AWeapon), 		WeaponFlagDefs,	countof(WeaponFlagDefs) },
+	{ RUNTIME_CLASS(APlayerPawn),	PlayerPawnFlagDefs,countof(PlayerPawnFlagDefs) },
+	{ RUNTIME_CLASS(APowerSpeed),	PowerSpeedFlagDefs,countof(PowerSpeedFlagDefs) },
 };
 #define NUM_FLAG_LISTS (countof(FlagLists))
 
@@ -525,11 +546,11 @@ FFlagDef *FindFlag (const PClass *type, const char *part1, const char *part2)
 
 const char *GetFlagName(unsigned int flagnum, int flagoffset)
 {
-	for(unsigned i = 0; i < countof(ActorFlags); i++)
+	for(unsigned i = 0; i < countof(ActorFlagDefs); i++)
 	{
-		if (ActorFlags[i].flagbit == flagnum && ActorFlags[i].structoffset == flagoffset)
+		if (ActorFlagDefs[i].flagbit == flagnum && ActorFlagDefs[i].structoffset == flagoffset)
 		{
-			return ActorFlags[i].name;
+			return ActorFlagDefs[i].name;
 		}
 	}
 	return "(unknown)";	// return something printable

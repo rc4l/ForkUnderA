@@ -126,6 +126,6 @@ change that adds or alters a net command (or the state one carries):
 - Anything that needed a gate is recorded `adapted` in `commit-tracker/coverage.tsv` (note the gate),
   never `ported` raw.
 - The **multiplayer E2E** (host + connect a client) is the final gate — never single-player alone,
-  because a desync is invisible offline. Drive it with the `zandronum-driver` skill.
+  because a desync is invisible offline. Drive it with the `zandronum-session` skill.
 - The wire-format tests are what keep the bytes matching *after* the E2E passes; the E2E doesn't
   regress-guard the format, the golden tests do.

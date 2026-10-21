@@ -1023,6 +1023,7 @@ bool FFreeformMenuItemCommand::CopyTo(FFreeformMenuItem* other)
 	{
 		FFreeformMenuItemActionableBase::CopyTo(other);
 		theOther->SetSafe(mIsSafe);
+		theOther->SetUnsafe(mUnsafe);
 		return true;
 	}
 
@@ -1033,7 +1034,7 @@ bool FFreeformMenuItemCommand::MenuEvent(int mkey, bool fromcontroller)
 {
 	if (mkey == MKEY_MBYes)
 	{
-		C_DoCommand(mAction);
+		C_DoMenuCommand(mAction, mUnsafe);
 		return true;
 	}
 	return FFreeformMenuItemActionableBase::MenuEvent(mkey, fromcontroller);
@@ -1048,7 +1049,7 @@ bool FFreeformMenuItemCommand::Activate()
 	else
 	{
 		S_Sound(CHAN_VOICE | CHAN_UI, "menu/choose", snd_menuvolume, ATTN_NONE);
-		C_DoCommand(mAction);
+		C_DoMenuCommand(mAction, mUnsafe);
 	}
 	return true;
 }

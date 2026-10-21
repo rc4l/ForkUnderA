@@ -157,8 +157,10 @@ void cht_DoCheat (player_t *player, int cheat)
 	case CHT_FLY:
 		if (player->mo != NULL)
 		{
-			player->cheats ^= CF_FLY;
-			if (player->cheats & CF_FLY)
+			// [rc4l] uzdoom@337682934, in the form upstream settled on -- the commit as written tested
+			// `(flags7 ^= MF7_FLYCHEAT) != 0`, which is true whenever ANY other flags7 bit is set.
+			player->mo->flags7 ^= MF7_FLYCHEAT;
+			if (player->mo->flags7 & MF7_FLYCHEAT)
 			{
 				player->mo->flags |= MF_NOGRAVITY;
 				player->mo->flags2 |= MF2_FLY;

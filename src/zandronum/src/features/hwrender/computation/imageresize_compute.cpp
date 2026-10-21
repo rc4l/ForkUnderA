@@ -102,4 +102,20 @@ void ResizeImageBoxAverage(int srcWidth, int srcHeight, const unsigned char *src
 	}
 }
 
+void ComputeNearestResize(int srcWidth, int srcHeight, const unsigned char *src,
+	int dstWidth, int dstHeight, unsigned char *dst, int channels)
+{
+	for (int y = 0; y < dstHeight; y++)
+	{
+		// [rc4l] The source pixel under the destination pixel's centre.
+		const int sy = (int)(((long long)y * 2 + 1) * srcHeight / ((long long)dstHeight * 2));
+		const unsigned char *row = src + (size_t)sy * srcWidth * channels;
+		for (int x = 0; x < dstWidth; x++)
+		{
+			const int sx = (int)(((long long)x * 2 + 1) * srcWidth / ((long long)dstWidth * 2));
+			for (int c = 0; c < channels; c++) *dst++ = row[(size_t)sx * channels + c];
+		}
+	}
+}
+
 } // namespace zx

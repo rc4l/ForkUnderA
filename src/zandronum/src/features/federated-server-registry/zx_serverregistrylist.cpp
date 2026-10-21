@@ -15,6 +15,7 @@
 #include "cmdlib.h"     // CreatePath
 #include "doomtype.h"   // Printf
 #include "m_misc.h"     // M_GetCachePath
+#include "features/fileio/computation/readfile_compute.h"   // [rc4l] ComputeFileText
 #include "zstring.h"
 #include "features/net/zx_httpsget.h"
 
@@ -38,7 +39,7 @@ namespace
 {
 
 // [rc4l] The floor: what a fresh install queries before it has ever reached the network. Kept in sync
-// with serverregistries.txt at the repo root by hand -- there is exactly one line, and a build-time
+// with config/serverregistries.txt by hand -- there is exactly one line, and a build-time
 // generator for one line would cost more than it saves.
 const char *const kBuiltinList = "registry.cantstopscrolling.net    rc4l\n";
 
@@ -61,20 +62,6 @@ FString CachePath( void )
 	return path;
 }
 
-std::string ReadWholeFile( const char *path )
-{
-	std::string out;
-	FILE *f = std::fopen( path, "rb" );
-	if ( f == NULL )
-		return out;
-
-	char buf[4096];
-	size_t n;
-	while (( n = std::fread( buf, 1, sizeof buf, f )) > 0 )
-		out.append( buf, n );
-	std::fclose( f );
-	return out;
-}
 
 // Age of the cache in seconds, or -1 when there is no cache at all.
 long CacheAgeSeconds( const char *path )
@@ -157,8 +144,28 @@ void ReportLastOutcome( void )
 
 std::vector<ServerRegistryEntry> ServerRegistryList_Resolve( const char *userCSV )
 {
+	// [rc4l] Say what was thrown away, ONCE.
+	//
+	// A bad entry is skipped rather than failing the whole list, which is right -- one typo must not
+	// cost a player every registry they have. But skipping it silently is how a registry named by an
+	// IPv6 address disappeared while the browser looked perfectly healthy, falling back to the
+	// built-in list with nothing on screen to say so.
+	//
+	// One summary line, not one per entry: a mistyped cvar should not produce a wall of console.
+	std::vector<std::string> skipped;
 	const std::vector<ServerRegistryEntry> user =
-		ParseServerRegistryCSV( userCSV != NULL ? userCSV : "" );
+		ParseServerRegistryCSV( userCSV != NULL ? userCSV : "", &skipped );
+
+	if ( skipped.empty( ) == false )
+	{
+		FString list;
+		for ( size_t i = 0; i < skipped.size( ) && i < 3; ++i )
+			list += ( i ? ", " : "" ) + FString( skipped[i].c_str( ));
+
+		Printf( "cl_fua_serverregistry_list: %u entr%s skipped as unreadable (%s%s).\n",
+			static_cast<unsigned int>( skipped.size( )), ( skipped.size( ) == 1 ) ? "y" : "ies",
+			list.GetChars( ), ( skipped.size( ) > 3 ) ? ", ..." : "" );
+	}
 
 	// [rc4l] The deliberate opt-out: fetching off AND a list of your own means we add nothing at all,
 	// not even the built-in default. Someone running a private network has to be able to leave ours
@@ -170,7 +177,7 @@ std::vector<ServerRegistryEntry> ServerRegistryList_Resolve( const char *userCSV
 	if (( cl_fua_serverregistrylist_fetch == false ) && ( user.empty( ) == false ))
 		return user;
 
-	std::vector<ServerRegistryEntry> shipped = ParseServerRegistryList( ReadWholeFile( CachePath( ).GetChars( )));
+	std::vector<ServerRegistryEntry> shipped = ParseServerRegistryList( ComputeFileText( CachePath( ).GetChars( )));
 	if ( shipped.empty( ))
 		shipped = ParseServerRegistryList( kBuiltinList );
 

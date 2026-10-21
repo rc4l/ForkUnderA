@@ -45,6 +45,8 @@
 #include "features/updater/zx_updater.h"                      // [rc4l] update-available state
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded chip geometry/gradient
 #include "features/updater/computation/notice_compute.h"      // [rc4l] tested focus state machine
+#include "features/global-header/computation/globalheader_compute.h" // [rc4l] where the top row is
+#include "features/global-header/zx_globalheader.h"                  // [rc4l] does the bar hold the arrows?
 
 IMPLEMENT_CLASS(DListMenu)
 
@@ -211,6 +213,37 @@ bool DListMenu::MenuEvent (int mkey, bool fromcontroller)
 
 //=============================================================================
 //
+// [rc4l] Is Up about to leave this menu for the global tab bar?
+//
+// Up off the first reachable row goes to the bar -- always, whether or not the update chip is
+// showing. The chip used to intercept Up here ("belongs to it, not us"), but it never forwarded that
+// Up anywhere: from the list its key handler delegates and the list simply wrapped to the bottom, so
+// Up on the first item reached neither the chip nor the bar. The chip is still reachable on its own
+// terms (Right focuses it, a click activates it); it is just no longer in the vertical path, so Up
+// does the one thing the tab strip exists to promise -- there is something above the first row, and
+// Up goes to it.
+//
+//=============================================================================
+
+bool DListMenu::AtTopRow()
+{
+	if (mDesc == NULL)
+		return false;
+
+	// On the chip, and there is nothing above it but the bar.
+	if (mNoticeFocused)
+		return true;
+
+	TArray<bool> selectable;
+	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
+		selectable.Push(mDesc->mItems[i]->Selectable());
+
+	return zx::CursorAtTopRow(selectable.Size() > 0 ? &selectable[0] : NULL,
+		static_cast<int>(selectable.Size()), mDesc->mSelectedItem);
+}
+
+//=============================================================================
+//
 //
 //
 //=============================================================================
@@ -289,8 +322,14 @@ void DListMenu::Drawer ()
 	{
 		if (mDesc->mItems[i]->mEnabled) mDesc->mItems[i]->Drawer(mDesc->mSelectedItem == (int)i);
 	}
-	if (mDesc->mSelectedItem >= 0 && mDesc->mSelectedItem < (int)mDesc->mItems.Size())
+	// [rc4l] No skull while the global tab bar holds the arrows. The selection is still remembered
+	// and comes back when the player goes down again, but drawing it now would put two cursors on
+	// screen and only the one up on the bar is where the next keypress goes.
+	if (mDesc->mSelectedItem >= 0 && mDesc->mSelectedItem < (int)mDesc->mItems.Size()
+		&& !zx::GlobalHeader_HasFocus())
+	{
 		mDesc->mItems[mDesc->mSelectedItem]->DrawSelector(mDesc->mSelectOfsX, mDesc->mSelectOfsY, mDesc->mSelector);
+	}
 	NoticeDrawer();   // [rc4l] no-op unless this is the main menu with an update pending
 	Super::Drawer();
 }
@@ -506,8 +545,16 @@ void FListMenuItem::DrawSelector(int xofs, int yofs, FTextureID tex)
 	{
 		if ((DMenu::MenuTime%8) < 6)
 		{
+			// [rc4l] uzdoom@1aa00f1b0: draw the player-setup cursor the same way the options menu
+			// does -- DTA_Clean rounds the position to whole clean units, so the cursor drifted
+			// out of line with the text beside it.
 			screen->DrawText(ConFont, OptionSettings.mFontColorSelection,
-				mXpos + xofs, mYpos + yofs, "\xd", DTA_Clean, true, TAG_DONE);
+				(mXpos + xofs - 160) * CleanXfac + screen->GetWidth() / 2,
+				(mYpos + yofs - 100) * CleanYfac + screen->GetHeight() / 2,
+				"\xd",
+				DTA_CellX, 8 * CleanXfac,
+				DTA_CellY, 8 * CleanYfac,
+				TAG_DONE);
 		}
 	}
 	else
@@ -730,13 +777,21 @@ void FListMenuItemText::Drawer(bool selected)
 	}
 }
 
-int FListMenuItemText::GetWidth() 
-{ 
+// [rc4l] The glyphs' own height, not the row's line box. A descriptor's linespacing is the distance
+// BETWEEN rows and is usually taller than the font, so padding below the line box leaves the leftover
+// leading as extra gap -- which is what made the panel's bottom margin visibly larger than its top.
+int FListMenuItemText::GetDrawnHeight()
+{
+	return mFont != NULL ? mFont->GetHeight() : 0;
+}
+
+int FListMenuItemText::GetWidth()
+{
 	const char *text = mText;
 	if (text != NULL)
 	{
 		if (*text == '$') text = GStrings(text+1);
-		return mFont->StringWidth(text); 
+		return mFont->StringWidth(text);
 	}
 	return 1;
 }
@@ -767,6 +822,27 @@ int FListMenuItemPatch::GetWidth()
 		: 0;
 }
 
+// [rc4l] Same offset correction as the static variant -- this one is drawn by the identical
+// DrawTexture call, so it lands at (x - leftoffset, y - topoffset) too.
+int FListMenuItemPatch::GetDrawnX()
+{
+	return mTexture.isValid()
+		? mXpos - TexMan[mTexture]->GetScaledLeftOffset()
+		: mXpos;
+}
+
+int FListMenuItemPatch::GetDrawnY()
+{
+	return mTexture.isValid()
+		? mYpos - TexMan[mTexture]->GetScaledTopOffset()
+		: mYpos;
+}
+
+int FListMenuItemPatch::GetDrawnHeight()
+{
+	return mTexture.isValid() ? TexMan[mTexture]->GetScaledHeight() : 0;
+}
+
 // [rc4l] The base FListMenuItem::GetWidth returns 0, so a static patch (a menu's logo art) was
 // invisible to anything measuring a menu's extent. Reporting the real width lets panel/backdrop
 // code size itself from the descriptor instead of hardcoding per-game numbers.
@@ -777,91 +853,32 @@ int FListMenuItemStaticPatch::GetWidth()
 		: 0;
 }
 
-
-//=============================================================================
+// [rc4l] Where the patch actually paints. DrawTexture subtracts the texture's own offsets, so the
+// drawn corner is (x - leftoffset, y - topoffset) rather than (x, y).
 //
-// [rc4l] DFUAPanelListMenu -- a ListMenu that draws the rounded gradient panel behind its own
-// content, so a menu reads as a card floating over the title screen instead of loose art and text
-// on a busy background. Same visual language as the updater's "update available" chip and the
-// open-link dialog, reusing their tested geometry/gradient math.
-//
-// Opt in from menudef with `Class "FUAPanelListMenu"`. The panel is measured from the descriptor's
-// own items, so a menu can add, remove or reposition rows -- and each game can use its own logo and
-// coordinates -- without touching this code.
-//
-//=============================================================================
-
-class DFUAPanelListMenu : public DListMenu
+// This is not a nicety. Freedoom's M_DOOM is 159x37 with offsets (13,-16), and the menu places it
+// with `StaticPatch 94, 2` -- so it paints at (81, 18). Measuring 94,2 instead put the panel's top
+// sixteen virtual rows too high, which at CleanYfac 4 is 64 screen px: enough that the computed top
+// went negative and ComputePanelRect clamped it flush to the screen edge.
+int FListMenuItemStaticPatch::GetDrawnX()
 {
-	DECLARE_CLASS(DFUAPanelListMenu, DListMenu)
-public:
-	void Drawer();
-};
-IMPLEMENT_CLASS(DFUAPanelListMenu)
-
-void DFUAPanelListMenu::Drawer()
-{
-	// Content extent in the 320x200 virtual page the items are drawn in (DTA_Clean).
-	int vLeft = INT_MAX, vRight = INT_MIN, vTop = INT_MAX, vBottom = INT_MIN;
-	for (unsigned i = 0; i < mDesc->mItems.Size(); ++i)
-	{
-		FListMenuItem *item = mDesc->mItems[i];
-		if (!item->mEnabled)
-			continue;
-		const int y = item->GetY();
-		if (y < 0)
-			continue;			// negative Y is the CleanNoMove path; not part of the page
-		const int w = item->GetWidth();
-		if (w <= 0)
-			continue;			// an item that cannot report a width contributes no extent
-		const int x = item->GetX();
-		// The selection cursor hangs to the LEFT of its row (mSelectOfsX is negative), so the
-		// row's drawn extent starts there, not at the item's own x -- miss this and the skull
-		// ends up outside the panel.
-		const int drawnLeft = x + (mDesc->mSelectOfsX < 0 ? mDesc->mSelectOfsX : 0);
-		if (drawnLeft < vLeft) vLeft = drawnLeft;
-		if (x + w > vRight) vRight = x + w;
-		if (y < vTop)      vTop = y;
-		if (y > vBottom)   vBottom = y;
-	}
-
-	// Nothing measurable (a menu of items that all report width 0) -- draw it unpanelled rather
-	// than guess at a rectangle.
-	if (vRight <= vLeft)
-	{
-		Super::Drawer();
-		return;
-	}
-	vBottom += mDesc->mLinespacing;		// the last row's own height
-
-	const int padV = 8;					// virtual px of breathing room around the content
-	const int cx = CleanXfac, cy = CleanYfac;
-	const int sw = screen->GetWidth(), sh = screen->GetHeight();
-	// DTA_Clean maps the virtual page onto the screen scaled by Clean*fac and centred, so a virtual
-	// coordinate becomes (v - centre) * fac + screenCentre.
-	const int topPx    = (vTop    - padV - 100) * cy + sh / 2;
-	const int bottomPx = (vBottom + padV - 100) * cy + sh / 2;
-	// ComputePanelRect centres the panel on screen, so its half-width has to reach the further of
-	// the two content edges from the virtual centre -- sizing it to the raw content width would
-	// clip whichever side sticks out more.
-	const int halfV    = MAX(160 - vLeft, vRight - 160);
-	const int panelWpx = (2 * halfV + 2 * padV) * cx;
-
-	zx::PanelRect r = zx::ComputePanelRect(sw, sh, panelWpx, topPx, bottomPx, 0, 6 * cy);
-	const zx::PanelColor topCol = { 26, 28, 40, 236 };
-	const zx::PanelColor botCol = { 8, 9, 15, 248 };
-	for (int row = 0; row < r.h; ++row)
-	{
-		const int inset = zx::ComputeRoundedInset(row, r.h, r.radius);
-		const int rowW = r.w - 2 * inset;
-		if (rowW <= 0)
-			continue;
-		const zx::PanelColor c = zx::ComputePanelGradient(row, r.h, topCol, botCol);
-		screen->Dim(PalEntry(c.r, c.g, c.b), c.a / 255.f, r.x + inset, r.y + row, rowW, 1);
-	}
-
-	Super::Drawer();					// the logo and rows, on top of the panel
+	return mTexture.isValid()
+		? mXpos - TexMan[mTexture]->GetScaledLeftOffset()
+		: mXpos;
 }
+
+int FListMenuItemStaticPatch::GetDrawnY()
+{
+	return mTexture.isValid()
+		? mYpos - TexMan[mTexture]->GetScaledTopOffset()
+		: mYpos;
+}
+
+int FListMenuItemStaticPatch::GetDrawnHeight()
+{
+	return mTexture.isValid() ? TexMan[mTexture]->GetScaledHeight() : 0;
+}
+
 
 //=============================================================================
 //

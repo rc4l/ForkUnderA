@@ -50,6 +50,7 @@
 #include "features/updater/computation/openurl_compute.h"   // [rc4l] zx::IsOpenableURL scheme gate
 #include "features/updater/computation/promptpanel_compute.h" // [rc4l] rounded panel geometry/gradient
 #include "features/updater/computation/release_url_compute.h" // [rc4l] OS-correct download URL
+#include "features/mainloop/mainloop.h"   // [rc4l] Quit, which a stepped loop finishes later
 
 
 extern FSaveGameNode *quickSaveSlot;
@@ -161,8 +162,10 @@ void DMessageBoxMenu::HandleResult(bool res)
 		{
 			if (mAction == NAME_None) 
 			{
-				mParentMenu->MenuEvent(res? MKEY_MBYes : MKEY_MBNo, false);
+				// [MobiusU9B] Close before dispatching so a confirmed action can open its own popup on top of the parent.
+				DMenu *parent = mParentMenu;
 				Close();
+				parent->MenuEvent(res? MKEY_MBYes : MKEY_MBNo, false);
 			}
 			else 
 			{
@@ -409,16 +412,18 @@ void DQuitMenu::HandleResult(bool res)
 {
 	if (res)
 	{
+		int vbls = 0;
 		// [BB] !netgame -> ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 		if ( NETWORK_GetState( ) == NETSTATE_SINGLE )
 		{
 			if (gameinfo.quitSound.IsNotEmpty())
 			{
 				S_Sound (CHAN_VOICE | CHAN_UI, gameinfo.quitSound, snd_menuvolume, ATTN_NONE);
-				I_WaitVBL (105);
+				vbls = 105;
 			}
 		}
-		ST_Endoom();
+		// [rc4l] Waits out the quit sound and ends, or on a stepped loop ends once the sound has had its time.
+		zx::mainloop::Quit(vbls);
 	}
 	else
 	{
@@ -937,7 +942,7 @@ static zx::ReleasePlatform M_HostReleasePlatform()
 void M_ConfirmDownloadRelease(const char *tag)
 {
 	char url[512];
-	if (!zx::ComputeReleaseDownloadURL(url, sizeof url, "https://github.com/rc4l/ZandroX", tag,
+	if (!zx::ComputeReleaseDownloadURL(url, sizeof url, "https://github.com/rc4l/ForkUnderA", tag,
 			M_HostReleasePlatform()))
 	{
 		Printf("download: could not build a release URL for tag '%s'\n", tag != NULL ? tag : "(null)");

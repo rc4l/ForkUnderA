@@ -58,6 +58,7 @@
 #include "s_sndseq.h"
 #include "r_data/sprites.h"
 #include "network/packetarchive.h"
+#include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] zx::ListingProof, header-pure
 #include <list>
 #include <queue>
 
@@ -149,12 +150,51 @@
 #define SQF2_GAMEMODE_SHORTNAME		0x00000008
 #define SQF2_VOICECHAT				0x00000010
 
+// [rc4l] Ours, hence fua_ per the naming rule -- it also flags the one risk in adding a bit here. If
+// upstream ever allocates 0x20 for something of their own, a ZandroX server and a Zandronum launcher
+// would disagree about what these bytes mean. We take that deliberately: the field is a byte of flags
+// and a 16-bit port, fixed shape whatever the answer, so a launcher that does not understand it can
+// still skip it cleanly.
+//
+// Port 0 means "not serving" -- the field is always present when asked for rather than conditionally
+// omitted, because a variable-shape field is what actually breaks a parser.
+// Flags bit 0: the operator would rather clients tried public mirrors before this server.
+#define SQF2_FUA_DIRECT_DOWNLOAD	0x00000020
+
+// [rc4l] The MD5 of the IWAD this server is running, as a string ("" when it cannot be determined).
+//
+// SQF_IWAD sends only a NAME, and SQF2_PWAD_HASHES deliberately excludes the IWAD -- see
+// network_InitPWADList, which skips it when building the PWAD list. So "doom2.wad" has until now
+// been all a client could know, and doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build, BFG
+// Edition and the 2024 KEX re-release. They are not interchangeable: join on a build the server is
+// not running and level authentication rejects you, reporting nothing you can act on.
+#define SQF2_FUA_IWAD_HASH			0x00000040
+
+// [rc4l] How big every file the server is running is, in bytes:
+//
+//     [u32 IWAD size][u8 PWAD count][u32 per PWAD, in SQF_PWADS order]
+//
+// SQF_PWADS gives names and SQF2_PWAD_HASHES gives digests, so a client could tell WHETHER it needed
+// a file but never how much of a wait agreeing to it was -- a 200 KB map pack and a 400 MB
+// resource wad looked identical in the browser, which is the one number the decision actually turns
+// on.
+//
+// The IWAD is measured too even though it is never downloaded: the browser lists it alongside the
+// PWADs, and one line in that list silently lacking the number every other line has reads as a bug
+// rather than as a distinction. It goes FIRST because SQF_IWAD precedes SQF_PWADS everywhere else in
+// this protocol, and it is a fixed 32 bits rather than part of the counted run so that "how many
+// sizes follow" keeps meaning "how many PWADs".
+//
+// 32 bits, so the ceiling is 4 GB. Anything larger is not a file anyone is going to be served over a
+// launcher query, and a fixed width keeps the field skippable by shape.
+#define SQF2_FUA_WAD_SIZES			0x00000080
+
 #define	SQF_ALL						( SQF_NAME|SQF_URL|SQF_EMAIL|SQF_MAPNAME|SQF_MAXCLIENTS|SQF_MAXPLAYERS| \
 									  SQF_PWADS|SQF_GAMETYPE|SQF_GAMENAME|SQF_IWAD|SQF_FORCEPASSWORD|SQF_FORCEJOINPASSWORD|SQF_GAMESKILL| \
 									  SQF_BOTSKILL|SQF_DMFLAGS|SQF_LIMITS|SQF_TEAMDAMAGE|SQF_TEAMSCORES|SQF_NUMPLAYERS|SQF_PLAYERDATA|SQF_TEAMINFO_NUMBER|SQF_TEAMINFO_NAME|SQF_TEAMINFO_COLOR|SQF_TEAMINFO_SCORE| \
 									  SQF_TESTING_SERVER|SQF_DATA_MD5SUM|SQF_ALL_DMFLAGS|SQF_SECURITY_SETTINGS|SQF_OPTIONAL_WADS|SQF_DEH|SQF_EXTENDED_INFO )
 
-#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT )
+#define SQF2_ALL					( SQF2_PWAD_HASHES|SQF2_COUNTRY|SQF2_GAMEMODE_NAME|SQF2_GAMEMODE_SHORTNAME|SQF2_VOICECHAT|SQF2_FUA_DIRECT_DOWNLOAD|SQF2_FUA_IWAD_HASH|SQF2_FUA_WAD_SIZES )
 
 #define	MAX_STORED_QUERY_IPS		512
 
@@ -441,8 +481,6 @@ struct CLIENT_s
 	// [BB] Client doesn't want his country to be revealed to the other players.
 	bool			bWantHideCountry;
 
-	// [TP] Client doesn't want his account to be revealed to the other players.
-	bool			WantHideAccount;
 
 	// [BB] Did the client not yet acknowledge receiving the last full update?
 	bool			bFullUpdateIncomplete;
@@ -546,13 +584,22 @@ struct CLIENT_s
 	// [BB] Variables for the account system
 	FString username;
 	unsigned int clientSessionID;
-	int SRPsessionID;
 	bool loggedIn;
-	TArray<unsigned char> bytesA;
-	TArray<unsigned char> bytesB;
-	TArray<unsigned char> bytesM;
-	TArray<unsigned char> bytesHAMK;
-	TArray<unsigned char> salt;
+
+	// [rc4l] Anonymous accounts, held from the connection attempt until the proof is judged.
+	//
+	// Minted once per slot and re-sent unchanged on every retry, because the connection sequence
+	// has no acks and a client that signed against a challenge we had since replaced would be
+	// refused for nothing but a dropped packet.
+	TArray<unsigned char> fuaClientNonce;
+	TArray<unsigned char> fuaEphemeralPrivate;
+	TArray<unsigned char> fuaClientEphemeral;
+	TArray<unsigned char> fuaServerEphemeralPublic;
+	TArray<unsigned char> fuaChallengeSignature;
+
+	// [rc4l] Whether the fields above hold a challenge, which the nonce is compared against to tell
+	// this client's own retry from a different client taking the slot.
+	bool fuaHasChallenge;
 
 	// [CK] The client communicates back to us with the last gametic from the server it saw
 	LONG			lLastServerGametic;
@@ -720,7 +767,18 @@ void		SERVER_SERVERREGISTRY_Broadcast( void );
 void		SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse );
 const char	*SERVER_SERVERREGISTRY_GetGameName( void );
 bool SERVER_SERVERREGISTRY_IsAddress( const NETADDRESS_s &Address );
+// [rc4l] What the registry itself has told us about this server's visibility, per family. The only
+// honest answer available on the hosting machine; see listingproof_compute.h for why nothing local
+// counts. `bIPv6` false asks about the IPv4 listing.
+zx::ListingProof SERVER_SERVERREGISTRY_GetListingProof( bool bIPv6 );
+// [rc4l] False when the registry has no AAAA record, in which case an absent IPv6 listing is
+// expected rather than broken.
+bool SERVER_SERVERREGISTRY_HasV6Registry( void );
 void		SERVER_SERVERREGISTRY_HandleVerificationRequest( BYTESTREAM_s *pByteStream );
+
+// [rc4l] Send a packet at a joiner who cannot reach us, so our own router will accept the
+// reply that follows. See the definition for why sending it is the entire point.
+void		SERVER_SERVERREGISTRY_HandlePunchRequest( BYTESTREAM_s *pByteStream );
 void		SERVER_SERVERREGISTRY_SendBanlistReceipt( void );
 
 // Statistic functions.
@@ -759,7 +817,6 @@ EXTERN_CVAR( Int, sv_timestampformat );
 EXTERN_CVAR( Int, sv_colorstripmethod );
 EXTERN_CVAR( Bool, sv_minimizetosystray )
 EXTERN_CVAR( Int, sv_queryignoretime )
-EXTERN_CVAR( Bool, sv_forcelogintojoin )
 EXTERN_CVAR( Bool, sv_limitcommands )
 EXTERN_CVAR( Int, sv_smoothplayers )
 EXTERN_CVAR( Int, sv_allowprivatechat )

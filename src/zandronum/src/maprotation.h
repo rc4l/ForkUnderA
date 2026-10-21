@@ -75,7 +75,9 @@ struct MapRotationEntry
 //	PROTOTYPES
 
 void			MAPROTATION_Construct( void );
-void			MAPROTATION_StartNewGame( void );
+// [rc4l] Takes the map the command line asked for, so a rotation can begin there. NULL or empty
+// keeps the behaviour this had before: position zero, or a random one under sv_randommaprotation.
+void			MAPROTATION_StartNewGame( const char *pszStartMap );
 unsigned int	MAPROTATION_CountEligiblePlayers( void );
 unsigned int	MAPROTATION_GetNumEntries( void );
 unsigned int	MAPROTATION_GetCurrentPosition( void );

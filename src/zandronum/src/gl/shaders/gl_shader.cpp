@@ -56,6 +56,9 @@
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/system/gl_cvars.h"
 #include "gl/shaders/gl_shader.h"
+#include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
+#include "features/hwshaders/computation/hwshader_compute.h"
+static_assert(FIRST_USER_SHADER == zx::hwshaders::kFirstUserShader, "features/hwshaders numbers user shaders as GL does");
 #include "gl/textures/gl_material.h"
 #include "gl/dynlights/gl_lightbuffer.h"
 
@@ -65,20 +68,78 @@
 //
 //==========================================================================
 
+//==========================================================================
+//
+// [rc4l] Resolve a core shader from OUR pk3, and say so when a mod tried to replace it.
+//
+// The pinning is silent by design -- the shader still loads, the game still runs -- but silence is
+// how the mod author never finds out and the player blames the engine for an effect that stopped
+// working. So the override is named once, with the file it came from.
+//
+// Once per lump, because Load runs for every material shader and a line per compile would bury it.
+//
+//==========================================================================
+
+static int gl_CoreShaderLump(const char *name)
+{
+	const int coreFile = 0;
+	const int core = Wads.CheckNumForFullName(name, coreFile);
+	const int winner = Wads.CheckNumForFullName(name);
+
+	if ((core != -1) && (winner != -1) && (winner != core))
+	{
+		static TArray<FString> reported;
+		bool seen = false;
+
+		for (unsigned int i = 0; i < reported.Size(); i++)
+		{
+			if (reported[i].CompareNoCase(name) == 0)
+			{
+				seen = true;
+				break;
+			}
+		}
+
+		if (seen == false)
+		{
+			reported.Push(name);
+			Printf(TEXTCOLOR_YELLOW "%s in %s is being ignored: it replaces a core engine shader, "
+				"which is no longer allowed because an outdated copy stops the game from starting. "
+				"Custom shaders declared in GLDEFS are unaffected.\n",
+				name, Wads.GetWadName(Wads.GetLumpFile(winner)));
+		}
+	}
+
+	return core;
+}
+
 bool FShader::Load(const char * name, const char * vert_prog_lump, const char * frag_prog_lump, const char * proc_prog_lump, const char * defines)
 {
 	static char buffer[10000];
 	FString error;
 
-	int i_lump = Wads.CheckNumForFullName("shaders/glsl/shaderdefs.i");
+	// [rc4l] Core shaders come from OUR pk3 and nowhere else, ported from upstream 5a4a5a17d and
+	// 03c8fd995.
+	//
+	// Lump lookup answers with the last file to define a name, so a mod shipping its own
+	// shaders/glsl/main.fp silently replaces the engine's. That is not hypothetical: a crash report
+	// (GlitchTip 31) came from a mod doing exactly that with a 2016-era copy, which our "#version
+	// 140" preamble then rejected -- gl_Color is REMOVED at 140, not merely deprecated -- and the
+	// engine died with I_FatalError before the title screen.
+	//
+	// The mod was not trying to replace an engine file; back when it was written its copy and the
+	// engine's were the same vintage, so shipping one looked harmless. Pinning is what stops a mod
+	// aging into a crash.
+	//
+	int i_lump = gl_CoreShaderLump("shaders/glsl/shaderdefs.i");
 	if (i_lump == -1) I_Error("Unable to load 'shaders/glsl/shaderdefs.i'");
 	FMemLump i_data = Wads.ReadLump(i_lump);
 
-	int vp_lump = Wads.CheckNumForFullName(vert_prog_lump);
+	int vp_lump = gl_CoreShaderLump(vert_prog_lump);
 	if (vp_lump == -1) I_Error("Unable to load '%s'", vert_prog_lump);
 	FMemLump vp_data = Wads.ReadLump(vp_lump);
 
-	int fp_lump = Wads.CheckNumForFullName(frag_prog_lump);
+	int fp_lump = gl_CoreShaderLump(frag_prog_lump);
 	if (fp_lump == -1) I_Error("Unable to load '%s'", frag_prog_lump);
 	FMemLump fp_data = Wads.ReadLump(fp_lump);
 
@@ -133,7 +194,10 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	{
 		if (*proc_prog_lump != '#')
 		{
-			int pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
+			// [rc4l] Ours first, so a mod cannot override a CORE logic module by name; anything we
+			// do not ship is a genuine mod shader and is looked up normally. Upstream 03c8fd995.
+			int pp_lump = gl_CoreShaderLump(proc_prog_lump);
+			if (pp_lump == -1) pp_lump = Wads.CheckNumForFullName(proc_prog_lump);
 			if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
 			FMemLump pp_data = Wads.ReadLump(pp_lump);
 
@@ -149,7 +213,7 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 			if (pp_data.GetString().IndexOf("ProcessLight") < 0)
 			{
-				int pl_lump = Wads.CheckNumForFullName("shaders/glsl/func_defaultlight.fp");
+				int pl_lump = gl_CoreShaderLump("shaders/glsl/func_defaultlight.fp");
 				if (pl_lump == -1) I_Error("Unable to load '%s'", "shaders/glsl/func_defaultlight.fp");
 				FMemLump pl_data = Wads.ReadLump(pl_lump);
 				fp_comb << "\n" << pl_data.GetString().GetChars();
@@ -227,6 +291,8 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 	muFogColor.Init(hShader, "uFogColor");
 	muDynLightColor.Init(hShader, "uDynLightColor");
 	muObjectColor.Init(hShader, "uObjectColor");
+	muDamageTint.Init(hShader, "uDamageTint");			// [rc4l] features/damage-tint
+	muDamageTintRange.Init(hShader, "uDamageTintRange");	// [rc4l]
 	muGlowBottomColor.Init(hShader, "uGlowBottomColor");
 	muGlowTopColor.Init(hShader, "uGlowTopColor");
 	muGlowBottomPlane.Init(hShader, "uGlowBottomPlane");
@@ -364,7 +430,6 @@ static const FDefaultShader defaultshaders[]=
 	{NULL,NULL}
 };
 
-static TArray<FString> usershaders;
 
 struct FEffectShader
 {
@@ -434,12 +499,13 @@ void FShaderManager::CompileShaders()
 		}
 	}
 
-	for(unsigned i = 0; i < usershaders.Size(); i++)
+	// [rc4l] The lumps GLDEFS named, kept by features/hwshaders so the backend compiles the same ones.
+	for(int i = 0; i < zx::hwshaders::UserShaderCount(); i++)
 	{
-		FString name = ExtractFileBase(usershaders[i]);
+		FString name = ExtractFileBase(zx::hwshaders::UserShaderLump(i));
 		FName sfn = name;
 
-		FShader *shc = Compile(sfn, usershaders[i], true);
+		FShader *shc = Compile(sfn, zx::hwshaders::UserShaderLump(i), true);
 		mTextureEffects.Push(shc);
 	}
 
@@ -541,7 +607,7 @@ FShader *FShaderManager::BindEffect(int effect)
 //
 //
 //==========================================================================
-EXTERN_CVAR(Int, gl_fuzztype)
+EXTERN_CVAR(Int, r_fuzztype)
 
 void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 {
@@ -551,9 +617,9 @@ void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 		mTextureEffectsNAT[i]->ApplyMatrices(proj, view);
 	}
 	mTextureEffects[4]->ApplyMatrices(proj, view);
-	if (gl_fuzztype != 0)
+	if (r_fuzztype != 0)
 	{
-		mTextureEffects[4+gl_fuzztype]->ApplyMatrices(proj, view);
+		mTextureEffects[4+r_fuzztype]->ApplyMatrices(proj, view);
 	}
 	for (unsigned i = 12; i < mTextureEffects.Size(); i++)
 	{
@@ -566,80 +632,4 @@ void FShaderManager::ApplyMatrices(VSMatrix *proj, VSMatrix *view)
 	if (mActiveShader != NULL) mActiveShader->Bind();
 }
 
-//==========================================================================
-//
-//
-//
-//==========================================================================
-
-void gl_DestroyUserShaders()
-{
-	// todo
-}
-
-//==========================================================================
-//
-// Parses a shader definition
-//
-//==========================================================================
-
-void gl_ParseHardwareShader(FScanner &sc, int deflump)
-{
-	int type = FTexture::TEX_Any;
-	bool disable_fullbright=false;
-	bool thiswad = false;
-	bool iwad = false;
-	int maplump = -1;
-	FString maplumpname;
-	float speed = 1.f;
-
-	sc.MustGetString();
-	if (sc.Compare("texture")) type = FTexture::TEX_Wall;
-	else if (sc.Compare("flat")) type = FTexture::TEX_Flat;
-	else if (sc.Compare("sprite")) type = FTexture::TEX_Sprite;
-	else sc.UnGet();
-
-	sc.MustGetString();
-	FTextureID no = TexMan.CheckForTexture(sc.String, type);
-	FTexture *tex = TexMan[no];
-
-	sc.MustGetToken('{');
-	while (!sc.CheckToken('}'))
-	{
-		sc.MustGetString();
-		if (sc.Compare("shader"))
-		{
-			sc.MustGetString();
-			maplumpname = sc.String;
-		}
-		else if (sc.Compare("speed"))
-		{
-			sc.MustGetFloat();
-			speed = float(sc.Float);
-		}
-	}
-	if (!tex)
-	{
-		return;
-	}
-
-	if (maplumpname.IsNotEmpty())
-	{
-		if (tex->bWarped != 0)
-		{
-			Printf("Cannot combine warping with hardware shader on texture '%s'\n", tex->Name.GetChars());
-			return;
-		}
-		tex->gl_info.shaderspeed = speed; 
-		for(unsigned i=0;i<usershaders.Size();i++)
-		{
-			if (!usershaders[i].CompareNoCase(maplumpname))
-			{
-				tex->gl_info.shaderindex = i + FIRST_USER_SHADER;
-				return;
-			}
-		}
-		tex->gl_info.shaderindex = usershaders.Push(maplumpname) + FIRST_USER_SHADER;
-	}	
-}
 

@@ -51,6 +51,8 @@
 // [BB] New #includes.
 #include "doomerrors.h"
 
+#include "features/iwad-registry/zx_iwadregistry.h" // [rc4l] fua IWAD registration
+
 
 CVAR (Bool, queryiwad, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (String, defaultiwad, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
@@ -114,16 +116,21 @@ int FIWadManager::GetIWadInfo()
 //
 //==========================================================================
 
-void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
+void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize, FIWADInfo *result)
 {
 	FScanner sc;
+	int blocks = 0;
 
 	sc.OpenMem("IWADINFO", data, datasize);
 	while (sc.GetString())
 	{
 		if (sc.Compare("IWAD"))
 		{
-			FIWADInfo *iwad = &mIWads[mIWads.Reserve(1)];
+			++blocks;
+
+			// [rc4l] Into the caller's when it supplied one, since appending first would leave a
+			// rejected file's claim in the list for everything afterwards to match against.
+			FIWADInfo *iwad = (result != NULL) ? result : &mIWads[mIWads.Reserve(1)];
 			sc.MustGetStringName("{");
 			while (!sc.CheckString("}"))
 			{
@@ -221,9 +228,25 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
 					sc.ScriptError("Unknown keyword '%s'", sc.String);
 				}
 			}
+			if (iwad->MapInfo.IsEmpty())
+			{
+				// [rc4l] uzdoom@268e7df99 -- an IWAD that names no MAPINFO gets the minimum set, or it starts
+				// with no editor numbers defined at all and every thing in its maps is unknown.
+				iwad->MapInfo = "mapinfo/mindefaults.txt";
+			}
 		}
 		else if (sc.Compare("NAMES"))
 		{
+			// [rc4l] Never from a candidate, because NAMES extends the list the engine searches for
+			// and that is a claim about the whole install rather than about the file itself.
+			if (result != NULL)
+			{
+				sc.MustGetStringName("{");
+				while (!sc.CheckString("}"))
+					sc.MustGetString();
+				continue;
+			}
+
 			sc.MustGetStringName("{");
 			mIWadNames.Push(FString());
 			while (!sc.CheckString("}"))
@@ -245,11 +268,21 @@ void FIWadManager::ParseIWadInfo(const char *fn, const char *data, int datasize)
 			}
 		}
 	}
+
+	// [rc4l] A DECLARATION is one block and a LIST is many, and both go by the same lump name.
+	//
+	// Read as a self-declaration, the engine's own catalogue of every game it recognises says "this
+	// file is the first game in its own list", which registered fua_core.pk3 as an IWAD.
+	//
+	// Refused by count rather than by excluding the base pk3 by name, because what matters is what
+	// the lump says rather than which file it came out of.
+	if ((result != NULL) && (blocks != 1))
+		result->Name = "";
 }
 
 //==========================================================================
 //
-// Lool for IWAD definition lump
+// Look for IWAD definition lump
 //
 //==========================================================================
 
@@ -286,8 +319,83 @@ void FIWadManager::ParseIWadInfos(const char *fn)
 // Scan the contents of an IWAD to determine which one it is
 //==========================================================================
 
+// [rc4l] Adapted from uzdoom@cdff5bdc08a2f4eac784f3984b18cd788e16be42 ("rewrite of the IWAD loading
+// mechanism"), which introduced FIWadManager::CheckIWADInfo so that a file carrying its own
+// IWADINFO says what it is instead of being guessed at from the lumps it happens to contain.
+//
+// ONE PIECE of that rewrite, the rest of which rebuilds discovery around a FileSystem this tree
+// does not have, so that row stays pending.
+//
+// ADAPTED rather than ported, because upstream builds a whole FileSystem to read one lump where
+// this tree has the FResourceFile that ParseIWadInfos twelve lines up already uses.
+//
+// Worth having because MustContain is deliberately coarse, Doom II's being "MAP01" and nothing
+// else, so recognition can only ever answer what a file can run as rather than what it is.
+int FIWadManager::CheckIWADInfo(const char *fn)
+{
+	FResourceFile *resfile = FResourceFile::OpenResourceFile(fn, NULL, true);
+	if (resfile == NULL)
+		return -1;
+
+	int found = -1;
+
+	for (int i = (int)resfile->LumpCount() - 1; i >= 0; i--)
+	{
+		FResourceLump *lmp = resfile->GetLump(i);
+
+		if ((lmp->Namespace != ns_global) || stricmp(lmp->Name, "IWADINFO"))
+			continue;
+
+		try
+		{
+			FIWADInfo declared;
+			ParseIWadInfo(fn, (const char *)lmp->CacheLump(), lmp->LumpSize, &declared);
+
+			// A block that named nothing is not a claim, and pushing it would grow an anonymous
+			// entry that the first file with any lump at all would match.
+			if (declared.Name.IsEmpty())
+				break;
+
+			// Already known by that name, so this is another copy of a game we can describe, which
+			// is the rule that stops a shelf full of one IWAD filling the picker with duplicates.
+			for (unsigned j = 0; j < mIWads.Size(); ++j)
+			{
+				if (mIWads[j].Name.CompareNoCase(declared.Name) == 0)
+				{
+					found = (int)j;
+					break;
+				}
+			}
+
+			if (found < 0)
+				found = (int)mIWads.Push(declared);
+		}
+		catch (CRecoverableError &err)
+		{
+			// A malformed declaration costs that file its claim and nothing else, where letting the
+			// error escape would stop the engine starting at all.
+			Printf(TEXTCOLOR_RED "%s: %s\nIgnoring its IWADINFO.\n", fn, err.GetMessage());
+			found = -1;
+		}
+
+		break;
+	}
+
+	delete resfile;
+	return found;
+}
+
 int FIWadManager::ScanIWAD (const char *iwad)
 {
+	// [rc4l] What the file says about itself beats what its lumps imply, a declaration being exact
+	// where recognition is a guess.
+	//
+	// This opens the file a second time, which happens a handful of times at startup and never in
+	// a frame.
+	const int declared = CheckIWADInfo(iwad);
+	if (declared >= 0)
+		return declared;
+
 	FResourceFile *iwadfile = FResourceFile::OpenResourceFile(iwad, NULL, true);
 
 	if (iwadfile != NULL)
@@ -298,11 +406,11 @@ int FIWadManager::ScanIWAD (const char *iwad)
 			FResourceLump *lump = iwadfile->GetLump(ii);
 
 			CheckLumpName(lump->Name);
-			if (lump->FullName != NULL)
+			if (lump->FullName.IsNotEmpty())
 			{
 				if (strnicmp(lump->FullName, "maps/", 5) == 0)
 				{
-					FString mapname(lump->FullName+5, strcspn(lump->FullName+5, "."));
+					FString mapname(&lump->FullName[5], strcspn(&lump->FullName[5], "."));
 					CheckLumpName(mapname);
 				}
 			}
@@ -323,7 +431,40 @@ int FIWadManager::ScanIWAD (const char *iwad)
 // 
 //==========================================================================
 
-int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads)
+// [rc4l] Register every IWAD in one folder, whatever the engine is doing about finding one.
+//
+// Separate from CheckIWAD because that runs only while the engine still needs an IWAD, and a -iwad
+// that resolves skips the whole directory search (see IdentifyVersion) along with the rest of the
+// player's collection.
+void FIWadManager::RegisterIWADsIn(const char *dir)
+{
+	if ((dir == NULL) || (*dir == '\0'))
+		return;
+
+	const char *slash = (dir[strlen(dir) - 1] != '/') ? "/" : "";
+
+	for (unsigned i = 0; i < mIWadNames.Size(); i++)
+	{
+		if (mIWadNames[i].IsEmpty())
+			continue;
+
+		FString path;
+		path.Format("%s%s%s", dir, slash, mIWadNames[i].GetChars());
+		FixPathSeperator(path);
+
+		// A stat per known name, with only files that exist opened at all.
+		if (!FileExists(path))
+			continue;
+
+		// Still has to BE one, the name list being what to look for rather than what a file is.
+		if (ScanIWAD(path) == -1)
+			continue;
+
+		zx::RegisterIwad(path.GetChars());
+	}
+}
+
+int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads, unsigned int numwadslots)
 {
 	const char *slash;
 	int numfound;
@@ -332,8 +473,15 @@ int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads)
 
 	slash = (doomwaddir[0] && doomwaddir[strlen (doomwaddir)-1] != '/') ? "/" : "";
 
-	// Search for a pre-defined IWAD
-	for (unsigned i=0; i< mIWadNames.Size(); i++)
+	// Search for a pre-defined IWAD.
+	//
+	// [rc4l] Bounded by the caller's allocation, NOT by mIWadNames.Size(): ScanIWAD below parses
+	// the candidate's own IWADINFO (CheckIWADInfo), and a file declaring a Names block pushes onto
+	// mIWadNames mid-loop. The caller sized `wads` before that could happen, so trusting the table
+	// here walked off the end of the array and dereferenced a garbage FString -- the crash seen
+	// when hosting from the presets menu, which restarts the engine and rescans with mod files
+	// present.
+	for (unsigned i=0; i < mIWadNames.Size() && i < numwadslots; i++)
 	{
 		if (mIWadNames[i].IsNotEmpty() && wads[i].Path.IsEmpty())
 		{
@@ -344,7 +492,11 @@ int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads)
 			if (FileExists (iwad))
 			{
 				wads[i].Type = ScanIWAD (iwad);
-				if (wads[i].Type != -1)
+				// [rc4l] The type indexes mIWads, so it has to be a live row: scanning parses the
+				// candidate's own IWADINFO and can push new games, and a manager that never parsed
+				// has no rows at all. Reading past the end handed the assignment below a pointer
+				// that was not a string.
+				if (wads[i].Type >= 0 && (unsigned)wads[i].Type < mIWads.Size())
 				{
 					wads[i].Path = iwad;
 					wads[i].Name = mIWads[wads[i].Type].Name;
@@ -389,7 +541,6 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 	bool iwadparmfound = false;
 	FString custwad;
 
-	ParseIWadInfos(zdoom_wad);
 	wads.Resize(mIWadNames.Size());
 	foundwads.Resize(mIWads.Size());
 	memset(&foundwads[0], 0, foundwads.Size() * sizeof(foundwads[0]));
@@ -403,7 +554,7 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 	{
 		custwad = iwadparm;
 		FixPathSeperator (custwad);
-		if (CheckIWAD (custwad, &wads[0]))
+		if (CheckIWAD (custwad, &wads[0], wads.Size()))
 		{ // -iwad parameter was a directory
 			iwadparm = NULL;
 		}
@@ -412,7 +563,7 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 			DefaultExtension (custwad, ".wad");
 			iwadparm = custwad;
 			mIWadNames[0] = custwad;
-			CheckIWAD ("", &wads[0]);
+			CheckIWAD ("", &wads[0], wads.Size());
 		}
 	}
 
@@ -429,7 +580,7 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 				{
 					FString nice = NicePath(value);
 					FixPathSeperator(nice);
-					CheckIWAD(nice, &wads[0]);
+					CheckIWAD(nice, &wads[0], wads.Size());
 				}
 			}
 		}
@@ -440,13 +591,27 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 		TArray<FString> steam_path = I_GetSteamPath();
 		for (i = 0; i < steam_path.Size(); ++i)
 		{
-			CheckIWAD (steam_path[i], &wads[0]);
+			CheckIWAD (steam_path[i], &wads[0], wads.Size());
 		}
 	}
 
 	if (iwadparm != NULL && !wads[0].Path.IsEmpty())
 	{
 		iwadparmfound = true;
+	}
+
+	// [rc4l] Scanning above can have grown both tables (a candidate file's IWADINFO declaring new
+	// names/games), so re-sync the parallel arrays before anything indexes them. New name slots
+	// were never scanned, so they are empty and skipped; new game slots start not-found.
+	if (mIWadNames.Size() > wads.Size())
+	{
+		wads.Resize(mIWadNames.Size());
+	}
+	if (mIWads.Size() > foundwads.Size())
+	{
+		const unsigned int oldsize = foundwads.Size();
+		foundwads.Resize(mIWads.Size());
+		memset(&foundwads[oldsize], 0, (foundwads.Size() - oldsize) * sizeof(foundwads[0]));
 	}
 
 	for (i = numwads = 0; i < mIWadNames.Size(); i++)
@@ -603,6 +768,31 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 const FIWADInfo *FIWadManager::FindIWAD(TArray<FString> &wadfiles, const char *iwad, const char *basewad)
 {
 	int iwadType = IdentifyVersion(wadfiles, iwad, basewad);
+
+	// [rc4l] Fua IWAD registration over every folder we know about, rather than only the ones
+	// IdentifyVersion happened to need before it stopped at the first thing it could boot from.
+	//
+	// Run after identification so the definitions are loaded, at the cost of a stat per known name
+	// per folder and a hash per file the first time it is seen.
+	RegisterIWADsIn(progdir);
+
+	static const char *const kSections[] = { "IWADSearch.Directories", "FileSearch.Directories" };
+
+	for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); ++s)
+	{
+		if (!GameConfig->SetSection(kSections[s]))
+			continue;
+
+		const char *key;
+		const char *value;
+
+		while (GameConfig->NextInSection(key, value))
+		{
+			if (stricmp(key, "Path") == 0)
+				RegisterIWADsIn(NicePath(value));
+		}
+	}
+
 	//gameiwad = iwadType;
 	const FIWADInfo *iwad_info = &mIWads[iwadType];
 	if (DoomStartupInfo.Name.IsEmpty()) DoomStartupInfo.Name = iwad_info->Name;
@@ -627,5 +817,5 @@ bool FIWadManager::DoesDirectoryHaveIWADs( const char *pszPath )
 {
 	TArray<WadStuff> wads;
 	wads.Resize(mIWadNames.Size());
-	return ( CheckIWAD( pszPath, &wads[0] ) > 0 );
+	return ( CheckIWAD( pszPath, &wads[0], wads.Size() ) > 0 );
 }

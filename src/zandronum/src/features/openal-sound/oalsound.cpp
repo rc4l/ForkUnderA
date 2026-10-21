@@ -523,8 +523,9 @@ static void FindLoopTags(FileReader *fr, unsigned int *start, bool *startass, un
 
 static void FindLoopTags(const BYTE *data, size_t size, unsigned int *start, bool *startass, unsigned int *end, bool *endass)
 {
-	MemoryReader *reader = new MemoryReader((const char*)data, (long)size);
-	FindLoopTags(reader, start, startass, end, endass);
+	// [rc4l] On the stack, since the reader made with new here was never deleted, one leaked a sound loaded.
+	MemoryReader reader((const char*)data, (long)size);
+	FindLoopTags(&reader, start, startass, end, endass);
 }
 
 class OpenALSoundStream : public SoundStream
@@ -924,7 +925,8 @@ public:
         UserData = userdata;
         SampleRate = samplerate;
 
-        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_FLOAT32"));
+        // [rc4l] The extension's own spelling: OpenAL Soft matches names in any case, Emscripten's OpenAL only exactly.
+        Format = ComputeStreamFormat(flags, !!alIsExtensionPresent("AL_EXT_float32"));
         if(Format == AL_NONE)
         {
             Printf("Unsupported format: 0x%x\n", flags);
@@ -939,16 +941,21 @@ public:
         return true;
     }
 
-    bool Init(const char *filename, bool loop)
+    // [rc4l] uzdoom@0017e1e6e -- the stream now takes an already-open reader and owns it, so a
+    // caller can hand over a file, a lump or a block of memory without this needing to know which.
+    // The two older overloads survive as thin wrappers because our loop-tag scanning below is ours
+    // and there is no reason to write it three times.
+    bool Init(FileReader *reader, bool loop)
     {
         if(!SetupSource())
         {
+            delete reader;
             return false;
         }
 
         if(Decoder) delete Decoder;
         if(Reader) delete Reader;
-        Reader = new FileReader(filename);
+        Reader = reader;
         
         Loop_Start = 0;
         Loop_End = ~0u;
@@ -983,7 +990,12 @@ public:
 
         Data.Resize((SampleRate / 5) * FrameSize);
 
-        size_t samples = Decoder->getSampleLength() / FrameSize;
+        // [rc4l] getSampleLength() is a count of FRAMES, not bytes -- mpg123_length() and
+        // SndInfo.frames both return frames, and DecoderCallback above compares it against
+        // getSampleOffset() and multiplies by FrameSize to get bytes. Dividing by FrameSize here
+        // made the track look a quarter of its real length (stereo 16-bit), and since Loop_End
+        // starts unset it gets clamped to that, so playback ended at 25% of the song.
+        size_t samples = Decoder->getSampleLength();
         ZxLoopPoints lp = ComputeLoopPoints(Loop_Start, Loop_End, startass, endass, srate, samples);
         Loop_Start = lp.start;
         Loop_End = lp.end;
@@ -991,56 +1003,14 @@ public:
         return true;
     }
 
+    bool Init(const char *filename, bool loop)
+    {
+        return Init(new FileReader(filename), loop);
+    }
+
     bool Init(const BYTE *data, bool loop, unsigned int datalen)
     {
-        if(!SetupSource())
-        {
-            return false;
-        }
-
-        if(Decoder) delete Decoder;
-        if(Reader) delete Reader;
-        Reader = new MemoryReader((const char*)data, datalen);
-
-        Loop_Start = 0;
-        Loop_End = ~0u;
-        bool startass = false, endass = false;
-        FindLoopTags(Reader, &Loop_Start, &startass, &Loop_End, &endass);
-        Reader->Seek(0, SEEK_SET);
-
-        Decoder = Renderer->CreateDecoder(Reader);
-        if(!Decoder) return false;
-
-        Callback = DecoderCallback;
-        UserData = NULL;
-
-        ChannelConfig chans;
-        SampleType type;
-        int srate;
-
-        Decoder->getInfo(&srate, &chans, &type);
-        ZxSampleFormat sf = ComputeSampleFormat(chans, type);
-        Format = sf.format;
-        FrameSize = sf.sampleSize;
-
-        if(Format == AL_NONE)
-        {
-            /*Printf("Unsupported audio format: %s, %s\n", GetChannelConfigName(chans),
-                   GetSampleTypeName(type));*/
-            Printf("Unsupported audio format: %d, %d\n", chans, type);
-            return false;
-        }
-        SampleRate = srate;
-        Looping = loop;
-
-        Data.Resize((SampleRate / 5) * FrameSize);
-
-        size_t samples = Decoder->getSampleLength();
-        ZxLoopPoints lp = ComputeLoopPoints(Loop_Start, Loop_End, startass, endass, srate, samples);
-        Loop_Start = lp.start;
-        Loop_End = lp.end;
-
-        return true;
+        return Init(new MemoryReader((const char*)data, datalen), loop);
     }
 };
 
@@ -1280,14 +1250,7 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         // although it can generate reasonable number of sources.
 
         const int numChannels = MAX<int>(*snd_channels, 2);
-        int numSources = numMono + numStereo;
-
-        if (0 == numSources)
-        {
-            numSources = numChannels;
-        }
-
-        Sources.Resize(MIN<int>(numChannels, numSources));
+        Sources.Resize(ComputeSourceCount(numMono, numStereo, numChannels));
         for (unsigned i = 0; i < Sources.Size(); i++)
         {
             alGenSources(1, &Sources[i]);
@@ -1729,12 +1692,10 @@ SoundStream *OpenALSoundRenderer::CreateStream(SoundStreamCallback callback, int
 	return stream;
 }
 
-SoundStream *OpenALSoundRenderer::OpenStream(const char *filename, int flags, int offset, int length)
+SoundStream *OpenALSoundRenderer::OpenStream(FileReader *reader, int flags)
 {
 	OpenALSoundStream *stream = new OpenALSoundStream(this);
-    bool ok = ((offset == -1) ? stream->Init((const BYTE*)filename, !!(flags&SoundStream::Loop), length) :
-                                stream->Init(filename, !!(flags&SoundStream::Loop)));
-    if(ok == false)
+	if (!stream->Init(reader, !!(flags&SoundStream::Loop)))
 	{
 		delete stream;
 		return NULL;
@@ -2079,10 +2040,12 @@ unsigned int OpenALSoundRenderer::GetPosition(FISoundChannel *chan)
     if(chan == NULL || chan->SysChannel == NULL)
         return 0;
 
-    ALint pos;
-    alGetSourcei(GET_PTRID(chan->SysChannel), AL_SAMPLE_OFFSET, &pos);
+    const ALuint source = GET_PTRID(chan->SysChannel);
+    ALint state = AL_INITIAL, pos = 0;
+    alGetSourcei(source, AL_SOURCE_STATE, &state);
+    alGetSourcei(source, AL_SAMPLE_OFFSET, &pos);
     if(getALError() == AL_NO_ERROR)
-        return pos;
+        return ComputeSourcePosition(state == AL_STOPPED, pos);
     return 0;
 }
 

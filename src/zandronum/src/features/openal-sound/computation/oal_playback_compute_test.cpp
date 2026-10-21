@@ -92,3 +92,26 @@ TEST(ComputeShouldSetLoopPoints, AllConditions)
 	EXPECT_FALSE(ComputeShouldSetLoopPoints(5, 10, false)); // [rc4l] AL lacks SOFT loop points
 }
 } // namespace
+
+// [rc4l] The device's counts cap the channels, nothing reported means the channels, and Emscripten's two INT_MAX counts do not overflow into a negative size.
+TEST(ComputeSourceCount, TheDeviceCapsTheChannels)
+{
+	EXPECT_EQ(32, ComputeSourceCount(255, 1, 32));
+	EXPECT_EQ(16, ComputeSourceCount(15, 1, 32));
+	EXPECT_EQ(32, ComputeSourceCount(0, 0, 32));
+	EXPECT_EQ(32, ComputeSourceCount(2147483647, 2147483647, 32));
+	EXPECT_EQ(32, ComputeSourceCount(-5, -1, 32));
+}
+
+// [rc4l] Doom 2's rocket explosion (14475 samples at 11025 Hz) ended at offset 14474 in a browser, short of its length, so the channel took it for evicted and the BFG's blast played twice.
+TEST(ComputeSourcePosition, AStoppedSourceIsAtTheStart)
+{
+	EXPECT_EQ(0u, ComputeSourcePosition(true, 14474));
+	EXPECT_EQ(0u, ComputeSourcePosition(true, 0));
+}
+
+TEST(ComputeSourcePosition, APlayingSourceIsWhereItPlays)
+{
+	EXPECT_EQ(7000u, ComputeSourcePosition(false, 7000));
+	EXPECT_EQ(0u, ComputeSourcePosition(false, -1));
+}

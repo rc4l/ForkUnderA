@@ -1616,7 +1616,11 @@ class CommandDrawMugShot : public SBarInfoCommand
 		{
 			FTexture *face = script->MugShot.GetFace(statusBar->CPlayer, defaultFace, accuracy, stateFlags);
 			if (face != NULL)
-				statusBar->DrawGraphic(face, x, y, block->XOffset(), block->YOffset(), block->Alpha(), block->FullScreenOffsets());
+			{
+				// [rc4l] features/damage-tint: the floor's tint reaches the mugshot too.
+				statusBar->DrawGraphic(face, x, y, block->XOffset(), block->YOffset(), block->Alpha(), block->FullScreenOffsets(),
+					false, false, 0, false, -1, -1, 0, 0, 0, 0, false, DamageTint_FaceOverlay());
+			}
 		}
 		void	Parse(FScanner &sc, bool fullScreenOffsets)
 		{
@@ -3274,8 +3278,9 @@ class CommandHasWeaponPiece : public SBarInfoCommandFlowControl
 					AWeaponHolder *hold = static_cast<AWeaponHolder*>(inv);
 					if(hold->PieceWeapon == weapon)
 					{
-						if(hold->PieceMask & (1 << (piece-1)))
-							SetTruth(true, block, statusBar);
+						// [rc4l] uzdoom@a41af2de7 -- only ever set truth, never cleared it, so a piece
+						// that had been removed still read as held.
+						SetTruth(0 != (hold->PieceMask & (1 << (piece-1))), block, statusBar);
 						return;
 					}
 				}

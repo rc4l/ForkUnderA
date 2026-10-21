@@ -186,7 +186,7 @@ FString M_GetCajunPath(const char *botfilename)
 
 //===========================================================================
 //
-// M_GetConfigPath													Windows
+// M_GetLegacyConfigPath													Windows
 //
 // Returns the path to the config file. On Windows, this can vary for reading
 // vs writing. i.e. If $PROGDIR/zdoom-<user>.ini does not exist, it will try
@@ -194,7 +194,7 @@ FString M_GetCajunPath(const char *botfilename)
 //
 //===========================================================================
 
-FString M_GetConfigPath(bool for_reading)
+FString M_GetLegacyConfigPath(bool for_reading)
 {
 	FString path;
 	HRESULT hr;
@@ -394,7 +394,7 @@ FString M_GetCajunPath(const char *botfilename)
 
 //===========================================================================
 //
-// M_GetConfigPath													Mac OS X
+// M_GetLegacyConfigPath													Mac OS X
 //
 // Returns the path to the config file. On Windows, this can vary for reading
 // vs writing. i.e. If $PROGDIR/zdoom-<user>.ini does not exist, it will try
@@ -402,7 +402,7 @@ FString M_GetCajunPath(const char *botfilename)
 //
 //===========================================================================
 
-FString M_GetConfigPath(bool for_reading)
+FString M_GetLegacyConfigPath(bool for_reading)
 {
 	char cpath[PATH_MAX];
 	FSRef folder;
@@ -494,25 +494,8 @@ FString GetUserFile (const char *file)
 			I_FatalError ("~/.config must be a directory");
 		}
 
-		// This can be removed after a release or two
-		// Transfer the old zdoom directory to the new location
-		bool moved = false;
-// [BB] Don't move the config if we are using a beta build.
-#if ( BUILD_ID == BUILD_RELEASE )
-		FString oldpath = NicePath("~/." GAMENAMELOWERCASE "/");
-		if (stat (oldpath, &extrainfo) != -1)
-		{
-			if (rename(oldpath, path) == -1)
-			{
-				I_Error ("Failed to move old " GAMENAMELOWERCASE " directory (%s) to new location (%s).",
-					oldpath.GetChars(), path.GetChars());
-			}
-			else
-				moved = true;
-		}
-#endif
-
-		if (!moved && mkdir (path, S_IRUSR | S_IWUSR | S_IXUSR) == -1)
+		// [rc4l] No move of ~/.forkundera here, which ZDoom's first run made of its own old folder: this fork never kept its config there, and that folder is the bridge's instance registry and its tools' fixtures and baselines, which the move carried off on a runner's first launch.
+		if (mkdir (path, S_IRUSR | S_IWUSR | S_IXUSR) == -1)
 		{
 			I_FatalError ("Failed to create %s directory:\n%s",
 				path.GetChars(), strerror (errno));
@@ -591,7 +574,7 @@ FString M_GetCajunPath(const char *botfilename)
 
 //===========================================================================
 //
-// M_GetConfigPath														Unix
+// M_GetLegacyConfigPath														Unix
 //
 // Returns the path to the config file. On Windows, this can vary for reading
 // vs writing. i.e. If $PROGDIR/zdoom-<user>.ini does not exist, it will try
@@ -599,7 +582,7 @@ FString M_GetCajunPath(const char *botfilename)
 //
 //===========================================================================
 
-FString M_GetConfigPath(bool for_reading)
+FString M_GetLegacyConfigPath(bool for_reading)
 {
 	return GetUserFile(GAMENAMELOWERCASE ".ini");
 }
@@ -631,3 +614,82 @@ FString M_GetSavegamesPath()
 }
 
 #endif
+
+//===========================================================================
+//
+// M_GetFuaUserPath													All platforms
+//
+// [rc4l] The one folder per user that holds everything this fork keeps for a player: the identity
+// keys and the IWAD store.
+//
+// A sibling of the node cache rather than a child of it, because that cache is deliberately named
+// after ZDoom so its child ports can share one, which is right for parsed nodes and wrong for our
+// own content: an account belongs to ForkUnderA, not to whatever else reads that folder.
+//
+// Written once here rather than per platform, since M_GetCachePath already resolved the per-user
+// part on each of them.
+//
+//===========================================================================
+
+FString M_GetFuaUserPath()
+{
+	FString path = M_GetCachePath(false);
+	FixPathSeperator(path);
+
+	// Trim the "/zdoom/cache" every platform's M_GetCachePath appends.
+	for (int i = 0; i < 2; ++i)
+	{
+		const long slash = path.LastIndexOf('/');
+		if (slash > 0)
+			path.Truncate(slash);
+	}
+
+	path << "/" GAMENAME;
+	return path;
+}
+
+
+//===========================================================================
+//
+// M_GetConfigPath													All platforms
+//
+// [rc4l] The config lives in the same per-user folder as the identity keys and the IWAD store, so
+// every copy of the engine on a machine shares one set of settings.
+//
+// Unless one already exists where an older build would have put it. That file is somebody's
+// settings, and a build that quietly started reading a different one would look like it had thrown
+// them away. So the old location wins whenever it holds a file, which also means dropping an ini
+// next to the exe is still how you make an install portable.
+//
+// The test is EXISTENCE, not writability. The old rule asked whether the program directory could be
+// written to, which is true for most installs, so almost every player ended up with the config
+// beside the exe whether they wanted it there or not.
+//
+//===========================================================================
+
+bool M_ConfigIsAtLegacyPath()
+{
+	// [rc4l] Asked of the reading path, which is the one that also checks the unnamed
+	// forkundera.ini a shared install may have been left with.
+	const FString legacy = M_GetLegacyConfigPath(true);
+	return !legacy.IsEmpty() && FileExists(legacy);
+}
+
+FString M_GetConfigPath(bool for_reading)
+{
+	if (M_ConfigIsAtLegacyPath())
+	{
+		return M_GetLegacyConfigPath(for_reading);
+	}
+
+	FString path = M_GetFuaUserPath();
+	if (path.IsEmpty())
+	{
+		// Nowhere of our own to put it, so behave exactly as before.
+		return M_GetLegacyConfigPath(for_reading);
+	}
+
+	CreatePath(path);
+	path << "/" GAMENAMELOWERCASE ".ini";
+	return path;
+}

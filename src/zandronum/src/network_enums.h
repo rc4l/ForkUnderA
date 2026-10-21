@@ -388,10 +388,6 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_GIVEINVENTORYEXTRA ),
 	ENUM_ELEMENT ( SVC2_SYNCPLAYERMEDALCOUNTS ),
 	ENUM_ELEMENT ( SVC2_PRINTTEAMSCORESMESSAGE ),
-	// [BB] Commands necessary for the account system.
-	ENUM_ELEMENT ( SVC2_SRP_USER_START_AUTHENTICATION ),
-	ENUM_ELEMENT ( SVC2_SRP_USER_PROCESS_CHALLENGE ),
-	ENUM_ELEMENT ( SVC2_SRP_USER_VERIFY_SESSION ),
 	ENUM_ELEMENT ( SVC2_RCONACCESS ),
 	// [TRSR] Command for syncing Domination point state.
 	ENUM_ELEMENT ( SVC2_SETDOMINATIONPOINTSTATE ),
@@ -399,6 +395,11 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SETTHINGSIZE ),
 	// [ZandroX] Debug: explosion damage region for the client-side hitbox overlay.
 	ENUM_ELEMENT ( SVC2_DEBUGEXPLOSION ),
+	// [rc4l] Sprite orientation (+ROLLSPRITE roll now; SpriteAngle/SpriteRotation later share the
+	// same flag byte). Appended, never inserted -- an inserted id shifts every command after it.
+	ENUM_ELEMENT ( SVC2_SETTHINGSPRITEORIENTATION ),
+	// [MobiusU9B] fua_damagetaken: one damage roll, sent only to the player who took it.
+	ENUM_ELEMENT ( SVC2_FUADAMAGETAKEN ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }
@@ -474,14 +475,6 @@ BEGIN_ENUM( CLC )
 }
 END_ENUM( CLC )
 
-BEGIN_ENUM( CLC_SRP )
-{
-	ENUM_ELEMENT2( CLC_SRP_USER_REQUEST_LOGIN, NUM_CLIENT_COMMANDS ),
-	ENUM_ELEMENT( CLC_SRP_USER_START_AUTHENTICATION ),
-	ENUM_ELEMENT( CLC_SRP_USER_PROCESS_CHALLENGE ),
-}
-END_ENUM( CLC_SRP )
-
 BEGIN_ENUM ( NetworkErrorCode )
 {
 	// Client has the wrong password.
@@ -510,6 +503,12 @@ BEGIN_ENUM ( NetworkErrorCode )
 
 	// [TP] The client sent bad userinfo
 	ENUM_ELEMENT( NETWORK_ERRORCODE_USERINFOREJECTED ),
+
+	// [rc4l] The client never proved which account it holds, or the proof did not check out.
+	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYREJECTED ),
+
+	// [rc4l] Somebody holding the same key is already playing here.
+	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYINUSE ),
 
 	ENUM_ELEMENT( NUM_NETWORK_ERRORCODES )
 }

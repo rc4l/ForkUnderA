@@ -33,6 +33,7 @@
 */
 
 #include <cfloat>
+#include "menu/restartnote_compute.h"
 
 void M_DrawConText (int color, int x, int y, const char *str);
 void M_SetVideoMode();
@@ -80,10 +81,11 @@ class FOptionMenuItemCommand : public FOptionMenuItemSubmenu
 {
 	bool mUnsafe;
 public:
-	FOptionMenuItemCommand(const char *label, const char *menu)
+	// [rc4l] Unsafe unless menudef trusts it (features/command-safety's ComputeMenuCommandUnsafe).
+	FOptionMenuItemCommand(const char *label, const char *menu, bool unsafe = true)
 		: FOptionMenuItemSubmenu(label, menu)
 	{
-		mUnsafe = true;
+		mUnsafe = unsafe;
 	}
 
 	// [BB] Moved implementation to c_dispatch.cpp
@@ -101,17 +103,17 @@ class FOptionMenuItemSafeCommand : public FOptionMenuItemCommand
 {
 	// action is a CCMD
 public:
-	FOptionMenuItemSafeCommand(const char *label, const char *menu)
-		: FOptionMenuItemCommand(label, menu)
+	FOptionMenuItemSafeCommand(const char *label, const char *menu, bool unsafe)
+		: FOptionMenuItemCommand(label, menu, unsafe)
 	{
 	}
 
 	bool MenuEvent (int mkey, bool fromcontroller)
 	{
+		// [rc4l] A confirmed command runs as the item's own, so a mod's menu cannot reach an unsafe command by asking first.
 		if (mkey == MKEY_MBYes)
 		{
-			C_DoCommand(mAction);
-			return true;
+			return FOptionMenuItemCommand::Activate();
 		}
 		return FOptionMenuItemCommand::MenuEvent(mkey, fromcontroller);
 	}
@@ -175,13 +177,28 @@ public:
 	virtual void SetSelection(int Selection) = 0;
 
 	//=============================================================================
+	bool IsGrayed()
+	{
+		// [TP] Also gray it if we cannot edit this cvar for some other reason.
+		return (mGrayCheck != NULL && !(mGrayCheck->GetGenericRep(CVAR_Bool).Bool)) || IsDisabled();
+	}
+
+	// [rc4l] The text the row shows for its current value, which Draw and a note beside it both measure.
+	const char *ValueText()
+	{
+		int Selection = GetSelection();
+		FOptionValues **opt = OptionValues.CheckKey(mValues);
+		if (Selection < 0 || opt == NULL || *opt == NULL)
+		{
+			return "Unknown";
+		}
+		return (*opt)->mValues[Selection].Text;
+	}
+
+	//=============================================================================
 	int Draw(FOptionMenuDescriptor *desc, int y, int indent, bool selected)
 	{
-		bool grayed = mGrayCheck != NULL && !(mGrayCheck->GetGenericRep(CVAR_Bool).Bool);
-
-		// [TP] Also gray it if we cannot edit this cvar for some other reason.
-		if ( IsDisabled() )
-			grayed = true;
+		bool grayed = IsGrayed();
 
 		if (mCenter)
 		{
@@ -190,19 +207,8 @@ public:
 		drawLabel(indent, y, selected? OptionSettings.mFontColorSelection : OptionSettings.mFontColor, grayed);
 
 		int overlay = grayed? MAKEARGB(96,48,0,0) : 0;
-		const char *text;
-		int Selection = GetSelection();
-		FOptionValues **opt = OptionValues.CheckKey(mValues);
-		if (Selection < 0 || opt == NULL || *opt == NULL)
-		{
-			text = "Unknown";
-		}
-		else
-		{
-			text = (*opt)->mValues[Selection].Text;
-		}
-		screen->DrawText (SmallFont, OptionSettings.mFontColorValue, indent + CURSORSPACE, y, 
-			text, DTA_CleanNoMove_1, true, DTA_ColorOverlay, overlay, TAG_DONE);
+		screen->DrawText (SmallFont, OptionSettings.mFontColorValue, indent + CURSORSPACE, y,
+			ValueText(), DTA_CleanNoMove_1, true, DTA_ColorOverlay, overlay, TAG_DONE);
 		return indent;
 	}
 
@@ -248,6 +254,7 @@ public:
 
 class FOptionMenuItemOption : public FOptionMenuItemOptionBase
 {
+protected:
 	// action is a CVAR
 	FBaseCVar *mCVar;
 public:
@@ -327,6 +334,49 @@ public:
 	bool IsServerCVar() const override
 	{
 		return mCVar && mCVar->IsServerCVar();
+	}
+};
+
+//=============================================================================
+//
+// [rc4l] An option that takes effect only after a restart: once its cvar differs from launchcvar, which holds the value the game started with in the same type, a white note beside the value says so.
+//
+//=============================================================================
+
+class FOptionMenuItemRestartOption : public FOptionMenuItemOption
+{
+	FBaseCVar *mLaunchCVar;
+public:
+
+	FOptionMenuItemRestartOption(const char *label, const char *menu, const char *values, const char *launchcvar, const char *graycheck, int center)
+		: FOptionMenuItemOption(label, menu, values, graycheck, center)
+	{
+		mLaunchCVar = FindCVar(launchcvar, NULL);
+	}
+
+	int Draw(FOptionMenuDescriptor *desc, int y, int indent, bool selected)
+	{
+		indent = FOptionMenuItemOption::Draw(desc, y, indent, selected);
+		if (mCVar == NULL || mLaunchCVar == NULL) return indent;
+		static const char *const wordings[] = { "(restart the game to apply)", "(restart to apply)", "(restart)" };
+		const int count = (int)(sizeof(wordings) / sizeof(wordings[0]));
+		int widths[count];
+		for (int i = 0; i < count; ++i) widths[i] = SmallFont->StringWidth(wordings[i]);
+		// [rc4l] The note starts a space after the value at its own scale, and stops one clean pixel short of the edge for the rounding below.
+		const int valueRight = indent + CURSORSPACE + SmallFont->StringWidth(ValueText()) * CleanXfac_1;
+		const int gap = SmallFont->StringWidth(" ");
+		const FString value = mCVar->GetGenericRep(CVAR_String).String;
+		const FString launched = mLaunchCVar->GetGenericRep(CVAR_String).String;
+		const zx::RestartNoteFit fit = zx::ComputeRestartNote(value, launched, !(mLaunchCVar->GetFlags() & CVAR_ISDEFAULT), IsGrayed(),
+			valueRight, gap, screen->GetWidth() - CleanXfac_1, CleanXfac_1, widths, count);
+		if (fit.wording < 0) return indent;
+		// [rc4l] A note smaller than the menu's text is drawn on a virtual screen that many times smaller, centred on the row, and kept to its ratio so a widescreen does not squeeze it toward the middle.
+		const int s = fit.scale;
+		const int left = valueRight + gap * s;
+		const int top = y + SmallFont->GetHeight() * (CleanYfac_1 - s) / 2;
+		screen->DrawText(SmallFont, CR_WHITE, (left + s - 1) / s, top / s, wordings[fit.wording],
+			DTA_VirtualWidth, screen->GetWidth() / s, DTA_VirtualHeight, screen->GetHeight() / s, DTA_KeepRatio, true, TAG_DONE);
+		return indent;
 	}
 };
 
@@ -514,9 +564,23 @@ class FOptionMenuSliderBase : public FOptionMenuItem
 	int mDrawX;
 	int mSliderShort;
 
+	// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+	//   SUPERSEDED BY: nothing. Upstream's slider (optionmenuitems.zs, OptionMenuSliderBase::
+	//   MouseEvent) writes the CVAR on every drag event exactly as ours did, so there is no fix
+	//   there to take and no reason to expect one.
+	//   ON PORT: keep this. It is behaviour upstream does not have.
+	//
+	// A dragged slider whose CVAR resizes the display moves the ground under the drag: the render
+	// target changes size mid-gesture, the pointer maps to a different place in it, and the thumb
+	// slides away from the cursor. Holding the value until the button comes up leaves one
+	// coordinate space for the whole drag.
+	bool mDeferApply;
+	bool mDragging;
+	double mPendingValue;
+
 public:
 	// [TP] Now takes menu as well
-	FOptionMenuSliderBase(const char *label, double min, double max, double step, int showval, FName menu = NAME_None)
+	FOptionMenuSliderBase(const char *label, double min, double max, double step, int showval, FName menu = NAME_None, bool deferApply = false)
 		: FOptionMenuItem(label, menu)
 	{
 		mMin = min;
@@ -525,6 +589,9 @@ public:
 		mShowValue = showval;
 		mDrawX = 0;
 		mSliderShort = 0;
+		mDeferApply = deferApply;
+		mDragging = false;
+		mPendingValue = 0;
 	}
 
 	virtual double GetSliderValue() = 0;
@@ -582,7 +649,11 @@ public:
 		// [TP] Support for graying
 		drawLabel(indent, y, selected? OptionSettings.mFontColorSelection : OptionSettings.mFontColor, Selectable() == false );
 		mDrawX = indent + CURSORSPACE;
-		DrawSlider (mDrawX, y, mMin, mMax, GetSliderValue(), mShowValue, indent);
+
+		// [rc4l] The pending value while a deferred drag is in progress, so the thumb follows the
+		// cursor even though the CVAR has not been written yet.
+		const double shown = mDragging ? mPendingValue : GetSliderValue();
+		DrawSlider (mDrawX, y, mMin, mMax, shown, mShowValue, indent);
 		return indent;
 	}
 
@@ -630,11 +701,25 @@ public:
 
 		x = clamp(x, slide_left, slide_right);
 		double v = mMin + ((x - slide_left) * (mMax - mMin)) / (slide_right - slide_left);
-		if (v != GetSliderValue())
+
+		// [rc4l] Held rather than written, for a slider whose CVAR resizes what we are drawing on.
+		// See the note on mDeferApply.
+		if (mDeferApply && type != DMenu::MOUSE_Release)
 		{
-			SetSliderValue(v);
-			//S_Sound (CHAN_VOICE | CHAN_UI, "menu/change", snd_menuvolume, ATTN_NONE);
+			mDragging = true;
+			mPendingValue = v;
 		}
+		else
+		{
+			mDragging = false;
+
+			if (v != GetSliderValue())
+			{
+				SetSliderValue(v);
+				//S_Sound (CHAN_VOICE | CHAN_UI, "menu/change", snd_menuvolume, ATTN_NONE);
+			}
+		}
+
 		if (type == DMenu::MOUSE_Click)
 		{
 			lm->SetFocus(this);
@@ -668,8 +753,8 @@ class FOptionMenuSliderCVar : public FOptionMenuSliderBase
 {
 	FBaseCVar *mCVar;
 public:
-	FOptionMenuSliderCVar(const char *label, const char *menu, double min, double max, double step, int showval)
-		: FOptionMenuSliderBase(label, min, max, step, showval, menu) // [TP] Added menu parameter
+	FOptionMenuSliderCVar(const char *label, const char *menu, double min, double max, double step, int showval, bool deferApply = false)
+		: FOptionMenuSliderBase(label, min, max, step, showval, menu, deferApply) // [TP] Added menu parameter
 	{
 		mCVar = FindCVar(menu, NULL);
 	}

@@ -1,0 +1,7 @@
+{
+  "name": "LMS",
+  "summary": "Last Man Standing. Limited lives a round, and the last one alive takes it.",
+  "group": "mode",
+  "gamemode": "lastmanstanding",
+  "cfg": "lms.cfg"
+}

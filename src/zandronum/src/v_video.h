@@ -210,6 +210,9 @@ public:
 	// points to the last row in the buffer, which will be the first row output.
 	virtual void GetScreenshotBuffer(const BYTE *&buffer, int &pitch, ESSType &color_type);
 
+	// [rc4l] A screen read back only asynchronously (a browser's WebGPU) has its PNG made once the frame is drawn, under path's name, and returns true; false keeps GetScreenshotBuffer.
+	virtual bool ScreenshotLater(const char *path) { return false; }
+
 	// Releases the screenshot buffer.
 	virtual void ReleaseScreenshotBuffer();
 
@@ -421,6 +424,16 @@ public:
 	virtual int GetPixelDoubling() const { return 0; }
 	virtual int GetTrueHeight() { return GetHeight(); }
 
+	// [rc4l] Adapted from uzdoom@9b6756114b89c37d607705713bd7705cf08c8a20 ("Scale mouse coordinates
+	// based on window size"), being the seam where an OS mouse position becomes a buffer one.
+	//
+	// ADAPTED rather than ported, because upstream reads mOutputLetterbox off a DFrameBuffer this
+	// tree does not have and letterboxes where we stretch to fill, so only the hook is theirs.
+	//
+	// A no-op by default, since a backend that renders straight at the window size has nothing to
+	// convert.
+	virtual void ScaleCoordsFromWindow(int &x, int &y) { (void)x; (void)y; }
+
 	uint32 GetLastFPS() const { return LastCount; }
 
 #ifdef _WIN32
@@ -455,7 +468,18 @@ EXTERN_CVAR (Float, vid_contrast)
 // Translucency tables
 
 // RGB32k is a normal R5G5B5 -> palette lookup table.
-extern "C" BYTE RGB32k[32][32][32];
+
+// Use a union so we can "overflow" without warnings.
+// Otherwise, we get stuff like this from Clang (when compiled
+// with -fsanitize=bounds) while running:
+//   src/v_video.cpp:390:12: runtime error: index 1068 out of bounds for type 'BYTE [32]'
+//   src/r_draw.cpp:273:11: runtime error: index 1057 out of bounds for type 'BYTE [32]'
+union ColorTable32k
+{
+	BYTE RGB[32][32][32];
+	BYTE All[32 *32 *32];
+};
+extern "C" ColorTable32k RGB32k;
 
 // Col2RGB8 is a pre-multiplied palette for color lookup. It is stored in a
 // special R10B10G10 format for efficient blending computation.

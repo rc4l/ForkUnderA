@@ -1,0 +1,184 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseTopOfStack, parseLinuxPerf, sampleProcess, sampleTable } from "../src/sample.mjs";
+
+// A fake spawn: returns canned {err,stdout,stderr} per invocation, recording the commands.
+function fakeRun(replies) {
+  const calls = [];
+  let i = 0;
+  const run = async (cmd, args) => { calls.push({ cmd, args }); return replies[i++] || { err: null, stdout: "", stderr: "" }; };
+  run.calls = calls;
+  return run;
+}
+
+const MAC_OUT = [
+  "Sort by top of stack, including counts of all functions:",
+  "    FBlockThingsIterator::Next  (in forkundera)        412",
+  "    R_DrawColumn  (in forkundera)        88",
+  "",
+].join("\n");
+
+test("sampleProcess: macOS backend parses the sample output", async () => {
+  const run = fakeRun([{ err: null, stdout: MAC_OUT, stderr: "" }]);
+  const r = await sampleProcess(1234, { _platform: "darwin", _run: run, engineOnly: true, top: 5 });
+  assert.equal(r.available, true);
+  assert.equal(r.backend, "sample");
+  assert.equal(r.functions[0].symbol, "FBlockThingsIterator::Next");
+  assert.equal(run.calls[0].cmd, "sample");
+});
+
+test("sampleProcess: macOS with no output reports unavailable", async () => {
+  const r = await sampleProcess(1, { _platform: "darwin", _run: fakeRun([{ err: { message: "boom" }, stdout: "", stderr: "" }]) });
+  assert.equal(r.available, false);
+  assert.match(r.error, /boom/);
+});
+
+test("sampleProcess: Linux backend records then reports", async () => {
+  const perf = "  50.00%  forkundera  forkundera  [.] P_RunThinkers\n  10.00%  forkundera  forkundera  [.] R_DrawSpan\n";
+  const run = fakeRun([{ err: null, stdout: "", stderr: "" }, { err: null, stdout: perf, stderr: "" }]);
+  const r = await sampleProcess(9, { _platform: "linux", _run: run, engineOnly: true });
+  assert.equal(r.available, true);
+  assert.equal(r.backend, "perf");
+  assert.equal(r.functions[0].symbol, "P_RunThinkers");
+  assert.deepEqual(run.calls.map((c) => c.args[0]), ["record", "report"]);
+});
+
+test("sampleProcess: Linux surfaces perf-not-installed and perf-blocked", async () => {
+  const notInstalled = await sampleProcess(9, { _platform: "linux", _run: fakeRun([{ err: { message: "spawn perf ENOENT" }, stdout: "", stderr: "" }]) });
+  assert.equal(notInstalled.available, false);
+  assert.match(notInstalled.error, /not installed/);
+
+  const blocked = await sampleProcess(9, { _platform: "linux", _run: fakeRun([{ err: null, stdout: "", stderr: "perf_event_paranoid too high" }]) });
+  assert.equal(blocked.available, false);
+  assert.match(blocked.error, /perf_event_paranoid|blocked/);
+
+  const noReport = await sampleProcess(9, { _platform: "linux", _run: fakeRun([{ err: null, stdout: "", stderr: "" }, { err: null, stdout: "", stderr: "" }]) });
+  assert.equal(noReport.available, false);
+  assert.match(noReport.error, /no output/);
+});
+
+test("sampleProcess: Windows without a connection says what to pass instead", async () => {
+  // [rc4l] Windows used to have no sampler at all and this pointed at Tracy/WPR. It has one now, in
+  // the engine (src/mcp_sample.h), so the only thing that can be missing is the connection it needs
+  // -- a pid alone cannot reach an in-process sampler.
+  const r = await sampleProcess(1, { _platform: "win32" });
+  assert.equal(r.available, false);
+  assert.equal(r.backend, "none");
+  assert.match(r.error, /--port/);
+});
+
+test("sampleProcess: Windows with a connection uses the in-engine sampler", async () => {
+  const asked = [];
+  const conn = {
+    rpc: async (cmd, args) => { asked.push([cmd, args]); return { sampling: true }; },
+    waitEvent: async () => ({
+      seconds: 2.01, samples: 1500,
+      functions: [{ symbol: "P_CheckPosition", dso: "forkundera", samples: 900, percent: 60 }],
+    }),
+  };
+
+  const r = await sampleProcess(1, { _platform: "win32", conn, seconds: 2, top: 5, engineOnly: true });
+
+  assert.deepEqual(asked, [["perf.sample", { seconds: 2, top: 5, engine: 1 }]]);
+  assert.equal(r.available, true);
+  assert.equal(r.backend, "bridge");
+  assert.equal(r.samples, 1500);
+  // Renamed to `binary` so a caller cannot tell which of the three backends answered.
+  assert.deepEqual(r.functions, [{ symbol: "P_CheckPosition", binary: "forkundera", samples: 900, percent: 60 }]);
+});
+
+test("sampleProcess: --stacks asks the engine to walk stacks and returns the inclusive table beside the self one", async () => {
+  const asked = [];
+  const conn = {
+    rpc: async (cmd, args) => { asked.push([cmd, args]); return { sampling: true }; },
+    waitEvent: async () => ({
+      seconds: 1, samples: 10,
+      functions: [{ symbol: "ClipAngle", dso: "forkundera", samples: 2, percent: 20 }],
+      inclusive: [{ symbol: "D_Display", dso: "forkundera", samples: 10, percent: 100 }],
+    }),
+  };
+
+  const r = await sampleProcess(1, { _platform: "win32", conn, seconds: 1, top: 5, stacks: true });
+
+  assert.deepEqual(asked, [["perf.sample", { seconds: 1, top: 5, engine: 0, stacks: 1 }]]);
+  assert.deepEqual(r.inclusive, [{ symbol: "D_Display", binary: "forkundera", samples: 10, percent: 100 }]);
+  assert.equal(r.functions[0].symbol, "ClipAngle");
+});
+
+test("sampleProcess: a refused sample run is reported, not treated as empty", async () => {
+  const conn = { rpc: async () => null, waitEvent: async () => { throw new Error("must not wait"); } };
+
+  const r = await sampleProcess(1, { _platform: "win32", conn });
+
+  assert.equal(r.available, false);
+  assert.match(r.error, /refused/);
+});
+
+const SAMPLE = `
+Analysis of sampling forkundera (pid 123) every 1 millisecond
+Call graph:
+    ... (tree omitted) ...
+
+Sort by top of stack, same collapsed (when >= 5):
+        mach_msg2_trap  (in libsystem_kernel.dylib)        4200
+        P_MobjThinker  (in forkundera)        900
+        A_Chase  (in forkundera)        640
+        P_TryMove  (in forkundera)        410
+        FRandom::operator()  (in forkundera)        120
+
+Binary Images:
+       0x100000000 forkundera
+`;
+
+test("parseTopOfStack extracts symbol/binary/samples, hottest first", () => {
+  const fns = parseTopOfStack(SAMPLE, { top: 3 });
+  assert.equal(fns.length, 3);
+  assert.deepEqual(fns[0], { symbol: "mach_msg2_trap", binary: "libsystem_kernel.dylib", samples: 4200 });
+  assert.equal(fns[1].symbol, "P_MobjThinker");
+  assert.equal(fns[2].symbol, "A_Chase");
+});
+
+test("parseTopOfStack can filter to one binary (our engine's hot functions)", () => {
+  const fns = parseTopOfStack(SAMPLE, { onlyBinary: "forkundera" });
+  assert.deepEqual(fns.map((f) => f.symbol), ["P_MobjThinker", "A_Chase", "P_TryMove", "FRandom::operator()"]);
+  assert.ok(fns.every((f) => f.binary === "forkundera"));
+});
+
+test("parseTopOfStack returns [] when the section is absent", () => {
+  assert.deepEqual(parseTopOfStack("no such section here"), []);
+});
+
+const PERF = `# Samples: 10K
+#
+# Overhead  Command      Shared Object      Symbol
+# ........  ...........  .................  ...................
+#
+    31.20%  forkundera   forkundera         [.] P_MobjThinker
+    18.05%  forkundera   forkundera         [.] FBlockThingsIterator::Next
+     9.10%  forkundera   libc.so.6          [.] __memmove_avx
+     4.00%  forkundera   forkundera         [.] A_Chase
+`;
+
+test("parseLinuxPerf extracts symbol/dso/percent, hottest first", () => {
+  const fns = parseLinuxPerf(PERF, { top: 3 });
+  assert.equal(fns[0].symbol, "P_MobjThinker");
+  assert.equal(fns[0].samples, 31.2);
+  assert.equal(fns[1].symbol, "FBlockThingsIterator::Next");
+  assert.equal(fns[2].binary, "libc.so.6");
+});
+
+test("parseLinuxPerf can filter to the engine binary", () => {
+  const fns = parseLinuxPerf(PERF, { onlyBinary: "forkundera" });
+  assert.deepEqual(fns.map((f) => f.symbol), ["P_MobjThinker", "FBlockThingsIterator::Next", "A_Chase"]);
+});
+
+// [rc4l] The JSON was read with one-off scripts twice while chasing nuts.wad's tic; the table is what they printed.
+test("a sample prints as self and inclusive shares, hottest first and cut at top", () => {
+  const report = { available: true, backend: "bridge", seconds: 15, samples: 9836,
+    functions: [{ symbol: "IDList<AActor>::getNewID", percent: 43.88 }, { symbol: "PIT_CheckThing", percent: 8.16 }],
+    inclusive: [{ symbol: "P_Ticker", percent: 82.81 }] };
+  assert.deepEqual(sampleTable(report, { top: 1 }), ["9836 samples over 15 s (bridge)", "self:", "  43.88%  IDList<AActor>::getNewID", "inclusive:", "  82.81%  P_Ticker"]);
+  assert.deepEqual(sampleTable({ ...report, inclusive: undefined }).slice(1), ["self:", "  43.88%  IDList<AActor>::getNewID", "   8.16%  PIT_CheckThing"]);
+  assert.deepEqual(sampleTable({ available: false, backend: "bridge", error: "perf.sample was refused" }), ["no sample: perf.sample was refused"]);
+  assert.deepEqual(sampleTable({ available: false, backend: "none" }), ["no sample: none"]);
+});

@@ -15,6 +15,10 @@
 #include "c_dispatch.h"
 #include "v_video.h"
 #include "features/video-scale/computation/videoscale_compute.h"
+#include "features/video-scale/videoscale.h"
+#include "doomstat.h"   // [rc4l] setsizeneeded
+#include "sbar.h"       // [rc4l] StatusBar
+#include "features/handoff/effects.h"   // [rc4l] QueuedBesideTic
 
 // The scale CVARs do NOT trigger a mode reset. A mode reset would destroy and recreate the window +
 // GL context (black flash + keyboard-focus loss on every slider tick). Instead the framebuffer's
@@ -70,3 +74,30 @@ CCMD(vid_showcurrentscaling)
 	Printf("Current vid_scalefactor: %f\n", (float)vid_scalefactor);
 	Printf("Render resolution: %d x %d\n", screen->GetWidth(), screen->GetHeight());
 }
+
+namespace zx {
+
+ScaleReconcile ReconcileRenderSize(int clientW, int clientH, int renderW, int renderH, int lastClientW, int lastClientH, int &wantW, int &wantH)
+{
+	const ScaledViewport v = ComputeScaledViewport(clientW, clientH,
+		vid_scalemode, vid_scalefactor,
+		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
+		!!vid_cropaspect, 0.f,
+		VID_SCALE_MIN_WIDTH, VID_SCALE_MIN_HEIGHT);
+	wantW = v.width;
+	wantH = v.height;
+	return ComputeScaleReconcile(clientW, clientH, renderW, renderH, lastClientW, lastClientH, v.width, v.height);
+}
+
+void ResizeScreenInPlace(DSimpleCanvas *canvas, int w, int h)
+{
+	// [rc4l] Mirrors upstream's V_OutputResized: no window or context is recreated, so there is no black flash or focus loss.
+	canvas->Resize(w, h);
+	V_RecalcVideoModeState(w, h, DisplayBits);
+	// [rc4l] The status bar caches ST_Y from SCREENHEIGHT, and a stale one sizes the 3D view taller than the buffer it draws into; it is the game's, so beside a tic it waits for the handoff.
+	const zx::handoff::UIEffect sizeChanged = { [](intptr_t, intptr_t) { if (StatusBar != NULL) StatusBar->ScreenSizeChanged(); }, 0, 0 };
+	if (!zx::handoff::QueuedBesideTic(sizeChanged)) sizeChanged.run(sizeChanged.a, sizeChanged.b);
+	setsizeneeded = true;
+}
+
+} // namespace zx

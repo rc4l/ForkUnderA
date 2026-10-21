@@ -11,6 +11,14 @@
 #include <alc.h>
 #include <alext.h>
 
+// [rc4l] Emscripten's al.h and alc.h name no calling convention for their entry points.
+#ifndef AL_APIENTRY
+#define AL_APIENTRY
+#endif
+#ifndef ALC_APIENTRY
+#define ALC_APIENTRY
+#endif
+
 #include <efx.h>
 
 #ifndef ALC_ENUMERATE_ALL_EXT
@@ -139,7 +147,7 @@ public:
 
 	// Streaming sounds.
 	SoundStream *CreateStream(SoundStreamCallback callback, int buffbytes, int flags, int samplerate, void *userdata);
-	SoundStream *OpenStream(const char *filename, int flags, int offset, int length);
+	SoundStream *OpenStream(FileReader *reader, int flags);
 
 	// Starts a sound.
 	FISoundChannel *StartSound(SoundHandle sfx, float vol, int pitch, int chanflags, FISoundChannel *reuse_chan);

@@ -1,5 +1,6 @@
-# Build artifacts (fetched/built by mac_compile.sh)
-deps/
+# Build artifacts (fetched/built by mac_compile.sh), except DiligentCore, the Vulkan backend's submodule
+deps/*
+!deps/DiligentCore
 build/
 
 # Visual Studio outputs
@@ -9,6 +10,7 @@ src/zandronum/sqlite/sqlite-autoconf*
 
 # Test/coverage build trees (cmake -S tests -B build-*)
 build-tests/
+build-tests-web/
 build-san/
 build-coverage/
 build-cov-llvm/
@@ -61,3 +63,27 @@ ZandroX-dev-*/
 *.rej
 *.rej.orig
 *.orig
+.build-status
+
+# [rc4l] Reference material for the mkiwad manifest, not ours to redistribute.
+tools/mm8bdm/
+
+# [rc4l] Standalone DiligentCore build used to verify the vendored tree compiles on its own.
+build-diligent/
+
+# fuactl play sessions (port/token of a running instance, and one per port) and the report queue
+tools/fuactl/.play-session*
+tools/fuactl/queue.json
+
+# fuactl's native helpers' build trees (tools/fuactl/native/<helper>/build)
+tools/fuactl/native/*/build/
+
+# Web builds (web_compile.sh, tools/web/webgpu-check/build.sh)
+build-web/
+build-webgpu-check/
+dist-web/
+build-hosttools/
+
+# The demo site's stage (tools/web/demo), and the cache wrangler leaves wherever it runs
+tools/web/demo/site/
+.wrangler/

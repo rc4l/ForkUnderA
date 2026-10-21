@@ -27,10 +27,20 @@ GH_TOK  = os.environ["GITHUB_TOKEN"]
 DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0", "false")
 MARKER_TMPL = "GlitchTip-ID: {}"          # dedup marker embedded (hidden) in each issue body
 
-# platform -> (preferred load base, symbol-file path inside the release symbols zip)
+# platform -> (preferred load base, symbol-file paths to try inside the release symbols zip)
+#
+# [rc4l] Two names per platform, because the binary was renamed zandronum -> forkundera and the
+# symbol files are named after it. Every release published before that rename contains the old
+# names, forever, and a crash from one of those builds is exactly when symbols matter most.
 PLAT = {
-    "macos":   (0x100000000, "zandronum.dSYM/Contents/Resources/DWARF/zandronum"),
-    "linux":   (0,           "zandronum.debug"),
+    "macos":   (0x100000000, ("forkundera.dSYM/Contents/Resources/DWARF/forkundera",
+                              "zandronum.dSYM/Contents/Resources/DWARF/zandronum")),
+    "linux":   (0,           ("forkundera.debug", "zandronum.debug")),
+    # [rc4l] The headless server is a different binary from the client -- SERVER_ONLY, no renderer,
+    # no sound -- so its addresses mean nothing against the client's symbols. It gets its own key,
+    # its own release asset and its own debug file, which SERVERONLY already names for us because it
+    # appends "-server" to ZDOOM_EXE_NAME.
+    "linux-server": (0,      ("forkundera-server.debug",)),
     "windows": (0x140000000, None),        # first *.pdb found in the zip
 }
 
@@ -72,6 +82,12 @@ def tagval(ev, key):
             return t.get("value")
     return None
 
+def build_kind(ev):
+    # [rc4l] "server" or "client", stamped at sentry init. Absent on anything built before that
+    # existed, and absent is NOT the same as client: see resolve_platform.
+    v = tagval(ev, "build")
+    return v.strip().lower() if v else None
+
 def norm_platform(ev):
     name = ""
     for c in (ev.get("contexts") or {}).values():
@@ -82,6 +98,24 @@ def norm_platform(ev):
     if "mac" in name or "darwin" in name: return "macos"
     if "windows" in name:                 return "windows"
     return "linux"
+
+def resolve_platform(ev, platform):
+    """Which symbol set this crash may be read with, or None to refuse.
+
+    [rc4l] REFUSING IS A FEATURE HERE. A server crash carries the same release, the same dist and the
+    same platform as a client crash from the same commit, so without this it matched the client's
+    symbols asset and symbolicated the wrong binary -- producing function names that are authoritative
+    and false. An unsymbolicated stack at least admits it is useless.
+
+    Absent tag means the build predates the tag, so it is a client (nothing else reported then).
+    """
+    kind = build_kind(ev)
+    if kind == "server":
+        key = f"{platform}-server"
+        if key not in PLAT:
+            return None                                  # no server symbols for this platform, ever
+        return key
+    return platform
 
 def exception_frames(ev):
     # GlitchTip nests the stacktrace under entries[type=="exception"].
@@ -120,7 +154,10 @@ def find_symbolizer():
 
 def find_asset_url(platform, sha12):
     releases = json.loads(gh(f"/repos/{GH_REPO}/releases?per_page=100"))
-    want = re.compile(rf"ZandroX-symbols-{platform}-{re.escape(sha12)}", re.I)
+    # [rc4l] Matches both the old "ZandroX-symbols-<platform>-<sha>" and the current
+    # "symbols-<platform>-<sha>". Releases already published keep the old name forever, and a crash
+    # from one of those builds is exactly when symbols matter most, so the pattern has to span both.
+    want = re.compile(rf"symbols-{platform}-{re.escape(sha12)}", re.I)
     for rel in releases:
         for a in rel.get("assets", []):
             if want.search(a["name"]):
@@ -144,10 +181,13 @@ def ensure_symbols(platform, sha12):
     return dest
 
 def symfile_path(symdir, platform):
-    sub = PLAT[platform][1]
-    if sub:
-        p = os.path.join(symdir, sub)
-        return p if os.path.exists(p) else None
+    subs = PLAT[platform][1]
+    if subs:
+        for sub in subs:                                 # current name first, then the pre-rename one
+            p = os.path.join(symdir, sub)
+            if os.path.exists(p):
+                return p
+        return None
     for root, _, files in os.walk(symdir):               # windows: first pdb
         for f in files:
             if f.lower().endswith(".pdb"):
@@ -160,6 +200,10 @@ def symbolicate(ev, platform):
     sha12 = build_sha(ev)
     if not sha12:
         return None, "no build sha on the event (release/dist tag missing)"
+    platform = resolve_platform(ev, platform)
+    if platform is None:
+        return None, (f"crash came from a server build and no server symbols exist for "
+                      f"{norm_platform(ev)}; refusing to read it with the client's")
     base_tag = tagval(ev, "zx_image_base")
     if not base_tag:
         return None, "no zx_image_base tag on the event (can't rebase addresses)"

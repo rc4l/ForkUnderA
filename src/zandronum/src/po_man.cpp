@@ -950,7 +950,10 @@ void DPolyDoor::Tick ()
 		break;
 
 	case PODOOR_SWING:
-		if (poly->RotatePolyobj (m_Speed))
+		// [rc4l] uzdoom@78b4cbdf6 -- a swing door blocked at the very end of its travel never
+		// reached the completion code below, because RotatePolyobj returns false when blocked.
+		// Once the distance is used up the door is done regardless.
+		if (m_Dist <= 0 || poly->RotatePolyobj (m_Speed))
 		{
 
 			// [WS] Inform clients that the door is closing.
@@ -961,11 +964,9 @@ void DPolyDoor::Tick ()
 				SERVERCOMMANDS_SetPolyDoorSpeedRotation( m_PolyObj, m_Speed, poly->angle );
 			}
 
+			// [rc4l] uzdoom@60b735dc6 -- redundant: a perpetual swing door (m_Dist == -1) can never
+			// reach the m_Dist <= 0 completion below, so the early return guarded nothing.
 			absSpeed = abs (m_Speed);
-			if (m_Dist == -1)
-			{ // perpetual polyobj
-				return;
-			}
 			m_Dist -= absSpeed;
 			if (m_Dist <= 0)
 			{
@@ -1336,6 +1337,7 @@ bool FPolyObj::MovePolyobj (int x, int y, bool force)
 	CenterSpot.y += y;
 	LinkPolyobj ();
 	ClearSubsectorLinks();
+	MarkSidesMoved();
 	RecalcActorFloorCeil(Bounds | oldbounds);
 
 	// [BC/BB] Polyobject has moved.
@@ -1392,7 +1394,7 @@ static void RotatePt (int an, fixed_t *x, fixed_t *y, fixed_t startSpotX, fixed_
 //
 //==========================================================================
 
-bool FPolyObj::RotatePolyobj (angle_t angle)
+bool FPolyObj::RotatePolyobj (angle_t angle, bool fromsave)
 {
 	int an;
 	bool blocked;
@@ -1414,11 +1416,16 @@ bool FPolyObj::RotatePolyobj (angle_t angle)
 	validcount++;
 	UpdateBBox();
 
-	for(unsigned i=0;i < Sidedefs.Size(); i++)
+	// [rc4l] uzdoom@6fd70ff32: when a savegame restores a polyobject's rotation we must not damage
+	// or be blocked by actors -- the pawns may be only partly deserialized, which crashes.
+	if (!fromsave)
 	{
-		if (CheckMobjBlocking(Sidedefs[i]))
+		for(unsigned i=0;i < Sidedefs.Size(); i++)
 		{
-			blocked = true;
+			if (CheckMobjBlocking(Sidedefs[i]))
+			{
+				blocked = true;
+			}
 		}
 	}
 	if (blocked)
@@ -1435,6 +1442,7 @@ bool FPolyObj::RotatePolyobj (angle_t angle)
 	this->angle += angle;
 	LinkPolyobj();
 	ClearSubsectorLinks();
+	MarkSidesMoved();
 	RecalcActorFloorCeil(Bounds | oldbounds);
 
 	// [BC] Polyobject has rotated.
@@ -1910,8 +1918,8 @@ static void SpawnPolyobj (int index, int tag, int type)
 			sd->linedef->args[0] = 0;
 			IterFindPolySides(&polyobjs[index], sd);
 			po->MirrorNum = sd->linedef->args[1];
-			po->crush = (type != PO_SPAWN_TYPE) ? 3 : 0;
-			po->bHurtOnTouch = (type == PO_SPAWNHURT_TYPE);
+			po->crush = (type != SMT_PolySpawn) ? 3 : 0;
+			po->bHurtOnTouch = (type == SMT_PolySpawnHurt);
 			po->tag = tag;
 			po->seqType = sd->linedef->args[2];
 			if (po->seqType < 0 || po->seqType > 63)
@@ -1985,8 +1993,8 @@ static void SpawnPolyobj (int index, int tag, int type)
 		}
 		if (po->Sidedefs.Size() > 0)
 		{
-			po->crush = (type != PO_SPAWN_TYPE) ? 3 : 0;
-			po->bHurtOnTouch = (type == PO_SPAWNHURT_TYPE);
+			po->crush = (type != SMT_PolySpawn) ? 3 : 0;
+			po->bHurtOnTouch = (type == SMT_PolySpawnHurt);
 			po->tag = tag;
 			po->seqType = po->Sidedefs[0]->linedef->args[3];
 			po->MirrorNum = po->Sidedefs[0]->linedef->args[2];
@@ -2114,9 +2122,8 @@ void PO_Init (void)
 	for (polyspawn = polyspawns, prev = &polyspawns; polyspawn;)
 	{
 		// 9301 (3001) = no crush, 9302 (3002) = crushing, 9303 = hurting touch
-		if (polyspawn->type == PO_SPAWN_TYPE ||
-			polyspawn->type == PO_SPAWNCRUSH_TYPE ||
-			polyspawn->type == PO_SPAWNHURT_TYPE)
+		if (polyspawn->type >= SMT_PolySpawn &&
+			polyspawn->type <= SMT_PolySpawnHurt)
 		{ 
 			// Polyobj StartSpot Pt.
 			polyobjs[polyIndex].StartSpot.x = polyspawn->x;
@@ -2139,7 +2146,7 @@ void PO_Init (void)
 	for (polyspawn = polyspawns; polyspawn;)
 	{
 		polyspawns_t *next = polyspawn->next;
-		if (polyspawn->type == PO_ANCHOR_TYPE)
+		if (polyspawn->type == SMT_PolyAnchor)
 		{ 
 			// Polyobj Anchor Pt.
 			TranslateToStartSpot (polyspawn->angle, (int)polyspawn->x, (int)polyspawn->y);
@@ -2245,6 +2252,12 @@ void FPolyObj::ClearSubsectorLinks()
 		subsectorlinks = next;
 	}
 	subsectorlinks = NULL;
+}
+
+// [rc4l] features/levelmesh: the sides stand somewhere new, so the bake and GL's wall cache take them again once a walk sees them.
+void FPolyObj::MarkSidesMoved()
+{
+	for (unsigned i = 0; i < Sidedefs.Size(); i++) Sidedefs[i]->fua_dirty++;
 }
 
 void FPolyObj::ClearAllSubsectorLinks()

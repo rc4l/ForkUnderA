@@ -50,6 +50,12 @@ class FConsoleWindow
 public:
 	static FConsoleWindow& GetInstance();
 
+	// [rc4l] Whether the window exists at all. The -host path never creates it (a dedicated server
+	// child has no NSApplication, no window, no user), and GetInstance()'s assert compiles out in
+	// release -- so every unguarded GetInstance() call was a null dereference waiting for the first
+	// hosted game on macOS. Call sites that draw on the console window must check this first.
+	static bool InstanceExists();
+
 	static void CreateInstance();
 	static void DeleteInstance();
 

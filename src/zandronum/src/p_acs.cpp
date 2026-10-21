@@ -36,6 +36,8 @@
 */
 
 #include <assert.h>
+#include "features/handoff/snapshot.h"   // [rc4l] TicScreenWidth, TicScreenHeight
+#include "features/handoff/gamethread.h"   // [rc4l] AskMain
 
 #include "templates.h"
 #include "doomdef.h"
@@ -98,6 +100,7 @@
 #include "domination.h" // [TRSR]
 
 #include "g_shared/a_pickups.h"
+#include "features/decals/decals.h"   // [rc4l] ShootMark, the script's decal
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -407,7 +410,7 @@ FACSStack::~FACSStack()
 //
 // When the string table needs to grow to hold more strings, a garbage
 // collection is first attempted to see if more room can be made to store
-// strings without growing. A string is concidered in use if any value
+// strings without growing. A string is considered in use if any value
 // in any of these variable blocks contains a valid ID in the global string
 // table:
 //   * The active area of the ACS stack
@@ -416,7 +419,7 @@ FACSStack::~FACSStack()
 //   * All world variables
 //   * All global variables
 // It's not important whether or not they are really used as strings, only
-// that they might be. A string is also concidered in use if its lock count
+// that they might be. A string is also considered in use if its lock count
 // is non-zero, even if none of the above variable blocks referenced it.
 //
 // To keep track of local and map variables for nonresident maps in a hub,
@@ -1291,14 +1294,8 @@ static void ClearInventory (AActor *activator)
 	item->ClearCounters();
 	if (info->IsDescendantOf (RUNTIME_CLASS(ABasicArmorPickup)))
 	{
-		if (static_cast<ABasicArmorPickup*>(item)->SaveAmount != 0)
-		{
-			static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
-		}
-		else
-		{
-			static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
-		}
+		// [rc4l] uzdoom@c3227729e -- both branches did the same thing.
+		static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
 	}
 	else if (info->IsDescendantOf (RUNTIME_CLASS(ABasicArmorBonus)))
 	{
@@ -2024,12 +2021,8 @@ void DPlaneWatcher::Tick ()
 // own behavior is loaded (if it has one).
 void FBehavior::StaticLoadDefaultModules ()
 {
-	// When playing Strife, STRFHELP is always loaded.
-	if (gameinfo.gametype == GAME_Strife)
-	{
-		StaticLoadModule (Wads.CheckNumForName ("STRFHELP", ns_acslibrary));
-	}
-
+	// [rc4l] uzdoom@89054f5d6 -- strfhelp moves to filter/strife/acs and is loaded through
+	// LOADACS like any other library, rather than by a hardcoded game check here.
 	// Scan each LOADACS lump and load the specified modules in order
 	int lump, lastlump = 0;
 
@@ -3696,6 +3689,72 @@ void DACSThinker::ReplaceActivator (AActor *actor, AActor *newactor)
 	}
 }
 
+
+// [rc4l] uzdoom@30acb7200 / ba346616e / 2747f9a9f: set an actor's teleport fog classes from ACS.
+//
+// uzdoom@ba346616e shipped this with `check != NULL` on both tests, so both arms assigned NULL and
+// the function could only ever clear the fog. uzdoom@7bc2e5c67 fixes it to `check == NULL`, which
+// is the form taken here: an unresolvable name (or "none"/"null") clears the fog, anything that
+// resolves sets it.
+static void SetActorTeleFog(AActor *activator, int tid, FString telefogsrc, FString telefogdest)
+{
+	// [rc4l] uzdoom@5f56fb5a1 -- Set the actor's telefog to the specified actor. Handle "" as
+	// "don't change" since "None" should work just fine for disabling the fog (given that it
+	// will resolve to NAME_None which is not a valid actor name). The old form treated an
+	// unknown class name the same as "none" and silently cleared the fog.
+	if (tid == 0)
+	{
+		if (activator != NULL)
+		{
+			if (telefogsrc.IsNotEmpty())
+				activator->TeleFogSourceType = PClass::FindClass(telefogsrc);
+			if (telefogdest.IsNotEmpty())
+				activator->TeleFogDestType = PClass::FindClass(telefogdest);
+		}
+	}
+	else
+	{
+		FActorIterator iterator(tid);
+		AActor *actor;
+
+		const PClass * const src = telefogsrc.IsNotEmpty() ? PClass::FindClass(telefogsrc) : NULL;
+		const PClass * const dest = telefogdest.IsNotEmpty() ? PClass::FindClass(telefogdest) : NULL;
+		while ((actor = iterator.Next()))
+		{
+			if (telefogsrc.IsNotEmpty())
+				actor->TeleFogSourceType = src;
+			if (telefogdest.IsNotEmpty())
+				actor->TeleFogDestType = dest;
+		}
+	}
+}
+
+// [rc4l] uzdoom@30acb7200 cluster: swap an actor's source and destination fog.
+static int SwapActorTeleFog(AActor *activator, int tid)
+{
+	int count = 0;
+	if (tid == 0)
+	{
+		if ((activator == NULL) || (activator->TeleFogSourceType == activator->TeleFogDestType))
+			return 0;
+		swapvalues(activator->TeleFogSourceType, activator->TeleFogDestType);
+		return 1;
+	}
+	else
+	{
+		FActorIterator iterator(tid);
+		AActor *actor;
+		while ((actor = iterator.Next()))
+		{
+			if (actor->TeleFogSourceType == actor->TeleFogDestType)
+				continue;
+			swapvalues(actor->TeleFogSourceType, actor->TeleFogDestType);
+			count++;
+		}
+	}
+	return count;
+}
+
 //======================================================================
 //
 // [RK] Added bRemoveNow if we're planning for GC soon and 'activation'
@@ -4209,7 +4268,7 @@ int DLevelScript::DoSpawn (int type, fixed_t x, fixed_t y, fixed_t z, int tid, i
 		actor = Spawn (info, x, y, z, ALLOW_REPLACE);
 		if (actor != NULL)
 		{
-			DWORD oldFlags2 = actor->flags2;
+			ActorFlags2 oldFlags2 = actor->flags2;
 			actor->flags2 |= MF2_PASSMOBJ;
 			if (force || P_TestMobjLocation (actor))
 			{
@@ -4717,6 +4776,23 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		}
 		break; 	// [GRB]
 
+	// [rc4l] features/quake-movement. Replicated through the existing SetThingProperty command, and
+	// only when the value actually changed -- the same shape APROP_JumpZ above uses. An out-of-range
+	// value is ignored rather than clamped, so a buggy script can't silently land the pawn in a
+	// movement model the mod never authored for.
+	case APROP_MvType:
+		if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)) && (value == MVTYPE_DOOM || value == MVTYPE_QUAKE))
+		{
+			APlayerPawn *playerActor = static_cast<APlayerPawn *>(actor);
+			oldValue = playerActor->MvType;
+
+			playerActor->MvType = value;
+
+			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( oldValue != playerActor->MvType ) )
+				SERVERCOMMANDS_SetThingProperty( actor, APROP_MvType );
+		}
+		break;
+
 	case APROP_ChaseGoal:
 		if (value)
 			actor->flags5 |= MF5_CHASEGOAL;
@@ -5086,6 +5162,17 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	// [ZandroX] Raw attack-extent fields (0 = unset, falls back to the physical extent).
 	case APROP_HitRadius:	return (int)(actor->projectilepassradius);
 	case APROP_HitHeight:	return (int)(actor->projectilepassheight);
+	// [rc4l] features/quake-movement. Non-pawns report MVTYPE_DOOM, which is what they simulate under.
+	case APROP_MvType:		return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								? static_cast<APlayerPawn *>(actor)->MvType
+								: MVTYPE_DOOM;
+	// [rc4l] features/quake-movement: read-only traversal state. A non-pawn is never traversing.
+	case APROP_IsCrouchSliding:	return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								&& static_cast<APlayerPawn *>(actor)->isCrouchSliding;
+	case APROP_IsWallClimbing:	return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								&& static_cast<APlayerPawn *>(actor)->isWallClimbing;
+	case APROP_IsAirWallRunning:return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								&& static_cast<APlayerPawn *>(actor)->isAirWallRunning;
 	case APROP_ReactionTime:return actor->reactiontime;
 	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
@@ -5165,6 +5252,10 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_ViewHeight:
 		case APROP_AttackZOffset:
 		case APROP_StencilColor:
+		case APROP_MvType:
+		case APROP_IsCrouchSliding:
+		case APROP_IsWallClimbing:
+		case APROP_IsAirWallRunning:
 			return (GetActorProperty(tid, property) == value);
 
 		// Boolean values need to compare to a binary version of value
@@ -5557,6 +5648,13 @@ enum EACSFunctions
 	ACSF_PickActor,
 	ACSF_IsPointerEqual,
 	ACSF_CanRaiseActor,
+	ACSF_SetActorTeleFog,		// 86 -- [rc4l] uzdoom@30acb7200 cluster
+	ACSF_SwapActorTeleFog,		// 87
+	// [rc4l] uzdoom@2b12db153 -- 88/89/90, matching upstream numbering.
+	ACSF_SetActorRoll,
+	ACSF_ChangeActorRoll,
+	ACSF_GetActorRoll,
+	ACSF_QuakeEx,
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
@@ -5923,7 +6021,7 @@ static bool DoSpawnDecal(AActor *actor, const FDecalTemplate *tpl, int flags, an
 		DBaseDecal* operator() ( const FDecalTemplate *tpl, AActor *basisactor, sector_t *sec, fixed_t x, fixed_t y,
 			fixed_t z, angle_t angle, fixed_t tracedist, bool permanent )
 		{
-			DBaseDecal* decal = ::ShootDecal( tpl, basisactor, sec, x, y, z, angle, tracedist, permanent );
+			DBaseDecal* decal = zx::decals::ShootMark( tpl, basisactor, sec, x, y, z, angle, tracedist, permanent, zx::decals::kSourceScript );
 
 			if ( decal && NETWORK_GetState() == NETSTATE_SERVER )
 				SERVERCOMMANDS_ShootDecal( tpl, basisactor, z, angle, tracedist, permanent );
@@ -5967,6 +6065,39 @@ static void SetActorAngle(AActor *activator, int tid, int angle, bool interpolat
 			// This fixes the "rave room" in SPACEDM5.wad.
 			if( NETWORK_GetState() == NETSTATE_SERVER )
 				SERVERCOMMANDS_SetThingAngleExact( actor );
+		}
+	}
+}
+
+// [rc4l] uzdoom@2b12db153 -- no SERVERCOMMANDS broadcast, unlike SetActorPitch below: there is no
+// CM_ROLL to send it with. The CM_ movement flags in network.h are a full 16 bits (CM_NOLAST = 1<<15,
+// "We do not have enough room for more flags here"), so wiring roll to clients means widening the
+// wire field, which is its own job. Nothing reads AActor::roll yet, so nothing desyncs today.
+static void SetActorRoll(AActor *activator, int tid, int angle, bool interpolate)
+{
+	if (tid == 0)
+	{
+		if (activator != NULL)
+		{
+			activator->SetRoll(angle << 16, interpolate);
+
+			// [rc4l] Tell the clients about the changed roll.
+			if ( NETWORK_GetState() == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingSpriteOrientation( activator, SPRITEORIENT_ROLL );
+		}
+	}
+	else
+	{
+		FActorIterator iterator(tid);
+		AActor *actor;
+
+		while ((actor = iterator.Next()))
+		{
+			actor->SetRoll(angle << 16, interpolate);
+
+			// [rc4l] Tell the clients about the changed roll.
+			if ( NETWORK_GetState() == NETSTATE_SERVER )
+				SERVERCOMMANDS_SetThingSpriteOrientation( actor, SPRITEORIENT_ROLL );
 		}
 	}
 }
@@ -8983,6 +9114,50 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			return 0;
 		}
 
+		// [rc4l] uzdoom@30acb7200 cluster
+		case ACSF_SetActorTeleFog:
+			SetActorTeleFog(activator, args[0], FBehavior::StaticLookupString(args[1]), FBehavior::StaticLookupString(args[2]));
+			break;
+
+		case ACSF_SwapActorTeleFog:
+			return SwapActorTeleFog(activator, args[0]);
+
+		// [Nash] Actor roll functions. Let's roll!	// [rc4l] uzdoom@2b12db153
+		case ACSF_SetActorRoll:
+			actor = SingleActorFromTID(args[0], activator);
+			if (actor != NULL)
+			{
+				actor->SetRoll(args[1] << 16, false);
+
+				// [rc4l] Tell the clients about the changed roll.
+				if ( NETWORK_GetState() == NETSTATE_SERVER )
+					SERVERCOMMANDS_SetThingSpriteOrientation( actor, SPRITEORIENT_ROLL );
+			}
+			return 0;
+
+		case ACSF_ChangeActorRoll:
+			if (argCount >= 2)
+			{
+				SetActorRoll(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
+			}
+			break;
+
+		case ACSF_GetActorRoll:
+			actor = SingleActorFromTID(args[0], activator);
+			return actor != NULL ? actor->roll >> 16 : 0;
+
+		// [rc4l] uzdoom@b6ca1947f, with the fixed->double conversion from uzdoom@e29b8b209.
+		// The three wave-speed arguments arrive from ACS as fixed point and P_StartQuakeXYZ
+		// takes doubles, so they go through FIXED2DBL rather than being passed raw.
+		case ACSF_QuakeEx:
+		{
+			return P_StartQuakeXYZ(activator, args[0], args[1], args[2], args[3], args[4], args[5], args[6], FBehavior::StaticLookupString(args[7]),
+				argCount > 8 ? args[8] : 0,
+				argCount > 9 ? FIXED2DBL(args[9]) : 1.0,
+				argCount > 10 ? FIXED2DBL(args[10]) : 1.0,
+				argCount > 11 ? FIXED2DBL(args[11]) : 1.0 );
+		}
+
 		case ACSF_GetActorFloorTexture:
 		{
 			auto a = SingleActorFromTID(args[0], activator);
@@ -11913,7 +12088,13 @@ scriptwait:
 			break;
 
 		case PCD_PLAYMOVIE:
-			STACK(1) = I_PlayMovie (FBehavior::StaticLookupString (STACK(1)));
+			{
+				// [rc4l] features/handoff: a movie plays in the main thread's window, which a tic on its own thread asks for and waits on.
+				const char *movie = FBehavior::StaticLookupString (STACK(1));
+				int result = MOVIE_Failed;
+				zx::handoff::AskMainFor ([&] { result = I_PlayMovie (movie); });
+				STACK(1) = result;
+			}
 			break;
 
 		case PCD_SETACTORPOSITION:
@@ -12371,7 +12552,7 @@ scriptwait:
 			}
 			else
 			{
-				PushToStack (SCREENWIDTH);
+				PushToStack (zx::handoff::TicScreenWidth ());   // [rc4l] as the handoff took it before the tic
 			}
 			break;
 
@@ -12392,7 +12573,7 @@ scriptwait:
 			}
 			else
 			{
-				PushToStack (SCREENHEIGHT);
+				PushToStack (zx::handoff::TicScreenHeight ());
 			}
 			break;
 
@@ -13689,6 +13870,11 @@ int ACS_GetTranslationIndex( FRemapTable *pTranslation )
 	return translationindex;
 }
 
+// [rc4l] The MCP ACS / map-var / script introspection CCMDs below are part of the dev-only bridge
+// (features/mcp-bridge) and are compiled out of release builds, so a shipped binary carries no MCP
+// surface at all. Gate matches -DFUA_MCP_BRIDGE.
+#ifdef FUA_MCP_BRIDGE
+#include "features/mcp-bridge/computation/mcprpc_compute.h"   // [rc4l] FnvInit, FnvMixU64
 // ==== MCP_ACSVARS (overlay-appended to p_acs.cpp; not committed upstream) ====
 // Read/write ACS world and global variables by index. World vars are a
 // file-static array in p_acs.cpp, so these commands live here (appended) rather
@@ -13858,3 +14044,30 @@ CCMD( dumpfunctions )
 	}
 }
 // ==== end MCP_SCRIPTS ====
+
+// [rc4l] features/mcp-bridge's sim trace: every ACS variable a script can read (world, global, their arrays, each module's map variables), so a trace shows a script that saw something different.
+unsigned long long ACS_StateHash ()
+{
+	uint64_t h = zx::mcp::FnvInit();
+	for ( int i = 0; i < NUM_WORLDVARS; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)ACS_WorldVars[i] );
+	for ( int i = 0; i < NUM_GLOBALVARS; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)ACS_GlobalVars[i] );
+	const auto mixArray = [&h]( const FWorldGlobalArray &arr )
+	{
+		FWorldGlobalArray::ConstIterator it( arr );
+		const FWorldGlobalArray::Pair *pair;
+		while ( it.NextPair( pair ) )
+		{
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)pair->Key );
+			h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)pair->Value );
+		}
+	};
+	for ( int i = 0; i < NUM_WORLDVARS; i++ ) mixArray( ACS_WorldArrays[i] );
+	for ( int i = 0; i < NUM_GLOBALVARS; i++ ) mixArray( ACS_GlobalArrays[i] );
+	for ( int lib = 0; FBehavior::StaticGetModule( lib ) != NULL; lib++ )
+	{
+		FBehavior *m = FBehavior::StaticGetModule( lib );
+		for ( int i = 0; i < NUM_MAPVARS; i++ ) h = zx::mcp::FnvMixU64( h, (uint64_t)(int64_t)( m->MapVars[i] != NULL ? *m->MapVars[i] : 0 ) );
+	}
+	return h;
+}
+#endif // FUA_MCP_BRIDGE

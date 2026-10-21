@@ -9,6 +9,7 @@ struct vertex_t;
 struct secplane_t;
 struct subsector_t;
 struct sector_t;
+class FMaterial;	// [rc4l] used by FSkyVertexBuffer::RenderDome; was relying on include order
 
 
 class FVertexBuffer
@@ -173,42 +174,17 @@ public:
 
 #define VSO ((FSkyVertex*)NULL)
 
-struct FModelVertex
-{
-	float x, y, z;	// world position
-	float u, v;		// texture coordinates
+#include "features/models/modelgeometry.h"   // [rc4l] FModelVertex and a model's geometry, which features/models keeps on the CPU
 
-	void Set(float xx, float yy, float zz, float uu, float vv)
-	{
-		x = xx;
-		y = yy;
-		z = zz;
-		u = uu;
-		v = vv;
-	}
-
-	void SetNormal(float nx, float ny, float nz)
-	{
-		// GZDoom currently doesn't use normals. This function is so that the high level code can pretend it does.
-	}
-};
-
-
+// [rc4l] A model's geometry uploaded for GL's vertex shader, which lerps its two keyframes.
 class FModelVertexBuffer : public FVertexBuffer
 {
-	int mIndexFrame[2];
 	unsigned int ibo_id;
 
 public:
 
-	FModelVertexBuffer(bool needindex);
+	FModelVertexBuffer(const FModelGeometry &geometry);
 	~FModelVertexBuffer();
-
-	FModelVertex *LockVertexBuffer(unsigned int size);
-	void UnlockVertexBuffer();
-
-	unsigned int *LockIndexBuffer(unsigned int size);
-	void UnlockIndexBuffer();
 
 	unsigned int SetupFrame(unsigned int frame1, unsigned int frame2);
 };

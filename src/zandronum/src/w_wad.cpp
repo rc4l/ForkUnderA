@@ -48,6 +48,7 @@
 #include "cmdlib.h"
 #include "c_dispatch.h"
 #include "w_wad.h"
+#include "features/handoff/seam.h"   // [rc4l] wad/read
 #include "w_zip.h"
 #include "m_crc32.h"
 #include "v_text.h"
@@ -56,6 +57,7 @@
 #include "doomerrors.h"
 #include "resourcefiles/resourcefile.h"
 #include "md5.h"
+#include "doomstat.h"
 // [TP]
 #include "c_cvars.h"
 
@@ -344,16 +346,63 @@ void FWadCollection::AddFile (const char *filename, FileReader *wadinfo, bool bL
 			FResourceLump *lump = resfile->GetLump(i);
 			if (lump->Flags & LUMPF_EMBEDDED)
 			{
-				char path[256];
-
-				mysnprintf(path, countof(path), "%s:", filename);
-				char *wadstr = path + strlen(path);
-
+				FString path;
+				path.Format("%s:%s", filename, lump->FullName.GetChars());
 				FileReader *embedded = lump->NewReader();
-				strcpy(wadstr, lump->FullName);
-
 				// [BB] We consider all embedded files as being loaded automatically.
 				AddFile(path, embedded, true, isOptional);
+			}
+		}
+
+		if (hashfile)
+		{
+			BYTE cksum[16];
+			char cksumout[33];
+			memset(cksumout, 0, sizeof(cksumout));
+
+			FileReader *reader = wadinfo;
+
+			if (reader != NULL)
+			{
+				MD5Context md5;
+				reader->Seek(0, SEEK_SET);
+				md5.Update(reader, reader->GetLength());
+				md5.Final(cksum);
+
+				for (size_t j = 0; j < sizeof(cksum); ++j)
+				{
+					sprintf(cksumout + (j * 2), "%02X", cksum[j]);
+				}
+
+				fprintf(hashfile, "file: %s, hash: %s, size: %d\n", filename, cksumout, reader->GetLength());
+			}
+
+			else
+				fprintf(hashfile, "file: %s, Directory structure\n", filename);
+
+			for (DWORD i = 0; i < resfile->LumpCount(); i++)
+			{
+				FResourceLump *lump = resfile->GetLump(i);
+
+				if (!(lump->Flags & LUMPF_EMBEDDED))
+				{
+					reader = lump->NewReader();
+
+					MD5Context md5;
+					md5.Update(reader, lump->LumpSize);
+					md5.Final(cksum);
+
+					for (size_t j = 0; j < sizeof(cksum); ++j)
+					{
+						sprintf(cksumout + (j * 2), "%02X", cksum[j]);
+					}
+
+					fprintf(hashfile, "file: %s, lump: %s, hash: %s, size: %d\n", filename,
+						lump->FullName.IsNotEmpty() ? lump->FullName.GetChars() : lump->Name,
+						cksumout, lump->LumpSize);
+
+					delete reader;
+				}
 			}
 		}
 		return;
@@ -742,7 +791,7 @@ void FWadCollection::InitHashChains (void)
 		FirstLumpIndex[j] = i;
 
 		// Do the same for the full paths
-		if (LumpInfo[i].lump->FullName!=NULL)
+		if (LumpInfo[i].lump->FullName.IsNotEmpty())
 		{
 			j = MakeKey(LumpInfo[i].lump->FullName) % NumLumps;
 			NextLumpIndex_FullName[i] = FirstLumpIndex_FullName[j];
@@ -1093,7 +1142,7 @@ const char *FWadCollection::GetLumpFullName (int lump) const
 {
 	if ((size_t)lump >= NumLumps)
 		return NULL;
-	else if (LumpInfo[lump].lump->FullName != NULL)
+	else if (LumpInfo[lump].lump->FullName.IsNotEmpty())
 		return LumpInfo[lump].lump->FullName;
 	else
 		return LumpInfo[lump].lump->Name;
@@ -1313,6 +1362,23 @@ int FWadCollection::GetLastLump (int wadnum) const
 // Returns the name of the given wad, including any path
 //
 //==========================================================================
+
+// [rc4l] See the header. Matched case-insensitively, because a name written into a record or a
+// server's file list is the player's spelling, not the filesystem's.
+const char *W_GetLoadedWadPath (const char *bareName)
+{
+	if ((bareName == NULL) || (bareName[0] == '\0'))
+		return NULL;
+
+	for (int i = 0; i < Wads.GetNumWads(); ++i)
+	{
+		const char *name = Wads.GetWadName(i);
+		if ((name != NULL) && (stricmp(name, bareName) == 0))
+			return Wads.GetWadFullName(i);
+	}
+
+	return NULL;
+}
 
 const char *FWadCollection::GetWadFullName (int wadnum) const
 {
@@ -1561,6 +1627,7 @@ FWadLump & FWadLump::operator= (const FWadLump &copy)
 FWadLump::FWadLump(FResourceLump *lump, bool alwayscache)
 : FileReader()
 {
+	ZX_SEAM_UNTIMED("wad/read", Main);   // [rc4l] features/handoff: an archive has one reader, so only the main thread reads lumps
 	FileReader *f = lump->GetReader();
 
 	if (f != NULL && f->GetFile() != NULL && !alwayscache)
@@ -1733,5 +1800,35 @@ static void PrintLastError ()
 static void PrintLastError ()
 {
 	Printf (TEXTCOLOR_RED "  %s\n", strerror(errno));
+}
+#endif
+
+#ifdef _DEBUG
+//==========================================================================
+//
+// CCMD LumpNum
+//
+//==========================================================================
+
+CCMD(lumpnum)
+{
+	for (int i = 1; i < argv.argc(); ++i)
+	{
+		Printf("%s: %d\n", argv[i], Wads.CheckNumForName(argv[i]));
+	}
+}
+
+//==========================================================================
+//
+// CCMD LumpNumFull
+//
+//==========================================================================
+
+CCMD(lumpnumfull)
+{
+	for (int i = 1; i < argv.argc(); ++i)
+	{
+		Printf("%s: %d\n", argv[i], Wads.CheckNumForFullName(argv[i]));
+	}
 }
 #endif

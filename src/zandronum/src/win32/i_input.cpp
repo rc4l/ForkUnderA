@@ -107,6 +107,8 @@
 #include "v_text.h"
 #include "version.h"
 #include "features/video-scale/computation/videoscale_compute.h" // [rc4l] VID_SCALE_UI_MIN_*
+#include "mcp_bridge.h" // [rc4l] MCP_InputLocked: drop OS input on a hands-off harness-driven instance
+#include "features/frame/viewtrace.h" // [rc4l] NoteAppActive
 
 // Prototypes and declarations.
 #include "rawinput.h"
@@ -161,6 +163,9 @@ extern bool CursorState;
 extern BOOL paused;
 static bool noidle = false;
 
+EXTERN_CVAR (Bool, i_pauseinbackground)
+EXTERN_CVAR (Bool, fua_render_in_background)
+
 LPDIRECTINPUT8			g_pdi;
 LPDIRECTINPUT			g_pdi3;
 
@@ -168,9 +173,6 @@ LPDIRECTINPUT			g_pdi3;
 BOOL AppActive = TRUE;
 int SessionState = 0;
 int BlockMouseMove; 
-
-// [BB] Allows to keep the sound turned on, when the client is not the active app.
-CVAR (Bool, cl_soundwhennotactive, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 CVAR (Bool, k_allowfullscreentoggle, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
@@ -219,6 +221,35 @@ bool GUIWndProcHook(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESU
 	event_t ev = { EV_GUI_Event };
 
 	*result = 0;
+
+	// [rc4l] A harness-driven instance is hands-off: swallow the OS input messages here so a stray
+	// keypress or click on its window cannot perturb the run. Bridge-injected events go straight to
+	// D_PostEvent and never pass through this hook, so driving the instance still works.
+	//
+	// Only the messages this function would otherwise turn into events are consumed -- returning true
+	// for everything would eat WM_PAINT and friends out of the WndProc switch below and leave a dead
+	// window. The mac side drops OS input at I_ProcessEvent for the same reason; this is that anchor
+	// on Windows, which had none, so ZANDRONUM_BRIDGE_INPUT_LOCK silently did nothing here.
+	//
+	// Physical MOUSE input is already gated by use_mouse further down; this closes the keyboard and
+	// wheel, which nothing gated.
+	if ( MCP_InputLocked( ))
+	{
+		switch (message)
+		{
+		case WM_KEYDOWN:	case WM_SYSKEYDOWN:
+		case WM_KEYUP:		case WM_SYSKEYUP:
+		case WM_CHAR:		case WM_SYSCHAR:
+		case WM_LBUTTONDOWN:	case WM_LBUTTONUP:
+		case WM_RBUTTONDOWN:	case WM_RBUTTONUP:
+		case WM_MBUTTONDOWN:	case WM_MBUTTONUP:
+		case WM_XBUTTONDOWN:	case WM_XBUTTONUP:
+		case WM_MOUSEMOVE:	case WM_MOUSEWHEEL:
+			return true;
+		default:
+			break;
+		}
+	}
 
 	switch (message)
 	{
@@ -336,8 +367,25 @@ bool GUIWndProcHook(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESU
 
 		{
 			int shift = screen? screen->GetPixelDoubling() : 0;
-			ev.data1 = LOWORD(lParam) >> shift; 
-			ev.data2 = HIWORD(lParam) >> shift; 
+			ev.data1 = LOWORD(lParam) >> shift;
+			ev.data2 = HIWORD(lParam) >> shift;
+
+			// [rc4l] Window pixels to render pixels, the step upstream added as
+			// ScaleCoordsFromWindow, without which every hit test at any scale but Native is off by
+			// the ratio between the window and the buffer.
+			//
+			// BEFORE the letterbox adjustment below, because that one is already in render pixels.
+			//
+			// Through locals because the event carries SWORDs, which a scaled render coordinate
+			// always fits back into.
+			if (screen)
+			{
+				int mx = ev.data1, my = ev.data2;
+				screen->ScaleCoordsFromWindow(mx, my);
+				ev.data1 = (SWORD)mx;
+				ev.data2 = (SWORD)my;
+			}
+
 			if (screen) ev.data2 -= (screen->GetTrueHeight() - screen->GetHeight())/2;
 		}
 
@@ -597,16 +645,22 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 	case WM_ACTIVATEAPP:
 		AppActive = wParam;
+		zx::frame::NoteAppActive(wParam != 0);   // [rc4l] fua_viewtrace
 		if (wParam)
 		{
 			SetPriorityClass (GetCurrentProcess (), INGAME_PRIORITY_CLASS);
 		}
-		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT )
+		// [rc4l] Not idle priority when i_pauseinbackground is off: the game is deliberately still
+		// running back there, and starving it is the opposite of what was asked for. Ported from
+		// uzdoom@b044baf850eeb99f06835a223804e1d73994dc04.
+		else if (!noidle && NETWORK_GetState( ) != NETSTATE_CLIENT && i_pauseinbackground
+			&& !fua_render_in_background)
 		{
 			SetPriorityClass (GetCurrentProcess (), IDLE_PRIORITY_CLASS);
 		}
-		if ( ( NETWORK_GetState( ) != NETSTATE_CLIENT ) || ( cl_soundwhennotactive == false ) )
-			S_SetSoundPaused (wParam);
+		// [rc4l] Unconditional: S_SetSoundPaused answers i_pauseinbackground and
+		// i_soundinbackground itself now. Ported from uzdoom@12ed24d066a819a128a54e2359fd0e2d48f641fe.
+		S_SetSoundPaused (wParam);
 		break;
 
 	case WM_WTSSESSION_CHANGE:
@@ -799,6 +853,24 @@ bool I_InitInput (void *hwnd)
 
 
 // Free all input resources
+// [rc4l] The two questions cross-platform code asks about the window, answered from AppActive --
+// the same flag WM_ACTIVATEAPP maintains, so there is only ever one opinion about this.
+bool I_WindowIsActive ()
+{
+	return !!AppActive;
+}
+
+// Re-apply the priority for the window state and cvars as they are NOW. Without this, turning the
+// background-render switch on while already in the background leaves the idle priority that was set
+// on the way out, and nothing changes until the window is activated -- by which point the switch is
+// not doing anything you can see.
+void I_UpdateBackgroundPriority ()
+{
+	const bool wantIdle = !AppActive && !noidle && !fua_render_in_background
+		&& i_pauseinbackground && NETWORK_GetState( ) != NETSTATE_CLIENT;
+	SetPriorityClass (GetCurrentProcess (), wantIdle ? IDLE_PRIORITY_CLASS : INGAME_PRIORITY_CLASS);
+}
+
 void I_ShutdownInput ()
 {
 	if (Keyboard != NULL)
@@ -857,6 +929,13 @@ void I_GetEvent ()
 			DispatchMessage (&mess);
 		}
 	}
+
+	// [rc4l] The raw/DirectInput devices are the OTHER way OS input reaches the sim, and they do not
+	// go through GUIWndProcHook at all -- so a hands-off instance has to skip them here too, or the
+	// window hook's lock is half a lock. The message pump above still runs: the window must stay
+	// alive and answer WM_QUIT/WM_PAINT whether or not anybody is allowed to type at it.
+	if ( MCP_InputLocked( ))
+		return;
 
 	if (Keyboard != NULL)
 	{

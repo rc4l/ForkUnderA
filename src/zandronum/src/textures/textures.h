@@ -34,7 +34,7 @@ class FArchive;
 // Texture IDs
 class FTextureManager;
 class FTerrainTypeArray;
-class FGLTexture;
+class FTexturePixels;
 class FMaterial;
 
 class FTextureID
@@ -87,6 +87,7 @@ struct FAnimDef
 	WORD	NumFrames;
 	WORD	CurFrame;
 	BYTE	AnimType;
+	bool	bDiscrete;			// taken out of AnimType to have better control
 	DWORD	SwitchTime;			// Time to advance to next frame
 	struct FAnimFrame
 	{
@@ -100,7 +101,7 @@ struct FAnimDef
 		ANIM_Backward,
 		ANIM_OscillateUp,
 		ANIM_OscillateDown,
-		ANIM_DiscreteFrames
+		ANIM_Random
 	};
 
 	void SetSwitchTime (DWORD mstime);
@@ -256,6 +257,8 @@ public:
 
 	int GetScaledWidth () { int foo = (Width << 17) / (int)xScale; return (foo >> 1) + (foo & 1); }
 	int GetScaledHeight () { int foo = (Height << 17) / (int)yScale; return (foo >> 1) + (foo & 1); }
+	// [rc4l] uzdoom@a3bdbff05 -- same, against a caller-supplied scale rather than the texture's own.
+	int GetScaledHeight (fixed_t scale) { int foo = (Height << 17) / (int)scale; return (foo >> 1) + (foo & 1); }
 	double GetScaledWidthDouble () { return (Width * 65536.) / double(xScale); }
 	double GetScaledHeightDouble () { return (Height * 65536.) / double(yScale); }
 
@@ -330,7 +333,7 @@ public:
 	struct MiscGLInfo
 	{
 		FMaterial *Material[2];
-		FGLTexture *SystemTexture[2];
+		FTexturePixels *SystemTexture[2];
 		FTexture *Brightmap;
 		PalEntry GlowColor;
 		PalEntry FloorSkyColor;
@@ -464,6 +467,7 @@ public:
 
 	FTextureID CreateTexture (int lumpnum, int usetype=FTexture::TEX_Any);	// Also calls AddTexture
 	FTextureID AddTexture (FTexture *texture);
+	void ReserveHeadroom (unsigned int amount);   // [rc4l] room for amount more textures before the arrays move, made between tics
 	FTextureID GetDefaultTexture() const { return DefaultTexture; }
 
 	void LoadTextureX(int wadnum);
@@ -493,6 +497,8 @@ public:
 
 	FSwitchDef *FindSwitch (FTextureID texture);
 	FDoorAnimation *FindAnimatedDoor (FTextureID picnum);
+	// [rc4l] The ANIMDEFS animations, read-only, so the Vulkan backend can give every frame of one a material slot.
+	const TArray<FAnimDef *> &GetAnimations () const { return mAnimations; }
 
 private:
 
@@ -507,14 +513,14 @@ private:
 	void InitBuildTiles ();
 
 	// Animation stuff
-	void AddAnim (FAnimDef *anim);
+	FAnimDef *AddAnim (FAnimDef *anim);
 	void FixAnimations ();
 	void InitAnimated ();
 	void InitAnimDefs ();
-	void AddSimpleAnim (FTextureID picnum, int animcount, int animtype, DWORD speedmin, DWORD speedrange=0);
-	void AddComplexAnim (FTextureID picnum, const TArray<FAnimDef::FAnimFrame> &frames);
+	FAnimDef *AddSimpleAnim (FTextureID picnum, int animcount, DWORD speedmin, DWORD speedrange=0);
+	FAnimDef *AddComplexAnim (FTextureID picnum, const TArray<FAnimDef::FAnimFrame> &frames);
 	void ParseAnim (FScanner &sc, int usetype);
-	void ParseRangeAnim (FScanner &sc, FTextureID picnum, int usetype, bool missing);
+	FAnimDef *ParseRangeAnim (FScanner &sc, FTextureID picnum, int usetype, bool missing);
 	void ParsePicAnim (FScanner &sc, FTextureID picnum, int usetype, bool missing, TArray<FAnimDef::FAnimFrame> &frames);
 	void ParseWarp(FScanner &sc);
 	void ParseCameraTexture(FScanner &sc);
@@ -617,6 +623,7 @@ public:
 	void Unload ();
 	bool CheckModified ();
 	void NeedUpdate() { bNeedsUpdate=true; }
+	bool NeedsUpdate() const { return bNeedsUpdate; }   // [rc4l] whether a frame shows it, so its camera's view is drawn
 	void SetUpdated() { bNeedsUpdate = false; bDidUpdate = true; bFirstUpdate = false; }
 	DSimpleCanvas *GetCanvas() { return Canvas; }
 	void MakeTexture ();

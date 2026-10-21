@@ -96,4 +96,21 @@ PanelColor ComputePanelGradient(int row, int height, PanelColor top, PanelColor 
 	return c;
 }
 
+int ComputeSeparatorAlpha(int x, int width, int peak)
+{
+	if ((width <= 0) || (peak <= 0))
+		return 0;
+	if ((x < 0) || (x >= width))
+		return 0;
+
+	// Distance from the middle column, scaled so the ends land on zero. Integer throughout: this is
+	// an alpha in 0..255 and a fractional one would only be rounded away at the Dim() call.
+	const int mid = width / 2;
+	const int dist = (x < mid) ? (mid - x) : (x - mid);
+	const int half = (mid > 0) ? mid : 1;
+
+	const int a = peak - (peak * dist) / half;
+	return (a > 0) ? a : 0;
+}
+
 } // namespace zx

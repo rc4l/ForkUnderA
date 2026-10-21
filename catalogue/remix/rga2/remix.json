@@ -1,0 +1,27 @@
+{
+  "name": "RGA2",
+  "summary": "Real Guns Advanced 2: reloading, ironsights and a full arsenal in place of Doom's.",
+  "group": "mix",
+  "files": [
+    {
+      "name": "rga2ref_core.wad",
+      "md5": "c8eea4d752ff27a948912e82124402dc"
+    },
+    {
+      "name": "rga2ref_code_154.wad",
+      "md5": "a434419d2263dffd1e26f40b2990f793"
+    },
+    {
+      "name": "rga2ref_mon_154.wad",
+      "md5": "039def4b09021a4d89c9df6923dcac3f"
+    },
+    {
+      "name": "rga2ref_blade_154.wad",
+      "md5": "c7ebeca4f632a171f9a89c96f68453b6"
+    },
+    {
+      "name": "rga2_levelsaving_v7_cf5.pk3",
+      "md5": "75c726331871bf553e6195a39d1480f7"
+    }
+  ]
+}

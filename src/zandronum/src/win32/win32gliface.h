@@ -31,7 +31,8 @@ FRenderer *gl_CreateInterface();
 class Win32GLVideo : public IVideo
 {
 public:
-	Win32GLVideo(int parm);
+	// [rc4l] `gl` false brings the video up without a GL context, for a renderer that is not GL.
+	Win32GLVideo(int parm, bool gl = true);
 	virtual ~Win32GLVideo();
 
 	EDisplayType GetDisplayType () { return DISPLAY_Both; }
@@ -47,6 +48,8 @@ public:
 	bool SetFullscreen(const char *devicename, int w, int h, int bits, int hz);
 
 	HDC m_hDC;
+	// [rc4l] Whether this video makes GL contexts at all.
+	bool m_gl;
 
 protected:
 	struct ModeInfo
@@ -103,8 +106,12 @@ public:
 	Win32GLFrameBuffer() {}
 	// Actually, hMonitor is a HMONITOR, but it's passed as a void * as there
     // look to be some cross-platform bits in the way.
-	Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen);
+	// [rc4l] `initGL` false sets the window up without a GL context, for a frame buffer that presents through another API.
+	Win32GLFrameBuffer(void *hMonitor, int width, int height, int bits, int refreshHz, bool fullscreen, bool initGL = true);
 	virtual ~Win32GLFrameBuffer();
+
+	// [rc4l] The window's client area in pixels, false when it cannot be read.
+	bool ClientSize(int &w, int &h) const;
 
 
 	// unused but must be defined

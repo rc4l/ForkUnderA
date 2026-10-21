@@ -50,19 +50,23 @@
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/renderer/gl_renderstate.h"
+#include "gl/scene/gl_observer.h"
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
-#include "gl/dynlights/gl_glow.h"
+#include "features/gldefs/glow.h"
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/models/gl_models.h"
 #include "gl/shaders/gl_shader.h"
 #include "gl/textures/gl_material.h"
 #include "computation/psprite_overlay_compute.h"
+#include "features/damage-tint/damagetint.h"
+#include "features/gamecopy/tintsubject.h"   // [rc4l] TintSubjectOf	// [rc4l] damaging-floor weapon tint
+#include "features/draw2d/computation/quad2d_compute.h"	// [rc4l] a layer's 2D blend
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
 EXTERN_CVAR (Bool, st_scale)
-EXTERN_CVAR(Int, gl_fuzztype)
+EXTERN_CVAR(Int, r_fuzztype)
 EXTERN_CVAR (Bool, r_deathcamera)
 
 
@@ -72,7 +76,7 @@ EXTERN_CVAR (Bool, r_deathcamera)
 //
 //==========================================================================
 
-void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture)
+void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed_t sy, bool hudModelStep, int OverrideShader, bool alphatexture, int blend2d)
 {
 	float			fU1,fV1;
 	float			fU2,fV2;
@@ -201,7 +205,43 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	{
 		gl_RenderState.AlphaFunc(GL_GEQUAL, 0.f);
 	}
+	// [rc4l] features/damage-tint: while a damaging floor hurts the player, arm the shader's
+	// per-pixel multiplicative gradient -- full tint at the weapon's bottom edge (fV2), fading to
+	// none at the coverage point. Cleared right after the draw.
+	zx::damagetint::TintGradient dt = zx::damagetint::TintGradient();
+	if (DamageTint_WeaponGradient(zx::gamecopy::TintSubjectOf(player->mo), player->mo->RenderStyle.BlendOp, player->mo->RenderStyle.Flags, fV1, fV2, dt))
+		gl_RenderState.SetDamageTint(dt.r, dt.g, dt.b, dt.strength, dt.top, dt.bottom, dt.glow);
 	gl_RenderState.Apply();
+
+	// [rc4l] The weapon's screen-space quad (x1/y1/x2/y2 are pixels including viewwindowx/y), for a check against GL's weapon; built after Apply so the colour is the final shaded one.
+	if (gl_observer)
+	{
+		zx::draw2d::Quad2D q;
+		q.material = tex;
+		q.x = x1; q.y = y1; q.w = x2 - x1; q.h = y2 - y1;
+		q.u1 = fU1; q.v1 = fV1; q.u2 = fU2; q.v2 = fV2;
+		gl_RenderState.GetColorRGBA(q.r, q.g, q.b, q.a);
+		// [rc4l] Fold in the dynamic light the shader would have added. Without it the weapon is lit
+		// by the sector alone and stays dark while its own muzzle flash lights the room.
+		{
+			float dr, dg, db;
+			gl_RenderState.GetDynLight(dr, dg, db);
+			q.r = (q.r + dr > 1.f) ? 1.f : q.r + dr;
+			q.g = (q.g + dg > 1.f) ? 1.f : q.g + dg;
+			q.b = (q.b + db > 1.f) ? 1.f : q.b + db;
+		}
+		q.clipL = 0; q.clipT = 0; q.clipR = 0; q.clipB = 0;
+		q.blend = blend2d;
+		q.translation = psptranslation;
+		q.texMode = gl_RenderState.GetTextureMode();
+		q.fixedColormap = gl_fixedcolormap;
+		q.fuzz = OverrideShader > 4 ? OverrideShader - 4 : 0;
+		q.tint = dt;
+		q.kind = 0;
+		q.lx2 = q.ly2 = 0.f;
+		gl_observer->WeaponQuad(q);
+	}
+
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, fU1, fV1);
 	ptr++;
@@ -212,6 +252,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 	ptr->Set(x2, y2, 0, fU2, fV2);
 	ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
+	gl_RenderState.ClearDamageTint(); // [rc4l] features/damage-tint
 	gl_RenderState.AlphaFunc(GL_GEQUAL, 0.5f);
 }
 
@@ -221,7 +262,7 @@ void FGLRenderer::DrawPSprite (player_t * player,pspdef_t *psp,fixed_t sx, fixed
 //
 //==========================================================================
 
-EXTERN_CVAR(Bool, gl_brightfog)
+EXTERN_CVAR(Bool, r_brightfog)
 
 void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 {
@@ -373,11 +414,11 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		vis.RenderStyle.CheckFuzz();
 		if (vis.RenderStyle.BlendOp == STYLEOP_Fuzz)
 		{
-			if (gl_fuzztype != 0)
+			if (r_fuzztype != 0)
 			{
 				// Todo: implement shader selection here
 				vis.RenderStyle = LegacyRenderStyles[STYLE_Translucent];
-				OverrideShader = gl_fuzztype + 4;
+				OverrideShader = r_fuzztype + 4;
 				trans = 0.99f;	// trans may not be 1 here
 			}
 			else
@@ -480,7 +521,7 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 		}
 		else
 		{
-			if (gl_lights && GLRenderer->mLightCount && !gl_fixedcolormap && gl_light_sprites)
+			if (r_lights && GLRenderer->mLightCount && !gl_fixedcolormap && r_light_sprites)
 			{
 				gl_SetDynSpriteLight(playermo, NULL);
 			}
@@ -505,7 +546,8 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			drawsx = psp->oldx + FixedMul(psp->sx - psp->oldx, r_TicFrac);
 			drawsy = psp->oldy + FixedMul(psp->sy - psp->oldy, r_TicFrac);
 		}
-		DrawPSprite (player,psp,drawsx+addx, drawsy+addy, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha));
+		DrawPSprite (player,psp,drawsx+addx, drawsy+addy, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha),
+			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha));
 	}
 	gl_RenderState.SetObjectColor(0xffffffff);
 	gl_RenderState.SetDynLight(0, 0, 0);
@@ -531,7 +573,7 @@ void FGLRenderer::DrawTargeterSprites()
 
 	gl_RenderState.EnableBrightmap(false);
 	gl_RenderState.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	gl_RenderState.AlphaFunc(GL_GEQUAL,gl_mask_sprite_threshold);
+	gl_RenderState.AlphaFunc(GL_GEQUAL,r_mask_sprite_threshold);
 	gl_RenderState.BlendEquation(GL_FUNC_ADD);
 	gl_RenderState.ResetColor();
 	gl_RenderState.SetTextureMode(TM_MODULATE);
@@ -542,6 +584,6 @@ void FGLRenderer::DrawTargeterSprites()
 	for (i=0; i<3; i++)
 	{
 		psp = player->psprites.Find(targetlayers[i]);
-		if (psp && psp->state) DrawPSprite (player,psp,psp->sx, psp->sy, false, 0, false);
+		if (psp && psp->state) DrawPSprite (player,psp,psp->sx, psp->sy, false, 0, false, 0);
 	}
 }

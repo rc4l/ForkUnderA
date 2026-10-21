@@ -6,6 +6,8 @@
 #include "win32gliface.h"
 #endif
 
+#include "features/display/display.h"   // [rc4l] ScreenColors
+
 class FHardwareTexture;
 
 extern long gl_frameMS;
@@ -80,6 +82,13 @@ public:
 	bool Is8BitMode() { return false; }
 	void DumpScaleState();
 
+	// [rc4l] The mouse arrives in window pixels and everything is drawn in render ones, so see
+	// v_video.h.
+	void ScaleCoordsFromWindow(int &x, int &y);
+
+	// [rc4l] Whether GL's window is shown, so a frame it is covered in skips the finish, the replay read and the swap; whoever composes GL with another renderer sets it.
+	bool mPresents = true;
+
 
 private:
 	// [rc4l] video-scale: offscreen render target for internal-resolution scaling. When
@@ -113,8 +122,6 @@ private:
 	void DestroyReplayCapture();              // delete the PBOs while the context is still current
 #endif
 
-	PalEntry Flash;
-
 	// Texture creation info
 	int cm;
 	int translation;
@@ -122,7 +129,6 @@ private:
 	bool needsetgamma;
 	bool swapped;
 
-	PalEntry SourcePalette[256];
 	BYTE *ScreenshotBuffer;
 
 	class Wiper
@@ -141,8 +147,7 @@ private:
 	FHardwareTexture *wipeendscreen;
 
 public:
-	AActor * LastCamera;
-	int palette_brightness;
+	zx::display::ScreenColors Colors;   // [rc4l] the palette, its brightness and the flash, as the backend's frame buffer keeps them
 };
 
 

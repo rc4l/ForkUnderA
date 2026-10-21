@@ -73,8 +73,21 @@ static	NETADDRESS_s	g_AddressFrom;
 // Our network socket.
 static	SOCKET			g_NetworkSocket;
 
+// [rc4l] See network.h. Sends reachability probes from a port nobody announced to.
+static	SOCKET			g_ProbeSocket;
+
 // Our local port.
 static	USHORT			g_usLocalPort;
+
+// [rc4l] Whether a socket ended up speaking both families. Two things need it: the bind has to hand
+// a socket the matching kind of address, and every SEND to a v4 peer has to be dressed as
+// ::ffff:a.b.c.d, because an AF_INET6 socket refuses a sockaddr_in outright.
+//
+// One per socket, not one for the pair. They are allocated separately and either can fall back on
+// its own, so a single flag would let whichever was allocated last decide how the other addressed
+// every packet it sent.
+static	bool			g_bSocketIsDualStack = false;
+static	bool			g_bProbeSocketIsDualStack = false;
 
 // Buffer for the Huffman encoding.
 static	UCHAR			g_ucHuffmanBuffer[131072];
@@ -83,8 +96,8 @@ static	UCHAR			g_ucHuffmanBuffer[131072];
 //	PROTOTYPES
 
 static	void			network_Error( const char *pszError );
-static	SOCKET			network_AllocateSocket( void );
-static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse );
+static	SOCKET			network_AllocateSocket( bool &bGotDualStack );
+static	bool			network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack );
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -126,13 +139,13 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 	g_usLocalPort = usPort;
 
 	// Allocate a socket, and attempt to bind it to the given port.
-	g_NetworkSocket = network_AllocateSocket( );
-	if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false ) == false )
+	g_NetworkSocket = network_AllocateSocket( g_bSocketIsDualStack );
+	if ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, g_usLocalPort, false, g_bSocketIsDualStack ) == false )
 	{
 		bSuccess = true;
 		bool bSuccessIP = true;
 		usNewPort = g_usLocalPort;
-		while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false ) == false )
+		while ( network_BindSocketToPort( g_NetworkSocket, ulInAddr, ++usNewPort, false, g_bSocketIsDualStack ) == false )
 		{
 			// Didn't find an available port. Oh well...
 			if ( usNewPort == g_usLocalPort )
@@ -170,6 +183,24 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 	if ( ioctlsocket( g_NetworkSocket, FIONBIO, &ulArg ) == -1 )
 		printf( "network_AllocateSocket: ioctl FIONBIO: %s", strerror( errno ));
 
+	// [rc4l] The probe socket. See network.h: verification sent from the socket servers announce to
+	// proves only that WE can reach them, because their NAT already has a mapping for us.
+	//
+	// Port 0 asks the OS for any free port, which is all that matters -- it simply must not be the
+	// one they talked to. A failure here is not fatal: probes fall back to the main socket, which is
+	// how it behaved before, so the daemon keeps working and only the strictness is lost.
+	g_ProbeSocket = network_AllocateSocket( g_bProbeSocketIsDualStack );
+	if ( network_BindSocketToPort( g_ProbeSocket, ulInAddr, 0, false, g_bProbeSocketIsDualStack ) == false )
+	{
+		printf( "NETWORK_Construct: couldn't open a probe socket; reachability checks will be weaker.\n" );
+		g_ProbeSocket = g_NetworkSocket;
+		g_bProbeSocketIsDualStack = g_bSocketIsDualStack;
+	}
+	else if ( ioctlsocket( g_ProbeSocket, FIONBIO, &ulArg ) == -1 )
+	{
+		printf( "NETWORK_Construct: ioctl FIONBIO on probe socket: %s\n", strerror( errno ));
+	}
+
 	// Init our read buffer.
 	// [BB] Vortex Cortex pointed us to the fact that the smallest huffman code is only 3 bits
 	// and it turns into 8 bits when it's decompressed. Thus we need to allocate a buffer that
@@ -195,53 +226,77 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 
 //*****************************************************************************
 //
-int NETWORK_GetPackets( void )
+// [rc4l] One socket's worth of receiving. Returns the byte count, or -1 for "nothing to read", which
+// covers both an empty non-blocking socket and the errors that are not worth stopping over.
+//
+// Split out from NETWORK_GetPackets because there are now two sockets to drain, and draining only the
+// first one is exactly the bug this exists to prevent.
+// [rc4l] sockaddr_storage, because a sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight.
+// A dual-stack socket hands back the larger one, and the kernel refuses with EFAULT rather than
+// truncating it, so a v4-sized buffer here does not lose the address: it loses every packet.
+static LONG network_ReceiveFromSocket( SOCKET Socket, sockaddr_storage &SocketFrom )
 {
-	LONG				lNumBytes;
-	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
-	sockaddr			SocketFrom;
-	INT					iSocketFromLength;
-
-    iSocketFromLength = sizeof( SocketFrom );
+	INT iSocketFromLength = sizeof( SocketFrom );
+	LONG lNumBytes;
 
 #ifdef	WIN32
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, &iSocketFromLength );
+	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, &SocketFrom, (socklen_t *)&iSocketFromLength );
+	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
-    if ( lNumBytes == -1 ) 
-    { 
+    if ( lNumBytes == -1 )
+    {
 #ifdef __WIN32__
         errno = WSAGetLastError( );
 
         if ( errno == WSAEWOULDBLOCK )
-            return ( false );
+            return ( -1 );
 
 		// Connection reset by peer. Doesn't mean anything to the server.
 		if ( errno == WSAECONNRESET )
-			return ( false );
+			return ( -1 );
 
         if ( errno == WSAEMSGSIZE )
 		{
              printf( "NETWORK_GetPackets:  WARNING! Oversize packet from %s\n", g_AddressFrom.ToString() );
-             return ( false );
+             return ( -1 );
         }
 
         printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
+		return ( -1 );
 #else
         if ( errno == EWOULDBLOCK )
-            return ( false );
+            return ( -1 );
 
         if ( errno == ECONNREFUSED )
-            return ( false );
+            return ( -1 );
 
         printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-        return ( false );
+        return ( -1 );
 #endif
     }
+
+	return ( lNumBytes );
+}
+
+//*****************************************************************************
+//
+int NETWORK_GetPackets( void )
+{
+	LONG				lNumBytes;
+	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
+	sockaddr_storage	SocketFrom;
+
+	lNumBytes = network_ReceiveFromSocket( g_NetworkSocket, SocketFrom );
+
+	// [rc4l] The probe socket is NOT write-only, and treating it as though it were took the whole
+	// registry down: verification requests leave by it, servers reply to whatever address the request
+	// arrived from, and so every verification reply lands here and nowhere else. Draining only the
+	// main socket meant no server could ever verify, and therefore none could ever be listed.
+	if (( lNumBytes <= 0 ) && ( g_ProbeSocket != g_NetworkSocket ))
+		lNumBytes = network_ReceiveFromSocket( g_ProbeSocket, SocketFrom );
 
 	// No packets or an error, so don't process anything.
 	if ( lNumBytes <= 0 )
@@ -258,7 +313,7 @@ int NETWORK_GetPackets( void )
 	g_NetworkMessage.ByteStream.pbStreamEnd = g_NetworkMessage.ByteStream.pbStream + g_NetworkMessage.ulCurrentSize;
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( SocketFrom );
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	return ( g_NetworkMessage.ulCurrentSize );
 }
@@ -268,6 +323,39 @@ int NETWORK_GetPackets( void )
 NETADDRESS_s NETWORK_GetFromAddress( void )
 {
 	return ( g_AddressFrom );
+}
+
+//*****************************************************************************
+//
+// [rc4l] The higher of the two descriptors, for select's nfds argument. On Windows nfds is ignored,
+// but it is computed there too rather than left as a platform-shaped difference to trip over later.
+SOCKET NETWORK_MaxSocket( void )
+{
+	return (( g_ProbeSocket > g_NetworkSocket ) ? g_ProbeSocket : g_NetworkSocket );
+}
+
+//*****************************************************************************
+//
+// [rc4l] See network.h. Identical to NETWORK_LaunchPacket except for the socket it leaves by, which
+// is the entire point: a different source port means no NAT mapping to ride in on.
+void NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
+{
+	INT iNumBytesOut = sizeof( g_ucHuffmanBuffer );
+
+	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	if ( pBuffer->ulCurrentSize == 0 )
+		return;
+
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bProbeSocketIsDualStack );
+
+	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize,
+		&iNumBytesOut );
+
+	sendto( g_ProbeSocket, (const char *)g_ucHuffmanBuffer, iNumBytesOut, 0,
+		reinterpret_cast<sockaddr *>( &SocketAddress ), iAddressLength );
 }
 
 //*****************************************************************************
@@ -284,12 +372,14 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		return;
 
 	// Convert the IP address to a socket address.
-	struct sockaddr_in SocketAddress;
-	Address.ToSocketAddress( reinterpret_cast<sockaddr&>(SocketAddress) );
+	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
+	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
+	struct sockaddr_storage SocketAddress;
+	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
 	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), sizeof( SocketAddress ));
+	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
 
 	// If sendto returns -1, there was an error.
 	if ( lNumBytes == -1 )
@@ -339,7 +429,11 @@ return;
 NETADDRESS_s NETWORK_GetLocalAddress( void )
 {
 	char				szBuffer[512];
-	struct sockaddr_in	SocketAddress;
+	// [rc4l] sockaddr_storage, for the reason in NETWORK_GetPackets: a dual-stack socket names
+	// itself with a sockaddr_in6, and the smaller struct makes getsockname fail rather than
+	// truncate. Only the port is wanted here, and LoadFromSocketAddress knows how to find it in
+	// either family instead of trusting the two layouts to agree.
+	struct sockaddr_storage	SocketAddress;
 	int					iNameLength;
 
 #ifndef __WINE__
@@ -360,7 +454,9 @@ NETADDRESS_s NETWORK_GetLocalAddress( void )
 		printf( "NETWORK_GetLocalAddress: Error getting socket name: %s", strerror( errno ));
 	}
 
-	Address.usPort = SocketAddress.sin_port;
+	NETADDRESS_s Named;
+	Named.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketAddress ));
+	Address.usPort = Named.usPort;
 	return ( Address );
 }
 
@@ -395,9 +491,44 @@ void network_Error( const char *pszError )
 
 //*****************************************************************************
 //
-static SOCKET network_AllocateSocket( void )
+// [rc4l] Whether our sockets speak both families. The bind below has to hand a socket the matching
+// kind of address, and only this knows which kind it got.
+
+
+//*****************************************************************************
+//
+// [rc4l] A socket that hears v6 AND v4, matching what the engine does.
+//
+// The registry has to be reachable by every server and every launcher, so it is the last thing that
+// should be picky about families. Turning IPV6_V6ONLY off makes one v6 socket accept v4 peers too,
+// arriving as ::ffff:a.b.c.d, which NETADDRESS_s::LoadFromSocketAddress puts straight back into v4 so
+// nothing downstream sees the mapped form. The ban list, the server set and the reach cookies all
+// key on addresses, and every one of them would break if the same host were two different addresses
+// depending on which way it came in.
+//
+// Falls back to a plain v4 socket for the same reasons it does in the engine: the option defaults
+// differently across platforms, the stack can be disabled outright, and a registry that only hears
+// v6 would be invisible to every server that exists today.
+// [rc4l] Reports what it got instead of writing a global, so two sockets cannot overwrite each
+// other's answer.
+static SOCKET network_AllocateSocket( bool &bGotDualStack )
 {
 	SOCKET	Socket;
+
+	Socket = socket( PF_INET6, SOCK_DGRAM, IPPROTO_UDP );
+	if ( Socket != INVALID_SOCKET )
+	{
+		int off = 0;
+		if ( setsockopt( Socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&off, sizeof( off )) == 0 )
+		{
+			bGotDualStack = true;
+			return ( Socket );
+		}
+
+		closesocket( Socket );
+	}
+
+	bGotDualStack = false;
 
 	// Allocate a socket.
 	Socket = socket( PF_INET, SOCK_DGRAM, IPPROTO_UDP );
@@ -409,23 +540,38 @@ static SOCKET network_AllocateSocket( void )
 
 //*****************************************************************************
 //
-bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse )
+bool network_BindSocketToPort( SOCKET Socket, ULONG ulInAddr, USHORT usPort, bool bReUse, bool bDualStack )
 {
 	int		iErrorCode;
-	struct sockaddr_in address;
 
 	// setsockopt needs an int, bool won't work
 	int		enable = 1;
 
+	// Allow the network socket to broadcast. Meaningless on a v6 socket, which has multicast and no
+	// broadcast at all, and harmless: the call simply fails there.
+	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
+	if ( bReUse )
+		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
+
+	// [rc4l] Bind to match the SOCKET'S family. in6addr_any covers every v4 address as well on a
+	// dual-stack socket; handing it a sockaddr_in fails outright and the registry never comes up.
+	if ( bDualStack )
+	{
+		struct sockaddr_in6 address6;
+		memset( &address6, 0, sizeof( address6 ));
+		address6.sin6_family = AF_INET6;
+		address6.sin6_addr = in6addr_any;
+		address6.sin6_port = htons( usPort );
+
+		iErrorCode = bind( Socket, (sockaddr *)&address6, sizeof( address6 ));
+		return ( iErrorCode != SOCKET_ERROR );
+	}
+
+	struct sockaddr_in address;
 	memset (&address, 0, sizeof(address));
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = ulInAddr;
 	address.sin_port = htons( usPort );
-
-	// Allow the network socket to broadcast.
-	setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (const char *)&enable, sizeof( enable ));
-	if ( bReUse )
-		setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof( enable ));
 
 	iErrorCode = bind( Socket, (sockaddr *)&address, sizeof( address ));
 	if ( iErrorCode == SOCKET_ERROR )
@@ -452,9 +598,13 @@ void I_DoSelect (void)
 
     FD_ZERO(&fdset);
     FD_SET(g_NetworkSocket, &fdset);
+    // [rc4l] Verification replies arrive on the probe socket, so it has to be waited on too. The
+    // one second timeout below would have polled it eventually, but "eventually" against a four
+    // second verification window is not a margin worth keeping.
+    FD_SET(g_ProbeSocket, &fdset);
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    if (select (static_cast<int>(g_NetworkSocket)+1, &fdset, NULL, NULL, &timeout) == -1)
+    if (select (static_cast<int>(NETWORK_MaxSocket())+1, &fdset, NULL, NULL, &timeout) == -1)
         return;
 #else
     struct timeval   timeout;
@@ -465,9 +615,12 @@ void I_DoSelect (void)
     	FD_SET(0, &fdset);
 
     FD_SET(g_NetworkSocket, &fdset);
+    // [rc4l] Same reason as the Windows branch above: replies to a verification request come back on
+    // the probe socket, so it belongs in the wait set.
+    FD_SET(g_ProbeSocket, &fdset);
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    if (select (static_cast<int>(g_NetworkSocket)+1, &fdset, NULL, NULL, &timeout) == -1)
+    if (select (static_cast<int>(NETWORK_MaxSocket())+1, &fdset, NULL, NULL, &timeout) == -1)
         return;
 
     stdin_ready = FD_ISSET(0, &fdset);

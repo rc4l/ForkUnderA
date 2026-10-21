@@ -65,6 +65,8 @@
 #include "network.h"
 #include "gamemode.h"
 #include "st_hud.h"
+#include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
+#include "features/crosshair/crosshair.h"	// [MobiusU9B] Crosshair Options size and offsets
 
 #define XHAIRSHRINKSIZE		(FRACUNIT/18)
 #define XHAIRPICKUPSIZE		(FRACUNIT*2+XHAIRSHRINKSIZE)
@@ -557,15 +559,20 @@ void DBaseStatusBar::ShowPlayerName ()
 //---------------------------------------------------------------------------
 
 void DBaseStatusBar::DrawImage (FTexture *img,
-	int x, int y, FRemapTable *translation) const
+	int x, int y, FRemapTable *translation, PalEntry colorOverlay, float overlayCoverage, bool overlayGlow) const
 {
-	if (img != NULL)
-	{
-		screen->DrawTexture (img, x + ST_X, y + ST_Y,
-			DTA_Translation, translation,
-			DTA_Bottom320x200, Scaled,
-			TAG_DONE);
-	}
+	if (img == NULL)
+		return;
+
+	// [rc4l] features/damage-tint: the overlay renders as the shader's per-pixel gradient (full at
+	// the image's bottom edge, gone at the coverage point) -- armed for this one draw and cleared
+	// right after. No banding, the art's own shading survives, and a protected face glows.
+	DamageTint_Arm2D(colorOverlay, colorOverlay.a ? overlayCoverage : 0.0f, overlayGlow);
+	screen->DrawTexture (img, x + ST_X, y + ST_Y,
+		DTA_Translation, translation,
+		DTA_Bottom320x200, Scaled,
+		TAG_DONE);
+	DamageTint_Disarm2D();
 }
 
 //---------------------------------------------------------------------------
@@ -1207,8 +1214,6 @@ void DBaseStatusBar::DrawCrosshair ()
 	static int palettecolor = 0;
 
 	DWORD color;
-	fixed_t size;
-	int w, h;
 
 	// [AK] The crosshair doesn't look good while using the free chasecam, so don't draw it.
 	if (FreeChasecam::IsBeingUsed())
@@ -1226,7 +1231,10 @@ void DBaseStatusBar::DrawCrosshair ()
 	ST_LoadCrosshair();
 
 	// Don't draw the crosshair if there is none
-	if (CrosshairImage == NULL || gamestate == GS_TITLELEVEL)
+	// [rc4l] uzdoom@3af08f198: no crosshair once the camera's owner is dead -- the death camera
+	// has no weapon to aim.
+	// [rc4l] features/handoff: the console player's camera as the game has it, since the HUD is drawn between tics.
+	if (CrosshairImage == NULL || gamestate == GS_TITLELEVEL || players[consoleplayer].camera == NULL || players[consoleplayer].camera->health <= 0)
 	{
 		return;
 	}
@@ -1235,21 +1243,8 @@ void DBaseStatusBar::DrawCrosshair ()
 	if ( zacompatflags & ZACOMPATF_NO_CROSSHAIR )
 		return;
 
-	if (crosshairscale)
-	{
-		size = SCREENHEIGHT * FRACUNIT / 200;
-	}
-	else
-	{
-		size = FRACUNIT;
-	}
-
-	if (crosshairgrow)
-	{
-		size = FixedMul (size, CrosshairSize);
-	}
-	w = (int)((CrosshairImage->GetWidth() * size) >> FRACBITS);
-	h = (int)((CrosshairImage->GetHeight() * size) >> FRACBITS);
+	// [MobiusU9B] The stock crosshairscale/crosshairgrow sizing plus the Crosshair Options size and offset sliders.
+	const zx::crosshair::CrosshairRect rect = zx::crosshair::GetRect (CrosshairImage, CrosshairSize);
 
 	if (crosshairhealth)
 	{
@@ -1296,10 +1291,10 @@ void DBaseStatusBar::DrawCrosshair ()
 	}
 
 	screen->DrawTexture (CrosshairImage,
-		viewwidth / 2 + viewwindowx,
-		viewheight / 2 + viewwindowy,
-		DTA_DestWidth, w,
-		DTA_DestHeight, h,
+		rect.x,
+		rect.y,
+		DTA_DestWidth, rect.width,
+		DTA_DestHeight, rect.height,
 		DTA_AlphaChannel, true,
 		DTA_FillColor, (palettecolor << 24) | (color & 0xFFFFFF),
 		TAG_DONE);

@@ -43,7 +43,6 @@
 #include "files.h"
 #include "m_swap.h"
 #include "v_video.h"
-#include "sbar.h"   // [rc4l] StatusBar->ScreenSizeChanged on an in-place resize
 #include "doomstat.h"
 #include "m_png.h"
 #include "m_crc32.h"
@@ -54,36 +53,28 @@
 
 #include "gl/system/gl_interface.h"
 #include "gl/system/gl_framebuffer.h"
+#include "features/display/display.h"   // [rc4l] the palette, flash and gamma ramp
+#include "features/viewsetup/viewsetup.h"   // [rc4l] ForgetCamera
 #include "gl/renderer/gl_renderer.h"
 #include "gl/renderer/gl_renderstate.h"
 #include "gl/renderer/gl_lightdata.h"
 #include "gl/data/gl_data.h"
 #include "gl/textures/gl_hwtexture.h"
-#include "gl/textures/gl_texture.h"
-#include "gl/textures/gl_translate.h"
-#include "gl/textures/gl_skyboxtexture.h"
+#include "features/materials/textureinfo.h"
+#include "features/materials/translationpalette.h"
+#include "features/materials/skyboxtexture.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
 #include "gl/gl_functions.h"
+#include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 #ifdef ZX_ENABLE_REPLAY
 #include "features/replay/zx_replay.h"   // [rc4l] FUA instant-replay frame capture hook
 #include "features/replay/computation/replay_compute.h" // [rc4l] pure readback sizing/lifecycle logic
 #endif
 
 IMPLEMENT_CLASS(OpenGLFrameBuffer)
-EXTERN_CVAR (Float, vid_brightness)
-EXTERN_CVAR (Float, vid_contrast)
 EXTERN_CVAR (Bool, vid_vsync)
-// [rc4l] video-scale: the render-scale knob (features/video-scale/videoscale.cpp).
-EXTERN_CVAR (Int, vid_scalemode)
-EXTERN_CVAR (Float, vid_scalefactor)
-EXTERN_CVAR (Int, vid_scale_customwidth)
-EXTERN_CVAR (Int, vid_scale_customheight)
-EXTERN_CVAR (Float, vid_scale_custompixelaspect)
-EXTERN_CVAR (Bool, vid_cropaspect)
-extern bool setsizeneeded;
-extern int DisplayBits;
-#include "features/video-scale/computation/videoscale_compute.h"
+#include "features/video-scale/videoscale.h"
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
 
@@ -103,10 +94,9 @@ OpenGLFrameBuffer::OpenGLFrameBuffer(void *hMonitor, int width, int height, int 
 	Super(hMonitor, width, height, bits, refreshHz, fullscreen) 
 {
 	GLRenderer = new FGLRenderer(this);
-	memcpy (SourcePalette, GPalette.BaseColors, sizeof(PalEntry)*256);
-	UpdatePalette ();
+	Colors.Load();
 	ScreenshotBuffer = NULL;
-	LastCamera = NULL;
+	zx::viewsetup::ForgetCamera();
 
 	// [rc4l] video-scale: no scale buffer until UpdateScaleBuffer decides one is needed.
 	mScaleFB = mScaleColorTex = mScaleDepthRB = 0;
@@ -232,6 +222,8 @@ void OpenGLFrameBuffer::Update()
 		return;
 	}
 
+	MCP_GLPerf_ZoneBegin(MCP_GLZ_HUD2D); // [rc4l] GPU-time the 2D/HUD pass (no-op unless bridge+capture)
+
 	Begin2D(false);
 
 	DrawRateStuff();
@@ -239,7 +231,7 @@ void OpenGLFrameBuffer::Update()
 
 	if (GetTrueHeight() != GetHeight())
 	{
-		if (GLRenderer != NULL) 
+		if (GLRenderer != NULL)
 			GLRenderer->ClearBorders();
 
 		Begin2D(false);
@@ -248,6 +240,11 @@ void OpenGLFrameBuffer::Update()
 	// to fill the window before the backbuffer is presented.
 	if (mScaleActive)
 		BlitScaleBuffer();
+
+	// [rc4l] Close the 2D span and the whole-frame GPU span here, BEFORE Swap(), so the buffer swap /
+	// vsync wait is never charged to render time. No-op unless the bridge is profiling.
+	MCP_GLPerf_ZoneEnd(MCP_GLZ_HUD2D);
+	MCP_GLPerf_FrameEnd();
 
 	if (gl_draw_sync || !swapped)
 	{
@@ -286,15 +283,8 @@ void OpenGLFrameBuffer::Update()
 void OpenGLFrameBuffer::GetClientSize(int &w, int &h)
 {
 #ifdef _WIN32
-	// Win32 native backend: the window's client rectangle in pixels (the borderless popup covers the
-	// monitor when fullscreen; a normal window when windowed). Window is the global HWND.
-	RECT r;
-	if (Window != NULL && GetClientRect(Window, &r))
-	{
-		w = int(r.right - r.left);
-		h = int(r.bottom - r.top);
-	}
-	else
+	// [rc4l] The window's client rectangle in pixels, which is the whole monitor for the fullscreen borderless popup.
+	if (!ClientSize(w, h))
 	{
 		w = GetWidth();
 		h = GetHeight();
@@ -389,6 +379,19 @@ void OpenGLFrameBuffer::UpdateScaleBuffer()
 	glViewport(0, 0, renderW, renderH);
 }
 
+// [rc4l] The inverse of BlitScaleBuffer, reading the same two cached numbers that blit does,
+// because that blit is what put the pixels where the pointer now is.
+//
+// Not gated on mScaleActive, because the cached client size equals the render size when scaling is
+// off, making this an identity rather than a special case worth branching for.
+void OpenGLFrameBuffer::ScaleCoordsFromWindow(int &x, int &y)
+{
+	const int clientW = (mScaleClientW > 0) ? mScaleClientW : GetWidth();
+	const int clientH = (mScaleClientH > 0) ? mScaleClientH : GetHeight();
+
+	zx::ScaleWindowPointToRender(clientW, clientH, GetWidth(), GetHeight(), x, y);
+}
+
 void OpenGLFrameBuffer::BlitScaleBuffer()
 {
 	// Cached client size (set in UpdateScaleBuffer); avoids a per-frame GetClientSize, which is an
@@ -406,22 +409,8 @@ void OpenGLFrameBuffer::BlitScaleBuffer()
 
 void OpenGLFrameBuffer::ResizeRenderInPlace(int w, int h)
 {
-	// Resize the render target without recreating the SDL window or GL context -- mirrors upstream's
-	// V_OutputResized. No black flash, no keyboard-focus loss (the window never goes away).
-	Resize(w, h);                                // canvas backing store + Width/Height/Pitch
-	V_RecalcVideoModeState(w, h, DisplayBits);   // Clean facs, DisplayW/H, mode-set recompute
-
-	// [rc4l] The status bar caches ST_Y, computed from SCREENHEIGHT in DBaseStatusBar::SetScaled.
-	// Resizing the render target without telling it leaves that cache pointing at the OLD height,
-	// and R_SetWindow then sizes the 3D view against a stale ST_Y -- a view TALLER than the buffer
-	// it draws into, which shows up as the status-bar strip rendering garbage while screenblocks 11
-	// (no status bar) looks fine. A real mode set goes through this; an in-place resize has to too.
-	if (StatusBar != NULL)
-	{
-		StatusBar->ScreenSizeChanged();
-	}
-
-	setsizeneeded = true;                        // recompute the 3D view for the new render size
+	// [rc4l] features/video-scale: the canvas, the mode state, the status bar and the view, shared with the backend's frame buffer.
+	zx::ResizeScreenInPlace(this, w, h);
 	UpdateScaleBuffer();                         // (re)build + bind the scale FBO, or drop to backbuffer
 }
 
@@ -442,16 +431,24 @@ void OpenGLFrameBuffer::MaybeResizeForScale()
 
 	int cw = GetWidth(), ch = GetHeight();
 	GetClientSize(cw, ch);
-	zx::ScaledViewport v = zx::ComputeScaledViewport(cw, ch,
-		vid_scalemode, vid_scalefactor,
-		vid_scale_customwidth, vid_scale_customheight, vid_scale_custompixelaspect,
-		!!vid_cropaspect, 0.f,
-		zx::VID_SCALE_MIN_WIDTH, zx::VID_SCALE_MIN_HEIGHT);
-	switch (zx::ComputeScaleReconcile(cw, ch, GetWidth(), GetHeight(),
-		mScaleClientW, mScaleClientH, v.width, v.height))
+	// [rc4l] A MINIMIZED window has no client area, and following it there is worse than useless.
+	//
+	// This reconcile runs every frame against the window's live client rectangle, which is right for
+	// a drag or a fullscreen toggle and wrong for minimize: the client rect goes to nothing, the
+	// render target is rebuilt at one pixel square, and everything drawn until the window comes back
+	// is drawn into it. Harmless while nobody is looking -- and not harmless at all with
+	// fua_render_in_background on, where the whole point is that the frames still count. A minimized
+	// window's shots came out 1x1.
+	//
+	// Keeping the last good size costs nothing: restoring sends a real client rect and the next
+	// frame reconciles to it, which is the same path a drag already takes.
+	if (cw <= 0 || ch <= 0)
+		return;
+	int wantW = 0, wantH = 0;
+	switch (zx::ReconcileRenderSize(cw, ch, GetWidth(), GetHeight(), mScaleClientW, mScaleClientH, wantW, wantH))
 	{
 	case zx::SCALE_RECONCILE_RESIZE:
-		ResizeRenderInPlace(v.width, v.height);
+		ResizeRenderInPlace(wantW, wantH);
 		break;
 
 	case zx::SCALE_RECONCILE_REBUILD:
@@ -563,11 +560,26 @@ void OpenGLFrameBuffer::Swap()
 {
 	Finish.Reset();
 	Finish.Clock();
-	glFinish();
+	// [rc4l] With GL's window covered there is nothing to finish or present, so glFinish's full stall and SwapBuffers are skipped.
+	const bool glIdle = !mPresents;
+	if (!glIdle) glFinish();
 #ifdef ZX_ENABLE_REPLAY
 	// [rc4l] FUA instant replay: when a frame is due, kick off an async PBO readback of the just-
 	// rendered back buffer and hand the PREVIOUS frame's (already-completed) readback to the encoder.
-	if (zx::replay::WantsFrame())
+	// [rc4l] ...and when the backend is carrying the frame, it has already captured it.
+	//
+	// There are two replay captures. This one reads GL's back buffer; DrawSceneOnce takes a copy of
+	// the Diligent swapchain just before Present. With fua_dg_standalone on, GL's back buffer is not
+	// the presented image and never was -- a screenshot of it shows the HUD over grey slabs where the
+	// world should be, because GL stopped drawing the world and nothing clears what it left. So this
+	// path was recording a corrupted picture, and paying a glFinish, a full-screen glReadPixels and a
+	// buffer map every capture frame to do it. That is the whole of the frame-time TAIL: Sunder MAP20's
+	// p95 goes 8.65 ms -> 7.21 with it gone, MAP16's 2.70 -> 1.92.
+	// WantsFrame() is asked FIRST and unconditionally: it owns the recording session's lifecycle, so
+	// short-circuiting past it would stop the session ever starting -- including the Vulkan stream,
+	// which is the one that still works.
+	const bool wantReplayFrame = zx::replay::WantsFrame();
+	if (wantReplayFrame && !glIdle)
 	{
 		// Capture at the window's drawable size (the full presented frame), not the virtual render size.
 		const int cw = mScaleClientW > 0 ? mScaleClientW : SCREENWIDTH;
@@ -580,7 +592,7 @@ void OpenGLFrameBuffer::Swap()
 		//DoSetGamma();
 		needsetgamma = false;
 	}
-	SwapBuffers();
+	if (!glIdle) SwapBuffers();
 	Finish.Unclock();
 	swapped = true;
 	FHardwareTexture::UnbindAll();
@@ -601,22 +613,8 @@ void OpenGLFrameBuffer::DoSetGamma()
 
 	if (m_supportsGamma)
 	{
-		// This formula is taken from Doomsday
-		float gamma = clamp<float>(Gamma, 0.1f, 4.f);
-		float contrast = clamp<float>(vid_contrast, 0.1f, 3.f);
-		float bright = clamp<float>(vid_brightness, -0.8f, 0.8f);
-
-		double invgamma = 1 / gamma;
-		double norm = pow(255., invgamma - 1);
-
-		for (int i = 0; i < 256; i++)
-		{
-			double val = i * contrast - (contrast - 1) * 127;
-			if(gamma != 1) val = pow(val, invgamma) / norm;
-			val += bright * 128;
-
-			gammaTable[i] = gammaTable[i + 256] = gammaTable[i + 512] = (WORD)clamp<double>(val*256, 0, 0xffff);
-		}
+		// [rc4l] Doomsday's curve, worked out in features/display for any frame buffer.
+		zx::display::CurrentGammaRamp(gammaTable);
 		SetGammaTable(gammaTable);
 	}
 }
@@ -644,43 +642,31 @@ bool OpenGLFrameBuffer::SetContrast(float contrast)
 //
 //===========================================================================
 
+// [rc4l] The palette, its brightness and the flash are features/display's, shared with the backend's frame buffer.
 void OpenGLFrameBuffer::UpdatePalette()
 {
-	int rr=0,gg=0,bb=0;
-	for(int x=0;x<256;x++)
-	{
-		rr+=GPalette.BaseColors[x].r;
-		gg+=GPalette.BaseColors[x].g;
-		bb+=GPalette.BaseColors[x].b;
-	}
-	rr>>=8;
-	gg>>=8;
-	bb>>=8;
-
-	palette_brightness = (rr*77 + gg*143 + bb*35)/255;
+	Colors.UpdateBrightness();
 }
 
 void OpenGLFrameBuffer::GetFlashedPalette (PalEntry pal[256])
 {
-	memcpy(pal, SourcePalette, 256*sizeof(PalEntry));
+	memcpy(pal, Colors.palette, 256*sizeof(PalEntry));
 }
 
 PalEntry *OpenGLFrameBuffer::GetPalette ()
 {
-	return SourcePalette;
+	return Colors.palette;
 }
 
 bool OpenGLFrameBuffer::SetFlash(PalEntry rgb, int amount)
 {
-	Flash = PalEntry(amount, rgb.r, rgb.g, rgb.b);
+	Colors.SetFlash(rgb, amount);
 	return true;
 }
 
 void OpenGLFrameBuffer::GetFlash(PalEntry &rgb, int &amount)
 {
-	rgb = Flash;
-	rgb.a = 0;
-	amount = Flash.a;
+	Colors.GetFlash(rgb, amount);
 }
 
 int OpenGLFrameBuffer::GetPageCount()
@@ -729,7 +715,7 @@ void OpenGLFrameBuffer::GetHitlist(BYTE *hitlist)
 
 FNativePalette *OpenGLFrameBuffer::CreatePalette(FRemapTable *remap)
 {
-	return GLTranslationPalette::CreatePalette(remap);
+	return FTranslationPalette::CreatePalette(remap);
 }
 
 //==========================================================================
@@ -896,9 +882,9 @@ void OpenGLFrameBuffer::ReleaseScreenshotBuffer()
 
 void OpenGLFrameBuffer::GameRestart()
 {
-	memcpy (SourcePalette, GPalette.BaseColors, sizeof(PalEntry)*256);
-	UpdatePalette ();
-	ScreenshotBuffer = NULL;
-	LastCamera = NULL;
+	Colors.Load();
+	// [rc4l] Freed rather than forgotten, since a restart after a screenshot dropped its buffer.
+	ReleaseScreenshotBuffer();
+	zx::viewsetup::ForgetCamera();
 	gl_GenerateGlobalBrightmapFromColormap();
 }

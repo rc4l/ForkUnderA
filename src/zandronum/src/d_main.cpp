@@ -66,12 +66,28 @@
 #include "doomstat.h"
 #include "gstrings.h"
 #include "w_wad.h"
+#include "features/addon-catalogue/zx_catalogue.h" // [rc4l] validated at startup, not on first use
 #include "features/crashreport/zx_crashreport.h"
+#include "features/draw2d/record.h"
+#include "features/frame/playerview.h"   // [rc4l] FrameClock
+#include "features/hwrender/backendonly.h"
+#include "features/continue/zx_continue.h"
+#include "features/identity/zx_identity.h"
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
+#include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
+#include "features/wad-download/zx_wadsearch.h" // [rc4l] where to look for IWADs and PWADs
+#include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
+#include "features/server-hosting/zx_hosting.h" // [rc4l] hosting a server from inside the game
+#include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
+#include "features/port-mapping/zx_portmap.h" // [rc4l] and giving back any port we asked for
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/speedometer/speedometer.h" // [MobiusU9B] on-screen speed readout
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
 #include "f_wipe.h"
+#include "features/wipe/wipetrace.h"   // [rc4l] NoteWipeStarted
+#include "features/telemetry/telemetry.h"   // [rc4l] SetSoakReady
 #include "m_argv.h"
 #include "m_misc.h"
 #include "menu/menu.h"
@@ -89,6 +105,9 @@
 #include "r_utility.h"
 #include "r_sky.h"
 #include "d_main.h"
+#include "features/mainloop/mainloop.h"
+#include "features/mainloop/computation/mainloop_compute.h"
+#include "features/wadreload/zx_wadreload.h" // [rc4l] ResetStartupStateForRestart()
 #include "d_dehacked.h"
 #include "cmdlib.h"
 #include "s_sound.h"
@@ -115,6 +134,10 @@
 #include "cl_statistics.h"
 #include "maprotation.h"
 #include "features/server-browser/browser.h"
+#include "features/core-pk3/computation/corepk3_compute.h" // [rc4l] which fua_core_*.pk3 is ours
+
+#include <string>
+#include <vector>
 #include "p_spec.h"
 #include "joinqueue.h"
 #include "lastmanstanding.h"
@@ -149,6 +172,16 @@
 #include "po_man.h"
 #include "resourcefiles/resourcefile.h"
 #include "r_renderer.h"
+#include "features/frame/framestall.h"   // [rc4l] DebugFrameStall
+#include "features/frame/debugorbit.h"   // [rc4l] DebugOrbit
+#include "features/frame/viewtrace.h"   // [rc4l] NoteMouseEvent
+#include "features/framephase/framephase.h"   // [rc4l] FrameBoundary and the main loop's phases
+#include "features/handoff/seam.h"   // [rc4l] NoteMainThread
+#include "features/gamecopy/gamecopy.h"   // [rc4l] FillMap
+#include "features/gamecopy/players.h"    // [rc4l] the eye's FOV
+#include "features/gameloop/loop.h"       // [rc4l] FrameBegins, FrameEnds
+#include "features/gameloop/hud.h"        // [rc4l] RecordHUD, ReplayHUD
+#include "features/handoff/gamethread.h" // [rc4l] TicInFlight
 #include "p_local.h"
 
 
@@ -256,6 +289,7 @@ FString StoredWarp;
 extern FString StoredReloadMap; // [rc4l] set by wad_reload to boot into a map after a restart
 bool advancedemo;
 FILE *debugfile;
+FILE *hashfile;
 event_t events[MAXEVENTS];
 int eventhead;
 int eventtail;
@@ -267,6 +301,15 @@ bool nospriterename;
 FStartupInfo DoomStartupInfo;
 FString lastIWAD;
 int restart = 0;
+
+// [rc4l] See D_RequestRestart in d_main.h: the throw is deferred to the top of D_DoomLoop so it
+// never has to unwind through Objective-C frames.
+static bool s_restartRequested = false;
+
+void D_RequestRestart()
+{
+	s_restartRequested = true;
+}
 
 cycle_t FrameCycles;
 
@@ -337,7 +380,11 @@ void D_PostEvent (const event_t *ev)
 		return;
 	}
 	events[eventhead] = *ev;
-	if (ev->type == EV_Mouse && !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling)
+	// [rc4l] A mouse move turns the view unless the game is paused or a menu or the console is up.
+	const bool mouseTurnsView = !paused && menuactive == MENU_Off && ConsoleState != c_down && ConsoleState != c_falling;
+	if (ev->type == EV_Mouse)
+		zx::frame::NoteMouseEvent(mouseTurnsView);   // [rc4l] fua_viewtrace
+	if (ev->type == EV_Mouse && mouseTurnsView)
 	{
 		if (Button_Mlook.bDown || freelook)
 		{
@@ -579,8 +626,8 @@ CVAR (Flag, sv_shotgunstart,		dmflags2, DF2_SHOTGUNSTART);
 
 // [BB/EP] Only necessary to handle ZADF_FORCE_VIDEO_DEFAULTS.
 #ifndef NO_GL
-EXTERN_CVAR(Int, gl_lightmode)
-EXTERN_CVAR(Int, gl_distfog)
+EXTERN_CVAR(Int, r_lightmode)
+EXTERN_CVAR(Int, r_distfog)
 #endif
 
 // [AK] Added CVAR_CAMPAIGNLOCK and CVAR_GAMEPLAYFLAGSET.
@@ -626,17 +673,18 @@ CUSTOM_CVAR (Int, zadmflags, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEP
 	SERVER_FlagsetChanged( self );
 
 #ifndef NO_GL
-	// [BB/EP] This makes gl_lightmode and gl_distfog handle ZADF_FORCE_VIDEO_DEFAULTS.
+	// [BB/EP] This makes r_lightmode and r_distfog handle ZADF_FORCE_VIDEO_DEFAULTS.
 	// [BB] Don't do this on startup since gl.flags is not properly initialized yet.
 	if ( gamestate != GS_STARTUP )
 	{
-		gl_lightmode.Callback();
-		gl_distfog.Callback();
+		r_lightmode.Callback();
+		r_distfog.Callback();
 	}
 #endif
 }
 
 CVAR (Flag, sv_noidentifytarget,			zadmflags, ZADF_NO_IDENTIFY_TARGET);
+CVAR (Flag, sv_fua_noidentifyactors,		zadmflags, ZADF_FUA_NO_IDENTIFY_ACTORS); // [MobiusU9B] features/crosshair
 CVAR (Flag, sv_applylmsspectatorsettings,	zadmflags, ZADF_ALWAYS_APPLY_LMS_SPECTATORSETTINGS);
 CVAR (Flag, sv_nocoopinfo,			zadmflags, ZADF_NO_COOP_INFO);
 CVAR (Flag, sv_unblockplayers,			zadmflags, ZADF_UNBLOCK_PLAYERS);
@@ -856,6 +904,130 @@ CVAR (Flag, compat_noobituaries, zacompatflags, ZACOMPATF_NO_OBITUARIES);
 //
 //==========================================================================
 
+// [rc4l] A running wipe: when its last tic was drawn, the 2D state it started with, and whether one is running.
+static unsigned int s_wipeStart;
+static bool s_wipeHw2d;
+// [rc4l] Frames begun since the last wipe ended (features/mainloop's ComputeFramesSinceWipe).
+static int s_framesSinceWipe = 2;
+static bool s_wiping;
+
+// [rc4l] The level's HUD: the status bar and what draws over and beside it, the scoreboard, the speedometer and the medals, all read from the live game.
+static void D_DrawLevelHUD ()
+{
+	if (hud_althud && viewheight == SCREENHEIGHT && screenblocks > 10)
+	{
+		StatusBar->DrawBottomStuff (HUD_AltHud);
+		if (DrawFSHUD || automapactive) DrawHUD();
+		StatusBar->Draw (HUD_AltHud);
+		StatusBar->DrawTopStuff (HUD_AltHud);
+	}
+	else 
+	if (viewheight == SCREENHEIGHT && viewactive && screenblocks > 10)
+	{
+		EHudState state = DrawFSHUD ? HUD_Fullscreen : HUD_None;
+		StatusBar->DrawBottomStuff (state);
+		StatusBar->Draw (state);
+		StatusBar->DrawTopStuff (state);
+	}
+	else
+	{
+		StatusBar->DrawBottomStuff (HUD_StatusBar);
+		StatusBar->Draw (HUD_StatusBar);
+		StatusBar->DrawTopStuff (HUD_StatusBar);
+	}
+
+	if ( viewactive )
+	{
+		// [BC] Handle rendering for the possession module.
+		POSSESSION_Render( );
+
+		// [BC] Render the scoreboard [BB] respecting free spectate mode.
+		// [MobiusU9B] Hoisted so the speedometer reads the same player the HUD shows.
+		const ULONG ulDisplayPlayer = CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer;
+		HUD_Render( ulDisplayPlayer );
+
+		// [MobiusU9B] The speedometer, see features/speedometer/README.md.
+		zx::speedometer::Draw( ulDisplayPlayer );
+
+		// Render any medals the player might have been awarded.
+		MEDAL_Render( );
+	}
+}
+
+// [rc4l] features/handoff: what a frame needs of the game, done between tics: the render copy of the tics just run, its check, and the console player's camera, which a player naming none sees through its body.
+static bool s_displayPrepared = false;
+static bool s_inputTaken = false;   // [rc4l] the handoff took the frame's input, which D_Display would otherwise take mid-frame
+
+// [rc4l] features/handoff: the main loop's work that may load wads, maps or a server or answer an RPC about the game, so only with no tic in flight: at the top of a frame, or in the handoff that takes one back.
+void D_RunHandoffWork ()
+{
+	zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
+	zx::waddownload::Tick(); // [rc4l] drains the WAD downloader's log + fires its completion (main thread)
+	zx::wadserve::Tick(); // [rc4l] server side: binds/rebinds the WAD listener, snapshots its config, drains its log
+	zx::JoinTick(); // [rc4l] puts a failed join back in the server browser instead of a bare console
+	zx::Continue_Tick(); // [rc4l] finishes a Continue that had to reload the WAD set first
+	zx::HostTick(); // [rc4l] client side: drains our own server's output and watches it come up or fall over
+	MCP_Bridge_Poll();
+}
+
+// [rc4l] features/handoff: a frame drawn beside a tic, or after the handoff prepared it and took the input: it reads only the copy and the recorded HUD.
+// [rc4l] A frame's input, the window's messages and the debug orbit, the same on both schedules, since the game thread's frames had no orbit and measured a still view.
+static void D_FrameInput ()
+{
+	{
+		const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
+		I_StartTic ();
+	}
+	zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
+}
+
+void D_DisplayBesideTic ()
+{
+	s_displayPrepared = true;
+	s_inputTaken = true;
+	zx::gameloop::FrameBegins ();
+	{
+		const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+		D_FrameInput ();
+		MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
+		D_Display ();
+	}
+	zx::gameloop::FrameEnds ();
+}
+
+void D_PrepareDisplay (bool input)
+{
+	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		return;
+	if (input)
+	{
+		const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );   // [rc4l] it reads the window's messages, the mouse among them
+		NetUpdate ();			// send out any new accumulation
+	}
+	s_inputTaken = input;
+	zx::gamecopy::FillMap ();
+	zx::gamecopy::CheckBeforeViews ();
+	if (players[consoleplayer].camera == NULL)
+	{
+		players[consoleplayer].camera = players[consoleplayer].mo;
+	}
+	// [rc4l] The status bar's blend of the view, which reads the player, before D_Display draws it.
+	if ((gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) && gametic != 0 && (automapactive || viewactive) && StatusBar != NULL)
+	{
+		float blend[4] = { 0, 0, 0, 0 };
+		StatusBar->BlendView (blend);
+	}
+	// [rc4l] A resized screen's view first, so the HUD recorded next, the crosshair among it, is never the new screen around the old view.
+	if (setsizeneeded && StatusBar != NULL && !zx::handoff::TicInFlight ())
+	{
+		R_ExecuteSetViewSize ();
+	}
+	// [rc4l] The level's HUD, recorded for a frame without GL to replay; D_Display draws it there only after a tic.
+	const zx::gameloop::HudKey hudKey = { gametic, SCREENWIDTH, SCREENHEIGHT, viewheight, (int)screenblocks, automapactive, viewactive, (bool)hud_althud, DrawFSHUD };
+	zx::gameloop::RecordHUD ((gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) && gametic != 0 && StatusBar != NULL, hudKey, D_DrawLevelHUD);
+	s_displayPrepared = true;
+}
+
 void D_Display ()
 {
 	bool wipe;
@@ -865,27 +1037,40 @@ void D_Display ()
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
 
+	// [rc4l] A loop without a handoff of its own prepares the frame here.
+	if (!s_displayPrepared)
+	{
+		D_PrepareDisplay (false);
+	}
+	s_displayPrepared = false;
+	const bool inputTaken = s_inputTaken;
+	s_inputTaken = false;
+
 	if (nodrawers || screen == NULL)
 		return; 				// for comparative timing / profiling
+
+	// [rc4l] features/hwrender: last frame's 2D is dead -- the HUD moves, text scrolls, menus open.
+	// Dropped here rather than after the render so that everything drawn this frame, including the
+	// console and menus which are drawn late, is captured. See features/draw2d/record.h.
+	zx::draw2d::Clear2D();
+	zx::hwrender::FrameTimingBegin();   // [rc4l] vid_fps per renderer, split at LiveFrame
 
 	cycle_t cycles;
 	
 	cycles.Reset();
 	cycles.Clock();
 
-	if (players[consoleplayer].camera == NULL)
-	{
-		players[consoleplayer].camera = players[consoleplayer].mo;
-	}
-
 	if (viewactive)
 	{
-		R_SetFOV (players[consoleplayer].camera && players[consoleplayer].camera->player ?
-			players[consoleplayer].camera->player->FOV : 90.f);
+		// [rc4l] features/gamecopy: the FOV of whose eyes the console player sees through, as the copy took it.
+		const zx::gamecopy::ActorRecord *const eye = zx::gamecopy::CameraOf (consoleplayer);
+		const zx::gamecopy::PlayerRecord *const eyePlayer = eye != NULL ? zx::gamecopy::Player (eye->playerIndex) : NULL;
+		R_SetFOV (eyePlayer != NULL ? eyePlayer->FOV : 90.f);
 	}
 
 	// [RH] change the screen mode if needed
-	if (setmodeneeded)
+	// [rc4l] features/handoff: not beside a tic, since the status bar the mode change resizes is the tic's.
+	if (setmodeneeded && !zx::handoff::TicInFlight ())
 	{
 		// Change screen mode.
 		if (Video->SetResolution (NewWidth, NewHeight, NewBits))
@@ -910,11 +1095,11 @@ void D_Display ()
 	RenderTarget = screen;
 
 	// change the view size if needed
-	if (setsizeneeded && StatusBar != NULL)
+	if (setsizeneeded && StatusBar != NULL && !zx::handoff::TicInFlight ())
 	{
 		R_ExecuteSetViewSize ();
 	}
-	setmodeneeded = false;
+	if (!zx::handoff::TicInFlight ()) setmodeneeded = false;
 
 	if (screen->Lock (false))
 	{
@@ -953,6 +1138,7 @@ void D_Display ()
 			wipe = screen->WipeStartScreen (wipe_Melt);
 			break;
 		}
+		if (wipe) zx::wipe::NoteWipeStarted ();   // [rc4l] features/wipe's trace counts every wipe begun, presented or not
 		wipegamestate = gamestate;
 	}
 	else
@@ -963,7 +1149,8 @@ void D_Display ()
 	hw2d = false;
 
 	{
-		unsigned int nowtime = I_FPSTime();
+		// [rc4l] Pinned with the backend's warps when a capture sets fua_debug_frameclock.
+		unsigned int nowtime = zx::frame::FrameClock(I_FPSTime());
 		TexMan.UpdateAnimations(nowtime);
 		R_UpdateSky(nowtime);
 		switch (gamestate)
@@ -975,6 +1162,9 @@ drawfullconsole:
 			hw2d = screen->Begin2D(false);
 			C_DrawConsole (false);
 			M_Drawer ();
+			// [rc4l] This case returns before the shared call below ever runs, so the band needs its
+			// own -- a download outlives dropping to the full console.
+			zx::DrawJoinReadyNotice ( menuactive != MENU_Off );
 			screen->Update ();
 			return;
 
@@ -994,18 +1184,15 @@ drawfullconsole:
 			// This happens for example if you start a new game, while being on a server.
 			if (automapactive || viewactive)
 			{
-				if (StatusBar != NULL)
-				{
-					float blend[4] = { 0, 0, 0, 0 };
-					StatusBar->BlendView (blend);
-				}
 				screen->SetBlendingRect(viewwindowx, viewwindowy,
 					viewwindowx + viewwidth, viewwindowy + viewheight);
 				// [BB] Zandronum handles prediction differently.
 				//P_PredictPlayer(&players[consoleplayer]);
 				// [BB] This check shouldn't be necessary, but should completely prevent
 				// the "tried to render NULL actor" errors.
-				if ( (players[consoleplayer].mo != NULL) && (players[consoleplayer].camera != NULL) )
+				// [rc4l] features/gamecopy: the console player's body and camera as the copy holds them.
+				const zx::gamecopy::PlayerRecord *const me = zx::gamecopy::Player (consoleplayer);
+				if ( me != NULL && me->mo >= 0 && zx::gamecopy::CameraOf (consoleplayer) != NULL )
 					Renderer->RenderView(&players[consoleplayer]);
 				// [BB] Zandronum handles prediction differently.
 				//P_UnPredictPlayer();
@@ -1034,38 +1221,10 @@ drawfullconsole:
 				V_RefreshViewBorder ();
 			}
 
-			if (hud_althud && viewheight == SCREENHEIGHT && screenblocks > 10)
+			// [rc4l] features/handoff: a frame without GL replays the HUD the handoff drew, which reads the game only between tics.
+			if (!zx::gameloop::ReplayHUD ())
 			{
-				StatusBar->DrawBottomStuff (HUD_AltHud);
-				if (DrawFSHUD || automapactive) DrawHUD();
-				StatusBar->Draw (HUD_AltHud);
-				StatusBar->DrawTopStuff (HUD_AltHud);
-			}
-			else 
-			if (viewheight == SCREENHEIGHT && viewactive && screenblocks > 10)
-			{
-				EHudState state = DrawFSHUD ? HUD_Fullscreen : HUD_None;
-				StatusBar->DrawBottomStuff (state);
-				StatusBar->Draw (state);
-				StatusBar->DrawTopStuff (state);
-			}
-			else
-			{
-				StatusBar->DrawBottomStuff (HUD_StatusBar);
-				StatusBar->Draw (HUD_StatusBar);
-				StatusBar->DrawTopStuff (HUD_StatusBar);
-			}
-
-			if ( viewactive )
-			{
-				// [BC] Handle rendering for the possession module.
-				POSSESSION_Render( );
-
-				// [BC] Render the scoreboard [BB] respecting free spectate mode.
-				HUD_Render( CLIENTDEMO_IsInFreeSpectateMode( ) == false ? HUD_GetViewPlayer( ) : consoleplayer );
-
-				// Render any medals the player might have been awarded.
-				MEDAL_Render( );
+				D_DrawLevelHUD ();
 			}
 
 			// Render chat prompt.
@@ -1096,6 +1255,13 @@ drawfullconsole:
 		default:
 			break;
 		}
+
+		// [rc4l] The download/ready band, when no menu is up. AFTER the switch rather than inside the
+		// GS_LEVEL case, because a transfer does not stop for the intermission, the finale or the demo
+		// screen -- and each of those sets up its own 2D pass in that switch, which this has to be
+		// inside of to reach the screen at all. The call after M_Drawer handles the menu case.
+		// See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ( false );
 	}
 	if ( NETWORK_InClientMode() )
 	{
@@ -1149,49 +1315,103 @@ drawfullconsole:
 
 	if (!wipe || NoWipe < 0)
 	{
-		NetUpdate ();			// send out any new accumulation
+		if (!inputTaken)
+		{
+			const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );   // [rc4l] it reads the window's messages, the mouse among them
+			NetUpdate ();			// send out any new accumulation
+		}
 		// normal update
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
+
+		// [rc4l] The same band, for when a menu IS up: after M_Drawer so it sits on top of it, since a
+		// download runs while the player wanders through menus and the one readout they have must not
+		// be the thing the options screen covers up. Captures no input at all.
+		// See features/server-browser/zx_joinserver.h.
+		zx::DrawJoinReadyNotice ( true );
 		FStat::PrintStat ();
-		screen->Update ();		// page flip or blit buffer
+		{
+			const zx::framephase::Scope flipPhase( zx::framephase::kPhaseFlip );
+			screen->Update ();		// page flip or blit buffer
+		}
+
+		// [rc4l] features/hwrender: mirror the frame into the Diligent backend window.
+		//
+		// Until now the backend drew a snapshot taken at upload time, which is enough to benchmark
+		// and to check a screenshot but is not a renderer -- you cannot tell whether geometry, depth
+		// or the camera are right from one still frame. Driving it from the real frame loop with the
+		// live camera is what turns it into something you can walk around in and see wrong.
+		//
+		// Deliberately AFTER screen->Update: the GL frame is the one the player is playing, and the
+		// backend must not be able to stall or corrupt it.
+		zx::hwrender::LiveFrame ();
 	}
 	else
 	{
+		// [rc4l] features/handoff: a wipe holds the tics back until it ends, so it runs as the handoff does.
+		zx::gameloop::FrameEnds ();
 		// wipe update
-		unsigned int wipestart, nowtime, diff;
-		bool done;
-
 		GSnd->SetSfxPaused(true, 1);
 		I_FreezeTime(true);
 		screen->WipeEndScreen ();
 
-		wipestart = I_MSTime();
+		s_wipeStart = I_MSTime();
+		s_wipeHw2d = hw2d;
+		s_wiping = true;
 		NetUpdate();		// send out any new accumulation
 
-		do
+		// [rc4l] Run to its end here, unless the loop is stepped a frame at a time, which advances it through D_WipeStep instead.
+		if (!zx::mainloop::Stepped())
 		{
 			do
-			{
 				I_WaitVBL(2);
-				nowtime = I_MSTime();
-				diff = (nowtime - wipestart) * 40 / 1000;	// Using 35 here feels too slow.
-			} while (diff < 1);
-			wipestart = nowtime;
-			done = screen->WipeDo (1);
-			C_DrawConsole (hw2d);	// console and
-			M_Drawer ();			// menu are drawn even on top of wipes
-			screen->Update ();		// page flip or blit buffer
-			NetUpdate ();			// [RH] not sure this is needed anymore
-		} while (!done);
-		screen->WipeCleanup();
-		I_FreezeTime(false);
-		GSnd->SetSfxPaused(false, 1);
+			while (!D_WipeStep ());
+		}
 	}
 
 	cycles.Unclock();
 	FrameCycles = cycles;
 }
+
+//==========================================================================
+//
+// D_WipeStep
+//
+// [rc4l] One tic of a running wipe once one is due, with the console and menu drawn over it; true once it has ended.
+//==========================================================================
+
+bool D_WipeStep ()
+{
+	const unsigned int nowtime = I_MSTime();
+	// Using 35 here feels too slow.
+	if (zx::mainloop::ComputeWipeTicsDue(s_wipeStart, nowtime) < 1)
+		return false;
+	s_wipeStart = nowtime;
+	// [rc4l] Each step is a frame of its own, so its 2D starts afresh as D_Display's does; the console and menu piled up under one generation and were drawn past the backend's vertices.
+	zx::draw2d::Clear2D();
+	const bool done = screen->WipeDo (1);
+	C_DrawConsole (s_wipeHw2d);	// console and
+	M_Drawer ();			// menu are drawn even on top of wipes
+	screen->Update ();		// page flip or blit buffer
+	NetUpdate ();			// [RH] not sure this is needed anymore
+	if (done)
+	{
+		screen->WipeCleanup();
+		I_FreezeTime(false);
+		GSnd->SetSfxPaused(false, 1);
+		s_wiping = false;
+		s_framesSinceWipe = 0;
+	}
+	return done;
+}
+
+bool D_WipeRunning ()
+{
+	return s_wiping;
+}
+
+// [rc4l] A soak mark waits out a running wipe and the frame after it, since its copies of both screens would read as memory kept.
+static const bool s_soakReadyInstalled = (zx::telemetry::SetSoakReady ([] { return zx::mainloop::ComputeAtRestAfterWipe (D_WipeRunning (), s_framesSinceWipe); }), true);
 
 //==========================================================================
 //
@@ -1256,9 +1476,22 @@ void D_ErrorCleanup ()
 //
 //==========================================================================
 
+// [rc4l] The last tic I_StartFrame ran for, reset each time the loop is entered.
+static int s_lastTic;
+
+// [rc4l] Frame-synchronous IO once for each new tic on either schedule, since the game thread's frames skipped it and left SDL's key table unbuilt and the pads unread in a level.
+static void D_StartFrameIO ()
+{
+	if (gametic > s_lastTic)
+	{
+		s_lastTic = gametic;
+		I_StartFrame ();
+	}
+}
+
 void D_DoomLoop ()
 {
-	int lasttic = 0;
+	s_lastTic = 0;
 
 	// Clamp the timer to TICRATE until the playloop has been entered.
 	r_NoInterpolate = true;
@@ -1270,12 +1503,54 @@ void D_DoomLoop ()
 	// at the bottom of the log alongside the sound/VoIP init lines, not scrolled off mid-startup.
 	ZX_CrashReportLogStatus ();
 
+	// [rc4l] A browser's driver takes the frames from here, and D_DoomMain unwinds back to it.
+	if (zx::mainloop::Stepped ())
+		zx::mainloop::StartStepped (D_RunFrame);
+
 	for (;;)
+		D_RunFrame ();
+}
+
+//==========================================================================
+//
+// D_RunFrame
+//
+// [rc4l] One pass of the main loop, which D_DoomLoop repeats and a browser calls once an animation frame.
+//==========================================================================
+
+void D_RunFrame ()
+{
 	{
 		try
 		{
-			zx::updater::Tick(); // [rc4l] fires the deferred update check + drains its verdict log (main thread)
-			MCP_Bridge_Poll();
+			// [rc4l] The only place a restart is thrown from. Anything that wants one sets the flag
+			// and returns normally; see D_RequestRestart.
+			if (s_restartRequested)
+			{
+				zx::gameloop::FinishInFlight ();   // [rc4l] features/handoff: never unwind beside a running tic
+				s_restartRequested = false;
+				throw CRestartException();
+			}
+
+			// [rc4l] features/handoff: a quit takes the game back from a tic in flight first.
+			if (zx::mainloop::QuitPending ()) zx::gameloop::FinishInFlight ();
+			zx::mainloop::FinishPendingQuit ();
+
+			// [rc4l] A wipe a stepped loop is running takes the whole frame, as D_Display's own loop does on the desktop.
+			if (D_WipeRunning ())
+			{
+				D_WipeStep ();
+				return;
+			}
+
+			s_framesSinceWipe = zx::mainloop::ComputeFramesSinceWipe (s_framesSinceWipe);
+			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
+			MCP_RPC_FrameEnd();   // [rc4l] perf.capture's frame, which the bridge's poll below skips while a tic is in flight
+			// [rc4l] features/handoff: what may load wads, maps or a server, or answer an RPC about the game, waits for the handoff.
+			if (!zx::handoff::TicInFlight ())
+			{
+				D_RunHandoffWork ();
+			}
 			switch ( NETWORK_GetState( ))
 			{
 			case NETSTATE_CLIENT:
@@ -1288,14 +1563,15 @@ void D_DoomLoop ()
 					CLIENT_GetPackets( );
 
 				// frame syncronous IO operations
-				if (gametic > lasttic)
-				{
-					lasttic = gametic;
-					I_StartFrame ();
-				}
+				D_StartFrameIO ();
 
 				// Run at least 1 tick.
-				TryRunTics( );
+				{
+					const int ticBefore = gametic;
+					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
+					TryRunTics( );
+					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
+				}
 
 				// Move positional sounds.
 				// NOTE: .camera can be NULL if player has loaded the level but
@@ -1307,22 +1583,42 @@ void D_DoomLoop ()
 				// [AK] Don't call I_StartTic() if we're currently using the old
 				// Skulltag mouse behaviour.
 				if ( cl_useskulltagmouse == false )
+				{
+					const zx::framephase::Scope inputPhase( zx::framephase::kPhaseInput );
 					I_StartTic( );
+				}
+				zx::frame::DebugOrbit();   // [rc4l] fua_debug_orbit
 
-				D_Display( );
+				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
+				{
+					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+					D_Display( );
+				}
 				break;
 			case NETSTATE_SERVER:
+
+				// [rc4l] By the time we are ticking, the socket is bound and the map is up -- which
+				// is what "ready" has to mean. Anything earlier and the game connects to a server
+				// that is not listening yet, and the player is shown a network timeout for what was
+				// really just impatience.
+				SERVER_FUA_AnnounceReadyOnce( );
 
 				SERVER_Tick( );
 				break;
 			default:
 
 				// frame syncronous IO operations
-				if (gametic > lasttic)
+				D_StartFrameIO ();
+
+				// [rc4l] The server registries asked once a few seconds in and the browser's clocks pumped every frame on either schedule, so the list is there when the menu opens.
+				BROWSER_BackgroundTick( );
+
+				// [rc4l] features/handoff: fua_gamethread's schedule, a tic's playsim on the game thread and this frame drawn beside it.
+				if (zx::gameloop::GameThreadFrame ())
 				{
-					lasttic = gametic;
-					I_StartFrame ();
+					break;
 				}
+
 				
 				// process one or more tics
 				if (singletics)
@@ -1345,27 +1641,51 @@ void D_DoomLoop ()
 				}
 				else
 				{
+					const int ticBefore = gametic;
+					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
 					TryRunTics (); // will run at least one tic
+					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
 				}
+
 				// Update display, next frame, with current state.
-				I_StartTic ();
-				D_Display ();
+				D_FrameInput ();
+				MCP_RPC_MarkRender(); // [rc4l] coarse sim|render split for the MCP perf profiler (no-op when off)
+				// [rc4l] features/handoff: the frame's touches of the game in the handoff, then the frame, which may touch none.
+				D_PrepareDisplay (true);
+				zx::gameloop::FrameBegins ();
+				{
+					const zx::framephase::Scope displayPhase( zx::framephase::kPhaseDisplay );
+					D_Display ();
+				}
+				zx::gameloop::FrameEnds ();
 				break;
 			}
 		}
 		catch (CRecoverableError &error)
 		{
-			if (error.GetMessage ())
-			{
-				// [BC] Give this message a little more presence in server mode.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					Printf( "*** ERROR: %s\n", error.GetMessage( ));
-				else
-					Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
-			}
-			D_ErrorCleanup ();
+			D_RecoverFromError (error);
 		}
 	}
+}
+
+//==========================================================================
+//
+// D_RecoverFromError
+//
+// [rc4l] The loop's answer to a recoverable error, shared with commands the page runs between frames.
+//==========================================================================
+
+void D_RecoverFromError (CRecoverableError &error)
+{
+	if (error.GetMessage ())
+	{
+		// [BC] Give this message a little more presence in server mode.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			Printf( "*** ERROR: %s\n", error.GetMessage( ));
+		else
+			Printf (PRINT_BOLD, "\n%s\n", error.GetMessage());
+	}
+	D_ErrorCleanup ();
 }
 
 //==========================================================================
@@ -1644,7 +1964,9 @@ void D_DoAdvanceDemo (void)
 		break;
 	}
 
-	if (pagename)
+	// [rc4l] uzdoom@484eb347c: pagename is an FString here, and FString has no operator bool --
+	// this relied on an implicit conversion rather than testing whether it is empty.
+	if (pagename.IsNotEmpty())
 	{
 		if (Page != NULL)
 		{
@@ -2074,6 +2396,47 @@ void D_AddSubdirectory (const char *Subdirectory)
 //
 //==========================================================================
 
+//==========================================================================
+//
+// [rc4l] Which fua_core_*.pk3 are actually sitting next to the exe.
+//
+// Only ever called on the failure path, so the scan costs nothing in the normal case.
+//
+//==========================================================================
+
+static FString d_FuaDescribeFoundCores( void )
+{
+	// The scan is ours because it is I/O; which names count and what to say about them belong to
+	// features/core-pk3/computation, where both are asserted.
+	std::vector<std::string> found;
+	findstate_t fileinfo;
+	void *handle;
+
+	FString pattern = progdir;
+	if (( pattern.Len( ) > 0 ) && ( pattern[pattern.Len( ) - 1] != '/' ))
+		pattern += '/';
+	pattern += "*.pk3";
+
+	if (( handle = I_FindFirst( pattern.GetChars( ), &fileinfo )) != ((void *)-1))
+	{
+		do
+		{
+			if (( I_FindAttr( &fileinfo ) & FA_DIREC ) != 0 )
+				continue;
+
+			const std::string name = I_FindName( &fileinfo );
+			if ( zx::IsCorePk3Name( name ))
+				found.push_back( name );
+		}
+		while ( I_FindNext( handle, &fileinfo ) == 0 );
+		I_FindClose( handle );
+	}
+
+	return FString( zx::DescribeFoundCores( BASEWAD, found ).c_str( ));
+}
+
+//==========================================================================
+
 static const char *BaseFileSearch (const char *file, const char *ext, bool lookfirstinprogdir)
 {
 	static char wad[PATH_MAX];
@@ -2093,7 +2456,8 @@ static const char *BaseFileSearch (const char *file, const char *ext, bool lookf
 		return wad;
 	}
 
-	if (GameConfig->SetSection ("FileSearch.Directories"))
+	// [rc4l] uzdoom@a013703e1 -- BaseFileSearch can run before the config exists.
+	if (GameConfig != NULL && GameConfig->SetSection ("FileSearch.Directories"))
 	{
 		const char *key;
 		const char *value;
@@ -2234,6 +2598,47 @@ static FString ParseGameInfo(TArray<FString> &pwads, const char *fn, const char 
 				// information from the launcher instead.
 				if ( Args->CheckParm ( "-connect" ) )
 					continue;
+
+				// [rc4l] PROVENANCE: NO UPSTREAM COMMIT -- ours.
+				//   SUPERSEDED BY: nothing. Upstream reaches this with a hand-typed command line,
+				//   where naming the same file twice is the user's own doing. A catalogue that lists
+				//   what a mod needs, on a build whose clients auto-load nothing, is ours.
+				//   ON PORT: keep.
+				//
+				// ALREADY ASKED FOR? Then leave it. A GAMEINFO naming a file the command line also
+				// names loaded it TWICE, as two independent entries in the wad list.
+				//
+				// Which nothing survives on a server. network_InitPWADList walks that list, so the
+				// server advertised the file twice and no client could match it: a joiner loads it
+				// once, the counts differ, and authentication refuses the join naming a file both
+				// sides plainly have. Super Skulltag hit it exactly this way -- its pk3 LOADs
+				// skulltag_content, our entry lists it so it can be downloaded, and hosting it was
+				// unjoinable from the moment it otherwise worked.
+				//
+				// The client escaped it only by the branch above: with -connect it skips auto-loading
+				// altogether, so the asymmetry that hid this is the same one that made it fatal.
+				{
+					bool bAlready = false;
+
+					for ( unsigned int i = 0; i < pwads.Size( ); ++i )
+					{
+						const char *pszHave = pwads[i].GetChars( );
+						const char *pszSlash = strrchr( pszHave, '/' );
+						const char *pszBack = strrchr( pszHave, '\\' );
+
+						if (( pszBack != NULL ) && (( pszSlash == NULL ) || ( pszBack > pszSlash )))
+							pszSlash = pszBack;
+
+						if ( stricmp( pszSlash ? ( pszSlash + 1 ) : pszHave, sc.String ) == 0 )
+						{
+							bAlready = true;
+							break;
+						}
+					}
+
+					if ( bAlready )
+						continue;
+				}
 
 				if (!FileExists(checkpath))
 				{
@@ -2415,6 +2820,19 @@ static void D_DoomInit()
 	// forgot to close must be cleared before any resources are deleted.
 	atterm( ACS_ClearLumpHandles );
 
+	// [rc4l] Two halves of one promise: a server we started must not outlive us.
+	//
+	// HostShutdown is the tidy half -- an orderly quit takes the child with it. HostWatchdogInit is
+	// the other half, running in the CHILD, for the untidy ones: it is the whole guarantee on macOS,
+	// which has no PR_SET_PDEATHSIG, and a second lock on the door elsewhere. Registered this early
+	// because a startup that fails after the spawn still has to clean up after itself.
+	atterm( zx::HostShutdown );
+
+	// A port mapping outlives the game unless something gives it back, and a quit is the commonest
+	// way for one to be forgotten.
+	atterm( zx::PortMapShutdown );
+	zx::HostWatchdogInit( );
+
 	gamestate = GS_STARTUP;
 
 	// Determine if we're going to be a server, client, or local player.
@@ -2455,9 +2873,6 @@ static void D_DoomInit()
 
 	FRandom::StaticClearRandom ();
 
-	Printf ("M_LoadDefaults: Load system defaults.\n");
-	M_LoadDefaults ();			// load before initing other systems
-
 }
 
 //==========================================================================
@@ -2466,8 +2881,12 @@ static void D_DoomInit()
 //
 //==========================================================================
 
-static void AddAutoloadFiles(const char *gamesection)
+static void AddAutoloadFiles(const char *autoname)
 {
+	// [rc4l] uzdoom@258822ef3 -- the Autoname is a dotted hierarchy now, walked prefix by
+	// prefix, so the separate Group mechanism is gone. The trailing dot simplifies that walk.
+	LumpFilterIWAD.Format("%s.", autoname);
+
 	if (!(gameinfo.flags & GI_SHAREWARE) && !Args->CheckParm("-noautoload"))
 	{
 		FString file;
@@ -2499,12 +2918,16 @@ static void AddAutoloadFiles(const char *gamesection)
 		file += ".Autoload";
 		D_AddConfigWads (allwads, file);
 
-		// Add IWAD-specific wads
-		if (gamesection != NULL)
+		// Add IWAD-specific wads, one section per dotted prefix. This supersedes both the group
+		// section and the uzdoom@a91997d12 empty-name guard: an empty name yields no prefixes.
+		long len;
+		int lastpos = -1;
+
+		while ((len = LumpFilterIWAD.IndexOf('.', lastpos+1)) > 0)
 		{
-			file = gamesection;
-			file += ".Autoload";
+			file = LumpFilterIWAD.Left(len) + ".Autoload";
 			D_AddConfigWads(allwads, file);
+			lastpos = len;
 		}
 	}
 }
@@ -2746,10 +3169,12 @@ static void FinalGC()
 
 void D_DoomMain (void)
 {
+	zx::handoff::NoteMainThread();   // [rc4l] before any seam, so their thread checks know which thread is main
 	int p;
 	const char *v;
 	const char *wad;
 	DArgs *execFiles;
+	FIWadManager *iwad_man = NULL;
 	TArray<FString> pwads;
 	/* [BB] Zandronum uses different bot code and thus doesn't need these.
 	FString *args;
@@ -2765,9 +3190,27 @@ void D_DoomMain (void)
 	}
   */
 
+	if (Args->CheckParm("-hashfiles"))
+	{
+		const char *filename = "fileinfo.txt";
+		Printf("Hashing loaded content to: %s\n", filename);
+		hashfile = fopen(filename, "w");
+		if (hashfile)
+		{
+			fprintf(hashfile, "%s version %s (%s)\n", GAMENAME, GetVersionString(), GetGitHash());
+#ifdef __VERSION__
+			fprintf(hashfile, "Compiler version: %s\n", __VERSION__);
+#endif
+			fprintf(hashfile, "Command line:");
+			for (int i = 0; i < Args->NumArgs(); ++i)
+			{
+				fprintf(hashfile, " %s", Args->GetArg(i));
+			}
+			fprintf(hashfile, "\n");
+		}
+	}
+
 	D_DoomInit();
-	PClass::StaticInit ();
-	atterm(FinalGC);
 
 	// [RH] Make sure zdoom.pk3 is always loaded,
 	// as it contains magic stuff we need.
@@ -2775,9 +3218,25 @@ void D_DoomMain (void)
 	wad = BaseFileSearch (BASEWAD, NULL, true);
 	if (wad == NULL)
 	{
-		I_FatalError ("Cannot find " BASEWAD);
+		// [rc4l] Name the cores we DID find. The pk3 carries this build's release key, so the usual
+		// cause of getting here is a mismatched pair, and saying which ones are present turns that
+		// from a dead end into a diagnosis.
+		I_FatalError ("Cannot find %s.\n%s", BASEWAD, d_FuaDescribeFoundCores( ).GetChars( ));
 	}
 	FString basewad = wad;
+
+	// [rc4l] uzdoom@dfda74ffe -- the IWAD list is parsed before the config loads, so the config
+	// can generate an autoload section per IWAD. M_LoadDefaults moves out of D_DoomInit to here;
+	// Zandronum's map rotation, pathing and callvote constructors still run ahead of it inside
+	// D_DoomInit, which is what the comment there requires.
+	iwad_man = new FIWadManager;
+	iwad_man->ParseIWadInfos(basewad);
+
+	Printf ("M_LoadDefaults: Load system defaults.\n");
+	M_LoadDefaults (iwad_man);			// load before initing other systems
+
+	PClass::StaticInit ();
+	atterm(FinalGC);
 
 
 	// reinit from here
@@ -2787,6 +3246,11 @@ void D_DoomMain (void)
 		if (restart)
 		{
 			C_InitConsole(SCREENWIDTH, SCREENHEIGHT, false);
+
+			// [rc4l] Startup state that is written once-if-empty and so survives a restart onto a
+			// DIFFERENT WAD set. The reasoning and the reset itself live in features/wadreload, so
+			// this stays a one-line hook in a vendored file.
+			zx::wadreload::ResetStartupStateForRestart();
 		}
 		nospriterename = false;
 
@@ -2799,9 +3263,43 @@ void D_DoomMain (void)
 
 		// The IWAD selection dialogue does not show in fullscreen so if the
 		// restart is initiated without a defined IWAD assume for now that it's not going to change.
-		if (iwad.Len() == 0) iwad = lastIWAD;
+		if (iwad.IsEmpty()) iwad = lastIWAD;	// [rc4l] uzdoom@484eb347c
 
-		FIWadManager *iwad_man = new FIWadManager;
+		// [rc4l] Teach the IWAD search about Doomseeker's and GZDoom's folders BEFORE it looks.
+		//
+		// This used to happen only when joining a server, which left a gap nobody would guess at: a
+		// new player whose IWADs live in a Doomseeker or GZDoom folder, and who has no Steam copy,
+		// got an empty IWAD picker on first launch -- and then a full one later, because joining once
+		// wrote those paths into their ini for good. The list appearing to fix itself is worse than
+		// it being wrong, so the paths are registered here too, before anything is searched.
+		//
+		// Registering twice is free: AddPathOnce is idempotent and only adds directories that exist.
+		zx::RegisterKnownWadDirectories();
+
+		// [rc4l] And our own download folder, before anything searches it.
+		zx::waddownload::RegisterDownloadDirEarly();
+
+		// [rc4l] And any mirror shipped since this player's saved list was written.
+		zx::waddownload::MergeShippedDownloadSites();
+
+		// [rc4l] Anonymous accounts: load or create this machine's identity before any join can
+		// need it, so the handshake itself never touches the disk.
+		{
+			const std::string identityRoot = zx::Identity_ConfigRoot( );
+			zx::Identity_InitClientHere( identityRoot.c_str( ));
+		}
+
+		// [rc4l] iwad_man is created earlier now (uzdoom@dfda74ffe moved it ahead of M_LoadDefaults,
+		// which needs it to generate the autoload sections), so this only fills it in if that did
+		// not already happen. The registration above still lands before any searching.
+		// [rc4l] A restart arrives here with no manager (see the delete at the end of the loop),
+		// and a fresh one has no IWADINFO in it -- FindIWAD reads those tables, so parse before
+		// asking. The first boot path does this above, ahead of M_LoadDefaults.
+		if (iwad_man == NULL)
+		{
+			iwad_man = new FIWadManager;
+			iwad_man->ParseIWadInfos(basewad);
+		}
 		const FIWADInfo *iwad_info = iwad_man->FindIWAD(allwads, iwad, basewad);
 		gameinfo.gametype = iwad_info->gametype;
 		gameinfo.flags = iwad_info->flags;
@@ -2845,6 +3343,11 @@ void D_DoomMain (void)
 		pwads.Clear();
 		pwads.ShrinkToFit();
 
+		if (hashfile)
+		{
+			Printf("Notice: File hashing is incredibly verbose. Expect loading files to take much longer than usual.\n");
+		}
+
 		Printf ("W_Init: Init WADfiles.\n");
 		Wads.InitMultipleFiles (/*allwads*/); // [BB] Removed argument.
 		// [rc4l] Tag crash reports with the IWAD + full load order (bare filenames only).
@@ -2852,6 +3355,10 @@ void D_DoomMain (void)
 		allwads.Clear();
 		allwads.ShrinkToFit();
 		SetMapxxFlag();
+
+		// [rc4l] uzdoom@c36222d2e -- key setup happens here now, after the wads are loaded,
+		// because the default bindings come from DEFBINDS lumps.
+		GameConfig->DoKeySetup(gameinfo.ConfigName);
 
 		// Now that wads are loaded, define mod-specific cvars.
 		ParseCVarInfo();
@@ -3035,6 +3542,10 @@ void D_DoomMain (void)
 		// Create replacements for dehacked pickups
 		FinishDehPatch();
 
+		// [rc4l] uzdoom@15dbbc913 -- seed the map from MAPINFO first, then let DECORATE's numbers
+		// overwrite it. That order is what makes a DECORATE doomed number win.
+		InitActorNumsFromMapinfo();
+		InitSpawnablesFromMapinfo();
 		FActorInfo::StaticSetActorNums ();
 
 		// [TP] Init preferred weapon order
@@ -3123,13 +3634,34 @@ void D_DoomMain (void)
 		DATABASE_Construct( );
 
 		// [BC] Initialize the browser module.
-		BROWSER_Construct( );
+		// [rc4l] ONCE PER PROCESS, not once per restart. wad_reload restarts the engine in place by
+		// throwing CRestartException, and this ran again on the way back through: it re-Init'd both
+		// UDP buffers over live ones and cleared the entire server list. So joining a server that
+		// needed different files, the one case where a restart is not the player's own idea, emptied
+		// the browser. The session had already had its one automatic sweep, so the list then stayed
+		// empty until REFRESH was pressed. That is the "the server I just clicked vanished" report.
+		//
+		// Nothing this sets up depends on which WADs are loaded, so there is nothing to redo.
+		if ( !restart )
+			BROWSER_Construct( );
+
+		// [rc4l] The catalogue is read HERE rather than when somebody opens the host screen, so an
+		// entry that could not be used is reported while the console is still on screen. Cheap: a
+		// handful of small files. Re-read after a restart because a wad_reload may have been the
+		// thing that changed what is on disk.
+		zx::CatalogueCheckAtStartup( );
 
 		// [RH] Lock any cvars that should be locked now that we're
 		// about to begin the game.
 		FBaseCVar::EnableNoSet ();
 
 		delete iwad_man;	// now we won't need this anymore
+		// [rc4l] ...and the restart path comes back around to the `if (iwad_man == NULL)` test
+		// above, so the pointer has to say it is gone. Leaving it dangling meant a restart
+		// (wad_reload, hosting from the catalogue, joining a server) ran FindIWAD against freed
+		// memory: the tables read back as garbage sizes and the first name it touched was not a
+		// string any more. That is the crash on the second trip through D_DoomMain.
+		iwad_man = NULL;
 
 		// [RH] Run any saved commands from the command line or autoexec.cfg now.
 		gamestate = GS_FULLCONSOLE;
@@ -3208,9 +3740,10 @@ void D_DoomMain (void)
 				{
 					G_NewInit( );
 
-					// Check if we have map rotation setup. If we do, use the first map there.
+					// Check if we have map rotation setup. If we do, use the first map there --
+					// [rc4l] or the one that was asked for, when the rotation holds it.
 					if ( useMapRotation )
-						MAPROTATION_StartNewGame( );
+						MAPROTATION_StartNewGame( startmap );
 					else
 						G_InitNew( startmap, false );
 				}
@@ -3228,7 +3761,7 @@ void D_DoomMain (void)
 							G_BeginRecording (startmap);
 						// [AK] Use a map from the map rotation if it should be used.
 						if ((NETWORK_GetState() != NETSTATE_CLIENT) && (useMapRotation))
-							MAPROTATION_StartNewGame();
+							MAPROTATION_StartNewGame( startmap );
 						else
 							G_InitNew (startmap, false);
 					if (StoredWarp.IsNotEmpty())
@@ -3282,6 +3815,12 @@ void D_DoomMain (void)
 		else
 		{
 			G_InitNew( startmap, false );
+		}
+		// [rc4l] A restart makes a startup screen as a first boot does, but only a first boot's is deleted above.
+		if ( restart )
+		{
+			delete StartScreen;
+			StartScreen = NULL;
 		}
 
 		// Client mode starts off in the full console!
@@ -3361,10 +3900,6 @@ void D_DoomMain (void)
 
 UNSAFE_CCMD(restart)
 {
-	// [AK] This function may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
-
 	// remove command line args that would get in the way during restart
 	Args->RemoveArgs("-iwad");
 	Args->RemoveArgs("-deh");
@@ -3389,7 +3924,9 @@ UNSAFE_CCMD(restart)
 	}
 
 	// initiate the restart
-	throw CRestartException();
+	// [rc4l] Deferred for the same reason as wad_reload: a console command can be dispatched from
+	// inside the Cocoa event pump, and the throw must not unwind through Objective-C frames.
+	D_RequestRestart();
 }
 
 //==========================================================================

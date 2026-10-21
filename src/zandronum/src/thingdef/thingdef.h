@@ -139,6 +139,9 @@ public:
 	void Copy(int dest, int src, int cnt);
 	int ResolveAll();
 	FxExpression *Get(int no);
+	// [ForkUnderA] fua-caching: the class whose DECORATE owns entry no, so the
+	// spawn-closure precache can group constant refs by class without the VM.
+	const PClass *GetOwner(unsigned int no);
 	unsigned int Size() { return expressions.Size(); }
 };
 
@@ -266,11 +269,12 @@ enum EDefinitionType
 #define GCC_MSEG
 #else
 #define MSVC_ASEG
-#define GCC_ASEG __attribute__((section(SECTION_AREG)))
+// [rc4l] used, or a linker that collects unreferenced data (wasm-ld's --gc-sections) drops entries only the section walk reaches.
+#define GCC_ASEG __attribute__((section(SECTION_AREG))) __attribute__((used))
 #define MSVC_PSEG
-#define GCC_PSEG __attribute__((section(SECTION_GREG)))
+#define GCC_PSEG __attribute__((section(SECTION_GREG))) __attribute__((used))
 #define MSVC_MSEG
-#define GCC_MSEG __attribute__((section(SECTION_MREG)))
+#define GCC_MSEG __attribute__((section(SECTION_MREG))) __attribute__((used))
 #endif
 
 

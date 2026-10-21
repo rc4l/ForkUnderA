@@ -39,12 +39,14 @@
 
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/decals/decals.h"   // [rc4l] every mark, made and judged in one place
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
 #include "features/mbf21/computation/damage_groups_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "p_trace.h"
+EXTERN_CVAR (Bool, fua_decal_log)
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
 
@@ -124,7 +126,6 @@ CVAR(Int, sv_smartaim, 0, CVAR_ARCHIVE | CVAR_SERVERINFO)
 CVAR(Bool, cl_doautoaim, false, CVAR_ARCHIVE)
 
 static void CheckForPushSpecial(line_t *line, int side, AActor *mobj, bool windowcheck);
-static void SpawnShootDecal(AActor *t1, const FTraceResults &trace);
 static void SpawnDeepSplash(AActor *t1, const FTraceResults &trace, AActor *puff,
 	fixed_t vx, fixed_t vy, fixed_t vz, fixed_t shootz, bool ffloor = false);
 
@@ -138,6 +139,19 @@ static int		tmunstuck;     /* killough 8/1/98: whether to allow unsticking */
 // keep track of special lines as they are hit,
 // but don't process them until the move is proven valid
 TArray<line_t *> spechit;
+
+// [rc4l] Secnode replay: P_CreateSecNodeList used to re-sweep the same blockmap lines
+// P_CheckPosition had just enumerated for the same (thing, x, y) box. P_CheckPosition
+// records its completed line enumeration here and AActor::LinkToWorld's
+// P_CreateSecNodeList replays it in identical order instead of sweeping again.
+// One-shot: every P_CreateSecNodeList call consumes or discards the recording, so a
+// stale list can never replay -- the world can change between unrelated calls, but not
+// between a move's check and its link, which run back to back inside P_TryMove with no
+// thinkers in between.
+static TArray<line_t *> SecnodeReplayLines;
+static AActor *SecnodeReplayThing;
+static fixed_t SecnodeReplayX, SecnodeReplayY;
+static bool SecnodeReplayValid;
 
 // Temporary holder for thing_sectorlist threads
 msecnode_t* sector_list = NULL;		// phares 3/16/98
@@ -781,7 +795,10 @@ static int untouched(line_t *ld, FCheckPosition &tm)
 //
 //==========================================================================
 
+
 static // killough 3/26/98: make static
+
+
 bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 {
 	bool rail = false;
@@ -964,6 +981,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 		tm.floorpic = open.floorpic;
 		tm.touchmidtex = open.touchmidtex;
 		tm.abovemidtex = open.abovemidtex;
+		tm.floorline = ld;   // [rc4l] which line this was, for the step check in P_TryMove
 		tm.thing->BlockingLine = ld;
 	}
 	else if (open.bottom == tm.floorz)
@@ -1044,7 +1062,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	// Both things overlap in x or y direction
 	bool unblocking = false;
 
-	if (tm.FromPMove)
+	// [rc4l] uzdoom@0a16855232 -- players get the same unstick handling as a P_PlayerMove, so two
+	// overlapping players can separate instead of staying wedged together.
+	if (tm.FromPMove || tm.thing->player != NULL)
 	{
 		// Both actors already overlap. To prevent them from remaining stuck allow the move if it
 		// takes them further apart or the move does not change the position (when called from P_ChangeSector.)
@@ -1067,6 +1087,19 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	}
 
 	// [RH] If the other thing is a bridge, then treat the moving thing as if it had MF2_PASSMOBJ, so
+	// [rc4l] uzdoom@e5340ad63: a reflective actor with THRUREFLECT lets missiles pass through
+	// instead of reflecting them, keeping their speed and angle. A seeker retargets so it does
+	// not immediately home back onto what it just passed.
+	if ((thing->flags7 & MF7_THRUREFLECT) && (thing->flags2 & MF2_REFLECTIVE) && (tm.thing->flags & MF_MISSILE))
+	{
+		if (tm.thing->flags2 & MF2_SEEKERMISSILE)
+		{
+			tm.thing->tracer = tm.thing->target;
+		}
+		tm.thing->target = thing;
+		return true;
+	}
+
 	// you can use a scrolling floor to move scenery items underneath a bridge.
 	if ((tm.thing->flags2 & MF2_PASSMOBJ || thing->flags4 & MF4_ACTLIKEBRIDGE) && !(i_compatflags & COMPATF_NO_PASSMOBJ))
 	{ // check if a mobj passed over/under another object
@@ -1315,7 +1348,9 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						// [rc4l] uzdoom@5ac7e4fc3: friends never harm each other, unless the shooter
 						// has HARMFRIENDS set. The species and TIDtoHate tests below now only apply
 						// when the two are NOT friends, which is what the else was added for.
-						if (!(thing->flags7 & MF7_HARMFRIENDS)) return false;
+						// [rc4l] uzdoom@123da6873 -- the flag belongs to the SHOOTER, not the victim;
+						// it was read off `thing` (the thing being hit) until now.
+						if (!(tm.thing->target->flags7 & MF7_HARMFRIENDS)) return false;
 					}
 					else
 					{
@@ -1479,7 +1514,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		damage = tm.thing->GetMissileDamage((tm.thing->flags4 & MF4_STRIFEDAMAGE) ? 3 : 7, 1);
 		if ( NETWORK_InClientMode() == false )
 		{
-			if ((damage > 0) || (tm.thing->flags6 & MF6_FORCEPAIN))
+			if ((damage > 0) || (tm.thing->flags6 & MF6_FORCEPAIN) || (tm.thing->flags7 & MF7_CAUSEPAIN))
 			{
 				if (( tm.thing->target ) &&
 					( tm.thing->target->player ) &&
@@ -1644,6 +1679,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	newsec = P_PointInSector(x, y);
 	tm.ceilingline = thing->BlockingLine = NULL;
+	tm.floorline = NULL;
 
 	// The base floor / ceiling is from the subsector that contains the point.
 	// Any contacted lines the step closer together will adjust them.
@@ -1788,11 +1824,21 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	bool good = true;
 
+	// [rc4l] Loop-invariant: the answer depends only on `thing` and per-tic client state, so hoist
+	// it out of the line loop. It was being recomputed (network state + demo lookups) once per
+	// blockmap line, per move, per actor -- measurable during mass-death actor storms.
+	const bool specUnrestricted = P_IsSpectatorUnrestricted(thing);
+
+	SecnodeReplayValid = false;
+	SecnodeReplayLines.Clear();
+
 	while ((ld = it.Next()))
 	{
+		SecnodeReplayLines.Push(ld); // [rc4l] record the enumeration for the secnode replay
+
 		// [AK] Spectators without physical restrictions should only be executing
 		// line specials if they reached this point.
-		if (P_IsSpectatorUnrestricted(thing))
+		if (specUnrestricted)
 		{
 			if (ld->special)
 				spechit.Push(ld);
@@ -1802,6 +1848,13 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 		good &= PIT_CheckLine(ld, box, tm);
 	}
+	// [rc4l] The enumeration completed, so it is a faithful line list for this
+	// (thing, x, y) box -- publish it for the matching LinkToWorld.
+	SecnodeReplayThing = thing;
+	SecnodeReplayX = x;
+	SecnodeReplayY = y;
+	SecnodeReplayValid = true;
+
 	if (!good)
 	{
 		return false;
@@ -1839,7 +1892,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, bool actorsonly)
 
 bool P_TestMobjLocation(AActor *mobj)
 {
-	int flags;
+	ActorFlags flags;
 
 	flags = mobj->flags;
 	mobj->flags &= ~MF_PICKUP;
@@ -2434,7 +2487,11 @@ bool P_TryMove(AActor *thing, fixed_t x, fixed_t y,
 	// [BC] Flag this thing as having moved.
 	thing->STFlags |= STFL_POSITIONCHANGED;
 
-	thing->LinkToWorld();
+	// [rc4l] P_CheckPosition already resolved this exact (x, y) into tm.sector at the top of this
+	// move; the parameterless LinkToWorld() would walk the gameplay BSP again for the identical
+	// answer. Bit-exact elision -- measured against mass simultaneous deaths (a "kill monsters"
+	// storm of ~5k effect actors), where the per-move re-walk was a top sim hotspot.
+	thing->LinkToWorld(tm.sector);
 
 	if (thing->flags2 & MF2_FLOORCLIP)
 	{
@@ -2522,6 +2579,25 @@ bool P_TryMove(AActor *thing, fixed_t x, fixed_t y,
 	return true;
 
 pushline:
+	// [rc4l] A missile is about to explode here, so name the line it actually ran into.
+	//
+	// BlockingLine is assigned by every clause that narrows the movement box, and PIT_CheckLine
+	// keeps iterating after one has, so it ends up holding whichever line was visited LAST rather
+	// than the one that stopped anything. P_ExplodeMissile is handed it and the decal is offered to
+	// its sidedef, so the mark goes to a line the missile never touched -- on dbab02 a plasma ball
+	// stopped by a wall was reported against an invisible sector divider nine units in front of it,
+	// which carries no texture at any height, so vanilla made no mark at all while bullets marked
+	// the wall behind it perfectly well.
+	//
+	// Decided here because this is the one exit every failed move passes through, with both
+	// candidates in hand: whichever plane the missile is outside of is the one it hit.
+	if ((thing->flags & MF_MISSILE) && !(thing->flags & MF_NOCLIP))
+	{
+		if (thing->z < tm.floorz && tm.floorline != NULL)
+			thing->BlockingLine = tm.floorline;
+		else if (thing->z + thing->height > tm.ceilingz && tm.ceilingline != NULL)
+			thing->BlockingLine = tm.ceilingline;
+	}
 	thing->flags6 &= ~MF6_INTRYMOVE;
 /*
 	// [RH] Don't activate anything if just predicting
@@ -2662,7 +2738,8 @@ bool P_OldTryMove (AActor *thing, fixed_t x, fixed_t y,
 	thing->x = x;
 	thing->y = y;
 
-	thing->LinkToWorld( );
+	// [rc4l] Same elision as P_TryMove: tm.sector is P_CheckPosition's answer for this (x, y).
+	thing->LinkToWorld( tm.sector );
 
 	// if any special lines were hit, do the effect
 	// [AK] Allow spectators without physical restrictions to execute line specials.
@@ -3827,6 +3904,11 @@ bool P_BounceWall(AActor *mo)
 extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
+	// [rc4l] uzdoom@e5340ad63: a reflective actor with THRUREFLECT wants missiles to pass
+	// straight through, so there is nothing here to bounce off.
+	if (BlockingMobj && ((BlockingMobj->flags2 & MF2_REFLECTIVE) && (BlockingMobj->flags7 & MF7_THRUREFLECT)))
+		return true;
+
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
 		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
 		// projectile the victim's RipperLevel window rejects is not a ripper as far as this
@@ -4625,38 +4707,43 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 				return NULL;
 
 			// [RH] Spawn a decal
-			if (trace.HitType == TRACE_HitWall && trace.Line->special != Line_Horizon && !(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL))
+			// [rc4l] features/decals: a floor or ceiling hit is marked too, beside the game's own handling of it and never instead of it.
+			const bool fuaHitWall = ( trace.HitType == TRACE_HitWall && trace.Line->special != Line_Horizon );
+			const bool fuaHitFlat = ( trace.HitType == TRACE_HitFloor || trace.HitType == TRACE_HitCeiling );
+			const bool fuaMarks = !(flags & LAF_NOIMPACTDECAL) && !(puffDefaults->flags7 & MF7_NODECAL);
+			if ((fuaHitWall || fuaHitFlat) && fuaMarks)
 			{
+				AActor *decalSource;
 				// [TN] If the actor or weapon has a decal defined, use that one.
 				if (t1->DecalGenerator != NULL ||
 					(t1->player != NULL && t1->player->ReadyWeapon != NULL && t1->player->ReadyWeapon->DecalGenerator != NULL))
 				{
 					// [ZK] If puff has FORCEDECAL set, do not use the weapon's decal
 					if (puffDefaults->flags7 & MF7_FORCEDECAL && puff != NULL && puff->DecalGenerator)
-						SpawnShootDecal(puff, trace);
+						decalSource = puff;
 					else
-						SpawnShootDecal(t1, trace);
+						decalSource = t1;
 				}
-
 				// Else, look if the bulletpuff has a decal defined.
 				else if (puff != NULL && puff->DecalGenerator)
 				{
-					SpawnShootDecal(puff, trace);
+					decalSource = puff;
 				}
-
 				// [BB] Clients dont' spawn the puff, so we have to look if the default puff has a decal defined.
 				else if( NETWORK_InClientMode()
 							&& pufftype && (GetDefaultByType (pufftype) != NULL) && GetDefaultByType (pufftype)->DecalGenerator)
 				{
-					SpawnShootDecal (GetDefaultByType (pufftype), trace);
+					decalSource = GetDefaultByType (pufftype);
 				}
-
 				else
 				{
-					SpawnShootDecal(t1, trace);
+					decalSource = t1;
 				}
+
+				zx::decals::MarkShot(decalSource, trace, zx::decals::kSourceHitscan);
 			}
-			else if (puff != NULL &&
+			// [rc4l] Stock's splash test exactly: only a wall decal stands in for it, so a marked floor still splashes.
+			if (!(fuaHitWall && fuaMarks) && puff != NULL &&
 				trace.CrossedWater == NULL &&
 				trace.Sector->heightsec == NULL &&
 				trace.HitType == TRACE_HitFloor)
@@ -4986,7 +5073,8 @@ void P_TraceBleed(int damage, fixed_t x, fixed_t y, fixed_t z, AActor *actor, an
 			vx, vy, vz, 172 * FRACUNIT, 0, ML_BLOCKEVERYTHING, actor,
 			bleedtrace, TRACE_NoSky))
 		{
-			if (bleedtrace.HitType == TRACE_HitWall)
+			// [rc4l] features/decals: blood marks the wall, floor or ceiling its trace reached, refused on a server as every impact is.
+			if (bleedtrace.HitType == TRACE_HitWall || bleedtrace.HitType == TRACE_HitFloor || bleedtrace.HitType == TRACE_HitCeiling)
 			{
 				PalEntry bloodcolor = actor->GetBloodColor();
 				if (bloodcolor != 0)
@@ -4996,16 +5084,7 @@ void P_TraceBleed(int damage, fixed_t x, fixed_t y, fixed_t z, AActor *actor, an
 					bloodcolor.b >>= 1;
 					bloodcolor.a = 1;
 				}
-
-				// [BC] Servers don't need to spawn decals.
-				if ( NETWORK_GetState( ) != NETSTATE_SERVER )
-				{
-					DImpactDecal::StaticCreate(bloodType,
-						bleedtrace.X, bleedtrace.Y, bleedtrace.Z,
-						bleedtrace.Line->sidedef[bleedtrace.Side],
-						bleedtrace.ffloor,
-						bloodcolor);
-				}
+				zx::decals::MarkBlood(bloodType, bleedtrace, vx, vy, vz, bloodcolor);
 			}
 		}
 	}
@@ -5082,6 +5161,7 @@ struct RailData
 	TArray<SRailHit> RailHits;
 	bool StopAtOne;
 	bool StopAtInvul;
+	bool ThruSpecies;
 
 	// [AK] Added caller and hitscan puff actor pointers.
 	AActor *pCaller;
@@ -5106,6 +5186,12 @@ static ETraceStatus ProcessRailHit(FTraceResults &res, void *userdata)
 	if (data->StopAtInvul && res.Actor->flags2 & MF2_INVULNERABLE)
 	{
 		return TRACE_Stop;
+	}
+
+	// Skip actors with the same species if the puff has MTHRUSPECIES.
+	if (data->ThruSpecies && res.Actor->GetSpecies() == data->pCaller->GetSpecies())
+	{
+		return TRACE_Skip;
 	}
 
 	// Save this thing for damaging later, and continue the trace
@@ -5178,6 +5264,7 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 
 	flags = (puffDefaults->flags6 & MF6_NOTRIGGER) ? 0 : TRACE_PCross | TRACE_Impact;
 	rail_data.StopAtInvul = (puffDefaults->flags3 & MF3_FOILINVUL) ? false : true;
+	rail_data.ThruSpecies = (puffDefaults->flags6 & MF6_MTHRUSPECIES) ? true : false;
 
 	// [AK] Remember the actor who fired the rail and the puff actor that is supposed to spawn.
 	rail_data.pCaller = source;
@@ -5241,20 +5328,25 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 			// [BC] Damage is server side.
 			if ( NETWORK_InClientMode() == false )
 			{
-				if (puffDefaults && puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
-				{
-					P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
-				}
 				// [BC/BB] Support for instagib.
 				if ( instagib )
 					damage = 999;
 
 				// [RK] If the attack source is a player, send the DMG_PLAYERATTACK flag.
 				// [rc4l] uzdoom@71ce4bcf0: pass the puff's FOILINVUL/FOILBUDDHA through, which
-				// the old call dropped entirely.
+				// the old call dropped entirely. uzdoom@375c0ac73 then folded the poison check and
+				// the flag reads under one puffDefaults guard -- the flag reads were dereferencing
+				// it unconditionally, immediately after a line that admits it can be NULL.
 				int dmgFlagPass = DMG_INFLICTOR_IS_PUFF | (source->player ? DMG_PLAYERATTACK : 0);
-				dmgFlagPass += (puffDefaults->flags3 & MF3_FOILINVUL) ? DMG_FOILINVUL : 0;
-				dmgFlagPass += (puffDefaults->flags7 & MF7_FOILBUDDHA) ? DMG_FOILBUDDHA : 0;
+				if (puffDefaults != NULL)	// is this even possible?
+				{
+					if (puffDefaults->PoisonDamage > 0 && puffDefaults->PoisonDuration != INT_MIN)
+					{
+						P_PoisonMobj(hitactor, thepuff ? thepuff : source, source, puffDefaults->PoisonDamage, puffDefaults->PoisonDuration, puffDefaults->PoisonPeriod, puffDefaults->PoisonDamageType);
+					}
+					if (puffDefaults->flags3 & MF3_FOILINVUL) dmgFlagPass |= DMG_FOILINVUL;
+					if (puffDefaults->flags7 & MF7_FOILBUDDHA) dmgFlagPass |= DMG_FOILBUDDHA;
+				}
 				int newdam = P_DamageMobj(hitactor, thepuff ? thepuff : source, source, damage, damagetype, dmgFlagPass);
 
 				if (bleed)
@@ -5279,12 +5371,12 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	// Spawn a decal or puff at the point where the trace ended.
 	// [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: the endpoint puff now spawns
 	// on floor/ceiling hits too, not only walls (older Zandronum was wall-only), with a sky-flat guard
-	// that destroys the puff if it landed on the open sky (unless the puff is MF3_SKYEXPLODE). The decal
-	// stays wall-only -- flats don't take wall decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
+	// that destroys the puff if it landed on the open sky (unless the puff is MF3_SKYEXPLODE). The mark goes
+	// wherever the puff does, judged by features/decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
 	const RailEndpointSpawn railEnd = ComputeRailEndpointSpawn(trace.HitType);
 	if (railEnd.decal)
 	{
-		SpawnShootDecal(source, trace);
+		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail);
 	}
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
@@ -5494,7 +5586,8 @@ CUSTOM_CVAR(Float, chase_dist, 90.f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 
 void P_AimCamera(AActor *t1, fixed_t &CameraX, fixed_t &CameraY, fixed_t &CameraZ, sector_t *&CameraSector)
 {
-	fixed_t distance = (fixed_t)(chase_dist * FRACUNIT);
+	// [rc4l] uzdoom@e0667544d: unclamped these overflow fixed_t and throw the camera off the map.
+	fixed_t distance = FLOAT2FIXED(clamp<float>(chase_dist, 0.f, 30000.f));
 	// [AK] If we're using free chasecam, use the angle and pitch of the camera.
 	// If not, use the passed actor's angle and pitch.
 	const bool usingFreeChasecam = FreeChasecam::IsBeingUsed();
@@ -5507,7 +5600,7 @@ void P_AimCamera(AActor *t1, fixed_t &CameraX, fixed_t &CameraY, fixed_t &Camera
 	vy = FixedMul(finecosine[pitch], finesine[angle]);
 	vz = finesine[pitch];
 
-	sz = t1->z - t1->floorclip + t1->height + (fixed_t)(chase_height * FRACUNIT);
+	sz = t1->z - t1->floorclip + t1->height + FLOAT2FIXED(clamp<float>(chase_height, -1000.f, 1000.f));	// [rc4l] uzdoom@e0667544d
 
 	if (Trace(t1->x, t1->y, sz, t1->Sector,
 		vx, vy, vz, distance, 0, 0, NULL, trace) &&
@@ -5974,8 +6067,6 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 	double bombdistancefloat = 1.f / (double)(bombdistance - fulldamagedistance);
 	double bombdamagefloat = (double)bombdamage;
 
-	FVector3 bombvec(FIXED2FLOAT(bombspot->x), FIXED2FLOAT(bombspot->y), FIXED2FLOAT(bombspot->z));
-
 	FBlockThingsIterator it(FBoundingBox(bombspot->x, bombspot->y, bombdistance << FRACBITS));
 	AActor *thing;
 
@@ -6085,7 +6176,12 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			points *= (double)(double(thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT)) / (double)FRACUNIT);
 
 			// points and bombdamage should be the same sign
-			if ((points * bombdamage) > 0 && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [rc4l] uzdoom@62a4945ca: a CAUSEPAIN bomb must reach the victim even when the radius
+			// damage works out to zero, or it can never trigger the pain it exists to cause.
+			// [rc4l] uzdoom@34aeb428a dropped the CAUSEPAIN test here: the sign check is about
+			// whether damage and thrust agree, not about pain, and CAUSEPAIN is honoured inside
+			// P_DamageMobj anyway.
+			if (((points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;
@@ -6265,7 +6361,7 @@ EXTERN_CVAR(Int, cl_bloodtype)
 
 bool P_AdjustFloorCeil(AActor *thing, FChangePosition *cpos)
 {
-	int flags2 = thing->flags2 & MF2_PASSMOBJ;
+	ActorFlags2 flags2 = thing->flags2 & MF2_PASSMOBJ;
 	FCheckPosition tm;
 
 	if ((thing->flags2 & MF2_PASSMOBJ) && (thing->flags3 & MF3_ISMONSTER))
@@ -7201,11 +7297,32 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 	}
 
 	FBoundingBox box(thing->x, thing->y, thing->radius);
+
+	// [rc4l] Secnode replay (see the statics near spechit): when the immediately
+	// preceding P_CheckPosition enumerated this exact (thing, x, y) box, replay its
+	// recorded line list in identical order instead of sweeping the blockmap again.
+	// Any P_CreateSecNodeList call consumes or discards the recording.
+	const bool replay = SecnodeReplayValid && SecnodeReplayThing == thing &&
+		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y;
+	SecnodeReplayValid = false;
+
 	FBlockLinesIterator it(box);
 	line_t *ld;
+	unsigned int ri = 0;
 
-	while ((ld = it.Next()))
+	for (;;)
 	{
+		if (replay)
+		{
+			if (ri >= SecnodeReplayLines.Size())
+				break;
+			ld = SecnodeReplayLines[ri++];
+		}
+		else if ((ld = it.Next()) == NULL)
+		{
+			break;
+		}
+
 		if (box.Right() <= ld->bbox[BOXLEFT] ||
 			box.Left() >= ld->bbox[BOXRIGHT] ||
 			box.Top() <= ld->bbox[BOXBOTTOM] ||
@@ -7255,35 +7372,6 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 		{
 			node = node->m_tnext;
 		}
-	}
-}
-
-//==========================================================================
-//
-//
-//
-//==========================================================================
-
-void SpawnShootDecal(AActor *t1, const FTraceResults &trace)
-{
-	FDecalBase *decalbase = NULL;
-
-	// [BC] Servers don't need to spawn decals.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		return;
-
-	if (t1->player != NULL && t1->player->ReadyWeapon != NULL)
-	{
-		decalbase = t1->player->ReadyWeapon->GetDefault()->DecalGenerator;
-	}
-	else
-	{
-		decalbase = t1->DecalGenerator;
-	}
-	if (decalbase != NULL)
-	{
-		DImpactDecal::StaticCreate(decalbase->GetDecal(),
-			trace.X, trace.Y, trace.Z, trace.Line->sidedef[trace.Side], trace.ffloor);
 	}
 }
 

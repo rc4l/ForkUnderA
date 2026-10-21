@@ -1,0 +1,13 @@
+# [rc4l] Pk3 lumps must be byte-identical across build platforms, or protected-lump authentication
+# fails between a Windows-built server and a Mac/Linux client on the SAME version. A Windows checkout
+# otherwise converts these text lumps to CRLF (git core.autocrlf=true on the Windows runner), so the
+# Windows-built pk3 packs authenticated lumps (DOOMDEFS, HTICDEFS, STRFDEFS, MAPINFO, ...) with \r\n and
+# their per-lump MD5s stop matching Mac/Linux (LF).
+#
+# -text disables ALL line-ending conversion, so every platform checks out -- and packs -- the exact
+# committed bytes. Deliberately NOT eol=lf: today's lumps are a mix of LF and CRLF, and forcing LF would
+# rewrite the CRLF ones and break compatibility with every build already shipped (including the Mac/Linux
+# c8388c43). -text changes zero bytes; it only stops Windows from diverging.
+src/zandronum/wadsrc/**     -text
+src/zandronum/wadsrc_st/**  -text
+src/zandronum/wadsrc_bm/**  -text

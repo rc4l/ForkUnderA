@@ -38,6 +38,7 @@
 **
 */
 
+
 #include "gl/system/gl_system.h"
 #include "files.h"
 #include "m_swap.h"
@@ -59,9 +60,10 @@
 #include "gl/data/gl_data.h"
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_drawinfo.h"
+#include "features/draw2d/draw2d.h"   // [rc4l] the 2D draws, worked out without GL
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_texture.h"
-#include "gl/textures/gl_translate.h"
+#include "features/materials/textureinfo.h"
+#include "features/materials/translationpalette.h"
 #include "gl/textures/gl_material.h"
 #include "gl/textures/gl_samplers.h"
 #include "gl/utility/gl_clock.h"
@@ -94,7 +96,6 @@ FGLRenderer::FGLRenderer(OpenGLFrameBuffer *fb)
 	mSkyVBO = NULL;
 	gl_spriteindex = 0;
 	mShaderManager = NULL;
-	glpart2 = glpart = mirrortexture = NULL;
 	mLights = NULL;
 }
 
@@ -103,10 +104,6 @@ void gl_FlushModels();
 
 void FGLRenderer::Initialize()
 {
-	glpart2 = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart2.png"), FTexture::TEX_MiscPatch);
-	glpart = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/glpart.png"), FTexture::TEX_MiscPatch);
-	mirrortexture = FTexture::CreateTexture(Wads.GetNumForFullName("glstuff/mirror.png"), FTexture::TEX_MiscPatch);
-
 	mVBO = new FFlatVertexBuffer;
 	mSkyVBO = new FSkyVertexBuffer;
 	mLights = new FLightBuffer();
@@ -129,9 +126,6 @@ FGLRenderer::~FGLRenderer()
 	if (mVBO != NULL) delete mVBO;
 	if (mSkyVBO != NULL) delete mSkyVBO;
 	if (mLights != NULL) delete mLights;
-	if (glpart2) delete glpart2;
-	if (glpart) delete glpart;
-	if (mirrortexture) delete mirrortexture;
 	if (mFBID != 0) glDeleteFramebuffers(1, &mFBID);
 }
 
@@ -207,10 +201,7 @@ void FGLRenderer::ProcessSector(sector_t *fakesector)
 //
 //===========================================================================
 
-void FGLRenderer::FlushTextures()
-{
-	FMaterial::FlushAll();
-}
+
 
 //===========================================================================
 // 
@@ -244,15 +235,7 @@ void FGLRenderer::EndOffscreen()
 //
 //===========================================================================
 
-unsigned char *FGLRenderer::GetTextureBuffer(FTexture *tex, int &w, int &h)
-{
-	FMaterial * gltex = FMaterial::ValidateTexture(tex, false);
-	if (gltex)
-	{
-		return gltex->CreateTexBuffer(0, w, h);
-	}
-	return NULL;
-}
+
 
 //===========================================================================
 // 
@@ -304,83 +287,27 @@ void FGLRenderer::ClearBorders()
 
 void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 {
-	double xscale = parms.destwidth / parms.texwidth;
-	double yscale = parms.destheight / parms.texheight;
-	double x = parms.x - parms.left * xscale;
-	double y = parms.y - parms.top * yscale;
-	double w = parms.destwidth;
-	double h = parms.destheight;
-	float u1, v1, u2, v2;
-	int light = 255;
-
-	FMaterial * gltex = FMaterial::ValidateTexture(img, false);
-
-	if (parms.colorOverlay && (parms.colorOverlay & 0xffffff) == 0)
-	{
-		// Right now there's only black. Should be implemented properly later
-		light = 255 - APART(parms.colorOverlay);
-		parms.colorOverlay = 0;
-	}
+	// [rc4l] features/draw2d works the draw out, the quad GL draws and the backend records alike.
+	zx::draw2d::TextureDraw d;
+	zx::draw2d::PrepareTexture(img, parms, d);
+	FMaterial *gltex = (FMaterial *)d.quad.material;
+	const float x = d.quad.x, y = d.quad.y, x2 = d.x2, y2 = d.y2;
+	const float u1 = d.quad.u1, v1 = d.quad.v1, u2 = d.quad.u2, v2 = d.quad.v2;
+	parms.colorOverlay = d.colorOverlay;
 
 	gl_SetRenderStyle(parms.style, !parms.masked, false);
 	if (!img->bHasCanvas)
 	{
-		int translation = 0;
-		if (!parms.alphaChannel)
-		{
-			if (parms.remap != NULL && !parms.remap->Inactive)
-			{
-				GLTranslationPalette * pal = static_cast<GLTranslationPalette*>(parms.remap->GetNative());
-				if (pal) translation = -pal->GetIndex();
-			}
-		}
-		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, translation, 0, !!(parms.style.Flags & STYLEF_RedIsAlpha));
-
-		u1 = gltex->GetUL();
-		v1 = gltex->GetVT();
-		u2 = gltex->GetUR();
-		v2 = gltex->GetVB();
-
+		// [rc4l] GL applies the remap in the shader from a palette texture, so it takes the index negated.
+		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, -d.translation, 0, !!(parms.style.Flags & STYLEF_RedIsAlpha));
 	}
 	else
 	{
 		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, 0, -1, false);
-		u1 = 0.f;
-		v1 = 1.f;
-		u2 = 1.f;
-		v2 = 0.f;
 		gl_RenderState.SetTextureMode(TM_OPAQUE);
 	}
-	
-	if (parms.flipX)
-	{
-		float temp = u1;
-		u1 = u2;
-		u2 = temp;
-	}
-	
 
-	if (parms.windowleft > 0 || parms.windowright < parms.texwidth)
-	{
-		x += parms.windowleft * xscale;
-		w -= (parms.texwidth - parms.windowright + parms.windowleft) * xscale;
-
-		u1 = float(u1 + parms.windowleft / parms.texwidth);
-		u2 = float(u2 - (parms.texwidth - parms.windowright) / parms.texwidth);
-	}
-
-	PalEntry color;
-	if (parms.style.Flags & STYLEF_ColorIsFixed)
-	{
-		color = parms.fillcolor;
-	}
-	else
-	{
-		color = PalEntry(light, light, light);
-	}
-	// [rc4l] fixed64: upstream used Scale(alpha, 255, FRACUNIT); convert through the
-	// draw-side float macro instead of raw fixed math on the strong type.
-	color.a = (BYTE)(FIXED2FLOAT(parms.alpha) * 255.f);
+	PalEntry color(d.a, d.r, d.g, d.b);
 
 	// scissor test doesn't use the current viewport for the coordinates, so use real screen coordinates
 	int btm = (SCREENHEIGHT - screen->GetHeight()) / 2;
@@ -396,9 +323,9 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x, y, 0, u1, v1); ptr++;
-	ptr->Set(x, y + h, 0, u1, v2); ptr++;
-	ptr->Set(x + w, y, 0, u2, v1); ptr++;
-	ptr->Set(x + w, y + h, 0, u2, v2); ptr++;
+	ptr->Set(x, y2, 0, u1, v2); ptr++;
+	ptr->Set(x2, y, 0, u2, v1); ptr++;
+	ptr->Set(x2, y2, 0, u2, v2); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 
 	if (parms.colorOverlay)
@@ -411,9 +338,9 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 
 		FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 		ptr->Set(x, y, 0, u1, v1); ptr++;
-		ptr->Set(x, y + h, 0, u1, v2); ptr++;
-		ptr->Set(x + w, y, 0, u2, v1); ptr++;
-		ptr->Set(x + w, y + h, 0, u2, v2); ptr++;
+		ptr->Set(x, y2, 0, u1, v2); ptr++;
+		ptr->Set(x2, y, 0, u2, v1); ptr++;
+		ptr->Set(x2, y2, 0, u2, v2); ptr++;
 		GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_STRIP);
 	}
 
@@ -431,7 +358,7 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 //==========================================================================
 void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 color)
 {
-	PalEntry p = color? (PalEntry)color : GPalette.BaseColors[palcolor];
+	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
 	gl_RenderState.EnableTexture(false);
 	gl_RenderState.SetColorAlpha(p, 1.f);
 	gl_RenderState.Apply();
@@ -440,7 +367,7 @@ void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	ptr->Set(x2, y2, 0, 0, 0); ptr++;
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_LINES);
-	
+
 	gl_RenderState.EnableTexture(true);
 }
 
@@ -451,7 +378,7 @@ void FGLRenderer::DrawLine(int x1, int y1, int x2, int y2, int palcolor, uint32 
 //==========================================================================
 void FGLRenderer::DrawPixel(int x1, int y1, int palcolor, uint32 color)
 {
-	PalEntry p = color? (PalEntry)color : GPalette.BaseColors[palcolor];
+	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
 	gl_RenderState.EnableTexture(false);
 	gl_RenderState.SetColorAlpha(p, 1.f);
 	gl_RenderState.Apply();
@@ -476,7 +403,7 @@ void FGLRenderer::Dim(PalEntry color, float damount, int x1, int y1, int w, int 
 	gl_RenderState.AlphaFunc(GL_GREATER,0);
 	gl_RenderState.SetColorAlpha(color, damount);
 	gl_RenderState.Apply();
-	
+
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
 	ptr->Set(x1, y1, 0, 0, 0); ptr++;
 	ptr->Set(x1, y1+h, 0, 0, 0); ptr++;
@@ -537,7 +464,7 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 {
 	int rt;
 	int offY = 0;
-	PalEntry p = palcolor==-1 || color != 0? (PalEntry)color : GPalette.BaseColors[palcolor];
+	const PalEntry p = zx::draw2d::DrawColor(palcolor, color);
 	int width = right-left;
 	int height= bottom-top;
 	
@@ -553,10 +480,10 @@ void FGLRenderer::Clear(int left, int top, int right, int bottom, int palcolor, 
 		rt += offY;
 	}
 	*/
-	
+
 	glEnable(GL_SCISSOR_TEST);
 	glScissor(left, rt - height, width, height);
-	
+
 	glClearColor(p.r/255.0f, p.g/255.0f, p.b/255.0f, 0.f);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glClearColor(0.f, 0.f, 0.f, 0.f);
@@ -576,17 +503,9 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 	double originx, double originy, double scalex, double scaley,
 	angle_t rotation, FDynamicColormap *colormap, int lightlevel)
 {
-	if (npoints < 3)
-	{ // This is no polygon.
-		return;
-	}
-
-	FMaterial *gltexture = FMaterial::ValidateTexture(texture, false);
-
-	if (gltexture == NULL)
-	{
-		return;
-	}
+	// [rc4l] features/draw2d works out the points' texture coordinates.
+	if (!zx::draw2d::PreparePoly(texture, points, npoints, originx, originy, scalex, scaley, rotation, colormap, lightlevel, mPoly, mPolyTris)) return;
+	FMaterial *gltexture = (FMaterial *)mPoly.material;
 
 	FColormap cm;
 	cm = colormap;
@@ -600,38 +519,12 @@ void FGLRenderer::FillSimplePoly(FTexture *texture, FVector2 *points, int npoint
 	glset.lightmode = savedlightmode;
 
 	gl_RenderState.SetMaterial(gltexture, CLAMP_NONE, 0, -1, false);
-
-	int i;
-	float rot = float(rotation * M_PI / float(1u << 31));
-	bool dorotate = rot != 0;
-
-	float cosrot = cos(rot);
-	float sinrot = sin(rot);
-
-	//float yoffs = GatheringWipeScreen ? 0 : LBOffset;
-	float uscale = float(1.f / (texture->GetScaledWidth() * scalex));
-	float vscale = float(1.f / (texture->GetScaledHeight() * scaley));
-	if (gltexture->tex->bHasCanvas)
-	{
-		vscale = 0 - vscale;
-	}
-	float ox = float(originx);
-	float oy = float(originy);
-
 	gl_RenderState.Apply();
 
 	FFlatVertex *ptr = GLRenderer->mVBO->GetBuffer();
-	for (i = 0; i < npoints; ++i)
+	for (int i = 0; i < npoints; ++i)
 	{
-		float u = points[i].X - 0.5f - ox;
-		float v = points[i].Y - 0.5f - oy;
-		if (dorotate)
-		{
-			float t = u;
-			u = t * cosrot - v * sinrot;
-			v = v * cosrot + t * sinrot;
-		}
-		ptr->Set(points[i].X, points[i].Y, 0, u*uscale, v*vscale);
+		ptr->Set(points[i].X, points[i].Y, 0, mPoly.uv[2 * i], mPoly.uv[2 * i + 1]);
 		ptr++;
 	}
 	GLRenderer->mVBO->RenderCurrent(ptr, GL_TRIANGLE_FAN);

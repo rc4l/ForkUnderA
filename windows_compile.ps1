@@ -8,8 +8,9 @@
 
 .DESCRIPTION
     Builds ZandroX (x64) the same way CI does: vcpkg-supplied OpenAL audio stack,
-    the DirectX headers reshaped out of the modern Windows SDK, MSVC via the
-    Visual Studio 2022 generator, then packages a runnable dist-windows/ zip.
+    the DirectX headers reshaped out of the modern Windows SDK, MSVC with Ninja
+    from Visual Studio's developer shell (into build-win-ninja/), then packages a
+    runnable dist-windows/ zip.
 
     This is the "compile from source" path — it (re)builds the dependencies with
     vcpkg. For a fast build from prebuilt, committed dependencies, use
@@ -37,6 +38,11 @@
 .PARAMETER NoPackage
     Stop after compiling; do not assemble or zip dist-windows/.
 
+.PARAMETER Generator
+    The CMake generator (default: Ninja Multi-Config, as CI builds, where each compile can go through
+    a launcher such as sccache). "Visual Studio 17 2022" builds into build-win/ instead, the tree
+    windows_build.ps1 uses.
+
 .EXAMPLE
     .\windows_compile.ps1
     .\windows_compile.ps1 -Configuration Debug -NoPackage
@@ -51,14 +57,18 @@ param(
 
     [switch]$Clean,
     [switch]$SkipDeps,
-    [switch]$NoPackage
+    [switch]$NoPackage,
+
+    [string]$Generator = "Ninja Multi-Config"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $ScriptRoot = $PSScriptRoot
-$BuildDir   = Join-Path $ScriptRoot "build-win"
+# [rc4l] Ninja builds into a tree of its own, since build-win/ is the Visual Studio tree windows_build.ps1 and windows_build_run.ps1 share, and CMake refuses to switch a tree's generator.
+$isVS       = $Generator -like "Visual Studio*"
+$BuildDir   = Join-Path $ScriptRoot $(if ($isVS) { "build-win" } else { "build-win-ninja" })
 $DistDir    = Join-Path $ScriptRoot "dist-windows"
 $DepsDir    = Join-Path $ScriptRoot "deps"
 
@@ -165,7 +175,10 @@ Write-Note "DXSDK_DIR set to $dx"
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) ---------------------------------
 # [rc4l] Explicit -D dep paths instead of the vcpkg toolchain file — the toolchain's
 # cmake_policy() calls collide with Zandronum's old CMake minimums and break the VS generator.
-Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, STATIC deps)"
+Write-Status "Configuring CMake ($Generator, x64, OpenAL, STATIC deps)"
+# [rc4l] Kept so the replay assertion below has something to read.
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+$ConfigureLog = Join-Path $BuildDir "configure.log"
 $dep = $VcpkgInstalled
 # [rc4l] Static deps (x64-windows-static): link the whole vcpkg static lib set -- the linker
 # discards what it doesn't reference -- so libsndfile's transitive codecs (FLAC/vorbis/ogg/opus/
@@ -192,7 +205,31 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
     Write-Status "building with debug symbols (PDB)"
     $symArgs = @("-DZX_WITH_SYMBOLS=ON")
 }
-& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
+
+# [rc4l] Only a build whose symbols get published may report crashes; see ZX_OFFICIAL_BUILD in
+# src/zandronum/CMakeLists.txt. Set by CI, never by a local build.
+if ($env:ZX_OFFICIAL_BUILD -eq "1") {
+    Write-Status "official build: crash reporting enabled"
+    $symArgs += "-DZX_OFFICIAL_BUILD=ON"
+}
+
+# [MobiusU9B] Dev-only MCP bridge on the same ZX_MCP_BRIDGE=1 opt-in as mac_compile.sh, passed OFF otherwise so a cached ON never leaks into a normal build.
+$bridgeArgs = @("-DFUA_MCP_BRIDGE=OFF")
+if ($env:ZX_MCP_BRIDGE -eq "1") {
+    Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
+    $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
+}
+# [rc4l] Ninja needs MSVC on PATH, which a plain PowerShell lacks, so the script enters Visual Studio's developer shell itself when it is not in one already (CI's is).
+if (-not $isVS -and -not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    $vsPath = if (Test-Path $vswhere) { & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath } else { $null }
+    if (-not $vsPath) { throw "Visual Studio with the C++ workload not found; install it, or pass -Generator 'Visual Studio 17 2022'." }
+    Write-Status "Entering the Visual Studio developer shell ($vsPath)"
+    & (Join-Path $vsPath "Common7\Tools\Launch-VsDevShell.ps1") -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
+}
+# [rc4l] Visual Studio takes its platform and toolset here; Ninja Multi-Config gets them from the developer shell and builds the one configuration asked for, since a Debug one breaks on a generated source.
+$genArgs = @(if ($isVS) { "-A", "x64", "-T", "v143" } else { "-DCMAKE_CONFIGURATION_TYPES=$Configuration" })
+& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G $Generator @genArgs `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
@@ -211,16 +248,25 @@ if ($env:ZX_WITH_SYMBOLS -eq "1") {
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
-    @symArgs
+    @symArgs @bridgeArgs | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+
+# [rc4l] Instant replay is OPTIONAL to CMake -- without FFmpeg it compiles as a no-capture stub and
+# nothing fails -- so the only way to tell a full build from a feature-stripped one is this line in
+# the configure output. CI already asserts on it (_build.yml greps build.log); asserting here too
+# means a local run of this script cannot quietly produce something a release never would.
+if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" -Quiet)) {
+    throw "CMake did not enable instant replay (no 'FUA replay: FFmpeg found' in $ConfigureLog). Re-run without -SkipDeps so vcpkg installs ffmpeg[x264]."
+}
 
 # --- Build -----------------------------------------------------------------
 Write-Status "Building ($Configuration)"
-& cmake --build $BuildDir --config $Configuration -- -m
+$buildArgs = @(if ($isVS) { "--", "-m" })
+& cmake --build $BuildDir --config $Configuration @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
-$exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
-if (-not (Test-Path $exe)) { throw "zandronum.exe missing — the build failed" }
+$exe = Join-Path $BuildDir "$Configuration\forkundera.exe"
+if (-not (Test-Path $exe)) { throw "forkundera.exe missing — the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) {
@@ -232,17 +278,47 @@ if ($NoPackage) {
 Write-Status "Packaging dist-windows/"
 $out = Join-Path $BuildDir $Configuration
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-Copy-Item "$out\zandronum.exe" $DistDir\
+Copy-Item "$out\forkundera.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
 # [rc4l] Ship Freedoom so the zip is playable without a separate IWAD (BSD-3-clause, clause 2
 # requires the notice to accompany binary distributions).
-if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
-} else {
-    throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
+# Both phases: Phase 1 is what stands in for doom.wad, and the wildcard copy below would happily
+# ship half of them.
+foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
+    if (-not (Test-Path (Join-Path $ScriptRoot "tools\freedoom\$wad"))) {
+        throw "tools/freedoom/$wad missing — the zip would ship without a game to fall back on"
+    }
 }
+# [rc4l] Into iwads/, not loose beside the exe. A player opening the folder should see a program to
+# run, not a pile of game data they did not put there. The engine is told about the folder in
+# features/wad-download/zx_wadsearch.cpp.
+#
+# THIS IS THE SCRIPT CI ACTUALLY RUNS. The same move was made in windows_build.ps1,
+# windows10_compile.ps1, linux_compile.sh and mac_compile.sh, and missing this one meant the release
+# zip still shipped them loose -- and shipped no fuamega.wad at all, because only this path had never
+# learned to. Four packaging scripts were changed and the fifth was the one that mattered.
+$IwadDir = Join-Path $DistDir "iwads"
+New-Item -ItemType Directory -Force -Path $IwadDir | Out-Null
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $IwadDir\
+
+# The notice stays at the top level: clause 2 wants it to accompany the distribution, and a notice
+# filed inside a data folder is one nobody opens.
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
+
+# [rc4l] Our own base data for total conversions that ship no base file of their own. Checked rather
+# than copied blind, the same as Freedoom above: without it Mega Man 8-bit Deathmatch is unhostable,
+# which is exactly what every release built by this script has been.
+if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
+    throw "tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py"
+}
+Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $IwadDir\
+
+# [rc4l] The addon catalogue. Required rather than best-effort: the HOST tab reads it from beside the
+# exe, and a build without it offers nothing to host.
+$catalogue = Join-Path $ScriptRoot "catalogue"
+if (-not (Test-Path $catalogue)) { throw "catalogue/ missing -- the HOST tab would have nothing to offer" }
+Copy-Item $catalogue $DistDir -Recurse -Force
 
 # [rc4l] GPL-3.0 sections 4-6: the binary must carry the license text and point at the source.
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
@@ -255,7 +331,7 @@ if (Get-ChildItem "$DistDir\*.dll" -ErrorAction SilentlyContinue) {
 }
 Write-Note "static build: no runtime DLLs in dist-windows"
 
-$zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
+$zip = Join-Path $ScriptRoot "ForkUnderA-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $zip -Force
 Write-Status "Done: $zip"

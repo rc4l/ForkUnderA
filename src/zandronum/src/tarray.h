@@ -248,6 +248,11 @@ public:
 			}
 		}
 	}
+	// [rc4l] How many entries it holds before the next push moves it.
+	unsigned int Capacity () const
+	{
+		return Most;
+	}
 	// Grow Array to be large enough to hold amount more entries without
 	// further growing.
 	void Grow (unsigned int amount)
@@ -353,6 +358,17 @@ class TDeletingArray : public TArray<T, TT>
 {
 public:
 	~TDeletingArray<T, TT> ()
+	{
+		DeleteAll ();
+	}
+	// [rc4l] Deletes every element and empties the array, for one a restart (wad_reload) fills again rather than only exit frees.
+	void DeleteAndClear ()
+	{
+		DeleteAll ();
+		TArray<T,TT>::Clear ();
+	}
+private:
+	void DeleteAll ()
 	{
 		for (unsigned int i = 0; i < TArray<T,TT>::Size(); ++i)
 		{

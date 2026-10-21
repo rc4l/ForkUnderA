@@ -197,8 +197,8 @@ BEGIN
             VALUE "FileDescription", GAMENAME "\0"
             VALUE "FileVersion", "v" DOTVERSIONSTR_REV "\0"
             VALUE "InternalName", GAMENAME "\0"
-            VALUE "LegalCopyright", "Copyright © 1993-1996 id Software, 1998-2013 Randy Heit, Christoph Oelckers, Braden Obrzut, et al."
-            VALUE "LegalTrademarks", "Doom® is a Registered Trademark of id Software, Inc.\0"
+            VALUE "LegalCopyright", "Copyright ï¿½ 1993-1996 id Software, 1998-2013 Randy Heit, Christoph Oelckers, Braden Obrzut, et al."
+            VALUE "LegalTrademarks", "Doomï¿½ is a Registered Trademark of id Software, Inc.\0"
             VALUE "OriginalFilename", GAMENAMELOWERCASE ".exe\0"
             VALUE "PrivateBuild", "\0"
             VALUE "ProductName", GAMENAME "\0"
@@ -242,14 +242,14 @@ CAPTION "Welcome"
 FONT 8, "MS Shell Dlg", 0, 0, 0x1
 BEGIN
 	ICON            IDI_ICONST,IDC_STATIC,7,7,32,32
-	LTEXT           "Welcome to Zandronum!",IDC_STATIC,42,8,180,8
+	LTEXT           "<Welcome>",IDC_WELCOME_TITLE,42,8,180,8
 	LTEXT           "<Version info>",IDC_WELCOME_VERSION,42,18,180,8
 	GROUPBOX        "IWAD selection",IDC_STATIC,8,32,224-16,102
 	LTEXT           "Select which game file (IWAD) to run.", IDC_STATIC,12,32+12,190,8
     LISTBOX         IDC_IWADLIST,12,32+24,224-24,72,LBS_NOINTEGRALHEIGHT | 
                     WS_VSCROLL | WS_TABSTOP
 	GROUPBOX        "Video settings",IDC_STATIC,8,138,224-16,48
-	LTEXT           "Choose how Zandronum will render the game.", IDC_STATIC,12,148,190,8
+	LTEXT           "<Renderer>", IDC_WELCOME_RENDERER,12,148,190,8
 	CONTROL         "Hardware (OpenGL)",IDC_WELCOME_OPENGL,"Button",
                     BS_AUTORADIOBUTTON,12,170,93,10
 	CONTROL         "Software (Doom)",IDC_WELCOME_SOFTWARE,"Button",
@@ -259,7 +259,7 @@ BEGIN
 	CONTROL         "Don't ask me this again",IDC_DONTASKIWAD,"Button",
                     BS_AUTOCHECKBOX | WS_TABSTOP,72,192,87,10
 	CTEXT           "", IDC_WELCOME_SHIFTLABEL,12,204,200,8
-    DEFPUSHBUTTON   "Play Zandronum",IDOK,8,236-18,90,14
+    DEFPUSHBUTTON   "Play",IDOK,8,236-18,90,14
     PUSHBUTTON      "Exit",IDCANCEL,224-58,236-18,50,14
 
 END

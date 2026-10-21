@@ -55,6 +55,8 @@
 #include "doomerrors.h"
 
 #include "features/freeform-menu/freeformmenuitems.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeMenuCommandUnsafe
+#include "menu/menuplatform_compute.h"
 #include "optionmenuitems.h"
 
 void ClearSaveGames();
@@ -147,6 +149,20 @@ static bool CheckSkipGameBlock(FScanner &sc)
 //
 //=============================================================================
 
+// [rc4l] The platform IfOption's platform keywords are matched against (menuplatform_compute.h).
+static zx::MenuPlatform CurrentMenuPlatform()
+{
+#if defined(__EMSCRIPTEN__)
+	return zx::MenuPlatform::Web;
+#elif defined(_WIN32)
+	return zx::MenuPlatform::Windows;
+#elif defined(__APPLE__)
+	return zx::MenuPlatform::Mac;
+#else
+	return zx::MenuPlatform::Unix;
+#endif
+}
+
 static bool CheckSkipOptionBlock(FScanner &sc)
 {
 	bool filter = false;
@@ -156,24 +172,7 @@ static bool CheckSkipOptionBlock(FScanner &sc)
 		sc.MustGetString();
 		if (sc.Compare("ReadThis")) filter |= gameinfo.drawreadthis;
 		else if (sc.Compare("Swapmenu")) filter |= gameinfo.swapmenu;
-		else if (sc.Compare("Windows"))
-		{
-			#ifdef _WIN32
-				filter = true;
-			#endif
-		}
-		else if (sc.Compare("unix"))
-		{
-			#ifdef __unix__
-				filter = true;
-			#endif
-		}
-		else if (sc.Compare("Mac"))
-		{
-			#ifdef __APPLE__
-				filter = true;
-			#endif
-		}
+		else if (zx::ComputeIsMenuPlatformKeyword(sc.String)) filter |= zx::ComputeMenuPlatformMatches(sc.String, CurrentMenuPlatform());
 		else if (sc.Compare("OpenAL")) // [rc4l] the OpenAL backend is present (always, unless NO_OPENAL)
 		{
 			#ifndef NO_OPENAL
@@ -951,6 +950,7 @@ static void ParseFreeformMenuBody(FScanner &sc, FFreeformMenuDescriptor *desc, F
 			sc.MustGetStringName("{");
 			
 			FFreeformMenuItemCommand* it = new FFreeformMenuItemCommand();
+			bool confirmed = false;
 			while (!sc.CheckString("}"))
 			{
 				sc.MustGetString();
@@ -969,6 +969,7 @@ static void ParseFreeformMenuBody(FScanner &sc, FFreeformMenuDescriptor *desc, F
 				else if (sc.Compare("SafeCommand"))
 				{
 					it->SetSafe(true);
+					confirmed = true;
 				}
 				else if (sc.Compare("command"))
 				{
@@ -980,6 +981,7 @@ static void ParseFreeformMenuBody(FScanner &sc, FFreeformMenuDescriptor *desc, F
 					sc.ScriptError("Unknown keyword '%s'", sc.String);
 				}
 			}
+			it->SetUnsafe(zx::ComputeMenuCommandUnsafe(confirmed, Wads.GetLumpFile(sc.LumpNum), FWadCollection::IWAD_FILENUM));
 
 			addedItem = it;
 		}
@@ -1606,7 +1608,12 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 	while (!sc.CheckString("}"))
 	{
 		sc.MustGetString();
-		if (sc.Compare("ifgame"))
+		// [rc4l] The else of an IfOption whose block was taken, as list and freeform menus have it.
+		if (sc.Compare("else"))
+		{
+			SkipSubBlock(sc);
+		}
+		else if (sc.Compare("ifgame"))
 		{
 			if (!CheckSkipGameBlock(sc))
 			{
@@ -1666,8 +1673,10 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			FOptionMenuItem *it = new FOptionMenuItemSubmenu(label, sc.String);
 			desc->mItems.Push(it);
 		}
-		else if (sc.Compare("Option"))
+		// [rc4l] RestartOption is an Option with the cvar holding its launch value after the values, for a setting that waits for a restart.
+		else if (sc.Compare("Option") || sc.Compare("RestartOption"))
 		{
+			const bool restart = sc.Compare("RestartOption");
 			sc.MustGetString();
 			FString label = sc.String;
 			sc.MustGetStringName(",");
@@ -1676,6 +1685,13 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			sc.MustGetStringName(",");
 			sc.MustGetString();
 			FString values = sc.String;
+			FString launch;
+			if (restart)
+			{
+				sc.MustGetStringName(",");
+				sc.MustGetString();
+				launch = sc.String;
+			}
 			FString check;
 			int center = 0;
 			if (sc.CheckString(","))
@@ -1688,7 +1704,8 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 					center = sc.Number;
 				}
 			}
-			FOptionMenuItem *it = new FOptionMenuItemOption(label, cvar, values, check, center);
+			FOptionMenuItem *it = restart ? new FOptionMenuItemRestartOption(label, cvar, values, launch, check, center)
+				: new FOptionMenuItemOption(label, cvar, values, check, center);
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("Command"))
@@ -1706,7 +1723,8 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			FString label = sc.String;
 			sc.MustGetStringName(",");
 			sc.MustGetString();
-			FOptionMenuItem *it = new FOptionMenuItemSafeCommand(label, sc.String);
+			FOptionMenuItem *it = new FOptionMenuItemSafeCommand(label, sc.String,
+				zx::ComputeMenuCommandUnsafe(true, Wads.GetLumpFile(sc.LumpNum), FWadCollection::IWAD_FILENUM));
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("Control") || sc.Compare("MapControl"))
@@ -1795,7 +1813,17 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 				sc.MustGetNumber();
 				showvalue = sc.Number;
 			}
-			FOptionMenuItem *it = new FOptionMenuSliderCVar(text, action, min, max, step, showvalue);
+
+			// [rc4l] An optional eighth field, nonzero to hold the value until the mouse is
+			// released, for a slider whose CVAR resizes what the menu is drawn on.
+			bool deferApply = false;
+			if (sc.CheckString(","))
+			{
+				sc.MustGetNumber();
+				deferApply = ( sc.Number != 0 );
+			}
+
+			FOptionMenuItem *it = new FOptionMenuSliderCVar(text, action, min, max, step, showvalue, deferApply);
 			desc->mItems.Push(it);
 		}
 		else if (sc.Compare("screenresolution"))
@@ -1912,12 +1940,10 @@ static void ParseOptionMenuBody(FScanner &sc, FOptionMenuDescriptor *desc)
 			desc->mRequiresRCON = true;
 		}
 		// [BB]
-		else if ( sc.Compare ( "ServerBrowserSlot" ) )
-		{
-			sc.MustGetNumber();
-			FOptionMenuItem *it = new FOptionMenuServerBrowserLine(sc.Number);
-			desc->mItems.Push(it);
-		}
+		// [rc4l] "ServerBrowserSlot" removed with the pre-MVP browser. It declared one of that
+		// browser's eight fixed server rows; the MVP browser draws its own list and has no such item.
+		// A MENUDEF still using the keyword now gets a parse error naming it, which is a clearer
+		// failure than a row that silently does nothing.
 		// [AK] Microphone test bar.
 		else if ( sc.Compare ( "MicTestBar" ))
 		{
@@ -1993,6 +2019,8 @@ static void ParseAddOptionMenu(FScanner &sc)
 //
 //
 //=============================================================================
+
+namespace zx { void GlobalHeader_ShiftMenusDown(); }
 
 void M_ParseMenuDefs()
 {
@@ -2080,6 +2108,11 @@ void M_ParseMenuDefs()
 			}
 		}
 	}
+
+	// [rc4l] Make room for the global tab bar. Here because it is the only point at which every
+	// MENUDEF, ours and every mod's, has been read -- a shift applied earlier would miss whatever
+	// was parsed after it.
+	zx::GlobalHeader_ShiftMenusDown();
 }
 
 
@@ -2579,10 +2612,16 @@ void M_CreateMenus()
 	}
 
 	// [rc4l] Populate the OpenAL device + resampler lists from the live driver (UZDoom parity).
+	//
+	// Guarded because both live in features/openal-sound/oalsound.cpp, which CMake drops when
+	// NO_SOUND -- so a SERVERONLY build called two functions nobody compiled. Asking a headless
+	// server which audio devices it has is a question with no answer anyway.
+#ifndef NO_SOUND
 	if ((opt = OptionValues.CheckKey(NAME_Aldevices)) != NULL)
 		I_BuildALDeviceList(*opt);
 	if ((opt = OptionValues.CheckKey(NAME_Alresamplers)) != NULL)
 		I_BuildALResamplersList(*opt);
+#endif
 }
 
 //=============================================================================

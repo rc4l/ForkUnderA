@@ -198,6 +198,7 @@ enum SAW_Flags
 	// [rc4l] uzdoom@cfd24f438
 	SF_NOPULLIN = 32,
 	SF_NOTURN = 64,
+	SF_STEALARMOR = 128,	// [rc4l] uzdoom@a150e0686
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
@@ -214,7 +215,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 		return;
 	}
 	
-	ACTION_PARAM_START(9);
+	ACTION_PARAM_START(11);
 	ACTION_PARAM_SOUND(fullsound, 0);
 	ACTION_PARAM_SOUND(hitsound, 1);
 	ACTION_PARAM_INT(damage, 2);
@@ -224,6 +225,9 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	ACTION_PARAM_ANGLE(Spread_XY, 6);
 	ACTION_PARAM_ANGLE(Spread_Z, 7);
 	ACTION_PARAM_FIXED(LifeSteal, 8);
+	// [rc4l] uzdoom@a150e0686
+	ACTION_PARAM_INT(lifestealmax, 9);
+	ACTION_PARAM_CLASS(armorbonustype, 10);
 
 
 
@@ -318,7 +322,34 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Saw)
 	const int prevhealth = self->health;
 
 	if (LifeSteal && !(linetarget->flags5 & MF5_DONTDRAIN))
-		P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS));
+	{
+		// [rc4l] uzdoom@a150e0686 with its fix uzdoom@9446edc06 folded in (the flags variable
+		// here is Flags, capitalised -- upstream first wrote `flags` and did not compile).
+		// SF_STEALARMOR converts the drain into armour instead of health, and lifestealmax
+		// caps either form.
+		if (Flags & SF_STEALARMOR)
+		{
+			if (!armorbonustype) armorbonustype = PClass::FindClass("ArmorBonus");
+
+			if (armorbonustype->IsDescendantOf (RUNTIME_CLASS(ABasicArmorBonus)))
+			{
+				ABasicArmorBonus *armorbonus = static_cast<ABasicArmorBonus *>(Spawn (armorbonustype, 0,0,0, NO_REPLACE));
+				armorbonus->SaveAmount *= (int)((actualdamage * LifeSteal) >> FRACBITS);
+				armorbonus->MaxSaveAmount = lifestealmax <= 0 ? armorbonus->MaxSaveAmount : lifestealmax;
+				armorbonus->flags |= MF_DROPPED;
+				armorbonus->ClearCounters();
+
+				if (!armorbonus->CallTryPickup (self))
+				{
+					armorbonus->Destroy ();
+				}
+			}
+		}
+		else
+		{
+			P_GiveBody (self,(int)( (actualdamage * LifeSteal) >> FRACBITS), lifestealmax);
+		}
+	}
 
 	// [EP] Inform the clients about the player health change if needed.
 	if ( ( NETWORK_GetState() == NETSTATE_SERVER ) && self->player && prevhealth != self->health )
@@ -998,7 +1029,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 	int 				j;
 	int 				damage;
 	angle_t 			an;
-	AActor				*thingToHit;
 	AActor				*linetarget;
 
 	// [BC] This is not done on the client end.
@@ -1054,8 +1084,28 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 		AActor *spray = Spawn (spraytype, linetarget->x, linetarget->y,
 			linetarget->z + (linetarget->height>>2), ALLOW_REPLACE);
 
-		if (spray && (spray->flags5 & MF5_PUFFGETSOWNER))
-			spray->target = self->target;
+		// [rc4l] uzdoom@c78fdae31 -- the damage flags and type are built up here, inside the
+		// spray check, rather than recomputed at the P_DamageMobj call. The FOILINVUL/FOILBUDDHA
+		// half of that is uzdoom@95bd6bde9, which we already had from an out-of-order port.
+		int dmgFlags = 0;
+		FName dmgType = NAME_BFGSplash;
+
+		if (spray)
+		{
+			if (spray->flags6 & MF6_MTHRUSPECIES && spray->GetSpecies() == linetarget->GetSpecies())
+			{
+				// [MC] Remove it because technically, the spray isn't trying to "hit" them.
+				// [rc4l] Destroyed before the [BC] broadcast below, and the continue skips that
+				// broadcast entirely -- otherwise the server would tell clients to spawn a spray
+				// it has already destroyed.
+				spray->Destroy();
+				continue;
+			}
+			if (spray->flags5 & MF5_PUFFGETSOWNER) spray->target = self->target;
+			if (spray->flags3 & MF3_FOILINVUL) dmgFlags |= DMG_FOILINVUL;
+			if (spray->flags7 & MF7_FOILBUDDHA) dmgFlags |= DMG_FOILBUDDHA;
+			dmgType = spray->DamageType;
+		}
 		
 		// [BC] Tell clients to spawn the tracers.
 		if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( spray ))
@@ -1073,16 +1123,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_BFGSpray)
 			damage = defdamage;
 		}
 
-		thingToHit = linetarget;
-		// [rc4l] uzdoom@95bd6bde9: build the flags up so FOILBUDDHA is honoured, and so
-		// FOILINVUL is actually passed -- the old expression computed it inline and the
-		// commit notes it "wasn't working".
-		int dmgFlagPass = 0;
-		dmgFlagPass += (spray != NULL && (spray->flags3 & MF3_FOILINVUL)) ? DMG_FOILINVUL : 0;
-		dmgFlagPass += (spray != NULL && (spray->flags7 & MF7_FOILBUDDHA)) ? DMG_FOILBUDDHA : 0;
-		int newdam = P_DamageMobj (thingToHit, self->target, self->target, damage, spray != NULL? FName(spray->DamageType) : FName(NAME_BFGSplash), 
-			dmgFlagPass);
-		P_TraceBleed (newdam > 0 ? newdam : damage, thingToHit, self->target);
+		int newdam = P_DamageMobj (linetarget, self->target, self->target, damage, dmgType, dmgFlags);
+		P_TraceBleed (newdam > 0 ? newdam : damage, linetarget, self->target);
 	}
 }
 

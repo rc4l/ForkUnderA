@@ -146,8 +146,6 @@ void FActorInfo::StaticInit ()
 
 void FActorInfo::StaticSetActorNums ()
 {
-	SpawnableThings.Clear();
-	DoomEdMap.Empty ();
 
 	for (unsigned int i = 0; i < PClass::m_RuntimeActors.Size(); ++i)
 	{
@@ -163,6 +161,17 @@ void FActorInfo::StaticSetActorNums ()
 void FActorInfo::RegisterIDs ()
 {
 	const PClass *cls = PClass::FindClass(Class->TypeName);
+
+	// [rc4l] uzdoom@b6a4511dd -- Conversation IDs have never been filtered by game so we cannot
+	// start doing that; this sits outside the GameFilter check deliberately.
+	if (ConversationID > 0)
+	{
+		StrifeTypes[ConversationID] = cls;
+		if (cls != Class) 
+		{
+			Printf(TEXTCOLOR_RED"Conversation ID %d refers to hidden class type '%s'\n", ConversationID, cls->TypeName.GetChars());
+		}
+	}
 	bool set = false;
 
 	if (GameFilter == GAME_Any || (GameFilter & gameinfo.gametype))
@@ -177,21 +186,23 @@ void FActorInfo::RegisterIDs ()
 		}
 		if (DoomEdNum != -1)
 		{
-			DoomEdMap.AddType (DoomEdNum, cls);
+			// [rc4l] uzdoom@15dbbc913 -- Special == -2 marks a DECORATE-defined entry, so a second
+			// DECORATE definition for the same number is reported while a MAPINFO one is silently
+			// overridden. That override is what keeps our own actors' DECORATE numbers working.
+			FDoomEdEntry *oldent = DoomEdMap.CheckKey(DoomEdNum);
+			if (oldent != NULL && oldent->Special == -2)
+			{
+				Printf(TEXTCOLOR_RED"Editor number %d defined twice for classes '%s' and '%s'\n", DoomEdNum, cls->TypeName.GetChars(), oldent->Type->TypeName.GetChars());
+			}
+			FDoomEdEntry ent;
+			memset(&ent, 0, sizeof(ent));
+			ent.Type = cls;
+			ent.Special = -2;
+			DoomEdMap.Insert(DoomEdNum, ent);
 			if (cls != Class) 
 			{
 				Printf(TEXTCOLOR_RED"Editor number %d refers to hidden class type '%s'\n", DoomEdNum, cls->TypeName.GetChars());
 			}
-		}
-	}
-	// Fill out the list for Chex Quest with Doom's actors
-	if (gameinfo.gametype == GAME_Chex && DoomEdMap.FindType(DoomEdNum) == NULL &&
-		(GameFilter & GAME_Doom))
-	{
-		DoomEdMap.AddType (DoomEdNum, Class, true);
-		if (cls != Class) 
-		{
-			Printf(TEXTCOLOR_RED"Editor number %d refers to hidden class type '%s'\n", DoomEdNum, cls->TypeName.GetChars());
 		}
 	}
 }
@@ -400,132 +411,7 @@ fixed_t *DmgFactors::CheckFactor(FName type)
 //
 //==========================================================================
 
-FDoomEdMap DoomEdMap;
-
-FDoomEdMap::FDoomEdEntry *FDoomEdMap::DoomEdHash[DOOMED_HASHSIZE];
-
-FDoomEdMap::~FDoomEdMap()
-{
-	Empty();
-}
-
-void FDoomEdMap::AddType (int doomednum, const PClass *type, bool temporary)
-{
-	unsigned int hash = (unsigned int)doomednum % DOOMED_HASHSIZE;
-	FDoomEdEntry *entry = DoomEdHash[hash];
-	while (entry && entry->DoomEdNum != doomednum)
-	{
-		entry = entry->HashNext;
-	}
-	if (entry == NULL)
-	{
-		entry = new FDoomEdEntry;
-		entry->HashNext = DoomEdHash[hash];
-		entry->DoomEdNum = doomednum;
-		DoomEdHash[hash] = entry;
-	}
-	else if (!entry->temp)
-	{
-		Printf (PRINT_BOLD, "Warning: %s and %s both have doomednum %d.\n",
-			type->TypeName.GetChars(), entry->Type->TypeName.GetChars(), doomednum);
-	}
-	entry->temp = temporary;
-	entry->Type = type;
-}
-
-void FDoomEdMap::DelType (int doomednum)
-{
-	unsigned int hash = (unsigned int)doomednum % DOOMED_HASHSIZE;
-	FDoomEdEntry **prev = &DoomEdHash[hash];
-	FDoomEdEntry *entry = *prev;
-	while (entry && entry->DoomEdNum != doomednum)
-	{
-		prev = &entry->HashNext;
-		entry = entry->HashNext;
-	}
-	if (entry != NULL)
-	{
-		*prev = entry->HashNext;
-		delete entry;
-	}
-}
-
-void FDoomEdMap::Empty ()
-{
-	int bucket;
-
-	for (bucket = 0; bucket < DOOMED_HASHSIZE; ++bucket)
-	{
-		FDoomEdEntry *probe = DoomEdHash[bucket];
-
-		while (probe != NULL)
-		{
-			FDoomEdEntry *next = probe->HashNext;
-			delete probe;
-			probe = next;
-		}
-		DoomEdHash[bucket] = NULL;
-	}
-}
-
-const PClass *FDoomEdMap::FindType (int doomednum) const
-{
-	unsigned int hash = (unsigned int)doomednum % DOOMED_HASHSIZE;
-	FDoomEdEntry *entry = DoomEdHash[hash];
-	while (entry && entry->DoomEdNum != doomednum)
-		entry = entry->HashNext;
-	return entry ? entry->Type : NULL;
-}
-
-struct EdSorting
-{
-	const PClass *Type;
-	int DoomEdNum;
-};
-
-static int STACK_ARGS sortnums (const void *a, const void *b)
-{
-	return ((const EdSorting *)a)->DoomEdNum -
-		((const EdSorting *)b)->DoomEdNum;
-}
-
-void FDoomEdMap::DumpMapThings ()
-{
-	TArray<EdSorting> infos (PClass::m_Types.Size());
-	int i;
-
-	for (i = 0; i < DOOMED_HASHSIZE; ++i)
-	{
-		FDoomEdEntry *probe = DoomEdHash[i];
-
-		while (probe != NULL)
-		{
-			EdSorting sorting = { probe->Type, probe->DoomEdNum };
-			infos.Push (sorting);
-			probe = probe->HashNext;
-		}
-	}
-
-	if (infos.Size () == 0)
-	{
-		Printf ("No map things registered\n");
-	}
-	else
-	{
-		qsort (&infos[0], infos.Size (), sizeof(EdSorting), sortnums);
-
-		for (i = 0; i < (int)infos.Size (); ++i)
-		{
-			Printf ("%6d %s\n",
-				infos[i].DoomEdNum, infos[i].Type->TypeName.GetChars());
-		}
-	}
-}
-
-CCMD (dumpmapthings)
-{
-	FDoomEdMap::DumpMapThings ();
-}
+// [rc4l] uzdoom@ccd9fb9c2 -- FDoomEdMap and the dumpmapthings CCMD now live in g_doomedmap.cpp.
 
 
 static void SummonActor (int command, int command2, FCommandLine argv)

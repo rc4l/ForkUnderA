@@ -55,22 +55,12 @@
 
 // [BB] New #includes.
 #include "gl/gl_functions.h"
+#include "features/levelmesh/computation/shading_compute.h"
 
 // externally settable lighting properties
-static float distfogtable[2][256];	// light to fog conversion table for black fog
-static PalEntry outsidefogcolor;
-int fogdensity;
-int outsidefogdensity;
-int skyfog;
 
-CUSTOM_CVAR (Int, gl_light_ambient, 20, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	// ambient of 0 does not work correctly because light level 0 is special.
-	if (self < 1) self = 1;
-}
 
-CVAR(Int, gl_weaponlight, 8, CVAR_ARCHIVE);
-CUSTOM_CVAR(Bool, gl_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
+CUSTOM_CVAR(Bool, r_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
 	// The fixed colormap state needs to be reset because if this happens when
 	// a shader is set to CM_LITE or CM_TORCH it won't register the change in behavior caused by this CVAR.
@@ -79,7 +69,6 @@ CUSTOM_CVAR(Bool, gl_enhanced_nightvision, true, CVAR_ARCHIVE|CVAR_NOINITCALL)
 		GLRenderer->mShaderManager->ResetFixedColormap();
 	}
 }
-CVAR(Bool, gl_brightfog, false, CVAR_ARCHIVE);
 
 
 
@@ -89,43 +78,8 @@ CVAR(Bool, gl_brightfog, false, CVAR_ARCHIVE);
 //
 //==========================================================================
 
-CUSTOM_CVAR (Int, gl_distfog, 70, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	// [BB/EP] Take care of gl_distfog and ZADF_FORCE_VIDEO_DEFAULTS.
-	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_distfog );
 
-	for (int i=0;i<256;i++)
-	{
-
-		if (i<164)
-		{
-			distfogtable[0][i]= (gl_distfog>>1) + (gl_distfog)*(164-i)/164;
-		}
-		else if (i<230)
-		{											    
-			distfogtable[0][i]= (gl_distfog>>1) - (gl_distfog>>1)*(i-164)/(230-164);
-		}
-		else distfogtable[0][i]=0;
-
-		if (i<128)
-		{
-			distfogtable[1][i]= 6.f + (gl_distfog>>1) + (gl_distfog)*(128-i)/48;
-		}
-		else if (i<216)
-		{											    
-			distfogtable[1][i]= (216.f-i) / ((216.f-128.f)) * gl_distfog / 10;
-		}
-		else distfogtable[1][i]=0;
-	}
-}
-
-CUSTOM_CVAR(Int,gl_fogmode,1,CVAR_ARCHIVE|CVAR_NOINITCALL)
-{
-	if (self>2) self=2;
-	if (self<0) self=0;
-}
-
-CUSTOM_CVAR(Int, gl_lightmode, 3 ,CVAR_ARCHIVE|CVAR_NOINITCALL)
+CUSTOM_CVAR(Int, r_lightmode, 3 ,CVAR_ARCHIVE|CVAR_NOINITCALL)
 {
 	int newself = self;
 	if (newself > 4) newself=8;	// use 8 for software lighting to avoid conflicts with the bit mask
@@ -201,18 +155,6 @@ void gl_GetRenderStyle(FRenderStyle style, bool drawopaque, bool allowcolorblend
 // Set fog parameters for the level
 //
 //==========================================================================
-void gl_SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefogdensity, int _skyfog)
-{
-	fogdensity=_fogdensity;
-	outsidefogcolor=_outsidefogcolor;
-	outsidefogdensity=_outsidefogdensity;
-	skyfog=_skyfog;
-
-	outsidefogdensity>>=1;
-	fogdensity>>=1;
-}
-
-
 //==========================================================================
 //
 // Get current light level
@@ -221,8 +163,8 @@ void gl_SetFogParams(int _fogdensity, PalEntry _outsidefogcolor, int _outsidefog
 
 int gl_CalcLightLevel(int lightlevel, int rellight, bool weapon)
 {
-	// [BB/EP] Take care of gl_light_ambient and ZADF_FORCE_VIDEO_DEFAULTS.
-	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( gl_light_ambient );
+	// [BB/EP] Take care of r_light_ambient and ZADF_FORCE_VIDEO_DEFAULTS.
+	OVERRIDE_INT_GL_CVAR_IF_NECESSARY( r_light_ambient );
 
 	int light;
 
@@ -237,9 +179,9 @@ int gl_CalcLightLevel(int lightlevel, int rellight, bool weapon)
 		light=lightlevel;
 	}
 
-	if (light<gl_light_ambient && glset.lightmode != 8)		// ambient clipping only if not using software lighting model.
+	if (light<r_light_ambient && glset.lightmode != 8)		// ambient clipping only if not using software lighting model.
 	{
-		light = gl_light_ambient;
+		light = r_light_ambient;
 		if (rellight<0) rellight>>=1;
 	}
 	return clamp(light+rellight, 0, 255);
@@ -305,7 +247,7 @@ void gl_SetColor(int sectorlightlevel, int rellight, const FColormap &cm, float 
 //
 //	Rules for fog:
 //
-//  1. If bit 4 of gl_lightmode is set always use the level's fog density. 
+//  1. If bit 4 of r_lightmode is set always use the level's fog density. 
 //     This is what Legacy's GL render does.
 //	2. black fog means no fog and always uses the distfogtable based on the level's fog density setting
 //	3. If outside fog is defined and the current fog color is the same as the outside fog
@@ -501,7 +443,7 @@ void gl_SetShaderLight(float level, float olight)
 
 void gl_SetFog(int lightlevel, int rellight, const FColormap *cmap, bool isadditive)
 {
-	// [BB/EP] Take care of gl_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
+	// [BB/EP] Take care of r_fogmode and ZADF_FORCE_VIDEO_DEFAULTS.
 	OVERRIDE_FOGMODE_IF_NECESSARY
 
 	PalEntry fogcolor;
@@ -529,7 +471,7 @@ void gl_SetFog(int lightlevel, int rellight, const FColormap *cmap, bool isaddit
 
 
 	// no fog in enhanced vision modes!
-	if (fogdensity==0 || gl_fogmode == 0)
+	if (fogdensity==0 || r_fogmode == 0)
 	{
 		gl_RenderState.EnableFog(false);
 		gl_RenderState.SetFog(0,0);

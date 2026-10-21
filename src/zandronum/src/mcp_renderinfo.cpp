@@ -16,6 +16,7 @@
 #include "r_state.h"
 #include "st_stuff.h"
 #include "gl/system/gl_interface.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 #if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
 #include "gl/system/gl_system.h"
 #include "sdlglvideo.h"
@@ -34,7 +35,10 @@ static void PrintCVar( const char *name )
 CCMD( dumprenderer )
 {
 	Printf( "MCP_RENDERER\n" );
-	Printf( "renderer=%s\n", currentrenderer == 1 ? "opengl" : "software" );
+	// [rc4l] A launch without GL (-vulkan) still has vid_renderer 1, so it is asked directly.
+	Printf( "renderer=%s\n", zx::hwrender::BackendOnly( ) ? "vulkan" : currentrenderer == 1 ? "opengl" : "software" );
+	// [rc4l] Which API that backend's device runs on, so a -webgpu launch that came up on Vulkan says so.
+	Printf( "backend_api=%s\n", zx::hwrender::BackendApiName( ) );
 
 	if ( screen != NULL )
 	{

@@ -39,6 +39,8 @@
 #include "v_video.h"
 #include "p_trace.h"
 #include "decallib.h"
+#include "features/decals/decals.h"   // [rc4l] every decal is made and judged there
+#include "features/decals/computation/markrules_compute.h"   // [rc4l] ComputeMarksToEvict
 #include "statnums.h"
 #include "c_dispatch.h"
 #include "d_net.h"
@@ -207,7 +209,46 @@ void DBaseDecal::SetShade (int r, int g, int b)
 	AlphaColor = MAKEARGB(ColorMatcher.Pick (r, g, b), r, g, b);
 }
 
+// [rc4l] Which tier of wall a decal at (x, y, z) sticks to, the one test StickToWall and TierTexture share.
+enum { kTierMid, kTierLower, kTierUpper, kTier3D, kTierOpen };
+
+static int TierOf (const side_t *wall, fixed_t x, fixed_t y, fixed_t z, const F3DFloor *ffloor)
+{
+	const line_t *line = wall->linedef;
+	const sector_t *back = (line->sidedef[0] == wall) ? line->backsector : line->frontsector;
+	if (back == NULL) return kTierMid;
+	if (back->floorplane.ZatPoint (x, y) >= z) return kTierLower;
+	if (back->ceilingplane.ZatPoint (x, y) <= z) return kTierUpper;
+#ifdef _3DFLOORS
+	if (ffloor != NULL) return kTier3D;   // this is a 3d-floor segment - do this only if we know which one!
+#endif
+	return kTierOpen;
+}
+
+static FTextureID TextureOfTier (const side_t *wall, int tier, const F3DFloor *ffloor)
+{
+	switch (tier)
+	{
+	case kTierMid: return wall->GetTexture (side_t::mid);
+	case kTierLower: return wall->GetTexture (side_t::bottom);
+	case kTierUpper: return wall->GetTexture (side_t::top);
+#ifdef _3DFLOORS
+	case kTier3D:
+		if (ffloor->flags & FF_UPPERTEXTURE) return wall->GetTexture (side_t::top);
+		if (ffloor->flags & FF_LOWERTEXTURE) return wall->GetTexture (side_t::bottom);
+		return ffloor->master->sidedef[0]->GetTexture (side_t::mid);
+#endif
+	default: return FNullTextureID ();
+	}
+}
+
+FTextureID DBaseDecal::TierTexture (const side_t *wall, fixed_t x, fixed_t y, fixed_t z, const F3DFloor *ffloor)
+{
+	return TextureOfTier (wall, TierOf (wall, x, y, z, ffloor), ffloor);
+}
+
 // Returns the texture the decal stuck to.
+// [rc4l] Whether it may stick there at all is features/decals' to judge, before the decal is made.
 FTextureID DBaseDecal::StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor *ffloor)
 {
 	// Stick the decal at the end of the chain so it appears on top
@@ -223,93 +264,65 @@ FTextureID DBaseDecal::StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor
 	*prev = this;
 	WallNext = NULL;
 	WallPrev = prev;
-/*
-	WallNext = wall->AttachedDecals;
-	WallPrev = &wall->AttachedDecals;
-	if (WallNext)
-		WallNext->WallPrev = &WallNext;
-	wall->AttachedDecals = this;
-*/
-	sector_t *front, *back;
-	line_t *line;
-	FTextureID tex;
 
-	line = wall->linedef;
-	if (line->sidedef[0] == wall)
+	const line_t *line = wall->linedef;
+	const sector_t *front = (line->sidedef[0] == wall) ? line->frontsector : line->backsector;
+	const sector_t *back = (line->sidedef[0] == wall) ? line->backsector : line->frontsector;
+	const int tier = TierOf (wall, x, y, Z, ffloor);
+	const FTextureID tex = TextureOfTier (wall, tier, ffloor);
+	switch (tier)
 	{
-		front = line->frontsector;
-		back = line->backsector;
-	}
-	else
-	{
-		front = line->backsector;
-		back = line->frontsector;
-	}
-	if (back == NULL)
-	{
+	case kTierMid:
 		RenderFlags |= RF_RELMID;
 		if (line->flags & ML_DONTPEGBOTTOM)
 			Z -= front->GetPlaneTexZ(sector_t::floor);
 		else
 			Z -= front->GetPlaneTexZ(sector_t::ceiling);
-		tex = wall->GetTexture(side_t::mid);
-	}
-	else if (back->floorplane.ZatPoint (x, y) >= Z)
-	{
+		break;
+	case kTierLower:
 		RenderFlags |= RF_RELLOWER|RF_CLIPLOWER;
 		if (line->flags & ML_DONTPEGBOTTOM)
 			Z -= front->GetPlaneTexZ(sector_t::ceiling);
 		else
 			Z -= back->GetPlaneTexZ(sector_t::floor);
-		tex = wall->GetTexture(side_t::bottom);
-	}
-	else if (back->ceilingplane.ZatPoint (x, y) <= Z)
-	{
+		break;
+	case kTierUpper:
 		RenderFlags |= RF_RELUPPER|RF_CLIPUPPER;
 		if (line->flags & ML_DONTPEGTOP)
 			Z -= front->GetPlaneTexZ(sector_t::ceiling);
 		else
 			Z -= back->GetPlaneTexZ(sector_t::ceiling);
-		tex = wall->GetTexture(side_t::top);
-	}
+		break;
 #ifdef _3DFLOORS
-	else if (ffloor) // this is a 3d-floor segment - do this only if we know which one!
-	{
+	case kTier3D:
 		Sector=ffloor->model;
 		RenderFlags |= RF_RELMID|RF_CLIPMID;
 		if (line->flags & ML_DONTPEGBOTTOM)
 			Z -= Sector->GetPlaneTexZ(sector_t::floor);
 		else
 			Z -= Sector->GetPlaneTexZ(sector_t::ceiling);
-
-		if (ffloor->flags & FF_UPPERTEXTURE)
-		{
-			tex = wall->GetTexture(side_t::top);
-		}
-		else if (ffloor->flags & FF_LOWERTEXTURE)
-		{
-			tex = wall->GetTexture(side_t::bottom);
-		}
-		else
-		{
-			tex = ffloor->master->sidedef[0]->GetTexture(side_t::mid);
-		}
-	}
+		break;
 #endif
-	else return FNullTextureID();
-	CalcFracPos (wall, x, y);
-
-	FTexture *texture = TexMan[tex];
-
-	if (texture == NULL || texture->bNoDecals)
-	{
+	default:
 		return FNullTextureID();
 	}
-
+	CalcFracPos (wall, x, y);
 	return tex;
 }
 
 fixed_t DBaseDecal::GetRealZ (const side_t *wall) const
+{
+	return RealZOnWall (wall, Z, RenderFlags);
+}
+
+// [rc4l] The same answer without a decal object, because the backend needs it EVERY FRAME.
+//
+// A decal's stored Z is relative to a plane whenever RF_RELMASK is set, and that plane moves: a door
+// track, a lift's front. The engine re-resolves it each time it draws, so GL's decals ride doors for
+// free. The backend keeps its own record of the mark and was resolving this once, at spawn -- so its
+// decals stayed where the door had been. Splitting the lookup out is what lets it ask again without
+// holding a pointer to a thinker that may since have been destroyed.
+fixed_t DBaseDecal::RealZOnWall (const side_t *wall, fixed_t z, DWORD renderFlags)
 {
 	const line_t *line = wall->linedef;
 	const sector_t *front, *back;
@@ -329,36 +342,36 @@ fixed_t DBaseDecal::GetRealZ (const side_t *wall) const
 		back = front;
 	}
 
-	switch (RenderFlags & RF_RELMASK)
+	switch (renderFlags & RF_RELMASK)
 	{
 	default:
-		return Z;
+		return z;
 	case RF_RELUPPER:
 		if (line->flags & ML_DONTPEGTOP)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 		else
 		{
-			return Z + back->GetPlaneTexZ(sector_t::ceiling);
+			return z + back->GetPlaneTexZ(sector_t::ceiling);
 		}
 	case RF_RELLOWER:
 		if (line->flags & ML_DONTPEGBOTTOM)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 		else
 		{
-			return Z + back->GetPlaneTexZ(sector_t::floor);
+			return z + back->GetPlaneTexZ(sector_t::floor);
 		}
 	case RF_RELMID:
 		if (line->flags & ML_DONTPEGBOTTOM)
 		{
-			return Z + front->GetPlaneTexZ(sector_t::floor);
+			return z + front->GetPlaneTexZ(sector_t::floor);
 		}
 		else
 		{
-			return Z + front->GetPlaneTexZ(sector_t::ceiling);
+			return z + front->GetPlaneTexZ(sector_t::ceiling);
 		}
 	}
 }
@@ -552,22 +565,16 @@ void DBaseDecal::Spread (const FDecalTemplate *tpl, side_t *wall, fixed_t x, fix
 
 DBaseDecal *DBaseDecal::CloneSelf (const FDecalTemplate *tpl, fixed_t ix, fixed_t iy, fixed_t iz, side_t *wall, F3DFloor * ffloor) const
 {
-	DBaseDecal *decal = new DBaseDecal(iz);
-	if (decal != NULL)
+	if (!zx::decals::WallAcceptsClone (wall, ix, iy, iz, ffloor, true))
 	{
-		if (decal->StickToWall (wall, ix, iy, ffloor).isValid())
-		{
-			tpl->ApplyToDecal (decal, wall);
-			decal->AlphaColor = AlphaColor;
-			decal->RenderFlags = (decal->RenderFlags & RF_DECALMASK) |
-								 (this->RenderFlags & ~RF_DECALMASK);
-		}
-		else
-		{
-			decal->Destroy();
-			return NULL;
-		}
+		return NULL;
 	}
+	DBaseDecal *decal = new DBaseDecal(iz);
+	decal->StickToWall (wall, ix, iy, ffloor);
+	tpl->ApplyToDecal (decal, wall);
+	decal->AlphaColor = AlphaColor;
+	decal->RenderFlags = (decal->RenderFlags & RF_DECALMASK) |
+						 (this->RenderFlags & ~RF_DECALMASK);
 	return decal;
 }
 
@@ -647,99 +654,29 @@ DImpactDecal::DImpactDecal (fixed_t z)
 
 void DImpactDecal::CheckMax ()
 {
-	if (ImpactCount >= cl_maxdecals)
+	// [rc4l] One budget for wall and floor marks alike, the oldest retired first.
+	for (int n = zx::decals::ComputeMarksToEvict (ImpactCount, cl_maxdecals); n > 0; n--)
 	{
 		DThinker *thinker = DThinker::FirstThinker (STAT_AUTODECAL);
-		if (thinker != NULL)
-		{
-			thinker->Destroy();
-		}
+		if (thinker == NULL) break;
+		thinker->Destroy();
 	}
-}
-
-DImpactDecal *DImpactDecal::StaticCreate (const char *name, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color)
-{
-	if (cl_maxdecals > 0)
-	{
-		const FDecalTemplate *tpl = DecalLibrary.GetDecalByName (name);
-
-		if (tpl != NULL && (tpl = tpl->GetDecal()) != NULL)
-		{
-			return StaticCreate (tpl, x, y, z, wall, ffloor, color);
-		}
-	}
-	return NULL;
-}
-
-DImpactDecal *DImpactDecal::StaticCreate (const FDecalTemplate *tpl, fixed_t x, fixed_t y, fixed_t z, side_t *wall, F3DFloor * ffloor, PalEntry color)
-{
-	DImpactDecal *decal = NULL;
-	if (tpl != NULL && cl_maxdecals > 0 && !(wall->Flags & WALLF_NOAUTODECALS))
-	{
-		if (tpl->LowerDecal)
-		{
-			int lowercolor;
-			const FDecalTemplate * tpl_low = tpl->LowerDecal->GetDecal();
-
-			// If the default color of the lower decal is the same as the main decal's
-			// apply the custom color as well.
-			if (tpl->ShadeColor != tpl_low->ShadeColor) lowercolor=0;
-			else lowercolor = color;
-			StaticCreate (tpl_low, x, y, z, wall, ffloor, lowercolor);
-		}
-		DImpactDecal::CheckMax();
-		decal = new DImpactDecal (z);
-		if (decal == NULL)
-		{
-			return NULL;
-		}
-
-		if (!decal->StickToWall (wall, x, y, ffloor).isValid())
-		{
-			return NULL;
-		}
-
-		tpl->ApplyToDecal (decal, wall);
-		if (color != 0)
-		{
-			decal->SetShade (color.r, color.g, color.b);
-		}
-
-		if (!cl_spreaddecals || !decal->PicNum.isValid())
-		{
-			return decal;
-		}
-
-		// Spread decal to nearby walls if it does not all fit on this one
-		decal->Spread (tpl, wall, x, y, z, ffloor);
-	}
-	return decal;
 }
 
 DBaseDecal *DImpactDecal::CloneSelf (const FDecalTemplate *tpl, fixed_t ix, fixed_t iy, fixed_t iz, side_t *wall, F3DFloor * ffloor) const
 {
-	if (wall->Flags & WALLF_NOAUTODECALS)
+	if (!zx::decals::WallAcceptsClone (wall, ix, iy, iz, ffloor, false))
 	{
 		return NULL;
 	}
 
 	DImpactDecal::CheckMax();
 	DImpactDecal *decal = new DImpactDecal(iz);
-	if (decal != NULL)
-	{
-		if (decal->StickToWall (wall, ix, iy, ffloor).isValid())
-		{
-			tpl->ApplyToDecal (decal, wall);
-			decal->AlphaColor = AlphaColor;
-			decal->RenderFlags = (decal->RenderFlags & RF_DECALMASK) |
-								 (this->RenderFlags & ~RF_DECALMASK);
-		}
-		else
-		{
-			decal->Destroy();
-			return NULL;
-		}
-	}
+	decal->StickToWall (wall, ix, iy, ffloor);
+	tpl->ApplyToDecal (decal, wall);
+	decal->AlphaColor = AlphaColor;
+	decal->RenderFlags = (decal->RenderFlags & RF_DECALMASK) |
+						 (this->RenderFlags & ~RF_DECALMASK);
 	return decal;
 }
 
@@ -777,48 +714,6 @@ CCMD (spray)
 	Net_WriteString (argv[1]);
 }
 
-DBaseDecal *ShootDecal(const FDecalTemplate *tpl, AActor *basisactor, sector_t *sec, fixed_t x, fixed_t y, fixed_t z, angle_t angle, fixed_t tracedist, bool permanent)
-{
-	if (tpl == NULL || (tpl = tpl->GetDecal()) == NULL)
-	{
-		return NULL;
-	}
-
-	FTraceResults trace;
-	DBaseDecal *decal;
-	side_t *wall;
-
-	angle >>= ANGLETOFINESHIFT;
-
-	Trace(x, y, z, sec,
-		finecosine[angle], finesine[angle], 0,
-		tracedist, 0, 0, NULL, trace, TRACE_NoSky);
-
-	if (trace.HitType == TRACE_HitWall)
-	{
-		if (permanent)
-		{
-			decal = new DBaseDecal(trace.Z);
-			wall = trace.Line->sidedef[trace.Side];
-			decal->StickToWall(wall, trace.X, trace.Y, trace.ffloor);
-			tpl->ApplyToDecal(decal, wall);
-			// Spread decal to nearby walls if it does not all fit on this one
-			if (cl_spreaddecals)
-			{
-				decal->Spread(tpl, wall, trace.X, trace.Y, trace.Z, trace.ffloor);
-			}
-			return decal;
-		}
-		else
-		{
-			return DImpactDecal::StaticCreate(tpl,
-				trace.X, trace.Y, trace.Z,
-				trace.Line->sidedef[trace.Side], NULL);
-		}
-	}
-	return NULL;
-}
-
 class ADecal : public AActor
 {
 	DECLARE_CLASS (ADecal, AActor);
@@ -848,7 +743,7 @@ void ADecal::BeginPlay ()
 			// Look for a wall within 64 units behind the actor. If none can be
 			// found, then no decal is created, and this actor is destroyed
 			// without effectively doing anything.
-			if (NULL == ShootDecal(tpl, this, Sector, x, y, z, angle + ANGLE_180, 64*FRACUNIT, true))
+			if (NULL == zx::decals::ShootMark(tpl, this, Sector, x, y, z, angle + ANGLE_180, 64*FRACUNIT, true, zx::decals::kSourcePlaced))
 			{
 				DPrintf ("Could not find a wall to stick decal to at (%d,%d)\n", x>>FRACBITS, y>>FRACBITS);
 			}

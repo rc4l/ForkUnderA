@@ -72,6 +72,9 @@
 #	include <windows.h>
 // [BB] Include winsock2.h instead of winsock.h
 #	include <winsock2.h>
+// [rc4l] IPv6 lives here, not in winsock2.h: sockaddr_in6, in6_addr, inet_ntop and inet_pton are all
+// declared by ws2tcpip.h, and it has to follow winsock2.h rather than precede it.
+#	include <ws2tcpip.h>
 #else
 #	include <sys/socket.h>
 #	include <netinet/in.h>

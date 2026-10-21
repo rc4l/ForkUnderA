@@ -26,6 +26,10 @@
 
 
 #include <string.h>
+#include <errno.h>
+#include "features/gamecopy/level.h"   // [rc4l] the level as the copy holds it
+#include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
+#include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -69,6 +73,9 @@
 #include "g_game.h"
 #include "g_level.h"
 #include "features/skywire/computation/sky_wire_compute.h"
+#include "features/bot-save/zx_botsave.h"
+#include "features/quake-movement/quakemove.h"
+#include "features/quake-movement/computation/qphysics_compute.h"
 #include "sbar.h"
 #include "m_swap.h"
 #include "m_png.h"
@@ -81,6 +88,7 @@
 #include "d_event.h"
 #include "p_acs.h"
 #include "m_joy.h"
+#include "mcp_bridge.h" // synthetic analog-axis injection anchor (no-op unless FUA_MCP_BRIDGE)
 #include "farchive.h"
 #include "r_renderer.h"
 #include "r_data/colormaps.h"
@@ -112,7 +120,7 @@
 #include "statnums.h"
 #include "domination.h"
 #include "win32/g15/g15.h"
-#include "gl/dynlights/gl_dynlight.h"
+#include "features/dynlights/dynlight.h"
 #include "p_3dmidtex.h"
 #include "a_lightning.h"
 #include "po_man.h"
@@ -121,6 +129,9 @@
 #include <zlib.h>
 
 #include "g_hub.h"
+#include "features/telemetry/telemetry.h"
+#include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -140,7 +151,6 @@ void	G_DoPlayDemo (void);
 void	G_DoCompleted (void);
 void	G_DoVictory (void);
 void	G_DoWorldDone (void);
-void	G_DoSaveGame (bool okForQuicksave, FString filename, const char *description);
 void	G_DoAutoSave ();
 
 void STAT_Write(FILE *file);
@@ -150,8 +160,15 @@ FIntCVar gameskill ("skill", 2, CVAR_SERVERINFO|CVAR_LATCH);
 CVAR (Bool, chasedemo, false, 0);
 CVAR (Bool, storesavepic, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, longsavemessages, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-CVAR (String, save_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] A script cannot point saves elsewhere (features/command-safety).
+CVAR (String, save_dir, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOSETBYACS);
+// [rc4l] uzdoom@c339bb33c: freeze the clock across a save so the world does not advance
+// while the snapshot is being written.
+CVAR (Bool, cl_waitforsave, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG);
 EXTERN_CVAR (Float, con_midtime);
+
+// [rc4l] LAN-discovery tracing switch, defined in features/federated-server-registry/sv_serverregistry.cpp.
+EXTERN_CVAR (Bool, fua_showlandiscovery)
 
 // [BB]
 EXTERN_CVAR (Int, vid_renderer)
@@ -235,10 +252,13 @@ short			consistancy[MAXPLAYERS][BACKUPTICS];
  
 #define TURBOTHRESHOLD	12800
 
-float	 		normforwardmove[2] = {0x19, 0x32};		// [RH] For setting turbo from console
-float	 		normsidemove[2] = {0x18, 0x28};			// [RH] Ditto
+// [rc4l] Extended to four tiers for features/quake-movement: walk, run, crouch-walk,
+// crouch-run. The first two are the historic values untouched; only a Quake pawn can select
+// tiers 2-3, so stock movement never reaches the new entries.
+float	 		normforwardmove[4] = {0x19, 0x32, 0xD, 0x19};	// [RH] For setting turbo from console
+float	 		normsidemove[4] = {0x18, 0x28, 0xC, 0x18};		// [RH] Ditto
 
-fixed_t			forwardmove[2], sidemove[2];
+fixed_t			forwardmove[4], sidemove[4];
 fixed_t 		angleturn[4] = {640, 1280, 320, 320};		// + slow turn
 fixed_t			flyspeed[2] = {1*256, 3*256};
 int				lookspeed[2] = {450, 512};
@@ -324,10 +344,12 @@ CUSTOM_CVAR (Float, turbo, 100.f, 0)
 	{
 		double scale = self * 0.01;
 
-		forwardmove[0] = (int)(normforwardmove[0]*scale);
-		forwardmove[1] = (int)(normforwardmove[1]*scale);
-		sidemove[0] = (int)(normsidemove[0]*scale);
-		sidemove[1] = (int)(normsidemove[1]*scale);
+		// [rc4l] Four tiers now (features/quake-movement); the loop keeps turbo scaling all of them.
+		for (int tier = 0; tier < 4; ++tier)
+		{
+			forwardmove[tier] = (int)(normforwardmove[tier]*scale);
+			sidemove[tier] = (int)(normsidemove[tier]*scale);
+		}
 	}
 }
 
@@ -744,7 +766,22 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	cmd->consistancy = consistancy[consoleplayer][(maketic/ticdup)%BACKUPTICS];
 
 	strafe = Button_Strafe.bDown;
-	speed = Button_Speed.bDown ^ (int)cl_run;
+	// [rc4l] features/quake-movement: a Quake pawn selects one of FOUR tiers (walk, run,
+	// crouch-walk, crouch-run) so Player.ForwardMove/SideMove entries 3 and 4 become
+	// reachable. Gated on MvType: a stock pawn keeps exactly the two tiers it always had,
+	// because its crouch slowdown already comes from crouchfactor in P_MovePlayer_Doom and
+	// applying a tier as well would slow it twice.
+	const bool running = ( Button_Speed.bDown ^ (int)cl_run ) != 0;
+	if (zx::quakemove::UsesQuakeMovement (players[consoleplayer].mo))
+	{
+		const bool crouching = Button_Crouch.bDown
+			&& players[consoleplayer].CanCrouch() && level.IsCrouchingAllowed();
+		speed = zx::quakemove::QWalkCrouchTier (running, crouching);
+	}
+	else
+	{
+		speed = running ? 1 : 0;
+	}
 
 	forward = side = fly = 0;
 
@@ -829,7 +866,14 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	if (Button_User3.bDown)			cmd->ucmd.buttons |= BT_USER3;
 	if (Button_User4.bDown)			cmd->ucmd.buttons |= BT_USER4;
 
-	if (Button_Speed.bDown)			cmd->ucmd.buttons |= BT_SPEED;
+	// [rc4l] features/quake-movement: for a Quake pawn, BT_SPEED means "is running", not "+speed is
+	// held". The Quake move tier is picked from this bit on the SERVER, which cannot see cl_run --
+	// so with the default cl_run 1 and no +speed held, the bit was clear while the player was in
+	// fact running, and the pawn accelerated toward walking speed. Gated on MvType so stock pawns
+	// keep the vanilla meaning of the bit exactly.
+	if (zx::quakemove::UsesQuakeMovement (players[consoleplayer].mo)
+		? (Button_Speed.bDown ^ (int)cl_run) != 0
+		: Button_Speed.bDown)		cmd->ucmd.buttons |= BT_SPEED;
 	if (Button_Strafe.bDown)		cmd->ucmd.buttons |= BT_STRAFE;
 	if (Button_MoveRight.bDown)		cmd->ucmd.buttons |= BT_MOVERIGHT;
 	if (Button_MoveLeft.bDown)		cmd->ucmd.buttons |= BT_MOVELEFT;
@@ -847,6 +891,7 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 	float joyaxes[NUM_JOYAXIS];
 
 	I_GetAxes(joyaxes);
+	MCP_RPC_OverrideAxes(joyaxes); // bridge synthetic sticks (no-op in release; anchor byte-identical)
 
 	// [Leo] Clamp JOYAXIS_Side.
 	joyaxes[JOYAXIS_Side] = clamp<float>(joyaxes[JOYAXIS_Side], -1.f, 1.f);
@@ -968,6 +1013,29 @@ void G_BuildTiccmd (ticcmd_t *cmd)
 //[Graf Zahl] This really helps if the mouse update rate can't be increased!
 CVAR (Bool,		smooth_mouse,	false,	CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 
+// [rc4l] features/handoff: what turning reads of the console player, live in the handoff and from the render copy beside a running tic, where a mouse move still turns the view.
+struct G_TurnPlayer { bool scales; float fovScale; bool spectating; bool freelook; };
+static G_TurnPlayer G_TurnPlayerNow ()
+{
+	G_TurnPlayer t;
+	if (zx::handoff::TicInFlight ())
+	{
+		const zx::gamecopy::PlayerRecord *const p = zx::gamecopy::Player (consoleplayer);
+		t.scales = p != NULL && p->playerstate != PST_DEAD && p->hasWeapon && p->weaponFOVScale > 0;
+		t.fovScale = p != NULL ? p->weaponFOVScale : 1.f;
+		t.spectating = p != NULL && p->bSpectating;
+		// [rc4l] FLevelLocals::IsFreelookAllowed on the copy's flags, dmflags being the main thread's.
+		t.freelook = (dmflags & DF_NO_FREELOOK) ? false : (dmflags & DF_YES_FREELOOK) ? true : !(zx::gamecopy::Level ().flags & LEVEL_FREELOOK_NO);
+		return t;
+	}
+	player_t &p = players[consoleplayer];
+	t.scales = p.playerstate != PST_DEAD && p.ReadyWeapon != NULL && p.ReadyWeapon->FOVScale > 0;
+	t.fovScale = t.scales ? p.ReadyWeapon->FOVScale : 1.f;
+	t.spectating = p.bSpectating;
+	t.freelook = level.IsFreelookAllowed ();
+	return t;
+}
+
 void G_AddViewPitch (int look, bool mouse)
 {
 	if (gamestate == GS_TITLELEVEL)
@@ -975,15 +1043,14 @@ void G_AddViewPitch (int look, bool mouse)
 		return;
 	}
 	look <<= 16;
-	if (players[consoleplayer].playerstate != PST_DEAD &&		// No adjustment while dead.
-		players[consoleplayer].ReadyWeapon != NULL &&			// No adjustment if no weapon.
-		players[consoleplayer].ReadyWeapon->FOVScale > 0)		// No adjustment if it is non-positive.
+	const G_TurnPlayer turner = G_TurnPlayerNow ();
+	if (turner.scales)		// No adjustment while dead, with no weapon, or with a non-positive scale.
 	{
-		look = int(look * players[consoleplayer].ReadyWeapon->FOVScale);
+		look = int(look * turner.fovScale);
 	}
 	// [BB] Allow spectators to freelook no matter what. Note: This probably causes some
 	// sky rendering errors in software mode.
-	if (!level.IsFreelookAllowed() && ( players[consoleplayer].bSpectating == false ) && ( CLIENTDEMO_IsInFreeSpectateMode() == false ))
+	if (!turner.freelook && ( turner.spectating == false ) && ( CLIENTDEMO_IsInFreeSpectateMode() == false ))
 	{
 		LocalViewPitch = 0;
 	}
@@ -1024,11 +1091,10 @@ void G_AddViewAngle (int yaw, bool mouse)
 		return;
 	}
 	yaw <<= 16;
-	if (players[consoleplayer].playerstate != PST_DEAD &&	// No adjustment while dead.
-		players[consoleplayer].ReadyWeapon != NULL &&		// No adjustment if no weapon.
-		players[consoleplayer].ReadyWeapon->FOVScale > 0)	// No adjustment if it is non-positive.
+	const G_TurnPlayer turner = G_TurnPlayerNow ();
+	if (turner.scales)	// No adjustment while dead, with no weapon, or with a non-positive scale.
 	{
-		yaw = int(yaw * players[consoleplayer].ReadyWeapon->FOVScale);
+		yaw = int(yaw * turner.fovScale);
 	}
 	LocalViewAngle -= yaw;
 	if (yaw != 0)
@@ -1462,7 +1528,24 @@ bool G_Responder (event_t *ev)
 extern FTexture *Page;
 
 
+// [rc4l] features/handoff: G_Ticker in two halves around the playsim's tic, which is all a game thread runs.
 void G_Ticker ()
+{
+	const G_TickerPart part = G_TickerBegin ();
+	if (part.playsim)
+	{
+		G_TickerPlaysim ();
+	}
+	G_TickerEnd (part);
+}
+
+void G_TickerPlaysim ()
+{
+	ZX_ZONE ("sim/pticker"); // [rc4l] the playsim's tic in features/telemetry, which perf.ticprof reads too
+	P_Ticker ();
+}
+
+G_TickerPart G_TickerBegin ()
 {
 	int i;
 	gamestate_t	oldgamestate;
@@ -1626,6 +1709,23 @@ void G_Ticker ()
 			lCommand = pByteStream->ReadLong();
 			if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 				BROWSER_ParseServerQuery( pByteStream, true );
+			// [rc4l] A LAN broadcast announce. It leaves the server's ephemeral broadcast socket, so
+			// its source port is not the game port; the real game port follows the header. Patch it
+			// onto the from-address, then the remainder is an ordinary challenge reply parsed as-is.
+			else if ( lCommand == SERVER_LAUNCHER_LAN_CHALLENGE )
+			{
+				const USHORT usGamePort = pByteStream->ReadShort();
+				NETWORK_OverrideFromAddressPort( usGamePort );
+				// [rc4l] Hidden LAN diagnostics: silent unless fua_showlandiscovery is on. The receiving
+				// half of fua_landiag -- "did an announce arrive, from where, what game port did it name".
+				if ( fua_showlandiscovery )
+					Printf( "[LAN] announce from %s (game port %u)\n",
+						NETWORK_GetFromAddress().ToString(), usGamePort );
+				BROWSER_ParseServerQuery( pByteStream, true );
+			}
+			// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
+			else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
+				BROWSER_ParseServerQuerySegment( pByteStream, true );
 		}
 
 		// Now that we're done parsing the multiple packets the server has sent our way, check
@@ -1750,6 +1850,7 @@ void G_Ticker ()
 	}
 
 	// do main actions
+	G_TickerPart part = { gamestate, false };
 	switch (gamestate)
 	{
 	case GS_LEVEL:
@@ -1922,8 +2023,24 @@ void G_Ticker ()
 		// [BB] Don't call P_Ticker on the server if there are no players.
 		// This significantly reduces CPU usage on maps with many monsters
 		// (of course only as long as there are no connected clients).
-		if ( ( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( SERVER_CalcNumConnectedClients() > 0 ) )
-			P_Ticker ();
+		part.playsim = ( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( SERVER_CalcNumConnectedClients() > 0 );
+		break;
+
+	case GS_TITLELEVEL:
+		part.playsim = true;
+		break;
+
+	default:
+		break;
+	}
+	return part;
+}
+
+void G_TickerEnd (const G_TickerPart &part)
+{
+	switch (part.state)
+	{
+	case GS_LEVEL:
 		AM_Ticker ();
 
 		// Tick the medal system.
@@ -1938,10 +2055,6 @@ void G_Ticker ()
 				ANNOUNCER_PlayEntry( cl_announcer, pszWelcomeSound );
 		}
 
-		break;
-
-	case GS_TITLELEVEL:
-		P_Ticker ();
 		break;
 
 	case GS_INTERMISSION:
@@ -2345,7 +2458,7 @@ bool G_CheckSpot (int playernum, FPlayerStart *mthing)
 	//    return false;
 
 	// [EP] Spectator flags must be disabled for the position checking, too.
-	DWORD oldflags2 = players[playernum].mo->flags2;
+	ActorFlags2 oldflags2 = players[playernum].mo->flags2;
 	if ( players[playernum].mo->STFlags & STFL_OBSOLETE_SPECTATOR_BODY )
 		players[playernum].mo->flags2 &= ~MF2_THRUACTORS;
 
@@ -4354,7 +4467,7 @@ AActor* GAME_SelectRandomSpotForArtifact ( const PClass *pArtifactType, const TA
 			P_FindFloorCeiling( pArtifact, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
 		}
 
-		const DWORD spawnFlags = pArtifact->flags;
+		const ActorFlags spawnFlags = pArtifact->flags;
 		// [BB] Ensure that the artifact is solid, otherwise P_TestMobjLocation won't complain if a player already is at the proposed position.
 		pArtifact->flags |= MF_SOLID;
 
@@ -4636,16 +4749,19 @@ void G_DoLoadGame ()
 	}
 
 	SaveVersion = 0;
+	// [rc4l] Newer saves too, whose classes and fields this build cannot know (computation/saveversion_compute).
+	int saveVerdict = kSaveVersionTooOld;
 	if (!M_GetPNGText (png, "ZDoom Save Version", sigcheck, 20) ||
 		0 != strncmp (sigcheck, SAVESIG, 9) ||		// ZDOOMSAVE is the first 9 chars
-		(SaveVersion = atoi (sigcheck+9)) < MINSAVEVER)
+		(saveVerdict = ComputeSaveVersionVerdict (SaveVersion = atoi (sigcheck+9), MINSAVEVER, SAVEVER)) != kSaveVersionReadable)
 	{
 		delete png;
 		fclose (stdfile);
 		Printf ("Savegame is from an incompatible version");
 		if (SaveVersion != 0)
 		{
-			Printf(": %d (%d is the oldest supported)", SaveVersion, MINSAVEVER);
+			if (saveVerdict == kSaveVersionTooNew) Printf(": %d (%d is the newest supported)", SaveVersion, SAVEVER);
+			else Printf(": %d (%d is the oldest supported)", SaveVersion, MINSAVEVER);
 		}
 		Printf("\n");
 		return;
@@ -4714,6 +4830,11 @@ void G_DoLoadGame ()
 	P_ReadACSDefereds (png);
 
 	// load a base level
+	// [rc4l] Re-occupy the slots the bots held BEFORE the matcher runs. Their data is already in
+	// this file; ReadMultiplePlayers simply refuses to match into an empty slot, so without this it
+	// is read past and thrown away.
+	zx::BotSave_Restore( png, stdfile );
+
 	savegamerestore = true;		// Use the player actors in the savegame
 	bool demoplaybacksave = demoplayback;
 	G_InitNew (map, false);
@@ -4776,15 +4897,32 @@ void G_DoLoadGame ()
 //
 void G_SaveGame (const char *filename, const char *description)
 {
+	// [rc4l] uzdoom@5d65b10ae -- these guards used to live in the save CCMD, so only the console
+	// path was checked; anything else reaching G_SaveGame skipped them entirely.
 	if (sendsave || gameaction == ga_savegame)
 	{
 		Printf ("A game save is still pending.\n");
-		return;
 	}
-	savegamefile = filename;
-	strncpy (savedescription, description, sizeof(savedescription)-1);
-	savedescription[sizeof(savedescription)-1] = '\0';
-	sendsave = true;
+	else if (!usergame)
+	{
+		Printf ("not in a saveable game\n");
+	}
+	else if (gamestate != GS_LEVEL)
+	{
+		Printf ("not in a level\n");
+	}
+	// [rc4l] Zandronum has no `multiplayer` global; NETSTATE_SINGLE is the equivalent.
+	else if (players[consoleplayer].health <= 0 && NETWORK_GetState( ) == NETSTATE_SINGLE)
+	{
+		Printf ("player is dead in a single-player game\n");
+	}
+	else
+	{
+		savegamefile = filename;
+		strncpy (savedescription, description, sizeof(savedescription)-1);
+		savedescription[sizeof(savedescription)-1] = '\0';
+		sendsave = true;
+	}
 }
 
 FString G_BuildSaveName (const char *prefix, int slot)
@@ -4936,7 +5074,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 
 	// Do not even try, if we're not in a level. (Can happen after
 	// a demo finishes playback.)
-	if (lines == NULL || sectors == NULL)
+	if (lines == NULL || sectors == NULL || gamestate != GS_LEVEL)	// [rc4l] uzdoom@5d65b10ae
 	{
 		return;
 	}
@@ -4945,6 +5083,10 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	{
 		filename = G_BuildSaveName ("demosave.zds", -1);
 	}
+
+	// [rc4l] uzdoom@c339bb33c
+	if (cl_waitforsave)
+		I_FreezeTime(true);
 
 	insave = true;
 	G_SnapshotLevel ();
@@ -4955,6 +5097,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	{
 		Printf ("Could not create savegame '%s'\n", filename.GetChars());
 		insave = false;
+		I_FreezeTime(false);	// [rc4l] uzdoom@c339bb33c: unfreeze on the failure path too
 		return;
 	}
 
@@ -5002,6 +5145,10 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 		M_AppendPNGChunk (stdfile, MAKE_ID('m','p','E','m'), &multiplayerEmulation, 1);
 	}
 
+	// [rc4l] The bots, so they are still here when this save is loaded. Beside mpEm deliberately:
+	// same kind of Zandronum-specific state, same additive mechanism, no change to the save stream.
+	zx::BotSave_Write( stdfile );
+
 	if (NextSkill != -1)
 	{
 		BYTE next = NextSkill;
@@ -5028,6 +5175,8 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	}
 	if (success) 
 	{
+		// [rc4l] A renderer that reads its picture back only later puts it in now that the save is there.
+		Renderer->SaveWritten (filename.GetChars());
 		if (longsavemessages) Printf ("%s (%s)\n", GStrings("GGSAVED"), filename.GetChars());
 		else Printf ("%s\n", GStrings("GGSAVED"));
 	}
@@ -5043,6 +5192,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	}
 		
 	insave = false;
+	I_FreezeTime(false);	// [rc4l] uzdoom@c339bb33c
 }
 
 
@@ -5163,9 +5313,9 @@ void G_WriteDemoTiccmd (ticcmd_t *cmd, int player, int buf)
 void G_RecordDemo (const char* name)
 {
 	usergame = false;
-	demoname = name;
+	// [rc4l] A demo is always a .lmp, whatever extension the name carries (features/command-safety).
+	demoname = zx::ComputeOwnExtension(name, {".lmp"}).c_str();
 	FixPathSeperator (demoname);
-	DefaultExtension (demoname, ".lmp");
 	maxdemosize = 0x20000;
 	demobuffer = (BYTE *)M_Malloc (maxdemosize);
 	demorecording = true; 
@@ -5425,6 +5575,13 @@ bool G_ProcessIFFDemo (FString &mapname)
 			demo_p = nextchunk;
 	}
 
+	// [rc4l] uzdoom@322742d4b
+	if (!headerHit)
+	{
+		Printf ("Demo has no header!\n");
+		return true;
+	}
+
 	if (!numPlayers)
 	{
 		Printf ("Demo has no players!\n");
@@ -5658,7 +5815,8 @@ bool G_CheckDemoStatus (void)
 		formlen = demobuffer + 4;
 		WriteLong (int(demo_p - demobuffer - 8), &formlen);
 
-		bool saved = M_WriteFile (demoname, demobuffer, int(demo_p - demobuffer)); 
+		bool saved = M_WriteFile (demoname, demobuffer, int(demo_p - demobuffer));
+		const int writeError = errno;
 		M_Free (demobuffer); 
 		demorecording = false;
 		stoprecording = false;
@@ -5668,7 +5826,8 @@ bool G_CheckDemoStatus (void)
 		}
 		else
 		{
-			Printf ("Demo %s could not be saved\n", demoname.GetChars());
+			// [rc4l] With the system's reason, since a demo a CI runner could not write said nothing of why.
+			Printf ("Demo %s could not be saved: %s\n", demoname.GetChars(), strerror (writeError));
 		}
 	}
 

@@ -76,7 +76,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Doom, Strife, Chex)
 	{
-		PatchItem "M_NGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
+		PatchItem "M_NGAME", "n", "PlayerclassMenu"
 		ifOption(SwapMenu)
 		{
 			PatchItem "M_LOADG", "l", "LoadGameMenu"
@@ -98,7 +98,7 @@ LISTMENU "MainMenu"
 	
 	IfGame(Heretic, Hexen)
 	{
-		TextItem "$MNU_NEWGAME", "n", "FUANewGameMenu"	// [rc4l] Online/Offline first
+		TextItem "$MNU_NEWGAME", "n", "PlayerclassMenu"
 		TextItem "$MNU_OPTIONS", "o", "OptionsMenu"
 		TextItem "$MNU_GAMEFILES", "g", "GameFilesMenu"
 		TextItem "$MNU_INFO", "i", "ReadThisMenu"
@@ -165,14 +165,20 @@ ListMenu "PlayerclassMenu"
 
 ListMenu "EpisodeMenu"
 {
-	IfGame(Doom, Heretic, Hexen, Strife)
-	{
-		NetgameMessage "$NEWGAME"
-	}
-	IfGame(Chex)
-	{
-		NetgameMessage "$CNEWGAME"
-	}
+	// [rc4l] NetgameMessage removed. "$NEWGAME" ("you can't start a new game while in a network
+	// game") blocked this menu from OPENING for a connected client, which total conversions run into
+	// constantly: mods route their own setup through the episode list, so a player joining a server
+	// hit a refusal on a menu they had every reason to open.
+	//
+	// The gate was aimed at the wrong thing. Opening the list is harmless -- it is picking an entry
+	// that would try to start a game, and a client cannot do that anyway: the server owns the map.
+	// Keeping the menu shut to prevent an action it is not the only route to just made the mod
+	// unusable online.
+	//
+	// LoadGameMenu, SaveGameMenu and PlayerclassMenu keep theirs. Note PlayerclassMenu carries the
+	// same gate TWICE -- here in menudef and again hardcoded at menu/menudef.cpp:2301, which builds a
+	// generated option menu when a mod has too many classes for a list menu. Anything done to that
+	// one has to change both, or the fix silently misses exactly the mods that need it.
 
 	IfGame(Doom, Chex)
 	{
@@ -371,60 +377,8 @@ OptionMenu "OptionsMenu"
 	StaticText " "
 	SafeCommand "Reset to defaults",	"reset2defaults"
 	SafeCommand	"Reset to last saved",	"reset2saved"
+	SafeCommand "Save current settings",	"writeini" // [MobiusU9B] Ported from uzdoom@190173bc442a0eab808f4d2c8a18a1f932e92547: saves the ini without quitting.
 	Command "Go to console",			"menuconsole"
-}
-
-//-------------------------------------------------------------------------------------------
-//
-// [rc4l] New Game now asks Online or Offline first, instead of going straight to the
-// singleplayer flow. The server browser already existed (ZA_Browser, browsermenu.cpp) but was
-// buried three levels down under Options -> Multiplayer Options -> Browse servers, which is a
-// strange place for the primary way people play this engine.
-//
-// Offline points at PlayerclassMenu -- the exact target New Game used before -- so the
-// singleplayer path is unchanged and simply gains one keypress. Its netgame guard is unaffected:
-// PlayerclassMenu carries its own NetgameMessage.
-//
-// Kept as its own menu (FUA room) rather than restructured into Zandronum's ZA_ menus, so a
-// re-sync never has to untangle ours from theirs.
-//
-//-------------------------------------------------------------------------------------------
-
-// A ListMenu, not an OptionMenu, so it reads as a continuation of the main menu rather than a
-// settings page: same logo art and position per game, and the DEFAULTLISTMENU selector/font/
-// linespacing above (M_SKULL1 + BigFont Red on Doom) apply for free. The two entries are TextItem
-// rather than PatchItem because there is no M_ONLINE/M_OFFLIN art in any IWAD -- BigFont Red is
-// the closest match to the main menu's patches without shipping new graphics.
-LISTMENU "FUANewGameMenu"
-{
-	Class "FUAPanelListMenu"	// [rc4l] rounded panel behind the logo + rows (listmenu.cpp)
-	IfGame(Doom, Chex)
-	{
-		StaticPatch 94, 2, "M_DOOM"
-		Position 97, 72
-	}
-	IfGame(Strife)
-	{
-		StaticPatch 84, 2, "M_STRIFE"
-		Position 97, 45
-	}
-	IfGame(Heretic)
-	{
-		StaticPatch 88, 0, "M_HTIC"
-		StaticPatch 40, 10, "M_SKL01"
-		StaticPatch 232, 10, "M_SKL00"
-		Position 110, 56
-	}
-	IfGame(Hexen)
-	{
-		StaticPatch 88, 0, "M_HTIC"
-		StaticPatch 37, 80, "FBULB0"
-		StaticPatch 278, 80, "FBULA0"
-		Position 110, 56
-	}
-
-	TextItem "Online",	"o", "ZA_Browser"
-	TextItem "Offline",	"f", "PlayerclassMenu"
 }
 
 //-------------------------------------------------------------------------------------------
@@ -434,6 +388,17 @@ LISTMENU "FUANewGameMenu"
 //
 //-------------------------------------------------------------------------------------------
 
+// [rc4l] fua-caching: what gets preloaded at level load. "Placed actors" warms every animation of
+// everything standing on the map; "Full" additionally follows spawn references in DECORATE (the
+// explosions/debris/blood a death can produce), which is what stops first-kill hitching in
+// effect-heavy mods. Off restores stock lazy loading, byte for byte.
+OptionValue "FuaCachingModes"
+{
+	0, "Off"
+	1, "Placed actors"
+	2, "Full (spawn closure)"
+}
+
 OptionMenu "FUAOptions"
 {
 	Title "FUA OPTIONS"
@@ -441,10 +406,48 @@ OptionMenu "FUAOptions"
 	Submenu "Field of View",			"FUAFovOptions"
 	Submenu "Crash Reporting",			"CrashReportOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
+	Submenu "Damage Tint",				"FUADamageTintOptions"
+	Submenu "Speedometer",				"FUASpeedometerOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
 	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
+}
+
+// [rc4l] features/damage-tint: players on damaging floors pick up the floor's color -- a glow
+// gradient from the feet on body sprites, a faint tint on your own weapon, and the mugshot.
+// Strength 0 disables a surface; body coverage picks how far up the gradient climbs.
+OptionMenu "FUADamageTintOptions"
+{
+	Title "DAMAGE TINT"
+	StaticText "Players standing in damaging floors take on the floor's color.", 1
+	StaticText " "
+	Slider	"Body glow strength",		"cl_damagetint",					0.0, 100.0, 5.0, 0
+	Slider	"Body glow coverage",		"cl_damagetint_coverage",			0.0, 100.0, 5.0, 0
+	StaticText " "
+	Slider	"Weapon tint strength",		"cl_damagetint_weapon",				0.0, 100.0, 5.0, 0
+	Slider	"Weapon tint coverage",		"cl_damagetint_weapon_coverage",	0.0, 100.0, 5.0, 0
+	StaticText " "
+	Slider	"Face tint strength",		"cl_damagetint_face",				0.0, 100.0, 5.0, 0
+	Slider	"Face tint coverage",		"cl_damagetint_face_coverage",		0.0, 100.0, 5.0, 0
+	StaticText " "
+	StaticText "Coverage: how far up each sprite the tint reaches (50 = half).", 1
+}
+
+// [MobiusU9B] features/speedometer: the displayed player's speed in map units per second, placed by percentage of the screen.
+OptionMenu "FUASpeedometerOptions"
+{
+	Title "SPEEDOMETER"
+	Option	"Show speedometer",			"cl_fua_speedometer",			"OnOff"
+	Option	"Include vertical speed",	"cl_fua_speedometer_vertical",	"OnOff",		"cl_fua_speedometer"
+	Option	"Text color",				"cl_fua_speedometer_color",		"TextColors",	"cl_fua_speedometer"
+	StaticText " "
+	Slider	"Horizontal position",		"cl_fua_speedometer_x",			0.0, 100.0, 0.5, 1
+	Slider	"Vertical position",		"cl_fua_speedometer_y",			0.0, 100.0, 0.5, 1
+	StaticText " "
+	StaticText "Position is a percentage of the screen:", 1
+	StaticText "0 = left / top, 100 = right / bottom.", 1
 }
 
 // [rc4l] fov-interp: FOV and how fast the view tweens to it. Its own submenu rather than rows in
@@ -902,16 +905,32 @@ OptionValue ZA_RespawnInvulEffects
 	2.0, "ZDoom"
 }
 
+OptionMenu "OpenGLOptions"
+{
+	Title "OPENGL OPTIONS"
+	Submenu "Dynamic Light Options",	"GLLightOptions"
+	Submenu "Texture Options", 			"GLTextureGLOptions"
+	Submenu "Preferences", 				"GLPrefOptions"
+}
+
 OptionMenu "VideoOptions"
 {
 	Title "DISPLAY OPTIONS"
 	
-	Submenu "Scoreboard Options", 		"ScoreboardOptions"
+	Submenu "OpenGL Options", 			"OpenGLOptions"
+	// [TP] Zandronum's scoreboard does not use these options
+	// Submenu "Scoreboard Options", 		"ScoreboardOptions"
 	StaticText " "
 	Slider "Screen size",				"screenblocks", 3.0, 12.0, 1.0, 0
-	Slider "Brightness",				"Gamma", 0.75, 3.0, 0.05, 2
+
+	Slider "Gamma correction",			"Gamma",						0.75, 3.0, 0.05, 2
+	Slider "Brightness",				"vid_brightness",				-0.8,0.8, 0.05
+	Slider "Contrast",					"vid_contrast",	   				0.1, 3.0, 0.1
+
 	Option "Vertical Sync",				"vid_vsync", "OnOff"
-	Option "Column render mode",		"r_columnmethod", "ColumnMethods"
+	Option "Blood uses max health",		"blood_fade_usemaxhealth", "OnOff" // [AK]
+	// [TP]
+	Slider "Blood brightness",			"blood_fade_scalar",			0.0, 1.0, 0.05
 
 	StaticText " "
 	Option "Screen wipe style",			"wipetype", "Wipes"
@@ -919,12 +938,11 @@ OptionMenu "VideoOptions"
 	IfOption(Windows)
 	{
 		Option	"Show ENDOOM screen",	"showendoom", "Endoom"
-		//Option "DirectDraw palette hack", "vid_palettehack", "OnOff"
-		//Option "Use attached surfaces", "vid_attachedsurfaces", "OnOff"
 	}
 	
 	Option "Stretch short skies",		"r_stretchsky", "OnOff"
 	Option "Use fuzz effect",			"r_drawfuzz", "Fuzziness"
+	Option "Respawn invul effect",		"cl_respawninvuleffect", "ZA_RespawnInvulEffects" // [TP]
 	Slider "Lost Soul translucency",	"transsouls", 0.25, 1.0, 0.05, 2
 	Option "Use fake contrast",			"r_fakecontrast", "Contrast"
 	Option "Rocket Trails",				"cl_rockettrails", "RocketTrailTypes"
@@ -934,7 +952,6 @@ OptionMenu "VideoOptions"
 	Option "Show player sprites",		"r_drawplayersprites", "OnOff"
 	Option "Death camera",				"r_deathcamera", "OnOff"
 	Option "Teleporter zoom",			"telezoom", "OnOff"
-	Slider "Earthquake shake intensity",	"r_quakeintensity", 0.0, 1.0, 0.05, 2
 	Option "Interpolate monster movement",	"nomonsterinterpolation", "NoYes"
 }
 
@@ -1015,13 +1032,8 @@ OptionMenu "HUDOptions"
 	Submenu "Alternative HUD",			"AltHudOptions"
 	Submenu "Message Options", 			"MessageOptions"
 	Submenu "Scoreboard Options", 			"ScoreboardOptions" // [AK]
+	Submenu "Crosshair Options",			"FUACrosshairOptions" // [MobiusU9B]
 	StaticText " "
-	Option "Default Crosshair",			"crosshair", "Crosshairs"
-	Option "Force default crosshair",	"crosshairforce", "OnOff"
-	Option "Grow crosshair when picking up items",	"crosshairgrow", "OnOff"
-	ColorPicker "Crosshair color", 		"crosshaircolor"
-	Option "Crosshair shows health",	"crosshairhealth", "OnOff"
-	Option "Scale crosshair",			"crosshairscale", "OnOff"
 	Option "Voting display",			"cl_showfullscreenvote", "ZA_VotingDisplay"
 	Option "Hide vote screen after vote",		"cl_hidevotescreen", "YesNo" // [AK]
 	Option "Fullscreen HUD",			"cl_stfullscreenhud", "ZA_FullscreenHUD"
@@ -1039,6 +1051,80 @@ OptionMenu "HUDOptions"
 	Option "Ice death flashes",			"pf_ice",			"ZDoomHexen"
 	Option "Poison Buildup flashes",	"pf_hazard",		"ZDoomStrife"
 }
+
+// [MobiusU9B] cl_fua_identify_position: where Zandronum's target identification is drawn.
+OptionValue "FUAIdentifyPositions"
+{
+	0, "Bottom of screen"
+	1, "Next to crosshair"
+}
+
+// [MobiusU9B] cl_fua_identify_actorname: what the actor-name line beside the crosshair shows.
+OptionValue "FUAActorNameModes"
+{
+	0, "Off"
+	1, "DECORATE class"
+	2, "Tag"
+}
+
+// [MobiusU9B] features/crosshair: every crosshair setting in one place, plus size and offset sliders.
+OptionMenu "FUACrosshairOptions"
+{
+	Title "CROSSHAIR OPTIONS"
+	Option "Default Crosshair",			"crosshair", "Crosshairs"
+	Option "Force default crosshair",	"crosshairforce", "OnOff"
+	Option "Grow crosshair when picking up items",	"crosshairgrow", "OnOff"
+	ColorPicker "Crosshair color", 		"crosshaircolor"
+	Option "Crosshair shows health",	"crosshairhealth", "OnOff"
+	Option "Scale crosshair with resolution",	"crosshairscale", "OnOff"
+	StaticText " "
+	Slider	"Crosshair size",			"cl_fua_crosshair_scale",	0.25, 4.0, 0.05, 2
+	Slider	"Horizontal offset",		"cl_fua_crosshair_x",		-50.0, 50.0, 0.5, 1
+	Slider	"Vertical offset",			"cl_fua_crosshair_y",		-50.0, 50.0, 0.5, 1
+	StaticText " "
+	StaticText "Offsets are % of the view from its centre, + is right / down.", 1
+	StaticText "They move the crosshair, not where you shoot.", 1
+	StaticText "Target info and the telemeter follow the crosshair.", 1
+	StaticText " "
+	StaticText "Target info", 1
+	Option	"Identify players",			"cl_fua_identify_players",		"OnOff"
+	Option	"Identify monsters",		"cl_fua_identify_monsters",		"OnOff"
+	Option	"Health and armor",			"cl_fua_identify_health",		"OnOff"
+	Option	"Weapon and ammo",			"cl_fua_identify_weapon",		"OnOff"
+	Option	"Class",					"cl_fua_identify_class",		"OnOff"
+	Option	"Ally / Enemy label",		"cl_fua_identify_allyenemy",	"OnOff"
+	Option	"Ghost marker",				"cl_fua_identify_ghost",		"OnOff"
+	Option	"Show target info",			"cl_fua_identify_position",		"FUAIdentifyPositions"
+	Option	"Actor name",				"cl_fua_identify_actorname",	"FUAActorNameModes"
+	StaticText " "
+	StaticText "Telemeter", 1
+	Option	"Telemeter",				"cl_fua_telemeter",				"OnOff"
+	Option	"Measure decorations",		"cl_fua_telemeter_decorations",	"OnOff", "cl_fua_telemeter"
+	Option	"Measure monsters",			"cl_fua_telemeter_monsters",	"OnOff", "cl_fua_telemeter"
+	Option	"Measure players",			"cl_fua_telemeter_players",		"OnOff", "cl_fua_telemeter"
+	Option	"Measure projectiles",		"cl_fua_telemeter_projectiles",	"OnOff", "cl_fua_telemeter"
+	StaticText " "
+	StaticText "Next to the crosshair", 1
+	Slider	"Text size",				"cl_fua_xhairinfo_textsize",	0.5, 4.0, 0.1, 1
+	Slider	"Name X offset",			"cl_fua_xhairinfo_name_x",		-200, 200, 1, 0
+	Slider	"Name Y offset",			"cl_fua_xhairinfo_name_y",		-200, 200, 1, 0
+	Slider	"Details X offset",			"cl_fua_xhairinfo_info_x",		-200, 200, 1, 0
+	Slider	"Details Y offset",			"cl_fua_xhairinfo_info_y",		-200, 200, 1, 0
+	Slider	"Actor name X offset",		"cl_fua_xhairinfo_actor_x",		-200, 200, 1, 0
+	Slider	"Actor name Y offset",		"cl_fua_xhairinfo_actor_y",		-200, 200, 1, 0
+	Slider	"Telemeter X offset",		"cl_fua_xhairinfo_telemeter_x",	-200, 200, 1, 0
+	Slider	"Telemeter Y offset",		"cl_fua_xhairinfo_telemeter_y",	-200, 200, 1, 0
+	StaticText " "
+	StaticText "Details are the lines under the name. Health, weapon", 1
+	StaticText "and class show for allies only. The ghost marker flags", 1
+	StaticText "monsters some attacks pass through (Heretic's ghosts).", 1
+	StaticText "Actor name is for items, decorations, projectiles and", 1
+	StaticText "corpses, always next to the crosshair. Monsters and", 1
+	StaticText "players use the identify rows above.", 1
+	StaticText "The telemeter shows the gap in map units between your", 1
+	StaticText "hitbox and what the crosshair is on; touching reads 0.", 1
+	StaticText "It skips items and your own shots.", 1
+}
 	
 //-------------------------------------------------------------------------------------------
 //
@@ -1050,6 +1136,14 @@ OptionValue "AMCoordinates"
 {
 	0, "Player"
 	1, "Map"
+}
+
+// [rc4l] uzdoom@bd93ce63a
+OptionValue "AltHUDAmmo"
+{
+	0, "Current weapon"
+	1, "Available weapons"
+	2, "All weapons"
 }
 
 OptionValue "AltHUDScale"
@@ -1084,6 +1178,8 @@ OptionMenu "AltHUDOptions"
 	Option "Show monster count",					"hud_showmonsters", "OnOff"
 	Option "Show item count",						"hud_showitems", "OnOff"
 	Option "Show weapons",							"hud_showweapons", "OnOff"
+	Option "Show ammo for",							"hud_showammo", "AltHUDAmmo"
+	// [rc4l] uzdoom@bd93ce63a
 	Option "Show stamina and accuracy",				"hud_showstats", "OnOff"
 	Option "Show berserk",							"hud_berserk_health", "OnOff"
 	Option "Show time",								"hud_showtime", "AltHUDTime"
@@ -1144,6 +1240,7 @@ OptionMenu "MiscOptions"
 	Option "Enable autosaves",						"disableautosave", "Autosave"
 	Slider "Number of autosaves",					"autosavecount", 1, 20, 1, 0
 	Option "Load *.deh/*.bex lumps",				"dehload", "dehopt"
+	Option "Pause game in background",				"i_pauseinbackground", "OnOff" // [rc4l]
 	StaticText " "
 	Option "Cache nodes",							"gl_cachenodes", "OnOff"
 	Slider "Time threshold for node caching",		"gl_cachetime", 0.0, 2.0, 0.1
@@ -1606,6 +1703,7 @@ OptionMenu GameplayOptions
 	Option "End sector counts for kill %",	"sv_nocountendmonst", "NoYes"
 	// [TP] Zandronum dmflags
 	Option "Allow player identification",	"sv_noidentifytarget", "NoYes"
+	Option "Allow actor identification",	"sv_fua_noidentifyactors", "NoYes" // [MobiusU9B]
 	Option "Unblock players",		"sv_unblockplayers", "YesNo"
 	Option "Unblock allies",		"sv_unblockallies", "YesNo"
 	Option "Allow rocket jumping",	"sv_norocketjumping", "NoYes"
@@ -1843,6 +1941,7 @@ OptionMenu SoundOptions
 	Option "Play connect sound", "cl_connectsound", "YesNo" // [TP]
 	Option "Multiple announcer sounds", "cl_allowmultipleannouncersounds", "YesNo" // [TP]
 	Option "Lock music",		"snd_lockmusic", "YesNo" // [AK]
+	Option "Sound in background", "i_soundinbackground", "OnOff" // [rc4l]
 	StaticText " "
 	Command "Restart sound",	"snd_reset"
 	StaticText " "
@@ -1934,21 +2033,24 @@ OptionValue ModReplayers
 }
 
 
-OptionValue ModInterpolations
+OptionValue ModQuality
 {
-	0.0, "None"
+	0.0, "Aliasing"
 	1.0, "Linear"
 	2.0, "Cubic"
+	3.0, "Band-limited step"		// BLEP
+	4.0, "Linear (Slower)"
+	5.0, "Band-limited linear"		// BLAM
+	6.0, "Cubic (Slower)"
+	7.0, "Sinc"
 }
 
 
 OptionValue ModVolumeRamps
 {
 	0.0, "None"
-	1.0, "Logarithmic"
-	2.0, "Linear"
-	3.0, "XM=lin, else none"
-	4.0, "XM=lin, else log"
+	1.0, "Note on/off only"
+	2.0, "Full ramping"
 }
 
 
@@ -1958,7 +2060,7 @@ OptionMenu ModReplayerOptions
 	Option "Replayer engine",		"mod_dumb", "ModReplayers"
 	StaticText " "
 	Option "Sample rate",			"mod_samplerate", "SampleRates", "mod_dumb"
-	Option "Interpolation",			"mod_interp", "ModInterpolations", "mod_dumb"
+	Option "Quality",				"mod_interp", "ModQuality", "mod_dumb"
 	Option "Volume ramping",		"mod_volramp", "ModVolumeRamps", "mod_dumb"
 	StaticText " "
 	Option "Chip-o-matic",			"mod_autochip", "OnOff", "mod_dumb"
@@ -2007,6 +2109,22 @@ OptionValue Renderers
 	1.0, "OpenGL"
 }
 
+// [rc4l] The renderer the next launch draws with (vid_backend, features/hwrender): on a Mac Vulkan runs on Metal through MoltenVK.
+OptionValue Backends
+{
+	1, "Vulkan (Recommended)"
+	0, "GL (Legacy)"
+}
+OptionValue BackendsMac
+{
+	1, "Vulkan on Metal (Recommended)"
+	0, "GL (Legacy)"
+}
+OptionValue BackendsWeb
+{
+	2, "WebGPU"
+}
+
 // [rc4l] video-scale: internal render resolution presets, faithful to upstream's ScaleModes
 // (r_videoscale vScaleTable). See features/video-scale. >>> SUPERSEDED-BY-UPSTREAM <<<
 OptionValue ScaleModes
@@ -2032,19 +2150,52 @@ OptionMenu VideoModeMenu
 	Title "VIDEO MODE"
 
 	Option "Fullscreen",			"fullscreen", "YesNo"
+	// [rc4l] uzdoom@f3cc87267
+	IfOption(Mac)
+	{
+		Option "Retina/HiDPI support", "vid_hidpi", "YesNo"
+	}
 	Option "Aspect ratio",			"menu_screenratios", "Ratios"
-	// [rc4l] Renderer option removed: ZandroX is OpenGL-only (software renderer dropped).
+	// [rc4l] The renderer is chosen at launch, so a change says beside it that the game must restart.
+	IfOption(Mac)
+	{
+		RestartOption "Renderer",		"vid_backend", "BackendsMac", "vid_backend_launched"
+	}
+	IfOption(Windows)
+	{
+		RestartOption "Renderer",		"vid_backend", "Backends", "vid_backend_launched"
+	}
+	IfOption(Unix)
+	{
+		RestartOption "Renderer",		"vid_backend", "Backends", "vid_backend_launched"
+	}
+	// [rc4l] A browser draws only through its own WebGPU, so its renderer is shown greyed out.
+	IfOption(Web)
+	{
+		Option "Renderer",			"vid_backend", "BackendsWeb", "vid_backend_choosable"
+	}
 	Option "Force aspect ratio",	"vid_aspect", "ForceRatios"
 	Option "Enable 5:4 aspect ratio","vid_tft", "YesNo"
 	Option "Scale mode",			"vid_scalemode", "ScaleModes"
-	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2
+	// [rc4l] The trailing 1 holds the value until the mouse is released; this one resizes what the
+	// menu is drawn on, so applying mid-drag moves the thumb away from the cursor.
+	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2, 1
 	StaticText " "
-	StaticText "Windowed size", 1
-	TextField "Width",				"vid_defwidth"
-	TextField "Height",				"vid_defheight"
-	Command "Apply windowed size",	"vid_setsize"
-	StaticText " "
-	StaticText "(or drag the window edges to resize)"
+	// [rc4l] In a browser the page sizes the canvas and the game follows it, so there is no window to size.
+	IfOption(Web)
+	{
+		StaticText "The game fills the page; resize the browser"
+		StaticText "window or use Fullscreen to change its size."
+	}
+	else
+	{
+		StaticText "Windowed size", 1
+		TextField "Width",				"vid_defwidth"
+		TextField "Height",				"vid_defheight"
+		Command "Apply windowed size",	"vid_setsize"
+		StaticText " "
+		StaticText "(or drag the window edges to resize)"
+	}
 	class VideoModeMenu
 }
 

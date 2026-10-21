@@ -208,13 +208,28 @@ enum FlagSet
 	// renumbering an existing entry would break protocol compatibility. flags8 (MBF21) had no
 	// entry at all until now, which meant A_ChangeFlag on an MF8_* flag never reached clients.
 	FLAGSET_FLAGS8,
-	FLAGSET_FLAGS9
+	FLAGSET_FLAGS9,
+	// [rc4l] Appended for the same reason as flags8/flags9 above: this enum goes out as a Byte, so a
+	// new entry may only ever go on the end. mvFlags is authored from DECORATE and only changes at
+	// runtime if a mod calls A_ChangeFlag/SetActorProperty on one, so this costs nothing in practice.
+	FLAGSET_MVFLAGS
 };
 
 enum ActorScaleFlag
 {
 	ACTORSCALE_X = 1,
 	ACTORSCALE_Y = 2
+};
+
+// [rc4l] Which sprite-orientation fields a SetThingSpriteOrientation command carries.
+//
+// This is deliberately NOT a new CM_ bit on MoveThing: those flags are a full 16 bits (CM_NOLAST is
+// 1<<15) and widening them would cost two bytes on every position update in the game, forever, to
+// carry values a script sets once in a while. A byte of flags here leaves room for the rest of the
+// sprite-orientation group -- SpriteAngle and SpriteRotation -- to arrive without another command.
+enum SpriteOrientationFlag
+{
+	SPRITEORIENT_ROLL = 1
 };
 
 // [ZandroX] Which dimensions a SetThingSize command carries.
@@ -277,6 +292,7 @@ enum TeamScoreType
 // [AK] The country index that indicates a LAN connection.
 #define COUNTRYINDEX_LAN	UCHAR_MAX
 
+
 // [BB] 5 = 1 + 4 (SVC_HEADER + packet number)
 const int PACKET_HEADER_SIZE = 5;
 
@@ -338,10 +354,23 @@ struct NetworkPWAD
 	FString name;
 	FString checksum;
 	int wadnum; // [TP] Added wadnum
+
+	// [rc4l] Size on disk in bytes, for SQF2_FUA_WAD_SIZES; 0 when it could not be measured.
+	//
+	// Recorded HERE, when the list is built, rather than measured when a launcher asks: the list is
+	// rebuilt once per wad set, and this loop already reads every one of these files end to end to
+	// checksum it. Measuring at query time would instead put a stat per PWAD on the path that answers
+	// every launcher in the world, several times a minute.
+	unsigned int size;
+
+	NetworkPWAD( ) : wadnum( 0 ), size( 0 ) { }
 };
 
 //*****************************************************************************
 //	VARIABLES
+
+// [rc4l] Size of the loaded IWAD in bytes, for SQF2_FUA_WAD_SIZES. 0 when it could not be measured.
+unsigned int	NETWORK_GetIWADSize( void );
 
 extern FString g_lumpsAuthenticationChecksum;
 extern FString g_MapCollectionChecksum;
@@ -356,6 +385,17 @@ int				NETWORK_GetPackets( void );
 int				NETWORK_GetLANPackets( void );
 NETADDRESS_s	NETWORK_GetFromAddress( void );
 void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+
+// [rc4l] Broadcast onto the LAN via the dedicated send-only v4 socket (see network.cpp).
+void			NETWORK_LaunchBroadcast( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+
+// [rc4l] Whether a dedicated LAN broadcast socket exists (a dual-stack server); if not, the plain v4
+// game socket can broadcast itself and callers should use NETWORK_LaunchPacket.
+bool			NETWORK_CanBroadcastOnLAN( void );
+
+// [rc4l] Patch the port of the last received-from address; used by the LAN pump to restore the game
+// port that a broadcast's ephemeral source port cannot carry.
+void			NETWORK_OverrideFromAddressPort( USHORT usPort );
 NETADDRESS_s	NETWORK_GetLocalAddress( void );
 NETADDRESS_s	NETWORK_GetCachedLocalAddress( void );
 NETBUFFER_s		*NETWORK_GetNetworkMessageBuffer( void );

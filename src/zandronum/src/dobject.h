@@ -35,6 +35,7 @@
 #define __DOBJECT_H__
 
 #include <stdlib.h>
+#include <atomic>
 #include "doomtype.h"
 
 struct PClass;
@@ -174,7 +175,7 @@ private: \
 #	pragma data_seg()
 #	define _DECLARE_TI(cls) __declspec(allocate(".creg$u")) ClassReg *cls::RegistrationInfoPtr = &cls::RegistrationInfo;
 #else
-#	define _DECLARE_TI(cls) ClassReg *cls::RegistrationInfoPtr __attribute__((section(SECTION_CREG))) = &cls::RegistrationInfo;
+#	define _DECLARE_TI(cls) ClassReg *cls::RegistrationInfoPtr __attribute__((section(SECTION_CREG))) __attribute__((used)) = &cls::RegistrationInfo;
 #endif
 
 #define _IMP_PCLASS(cls,ptrs,create) \
@@ -237,7 +238,8 @@ namespace GC
 	};
 
 	// Number of bytes currently allocated through M_Malloc/M_Realloc.
-	extern size_t AllocBytes;
+	// [rc4l] Atomic, since the game thread and the main thread both allocate.
+	extern std::atomic<size_t> AllocBytes;
 
 	// Amount of memory to allocate before triggering a collection.
 	extern size_t Threshold;
@@ -491,15 +493,16 @@ public:
 		Class = inClass;
 	}
 
-	void *operator new(size_t len)
-	{
-		return M_Malloc(len);
-	}
-
-	void operator delete (void *mem)
-	{
-		M_Free(mem);
-	}
+	// [rc4l] actor-pool: object memory is recycled through a per-size free pool
+	// (dobject.cpp) instead of hitting the allocator for every spawn/death. Storms
+	// spawn and destroy thousands of actors; the pool removes that churn. Memory is
+	// only ever pooled at the point the GC frees it -- i.e. after mark-and-sweep has
+	// PROVEN nothing references the object -- which is exactly the guarantee free()
+	// relies on today. GC::AllocBytes accounting is preserved by the pool so GC
+	// pacing is byte-identical to the malloc path. Debug builds poison recycled
+	// memory so any untracked stale pointer still fails loudly.
+	void *operator new(size_t len);
+	void operator delete (void *mem);
 
 	// GC fiddling
 

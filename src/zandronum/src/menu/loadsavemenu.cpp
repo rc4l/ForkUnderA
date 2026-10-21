@@ -46,6 +46,7 @@
 #include "doomstat.h"
 #include "gi.h"
 #include "d_gui.h"
+#include "features/global-header/zx_globalheader.h"
 
 
 
@@ -394,7 +395,20 @@ DLoadSaveMenu::DLoadSaveMenu(DMenu *parent, FListMenuDescriptor *desc)
 	ReadSaveStrings();
 
 	savepicLeft = 10;
+
+	// [rc4l] Pushed down ONLY as far as the global header actually reaches.
+	//
+	// This screen does not lay itself out from its descriptor like an ordinary list menu; it puts its
+	// own frames at real pixel positions, so the descriptor shift that moved every other menu clear
+	// of the bar went straight past it. But paying that shift unconditionally is wrong here: the
+	// picture and comment frames below have fixed heights, so on a short window the whole column just
+	// slid off the bottom edge. At the usual proportions 54 is already well clear of the bar and
+	// there is nothing to pay.
 	savepicTop = 54*CleanYfac;
+
+	const int headerBottom = zx::GlobalHeader_ScreenBottom() + 2*CleanYfac;
+	if (savepicTop < headerBottom)
+		savepicTop = headerBottom;
 	savepicWidth = 216*screen->GetWidth()/640;
 	savepicHeight = 135*screen->GetHeight()/400;
 

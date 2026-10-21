@@ -45,10 +45,12 @@
 #include "s_sound.h"
 #include "memarena.h"
 #include "g_level.h"
+#include "tflags.h"
 #include "p_attackextent.h"
 
 // [AK] Needed for std::numeric_limits in the IDList class.
 #include <limits>
+#include "features/netids/computation/netidsearch_compute.h"   // [rc4l] IDList's bitmap of free ids
 
 struct subsector_t;
 //
@@ -115,9 +117,9 @@ struct subsector_t;
 // Any questions?
 //
 
-enum
-{
 // --- mobj.flags ---
+enum ActorFlag
+{
 
 	MF_SPECIAL			= 0x00000001,	// call P_SpecialThing when touched
 	MF_SOLID			= 0x00000002,
@@ -162,7 +164,16 @@ enum
 	MF_STEALTH			= 0x40000000,	// [RH] Andy Baker's stealth monsters
 	MF_ICECORPSE		= 0x80000000,	// a frozen corpse (for blasting) [RH] was 0x800000
 
+	// --- dummies for unknown/unimplemented Strife flags ---
+	// [rc4l] uzdoom@ca012bc9b moved this into the flags word: it is or'd with MF_SHADOW, and once
+	// the words are typed it cannot live in the renderflags enum.
+	MF_STRIFEx8000000 = 0,		// seems related to MF_SHADOW
+
+};
+
 // --- mobj.flags2 ---
+enum ActorFlag2
+{
 
 	MF2_DONTREFLECT		= 0x00000001,	// this projectile cannot be reflected
 	MF2_WINDTHRUST		= 0x00000002,	// gets pushed around by the wind specials
@@ -202,7 +213,11 @@ enum
 	MF2_SEEKERMISSILE	= 0x40000000,	// is a seeker (for reflection)
 	MF2_REFLECTIVE		= 0x80000000,	// reflects missiles
 
+};
+
 // --- mobj.flags3 ---
+enum ActorFlag3
+{
 
 	MF3_FLOORHUGGER		= 0x00000001,	// Missile stays on floor
 	MF3_CEILINGHUGGER	= 0x00000002,	// Missile stays on ceiling
@@ -237,7 +252,11 @@ enum
 	MF3_PUFFONACTORS	= 0x40000000,	// Puff appears even when hit bleeding actors
 	MF3_HUNTPLAYERS		= 0x80000000,	// Used with TIDtoHate, means to hate players too
 
+};
+
 // --- mobj.flags4 ---
+enum ActorFlag4
+{
 
 	MF4_NOHATEPLAYERS	= 0x00000001,	// Ignore player attacks
 	MF4_QUICKTORETALIATE= 0x00000002,	// Always switch targets when hurt
@@ -273,7 +292,11 @@ enum
 	MF4_FRIGHTENED		= 0x40000000,	// Monster runs away from player
 	MF4_BOSSSPAWNED		= 0x80000000,	// Spawned by a boss spawn cube
 	
+};
+
 // --- mobj.flags5 ---
+enum ActorFlag5
+{
 
 	MF5_DONTDRAIN		= 0x00000001,	// cannot be drained health from.
 	/*					= 0x00000002,	   reserved for use by scripting branch */
@@ -309,7 +332,11 @@ enum
 	MF5_PAINLESS		= 0x40000000,	// Actor always inflicts painless damage.
 	MF5_MOVEWITHSECTOR	= 0x80000000,	// P_ChangeSector() will still process this actor if it has MF_NOBLOCKMAP
 
+};
+
 // --- mobj.flags6 ---
+enum ActorFlag6
+{
 
 	MF6_NOBOSSRIP		= 0x00000001,	// For rippermissiles: Don't rip through bosses.
 	MF6_THRUSPECIES		= 0x00000002,	// Actors passes through other of the same species.
@@ -344,7 +371,11 @@ enum
 	MF6_NOTONAUTOMAP	= 0x40000000,	// will not be shown on automap with the 'scanner' powerup.
 	MF6_RELATIVETOFLOOR	= 0x80000000,	// [RC] Make flying actors be affected by lifts.
 
+};
+
 // --- mobj.flags7 ---
+enum ActorFlag7
+{
 
 	MF7_NEVERTARGET		= 0x00000001,	// can not be targetted at all, even if monster friendliness is considered.
 	MF7_NOTELESTOMP		= 0x00000002,	// cannot telefrag under any circumstances (even when set by MAPINFO)
@@ -358,13 +389,31 @@ enum
 	// [rc4l] uzdoom@f802d7a44, renamed by 6073adbee and fixed by 774db445e -- landed as the
 	// settled DONTTHRUST form rather than replaying FULLMASS and renaming it.
 	MF7_DONTTHRUST		= 0x00000100,	// Thrusting functions do not take, and do not give thrust (damage) to actors with this flag.
-	MF7_ALLOWPAIN		= 0x00000200,	// [rc4l] uzdoom@2e085b231: invulnerable or damage-immune actors still react to being hit.
+	MF7_ALLOWPAIN		= 0x00000200,	// [rc4l] uzdoom@2e085b231
+	MF7_THRUREFLECT		= 0x00000800,	// [rc4l] uzdoom@e5340ad63: reflective actors let missiles pass without slowing or turning.
+	MF7_MIRRORREFLECT	= 0x00001000,	// [rc4l] uzdoom@533ae9593: reflected missile is turned a flat 180 degrees.
+	MF7_AIMREFLECT		= 0x00002000,	// [rc4l] uzdoom@533ae9593: reflected missile is aimed straight back at whoever fired it.
 	MF7_CAUSEPAIN		= 0x00000400,	// [rc4l] uzdoom@b54b18c8c: damage sources with this can cause the same effect as ALLOWPAIN.
 
 	MF7_HITTARGET		= 0x00004000,	// The actor the projectile dies on is set to target, provided it's targetable anyway.
 	MF7_HITMASTER		= 0x00008000,	// Same as HITTARGET, except it's master instead of target.
 	MF7_HITTRACER		= 0x00010000,	// Same as HITTARGET, but for tracer.
 	MF7_NODECAL			= 0x00020000,	// [ZK] Forces puff to have no impact decal
+	//
+	// [rc4l] THE REAL FIX, when someone has time: engine-specific flags of ours should not live in
+	// upstream's flag fields at all. Every time upstream adds a flag it takes the next free bit, and
+	// so did Zandronum, so the two keep landing on the same one -- this is the second rehoming in a
+	// single seam. A dedicated fua_flags field would end it permanently: upstream grows into its own
+	// fields at its own numbers and every future flag port applies verbatim. It is close to free --
+	// flags are sent one flagset at a time and only when they differ from the default, so an unused
+	// field costs nothing on the wire even in a 30k-monster map, and 4 bytes per actor is noise
+	// against an AActor. What it needs first is an accurate list of which flags are genuinely ours,
+	// which is not obvious: comparing against upstream HEAD is noisy because upstream has since
+	// renamed and restructured whole families.
+	// [rc4l] uzdoom@337682934 -- upstream numbered this 0x00020000, taken here by MF7_NODECAL, so it
+	// moves to the next free bit. flags7 IS wire-synced (SERVERCOMMANDS_SetThingFlags FLAGSET_FLAGS7),
+	// but only added bits matter -- no existing value shifts.
+	MF7_FLYCHEAT		= 0x00080000,	// must be part of the actor so that it can be tracked properly
 	MF7_FORCEDECAL		= 0x00040000,	// [ZK] Forces P_LineAttack to use the puff's decal, even if the player's weapon has a decal defined
 
 	// [BB] Out of order ZDoom backport.
@@ -500,7 +549,11 @@ enum
 
 	// [BC] End of new ST flags.
 
+};
+
 // --- mobj.renderflags ---
+enum ActorRenderFlag
+{
 
 	RF_XFLIP			= 0x0001,	// Flip sprite horizontally
 	RF_YFLIP			= 0x0002,	// Flip sprite vertically
@@ -529,19 +582,16 @@ enum
 	RF_VOXELSPRITE		= 0x3000,	// Voxel object
 	RF_INVISIBLE		= 0x8000,	// Don't bother drawing this actor
 
-	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides gl_billboard_mode setting)
-	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides gl_billboard_mode setting)
-
-// --- dummies for unknown/unimplemented Strife flags ---
-
-	MF_STRIFEx8000000 = 0,		// seems related to MF_SHADOW
+	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides r_billboard_mode setting)
+	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides r_billboard_mode setting)
+	RF_ROLLSPRITE			= 0x40000,	// [rc4l] uzdoom: [marrub] roll the sprite billboard around the sight vector
 };
 
 // [rc4l] MBF21 needed more flag bits. These back the MBF21 thing flags that have no existing
 // ZDoom equivalent (the episode/MAP07 boss actions and full-volume sounds); the rest of the
 // MBF21 "Bits" mnemonics map onto the flags2/3/4 words above. Values match Zandronum lz/mbf21.
 // Ported behaviour: DSDA-Doom + Zandronum lz/mbf21; MBF21 spec v1.4.
-enum
+enum ActorFlag8
 {
 	MF8_FULLVOLDEATH	= 0x00000001,	// [MBF21] death sound plays at full volume
 	MF8_FULLVOLSEE		= 0x00000002,	// [MBF21] see sound plays at full volume
@@ -557,13 +607,34 @@ enum
 // [MGOOOOOO] ZandroX-owned actor flags. flags8 is MBF21's word and its bit values are fixed by
 // that spec, so fork-specific flags get their own word rather than squatting on bits a future
 // MBF21/id24 port may want. See features/ripper/README.md for the ripper set.
-enum
+enum ActorFlag9
 {
 	MF9_NORIPSOUND		= 0x00000001,	// ripper makes no sound at all when it rips
 	MF9_RIPEXPLODEONLIMIT = 0x00000002,	// spent rip budget detonates the ripper instead of ghosting
 	MF9_RIPPERNOPAIN	= 0x00000004,	// rips never induce pain; the terminal explosion still can
 	MF9_RIPSOUNDNORESTART = 0x00000008,	// let the rip sound finish instead of restarting it every tic
 	MF9_USERIPSTATE		= 0x00000010,	// enter the Rip state after ripping, like +USEBOUNCESTATE
+};
+
+// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the movement-model flag
+// word. These get their own word rather than a spare bit in flags8/flags9 because Q-Zandronum keeps
+// them separate too, so a mod's +CROUCHSLIDE means the same thing in both engines. Every one of them
+// is inert unless the pawn also sets Player.MvType 1 -- see features/quake-movement/README.md.
+enum
+{
+	MV_CPMAIRCONTROL	= 0x00000001,	// Challenge ProMode air control instead of VQ3-style
+	MV_CROUCHSLIDE		= 0x00000002,	// crouching at speed slides instead of braking
+	MV_WALLJUMP			= 0x00000004,	// the second jump may be spent against a wall
+	MV_WALLJUMPV2		= 0x00000008,	// wall jump pushes along the wall normal
+	MV_DOUBLETAPJUMP	= 0x00000010,	// double-tapping a direction spends the second jump as a dash
+	MV_WALLCLIMB		= 0x00000020,	// hold jump against a wall to climb it
+	MV_EDGEJUMP			= 0x00000040,	// jumping off an edge is not penalised (was +RAMPJUMP)
+	MV_SILENT			= 0x00000080,	// suppress this pawn's movement sounds
+	MV_ELEVATORJUMP		= 0x00000100,	// inherit a rising floor's speed instead of being eaten by it
+	MV_AIRWALLRUN		= 0x00000200,	// crouched and fast enough, run along a wall in mid-air
+	MV_USER4JUMP		= 0x00000400,	// the user4 button also spends the second jump
+	MV_GROUNDSECONDJUMP	= 0x00000800,	// the second jump is available from the ground too
+	MV_ABSOLUTESECONDJUMP = 0x00001000,	// the second jump sets velocity rather than adding to it
 };
 
 #define TRANSLUC25			(FRACUNIT/4)
@@ -592,7 +663,7 @@ enum replace_t
 	ALLOW_REPLACE = 1
 };
 
-enum EBounceFlags
+enum ActorBounceFlag
 {
 	BOUNCE_Walls = 1<<0,		// bounces off of walls
 	BOUNCE_Floors = 1<<1,		// bounces off of floors
@@ -645,6 +716,31 @@ enum EBounceFlags
 
 
 };
+
+// [TP] Flagset definitions -- [rc4l] uzdoom@ca012bc9b. ActorFlags8 is MBF21's word and
+// ActorFlags9 is ZandroX's own; upstream has neither, so those two typedefs are ours.
+typedef TFlags<ActorFlag> ActorFlags;
+typedef TFlags<ActorFlag2> ActorFlags2;
+typedef TFlags<ActorFlag3> ActorFlags3;
+typedef TFlags<ActorFlag4> ActorFlags4;
+typedef TFlags<ActorFlag5> ActorFlags5;
+typedef TFlags<ActorFlag6> ActorFlags6;
+typedef TFlags<ActorFlag7> ActorFlags7;
+typedef TFlags<ActorFlag8> ActorFlags8;
+typedef TFlags<ActorFlag9> ActorFlags9;
+typedef TFlags<ActorRenderFlag> ActorRenderFlags;
+typedef TFlags<ActorBounceFlag, WORD> ActorBounceFlags;
+DEFINE_TFLAGS_OPERATORS (ActorFlags)
+DEFINE_TFLAGS_OPERATORS (ActorFlags2)
+DEFINE_TFLAGS_OPERATORS (ActorFlags3)
+DEFINE_TFLAGS_OPERATORS (ActorFlags4)
+DEFINE_TFLAGS_OPERATORS (ActorFlags5)
+DEFINE_TFLAGS_OPERATORS (ActorFlags6)
+DEFINE_TFLAGS_OPERATORS (ActorFlags7)
+DEFINE_TFLAGS_OPERATORS (ActorFlags8)
+DEFINE_TFLAGS_OPERATORS (ActorFlags9)
+DEFINE_TFLAGS_OPERATORS (ActorRenderFlags)
+DEFINE_TFLAGS_OPERATORS (ActorBounceFlags)
 
 // Used to affect the logic for thing activation through death, USESPECIAL and BUMPSPECIAL
 // "thing" refers to what has the flag and the special, "trigger" refers to what used or bumped it
@@ -805,6 +901,9 @@ public:
 	virtual void HandleSpawnFlags();	// Translates SpawnFlags into in-game flags.
 
 	virtual void MarkPrecacheSounds() const;	// Marks sounds used by this actor for precaching.
+	void MarkPropertySounds() const;			// [ForkUnderA] The property-sound list itself, non-virtual so
+												// fua-caching can call it on class Defaults (whose vtable
+												// pointer must not be trusted -- Defaults are memcpy-built).
 
 	virtual void Activate (AActor *activator);
 	virtual void Deactivate (AActor *activator);
@@ -943,7 +1042,12 @@ public:
 		 {
 			 return 0;
 		 }
-		 return finesine[(int)(MulScale22(((FloatBobPhase + level.maptime) << FRACBITS) + ticfrac, FINEANGLES) & FINEMASK)] * 8;
+		 return BobOffsetAt(FloatBobPhase + level.maptime, ticfrac);
+	}
+	// [rc4l] The float bob at a tic of its phase, ticfrac of the way through it, which features/gamecopy's actor records read too.
+	static fixed_t BobOffsetAt(int phaseTic, fixed_t ticfrac)
+	{
+		 return finesine[(int)(MulScale22((phaseTic << FRACBITS) + ticfrac, FINEANGLES) & FINEMASK)] * 8;
 	}
 
 	// Enter the crash state
@@ -978,6 +1082,7 @@ public:
 	// These also set CF_INTERPVIEW for players.
 	void SetPitch(int p, bool interpolate);
 	void SetAngle(angle_t ang, bool interpolate);
+	void SetRoll(angle_t roll, bool interpolate);	// [rc4l] uzdoom@2b12db153
 
 	const PClass *GetBloodType(int type = 0) const
 	{
@@ -1036,7 +1141,7 @@ public:
 	BYTE			frame;				// sprite frame to draw
 	fixed_t			scaleX, scaleY;		// Scaling values; FRACUNIT is normal size
 	FRenderStyle	RenderStyle;		// Style to draw this actor with
-	DWORD			renderflags;		// Different rendering flags
+	ActorRenderFlags	renderflags;		// Different rendering flags
 	FTextureID		picnum;				// Draw this instead of sprite if valid
 	DWORD			effects;			// [RH] see p_effect.h
 	fixed_t			alpha;
@@ -1075,15 +1180,16 @@ public:
 	FState			*state;
 	SDWORD			Damage;			// For missiles and monster railgun
 	int				projectileKickback;
-	DWORD			flags;
-	DWORD			flags2;			// Heretic flags
-	DWORD			flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
-	DWORD			flags4;			// [RH] Even more flags!
-	DWORD			flags5;			// OMG! We need another one.
-	DWORD			flags6;			// Shit! Where did all the flags go?
-	DWORD			flags7;			//
-	DWORD			flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
-	DWORD			flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
+	ActorFlags		flags;
+	ActorFlags2		flags2;			// Heretic flags
+	ActorFlags3		flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
+	ActorFlags4		flags4;			// [RH] Even more flags!
+	ActorFlags5		flags5;			// OMG! We need another one.
+	ActorFlags6		flags6;			// Shit! Where did all the flags go?
+	ActorFlags7		flags7;			//
+	ActorFlags8		flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
+	ActorFlags9		flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
+	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.
 	DWORD			VisibleToTeam;
@@ -1236,6 +1342,9 @@ public:
 	FNameNoInit DamageTypeReceived;
 	fixed_t DamageFactor;
 	fixed_t DamageMultiply;		// [rc4l] uzdoom@99b2cfa14: scales damage this actor DEALS.
+	// [rc4l] uzdoom@30acb7200: per-actor teleport fog. NULL means "spawn nothing".
+	const PClass *TeleFogSourceType;
+	const PClass *TeleFogDestType;
 
 	FNameNoInit PainType;
 	FNameNoInit DeathType;
@@ -1279,6 +1388,10 @@ public:
 	// [RH] Used to interpolate the view to get >35 FPS
 	fixed_t PrevX, PrevY, PrevZ;
 	angle_t PrevAngle;
+	angle_t PrevRoll;	// [rc4l] +ROLLSPRITE interpolation, mirrors PrevAngle
+	int rcRecord;		// [rc4l] features/gamecopy: this actor's record in the render copy, written between tics only
+	int rcListed;		// [rc4l] features/gamecopy: its place in the actor list a tic's end made, read only to link that list
+	unsigned int rcSerial;	// [rc4l] features/gamecopy: this actor's id, given by the first fill that takes it and never reused
 
 	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.
 	int	lastNetXUpdateTic, lastNetYUpdateTic, lastNetZUpdateTic, lastNetVelXUpdateTic, lastNetVelYUpdateTic, lastNetVelZUpdateTic, lastNetMovedirUpdateTic;
@@ -1356,7 +1469,7 @@ public:
 	virtual bool UpdateWaterLevel (fixed_t oldz, bool splash=true);
 	bool isFast();
 	bool isSlow();
-	void SetIdle();
+	void SetIdle(bool nofunction=false);
 	void ClearCounters();
 	FState *GetRaiseState();
 	void Revive();
@@ -1489,19 +1602,20 @@ template <typename T>
 class IDList
 {
 private:
-	// List of all possible network ID's for an actor. Slot is true if it available for use.
+	// List of all possible network ID's for an actor.
 	typedef struct
 	{
-		// Is this node occupied, or free to be used by a new actor?
-		bool	bFree;
-
 		// If this node is occupied, this is the actor occupying it.
 		T	*pActor;
 
 	} IDNODE_t;
 
-	IDNODE_t _entries[ static_cast<unsigned int>(( std::numeric_limits<unsigned short>::max )( )) + 1];
+	IDNODE_t _entries[zx::netids::kIdCount];
+	// [rc4l] One entry and one bit for every value a net id can take.
+	static_assert ( zx::netids::kIdCount == static_cast<unsigned>(( std::numeric_limits<unsigned short>::max )( )) + 1, "a net id is an unsigned short" );
 	unsigned short _firstFreeID;
+	// [rc4l] Which ids are free, a bit each, the one record of it, so getNewID finds the next a word at a time (features/netids).
+	uint64_t _freeBits[zx::netids::kIdWords];
 
 	inline bool isIndexValid ( const unsigned short netID ) const
 	{
@@ -1524,8 +1638,8 @@ public:
 	{
 		if ( isIndexValid ( netID ) )
 		{
-			_entries[netID].bFree = true;
 			_entries[netID].pActor = NULL;
+			zx::netids::ComputeMarkId ( _freeBits, netID, true );
 		}
 	}
 
@@ -1536,7 +1650,7 @@ public:
 		if ( isIndexValid ( netID ) == false )
 			return ( NULL );
 
-		if (( _entries[netID].bFree == false ) && ( _entries[netID].pActor ))
+		if (( zx::netids::ComputeIdFree ( _freeBits, netID ) == false ) && ( _entries[netID].pActor ))
 			return ( _entries[netID].pActor );
 
 		return ( NULL );

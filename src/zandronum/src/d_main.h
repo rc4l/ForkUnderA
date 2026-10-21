@@ -45,10 +45,37 @@ struct CRestartException
 	char dummy;
 };
 
+// [rc4l] Ask for a restart from ANY context, instead of throwing CRestartException on the spot.
+//
+// The throw has to unwind to D_DoomMain's catch, and on the Cocoa backend the whole engine runs
+// inside applicationDidFinishLaunching -- so a console command dispatched from the event pump has
+// Objective-C frames between it and that catch. A C++ exception cannot cross those: it reaches
+// objc_exception_rethrow and the process aborts, after call_terms() has already torn the sound
+// renderer down on the way past. wad_reload therefore killed the engine on macOS every time.
+//
+// Deferring means the throw happens at the top of D_DoomLoop instead, which is a plain C++ frame
+// directly inside D_DoomMain's try, with nothing of AppKit's in between.
+void D_RequestRestart();
+
 void D_DoomMain (void);
+
+// [rc4l] One pass of the main loop, which D_DoomLoop repeats and a browser calls once an animation frame.
+void D_RunFrame ();
+
+class CRecoverableError;
+// [rc4l] Print a recoverable error and clean up after it, as the loop does.
+void D_RecoverFromError (CRecoverableError &error);
+
+// [rc4l] One tic of a running wipe once one is due, with the console and menu drawn over it; true once it has ended.
+bool D_WipeStep ();
+// [rc4l] Whether a wipe is running, which a stepped loop advances in place of a frame until it ends.
+bool D_WipeRunning ();
 
 
 void D_Display ();
+void D_PrepareDisplay (bool input);
+void D_DisplayBesideTic ();
+void D_RunHandoffWork ();   // [rc4l] features/handoff: the loop's work that needs no tic in flight   // [rc4l] features/handoff: a frame from the copy and the recorded HUD, taking no input   // [rc4l] features/handoff: what a frame needs of the game, done between tics, input the frame's too
 
 
 //
@@ -118,26 +145,49 @@ extern FStartupInfo DoomStartupInfo;
 //
 //==========================================================================
 
-struct FIWadManager
+class FIWadManager
 {
-private:
 	TArray<FIWADInfo> mIWads;
 	TArray<FString> mIWadNames;
 	TArray<int> mLumpsFound;
 
-	void ParseIWadInfo(const char *fn, const char *data, int datasize);
-	void ParseIWadInfos(const char *fn);
+	// [rc4l] `result` non-NULL parses INTO it instead of appending to the list, so a candidate can
+	// be read without joining the list until it has been accepted. See CheckIWADInfo.
+	void ParseIWadInfo(const char *fn, const char *data, int datasize, FIWADInfo *result = NULL);
+
+	// [rc4l] Let a file declare what it is, rather than being recognised by its lumps.
+	int CheckIWADInfo(const char *fn);
+
+	// [rc4l] Register every IWAD in one folder, whether or not the engine still needs to find one.
+	void RegisterIWADsIn(const char *dir);
 	void ClearChecks();
 	void CheckLumpName(const char *name);
 	int GetIWadInfo();
 	int ScanIWAD (const char *iwad);
-	int CheckIWAD (const char *doomwaddir, WadStuff *wads);
+	// [rc4l] numwadslots = entries the caller allocated in `wads`. Scanning a candidate file
+	// parses its IWADINFO, which can PUSH new entries into mIWadNames/mIWads while this loop is
+	// running, so the loop must be bounded by the caller's allocation and not by a table that
+	// grows underneath it (that read past the end and crashed on restart -- see d_iwad.cpp).
+	int CheckIWAD (const char *doomwaddir, WadStuff *wads, unsigned int numwadslots);
 	int IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, const char *zdoom_wad);
 public:
+	void ParseIWadInfos(const char *fn);
 	const FIWADInfo *FindIWAD(TArray<FString> &wadfiles, const char *iwad, const char *basewad);
 
 	// [RC] Checks if a directory contains IWADs. Used by "no IWAD" setup screen in I_system.cpp.
 	bool DoesDirectoryHaveIWADs( const char *pszPath );
+	// [rc4l] uzdoom@dfda74ffe -- the config constructor walks the IWAD list to create autoload
+	// sections, so it needs to read the names and flags.
+	const FString *GetAutoname(unsigned int num) const
+	{
+		if (num < mIWads.Size()) return &mIWads[num].Autoname;
+		else return NULL;
+	}
+	int GetIWadFlags(unsigned int num) const
+	{
+		if (num < mIWads.Size()) return mIWads[num].flags;
+		else return false;
+	}
 };
 
 

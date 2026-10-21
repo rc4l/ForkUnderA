@@ -1,0 +1,15 @@
+{
+  "name": "DoomWare",
+  "summary": "A few seconds of warning, then a minigame. Survive the round, keep your score, and do it faster next time.",
+  "iwad": "doom2.wad",
+  "kind": "pvp",
+  "gamemode": "deathmatch",
+  "teams": true,
+  "map": "MAP01",
+  "files": [
+    {
+      "name": "doomware_v1_05a.wad",
+      "md5": "968ada0d59ec73d8080385eb6ee919a7"
+    }
+  ]
+}

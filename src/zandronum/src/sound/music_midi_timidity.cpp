@@ -373,7 +373,11 @@ bool TimidityPPMIDIDevice::LaunchTimidity ()
 
 	DPrintf ("cmd: \x1cG%s\n", CommandLine.GetChars());
 
-#ifdef _WIN32
+#if defined(__EMSCRIPTEN__)
+	// [rc4l] A browser starts no other programs, so Timidity++ is never there to run.
+	Printf (PRINT_BOLD, "Timidity++ is not available in a browser.\n");
+	return false;
+#elif defined(_WIN32)
 	STARTUPINFO startup = { sizeof(startup), };
 	PROCESS_INFORMATION procInfo;
 

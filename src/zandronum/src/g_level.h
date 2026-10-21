@@ -54,7 +54,8 @@ class FScanner;
 #define GCC_YSEG
 #else
 #define MSVC_YSEG
-#define GCC_YSEG __attribute__((section(SECTION_YREG)))
+// [rc4l] used, or a linker that collects unreferenced data (wasm-ld's --gc-sections) drops entries only the section walk reaches.
+#define GCC_YSEG __attribute__((section(SECTION_YREG))) __attribute__((used))
 #endif
 
 struct FIntermissionDescriptor;
@@ -107,6 +108,9 @@ struct FMapInfoParser
 
 	void ParseIntermissionAction(FIntermissionDescriptor *Desc);
 	void ParseIntermission();
+	void ParseDoomEdNums();
+	void ParseSpawnNums();
+	void ParseConversationIDs();
 	void ParseAMColors(bool);
 	FName CheckEndSequence();
 	FName ParseEndGame();
@@ -482,7 +486,6 @@ struct FLevelLocals
 	int			musicorder;
 	int			cdtrack;
 	unsigned int cdid;
-	int			nextmusic;				// For MUSINFO purposes
 	FTextureID	skytexture1;
 	FTextureID	skytexture2;
 

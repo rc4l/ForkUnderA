@@ -60,6 +60,12 @@
 #include "deathmatch.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/fua-caching/fua_caching.h"
+#include "features/telemetry/telemetry.h"
+#include "features/handoff/seam.h"   // [rc4l] the channels and music are game data
+#include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI, QueuedForHandoff, QueuedBesideTic
+
+#include <vector>
 
 // MACROS ------------------------------------------------------------------
 
@@ -121,6 +127,9 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
+
+// [rc4l] uzdoom@3ea49a66d: dedicated pitch-variation stream -- see the use site in S_StartSound.
+static FRandom pr_soundpitch ("SoundPitch");
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
 
@@ -526,6 +535,7 @@ void S_Start ()
 
 void S_PrecacheLevel ()
 {
+	ZX_ZONE("load/precache_sounds");   // [rc4l] the level's sounds loaded ahead
 	unsigned int i;
 
 	if (GSnd)
@@ -549,13 +559,23 @@ void S_PrecacheLevel ()
 			level.info->PrecacheSounds[i].MarkUsed();
 		}
 
+		// [ForkUnderA] cl_fua_caching: property sounds and constant
+		// state-parameter sounds of the placed-class/spawn-closure set.
+		// Must run before the cache/unload loops below.
+		FUA_MarkCachedSounds();
+
+		unsigned int cached = 0;
 		for (i = 1; i < S_sfx.Size(); ++i)
 		{
 			if (S_sfx[i].bUsed)
 			{
 				S_CacheSound (&S_sfx[i]);
+				cached++;
 			}
 		}
+		// [ForkUnderA]
+		if (FUA_CachingMode() > 0)
+			Printf ("FUA caching: %u sounds precached\n", cached);
 		for (i = 1; i < S_sfx.Size(); ++i)
 		{
 			if (!S_sfx[i].bUsed && S_sfx[i].link == sfxinfo_t::NO_LINK)
@@ -882,10 +902,16 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 //
 //==========================================================================
 
+// [rc4l] features/handoff: what a tic on its own thread asked of the sound device, done in the handoff that takes it back (S_RunDeferredSounds) in this order: stops and volumes, then the starts.
+static std::vector<FSoundChan *> DeferredStarts;
+static std::vector<FSoundChan *> DeferredStops;
+static std::vector<std::pair<FSoundChan *, float> > DeferredVolumes;
+
 static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation,
 	FRolloffInfo *forcedrolloff=NULL, int pitch_override=-1)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	sfxinfo_t *sfx;
 	int chanflags;
 	int basepriority;
@@ -1051,7 +1077,14 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	}
 
 	// Make sure the sound is loaded.
-	sfx = S_LoadSound(sfx);
+	// [rc4l] features/handoff: a tic on its own thread loads nothing, since loading makes a device buffer; the handoff's start loads it.
+	const bool deferred = zx::handoff::Deferring () && !GSnd->IsNull ();
+	if (deferred)
+	{
+		if (sfx->link != sfxinfo_t::NO_LINK) sfx = &S_sfx[sfx->link];
+		if (sfx->lumpnum == -1) return NULL;
+	}
+	else sfx = S_LoadSound(sfx);
 
 	// The empty sound never plays.
 	if (sfx->lumpnum == sfx_empty)
@@ -1138,7 +1171,13 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	}
 	else if (snd_pitched && sfx->PitchMask != 0)
 	{
-		pitch = NORM_PITCH - (M_Random() & sfx->PitchMask) + (M_Random() & sfx->PitchMask);
+		// [rc4l] uzdoom@3ea49a66d: pitch variation draws from its OWN stream, not the shared
+		// M_Random the simulation also uses. Whether and when a sound plays depends on
+		// real-time audio channel availability, so drawing from a sim stream let audio timing
+		// perturb gameplay RNG -- proven here: an identical scenario replayed differently with
+		// sound on and identically with -nosound. Upstream walled this off for the same reason
+		// (their FCRandom is explicitly the client-side, non-synced class).
+		pitch = NORM_PITCH - (pr_soundpitch() & sfx->PitchMask) + (pr_soundpitch() & sfx->PitchMask);
 	}
 	else
 	{
@@ -1148,6 +1187,14 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	if (chanflags & CHAN_EVICTED)
 	{
 		chan = NULL;
+	}
+	else if (deferred)
+	{
+		// [rc4l] features/handoff: the channel with no voice yet, which counts as playing for the rest of the tic as a started one would.
+		chan = (FSoundChan*)S_GetChannel(NULL);
+		chan->StartTime.AsOne = 0;
+		chanflags |= CHAN_EVICTED;
+		DeferredStarts.push_back(chan);
 	}
 	else 
 	{
@@ -1194,6 +1241,8 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		chan->Pitch = pitch;
 		chan->Priority = basepriority;
 		chan->DistanceScale = attenuation;
+		// [rc4l] Kept for a later start, since a channel started without the device (a tic on the game thread's, or a loop with no voice) has no rolloff of the device's, and S_RestartSound played every positional sound with none, silent.
+		chan->Rolloff = *rolloff;
 		chan->SourceType = type;
 		switch (type)
 		{
@@ -1217,6 +1266,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 void S_RestartSound(FSoundChan *chan)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	assert(chan->ChanFlags & CHAN_EVICTED);
 
 	FSoundChan *ochan;
@@ -1559,6 +1609,7 @@ bool S_IsMusicPaused ( void )
 
 void S_StopSoundID (int sound_id, int channel)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
 	{
 		if ( (chan->SoundID == sound_id) && (chan->EntChannel == channel) )
@@ -1578,6 +1629,7 @@ void S_StopSoundID (int sound_id, int channel)
 
 void S_StopSound (int channel)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1601,6 +1653,7 @@ void S_StopSound (int channel)
 
 void S_StopSound (AActor *actor, int channel)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1625,6 +1678,7 @@ void S_StopSound (AActor *actor, int channel)
 
 void S_StopSound (const sector_t *sec, int channel)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1649,6 +1703,7 @@ void S_StopSound (const sector_t *sec, int channel)
 
 void S_StopSound (const FPolyObj *poly, int channel)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1671,6 +1726,7 @@ void S_StopSound (const FPolyObj *poly, int channel)
 
 void S_StopAllChannels ()
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	SN_StopAllSequences();
 
 	FSoundChan *chan = Channels;
@@ -1680,7 +1736,7 @@ void S_StopAllChannels ()
 		S_StopChannel(chan);
 		chan = next;
 	}
-	GSnd->UpdateSounds();
+	if (!zx::handoff::Deferring()) GSnd->UpdateSounds();   // [rc4l] features/handoff: the device is the handoff's
 }
 
 //==========================================================================
@@ -1691,6 +1747,7 @@ void S_StopAllChannels ()
 
 void S_StopAllSoundsFromActor (AActor *ent)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	// [AK] The server doesn't play sounds.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -1717,6 +1774,7 @@ void S_StopAllSoundsFromActor (AActor *ent)
 
 void S_StopAllUnattachedSounds ()
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1745,6 +1803,7 @@ void S_StopAllUnattachedSounds ()
 
 void S_RelinkSound (AActor *from, AActor *to)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	if (from == NULL)
 		return;
 
@@ -1785,13 +1844,16 @@ void S_RelinkSound (AActor *from, AActor *to)
 
 bool S_ChangeSoundVolume(AActor *actor, int channel, float volume)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
 	{
 		if (chan->SourceType == SOURCE_Actor &&
 			chan->Actor == actor &&
 			(chan->EntChannel == channel || (i_compatflags & COMPATF_MAGICSILENCE)))
 		{
-			GSnd->ChannelVolume(chan, volume);
+			// [rc4l] features/handoff: a tic on its own thread sets the voice's volume in the handoff.
+			if (zx::handoff::Deferring ()) DeferredVolumes.push_back(std::make_pair(chan, volume));
+			else GSnd->ChannelVolume(chan, volume);
 			chan->Volume = volume;
 			return true;
 		}
@@ -1808,6 +1870,7 @@ bool S_ChangeSoundVolume(AActor *actor, int channel, float volume)
 
 bool S_GetSoundPlayingInfo (const AActor *actor, int sound_id)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	if (sound_id > 0)
 	{
 		for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
@@ -1825,6 +1888,7 @@ bool S_GetSoundPlayingInfo (const AActor *actor, int sound_id)
 
 bool S_GetSoundPlayingInfo (const sector_t *sec, int sound_id)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	if (sound_id > 0)
 	{
 		for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
@@ -1842,6 +1906,7 @@ bool S_GetSoundPlayingInfo (const sector_t *sec, int sound_id)
 
 bool S_GetSoundPlayingInfo (const FPolyObj *poly, int sound_id)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	if (sound_id > 0)
 	{
 		for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
@@ -1895,6 +1960,7 @@ static bool S_IsChannelUsed(AActor *actor, int channel, int *seen)
 
 bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	if (i_compatflags & COMPATF_MAGICSILENCE)
 	{
 		channel = 0;
@@ -1922,6 +1988,9 @@ bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 
 void S_PauseSound (bool notmusic, bool notsfx)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	// [rc4l] features/handoff: a tic on its own thread pauses the device in the handoff, as it changes the music.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t b) { S_PauseSound (a != 0, b != 0); }, notmusic, notsfx })) return;
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -1947,6 +2016,9 @@ void S_PauseSound (bool notmusic, bool notsfx)
 
 void S_ResumeSound (bool notsfx)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	// [rc4l] features/handoff: a tic on its own thread resumes the device in the handoff, as it changes the music.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t) { S_ResumeSound (a != 0); }, notsfx, 0 })) return;
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -1982,10 +2054,79 @@ bool S_GetSoundPaused (void)
 //
 //==========================================================================
 
+// [rc4l] Freezing the game and silencing it are separate questions, split in
+// uzdoom@12ed24d066a819a128a54e2359fd0e2d48f641fe; the sound half is
+// uzdoom@000037dbf69c2c1580f3c9bb8a9771bf18bc7ae8.
+CVAR (Bool, i_soundinbackground, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+CVAR (Bool, i_pauseinbackground, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+
+// [rc4l] Keep the game running AND drawing while the window is in the background.
+//
+// Three separate things stop when a window is deactivated, and turning off any one of them on its
+// own changes nothing measurable -- which is what made this confusing to chase. On Sunder MAP10,
+// unfocused, the frame reads 28.6 ms with the renderer using 1.5 ms of it; focused, the same scene
+// is 0.52 ms. The 27 ms in between is not work, it is the three of these:
+//
+//   1. The world is PAUSED. S_SetSoundPaused marks `paused` negative on deactivation, P_Ticker
+//      returns early, r_NoInterpolate is left true, and TryRunTics then waits out a whole tic --
+//      which is why an idle background window sits at exactly 35 fps and not some other number.
+//   2. The process drops to IDLE_PRIORITY_CLASS.
+//   3. The frame is never PRESENTED: Win32GLFrameBuffer::CanUpdate refuses while inactive, so the
+//      2D pass and the buffer swap are skipped and the window keeps a stale image.
+//
+// i_pauseinbackground already covers (1) and half of (2), and is the right switch for "keep playing
+// while I alt-tab". This is the switch for "keep DRAWING", which is a different ask -- a second
+// monitor, a capture card, a recording, a benchmark -- and it implies all three.
+//
+// It also takes effect IMMEDIATELY. i_pauseinbackground alone does not: set it while the window is
+// already in the background and nothing happens, because the pause mark and the idle priority were
+// latched on the way out and are only re-evaluated when the window is next activated. That cost an
+// hour of measuring a cvar that was already set correctly.
+CUSTOM_CVAR (Bool, fua_render_in_background, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
+{
+	if (self)
+	{
+		// Unlatch the background pause here rather than waiting to be activated. The mark is the
+		// negative value; a positive `paused` is the player's own pause and is not ours to clear.
+		if (paused < 0)
+			paused = 0;
+	}
+	else
+	{
+		// Turned off: re-apply the ordinary rule for whichever state the window is actually in.
+		S_SetSoundPaused (I_WindowIsActive () ? 1 : 0);
+	}
+	I_UpdateBackgroundPriority ();
+}
+
+// [rc4l] Upstream's `pauseext`, computed rather than stored: the commit defining it,
+// uzdoom@16e0f79fd7c31ab5a3b942c2899adaa2827e7fe3, only gates the P2P transport we replaced, so the
+// mark stays in `paused` as a negative value.
+static bool sound_BackgroundPauseWanted( int state )
+{
+	// [BB] !netgame -> (NETWORK_GetState( ) == NETSTATE_SINGLE)
+	// [rc4l] fua_render_in_background means the world keeps running back there, so there is nothing
+	// to pause -- see the cvar's note.
+	if ( fua_render_in_background )
+		return false;
+	return ( state == 0 ) && ( NETWORK_GetState( ) == NETSTATE_SINGLE ) && i_pauseinbackground
+#ifdef _DEBUG
+		&& !demoplayback
+#endif
+		;
+}
+
 void S_SetSoundPaused (int state)
 {
-	if (state)
+	// [rc4l] A focus change while a tic runs on the game thread waits for the handoff, since it sets the game's paused.
+	if (zx::handoff::QueuedBesideTic ({ [](intptr_t a, intptr_t) { S_SetSoundPaused (int (a)); }, state, 0 })) return;
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	const bool bBackgroundPause = sound_BackgroundPauseWanted( state );
+
+	if ((state || i_soundinbackground) && !bBackgroundPause)
 	{
+		// [rc4l] `<= 0` because our mark is the negative value; a positive `paused` still fails it,
+		// which is uzdoom@d789676b26da43d1a67acdaadb498c6e79e52241.
 		if (paused <= 0)
 		{
 			S_ResumeSound(true);
@@ -2011,16 +2152,14 @@ void S_SetSoundPaused (int state)
 			S_PauseSound(false, true);
 			if (GSnd !=  NULL)
 			{
-				GSnd->SetInactive(gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL ?
+				// [rc4l] Stop the device outright only when the game is genuinely frozen, or a
+				// running world bursts on return: uzdoom@16838bfa660f0ecc6a35c807166279171d730602.
+				GSnd->SetInactive(bBackgroundPause && (gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) ?
 					SoundRenderer::INACTIVE_Complete :
 					SoundRenderer::INACTIVE_Mute);
 			}
-			// [BB] !netgame -> (NETWORK_GetState( ) == NETSTATE_SINGLE)
-			if ((NETWORK_GetState( ) == NETSTATE_SINGLE)
-#ifdef _DEBUG
-				&& !demoplayback
-#endif
-				)
+			// The mark goes last, or it would fail the guard above and skip the work it marks.
+			if (bBackgroundPause)
 			{
 				paused = -1;
 			}
@@ -2039,6 +2178,7 @@ void S_SetSoundPaused (int state)
 
 void S_EvictAllChannels()
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan, *next;
 
 	for (chan = Channels; chan != NULL; chan = next)
@@ -2109,6 +2249,7 @@ void S_RestoreEvictedChannel(FSoundChan *chan)
 
 void S_RestoreEvictedChannels()
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	// Restart channels in the same order they were originally played.
 	S_RestoreEvictedChannel(Channels);
 }
@@ -2122,6 +2263,8 @@ void S_RestoreEvictedChannels()
 
 void S_UpdateSounds (AActor *listenactor)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	ZX_ZONE("audio/update");   // [rc4l] positional sounds moved for the listener
 	FVector3 pos, vel;
 	SoundListener listener;
 
@@ -2298,6 +2441,7 @@ float S_GetRolloff(FRolloffInfo *rolloff, float distance, bool logarithmic)
 
 void S_ChannelEnded(FISoundChannel *ichan)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *schan = static_cast<FSoundChan*>(ichan);
 	bool evicted;
 
@@ -2373,6 +2517,7 @@ void S_ChannelVirtualChanged(FISoundChannel *ichan, bool is_virtual)
 
 void S_StopChannel(FSoundChan *chan)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	if (chan == NULL)
 		return;
 
@@ -2388,12 +2533,43 @@ void S_StopChannel(FSoundChan *chan)
 				chan->Actor = NULL;
 			}
 		}
-		GSnd->StopChannel(chan);
+		// [rc4l] features/handoff: a tic on its own thread stops the voice in the handoff, the channel already forgotten here.
+		if (zx::handoff::Deferring ()) DeferredStops.push_back(chan);
+		else GSnd->StopChannel(chan);
 	}
 	else
 	{
 		S_ReturnChannel(chan);
 	}
+}
+
+// [rc4l] Whether a channel is still in the playing list, which one returned and reused since a deferral was asked is not, under the old meaning.
+static bool S_IsLinked(FSoundChan *chan)
+{
+	for (FSoundChan *c = Channels; c != NULL; c = c->NextChan) if (c == chan) return true;
+	return false;
+}
+
+void S_RunDeferredSounds()
+{
+	ZX_SEAM_UNTIMED("sound/deferred", Handoff);
+	for (FSoundChan *chan : DeferredStops)
+		if (S_IsLinked(chan) && chan->SysChannel != NULL) GSnd->StopChannel(chan);
+	for (const auto &v : DeferredVolumes)
+		if (S_IsLinked(v.first) && v.first->SysChannel != NULL) GSnd->ChannelVolume(v.first, v.second);
+	// [rc4l] In the order the tic started them, each loaded and started as an evicted sound restarts, and forgotten when it cannot start and does not loop.
+	for (size_t i = 0; i < DeferredStarts.size(); i++)
+	{
+		FSoundChan *chan = DeferredStarts[i];
+		bool repeated = false;
+		for (size_t k = 0; k < i; k++) repeated |= DeferredStarts[k] == chan;
+		if (repeated || !S_IsLinked(chan) || !(chan->ChanFlags & CHAN_EVICTED)) continue;
+		S_RestartSound(chan);
+		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
+	}
+	DeferredStarts.clear();
+	DeferredStops.clear();
+	DeferredVolumes.clear();
 }
 
 //==========================================================================
@@ -2459,6 +2635,7 @@ static FArchive &operator<<(FArchive &arc, FSoundChan &chan)
 
 void S_SerializeSounds(FArchive &arc)
 {
+	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	FSoundChan *chan;
 
 	GSnd->Sync(true);
@@ -2529,6 +2706,7 @@ void S_SerializeSounds(FArchive &arc)
 
 void S_ActivatePlayList (bool goBack)
 {
+	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
 	int startpos, pos;
 
 	// [BC] Server doesn't use music/sound.
@@ -2585,6 +2763,7 @@ bool S_ChangeCDMusic (int track, unsigned int id, bool looping)
 
 bool S_StartMusic (const char *m_id)
 {
+	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
 	return S_ChangeMusic (m_id, 0, false);
 }
 
@@ -2603,6 +2782,15 @@ TArray<BYTE> musiccache;
 
 bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 {
+	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
+	// [rc4l] features/handoff: a tic on its own thread changes the music in the handoff, its name kept as a name, which lives as long as the program.
+	if (zx::handoff::Deferring ())
+	{
+		const int name = musicname != NULL ? FName (musicname).GetIndex () : -1;
+		const intptr_t flags = (intptr_t (order) << 2) | (looping ? 1 : 0) | (force ? 2 : 0);
+		zx::handoff::QueueUI ({ [](intptr_t a, intptr_t b) { S_ChangeMusic (a >= 0 ? FName (ENamedName (a)).GetChars () : NULL, int (b >> 2), (b & 1) != 0, (b & 2) != 0); }, name, flags });
+		return true;
+	}
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return ( false );
@@ -2685,7 +2873,7 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 	else
 	{
 		int lumpnum = -1;
-		int offset = 0, length = 0;
+		int length = 0;
 		int device = MDEV_DEFAULT;
 		MusInfo *handle = NULL;
 		FName musicasname = musicname;
@@ -2706,6 +2894,9 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 			musicname += 7;
 		}
 
+		// [rc4l] uzdoom@0017e1e6e -- one reader for all three sources, instead of a filename plus
+		// offset for a file and a raw pointer for cached bytes.
+		FileReader *reader = NULL;
 		if (!FileExists (musicname))
 		{
 			if ((lumpnum = Wads.CheckNumForFullName (musicname, true, ns_music)) == -1)
@@ -2735,8 +2926,6 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 					// shut down old music before reallocating and overwriting the cache!
 					S_StopMusic (true);
 
-					offset = -1;							// this tells the low level code that the music 
-															// is being used from memory
 					length = Wads.LumpLength (lumpnum);
 					if (length == 0)
 					{
@@ -2744,17 +2933,25 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 					}
 					musiccache.Resize(length);
 					Wads.ReadLump(lumpnum, &musiccache[0]);
+
+					reader = new MemoryReader((const char*)&musiccache[0], musiccache.Size());
 				}
 				else
 				{
-					offset = Wads.GetLumpOffset (lumpnum);
-					length = Wads.LumpLength (lumpnum);
-					if (length == 0)
+					if (Wads.LumpLength (lumpnum) == 0)
 					{
 						return false;
 					}
+					reader = Wads.ReopenLumpNum(lumpnum);
 				}
 			}
+		}
+		else
+		{
+			// [rc4l] uzdoom@98b2475fb -- load an external file. Their conversion dropped this
+			// branch, leaving reader NULL for any name that is not a lump, which silently broke
+			// music loaded from a loose file on disk.
+			reader = new FileReader(musicname);
 		}
 
 		// shutdown old music
@@ -2763,6 +2960,8 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 		// Just record it if volume is 0
 		if (snd_musicvolume <= 0)
 		{
+			// [rc4l] Nothing plays the reader at volume 0, so it is closed here rather than left holding its WAD open, one a level.
+			delete reader;
 			mus_playing.loop = looping;
 			mus_playing.name = musicname;
 			mus_playing.baseorder = order;
@@ -2775,15 +2974,9 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 		{
 			mus_playing.handle = handle;
 		}
-		else if (offset != -1)
-		{
-			mus_playing.handle = I_RegisterSong (lumpnum != -1 ?
-				Wads.GetWadFullName (Wads.GetLumpFile (lumpnum)) :
-				musicname, NULL, offset, length, device);
-		}
 		else
 		{
-			mus_playing.handle = I_RegisterSong (NULL, &musiccache[0], -1, length, device);
+			mus_playing.handle = I_RegisterSong (reader, device);
 		}
 	}
 
@@ -2810,6 +3003,7 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 
 void S_RestartMusic ()
 {
+	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -2875,6 +3069,8 @@ int S_GetMusic (char **name)
 
 void S_StopMusic (bool force)
 {
+	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t) { S_StopMusic (a != 0); }, force, 0 })) return;
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
@@ -3308,4 +3504,30 @@ CCMD (cachesound)
 			S_CacheSound (&S_sfx[sfxnum]);
 		}
 	}
+}
+
+//==========================================================================
+//
+// CCMD listsoundchannels
+//
+//==========================================================================
+
+// [rc4l] uzdoom@c4f932022
+CCMD(listsoundchannels)
+{	
+	FSoundChan *chan;
+	int count = 0;
+	for (chan = Channels; chan != NULL; chan = chan->NextChan)
+	{
+		if (!(chan->ChanFlags & CHAN_EVICTED))
+		{
+			FVector3 chanorigin;
+
+			CalcPosVel(chan, &chanorigin, NULL);
+
+			Printf("%s at (%1.5f, %1.5f, %1.5f)\n", (const char*)chan->SoundID, chanorigin.X, chanorigin.Y, chanorigin.Z);
+			count++;
+		}
+	}
+	Printf("%d sounds playing\n", count);
 }

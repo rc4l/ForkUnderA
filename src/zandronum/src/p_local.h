@@ -116,6 +116,10 @@ void	P_PredictPlayer (player_t *player);
 void	P_UnPredictPlayer ();
 */
 
+// [rc4l] Flush the FindStateByString memo (p_states.cpp) -- entries key on ClassIndex and
+// hold FState pointers, both invalidated when a wad_reload rebuilds the actor classes.
+void P_ClearStateStringCache ();
+
 //
 // P_MOBJ
 //
@@ -212,8 +216,12 @@ void P_RemoveThing(AActor * actor);
 // friendliness. Upstream put it in the second slot; ours is already Zandronum's byClient,
 // so it goes third and defaults to NULL (the old behaviour).
 bool P_Thing_Raise(AActor *thing, bool byClient = false, AActor *raiser = NULL); // [BB/EP] Added 'byClient'.
+// [rc4l] uzdoom@30acb7200: per-actor teleport fog; declared here so A_Teleport can reach it.
+AActor *P_SpawnTeleportFog(AActor *mobj, fixed_t x, fixed_t y, fixed_t z, bool beforeTele = true, bool setTarget = false);
 bool P_Thing_CanRaise(AActor *thing);
 const PClass *P_GetSpawnableType(int spawnnum);
+void InitSpawnablesFromMapinfo();
+extern FClassMap StrifeTypes;
 
 //
 // P_MAPUTL
@@ -342,23 +350,31 @@ class FBlockThingsIterator
 	};
 	HashEntry FixedHash[10];
 	int NumFixedHash;
-	TArray<HashEntry> DynHash;
+	// [rc4l] Leased from a shared pool on first dense-block overflow and returned by
+	// the destructor (see p_maputl.cpp). Iterators are constructed for every collision
+	// check, and per-iterator allocation churn was measurable in mass-actor storms;
+	// pooled blocks keep their grown capacity across leases. NULL until needed.
+	TArray<HashEntry> *DynHash;
+	static TArray<TArray<HashEntry> *> DynHashPool;
 
-	HashEntry *GetHashEntry(int i) { return i < (int)countof(FixedHash) ? &FixedHash[i] : &DynHash[i - countof(FixedHash)]; }
+	HashEntry *GetHashEntry(int i) { return i < (int)countof(FixedHash) ? &FixedHash[i] : &(*DynHash)[i - countof(FixedHash)]; }
 
 	void StartBlock(int x, int y);
 	void SwitchBlock(int x, int y);
 	void ClearHash();
 
-	// The following is only for use in the path traverser 
+	// The following is only for use in the path traverser
 	// and therefore declared private.
 	FBlockThingsIterator();
+
+	FBlockThingsIterator(const FBlockThingsIterator &); // [rc4l] not implemented: copying would double-return the leased hash block
 
 	friend class FPathTraverse;
 
 public:
 	FBlockThingsIterator(int minx, int miny, int maxx, int maxy);
 	FBlockThingsIterator(const FBoundingBox &box);
+	~FBlockThingsIterator(); // [rc4l] returns the leased DynHash block to the pool
 	AActor *Next(bool centeronly = false);
 	void Reset() { StartBlock(minx, miny); }
 };
@@ -422,6 +438,14 @@ struct FCheckPosition
 	bool			floatok;
 	bool			FromPMove;
 	line_t			*ceilingline;
+	// [rc4l] ...and the line that raised the FLOOR, which had no counterpart.
+	//
+	// A missile that will not climb a step is stopped by whichever line raised tm.floorz, and the
+	// only record of a constraining line was the ceiling one. So the missile was reported as having
+	// hit whatever line happened to be visited LAST -- BlockingLine is assigned by every clause that
+	// narrows the box, and iteration continues past a block, so the last writer won. A mark was then
+	// offered to a line the missile never touched.
+	line_t			*floorline;
 	AActor			*stepthing;
 	// [RH] These are used by PIT_CheckThing and P_XYMovement to apply
 	// ripping damage once per tic instead of once per move.
@@ -655,19 +679,6 @@ struct polyspawns_t
 	fixed_t y;
 	short angle;
 	short type;
-};
-
-enum
-{
-	PO_HEX_ANCHOR_TYPE = 3000,
-	PO_HEX_SPAWN_TYPE,
-	PO_HEX_SPAWNCRUSH_TYPE,
-
-	// [RH] Thing numbers that don't conflict with Doom things
-	PO_ANCHOR_TYPE = 9300,
-	PO_SPAWN_TYPE,
-	PO_SPAWNCRUSH_TYPE,
-	PO_SPAWNHURT_TYPE
 };
 
 extern int po_NumPolyobjs;

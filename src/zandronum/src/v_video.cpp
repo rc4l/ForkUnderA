@@ -67,6 +67,10 @@
 #include "r_renderer.h"
 #include "menu/menu.h"
 #include "r_data/voxels.h"
+#include "features/fua-caching/fua_caching.h"
+#include "features/draw2d/record.h"
+#include "features/hwrender/computation/rendererrate_compute.h"
+#include "features/hwrender/backendonly.h"                         // [rc4l] BackendApiName, for the backend line's name
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -147,7 +151,7 @@ extern "C" {
 DWORD Col2RGB8[65][256];
 DWORD *Col2RGB8_LessPrecision[65];
 DWORD Col2RGB8_Inverse[65][256];
-BYTE RGB32k[32][32][32];
+ColorTable32k RGB32k;
 }
 
 static DWORD Col2RGB8_2[63][256];
@@ -165,6 +169,8 @@ CVAR (Int, vid_defheight, 480, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 int zx_pendingClientWidth = 0, zx_pendingClientHeight = 0;
 CVAR (Int, vid_defbits, 8, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 CVAR (Bool, vid_fps, false, 0)
+// [rc4l] How many times larger vid_fps draws its 8x8 text, which is otherwise tiny at high resolutions.
+CVAR (Int, fua_fps_scale, 1, CVAR_ARCHIVE)
 CVAR (Bool, ticker, false, 0)
 CVAR (Int, vid_showpalette, 0, 0)
 
@@ -398,7 +404,7 @@ void DCanvas::Dim (PalEntry color, float damount, int x1, int y1, int w, int h)
 
 			bg = bg2rgb[(*spot)&0xff];
 			bg = (fg+bg) | 0x1f07c1f;
-			*spot = RGB32k[0][0][bg&(bg>>15)];
+			*spot = RGB32k.All[bg&(bg>>15)];
 			spot++;
 		}
 		spot += gap;
@@ -669,7 +675,7 @@ static void BuildTransTable (const PalEntry *palette)
 	for (r = 0; r < 32; r++)
 		for (g = 0; g < 32; g++)
 			for (b = 0; b < 32; b++)
-				RGB32k[r][g][b] = ColorMatcher.Pick ((r<<3)|(r>>2), (g<<3)|(g>>2), (b<<3)|(b>>2));
+				RGB32k.RGB[r][g][b] = ColorMatcher.Pick ((r<<3)|(r>>2), (g<<3)|(g>>2), (b<<3)|(b>>2));
 
 	int x, y;
 
@@ -907,12 +913,26 @@ void DFrameBuffer::DrawRateStuff ()
 		{
 			char fpsbuff[40];
 			int chars;
-			int rate_x;
 
-			chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
-			rate_x = Width - chars * 8;
-			Clear (rate_x, 0, Width, 8, GPalette.BlackIndex, 0);
-			DrawText (ConFont, CR_WHITE, rate_x, 0, (char *)&fpsbuff[0], TAG_DONE);
+			// [rc4l] features/hwrender: with the backend drawing too, both windows share this loop's rate, so each shows its own renderer's frame time instead, GL's line for GL's window and the backend's for its own.
+			const bool perRenderer = zx::hwrender::BackendRateLive();
+			for (int line = 0; line < (perRenderer ? 2 : 1); line++)
+			{
+				if (perRenderer)
+				{
+					int ms, fps;
+					zx::hwrender::RendererRateShown(line != 0, ms, fps);
+					chars = zx::hwrender::ComputeRateText(fpsbuff, countof(fpsbuff), line ? zx::hwrender::ComputeBackendRateName(zx::hwrender::BackendApiName()) : "GL", ms, fps);
+					zx::draw2d::Set2DTarget(line ? zx::draw2d::k2DBackendOnly : zx::draw2d::k2DGLOnly);
+				}
+				else chars = mysnprintf (fpsbuff, countof(fpsbuff), "%2u ms (%3u fps)", howlong, LastCount);
+				// [rc4l] Drawn on a canvas fua_fps_scale times smaller than the screen, so each glyph comes out that many times larger.
+				const zx::hwrender::RateBox box = zx::hwrender::ComputeRateBox(Width, Height, chars, fua_fps_scale);
+				Clear (box.boxLeft, 0, Width, box.boxHeight, GPalette.BlackIndex, 0);
+				DrawText (ConFont, CR_WHITE, box.x, 0, (char *)&fpsbuff[0],
+					DTA_VirtualWidth, box.virtualWidth, DTA_VirtualHeight, box.virtualHeight, DTA_KeepRatio, true, TAG_DONE);
+			}
+			zx::draw2d::Set2DTarget(zx::draw2d::k2DBoth);
 
 			DWORD thisSec = ms/1000;
 			if (LastSec < thisSec)
@@ -1304,6 +1324,10 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 		}
 	}
 
+	// [ForkUnderA] cl_fua_caching: every state of every placed class, plus
+	// (mode 2) the spawn closure. No-op in mode 0.
+	FUA_MarkCachedSprites (spritelist, sprites.Size());
+
 	for (i = (int)(sprites.Size () - 1); i >= 0; i--)
 	{
 		if (spritelist[i])
@@ -1318,7 +1342,14 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 					FTextureID pic = frame->Texture[k];
 					if (pic.isValid())
 					{
-						hitlist[pic.GetIndex()] = 5;
+						// [ForkUnderA] The GL precacher must build the expanded material sprites
+						// actually render with. The stock value was HIT_Wall|HIT_Sky, so sprites
+						// never set HIT_Sprite and FMaterial::PrecacheGL's sprite branch never ran
+						// -- sprites were precached as walls (uzdoom@74f4ae86d names these classes).
+						// Kept behind the caching mode, which retains the stock value for mode 0.
+						hitlist[pic.GetIndex()] = FUA_CachingMode() > 0
+							? FTextureManager::HIT_Sprite
+							: (FTextureManager::HIT_Wall | FTextureManager::HIT_Sky);
 					}
 				}
 			}
@@ -1330,14 +1361,14 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 	for (i = numsectors - 1; i >= 0; i--)
 	{
 		hitlist[sectors[i].GetTexture(sector_t::floor).GetIndex()] = 
-			hitlist[sectors[i].GetTexture(sector_t::ceiling).GetIndex()] |= 2;
+			hitlist[sectors[i].GetTexture(sector_t::ceiling).GetIndex()] |= FTextureManager::HIT_Flat;
 	}
 
 	for (i = numsides - 1; i >= 0; i--)
 	{
 		hitlist[sides[i].GetTexture(side_t::top).GetIndex()] =
 		hitlist[sides[i].GetTexture(side_t::mid).GetIndex()] =
-		hitlist[sides[i].GetTexture(side_t::bottom).GetIndex()] |= 3;
+		hitlist[sides[i].GetTexture(side_t::bottom).GetIndex()] |= FTextureManager::HIT_Wall;
 	}
 
 	// Sky texture is always present.
@@ -1349,11 +1380,11 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 
 	if (sky1texture.isValid())
 	{
-		hitlist[sky1texture.GetIndex()] |= 1;
+		hitlist[sky1texture.GetIndex()] |= FTextureManager::HIT_Sky;
 	}
 	if (sky2texture.isValid())
 	{
-		hitlist[sky2texture.GetIndex()] |= 1;
+		hitlist[sky2texture.GetIndex()] |= FTextureManager::HIT_Sky;
 	}
 }
 

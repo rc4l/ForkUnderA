@@ -103,6 +103,11 @@ void G_DoLoadGame (void);
 // Called by M_Responder.
 void G_SaveGame (const char *filename, const char *description);
 
+// [rc4l] The synchronous half of the above, exported because the quit path has no next tic for the
+// queued form to run in: G_SaveGame only sets gameaction = ga_savegame, and exit() follows
+// immediately after the caller returns.
+void G_DoSaveGame (bool okForQuicksave, FString filename, const char *description);
+
 // Only called by startup code.
 void G_RecordDemo (const char* name);
 
@@ -115,6 +120,11 @@ bool G_CheckDemoStatus (void);
 void G_WorldDone (void);
 
 void G_Ticker (void);
+// [rc4l] features/handoff: G_Ticker's halves around the playsim's tic, playsim true when it runs this tic.
+struct G_TickerPart { int state; bool playsim; };   // [rc4l] state is the gamestate_t the tic began in
+G_TickerPart G_TickerBegin ();
+void G_TickerPlaysim ();
+void G_TickerEnd (const G_TickerPart &part);
 bool G_Responder (event_t*	ev);
 
 void G_ScreenShot (char *filename);

@@ -56,6 +56,7 @@
 #ifdef NO_GL
 #include "r_nullrenderer.h"
 #endif
+#include "features/frame/framedriver.h"   // [rc4l] CreateLaunchRenderer
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -184,8 +185,7 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		// [rc4l] GL-only build: always use the OpenGL renderer.
-		Renderer = gl_CreateInterface();
+		Renderer = zx::frame::CreateLaunchRenderer(gl_CreateInterface);
 #else
 		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
 		Renderer = new FNullRenderer;

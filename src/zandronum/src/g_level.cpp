@@ -37,6 +37,7 @@
 #include "d_main.h"
 #include "features/crashreport/zx_crashreport.h"
 #include "g_level.h"
+#include "features/continue/zx_continue.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "g_game.h"
 #include "s_sound.h"
@@ -113,6 +114,8 @@
 #include <set> // [CK] For CCMD listmusic
 
 #include "g_hub.h"
+#include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
+#include "features/telemetry/telemetry.h"
 
 void STAT_StartNewGame(const char *lev);
 void STAT_ChangeLevel(const char *newl);
@@ -214,7 +217,14 @@ CCMD (map)
 						return;
 					}
 
+					// [rc4l] This disconnect is on the way to the map just named, not a player
+					// leaving a server. Continue routes every departure back to the last session,
+					// so without saying so here it takes them there instead of to the map -- and
+					// if that session was one we hosted, it starts the server again, whose join
+					// tears down through here as well.
+					zx::Continue_NoteChoosingDestination( true );
 					CLIENT_QuitNetworkGame( NULL );
+					zx::Continue_NoteChoosingDestination( false );
 				}
 
 				if ( sv_maprotation )
@@ -249,7 +259,8 @@ CCMD (map)
 // [rc4l] uzdoom@eceb37aa6: start a map and record a demo of it in one step. Single-player
 // only -- Zandronum records client demos through CLIENTDEMO_*, a different path, so the
 // guard is on our network state rather than upstream's bare `netgame`.
-CCMD (recordmap)
+// [rc4l] Unsafe, since it writes the demo wherever it is told (features/command-safety).
+UNSAFE_CCMD (recordmap)
 {
 	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
 	{
@@ -414,7 +425,10 @@ static void InitPlayerClasses ()
 			SinglePlayerClass[i] = players[i].userinfo.GetPlayerClassNum();
 			if (SinglePlayerClass[i] < 0 || !playeringame[i])
 			{
-				SinglePlayerClass[i] = (pr_classchoice()) % PlayerClasses.Size ();
+				// [rc4l] A mod that set NoRandomPlayerClass gets a selectable class here instead of
+				// a roll; -1 means it didn't ask, so the roll stays exactly as it was.
+				const int fallback = ZX_PlayerClassFallback(SinglePlayerClass[i], false, 0);
+				SinglePlayerClass[i] = (fallback >= 0) ? fallback : ((pr_classchoice()) % PlayerClasses.Size ());
 			}
 			players[i].cls = NULL;
 			players[i].CurrentPlayerClass = SinglePlayerClass[i];
@@ -441,7 +455,13 @@ void G_UpdateSinglePlayerClass (const unsigned int player)
 	// [AK] Assign a random class for the player if necessary.
 	if (SinglePlayerClass[player] < 0)
 	{
-		if (players[player].bOnTeam)
+		// [rc4l] Unless the mod forbade random classes, in which case pick a selectable one.
+		const int fallback = ZX_PlayerClassFallback(SinglePlayerClass[player],
+			!!players[player].bOnTeam, players[player].Team);
+
+		if (fallback >= 0)
+			SinglePlayerClass[player] = fallback;
+		else if (players[player].bOnTeam)
 			SinglePlayerClass[player] = TEAM_SelectRandomValidPlayerClass(players[player].Team);
 		else
 			SinglePlayerClass[player] = (pr_classchoice()) % PlayerClasses.Size();
@@ -1151,6 +1171,7 @@ void SERVERCONSOLE_SetCurrentMapname( const char *pszString );
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
 void G_DoLoadLevel (int position, bool autosave)
 {
+	ZX_ZONE("load/level");   // [rc4l] a level load, whole
 	static int lastposition = 0;
 	gamestate_t oldgs = gamestate;
 	unsigned int i;
@@ -1432,11 +1453,14 @@ void G_DoLoadLevel (int position, bool autosave)
 		else
 		{
 
+			// [rc4l] uzdoom@e4a041cb4 -- map names read better lower case in the console banner.
+			FString mapname = level.MapName;
+			mapname.ToLower();
 			Printf (
 					"\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n"
 					TEXTCOLOR_BOLD "%s - %s\n\n",
-					level.MapName.GetChars(), level.LevelName.GetChars());
+					mapname.GetChars(), level.LevelName.GetChars());	// [rc4l] uzdoom@c7842a8de
 
 			// [RC] Update the G15 display.
 			G15_NextLevel(level.MapName, level.LevelName.GetChars());
@@ -2029,16 +2053,10 @@ void G_FinishTravel ()
 			pawn->SetState(pawn->SpawnState);
 			pawn->player->SendPitchLimits();
 
-			// [rc4l] uzdoom@aa338a4dc: sync the FLY flags. MF2_FLY and CF_FLY are set independently
-			// and travel only carried one of them, so a flying player arrived with them disagreeing.
-			if (pawn->flags2 & MF2_FLY)
-			{
-				pawn->player->cheats |= CF_FLY;
-			}
-			else
-			{
-				pawn->player->cheats &= ~CF_FLY;
-			}
+			// [rc4l] uzdoom@337682934 removes the uzdoom@aa338a4dc FLY sync that used to sit here. It
+			// existed only because CF_FLY lived on player_t while MF2_FLY lived on the actor, so
+			// travel carried one and not the other. Both are actor flags now and travel keeps them
+			// together for free.
 
 			// [BC]
 			pawn->NetID = savedNetID;
@@ -2327,7 +2345,10 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 		<< level.maptime
 		<< i;
 
-	arc << level.nextmusic;
+	// [rc4l] uzdoom@3463b8787 -- MUSINFO state is a player property now. The field stays in
+	// the stream so the format is unchanged and old saves still parse.
+	int nextmusic;
+	arc << nextmusic;
 
 	// Hub transitions must keep the current total time
 	if (!hubLoad)
@@ -2890,10 +2911,22 @@ CCMD(listmaps)
 	}
 }
 
+// [rc4l] uzdoom@845bcdf14 blocks FString's relational operators, which is what made this bug
+// visible: std::set<FString> fell back on FString's implicit conversion to const char* and
+// ordered by POINTER ADDRESS, so listmusic neither sorted nor deduplicated by name. Order by
+// the text instead.
+struct FStringNameLess
+{
+	bool operator() ( const FString &a, const FString &b ) const
+	{
+		return a.Compare( b ) < 0;
+	}
+};
+
 // [CK] Lists all the music loaded in the wad
 CCMD( listmusic )
 {
-	std::set<FString> musicNames;
+	std::set<FString, FStringNameLess> musicNames;
 
 	for ( unsigned int i = 0; i < wadlevelinfos.Size(); i++ )
 	{
@@ -2911,7 +2944,7 @@ CCMD( listmusic )
 	}
 
 	Printf( "Loaded music:\n" );
-	for ( std::set<FString>::iterator it = musicNames.begin(); it != musicNames.end(); it++ )
+	for ( std::set<FString, FStringNameLess>::iterator it = musicNames.begin(); it != musicNames.end(); it++ )
 	{
 		if ( it->Len() <= 0)
 			continue;

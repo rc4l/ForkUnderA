@@ -16,6 +16,12 @@ option(ZANDROX_TESTS_SANITIZE "Build tests with AddressSanitizer + UBSan" OFF)
 option(ZANDROX_TESTS_COVERAGE "Build tests with llvm-cov instrumentation" OFF)
 
 # [rc4l] Pull GoogleTest/GoogleMock via FetchContent, the canonical modern wiring.
+# [rc4l] Under Emscripten (web-port-design 13a) the tests run in Node, the browser build's runtime, with WebAssembly's own exceptions and threads on every object as the engine has them.
+if(EMSCRIPTEN)
+  add_compile_options(-fwasm-exceptions -pthread)
+  add_link_options(-fwasm-exceptions -pthread)
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -23,6 +29,14 @@ FetchContent_Declare(
   GIT_TAG        v1.15.2
   GIT_SHALLOW    TRUE
 )
+# [rc4l] MSVC only: GoogleTest defaults to the STATIC CRT (/MT) while everything else here uses the
+# dynamic one (/MD), and the two cannot link -- LNK2038 on RuntimeLibrary, followed by a few hundred
+# LNK2005 duplicate symbols out of msvcprt.lib that all trace back to it. Must be set BEFORE
+# MakeAvailable, since that is when GoogleTest's own CMake reads it. No effect on GCC/Clang.
+#
+# Not caught locally because an already-configured build-tests/ reuses its cached GoogleTest; only a
+# clean configure trips it, which is what CI does every run.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 enable_testing()
@@ -53,8 +67,39 @@ endif()
 # them straight into the test binary — the coverage gate then measures the real .cpp.
 file(GLOB_RECURSE COMPUTE_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_compute.cpp")
 
-add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES})
-target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}")
+# [rc4l] iwadallow_compute.cpp is generated-header-dependent: the downloadable-IWAD allowlist lives in
+# the repo-root iwadallowlist.txt and is compiled in (see tools/gen-wadlists.cmake for why it is not
+# a runtime file). The engine build runs the same generator; running it here too is what lets the
+# tests assert against the SHIPPED list rather than a copy that could quietly disagree with it.
+set(ZX_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+if(WIN32)
+  set(ZX_WADLIST_PLATFORM windows)
+elseif(APPLE)
+  set(ZX_WADLIST_PLATFORM macos)
+else()
+  set(ZX_WADLIST_PLATFORM linux)
+endif()
+set(ZX_GEN_LISTS "${CMAKE_CURRENT_BINARY_DIR}/generated/zx_waddownload_lists.h")
+add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
+  COMMAND ${CMAKE_COMMAND}
+    "-DIWAD_LIST=${ZX_REPO_ROOT}/config/iwadallowlist.txt"
+    "-DSITE_LIST=${ZX_REPO_ROOT}/config/waddownloadsites.txt"
+    "-DSUBST_LIST=${ZX_REPO_ROOT}/config/iwadsubstitutes.txt"
+    "-DDIR_LIST=${ZX_REPO_ROOT}/config/waddirectories.txt"
+    "-DPLATFORM=${ZX_WADLIST_PLATFORM}"
+    "-DOUT=${ZX_GEN_LISTS}"
+    -P "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
+  DEPENDS "${ZX_REPO_ROOT}/config/iwadallowlist.txt" "${ZX_REPO_ROOT}/config/waddownloadsites.txt"
+          "${ZX_REPO_ROOT}/config/iwadsubstitutes.txt"
+          "${ZX_REPO_ROOT}/config/waddirectories.txt"
+          "${ZX_REPO_ROOT}/tools/gen-wadlists.cmake"
+  COMMENT "Generating zx_waddownload_lists.h from iwadallowlist.txt / waddownloadsites.txt")
+
+# [rc4l] features/sound-decoders: pcmdecode_compute.cpp calls the vendored decoders, built once here as in the engine, with their warnings off.
+set(ZX_SOUND_DECODERS "${ENGINE_SRC}/features/sound-decoders/vendor/decoders_vendor.cpp")
+set_source_files_properties("${ZX_SOUND_DECODERS}" PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}" "${ZX_GEN_LISTS}")
+target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
 # it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
@@ -62,6 +107,10 @@ target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
 # sanitizer/coverage options below stay GCC/Clang-only on purpose: CI measures coverage on Linux.
 if(MSVC)
   target_compile_options(zandrox_tests PRIVATE /W4)
+  # [rc4l] MSVC hides M_PI and friends behind _USE_MATH_DEFINES; several tests use M_PI to build
+  # trig reference values. Defined on the target rather than #defined in each file, so a new test
+  # does not have to know this.
+  target_compile_definitions(zandrox_tests PRIVATE _USE_MATH_DEFINES)
 else()
   target_compile_options(zandrox_tests PRIVATE -Wall -Wextra)
 endif()
@@ -81,6 +130,12 @@ if(ZANDROX_TESTS_COVERAGE)
     -fprofile-instr-generate -fcoverage-mapping -g -O0)
   target_link_options(zandrox_tests PRIVATE
     -fprofile-instr-generate -fcoverage-mapping)
+endif()
+
+# [rc4l] The heap grows as the desktop's does, main runs on a worker so the job pool's threads can start while it waits, and the exit status is the tests' verdict; no test reads the disk, so the module keeps its in-memory file system.
+if(EMSCRIPTEN)
+  target_link_options(zandrox_tests PRIVATE "SHELL:-s ALLOW_MEMORY_GROWTH=1" "SHELL:-s EXIT_RUNTIME=1" "SHELL:-s STACK_SIZE=4MB"
+    "SHELL:-s PROXY_TO_PTHREAD=1" "SHELL:-s PTHREAD_POOL_SIZE=8")
 endif()
 
 gtest_discover_tests(zandrox_tests)
@@ -124,11 +179,22 @@ endif()
 # The shim header cannot colocate -- it would collide with the engine's real i_system.h in that
 # directory -- so it lives under tests/shims/. Portable C/C++: runs on Linux and macOS.
 file(GLOB_RECURSE NET_TEST_SOURCES CONFIGURE_DEPENDS "${ENGINE_SRC}/*_nettest.cpp")
-if(NET_TEST_SOURCES)
+# [rc4l] Not under Emscripten, whose sockets are no UDP to test.
+if(NET_TEST_SOURCES AND NOT EMSCRIPTEN)
   add_executable(zandrox_tests_net
     ${NET_TEST_SOURCES}
     "${ENGINE_SRC}/networkshared.cpp"
+    # [rc4l] networkshared.cpp unmaps ::ffff:a.b.c.d through this, so the target that links it
+    # needs it as well.
+    "${ENGINE_SRC}/features/net/computation/v6mapped_compute.cpp"
+    # [rc4l] ...and matches v6 bans through this one, for the same reason.
+    "${ENGINE_SRC}/features/net/computation/v6prefix_compute.cpp"
     "${ENGINE_SRC}/platform.cpp"
+    # [rc4l] The ini parser, here for the same reason as networkshared.cpp: it is vendored engine
+    # code whose only heavy dependency is shimmed away, and a truncation bug in it reached players.
+    "${ENGINE_SRC}/configfile.cpp"
+    "${ENGINE_SRC}/zstring.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shims/net/frandom_stub.cpp"
     "${ENGINE_SRC}/huffman/bitreader.cpp"
     "${ENGINE_SRC}/huffman/bitwriter.cpp"
     "${ENGINE_SRC}/huffman/huffcodec.cpp"
@@ -136,13 +202,34 @@ if(NET_TEST_SOURCES)
   # Shim dir BEFORE the engine tree: networkshared.cpp's #include "i_system.h" must resolve to
   # tests/shims/net/i_system.h; doomtype.h etc. still come from ENGINE_SRC.
   target_include_directories(zandrox_tests_net BEFORE PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/shims/net" "${ENGINE_SRC}")
+    "${CMAKE_CURRENT_SOURCE_DIR}/shims/net" "${ENGINE_SRC}"
+    # [rc4l] configfile.cpp's own two dependencies: FString's formatter and the RNG behind its
+    # multi-line end tags.
+    "${ENGINE_SRC}/../gdtoa" "${ENGINE_SRC}/sound")
   # strnicmp is a Windows spelling; the vendored code uses it, POSIX spells it strncasecmp.
-  target_compile_definitions(zandrox_tests_net PRIVATE strnicmp=strncasecmp)
+  # [rc4l] Only remap it AWAY from Windows: on MSVC strnicmp is the one that exists and
+  # strncasecmp is not declared, so defining this unconditionally broke the Windows build.
+  if(NOT WIN32)
+    target_compile_definitions(zandrox_tests_net PRIVATE strnicmp=strncasecmp)
+  endif()
   target_link_libraries(zandrox_tests_net PRIVATE GTest::gtest_main)
+  # [rc4l] networkshared.cpp calls htons/ntohs/inet_addr/gethostbyname. On POSIX those are in libc;
+  # on Windows they live in Winsock, so the target needs it explicitly -- the same ws2_32 the
+  # server-registry executable links for the same reason.
+  if(WIN32)
+    target_link_libraries(zandrox_tests_net PRIVATE ws2_32)
+  endif()
   # -Wall -Wextra but NOT -Werror: this compiles vendored engine .cpp we don't own (it trips
   # legacy warnings like the deprecated sprintf); the value is the assertions under ASan.
-  target_compile_options(zandrox_tests_net PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+  # [rc4l] Same MSVC split as zandrox_tests above -- cl rejects /Wextra with D8021, a hard command
+  # line error, so passing the GCC flags here failed the whole Windows configure even though this
+  # target's own sources are portable. /W4 is the equivalent; the deprecation quieting is /wd4996.
+  if(MSVC)
+    target_compile_options(zandrox_tests_net PRIVATE /W4 /wd4996)
+    target_compile_definitions(zandrox_tests_net PRIVATE _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
+  else()
+    target_compile_options(zandrox_tests_net PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+  endif()
   if(ZANDROX_TESTS_SANITIZE)
     message(STATUS "zandrox_tests_net: AddressSanitizer + UBSan enabled")
     target_compile_options(zandrox_tests_net PRIVATE

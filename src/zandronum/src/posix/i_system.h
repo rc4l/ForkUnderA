@@ -90,6 +90,10 @@ void I_StartFrame (void);
 // Can call D_PostEvent.
 void I_StartTic (void);
 
+// [rc4l] See the win32 header: the background-render switch asks these from cross-platform code.
+bool I_WindowIsActive ();
+void I_UpdateBackgroundPriority ();
+
 // Asynchronous interrupt functions should maintain private queues
 // that are read by the synchronous functions
 // to be converted into events.
@@ -165,6 +169,8 @@ int I_FindAttr (findstate_t *fileinfo);
 #define FA_DIREC	8
 #define FA_ARCH		16
 
+// [rc4l] Only where the C library has none (CMake's NEED_STRLWR): Emscripten's has its own, which this would redeclare as static.
+#ifdef NEED_STRLWR
 static inline char *strlwr(char *str)
 {
 	char *ptr = str;
@@ -175,5 +181,6 @@ static inline char *strlwr(char *str)
 	}
 	return str;
 }
+#endif
 
 #endif

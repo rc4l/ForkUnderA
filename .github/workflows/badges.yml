@@ -18,7 +18,7 @@ jobs:
   publish:
     # [rc4l] Main-repo-only infra: the badge JSON is read from THIS repo's `badges` branch by shields.io.
     # On a fork it would push a stray `badges` branch nobody reads, so skip it there.
-    if: github.repository == 'rc4l/ZandroX'
+    if: github.repository == 'rc4l/ForkUnderA'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
           fi
           printf '{"schemaVersion":1,"label":"tests","message":"%s","color":"blue"}\n' "$TESTS" > tests.json
           git add tests.json
-          if git -c user.email=ci@zandrox -c user.name="ZandroX CI" commit -q -m "Update tests badge: $TESTS"; then
+          if git -c user.email=ci@forkundera -c user.name="ForkUnderA CI" commit -q -m "Update tests badge: $TESTS"; then
             git push -q origin badges
             echo "published tests=$TESTS"
           else

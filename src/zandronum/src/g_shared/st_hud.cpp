@@ -75,25 +75,8 @@
 #include "win32/g15/g15.h"
 #include "voicechat.h"
 #include "possession.h"
-
-// [AK] Message levels used for cl_identifytarget.
-enum
-{
-	IDENTIFY_TARGET_OFF,
-	IDENTIFY_TARGET_NAME,
-	IDENTIFY_TARGET_HEALTH,
-	IDENTIFY_TARGET_WEAPON,
-	IDENTIFY_TARGET_CLASS,
-};
-
-// [AK] Message levels used for cl_identifymonsters.
-enum
-{
-	IDENTIFY_MONSTERS_OFF,
-	IDENTIFY_MONSTERS_NAME,
-	IDENTIFY_MONSTERS_DROPITEMS,
-	IDENTIFY_MONSTERS_GHOST,
-};
+#include "features/crosshair/crosshair.h"	// [MobiusU9B] target info beside the crosshair
+#include "features/crosshair/computation/targetinfo_compute.h"
 
 //*****************************************************************************
 //	VARIABLES
@@ -157,8 +140,6 @@ static	void	HUD_DrawFragMessage( const unsigned int displayPlayer );
 //*****************************************************************************
 //	CONSOLE VARIABLES
 
-CVAR( Int, cl_identifytarget, IDENTIFY_TARGET_NAME, CVAR_ARCHIVE )
-CVAR( Int, cl_identifymonsters, IDENTIFY_MONSTERS_OFF, CVAR_ARCHIVE )
 CVAR( Bool, cl_showlargefragmessages, true, CVAR_ARCHIVE )
 CVAR( Bool, cl_drawcoopinfo, true, CVAR_ARCHIVE )
 CVAR( Bool, r_drawspectatingstring, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG )
@@ -423,260 +404,194 @@ static AActor *HUD_ScanForTarget( AActor *pSource )
 {
 	FTraceResults trace;
 
-	angle_t angle = pSource->angle >> ANGLETOFINESHIFT;
-	angle_t pitch = static_cast<angle_t>( pSource->pitch ) >> ANGLETOFINESHIFT;
-	fixed_t vx = FixedMul( finecosine[pitch], finecosine[angle] );
-	fixed_t vy = FixedMul( finecosine[pitch], finesine[angle] );
-	fixed_t vz = -finesine[pitch];
-	fixed_t eyez = pSource->player ? pSource->player->viewz : pSource->z + pSource->height / 2;
-
-	if ( Trace( pSource->x,	// Actor x
-		pSource->y, // Actor y
-		eyez,	// Actor z
-		pSource->Sector,
-		vx,
-		vy,
-		vz,
-		( 32 * 64 * FRACUNIT ) /* MISSILERANGE */,	// Maximum distance
-		MF_SHOOTABLE,	// Actor mask
-		ML_BLOCKEVERYTHING,	// Wall mask
-		pSource,		// Actor to ignore
-		trace,	// Result
-		TRACE_NoSky,	// Trace flags
-		NULL ) == false )	// Callback
-	// Did not spot anything anything.
-	{
+	// [MobiusU9B] The trace itself moved to features/crosshair, which aims it through the drawn crosshair like the view sweep.
+	if (( zx::crosshair::TraceFromView( pSource, MF_SHOOTABLE, zx::crosshair::kIdentifyRange, trace ) == false ) || ( trace.HitType != TRACE_HitActor ))
 		return ( NULL );
+
+	// Return the actor we found.
+	return ( trace.Actor );
+}
+
+//*****************************************************************************
+//
+// [MobiusU9B] The checks every identify readout shares, so the crosshair's actor name obeys them too.
+static bool HUD_CanIdentifyFrom( player_t *pPlayer )
+{
+	// [BC] The player may not have a body between intermission-less maps.
+	if (( pPlayer->camera == NULL ) || ( viewactive == false ))
+		return ( false );
+
+	// Don't do any of this while still receiving a snapshot.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_GetConnectionState( ) == CTS_RECEIVINGSNAPSHOT ))
+		return ( false );
+
+	if (( pPlayer->bSpectating ) && ( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ))
+		return ( false );
+
+	// [rc4l] features/handoff: the console player's camera as the game has it, since the HUD is drawn between tics, where the renderer's view is the last frame's.
+	return ( players[consoleplayer].camera != NULL );
+}
+
+//*****************************************************************************
+//
+// [MobiusU9B] Whether pTarget's health on this machine is real: online a friendly monster's never is, and a player's only when the server shares it.
+static bool HUD_IsTargetHealthKnown( AActor *pTarget )
+{
+	const bool bServerShares = ( pTarget->player != NULL ) && SERVER_IsPlayerAllowedToKnowHealth( consoleplayer, static_cast<ULONG>( pTarget->player - players ));
+	return ( zx::crosshair::ComputeIdentifyHealthKnown( NETWORK_InClientMode( ), bServerShares ));
+}
+
+//*****************************************************************************
+//
+// [MobiusU9B] Builds the identify text for the actor in the crosshair from the Target info toggles; false when nothing should show.
+static bool HUD_BuildTargetText( player_t *pPlayer, zx::crosshair::TargetText &target )
+{
+	const zx::crosshair::IdentifyToggles toggles = zx::crosshair::ReadIdentifyToggles( );
+
+	// Break out if we don't want to identify the target, or
+	// a medal has just been awarded and is being displayed.
+	if ((( toggles.players == false ) && ( toggles.monsters == false )) || ( zadmflags & ZADF_NO_IDENTIFY_TARGET ) || ( MEDAL_GetDisplayedMedal( pPlayer->camera->player - players ) != nullptr ))
+		return ( false );
+
+	// Search for a player or monster directly in front of the camera. If none are found, exit.
+	AActor *pTargetActor = HUD_ScanForTarget( players[consoleplayer].camera );
+
+	// [CK] If the actor shouldn't be identified from decorate flags, ignore them.
+	if (( pTargetActor == NULL ) || (( pTargetActor->STFlags & STFL_DONTIDENTIFYTARGET ) != 0 ))
+		return ( false );
+
+	player_t *const pTargetPlayer = pTargetActor->player;
+	zx::crosshair::IdentifyTarget info;
+	info.isPlayer = ( pTargetPlayer != NULL );
+	info.isMonster = (( pTargetActor->flags3 & MF3_ISMONSTER ) != 0 );
+	info.friendly = pTargetActor->IsFriend( players[consoleplayer].mo );
+	info.healthKnown = HUD_IsTargetHealthKnown( pTargetActor );
+	info.hasWeapon = ( pTargetPlayer != NULL ) && ( pTargetPlayer->ReadyWeapon != NULL );
+	info.isGhost = (( pTargetActor->flags3 & MF3_GHOST ) != 0 );
+
+	// [MobiusU9B] Which lines a target gets is decided, and unit-tested, in features/crosshair.
+	const zx::crosshair::IdentifyLines lines = zx::crosshair::ComputeIdentifyLines( toggles, info );
+	if ( lines.show == false )
+		return ( false );
+
+	// Build the string and text color;
+	// [MobiusU9B] The name goes in target.name and every later line, each led by its newline, in target.details.
+	EColorRange &color = target.color;
+	FString &targetInfoMsg = target.details;
+	color = CR_GRAY;
+
+	if ( pTargetPlayer )
+	{
+		target.name = pTargetPlayer->userinfo.GetName( );
 	}
 	else
 	{
-		// Return NULL if we did not hit an actor.
-		if ( trace.HitType != TRACE_HitActor )
-			return ( NULL );
+		target.name = pTargetActor->GetTag( );
 
-		// Return the actor we found.
-		return ( trace.Actor );
+		// [AK] Colorize the string in case the actor's name tag contains unformatted color codes.
+		V_ColorizeString( target.name );
 	}
+
+	// Attempt to use the team color.
+	if ( GAMEMODE_GetCurrentFlags( ) & GMF_PLAYERSONTEAMS )
+	{
+		ULONG ulTeam = TEAM_None;
+
+		// [AK] If the target is not a player, then check their designated team.
+		if ( pTargetPlayer == NULL )
+			ulTeam = pTargetActor->DesignatedTeam;
+		else if ( pTargetPlayer->bOnTeam )
+			ulTeam = pTargetPlayer->Team;
+
+		// [AK] Only change the text color if this actor's team is valid.
+		if (( ulTeam != TEAM_None ) && ( TEAM_CheckIfValid( ulTeam )))
+			color = static_cast<EColorRange>( TEAM_GetTextColor( ulTeam ));
+	}
+
+	// [AK] Print this actor's current health and armor.
+	if ( lines.health )
+	{
+		int healthPercentage = ( 100 * pTargetActor->health ) / ( pTargetPlayer ? pTargetPlayer->mo->GetMaxHealth( ) : pTargetActor->SpawnHealth( ));
+		targetInfoMsg += '\n';
+
+		if ( healthPercentage <= 25 )
+			targetInfoMsg += TEXTCOLOR_RED;
+		else if ( healthPercentage <= 50 )
+			targetInfoMsg += TEXTCOLOR_ORANGE;
+		else if ( healthPercentage <= 75 )
+			targetInfoMsg += TEXTCOLOR_GOLD;
+		else
+			targetInfoMsg += TEXTCOLOR_GREEN;
+
+		AInventory *armor = pTargetActor->FindInventory( RUNTIME_CLASS( ABasicArmor ));
+		targetInfoMsg.AppendFormat( "%d" TEXTCOLOR_GREEN " / %d", pTargetActor->health, armor ? armor->Amount : 0 );
+	}
+
+	// [AK] Print this player's current weapon if they have one.
+	if ( lines.weapon )
+	{
+		targetInfoMsg += '\n';
+		targetInfoMsg.AppendFormat( TEXTCOLOR_GREEN "%s", pTargetPlayer->ReadyWeapon->GetTag( ));
+
+		// [AK] If this weapon uses ammo, print the amount as well.
+		if ( pTargetPlayer->ReadyWeapon->Ammo1 )
+		{
+			targetInfoMsg.AppendFormat( TEXTCOLOR_GOLD " %d", pTargetPlayer->ReadyWeapon->Ammo1->Amount );
+
+			// [AK] If this weapon also has a secondary ammo type, print that amount too.
+			if ( pTargetPlayer->ReadyWeapon->Ammo2 )
+				targetInfoMsg.AppendFormat( " %d", pTargetPlayer->ReadyWeapon->Ammo2->Amount );
+		}
+	}
+
+	// [AK] Print this player's class.
+	// [MobiusU9B] Just the class, or the morph they are under, without the skin.
+	if ( lines.playerClass )
+	{
+		const char *pszClass = pTargetPlayer->MorphedPlayerClass ? pTargetPlayer->MorphedPlayerClass->TypeName.GetChars( ) : GetPrintableDisplayName( pTargetPlayer->cls );
+		targetInfoMsg += '\n';
+		targetInfoMsg.AppendFormat( TEXTCOLOR_GREEN "%s", pszClass );
+	}
+
+	// [AK] Indicate if this monster is a ghost.
+	if ( lines.ghost )
+		targetInfoMsg += "\n" TEXTCOLOR_DARKGRAY "Is a ghost";
+
+	if ( pTargetActor->IsFriend( players[consoleplayer].camera ))
+	{
+		if ( lines.allyEnemy )
+			targetInfoMsg += "\n" TEXTCOLOR_DARKGREEN "Ally";
+	}
+	else
+	{
+		if ( lines.allyEnemy )
+			targetInfoMsg += "\n" TEXTCOLOR_DARKRED "Enemy";
+
+		// If this player is carrying the terminator artifact, display his name in red.
+		if (( terminator ) && ( pTargetPlayer ) && ( pTargetPlayer->cheats2 & CF2_TERMINATORARTIFACT ))
+			color = CR_RED;
+	}
+
+	return ( true );
 }
 
 //*****************************************************************************
 //
 void HUD_DrawTargetName( player_t *pPlayer )
 {
-	// [BC] The player may not have a body between intermission-less maps.
-	if (( pPlayer->camera == NULL ) || ( viewactive == false ))
-		return;
+	const bool bCanIdentify = HUD_CanIdentifyFrom( pPlayer );
+	const bool bBesideCrosshair = zx::crosshair::IsTargetInfoNextToCrosshair( );
+	zx::crosshair::TargetText target;
+	const bool bFound = bCanIdentify && HUD_BuildTargetText( pPlayer, target );
 
-	// Break out if we don't want to identify the target, or
-	// a medal has just been awarded and is being displayed.
-	if (( cl_identifytarget == IDENTIFY_TARGET_OFF ) || ( zadmflags & ZADF_NO_IDENTIFY_TARGET ) || ( MEDAL_GetDisplayedMedal( pPlayer->camera->player - players ) != nullptr ))
-		return;
-
-	// Don't do any of this while still receiving a snapshot.
-	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_GetConnectionState( ) == CTS_RECEIVINGSNAPSHOT ))
-		return;
-
-	if (( pPlayer->bSpectating ) && ( lastmanstanding || teamlms ) && ( LASTMANSTANDING_GetState( ) == LMSS_INPROGRESS ))
-		return;
-
-	// Look for players directly in front of the player.
-	if ( camera )
+	if (( bFound ) && ( bBesideCrosshair == false ))
 	{
-		// Search for a player or monster directly in front of the camera. If none are found, exit.
-		AActor *pTargetActor = HUD_ScanForTarget( camera );
-		if (( pTargetActor == NULL ) || (( pTargetActor->player == NULL ) && (( pTargetActor->flags3 & MF3_ISMONSTER ) == false )))
-			return;
-
-		// [CK] If the actor shouldn't be identified from decorate flags, ignore them.
-		// [AK] Likewise, ignore monsters if we don't want to identify them.
-		if ((( pTargetActor->STFlags & STFL_DONTIDENTIFYTARGET ) != 0 ) || (( cl_identifymonsters == IDENTIFY_MONSTERS_OFF ) && ( pTargetActor->flags3 & MF3_ISMONSTER )))
-			return;
-
-		// Build the string and text color;
-		EColorRange color = CR_GRAY;
-		FString targetInfoMsg;
-
-		if ( pTargetActor->player )
-		{
-			targetInfoMsg = pTargetActor->player->userinfo.GetName( );
-		}
-		else
-		{
-			targetInfoMsg = pTargetActor->GetTag( );
-
-			// [AK] Colorize the string in case the actor's name tag contains unformatted color codes.
-			V_ColorizeString( targetInfoMsg );
-		}
-
-		// Attempt to use the team color.
-		if ( GAMEMODE_GetCurrentFlags( ) & GMF_PLAYERSONTEAMS )
-		{
-			ULONG ulTeam = TEAM_None;
-
-			// [AK] If the target is not a player, then check their designated team.
-			if ( pTargetActor->player == NULL )
-				ulTeam = pTargetActor->DesignatedTeam;
-			else if ( pTargetActor->player->bOnTeam )
-				ulTeam = pTargetActor->player->Team;
-
-			// [AK] Only change the text color if this actor's team is valid.
-			if (( ulTeam != TEAM_None ) && ( TEAM_CheckIfValid( ulTeam )))
-				color = static_cast<EColorRange>( TEAM_GetTextColor( ulTeam ));
-		}
-
-		// [AK] If this actor is friendly to us, print more information about them.
-		if ( pTargetActor->IsFriend( players[consoleplayer].mo ))
-		{
-			// [AK] Print this actor's current health and armor.
-			if ( cl_identifytarget >= IDENTIFY_TARGET_HEALTH )
-			{
-				int healthPercentage = ( 100 * pTargetActor->health ) / ( pTargetActor->player ? pTargetActor->player->mo->GetMaxHealth( ) : pTargetActor->SpawnHealth( ));
-				targetInfoMsg += '\n';
-
-				if ( healthPercentage <= 25 )
-					targetInfoMsg += TEXTCOLOR_RED;
-				else if ( healthPercentage <= 50 )
-					targetInfoMsg += TEXTCOLOR_ORANGE;
-				else if ( healthPercentage <= 75 )
-					targetInfoMsg += TEXTCOLOR_GOLD;
-				else
-					targetInfoMsg += TEXTCOLOR_GREEN;
-
-				AInventory *armor = pTargetActor->FindInventory( RUNTIME_CLASS( ABasicArmor ));
-				targetInfoMsg.AppendFormat( "%d" TEXTCOLOR_GREEN " / %d", pTargetActor->health, armor ? armor->Amount : 0 );
-			}
-
-			if ( pTargetActor->player )
-			{
-				// [AK] Print this player's current weapon if they have one.
-				if (( cl_identifytarget >= IDENTIFY_TARGET_WEAPON ) && ( pTargetActor->player->ReadyWeapon ))
-				{
-					targetInfoMsg += '\n';
-					targetInfoMsg.AppendFormat( TEXTCOLOR_GREEN "%s", pTargetActor->player->ReadyWeapon->GetTag( ));
-
-					// [AK] If this weapon uses ammo, print the amount as well.
-					if ( pTargetActor->player->ReadyWeapon->Ammo1 )
-					{
-						targetInfoMsg.AppendFormat( TEXTCOLOR_GOLD " %d", pTargetActor->player->ReadyWeapon->Ammo1->Amount );
-
-						// [AK] If this weapon also has a secondary ammo type, print that amount too.
-						if ( pTargetActor->player->ReadyWeapon->Ammo2 )
-							targetInfoMsg.AppendFormat( " %d", pTargetActor->player->ReadyWeapon->Ammo2->Amount );
-					}
-				}
-
-				// [AK] Print this player's class.
-				if ( cl_identifytarget >= IDENTIFY_TARGET_CLASS )
-				{
-					FString classString;
-
-					// [AK] Display the name of the class the player is current playing as.
-					// If they're supposed to be morphed, don't print the name of their skin.
-					if ( pTargetActor->player->MorphedPlayerClass )
-					{
-						classString = pTargetActor->player->MorphedPlayerClass->TypeName.GetChars( );
-					}
-					else
-					{
-						FString skinString;
-
-						if ( PlayerClasses.Size( ) > 1 )
-							classString = GetPrintableDisplayName( pTargetActor->player->cls );
-
-						if ( classString.IsNotEmpty( ))
-							classString += " - ";
-
-						// [AK] Get the name of the player's current skin, if skins are enabled.
-						// Their skin should only be displayed if they're playing the class meant
-						// for it. Otherwise, print "base" instead.
-						if ( cl_skins )
-						{
-							const int skin = pTargetActor->player->userinfo.GetSkin( );
-
-							for ( unsigned int i = 0; i < PlayerClasses.Size( ); i++ )
-							{
-								if (( pTargetActor->player->cls == PlayerClasses[i].Type ) && ( PlayerClasses[i].CheckSkin( skin )))
-								{
-									skinString += skins[skin].name;
-									break;
-								}
-							}
-						}
-
-						classString += skinString.IsNotEmpty( ) ? skinString : "Base";
-					}
-
-					targetInfoMsg += '\n';
-					targetInfoMsg.AppendFormat( TEXTCOLOR_GREEN "%s", classString.GetChars( ));
-				}
-			}
-		}
-
-		if ( pTargetActor->flags3 & MF3_ISMONSTER )
-		{
-			// [AK] Print a list of this monster's drop items if we want to.
-			if ( cl_identifymonsters >= IDENTIFY_MONSTERS_DROPITEMS )
-			{
-				FDropItem *pDropItems = pTargetActor->GetDropItems( );
-				FString dropItemList;
-
-				while ( pDropItems )
-				{
-					const PClass *pClass = PClass::FindClass( pDropItems->Name );
-
-					// [AK] Ignore items that are invalid or have no chance of spawning.
-					if (( pClass != NULL ) && ( pDropItems->probability > -1 ))
-					{
-						if ( dropItemList.IsNotEmpty( ))
-							dropItemList += ", ";
-
-						dropItemList += pDropItems->Name.GetChars( );
-
-						// [AK] Include this item's probability if applicable.
-						if ( pDropItems->probability < 255 )
-						{
-							float fProbabilityPercentage = clamp( static_cast<float>(( pDropItems->probability + 1 ) * 100 ) / 256.f, 0.f, 100.f );
-
-							// [AK] When the probability is less than 1%, display it with two decimals.
-							// Otherwise, display it with one decimal.
-							if ( fProbabilityPercentage < 1.f )
-								dropItemList.AppendFormat( " (%.2f%%)", fProbabilityPercentage );
-							else
-								dropItemList.AppendFormat( " (%.1f%%)", fProbabilityPercentage );
-						}
-					}
-
-					pDropItems = pDropItems->Next;
-				}
-
-				if ( dropItemList.IsNotEmpty( ))
-				{
-					targetInfoMsg += '\n';
-					targetInfoMsg.AppendFormat( TEXTCOLOR_BLACK "%s", dropItemList.GetChars( ));
-				}
-			}
-
-			// [AK] Indicate if this monster is a ghost.
-			if (( cl_identifymonsters >= IDENTIFY_MONSTERS_GHOST ) && ( pTargetActor->flags3 & MF3_GHOST ))
-				targetInfoMsg += "\n" TEXTCOLOR_DARKGRAY "Is a ghost";
-		}
-
-		if ( pTargetActor->IsFriend( camera ))
-		{
-			targetInfoMsg += "\n" TEXTCOLOR_DARKGREEN "Ally";
-		}
-		else
-		{
-			targetInfoMsg += "\n" TEXTCOLOR_DARKRED "Enemy";
-
-			// If this player is carrying the terminator artifact, display his name in red.
-			if (( terminator ) && ( pTargetActor->player ) && ( pTargetActor->player->cheats2 & CF2_TERMINATORARTIFACT ))
-				color = CR_RED;
-		}
-
-		DHUDMessageFadeOut *pMsg = new DHUDMessageFadeOut( SmallFont, targetInfoMsg, 1.5f, gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f, 0, 0, color, 2.f, 0.35f );
+		DHUDMessageFadeOut *pMsg = new DHUDMessageFadeOut( SmallFont, target.name + target.details, 1.5f, gameinfo.gametype == GAME_Doom ? 0.96f : 0.95f, 0, 0, target.color, 2.f, 0.35f );
 		StatusBar->AttachMessage( pMsg, MAKE_ID( 'P', 'N', 'A', 'M' ));
 	}
+
+	// [MobiusU9B] Everything beside the crosshair, the actor name included, is drawn every frame by features/crosshair.
+	zx::crosshair::DrawBesideCrosshair( bCanIdentify ? players[consoleplayer].camera : NULL, ( bFound && bBesideCrosshair ) ? &target : NULL );
 }
 
 //*****************************************************************************

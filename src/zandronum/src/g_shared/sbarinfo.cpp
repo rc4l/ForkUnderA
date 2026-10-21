@@ -62,6 +62,7 @@
 #include "cooperative.h"
 #include "gamemode.h"
 #include "team.h"
+#include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
 
 #define ARTIFLASH_OFFSET (statusBar->invBarOffset+6)
 enum
@@ -1201,7 +1202,8 @@ public:
 	}
 
 	//draws an image with the specified flags
-	void DrawGraphic(FTexture* texture, SBarInfoCoordinate x, SBarInfoCoordinate y, int xOffset, int yOffset, int alpha, bool fullScreenOffsets, bool translate=false, bool dim=false, int offsetflags=0, bool alphaMap=false, int forceWidth=-1, int forceHeight=-1, fixed_t cx=0, fixed_t cy=0, fixed_t cr=0, fixed_t cb=0, bool clearDontDraw=false) const
+	// [rc4l] colorOverlay: optional ARGB stamped over the graphic (features/damage-tint mugshot); alpha 0 = none.
+	void DrawGraphic(FTexture* texture, SBarInfoCoordinate x, SBarInfoCoordinate y, int xOffset, int yOffset, int alpha, bool fullScreenOffsets, bool translate=false, bool dim=false, int offsetflags=0, bool alphaMap=false, int forceWidth=-1, int forceHeight=-1, fixed_t cx=0, fixed_t cy=0, fixed_t cr=0, fixed_t cb=0, bool clearDontDraw=false, PalEntry colorOverlay=0) const
 	{
 		if (texture == NULL)
 			return;
@@ -1237,7 +1239,13 @@ public:
 			if(Scaled)
 			{
 				if(cx != 0 || cy != 0)
+				{
 					screen->VirtualToRealCoords(dcx, dcy, tmp, tmp, script->resW, script->resH, true);
+					// [rc4l] uzdoom@bce7d1237: VirtualToRealCoords scales BOTH axes, so an unset
+					// one comes back non-zero and clips an edge that was meant to be left alone.
+					if (cx == 0) dcx = 0;
+					if (cy == 0) dcy = 0;
+				}
 				if(cr != 0 || cb != 0 || clearDontDraw)
 					screen->VirtualToRealCoords(dcr, dcb, tmp, tmp, script->resW, script->resH, true);
 				screen->VirtualToRealCoords(dx, dy, w, h, script->resW, script->resH, true);
@@ -1263,7 +1271,7 @@ public:
 						DTA_ClipRight, static_cast<int>(MIN<double>(INT_MAX, dcr)),
 						DTA_ClipBottom, static_cast<int>(MIN<double>(INT_MAX, dcb)),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						DTA_AlphaChannel, alphaMap,
@@ -1280,7 +1288,7 @@ public:
 						DTA_ClipRight, static_cast<int>(MIN<double>(INT_MAX, dcr)),
 						DTA_ClipBottom, static_cast<int>(MIN<double>(INT_MAX, dcb)),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						TAG_DONE);
@@ -1298,8 +1306,12 @@ public:
 
 			// We can't use DTA_HUDRules since it forces a width and height.
 			// Translation: No high res.
-			bool xright = rx < 0;
-			bool ybot = ry < 0;
+			// [rc4l] uzdoom@1c2a6e845 -- decide right/bottom alignment from the INPUT coordinates,
+			// not from rx/ry, which adjustRelCenter has already translated by the offsets.
+			// [rc4l] uzdoom@72506fa6e fixes a regression from uzdoom@1c2a6e845: a RelCenter
+			// coordinate is legitimately negative and must not be read as right/bottom alignment.
+			bool xright = *x < 0 && !x.RelCenter();
+			bool ybot = *y < 0 && !y.RelCenter();
 
 			w = (forceWidth < 0 ? texture->GetScaledWidthDouble() : forceWidth);
 			h = (forceHeight < 0 ? texture->GetScaledHeightDouble() : forceHeight);
@@ -1340,7 +1352,7 @@ public:
 						DTA_ClipRight, static_cast<int>(rcr),
 						DTA_ClipBottom, static_cast<int>(rcb),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						DTA_AlphaChannel, alphaMap,
@@ -1357,7 +1369,7 @@ public:
 						DTA_ClipRight, static_cast<int>(rcr),
 						DTA_ClipBottom, static_cast<int>(rcb),
 						DTA_Translation, translate ? GetTranslation() : 0,
-						DTA_ColorOverlay, dim ? DIM_OVERLAY : 0,
+						DTA_ColorOverlay, colorOverlay.a ? colorOverlay.d : (dim ? DIM_OVERLAY : 0),
 						DTA_CenterBottomOffset, (offsetflags & SBarInfoCommand::CENTER_BOTTOM) == SBarInfoCommand::CENTER_BOTTOM,
 						DTA_Alpha, alpha,
 						TAG_DONE);

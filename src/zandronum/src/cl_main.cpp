@@ -49,6 +49,7 @@
 //-----------------------------------------------------------------------------
 
 #include "networkheaders.h"
+#include "mcp_bridge.h" // [rc4l] MCP_NetProf_Recv (no-op when the bridge is off)
 
 // [AK] Including "networkheaders.h" in Windows also includes <wingdi.h> which
 // already defines OPAQUE. We need this constant for SVC2_FLASHSTEALTHMONSTER,
@@ -62,11 +63,19 @@
 #include "a_doomglobal.h"
 #include "announcer.h"
 #include "features/server-browser/browser.h"
+#include "features/server-hosting/zx_punchclient.h"
+#include "features/continue/zx_continue.h"
+#include "features/server-browser/computation/reconnect_compute.h"
+#include "features/server-browser/computation/replyrouting_compute.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
+#include "features/server-hosting/zx_hosting.h" // [rc4l] admin on a server we started ourselves
+#include "features/server-hosting/zx_reachprobe.h" // [rc4l] the cookie leg lands on this socket
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "cl_statistics.h"
 #include "features/fixed64/computation/angle_interp_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/damage-taken/damagetaken.h"
 #include "cooperative.h"
 #include "doomerrors.h"
 #include "doomtype.h"
@@ -85,6 +94,7 @@
 #include "m_argv.h"
 #include "m_cheat.h"
 #include "cl_main.h"
+#include "features/identity/zx_identitynet.h"
 #include "p_effect.h"
 #include "p_lnspec.h"
 #include "possession.h"
@@ -121,7 +131,6 @@
 #include "a_movingcamera.h"
 #include "d_netinf.h"
 #include "po_man.h"
-#include "network/cl_auth.h"
 #include "r_data/colormaps.h"
 #include "r_main.h"
 #include "network_enums.h"
@@ -138,6 +147,7 @@
 #include "wi_stuff.h"
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -167,7 +177,6 @@ EXTERN_CVAR( Bool, cl_oldfreelooklimit )
 EXTERN_CVAR( Float, turbo )
 EXTERN_CVAR( Float, sv_gravity )
 EXTERN_CVAR( Float, sv_aircontrol )
-EXTERN_CVAR( Bool, cl_hideaccount )
 EXTERN_CVAR( Int, cl_ticsperupdate )
 EXTERN_CVAR( String, name )
 EXTERN_CVAR( Bool, cl_telespy )
@@ -192,15 +201,6 @@ CVAR( Bool, cl_keepserversettings, false, CVAR_ARCHIVE | CVAR_DEBUGONLY )
 // [JS] Always makes us ready when we are in intermission.
 CVAR( Bool, cl_autoready, false, CVAR_ARCHIVE )
 
-#ifdef WIN32
-// [AK] Automatically logs us into our default account (i.e. login_default_user).
-CUSTOM_CVAR( Bool, cl_autologin, false, CVAR_ARCHIVE | CVAR_NOINITCALL )
-{
-	// [AK] Log in automatically when enabling this CVar, if not already.
-	if (( self ) && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENT_IsLoggedIn( ) == false ))
-		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
-}
-#endif
 
 // [AK] Restores the old mouse behaviour from Skulltag.
 CVAR( Bool, cl_useskulltagmouse, false, CVAR_GLOBALCONFIG | CVAR_ARCHIVE )
@@ -513,6 +513,8 @@ void CLIENT_Construct( void )
 	// Set up a socket and network message buffer.
 	NETWORK_Construct( usPort, true );
 
+	// [rc4l] A restart (wad_reload) constructs the client again without destructing it, so the buffer the last start made is freed first.
+	g_LocalBuffer.Free( );
 	g_LocalBuffer.Init( MAX_UDP_PACKET * 8, BUFFERTYPE_WRITE );
 
 	// Initialize the stored packets buffer.
@@ -877,6 +879,7 @@ void CLIENT_SendServerPacket( void )
 //
 void CLIENT_AttemptConnection( void )
 {
+
 	ULONG	ulIdx;
 
 	if ( g_ulRetryTicks )
@@ -916,9 +919,12 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 	g_LocalBuffer.ByteStream.WriteString( cl_password );
 	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
-	g_LocalBuffer.ByteStream.WriteByte( cl_hideaccount );
 	g_LocalBuffer.ByteStream.WriteByte( NETGAMEVERSION );
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
+
+	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one
+	// we can still check.
+	CLIENT_FuaAuthWriteHello( &g_LocalBuffer.ByteStream );
 }
 
 //*****************************************************************************
@@ -941,6 +947,9 @@ void CLIENT_AttemptAuthentication( char *pszMapName )
 
 	// Send a checksum of our verticies, linedefs, sidedefs, and sectors.
 	CLIENT_AuthenticateLevel( pszMapName );
+
+	// [rc4l] Anonymous accounts: and who we are, which the server judges before it commits a slot.
+	CLIENT_FuaAuthWriteProof( &g_LocalBuffer.ByteStream );
 
 	// Make sure all players are gone from the level.
 	CLIENT_ClearAllPlayers();
@@ -1018,7 +1027,32 @@ void CLIENT_GetPackets( void )
 		pByteStream = &NETWORK_GetNetworkMessageBuffer( )->ByteStream;
 
 		// If we're a client and receiving a message from the server...
-		if ( NETWORK_GetState() == NETSTATE_CLIENT
+		// [rc4l] A launcher reply from the server we are PLAYING on arrives from the same address as
+		// its game traffic, so without this it went to the game parser, which has no idea what it is.
+		// The browser then waited out its timeout and reported the server the player was standing on
+		// as "did not respond".
+		//
+		// Gated on an outstanding query rather than on the command alone: the command is read out of a
+		// packet that has not been authenticated as a launcher reply yet, and a game packet is free to
+		// begin with any bytes at all. Having asked this exact address a question we have not had an
+		// answer to is what makes the reading meaningful.
+		bool bLauncherReply = false;
+		{
+			const bool bAwaiting = BROWSER_IsAwaitingReplyFrom( NETWORK_GetFromAddress( ));
+
+			BYTE *const pSavedStream = pByteStream->pbStream;
+			const LONG lPeeked = bAwaiting ? pByteStream->ReadLong( ) : 0;
+
+			// Put it back either way; whoever handles this packet reads from the start.
+			pByteStream->pbStream = pSavedStream;
+
+			const zx::LauncherCommands commands = {
+				SERVER_LAUNCHER_CHALLENGE, SERVER_LAUNCHER_CHALLENGE_SEGMENTED };
+			bLauncherReply = zx::ShouldRouteToBrowser( bAwaiting, lPeeked, commands );
+		}
+
+		if ( bLauncherReply == false
+			&& NETWORK_GetState() == NETSTATE_CLIENT
 			&& NETWORK_GetFromAddress().Compare( CLIENT_GetServerAddress() ))
 		{
 			// Statistics.
@@ -1108,7 +1142,15 @@ void CLIENT_GetPackets( void )
 				AddressFrom = NETWORK_GetFromAddress( );
 
 			// If we're receiving info from the server registry...
-			if ( AddressFrom.Compare( ServerRegistryAddress ))
+			//
+			// [rc4l] Either the announce target above, or any registry the BROWSER queries. Those are
+			// two different settings: fua_serverregistry_host is where a server announces, and
+			// cl_fua_serverregistry_list is where this client asks. Only the first was checked here,
+			// so pointing them at different hosts, which every local-registry test does, meant we
+			// sent to one registry and discarded its answer. The reachability cookie never arrived
+			// and INTERNET stayed white with nothing on screen to say why.
+			if ( AddressFrom.Compare( ServerRegistryAddress ) ||
+				BROWSER_IsServerRegistryAddress( NETWORK_GetFromAddress( )))
 			{
 				lCommand = pByteStream->ReadLong();
 				switch ( lCommand )
@@ -1126,9 +1168,11 @@ void CLIENT_GetPackets( void )
 							// Now, query all the servers on the list.
 							BROWSER_QueryAllServers( );
 
-							// Finally, clear the server list. Server slots will be reactivated when
-							// they come in.
-							BROWSER_DeactivateAllServers( );
+							// [rc4l] Re-check what is already listed instead of blanking it. This
+							// used to deactivate every row, so the whole list vanished the instant
+							// the registry answered and only refilled as each server replied. Rows
+							// now stay up while they are verified and drop on their own timeout.
+							BROWSER_RefreshListedServers( );
 						}
 					}
 					break;
@@ -1139,19 +1183,61 @@ void CLIENT_GetPackets( void )
 				// REQUESTIGNORED case is what puts us on its flood queue.
 				case SRSC_REQUESTIGNORED:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Throttled );
 					Printf( "Refresh request ignored. Please wait 10 seconds before refreshing the list again.\n" );
 					break;
 
 				case SRSC_IPISBANNED:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Banned );
 					Printf( "You are banned from the server registry.\n" );
+					break;
+
+				// [rc4l] The cookie leg of a reachability test. It arrives here because the request
+				// went out on this socket -- deliberately NOT the socket bound to the port under
+				// test, so that this exchange cannot open a NAT mapping for that port and make an
+				// unforwarded port look open. See features/server-hosting/zx_reachprobe.h.
+				case SRSC_REACHCOOKIE:
+					{
+						// [rc4l] COPIED, not held. BYTESTREAM_s::ReadString returns a pointer into one
+						// static buffer that every call reuses, so reading the second string rewrites
+						// what the first pointer is looking at. Holding both meant echoing the public
+						// IP back as the cookie, which the registry then rejected -- a rejection that
+						// looks exactly like a closed port from the outside.
+						const FString cookie = pByteStream->ReadString( );
+						const FString seenAs = pByteStream->ReadString( );
+
+						zx::ReachProbeSetPublicIp( seenAs.GetChars( ));
+						zx::ReachProbeCookieArrived( cookie.GetChars( ));
+					}
+					break;
+
+				// [rc4l] The registry answering a punch request: either the cookie leg, or a verdict.
+				//
+				// One message for both because they are the same conversation, and the marker in the
+				// first slot says which. Negative can never be a verdict, since PunchVerdict counts
+				// up from zero.
+				case SRSC_PUNCHRESULT:
+					{
+						const int marker = pByteStream->ReadLong( );
+
+						if ( marker == SERVERREGISTRY_PUNCH_COOKIE )
+						{
+							// COPIED rather than held, for the reason spelled out on SRSC_REACHCOOKIE
+							// above: ReadString hands back a pointer into one shared static buffer.
+							const FString cookie = pByteStream->ReadString( );
+							zx::PunchCookieArrived( cookie.GetChars( ));
+						}
+						else
+						{
+							zx::PunchResultArrived( marker );
+						}
+					}
 					break;
 
 				case SRSC_WRONGVERSION:
 
-					BROWSER_ServerRegistryRefusedQuery( );
+					BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus::Version );
 					Printf( "The server registry is using a different version of the launcher-to-server-registry protocol.\n" );
 					break;
 
@@ -1167,8 +1253,21 @@ void CLIENT_GetPackets( void )
 				lCommand = pByteStream->ReadLong();
 				if ( lCommand == SERVER_LAUNCHER_CHALLENGE )
 					BROWSER_ParseServerQuery( pByteStream, false );
+				// [rc4l] A reply too big for one datagram, arriving in numbered pieces.
+				else if ( lCommand == SERVER_LAUNCHER_CHALLENGE_SEGMENTED )
+					BROWSER_ParseServerQuerySegment( pByteStream, false );
+				// [rc4l] A server the registry punched on our behalf, knocking. Under carrier NAT
+				// its packets arrive from a DIFFERENT port than the registry listed -- the knock's
+				// source is the only endpoint of that server that actually works, so the browser
+				// re-aims its waiting slot there. Not gated on the sending address: the whole point
+				// is that we could not have predicted it.
+				else if ( lCommand == SERVERREGISTRY_PUNCH )
+					BROWSER_PunchKnockFrom( NETWORK_GetFromAddress( ));
+				// [rc4l] It answered, so it is there. Keep the row rather than letting the refresh
+				// that just deactivated everything take it away. See BROWSER_ServerSaidItIsIgnoringUs
+				// for why your own server trips this every single time.
 				else if ( lCommand == SERVER_LAUNCHER_IGNORING )
-					Printf( "WARNING! Please wait a full 10 seconds before refreshing the server list.\n" );
+					BROWSER_ServerSaidItIsIgnoringUs( NETWORK_GetFromAddress( ));
 				//else
 				//	Printf( "Unknown network message from %s.\n", g_AddressFrom.ToString() );
 			}
@@ -1346,6 +1445,10 @@ void CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket )
 		// Process this command.
 		CLIENT_ProcessCommand( lCommand, pByteStream );
 
+		// [rc4l] Per-command RECEIVE bandwidth accounting for the MCP net profiler. One seam; the byte
+		// span (command byte + payload) is exactly what the demo path below already measures. No-op off.
+		MCP_NetProf_Recv( (int)lCommand, (int)( pByteStream->pbStream - commandAsStream.pbStream ) );
+
 		g_lLastCmd = lCommand;
 
 		// [BB] If we're recording a demo, write the contents of this command at the position
@@ -1396,6 +1499,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 		// [CK] Use the server's gametic to start at a reasonable number
 		CLIENT_SetLatestServerGametic( pByteStream->ReadLong() );
+
+		// [rc4l] Anonymous accounts: the server proves itself here, and we walk away rather than
+		// name an account to something that cannot.
+		if ( CLIENT_FuaAuthReadChallenge( pByteStream ) == false )
+		{
+			CLIENT_QuitNetworkGame( "This server could not prove its identity." );
+			return;
+		}
 
 		// [BB] If we don't have the map, something went horribly wrong.
 		if ( P_CheckIfMapExists( g_szMapName ) == false )
@@ -1469,11 +1580,14 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			case NETWORK_ERRORCODE_WRONGVERSION:
 
-				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nPlease check http://www." DOMAIN_NAME "/ for updates.", pByteStream->ReadString() );
+				szErrorString.Format( "Failed connect. Your version is different.\nThis server is using version: %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString() );
 				break;
 			case NETWORK_ERRORCODE_WRONGPROTOCOLVERSION:
 
-				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nPlease check http://www." DOMAIN_NAME "/ for a matching version.", pByteStream->ReadString(), GetVersionStringRev() );
+				// [rc4l] Points at ZandroX, not zandronum.com. A protocol mismatch against a ZandroX
+				// server is a ZandroX build mismatch, and zandronum.com does not publish the build the
+				// player is being sent to go and find.
+				szErrorString.Format( "Failed connect. Your protocol version is different.\nServer uses: %s\nYou use:     %s\nGet a matching " FUA_NAME " build: " FUA_RELEASES_URL, pByteStream->ReadString(), GetVersionStringRev() );
 				break;
 			case NETWORK_ERRORCODE_BANNED:
 
@@ -1572,6 +1686,22 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 					szErrorString.Format( "%s authentication failed.\nPlease make sure you are using the exact same file(s) as the server, and try again.", ( ulErrorCode == NETWORK_ERRORCODE_PROTECTED_LUMP_AUTHENTICATIONFAILED ) ? "Protected lump" : "Level" );
 					Printf( "The server reports %d file(s), and you have %d\n", numServerPWADs, NETWORK_GetAuthenticatedWADsList().Size() );
+
+					// [rc4l] BOTH lists in full, not only the difference. The difference names what did
+					// not line up and never says why, and the why is almost always in what did: a file
+					// loaded twice, a name that matched with a different hash behind it, an order that
+					// is not the order the other side used. Two lists in the log settle in one read
+					// what the summary above cannot settle at all.
+					Printf( "Server's list:\n" );
+					for ( unsigned int i = 0; i < serverPWADs.Size( ); ++i )
+						Printf( "  %s - %s\n", serverPWADs[i].name.GetChars( ), serverPWADs[i].checksum.GetChars( ));
+
+					Printf( "Ours:\n" );
+					{
+						const TArray<NetworkPWAD> &ours = NETWORK_GetAuthenticatedWADsList( );
+						for ( unsigned int i = 0; i < ours.Size( ); ++i )
+							Printf( "  %s - %s\n", ours[i].name.GetChars( ), ours[i].checksum.GetChars( ));
+					}
 					if ( incompatiblePWADs.Size( ) != 0 )
 					{
 						Printf( "Incompatible file(s) (file name - server | client):\n" );
@@ -1592,6 +1722,35 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 					}
 					break;
 				}
+
+			// [rc4l] Its own code rather than the level-authentication one, which would send the
+			// player hunting for a file mismatch that is not there.
+			case NETWORK_ERRORCODE_IDENTITYREJECTED:
+
+				szErrorString = "The server could not confirm who you are.\nDelete your identity folder to start over with a new account.";
+				break;
+
+			// [rc4l] Answered with another account rather than a refusal, so a player whose key has
+			// leaked is kept out of their account and not out of the game.
+			//
+			// The same numbering that gives two copies of the engine an account each, asked for one
+			// more, which bounds this on its own.
+			case NETWORK_ERRORCODE_IDENTITYINUSE:
+
+				if ( zx::Identity_SwitchToSpare( ))
+				{
+					Printf( TEXTCOLOR_GOLD "Somebody is already playing on your account.\n"
+						TEXTCOLOR_NORMAL "Joining on a new one instead. If this was not you, your key has leaked.\n" );
+
+					CLIENT_FuaAuthReset( );
+					g_ulRetryTicks = 0;
+					CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+					return;
+				}
+
+				szErrorString = "Somebody is already playing on your account.\nThis machine has run out of accounts to make, which means the server refused every one.";
+				break;
+
 			case NETWORK_ERRORCODE_TOOMANYCONNECTIONSFROMIP:
 
 				szErrorString = "Too many connections from your IP.";
@@ -1602,7 +1761,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				break;
 			default:
 
-				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Please check http://www." DOMAIN_NAME "/ for updates.", static_cast<unsigned int> (ulErrorCode) );
+				szErrorString.Format( "Unknown error code: %d!\n\nYour version may be different. Get a matching " FUA_NAME " build: " FUA_RELEASES_URL, static_cast<unsigned int> (ulErrorCode) );
 				break;
 			}
 
@@ -2139,12 +2298,6 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				}
 				break;
 
-			case SVC2_SRP_USER_START_AUTHENTICATION:
-			case SVC2_SRP_USER_PROCESS_CHALLENGE:
-			case SVC2_SRP_USER_VERIFY_SESSION:
-				CLIENT_ProcessSRPServerCommand ( lExtCommand, pByteStream );
-				break;
-
 			case SVC2_SETTHINGHEALTH:
 				{
 					const unsigned short netID = pByteStream->ReadShort();
@@ -2264,7 +2417,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 					const FDecalTemplate* tpl = DecalLibrary.GetDecalByName( decalName );
 
 					if ( actor && tpl )
-						ShootDecal( tpl, actor, actor->Sector, actor->x, actor->y, z, angle, tracedist, permanent );
+						zx::decals::ShootMark( tpl, actor, actor->Sector, actor->x, actor->y, z, angle, tracedist, permanent, zx::decals::kSourceScript );
 				}
 				break;
 
@@ -2465,10 +2618,34 @@ void CLIENT_RestoreServerInfoCVars( void )
 
 //*****************************************************************************
 //
+// [rc4l] Which of our own hosted servers this connection is to, or 0 for somebody else's.
+static unsigned g_ConnectedHostGeneration = 0;
+
 void CLIENT_QuitNetworkGame( const char *pszString )
 {
+	// [rc4l] Every way of leaving a server is the same way of leaving. The gate decides whether this
+	// teardown is one at all -- a join tidying up on its way in, and a reconnect, are not.
+	zx::Continue_NoteLeftServer( );
+
 	if ( pszString )
 		Printf( "%s\n", pszString );
+
+	// [rc4l] Leaving a server WE are running takes it with us.
+	//
+	// This is the catch-all route out of a network game -- the disconnect command, a kick, a timeout,
+	// joining somewhere else, going back to single player. Putting it here rather than at each of
+	// those means there is no exit that can forget, which matters because the thing being forgotten
+	// is a process holding a port.
+	//
+	// GUARDED BY GENERATION, not by "am I hosting". Stopping a server disconnects the client, but the
+	// client only notices SECONDS later -- by which time the player may have started another one.
+	// Asking the looser question tore that new server down; the addresses are identical, so nothing
+	// but a generation can tell the two apart. Verified by doing exactly that: stop, start, and watch
+	// the second server die to the first one's goodbye.
+	if (( g_ConnectedHostGeneration != 0 ) && ( g_ConnectedHostGeneration == zx::HostGeneration( )))
+		zx::HostStop( );
+
+	g_ConnectedHostGeneration = 0;
 
 	// Set the consoleplayer back to 0 and keep our userinfo to avoid desync if we ever reconnect.
 	if ( consoleplayer != 0 )
@@ -2494,6 +2671,12 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	g_AddressServer.Clear( );
 	CLIENT_SetConnectionState( CTS_DISCONNECTED );
 
+	// [rc4l] If this disconnect ended a join WE started, the browser takes it from here instead of
+	// leaving the player at a bare console with a stranger's WAD set loaded and one line of
+	// explanation about to scroll away. Records only -- the menu is opened from JoinTick once the
+	// teardown below has finished.
+	zx::NoteJoinFailed( pszString );
+
 	// Go back to the full console.
 	// [BB] This is what the CCMD endgame is doing and thus should be
 	// enough to handle all non-network related things.
@@ -2512,8 +2695,8 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// [AK] Since we disconnected, we don't have RCON access anymore.
 	g_HasRCONAccess = false;
 
-	// [AK] Log the client out of their account now so that they can log in again.
-	CLIENT_LogOut( );
+	// [rc4l] Forget the account this connection earned us, so the next server sees a fresh proof.
+	CLIENT_FuaAuthReset( );
 
 	// [AK] Close the server setup menu if we're still in it.
 	if ( M_InServerSetupMenu( ))
@@ -3381,6 +3564,17 @@ void ServerCommands::EndSnapshot::Execute()
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
 
+	// [rc4l] Remember this server, whichever way we got here.
+	//
+	// Hooked at the moment the connection COMPLETES rather than at either place that starts one:
+	// the browser's join had its own hook and the console's connect had none, so typing an address
+	// left nothing to come back to. Every route ends here, and ending here also means we never
+	// record a server we failed to reach.
+	zx::Continue_NoteJoined( );
+
+	// [rc4l] Anonymous accounts: open the identity exchange now that we are a client the server
+	// will take commands from. Doing it during the level check was too early, and the hello was
+
 	// Display in the console that we have the snapshot now.
 	Printf( "Snapshot received.\n" );
 
@@ -3436,11 +3630,23 @@ void ServerCommands::EndSnapshot::Execute()
 	// [AK] Reset the scoreboard.
 	SCOREBOARD_Reset( );
 
-#ifdef WIN32
-	// [AK] Allow the client to log into their default account automatically.
-	if (( CLIENTDEMO_IsPlaying( ) == false ) && ( cl_autologin ))
-		CLIENT_RetrieveUserAndLogIn( login_default_user.GetGenericRep( CVAR_String ).String );
-#endif
+	// [rc4l] If this is a server WE started, take administrator rights on it now.
+	//
+	// A player who launched a process should not be typing a password back to it. The secret was
+	// generated at spawn, handed to the child on its command line, and never written down; presenting
+	// it here is the last step of a handshake that began before the server existed.
+	//
+	// Bound to the ADDRESS WE STARTED, not to "is this loopback" -- see HostOwnsAddress. Keyed the
+	// loose way, anyone who pointed a client at any local server would be handed admin on it.
+	if ( zx::HostOwnsAddress( g_AddressServer.ToString( )))
+	{
+		CLIENTCOMMANDS_ChangeRCONStatus( true, zx::HostRconSecret( ));
+		Printf( "You are the administrator of this server. Use rcon <command>.\n" );
+
+		// Remembered so that leaving THIS connection stops THIS server, and a goodbye from an
+		// earlier one cannot take down a later one. See CLIENT_QuitNetworkGame.
+		g_ConnectedHostGeneration = zx::HostGeneration( );
+	}
 
 	// Display the message of the day.
 	C_MOTDPrint( g_MOTD );
@@ -4038,6 +4244,27 @@ void ServerCommands::DamagePlayerWithType::Execute()
 
 //*****************************************************************************
 //
+void ServerCommands::FuaDamageTaken::Execute()
+{
+	// [MobiusU9B] Same guard as client_DamagePlayer: a roll that arrives between levels has nowhere to belong.
+	if ( gamestate != GS_LEVEL )
+		return;
+
+	zx::damagetaken::Report report;
+	report.mapTime = mapTime;
+	report.damage = damage;
+	report.armorAbsorbed = armorAbsorbed;
+	report.healthLost = healthLost;
+	report.attackerPlayer = static_cast<ULONG>( attackerPlayer );
+	report.attackerClass = attackerClass;
+	report.weaponClass = weaponClass;
+	report.damageType = damageType.GetChars( );
+	report.lethal = lethal;
+	zx::damagetaken::OnServerReport( report );
+}
+
+//*****************************************************************************
+//
 void ServerCommands::KillPlayer::Execute()
 {
 	// [AK] Check if this player's killer was another valid player.
@@ -4563,6 +4790,9 @@ void ServerCommands::UpdatePlayerExtraData::Execute()
 	player->cmd.ucmd.buttons = buttons;
 	player->viewz = viewZ;
 	player->bob = bob;
+	// [rc4l] View roll of the player being watched. PrevRoll follows so the camera does not sweep
+	// to the new tilt from a stale one -- the same reasoning as the sprite-orientation handler.
+	player->mo->PrevRoll = player->mo->roll = roll;
 }
 
 //*****************************************************************************
@@ -5371,7 +5601,7 @@ void ServerCommands::SetThingFlags::Execute()
 			if ( relinkActor )
 				actor->UnlinkFromWorld ();
 
-			actor->flags = flags;
+			actor->flags = ActorFlags::FromInt (flags);
 
 			// [BB] Link based on the new flags.
 			if ( relinkActor )
@@ -5380,36 +5610,41 @@ void ServerCommands::SetThingFlags::Execute()
 		break;
 	case FLAGSET_FLAGS2:
 
-		actor->flags2 = flags;
+		actor->flags2 = ActorFlags2::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS3:
 
-		actor->flags3 = flags;
+		actor->flags3 = ActorFlags3::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS4:
 
-		actor->flags4 = flags;
+		actor->flags4 = ActorFlags4::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS5:
 
-		actor->flags5 = flags;
+		actor->flags5 = ActorFlags5::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS6:
 
-		actor->flags6 = flags;
+		actor->flags6 = ActorFlags6::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS7:
 
-		actor->flags7 = flags;
+		actor->flags7 = ActorFlags7::FromInt (flags);
 		break;
 	// [MGOOOOOO] flags8 (MBF21) and flags9 (ZandroX's own word, see actor.h MF9_*).
 	case FLAGSET_FLAGS8:
 
-		actor->flags8 = flags;
+		actor->flags8 = ActorFlags8::FromInt (flags);
 		break;
 	case FLAGSET_FLAGS9:
 
-		actor->flags9 = flags;
+		actor->flags9 = ActorFlags9::FromInt (flags);
+		break;
+	// [rc4l] Movement-model flags (see actor.h MV_*).
+	case FLAGSET_MVFLAGS:
+
+		actor->mvFlags = flags;
 		break;
 	case FLAGSET_FLAGSST:
 
@@ -5480,6 +5715,13 @@ void ServerCommands::SetThingProperty::Execute()
 
 	case APROP_Friction:
 		actor->Friction = value;
+		break;
+
+	// [rc4l] features/quake-movement. Range-checked on receipt too: the server is trusted, but a
+	// value outside the enum would put local prediction on a movement model that doesn't exist.
+	case APROP_MvType:
+		if ( actor->IsKindOf( RUNTIME_CLASS( APlayerPawn )) && ( value == MVTYPE_DOOM || value == MVTYPE_QUAKE ))
+			static_cast<APlayerPawn *>( actor )->MvType = value;
 		break;
 
 	default:
@@ -5667,6 +5909,17 @@ void ServerCommands::SetThingScale::Execute()
 
 	if ( ContainsScaleY() )
 		actor->scaleY = scaleY;
+}
+
+//*****************************************************************************
+//
+void ServerCommands::SetThingSpriteOrientation::Execute()
+{
+	// [rc4l] PrevRoll is set alongside roll rather than left at its old value: the client has no
+	// idea how long ago the server changed this, so interpolating from a stale previous angle would
+	// make the sprite sweep to its new orientation instead of simply being there.
+	if ( ContainsRoll() )
+		actor->PrevRoll = actor->roll = roll;
 }
 
 //*****************************************************************************
@@ -9181,15 +9434,17 @@ static void client_SetPolyobjRotation( BYTESTREAM_s *pByteStream )
 static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 {
 	AActor	*pCenter;
-	LONG	lIntensity;
+	LONG	lIntensityX, lIntensityY, lIntensityZ;	// [rc4l] per-axis now
 	LONG	lDuration;
 	LONG	lTremorRadius;
 
 	// Read in the center's network ID.
 	unsigned short netID = pByteStream->ReadShort();
 
-	// Read in the intensity of the quake.
-	lIntensity = pByteStream->ReadByte();
+	// Read in the intensity of the quake, one value per axis.
+	lIntensityX = pByteStream->ReadByte();
+	lIntensityY = pByteStream->ReadByte();
+	lIntensityZ = pByteStream->ReadByte();
 
 	// Read in the duration of the quake.
 	lDuration = pByteStream->ReadShort();
@@ -9200,6 +9455,9 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 	// [BB] Read in the quake sound.
 	FSoundID quakesound = pByteStream->ReadString();
 
+	// [rc4l] Read in the QF_ scaling flags.
+	LONG lQuakeFlags = pByteStream->ReadLong();
+
 	// Find the actor that represents the center of the quake based on the network
 	// ID sent. If we can't find the actor, then the quake has no center.
 	pCenter = CLIENT_FindThingByNetID( netID );
@@ -9207,7 +9465,9 @@ static void client_EarthQuake( BYTESTREAM_s *pByteStream )
 		return;
 
 	// Create the earthquake. Since this is client-side, damage is always 0.
-	new DEarthquake( pCenter, lIntensity, lDuration, 0, lTremorRadius, quakesound );
+	// [rc4l] Wave speeds are not on the wire (see the note in DEarthquake's constructor), so a
+	// client reconstructs the quake without wave motion. Zero is the "no wave" value.
+	new DEarthquake( pCenter, lIntensityX, lIntensityY, lIntensityZ, lDuration, 0, lTremorRadius, quakesound, lQuakeFlags, 0, 0, 0 );
 }
 
 //*****************************************************************************
@@ -9702,6 +9962,10 @@ CCMD( connect )
 		CLIENT_QuitNetworkGame( NULL );
 
 	// Put the game in client mode.
+	// [rc4l] Remember the local game BEFORE the netstate flips, because after this line we look
+	// like a client and there is nothing left that says we were playing something of our own.
+	zx::Continue_NoteLeavingLocalGame( );
+
 	NETWORK_SetState( NETSTATE_CLIENT );
 
 	// [AK] Make sure the server setup menu is closed if we're connecting.
@@ -9722,11 +9986,17 @@ CCMD( connect )
 	// Put the game in the full console.
 	gameaction = ga_fullconsole;
 
+	// [rc4l] Tell the departure gate this teardown belongs to a reconnect, so it does not send the
+	// player back to an offline game instead. Cleared once the attempt has been made.
+	zx::Continue_NoteReconnecting( true );
+
 	// Send out a connection signal.
 	CLIENT_AttemptConnection( );
 
 	// Update the connection state.
 	CLIENT_SetConnectionState( CTS_ATTEMPTINGCONNECTION );
+
+	zx::Continue_NoteReconnecting( false );
 
 	// If we've elected to record a demo, begin that process now.
 	pszDemoName = Args->CheckValue( "-record" );
@@ -9782,11 +10052,22 @@ CCMD( reconnect )
 		CLIENT_QuitNetworkGame( NULL );
 	
 	// Store the address of the server we were on.
-	if ( g_AddressLastConnected.IsSet() == false )
+	const zx::ReconnectAction ReconnectPlan = zx::DecideReconnect( g_AddressLastConnected.IsSet( ));
+
+	if ( zx::ReconnectConnects( ReconnectPlan ) == false )
 	{
 		Printf( "Unknown IP for last server. Use \"connect <server ip>\".\n" );
 		return;
 	}
+
+	// [rc4l] Ask the server's router to let us back in, exactly as joining from the browser does.
+	//
+	// Without this a reconnect only worked while the mapping the original join opened was still
+	// alive, which is tens of seconds, so anyone who dropped from a server behind a router had to go
+	// back to the browser to be introduced again. Asking cannot delay or refuse the connection
+	// below; if it fails we end where the old behaviour ended.
+	if ( ReconnectPlan == zx::ReconnectAction::AskThenConnect )
+		zx::PunchRequestFor( g_AddressLastConnected, true );
 
 	// Put the game in client mode.
 	NETWORK_SetState( NETSTATE_CLIENT );

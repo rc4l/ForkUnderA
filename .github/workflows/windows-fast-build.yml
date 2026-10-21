@@ -12,6 +12,18 @@ on:
       - windows_build.ps1
       - windows_assets/**
       - .github/workflows/windows-fast-build.yml
+      # [rc4l] The source-side coupling: a dependency added to the CMake files or to
+      # windows_compile.ps1's vcpkg list, but never frozen into windows_assets/, leaves this path
+      # building fine and shipping the feature dead (ffmpeg did exactly that).
+      # Not src/**, which would mean a Windows runner on every PR.
+      - src/zandronum/CMakeLists.txt
+      - windows_compile.ps1
+      - .github/workflows/windows-export-deps.yml
+  # [rc4l] src/CMakeLists.txt can carry a new dependency too, but most pull requests touch it only to add a source file, so a change to it is checked once merged rather than on every pull request.
+  push:
+    branches: [main]
+    paths:
+      - src/zandronum/src/CMakeLists.txt
   workflow_dispatch:
 
 jobs:
@@ -20,8 +32,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive   # [rc4l] DiligentCore brings its own (glslang, SPIRV, volk)
 
-      - name: Build ZandroX (windows_build.ps1, prebuilt deps)
+      - name: Build ForkUnderA (windows_build.ps1, prebuilt deps)
         shell: pwsh
         run: ./windows_build.ps1 -Version "fast-ci"
 
@@ -29,5 +43,5 @@ jobs:
         if: ${{ success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ZandroX-windows-fast
-          path: ZandroX-*-windows-x64.zip
+          name: ForkUnderA-windows-fast
+          path: ForkUnderA-*-windows-x64.zip

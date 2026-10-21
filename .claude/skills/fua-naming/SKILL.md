@@ -21,8 +21,8 @@ Pattern: `<standard-prefix>_fua_<name>`  (or just `fua_<name>` when there's no p
 | ACS function (script-callable builtin) | `NameHere` | **`fua_NameHere`** |
 | ZScript / other named function | `NameHere` | **`fua_NameHere`** |
 
-Real examples already in the tree: `cl_fua_replay`, `cl_fua_replay_bitrate`, `cl_fua_flat_holes`,
-`cl_fua_holedebug`, and the bindable command `fua_clip` (see `features/replay/`).
+Real examples already in the tree: `cl_fua_replay`, `cl_fua_replay_bitrate`, `cl_fua_hitbox`,
+`cl_fua_download`, and the bindable command `fua_clip` (see `features/replay/`).
 
 ## When it does NOT apply
 

@@ -55,6 +55,8 @@
 #include "p_lnspec.h"
 #include "v_palette.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
+#include "features/decals/decals.h"   // [rc4l] ResetDecalReport
 #include "c_console.h"
 #include "c_cvars.h"
 #include "p_acs.h"
@@ -95,7 +97,8 @@
 #include "domination.h"
 
 // [BB] New #includes..
-#include "gl/dynlights/gl_dynlight.h"
+#include "features/dynlights/dynlight.h"
+#include "features/telemetry/telemetry.h"
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
 
@@ -1756,7 +1759,7 @@ AActor *SpawnMapThing(int index, FMapThing *mt, int position)
 	if (dumpspawnedthings)
 	{
 		Printf("%5d: (%5d, %5d, %5d), doomednum = %5d, flags = %04x, type = %s\n",
-			index, mt->x>>FRACBITS, mt->y>>FRACBITS, mt->z>>FRACBITS, mt->type, mt->flags, 
+			index, mt->x>>FRACBITS, mt->y>>FRACBITS, mt->z>>FRACBITS, mt->EdNum, mt->flags, 
 			spawned? spawned->GetClass()->TypeName.GetChars() : "(none)");
 	}
 	/*
@@ -1881,7 +1884,8 @@ void P_LoadThings (MapData * map)
 		mti[i].x = LittleShort(mt->x) << FRACBITS;
 		mti[i].y = LittleShort(mt->y) << FRACBITS;
 		mti[i].angle = LittleShort(mt->angle);
-		mti[i].type = LittleShort(mt->type);
+		mti[i].EdNum = LittleShort(mt->type);
+		mti[i].info = DoomEdMap.CheckKey(mti[i].EdNum);
 	}
 	delete [] mtp;
 }
@@ -1921,7 +1925,8 @@ void P_LoadThings2 (MapData * map)
 		mti[i].y = LittleShort(mth[i].y)<<FRACBITS;
 		mti[i].z = LittleShort(mth[i].z)<<FRACBITS;
 		mti[i].angle = LittleShort(mth[i].angle);
-		mti[i].type = LittleShort(mth[i].type);
+		mti[i].EdNum = LittleShort(mth[i].type);
+		mti[i].info = DoomEdMap.CheckKey(mti[i].EdNum);
 		mti[i].flags = LittleShort(mth[i].flags);
 		mti[i].special = mth[i].special;
 		for(int j=0;j<5;j++) mti[i].args[j] = mth[i].args[j];
@@ -3501,32 +3506,19 @@ void P_GetPolySpots (MapData * map, TArray<FNodeBuilder::FPolyStart> &spots, TAr
 {
 	if (map->HasBehavior)
 	{
-		int spot1, spot2, spot3, anchor;
-
-		if (gameinfo.gametype == GAME_Hexen)
-		{
-			spot1 = PO_HEX_SPAWN_TYPE;
-			spot2 = PO_HEX_SPAWNCRUSH_TYPE;
-			anchor = PO_HEX_ANCHOR_TYPE;
-		}
-		else
-		{
-			spot1 = PO_SPAWN_TYPE;
-			spot2 = PO_SPAWNCRUSH_TYPE;
-			anchor = PO_ANCHOR_TYPE;
-		}
-		spot3 = PO_SPAWNHURT_TYPE;
-
+		// [rc4l] uzdoom@9e5bf3812 -- the polyobject spot numbers differ between Hexen and everything
+		// else, and both sets are MAPINFO entries now, so ask the table rather than picking a pair
+		// of hardcoded numbers by game type.
 		for (unsigned int i = 0; i < MapThingsConverted.Size(); ++i)
 		{
-			if (MapThingsConverted[i].type == spot1 || MapThingsConverted[i].type == spot2 || 
-				MapThingsConverted[i].type == spot3 || MapThingsConverted[i].type == anchor)
+			FDoomEdEntry *mentry = MapThingsConverted[i].info;
+			if (mentry != NULL && mentry->Type == NULL && mentry->Special >= SMT_PolyAnchor && mentry->Special <= SMT_PolySpawnHurt)
 			{
 				FNodeBuilder::FPolyStart newvert;
 				newvert.x = MapThingsConverted[i].x;
 				newvert.y = MapThingsConverted[i].y;
 				newvert.polynum = MapThingsConverted[i].angle;
-				if (MapThingsConverted[i].type == anchor)
+				if (mentry->Special == SMT_PolyAnchor)
 				{
 					anchors.Push (newvert);
 				}
@@ -3931,6 +3923,7 @@ void P_FreeExtraLevelData()
 // [RH] position indicates the start spot to spawn at
 void P_SetupLevel (const char *lumpname, int position)
 {
+	ZX_ZONE("load/setup");   // [rc4l] the map read and set up
 	cycle_t times[20];
 	FMapThing *buildthings;
 	int numbuildthings;
@@ -3950,6 +3943,10 @@ void P_SetupLevel (const char *lumpname, int position)
 	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
 	// left over from the previous level would be drawn in the wrong place here.
 	zx::hitboxviz::ClearBlasts();
+
+	// [rc4l] features/levelmesh's boxes belong to the last level's marks, and features/decals counts this level's afresh.
+	zx::levelmesh::ClearProjectedDecals();
+	zx::decals::ResetDecalReport();
 
 	level.maptype = MAPTYPE_UNKNOWN;
 	wminfo.partime = 180;

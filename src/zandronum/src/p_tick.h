@@ -33,7 +33,12 @@
 // Carries out all thinking of monsters and players.
 void P_Ticker (void);
 
+// [rc4l] features/gameloop: r_NoInterpolate as P_Ticker leaves it, handed to the renderer between tics, since the tic may run beside a frame.
+extern bool p_NoInterpolate;
+
 bool P_CheckTickerPaused ();
+// [rc4l] features/gameloop: whether the tic is paused for a demo, a menu or the console, without pausing the sound as P_CheckTickerPaused does.
+bool P_TickerPausedNow ();
 
 
 #endif

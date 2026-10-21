@@ -415,6 +415,9 @@ enum
 
 	// [AK] Enemy icons won't appear over a player's head.
 	ZADF_NO_ENEMY_ICONS = 1 << 28,
+
+	// [MobiusU9B] The crosshair's actor-name line (features/crosshair) shows nothing, like sv_noidentifytarget does for players.
+	ZADF_FUA_NO_IDENTIFY_ACTORS = 1 << 29,
 };
 
 // [RH] Compatibility flags.
@@ -565,6 +568,7 @@ enum
 	BCOMPATF_BADPORTALS			= 1 << 4,	// Restores the old unstable portal behavior
 	BCOMPATF_REBUILDNODES		= 1 << 5,	// Force node rebuild
 	BCOMPATF_LINKFROZENPROPS	= 1 << 6,	// Clearing PROP_TOTALLYFROZEN or PROP_FROZEN also clears the other
+	BCOMPATF_FLOATBOB			= 1 << 7,	// [rc4l] uzdoom@93c12cf25 -- Hexen's floatbob z handling
 };
 
 // phares 3/20/98:

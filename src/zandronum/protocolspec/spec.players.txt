@@ -226,6 +226,11 @@ Command UpdatePlayerExtraData
 	Byte buttons
 	Long viewZ
 	Long bob
+	# [rc4l] View roll, so a spectator sees the camera tilt of the player they are watching. Appended
+	# last so the existing field layout is untouched. Full Long like pitch beside it rather than the
+	# compressed AproxAngle the sprite roll uses: this drives a camera, where quantisation shows up
+	# as the view stepping instead of turning.
+	Long roll
 EndCommand
 
 Command UpdatePlayerTime

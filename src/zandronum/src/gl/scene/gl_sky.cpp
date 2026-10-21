@@ -39,6 +39,7 @@
 */
 
 #include "gl/system/gl_system.h"
+#include "c_cvars.h"
 #include "a_sharedglobal.h"
 #include "g_level.h"
 #include "r_sky.h"
@@ -54,7 +55,7 @@
 #include "gl/textures/gl_material.h"
 #include "gl/utility/gl_convert.h"
 
-CVAR(Bool,gl_noskyboxes, false, 0)
+EXTERN_CVAR(Bool, r_noskyboxes)
 extern int skyfog;
 
 enum
@@ -68,6 +69,8 @@ enum
 //  Calculate sky texture
 //
 //==========================================================================
+CVAR(Bool, fua_sky_log, false, 0)
+
 void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 {
 	FPortal *portal = sector->portals[plane];
@@ -87,7 +90,7 @@ void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 		// JUSTHIT is used as an indicator that a skybox is in use.
 		// This is to avoid recursion
 
-		if (!gl_noskyboxes && skyboxx && GLRenderer->mViewActor!=skyboxx && !(skyboxx->flags&MF_JUSTHIT))
+		if (!r_noskyboxes && skyboxx && GLRenderer->mViewActor!=skyboxx && !(skyboxx->flags&MF_JUSTHIT))
 		{
 			type=RENDERWALL_SKYBOX;
 			skybox=skyboxx;
@@ -163,6 +166,15 @@ void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 		planemirror = plane == sector_t::ceiling? &sector->ceilingplane : &sector->floorplane;
 	}
 	else return;
+	if (fua_sky_log && seg != NULL && seg->linedef != NULL)
+	{
+		Printf("skyq %.0f %.0f line %d %s sec %d back %d type %d by %.0f,%.0f\n", zbottom[0], ztop[0],
+			(int)(seg->linedef - lines),
+			(seg->linedef->backsector != NULL) ? "two-sided" : "one-sided",
+			(int)(sector - sectors),
+			(seg->backsector != NULL) ? (int)(seg->backsector - sectors) : -1, type,
+			portal != NULL ? FIXED2FLOAT(portal->xDisplacement) : 0.f, portal != NULL ? FIXED2FLOAT(portal->yDisplacement) : 0.f);
+	}
 	PutWall(0);
 }
 

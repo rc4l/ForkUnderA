@@ -122,3 +122,67 @@ TEST(Gradient, SingleRowAndClamp)
 	PanelColor under = ComputePanelGradient(-4, 5, top, bot);
 	EXPECT_EQ(under.r, 30);
 }
+
+//=============================================================================
+// ComputeSeparatorAlpha -- the fading horizontal rule inside a panel
+//=============================================================================
+
+TEST(SeparatorAlpha, PeaksInTheMiddle)
+{
+	EXPECT_EQ(200, zx::ComputeSeparatorAlpha(50, 101, 200));
+}
+
+TEST(SeparatorAlpha, FadesToNothingAtBothEnds)
+{
+	// The point of the fade: a rule inside a panel with no border of its own must not end in a hard
+	// edge, or it reads as the panel being cut in two.
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(0, 101, 200));
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(100, 101, 200));
+}
+
+TEST(SeparatorAlpha, RisesMonotonicallyTowardsTheMiddle)
+{
+	int prev = -1;
+	for (int x = 0; x <= 50; ++x)
+	{
+		const int a = zx::ComputeSeparatorAlpha(x, 101, 200);
+		EXPECT_GE(a, prev) << "dipped at x=" << x;
+		prev = a;
+	}
+	EXPECT_EQ(200, prev);
+}
+
+TEST(SeparatorAlpha, IsSymmetric)
+{
+	for (int x = 0; x < 50; ++x)
+		EXPECT_EQ(zx::ComputeSeparatorAlpha(x, 101, 200),
+			zx::ComputeSeparatorAlpha(100 - x, 101, 200)) << "asymmetric at x=" << x;
+}
+
+TEST(SeparatorAlpha, NeverExceedsThePeak)
+{
+	for (int x = 0; x < 64; ++x)
+		EXPECT_LE(zx::ComputeSeparatorAlpha(x, 64, 255), 255);
+}
+
+TEST(SeparatorAlpha, RefusesColumnsOutsideTheRule)
+{
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(-1, 101, 200));
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(101, 101, 200));
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(999, 101, 200));
+}
+
+TEST(SeparatorAlpha, DegenerateWidthsAndPeaksDrawNothing)
+{
+	// A panel narrow enough to have no room for a rule asks for one anyway on some resolutions; it
+	// must come back with nothing to draw rather than dividing by a zero half-width.
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(0, 0, 200));
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(0, -5, 200));
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(0, 101, 0));
+	EXPECT_EQ(0, zx::ComputeSeparatorAlpha(0, 101, -1));
+}
+
+TEST(SeparatorAlpha, AOneColumnRuleIsJustThePeak)
+{
+	EXPECT_EQ(200, zx::ComputeSeparatorAlpha(0, 1, 200));
+}

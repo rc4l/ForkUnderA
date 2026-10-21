@@ -29,6 +29,8 @@ public:
 	virtual void UpdateInterpolation() = 0;
 	virtual void Restore() = 0;
 	virtual void Interpolate(fixed_t smoothratio) = 0;
+	// [rc4l] features/gamecopy: adds this interpolation's values at the start and end of the last tic to the render copy's blends.
+	virtual void CopyForRender() const = 0;
 	virtual void Serialize(FArchive &arc);
 };
 
@@ -59,6 +61,8 @@ public:
 	void DoInterpolations(fixed_t smoothratio);
 	void RestoreInterpolations();
 	void ClearInterpolations();
+	// [rc4l] features/gamecopy: every interpolation's values handed to the render copy.
+	void CopyForRender() const;
 };
 
 extern FInterpolator interpolator;

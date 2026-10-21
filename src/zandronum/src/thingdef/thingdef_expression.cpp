@@ -59,6 +59,7 @@ DEFINE_GLOBAL_VARIABLE(testglobalvar)
 // Accessible actor member variables
 DEFINE_MEMBER_VARIABLE(alpha, AActor)
 DEFINE_MEMBER_VARIABLE(Speed, AActor)	// [rc4l] uzdoom@44683657f
+DEFINE_MEMBER_VARIABLE(roll, AActor)	// [rc4l] uzdoom@2b12db153
 DEFINE_MEMBER_VARIABLE(angle, AActor)
 DEFINE_MEMBER_VARIABLE(args, AActor)
 DEFINE_MEMBER_VARIABLE(ceilingz, AActor)
@@ -452,6 +453,83 @@ ExpVal FxIntCast::EvalExpression (AActor *self)
 	baseval.Type = VAL_Int;
 	return baseval;
 }
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+FxFloatCast::FxFloatCast(FxExpression *x)
+: FxExpression(x->ScriptPosition)
+{
+	basex = x;
+	ValueType = VAL_Float;
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+FxFloatCast::~FxFloatCast()
+{
+	SAFE_DELETE(basex);
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+FxExpression *FxFloatCast::Resolve(FCompileContext &ctx)
+{
+	CHECKRESOLVED();
+	SAFE_RESOLVE(basex, ctx);
+
+	if (basex->ValueType == VAL_Float)
+	{
+		FxExpression *x = basex;
+		basex = NULL;
+		delete this;
+		return x;
+	}
+	else if (basex->ValueType == VAL_Int)
+	{
+		if (basex->isConstant())
+		{
+			ExpVal constval = basex->EvalExpression(NULL);
+			FxExpression *x = new FxConstant(constval.GetFloat(), ScriptPosition);
+			delete this;
+			return x;
+		}
+		return this;
+	}
+	else
+	{
+		ScriptPosition.Message(MSG_ERROR, "Numeric type expected");
+		delete this;
+		return NULL;
+	}
+}
+
+//==========================================================================
+//
+//
+//
+//==========================================================================
+
+ExpVal FxFloatCast::EvalExpression (AActor *self)
+{
+	ExpVal baseval = basex->EvalExpression(self);
+	baseval.Float = baseval.GetFloat();
+	baseval.Type = VAL_Float;
+	return baseval;
+}
+
+
 
 
 //==========================================================================
@@ -1778,6 +1856,78 @@ ExpVal FxFRandom::EvalExpression (AActor *self)
 //
 //
 //==========================================================================
+//
+// [rc4l] uzdoom@8c5a8c54f cluster, settled form under upstream's final name.
+//
+//==========================================================================
+
+// [rc4l] uzdoom@8e0151b4c -- frandompick picks between float values; randompick stays integral.
+FxRandomPick::FxRandomPick(FRandom * r, TArray<FxExpression*> mi, bool floaty, const FScriptPosition &pos)
+: FxExpression(pos)
+{
+	for (unsigned int index = 0; index < mi.Size(); index++)
+	{
+		FxExpression *casted;
+		if (floaty)
+		{
+			casted = new FxFloatCast(mi[index]);
+		}
+		else
+		{
+			casted = new FxIntCast(mi[index]);
+		}
+		min.Push(casted);
+	}
+	rng = r;
+	ValueType = floaty ? VAL_Float : VAL_Int;
+}
+
+FxRandomPick::~FxRandomPick()
+{
+	// [rc4l] uzdoom@641042871: the sub-expressions are owned here and were leaked before.
+	for (unsigned int index = 0; index < min.Size(); index++)
+	{
+		SAFE_DELETE(min[index]);
+	}
+}
+
+FxExpression *FxRandomPick::Resolve(FCompileContext &ctx)
+{
+	CHECKRESOLVED();
+	for (unsigned int index = 0; index < min.Size(); index++)
+	{
+		RESOLVE(min[index], ctx);
+		ABORT(min[index]);
+	}
+	return this;
+}
+
+ExpVal FxRandomPick::EvalExpression(AActor *self)
+{
+	ExpVal val;
+	int max = min.Size();
+	if (max > 0)
+	{
+		int select = (*rng)(max);
+		val = min[select]->EvalExpression(self);
+	}
+	/* Is a default even important when the parser requires at least one
+	 * choice? Why do we do this? */
+	else if (ValueType == VAL_Int)
+	{
+		val.Type = VAL_Int;
+		val.Int = (*rng)();
+	}
+	else
+	{
+		val.Type = VAL_Float;
+		val.Float = (*rng)(0x40000000) / double(0x40000000);
+	}
+	assert(val.Type == ValueType.Type);	// [rc4l] uzdoom@a64ebc720 -- ValueType is an FExpressionType
+	return val;
+}
+
+//==========================================================================
 
 FxRandom2::FxRandom2(FRandom *r, FxExpression *m, const FScriptPosition &pos)
 : FxExpression(pos)
@@ -2018,6 +2168,7 @@ FxExpression *FxGlobalVariable::Resolve(FCompileContext&)
 	case VAL_Fixed:
 	case VAL_Angle:
 		ValueType = VAL_Float;
+		break;	// [rc4l] uzdoom@79791629e -- fell through into the object/class cases
 
 	case VAL_Object:
 	case VAL_Class:
@@ -2924,6 +3075,14 @@ FxExpression *FStateExpressions::Get(int num)
 {
 	if (num >= 0 && num < int(Size()))
 		return expressions[num].expr;
+	return NULL;
+}
+
+// [ForkUnderA] fua-caching: see the declaration.
+const PClass *FStateExpressions::GetOwner(unsigned int num)
+{
+	if (num < Size())
+		return expressions[num].owner;
 	return NULL;
 }
 

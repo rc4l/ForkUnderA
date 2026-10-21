@@ -33,6 +33,7 @@
 
 class FConfigFile;
 class FGameConfigFile;
+class FIWadManager;
 
 extern FGameConfigFile *GameConfig;
 
@@ -47,7 +48,7 @@ void M_FindResponseFile (void);
 //		Pass a NULL to get the original behavior.
 void M_ScreenShot (const char *filename);
 
-void M_LoadDefaults ();
+void M_LoadDefaults (FIWadManager *iwad_man);
 
 bool M_SaveDefaults (const char *filename);
 void M_SaveCustomKeys (FConfigFile *config, char *section, char *subsection, size_t sublen);
@@ -67,5 +68,15 @@ FString M_GetCajunPath(const char *filename);
 FString M_GetConfigPath(bool for_reading);
 FString M_GetScreenshotsPath();
 FString M_GetSavegamesPath();
+
+// [rc4l] The per-user folder holding this fork's identity keys, IWAD store and config.
+FString M_GetFuaUserPath();
+
+// [rc4l] Where the config would have been written before it moved into that folder, which is what
+// decides whether an install keeps its old one.
+FString M_GetLegacyConfigPath(bool for_reading);
+
+// [rc4l] Whether that old file exists, which is what decides between the two.
+bool M_ConfigIsAtLegacyPath();
 
 #endif

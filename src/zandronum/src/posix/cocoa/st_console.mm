@@ -147,6 +147,11 @@ FConsoleWindow& FConsoleWindow::GetInstance()
 	return *s_instance;
 }
 
+bool FConsoleWindow::InstanceExists()
+{
+	return NULL != s_instance;
+}
+
 
 void FConsoleWindow::Show(const bool visible)
 {

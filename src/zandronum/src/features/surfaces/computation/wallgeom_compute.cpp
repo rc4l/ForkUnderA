@@ -1,0 +1,176 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 rc4l
+
+#include "features/surfaces/computation/wallgeom_compute.h"
+
+namespace zx { namespace surfaces {
+
+namespace {
+
+WallPart Make(float bottom, float top)
+{
+	WallPart p;
+	p.bottom = bottom;
+	p.top = top;
+	// [rc4l] Strictly greater. A part whose top meets its bottom covers nothing, and registering it
+	// puts a zero-area quad in the mesh with a real material and a real slot -- which is a draw call
+	// and a batch for a surface nobody can see.
+	p.present = (top > bottom);
+	return p;
+}
+
+} // namespace
+
+void ComputeUpperSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb)
+{
+	if (!a.twoSided) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
+	// [rc4l] Under sky on BOTH sides there is no upper: `if (front!=sky || back!=sky)`.
+	//
+	// GL wraps the whole upper-texture branch in that test, so the strip between two sky ceilings
+	// is left for the sky to fill. Deriving it anyway put a lump of the sidedef's top texture across
+	// dbab02's horizon -- geometry and lighting both correct, and simply not a surface that exists.
+	if (a.frontCeilingSky && a.backCeilingSky) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
+	float bottomA = a.backCeiling, bottomB = b.backCeiling;
+	// [rc4l] The FRONT FLOOR obstructs the bottom of an upper, and only when it does so at BOTH ends.
+	//
+	// This is `if (ffh1>bch1 && ffh2>bch2) { bch1a=ffh1; bch2a=ffh2; }` -- GL's own comment says
+	// "the back sector's floor", and GL's own code says ffh, which is the front's. The plane matters:
+	// a sector squeezed shut, a door mid-move, a crusher down, reports a ceiling BELOW the floor, and
+	// taking that literally hangs the upper down through the doorway into space the lower already
+	// covers. Clamping to the BACK floor instead is the same answer whenever the two floors agree --
+	// which is every unsloped door, which is why it went unnoticed -- and a different one the moment
+	// either floor slopes.
+	//
+	// Both ends together, not each on its own, because a wall that pinches out at one end is still
+	// one quad and GL clamps it as one quad or not at all.
+	// ...and GL asks this one only when the floors are not both sky, for the same reason.
+	if ((!a.frontFloorSky || !a.backFloorSky) &&
+	    a.frontFloor > bottomA && b.frontFloor > bottomB)
+	{
+		bottomA = a.frontFloor;
+		bottomB = b.frontFloor;
+	}
+	pa = Make(bottomA, a.frontCeiling);
+	pb = Make(bottomB, b.frontCeiling);
+}
+
+void ComputeLowerSpan(const WallHeights &a, const WallHeights &b, WallPart &pa, WallPart &pb)
+{
+	if (!a.twoSided) { pa = Make(0.f, 0.f); pb = Make(0.f, 0.f); return; }
+	float topA = a.backFloor, topB = b.backFloor;
+	// The mirror, and the same correction: `if (fch1<bfh1 && fch2<bfh2) { bfh1=fch1; bfh2=fch2; }`.
+	// The FRONT CEILING cuts the top off a lower -- which matters most under a sky, where the back
+	// sector's floor can stand well above the ceiling the player is looking through.
+	if (a.frontCeiling < topA && b.frontCeiling < topB)
+	{
+		topA = a.frontCeiling;
+		topB = b.frontCeiling;
+	}
+	pa = Make(a.frontFloor, topA);
+	pb = Make(b.frontFloor, topB);
+}
+
+WallPart ComputeMiddlePart(const WallHeights &h)
+{
+	if (!h.twoSided) return Make(h.frontFloor, h.frontCeiling);
+
+	// The opening: between the higher floor and the lower ceiling. Both sectors have to agree there
+	// is a gap, which is what makes a closed door produce nothing here.
+	const float floor = (h.frontFloor > h.backFloor) ? h.frontFloor : h.backFloor;
+	const float ceiling = (h.frontCeiling < h.backCeiling) ? h.frontCeiling : h.backCeiling;
+	return Make(floor, ceiling);
+}
+
+void ComputeMiddleClip(const WallHeights &a, const WallHeights &b, const MidTextureClip &c,
+	WallPart &pa, WallPart &pb)
+{
+	float topA, topB, botA, botB;
+	if (!c.clipToPlanes)
+	{
+		// Both sides the same sector, nothing forcing it: GL does not clip at all, because clipping
+		// to planes that are the same plane can only produce artefacts.
+		topA = topB = c.texTop;
+		botA = botB = c.texBottom;
+	}
+	else
+	{
+		if (!c.hasUpper)
+		{
+			// An intra-sky line with no upper does not clip the texture at all.
+			if (c.frontCeilingSky && c.backCeilingSky) { topA = topB = c.texTop; }
+			else
+			{
+				// Missing texture: the HIGHER ceiling, and let the geometry clip what extrudes.
+				topA = (a.backCeiling > a.frontCeiling) ? a.backCeiling : a.frontCeiling;
+				topB = (b.backCeiling > b.frontCeiling) ? b.backCeiling : b.frontCeiling;
+			}
+		}
+		else if ((a.backCeiling > a.frontCeiling || b.backCeiling > b.frontCeiling) &&
+		         (!c.frontCeilingSky || c.backCeilingSky))
+		{
+			// The ceilings cross: use the back sector's and let the front's plane clip the polygon.
+			topA = a.backCeiling; topB = b.backCeiling;
+		}
+		else
+		{
+			topA = (a.backCeiling < a.frontCeiling) ? a.backCeiling : a.frontCeiling;
+			topB = (b.backCeiling < b.frontCeiling) ? b.backCeiling : b.frontCeiling;
+		}
+
+		if (!c.hasLower)
+		{
+			botA = (a.backFloor < a.frontFloor) ? a.backFloor : a.frontFloor;
+			botB = (b.backFloor < b.frontFloor) ? b.backFloor : b.frontFloor;
+		}
+		else if (a.backFloor < a.frontFloor || b.backFloor < b.frontFloor)
+		{
+			botA = a.backFloor; botB = b.backFloor;
+		}
+		else
+		{
+			botA = (a.backFloor > a.frontFloor) ? a.backFloor : a.frontFloor;
+			botB = (b.backFloor > b.frontFloor) ? b.backFloor : b.frontFloor;
+		}
+
+		// And then the texture itself clips, when it does not repeat: a hanging texture that ends
+		// above the plane brings the polygon down with it. Both ends together, as everywhere else.
+		if (!c.wrap)
+		{
+			if (c.texTop < topA && c.texTop < topB) topA = topB = c.texTop;
+			if (c.texBottom > botA && c.texBottom > botB) botA = botB = c.texBottom;
+		}
+	}
+	pa = Make(botA, topA);
+	pb = Make(botB, topB);
+}
+
+void ComputeWallPinch(const float *ztopIn, const float *zbottomIn, WallPinch &out)
+{
+	out.fracLeft = 0.f;
+	out.fracRight = 1.f;
+	out.ztop[0] = ztopIn[0]; out.ztop[1] = ztopIn[1];
+	out.zbottom[0] = zbottomIn[0]; out.zbottom[1] = zbottomIn[1];
+
+	// The two edges of the wall as lines in (fraction along, height): the top runs from ztop[0] to
+	// ztop[1] and the bottom from zbottom[0] to zbottom[1]. Where they cross is where the wall ends.
+	const float dch = ztopIn[1] - ztopIn[0];
+	const float dfh = zbottomIn[1] - zbottomIn[0];
+	const float denom = dch - dfh;
+	if (denom == 0.f) return;   // parallel: it pinches nowhere, so it pinches at neither end
+
+	const float coeff = (zbottomIn[0] - ztopIn[0]) / denom;
+	const float interY = ztopIn[0] + coeff * dch;
+
+	if (ztopIn[0] < zbottomIn[0])
+	{
+		out.fracLeft = coeff;
+		out.ztop[0] = out.zbottom[0] = interY;
+	}
+	if (ztopIn[1] < zbottomIn[1])
+	{
+		out.fracRight = coeff;
+		out.ztop[1] = out.zbottom[1] = interY;
+	}
+}
+
+}} // namespace zx::surfaces

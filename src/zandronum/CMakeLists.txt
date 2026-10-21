@@ -3,11 +3,21 @@ cmake_minimum_required( VERSION 3.5 )
 project(Zandronum)
 
 if( COMMAND cmake_policy )
-	cmake_policy( SET CMP0011 NEW )
-	cmake_policy( SET CMP0054 NEW )
+	if( POLICY CMP0011 )
+		cmake_policy( SET CMP0011 NEW )
+	endif( POLICY CMP0011 )
+	if( POLICY CMP0054 )
+		cmake_policy( SET CMP0054 NEW )
+	endif( POLICY CMP0054 )
 endif( COMMAND cmake_policy )
 
 list( APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR} )
+
+# [rc4l] The browser build (the `web` preset): WebAssembly's own exceptions for the engine's throws, and threads, which Diligent's web build is compiled with, on every object so they all link together.
+if( EMSCRIPTEN )
+	add_compile_options( -fwasm-exceptions -pthread )
+	add_link_options( -fwasm-exceptions -pthread )
+endif()
 include( FindPackageHandleStandardArgs )
 
 # Generator expression are available some time in CMake 2.8. Due to
@@ -29,6 +39,54 @@ if(CMAKE_CROSSCOMPILING)
 	include(${IMPORT_EXECUTABLES})
 endif(CMAKE_CROSSCOMPILING)
 
+# [rc4l] The engine's own data pk3 carries a build key in its name: fua_core_<key>.pk3.
+#
+# A fixed zandronum.pk3 loads happily when it is stale, and the engine then misbehaves somewhere far
+# from the cause. Keyed, a mismatched pair simply is not found and the engine says so at startup.
+# That is the point of this: turning a silent wrong-data bug into a loud one.
+#
+# COMPUTED HERE AND NOWHERE ELSE. The exe is told the same string through FUA_CORE_PK3_NAME below,
+# so the name it looks for and the name zipdir writes cannot drift apart within a build tree. A glob
+# would reintroduce exactly the ambiguity this removes once a player has several cores in one folder.
+# FUA_VERSION is the fork's own release tag, the same string GetFuaVersionTag() reports. Asking git
+# is right even during a release build, where the tag does not exist yet: _build.yml already runs
+# `git tag -f "<version>" HEAD` on all three platforms before compiling, so describe answers with the
+# release being cut. The override is for builds with no git at all.
+if( NOT FUA_VERSION )
+	find_package( Git QUIET )
+	if( GIT_FOUND )
+		# --match is load-bearing. This repo also carries server-registry-v* tags for the registry
+		# image, and the newest tag overall is often one of those, which named the engine's pk3
+		# fua_core_server-registry-v0.1.5.pk3. Match the engine's own v* line only, the same pattern
+		# release.yml bumps from.
+		execute_process( COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0 --match "v[0-9]*"
+			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+			OUTPUT_VARIABLE FUA_VERSION
+			OUTPUT_STRIP_TRAILING_WHITESPACE
+			ERROR_QUIET )
+	endif()
+endif()
+if( NOT FUA_VERSION )
+	set( FUA_VERSION "dev" )
+endif()
+
+# Anything a filename cannot carry becomes a dash rather than being dropped, so two different
+# versions can never collapse onto one name.
+string( REGEX REPLACE "[^A-Za-z0-9._-]" "-" FUA_CORE_KEY "${FUA_VERSION}" )
+
+set( FUA_CORE_PK3_NAME "fua_core_${FUA_CORE_KEY}.pk3" )
+message( STATUS "Engine data pk3: ${FUA_CORE_PK3_NAME}" )
+
+# The exe is told the same string, so BASEWAD and the file zipdir writes come from one place.
+add_definitions( -DFUA_CORE_PK3_NAME="${FUA_CORE_PK3_NAME}" )
+
+# [rc4l] GAMEVER_STRING is the version clients and servers hand each other and refuse to mix across
+# (sv_main.cpp compares it with stricmp), so it has to be OUR release rather than the Zandronum
+# release we forked from. Zandronum sets it to its own release for exactly this reason; leaving it
+# at 3.2.1 said every build of ours was interchangeable with every other, which was never true.
+string( REGEX REPLACE "^v" "" FUA_GAMEVER "${FUA_VERSION}" )
+add_definitions( -DFUA_GAMEVER_STRING="${FUA_GAMEVER}" )
+
 # Simplify pk3 building, add_pk3(filename srcdirectory)
 function( add_pk3 PK3_NAME PK3_DIR )
 	# Generate target name. Just use "pk3" for main pk3 target.
@@ -37,6 +95,11 @@ function( add_pk3 PK3_NAME PK3_DIR )
 	if( ${PK3_TARGET} STREQUAL "zandronum_pk3" )
 		set( PK3_TARGET "pk3" )
 	endif( ${PK3_TARGET} STREQUAL "zandronum_pk3" )
+	# [rc4l] The core pk3's FILENAME now carries a build key, so deriving the target name from it
+	# would rename the target on every rebuild and break everything that depends on "pk3".
+	if( ${PK3_NAME} STREQUAL ${FUA_CORE_PK3_NAME} )
+		set( PK3_TARGET "pk3" )
+	endif()
 
 	if( NOT NO_GENERATOR_EXPRESSIONS AND NOT ZDOOM_OUTPUT_OLDSTYLE )
 		add_custom_command( OUTPUT ${ZDOOM_OUTPUT_DIR}/${PK3_NAME}
@@ -58,15 +121,8 @@ function( add_pk3 PK3_NAME PK3_DIR )
 	endif( NOT NO_GENERATOR_EXPRESSIONS )
 endfunction( add_pk3 )
 
-# Macro for building libraries without debugging information
-macro( make_release_only )
-	set( CMAKE_C_FLAGS_MINSIZEREL ${CMAKE_C_FLAGS_RELEASE} )
-	set( CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELEASE} )
-	string( REPLACE "/MT " "/MTd " CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_RELEASE} )
-	set( CMAKE_CXX_FLAGS_MINSIZEREL ${CMAKE_CXX_FLAGS_RELEASE} )
-	set( CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELEASE} )
-	string( REPLACE "/MT " "/MTd " CMAKE_CXX_FLAGS_DEBUG ${CMAKE_CXX_FLAGS_RELEASE} )
-endmacro( make_release_only )
+# [rc4l] make_release_only, shared with tools/web/hosttools.
+include( "${CMAKE_CURRENT_SOURCE_DIR}/ReleaseOnly.cmake" )
 
 IF( NOT CMAKE_BUILD_TYPE )
 	SET( CMAKE_BUILD_TYPE Debug CACHE STRING
@@ -75,7 +131,68 @@ IF( NOT CMAKE_BUILD_TYPE )
 ENDIF( NOT CMAKE_BUILD_TYPE )
 
 set( ZDOOM_OUTPUT_DIR ${CMAKE_BINARY_DIR} CACHE PATH "Directory where zdoom.pk3 and the executable will be created." )
-set( ZDOOM_EXE_NAME "zandronum" CACHE FILEPATH "Name of the executable to create" )
+set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create" )
+
+# [rc4l] The native MCP control bridge (features/mcp-bridge). OFF by default so RELEASE binaries
+# contain zero remote-control surface -- a shipped player build cannot be driven, period. Dev/test
+# builds turn it on (-DFUA_MCP_BRIDGE=ON, or ZX_MCP_BRIDGE=1 for the compile scripts). See
+# features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
+option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
+
+# [rc4l] DiligentCore (Apache-2.0, deps/DiligentCore), the default Vulkan renderer on every client build with GL (Legacy) beside it, off for a server, which has no renderer.
+if( SERVERONLY OR NO_GL )
+	set( FUA_DILIGENT_DEFAULT OFF )
+else()
+	set( FUA_DILIGENT_DEFAULT ON )
+endif()
+option( FUA_DILIGENT "Build the Diligent (Vulkan) render backend" ${FUA_DILIGENT_DEFAULT} )
+# [rc4l] Voice chat (Opus and RNNoise), which a build can leave out on its own as well as with its sound.
+option( ZX_VOIP "Build voice chat (Opus, RNNoise)" ON )
+# [rc4l] Signed anonymous accounts (OpenSSL's Ed25519 and X25519); without them the identity reports failure and online play goes unsigned.
+option( ZX_ACCOUNTS "Build signed accounts (OpenSSL)" ON )
+# [rc4l] The features that reach other machines (src/CMakeLists.txt ONLINE_SOURCES); without them a build plays offline only, as the browser's does.
+option( ZX_ONLINE "Build hosting, the server browser, wad downloads, the updater and accounts" ON )
+# [rc4l] The same backend on WebGPU: Dawn beside Vulkan on the desktop (-webgpu), where the browser build's renderer is checked against Vulkan.
+option( FUA_WEBGPU "Build the Diligent backend's WebGPU device (Dawn on the desktop)" OFF )
+# [rc4l] Off only for a server: a build without GL may still ask for the backend alone (the browser's, -DFUA_DILIGENT=ON).
+if( FUA_DILIGENT AND SERVERONLY )
+	message( STATUS "FUA_DILIGENT: off for a build without a renderer" )
+	set( FUA_DILIGENT OFF CACHE BOOL "Build the Diligent (Vulkan) render backend" FORCE )
+endif()
+if( FUA_DILIGENT )
+	# [rc4l] DiligentCore is a submodule; a clone without its submodules gets told how to fetch them rather than a wall of missing-file errors.
+	if( NOT EXISTS "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/ThirdParty/glslang/CMakeLists.txt" )
+		message( FATAL_ERROR "deps/DiligentCore and its submodules are missing: run `git submodule update --init --recursive`, or configure with -DFUA_DILIGENT=OFF for GL alone." )
+	endif()
+	# [rc4l] The engine links the STATIC CRT (/MT, set in REL_C_FLAGS below); Diligent defaults to the
+	# dynamic one, and the two cannot link -- LNK2038 on RuntimeLibrary across every Diligent object.
+	# Exactly the failure the tests build documents for GoogleTest, and it must be set BEFORE
+	# add_subdirectory, since that is when Diligent's CMake reads it.
+	# CMAKE_MSVC_RUNTIME_LIBRARY does not work here: it needs CMP0091 NEW, and Diligent's own
+	# cmake_minimum_required resets the policy before its targets are defined. The pre-CMP0091 idiom
+	# -- rewriting /MD to /MT in the inherited flag variables -- does work, because subdirectory
+	# targets inherit these.
+	foreach( flag_var
+		CMAKE_C_FLAGS   CMAKE_C_FLAGS_RELEASE   CMAKE_C_FLAGS_DEBUG   CMAKE_C_FLAGS_RELWITHDEBINFO
+		CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_RELEASE CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELWITHDEBINFO )
+		string( REPLACE "/MDd" "/MTd" ${flag_var} "${${flag_var}}" )
+		string( REPLACE "/MD"  "/MT"  ${flag_var} "${${flag_var}}" )
+	endforeach()
+	set( DILIGENT_BUILD_TESTS      OFF CACHE BOOL "" FORCE )
+	set( DILIGENT_BUILD_SAMPLES    OFF CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_DIRECT3D11    ON  CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_DIRECT3D12    ON  CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_OPENGL        ON  CACHE BOOL "" FORCE )
+	set( DILIGENT_NO_ARCHIVER      ON  CACHE BOOL "" FORCE )
+	# [rc4l] Super resolution is unused, and its NVIDIA library is built against the dynamic CRT, which a whole-solution build fails to link beside /MT.
+	set( DILIGENT_NO_SUPER_RESOLUTION ON CACHE BOOL "" FORCE )
+	if( FUA_WEBGPU )
+		set( DILIGENT_NO_WEBGPU OFF CACHE BOOL "" FORCE )
+	else()
+		set( DILIGENT_NO_WEBGPU ON CACHE BOOL "" FORCE )
+	endif()
+	add_subdirectory( "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore" "${CMAKE_BINARY_DIR}/DiligentCore" )
+endif()
 if( MSVC )
 	# Allow the user to use ZDOOM_OUTPUT_DIR as a single release point.
 	# Use zdoom, zdoomd, zdoom64, and zdoomd64 for the binary names
@@ -94,6 +211,22 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
 if( CMAKE_BUILD_TYPE MATCHES Release AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AND NOT APPLE )
 	option( RELEASE_WITH_DEBUG_FILE "Create the debug symbols file for the release build." ON )
 endif( CMAKE_BUILD_TYPE MATCHES Release AND ( CMAKE_COMPILER_IS_GNUCXX OR MSVC ) AND NOT APPLE )
+
+# [rc4l] The same thing again for a MULTI-CONFIG generator, which is what Visual Studio is and so
+# what every local Windows build uses. Those pick the config at BUILD time, leaving CMAKE_BUILD_TYPE
+# empty at configure time, so the block above never even created the option and a local Release
+# build got no /Zi and no PDB whatsoever. SymFromAddr then has nothing to read: mcp_crash.cpp writes
+# unsymbolised backtraces and the sampling profiler cannot name one of our own functions. Found when
+# perf.sample reported 13% of a kill storm as "[unknown]" inside forkundera.
+#
+# Tied to the BRIDGE rather than turned on for everyone, because "everyone" includes the release CI
+# that builds what players download. That path already emits its PDB deliberately and separately
+# (ZX_WITH_SYMBOLS, src/CMakeLists.txt), gated so ordinary dev and PR builds stay lean -- and this
+# must not quietly override that decision. A bridge build is a dev build by construction (the bridge
+# is never ON in a shipped binary), and it is the one that needs symbols to be worth anything.
+if( FUA_MCP_BRIDGE AND CMAKE_CONFIGURATION_TYPES AND MSVC AND NOT APPLE )
+	option( RELEASE_WITH_DEBUG_FILE "Create the debug symbols file for the release build." ON )
+endif( )
 
 find_package( BZip2 )
 find_package( JPEG )
@@ -246,7 +379,10 @@ endif( RELEASE_WITH_DEBUG_FILE )
 # [BB] Library that allows to map IP addresses to country names.
 add_subdirectory( GeoIP )
 # [BB]
-add_subdirectory( server-registry )
+# [rc4l] The registry is a native server program, so the browser build leaves it out.
+if( NOT EMSCRIPTEN )
+	add_subdirectory( server-registry )
+endif()
 # [BB] Library for the database backend.
 add_subdirectory( sqlite )
 add_subdirectory( lzma )
@@ -267,6 +403,21 @@ if( ZX_ENABLE_SENTRY AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sentry-native/CMake
 	add_subdirectory( sentry-native )
 else()
 	set( ZX_ENABLE_SENTRY OFF )
+endif()
+
+# [rc4l] Whether this build's symbols will be published, which is the only honest licence to report a
+# crash: a report nobody can symbolicate is noise that outlives the build it came from (issue #228).
+#
+# OFF by default and set only by the release workflow, deliberately. It cannot be inferred locally --
+# the tempting test, whether `git describe` lands exactly on a tag, says yes for a developer building
+# at a tagged commit, and crash-sync would then read their binary with the official release's symbols.
+# Only the machine that publishes the symbols can assert that they exist.
+option( ZX_OFFICIAL_BUILD "This build's symbols are published, so crash reporting is meaningful" OFF )
+if( ZX_OFFICIAL_BUILD )
+	add_definitions( -DZX_OFFICIAL_BUILD=1 )
+	message( STATUS "ZX crash reporting: official build (reports enabled)" )
+else()
+	message( STATUS "ZX crash reporting: unofficial build (reports disabled -- no symbols would be published)" )
 endif()
 
 # [rc4l] Guard against silently shipping crash reporting that can't deliver: if sentry is enabled it
@@ -291,9 +442,9 @@ add_subdirectory( wadsrc_st )
 add_subdirectory( src )
 
 # [AK] Library for noise suppression for VoIP.
-if ( NOT NO_SOUND )
+if ( NOT NO_SOUND AND ZX_VOIP )
 	add_subdirectory( rnnoise )
-endif ( NOT NO_SOUND )
+endif ( NOT NO_SOUND AND ZX_VOIP )
 
 if( NOT CMAKE_CROSSCOMPILING )
 	export(TARGETS ${CROSS_EXPORTS} FILE "${CMAKE_BINARY_DIR}/ImportExecutables.cmake" )

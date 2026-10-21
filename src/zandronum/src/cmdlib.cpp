@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>
-#if !defined(__sun)
+#if !defined(__sun) && !defined(__EMSCRIPTEN__)
 #include <fts.h>
 #endif
 #endif
@@ -906,11 +906,13 @@ FString NicePath(const char *path)
 		FString who(path, slash - path);
 		pwstruct = getpwnam(who);
 	}
-	if (pwstruct == NULL)
+	// [rc4l] With no passwd entry (a browser has none), my home is $HOME, which Emscripten sets and the page keeps between visits.
+	const char *home = (pwstruct == NULL && slash == path + 1) ? getenv("HOME") : NULL;
+	if (pwstruct == NULL && (home == NULL || *home == '\0'))
 	{
 		return ExpandEnvVars(path);
 	}
-	FString where(pwstruct->pw_dir);
+	FString where(pwstruct != NULL ? pwstruct->pw_dir : home);
 	if (*slash != '\0')
 	{
 		where += ExpandEnvVars(slash);
@@ -980,7 +982,7 @@ void ScanDirectory(TArray<FFileList> &list, const char *dirpath)
 	}
 }
 
-#elif defined(__sun) || defined(__linux__)
+#elif defined(__sun) || defined(__linux__) || defined(__EMSCRIPTEN__)
 
 //==========================================================================
 //
@@ -1052,8 +1054,16 @@ void ScanDirectory(TArray<FFileList> &list, const char *dirpath)
 			// Skip hidden directories. (Prevents SVN bookkeeping
 			// info from being included.)
 			fts_set(fts, ent, FTS_SKIP);
+			continue;
 		}
-		if (ent->fts_info == FTS_D && ent->fts_level == 0)
+		// [rc4l] Record every directory encountered, not only the root (fts_level == 0, which is
+		// what this branch used to keep). The Windows and Linux branches report an
+		// isDirectory=true entry for EVERY subdirectory they walk into, and callers rely on it --
+		// the addon catalogue enumerates its entries as "the directories ScanDirectory reported",
+		// so on macOS/BSD it saw none and every catalogue loaded empty. The root is excluded to
+		// match the other branches, which scan the root's contents and never report the root
+		// itself.
+		if (ent->fts_info == FTS_D && ent->fts_level > 0)
 		{
 			FFileList *fl = &list[list.Reserve(1)];
 			fl->Filename = ent->fts_path;

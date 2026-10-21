@@ -28,8 +28,7 @@ the C++20-ill-formed template-id destructor in `tarray.h`.
   shims + glue, the 2D drawer, the legacy-scene capture hooks, **native SDL2** (sdl12-compat no
   longer linked; `sdlvideo.cpp`/`SDLMain.m` deleted), and the core-context request path
   (`vid_hwrender` → `zx::ResolveBackend` → `ComputeGLContextRequests`).
-- **184/184 tests green**, 100% coverage gate on all `computation/` units (13 units: the archive's
-  ten + this branch's 64-bit-safe `vertexconvert`, `glcontext`, `backendselect` — the archive's
+- **Tests green**, 100% coverage gate on all `computation/` units (the archive's ten + this branch's 64-bit-safe `vertexconvert`, `glcontext`, `backendselect` — the archive's
   32-bit versions of the latter two were superseded, not merged).
 - **`fixed_t` reconciliation:** the strong `zx::Fixed` type caught upstream's stale
   `typedef int32_t fixed_t` in the backend shim at compile time (backend has zero `fixed_t`

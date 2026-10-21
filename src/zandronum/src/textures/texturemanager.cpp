@@ -35,6 +35,7 @@
 */
 
 #include "doomtype.h"
+#include "features/handoff/seam.h"   // [rc4l] texture/grow
 #include "doomstat.h"
 #include "w_wad.h"
 #include "templates.h"
@@ -53,8 +54,10 @@
 #include "r_renderer.h"
 #include "r_sky.h"
 #include "textures/textures.h"
+#include "features/fua-caching/fua_caching.h"
 // [BB] New #includes.
 #include "cl_demo.h"
+#include "features/telemetry/telemetry.h"
 
 FTextureManager TexMan;
 
@@ -218,12 +221,14 @@ FTextureID FTextureManager::CheckForTexture (const char *name, int usetype, BITF
 	if ((flags & TEXMAN_TryAny) && usetype != FTexture::TEX_Any)
 	{
 		// Never return the index of NULL textures.
+		// [rc4l] uzdoom@8c052818b: this return used to sit outside the if, so a miss returned -1 and
+		// the full-path lookup below was unreachable. Falling through is the whole fix.
 		if (firstfound != -1)
 		{
 			if (firsttype == FTexture::TEX_Null) return FTextureID(0);
 			if (firsttype == FTexture::TEX_FirstDefined && !(flags & TEXMAN_ReturnFirst)) return FTextureID(0);
+			return FTextureID(firstfound);
 		}
-		return FTextureID(firstfound);
 	}
 
 	
@@ -369,12 +374,27 @@ void FTextureManager::UnloadAll ()
 //
 //==========================================================================
 
+void FTextureManager::ReserveHeadroom (unsigned int amount)
+{
+	Textures.Grow (amount);
+	Translation.Grow (amount);
+}
+
 FTextureID FTextureManager::AddTexture (FTexture *texture)
 {
 	int bucket;
 	int hash;
 
 	if (texture == NULL) return FTextureID(-1);
+
+	// [rc4l] Claim this texture as THE texture for its lump, so a full-path lookup finds it instead
+	// of minting a copy the map never draws. Multipatch is skipped because its source lump is the
+	// TEXTURE1 lump it was defined in, not an image it owns. See e114f99.
+	if (!texture->bMultiPatch && texture->SourceLump >= 0 &&
+		Wads.GetLinkedTexture(texture->SourceLump) == NULL)
+	{
+		Wads.SetLinkedTexture(texture->SourceLump, texture);
+	}
 
 	// Later textures take precedence over earlier ones
 
@@ -391,6 +411,11 @@ FTextureID FTextureManager::AddTexture (FTexture *texture)
 	}
 
 	TextureHash hasher = { texture, hash };
+	// [rc4l] features/handoff: a push past the headroom moves the array a frame may be reading, which only the main thread may do while no tic runs.
+	if (Textures.Size () >= Textures.Capacity ())
+	{
+		ZX_SEAM_UNTIMED ("texture/grow", Idle);
+	}
 	int trans = Textures.Push (hasher);
 	Translation.Push (trans);
 	if (bucket >= 0) HashFirst[bucket] = trans;
@@ -1238,6 +1263,7 @@ int FTextureManager::CountLumpTextures (int lumpnum)
 
 void FTextureManager::PrecacheLevel (void)
 {
+	ZX_ZONE("load/precache_textures");   // [rc4l] the level's textures loaded ahead
 	BYTE *hitlist;
 	int cnt = NumTextures();
 
@@ -1274,6 +1300,32 @@ void FTextureManager::PrecacheLevel (void)
 	for (int i = cnt - 1; i >= 0; i--)
 	{
 		Renderer->PrecacheTexture(ByIndex(i), hitlist[i]);
+	}
+
+	// [ForkUnderA] cl_fua_caching: make the cost visible so it can be tuned
+	// instead of guessed at.
+	if (FUA_CachingMode() > 0)
+	{
+		unsigned int marked = 0;
+		QWORD pixbytes = 0;
+		for (int i = 0; i < cnt; ++i)
+		{
+			if (hitlist[i])
+			{
+				FTexture *tex = ByIndex(i);
+				if (tex != NULL)
+				{
+					marked++;
+					pixbytes += (QWORD)tex->GetWidth() * tex->GetHeight() * 4;
+				}
+			}
+		}
+		Printf ("FUA caching: %u textures (%.1f MB) precached in %u ms\n",
+			marked, pixbytes / (1024.0 * 1024.0), I_MSTime() - precacheTime);
+
+		// Compile every reachable GPU pipeline now rather than at first draw
+		// mid-fight (once per session; see fua_warmup.cpp).
+		FUA_WarmupPipelines ();
 	}
 
 	delete[] hitlist;

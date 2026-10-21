@@ -1,0 +1,67 @@
+{
+ "rules": [
+  {
+   "name": "renderer-reads-the-copy",
+   "why": "With tics on their own thread the renderer draws while a tic changes the game, so it reads the game only through features/gamecopy's per-tic copy: no live actors, players, particles, interpolations, visit stamps, game randomness or game functions.",
+   "files": [
+    "features/frame/", "features/sprites/", "features/levelmesh/", "features/visibility/", "features/hwrender/",
+    "r_utility.cpp", "features/dynlights/pointlight.cpp", "features/dynlights/pointlight.h", "features/stackportals/", "features/horizon/",
+    "features/surfaces/", "features/fakeflat/", "features/viewsetup/", "features/fov-interp/fovinterp.cpp",
+    "features/materials/", "features/draw2d/screenblend.cpp", "features/damage-tint/", "features/hitboxviz/", "features/models/"
+   ],
+   "exclude": ["*/computation/*", "*_test.cpp", "*_gl.cpp", "features/damage-tint/tintsubject.*"],
+   "why_excluded": "GL draws only while tics run inline (the *_gl.cpp files and gl/), and tintsubject is the damage tint's game half the fill calls.",
+   "exempt": ["\\b(?:void|bool)\\s+(?:\\w+::)?(?:RenderView|WriteSavePic|RenderTextureView|SetupFrame|StateChanged)\\s*\\([^)]*\\)"],
+   "why_exempt": "The renderer interface's signatures name the game's player and actor; the backend turns them into record indices without reading them, and the bodies are still checked. Console command bodies and declarations are never counted, since commands run between tics and a declaration reads nothing.",
+   "patterns": [
+    {"name": "live thinker iteration", "regex": "\\bTThinkerIterator\\s*<"},
+    {"name": "live actor", "regex": "\\bAActor\\b"},
+    {"name": "live player", "regex": "\\bplayer_t\\b|\\bplayers\\s*\\[|\\bplayeringame\\s*\\["},
+    {"name": "live particles", "regex": "\\bParticles\\s*\\[|\\bParticlesInSubsec\\b|\\bActiveParticles\\b"},
+    {"name": "write-and-undo interpolation", "regex": "\\binterpolator\\s*\\."},
+    {"name": "shared visit stamp", "regex": "\\bvalidcount\\b"},
+    {"name": "game randomness", "regex": "\\bM_Random\\b|\\bpr_\\w+\\s*\\("},
+    {"name": "game function", "regex": "\\bP_(?!AproxDistance\\b)[A-Z]\\w*\\s*\\(|\\bC_ShouldForceInterpolation\\s*\\("},
+    {"name": "live level state", "regex": "\\blevel\\s*\\.\\s*(flags|flags2|time|maptime|totaltime|fadeto|outsidefog|skyspeed1|skyspeed2|DefaultSkybox)\\b"},
+    {"name": "live map accessor", "regex": "(?<!\\brc)(?<!TexMan)(?:\\.|->)\\s*(?:GetTexture\\s*\\((?!\\s*\\))|(?:GetPlaneTexZ|GetLightLevel|GetTextureXOffset|GetTextureYOffset|GetTextureXScale|GetTextureYScale|GetXOffset|GetYOffset|GetXScale|GetYScale|GetAngle|GetAlpha|GetFloorLight|GetCeilingLight|GetLight|GetGlow|GetReflect|GetSpecialColor)\\s*\\()"}
+   ],
+   "fields": {"table": "features/gamecopy/fields.h", "types": ["sector", "side", "line", "vertex", "polyobj"],
+    "why_unpatterned": "Members named too generically to tell a live read from any other struct's member by name; the copy check and ThreadSanitizer watch them instead.",
+    "unpatterned": ["x", "y", "flags", "Flags", "special", "Light", "args", "Alpha"]}
+  },
+  {
+   "name": "game-leaves-the-renderer-alone",
+   "why": "A tic on its own thread may not touch what the main thread draws or plays with: the renderer and frame buffer, the view it set up, the menus, console and automap, the sound device, render cvars or the screen size, nor set any variable the renderer's headers declare (queue #51 was P_Ticker setting r_NoInterpolate).",
+   "writes": {
+    "headers": [
+     "r_utility.h", "r_main.h", "r_sky.h", "r_renderer.h", "r_data/r_interpolate.h", "r_data/r_translate.h", "v_video.h", "v_palette.h",
+     "v_font.h", "st_stuff.h", "hu_stuff.h", "c_console.h", "am_map.h", "gl/", "features/hwrender/", "features/levelmesh/", "features/sprites/",
+     "features/visibility/", "features/frame/", "features/draw2d/", "features/viewsetup/", "features/horizon/", "features/surfaces/",
+     "features/models/", "features/materials/", "features/rendersettings/"
+    ],
+    "exclude": ["*/computation/*"],
+    "unpatterned": ["validcount"]
+   },
+   "files": [
+    "p_*.cpp", "p_*.h", "g_game.cpp", "g_level.cpp", "g_shared/", "g_doom/", "g_heretic/", "g_hexen/", "g_raven/", "g_strife/",
+    "thingdef/", "po_man.cpp", "dthinker.cpp", "s_sndseq.cpp", "decallib.cpp",
+    "team.cpp", "duel.cpp", "lastmanstanding.cpp", "possession.cpp", "survival.cpp", "invasion.cpp", "domination.cpp",
+    "gamemode.cpp", "callvote.cpp", "medal.cpp", "bots.cpp", "botcommands.cpp", "astar.cpp", "botpath.cpp",
+    "features/dynlights/a_dynlight.cpp", "features/dynlights/cycler.cpp", "features/mbf21/", "features/quake-movement/",
+    "features/spawnprojectile/", "features/a_checkrange/", "features/a_fireprojectile/", "features/a_noisealert/",
+    "features/a_startsound/", "features/actorresize/", "features/ripper/"
+   ],
+   "exclude": ["*/computation/*", "*_test.cpp", "g_shared/shared_sbar.cpp", "g_shared/sbar*.cpp", "g_shared/shared_hud.cpp", "g_shared/st_hud.cpp", "g_shared/hudmessages.cpp", "g_doom/doom_sbar.cpp", "g_heretic/heretic_sbar.cpp", "g_hexen/hexen_sbar.cpp", "g_strife/strife_sbar.cpp", "g_shared/sbar_mugshot.cpp"],
+   "patterns": [
+    {"name": "renderer", "regex": "\\bRenderer\\s*->|\\bgl_[A-Z]\\w*\\s*\\("},
+    {"name": "frame buffer", "regex": "\\bscreen\\s*->|\\bSCREENWIDTH\\b|\\bSCREENHEIGHT\\b"},
+    {"name": "render view", "regex": "\\bview(x|y|z|angle|pitch|sector)\\b|\\br_TicFrac\\b|\\br_NoInterpolate\\b"},
+    {"name": "menus and console", "regex": "\\bmenuactive\\b|\\bConsoleState\\b|\\bM_StartControlPanel\\b|\\bM_SetMenu\\b|\\bM_ClearMenus\\b|\\bC_HideConsole\\b|\\bC_FullConsole\\b"},
+    {"name": "automap", "regex": "\\bAM_[A-Z]\\w*\\s*\\("},
+    {"name": "sound device", "regex": "\\bGSnd\\s*->"},
+    {"name": "renderer features", "regex": "\\bzx::(levelmesh|hwrender|materials|sprites|visibility|frame|draw2d|viewsetup|horizon|surfaces|models|hitboxviz|crosshair|damagetint)::"},
+    {"name": "render cvar", "regex": "\\bvid_[a-z]\\w*\\b|\\bgl_[a-z][a-z0-9_]*\\b|\\bfua_dg_\\w+\\b|\\br_drawtrans\\b|\\br_lights\\w*\\b"}
+   ]
+  }
+ ]
+}

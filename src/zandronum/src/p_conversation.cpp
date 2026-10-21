@@ -33,6 +33,7 @@
 */
 
 #include <assert.h>
+#include "features/handoff/effects.h"   // [rc4l] RunOrQueue
 
 #include "actor.h"
 #include "p_conversation.h"
@@ -107,11 +108,11 @@ void GiveSpawner (player_t *player, const PClass *type);
 
 TArray<FStrifeDialogueNode *> StrifeDialogues;
 
-typedef TMap<int, const PClass *> FStrifeTypeMap;	// maps conversation IDs to actor classes
 typedef TMap<int, int> FDialogueIDMap;				// maps dialogue IDs to dialogue array index (for ACS)
 typedef TMap<FName, int> FDialogueMap;				// maps actor class names to dialogue array index
 
-static FStrifeTypeMap StrifeTypes;
+// [rc4l] uzdoom@b6a4511dd -- no longer file-static: p_things fills it from MAPINFO now.
+FClassMap StrifeTypes;
 static FDialogueIDMap DialogueRoots;
 static FDialogueMap ClassRoots;
 static int ConversationMenuY;
@@ -1112,6 +1113,8 @@ void P_FreeStrifeConversations ()
 //
 //============================================================================
 
+static void ShowConversation (intptr_t node, intptr_t pauseTic);
+
 void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveangle)
 {
 
@@ -1207,26 +1210,34 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 	// [SB] But this stuff only matters on the client.
 	if (NETWORK_GetState() != NETSTATE_SERVER && pc->player == &players[consoleplayer])
 	{
-		if (CurNode->SpeakerVoice != 0)
-		{
-			I_SetMusicVolume (dlg_musicvolume);
-		}
-
-		DConversationMenu *cmenu = new DConversationMenu(CurNode);
-
-
-		if (CurNode != PrevNode)
-		{ // Only reset the selection if showing a different menu.
-			DConversationMenu::mSelection = 0;
-			PrevNode = CurNode;
-		}
-
-		// And open the menu
-		M_StartControlPanel (false);
-		M_ActivateMenu(cmenu);
-		ConversationPauseTic = gametic + 20;
-		menuactive = MENU_OnNoPause;
+		// [rc4l] features/handoff: the menu is the main thread's, so a tic on its own thread shows it in the handoff.
+		zx::handoff::RunOrQueue ({ ShowConversation, intptr_t (CurNode), gametic + 20 });
 	}
+}
+
+// [rc4l] The conversation's menu for node, paused until pauseTic, as P_StartConversation opens it.
+static void ShowConversation (intptr_t node, intptr_t pauseTic)
+{
+	FStrifeDialogueNode *const shown = reinterpret_cast<FStrifeDialogueNode *>(node);
+	if (shown->SpeakerVoice != 0)
+	{
+		I_SetMusicVolume (dlg_musicvolume);
+	}
+
+	DConversationMenu *cmenu = new DConversationMenu(shown);
+
+
+	if (shown != PrevNode)
+	{ // Only reset the selection if showing a different menu.
+		DConversationMenu::mSelection = 0;
+		PrevNode = shown;
+	}
+
+	// And open the menu
+	M_StartControlPanel (false);
+	M_ActivateMenu(cmenu);
+	ConversationPauseTic = int (pauseTic);
+	menuactive = MENU_OnNoPause;
 }
 
 //============================================================================

@@ -142,6 +142,7 @@
 #include "actors/hexen/heresiarch.txt"
 // [BB] Hexen invasion spawners.
 #include "actors/hexen/hexenspawners.txt"
+#include "actors/hexen/flies.txt"
 
 // [BC] New Skulltag actor definitions.
 #include "actors/skulltag/skulltagarmor.txt"

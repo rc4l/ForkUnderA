@@ -13,7 +13,7 @@ Everything is read fresh each frame, so `A_SetSize`, `A_SetHitSize`, `APROP_Radi
 `APROP_HitRadius` and crouch shrink are all reflected on the next frame. Nothing is
 snapshotted (see *Provenance* — the reference implementation gets this wrong).
 
-GL renderer only; the software renderer has no world-space line path.
+GL and Vulkan; the software renderer has no world-space line path.
 
 ## Toggles
 
@@ -124,8 +124,15 @@ so existing traffic is byte-for-byte unchanged. See also
 - `vizgate_compute` — `ShouldDraw` (the full offline / `sv_cheats` truth table) and
   `ResolveLineWidth`.
 
-`hitboxviz.{h,cpp}` is the engine glue: cvars, the `fua_hitbox` CCMD, per-scene collection,
-and the GL draw.
+`hitboxviz.{h,cpp}` is the engine glue every build has:
+- the cvars and the `fua_hitbox` CCMD;
+- the boxes and blasts;
+- the backend's collection (`CollectBackendFrame`, `BackendLines`);
+- the server's side.
+
+`hitboxviz_gl.cpp` is GL's half: per-scene collection and the GL draw. Only builds with GL
+compile it, so a build without GL (the server, the browser) still has the backend's overlay.
+`hitboxviz_internal.h` is what the two files share.
 
 ### Scene nesting
 
@@ -156,6 +163,11 @@ and are not implemented.
   have collision boxes worth seeing.
 - `gl/scene/gl_scene.cpp` — `BeginFrame()` in `CreateScene`, `Draw()` at the tail of
   `RenderTranslucent` (3D projection current, depth buffer writable again).
+- `features/frame/standaloneframe.cpp` — `CollectBackendFrame` with the player's walk's sectors,
+  for the Vulkan backend, whose `features/hwrender/diligent/dglines.cpp` draws `BackendLines`
+  after the mirrors and before the 2D. It draws the player's view only (GL also draws boxes
+  inside portals), and each edge is a screen-space quad `cl_fua_hitbox_linewidth` pixels wide
+  (`wideline_compute`), so the width is not clamped to a driver's line range.
 - `p_map.cpp` — record/broadcast in `P_RadiusAttack` (right after the `fulldamagedistance`
   clamp, so the drawing can't disagree with the simulation); debug-only send in
   `AActor::SetHitSize`.

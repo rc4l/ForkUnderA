@@ -66,6 +66,7 @@
 #include "networkshared.h"
 #include "p_local.h"
 #include "p_tick.h"
+#include "r_utility.h"   // [rc4l] r_NoInterpolate
 // [rc4l] r_draw.h removed (GL-only build); this file does not use it.
 #include "r_state.h"
 #include "sbar.h"
@@ -76,6 +77,7 @@
 #include "network_enums.h"
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -175,9 +177,9 @@ void CLIENTDEMO_BeginRecording( const char *pszDemoName )
 		return;
 
 	// First, setup the demo name.
-	g_DemoName = pszDemoName;
+	// [rc4l] A client demo is always a .cld, whatever extension the name carries (features/command-safety).
+	g_DemoName = zx::ComputeOwnExtension( pszDemoName, { ".cld" } ).c_str( );
 	FixPathSeperator( g_DemoName );
-	DefaultExtension( g_DemoName, ".cld" );
 
 	// Allocate 128KB of memory for the demo buffer.
 	g_bDemoRecording = true;
@@ -540,7 +542,9 @@ void CLIENTDEMO_ReadPacket( void )
 				if ( g_ulTicsToSkip > 0 )
 				{
 					// [BB] When skipping a tic, we still need to process the current ticcmd_t.
+					p_NoInterpolate = r_NoInterpolate;
 					P_Ticker ();
+					r_NoInterpolate = p_NoInterpolate;
 					--g_ulTicsToSkip;
 				}
 			}
@@ -615,7 +619,11 @@ void CLIENTDEMO_ReadPacket( void )
 						if ( g_ConsolePlayerUnrestricted )
 						{
 							players[consoleplayer].mo->flags |= MF_NOCLIP;
-							players[consoleplayer].cheats |= (CF_FLY | CF_NOCLIP | CF_NOCLIP2);
+	// [rc4l] uzdoom@337682934 moved the fly state from player_t::cheats to the actor's flags7, and
+	// nothing reads CF_FLY any more. This is a Zandronum call site upstream has no equivalent of, so
+	// it has to be carried across by hand or flight is silently lost here.
+							players[consoleplayer].cheats |= (CF_NOCLIP | CF_NOCLIP2);
+							players[consoleplayer].mo->flags7 |= MF7_FLYCHEAT;
 						}
 						else
 						{

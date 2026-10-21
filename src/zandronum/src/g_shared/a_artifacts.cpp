@@ -71,7 +71,10 @@ bool APowerupGiver::Use (bool pickup)
 	}
 	if (BlendColor != 0)
 	{
-		power->BlendColor = BlendColor;
+		// [rc4l] uzdoom@fbe14d59b with its correction uzdoom@e6de24a7d: a powerup whose blend is
+		// the 'no colormap' sentinel must not overwrite the one already in effect. The first
+		// version tested alpha != 0, which also rejected legitimate special colormaps.
+		if (BlendColor != MakeSpecialColormap(65535)) power->BlendColor = BlendColor;
 	}
 	if (Mode != NAME_None)
 	{
@@ -1044,7 +1047,7 @@ void APowerFlight::EndEffect ()
 	{
 		return;
 	}
-	if (!(Owner->player->cheats & CF_FLY))
+	if (!(Owner->flags7 & MF7_FLYCHEAT))	// [rc4l] uzdoom@337682934
 	{
 		if (Owner->z != Owner->floorz)
 		{
@@ -1988,7 +1991,7 @@ void APowerMorph::EndEffect( )
 	if (!bNoCallUndoMorph)
 	{
 		int savedMorphTics = Player->morphTics;
-		P_UndoPlayerMorph (Player, Player);
+		P_UndoPlayerMorph (Player, Player, 0, !!(Player->MorphStyle & MORPH_UNDOALWAYS));
 
 		// Abort if unmorph failed; in that case,
 		// set the usual retry timer and return.

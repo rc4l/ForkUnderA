@@ -124,6 +124,19 @@ ScaleReconcile ComputeScaleReconcile(
 	int cachedClientWidth, int cachedClientHeight,
 	int wantWidth, int wantHeight);
 
+// [rc4l] A point in WINDOW pixels to the RENDER pixels everything is drawn in, since the scale
+// feature keeps the window at one size and renders into a buffer of another.
+//
+// Upstream calls this ScaleCoordsFromWindow, and ours is the same idea against a present rect that
+// fills the client rather than letterboxing inside it, so there is no offset to undo.
+//
+// A size of zero or less means nothing has been set up yet, and the point is left alone rather than
+// scaled by a ratio invented from it.
+void ScaleWindowPointToRender(
+	int clientWidth, int clientHeight,
+	int renderWidth, int renderHeight,
+	int &x, int &y);
+
 } // namespace zx
 
 #endif // ZX_VIDEOSCALE_COMPUTE_H

@@ -85,6 +85,14 @@ typedef struct
 	// [BB] Does the server enforce the holy banlist locally?
 	mutable bool	bEnforcesBanList;
 
+	// [rc4l] Can this server open a hole for a joiner when asked?
+	//
+	// Mutable and set from the announce, where old builds simply say nothing and land on false. That
+	// false is the whole point: it is what lets the registry refuse a punch request INSTANTLY for
+	// every server that predates the feature, instead of instructing something that will never
+	// answer and leaving the client to time out.
+	mutable bool	bSupportsPunch;
+
 	// [BB] Is the server using the latest Skulltag version
 	bool	bNewFormatServer;
 
@@ -96,6 +104,10 @@ typedef struct
 
 	// [BB] Number that we send the server along with our verification request.
 	__int32 ServerVerificationInt;
+
+	// [rc4l] What this server calls itself, never sent on, because publishing an id derived from its
+	// secret would let anyone have somebody else's listing merged away.
+	mutable std::string	RegistryId;
 
 } SERVER_s;
 

@@ -347,18 +347,32 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 	}
 }
 
-bool EV_DoPillar (DPillar::EPillar type, int tag, fixed_t speed, fixed_t height,
+// [rc4l] uzdoom@c3c22315d -- a zero tag means "manual trigger": act on the activating line's
+// back sector instead of iterating tagged sectors.
+bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
 				  fixed_t height2, int crush, bool hexencrush)
 {
+	int secnum;
+	sector_t *sec;
 	bool rtn = false;
-	int secnum = -1;
 	// [BC]
 	DPillar		*pPillar;
 
-	while ((secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
+	// check if a manual trigger; if so do just the sector on the backside
+	if (tag == 0)
 	{
-		sector_t *sec = &sectors[secnum];
+		if (!line || !(sec = line->backsector))
+			return rtn;
+		secnum = (int)(sec - sectors);
+		goto manual_pillar;
+	}
 
+	secnum = -1;
+	while (tag && (secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
+	{
+		sec = &sectors[secnum];
+
+manual_pillar:
 		if (sec->PlaneMoving(sector_t::floor) || sec->PlaneMoving(sector_t::ceiling))
 			continue;
 

@@ -52,7 +52,13 @@ int GetRevisionNumber();
 
 #define GAME_MAJOR_VERSION 3
 #define GAME_MINOR_VERSION 1
-#define GAMEVER_STRING "3.2.1"
+// [rc4l] Our release, not the Zandronum release we forked from. This is the string a client sends on
+// connect and a server rejects it over, so builds that are not interchangeable must not claim to be.
+// Set by src/zandronum/CMakeLists.txt; the fallback is for builds that bypass our CMake.
+#ifndef FUA_GAMEVER_STRING
+#define FUA_GAMEVER_STRING "3.2.1"
+#endif
+#define GAMEVER_STRING FUA_GAMEVER_STRING
 #define DOTVERSIONSTR GAMEVER_STRING
 #define VERSIONSTR DOTVERSIONSTR
 
@@ -91,7 +97,7 @@ int GetRevisionNumber();
 // Version stored in the ini's [LastRun] section.
 // Bump it if you made some configuration change that you want to
 // be able to migrate in FGameConfigFile::DoGlobalSetup().
-#define LASTRUNVERSION "210"
+#define LASTRUNVERSION "211"
 
 // [TP] Same as above except for Zandronum-specific changes
 #define LASTZARUNVERSION "181"
@@ -135,6 +141,7 @@ int GetRevisionNumber();
 // [rc4l] 4512: level_info_t / FLevelLocals sky, fade, F1, border and background name fields became
 // FStrings and the sky pair became FTextureIDs (uzdoom@65e8563cf), so the serialised layout changed
 // and older saves must not be read back into it.
+
 // [rc4l] 4513: map names in level snapshots are stored as full strings rather than a fixed
 // 8-character field (uzdoom@8ec95dc58). Upstream numbered the same change 4508; ours is a separate
 // line that was already past that.
@@ -154,7 +161,17 @@ int GetRevisionNumber();
 // garbage (uzdoom@3437f4fca + c494063eb). Upstream numbered it 4516; ours is a separate line.
 // [rc4l] 4519: AActor serializes DamageMultiply, the outgoing-damage scale reachable from
 // DECORATE and from ACS via APROP_DamageMultiplier (uzdoom@99b2cfa14 + e303833e5).
-#define SAVEVER 4519
+// [rc4l] 4520: AActor serializes TeleFogSourceType/TeleFogDestType, the per-actor teleport fog
+// classes reachable from DECORATE and from ACS SetTeleFog/SwapTeleFog (uzdoom@30acb7200 cluster).
+// [rc4l] 4521: AActor serializes mvFlags and APlayerPawn serializes MvType, the Quake movement
+// model and its flag word (features/quake-movement). Numbered above upstream's 4520 rather than
+// reusing the 4513 this branch was written against: saves made by builds 4514-4520 do not contain
+// these fields, and a >= 4513 guard would have read them out of a file that never had them.
+// [rc4l] 4523: uzdoom@3463b8787, MUSINFO state moved onto player_t.
+// [rc4l] 4524: level snapshots hold DFlatDecal, features/decals' floor and ceiling marks, a class older
+// builds do not know; from here a build refuses a save newer than its own (ComputeSaveVersionVerdict).
+#define SAVEVER 4524
+
 
 #define SAVEVERSTRINGIFY2(x) #x
 #define SAVEVERSTRINGIFY(x) SAVEVERSTRINGIFY2(x)
@@ -163,27 +180,50 @@ int GetRevisionNumber();
 #define DYNLIGHT
 
 // This is so that derivates can use the same savegame versions without worrying about engine compatibility
-#define GAMESIG "ZANDRONUM"
-#define BASEWAD "zandronum.pk3"
+// [rc4l] Ours now. It is the engine string inside savegames (GetEngineString, g_game.cpp), so saves
+// written by a build that still said ZANDRONUM will not load. Taken deliberately as part of the
+// rebrand: this is a new foundation, not a Zandronum install with a different label.
+#define GAMESIG "FORKUNDERA"
+// [rc4l] The engine data pk3, named with this build's release key by src/zandronum/CMakeLists.txt so
+// a stale one is not found rather than silently loaded. The fallback only exists for builds that
+// bypass our CMake entirely.
+#ifndef FUA_CORE_PK3_NAME
+#define FUA_CORE_PK3_NAME "fua_core_dev.pk3"
+#endif
+#define BASEWAD FUA_CORE_PK3_NAME
 
 // [rc4l] THE product display name. Every user-facing place that names this engine -- the console
 // version line, the window/taskbar title -- reads this one macro, so a rebrand is a one-line edit
 // here rather than a hunt through the tree.
 //
-// Deliberately NOT reusing GAMESIG / GAMENAME / GAMENAMELOWERCASE for this. Those look like display
-// names but are load-bearing compatibility values: GAMENAMELOWERCASE is the config FILENAME
-// (m_specialpaths.cpp) so changing it silently orphans everyone's settings, and GAMESIG identifies
-// the engine inside savegames via GetEngineString() (g_game.cpp) so changing it invalidates saves.
-// Renaming the product must not do either of those things.
+// Still separate from GAMESIG / GAMENAME / GAMENAMELOWERCASE, which are not display names however
+// much they read like them: GAMENAMELOWERCASE is the config FILENAME (m_specialpaths.cpp) and
+// GAMESIG is the engine string inside savegames (GetEngineString, g_game.cpp). All three have now
+// been moved to ForkUnderA anyway, which orphans existing settings and saves. That was a deliberate
+// call, not a side effect: one clean break at the rebrand rather than carrying the old name forever.
+// The separation stays because they answer different questions, and the next rename should not have
+// to be a break as well.
 #define FUA_NAME "Fua"
 
+// [rc4l] What a server we start for the player is called by default, on the HOST form and in the
+// browser. Built from FUA_NAME rather than spelled out, so the next rename is still one line.
+#define FUA_DEFAULT_SERVERNAME	FUA_NAME " Server"
+
 // More stuff that needs to be different for derivatives.
-#define GAMENAME "Zandronum"
-#define GAMENAMELOWERCASE "zandronum"
+#define GAMENAME "ForkUnderA"
+#define GAMENAMELOWERCASE "forkundera"
 #define DOMAIN_NAME "zandronum.com"
 #define FORUM_URL "https://" DOMAIN_NAME "/forum/"
 #define BUGS_FORUM_URL	"https://" DOMAIN_NAME "/tracker/"
 #define WIKI_URL "https://wiki." DOMAIN_NAME "/"
+
+// [rc4l] Where a player is sent when their BUILD does not match a server's.
+//
+// Deliberately not DOMAIN_NAME. A protocol mismatch against a ZandroX server is a ZandroX build
+// mismatch, and zandronum.com has nothing to offer that player -- it does not publish the build they
+// are being told to go and find. The other DOMAIN_NAME uses are Zandronum's own services (the
+// buy-Doom and Freedoom redirects) and stay where they are.
+#define FUA_RELEASES_URL "https://github.com/rc4l/ForkUnderA/releases"
 
 // [BC] This is what's displayed as the title for server windows.
 #define	SERVERCONSOLE_TITLESTRING	GAMENAME " v" DOTVERSIONSTR " Server"

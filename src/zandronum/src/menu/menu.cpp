@@ -33,6 +33,7 @@
 */
 
 #include "doomdef.h"
+#include "features/handoff/effects.h"   // [rc4l] QueuedForHandoff
 #include "doomstat.h"
 #include "c_dispatch.h"
 #include "d_gui.h"
@@ -66,7 +67,9 @@
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "cl_commands.h"
-#include "network/cl_auth.h"
+#include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
+#include "features/server-hosting/zx_hosting.h" // [rc4l] starting a game closes a server we are running
+#include "features/global-header/zx_globalheader.h" // [rc4l] the tab bar drawn over every menu
 
 //
 // Todo: Move these elsewhere
@@ -195,6 +198,7 @@ bool DMenu::MenuEvent (int mkey, bool fromcontroller)
 		Close();
 		S_Sound (CHAN_VOICE | CHAN_UI, 
 			DMenu::CurrentMenu != NULL? "menu/backup" : "menu/clear", snd_menuvolume, ATTN_NONE);
+
 		return true;
 	}
 	}
@@ -243,9 +247,40 @@ bool DMenu::MouseEvent(int type, int x, int y)
 
 //=============================================================================
 //
+// [rc4l] Menus opt IN to handing Up to the global tab bar. Silence means "I keep my arrows".
+//
+//=============================================================================
+
+bool DMenu::AtTopRow()
+{
+	return false;
+}
+
+//=============================================================================
+//
 //
 //
 //=============================================================================
+
+//=============================================================================
+//
+// [rc4l] Where the back button's top-left corner goes, in real pixels.
+//
+// Its home is the top-left of the screen, and the global header now owns that corner: the arrows sat
+// on the bar, or in the band of game above it, depending on the window's shape. The bar is chrome
+// that spans the whole width, so the button moves out from under it rather than fighting it, and
+// takes the same padding off that edge that it now takes off the left one.
+//
+// Shared by the drawing and the hit test on purpose. They were already two copies of this sum, and
+// a back button you can see but not click is the classic result of letting them drift.
+static void M_BackButtonOrigin(int w, int h, int &x, int &y)
+{
+	const int pad = 2 * CleanXfac;
+
+	x = (m_show_backbutton & 1) ? screen->GetWidth() - w : pad;
+	y = (m_show_backbutton & 2) ? screen->GetHeight() - h
+		: zx::GlobalHeader_ScreenBottom() + 2 * CleanYfac;
+}
 
 bool DMenu::MouseEventBack(int type, int x, int y)
 {
@@ -254,10 +289,13 @@ bool DMenu::MouseEventBack(int type, int x, int y)
 		FTexture *tex = TexMan(gameinfo.mBackButton);
 		if (tex != NULL)
 		{
-			if (m_show_backbutton&1) x -= screen->GetWidth() - tex->GetScaledWidth() * CleanXfac;
-			if (m_show_backbutton&2) y -= screen->GetHeight() - tex->GetScaledHeight() * CleanYfac;
-			mBackbuttonSelected = ( x >= 0 && x < tex->GetScaledWidth() * CleanXfac && 
-									y >= 0 && y < tex->GetScaledHeight() * CleanYfac);
+			const int w = tex->GetScaledWidth() * CleanXfac;
+			const int h = tex->GetScaledHeight() * CleanYfac;
+
+			int ox, oy;
+			M_BackButtonOrigin(w, h, ox, oy);
+
+			mBackbuttonSelected = (x >= ox && x < ox + w && y >= oy && y < oy + h);
 			if (mBackbuttonSelected && type == MOUSE_Release)
 			{
 				if (m_use_mouse == 2) mBackbuttonSelected = false;
@@ -310,8 +348,8 @@ void DMenu::Drawer ()
 		FTexture *tex = TexMan(gameinfo.mBackButton);
 		int w = tex->GetScaledWidth() * CleanXfac;
 		int h = tex->GetScaledHeight() * CleanYfac;
-		int x = (!(m_show_backbutton&1))? 0:screen->GetWidth() - w;
-		int y = (!(m_show_backbutton&2))? 0:screen->GetHeight() - h;
+		int x, y;
+		M_BackButtonOrigin(w, h, x, y);
 		if (mBackbuttonSelected && (mMouseCapture || m_use_mouse == 1))
 		{
 			screen->DrawTexture(tex, x, y, DTA_CleanNoMove, true, DTA_ColorOverlay, MAKEARGB(40, 255,255,255), TAG_DONE);
@@ -393,17 +431,35 @@ void DEnterKey::Drawer()
 //
 //=============================================================================
 
-void M_StartControlPanel (bool makeSound)
+// [rc4l] Let go of every menu key the framework thinks is held.
+//
+// M_Responder latches a key on the way down and unlatches it on the way up, and M_Ticker repeats
+// whatever is still latched. A menu that turns TranslateKeyboardEvents off mid-press -- which is what
+// happens the moment focus lands in the server browser's search box -- never gets the matching
+// release, because the release is no longer being translated. The button then repeats forever and
+// shoves the focus around while the player is trying to type.
+//
+// Opening the menu already did exactly this loop for the same reason; it just needed a name so
+// anything taking the keyboard can say so.
+void M_ReleaseMenuButtons ()
 {
-	// intro might call this repeatedly
-	if (DMenu::CurrentMenu != NULL)
-		return;
-
-	ResetButtonStates ();
 	for (int i = 0; i < NUM_MKEYS; ++i)
 	{
 		MenuButtons[i].ReleaseKey(0);
+		MenuButtonTickers[i] = 0;
 	}
+}
+
+bool M_StartControlPanel (bool makeSound, bool allowRedirect)
+{
+	// [rc4l] features/handoff: the menus are the main thread's, so a tic on its own thread opens them in the handoff.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t b) { M_StartControlPanel (a != 0, b != 0); }, makeSound, allowRedirect })) return true;
+	// intro might call this repeatedly
+	if (DMenu::CurrentMenu != NULL)
+		return false;
+
+	ResetButtonStates ();
+	M_ReleaseMenuButtons ();
 
 	C_HideConsole ();				// [RH] Make sure console goes bye bye.
 	menuactive = MENU_On;
@@ -415,12 +471,30 @@ void M_StartControlPanel (bool makeSound)
 	{
 		S_Sound (CHAN_VOICE | CHAN_UI, "menu/activate", snd_menuvolume, ATTN_NONE);
 	}
+
+	// [rc4l] A download finished while the player was elsewhere, so its join is waiting. The band on
+	// screen says "Open the Menu", and this is opening the menu -- so it goes where the band
+	// promised, rather than to a main menu the player then has to navigate out of.
+	//
+	// It used to hang off MKEY_Back instead, which acted on the OPPOSITE gesture to the one being
+	// asked for: the band said open, and the jump happened when you backed out. Backing out is the
+	// one input that reliably means "I am leaving this", and giving it a second, invisible meaning
+	// is how Escape stopped doing what Escape does.
+	// [rc4l] Two reasons to open somewhere other than the main menu, and they answer the same way: a
+	// join that finished while the player was in the game, or a browser they were in when they left.
+	if (allowRedirect && (zx::ConsumeJoinReady() || zx::GlobalHeader_ResumeBrowser()))
+	{
+		M_SetMenu("ZA_Browser", -1);
+		return true;
+	}
 	BackbuttonTime = 0;
 	BackbuttonAlpha = 0;
 
 	// [BB] Don't change the displayed menu status when a demo is played.
 	if ( CLIENTDEMO_IsPlaying( ) == false )
 		PLAYER_SetStatus( &players[consoleplayer], PLAYERSTATUS_INMENU, true, SETPLAYERSTATUS_CLIENTSENDSUPDATE );
+
+	return false;
 }
 
 //=============================================================================
@@ -445,6 +519,7 @@ void M_ActivateMenu(DMenu *menu)
 
 void M_SetMenu(FName menu, int param)
 {
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t a, intptr_t b) { M_SetMenu (FName (ENamedName (a)), int (b)); }, intptr_t (menu.GetIndex ()), param })) return;
 	// some menus need some special treatment
 	switch (menu)
 	{
@@ -529,6 +604,27 @@ void M_SetMenu(FName menu, int param)
 		}
 	case NAME_StartgameConfirmed:
 
+		// [rc4l] A server of ours is a thing other people are standing in, and starting a game takes
+		// it away from them without a word. Everywhere else that ends a hosted server asks first --
+		// the HOST tab's STOP button, and now joining someone else's server -- so this asks too.
+		//
+		// Placed on Confirmed rather than earlier so it is the LAST question, after the skill
+		// prompts: being asked about your server and then still having to pick a skill would leave
+		// the answer stale by the time anything happened.
+		if ( zx::HostCurrentState( ) != zx::HostState::Idle )
+		{
+			M_StartMessage( "starting a game closes the server\nyou are running, and disconnects\n"
+				"anyone playing on it.\n\npress y or n.", 0, NAME_FuaStopHostAndStartgame );
+			return;
+		}
+
+		// Falls through: the server is gone, so this is now an ordinary start.
+	case NAME_FuaStopHostAndStartgame:
+
+		// [rc4l] Stop before the game starts, not after. G_DeferedInitNew below does not come back
+		// here, so a stop deferred past it would never run and the server would outlive the menu.
+		zx::HostStop( );
+
 		// [BC/BB] Put us back in single player mode, and reset our dmflags.
 		{
 			UCVarValue	Val;
@@ -573,29 +669,6 @@ void M_SetMenu(FName menu, int param)
 		if (( NETWORK_GetState() == NETSTATE_CLIENT ) && ( CLIENT_HasRCONAccess() == false ))
 			menu = NAME_ZA_RconLoginMenu;
 		break;
-
-	case NAME_ZA_LoginMenu:
-		// [AK] Prevent the login menu from opening if the client is already logged in.
-		if (( NETWORK_GetState() == NETSTATE_CLIENT ) && ( CLIENT_IsLoggedIn()))
-		{
-			M_StartMessage( "You are already logged in.\n\npress a key.", 1 );
-			return;
-		}
-
-#ifdef WIN32
-		FBaseCVar *usernameCVar = FindCVar( "menu_authusername", nullptr );
-
-		// [AK] Set the username in the login menu to the client's default username when the menu's opened
-		// for the first time (i.e. "menu_authusername" hasn't been changed yet).
-		if (( usernameCVar != nullptr ) && ( strlen( usernameCVar->GetGenericRep( CVAR_String ).String ) == 0 ))
-		{
-			UCVarValue val;
-			val.String = login_default_user.GetGenericRep( CVAR_String ).String;
-			usernameCVar->SetGenericRep( val, CVAR_String );
-		}
-#endif
-
-		break;
 	}
 
 	// End of special checks
@@ -604,7 +677,24 @@ void M_SetMenu(FName menu, int param)
 	if (desc != NULL)
 	{
 		// [BB] netgame -> ( NETWORK_GetState( ) == NETSTATE_CLIENT )
-		if ((*desc)->mNetgameMessage.IsNotEmpty() && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && !demoplayback)
+		//
+		// [rc4l] Restricted to save/load. This used to refuse ANY descriptor carrying a
+		// NetgameMessage, and that is data a MOD owns: a pk3's own MENUDEF replaces ours wholesale,
+		// so the flag arrives from whatever the mod inherited or copied, not from a decision that
+		// this menu is unsafe online. Total conversions route their own setup through those menus --
+		// MM8BDM refuses to let a connected player open its join/class flow and tells them they
+		// "can't start a new game", which is neither true nor actionable -- and nothing we ship can
+		// fix it, because the mod's definitions win over ours.
+		//
+		// Saving and loading are the two where a client genuinely cannot proceed: the server owns
+		// the game state, so both would fail or desync no matter what the menu says. Those keep the
+		// refusal, by NAME, where a mod cannot accidentally opt out of it either.
+		//
+		// Everything else opens. Opening a menu is harmless; the actions inside it that cannot work
+		// as a client are already refused where they are performed -- G_DeferedInitNew is
+		// server-driven, and NAME_Savegamemenu has its own SAVEDEAD check above.
+		const bool bClientOnlyMenu = ( menu == NAME_Savegamemenu ) || ( menu == NAME_Loadgamemenu );
+		if ( bClientOnlyMenu && (*desc)->mNetgameMessage.IsNotEmpty() && ( NETWORK_GetState( ) == NETSTATE_CLIENT ) && !demoplayback)
 		{
 			M_StartMessage((*desc)->mNetgameMessage, 1);
 			return;
@@ -742,6 +832,20 @@ bool M_Responder (event_t *ev)
 			fromcontroller = false;
 			if (ev->subtype == EV_GUI_KeyRepeat)
 			{
+				// [rc4l] A menu that asked for RAW keys gets the OS's repeats.
+				//
+				// This returned true unconditionally, so a held key was eaten here and no menu ever
+				// saw a repeat. That is right for menu NAVIGATION -- the repetition below is done by
+				// hand so gamepads behave like keyboards -- and wrong for a text field, which is not
+				// navigating anything and wants exactly what the OS sends. Holding left in the search
+				// box or on the hosting form moved the caret one character and then stopped.
+				//
+				// TranslateKeyboardEvents is already the question "does this menu want raw keys",
+				// and a menu answers no only while a field has focus, so this hands repeats to the
+				// one case that needs them and changes nothing for every other menu.
+				if (!DMenu::CurrentMenu->TranslateKeyboardEvents())
+					return DMenu::CurrentMenu->Responder(ev);
+
 				// We do our own key repeat handling but still want to eat the
 				// OS's repeated keys.
 				return true;
@@ -758,6 +862,20 @@ bool M_Responder (event_t *ev)
 				{
 						if (!m_use_mouse)
 							return true;
+
+						// [rc4l] The tab bar gets first refusal on anything over it. It is drawn on
+						// top, so it has to be asked first, or the menu underneath answers for
+						// pixels the player can see belong to the bar.
+						if (ev->subtype == EV_GUI_MouseMove)
+						{
+							if (zx::GlobalHeader_MouseMove(ev->data1, ev->data2))
+								return true;
+						}
+						else if (ev->subtype == EV_GUI_LButtonDown)
+						{
+							if (zx::GlobalHeader_MouseClick(ev->data1, ev->data2))
+								return true;
+						}
 				}
 
 				// pass everything else on to the current menu
@@ -865,6 +983,58 @@ bool M_Responder (event_t *ev)
 				{
 					MenuButtonTickers[mkey] = KEY_REPEAT_DELAY;
 				}
+				// [rc4l] While the tab bar holds the arrows, the menu underneath sees none of them.
+				//
+				// That is what having focus means, and routing the key to both would move the bar's
+				// cursor and the menu's selection at the same time -- two carets, one keypress.
+				// [rc4l] ESCAPE MEANS ESCAPE, and it is dealt with before the bar gets a look in.
+				//
+				// It used to be one of the bar's cases, which spent the keypress handing the arrows
+				// back: a player who had walked up to the bar then had to press Escape twice, once
+				// to leave the bar and once to leave the menu. Escape is the one key that must never
+				// be absorbed by something the player did not ask to be in, so the bar's focus is
+				// dropped here as a side effect and the key carries on to the menu regardless.
+				if (mkey == MKEY_Back)
+				{
+					zx::GlobalHeader_ReleaseFocus();
+				}
+				else if (zx::GlobalHeader_HasFocus())
+				{
+					// While the tab bar holds the arrows, the menu underneath sees none of them.
+					// That is what having focus means, and routing the key to both would move the
+					// bar's cursor and the menu's selection at once: two carets, one keypress.
+					bool handled = false;
+					switch (mkey)
+					{
+					case MKEY_Left:		handled = zx::GlobalHeader_NavLeft();	break;
+					case MKEY_Right:	handled = zx::GlobalHeader_NavRight();	break;
+					case MKEY_Down:		handled = zx::GlobalHeader_NavDown();	break;
+					case MKEY_Enter:	handled = zx::GlobalHeader_Activate();	break;
+
+					// Up is already at the top of everything.
+					case MKEY_Up:		handled = true;							break;
+					default:											break;
+					}
+
+					if (handled)
+						return true;
+				}
+				// [rc4l] Up off the top row of a menu is how the keyboard reaches the bar.
+				//
+				// Asked here rather than inside each menu's Up because the bar sits above ALL of
+				// them: putting the question in one place is what stops the answer drifting apart
+				// menu by menu, and a mod's own menu inherits the behaviour without knowing.
+				//
+				// It costs the wrap from the top row to the bottom one, which is the trade every
+				// game with a tab strip makes: there is now something above the first row, so Up
+				// goes to it.
+				else if (mkey == MKEY_Up && DMenu::CurrentMenu->AtTopRow())
+				{
+					zx::GlobalHeader_TakeFocus();
+					S_Sound(CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE);
+					return true;
+				}
+
 				DMenu::CurrentMenu->MenuEvent(mkey, fromcontroller);
 				return true;
 			}
@@ -878,8 +1048,15 @@ bool M_Responder (event_t *ev)
 			// Pop-up menu?
 			if (ev->data1 == KEY_ESCAPE)
 			{
-				M_StartControlPanel(true);
-				M_SetMenu(NAME_Mainmenu, -1);
+				// [rc4l] ASK whether the panel already routed us, rather than deciding again.
+				//
+				// Both did, and both consumed the waiting join to find out. M_StartControlPanel got
+				// there first and opened the browser, which left the flag clear, so the test here
+				// came out false and the main menu was set straight over the top. Escape stopped
+				// honouring the "Open the Menu" band it had honoured a moment before, and the cause
+				// was never in this branch: it was that the question was asked twice.
+				if (!M_StartControlPanel(true))
+					M_SetMenu(NAME_Mainmenu, -1);
 				return true;
 			}
 			// If devparm is set, pressing F1 always takes a screenshot no matter
@@ -894,8 +1071,13 @@ bool M_Responder (event_t *ev)
 		else if (ev->type == EV_GUI_Event && ev->subtype == EV_GUI_LButtonDown && 
 				 ConsoleState != c_down && m_use_mouse)
 		{
-			M_StartControlPanel(true);
-			M_SetMenu(NAME_Mainmenu, -1);
+			// [rc4l] A download finished while the player was away, so its join is waiting. Opening
+			// the menu is the one deliberate "I am ready to stop playing" gesture there is, so it is
+			// what we hang this on -- no new key to bind, nothing to conflict with, and impossible to
+			// trigger mid-fight by accident. They land on the list and press JOIN themselves. The
+			// panel owns that decision now; this only supplies the default when it did not act.
+			if (!M_StartControlPanel(true))
+				M_SetMenu(NAME_Mainmenu, -1);
 			return true;
 		}
 	}
@@ -948,10 +1130,11 @@ void M_Ticker (void)
 void M_Drawer (void) 
 {
 	player_t *player = &players[consoleplayer];
-	AActor *camera = player->camera;
 	PalEntry fade = 0;
 
-	if (!screen->Accel2D && camera != NULL && (gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL))
+	// [rc4l] The camera read only where the software fade needs it, since reading it touches the pawn a tic on the game thread is ticking.
+	AActor *camera = !screen->Accel2D && (gamestate == GS_LEVEL || gamestate == GS_TITLELEVEL) ? (AActor *)player->camera : NULL;
+	if (camera != NULL)
 	{
 		if (camera->player != NULL)
 		{
@@ -969,6 +1152,13 @@ void M_Drawer (void)
 			V_SetBorderNeedRefresh();
 		}
 		DMenu::CurrentMenu->Drawer();
+
+		// [rc4l] The global tab bar, drawn AFTER the menu and over every one of them.
+		//
+		// Here rather than in a menu descriptor because MENUDEF is replaced wholesale by any total
+		// conversion, and a route to online play that a mod can delete by accident is not a route.
+		// Everything below is shifted down by GlobalHeader_MenuOffsetY() to make room.
+		zx::GlobalHeader_Draw();
 	}
 }
 
@@ -980,6 +1170,7 @@ void M_Drawer (void)
 
 void M_ClearMenus ()
 {
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t, intptr_t) { M_ClearMenus (); }, 0, 0 })) return;
 	M_DemoNoPlay = false;
 	if (DMenu::CurrentMenu != NULL)
 	{
@@ -989,6 +1180,11 @@ void M_ClearMenus ()
 	D_SendPendingUserinfoChanges(); // [TP]
 	V_SetBorderNeedRefresh();
 	menuactive = MENU_Off;
+
+	// [rc4l] The bar does not keep the arrows across a closed menu. Escape has to land on the first
+	// row of the main menu every time, and a bar still holding focus from last time would swallow
+	// the arrows of a menu the player has only just opened.
+	zx::GlobalHeader_ReleaseFocus();
 
 	// [AK] If we're not in a menu, then we're obviously not in the server setup menu.
 	ServerSetupMenu = NULL;
@@ -1065,8 +1261,11 @@ bool M_IsValidMenu( const char *name )
 
 CCMD (menu_main)
 {
-	M_StartControlPanel(true);
-	M_SetMenu(NAME_Mainmenu, -1);
+	// [rc4l] Same redirect as the escape key: opening the main menu is opening the main menu however
+	// the player got there, and a waiting join should not depend on which route they took. Which is
+	// why the decision lives in one place and this asks it rather than repeating it.
+	if (!M_StartControlPanel(true))
+		M_SetMenu(NAME_Mainmenu, -1);
 }
 
 CCMD (menu_load)

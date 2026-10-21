@@ -26,6 +26,8 @@
 //-----------------------------------------------------------------------------
 
 #include <stddef.h>
+#include "features/gameloop/loop.h"   // [rc4l] RunTic
+#include "features/gameloop/computation/threadedtic_compute.h"   // [rc4l] ComputeTicDrawn
 
 #include "version.h"
 #include "menu/menu.h"
@@ -39,6 +41,7 @@
 #include "c_console.h"
 #include "d_netinf.h"
 #include "d_net.h"
+#include "features/mainloop/mainloop.h"   // [rc4l] Stepped
 #include "cmdlib.h"
 #include "s_sound.h"
 #include "m_cheat.h"
@@ -74,6 +77,11 @@
 #include "sv_commands.h"
 #include "team.h"
 #include "chat.h"
+#include "mcp_ticprof.h" // [ForkUnderA] per-tic sim profiler (no-op unless FUA_MCP_BRIDGE)
+#include "mcp_simtrace.h" // [ForkUnderA] sim tracer tic boundary (no-op unless FUA_MCP_BRIDGE)
+#include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
+#include "features/telemetry/telemetry.h"
+#include "features/decals/decals.h"   // [rc4l] MarkSpray
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
@@ -170,7 +178,7 @@ static struct TicSpecial
 	size_t used[BACKUPTICS];
 	BYTE *streamptr;
 	size_t streamoffs;
-	int   specialsize;
+	size_t specialsize;	// [rc4l] uzdoom@86986446a
 	int	  lastmaketic;
 	bool  okay;
 
@@ -209,11 +217,11 @@ static struct TicSpecial
 	}
 
 	// Make more room for special commands.
-	void GetMoreSpace ()
+	void GetMoreSpace (size_t needed)
 	{
 		int i;
 
-		specialsize <<= 1;
+		specialsize = MAX(specialsize * 2, needed + 30);
 
 		DPrintf ("Expanding special size to %zu\n", specialsize);
 
@@ -225,8 +233,11 @@ static struct TicSpecial
 
 	void CheckSpace (size_t needed)
 	{
-		if (streamoffs >= specialsize - needed)
-			GetMoreSpace ();
+		// [rc4l] uzdoom@86986446a -- specialsize - needed underflows when a single write is larger
+		// than the whole buffer (a long chat line or savegame path), so the old guard passed and
+		// nothing grew. Compare the sum instead, and grow to fit rather than merely doubling.
+		if (streamoffs + needed >= specialsize)
+			GetMoreSpace (streamoffs + needed);
 
 		streamoffs += needed;
 	}
@@ -1747,7 +1758,8 @@ void TryRunTics (void)
 	bool doWait = cl_capfps || r_NoInterpolate /*|| netgame*/;
 
 	// get real tics
-	if (doWait)
+	// [rc4l] A stepped loop never waits for a tic; its driver calls again next frame.
+	if (doWait && !zx::mainloop::Stepped())
 	{
 		entertic = I_WaitForTic (oldentertics);
 	}
@@ -1789,11 +1801,13 @@ void TryRunTics (void)
 		counts = realtics;
 	else
 		counts = availabletics;
-	
-	if (counts == 0 && !doWait)
+
+
+	// [rc4l] Nor does it run a tic before one is due, which waiting would have made due.
+	if (counts == 0 && (!doWait || zx::mainloop::Stepped()))
 	{
 		// Check possible stall conditions
-		Net_CheckLastRecieved(counts);
+		Net_CheckLastReceived(counts);
 		return;
 	}
 
@@ -1875,7 +1889,7 @@ void TryRunTics (void)
 				I_Error ("TryRunTics: lowtic < gametic");
 
 		// Check possible stall conditions
-		Net_CheckLastRecieved (counts);
+		Net_CheckLastReceived (counts);
 
 			// don't stay in here forever -- give the menu a chance to work
 			if (I_GetTime (false) - entertic >= TICRATE/3)
@@ -1907,19 +1921,48 @@ void TryRunTics (void)
 				D_DoAdvanceDemo ();
 			}
 			if (debugfile) fprintf (debugfile, "run tic %d\n", gametic);
-			C_Ticker ();
-			M_Ticker ();
-			I_GetTime (true);
-			G_Ticker ();
-			gametic++;
-
-			NetUpdate ();	// check for new console commands
+			// [rc4l] features/handoff: the handoff's work, the playsim's tic and the handoff's work again, the render copy left to the last tic the frame draws.
+			zx::gameloop::RunTic (zx::gameloop::ComputeTicDrawn (counts));
 		}
 		S_UpdateSounds (players[consoleplayer].camera);	// move positional sounds
 	}
 }
 
-void Net_CheckLastRecieved (int counts)
+// [rc4l] features/handoff: how many tics are due now, the input taken and the clock read, running none; TryRunTics's start for a single-player loop that never waits for a tic.
+int Net_TicsDue (void)
+{
+	entertic = I_GetTime (false);
+	const int realtics = entertic - oldentertics;
+	oldentertics = entertic;
+	NetUpdate ();
+	int lowtic = INT_MAX;
+	for (int i = 0; i < doomcom.numnodes; i++)
+		if (nodeingame[i] && nettics[i] < lowtic)
+			lowtic = nettics[i];
+	const int availabletics = ticdup == 1 ? lowtic - gametic : lowtic - gametic / ticdup;
+	int counts;
+	if (realtics < availabletics-1)
+		counts = realtics+1;
+	else if (realtics < availabletics)
+		counts = realtics;
+	else
+		counts = availabletics;
+	return counts > 0 ? counts : 0;
+}
+
+// [rc4l] features/handoff: the turn of the console player's ticcmds from fromTic up to maketic, built but not yet in the game the frame shows, as 32-bit angles.
+void Net_PendingLocalTurn (int fromTic, int &yaw, int &pitch)
+{
+	yaw = pitch = 0;
+	for (int k = fromTic; k < maketic; k++)
+	{
+		const usercmd_t &cmd = localcmds[k % LOCALCMDTICS].ucmd;
+		yaw += cmd.yaw << 16;
+		pitch += cmd.pitch << 16;
+	}
+}
+
+void Net_CheckLastReceived (int counts)
 {
 	// [Ed850] Check to see the last time a packet was recieved.
 	// If it's longer then 3 seconds, a node has likely stalled.
@@ -1948,11 +1991,15 @@ void Net_CheckLastRecieved (int counts)
 		}
 		else
 		{	//Send a resend request to the Arbitrator, as it's obvious we are stuck here.
-			if (debugfile && !players[playerfornode[Net_Arbitrator]].waiting)
+			// [rc4l] uzdoom@3d7934f1a -- Net_Arbitrator is a PLAYER number, but nettics and
+			// remoteresend are indexed by NODE, so these read and wrote the wrong slots. The
+			// players[] lookup is the mirror image: it wanted the arbitrator directly, not the
+			// player owning the node with the same number.
+			if (debugfile && !players[Net_Arbitrator].waiting)
 				fprintf(debugfile, "Arbitrator is slow (%i to %i)\n",
-				nettics[Net_Arbitrator], gametic + counts);
+				nettics[nodeforplayer[Net_Arbitrator]], gametic + counts);
 			//Send resend request to the Arbitrator. Also mark the Arbitrator as waiting to display it in the hud.
-			remoteresend[Net_Arbitrator] = players[playerfornode[Net_Arbitrator]].waiting = hadlate = true;
+			remoteresend[nodeforplayer[Net_Arbitrator]] = players[Net_Arbitrator].waiting = hadlate = true;
 		}
 	}
 }
@@ -2029,7 +2076,13 @@ void FDynamicBuffer::SetData (const BYTE *data, int len)
 	}
 	else
 	{
-		len = 0;
+		// [rc4l] uzdoom@2c06987f6 -- `len = 0` assigned the LOCAL parameter, so a NULL data pointer
+		// left m_Len stale and the buffer still looked like it held its old contents.
+		//
+		// That commit also added M_Free(m_Data) here, which is NOT taken: it leaves m_Data dangling
+		// while m_BufferLen keeps its old value, so the next call with a small len skips the realloc
+		// and memcpys into freed memory. Upstream removed it again -- HEAD has only the m_Len reset.
+		m_Len = 0;
 	}
 }
 
@@ -2317,12 +2370,7 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 				vx, vy, vz, 172*FRACUNIT, 0, ML_BLOCKEVERYTHING, players[player].mo,
 				trace, TRACE_NoSky))
 			{
-				if (trace.HitType == TRACE_HitWall)
-				{
-					DImpactDecal::StaticCreate (s,
-						trace.X, trace.Y, trace.Z,
-						trace.Line->sidedef[trace.Side], NULL);
-				}
+				zx::decals::MarkSpray (s, trace);
 			}
 		}
 		break;
@@ -2635,6 +2683,13 @@ void Net_SkipCommand (int type, BYTE **stream)
 		case DEM_SUMMONFRIEND2:
 		case DEM_SUMMONFOE2:
 			skip = strlen ((char *)(*stream)) + 26;
+			break;
+
+		// [rc4l] uzdoom@b2fbeb24c -- DEM_CHANGEMAP2 was absent here, so skipping it consumed the
+		// wrong length and every following byte in the stream was misread. One byte of position
+		// then the NUL-terminated map name.
+		case DEM_CHANGEMAP2:
+			skip = strlen((char *)(*stream + 1)) + 2;
 			break;
 
 		case DEM_MUSICCHANGE:

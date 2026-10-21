@@ -37,6 +37,7 @@
 #include "i_system.h"
 #include "templates.h"
 #include "m_misc.h"
+#include "features/telemetry/telemetry.h"
 
 //==========================================================================
 //
@@ -47,7 +48,7 @@
 //==========================================================================
 
 FileReader::FileReader ()
-: File(NULL), Length(0), StartPos(0), CloseOnDestruct(false)
+: File(NULL), Length(0), StartPos(0), FilePos(0), CloseOnDestruct(false)	// [rc4l] uzdoom@322742d4b
 {
 }
 
@@ -141,6 +142,7 @@ long FileReader::Read (void *buffer, long len)
 	}
 	len = (long)fread (buffer, 1, len, File);
 	FilePos += len;
+	ZX_COUNT ("io/read_bytes", "bytes", len);   // [rc4l] every file read, for features/telemetry
 	return len;
 }
 
@@ -526,4 +528,60 @@ long MemoryReader::Read (void *buffer, long len)
 char *MemoryReader::Gets(char *strbuf, int len)
 {
 	return GetsFromBuffer(bufptr, strbuf, len);
+}
+
+//==========================================================================
+//
+// MemoryArrayReader
+//
+// reads data from an array of memory
+//
+//==========================================================================
+
+MemoryArrayReader::MemoryArrayReader (const char *buffer, long length)
+{
+    buf.Resize(length);
+    memcpy(&buf[0], buffer, length);
+    Length=length;
+    FilePos=0;
+}
+
+MemoryArrayReader::~MemoryArrayReader ()
+{
+}
+
+long MemoryArrayReader::Tell () const
+{
+    return FilePos;
+}
+
+long MemoryArrayReader::Seek (long offset, int origin)
+{
+    switch (origin)
+    {
+    case SEEK_CUR:
+        offset+=FilePos;
+        break;
+
+    case SEEK_END:
+        offset+=Length;
+        break;
+
+    }
+    FilePos=clamp<long>(offset,0,Length-1);
+    return 0;
+}
+
+long MemoryArrayReader::Read (void *buffer, long len)
+{
+    if (len>Length-FilePos) len=Length-FilePos;
+    if (len<0) len=0;
+    memcpy(buffer,&buf[FilePos],len);
+    FilePos+=len;
+    return len;
+}
+
+char *MemoryArrayReader::Gets(char *strbuf, int len)
+{
+    return GetsFromBuffer((char*)&buf[0], strbuf, len);
 }

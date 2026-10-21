@@ -73,6 +73,14 @@ if (-not (Test-Path (Join-Path $Deps "lib\OpenAL32.lib"))) {
 if (-not (Test-Path (Join-Path $Deps "lib\glew32.lib"))) {
     throw "windows_assets/ has no lib/glew32.lib. GLEW is required for the client build — regenerate windows_assets/ with the windows-export-deps workflow (it installs glew:x64-windows)."
 }
+# [rc4l] FFmpeg is checked here rather than left to CMake because CMake does NOT fail without it —
+# src/CMakeLists.txt treats it as optional and compiles instant replay as a no-capture stub. So a
+# windows_assets/ without ffmpeg configures, builds, packages and ships a binary that answers the
+# clip key with "not built into this binary", and nothing along the way says so. That is exactly how
+# it shipped, which is why the check is a hard failure and not a warning.
+if (-not (Test-Path (Join-Path $Deps "lib\avcodec.lib"))) {
+    throw "windows_assets/ has no lib/avcodec.lib. FFmpeg is required for instant replay — regenerate windows_assets/ with the windows-export-deps workflow (it installs ffmpeg[x264]:x64-windows)."
+}
 
 if ($Clean) {
     Write-Status "Cleaning build and dist directories"
@@ -82,9 +90,25 @@ if ($Clean) {
 if (-not $Version) { $Version = Get-DefaultVersion }
 Write-Status "ZandroX fast Windows build — configuration=$Configuration version=$Version"
 
-if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
-    throw "cmake not found on PATH. Install CMake and Visual Studio 2022 (with the C++ workload)."
+# [rc4l] Visual Studio ships its own cmake and does NOT put it on PATH, so a machine with a perfectly
+# good C++ toolchain fails here with "install CMake" and sends you installing something you already
+# have. Same resolver as windows_build_run.ps1 -- keep the two in step.
+function Resolve-CMake {
+    $onPath = Get-Command cmake -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+    $candidates = @()
+    foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if (-not $pf) { continue }
+        $candidates += (Join-Path $pf "CMake\bin\cmake.exe")
+        foreach ($ed in @("Community", "Professional", "Enterprise", "BuildTools")) {
+            $candidates += (Join-Path $pf "Microsoft Visual Studio\2022\$ed\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe")
+        }
+    }
+    foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
+    throw "cmake not found on PATH or in any Visual Studio 2022 install. Install CMake, or run from a Developer PowerShell."
 }
+$CMake = Resolve-CMake
+Write-Note "cmake: $CMake"
 
 # --- DirectX headers/libs from the Windows SDK -----------------------------
 # [rc4l] Zandronum's build wants the legacy DirectX SDK layout; reshape it out of the modern SDK.
@@ -107,9 +131,40 @@ $env:DXSDK_DIR = $dx
 Write-Note "DXSDK_DIR set to $dx"
 
 # --- Configure (MSVC x64, NO_FMOD, OpenAL) — deps from windows_assets/ ------
+# [rc4l] Drop out of "Stop" for the two native calls below. Under $ErrorActionPreference = "Stop",
+# PowerShell wraps every stderr line from a native exe in a NativeCommandError and treats it as
+# TERMINATING — so a CMake *warning* (find_package dev warnings, which src/CMakeLists.txt emits on a
+# clean configure) aborts the script as though the build had failed, with a message that names the
+# warning rather than the abort. The exit code is what actually says whether it worked, and both
+# calls check $LASTEXITCODE immediately.
+$PrevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+
 Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)"
-& cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
+# [rc4l] FFmpeg is pinned by absolute path like every other dependency here, and CMAKE_PREFIX_PATH is
+# a backstop rather than the mechanism. src/CMakeLists.txt locates FFmpeg with a bare
+# find_path/find_library, which does two things we do not want: it searches wherever it likes, and it
+# SKIPS ENTIRELY when the cache already holds a value. So a build directory previously configured by
+# windows_compile.ps1 keeps pointing at that script's vcpkg tree -- the fast path then compiles
+# against a static FFmpeg while linking everything else dynamically, which is a real failure this
+# very tree produced. Naming the five variables the fallback uses makes the answer come from
+# windows_assets/ and nowhere else, stale cache or not.
+#
+# [rc4l] The configure log is kept so the replay assertion below has something to read. CMake reports
+# which optional features it turned on, and that report is the only place the difference between a
+# full build and a feature-stripped one is visible.
+New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+$ConfigureLog = Join-Path $BuildDir "configure.log"
+
+# [MobiusU9B] Dev-only MCP bridge on the same ZX_MCP_BRIDGE=1 opt-in as mac_compile.sh, passed OFF otherwise so a cached ON never leaks into a normal build.
+$bridgeArgs = @("-DFUA_MCP_BRIDGE=OFF")
+if ($env:ZX_MCP_BRIDGE -eq "1") {
+    Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
+    $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
+}
+& $CMake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
+    "-DCMAKE_PREFIX_PATH=$Deps" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
     -DFORCE_INTERNAL_GME=ON `
@@ -123,15 +178,31 @@ Write-Status "Configuring CMake (Visual Studio 2022, x64, OpenAL, prebuilt deps)
     "-DOPUS_LIBRARIES=$Deps/lib/opus.lib" `
     "-DGLEW_INCLUDE_DIR=$Deps/include" `
     "-DGLEW_LIBRARY=$Deps/lib/glew32.lib" `
-    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF"
-if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
+    "-DFFMPEG_INCLUDE_DIRS=$Deps/include" `
+    "-DFFMPEG_AVCODEC_LIB=$Deps/lib/avcodec.lib" `
+    "-DFFMPEG_AVFORMAT_LIB=$Deps/lib/avformat.lib" `
+    "-DFFMPEG_AVUTIL_LIB=$Deps/lib/avutil.lib" `
+    "-DFFMPEG_SWSCALE_LIB=$Deps/lib/swscale.lib" `
+    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF" @bridgeArgs | Tee-Object -FilePath $ConfigureLog
+if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $PrevEAP; throw "cmake configure failed" }
+
+# [rc4l] Belt and braces over the avcodec.lib check above: the libs can be present and CMake still
+# not enable replay (missing headers, a find_path that lands somewhere else). The lib check catches
+# the deps being absent; this catches them being unusable, and the two failure modes look identical
+# from the outside -- a binary that builds and cannot record.
+if (-not (Select-String -Path $ConfigureLog -Pattern "FUA replay: FFmpeg found" -Quiet)) {
+    $ErrorActionPreference = $PrevEAP
+    throw "CMake did not enable instant replay (no 'FUA replay: FFmpeg found' in $ConfigureLog). The build would ship a no-capture stub — check windows_assets/include/libavcodec."
+}
 
 Write-Status "Building ($Configuration)"
-& cmake --build $BuildDir --config $Configuration -- -m
-if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
+& $CMake --build $BuildDir --config $Configuration -- -m
+$BuildExit = $LASTEXITCODE
+$ErrorActionPreference = $PrevEAP
+if ($BuildExit -ne 0) { throw "cmake build failed" }
 
-$exe = Join-Path $BuildDir "$Configuration\zandronum.exe"
-if (-not (Test-Path $exe)) { throw "zandronum.exe missing — the build failed" }
+$exe = Join-Path $BuildDir "$Configuration\forkundera.exe"
+if (-not (Test-Path $exe)) { throw "forkundera.exe missing — the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) { Write-Status "Done (compile only; -NoPackage)"; return }
@@ -140,15 +211,50 @@ if ($NoPackage) { Write-Status "Done (compile only; -NoPackage)"; return }
 Write-Status "Packaging dist-windows/"
 $out = Join-Path $BuildDir $Configuration
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-Copy-Item "$out\zandronum.exe" $DistDir\
+Copy-Item "$out\forkundera.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
-if (Test-Path (Join-Path $ScriptRoot "tools\freedoom\freedoom2.wad")) {
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $DistDir\
-    Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
-} else {
-    throw "tools/freedoom/freedoom2.wad missing — the zip would ship without a game"
+# [rc4l] BOTH phases are required, not just the second. Phase 1 is what stands in for doom.wad, and
+# the substitute table has named it since it was written -- so shipping without it means every Doom 1
+# experience refuses to host on a machine that has no Ultimate Doom, which is the case this exists to
+# cover. Checked one by one because the copy is a wildcard and would happily ship half of them.
+foreach ($wad in @("freedoom1.wad", "freedoom2.wad")) {
+    if (-not (Test-Path (Join-Path $ScriptRoot "tools\freedoom\$wad"))) {
+        throw "tools/freedoom/$wad missing — the zip would ship without a game to fall back on"
+    }
 }
+# [rc4l] Into iwads/, not loose beside the exe. A player opening the folder should see a program to
+# run, not a pile of game data they did not put there and cannot tell apart from their own. The
+# engine is told about the folder in features/wad-download/zx_wadsearch.cpp, on every launch rather
+# than only on a fresh config, so an update that moves them does not strand an existing player.
+$IwadDir = Join-Path $DistDir "iwads"
+New-Item -ItemType Directory -Force -Path $IwadDir | Out-Null
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\*.wad") $IwadDir\
+
+# The licence stays at the top level with the other notices: BSD-3-clause clause 2 wants it to
+# accompany the distribution, and a notice filed inside a data folder is one nobody opens.
+Copy-Item (Join-Path $ScriptRoot "tools\freedoom\License.txt") "$DistDir\FREEDOOM-LICENSE.txt"
+
+# [rc4l] Our own base data for total conversions that ship no base file of their own. Built by
+# tools/mkiwad, entirely generated, so it carries nobody else's work. Checked rather than copied
+# blind, for the same reason the two above are: a wildcard that quietly ships nothing leaves a
+# catalogue entry nobody can host.
+if (-not (Test-Path (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad"))) {
+    throw "tools/mkiwad/fuamega.wad missing, so rebuild it with tools/mkiwad/mkiwad.py"
+}
+Copy-Item (Join-Path $ScriptRoot "tools\mkiwad\fuamega.wad") $IwadDir\
+
+# [rc4l] The addon catalogue. Required rather than best-effort, exactly as in linux_compile.sh and
+# mac_compile.sh -- which both stage it, while this script did not.
+#
+# The HOST tab reads it from beside the binary (CatalogueShippedDir is progdir + "catalogue"), and a
+# missing directory is not an error there: the scan finds nothing, the presets list draws empty, and
+# hosting reads as a feature nobody implemented. Every Windows build so far shipped with nothing to
+# host, and the only symptom was an empty list.
+if (-not (Test-Path (Join-Path $ScriptRoot "catalogue"))) {
+    throw "catalogue/ missing -- the HOST tab would have nothing to offer"
+}
+Copy-Item (Join-Path $ScriptRoot "catalogue") $DistDir\ -Recurse -Force
 
 Copy-Item (Join-Path $ScriptRoot "LICENSE.txt") $DistDir\
 Copy-Item (Join-Path $ScriptRoot "THIRD-PARTY-NOTICES.txt") $DistDir\
@@ -160,7 +266,15 @@ if (-not (Test-Path "$DistDir\OpenAL32.dll")) {
 }
 Write-Note "sound OK: OpenAL32.dll present"
 
-$zip = Join-Path $ScriptRoot "ZandroX-$Version-windows-x64.zip"
+# [rc4l] The engine links avcodec by import lib, so a zip without the DLL beside the exe is one that
+# will not start at all -- a louder failure than the stub, but still one to catch before shipping.
+# Versioned name (avcodec-61.dll and friends), so match by pattern rather than by version.
+if (-not (Get-ChildItem "$DistDir\avcodec-*.dll" -ErrorAction SilentlyContinue)) {
+    throw "no avcodec-*.dll in dist-windows — the build would ship unable to start; check windows_assets/bin"
+}
+Write-Note "instant replay OK: FFmpeg runtime present"
+
+$zip = Join-Path $ScriptRoot "ForkUnderA-$Version-windows-x64.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$DistDir\*" -DestinationPath $zip -Force
 Write-Status "Done: $zip"

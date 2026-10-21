@@ -38,6 +38,7 @@
 #include "m_random.h"
 #include "doomdef.h"
 #include "p_local.h"
+#include "features/decals/decals.h"   // [rc4l] a missile's mark
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -97,6 +98,9 @@
 #include <set>
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/quake-movement/quakemove.h"
+#include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
+#include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -443,6 +447,8 @@ void AActor::Serialize (FArchive &arc)
 		<< PainThreshold
 		<< DamageFactor
 		<< DamageMultiply		// [rc4l] uzdoom@99b2cfa14
+		<< TeleFogSourceType	// [rc4l] uzdoom@30acb7200
+		<< TeleFogDestType
 		<< WeaveIndexXY << WeaveIndexZ
 		<< PoisonDamageReceived << PoisonDurationReceived << PoisonPeriodReceived << Poisoner
 		<< PoisonDamage << PoisonDuration << PoisonPeriod;
@@ -513,6 +519,13 @@ void AActor::Serialize (FArchive &arc)
 			<< RipVictims;
 	}
 
+	// [rc4l] Movement-model flags (features/quake-movement). Version-guarded so older snapshots load
+	// with the class default -- 0, i.e. no movement flags, which is exactly pre-feature behaviour.
+	if (SaveVersion >= 4521)
+	{
+		arc << mvFlags;
+	}
+
 	{
 		FString tagstr;
 		if (arc.IsStoring() && Tag != NULL && Tag->Len() > 0) tagstr = *Tag;
@@ -555,15 +568,13 @@ void AActor::Serialize (FArchive &arc)
 		PrevY = y;
 		PrevZ = z;
 		PrevAngle = angle;
+		PrevRoll = roll;	// [rc4l]
 		UpdateWaterLevel(z, false);
 	}
 }
 
-void FMapThing::Serialize (FArchive &arc)
-{
-	arc << thingid << x << y << z << angle << type << flags << special
-		<< args[0] << args[1] << args[2] << args[3] << args[4];
-}
+// [rc4l] uzdoom@51591d10b removed FMapThing::Serialize -- nothing called it, here either, and it
+// only ever wrote a subset of the struct.
 
 AActor::AActor () throw()
 {
@@ -680,7 +691,7 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 		}
 		state = newstate;
 		tics = GetTics(newstate);
-		renderflags = (renderflags & ~RF_FULLBRIGHT) | newstate->GetFullbright();
+		renderflags = (renderflags & ~RF_FULLBRIGHT) | ActorRenderFlags::FromInt (newstate->GetFullbright());
 		newsprite = newstate->sprite;
 		if (newsprite != SPR_FIXED)
 		{ // okay to change sprite and/or frame
@@ -1686,6 +1697,9 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 			return;
 		}
 	}
+	// [rc4l] features/decals: how it was moving, for an angled mark, before the velocity is thrown away.
+	const fixed_t fuaVelX = mo->velx, fuaVelY = mo->vely, fuaVelZ = mo->velz;
+
 	mo->velx = mo->vely = mo->velz = 0;
 	mo->effects = 0;		// [RH]
 	mo->flags &= ~MF_SHOOTABLE;
@@ -1727,76 +1741,8 @@ void P_ExplodeMissile (AActor *mo, line_t *line, AActor *target, bool bExplodeOn
 		return;
 	}
 
-	if (line != NULL && cl_missiledecals)
-	{
-		int side = P_PointOnLineSide (mo->x, mo->y, line);
-		if (line->sidedef[side] == NULL)
-			side ^= 1;
-		if (line->sidedef[side] != NULL)
-		{
-			FDecalBase *base = mo->DecalGenerator;
-			if (base != NULL)
-			{
-				// Find the nearest point on the line, and stick a decal there
-				fixed_t x, y, z;
-				SQWORD num, den;
-
-				den = (SQWORD)((SQWORD)line->dx*line->dx + (SQWORD)line->dy*line->dy);
-				if (den != 0)
-				{
-					SDWORD frac;
-
-					num = (SQWORD)((SQWORD)(mo->x-line->v1->x)*line->dx+(SQWORD)(mo->y-line->v1->y)*line->dy);
-					if (num <= 0)
-					{
-						frac = 0;
-					}
-					else if (num >= den)
-					{
-						frac = 1<<30;
-					}
-					else
-					{
-						frac = (SDWORD)(num / (den>>30));
-					}
-
-					x = line->v1->x + MulScale30 (line->dx, frac);
-					y = line->v1->y + MulScale30 (line->dy, frac);
-					z = mo->z;
-
-					F3DFloor * ffloor=NULL;
-#ifdef _3DFLOORS
-					if (line->sidedef[side^1] != NULL)
-					{
-						sector_t * backsector = line->sidedef[side^1]->sector;
-						extsector_t::xfloor &xf = backsector->e->XFloor;
-						// find a 3D-floor to stick to
-						for(unsigned int i=0;i<xf.ffloors.Size();i++)
-						{
-							F3DFloor * rover=xf.ffloors[i];
-
-							if ((rover->flags&(FF_EXISTS|FF_SOLID|FF_RENDERSIDES))==(FF_EXISTS|FF_SOLID|FF_RENDERSIDES))
-							{
-								if (z<=rover->top.plane->ZatPoint(x, y) && z>=rover->bottom.plane->ZatPoint( x, y))
-								{
-									ffloor=rover;
-									break;
-								}
-							}
-						}
-					}
-#endif
-
-					// [BC] Servers don't need to spawn decals.
-					if ( NETWORK_GetState( ) != NETSTATE_SERVER )
-					{
-						DImpactDecal::StaticCreate (base->GetDecal (),
-							x, y, z, line->sidedef[side], ffloor);
-					}
-				}
-			}
-		}
-	}
+	// [rc4l] features/decals: its mark, on the line it struck or the floor or ceiling it came to rest against.
+	zx::decals::MarkMissile (mo, line, target, fuaVelX, fuaVelY, fuaVelZ);
 
 	// play the sound before changing the state, so that AActor::Destroy can call S_RelinkSounds on it and the death state can override it.
 	if (mo->DeathSound)
@@ -2541,20 +2487,59 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 				}
 				if (BlockingMobj && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 				{
-					angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
-
-					// Change angle for deflection/reflection
-					if (mo->AdjustReflectionAngle (BlockingMobj, angle))
+					// [rc4l] uzdoom@533ae9593 with its cleanup uzdoom@fdf2d6c49 folded in, then
+					// uzdoom@6bb084998. THRUREFLECT suppresses the angle change entirely;
+					// MIRRORREFLECT turns the missile a flat 180; AIMREFLECT sends it straight back
+					// at whoever fired it. Without this the two flags were parsed but inert.
+					if (!(BlockingMobj->flags7 & MF7_THRUREFLECT))
 					{
-						goto explode;
-					}
+						// [rc4l] uzdoom@6bb084998 -- the reflection angle is computed the same way
+						// for every case; MIRRORREFLECT is applied to the VELOCITY further down
+						// instead of by pre-loading `angle` here, which is what broke it.
+						angle = R_PointToAngle2(BlockingMobj->x, BlockingMobj->y, mo->x, mo->y);
 
-					// Reflect the missile along angle
-					mo->angle = angle;
-					angle >>= ANGLETOFINESHIFT;
-					mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
-					mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
-					mo->velz = -mo->velz/2;
+						// Change angle for deflection/reflection
+						if (mo->AdjustReflectionAngle (BlockingMobj, angle))
+						{
+							goto explode;
+						}
+
+						bool tg = (mo->target != NULL);
+						bool blockingtg = (BlockingMobj->target != NULL);
+						if ((BlockingMobj->flags7 & MF7_AIMREFLECT) && (tg || blockingtg))
+						{
+							AActor *origin = tg ? mo->target : BlockingMobj->target;
+
+							float speed = (float)(mo->Speed);
+							FVector3 velocity(FIXED2FLOAT(origin->x - mo->x), FIXED2FLOAT(origin->y - mo->y),
+											  FIXED2FLOAT((origin->z + (origin->height / 2)) - mo->z));
+							velocity.Resize(speed);
+							mo->velx = FLOAT2FIXED(velocity.X);
+							mo->vely = FLOAT2FIXED(velocity.Y);
+							mo->velz = FLOAT2FIXED(velocity.Z);
+						}
+						else
+						{
+							// [rc4l] uzdoom@6bb084998 -- a mirror reverses the velocity it was
+							// given rather than recomputing one from Speed at the flipped angle.
+							if ((BlockingMobj->flags7 & MF7_MIRRORREFLECT) && (tg || blockingtg))
+							{
+								mo->angle += ANGLE_180;
+								mo->velx = -mo->velx / 2;
+								mo->vely = -mo->vely / 2;
+								mo->velz = -mo->velz / 2;
+							}
+							else
+							{
+								// Reflect the missile along angle
+								mo->angle = angle;
+								angle >>= ANGLETOFINESHIFT;
+								mo->velx = FixedMul (mo->Speed>>1, finecosine[angle]);
+								mo->vely = FixedMul (mo->Speed>>1, finesine[angle]);
+								mo->velz = -mo->velz/2;
+							}
+						}
+					}
 					if (mo->flags2 & MF2_SEEKERMISSILE)
 					{
 						mo->tracer = mo->target;
@@ -2666,6 +2651,23 @@ explode:
 
 	if (mo->flags & (MF_MISSILE | MF_SKULLFLY))
 	{ // no friction for missiles
+		return oldfloorz;
+	}
+
+	// [rc4l] features/quake-movement. Quake friction is applied AFTER the move rather than before,
+	// so the server has to send the velocity it had BEFORE friction: it moves, frictions, then
+	// transmits, and a client that received the post-friction value would apply friction to it a
+	// second time. Same MovePlayer fields, same byte count -- only the value written changes.
+	if (zx::quakemove::UsesQuakeMovement(mo))
+	{
+		if (NETWORK_GetState() == NETSTATE_SERVER)
+		{
+			player->ServerXYZVel[0] = mo->velx;
+			player->ServerXYZVel[1] = mo->vely;
+			player->ServerXYZVel[2] = mo->velz;
+		}
+
+		zx::quakemove::ApplyQuakeFriction(mo);
 		return oldfloorz;
 	}
 
@@ -3156,6 +3158,13 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 	// [BC] Mark this item as having moved.
 	if ( mo->z != oldz )
 		mo->STFlags |= STFL_POSITIONCHANGED;
+	// [rc4l] uzdoom@93c12cf25 -- Hexen compatibility handling for floatbobbing. Only for an item the
+	// map actually placed above ground (special1 > 0), so ordinary items are unaffected.
+	if (mo->special1 > 0 && (mo->flags2 & MF2_FLOATBOB) && (ib_compatflags & BCOMPATF_FLOATBOB))
+	{
+		mo->z = mo->floorz + fixed_t::FromRaw(mo->special1);
+	}
+
 //
 // adjust height
 //
@@ -3329,7 +3338,14 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 				{
 					// [BB] ZDoom changed the jumping here revision 2238.
 					// The old behavior is necessary for existing jumpmaze wads.
-					if ( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel)
+					// [rc4l] Quake pawns skip this entirely, matching
+					// qzandronum@397272811e4f71b168f1949d21369d3e91a7146c, which deletes the block.
+					// It hardcodes a 7-tic landing cooldown, and because it runs before
+					// CheckJumpQuake sees the grounded tic it overwrote the negative sentinel that
+					// the re-arm keys off -- so Player.JumpDelay was dead for the main jump and
+					// every Quake pawn silently got 7 tics no matter what it authored.
+					if ( zx::quakemove::UsesQuakeMovement( mo ) == false &&
+						( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel) )
 					{ // delay any jumping for a short while
 						mo->player->jumpTics = 7;
 
@@ -3585,8 +3601,8 @@ void P_NightmareRespawn (AActor *mobj)
 		z = ONCEILINGZ;
 	else if (info->flags2 & MF2_SPAWNFLOAT)
 		z = FLOATRANDZ;
-	else if (info->flags2 & MF2_FLOATBOB)
-		z = mobj->SpawnPoint[2];
+	// [rc4l] uzdoom@93c12cf25 -- floatbob items are ordinary ONFLOORZ spawns now; the Hexen height is
+	// handled by the compat path in P_ZMovement instead.
 	else
 		z = ONFLOORZ;
 
@@ -3687,22 +3703,20 @@ void P_NightmareRespawn (AActor *mobj)
 	}
 
 	// spawn a teleport fog at old spot because of removal of the body?
-	mo = Spawn ("TeleportFog", mobj->x, mobj->y, mobj->z, ALLOW_REPLACE);
+	// [rc4l] uzdoom@30acb7200: route this through P_SpawnTeleportFog so the actor's own
+	// TeleFogSourceType/TeleFogDestType are honoured here too, not just in P_Teleport.
+	mo = P_SpawnTeleportFog(mobj, mobj->x, mobj->y, mobj->z + TELEFOGHEIGHT, true, true);
 	if (mo != NULL)
 	{
-		mo->z += TELEFOGHEIGHT;
-
 		// [BC] If we're the server, tell clients to spawn the thing.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 
 	// spawn a teleport fog at the new spot
-	mo = Spawn ("TeleportFog", x, y, z, ALLOW_REPLACE);
+	mo = P_SpawnTeleportFog(mobj, x, y, z + TELEFOGHEIGHT, false, true);
 	if (mo != NULL)
 	{
-		mo->z += TELEFOGHEIGHT;
-
 		// [BC] If we're the server, tell clients to spawn the thing.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_SpawnThing( mo );
@@ -4114,6 +4128,19 @@ void AActor::SetAngle(angle_t ang, bool interpolate)
 	}
 }
 
+// [rc4l] uzdoom@2b12db153
+void AActor::SetRoll(angle_t r, bool interpolate)
+{
+	if (r != roll)
+	{
+		roll = r;
+		if (player != NULL && interpolate)
+		{
+			player->cheats |= CF_INTERPVIEW;
+		}
+	}
+}
+
 //
 // P_MobjThinker
 //
@@ -4121,6 +4148,11 @@ void AActor::Tick ()
 {
 	// [BB] Start to measure how much outbound net traffic this call of AActor::Tick() needs.
 	NETWORK_StartTrafficMeasurement ( );
+
+	// [rc4l] Self-register for this tic's P_RunEffects pass (see p_effect.cpp) --
+	// the effects walk no longer scans every thinker.
+	if (effects && ( NETWORK_GetState( ) != NETSTATE_SERVER ))
+		P_RegisterEffectActor (this);
 
 	// [RH] Data for Heretic/Hexen scrolling sectors
 	static const BYTE HexenScrollDirs[8] = { 64, 0, 192, 128, 96, 32, 224, 160 };
@@ -4160,6 +4192,7 @@ void AActor::Tick ()
 	PrevY = y;
 	PrevZ = z;
 	PrevAngle = angle;
+	PrevRoll = roll;	// [rc4l]
 
 	// [BC] There are times when we don't want to tick this actor if it's a player.
 	// [BB] Voodoo dolls are an exemption.
@@ -4502,11 +4535,15 @@ void AActor::Tick ()
 			velz <= 0 &&
 			floorz == z)
 		{
-			secplane_t floorplane = floorsector->floorplane;
+			// [rc4l] uzdoom@c4b742ebf -- with 3D floors on, the copy from floorsector was immediately
+			// overwritten by P_FindFloorPlane; only the non-3D path ever needed it.
+			secplane_t floorplane;
 
 #ifdef _3DFLOORS
 			// Check 3D floors as well
 			floorplane = P_FindFloorPlane(floorsector, x, y, floorz);
+#else
+			floorplane = floorsector->floorplane;
 #endif
 
 			if (floorplane.c < STEEPSLOPE &&
@@ -4699,18 +4736,12 @@ void AActor::Tick ()
 		flags7 &= ~MF7_HANDLENODELAY;
 		if (state->GetNoDelay())
 		{
+			// [rc4l] uzdoom@5aba252b8 -- calling the state's function directly avoids the
+			// re-entry into SetState and the tic fudging that went with it.
 			// For immediately spawned objects with the NoDelay flag set for their
-			// Spawn state, explicitly set the current state so that it calls its
-			// action and chains 0-tic states.
-			int starttics = tics;
-			if (!SetState(state))
+			// Spawn state, explicitly call the current state's function.
+			if (state->CallAction(this, this) && (ObjectFlags & OF_EuthanizeMe))
 				return;				// freed itself
-			// If the initial state had a duration of 0 tics, let the next state run
-			// normally. Otherwise, increment tics by 1 so that we don't double up ticks.
-			else if (starttics > 0 && tics >= 0)
-			{
-				tics++;
-			}
 		}
 	}
 	// cycle through states, calling action functions at transitions
@@ -4965,11 +4996,11 @@ void IDList<T>::useID ( const unsigned short netID, T *actor )
 {
 	if ( isIndexValid ( netID ) )
 	{
-		if ( ( _entries[netID].bFree == false ) && ( _entries[netID].pActor != actor ) )
+		if ( ( zx::netids::ComputeIdFree ( _freeBits, netID ) == false ) && ( _entries[netID].pActor != actor ) )
 			SERVER_PrintWarning ( "IDList<T>::useID is using an already used ID.\n" );
 
-		_entries[netID].bFree = false;
 		_entries[netID].pActor = actor;
+		zx::netids::ComputeMarkId ( _freeBits, netID, false );
 	}
 }
 
@@ -4983,28 +5014,22 @@ unsigned short IDList<T>::getNewID( void )
 	// Actor's network ID is the first availible net ID.
 	unsigned short id = _firstFreeID;
 
-	do
+	// [rc4l] The next free one found in the bitmap rather than by walking every entry: a full table (nuts.wad with Complex Doom, 70,000 actors) read all 65,535 on each spawn, 44% of a tic (features/netids).
+	_firstFreeID = static_cast<unsigned short>( zx::netids::ComputeNextFreeId ( _freeBits, id ));
+	if ( _firstFreeID == id )
 	{
-		if ( _firstFreeID == ( std::numeric_limits<unsigned short>::max )( ))
-			_firstFreeID = 1;
-		else
-			_firstFreeID++;
-
-		if ( _firstFreeID == id )
+		// [BB] In case there is no free netID, the server has to abort the current game.
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			// [BB] In case there is no free netID, the server has to abort the current game.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			{
-				// [BB] We can only spawn (MAX_NETID-2) actors with netID, because ID zero is reserved and
-				// we already check that a new ID for the next actor is available when assign a net ID.
-				Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", ( std::numeric_limits<unsigned short>::max )( ));
-				CountActors ( );
-				I_Error ("Network ID limit reached (>=%u actors)!\n", ( std::numeric_limits<unsigned short>::max )( ));
-			}
-
-			return ( 0 );
+			// [BB] We can only spawn (MAX_NETID-2) actors with netID, because ID zero is reserved and
+			// we already check that a new ID for the next actor is available when assign a net ID.
+			Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", ( std::numeric_limits<unsigned short>::max )( ));
+			CountActors ( );
+			I_Error ("Network ID limit reached (>=%u actors)!\n", ( std::numeric_limits<unsigned short>::max )( ));
 		}
-	} while ( _entries[_firstFreeID].bFree == false );
+
+		return ( 0 );
+	}
 
 	return ( id );
 }
@@ -5100,7 +5125,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	
 	actor->sprite = st->sprite;
 	actor->frame = st->GetFrame();
-	actor->renderflags = (actor->renderflags & ~RF_FULLBRIGHT) | st->GetFullbright();
+	actor->renderflags = (actor->renderflags & ~RF_FULLBRIGHT) | ActorRenderFlags::FromInt (st->GetFullbright());
 	actor->touching_sectorlist = NULL;	// NULL head of sector list // phares 3/13/98
 	if (G_SkillProperty(SKILLP_FastMonsters))
 		actor->Speed = actor->GetClass()->Meta.GetMetaFixed(AMETA_FastSpeed, actor->Speed);
@@ -5259,6 +5284,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 			TEAM_ExecuteReturnRoutine( teams.Size( ), NULL );
 	}
 
+	MCP_SimTrace_Spawn (actor); // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 	g_SpawnCycles.Unclock();
 	return actor;
 }
@@ -5397,6 +5423,7 @@ void AActor::PostBeginPlay ()
 		Renderer->StateChanged(this);
 	}
 	PrevAngle = angle;
+	PrevRoll = roll;	// [rc4l]
 	flags7 |= MF7_HANDLENODELAY;
 
 	// [AK] Trigger an event script indicating that the actor has spawned.
@@ -5411,6 +5438,13 @@ void AActor::PostBeginPlay ()
 }
 
 void AActor::MarkPrecacheSounds() const
+{
+	MarkPropertySounds();
+}
+
+// [ForkUnderA] Split out of MarkPrecacheSounds so fua-caching can mark a
+// never-spawned class's sounds through its Defaults without virtual dispatch.
+void AActor::MarkPropertySounds() const
 {
 	SeeSound.MarkUsed();
 	AttackSound.MarkUsed();
@@ -5646,8 +5680,14 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 					type = p->userinfo.GetPlayerClassNum();
 					if (type < 0)
 					{
+						// [rc4l] Unless the mod forbade random classes, in which case pick a
+						// selectable one rather than re-rolling on every respawn.
+						const int fallback = ZX_PlayerClassFallback( type, !!p->bOnTeam, p->Team );
+
+						if ( fallback >= 0 )
+							type = fallback;
 						// [BB] If the player is on a team, only a class valid for this team may be selected.
-						if ( p->bOnTeam )
+						else if ( p->bOnTeam )
 							type = TEAM_SelectRandomValidPlayerClass( p->Team );
 						else
 							type = pr_multiclasschoice() % PlayerClasses.Size ();
@@ -5679,6 +5719,10 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	{
 		spawn_x = mo->x;
 		spawn_y = mo->y;
+		// [rc4l] uzdoom@c631ffc5f: respawning where you died must keep the height you died at.
+		// Otherwise the z below re-derives ONFLOORZ/ONCEILINGZ from the class default and drops
+		// the player to the floor of a spot they may have been standing above.
+		spawn_z = mo->z;
 		spawn_angle = mo->angle;
 	}
 	else
@@ -5698,14 +5742,16 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 		{
 			spawn_angle += 1 << ANGLETOFINESHIFT;
 		}
-	}
 
-	if (GetDefaultByType(p->cls)->flags & MF_SPAWNCEILING)
-		spawn_z = ONCEILINGZ;
-	else if (GetDefaultByType(p->cls)->flags2 & MF2_SPAWNFLOAT)
-		spawn_z = FLOATRANDZ;
-	else
-		spawn_z = ONFLOORZ;
+		// [rc4l] uzdoom@c631ffc5f: only derive the height when spawning at a start spot; the
+		// respawn-in-place branch above already set it.
+		if (GetDefaultByType(p->cls)->flags & MF_SPAWNCEILING)
+			spawn_z = ONCEILINGZ;
+		else if (GetDefaultByType(p->cls)->flags2 & MF2_SPAWNFLOAT)
+			spawn_z = FLOATRANDZ;
+		else
+			spawn_z = ONFLOORZ;
+	}
 
 	mobj = static_cast<APlayerPawn *>
 		(Spawn (p->cls, spawn_x, spawn_y, spawn_z, NO_REPLACE));
@@ -5810,7 +5856,10 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	p->mo->ResetAirSupply(false);
 	p->Uncrouch();
 	p->MinPitch = p->MaxPitch = 0;	// will be filled in by PostBeginPlay()/netcode
-	p->cheats &= ~CF_FLY;
+	p->MUSINFOactor = NULL;
+	p->MUSINFOtics = -1;
+	// [rc4l] uzdoom@337682934 -- the fly state lives on the actor now (MF7_FLYCHEAT), and a freshly
+	// spawned pawn has default flags7, so there is nothing to clear here.
 
 	p->velx = p->vely = 0;		// killough 10/98: initialize bobbing to 0.
 
@@ -6105,21 +6154,13 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	AActor *mobj;
 	fixed_t x, y, z;
 
-	if (mthing->type == 0 || mthing->type == -1)
+	if (mthing->EdNum == 0 || mthing->EdNum == -1)
 		return NULL;
-
-	// count deathmatch start positions
-	if (mthing->type == 11)
-	{
-		FPlayerStart start(mthing);
-		deathmatchstarts.Push(start);
-		return NULL;
-	}
 
 	// [BC] Count temporary team starts.
-	if ( mthing->type == 5082 )
+	if ( mthing->EdNum == 5082 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		TemporaryTeamStarts.Push( start );
 		return NULL;
 	}
@@ -6127,26 +6168,26 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [CW] Count team starts.
 	for ( ULONG i = 0; i < teams.Size( ); i++ )
 	{
-		if ( mthing->type == static_cast<int> (teams[i].ulPlayerStartThingNumber) )
+		if ( mthing->EdNum == static_cast<int> (teams[i].ulPlayerStartThingNumber) )
 		{
-			FPlayerStart start( mthing );
+			FPlayerStart start( mthing, mthing->EdNum );
 			teams[i].TeamStarts.Push( start );
 			return NULL;
 		}
 	}
 
 	// [RC] Catalog possession starts
-	if ( mthing->type == 6000 )
+	if ( mthing->EdNum == 6000 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		PossessionStarts.Push( start );
 		return NULL;
 	}
 
 	// [RC] Catalog terminator starts
-	if ( mthing->type == 6001 )
+	if ( mthing->EdNum == 6001 )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		TerminatorStarts.Push( start );
 		return NULL;
 	}
@@ -6154,67 +6195,107 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [BC/BB] Count invasion starts.
 	if ( INVASION_IsMapThingInvasionSpot( mthing ) )
 	{
-		FPlayerStart start( mthing );
+		FPlayerStart start( mthing, mthing->EdNum );
 		GenericInvasionStarts.Push( start );
 	}
 
-	// Convert Strife starts to Hexen-style starts
-	if (gameinfo.gametype == GAME_Strife && mthing->type >= 118 && mthing->type <= 127)
-	{
-		mthing->args[0] = mthing->type - 117;
-		mthing->type = 1;
-	}
-
-	// [RH] Record polyobject-related things
-	if (gameinfo.gametype == GAME_Hexen)
-	{
-		switch (mthing->type)
-		{
-		case PO_HEX_ANCHOR_TYPE:
-			mthing->type = PO_ANCHOR_TYPE;
-			break;
-		case PO_HEX_SPAWN_TYPE:
-			mthing->type = PO_SPAWN_TYPE;
-			break;
-		case PO_HEX_SPAWNCRUSH_TYPE:
-			mthing->type = PO_SPAWNCRUSH_TYPE;
-			break;
-		}
-	}
-
-	if (mthing->type == PO_ANCHOR_TYPE ||
-		mthing->type == PO_SPAWN_TYPE ||
-		mthing->type == PO_SPAWNCRUSH_TYPE ||
-		mthing->type == PO_SPAWNHURT_TYPE)
-	{
-		polyspawns_t *polyspawn = new polyspawns_t;
-		polyspawn->next = polyspawns;
-		polyspawn->x = mthing->x;
-		polyspawn->y = mthing->y;
-		polyspawn->angle = mthing->angle;
-		polyspawn->type = mthing->type;
-		polyspawns = polyspawn;
-		if (mthing->type != PO_ANCHOR_TYPE)
-			po_NumPolyobjs++;
-		return NULL;
-	}
-
-	// check for players specially
+	// [rc4l] uzdoom@9e5bf3812 -- the editor-number lookup moves up to here, after Zandronum's own
+	// special mapthings. Those must stay ahead of it: the team start numbers come from
+	// teams[].ulPlayerStartThingNumber, which is configurable at runtime and so can never be a
+	// static MAPINFO entry. Everything upstream recognised by hardcoded number -- player and
+	// deathmatch starts, the Strife start conversion, the polyobject spots and the sound sequence
+	// overrides -- is a MAPINFO entry carrying an ESpecialMapthings code now.
+	// [rc4l] Zandronum supports more players than upstream's eight, and those extra starts are
+	// computed from gameinfo.player5start rather than listed anywhere, so they can never be static
+	// MAPINFO entries. Work the player number out before the lookup, so such a start is not
+	// reported as an unknown type. This also covers starts 5 to 8, which makes the MAPINFO entries
+	// for those redundant but harmless.
 	int pnum = -1;
-
-	if (mthing->type <= 4 && mthing->type > 0)
-	{
-		pnum = mthing->type - 1;
-	}
-	else
 	{
 		// [BC] We can't use the value of 32 for MAXPLAYERS here, otherwise it
 		// messes with Strife items.
 		// [BB] Only apply the restriction if we actually play Strife.
 		const int maxPlayerStarts = (gameinfo.gametype == GAME_Strife) ? 8 : MAXPLAYERS;
-		if (mthing->type >= gameinfo.player5start && mthing->type < gameinfo.player5start + maxPlayerStarts - 4)
+		if (mthing->EdNum >= gameinfo.player5start && mthing->EdNum < gameinfo.player5start + maxPlayerStarts - 4)
 		{
-			pnum = mthing->type - gameinfo.player5start + 4;
+			pnum = mthing->EdNum - gameinfo.player5start + 4;
+		}
+	}
+
+	// [rc4l] uzdoom@51591d10b -- the entry was resolved when the thing was read.
+	FDoomEdEntry *mentry = mthing->info;
+
+	if (mentry == NULL)
+	{
+		// [RH] Don't die if the map tries to spawn an unknown thing
+		if (pnum == -1)
+		Printf ("Unknown type %i at (%i, %i)\n",
+				 mthing->EdNum,
+				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
+		mentry = DoomEdMap.CheckKey(0);
+		if (mentry == NULL)	// we need a valid entry for the rest of this function so if we can't find a default, let's exit right away.
+		{
+			return NULL;
+		}
+	}
+	if (mentry->Type == NULL && mentry->Special <= 0)
+	{
+		// has been explicitly set to not spawning anything.
+		return NULL;
+	}
+
+	// copy args to mapthing so that we have them in one place for the rest of this function
+	// [rc4l] uzdoom@6f5dbdefb -- only for entries that name an actor. A special-only entry
+	// carries no args of its own, and copying them wiped the ones the map supplied.
+	if (mentry->ArgsDefined)
+	{
+		if (mentry->Type != NULL) mthing->special = mentry->Special;
+		memcpy(mthing->args, mentry->Args, sizeof(mthing->args));
+	}
+
+	if (pnum == -1 && mentry->Type == NULL)
+	{
+		switch (mentry->Special)
+		{
+		case SMT_DeathmatchStart:
+		{
+			// count deathmatch start positions
+			FPlayerStart start(mthing, 0);
+			deathmatchstarts.Push(start);
+			return NULL;
+		}
+
+		case SMT_PolyAnchor:
+		case SMT_PolySpawn:
+		case SMT_PolySpawnCrush:
+		case SMT_PolySpawnHurt:
+		{
+			polyspawns_t *polyspawn = new polyspawns_t;
+			polyspawn->next = polyspawns;
+			polyspawn->x = mthing->x;
+			polyspawn->y = mthing->y;
+			polyspawn->angle = mthing->angle;
+			polyspawn->type = mentry->Special;
+			polyspawns = polyspawn;
+			if (mentry->Special != SMT_PolyAnchor)
+				po_NumPolyobjs++;
+			return NULL;
+		}
+
+		case SMT_Player1Start:
+		case SMT_Player2Start:
+		case SMT_Player3Start:
+		case SMT_Player4Start:
+		case SMT_Player5Start:
+		case SMT_Player6Start:
+		case SMT_Player7Start:
+		case SMT_Player8Start:
+			pnum = mentry->Special - SMT_Player1Start;
+			break;
+
+		// Sound sequence override will be handled later
+		default:
+			break;
 		}
 	}
 
@@ -6287,7 +6368,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 			return NULL;
 
 		// save spots for respawning in network games
-		FPlayerStart start(mthing);
+		FPlayerStart start(mthing, pnum+1);
 		playerstarts[pnum] = start;
 		AllPlayerStarts.Push(start);
 
@@ -6303,20 +6384,12 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	}
 
 	// [RH] sound sequence overriders
-	if (mthing->type >= 1400 && mthing->type < 1410)
+	// [rc4l] uzdoom@9e5bf3812 -- 1400-1409 and 1411 are MAPINFO $SSeqOverride entries now, the
+	// first ten carrying their sequence number as an argument.
+	if (mentry->Type == NULL && mentry->Special == SMT_SSeqOverride)
 	{
-		P_PointInSector (mthing->x, mthing->y)->seqType = mthing->type - 1400;
-		return NULL;
-	}
-	else if (mthing->type == 1411)
-	{
-		int type;
-
-		if (mthing->args[0] == 255)
-			type = -1;
-		else
-			type = mthing->args[0];
-
+		int type = mentry->Args[0];
+		if (type == 255) type = -1;
 		if (type > 63)
 		{
 			Printf ("Sound sequence %d out of range\n", type);
@@ -6330,34 +6403,22 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 
 	// [RH] Determine if it is an old ambient thing, and if so,
 	//		map it to MT_AMBIENT with the proper parameter.
-	if (mthing->type >= 14001 && mthing->type <= 14064)
+	if (mthing->EdNum >= 14001 && mthing->EdNum <= 14064)
 	{
-		mthing->args[0] = mthing->type - 14000;
-		mthing->type = 14065;
+		mthing->args[0] = mthing->EdNum - 14000;
+		mthing->EdNum = 14065;
 	}
-	else if (mthing->type >= 14101 && mthing->type <= 14164)
+	else if (mthing->EdNum >= 14101 && mthing->EdNum <= 14164)
 	{
-		mthing->args[0] = mthing->type - 14100;
-		mthing->type = 14165;
-	}
-	// find which type to spawn
-	i = DoomEdMap.FindType (mthing->type);
-
-	if (i == NULL)
-	{
-		// [RH] Don't die if the map tries to spawn an unknown thing
-		Printf ("Unknown type %i at (%i, %i)\n",
-				 mthing->type,
-				 mthing->x>>FRACBITS, mthing->y>>FRACBITS);
-		i = PClass::FindClass("Unknown");
+		mthing->args[0] = mthing->EdNum - 14100;
+		mthing->EdNum = 14165;
 	}
 	// [RH] If the thing's corresponding sprite has no frames, also map
 	//		it to the unknown thing.
-	else
+	// Handle decorate replacements explicitly here
+	// to check for missing frames in the replacement object.
 	{
-		// Handle decorate replacements explicitly here
-		// to check for missing frames in the replacement object.
-		i = i->GetReplacement();
+		i = mentry->Type->GetReplacement();
 
 		const AActor *defaults = GetDefaultByType (i);
 		if (defaults->SpawnState == NULL ||
@@ -6453,7 +6514,17 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	mobj = AActor::StaticSpawn (i, x, y, z, NO_REPLACE, true);
 
 	if (z == ONFLOORZ)
+	{
 		mobj->z += mthing->z;
+		// [rc4l] uzdoom@93c12cf25 -- remember the map-given height so the Hexen compat path in
+		// P_ZMovement can hold the item there instead of letting it settle to the floor.
+		if ((mobj->flags2 & MF2_FLOATBOB) && (ib_compatflags & BCOMPATF_FLOATBOB))
+		{
+			// [rc4l] special1 is a plain int and mthing->z is our strong fixed_t; upstream converted
+			// implicitly. The value is a raw 16.16 height, compared against floorz the same way below.
+			mobj->special1 = mthing->z.Raw();
+		}
+	}
 	else if (z == ONCEILINGZ)
 		mobj->z -= mthing->z;
 
@@ -6466,7 +6537,11 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	else if (mthing->gravity > 0) mobj->gravity = FixedMul(mobj->gravity, mthing->gravity);
 	else mobj->flags &= ~MF_NOGRAVITY;
 
-	P_FindFloorCeiling(mobj, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT);
+	// [rc4l] uzdoom@93c12cf25 -- for Hexen floatbob compatibility we do not want to alter floorz.
+	if (mobj->special1 == 0 || !(mobj->flags2 & MF2_FLOATBOB) || !(ib_compatflags & BCOMPATF_FLOATBOB))
+	{
+		P_FindFloorCeiling(mobj, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT);
+	}
 
 	if (!(mobj->flags2 & MF2_ARGSDEFINED))
 	{
@@ -6604,6 +6679,17 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 
 	puff = Spawn (pufftype, x, y, z, ALLOW_REPLACE);
 	if (puff == NULL) return NULL;
+
+	// [rc4l] uzdoom@db25322b4 -- honour +RANDOMIZE on puffs, as P_ExplodeMissile and
+	// P_CheckMissileSpawn already do. This draws from pr_spawnpuff, which this function
+	// already draws from for the z jitter below, so predicting clients and the server
+	// consume the stream identically.
+	if ((puff->flags4 & MF4_RANDOMIZE) && puff->tics > 0)
+	{
+		puff->tics -= pr_spawnpuff() & 3;
+		if (puff->tics < 1)
+			puff->tics = 1;
+	}
 
 	//Moved puff creation and target/master/tracer setting to here.
 	if (puff && vict)
@@ -7420,12 +7506,24 @@ static fixed_t GetDefaultSpeed(const PClass *type)
 
 AActor *P_SpawnMissile (AActor *source, AActor *dest, const PClass *type, AActor *owner, const bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf -- dereferenced source unconditionally; a DECORATE caller can reach
+	// here with none.
+	if (source == NULL)
+		return NULL;
+
 	return P_SpawnMissileXYZ (source->x, source->y, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		source, dest, type, true, owner, bSpawnOnClient); // [BB] Added bSpawnOnClient.
 }
 
 AActor *P_SpawnMissileZ (AActor *source, fixed_t z, AActor *dest, const PClass *type, const bool bSpawnOnClient) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileXYZ (source->x, source->y, z, source, dest, type,
 		true, NULL, bSpawnOnClient ); // [BB] Added bSpawnOnClient.
 }
@@ -7433,6 +7531,13 @@ AActor *P_SpawnMissileZ (AActor *source, fixed_t z, AActor *dest, const PClass *
 AActor *P_SpawnMissileXYZ (fixed_t x, fixed_t y, fixed_t z,
 	AActor *source, AActor *dest, const PClass *type, bool checkspawn, AActor *owner, const bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	if (dest == NULL)
 	{
 		Printf ("P_SpawnMissilyXYZ: Tried to shoot %s from %s with no dest\n",
@@ -7550,6 +7655,13 @@ AActor * P_OldSpawnMissile(AActor * source, AActor * owner, AActor * dest, const
 AActor *P_SpawnMissileAngle (AActor *source, const PClass *type,
 	angle_t angle, fixed_t velz, bool bSpawnOnClient) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileAngleZSpeed (source, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		type, angle, velz, GetDefaultSpeed (type),
 		NULL, true, bSpawnOnClient ); // [BB] Added bSpawnOnClient.
@@ -7565,6 +7677,13 @@ AActor *P_SpawnMissileAngleZ (AActor *source, fixed_t z,
 
 AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PClass *type, bool bSpawnOnClient ) // [BB] Added bSpawnOnClient.
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	angle_t an;
 	fixed_t dist;
 	fixed_t speed;
@@ -7595,6 +7714,13 @@ AActor *P_SpawnMissileZAimed (AActor *source, fixed_t z, AActor *dest, const PCl
 AActor *P_SpawnMissileAngleSpeed (AActor *source, const PClass *type,
 	angle_t angle, fixed_t velz, fixed_t speed)
 {
+	// [rc4l] uzdoom@c4b742ebf, settled by uzdoom@fd7ed2bc2 -- dereferenced source unconditionally;
+	// a DECORATE or ACS caller can reach these with none.
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
 	return P_SpawnMissileAngleZSpeed (source, source->z + 32*FRACUNIT + source->GetBobOffset(),
 		type, angle, velz, speed);
 }
@@ -8044,11 +8170,11 @@ void AActor::Crash()
 	}
 }
 
-void AActor::SetIdle()
+void AActor::SetIdle(bool nofunction)
 {
 	FState *idle = FindState (NAME_Idle);
 	if (idle == NULL) idle = SpawnState;
-	SetState(idle);
+	SetState(idle, nofunction);
 }
 
 int AActor::SpawnHealth()
@@ -8278,27 +8404,28 @@ void PrintMiscActorInfo(AActor *query)
 			}
 		}
 		static const char * renderstyles[]= {"None", "Normal", "Fuzzy", "SoulTrans",
-			"OptFuzzy", "Stencil", "Translucent", "Add", "Shaded", "TranslucentStencil"};
+			"OptFuzzy", "Stencil", "Translucent", "Add", "Shaded", "TranslucentStencil",
+			"Shadow", "Subtract", "AddStencil", "AddShaded"};
 
-		Printf("%s @ %p has the following flags:\n   flags: %x", query->GetTag(), query, query->flags);
+		Printf("%s @ %p has the following flags:\n   flags: %x", query->GetTag(), query, query->flags.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags));
-		Printf("\n   flags2: %x", query->flags2);
+		Printf("\n   flags2: %x", query->flags2.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags2 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags2));
-		Printf("\n   flags3: %x", query->flags3);
+		Printf("\n   flags3: %x", query->flags3.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags3 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags3));
-		Printf("\n   flags4: %x", query->flags4);
+		Printf("\n   flags4: %x", query->flags4.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags4 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags4));
-		Printf("\n   flags5: %x", query->flags5);
+		Printf("\n   flags5: %x", query->flags5.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags5 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags5));
-		Printf("\n   flags6: %x", query->flags6);
+		Printf("\n   flags6: %x", query->flags6.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags6 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags6));
-		Printf("\n   flags7: %x", query->flags7);
+		Printf("\n   flags7: %x", query->flags7.GetValue());
 		for (flagi = 0; flagi <= 31; flagi++)
 			if (query->flags7 & 1<<flagi) Printf(" %s", FLAG_NAME(1<<flagi, flags7));
 		Printf("\nBounce flags: %x\nBounce factors: f:%f, w:%f", 
@@ -8308,7 +8435,7 @@ void PrintMiscActorInfo(AActor *query)
 			if (query->BounceFlags & 1<<flagi) Printf(" %s", flagnamesb[flagi]);*/
 		Printf("\nRender style = %i:%s, alpha %f\nRender flags: %x", 
 			querystyle, (querystyle < STYLE_Count ? renderstyles[querystyle] : "Unknown"),
-			FIXED2FLOAT(query->alpha), query->renderflags);
+			FIXED2FLOAT(query->alpha), query->renderflags.GetValue());
 		/*for (flagi = 0; flagi < 31; flagi++)
 			if (query->renderflags & 1<<flagi) Printf(" %s", flagnamesr[flagi]);*/
 		Printf("\nSpecial+args: %s(%i, %i, %i, %i, %i)\nspecial1: %i, special2: %i.",

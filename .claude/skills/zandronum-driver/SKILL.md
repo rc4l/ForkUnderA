@@ -1,64 +1,89 @@
 ---
 name: zandronum-driver
-description: How to drive the ZandroX engine via the Zandronum MCP without wasting time — launch into a map, never idle on the launch call, avoid stale-instance/port traps, and recover with reset. Use whenever launching or controlling the engine through the MCP (launch_instance, verify_menu, screenshot, run_command, menu_nav).
+description: How to drive a running ZandroX engine from an agent with fuactl (tools/fuactl) over the native MCP bridge — build a bridge-enabled engine on any OS, launch a supervised windowed instance, read and navigate menus, take screenshots, run console commands, and clean up instances. Use whenever launching or controlling the engine programmatically (the fuactl CLI, or its MCP tools such as launch_instance, ui_read, ui_menu_nav, ui_screenshot, rpc, reap).
 ---
 
-# Driving the ZandroX engine via the MCP
+# Driving the ZandroX engine with fuactl
 
-The MCP (`zandronum-mcp`, v0.4.0+) spawns a bridge-patched engine and drives it over
-loopback TCP. Follow this to avoid the failure modes that otherwise eat a lot of time.
+`tools/fuactl` replaced the old external `zandronum-mcp` in `0f20ec79` (2026-08-12). The engine now
+answers a typed RPC protocol on a loopback bridge, and fuactl is both its CLI (`npx fuactl <cmd>`)
+and its MCP server (`npx fuactl mcp`). If you know the old tool names (`verify_menu`,
+`get_startup_errors`, `reset`, …), `tools/fuactl/docs/parity.md` maps each one to its replacement.
+The overview is `README.fuactl.md`; the full RPC list is `src/zandronum/src/features/mcp-bridge/README.md`.
+
+## Before the first launch
+
+- **Node.js**, then `cd tools/fuactl && npm install`.
+- **A bridge-enabled engine.** Release builds contain no bridge at all, so launching one fails with
+  "bridge port never opened". Build a dev engine:
+
+  | OS | Command |
+  |---|---|
+  | macOS | `ZX_MCP_BRIDGE=1 ./mac_compile.sh` |
+  | Linux | `ZX_MCP_BRIDGE=1 ./linux_compile.sh` |
+  | Windows | `$env:ZX_MCP_BRIDGE=1; .\windows_compile.ps1 -SkipDeps` (or `windows_build.ps1`) |
+
+  The flag is a compile definition on the whole engine, so switching it on or off rebuilds
+  everything. Never hand a bridge build to players.
+- `npx fuactl doctor` checks that the engine fuactl will use is bridge-enabled and newer than the source.
+- fuactl uses the staged binary at `build/ForkUnderA.app/Contents/MacOS/forkundera`,
+  `dist-windows/forkundera.exe` or `dist-linux/forkundera`. Set `FUACTL_ENGINE` to use another.
 
 ## Rebuild before you launch
 
-- **After any code or `wadsrc/` change, rebuild the bundle with `mac_build_run.sh` first.**
-  It fails closed — stops on a bad build, repacks any stale/missing pk3, and verifies the
-  bundle's binary + pk3 before it says "safe to launch." Launching without it is the #1 time
-  sink: a hand-rolled `cmake --build --target zdoom` never rebuilds the pk3, so you drive a
-  stale binary or hit `Cannot find zandronum.pk3` and debug the wrong layer for an hour.
+After any code or `wadsrc/` change, rebuild with the fail-closed script for your OS:
+`mac_build_run.sh` or `windows_build_run.ps1`. They stop on a bad build, repack stale pk3s and check
+the staged binary. A hand-rolled `cmake --build --target zdoom` never rebuilds the pk3, so you end up
+driving a stale engine and debugging the wrong layer.
 
 ## Launch
 
-- **Always launch into a map.** Pass `map: "MAP01"` (and `skill: 3`). Without a map the
-  engine sits at the title screen; with a non-ZDoom IWAD (e.g. `freedoom2.wad`) it also
-  spam-loops `Cannot play non-ZDoom demos`. A map gives you a steady, drivable instance.
-- **Always windowed.** `fullscreen: false` (+ a modest `width`/`height`, e.g. 960×600).
-  Never fullscreen — it takes over the user's screen.
-- **The launch call blocks (~up to 120s), but the engine is up in a few seconds.**
-  Do NOT sit waiting on it. As soon as it returns *or* backgrounds, immediately drive the
-  instance — `get_startup_errors` (reads the log, works even if the bridge is down) then a
-  real command / `verify_menu` / `screenshot`.
-- IWAD lives next to the engine: `build/ZandroX.app/Contents/MacOS/freedoom2.wad`.
+`npx fuactl launch --map MAP01 --skill 3` (MCP: `launch_instance`) prints the `pid`, `port` and
+`token` every later call needs. Each instance:
 
-## Opening an arbitrary menu
+- **starts in a map** (`MAP01` by default). At the title screen a non-ZDoom IWAD such as
+  `freedoom2.wad` spam-loops `Cannot play non-ZDoom demos`.
+- **runs windowed** at 640×400.
+- **gets its own fresh ini** (`-config` in a temp folder), so it starts from engine defaults and never
+  reads or writes the user's settings.
+- **ignores the real keyboard and mouse** (`ZANDRONUM_BRIDGE_INPUT_LOCK`), so the user can keep
+  working and only injected input reaches the game.
 
-`openmenu "MenuName"` opens any menu descriptor by name (via `verify_menu`'s `open`, or
-`run_command`). Load a custom `MENUDEF` lump with `files: ["…/foo.pk3"]` — no rebuild
-needed for menudef-only changes.
+`--iwad`, `--file a.pk3,b.pk3`, `--seed` and `--arg` (raw engine arguments) pass through.
 
-## When commands time out
+## Driving the UI
 
-A command timing out almost always means one of:
-1. **You attached to a stale/stopped instance** on the conventional port. v0.4.0 prevents
-   this (free-port allocation + PID handshake), but if you see it: run the **`reset`** tool,
-   then relaunch.
-2. The engine is genuinely busy — screenshots/`verify_menu` already get a longer timeout.
+Every call takes `--port P --token T`:
 
-Diagnose with `get_startup_errors` and, if needed, `lsof -nP -iTCP -sTCP:LISTEN | grep 777`
-— don't blind-retry.
+| CLI | MCP | Does |
+|---|---|---|
+| `ui read` | `ui_read` | the current menu as text |
+| `ui find <label>` | `ui_find` | where a label is on screen |
+| `ui nav down down enter` | `ui_menu_nav` | menu keys: up, down, left, right, enter, back, backspace |
+| `ui click <x> <y>` | `ui_click` | a mouse click (the MCP tool can also click a `label`) |
+| `ui type <text>` | `ui_type` | text input |
+| `ui screenshot [name]` | `ui_screenshot` | a PNG written next to the engine |
+| `ui exec <ccmd>` | `rpc` with `console.exec` | any console command |
 
-## Stale instances (should be rare now)
+`ui exec openmenu <MenuName>` opens any menu by name. Load a custom `MENUDEF` with
+`--file …/foo.pk3`; menudef-only changes need no rebuild.
 
-The engine runs a **parent-death watchdog**: it exits within ~3s once the MCP that
-launched it dies (`ZANDRONUM_BRIDGE_PARENT_PID`). So orphans from ended sessions should
-not accumulate. If they do (e.g. an engine wedged in the macOS window server during
-teardown — `ps` state `UE`/`TX`, survives SIGKILL):
+## When an instance stops answering
 
-- Run the MCP **`reset`** tool (reaps orphans + frees ports), or
-- Run `scripts/zx-mcp-reset.sh` from a real shell.
-- Truly wedged (`UE`/`TX`) processes survive SIGKILL and need Activity Monitor / a logout.
+`npx fuactl hang --port P` tells apart the four cases that look the same from outside: the process
+died, it is stuck in one function (which it names), its tic is frozen, or it is simply paused.
+On Windows the in-engine sampler can't answer for a wedged game thread, so it builds and runs
+`native/stackdump` instead and names the busiest thread's first engine frame (`report.stack` has the
+stacks). Don't blind-retry.
 
-## Don't fight the sandbox
+## Cleaning up
 
-`kill`/`killall` from the agent Bash tool is sandboxed and often can't reap GUI engines.
-Prefer the `reset` tool (runs inside the MCP process) or ask the user to run
-`scripts/zx-mcp-reset.sh` (or `! killall -9 zandronum`) themselves.
+- `npx fuactl ls` lists the instances fuactl launched; `npx fuactl reap` removes orphans (`--all`,
+  `--kill`). MCP: `list_instances`, `reap`.
+- An instance exits by itself within a few seconds once the fuactl that launched it dies
+  (`ZANDRONUM_BRIDGE_PARENT_PID`), so orphans should be rare.
+- `kill`/`killall` from the agent's Bash tool is sandboxed and often can't reap a GUI engine; prefer
+  `fuactl reap`.
+- macOS only: an engine wedged in the window server (`ps` state `UE`/`TX`) survives SIGKILL.
+  `scripts/zx-mcp-reset.sh` force-kills every engine and lists the wedged ones, which need Activity
+  Monitor or a logout.

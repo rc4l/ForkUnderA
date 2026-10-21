@@ -8,6 +8,7 @@
 // [BB] New #includes.
 #include "m_png.h"
 #include "p_acs.h"
+#include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 
 static int WriteTHINGS (FILE *file);
 static int WriteLINEDEFS (FILE *file);
@@ -31,10 +32,6 @@ UNSAFE_CCMD (dumpmap)
 {
 	const char *mapname;
 	FILE *file;
-
-	// [BB] This function can overwrite arbitrary files and thus may not be used by ConsoleCommand.
-	if ( ACS_IsCalledFromConsoleCommand( ))
-		return;
 
 	// [BB] The server can't do this.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -68,10 +65,12 @@ UNSAFE_CCMD (dumpmap)
 		mapname = argv[2];
 	}
 
-	file = fopen (argv[1], "wb");
+	// [rc4l] Always a .wad, whatever extension the name carries (features/command-safety).
+	const std::string filename = zx::ComputeOwnExtension(argv[1], {".wad"});
+	file = fopen (filename.c_str(), "wb");
 	if (file == NULL)
 	{
-		Printf ("Cannot write %s\n", argv[1]);
+		Printf ("Cannot write %s\n", filename.c_str());
 		return;
 	}
 

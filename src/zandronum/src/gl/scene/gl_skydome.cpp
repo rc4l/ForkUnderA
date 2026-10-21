@@ -51,9 +51,9 @@
 #include "gl/scene/gl_drawinfo.h"
 #include "gl/scene/gl_portal.h"
 #include "gl/shaders/gl_shader.h"
-#include "gl/textures/gl_bitmap.h"
-#include "gl/textures/gl_texture.h"
-#include "gl/textures/gl_skyboxtexture.h"
+#include "features/materials/texturebitmap.h"
+#include "features/materials/textureinfo.h"
+#include "features/materials/skyboxtexture.h"
 #include "gl/textures/gl_material.h"
 
 
@@ -64,7 +64,7 @@
 //
 //-----------------------------------------------------------------------------
 
-CVAR(Float, skyoffset, 0, 0)	// for testing
+EXTERN_CVAR(Float, skyoffset)   // [rc4l] features/rendersettings, which both renderers read
 
 extern int skyfog;
 
@@ -275,12 +275,39 @@ void RenderDome(FMaterial * tex, float x_offset, float y_offset, bool mirror, in
 		gl_RenderState.SetMaterial(tex, CLAMP_NONE, 0, -1, false);
 		texw = tex->TextureWidth();
 		texh = tex->TextureHeight();
+		// [rc4l] What the ENGINE thinks the sky is. The Diligent dome derives its transform from
+		// sky1texture and came out with a different height than this, which is the whole reason its
+		// horizon sits wrong on maps with a non-stock sky. Printed once per change, not per frame.
+		{
+			static int lastW = -1, lastH = -1;
+			if (texw != lastW || texh != lastH)
+			{
+				lastW = texw; lastH = texh;
+				Printf("gl sky: %s %dx%d skyoffset %d%s\n",
+					tex->tex != NULL ? tex->tex->Name.GetChars() : "?",
+					texw, texh, tex->tex ? tex->tex->SkyOffset : 0,
+					(tex->tex && tex->tex->gl_info.bSkybox) ? " [skybox]" : "");
+			}
+		}
 		gl_RenderState.EnableModelMatrix(true);
 
 		gl_RenderState.mModelMatrix.loadIdentity();
 		gl_RenderState.mModelMatrix.rotate(-180.0f+x_offset, 0.f, 1.f, 0.f);
 
-		float xscale = 1024.f / float(texw);
+		// [rc4l] The repeat count has to be a WHOLE number of wraps, or the sky cannot meet itself.
+		//
+		// 1024/texw was used raw, so any width that does not divide 1024 leaves a fractional repeat and
+		// a vertical seam where the last partial copy butts against the first. DADM's sky is 1000 wide:
+		// 1.024 wraps, and that 2.4% is the seam players reported.
+		//
+		// The clamp matters as much: a texture 1024 or wider is already wide enough for the dome, and
+		// raw division scaled it DOWN -- 2048 wide became 0.5, stretching one copy across two domes'
+		// worth, which is the other half of the same report.
+		//
+		// Upstream 348c384bb6, "fixed scaling of skies with unusual dimensions" -- the same one-line
+		// change, using the later floorf spelling. Our vertical branches already agree with upstream's
+		// SetupMatrices exactly, so this line was the only divergence left in the sky path.
+		float xscale = texw < 1024.f ? floorf(1024.f / float(texw)) : 1.f;
 		float yscale = 1.f;
 		// [EP] Zandronum's early backport of GZDoom fad3a5410, re-grafted onto the
 		// buffered dome (in upstream's own later matrix form): smaller sky textures

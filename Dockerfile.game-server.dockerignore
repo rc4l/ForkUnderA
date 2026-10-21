@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 rc4l
+
+# [rc4l] Build context for Dockerfile.game-server. BuildKit reads <dockerfile>.dockerignore in
+# preference to the root .dockerignore, which excludes everything (that one serves
+# Dockerfile.linux-build, whose image is a toolchain with the source mounted at runtime).
+#
+# [rc4l] Allowlist rather than denylist, as Dockerfile.registry.dockerignore is: start from nothing and name what the build reads.
+*
+
+# [rc4l] The staged server and the two files the runtime stage copies beside it; the compile happens before docker build, so no source enters the context.
+!dist-prebuilt
+!config/waddownloadsites.txt
+!scripts/game-server-entrypoint.sh

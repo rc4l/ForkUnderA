@@ -43,15 +43,19 @@
 class FScanner;
 class FDecalTemplate;
 struct FDecalAnimator;
+
 struct PClass;
 class DBaseDecal;
 struct side_t;
+class FRandom;
 
 class FDecalBase
 {
 	friend class FDecalLib;
 public:
 	virtual const FDecalTemplate *GetDecal () const;
+	// [rc4l] GetDecal with a group's choice drawn from `choice`, for marks the game's own stream never drew for.
+	virtual const FDecalTemplate *GetDecalWith (FRandom &choice) const { (void)choice; return GetDecal (); }
 	virtual void ReplaceDecalRef (FDecalBase *from, FDecalBase *to) = 0;
 	
 	// [TP]
@@ -74,6 +78,8 @@ public:
 	FDecalTemplate () : Translation (0) {}
 
 	void ApplyToDecal (DBaseDecal *actor, side_t *wall) const;
+	// [rc4l] ApplyToDecal with its random flips drawn from `flips`, so a floor mark leaves the game's stream where it was.
+	void ApplyToDecal (DBaseDecal *actor, side_t *wall, FRandom &flips) const;
 	const FDecalTemplate *GetDecal () const;
 	void ReplaceDecalRef (FDecalBase *from, FDecalBase *to);
 

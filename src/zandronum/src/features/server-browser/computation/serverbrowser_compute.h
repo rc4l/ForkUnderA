@@ -34,10 +34,6 @@ enum class BrowserPhase
 // than a spinner, because the first server usually arrives long before the last one gives up.
 BrowserPhase ComputeBrowserPhase( bool waitingForRegistry, const BrowserCounts &counts );
 
-// True when a "still working" hint belongs on screen ALONGSIDE results -- the phase alone cannot say
-// this, since Ready and "three servers yet to answer" are both true at once.
-bool ComputeShowsProgress( bool waitingForRegistry, const BrowserCounts &counts );
-
 // Spinner frame for a given tic. frameCount and ticsPerFrame must be positive; nonsense input pins
 // to frame 0 rather than dividing by zero, because a spinner is never worth a crash.
 int ComputeSpinnerFrame( int tic, int frameCount, int ticsPerFrame );
@@ -65,6 +61,17 @@ struct RowWindow
 // Anchoring to the selection instead of recentring every frame is what stops the list jumping around
 // while results stream in underneath it.
 RowWindow ComputeRowWindow( int total, int perPage, int selected, int currentFirst );
+
+// A scroll position, made safe against a list that is not the size it was when the position was
+// taken. Two things produce a stale position: a remembered per-tab scroll being restored, and
+// servers dying underneath a list that is already open. Both land here.
+//
+// The dangerous direction is SHRINKING. A browser scrolled to row 40 of 60 whose servers time out
+// down to 6 must not keep drawing from row 40 -- there is nothing there, and the row indices are fed
+// straight back into hit-testing, so a stale first row aims clicks at rows that do not exist.
+// Anything past the end pins to the last full page; a list that fits entirely on screen pins to 0,
+// which is also what makes the scrollbar's disappearance harmless.
+int ComputeRestoredScroll( int remembered, int total, int perPage );
 
 // Keep a selection valid as the list grows and shrinks under it. Returns -1 for an empty list.
 int ComputeClampedSelection( int selected, int total );

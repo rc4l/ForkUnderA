@@ -73,7 +73,8 @@ class FDecalGroup : public FDecalBase
 
 public:
 	FDecalGroup () : Choices (pr_decalchoice) {}
-	const FDecalTemplate *GetDecal () const;
+	const FDecalTemplate *GetDecal () const { return GetDecalWith (pr_decalchoice); }
+	const FDecalTemplate *GetDecalWith (FRandom &choice) const;
 	void ReplaceDecalRef (FDecalBase *from, FDecalBase *to)
 	{
 		Choices.ReplaceValues(from, to);
@@ -1038,6 +1039,11 @@ FDecalBase::~FDecalBase ()
 
 void FDecalTemplate::ApplyToDecal (DBaseDecal *decal, side_t *wall) const
 {
+	ApplyToDecal (decal, wall, pr_decal);
+}
+
+void FDecalTemplate::ApplyToDecal (DBaseDecal *decal, side_t *wall, FRandom &flips) const
+{
 	if (RenderStyle.Flags & STYLEF_ColorIsFixed)
 	{
 		decal->SetShade (ShadeColor);
@@ -1052,7 +1058,7 @@ void FDecalTemplate::ApplyToDecal (DBaseDecal *decal, side_t *wall) const
 		(decal->RenderFlags & (RF_RELMASK|RF_CLIPMASK|RF_INVISIBLE|RF_ONESIDED));
 	if (RenderFlags & (DECAL_RandomFlipX|DECAL_RandomFlipY))
 	{
-		decal->RenderFlags ^= pr_decal() &
+		decal->RenderFlags ^= flips() &
 			((RenderFlags & (DECAL_RandomFlipX|DECAL_RandomFlipY)) >> 8);
 	}
 	if (Animator != NULL)
@@ -1124,9 +1130,9 @@ FDecalLib::FTranslation *FDecalLib::FTranslation::LocateTranslation (DWORD start
 	return trans;
 }
 
-const FDecalTemplate *FDecalGroup::GetDecal () const
+const FDecalTemplate *FDecalGroup::GetDecalWith (FRandom &choice) const
 {
-	const FDecalBase *decal = Choices.PickEntry ();
+	const FDecalBase *decal = Choices.PickEntry (choice);
 	const FDecalBase *remember = decal;
 
 	// Repeatedly GetDecal() until the result is constant, since
@@ -1136,7 +1142,7 @@ const FDecalTemplate *FDecalGroup::GetDecal () const
 		do
 		{
 			remember = decal;
-			decal = decal->GetDecal ();
+			decal = decal->GetDecalWith (choice);
 		} while (decal != NULL && decal != remember);
 	}
 	return static_cast<const FDecalTemplate *>(remember);

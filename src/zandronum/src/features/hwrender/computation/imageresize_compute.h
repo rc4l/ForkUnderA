@@ -21,6 +21,10 @@ namespace zx
 void ResizeImageBoxAverage(int srcWidth, int srcHeight, const unsigned char *src,
 	int dstWidth, int dstHeight, unsigned char *dst);
 
+// [rc4l] Resize a tightly packed image of `channels` bytes a pixel either way by taking each destination pixel's nearest source pixel, as a screenshot of a frame drawn at another size is; dst holds dstWidth*dstHeight*channels bytes.
+void ComputeNearestResize(int srcWidth, int srcHeight, const unsigned char *src,
+	int dstWidth, int dstHeight, unsigned char *dst, int channels);
+
 } // namespace zx
 
 #endif // ZX_IMAGERESIZE_COMPUTE_H

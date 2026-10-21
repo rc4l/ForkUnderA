@@ -93,7 +93,7 @@ For each field type the command serializes, there must be a test that it:
   in-process capture/replay harness, not this. Network conditions there are *inputs* (drop/reorder the
   captured command buffer), still deterministic, still no live server.
 - **The socket/handshake transport:** inherited Zandronum code, rarely touched; covered by the
-  occasional manual `zandronum-driver` session, not automated here.
+  occasional manual `zandronum-session` run, not automated here.
 
 Determinism is the whole point: a red wire test is a byte-level repro that replays identically on a
 laptop, not a flaky multiplayer session. Keep it that way — no clocks, no RNG, no processes.

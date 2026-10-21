@@ -33,8 +33,6 @@
 */
 
 #include <SDL.h>
-#include <signal.h>
-#include <time.h>
 
 #include "version.h"
 #include "hardware.h"
@@ -46,16 +44,20 @@
 #include "v_text.h"
 #include "doomstat.h"
 #include "m_argv.h"
-#ifndef NO_GL
-#include "sdlglvideo.h"
-#endif
+#include "sdlvideo.h"
 // [rc4l] video-scale: faithful port of upstream's r_videoscale math. See features/video-scale.
 #include "features/video-scale/computation/videoscale_compute.h"
+#include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
+#include "features/frame/framedriver.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
+#include "sdlhost.h"   // [rc4l] fullscreen as the host has it
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
 #include "r_nullrenderer.h"
 #endif
+
+// [rc4l] GL's renderer, which a build with GL hands to CreateLaunchRenderer.
+FRenderer *gl_CreateInterface();
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -104,18 +106,29 @@ void I_ShutdownGraphics ()
 	}
 	if (Video)
 		delete Video, Video = NULL;
+
+	SDL_QuitSubSystem (SDL_INIT_VIDEO);	// [rc4l] uzdoom@8e1b1aa20
 }
 
 void I_InitGraphics ()
 {
+	// [rc4l] uzdoom@8e1b1aa20
+	if (SDL_InitSubSystem (SDL_INIT_VIDEO) < 0)
+	{
+		I_FatalError ("Could not initialize SDL video:\n%s\n", SDL_GetError());
+		return;
+	}
+
+	Printf("Using video driver %s\n", SDL_GetCurrentVideoDriver());
+
 	UCVarValue val;
 
 	val.Bool = !!Args->CheckParm ("-devparm");
 	ticker.SetGenericRepDefault (val, CVAR_Bool);
 
-#ifndef NO_GL
-	// [rc4l] GL-only build: OpenGL is the only renderer, so there is no software video backend to fall back to.
-	Video = new SDLGLVideo(0);
+#if !defined(NO_GL) || defined(FUA_DILIGENT)
+	// [rc4l] A build with a renderer, GL or the backend, opens the engine's window; there is no software video backend to fall back to.
+	Video = new SDLVideo(0);
 #else
 	// [rc4l] The dedicated server has no renderer and must never try to open a window.
 	I_FatalError ("This is a server-only build; it cannot initialize graphics");
@@ -139,11 +152,10 @@ void I_CreateRenderer()
 	if (Renderer == NULL)
 	{
 #ifndef NO_GL
-		// [rc4l] GL-only build: always use the OpenGL renderer.
-		Renderer = gl_CreateInterface();
+		Renderer = zx::frame::CreateLaunchRenderer(gl_CreateInterface);
 #else
-		// [rc4l] Dedicated server (no OpenGL): use the trivial null renderer.
-		Renderer = new FNullRenderer;
+		// [rc4l] Without GL the backend draws alone (the browser's build); without it too, the dedicated server's trivial null renderer.
+		Renderer = zx::hwrender::BackendOnly() ? zx::frame::CreateLaunchRenderer(NULL) : new FNullRenderer;
 #endif
 		atterm(I_DeleteRenderer);
 	}
@@ -169,6 +181,8 @@ DFrameBuffer *I_SetMode (int &width, int &height, DFrameBuffer *old)
 		fs = fullscreen;
 		break;
 	}
+	// [rc4l] A page's canvas is never an SDL fullscreen window; the page makes it fullscreen (fullscreen's callback below).
+	if (zx::sdlhost::OwnsFullscreen()) fs = false;
 
 	// [rc4l] video-scale: split the window's CLIENT size from the RENDER (virtual) size.
 	//   - client size = the window's drawable: the desktop for fullscreen (borderless-desktop), or
@@ -280,65 +294,6 @@ void I_ClosestResolution (int *width, int *height, int bits)
 EXTERN_CVAR(Int, vid_maxfps);
 EXTERN_CVAR(Bool, cl_capfps);
 
-#ifndef __APPLE__
-Semaphore FPSLimitSemaphore;
-
-static void FPSLimitNotify(sigval val)
-{
-	SEMAPHORE_SIGNAL(FPSLimitSemaphore)
-}
-
-void I_SetFPSLimit(int limit)
-{
-	static sigevent FPSLimitEvent;
-	static timer_t FPSLimitTimer;
-	static bool FPSLimitTimerEnabled = false;
-	static bool EventSetup = false;
-	if(!EventSetup)
-	{
-		EventSetup = true;
-		FPSLimitEvent.sigev_notify = SIGEV_THREAD;
-		FPSLimitEvent.sigev_signo = 0;
-		FPSLimitEvent.sigev_value.sival_int = 0;
-		FPSLimitEvent.sigev_notify_function = FPSLimitNotify;
-		FPSLimitEvent.sigev_notify_attributes = NULL;
-
-		SEMAPHORE_INIT(FPSLimitSemaphore, 0, 0)
-	}
-
-	if (limit < 0)
-	{
-		limit = vid_maxfps;
-	}
-	// Kill any leftover timer.
-	if (FPSLimitTimerEnabled)
-	{
-		timer_delete(FPSLimitTimer);
-		FPSLimitTimerEnabled = false;
-	}
-	if (limit == 0)
-	{ // no limit
-		DPrintf("FPS timer disabled\n");
-	}
-	else
-	{
-		FPSLimitTimerEnabled = true;
-		if(timer_create(CLOCK_REALTIME, &FPSLimitEvent, &FPSLimitTimer) == -1)
-			Printf("Failed to create FPS limitter event\n");
-		itimerspec period = { {0, 0}, {0, 0} };
-		period.it_value.tv_nsec = period.it_interval.tv_nsec = 1000000000 / limit;
-		if(timer_settime(FPSLimitTimer, 0, &period, NULL) == -1)
-			Printf("Failed to set FPS limitter timer\n");
-		DPrintf("FPS timer set to %u ms\n", (unsigned int) period.it_interval.tv_nsec / 1000000);
-	}
-}
-#else
-// So Apple doesn't support POSIX timers and I can't find a good substitute short of
-// having Objective-C Cocoa events or something like that.
-void I_SetFPSLimit(int limit)
-{
-}
-#endif
 
 // [rc4l] Default 500 to match upstream UZDoom/GZDoom (was 200). vsync and cl_capfps are already off
 // by default like upstream; this was the only framerate-cap divergence. 0 = uncapped, clamp [35,1000].
@@ -358,12 +313,15 @@ CUSTOM_CVAR (Int, vid_maxfps, 500, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	}
 }
 
-#ifndef NO_GL
+// [rc4l] No call at game start in any build: the screen is already made in this mode, and a call then rebuilt the window and swapchain on the first frame, which zeroes a browser's canvas.
 CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_NOINITCALL)
-#else
-CUSTOM_CVAR (Bool, fullscreen, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
-#endif
 {
+	// [rc4l] A page's one canvas goes fullscreen or back, as the page's own button does, rather than the window being rebuilt.
+	if (zx::sdlhost::OwnsFullscreen())
+	{
+		zx::sdlhost::SetFullscreen(self);
+		return;
+	}
 	if ( screen )
 	{
 		NewWidth = screen->GetWidth();
@@ -385,11 +343,8 @@ CUSTOM_CVAR (Float, vid_winscale, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 		NewWidth = screen->GetWidth();
 		NewHeight = screen->GetHeight();
 		NewBits = DisplayBits;
-#ifdef NO_GL
-		setmodeneeded = true;
-#else
+		// [rc4l] Not without GL either, where the software renderer that wanted it is gone and the call at game start rebuilt the window.
 		//setmodeneeded = true;	// This CVAR doesn't do anything and only causes problems!
-#endif
 	}
 }
 
