@@ -99,6 +99,9 @@ void C_FindBind(const char *Command, char *Key);
 
 extern const char *KeyNames[];
 
+// [rc4l] A key by its DEFBINDS name (or #number), 0 for none, for lumps that name keys (features/touch-input).
+int C_KeyFromName(const char *name);
+
 struct FKeyAction
 {
 	FString mTitle;

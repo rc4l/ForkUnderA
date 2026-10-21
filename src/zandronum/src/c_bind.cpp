@@ -204,6 +204,11 @@ static int GetKeyFromName (const char *name)
 //
 //=============================================================================
 
+int C_KeyFromName(const char *name)
+{
+	return GetKeyFromName(name);
+}
+
 static int GetConfigKeyFromName (const char *key)
 {
 	int keynum = GetKeyFromName(key);

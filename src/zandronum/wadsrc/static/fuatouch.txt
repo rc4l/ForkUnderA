@@ -1,0 +1,24 @@
+// FUATOUCH -- the on-screen controls a touch screen shows in play (features/touch-input).
+//
+// A mod's own FUATOUCH lump layers on this one: a `button` with an id already here replaces it, a new id
+// adds one, and `clear` drops everything before it. Zones and `at` are fractions of the view inside its
+// safe area; `radius` and `size` are virtual pixels on the freeform menu's 480x270 canvas. A button's
+// `key` is a DEFBINDS key name, so the Controls menu rebinds it; a `command` instead takes a spare joystick
+// key (joy9 up) and binds it unless the player already has. `icon` names a graphic lump drawn in place of the label.
+
+stick { zone 0.00 0.30 0.42 1.00  radius 64  deadzone 0.20 }
+look  { zone 0.42 0.00 1.00 1.00  sensitivity 1.0 }
+
+button fire   { key rtrigger   at 0.90 0.78  size 84  label "FIRE" }
+button use    { key pad_a      at 0.90 0.56  size 60  label "USE" }
+button jump   { key pad_y      at 0.76 0.88  size 60  label "JUMP" }
+button weapon { key rshoulder  at 0.76 0.66  size 48  label "WPN" }
+button map    { key dpadup     at 0.58 0.06  size 40  label "MAP" }
+button menu   { key pad_back   at 0.50 0.06  size 44  label "MENU" }
+
+portrait {
+	button fire   { at 0.86 0.84 }
+	button use    { at 0.86 0.68 }
+	button jump   { at 0.68 0.90 }
+	button weapon { at 0.68 0.74 }
+}
