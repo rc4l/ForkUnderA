@@ -84,6 +84,9 @@ export function configuredOnce(n) {
 // [rc4l] The pointlight scenario's hall, as the light grid check serves it to the page.
 const POINTLIGHT_WAD = 'fua-pointlight.wad';
 
+// [rc4l] The pointlight scenario's vantages the browser frames, its nearest and a middle one, since each frame takes seconds under CI's software WebGPU and the scenario covers the rest.
+export const LIGHT_VANTAGES = POINTLIGHT_VANTAGES.filter((v) => ['d600', 'd1500'].includes(v.name));
+
 // [rc4l] How much one block of the frame must change with the light on for the comparison to mean anything.
 export const LIT_FLOOR = 4;
 
@@ -252,7 +255,7 @@ export const CHECKS = [
       const frame = async (command) => { Module.fuaCommand(command); ${pause(300)} return grabFrame(); };
       ${pause(3000)}
       const at = [];
-      for (const v of ${JSON.stringify(POINTLIGHT_VANTAGES.map(({ name, at: { x, y } }) => ({ name, x, y })))}) {
+      for (const v of ${JSON.stringify(LIGHT_VANTAGES.map(({ name, at: { x, y } }) => ({ name, x, y })))}) {
         Module.fuaCommand('warp ' + v.x + ' ' + v.y);
         ${pause(1000)}
         at.push({ name: v.name, grid: await frame('fua_dg_clusters 1'), none: await frame('fua_dg_clusters 0'), dark: await frame('fua_dg_dynlights 0') });

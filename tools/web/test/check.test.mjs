@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -234,7 +234,8 @@ test("the light grid check plays the pointlight scenario's hall from its vantage
   assert.ok(check.firefox);
   assert.equal(check.query, 'file=fua-pointlight.wad&map=MAP01');
   assert.match(check.init, /"fua-pointlight\.wad"/);
-  for (const name of ['d600', 'd1000', 'd1500', 'd2200', 'd3000']) assert.match(check.evaluate, new RegExp(`"name":"${name}"`));
+  assert.deepEqual(LIGHT_VANTAGES.map((v) => v.name), ['d600', 'd1500']);
+  for (const v of LIGHT_VANTAGES) assert.match(check.evaluate, new RegExp(`"name":"${v.name}","x":${v.at.x},"y":${v.at.y}`));
 });
 
 test("a check with a query of its own opens the run's page with it in place of the run's", () => {
