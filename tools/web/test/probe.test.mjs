@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRun, queryMap, report, runScript, soakLines } from '../probe.mjs';
+import { abLine, abShots, initFor, parseRun, parseSwap, queryMap, report, runScript, soakLines } from '../probe.mjs';
+import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 
 test('a run is console lines with waits between them', () => {
   assert.deepEqual(parseRun('god; give all ;wait 1000; +attack;'), [{ command: 'god' }, { command: 'give all' }, { wait: 1000 }, { command: '+attack' }]);
@@ -46,4 +47,44 @@ test('a run looks at the frame pacing and the audio level since its last look', 
   assert.equal(js.match(/framesFrom = window\.fuaFrames\.length;/g).length, 3);
   assert.match(js, /window\.fuaLevel\.mean\(\)\.toFixed\(4\) \+ ' RMS'\); window\.fuaLevel\.reset\(\);/);
   assert.doesNotMatch(js, /fuaCommand\("frames"\)/);
+});
+
+// [rc4l] A 32x16 frame as the page hands it back, base64 PNG, one grey level with its left half at left.
+function frame(left, right = 10) {
+  const rgb = Buffer.alloc(32 * 16 * 3);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 32; x++) rgb.fill(x < 16 ? left : right, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  return encodePNG(32, 16, rgb).toString('base64');
+}
+
+// [rc4l] Queue #68 took a scratch harness of its own to frame a cvar at two values in a browser, for want of this step.
+test('an ab step frames a cvar at two values, sets it back, and reports how far apart the frames sit', () => {
+  const steps = parseRun('god; ab fua_dg_clusters 1 0');
+  assert.deepEqual(steps[1], { ab: { cvar: 'fua_dg_clusters', a: '1', b: '0' } });
+  const js = runScript(steps);
+  assert.match(js, /const grabFrame = /);
+  assert.match(js, /Module\.fuaCommand\("fua_dg_clusters 1"\);/);
+  assert.match(js, /Module\.fuaCommand\("fua_dg_clusters 0"\);/);
+  assert.match(js, /abs\.push\(\{ cvar: "fua_dg_clusters", a: "1", b: "0", frames: \[first, second\] \}\);/);
+  const ab = { cvar: 'fua_dg_clusters', a: '1', b: '0', frames: [frame(10), frame(90)] };
+  assert.equal(abLine(ab), 'ab fua_dg_clusters 1 vs 0: mean|d| 40.000, largest block 80.00');
+  assert.deepEqual(report({ said: [], sounds: [], heldBefore: 0, heldAfter: 0, abs: [ab] }, [])[0], abLine(ab));
+  assert.deepEqual(abShots([ab]).map((s) => s.name), ['ab1-fua_dg_clusters-1.png', 'ab1-fua_dg_clusters-0.png']);
+  assert.deepEqual(abShots([ab])[1].bytes, Buffer.from(ab.frames[1], 'base64'));
+  assert.deepEqual(abShots(undefined), []);
+});
+
+test('a WGSL swap splits at its first arrow, and one without an arrow or a find is refused', () => {
+  assert.deepEqual(parseSwap('(1.0f / gl_FragCoord.w)=>vPixelPos.w'), { find: '(1.0f / gl_FragCoord.w)', replace: 'vPixelPos.w' });
+  assert.deepEqual(parseSwap('a=>b=>c'), { find: 'a', replace: 'b=>c' });
+  assert.throws(() => parseSwap('nothing'), /--wgsl takes FIND=>REPLACE, not "nothing"/);
+  assert.throws(() => parseSwap('=>x'), /--wgsl takes FIND=>REPLACE/);
+});
+
+test('the page starts with the watches, each WAD served and the swap, and only what was asked for', () => {
+  const plain = initFor();
+  assert.match(plain, /window\.fuaSounds = \[\]/);
+  assert.doesNotMatch(plain, /createShaderModule|files\.json/);
+  const all = initFor({ wads: [{ name: 'q.wad', bytes: Buffer.from('PWAD') }], swap: { find: 'a', replace: 'b' } });
+  assert.match(all, /const name = "q\.wad";/);
+  assert.match(all, /createShaderModule/);
 });

@@ -218,7 +218,7 @@ Rules that keep it honest, in their scalable form:
 5. **Live comparison first, golden captures last.**
    - WebGPU is checked against Vulkan live on desktop, so no golden images are needed there.
    - Golden captures, with the scenario suite's per-box tolerances, are only for where no second renderer exists: the browser, and after GL is removed.
-   - Browser smoke tests stay few (boot, a map, one capture), because CI runs Chrome's software WebGPU.
+   - Browser checks run locally rather than in CI, which plays no game.
 
 ## How it fits the codebase
 

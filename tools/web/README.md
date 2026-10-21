@@ -76,11 +76,13 @@ The demo site, a Cloudflare Worker serving a staged page under `/demo/` at the c
 ## probe.mjs
 
 ```bash
-node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N] [--browser chrome|firefox]
+node tools/web/probe.mjs [dist-web] [--query Q] [--run "god; wait 1000; +attack"] [--autoplay] [--software] [--seconds N] [--browser chrome|firefox] [--wad a.wad,b.wad] [--wgsl FIND=>REPLACE] [--shots DIR]
 node tools/web/probe.mjs [dist-web] [--query Q] --soak reload|TEXT [--cycles N] [--settle MS] [--seconds N]
 ```
 
-Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: what the lines printed, each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. Two steps look rather than act: `frames` prints the browser's frame pacing since the last `frames` (median, p99 and longest gap, and the gaps over 20 and 50 ms), and `level` the RMS the audio output carried since the last `level`. The page has the focus, as a player's does. `--browser firefox` plays it in Firefox instead (`firefox.mjs`, over WebDriver BiDi): headless Firefox offers no WebGPU adapter, so its window opens and is moved off the screen, silent.
+Plays a staged page through console lines (with `wait N` between them, in milliseconds) and reports what it did: what the lines printed, each sound it started, any started again, the screen textures it held before and after, and its WebGPU errors. `--autoplay` lets its audio run without a click. Two steps look rather than act: `frames` prints the browser's frame pacing since the last `frames` (median, p99 and longest gap, and the gaps over 20 and 50 ms), and `level` the RMS the audio output carried since the last `level`. A step `ab CVAR A B` frames the view with the cvar at A and at B, sets it back, and prints how far the two frames sit apart (16-pixel block means, as the scenarios judge); `--shots DIR` keeps the frames. The page has the focus, as a player's does. `--browser firefox` plays it in Firefox instead (`firefox.mjs`, over WebDriver BiDi): headless Firefox offers no WebGPU adapter, so its window opens and is moved off the screen, silent.
+
+`--wad` serves WADs from anywhere to the page as if they were staged, so a template map plays on any build (`--query "file=a.wad&map=MAP01"`). `--wgsl FIND=>REPLACE` rewrites every WGSL shader the page makes, to try a shader change without building again: `--wgsl "(1.0f / gl_FragCoord.w)=>vPixelPos.w"` tried queue #68's fix on a build from before it.
 
 `--soak` instead repeats an action on the query's map (`reload` loads it again; other text is console lines separated by `|`, and a `check: resize WxH` line resizes the page), marks memory after each, and prints the engine's `fua_soak` verdict, exiting 1 when something kept growing. Chrome runs with `--expose-gc`, so each mark comes after the page's garbage is collected.
 
@@ -89,14 +91,17 @@ The page code, the watches and the soak among it, is shared with the checks (`pa
 ## check.mjs
 
 ```bash
-node tools/web/check.mjs [dist-web] [--software] [--only TEXT]
+node tools/web/check.mjs [dist-web] [--software] [--only TEXT] [--browser chrome|firefox]
 ```
 
 Serves a staged build and runs `CHECKS` (in `check.mjs`, each named for what it proves) in headless Chrome, in order on one profile, since a later check can read what an earlier one stored.
 - It prints PASS or FAIL for each, with the console's last lines (and the screenshot, where the check judges one) for a failure, and exits 1 if any failed.
 - An error the page's WebGPU device reports fails whichever check it came in.
 - `--only TEXT` runs the checks whose names contain TEXT.
-- `--software` runs WebGPU on SwiftShader, for a machine with no GPU; CI's `build-web` job runs it that way.
+- `--software` runs WebGPU on SwiftShader, for a machine with no GPU.
+- CI runs none of them, since it plays no game: run them here after changing the engine, the page or its shaders.
+- `--browser firefox` runs the checks marked `firefox` in Firefox and skips the rest, since Firefox's WebGPU is not Chrome's.
+- A check can carry its own map: `query` opens it with its own query, and `serveData(name, bytes)` (`page.mjs`) as its `init` serves the WAD as if staged; the light grid check plays `scenarios/pointlight.mjs`'s hall that way.
 
 ## webgpu-check
 

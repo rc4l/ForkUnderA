@@ -83,11 +83,55 @@ test("the report summarises the map and describes the sectors and lines asked ab
   assert.throws(() => mapReport(found, { lines: [99] }), /no line 99: the map has 8/);
 });
 
-test("a map with no script source says so, and a binary-format map is refused by name", () => {
+test("a map with no script source says so", () => {
   const found = findMapLumps([{ name: "a.wad", buf: wad(mapLumps("MAP01", courtMap())) }], "MAP01");
   assert.equal(mapReport(found, { scripts: "x" }).scripts, "no SCRIPTS source in the map");
   assert.equal(mapReport(found).scripts, undefined);
-  const binary = findMapLumps([{ name: "old.wad", buf: wad([{ name: "MAP01", data: "" }, { name: "THINGS", data: "x" }]) }], "MAP01");
-  assert.throws(() => mapReport(binary), /old\.wad holds the map in binary format/);
   assert.deepEqual(grepScripts("a\r\nB\r\nab", "^a"), [{ line: 1, text: "a" }, { line: 3, text: "ab" }]);
+});
+
+// [rc4l] Little-endian 16-bit fields (negative ones signed) and 8-character names, packed as a binary map's lumps are.
+function packed(fields) {
+  return Buffer.concat(fields.map((f) => {
+    if (typeof f === "string") { const b = Buffer.alloc(8); b.write(f, "latin1"); return b; }
+    const b = Buffer.alloc(2);
+    if (f < 0) b.writeInt16LE(f); else b.writeUInt16LE(f);
+    return b;
+  }));
+}
+
+// [rc4l] One 256-square sector in a binary map's lumps: its corners, four lines each with a side into it, and the north line's own fields.
+function binarySquare(northLine) {
+  const corners = [[0, 0], [0, 256], [256, 256], [256, 0]];
+  return {
+    VERTEXES: packed(corners.flat()),
+    SIDEDEFS: Buffer.concat(corners.map(() => packed([0, 0, "-", "-", "STARTAN2", 0]))),
+    SECTORS: packed([-16, 128, "FLOOR4_8", "F_SKY1", 160, 0, 7]),
+    LINEDEFS: Buffer.concat(corners.map((_, i) => (i === 1 ? northLine(i) : northLine(i, true)))),
+  };
+}
+
+test("a Doom-format map reads as its UDMF would, its tag as the id", () => {
+  const lumps = binarySquare((i, plain) => packed([i, (i + 1) % 4, 1, plain ? 0 : 11, plain ? 0 : 7, i, 0xffff]));
+  const things = packed([128, 64, 90, 2018, 7]);
+  const buf = wad([{ name: "MAP01", data: "" }, { name: "THINGS", data: things }, ...Object.entries(lumps).map(([name, data]) => ({ name, data }))]);
+  const r = mapReport(findMapLumps([{ name: "doom.wad", buf }], "MAP01"), { sectors: [0], special: 11, tag: 7, things: [2018] });
+  assert.deepEqual(r.summary, { namespace: "doom (binary)", sectors: 1, lines: 4, things: 1, specials: { 11: 1 }, skyCeilings: 1, skyFloors: 0 });
+  assert.deepEqual([r.sectors[0].bounds, r.sectors[0].lines, r.sectors[0].heightfloor, r.sectors[0].texturefloor], [[0, 0, 256, 256], [0, 1, 2, 3], -16, "FLOOR4_8"]);
+  assert.deepEqual([r.special.length, r.special[0].from, r.special[0].to, r.special[0].front, r.special[0].back, r.special[0].id], [1, [0, 256], [256, 256], 0, null, 7]);
+  assert.equal(r.special[0].frontSide.texturemiddle, "STARTAN2");
+  assert.deepEqual(r.tag.map((s) => s.index), [0]);
+  assert.deepEqual(r.things, [{ index: 0, x: 128, y: 64, angle: 90, type: 2018, flags: 7 }]);
+});
+
+test("a map with a BEHAVIOR lump reads in Hexen's layout, the special's arguments and the thing's tid with it", () => {
+  // [rc4l] Hexen's line is v1, v2, flags, then a byte special and five byte args, then the sides.
+  const line = (i, plain) => Buffer.concat([packed([i, (i + 1) % 4, 1]), Buffer.from(plain ? [0, 0, 0, 0, 0, 0] : [243, 1, 2, 0, 0, 0]), packed([i, 0xffff])]);
+  const lumps = binarySquare(line);
+  const thing = Buffer.concat([packed([5, -32, 64, 16, 180, 9800, 7]), Buffer.from([0, 255, 128, 0, 64, 0])]);
+  const buf = wad([{ name: "MAP01", data: "" }, { name: "THINGS", data: thing }, ...Object.entries(lumps).map(([name, data]) => ({ name, data })), { name: "BEHAVIOR", data: "ACS" }]);
+  const r = mapReport(findMapLumps([{ name: "hexen.wad", buf }], "MAP01"), { special: 243, things: [9800] });
+  assert.equal(r.summary.namespace, "hexen (binary)");
+  assert.deepEqual([r.special[0].arg0, r.special[0].arg1, r.special[0].from], [1, 2, [0, 256]]);
+  assert.deepEqual(r.things, [{ index: 0, id: 5, x: -32, y: 64, height: 16, angle: 180, type: 9800, flags: 7, special: 0, arg0: 255, arg1: 128, arg2: 0, arg3: 64, arg4: 0 }]);
 });

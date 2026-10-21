@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, STARTED, inPage, pause, repeatedSounds, soakInPage, framePacing } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing } from '../page.mjs';
 
 // [rc4l] STARTED run against a stand-in page: its error panel, its Module, and whether it is isolated.
 function runStarted({ errorShown = false, errorText = '', module = {}, isolated = true }) {
@@ -154,4 +154,40 @@ test('the frame watch keeps each frame time the browser hands it', () => {
   for (const t of [16, 33, 50]) pending.shift()(t);
   assert.deepEqual(window.fuaFrames, [16, 33, 50]);
   assert.equal(pending.length, 1);
+});
+
+test('a file served to the page joins its data list and comes back as its bytes, and every other fetch goes through', async () => {
+  const asked = [];
+  const window = { fetch: async (url) => { asked.push(url); return new Response(url.endsWith('files.json') ? '[{"name":"freedoom2.wad","size":3}]' : 'real'); } };
+  new Function('window', serveData('map.wad', Buffer.from([1, 2, 250])))(window);
+  assert.deepEqual(await (await window.fetch('data/files.json')).json(), [{ name: 'freedoom2.wad', size: 3 }, { name: 'map.wad', size: 3 }]);
+  assert.deepEqual([...new Uint8Array(await (await window.fetch('data/map.wad')).arrayBuffer())], [1, 2, 250]);
+  assert.equal(await (await window.fetch('data/freedoom2.wad')).text(), 'real');
+  assert.deepEqual(asked, ['data/files.json', 'data/freedoom2.wad']);
+});
+
+// [rc4l] GRAB_FRAME against a stand-in page whose screenshot hands the canvas's toBlob a download of the frame's bytes.
+function grabbing(frames) {
+  const commands = [], downloads = [];
+  class Canvas { toBlob(cb, type) { cb(new Blob([Uint8Array.from(frames.shift())], { type })); } }
+  const Module = { canvas: new Canvas(), fuaCommand: (c) => { commands.push(c); if (c === 'screenshot') Module.canvas.toBlob(() => downloads.push(c), 'image/png'); } };
+  const grabFrame = new Function('Module', `${GRAB_FRAME} return grabFrame;`)(Module);
+  return { grabFrame, Module, commands, downloads };
+}
+
+test('a grabbed frame is the next one drawn, as base64, taken quietly instead of its download', async () => {
+  const { grabFrame, Module, commands, downloads } = grabbing([[137, 80, 78, 71], [1, 2]]);
+  assert.equal(await grabFrame(), Buffer.from([137, 80, 78, 71]).toString('base64'));
+  assert.equal(await grabFrame(), Buffer.from([1, 2]).toString('base64'));
+  assert.deepEqual(commands.slice(0, 4), ['clear', 'screenshot_quiet 1', 'screenshot', 'screenshot_quiet 0']);
+  assert.deepEqual(downloads, []);
+  assert.equal(Object.hasOwn(Module.canvas, 'toBlob'), false);
+});
+
+test('a WGSL swap rewrites every shader the page makes and leaves the rest of its description', () => {
+  const made = [];
+  class GPUDevice { createShaderModule(desc) { made.push(desc); return 'module'; } }
+  new Function('GPUDevice', swapWgsl('1.0f / gl_FragCoord.w', 'vPixelPos.w'))(GPUDevice);
+  assert.equal(new GPUDevice().createShaderModule({ label: 'scene', code: 'let d = (1.0f / gl_FragCoord.w); let e = (1.0f / gl_FragCoord.w);' }), 'module');
+  assert.deepEqual(made, [{ label: 'scene', code: 'let d = (vPixelPos.w); let e = (vPixelPos.w);' }]);
 });

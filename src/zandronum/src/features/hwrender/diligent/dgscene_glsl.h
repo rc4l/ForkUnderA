@@ -316,18 +316,7 @@ static const char *kSceneVS =
 	   So the marker now carries its full meaning -- no side, and no light from here. */ \
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
-	/* [rc4l] The cell this fragment is in, and the short list of lights that can reach it.
-
-	   uLightParams.zw carry the cluster depth range, and a zero in z means the grid is off -- in
-	   which case this loops over every light exactly as it always has. The two paths must draw the
-	   SAME picture, so fua_dg_clusters flips between them in a frozen frame and a diff says whether
-	   they do.
-
-	   Depth is 1.0 / gl_FragCoord.w: the clip w the hardware interpolated, which is the quantity
-	   ComputeLightClustersFromMVP slices the light by on the CPU. Two sides agreeing because they
-	   read the same number is worth more than two sides computing numbers that ought to match.
-
-	   The 32, 18 and 24 are kClusterTilesX, kClusterTilesY and kClusterSlices; a static_assert keeps them honest. */ \
+	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
 	"    int first = 0;\n" \
 	"    int count = n;\n" \
 	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
@@ -336,7 +325,8 @@ static const char *kSceneVS =
 	"        int tileH = max((int(uScreen.y) + 17) / 18, 1);\n" \
 	"        int tx = clamp(int(gl_FragCoord.x) / tileW, 0, 31);\n" \
 	"        int ty = clamp(int(gl_FragCoord.y) / tileH, 0, 17);\n" \
-	"        float depth = 1.0 / gl_FragCoord.w;\n" \
+	/* [rc4l] Depth is the clip w the CPU slices lights by, from vPixelPos.w, since Firefox's WebGPU gives gl_FragCoord.w as w rather than 1/w and every fragment there read the nearest slice. */ \
+	"        float depth = vPixelPos.w;\n" \
 	"        int slice = 0;\n" \
 	"        if (depth > uLightParams.z)\n" \
 	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \

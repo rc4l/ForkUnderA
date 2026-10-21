@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { encodePNG } from '../../fuactl/src/pngcore.mjs';
+import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -210,4 +212,39 @@ test('distant shooters are judged only where a sound with no distance was heard'
   assert.match(heardAtDistance({ control: 0, peak: 0, contexts: [{ state: 'running', time: 3 }] }).skip, /made no sound at all/);
   const check = { until: 'x', expect: heardAtDistance };
   assert.deepEqual(judge(check, '[eval] {"control":0,"peak":0,"contexts":[]}'), { ok: true, skip: 'the page made no sound at all, a sound with no distance peaking at 0 RMS (audio [])' });
+});
+
+// [rc4l] A 32x32 frame as the page hands it back, base64 PNG, dark but for a bright square of side lit at the top left.
+function frame(lit, level = 200) {
+  const rgb = Buffer.alloc(32 * 32 * 3, 10);
+  for (let y = 0; y < lit; y++) for (let x = 0; x < lit; x++) rgb.fill(level, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  return encodePNG(32, 32, rgb).toString('base64');
+}
+
+test("the light grid has to draw what no grid draws, where the light showed at all, by the pointlight scenario's ceiling", () => {
+  const lit = frame(16), dark = frame(0);
+  assert.equal(gridMatches([{ name: 'd600', grid: lit, none: lit, dark }]), '');
+  assert.equal(gridMatches([{ name: 'd600', grid: dark, none: lit, dark }]), `at d600 the light grid drew 44.531 away from no grid, over ${POINTLIGHT_BOXES.MAP01.frame.ceiling}`);
+  const faint = frame(16, 10 + LIT_FLOOR - 1);
+  assert.equal(gridMatches([{ name: 'd600', grid: faint, none: faint, dark }]), 'at d600 the light changed no block by more than 2.81, so it never drew');
+});
+
+test("the light grid check plays the pointlight scenario's hall from its vantages", () => {
+  const check = CHECKS.find((c) => c.name.startsWith('a distant light'));
+  assert.ok(check.firefox);
+  assert.equal(check.query, 'file=fua-pointlight.wad&map=MAP01');
+  assert.match(check.init, /"fua-pointlight\.wad"/);
+  assert.deepEqual(LIGHT_VANTAGES.map((v) => v.name), ['d600', 'd1500']);
+  for (const v of LIGHT_VANTAGES) assert.match(check.evaluate, new RegExp(`"name":"${v.name}","x":${v.at.x},"y":${v.at.y}`));
+});
+
+test("a check with a query of its own opens the run's page with it in place of the run's", () => {
+  assert.equal(checkUrl('http://127.0.0.1:8/?map=MAP01', {}), 'http://127.0.0.1:8/?map=MAP01');
+  assert.equal(checkUrl('http://127.0.0.1:8/?map=MAP01', { query: 'file=a.wad&map=MAP02' }), 'http://127.0.0.1:8/?file=a.wad&map=MAP02');
+});
+
+test('Firefox runs only the checks marked for it, and Chrome runs every one', () => {
+  assert.equal(notIn('chrome', {}), '');
+  assert.equal(notIn('firefox', { firefox: true }), '');
+  assert.equal(notIn('firefox', {}), 'it needs what only the Chrome driver does');
 });
