@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
+import { summarizeCrash } from "./crashes.mjs";
 import { sessionFileFor, clearPortSessions, standAt, holdingLaunchFile } from "./shot.mjs";
 import { sleep } from "./capture.mjs";
 
@@ -325,13 +326,21 @@ async function launchChecked(opts, port) {
   });
 }
 
+// [rc4l] The error for a failed launch: when the engine left a crash file, its path, why it stopped and its first frames, since "bridge closed" alone sent the reader to `fuactl crashes` to learn it had crashed at all.
+export function crashedError(inst, e, _fs = fs) {
+  const file = inst && inst.log ? `${inst.log}.crash` : null;
+  if (!file || !_fs.existsSync(file)) return e;
+  const { why, stack } = summarizeCrash(_fs.readFileSync(file, "utf8"));
+  return new Error([`engine crashed -- ${file}`, why, ...stack].filter(Boolean).join("\n  "));
+}
+
 // [rc4l] body(inst), with the engine stopped if it throws: a launch that timed out kept its port, and every launch after it timed out too.
 export async function stoppingOnFailure(inst, body, stop = stopInstance) {
   try {
     return await body(inst);
   } catch (e) {
     await stop(inst);
-    throw e;
+    throw crashedError(inst, e);
   }
 }
 
@@ -346,8 +355,7 @@ export async function withLockedInstance(opts, body, { launch = play, connect = 
     c = await connect(inst.port, inst.token);
     return await body(c, inst);
   } catch (e) {
-    const died = inst && inst.log && fs.existsSync(`${inst.log}.crash`);
-    throw new Error(died ? `engine crashed -- ${inst.log}.crash` : e.message);
+    throw crashedError(inst, e);
   } finally {
     if (c) c.close();
     if (inst) await stop(inst);

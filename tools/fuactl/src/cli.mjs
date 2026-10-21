@@ -667,7 +667,9 @@ async function main() {
           targets.push({ label: "MCP (ZANDRONUM_EXE)", exe: process.env.ZANDRONUM_EXE });
         }
       }
-      const reports = targets.map((t) => doctorEngine({ ...t, srcDir }));
+      // [rc4l] The repo root is three up from the engine source, where deps/DiligentCore must be checked out.
+      const repoRoot = srcDir ? path.resolve(srcDir, "..", "..", "..") : null;
+      const reports = targets.map((t) => doctorEngine({ ...t, srcDir, repoRoot }));
       console.log(JSON.stringify(reports, null, 2));
       if (reports.some((r) => r.problems.length)) process.exitCode = 1;
       break;
