@@ -186,4 +186,21 @@
 
   document.getElementById('fullscreen').addEventListener('click', () => canvas.requestFullscreen());
   again.addEventListener('click', () => location.reload());
+
+  // [rc4l] Touch play: the pointers forwarded to the engine's own controls (touch.js, features/touch-input), the footer folded to a row, and the game kept a landscape strip in portrait when ?strip asks (layout.js).
+  const touch = FuaTouch.install(canvas, Module, { logic: FuaTouchLogic });
+  const main = document.querySelector('main');
+  const footer = document.querySelector('footer');
+  const strip = FuaLayout.stripAspect(location.search);
+  const layOut = () => {
+    document.body.classList.toggle('fua-touch', !!touch.state.active);
+    const l = FuaLayout.computeLayout(window.innerWidth, window.innerHeight, { aspect: strip, footer: footer.offsetHeight });
+    main.style.flex = l.mainHeight === null ? '' : '0 0 auto';
+    main.style.height = l.mainHeight === null ? '' : l.mainHeight + 'px';
+  };
+  window.addEventListener('resize', layOut);
+  canvas.addEventListener('pointerdown', layOut);
+  window.addEventListener('keydown', layOut);
+  document.getElementById('more').addEventListener('click', () => { document.body.classList.toggle('fua-footer-open'); layOut(); });
+  layOut();
 })();
