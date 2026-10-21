@@ -18,3 +18,4 @@ registry's frame (`FrameMark`).
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: walk, rebake and actors.
 - `features/hwrender/diligent/dgscene.cpp`: backend around `DrawSceneOnce`, upload and lights in
   `PrepareFrame`, present around `swap->Present` and the frame pacing wait.
+- `features/web/webdriver.cpp` `Frame`: present for a browser's wait between its animation frames.

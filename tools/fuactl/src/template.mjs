@@ -30,6 +30,9 @@ export function vantageCommands(side) {
 // [rc4l] The two launches a template compares by default; a scenario may name its own, each with the cvars it sets.
 export const GL_VS_VULKAN = [{ name: "gl", gl: true }, { name: "vk", gl: false }];
 
+// [rc4l] Vulkan with the scene pinned at full scale against at half (features/dynres), for a pass that must land at half scale where it does at full.
+export const FULL_VS_HALF = [{ name: "full", cvars: { fua_dg_dynres_force: 1 } }, { name: "half", cvars: { fua_dg_dynres_force: 0.5 } }];
+
 // [rc4l] Whether a box's difference passes: at most its ceiling, and at least its floor when it must change.
 export function boxWithin(d, { ceiling, floor }) {
   return (ceiling === undefined || d <= ceiling) && (floor === undefined || d >= floor);

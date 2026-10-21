@@ -30,6 +30,9 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 - `docs/diagnostics.md` says which diagnostics reach players, what each costs, and the rules for adding one.
 - To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. `compare a.json b.json` sets two `stats --json` files side by side.
 - A frame time that drops for no reason is an empty world until a shot proves otherwise.
+- Driven launches start with dynamic resolution off (`vid_fua_dynres 0`), so a measurement is never taken at a scale the load chose; a player's session has it on. `fua_dynres_report` and `frame/dynres_scale` say what scale a frame drew at, and `fua_dg_dynres_force S` pins one.
+- `fua_dg_gpuload N` adds N loops of shader work at each of the scene's pixels, a GPU-bound frame on any machine, as `fua_debug_framestall_us` makes a CPU-bound one; on a fast desktop GPU almost nothing else is GPU-bound.
+- `vid_maxfps` and `cl_capfps` limit the frame rate (`features/frame-limit`, default 500), and the wait shows as the `frame/limit_wait` zone; turn the limit off (`vid_maxfps 0`) before reading a frame time under 2 ms.
 
 ## What memory does
 
@@ -66,6 +69,7 @@ Headless Chrome (always muted) reproduces what the page holds:
 - `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. The run steps `frames` (the browser's frame pacing since the last one) and `level` (the audio output's RMS) measure what a player sees and hears; `fua_debug_orbit 25` turns the aim for repeatable motion. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
 - A `wad_reload` reloads the page; nothing in the engine survives that, so what to watch across reloads is the page's stored data (`navigator.storage.estimate()`), which holds the config and the player's WADs.
 - The check "lets go of" compares the page's view with the engine's.
+- Headless Chrome and off-screen Firefox pace frames to no display (Chrome near 325 Hz, Firefox in bursts), so dynamic resolution reads a refresh no player has there; judge it by `fua_dynres_report` with `fua_dg_gpuload` against a run without, never by its budget.
 - Headless Firefox has no WebGPU, so `--browser firefox` on `probe.mjs` (and `check.mjs`) opens a Firefox window off the screen instead. For what only the player's machine shows, ask them to type these in the console and paste what they print:
   - `fua_flightdump` writes the last frames, seconds and hitches as downloads and prints a summary.
   - `fua_hitches`.

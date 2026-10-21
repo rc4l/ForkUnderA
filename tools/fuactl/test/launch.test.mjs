@@ -86,6 +86,15 @@ test("a harness instance keeps the OS mouse out of the game", () => {
   assert.equal(setValue(args, "use_joystick"), "0");
 });
 
+// [rc4l] A driven run compares frames and frame times, which a scale chosen by the GPU's load would make differ between runs.
+test("a driven instance draws its scene at full scale, and a hands-on one as players do", () => {
+  assert.equal(setValue(engineArgs({}, "x.ini"), "vid_fua_dynres"), "0");
+  assert.equal(setValue(engineArgs({ allowOsInput: true }, "x.ini"), "vid_fua_dynres"), undefined);
+  // [rc4l] A side's own cvars come after, so a scenario pinning a scale is not overruled.
+  const args = engineArgs({ cvars: { vid_fua_dynres: 1 } }, "x.ini");
+  assert.ok(args.lastIndexOf("vid_fua_dynres") > args.indexOf("vid_fua_dynres"));
+});
+
 test("a harness instance does NOT disable the menu mouse it injects into", () => {
   // [rc4l] m_use_mouse used to be forced to 0 here. menu.cpp drops every GUI mouse event when it is
   // 0, injected ones included, so `ui click` reported {"clicked":[x,y]} and did nothing -- on every

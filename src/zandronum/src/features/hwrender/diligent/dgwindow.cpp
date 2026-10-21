@@ -135,6 +135,7 @@ static void ShutdownBackend()
 	ResetAtlas();
 	ReportHeldDeviceObjects("at shutdown, after the level's resources were released");
 	ReleaseGpuPasses();
+	ReleaseGpuLoad();
 	ForgetBackendWindow(g_hwnd);
 	ReleaseFrameFence();
 	Diligent::SetDebugMessageCallback(nullptr);

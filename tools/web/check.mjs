@@ -90,15 +90,18 @@ export const LIGHT_VANTAGES = POINTLIGHT_VANTAGES.filter((v) => ['d600', 'd1500'
 // [rc4l] How much one block of the frame must change with the light on for the comparison to mean anything.
 export const LIT_FLOOR = 4;
 
-// [rc4l] Why the light grid check failed, or '': at each vantage the light changed the frame, and the grid drew what no grid draws, judged as the pointlight scenario judges it.
+// [rc4l] Why the light grid check failed, or '': at each vantage the light changed the frame, and the grid drew what no grid draws at full scale and at half (which must differ from full), judged as the pointlight scenario judges it.
 export function gridMatches(at) {
   const { box, ceiling } = POINTLIGHT_BOXES.MAP01.frame;
-  for (const { name, grid, none, dark } of at) {
-    const [g, n, d] = [grid, none, dark].map((b64) => decodePNGBytes(Buffer.from(b64, 'base64')));
+  for (const { name, grid, none, dark, halfGrid, halfNone } of at) {
+    const [g, n, d, hg, hn] = [grid, none, dark, halfGrid, halfNone].map((b64) => decodePNGBytes(Buffer.from(b64, 'base64')));
     const lit = boxDiffMax(n, d, box);
     if (!(lit >= LIT_FLOOR)) return `at ${name} the light changed no block by more than ${lit.toFixed(2)}, so it never drew`;
     const off = boxDiff(g, n, box);
     if (!(off <= ceiling)) return `at ${name} the light grid drew ${off.toFixed(3)} away from no grid, over ${ceiling}`;
+    const halfOff = boxDiff(hg, hn, box);
+    if (!(halfOff <= ceiling)) return `at ${name} at half scale the light grid drew ${halfOff.toFixed(3)} away from no grid, over ${ceiling}`;
+    if (!(boxDiff(hn, n, box) > 0)) return `at ${name} the half-scale frame matched the full one, so it never drew below full scale`;
   }
   return '';
 }
@@ -247,21 +250,28 @@ export const CHECKS = [
   },
   // [rc4l] Firefox's WebGPU gave gl_FragCoord.w as w rather than 1/w, so every fragment read the light grid's nearest depth slice and a distant light lit nothing (queue #68).
   {
-    name: 'a distant light draws the same through the light grid as without it',
+    name: 'a distant light draws the same through the light grid as without it, at full and at half scale',
     firefox: true,
     query: `file=${POINTLIGHT_WAD}&map=MAP01`,
     init: serveData(POINTLIGHT_WAD, buildPointlightWad()),
     evaluate: inPage(`${GRAB_FRAME}
       const frame = async (command) => { Module.fuaCommand(command); ${pause(300)} return grabFrame(); };
       ${pause(3000)}
+      // [rc4l] At full scale throughout, so a slow adapter's dynamic resolution cannot change the scale between frames compared.
+      Module.fuaCommand('fua_dg_dynres_force 1');
       const at = [];
       for (const v of ${JSON.stringify(LIGHT_VANTAGES.map(({ name, at: { x, y } }) => ({ name, x, y })))}) {
         Module.fuaCommand('warp ' + v.x + ' ' + v.y);
         ${pause(1000)}
-        at.push({ name: v.name, grid: await frame('fua_dg_clusters 1'), none: await frame('fua_dg_clusters 0'), dark: await frame('fua_dg_dynlights 0') });
+        const grid = await frame('fua_dg_clusters 1'), none = await frame('fua_dg_clusters 0'), dark = await frame('fua_dg_dynlights 0');
         Module.fuaCommand('fua_dg_dynlights 1');
-        Module.fuaCommand('fua_dg_clusters 1');
+        // [rc4l] The same at half scale (features/dynres), whose tiles are cut from the scene's pixels rather than the frame's.
+        Module.fuaCommand('fua_dg_dynres_force 0.5');
+        const halfNone = await frame('fua_dg_clusters 0'), halfGrid = await frame('fua_dg_clusters 1');
+        Module.fuaCommand('fua_dg_dynres_force 1');
+        at.push({ name: v.name, grid, none, dark, halfGrid, halfNone });
       }
+      Module.fuaCommand('fua_dg_dynres_force 0');
       return at;`),
     until: EVAL,
     expect: gridMatches,

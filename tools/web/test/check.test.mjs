@@ -221,12 +221,15 @@ function frame(lit, level = 200) {
   return encodePNG(32, 32, rgb).toString('base64');
 }
 
-test("the light grid has to draw what no grid draws, where the light showed at all, by the pointlight scenario's ceiling", () => {
-  const lit = frame(16), dark = frame(0);
-  assert.equal(gridMatches([{ name: 'd600', grid: lit, none: lit, dark }]), '');
-  assert.equal(gridMatches([{ name: 'd600', grid: dark, none: lit, dark }]), `at d600 the light grid drew 44.531 away from no grid, over ${POINTLIGHT_BOXES.MAP01.frame.ceiling}`);
+test("the light grid has to draw what no grid draws at full and at half scale, where the light showed at all, by the pointlight scenario's ceiling", () => {
+  const lit = frame(16), dark = frame(0), half = frame(8);
+  const at = (over) => [{ name: 'd600', grid: lit, none: lit, dark, halfGrid: half, halfNone: half, ...over }];
+  assert.equal(gridMatches(at({})), '');
+  assert.equal(gridMatches(at({ grid: dark })), `at d600 the light grid drew 44.531 away from no grid, over ${POINTLIGHT_BOXES.MAP01.frame.ceiling}`);
   const faint = frame(16, 10 + LIT_FLOOR - 1);
-  assert.equal(gridMatches([{ name: 'd600', grid: faint, none: faint, dark }]), 'at d600 the light changed no block by more than 2.81, so it never drew');
+  assert.equal(gridMatches(at({ grid: faint, none: faint })), 'at d600 the light changed no block by more than 2.81, so it never drew');
+  assert.equal(gridMatches(at({ halfGrid: dark })), `at d600 at half scale the light grid drew 10.391 away from no grid, over ${POINTLIGHT_BOXES.MAP01.frame.ceiling}`);
+  assert.equal(gridMatches(at({ halfGrid: lit, halfNone: lit })), 'at d600 the half-scale frame matched the full one, so it never drew below full scale');
 });
 
 test("the light grid check plays the pointlight scenario's hall from its vantages", () => {

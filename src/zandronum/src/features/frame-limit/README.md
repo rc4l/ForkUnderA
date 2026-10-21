@@ -39,3 +39,4 @@ sleep, and a browser frame's due test.
 - `d_net.cpp` `cl_capfps` is a plain cvar, its timer switching gone; `posix/sdl/i_fpslimit.cpp`
   is deleted.
 - `frame/limit_wait` times the wait for traces (`fuactl record`).
+- `wadsrc/static/menudef.txt`: Video options' "Frame rate limit" (`MaxFps`, upstream's choices and the higher refresh rates).

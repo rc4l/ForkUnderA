@@ -585,12 +585,24 @@ bool CreateNormalTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<
 	return normal.RawPtr() != nullptr;
 }
 
+void ApplyPassViewport(Diligent::IDeviceContext *ctx)
+{
+	if (g_pass.targets.color == nullptr || g_pass.targets.w <= 0 || g_pass.targets.h <= 0) return;
+	const Diligent::TextureDesc &td = g_pass.targets.color->GetTexture()->GetDesc();
+	Diligent::Viewport vp;
+	vp.TopLeftX = 0.f; vp.TopLeftY = 0.f;
+	vp.Width = (float)g_pass.targets.w; vp.Height = (float)g_pass.targets.h;
+	vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
+	ctx->SetViewports(1, &vp, td.Width, td.Height);
+}
+
 void BeginPassTargets(Diligent::IDeviceContext *ctx, const PassTargets &targets, const float clear[4])
 {
 	g_pass.targets = targets;
 	g_pass.gbufBound = targets.normal != nullptr;
 	Diligent::ITextureView *bound[2] = { targets.color, targets.normal };
 	ctx->SetRenderTargets(g_pass.gbufBound ? 2 : 1, bound, targets.depth, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ApplyPassViewport(ctx);
 	ctx->ClearRenderTarget(targets.color, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	if (g_pass.gbufBound)
 	{
@@ -602,15 +614,18 @@ void BeginPassTargets(Diligent::IDeviceContext *ctx, const PassTargets &targets,
 	ctx->ClearDepthStencil(targets.depth, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
-PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal)
+PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal, bool screenView)
 {
 	PassTargets t;
 	t.color = color->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 	t.depth = depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
-	t.w = (int)color->GetDesc().Width;
-	t.h = (int)color->GetDesc().Height;
+	const int texW = (int)color->GetDesc().Width, texH = (int)color->GetDesc().Height;
+	t.w = texW;
+	t.h = texH;
+	// [rc4l] A view of the screen draws where the player's view does, the scene's pixels at its top left, so a picture of it lands pixel for pixel.
+	if (screenView && texW == FrameWidth() && texH == FrameHeight()) { t.w = SceneWidth(); t.h = SceneHeight(); }
 	// [rc4l] A normal target of another size would be read at the wrong texels, so the view draws no marks instead.
-	if (normal != NULL && (int)normal->GetDesc().Width == t.w && (int)normal->GetDesc().Height == t.h)
+	if (normal != NULL && (int)normal->GetDesc().Width == texW && (int)normal->GetDesc().Height == texH)
 	{
 		t.normal = normal->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
 		t.normalRead = normal->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE);
@@ -689,6 +704,8 @@ void DrawSceneOnce(bool present, bool pump)
 	PrepareFrame(ctx);
 	// [rc4l] GL's stereo 3D (vr_mode): each eye draws the world from its own place, an anaglyph keeping its first eye's picture to blend under the 2D.
 	const zx::hwrender::StereoMode stereo = CurrentStereoMode();
+	// [rc4l] features/dynres: the scale every screen-sized pass of this frame draws at, full while two eyes share the frame.
+	BeginSceneFrame(stereo.eyes <= 1);
 	for (int eye = 0; eye < stereo.eyes; eye++)
 	{
 		SetStereoEye(stereo.shift[eye]);
@@ -702,9 +719,9 @@ void DrawSceneOnce(bool present, bool pump)
 		// [rc4l] Colour and the G-buffer together, for the opaque world only. DrawWorld drops back to
 		// colour alone before the decals, which read the G-buffer rather than write it.
 		PassTargets screen;
-		screen.color = FrameRTV();
+		screen.color = SceneRTV();
 		screen.depth = EnsureSceneDepth();
-		screen.w = FrameWidth(); screen.h = FrameHeight();
+		screen.w = SceneWidth(); screen.h = SceneHeight();
 		if (screen.depth)
 		{
 			screen.normal = SceneNormalRTV();
@@ -727,6 +744,8 @@ void DrawSceneOnce(bool present, bool pump)
 	if (stereo.eyes > 1) BlendEyes(ctx, stereo);
 	ShowStackView(ctx);
 	DrawHitboxes(ctx);
+	DrawGpuLoad(ctx);
+	UpscaleScene(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	BeginGpuPass(ctx, kGpu2D);
@@ -951,6 +970,7 @@ static void BindWorldTargets(Diligent::IDeviceContext *ctx, bool normal)
 {
 	Diligent::ITextureView *targets[2] = { g_pass.targets.color, g_pass.targets.normal };
 	ctx->SetRenderTargets(normal && g_pass.targets.normal ? 2 : 1, targets, g_pass.targets.depth, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ApplyPassViewport(ctx);
 }
 
 void DrawWorld(Diligent::IDeviceContext *ctx)

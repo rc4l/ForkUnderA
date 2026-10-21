@@ -202,8 +202,10 @@ static const char *kDeferredDecalPS =
 	"layout(location = 6) flat in int vTex;\n"
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() {\n"
+	/* [rc4l] uv is the fragment's place in the view, which clip space is rebuilt from, and depthAt its texel in the depth and normals, which a view below full scale fills only the top left of (features/dynres). */
 	"    vec2 uv = gl_FragCoord.xy / vec2(uScreen.x, uScreen.y);\n"
-	"    float d = texture(sampler2D(uSceneDepth, uSceneDepth_sampler), uv).r;\n"
+	"    vec2 depthAt = gl_FragCoord.xy / vec2(textureSize(sampler2D(uSceneDepth, uSceneDepth_sampler), 0));\n"
+	"    float d = texture(sampler2D(uSceneDepth, uSceneDepth_sampler), depthAt).r;\n"
 	/* Nothing was drawn here -- the far plane. There is no surface to paint. */
 	"    if (d >= 1.0) discard;\n"
 	/* Reconstruct the world position of whatever the depth buffer says is here. Clip space is x,y in
@@ -226,7 +228,7 @@ static const char *kDeferredDecalPS =
 	   wrong in every place that mattered: across a silhouette it straddled two surfaces, on a
 	   two-pixel sliver there was no neighbourhood to sample, and at a grazing angle it was a
 	   difference of nearly-equal large numbers. Alpha zero means nothing was drawn here. */
-	"    vec4 gbuf = texture(sampler2D(uSceneNormal, uSceneNormal_sampler), uv);\n"
+	"    vec4 gbuf = texture(sampler2D(uSceneNormal, uSceneNormal_sampler), depthAt);\n"
 	/* [rc4l] And alpha 0.75 is a surface features/decals refuses marks on, an animated wall or a liquid flat beside the mark. */
 	"    if (gbuf.a < 0.875) discard;\n"
 	"    vec3 nrm = normalize(gbuf.xyz * 2.0 - 1.0);\n"
@@ -747,7 +749,11 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 
 	// The depth buffer comes off the render target for this pass -- it is being READ.
 	Diligent::ITextureView *rtv = PassColorRTV();
-	if (rtv) ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	if (rtv)
+	{
+		ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ApplyPassViewport(ctx);
+	}
 
 	// [rc4l] One draw per blend pass for the whole level, since each mark's record carries its texture slot and only the fixed-function blend breaks a draw (dbab04's 43 plasma marks were 21 draws).
 	for (int pass = 0; pass < kDecalPasses; pass++)
@@ -797,8 +803,11 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	}
 
 
-	if (rtv) ctx->SetRenderTargets(1, &rtv, PassDepthDSV(),
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	if (rtv)
+	{
+		ctx->SetRenderTargets(1, &rtv, PassDepthDSV(), Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		ApplyPassViewport(ctx);
+	}
 }
 
 }} // namespace zx::hwrender
