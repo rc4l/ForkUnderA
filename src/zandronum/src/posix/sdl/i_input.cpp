@@ -21,6 +21,7 @@
 #include "chat.h"
 #include "features/mouse-capture/computation/mousecapture_compute.h"
 #include "sdlhost.h"   // [rc4l] MouseHeld
+#include "features/touch-input/touchoverlay.h"   // [rc4l] the on-screen controls
 
 static void I_CheckGUICapture ();
 static void I_CheckNativeMouse ();
@@ -402,6 +403,7 @@ void MessagePump (const SDL_Event &sev)
 
 	case SDL_KEYDOWN:
 	case SDL_KEYUP:
+		if (sev.type == SDL_KEYDOWN) zx::touch::NoteKeyboard ();   // [rc4l] a keyboard hides the touch overlay (features/touch-input)
 	{
 		const SDL_Scancode scan = sev.key.keysym.scancode;
 		if (scan >= SDL_NUM_SCANCODES)
@@ -529,6 +531,7 @@ void I_GetEvent ()
 	{
 		MouseRead ();
 	}
+	zx::touch::Tick ();   // [rc4l] the host's touch screen, if any (features/touch-input)
 }
 
 void I_StartTic ()
