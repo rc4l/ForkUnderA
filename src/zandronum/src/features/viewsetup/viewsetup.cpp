@@ -5,6 +5,8 @@
 #include "features/gamecopy/lights.h"   // [rc4l] whether the level has a dynamic light
 #include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/viewsetup/viewsetup.h"
+#include "c_dispatch.h"   // [rc4l] fua_lens
+#include "r_utility.h"    // [rc4l] r_viewLens
 #include "features/gamecopy/players.h"   // [rc4l] the records a view is set up from
 #include "features/viewsetup/computation/viewsetup_compute.h"
 
@@ -180,4 +182,18 @@ bool SpritesTakeDynamicLight()
 	return r_lights && zx::viewsetup::SpriteView().DynamicLightCount() && !gl_fixedcolormap && r_light_sprites;
 }
 
+// [rc4l] The lens the renderers draw with, one line each, for dumprenderer and the checks: the field across, the vertical field it shows, and the ratio.
+void PrintLens()
+{
+	Printf("view_fov=%.2f\n", r_viewLens.fov);
+	Printf("view_vfov=%.2f\n", ComputeVerticalFov(r_viewLens.fov, r_viewLens.fovRatio));
+	Printf("view_ratio=%.4f\n", r_viewLens.ratio);
+}
+
 }} // namespace zx::viewsetup
+
+// [rc4l] The lens as a command of its own, in every build (a browser's has no bridge).
+CCMD(fua_lens)
+{
+	zx::viewsetup::PrintLens();
+}

@@ -64,6 +64,9 @@ void ForgetCamera();
 // [rc4l] Whether sprites, the weapon and decals take dynamic light this frame: lights on and in the view, no fixed colormap, and r_light_sprites.
 bool SpritesTakeDynamicLight();
 
+// [rc4l] The lens the renderers draw with, printed one line each (fua_lens, dumprenderer).
+void PrintLens();
+
 }} // namespace zx::viewsetup
 
 #endif // ZX_VIEWSETUP_H
