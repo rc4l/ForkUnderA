@@ -82,6 +82,8 @@
 #include "features/port-mapping/zx_portmap.h" // [rc4l] and giving back any port we asked for
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a failed join lands in the browser
 #include "features/speedometer/speedometer.h" // [MobiusU9B] on-screen speed readout
+#include "features/touch-input/touchoverlay.h"   // [rc4l] the on-screen controls
+#include "features/touch-input/touchdef.h"
 #include "s_sound.h"
 #include "v_video.h"
 #include "intermission/intermission.h"
@@ -1160,6 +1162,7 @@ void D_Display ()
 drawfullconsole:
 			screen->SetBlendingRect(0,0,0,0);
 			hw2d = screen->Begin2D(false);
+			zx::touch::Draw ();   // [rc4l] the on-screen controls, in play alone, under the console and menu (features/touch-input)
 			C_DrawConsole (false);
 			M_Drawer ();
 			// [rc4l] This case returns before the shared call below ever runs, so the band needs its
@@ -1321,6 +1324,7 @@ drawfullconsole:
 			NetUpdate ();			// send out any new accumulation
 		}
 		// normal update
+		zx::touch::Draw ();   // [rc4l] the on-screen controls, in play alone, under the console and menu (features/touch-input)
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
 
@@ -3359,6 +3363,8 @@ void D_DoomMain (void)
 		// [rc4l] uzdoom@c36222d2e -- key setup happens here now, after the wads are loaded,
 		// because the default bindings come from DEFBINDS lumps.
 		GameConfig->DoKeySetup(gameinfo.ConfigName);
+		// [rc4l] FUATOUCH once the wads hold it and the bindings are set, since a command button may bind a spare joystick key (features/touch-input).
+		zx::touch::LoadDefs ();
 
 		// Now that wads are loaded, define mod-specific cvars.
 		ParseCVarInfo();
