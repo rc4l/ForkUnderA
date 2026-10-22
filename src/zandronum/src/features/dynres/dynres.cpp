@@ -32,6 +32,12 @@ CUSTOM_CVAR(Float, vid_fua_dynres_min, 0.5f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 	if (self < 0.25f) self = 0.25f;
 	else if (self > 1.f) self = 1.f;
 }
+// [rc4l] How long a window of frames a browser, which times no GPU, judges each step by, in seconds.
+CUSTOM_CVAR(Float, vid_fua_dynres_window, zx::dynres::kDynresWindowSeconds, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+{
+	if (self < 0.05f) self = 0.05f;
+	else if (self > 5.f) self = 5.f;
+}
 // [rc4l] Pins the scale for tests and comparisons, 0 leaving it to the controller.
 CVAR(Float, fua_dg_dynres_force, 0.f, 0)
 // [rc4l] Prints each step the controller takes and why.
@@ -145,8 +151,10 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 	g_held = "";
 	float steps[kMaxDynresSteps];
 	const int count = ComputeDynresSteps(vid_fua_dynres_min, !zx::hwrender::ComputeTextureFilter(r_texture_filter).magLinear, steps);
+	DynresTuning tuning;
+	tuning.windowMs = vid_fua_dynres_window * 1000.0;
 	const DynresState was = g_state;
-	g_state = ComputeDynresStep(g_state, x, g_budgetMs, steps, count, DynresTuning());
+	g_state = ComputeDynresStep(g_state, x, g_budgetMs, steps, count, tuning);
 	const char *why = ComputeDynresWhy(was, g_state, g_gpuTimed);
 	if (fua_dynres_log && *why)
 		Printf("dynamic resolution: %.3f -> %.3f, %s (%s %.2f ms, budget %.2f ms)\n", g_scale, steps[g_state.step], why,
@@ -158,13 +166,13 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 
 }} // namespace zx::dynres
 
-// [rc4l] Where dynamic resolution stands: the scale, the budget and the refresh it came from, the GPU's average or the frames' last second, and what holds it if anything does.
+// [rc4l] Where dynamic resolution stands: the scale, the budget and the refresh it came from, the GPU's average or the frames' last window, and what holds it if anything does.
 CCMD(fua_dynres_report)
 {
 	const zx::dynres::DynresState &s = zx::dynres::g_state;
 	FString gpu;
 	if (zx::dynres::g_gpuTimed) gpu.Format("GPU average %.2f ms", s.gpuAvgMs);
-	else gpu.Format("GPU not timed, frames %.2f ms over the last second%s", s.lastWindowMs, s.trial ? (s.trialUp ? ", trying a step up" : ", trying a step down") : (s.refuseMs > 0.0 ? ", a step down that did not help waits" : ""));
+	else gpu.Format("GPU not timed, frames %.2f ms over the last %.2f s%s", s.lastWindowMs, (float)vid_fua_dynres_window, s.trial ? (s.trialUp ? ", trying a step up" : ", trying a step down") : (s.refuseMs > 0.0 ? ", a step down that did not help waits" : ""));
 	Printf("dynamic resolution: %s, scale %.3f, budget %.2f ms (refresh %.1f Hz, frame limit %d), %s, %d changes%s%s\n",
 		vid_fua_dynres ? "on" : "off", zx::dynres::g_scale, zx::dynres::g_budgetMs, zx::dynres::g_refreshHz,
 		zx::framelimit::LimitFps(), gpu.GetChars(), s.changes, *zx::dynres::g_held ? ", " : "", zx::dynres::g_held);

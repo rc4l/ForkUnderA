@@ -38,6 +38,9 @@ struct DynresSample
 	double frameMs = 0.0;     // [rc4l] the frame's whole length, its waits included
 };
 
+// [rc4l] vid_fua_dynres_window's default: how long an untimed window of frames is, in seconds.
+const float kDynresWindowSeconds = 0.15f;
+
 // [rc4l] How the controller reacts.
 struct DynresTuning
 {
@@ -46,7 +49,7 @@ struct DynresTuning
 	double weight = 0.2;      // [rc4l] how far one sample moves the average
 	int settleFrames = 8;     // [rc4l] samples ignored after a step, while the GPU's timings still describe the old scale
 	int upFrames = 30;        // [rc4l] frames the headroom must hold before a step up
-	double windowMs = 1000.0; // [rc4l] untimed, frames are judged by their mean over windows this long, since Firefox lets several through and then holds one for the GPU
+	double windowMs = kDynresWindowSeconds * 1000.0; // [rc4l] untimed, frames are judged by their mean over windows this long, since Firefox lets several through and then holds one for the GPU
 	double slowAt = 1.2;      // [rc4l] an untimed window whose mean passes this share of the budget is slow
 	double roomAt = 0.8;      // [rc4l] an untimed window under this share of the budget has room for a step up
 	int roomWindows = 2;      // [rc4l] such windows in a row before a step up

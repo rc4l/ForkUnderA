@@ -21,15 +21,16 @@ The HUD, menus, console and automap are drawn after it at full resolution and st
 - **A browser has no GPU timings**: standard WebGPU writes timestamps only at a pass's edges, and
   Diligent's duration queries need them inside passes (the queue's `onSubmittedWorkDone` was tried
   and reads the browser's polling, some 3 ms in Chrome and 16 ms in Firefox with the GPU idle), so
-  it judges the frames' mean over each second and every step is a trial the next second bears out:
-  - a second whose frames average over 1.2 budgets steps down, whatever the CPU's share, since
+  it judges the frames' mean over each window of `vid_fua_dynres_window` seconds (0.15 by default,
+  "Reaction time" in the browser's video options) and every step is a trial the next window bears out:
+  - a window whose frames average over 1.2 budgets steps down, whatever the CPU's share, since
     Firefox lets several frames through and then holds one for the GPU at the animation frame, or
-    waits on the GPU inside its own calls; the step is kept only if the next second's frames, from
+    waits on the GPU inside its own calls; the step is kept only if the next window's frames, from
     a quarter second after it, are a twentieth shorter, and followed at once by the next while they
     stay slow, since a step kept for nothing is soon undone by a step up;
   - a step down undone waits a time that doubles, from two seconds up to sixteen, before the next,
     unless the frames grow a quarter heavier than when it was undone, which is another load;
-  - below full scale it steps up after two seconds under 0.8 budgets, or after three seconds at a scale kept
+  - below full scale it steps up after two windows in a row under 0.8 budgets, or after three seconds at a scale kept
     whatever the frames, since frames paced to a 60 Hz display never show room, and a step down
     tried and undone meanwhile does not restart that wait; a step
     up that makes slow frames longer by a tenth is undone and that wait doubles, up to sixteen

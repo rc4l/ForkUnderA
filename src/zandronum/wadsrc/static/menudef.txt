@@ -2249,6 +2249,8 @@ OptionMenu VideoModeMenu
 	IfOption(Web)
 	{
 		Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargetsWeb", "vid_fua_dynres"
+		// [rc4l] How long a window of frames each step is judged by, since a browser times no GPU.
+		Slider "Reaction time (seconds)",	"vid_fua_dynres_window", 0.05, 2.0, 0.05, 2
 	}
 	else
 	{

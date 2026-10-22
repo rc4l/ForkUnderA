@@ -238,6 +238,20 @@ DynresState Play(DynresState s, const Load &load, double ms, double budget, cons
 	return s;
 }
 
+// [rc4l] Plays a load's frames until done holds or ms pass, returning the state and in *at how long it took, ms when done never held.
+DynresState PlayUntil(DynresState s, const Load &load, const std::function<bool(const DynresState &)> &done, double ms, double budget, const float *steps, int count, double *at)
+{
+	double played = 0.0;
+	for (int i = 0; played < ms && !done(s); i++)
+	{
+		const DynresSample x = load(steps[s.step], i);
+		played += x.frameMs;
+		s = ComputeDynresStep(s, x, budget, steps, count, DynresTuning());
+	}
+	*at = played;
+	return s;
+}
+
 // [rc4l] Frames of a fixed CPU cost and a GPU cost that shrinks with the pixels.
 Load Costs(double cpu, double gpu)
 {
@@ -278,15 +292,15 @@ TEST(ComputeDynresStep, UntimedGpuWaitsCountedAsCpuStepDown)
 {
 	float steps[kMaxDynresSteps];
 	const int n = ComputeDynresSteps(0.5f, true, steps);
-	double below = 0.0;
-	DynresState s = Play(DynresState(), WaitsInCalls, 4500, k60, steps, n);
-	EXPECT_EQ(n - 1, s.step);
+	double below = 0.0, at = 0.0;
+	DynresState s = PlayUntil(DynresState(), WaitsInCalls, [&](const DynresState &d) { return d.step == n - 1 && !d.trial; }, 4500, k60, steps, n, &at);
+	EXPECT_LT(at, 4500);
 	s = Play(s, WaitsInCalls, 30000, k60, steps, n, &below);
 	EXPECT_DOUBLE_EQ(1.0, below);
 }
 
-// [rc4l] It steps within a second or two of the frames slowing, each step judged over the second after it.
-TEST(ComputeDynresStep, UntimedASlowSecondStepsDownAtOnce)
+// [rc4l] It steps once a window's frames are slow, each step judged over the window after it.
+TEST(ComputeDynresStep, UntimedASlowWindowStepsDownAtOnce)
 {
 	float steps[kMaxDynresSteps];
 	const int n = ComputeDynresSteps(0.5f, false, steps);
@@ -332,13 +346,14 @@ TEST(ComputeDynresStep, UntimedAHeavierLoadEndsARefusal)
 {
 	float steps[kMaxDynresSteps];
 	const int n = ComputeDynresSteps(0.5f, true, steps);
-	DynresState s = Play(DynresState(), Costs(30, 0), 3000, k60, steps, n);
+	double at = 0.0;
+	const DynresState s = PlayUntil(DynresState(), Costs(30, 0), [](const DynresState &d) { return d.refuseMs > 0.0; }, 5000, k60, steps, n, &at);
 	ASSERT_GT(s.refuseMs, 0.0);
 	const DynresState same = Play(s, Costs(30, 0), 1000, k60, steps, n);
 	EXPECT_EQ(0, same.step);
 	EXPECT_GT(same.refuseMs, 0.0);
-	const DynresState heavier = Play(s, Costs(4, 40), 1300, k60, steps, n);
-	EXPECT_EQ(1, heavier.step);
+	const DynresState heavier = PlayUntil(s, Costs(4, 40), [](const DynresState &d) { return d.step == 1; }, 1500, k60, steps, n, &at);
+	EXPECT_LT(at, 1500);
 	EXPECT_TRUE(heavier.trial);
 }
 
@@ -361,14 +376,14 @@ TEST(ComputeDynresStep, UntimedAStepUpIsTriedAfterTheWait)
 	const DynresTuning t;
 	DynresState s;
 	s.step = 1;
-	s = Play(s, Costs(k60, 0), t.upWaitMs - 100, k60, steps, n);
-	EXPECT_EQ(1, s.step);
-	s = Play(s, Costs(k60, 0), t.windowMs, k60, steps, n);
-	EXPECT_EQ(0, s.step);
+	double at = 0.0;
+	s = PlayUntil(s, Costs(k60, 0), [](const DynresState &d) { return d.step == 0; }, 10000, k60, steps, n, &at);
+	EXPECT_GE(at, t.upWaitMs);
+	EXPECT_LT(at, t.upWaitMs + 2 * t.windowMs);
 	EXPECT_TRUE(s.trialUp);
-	s = Play(s, Costs(k60, 0), 2 * t.windowMs, k60, steps, n);
+	s = PlayUntil(s, Costs(k60, 0), [](const DynresState &d) { return !d.trial; }, 2000, k60, steps, n, &at);
+	EXPECT_LT(at, 2000);
 	EXPECT_EQ(0, s.step);
-	EXPECT_FALSE(s.trial);
 }
 
 // [rc4l] A step up back into the load is undone and makes the next try wait twice as long, up to sixteen times, until frames a tenth lighter than before it forget the wait.
@@ -395,14 +410,16 @@ TEST(ComputeDynresStep, UntimedAStepDownSoonAfterAStepUpWaitsLongerNextTime)
 	float steps[kMaxDynresSteps];
 	const int n = ComputeDynresSteps(0.5f, true, steps);
 	const DynresTuning t;
+	const auto stepped = [](const DynresState &d) { return d.step == 1; };
+	double at = 0.0;
 	DynresState s;
 	s.sinceUpMs = 500.0;
-	s = Play(s, Costs(4, 40), 1100, k60, steps, n);
+	s = PlayUntil(s, Costs(4, 40), stepped, 2000, k60, steps, n, &at);
 	EXPECT_EQ(1, s.step);
 	EXPECT_DOUBLE_EQ(t.upWaitMs * 2, s.upWaitMs);
 	DynresState late;
 	late.upWaitMs = 12000.0;
-	late = Play(late, Costs(4, 40), 1100, k60, steps, n);
+	late = PlayUntil(late, Costs(4, 40), stepped, 2000, k60, steps, n, &at);
 	EXPECT_EQ(1, late.step);
 	EXPECT_DOUBLE_EQ(12000.0, late.upWaitMs);
 }
@@ -503,7 +520,8 @@ TEST(ComputeDynresStep, UntimedStepsDownUndoneLeaveTheWaitToStepUp)
 	const DynresTuning t;
 	DynresState s;
 	s.step = 1;
-	s = Play(s, Costs(21, 0), t.upWaitMs + 3 * t.windowMs, k60, steps, n);
+	double at = 0.0;
+	s = PlayUntil(s, Costs(21, 0), [](const DynresState &d) { return d.step == 0; }, 10000, k60, steps, n, &at);
 	EXPECT_GE(s.changes, 2);
-	EXPECT_EQ(0, s.step);
+	EXPECT_LT(at, t.upWaitMs + 2000);
 }
