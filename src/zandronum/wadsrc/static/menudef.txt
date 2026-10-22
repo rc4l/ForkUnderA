@@ -2186,6 +2186,20 @@ OptionValue DynresTargets
 	480, "480 fps"
 }
 
+// [rc4l] features/dynres: the same in a browser, whose default aims at 60 fps since it times no GPU.
+OptionValue DynresTargetsWeb
+{
+	0, "Auto (60 fps)"
+	60, "60 fps"
+	120, "120 fps"
+	144, "144 fps"
+	165, "165 fps"
+	180, "180 fps"
+	240, "240 fps"
+	360, "360 fps"
+	480, "480 fps"
+}
+
 // [rc4l] video-scale / windowed-video: the resolution grid is retired (upstream deleted it in
 // b65b83edb). Fullscreen is borderless-desktop and always fills; there is no mode to pick. The
 // "resolution" is now expressed as a render Scale mode + Scale factor (rendered at that size and
@@ -2231,7 +2245,15 @@ OptionMenu VideoModeMenu
 	Option "Frame rate limit",		"vid_maxfps", "MaxFps"
 	// [rc4l] features/dynres: only the 3D scene scales, below the scale factor's size, and the HUD and menus stay sharp.
 	Option "Dynamic resolution",	"vid_fua_dynres", "OnOff"
-	Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargets", "vid_fua_dynres"
+	// [rc4l] A browser times no GPU, so its default aims at 60 fps rather than the display's refresh (features/dynres).
+	IfOption(Web)
+	{
+		Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargetsWeb", "vid_fua_dynres"
+	}
+	else
+	{
+		Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargets", "vid_fua_dynres"
+	}
 	Slider "Lowest resolution",		"vid_fua_dynres_min", 0.25, 1.0, 0.125, 3
 	StaticText " "
 	// [rc4l] In a browser the page sizes the canvas and the game follows it, so there is no window to size.

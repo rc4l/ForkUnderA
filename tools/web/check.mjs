@@ -345,8 +345,7 @@ export const CHECKS = [
         const said = log.textContent.slice(before), m = /scale ([\\d.]+)/.exec(said);
         return { scale: m ? Number(m[1]) : -1, held: /held while/.test(said) };
       };
-      // [rc4l] A target the page meets at rest, since headless Chrome draws under the 480 Hz it reads and a lower scale there rightly helps.
-      Module.fuaCommand('vid_fua_dynres_target 60');
+      // [rc4l] The default target, which a browser aims at 60 fps since it times no GPU, met at rest.
       ${pause(4000)}
       const idle = (await report()).scale;
       Module.fuaCommand('fua_dg_gpuload 60000');
@@ -366,7 +365,6 @@ export const CHECKS = [
       ${pause(1000)}
       const blurHeld = (await report()).held;
       window.dispatchEvent(new Event('focus'));
-      Module.fuaCommand('vid_fua_dynres_target 0');
       ${pause(500)}
       return { idle, loaded, after, consoleHeld, blurHeld };`),
     until: EVAL,

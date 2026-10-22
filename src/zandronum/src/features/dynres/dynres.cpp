@@ -34,6 +34,8 @@ CUSTOM_CVAR(Float, vid_fua_dynres_min, 0.5f, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 }
 // [rc4l] Pins the scale for tests and comparisons, 0 leaving it to the controller.
 CVAR(Float, fua_dg_dynres_force, 0.f, 0)
+// [rc4l] Prints each step the controller takes and why.
+CVAR(Bool, fua_dynres_log, false, 0)
 
 EXTERN_CVAR(Bool, vid_vsync)
 EXTERN_CVAR(Int, r_texture_filter)
@@ -81,10 +83,10 @@ void Publish()
 float Hold(const char *why, float scale)
 {
 	g_held = why;
-	g_state.step = 0;
-	g_state.settle = 0;
-	g_state.roomFrames = 0;
-	g_state.haveAvg = false;
+	// [rc4l] The controller starts over once it is let go, with no trial or wait left over from before.
+	const int changes = g_state.changes;
+	g_state = DynresState();
+	g_state.changes = changes;
 	g_scale = scale;
 	Publish();
 	return g_scale;
@@ -118,6 +120,7 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 	caps.vsync = vid_vsync || zx::mainloop::Stepped();
 	caps.limitFps = zx::framelimit::LimitFps();
 	caps.targetFps = vid_fua_dynres_target;
+	caps.untimed = !g_gpuTimed;
 	g_budgetMs = ComputeFrameBudgetMs(caps);
 
 	if (fua_dg_dynres_force > 0.f) return Hold("pinned by fua_dg_dynres_force", std::min(1.f, std::max(0.25f, (float)fua_dg_dynres_force)));
@@ -142,7 +145,12 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 	g_held = "";
 	float steps[kMaxDynresSteps];
 	const int count = ComputeDynresSteps(vid_fua_dynres_min, !zx::hwrender::ComputeTextureFilter(r_texture_filter).magLinear, steps);
+	const DynresState was = g_state;
 	g_state = ComputeDynresStep(g_state, x, g_budgetMs, steps, count, DynresTuning());
+	const char *why = ComputeDynresWhy(was, g_state, g_gpuTimed);
+	if (fua_dynres_log && *why)
+		Printf("dynamic resolution: %.3f -> %.3f, %s (%s %.2f ms, budget %.2f ms)\n", g_scale, steps[g_state.step], why,
+			g_gpuTimed ? "GPU" : "frames", g_gpuTimed ? was.gpuAvgMs : g_state.lastWindowMs, g_budgetMs);
 	g_scale = steps[g_state.step];
 	Publish();
 	return g_scale;
@@ -150,13 +158,14 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 
 }} // namespace zx::dynres
 
-// [rc4l] Where dynamic resolution stands: the scale, the budget and the refresh it came from, the GPU's average, and what holds it if anything does.
+// [rc4l] Where dynamic resolution stands: the scale, the budget and the refresh it came from, the GPU's average or the frames' last second, and what holds it if anything does.
 CCMD(fua_dynres_report)
 {
+	const zx::dynres::DynresState &s = zx::dynres::g_state;
 	FString gpu;
-	if (zx::dynres::g_gpuTimed) gpu.Format("GPU average %.2f ms", zx::dynres::g_state.gpuAvgMs);
-	else gpu = "GPU not timed, judged by the frames that waited on it";
+	if (zx::dynres::g_gpuTimed) gpu.Format("GPU average %.2f ms", s.gpuAvgMs);
+	else gpu.Format("GPU not timed, frames %.2f ms over the last second%s", s.lastWindowMs, s.trial ? (s.trialUp ? ", trying a step up" : ", trying a step down") : (s.refuseMs > 0.0 ? ", a step down that did not help waits" : ""));
 	Printf("dynamic resolution: %s, scale %.3f, budget %.2f ms (refresh %.1f Hz, frame limit %d), %s, %d changes%s%s\n",
 		vid_fua_dynres ? "on" : "off", zx::dynres::g_scale, zx::dynres::g_budgetMs, zx::dynres::g_refreshHz,
-		zx::framelimit::LimitFps(), gpu.GetChars(), zx::dynres::g_state.changes, *zx::dynres::g_held ? ", " : "", zx::dynres::g_held);
+		zx::framelimit::LimitFps(), gpu.GetChars(), s.changes, *zx::dynres::g_held ? ", " : "", zx::dynres::g_held);
 }
