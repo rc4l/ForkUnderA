@@ -19,6 +19,7 @@ Run from `tools/fuactl` as `node src/cli.mjs …` against your own locked instan
 node src/cli.mjs stats frame/ --port 7799    # the frame's own times: present to present, each renderer's share, tics
 node src/cli.mjs stats phase/ --port 7799    # where the frame went, by features/framephase's phases
 node src/cli.mjs stats gpu/ --port 7799      # GPU time per pass and GPU memory
+node src/cli.mjs stats gpu/upload/ --port 7799    # bytes sent to the GPU a frame, by buffer; levelmesh/repaint_* says why surfaces went again
 node src/cli.mjs hitches 10 --port 7799      # slow frames and the regions they spent most in
 node src/cli.mjs stats --port 7799           # every counter there is; the groups are named in the telemetry README
 ```
@@ -50,7 +51,7 @@ node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allo
   - Rapid WAD changes: `--action "wad_reload <other iwad> map=E1M1|wad_reload <iwad> <pwad> map=MAP01"` (forward slashes); with no `map=`, the restarts stay at the title.
   - Self-hosting: `--action "fua_hostmap MAP01"`. A server: launch one with `launch --arg "-host,-port,10670"`, then `soak --port <client> --judge-port <server> --judge-token T --action "connect 127.0.0.1:10670|disconnect"` judges the server while the client joins and leaves.
   - Resizing: `--action "check: resize 900x700|check: resize 1340x860"` sizes the game window from outside as a drag does (`window --resize WxH` once), since `vid_setmode` leaves a window's size alone; fullscreen: `--action "fullscreen 1|fullscreen 0"`, which covers the user's screen while it runs.
-- Turn on `fua_render_in_background` for a soak (scenarios do): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
+- A soak needs `fua_render_in_background` on (a `--lock` launch, and so every scenario, starts with it on; turn it on in the user's): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
 - The heap gauges read `n/a` in plain `stats`, since walking the heaps stalls frames; a soak and `memsnap`/`memdiff` read them fresh, and `fua_telemetry_heaps 1` keeps them live.
 - A slow frame at a fixed interval that no timed region covers is something periodic on the main thread, such as a gauge's read: `record`, find the interval between slow frames, then `sample --stacks` while it happens.
 - Private bytes settle over the first sixty or so restarts (the heap's commit and the driver's caches) and level off; judge a restart soak with `--ignore mem/private_bytes` and live allocations, heap bytes, GPU memory and handles, or run eighty restarts and watch the plateau. `mem/win/` and `mem/heaps_committed_bytes` say whether growth sits in a heap or outside every one.
@@ -67,7 +68,7 @@ node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allo
 Headless Chrome (always muted) reproduces what the page holds:
 
 - `node tools/web/check.mjs dist-web --only "holds no more memory"` runs the reload soak.
-- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. The run steps `frames` (the browser's frame pacing since the last one) and `level` (the audio output's RMS) measure what a player sees and hears; `fua_debug_orbit 25` turns the aim for repeatable motion. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
+- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. The run steps `frames` (the browser's frame pacing since the last one) and `level` (the audio output's RMS) measure what a player sees and hears; `fua_debug_orbit 25` turns the aim for repeatable motion; `gpucalls` lists the WebGPU calls a second since the last one, a buffer's writes among them. A page that drew nothing for longer than `--stall-ms` gets a `STALLED` line saying from when, so what the steps printed after it is known stale, and exit 3. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
 - A `wad_reload` reloads the page; nothing in the engine survives that, so what to watch across reloads is the page's stored data (`navigator.storage.estimate()`), which holds the config and the player's WADs.
 - The check "lets go of" compares the page's view with the engine's.
 - A player's fight, not a map's start: `probe.mjs --save game.zds` loads a save into the page before the steps (begin them with a `wait`). A player's browser save leaves their page as a download when they type `fua_offer <save name>` in the game console; a browser save does not load in a desktop build, nor a desktop one in the browser.
