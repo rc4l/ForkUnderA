@@ -4,6 +4,7 @@
 // [rc4l] The per-frame stream: sprites, models and decals, the solid ones drawn after the world and the translucent ones sorted into one pass with the world's.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/computation/pieceorder_compute.h"   // [rc4l] ComputePieceOrderKey
 #include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
@@ -145,19 +146,9 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// translucent sprites drawn in the wrong order composite wrongly. Within the translucent set
 		// the sort beats batching, so material grouping is deliberately given up there.
 		static TArray<int> order;
-		order.Clear();
-		for (int i = 0; i < npieces; i++) order.Push(i);
+		order.Resize(npieces);
 
 		const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
-		static TArray<float> key;
-		key.Clear();
-		key.Resize(npieces);
-		for (int i = 0; i < npieces; i++)
-		{
-			const zx::levelmesh::MeshPiece &p = pieces[i];
-			const float dx = p.sortX - cx, dy = p.sortY - cy, dz = p.sortZ - cz;
-			key[i] = dx*dx + dy*dy + dz*dz;
-		}
 		// [rc4l] n log n, because this ran as a selection sort over every sprite in the frame.
 		//
 		// The rule is unchanged -- opaque first and grouped by material, then blended back to front --
@@ -170,22 +161,18 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// The index breaks ties so the order is DETERMINISTIC. std::sort is not stable, and two
 		// sprites at the same distance trading places between frames is a flicker -- the same trap the
 		// translucent draw comparator documents one pass later.
-		// `key` has static storage, which a lambda cannot capture; the pointer can.
-		const float *keyp = (npieces > 0) ? &key[0] : NULL;
-		std::sort(&order[0], &order[0] + npieces,
-			[pieces, keyp](int ia, int ib) {
-				const zx::levelmesh::MeshPiece &pa = pieces[ia];
-				const zx::levelmesh::MeshPiece &pb = pieces[ib];
-				const bool ta = pa.blendMode != 0, tb = pb.blendMode != 0;
-				if (ta != tb) return !ta;                             // opaque before blended
-				if (!ta)
-				{
-					if (pa.material != pb.material) return pa.material < pb.material;
-					return ia < ib;
-				}
-				if (keyp[ia] != keyp[ib]) return keyp[ia] > keyp[ib]; // blended: far first
-				return ia < ib;
-			});
+		// [rc4l] Each piece read once into a key (pieceorder_compute), since a comparator reading two pieces a comparison was a twentieth of a Complex Doom fight's frame.
+		static std::vector<zx::hwrender::PieceOrderKey> orderKeys;
+		orderKeys.resize(npieces);
+		for (int i = 0; i < npieces; i++)
+		{
+			const zx::levelmesh::MeshPiece &p = pieces[i];
+			const float dx = p.sortX - cx, dy = p.sortY - cy, dz = p.sortZ - cz;
+			orderKeys[i].key = zx::hwrender::ComputePieceOrderKey(p.blendMode != 0, (uintptr_t)p.material, dx*dx + dy*dy + dz*dz);
+			orderKeys[i].index = i;
+		}
+		zx::hwrender::ComputeSortPieceOrder(orderKeys);
+		for (int i = 0; i < npieces; i++) order[i] = orderKeys[i].index;
 
 		// [rc4l] Laid out first, and every slot found, on this thread; then the records and vertices are written on the pool, each piece into its own place.
 		static TArray<unsigned> dynVerts;
