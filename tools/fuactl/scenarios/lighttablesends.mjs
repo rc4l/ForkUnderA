@@ -25,10 +25,7 @@ export function meanOf(rows, name) {
 
 export async function judgeLaunch(c, inst, label) {
   // [rc4l] In the glow room, whose light steps every tic, a frame a tic, for long enough to fill the stats window's 240 frames.
-  await c.rpc("sim.resume", {}).catch(() => {});
   await c.rpc("player.setpos", VANTAGES.find((v) => v.name === "glow").at);
-  // [rc4l] A window without focus draws nothing, and a surface is baked again only when a frame walks it.
-  await cap.exec(c, "fua_render_in_background 1");
   await cap.exec(c, "vid_maxfps 35");
   const from = cap.ticOf(await c.rpc("sim.tic"));
   await cap.sleep(8000);
