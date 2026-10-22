@@ -85,12 +85,20 @@ function asRows(rows) {
   return (rows || []).map((f) => ({ symbol: f.symbol, binary: f.dso, samples: f.samples, percent: f.percent }));
 }
 
-// [rc4l] A sample as text: each function's share where the time landed, and with stacks the share it was anywhere on the stack of, hottest first.
+// [rc4l] What a sample cannot show, read from the frames it caught: a main thread drawing beside threaded tics never runs them, and the in-engine sampler interrupts that thread only.
+export function sampleNotes(report) {
+  const caught = (name) => [...(report.functions || []), ...(report.inclusive || [])].some((f) => String(f.symbol || "").includes(name));
+  return caught("GameThreadFrame") || caught("D_DisplayBesideTic")
+    ? ["note: tics ran on the game thread, which this sampler does not interrupt; launch with --cvar fua_gamethread=0 to see what they cost"]
+    : [];
+}
+
+// [rc4l] A sample as text: each function's share where the time landed, and with stacks the share it was anywhere on the stack of, hottest first, then what it could not see.
 export function sampleTable(report, { top = 30 } = {}) {
   const rows = (title, list) => [`${title}:`, ...(list || []).slice(0, top).map((f) => `${String(f.percent).padStart(7)}%  ${f.symbol}`)];
   if (!report.available) return [`no sample: ${report.error || report.backend}`];
   return [`${report.samples} samples over ${report.seconds} s (${report.backend})`, ...rows("self", report.functions),
-    ...(report.inclusive ? rows("inclusive", report.inclusive) : [])];
+    ...(report.inclusive ? rows("inclusive", report.inclusive) : []), ...sampleNotes(report)];
 }
 
 export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false) {

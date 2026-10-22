@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTopOfStack, parseLinuxPerf, sampleProcess, sampleTable } from "../src/sample.mjs";
+import { parseTopOfStack, parseLinuxPerf, sampleNotes, sampleProcess, sampleTable } from "../src/sample.mjs";
 
 // A fake spawn: returns canned {err,stdout,stderr} per invocation, recording the commands.
 function fakeRun(replies) {
@@ -181,4 +181,14 @@ test("a sample prints as self and inclusive shares, hottest first and cut at top
   assert.deepEqual(sampleTable({ ...report, inclusive: undefined }).slice(1), ["self:", "  43.88%  IDList<AActor>::getNewID", "   8.16%  PIT_CheckThing"]);
   assert.deepEqual(sampleTable({ available: false, backend: "bridge", error: "perf.sample was refused" }), ["no sample: perf.sample was refused"]);
   assert.deepEqual(sampleTable({ available: false, backend: "none" }), ["no sample: none"]);
+});
+
+// [rc4l] A fight profiled with the game thread on showed almost no tic: the sampler interrupts the main thread, which draws beside the tics.
+test("a sample says when the tics ran where it cannot see them", () => {
+  const threaded = { available: true, samples: 10, seconds: 1, backend: "bridge", functions: [{ symbol: "zx::hwrender::DrawWorld", percent: 30 }], inclusive: [{ symbol: "zx::gameloop::GameThreadFrame", percent: 90 }] };
+  assert.equal(sampleNotes(threaded).length, 1);
+  assert.match(sampleTable(threaded).at(-1), /fua_gamethread=0/);
+  assert.equal(sampleNotes({ ...threaded, inclusive: [{ symbol: "D_DisplayBesideTic", percent: 50 }] }).length, 1);
+  assert.deepEqual(sampleNotes({ ...threaded, inclusive: [{ symbol: "TryRunTics", percent: 60 }] }), []);
+  assert.deepEqual(sampleNotes({ available: true, functions: [] }), []);
 });

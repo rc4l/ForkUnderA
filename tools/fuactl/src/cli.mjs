@@ -8,7 +8,7 @@ import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } fr
 import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
-import { sampleProcess, sampleTable } from "./sample.mjs";
+import { sampleNotes, sampleProcess, sampleTable } from "./sample.mjs";
 import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
@@ -628,7 +628,7 @@ async function main() {
         : await sampleProcess(pid, opts);
       // [rc4l] --table prints the shares as text, the JSON otherwise.
       if (flags.table) console.log(sampleTable(r, { top: opts.top }).join("\n"));
-      else console.log(JSON.stringify(r, null, 2));
+      else console.log(JSON.stringify({ ...r, notes: sampleNotes(r) }, null, 2));
       break;
     }
     case "hang": {
