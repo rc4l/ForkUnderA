@@ -74,6 +74,8 @@ TEST(GrowBufferCompute, AFlushFallsDueEachTimeTheBudgetFills)
 	size_t pending = 0;
 	zx::hwrender::ComputeUploadChunks(48u << 20, 1u << 20, [&](size_t, size_t n) { if (zx::hwrender::ComputeUploadFlushDue(pending, n, zx::hwrender::kUploadFlushBytes)) flushes++; });
 	EXPECT_EQ(12, flushes);
+	// [rc4l] Half a page between flushes, so a level's upload fits one page each time.
+	EXPECT_EQ(zx::hwrender::kWebGPUUploadPageBytes / 2, zx::hwrender::kUploadFlushBytes);
 }
 
 // [rc4l] A level's first upload asked the device it had not yet made for its type, and every scenario's engine crashed.

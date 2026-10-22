@@ -30,8 +30,11 @@ void ComputeUploadChunks(size_t bytes, size_t chunk, Write write)
 	for (size_t at = 0; at < bytes; at += chunk) write(at, bytes - at < chunk ? bytes - at : chunk);
 }
 
-// [rc4l] The bytes a browser's context takes into upload pages between flushes during a level's upload, half of Diligent's 8 MB WebGPU page, since every page one frame needs stays in its pool for good.
-const size_t kUploadFlushBytes = 4u << 20;
+// [rc4l] The size of a WebGPU device's upload pages, which dgdevice_wgpu.cpp gives Diligent.
+const size_t kWebGPUUploadPageBytes = 8u << 20;
+
+// [rc4l] The bytes a browser's context takes into upload pages between flushes during a level's upload, half a page, since every page one frame needs stays in Diligent's pool for good.
+const size_t kUploadFlushBytes = kWebGPUUploadPageBytes / 2;
 
 // [rc4l] The flush budget while uploads are flushed: kUploadFlushBytes on a browser's device, none on another, nor before a device is made, as at a level's first upload, which made the window and the device itself.
 size_t ComputeUploadFlushBudget(bool deviceMade, bool webgpu);
