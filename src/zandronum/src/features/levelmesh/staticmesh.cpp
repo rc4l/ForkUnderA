@@ -3,6 +3,7 @@
 
 #include "features/levelmesh/staticmesh.h"
 #include "features/surfaces/computation/surfacechange_compute.h"
+#include "features/telemetry/telemetry.h"
 
 #include "tarray.h"
 #include "c_dispatch.h"
@@ -447,6 +448,16 @@ static zx::surfaces::SurfaceKey KeyOf(const MeshPiece &p)
 	return k;
 }
 
+// [rc4l] What each repaint was for, in telemetry's levelmesh/repaint_ counters.
+static void CountRepaintCauses(unsigned causes)
+{
+	if (causes & zx::surfaces::kRepaintMaterial) ZX_COUNT("levelmesh/repaint_material", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintAlpha) ZX_COUNT("levelmesh/repaint_alpha", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintShading) ZX_COUNT("levelmesh/repaint_shading", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintNormal) ZX_COUNT("levelmesh/repaint_normal", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintScroll) ZX_COUNT("levelmesh/repaint_scroll", "pieces", 1);
+}
+
 void MeshRegisterPiece(const MeshPiece &piece)
 {
 	if (piece.range.count == 0) return;
@@ -467,8 +478,9 @@ void MeshRegisterPiece(const MeshPiece &piece)
 		// A switch changes the MATERIAL, which was not among them, so the change went uncounted and
 		// the switch stayed looking unpressed -- and nothing here noticed a shading change at all,
 		// which is why moving geometry needed a separate dirty-vertex channel to be repainted.
-		const zx::surfaces::SurfaceChange what =
-			zx::surfaces::ComputeSurfaceChange(KeyOf(g_pieceList[*found]), KeyOf(piece));
+		const zx::surfaces::SurfaceKey was = KeyOf(g_pieceList[*found]), now = KeyOf(piece);
+		const zx::surfaces::SurfaceChange what = zx::surfaces::ComputeSurfaceChange(was, now);
+		if (what == zx::surfaces::kSurfaceRepaint) CountRepaintCauses(zx::surfaces::ComputeRepaintCauses(was, now));
 		g_pieceList[*found] = piece;
 		if (what == zx::surfaces::kSurfaceRebatch)
 		{

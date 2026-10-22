@@ -175,3 +175,32 @@ TEST(SurfaceChange, AGenuineResizeIsStillARebatch)
 	SurfaceKey now = Wall(); now.rangeCount = 12;
 	EXPECT_EQ(kSurfaceRebatch, ComputeSurfaceChange(was, now));
 }
+
+TEST(SurfaceChange, ARepaintNamesEveryKindOfFieldThatChanged)
+{
+	EXPECT_EQ(0u, ComputeRepaintCauses(Wall(), Wall()));
+	SurfaceKey k = Wall();
+	k.material = &kTexB;
+	EXPECT_EQ((unsigned)kRepaintMaterial, ComputeRepaintCauses(Wall(), k));
+	k = Wall(); k.alpha = 0.5f;
+	EXPECT_EQ((unsigned)kRepaintAlpha, ComputeRepaintCauses(Wall(), k));
+	k = Wall(); k.normZ = 1.f;
+	EXPECT_EQ((unsigned)kRepaintNormal, ComputeRepaintCauses(Wall(), k));
+	k = Wall(); k.scrollV = 0.25f;
+	EXPECT_EQ((unsigned)kRepaintScroll, ComputeRepaintCauses(Wall(), k));
+	// [rc4l] Each shading field alone is the shading cause.
+	const auto shaded = [](void (*edit)(SurfaceKey &)) { SurfaceKey s = Wall(); edit(s); return ComputeRepaintCauses(Wall(), s); };
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.colorR = 0.25f; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.colorG = 0.25f; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.colorB = 0.25f; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.softLight = 0.5f; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.fogDensity = 0.5f; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.fogColor = 0x808080; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.fogMode = 1; }));
+	EXPECT_EQ((unsigned)kRepaintNormal, shaded([](SurfaceKey &s) { s.normX = 0.f; }));
+	EXPECT_EQ((unsigned)kRepaintNormal, shaded([](SurfaceKey &s) { s.normY = 1.f; }));
+	EXPECT_EQ((unsigned)kRepaintScroll, shaded([](SurfaceKey &s) { s.scrollU = 0.5f; }));
+	// [rc4l] Several at once are all named.
+	k = Wall(); k.material = &kTexB; k.colorR = 0.25f; k.scrollU = 0.5f;
+	EXPECT_EQ((unsigned)(kRepaintMaterial | kRepaintShading | kRepaintScroll), ComputeRepaintCauses(Wall(), k));
+}

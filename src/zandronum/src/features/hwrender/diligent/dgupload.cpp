@@ -6,6 +6,7 @@
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputePieceShader
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputePieceCapacity
 #include "features/telemetry/telemetry.h"
+#include <string.h>   // [rc4l] memcmp
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
@@ -543,8 +544,8 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 		ScenePieceData pd;
 		FillPieceData(p, 0, pd, true);
 		g_scene.pieces.Push(pd);
-		ctx->UpdateBuffer(g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
-			sizeof(ScenePieceData), &pd, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		SendToBuffer(ctx, g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+			sizeof(ScenePieceData), &pd);
 	}
 	slot.blended = false;
 
@@ -560,9 +561,8 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 		if (dv.z > nb.maxZ) nb.maxZ = dv.z;
 		g_scene.cpuVerts.Push(dv);
 	}
-	ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 
 	const unsigned int idx = g_vbSlots.Push(slot);
 	g_slotByOffset.Insert(slot.meshOffset, idx);
@@ -584,9 +584,8 @@ static void RetireSlot(Diligent::IDeviceContext *ctx, VBSlot &slot)
 		SceneVertex &dv = g_scene.cpuVerts[slot.vbStart + v];
 		dv.x = dv.y = dv.z = 0.f;
 	}
-	ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 	slot.count = 0;   // nothing here to patch again
 }
 
@@ -609,9 +608,8 @@ static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
 	if (slot.pieceIndex >= g_scene.pieces.Size()) return false;
 
 	FillPieceData(p, 0, g_scene.pieces[slot.pieceIndex], true);
-	ctx->UpdateBuffer(g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
-		sizeof(ScenePieceData), &g_scene.pieces[slot.pieceIndex],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+		sizeof(ScenePieceData), &g_scene.pieces[slot.pieceIndex]);
 
 	SceneBatch &nb = g_scene.batches[slot.batch];
 	for (unsigned int v = 0; v < p.range.count; v++)
@@ -631,9 +629,8 @@ static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
 		SceneVertex &dv = g_scene.cpuVerts[slot.vbStart + v];
 		dv.x = dv.y = dv.z = 0.f;
 	}
-	ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-		(Diligent::Uint64)slot.capacity * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.capacity * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 
 	slot.count = p.range.count;
 	slot.meshOffset = p.range.offset;
@@ -777,7 +774,15 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 				if (slotIdx == NULL || *slotIdx >= g_vbSlots.Size()) continue;
 				const VBSlot &slot = g_vbSlots[*slotIdx];
 				if (slot.count == 0 || slot.pieceIndex >= g_scene.pieces.Size()) continue;
-				FillPieceData(p, 0, g_scene.pieces[slot.pieceIndex], true);
+				// [rc4l] A record that comes out as the GPU already holds it, as an animation frame's does when SlotRemap carries the frame, is not sent again.
+				ScenePieceData pd;
+				FillPieceData(p, 0, pd, true);
+				if (memcmp(&pd, &g_scene.pieces[slot.pieceIndex], sizeof(pd)) == 0)
+				{
+					ZX_COUNT("gpu/repaint_same", "pieces", 1);
+					continue;
+				}
+				g_scene.pieces[slot.pieceIndex] = pd;
 				s_repaintSlots.Push(slot.pieceIndex);
 				g_stats.geomRepaints++;
 				g_stats.fRepaints++;
@@ -797,11 +802,11 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 						if (s_repaintSlots[i] > runEnd) runEnd = s_repaintSlots[i];
 						continue;
 					}
-					ctx->UpdateBuffer(g_scene.pieceBuf,
+					SendToBuffer(ctx, g_scene.pieceBuf,
 						(Diligent::Uint64)runStart * sizeof(ScenePieceData),
 						(Diligent::Uint64)(runEnd - runStart + 1) * sizeof(ScenePieceData),
-						&g_scene.pieces[runStart],
-						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+						&g_scene.pieces[runStart]);
+					ZX_COUNT("gpu/repaint_sent", "pieces", runEnd - runStart + 1);
 					g_stats.repaintRuns++;
 					g_stats.fRuns++;
 					if (!end) { runStart = runEnd = s_repaintSlots[i]; }
@@ -917,15 +922,13 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 					if (slot.pieceIndex < g_scene.pieces.Size())
 					{
 						FillPieceData(*p, 0, g_scene.pieces[slot.pieceIndex], true);
-						ctx->UpdateBuffer(g_scene.pieceBuf,
+						SendToBuffer(ctx, g_scene.pieceBuf,
 							(Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData), sizeof(ScenePieceData),
-							&g_scene.pieces[slot.pieceIndex],
-							Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+							&g_scene.pieces[slot.pieceIndex]);
 					}
 					for (unsigned int v = 0; v < slot.count; v++) g_scene.cpuVerts[slot.vbStart + v] = moved[v];
-					ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+					SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 					g_stats.geomPatchVerts += (int)slot.count;
 					g_stats.fPatchVerts += (int)slot.count;
 					patched++;

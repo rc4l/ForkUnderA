@@ -802,8 +802,7 @@ static void DrawSkyFade(Diligent::IDeviceContext *ctx)
 		CreateDeviceBuffer(bd, nullptr, &g_skyFadeVB);
 		if (!g_skyFadeVB) return;
 	}
-	ctx->UpdateBuffer(g_skyFadeVB, 0, sizeof(v), v,
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_skyFadeVB, 0, sizeof(v), v);
 
 	Diligent::IBuffer *vbs[] = { g_skyFadeVB };
 	const Diligent::Uint64 offsets[] = { 0 };

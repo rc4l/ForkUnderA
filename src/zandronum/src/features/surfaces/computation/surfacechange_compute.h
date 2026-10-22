@@ -77,6 +77,19 @@ enum SurfaceChange
 // Compare what a surface was against what it now is.
 SurfaceChange ComputeSurfaceChange(const SurfaceKey &was, const SurfaceKey &now);
 
+// [rc4l] Why a surface is repainted, one bit per kind of field that changed, for telemetry's count of what the re-sends are.
+enum RepaintCause
+{
+	kRepaintMaterial = 1,   // [rc4l] an animation frame
+	kRepaintAlpha    = 2,
+	kRepaintShading  = 4,   // [rc4l] its light, colour or fog
+	kRepaintNormal   = 8,
+	kRepaintScroll   = 16,
+};
+
+// [rc4l] The RepaintCause bits for every kind of field that differs between was and now, 0 when none does.
+unsigned ComputeRepaintCauses(const SurfaceKey &was, const SurfaceKey &now);
+
 }} // namespace zx::surfaces
 
 #endif

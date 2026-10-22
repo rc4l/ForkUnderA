@@ -43,9 +43,10 @@ void NoteMadeInPlay(const char *kind, const char *name)
 	if (inPlay) ZX_COUNT("gpu/made_in_play", "objects", 1);
 }
 
-// [rc4l] A frame drawn, which arms the count a few frames after the level is ready.
+// [rc4l] A frame drawn, which arms the count a few frames after the level is ready and ends gpu/upload/'s frame.
 static void MadeInPlayFrame(bool ready)
 {
+	NoteUploadFrame();
 	std::lock_guard<std::mutex> guard(g_madeLock);
 	ComputeMadeInPlayFrame(g_madeInPlay, ready);
 }

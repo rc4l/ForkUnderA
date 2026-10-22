@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { abLine, abShots, initFor, loadSave, parseRun, parseSwap, queryMap, report, runScript, soakLines } from '../probe.mjs';
+import { abLine, abShots, initFor, loadSave, parseRun, parseSwap, queryMap, report, runScript, soakLines, stallLine } from '../probe.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 
 test('a run is console lines with waits between them', () => {
@@ -100,4 +100,14 @@ test('a save given to a run is written into the page home and loaded before its 
   assert.ok(js.indexOf("fuaCommand('load ' + at)") > 0);
   assert.ok(js.indexOf("fuaCommand('load ' + at)") < js.indexOf('setTimeout(r, 50)'));
   assert.doesNotMatch(runScript(parseRun('wait 50')), /FuaHome\.HOME/);
+});
+
+test('stallLine names a page that stopped drawing for longer than the limit', () => {
+  assert.equal(stallLine(undefined, 10000), '');
+  assert.equal(stallLine({ ms: 9000, at: 0 }, 10000), '');
+  assert.equal(stallLine({ ms: 41200, at: 13000 }, 10000), 'STALLED: the page drew nothing for 41.2 s from 13.0 s into the run, so what the steps after that printed is stale');
+});
+
+test('runScript reports the longest wait between frames over the run', () => {
+  assert.match(runScript(parseRun('wait 100')), /stall: longestGap\(window\.fuaFrames\.slice\(runFramesFrom\)\)/);
 });

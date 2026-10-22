@@ -51,6 +51,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 
 - `features/framephase/framephase.cpp`: each phase feeds `phase/<name>`, and `FrameBoundary` calls `FrameMark`.
 - `d_net.cpp` `TryRunTics`, `g_game.cpp` `G_Ticker` and `p_tick.cpp` `P_Ticker`: the `sim/` zones and `TicMark`, which the bridge's `perf.ticprof` reads (`features/mcp-bridge/computation/ticprof_compute.h` names them).
+- `features/levelmesh/staticmesh.cpp` `MeshRegisterPiece`: `levelmesh/repaint_material`, `_alpha`, `_shading`, `_normal` and `_scroll`, the surfaces repainted each frame by what changed (`ComputeRepaintCauses`).
+- `features/hwrender/diligent/dgscene.cpp` `SendToBuffer`, the backend's one buffer write: `gpu/upload_bytes` and the breakdown `gpu/upload/`, each buffer's bytes per frame since it was last read; `dgupload.cpp`'s repaint drain counts `gpu/repaint_sent` (records sent, gaps bridged) and `gpu/repaint_same` (records that came out as the GPU holds them and were not sent).
 - `dthinker.cpp` `TickThinkers`: with `fua_telemetry_thinkers 1`, each thinker's tick by class, as the breakdown `sim/thinker/`.
 - `features/visibility/viswalk.cpp`: the `vis/` zones.
 - `features/gamecopy/`: the fill's `copy/` zones and counts (seen bits, sectors, sides and their scan and take,

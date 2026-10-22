@@ -401,8 +401,7 @@ void RefreshBindless()
 		auto *ctx = GetContext();
 		if (moved && ctx)
 		{
-			ctx->UpdateBuffer(g_slotRemapBuf, 0, (Diligent::Uint64)g_slotRemap.size() * sizeof(unsigned), &g_slotRemap[0],
-				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			SendToBuffer(ctx, g_slotRemapBuf, 0, (Diligent::Uint64)g_slotRemap.size() * sizeof(unsigned), &g_slotRemap[0]);
 			g_stats.remapUploads++;
 		}
 	}

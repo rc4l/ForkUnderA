@@ -68,4 +68,17 @@ SurfaceChange ComputeSurfaceChange(const SurfaceKey &was, const SurfaceKey &now)
 	return kSurfaceUnchanged;
 }
 
+unsigned ComputeRepaintCauses(const SurfaceKey &was, const SurfaceKey &now)
+{
+	unsigned causes = 0;
+	if (was.material != now.material) causes |= kRepaintMaterial;
+	if (!Same(was.alpha, now.alpha)) causes |= kRepaintAlpha;
+	if (!Same(was.colorR, now.colorR) || !Same(was.colorG, now.colorG) || !Same(was.colorB, now.colorB) ||
+	    !Same(was.softLight, now.softLight) || !Same(was.fogDensity, now.fogDensity) ||
+	    was.fogColor != now.fogColor || was.fogMode != now.fogMode) causes |= kRepaintShading;
+	if (!Same(was.normX, now.normX) || !Same(was.normY, now.normY) || !Same(was.normZ, now.normZ)) causes |= kRepaintNormal;
+	if (!Same(was.scrollU, now.scrollU) || !Same(was.scrollV, now.scrollV)) causes |= kRepaintScroll;
+	return causes;
+}
+
 }} // namespace zx::surfaces

@@ -176,7 +176,10 @@ bool SkyPortalReach(float &camX, float &camY, float &reach);
 // [rc4l] The horizon windows' planes, drawn after the opaque world -- see features/horizon.
 void DrawHorizonPlanes(Diligent::IDeviceContext *ctx);
 
-// [rc4l] Uploads count vertices of stride bytes into a grow-only vertex buffer, re-created when short; false if none can be had.
+// [rc4l] Writes bytes into buf at offset, the one place the backend sends a buffer anything, counted under gpu/upload_bytes and by buffer under gpu/upload/.
+void SendToBuffer(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data);
+// [rc4l] Ends a frame for gpu/upload/'s bytes per frame.
+void NoteUploadFrame();
 // [rc4l] Bytes written into buf at offset in pieces no bigger than an upload page, so a big write takes pooled pages rather than one its own size, which a browser's device keeps for good.
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data);
 // [rc4l] The deferred decal pass's pipelines and buffers made for the level now, as its scene's are, rather than by its first mark; false when they cannot be (fua_projdecals_stats says why).
