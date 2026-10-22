@@ -76,12 +76,12 @@ export const SETTINGS = [
   { name: "radial fog", commands: ["r_fogmode 2"] },
 ];
 
-// [rc4l] compareSameFrame under each setting, its lines named by the setting.
-export async function compareEachSetting(opts) {
+// [rc4l] compareSameFrame (or compare) under each setting, its lines named by the setting.
+export async function compareEachSetting(opts, compare = compareSameFrame) {
   const lines = [];
   let failed = 0, refused = false;
   for (const s of SETTINGS) {
-    const r = await compareSameFrame({ ...opts, name: `${opts.name}_${s.name.replace(/ /g, "")}`, commands: s.commands, settleTics: 35 });
+    const r = await compare({ ...opts, name: `${opts.name}_${s.name.replace(/ /g, "")}`, commands: s.commands, settleTics: 35 });
     lines.push(...r.lines.map((l) => `${s.name}: ${l}`));
     failed += r.failed;
     refused = refused || !!r.refused;
