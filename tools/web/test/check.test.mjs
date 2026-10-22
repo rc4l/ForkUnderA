@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -290,4 +290,10 @@ test('leaving the page stores the config and prints nothing', () => {
   assert.equal(storedQuietly({ stored: true, said: '' }), '');
   assert.equal(storedQuietly({ stored: false, said: '' }), 'the store failed');
   assert.equal(storedQuietly({ stored: true, said: 'Config saved.\n' }), 'the console printed "Config saved."');
+});
+
+test('lightTableSends names a table never sent and surfaces sent again', () => {
+  assert.equal(lightTableSends({ pieceCopies: 0, tableCopies: 35 }), '');
+  assert.match(lightTableSends({ pieceCopies: 0, tableCopies: 0 }), /sector light table was sent 0.0 times a second/);
+  assert.match(lightTableSends({ pieceCopies: 70, tableCopies: 35 }), /surface records were sent 70.0 times a second/);
 });

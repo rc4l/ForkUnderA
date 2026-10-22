@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, WATCH_GPU_CALLS, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, WATCH_GPU_CALLS, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates, longestGap } from '../page.mjs';
 
 // [rc4l] STARTED run against a stand-in page: its error panel, its Module, and whether it is isolated.
 function runStarted({ errorShown = false, errorText = '', module = {}, isolated = true }) {
@@ -213,4 +213,10 @@ test('the gpu calls look gives each busiest kind a second, and says when there w
   assert.equal(gpuCallRates({ from: 5000, by: {} }, 6000), 'gpu calls: none');
   assert.match(WATCH_GPU_CALLS, /GPUDevice\.prototype\.createBindGroup = function/);
   assert.match(WATCH_GPU_CALLS, /if \(window\.GPUDevice\)/);
+});
+
+test('longestGap finds the longest wait between frames and where it began', () => {
+  assert.deepEqual(longestGap([]), { ms: 0, at: 0 });
+  assert.deepEqual(longestGap([100]), { ms: 0, at: 0 });
+  assert.deepEqual(longestGap([100, 116, 132, 8132, 8148]), { ms: 8000, at: 32 });
 });

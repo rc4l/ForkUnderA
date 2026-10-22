@@ -7,6 +7,13 @@ namespace zx { namespace surfaces {
 
 namespace {
 
+// [rc4l] Whether two surfaces take their light from different places in the sector light table.
+bool LitDiffers(const SurfaceKey &a, const SurfaceKey &b)
+{
+	return a.litSector != b.litSector || a.litKind != b.litKind || a.litSideLight != b.litSideLight ||
+		a.litContrast != b.litContrast || a.litFlags != b.litFlags;
+}
+
 // [rc4l] Exact comparison, deliberately.
 //
 // A tolerance here would be a second opinion about when two surfaces are the same, and the first
@@ -58,6 +65,7 @@ SurfaceChange ComputeSurfaceChange(const SurfaceKey &was, const SurfaceKey &now)
 	if (!Same(was.fogDensity, now.fogDensity)) return kSurfaceRepaint;
 	if (was.fogColor != now.fogColor) return kSurfaceRepaint;
 	if (was.fogMode != now.fogMode) return kSurfaceRepaint;
+	if (LitDiffers(was, now)) return kSurfaceRepaint;
 	// [rc4l] The normal decides which dynamic lights reach the surface, so a door that tilts or a
 	// slope that moves changes how it is lit without moving a single vertex of anything else.
 	if (!Same(was.normX, now.normX) || !Same(was.normY, now.normY) ||
@@ -66,6 +74,19 @@ SurfaceChange ComputeSurfaceChange(const SurfaceKey &was, const SurfaceKey &now)
 	if (!Same(was.scrollU, now.scrollU) || !Same(was.scrollV, now.scrollV)) return kSurfaceRepaint;
 
 	return kSurfaceUnchanged;
+}
+
+unsigned ComputeRepaintCauses(const SurfaceKey &was, const SurfaceKey &now)
+{
+	unsigned causes = 0;
+	if (was.material != now.material) causes |= kRepaintMaterial;
+	if (!Same(was.alpha, now.alpha)) causes |= kRepaintAlpha;
+	if (!Same(was.colorR, now.colorR) || !Same(was.colorG, now.colorG) || !Same(was.colorB, now.colorB) ||
+	    !Same(was.softLight, now.softLight) || !Same(was.fogDensity, now.fogDensity) ||
+	    was.fogColor != now.fogColor || was.fogMode != now.fogMode || LitDiffers(was, now)) causes |= kRepaintShading;
+	if (!Same(was.normX, now.normX) || !Same(was.normY, now.normY) || !Same(was.normZ, now.normZ)) causes |= kRepaintNormal;
+	if (!Same(was.scrollU, now.scrollU) || !Same(was.scrollV, now.scrollV)) causes |= kRepaintScroll;
+	return causes;
 }
 
 }} // namespace zx::surfaces

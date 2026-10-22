@@ -28,6 +28,16 @@ void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiec
 // [rc4l] A level surface's shading, as CaptureShading but with no fixed colormap: the cached mesh keeps its light through a power, and the shader applies the colormap over it, so a power starting, blinking or ending never re-bakes the level.
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog = false);
 
+// [rc4l] CaptureLevelShading, and the surface lit from the sector light table thereafter when guess's sector gives back exactly the light and colormap it was shaded with (ComputeSectorLitReproduces); a guess of sector -1 shades as baked.
+void CaptureLevelShadingFrom(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, const SectorLightRef &guess);
+
+// [rc4l] Which shading of the level the bake is on, bumped by NoteLevelShadeChanged when a light setting changes, so a flat baked under the old ones is shaded again.
+unsigned int LevelShadeGeneration();
+void NoteLevelShadeChanged();
+
+// [rc4l] Sector `sector`'s entry in the sector light table, from the render copy the bake reads.
+SectorLightEntry SectorLightEntryOf(int sector);
+
 // [rc4l] gl_SetColor's colour alone, as FillSimplePoly sets it for a textured automap floor: software lighting's curve swapped for the standard one.
 void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b);
 

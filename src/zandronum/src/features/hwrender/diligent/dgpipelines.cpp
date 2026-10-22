@@ -7,6 +7,8 @@
 #include "features/hwshaders/computation/hwshader_compute.h"
 #include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsCapacity
+#include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLightCapacity
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
 
 #include <string.h>
@@ -401,8 +403,7 @@ void RefreshBindless()
 		auto *ctx = GetContext();
 		if (moved && ctx)
 		{
-			ctx->UpdateBuffer(g_slotRemapBuf, 0, (Diligent::Uint64)g_slotRemap.size() * sizeof(unsigned), &g_slotRemap[0],
-				Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+			SendToBuffer(ctx, g_slotRemapBuf, 0, (Diligent::Uint64)g_slotRemap.size() * sizeof(unsigned), &g_slotRemap[0]);
 			g_stats.remapUploads++;
 		}
 	}
@@ -657,14 +658,17 @@ bool EnsureScenePipeline(FString &err)
 	g_builtCull = (int)fua_dg_cull;
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.
 	if (g_pso.world[kWpOpaque] && g_builtSlots != MaterialSlotCapacity()) ReleaseScenePipelines();
+	// [rc4l] A level with more sectors than the sector light table holds makes it again, and the pipelines binding it.
+	if (g_pso.world[kWpOpaque] && (unsigned)numsectors > g_scene.sectorLightCapacity) ReleaseScenePipelines();
 	g_builtSlots = MaterialSlotCapacity();
 	if (g_pso.world[kWpOpaque]) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) { err = "no device/swapchain"; return false; }
 
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer;
-	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua scene VS", kSceneVS);
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, dynVS, psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer;
+	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua scene VS", kSceneVS.c_str());
+	dynVS = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua dynamic VS", kDynamicVS.c_str());
 	psOpaque = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS opaque", kScenePSOpaque);
 	psMasked = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS masked", kScenePS);
 	// [rc4l] Ask the SHADER what it declared, before any pipeline has an opinion about it.
@@ -686,7 +690,7 @@ bool EnsureScenePipeline(FString &err)
 	psGBuffer = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS masked + gbuffer", kScenePSGBuffer);
 	psTrans = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS translucent", kScenePSTrans);
 	psRedAlpha = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS red alpha", kScenePSRedAlpha);
-	if (!vs || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
+	if (!vs || !dynVS || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
 	{
 		// [rc4l] Shaders that compiled alone can still clash together, over a helper both define, so the world is drawn without them rather than not at all.
 		if (!g_userShadersOff && zx::hwshaders::UserShaderCount() > 0)
@@ -722,6 +726,22 @@ bool EnsureScenePipeline(FString &err)
 	// [rc4l] The player's sky holes, two vec4s each, created once at kMaxSkyHoles for the same reason: every world pipeline binds them statically.
 	if (!g_scene.skyHoleBuf && !CreateStructuredBuffer("fua sky holes", 16, zx::levelmesh::kMaxSkyHoles * 2, NULL, g_scene.skyHoleBuf))
 	{ err = "sky hole buffer creation failed"; return false; }
+	if (!g_scene.sectorLightBuf || (unsigned)numsectors > g_scene.sectorLightCapacity)
+	{
+		const unsigned sectorsHeld = zx::hwrender::ComputeSectorLightCapacity(numsectors);
+		g_scene.sectorLightBuf.Release();
+		g_scene.sectorLightWords.Clear();
+		if (!CreateStructuredBuffer("fua sector light", 4, sectorsHeld * zx::levelmesh::kSectorLightWords, NULL, g_scene.sectorLightBuf))
+		{ err = "sector light buffer creation failed"; return false; }
+		g_scene.sectorLightCapacity = sectorsHeld;
+	}
+	// [rc4l] The dynamic stream's words at the most a frame has wanted, which EnsureDynamicRecords grows with the pipelines.
+	if (!g_scene.dynDataBuf)
+	{
+		const unsigned words = zx::hwrender::ComputeDynWordsCapacity(g_scene.dynWordsPeak);
+		if (!CreateStructuredBuffer("fua dynamic data", 4, words, NULL, g_scene.dynDataBuf)) { err = "dynamic data buffer creation failed"; return false; }
+		g_scene.dynDataCapacity = words;
+	}
 
 	// [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
 	// a macro, so the qualified name does not survive the preprocessor here.
@@ -729,6 +749,10 @@ bool EnsureScenePipeline(FString &err)
 		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},   // position
 		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},   // uv
 		Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},   // piece index
+	};
+	// [rc4l] The dynamic stream's one attribute, a reference into its words (ComputeSpriteRef, ComputeGeneralRef).
+	Diligent::LayoutElement dynLayout[] = {
+		Diligent::LayoutElement{0, 0, 1, Diligent::VT_UINT32, false},
 	};
 
 	static Diligent::ShaderResourceVariableDesc vars[] = {
@@ -786,8 +810,9 @@ bool EnsureScenePipeline(FString &err)
 			pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.f;
 		}
 		if (blended) SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0], d.blend);
-		pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-		pci.GraphicsPipeline.InputLayout.NumElements = 3;
+		// [rc4l] The level's pipelines read its vertices; the others draw the dynamic stream.
+		pci.GraphicsPipeline.InputLayout.LayoutElements = d.level ? layout : dynLayout;
+		pci.GraphicsPipeline.InputLayout.NumElements = d.level ? 3 : 1;
 		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
 		// [rc4l] The material array is the last of each, left out where the shaders have none (FUA_BINDLESS).
 		const Diligent::Uint32 noArray = MaterialSlotCapacity() > 0 ? 0 : 1;
@@ -797,7 +822,7 @@ bool EnsureScenePipeline(FString &err)
 		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
 		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
 			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0])) - noArray;
-		pci.pVS = vs;
+		pci.pVS = d.level ? vs : dynVS;
 		pci.pPS = stages[d.stage];
 		CreatePipeline(pci, &g_pso.world[pass]);
 		if (!g_pso.world[pass]) { err = "scene pipeline creation failed"; return false; }
@@ -829,6 +854,10 @@ bool EnsureScenePipeline(FString &err)
 				sv->Set(g_scene.stackVisBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		if (auto *rv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
 			rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (auto *dv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "DynData"))
+			dv->Set(g_scene.dynDataBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (auto *lv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SectorLight"))
+			lv->Set(g_scene.sectorLightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		if (auto *hv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
 			hv->Set(g_scene.skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 

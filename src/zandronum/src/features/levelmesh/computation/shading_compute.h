@@ -63,6 +63,9 @@ float ComputeFogDensity(int lightLevel, unsigned fogColor, const ShadingEnv &env
 // [rc4l] gl_SetColor then gl_SetFog for one surface, as the render state holds them afterwards.
 Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env);
 
+// [rc4l] Whether a level surface baked under a is shaded as it would be under b: every setting but the fixed colormap and the skybox, which a level surface is baked without.
+bool ComputeSameLevelShading(const ShadingEnv &a, const ShadingEnv &b);
+
 }} // namespace zx::levelmesh
 
 #endif // ZX_SHADING_COMPUTE_H

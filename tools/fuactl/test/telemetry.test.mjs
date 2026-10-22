@@ -56,6 +56,9 @@ test("the JSON a console reply holds is found among its other lines, strings wit
   assert.deepEqual(parseConsoleJson('{"pass":true,"s":"q\\"}"}'), { pass: true, s: 'q"}' });
   assert.throws(() => parseConsoleJson("no json here"), /no JSON in/);
   assert.throws(() => parseConsoleJson('[{"a":1}'), /unterminated JSON/);
+  // [rc4l] A level upload's bracketed summary and a pickup's message ahead of the reply are skipped.
+  assert.deepEqual(parseConsoleJson('vulkan: uploaded 12 verts [lightmode 3, fogmode 1]\nArmor Essence\n[{"name":"gpu/repaint_sent","mean":2}]'), [{ name: "gpu/repaint_sent", mean: 2 }]);
+  assert.throws(() => parseConsoleJson("[lightmode 3] and nothing else"), /no JSON in/);
 });
 
 // [rc4l] An instance that answers the soak's RPCs and console commands from a script, its level clock reset by each map command.

@@ -129,6 +129,25 @@ A frame's sprites, models and decals are laid out on the main thread (`computati
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 
+The sector light table (`fua sector light`, `kSectorLightWords` a sector) holds each sector's light level, floor
+and ceiling lights and colormap, read from the render copy and its changed entries sent once a frame
+(`UpdateSectorLightTable`, `ComputeChangedRuns`). A level surface its sector lights carries where its light comes
+from in its record (`computation/sectorlitrecord_compute`, `kTexFlagSectorLit`), and the scene and traced-mirror
+shaders shade it from the table each frame (`FUA_SECTORLIT_GLSL`, `ComputeSectorLitShade` its CPU twin), the
+level's light settings and the player's weapon light in `uShadeEnv`, `uShadeEnv2` and `uShadeFog`. On Sunder
+MAP11 99.8% of the level's surfaces are lit from it, and a frame's surface records sent for light changes went
+from about 110 to under one; `fua_dg_sectorlit 0` bakes every surface's shading into its record, and
+`fua_dg_sectorlit_report` counts what the table lights.
+
+The dynamic stream is one 32-bit reference a vertex (`kDynamicVS`, which the world pipelines that are not the
+level's use). A plain sprite is packed with its four corners into 112 bytes (`computation/spritepack_compute`)
+and its six references name its corners; anything the packed form cannot carry bit for bit (a warp, a glow, a
+tint, a colour off an 8-bit step, a sprite a traced mirror reads) keeps its whole record behind the level's and
+its vertices among the stream's words. A Complex Doom fight's 6,500 sprites a frame went from about 384 bytes
+each to 136, and its uploads from 3.5 to 1.8 MB a frame in Firefox; `fua_dg_spritepack 0` sends every piece
+whole. The words buffer (`fua dynamic data`) is bound statically, so it grows with the piece buffer in
+`EnsureDynamicRecords` (`ComputeDynWordsBound`) and the pipelines are made again with it.
+
 Nothing the GPU needs is made by the frame that first draws it. The deferred decal pass's pipelines are built
 with the scene's (`EnsureDecalPipelines` in `BuildSceneBuffer`), and once the level is uploaded the backend makes
 every texture the engine marked for precache (`FBackendRenderer::PrecacheTexture`, `features/fua-caching`): the

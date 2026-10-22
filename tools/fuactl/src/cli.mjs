@@ -1103,7 +1103,9 @@ async function main() {
     // [rc4l] The views that are one console command each (telemetry.mjs), their output printed as the engine wrote it.
     case "console": case "stats": case "hitches": case "flight": case "memsnap": case "memdiff": {
       const text = telemetry.consoleTextFor(cmd, rest, flags);
-      process.stdout.write(await withUi(flags, (c) => telemetry.execSlow(c, text)));
+      const reply = await withUi(flags, (c) => telemetry.execSlow(c, text));
+      // [rc4l] stats --json prints its JSON alone, so a game message printed meanwhile cannot break the reader.
+      process.stdout.write(cmd === "stats" && flags.json ? `${JSON.stringify(telemetry.parseConsoleJson(reply))}\n` : reply);
       break;
     }
     case "record": {

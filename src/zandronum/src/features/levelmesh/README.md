@@ -52,6 +52,16 @@ The level is baked from the map (`wallcache.cpp`, `flatmesh.cpp`), whole at load
 reaches something that moved, relit or scrolled; GL's walk fills nothing. GL keeps its own replay cache of
 `GLWall`s in `gl/scene/gl_wallcache.cpp`, keyed on the same dirty counters.
 
+A wall or flat whose light is its own sector's is lit from the GPU's sector light table rather than its
+baked shading. The bake names where it believes the light comes from (`WallLightGuess`: the front sector and
+sidedef when no height transfer, 3D floor band or fullbright texture lights it; a flat's own plane in
+`BakeSectorPlane`) and `CaptureLevelShadingFrom` keeps the guess only when `ComputeSectorLitInput` gives back
+exactly the light and colormap it was shaded with, so a wrong guess shades as baked. A flicker then changes
+one table entry, and the surface's record, re-baked identical, is not sent again. A change of light settings
+(`r_lightmode`, `r_fogmode` and the rest, `ComputeSameLevelShading`) bakes the level again and bumps
+`LevelShadeGeneration`, which a flat's stamp carries, so what stays baked follows too. Scenarios `lighttable`
+(GL against Vulkan in rooms each lit a changing way, under four settings) and `lighttablesends`.
+
 The dynamic stream is refilled each frame for each view: sprites, models and particles from
 `features/sprites`, the floor and ceiling marks `features/decals` makes, projected from the render copy's records
 (`projdecals.cpp`, each mark's box worked out again only when its picture, size or place changes), and the decals

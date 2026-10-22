@@ -49,7 +49,6 @@ async function madeSoFar(c) {
 }
 
 export async function judgeLaunch(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   await cap.waitTics(c, 35);
   let before = await madeSoFar(c);
   const steps = [];

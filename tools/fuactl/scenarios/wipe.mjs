@@ -69,7 +69,6 @@ async function inMap02(c) {
 }
 
 export async function judgeLaunch(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   await cap.exec(c, "fua_wipe_trace 1");
   await cap.waitTics(c, 35);
   await cap.exec(c, "nextmap", { quietMs: 400 });

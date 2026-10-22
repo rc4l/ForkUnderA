@@ -47,8 +47,9 @@ died and left no token, as `reap --kill` stops every such orphan; never stop eng
   for that with its own window (see `fua-side-by-side`), `--webgpu`, `--rt` for ray-traced
   mirrors, which must be on when the scene is uploaded (or set `fua_dg_rtmirrors 1` and run
   `fua_diligent_scene`).
-- A `--lock` launch is never focused, so it keeps its world running (`i_pauseinbackground 0`), but its
-  window presents only with `fua_render_in_background 1`: set it before timing frames or recording clips.
+- A `--lock` launch has the focus only when Windows lets it take it, so it launches with its world running
+  (`i_pauseinbackground 0`) and presenting (`fua_render_in_background 1`) either way; to test what an
+  unfocused window does, set the latter to 0 and `window --activate 0` (`harness-windows-have-focus`).
 - A `--lock` launch also starts with dynamic resolution off (`vid_fua_dynres 0`), so its frames are drawn at
   full scale whatever the GPU's load; set it to 1 to see what a player gets.
 - `--preset ID [--variant V]` loads a `catalogue/<ID>/addon.json` wad set from the download store

@@ -18,6 +18,8 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/telemetry/telemetry.h"
+#include "features/hwrender/computation/uploadtally_compute.h"
+#include <mutex>
 #include "features/hwrender/diligent/dggputimer.h"   // [rc4l] gpu/frame_ms, gpu/world_ms, gpu/2d_ms
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
@@ -440,11 +442,37 @@ void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf
 	else ZX_COUNT("gpu/upload_spared", "bytes", (double)bytes);
 }
 
+// [rc4l] What each buffer has been sent since gpu/upload/ was last read.
+static std::mutex g_uploadTallyLock;
+static zx::hwrender::UploadTally g_uploadTally;
+
+static void UploadBreakdown(std::vector<zx::telemetry::Reading> &out)
+{
+	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
+	for (const auto &b : zx::hwrender::ComputeUploadTallyTake(g_uploadTally)) out.push_back({ "gpu/upload/" + b.first, "bytes", b.second });
+}
+
+static const bool s_uploadBreakdown = (zx::telemetry::RegisterBreakdown("gpu/upload/", UploadBreakdown, false), true);
+
+void SendToBuffer(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
+{
+	ctx->UpdateBuffer(buf, offset, bytes, data, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ZX_COUNT("gpu/upload_bytes", "bytes", (double)bytes);
+	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
+	zx::hwrender::ComputeUploadTallyAdd(g_uploadTally, buf->GetDesc().Name, (double)bytes);
+}
+
+void NoteUploadFrame()
+{
+	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
+	zx::hwrender::ComputeUploadTallyFrame(g_uploadTally);
+}
+
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
 {
 	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
 	{
-		ctx->UpdateBuffer(buf, offset + at, n, (const char *)data + at, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		SendToBuffer(ctx, buf, offset + at, n, (const char *)data + at);
 		if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, n, g_uploadFlushBudget)) ctx->Flush();
 	});
 }
@@ -950,6 +978,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 		g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	}
 	EnsureDynamicRecords();
+	UpdateSectorLightTable(ctx);
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
 	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();

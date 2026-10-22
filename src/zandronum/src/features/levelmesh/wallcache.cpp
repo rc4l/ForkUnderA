@@ -229,6 +229,8 @@ void RecalcLiveVertexHeights(vertex_t *v)
 
 // [rc4l] The level's walls were last baked with r_seamless this way, so a change bakes them again.
 static bool g_bakedSeamless = false;
+// [rc4l] The light settings the level was last baked under, which a change bakes it again for.
+static zx::levelmesh::ShadingEnv g_bakedShading;
 
 // [rc4l] No splits, for a piece GL does not draw through RenderWall's split.
 static SeamSplits NoSeams()
@@ -540,6 +542,23 @@ static void BakeWallGlow(MeshPiece &mp, sector_t *sec, int lightLevel, unsigned 
 	GlowPlaneOf(sec->rc.floorplane, mp.glowBottomPlane);
 }
 
+// [rc4l] Where a wall's own light comes from for the sector light table, its front sector and sidedef, unless a height transfer lights it by where the view is or its texture is fullbright.
+static zx::levelmesh::SectorLightRef WallLightGuess(const seg_t *seg, zx::materials::MaterialRef material)
+{
+	zx::levelmesh::SectorLightRef r;
+	if (seg == NULL || seg->frontsector == NULL || seg->sidedef == NULL) return r;
+	sector_t transfer;
+	if (zx::fakeflat::TransferSector(seg->frontsector, &transfer, false) != seg->frontsector || zx::materials::MaterialIsFullbright(material)) return r;
+	const side_t *side = seg->sidedef;
+	r.sector = (int)(seg->frontsector - sectors);
+	r.kind = zx::levelmesh::kSectorLitWall;
+	r.sideLight = side->rc.Light;
+	r.sideAbsolute = (side->rc.Flags & WALLF_ABSLIGHTING) != 0;
+	r.sideLightFog = (side->rc.Flags & WALLF_LIGHT_FOG) != 0;
+	side->GetRcLightLevel(false, 0, false, &r.contrast);
+	return r;
+}
+
 static int ReshadeSegFromMap(int segIndex)
 {
 	if (!gl_wallmesh) return -1;
@@ -574,7 +593,8 @@ static int ReshadeSegFromMap(int segIndex)
 		FColormap cm;
 		cm = cmFrom;
 		const int li = sc.bandLight[slot];
-		if (li >= 0 && li < nLights)
+		const bool band = li >= 0 && li < nLights;
+		if (band)
 		{
 			const lightlist_t &ll = (*lights)[li];
 			lightLevel = BandLightLevel(ll, seg, lightLevel);
@@ -590,7 +610,8 @@ static int ReshadeSegFromMap(int segIndex)
 		// turn solid, so they are preserved here exactly as the base texture and normal are.
 		const float savedAlpha = mp.alpha;
 		const int   savedBlend = mp.blendMode;
-		zx::levelmesh::CaptureLevelShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
+		zx::levelmesh::CaptureLevelShadingFrom(lightLevel, dl.relLight + getExtraLight(), cm, mp, false,
+			band ? zx::levelmesh::SectorLightRef() : WallLightGuess(seg, mp.material));
 		BakeWallGlow(mp, seg->frontsector, lightLevel, cm.LightColor.d);
 		// AFTER CaptureShading, which clears baseTex and resets alpha and blend mode on the way past.
 		mp.baseTex    = savedBase;
@@ -905,7 +926,8 @@ int BakeSegFromMap(int segIndex)
 			sc.bandLight[slot0 + bi] = (signed char)bands[bi].lightEntry;
 			if (bands[bi].lightEntry >= 0) cm.CopyLightColor(bands[bi].lightFrom);
 
-			zx::levelmesh::CaptureLevelShading(lightLevel, dl.relLight + getExtraLight(), cm, mp);
+			zx::levelmesh::CaptureLevelShadingFrom(lightLevel, dl.relLight + getExtraLight(), cm, mp, false,
+				bands[bi].lightEntry >= 0 ? zx::levelmesh::SectorLightRef() : WallLightGuess(seg, d.material));
 			BakeWallGlow(mp, seg->frontsector, lightLevel, cm.LightColor.d);
 			// [rc4l] AFTER CaptureShading, which ends by clearing baseTex.
 			//
@@ -1089,6 +1111,7 @@ int BakeLevelFromMap()
 {
 	if (segs == NULL || numsegs <= 0) return 0;
 	g_bakedSeamless = r_seamless;
+	g_bakedShading = RenderShadingEnv(false);
 	int made = 0;
 	for (int i = 0; i < numsegs; i++) { const int m = BakeSegFromMap(i); if (m > 0) made += m; }
 	return made;
@@ -1330,6 +1353,13 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
 	// [rc4l] r_seamless reshapes every wall's fan, so a change bakes the level's walls again.
 	if (g_bakedSeamless != (bool)r_seamless) BakeLevelFromMap();
+	// [rc4l] So does a light setting (r_lightmode, r_fogmode and the rest), which a surface lit from the sector light table follows by itself and one baked keeps until it is baked again.
+	if (!zx::levelmesh::ComputeSameLevelShading(g_bakedShading, RenderShadingEnv(false)))
+	{
+		zx::levelmesh::NoteLevelShadeChanged();
+		BakeLevelFromMap();
+		for (int i = 0; i < numsectors; i++) RebakeSectorFlats(i);
+	}
 	// [rc4l] GL's missing-texture fills hang on the heights and textures round them, so a move or a texture change works them out again below.
 	TArray<int> fillMoved, fillSides;
 	// [rc4l] With the walks' lists only what they reached is looked at, and the rest stays dirty until a walk reaches it.

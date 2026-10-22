@@ -74,7 +74,10 @@ test("the hands-on build asks for no monsters and for freelook enabled", () => {
   assert.equal(playCvars({ sideBySide: true }).fua_dg_standalone, undefined);
   // [rc4l] A locked launch is always in the background, so its world must not pause there.
   assert.equal(playCvars({ lock: true }).i_pauseinbackground, 0);
+  assert.equal(playCvars({ lock: true }).fua_render_in_background, 1);
+  assert.equal(playCvars({ lock: true, extra: { fua_render_in_background: 0 } }).fua_render_in_background, 0);
   assert.equal(playCvars({}).i_pauseinbackground, undefined);
+  assert.equal(playCvars({}).fua_render_in_background, undefined);
   // [rc4l] --cvar's come last, so they can turn off what the launch set.
   assert.equal(playCvars({ extra: { sv_nomonsters: "0" } }).sv_nomonsters, "0");
   assert.equal(playCvars({ extra: { fua_dg_standalone: "0" } }).fua_dg_standalone, "0");
