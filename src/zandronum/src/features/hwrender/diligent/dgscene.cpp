@@ -434,6 +434,12 @@ void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes)
 	if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, bytes, g_uploadFlushBudget)) ctx->Flush();
 }
 
+void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data)
+{
+	if (zx::hwrender::ComputeUploadChanged(shadow, buf->GetUniqueID(), data, bytes)) UpdateBufferInPages(ctx, buf, 0, bytes, data);
+	else ZX_COUNT("gpu/upload_spared", "bytes", (double)bytes);
+}
+
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
 {
 	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
@@ -461,7 +467,7 @@ bool EnsureGrowingBuffer(Diligent::RefCntAutoPtr<Diligent::IBuffer> &buf, unsign
 // USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data changes once per
 // frame, so it does not belong in the dynamic heap at all.
 bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
-	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name)
+	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name, zx::hwrender::UploadShadow *shadow)
 {
 	Diligent::BufferDesc kind;
 	kind.Name = name;
@@ -469,7 +475,8 @@ bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Dili
 	kind.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 	if (!EnsureGrowingBuffer(vb, capacity, count, stride, pad, kind)) return false;
 	// [rc4l] In pages: nuts.wad's 57,000 sprites wrote 8 MB a frame in one piece, and a browser kept 96 MB of upload pages.
-	UpdateBufferInPages(ctx, vb, 0, (size_t)count * stride, data);
+	if (shadow != nullptr) UpdateBufferIfChanged(ctx, vb, *shadow, (size_t)count * stride, data);
+	else UpdateBufferInPages(ctx, vb, 0, (size_t)count * stride, data);
 	return true;
 }
 

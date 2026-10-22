@@ -79,6 +79,7 @@
 #include "Shader.h"
 #include "RefCntAutoPtr.hpp"
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture, CreateDeviceBuffer
+#include "features/hwrender/computation/uploadguard_compute.h"   // [rc4l] UploadShadow
 
 class FString;
 
@@ -187,6 +188,8 @@ struct UploadFlushing
 	UploadFlushing();
 	~UploadFlushing();
 };
+// [rc4l] UpdateBufferInPages, unless buf already holds those bytes from the last upload through shadow (uploadguard_compute), counting what it spared under gpu/upload_spared.
+void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data);
 // [rc4l] Counts bytes another upload sent, such as a texture's, toward the flush an UploadFlushing makes due.
 void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes);
 // [rc4l] The translation the floor mark pass asks a decal's graphic for (ComputeDecalPassTranslation), shared with the precache that makes it ahead.
@@ -196,8 +199,10 @@ void PrecacheQueuedMaterials();
 // [rc4l] A grow-only buffer of at least count elements of stride bytes, made again from kind's name, usage, binding and access at ComputeGrownCapacity(count, pad) when short; false if none can be had.
 bool EnsureGrowingBuffer(Diligent::RefCntAutoPtr<Diligent::IBuffer> &buf, unsigned int &capacity, unsigned int count, unsigned int stride,
 	unsigned int pad, const Diligent::BufferDesc &kind);
+// [rc4l] count vertices into a grow-only vertex buffer, unsent when shadow is given and they are what it already holds.
 bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
-	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name);
+	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name,
+	zx::hwrender::UploadShadow *shadow = nullptr);
 
 // [rc4l] The 2D pass (dg2d.cpp): the captured HUD, menus and console over the frame, and what it drew last.
 void Draw2D(Diligent::IDeviceContext *ctx);

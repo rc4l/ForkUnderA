@@ -77,6 +77,7 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   - `dgframe.cpp`: `gpu/made/in_play` and the per-frame `gpu/made_in_play`, what was made while the level was played rather than loaded,
     which `fua_dg_made` lists (`computation/madeinplay_compute`) and `fuactl scenarios madeinplay` holds at no shader or pipeline.
   - `dgtexture.cpp`: `load/precache_backend` and `load/precached_textures`, the level's marked textures made ahead.
+  - `dgscene.cpp` `UpdateBufferIfChanged`: `gpu/upload_spared`, the bytes a frame did not send because the buffer already held them (the light grid and the 2D layer).
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
 - `network.cpp`: the `net/` totals. `files.cpp` `FileReader::Read`: `io/read_bytes`.
 - `features/crashreport/zx_crashreport.cpp`: the summary goes into the Sentry extras, throttled. `features/web/webcrash.cpp` hands it to the page for `web/crashreport.js`.
