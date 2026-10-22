@@ -4293,7 +4293,8 @@ void SERVERCOMMANDS_SetThingHealth( AActor* mobj, ULONG ulPlayerExtra, ServerCom
 
 	NetCommand command( SVC2_SETTHINGHEALTH );
 	command.addShort( mobj->NetID );
-	command.addByte( mobj->health );
+	// [rc4l] A long, since a joiner gets every hurt or dead actor's health now: a byte wrapped a corpse's -5 to 251 and cut a cyberdemon's 4000.
+	command.addLong( mobj->health );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 

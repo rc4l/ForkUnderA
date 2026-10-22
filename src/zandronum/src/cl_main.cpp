@@ -148,6 +148,8 @@
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
+#include "features/latency/latency.h"   // [rc4l] latency/ counters
+#include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -1047,7 +1049,7 @@ void CLIENT_GetPackets( void )
 			pByteStream->pbStream = pSavedStream;
 
 			const zx::LauncherCommands commands = {
-				SERVER_LAUNCHER_CHALLENGE, SERVER_LAUNCHER_CHALLENGE_SEGMENTED };
+				SERVER_LAUNCHER_CHALLENGE, SERVER_LAUNCHER_CHALLENGE_SEGMENTED, SERVER_LAUNCHER_IGNORING };
 			bLauncherReply = zx::ShouldRouteToBrowser( bAwaiting, lPeeked, commands );
 		}
 
@@ -1297,7 +1299,9 @@ void CLIENT_CheckForMissingPackets( void )
 		if (( g_lHighestReceivedSequence - g_lLastParsedSequence ) >= PACKET_BUFFER_SIZE )
 		{
 			FString quitMessage;
-			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets. Unable to recover.", PACKET_BUFFER_SIZE );
+			// [rc4l] With the two sequences, so a log says whether the server ran ahead or the client never parsed its first packet.
+			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets (last parsed %d, highest received %d). Unable to recover.", PACKET_BUFFER_SIZE,
+				static_cast<int>( g_lLastParsedSequence ), static_cast<int>( g_lHighestReceivedSequence ));
 			CLIENT_QuitNetworkGame( quitMessage.GetChars() );
 			return;
 		}
@@ -1363,15 +1367,19 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 
 	// If this is an unreliable packet, just break out of here and begin parsing it. There's no
 	// need to store it.
-	if ( lCommand == SVC_UNRELIABLEPACKET )
+	const zx::netclient::PacketHeaderKind kind = zx::netclient::ComputePacketHeaderKind( lCommand, SVC_HEADER, SVC_UNRELIABLEPACKET );
+	if ( kind == zx::netclient::kPacketUnreliable )
 		return ( true );
-	else
+	// [rc4l] A packet with neither header carries no sequence; reading one from its body set the highest sequence to garbage, which ends the game as 2048 packets missing.
+	if ( kind == zx::netclient::kPacketStray )
 	{
-		// Read in the sequence. This is the # of the packet the server has sent us.
-		lSequence = pByteStream->ReadLong();
+		Printf( "CLIENT_ReadPacketHeader: WARNING! Expected SVC_HEADER or SVC_UNRELIABLEPACKET, got %d in a %d-byte packet; dropped it\n",
+			static_cast<int>( lCommand ), static_cast<int>( NETWORK_GetNetworkMessageBuffer( )->CalcSize( )));
+		return ( false );
 	}
-	if ( lCommand != SVC_HEADER )
-		Printf( "CLIENT_ReadPacketHeader: WARNING! Expected SVC_HEADER or SVC_UNRELIABLEPACKET!\n" );
+
+	// Read in the sequence. This is the # of the packet the server has sent us.
+	lSequence = pByteStream->ReadLong();
 
 	// Check to see if we've already received this packet. If so, skip it.
 	for ( lIdx = 0; lIdx < PACKET_BUFFER_SIZE; lIdx++ )
@@ -1393,6 +1401,10 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 	memcpy( g_ReceivedPacketBuffer.abData + g_lPacketBeginning[g_bPacketNum], NETWORK_GetNetworkMessageBuffer( )->ByteStream.pbStream, NETWORK_GetNetworkMessageBuffer( )->CalcSize());
 	g_lCurrentPosition += NETWORK_GetNetworkMessageBuffer( )->CalcSize();
 
+	// [rc4l] A jump this big is a server whose sequence restarted or ran on without us, which ends the game once it passes PACKET_BUFFER_SIZE.
+	if ( lSequence > g_lHighestReceivedSequence + 256 )
+		Printf( "CLIENT_ReadPacketHeader: WARNING! sequence jumped from %d to %d (last parsed %d)\n", static_cast<int>( g_lHighestReceivedSequence ),
+			static_cast<int>( lSequence ), static_cast<int>( g_lLastParsedSequence ));
 	if ( lSequence > g_lHighestReceivedSequence )
 		g_lHighestReceivedSequence = lSequence;
 
@@ -1406,6 +1418,9 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 void CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket )
 {
 	LONG	lCommand;
+
+	// [rc4l] features/latency: a server packet applied, which the next frame to end draws.
+	zx::latency::NotePacketApplied();
 
 	// We're currently parsing a packet.
 	g_bIsParsingPacket = true;
@@ -2301,12 +2316,12 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			case SVC2_SETTHINGHEALTH:
 				{
 					const unsigned short netID = pByteStream->ReadShort();
-					const int health = pByteStream->ReadByte();
+					const int health = pByteStream->ReadLong();
 					AActor* mo = CLIENT_FindThingByNetID( netID );
 
 					if ( mo == NULL )
 					{
-						CLIENT_PrintWarning( "SVC2_SETTHINGSPECIAL: Couldn't find thing: %u\n", netID );
+						CLIENT_PrintWarning( "SVC2_SETTHINGHEALTH: Couldn't find thing: %u\n", netID );
 						break;
 					}
 
