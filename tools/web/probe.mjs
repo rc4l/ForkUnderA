@@ -8,12 +8,13 @@ import { serveLocally } from './serve.mjs';
 import { smokeIn } from './firefox.mjs';
 import { removeQuietly } from './smoke.mjs';
 import { heapGrowth } from './heap.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, HEAR_CONSOLE, GRAB_FRAME, PIECE_S, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, GRAB_FRAME, PIECE_S, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates } from './page.mjs';
 import { decodePNGBytes, boxDiff, boxDiffMax } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] What a run's look steps print, each about the time since the run began or the last look of its kind: "frames" the browser's frame pacing, "level" what the audio output carried.
 const LOOKS = {
   frames: 'console.log(framePacing(window.fuaFrames.slice(framesFrom))); framesFrom = window.fuaFrames.length;',
+  gpucalls: 'console.log(gpuCallRates(window.fuaGpuCalls, performance.now())); window.fuaGpuCalls.from = performance.now(); window.fuaGpuCalls.by = {};',
   level: "console.log('level: ' + window.fuaLevel.mean().toFixed(4) + ' RMS'); window.fuaLevel.reset();",
 };
 
@@ -55,6 +56,7 @@ export function runScript(steps, { save = null } = {}) {
     let framesFrom = window.fuaFrames.length;
     window.fuaLevel.reset();
     ${framePacing.toString()}
+    ${gpuCallRates.toString()}
     ${HEAR_CONSOLE}
     ${GRAB_FRAME}
     const abs = [];
@@ -93,7 +95,7 @@ export function parseSwap(text) {
 
 // [rc4l] Page code to run before the page's own: the watches, each --wad served as if staged, and a --wgsl swap.
 export function initFor({ wads = [], swap = null } = {}) {
-  return [WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, ...wads.map((w) => serveData(w.name, w.bytes)),
+  return [WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, WATCH_GPU_CALLS, ...wads.map((w) => serveData(w.name, w.bytes)),
     ...(swap ? [swapWgsl(swap.find, swap.replace)] : [])].join('\n');
 }
 

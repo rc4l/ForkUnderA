@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, WATCH_GPU_CALLS, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates } from '../page.mjs';
 
 // [rc4l] STARTED run against a stand-in page: its error panel, its Module, and whether it is isolated.
 function runStarted({ errorShown = false, errorText = '', module = {}, isolated = true }) {
@@ -205,4 +205,12 @@ test('a soak asks the driver to collect before each mark, and collects itself wh
   assert.match(js, /console\.log\('check: gc ' \+ n\);/);
   assert.match(js, /window\.fuaGcTaken !== n/);
   assert.match(js, /if \(window\.fuaGcTaken !== n\) for \(let k = 0; k < 2 && window\.gc; k\+\+\)/);
+});
+
+test('the gpu calls look gives each busiest kind a second, and says when there were none', () => {
+  const by = { 'bind group decal': { calls: 1300, bytes: 0 }, 'write Upload memory page': { calls: 80, bytes: 100 * 1048576 }, 'copy to fua dynamic VB': { calls: 80, bytes: 20 * 1048576 } };
+  assert.equal(gpuCallRates({ from: 0, by }, 10000, 2), 'gpu calls a second: bind group decal 130 | write Upload memory page 8 (10.00 MB)');
+  assert.equal(gpuCallRates({ from: 5000, by: {} }, 6000), 'gpu calls: none');
+  assert.match(WATCH_GPU_CALLS, /GPUDevice\.prototype\.createBindGroup = function/);
+  assert.match(WATCH_GPU_CALLS, /if \(window\.GPUDevice\)/);
 });

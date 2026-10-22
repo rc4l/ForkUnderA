@@ -153,6 +153,23 @@ export function framePacing(times) {
   return `frames: ${gaps.length}, interval median ${at(0.5).toFixed(2)} p99 ${at(0.99).toFixed(2)} max ${gaps[gaps.length - 1].toFixed(1)} ms, over 20 ms ${gaps.filter((g) => g > 20).length}, over 50 ms ${gaps.filter((g) => g > 50).length}`;
 }
 
+// [rc4l] The page's WebGPU calls by kind, in window.fuaGpuCalls: bind groups by the layout they are for, bytes written to each buffer and copied into each, so a run sees what churns (queue #48 was the decal pass's 13,000 bind groups a second).
+export const WATCH_GPU_CALLS = `window.fuaGpuCalls = { from: performance.now(), by: {} }; if (window.GPUDevice) {
+  const add = (k, n) => { const by = window.fuaGpuCalls.by; const e = by[k] || (by[k] = { calls: 0, bytes: 0 }); e.calls++; e.bytes += n || 0; };
+  const bind = GPUDevice.prototype.createBindGroup, write = GPUQueue.prototype.writeBuffer, copy = GPUCommandEncoder.prototype.copyBufferToBuffer;
+  GPUDevice.prototype.createBindGroup = function (d) { add('bind group ' + ((d.layout && d.layout.label) || '?'), 0); return bind.call(this, d); };
+  GPUQueue.prototype.writeBuffer = function (b, o, data, ...rest) { add('write ' + (b.label || '?'), rest[1] ?? data.byteLength); return write.call(this, b, o, data, ...rest); };
+  GPUCommandEncoder.prototype.copyBufferToBuffer = function (s, so, d, doff, n) { add('copy to ' + (d.label || '?'), n); return copy.call(this, s, so, d, doff, n); };
+}`;
+
+// [rc4l] The calls since from, at nowMs, as one line of the busiest kinds, each a second's calls and megabytes.
+export function gpuCallRates({ from, by }, nowMs, top = 8) {
+  const seconds = Math.max(0.001, (nowMs - from) / 1000);
+  const kinds = Object.entries(by).sort((a, b) => b[1].calls - a[1].calls || b[1].bytes - a[1].bytes).slice(0, top);
+  if (!kinds.length) return 'gpu calls: none';
+  return 'gpu calls a second: ' + kinds.map(([k, e]) => `${k} ${(e.calls / seconds).toFixed(0)}${e.bytes ? ` (${(e.bytes / seconds / 1048576).toFixed(2)} MB)` : ''}`).join(' | ');
+}
+
 // [rc4l] Page code defining grabFrame(), the next frame the engine draws as a base64 PNG, taken from the canvas just after it as the page's screenshot is, with the notify lines cleared first and no capture message (screenshot_quiet is left off).
 export const GRAB_FRAME = `const grabFrame = () => new Promise((resolve) => {
         const canvas = Module.canvas;
