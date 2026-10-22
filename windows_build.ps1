@@ -52,6 +52,8 @@ $ScriptRoot = $PSScriptRoot
 $BuildDir   = Join-Path $ScriptRoot "build-win"
 $DistDir    = Join-Path $ScriptRoot "dist-windows"
 $Deps       = Join-Path $ScriptRoot "windows_assets"
+# [Doruk-Aksoy] Passed to CMake rather than left to its cached default, which a build tree configured before the rename still holds as zandronum.
+$ExeName    = "forkundera"
 
 function Write-Status { param([string]$Message) Write-Host "==> $Message" -ForegroundColor Green }
 function Write-Note   { param([string]$Message) Write-Host "    $Message" -ForegroundColor DarkGray }
@@ -165,6 +167,7 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
 & $CMake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$Deps" `
+    "-DZDOOM_EXE_NAME:STRING=$ExeName" `
     -DNO_FMOD=ON -DNO_OPENAL=OFF `
     -DFORCE_INTERNAL_JPEG=ON -DFORCE_INTERNAL_BZIP2=ON -DFORCE_INTERNAL_ZLIB=ON `
     -DFORCE_INTERNAL_GME=ON `
@@ -201,8 +204,8 @@ $BuildExit = $LASTEXITCODE
 $ErrorActionPreference = $PrevEAP
 if ($BuildExit -ne 0) { throw "cmake build failed" }
 
-$exe = Join-Path $BuildDir "$Configuration\forkundera.exe"
-if (-not (Test-Path $exe)) { throw "forkundera.exe missing — the build failed" }
+$exe = Join-Path $BuildDir "$Configuration\$ExeName.exe"
+if (-not (Test-Path $exe)) { throw "$ExeName.exe missing — the build failed" }
 Write-Status "Compiled: $exe"
 
 if ($NoPackage) { Write-Status "Done (compile only; -NoPackage)"; return }
@@ -211,7 +214,7 @@ if ($NoPackage) { Write-Status "Done (compile only; -NoPackage)"; return }
 Write-Status "Packaging dist-windows/"
 $out = Join-Path $BuildDir $Configuration
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
-Copy-Item "$out\forkundera.exe" $DistDir\
+Copy-Item "$out\$ExeName.exe" $DistDir\
 Copy-Item "$out\*.pk3" $DistDir\ -ErrorAction SilentlyContinue
 
 # [rc4l] BOTH phases are required, not just the second. Phase 1 is what stands in for doom.wad, and

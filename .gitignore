@@ -26,6 +26,7 @@ build-win/
 dist-windows/
 dxsdk/
 ZandroX-*-windows-x64.zip
+ForkUnderA-*-windows-x64.zip
 
 # Files the engine build generates into the vendored source tree (upstream
 # .hgignore treats these as generated; we vendored without .hg so ignore them
