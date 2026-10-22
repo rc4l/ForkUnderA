@@ -129,6 +129,14 @@ export function dynresFollows({ idle, loaded, after, consoleHeld, blurHeld }) {
 }
 
 // [rc4l] Why leaving the page went wrong, or '': the store failing, or the console told of it, as it was each time the page was hidden.
+// [rc4l] Why the options a browser build holds were wrong, or '': damage tint, which it draws, could not be changed, or instant replay or the update check, which it cannot do, were not off and greyed out.
+export function browserOptions({ tint, replay, replayAvailable, updates }) {
+  if (tint !== '40') return `cl_damagetint read ${tint} after setting it to 40, so damage tint cannot be changed`;
+  if (replayAvailable !== 'false' || replay !== 'false') return `instant replay reads ${replay}, available ${replayAvailable}, in a build that cannot record`;
+  if (updates !== 'false') return `the update check reads choosable ${updates} in a page that is its own update`;
+  return '';
+}
+
 export function storedQuietly({ stored, said }) {
   if (stored !== true) return 'the store failed';
   return /Config saved/.test(said) ? 'the console printed "Config saved."' : '';
@@ -566,6 +574,25 @@ export const CHECKS = [
       return document.activeElement ? document.activeElement.id || document.activeElement.tagName : null;`),
     until: EVAL,
     expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
+  },
+  // [rc4l] Damage tint showed 0 and could not be changed, and instant replay could be turned on, in a build without GL or FFmpeg.
+  {
+    name: 'damage tint can be changed, and instant replay and the update check are off and greyed out',
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const read = async (name) => {
+        const before = log.textContent.length;
+        Module.fuaCommand(name);
+        ${pause(300)}
+        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(log.textContent.slice(before));
+        return m ? m[1] : null;
+      };
+      Module.fuaCommand('cl_damagetint 40');
+      const tint = await read('cl_damagetint');
+      Module.fuaCommand('cl_damagetint 100');
+      return { tint, replay: await read('cl_fua_replay'), replayAvailable: await read('cl_fua_replay_available'), updates: await read('cl_fua_update_choosable') };`),
+    until: EVAL,
+    expect: browserOptions,
   },
   // [rc4l] Game keys did nothing until a frame off the game thread's schedule built SDL's key table, which fullscreen happened to cause; holding up must move the player.
   {

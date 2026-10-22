@@ -20,7 +20,7 @@ against the actor's own floor plane) — per-pixel falloff on the GPU, no new sh
 
 | file | role |
 |------|------|
-| `damagetint.h/.cpp` | Engine glue: per-actor intensity ramps, per-texture average-color cache, the render hooks. `NO_GL` builds get inert stubs. |
+| `damagetint.h/.cpp` | Engine glue: per-actor intensity ramps, per-texture average-color cache, the render hooks. The dedicated server (`SERVER_ONLY`) gets inert stubs; a build without GL keeps the cvars and tints through the Vulkan backend. |
 | `features/gamecopy/tintsubject.h/.cpp` | The game half, read between tics into the render copy: the sector damage table and whether an actor's floor hurts it unprotected (`TintSubjectOf`); `fua_tintdebug` stays in `damagetint.cpp`. |
 | `computation/damagetint_compute.{h,cpp,_test.cpp}` | Pure math: ramp step, damage-cycle pulse, effective strength, white→floor channel blend. 100% unit coverage. |
 

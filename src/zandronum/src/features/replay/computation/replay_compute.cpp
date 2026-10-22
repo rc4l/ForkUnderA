@@ -7,6 +7,11 @@
 
 namespace zx {
 
+int ComputeReplaySwitchFlags(bool built, int saved, int fixed)
+{
+	return built ? saved : fixed;
+}
+
 bool ComputeFrameDue(int64_t lastCaptureUs, int64_t nowUs, int targetFps)
 {
 	if (targetFps <= 0)

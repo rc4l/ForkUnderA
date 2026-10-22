@@ -9,6 +9,13 @@
 
 using namespace zx;
 
+// [rc4l] A browser showed instant replay as on and changeable while it could record nothing.
+TEST(ReplaySwitch, IsSavedWhereTheBuildRecordsAndFixedWhereItCannot)
+{
+	EXPECT_EQ(3, zx::ComputeReplaySwitchFlags(true, 3, 8));
+	EXPECT_EQ(8, zx::ComputeReplaySwitchFlags(false, 3, 8));
+}
+
 TEST(ReplayPixels, GLReadbacksAreThreeBytesAndSwapchainImagesFour)
 {
 	EXPECT_EQ(3, zx::ComputeReplayPixelBytes(zx::kReplayRGB24));

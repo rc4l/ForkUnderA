@@ -318,6 +318,12 @@ OptionValue "OnOff"
 	1, "On"
 }
 
+// [rc4l] A browser's update check, which is the page itself.
+OptionValue "UpdatesWithPage"
+{
+	0, "Updates with the page"
+}
+
 OptionValue "OffOn"
 {
 	0, "On"
@@ -411,7 +417,15 @@ OptionMenu "FUAOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
-	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+	// [rc4l] A build that reaches no other machine checks nothing, and a browser's page is the update; both show it greyed out.
+	IfOption(Web)
+	{
+		Option	"Check for updates",	"cl_fua_update_notify",		"UpdatesWithPage",	"cl_fua_update_choosable"
+	}
+	else
+	{
+		Option	"Check for updates",	"cl_fua_update_notify",		"OnOff",			"cl_fua_update_choosable"
+	}
 	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
 }
 
@@ -547,7 +561,8 @@ OptionValue "ReplayEncoderMode"
 OptionMenu "ReplayOptions"
 {
 	Title "INSTANT REPLAY"
-	Option	"Enable instant replay",	"cl_fua_replay",			"OnOff"
+	// [rc4l] Greyed out where the build cannot record, as a browser's cannot.
+	Option	"Enable instant replay",	"cl_fua_replay",			"OnOff",			"cl_fua_replay_available"
 	StaticText " "
 	Option	"Clip length",				"cl_fua_replay_duration",	"ReplayDurations",	"cl_fua_replay"
 	Option	"Capture rate",				"cl_fua_replay_fps",		"ReplayFps",		"cl_fua_replay"

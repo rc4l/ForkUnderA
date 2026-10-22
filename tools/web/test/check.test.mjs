@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -275,6 +275,15 @@ test('dynamic resolution in the page is judged at rest, under load, after it, an
   assert.equal(dynresFollows({ ...good, after: 0.25 }), 'it stayed at 0.25 once the load ended');
   assert.equal(dynresFollows({ ...good, consoleHeld: false }), 'it read frames with the console up');
   assert.equal(dynresFollows({ ...good, blurHeld: false }), 'it read frames with the window out of focus');
+});
+
+test('a browser build tints but neither records replays nor checks for updates', () => {
+  const ok = { tint: '40', replay: 'false', replayAvailable: 'false', updates: 'false' };
+  assert.equal(browserOptions(ok), '');
+  assert.match(browserOptions({ ...ok, tint: null }), /damage tint cannot be changed/);
+  assert.match(browserOptions({ ...ok, replay: 'true' }), /instant replay reads true/);
+  assert.match(browserOptions({ ...ok, replayAvailable: 'true' }), /available true/);
+  assert.match(browserOptions({ ...ok, updates: 'true' }), /choosable true/);
 });
 
 test('leaving the page stores the config and prints nothing', () => {
