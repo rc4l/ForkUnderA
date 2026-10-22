@@ -7,6 +7,7 @@
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputePieceCapacity
 #include "features/telemetry/telemetry.h"
 #include <string.h>   // [rc4l] memcmp
+#include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsBound
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
@@ -150,13 +151,26 @@ static bool MakePieceBuffer(Diligent::IDeviceContext *ctx, unsigned int want)
 // [rc4l] The piece buffer made bigger before this frame's dynamic pieces are laid out, when they outnumber the records behind the level's: past them each sprite drew with the last record's material, and nuts.wad's 10,600 monsters showed as rows of one wrong monster.
 void EnsureDynamicRecords()
 {
-	int count = 0;
+	int count = 0, vertices = 0;
 	zx::levelmesh::DynPieces(count);
+	zx::levelmesh::DynVertices(vertices);
 	const unsigned int dynamic = (unsigned int)count;
 	if (dynamic > g_scene.dynPeak) g_scene.dynPeak = dynamic;
+	const unsigned int words = zx::hwrender::ComputeDynWordsBound(dynamic, (unsigned int)vertices);
+	if (words > g_scene.dynWordsPeak) g_scene.dynWordsPeak = words;
 	auto *ctx = GetContext();
-	if (!g_scene.pieceBuf || ctx == NULL || zx::hwrender::ComputeBufferFits(true, g_scene.pieceCapacity, g_scene.pieces.Size() + dynamic)) return;
-	if (!MakePieceBuffer(ctx, zx::hwrender::ComputePieceCapacity(g_scene.pieces.Size(), g_scene.dynPeak))) return;
+	if (!g_scene.pieceBuf || ctx == NULL) return;
+	bool remade = false;
+	if (!zx::hwrender::ComputeBufferFits(true, g_scene.pieceCapacity, g_scene.pieces.Size() + dynamic))
+		remade = MakePieceBuffer(ctx, zx::hwrender::ComputePieceCapacity(g_scene.pieces.Size(), g_scene.dynPeak));
+	// [rc4l] The dynamic words too, which EnsureScenePipeline makes again at the peak.
+	if (g_scene.dynDataBuf && words > g_scene.dynDataCapacity)
+	{
+		g_scene.dynDataBuf.Release();
+		g_scene.dynDataCapacity = 0;
+		remade = true;
+	}
+	if (!remade) return;
 	// [rc4l] A new buffer object, so the pipelines binding it statically are made again, as a level's upload does.
 	ReleaseScenePipelines();
 	FString err;
