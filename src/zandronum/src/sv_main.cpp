@@ -2962,6 +2962,10 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 		if ( pActor->angle != 0 )
 			SERVERCOMMANDS_SetThingAngle( pActor, ulClient, SVCF_ONLYTHISCLIENT );
 
+		// [rc4l] A joiner otherwise holds a hurt or dead actor at its spawn health (netsync's late joiner held a corpse at 20); a player's health goes with the player.
+		if (( pActor->player == NULL ) && ( pActor->health != pActor->GetDefault( )->health ))
+			SERVERCOMMANDS_SetThingHealth( pActor, ulClient, SVCF_ONLYTHISCLIENT );
+
 		// Spawned monster is a corpse.
 		if (( pActor->health <= 0 ) && ( pActor->flags & MF_COUNTKILL ))
 		{

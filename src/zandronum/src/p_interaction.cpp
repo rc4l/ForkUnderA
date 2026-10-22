@@ -829,8 +829,12 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
 		// If there isn't a player attached to this object, treat it like a normal thing.
+		// [rc4l] With where it died and which way it faced: a client simulating its last steps until a late death arrives kept its own facing for good (netsync's lossy observer).
 		if ( player == NULL )
+		{
 			SERVERCOMMANDS_KillThing( this, source, inflictor );
+			SERVERCOMMANDS_MoveThingExact( this, CM_X|CM_Y|CM_Z|CM_ANGLE );
+		}
 		else
 			SERVERCOMMANDS_KillPlayer( ULONG( player - players ), source, inflictor, MeansOfDeath );
 	}
