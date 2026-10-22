@@ -58,7 +58,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   particles, decals, views, interpolations,
   sides taken, polyobject subsectors), `copy/prescan` (the tic-end scan, on the game thread when tics run there),
   `copy/prescanned` (fills that used it) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
-  `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace.
+  `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace;
+  `features/gameloop/loop.cpp`: `handoff/backlog_tics` (the tics a threaded frame was owed) and `handoff/inline_catchup` (those it ran inline).
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones.
 - `features/jobs/jobs.cpp`: a `JobObserver` (`jobpool_compute.h`) on telemetry's clock times the `jobs/` regions and names each worker "job N".
 - `features/hwrender/rendererrate.cpp`: vid_fps's split, under `frame/`.
