@@ -39,7 +39,7 @@ struct DynresSample
 };
 
 // [rc4l] vid_fua_dynres_window's default: how long an untimed window of frames is, in seconds.
-const float kDynresWindowSeconds = 0.15f;
+const float kDynresWindowSeconds = 0.2f;
 
 // [rc4l] How the controller reacts.
 struct DynresTuning

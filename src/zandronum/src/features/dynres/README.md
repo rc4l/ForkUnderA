@@ -21,7 +21,7 @@ The HUD, menus, console and automap are drawn after it at full resolution and st
 - **A browser has no GPU timings**: standard WebGPU writes timestamps only at a pass's edges, and
   Diligent's duration queries need them inside passes (the queue's `onSubmittedWorkDone` was tried
   and reads the browser's polling, some 3 ms in Chrome and 16 ms in Firefox with the GPU idle), so
-  it judges the frames' mean over each window of `vid_fua_dynres_window` seconds (0.15 by default,
+  it judges the frames' mean over each window of `vid_fua_dynres_window` seconds (0.2 by default,
   "Reaction time" in the browser's video options) and every step is a trial the next window bears out:
   - a window whose frames average over 1.2 budgets steps down, whatever the CPU's share, since
     Firefox lets several frames through and then holds one for the GPU at the animation frame, or
