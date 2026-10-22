@@ -102,7 +102,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | what a frame costs at a view (Vulkan) | `costs --port P [--spot S \| --at --face]`: frame p50/p99, GPU and submit time (`fua_diligent_bench`), the world passes and phases, the walk's clipping, batches and sprites; the step-0 table of `docs/hwrender-performance-scope.md` is these columns |
 | any timing, count or memory reading the engine keeps, on any platform | `stats [PREFIX]`, `hitches`, `record`, `flight`, `memsnap`/`memdiff`, `soak`, `perfgate` (`features/telemetry`; the `perf-telemetry` skill says which to reach for) |
 | GPU ms per pass | `stats gpu/` on the backend (duration queries); `gl-timers` for GL (check `renderer-info` first; no timer queries reads as zeros) |
-| where the main thread's time goes | `sample --port P [--seconds N] [--stacks] [--table]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows; `--table` prints it as text |
+| where the main thread's time goes | `sample --port P [--seconds N] [--stacks] [--table]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows; `--table` prints it as text; `--thread game` samples the thread running tics instead |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 | a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |
 

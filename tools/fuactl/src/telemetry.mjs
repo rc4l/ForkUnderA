@@ -205,6 +205,17 @@ export function baselinePath(name, home = os.homedir()) {
   return path.join(home, ".forkundera", "baselines", `${name}.json`);
 }
 
+// [rc4l] Several readings of the same counters as one, each counter's p50 and p99 the median of its runs, so one noisy stretch of a fight cannot pass or fail a gate; a counter some run lacked keeps its first reading.
+export function medianReadings(runs) {
+  if (runs.length <= 1) return runs[0] || [];
+  const median = (v) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)];
+  return runs[0].map((row) => {
+    const same = runs.map((r) => r.find((x) => x.name === row.name)).filter((x) => x && x.available);
+    if (!row.available || same.length < runs.length) return row;
+    return { ...row, p50: median(same.map((x) => x.p50)), p99: median(same.map((x) => x.p99)) };
+  });
+}
+
 // [rc4l] A gate against a saved baseline: the first run, or --update, saves the readings; otherwise it compares and passes when nothing regressed.
 export function perfGate(name, readings, { update = false, home, share, floor } = {}) {
   const file = baselinePath(name, home);

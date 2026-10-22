@@ -11,7 +11,7 @@ Run from `tools/fuactl` as `node src/cli.mjs …` against your own locked instan
 
 - A fight needs monsters that hear the gun. `play` turns god and notarget on, so launch it `--monsters --targetable` (god stays on) or run `notarget` and read back `notarget OFF`. Shooting at spawn under notarget measures idle monsters.
 - An engine whose frames run for seconds (a slaughter map catching up tics) answers an rpc only between frames. `FUACTL_TIMEOUT_SCALE=12` stretches every wait.
-- `sample --port 7799 --stacks --table` prints where the main thread's time went, self and inclusive, as text. With the game thread on (players' default) the tics run elsewhere and the table says so; launch with `--cvar fua_gamethread=0` to profile them.
+- `sample --port 7799 --stacks --table` prints where the main thread's time went, self and inclusive, as text. With the game thread on (players' default) the tics run elsewhere and the table says so; `--thread game` samples that thread instead, as it runs beside the frames.
 
 ## What a frame costs
 
@@ -28,7 +28,7 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 - `record --seconds 10 --name X` writes every counter for every frame, plus every timed region on every thread, under the engine's `telemetry/` folder. `--recap` (or `recap X` later) reads it back: frames, tics on the game thread and held frames each second, then the counters the slowest quarter of seconds spent more on than the fastest. Open `X-trace.json` in Perfetto to see the job lanes against the game thread.
 - To compare two settings, `abperf` them inside one session. Never compare two launches. It reads each setting back before measuring and fails on one that did not take; never chain a setting after `load ...; wait N`, since a load drops every waiting command with the level's thinkers.
 - `docs/diagnostics.md` says which diagnostics reach players, what each costs, and the rules for adding one.
-- To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. `compare a.json b.json` sets two `stats --json` files side by side.
+- To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. For a fight, `--steps "+attack"` fires after the move and `--runs 3` judges the median of three readings (`perfgate sunder-chamber-fight frame/ --spot sunder-chamber-fight --steps "+attack" --runs 3`). `compare a.json b.json` sets two `stats --json` files side by side.
 - A frame time that drops for no reason is an empty world until a shot proves otherwise.
 - Driven launches start with dynamic resolution off (`vid_fua_dynres 0`), so a measurement is never taken at a scale the load chose; a player's session has it on. `fua_dynres_report` and `frame/dynres_scale` say what scale a frame drew at, and `fua_dg_dynres_force S` pins one.
 - `fua_dg_gpuload N` adds N loops of shader work at each of the scene's pixels, a GPU-bound frame on any machine, as `fua_debug_framestall_us` makes a CPU-bound one; on a fast desktop GPU almost nothing else is GPU-bound.

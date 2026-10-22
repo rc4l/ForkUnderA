@@ -811,12 +811,15 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		GetInt( args, "tic_max", ticMax );
 		// [rc4l] stacks 1 walks each sample's stack too, for an inclusive table of where the time went from.
 		GetInt( args, "stacks", stacks );
+		// [rc4l] game 1 samples the thread running tics beside the main one (fua_gamethread), which the main thread's samples never show.
+		long game = 0;
+		GetInt( args, "game", game );
 
 		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top,
-			(int)ticMin, (int)ticMax, stacks != 0 ) )
+			(int)ticMin, (int)ticMax, stacks != 0, game != 0 ) )
 		{
-			SendErr( id, "no in-engine sampler on this platform (macOS and Linux use fuactl's "
-				"external sample/perf backend)" );
+			SendErr( id, game != 0 ? "the game thread has not run a tic yet (fua_gamethread off, or no level)"
+				: "no in-engine sampler on this platform (macOS and Linux use fuactl's external sample/perf backend)" );
 			return;
 		}
 

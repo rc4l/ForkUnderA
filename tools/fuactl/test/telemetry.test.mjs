@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { allocGrowth, parseAllocReport, consoleTextFor, levelStarted, resizeAsked, soakSteps, soakSlower, soakCycleLines, parseConsoleJson, runSoak, compareStats, formatCompare, baselinePath, perfGate, execSlow } from "../src/telemetry.mjs";
+import { allocGrowth, parseAllocReport, consoleTextFor, levelStarted, resizeAsked, soakSteps, soakSlower, soakCycleLines, parseConsoleJson, runSoak, compareStats, formatCompare, baselinePath, perfGate, execSlow, medianReadings } from "../src/telemetry.mjs";
 
 test("each view is the console command it names, built from its words and flags", () => {
   assert.equal(consoleTextFor("console", ["map", "MAP02"]), "map MAP02");
@@ -244,4 +244,17 @@ test("a slow command returns everything the console printed while it ran", async
   };
   assert.equal(await execSlow(c, "fua_stats json"), "ran fua_stats json.");
   assert.equal(listener, null);
+});
+
+// [rc4l] A fight's readings swing run to run, so a gate on one stretch of it judged the stretch, not the build.
+test("several readings become each counter's median p50 and p99", () => {
+  const row = (name, p50, p99, available = true) => ({ name, unit: "ms", available, p50, p99, mean: p50 });
+  const runs = [[row("tic/playsim", 10, 40), row("frame/ms", 5, 9)], [row("tic/playsim", 30, 70), row("frame/ms", 6, 8)], [row("tic/playsim", 12, 45), row("frame/ms", 4, 30)]];
+  const m = medianReadings(runs);
+  assert.deepEqual(m.map((r) => [r.name, r.p50, r.p99]), [["tic/playsim", 12, 45], ["frame/ms", 5, 9]]);
+  assert.deepEqual(medianReadings([runs[0]]), runs[0]);
+  assert.deepEqual(medianReadings([]), []);
+  // [rc4l] A counter missing from a run, or unavailable, keeps the first reading.
+  const gaps = medianReadings([[row("a", 1, 2), row("b", 1, 1, false)], [row("b", 5, 5)]]);
+  assert.deepEqual(gaps.map((r) => [r.name, r.p50]), [["a", 1], ["b", 1]]);
 });

@@ -162,7 +162,7 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL) (stays up until Ctrl-C)
-  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows; --table prints them as text
+  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--thread game] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows, --thread game samples the thread running tics instead of the main one; --table prints them as text
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
@@ -231,7 +231,7 @@ const USAGE = `fuactl <command>
   memdiff [A] [B] [--port P]         what changed between snapshots A and B, or between A and now
   soak [--action reload|"STEP|STEP..."] [--cycles N] [--warmup W] [--settle MS] [--ignore PREFIX,...] [--judge-port P [--judge-token T]] [--sites] [--port P]   repeat an action's console steps N times, waiting on each that starts a level, and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak) or the cycles got slower; a step "check: resize WxH" sizes the game window, --ignore leaves readings under those prefixes out, --judge-port judges a server this instance joins and leaves, and --sites prints the allocation stacks that grew
   compare A.json B.json [--share F] [--floor MS]   two fua_stats json readings side by side; a timing whose p50 or p99 grew by over F (0.15) and FLOOR ms (0.1) is marked
-  perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
+  perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--steps "A|B"] [--runs N] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; --steps runs console steps after the move ("give all|+attack" for a fight) and --runs takes N readings a settle apart, each counter judged on their median; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -620,6 +620,8 @@ async function main() {
         top: flags.top ? Number(flags.top) : 12,
         engineOnly: !!flags.engine,
         stacks: !!flags.stacks,
+        // [rc4l] --thread game samples the thread running tics (fua_gamethread) rather than the main one.
+        game: flags.thread === "game",
       };
       // [rc4l] The Windows backend lives inside the engine, so it needs a connection rather than a
       // pid. Opened only when --port was given; the external backends never touch it.
@@ -1155,8 +1157,15 @@ async function main() {
       const at = shot.cameraFromFlags(flags, SPOTS);
       const readings = await withUi(flags, async (c) => {
         if (at) await shot.moveTo(c, at);
-        await cap.sleep(num(flags.settle) ?? 4000);
-        return telemetry.parseConsoleJson(await telemetry.execSlow(c, `fua_stats json ${rest[1] ?? ""}`.trim()));
+        // [rc4l] --steps sets the scene up after the move (give all|+attack for a fight), and --runs takes that many readings a settle apart.
+        for (const step of String(flags.steps && flags.steps !== true ? flags.steps : "").split("|").map((s) => s.trim()).filter(Boolean))
+          await c.rpc("console.exec", { text: step });
+        const runs = [];
+        for (let i = 0; i < Math.max(1, num(flags.runs) ?? 1); i++) {
+          await cap.sleep(num(flags.settle) ?? 4000);
+          runs.push(telemetry.parseConsoleJson(await telemetry.execSlow(c, `fua_stats json ${rest[1] ?? ""}`.trim())));
+        }
+        return telemetry.medianReadings(runs);
       });
       const gate = telemetry.perfGate(rest[0], readings, { update: !!flags.update, share: num(flags.share), floor: num(flags.floor) });
       if (gate.saved) { console.log(`perfgate: saved ${readings.length} counters as the baseline ${gate.saved}`); break; }
