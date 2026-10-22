@@ -23,6 +23,7 @@ static const char *kSceneVSCommon =
 	FUA_CONSTANTS_GLSL
 	// [rc4l] Everything constant across a piece, read once here instead of ridden in on every vertex.
 	FUA_PIECEDATA_GLSL
+	FUA_SECTORLIT_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
 	"layout(location = 2) out vec3 vLightParm;\n"
@@ -54,6 +55,7 @@ static const char *kSceneVSCommon =
 	"    return (StackVisIn.stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
 	"}\n"
 	"void fuaSceneVertex(PieceData pd, vec3 aPos, vec2 aUV) {\n"
+	"    pd = fuaSectorLit(pd);\n"
 	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
 	"    vFloodU = pd.floodU;\n"
 	"    vFloodV = pd.floodV;\n"

@@ -129,6 +129,16 @@ A frame's sprites, models and decals are laid out on the main thread (`computati
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 
+The sector light table (`fua sector light`, `kSectorLightWords` a sector) holds each sector's light level, floor
+and ceiling lights and colormap, read from the render copy and its changed entries sent once a frame
+(`UpdateSectorLightTable`, `ComputeChangedRuns`). A level surface its sector lights carries where its light comes
+from in its record (`computation/sectorlitrecord_compute`, `kTexFlagSectorLit`), and the scene and traced-mirror
+shaders shade it from the table each frame (`FUA_SECTORLIT_GLSL`, `ComputeSectorLitShade` its CPU twin), the
+level's light settings and the player's weapon light in `uShadeEnv`, `uShadeEnv2` and `uShadeFog`. On Sunder
+MAP11 99.8% of the level's surfaces are lit from it, and a frame's surface records sent for light changes went
+from about 110 to under one; `fua_dg_sectorlit 0` bakes every surface's shading into its record, and
+`fua_dg_sectorlit_report` counts what the table lights.
+
 The dynamic stream is one 32-bit reference a vertex (`kDynamicVS`, which the world pipelines that are not the
 level's use). A plain sprite is packed with its four corners into 112 bytes (`computation/spritepack_compute`)
 and its six references name its corners; anything the packed form cannot carry bit for bit (a warp, a glow, a

@@ -8,6 +8,7 @@
 #include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsCapacity
+#include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLightCapacity
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
 
 #include <string.h>
@@ -657,6 +658,8 @@ bool EnsureScenePipeline(FString &err)
 	g_builtCull = (int)fua_dg_cull;
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.
 	if (g_pso.world[kWpOpaque] && g_builtSlots != MaterialSlotCapacity()) ReleaseScenePipelines();
+	// [rc4l] A level with more sectors than the sector light table holds makes it again, and the pipelines binding it.
+	if (g_pso.world[kWpOpaque] && (unsigned)numsectors > g_scene.sectorLightCapacity) ReleaseScenePipelines();
 	g_builtSlots = MaterialSlotCapacity();
 	if (g_pso.world[kWpOpaque]) return true;
 	auto *dev = GetDevice();
@@ -723,6 +726,15 @@ bool EnsureScenePipeline(FString &err)
 	// [rc4l] The player's sky holes, two vec4s each, created once at kMaxSkyHoles for the same reason: every world pipeline binds them statically.
 	if (!g_scene.skyHoleBuf && !CreateStructuredBuffer("fua sky holes", 16, zx::levelmesh::kMaxSkyHoles * 2, NULL, g_scene.skyHoleBuf))
 	{ err = "sky hole buffer creation failed"; return false; }
+	if (!g_scene.sectorLightBuf || (unsigned)numsectors > g_scene.sectorLightCapacity)
+	{
+		const unsigned sectorsHeld = zx::hwrender::ComputeSectorLightCapacity(numsectors);
+		g_scene.sectorLightBuf.Release();
+		g_scene.sectorLightWords.Clear();
+		if (!CreateStructuredBuffer("fua sector light", 4, sectorsHeld * zx::levelmesh::kSectorLightWords, NULL, g_scene.sectorLightBuf))
+		{ err = "sector light buffer creation failed"; return false; }
+		g_scene.sectorLightCapacity = sectorsHeld;
+	}
 	// [rc4l] The dynamic stream's words at the most a frame has wanted, which EnsureDynamicRecords grows with the pipelines.
 	if (!g_scene.dynDataBuf)
 	{
@@ -844,6 +856,8 @@ bool EnsureScenePipeline(FString &err)
 			rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		if (auto *dv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "DynData"))
 			dv->Set(g_scene.dynDataBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (auto *lv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SectorLight"))
+			lv->Set(g_scene.sectorLightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		if (auto *hv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
 			hv->Set(g_scene.skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 

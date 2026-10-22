@@ -446,7 +446,7 @@ FlatChange ComputeFlatChange(bool stored, const FlatStamp &baked, const FlatStam
 	const bool sameShade = baked.lightLevel == now.lightLevel && baked.extraLight == now.extraLight
 		&& baked.lightColor == now.lightColor && baked.fadeColor == now.fadeColor
 		&& baked.desaturation == now.desaturation && baked.blendFactor == now.blendFactor
-		&& baked.alpha == now.alpha && baked.renderStyle == now.renderStyle;
+		&& baked.alpha == now.alpha && baked.renderStyle == now.renderStyle && baked.shadeGeneration == now.shadeGeneration;
 	return sameShade ? kFlatSame : kFlatReshade;
 }
 

@@ -970,6 +970,9 @@ TEST(FlatMesh, ALightChangeReshadesThePieceAndKeepsItsVertices)
 	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
 	now = was; now.alpha = 32768; now.renderStyle = 2;
 	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
+	// [rc4l] A light mode changed mid-level, which no sector's own light shows.
+	now = was; now.shadeGeneration = 1;
+	EXPECT_EQ(kFlatReshade, ComputeFlatChange(true, was, now, false));
 }
 
 TEST(FlatMesh, AMovedPlaneOrANewScaleAngleOrTextureRebuildsTheVertices)

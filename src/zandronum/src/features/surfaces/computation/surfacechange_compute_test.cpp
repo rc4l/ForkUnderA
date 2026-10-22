@@ -197,10 +197,25 @@ TEST(SurfaceChange, ARepaintNamesEveryKindOfFieldThatChanged)
 	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.fogDensity = 0.5f; }));
 	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.fogColor = 0x808080; }));
 	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.fogMode = 1; }));
+	EXPECT_EQ((unsigned)kRepaintShading, shaded([](SurfaceKey &s) { s.litSector = 4; }));
 	EXPECT_EQ((unsigned)kRepaintNormal, shaded([](SurfaceKey &s) { s.normX = 0.f; }));
 	EXPECT_EQ((unsigned)kRepaintNormal, shaded([](SurfaceKey &s) { s.normY = 1.f; }));
 	EXPECT_EQ((unsigned)kRepaintScroll, shaded([](SurfaceKey &s) { s.scrollU = 0.5f; }));
 	// [rc4l] Several at once are all named.
 	k = Wall(); k.material = &kTexB; k.colorR = 0.25f; k.scrollU = 0.5f;
 	EXPECT_EQ((unsigned)(kRepaintMaterial | kRepaintShading | kRepaintScroll), ComputeRepaintCauses(Wall(), k));
+}
+
+// [rc4l] A surface whose light comes from somewhere else in the sector light table has a different record however alike its colours are.
+TEST(SurfaceChange, ASurfaceLitFromAnotherPlaceInTheTableIsRepainted)
+{
+	SurfaceKey lit = Wall();
+	lit.litSector = 4; lit.litKind = 2; lit.litSideLight = 16; lit.litContrast = -16; lit.litFlags = 1;
+	EXPECT_EQ(kSurfaceUnchanged, ComputeSurfaceChange(lit, lit));
+	const auto changed = [&](void (*edit)(SurfaceKey &)) { SurfaceKey k = lit; edit(k); return ComputeSurfaceChange(lit, k); };
+	EXPECT_EQ(kSurfaceRepaint, changed([](SurfaceKey &k) { k.litSector = -1; }));
+	EXPECT_EQ(kSurfaceRepaint, changed([](SurfaceKey &k) { k.litKind = 0; }));
+	EXPECT_EQ(kSurfaceRepaint, changed([](SurfaceKey &k) { k.litSideLight = 0; }));
+	EXPECT_EQ(kSurfaceRepaint, changed([](SurfaceKey &k) { k.litContrast = 0; }));
+	EXPECT_EQ(kSurfaceRepaint, changed([](SurfaceKey &k) { k.litFlags = 0; }));
 }

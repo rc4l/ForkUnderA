@@ -20,6 +20,12 @@ struct UploadShadow
 // [rc4l] Whether data differs from what buffer `object` holds, keeping it as the buffer's contents when it does; a different buffer always differs.
 bool ComputeUploadChanged(UploadShadow &s, long long object, const void *data, size_t bytes);
 
+// [rc4l] A run of entries to send, the first and how many.
+struct UploadRun { unsigned first, count; };
+
+// [rc4l] The runs of entries (stride words each, `entries` of them) where now differs from was, two runs fewer than bridge unchanged entries apart joined, so a handful of writes carries every change.
+std::vector<UploadRun> ComputeChangedRuns(const unsigned *was, const unsigned *now, unsigned entries, unsigned stride, unsigned bridge);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_UPLOADGUARD_COMPUTE_H

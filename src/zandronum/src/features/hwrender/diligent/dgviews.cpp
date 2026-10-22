@@ -492,8 +492,11 @@ static const char *kMirrorPS =
 	// that holds everything else. The colour and the material this ray hits come from there.
 	"const uint STRIDE = 6u;\n"
 	FUA_PIECEDATA_GLSL
+	FUA_SECTORLIT_GLSL
+	// [rc4l] A piece's record shaded as the scene shader shades it, a surface lit from the sector light table included.
+	"PieceData fuaPiece(uint p) { return fuaSectorLit(PiecesIn.pieces[p]); }\n"
 	"uint vertPiece(uint v) { return uint(VertsIn.vtx[v * STRIDE + 5u] + 0.5); }\n"
-	"vec3 vertColor(uint v) { return PiecesIn.pieces[vertPiece(v)].colorLight.rgb; }\n"
+	"vec3 vertColor(uint v) { return fuaPiece(vertPiece(v)).colorLight.rgb; }\n"
 	"vec2 vertUV(uint v)    { uint b = v * STRIDE + 3u; return vec2(VertsIn.vtx[b], VertsIn.vtx[b + 1u]); }\n"
 	// [rc4l] ComputeTracedSpriteHit, line for line: where the ray from o along d meets sprite s's quad from either side, between tMin and tMax, and its texture coordinate there.
 	"uint spriteAt(uint s) { return 1u + uint(TracedSpritesIn.tracedSprites[0].x) + s * 4u; }\n"
@@ -530,10 +533,11 @@ static const char *kMirrorPS =
 	"vec3 fuaTracedShade(vec3 texel, uint p, vec3 color, float dist) {\n"
 	"    vec3 seen = uCameraPos.xyz + normalize(vWorld - uCameraPos.xyz) * dist;\n"
 	"    vec4 clip = uMVP * vec4(seen, 1.0);\n"
-	"    float fogMode = PiecesIn.pieces[p].fogAlphaMat.z;\n"
-	"    float fogfactor = fuaFogFactor(fogMode, PiecesIn.pieces[p].fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
-	"    vec3 light = fuaSectorLight(color, PiecesIn.pieces[p].colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
-	"    return fuaColouredFog(texel * light, PiecesIn.pieces[p].fogColor.rgb, fogMode, fogfactor);\n"
+	"    PieceData pd = fuaPiece(p);\n"
+	"    float fogMode = pd.fogAlphaMat.z;\n"
+	"    float fogfactor = fuaFogFactor(fogMode, pd.fogAlphaMat.x, vec4(seen, clip.w), uCameraPos.xyz);\n"
+	"    vec3 light = fuaSectorLight(color, pd.colorLight.w, fogMode, fogfactor, clip.z / clip.w);\n"
+	"    return fuaColouredFog(texel * light, pd.fogColor.rgb, fogMode, fogfactor);\n"
 	"}\n"
 	"void main() {\n"
 	"    vec3 sheen = fuaMirrorSheen();\n"
@@ -604,7 +608,7 @@ static const char *kMirrorPS =
 	"        vec3 st = textureLod(sampler2D(uMaterials[nonuniformEXT(spriteMat(hitSprite))], uMaterials_sampler), hitUV, 0.0).rgb;\n"
 	"        if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(st) + glaze, vec3(1.0)), 1.0); return; }\n"
 	"        uint sp = spritePiece(hitSprite);\n"
-	"        vec3 sc = fuaTracedShade(st, sp, PiecesIn.pieces[sp].colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
+	"        vec3 sc = fuaTracedShade(st, sp, fuaPiece(sp).colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
 	"        outColor = vec4(min(sc + glaze, vec3(1.0)), 1.0);\n"
 	"        return;\n"
 	"    }\n"
@@ -842,6 +846,9 @@ bool EnsureMirrorResources()
 		if (g_scene.pieceBuf)
 			if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Pieces"))
 				v->Set(g_scene.pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		if (g_scene.sectorLightBuf)
+			if (auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SectorLight"))
+				v->Set(g_scene.sectorLightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 		BindSceneConstants(g_mirrorPSO);
 		// [rc4l] The sheen block, made once like the scene constants, since a replaced buffer would leave this pipeline reading the old one.
 		if (!g_sheenCB)
@@ -968,6 +975,8 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.fixedColormap = zx::viewsetup::FixedColormapShadeFor(g_pass.inCameraPass ? CM_DEFAULT : (int)gl_fixedcolormap);
 	in.lightsCheckSide = r_lights_checkside;
 	in.walkSlots = zx::levelmesh::WalkSlots();
+	in.shading = RenderShadingEnv(false);
+	in.extraLight = getExtraLight();
 	zx::hwrender::ComputeSceneConstants(in, cb);
 }
 

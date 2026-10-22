@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { serveLocally } from './serve.mjs';
 import { gpuLogLines, removeQuietly } from './smoke.mjs';
 import { smokeIn } from './firefox.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
 import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
 import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
+import { buildLightTableWad, VANTAGES as LIGHTTABLE_VANTAGES } from '../fuactl/scenarios/lighttable.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
@@ -83,6 +84,7 @@ export function configuredOnce(n) {
 
 // [rc4l] The pointlight scenario's hall, as the light grid check serves it to the page.
 const POINTLIGHT_WAD = 'fua-pointlight.wad';
+const LIGHTTABLE_WAD = 'fua-lighttable.wad';
 
 // [rc4l] The pointlight scenario's vantages the browser frames, its nearest and a middle one, since each frame takes seconds under software WebGPU (--software) and the scenario covers the rest.
 export const LIGHT_VANTAGES = POINTLIGHT_VANTAGES.filter((v) => ['d600', 'd1500'].includes(v.name));
@@ -107,6 +109,13 @@ export function gridMatches(at) {
 }
 
 // [rc4l] Why firing at the floor went wrong, or '': the decal pass drawing no mark, which would leave it untried.
+// [rc4l] Why the sector light table went wrong in the page, or '': its entries never sent while the rooms' light changed, or surface records sent again for changes it should carry, each a second.
+export function lightTableSends({ pieceCopies, tableCopies }) {
+  if (!(tableCopies > 1)) return `the sector light table was sent ${Number(tableCopies).toFixed(1)} times a second, so the rooms' light did not change or did not reach it`;
+  if (!(pieceCopies < 2)) return `surface records were sent ${Number(pieceCopies).toFixed(1)} times a second for light changes the table should carry`;
+  return '';
+}
+
 export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
 }
@@ -306,6 +315,27 @@ export const CHECKS = [
       return at;`),
     until: EVAL,
     expect: gridMatches,
+  },
+  // [rc4l] A browser carries every write through its GPU process, so rooms whose light changes every tic reach it as sector light table entries, never as their surfaces sent again.
+  {
+    name: 'light changing every tic reaches the page as sector light table entries, not surfaces sent again',
+    firefox: true,
+    query: `file=${LIGHTTABLE_WAD}&map=MAP02`,
+    init: `${WATCH_GPU_CALLS}\n${serveData(LIGHTTABLE_WAD, buildLightTableWad())}`,
+    evaluate: inPage(`
+      ${pause(3000)}
+      Module.fuaCommand('r_drawplayersprites 0');
+      const glow = ${JSON.stringify(LIGHTTABLE_VANTAGES.find((v) => v.name === 'glow').at)};
+      Module.fuaCommand('warp ' + glow.x + ' ' + glow.y);
+      ${pause(1500)}
+      window.fuaGpuCalls.from = performance.now();
+      window.fuaGpuCalls.by = {};
+      ${pause(3000)}
+      const by = window.fuaGpuCalls.by, seconds = (performance.now() - window.fuaGpuCalls.from) / 1000;
+      const calls = (k) => (by[k] ? by[k].calls : 0) / seconds;
+      return { pieceCopies: calls('copy to fua scene piece data'), tableCopies: calls('copy to fua sector light') };`),
+    until: EVAL,
+    expect: lightTableSends,
   },
   // [rc4l] A browser's present reset the deadline its frames kept, so every frame was due and the limit held nothing there.
   {

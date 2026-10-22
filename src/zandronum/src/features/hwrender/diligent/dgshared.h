@@ -16,7 +16,7 @@
 
 // [rc4l] The scene constant block every pass binds, declared once; uFrame.x is the warp clock in seconds.
 #define FUA_CONSTANTS_GLSL \
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; vec4 uFixedColormap; vec4 uFixedRange; vec4 uOptions; };\n"
+	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; vec4 uFixedColormap; vec4 uFixedRange; vec4 uOptions; vec4 uShadeEnv; vec4 uShadeEnv2; vec4 uShadeFog; };\n"
 
 // [rc4l] main.fp's fixed colormap on a lit texel, after a block declaring uFixedColormap and uFixedRange: mode 1 (w) maps its grey into the ramp, as invulnerability inverts, and mode 2 multiplies it, as light amplification and a torch tint.
 #define FUA_FIXED_COLORMAP_GLSL \
@@ -67,6 +67,93 @@
 #define FUA_PIECEDATA_GLSL \
 	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 glowTop; vec4 glowBottom; vec4 glowTopPlane; vec4 glowBottomPlane; vec4 tint; vec4 tintRange; vec4 extra; };\n" \
 	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; } PiecesIn;\n"
+
+// [rc4l] A level surface lit from the sector light table, after FUA_CONSTANTS_GLSL and FUA_PIECEDATA_GLSL: fuaSectorLit gives a record kTexFlagSectorLit marks the shading ComputeSectorLitShade gives it, ComputeSectorLitInput then ComputeShading line for line, and leaves any other record as it is.
+#define FUA_SECTORLIT_GLSL \
+	"layout(std430, binding = 13) readonly buffer SectorLight { uint sectorLight[]; } SectorLightIn;\n" \
+	/* [rc4l] ComputeLightLevel, its 1.95 the float the CPU multiplies by and precise so no fused multiply rounds it otherwise. */ \
+	"int fuaShadeLightLevel(int lightLevel, int relLight, int mode) {\n" \
+	"    if (lightLevel == 0) return 0;\n" \
+	"    int light = lightLevel;\n" \
+	"    if ((mode & 2) != 0 && lightLevel < 192) {\n" \
+	"        precise float f = 192.0 - float(192 - lightLevel) * uintBitsToFloat(0x3ff9999au);\n" \
+	"        light = int(roundEven(f));\n" \
+	"    }\n" \
+	"    int ambient = int(uShadeEnv.y);\n" \
+	"    if (light < ambient && mode != 8) { light = ambient; if (relLight < 0) relLight >>= 1; }\n" \
+	"    return clamp(light + relLight, 0, 255);\n" \
+	"}\n" \
+	/* [rc4l] ComputeLightColor, as bytes. */ \
+	"ivec3 fuaShadeLightColor(int light, uint color, int blendFactor, int mode) {\n" \
+	"    ivec3 c = ivec3(int((color >> 16) & 255u), int((color >> 8) & 255u), int(color & 255u));\n" \
+	"    if (mode == 8) return c;\n" \
+	"    ivec3 r = blendFactor == 0 ? c * light / 255 : (ivec3(light * (255 - blendFactor)) + c * blendFactor) / 255;\n" \
+	"    return r & ivec3(255);\n" \
+	"}\n" \
+	/* [rc4l] ComputeDistFog. */ \
+	"float fuaShadeDistFog(int distFog, bool softTable, int i) {\n" \
+	"    if (!softTable) {\n" \
+	"        if (i < 164) return float((distFog >> 1) + distFog * (164 - i) / 164);\n" \
+	"        if (i < 230) return float((distFog >> 1) - (distFog >> 1) * (i - 164) / (230 - 164));\n" \
+	"        return 0.0;\n" \
+	"    }\n" \
+	"    if (i < 128) return 6.0 + float(distFog >> 1) + float(distFog * (128 - i) / 48);\n" \
+	"    if (i < 216) return (216.0 - float(i)) / (216.0 - 128.0) * float(distFog) / 10.0;\n" \
+	"    return 0.0;\n" \
+	"}\n" \
+	/* [rc4l] ComputeFogDensity, the outside fog's colour a 24-bit whole number in uShadeFog.x and its alpha in .y. */ \
+	"float fuaShadeFogDensity(int lightLevel, uint fogColor, int mode) {\n" \
+	"    int levelDensity = int(uShadeEnv2.y);\n" \
+	"    if ((mode & 4) != 0) return float(levelDensity != 0 ? levelDensity : 18);\n" \
+	"    if ((fogColor & 0xffffffu) == 0u) return mode != 8 ? fuaShadeDistFog(int(uShadeEnv.w), mode != 0, clamp(lightLevel, 0, 255)) : 0.0;\n" \
+	"    int outsideDensity = int(uShadeEnv2.z);\n" \
+	"    if (outsideDensity != 0 && int(uShadeFog.y) != 255 && (fogColor & 0xffffffu) == uint(uShadeFog.x)) return float(outsideDensity);\n" \
+	"    if (levelDensity != 0) return float(levelDensity);\n" \
+	"    if (lightLevel < 248) return float(clamp(255 - lightLevel, 30, 255));\n" \
+	"    return 0.0;\n" \
+	"}\n" \
+	"PieceData fuaSectorLit(PieceData pd) {\n" \
+	"    if ((int(pd.extra.w) & 32768) == 0) return pd;\n" \
+	"    uint b = uint(pd.colorLight.x) * 8u;\n" \
+	"    int kind = int(pd.colorLight.y), sideLight = int(pd.colorLight.z), contrast = int(pd.colorLight.w);\n" \
+	"    bool sideAbsolute = pd.fogColor.x > 0.5, sideLightFog = pd.fogColor.y > 0.5, noFog = pd.fogColor.z > 0.5;\n" \
+	"    int flags = int(uShadeEnv2.x), mode = int(uShadeEnv.x), fogMode = int(uShadeEnv.z);\n" \
+	"    bool fadeTable = (flags & 1) != 0, brightFog = (flags & 2) != 0;\n" \
+	"    uint lightColor = SectorLightIn.sectorLight[b + 3u], fadeColor = SectorLightIn.sectorLight[b + 4u];\n" \
+	"    int blendFactor = int(SectorLightIn.sectorLight[b + 5u]), desaturation = int(SectorLightIn.sectorLight[b + 6u]);\n" \
+	/* [rc4l] ComputeSectorLitInput. */ \
+	"    int lightLevel = 0, relLight = 0;\n" \
+	"    if (kind == 0) lightLevel = int(SectorLightIn.sectorLight[b + 1u]);\n" \
+	"    else if (kind == 1) lightLevel = int(SectorLightIn.sectorLight[b + 2u]);\n" \
+	"    else {\n" \
+	"        int org = clamp(int(SectorLightIn.sectorLight[b]), 0, 255);\n" \
+	"        bool foggy = (fadeColor & 0xffffffu) != 0u || fadeTable;\n" \
+	"        int base = sideAbsolute ? sideLight : org;\n" \
+	"        int rel = foggy ? 0 : contrast;\n" \
+	"        if (!sideAbsolute && (!foggy || sideLightFog)) base = clamp(base + sideLight, 0, 255);\n" \
+	"        lightLevel = clamp(base, 0, 255);\n" \
+	"        relLight = org >= 253 ? 0 : (lightLevel - rel > 256 ? 256 - lightLevel + rel : rel);\n" \
+	"    }\n" \
+	/* [rc4l] ComputeShading with the player's extra light, outside the fixed colormap and any skybox, as a level surface is baked. */ \
+	"    relLight += int(uShadeEnv2.w);\n" \
+	"    ivec3 c = fuaShadeLightColor(fuaShadeLightLevel(lightLevel, relLight, mode), lightColor, blendFactor, mode);\n" \
+	"    float soft = mode == 8 ? float(clamp(lightLevel + relLight, 0, 255)) / 255.0 : -1.0;\n" \
+	"    float density = 0.0;\n" \
+	"    uint color = 0u;\n" \
+	"    if (fadeTable) { density = 70.0; color = 0x808080u; }\n" \
+	"    else if (!noFog) { density = fuaShadeFogDensity(lightLevel, fadeColor, mode); color = fadeColor & 0xffffffu; }\n" \
+	"    float scale = uintBitsToFloat(0xb7bd18b6u);\n" \
+	"    if (density == 0.0 || fogMode == 0) { color = 0u; pd.fogAlphaMat.x = 0.0 * scale; pd.fogAlphaMat.z = 0.0; }\n" \
+	"    else {\n" \
+	"        pd.fogAlphaMat.x = density * scale;\n" \
+	"        pd.fogAlphaMat.z = float(color == 0u ? fogMode : -fogMode);\n" \
+	"        if (mode == 8 && brightFog && color != 0u) soft = 1.0;\n" \
+	"    }\n" \
+	"    pd.colorLight = vec4(vec3(c) / 255.0, soft);\n" \
+	"    pd.fogColor.xyz = vec3(float((color >> 16) & 255u), float((color >> 8) & 255u), float(color & 255u)) / 255.0;\n" \
+	"    pd.extra.x = float(desaturation) / 255.0;\n" \
+	"    return pd;\n" \
+	"}\n"
 
 #include "RenderDevice.h"
 #include "DeviceContext.h"
@@ -180,6 +267,8 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx);
 void SendToBuffer(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data);
 // [rc4l] Ends a frame for gpu/upload/'s bytes per frame.
 void NoteUploadFrame();
+// [rc4l] The sector light table brought up to the render copy's sectors, sending only the entries that changed, once a frame before anything draws.
+void UpdateSectorLightTable(Diligent::IDeviceContext *ctx);
 // [rc4l] Bytes written into buf at offset in pieces no bigger than an upload page, so a big write takes pooled pages rather than one its own size, which a browser's device keeps for good.
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data);
 // [rc4l] The deferred decal pass's pipelines and buffers made for the level now, as its scene's are, rather than by its first mark; false when they cannot be (fua_projdecals_stats says why).

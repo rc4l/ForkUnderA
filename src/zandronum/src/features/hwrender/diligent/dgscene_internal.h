@@ -260,6 +260,10 @@ struct SceneGeometry
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> dynDataBuf;
 	unsigned int dynDataCapacity = 0;               // [rc4l] in 32-bit words
 	unsigned int dynWordsPeak = 0;                  // [rc4l] the most words a frame's dynamic pieces could take
+	// [rc4l] The sector light table (fuaSectorLit), kSectorLightWords a sector, bound statically like the piece buffer, and what it holds.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> sectorLightBuf;
+	unsigned int sectorLightCapacity = 0;           // [rc4l] in sectors
+	TArray<unsigned> sectorLightWords;
 	TArray<SceneBatch> batches;
 	TArray<int>  blendBatches;                      // [rc4l] the translucent batches, in build order
 	// [rc4l] The stacked views' subsector bits (ComputeMarkStackVisible), ready once this frame's are uploaded.
