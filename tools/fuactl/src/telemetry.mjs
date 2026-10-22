@@ -68,21 +68,32 @@ export function soakCycleLines(cycles) {
   return cycles.map((c, i) => `cycle ${i + 1}: steps ${c.stepSeconds.toFixed(2)} s, frame p50 ${c.frameMs.toFixed(3)} ms`);
 }
 
-// [rc4l] The first JSON value a console reply holds, which other output may surround.
+// [rc4l] Where the next "[" or "{" at or after from is in s, -1 for none.
+function nextOpen(s, from) {
+  const i = s.slice(from).search(/[[{]/);
+  return i < 0 ? -1 : from + i;
+}
+
+// [rc4l] The first JSON value a console reply holds, which other output may surround, a bracketed line that is not JSON (a level upload's "[lightmode 3, ...]", a pickup's message) skipped.
 export function parseConsoleJson(text) {
   const s = String(text);
-  const start = s.search(/[[{]/);
-  if (start < 0) throw new Error(`no JSON in: ${s.trim().slice(0, 120)}`);
-  const open = s[start], close = open === "[" ? "]" : "}";
-  let depth = 0, inString = false;
-  for (let i = start; i < s.length; i++) {
-    const ch = s[i];
-    if (inString) { if (ch === "\\") i++; else if (ch === '"') inString = false; continue; }
-    if (ch === '"') inString = true;
-    else if (ch === open) depth++;
-    else if (ch === close && --depth === 0) return JSON.parse(s.slice(start, i + 1));
+  for (let start = nextOpen(s, 0); start >= 0; start = nextOpen(s, start + 1)) {
+    const open = s[start], close = open === "[" ? "]" : "}";
+    let depth = 0, inString = false, closed = false;
+    for (let i = start; i < s.length && !closed; i++) {
+      const ch = s[i];
+      if (inString) { if (ch === "\\") i++; else if (ch === '"') inString = false; continue; }
+      if (ch === '"') inString = true;
+      else if (ch === open) depth++;
+      else if (ch === close && --depth === 0) {
+        closed = true;
+        try { return JSON.parse(s.slice(start, i + 1)); } catch { /* [rc4l] not JSON, so the next bracket is tried */ }
+      }
+    }
+    // [rc4l] A reply cut off inside its JSON is no shorter JSON further in.
+    if (!closed) throw new Error(`unterminated JSON in: ${s.trim().slice(0, 120)}`);
   }
-  throw new Error(`unterminated JSON in: ${s.trim().slice(0, 120)}`);
+  throw new Error(`no JSON in: ${s.trim().slice(0, 120)}`);
 }
 
 // [rc4l] A fua_allocsites report's stacks, each with its live count and bytes.
