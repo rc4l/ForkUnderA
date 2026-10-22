@@ -324,7 +324,9 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		}
 	if (vb.Size() == 0) return;
 
-		if (!UploadGrowingVB(ctx, g_vb2D, g_vb2DCapacity, &vb[0], vb.Size(), sizeof(Vertex2D), 1024, "fua 2D VB")) return;
+		// [rc4l] A HUD and menu that did not change send nothing.
+		static zx::hwrender::UploadShadow shadow2D;
+		if (!UploadGrowingVB(ctx, g_vb2D, g_vb2DCapacity, &vb[0], vb.Size(), sizeof(Vertex2D), 1024, "fua 2D VB", &shadow2D)) return;
 	}
 	if (vb.Size() == 0 || !g_vb2D) return;
 

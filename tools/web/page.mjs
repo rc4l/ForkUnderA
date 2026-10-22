@@ -153,6 +153,13 @@ export function framePacing(times) {
   return `frames: ${gaps.length}, interval median ${at(0.5).toFixed(2)} p99 ${at(0.99).toFixed(2)} max ${gaps[gaps.length - 1].toFixed(1)} ms, over 20 ms ${gaps.filter((g) => g > 20).length}, over 50 ms ${gaps.filter((g) => g > 50).length}`;
 }
 
+// [rc4l] The longest wait between two browser frames, its length and its start, in ms from the first frame; 0 long with fewer than two.
+export function longestGap(times) {
+  let ms = 0, at = 0;
+  for (let i = 1; i < times.length; i++) if (times[i] - times[i - 1] > ms) { ms = times[i] - times[i - 1]; at = times[i - 1] - times[0]; }
+  return { ms, at };
+}
+
 // [rc4l] The page's WebGPU calls by kind, in window.fuaGpuCalls: bind groups by the layout they are for, bytes written to each buffer and copied into each, so a run sees what churns (queue #48 was the decal pass's 13,000 bind groups a second).
 export const WATCH_GPU_CALLS = `window.fuaGpuCalls = { from: performance.now(), by: {} }; if (window.GPUDevice) {
   const add = (k, n) => { const by = window.fuaGpuCalls.by; const e = by[k] || (by[k] = { calls: 0, bytes: 0 }); e.calls++; e.bytes += n || 0; };

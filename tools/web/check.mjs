@@ -7,9 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { serveLocally } from './serve.mjs';
 import { gpuLogLines, removeQuietly } from './smoke.mjs';
 import { smokeIn } from './firefox.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
 import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
 import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
+import { buildLightTableWad, VANTAGES as LIGHTTABLE_VANTAGES } from '../fuactl/scenarios/lighttable.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
@@ -83,6 +84,7 @@ export function configuredOnce(n) {
 
 // [rc4l] The pointlight scenario's hall, as the light grid check serves it to the page.
 const POINTLIGHT_WAD = 'fua-pointlight.wad';
+const LIGHTTABLE_WAD = 'fua-lighttable.wad';
 
 // [rc4l] The pointlight scenario's vantages the browser frames, its nearest and a middle one, since each frame takes seconds under software WebGPU (--software) and the scenario covers the rest.
 export const LIGHT_VANTAGES = POINTLIGHT_VANTAGES.filter((v) => ['d600', 'd1500'].includes(v.name));
@@ -107,6 +109,13 @@ export function gridMatches(at) {
 }
 
 // [rc4l] Why firing at the floor went wrong, or '': the decal pass drawing no mark, which would leave it untried.
+// [rc4l] Why the sector light table went wrong in the page, or '': its entries never sent while the rooms' light changed, or surface records sent again for changes it should carry, each a second.
+export function lightTableSends({ pieceCopies, tableCopies }) {
+  if (!(tableCopies > 1)) return `the sector light table was sent ${Number(tableCopies).toFixed(1)} times a second, so the rooms' light did not change or did not reach it`;
+  if (!(pieceCopies < 2)) return `surface records were sent ${Number(pieceCopies).toFixed(1)} times a second for light changes the table should carry`;
+  return '';
+}
+
 export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
 }
@@ -129,6 +138,14 @@ export function dynresFollows({ idle, loaded, after, consoleHeld, blurHeld }) {
 }
 
 // [rc4l] Why leaving the page went wrong, or '': the store failing, or the console told of it, as it was each time the page was hidden.
+// [rc4l] Why the options a browser build holds were wrong, or '': damage tint, which it draws, could not be changed, or instant replay or the update check, which it cannot do, were not off and greyed out.
+export function browserOptions({ tint, replay, replayAvailable, updates }) {
+  if (tint !== '40') return `cl_damagetint read ${tint} after setting it to 40, so damage tint cannot be changed`;
+  if (replayAvailable !== 'false' || replay !== 'false') return `instant replay reads ${replay}, available ${replayAvailable}, in a build that cannot record`;
+  if (updates !== 'false') return `the update check reads choosable ${updates} in a page that is its own update`;
+  return '';
+}
+
 export function storedQuietly({ stored, said }) {
   if (stored !== true) return 'the store failed';
   return /Config saved/.test(said) ? 'the console printed "Config saved."' : '';
@@ -299,6 +316,27 @@ export const CHECKS = [
     until: EVAL,
     expect: gridMatches,
   },
+  // [rc4l] A browser carries every write through its GPU process, so rooms whose light changes every tic reach it as sector light table entries, never as their surfaces sent again.
+  {
+    name: 'light changing every tic reaches the page as sector light table entries, not surfaces sent again',
+    firefox: true,
+    query: `file=${LIGHTTABLE_WAD}&map=MAP02`,
+    init: `${WATCH_GPU_CALLS}\n${serveData(LIGHTTABLE_WAD, buildLightTableWad())}`,
+    evaluate: inPage(`
+      ${pause(3000)}
+      Module.fuaCommand('r_drawplayersprites 0');
+      const glow = ${JSON.stringify(LIGHTTABLE_VANTAGES.find((v) => v.name === 'glow').at)};
+      Module.fuaCommand('warp ' + glow.x + ' ' + glow.y);
+      ${pause(1500)}
+      window.fuaGpuCalls.from = performance.now();
+      window.fuaGpuCalls.by = {};
+      ${pause(3000)}
+      const by = window.fuaGpuCalls.by, seconds = (performance.now() - window.fuaGpuCalls.from) / 1000;
+      const calls = (k) => (by[k] ? by[k].calls : 0) / seconds;
+      return { pieceCopies: calls('copy to fua scene piece data'), tableCopies: calls('copy to fua sector light') };`),
+    until: EVAL,
+    expect: lightTableSends,
+  },
   // [rc4l] A browser's present reset the deadline its frames kept, so every frame was due and the limit held nothing there.
   {
     name: 'vid_maxfps holds the page to its frame rate',
@@ -337,8 +375,7 @@ export const CHECKS = [
         const said = log.textContent.slice(before), m = /scale ([\\d.]+)/.exec(said);
         return { scale: m ? Number(m[1]) : -1, held: /held while/.test(said) };
       };
-      // [rc4l] A target the page meets at rest, since headless Chrome draws under the 480 Hz it reads and a lower scale there rightly helps.
-      Module.fuaCommand('vid_fua_dynres_target 60');
+      // [rc4l] The default target, which a browser aims at 60 fps since it times no GPU, met at rest.
       ${pause(4000)}
       const idle = (await report()).scale;
       Module.fuaCommand('fua_dg_gpuload 60000');
@@ -358,7 +395,6 @@ export const CHECKS = [
       ${pause(1000)}
       const blurHeld = (await report()).held;
       window.dispatchEvent(new Event('focus'));
-      Module.fuaCommand('vid_fua_dynres_target 0');
       ${pause(500)}
       return { idle, loaded, after, consoleHeld, blurHeld };`),
     until: EVAL,
@@ -566,6 +602,25 @@ export const CHECKS = [
       return document.activeElement ? document.activeElement.id || document.activeElement.tagName : null;`),
     until: EVAL,
     expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
+  },
+  // [rc4l] Damage tint showed 0 and could not be changed, and instant replay could be turned on, in a build without GL or FFmpeg.
+  {
+    name: 'damage tint can be changed, and instant replay and the update check are off and greyed out',
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const read = async (name) => {
+        const before = log.textContent.length;
+        Module.fuaCommand(name);
+        ${pause(300)}
+        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(log.textContent.slice(before));
+        return m ? m[1] : null;
+      };
+      Module.fuaCommand('cl_damagetint 40');
+      const tint = await read('cl_damagetint');
+      Module.fuaCommand('cl_damagetint 100');
+      return { tint, replay: await read('cl_fua_replay'), replayAvailable: await read('cl_fua_replay_available'), updates: await read('cl_fua_update_choosable') };`),
+    until: EVAL,
+    expect: browserOptions,
   },
   // [rc4l] Game keys did nothing until a frame off the game thread's schedule built SDL's key table, which fullscreen happened to cause; holding up must move the player.
   {

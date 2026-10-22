@@ -14,6 +14,9 @@ namespace zx {
 // elapsed since the last captured frame to grab another. targetFps <= 0 disables capture.
 bool ComputeFrameDue(int64_t lastCaptureUs, int64_t nowUs, int targetFps);
 
+// [rc4l] The master switch's cvar flags: `saved` where the build records, `fixed` where it cannot, so the switch can be neither turned on nor written over a config another build shares.
+int ComputeReplaySwitchFlags(bool built, int saved, int fixed);
+
 // [rc4l] Whether a stream is still being fed, so a clip is saved from it: frames have arrived and the last within a second, which a stream a renderer stopped drawing to fails.
 bool ComputeStreamLive(unsigned framesIn, int64_t lastFrameUs, int64_t nowUs);
 

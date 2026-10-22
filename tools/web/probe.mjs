@@ -8,7 +8,7 @@ import { serveLocally } from './serve.mjs';
 import { smokeIn } from './firefox.mjs';
 import { removeQuietly } from './smoke.mjs';
 import { heapGrowth } from './heap.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, GRAB_FRAME, PIECE_S, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates } from './page.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_FRAMES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, GRAB_FRAME, PIECE_S, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates, longestGap } from './page.mjs';
 import { decodePNGBytes, boxDiff, boxDiffMax } from '../fuactl/src/pngcore.mjs';
 
 // [rc4l] What a run's look steps print, each about the time since the run began or the last look of its kind: "frames" the browser's frame pacing, "level" what the audio output carried.
@@ -52,18 +52,19 @@ function stepCode(s) {
 // [rc4l] The page code a run is: each command through Module.fuaCommand, each wait a pause, each look printed, each ab's frames kept, then what the steps printed and what the watches saw since the first step.
 export function runScript(steps, { save = null } = {}) {
   const body = steps.map(stepCode).join('\n');
-  return inPage(`const from = window.fuaSounds.length, heldBefore = window.fuaHeld.size;
+  return inPage(`const from = window.fuaSounds.length, heldBefore = window.fuaHeld.size, runFramesFrom = window.fuaFrames.length;
     let framesFrom = window.fuaFrames.length;
     window.fuaLevel.reset();
     ${framePacing.toString()}
     ${gpuCallRates.toString()}
+    ${longestGap.toString()}
     ${HEAR_CONSOLE}
     ${GRAB_FRAME}
     const abs = [];
     ${save ? loadSave(save) : ''}
     ${body}
     unhear();
-    return { said, sounds: window.fuaSounds.slice(from), heldBefore, heldAfter: window.fuaHeld.size, abs };`);
+    return { said, sounds: window.fuaSounds.slice(from), heldBefore, heldAfter: window.fuaHeld.size, abs, stall: longestGap(window.fuaFrames.slice(runFramesFrom)) };`);
 }
 
 // [rc4l] Page code that writes a save into the page's home and loads it, so a run starts where the player saved (their fight) rather than at the map's start; the run's first wait lets the load finish.
@@ -109,6 +110,12 @@ export function soakLines(verdict) {
   return String(verdict.report || 'the soak gave no verdict').trimEnd().split('\n');
 }
 
+// [rc4l] Why a run's later steps cannot be believed, or '': the page drew nothing for longer than limitMs, so what they printed describes the frames before the stall.
+export function stallLine(stall, limitMs) {
+  if (!stall || !(stall.ms > limitMs)) return '';
+  return `STALLED: the page drew nothing for ${(stall.ms / 1000).toFixed(1)} s from ${(stall.at / 1000).toFixed(1)} s into the run, so what the steps after that printed is stale`;
+}
+
 // [rc4l] The report: what the steps printed, each sound started, any started again, the stream's pieces counted, the screen textures held before and after, and the first WebGPU errors.
 export function report({ said = [], sounds, heldBefore, heldAfter, abs = [] }, lines) {
   const played = sounds.filter((s) => s.len >= PIECE_S);
@@ -131,7 +138,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const autoplay = on('--autoplay'), software = on('--software'), browser = flag('--browser', 'chrome');
   const wads = flag('--wad', '').split(',').filter(Boolean).map((w) => ({ name: path.basename(w), bytes: fs.readFileSync(w) }));
   const swap = flag('--wgsl', null), shots = flag('--shots', null), savePath = flag('--save', null);
-  const visits = Number(flag('--visits', 1)), heap = on('--heap');
+  const visits = Number(flag('--visits', 1)), heap = on('--heap'), stallMs = Number(flag('--stall-ms', 10000));
   if ((visits > 1 || heap) && browser !== 'chrome') { console.error('--visits and --heap need Chrome, whose profile and heap snapshots the driver reaches'); process.exit(2); }
   const save = savePath ? { name: path.basename(savePath), bytes: fs.readFileSync(savePath) } : null;
   const dir = path.resolve(args[0] ?? 'dist-web');
@@ -151,10 +158,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (!matched || matched.startsWith('[eval] threw')) { console.error(matched || 'the page never finished the run'); process.exit(1); }
   const result = JSON.parse(matched.slice('[eval] '.length));
   for (const l of soak ? soakLines(result) : report(result, lines)) console.log(l);
+  const stalled = soak ? '' : stallLine(result.stall, stallMs);
+  if (stalled) console.log(stalled);
   if (heap) for (const l of heaps?.base && heaps?.end ? heapGrowth(heaps.base, heaps.end) : ['heap: no snapshots were taken (--heap reads a --soak)']) console.log(l);
   if (shots) {
     fs.mkdirSync(shots, { recursive: true });
     for (const s of abShots(result.abs)) fs.writeFileSync(path.join(shots, s.name), s.bytes);
   }
-  process.exit(soak && !result.pass ? 1 : 0);
+  process.exit(soak && !result.pass ? 1 : (stalled ? 3 : 0));
 }

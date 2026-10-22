@@ -4,10 +4,12 @@
 // [rc4l] The per-frame stream: sprites, models and decals, the solid ones drawn after the world and the translucent ones sorted into one pass with the world's.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "features/hwrender/computation/pieceorder_compute.h"   // [rc4l] ComputePieceOrderKey
 #include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
 #include "features/telemetry/telemetry.h"
+#include <string.h>   // [rc4l] memcpy
 
 // [rc4l] Dump the ORDER the translucent pass actually draws in, for one frame.
 //
@@ -29,6 +31,8 @@ CCMD( fua_dg_blendorder )
 
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
+// [rc4l] Plain sprites drawn from packed words (ComputeSpritePack); 0 sends every dynamic piece its whole record and vertices, to compare against.
+CVAR(Bool, fua_dg_spritepack, true, 0)
 // [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
 CVAR(Bool, fua_dg_blendwalk, true, 0)
 
@@ -81,15 +85,15 @@ static bool EnsureBlendIndexBuffer(Diligent::IRenderDevice *dev, unsigned int ne
 // has to be composited before the floor, and it cannot be if sprites are a separate pass afterwards.
 
 // [rc4l] The quads a traced mirror's rays can meet, each sprite a mirror's walk took from its first three corners, and the steps between those walks' views.
-static void GatherTracedSprites(const TArray<SceneVertex> &vb)
+static void GatherTracedSprites(const SceneVertex *vb, unsigned count)
 {
 	TArray<zx::hwrender::TracedSprite> &out = g_scene.tracedSprites;
 	if (!fua_dg_rtmirrors || !fua_dg_rtsprites) return;
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (!zx::hwrender::ComputeTracesRun(r.count, r.solid, r.depthBias, r.hud, r.stackSlot, r.onMirror, r.mirrorView, r.blend) || r.first + 2 >= vb.Size()) continue;
-		const SceneVertex &a = vb[r.first], &b = vb[r.first + 1], &c = vb[r.first + 2];
+		if (r.general < 0 || !zx::hwrender::ComputeTracesRun(r.count, r.solid, r.depthBias, r.hud, r.stackSlot, r.onMirror, r.mirrorView, r.blend) || (unsigned)r.general + 2 >= count) continue;
+		const SceneVertex &a = vb[r.general], &b = vb[r.general + 1], &c = vb[r.general + 2];
 		const float tl[5] = { a.x, a.y, a.z, a.u, a.v }, tr[5] = { b.x, b.y, b.z, b.u, b.v }, bl[5] = { c.x, c.y, c.z, c.u, c.v };
 		zx::hwrender::TracedSprite s;
 		if (zx::hwrender::ComputeTracedSprite(tl, tr, bl, (unsigned)(a.pieceIndex + 0.5f), r.mirrorView, s)) out.Push(s);
@@ -117,8 +121,6 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
 	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) { g_scene.dynRuns.Clear(); g_scene.tracedSprites.Clear(); g_scene.tracedSteps.clear(); return; }
 
-	static TArray<SceneVertex> vb;
-
 	// The dynamic path's piece records, rebuilt with its vertices every frame.
 
 	static TArray<ScenePieceData> dynPieces;
@@ -145,19 +147,9 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// translucent sprites drawn in the wrong order composite wrongly. Within the translucent set
 		// the sort beats batching, so material grouping is deliberately given up there.
 		static TArray<int> order;
-		order.Clear();
-		for (int i = 0; i < npieces; i++) order.Push(i);
+		order.Resize(npieces);
 
 		const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
-		static TArray<float> key;
-		key.Clear();
-		key.Resize(npieces);
-		for (int i = 0; i < npieces; i++)
-		{
-			const zx::levelmesh::MeshPiece &p = pieces[i];
-			const float dx = p.sortX - cx, dy = p.sortY - cy, dz = p.sortZ - cz;
-			key[i] = dx*dx + dy*dy + dz*dz;
-		}
 		// [rc4l] n log n, because this ran as a selection sort over every sprite in the frame.
 		//
 		// The rule is unchanged -- opaque first and grouped by material, then blended back to front --
@@ -170,47 +162,97 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		// The index breaks ties so the order is DETERMINISTIC. std::sort is not stable, and two
 		// sprites at the same distance trading places between frames is a flicker -- the same trap the
 		// translucent draw comparator documents one pass later.
-		// `key` has static storage, which a lambda cannot capture; the pointer can.
-		const float *keyp = (npieces > 0) ? &key[0] : NULL;
-		std::sort(&order[0], &order[0] + npieces,
-			[pieces, keyp](int ia, int ib) {
-				const zx::levelmesh::MeshPiece &pa = pieces[ia];
-				const zx::levelmesh::MeshPiece &pb = pieces[ib];
-				const bool ta = pa.blendMode != 0, tb = pb.blendMode != 0;
-				if (ta != tb) return !ta;                             // opaque before blended
-				if (!ta)
-				{
-					if (pa.material != pb.material) return pa.material < pb.material;
-					return ia < ib;
-				}
-				if (keyp[ia] != keyp[ib]) return keyp[ia] > keyp[ib]; // blended: far first
-				return ia < ib;
-			});
+		// [rc4l] Each piece read once into a key (pieceorder_compute), since a comparator reading two pieces a comparison was a twentieth of a Complex Doom fight's frame.
+		static std::vector<zx::hwrender::PieceOrderKey> orderKeys;
+		orderKeys.resize(npieces);
+		for (int i = 0; i < npieces; i++)
+		{
+			const zx::levelmesh::MeshPiece &p = pieces[i];
+			const float dx = p.sortX - cx, dy = p.sortY - cy, dz = p.sortZ - cz;
+			orderKeys[i].key = zx::hwrender::ComputePieceOrderKey(p.blendMode != 0, (uintptr_t)p.material, dx*dx + dy*dy + dz*dz);
+			orderKeys[i].index = i;
+		}
+		zx::hwrender::ComputeSortPieceOrder(orderKeys);
+		for (int i = 0; i < npieces; i++) order[i] = orderKeys[i].index;
 
-		// [rc4l] Laid out first, and every slot found, on this thread; then the records and vertices are written on the pool, each piece into its own place.
+		// [rc4l] Every slot found and every atlas place taken in draw order, on this thread, since placing a sprite the first time uploads it.
 		static TArray<unsigned> dynVerts;
 		dynVerts.Resize(npieces);
 		for (int i = 0; i < npieces; i++) dynVerts[i] = pieces[i].range.count == 0 ? 0u : pieces[i].quad ? 6u : pieces[i].range.count;
-		const int recordsLeft = g_scene.pieceCapacity > g_scene.pieces.Size() ? int(g_scene.pieceCapacity - g_scene.pieces.Size()) : 0;
-		static std::vector<zx::hwrender::DynSlot> layout;
-		const unsigned nv = zx::hwrender::ComputeDynLayout(&order[0], npieces, &dynVerts[0], recordsLeft, layout);
 		static std::vector<PieceSlotSet> slots;
-		slots.resize(layout.size());
-		// [rc4l] Placed here, on this thread, since placing a sprite the first time uploads it.
 		static std::vector<const AtlasEntry *> atlased;
-		atlased.assign(layout.size(), NULL);
+		slots.resize(npieces);
+		atlased.assign(npieces, NULL);
 		const bool atlas = AtlasActive();
 		g_stats.dynMirrorRuns = 0;
-		int records = 0;
-		for (size_t k = 0; k < layout.size(); k++)
+		for (int i = 0; i < npieces; i++)
 		{
-			const zx::levelmesh::MeshPiece &p = pieces[layout[k].piece];
+			const int k = order[i];
+			if (dynVerts[k] == 0) continue;
+			const zx::levelmesh::MeshPiece &p = pieces[k];
 			slots[k] = PieceSlots(p, p.translation, false);
 			if (atlas) atlased[k] = AtlasFor(p.material, p.translation, p.quad && !p.depthBias && !p.solid && !p.hud && p.mirrorView < 0 && p.onMirror < 0);
 			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
-			if (layout[k].record >= 0) records++;
 		}
-		vb.Resize(nv);
+		// [rc4l] Every record filled on the pool, and each plain quad packed with its corners (ComputeSpritePack) unless a traced mirror reads its record.
+		static std::vector<ScenePieceData> filled;
+		static std::vector<unsigned> packedWords;
+		static std::vector<char> packedFlag;
+		static std::vector<int> unfilled;
+		filled.resize(npieces);
+		packedWords.resize((size_t)npieces * zx::hwrender::kSpriteWords);
+		packedFlag.assign(npieces, 0);
+		const int packChunks = (npieces + kDynChunk - 1) / kDynChunk;
+		unfilled.assign(packChunks, 0);
+		const bool tracing = fua_dg_rtmirrors && fua_dg_rtsprites;
+		const bool packing = fua_dg_spritepack;
+		auto pack = [&](int chunk, int)
+		{
+			static const int kQuadOrder[4] = { 0, 1, 2, 3 };
+			int missed = 0;
+			for (int k = chunk * kDynChunk; k < npieces && k < (chunk + 1) * kDynChunk; k++)
+			{
+				if (dynVerts[k] == 0) continue;
+				const zx::levelmesh::MeshPiece &p = pieces[k];
+				ScenePieceData &pd = filled[k];
+				FillPieceDataWith(p, slots[k], pd, false);
+				if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
+				else if (BindlessActive()) missed += zx::hwrender::ComputeSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot, (int)FilledSlotCount());
+				if (!packing || !p.quad || p.range.count != 4) continue;
+				if (tracing && zx::hwrender::ComputeTracesRun(6, p.solid, p.depthBias, p.hud, p.stackSlot, p.onMirror, p.mirrorView, p.blendMode)) continue;
+				zx::hwrender::SpriteCorner corners[4];
+				const AtlasEntry *ae = atlased[k];
+				for (int c = 0; c < 4; c++)
+				{
+					const zx::levelmesh::MeshVertex &mv = src[p.range.offset + kQuadOrder[c]];
+					const SceneVertex dv = ToSceneVertex(mv, 0);
+					corners[c] = { dv.x, dv.y, dv.z, dv.u, dv.v };
+					if (ae != NULL) zx::hwrender::ComputeAtlasUV(ae->x, ae->y, ae->w, ae->h, AtlasPageSize(), AtlasPageSize(), corners[c].u, corners[c].v);
+				}
+				packedFlag[k] = zx::hwrender::ComputeSpritePack(pd, corners, &packedWords[(size_t)k * zx::hwrender::kSpriteWords]) ? 1 : 0;
+			}
+			unfilled[chunk] = missed;
+		};
+		zx::jobs::Pool().ParallelFor(packChunks, pack);
+		for (int c = 0; c < packChunks; c++)
+		{
+			g_stats.dynSlotUnfilled += unfilled[c];
+			g_stats.dynSlotUnfilledTotal += unfilled[c];
+		}
+		const int recordsLeft = g_scene.pieceCapacity > g_scene.pieces.Size() ? int(g_scene.pieceCapacity - g_scene.pieces.Size()) : 0;
+		static std::vector<zx::hwrender::DynSlot> layout;
+		const zx::hwrender::DynLayoutTotals totals = zx::hwrender::ComputeDynLayout(&order[0], npieces, &dynVerts[0],
+			(const bool *)&packedFlag[0], recordsLeft, layout);
+		int records = 0;
+		for (const zx::hwrender::DynSlot &slot : layout) if (slot.record >= 0) records++;
+		ZX_COUNT("gpu/sprites_packed", "sprites", totals.sprites);
+		ZX_COUNT("gpu/sprites_whole", "pieces", (double)layout.size() - totals.sprites);
+		// [rc4l] The words: the general vertices first, as SceneVertex, then the packed sprites from a multiple of four.
+		const unsigned spriteBase = (totals.general * 6 + 3) & ~3u;
+		static TArray<unsigned> words;
+		words.Resize(spriteBase + (unsigned)totals.sprites * zx::hwrender::kSpriteWords);
+		static TArray<unsigned> refs;
+		refs.Resize(totals.stream);
 		runs.Resize((unsigned)layout.size());
 		dynPieces.Resize(records);
 
@@ -257,13 +299,13 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const zx::levelmesh::MeshPiece *pieces;
 			const zx::levelmesh::MeshVertex *src;
 			int count;
-			std::vector<int> *unfilled;
+			unsigned spriteBase;
 			void operator()(int chunk, int) const
 			{
 				static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
 				const unsigned base = g_scene.pieces.Size();
 				const unsigned lastRecord = g_scene.pieceCapacity > 0 ? g_scene.pieceCapacity - 1 : 0;
-				int missed = 0;
+				SceneVertex *general = (SceneVertex *)&words[0];
 				for (int k = chunk * kDynChunk; k < count && k < (chunk + 1) * kDynChunk; k++)
 				{
 					const zx::hwrender::DynSlot &slot = layout[k];
@@ -280,52 +322,59 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					r.onMirror = p.onMirror;
 					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 					r.lo = 1e30f; r.hi = -1e30f;
-					const AtlasEntry *ae = atlased[k];
+					const AtlasEntry *ae = atlased[slot.piece];
 					r.atlasPage = ae != NULL ? ae->page : -1;
-					const unsigned int dynPieceIndex = slot.record >= 0 ? base + (unsigned)slot.record : lastRecord;
-					if (slot.record >= 0)
+					r.general = slot.sprite >= 0 ? -1 : (int)slot.general;
+					if (slot.sprite >= 0)
 					{
-						ScenePieceData &pd = dynPieces[slot.record];
-						FillPieceDataWith(p, slots[k], pd, false);
-						if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
-						else if (BindlessActive()) missed += zx::hwrender::ComputeSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot, (int)FilledSlotCount());
+						// [rc4l] A packed sprite: its words, and six references to its corners.
+						const unsigned at = spriteBase + (unsigned)slot.sprite * zx::hwrender::kSpriteWords;
+						memcpy(&words[at], &packedWords[(size_t)slot.piece * zx::hwrender::kSpriteWords], zx::hwrender::kSpriteWords * sizeof(unsigned));
+						for (unsigned v = 0; v < 6; v++) refs[slot.first + v] = zx::hwrender::ComputeSpriteRef(at, kQuadOrder[v]);
+						for (int c = 0; c < 4; c++)
+						{
+							float y;
+							memcpy(&y, &words[at + c * 4 + 1], sizeof(y));
+							if (y < r.lo) r.lo = y;
+							if (y > r.hi) r.hi = y;
+						}
+						continue;
 					}
+					const unsigned int dynPieceIndex = slot.record >= 0 ? base + (unsigned)slot.record : lastRecord;
+					if (slot.record >= 0) dynPieces[slot.record] = filled[slot.piece];
 					for (unsigned v = 0; v < slot.count; v++)
 					{
 						const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
 						SceneVertex dv = ToSceneVertex(src[p.range.offset + srcIndex], dynPieceIndex);
 						if (ae != NULL) zx::hwrender::ComputeAtlasUV(ae->x, ae->y, ae->w, ae->h, AtlasPageSize(), AtlasPageSize(), dv.u, dv.v);
-						vb[slot.first + v] = dv;
+						general[slot.general + v] = dv;
+						refs[slot.first + v] = zx::hwrender::ComputeGeneralRef(slot.general + v);
 						if (dv.y < r.lo) r.lo = dv.y;
 						if (dv.y > r.hi) r.hi = dv.y;
 					}
 				}
-				(*unfilled)[chunk] = missed;
 			}
 		};
-		static std::vector<int> unfilled;
 		const int chunks = (int)((layout.size() + kDynChunk - 1) / kDynChunk);
-		unfilled.assign(chunks, 0);
-		Fill fill = { pieces, src, (int)layout.size(), &unfilled };
+		Fill fill = { pieces, src, (int)layout.size(), spriteBase };
 		zx::jobs::Pool().ParallelFor(chunks, fill);
-		for (int c = 0; c < chunks; c++)
-		{
-			g_stats.dynSlotUnfilled += unfilled[c];
-			g_stats.dynSlotUnfilledTotal += unfilled[c];
-		}
-	if (vb.Size() == 0) return;
+	if (refs.Size() == 0) return;
 
-		GatherTracedSprites(vb);
-		if (!UploadGrowingVB(ctx, g_dynVB, g_dynVBCapacity, &vb[0], vb.Size(), sizeof(SceneVertex), 1024, "fua dynamic VB")) return;
+		GatherTracedSprites((const SceneVertex *)&words[0], totals.general);
+		if (!UploadGrowingVB(ctx, g_dynVB, g_dynVBCapacity, &refs[0], refs.Size(), sizeof(unsigned), 1024, "fua dynamic refs")) return;
+		// [rc4l] The words EnsureDynamicRecords made room for; a frame past them draws no dynamic piece rather than read past the buffer.
+		if (!g_scene.dynDataBuf || words.Size() > g_scene.dynDataCapacity) { ZX_COUNT("gpu/dyn_words_short", "frames", 1); return; }
+		if (words.Size() > 0) UpdateBufferInPages(ctx, g_scene.dynDataBuf, 0, (size_t)words.Size() * sizeof(unsigned), &words[0]);
 		// ...and the records they index, into the back of the shared piece buffer.
 		if (g_scene.pieceBuf && dynPieces.Size() > 0 &&
 		    g_scene.pieces.Size() + dynPieces.Size() <= g_scene.pieceCapacity)
 			UpdateBufferInPages(ctx, g_scene.pieceBuf, (unsigned long long)g_scene.pieces.Size() * sizeof(ScenePieceData),
 				(size_t)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0]);
 	}
-	if (vb.Size() == 0 || !g_dynVB) return;
+	if (!g_dynVB || g_scene.dynRuns.Size() == 0) return;
 	g_scene.dynReady = true;
 }
+
 
 // [rc4l] The away-facing half of a 3D floor used to be dropped HERE, per surface, on the CPU.
 //

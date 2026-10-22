@@ -314,8 +314,6 @@ export function judgeSoak(label, { pass, marks, judged, grew = [] }) {
 // [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another, or builds one from the launch's { wadPath, iwad }) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
 export function compareSoak(opts) {
   return eachLaunch(opts, async (c, inst, label, files) => {
-    // [rc4l] A window without focus presents nothing, and the backend frees what it let go of only after a present, so an unfocused launch reads as a leak.
-    await cap.exec(c, "fua_render_in_background 1");
     await cap.waitTics(c, opts.settleTics ?? 35);
     const action = typeof opts.action === "function" ? opts.action(files) : opts.action ?? "reload";
     return judgeSoak(label, await runSoak(c, { action, cycles: opts.cycles ?? 6, warmup: opts.warmup ?? 1, settleMs: opts.settleMs ?? 4000, ignore: opts.ignore ?? [] }));

@@ -40,7 +40,7 @@ bool DamageTint_Armed2D( zx::damagetint::TintGradient &out );
 PalEntry DamageTint_Blend( PalEntry avg, int pct );
 
 // 2D path (the status-bar mugshot): arm the shader's per-pixel gradient for the next draw and
-// clear it right after. No-ops when overlay.a == 0 (and on NO_GL builds).
+// clear it right after. No-ops when overlay.a == 0 (and on the dedicated server).
 void DamageTint_Arm2D( PalEntry overlay, float coverageFrac, bool glow = false );
 void DamageTint_Disarm2D();
 

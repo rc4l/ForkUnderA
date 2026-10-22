@@ -34,11 +34,10 @@ Command **`fua_clip`** (bound to `,`) saves the last `duration` seconds to:
 Vulkan backend beside it writes `<name>.mp4` (GL) and `<name>_vk.mp4`, a stream not fed in the last second (GL's
 under standalone) is skipped, and a launch without GL (the default) records the backend as its only stream.
 Beside GL the `_vk` stream has no wipe frames, since that window is not presented during one.
-Frames are captured as they are presented, so a `--lock` instance needs `fua_render_in_background 1`.
+Frames are captured as they are presented; a `--lock` instance presents without the focus, since it launches with `fua_render_in_background 1`.
 
 ## Recipe (fuactl)
-1. `play --map M [--file ...] --lock --port 7799 [--res 1280x720] [--gl | --gl-beside]` (Vulkan alone by default, the backend's stream only), then
-   `ui exec "fua_render_in_background 1"`.
+1. `play --map M [--file ...] --lock --port 7799 [--res 1280x720] [--gl | --gl-beside]` (Vulkan alone by default, the backend's stream only).
 2. `ui exec "cl_fua_replay_duration <N>; cl_fua_replay_maxheight 720"`; let it render a few seconds.
 3. Do the thing you want captured (`ui exec "+forward"`, `rpc player.setpos ...`).
 4. Press the bind, not just the command, when the key is what is being checked:

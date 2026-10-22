@@ -3,6 +3,7 @@
 
 #include "features/levelmesh/staticmesh.h"
 #include "features/surfaces/computation/surfacechange_compute.h"
+#include "features/telemetry/telemetry.h"
 
 #include "tarray.h"
 #include "c_dispatch.h"
@@ -129,6 +130,9 @@ void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out)
 	// CaptureShading captures SHADING; a CPU light belongs to whoever computed one.
 	out.dynR = out.dynG = out.dynB = 0.f;
 	out.cpuLight = false;
+	// [rc4l] Lit as baked until CaptureLevelShadingFrom finds the table reproduces it.
+	out.sectorLight = SectorLightRef();
+	out.sectorLitNoFog = false;
 	// [rc4l] The NORMAL is deliberately not touched here.
 	//
 	// This function captures SHADING, and a normal is geometry. It used to default to straight up,
@@ -444,7 +448,22 @@ static zx::surfaces::SurfaceKey KeyOf(const MeshPiece &p)
 	k.fogMode = p.fogMode;
 	k.normX = p.normX; k.normY = p.normY; k.normZ = p.normZ;
 	k.scrollU = p.scrollU; k.scrollV = p.scrollV;
+	k.litSector = p.sectorLight.sector;
+	k.litKind = p.sectorLight.kind;
+	k.litSideLight = p.sectorLight.sideLight;
+	k.litContrast = p.sectorLight.contrast;
+	k.litFlags = (p.sectorLight.sideAbsolute ? 1u : 0u) | (p.sectorLight.sideLightFog ? 2u : 0u) | (p.sectorLitNoFog ? 4u : 0u);
 	return k;
+}
+
+// [rc4l] What each repaint was for, in telemetry's levelmesh/repaint_ counters.
+static void CountRepaintCauses(unsigned causes)
+{
+	if (causes & zx::surfaces::kRepaintMaterial) ZX_COUNT("levelmesh/repaint_material", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintAlpha) ZX_COUNT("levelmesh/repaint_alpha", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintShading) ZX_COUNT("levelmesh/repaint_shading", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintNormal) ZX_COUNT("levelmesh/repaint_normal", "pieces", 1);
+	if (causes & zx::surfaces::kRepaintScroll) ZX_COUNT("levelmesh/repaint_scroll", "pieces", 1);
 }
 
 void MeshRegisterPiece(const MeshPiece &piece)
@@ -467,8 +486,9 @@ void MeshRegisterPiece(const MeshPiece &piece)
 		// A switch changes the MATERIAL, which was not among them, so the change went uncounted and
 		// the switch stayed looking unpressed -- and nothing here noticed a shading change at all,
 		// which is why moving geometry needed a separate dirty-vertex channel to be repainted.
-		const zx::surfaces::SurfaceChange what =
-			zx::surfaces::ComputeSurfaceChange(KeyOf(g_pieceList[*found]), KeyOf(piece));
+		const zx::surfaces::SurfaceKey was = KeyOf(g_pieceList[*found]), now = KeyOf(piece);
+		const zx::surfaces::SurfaceChange what = zx::surfaces::ComputeSurfaceChange(was, now);
+		if (what == zx::surfaces::kSurfaceRepaint) CountRepaintCauses(zx::surfaces::ComputeRepaintCauses(was, now));
 		g_pieceList[*found] = piece;
 		if (what == zx::surfaces::kSurfaceRebatch)
 		{

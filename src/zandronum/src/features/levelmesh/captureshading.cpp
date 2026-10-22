@@ -6,6 +6,8 @@
 
 #include "features/rendersettings/rendersettings.h"   // [rc4l] FColormap and RenderShadingEnv
 #include "features/levelmesh/computation/shading_compute.h"
+#include "r_defs.h"
+#include "r_state.h"   // [rc4l] sectors, numsectors
 #include "c_dispatch.h"
 #include "c_console.h"
 #include <string.h>
@@ -109,6 +111,37 @@ void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiec
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)
 {
 	Capture(lightlevel, rellight, cm, out, noFog, false, true);
+}
+
+static unsigned int g_shadeGeneration = 0;
+unsigned int LevelShadeGeneration() { return g_shadeGeneration; }
+void NoteLevelShadeChanged() { g_shadeGeneration++; }
+
+SectorLightEntry SectorLightEntryOf(int sector)
+{
+	SectorLightEntry e;
+	if (sector < 0 || sector >= numsectors) return e;
+	const sector_t &s = sectors[sector];
+	FColormap cm;
+	cm = s.rc.ColorMap;
+	e.lightLevel = s.rc.lightlevel;
+	e.floorLight = gl_ClampLight(s.rc.GetFloorLight());
+	e.ceilingLight = gl_ClampLight(s.rc.GetCeilingLight());
+	e.lightColor = cm.LightColor.d;
+	e.fadeColor = cm.FadeColor.d;
+	e.blendFactor = cm.blendfactor;
+	e.desaturation = cm.desaturation;
+	return e;
+}
+
+void CaptureLevelShadingFrom(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, const SectorLightRef &guess)
+{
+	Capture(lightlevel, rellight, cm, out, noFog, false, true);
+	if (guess.sector < 0) return;
+	const SectorLitInput in = ComputeSectorLitInput(SectorLightEntryOf(guess.sector), guess, RenderShadingEnv(false).fadeTable);
+	if (!ComputeSectorLitReproduces(in, lightlevel, rellight - getExtraLight(), cm.LightColor.d, cm.FadeColor.d, cm.blendfactor, cm.desaturation)) return;
+	out.sectorLight = guess;
+	out.sectorLitNoFog = noFog;
 }
 
 }} // namespace zx::levelmesh

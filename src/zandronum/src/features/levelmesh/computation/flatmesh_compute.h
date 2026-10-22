@@ -317,6 +317,7 @@ struct FlatStamp
 	int desaturation, blendFactor;
 	long long alpha;
 	int renderStyle;
+	unsigned int shadeGeneration;   // [rc4l] LevelShadeGeneration(), which a light setting's change bumps
 };
 
 // [rc4l] What a stored flat needs.

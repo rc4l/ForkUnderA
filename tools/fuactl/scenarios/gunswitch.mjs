@@ -41,7 +41,6 @@ export function judgeGunSwitch(label, { before, after, floorBefore, floorAfter }
 }
 
 export async function judgeLaunch(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   await c.rpc("player.setpos", { x: 384, y: 240, z: 0, angle: 90, pitch: 0 });
   await cap.waitTics(c, 35);
   const before = await rebuilds(c);

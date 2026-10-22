@@ -34,9 +34,12 @@
 using namespace zx::damagetint;
 using zx::gamecopy::TintSubject;
 
-#ifndef NO_GL
+// [rc4l] Everywhere but the dedicated server, which draws nothing; a build without GL (a browser's, a Vulkan-only one) tints through the backend's records.
+#ifndef SERVER_ONLY
 
+#ifndef NO_GL
 #include "gl/renderer/gl_renderstate.h"
+#endif
 
 // Strength (color intensity) and coverage (how far up the sprite the gradient reaches, as a percent
 // of the body / weapon-quad height). Either at 0 disables that surface. Face is strength-only.
@@ -174,7 +177,18 @@ namespace
 
 	void SetGLTint( const TintGradient &g )
 	{
+#ifndef NO_GL
 		gl_RenderState.SetDamageTint( g.r, g.g, g.b, g.strength, g.top, g.bottom, g.glow );
+#else
+		(void)g;
+#endif
+	}
+
+	void ClearGLTint()
+	{
+#ifndef NO_GL
+		gl_RenderState.ClearDamageTint();
+#endif
 	}
 
 	// [rc4l] What DamageTint_Arm2D armed, held for a renderer that records the 2D draw rather than drawing it at once.
@@ -216,7 +230,7 @@ bool DamageTint_Ramp( unsigned int id, float &intensity, int &lastTic )
 
 void DamageTint_EndSpriteGlow()
 {
-	gl_RenderState.ClearDamageTint();
+	ClearGLTint();
 }
 
 PalEntry DamageTint_Blend( PalEntry avg, int pct )
@@ -238,7 +252,7 @@ void DamageTint_Arm2D( PalEntry overlay, float coverageFrac, bool glow )
 void DamageTint_Disarm2D()
 {
 	g_armed2DOn = false;
-	gl_RenderState.ClearDamageTint();
+	ClearGLTint();
 }
 
 bool DamageTint_Armed2D( TintGradient &out )
@@ -326,7 +340,7 @@ CCMD( fua_tintdebug )
 	}
 }
 
-#else // NO_GL -- dedicated server: no renderer, no tint; nothing references these there.
+#else // SERVER_ONLY -- the dedicated server: no renderer, no tint.
 
 #include "features/damage-tint/damagetint.h"
 bool DamageTint_BeginSpriteGlow( const zx::gamecopy::TintSubject &, int, DWORD, float, float ) { return false; }
@@ -339,4 +353,4 @@ PalEntry DamageTint_FaceOverlay( float *cov, bool *glow ) { if ( cov ) *cov = 0.
 void DamageTint_Arm2D( PalEntry, float, bool ) {}
 void DamageTint_Disarm2D() {}
 
-#endif // NO_GL
+#endif // SERVER_ONLY

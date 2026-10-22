@@ -314,6 +314,7 @@ void WriteAbortReport( const char *why )
 volatile LONG   g_heartbeat = 0;
 HANDLE          g_mainThread = NULL;
 HANDLE          g_gameThread = NULL;   // [rc4l] features/handoff: the thread running tics beside the main one, once there is one
+ULONG_PTR       g_gameStackHigh = 0;   // [rc4l] the top of its stack, which bounds perf.sample's walks of it
 volatile LONG   g_hangReported = 0;
 
 void WriteThreadStack( HANDLE thread, const char *why )
@@ -470,6 +471,24 @@ void MCP_Crash_NoteGameThread()
 	SetThreadStackGuarantee( &guarantee );
 	DuplicateHandle( GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &g_gameThread,
 		0, FALSE, DUPLICATE_SAME_ACCESS );
+	ULONG_PTR stackLow = 0;
+	GetCurrentThreadStackLimits( &stackLow, &g_gameStackHigh );
+#endif
+}
+
+bool MCP_Crash_GameThreadForSampling( void **handle, unsigned long long *stackHigh )
+{
+#ifdef _WIN32
+	HANDLE dup = NULL;
+	if ( g_gameThread == NULL || g_gameStackHigh == 0 ) return false;
+	if ( !DuplicateHandle( GetCurrentProcess(), g_gameThread, GetCurrentProcess(), &dup,
+		THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0 )) return false;
+	*handle = dup;
+	*stackHigh = (unsigned long long)g_gameStackHigh;
+	return true;
+#else
+	(void)handle; (void)stackHigh;
+	return false;
 #endif
 }
 

@@ -1301,6 +1301,8 @@ void FTextureManager::PrecacheLevel (void)
 	{
 		Renderer->PrecacheTexture(ByIndex(i), hitlist[i]);
 	}
+	// [rc4l] A mark's graphic is in no hitlist, so the first scorch of a fight was made on the frame it appeared.
+	FUA_PrecacheDecals ();
 
 	// [ForkUnderA] cl_fua_caching: make the cost visible so it can be tuned
 	// instead of guessed at.

@@ -187,8 +187,19 @@ test("a sample prints as self and inclusive shares, hottest first and cut at top
 test("a sample says when the tics ran where it cannot see them", () => {
   const threaded = { available: true, samples: 10, seconds: 1, backend: "bridge", functions: [{ symbol: "zx::hwrender::DrawWorld", percent: 30 }], inclusive: [{ symbol: "zx::gameloop::GameThreadFrame", percent: 90 }] };
   assert.equal(sampleNotes(threaded).length, 1);
-  assert.match(sampleTable(threaded).at(-1), /fua_gamethread=0/);
+  assert.match(sampleTable(threaded).at(-1), /--thread game/);
   assert.equal(sampleNotes({ ...threaded, inclusive: [{ symbol: "D_DisplayBesideTic", percent: 50 }] }).length, 1);
   assert.deepEqual(sampleNotes({ ...threaded, inclusive: [{ symbol: "TryRunTics", percent: 60 }] }), []);
   assert.deepEqual(sampleNotes({ available: true, functions: [] }), []);
+});
+
+test("--thread game asks the engine to sample the thread running tics", async () => {
+  const asked = [];
+  const conn = {
+    rpc: async (cmd, args) => { asked.push([cmd, args]); return {}; },
+    waitEvent: async () => ({ seconds: 1, samples: 4, functions: [{ symbol: "P_Ticker", dso: "forkundera", samples: 4, percent: 100 }] }),
+  };
+  const r = await sampleProcess(1, { _platform: "win32", conn, seconds: 1, top: 5, game: true });
+  assert.deepEqual(asked, [["perf.sample", { seconds: 1, top: 5, engine: 0, game: 1 }]]);
+  assert.equal(r.functions[0].symbol, "P_Ticker");
 });

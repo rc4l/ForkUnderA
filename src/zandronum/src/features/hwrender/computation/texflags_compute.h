@@ -8,11 +8,11 @@
 
 namespace zx { namespace hwrender {
 
-// [rc4l] Its bits, which the scene shaders test by these same values: single flags, then the fuzz shader in bits 7-9, the culled faces in bits 11-12 and a surface refusing marks in bit 14.
+// [rc4l] Its bits, which the scene shaders test by these same values: single flags, then the fuzz shader in bits 7-9, the culled faces in bits 11-12, a surface refusing marks in bit 14 and one lit from the sector light table in bit 15.
 enum
 {
 	kTexFlagStencil = 1, kTexFlagAlphaTest = 2, kTexFlagHud = 4, kTexFlagLevel = 8, kTexFlagInverse = 16, kTexFlagColorBlend = 32,
-	kTexFlagFogLayer = 64, kTexFlagFogBoundary = 1024, kTexFlagFogPass = 8192, kTexFlagNoMarks = 16384,
+	kTexFlagFogLayer = 64, kTexFlagFogBoundary = 1024, kTexFlagFogPass = 8192, kTexFlagNoMarks = 16384, kTexFlagSectorLit = 32768,
 	kTexFlagFuzzShift = 7, kTexFlagFuzzMask = 7, kTexFlagCullShift = 11, kTexFlagCullMask = 3,
 };
 

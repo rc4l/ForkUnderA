@@ -502,14 +502,15 @@ void ListActors(std::vector<AActor *> &out)
 	for (AActor *a; (a = it.Next()) != NULL; )
 	{
 		if (a->rcSerial == kNoId) a->rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
+		// [rc4l] Its place noted while it is in cache, which LinkListed reads; a pass of its own cost a Complex Doom fight half a millisecond a tic.
+		a->rcListed = (int)out.size();
 		out.push_back(a);
 	}
 }
 
-// [rc4l] Each sector's actors linked by their places in list, in its thinglist's order: its first in firstIn, each one's next in next.
+// [rc4l] Each sector's actors linked by their places in list, in its thinglist's order: its first in firstIn, each one's next in next; list is ListActors', whose places each actor holds.
 void LinkListed(const std::vector<AActor *> &list, std::vector<int> &firstIn, std::vector<int> &next)
 {
-	for (size_t i = 0; i < list.size(); i++) list[i]->rcListed = (int)i;
 	firstIn.resize(numsectors);
 	next.assign(list.size(), -1);
 	RecordLinks links;
@@ -970,9 +971,7 @@ void CheckPrescan(const std::vector<int> &sectorCandidates, const std::vector<in
 	g_prescanListed++;
 	static std::vector<AActor *> now;
 	static std::vector<int> firstIn, next;
-	now.clear();
-	TThinkerIterator<AActor> it;
-	for (AActor *a; (a = it.Next()) != NULL; ) now.push_back(a);
+	ListActors(now);
 	if (now != g_listed) { PrescanMissed("actor list, length", (int)now.size()); return; }
 	LinkListed(now, firstIn, next);
 	if (firstIn != g_listedFirstIn || next != g_listedNext) PrescanMissed("sector links, actors", (int)now.size());
@@ -990,14 +989,15 @@ void ScanAtTicEnd()
 	ZX_ZONE("copy/prescan");
 	g_prescan.stamp.found = false;
 	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) return;
-	ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; });
-	ListChanges(numsides, g_prescan.sides, [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; });
-	ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; });
-	ListActors(g_listed);
-	LinkListed(g_listed, g_listedFirstIn, g_listedNext);
-	ScanDecalSides();
-	ScanSeen();
-	ScanLights();
+	// [rc4l] Each part timed on its own, since in a Complex Doom fight the whole was a quarter of the tic.
+	{ ZX_ZONE("copy/prescan_sectors"); ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_sides"); ListChanges(numsides, g_prescan.sides, [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_lines"); ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed); }
+	{ ZX_ZONE("copy/prescan_links"); LinkListed(g_listed, g_listedFirstIn, g_listedNext); }
+	{ ZX_ZONE("copy/prescan_decals"); ScanDecalSides(); }
+	{ ZX_ZONE("copy/prescan_seen"); ScanSeen(); }
+	{ ZX_ZONE("copy/prescan_lights"); ScanLights(); }
 	g_prescan.stamp = StampNow(true);
 }
 

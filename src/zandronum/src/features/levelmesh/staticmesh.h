@@ -24,6 +24,7 @@
 
 #include <stddef.h>
 #include "features/levelmesh/computation/shading_compute.h"
+#include "features/levelmesh/computation/sectorlight_compute.h"   // [rc4l] SectorLightRef
 #include "features/damage-tint/computation/damagetint_compute.h"   // [rc4l] TintGradient
 
 namespace zx { namespace levelmesh {
@@ -123,6 +124,9 @@ struct MeshPiece
 	int           stackSlot;    // [rc4l] the stacked view whose walk alone drew it (ComputeStackCaptureSlot), or -1 for the frame's
 	int           onMirror;     // [rc4l] the line mirror whose face a decal is stuck to, drawn over that mirror's surface, or -1
 	int           linkId;       // [rc4l] numsubsectors plus the sidedef a wall was baked from, the id GL's light links name it by, or -1 to place it by geometry (PieceStackId)
+	// [rc4l] Where a level surface's light comes from when the sector light table reproduces it exactly (CaptureLevelShadingFrom), sector -1 for a surface shaded only as baked.
+	SectorLightRef sectorLight;
+	bool          sectorLitNoFog;   // [rc4l] the noFog its shading was captured with
 	bool          plain;        // [rc4l] GL draws it in its solid pass, so its see-through texels are drawn rather than discarded
 
 	// [rc4l] This surface is seen from BELOW: a ceiling, or the underside of a 3D floor.
@@ -210,6 +214,7 @@ struct MeshPiece
 		mirrorSector = -1; mirrorCeiling = false;
 		scrollU = scrollV = 0.f;
 		cpuLight = false;
+		sectorLitNoFog = false;
 		mirrorView = -1;
 		stackSlot = -1;
 		onMirror = -1;

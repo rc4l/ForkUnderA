@@ -60,7 +60,7 @@ test("each mode is its own launch, warmed and measured round by round, then shot
   const rows = await runFps({ modes: ["gl", "vulkan"], rounds: 2, frames: 600, warmup: 300, vsync: false, shot: true, sample: 3, label: "t",
     launch: { map: "MAP10", port: 7799 } }, deps);
   assert.deepEqual(launches, [{ map: "MAP10", port: 7799, gl: true }, { map: "MAP10", port: 7799 }]);
-  assert.deepEqual(commands.slice(0, 3), ["fua_render_in_background 1", "vid_vsync 0", "dumprenderer"]);
+  assert.deepEqual(commands.slice(0, 2), ["vid_vsync 0", "dumprenderer"]);
   assert.deepEqual(captures.slice(0, 3), [{ frames: 600, warmup: 300 }, { frames: 600, warmup: 60 }, { frames: 600, warmup: 60 }]);
   assert.equal(rows[0].p50_ms, 2.25);   // [rc4l] the warm-up round's 2.1 is thrown away; the median of 2.2 and 2.3 is kept
   assert.equal(rows[0].shot, null);

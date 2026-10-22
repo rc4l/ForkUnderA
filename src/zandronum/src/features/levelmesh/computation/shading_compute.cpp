@@ -115,4 +115,11 @@ Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env)
 	return s;
 }
 
+bool ComputeSameLevelShading(const ShadingEnv &a, const ShadingEnv &b)
+{
+	return a.lightMode == b.lightMode && a.ambient == b.ambient && a.fogMode == b.fogMode && a.distFog == b.distFog &&
+		a.fadeTable == b.fadeTable && a.brightFog == b.brightFog && a.fogDensity == b.fogDensity &&
+		a.outsideFogDensity == b.outsideFogDensity && a.outsideFogColor == b.outsideFogColor;
+}
+
 }} // namespace zx::levelmesh
