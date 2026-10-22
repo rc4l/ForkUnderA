@@ -90,6 +90,12 @@ test('--only picks the checks whose names contain its text', () => {
   assert.deepEqual(selectChecks(CHECKS, 'save').map((c) => c.name), ['a save gets its picture', 'a save survives a reload and loads']);
 });
 
+test('--only takes several texts at |, in the order the suite runs them', () => {
+  const names = selectChecks(CHECKS, 'reloading the level | the canvas is configured once').map((c) => c.name);
+  assert.deepEqual(names, ['the canvas is configured once through a level start', 'reloading the level holds no more memory']);
+  assert.equal(selectChecks(CHECKS, ' | ').length, 0);
+});
+
 test('the checks run in the order a profile carries state through', () => {
   const names = CHECKS.map((c) => c.name);
   assert.ok(names.indexOf('quitting stops the loop and offers to play again') < names.indexOf('a reload keeps what was set before quitting'));

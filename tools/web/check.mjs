@@ -744,7 +744,10 @@ export function heardAtDistance({ control, peak, contexts }) {
 
 // [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.
 export function selectChecks(checks, only) {
-  return only ? checks.filter((c) => c.name.includes(only)) : checks;
+  if (!only) return checks;
+  // [rc4l] Several texts split at |, each check that holds any of them run in the suite's order, so a sequence on one profile (a check before a soak) runs without the rest.
+  const texts = only.split('|').map((s) => s.trim()).filter(Boolean);
+  return checks.filter((c) => texts.some((s) => c.name.includes(s)));
 }
 
 // [rc4l] The page a check opens: the run's own, or the run's with the check's query in place of its own.

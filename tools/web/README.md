@@ -97,7 +97,7 @@ node tools/web/check.mjs [dist-web] [--software] [--only TEXT] [--browser chrome
 Serves a staged build and runs `CHECKS` (in `check.mjs`, each named for what it proves) in headless Chrome, in order on one profile, since a later check can read what an earlier one stored.
 - It prints PASS or FAIL for each, with the console's last lines (and the screenshot, where the check judges one) for a failure, and exits 1 if any failed.
 - An error the page's WebGPU device reports fails whichever check it came in.
-- `--only TEXT` runs the checks whose names contain TEXT.
+- `--only TEXT` runs the checks whose names contain TEXT, or any of several texts split at `|`, in the suite's order on one profile (`--only "configured once|reloading the level"` runs a check before the soak).
 - `--software` runs WebGPU on SwiftShader, for a machine with no GPU.
 - CI runs none of them, since it plays no game: run them here after changing the engine, the page or its shaders.
 - `--browser firefox` runs the checks marked `firefox` in Firefox and skips the rest, since Firefox's WebGPU is not Chrome's.
