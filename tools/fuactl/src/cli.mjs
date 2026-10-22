@@ -14,7 +14,7 @@ import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
 import { play, quitInstance, defaultPwadStore, resolvePreset, readView, MODES, describeMode } from "./play.mjs";
-import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
+import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem, netQueueInfo } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
 import { activateEngineWindows, engineWindows, resizeEngineWindow } from "./window.mjs";
 import { captureSeconds, formatRecap, parseCaptureCsv, slowSecondsGrew } from "./recap.mjs";
@@ -37,6 +37,9 @@ import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
 import { runCoverage } from "./coverage.mjs";
+import * as netplay from "./netplay.mjs";
+import * as netdiffMod from "./netdiff.mjs";
+import * as netcap from "./netcap.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { recentCrashes, summarizeCrash } from "./crashes.mjs";
@@ -166,6 +169,9 @@ const USAGE = `fuactl <command>
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
+  netplay [--map M] [--iwad W] [--file a.wad,b.pk3] [--players N] [--observers N] [--lag MS,MS] [--loss PCT,PCT] [--port P] [--game-port G] [--for-user] [--cvar k=v] | --quit   a locked server and clients joined to it as players and observers on loopback, each client's simulated ping and loss from the lists, recorded in .netplay-session.json until Ctrl-C (--for-user leaves the first client's input to you); --quit stops a set by its tokens
+  netdiff [--seconds N]   the running netplay set's server against each client: actors by network id at the server tic each last heard, sectors and sidedefs; exit 1 when any differ
+  netcap record --out FILE [--seconds N] | netcap diff A B   every command the running set's server writes for its clients, captured to FILE.netcap; diff names the commands whose counts changed and where each client's stream parts
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   queue add <description> [--port P] [--name SPOT] [--no-instance [--map M]]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill); --no-instance queues one seen where no engine answers (a browser page, an engine already gone), with its map when known and no spot
@@ -529,9 +535,14 @@ async function main() {
         let where = { map: flags.map && flags.map !== true ? String(flags.map) : null, at: null };
         if (!flags["no-instance"]) {
           const c = await connectTarget(flags, usage);
-          const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
+          // [rc4l] A netgame's side of the report, its role and ping; a dedicated server has no camera to save, so it files no spot.
+          const net = netQueueInfo(await c.rpc("net.state", {}).catch(() => null));
+          if (net?.role !== "server") {
+            const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
+            where = { map: cam.map, at: shot.atFromCamera(cam) };
+          }
+          where.net = net;
           c.close();
-          where = { map: cam.map, at: shot.atFromCamera(cam) };
         }
         const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, ...where });
         saveQueue(r.queue);
@@ -1019,7 +1030,7 @@ async function main() {
     // [rc4l] `fuactl build` -- compile and stage, failing loudly rather than staging nothing.
     case "build": {
       const r = shot.build({ root: flags.root || undefined, stage: !flags["no-stage"], tests: !!flags.tests });
-      if (r.tests) console.log(`unit tests: ${r.tests.passed} passed`);
+      if (r.tests) console.log(`unit tests: ${r.tests.passed} passed in ${r.tests.binaries} binaries`);
       if (!r.staged) { console.log("build ok, not staged"); break; }
       const when = new Date(fs.statSync(r.staged).mtime).toTimeString().slice(0, 8);
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
@@ -1415,6 +1426,65 @@ async function main() {
       const info = await c.rpc("renderer.info");
       c.close();
       console.log(JSON.stringify(info, null, 2));
+      break;
+    }
+    case "netplay": {
+      if (flags.quit) {
+        const session = netplay.readNetplaySession();
+        for (const m of [...session.clients].reverse().concat([session.server])) {
+          console.log(`${m.role} on ${m.port}: ${await quitInstance({ port: m.port, token: m.token })}`);
+        }
+        break;
+      }
+      const set = await netplay.launchNetplay(netplay.netplayOptionsFromFlags(flags, shot.parseCvarFlag));
+      const session = netplay.netplaySession(set);
+      netplay.writeNetplaySession(session);
+      console.log(`server on bridge ${session.server.port}, game port ${session.gamePort}, ${session.map}`);
+      for (const c of session.clients) console.log(`${c.role} player ${c.player} on bridge ${c.port}${c.lag ? `, ping +${c.lag} ms` : ""}${c.loss ? `, ${c.loss}% loss` : ""}`);
+      console.log("recorded in .netplay-session.json; Ctrl-C stops the set");
+      process.on("SIGINT", async () => { await netplay.closeNetplay(set); process.exit(0); });
+      await new Promise(() => {});
+      break;
+    }
+    case "netdiff": {
+      const session = netplay.readNetplaySession();
+      const open = async (m) => { const c = new BridgeClient(); await c.connect(m.port, { token: m.token }); await c.waitHello(); return c; };
+      const sc = await open(session.server);
+      let differ = 0;
+      try {
+        for (const m of session.clients) {
+          const cc = await open(m);
+          try {
+            const r = await netdiffMod.netdiff(sc, cc, { seconds: flags.seconds ? Number(flags.seconds) : 2 });
+            for (const l of netdiffMod.diffLines(`${m.role} player ${m.player} (server tic ${r.alignedTic})`, r.diffs, r.compared)) console.log(l);
+            if (r.diffs.length) differ++;
+          } finally { cc.close(); }
+        }
+      } finally { sc.close(); }
+      process.exitCode = differ ? 1 : 0;
+      break;
+    }
+    case "netcap": {
+      const names = netcap.commandNames(fs.readFileSync(netcap.ENUMS, "utf8"));
+      if (rest[0] === "diff") {
+        if (rest.length < 3) throw new Error(usageFor(USAGE, "netcap"));
+        const read = (f) => netcap.parseCapture(fs.readFileSync(f, "utf8"));
+        const d = netcap.diffCaptures(read(rest[1]), read(rest[2]), names);
+        for (const l of netcap.diffCaptureLines(d, names)) console.log(l);
+        process.exitCode = d.same ? 0 : 1;
+        break;
+      }
+      if (rest[0] !== "record" || !flags.out) throw new Error(usageFor(USAGE, "netcap"));
+      const session = netplay.readNetplaySession();
+      const c = new BridgeClient();
+      await c.connect(session.server.port, { token: session.server.token });
+      await c.waitHello();
+      try {
+        const file = await netcap.recordCapture(c, String(flags.out), { seconds: flags.seconds ? Number(flags.seconds) : 5 });
+        const lines = netcap.parseCapture(fs.readFileSync(file, "utf8"));
+        console.log(`${file}: ${lines.length} commands`);
+        for (const [n, k] of Object.entries(netcap.countByName(lines, names)).sort((a, b) => b[1] - a[1]).slice(0, 12)) console.log(`  ${String(k).padStart(6)}  ${n}`);
+      } finally { c.close(); }
       break;
     }
     case "net-bw": {

@@ -25,9 +25,16 @@ export function spotNameFor(id, description) {
 }
 
 // [rc4l] The queue with a new open item at the end, and that item.
-export function addItem(queue, { description, spot, map, at }, now = new Date().toISOString()) {
+// [rc4l] A netgame instance's side of a report from its net.state: its role and ping, the server tic a client last heard of, a server's clients and their pings; null outside a netgame.
+export function netQueueInfo(state) {
+  if (!state || (state.role !== "client" && state.role !== "server")) return null;
+  if (state.role === "client") return { role: "client", player: state.consoleplayer, ping: state.ping, serverTic: state.serverTic, connection: state.connection };
+  return { role: "server", clients: (state.clients || []).map((c) => ({ player: c.player, ping: c.ping, state: c.state, spectating: c.spectating })) };
+}
+
+export function addItem(queue, { description, spot, map, at, net = null }, now = new Date().toISOString()) {
   const id = nextId(queue);
-  const item = { id, status: "open", description, spot: spot || spotNameFor(id, description), map, at, added: now, notes: [] };
+  const item = { id, status: "open", description, spot: spot || spotNameFor(id, description), map, at, ...(net ? { net } : {}), added: now, notes: [] };
   return { queue: { ...queue, items: [...queue.items, item] }, item };
 }
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareEachLaunch, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -348,4 +348,32 @@ test("a side runs the backend beside GL only when GL's frame or both renderers' 
   assert.equal(sideBesideGl({ name: "gl", gl: true, frame: "gl" }), false, "GL alone has no backend to sit beside");
   assert.equal(sideBesideGl({ name: "wgpu", webgpu: true, glDraws: true }), false, "a WebGPU launch has no GL");
   assert.equal(sideBesideGl(), false);
+});
+
+test("a netplay scenario hosts each configuration on each map, judges the set and always closes it", async () => {
+  const launched = [], closed = [];
+  const deps = {
+    launch: async (o) => { launched.push(o); if (o.lag === "bad") throw new Error("never joined"); return { id: launched.length }; },
+    close: async (set) => closed.push(set.id),
+  };
+  const configs = [{ name: "lan", players: 1, observers: 1 }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
+  const judged = [];
+  const r = await compareNetplay({ name: "nt", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs, judgeNetplay: async (set, label, info) => { judged.push([set.id, label, info.config.name]); return set.id === 2 ? { line: `FAIL ${label}`, failed: 1 } : { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
+  assert.deepEqual(judged, [[1, "MAP01 lan", "lan"], [2, "MAP01 ping", "ping"]]);
+  assert.deepEqual(r.lines, ["PASS MAP01 lan", "FAIL MAP01 ping", "FAIL MAP01 broken: never joined"]);
+  assert.equal(r.failed, 2);
+  assert.deepEqual(closed, [1, 2]);
+  assert.deepEqual([launched[0].players, launched[0].observers, launched[1].players, launched[1].lag, launched[1].clientCvars], [1, 1, 1, "100", { cl_unlagged: 1 }]);
+  assert.equal(compareNetplay.judgedAlone, true);
+  assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
+});
+
+test("--side names a netplay configuration and its cvars reach that configuration's server and clients", () => {
+  const opts = { name: "n", configs: [{ name: "lan" }, { name: "ping", serverCvars: { a: 1 } }] };
+  const r = withSideCvars(opts, "ping", { fua_debug_netdrop: "47" });
+  assert.deepEqual(r.configs[1], { name: "ping", serverCvars: { a: 1, fua_debug_netdrop: "47" }, clientCvars: { fua_debug_netdrop: "47" } });
+  assert.deepEqual(r.configs[0], { name: "lan" });
+  assert.throws(() => withConfigCvars(opts, "wan", {}), /no configuration wan \(lan, ping\)/);
+  assert.equal(sideAdjust("wan", {})(opts), null);
+  assert.equal(sideAdjust("lan", { x: 1 })(opts).configs[0].clientCvars.x, 1);
 });

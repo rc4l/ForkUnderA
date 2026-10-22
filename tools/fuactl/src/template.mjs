@@ -12,6 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
+import { launchNetplay, closeNetplay } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -141,6 +142,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
 
 // [rc4l] A scenario's options with cvars added to one named side, for running a regression test under the behaviour it guards against.
 export function withSideCvars(opts, sideName, cvars) {
+  if (opts.configs) return withConfigCvars(opts, sideName, cvars);
   const sides = opts.sides || GL_VS_VULKAN;
   if (!sides.some((s) => s.name === sideName)) throw new Error(`${opts.name} has no side ${sideName} (${sides.map((s) => s.name).join(", ")})`);
   return { ...opts, sides: sides.map((s) => (s.name === sideName ? { ...s, cvars: { ...(s.cvars || {}), ...cvars } } : s)) };
@@ -168,7 +170,14 @@ export function matrixAdjust(cvars, adjust = (o) => o) {
 
 // [rc4l] withSideCvars for a whole run: a scenario without that side gives null, to be skipped rather than end the run.
 export function sideAdjust(sideName, cvars) {
-  return (opts) => ((opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);
+  return (opts) => ((opts.configs || opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);
+}
+
+// [rc4l] A netplay scenario's options with cvars added to one named configuration, on its server and its clients alike (a fault knob does nothing on the side it does not apply to).
+export function withConfigCvars(opts, configName, cvars) {
+  if (!opts.configs.some((c) => c.name === configName)) throw new Error(`${opts.name} has no configuration ${configName} (${opts.configs.map((c) => c.name).join(", ")})`);
+  return { ...opts, configs: opts.configs.map((c) => (c.name === configName
+    ? { ...c, serverCvars: { ...(c.serverCvars || {}), ...cvars }, clientCvars: { ...(c.clientCvars || {}), ...cvars } } : c)) };
 }
 
 // [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
@@ -176,6 +185,7 @@ export const WEBGPU_CEILING = 1.5;
 
 // [rc4l] A scenario on WebGPU, by how it judges: two launches compare its first Vulkan side on each without GL, each box at WEBGPU_CEILING with no floor; one launch judged against itself (a counter, a picture over time) runs on WebGPU alone with its own limits; skipped, with the reason, when it judges GL and the backend in one frame or needs ray tracing; null with no Vulkan side of its own.
 export function webgpuOptions(opts, compare = compareTemplate) {
+  if (compare.netgame) return { skip: "it judges a netgame of locked Vulkan clients, which --webgpu does not change" };
   if (compare === compareSameFrame) return { skip: "it judges GL and the backend in one frame, and a WebGPU launch has no GL" };
   if ((opts.needs || []).includes("raytracing")) return { skip: "it needs ray tracing, which WebGPU lacks" };
   if ((opts.needs || []).includes("readback")) return { skip: "it reads each presented frame back at once, which WebGPU does only later" };
@@ -486,4 +496,31 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 }
 
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
-for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch, compareHosted]) compare.judgedAlone = true;
+// [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
+export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
+  const { launch = launchNetplay, close = closeNetplay } = deps;
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) for (const config of configs) {
+    const label = `${map} ${config.name}`;
+    let set = null;
+    try {
+      set = await launch({ iwad, map, files: [wadPath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "",
+        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: config.clientCvars || {} });
+      const r = await judgeNetplay(set, label, { wadPath, iwad, map, config });
+      lines.push(...(r.lines || [r.line]));
+      failed += r.failed;
+    } catch (e) {
+      lines.push(`FAIL ${label}: ${e.message}`);
+      failed++;
+    } finally {
+      if (set) await close(set);
+    }
+  }
+  return { lines, failed };
+}
+compareNetplay.netgame = true;
+
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch, compareHosted, compareNetplay]) compare.judgedAlone = true;

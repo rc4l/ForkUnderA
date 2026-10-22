@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, loopbackArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, testBinaries, combineGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -366,6 +366,15 @@ test("a unit test run reports how many passed and which failed, each once", () =
   const out = "[==========] 3 tests ran.\n[  PASSED  ] 2 tests.\n[  FAILED  ] 1 test, listed below:\n[  FAILED  ] Suite.Case\n[  FAILED  ] Suite.Case (0 ms)\n";
   assert.deepEqual(summarizeGtest(out), { passed: 2, failed: ["Suite.Case"] });
   assert.deepEqual(summarizeGtest("nothing"), { passed: 0, failed: [] });
+});
+
+test("a tests build runs every unit test binary it made and sums them", () => {
+  const made = (p) => !p.includes("_net");
+  assert.deepEqual(testBinaries("R", made).map((p) => p.split(String.fromCharCode(92)).join("/")), ["R/build-tests/Release/zandrox_tests.exe"]);
+  assert.equal(testBinaries("R", () => true).length, 2);
+  assert.deepEqual(combineGtest([{ passed: 3, failed: [], status: 0 }, { passed: 2, failed: ["A.B"], status: 1 }]), { passed: 5, failed: ["A.B"], status: 1, binaries: 2 });
+  assert.deepEqual(combineGtest([{ passed: 1, failed: [], status: 0 }, { passed: 0, failed: [], status: 127 }]).status, 127);
+  assert.deepEqual(combineGtest([]), { passed: 0, failed: [], status: 0, binaries: 0 });
 });
 
 // [rc4l] play --spot at WDI18's #29 spot died on an occupied spot and left no instance at all.
