@@ -174,6 +174,13 @@ reload unless it names console steps, or a function of the launch's `{ wadPath, 
 kept growing past `warmup` (`judgeSoak`), leaving out readings under each `ignore` prefix. `soak.mjs` reloads
 a map with lights and monsters; `wadsoak.mjs` and `wadsoaktitle.mjs` swap WAD sets with `wad_reload`.
 
+For what a netgame splits between machines, use `compareHosted` (a server and one client, `judgeHosted(sc, cc,
+label)`; `decalnet.mjs`) or `compareNetplay`: each of the scenario's `configs` (`{ name, players, observers, lag,
+loss, serverCvars, clientCvars }`, lag and loss per client) is hosted with a locked server and that many player
+and observer clients, and `judgeNetplay(set, label)` judges the whole set. `netsync.mjs`, `unlaggedhit.mjs` and
+`netbroadcast.mjs` are the models, and `netplay-testing` says when an observer judges something and how to make
+a netgame scenario fail first (`--side CONFIG --cvar fua_debug_netdrop=ID`).
+
 `scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
 compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at
 `WEBGPU_CEILING`; one judged against itself (a comparison marked `judgedAlone` in `template.mjs`) runs on WebGPU alone
