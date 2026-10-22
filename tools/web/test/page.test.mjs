@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing } from '../page.mjs';
+import { HEAR_CONSOLE, WATCH_LEVEL, WATCH_FRAMES, WATCH_GPU_CALLS, STARTED, GRAB_FRAME, inPage, pause, repeatedSounds, serveData, soakInPage, swapWgsl, framePacing, gpuCallRates, longestGap } from '../page.mjs';
 
 // [rc4l] STARTED run against a stand-in page: its error panel, its Module, and whether it is isolated.
 function runStarted({ errorShown = false, errorText = '', module = {}, isolated = true }) {
@@ -190,4 +190,33 @@ test('a WGSL swap rewrites every shader the page makes and leaves the rest of it
   new Function('GPUDevice', swapWgsl('1.0f / gl_FragCoord.w', 'vPixelPos.w'))(GPUDevice);
   assert.equal(new GPUDevice().createShaderModule({ label: 'scene', code: 'let d = (1.0f / gl_FragCoord.w); let e = (1.0f / gl_FragCoord.w);' }), 'module');
   assert.deepEqual(made, [{ label: 'scene', code: 'let d = (vPixelPos.w); let e = (vPixelPos.w);' }]);
+});
+
+test('a soak asked for heaps waits on a snapshot at its first judged mark and at its end, and one not asked takes none', () => {
+  const heap = soakInPage('reload', 9, 10, 'MAP01', 3, { heap: true });
+  assert.match(heap, /if \(i === 3\) \{ base = ledger\(\); await heapAt\('base'\); \}/);
+  assert.match(heap, /await heapAt\('end'\);\s+held\('end'\);/);
+  assert.match(heap, /window\.fuaHeapTaken !== label/);
+  assert.doesNotMatch(soakInPage('reload', 9, 10, 'MAP01', 3), /await heapAt/);
+});
+
+test('a soak asks the driver to collect before each mark, and collects itself when no driver answers', () => {
+  const js = soakInPage('reload', 3, 100);
+  assert.match(js, /console\.log\('check: gc ' \+ n\);/);
+  assert.match(js, /window\.fuaGcTaken !== n/);
+  assert.match(js, /if \(window\.fuaGcTaken !== n\) for \(let k = 0; k < 2 && window\.gc; k\+\+\)/);
+});
+
+test('the gpu calls look gives each busiest kind a second, and says when there were none', () => {
+  const by = { 'bind group decal': { calls: 1300, bytes: 0 }, 'write Upload memory page': { calls: 80, bytes: 100 * 1048576 }, 'copy to fua dynamic VB': { calls: 80, bytes: 20 * 1048576 } };
+  assert.equal(gpuCallRates({ from: 0, by }, 10000, 2), 'gpu calls a second: bind group decal 130 | write Upload memory page 8 (10.00 MB)');
+  assert.equal(gpuCallRates({ from: 5000, by: {} }, 6000), 'gpu calls: none');
+  assert.match(WATCH_GPU_CALLS, /GPUDevice\.prototype\.createBindGroup = function/);
+  assert.match(WATCH_GPU_CALLS, /if \(window\.GPUDevice\)/);
+});
+
+test('longestGap finds the longest wait between frames and where it began', () => {
+  assert.deepEqual(longestGap([]), { ms: 0, at: 0 });
+  assert.deepEqual(longestGap([100]), { ms: 0, at: 0 });
+  assert.deepEqual(longestGap([100, 116, 132, 8132, 8148]), { ms: 8000, at: 32 });
 });

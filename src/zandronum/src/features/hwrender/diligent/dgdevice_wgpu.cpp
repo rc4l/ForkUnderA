@@ -14,6 +14,7 @@
 #include "BufferWebGPU.h"
 #include "RefCntAutoPtr.hpp"
 #include "features/hwrender/computation/keptobjects_compute.h"
+#include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] kWebGPUUploadPageBytes
 #if PLATFORM_WEB
 #include <emscripten/html5_webgpu.h>
 #endif
@@ -35,6 +36,8 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	ci.Features.TimestampQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.DepthBiasClamp = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [rc4l] The upload page size is ours to name, since the flush budget a level's upload is sent under is cut from it.
+	ci.UploadHeapPageSize = (Diligent::Uint32)zx::hwrender::kWebGPUUploadPageBytes;
 #if PLATFORM_WEB
 	// [rc4l] A browser makes its device asynchronously, so the page makes it first (Module.preinitializedWebGPUDevice) and the backend attaches to it.
 	WGPUDevice pageDevice = emscripten_webgpu_get_device();

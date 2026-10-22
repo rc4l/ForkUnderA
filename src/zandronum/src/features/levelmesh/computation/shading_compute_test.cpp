@@ -187,3 +187,25 @@ TEST(Shading, SoftwareLightingCarriesTheLevelAndBrightFogRaisesIt)
 	in.additive = true;   // [rc4l] black fog is not bright fog
 	EXPECT_EQ(ComputeShading(in, e).softLight, 120 / 255.f);
 }
+
+// [rc4l] Changing the light mode mid-level left every baked surface in the old one, a 3D floor's bands included.
+TEST(ComputeSameLevelShading, EverySettingButTheFixedColormapAndSkybox)
+{
+	ShadingEnv a;
+	a.lightMode = 3; a.ambient = 0; a.fogMode = 1; a.distFog = 70; a.fixedColormap = false; a.fadeTable = false;
+	a.inSkybox = false; a.brightFog = true; a.fogDensity = 0; a.outsideFogDensity = 0; a.outsideFogColor = 0xff000000;
+	ShadingEnv b = a;
+	EXPECT_TRUE(ComputeSameLevelShading(a, b));
+	b.fixedColormap = true; b.inSkybox = true;
+	EXPECT_TRUE(ComputeSameLevelShading(a, b));
+	const auto differs = [&](void (*edit)(ShadingEnv &)) { ShadingEnv c = a; edit(c); return !ComputeSameLevelShading(a, c); };
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.lightMode = 8; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.ambient = 16; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.fogMode = 2; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.distFog = 20; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.fadeTable = true; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.brightFog = false; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.fogDensity = 30; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.outsideFogDensity = 30; }));
+	EXPECT_TRUE(differs([](ShadingEnv &e) { e.outsideFogColor = 0x00102030; }));
+}

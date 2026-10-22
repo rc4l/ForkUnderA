@@ -7,11 +7,12 @@
 #define ZX_SCENECONSTANTS_COMPUTE_H
 
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] FixedColormapShade
+#include "features/levelmesh/computation/shading_compute.h"       // [rc4l] ShadingEnv
 
 namespace zx { namespace hwrender {
 
-// [rc4l] mat4 uMVP, then uCameraPos, uLightParams, uClipPlane, uScreen, uSkyColor, uFrame, uFixedColormap, uFixedRange and uOptions, a vec4 each.
-enum { kSceneConstantFloats = 52 };
+// [rc4l] mat4 uMVP, then uCameraPos, uLightParams, uClipPlane, uScreen, uSkyColor, uFrame, uFixedColormap, uFixedRange, uOptions, uShadeEnv, uShadeEnv2 and uShadeFog, a vec4 each.
+enum { kSceneConstantFloats = 64 };
 
 // [rc4l] uFixedColormap (the start colour, the mode in w) and uFixedRange (the ramp, w 0) from a view's shade; only a ramp or a tint is ever a view's, so anything else reads as none.
 void ComputeFixedColormapConstants(const zx::viewsetup::FixedColormapShade &shade, float out[8]);
@@ -37,6 +38,8 @@ struct SceneConstantInputs
 	zx::viewsetup::FixedColormapShade fixedColormap;   // [rc4l] what the view's fixed colormap does to every texel, uFixedColormap and uFixedRange
 	bool lightsCheckSide;             // [rc4l] r_lights_checkside: a light behind a surface's plane does not reach it; uOptions.x
 	int walkSlots;                    // [rc4l] the walk slots each id has this level (ComputeWalkSlots), the stride the walk bits are read by; uOptions.y
+	zx::levelmesh::ShadingEnv shading;   // [rc4l] the level's light settings, which a surface lit from the sector light table is shaded under (uShadeEnv, uShadeEnv2, uShadeFog)
+	int extraLight;                   // [rc4l] the player's weapon light, getExtraLight(); uShadeEnv2.w
 };
 
 // [rc4l] Fill `out` (kSceneConstantFloats floats) from `in`.

@@ -22,6 +22,7 @@
 #include "m_misc.h"
 #include "v_video.h"
 #include "v_font.h"
+#include "c_cvars.h"   // [rc4l] CVAR
 
 // [rc4l] The server browser: an empty list, and no packet ever arrives to parse.
 void BROWSER_Construct( void ) {}
@@ -116,6 +117,10 @@ int Port( ) { return 0; }
 bool PrefersMirrors( ) { return false; }
 void Tick( ) {}
 } // namespace wadserve
+
+// [rc4l] The menu's Check for updates row, shown off and greyed out, since there is nothing to check and a browser's page is its own update.
+CVAR( Bool, cl_fua_update_notify, false, CVAR_NOSET )
+CVAR( Bool, cl_fua_update_choosable, false, CVAR_NOSET )
 
 namespace updater {
 bool IsAvailable( ) { return false; }

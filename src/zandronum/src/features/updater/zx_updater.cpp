@@ -23,6 +23,8 @@
 // bottom-right main-menu notice if one exists. Turn off in Options > FUA Options to disable the check
 // entirely (no network call). CVAR_GLOBALCONFIG so it's remembered across WADs/instances.
 CVAR(Bool, cl_fua_update_notify, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [rc4l] Whether the menu's Check for updates row can be changed, which an offline build's stub answers no to.
+CVAR(Bool, cl_fua_update_choosable, true, CVAR_NOSET)
 
 // The GitHub endpoint we check (matches the repo release_url_compute builds download URLs for).
 #define ZX_UPDATE_API_HOST "api.github.com"

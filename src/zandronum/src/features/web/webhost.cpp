@@ -9,6 +9,10 @@
 #include "posix/sdl/sdlhost.h"
 #include "features/web/webdriver.h"
 #include "features/telemetry/telemetry.h"
+#include "features/web/computation/offer_compute.h"
+#include "c_dispatch.h"   // [rc4l] CCMD
+#include "cmdlib.h"       // [rc4l] FileExists
+#include "m_misc.h"       // [rc4l] M_GetSavegamesPath
 
 namespace zx { namespace sdlhost {
 
@@ -16,6 +20,15 @@ namespace zx { namespace sdlhost {
 static void OfferFile(const char *path)
 {
 	EM_ASM({ if (Module.fuaOfferFile) Module.fuaOfferFile(UTF8ToString($0)); }, path);
+}
+
+// [rc4l] A file in the page's home downloaded for the player, such as a save to send with a report: fua_offer heavy, or a path.
+CCMD(fua_offer)
+{
+	if (argv.argc() < 2) { Printf("Usage: fua_offer <save name or path>\n"); return; }
+	const std::string path = zx::web::ComputeOfferedPath(argv[1], M_GetSavegamesPath().GetChars());
+	if (!FileExists(path.c_str())) { Printf("fua_offer: there is no %s\n", path.c_str()); return; }
+	OfferFile(path.c_str());
 }
 
 // [rc4l] A browser has no signals to catch a crash with; the page catches one (web/crashreport.js).

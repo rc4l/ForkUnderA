@@ -18,6 +18,8 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/telemetry/telemetry.h"
+#include "features/hwrender/computation/uploadtally_compute.h"
+#include <mutex>
 #include "features/hwrender/diligent/dggputimer.h"   // [rc4l] gpu/frame_ms, gpu/world_ms, gpu/2d_ms
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
@@ -286,8 +288,10 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 	ci.Desc.ShaderType = type;
 	ci.Desc.Name = name;
 	ci.Source = text.c_str();
+	ZX_ZONE("gpu/make_shader");   // [rc4l] a shader compiled
 	dev->CreateShader(ci, &shader);
 	s_shadersMade += 1.0;
+	NoteMadeInPlay("shader", name);
 	return shader;
 }
 
@@ -318,8 +322,10 @@ void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Dilige
 	Diligent::GraphicsPipelineStateCreateInfo flagged = pci;
 	flagged.PSODesc.ResourceLayout.Variables = descs.empty() ? nullptr : descs.data();
 	flagged.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)descs.size();
+	ZX_ZONE("gpu/make_pipeline");   // [rc4l] a pipeline made, which the driver may compile then
 	GetDevice()->CreateGraphicsPipelineState(flagged, pso);
 	s_pipelinesMade += 1.0;
+	NoteMadeInPlay("pipeline", pci.PSODesc.Name);
 }
 
 // [rc4l] The backend's own vertex, laid out BY MATERIAL rather than in bake order.
@@ -409,11 +415,65 @@ bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Dilige
 // [rc4l] The most one write sends, under either device's upload page, so writes share pages rather than each taking one its own size.
 static const size_t kUploadPageBytes = 1 << 20;
 
+// [rc4l] The flush budget while an UploadFlushing lives on a browser's device, 0 otherwise, and what has gone since the last flush.
+static size_t g_uploadFlushBudget = 0;
+static size_t g_uploadSinceFlush = 0;
+
+UploadFlushing::UploadFlushing()
+{
+	Diligent::IRenderDevice *dev = GetDevice();
+	g_uploadFlushBudget = zx::hwrender::ComputeUploadFlushBudget(dev != NULL, dev != NULL && dev->GetDeviceInfo().Type == Diligent::RENDER_DEVICE_TYPE_WEBGPU);
+	g_uploadSinceFlush = 0;
+}
+
+UploadFlushing::~UploadFlushing()
+{
+	g_uploadFlushBudget = 0;
+}
+
+void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes)
+{
+	if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, bytes, g_uploadFlushBudget)) ctx->Flush();
+}
+
+void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data)
+{
+	if (zx::hwrender::ComputeUploadChanged(shadow, buf->GetUniqueID(), data, bytes)) UpdateBufferInPages(ctx, buf, 0, bytes, data);
+	else ZX_COUNT("gpu/upload_spared", "bytes", (double)bytes);
+}
+
+// [rc4l] What each buffer has been sent since gpu/upload/ was last read.
+static std::mutex g_uploadTallyLock;
+static zx::hwrender::UploadTally g_uploadTally;
+
+static void UploadBreakdown(std::vector<zx::telemetry::Reading> &out)
+{
+	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
+	for (const auto &b : zx::hwrender::ComputeUploadTallyTake(g_uploadTally)) out.push_back({ "gpu/upload/" + b.first, "bytes", b.second });
+}
+
+static const bool s_uploadBreakdown = (zx::telemetry::RegisterBreakdown("gpu/upload/", UploadBreakdown, false), true);
+
+void SendToBuffer(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
+{
+	ctx->UpdateBuffer(buf, offset, bytes, data, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ZX_COUNT("gpu/upload_bytes", "bytes", (double)bytes);
+	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
+	zx::hwrender::ComputeUploadTallyAdd(g_uploadTally, buf->GetDesc().Name, (double)bytes);
+}
+
+void NoteUploadFrame()
+{
+	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
+	zx::hwrender::ComputeUploadTallyFrame(g_uploadTally);
+}
+
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
 {
 	zx::hwrender::ComputeUploadChunks(bytes, kUploadPageBytes, [&](size_t at, size_t n)
 	{
-		ctx->UpdateBuffer(buf, offset + at, n, (const char *)data + at, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		SendToBuffer(ctx, buf, offset + at, n, (const char *)data + at);
+		if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, n, g_uploadFlushBudget)) ctx->Flush();
 	});
 }
 
@@ -435,7 +495,7 @@ bool EnsureGrowingBuffer(Diligent::RefCntAutoPtr<Diligent::IBuffer> &buf, unsign
 // USAGE_DEFAULT + UpdateBuffer rather than a mapped dynamic buffer: this data changes once per
 // frame, so it does not belong in the dynamic heap at all.
 bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,
-	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name)
+	unsigned int &capacity, const void *data, unsigned int count, unsigned int stride, unsigned int pad, const char *name, zx::hwrender::UploadShadow *shadow)
 {
 	Diligent::BufferDesc kind;
 	kind.Name = name;
@@ -443,7 +503,8 @@ bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Dili
 	kind.BindFlags = Diligent::BIND_VERTEX_BUFFER;
 	if (!EnsureGrowingBuffer(vb, capacity, count, stride, pad, kind)) return false;
 	// [rc4l] In pages: nuts.wad's 57,000 sprites wrote 8 MB a frame in one piece, and a browser kept 96 MB of upload pages.
-	UpdateBufferInPages(ctx, vb, 0, (size_t)count * stride, data);
+	if (shadow != nullptr) UpdateBufferIfChanged(ctx, vb, *shadow, (size_t)count * stride, data);
+	else UpdateBufferInPages(ctx, vb, 0, (size_t)count * stride, data);
 	return true;
 }
 
@@ -680,6 +741,8 @@ void DrawSceneOnce(bool present, bool pump)
 	{
 		FString err;
 		if (!EnsureScenePipeline(err)) return;
+		// [rc4l] And the decal pass's with them, made again here when a setting released both, not by the next mark.
+		EnsureDecalPipelines();
 	}
 	// [rc4l] Textures the engine flushed (hqresize, hires, the texture format) are made again from the new pixels, and all of them when the filter starts or stops reading mips.
 	{
@@ -915,6 +978,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 		g_phase.lights.Clock();    CollectDynamicLights(ctx);   g_phase.lights.Unclock();
 	}
 	EnsureDynamicRecords();
+	UpdateSectorLightTable(ctx);
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
 	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();

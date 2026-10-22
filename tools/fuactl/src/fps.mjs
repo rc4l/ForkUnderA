@@ -54,7 +54,6 @@ export async function runFps(opts, deps = {}) {
   const rows = [];
   for (const mode of opts.modes) {
     rows.push(await withInstance({ ...opts.launch, ...FPS_MODES[mode] }, async (c, inst) => {
-      await exec(c, "fua_render_in_background 1");
       await exec(c, `vid_vsync ${opts.vsync ? 1 : 0}`);
       const renderer = launchRenderer(await exec(c, "dumprenderer"));
       // [rc4l] Thrown away: a fresh launch renders once a tic until its first capture has run.

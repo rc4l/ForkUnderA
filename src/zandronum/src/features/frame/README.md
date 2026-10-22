@@ -59,7 +59,8 @@ screen itself):
 - `fua_debug_orbit <degrees>` and `fua_debug_orbit_period` (`debugorbit`, `computation/debugorbit_compute`):
   the aim swept in a circle every frame through the mouse's own path, for repeatable motion.
 - `fua_debug_ticstall_us` and `fua_debug_framestall_us` (`framestall`, `computation/framestall_compute`):
-  CPU time burned on tic frames or on every frame, to test what a slow frame does to the picture.
+  CPU time burned on tic frames or on every frame, to test what a slow frame does to the picture;
+  `fua_debug_playsim_us` burns it inside each tic's playsim, on whichever thread runs it, as a heavy fight's tic does.
 
 ## In-engine hooks
 

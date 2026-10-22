@@ -33,6 +33,7 @@
 #include <string>
 #include "features/hwrender/diligent/dgdevice.h"
 #include "features/hwrender/diligent/dgmemory.h"   // [rc4l] every texture and buffer counted by tag
+#include "features/telemetry/telemetry.h"   // [rc4l] gpu/make_texture, gpu/make_buffer
 
 EXTERN_CVAR(Int, vid_backend)
 
@@ -202,18 +203,22 @@ bool CanWaitForGPU() { return ChosenDeviceApi()->canWaitForGPU; }
 
 bool PagePaced() { return ChosenDeviceApi()->pagePaced; }
 
-void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out)
+void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out, const char *madeName)
 {
+	ZX_ZONE("gpu/make_texture");   // [rc4l] a texture made, and its pixels uploaded when it has them
 	g_device->CreateTexture(desc, data, out);
 	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
 	TrackDeviceTexture(*out, desc);
+	NoteMadeInPlay("texture", madeName != nullptr ? madeName : desc.Name);
 }
 
 void CreateDeviceBuffer(const Diligent::BufferDesc &desc, const Diligent::BufferData *data, Diligent::IBuffer **out)
 {
+	ZX_ZONE("gpu/make_buffer");   // [rc4l] a buffer made, and its contents uploaded when it has them
 	g_device->CreateBuffer(desc, data, out);
 	if (ChosenDeviceApi()->keep != nullptr) ChosenDeviceApi()->keep(*out);
 	TrackDeviceBuffer(*out, desc);
+	NoteMadeInPlay("buffer", desc.Name);
 }
 
 void FreeReleasedObjects(Diligent::ISwapChain *swap)

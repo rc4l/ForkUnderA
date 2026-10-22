@@ -61,7 +61,6 @@ export function judgeCommandSafetyFrom(label, { listed, refusals, saved }) {
 }
 
 export async function judgeCommandSafety(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   let said = "";
   const off = c.onEvent((ev, data) => { if (ev === "out" && typeof data.text === "string") said += data.text; });
   try {

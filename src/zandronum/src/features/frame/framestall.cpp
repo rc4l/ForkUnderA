@@ -12,12 +12,22 @@
 CVAR(Int, fua_debug_ticstall_us, 0, 0)
 // [rc4l] Microseconds burned on every frame, the same cost spread evenly as the control (debug).
 CVAR(Int, fua_debug_framestall_us, 0, 0)
+// [rc4l] Microseconds burned inside each tic's playsim, on whichever thread runs it, as a heavy fight's tic costs (debug).
+CVAR(Int, fua_debug_playsim_us, 0, 0)
 
 namespace zx { namespace frame {
 
 void DebugFrameStall(bool ticRan)
 {
 	const int us = ComputeFrameStallUs(ticRan, fua_debug_ticstall_us, fua_debug_framestall_us);
+	if (us <= 0) return;
+	const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(us);
+	while (std::chrono::steady_clock::now() < until) {}
+}
+
+void DebugPlaysimStall()
+{
+	const int us = fua_debug_playsim_us;
 	if (us <= 0) return;
 	const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(us);
 	while (std::chrono::steady_clock::now() < until) {}

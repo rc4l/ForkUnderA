@@ -15,9 +15,13 @@ struct DynresCaps
 	bool vsync = false;
 	int limitFps = 0;         // [rc4l] features/frame-limit's, 0 for none
 	int targetFps = 0;        // [rc4l] vid_fua_dynres_target, 0 for the display's refresh
+	bool untimed = false;     // [rc4l] the GPU's frames are not timed, as in a browser
 };
 
-// [rc4l] The frame time to aim under, in ms: the target or else the display's refresh (60 Hz when unknown), never above vsync's refresh or the frame limit, since a cap a scale cannot beat is no reason to blur.
+// [rc4l] The frame rate an untimed controller aims at unless a target is picked, and the slowest refresh read from frames it believes, since every step it takes is a trial and slow frames read as a slow display.
+const double kUntimedHz = 60.0;
+
+// [rc4l] The frame time to aim under, in ms: the target or else the display's refresh (60 Hz when unknown or untimed), never above vsync's refresh or the frame limit, since a cap a scale cannot beat is no reason to blur.
 double ComputeFrameBudgetMs(const DynresCaps &caps);
 
 // [rc4l] The most steps any step list holds.
@@ -34,6 +38,9 @@ struct DynresSample
 	double frameMs = 0.0;     // [rc4l] the frame's whole length, its waits included
 };
 
+// [rc4l] vid_fua_dynres_window's default: how long an untimed window of frames is, in seconds.
+const float kDynresWindowSeconds = 0.2f;
+
 // [rc4l] How the controller reacts.
 struct DynresTuning
 {
@@ -42,12 +49,16 @@ struct DynresTuning
 	double weight = 0.2;      // [rc4l] how far one sample moves the average
 	int settleFrames = 8;     // [rc4l] samples ignored after a step, while the GPU's timings still describe the old scale
 	int upFrames = 30;        // [rc4l] frames the headroom must hold before a step up
-	int upFramesUntimed = 120;// [rc4l] frames before an untimed step up is tried, since the GPU's headroom is then a guess
-	int untimedMisses = 3;    // [rc4l] frames in a row that waited on the GPU before an untimed step down
-	double lateAt = 1.5;      // [rc4l] an untimed frame longer than this many budgets missed a refresh, since one paced to a display is late by a whole refresh or not at all
-	int trialFrames = 30;     // [rc4l] frames an untimed step is judged over once settled
-	double trialGain = 0.9;   // [rc4l] an untimed step down is kept once it brings the frames under this share of their old length, and a step up undone once late frames grow past their old length over it
-	double refuseMs = 1000.0; // [rc4l] half the first wait before another untimed step down once one is undone, in time since slow frames are what it waits through
+	double windowMs = kDynresWindowSeconds * 1000.0; // [rc4l] untimed, frames are judged by their mean over windows this long, since Firefox lets several through and then holds one for the GPU
+	double slowAt = 1.2;      // [rc4l] an untimed window whose mean passes this share of the budget is slow
+	double roomAt = 0.8;      // [rc4l] an untimed window under this share of the budget has room for a step up
+	int roomWindows = 2;      // [rc4l] such windows in a row before a step up
+	double upWaitMs = 3000.0; // [rc4l] time below full scale before an untimed step up is tried, doubled each time one is soon undone
+	double keepAt = 0.95;     // [rc4l] an untimed step down is kept once its window's mean is under this share of the one before it, since one kept for nothing is soon undone by a step up
+	double trialGain = 0.9;   // [rc4l] an untimed step up is undone once its slow window grows past the one before over this share
+	double settleMs = 250.0;  // [rc4l] untimed time after a step, on top of settleFrames, before its window counts, while frames the browser still holds were drawn at the old scale
+	double refuseMs = 1000.0; // [rc4l] half the first wait before another untimed step down once one is undone
+	double rearmAt = 1.25;    // [rc4l] frames this much heavier than when a step down was undone end the wait, since the load has changed
 };
 
 // [rc4l] Where the controller stands.
@@ -59,23 +70,28 @@ struct DynresState
 	double gpuAvgMs = 0.0;
 	bool haveAvg = false;
 	int changes = 0;          // [rc4l] steps taken, for telemetry
-	int missStreak = 0;       // [rc4l] untimed frames in a row that waited on the GPU
-	int sinceUp = 1 << 20;    // [rc4l] frames since the last step up
-	int upWait = 0;           // [rc4l] the untimed wait before a step up, doubled each time one is soon undone
-	double frameAvgMs = 0.0;  // [rc4l] the untimed frames' average since the last step, 0 for none yet
-	double beforeMs = 0.0;    // [rc4l] that average just before the last untimed step
-	int trial = 0;            // [rc4l] frames left judging the last untimed step
+	double quietMs = 0.0;     // [rc4l] untimed time left before the window after a step counts
+	double winMs = 0.0;       // [rc4l] the untimed window's frames so far, in time
+	int winFrames = 0;
+	double lastWindowMs = 0.0;// [rc4l] the last whole untimed window's mean frame, 0 for none yet
+	bool trial = false;       // [rc4l] whether the window under way judges the last untimed step
 	bool trialUp = false;     // [rc4l] whether the step judged was one up
+	double beforeMs = 0.0;    // [rc4l] the mean of the window before the last untimed step
+	double sinceUpMs = 1e9;   // [rc4l] time since the last step up
+	double roomMs = 0.0;      // [rc4l] untimed time below full scale since the last step kept or tried up
+	int roomRun = 0;          // [rc4l] untimed windows in a row with room for a step up
+	double upWaitMs = 0.0;    // [rc4l] the untimed wait before a step up, doubled each time one is soon undone
 	double upFailMs = 0.0;    // [rc4l] the frames before the last untimed step up undone, whose doubled wait frames lighter than them forget
 	double downWaitMs = 0.0;  // [rc4l] the untimed wait before a step down once one is undone, doubled each time
 	double refuseMs = 0.0;    // [rc4l] what is left of that wait
+	double refusedAtMs = 0.0; // [rc4l] the frames when the last untimed step down was undone
 };
 
-// [rc4l] Whether an untimed frame waited on the GPU: late (t.lateAt) while the CPU worked well under the frame, the only sign of the GPU a browser gives.
-bool ComputeFrameWaitedOnGpu(const DynresSample &x, double budgetMs, const DynresTuning &t);
-
-// [rc4l] The state after a frame: a step down when the GPU is over budget and is what holds the frame, up once the next step's predicted cost has fitted for long enough, else as it was; untimed, frames that waited on the GPU step down and a wait steps up, and each step is kept only if the frames bear it out.
+// [rc4l] The state after a frame: a step down when the GPU is over budget and is what holds the frame, up once the next step's predicted cost has fitted for long enough, else as it was; untimed, a slow window of frames steps down and a wait or room steps up, and each step is kept only if the next window bears it out.
 DynresState ComputeDynresStep(const DynresState &s, const DynresSample &x, double budgetMs, const float *steps, int count, const DynresTuning &t);
+
+// [rc4l] Why the controller moved from was to now, for fua_dynres_log; "" when it did not.
+const char *ComputeDynresWhy(const DynresState &was, const DynresState &now, bool timed);
 
 // [rc4l] Whether the controller may read a frame: a timed one always, and an untimed one only while the game runs (no pause, menu or console) in a focused window, since a paused game draws once a tic and a browser slows a page out of focus.
 bool ComputeFrameJudged(bool timed, bool running, bool focused);
@@ -93,19 +109,18 @@ SceneRect ComputeSceneRect(int frameW, int frameH, float scale);
 // [rc4l] A display's refresh from a browser's short frame interval, snapped to the common rate within 4% of it; 0 above 1000 Hz, which is a browser drawing for no display.
 double ComputeRefreshFromIntervalMs(double shortestMs);
 
-// [rc4l] How many frame intervals a browser's refresh is read from, and how many such windows it is held over.
-enum { kRefreshFrames = 120, kRefreshWindows = 8 };
+// [rc4l] How many frame intervals a browser's refresh is read from.
+enum { kRefreshFrames = 120 };
 
-// [rc4l] A browser's recent frame intervals and the refresh each of its last whole windows read.
+// [rc4l] A browser's recent frame intervals and the fastest refresh a whole window of them read.
 struct FrameRefresh
 {
 	double intervals[kRefreshFrames] = {};
 	int count = 0, next = 0, sinceWindow = 0;
-	double windowHz[kRefreshWindows] = {};
-	int windows = 0, nextWindow = 0;
+	double fastestHz = 0.0;
 };
 
-// [rc4l] Adds a frame's interval in ms (none at 0 or below) and returns a browser's refresh in Hz, 0 until known: its last intervals' median, held at the fastest of its last whole windows so a run of slow frames is not taken for a slow display.
+// [rc4l] Adds a frame's interval in ms (none at 0 or below) and returns a browser's refresh in Hz, 0 until known: its last intervals' median, held at the fastest whole window yet, since no run of slow frames, however long, is a slower display.
 double ComputeFrameRefreshHz(FrameRefresh &r, double frameMs);
 
 }} // namespace zx::dynres

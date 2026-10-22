@@ -68,6 +68,19 @@ unsigned int ComputeSourcePosition(bool stopped, int sampleOffset)
 	return stopped || sampleOffset < 0 ? 0u : (unsigned int)sampleOffset;
 }
 
+long long ComputeBufferSamples(int size, int bits, int channels)
+{
+	if (size <= 0 || bits <= 0 || channels <= 0) return 0;
+	return (long long)size * 8 / ((long long)bits * channels);
+}
+
+long long ComputeRestoredSampleOffset(unsigned int start, long long length, bool looping)
+{
+	if (length <= 0) return 0;
+	if (start < length) return start;
+	return looping ? (long long)start % length : -1;
+}
+
 int ComputeSourceCount(int numMono, int numStereo, int channels)
 {
 	const long long reported = (long long)(numMono > 0 ? numMono : 0) + (numStereo > 0 ? numStereo : 0);

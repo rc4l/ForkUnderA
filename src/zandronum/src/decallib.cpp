@@ -1072,6 +1072,20 @@ const FDecalTemplate *FDecalTemplate::GetDecal () const
 	return this;
 }
 
+void FDecalLib::ForEachTemplate (void (*fn)(const FDecalTemplate *, void *), void *data) const
+{
+	WalkTemplates (Root, fn, data);
+}
+
+void FDecalLib::WalkTemplates (const FDecalBase *root, void (*fn)(const FDecalTemplate *, void *), void *data)
+{
+	for (; root != NULL; root = root->Right)
+	{
+		WalkTemplates (root->Left, fn, data);
+		if (const FDecalTemplate *t = root->AsTemplate ()) fn (t, data);
+	}
+}
+
 FDecalLib::FTranslation::FTranslation (DWORD start, DWORD end)
 {
 	DWORD ri, gi, bi, rs, gs, bs;

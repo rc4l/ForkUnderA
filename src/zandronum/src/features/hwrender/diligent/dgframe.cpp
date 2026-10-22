@@ -8,6 +8,9 @@
 #include "features/draw2d/record.h"   // [rc4l] Clear2D
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/computation/levelsetup_compute.h"
+#include "features/hwrender/computation/madeinplay_compute.h"
+#include "features/hwrender/diligent/dgdevice.h"   // [rc4l] NoteMadeInPlay
+#include <mutex>
 #include "features/perfstats/computation/perfstats_compute.h"   // [rc4l] ComputeFrameTimeSummary
 #include "features/telemetry/telemetry.h"
 
@@ -21,9 +24,46 @@ namespace zx { namespace hwrender {
 // [rc4l] Where this level's set-up stands, as levelsetup_compute steps it.
 static LevelSetup g_setup = ComputeLevelSetupStart();
 
+// [rc4l] What the backend made while this level was played, which should be nothing: each is a compile or an upload a frame waited on.
+static MadeInPlay g_madeInPlay;
+static std::mutex g_madeLock;
+
+static double MadeInPlayTotal() { std::lock_guard<std::mutex> guard(g_madeLock); return g_madeInPlay.total; }
+static const bool s_madeInPlayCounted = (zx::telemetry::Register(
+	zx::telemetry::CounterSpec{ "gpu/made/in_play", "objects", zx::telemetry::CounterKind::Gauge, 500, false }, MadeInPlayTotal), true);
+
+void NoteMadeInPlay(const char *kind, const char *name)
+{
+	bool inPlay;
+	{
+		std::lock_guard<std::mutex> guard(g_madeLock);
+		inPlay = ComputeMadeInPlayNote(g_madeInPlay, kind, name);
+	}
+	// [rc4l] Counted outside the lock, which the gauge's read takes under telemetry's own.
+	if (inPlay) ZX_COUNT("gpu/made_in_play", "objects", 1);
+}
+
+// [rc4l] A frame drawn, which arms the count a few frames after the level is ready and ends gpu/upload/'s frame.
+static void MadeInPlayFrame(bool ready)
+{
+	NoteUploadFrame();
+	std::lock_guard<std::mutex> guard(g_madeLock);
+	ComputeMadeInPlayFrame(g_madeInPlay, ready);
+}
+
+CCMD( fua_dg_made )
+{
+	std::lock_guard<std::mutex> guard(g_madeLock);
+	Printf("%s", ComputeMadeInPlayReport(g_madeInPlay).c_str());
+}
+
 // [rc4l] Everything a level owned on the GPU, released for the next level, and at shutdown before what is still held is reported.
 void ReleaseLevelResources()
 {
+	{
+		std::lock_guard<std::mutex> guard(g_madeLock);
+		ComputeMadeInPlayClear(g_madeInPlay);
+	}
 	// [rc4l] The texture cache and material SRBs are keyed on raw FMaterial*, so a new level's materials at an old one's addresses wore its textures after a few map changes; SRBs reference the textures, so they go first.
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();
@@ -79,6 +119,7 @@ static bool AutoSetupForLevel()
 			FString report;
 			ZX_ZONE("load/upload");   // [rc4l] the baked level uploaded to the GPU
 			ComputeLevelSetupUploaded(g_setup, SceneUpload(report));
+			if (g_setup.state == kSetupReady) PrecacheQueuedMaterials();
 			if (g_setup.state == kSetupReady) Printf("vulkan: %s\n", report.GetChars());
 			else if (g_setup.state == kSetupGaveUp) Printf("vulkan: setup failed after %d attempts -- %s\n", g_setup.tries, report.GetChars());
 		}
@@ -305,6 +346,7 @@ void LiveFrame()
 	// upload and the batch loop.
 	BuildMVP(g_mvp);
 	DrawSceneOnce(true, true);
+	MadeInPlayFrame(autoReady);
 	zx::hwrender::BackendFrameDone();
 }
 
@@ -399,6 +441,7 @@ void PresentBackendOnly(bool present)
 	g_lastFrameWorld = world;
 	FollowBackendSurface();
 	DrawBackendFrame(true);
+	MadeInPlayFrame(ready);
 	zx::hwrender::BackendFrameDone();
 }
 

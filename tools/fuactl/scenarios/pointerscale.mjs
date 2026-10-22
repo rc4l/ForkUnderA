@@ -20,8 +20,6 @@ const FROM = [1000, 600];
 const WANT = { from: FROM, x: 500, y: 300, width: 640, height: 360 };
 
 export async function judgePointer(c, inst, label) {
-  // [rc4l] An unfocused window skips its frame, and with it the client size the mapping reads.
-  await cap.exec(c, "fua_render_in_background 1");
   await cap.exec(c, "vid_scalefactor 0.5");
   await cap.waitTics(c, 20);
   return judgeWindowPoint(label, await c.rpc("input.windowpoint", { x: FROM[0], y: FROM[1] }), WANT);

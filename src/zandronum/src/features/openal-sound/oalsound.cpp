@@ -1703,6 +1703,26 @@ SoundStream *OpenALSoundRenderer::OpenStream(FileReader *reader, int flags)
 	return stream;
 }
 
+// [rc4l] A source's buffer and where in it a sound starts, the buffer first since a browser's OpenAL measures an offset against the buffers already on the source: a restored sound where it had got to, held inside its buffer (ComputeRestoredSampleOffset); false, the buffer taken off again, when it had already finished or AL refused a setting.
+static bool StartAt(ALuint source, ALuint buffer, FISoundChannel *reuse_chan, int chanflags)
+{
+    alSourcei(source, AL_BUFFER, buffer);
+    long long offset = 0;
+    if (reuse_chan && reuse_chan->StartTime.AsOne != 0 && (chanflags & SNDF_ABSTIME))
+    {
+        ALint size = 0, bits = 0, channels = 0;
+        alGetBufferi(buffer, AL_SIZE, &size);
+        alGetBufferi(buffer, AL_BITS, &bits);
+        alGetBufferi(buffer, AL_CHANNELS, &channels);
+        offset = ComputeRestoredSampleOffset(reuse_chan->StartTime.Lo, ComputeBufferSamples(size, bits, channels), (chanflags & SNDF_LOOP) != 0);
+    }
+    if (offset >= 0) alSourcei(source, AL_SAMPLE_OFFSET, (ALint)offset);
+    if (offset >= 0 && getALError() == AL_NO_ERROR) return true;
+    alSourcei(source, AL_BUFFER, 0);
+    getALError();
+    return false;
+}
+
 FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int pitch, int chanflags, FISoundChannel *reuse_chan)
 {
     if (FreeSfx.Size() == 0)
@@ -1752,19 +1772,8 @@ FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int 
     else
         alSourcef(source, AL_PITCH, PITCH(pitch));
 
-    if (!reuse_chan || reuse_chan->StartTime.AsOne == 0)
-        alSourcef(source, AL_SEC_OFFSET, 0.f);
-    else
-    {
-        if ((chanflags & SNDF_ABSTIME))
-            alSourcei(source, AL_SAMPLE_OFFSET, reuse_chan->StartTime.Lo);
-        else
-            alSourcef(source, AL_SEC_OFFSET, 0.f);
-    }
-    if (getALError() != AL_NO_ERROR)
+    if (!StartAt(source, buffer, reuse_chan, chanflags))
         return NULL;
-
-    alSourcei(source, AL_BUFFER, buffer);
     if ((chanflags & SNDF_NOPAUSE) || !SFXPaused)
         alSourcePlay(source);
     if (getALError() != AL_NO_ERROR)
@@ -1957,22 +1966,8 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
     else
         alSourcef(source, AL_PITCH, PITCH(pitch));
 
-    if(!reuse_chan)
-        alSourcef(source, AL_SEC_OFFSET, 0.f);
-    else
-    {
-        if((chanflags&SNDF_ABSTIME))
-            alSourcei(source, AL_SAMPLE_OFFSET, reuse_chan->StartTime.Lo);
-        else
-        {
-            // FIXME: set offset based on the current time and the StartTime
-            alSourcef(source, AL_SEC_OFFSET, 0.f);
-        }
-    }
-    if(getALError() != AL_NO_ERROR)
+    if (!StartAt(source, buffer, reuse_chan, chanflags))
         return NULL;
-
-    alSourcei(source, AL_BUFFER, buffer);
     if((chanflags&SNDF_NOPAUSE) || !SFXPaused)
         alSourcePlay(source);
     if(getALError() != AL_NO_ERROR)

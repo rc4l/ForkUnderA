@@ -56,7 +56,6 @@ async function pairOn(c, label) {
 }
 
 export async function judgeLaunch(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   await cap.exec(c, "fua_dg_spriteatlas 1");
   const first = await pairOn(c, label);
   await cap.exec(c, "map MAP02", { quietMs: 400 });

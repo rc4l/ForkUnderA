@@ -17,82 +17,116 @@ const double kCommonRates[] = { 30, 48, 50, 60, 72, 75, 85, 90, 100, 120, 144, 1
 
 DynresState Stepped(DynresState n, int step, const DynresTuning &t)
 {
-	if (step < n.step) n.sinceUp = 0;
 	n.step = step;
 	n.settle = t.settleFrames;
 	n.roomFrames = 0;
-	n.missStreak = 0;
 	n.haveAvg = false;
-	n.frameAvgMs = 0.0;
-	n.trial = 0;
+	n.quietMs = t.settleMs;
+	n.winMs = 0.0;
+	n.winFrames = 0;
+	n.roomRun = 0;
+	n.trial = false;
 	n.changes++;
 	return n;
 }
 
 // [rc4l] An untimed wait made twice as long, at least twice base and at most sixteen times it.
-template <typename T> T Doubled(T wait, T base)
+double Doubled(double wait, double base)
 {
 	return std::min(std::max(wait, base) * 2, base * 16);
 }
 
-// [rc4l] A step whose frames are judged against the frames before it.
-DynresState Trial(DynresState n, int step, bool up, const DynresTuning &t)
+// [rc4l] A step whose next whole window is judged against the window before it.
+DynresState Trial(DynresState n, int step, bool up, double beforeMs, const DynresTuning &t)
 {
-	const double before = n.frameAvgMs;
 	n = Stepped(n, step, t);
-	n.beforeMs = before;
-	n.trial = t.trialFrames;
+	n.beforeMs = beforeMs;
+	n.trial = true;
 	n.trialUp = up;
+	if (up) n.sinceUpMs = n.roomMs = 0.0;
 	return n;
 }
 
-// [rc4l] Untimed, from the frame alone: a run of frames that waited on the GPU steps down and a wait steps up, each judged once settled and undone unless the frames bear it out, so a scale that changes nothing goes back to full; each direction's wait doubles when its step is undone.
-DynresState UntimedStep(DynresState n, const DynresSample &x, double budgetMs, int count, const DynresTuning &t)
+// [rc4l] The window after a step: a step down is kept only if it shortened the frames and a step up undone if it made slow frames longer, each undoing doubling its direction's wait, and a step kept is followed at once by the next while the frames stay slow or keep room.
+DynresState Judged(DynresState n, double mean, double budgetMs, int count, const DynresTuning &t)
 {
-	n.frameAvgMs = n.frameAvgMs > 0.0 ? n.frameAvgMs + t.weight * (x.frameMs - n.frameAvgMs) : x.frameMs;
-	if (n.trial > 0)
+	n.trial = false;
+	const bool slow = mean > budgetMs * t.slowAt;
+	if (n.trialUp)
 	{
-		if (--n.trial > 0) return n;
-		const bool late = n.frameAvgMs > budgetMs * t.lateAt;
-		// [rc4l] A step up that made late frames longer cost what the GPU could not give.
-		if (n.trialUp && late && n.frameAvgMs * t.trialGain > n.beforeMs)
+		if (slow && mean * t.trialGain > n.beforeMs)
 		{
-			n.upWait = Doubled(n.upWait, t.upFramesUntimed);
+			n.upWaitMs = Doubled(n.upWaitMs, t.upWaitMs);
 			n.upFailMs = n.beforeMs;
+			n.roomMs = 0.0;
 			return Stepped(n, n.step + 1, t);
 		}
-		// [rc4l] A step down that left the frames no shorter was not the GPU's to make, however near on time they came.
-		if (!n.trialUp && n.frameAvgMs > n.beforeMs * t.trialGain)
-		{
-			n.downWaitMs = Doubled(n.downWaitMs, t.refuseMs);
-			n.refuseMs = n.downWaitMs;
-			return Stepped(n, n.step - 1, t);
-		}
-		return n;
+		return mean < budgetMs * t.roomAt && n.step > 0 ? Trial(n, n.step - 1, true, mean, t) : n;
 	}
-	if (n.refuseMs > 0.0) n.refuseMs -= x.frameMs;
-	n.missStreak = ComputeFrameWaitedOnGpu(x, budgetMs, t) ? n.missStreak + 1 : 0;
-	if (n.missStreak >= t.untimedMisses && n.step + 1 < count && n.refuseMs <= 0.0)
+	// [rc4l] Frames no shorter at the lower scale were not the GPU's, however near on time they came.
+	if (mean > n.beforeMs * t.keepAt)
 	{
-		if (n.sinceUp < t.upFramesUntimed) n.upWait = Doubled(n.upWait, t.upFramesUntimed);
-		return Trial(n, n.step + 1, false, t);
+		n.downWaitMs = Doubled(n.downWaitMs, t.refuseMs);
+		n.refuseMs = n.downWaitMs;
+		n.refusedAtMs = n.beforeMs;
+		return Stepped(n, n.step - 1, t);
 	}
-	// [rc4l] A wait earned under a heavier load is forgotten once the frames, settled, come a tenth under what they were then.
-	if (n.upFailMs > 0.0 && n.roomFrames >= t.settleFrames && n.frameAvgMs < n.upFailMs * t.trialGain)
+	// [rc4l] The wait to step up starts at the scale kept, while a step down undone leaves the wait where it was.
+	n.roomMs = 0.0;
+	return slow && n.step + 1 < count ? Trial(n, n.step + 1, false, mean, t) : n;
+}
+
+// [rc4l] A window with no step to judge: slow frames step down unless one was just undone at this load, and below full scale, room or the wait steps up.
+DynresState Windowed(DynresState n, double mean, double budgetMs, int count, const DynresTuning &t)
+{
+	if (n.refuseMs > 0.0 && mean > n.refusedAtMs * t.rearmAt) n.refuseMs = 0.0;
+	if (mean > budgetMs * t.slowAt && n.step + 1 < count && n.refuseMs <= 0.0)
 	{
-		n.upWait = 0;
+		// [rc4l] A step up soon followed by slow frames was a guess too early, so the next waits twice as long.
+		if (n.sinceUpMs < t.upWaitMs) n.upWaitMs = Doubled(n.upWaitMs, t.upWaitMs);
+		return Trial(n, n.step + 1, false, mean, t);
+	}
+	// [rc4l] A wait earned under a heavier load is forgotten once the frames come a tenth under what they were then.
+	if (n.upFailMs > 0.0 && mean < n.upFailMs * t.trialGain)
+	{
+		n.upWaitMs = 0.0;
 		n.upFailMs = 0.0;
 	}
-	if (n.step > 0 && ++n.roomFrames >= std::max(n.upWait, t.upFramesUntimed)) return Trial(n, n.step - 1, true, t);
+	if (n.step == 0) return n;
+	n.roomRun = mean < budgetMs * t.roomAt ? n.roomRun + 1 : 0;
+	if (n.roomRun >= t.roomWindows || n.roomMs >= std::max(n.upWaitMs, t.upWaitMs)) return Trial(n, n.step - 1, true, mean, t);
 	return n;
 }
 
+// [rc4l] Untimed, from the frames alone, judged by their mean over whole windows since Firefox lets several through and then holds one for the GPU, and a browser may wait on the GPU inside its own calls; each step is a trial the next window keeps or undoes.
+DynresState UntimedStep(DynresState n, const DynresSample &x, double budgetMs, int count, const DynresTuning &t)
+{
+	if (!(x.frameMs > 0.0)) return n;
+	n.sinceUpMs += x.frameMs;
+	if (n.refuseMs > 0.0) n.refuseMs -= x.frameMs;
+	if (n.step > 0) n.roomMs += x.frameMs;
+	if (n.quietMs > 0.0)
+	{
+		n.quietMs -= x.frameMs;
+		return n;
+	}
+	n.winMs += x.frameMs;
+	n.winFrames++;
+	if (n.winMs < t.windowMs) return n;
+	const double mean = n.winMs / n.winFrames;
+	n.lastWindowMs = mean;
+	n.winMs = 0.0;
+	n.winFrames = 0;
+	return n.trial ? Judged(n, mean, budgetMs, count, t) : Windowed(n, mean, budgetMs, count, t);
+}
 }
 
 double ComputeFrameBudgetMs(const DynresCaps &caps)
 {
-	double hz = caps.targetFps > 0 ? caps.targetFps : (caps.refreshHz > 0.0 ? caps.refreshHz : 60.0);
-	if (caps.vsync && caps.refreshHz > 0.0 && caps.refreshHz < hz) hz = caps.refreshHz;
+	// [rc4l] Untimed, a refresh read under 60 Hz may be the GPU's own lag, so it is taken for no slower display than that.
+	const double refresh = caps.untimed && caps.refreshHz > 0.0 ? std::max(caps.refreshHz, kUntimedHz) : caps.refreshHz;
+	double hz = caps.targetFps > 0 ? caps.targetFps : (refresh > 0.0 && !caps.untimed ? refresh : kUntimedHz);
+	if (caps.vsync && refresh > 0.0 && refresh < hz) hz = refresh;
 	if (caps.limitFps > 0 && caps.limitFps < hz) hz = caps.limitFps;
 	return 1000.0 / hz;
 }
@@ -107,16 +141,10 @@ int ComputeDynresSteps(float minScale, bool pointFilter, float out[kMaxDynresSte
 	return n;
 }
 
-bool ComputeFrameWaitedOnGpu(const DynresSample &x, double budgetMs, const DynresTuning &t)
-{
-	return x.frameMs > budgetMs * t.lateAt && x.cpuMs < x.frameMs * 0.6;
-}
-
 DynresState ComputeDynresStep(const DynresState &s, const DynresSample &x, double budgetMs, const float *steps, int count, const DynresTuning &t)
 {
 	DynresState n = s;
 	if (n.step >= count) n.step = count > 0 ? count - 1 : 0;
-	if (n.sinceUp < (1 << 20)) n.sinceUp++;
 	if (n.settle > 0)
 	{
 		n.settle--;
@@ -136,6 +164,14 @@ DynresState ComputeDynresStep(const DynresState &s, const DynresSample &x, doubl
 	return n;
 }
 
+const char *ComputeDynresWhy(const DynresState &was, const DynresState &now, bool timed)
+{
+	if (now.changes == was.changes) return "";
+	if (timed) return now.step > was.step ? "the GPU is over budget" : "the GPU has room";
+	if (now.trial) return now.trialUp ? "trying a step up" : "trying a step down, the frames were slow";
+	return now.step > was.step ? "a step up that made slow frames longer, undone" : "a step down that left the frames no shorter, undone";
+}
+
 bool ComputeFrameJudged(bool timed, bool running, bool focused)
 {
 	return timed || (running && focused);
@@ -145,9 +181,10 @@ DynresState ComputeDynresUnjudged(const DynresState &s, int settleFrames)
 {
 	DynresState n = s;
 	n.settle = std::max(n.settle, settleFrames);
-	n.missStreak = 0;
 	n.roomFrames = 0;
-	n.frameAvgMs = 0.0;
+	n.roomRun = 0;
+	n.winMs = 0.0;
+	n.winFrames = 0;
 	return n;
 }
 
@@ -195,16 +232,13 @@ double ComputeFrameRefreshHz(FrameRefresh &r, double frameMs)
 		if (r.count < kRefreshFrames) r.count++;
 		r.sinceWindow++;
 	}
-	double hz = ComputeRefreshFromIntervalMs(ComputeMedianIntervalMs(r.intervals, r.count));
+	const double hz = ComputeRefreshFromIntervalMs(ComputeMedianIntervalMs(r.intervals, r.count));
 	if (r.sinceWindow >= kRefreshFrames)
 	{
 		r.sinceWindow = 0;
-		r.windowHz[r.nextWindow] = hz;
-		r.nextWindow = (r.nextWindow + 1) % kRefreshWindows;
-		if (r.windows < kRefreshWindows) r.windows++;
+		r.fastestHz = std::max(r.fastestHz, hz);
 	}
-	for (int i = 0; i < r.windows; i++) hz = std::max(hz, r.windowHz[i]);
-	return hz;
+	return std::max(hz, r.fastestHz);
 }
 
 }} // namespace zx::dynres

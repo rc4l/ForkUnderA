@@ -278,14 +278,14 @@ async function waitForFile(file, timeoutMs, proc, giveUp = () => null) {
   throw new Error(`${file} was not written within ${Math.round(timeoutMs / 1000)} s`);
 }
 
-// [rc4l] Records a fixture's demo: a new game on its map, the fight, then the recording stopped and written.
-export async function recordFixture(f, { engine, store, dir = fixtureDir(), log = () => {} } = {}) {
+// [rc4l] Records a fixture's demo: a new game on its map, the fight, then the recording stopped and written; cvars apply to the recording, as --cvar does to a check.
+export async function recordFixture(f, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
   const { files, missing } = fixtureFiles(f, dir, store);
   if (missing.length) throw new Error(`${f.name} needs ${missing.join(", ")}, not in ${store}`);
   const demo = path.join(dir, `${f.name}.lmp`);
   fs.rmSync(demo, { force: true });
   const iwad = fixtureIwad(f, store, path.dirname(engine || resolveEngine()));
-  const inst = await launchInstance({ engine, iwad, map: f.map, cvars: RUN_UNFOCUSED,
+  const inst = await launchInstance({ engine, iwad, map: f.map, cvars: { ...RUN_UNFOCUSED, ...cvars },
     extraArgs: files.length ? ["-file", ...files] : [], record: demo.replace(/\\/g, "/") });
   let c = null;
   try {
