@@ -132,6 +132,7 @@
 #include "features/telemetry/telemetry.h"
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
+#include "features/latency/latency.h"   // [rc4l] latency/ counters
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -752,6 +753,8 @@ static inline int joyint(double val)
 //
 void G_BuildTiccmd (ticcmd_t *cmd)
 {
+	// [rc4l] features/latency: this tic carries every input taken before it.
+	zx::latency::NoteTicBuilt();
 	int 		strafe;
 	int 		speed;
 	int 		forward;

@@ -71,7 +71,14 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
 - `ping`, `capabilities` (self-describing), `console.exec {text}`
 - **Determinism**: `sim.tic`, `sim.hash`, `sim.seed {op:get|set,value}`, `sim.pause`, `sim.resume`,
   `sim.step {tics}`, `sim.snapshot {slot}`, `sim.restore {slot}`
-- **Structured state**: `state.player`, `state.actors {limit}`
+- **Structured state**: `state.player`, `state.actors {limit}`; `world.actors {netid, limit, players, all, owned}`
+  lists the synced actors in network id order (`netrpc_compute`), with positions and velocities to a
+  thousandth of a map unit, so two instances of one netgame can be compared actor by actor.
+  `world.sectorstate {first, count}` and `world.sidestate {first, count}` page through every sector's
+  plane heights, light, colour, fade and flats, and every sidedef's textures, light and flags.
+- **Netgames**: `net.state` is this instance's side of a netgame: its role, a client's connection, the
+  server tic it last heard of and its ping, and a server's clients with each one's ping and the last
+  server tic it said it saw. `fuactl netdiff` and `netplay` read it.
 - **Input**: `input.event {evtype,subtype,data1,data2}`
 - **Perf**: `perf.capture {frames}` → async `perf` event with p50/p95/p99 + 1%-low fps and the coarse
   sim/render split; `perf.counters` → actor/segment counts and every `features/telemetry` counter. The sim|render boundary is one anchor

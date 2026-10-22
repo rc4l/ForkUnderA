@@ -106,6 +106,7 @@
 #include "md5.h"
 #include "doomerrors.h"
 #include "features/telemetry/telemetry.h"
+#include "features/net-transport/netconditions.h"   // [rc4l] fua_net_fakeping, fua_net_fakeloss
 
 enum LumpAuthenticationMode {
 	LAST_LUMP,
@@ -817,10 +818,64 @@ void NETWORK_Destruct( void )
 
 //*****************************************************************************
 //
+// [rc4l] features/net-transport: every held outgoing packet whose time has come, sent and counted as NETWORK_LaunchPacket counts its own.
+static void network_SendHeldPackets( void )
+{
+	zx::nettransport::HeldPacket held;
+	while ( zx::nettransport::TakeDueOutbound( held ))
+	{
+		if ( g_NetworkSocket == INVALID_SOCKET || held.bytes.empty( ))
+			continue;
+		const LONG lSent = sendto( g_NetworkSocket, reinterpret_cast<const char *>( held.bytes.data( )), static_cast<int>( held.bytes.size( )), 0,
+			reinterpret_cast<const sockaddr *>( held.address.data( )), held.addressLength );
+		ZX_COUNT( "net/held_released", "packets", 1 );
+		if ( lSent <= 0 )
+		{
+#ifdef __WIN32__
+			const int iError = WSAGetLastError( );
+#else
+			const int iError = errno;
+#endif
+			ZX_COUNT( "net/held_send_failed", "packets", 1 );
+			Printf( "NETWORK: a packet held for fua_net_fakeping failed to send (error %d, %d-byte address)\n", iError, held.addressLength );
+			continue;
+		}
+		ZX_COUNT( "net/bytes_out", "bytes", lSent );
+		ZX_COUNT( "net/packets_out", "packets", 1 );
+		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			SERVER_STATISTIC_AddToOutboundDataTransfer( lSent );
+	}
+}
+
+// [rc4l] features/net-transport: every packet waiting on the socket held for the fake ping (or dropped), then the oldest due one into g_ucHuffmanBuffer and From; its size, or 0 with none due.
+static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
+{
+	for ( ;; )
+	{
+		sockaddr_storage	Waiting;
+		INT					iWaitingLength = sizeof( Waiting );
+#ifdef	WIN32
+		const LONG lGot = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &Waiting ), &iWaitingLength );
+#else
+		const LONG lGot = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &Waiting ), (socklen_t *)&iWaitingLength );
+#endif
+		if ( lGot <= 0 )
+			break;
+		zx::nettransport::HoldInbound( g_ucHuffmanBuffer, lGot, &Waiting, iWaitingLength );
+	}
+
+	zx::nettransport::HeldPacket held;
+	if ( !zx::nettransport::TakeDueInbound( held ) || held.bytes.size( ) > sizeof( g_ucHuffmanBuffer ) || held.address.size( ) > sizeof( From ))
+		return 0;
+	memcpy( g_ucHuffmanBuffer, held.bytes.data( ), held.bytes.size( ));
+	memcpy( &From, held.address.data( ), held.address.size( ));
+	iFromLength = held.addressLength;
+	return static_cast<LONG>( held.bytes.size( ));
+}
+
 int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
-	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
 	// [rc4l] BIG ENOUGH FOR THE FAMILY THAT ACTUALLY ARRIVES.
 	//
 	// A plain sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight, so once the socket went
@@ -836,11 +891,20 @@ int NETWORK_GetPackets( void )
 	if ( g_NetworkSocket == INVALID_SOCKET )
 		return ( 0 );
 
+	// [rc4l] features/net-transport: under a fake ping or loss, what is due goes out and the oldest due packet in is the one read.
+	if ( zx::nettransport::ConditionsOn( ))
+	{
+		network_SendHeldPackets( );
+		lNumBytes = network_TakeHeldInbound( SocketFrom, iSocketFromLength );
+	}
+	else
+	{
 #ifdef	WIN32
 	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
 #else
 	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
+	}
 
 	// If the number of bytes returned is -1, an error has occured.
 	if ( lNumBytes == -1 ) 
@@ -894,26 +958,8 @@ int NETWORK_GetPackets( void )
 	// Store the IP address of the sender.
 	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
-	// Decode the huffman-encoded message we received.
-	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( false == false )
-	{
-		HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
-		g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
-	}
-	else
-	{
-		// [BB] We don't need to decode, so we just copy the data.
-		// Not very efficient, but this keeps the changes at a minimum for now.
-		memcpy ( g_NetworkMessage.pbData, g_ucHuffmanBuffer, lNumBytes );
-		g_NetworkMessage.ulCurrentSize = lNumBytes;
-	}
-	g_NetworkMessage.ByteStream.pbStream = g_NetworkMessage.pbData;
-	g_NetworkMessage.ByteStream.pbStreamEnd = g_NetworkMessage.ByteStream.pbStream + g_NetworkMessage.ulCurrentSize;
-	g_NetworkMessage.ByteStream.bitBuffer = NULL;
-	g_NetworkMessage.ByteStream.bitShift = -1;
-
-	return ( g_NetworkMessage.ulCurrentSize );
+	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
+	return ( NETWORK_DecodeIntoMessage( g_ucHuffmanBuffer, lNumBytes, g_NetworkMessage ));
 }
 
 //*****************************************************************************
@@ -925,7 +971,6 @@ int NETWORK_GetLANPackets( void )
 		return 0;
 
 	LONG				lNumBytes;
-	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
 	// [rc4l] Room for a v6 sender, for the reason spelled out in NETWORK_GetPackets above.
 	sockaddr_storage	SocketFrom;
 	INT					iSocketFromLength;
@@ -986,24 +1031,8 @@ int NETWORK_GetLANPackets( void )
 	// Store the IP address of the sender.
 	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
-	// Decode the huffman-encoded message we received.
-	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( false == false )
-	{
-		HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
-		g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
-	}
-	else 
-	{
-		// [BB] We don't need to decode, so we just copy the data.
-		// Not very efficient, but this keeps the changes at a minimum for now.
-		memcpy ( g_NetworkMessage.pbData, g_ucHuffmanBuffer, lNumBytes );
-		g_NetworkMessage.ulCurrentSize = lNumBytes;
-	}
-	g_NetworkMessage.ByteStream.pbStream = g_NetworkMessage.pbData;
-	g_NetworkMessage.ByteStream.pbStreamEnd = g_NetworkMessage.ByteStream.pbStream + g_NetworkMessage.ulCurrentSize;
-
-	return ( g_NetworkMessage.ulCurrentSize );
+	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
+	return ( NETWORK_DecodeIntoMessage( g_ucHuffmanBuffer, lNumBytes, g_NetworkMessage ));
 }
 
 //*****************************************************************************
@@ -1045,6 +1074,13 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 		// Not very efficient, but this keeps the changes at a minimum for now.
 		memcpy ( g_ucHuffmanBuffer, pBuffer->pbData, pBuffer->ulCurrentSize );
 		iNumBytesOut = pBuffer->ulCurrentSize;
+	}
+
+	// [rc4l] features/net-transport: under a fake ping or loss the packet waits its turn behind those held before it, or is dropped.
+	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, iNumBytesOut, &SocketAddress, iAddressLength ))
+	{
+		network_SendHeldPackets( );
+		return;
 	}
 
 	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );

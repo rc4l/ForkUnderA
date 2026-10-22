@@ -516,6 +516,9 @@ struct NETBUFFER_s
 void			NETWORK_StartTrafficMeasurement ( );
 int				NETWORK_StopTrafficMeasurement ( );
 
+// [rc4l] A received datagram Huffman-decoded into Message, a READ buffer, never past its ulMaxSize: the decoded size, or 0 for one that would not fit, which no packet of ours can be.
+ULONG			NETWORK_DecodeIntoMessage ( const unsigned char *pbRaw, int lLength, NETBUFFER_s &Message );
+
 //--------------------------------------------------------------------------------------------------------------------------------------------------
 //-- CLASSES ---------------------------------------------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------------------------------------------------------

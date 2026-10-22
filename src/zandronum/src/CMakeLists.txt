@@ -1853,6 +1853,11 @@ add_executable( zdoom WIN32
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
 	features/damage-taken/damagetaken.cpp
+	features/net-transport/netconditions.cpp
+	features/net-protocol/commandcapture.cpp
+	features/net-protocol/testfaults.cpp
+	features/net-session/unlaggedreport.cpp
+	features/latency/latency.cpp
 	zzautozend.cpp
 )
 
