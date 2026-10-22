@@ -129,6 +129,13 @@ A frame's sprites, models and decals are laid out on the main thread (`computati
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 
+Nothing the GPU needs is made by the frame that first draws it. The deferred decal pass's pipelines are built
+with the scene's (`EnsureDecalPipelines` in `BuildSceneBuffer`), and once the level is uploaded the backend makes
+every texture the engine marked for precache (`FBackendRenderer::PrecacheTexture`, `features/fua-caching`): the
+level's walls, flats and skies, its actors' sprites, animation and switch frames and the decal graphics, as
+`computation/precache_compute` orders and budgets them. `fua_dg_made` lists what was made while the level was
+played instead, and `fuactl scenarios madeinplay` fails on any shader or pipeline among them.
+
 `computation/levelsetup_compute` steps a level's set-up (bake from the map, upload, retry, give up);
 `PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only
 ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes its entry points from

@@ -17,6 +17,7 @@
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
 #include "features/hwrender/computation/bindingkey_compute.h"   // [rc4l] the bindings kept per graphic and views
+#include "features/hwrender/computation/precache_compute.h"   // [rc4l] ComputeDecalPassTranslation
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks fua_projdecals_stats lists
 #include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
 #include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] ComputeDecalPassBlend, the blend a pass draws with
@@ -430,7 +431,7 @@ static Diligent::IShaderResourceBinding *DecalBinding(int pass, Diligent::IDevic
 	return (g_ddBindings[key] = made).RawPtr();
 }
 
-static bool EnsureDeferredDecalPass()
+bool EnsureDecalPipelines()
 {
 	// [rc4l] The pipeline binds the plane table, so a level with more sectors than it holds makes both again before anything is written past its end.
 	if (g_ddPSO[0] && g_ddPlaneCapacity < numsectors) ReleaseDecalPipelines();
@@ -561,6 +562,13 @@ static bool EnsureDeferredDecalPass()
 	return true;
 }
 
+int DecalPassTranslation(const void *material, int translation, bool redToAlpha)
+{
+	zx::materials::MaterialInfo info;
+	const bool basePalette = redToAlpha && zx::materials::DescribeMaterial(material, info) && info.basePalette;
+	return zx::hwrender::ComputeDecalPassTranslation(translation, redToAlpha, basePalette, TRANSLATION(TRANSLATION_Standard, 8));
+}
+
 // [rc4l] Draw this frame's marks as boxes, resolved against the depth and normal buffers.
 //
 // Runs AFTER the world and before the sprites: a decal marks a surface, so it belongs with the
@@ -577,7 +585,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	const zx::levelmesh::GpuDecal *decals = NULL;
 	const int n = zx::levelmesh::GetProjectedDecalsGpu(&decals);
 	if (n <= 0 || decals == NULL) { g_ddBail = "nothing registered"; return; }
-	if (!EnsureDeferredDecalPass()) return;
+	if (!EnsureDecalPipelines()) return;
 
 	// [rc4l] The pass's own depth and normals, so a mirror's, a stacked view's and a camera's marks land on what that view drew.
 	Diligent::ITextureView *depthSRV = PassDepthSRV();
@@ -640,13 +648,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				// happens to be. For the BFG's scorch that is a flat mask, and the mark painted its
 				// whole box in one colour -- while the same texture on a wall, asked for with its
 				// translation, came out as soot.
-				int trans = d.translation;
-				if (d.redToAlpha)
-				{
-					zx::materials::MaterialInfo info;
-					if (zx::materials::DescribeMaterial(d.material, info) && info.basePalette)
-						trans = TRANSLATION(TRANSLATION_Standard, 8);
-				}
+				const int trans = DecalPassTranslation(d.material, d.translation, d.redToAlpha);
 				Diligent::IDeviceObject *srv = GetMaterialSRV(d.material, trans);
 				if (!srv) continue;
 				// [rc4l] Say when a mark's texture came back as the WHITE fallback.

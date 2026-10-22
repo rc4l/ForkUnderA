@@ -413,6 +413,8 @@ static bool BuildSceneBuffer(FString &err)
 
 	ReleaseBatchSRBs();
 	for (unsigned i = 0; i < g_scene.batches.Size(); i++) BatchSRB(g_scene.batches[i]);
+	// [rc4l] The decal pass's pipelines go whenever the scene's do (ReleaseScenePipelines), so they are made with the scene: made by the first floor or ceiling mark instead, they stalled that frame some 18 ms on every level.
+	EnsureDecalPipelines();
 	return true;
 }
 // See ReleaseMaterialSRBs. The batches keep raw copies of bindings they do not own.

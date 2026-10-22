@@ -286,8 +286,10 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 	ci.Desc.ShaderType = type;
 	ci.Desc.Name = name;
 	ci.Source = text.c_str();
+	ZX_ZONE("gpu/make_shader");   // [rc4l] a shader compiled
 	dev->CreateShader(ci, &shader);
 	s_shadersMade += 1.0;
+	NoteMadeInPlay("shader", name);
 	return shader;
 }
 
@@ -318,8 +320,10 @@ void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Dilige
 	Diligent::GraphicsPipelineStateCreateInfo flagged = pci;
 	flagged.PSODesc.ResourceLayout.Variables = descs.empty() ? nullptr : descs.data();
 	flagged.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)descs.size();
+	ZX_ZONE("gpu/make_pipeline");   // [rc4l] a pipeline made, which the driver may compile then
 	GetDevice()->CreateGraphicsPipelineState(flagged, pso);
 	s_pipelinesMade += 1.0;
+	NoteMadeInPlay("pipeline", pci.PSODesc.Name);
 }
 
 // [rc4l] The backend's own vertex, laid out BY MATERIAL rather than in bake order.
@@ -423,6 +427,11 @@ UploadFlushing::UploadFlushing()
 UploadFlushing::~UploadFlushing()
 {
 	g_uploadFlushBudget = 0;
+}
+
+void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes)
+{
+	if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, bytes, g_uploadFlushBudget)) ctx->Flush();
 }
 
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
@@ -697,6 +706,8 @@ void DrawSceneOnce(bool present, bool pump)
 	{
 		FString err;
 		if (!EnsureScenePipeline(err)) return;
+		// [rc4l] And the decal pass's with them, made again here when a setting released both, not by the next mark.
+		EnsureDecalPipelines();
 	}
 	// [rc4l] Textures the engine flushed (hqresize, hires, the texture format) are made again from the new pixels, and all of them when the filter starts or stops reading mips.
 	{

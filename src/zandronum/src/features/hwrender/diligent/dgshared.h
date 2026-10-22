@@ -178,12 +178,21 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx);
 // [rc4l] Uploads count vertices of stride bytes into a grow-only vertex buffer, re-created when short; false if none can be had.
 // [rc4l] Bytes written into buf at offset in pieces no bigger than an upload page, so a big write takes pooled pages rather than one its own size, which a browser's device keeps for good.
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data);
+// [rc4l] The deferred decal pass's pipelines and buffers made for the level now, as its scene's are, rather than by its first mark; false when they cannot be (fua_projdecals_stats says why).
+bool EnsureDecalPipelines();
+
 // [rc4l] While one lives, UpdateBufferInPages flushes a browser's context each time kUploadFlushBytes have gone, so its upload pages go back to the pool as it goes, for a level's upload and its rebuilds, which come before the frame maps or draws anything a flush would cut short.
 struct UploadFlushing
 {
 	UploadFlushing();
 	~UploadFlushing();
 };
+// [rc4l] Counts bytes another upload sent, such as a texture's, toward the flush an UploadFlushing makes due.
+void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes);
+// [rc4l] The translation the floor mark pass asks a decal's graphic for (ComputeDecalPassTranslation), shared with the precache that makes it ahead.
+int DecalPassTranslation(const void *material, int translation, bool redToAlpha);
+// [rc4l] The textures the engine marked for this level (QueueMaterialPrecache) made now, as its scene is set up, rather than by the frames that first draw them (dgtexture.cpp).
+void PrecacheQueuedMaterials();
 // [rc4l] A grow-only buffer of at least count elements of stride bytes, made again from kind's name, usage, binding and access at ComputeGrownCapacity(count, pad) when short; false if none can be had.
 bool EnsureGrowingBuffer(Diligent::RefCntAutoPtr<Diligent::IBuffer> &buf, unsigned int &capacity, unsigned int count, unsigned int stride,
 	unsigned int pad, const Diligent::BufferDesc &kind);

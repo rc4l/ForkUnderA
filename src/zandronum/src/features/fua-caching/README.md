@@ -9,12 +9,17 @@ MAP30 + Complex Doom `kill monsters`, worst frame 482 ms cold vs 211 ms warm).
 `cl_fua_caching` (Int, default 2, archived; menu: FUA Options → Asset caching):
 
 - **0 — Off**: stock lazy loading, byte-identical code paths.
-- **1 — Placed actors**: every state of every placed actor class (and its ancestors).
+- **1 — Placed actors**: every state of every placed actor class (and its ancestors), and TERRAIN's splash classes.
 - **2 — Full (spawn closure)**: mode 1 plus the transitive closure over constant
   DECORATE state parameters (`A_SpawnItemEx("Foo")` etc. are constant-folded to
   `FxConstant` at parse time — read without running the evaluator), drop-item chains,
   actor replacements, and blood types. Run-time-computed spawn classes stay lazy.
   Closure capped at 4096 classes (excess reported, stays lazy).
+
+Both modes also mark every frame of a marked texture's ANIMDEFS animation and a marked switch's other pictures
+(`computation/animmarks_compute`), and send every DECALDEF template's graphic to the listener the Vulkan backend installs (`FUA_SetDecalPrecache`), which makes the
+whole list when it sets the level up (`features/hwrender/computation/precache_compute`), world textures first, up to
+256 MB on a browser's device.
 
 Sound side mirrors it: property sounds via `MarkPrecacheSounds()` on each closure
 class's Defaults, plus constant sound arguments from state parameters.
@@ -33,7 +38,11 @@ prints whenever the mode is active.
   hitlist entries stamped `8` (`HIT_Sprite`) in modes 1–2 so the GL precacher builds
   the *expanded* material sprites actually render with (stock `5` built the wall
   variant — the GL sprite-precache branch was dead code).
-- `textures/texturemanager.cpp` (`PrecacheLevel`) — summary Printf.
+- `textures/texturemanager.cpp` (`PrecacheLevel`) — summary Printf; `FUA_PrecacheDecals()` after the renderer loop.
+- `v_video.cpp` (`DFrameBuffer::GetHitlist`) — `FUA_MarkAnimatedTextures()` after the sky marks.
+- `decallib.h`, `decallib.cpp` — `FDecalBase::AsTemplate()` and `FDecalLib::ForEachTemplate()`, so the templates
+  can be walked without a group's `GetDecal` drawing from its random stream.
+- `features/frame/backendrenderer.cpp` (`PrecacheTexture`) — hands each marked texture to the backend's queue.
 - `gl/textures/gl_texture.cpp` (`FTexture::PrecacheGL`) — upload gate is
   `gl_precache || FUA_CachingMode() > 0` (gl_precache kept as legacy opt-in).
 - `gl/scene/gl_scene.cpp` (`FGLInterface::PrecacheTexture`) — in modes 1–2, sprite

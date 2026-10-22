@@ -71,7 +71,12 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries; the frame's is timed for `features/dynres` with telemetry off too.
   - `dgmemory.cpp`: every texture and buffer made through `CreateDeviceTexture`/`CreateDeviceBuffer`, under `gpu/mem/` and the breakdown `gpu/mem/tag/`. At shutdown it reports what is still held.
   - `dgdevice_vk.cpp`: `VK_EXT_memory_budget` under `gpu/vk_`, the device's heaps and the host's apart.
-  - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`: the shaders and pipelines made, under `gpu/made/`.
+  - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`, and `dgprobe.cpp`'s `CreateDeviceTexture` and `CreateDeviceBuffer`: the shaders and
+    pipelines made, under `gpu/made/`, each timed (`gpu/make_shader`, `gpu/make_pipeline`, `gpu/make_texture`, `gpu/make_buffer`), and
+    `dgtexture.cpp`'s `gpu/make_material`, a material decoded, uploaded and mipped.
+  - `dgframe.cpp`: `gpu/made/in_play` and the per-frame `gpu/made_in_play`, what was made while the level was played rather than loaded,
+    which `fua_dg_made` lists (`computation/madeinplay_compute`) and `fuactl scenarios madeinplay` holds at no shader or pipeline.
+  - `dgtexture.cpp`: `load/precache_backend` and `load/precached_textures`, the level's marked textures made ahead.
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
 - `network.cpp`: the `net/` totals. `files.cpp` `FileReader::Read`: `io/read_bytes`.
 - `features/crashreport/zx_crashreport.cpp`: the summary goes into the Sentry extras, throttled. `features/web/webcrash.cpp` hands it to the page for `web/crashreport.js`.
