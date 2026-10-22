@@ -753,7 +753,8 @@ bool I_WriteIniFailed ()
 	// return true to retry
 }
 
-static const char *pattern;
+// [rc4l] Per thread, since the wad library's and wad download's workers search folders while the main thread does.
+static thread_local const char *pattern;
 
 // [BB] Added FreeBSD checks
 #if ( defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED < 1080 ) || ( defined ( __FreeBSD__ ) && ( __FreeBSD__ < 8 ) )
