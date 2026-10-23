@@ -1854,6 +1854,7 @@ add_executable( zdoom WIN32
 	features/crosshair/crosshair.cpp
 	features/damage-taken/damagetaken.cpp
 	features/net-transport/netconditions.cpp
+	features/net-transport/recvthread.cpp
 	features/net-protocol/commandcapture.cpp
 	features/net-protocol/testfaults.cpp
 	features/net-session/unlaggedreport.cpp

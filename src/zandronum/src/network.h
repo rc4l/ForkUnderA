@@ -407,6 +407,10 @@ const char		*NETWORK_GetCountryNameFromIndex( ULONG ulIndex );
 USHORT			NETWORK_GetLocalPort( void );
 // [rc4l] The IPv4 address the game socket bound in network byte order, INADDR_ANY unless -useip named one.
 ULONG			NETWORK_GetBoundInAddr( void );
+// [rc4l] When the datagram NETWORK_GetPackets last returned arrived (features/net-transport), on I_MSTime's clock.
+unsigned		NETWORK_GetArrivalMS( void );
+// [rc4l] Starts or stops a server's receive thread on the game socket (features/net-transport/recvthread.h).
+void			NETWORK_SetReceiveThread( bool bOn );
 
 const TArray<NetworkPWAD>&	NETWORK_GetPWADList( void ); // [RC]
 const TArray<NetworkPWAD>&	NETWORK_GetAuthenticatedWADsList( void ); // [SB]

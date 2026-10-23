@@ -86,6 +86,8 @@
 #include "features/net-session/computation/joinupdate_compute.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
+#include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
+#include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_server_stall_ms
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -285,6 +287,8 @@ CVAR( Int, sv_timestampformat, 0, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 CVAR( Int, sv_colorstripmethod, 0, CVAR_ARCHIVE )
 CVAR( Bool, sv_minimizetosystray, true, CVAR_ARCHIVE )
 CVAR( Int, sv_queryignoretime, 10, CVAR_ARCHIVE )
+// [rc4l] A thread reads the game socket and stamps each datagram, so the tick parses without polling and ping counts from arrival.
+CVAR( Bool, sv_fua_receivethread, true, CVAR_NOSETBYACS )
 CVAR( Bool, sv_markchatlines, false, CVAR_ARCHIVE )
 CVAR( Int, sv_distinguishteamchatlines, 0, CVAR_ARCHIVE )
 CVAR( Flag, sv_nokill, dmflags2, DF2_NOSUICIDE )
@@ -712,6 +716,10 @@ void SERVER_Tick( void )
 	ZX_SEAM_UNTIMED( "net/server_tick", Main );
 	unsigned int nowTime = 0;
 
+	// [rc4l] features/net-transport: the receive thread follows its cvar, so it can be switched off and on in a running server.
+	if ( sv_fua_receivethread != zx::nettransport::ReceiveThreadRunning( ))
+		NETWORK_SetReceiveThread( sv_fua_receivethread );
+
 	I_DoSelect();
 
 	const unsigned int previousTics = static_cast<unsigned>( g_GameTicShift + g_GameTime / MS_PER_TIC );
@@ -723,7 +731,8 @@ void SERVER_Tick( void )
 		// for an accurate ping measurement.
 		SERVER_GetPackets( );
 
-		I_Sleep( 1 );
+		// [rc4l] Woken by a datagram as it arrives, where it slept the millisecond out.
+		zx::nettransport::WaitForDatagram( 1 );
 		deltaTics = server_GetDeltaTicks( nowTime, previousTics );
 	}
 
@@ -775,6 +784,9 @@ void SERVER_Tick( void )
 
 		// [rc4l] The map state this tic changed, sent from one place (features/net-replication).
 		zx::netreplication::SendChanges( );
+
+		// [rc4l] fua_debug_server_stall_ms, a slow tick for scenario netstall.
+		zx::netprotocol::StallServerForTest( gametic );
 
 		// However we need to spawn the unlagged debug actors here i.e. after having processed their
 		// movement commands which updated their last server gametic.
@@ -6405,7 +6417,8 @@ static bool server_MissingPacket( BYTESTREAM_s *pByteStream )
 static bool server_UpdateClientPing( BYTESTREAM_s *pByteStream )
 {
 	const unsigned int oldTime = pByteStream->ReadLong( );
-	const unsigned int nowTime = I_MSTime( );
+	// [rc4l] When the reply arrived, not when this tick got to it, so a slow tick does not read as the client's lag.
+	const unsigned int nowTime = NETWORK_GetArrivalMS( );
 
 	// [BB] This ping information from the client doesn't make sense.
 	if ( oldTime > nowTime )

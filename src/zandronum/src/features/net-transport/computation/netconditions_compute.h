@@ -39,6 +39,9 @@ void ComputeHoldPacket(HeldPackets &held, long long nowMs, int delayMs, const un
 // [rc4l] The oldest held packet into out when its time has come at nowMs, true then and false while none is due.
 bool ComputeTakeDuePacket(HeldPackets &held, long long nowMs, HeldPacket &out);
 
+// [rc4l] Whether one more datagram joins a queue of at most capacity, which drops the newest rather than grow while the main thread is stalled.
+bool ComputeAdmitDatagram(const HeldPackets &held, size_t capacity);
+
 }} // namespace zx::nettransport
 
 #endif // ZX_NETCONDITIONS_COMPUTE_H

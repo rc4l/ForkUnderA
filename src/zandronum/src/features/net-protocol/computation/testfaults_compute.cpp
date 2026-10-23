@@ -31,6 +31,11 @@ bool ComputeNetDropMatches(const char *spec, int id, int ext)
 	return false;
 }
 
+int ComputeServerStallMs(int tic, int ticRate, int stallMs)
+{
+	return (stallMs > 0 && ticRate > 0 && tic % ticRate == 0) ? stallMs : 0;
+}
+
 int ComputeReportedServerTic(int held, int testOffset)
 {
 	const int t = held - (testOffset > 0 ? testOffset : 0);

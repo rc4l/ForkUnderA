@@ -71,3 +71,15 @@ TEST(ComputeHoldPacket, ANegativeDelayGoesAtOnceAndEmptyPartsStayEmpty)
 	EXPECT_TRUE(out.address.empty());
 	EXPECT_EQ(0, out.addressLength);
 }
+
+TEST(ComputeAdmitDatagram, AFullQueueDropsTheNewest)
+{
+	HeldPackets held;
+	const unsigned char byte = 1;
+	EXPECT_TRUE(ComputeAdmitDatagram(held, 2));
+	ComputeHoldPacket(held, 0, 0, &byte, 1, &byte, 1);
+	EXPECT_TRUE(ComputeAdmitDatagram(held, 2));
+	ComputeHoldPacket(held, 0, 0, &byte, 1, &byte, 1);
+	EXPECT_FALSE(ComputeAdmitDatagram(held, 2));
+	EXPECT_FALSE(ComputeAdmitDatagram(held, 0));
+}

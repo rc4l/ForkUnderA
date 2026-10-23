@@ -33,3 +33,12 @@ TEST(ComputeReportedServerTic, TheHeldTicLessTheOffsetNeverBelowZero)
 	EXPECT_EQ(700, ComputeReportedServerTic(700, -4));
 	EXPECT_EQ(0, ComputeReportedServerTic(3, 10));
 }
+
+TEST(ComputeServerStallMs, OnceASecondAndOnlyWhenAsked)
+{
+	EXPECT_EQ(300, ComputeServerStallMs(70, 35, 300));
+	EXPECT_EQ(0, ComputeServerStallMs(71, 35, 300));
+	EXPECT_EQ(0, ComputeServerStallMs(70, 35, 0));
+	EXPECT_EQ(0, ComputeServerStallMs(70, 35, -5));
+	EXPECT_EQ(0, ComputeServerStallMs(70, 0, 300));
+}

@@ -8,7 +8,8 @@ What a server writes for its clients, seen and, for tests, held back.
   it writes where it is told (`features/command-safety`).
 - `fua_debug_netdrop "id,id/ext"` leaves the named commands unsent, and `fua_debug_unlagged_ticoffset N`
   makes a client report a server tic N behind the one it holds: faults a netgame scenario switches on to
-  prove it fails (`ComputeNetDropMatches`, `ComputeReportedServerTic`).
+  prove it fails (`ComputeNetDropMatches`, `ComputeReportedServerTic`). `fua_debug_server_stall_ms N` stalls a
+  server's tick N ms once a second (`ComputeServerStallMs`, hooked after `G_Ticker` in `SERVER_Tick`).
 
 ## Owns
 

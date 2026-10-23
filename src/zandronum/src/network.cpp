@@ -108,6 +108,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/net-transport/netconditions.h"   // [rc4l] fua_net_fakeping, fua_net_fakeloss
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
+#include "features/net-transport/recvthread.h"   // [rc4l] a server's receive thread
 
 enum LumpAuthenticationMode {
 	LAST_LUMP,
@@ -212,6 +213,8 @@ static	bool				g_bLANSocketInvalid = false;
 static	USHORT			g_usLocalPort;
 // [rc4l] The address the game socket bound, which -useip names, so the server's other listeners bind it too.
 static	ULONG			g_ulBoundInAddr = INADDR_ANY;
+// [rc4l] When the datagram NETWORK_GetPackets last returned arrived, on I_MSTime's clock.
+static	unsigned		g_ulArrivalMS = 0;
 
 // Buffer for the Huffman encoding.
 static	UCHAR			g_ucHuffmanBuffer[131072];
@@ -803,6 +806,9 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 //
 void NETWORK_Destruct( void )
 {
+	// [rc4l] features/net-transport: the receive thread stops before anything it reads into goes.
+	zx::nettransport::StopReceiveThread( );
+
 	// Free the network message buffer.
 	g_NetworkMessage.Free();
 
@@ -853,17 +859,27 @@ static void network_SendHeldPackets( void )
 }
 
 // [rc4l] features/net-transport: every packet waiting on the socket held for the fake ping (or dropped), then the oldest due one into g_ucHuffmanBuffer and From; its size, or 0 with none due.
+// [rc4l] One raw datagram into g_ucHuffmanBuffer: from a server's receive thread when it runs, else straight off the socket, with when it arrived.
+static LONG network_ReceiveRaw( sockaddr_storage &From, INT &iFromLength, unsigned &arrivalMs )
+{
+	if ( zx::nettransport::ReceiveThreadRunning( ))
+		return zx::nettransport::TakeDatagram( g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), &From, sizeof( From ), iFromLength, arrivalMs );
+	arrivalMs = I_MSTime( );
+#ifdef	WIN32
+	return recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &From ), &iFromLength );
+#else
+	return recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &From ), (socklen_t *)&iFromLength );
+#endif
+}
+
 static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 {
 	for ( ;; )
 	{
 		sockaddr_storage	Waiting;
 		INT					iWaitingLength = sizeof( Waiting );
-#ifdef	WIN32
-		const LONG lGot = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &Waiting ), &iWaitingLength );
-#else
-		const LONG lGot = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &Waiting ), (socklen_t *)&iWaitingLength );
-#endif
+		unsigned			arrivalMs;
+		const LONG lGot = network_ReceiveRaw( Waiting, iWaitingLength, arrivalMs );
 		if ( lGot <= 0 )
 			break;
 		zx::nettransport::HoldInbound( g_ucHuffmanBuffer, lGot, &Waiting, iWaitingLength );
@@ -875,6 +891,8 @@ static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 	memcpy( g_ucHuffmanBuffer, held.bytes.data( ), held.bytes.size( ));
 	memcpy( &From, held.address.data( ), held.address.size( ));
 	iFromLength = held.addressLength;
+	// [rc4l] A held datagram arrives when its fake delay lets it go.
+	g_ulArrivalMS = I_MSTime( );
 	return static_cast<LONG>( held.bytes.size( ));
 }
 
@@ -906,11 +924,10 @@ int NETWORK_GetPackets( void )
 	}
 	else
 	{
-#ifdef	WIN32
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
-#else
-	lNumBytes = recvfrom( g_NetworkSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
-#endif
+		unsigned arrivalMs;
+		lNumBytes = network_ReceiveRaw( SocketFrom, iSocketFromLength, arrivalMs );
+		if ( lNumBytes > 0 )
+			g_ulArrivalMS = arrivalMs;
 	}
 
 	// If the number of bytes returned is -1, an error has occured.
@@ -1336,6 +1353,23 @@ USHORT NETWORK_GetLocalPort( void )
 ULONG NETWORK_GetBoundInAddr( void )
 {
 	return ( g_ulBoundInAddr );
+}
+
+//*****************************************************************************
+//
+unsigned NETWORK_GetArrivalMS( void )
+{
+	return ( g_ulArrivalMS );
+}
+
+//*****************************************************************************
+//
+void NETWORK_SetReceiveThread( bool bOn )
+{
+	if ( bOn )
+		zx::nettransport::StartReceiveThread( static_cast<uintptr_t>( g_NetworkSocket ));
+	else
+		zx::nettransport::StopReceiveThread( );
 }
 
 //*****************************************************************************

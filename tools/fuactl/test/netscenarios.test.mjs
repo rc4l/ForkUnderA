@@ -98,3 +98,13 @@ test("netmapstate holds the server to every scripted family before judging agree
     "floor reflection never changed", "floor FLOOR4_8", "the wall texture never changed", "the line's blocking or translucency never changed"]);
   assert.deepEqual(serverChanged({ sectors: [], sides: [], lines: [] }), ["the changed sector is not there"]);
 });
+
+test("netstall passes a ping measured through the stalls and names each fault", async () => {
+  const { judgeStall, CONFIGS, STALL_MS, LAG_MS, SLACK_MS } = await import("../scenarios/netstall.mjs");
+  assert.equal(CONFIGS[0].serverCvars.fua_debug_server_stall_ms, STALL_MS);
+  assert.equal(judgeStall("x", { pings: [LAG_MS, LAG_MS + 5, LAG_MS + SLACK_MS], playing: true }).failed, 0);
+  const bad = judgeStall("x", { pings: [LAG_MS, LAG_MS + STALL_MS], playing: false }).line;
+  assert.match(bad, /measured up to 400 ms for a client 100 ms away/);
+  assert.match(bad, /left the game during the stalls/);
+  assert.match(judgeStall("x", { pings: [], playing: true }).line, /measured no ping/);
+});

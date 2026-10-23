@@ -14,6 +14,9 @@ bool DroppedForTest(const unsigned char *bytes, int length);
 // [rc4l] The server tic a client reports for unlagged after fua_debug_unlagged_ticoffset.
 int ReportedServerTic(int held);
 
+// [rc4l] Stalls a server's tick at tic as fua_debug_server_stall_ms asks.
+void StallServerForTest(int tic);
+
 }} // namespace zx::netprotocol
 
 #endif // ZX_TESTFAULTS_H
