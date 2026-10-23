@@ -20,7 +20,7 @@ struct ShotPlayer
 	double presentX = 0, presentY = 0, presentZ = 0;
 };
 
-// [rc4l] One hitscan by a player: its number since the last reset, the shooter, the tic it ran in, the tic unlagged rewound to (the tic itself on a client), the player it hit or -1.
+// [rc4l] One hitscan by a player: its number since the last reset, the shooter, the tic it ran in, the tic unlagged rewound to (the tic itself on a client), the player it hit or -1, whether this side traced it (a client only with cl_clientsidepuffs) and the network id of the actor its trace hit or -1.
 struct UnlaggedShot
 {
 	int number = 0;
@@ -28,6 +28,8 @@ struct UnlaggedShot
 	int tic = 0;
 	int rewindTic = 0;
 	int hitPlayer = -1;
+	bool traced = false;
+	int hitNetId = -1;
 	std::vector<ShotPlayer> players;
 };
 
@@ -42,6 +44,9 @@ enum { kShotsKept = 128 };
 
 // [rc4l] Numbers shot and adds it to the log, the oldest going once kShotsKept are kept.
 void ComputeLogShot(ShotLog &log, UnlaggedShot shot);
+
+// [rc4l] The latest shot as this side traced it, hitting the actor of network id hitNetId (-1 for none); nothing with no shot logged.
+void ComputeNoteTrace(ShotLog &log, int hitNetId);
 
 std::string ComputeShotJson(const UnlaggedShot &shot);
 

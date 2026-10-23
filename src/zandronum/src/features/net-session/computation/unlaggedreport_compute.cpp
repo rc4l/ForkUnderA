@@ -25,10 +25,18 @@ void ComputeLogShot(ShotLog &log, UnlaggedShot shot)
 	while (log.shots.size() > (size_t)kShotsKept) log.shots.pop_front();
 }
 
+void ComputeNoteTrace(ShotLog &log, int hitNetId)
+{
+	if (log.shots.empty()) return;
+	log.shots.back().traced = true;
+	log.shots.back().hitNetId = hitNetId;
+}
+
 std::string ComputeShotJson(const UnlaggedShot &shot)
 {
 	std::string s = "{\"n\":" + std::to_string(shot.number) + ",\"shooter\":" + std::to_string(shot.shooter) + ",\"tic\":" + std::to_string(shot.tic) +
-		",\"rewind\":" + std::to_string(shot.rewindTic) + ",\"hit\":" + std::to_string(shot.hitPlayer) + ",\"players\":[";
+		",\"rewind\":" + std::to_string(shot.rewindTic) + ",\"hit\":" + std::to_string(shot.hitPlayer) + ",\"traced\":" + (shot.traced ? "1" : "0") +
+		",\"hitNetId\":" + std::to_string(shot.hitNetId) + ",\"players\":[";
 	for (size_t i = 0; i < shot.players.size(); i++)
 	{
 		const ShotPlayer &p = shot.players[i];

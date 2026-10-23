@@ -31,6 +31,8 @@ TEST(ComputeShotJson, TheShotAndEachPlayerWhereTheTraceMetThemAndWhereTheyWere)
 	s.tic = 700;
 	s.rewindTic = 696;
 	s.hitPlayer = 1;
+	s.traced = true;
+	s.hitNetId = 57;
 	ShotPlayer p;
 	p.player = 1;
 	p.x = 10; p.y = -20.5; p.z = 0;
@@ -38,9 +40,25 @@ TEST(ComputeShotJson, TheShotAndEachPlayerWhereTheTraceMetThemAndWhereTheyWere)
 	s.players.push_back(p);
 	p.player = 2;
 	s.players.push_back(p);
-	EXPECT_EQ("{\"n\":3,\"shooter\":0,\"tic\":700,\"rewind\":696,\"hit\":1,\"players\":["
+	EXPECT_EQ("{\"n\":3,\"shooter\":0,\"tic\":700,\"rewind\":696,\"hit\":1,\"traced\":1,\"hitNetId\":57,\"players\":["
 		"{\"p\":1,\"x\":10.000,\"y\":-20.500,\"z\":0.000,\"px\":14.000,\"py\":-20.500,\"pz\":0.000},"
 		"{\"p\":2,\"x\":10.000,\"y\":-20.500,\"z\":0.000,\"px\":14.000,\"py\":-20.500,\"pz\":0.000}]}", ComputeShotJson(s));
+}
+
+TEST(ComputeNoteTrace, TheLatestShotTakesWhatItsTraceHit)
+{
+	ShotLog log;
+	ComputeNoteTrace(log, 9);
+	EXPECT_TRUE(log.shots.empty());
+	ComputeLogShot(log, UnlaggedShot());
+	ComputeLogShot(log, UnlaggedShot());
+	EXPECT_FALSE(log.shots.back().traced);
+	ComputeNoteTrace(log, 41);
+	EXPECT_TRUE(log.shots.back().traced);
+	EXPECT_EQ(41, log.shots.back().hitNetId);
+	EXPECT_FALSE(log.shots.front().traced);
+	EXPECT_EQ(-1, log.shots.front().hitNetId);
+	EXPECT_NE(std::string::npos, ComputeShotJson(log.shots.front()).find("\"traced\":0,\"hitNetId\":-1"));
 }
 
 TEST(ComputeShotLogJson, TheRoleAndEveryShot)

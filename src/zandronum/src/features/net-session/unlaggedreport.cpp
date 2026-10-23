@@ -49,7 +49,15 @@ void NoteServerShot(AActor *shooter, AActor *hit)
 	if (!zx::net::IsServer() || shooter == NULL || shooter->player == NULL) return;
 	UnlaggedShot s = ShotBy(shooter, UNLAGGED_IsReconciled());
 	s.hitPlayer = (hit != NULL && hit->player != NULL) ? (int)(hit->player - players) : -1;
+	s.traced = true;
+	s.hitNetId = hit != NULL ? (int)hit->NetID : -1;
 	ComputeLogShot(g_log, s);
+}
+
+void NoteClientTrace(AActor *shooter, AActor *hit)
+{
+	if (!zx::net::IsClient() || shooter == NULL || shooter->player == NULL || shooter->player != &players[consoleplayer]) return;
+	ComputeNoteTrace(g_log, hit != NULL ? (int)hit->NetID : -1);
 }
 
 void NoteClientShot(AActor *shooter)

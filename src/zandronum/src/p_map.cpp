@@ -4653,6 +4653,7 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 
 	// [rc4l] features/net-session: fua_unlagged_report's record of the trace, the others still where unlagged put them.
 	zx::netsession::NoteServerShot( t1, ( hitSomething && trace.HitType == TRACE_HitActor ) ? trace.Actor : NULL );
+	zx::netsession::NoteClientTrace( t1, ( hitSomething && trace.HitType == TRACE_HitActor ) ? trace.Actor : NULL );
 
 	// [Spleen]
 	UNLAGGED_Restore( t1 );

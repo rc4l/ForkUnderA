@@ -7,7 +7,9 @@ shooter's own client held them.
   holds the tic it ran in, the tic unlagged rewound to, whom it hit and every other player where the trace
   met them (rewound) and where they were (`restorePos`); on a client, its own shots with the other players
   where it held them. Shots are numbered from the last reset on each side, so a scenario matches them one by
-  one (`tools/fuactl/scenarios/unlaggedhit.mjs`).
+  one (`tools/fuactl/scenarios/unlaggedhit.mjs`). Each shot also says whether that side traced it and the network id
+  of the actor its trace hit (`traced`, `hitNetId`): a server always traces, a client only to predict puffs
+  (`cl_clientsidepuffs`), so `farhitscan` can set a client's trace against its server's at 6,400 units and more.
 - Rails and projectiles are not recorded: unlagged rewinds hitscan, rails and autoaim traces, and only
   `P_LineAttack`'s are noted.
 
@@ -35,8 +37,8 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
   `SERVER_SERVERREGISTRY_SendServerInfo` the seam `net/launcher_reply`, both owned by the main thread.
 - `sv_main.cpp` `SERVER_SetupNewConnection` compares the whole revision a client sends with its own
   (`cl_main.cpp` `CLIENT_AttemptConnection` writes it), so a different build is refused every time.
-- `p_map.cpp` `P_LineAttack`: `NoteClientShot` before a client returns, `NoteServerShot` after `Trace` and
-  before `UNLAGGED_Restore`.
+- `p_map.cpp` `P_LineAttack`: `NoteClientShot` before a client returns, `NoteServerShot` and `NoteClientTrace` after
+  `Trace` and before `UNLAGGED_Restore`.
 - `sv_main.cpp` `SERVER_SendFullUpdate` sends a joiner each hurt or dead actor's health, which it held at
   spawn health, and the exact place of each thing resting between whole units, where its spawn had rounded
   it (`netsync`'s late joiner and a dropped clip).

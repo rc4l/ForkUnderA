@@ -16,6 +16,9 @@ void NoteServerShot(AActor *shooter, AActor *hit);
 // [rc4l] A client's own hitscan, with where it found the other players.
 void NoteClientShot(AActor *shooter);
 
+// [rc4l] A client's own trace of the shot NoteClientShot logged, which it runs only to predict puffs (cl_clientsidepuffs), and the actor it hit.
+void NoteClientTrace(AActor *shooter, AActor *hit);
+
 }} // namespace zx::netsession
 
 #endif // ZX_UNLAGGEDREPORT_H

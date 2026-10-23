@@ -47,7 +47,7 @@ std::string ComputeNetClientJson(const NetClientRow &row)
 {
 	return "{\"player\":" + std::to_string(row.player) + ",\"name\":" + Quoted(row.name) + ",\"state\":" + Quoted(ComputeClientSlotStateName(row.state)) +
 		",\"ping\":" + std::to_string(row.ping) + ",\"lastServerTic\":" + std::to_string(row.lastServerTic) + ",\"clientTic\":" + std::to_string(row.clientTic) +
-		",\"spectating\":" + (row.spectating ? "true" : "false") + ",\"bot\":" + (row.bot ? "true" : "false") + "}";
+		",\"spectating\":" + (row.spectating ? "true" : "false") + ",\"bot\":" + (row.bot ? "true" : "false") + ",\"account\":" + Quoted(row.account) + "}";
 }
 
 std::string ComputeWorldActorJson(const WorldActorRow &row)

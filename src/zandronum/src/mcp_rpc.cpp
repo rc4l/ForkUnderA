@@ -402,6 +402,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"leveltime\":" + I( level.time );
 		body += ",\"gamestate\":" + I( (int)gamestate );
 		body += ",\"inlevel\":" + B( InLevel() );
+		// [rc4l] Which map, so a map change is seen arriving where it was sent.
+		body += ",\"map\":\"" + zx::json::ComputeJsonEscape( level.MapName.GetChars() ) + "\"";
 		body += ",\"paused\":" + I( paused ) + "}";
 		SendOk( id, body );
 	}
@@ -828,6 +830,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			body += ",\"consoleplayer\":" + I( consoleplayer );
 			body += ",\"ping\":" + I( (long long)players[consoleplayer].ulPing );
 			body += ",\"fullUpdateIncomplete\":" + B( CLIENT_GetFullUpdateIncomplete() );
+			// [rc4l] The account this client's server says it plays as.
+			body += ",\"account\":\"" + zx::json::ComputeJsonEscape( CLIENT_GetPlayerAccountName( consoleplayer ).GetChars() ) + "\"";
 		}
 		if ( state == NETSTATE_SERVER )
 		{
@@ -846,6 +850,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				r.clientTic = cl->ulClientGameTic;
 				r.spectating = players[i].bSpectating;
 				r.bot = players[i].bIsBot;
+				r.account = cl->GetAccountName().GetChars();
 				body += ( first ? "" : "," ) + zx::mcp::ComputeNetClientJson( r );
 				first = false;
 			}

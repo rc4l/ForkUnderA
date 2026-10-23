@@ -52,11 +52,13 @@ TEST(ComputeNetClientJson, EveryFieldWithTheNameEscaped)
 	r.lastServerTic = 700;
 	r.clientTic = 690;
 	r.spectating = true;
-	EXPECT_EQ("{\"player\":1,\"name\":\"a\\\"b\",\"state\":\"spawned\",\"ping\":48,\"lastServerTic\":700,\"clientTic\":690,\"spectating\":true,\"bot\":false}",
+	EXPECT_EQ("{\"player\":1,\"name\":\"a\\\"b\",\"state\":\"spawned\",\"ping\":48,\"lastServerTic\":700,\"clientTic\":690,\"spectating\":true,\"bot\":false,\"account\":\"\"}",
 		ComputeNetClientJson(r));
 	r.spectating = false;
 	r.bot = true;
 	EXPECT_NE(std::string::npos, ComputeNetClientJson(r).find("\"spectating\":false,\"bot\":true"));
+	r.account = "player-3f2a";
+	EXPECT_NE(std::string::npos, ComputeNetClientJson(r).find("\"account\":\"player-3f2a\"}"));
 }
 
 TEST(ComputeWorldActorJson, PositionsToAThousandthAndEveryField)

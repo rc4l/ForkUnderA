@@ -31,6 +31,7 @@ struct NetClientRow
 	long long clientTic = 0;
 	bool spectating = false;
 	bool bot = false;
+	std::string account;   // [rc4l] the account it proved at join (features/identity), empty before
 };
 
 std::string ComputeNetClientJson(const NetClientRow &row);
