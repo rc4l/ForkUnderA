@@ -59,8 +59,11 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 to `judgeNetplay(set, label, { wadPath, config })`. The models: `netsync` (scripted changes, a kill, a late
 joiner), `unlaggedhit` (rewound hits), `netbroadcast` (what an observer sees of another's actions),
 `waddownload` (fetching a missing wad, two clients at once), `lanbrowse` (a LAN listing joined) and
-`netmapstate` (every family only a server writes of a sector and a line) and `netstall` (ping measured through a
-server tick stalled by `fua_debug_server_stall_ms`). After each judge it fails an instance
+`netmapstate` (every family only a server writes of a sector and a line), `netstall` (ping measured through a
+server tick stalled by `fua_debug_server_stall_ms`) and `farhitscan` (a pistol at 400 monsters 6,400+ units away, each
+shot's client trace against the server's, what the observer holds) and `netmapchange` (`changemap` through the
+intermission, each client's own `reconnect`, then `map`, each judged on the accounts, playing, the world and a
+kill). `fireUntilDead` holds a client's fire on the first live actor of a class and `joinGame` waits a join out. A config's `maps` limits it to those maps. After each judge it fails an instance
 whose netcode seams another thread entered (`fua_seams`) and a server that sent a map change a tic late because
 no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints each).
 
@@ -77,6 +80,11 @@ no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints
   fault switched on tests nothing.
 - **Hold the server to the change first.** Agreement between two worlds that never changed proves nothing,
   so check the server's own world did what the script or player meant before comparing.
+- **Compare a world at rest.** A client steps a walking monster along its direction itself and the server
+  corrects it only when it turns, so a live, chasing monster reads up to a step off (8 units for a zombieman);
+  kill what woke before `clientAgreement`. And a gunshot wakes every monster that hears it with sight of the
+  shooter, deaf (`ambush`) or not: keep sleepers in a closed room or past two `blocksound` lines
+  (`m.block(..., () => ({ blocksound: true }))`, as `farhitscan` and `netmapchange` do).
 - **Judge by state read at the server's tic, not by pictures**: what a client draws depends on its view and
   timing. Coarse picture checks only, if any.
 

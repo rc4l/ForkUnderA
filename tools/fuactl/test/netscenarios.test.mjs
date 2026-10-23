@@ -108,3 +108,39 @@ test("netstall passes a ping measured through the stalls and names each fault", 
   assert.match(bad, /left the game during the stalls/);
   assert.match(judgeStall("x", { pings: [], playing: true }).line, /measured no ping/);
 });
+
+test("farhitscan matches each shot's two traces and judges hits, agreement and what both clients hold", async () => {
+  const { buildFarHitscanWad, matchShots, judgeFarHits, SHOTS, COLUMNS, ROWS } = await import("../scenarios/farhitscan.mjs");
+  assert.deepEqual(lumpNames(buildFarHitscanWad()), ["MAP01", "TEXTMAP", "ENDMAP", "MAP02", "TEXTMAP", "ENDMAP"]);
+  const text = readWad(buildFarHitscanWad())[1].data.toString("latin1");
+  assert.equal((text.match(/type = 3004;/g) || []).length, COLUMNS * ROWS);
+  assert.equal((text.match(/ambush = true;/g) || []).length, COLUMNS * ROWS, "MAP01's horde is deaf");
+  const server = { shots: [{ n: 1, hitNetId: 40 }, { n: 2, hitNetId: 40 }, { n: 3, hitNetId: -1 }] };
+  const client = { shots: [{ n: 1, traced: 1, hitNetId: 40 }, { n: 2, traced: 0, hitNetId: -1 }] };
+  assert.deepEqual(matchShots(server, client), [{ n: 1, server: 40, client: 40 }, { n: 2, server: 40, client: null }, { n: 3, server: -1, client: undefined }]);
+  const shots = Array.from({ length: SHOTS }, (_, i) => ({ n: i + 1, server: 40 + (i >> 1), client: 40 + (i >> 1) }));
+  const health = new Map(shots.map((s) => [s.server, { server: -5, shooter: -5, observer: -5 }]));
+  assert.match(judgeFarHits("x", { shots, health, bars: { hit: 0.9, agree: 0.9 } }).line, /^PASS x: 16 shots at 6,400\+ units, 16 hit, 16 traced alike on the shooter, 8 monsters hit \(8 killed\)/);
+  const bad = judgeFarHits("x", { shots: shots.map((s, i) => (i < 8 ? { ...s, server: -1, client: null } : s)),
+    health: new Map([[44, { server: -5, shooter: 20, observer: -5 }]]), bars: { hit: 0.9, agree: 0.9 } });
+  assert.equal(bad.failed, 1);
+  for (const want of [/shooter traced 8 of 16 shots/, /server hit a monster with 8 of 16 shots/, /same|hit what the server's did on 8 of 16/, /shooter holds monster 44 at 20, the server at -5/]) assert.match(bad.line, want);
+});
+
+test("netmapchange judges each change by what each client saw, its account and the zombieman", async () => {
+  const { buildNetMapChangeWad, judgeChange, STEPS, aheadOf } = await import("../scenarios/netmapchange.mjs");
+  const east = { x: 512, y: 512, angle: 0 }, west = { ...east, angle: 180 };
+  assert.deepEqual([aheadOf(east, { x: 832, y: 512 }), aheadOf(east, { x: 96, y: 512 }), aheadOf(west, { x: 96, y: 512 }), aheadOf(east, { x: 832, y: 864 })], [true, false, true, false]);
+  assert.deepEqual(lumpNames(buildNetMapChangeWad()), ["MAP01", "TEXTMAP", "ENDMAP", "MAP02", "TEXTMAP", "ENDMAP", "MAP03", "TEXTMAP", "ENDMAP"]);
+  assert.deepEqual(STEPS.map((s) => [s.map, s.intermission, s.by]), [["MAP02", true, "server"], ["MAP02", false, "clients"], ["MAP03", false, "server"]]);
+  const good = { who: "player player 0", role: "player", sawIntermission: true, map: "MAP02", connection: "active", playing: true, account: "a1", accountBefore: "a1", serverAccount: "a1", zombieHealth: -3 };
+  const agreed = { failed: 0, lines: [] };
+  assert.deepEqual(judgeChange(STEPS[0], { clients: [good], zombieDied: true, agreed }), []);
+  const bad = { ...good, sawIntermission: false, map: "MAP01", connection: "disconnected", playing: false, spectating: true, account: "b2", serverAccount: "c3", zombieHealth: 20 };
+  const faults = judgeChange(STEPS[0], { clients: [bad], zombieDied: false, agreed: { failed: 1, lines: ["FAIL x: 1 difference(s)", "  sector 0: light"] } });
+  for (const want of [/never showed the intermission/, /is on MAP01, not MAP02/, /connection is disconnected/, /came back spectating/, /plays as b2, not a1/, /holds player player 0 as c3/, /never killed/, /^FAIL x/, /^sector 0: light$/]) assert.ok(faults.some((f) => want.test(f)), String(want));
+  assert.ok(!faults.some((f) => /holds the zombieman/.test(f)), "a zombieman that never died is not judged on the clients");
+  assert.deepEqual(judgeChange(STEPS[1], { clients: [{ ...good, sawIntermission: false, zombieHealth: 20 }], zombieDied: true, agreed }), ["player player 0 holds the zombieman at 20"]);
+  assert.deepEqual(judgeChange(STEPS[1], { clients: [{ ...good, account: "", playing: false }], zombieDied: true, agreed }), ["player player 0 came back not in the game", "player player 0 has no account"]);
+  assert.deepEqual(judgeChange(STEPS[2], { clients: [{ ...good, sawIntermission: false, map: "MAP03" }], zombieDied: true, agreed }), []);
+});
