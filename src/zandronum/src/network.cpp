@@ -898,8 +898,8 @@ static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 
 int NETWORK_GetPackets( void )
 {
-	// [rc4l] The netcode runs on the main thread, where a server's tick and a client's inline tic read what arrives.
-	ZX_SEAM( "net/receive", Main );
+	// [rc4l] The netcode runs on the main thread, where a server's tick and a client's inline tic read what arrives; untimed, since a server's wait polls it about 28 times a tic.
+	ZX_SEAM_UNTIMED( "net/receive", Main );
 	LONG				lNumBytes;
 	// [rc4l] BIG ENOUGH FOR THE FAMILY THAT ACTUALLY ARRIVES.
 	//
