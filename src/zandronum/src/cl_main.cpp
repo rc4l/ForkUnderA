@@ -922,7 +922,8 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 	g_LocalBuffer.ByteStream.WriteString( cl_password );
 	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
-	g_LocalBuffer.ByteStream.WriteByte( NETGAMEVERSION );
+	// [rc4l] The whole revision, where its low byte let one mismatched build in 256 through to misread the wire.
+	g_LocalBuffer.ByteStream.WriteLong( GetRevisionNumber( ));
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
 
 	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one

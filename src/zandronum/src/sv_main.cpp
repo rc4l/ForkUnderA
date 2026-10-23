@@ -2019,12 +2019,11 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 			// Tell the client a packet saying the server is full.
 			SERVER_ConnectionError( AddressFrom, "Server is full.", NETWORK_ERRORCODE_SERVERISFULL );
 
-			// User sent the version, password, start as spectator, restore frags, and network protcol version along with the challenge.
+			// [rc4l] The version, the password, the connect flags and the revision, as CLIENT_AttemptConnection writes them; it read three bytes where two were sent.
 			pByteStream->ReadString();
 			pByteStream->ReadString();
 			pByteStream->ReadByte();
-			pByteStream->ReadByte();
-			pByteStream->ReadByte();
+			pByteStream->ReadLong();
 			// [BB] Lump authentication string.
 			pByteStream->ReadString();
 			// [rc4l] And the identity fields, so this drain still matches what a client sends.
@@ -2066,7 +2065,7 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].bWantHideCountry = !!( connectFlags & CCF_HIDECOUNTRY );
 
 	// Read in the client's network game version.
-	clientNetworkGameVersion = pByteStream->ReadByte();
+	clientNetworkGameVersion = pByteStream->ReadLong();
 
 	g_aClients[lClient].SavedPackets.Clear();
 	g_aClients[lClient].PacketBuffer.Clear();
@@ -2095,7 +2094,8 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	}
 
 	// Make sure the network game version matches.
-	if ( NETGAMEVERSION != clientNetworkGameVersion )
+	// [rc4l] The whole revision the client sent, since a byte of it matched one mismatched build in 256.
+	if ( GetRevisionNumber( ) != clientNetworkGameVersion )
 	{
 		SERVER_ClientError( lClient, NETWORK_ERRORCODE_WRONGPROTOCOLVERSION );
 #ifdef CREATE_PACKET_LOG
