@@ -356,7 +356,7 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
     launch: async (o) => { launched.push(o); if (o.lag === "bad") throw new Error("never joined"); return { id: launched.length }; },
     close: async (set) => closed.push(set.id),
   };
-  const configs = [{ name: "lan", players: 1, observers: 1 }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
+  const configs = [{ name: "lan", players: 1, observers: 1, broadcast: true }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
   const judged = [];
   const r = await compareNetplay({ name: "nt", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs, judgeNetplay: async (set, label, info) => { judged.push([set.id, label, info.config.name]); return set.id === 2 ? { line: `FAIL ${label}`, failed: 1 } : { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
   assert.deepEqual(judged, [[1, "MAP01 lan", "lan"], [2, "MAP01 ping", "ping"]]);
@@ -364,6 +364,7 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
   assert.equal(r.failed, 2);
   assert.deepEqual(closed, [1, 2]);
   assert.deepEqual([launched[0].players, launched[0].observers, launched[1].players, launched[1].lag, launched[1].clientCvars], [1, 1, 1, "100", { cl_unlagged: 1 }]);
+  assert.deepEqual([launched[0].broadcast, launched[1].broadcast], [true, false]);
   assert.equal(compareNetplay.judgedAlone, true);
   assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
 });

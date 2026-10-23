@@ -8,9 +8,9 @@ import { scaled } from "./timeouts.mjs";
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
 
-// [rc4l] A server's arguments: its wads, -host on the game port (a +port cvar is ignored), no announcing, cheats from launch (a later change never reaches a joined client), any number of clients from one address (every client of a set is 127.0.0.1), and loopback only.
-export function serverArgs({ files = [], gamePort = NETPLAY_GAME_PORT } = {}) {
-  return [...(files.length ? ["-file", ...files] : []), "-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0",
+// [rc4l] A server's arguments: its wads, -host on the game port (a +port cvar is ignored), no announcing to the registry and none on the LAN unless broadcast (then left to its cvar), cheats from launch (a later change never reaches a joined client), any number of clients from one address (every client of a set is 127.0.0.1), and loopback only.
+export function serverArgs({ files = [], gamePort = NETPLAY_GAME_PORT, broadcast = false } = {}) {
+  return [...(files.length ? ["-file", ...files] : []), "-host", "-port", String(gamePort), ...(broadcast ? [] : ["+sv_broadcast", "0"]), "+sv_updatemaster", "0",
     "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"];
 }
 
@@ -19,9 +19,9 @@ export function clientArgs({ files = [], webgpu = false } = {}) {
   return [...(files.length ? ["-file", ...files] : []), "-useip", "127.0.0.1", ...(webgpu ? ["-webgpu"] : [])];
 }
 
-// [rc4l] A client's cvars: presenting without the focus, its fake ping and loss when set, then the caller's.
+// [rc4l] A client's cvars: presenting without the focus, no public server registry to ask, its fake ping and loss when set, then the caller's.
 export function clientCvars({ lag = 0, loss = 0, cvars = {} } = {}) {
-  return { fua_render_in_background: 1, ...(lag > 0 ? { fua_net_fakeping: lag } : {}), ...(loss > 0 ? { fua_net_fakeloss: loss } : {}), ...cvars };
+  return { fua_render_in_background: 1, cl_fua_serverregistry_list: "", cl_fua_serverregistrylist_fetch: 0, ...(lag > 0 ? { fua_net_fakeping: lag } : {}), ...(loss > 0 ? { fua_net_fakeloss: loss } : {}), ...cvars };
 }
 
 // [rc4l] One value per client from a comma list, "100,0" for the first two, a lone value for every client, the last given for any past the list.
@@ -45,7 +45,7 @@ export function clientPlaying(serverState, player) {
 }
 
 // [rc4l] Why a client's log says it never got in, from the refusals cl_main.cpp prints and its own quit, or null.
-const REFUSALS = /Too many connections from your IP|Server is full|Incorrect password|Failed connect\.|Couldn't connect\.|authentication failed|could not confirm who you are|already playing on your account|rejected the userinfo|Unknown error code|Unable to recover/i;
+const REFUSALS = /Too many connections from your IP|Server is full|Incorrect password|Failed connect\.|Couldn't connect\.|authentication failed|could not confirm who you are|already playing on your account|rejected the userinfo|Unknown error code|Unable to recover|Can't join|Won't download|No usable download sites|Downloading \d+ files? to/i;
 export function connectionTrouble(logText) {
   return String(logText ?? "").split(/\r?\n/).find((l) => REFUSALS.test(l))?.trim() || null;
 }
@@ -56,17 +56,41 @@ export function withTrouble(error, logText) {
   return why ? new Error(`${error.message}: the client says "${why}"`) : error;
 }
 
-// [rc4l] Launches one client into a set, joins it to the game and waits until the server holds it playing.
-export async function addClient(set, { role = "player", lag = 0, loss = 0, cvars = {}, forUser = false } = {}, deps = {}) {
+// [rc4l] A join as a player makes one from the browser: the server added by address and queried (or, with lan, heard announcing itself), picked once it answers, then fua_join_selected_server, which fetches what the client lacks and reloads onto the server's wads.
+export async function joinThroughBrowser(c, address, deps = {}, { lan = false } = {}) {
+  const { exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000) } = deps;
+  // [rc4l] The browser on screen, as a player has it, so a finished download joins at once rather than waiting to be come back to.
+  await exec(c, "openmenu ZA_Browser");
+  if (!lan) await c.rpc("browser.add", { address });
+  const deadline = Date.now() + timeoutMs;
+  while (!((await c.rpc("browser.list", {}))?.servers || []).some((s) => s.address === address && s.name && (!lan || s.lan))) {
+    if (Date.now() > deadline) throw new Error(lan ? `the browser never heard ${address} announce itself on the LAN` : `the browser never heard back from ${address}`);
+    await sleep(250);
+  }
+  await c.rpc("browser.select", { address });
+  await exec(c, "fua_join_selected_server");
+  // [rc4l] Connected, since the title's demo is a level too and a download comes first.
+  while ((await c.rpc("net.state", {}).catch(() => ({})))?.connection !== "active") {
+    if (Date.now() > deadline) throw new Error(`never connected to ${address} after joining from the browser`);
+    await sleep(250);
+  }
+}
+
+// [rc4l] Launches one client into a set, joins it to the game and waits until the server holds it playing; via "browser" joins from the browser by address and "lan" from its LAN listing, and files replaces the set's wads, empty for a client that has to fetch them.
+export async function addClient(set, { role = "player", lag = 0, loss = 0, cvars = {}, forUser = false, files = set.files, via = "connect" } = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000) } = deps;
   const index = set.clients.length;
-  const inst = await launch({ port: set.basePort + 1 + index, iwad: set.iwad, extraArgs: clientArgs(set), connect: `127.0.0.1:${set.gamePort}`,
-    cvars: clientCvars({ lag, loss, cvars }), allowOsInput: forUser });
-  const client = { inst, c: null, role, lag, loss, player: -1 };
+  // [rc4l] The slot is taken before the launch, so clients added at once each get their own port.
+  const client = { inst: null, c: null, role, lag, loss, player: -1 };
   set.clients.push(client);
+  const address = `127.0.0.1:${set.gamePort}`;
+  const fromBrowser = via === "browser" || via === "lan";
+  const inst = client.inst = await launch({ port: set.basePort + 1 + index, iwad: set.iwad, extraArgs: clientArgs({ ...set, files }), ...(fromBrowser ? {} : { connect: address }),
+    cvars: clientCvars({ lag, loss, cvars }), allowOsInput: forUser });
   const readLog = deps.readLog || ((i) => (i.log && fs.existsSync(i.log) ? fs.readFileSync(i.log, "utf8") : ""));
   try {
     client.c = await connect(inst);
+    if (fromBrowser) await joinThroughBrowser(client.c, address, { exec, sleep, timeoutMs }, { lan: via === "lan" });
     await waitInLevel(client.c, timeoutMs);
   } catch (e) {
     throw withTrouble(e, readLog(inst));
@@ -94,12 +118,13 @@ export async function closeNetplay(set, stop = stopInstance) {
 export async function launchNetplay(opts = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, stop = stopInstance, timeoutMs = scaled(60000) } = deps;
   const { iwad, map, files = [], players = 1, observers = 0, lag = "", loss = "", basePort = NETPLAY_BRIDGE_PORT, gamePort = NETPLAY_GAME_PORT,
-    forUser = false, cvars = {}, clientCvars: perClientCvars = {} } = opts;
+    forUser = false, cvars = {}, clientCvars: perClientCvars = {}, broadcast = false } = opts;
   const roles = clientRoles({ players, observers });
   const lags = perClient(lag, roles.length), losses = perClient(loss, roles.length);
   const set = { iwad, map, files, basePort, gamePort, server: null, clients: [] };
   try {
-    const inst = await launch({ port: basePort, iwad, map, extraArgs: serverArgs({ files, gamePort }), cvars });
+    // [rc4l] Announcing through its cvar, so a caller's sv_broadcast 0 still turns it off.
+    const inst = await launch({ port: basePort, iwad, map, extraArgs: serverArgs({ files, gamePort, broadcast }), cvars: { ...(broadcast ? { sv_broadcast: 1 } : {}), ...cvars } });
     set.server = { inst, c: null, role: "server" };
     set.server.c = await connect(inst);
     await waitInLevel(set.server.c, timeoutMs);

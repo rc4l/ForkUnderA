@@ -378,7 +378,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"browser.add\",\"browser.select\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
 			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"net.state\""
@@ -525,11 +525,29 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			// would miss the collapse entirely.
 			body += ",\"listed\":" + B( BROWSER_IsListable( i ) );
 			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
+			// [rc4l] Where the server serves its own files, which a join falls back to when no mirror has them.
+			body += ",\"download\":\"" + zx::json::ComputeJsonEscape( BROWSER_GetDirectDownloadURL( i ).GetChars() ) + "\"";
 			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
 			++n;
 		}
 		body += "],\"count\":" + I( n ) + "}";
 		SendOk( id, body );
+	}
+	else if ( cmd == "browser.add" || cmd == "browser.select" )
+	{
+		// [rc4l] A server by address, as Continue probes one: add adds and queries it, select makes it the one fua_join_selected_server joins.
+		std::string address;
+		NETADDRESS_s Address;
+		if ( !GetStr( args, "address", address ) || !Address.LoadFromString( address.c_str() ) ) { SendErr( id, cmd + " requires args.address, host:port" ); return; }
+		if ( cmd == "browser.add" )
+			BROWSER_AddServerToList( Address );
+		const LONG lSlot = BROWSER_GetListIDByAddress( Address );
+		if ( lSlot < 0 ) { SendErr( id, "no browser row for " + address ); return; }
+		if ( cmd == "browser.add" )
+			BROWSER_RecheckServer( (ULONG)lSlot );
+		else
+			BROWSER_SetSelectedServer( lSlot );
+		SendOk( id, "{\"slot\":" + I( (long long)lSlot ) + "}" );
 	}
 	else if ( cmd == "net.clients" )
 	{

@@ -97,7 +97,10 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   `ComputeInclusiveRanks`); `fuactl sample --port P --stacks` prints both.
 - **Server discovery**: `browser.refresh` kicks both halves of a browser refresh (LAN broadcast and
   the federated registry); `browser.list` returns the browser's servers as data -- name, address,
-  `lan`, the reported `country`, the resolved `flag` and its index, players, ping. The console's
+  `lan`, the reported `country`, the resolved `flag` and its index, players, the server's own `download`
+  endpoint, ping. `browser.add {address}` lists and queries a server by address, as Continue probes one,
+  and `browser.select {address}` makes it the one `fua_join_selected_server` joins (`fuactl` netplay's
+  browser and LAN joins). The console's
   `dumpserverlist` prints none of the discovery fields, which is why this exists. Assert on `flag`:
   a server whose own GeoIP lookup failed reports `XIP` and the browser geolocates it from the
   address instead, leaving `country` empty by design. Driven by `fuactl browser` and the

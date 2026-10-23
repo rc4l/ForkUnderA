@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");
@@ -23,6 +23,7 @@ test("a server hosts on its game port on loopback with no announcing and cheats 
   assert.deepEqual(serverArgs({ files: ["a.wad"], gamePort: 10900 }),
     ["-file", "a.wad", "-host", "-port", "10900", "+sv_broadcast", "0", "+sv_updatemaster", "0", "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"]);
   assert.equal(serverArgs().includes("-file"), false);
+  assert.equal(serverArgs({ broadcast: true }).includes("+sv_broadcast"), false);
 });
 
 test("a client joins on loopback, with WebGPU when asked", () => {
@@ -30,9 +31,10 @@ test("a client joins on loopback, with WebGPU when asked", () => {
   assert.deepEqual(clientArgs({ webgpu: true }), ["-useip", "127.0.0.1", "-webgpu"]);
 });
 
-test("a client presents unfocused and takes its fake ping and loss only when set", () => {
-  assert.deepEqual(clientCvars(), { fua_render_in_background: 1 });
-  assert.deepEqual(clientCvars({ lag: 100, loss: 5, cvars: { cl_unlagged: 1 } }), { fua_render_in_background: 1, fua_net_fakeping: 100, fua_net_fakeloss: 5, cl_unlagged: 1 });
+test("a client presents unfocused, asks no public registry and takes its fake ping and loss only when set", () => {
+  const quiet = { fua_render_in_background: 1, cl_fua_serverregistry_list: "", cl_fua_serverregistrylist_fetch: 0 };
+  assert.deepEqual(clientCvars(), quiet);
+  assert.deepEqual(clientCvars({ lag: 100, loss: 5, cvars: { cl_unlagged: 1 } }), { ...quiet, fua_net_fakeping: 100, fua_net_fakeloss: 5, cl_unlagged: 1 });
 });
 
 test("per-client values spread from a comma list", () => {
@@ -71,11 +73,15 @@ function fakes({ failOn = -1 } = {}) {
     launched.push(inst);
     return inst;
   };
+  const rpcs = [];
+  let browserAnswersAfter = 0;
   const connect = async (inst) => ({
     inst,
-    rpc: async (m) => {
+    rpc: async (m, args) => {
+      rpcs.push([inst.port, m, args]);
+      if (m === "browser.list") return { servers: [{ address: "127.0.0.1:10950", name: browserAnswersAfter-- > 0 ? "" : "srv", lan: true }] };
       if (m !== "net.state") return {};
-      if (!inst.opts.connect) return { role: "server", clients: [...players.entries()].map(([p, joined]) => ({ player: p, state: joined ? "spawned" : "connected", spectating: !joined })) };
+      if (inst.opts.extraArgs.includes("-host")) return { role: "server", clients: [...players.entries()].map(([p, joined]) => ({ player: p, state: joined ? "spawned" : "connected", spectating: !joined })) };
       const p = launched.indexOf(inst);
       if (!players.has(p)) players.set(p, false);
       return { role: "client", connection: "active", consoleplayer: p };
@@ -84,7 +90,7 @@ function fakes({ failOn = -1 } = {}) {
   });
   const exec = async (c, text) => { execs.push([c.inst.port, text]); if (text === "join") players.set(launched.indexOf(c.inst), true); return ""; };
   const deps = { launch, connect, exec, waitInLevel: async () => {}, sleep: async () => {}, stop: async (i) => stopped.push(i.port), timeoutMs: 1000 };
-  return { deps, launched, execs, stopped, closed };
+  return { deps, launched, execs, stopped, closed, rpcs, answerAfter: (n) => { browserAnswersAfter = n; } };
 }
 
 test("a set launches the server in the map, then each client joined with its own ping", async () => {
@@ -115,6 +121,36 @@ test("a late joiner joins a running set, and a set that fails to launch is torn 
   const g = fakes({ failOn: 1 });
   await assert.rejects(launchNetplay({ players: 1, basePort: 7900 }, g.deps), /launch failed/);
   assert.deepEqual(g.stopped, [7900]);
+});
+
+test("clients added at once each get their own port, and a browser join fetches the server's wads itself", async () => {
+  const f = fakes();
+  const set = await launchNetplay({ files: ["x.wad"], players: 0, basePort: 7900, gamePort: 10950 }, f.deps);
+  f.answerAfter(2);
+  const [a, b] = await Promise.all([addClient(set, { files: [], via: "browser" }, f.deps), addClient(set, {}, f.deps)]);
+  assert.deepEqual([a.inst.port, b.inst.port], [7901, 7902]);
+  assert.equal(a.inst.opts.connect, undefined);
+  assert.ok(!a.inst.opts.extraArgs.includes("x.wad") && b.inst.opts.extraArgs.includes("x.wad"));
+  assert.deepEqual(f.rpcs.filter((r) => r[0] === 7901 && r[1].startsWith("browser.")).map((r) => [r[1], r[2]?.address]),
+    [["browser.add", "127.0.0.1:10950"], ["browser.list", undefined], ["browser.list", undefined], ["browser.list", undefined], ["browser.select", "127.0.0.1:10950"]]);
+  assert.deepEqual(f.execs.filter((e) => e[0] === 7901).map((e) => e[1]), ["openmenu ZA_Browser", "fua_join_selected_server", "join"]);
+  const lan = await launchNetplay({ players: 0, broadcast: true, cvars: { sv_broadcast: 0 }, basePort: 7900, gamePort: 10950 }, f.deps);
+  assert.equal(f.launched.at(-1).opts.cvars.sv_broadcast, 0);
+  await addClient(lan, { via: "lan" }, f.deps);
+  assert.equal(f.rpcs.filter((r) => r[0] === 7901 && r[1] === "browser.add").length, 1, "a LAN join adds nothing by address");
+  assert.match(connectionTrouble("Can't find 'm.wad'\nDownloading 2 files to C:/t/\nDownloading m.wad from 127.0.0.1:10950"), /^Downloading 2 files to/);
+});
+
+test("a browser that never hears from the server says so", async () => {
+  const f = fakes();
+  f.answerAfter(1e9);
+  const c = await f.deps.connect({ port: 1, opts: { extraArgs: [] } });
+  await assert.rejects(joinThroughBrowser(c, "127.0.0.1:10950", { ...f.deps, timeoutMs: 0 }), /the browser never heard back from 127\.0\.0\.1:10950/);
+  const queried = { inst: { port: 1 }, rpc: async (m) => (m === "browser.list" ? { servers: [{ address: "127.0.0.1:10950", name: "srv", lan: false }] } : {}) };
+  await assert.rejects(joinThroughBrowser(queried, "127.0.0.1:10950", { ...f.deps, timeoutMs: 0 }, { lan: true }), /never heard 127\.0\.0\.1:10950 announce itself on the LAN/);
+  f.answerAfter(0);
+  const stuck = { inst: { port: 1 }, rpc: async (m) => (m === "browser.list" ? { servers: [{ address: "127.0.0.1:10950", name: "srv" }] } : m === "net.state" ? { connection: "disconnected" } : {}) };
+  await assert.rejects(joinThroughBrowser(stuck, "127.0.0.1:10950", { ...f.deps, timeoutMs: 0 }), /never connected to 127\.0\.0\.1:10950 after joining from the browser/);
 });
 
 test("a client the server never holds playing times out", async () => {
