@@ -10,6 +10,7 @@
 #include "doomstat.h"
 #include "network.h"
 #include "unlagged.h"
+#include "features/net-session/netrole.h"
 
 namespace zx { namespace netsession {
 
@@ -45,7 +46,7 @@ UnlaggedShot ShotBy(AActor *shooter, bool rewound)
 
 void NoteServerShot(AActor *shooter, AActor *hit)
 {
-	if (NETWORK_GetState() != NETSTATE_SERVER || shooter == NULL || shooter->player == NULL) return;
+	if (!zx::net::IsServer() || shooter == NULL || shooter->player == NULL) return;
 	UnlaggedShot s = ShotBy(shooter, UNLAGGED_IsReconciled());
 	s.hitPlayer = (hit != NULL && hit->player != NULL) ? (int)(hit->player - players) : -1;
 	ComputeLogShot(g_log, s);
@@ -53,7 +54,7 @@ void NoteServerShot(AActor *shooter, AActor *hit)
 
 void NoteClientShot(AActor *shooter)
 {
-	if (NETWORK_GetState() != NETSTATE_CLIENT || shooter == NULL || shooter->player == NULL || shooter->player != &players[consoleplayer]) return;
+	if (!zx::net::IsClient() || shooter == NULL || shooter->player == NULL || shooter->player != &players[consoleplayer]) return;
 	ComputeLogShot(g_log, ShotBy(shooter, false));
 }
 
@@ -68,6 +69,6 @@ CCMD(fua_unlagged_report)
 		Printf("[unlagged] report reset\n");
 		return;
 	}
-	const char *role = NETWORK_GetState() == NETSTATE_SERVER ? "server" : NETWORK_GetState() == NETSTATE_CLIENT ? "client" : "single";
+	const char *role = zx::net::IsServer() ? "server" : zx::net::IsClient() ? "client" : "single";
 	Printf("%s\n", zx::netsession::ComputeShotLogJson(zx::netsession::g_log, role).c_str());
 }

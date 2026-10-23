@@ -84,6 +84,7 @@
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
 #include "features/net-session/computation/joinupdate_compute.h"
+#include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -706,6 +707,8 @@ unsigned int server_GetDeltaTicks( unsigned int &nowTime, const unsigned int pre
 //
 void SERVER_Tick( void )
 {
+	// [rc4l] Untimed, since the tick waits for its next tic inside.
+	ZX_SEAM_UNTIMED( "net/server_tick", Main );
 	unsigned int nowTime = 0;
 
 	I_DoSelect();

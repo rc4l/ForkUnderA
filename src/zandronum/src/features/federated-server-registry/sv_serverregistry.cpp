@@ -82,6 +82,8 @@
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] is anyone outside seeing us
 #include "features/net/zx_resolve.h" // [rc4l] the registry's AAAA, which LoadFromString cannot find
 #include "features/identity/zx_identity.h" // [rc4l] the id the registry groups our two listings by
+#include "features/net-session/netrole.h"
+#include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
 // [rc4l] Its own switch, not `developer`, so turning on LAN tracing does not also unleash every other
 // subsystem's developer chatter. Off by default; when on, the server logs each announce it sends and
@@ -911,6 +913,8 @@ void SERVER_SERVERREGISTRY_Broadcast( void )
 //
 void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, ULONG ulTime, ULONG ulFlags2, bool bBroadcasting, bool bSegmentedResponse )
 {
+	// [rc4l] A launcher reply reads live cvars and players, so it stays on the main thread until it answers from a snapshot.
+	ZX_SEAM( "net/launcher_reply", Main );
 	IPStringArray szAddress;
 	ULONG		ulIdx;
 	ULONG		ulBits;
@@ -1432,7 +1436,7 @@ CCMD( fua_landiag )
 		broadcastOctets[2], broadcastOctets[3], DEFAULT_BROADCAST_PORT );
 	Printf( "  broadcast socket:    %s\n", NETWORK_CanBroadcastOnLAN() ?
 		"dedicated v4 (dual-stack host)" : "none -- game socket broadcasts directly" );
-	Printf( "  hosting:             %s\n", ( NETWORK_GetState() == NETSTATE_SERVER ) ? "yes" : "no (client)" );
+	Printf( "  hosting:             %s\n", ( zx::net::IsServer() ) ? "yes" : "no (client)" );
 	Printf( "  sv_broadcast:        %s\n", sv_broadcast ? "on" : "off" );
 	if ( g_LocalAddress.bIsIPv6 || ( g_LocalAddress.abIP[0] == 127 ))
 		Printf( TEXTCOLOR_YELLOW "  note: local address is loopback/v6 -- other machines on the LAN will not see this server.\n" );
@@ -1470,7 +1474,7 @@ CCMD( fua_hostdiag )
 {
 	Printf( "Public listing diagnostics:\n" );
 
-	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+	if ( !zx::net::IsServer() )
 	{
 		Printf( TEXTCOLOR_YELLOW "  not hosting -- there is nothing to announce. Start a server first.\n" );
 		return;
@@ -1560,7 +1564,7 @@ CUSTOM_CVAR( String, sv_hostname, "Unnamed " GAMENAME " server", CVAR_ARCHIVE|CV
 	SERVERCONSOLE_UpdateTitleString( (const char *)self );
 
 	// [AK] Notify the clients about the new hostname.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if ( zx::net::IsServer() )
 		SERVERCOMMANDS_SetCVar( self );
 }
 

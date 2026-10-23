@@ -17,6 +17,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "features/gamecopy/players.h"   // [rc4l] the players the zoom is read from
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR (Float, cl_fovchangespeed)
 
@@ -55,7 +56,7 @@ float FOV_InterpolatedForFrame(int player)
 	// which is why the network state is part of the test.
 	const bool interpolate = !paused
 		&& !CLIENTDEMO_IsPaused()
-		&& (NETWORK_GetState() == NETSTATE_CLIENT || menuactive != MENU_On);
+		&& (zx::net::IsClient() || menuactive != MENU_On);
 
 	// [rc4l] fixed64: r_TicFrac is 48.16 fixed point. Cross to float via double, never straight
 	// from the 64-bit integer — see the fixed64-widening skill. (Q-Zandronum's original used

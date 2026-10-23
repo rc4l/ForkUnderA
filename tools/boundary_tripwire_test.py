@@ -11,7 +11,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from boundary_tripwire import (DOC_BEGIN, DOC_END, check, code_only, counts, doc, exempted, extern_names, field_patterns, in_set,  # noqa: E402
-                               lowered, seams, stale_docs, with_doc, write_patterns)
+                               lowered, owned_paths, seams, stale_docs, with_doc, write_patterns)
 
 NL = '\n'
 
@@ -48,6 +48,16 @@ class BoundaryTripwire(unittest.TestCase):
         files = {'features/sprites/a.cpp': 'AActor *a; AActor *b;', 'features/sprites/computation/c_compute.cpp': 'AActor',
                  'features/sprites/a_test.cpp': 'AActor', 'features/sprites/README.md': 'AActor', 'g_game.cpp': 'AActor'}
         self.assertEqual(counts([RENDER], files), {'render': {'features/sprites/a.cpp': 2}})
+
+    def test_a_modules_readme_says_what_it_owns_and_its_files_are_not_counted(self):
+        readme = '# net-x' + NL + NL + '## Owns' + NL + NL + '- `net.cpp`, `net.h` and `huff/`.' + NL + NL + '## Files' + NL + NL + '- `other.cpp`' + NL
+        rule = {'name': 'roles', 'files': ['*.cpp'], 'owners': ['features/net-x/README.md'], 'patterns': [{'name': 'state', 'regex': r'\bGetState\('}]}
+        files = {'features/net-x/README.md': readme, 'net.cpp': 'GetState();', 'huff/a.cpp': 'GetState();', 'features/net-x/b.cpp': 'GetState();',
+                 'other.cpp': 'GetState(); GetState();'}
+        self.assertEqual(owned_paths(rule, files), ['features/net-x/', 'net.cpp', 'net.h', 'huff/'])
+        self.assertEqual(counts([rule], files), {'roles': {'other.cpp': 2}})
+        with self.assertRaises(SystemExit):
+            owned_paths(rule, {'features/net-x/README.md': '# net-x' + NL})
 
     def test_copied_fields_are_live_unless_read_through_rc(self):
         rule = dict(RENDER, patterns=[], fields={'table': 'features/gamecopy/fields.h', 'types': ['sector', 'side']})

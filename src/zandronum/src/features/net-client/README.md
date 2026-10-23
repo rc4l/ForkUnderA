@@ -15,12 +15,22 @@ What a client does with what arrives from its server.
   kept 256. With every slot live the stored bytes can wrap over a packet still waiting for a gap to fill, so a
   slot whose bytes a new packet lands on is forgotten (`ComputeOverwritesSlot`) and asked for again.
 
+## Owns
+
+`cl_main.cpp`, `cl_main.h`, `cl_commands.cpp`, `cl_commands.h`, `cl_pred.cpp`, `cl_demo.cpp`, `cl_demo.h`,
+`cl_statistics.cpp` and `cl_statistics.h`.
+
+## Public header
+
+`cl_main.h` (the connection, the server tic it holds) and `cl_commands.h` (what a client sends).
+
 ## Files
 
 - `computation/packetheader_compute.{h,cpp}` with its `_test.cpp`.
 
 ## In-engine hooks
 
+- `cl_main.cpp` `CLIENT_ParsePacket` is the seam `net/parse`, owned by the main thread.
 - `cl_main.cpp` `CLIENT_ReadPacketHeader` (the header kind, the ring slot, the overwritten slots, the jump warning) and
   `CLIENT_CheckForMissingPackets` (the quit's sequences).
 - `cl_main.cpp` `CLIENT_GetPackets`: `SERVER_LAUNCHER_IGNORING` is among the launcher replies routed to the

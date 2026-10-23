@@ -28,6 +28,7 @@
 #include "c_dispatch.h"
 #include "doomstat.h"
 #include "network.h"
+#include "features/net-session/netrole.h"
 #include "d_player.h"
 #include "doomtype.h"
 #include "a_pickups.h"
@@ -940,7 +941,7 @@ void ForgetLevel()
 
 void FillMap()
 {
-	if (ComputeFillDue(gametic, g_filledTic, NETWORK_InClientMode())) FillNow();
+	if (ComputeFillDue(gametic, g_filledTic, zx::net::InClientMode())) FillNow();
 }
 
 zx::frame::OracleTally g_prescanCheck;   // [rc4l] fua_copy_prescan_check's count since the last report
@@ -1008,8 +1009,8 @@ void FillNow()
 	g_filledTic = gametic;
 	ZX_SEAM("copy/fill", Handoff);
 	// [rc4l] Whether the tic's end found the map's changes, which spares the handoff comparing the whole map (Sunder MAP16's 62,000 sides) while the frames wait.
-	const bool scanned = ComputePrescanFresh(g_prescan.stamp, StampNow(true), NETWORK_InClientMode());
-	const bool listed = ComputeActorScanFresh(g_prescan.stamp, StampNow(true), NETWORK_InClientMode());
+	const bool scanned = ComputePrescanFresh(g_prescan.stamp, StampNow(true), zx::net::InClientMode());
+	const bool listed = ComputeActorScanFresh(g_prescan.stamp, StampNow(true), zx::net::InClientMode());
 	g_prescan.stamp.found = false;
 	g_fills++;
 	ZX_COUNT("copy/prescanned", "fills", scanned ? 1 : 0);

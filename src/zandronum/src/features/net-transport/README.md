@@ -12,6 +12,16 @@ The game's UDP socket as tests drive it: a simulated ping and packet loss, set p
 - The held packets keep their own monotonic clock: `I_MSTime` counts from a base set only once the timer is
   chosen, so a packet held at startup came due nine days later and every one behind it waited.
 
+## Owns
+
+`network.cpp`, `network.h`, `networkshared.cpp`, `networkshared.h`, `networkheaders.h`, `i_net.cpp`, `i_net.h`,
+`huffman/`, `network/nettraffic.cpp` and `network/nettraffic.h`.
+
+## Public header
+
+`network.h` (sending, receiving, addresses) and `netconditions.h`. Packets launched or sockets touched outside
+the netcode are counted by `net-sockets-through-transport` (`tools/boundary-rules.json`) and may only shrink.
+
 ## Files
 
 - `computation/netconditions_compute.{h,cpp}`: the delay, the drop and the held-packet queue, tested in
@@ -20,6 +30,8 @@ The game's UDP socket as tests drive it: a simulated ping and packet loss, set p
 
 ## In-engine hooks
 
+- `network.cpp` `NETWORK_GetPackets` and `NETWORK_LaunchPacket` are the seams `net/receive` and `net/send`
+  (`features/handoff/seam.h`), owned by the main thread, where a server's tick and a client's inline tic run.
 - `network.cpp` `NETWORK_LaunchPacket`: an encoded packet is handed to `HoldOutbound` before `sendto`, and
   `network_SendHeldPackets` sends those due.
 - `network.cpp` `NETWORK_GetPackets`: under conditions, `network_TakeHeldInbound` holds every waiting datagram

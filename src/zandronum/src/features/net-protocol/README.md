@@ -10,6 +10,16 @@ What a server writes for its clients, seen and, for tests, held back.
   makes a client report a server tic N behind the one it holds: faults a netgame scenario switches on to
   prove it fails (`ComputeNetDropMatches`, `ComputeReportedServerTic`).
 
+## Owns
+
+`network_enums.h`, `network/netcommand.cpp`, `network/netcommand.h`, `network/servercommands.cpp` and
+`network/servercommands.h`, generated with the wire format from `src/zandronum/protocolspec/` and pinned by
+`tools/protocol-snapshot.py`.
+
+## Public header
+
+`network_enums.h` (the command ids) and `commandcapture.h` and `testfaults.h`.
+
 ## Files
 
 - `computation/commandcapture_compute.{h,cpp}` and `computation/testfaults_compute.{h,cpp}`, each with its

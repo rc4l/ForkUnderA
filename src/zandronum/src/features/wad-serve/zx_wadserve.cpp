@@ -47,6 +47,7 @@ typedef SOCKET zx_socket_t;
 #include "features/wad-serve/computation/httpreq_compute.h"
 #include "features/wad-serve/computation/ratebucket_compute.h"
 #include "features/wad-serve/computation/servepolicy_compute.h"
+#include "features/net-session/netrole.h"
 
 //*****************************************************************************
 //	CONSOLE VARIABLES
@@ -811,7 +812,7 @@ FString StatusLine()
 
 void Tick()
 {
-	if (NETWORK_GetState() != NETSTATE_SERVER)
+	if (!zx::net::IsServer())
 		return;
 
 	// Configuration first: a worker must never read a CVAR, so this is the only place they change.

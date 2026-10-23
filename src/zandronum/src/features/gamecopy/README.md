@@ -114,6 +114,11 @@ Seams:
 - `handoff/snapshot` (Handoff), `features/handoff/snapshot.cpp`
 - `handoff/ticker_begin` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/ticker_end` (Handoff), `features/gameloop/loop.cpp`
+- `net/launcher_reply` (Main), `features/federated-server-registry/sv_serverregistry.cpp`
+- `net/parse` (Main), `cl_main.cpp`
+- `net/receive` (Main), `network.cpp`
+- `net/send` (Main), `network.cpp`
+- `net/server_tick` (Main), `sv_main.cpp`
 - `sky/map` (Main), `r_sky.cpp`
 - `sound/channels` (GameData), `s_sound.cpp`
 - `sound/deferred` (Handoff), `s_sound.cpp`

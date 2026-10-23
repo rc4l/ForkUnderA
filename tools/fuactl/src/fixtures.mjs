@@ -14,6 +14,7 @@ import { captureVulkan, standAt } from "./shot.mjs";
 import { boxDiff, boxDiffMax, decodePNG } from "./pngcore.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import { scaled } from "./timeouts.mjs";
+import { parseSeamReport } from "./seams.mjs";
 
 const ARENA = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 160 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -583,15 +584,7 @@ export async function hudCheckFixture(f, { engine, store, dir = fixtureDir(), cv
   }
 }
 
-// [rc4l] What fua_seams prints: each seam entered (a table line with its entries) and the entries a thread its owner does not allow made, with the first such seam.
-export function parseSeamReport(text) {
-  const total = /^(\d+) violations(?:, the first in (\S+) on the (\w+) thread(?: in (\S+?)[;\s])?)?/m.exec(text);
-  const lines = String(text).split(/\r?\n/);
-  const entered = lines.filter((l) => /^\s*\S+\/\S+\s/.test(l)).length;
-  // [rc4l] fua_seams' own rows of where disallowed threads entered, the most entered first.
-  const sites = lines.filter((l) => /^\s+violated /.test(l)).map((l) => l.trim().replace(/^violated /, ""));
-  return { walked: entered, differed: total ? Number(total[1]) : 0, first: total && total[2] ? `${total[2]} (${total[3]}${total[4] ? `, ${total[4]}` : ""})` : "", sites, found: !!total, text };
-}
+export { parseSeamReport };
 
 // [rc4l] A fixture's demo played to its picture tic on Vulkan alone, judged by fua_seams: no frame touched game data and no tic the main thread's state, outside the handoff.
 export async function seamCheckFixture(f, opts = {}) {

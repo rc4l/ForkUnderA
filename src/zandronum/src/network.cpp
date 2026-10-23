@@ -107,6 +107,7 @@
 #include "doomerrors.h"
 #include "features/telemetry/telemetry.h"
 #include "features/net-transport/netconditions.h"   // [rc4l] fua_net_fakeping, fua_net_fakeloss
+#include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
 enum LumpAuthenticationMode {
 	LAST_LUMP,
@@ -879,6 +880,8 @@ static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 
 int NETWORK_GetPackets( void )
 {
+	// [rc4l] The netcode runs on the main thread, where a server's tick and a client's inline tic read what arrives.
+	ZX_SEAM( "net/receive", Main );
 	LONG				lNumBytes;
 	// [rc4l] BIG ENOUGH FOR THE FAMILY THAT ACTUALLY ARRIVES.
 	//
@@ -1050,6 +1053,7 @@ NETADDRESS_s NETWORK_GetFromAddress( void )
 //
 void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 {
+	ZX_SEAM_UNTIMED( "net/send", Main );
 	LONG				lNumBytes;
 	INT					iNumBytesOut = sizeof(g_ucHuffmanBuffer);
 

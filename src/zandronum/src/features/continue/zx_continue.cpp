@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include "features/net-session/netrole.h"
 
 namespace zx
 {
@@ -441,7 +442,7 @@ void Continue_Load( void )
 // a level runs while the player sits at the main menu.
 static bool InSession( void )
 {
-	return ( NETWORK_GetState( ) == NETSTATE_CLIENT );
+	return ( zx::net::IsClient() );
 }
 
 // [rc4l] Whether this particular record is worth offering: a snapshot too old to load, one whose
@@ -624,7 +625,7 @@ void Continue_NoteQuit( void )
 		return;
 
 	// Online, the address is the session; there is nothing local worth snapshotting.
-	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	if ( zx::net::IsClient() )
 	{
 		Continue_NoteJoined( );
 		return;
@@ -674,7 +675,7 @@ void Continue_NoteLeavingLocalGame( void )
 
 	// Only what is OURS to snapshot. Already being a client means the local game went long ago, and
 	// that session belongs to whoever recorded it at the time.
-	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	if ( zx::net::IsClient() )
 		return;
 
 	WriteLocalSnapshot( );

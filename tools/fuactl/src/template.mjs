@@ -12,7 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
-import { launchNetplay, closeNetplay } from "./netplay.mjs";
+import { launchNetplay, closeNetplay, seamViolations } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -498,7 +498,7 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
 export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
-  const { launch = launchNetplay, close = closeNetplay } = deps;
+  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations } = deps;
   const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
   fs.writeFileSync(wadPath, wad);
   const lines = [];
@@ -512,6 +512,9 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
       const r = await judgeNetplay(set, label, { wadPath, iwad, map, config });
       lines.push(...(r.lines || [r.line]));
       failed += r.failed;
+      // [rc4l] And the netcode stayed on the threads its seams name, on every instance.
+      const crossed = await seams(set);
+      if (crossed.length) { lines.push(`FAIL ${label}: ${crossed.join("; ")}`); failed++; }
     } catch (e) {
       lines.push(`FAIL ${label}: ${e.message}`);
       failed++;

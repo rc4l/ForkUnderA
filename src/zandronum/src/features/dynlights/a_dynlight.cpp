@@ -50,6 +50,7 @@
 #include "features/dynlights/dynlight.h"
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR (Float, r_lights_size);
 EXTERN_CVAR (Bool, r_lights_additive);
@@ -183,7 +184,7 @@ void ADynamicLight::PostBeginPlay()
 void ADynamicLight::Activate(AActor *activator)
 {
 	// [BB] The server never displays dynamic light, so just keep them deactivated.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if ( zx::net::IsServer() )
 	{
 		flags2 |= MF2_DORMANT;
 		return;

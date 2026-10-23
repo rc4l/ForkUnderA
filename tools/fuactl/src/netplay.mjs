@@ -4,6 +4,7 @@ import { launchInstance, stopInstance } from "./launch.mjs";
 import { attach } from "./session.mjs";
 import * as cap from "./capture.mjs";
 import { scaled } from "./timeouts.mjs";
+import { parseSeamReport } from "./seams.mjs";
 
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
@@ -105,6 +106,17 @@ export async function addClient(set, { role = "player", lag = 0, loss = 0, cvars
     if (Date.now() > deadline) throw withTrouble(new Error(`client ${index} (${role}) never joined the game: ${JSON.stringify(mine)}`), readLog(inst));
     await sleep(250);
   }
+}
+
+// [rc4l] Each instance of a set whose seams a thread their owner does not allow entered, as "who: first (count)", since the netcode's seams run only in a netgame.
+export async function seamViolations(set, exec = cap.exec) {
+  const out = [];
+  for (const m of [set.server, ...set.clients]) {
+    if (!m?.c) continue;
+    const r = parseSeamReport(await exec(m.c, "fua_seams"));
+    if (r.differed > 0) out.push(`${m.role}${m.player >= 0 ? ` player ${m.player}` : ""}: ${r.differed} seam violations, the first in ${r.first}`);
+  }
+  return out;
 }
 
 // [rc4l] Every connection closed and every instance stopped, clients first.

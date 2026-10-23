@@ -108,6 +108,7 @@
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/zx_resolvejob.h"
 #include "features/wad-download/computation/jobstate_compute.h"
+#include "features/net-session/netrole.h"
 
 // [rc4l] The bar above the menu, as features/global-header installs it; no bar until then.
 static int NoBarBottom( void ) { return 0; }
@@ -4943,7 +4944,7 @@ public:
 	// question about whether to disconnect cannot wait on the connection it is about.
 	int CountOtherPlayersHere( )
 	{
-		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		if ( !zx::net::IsClient() )
 			return 0;
 
 		int count = 0;
@@ -16745,7 +16746,7 @@ public:
 	// own server in order to travel to it.
 	bool RowIsTheServerWeAreOn( int lServer )
 	{
-		if ( NETWORK_GetState( ) != NETSTATE_CLIENT )
+		if ( !zx::net::IsClient() )
 			return false;
 
 		const NETADDRESS_s connected = CLIENT_GetServerAddress( );
@@ -16774,7 +16775,7 @@ public:
 		{
 			s_localIpFrame = static_cast<int>( gametic );
 			s_localIp = "";
-			if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+			if ( !zx::net::IsSinglePlayer() )
 				s_localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
 		}
 
@@ -16822,7 +16823,7 @@ public:
 			const int total = static_cast<int>( g_SortedServers.Size( ));
 			bool bTargetIsCurrent = false;
 
-			const bool bConnected = ( NETWORK_GetState( ) == NETSTATE_CLIENT );
+			const bool bConnected = ( zx::net::IsClient() );
 
 			if ( bConnected && ( g_Selected >= 0 ) && ( g_Selected < total ))
 			{

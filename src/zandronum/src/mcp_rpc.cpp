@@ -47,6 +47,7 @@
 #include "r_data/colormaps.h" // [rc4l] FDynamicColormap, for world.sectorstate
 #include "g_shared/a_pickups.h" // [rc4l] AInventory, which world.actors leaves out when carried
 #include "features/mcp-bridge/computation/netrpc_compute.h"
+#include "features/net-session/netrole.h"
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/gamecopy/tintsubject.h"   // [rc4l] DamageTint_SectorDamage
@@ -174,8 +175,7 @@ namespace
 	// plainly instead of silently doing nothing.
 	bool IsNetInstance()
 	{
-		LONG s = NETWORK_GetState();
-		return s == NETSTATE_SERVER || s == NETSTATE_CLIENT;
+		return zx::net::IsServer() || zx::net::IsClient();
 	}
 
 	// Deterministic fingerprint of the sim: level clock + RNG position + every actor's transform &
@@ -553,7 +553,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		// [rc4l] How many peers actually got in, which is the only signal a connection that never
 		// happened cannot produce.
-		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
+		if ( !zx::net::IsServer() ) { SendErr( id, "net.clients requires a server" ); return; }
 		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
 		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
 		SendOk( id, body );
@@ -597,11 +597,11 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		// [rc4l] The machine-readable half of fua_hostdiag, so a reachability check can be asserted on
 		// rather than eyeballed.
-		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
+		std::string body = "{\"hosting\":" + B( zx::net::IsServer() );
 		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
 
 		bool registryReplied = false;
-		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		if ( zx::net::IsServer() )
 		{
 			body += ",\"families\":{";
 			for ( int fam = 0; fam < 2; ++fam )

@@ -150,6 +150,7 @@
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 #include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
+#include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -1429,6 +1430,7 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 //
 void CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket )
 {
+	ZX_SEAM( "net/parse", Main );
 	LONG	lCommand;
 
 	// [rc4l] features/latency: a server packet applied, which the next frame to end draws.

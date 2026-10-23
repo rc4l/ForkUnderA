@@ -76,6 +76,7 @@
 #include "templates.h"
 #include "version.h"
 #include "features/federated-server-registry/zx_serverregistrylist.h"
+#include "features/net-session/netrole.h"
 
 //*****************************************************************************
 //	VARIABLES
@@ -1255,7 +1256,7 @@ static void browser_MirrorAnswerOntoOurOtherRows( LONG lAnswered )
 	// used it and mirrored nothing at all. RowIsOwnServer is the wider question, and the one the menu
 	// already asks to decide whether JOIN means "go there" or "you are already here".
 	FString localIp;
-	if ( NETWORK_GetState( ) != NETSTATE_SINGLE )
+	if ( !zx::net::IsSinglePlayer() )
 		localIp = NETWORK_GetLocalAddress( ).ToStringNoPort( );
 
 	const int hostPort = browser_PortOfAddress( zx::HostConnectAddress( ));
@@ -2138,7 +2139,7 @@ void BROWSER_BackgroundTick( void )
 
 		// A server does not browse, and a client already has the list it is playing on.
 		// [rc4l] Nor does an offline launch, which has no socket to ask with.
-		if ( NETWORK_GetState( ) == NETSTATE_SINGLE && !zx::net::OfflineLaunch( ))
+		if ( zx::net::IsSinglePlayer() && !zx::net::OfflineLaunch( ))
 			BROWSER_QueryServerRegistry( );
 	}
 
