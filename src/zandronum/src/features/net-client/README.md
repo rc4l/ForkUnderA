@@ -11,6 +11,9 @@ What a client does with what arrives from its server.
   now goes to the browser (`features/server-browser` `ShouldRouteToBrowser`). Two players behind one address
   (a household, a LAN party) hit it; `netsync`'s observer hit it on every other join.
 - A sequence that jumps by more than 256 is warned about, and the quit names both sequences.
+- The packet ring uses all its `PACKET_BUFFER_SIZE` slots (`ComputeNextPacketSlot`); its index was a byte, so it
+  kept 256. With every slot live the stored bytes can wrap over a packet still waiting for a gap to fill, so a
+  slot whose bytes a new packet lands on is forgotten (`ComputeOverwritesSlot`) and asked for again.
 
 ## Files
 
@@ -18,7 +21,7 @@ What a client does with what arrives from its server.
 
 ## In-engine hooks
 
-- `cl_main.cpp` `CLIENT_ReadPacketHeader` (the header kind, the jump warning) and
+- `cl_main.cpp` `CLIENT_ReadPacketHeader` (the header kind, the ring slot, the overwritten slots, the jump warning) and
   `CLIENT_CheckForMissingPackets` (the quit's sequences).
 - `cl_main.cpp` `CLIENT_GetPackets`: `SERVER_LAUNCHER_IGNORING` is among the launcher replies routed to the
   browser.

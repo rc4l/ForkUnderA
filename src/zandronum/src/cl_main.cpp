@@ -406,7 +406,8 @@ static	LONG				g_lPacketSequence[PACKET_BUFFER_SIZE];
 static	LONG				g_lPacketSize[PACKET_BUFFER_SIZE];
 
 // This is the index of the incoming packet.
-static	BYTE				g_bPacketNum;
+// [rc4l] Wide enough for every slot, where a BYTE wrapped at 256 and the ring kept an eighth of what it holds.
+static	ULONG				g_ulPacketNum;
 
 // This is the current position in the received packet buffer.
 static	LONG				g_lCurrentPosition;
@@ -906,7 +907,7 @@ void CLIENT_AttemptConnection( void )
 	g_bServerLagging = false;
 	g_bClientLagging = false;
 
-	g_bPacketNum = 0;
+	g_ulPacketNum = 0;
 	g_lCurrentPosition = 0;
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
@@ -943,7 +944,7 @@ void CLIENT_AttemptAuthentication( char *pszMapName )
 	Printf( "Authenticating level...\n" );
 
 	memset( g_lPacketSequence, -1, sizeof(g_lPacketSequence) );
-	g_bPacketNum = 0;
+	g_ulPacketNum = 0;
 
 	g_LocalBuffer.ByteStream.WriteByte( CLCC_ATTEMPTAUTHENTICATION );
 
@@ -971,7 +972,7 @@ void CLIENT_RequestSnapshot( void )
 	Printf( "Requesting snapshot...\n" );
 
 	memset( g_lPacketSequence, -1, sizeof (g_lPacketSequence) );
-	g_bPacketNum = 0;
+	g_ulPacketNum = 0;
 
 	// Send them a message to get data from the server, along with our userinfo.
 	g_LocalBuffer.ByteStream.WriteByte( CLCC_REQUESTSNAPSHOT );
@@ -1392,13 +1393,23 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 	if (( g_lCurrentPosition + ( NETWORK_GetNetworkMessageBuffer( )->CalcSize())) >= g_ReceivedPacketBuffer.lMaxSize )
 		g_lCurrentPosition = 0;
 
+	// [rc4l] A slot whose bytes this packet overwrites holds it no longer, so it is forgotten and asked for again if it was still awaited.
+	for ( lIdx = 0; lIdx < PACKET_BUFFER_SIZE; lIdx++ )
+	{
+		if (( lIdx != static_cast<LONG>( g_ulPacketNum )) && ( g_lPacketSequence[lIdx] != -1 ) && zx::netclient::ComputeOverwritesSlot( g_lPacketBeginning[lIdx],
+			g_lPacketSize[lIdx], g_lCurrentPosition, NETWORK_GetNetworkMessageBuffer( )->CalcSize()))
+		{
+			g_lPacketSequence[lIdx] = -1;
+		}
+	}
+
 	// Save a bunch of information about this incoming packet.
-	g_lPacketBeginning[g_bPacketNum] = g_lCurrentPosition;
-	g_lPacketSize[g_bPacketNum] = NETWORK_GetNetworkMessageBuffer( )->CalcSize();
-	g_lPacketSequence[g_bPacketNum] = lSequence;
+	g_lPacketBeginning[g_ulPacketNum] = g_lCurrentPosition;
+	g_lPacketSize[g_ulPacketNum] = NETWORK_GetNetworkMessageBuffer( )->CalcSize();
+	g_lPacketSequence[g_ulPacketNum] = lSequence;
 
 	// Save the received packet.
-	memcpy( g_ReceivedPacketBuffer.abData + g_lPacketBeginning[g_bPacketNum], NETWORK_GetNetworkMessageBuffer( )->ByteStream.pbStream, NETWORK_GetNetworkMessageBuffer( )->CalcSize());
+	memcpy( g_ReceivedPacketBuffer.abData + g_lPacketBeginning[g_ulPacketNum], NETWORK_GetNetworkMessageBuffer( )->ByteStream.pbStream, NETWORK_GetNetworkMessageBuffer( )->CalcSize());
 	g_lCurrentPosition += NETWORK_GetNetworkMessageBuffer( )->CalcSize();
 
 	// [rc4l] A jump this big is a server whose sequence restarted or ran on without us, which ends the game once it passes PACKET_BUFFER_SIZE.
@@ -1408,7 +1419,7 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 	if ( lSequence > g_lHighestReceivedSequence )
 		g_lHighestReceivedSequence = lSequence;
 
-	g_bPacketNum++;
+	g_ulPacketNum = zx::netclient::ComputeNextPacketSlot( g_ulPacketNum, PACKET_BUFFER_SIZE );
 
 	return ( false );
 }

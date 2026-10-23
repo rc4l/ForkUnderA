@@ -12,4 +12,14 @@ PacketHeaderKind ComputePacketHeaderKind(int firstByte, int svcHeader, int svcUn
 	return kPacketStray;
 }
 
+unsigned ComputeNextPacketSlot(unsigned slot, unsigned slots)
+{
+	return (slot + 1) % slots;
+}
+
+bool ComputeOverwritesSlot(long slotStart, long slotSize, long writeStart, long writeSize)
+{
+	return slotSize > 0 && writeSize > 0 && writeStart < slotStart + slotSize && slotStart < writeStart + writeSize;
+}
+
 }} // namespace zx::netclient

@@ -12,6 +12,12 @@ enum PacketHeaderKind { kPacketUnreliable, kPacketReliable, kPacketStray };
 
 PacketHeaderKind ComputePacketHeaderKind(int firstByte, int svcHeader, int svcUnreliable);
 
+// [rc4l] The ring slot after this one, so a ring of this many slots stores that many packets before it reuses one.
+unsigned ComputeNextPacketSlot(unsigned slot, unsigned slots);
+
+// [rc4l] Whether writing writeSize bytes at writeStart lands on any of a stored packet's slotSize bytes at slotStart.
+bool ComputeOverwritesSlot(long slotStart, long slotSize, long writeStart, long writeSize);
+
 }} // namespace zx::netclient
 
 #endif // ZX_PACKETHEADER_COMPUTE_H
