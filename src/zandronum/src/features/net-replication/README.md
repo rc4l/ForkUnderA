@@ -43,8 +43,8 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 ## In-engine hooks
 
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
-- `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` where
-  `SERVER_UpdateSides` was, and `SERVER_UpdateSectors`/`SERVER_UpdateLines` keep only the families not here.
+- `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between
+  `SERVER_UpdateLines` and `SERVER_UpdateSectors`, which keep only the families not here.
 - Touches in `p_acs.cpp`, `p_ceiling.cpp`, `p_doors.cpp`, `p_floor.cpp`, `p_lnspec.cpp`, `p_plats.cpp`,
   `p_sectors.cpp`, `p_spec.cpp`, `p_switch.cpp` and `g_game.cpp`'s map reset, where those sends were.
 - `sv_commands.cpp`: `SERVERCOMMANDS_SetLineTextureParts` sends the textures a mask names, and

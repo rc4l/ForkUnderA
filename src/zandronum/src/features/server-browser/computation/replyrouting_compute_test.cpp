@@ -30,9 +30,7 @@ TEST( ReplyRouting, ALauncherReplyWeAskedForGoesToTheBrowser )
 
 TEST( ReplyRouting, TheServerWePlayOnIgnoringOurQueryGoesToTheBrowser )
 {
-	// [rc4l] A second client from one address asks the server it plays on within ten seconds of the
-	// first; its "ignoring you" reply, parsed as game traffic, was read as a sequence number and the
-	// client quit with 2048 packets missing (netsync's observer, every second join).
+	// [rc4l] A server's "ignoring you" reply, parsed as game traffic, was read as a sequence number and quit netsync's observer with 2048 packets missing.
 	EXPECT_TRUE( ShouldRouteToBrowser( true, kIgnoring, kCommands ));
 	EXPECT_FALSE( ShouldRouteToBrowser( false, kIgnoring, kCommands ));
 }
