@@ -743,7 +743,8 @@ bool StartListener(int port)
 	std::memset(&address, 0, sizeof address);
 	address.sin_family = AF_INET;
 	address.sin_port = htons(static_cast<unsigned short>(port));
-	address.sin_addr.s_addr = htonl(INADDR_ANY);
+	// [rc4l] The game socket's address, so a server held to one address by -useip serves files only there and asks no firewall about the rest.
+	address.sin_addr.s_addr = NETWORK_GetBoundInAddr();
 
 	if (bind(sock, reinterpret_cast<sockaddr *>(&address), sizeof address) < 0 ||
 		listen(sock, 16) < 0)

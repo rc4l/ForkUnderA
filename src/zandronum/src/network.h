@@ -405,6 +405,8 @@ ULONG			NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address );
 const char		*NETWORK_GetCountryCodeFromIndex( ULONG ulIndex, bool bGetAlpha3 );
 const char		*NETWORK_GetCountryNameFromIndex( ULONG ulIndex );
 USHORT			NETWORK_GetLocalPort( void );
+// [rc4l] The IPv4 address the game socket bound in network byte order, INADDR_ANY unless -useip named one.
+ULONG			NETWORK_GetBoundInAddr( void );
 
 const TArray<NetworkPWAD>&	NETWORK_GetPWADList( void ); // [RC]
 const TArray<NetworkPWAD>&	NETWORK_GetAuthenticatedWADsList( void ); // [SB]

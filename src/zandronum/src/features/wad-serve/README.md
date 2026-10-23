@@ -30,7 +30,9 @@ Two consequences make it lopsided rather than merely tidier:
 The cost is real: **operators must forward TCP as well as UDP**, same port number as the game. UDP
 10666 and TCP 10666 are distinct bindings to the OS, so nothing about the existing netcode changes,
 but a host who only opened UDP sees downloads fail while the server itself works perfectly. Startup
-says so in as many words, and `fua_downloadserver_status` exists to make it diagnosable.
+says so in as many words, and `fua_downloadserver_status` exists to make it diagnosable. The
+listener binds the address the game socket bound (`NETWORK_GetBoundInAddr`), so a server held to one
+address by `-useip` serves files there alone.
 
 ## What stops it ruining the game it is attached to
 

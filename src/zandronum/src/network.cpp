@@ -209,6 +209,8 @@ static	bool				g_bLANSocketInvalid = false;
 
 // Our local port.
 static	USHORT			g_usLocalPort;
+// [rc4l] The address the game socket bound, which -useip names, so the server's other listeners bind it too.
+static	ULONG			g_ulBoundInAddr = INADDR_ANY;
 
 // Buffer for the Huffman encoding.
 static	UCHAR			g_ucHuffmanBuffer[131072];
@@ -350,6 +352,8 @@ static void network_OpenSockets( USHORT usPort, bool bAllocateLANSocket )
 			g_usLocalPort = usNewPort;
 		}
 	}
+
+	g_ulBoundInAddr = ulInAddr;
 
 	ulArg = true;
 	if ( ioctlsocket( g_NetworkSocket, FIONBIO, &ulArg ) == -1 )
@@ -1321,6 +1325,13 @@ USHORT NETWORK_ntohs( ULONG ul )
 USHORT NETWORK_GetLocalPort( void )
 {
 	return ( g_usLocalPort );
+}
+
+//*****************************************************************************
+//
+ULONG NETWORK_GetBoundInAddr( void )
+{
+	return ( g_ulBoundInAddr );
 }
 
 //*****************************************************************************
