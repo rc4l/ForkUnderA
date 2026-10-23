@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -80,13 +80,19 @@ test("a scenario imported rather than run keeps its options for probing", () => 
   assert.equal(scenarioOptions("file:///scenarios/never.mjs"), null);
 });
 
+test("a scenario run directly takes its port bare and its engine by --engine", () => {
+  assert.deepEqual(directRunArgs(["7850", "--engine", "F:/b/forkundera.exe"]), { port: 7850, engine: "F:/b/forkundera.exe" });
+  assert.deepEqual(directRunArgs(["--engine", "e.exe"]), { port: null, engine: "e.exe" });
+  assert.deepEqual(directRunArgs(["--engine"]), { port: null, engine: null });
+});
+
 test("an imported scenario runs as one call through the comparison it named", async () => {
   const url = "file:///scenarios/runnable.mjs";
   const seen = [];
   runScenarioIfMain(url, () => ({ name: "runnable", port: 7 }), async (opts) => { seen.push(opts.port); return { lines: ["PASS a"], failed: 0 }; });
   const out = await scenarioRun(url)();
   assert.deepEqual(seen, [7]);
-  assert.deepEqual(out, { lines: ["PASS a", "all runnable boxes within their limits"], code: 0 });
+  assert.deepEqual(out, { lines: ["PASS a", "all runnable checks within their limits"], code: 0 });
   assert.equal(scenarioRun("file:///scenarios/never.mjs"), null);
   await scenarioRun(url, (o) => ({ ...o, port: 9 }))();
   assert.deepEqual(seen, [7, 9]);
@@ -136,7 +142,7 @@ test("a scenario's own sides are compared by name", () => {
 });
 
 test("a scenario exits 0 only when nothing failed, and 3 when it refused to run", () => {
-  assert.deepEqual(scenarioOutcome("x", { lines: ["PASS a"], failed: 0 }), { lines: ["PASS a", "all x boxes within their limits"], code: 0 });
+  assert.deepEqual(scenarioOutcome("x", { lines: ["PASS a"], failed: 0 }), { lines: ["PASS a", "all x checks within their limits"], code: 0 });
   assert.equal(scenarioOutcome("x", { lines: [], failed: 2 }).code, 1);
   assert.equal(scenarioOutcome("x", { lines: [], failed: 1, refused: true }).code, 3);
 });

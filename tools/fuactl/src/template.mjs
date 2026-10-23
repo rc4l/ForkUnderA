@@ -332,7 +332,7 @@ export function compareSoak(opts) {
 
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
 export function scenarioOutcome(name, r) {
-  const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes within their limits`;
+  const summary = r.failed ? `${r.failed} failed` : `all ${name} checks within their limits`;
   return { lines: [...r.lines, summary], code: r.refused ? 3 : r.failed ? 1 : 0 };
 }
 
@@ -367,13 +367,25 @@ export function templateScenarioFiles(dir, names = []) {
     && fs.readFileSync(path.join(dir, f), "utf8").includes("runScenarioIfMain("));
 }
 
-// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; argv[2] is the port.
+// [rc4l] A direct run's arguments: the port given bare and the engine given as --engine PATH, which a direct run ignored and so drove the staged binary.
+export function directRunArgs(argv) {
+  const out = { port: null, engine: null };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--engine" && i + 1 < argv.length) out.engine = argv[++i];
+    else if (/^\d+$/.test(argv[i])) out.port = Number(argv[i]);
+  }
+  return out;
+}
+
+// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; directRunArgs reads its port and engine.
 export function runScenarioIfMain(metaUrl, options, compare = compareTemplate) {
   if (!isMain(metaUrl)) { registered.set(metaUrl, { options, compare }); return; }
+  const direct = directRunArgs(process.argv.slice(2));
+  if (direct.engine) process.env.FUACTL_ENGINE = direct.engine;
   const opts = options();
   // [rc4l] Named up front, since a scenario run directly takes the staged binary unless FUACTL_ENGINE says otherwise.
   console.log(`engine ${resolveEngine()}`);
-  compare({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
+  compare({ ...opts, port: direct.port || opts.port || 7796 }).then((r) => {
     const out = scenarioOutcome(opts.name, r);
     for (const l of out.lines) console.log(l);
     process.exit(out.code);
