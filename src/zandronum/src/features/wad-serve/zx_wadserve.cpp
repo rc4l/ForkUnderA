@@ -43,6 +43,7 @@ typedef SOCKET zx_socket_t;
 #include "w_wad.h"
 
 #include "features/wad-serve/zx_wadserve.h"
+#include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-serve/computation/httpreq_compute.h"
 #include "features/wad-serve/computation/ratebucket_compute.h"
 #include "features/wad-serve/computation/servepolicy_compute.h"
@@ -598,23 +599,6 @@ long long FileSizeOf(const char *path)
 	return size;
 }
 
-// The engine's own definition of which loaded file is the IWAD, matching network_InitPWADList: skip
-// everything loaded automatically, and the entry at IWAD_FILENUM is the one.
-int FindIwadWadnum()
-{
-	ULONG seen = 0;
-	for (ULONG idx = 0; Wads.GetWadName(idx) != NULL; ++idx)
-	{
-		if (Wads.GetLoadedAutomatically(idx) == false)
-		{
-			if (seen == static_cast<ULONG>(FWadCollection::IWAD_FILENUM))
-				return static_cast<int>(idx);
-			seen++;
-		}
-	}
-	return -1;
-}
-
 // Has the loaded WAD set changed since the table was built?
 //
 // Called every frame on the server, so it ALLOCATES NOTHING on the common path -- the answer is
@@ -661,7 +645,7 @@ void RebuildServableTable()
 {
 	std::vector<ServableEntry> table;
 
-	const int iwadNum = FindIwadWadnum();
+	const int iwadNum = zx::RunningIwadWadnum();
 	if (iwadNum >= 0)
 	{
 		const char *name = Wads.GetWadName(iwadNum);
