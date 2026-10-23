@@ -88,6 +88,7 @@
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchors (no-op unless FUA_MCP_BRIDGE)
 #include "features/mbf21/computation/damage_groups_compute.h"
 #include "features/damage-taken/damagetaken.h"
+#include "features/net-replication/actorstate.h"
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -1882,6 +1883,9 @@ thrust:
 		return damage;
 		}	// [rc4l] closes the MF7_BUDDHA else opened above
 	}
+
+	// [rc4l] features/net-replication: it lived, so its new health reaches every client, where only a death did.
+	zx::netreplication::NoteDamaged( target );
 
 	woundstate = target->FindState(NAME_Wound, mod);
 	// [BB] The server takes care of this.

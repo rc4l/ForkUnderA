@@ -25,6 +25,13 @@ polyobjects run on clients too and keep their own sends.
   sent a sector's gravity, reflection and plane angle to every client on each join, and never sent a sector's
   special or a line's monster, projectile or hitscan blocking at all.
 
+## Actors
+
+A monster or other non-player that takes damage and lives sends its health to every client at the tic's end, once
+however many hits it took (`NoteDamaged`, `SendWoundedHealth` from `SendChanges`, `ComputeSendsWoundedHealth`,
+`ComputeAddPendingHealth`). Stock Zandronum sends only the death, to save the bytes, so anything a client reads of a
+wounded monster's health (a health bar, a client script, `netdiff`) read its spawn health (`farhitscan`).
+
 ## Owns
 
 `sv_commands.cpp`, `sv_commands.h`, `network/packetarchive.cpp` and `network/packetarchive.h`.
@@ -39,10 +46,12 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `computation/mapstate_compute.{h,cpp}` (the families, what changed, what a compact send covered) with its
   `_test.cpp`.
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
+- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`).
 
 ## In-engine hooks
 
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
+- `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
 - `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between
   `SERVER_UpdateLines` and `SERVER_UpdateSectors`, which keep only the families not here.
 - Touches in `p_acs.cpp`, `p_ceiling.cpp`, `p_doors.cpp`, `p_floor.cpp`, `p_lnspec.cpp`, `p_plats.cpp`,

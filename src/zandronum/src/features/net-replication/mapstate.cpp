@@ -14,6 +14,7 @@
 #include "v_palette.h"
 
 #include "features/net-protocol/lineflags.h"
+#include "features/net-replication/actorstate.h"
 #include "features/net-replication/computation/mapstate_compute.h"
 #include "features/net-session/netrole.h"
 #include "features/telemetry/telemetry.h"
@@ -222,6 +223,7 @@ void NoteSentLine(int index, unsigned families) { g_lines.NoteSent(index, famili
 void SendChanges()
 {
 	if (!zx::net::IsServer()) return;
+	SendWoundedHealth();
 	EachKind([](auto &rows) {
 		if (!rows.Ready()) rows.Begin();
 		rows.SendTouched();
