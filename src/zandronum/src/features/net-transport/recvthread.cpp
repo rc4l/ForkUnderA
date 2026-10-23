@@ -2,6 +2,9 @@
 // Copyright (C) 2026 rc4l
 
 #include "networkheaders.h"
+#ifndef _WIN32
+#include <sys/select.h>   // [rc4l] select, which the socket headers do not declare on every POSIX system
+#endif
 
 #include "features/net-transport/recvthread.h"
 
