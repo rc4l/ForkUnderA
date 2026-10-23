@@ -151,6 +151,7 @@
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 #include "features/net-protocol/lineflags.h"   // [rc4l] the line flags a server sends
 #include "features/net-client/netclient.h"   // [rc4l] the packets applied, for the render copy
+#include "features/net-client/rejoin.h"   // [rc4l] a player the map command sent back comes back playing
 #include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
@@ -924,7 +925,8 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteByte( CLCC_ATTEMPTCONNECTION );
 	g_LocalBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 	g_LocalBuffer.ByteStream.WriteString( cl_password );
-	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
+	// [rc4l] features/net-client: a player the map command sent back asks to play again.
+	g_LocalBuffer.ByteStream.WriteByte( zx::netclient::ConnectFlags( cl_connect_flags ));
 	// [rc4l] The whole revision, where its low byte let one mismatched build in 256 through to misread the wire.
 	g_LocalBuffer.ByteStream.WriteLong( GetRevisionNumber( ));
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
@@ -2659,6 +2661,7 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// [rc4l] Every way of leaving a server is the same way of leaving. The gate decides whether this
 	// teardown is one at all -- a join tidying up on its way in, and a reconnect, are not.
 	zx::Continue_NoteLeftServer( );
+	zx::netclient::ForgetRejoin( );
 
 	if ( pszString )
 		Printf( "%s\n", pszString );
@@ -3596,6 +3599,7 @@ void ServerCommands::EndSnapshot::Execute()
 {
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
+	zx::netclient::ForgetRejoin( );
 
 	// [rc4l] Remember this server, whichever way we got here.
 	//
@@ -7589,6 +7593,9 @@ void ServerCommands::MapNew::Execute()
 
 	// [AK] We're reconnecting so we don't have RCON access anymore.
 	g_HasRCONAccess = false;
+
+	// [rc4l] features/net-client: whether we come back playing, read while the player list still says.
+	zx::netclient::NoteMapNew( );
 
 	// [AK] Close the server setup menu if we're still in it.
 	if ( M_InServerSetupMenu( ))
