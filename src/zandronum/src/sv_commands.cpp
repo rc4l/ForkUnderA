@@ -5359,7 +5359,8 @@ void SERVERCOMMANDS_SetMugShotState ( const char *statename )
 void SERVERCOMMANDS_Scroll3dMidtexture ( sector_t* sector, fixed_t move, bool ceiling, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	NetCommand command ( SVC2_SCROLL3DMIDTEX );
-	command.addByte ( sector - sectors );
+	// [rc4l] A long, where a byte scrolled sector index % 256 on a map with more sectors.
+	command.addLong ( sector - sectors );
 	command.addLong ( (SDWORD)(move) );
 	command.addByte ( ceiling );
 	command.sendCommandToClients ( ulPlayerExtra, flags );

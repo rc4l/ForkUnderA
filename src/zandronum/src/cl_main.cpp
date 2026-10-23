@@ -2274,7 +2274,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			case SVC2_SCROLL3DMIDTEX:
 				{
-					const int i = pByteStream->ReadByte();
+					const int i = pByteStream->ReadLong();
 					const int move = pByteStream->ReadLong();
 					const bool ceiling = !!pByteStream->ReadByte();
 

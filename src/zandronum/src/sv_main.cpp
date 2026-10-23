@@ -3041,9 +3041,9 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 	// [EP] If the sky scroll speed is changed, let the client know about it.
 	if ( level.info && level.skyspeed1 != level.info->skyspeed1 )
-		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ true );
+		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ true, ulClient, SVCF_ONLYTHISCLIENT );
 	if ( level.info && level.skyspeed2 != level.info->skyspeed2 )
-		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ false );
+		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ false, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [BB]
 	SERVERCOMMANDS_SetDefaultSkybox( ulClient, SVCF_ONLYTHISCLIENT ); 
