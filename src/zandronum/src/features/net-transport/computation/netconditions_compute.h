@@ -6,6 +6,7 @@
 #ifndef ZX_NETCONDITIONS_COMPUTE_H
 #define ZX_NETCONDITIONS_COMPUTE_H
 
+#include <cstddef>
 #include <deque>
 #include <vector>
 
@@ -40,7 +41,7 @@ void ComputeHoldPacket(HeldPackets &held, long long nowMs, int delayMs, const un
 bool ComputeTakeDuePacket(HeldPackets &held, long long nowMs, HeldPacket &out);
 
 // [rc4l] Whether one more datagram joins a queue of at most capacity, which drops the newest rather than grow while the main thread is stalled.
-bool ComputeAdmitDatagram(const HeldPackets &held, size_t capacity);
+bool ComputeAdmitDatagram(const HeldPackets &held, std::size_t capacity);
 
 }} // namespace zx::nettransport
 

@@ -31,7 +31,7 @@ void ComputeHoldPacket(HeldPackets &held, long long nowMs, int delayMs, const un
 	held.queue.push_back(p);
 }
 
-bool ComputeAdmitDatagram(const HeldPackets &held, size_t capacity)
+bool ComputeAdmitDatagram(const HeldPackets &held, std::size_t capacity)
 {
 	return held.queue.size() < capacity;
 }
