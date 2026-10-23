@@ -364,7 +364,7 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
     seams: async (set) => (set.id === 1 ? ["observer player 1: 2 seam violations, the first in net/parse (game)"] : []),
     replication: async (set) => (set.id === 1 ? "the server sent 3 changed rows a tic late, untouched, the first sector 4 (families 2)" : ""),
   };
-  const configs = [{ name: "lan", players: 1, observers: 1, broadcast: true }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
+  const configs = [{ name: "lan", players: 1, observers: 1, broadcast: true }, { name: "elsewhere", maps: ["MAP02"] }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
   const judged = [];
   const r = await compareNetplay({ name: "nt", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs, judgeNetplay: async (set, label, info) => { judged.push([set.id, label, info.config.name]); return set.id === 2 ? { line: `FAIL ${label}`, failed: 1 } : { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
   assert.deepEqual(judged, [[1, "MAP01 lan", "lan"], [2, "MAP01 ping", "ping"]]);

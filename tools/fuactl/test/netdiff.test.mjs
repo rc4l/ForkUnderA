@@ -24,12 +24,13 @@ test("actors agree within tolerance and every kind of difference is named", () =
   assert.deepEqual(diffActors([actor(1)], [actor(1, { x: 0.5, angle: 91 })]), []);
   const d = diffActors([actor(1), actor(2), actor(3, { health: 60 }), actor(4)], [actor(1, { x: 5 }), actor(3, { health: 20, c: "Zombie" }), actor(4, { angle: 180 }), actor(9)]);
   const what = d.map((x) => x.what);
-  assert.ok(what.includes("DoomImp only on the server"));
-  assert.ok(what.includes("DoomImp only on the client"));
-  assert.ok(what.some((w) => /5\.00 units apart/.test(w)));
-  assert.ok(what.includes("class DoomImp on the server, Zombie on the client"));
-  assert.ok(what.includes("DoomImp health 60 on the server, 20 on the client"));
-  assert.ok(what.includes("DoomImp facing 90 on the server, 180 on the client"));
+  assert.ok(what.includes("DoomImp 2 only on the server"));
+  assert.ok(what.includes("DoomImp 9 only on the client"));
+  assert.ok(what.includes("DoomImp 1 5.00 units apart"));
+  assert.ok(what.includes("class DoomImp on the server, Zombie on the client (3)"));
+  assert.ok(what.includes("DoomImp 3 health 60 on the server, 20 on the client"));
+  assert.ok(what.includes("DoomImp 4 facing 90 on the server, 180 on the client"));
+  assert.deepEqual(diffActors([actor(5, { health: -4 })], [actor(5, { health: -4, x: 9 })]).map((x) => x.what), ["DoomImp 5 (dead) 9.00 units apart"]);
 });
 
 test("a skipped actor and positions switched off compare only presence, class and health", () => {

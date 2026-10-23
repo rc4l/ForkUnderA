@@ -516,6 +516,8 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
   const lines = [];
   let failed = 0;
   for (const map of maps) for (const config of configs) {
+    // [rc4l] A config naming its maps runs on those alone.
+    if (config.maps && !config.maps.includes(map)) continue;
     const label = `${map} ${config.name}`;
     let set = null;
     try {

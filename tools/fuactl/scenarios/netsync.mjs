@@ -5,7 +5,7 @@ import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { SPECIAL, THING } from "../src/doomnums.mjs";
 import { acsScripts, callSpecial, PCD } from "../src/acs.mjs";
-import { addClient } from "../src/netplay.mjs";
+import { addClient, fireUntilDead } from "../src/netplay.mjs";
 import { clientAgreement, readWorld } from "../src/netdiff.mjs";
 import * as cap from "../src/capture.mjs";
 
@@ -50,27 +50,12 @@ export function serverChanged({ sectors, sides, actors }) {
   return faults;
 }
 
-// [rc4l] Fire held until the server's zombieman is dead, or the time runs out.
-async function killZombie(pc, sc, { seconds = 8 } = {}) {
-  await cap.exec(pc, "+attack", { quietMs: 60 });
-  const until = Date.now() + seconds * 1000;
-  try {
-    while (Date.now() < until) {
-      const z = ((await sc.rpc("world.actors", {}))?.actors || []).find((a) => /zombie/i.test(a.c));
-      if (!z || z.health <= 0) return;
-      await cap.sleep(200);
-    }
-  } finally {
-    await cap.exec(pc, "-attack", { quietMs: 60 });
-  }
-}
-
 export async function judgeNetplay(set, label) {
   const sc = set.server.c;
   const [player] = set.clients;
   for (const c of set.clients) await cap.exec(c.c, "god", { quietMs: 120 });
   await cap.waitTics(sc, 35);
-  await killZombie(player.c, sc);
+  await fireUntilDead(player.c, sc, /zombie/i);
   await cap.exec(sc, "puke 2");
   await cap.waitTics(sc, 35 * 4);
   await addClient(set, { role: "latejoin" });

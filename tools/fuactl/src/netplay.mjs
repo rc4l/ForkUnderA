@@ -97,13 +97,20 @@ export async function addClient(set, { role = "player", lag = 0, loss = 0, cvars
     throw withTrouble(e, readLog(inst));
   }
   // [rc4l] A client arrives a spectator, which the server sends only keepalives.
-  await exec(client.c, "join");
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
+  const { joined, mine } = await joinGame(client, set.server.c, { exec, sleep, timeoutMs });
+  if (!joined) throw withTrouble(new Error(`client ${index} (${role}) never joined the game: ${JSON.stringify(mine)}`), readLog(inst));
+  return client;
+}
+
+// [rc4l] A connected client asks to play, again each resendMs as a player would (a client's commands ride its unreliable packet, so a lossy one loses a join, and the server refuses another within 3 seconds), until its server holds it playing: whether it did, with what the client last said of itself.
+export async function joinGame(client, server, { exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000), resendMs = 3500, now = () => Date.now() } = {}) {
+  const deadline = now() + timeoutMs;
+  for (let asked = -Infinity; ;) {
+    if (now() - asked >= resendMs) { await exec(client.c, "join"); asked = now(); }
     const mine = await client.c.rpc("net.state", {});
     client.player = mine?.consoleplayer ?? -1;
-    if (mine?.connection === "active" && clientPlaying(await set.server.c.rpc("net.state", {}), client.player)) return client;
-    if (Date.now() > deadline) throw withTrouble(new Error(`client ${index} (${role}) never joined the game: ${JSON.stringify(mine)}`), readLog(inst));
+    if (mine?.connection === "active" && clientPlaying(await server.rpc("net.state", {}), client.player)) return { joined: true, mine };
+    if (now() > deadline) return { joined: false, mine };
     await sleep(250);
   }
 }
@@ -123,6 +130,27 @@ export async function seamViolations(set, exec = cap.exec) {
 export function replicationMisses(text) {
   const m = /replication: (\d+) rows sent, (\d+) missed(?:, the first (.+))?/.exec(String(text ?? ""));
   return m && Number(m[2]) > 0 ? `the server sent ${m[2]} changed rows a tic late, untouched, the first ${m[3]}` : "";
+}
+
+// [rc4l] Fire held on a client until its server holds the first live actor matching (a class pattern or a test of the row) dead, or the time runs out; that actor's network id once dead, else null.
+export async function fireUntilDead(shooter, server, match, { seconds = 8, exec = cap.exec, sleep = cap.sleep, now = () => Date.now() } = {}) {
+  const actors = async () => (await server.rpc("world.actors", {}))?.actors || [];
+  const matches = typeof match === "function" ? match : (a) => match.test(a.c);
+  const target = (await actors()).find((a) => matches(a) && a.health > 0);
+  if (!target) return null;
+  await exec(shooter, "+attack", { quietMs: 60 });
+  const until = now() + seconds * 1000;
+  try {
+    while (now() < until) {
+      const held = (await actors()).find((a) => a.netid === target.netid);
+      if (!held) return null;
+      if (held.health <= 0) return held.netid;
+      await sleep(200);
+    }
+    return null;
+  } finally {
+    await exec(shooter, "-attack", { quietMs: 60 });
+  }
 }
 
 // [rc4l] Every connection closed and every instance stopped, clients first.

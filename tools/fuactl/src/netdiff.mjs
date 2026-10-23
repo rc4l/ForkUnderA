@@ -37,22 +37,25 @@ export function angleApart(a, b) {
   return d > 180 ? 360 - d : d;
 }
 
+// [rc4l] An actor as a difference names it: its class, its network id and whether it is dead.
+export const actorName = (a) => `${a.c} ${a.netid}${a.health <= 0 ? " (dead)" : ""}`;
+
 // [rc4l] What differs between a server's actors and a client's, matched by network id: actors one side lacks, then each field past its tolerance; skip names ids (a predicted pawn) whose movement is not compared.
 export function diffActors(server, client, { tolerance = DEFAULT_TOLERANCE, skip = new Set(), positions = true } = {}) {
   const out = [];
   const byId = (list) => new Map(list.map((a) => [a.netid, a]));
   const s = byId(server), k = byId(client);
-  for (const [id, a] of s) if (!k.has(id)) out.push({ kind: "actor", netid: id, what: `${a.c} only on the server` });
-  for (const [id, b] of k) if (!s.has(id)) out.push({ kind: "actor", netid: id, what: `${b.c} only on the client` });
+  for (const [id, a] of s) if (!k.has(id)) out.push({ kind: "actor", netid: id, what: `${actorName(a)} only on the server` });
+  for (const [id, b] of k) if (!s.has(id)) out.push({ kind: "actor", netid: id, what: `${actorName(b)} only on the client` });
   for (const [id, a] of s) {
     const b = k.get(id);
     if (!b) continue;
-    if (a.c !== b.c) out.push({ kind: "actor", netid: id, what: `class ${a.c} on the server, ${b.c} on the client` });
-    if (a.health !== b.health && Math.abs(a.health - b.health) > tolerance.health) out.push({ kind: "actor", netid: id, what: `${a.c} health ${a.health} on the server, ${b.health} on the client` });
+    if (a.c !== b.c) out.push({ kind: "actor", netid: id, what: `class ${a.c} on the server, ${b.c} on the client (${id})` });
+    if (a.health !== b.health && Math.abs(a.health - b.health) > tolerance.health) out.push({ kind: "actor", netid: id, what: `${actorName(a)} health ${a.health} on the server, ${b.health} on the client` });
     if (!positions || skip.has(id)) continue;
     const apart = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-    if (apart > tolerance.pos) out.push({ kind: "actor", netid: id, what: `${a.c} ${apart.toFixed(2)} units apart`, apart });
-    if (angleApart(a.angle, b.angle) > tolerance.angle) out.push({ kind: "actor", netid: id, what: `${a.c} facing ${a.angle} on the server, ${b.angle} on the client` });
+    if (apart > tolerance.pos) out.push({ kind: "actor", netid: id, what: `${actorName(a)} ${apart.toFixed(2)} units apart`, apart });
+    if (angleApart(a.angle, b.angle) > tolerance.angle) out.push({ kind: "actor", netid: id, what: `${actorName(a)} facing ${a.angle} on the server, ${b.angle} on the client` });
   }
   return out;
 }

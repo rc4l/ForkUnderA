@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, replicationMisses, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");
@@ -163,6 +163,50 @@ test("a server that sent a change late, untouched, is named with the first", () 
   assert.equal(replicationMisses("replication: 40 rows sent, 0 missed"), "");
   assert.equal(replicationMisses("replication: 40 rows sent, 2 missed, the first line 7 (families 4)"), "the server sent 2 changed rows a tic late, untouched, the first line 7 (families 4)");
   assert.equal(replicationMisses("Unknown command"), "");
+});
+
+test("fire is held until the server holds the first live target dead, and let go however it ends", async () => {
+  const execs = [];
+  const exec = async (c, text) => execs.push(text);
+  const quick = { exec, sleep: async () => {} };
+  let health = 20;
+  const corpse = { c: "ZombieMan", netid: 3, health: -5 };
+  const server = { rpc: async () => ({ actors: [corpse, { c: "DoomImp", netid: 4, health: 60 }, { c: "ZombieMan", netid: 5, health: (health -= 10) }] }) };
+  assert.equal(await fireUntilDead("p", server, /zombie/i, quick), 5);
+  assert.deepEqual(execs, ["+attack", "-attack"]);
+  let t = 0;
+  const alive = { rpc: async () => ({ actors: [{ c: "ZombieMan", netid: 7, health: 20 }] }) };
+  assert.equal(await fireUntilDead("p", alive, /zombie/i, { ...quick, seconds: 1, now: () => (t += 600) }), null);
+  assert.equal(execs.at(-1), "-attack");
+  let calls = 0;
+  const vanishes = { rpc: async () => ({ actors: calls++ ? [] : [{ c: "ZombieMan", netid: 8, health: 20 }] }) };
+  assert.equal(await fireUntilDead("p", vanishes, /zombie/i, quick), null);
+  execs.length = 0;
+  assert.equal(await fireUntilDead("p", { rpc: async () => ({ actors: [corpse] }) }, /zombie/i, quick), null);
+  assert.equal(await fireUntilDead("p", { rpc: async () => ({}) }, /zombie/i, quick), null);
+  assert.deepEqual(execs, [], "nothing to kill fires nothing");
+  health = 20;
+  assert.equal(await fireUntilDead("p", server, (a) => a.netid === 5, quick), 5);
+});
+
+test("a join is waited on until the server holds the client playing, or reported not to have happened", async () => {
+  const execs = [];
+  const exec = async (c, text) => execs.push(text);
+  let polls = 0;
+  const client = { c: { rpc: async () => ({ consoleplayer: 2, connection: polls++ ? "active" : "attempting" }) }, player: -1 };
+  const server = { rpc: async () => ({ clients: [{ player: 2, state: "spawned", spectating: false }] }) };
+  const r = await joinGame(client, server, { exec, sleep: async () => {}, timeoutMs: 60000 });
+  assert.deepEqual([r.joined, client.player, execs], [true, 2, ["join"]]);
+  const watching = { rpc: async () => ({ clients: [{ player: 2, state: "spawned", spectating: true }] }) };
+  const never = await joinGame({ c: { rpc: async () => null }, player: 0 }, watching, { exec, sleep: async () => {}, timeoutMs: 0 });
+  assert.deepEqual([never.joined, never.mine], [false, null]);
+  // [rc4l] A join lost to packet loss is asked again once resendMs has passed, and not before.
+  execs.length = 0;
+  let t = 0, held = 0;
+  const lateServer = { rpc: async () => ({ clients: [{ player: 2, state: "spawned", spectating: held++ < 6 }] }) };
+  const active = { c: { rpc: async () => ({ consoleplayer: 2, connection: "active" }) }, player: -1 };
+  const again = await joinGame(active, lateServer, { exec, sleep: async () => { t += 1000; }, timeoutMs: 60000, resendMs: 3500, now: () => t });
+  assert.deepEqual([again.joined, execs], [true, ["join", "join"]]);
 });
 
 test("a client the server never holds playing times out", async () => {
