@@ -272,6 +272,8 @@ test("--cvar reads as name=value pairs, a bare name meaning 1, and nothing when 
   assert.equal(parseCvarFlag(undefined), undefined);
   assert.equal(parseCvarFlag(true), undefined);
   assert.deepEqual(parseCvarFlag("a=b=c,"), { a: "b=c" });
+  assert.deepEqual(parseCvarFlag("fua_debug_netdrop=151,135,232/4,sv_cheats=1"), { fua_debug_netdrop: "151,135,232/4", sv_cheats: "1" });
+  assert.deepEqual(parseCvarFlag("135,a=1"), { 135: "1", a: "1" });
 });
 
 test("a spot launches its map with its wads found by name in the store, and names what is missing", () => {

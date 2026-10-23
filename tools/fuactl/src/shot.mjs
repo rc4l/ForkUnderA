@@ -44,10 +44,18 @@ export function readSpot(spotsPath, name) {
 // [rc4l] --cvar's "name=value,name2=value2" as an object, a bare name meaning 1; undefined when the flag is absent.
 export function parseCvarFlag(text) {
   if (text == null || text === true) return undefined;
-  return Object.fromEntries(String(text).split(",").filter((kv) => kv.trim()).map((kv) => {
+  const out = {};
+  let last = null;
+  for (const raw of String(text).split(",")) {
+    const kv = raw.trim();
+    if (!kv) continue;
     const i = kv.indexOf("=");
-    return i < 0 ? [kv.trim(), "1"] : [kv.slice(0, i).trim(), kv.slice(i + 1).trim()];
-  }));
+    // [rc4l] A piece no cvar name could be (fua_debug_netdrop=151,135's 135) continues the value before it, where it became a cvar of its own.
+    if (i < 0 && last !== null && /^[^A-Za-z_]/.test(kv)) { out[last] += `,${kv}`; continue; }
+    last = i < 0 ? kv : kv.slice(0, i).trim();
+    out[last] = i < 0 ? "1" : kv.slice(i + 1).trim();
+  }
+  return out;
 }
 
 // [rc4l] Whether a renderer record's backend window was its own, beside GL's rather than embedded in it.
