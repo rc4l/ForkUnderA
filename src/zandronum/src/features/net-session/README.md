@@ -42,5 +42,7 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
 - `sv_main.cpp` `SERVER_SendFullUpdate` sends a joiner each hurt or dead actor's health, which it held at
   spawn health, and the exact place of each thing resting between whole units, where its spawn had rounded
   it (`netsync`'s late joiner and a dropped clip).
+- `sv_commands.cpp` `SERVERCOMMANDS_SpawnThing` sends the exact spawn for a thing whole units would move
+  (`ComputeSpawnRoundsPosition`), where each dropped clip sat a unit off on every client (`netmapchange`).
 - `p_interaction.cpp` `AActor::Die`: a monster's death goes out with where it died and which way it faced,
   which a client simulating its last steps until a late death arrives kept wrong (`netsync`'s lossy observer).

@@ -91,6 +91,7 @@
 #include "d_netinf.h"
 #include "callvote.h"
 #include "features/damage-taken/damagetaken.h"
+#include "features/net-session/computation/joinupdate_compute.h"
 #include <memory>
 
 CVAR (Bool, sv_showwarnings, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
@@ -1491,22 +1492,24 @@ void SERVERCOMMANDS_SpawnThing( AActor *pActor, ULONG ulPlayerExtra, ServerComma
 	if ( pActor == NULL )
 		return;
 
+	// [rc4l] features/net-session: a thing whole units would move (a dropped clip sat a unit off on every client) spawns exactly.
+	if ( zx::netsession::ComputeSpawnRoundsPosition( pActor->x.Raw(), pActor->y.Raw(), pActor->z.Raw() ))
+		SERVERCOMMANDS_SpawnThingExact( pActor, ulPlayerExtra, flags );
 	// If the actor doesn't have a network ID, it's better to send it ID-less.
-	if ( pActor->NetID == 0 )
-	{
+	else if ( pActor->NetID == 0 )
 		SERVERCOMMANDS_SpawnThingNoNetID( pActor, ulPlayerExtra, flags );
-		return;
+	else
+	{
+		ServerCommands::SpawnThing command;
+		command.SetType( pActor->GetClass() );
+		command.SetX( pActor->x );
+		command.SetY( pActor->y );
+		command.SetZ( pActor->z );
+		command.SetId( pActor->NetID );
+		command.sendCommandToClients( ulPlayerExtra, flags );
 	}
 
-	ServerCommands::SpawnThing command;
-	command.SetType( pActor->GetClass() );
-	command.SetX( pActor->x );
-	command.SetY( pActor->y );
-	command.SetZ( pActor->z );
-	command.SetId( pActor->NetID );
-	command.sendCommandToClients( ulPlayerExtra, flags );
-
-	if ( pActor->STFlags & STFL_LEVELSPAWNED )
+	if (( pActor->NetID != 0 ) && ( pActor->STFlags & STFL_LEVELSPAWNED ))
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS, ulPlayerExtra, flags );
 	}
