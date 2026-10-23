@@ -1579,7 +1579,7 @@ void BROWSER_ParseServerQuery( BYTESTREAM_s *pByteStream, bool bLAN )
 	//
 	// Your own server is in the list twice: LAN discovery finds it at the private address and the
 	// registry hands back the public one. Querying both means two launcher challenges arriving at one
-	// process from one IP, and a server refuses the second for sv_queryignoretime -- ten seconds, keyed
+	// process from one IP, and a stock server refuses the second for sv_queryignoretime -- ten seconds, keyed
 	// on the address WITHOUT the port, so this is not avoidable by asking from elsewhere.
 	//
 	// Whichever query lands first wins and the other row goes blank. The LAN path is shorter, so it
@@ -2216,7 +2216,7 @@ void BROWSER_ServerRegistryRefusedQuery( zx::RegistryStatus why )
 //
 // [rc4l] BEING IGNORED IS PROOF THE SERVER IS THERE.
 //
-// A server refuses a second launcher query from the same IP within sv_queryignoretime, ten seconds
+// A stock server refuses a second launcher query from the same IP within sv_queryignoretime (ours, after sv_fua_queriesperaddress), ten seconds
 // by default, and the refusal is keyed on the ADDRESS WITHOUT THE PORT. Your own server is therefore
 // guaranteed to trip it: the browser knows that machine twice, once on the LAN address and once on
 // the public one the registry hands back, and both queries reach the same process from the same IP.

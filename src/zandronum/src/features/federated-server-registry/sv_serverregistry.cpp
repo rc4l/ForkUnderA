@@ -78,6 +78,7 @@
 #include "features/server-hosting/zx_hosting.h" // [rc4l] tell the game that started us we are reachable
 #include "features/server-hosting/computation/punchbroker_compute.h" // [rc4l] how many punches, and when
 #include "features/federated-server-registry/computation/lanbroadcast_compute.h" // [rc4l] LAN subnet broadcast
+#include "features/federated-server-registry/computation/querylimit_compute.h" // [rc4l] queries answered per address
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] is anyone outside seeing us
 #include "features/net/zx_resolve.h" // [rc4l] the registry's AAAA, which LoadFromString cannot find
 #include "features/identity/zx_identity.h" // [rc4l] the id the registry groups our two listings by
@@ -135,6 +136,9 @@ static	NETBUFFER_s			g_SegmentBuffer;
 
 // Port the server registry is located on.
 static	USHORT				g_usServerRegistryPort;
+
+// [rc4l] Launcher queries answered from one address within sv_queryignoretime, so players sharing an address each see the server.
+CVAR( Int, sv_fua_queriesperaddress, 4, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 
 // List of IP address that this server has been queried by recently.
 static	STORED_QUERY_IP_s	g_StoredQueryIPs[MAX_STORED_QUERY_IPS];
@@ -918,35 +922,30 @@ void SERVER_SERVERREGISTRY_SendServerInfo( NETADDRESS_s Address, ULONG ulFlags, 
 	if ( bBroadcasting == false )
 	{
 		// First, check to see if we've been queried by this address recently.
-		if ( g_lStoredQueryIPHead != g_lStoredQueryIPTail )
+		// [rc4l] Counted rather than found, so each of a few players behind one address is answered.
+		int lAnsweredFromAddress = 0;
+		for ( ulIdx = g_lStoredQueryIPHead; ulIdx != (ULONG)g_lStoredQueryIPTail; ulIdx = ( ulIdx + 1 ) % MAX_STORED_QUERY_IPS )
 		{
-			ulIdx = g_lStoredQueryIPHead;
-			while ( ulIdx != (ULONG)g_lStoredQueryIPTail )
-			{
-				// Check to see if this IP exists in our stored query IP list. If it does, then
-				// ignore it, since it queried us less than 10 seconds ago.
-				if ( Address.CompareNoPort( g_StoredQueryIPs[ulIdx].Address ))
-				{
-					// Write our header.
-					g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_IGNORING );
+			if ( Address.CompareNoPort( g_StoredQueryIPs[ulIdx].Address ))
+				lAnsweredFromAddress++;
+		}
 
-					// Send the time the launcher sent to us.
-					g_ServerRegistryBuffer.ByteStream.WriteLong( ulTime );
+		if ( zx::ComputeIgnoreLauncherQuery( lAnsweredFromAddress, sv_fua_queriesperaddress ))
+		{
+			// Write our header.
+			g_ServerRegistryBuffer.ByteStream.WriteLong( SERVER_LAUNCHER_IGNORING );
 
-					// Send the packet.
-	//				NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address, true );
-					NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
+			// Send the time the launcher sent to us.
+			g_ServerRegistryBuffer.ByteStream.WriteLong( ulTime );
 
-					if ( sv_showlauncherqueries )
-						Printf( "Ignored IP launcher challenge.\n" );
+			// Send the packet.
+			NETWORK_LaunchPacket( &g_ServerRegistryBuffer, Address );
 
-					// Nothing more to do here.
-					return;
-				}
+			if ( sv_showlauncherqueries )
+				Printf( "Ignored IP launcher challenge.\n" );
 
-				ulIdx++;
-				ulIdx = ulIdx % MAX_STORED_QUERY_IPS;
-			}
+			// Nothing more to do here.
+			return;
 		}
 	
 		// Now, check to see if this IP has been banend from this server.
