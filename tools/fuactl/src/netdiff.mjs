@@ -1,4 +1,4 @@
-// [rc4l] Two instances of one netgame compared: their synced actors by network id, their sectors and their sidedefs, the client's actors aligned to the server tic it last heard of, within a tolerance per field.
+// [rc4l] Two instances of one netgame compared: their synced actors by network id, their sectors, sidedefs and lines, the client's actors aligned to the server tic it last heard of, within a tolerance per field.
 import * as cap from "./capture.mjs";
 
 // [rc4l] How far apart two readings of one field may be and still agree.
@@ -14,12 +14,12 @@ export async function readPaged(c, method, key, { page = 512 } = {}) {
   }
 }
 
-// [rc4l] One instance's world: its net state, synced actors, sectors and sidedefs.
+// [rc4l] One instance's world: its net state, synced actors, sectors, sidedefs and lines (none from an engine older than world.linestate).
 export async function readWorld(c, { sides = true } = {}) {
   const net = await c.rpc("net.state", {});
   const actors = await c.rpc("world.actors", { limit: 100000 });
   return { net, tic: actors?.tic ?? net?.gametic ?? 0, actors: actors?.actors || [], sectors: await readPaged(c, "world.sectorstate", "sectors"),
-    sides: sides ? await readPaged(c, "world.sidestate", "sides") : [] };
+    sides: sides ? await readPaged(c, "world.sidestate", "sides") : [], lines: sides ? await readPaged(c, "world.linestate", "lines").catch(() => []) : [] };
 }
 
 // [rc4l] The sample of a server's history nearest to tic, never later than it when an earlier one exists, or null for no history.
@@ -67,14 +67,21 @@ export function diffMap(server, client, { tolerance = DEFAULT_TOLERANCE } = {}) 
     const fields = [];
     if (!near(a.floor, b.floor, tolerance.height)) fields.push(`floor ${a.floor}/${b.floor}`);
     if (!near(a.ceiling, b.ceiling, tolerance.height)) fields.push(`ceiling ${a.ceiling}/${b.ceiling}`);
-    for (const f of ["light", "color", "fade", "desat", "floorTex", "ceilingTex"]) if (a[f] !== b[f]) fields.push(`${f} ${a[f]}/${b[f]}`);
+    for (const f of ["light", "color", "fade", "desat", "floorTex", "ceilingTex", "gravity", "friction", "special"]) if (a[f] !== b[f]) fields.push(`${f} ${a[f]}/${b[f]}`);
+    for (const f of ["reflect", "scale", "rotation"]) if (String(a[f]) !== String(b[f])) fields.push(`${f} ${a[f]}/${b[f]}`);
     if (fields.length) out.push({ kind: "sector", i: a.i, what: `sector ${a.i}: ${fields.join(", ")} (server/client)` });
   }
   const m = Math.min(server.sides.length, client.sides.length);
   for (let i = 0; i < m; i++) {
     const a = server.sides[i], b = client.sides[i];
-    const fields = ["top", "mid", "bottom", "light"].filter((f) => a[f] !== b[f]).map((f) => `${f} ${a[f]}/${b[f]}`);
+    const fields = ["top", "mid", "bottom", "light", "flags"].filter((f) => a[f] !== b[f]).map((f) => `${f} ${a[f]}/${b[f]}`);
     if (fields.length) out.push({ kind: "side", i: a.i, what: `side ${a.i}: ${fields.join(", ")} (server/client)` });
+  }
+  const sl = server.lines || [], cl = client.lines || [];
+  for (let i = 0; i < Math.min(sl.length, cl.length); i++) {
+    const a = sl[i], b = cl[i];
+    const fields = ["alpha", "flags"].filter((f) => a[f] !== b[f]).map((f) => `${f} ${a[f]}/${b[f]}`);
+    if (fields.length) out.push({ kind: "line", i: a.i, what: `line ${a.i}: ${fields.join(", ")} (server/client)` });
   }
   return out;
 }
@@ -94,7 +101,7 @@ export async function recordServerHistory(sc, { seconds = 2, sleep = cap.sleep, 
 
 // [rc4l] A netdiff verdict as lines: agreed, or each difference.
 export function diffLines(label, diffs, compared) {
-  if (!diffs.length) return [`AGREE ${label}: ${compared.actors} actors, ${compared.sectors} sectors, ${compared.sides} sides`];
+  if (!diffs.length) return [`AGREE ${label}: ${compared.actors} actors, ${compared.sectors} sectors, ${compared.sides} sides${compared.lines ? `, ${compared.lines} lines` : ""}`];
   return [`DIFFER ${label}: ${diffs.length} difference(s)`, ...diffs.slice(0, 40).map((d) => `  ${d.what}`), ...(diffs.length > 40 ? [`  ... ${diffs.length - 40} more`] : [])];
 }
 
@@ -108,5 +115,17 @@ export async function netdiff(sc, cc, { tolerance = DEFAULT_TOLERANCE, seconds =
   const aligned = sampleAt(history, client.net?.serverTic ?? server.tic) || { tic: server.tic, actors: server.actors };
   const own = client.actors.filter((a) => a.player === client.net?.consoleplayer).map((a) => a.netid);
   const diffs = [...diffMap(server, client, { tolerance }), ...diffActors(aligned.actors, client.actors, { tolerance, skip: new Set(own) })];
-  return { diffs, compared: { actors: client.actors.length, sectors: client.sectors.length, sides: client.sides.length }, alignedTic: aligned.tic, clientTic: client.net?.serverTic };
+  return { diffs, compared: { actors: client.actors.length, sectors: client.sectors.length, sides: client.sides.length, lines: (client.lines || []).length }, alignedTic: aligned.tic, clientTic: client.net?.serverTic };
+}
+
+// [rc4l] Each client's netdiff against its server as PASS or FAIL lines named by its role and player, and how many failed.
+export async function clientAgreement(sc, clients, label, diff = netdiff) {
+  const lines = [];
+  let failed = 0;
+  for (const c of clients) {
+    const r = await diff(sc, c.c, { seconds: 1 });
+    lines.push(...diffLines(`${label} ${c.role} player ${c.player}`, r.diffs, r.compared).map((l) => l.replace(/^AGREE/, "PASS").replace(/^DIFFER/, "FAIL")));
+    if (r.diffs.length) failed++;
+  }
+  return { lines, failed };
 }

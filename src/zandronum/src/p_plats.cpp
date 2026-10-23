@@ -39,6 +39,7 @@
 // [BB] New #includes.
 #include "network.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 #include "cl_demo.h"
 
 static FRandom pr_doplat ("DoPlat");
@@ -489,7 +490,7 @@ manual_plat:
 
 				// [BC] Update clients about this flat change.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+					zx::netreplication::TouchSector( ULONG( sec - sectors ));
 
 				// [BC] Also, mark this sector as having its flat changed.
 				sec->bFlatChange = true;

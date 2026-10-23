@@ -85,6 +85,7 @@
 #include "features/identity/zx_identitynet.h"
 #include "features/net-session/computation/joinupdate_compute.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
+#include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -771,6 +772,9 @@ void SERVER_Tick( void )
 		UNLAGGED_Tick( );
 
 		G_Ticker ();
+
+		// [rc4l] The map state this tic changed, sent from one place (features/net-replication).
+		zx::netreplication::SendChanges( );
 
 		// However we need to spawn the unlagged debug actors here i.e. after having processed their
 		// movement commands which updated their last server gametic.
@@ -1654,8 +1658,8 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 	// Tell the client of any lines that have been altered since the level start.
 	SERVER_UpdateLines( g_lCurrentClient );
 
-	// Tell the client of any sides that have been altered since the level start.
-	SERVER_UpdateSides( g_lCurrentClient );
+	// [rc4l] Tell the client of the server-written map state that differs from the level's start (features/net-replication).
+	zx::netreplication::SendToJoiner( g_lCurrentClient );
 
 	// Tell the client of any sectors that have been altered since the level start.
 	SERVER_UpdateSectors( g_lCurrentClient );
@@ -3510,10 +3514,6 @@ void SERVER_UpdateSectors( ULONG ulClient )
 	{
 		pSector = &sectors[ulIdx];
 
-		// Check and see if flats need to be updated.
-		if ( pSector->bFlatChange )
-			SERVERCOMMANDS_SetSectorFlat( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-
 		// Update the floor heights.
 		if ( pSector->bFloorHeightChange )
 			SERVERCOMMANDS_SetSectorFloorPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
@@ -3531,69 +3531,19 @@ void SERVER_UpdateSectors( ULONG ulClient )
 			SERVERCOMMANDS_SetSectorPanning( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 		}
 
-		// Update the sector color.
-		if (( pSector->SavedColorMap->Color.r != pSector->ColorMap->Color.r ) ||
-			( pSector->SavedColorMap->Color.g != pSector->ColorMap->Color.g ) ||
-			( pSector->SavedColorMap->Color.b != pSector->ColorMap->Color.b ) ||
-			( pSector->SavedColorMap->Desaturate != pSector->ColorMap->Desaturate ))
-		{
-			SERVERCOMMANDS_SetSectorColor( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector fade.
-		if (( pSector->SavedColorMap->Fade.r != pSector->ColorMap->Fade.r ) ||
-			( pSector->SavedColorMap->Fade.g != pSector->ColorMap->Fade.g ) ||
-			( pSector->SavedColorMap->Fade.b != pSector->ColorMap->Fade.b ))
-		{
-			SERVERCOMMANDS_SetSectorFade( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector's ceiling/floor rotation.
-		if (( pSector->SavedCeilingAngle != pSector->GetAngle(sector_t::ceiling,false) ) ||
-			( pSector->SavedFloorAngle != pSector->GetAngle(sector_t::floor,false) ))
-		{
-			SERVERCOMMANDS_SetSectorRotation( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector's ceiling/floor scale.
-		if (( pSector->SavedCeilingXScale != pSector->GetXScale(sector_t::ceiling) ) ||
-			( pSector->SavedCeilingYScale != pSector->GetYScale(sector_t::ceiling) ) ||
-			( pSector->SavedFloorXScale != pSector->GetXScale(sector_t::floor) ) ||
-			( pSector->SavedFloorYScale != pSector->GetYScale(sector_t::floor) ))
-		{
-			SERVERCOMMANDS_SetSectorScale( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector's friction.
-		if (( pSector->SavedFriction != pSector->friction || pSector->SavedMoveFactor != pSector->movefactor ) &&
-			( pSector->special & FRICTION_MASK ))
-		{
-			SERVERCOMMANDS_SetSectorFriction( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
 		// Update the sector's angle/y-offset.
 		if (( pSector->SavedBaseCeilingAngle != pSector->planes[sector_t::ceiling].xform.base_angle ) ||
 			( pSector->SavedBaseCeilingYOffset != pSector->planes[sector_t::ceiling].xform.base_yoffs ) ||
 			( pSector->SavedBaseFloorAngle != pSector->planes[sector_t::floor].xform.base_angle ) ||
 			( pSector->SavedBaseFloorYOffset != pSector->planes[sector_t::floor].xform.base_yoffs ))
 		{
-			SERVERCOMMANDS_SetSectorAngleYOffset( ulIdx );
+			// [rc4l] To the joiner alone; it went to every client on each join.
+			SERVERCOMMANDS_SetSectorAngleYOffset( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 		}
-
-		// Update the sector's gravity.
-		if ( pSector->SavedGravity != pSector->gravity )
-			SERVERCOMMANDS_SetSectorGravity( ulIdx );
 
 		// Update the sector's light level.
 		if ( pSector->bLightChange )
 			SERVERCOMMANDS_SetSectorLightLevel( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-
-		// Update the sector's reflection.
-		if (( pSector->SavedCeilingReflect != pSector->reflect[sector_t::ceiling] ) ||
-			( pSector->SavedFloorReflect != pSector->reflect[sector_t::floor] ))
-		{
-			SERVERCOMMANDS_SetSectorReflection( ulIdx );
-		}
 
 		// Tell client to mark all discovered secret sectors.
 		if ((pSector->special & SECRET_MASK) == 0 && pSector->secretsector)
@@ -3708,10 +3658,6 @@ void SERVER_UpdateLines( ULONG ulClient )
 
 	for ( ulLine = 0; ulLine < (ULONG)numlines; ulLine++ )
 	{
-		// Have any of the textures changed?
-		if ( lines[ulLine].TexChangeFlags )
-			SERVERCOMMANDS_SetLineTexture( ulLine, ulClient, SVCF_ONLYTHISCLIENT );
-
 		// [AK] Check if we need to update this line's texture offsets or scale.
 		for ( int side = 0; side <= 1; side++ )
 		{
@@ -3732,31 +3678,6 @@ void SERVER_UpdateLines( ULONG ulClient )
 					SERVERCOMMANDS_SetLineTextureScale( ulLine, side, position, ulClient, SVCF_ONLYTHISCLIENT );
 			}
 		}
-
-		// Is the alpha of this line altered?
-		if ( lines[ulLine].Alpha != lines[ulLine].SavedAlpha )
-			SERVERCOMMANDS_SetLineAlpha( ulLine, ulClient, SVCF_ONLYTHISCLIENT );
-
-		// Has the line's blocking status or the ML_ADDTRANS setting changed?
-		if ( lines[ulLine].flags != lines[ulLine].SavedFlags )
-			SERVERCOMMANDS_SetSomeLineFlags( ulLine, ulClient, SVCF_ONLYTHISCLIENT );
-	}
-}
-
-//*****************************************************************************
-//
-void SERVER_UpdateSides( ULONG ulClient )
-{
-	ULONG		ulSide;
-
-	if ( SERVER_IsValidClient( ulClient ) == false )
-		return;
-
-	for ( ulSide = 0; ulSide < (ULONG)numsides; ulSide++ )
-	{
-		// Have the side's flags changed?
-		if ( sides[ulSide].Flags != sides[ulSide].SavedFlags )
-			SERVERCOMMANDS_SetSideFlags( ulSide, ulClient, SVCF_ONLYTHISCLIENT );
 	}
 }
 
@@ -7361,8 +7282,8 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 	// Tell the client of any lines that have been altered since the level start.
 	SERVER_UpdateLines( g_lCurrentClient );
 
-	// Tell the client of any sides that have been altered since the level start.
-	SERVER_UpdateSides( g_lCurrentClient );
+	// [rc4l] Tell the client of the server-written map state that differs from the level's start (features/net-replication).
+	zx::netreplication::SendToJoiner( g_lCurrentClient );
 
 	// Tell the client of any sectors that have been altered since the level start.
 	SERVER_UpdateSectors( g_lCurrentClient );

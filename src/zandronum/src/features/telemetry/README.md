@@ -82,6 +82,9 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   - `dgscene.cpp` `UpdateBufferIfChanged`: `gpu/upload_spared`, the bytes a frame did not send because the buffer already held them (the light grid and the 2D layer).
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
 - `network.cpp`: the `net/` totals. `files.cpp` `FileReader::Read`: `io/read_bytes`.
+- The netcode's own: `features/net-transport`'s `net/held`, `net/fake_dropped`, `net/held_released` and
+  `net/held_send_failed`; `features/net-replication`'s `net/replication_sent` and `net/replication_missed`;
+  `features/latency`'s `latency/`; and the timed seams `net/receive`, `net/parse` and `net/launcher_reply`.
 - `features/crashreport/zx_crashreport.cpp`: the summary goes into the Sentry extras, throttled. `features/web/webcrash.cpp` hands it to the page for `web/crashreport.js`.
 - `features/web/webhost.cpp`: the file offerer downloads what the registry writes (`Module.fuaOfferFile`).
 - `d_main.cpp`: `SetSoakReady` from `D_WipeRunning` and the frames since a wipe (`features/mainloop`'s `ComputeAtRestAfterWipe`).

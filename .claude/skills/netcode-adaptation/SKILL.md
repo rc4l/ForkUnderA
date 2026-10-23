@@ -67,6 +67,11 @@ The netcode runs on the main thread, marked by the seams `net/receive`, `net/sen
    - **Spawn:** `SpawnThing`, `SpawnMissile`, `SpawnPuff`
    - **Destroy:** `DestroyThing`
    - **Sound:** `SoundActor`
+   - **Map state only a server writes** (a sector's flats, colour, fade, gravity, friction, reflection, scale,
+     rotation or special; a line's alpha, blocking flags or textures; a side's flags): no command, call
+     `zx::netreplication::TouchSector`/`TouchLine`/`TouchSide` (`features/net-replication/mapstate.h`) and the
+     change set sends it at the tic's end; a forgotten touch still goes out within a second and fails every
+     netgame scenario (`fua_net_replication`).
 
    Use the existing command; a mutation with **no** matching command is a bigger job (a new net
    command *and* its matching client-side handler in `cl_main`/`network` decode), not a quiet

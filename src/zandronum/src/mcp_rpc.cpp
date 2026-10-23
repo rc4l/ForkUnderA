@@ -48,6 +48,7 @@
 #include "g_shared/a_pickups.h" // [rc4l] AInventory, which world.actors leaves out when carried
 #include "features/mcp-bridge/computation/netrpc_compute.h"
 #include "features/net-session/netrole.h"
+#include "features/net-protocol/lineflags.h"
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/gamecopy/tintsubject.h"   // [rc4l] DamageTint_SectorDamage
@@ -381,7 +382,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"browser.add\",\"browser.select\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"net.state\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -748,18 +749,19 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += "],\"count\":" + I( (long long)n ) + ",\"total\":" + I( (long long)rows.size() ) + "}";
 		SendOk( id, body );
 	}
-	else if ( cmd == "world.sectorstate" || cmd == "world.sidestate" )
+	else if ( cmd == "world.sectorstate" || cmd == "world.sidestate" || cmd == "world.linestate" )
 	{
-		// [rc4l] Each sector's or sidedef's look as a netgame syncs it (args first, count), to compare a client's map with its server's.
+		// [rc4l] Each sector's, sidedef's or line's look as a netgame syncs it (args first, count), to compare a client's map with its server's.
 		long first = 0, count = -1;
 		GetInt( args, "first", first );
 		GetInt( args, "count", count );
 		const bool sectorsWanted = cmd == "world.sectorstate";
-		const int total = !InLevel() ? 0 : ( sectorsWanted ? numsectors : numsides );
+		const bool linesWanted = cmd == "world.linestate";
+		const int total = !InLevel() ? 0 : ( sectorsWanted ? numsectors : linesWanted ? numlines : numsides );
 		int b = 0, e = 0;
 		zx::mcp::ComputePageRange( total, first, count, b, e );
 		auto textureName = []( FTextureID tex ) { FTexture *ft = TexMan[tex]; return std::string( ft ? ft->Name.GetChars() : "" ); };
-		std::string body = "{\"tic\":" + I( gametic ) + ",\"total\":" + I( total ) + ( sectorsWanted ? ",\"sectors\":[" : ",\"sides\":[" );
+		std::string body = "{\"tic\":" + I( gametic ) + ",\"total\":" + I( total ) + ( sectorsWanted ? ",\"sectors\":[" : linesWanted ? ",\"lines\":[" : ",\"sides\":[" );
 		for ( int i = b; i < e; i++ )
 		{
 			if ( i > b ) body += ",";
@@ -776,7 +778,26 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				r.desaturation = s.ColorMap != NULL ? s.ColorMap->Desaturate : 0;
 				r.floorTex = textureName( s.GetTexture( sector_t::floor ));
 				r.ceilingTex = textureName( s.GetTexture( sector_t::ceiling ));
+				r.gravity = s.gravity;
+				r.friction = FIXED2DBL( s.friction );
+				r.special = s.special;
+				r.reflectFloor = s.reflect[sector_t::floor];
+				r.reflectCeiling = s.reflect[sector_t::ceiling];
+				r.xScaleFloor = FIXED2DBL( s.GetXScale( sector_t::floor ));
+				r.yScaleFloor = FIXED2DBL( s.GetYScale( sector_t::floor ));
+				r.xScaleCeiling = FIXED2DBL( s.GetXScale( sector_t::ceiling ));
+				r.yScaleCeiling = FIXED2DBL( s.GetYScale( sector_t::ceiling ));
+				r.angleFloor = s.GetAngle( sector_t::floor, false ) * ( 360.0 / 4294967296.0 );
+				r.angleCeiling = s.GetAngle( sector_t::ceiling, false ) * ( 360.0 / 4294967296.0 );
 				body += zx::mcp::ComputeSectorStateJson( r );
+			}
+			else if ( linesWanted )
+			{
+				zx::mcp::LineStateRow r;
+				r.index = i;
+				r.alpha = FIXED2DBL( lines[i].Alpha );
+				r.flags = lines[i].flags & zx::netprotocol::kClientLineFlags;
+				body += zx::mcp::ComputeLineStateJson( r );
 			}
 			else
 			{

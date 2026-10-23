@@ -62,6 +62,12 @@ struct SectorStateRow
 	unsigned color = 0, fade = 0;   // [rc4l] PalEntry values, rgb only
 	int desaturation = 0;
 	std::string floorTex, ceilingTex;
+	// [rc4l] What else only a server writes of it (features/net-replication's families).
+	double gravity = 0, friction = 0;
+	int special = 0;
+	double reflectFloor = 0, reflectCeiling = 0;
+	double xScaleFloor = 0, yScaleFloor = 0, xScaleCeiling = 0, yScaleCeiling = 0;
+	double angleFloor = 0, angleCeiling = 0;   // [rc4l] degrees
 };
 
 std::string ComputeSectorStateJson(const SectorStateRow &row);
@@ -76,6 +82,16 @@ struct SideStateRow
 };
 
 std::string ComputeSideStateJson(const SideStateRow &row);
+
+// [rc4l] One line's server-written look: its translucency and the flags clients move and draw by.
+struct LineStateRow
+{
+	int index = 0;
+	double alpha = 0;
+	unsigned flags = 0;
+};
+
+std::string ComputeLineStateJson(const LineStateRow &row);
 
 // [rc4l] The page [first, first + count) of total rows a paged read covers, clamped to what exists.
 void ComputePageRange(int total, long first, long count, int &begin, int &end);

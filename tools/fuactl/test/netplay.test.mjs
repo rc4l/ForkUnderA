@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, replicationMisses, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");
@@ -157,6 +157,12 @@ test("each instance whose netcode seams another thread entered is named", async 
   const set = { server: { c: "s", role: "server", player: -1 }, clients: [{ c: "a", role: "player", player: 0 }, { c: "b", role: "observer", player: 1 }, { c: null, role: "latejoin" }] };
   const said = { s: "0 violations; 0 locks taken while holding another", a: "net/parse  main  9 entries  1 violations\n1 violations, the first in net/parse on the game thread in CLIENT_ParsePacket:1430; 0 locks", b: "Unknown command" };
   assert.deepEqual(await seamViolations(set, async (c) => said[c]), ["player player 0: 1 seam violations, the first in net/parse (game, CLIENT_ParsePacket:1430)"]);
+});
+
+test("a server that sent a change late, untouched, is named with the first", () => {
+  assert.equal(replicationMisses("replication: 40 rows sent, 0 missed"), "");
+  assert.equal(replicationMisses("replication: 40 rows sent, 2 missed, the first line 7 (families 4)"), "the server sent 2 changed rows a tic late, untouched, the first line 7 (families 4)");
+  assert.equal(replicationMisses("Unknown command"), "");
 });
 
 test("a client the server never holds playing times out", async () => {

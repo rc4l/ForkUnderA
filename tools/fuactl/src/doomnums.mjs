@@ -22,6 +22,8 @@ export const SPECIAL = Object.freeze({
   Autosave: 15,
   Thing_Remove: 132,
   Sector_SetPlaneReflection: 159,
+  Sector_SetFloorScale2: 171,
+  Sector_SetRotation: 185,
   Sector_Set3DFloor: 160,
   Plane_Align: 181,
   Line_Mirror: 182,
@@ -29,6 +31,9 @@ export const SPECIAL = Object.freeze({
   Scroll_Floor: 223,
   Sector_SetColor: 212,
   Sector_SetFade: 213,
+  TranslucentLine: 208,
+  Sector_SetGravity: 216,
+  Sector_SetFriction: 219,
   ChangeCamera: 237,
   Exit_Normal: 243,
 });

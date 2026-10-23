@@ -119,6 +119,12 @@ export async function seamViolations(set, exec = cap.exec) {
   return out;
 }
 
+// [rc4l] What fua_net_replication says a server sent late, a change no Touch marked, or "" when nothing was.
+export function replicationMisses(text) {
+  const m = /replication: (\d+) rows sent, (\d+) missed(?:, the first (.+))?/.exec(String(text ?? ""));
+  return m && Number(m[2]) > 0 ? `the server sent ${m[2]} changed rows a tic late, untouched, the first ${m[3]}` : "";
+}
+
 // [rc4l] Every connection closed and every instance stopped, clients first.
 export async function closeNetplay(set, stop = stopInstance) {
   const all = [...set.clients].reverse().concat(set.server ? [set.server] : []);

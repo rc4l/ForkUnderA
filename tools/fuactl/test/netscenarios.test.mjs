@@ -85,3 +85,16 @@ test("lanbrowse passes a LAN row under the server's name and names each miss", a
   const wrong = judgeLan("x", { row: { lan: false, name: "other" }, diffs: [{ what: "sector 1: light 192/112 (server/client)" }] }).line;
   for (const want of [/did not arrive by LAN broadcast/, /listed as "other"/, /client: .*sector 1/]) assert.match(wrong, want);
 });
+
+test("netmapstate holds the server to every scripted family before judging agreement", async () => {
+  const { buildNetMapStateWad, serverChanged, AFTER } = await import("../scenarios/netmapstate.mjs");
+  assert.deepEqual(lumpNames(buildNetMapStateWad()), ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP"]);
+  const look = { light: 160, gravity: AFTER.gravity, color: AFTER.color, fade: AFTER.fade, friction: 0.7, rotation: AFTER.rotation, scale: [2, 2, 1, 1], reflect: [0.25, 0], floorTex: AFTER.floorTex };
+  const changed = { sectors: [look], sides: [{ mid: AFTER.wallTex }], lines: [{ flags: AFTER.lineFlags | 1, alpha: 0.5 }] };
+  assert.deepEqual(serverChanged(changed), []);
+  const still = { sectors: [{ light: 160, gravity: 1, color: 0xffffff, fade: 0, friction: 0.90625, rotation: [0, 0], scale: [1, 1, 1, 1], reflect: [0, 0], floorTex: "FLOOR4_8" }],
+    sides: [{ mid: "STARTAN2" }], lines: [{ flags: 1, alpha: 1 }] };
+  assert.deepEqual(serverChanged(still), ["gravity 1", "colour 16777215", "fade 0", "friction never changed", "rotation 0,0", "floor scale never changed",
+    "floor reflection never changed", "floor FLOOR4_8", "the wall texture never changed", "the line's blocking or translucency never changed"]);
+  assert.deepEqual(serverChanged({ sectors: [], sides: [], lines: [] }), ["the changed sector is not there"]);
+});

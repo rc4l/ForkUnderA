@@ -18,7 +18,8 @@ What a server writes for its clients, seen and, for tests, held back.
 
 ## Public header
 
-`network_enums.h` (the command ids) and `commandcapture.h` and `testfaults.h`.
+`network_enums.h` (the command ids), `lineflags.h` (`kClientLineFlags`, the line flags a server sends and a client replaces
+whole), `commandcapture.h` and `testfaults.h`.
 
 ## Files
 

@@ -66,13 +66,21 @@ std::string ComputeSectorStateJson(const SectorStateRow &row)
 {
 	return "{\"i\":" + std::to_string(row.index) + ",\"floor\":" + Num(row.floor) + ",\"ceiling\":" + Num(row.ceiling) + ",\"light\":" + std::to_string(row.light) +
 		",\"color\":" + std::to_string(row.color & 0xffffffu) + ",\"fade\":" + std::to_string(row.fade & 0xffffffu) + ",\"desat\":" + std::to_string(row.desaturation) +
-		",\"floorTex\":" + Quoted(row.floorTex) + ",\"ceilingTex\":" + Quoted(row.ceilingTex) + "}";
+		",\"floorTex\":" + Quoted(row.floorTex) + ",\"ceilingTex\":" + Quoted(row.ceilingTex) + ",\"gravity\":" + Num(row.gravity) +
+		",\"friction\":" + Num(row.friction) + ",\"special\":" + std::to_string(row.special) + ",\"reflect\":[" + Num(row.reflectFloor) + "," +
+		Num(row.reflectCeiling) + "],\"scale\":[" + Num(row.xScaleFloor) + "," + Num(row.yScaleFloor) + "," + Num(row.xScaleCeiling) + "," +
+		Num(row.yScaleCeiling) + "],\"rotation\":[" + Num(row.angleFloor) + "," + Num(row.angleCeiling) + "]}";
 }
 
 std::string ComputeSideStateJson(const SideStateRow &row)
 {
 	return "{\"i\":" + std::to_string(row.index) + ",\"top\":" + Quoted(row.top) + ",\"mid\":" + Quoted(row.mid) + ",\"bottom\":" + Quoted(row.bottom) +
 		",\"light\":" + std::to_string(row.light) + ",\"flags\":" + std::to_string(row.flags) + "}";
+}
+
+std::string ComputeLineStateJson(const LineStateRow &row)
+{
+	return "{\"i\":" + std::to_string(row.index) + ",\"alpha\":" + Num(row.alpha) + ",\"flags\":" + std::to_string(row.flags) + "}";
 }
 
 void ComputePageRange(int total, long first, long count, int &begin, int &end)

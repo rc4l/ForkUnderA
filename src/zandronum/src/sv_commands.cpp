@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/net-protocol/lineflags.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "features/quake-movement/quakemove.h"
@@ -3464,60 +3465,34 @@ void SERVERCOMMANDS_SetLineTexture( ULONG ulLine, ULONG ulPlayerExtra, ServerCom
 	if ( ulLine >= (ULONG)numlines )
 		return;
 
-	// No changed textures to update.
-	if ( lines[ulLine].TexChangeFlags == 0 )
+	SERVERCOMMANDS_SetLineTextureParts( ulLine, lines[ulLine].TexChangeFlags, ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+void SERVERCOMMANDS_SetLineTextureParts( ULONG ulLine, ULONG ulParts, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( ulLine >= (ULONG)numlines )
 		return;
 
 	ServerCommands::SetLineTexture command;
 	command.SetLine( &lines[ulLine] );
 
-	if ( lines[ulLine].TexChangeFlags & TEXCHANGE_FRONTTOP )
+	// [rc4l] Bit side * 3 + position, TEXCHANGE_*'s order, for each texture sent.
+	for ( int side = 0; side < 2; side++ )
 	{
-		command.SetTextureName( lines[ulLine].sidedef[0]->GetTexture(side_t::top).isValid() ? TexMan[lines[ulLine].sidedef[0]->GetTexture(side_t::top)]->Name : "-" );
-		command.SetSide( 0 );
-		command.SetPosition( 0 );
-		command.sendCommandToClients( ulPlayerExtra, flags );
-	}
+		if ( lines[ulLine].sidedef[side] == NULL )
+			continue;
 
-	if ( lines[ulLine].TexChangeFlags & TEXCHANGE_FRONTMEDIUM )
-	{
-		command.SetTextureName( lines[ulLine].sidedef[0]->GetTexture(side_t::mid).isValid() ? TexMan[lines[ulLine].sidedef[0]->GetTexture(side_t::mid)]->Name : "-" );
-		command.SetSide( 0 );
-		command.SetPosition( 1 );
-		command.sendCommandToClients( ulPlayerExtra, flags );
-	}
-
-	if ( lines[ulLine].TexChangeFlags & TEXCHANGE_FRONTBOTTOM )
-	{
-		command.SetTextureName( lines[ulLine].sidedef[0]->GetTexture(side_t::bottom).isValid() ? TexMan[lines[ulLine].sidedef[0]->GetTexture(side_t::bottom)]->Name : "-" );
-		command.SetSide( 0 );
-		command.SetPosition( 2 );
-		command.sendCommandToClients( ulPlayerExtra, flags );
-	}
-
-	if ( lines[ulLine].sidedef[1] != NULL )
-	{
-		if ( lines[ulLine].TexChangeFlags & TEXCHANGE_BACKTOP )
+		for ( int position = side_t::top; position <= side_t::bottom; position++ )
 		{
-			command.SetTextureName( lines[ulLine].sidedef[1]->GetTexture(side_t::top).isValid() ? TexMan[lines[ulLine].sidedef[1]->GetTexture(side_t::top)]->Name : "-" );
-			command.SetSide( 1 );
-			command.SetPosition( 0 );
-			command.sendCommandToClients( ulPlayerExtra, flags );
-		}
+			if (( ulParts & ( 1 << ( side * 3 + position ))) == 0 )
+				continue;
 
-		if ( lines[ulLine].TexChangeFlags & TEXCHANGE_BACKMEDIUM )
-		{
-			command.SetTextureName( lines[ulLine].sidedef[1]->GetTexture(side_t::mid).isValid() ? TexMan[lines[ulLine].sidedef[1]->GetTexture(side_t::mid)]->Name : "-" );
-			command.SetSide( 1 );
-			command.SetPosition( 1 );
-			command.sendCommandToClients( ulPlayerExtra, flags );
-		}
-
-		if ( lines[ulLine].TexChangeFlags & TEXCHANGE_BACKBOTTOM )
-		{
-			command.SetTextureName( lines[ulLine].sidedef[1]->GetTexture(side_t::bottom).isValid() ? TexMan[lines[ulLine].sidedef[1]->GetTexture(side_t::bottom)]->Name : "-" );
-			command.SetSide( 1 );
-			command.SetPosition( 2 );
+			const FTextureID texture = lines[ulLine].sidedef[side]->GetTexture( position );
+			command.SetTextureName( texture.isValid() ? TexMan[texture]->Name : "-" );
+			command.SetSide( side );
+			command.SetPosition( position );
 			command.sendCommandToClients( ulPlayerExtra, flags );
 		}
 	}
@@ -3617,7 +3592,7 @@ void SERVERCOMMANDS_SetSomeLineFlags( ULONG ulLine, ULONG ulPlayerExtra, ServerC
 
 	ServerCommands::SetSomeLineFlags command;
 	command.SetLine( &lines[ulLine] );
-	command.SetBlockFlags( lines[ulLine].flags & ( ML_BLOCKING | ML_BLOCKEVERYTHING | ML_RAILING | ML_BLOCK_PLAYERS | ML_ADDTRANS ));
+	command.SetBlockFlags( lines[ulLine].flags & zx::netprotocol::kClientLineFlags );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 

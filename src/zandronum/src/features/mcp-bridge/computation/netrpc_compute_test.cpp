@@ -87,7 +87,15 @@ TEST(ComputeSectorStateJson, HeightsLightColoursWithoutAlphaAndFlats)
 	r.desaturation = 12;
 	r.floorTex = "FLOOR4_8";
 	r.ceilingTex = "CEIL3_5";
-	EXPECT_EQ("{\"i\":3,\"floor\":8.000,\"ceiling\":128.250,\"light\":160,\"color\":1122867,\"fade\":4214880,\"desat\":12,\"floorTex\":\"FLOOR4_8\",\"ceilingTex\":\"CEIL3_5\"}",
+	r.gravity = 0.5;
+	r.friction = 0.90625;
+	r.special = 1024;
+	r.reflectFloor = 0.25;
+	r.xScaleFloor = 2;
+	r.yScaleCeiling = 0.5;
+	r.angleFloor = 90;
+	EXPECT_EQ("{\"i\":3,\"floor\":8.000,\"ceiling\":128.250,\"light\":160,\"color\":1122867,\"fade\":4214880,\"desat\":12,\"floorTex\":\"FLOOR4_8\",\"ceilingTex\":\"CEIL3_5\","
+		"\"gravity\":0.500,\"friction\":0.906,\"special\":1024,\"reflect\":[0.250,0.000],\"scale\":[2.000,0.000,0.000,0.500],\"rotation\":[90.000,0.000]}",
 		ComputeSectorStateJson(r));
 }
 
@@ -101,6 +109,15 @@ TEST(ComputeSideStateJson, TexturesLightAndFlags)
 	r.light = -16;
 	r.flags = 5;
 	EXPECT_EQ("{\"i\":7,\"top\":\"STARTAN2\",\"mid\":\"-\",\"bottom\":\"SW1BRCOM\",\"light\":-16,\"flags\":5}", ComputeSideStateJson(r));
+}
+
+TEST(ComputeLineStateJson, AlphaAndFlags)
+{
+	LineStateRow r;
+	r.index = 31;
+	r.alpha = 0.75;
+	r.flags = 0x01000002;
+	EXPECT_EQ("{\"i\":31,\"alpha\":0.750,\"flags\":16777218}", ComputeLineStateJson(r));
 }
 
 TEST(ComputePageRange, ClampedToWhatExists)

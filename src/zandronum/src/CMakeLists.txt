@@ -1857,6 +1857,7 @@ add_executable( zdoom WIN32
 	features/net-protocol/commandcapture.cpp
 	features/net-protocol/testfaults.cpp
 	features/net-session/unlaggedreport.cpp
+	features/net-replication/mapstate.cpp
 	features/latency/latency.cpp
 	zzautozend.cpp
 )

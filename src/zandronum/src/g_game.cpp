@@ -100,6 +100,7 @@
 #include "team.h"
 #include "a_doomglobal.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 #include "medal.h"
 #include "cl_demo.h"
 #include "cl_main.h"
@@ -3692,7 +3693,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 
 			// If we're the server, tell clients about this texture change.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetLineTexture( ulIdx );
+				zx::netreplication::TouchLine( ulIdx );
 
 			// Mark the texture as no being changed.
 			lines[ulIdx].TexChangeFlags = 0;
@@ -3740,7 +3741,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 
 			// If we're the server, tell clients about this alpha change.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetLineAlpha( ulIdx );
+				zx::netreplication::TouchLine( ulIdx );
 		}
 
 		// Restore the line's blocking status and the ML_ADDTRANS setting.
@@ -3750,7 +3751,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 
 			// If we're the server, tell clients about this blocking change and the ML_ADDTRANS setting.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSomeLineFlags( ulIdx );
+				zx::netreplication::TouchLine( ulIdx );
 		}
 	}
 
@@ -3804,7 +3805,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].bFlatChange = false;
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorFlat( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		if ( sectors[ulIdx].bLightChange )
@@ -3822,8 +3823,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				SERVERCOMMANDS_SetSectorColor( ulIdx );
-				SERVERCOMMANDS_SetSectorFade( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 			}
 		}
 
@@ -3852,7 +3853,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].SetYScale(sector_t::ceiling, sectors[ulIdx].SavedCeilingYScale);
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorScale( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		if (( sectors[ulIdx].SavedFloorAngle != sectors[ulIdx].GetAngle(sector_t::floor,false) ) ||
@@ -3862,7 +3863,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].SetAngle(sector_t::ceiling, sectors[ulIdx].SavedCeilingAngle);
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorRotation( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		if (( sectors[ulIdx].SavedBaseFloorAngle != sectors[ulIdx].planes[sector_t::floor].xform.base_angle ) ||
@@ -3886,7 +3887,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].movefactor = sectors[ulIdx].SavedMoveFactor;
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorFriction( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		if ( sectors[ulIdx].SavedGravity != sectors[ulIdx].gravity )
@@ -3894,7 +3895,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].gravity = sectors[ulIdx].SavedGravity;
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorGravity( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		if ( sectors[ulIdx].SavedSpecial != sectors[ulIdx].special )
@@ -3903,7 +3904,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 
 			// [BB] If we're the server, tell clients about the special (at least necessary for secrets).
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorSpecial( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		if (( sectors[ulIdx].SavedDamage != sectors[ulIdx].damage ) ||
@@ -3922,7 +3923,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].reflect[sector_t::floor] = sectors[ulIdx].SavedFloorReflect;
 
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorReflection( ulIdx );
+				zx::netreplication::TouchSector( ulIdx );
 		}
 
 		// [Dusk] Reset 3d midtextures

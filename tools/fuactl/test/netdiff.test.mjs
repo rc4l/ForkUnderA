@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sampleAt, angleApart, diffActors, diffMap, diffLines, readPaged, readWorld, recordServerHistory, netdiff, DEFAULT_TOLERANCE } from "../src/netdiff.mjs";
+import { sampleAt, angleApart, diffActors, diffMap, diffLines, readPaged, readWorld, recordServerHistory, netdiff, clientAgreement, DEFAULT_TOLERANCE } from "../src/netdiff.mjs";
 
 const actor = (netid, extra = {}) => ({ netid, c: "DoomImp", x: 0, y: 0, z: 0, angle: 90, health: 60, player: -1, ...extra });
 const sector = (i, extra = {}) => ({ i, floor: 0, ceiling: 128, light: 160, color: 16777215, fade: 0, desat: 0, floorTex: "F", ceilingTex: "C", ...extra });
@@ -45,10 +45,18 @@ test("sectors and sidedefs differ field by field", () => {
   const d = diffMap(server, client).map((x) => x.what);
   assert.deepEqual(d, ["sector 1: ceiling 128/64, light 160/200, floorTex F/X (server/client)", "side 0: bottom B/SW2 (server/client)"]);
   assert.match(diffMap(server, { sectors: [sector(0)], sides: [] })[0].what, /2 sectors on the server, 1 on the client/);
+
+  // [rc4l] What only a server writes: a sector's gravity, special, reflection, scale and rotation, a side's flags and a line's alpha and flags.
+  const more = { sectors: [sector(0, { gravity: 1, special: 0, reflect: [0, 0], scale: [1, 1, 1, 1], rotation: [0, 0] })], sides: [{ i: 0, top: "A", flags: 0 }], lines: [{ i: 0, alpha: 1, flags: 0 }] };
+  const changed = { sectors: [sector(0, { gravity: 0.5, special: 1024, reflect: [0.25, 0], scale: [2, 1, 1, 1], rotation: [90, 0] })], sides: [{ i: 0, top: "A", flags: 4 }], lines: [{ i: 0, alpha: 0.5, flags: 2 }] };
+  assert.deepEqual(diffMap(more, changed).map((x) => x.what), ["sector 0: gravity 1/0.5, special 0/1024, reflect 0,0/0.25,0, scale 1,1,1,1/2,1,1,1, rotation 0,0/90,0 (server/client)",
+    "side 0: flags 0/4 (server/client)", "line 0: alpha 1/0.5, flags 0/2 (server/client)"]);
+  assert.deepEqual(diffMap(more, { ...changed, lines: undefined, sides: [], sectors: more.sectors }), []);
 });
 
 test("the verdict lines agree or list each difference", () => {
   assert.deepEqual(diffLines("MAP01", [], { actors: 3, sectors: 9, sides: 30 }), ["AGREE MAP01: 3 actors, 9 sectors, 30 sides"]);
+  assert.deepEqual(diffLines("MAP01", [], { actors: 3, sectors: 9, sides: 30, lines: 20 }), ["AGREE MAP01: 3 actors, 9 sectors, 30 sides, 20 lines"]);
   const many = Array.from({ length: 45 }, (_, i) => ({ what: `d${i}` }));
   const lines = diffLines("MAP01", many, {});
   assert.equal(lines[0], "DIFFER MAP01: 45 difference(s)");
@@ -90,4 +98,13 @@ test("netdiff sets the client's actors against the server at its heard tic and l
   assert.deepEqual(r.diffs, []);
   assert.equal(r.alignedTic, 100);
   assert.equal(r.compared.actors, 2);
+});
+
+test("each client agrees or fails by name", async () => {
+  const clients = [{ c: "a", role: "player", player: 0 }, { c: "b", role: "observer", player: 1 }];
+  const diff = async (sc, c) => (c === "a" ? { diffs: [], compared: { actors: 2, sectors: 3, sides: 4 } } : { diffs: [{ what: "sector 1: light 1/2 (server/client)" }], compared: {} });
+  const r = await clientAgreement("s", clients, "MAP01 lan", diff);
+  assert.equal(r.failed, 1);
+  assert.equal(r.lines[0], "PASS MAP01 lan player player 0: 2 actors, 3 sectors, 4 sides");
+  assert.match(r.lines[1], /^FAIL MAP01 lan observer player 1: 1 difference/);
 });

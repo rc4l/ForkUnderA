@@ -41,6 +41,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 
 //==========================================================================
 //
@@ -252,7 +253,7 @@ void DFloor::Tick ()
 
 					// [BC] Update clients about this flat change.
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-						SERVERCOMMANDS_SetSectorFlat( ULONG( m_Sector - sectors ));
+						zx::netreplication::TouchSector( ULONG( m_Sector - sectors ));
 
 					// [BC] Also, mark this sector as having its flat changed.
 					m_Sector->bFlatChange = true;
@@ -275,7 +276,7 @@ void DFloor::Tick ()
 
 					// [BC] Update clients about this flat change.
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-						SERVERCOMMANDS_SetSectorFlat( ULONG( m_Sector - sectors ));
+						zx::netreplication::TouchSector( ULONG( m_Sector - sectors ));
 
 					// [BC] Also, mark this sector as having its flat changed.
 					m_Sector->bFlatChange = true;
@@ -709,7 +710,7 @@ manual_floor:
 
 				// [BC] Update clients about this flat change.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+					zx::netreplication::TouchSector( ULONG( sec - sectors ));
 
 				// [BC] Also, mark this sector as having its flat changed.
 				sec->bFlatChange = true;
@@ -742,7 +743,7 @@ manual_floor:
 
 				// [BC] Update clients about this flat change.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+					zx::netreplication::TouchSector( ULONG( sec - sectors ));
 
 				// [BC] Also, mark this sector as having its flat changed.
 				sec->bFlatChange = true;
@@ -801,7 +802,7 @@ manual_floor:
 
 					// [BC] Update clients about this flat change.
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-						SERVERCOMMANDS_SetSectorFlat( ULONG( modelsec - sectors ));
+						zx::netreplication::TouchSector( ULONG( modelsec - sectors ));
 				}
 			}
 			else if (line)
@@ -811,7 +812,7 @@ manual_floor:
 
 				// [BC] Update clients about this flat change.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+					zx::netreplication::TouchSector( ULONG( sec - sectors ));
 			}
 		}
 	}
@@ -1547,7 +1548,7 @@ bool EV_DoChange (line_t *line, EChange changetype, int tag)
 
 				// [BC] Update clients about this flat change.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+					zx::netreplication::TouchSector( ULONG( sec - sectors ));
 
 				// [BC] Also, mark this sector as having its flat changed.
 				sec->bFlatChange = true;
@@ -1562,7 +1563,7 @@ bool EV_DoChange (line_t *line, EChange changetype, int tag)
 
 				// [BC] Update clients about this flat change.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( ULONG( sec - sectors ));
+					zx::netreplication::TouchSector( ULONG( sec - sectors ));
 
 				// [BC] Also, mark this sector as having its flat changed.
 				sec->bFlatChange = true;

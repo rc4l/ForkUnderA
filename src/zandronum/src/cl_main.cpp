@@ -149,6 +149,7 @@
 #include "features/fov-interp/computation/fovrequest_compute.h"
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
+#include "features/net-protocol/lineflags.h"   // [rc4l] the line flags a server sends
 #include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
@@ -7320,8 +7321,9 @@ void ServerCommands::SetLineTextureScaleByID::Execute()
 //
 void ServerCommands::SetSomeLineFlags::Execute()
 {
-	line->flags &= ~(ML_BLOCKING|ML_BLOCK_PLAYERS|ML_BLOCKEVERYTHING|ML_RAILING|ML_ADDTRANS);
-	line->flags |= blockFlags;
+	// [rc4l] The same flags the server sends, replaced whole.
+	line->flags &= ~zx::netprotocol::kClientLineFlags;
+	line->flags |= ( blockFlags & zx::netprotocol::kClientLineFlags );
 }
 
 //*****************************************************************************

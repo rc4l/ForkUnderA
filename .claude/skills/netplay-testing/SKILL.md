@@ -58,7 +58,10 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 (`{ name, players, observers, lag, loss, serverCvars, clientCvars, broadcast }`), brings up a set and hands it
 to `judgeNetplay(set, label, { wadPath, config })`. The models: `netsync` (scripted changes, a kill, a late
 joiner), `unlaggedhit` (rewound hits), `netbroadcast` (what an observer sees of another's actions),
-`waddownload` (fetching a missing wad, two clients at once) and `lanbrowse` (a LAN listing joined).
+`waddownload` (fetching a missing wad, two clients at once), `lanbrowse` (a LAN listing joined) and
+`netmapstate` (every family only a server writes of a sector and a line). After each judge it fails an instance
+whose netcode seams another thread entered (`fua_seams`) and a server that sent a map change a tic late because
+no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints each).
 
 - **Joining as a player does.** `addClient(set, { files: [], via: "browser" })` launches a client without the
   set's wads and joins from its browser (`browser.add`, `browser.select`, `fua_join_selected_server`) with
@@ -68,7 +71,7 @@ joiner), `unlaggedhit` (rewound hits), `netbroadcast` (what an observer sees of 
 
 - **Make it fail first.** `scenarios NAME --side CONFIG --cvar fua_debug_netdrop=ID` leaves a server command
   unsent (`ID` or `ID/EXT`, named by `netcap`), and `--cvar fua_debug_unlagged_ticoffset=3` makes a client
-  report a server tic three behind. A netgame scenario that passes with the fault switched on tests nothing.
+  report a server tic three behind; a list of ids is one value (`fua_debug_netdrop=151,135`). A netgame scenario that passes with the fault switched on tests nothing.
 - **Hold the server to the change first.** Agreement between two worlds that never changed proves nothing,
   so check the server's own world did what the script or player meant before comparing.
 - **Judge by state read at the server's tic, not by pictures**: what a client draws depends on its view and

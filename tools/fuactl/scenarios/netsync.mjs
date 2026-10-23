@@ -6,7 +6,7 @@ import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { SPECIAL, THING } from "../src/doomnums.mjs";
 import { acsScripts, callSpecial, PCD } from "../src/acs.mjs";
 import { addClient } from "../src/netplay.mjs";
-import { netdiff, diffLines } from "../src/netdiff.mjs";
+import { clientAgreement, readWorld } from "../src/netdiff.mjs";
 import * as cap from "../src/capture.mjs";
 
 const DOOR_TAG = 10, LIFT_TAG = 11, LOOK_TAG = 12, WALL_ID = 20, ZOMBIE_TID = 5;
@@ -75,18 +75,10 @@ export async function judgeNetplay(set, label) {
   await cap.waitTics(sc, 35 * 4);
   await addClient(set, { role: "latejoin" });
   await cap.waitTics(sc, 35 * 2);
-  const { readWorld } = await import("../src/netdiff.mjs");
   const faults = serverChanged(await readWorld(sc));
-  const lines = [];
-  let failed = 0;
-  if (faults.length) { lines.push(`FAIL ${label}: the server's world did not change as scripted: ${faults.join("; ")}`); failed++; }
-  for (const c of set.clients) {
-    const r = await netdiff(sc, c.c, { seconds: 1 });
-    const out = diffLines(`${label} ${c.role} player ${c.player}`, r.diffs, r.compared);
-    lines.push(...out.map((l) => l.replace(/^AGREE/, "PASS").replace(/^DIFFER/, "FAIL")));
-    if (r.diffs.length) failed++;
-  }
-  return { lines, failed };
+  const agreed = await clientAgreement(sc, set.clients, label);
+  if (!faults.length) return agreed;
+  return { lines: [`FAIL ${label}: the server's world did not change as scripted: ${faults.join("; ")}`, ...agreed.lines], failed: agreed.failed + 1 };
 }
 
 // [rc4l] On loopback, at 100 ms of ping for every client, and with the observer losing a tenth of its packets; --side NAME --cvar fua_debug_netdrop=ID shows the clients missing what the server stopped sending.
