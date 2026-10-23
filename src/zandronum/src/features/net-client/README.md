@@ -22,15 +22,18 @@ What a client does with what arrives from its server.
 
 ## Public header
 
-`cl_main.h` (the connection, the server tic it holds) and `cl_commands.h` (what a client sends).
+`cl_main.h` (the connection, the server tic it holds), `cl_commands.h` (what a client sends) and `netclient.h`
+(`ParsedPackets`, the server packets applied, which the render copy refills on).
 
 ## Files
 
 - `computation/packetheader_compute.{h,cpp}` with its `_test.cpp`.
+- `netclient.{h,cpp}` (the packets applied).
 
 ## In-engine hooks
 
-- `cl_main.cpp` `CLIENT_ParsePacket` is the seam `net/parse`, owned by the main thread.
+- `cl_main.cpp` `CLIENT_ParsePacket` is the seam `net/parse`, owned by the main thread, and counts the packet
+  (`NoteParsedPacket`) for `features/gamecopy`'s fill.
 - `cl_main.cpp` `CLIENT_ReadPacketHeader` (the header kind, the ring slot, the overwritten slots, the jump warning) and
   `CLIENT_CheckForMissingPackets` (the quit's sequences).
 - `cl_main.cpp` `CLIENT_GetPackets`: `SERVER_LAUNCHER_IGNORING` is among the launcher replies routed to the

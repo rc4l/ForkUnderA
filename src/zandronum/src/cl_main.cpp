@@ -150,6 +150,7 @@
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 #include "features/net-protocol/lineflags.h"   // [rc4l] the line flags a server sends
+#include "features/net-client/netclient.h"   // [rc4l] the packets applied, for the render copy
 #include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
@@ -1436,6 +1437,8 @@ void CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket )
 
 	// [rc4l] features/latency: a server packet applied, which the next frame to end draws.
 	zx::latency::NotePacketApplied();
+	// [rc4l] And the render copy takes it, which no longer refills every frame.
+	zx::netclient::NoteParsedPacket();
 
 	// We're currently parsing a packet.
 	g_bIsParsingPacket = true;
