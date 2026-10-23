@@ -83,6 +83,7 @@
 #include "features/identity/computation/connectchallenge_compute.h"
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
+#include "features/net-session/computation/joinupdate_compute.h"
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -2859,6 +2860,10 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 				// [WS/BB] Always inform client of the actor's lastX/Y/Z.
 				ULONG ulBits = CM_LAST_X|CM_LAST_Y|CM_LAST_Z;
+
+				// [rc4l] The spawn above carries whole units in a short, so a thing between them or beyond that range is placed exactly.
+				if ( zx::netsession::ComputeSpawnRoundsPosition( pActor->x.Raw(), pActor->y.Raw(), pActor->z.Raw() ))
+					ulBits |= CM_X|CM_Y|CM_Z;
 
 				if ( pActor->velx != 0 )
 					ulBits |= CM_VELX;

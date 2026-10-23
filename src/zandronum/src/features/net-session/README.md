@@ -14,6 +14,7 @@ shooter's own client held them.
 ## Files
 
 - `computation/unlaggedreport_compute.{h,cpp}` (the shot log and its JSON) with its `_test.cpp`.
+- `computation/joinupdate_compute.{h,cpp}` (`ComputeSpawnRoundsPosition`) with its `_test.cpp`.
 - `unlaggedreport.{h,cpp}` (`NoteServerShot`, `NoteClientShot`, the command).
 
 ## In-engine hooks
@@ -21,6 +22,7 @@ shooter's own client held them.
 - `p_map.cpp` `P_LineAttack`: `NoteClientShot` before a client returns, `NoteServerShot` after `Trace` and
   before `UNLAGGED_Restore`.
 - `sv_main.cpp` `SERVER_SendFullUpdate` sends a joiner each hurt or dead actor's health, which it held at
-  spawn health (`netsync`'s late joiner).
+  spawn health, and the exact place of each thing resting between whole units, where its spawn had rounded
+  it (`netsync`'s late joiner and a dropped clip).
 - `p_interaction.cpp` `AActor::Die`: a monster's death goes out with where it died and which way it faced,
   which a client simulating its last steps until a late death arrives kept wrong (`netsync`'s lossy observer).
