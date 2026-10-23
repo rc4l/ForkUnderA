@@ -47,6 +47,8 @@
 //-----------------------------------------------------------------------------
 
 #include "netcommand.h"
+#include "features/net-protocol/commandcapture.h"   // [rc4l] fua_netcap
+#include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_netdrop
 
 //*****************************************************************************
 //
@@ -315,6 +317,10 @@ void NetCommand::sendCommandToClients ( ULONG ulPlayerExtra, ServerCommandFlags 
 //
 void NetCommand::sendCommandToOneClient( ULONG i )
 {
+	// [rc4l] features/net-protocol: a command fua_debug_netdrop names is left unsent, proving a netgame scenario fails without it.
+	if ( zx::netprotocol::DroppedForTest( _buffer.pbData, static_cast<int>( _buffer.CalcSize( ))))
+		return;
+
 	SERVER_CheckClientBuffer( i, _buffer.ulCurrentSize, _unreliable == false );
 
 	// [BB] 5 = 1 + 4 (SVC_HEADER + packet number)
@@ -329,6 +335,8 @@ void NetCommand::sendCommandToOneClient( ULONG i )
 			SERVER_PrintWarning ( "NetCommand %s created a packet to client %lu exceeding sv_maxpacketsize (%d >= %lu)!\n", getHeaderAsString(), i, estimateSize, SERVER_GetMaxPacketSize( ));
 	}
 
+	// [rc4l] features/net-protocol: fua_netcap's record of every command a client is sent.
+	zx::netprotocol::CaptureCommand( static_cast<int>( i ), _unreliable == false, _buffer.pbData, static_cast<int>( _buffer.CalcSize( )));
 	writeCommandToStream( getBytestreamForClient( i ));
 }
 

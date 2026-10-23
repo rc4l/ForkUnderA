@@ -63,6 +63,7 @@
 #include "team.h"
 #include "announcer.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 #include "network.h"
 #include "invasion.h"
 #include "cl_demo.h"
@@ -2494,7 +2495,7 @@ FUNC(LS_Sector_SetGravity)
 
 		// [BC] If we're the server, tell clients that this sector's gravity is being altered.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorGravity( secnum );
+			zx::netreplication::TouchSector( secnum );
 	}
 
 	return true;
@@ -2511,6 +2512,8 @@ FUNC(LS_Sector_SetColor)
 		// [AK] Allow clients to set the color since this is purely a visual effect, but only
 		// if the special was called from a CLIENTSIDE ACS script.
 		sectors[secnum].SetColor(arg1, arg2, arg3, arg4, false, ACS_IsCalledFromScript( ));
+		// [rc4l] Sent below for the whole tag, which features/net-replication then holds as sent.
+		zx::netreplication::NoteSentSector( secnum, zx::netreplication::kSectorColor );
 	}
 	// [BB] Tell clients to set the color for all sectors with tag arg0.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -2530,6 +2533,7 @@ FUNC(LS_Sector_SetFade)
 		// [AK] Allow clients to set the fade since this is purely a visual effect, but only
 		// if the special was called from a CLIENTSIDE ACS script.
 		sectors[secnum].SetFade(arg1, arg2, arg3, false, ACS_IsCalledFromScript( ));
+		zx::netreplication::NoteSentSector( secnum, zx::netreplication::kSectorFade );
 	}
 	// [BB] Tell clients to set the fade for all sectors with tag arg0.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -2597,7 +2601,7 @@ FUNC(LS_Sector_SetFloorScale)
 
 		// [BC] Tell clients about the scale update.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorScale( secnum );
+			zx::netreplication::TouchSector( secnum );
 	}
 	return true;
 }
@@ -2623,7 +2627,7 @@ FUNC(LS_Sector_SetCeilingScale)
 
 		// [BC] Tell clients about the scale update.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorScale( secnum );
+			zx::netreplication::TouchSector( secnum );
 	}
 	return true;
 }
@@ -2647,7 +2651,7 @@ FUNC(LS_Sector_SetFloorScale2)
 
 		// [BC] Tell clients about the scale update.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorScale( secnum );
+			zx::netreplication::TouchSector( secnum );
 	}
 	return true;
 }
@@ -2671,7 +2675,7 @@ FUNC(LS_Sector_SetCeilingScale2)
 
 		// [BC] Tell clients about the scale update.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorScale( secnum );
+			zx::netreplication::TouchSector( secnum );
 	}
 	return true;
 }
@@ -2687,6 +2691,7 @@ FUNC(LS_Sector_SetRotation)
 	{
 		sectors[secnum].SetAngle(sector_t::floor, floor);
 		sectors[secnum].SetAngle(sector_t::ceiling, ceiling);
+		zx::netreplication::NoteSentSector( secnum, zx::netreplication::kSectorRotation );
 	}
 
 	// [BB] Tell clients to set the the rotation for all sectors with tag arg0.
@@ -2872,7 +2877,7 @@ FUNC(LS_Line_SetBlocking)
 
 		// [Dusk] Update clients on the line flags
 		if ( NETWORK_GetState() == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSomeLineFlags( line );
+			zx::netreplication::TouchLine( line );
 	}
 	return true;
 }
@@ -3250,7 +3255,7 @@ FUNC(LS_TranslucentLine)
 
 		// [BC] If we're the server, tell clients to adjust this line's alpha.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetLineAlpha( linenum );
+			zx::netreplication::TouchLine( linenum );
 
 		if (arg2 == 0)
 		{
@@ -3267,7 +3272,7 @@ FUNC(LS_TranslucentLine)
 
 		// [BB] If we're the server, tell clients the new ML_ADDTRANS setting.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSomeLineFlags( linenum );
+			zx::netreplication::TouchLine( linenum );
 	}
 
 	return true;
@@ -3424,8 +3429,8 @@ FUNC(LS_ClearForceField)
 				// blocking status have been altered.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
-					SERVERCOMMANDS_SetLineTexture( ULONG( line - lines ));
-					SERVERCOMMANDS_SetSomeLineFlags( ULONG( line - lines ));
+					zx::netreplication::TouchLine( ULONG( line - lines ));
+					zx::netreplication::TouchLine( ULONG( line - lines ));
 				}
 			}
 		}
@@ -3443,7 +3448,7 @@ FUNC(LS_GlassBreak)
 
 	// [BC] If we're the server, update this line's blocking.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_SetSomeLineFlags( ULONG( ln - lines ));
+		zx::netreplication::TouchLine( ULONG( ln - lines ));
 
 	switched = P_ChangeSwitchTexture (ln->sidedef[0], false, 0, &quest1);
 	ln->special = 0;
@@ -3598,7 +3603,7 @@ FUNC(LS_Sector_SetPlaneReflection)
 
 		// [BC] If we're the server, tell clients that this sector's reflection is being altered.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorReflection( secnum );
+			zx::netreplication::TouchSector( secnum );
 	}
 
 	return true;

@@ -62,6 +62,9 @@ unsigned long long FileSizeOnDisk( const char *path );
 // Read-only: nothing here is moved, renamed or deleted. A player's WAD collection is theirs.
 void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out );
 
+// [rc4l] The wad number of the IWAD this game runs, counting as network_InitPWADList does (files loaded automatically skipped), or -1.
+int RunningIwadWadnum( void );
+
 // Add the well-known WAD folders belonging to other Doom tools (waddirectories.txt, compiled in) to
 // the config's FileSearch.Directories and IWADSearch.Directories. Only ones that actually exist, only
 // once each -- it is safe to call repeatedly and cheap when there is nothing to do.

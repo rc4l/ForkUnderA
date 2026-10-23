@@ -20,6 +20,8 @@ node src/cli.mjs stats frame/ --port 7799    # the frame's own times: present to
 node src/cli.mjs stats phase/ --port 7799    # where the frame went, by features/framephase's phases
 node src/cli.mjs stats gpu/ --port 7799      # GPU time per pass and GPU memory
 node src/cli.mjs stats gpu/upload/ --port 7799    # bytes sent to the GPU a frame, by buffer; levelmesh/repaint_* says why surfaces went again
+node src/cli.mjs stats latency/ --port 7799  # input to the frame that shows it, and on a client a server packet to the frame that draws it
+node src/cli.mjs stats net/ --port 7799      # bytes and packets in and out a frame
 node src/cli.mjs hitches 10 --port 7799      # slow frames and the regions they spent most in
 node src/cli.mjs stats --port 7799           # every counter there is; the groups are named in the telemetry README
 ```
@@ -29,6 +31,7 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 - `record --seconds 10 --name X` writes every counter for every frame, plus every timed region on every thread, under the engine's `telemetry/` folder. `--recap` (or `recap X` later) reads it back: frames, tics on the game thread and held frames each second, then the counters the slowest quarter of seconds spent more on than the fastest. Open `X-trace.json` in Perfetto to see the job lanes against the game thread.
 - To compare two settings, `abperf` them inside one session. Never compare two launches. It reads each setting back before measuring and fails on one that did not take; never chain a setting after `load ...; wait N`, since a load drops every waiting command with the level's thinkers.
 - `docs/diagnostics.md` says which diagnostics reach players, what each costs, and the rules for adding one.
+- In a netgame, `perfgate` and `abperf` run against one instance of a `netplay` set by `--port` (a client's frames, or a server's `sim/` tick with several clients joined); `setpos` is refused there, so judge where the map's starts put the players (`netplay-testing`).
 - To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. For a fight, `--steps "+attack"` fires after the move and `--runs 3` judges the median of three readings (`perfgate sunder-chamber-fight frame/ --spot sunder-chamber-fight --steps "+attack" --runs 3`). `compare a.json b.json` sets two `stats --json` files side by side.
 - `fua_dg_made` lists the GPU objects the backend made while the level was played rather than loaded, each a compile or upload a frame waited on; `scenarios madeinplay` fails on any shader or pipeline among them.
 - A frame time that drops for no reason is an empty world until a shot proves otherwise.

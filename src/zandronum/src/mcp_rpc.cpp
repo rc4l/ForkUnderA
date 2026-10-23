@@ -8,7 +8,8 @@
 // Command families:
 //   ping / capabilities / console.exec
 //   sim.tic sim.hash sim.seed sim.pause sim.resume sim.step sim.snapshot sim.restore   (determinism)
-//   state.player state.actors                                                          (structured state)
+//   state.player state.actors world.actors world.sectors                               (structured state)
+//   net.state net.clients net.hostdiag net.bandwidth                                   (netgames)
 //   input.event                                                                        (input injection)
 //
 #include "doomtype.h"
@@ -41,6 +42,13 @@
 #include "version.h"
 #include "network.h"
 #include "sv_main.h" // [rc4l] SERVER_SERVERREGISTRY_GetListingProof, for net.hostdiag
+#include "cl_main.h" // [rc4l] the client's connection and server tic, for net.state
+#include "r_data/sprites.h" // [rc4l] spritedef_t, for world.actors
+#include "r_data/colormaps.h" // [rc4l] FDynamicColormap, for world.sectorstate
+#include "g_shared/a_pickups.h" // [rc4l] AInventory, which world.actors leaves out when carried
+#include "features/mcp-bridge/computation/netrpc_compute.h"
+#include "features/net-session/netrole.h"
+#include "features/net-protocol/lineflags.h"
 #include "mcp_sample.h"
 #include "textures/textures.h"
 #include "features/gamecopy/tintsubject.h"   // [rc4l] DamageTint_SectorDamage
@@ -168,8 +176,7 @@ namespace
 	// plainly instead of silently doing nothing.
 	bool IsNetInstance()
 	{
-		LONG s = NETWORK_GetState();
-		return s == NETSTATE_SERVER || s == NETSTATE_CLIENT;
+		return zx::net::IsServer() || zx::net::IsClient();
 	}
 
 	// Deterministic fingerprint of the sim: level clock + RNG position + every actor's transform &
@@ -372,10 +379,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		SendOk( id, "{\"commands\":["
 			"\"ping\",\"capabilities\",\"console.exec\","
-			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
+			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"browser.add\",\"browser.select\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\",\"player.camera\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -395,6 +402,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		body += ",\"leveltime\":" + I( level.time );
 		body += ",\"gamestate\":" + I( (int)gamestate );
 		body += ",\"inlevel\":" + B( InLevel() );
+		// [rc4l] Which map, so a map change is seen arriving where it was sent.
+		body += ",\"map\":\"" + zx::json::ComputeJsonEscape( level.MapName.GetChars() ) + "\"";
 		body += ",\"paused\":" + I( paused ) + "}";
 		SendOk( id, body );
 	}
@@ -519,17 +528,35 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			// would miss the collapse entirely.
 			body += ",\"listed\":" + B( BROWSER_IsListable( i ) );
 			body += ",\"players\":" + I( BROWSER_GetNumPlayers( i ) );
+			// [rc4l] Where the server serves its own files, which a join falls back to when no mirror has them.
+			body += ",\"download\":\"" + zx::json::ComputeJsonEscape( BROWSER_GetDirectDownloadURL( i ).GetChars() ) + "\"";
 			body += ",\"ping\":" + I( BROWSER_GetPing( i ) ) + "}";
 			++n;
 		}
 		body += "],\"count\":" + I( n ) + "}";
 		SendOk( id, body );
 	}
+	else if ( cmd == "browser.add" || cmd == "browser.select" )
+	{
+		// [rc4l] A server by address, as Continue probes one: add adds and queries it, select makes it the one fua_join_selected_server joins.
+		std::string address;
+		NETADDRESS_s Address;
+		if ( !GetStr( args, "address", address ) || !Address.LoadFromString( address.c_str() ) ) { SendErr( id, cmd + " requires args.address, host:port" ); return; }
+		if ( cmd == "browser.add" )
+			BROWSER_AddServerToList( Address );
+		const LONG lSlot = BROWSER_GetListIDByAddress( Address );
+		if ( lSlot < 0 ) { SendErr( id, "no browser row for " + address ); return; }
+		if ( cmd == "browser.add" )
+			BROWSER_RecheckServer( (ULONG)lSlot );
+		else
+			BROWSER_SetSelectedServer( lSlot );
+		SendOk( id, "{\"slot\":" + I( (long long)lSlot ) + "}" );
+	}
 	else if ( cmd == "net.clients" )
 	{
 		// [rc4l] How many peers actually got in, which is the only signal a connection that never
 		// happened cannot produce.
-		if ( NETWORK_GetState() != NETSTATE_SERVER ) { SendErr( id, "net.clients requires a server" ); return; }
+		if ( !zx::net::IsServer() ) { SendErr( id, "net.clients requires a server" ); return; }
 		std::string body = "{\"connected\":" + I( (long long)SERVER_CalcNumConnectedClients() );
 		body += ",\"players\":" + I( (long long)SERVER_CountPlayers( false ) ) + "}";
 		SendOk( id, body );
@@ -573,11 +600,11 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		// [rc4l] The machine-readable half of fua_hostdiag, so a reachability check can be asserted on
 		// rather than eyeballed.
-		std::string body = "{\"hosting\":" + B( NETWORK_GetState() == NETSTATE_SERVER );
+		std::string body = "{\"hosting\":" + B( zx::net::IsServer() );
 		body += ",\"port\":" + I( (long long)NETWORK_GetLocalPort() );
 
 		bool registryReplied = false;
-		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		if ( zx::net::IsServer() )
 		{
 			body += ",\"families\":{";
 			for ( int fam = 0; fam < 2; ++fam )
@@ -681,6 +708,155 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			}
 		}
 		body += "],\"count\":" + I( n ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "world.actors" )
+	{
+		// [rc4l] The synced actors by network id (args netid, limit, players, all for client-only ones too, owned for carried inventory too), to compare one instance's world with another's.
+		long limit = 1024, netid = -1;
+		bool onlyPlayers = false, all = false, owned = false;
+		GetInt( args, "limit", limit );
+		GetInt( args, "netid", netid );
+		GetBool( args, "players", onlyPlayers );
+		GetBool( args, "all", all );
+		GetBool( args, "owned", owned );
+		std::vector<zx::mcp::WorldActorRow> rows;
+		if ( InLevel() )
+		{
+			TThinkerIterator<AActor> it;
+			AActor *mo;
+			while ( ( mo = it.Next() ) != NULL )
+			{
+				if ( !all && mo->NetID == 0 ) continue;
+				if ( netid >= 0 && mo->NetID != (unsigned)netid ) continue;
+				if ( onlyPlayers && mo->player == NULL ) continue;
+				// [rc4l] Inventory a player carries is in no place, and only the server gives it a network id.
+				if ( !owned && mo->IsKindOf( RUNTIME_CLASS( AInventory )) && static_cast<AInventory *>( mo )->Owner != NULL ) continue;
+				zx::mcp::WorldActorRow r;
+				r.netId = mo->NetID;
+				r.cls = ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
+				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z );
+				r.velX = FIXED2DBL( mo->velx ); r.velY = FIXED2DBL( mo->vely ); r.velZ = FIXED2DBL( mo->velz );
+				r.angle = (double)mo->angle * ( 360.0 / 4294967296.0 );
+				r.health = mo->health;
+				r.player = ( mo->player != NULL ) ? (int)( mo->player - players ) : -1;
+				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
+				rows.push_back( r );
+			}
+		}
+		zx::mcp::ComputeSortActorRows( rows );
+		std::string body = "{\"tic\":" + I( gametic ) + ",\"actors\":[";
+		const size_t n = std::min( rows.size(), (size_t)( limit > 0 ? limit : 0 ));
+		for ( size_t k = 0; k < n; k++ ) body += ( k ? "," : "" ) + zx::mcp::ComputeWorldActorJson( rows[k] );
+		body += "],\"count\":" + I( (long long)n ) + ",\"total\":" + I( (long long)rows.size() ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "world.sectorstate" || cmd == "world.sidestate" || cmd == "world.linestate" )
+	{
+		// [rc4l] Each sector's, sidedef's or line's look as a netgame syncs it (args first, count), to compare a client's map with its server's.
+		long first = 0, count = -1;
+		GetInt( args, "first", first );
+		GetInt( args, "count", count );
+		const bool sectorsWanted = cmd == "world.sectorstate";
+		const bool linesWanted = cmd == "world.linestate";
+		const int total = !InLevel() ? 0 : ( sectorsWanted ? numsectors : linesWanted ? numlines : numsides );
+		int b = 0, e = 0;
+		zx::mcp::ComputePageRange( total, first, count, b, e );
+		auto textureName = []( FTextureID tex ) { FTexture *ft = TexMan[tex]; return std::string( ft ? ft->Name.GetChars() : "" ); };
+		std::string body = "{\"tic\":" + I( gametic ) + ",\"total\":" + I( total ) + ( sectorsWanted ? ",\"sectors\":[" : linesWanted ? ",\"lines\":[" : ",\"sides\":[" );
+		for ( int i = b; i < e; i++ )
+		{
+			if ( i > b ) body += ",";
+			if ( sectorsWanted )
+			{
+				const sector_t &s = sectors[i];
+				zx::mcp::SectorStateRow r;
+				r.index = i;
+				r.floor = FIXED2DBL( s.CenterFloor( ));
+				r.ceiling = FIXED2DBL( s.CenterCeiling( ));
+				r.light = s.lightlevel;
+				r.color = s.ColorMap != NULL ? (unsigned)s.ColorMap->Color.d : 0;
+				r.fade = s.ColorMap != NULL ? (unsigned)s.ColorMap->Fade.d : 0;
+				r.desaturation = s.ColorMap != NULL ? s.ColorMap->Desaturate : 0;
+				r.floorTex = textureName( s.GetTexture( sector_t::floor ));
+				r.ceilingTex = textureName( s.GetTexture( sector_t::ceiling ));
+				r.gravity = s.gravity;
+				r.friction = FIXED2DBL( s.friction );
+				r.special = s.special;
+				r.reflectFloor = s.reflect[sector_t::floor];
+				r.reflectCeiling = s.reflect[sector_t::ceiling];
+				r.xScaleFloor = FIXED2DBL( s.GetXScale( sector_t::floor ));
+				r.yScaleFloor = FIXED2DBL( s.GetYScale( sector_t::floor ));
+				r.xScaleCeiling = FIXED2DBL( s.GetXScale( sector_t::ceiling ));
+				r.yScaleCeiling = FIXED2DBL( s.GetYScale( sector_t::ceiling ));
+				r.angleFloor = s.GetAngle( sector_t::floor, false ) * ( 360.0 / 4294967296.0 );
+				r.angleCeiling = s.GetAngle( sector_t::ceiling, false ) * ( 360.0 / 4294967296.0 );
+				body += zx::mcp::ComputeSectorStateJson( r );
+			}
+			else if ( linesWanted )
+			{
+				zx::mcp::LineStateRow r;
+				r.index = i;
+				r.alpha = FIXED2DBL( lines[i].Alpha );
+				r.flags = lines[i].flags & zx::netprotocol::kClientLineFlags;
+				body += zx::mcp::ComputeLineStateJson( r );
+			}
+			else
+			{
+				const side_t &d = sides[i];
+				zx::mcp::SideStateRow r;
+				r.index = i;
+				r.top = textureName( d.GetTexture( side_t::top ));
+				r.mid = textureName( d.GetTexture( side_t::mid ));
+				r.bottom = textureName( d.GetTexture( side_t::bottom ));
+				r.light = d.Light;
+				r.flags = d.Flags;
+				body += zx::mcp::ComputeSideStateJson( r );
+			}
+		}
+		body += "]}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "net.state" )
+	{
+		// [rc4l] This instance's side of a netgame: its role and tic, a client's connection, the server tic it last heard of and its ping, and a server's clients.
+		const int state = NETWORK_GetState();
+		std::string body = "{\"role\":\"" + std::string( zx::mcp::ComputeNetRoleName( state )) + "\",\"gametic\":" + I( gametic );
+		if ( state == NETSTATE_CLIENT )
+		{
+			body += ",\"connection\":\"" + std::string( zx::mcp::ComputeConnectionStateName( CLIENT_GetConnectionState() )) + "\"";
+			body += ",\"serverTic\":" + I( CLIENT_GetLatestServerGametic() );
+			body += ",\"lastPacketTic\":" + I( (long long)CLIENT_GetLastServerTick() );
+			body += ",\"consoleplayer\":" + I( consoleplayer );
+			body += ",\"ping\":" + I( (long long)players[consoleplayer].ulPing );
+			body += ",\"fullUpdateIncomplete\":" + B( CLIENT_GetFullUpdateIncomplete() );
+			// [rc4l] The account this client's server says it plays as.
+			body += ",\"account\":\"" + zx::json::ComputeJsonEscape( CLIENT_GetPlayerAccountName( consoleplayer ).GetChars() ) + "\"";
+		}
+		if ( state == NETSTATE_SERVER )
+		{
+			body += ",\"clients\":[";
+			bool first = true;
+			for ( ULONG i = 0; i < MAXPLAYERS; i++ )
+			{
+				if ( !SERVER_IsValidClient( i )) continue;
+				const CLIENT_s *cl = SERVER_GetClient( i );
+				zx::mcp::NetClientRow r;
+				r.player = (int)i;
+				r.name = players[i].userinfo.GetName();
+				r.state = (int)cl->State;
+				r.ping = (int)players[i].ulPing;
+				r.lastServerTic = cl->lLastServerGametic;
+				r.clientTic = cl->ulClientGameTic;
+				r.spectating = players[i].bSpectating;
+				r.bot = players[i].bIsBot;
+				r.account = cl->GetAccountName().GetChars();
+				body += ( first ? "" : "," ) + zx::mcp::ComputeNetClientJson( r );
+				first = false;
+			}
+			body += "]";
+		}
+		body += "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "input.event" )

@@ -27,6 +27,7 @@
 #include "textures/textures.h"
 
 #include <math.h>
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR (Int, cl_maxdecals)
 EXTERN_CVAR (Bool, cl_missiledecals)
@@ -55,7 +56,7 @@ int g_counts[3][kMarkVerdicts];
 
 MarkSettings Settings ()
 {
-	const MarkSettings s = { cl_maxdecals, cl_missiledecals, fua_decal_flats, NETWORK_GetState () == NETSTATE_SERVER };
+	const MarkSettings s = { cl_maxdecals, cl_missiledecals, fua_decal_flats, zx::net::IsServer() };
 	return s;
 }
 

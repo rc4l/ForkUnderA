@@ -22,7 +22,7 @@ nothing and are not counted; a hit armor fully absorbs is.
 **Network:** the server decides damage, and `SERVERCOMMANDS_DamagePlayer` only carries the new health
 and armor, so the server sends each roll to the player who took it in a new extended command,
 `SVC2_FUADAMAGETAKEN` (wire id 73), and to no one else. A client and server must be the same build to
-connect (`DOTVERSIONSTR` and the revision-derived `NETGAMEVERSION`), so no client can receive a command
+connect (`DOTVERSIONSTR` and the whole revision, `GetRevisionNumber`), so no client can receive a command
 it doesn't know. Client demos record the command and are tied to the exact build. There is no savegame
 impact: the strike lives only in memory.
 

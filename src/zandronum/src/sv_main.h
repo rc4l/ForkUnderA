@@ -701,7 +701,6 @@ void		SERVER_VPrintf( int printlevel, const char* format, va_list argptr, int pl
 void		SERVER_UpdateSectors( ULONG ulClient );
 void		SERVER_UpdateMovers( ULONG ulClient );
 void		SERVER_UpdateLines( ULONG ulClient );
-void		SERVER_UpdateSides( ULONG ulClient );
 void		SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient );
 void		SERVER_ReconnectNewLevel( const char *pszMapName );
 void		SERVER_LoadNewLevel( const char *pszMapName );

@@ -301,7 +301,8 @@ bool I_WriteIniFailed()
 }
 
 
-static const char *pattern;
+// [rc4l] Per thread, since the wad library's and wad download's workers search folders while the main thread does.
+static thread_local const char *pattern;
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED < 1080
 static int matchfile(struct dirent *ent)

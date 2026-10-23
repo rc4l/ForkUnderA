@@ -24,7 +24,7 @@ Worked through, using the cases that produced this skill:
 
 | Who reads it | Rebuilt with us? | Verdict |
 |---|---|---|
-| A connected game client | **Yes** — `NETGAMEVERSION` is revision-derived, so mismatched builds already refuse each other | Safe |
+| A connected game client | **Yes** — the connect carries the whole revision (`GetRevisionNumber`), so mismatched builds refuse each other | Safe |
 | A savegame written last week | No — the file is fixed, our code moved | **Dangerous** |
 | A demo recorded last month | No — same | **Dangerous** |
 | A launcher / server browser | No — someone else's program, someone else's release schedule | **Dangerous** |

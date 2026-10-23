@@ -15,12 +15,13 @@
 namespace zx
 {
 
-// The two launcher replies a server can send. Values match networkshared.h; passed in rather than
+// The launcher replies a server can send. Values match networkshared.h; passed in rather than
 // included so this unit stays free of the engine.
 struct LauncherCommands
 {
 	long whole;
 	long segmented;
+	long ignoring;	// [rc4l] "you asked within ten seconds", which the server you play on sends a second client from your address
 };
 
 // Should this packet go to the browser rather than to the game parser?

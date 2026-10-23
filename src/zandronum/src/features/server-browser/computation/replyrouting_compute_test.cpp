@@ -12,10 +12,11 @@ namespace
 
 // The real values from networkshared.h. Hard-coded here on purpose: if either constant ever moves,
 // this test is where that shows up rather than in a player's empty server list.
-const LauncherCommands kCommands = { 5660023, 5660032 };
+const LauncherCommands kCommands = { 5660023, 5660032, 5660024 };
 
 const long kWhole = 5660023;
 const long kSegmented = 5660032;
+const long kIgnoring = 5660024;
 
 } // namespace
 
@@ -25,6 +26,13 @@ TEST( ReplyRouting, ALauncherReplyWeAskedForGoesToTheBrowser )
 {
 	EXPECT_TRUE( ShouldRouteToBrowser( true, kWhole, kCommands ));
 	EXPECT_TRUE( ShouldRouteToBrowser( true, kSegmented, kCommands ));
+}
+
+TEST( ReplyRouting, TheServerWePlayOnIgnoringOurQueryGoesToTheBrowser )
+{
+	// [rc4l] A server's "ignoring you" reply, parsed as game traffic, was read as a sequence number and quit netsync's observer with 2048 packets missing.
+	EXPECT_TRUE( ShouldRouteToBrowser( true, kIgnoring, kCommands ));
+	EXPECT_FALSE( ShouldRouteToBrowser( false, kIgnoring, kCommands ));
 }
 
 TEST( ReplyRouting, GameTrafficIsLeftAlone )

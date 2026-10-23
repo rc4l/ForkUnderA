@@ -19,6 +19,7 @@
 
 #include <string>
 #include <vector>
+#include "features/net-session/netrole.h"
 
 namespace
 {
@@ -87,11 +88,11 @@ namespace zx { namespace damagetaken {
 void OnPlayerHit(player_t *player, AActor *source, AActor *inflictor, FName mod, const HitAmounts &hit)
 {
 	// [MobiusU9B] A client records only what the server reports, so damage it runs locally never counts.
-	if (player == NULL || NETWORK_InClientMode() || !ComputeDamageTakenIsRoll(inflictor != NULL, hit.armorAbsorbed, hit.healthLost))
+	if (player == NULL || zx::net::InClientMode() || !ComputeDamageTakenIsRoll(inflictor != NULL, hit.armorAbsorbed, hit.healthLost))
 		return;
 
 	const ULONG playerIndex = static_cast<ULONG>(player - players);
-	const bool server = NETWORK_GetState() == NETSTATE_SERVER;
+	const bool server = zx::net::IsServer();
 	if (server ? !SERVER_IsValidClient(playerIndex) : player != &players[consoleplayer])
 		return;
 

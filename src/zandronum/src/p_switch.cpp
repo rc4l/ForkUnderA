@@ -52,6 +52,7 @@
 #include "deathmatch.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 
 #include "gi.h"
 
@@ -288,7 +289,7 @@ bool P_ChangeSwitchTexture (side_t *side, int useAgain, BYTE special, bool *ques
 
 	// [BC] If we're the server, tell clients to set the line texture.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_SetLineTexture( static_cast<ULONG>( side->linedef - lines ) );
+		zx::netreplication::TouchLine( static_cast<ULONG>( side->linedef - lines ) );
 
 	if (useAgain || Switch->NumFrames > 1)
 	{
@@ -408,7 +409,7 @@ void DActiveButton::Tick ()
 
 		// [BC] If we're the server, tell clients to update the switch texture.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetLineTexture( static_cast<ULONG>( m_Side->linedef - lines )  );
+			zx::netreplication::TouchLine( static_cast<ULONG>( m_Side->linedef - lines )  );
 
 		if (killme)
 		{

@@ -88,6 +88,7 @@
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchors (no-op unless FUA_MCP_BRIDGE)
 #include "features/mbf21/computation/damage_groups_compute.h"
 #include "features/damage-taken/damagetaken.h"
+#include "features/net-replication/actorstate.h"
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -829,8 +830,12 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
 		// If there isn't a player attached to this object, treat it like a normal thing.
+		// [rc4l] With where it died and which way it faced: a client simulating its last steps until a late death arrives kept its own facing for good (netsync's lossy observer).
 		if ( player == NULL )
+		{
 			SERVERCOMMANDS_KillThing( this, source, inflictor );
+			SERVERCOMMANDS_MoveThingExact( this, CM_X|CM_Y|CM_Z|CM_ANGLE );
+		}
 		else
 			SERVERCOMMANDS_KillPlayer( ULONG( player - players ), source, inflictor, MeansOfDeath );
 	}
@@ -1878,6 +1883,9 @@ thrust:
 		return damage;
 		}	// [rc4l] closes the MF7_BUDDHA else opened above
 	}
+
+	// [rc4l] features/net-replication: it lived, so its new health reaches every client, where only a death did.
+	zx::netreplication::NoteDamaged( target );
 
 	woundstate = target->FindState(NAME_Wound, mod);
 	// [BB] The server takes care of this.

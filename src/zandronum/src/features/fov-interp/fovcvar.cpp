@@ -27,6 +27,7 @@
 #include "cmdlib.h"
 #include "network.h"
 #include "sv_main.h"
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR (Int, dmflags)
 
@@ -61,7 +62,7 @@ CUSTOM_CVAR (Float, fov, 90.f, CVAR_ARCHIVE)
 	const zx::FovRequestVerdict verdict = zx::FovRequestDecision (
 		(dmflags & DF_NO_FOV) != 0,
 		consoleplayer == Net_Arbitrator,
-		NETWORK_GetState( ) == NETSTATE_CLIENT,
+		zx::net::IsClient(),
 		gametic,
 		player->lastFOVChangeTic,
 		fov_change_cooldown_tics);
@@ -107,7 +108,7 @@ CUSTOM_CVAR (Float, fov, 90.f, CVAR_ARCHIVE)
 	else
 	{
 		// Just do this here in client games, matching the old CCMD.
-		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+		if ( zx::net::IsClient() )
 			player->DesiredFOV = static_cast<float> (requested);
 
 		Net_WriteByte (DEM_MYFOV);

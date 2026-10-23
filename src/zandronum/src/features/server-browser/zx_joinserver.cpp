@@ -46,6 +46,7 @@
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wadreload/zx_wadreload.h"
+#include "features/net-session/netrole.h"
 
 namespace zx
 {
@@ -660,7 +661,7 @@ void NoteJoinFailed( const char *reason )
 
 void JoinTick()
 {
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if ( zx::net::IsServer() )
 		return;
 
 	// Connected and playing -- whatever happens from here is not a failed join.

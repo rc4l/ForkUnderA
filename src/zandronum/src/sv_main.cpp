@@ -83,6 +83,11 @@
 #include "features/identity/computation/connectchallenge_compute.h"
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
+#include "features/net-session/computation/joinupdate_compute.h"
+#include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
+#include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
+#include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
+#include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_server_stall_ms
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -282,6 +287,8 @@ CVAR( Int, sv_timestampformat, 0, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 CVAR( Int, sv_colorstripmethod, 0, CVAR_ARCHIVE )
 CVAR( Bool, sv_minimizetosystray, true, CVAR_ARCHIVE )
 CVAR( Int, sv_queryignoretime, 10, CVAR_ARCHIVE )
+// [rc4l] A thread reads the game socket and stamps each datagram, so the tick parses without polling and ping counts from arrival.
+CVAR( Bool, sv_fua_receivethread, true, CVAR_NOSETBYACS )
 CVAR( Bool, sv_markchatlines, false, CVAR_ARCHIVE )
 CVAR( Int, sv_distinguishteamchatlines, 0, CVAR_ARCHIVE )
 CVAR( Flag, sv_nokill, dmflags2, DF2_NOSUICIDE )
@@ -705,7 +712,13 @@ unsigned int server_GetDeltaTicks( unsigned int &nowTime, const unsigned int pre
 //
 void SERVER_Tick( void )
 {
+	// [rc4l] Untimed, since the tick waits for its next tic inside.
+	ZX_SEAM_UNTIMED( "net/server_tick", Main );
 	unsigned int nowTime = 0;
+
+	// [rc4l] features/net-transport: the receive thread follows its cvar, so it can be switched off and on in a running server.
+	if ( sv_fua_receivethread != zx::nettransport::ReceiveThreadRunning( ))
+		NETWORK_SetReceiveThread( sv_fua_receivethread );
 
 	I_DoSelect();
 
@@ -718,7 +731,8 @@ void SERVER_Tick( void )
 		// for an accurate ping measurement.
 		SERVER_GetPackets( );
 
-		I_Sleep( 1 );
+		// [rc4l] Woken by a datagram as it arrives, where it slept the millisecond out.
+		zx::nettransport::WaitForDatagram( 1 );
 		deltaTics = server_GetDeltaTicks( nowTime, previousTics );
 	}
 
@@ -767,6 +781,12 @@ void SERVER_Tick( void )
 		UNLAGGED_Tick( );
 
 		G_Ticker ();
+
+		// [rc4l] The map state this tic changed, sent from one place (features/net-replication).
+		zx::netreplication::SendChanges( );
+
+		// [rc4l] fua_debug_server_stall_ms, a slow tick for scenario netstall.
+		zx::netprotocol::StallServerForTest( gametic );
 
 		// However we need to spawn the unlagged debug actors here i.e. after having processed their
 		// movement commands which updated their last server gametic.
@@ -1650,8 +1670,8 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 	// Tell the client of any lines that have been altered since the level start.
 	SERVER_UpdateLines( g_lCurrentClient );
 
-	// Tell the client of any sides that have been altered since the level start.
-	SERVER_UpdateSides( g_lCurrentClient );
+	// [rc4l] Tell the client of the server-written map state that differs from the level's start (features/net-replication).
+	zx::netreplication::SendToJoiner( g_lCurrentClient );
 
 	// Tell the client of any sectors that have been altered since the level start.
 	SERVER_UpdateSectors( g_lCurrentClient );
@@ -2018,12 +2038,11 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 			// Tell the client a packet saying the server is full.
 			SERVER_ConnectionError( AddressFrom, "Server is full.", NETWORK_ERRORCODE_SERVERISFULL );
 
-			// User sent the version, password, start as spectator, restore frags, and network protcol version along with the challenge.
+			// [rc4l] The version, the password, the connect flags and the revision, as CLIENT_AttemptConnection writes them; it read three bytes where two were sent.
 			pByteStream->ReadString();
 			pByteStream->ReadString();
 			pByteStream->ReadByte();
-			pByteStream->ReadByte();
-			pByteStream->ReadByte();
+			pByteStream->ReadLong();
 			// [BB] Lump authentication string.
 			pByteStream->ReadString();
 			// [rc4l] And the identity fields, so this drain still matches what a client sends.
@@ -2065,7 +2084,7 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].bWantHideCountry = !!( connectFlags & CCF_HIDECOUNTRY );
 
 	// Read in the client's network game version.
-	clientNetworkGameVersion = pByteStream->ReadByte();
+	clientNetworkGameVersion = pByteStream->ReadLong();
 
 	g_aClients[lClient].SavedPackets.Clear();
 	g_aClients[lClient].PacketBuffer.Clear();
@@ -2094,7 +2113,8 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	}
 
 	// Make sure the network game version matches.
-	if ( NETGAMEVERSION != clientNetworkGameVersion )
+	// [rc4l] The whole revision the client sent, since a byte of it matched one mismatched build in 256.
+	if ( GetRevisionNumber( ) != clientNetworkGameVersion )
 	{
 		SERVER_ClientError( lClient, NETWORK_ERRORCODE_WRONGPROTOCOLVERSION );
 #ifdef CREATE_PACKET_LOG
@@ -2860,6 +2880,10 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 				// [WS/BB] Always inform client of the actor's lastX/Y/Z.
 				ULONG ulBits = CM_LAST_X|CM_LAST_Y|CM_LAST_Z;
 
+				// [rc4l] The spawn above carries whole units in a short, so a thing between them or beyond that range is placed exactly.
+				if ( zx::netsession::ComputeSpawnRoundsPosition( pActor->x.Raw(), pActor->y.Raw(), pActor->z.Raw() ))
+					ulBits |= CM_X|CM_Y|CM_Z;
+
 				if ( pActor->velx != 0 )
 					ulBits |= CM_VELX;
 
@@ -2962,6 +2986,10 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 		if ( pActor->angle != 0 )
 			SERVERCOMMANDS_SetThingAngle( pActor, ulClient, SVCF_ONLYTHISCLIENT );
 
+		// [rc4l] A joiner otherwise holds a hurt or dead actor at its spawn health (netsync's late joiner held a corpse at 20); a player's health goes with the player.
+		if (( pActor->player == NULL ) && ( pActor->health != pActor->GetDefault( )->health ))
+			SERVERCOMMANDS_SetThingHealth( pActor, ulClient, SVCF_ONLYTHISCLIENT );
+
 		// Spawned monster is a corpse.
 		if (( pActor->health <= 0 ) && ( pActor->flags & MF_COUNTKILL ))
 		{
@@ -3013,9 +3041,9 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 	// [EP] If the sky scroll speed is changed, let the client know about it.
 	if ( level.info && level.skyspeed1 != level.info->skyspeed1 )
-		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ true );
+		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ true, ulClient, SVCF_ONLYTHISCLIENT );
 	if ( level.info && level.skyspeed2 != level.info->skyspeed2 )
-		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ false );
+		SERVERCOMMANDS_SetMapSkyScrollSpeed( /*isSky1 =*/ false, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [BB]
 	SERVERCOMMANDS_SetDefaultSkybox( ulClient, SVCF_ONLYTHISCLIENT ); 
@@ -3498,10 +3526,6 @@ void SERVER_UpdateSectors( ULONG ulClient )
 	{
 		pSector = &sectors[ulIdx];
 
-		// Check and see if flats need to be updated.
-		if ( pSector->bFlatChange )
-			SERVERCOMMANDS_SetSectorFlat( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-
 		// Update the floor heights.
 		if ( pSector->bFloorHeightChange )
 			SERVERCOMMANDS_SetSectorFloorPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
@@ -3519,69 +3543,19 @@ void SERVER_UpdateSectors( ULONG ulClient )
 			SERVERCOMMANDS_SetSectorPanning( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 		}
 
-		// Update the sector color.
-		if (( pSector->SavedColorMap->Color.r != pSector->ColorMap->Color.r ) ||
-			( pSector->SavedColorMap->Color.g != pSector->ColorMap->Color.g ) ||
-			( pSector->SavedColorMap->Color.b != pSector->ColorMap->Color.b ) ||
-			( pSector->SavedColorMap->Desaturate != pSector->ColorMap->Desaturate ))
-		{
-			SERVERCOMMANDS_SetSectorColor( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector fade.
-		if (( pSector->SavedColorMap->Fade.r != pSector->ColorMap->Fade.r ) ||
-			( pSector->SavedColorMap->Fade.g != pSector->ColorMap->Fade.g ) ||
-			( pSector->SavedColorMap->Fade.b != pSector->ColorMap->Fade.b ))
-		{
-			SERVERCOMMANDS_SetSectorFade( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector's ceiling/floor rotation.
-		if (( pSector->SavedCeilingAngle != pSector->GetAngle(sector_t::ceiling,false) ) ||
-			( pSector->SavedFloorAngle != pSector->GetAngle(sector_t::floor,false) ))
-		{
-			SERVERCOMMANDS_SetSectorRotation( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector's ceiling/floor scale.
-		if (( pSector->SavedCeilingXScale != pSector->GetXScale(sector_t::ceiling) ) ||
-			( pSector->SavedCeilingYScale != pSector->GetYScale(sector_t::ceiling) ) ||
-			( pSector->SavedFloorXScale != pSector->GetXScale(sector_t::floor) ) ||
-			( pSector->SavedFloorYScale != pSector->GetYScale(sector_t::floor) ))
-		{
-			SERVERCOMMANDS_SetSectorScale( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
-		// Update the sector's friction.
-		if (( pSector->SavedFriction != pSector->friction || pSector->SavedMoveFactor != pSector->movefactor ) &&
-			( pSector->special & FRICTION_MASK ))
-		{
-			SERVERCOMMANDS_SetSectorFriction( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-		}
-
 		// Update the sector's angle/y-offset.
 		if (( pSector->SavedBaseCeilingAngle != pSector->planes[sector_t::ceiling].xform.base_angle ) ||
 			( pSector->SavedBaseCeilingYOffset != pSector->planes[sector_t::ceiling].xform.base_yoffs ) ||
 			( pSector->SavedBaseFloorAngle != pSector->planes[sector_t::floor].xform.base_angle ) ||
 			( pSector->SavedBaseFloorYOffset != pSector->planes[sector_t::floor].xform.base_yoffs ))
 		{
-			SERVERCOMMANDS_SetSectorAngleYOffset( ulIdx );
+			// [rc4l] To the joiner alone; it went to every client on each join.
+			SERVERCOMMANDS_SetSectorAngleYOffset( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 		}
-
-		// Update the sector's gravity.
-		if ( pSector->SavedGravity != pSector->gravity )
-			SERVERCOMMANDS_SetSectorGravity( ulIdx );
 
 		// Update the sector's light level.
 		if ( pSector->bLightChange )
 			SERVERCOMMANDS_SetSectorLightLevel( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-
-		// Update the sector's reflection.
-		if (( pSector->SavedCeilingReflect != pSector->reflect[sector_t::ceiling] ) ||
-			( pSector->SavedFloorReflect != pSector->reflect[sector_t::floor] ))
-		{
-			SERVERCOMMANDS_SetSectorReflection( ulIdx );
-		}
 
 		// Tell client to mark all discovered secret sectors.
 		if ((pSector->special & SECRET_MASK) == 0 && pSector->secretsector)
@@ -3696,10 +3670,6 @@ void SERVER_UpdateLines( ULONG ulClient )
 
 	for ( ulLine = 0; ulLine < (ULONG)numlines; ulLine++ )
 	{
-		// Have any of the textures changed?
-		if ( lines[ulLine].TexChangeFlags )
-			SERVERCOMMANDS_SetLineTexture( ulLine, ulClient, SVCF_ONLYTHISCLIENT );
-
 		// [AK] Check if we need to update this line's texture offsets or scale.
 		for ( int side = 0; side <= 1; side++ )
 		{
@@ -3720,31 +3690,6 @@ void SERVER_UpdateLines( ULONG ulClient )
 					SERVERCOMMANDS_SetLineTextureScale( ulLine, side, position, ulClient, SVCF_ONLYTHISCLIENT );
 			}
 		}
-
-		// Is the alpha of this line altered?
-		if ( lines[ulLine].Alpha != lines[ulLine].SavedAlpha )
-			SERVERCOMMANDS_SetLineAlpha( ulLine, ulClient, SVCF_ONLYTHISCLIENT );
-
-		// Has the line's blocking status or the ML_ADDTRANS setting changed?
-		if ( lines[ulLine].flags != lines[ulLine].SavedFlags )
-			SERVERCOMMANDS_SetSomeLineFlags( ulLine, ulClient, SVCF_ONLYTHISCLIENT );
-	}
-}
-
-//*****************************************************************************
-//
-void SERVER_UpdateSides( ULONG ulClient )
-{
-	ULONG		ulSide;
-
-	if ( SERVER_IsValidClient( ulClient ) == false )
-		return;
-
-	for ( ulSide = 0; ulSide < (ULONG)numsides; ulSide++ )
-	{
-		// Have the side's flags changed?
-		if ( sides[ulSide].Flags != sides[ulSide].SavedFlags )
-			SERVERCOMMANDS_SetSideFlags( ulSide, ulClient, SVCF_ONLYTHISCLIENT );
 	}
 }
 
@@ -6472,7 +6417,8 @@ static bool server_MissingPacket( BYTESTREAM_s *pByteStream )
 static bool server_UpdateClientPing( BYTESTREAM_s *pByteStream )
 {
 	const unsigned int oldTime = pByteStream->ReadLong( );
-	const unsigned int nowTime = I_MSTime( );
+	// [rc4l] When the reply arrived, not when this tick got to it, so a slow tick does not read as the client's lag.
+	const unsigned int nowTime = NETWORK_GetArrivalMS( );
 
 	// [BB] This ping information from the client doesn't make sense.
 	if ( oldTime > nowTime )
@@ -7349,8 +7295,8 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 	// Tell the client of any lines that have been altered since the level start.
 	SERVER_UpdateLines( g_lCurrentClient );
 
-	// Tell the client of any sides that have been altered since the level start.
-	SERVER_UpdateSides( g_lCurrentClient );
+	// [rc4l] Tell the client of the server-written map state that differs from the level's start (features/net-replication).
+	zx::netreplication::SendToJoiner( g_lCurrentClient );
 
 	// Tell the client of any sectors that have been altered since the level start.
 	SERVER_UpdateSectors( g_lCurrentClient );

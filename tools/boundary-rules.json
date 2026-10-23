@@ -62,6 +62,37 @@
     {"name": "renderer features", "regex": "\\bzx::(levelmesh|hwrender|materials|sprites|visibility|frame|draw2d|viewsetup|horizon|surfaces|models|hitboxviz|crosshair|damagetint)::"},
     {"name": "render cvar", "regex": "\\bvid_[a-z]\\w*\\b|\\bgl_[a-z][a-z0-9_]*\\b|\\bfua_dg_\\w+\\b|\\br_drawtrans\\b|\\br_lights\\w*\\b"}
    ]
+  },
+  {
+   "name": "net-roles-through-the-session",
+   "why": "What role this process plays (server, client, single player, a client's demo) is decided by features/net-session, so a new role such as an observer or a listen server changes one header: code outside the netcode asks zx::net (features/net-session/netrole.h), and the vendored callers' allowances only shrink.",
+   "files": ["*.cpp", "*.h", "*.mm"],
+   "owners": ["features/net-transport/README.md", "features/net-protocol/README.md", "features/net-replication/README.md", "features/net-client/README.md", "features/net-session/README.md"],
+   "exclude": ["*/computation/*", "*_test.cpp", "*_nettest.cpp", "features/offline/"],
+   "why_excluded": "The netcode modules own what they report, each listing its vendored files under its README's ## Owns, and features/offline stubs the network for a build without one.",
+   "patterns": [
+    {"name": "role asked of the network", "regex": "\\bNETWORK_GetState\\s*\\(|\\bNETWORK_InClientMode\\s*\\("}
+   ]
+  },
+  {
+   "name": "net-sends-through-replication",
+   "why": "What a server sends is features/net-replication's to decide, so state families can go out from the per-tic change set rather than from every place game code changes them: game code's own SERVERCOMMANDS calls are what is left to move, and their allowances only shrink.",
+   "files": ["*.cpp", "*.h", "*.mm"],
+   "owners": ["features/net-transport/README.md", "features/net-protocol/README.md", "features/net-replication/README.md", "features/net-client/README.md", "features/net-session/README.md"],
+   "exclude": ["*/computation/*", "*_test.cpp", "*_nettest.cpp", "features/offline/"],
+   "patterns": [
+    {"name": "server command sent by game code", "regex": "\\bSERVERCOMMANDS_\\w+\\s*\\("}
+   ]
+  },
+  {
+   "name": "net-sockets-through-transport",
+   "why": "Datagrams leave and arrive through features/net-transport's socket, where simulated lag and loss, the byte counts and the I/O thread apply to every packet: code outside the netcode that launches packets or touches a socket itself is the launcher protocol's, counted so it only shrinks.",
+   "files": ["*.cpp", "*.h", "*.mm"],
+   "owners": ["features/net-transport/README.md", "features/net-protocol/README.md", "features/net-replication/README.md", "features/net-client/README.md", "features/net-session/README.md"],
+   "exclude": ["*/computation/*", "*_test.cpp", "*_nettest.cpp", "features/offline/"],
+   "patterns": [
+    {"name": "packet or socket outside the netcode", "regex": "\\bNETWORK_LaunchPacket\\s*\\(|\\bNETWORK_LaunchBroadcast\\s*\\(|\\bg_NetworkSocket\\b|\\bsendto\\s*\\(|\\brecvfrom\\s*\\("}
+   ]
   }
  ]
 }
