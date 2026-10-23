@@ -55,8 +55,16 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 ## A hosted scenario
 
 `compareNetplay` (template.mjs) builds the scenario's map and, for each of its `configs`
-(`{ name, players, observers, lag, loss, serverCvars, clientCvars }`), brings up a set and hands it to
-`judgeNetplay(set, label)`. `netsync`, `unlaggedhit` and `netbroadcast` are the models.
+(`{ name, players, observers, lag, loss, serverCvars, clientCvars, broadcast }`), brings up a set and hands it
+to `judgeNetplay(set, label, { wadPath, config })`. The models: `netsync` (scripted changes, a kill, a late
+joiner), `unlaggedhit` (rewound hits), `netbroadcast` (what an observer sees of another's actions),
+`waddownload` (fetching a missing wad, two clients at once) and `lanbrowse` (a LAN listing joined).
+
+- **Joining as a player does.** `addClient(set, { files: [], via: "browser" })` launches a client without the
+  set's wads and joins from its browser (`browser.add`, `browser.select`, `fua_join_selected_server`) with
+  the browser on screen, since a download that finishes with it shut waits for the player to come back;
+  `via: "lan"` waits for the server's LAN announce instead (`broadcast: true` in the config). Clients ask
+  no public server registry.
 
 - **Make it fail first.** `scenarios NAME --side CONFIG --cvar fua_debug_netdrop=ID` leaves a server command
   unsent (`ID` or `ID/EXT`, named by `netcap`), and `--cvar fua_debug_unlagged_ticoffset=3` makes a client
