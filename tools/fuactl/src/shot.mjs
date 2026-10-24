@@ -44,10 +44,18 @@ export function readSpot(spotsPath, name) {
 // [rc4l] --cvar's "name=value,name2=value2" as an object, a bare name meaning 1; undefined when the flag is absent.
 export function parseCvarFlag(text) {
   if (text == null || text === true) return undefined;
-  return Object.fromEntries(String(text).split(",").filter((kv) => kv.trim()).map((kv) => {
+  const out = {};
+  let last = null;
+  for (const raw of String(text).split(",")) {
+    const kv = raw.trim();
+    if (!kv) continue;
     const i = kv.indexOf("=");
-    return i < 0 ? [kv.trim(), "1"] : [kv.slice(0, i).trim(), kv.slice(i + 1).trim()];
-  }));
+    // [rc4l] A piece no cvar name could be (fua_debug_netdrop=151,135's 135) continues the value before it, where it became a cvar of its own.
+    if (i < 0 && last !== null && /^[^A-Za-z_]/.test(kv)) { out[last] += `,${kv}`; continue; }
+    last = i < 0 ? kv : kv.slice(0, i).trim();
+    out[last] = i < 0 ? "1" : kv.slice(i + 1).trim();
+  }
+  return out;
 }
 
 // [rc4l] Whether a renderer record's backend window was its own, beside GL's rather than embedded in it.
@@ -413,6 +421,17 @@ export function summarizeGtest(out) {
   return { passed: passed ? Number(passed[1]) : 0, failed: [...new Set(failed)] };
 }
 
+// [rc4l] The unit test binaries a tests build makes that exist: the monolithic one and the wire format's own (zandrox_tests_net).
+export function testBinaries(root, exists = fs.existsSync) {
+  return ["zandrox_tests", "zandrox_tests_net"].map((n) => path.join(root, "build-tests", "Release", `${n}.exe`)).filter((p) => exists(p));
+}
+
+// [rc4l] Several test runs as one: their passes summed, their failures listed, and the first status that is not 0 (a crash reports no failed test).
+export function combineGtest(runs) {
+  return { passed: runs.reduce((n, r) => n + r.passed, 0), failed: runs.flatMap((r) => r.failed), status: runs.find((r) => r.status !== 0)?.status ?? 0,
+    binaries: runs.length };
+}
+
 // [rc4l] Sources ending in one of suffixes as one sorted listing, so a build can tell when a new one appeared; the trees glob them at configure time only.
 export function sourcesStamp(files) {
   return [...files].map((f) => f.split(String.fromCharCode(92)).join("/")).sort().join("\n");
@@ -470,10 +489,14 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error, sta
   if (tests) {
     refreshGlobs(cm, root, "build-tests", ["_compute.cpp", "_test.cpp"], log);
     compile(cm, root, "build-tests", null, log);
-    const r = spawnSync(path.join(root, "build-tests/Release/zandrox_tests.exe"), ["--gtest_brief=1"], { encoding: "utf8" });
-    testRun = summarizeGtest((r.stdout || "") + (r.stderr || ""));
-    if (r.status !== 0) {
+    const runs = testBinaries(root).map((exe) => {
+      const r = spawnSync(exe, ["--gtest_brief=1"], { encoding: "utf8" });
+      return { exe, status: r.status, ...summarizeGtest((r.stdout || "") + (r.stderr || "")) };
+    });
+    testRun = combineGtest(runs);
+    if (testRun.status !== 0) {
       for (const f of testRun.failed) log(`FAILED ${f}`);
+      for (const r of runs) if (r.status !== 0 && !r.failed.length) log(`${path.basename(r.exe)} exited ${r.status} with no test reported failed (a crash)`);
       throw new Error(`unit tests failed (${testRun.failed.length})`);
     }
   }

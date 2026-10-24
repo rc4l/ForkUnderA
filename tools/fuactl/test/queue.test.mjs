@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "../src/queue.mjs";
+import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem, netQueueInfo } from "../src/queue.mjs";
 
 const AT = { x: 1, y: 2, z: 3, angle: 90, pitch: 10 };
 
@@ -52,4 +52,18 @@ test("a listed item shows its id, status, map, spot and description", () => {
   const { item } = addItem({ items: [] }, { description: "sky is black", map: "WDI01" });
   assert.equal(formatItem(item), "#1 [open] WDI01 q1-sky-is-black -- sky is black");
   assert.equal(formatItem({ ...item, map: undefined }), "#1 [open] ? q1-sky-is-black -- sky is black");
+});
+
+test("a netgame report carries the instance's role and ping, and outside one nothing", () => {
+  assert.deepEqual(netQueueInfo({ role: "client", consoleplayer: 1, ping: 48, serverTic: 900, connection: "active" }), { role: "client", player: 1, ping: 48, serverTic: 900, connection: "active" });
+  assert.deepEqual(netQueueInfo({ role: "server", clients: [{ player: 0, ping: 30, state: "spawned", spectating: false, name: "x" }] }), { role: "server", clients: [{ player: 0, ping: 30, state: "spawned", spectating: false }] });
+  assert.deepEqual(netQueueInfo({ role: "server" }).clients, []);
+  assert.equal(netQueueInfo({ role: "single" }), null);
+  assert.equal(netQueueInfo(null), null);
+});
+
+test("an item keeps its netgame side only when it has one", () => {
+  const q = { items: [] };
+  assert.deepEqual(addItem(q, { description: "x", map: "MAP01", at: null, net: { role: "client" } }, "now").item.net, { role: "client" });
+  assert.equal("net" in addItem(q, { description: "x", map: "MAP01", at: null }, "now").item, false);
 });

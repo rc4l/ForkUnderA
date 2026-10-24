@@ -11,7 +11,7 @@ Run from `tools/fuactl` as `node src/cli.mjs …` against your own locked instan
 
 - A fight needs monsters that hear the gun. `play` turns god and notarget on, so launch it `--monsters --targetable` (god stays on) or run `notarget` and read back `notarget OFF`. Shooting at spawn under notarget measures idle monsters.
 - An engine whose frames run for seconds (a slaughter map catching up tics) answers an rpc only between frames. `FUACTL_TIMEOUT_SCALE=12` stretches every wait.
-- `sample --port 7799 --stacks --table` prints where the game thread's time went, self and inclusive, as text.
+- `sample --port 7799 --stacks --table` prints where the main thread's time went, self and inclusive, as text. With the game thread on (players' default) the tics run elsewhere and the table says so; `--thread game` samples that thread instead, as it runs beside the frames.
 
 ## What a frame costs
 
@@ -19,6 +19,9 @@ Run from `tools/fuactl` as `node src/cli.mjs …` against your own locked instan
 node src/cli.mjs stats frame/ --port 7799    # the frame's own times: present to present, each renderer's share, tics
 node src/cli.mjs stats phase/ --port 7799    # where the frame went, by features/framephase's phases
 node src/cli.mjs stats gpu/ --port 7799      # GPU time per pass and GPU memory
+node src/cli.mjs stats gpu/upload/ --port 7799    # bytes sent to the GPU a frame, by buffer; levelmesh/repaint_* says why surfaces went again
+node src/cli.mjs stats latency/ --port 7799  # input to the frame that shows it, and on a client a server packet to the frame that draws it
+node src/cli.mjs stats net/ --port 7799      # bytes and packets in and out a frame
 node src/cli.mjs hitches 10 --port 7799      # slow frames and the regions they spent most in
 node src/cli.mjs stats --port 7799           # every counter there is; the groups are named in the telemetry README
 ```
@@ -28,7 +31,9 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 - `record --seconds 10 --name X` writes every counter for every frame, plus every timed region on every thread, under the engine's `telemetry/` folder. `--recap` (or `recap X` later) reads it back: frames, tics on the game thread and held frames each second, then the counters the slowest quarter of seconds spent more on than the fastest. Open `X-trace.json` in Perfetto to see the job lanes against the game thread.
 - To compare two settings, `abperf` them inside one session. Never compare two launches. It reads each setting back before measuring and fails on one that did not take; never chain a setting after `load ...; wait N`, since a load drops every waiting command with the level's thinkers.
 - `docs/diagnostics.md` says which diagnostics reach players, what each costs, and the rules for adding one.
-- To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. `compare a.json b.json` sets two `stats --json` files side by side.
+- In a netgame, `perfgate` and `abperf` run against one instance of a `netplay` set by `--port` (a client's frames, or a server's `sim/` tick with several clients joined); `setpos` is refused there, so judge where the map's starts put the players (`netplay-testing`).
+- To judge a change, use `perfgate NAME --spot S`. Its first run saves this machine's baseline under `~/.forkundera/baselines/`, and later runs fail on a regression. For a fight, `--steps "+attack"` fires after the move and `--runs 3` judges the median of three readings (`perfgate sunder-chamber-fight frame/ --spot sunder-chamber-fight --steps "+attack" --runs 3`). `compare a.json b.json` sets two `stats --json` files side by side.
+- `fua_dg_made` lists the GPU objects the backend made while the level was played rather than loaded, each a compile or upload a frame waited on; `scenarios madeinplay` fails on any shader or pipeline among them.
 - A frame time that drops for no reason is an empty world until a shot proves otherwise.
 - Driven launches start with dynamic resolution off (`vid_fua_dynres 0`), so a measurement is never taken at a scale the load chose; a player's session has it on. `fua_dynres_report` and `frame/dynres_scale` say what scale a frame drew at, and `fua_dg_dynres_force S` pins one.
 - `fua_dg_gpuload N` adds N loops of shader work at each of the scene's pixels, a GPU-bound frame on any machine, as `fua_debug_framestall_us` makes a CPU-bound one; on a fast desktop GPU almost nothing else is GPU-bound.
@@ -49,7 +54,7 @@ node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allo
   - Rapid WAD changes: `--action "wad_reload <other iwad> map=E1M1|wad_reload <iwad> <pwad> map=MAP01"` (forward slashes); with no `map=`, the restarts stay at the title.
   - Self-hosting: `--action "fua_hostmap MAP01"`. A server: launch one with `launch --arg "-host,-port,10670"`, then `soak --port <client> --judge-port <server> --judge-token T --action "connect 127.0.0.1:10670|disconnect"` judges the server while the client joins and leaves.
   - Resizing: `--action "check: resize 900x700|check: resize 1340x860"` sizes the game window from outside as a drag does (`window --resize WxH` once), since `vid_setmode` leaves a window's size alone; fullscreen: `--action "fullscreen 1|fullscreen 0"`, which covers the user's screen while it runs.
-- Turn on `fua_render_in_background` for a soak (scenarios do): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
+- A soak needs `fua_render_in_background` on (a `--lock` launch, and so every scenario, starts with it on; turn it on in the user's): a window without focus presents nothing, and the backend frees what it released only after a present, so it reads as a leak.
 - The heap gauges read `n/a` in plain `stats`, since walking the heaps stalls frames; a soak and `memsnap`/`memdiff` read them fresh, and `fua_telemetry_heaps 1` keeps them live.
 - A slow frame at a fixed interval that no timed region covers is something periodic on the main thread, such as a gauge's read: `record`, find the interval between slow frames, then `sample --stacks` while it happens.
 - Private bytes settle over the first sixty or so restarts (the heap's commit and the driver's caches) and level off; judge a restart soak with `--ignore mem/private_bytes` and live allocations, heap bytes, GPU memory and handles, or run eighty restarts and watch the plateau. `mem/win/` and `mem/heaps_committed_bytes` say whether growth sits in a heap or outside every one.
@@ -66,9 +71,11 @@ node src/cli.mjs soak --cycles 8 --warmup 2 --sites --port 7799   # and the allo
 Headless Chrome (always muted) reproduces what the page holds:
 
 - `node tools/web/check.mjs dist-web --only "holds no more memory"` runs the reload soak.
-- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. The run steps `frames` (the browser's frame pacing since the last one) and `level` (the audio output's RMS) measure what a player sees and hears; `fua_debug_orbit 25` turns the aim for repeatable motion. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
+- `node tools/web/probe.mjs <staged dir> --query "iwad=...&file=...&map=MAP11" --soak reload --cycles 4 --settle 9000` soaks a player's own map, and `--run "map MAP11; wait 9000; fua_stats gpu/"` prints what the commands printed. The run steps `frames` (the browser's frame pacing since the last one) and `level` (the audio output's RMS) measure what a player sees and hears; `fua_debug_orbit 25` turns the aim for repeatable motion; `gpucalls` lists the WebGPU calls a second since the last one, a buffer's writes among them. A page that drew nothing for longer than `--stall-ms` gets a `STALLED` line saying from when, so what the steps printed after it is known stale, and exit 3. A soak step `check: resize 900x700` resizes the page; `fullscreen true|fullscreen false` switches it.
 - A `wad_reload` reloads the page; nothing in the engine survives that, so what to watch across reloads is the page's stored data (`navigator.storage.estimate()`), which holds the config and the player's WADs.
 - The check "lets go of" compares the page's view with the engine's.
+- A player's fight, not a map's start: `probe.mjs --save game.zds` loads a save into the page before the steps (begin them with a `wait`). A player's browser save leaves their page as a download when they type `fua_offer <save name>` in the game console; a browser save does not load in a desktop build, nor a desktop one in the browser.
+- `--visits N` makes the run a returning player's (the same profile N times) and `--heap` names what a soak's page heap grew in, by constructor, from Chrome heap snapshots.
 - Headless Chrome and off-screen Firefox pace frames to no display (Chrome near 325 Hz, Firefox in bursts), so dynamic resolution reads a refresh no player has there; judge it by `fua_dynres_report` with `fua_dg_gpuload` against a run without, never by its budget.
 - Headless Firefox has no WebGPU, so `--browser firefox` on `probe.mjs` (and `check.mjs`) opens a Firefox window off the screen instead. For what only the player's machine shows, ask them to type these in the console and paste what they print:
   - `fua_flightdump` writes the last frames, seconds and hitches as downloads and prints a summary.

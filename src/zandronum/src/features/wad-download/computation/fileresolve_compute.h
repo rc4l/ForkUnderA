@@ -65,6 +65,12 @@ struct ResolveStep
 std::vector<ResolveStep> PlanFileResolve(const std::string &name, const std::string &md5Hex,
 	const std::string &downloadDir, const std::vector<std::string> &searchHits);
 
+// [rc4l] Whether the file at `path` is called `name`, ignoring case and whichever separator the path uses.
+bool ComputeFileIsNamed(const std::string &path, const std::string &name);
+
+// [rc4l] Whether two spellings name one path, ignoring case and separators as PlanFileResolve's dedupe does.
+bool ComputeSamePath(const std::string &a, const std::string &b);
+
 } // namespace zx
 
 #endif // ZX_FILERESOLVE_COMPUTE_H

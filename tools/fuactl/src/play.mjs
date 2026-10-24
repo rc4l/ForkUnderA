@@ -66,8 +66,8 @@ export function playCvars({ gl = false, glBeside = false, sideBySide = false, rt
   // Being shot at halfway through showing someone a texture seam is pure friction. Monsters go back
   // when the thing to look at IS a monster sprite.
   if (!monsters) cv.sv_nomonsters = 1;
-  // [rc4l] A locked launch never has the focus, and the background pause would hold its world at leveltime 1 with the weapon still lowered.
-  if (lock) cv.i_pauseinbackground = 0;
+  // [rc4l] A locked launch has the focus only when Windows lets it take it, and without it the background pause holds its world at leveltime 1 and the window presents nothing, so what a frame counts reads zero at random.
+  if (lock) { cv.i_pauseinbackground = 0; cv.fua_render_in_background = 1; }
   // [rc4l] --cvar's, last, so a launch can set what it needs before the map loads.
   return { ...cv, ...extra };
 }

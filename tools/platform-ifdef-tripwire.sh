@@ -21,7 +21,6 @@ sound/music_midi_timidity.cpp
 NOGL_FEATURE_SEAMS="
 features/crosshair/crosshair.cpp
 features/damage-tint/damagetint.cpp
-features/damage-tint/damagetint.h
 features/frame/standaloneframe.cpp
 features/fua-caching/fua_warmup.cpp
 "

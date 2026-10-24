@@ -48,8 +48,11 @@ bool CanWaitForGPU();
 bool PagePaced();
 
 // [rc4l] A texture or buffer made on the device and kept by its API (DeviceApi::keep); NULL in out when it could not be made.
-void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out);
+// [rc4l] madeName names it in fua_dg_made where desc.Name is a tag many share, as every material's is.
+void CreateDeviceTexture(const Diligent::TextureDesc &desc, const Diligent::TextureData *data, Diligent::ITexture **out, const char *madeName = nullptr);
 void CreateDeviceBuffer(const Diligent::BufferDesc &desc, const Diligent::BufferData *data, Diligent::IBuffer **out);
+// [rc4l] A GPU object made under kind and name, counted when the level is being played rather than loaded (dgframe.cpp, fua_dg_made).
+void NoteMadeInPlay(const char *kind, const char *name);
 
 // [rc4l] After a present: keeps the swapchain's own textures, which a resize makes again, and frees every kept object nothing holds any more.
 void FreeReleasedObjects(Diligent::ISwapChain *swap);

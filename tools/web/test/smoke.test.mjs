@@ -108,3 +108,13 @@ test('a retry returns the first answer, and past its deadline throws the last er
   await assert.rejects(retry(() => { throw new Error('refused'); }, Date.now() - 1, async () => {}), /refused/);
   await assert.rejects(retry(() => undefined, Date.now() - 1, async () => {}), /timed out/);
 });
+
+test('a page asks for a heap snapshot by its label', () => {
+  assert.deepEqual(inputAsked('[log] check: heap base'), { heap: 'base' });
+  assert.equal(inputAsked('[log] check: heap two words'), null);
+});
+
+test('a page asks for a full collection by its number', () => {
+  assert.deepEqual(inputAsked('[log] check: gc 3'), { gc: 3 });
+  assert.equal(inputAsked('[log] check: gc soon'), null);
+});

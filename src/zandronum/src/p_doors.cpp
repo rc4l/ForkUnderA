@@ -43,6 +43,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 
 //============================================================================
 //
@@ -821,8 +822,8 @@ bool DAnimatedDoor::StartClosing ()
 	// [BC] If we're the server, tell clients to alter this line's blocking status.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		SERVERCOMMANDS_SetSomeLineFlags( ULONG( m_Line1 - lines ));
-		SERVERCOMMANDS_SetSomeLineFlags( ULONG( m_Line2 - lines ));
+		zx::netreplication::TouchLine( ULONG( m_Line1 - lines ));
+		zx::netreplication::TouchLine( ULONG( m_Line2 - lines ));
 
 		// Also, tell clients to move the ceiling.
 		SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
@@ -876,8 +877,8 @@ void DAnimatedDoor::Tick ()
 				// [BC] If we're the server, tell clients to alter this line's blocking status.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
-					SERVERCOMMANDS_SetSomeLineFlags( ULONG( m_Line1 - lines ));
-					SERVERCOMMANDS_SetSomeLineFlags( ULONG( m_Line2 - lines ));
+					zx::netreplication::TouchLine( ULONG( m_Line1 - lines ));
+					zx::netreplication::TouchLine( ULONG( m_Line2 - lines ));
 				}
 
 				if (m_Delay == 0)
@@ -908,8 +909,8 @@ void DAnimatedDoor::Tick ()
 				// has changed.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
-					SERVERCOMMANDS_SetLineTexture( ULONG( m_Line1 - lines ));
-					SERVERCOMMANDS_SetLineTexture( ULONG( m_Line2 - lines ));
+					zx::netreplication::TouchLine( ULONG( m_Line1 - lines ));
+					zx::netreplication::TouchLine( ULONG( m_Line2 - lines ));
 				}
 			}
 		}
@@ -971,8 +972,8 @@ void DAnimatedDoor::Tick ()
 				// has changed.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
-					SERVERCOMMANDS_SetLineTexture( ULONG( m_Line1 - lines ));
-					SERVERCOMMANDS_SetLineTexture( ULONG( m_Line2 - lines ));
+					zx::netreplication::TouchLine( ULONG( m_Line1 - lines ));
+					zx::netreplication::TouchLine( ULONG( m_Line2 - lines ));
 				}
 			}
 		}
@@ -1025,8 +1026,8 @@ DAnimatedDoor::DAnimatedDoor (sector_t *sec, line_t *line, int speed, int delay,
 	// has changed.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		SERVERCOMMANDS_SetLineTexture( ULONG( m_Line1 - lines ));
-		SERVERCOMMANDS_SetLineTexture( ULONG( m_Line2 - lines ));
+		zx::netreplication::TouchLine( ULONG( m_Line1 - lines ));
+		zx::netreplication::TouchLine( ULONG( m_Line2 - lines ));
 	}
 
 	// don't forget texture scaling here!
@@ -1049,8 +1050,8 @@ DAnimatedDoor::DAnimatedDoor (sector_t *sec, line_t *line, int speed, int delay,
 	// has changed.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		SERVERCOMMANDS_SetSomeLineFlags( ULONG( m_Line1 - lines ));
-		SERVERCOMMANDS_SetSomeLineFlags( ULONG( m_Line2 - lines ));
+		zx::netreplication::TouchLine( ULONG( m_Line1 - lines ));
+		zx::netreplication::TouchLine( ULONG( m_Line2 - lines ));
 	}
 
 	m_BotDist = m_Sector->ceilingplane.d;

@@ -140,7 +140,8 @@ void SERVER_RCON_Tick( )
 			i++;
 	}
 
-	g_BadRequestFloodQueue.adjustHead( gametic / 1000 );
+	// [rc4l] In seconds, as the queue counts them; gametic / 1000 made each one about 29.
+	g_BadRequestFloodQueue.adjustHead( gametic / TICRATE );
 }
 
 //==========================================================================
@@ -154,6 +155,10 @@ void SERVER_RCON_Tick( )
 void SERVER_RCON_ParseMessage( NETADDRESS_s Address, LONG lMessage, BYTESTREAM_s *pByteStream )
 {
 	int iIndex = -1;
+
+	// [rc4l] An address that was banned, too old or wrong about the password is ignored for BAD_QUERY_IGNORE_TIME; it was queued and never checked.
+	if ((( lMessage == CLRC_BEGINCONNECTION ) || ( lMessage == CLRC_PASSWORD )) && g_BadRequestFloodQueue.addressInQueue( Address ))
+		return;
 
 	switch ( lMessage )
 	{
@@ -340,20 +345,23 @@ static void server_rcon_HandleNewConnection( NETADDRESS_s Address,  int iProtoco
 	// Banned client? Notify him, ignore him, and get out of here.
 	if ( SERVERBAN_IsIPBanned( Address ))
 	{
+		// [rc4l] Cleared first, or what the last reply left in the buffer went out ahead of this one.
+		g_MessageBuffer.Clear();
 		g_MessageBuffer.ByteStream.WriteByte( SVRC_BANNED );
 		NETWORK_LaunchPacket( &g_MessageBuffer, Address );
-		g_BadRequestFloodQueue.addAddress( Address, gametic / 1000 );
+		g_BadRequestFloodQueue.addAddress( Address, gametic / TICRATE );
 		return;
 	}
 
 	// Old protocol version? Notify, ignore, and quit.
 	if ( iProtocolVersion < MIN_PROTOCOL_VERSION )
 	{
+		g_MessageBuffer.Clear();
 		g_MessageBuffer.ByteStream.WriteByte( SVRC_OLDPROTOCOL );
 		g_MessageBuffer.ByteStream.WriteByte( PROTOCOL_VERSION );
 		g_MessageBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 		NETWORK_LaunchPacket( &g_MessageBuffer, Address );
-		g_BadRequestFloodQueue.addAddress( Address, gametic / 1000 );
+		g_BadRequestFloodQueue.addAddress( Address, gametic / TICRATE );
 		return;
 	}
 
@@ -409,7 +417,7 @@ static void server_rcon_HandleLogin( int iCandidateIndex, const char *pszHash )
 		NETWORK_LaunchPacket( &g_MessageBuffer, g_Candidates[iCandidateIndex].Address ); // [RC] Note: Be sure to finish any packets before calling Printf(). Otherwise SERVER_RCON_Print will clear your buffer.
 
 		// To prevent mass password flooding, ignore the IP for a few seconds.
-		g_BadRequestFloodQueue.addAddress( g_Candidates[iCandidateIndex].Address, gametic / 1000 );
+		g_BadRequestFloodQueue.addAddress( g_Candidates[iCandidateIndex].Address, gametic / TICRATE );
 
 		Printf( "Failed RCON login from %s. Ignoring IP for 10 seconds...\n", g_Candidates[iCandidateIndex].Address.ToString() );
 	}

@@ -28,7 +28,12 @@
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture
 
 #include "features/materials/materials.h"
+#include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/computation/texfilter_compute.h"   // [rc4l] ComputeMaterialMips
+#include "features/hwrender/computation/precache_compute.h"
+#include "features/hwrender/diligent/dgshared.h"   // [rc4l] UploadFlushing, NoteUploadSent
+#include "features/fua-caching/fua_caching.h"   // [rc4l] FUA_CachingMode
+#include "features/telemetry/telemetry.h"
 #include "tarray.h"
 #include "c_cvars.h"
 
@@ -62,6 +67,14 @@ struct TexEntry
 };
 
 static TArray<TexEntry> g_textures;
+// [rc4l] Each texture's place in g_textures by material and translation, so a lookup does not walk thousands of sprite frames.
+static zx::hwrender::MaterialIndex g_textureIndex;
+
+static void KeepTexture(const TexEntry &e)
+{
+	zx::hwrender::ComputeMaterialIndexInsert(g_textureIndex, e.material, e.translation, (int)g_textures.Size());
+	g_textures.Push(e);
+}
 static Diligent::RefCntAutoPtr<Diligent::ITexture> g_white;
 static Diligent::ITextureView *g_whiteSRV = NULL;
 
@@ -188,12 +201,12 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 		}
 	}
 
-	for (unsigned i = 0; i < g_textures.Size(); i++)
-		if (g_textures[i].material == materialPtr && g_textures[i].translation == translation)
-			return g_textures[i].srv;
+	const int kept = zx::hwrender::ComputeMaterialIndexFind(g_textureIndex, materialPtr, translation);
+	if (kept >= 0) return g_textures[kept].srv;
 
 	auto *dev = GetDevice();
 	if (!dev) return EnsureWhite();
+	ZX_ZONE("gpu/make_material");   // [rc4l] a material's pixels made, uploaded and mipped, which a frame drawing it first waits on
 
 	int w = 0, h = 0;
 	// [rc4l] A warp texture's pixels are its unwarped source, so it uploads as is and ripples in the scene shader.
@@ -201,12 +214,16 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	if (buf == NULL)
 	{
 		TexEntry e; e.material = materialPtr; e.translation = translation; e.srv = EnsureWhite();
-		g_textures.Push(e);
+		KeepTexture(e);
 		return e.srv;
 	}
 
 	Diligent::TextureDesc td;
+	// [rc4l] Tagged as every material is, for gpu/mem/tag/ and a soak, and named for fua_dg_made by its texture, or its size for one without a name such as a font's glyph.
 	td.Name = "fua material";
+	FString name = zx::materials::MaterialName(materialPtr);
+	if (name.Compare("?") == 0) name.Format("unnamed %dx%d", w, h);
+	if (translation != 0) name.AppendFormat(" translated %d", translation);
 	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
 	td.Width = (Diligent::Uint32)w;
 	td.Height = (Diligent::Uint32)h;
@@ -238,7 +255,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 	TexEntry e;
 	e.material = materialPtr;
 	e.translation = translation;
-	CreateDeviceTexture(td, NULL, &e.tex);
+	CreateDeviceTexture(td, NULL, &e.tex, name.GetChars());
 
 	if (e.tex)
 	{
@@ -251,18 +268,80 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 		GetContext()->UpdateTexture(e.tex, 0, 0, box, sub,
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		NoteUploadSent(GetContext(), (size_t)w * h * 4);
 	}
 	delete[] buf;
 
 	e.srv = e.tex ? e.tex->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE) : EnsureWhite();
 	if (e.tex && e.srv && mips) GetContext()->GenerateMips(e.srv);
-	g_textures.Push(e);
+	KeepTexture(e);
 	return e.srv;
+}
+
+// [rc4l] What TexMan.PrecacheLevel marked, waiting for the level's set-up, which comes after it.
+static PrecacheQueue g_precache;
+
+void QueueMaterialPrecache(const void *texture, int hits)
+{
+	ComputePrecacheQueueAdd(g_precache, texture, hits);
+}
+
+// [rc4l] A decal template's graphic with its translation and whether its red is its alpha, made with the level's precache as its marks will ask for it; the caching feature sends them here.
+static void QueueDecalPrecache(const void *texture, int translation, bool redToAlpha)
+{
+	ComputePrecacheQueueAddDecal(g_precache, texture, translation, redToAlpha);
+}
+static const bool s_decalsQueued = (FUA_SetDecalPrecache(QueueDecalPrecache), true);
+
+void PrecacheQueuedMaterials()
+{
+	Diligent::IRenderDevice *dev = GetDevice();
+	if (dev == NULL || (g_precache.entries.empty() && g_precache.decals.empty())) return;
+	ZX_ZONE("load/precache_backend");   // [rc4l] the level's marked textures made on the backend
+	UploadFlushing flushing;
+	const int64_t started = zx::telemetry::NowNs();
+	const int mode = FUA_CachingMode();
+	const bool mips = MaterialsWithMips();
+	const size_t budget = ComputePrecacheBudget(dev->GetDeviceInfo().Type == Diligent::RENDER_DEVICE_TYPE_WEBGPU);
+	size_t spent = 0;
+	int made = 0, skipped = 0;
+	for (const PrecacheEntry &e : ComputePrecacheQueueTake(g_precache))
+	{
+		const PrecacheAsk ask = ComputePrecacheAsk(e.hits, mode);
+		for (int expand = 0; expand < 2; expand++)
+		{
+			if (!(expand ? ask.expanded : ask.plain)) continue;
+			const void *mat = zx::materials::MaterialForTexture(e.texture, expand != 0);
+			zx::materials::MaterialInfo info;
+			if (mat == NULL || !zx::materials::DescribeMaterial(mat, info)) continue;
+			if (!ComputePrecacheSpend(spent, ComputeMaterialBytes(info.width, info.height, mips), budget)) { skipped++; continue; }
+			GetMaterialSRV(mat, 0);
+			GetBrightmapSRV(mat);
+			made++;
+		}
+	}
+	// [rc4l] A decal's graphic as a wall mark asks for it, and as a floor mark does when that differs.
+	for (const DecalPrecache &d : ComputePrecacheQueueTakeDecals(g_precache))
+	{
+		const void *mat = zx::materials::MaterialForTexture(d.texture, true);
+		zx::materials::MaterialInfo info;
+		if (mat == NULL || !zx::materials::DescribeMaterial(mat, info)) continue;
+		if (!ComputePrecacheSpend(spent, ComputeMaterialBytes(info.width, info.height, mips), budget)) { skipped++; continue; }
+		GetMaterialSRV(mat, d.translation);
+		const int pass = DecalPassTranslation(mat, d.translation, d.redToAlpha);
+		if (pass != d.translation) GetMaterialSRV(mat, pass);
+		made++;
+	}
+	ZX_COUNT("load/precached_textures", "textures", made);
+	const double ms = (zx::telemetry::NowNs() - started) / 1e6, mb = spent / (1024.0 * 1024.0);
+	if (skipped > 0) Printf("vulkan: %d marked textures (%.1f MB) made ahead in %.0f ms, %d left to load as drawn past the %u MB budget\n", made, mb, ms, skipped, (unsigned)(budget >> 20));
+	else Printf("vulkan: %d marked textures (%.1f MB) made ahead in %.0f ms\n", made, mb, ms);
 }
 
 void ReleaseMaterials()
 {
 	g_textures.Clear();
+	zx::hwrender::ComputeMaterialIndexClear(g_textureIndex);
 	g_whiteSRV = NULL;
 	g_white.Release();
 }

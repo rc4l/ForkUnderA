@@ -16,6 +16,8 @@
 
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/computation/backendview_compute.h"   // [rc4l] ComputeInvertMatrix4
+#include "features/hwrender/computation/bindingkey_compute.h"   // [rc4l] the bindings kept per graphic and views
+#include "features/hwrender/computation/precache_compute.h"   // [rc4l] ComputeDecalPassTranslation
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks fua_projdecals_stats lists
 #include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
 #include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] ComputeDecalPassBlend, the blend a pass draws with
@@ -23,6 +25,8 @@
 #include "c_dispatch.h"              // CCMD
 #include "r_defs.h"                  // sector_t
 #include "r_state.h"                 // sectors, numsectors
+
+#include <unordered_map>
 #include "m_fixed.h"                 // FIXED2FLOAT
 #include "r_data/r_translate.h"       // TRANSLATION, for the alpha-texture rule
 #include "features/materials/materials.h"   // [rc4l] whether a mark's texture uses the base palette
@@ -378,7 +382,10 @@ struct DeferredDecalInstance
 
 using zx::levelmesh::kDecalPasses;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_ddPSO[kDecalPasses];   // [rc4l] one per ComputeDecalPass draw
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_ddSRB[kDecalPasses];
+// [rc4l] A binding per pass, graphic, depth and normals, made once and kept across frames: re-pointing one binding per run of marks made a new WebGPU bind group every run, about 13,000 a second in a Complex Doom fight, which a browser frees only when it collects it, and Firefox ran out of memory.
+static std::unordered_map<zx::hwrender::BindingKey, Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding>, zx::hwrender::BindingKeyHash> g_ddBindings;
+// [rc4l] The bindings kept before the cache starts over, well over a level's graphics times the views a frame draws marks in.
+static const size_t kDecalBindingsKept = 2048;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_ddInstBuf;
 static Diligent::IBufferView *g_ddInstSRV = NULL;
 // [rc4l] One record per sector: (floor height, ceiling height, unused, unused).
@@ -405,10 +412,26 @@ CCMD(fua_projdecals_stats)
 
 void ReleaseDecalPipelines()
 {
-	for (int p = 0; p < kDecalPasses; p++) { g_ddSRB[p].Release(); g_ddPSO[p].Release(); }
+	g_ddBindings.clear();
+	for (int p = 0; p < kDecalPasses; p++) g_ddPSO[p].Release();
 }
 
-static bool EnsureDeferredDecalPass()
+// [rc4l] The binding a pass draws a graphic with over these depth and normals, made the first time it is asked for and kept (g_ddBindings).
+static Diligent::IShaderResourceBinding *DecalBinding(int pass, Diligent::IDeviceObject *tex, Diligent::IDeviceObject *depth, Diligent::IDeviceObject *normal)
+{
+	const zx::hwrender::BindingKey key = { tex, depth, normal, pass };
+	const auto kept = g_ddBindings.find(key);
+	if (kept != g_ddBindings.end()) return kept->second.RawPtr();
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> made;
+	g_ddPSO[pass]->CreateShaderResourceBinding(&made, true);
+	if (!made) return nullptr;
+	if (auto *v = made->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex")) v->Set(tex);
+	if (auto *v = made->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth")) v->Set(depth);
+	if (auto *v = made->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneNormal")) v->Set(normal);
+	return (g_ddBindings[key] = made).RawPtr();
+}
+
+bool EnsureDecalPipelines()
 {
 	// [rc4l] The pipeline binds the plane table, so a level with more sectors than it holds makes both again before anything is written past its end.
 	if (g_ddPSO[0] && g_ddPlaneCapacity < numsectors) ReleaseDecalPipelines();
@@ -534,11 +557,16 @@ static bool EnsureDeferredDecalPass()
 			if (auto *v = made->GetStaticVariableByName(stage, "Planes")) v->Set(g_ddPlaneSRV);
 		}
 		g_ddPSO[pass] = made;
-		made->CreateShaderResourceBinding(&g_ddSRB[pass], true);
-		if (!g_ddSRB[pass]) { g_ddBail = "resource binding creation failed"; return false; }
 	}
 
 	return true;
+}
+
+int DecalPassTranslation(const void *material, int translation, bool redToAlpha)
+{
+	zx::materials::MaterialInfo info;
+	const bool basePalette = redToAlpha && zx::materials::DescribeMaterial(material, info) && info.basePalette;
+	return zx::hwrender::ComputeDecalPassTranslation(translation, redToAlpha, basePalette, TRANSLATION(TRANSLATION_Standard, 8));
 }
 
 // [rc4l] Draw this frame's marks as boxes, resolved against the depth and normal buffers.
@@ -557,13 +585,15 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	const zx::levelmesh::GpuDecal *decals = NULL;
 	const int n = zx::levelmesh::GetProjectedDecalsGpu(&decals);
 	if (n <= 0 || decals == NULL) { g_ddBail = "nothing registered"; return; }
-	if (!EnsureDeferredDecalPass()) return;
+	if (!EnsureDecalPipelines()) return;
 
 	// [rc4l] The pass's own depth and normals, so a mirror's, a stacked view's and a camera's marks land on what that view drew.
 	Diligent::ITextureView *depthSRV = PassDepthSRV();
 	Diligent::ITextureView *normalSRV = PassNormalSRV();
 	if (!depthSRV) { g_ddBail = "no depth for this view"; return; }
 	if (!normalSRV) { g_ddBail = "no normals for this view"; return; }
+	// [rc4l] Started over before this pass commits any, so no binding a draw already holds goes.
+	if (zx::hwrender::ComputeBindingCacheFull(g_ddBindings.size(), kDecalBindingsKept)) g_ddBindings.clear();
 
 	float invMVP[16];
 	if (!ComputeInvertMatrix4(SceneMVP(), invMVP)) { g_ddBail = "view matrix not invertible"; return; }
@@ -618,13 +648,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 				// happens to be. For the BFG's scorch that is a flat mask, and the mark painted its
 				// whole box in one colour -- while the same texture on a wall, asked for with its
 				// translation, came out as soot.
-				int trans = d.translation;
-				if (d.redToAlpha)
-				{
-					zx::materials::MaterialInfo info;
-					if (zx::materials::DescribeMaterial(d.material, info) && info.basePalette)
-						trans = TRANSLATION(TRANSLATION_Standard, 8);
-				}
+				const int trans = DecalPassTranslation(d.material, d.translation, d.redToAlpha);
 				Diligent::IDeviceObject *srv = GetMaterialSRV(d.material, trans);
 				if (!srv) continue;
 				// [rc4l] Say when a mark's texture came back as the WHITE fallback.
@@ -764,12 +788,7 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		if (count == 0) continue;
 
 		Diligent::IPipelineState *pso = g_ddPSO[pass].RawPtr();
-		Diligent::IShaderResourceBinding *srb = g_ddSRB[pass].RawPtr();
-		if (!pso || !srb) continue;
-
-		auto *vTexVar = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex");
-		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneDepth")) v->Set(depthSRV);
-		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uSceneNormal")) v->Set(normalSRV);
+		if (!pso) continue;
 		ctx->SetPipelineState(pso);
 
 		// [rc4l] One draw per RUN of marks that share a graphic.
@@ -786,8 +805,8 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 			unsigned run = 1;
 			while (i + run < first + count && (int)all[i + run].centre[3] == slot) run++;
 
-			if (vTexVar)
-				vTexVar->Set((slot >= 0 && (unsigned)slot < views.Size()) ? views[slot] : fallback);
+			Diligent::IShaderResourceBinding *srb = DecalBinding(pass, (slot >= 0 && (unsigned)slot < views.Size()) ? views[slot] : fallback, depthSRV, normalSRV);
+			if (srb == nullptr) { g_ddBail = "resource binding creation failed"; i += run; continue; }
 			ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 			Diligent::DrawAttribs draw;

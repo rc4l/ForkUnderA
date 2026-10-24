@@ -34,6 +34,10 @@ node src/cli.mjs queue add "<their words, then what the screenshot shows>" --por
 - Where no engine answers (a browser page, which has no bridge, or an engine that already crashed),
   `queue add "<description>" --no-instance [--map M]` queues it without a spot. Ask them to type
   `currentpos` in the game console if the place matters, and `queue note` what it prints.
+- From a netgame, `queue add --port P` on their client also records its role, player, ping and the server
+  tic it last heard of (`net`), and on a dedicated server its clients and their pings with no spot, since a
+  server has no camera. Reproduce it with `netplay` and the same wads at the same `--lag`, judged by `netdiff`,
+  and `queue note` what each side showed (`netplay-testing`).
 
 `queue list` shows open items (`--all` includes closed). `queue next` prints the oldest open item with
 its full spot record.

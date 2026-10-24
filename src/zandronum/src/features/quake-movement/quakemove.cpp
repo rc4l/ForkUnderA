@@ -31,6 +31,7 @@
 #include "network.h"
 
 #include <cmath>
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR( Float, cl_spectatormove )
 
@@ -140,7 +141,7 @@ void StopAndIdleIfAtRest( APlayerPawn *mo )
 		{
 			// [BC] In client mode we don't know other players' move inputs, so the server tells us
 			// when to idle them; only the local player may decide it for themselves.
-			if (( NETWORK_InClientMode() == false ) || (( player - players ) == consoleplayer ))
+			if (( zx::net::InClientMode() == false ) || (( player - players ) == consoleplayer ))
 				mo->PlayIdle();
 		}
 
@@ -171,7 +172,7 @@ void SpawnEffectActor( player_t *player, int slot );
 // player 0's. Prediction is excluded too, or a re-predicted tic emits a second puff.
 bool IsLocalCosmeticPlayer( player_t *player )
 {
-	if ( NETWORK_GetState() == NETSTATE_SERVER )
+	if ( zx::net::IsServer() )
 		return false;
 	if ( CLIENT_PREDICT_IsPredicting() )
 		return false;
@@ -660,7 +661,7 @@ bool ApplyQuakeFriction( AActor *mo )
 
 	// [rc4l] A client does not run friction for OTHER players -- the server already applied it and
 	// sent the result, so re-applying it here would double it. See the README's netcode section.
-	const bool applyFriction = !( NETWORK_InClientMode() &&
+	const bool applyFriction = !( zx::net::InClientMode() &&
 		(( player - players ) != consoleplayer ));
 
 	if ( applyFriction )
@@ -758,7 +759,7 @@ void PlayJumpSound( APlayerPawn *mo, const char *sound )
 	if ( CLIENT_PREDICT_IsPredicting() == false )
 		S_Sound( mo, CHAN_BODY, sound, 1, ATTN_NORM );
 	// [EP] Inform the other clients to play the sound.
-	if ( NETWORK_GetState() == NETSTATE_SERVER )
+	if ( zx::net::IsServer() )
 	{
 		SERVERCOMMANDS_SoundActor( mo, CHAN_BODY, sound, 1, ATTN_NORM,
 			mo->player - players, SVCF_SKIPTHISCLIENT );
@@ -881,7 +882,7 @@ bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
 			TICRATE );
 
 		// [Leo] Inform the client of the jumpTics change.
-		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		if ( zx::net::IsServer() )
 			SERVERCOMMANDS_SetLocalPlayerJumpTics( player - players );
 	}
 	else if ( mo->secondJumpState == SJ_READY )
@@ -927,7 +928,7 @@ bool CheckJumpQuake( player_t *player, ticcmd_t *cmd )
 			mo->secondJumpsRemaining--;
 		mo->secondJumpState = SJ_NOT_AVAILABLE;
 
-		if ( NETWORK_GetState() == NETSTATE_SERVER )
+		if ( zx::net::IsServer() )
 			SERVERCOMMANDS_SetLocalPlayerJumpTics( player - players );
 	}
 

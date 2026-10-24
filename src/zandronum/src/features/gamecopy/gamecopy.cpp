@@ -28,6 +28,8 @@
 #include "c_dispatch.h"
 #include "doomstat.h"
 #include "network.h"
+#include "features/net-session/netrole.h"
+#include "features/net-client/netclient.h"   // [rc4l] the server packets a client applied, which change its world between tics
 #include "d_player.h"
 #include "doomtype.h"
 #include "a_pickups.h"
@@ -69,7 +71,7 @@ namespace {
 enum { kShape = 1, kPlacement = 2, kLook = 4 };
 
 Blends g_blends;      // [rc4l] what frames blend, from the last fill
-int g_filledTic = -1;   // [rc4l] the tic the copy was last taken at, -1 for none this level
+FillStamp g_filled;   // [rc4l] the tic and server packets the copy was last taken at, tic -1 for none this level
 bool g_levelLoaded = false;   // [rc4l] whether a level is set up for the copy to read, from InitLevel until ForgetLevel
 Blends g_gathering;   // [rc4l] what the interpolations add while a fill gathers
 zx::frame::OracleTally g_before, g_after;
@@ -502,14 +504,15 @@ void ListActors(std::vector<AActor *> &out)
 	for (AActor *a; (a = it.Next()) != NULL; )
 	{
 		if (a->rcSerial == kNoId) a->rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
+		// [rc4l] Its place noted while it is in cache, which LinkListed reads; a pass of its own cost a Complex Doom fight half a millisecond a tic.
+		a->rcListed = (int)out.size();
 		out.push_back(a);
 	}
 }
 
-// [rc4l] Each sector's actors linked by their places in list, in its thinglist's order: its first in firstIn, each one's next in next.
+// [rc4l] Each sector's actors linked by their places in list, in its thinglist's order: its first in firstIn, each one's next in next; list is ListActors', whose places each actor holds.
 void LinkListed(const std::vector<AActor *> &list, std::vector<int> &firstIn, std::vector<int> &next)
 {
-	for (size_t i = 0; i < list.size(); i++) list[i]->rcListed = (int)i;
 	firstIn.resize(numsectors);
 	next.assign(list.size(), -1);
 	RecordLinks links;
@@ -814,7 +817,16 @@ const ActorRecord *RecordById(unsigned int id)
 
 int CopyTic()
 {
-	return g_filledTic;
+	return g_filled.tic;
+}
+
+// [rc4l] The tic and the server packets applied as of now, which the copy is taken at.
+FillStamp StampOfNow()
+{
+	FillStamp s;
+	s.tic = gametic;
+	s.packets = zx::netclient::ParsedPackets();
+	return s;
 }
 
 int CopyLevel()
@@ -917,7 +929,7 @@ void InitLevel()
 	g_cameras.clear();
 	g_viewCamera = -1;
 	for (int i = 0; i < MAXPLAYERS; i++) g_inGame[i] = false;
-	g_filledTic = -1;
+	g_filled = FillStamp();
 	TakeLevel(g_level_);
 	InitXFloors();
 	InitLights();
@@ -939,7 +951,7 @@ void ForgetLevel()
 
 void FillMap()
 {
-	if (ComputeFillDue(gametic, g_filledTic, NETWORK_InClientMode())) FillNow();
+	if (ComputeFillDue(StampOfNow(), g_filled)) FillNow();
 }
 
 zx::frame::OracleTally g_prescanCheck;   // [rc4l] fua_copy_prescan_check's count since the last report
@@ -970,9 +982,7 @@ void CheckPrescan(const std::vector<int> &sectorCandidates, const std::vector<in
 	g_prescanListed++;
 	static std::vector<AActor *> now;
 	static std::vector<int> firstIn, next;
-	now.clear();
-	TThinkerIterator<AActor> it;
-	for (AActor *a; (a = it.Next()) != NULL; ) now.push_back(a);
+	ListActors(now);
 	if (now != g_listed) { PrescanMissed("actor list, length", (int)now.size()); return; }
 	LinkListed(now, firstIn, next);
 	if (firstIn != g_listedFirstIn || next != g_listedNext) PrescanMissed("sector links, actors", (int)now.size());
@@ -990,14 +1000,15 @@ void ScanAtTicEnd()
 	ZX_ZONE("copy/prescan");
 	g_prescan.stamp.found = false;
 	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) return;
-	ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; });
-	ListChanges(numsides, g_prescan.sides, [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; });
-	ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; });
-	ListActors(g_listed);
-	LinkListed(g_listed, g_listedFirstIn, g_listedNext);
-	ScanDecalSides();
-	ScanSeen();
-	ScanLights();
+	// [rc4l] Each part timed on its own, since in a Complex Doom fight the whole was a quarter of the tic.
+	{ ZX_ZONE("copy/prescan_sectors"); ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_sides"); ListChanges(numsides, g_prescan.sides, [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_lines"); ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed); }
+	{ ZX_ZONE("copy/prescan_links"); LinkListed(g_listed, g_listedFirstIn, g_listedNext); }
+	{ ZX_ZONE("copy/prescan_decals"); ScanDecalSides(); }
+	{ ZX_ZONE("copy/prescan_seen"); ScanSeen(); }
+	{ ZX_ZONE("copy/prescan_lights"); ScanLights(); }
 	g_prescan.stamp = StampNow(true);
 }
 
@@ -1005,11 +1016,11 @@ void FillNow()
 {
 	// [rc4l] Between a level's data being freed and the next set up, as at the full console endgame leaves, there is nothing to copy.
 	if (!g_levelLoaded) return;
-	g_filledTic = gametic;
+	g_filled = StampOfNow();
 	ZX_SEAM("copy/fill", Handoff);
 	// [rc4l] Whether the tic's end found the map's changes, which spares the handoff comparing the whole map (Sunder MAP16's 62,000 sides) while the frames wait.
-	const bool scanned = ComputePrescanFresh(g_prescan.stamp, StampNow(true), NETWORK_InClientMode());
-	const bool listed = ComputeActorScanFresh(g_prescan.stamp, StampNow(true), NETWORK_InClientMode());
+	const bool scanned = ComputePrescanFresh(g_prescan.stamp, StampNow(true), zx::net::InClientMode());
+	const bool listed = ComputeActorScanFresh(g_prescan.stamp, StampNow(true), zx::net::InClientMode());
 	g_prescan.stamp.found = false;
 	g_fills++;
 	ZX_COUNT("copy/prescanned", "fills", scanned ? 1 : 0);

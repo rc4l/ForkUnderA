@@ -74,6 +74,7 @@ build-diligent/
 
 # fuactl play sessions (port/token of a running instance, and one per port) and the report queue
 tools/fuactl/.play-session*
+tools/fuactl/.netplay-session*
 tools/fuactl/queue.json
 
 # fuactl's native helpers' build trees (tools/fuactl/native/<helper>/build)

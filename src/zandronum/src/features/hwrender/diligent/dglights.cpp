@@ -251,7 +251,8 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 		}
 		if (g_lightCount > 0)
 		{
-			UpdateBufferInPages(ctx, g_lightBuf, 0, (size_t)g_lightData.Size() * 4, &g_lightData[0]);
+			static zx::hwrender::UploadShadow lightShadow, rangeShadow, idShadow;
+			UpdateBufferIfChanged(ctx, g_lightBuf, lightShadow, (size_t)g_lightData.Size() * 4, &g_lightData[0]);
 			static std::vector<zx::hwrender::LightTouchRange> ranges;
 			static std::vector<unsigned> ids;
 			zx::hwrender::ComputeLightTouchLists(touched, kLightTouchIdCapacity, ranges, ids);
@@ -259,8 +260,8 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 				for (zx::hwrender::LightTouchRange &r : ranges) r.count = zx::hwrender::kLightTouchesAll;
 			if (g_lightTouchRangeBuf && g_lightTouchIdBuf)
 			{
-				UpdateBufferInPages(ctx, g_lightTouchRangeBuf, 0, ranges.size() * sizeof(ranges[0]), &ranges[0]);
-				if (!ids.empty()) UpdateBufferInPages(ctx, g_lightTouchIdBuf, 0, ids.size() * sizeof(unsigned), &ids[0]);
+				UpdateBufferIfChanged(ctx, g_lightTouchRangeBuf, rangeShadow, ranges.size() * sizeof(ranges[0]), &ranges[0]);
+				if (!ids.empty()) UpdateBufferIfChanged(ctx, g_lightTouchIdBuf, idShadow, ids.size() * sizeof(unsigned), &ids[0]);
 			}
 		}
 	}
@@ -382,8 +383,10 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	table.Resize((unsigned)cells * 2);
 	for (int i = 0; i < cells; i++) { table[i * 2] = offsets[i]; table[i * 2 + 1] = counts[i]; }
 
-	UpdateBufferInPages(ctx, g_clusterBuf, 0, (size_t)table.Size() * 4, &table[0]);
-	if (total > 0) UpdateBufferInPages(ctx, g_lightIndexBuf, 0, (size_t)total * 4, &indices[0]);
+	// [rc4l] A still view with still lights bins them the same, frame after frame.
+	static zx::hwrender::UploadShadow tableShadow, indexShadow;
+	UpdateBufferIfChanged(ctx, g_clusterBuf, tableShadow, (size_t)table.Size() * 4, &table[0]);
+	if (total > 0) UpdateBufferIfChanged(ctx, g_lightIndexBuf, indexShadow, (size_t)total * 4, &indices[0]);
 
 	g_clusterCells = cells;
 	g_clusterRefs = (int)total;

@@ -5,6 +5,10 @@ description: How code in ForkUnderA crosses between the game thread and the main
 
 # The game thread
 
+Netgames run inline on purpose: a client and a server keep their own loops (`d_main.cpp`), since the take-back's tic of
+delay would add to every player's latency and unlagged would rewind to a tic the client's screen no longer shows. A
+netcode change keeps it that way unless `unlaggedhit` proves no delay was added (`netplay-testing`).
+
 With `fua_gamethread` on (single-player, Vulkan alone), each tic's playsim runs on its own thread while the main
 thread draws. `src/zandronum/src/features/handoff/README.md` and `features/gameloop/README.md` are the spec; their
 generated sections list every seam, every copied field and every file that hands work across, so read them rather

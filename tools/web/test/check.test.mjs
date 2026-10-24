@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -88,6 +88,12 @@ test('a save comes back when the file is there and the engine takes it', () => {
 test('--only picks the checks whose names contain its text', () => {
   assert.equal(selectChecks(CHECKS, null), CHECKS);
   assert.deepEqual(selectChecks(CHECKS, 'save').map((c) => c.name), ['a save gets its picture', 'a save survives a reload and loads']);
+});
+
+test('--only takes several texts at |, in the order the suite runs them', () => {
+  const names = selectChecks(CHECKS, 'reloading the level | the canvas is configured once').map((c) => c.name);
+  assert.deepEqual(names, ['the canvas is configured once through a level start', 'reloading the level holds no more memory']);
+  assert.equal(selectChecks(CHECKS, ' | ').length, 0);
 });
 
 test('the checks run in the order a profile carries state through', () => {
@@ -271,8 +277,23 @@ test('dynamic resolution in the page is judged at rest, under load, after it, an
   assert.equal(dynresFollows({ ...good, blurHeld: false }), 'it read frames with the window out of focus');
 });
 
+test('a browser build tints but neither records replays nor checks for updates', () => {
+  const ok = { tint: '40', replay: 'false', replayAvailable: 'false', updates: 'false' };
+  assert.equal(browserOptions(ok), '');
+  assert.match(browserOptions({ ...ok, tint: null }), /damage tint cannot be changed/);
+  assert.match(browserOptions({ ...ok, replay: 'true' }), /instant replay reads true/);
+  assert.match(browserOptions({ ...ok, replayAvailable: 'true' }), /available true/);
+  assert.match(browserOptions({ ...ok, updates: 'true' }), /choosable true/);
+});
+
 test('leaving the page stores the config and prints nothing', () => {
   assert.equal(storedQuietly({ stored: true, said: '' }), '');
   assert.equal(storedQuietly({ stored: false, said: '' }), 'the store failed');
   assert.equal(storedQuietly({ stored: true, said: 'Config saved.\n' }), 'the console printed "Config saved."');
+});
+
+test('lightTableSends names a table never sent and surfaces sent again', () => {
+  assert.equal(lightTableSends({ pieceCopies: 0, tableCopies: 35 }), '');
+  assert.match(lightTableSends({ pieceCopies: 0, tableCopies: 0 }), /sector light table was sent 0.0 times a second/);
+  assert.match(lightTableSends({ pieceCopies: 70, tableCopies: 35 }), /surface records were sent 70.0 times a second/);
 });

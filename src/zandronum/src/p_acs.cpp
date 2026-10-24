@@ -87,6 +87,7 @@
 #include "cooperative.h"
 #include "invasion.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 #include "network/nettraffic.h"
 #include "za_database.h"
 #include "cl_commands.h"
@@ -4095,7 +4096,7 @@ void DLevelScript::ChangeFlat (int tag, int name, bool floorOrCeiling)
 
 		// [BC] Update clients about this flat change.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-			SERVERCOMMANDS_SetSectorFlat( secnum );
+			zx::netreplication::TouchSector( secnum );
 
 		// [BC] Also, mark this sector as having its flat changed.
 		sectors[secnum].bFlatChange = true;
@@ -4175,6 +4176,8 @@ void DLevelScript::SetLineTexture (int lineid, int side, int position, int name)
 		default:
 			break;
 		}
+		// [rc4l] Sent below for the whole line id, which features/net-replication then holds as sent.
+		zx::netreplication::NoteSentLine( linenum, zx::netreplication::kLineTexture << ( side * 3 + position ));
 	}
 
 	// [BB] If we're the server, tell clients about this texture change.
@@ -11580,7 +11583,7 @@ scriptwait:
 
 					// If we're the server, tell clients to update this line.
 					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-						SERVERCOMMANDS_SetSomeLineFlags( line );
+						zx::netreplication::TouchLine( line );
 				}
 
 				sp -= 2;

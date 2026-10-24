@@ -30,6 +30,10 @@ SceneConstantInputs Inputs(const float *mvp, const float *clip)
 	in.fixedColormap = { zx::viewsetup::kShadeRamp, { 1.f, 0.5f, 0.25f }, { -1.f, -0.5f, 0.125f } };
 	in.lightsCheckSide = true;
 	in.walkSlots = 35;
+	in.shading.lightMode = 8; in.shading.ambient = 12; in.shading.fogMode = 2; in.shading.distFog = 70;
+	in.shading.fixedColormap = false; in.shading.fadeTable = true; in.shading.inSkybox = false; in.shading.brightFog = true;
+	in.shading.fogDensity = 30; in.shading.outsideFogDensity = 45; in.shading.outsideFogColor = 0x80102030;
+	in.extraLight = 16;
 	return in;
 }
 
@@ -58,6 +62,9 @@ TEST(SceneConstants, EveryFieldLandsWhereTheShaderReadsIt)
 	EXPECT_EQ(1.f, out[40]); EXPECT_EQ(0.5f, out[41]); EXPECT_EQ(0.25f, out[42]); EXPECT_EQ(1.f, out[43]);
 	EXPECT_EQ(-1.f, out[44]); EXPECT_EQ(-0.5f, out[45]); EXPECT_EQ(0.125f, out[46]); EXPECT_EQ(0.f, out[47]);
 	EXPECT_EQ(1.f, out[48]); EXPECT_EQ(35.f, out[49]); EXPECT_EQ(0.f, out[50]); EXPECT_EQ(0.f, out[51]);
+	EXPECT_EQ(8.f, out[52]); EXPECT_EQ(12.f, out[53]); EXPECT_EQ(2.f, out[54]); EXPECT_EQ(70.f, out[55]);
+	EXPECT_EQ(3.f, out[56]); EXPECT_EQ(30.f, out[57]); EXPECT_EQ(45.f, out[58]); EXPECT_EQ(16.f, out[59]);
+	EXPECT_EQ((float)0x102030, out[60]); EXPECT_EQ(128.f, out[61]); EXPECT_EQ(0.f, out[62]); EXPECT_EQ(0.f, out[63]);
 	SceneConstantInputs off = Inputs(mvp, clip);
 	off.lightsCheckSide = false;
 	ComputeSceneConstants(off, out);

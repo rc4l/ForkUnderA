@@ -33,6 +33,8 @@ void MCP_Crash_Init();
 void MCP_Crash_NoteAlive();
 // [rc4l] Called once on the game thread so the hang watchdog can name it and watch its tics too.
 void MCP_Crash_NoteGameThread();
+// [rc4l] A handle to the game thread the caller closes, and the top of its stack, for perf.sample; false before the thread has run.
+bool MCP_Crash_GameThreadForSampling( void **handle, unsigned long long *stackHigh );
 
 // Marks the sim|render boundary for the coarse perf split (anchored before D_Display in D_DoomLoop).
 void MCP_RPC_MarkRender();
@@ -59,6 +61,7 @@ inline void MCP_Bridge_TeeOutput(const char *) {}
 inline void MCP_Bridge_Shutdown() {}
 inline void MCP_Crash_Init() {}
 inline void MCP_Crash_NoteGameThread() {}
+inline bool MCP_Crash_GameThreadForSampling( void **, unsigned long long * ) { return false; }
 inline void MCP_RPC_MarkRender() {}
 inline void MCP_RPC_FrameEnd() {}
 inline void MCP_NetProf_Recv( int, int ) {}

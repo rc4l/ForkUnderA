@@ -63,3 +63,23 @@ TEST(ThreadedTic, OnlyTheLastTicOfABatchIsDrawn)
 	EXPECT_FALSE(zx::gameloop::ComputeTicDrawn(33));
 	EXPECT_TRUE(zx::gameloop::ComputeTicDrawn(-1));   // [rc4l] a lone tic outside any batch
 }
+
+// [rc4l] A threaded game owed tics only as fast as real time made input, up to a second of it, so an overloaded fight answered the player later and later.
+TEST(ThreadedTic, TheBacklogIsHeldToThreeTicsWhileTicsRunThreaded)
+{
+	EXPECT_EQ(zx::gameloop::kThreadedTicBacklog, zx::gameloop::ComputeTicBacklogLimit(34, true));
+	EXPECT_EQ(34, zx::gameloop::ComputeTicBacklogLimit(34, false));
+	EXPECT_EQ(2, zx::gameloop::ComputeTicBacklogLimit(2, true));
+}
+
+// [rc4l] Catch-up tics ran inline whatever they cost, and a Complex Doom fight's 40 ms tics froze the frame for each (queue #70).
+TEST(ThreadedTic, CheapCatchUpRunsInlineAndExpensiveWaitsForTheGameThread)
+{
+	EXPECT_EQ(0, zx::gameloop::ComputeInlineCatchUp(0, 2.0, 6.0));
+	EXPECT_EQ(2, zx::gameloop::ComputeInlineCatchUp(2, 2.0, 6.0));
+	EXPECT_EQ(3, zx::gameloop::ComputeInlineCatchUp(5, 2.0, 6.0));
+	EXPECT_EQ(0, zx::gameloop::ComputeInlineCatchUp(2, 40.0, 6.0));
+	EXPECT_EQ(1, zx::gameloop::ComputeInlineCatchUp(3, 6.0, 6.0));
+	// [rc4l] Before any tic has been timed, the whole backlog runs as it always did.
+	EXPECT_EQ(4, zx::gameloop::ComputeInlineCatchUp(4, 0.0, 6.0));
+}

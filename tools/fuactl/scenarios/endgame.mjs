@@ -38,7 +38,6 @@ export function judgeEndgame(label, { crashed, alive, playing }) {
 }
 
 export async function judgeLaunch(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   await c.rpc("console.exec", { text: "endgame" });
   // [rc4l] Real time, since the full console's tics are what touched the freed level.
   await cap.sleep(2500);

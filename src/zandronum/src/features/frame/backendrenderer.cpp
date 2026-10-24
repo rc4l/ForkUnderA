@@ -65,8 +65,8 @@ static void FinishLaterPicture(unsigned serial, const unsigned char *rgb, int w,
 
 struct FBackendRenderer : public zx::frame::FLevelRenderer
 {
-	// [rc4l] Textures go to the backend as it first draws them, so there is nothing to warm.
-	void PrecacheTexture(FTexture *, int) {}
+	// [rc4l] The level's marked textures, made when the backend sets the level up rather than by the frame that first draws each.
+	void PrecacheTexture(FTexture *tex, int cache) { zx::hwrender::QueueMaterialPrecache(tex, cache); }
 
 	void RenderView(player_t *player)
 	{

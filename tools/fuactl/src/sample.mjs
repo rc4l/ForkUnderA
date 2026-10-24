@@ -85,16 +85,24 @@ function asRows(rows) {
   return (rows || []).map((f) => ({ symbol: f.symbol, binary: f.dso, samples: f.samples, percent: f.percent }));
 }
 
-// [rc4l] A sample as text: each function's share where the time landed, and with stacks the share it was anywhere on the stack of, hottest first.
+// [rc4l] What a sample cannot show, read from the frames it caught: a main thread drawing beside threaded tics never runs them, and the in-engine sampler interrupts that thread only.
+export function sampleNotes(report) {
+  const caught = (name) => [...(report.functions || []), ...(report.inclusive || [])].some((f) => String(f.symbol || "").includes(name));
+  return caught("GameThreadFrame") || caught("D_DisplayBesideTic")
+    ? ["note: tics ran on the game thread, which this sample did not interrupt; --thread game samples it"]
+    : [];
+}
+
+// [rc4l] A sample as text: each function's share where the time landed, and with stacks the share it was anywhere on the stack of, hottest first, then what it could not see.
 export function sampleTable(report, { top = 30 } = {}) {
   const rows = (title, list) => [`${title}:`, ...(list || []).slice(0, top).map((f) => `${String(f.percent).padStart(7)}%  ${f.symbol}`)];
   if (!report.available) return [`no sample: ${report.error || report.backend}`];
   return [`${report.samples} samples over ${report.seconds} s (${report.backend})`, ...rows("self", report.functions),
-    ...(report.inclusive ? rows("inclusive", report.inclusive) : [])];
+    ...(report.inclusive ? rows("inclusive", report.inclusive) : []), ...sampleNotes(report)];
 }
 
-export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false) {
-  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0, ...(stacks ? { stacks: 1 } : {}) });
+export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false, game = false) {
+  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0, ...(stacks ? { stacks: 1 } : {}), ...(game ? { game: 1 } : {}) });
   if (!started) return { available: false, backend: "bridge", error: "perf.sample was refused", functions: [] };
 
   // The run itself takes `seconds`; symbolising thousands of addresses afterwards takes a moment
@@ -118,11 +126,11 @@ export async function sampleBridge(conn, seconds, top, engineOnly, stacks = fals
 // sampler where the OS has a good one, the in-engine sampler on Windows where it does not.
 // `_run`/`_platform` are test seams (default to the real spawn / host platform); production never
 // passes them.
-export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, stacks = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
+export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, stacks = false, game = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
   const plat = _platform;
   if (plat === "darwin") return sampleMac(pid, seconds, top, engineOnly, _run);
   if (plat === "linux") return sampleLinux(pid, seconds, top, engineOnly, _run);
-  if (conn) return sampleBridge(conn, seconds, top, engineOnly, stacks);
+  if (conn) return sampleBridge(conn, seconds, top, engineOnly, stacks, game);
   return Promise.resolve({
     available: false, backend: "none",
     error: "the Windows sampler is in-engine and needs a bridge connection: pass --port (and --token), not --pid",

@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/net-protocol/lineflags.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "features/quake-movement/quakemove.h"
@@ -90,6 +91,7 @@
 #include "d_netinf.h"
 #include "callvote.h"
 #include "features/damage-taken/damagetaken.h"
+#include "features/net-session/computation/joinupdate_compute.h"
 #include <memory>
 
 CVAR (Bool, sv_showwarnings, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
@@ -1490,22 +1492,24 @@ void SERVERCOMMANDS_SpawnThing( AActor *pActor, ULONG ulPlayerExtra, ServerComma
 	if ( pActor == NULL )
 		return;
 
+	// [rc4l] features/net-session: a thing whole units would move (a dropped clip sat a unit off on every client) spawns exactly.
+	if ( zx::netsession::ComputeSpawnRoundsPosition( pActor->x.Raw(), pActor->y.Raw(), pActor->z.Raw() ))
+		SERVERCOMMANDS_SpawnThingExact( pActor, ulPlayerExtra, flags );
 	// If the actor doesn't have a network ID, it's better to send it ID-less.
-	if ( pActor->NetID == 0 )
-	{
+	else if ( pActor->NetID == 0 )
 		SERVERCOMMANDS_SpawnThingNoNetID( pActor, ulPlayerExtra, flags );
-		return;
+	else
+	{
+		ServerCommands::SpawnThing command;
+		command.SetType( pActor->GetClass() );
+		command.SetX( pActor->x );
+		command.SetY( pActor->y );
+		command.SetZ( pActor->z );
+		command.SetId( pActor->NetID );
+		command.sendCommandToClients( ulPlayerExtra, flags );
 	}
 
-	ServerCommands::SpawnThing command;
-	command.SetType( pActor->GetClass() );
-	command.SetX( pActor->x );
-	command.SetY( pActor->y );
-	command.SetZ( pActor->z );
-	command.SetId( pActor->NetID );
-	command.sendCommandToClients( ulPlayerExtra, flags );
-
-	if ( pActor->STFlags & STFL_LEVELSPAWNED )
+	if (( pActor->NetID != 0 ) && ( pActor->STFlags & STFL_LEVELSPAWNED ))
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FLAGS, ulPlayerExtra, flags );
 	}
@@ -3464,60 +3468,34 @@ void SERVERCOMMANDS_SetLineTexture( ULONG ulLine, ULONG ulPlayerExtra, ServerCom
 	if ( ulLine >= (ULONG)numlines )
 		return;
 
-	// No changed textures to update.
-	if ( lines[ulLine].TexChangeFlags == 0 )
+	SERVERCOMMANDS_SetLineTextureParts( ulLine, lines[ulLine].TexChangeFlags, ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+void SERVERCOMMANDS_SetLineTextureParts( ULONG ulLine, ULONG ulParts, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( ulLine >= (ULONG)numlines )
 		return;
 
 	ServerCommands::SetLineTexture command;
 	command.SetLine( &lines[ulLine] );
 
-	if ( lines[ulLine].TexChangeFlags & TEXCHANGE_FRONTTOP )
+	// [rc4l] Bit side * 3 + position, TEXCHANGE_*'s order, for each texture sent.
+	for ( int side = 0; side < 2; side++ )
 	{
-		command.SetTextureName( lines[ulLine].sidedef[0]->GetTexture(side_t::top).isValid() ? TexMan[lines[ulLine].sidedef[0]->GetTexture(side_t::top)]->Name : "-" );
-		command.SetSide( 0 );
-		command.SetPosition( 0 );
-		command.sendCommandToClients( ulPlayerExtra, flags );
-	}
+		if ( lines[ulLine].sidedef[side] == NULL )
+			continue;
 
-	if ( lines[ulLine].TexChangeFlags & TEXCHANGE_FRONTMEDIUM )
-	{
-		command.SetTextureName( lines[ulLine].sidedef[0]->GetTexture(side_t::mid).isValid() ? TexMan[lines[ulLine].sidedef[0]->GetTexture(side_t::mid)]->Name : "-" );
-		command.SetSide( 0 );
-		command.SetPosition( 1 );
-		command.sendCommandToClients( ulPlayerExtra, flags );
-	}
-
-	if ( lines[ulLine].TexChangeFlags & TEXCHANGE_FRONTBOTTOM )
-	{
-		command.SetTextureName( lines[ulLine].sidedef[0]->GetTexture(side_t::bottom).isValid() ? TexMan[lines[ulLine].sidedef[0]->GetTexture(side_t::bottom)]->Name : "-" );
-		command.SetSide( 0 );
-		command.SetPosition( 2 );
-		command.sendCommandToClients( ulPlayerExtra, flags );
-	}
-
-	if ( lines[ulLine].sidedef[1] != NULL )
-	{
-		if ( lines[ulLine].TexChangeFlags & TEXCHANGE_BACKTOP )
+		for ( int position = side_t::top; position <= side_t::bottom; position++ )
 		{
-			command.SetTextureName( lines[ulLine].sidedef[1]->GetTexture(side_t::top).isValid() ? TexMan[lines[ulLine].sidedef[1]->GetTexture(side_t::top)]->Name : "-" );
-			command.SetSide( 1 );
-			command.SetPosition( 0 );
-			command.sendCommandToClients( ulPlayerExtra, flags );
-		}
+			if (( ulParts & ( 1 << ( side * 3 + position ))) == 0 )
+				continue;
 
-		if ( lines[ulLine].TexChangeFlags & TEXCHANGE_BACKMEDIUM )
-		{
-			command.SetTextureName( lines[ulLine].sidedef[1]->GetTexture(side_t::mid).isValid() ? TexMan[lines[ulLine].sidedef[1]->GetTexture(side_t::mid)]->Name : "-" );
-			command.SetSide( 1 );
-			command.SetPosition( 1 );
-			command.sendCommandToClients( ulPlayerExtra, flags );
-		}
-
-		if ( lines[ulLine].TexChangeFlags & TEXCHANGE_BACKBOTTOM )
-		{
-			command.SetTextureName( lines[ulLine].sidedef[1]->GetTexture(side_t::bottom).isValid() ? TexMan[lines[ulLine].sidedef[1]->GetTexture(side_t::bottom)]->Name : "-" );
-			command.SetSide( 1 );
-			command.SetPosition( 2 );
+			const FTextureID texture = lines[ulLine].sidedef[side]->GetTexture( position );
+			command.SetTextureName( texture.isValid() ? TexMan[texture]->Name : "-" );
+			command.SetSide( side );
+			command.SetPosition( position );
 			command.sendCommandToClients( ulPlayerExtra, flags );
 		}
 	}
@@ -3617,7 +3595,7 @@ void SERVERCOMMANDS_SetSomeLineFlags( ULONG ulLine, ULONG ulPlayerExtra, ServerC
 
 	ServerCommands::SetSomeLineFlags command;
 	command.SetLine( &lines[ulLine] );
-	command.SetBlockFlags( lines[ulLine].flags & ( ML_BLOCKING | ML_BLOCKEVERYTHING | ML_RAILING | ML_BLOCK_PLAYERS | ML_ADDTRANS ));
+	command.SetBlockFlags( lines[ulLine].flags & zx::netprotocol::kClientLineFlags );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
 }
 
@@ -4293,7 +4271,8 @@ void SERVERCOMMANDS_SetThingHealth( AActor* mobj, ULONG ulPlayerExtra, ServerCom
 
 	NetCommand command( SVC2_SETTHINGHEALTH );
 	command.addShort( mobj->NetID );
-	command.addByte( mobj->health );
+	// [rc4l] A long, since a joiner gets every hurt or dead actor's health now: a byte wrapped a corpse's -5 to 251 and cut a cyberdemon's 4000.
+	command.addLong( mobj->health );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -5383,7 +5362,8 @@ void SERVERCOMMANDS_SetMugShotState ( const char *statename )
 void SERVERCOMMANDS_Scroll3dMidtexture ( sector_t* sector, fixed_t move, bool ceiling, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	NetCommand command ( SVC2_SCROLL3DMIDTEX );
-	command.addByte ( sector - sectors );
+	// [rc4l] A long, where a byte scrolled sector index % 256 on a map with more sectors.
+	command.addLong ( sector - sectors );
 	command.addLong ( (SDWORD)(move) );
 	command.addByte ( ceiling );
 	command.sendCommandToClients ( ulPlayerExtra, flags );

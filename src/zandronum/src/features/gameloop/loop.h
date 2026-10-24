@@ -18,6 +18,8 @@ void FinishInFlight();
 // [rc4l] The tics run on the game thread and the frames beside one that held positions, since the start.
 int ThreadedTics();
 int HeldFrames();
+// [rc4l] Whether this frame's tics run on the game thread, which NetUpdate holds the input made ahead to (ComputeTicBacklogLimit).
+bool TicsRunThreaded();
 
 // [rc4l] Marks the main thread drawing a frame (false) or back in the handoff (true), so a seam that only the handoff may enter counts a frame's touch of game data.
 void FrameBegins();

@@ -43,9 +43,11 @@ typedef SOCKET zx_socket_t;
 #include "w_wad.h"
 
 #include "features/wad-serve/zx_wadserve.h"
+#include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-serve/computation/httpreq_compute.h"
 #include "features/wad-serve/computation/ratebucket_compute.h"
 #include "features/wad-serve/computation/servepolicy_compute.h"
+#include "features/net-session/netrole.h"
 
 //*****************************************************************************
 //	CONSOLE VARIABLES
@@ -598,23 +600,6 @@ long long FileSizeOf(const char *path)
 	return size;
 }
 
-// The engine's own definition of which loaded file is the IWAD, matching network_InitPWADList: skip
-// everything loaded automatically, and the entry at IWAD_FILENUM is the one.
-int FindIwadWadnum()
-{
-	ULONG seen = 0;
-	for (ULONG idx = 0; Wads.GetWadName(idx) != NULL; ++idx)
-	{
-		if (Wads.GetLoadedAutomatically(idx) == false)
-		{
-			if (seen == static_cast<ULONG>(FWadCollection::IWAD_FILENUM))
-				return static_cast<int>(idx);
-			seen++;
-		}
-	}
-	return -1;
-}
-
 // Has the loaded WAD set changed since the table was built?
 //
 // Called every frame on the server, so it ALLOCATES NOTHING on the common path -- the answer is
@@ -661,7 +646,7 @@ void RebuildServableTable()
 {
 	std::vector<ServableEntry> table;
 
-	const int iwadNum = FindIwadWadnum();
+	const int iwadNum = zx::RunningIwadWadnum();
 	if (iwadNum >= 0)
 	{
 		const char *name = Wads.GetWadName(iwadNum);
@@ -743,7 +728,8 @@ bool StartListener(int port)
 	std::memset(&address, 0, sizeof address);
 	address.sin_family = AF_INET;
 	address.sin_port = htons(static_cast<unsigned short>(port));
-	address.sin_addr.s_addr = htonl(INADDR_ANY);
+	// [rc4l] The game socket's address, so a server held to one address by -useip serves files only there and asks no firewall about the rest.
+	address.sin_addr.s_addr = NETWORK_GetBoundInAddr();
 
 	if (bind(sock, reinterpret_cast<sockaddr *>(&address), sizeof address) < 0 ||
 		listen(sock, 16) < 0)
@@ -826,7 +812,7 @@ FString StatusLine()
 
 void Tick()
 {
-	if (NETWORK_GetState() != NETSTATE_SERVER)
+	if (!zx::net::IsServer())
 		return;
 
 	// Configuration first: a worker must never read a CVAR, so this is the only place they change.

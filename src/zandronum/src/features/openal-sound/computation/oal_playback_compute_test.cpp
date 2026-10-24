@@ -115,3 +115,25 @@ TEST(ComputeSourcePosition, APlayingSourceIsWhereItPlays)
 	EXPECT_EQ(7000u, ComputeSourcePosition(false, 7000));
 	EXPECT_EQ(0u, ComputeSourcePosition(false, -1));
 }
+
+TEST(ComputeBufferSamples, BytesOverTheFrameSize)
+{
+	EXPECT_EQ(22050, ComputeBufferSamples(44100, 16, 1));
+	EXPECT_EQ(11025, ComputeBufferSamples(44100, 16, 2));
+	EXPECT_EQ(44100, ComputeBufferSamples(44100, 8, 1));
+	EXPECT_EQ(0, ComputeBufferSamples(0, 16, 1));
+	EXPECT_EQ(0, ComputeBufferSamples(44100, 0, 1));
+	EXPECT_EQ(0, ComputeBufferSamples(44100, 16, 0));
+}
+
+// [rc4l] Loading a save restored every sound at the offset it had reached, which a browser's OpenAL refused past the end with dozens of "Invalid Value" errors (queue #71).
+TEST(ComputeRestoredSampleOffset, InsideTheBufferWrappedOrOver)
+{
+	EXPECT_EQ(100, ComputeRestoredSampleOffset(100, 1000, false));
+	EXPECT_EQ(0, ComputeRestoredSampleOffset(0, 1000, false));
+	EXPECT_EQ(-1, ComputeRestoredSampleOffset(1000, 1000, false));
+	EXPECT_EQ(-1, ComputeRestoredSampleOffset(5000, 1000, false));
+	EXPECT_EQ(0, ComputeRestoredSampleOffset(1000, 1000, true));
+	EXPECT_EQ(250, ComputeRestoredSampleOffset(2250, 1000, true));
+	EXPECT_EQ(0, ComputeRestoredSampleOffset(5000, 0, false));
+}

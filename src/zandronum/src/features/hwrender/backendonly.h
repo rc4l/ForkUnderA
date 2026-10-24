@@ -52,6 +52,8 @@ const char *BackendApiName();
 void NoteWorldView();
 // [rc4l] Drops the backend's caches keyed on textures and materials, which every start (a wad_reload's too) makes again at addresses the old ones may have had.
 void ForgetBackendTextures();
+// [rc4l] A texture the engine marked for this level's precache with its hit bits, which the backend makes when it sets the level up (precache_compute).
+void QueueMaterialPrecache(const void *texture, int hits);
 // [rc4l] Step the level's set-up through at once before its first view, which a launch without GL can since the map bakes the level whole, so that view, and a wipe's new screen, are drawn rather than black.
 void SettleLevelScene();
 

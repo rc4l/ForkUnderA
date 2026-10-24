@@ -17,6 +17,13 @@ HUD recorded for the frames drawn beside it. It sits above `features/gamecopy`, 
   schedule: inline whenever GL draws, a wipe, the automap, a menu or the console is up, the demo loop moves on, or
   `fua_copy_check` holds the copy to the live game.
   A quit or restart takes it back first.
+- Catch-up while tics run threaded (queue #70): a frame owed more than one tic runs inline only those that fit
+  `kInlineCatchUpMs` at the last tic's playsim cost (`ComputeInlineCatchUp`), and the rest go to the game thread a
+  handoff each with frames drawn beside them; `NetUpdate` makes input at most `kThreadedTicBacklog` tics ahead
+  (`ComputeTicBacklogLimit`), so a game whose tics cost more than a tic's time slows down rather than freezing
+  a frame per owed tic or answering the player later and later. `handoff/backlog_tics` and
+  `handoff/inline_catchup` count both; `fua_debug_playsim_us` makes every tic's playsim that slow
+  (`fuactl scenarios ticoverload`). The inline schedule (`fua_gamethread 0`) still catches up in one frame, as stock does.
 - `hud.cpp` `RecordHUD`/`ReplayHUD`: the level's HUD drawn into a capture (`features/draw2d` `BeginCapture2D`) in the
   handoff when a tic has run or the layout changed (`computation/hudrecord_compute`), and replayed by every frame
   GL does not draw; `fua_hud_record 0` draws it live, which `fuactl fixture hudcheck` holds it to.
@@ -34,6 +41,7 @@ HUD recorded for the frames drawn beside it. It sits above `features/gamecopy`, 
 
 - `d_net.cpp` `TryRunTics`: each tic is `RunTic`; `Net_TicsDue` (the tics due, input taken, none run) and
   `Net_PendingLocalTurn` (the turn built and not yet shown, which `R_InterpolateView` adds beside a tic).
+  `NetUpdate` holds the input made ahead to `ComputeTicBacklogLimit` while `TicsRunThreaded`.
 - `d_main.cpp` `D_RunFrame`: `GameThreadFrame` first in the single-player branch, the frame-top work that can load
   wads or maps or answer RPCs only with no tic in flight, and `FinishInFlight` before a quit or a restart;
   `D_Display` defers a mode or view size change while one is in flight.

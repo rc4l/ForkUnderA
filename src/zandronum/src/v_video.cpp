@@ -1386,6 +1386,9 @@ void DFrameBuffer::GetHitlist(BYTE *hitlist)
 	{
 		hitlist[sky2texture.GetIndex()] |= FTextureManager::HIT_Sky;
 	}
+
+	// [ForkUnderA] cl_fua_caching: the frames an animation or a switch turns to. No-op in mode 0.
+	FUA_MarkAnimatedTextures (hitlist);
 }
 
 //==========================================================================

@@ -65,6 +65,7 @@
 #include "features/materials/skyboxtexture.h"
 // [BB] New #includes.
 #include "network.h"
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR (Float, r_lights_intensity);
 EXTERN_CVAR (Float, r_lights_size);
@@ -783,7 +784,7 @@ void gl_ParseFrame(FScanner &sc, FString name)
 			case LIGHTTAG_LIGHT:
 				gl_ParseString(sc);
 				// [BB] The server just ignores all light associations.
-				if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+				if ( !zx::net::IsServer() )
 					gl_AddLightAssociation(name, frameName, sc.String);
 				break;
 			case LIGHTTAG_ATTENUATE:
@@ -1148,7 +1149,7 @@ void gl_AttachLight(AActor *actor, unsigned int count, const FLightDefaults *lig
 void gl_SetActorLights(AActor *actor)
 {
 	// [BB] The server never displays dynamic lights.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if ( zx::net::IsServer() )
 		return;
 
 	// [AK] Don't display dynamic lights on spectators.

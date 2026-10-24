@@ -39,6 +39,7 @@ const char *BackendApiName() { return ""; }
 void NoteWorldView() {}
 void ForgetBackendTextures() {}
 void SettleLevelScene() {}
+void QueueMaterialPrecache(const void *, int) {}
 void PresentBackendOnly(bool) {}
 void PrintDiligentMessages() {}
 unsigned char *ReadBackendFrame(int &, int &) { return NULL; }
