@@ -21,7 +21,7 @@ test("a client that fails to come up is named with its log's reason", async () =
 
 test("a server hosts on its game port on loopback with no announcing and cheats from launch", () => {
   assert.deepEqual(serverArgs({ files: ["a.wad"], gamePort: 10900 }),
-    ["-file", "a.wad", "-host", "-port", "10900", "+sv_broadcast", "0", "+sv_updatemaster", "0", "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"]);
+    ["-file", "a.wad", "-host", "-port", "10900", "+sv_broadcast", "0", "+sv_fua_serverregistry_announce", "0", "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"]);
   assert.equal(serverArgs().includes("-file"), false);
   assert.equal(serverArgs({ broadcast: true }).includes("+sv_broadcast"), false);
 });

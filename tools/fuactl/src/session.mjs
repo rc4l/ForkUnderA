@@ -172,7 +172,7 @@ export async function runNetBandwidth(opts = {}) {
   //  +sv_cheats 1 must be set AT LAUNCH: a runtime change never reaches an already-connected client,
   //   so the client's `summon` is refused with "sv_cheats must be true". Set here it lands in the
   //   client's initial cvar sync.
-  const server = await launchInstance({ seed, map, iwad, engine, extraArgs: ["-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0", "+sv_cheats", "1"] });
+  const server = await launchInstance({ seed, map, iwad, engine, extraArgs: ["-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_fua_serverregistry_announce", "0", "+sv_cheats", "1"] });
   let client = null;
   const sc = new BridgeClient(), cc = new BridgeClient();
   const connect = async (inst, c) => { for (let i = 0; ; i++) { try { await c.connect(inst.port, { token: inst.token, timeoutMs: 2000 }); await c.waitHello(); return; } catch (e) { c.close(); if (i >= 60) throw e; await sleep(500); } } };
