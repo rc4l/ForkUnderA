@@ -164,6 +164,15 @@ if( FUA_DILIGENT )
 	if( NOT EXISTS "${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/ThirdParty/glslang/CMakeLists.txt" )
 		message( FATAL_ERROR "deps/DiligentCore and its submodules are missing: run `git submodule update --init --recursive`, or configure with -DFUA_DILIGENT=OFF for GL alone." )
 	endif()
+	# [Doruk-Aksoy] Diligent's DXCompiler.cpp includes atlbase.h on MSVC, which only Visual Studio's optional ATL component installs, so a machine without it fails here instead of minutes into the build.
+	if( MSVC )
+		include( CheckIncludeFileCXX )
+		check_include_file_cxx( atlbase.h FUA_HAVE_ATLBASE_H )
+		if( NOT FUA_HAVE_ATLBASE_H )
+			unset( FUA_HAVE_ATLBASE_H CACHE )
+			message( FATAL_ERROR "atlbase.h not found: DiligentCore needs Visual Studio's ATL component. Add \"C++ ATL for latest v143 build tools (x86 & x64)\" (Microsoft.VisualStudio.Component.VC.ATL) in the Visual Studio Installer, or configure with -DFUA_DILIGENT=OFF for GL alone." )
+		endif()
+	endif()
 	# [rc4l] The engine links the STATIC CRT (/MT, set in REL_C_FLAGS below); Diligent defaults to the
 	# dynamic one, and the two cannot link -- LNK2038 on RuntimeLibrary across every Diligent object.
 	# Exactly the failure the tests build documents for GoogleTest, and it must be set BEFORE
