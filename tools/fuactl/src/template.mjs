@@ -255,7 +255,7 @@ export async function compareHosted({ name, wad, maps, sides = [{ name: "vk" }],
     const insts = [], conns = [];
     try {
       // [rc4l] -port on the command line, since a +port cvar is ignored, and cheats set at launch, since a later change never reaches a joined client.
-      const server = await launchInstance({ port, iwad, map, extraArgs: ["-file", wadPath, "-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_updatemaster", "0", "+sv_cheats", "1"] });
+      const server = await launchInstance({ port, iwad, map, extraArgs: ["-file", wadPath, "-host", "-port", String(gamePort), "+sv_broadcast", "0", "+sv_fua_serverregistry_announce", "0", "+sv_cheats", "1"] });
       insts.push(server);
       const sc = await attach(server);
       conns.push(sc);
