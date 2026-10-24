@@ -34,6 +34,10 @@ node src/cli.mjs queue add "<their words, then what the screenshot shows>" --por
 - Where no engine answers (a browser page, which has no bridge, or an engine that already crashed),
   `queue add "<description>" --no-instance [--map M]` queues it without a spot. Ask them to type
   `currentpos` in the game console if the place matters, and `queue note` what it prints.
+- From a netgame, `queue add --port P` on their client also records its role, player, ping and the server
+  tic it last heard of (`net`), and on a dedicated server its clients and their pings with no spot, since a
+  server has no camera. Reproduce it with `netplay` and the same wads at the same `--lag`, judged by `netdiff`,
+  and `queue note` what each side showed (`netplay-testing`).
 
 `queue list` shows open items (`--all` includes closed). `queue next` prints the oldest open item with
 its full spot record.
@@ -49,7 +53,13 @@ Two look steps measure what a player feels: `frames` prints the browser's frame 
 over 20 and 50 ms) since the last `frames`, and `level` what the audio output carried (RMS, with
 `--autoplay`). A run like `"god; warp X Y; fua_debug_orbit 25; wait 2000; frames; wait 5000; frames"` is a
 frame-rate report's repro, so a one-off Chrome script is never needed. The probe's Chrome is always muted, and a minimal template map isolates the fault
-better than their mod's busy map.
+better than their mod's busy map: `--wad map.wad --query "file=map.wad&map=MAP01"` serves one to any staged build.
+
+Reproduce it in the reporter's browser too: `--browser firefox` plays it in a Firefox window off the screen, and
+Firefox's WebGPU is not Chrome's (queue #68 lit nothing far away in Firefox alone). A step `ab CVAR A B` frames the
+view at both values and prints how far apart they sit, which bisects a render switch in the browser the way `ab`
+does in an engine. `--wgsl "FIND=>REPLACE"` rewrites the page's shaders, which tries a shader fix on the reporter's
+build before anything is rebuilt.
 
 A report from the demo site (`tools/web/demo`) is about the build last deployed there, served by its Worker
 rather than `serve.mjs`. `node tools/web/demo/verify.mjs` checks the live site against its stage first. It
@@ -99,6 +109,7 @@ meeting the Worker (the first deploy's revisits got a 404 for Freedoom's IWAD).
    left alone), `node --test`, the
    new scenario now passes, `coverage --since <ref>` holds every changed unit at 100% (`writing-tests`), and
    `node src/cli.mjs scenarios --engine F:/ForkUnderA/build-win/Release/forkundera.exe` is green (the suite runs every Vulkan side without GL, as players do, except those judged against GL in one frame). Re-shoot the item's spot GL against Vulkan and look at it.
+   For a browser item, `node tools/web/check.mjs <staged dir>` and `--browser firefox` too. CI plays no game, so the scenarios and these checks run only here.
 8. **Close it:** `queue done <id> --note "<cause>; <fix>; scenario <name>"`.
 9. **Hand the build back:** `build` stages it (the exe, its `.pdb`, the pk3s and `catalogue/`),
    relaunch their session (`play --unpark --port 7801` if you parked it, else `play --port 7801`, Vulkan alone; `fua-side-by-side` only when they asked to compare), then take the next item.

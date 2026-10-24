@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCounter, compareEachLaunch, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -80,13 +80,19 @@ test("a scenario imported rather than run keeps its options for probing", () => 
   assert.equal(scenarioOptions("file:///scenarios/never.mjs"), null);
 });
 
+test("a scenario run directly takes its port bare and its engine by --engine", () => {
+  assert.deepEqual(directRunArgs(["7850", "--engine", "F:/b/forkundera.exe"]), { port: 7850, engine: "F:/b/forkundera.exe" });
+  assert.deepEqual(directRunArgs(["--engine", "e.exe"]), { port: null, engine: "e.exe" });
+  assert.deepEqual(directRunArgs(["--engine"]), { port: null, engine: null });
+});
+
 test("an imported scenario runs as one call through the comparison it named", async () => {
   const url = "file:///scenarios/runnable.mjs";
   const seen = [];
   runScenarioIfMain(url, () => ({ name: "runnable", port: 7 }), async (opts) => { seen.push(opts.port); return { lines: ["PASS a"], failed: 0 }; });
   const out = await scenarioRun(url)();
   assert.deepEqual(seen, [7]);
-  assert.deepEqual(out, { lines: ["PASS a", "all runnable boxes within their limits"], code: 0 });
+  assert.deepEqual(out, { lines: ["PASS a", "all runnable checks within their limits"], code: 0 });
   assert.equal(scenarioRun("file:///scenarios/never.mjs"), null);
   await scenarioRun(url, (o) => ({ ...o, port: 9 }))();
   assert.deepEqual(seen, [7, 9]);
@@ -136,7 +142,7 @@ test("a scenario's own sides are compared by name", () => {
 });
 
 test("a scenario exits 0 only when nothing failed, and 3 when it refused to run", () => {
-  assert.deepEqual(scenarioOutcome("x", { lines: ["PASS a"], failed: 0 }), { lines: ["PASS a", "all x boxes within their limits"], code: 0 });
+  assert.deepEqual(scenarioOutcome("x", { lines: ["PASS a"], failed: 0 }), { lines: ["PASS a", "all x checks within their limits"], code: 0 });
   assert.equal(scenarioOutcome("x", { lines: [], failed: 2 }).code, 1);
   assert.equal(scenarioOutcome("x", { lines: [], failed: 1, refused: true }).code, 3);
 });
@@ -348,4 +354,36 @@ test("a side runs the backend beside GL only when GL's frame or both renderers' 
   assert.equal(sideBesideGl({ name: "gl", gl: true, frame: "gl" }), false, "GL alone has no backend to sit beside");
   assert.equal(sideBesideGl({ name: "wgpu", webgpu: true, glDraws: true }), false, "a WebGPU launch has no GL");
   assert.equal(sideBesideGl(), false);
+});
+
+test("a netplay scenario hosts each configuration on each map, judges the set and always closes it", async () => {
+  const launched = [], closed = [];
+  const deps = {
+    launch: async (o) => { launched.push(o); if (o.lag === "bad") throw new Error("never joined"); return { id: launched.length }; },
+    close: async (set) => closed.push(set.id),
+    seams: async (set) => (set.id === 1 ? ["observer player 1: 2 seam violations, the first in net/parse (game)"] : []),
+    replication: async (set) => (set.id === 1 ? "the server sent 3 changed rows a tic late, untouched, the first sector 4 (families 2)" : ""),
+  };
+  const configs = [{ name: "lan", players: 1, observers: 1, broadcast: true }, { name: "elsewhere", maps: ["MAP02"] }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
+  const judged = [];
+  const r = await compareNetplay({ name: "nt", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs, judgeNetplay: async (set, label, info) => { judged.push([set.id, label, info.config.name]); return set.id === 2 ? { line: `FAIL ${label}`, failed: 1 } : { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
+  assert.deepEqual(judged, [[1, "MAP01 lan", "lan"], [2, "MAP01 ping", "ping"]]);
+  assert.deepEqual(r.lines, ["PASS MAP01 lan", "FAIL MAP01 lan: observer player 1: 2 seam violations, the first in net/parse (game)",
+    "FAIL MAP01 lan: the server sent 3 changed rows a tic late, untouched, the first sector 4 (families 2)", "FAIL MAP01 ping", "FAIL MAP01 broken: never joined"]);
+  assert.equal(r.failed, 4);
+  assert.deepEqual(closed, [1, 2]);
+  assert.deepEqual([launched[0].players, launched[0].observers, launched[1].players, launched[1].lag, launched[1].clientCvars], [1, 1, 1, "100", { cl_unlagged: 1 }]);
+  assert.deepEqual([launched[0].broadcast, launched[1].broadcast], [true, false]);
+  assert.equal(compareNetplay.judgedAlone, true);
+  assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
+});
+
+test("--side names a netplay configuration and its cvars reach that configuration's server and clients", () => {
+  const opts = { name: "n", configs: [{ name: "lan" }, { name: "ping", serverCvars: { a: 1 } }] };
+  const r = withSideCvars(opts, "ping", { fua_debug_netdrop: "47" });
+  assert.deepEqual(r.configs[1], { name: "ping", serverCvars: { a: 1, fua_debug_netdrop: "47" }, clientCvars: { fua_debug_netdrop: "47" } });
+  assert.deepEqual(r.configs[0], { name: "lan" });
+  assert.throws(() => withConfigCvars(opts, "wan", {}), /no configuration wan \(lan, ping\)/);
+  assert.equal(sideAdjust("wan", {})(opts), null);
+  assert.equal(sideAdjust("lan", { x: 1 })(opts).configs[0].clientCvars.x, 1);
 });

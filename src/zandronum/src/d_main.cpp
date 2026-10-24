@@ -189,6 +189,7 @@
 #include "g_shared/pwo.h"
 
 #include "win32/g15/g15.h"
+#include "features/latency/latency.h"   // [rc4l] latency/ counters
 EXTERN_CVAR(Bool, hud_althud)
 void DrawHUD();
 
@@ -354,6 +355,9 @@ void D_ProcessEvents (void)
 		ev = &events[eventtail];
 		if (ev->type == EV_None)
 			continue;
+		// [rc4l] features/latency: the first input no frame has shown yet.
+		if (ev->type != EV_DeviceChange)
+			zx::latency::NoteInput();
 		if (ev->type == EV_DeviceChange)
 			UpdateJoystickMenu(I_UpdateDeviceList());
 		if (C_Responder (ev))
@@ -1545,6 +1549,7 @@ void D_RunFrame ()
 
 			s_framesSinceWipe = zx::mainloop::ComputeFramesSinceWipe (s_framesSinceWipe);
 			zx::framephase::FrameBoundary();   // [rc4l] the last iteration's phases become the last frame's
+			zx::latency::FrameShown();   // [rc4l] features/latency: the frame just ended showed what was armed
 			MCP_RPC_FrameEnd();   // [rc4l] perf.capture's frame, which the bridge's poll below skips while a tic is in flight
 			// [rc4l] features/handoff: what may load wads, maps or a server, or answer an RPC about the game, waits for the handoff.
 			if (!zx::handoff::TicInFlight ())

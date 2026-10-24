@@ -318,6 +318,12 @@ OptionValue "OnOff"
 	1, "On"
 }
 
+// [rc4l] A browser's update check, which is the page itself.
+OptionValue "UpdatesWithPage"
+{
+	0, "Updates with the page"
+}
+
 OptionValue "OffOn"
 {
 	0, "On"
@@ -411,7 +417,15 @@ OptionMenu "FUAOptions"
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
-	Option	"Check for updates",		"cl_fua_update_notify",		"OnOff"
+	// [rc4l] A build that reaches no other machine checks nothing, and a browser's page is the update; both show it greyed out.
+	IfOption(Web)
+	{
+		Option	"Check for updates",	"cl_fua_update_notify",		"UpdatesWithPage",	"cl_fua_update_choosable"
+	}
+	else
+	{
+		Option	"Check for updates",	"cl_fua_update_notify",		"OnOff",			"cl_fua_update_choosable"
+	}
 	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
 }
 
@@ -547,7 +561,8 @@ OptionValue "ReplayEncoderMode"
 OptionMenu "ReplayOptions"
 {
 	Title "INSTANT REPLAY"
-	Option	"Enable instant replay",	"cl_fua_replay",			"OnOff"
+	// [rc4l] Greyed out where the build cannot record, as a browser's cannot.
+	Option	"Enable instant replay",	"cl_fua_replay",			"OnOff",			"cl_fua_replay_available"
 	StaticText " "
 	Option	"Clip length",				"cl_fua_replay_duration",	"ReplayDurations",	"cl_fua_replay"
 	Option	"Capture rate",				"cl_fua_replay_fps",		"ReplayFps",		"cl_fua_replay"
@@ -2139,6 +2154,52 @@ OptionValue ScaleModes
 	7, "Minimum scale to fill (1.2)"
 }
 
+// [rc4l] features/frame-limit: vid_maxfps's choices, upstream's MaxFps with the higher refresh rates beside them.
+OptionValue MaxFps
+{
+	0, "Unlimited"
+	60, "60 fps"
+	75, "75 fps"
+	90, "90 fps"
+	120, "120 fps"
+	144, "144 fps"
+	165, "165 fps"
+	180, "180 fps"
+	200, "200 fps"
+	240, "240 fps"
+	360, "360 fps"
+	480, "480 fps"
+	500, "500 fps"
+}
+
+// [rc4l] features/dynres: the frame rate dynamic resolution holds, the display's refresh unless one is picked.
+OptionValue DynresTargets
+{
+	0, "Display refresh"
+	60, "60 fps"
+	120, "120 fps"
+	144, "144 fps"
+	165, "165 fps"
+	180, "180 fps"
+	240, "240 fps"
+	360, "360 fps"
+	480, "480 fps"
+}
+
+// [rc4l] features/dynres: the same in a browser, whose default aims at 60 fps since it times no GPU.
+OptionValue DynresTargetsWeb
+{
+	0, "Auto (60 fps)"
+	60, "60 fps"
+	120, "120 fps"
+	144, "144 fps"
+	165, "165 fps"
+	180, "180 fps"
+	240, "240 fps"
+	360, "360 fps"
+	480, "480 fps"
+}
+
 // [rc4l] video-scale / windowed-video: the resolution grid is retired (upstream deleted it in
 // b65b83edb). Fullscreen is borderless-desktop and always fills; there is no mode to pick. The
 // "resolution" is now expressed as a render Scale mode + Scale factor (rendered at that size and
@@ -2180,6 +2241,22 @@ OptionMenu VideoModeMenu
 	// [rc4l] The trailing 1 holds the value until the mouse is released; this one resizes what the
 	// menu is drawn on, so applying mid-drag moves the thumb away from the cursor.
 	Slider "Scale factor",			"vid_scalefactor", 0.25, 2.0, 0.25, 2, 1
+	StaticText " "
+	Option "Frame rate limit",		"vid_maxfps", "MaxFps"
+	// [rc4l] features/dynres: only the 3D scene scales, below the scale factor's size, and the HUD and menus stay sharp.
+	Option "Dynamic resolution",	"vid_fua_dynres", "OnOff"
+	// [rc4l] A browser times no GPU, so its default aims at 60 fps rather than the display's refresh (features/dynres).
+	IfOption(Web)
+	{
+		Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargetsWeb", "vid_fua_dynres"
+		// [rc4l] How long a window of frames each step is judged by, since a browser times no GPU.
+		Slider "Reaction time (seconds)",	"vid_fua_dynres_window", 0.05, 2.0, 0.05, 2
+	}
+	else
+	{
+		Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargets", "vid_fua_dynres"
+	}
+	Slider "Lowest resolution",		"vid_fua_dynres_min", 0.25, 1.0, 0.125, 3
 	StaticText " "
 	// [rc4l] In a browser the page sizes the canvas and the game follows it, so there is no window to size.
 	IfOption(Web)

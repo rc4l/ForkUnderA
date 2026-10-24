@@ -178,7 +178,9 @@
     };
     statusEl.hidden = true;
     // [rc4l] Module.fuaSaving is the store in progress, or the last one, for tests to wait on.
-    saveHome = FuaHome.keeper({ FS: Module.FS, log, writeConfig: () => { if (running) Module.fuaCommand('writeini'); }, onSaving: (p) => { Module.fuaSaving = p; } });
+    // [rc4l] The config written quietly, false when the engine could not write it.
+    Module.fuaWriteConfig = () => Module.ccall('fua_write_config', 'number', [], []) !== 0;
+    saveHome = FuaHome.keeper({ FS: Module.FS, log, writeConfig: () => { if (running && !Module.fuaWriteConfig()) log('The config could not be written.'); }, onSaving: (p) => { Module.fuaSaving = p; } });
     canvas.focus();
     running = true;
     Module.callMain(Module.fuaRestartArgs || wadArgs);

@@ -315,14 +315,7 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	viewx = sx; viewy = sy; viewz = sz; viewangle = sa;
 
 	const float clearCol[4] = { 0.f, 0.f, 0.f, 1.f };
-	BeginPassTargets(ctx, ViewPassTargets(g_skyPortalColor, g_skyPortalDepth, g_skyPortalNormal), clearCol);
-	{
-		Diligent::Viewport vp;
-		vp.TopLeftX = 0; vp.TopLeftY = 0;
-		vp.Width = (float)g_skyPortalW; vp.Height = (float)g_skyPortalH;
-		vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
-		ctx->SetViewports(1, &vp, (Diligent::Uint32)g_skyPortalW, (Diligent::Uint32)g_skyPortalH);
-	}
+	BeginPassTargets(ctx, ViewPassTargets(g_skyPortalColor, g_skyPortalDepth, g_skyPortalNormal, true), clearCol);
 	if (g_cb)
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);

@@ -6,6 +6,8 @@
 #ifndef ZX_DGSCENE_GLSL_H
 #define ZX_DGSCENE_GLSL_H
 
+#include <string>
+
 // [rc4l] kMainWalkSlot spelled for the scene shader, which reads one bit per walk for every subsector and sidedef, the level's WalkSlots of them an id (uOptions.y).
 #define FUA_MAIN_WALK_SLOT_STR "0"
 static_assert(zx::levelmesh::kMainWalkSlot == 0, "FUA_MAIN_WALK_SLOT_STR spells kMainWalkSlot");
@@ -16,14 +18,12 @@ static_assert(zx::hwrender::kTexFlagStencil == 1 && zx::hwrender::kTexFlagAlphaT
 	zx::hwrender::kTexFlagNoMarks == 16384 &&
 	zx::hwrender::kTexFlagFuzzShift == 7 && zx::hwrender::kTexFlagFuzzMask == 7 && zx::hwrender::kTexFlagCullShift == 11 &&
 	zx::hwrender::kTexFlagCullMask == 3, "the scene shaders test texFlags by these values");
-static const char *kSceneVS =
-	"#version 450\n"
-	"layout(location = 0) in vec3 aPos;\n"
-	"layout(location = 1) in vec2 aUV;\n"
-	"layout(location = 2) in float aPiece;\n"
+// [rc4l] The scene vertex shaders' common part: what they hand the fragment stages, and fuaSceneVertex, which places one vertex of a piece from its record, its position and its texture coordinate.
+static const char *kSceneVSCommon =
 	FUA_CONSTANTS_GLSL
 	// [rc4l] Everything constant across a piece, read once here instead of ridden in on every vertex.
 	FUA_PIECEDATA_GLSL
+	FUA_SECTORLIT_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec3 vColor;\n"
 	"layout(location = 2) out vec3 vLightParm;\n"
@@ -54,8 +54,8 @@ static const char *kSceneVS =
 	"    int bit = id * int(uOptions.y + 0.5) + slot;\n"
 	"    return (StackVisIn.stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
 	"}\n"
-	"void main() {\n"
-	"    PieceData pd = PiecesIn.pieces[int(aPiece + 0.5)];\n"
+	"void fuaSceneVertex(PieceData pd, vec3 aPos, vec2 aUV) {\n"
+	"    pd = fuaSectorLit(pd);\n"
 	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
 	"    vFloodU = pd.floodU;\n"
 	"    vFloodV = pd.floodV;\n"
@@ -116,6 +116,53 @@ static const char *kSceneVS =
 	// vertex of a planar face gives the same dot(n, p), so the flat value is that number exactly and
 	// the test is identical across the face however far away or however oblique it is.
 	"    vPlane = vec4(pd.normal.xyz, dot(pd.normal.xyz, aPos));\n"
+	"}\n";
+
+// [rc4l] The level's vertex shader, each vertex its own position, texture coordinate and piece.
+static const std::string kSceneVS = std::string(
+	"#version 450\n"
+	"layout(location = 0) in vec3 inPos;\n"
+	"layout(location = 1) in vec2 inUV;\n"
+	"layout(location = 2) in float inPiece;\n") + kSceneVSCommon +
+	"void main() { fuaSceneVertex(PiecesIn.pieces[int(inPiece + 0.5)], inPos, inUV); }\n";
+
+// [rc4l] The dynamic stream's vertex shader: each vertex a 32-bit reference, to a corner of a packed sprite (ComputeSpritePack) or to a general vertex, both in the frame's dynamic words (ComputeSpriteRef, ComputeGeneralRef).
+static const std::string kDynamicVS = std::string(
+	"#version 450\n"
+	"layout(location = 0) in uint aRef;\n") + kSceneVSCommon +
+	"layout(std430, binding = 12) readonly buffer DynData { uint words[]; } DynDataIn;\n"
+	"float fuaWordF(uint i) { return uintBitsToFloat(DynDataIn.words[i]); }\n"
+	"float fuaByte(uint w, int at) { return float((w >> uint(at)) & 255u) / 255.0; }\n"
+	"void main() {\n"
+	"    if ((aRef & 0x80000000u) == 0u) {\n"
+	"        uint b = aRef * 6u;\n"
+	"        fuaSceneVertex(PiecesIn.pieces[int(fuaWordF(b + 5u) + 0.5)], vec3(fuaWordF(b), fuaWordF(b + 1u), fuaWordF(b + 2u)), vec2(fuaWordF(b + 3u), fuaWordF(b + 4u)));\n"
+	"        return;\n"
+	"    }\n"
+	// [rc4l] ComputeSpriteUnpack, word for word.
+	"    uint base = aRef & 0x7ffffffcu;\n"
+	"    uint corner = aRef & 3u;\n"
+	"    uint w16 = DynDataIn.words[base + 16u], w17 = DynDataIn.words[base + 17u], w18 = DynDataIn.words[base + 18u], w19 = DynDataIn.words[base + 19u];\n"
+	"    uint sel = (w16 >> 24) >> (2u * corner);\n"
+	"    vec3 pos = vec3(fuaWordF(base + corner * 4u), fuaWordF(base + corner * 4u + 1u), fuaWordF(base + corner * 4u + 2u));\n"
+	"    vec2 uv = vec2(fuaWordF(base + ((sel & 1u) != 0u ? 7u : 3u)), fuaWordF(base + ((sel & 2u) != 0u ? 15u : 11u)));\n"
+	"    PieceData pd;\n"
+	"    pd.colorLight = vec4(fuaByte(w16, 0), fuaByte(w16, 8), fuaByte(w16, 16), fuaWordF(base + 20u));\n"
+	"    pd.fogAlphaMat = vec4(fuaWordF(base + 21u), fuaWordF(base + 22u), float(bitfieldExtract(int(w17), 24, 8)), float(w18 & 65535u));\n"
+	"    pd.fogColor = vec4(fuaByte(w17, 0), fuaByte(w17, 8), fuaByte(w17, 16), 0.0);\n"
+	"    pd.normal = vec4(0.0, 0.0, 0.0, 1.0);\n"
+	"    pd.floodU = vec4(0.0);\n"
+	"    pd.floodV = vec4(0.0);\n"
+	"    pd.actorLight = vec4(fuaWordF(base + 24u), fuaWordF(base + 25u), fuaWordF(base + 26u), float((w19 >> 16) & 1u));\n"
+	"    pd.bright = vec4(float(w18 >> 16), 0.0, 0.0, 0.0);\n"
+	"    pd.glowTop = vec4(0.0);\n"
+	"    pd.glowBottom = vec4(0.0);\n"
+	"    pd.glowTopPlane = vec4(0.0);\n"
+	"    pd.glowBottomPlane = vec4(0.0);\n"
+	"    pd.tint = vec4(0.0);\n"
+	"    pd.tintRange = vec4(0.0);\n"
+	"    pd.extra = vec4(fuaWordF(base + 23u), 0.0, 0.0, float(w19 & 65535u));\n"
+	"    fuaSceneVertex(pd, pos, uv);\n"
 	"}\n";
 
 // [rc4l] The engine's real lighting, ported.
@@ -316,18 +363,7 @@ static const char *kSceneVS =
 	   So the marker now carries its full meaning -- no side, and no light from here. */ \
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
-	/* [rc4l] The cell this fragment is in, and the short list of lights that can reach it.
-
-	   uLightParams.zw carry the cluster depth range, and a zero in z means the grid is off -- in
-	   which case this loops over every light exactly as it always has. The two paths must draw the
-	   SAME picture, so fua_dg_clusters flips between them in a frozen frame and a diff says whether
-	   they do.
-
-	   Depth is 1.0 / gl_FragCoord.w: the clip w the hardware interpolated, which is the quantity
-	   ComputeLightClustersFromMVP slices the light by on the CPU. Two sides agreeing because they
-	   read the same number is worth more than two sides computing numbers that ought to match.
-
-	   The 32, 18 and 24 are kClusterTilesX, kClusterTilesY and kClusterSlices; a static_assert keeps them honest. */ \
+	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
 	"    int first = 0;\n" \
 	"    int count = n;\n" \
 	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
@@ -336,7 +372,8 @@ static const char *kSceneVS =
 	"        int tileH = max((int(uScreen.y) + 17) / 18, 1);\n" \
 	"        int tx = clamp(int(gl_FragCoord.x) / tileW, 0, 31);\n" \
 	"        int ty = clamp(int(gl_FragCoord.y) / tileH, 0, 17);\n" \
-	"        float depth = 1.0 / gl_FragCoord.w;\n" \
+	/* [rc4l] Depth is the clip w the CPU slices lights by, from vPixelPos.w, since Firefox's WebGPU gives gl_FragCoord.w as w rather than 1/w and every fragment there read the nearest slice. */ \
+	"        float depth = vPixelPos.w;\n" \
 	"        int slice = 0;\n" \
 	"        if (depth > uLightParams.z)\n" \
 	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \

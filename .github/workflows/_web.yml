@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 
-# [rc4l] The browser build and its checks, called by test-and-build.yml beside the test suite rather than after it, since it is the longest job and uses nothing the tests make; a release ships no browser build, so release.yml does not call it.
+# [rc4l] The browser build, called by test-and-build.yml beside the test suite rather than after it, since it is the longest job and uses nothing the tests make; a release ships no browser build, so release.yml does not call it.
 name: web (reusable)
 
 on:
@@ -61,10 +61,6 @@ jobs:
           ccache --show-stats
           ls -la dist-web/ dist-web/data/
           test -s dist-web/forkundera.wasm || { echo "::error::the web build produced no forkundera.wasm"; exit 1; }
-
-      # [rc4l] The page in the runner's headless Chrome, WebGPU on SwiftShader since the runner has no GPU (web-port-design 13d).
-      - name: Browser checks
-        run: node tools/web/check.mjs dist-web --software
 
       # [rc4l] For trying a pull request's page by hand; nothing else reads it, so it is not kept long.
       - name: Upload the browser build

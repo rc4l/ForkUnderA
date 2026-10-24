@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 //
-// [rc4l] vid_fps per renderer: GL's frame and the backend's, each split at LiveFrame and summed into its last whole second.
+// [rc4l] vid_fps per renderer: GL's frame and the backend's, each split at LiveFrame, and the frames each drew in its last whole second.
 
 #include "features/hwrender/backendonly.h"
 

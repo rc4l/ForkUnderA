@@ -46,4 +46,10 @@ int ComputeSourceCount(int numMono, int numStereo, int channels);
 // [rc4l] A source's play position as the channels read it: 0 once it has stopped, as OpenAL Soft reports, since a browser's OpenAL reports a finished sound's whole length, often a sample short, and the sound counted as cut off and played again.
 unsigned int ComputeSourcePosition(bool stopped, int sampleOffset);
 
+// [rc4l] The sample frames a buffer of size bytes holds at bits per sample and channels, 0 when either is unknown.
+long long ComputeBufferSamples(int size, int bits, int channels);
+
+// [rc4l] Where a restored sound starts in a buffer of length samples: at start, wrapped for a looping sound, at 0 for a buffer of unknown length, and -1 for a sound that would already have finished, since an offset past the end is refused.
+long long ComputeRestoredSampleOffset(unsigned int start, long long length, bool looping);
+
 #endif // ZX_OAL_PLAYBACK_COMPUTE_H

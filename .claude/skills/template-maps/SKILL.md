@@ -21,7 +21,8 @@ Get the fault on your own screen in the reporter's map (`reproducing-a-report`),
 made of: which line special, sector flag, sky type, texture setup. Ask the engine rather than guess —
 `fuactl line <index>` / `line --at X,Y`, `look`, `rpc state.actors`, the engine's own logs
 (`fua_sky_log` named the horizon lines) -- and the map's own files: `fuactl mapdata <MAP> --preset ID
---sector N --scripts REGEX` found wdiexsec's reflective floor in its OPEN script. The template
+--sector N --scripts REGEX` found wdiexsec's reflective floor in its OPEN script, and `--file freedoom2.wad
+--special 11 --thing 2018` reads a Doom- or Hexen-format map the same way. The template
 reproduces THAT, nothing else.
 
 ## 2. Build the map with `src/udmf.mjs`
@@ -173,6 +174,13 @@ reload unless it names console steps, or a function of the launch's `{ wadPath, 
 kept growing past `warmup` (`judgeSoak`), leaving out readings under each `ignore` prefix. `soak.mjs` reloads
 a map with lights and monsters; `wadsoak.mjs` and `wadsoaktitle.mjs` swap WAD sets with `wad_reload`.
 
+For what a netgame splits between machines, use `compareHosted` (a server and one client, `judgeHosted(sc, cc,
+label)`; `decalnet.mjs`) or `compareNetplay`: each of the scenario's `configs` (`{ name, players, observers, lag,
+loss, serverCvars, clientCvars }`, lag and loss per client) is hosted with a locked server and that many player
+and observer clients, and `judgeNetplay(set, label)` judges the whole set. `netsync.mjs`, `unlaggedhit.mjs` and
+`netbroadcast.mjs` are the models, and `netplay-testing` says when an observer judges something and how to make
+a netgame scenario fail first (`--side CONFIG --cvar fua_debug_netdrop=ID`).
+
 `scenarios --webgpu` runs the set on the WebGPU device, and how depends on how a scenario judges: one
 compared across launches runs its first Vulkan side on Vulkan and on WebGPU, every box at
 `WEBGPU_CEILING`; one judged against itself (a comparison marked `judgedAlone` in `template.mjs`) runs on WebGPU alone
@@ -183,6 +191,17 @@ goes on.
 `BOXES[map]` is `{ name: { box: [x0, y0, x1, y1], ceiling } }` in frame fractions. Set ceilings from
 measurement, not taste: run the FIXED build, take what it reads, add margin. A map with a known,
 unrelated difference gets its own ceiling (MAP01's dome reads ~10 in both builds; the horizon box ~2).
+
+A fault only the browser build shows becomes a check in `tools/web/check.mjs` that plays the scenario's own map:
+`query` opens the page on it and `serveData(name, buildWad())` as the check's `init` serves it as if staged, its
+frames come back through `GRAB_FRAME` and are judged in Node with the scenario's `BOXES` by `boxDiff`. Mark it
+`firefox: true` when it can run in Firefox (`check.mjs --browser firefox`), since a browser's WebGPU can differ
+where no engine does: the light grid check plays `pointlight.mjs`'s hall, and only Firefox failed it.
+
+A pass that draws or reads screen-sized pictures must land at half scale where it does at full
+(`features/dynres`): `FULL_VS_HALF` (`src/template.mjs`) are Vulkan sides pinned at each, and `dynresmirror.mjs`,
+`dynressky.mjs` and `dynresstack.mjs` are the pattern, an existing scenario's map judged with a `floor` that
+proves the half side really drew below full scale.
 
 ## 5. Prove it catches the bug
 
@@ -207,6 +226,6 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 
 Every scenario opens with a one-line `// [rc4l]` summary of what it proves, so the list is generated
 rather than kept here: `head -qn1 tools/fuactl/scenarios/*.mjs`.
-| `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines and scripts, to find the ingredient to template |
+| `tools/fuactl/src/mapdata.mjs` | read a real map's sectors, lines, things and scripts (UDMF, Doom or Hexen format), to find the ingredient to template |
 | `tools/fuactl/src/acs.mjs` | ACS0 BEHAVIOR writer for scripted template maps |
 | `tools/fuactl/test/{udmf,template,pngcore}.test.mjs` | their tests |

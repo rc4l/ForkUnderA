@@ -39,6 +39,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 
 //============================================================================
 //
@@ -188,7 +189,7 @@ void DCeiling::Tick ()
 
 				// [TP] If we're the server, tell the client to change the ceiling texture.
 				if ( NETWORK_GetState() == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( m_Sector - sectors );
+					zx::netreplication::TouchSector( m_Sector - sectors );
 
 				// [BB] Also, mark this sector as having its flat changed.
 				m_Sector->bFlatChange = true;
@@ -265,7 +266,7 @@ void DCeiling::Tick ()
 
 				// [TP] If we're the server, tell the client to change the ceiling texture.
 				if ( NETWORK_GetState() == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetSectorFlat( m_Sector - sectors );
+					zx::netreplication::TouchSector( m_Sector - sectors );
 
 				// [BB] Also, mark this sector as having its flat changed.
 				m_Sector->bFlatChange = true;

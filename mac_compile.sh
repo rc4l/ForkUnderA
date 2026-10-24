@@ -194,6 +194,13 @@ build_sdl_from_source() {
 # ---------------------------------------------------------------------------
 # Source
 # ---------------------------------------------------------------------------
+# [rc4l] The Vulkan backend's submodule, checked out here the way the brew deps are installed above, since a fresh clone otherwise stops at configure with the same instruction.
+ensure_submodules() {
+    [[ -f "$SCRIPT_ROOT/deps/DiligentCore/CMakeLists.txt" ]] && return
+    status "Checking out deps/DiligentCore (git submodule)..."
+    git -C "$SCRIPT_ROOT" submodule update --init --recursive deps/DiligentCore || die "could not check out deps/DiligentCore; run: git submodule update --init --recursive deps/DiligentCore"
+}
+
 get_source() {
     # Vendored source: this repo tracks src/zandronum directly (git subtree, based
     # on ZA_3.2.1). Treat a present, non-hg tree as authoritative so the build
@@ -427,6 +434,8 @@ make_app_bundle() {
     for f in "$BUILD_DIR"/*.pk3 "$BUILD_DIR"/*.wad; do
         [[ -e "$f" ]] && cp "$f" "$macos/"
     done
+    # [rc4l] The IWADs live in iwads/ (build() above), which the engine searches as $PROGDIR/iwads; the glob above only ever shipped a stale loose wad.
+    cp -R "$BUILD_DIR/iwads" "$macos/"
     # [rc4l] Fail closed: the pk3 copy above is a guarded glob, so a build that never produced the
     # core pk3 would silently ship a bundle the engine can't start. Its name carries this build's
     # release key, so match the pattern rather than a literal. See features/core-pk3.
@@ -527,6 +536,7 @@ main() {
     ensure_homebrew
     ensure_base_tools
     get_source
+    ensure_submodules
     install_native_deps
     build_sdl_from_source
     configure

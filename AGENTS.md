@@ -13,3 +13,5 @@ When using Zandronum MCP, prefer windowed mode as opposed to fullscreen so we ca
 Keep pull request descriptions concise and minimal. Don't write an essay.
 
 Don't modify the base README file without explicit permission.
+
+Don't add CI steps that play the game. Tests that launch the engine or the browser page, such as `fuactl scenarios` on their template maps and `tools/web/check.mjs`, live in the repo and run locally.

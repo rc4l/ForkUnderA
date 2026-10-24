@@ -5,10 +5,13 @@
 
 #include "features/web/webdriver.h"
 #include "features/mainloop/mainloop.h"
+#include "features/frame-limit/framelimit.h"
+#include "features/framephase/framephase.h"
 #include "features/web/computation/webargs_compute.h"
 #include "d_main.h"   // [rc4l] CRestartException
 #include "doomerrors.h"
 #include "m_argv.h"
+#include "m_misc.h"   // [rc4l] M_SaveDefaults
 #include "c_dispatch.h"   // [rc4l] AddCommandString
 #include "features/wadreload/zx_wadreload.h"   // [rc4l] PendingReloadMap
 #include <stdlib.h>
@@ -26,8 +29,14 @@ static void FatalExit(CDoomError &error)
 	exit(-1);
 }
 
+static long long g_frameEndUs = 0;
+
 static void Frame()
 {
+	// [rc4l] features/frame-limit: a browser offers a frame each refresh, and one not yet due under vid_maxfps or cl_capfps is skipped.
+	if (!zx::framelimit::SteppedFrameDue()) return;
+	// [rc4l] The wait for this animation frame is a browser's wait to present, counted in that phase as a desktop's vsync is.
+	if (g_frameEndUs > 0) zx::framephase::AddPhase(zx::framephase::kPhasePresent, g_frameEndUs, zx::framephase::NowUs());
 	try
 	{
 		g_frame();
@@ -45,6 +54,7 @@ static void Frame()
 	{
 		FatalExit(error);
 	}
+	g_frameEndUs = zx::framephase::NowUs();
 }
 
 // [rc4l] The browser calls Frame once an animation frame, which is also when Diligent presents.
@@ -89,6 +99,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE void fua_command(const char *text)
 	{
 		FatalExit(error);
 	}
+}
+
+// [rc4l] The config written for the page's keeper as writeini writes it, but without the line writeini prints, which every hidden page repeated; 0 when it could not be.
+extern "C" EMSCRIPTEN_KEEPALIVE int fua_write_config()
+{
+	return M_SaveDefaults(NULL) ? 1 : 0;
 }
 
 void Fatal(const char *message)

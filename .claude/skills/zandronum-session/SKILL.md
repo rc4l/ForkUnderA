@@ -41,14 +41,20 @@ died and left no token, as `reap --kill` stops every such orphan; never stop eng
   and the renderers it really got printed (`ok renderers: ...`). `--lock` keeps the engine off the user's
   mouse and keyboard — always on your own launches, never on one the user plays.
 - Pick a port of your own (7799, 7796, ...), never the one the user's instance is on.
+- For a netgame, `netplay` (see `netplay-testing`) launches a locked server and clients on loopback and
+  `netplay --for-user` leaves the first client's input to the user while the others stay locked;
+  `netplay --quit` stops the whole set by its tokens.
 - `--file a.pk3,b.wad` for pwads, `--iwad` for another IWAD (an absolute path works), `--gl` for GL
   alone, `--gl-beside` for the backend beside GL in one process, which only the GL/Vulkan comparisons
   need (`shot` pairs, `fua_*_check`, the live `fua_vulkan 0/1` toggle) and players never run, `--side-by-side`
   for that with its own window (see `fua-side-by-side`), `--webgpu`, `--rt` for ray-traced
   mirrors, which must be on when the scene is uploaded (or set `fua_dg_rtmirrors 1` and run
   `fua_diligent_scene`).
-- A `--lock` launch is never focused, so it keeps its world running (`i_pauseinbackground 0`), but its
-  window presents only with `fua_render_in_background 1`: set it before timing frames or recording clips.
+- A `--lock` launch has the focus only when Windows lets it take it, so it launches with its world running
+  (`i_pauseinbackground 0`) and presenting (`fua_render_in_background 1`) either way; to test what an
+  unfocused window does, set the latter to 0 and `window --activate 0` (`harness-windows-have-focus`).
+- A `--lock` launch also starts with dynamic resolution off (`vid_fua_dynres 0`), so its frames are drawn at
+  full scale whatever the GPU's load; set it to 1 to see what a player gets.
 - `--preset ID [--variant V]` loads a `catalogue/<ID>/addon.json` wad set from the download store
   (`--store DIR`, else `FUACTL_PWADS`, else the engine's own `pwads/` folder). A missing file is named;
   fetch it with `fua_download <file>` in the engine console.
@@ -82,7 +88,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | the engine's windows as Windows sees them, and what one really shows | `window [--shot gl\|vk --out FILE]`: minimized, not responding, position; the shot comes from the compositor, not GL's own buffer |
 | what the crosshair is on, and the mesh piece drawing it | `look --at x,y,z --face yaw,pitch`; `--pixel x,y --size WxH` aims through a capture's pixel, from the live camera when no `--spot`/`--at` is given |
 | what a linedef is, or every line near a point | `line <index>` or `line --at X,Y --radius R` |
-| a map's sectors, lines, specials, things and ACS source, from its files | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--thing TYPE] [--scripts REGEX]` (9080 is a SkyViewpoint) |
+| a map's sectors, lines, specials, things and ACS source, from its files in any format | `mapdata <MAP> --preset ID [--sector N] [--line N] [--special N] [--tag N] [--thing TYPE] [--scripts REGEX]` (9080 is a SkyViewpoint) |
 | does a region move over time (warp, scroller), Vulkan and GL | `motion --spot NAME --box x0,y0,x1,y1 [--interval MS]` |
 | compare two captures | `png --diff a b`, `png --boxdiff a b x0,y0,x1,y1 [block]`, `png --diffimg a b out` |
 | a box's brightness and channel means, several captures | `png --range a b ... [x0 y0 x1 y1]` |
@@ -100,7 +106,7 @@ Every command takes `--port P --token T`; `--port P` alone takes the token from 
 | what a frame costs at a view (Vulkan) | `costs --port P [--spot S \| --at --face]`: frame p50/p99, GPU and submit time (`fua_diligent_bench`), the world passes and phases, the walk's clipping, batches and sprites; the step-0 table of `docs/hwrender-performance-scope.md` is these columns |
 | any timing, count or memory reading the engine keeps, on any platform | `stats [PREFIX]`, `hitches`, `record`, `flight`, `memsnap`/`memdiff`, `soak`, `perfgate` (`features/telemetry`; the `perf-telemetry` skill says which to reach for) |
 | GPU ms per pass | `stats gpu/` on the backend (duration queries); `gl-timers` for GL (check `renderer-info` first; no timer queries reads as zeros) |
-| where the main thread's time goes | `sample --port P [--seconds N] [--stacks] [--table]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows; `--table` prints it as text |
+| where the main thread's time goes | `sample --port P [--seconds N] [--stacks] [--table]`: on Windows the engine samples itself; `--stacks` adds each function's inclusive share, which is how a frame waiting in `AcquireNextImage` or the walk's share shows; `--table` prints it as text; `--thread game` samples the thread running tics instead |
 | pause / step the sim | `rpc sim.pause` · `rpc sim.step '{"tics":1}'` |
 | a fault that shows only mid-transition (a crouch, a lift) | `steps <tag> --hold +crouch [--count N] [--spot NAME]`: a GL/Vulkan pair and the eye height each tic |
 

@@ -11,7 +11,7 @@ bool ShouldRouteToBrowser( bool bAwaitingReply, long peekedCommand, const Launch
 	if ( bAwaitingReply == false )
 		return false;
 
-	return (( peekedCommand == commands.whole ) || ( peekedCommand == commands.segmented ));
+	return (( peekedCommand == commands.whole ) || ( peekedCommand == commands.segmented ) || ( peekedCommand == commands.ignoring ));
 }
 
 EmptyReason ExplainEmptyList( bool bHasSearch, int activeCount, int versionMismatchCount,

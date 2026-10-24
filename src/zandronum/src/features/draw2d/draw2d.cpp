@@ -67,7 +67,7 @@ bool PreparePoly(FTexture *tex, const FVector2 *points, int npoints, double orig
 		draw.points[2 * i] = points[i].X;
 		draw.points[2 * i + 1] = points[i].Y;
 	}
-	const PolyTexIn in = { originx, originy, scalex, scaley, rotation, tex->GetScaledWidth(), tex->GetScaledHeight(), tex->bHasCanvas };
+	const PolyTexIn in = { originx, originy, scalex, scaley, rotation, tex->GetScaledWidth(), tex->GetScaledHeight(), tex->bHasCanvas != 0 };
 	ComputePolyTexCoords(in, &draw.points[0], npoints, &draw.uv[0]);
 	zx::draw2d::Quad2D base = ComputeFillQuad(0.f, 0.f, 0.f, 0.f, 0xffffffu, 1.f);
 	base.material = draw.material;

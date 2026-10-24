@@ -71,7 +71,16 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
 - `ping`, `capabilities` (self-describing), `console.exec {text}`
 - **Determinism**: `sim.tic`, `sim.hash`, `sim.seed {op:get|set,value}`, `sim.pause`, `sim.resume`,
   `sim.step {tics}`, `sim.snapshot {slot}`, `sim.restore {slot}`
-- **Structured state**: `state.player`, `state.actors {limit}`
+- **Structured state**: `state.player`, `state.actors {limit}`; `world.actors {netid, limit, players, all, owned}`
+  lists the synced actors in network id order (`netrpc_compute`), with positions and velocities to a
+  thousandth of a map unit, so two instances of one netgame can be compared actor by actor.
+  `world.sectorstate {first, count}`, `world.sidestate {first, count}` and `world.linestate {first, count}`
+  page through every sector's plane heights, light, colour, fade, flats, gravity, friction, special,
+  reflection, scale and rotation, every sidedef's textures, light and flags, and every line's alpha and the
+  flags clients move by (`features/net-protocol/lineflags.h`).
+- **Netgames**: `net.state` is this instance's side of a netgame: its role, a client's connection, the
+  server tic it last heard of and its ping, and a server's clients with each one's ping and the last
+  server tic it said it saw. `fuactl netdiff` and `netplay` read it.
 - **Input**: `input.event {evtype,subtype,data1,data2}`
 - **Perf**: `perf.capture {frames}` → async `perf` event with p50/p95/p99 + 1%-low fps and the coarse
   sim/render split; `perf.counters` → actor/segment counts and every `features/telemetry` counter. The sim|render boundary is one anchor
@@ -90,7 +99,10 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
   `ComputeInclusiveRanks`); `fuactl sample --port P --stacks` prints both.
 - **Server discovery**: `browser.refresh` kicks both halves of a browser refresh (LAN broadcast and
   the federated registry); `browser.list` returns the browser's servers as data -- name, address,
-  `lan`, the reported `country`, the resolved `flag` and its index, players, ping. The console's
+  `lan`, the reported `country`, the resolved `flag` and its index, players, the server's own `download`
+  endpoint, ping. `browser.add {address}` lists and queries a server by address, as Continue probes one,
+  and `browser.select {address}` makes it the one `fua_join_selected_server` joins (`fuactl` netplay's
+  browser and LAN joins). The console's
   `dumpserverlist` prints none of the discovery fields, which is why this exists. Assert on `flag`:
   a server whose own GeoIP lookup failed reports `XIP` and the browser geolocates it from the
   address instead, leaving `country` empty by design. Driven by `fuactl browser` and the

@@ -18,7 +18,7 @@ export function buildRestartNoteWad() {
 // [rc4l] The last side's setting says GL while -vulkan draws, so its change goes to the long "Vulkan (Recommended)", after which the note has to shrink to fit.
 export const SIDES = [{ name: "gl", gl: true }, { name: "vk", noGl: true }, { name: "vk-set-gl", noGl: true, launchCvars: { vid_backend: 0 } }];
 
-// [rc4l] Each read after a frame has drawn the menu as it now is; an unfocused window draws none without fua_render_in_background.
+// [rc4l] Each read after a frame has drawn the menu as it now is.
 async function readAfter(c, command) {
   if (command) await cap.exec(c, command);
   await new Promise((r) => setTimeout(r, 300));
@@ -26,7 +26,6 @@ async function readAfter(c, command) {
 }
 
 export async function judgeRestart(c, inst, label) {
-  await cap.exec(c, "fua_render_in_background 1");
   const launched = cvarValueFrom(await cap.exec(c, "vid_backend"));
   const other = launched === "0" ? "1" : "0";
   const before = await readAfter(c, "openmenu VideoModeMenu");

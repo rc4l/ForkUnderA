@@ -49,6 +49,7 @@
 #include "features/freeform-menu/freeformmenuitems.h"
 // [rc4l] Pure layout math lives in a dependency-free, unit-tested computation unit.
 #include "features/freeform-menu/computation/freeform_layout_compute.h"
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR(Int, m_show_backbutton)
 
@@ -670,15 +671,15 @@ bool FFreeformMenuItem::IsVisible() const
 		return false;
 
 	// Singleplayer check
-	if (!mIsVisibleInSingleplayer && (gamestate != GS_TITLELEVEL) && (NETWORK_GetState() == NETSTATE_SINGLE || NETWORK_GetState() == NETSTATE_SINGLE_MULTIPLAYER))
+	if (!mIsVisibleInSingleplayer && (gamestate != GS_TITLELEVEL) && (zx::net::IsSinglePlayer() || zx::net::IsLocalMultiplayer()))
 		return false;
 	
 	// Botplay check
-	if (!mIsVisibleInBotplay && (gamestate != GS_TITLELEVEL) && NETWORK_GetState() == NETSTATE_SINGLE_MULTIPLAYER && (deathmatch || teamgame))
+	if (!mIsVisibleInBotplay && (gamestate != GS_TITLELEVEL) && zx::net::IsLocalMultiplayer() && (deathmatch || teamgame))
 		return false;
 
 	// Multiplayer check
-	if (!mIsVisibleInMultiplayer && (gamestate != GS_TITLELEVEL) && NETWORK_GetState( ) == NETSTATE_CLIENT)
+	if (!mIsVisibleInMultiplayer && (gamestate != GS_TITLELEVEL) && zx::net::IsClient())
 		return false;
 
 	// CVar check

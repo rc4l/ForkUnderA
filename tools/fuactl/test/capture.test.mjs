@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND, launchModeOf, glFrameOf, glFrameFor, echoedCvar, rendererReport, RENDERER_PROBE } from "../src/capture.mjs";
+import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND, launchModeOf, glFrameOf, glFrameFor, echoedCvar, rendererReport, RENDERER_PROBE, waitInLevel, GS_INTERMISSION } from "../src/capture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // This tool's own directory -- NOT tools/, which holds unrelated CI tripwires that drive nothing.
@@ -136,4 +136,24 @@ test("a connection's mode is asked once, except GL beside, whose standalone cvar
   assert.equal((await rendererReport(silent)).mode, null);
   await rendererReport(silent);
   assert.equal(silent.asked(), 2, "an engine that named no renderer is asked again");
+});
+
+// [rc4l] A bridge that reports each sim.tic in turn, the last one for good, and keeps every console line it is sent.
+function ticking(states) {
+  const sent = [];
+  return { sent, onEvent: () => () => {}, rpc: async (cmd, args) => {
+    if (cmd === "console.exec") { sent.push(args.text); return {}; }
+    return states.length > 1 ? states.shift() : states[0];
+  } };
+}
+
+// [rc4l] fuactl travel sat at the single-player tally until it timed out, since nothing pressed a key there.
+test("waiting for a level presses use through an intermission only when asked, and gives up on time", async () => {
+  const through = ticking([{ gamestate: GS_INTERMISSION }, { gamestate: GS_INTERMISSION }, { gamestate: 0, inlevel: true }]);
+  assert.deepEqual(await waitInLevel(through, 5000, { pressThrough: true, pollMs: 1 }), { gamestate: 0, inlevel: true });
+  assert.deepEqual(through.sent, ["+use", "-use", "+use", "-use"]);
+  const waiting = ticking([{ gamestate: GS_INTERMISSION }, { gamestate: 0, inlevel: true }]);
+  await waitInLevel(waiting, 5000, { pollMs: 1 });
+  assert.deepEqual(waiting.sent, []);
+  await assert.rejects(waitInLevel(ticking([{ gamestate: GS_INTERMISSION }]), 30, { pollMs: 1 }), /instance never reached GS_LEVEL/);
 });

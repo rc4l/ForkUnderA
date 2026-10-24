@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, blankGame, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, everyFormatPlayed, gpuError, heardAtDistance, heldOnce, judge, marked, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, threadedWithSound } from '../check.mjs';
+import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
+import { encodePNG } from '../../fuactl/src/pngcore.mjs';
+import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
 test('a check fails when its line never came', () => {
   assert.deepEqual(judge({ until: 'x' }, null), { ok: false, reason: 'no line matched /x/' });
@@ -88,10 +90,16 @@ test('--only picks the checks whose names contain its text', () => {
   assert.deepEqual(selectChecks(CHECKS, 'save').map((c) => c.name), ['a save gets its picture', 'a save survives a reload and loads']);
 });
 
+test('--only takes several texts at |, in the order the suite runs them', () => {
+  const names = selectChecks(CHECKS, 'reloading the level | the canvas is configured once').map((c) => c.name);
+  assert.deepEqual(names, ['the canvas is configured once through a level start', 'reloading the level holds no more memory']);
+  assert.equal(selectChecks(CHECKS, ' | ').length, 0);
+});
+
 test('the checks run in the order a profile carries state through', () => {
   const names = CHECKS.map((c) => c.name);
   assert.ok(names.indexOf('quitting stops the loop and offers to play again') < names.indexOf('a reload keeps what was set before quitting'));
-  assert.ok(names.indexOf('leaving the page stores the config') < names.indexOf('a reload keeps what was set before leaving'));
+  assert.ok(names.indexOf('leaving the page stores the config without a word in the console') < names.indexOf('a reload keeps what was set before leaving'));
   assert.ok(names.indexOf('a save gets its picture') < names.indexOf('a save survives a reload and loads'));
 });
 
@@ -210,4 +218,82 @@ test('distant shooters are judged only where a sound with no distance was heard'
   assert.match(heardAtDistance({ control: 0, peak: 0, contexts: [{ state: 'running', time: 3 }] }).skip, /made no sound at all/);
   const check = { until: 'x', expect: heardAtDistance };
   assert.deepEqual(judge(check, '[eval] {"control":0,"peak":0,"contexts":[]}'), { ok: true, skip: 'the page made no sound at all, a sound with no distance peaking at 0 RMS (audio [])' });
+});
+
+// [rc4l] A 32x32 frame as the page hands it back, base64 PNG, dark but for a bright square of side lit at the top left.
+function frame(lit, level = 200) {
+  const rgb = Buffer.alloc(32 * 32 * 3, 10);
+  for (let y = 0; y < lit; y++) for (let x = 0; x < lit; x++) rgb.fill(level, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  return encodePNG(32, 32, rgb).toString('base64');
+}
+
+test("the light grid has to draw what no grid draws at full and at half scale, where the light showed at all, by the pointlight scenario's ceiling", () => {
+  const lit = frame(16), dark = frame(0), half = frame(8);
+  const at = (over) => [{ name: 'd600', grid: lit, none: lit, dark, halfGrid: half, halfNone: half, ...over }];
+  assert.equal(gridMatches(at({})), '');
+  assert.equal(gridMatches(at({ grid: dark })), `at d600 the light grid drew 44.531 away from no grid, over ${POINTLIGHT_BOXES.MAP01.frame.ceiling}`);
+  const faint = frame(16, 10 + LIT_FLOOR - 1);
+  assert.equal(gridMatches(at({ grid: faint, none: faint })), 'at d600 the light changed no block by more than 2.81, so it never drew');
+  assert.equal(gridMatches(at({ halfGrid: dark })), `at d600 at half scale the light grid drew 10.391 away from no grid, over ${POINTLIGHT_BOXES.MAP01.frame.ceiling}`);
+  assert.equal(gridMatches(at({ halfGrid: lit, halfNone: lit })), 'at d600 the half-scale frame matched the full one, so it never drew below full scale');
+});
+
+test("the light grid check plays the pointlight scenario's hall from its vantages", () => {
+  const check = CHECKS.find((c) => c.name.startsWith('a distant light'));
+  assert.ok(check.firefox);
+  assert.equal(check.query, 'file=fua-pointlight.wad&map=MAP01');
+  assert.match(check.init, /"fua-pointlight\.wad"/);
+  assert.deepEqual(LIGHT_VANTAGES.map((v) => v.name), ['d600', 'd1500']);
+  for (const v of LIGHT_VANTAGES) assert.match(check.evaluate, new RegExp(`"name":"${v.name}","x":${v.at.x},"y":${v.at.y}`));
+});
+
+test("a check with a query of its own opens the run's page with it in place of the run's", () => {
+  assert.equal(checkUrl('http://127.0.0.1:8/?map=MAP01', {}), 'http://127.0.0.1:8/?map=MAP01');
+  assert.equal(checkUrl('http://127.0.0.1:8/?map=MAP01', { query: 'file=a.wad&map=MAP02' }), 'http://127.0.0.1:8/?file=a.wad&map=MAP02');
+});
+
+test('Firefox runs only the checks marked for it, and Chrome runs every one', () => {
+  assert.equal(notIn('chrome', {}), '');
+  assert.equal(notIn('firefox', { firefox: true }), '');
+  assert.equal(notIn('firefox', {}), 'it needs what only the Chrome driver does');
+});
+
+test('the frame limit holds the page near 16.7 ms at 60 and lets it run faster without', () => {
+  assert.equal(frameLimited({ held: 16.7, free: 2.08 }), '');
+  assert.equal(frameLimited({ held: 2.08, free: 2.08 }), 'vid_maxfps 60 left frames 2.08 ms apart');
+  assert.equal(frameLimited({ held: -1, free: 2.08 }), 'vid_maxfps 60 left frames -1 ms apart');
+  assert.equal(frameLimited({ held: 16.7, free: 16.7 }), 'with no limit frames were 16.7 ms apart');
+  assert.equal(frameLimited({ held: 16.7, free: -1 }), 'with no limit frames were -1 ms apart');
+});
+
+test('dynamic resolution in the page is judged at rest, under load, after it, and through the console and a blur', () => {
+  const good = { idle: 1, loaded: 0.5, after: 1, consoleHeld: true, blurHeld: true };
+  assert.equal(dynresFollows(good), '');
+  assert.equal(dynresFollows({ ...good, idle: 0.75 }), 'it drew at 0.75 with no load');
+  assert.equal(dynresFollows({ ...good, loaded: 1 }), 'it drew at 1 under GPU load');
+  assert.equal(dynresFollows({ ...good, loaded: -1 }), 'it drew at -1 under GPU load');
+  assert.equal(dynresFollows({ ...good, after: 0.25 }), 'it stayed at 0.25 once the load ended');
+  assert.equal(dynresFollows({ ...good, consoleHeld: false }), 'it read frames with the console up');
+  assert.equal(dynresFollows({ ...good, blurHeld: false }), 'it read frames with the window out of focus');
+});
+
+test('a browser build tints but neither records replays nor checks for updates', () => {
+  const ok = { tint: '40', replay: 'false', replayAvailable: 'false', updates: 'false' };
+  assert.equal(browserOptions(ok), '');
+  assert.match(browserOptions({ ...ok, tint: null }), /damage tint cannot be changed/);
+  assert.match(browserOptions({ ...ok, replay: 'true' }), /instant replay reads true/);
+  assert.match(browserOptions({ ...ok, replayAvailable: 'true' }), /available true/);
+  assert.match(browserOptions({ ...ok, updates: 'true' }), /choosable true/);
+});
+
+test('leaving the page stores the config and prints nothing', () => {
+  assert.equal(storedQuietly({ stored: true, said: '' }), '');
+  assert.equal(storedQuietly({ stored: false, said: '' }), 'the store failed');
+  assert.equal(storedQuietly({ stored: true, said: 'Config saved.\n' }), 'the console printed "Config saved."');
+});
+
+test('lightTableSends names a table never sent and surfaces sent again', () => {
+  assert.equal(lightTableSends({ pieceCopies: 0, tableCopies: 35 }), '');
+  assert.match(lightTableSends({ pieceCopies: 0, tableCopies: 0 }), /sector light table was sent 0.0 times a second/);
+  assert.match(lightTableSends({ pieceCopies: 70, tableCopies: 35 }), /surface records were sent 70.0 times a second/);
 });

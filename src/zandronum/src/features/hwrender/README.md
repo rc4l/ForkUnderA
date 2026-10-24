@@ -75,6 +75,13 @@ few times ran out of GPU memory first. Vulkan frees them itself. Textures' handl
 browser numbers each kind from one, and a buffer sharing a kept texture's number went unkept and waited on the
 collector (queue #48). Diligent's WebGPU device keeps every upload page it ever made, so the scene buffer is kept
 while the level fits it and its big writes go in upload-page-sized pieces (`kUploadPageBytes`, `dgupload.cpp`).
+Every page one frame needs stays in that pool, and a level goes up in one frame, as does a rebuild of it, so
+`SceneUpload` and `RefreshMovedGeometry` flush the context each time `kUploadFlushBytes` have gone while they run
+(`UploadFlushing`, `ComputeUploadFlushDue`): Sunder MAP11 kept 48 MB of pages a load and 96 MB after a save was
+loaded and flown around, and Firefox ran out of GPU memory.
+A material and translation are found in the texture cache and the slot table by `computation/materialindex_compute`,
+where a walk over thousands of Complex Doom sprite frames, for every slot of every binding refill, took 11% of a
+fight's frame.
 `features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
 Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
 
@@ -105,7 +112,8 @@ one 128-bit number per draw (tested to agree with the rule on every pair of 576 
 integers rather than walking the rule.
 
 `vid_fps` gives each renderer its own frame time (`rendererrate.cpp`): the frame is split at `LiveFrame`, GL's
-part before it and the backend's after.
+part before it and the backend's after. Its fps is the frames drawn in the last whole second, which a limit or a
+browser's refresh holds, never what the frame time would allow.
 
 The sky is three files: the level's dome or box and the fade (`diligent/dgsky.cpp`), the skybox portal and
 the surfaces painted from it by screen position (`dgskyportal.cpp`), and other skies' pictures
@@ -120,6 +128,32 @@ that view drew; it read the player's view's depth and normals before, and drew n
 A frame's sprites, models and decals are laid out on the main thread (`computation/dynlayout_compute`, each
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
+
+The sector light table (`fua sector light`, `kSectorLightWords` a sector) holds each sector's light level, floor
+and ceiling lights and colormap, read from the render copy and its changed entries sent once a frame
+(`UpdateSectorLightTable`, `ComputeChangedRuns`). A level surface its sector lights carries where its light comes
+from in its record (`computation/sectorlitrecord_compute`, `kTexFlagSectorLit`), and the scene and traced-mirror
+shaders shade it from the table each frame (`FUA_SECTORLIT_GLSL`, `ComputeSectorLitShade` its CPU twin), the
+level's light settings and the player's weapon light in `uShadeEnv`, `uShadeEnv2` and `uShadeFog`. On Sunder
+MAP11 99.8% of the level's surfaces are lit from it, and a frame's surface records sent for light changes went
+from about 110 to under one; `fua_dg_sectorlit 0` bakes every surface's shading into its record, and
+`fua_dg_sectorlit_report` counts what the table lights.
+
+The dynamic stream is one 32-bit reference a vertex (`kDynamicVS`, which the world pipelines that are not the
+level's use). A plain sprite is packed with its four corners into 112 bytes (`computation/spritepack_compute`)
+and its six references name its corners; anything the packed form cannot carry bit for bit (a warp, a glow, a
+tint, a colour off an 8-bit step, a sprite a traced mirror reads) keeps its whole record behind the level's and
+its vertices among the stream's words. A Complex Doom fight's 6,500 sprites a frame went from about 384 bytes
+each to 136, and its uploads from 3.5 to 1.8 MB a frame in Firefox; `fua_dg_spritepack 0` sends every piece
+whole. The words buffer (`fua dynamic data`) is bound statically, so it grows with the piece buffer in
+`EnsureDynamicRecords` (`ComputeDynWordsBound`) and the pipelines are made again with it.
+
+Nothing the GPU needs is made by the frame that first draws it. The deferred decal pass's pipelines are built
+with the scene's (`EnsureDecalPipelines` in `BuildSceneBuffer`), and once the level is uploaded the backend makes
+every texture the engine marked for precache (`FBackendRenderer::PrecacheTexture`, `features/fua-caching`): the
+level's walls, flats and skies, its actors' sprites, animation and switch frames and the decal graphics, as
+`computation/precache_compute` orders and budgets them. `fua_dg_made` lists what was made while the level was
+played instead, and `fuactl scenarios madeinplay` fails on any shader or pipeline among them.
 
 `computation/levelsetup_compute` steps a level's set-up (bake from the map, upload, retry, give up);
 `PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only

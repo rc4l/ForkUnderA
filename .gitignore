@@ -26,6 +26,7 @@ build-win/
 dist-windows/
 dxsdk/
 ZandroX-*-windows-x64.zip
+ForkUnderA-*-windows-x64.zip
 
 # Files the engine build generates into the vendored source tree (upstream
 # .hgignore treats these as generated; we vendored without .hg so ignore them
@@ -73,6 +74,7 @@ build-diligent/
 
 # fuactl play sessions (port/token of a running instance, and one per port) and the report queue
 tools/fuactl/.play-session*
+tools/fuactl/.netplay-session*
 tools/fuactl/queue.json
 
 # fuactl's native helpers' build trees (tools/fuactl/native/<helper>/build)
@@ -87,3 +89,4 @@ build-hosttools/
 # The demo site's stage (tools/web/demo), and the cache wrangler leaves wherever it runs
 tools/web/demo/site/
 .wrangler/
+build-tests-*/

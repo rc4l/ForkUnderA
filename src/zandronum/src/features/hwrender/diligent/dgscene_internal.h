@@ -125,6 +125,8 @@ EXTERN_CVAR(Bool, fua_vulkan)
 // [rc4l] The camera pitch, which lives outside any header the backend already pulls in.
 extern int viewpitch;
 
+#include "features/hwrender/computation/spritepack_compute.h"   // [rc4l] ScenePieceData, ComputeSpritePack
+
 namespace zx { namespace hwrender {
 
 // [rc4l] Where a pass draws: its colour and depth, the normals its G-buffer writes and the depth and normals the decal pass reads back (none for a pass without them), and its size.
@@ -164,29 +166,7 @@ struct SceneVertex
 	float pieceIndex;
 };
 
-// [rc4l] What a piece knows about itself, once, instead of once per vertex.
-//
-// Laid out in vec4s because std430 aligns a vec3 to 16 bytes anyway: writing it as four vec4s makes
-// the padding explicit rather than something the GLSL and the C++ have to agree about by luck.
-struct ScenePieceData
-{
-	float r, g, b, softLight;
-	float fogDensity, alpha, fogMode, matSlot;
-	float fogR, fogG, fogB, warpStyle;   // [rc4l] ANIMDEFS warp (1) or warp2 (2), else 0
-	float nx, ny, nz, warpSpeed;
-	// [rc4l] A flooded gap: u = floodU.xy . (x, y) + floodU.z on the plane at height floodU.w, v likewise, flood 1 to switch it on.
-	float floodUx, floodUy, floodU0, floodZ;
-	float floodVx, floodVy, floodV0, flood;
-	// [rc4l] A sprite's or model's light from the CPU (GL's gl_SetDynSpriteLight), cpuLight 1 to use it instead of the shader's loop.
-	float actorR, actorG, actorB, cpuLight;
-	// [rc4l] The slot holding this material's brightmap in the bindless array (0 for none), the piece's PieceStackId plus one (0 for a sprite or model, never culled), 1 when both slots go through SlotRemap, and 1 when GL draws it unmasked so no texel is discarded.
-	float brightSlot, stackId, animates, plain;
-	// [rc4l] A wall's glow (MeshPiece::glowTop and the rest): two colours with their heights, and the ceiling and floor planes they are measured from.
-	float glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
-	// [rc4l] A player's damage tint (MeshPiece::tint): colour and strength, then its texture-V span and 1 when it glows.
-	float tint[4], tintRange[4];
-	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and the piece's texture modes, styles and passes (ComputePieceTexFlags)
-};
+// [rc4l] ScenePieceData, what a piece knows about itself, is in features/hwrender/computation/spritepack_compute.h beside the packed sprite made from it.
 
 // [rc4l] One draw per material. Pieces arrive in bake order, so they are sorted by material first;
 // with a few hundred materials on a map that is a few hundred draws, which is what the GL path does
@@ -249,6 +229,7 @@ struct DynRun
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
+	int          general;      // [rc4l] its first general vertex, or -1 for a packed sprite, which has none
 };
 
 // [rc4l] The array's size on this device (ComputeMaterialSlotCapacity), which CompileShader hands every shader as FUA_MAT_SLOTS; 0 means a binding per material.
@@ -275,6 +256,14 @@ struct SceneGeometry
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> pieceBuf;
 	unsigned int pieceCapacity = 0;
 	unsigned int dynPeak = 0;                       // [rc4l] the most dynamic pieces a frame has had, which the buffer keeps records for
+	// [rc4l] The dynamic stream's words, its general vertices and packed sprites (kDynamicVS), which the dynamic pipelines bind statically, so it grows with the piece buffer.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> dynDataBuf;
+	unsigned int dynDataCapacity = 0;               // [rc4l] in 32-bit words
+	unsigned int dynWordsPeak = 0;                  // [rc4l] the most words a frame's dynamic pieces could take
+	// [rc4l] The sector light table (fuaSectorLit), kSectorLightWords a sector, bound statically like the piece buffer, and what it holds.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> sectorLightBuf;
+	unsigned int sectorLightCapacity = 0;           // [rc4l] in sectors
+	TArray<unsigned> sectorLightWords;
 	TArray<SceneBatch> batches;
 	TArray<int>  blendBatches;                      // [rc4l] the translucent batches, in build order
 	// [rc4l] The stacked views' subsector bits (ComputeMarkStackVisible), ready once this frame's are uploaded.
@@ -498,8 +487,8 @@ void BuildMVP(float *m);
 void DrawWorld(Diligent::IDeviceContext *ctx);
 // [rc4l] A pass's targets bound for DrawWorld and cleared: colour to clear, the normals to nothing drawn, depth to far, the G-buffer bound with them when the pass has one.
 void BeginPassTargets(Diligent::IDeviceContext *ctx, const PassTargets &targets, const float clear[4]);
-// [rc4l] An offscreen view's targets from its colour and depth textures and, for its marks, a normal texture of its size (NULL draws none).
-PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal);
+// [rc4l] An offscreen view's targets from its colour and depth textures and, for its marks, a normal texture of its size (NULL draws none); a screenView of the frame's size draws at the scene's scale.
+PassTargets ViewPassTargets(Diligent::ITexture *color, Diligent::ITexture *depth, Diligent::ITexture *normal, bool screenView);
 // [rc4l] The normals every frame-sized view shares, one view drawing at a time; NULL when it cannot be made.
 Diligent::ITexture *FrameViewNormal();
 // [rc4l] A w by h normal target the G-buffer writes and the decal pass reads.

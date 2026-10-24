@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { resolveEngine, engineArgs, loopbackArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
-import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
+import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, testBinaries, combineGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
 function inDir(dir, fn) {
@@ -84,6 +84,15 @@ test("a harness instance keeps the OS mouse out of the game", () => {
 
   assert.equal(setValue(args, "use_mouse"), "0");
   assert.equal(setValue(args, "use_joystick"), "0");
+});
+
+// [rc4l] A driven run compares frames and frame times, which a scale chosen by the GPU's load would make differ between runs.
+test("a driven instance draws its scene at full scale, and a hands-on one as players do", () => {
+  assert.equal(setValue(engineArgs({}, "x.ini"), "vid_fua_dynres"), "0");
+  assert.equal(setValue(engineArgs({ allowOsInput: true }, "x.ini"), "vid_fua_dynres"), undefined);
+  // [rc4l] A side's own cvars come after, so a scenario pinning a scale is not overruled.
+  const args = engineArgs({ cvars: { vid_fua_dynres: 1 } }, "x.ini");
+  assert.ok(args.lastIndexOf("vid_fua_dynres") > args.indexOf("vid_fua_dynres"));
 });
 
 test("a harness instance does NOT disable the menu mouse it injects into", () => {
@@ -263,6 +272,8 @@ test("--cvar reads as name=value pairs, a bare name meaning 1, and nothing when 
   assert.equal(parseCvarFlag(undefined), undefined);
   assert.equal(parseCvarFlag(true), undefined);
   assert.deepEqual(parseCvarFlag("a=b=c,"), { a: "b=c" });
+  assert.deepEqual(parseCvarFlag("fua_debug_netdrop=151,135,232/4,sv_cheats=1"), { fua_debug_netdrop: "151,135,232/4", sv_cheats: "1" });
+  assert.deepEqual(parseCvarFlag("135,a=1"), { 135: "1", a: "1" });
 });
 
 test("a spot launches its map with its wads found by name in the store, and names what is missing", () => {
@@ -357,6 +368,15 @@ test("a unit test run reports how many passed and which failed, each once", () =
   const out = "[==========] 3 tests ran.\n[  PASSED  ] 2 tests.\n[  FAILED  ] 1 test, listed below:\n[  FAILED  ] Suite.Case\n[  FAILED  ] Suite.Case (0 ms)\n";
   assert.deepEqual(summarizeGtest(out), { passed: 2, failed: ["Suite.Case"] });
   assert.deepEqual(summarizeGtest("nothing"), { passed: 0, failed: [] });
+});
+
+test("a tests build runs every unit test binary it made and sums them", () => {
+  const made = (p) => !p.includes("_net");
+  assert.deepEqual(testBinaries("R", made).map((p) => p.split(String.fromCharCode(92)).join("/")), ["R/build-tests/Release/zandrox_tests.exe"]);
+  assert.equal(testBinaries("R", () => true).length, 2);
+  assert.deepEqual(combineGtest([{ passed: 3, failed: [], status: 0 }, { passed: 2, failed: ["A.B"], status: 1 }]), { passed: 5, failed: ["A.B"], status: 1, binaries: 2 });
+  assert.deepEqual(combineGtest([{ passed: 1, failed: [], status: 0 }, { passed: 0, failed: [], status: 127 }]).status, 127);
+  assert.deepEqual(combineGtest([]), { passed: 0, failed: [], status: 0, binaries: 0 });
 });
 
 // [rc4l] play --spot at WDI18's #29 spot died on an occupied spot and left no instance at all.

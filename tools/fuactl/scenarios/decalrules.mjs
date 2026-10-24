@@ -180,7 +180,6 @@ async function shoot(c, at, { settle = 35 } = {}) {
 const report = async (c) => parseDecalReport(await cap.exec(c, "fua_decal_report", { quietMs: 300 }));
 
 export async function judgeLaunch(c, inst, label, sectors = {}) {
-  await cap.exec(c, "fua_render_in_background 1");
   await cap.exec(c, "fua_decal_report reset");
   await shoot(c, aim("plain", "floor"));
   await shoot(c, aim("plain", "wall"));

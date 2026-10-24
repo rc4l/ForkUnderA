@@ -52,11 +52,15 @@ struct SurfaceKey
 	int          fogMode;
 	float        normX, normY, normZ;
 	float        scrollU, scrollV;   // [rc4l] the texture shift a scroller added since the bake, applied by the shader
+	// [rc4l] Where a surface lit from the sector light table takes its light (MeshPiece::sectorLight), which its record carries instead of the shading; litSector -1 for none.
+	int          litSector, litKind, litSideLight, litContrast;
+	unsigned int litFlags;   // [rc4l] its side's absolute and kept-in-fog flags and its noFog, one bit each
 
 	SurfaceKey()
 		: material(0), baseTex(0), rangeOffset(0), rangeCount(0), blendMode(0), translation(0),
 		  alpha(1.f), colorR(1.f), colorG(1.f), colorB(1.f), softLight(-1.f), fogDensity(0.f),
-		  fogColor(0), fogMode(0), normX(0.f), normY(0.f), normZ(0.f), scrollU(0.f), scrollV(0.f) {}
+		  fogColor(0), fogMode(0), normX(0.f), normY(0.f), normZ(0.f), scrollU(0.f), scrollV(0.f),
+		  litSector(-1), litKind(0), litSideLight(0), litContrast(0), litFlags(0) {}
 };
 
 // [rc4l] The three answers, ordered by how much work they cost.
@@ -76,6 +80,19 @@ enum SurfaceChange
 
 // Compare what a surface was against what it now is.
 SurfaceChange ComputeSurfaceChange(const SurfaceKey &was, const SurfaceKey &now);
+
+// [rc4l] Why a surface is repainted, one bit per kind of field that changed, for telemetry's count of what the re-sends are.
+enum RepaintCause
+{
+	kRepaintMaterial = 1,   // [rc4l] an animation frame
+	kRepaintAlpha    = 2,
+	kRepaintShading  = 4,   // [rc4l] its light, colour or fog
+	kRepaintNormal   = 8,
+	kRepaintScroll   = 16,
+};
+
+// [rc4l] The RepaintCause bits for every kind of field that differs between was and now, 0 when none does.
+unsigned ComputeRepaintCauses(const SurfaceKey &was, const SurfaceKey &now);
 
 }} // namespace zx::surfaces
 

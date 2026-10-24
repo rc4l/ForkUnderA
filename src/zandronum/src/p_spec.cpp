@@ -96,6 +96,7 @@
 #include "unlagged.h"
 #include "network_enums.h"
 #include "st_hud.h"
+#include "features/net-replication/mapstate.h"
 
 static FRandom pr_playerinspecialsector ("PlayerInSpecialSector");
 void P_SetupPortals();
@@ -1827,6 +1828,9 @@ void P_SpawnSpecials (void)
 		sectors[i].SavedFloorReflect = sectors[i].reflect[sector_t::floor];
 	}
 
+	// [rc4l] And features/net-replication's baseline, at the same moment, before any open script runs.
+	zx::netreplication::BeginLevel( );
+
 	// [RH] Start running any open scripts on this map
 	// [BC] Clients don't run scripts.
 	// [BB] Clients only run the client side open scripts.
@@ -2496,7 +2500,7 @@ void P_SetSectorFriction (int tag, int amount, bool alterFlag)
 
 			// [BC] If we're the server, update clients about this friction change.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_SetSectorFriction( s );
+				zx::netreplication::TouchSector( s );
 		}
 	}
 }

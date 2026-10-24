@@ -82,6 +82,7 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "cl_main.h"
 #include "gamemode.h"
 #include "unlagged.h"
+#include "features/net-session/unlaggedreport.h"   // [rc4l] fua_unlagged_report
 #include "d_netinf.h"
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
@@ -4560,7 +4561,10 @@ static ETraceStatus CheckForActor(FTraceResults &res, void *userdata)
 AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 	int pitch, int damage, FName damageType, const PClass *pufftype, int flags, AActor **victim, int *actualdamage)
 {
-	// [BB] The only reason the client should try to execute P_LineAttack, is the online hitscan decal fix. 
+	// [rc4l] features/net-session: fua_unlagged_report's record of a client's own shot, where it finds the other players.
+	zx::netsession::NoteClientShot( t1 );
+
+	// [BB] The only reason the client should try to execute P_LineAttack, is the online hitscan decal fix.
 	// [CK] And also predicted puffs and blood decals.
 	if ( NETWORK_InClientMode()
 		&& cl_hitscandecalhack == false
@@ -4646,6 +4650,10 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 	const bool hitSomething = Trace(t1->x, t1->y, shootz, t1->Sector, vx, vy, vz, distance,
 		MF_SHOOTABLE, ML_BLOCKEVERYTHING | ML_BLOCKHITSCAN, t1, trace,
 		tflags, CheckForActor, &TData);
+
+	// [rc4l] features/net-session: fua_unlagged_report's record of the trace, the others still where unlagged put them.
+	zx::netsession::NoteServerShot( t1, ( hitSomething && trace.HitType == TRACE_HitActor ) ? trace.Actor : NULL );
+	zx::netsession::NoteClientTrace( t1, ( hitSomething && trace.HitType == TRACE_HitActor ) ? trace.Actor : NULL );
 
 	// [Spleen]
 	UNLAGGED_Restore( t1 );

@@ -51,6 +51,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 
 - `features/framephase/framephase.cpp`: each phase feeds `phase/<name>`, and `FrameBoundary` calls `FrameMark`.
 - `d_net.cpp` `TryRunTics`, `g_game.cpp` `G_Ticker` and `p_tick.cpp` `P_Ticker`: the `sim/` zones and `TicMark`, which the bridge's `perf.ticprof` reads (`features/mcp-bridge/computation/ticprof_compute.h` names them).
+- `features/levelmesh/staticmesh.cpp` `MeshRegisterPiece`: `levelmesh/repaint_material`, `_alpha`, `_shading`, `_normal` and `_scroll`, the surfaces repainted each frame by what changed (`ComputeRepaintCauses`).
+- `features/hwrender/diligent/dgscene.cpp` `SendToBuffer`, the backend's one buffer write: `gpu/upload_bytes` and the breakdown `gpu/upload/`, each buffer's bytes per frame since it was last read; `dgupload.cpp`'s repaint drain counts `gpu/repaint_sent` (records sent, gaps bridged) and `gpu/repaint_same` (records that came out as the GPU holds them and were not sent); `dgupload.cpp` times `scene/sectorlight`, the sector light table read and its changes sent; `dgdynamic.cpp` counts `gpu/sprites_packed` and `gpu/sprites_whole` each frame, and `gpu/dyn_words_short` for a frame whose dynamic words did not fit.
 - `dthinker.cpp` `TickThinkers`: with `fua_telemetry_thinkers 1`, each thinker's tick by class, as the breakdown `sim/thinker/`.
 - `features/visibility/viswalk.cpp`: the `vis/` zones.
 - `features/gamecopy/`: the fill's `copy/` zones and counts (seen bits, sectors, sides and their scan and take,
@@ -58,19 +60,31 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   particles, decals, views, interpolations,
   sides taken, polyobject subsectors), `copy/prescan` (the tic-end scan, on the game thread when tics run there),
   `copy/prescanned` (fills that used it) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
-  `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace.
+  `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace;
+  `features/gameloop/loop.cpp`: `handoff/backlog_tics` (the tics a threaded frame was owed) and `handoff/inline_catchup` (those it ran inline).
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones.
 - `features/jobs/jobs.cpp`: a `JobObserver` (`jobpool_compute.h`) on telemetry's clock times the `jobs/` regions and names each worker "job N".
 - `features/hwrender/rendererrate.cpp`: vid_fps's split, under `frame/`.
+- `features/frame-limit/framelimit.cpp`: the `frame/limit_wait` zone, the wait before a present that `vid_maxfps` or `cl_capfps` holds.
+- `features/dynres/dynres.cpp`: `frame/dynres_scale`, `frame/dynres_budget_ms` and `frame/dynres_changes`, none of them soaked.
 - `features/hwrender/diligent/`:
   - `dgscene.cpp`, `dg2d.cpp`, `dgsky.cpp`, `dgviews.cpp` and `dgdynamic.cpp`: the `draw/` and `scene/` zones and the `frame/vsync` gauge.
   - `dgframe.cpp` and `dgupload.cpp`: the `load/` zones, the present interval and `fua_frametimes`'s per-frame parts under `frame/` and `levelmesh/`, and the scene buffer's rebuilds.
-  - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries.
+  - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries; the frame's is timed for `features/dynres` with telemetry off too.
   - `dgmemory.cpp`: every texture and buffer made through `CreateDeviceTexture`/`CreateDeviceBuffer`, under `gpu/mem/` and the breakdown `gpu/mem/tag/`. At shutdown it reports what is still held.
   - `dgdevice_vk.cpp`: `VK_EXT_memory_budget` under `gpu/vk_`, the device's heaps and the host's apart.
-  - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`: the shaders and pipelines made, under `gpu/made/`.
+  - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`, and `dgprobe.cpp`'s `CreateDeviceTexture` and `CreateDeviceBuffer`: the shaders and
+    pipelines made, under `gpu/made/`, each timed (`gpu/make_shader`, `gpu/make_pipeline`, `gpu/make_texture`, `gpu/make_buffer`), and
+    `dgtexture.cpp`'s `gpu/make_material`, a material decoded, uploaded and mipped.
+  - `dgframe.cpp`: `gpu/made/in_play` and the per-frame `gpu/made_in_play`, what was made while the level was played rather than loaded,
+    which `fua_dg_made` lists (`computation/madeinplay_compute`) and `fuactl scenarios madeinplay` holds at no shader or pipeline.
+  - `dgtexture.cpp`: `load/precache_backend` and `load/precached_textures`, the level's marked textures made ahead.
+  - `dgscene.cpp` `UpdateBufferIfChanged`: `gpu/upload_spared`, the bytes a frame did not send because the buffer already held them (the light grid and the 2D layer).
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
 - `network.cpp`: the `net/` totals. `files.cpp` `FileReader::Read`: `io/read_bytes`.
+- The netcode's own: `features/net-transport`'s `net/held`, `net/fake_dropped`, `net/held_released` and
+  `net/held_send_failed`, and a server receive thread's `net/receive_dropped`; `features/net-replication`'s `net/replication_sent` and `net/replication_missed`;
+  `features/latency`'s `latency/`; and the timed seams `net/parse` and `net/launcher_reply`.
 - `features/crashreport/zx_crashreport.cpp`: the summary goes into the Sentry extras, throttled. `features/web/webcrash.cpp` hands it to the page for `web/crashreport.js`.
 - `features/web/webhost.cpp`: the file offerer downloads what the registry writes (`Module.fuaOfferFile`).
 - `d_main.cpp`: `SetSoakReady` from `D_WipeRunning` and the frames since a wipe (`features/mainloop`'s `ComputeAtRestAfterWipe`).

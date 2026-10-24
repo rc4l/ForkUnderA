@@ -27,6 +27,9 @@ simply repopulating within a minute.
 - `sv_serverregistry.cpp` — announces this server to its registry, and answers the launcher
   queries that follow. Was `sv_master.cpp`; Zandronum-only, with no UZDoom counterpart (it
   appears zero times in the tracked upstream history), so it carries no re-sync cost here.
+- A launcher query is answered up to `sv_fua_queriesperaddress` (4) times per address within
+  `sv_queryignoretime`, then ignored (`computation/querylimit_compute`). It was once, so the second of two
+  players behind one address never saw the server listed (`waddownload`'s two clients at once).
 
 ## "It shows up on LAN but not in the public list"
 

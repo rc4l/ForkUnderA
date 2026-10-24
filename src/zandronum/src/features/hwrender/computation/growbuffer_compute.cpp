@@ -21,4 +21,17 @@ unsigned int ComputePieceCapacity(unsigned int levelPieces, unsigned int dynamic
 	return ComputeGrownCapacity(levelPieces, dynamic > kDynamicRecordsAtLeast ? dynamic : kDynamicRecordsAtLeast);
 }
 
+size_t ComputeUploadFlushBudget(bool deviceMade, bool webgpu)
+{
+	return deviceMade && webgpu ? kUploadFlushBytes : 0;
+}
+
+bool ComputeUploadFlushDue(size_t &sinceFlush, size_t added, size_t budget)
+{
+	sinceFlush += added;
+	if (budget == 0 || sinceFlush < budget) return false;
+	sinceFlush = 0;
+	return true;
+}
+
 }} // namespace zx::hwrender

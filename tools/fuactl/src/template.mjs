@@ -12,6 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
+import { launchNetplay, closeNetplay, seamViolations, replicationMisses } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -29,6 +30,9 @@ export function vantageCommands(side) {
 
 // [rc4l] The two launches a template compares by default; a scenario may name its own, each with the cvars it sets.
 export const GL_VS_VULKAN = [{ name: "gl", gl: true }, { name: "vk", gl: false }];
+
+// [rc4l] Vulkan with the scene pinned at full scale against at half (features/dynres), for a pass that must land at half scale where it does at full.
+export const FULL_VS_HALF = [{ name: "full", cvars: { fua_dg_dynres_force: 1 } }, { name: "half", cvars: { fua_dg_dynres_force: 0.5 } }];
 
 // [rc4l] Whether a box's difference passes: at most its ceiling, and at least its floor when it must change.
 export function boxWithin(d, { ceiling, floor }) {
@@ -138,6 +142,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
 
 // [rc4l] A scenario's options with cvars added to one named side, for running a regression test under the behaviour it guards against.
 export function withSideCvars(opts, sideName, cvars) {
+  if (opts.configs) return withConfigCvars(opts, sideName, cvars);
   const sides = opts.sides || GL_VS_VULKAN;
   if (!sides.some((s) => s.name === sideName)) throw new Error(`${opts.name} has no side ${sideName} (${sides.map((s) => s.name).join(", ")})`);
   return { ...opts, sides: sides.map((s) => (s.name === sideName ? { ...s, cvars: { ...(s.cvars || {}), ...cvars } } : s)) };
@@ -165,7 +170,14 @@ export function matrixAdjust(cvars, adjust = (o) => o) {
 
 // [rc4l] withSideCvars for a whole run: a scenario without that side gives null, to be skipped rather than end the run.
 export function sideAdjust(sideName, cvars) {
-  return (opts) => ((opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);
+  return (opts) => ((opts.configs || opts.sides || GL_VS_VULKAN).some((s) => s.name === sideName) ? withSideCvars(opts, sideName, cvars) : null);
+}
+
+// [rc4l] A netplay scenario's options with cvars added to one named configuration, on its server and its clients alike (a fault knob does nothing on the side it does not apply to).
+export function withConfigCvars(opts, configName, cvars) {
+  if (!opts.configs.some((c) => c.name === configName)) throw new Error(`${opts.name} has no configuration ${configName} (${opts.configs.map((c) => c.name).join(", ")})`);
+  return { ...opts, configs: opts.configs.map((c) => (c.name === configName
+    ? { ...c, serverCvars: { ...(c.serverCvars || {}), ...cvars }, clientCvars: { ...(c.clientCvars || {}), ...cvars } } : c)) };
 }
 
 // [rc4l] The mean |d| every box is held to when WebGPU is judged against Vulkan: the same backend over two APIs, so near the same picture.
@@ -173,6 +185,7 @@ export const WEBGPU_CEILING = 1.5;
 
 // [rc4l] A scenario on WebGPU, by how it judges: two launches compare its first Vulkan side on each without GL, each box at WEBGPU_CEILING with no floor; one launch judged against itself (a counter, a picture over time) runs on WebGPU alone with its own limits; skipped, with the reason, when it judges GL and the backend in one frame or needs ray tracing; null with no Vulkan side of its own.
 export function webgpuOptions(opts, compare = compareTemplate) {
+  if (compare.netgame) return { skip: "it judges a netgame of locked Vulkan clients, which --webgpu does not change" };
   if (compare === compareSameFrame) return { skip: "it judges GL and the backend in one frame, and a WebGPU launch has no GL" };
   if ((opts.needs || []).includes("raytracing")) return { skip: "it needs ray tracing, which WebGPU lacks" };
   if ((opts.needs || []).includes("readback")) return { skip: "it reads each presented frame back at once, which WebGPU does only later" };
@@ -311,8 +324,6 @@ export function judgeSoak(label, { pass, marks, judged, grew = [] }) {
 // [rc4l] Each side launched on each map repeats the scenario's soak action (reload unless it names another, or builds one from the launch's { wadPath, iwad }) and passes when the engine judges that no memory, object, handle or thread count kept growing: for a leak, which no frame shows.
 export function compareSoak(opts) {
   return eachLaunch(opts, async (c, inst, label, files) => {
-    // [rc4l] A window without focus presents nothing, and the backend frees what it let go of only after a present, so an unfocused launch reads as a leak.
-    await cap.exec(c, "fua_render_in_background 1");
     await cap.waitTics(c, opts.settleTics ?? 35);
     const action = typeof opts.action === "function" ? opts.action(files) : opts.action ?? "reload";
     return judgeSoak(label, await runSoak(c, { action, cycles: opts.cycles ?? 6, warmup: opts.warmup ?? 1, settleMs: opts.settleMs ?? 4000, ignore: opts.ignore ?? [] }));
@@ -321,7 +332,7 @@ export function compareSoak(opts) {
 
 // [rc4l] A scenario's verdict as printed lines and an exit code: 0 all under ceiling, 1 failed, 3 refused.
 export function scenarioOutcome(name, r) {
-  const summary = r.failed ? `${r.failed} failed` : `all ${name} boxes within their limits`;
+  const summary = r.failed ? `${r.failed} failed` : `all ${name} checks within their limits`;
   return { lines: [...r.lines, summary], code: r.refused ? 3 : r.failed ? 1 : 0 };
 }
 
@@ -356,13 +367,25 @@ export function templateScenarioFiles(dir, names = []) {
     && fs.readFileSync(path.join(dir, f), "utf8").includes("runScenarioIfMain("));
 }
 
-// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; argv[2] is the port.
+// [rc4l] A direct run's arguments: the port given bare and the engine given as --engine PATH, which a direct run ignored and so drove the staged binary.
+export function directRunArgs(argv) {
+  const out = { port: null, engine: null };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--engine" && i + 1 < argv.length) out.engine = argv[++i];
+    else if (/^\d+$/.test(argv[i])) out.port = Number(argv[i]);
+  }
+  return out;
+}
+
+// [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; directRunArgs reads its port and engine.
 export function runScenarioIfMain(metaUrl, options, compare = compareTemplate) {
   if (!isMain(metaUrl)) { registered.set(metaUrl, { options, compare }); return; }
+  const direct = directRunArgs(process.argv.slice(2));
+  if (direct.engine) process.env.FUACTL_ENGINE = direct.engine;
   const opts = options();
   // [rc4l] Named up front, since a scenario run directly takes the staged binary unless FUACTL_ENGINE says otherwise.
   console.log(`engine ${resolveEngine()}`);
-  compare({ ...opts, port: Number(process.argv[2] || opts.port || 7796) }).then((r) => {
+  compare({ ...opts, port: direct.port || opts.port || 7796 }).then((r) => {
     const out = scenarioOutcome(opts.name, r);
     for (const l of out.lines) console.log(l);
     process.exit(out.code);
@@ -485,4 +508,39 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 }
 
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
-for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch, compareHosted]) compare.judgedAlone = true;
+// [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
+export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
+  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
+  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
+  fs.writeFileSync(wadPath, wad);
+  const lines = [];
+  let failed = 0;
+  for (const map of maps) for (const config of configs) {
+    // [rc4l] A config naming its maps runs on those alone.
+    if (config.maps && !config.maps.includes(map)) continue;
+    const label = `${map} ${config.name}`;
+    let set = null;
+    try {
+      set = await launch({ iwad, map, files: [wadPath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "",
+        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: config.clientCvars || {}, broadcast: !!config.broadcast });
+      const r = await judgeNetplay(set, label, { wadPath, iwad, map, config });
+      lines.push(...(r.lines || [r.line]));
+      failed += r.failed;
+      // [rc4l] And the netcode stayed on the threads its seams name, on every instance.
+      const crossed = await seams(set);
+      if (crossed.length) { lines.push(`FAIL ${label}: ${crossed.join("; ")}`); failed++; }
+      // [rc4l] And every map change it sent went out the tic it happened.
+      const late = await replication(set);
+      if (late) { lines.push(`FAIL ${label}: ${late}`); failed++; }
+    } catch (e) {
+      lines.push(`FAIL ${label}: ${e.message}`);
+      failed++;
+    } finally {
+      if (set) await close(set);
+    }
+  }
+  return { lines, failed };
+}
+compareNetplay.netgame = true;
+
+for (const compare of [compareCounter, compareOverTime, compareSequence, compareQuit, compareSoak, compareEachLaunch, compareHosted, compareNetplay]) compare.judgedAlone = true;

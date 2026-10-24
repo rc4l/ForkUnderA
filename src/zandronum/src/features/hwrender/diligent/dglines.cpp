@@ -147,14 +147,21 @@ void DrawHitboxes(Diligent::IDeviceContext *ctx)
 	{
 		Diligent::MapHelper<float> cb(ctx, g_lineCB, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int i = 0; i < 16; i++) cb[i] = mvp[i];
-		cb[16] = (float)FrameWidth(); cb[17] = (float)FrameHeight(); cb[18] = widthPx; cb[19] = 0.f;
+		// [rc4l] In the scene's pixels, a line keeping its width on the screen when the scene is drawn below full scale (features/dynres).
+		cb[16] = (float)SceneWidth(); cb[17] = (float)SceneHeight(); cb[18] = widthPx * (float)SceneWidth() / (float)FrameWidth(); cb[19] = 0.f;
 	}
 	// [rc4l] Over the player's view, tested against its depth as GL draws them at the end of its translucent pass.
-	Diligent::ITextureView *rtv = FrameRTV();
+	Diligent::ITextureView *rtv = SceneRTV();
 	Diligent::ITextureView *dsv = EnsureSceneDepth();
 	if (!dsv) dsv = FrameDSV();
 	if (!rtv) return;
 	ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	{
+		Diligent::Viewport vp;
+		vp.Width = (float)SceneWidth(); vp.Height = (float)SceneHeight();
+		vp.MinDepth = 0.f; vp.MaxDepth = 1.f;
+		ctx->SetViewports(1, &vp, (Diligent::Uint32)FrameWidth(), (Diligent::Uint32)FrameHeight());
+	}
 	Diligent::IBuffer *vbs[] = { g_lineVB };
 	const Diligent::Uint64 offsets[] = { 0 };
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION, Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);

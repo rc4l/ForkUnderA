@@ -75,6 +75,7 @@
 IMPLEMENT_CLASS(OpenGLFrameBuffer)
 EXTERN_CVAR (Bool, vid_vsync)
 #include "features/video-scale/videoscale.h"
+#include "features/frame-limit/framelimit.h"   // [rc4l] WaitBeforePresent
 
 CVAR(Bool, gl_aalines, false, CVAR_ARCHIVE)
 
@@ -592,7 +593,11 @@ void OpenGLFrameBuffer::Swap()
 		//DoSetGamma();
 		needsetgamma = false;
 	}
-	if (!glIdle) SwapBuffers();
+	if (!glIdle)
+	{
+		zx::framelimit::WaitBeforePresent();
+		SwapBuffers();
+	}
 	Finish.Unclock();
 	swapped = true;
 	FHardwareTexture::UnbindAll();

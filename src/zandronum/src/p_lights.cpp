@@ -759,7 +759,8 @@ void DGlow2::Tick ()
 // [BC]
 void DGlow2::UpdateToClient( ULONG ulClient )
 {
-	SERVERCOMMANDS_DoSectorLightGlow2( ULONG( m_Sector - sectors ), m_Start, m_End, m_Tics, m_MaxTics, m_OneShot );
+	// [rc4l] To the joiner alone, as the other lights' updates go; it restarted the glow on every client at each join.
+	SERVERCOMMANDS_DoSectorLightGlow2( ULONG( m_Sector - sectors ), m_Start, m_End, m_Tics, m_MaxTics, m_OneShot, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]

@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { firefoxProfile, formatLogEntry, formatBidiEval, offScreenScript } from '../firefox.mjs';
+import { firefoxProfile, formatLogEntry, formatBidiEval, offScreenScript, smokeIn, smokeFirefox } from '../firefox.mjs';
+import { smoke } from '../smoke.mjs';
 import { scratch } from './scratch.mjs';
 
 // [rc4l] Headless Firefox offers no WebGPU adapter, so its window opens off the screen and silent, and stays unthrottled there.
@@ -18,6 +19,12 @@ test('a fresh Firefox profile opens its window off the screen, silent and unthro
   firefoxProfile(dir, { autoplay: true });
   assert.match(fs.readFileSync(path.join(dir, 'user.js'), 'utf8'), /user_pref\("media\.autoplay\.default", 0\);/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('each browser gets its own driver, and a misspelt one stops the run', () => {
+  assert.equal(smokeIn('chrome'), smoke);
+  assert.equal(smokeIn('firefox'), smokeFirefox);
+  assert.throws(() => smokeIn('ff'), /no driver for the browser "ff": chrome or firefox/);
 });
 
 test('BiDi log entries read as the console lines smoke gives', () => {

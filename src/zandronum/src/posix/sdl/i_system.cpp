@@ -753,7 +753,8 @@ bool I_WriteIniFailed ()
 	// return true to retry
 }
 
-static const char *pattern;
+// [rc4l] Per thread, since the wad library's and wad download's workers search folders while the main thread does.
+static thread_local const char *pattern;
 
 // [BB] Added FreeBSD checks
 #if ( defined(__APPLE__) && MAC_OS_X_VERSION_MAX_ALLOWED < 1080 ) || ( defined ( __FreeBSD__ ) && ( __FreeBSD__ < 8 ) )
@@ -994,16 +995,13 @@ void I_OpenURL (const char *url)
 #endif
 }
 
-// [rc4l] The background-render switch's two platform questions.
-//
-// SDL's CanUpdate never refused on focus and nothing here drops the process priority, so on this
-// platform the switch has nothing left to do: the window reports active and the priority is left
-// alone. Defined so the shared caller does not have to know which platform it is on.
+// [rc4l] Whether the window has focus, which is when SDL gives it the keyboard, a browser page's included since its focus and blur events move it.
 bool I_WindowIsActive ()
 {
-	return true;
+	return SDL_GetKeyboardFocus () != NULL;
 }
 
+// [rc4l] Nothing here drops the process priority, so the background-render switch leaves it alone.
 void I_UpdateBackgroundPriority ()
 {
 }

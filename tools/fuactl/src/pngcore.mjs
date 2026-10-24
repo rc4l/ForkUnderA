@@ -3,7 +3,11 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 
 export function decodePNG(path) {
-  const buf = fs.readFileSync(path);
+  return decodePNGBytes(fs.readFileSync(path));
+}
+
+// [rc4l] A PNG already in memory, such as a frame a browser page handed back.
+export function decodePNGBytes(buf) {
   let p = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
   const idat = [];
   let palette = null;

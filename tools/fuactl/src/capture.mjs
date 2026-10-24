@@ -120,12 +120,20 @@ export async function capturePerf(c, { frames = 300, warmup = 0 } = {}) {
   return done;
 }
 
-export async function waitInLevel(c, timeoutMs = scaled(20000)) {
+// [rc4l] gamestate's GS_INTERMISSION (doomdef.h), the tally between levels that waits for a key.
+export const GS_INTERMISSION = 1;
+
+// [rc4l] Waits for the instance to be in a level; pressThrough presses use at an intermission, as a player leaves the tally, which a level change by an exit waits on.
+export async function waitInLevel(c, timeoutMs = scaled(20000), { pressThrough = false, pollMs = 200 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const t = await c.rpc("sim.tic").catch(() => ({}));
     if (t.inlevel) return t;
-    await sleep(200);
+    if (pressThrough && t.gamestate === GS_INTERMISSION) {
+      await exec(c, "+use", { quietMs: 60 });
+      await exec(c, "-use", { quietMs: 60 });
+    }
+    await sleep(pollMs);
   }
   throw new Error("instance never reached GS_LEVEL");
 }

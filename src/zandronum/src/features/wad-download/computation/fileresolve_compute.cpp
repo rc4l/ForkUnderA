@@ -95,4 +95,16 @@ std::vector<ResolveStep> PlanFileResolve(const std::string &name, const std::str
 	return steps;
 }
 
+bool ComputeFileIsNamed(const std::string &path, const std::string &name)
+{
+	const size_t slash = path.find_last_of("/\\");
+	const std::string file = (slash == std::string::npos) ? path : path.substr(slash + 1);
+	return !name.empty() && PathKey(file) == PathKey(name);
+}
+
+bool ComputeSamePath(const std::string &a, const std::string &b)
+{
+	return PathKey(a) == PathKey(b);
+}
+
 } // namespace zx

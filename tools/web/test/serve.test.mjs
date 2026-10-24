@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveInRoot, createServer } from '../serve.mjs';
+import { resolveInRoot, serveLocally } from '../serve.mjs';
 import { ISOLATION_HEADERS } from '../headers.mjs';
 import { scratch } from './scratch.mjs';
 
@@ -22,9 +22,8 @@ test('every response carries the isolation headers', async () => {
   fs.writeFileSync(path.join(dir, 'index.html'), '<p>hi</p>');
   fs.mkdirSync(path.join(dir, 'sub'));
   fs.writeFileSync(path.join(dir, 'sub', 'index.html'), '<p>sub</p>');
-  const server = createServer(dir);
-  await new Promise(r => server.listen(0, '127.0.0.1', r));
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const { server, origin: base } = await serveLocally(dir);
+  assert.match(base, /^http:\/\/127\.0\.0\.1:\d+$/);
   try {
     const ok = await fetch(`${base}/`);
     assert.equal(ok.status, 200);

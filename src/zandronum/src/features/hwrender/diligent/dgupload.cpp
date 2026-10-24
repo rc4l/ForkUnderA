@@ -6,9 +6,16 @@
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] ComputePieceShader
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputePieceCapacity
 #include "features/telemetry/telemetry.h"
+#include <string.h>   // [rc4l] memcmp
+#include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsBound
+#include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLitRecord
+#include "features/hwrender/computation/uploadguard_compute.h"   // [rc4l] ComputeChangedRuns
+#include "features/levelmesh/captureshading.h"   // [rc4l] SectorLightEntryOf
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
+#include "c_dispatch.h"   // [rc4l] fua_dg_sectorlit_report
+#include "features/hwrender/computation/texflags_compute.h"   // [rc4l] kTexFlagSectorLit
 
 namespace zx { namespace hwrender {
 
@@ -38,6 +45,9 @@ void ReserveDynamicSlots()
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
 	for (int i = 0; i < npieces; i++) PieceSlots(pieces[i], pieces[i].translation, false);
 }
+
+// [rc4l] Level surfaces their sector's light reproduces are lit from the sector light table (fuaSectorLit); 0 bakes every surface's shading into its record, to compare against.
+CVAR(Bool, fua_dg_sectorlit, true, 0)
 
 // [rc4l] The piece's own record, written once. See ScenePieceData.
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh)
@@ -88,6 +98,43 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 		zx::decals::SurfaceRefusesMarks(base->id, wallPiece, wallPiece ? sides[p.linkId - numsubsectors].rc.Flags : 0);
 	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass, noMarks };
 	pd.texFlags = (float)zx::hwrender::ComputePieceTexFlags(tex);
+	// [rc4l] A flicker then rewrites its sector's entry in the table rather than this record.
+	if (inMesh && fua_dg_sectorlit && p.sectorLight.sector >= 0) zx::hwrender::ComputeSectorLitRecord(pd, p.sectorLight, p.sectorLitNoFog);
+}
+
+// [rc4l] How many of the level's surfaces are lit from the sector light table, and how many sectors it holds.
+CCMD(fua_dg_sectorlit_report)
+{
+	unsigned lit = 0;
+	for (unsigned i = 0; i < g_scene.pieces.Size(); i++)
+		if ((unsigned)g_scene.pieces[i].texFlags & zx::hwrender::kTexFlagSectorLit) lit++;
+	Printf("sector light table: %u of %u level surfaces lit from it, %d sectors (room for %u), %s\n", lit, g_scene.pieces.Size(),
+		numsectors, g_scene.sectorLightCapacity, fua_dg_sectorlit ? "on" : "off (fua_dg_sectorlit 0)");
+}
+
+void UpdateSectorLightTable(Diligent::IDeviceContext *ctx)
+{
+	ZX_ZONE("scene/sectorlight");   // [rc4l] the sector light table read from the render copy and its changes sent
+	if (!g_scene.sectorLightBuf || ctx == NULL || numsectors <= 0 || (unsigned)numsectors > g_scene.sectorLightCapacity) return;
+	static TArray<unsigned> now;
+	const unsigned words = (unsigned)numsectors * zx::levelmesh::kSectorLightWords;
+	now.Resize(words);
+	for (int i = 0; i < numsectors; i++)
+		zx::levelmesh::ComputeSectorLightWords(zx::levelmesh::SectorLightEntryOf(i), &now[(unsigned)i * zx::levelmesh::kSectorLightWords]);
+	TArray<unsigned> &was = g_scene.sectorLightWords;
+	if (was.Size() != words)
+	{
+		was = now;
+		UpdateBufferInPages(ctx, g_scene.sectorLightBuf, 0, (size_t)words * sizeof(unsigned), &now[0]);
+		return;
+	}
+	const unsigned stride = zx::levelmesh::kSectorLightWords;
+	for (const zx::hwrender::UploadRun &run : zx::hwrender::ComputeChangedRuns(&was[0], &now[0], (unsigned)numsectors, stride, 64))
+	{
+		memcpy(&was[run.first * stride], &now[run.first * stride], (size_t)run.count * stride * sizeof(unsigned));
+		UpdateBufferInPages(ctx, g_scene.sectorLightBuf, (unsigned long long)run.first * stride * sizeof(unsigned),
+			(size_t)run.count * stride * sizeof(unsigned), &now[run.first * stride]);
+	}
 }
 
 // [rc4l] Where each piece's vertices ended up, so a moved one can be patched instead of rebuilt.
@@ -149,13 +196,26 @@ static bool MakePieceBuffer(Diligent::IDeviceContext *ctx, unsigned int want)
 // [rc4l] The piece buffer made bigger before this frame's dynamic pieces are laid out, when they outnumber the records behind the level's: past them each sprite drew with the last record's material, and nuts.wad's 10,600 monsters showed as rows of one wrong monster.
 void EnsureDynamicRecords()
 {
-	int count = 0;
+	int count = 0, vertices = 0;
 	zx::levelmesh::DynPieces(count);
+	zx::levelmesh::DynVertices(vertices);
 	const unsigned int dynamic = (unsigned int)count;
 	if (dynamic > g_scene.dynPeak) g_scene.dynPeak = dynamic;
+	const unsigned int words = zx::hwrender::ComputeDynWordsBound(dynamic, (unsigned int)vertices);
+	if (words > g_scene.dynWordsPeak) g_scene.dynWordsPeak = words;
 	auto *ctx = GetContext();
-	if (!g_scene.pieceBuf || ctx == NULL || zx::hwrender::ComputeBufferFits(true, g_scene.pieceCapacity, g_scene.pieces.Size() + dynamic)) return;
-	if (!MakePieceBuffer(ctx, zx::hwrender::ComputePieceCapacity(g_scene.pieces.Size(), g_scene.dynPeak))) return;
+	if (!g_scene.pieceBuf || ctx == NULL) return;
+	bool remade = false;
+	if (!zx::hwrender::ComputeBufferFits(true, g_scene.pieceCapacity, g_scene.pieces.Size() + dynamic))
+		remade = MakePieceBuffer(ctx, zx::hwrender::ComputePieceCapacity(g_scene.pieces.Size(), g_scene.dynPeak));
+	// [rc4l] The dynamic words too, which EnsureScenePipeline makes again at the peak.
+	if (g_scene.dynDataBuf && words > g_scene.dynDataCapacity)
+	{
+		g_scene.dynDataBuf.Release();
+		g_scene.dynDataCapacity = 0;
+		remade = true;
+	}
+	if (!remade) return;
 	// [rc4l] A new buffer object, so the pipelines binding it statically are made again, as a level's upload does.
 	ReleaseScenePipelines();
 	FString err;
@@ -413,6 +473,8 @@ static bool BuildSceneBuffer(FString &err)
 
 	ReleaseBatchSRBs();
 	for (unsigned i = 0; i < g_scene.batches.Size(); i++) BatchSRB(g_scene.batches[i]);
+	// [rc4l] The decal pass's pipelines go whenever the scene's do (ReleaseScenePipelines), so they are made with the scene: made by the first floor or ceiling mark instead, they stalled that frame some 18 ms on every level.
+	EnsureDecalPipelines();
 	return true;
 }
 // See ReleaseMaterialSRBs. The batches keep raw copies of bindings they do not own.
@@ -430,6 +492,8 @@ bool SceneUpload(FString &report)
 	if (screen != NULL) Fua_SetBackendWindowSize(screen->GetWidth(), screen->GetHeight());
 	if (!DiligentShowWindow(err)) { report = err; return false; }
 	if (!EnsureScenePipeline(err)) { report = err; return false; }
+	// [rc4l] The level goes up in one frame, and a browser's device would keep a page for every 8 MB of it; asked once the window has made the device.
+	UploadFlushing flushing;
 	if (!BuildSceneBuffer(err)) { report = err; return false; }
 
 	g_scene.verts = (int)g_scene.cpuVerts.Size();
@@ -539,8 +603,8 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 		ScenePieceData pd;
 		FillPieceData(p, 0, pd, true);
 		g_scene.pieces.Push(pd);
-		ctx->UpdateBuffer(g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
-			sizeof(ScenePieceData), &pd, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		SendToBuffer(ctx, g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+			sizeof(ScenePieceData), &pd);
 	}
 	slot.blended = false;
 
@@ -556,9 +620,8 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 		if (dv.z > nb.maxZ) nb.maxZ = dv.z;
 		g_scene.cpuVerts.Push(dv);
 	}
-	ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 
 	const unsigned int idx = g_vbSlots.Push(slot);
 	g_slotByOffset.Insert(slot.meshOffset, idx);
@@ -580,9 +643,8 @@ static void RetireSlot(Diligent::IDeviceContext *ctx, VBSlot &slot)
 		SceneVertex &dv = g_scene.cpuVerts[slot.vbStart + v];
 		dv.x = dv.y = dv.z = 0.f;
 	}
-	ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 	slot.count = 0;   // nothing here to patch again
 }
 
@@ -605,9 +667,8 @@ static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
 	if (slot.pieceIndex >= g_scene.pieces.Size()) return false;
 
 	FillPieceData(p, 0, g_scene.pieces[slot.pieceIndex], true);
-	ctx->UpdateBuffer(g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
-		sizeof(ScenePieceData), &g_scene.pieces[slot.pieceIndex],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
+		sizeof(ScenePieceData), &g_scene.pieces[slot.pieceIndex]);
 
 	SceneBatch &nb = g_scene.batches[slot.batch];
 	for (unsigned int v = 0; v < p.range.count; v++)
@@ -627,9 +688,8 @@ static bool ReviveSlot(Diligent::IDeviceContext *ctx, VBSlot &slot,
 		SceneVertex &dv = g_scene.cpuVerts[slot.vbStart + v];
 		dv.x = dv.y = dv.z = 0.f;
 	}
-	ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-		(Diligent::Uint64)slot.capacity * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+		(Diligent::Uint64)slot.capacity * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 
 	slot.count = p.range.count;
 	slot.meshOffset = p.range.offset;
@@ -662,7 +722,25 @@ static void NoteBail(const zx::levelmesh::MeshPiece &p)
 
 void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 {
+	// [rc4l] First in the frame's preparation, and a rebuild sends the level's piece records again in one frame.
+	UploadFlushing flushing;
 	if (!g_scene.vb || g_scene.cpuVerts.Size() == 0) return;
+	// [rc4l] fua_dg_sectorlit changes how every level record is written, so its turn writes them all again.
+	static int sectorLitWritten = -1;
+	if (sectorLitWritten != (int)fua_dg_sectorlit)
+	{
+		const bool first = sectorLitWritten < 0;
+		sectorLitWritten = (int)fua_dg_sectorlit;
+		FString err;
+		if (!first && BuildSceneBuffer(err))
+		{
+			g_scene.verts = (int)g_scene.cpuVerts.Size();
+			g_pendingRepaints.Clear();
+			zx::levelmesh::MeshClearRepaints();
+			zx::levelmesh::MeshClearDirtyRanges();
+			return;
+		}
+	}
 
 	// [rc4l] Two questions, both answered by the mesh, neither of them "did a vertex move".
 	//
@@ -771,7 +849,15 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 				if (slotIdx == NULL || *slotIdx >= g_vbSlots.Size()) continue;
 				const VBSlot &slot = g_vbSlots[*slotIdx];
 				if (slot.count == 0 || slot.pieceIndex >= g_scene.pieces.Size()) continue;
-				FillPieceData(p, 0, g_scene.pieces[slot.pieceIndex], true);
+				// [rc4l] A record that comes out as the GPU already holds it, as an animation frame's does when SlotRemap carries the frame, is not sent again.
+				ScenePieceData pd;
+				FillPieceData(p, 0, pd, true);
+				if (memcmp(&pd, &g_scene.pieces[slot.pieceIndex], sizeof(pd)) == 0)
+				{
+					ZX_COUNT("gpu/repaint_same", "pieces", 1);
+					continue;
+				}
+				g_scene.pieces[slot.pieceIndex] = pd;
 				s_repaintSlots.Push(slot.pieceIndex);
 				g_stats.geomRepaints++;
 				g_stats.fRepaints++;
@@ -791,11 +877,11 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 						if (s_repaintSlots[i] > runEnd) runEnd = s_repaintSlots[i];
 						continue;
 					}
-					ctx->UpdateBuffer(g_scene.pieceBuf,
+					SendToBuffer(ctx, g_scene.pieceBuf,
 						(Diligent::Uint64)runStart * sizeof(ScenePieceData),
 						(Diligent::Uint64)(runEnd - runStart + 1) * sizeof(ScenePieceData),
-						&g_scene.pieces[runStart],
-						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+						&g_scene.pieces[runStart]);
+					ZX_COUNT("gpu/repaint_sent", "pieces", runEnd - runStart + 1);
 					g_stats.repaintRuns++;
 					g_stats.fRuns++;
 					if (!end) { runStart = runEnd = s_repaintSlots[i]; }
@@ -911,15 +997,13 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx)
 					if (slot.pieceIndex < g_scene.pieces.Size())
 					{
 						FillPieceData(*p, 0, g_scene.pieces[slot.pieceIndex], true);
-						ctx->UpdateBuffer(g_scene.pieceBuf,
+						SendToBuffer(ctx, g_scene.pieceBuf,
 							(Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData), sizeof(ScenePieceData),
-							&g_scene.pieces[slot.pieceIndex],
-							Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+							&g_scene.pieces[slot.pieceIndex]);
 					}
 					for (unsigned int v = 0; v < slot.count; v++) g_scene.cpuVerts[slot.vbStart + v] = moved[v];
-					ctx->UpdateBuffer(g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
-						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart],
-						Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+					SendToBuffer(ctx, g_scene.vb, (Diligent::Uint64)slot.vbStart * sizeof(SceneVertex),
+						(Diligent::Uint64)slot.count * sizeof(SceneVertex), &g_scene.cpuVerts[slot.vbStart]);
 					g_stats.geomPatchVerts += (int)slot.count;
 					g_stats.fPatchVerts += (int)slot.count;
 					patched++;

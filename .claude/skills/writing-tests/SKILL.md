@@ -71,6 +71,11 @@ bash tests/coverage.sh --auto
 
 - **LeakSanitizer is Linux-only**: on macOS ASan and UBSan run but leaks aren't reported, so rely on CI
   (Ubuntu, the full ASan+UBSan+LSan set) for leak checks.
+- **macOS 26 + Apple clang 17**: the CLT's ASan runtime deadlocks in its own init (`AsanInitInternal` →
+  `dyld_shared_cache_iterate_text_swift` → malloc → back into ASan), so every sanitized binary hangs
+  before `main` and CMake's discovery step deletes it as "timed out". Configure with Homebrew LLVM
+  instead: `CC=$(brew --prefix llvm)/bin/clang CXX=$(brew --prefix llvm)/bin/clang++ cmake -S tests
+  -B build-tests -DZANDROX_TESTS_SANITIZE=ON`. CI's `macos-latest` is unaffected.
 - Coverage needs the **Clang** toolchain (llvm-cov); `coverage.sh` forces it.
 
 ## Run it locally (Windows)

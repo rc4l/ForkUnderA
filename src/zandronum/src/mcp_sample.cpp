@@ -6,6 +6,7 @@
 // touch thread handles and dbghelp.
 
 #include "mcp_sample.h"
+#include "mcp_bridge.h"   // [rc4l] MCP_Crash_GameThreadForSampling
 
 #ifdef FUA_MCP_BRIDGE
 
@@ -254,7 +255,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 
 } // namespace
 
-bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks )
+bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks, bool gameThread )
 {
 #ifdef _WIN32
 	{
@@ -270,24 +271,36 @@ bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMi
 	// pseudo-handle that means "whoever is asking", so handing it to another thread would have the
 	// sampler suspend ITSELF. The duplicate is closed by the run.
 	HANDLE thread = NULL;
-	if ( !DuplicateHandle( GetCurrentProcess( ), GetCurrentThread( ),
-		GetCurrentProcess( ), &thread,
-		THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0 ))
+	ULONG_PTR stackLow = 0, stackHigh = 0;
+	// [rc4l] The game thread's handle and stack top come from the crash module, which took them on that thread.
+	void *game = NULL;
+	unsigned long long gameStackHigh = 0;
+	const bool armed = gameThread
+		? MCP_Crash_GameThreadForSampling( &game, &gameStackHigh )
+		: DuplicateHandle( GetCurrentProcess( ), GetCurrentThread( ), GetCurrentProcess( ), &thread,
+			THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0 ) != FALSE;
+	if ( !armed )
 	{
 		std::lock_guard<std::mutex> guard( g_lock );
 		g_running = false;
 		return false;
 	}
-
-	// [rc4l] The top of the main thread's stack, read here on that thread, which bounds every walk of it.
-	ULONG_PTR stackLow = 0, stackHigh = 0;
-	GetCurrentThreadStackLimits( &stackLow, &stackHigh );
+	if ( gameThread )
+	{
+		thread = (HANDLE)game;
+		stackHigh = (ULONG_PTR)gameStackHigh;
+	}
+	else
+	{
+		// [rc4l] The top of the main thread's stack, read here on that thread, which bounds every walk of it.
+		GetCurrentThreadStackLimits( &stackLow, &stackHigh );
+	}
 
 	std::thread( SampleRun, thread, seconds, hz, engineOnly, top, ticMin, ticMax, stacks, (DWORD64)stackHigh ).detach( );
 	return true;
 #else
 	// mac and Linux keep the external samplers, which walk the whole stack and see every thread.
-	(void)seconds; (void)hz; (void)engineOnly; (void)top; (void)ticMin; (void)ticMax; (void)stacks;
+	(void)seconds; (void)hz; (void)engineOnly; (void)top; (void)ticMin; (void)ticMax; (void)stacks; (void)gameThread;
 	return false;
 #endif
 }

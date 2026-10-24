@@ -30,6 +30,18 @@ void ComputeUploadChunks(size_t bytes, size_t chunk, Write write)
 	for (size_t at = 0; at < bytes; at += chunk) write(at, bytes - at < chunk ? bytes - at : chunk);
 }
 
+// [rc4l] The size of a WebGPU device's upload pages, which dgdevice_wgpu.cpp gives Diligent.
+const size_t kWebGPUUploadPageBytes = 8u << 20;
+
+// [rc4l] The bytes a browser's context takes into upload pages between flushes during a level's upload, half a page, since every page one frame needs stays in Diligent's pool for good.
+const size_t kUploadFlushBytes = kWebGPUUploadPageBytes / 2;
+
+// [rc4l] The flush budget while uploads are flushed: kUploadFlushBytes on a browser's device, none on another, nor before a device is made, as at a level's first upload, which made the window and the device itself.
+size_t ComputeUploadFlushBudget(bool deviceMade, bool webgpu);
+
+// [rc4l] Adds added to the bytes sent since the last flush and says whether one is due at budget (never at 0), counting from nothing again when it is.
+bool ComputeUploadFlushDue(size_t &sinceFlush, size_t added, size_t budget);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_GROWBUFFER_COMPUTE_H

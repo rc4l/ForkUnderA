@@ -289,6 +289,8 @@ void	SERVERCOMMANDS_DoSectorLightPhased( ULONG ulSector, LONG lBaseLevel, LONG l
 // Line commands. These have something to do with lines.
 void	SERVERCOMMANDS_SetLineAlpha( ULONG ulLine, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetLineTexture( ULONG ulLine, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [rc4l] The line's textures named by ulParts, bit side * 3 + position (TEXCHANGE_*'s order).
+void	SERVERCOMMANDS_SetLineTextureParts( ULONG ulLine, ULONG ulParts, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetLineTextureByID( ULONG ulLineID, ULONG ulSide, ULONG ulPosition, const char *pszTexName, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetLineTextureOffset( ULONG ulLine, ULONG ulSide, ULONG ulPosition, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetLineTextureOffsetByID( ULONG ulLineID, fixed_t XOffset, fixed_t YOffset, ULONG ulSide, ULONG ulFlags, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );

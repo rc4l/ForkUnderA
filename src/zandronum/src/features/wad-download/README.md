@@ -259,7 +259,9 @@ used the **PWAD** path and never saw Steam. A player who bought Doom II on Steam
 `doom2.wad` server, we failed to find an IWAD the engine locates at startup without trouble, and
 substituted Freedoom — telling someone who owns the game that they don't. `zx_wadsearch.h` is the
 fix: after `D_AddFile` misses on an IWAD, walk `IWADSearch.Directories` and the Steam libraries the
-same way `IdentifyVersion` does, and only then consider substituting.
+same way `IdentifyVersion` does, and only then consider substituting. The IWAD the game is running
+counts first, wherever it was loaded from (`RunningIwadWadnum`, `ComputeFileIsNamed`): a player started
+with `-iwad` from another folder was told to download the file in use (`waddownload`).
 
 `config/waddirectories.txt` adds the folders other Doom tools use — Doomseeker/Wadseeker's
 download target (`DataPaths::localDataLocationPath()`, plus its older `.doomseeker` layout) and

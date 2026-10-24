@@ -57,6 +57,8 @@ public:
 	// [rc4l] GetDecal with a group's choice drawn from `choice`, for marks the game's own stream never drew for.
 	virtual const FDecalTemplate *GetDecalWith (FRandom &choice) const { (void)choice; return GetDecal (); }
 	virtual void ReplaceDecalRef (FDecalBase *from, FDecalBase *to) = 0;
+	// [rc4l] The node as a template, NULL for a group, which GetDecal would answer with a random choice.
+	virtual const FDecalTemplate *AsTemplate () const { return NULL; }
 	
 	// [TP]
 	FName GetName() const { return Name; }
@@ -81,6 +83,7 @@ public:
 	// [rc4l] ApplyToDecal with its random flips drawn from `flips`, so a floor mark leaves the game's stream where it was.
 	void ApplyToDecal (DBaseDecal *actor, side_t *wall, FRandom &flips) const;
 	const FDecalTemplate *GetDecal () const;
+	const FDecalTemplate *AsTemplate () const { return this; }
 	void ReplaceDecalRef (FDecalBase *from, FDecalBase *to);
 
 	fixed_t ScaleX, ScaleY;
@@ -108,8 +111,11 @@ public:
 
 	const FDecalTemplate *GetDecalByNum (WORD num) const;
 	const FDecalTemplate *GetDecalByName (const char *name) const;
+	// [rc4l] Every template the library holds, for a level's precache of the graphics its marks draw with.
+	void ForEachTemplate (void (*fn)(const FDecalTemplate *, void *), void *data) const;
 
 private:
+	static void WalkTemplates (const FDecalBase *root, void (*fn)(const FDecalTemplate *, void *), void *data);
 	struct FTranslation;
 
 	static void DelTree (FDecalBase *root);

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 rc4l
 #
-# [rc4l] Boundary tripwire (python3 tools/boundary_tripwire.py): the renderer reads the game only through features/gamecopy and the game leaves the renderer and UI alone, each rule in tools/boundary-rules.json with an allowance per file in tools/boundary-allow.json that may only shrink; --update lowers allowances to what is left, --init writes them the first time, --doc rewrites the generated boundary sections of the READMEs.
+# [rc4l] Boundary tripwire (python3 tools/boundary_tripwire.py): the renderer reads the game only through features/gamecopy, the game leaves the renderer and UI alone and the rest of the engine reaches the netcode through its modules, each rule in tools/boundary-rules.json with an allowance per file in tools/boundary-allow.json that may only shrink; --update lowers allowances to what is left, --init writes them the first time, --doc rewrites the generated boundary sections of the READMEs.
 import fnmatch
 import json
 import os
@@ -125,14 +125,30 @@ def exempted(text, rule):
     return text
 
 
+OWNS = re.compile(r'^## Owns[ \t]*$(.*?)(?=^## |\Z)', re.M | re.S)
+
+
+def owned_paths(rule, files):
+    """[rc4l] For a rule naming `owners` READMEs, each one's folder and every path its `## Owns` section lists in backticks; a README missing or without the section stops the check."""
+    out = []
+    for readme in rule.get('owners', []):
+        section = OWNS.search(files.get(readme, ''))
+        if section is None:
+            raise SystemExit('boundary-tripwire: rule %s names %s, which has no "## Owns" section' % (rule['name'], readme))
+        out.append(readme.rsplit('/', 1)[0] + '/')
+        out += re.findall(r'`([^`\s]+)`', section.group(1))
+    return out
+
+
 def counts(rules, files):
     """[rc4l] {rule: {file: matches}} for every file each rule covers that matches at all."""
     out = {}
     for rule in rules:
         patterns = [re.compile(p['regex']) for p in rule.get('patterns', []) + field_patterns(rule, files) + write_patterns(rule, files)]
+        exclude = rule.get('exclude', []) + owned_paths(rule, files)
         hits = {}
         for rel in sorted(files):
-            if not rel.endswith(CODE) or not in_set(rel, rule['files']) or in_set(rel, rule.get('exclude', [])):
+            if not rel.endswith(CODE) or not in_set(rel, rule['files']) or in_set(rel, exclude):
                 continue
             text = exempted(selected(code_only(files[rel])), rule)
             n = sum(len(p.findall(text)) for p in patterns)
@@ -275,7 +291,7 @@ def main(argv):
             for rel, n in sorted(hits.items(), key=lambda kv: -kv[1]):
                 print('  %5d  %s' % (n, rel))
     if problems:
-        print('BOUNDARY TRIPWIRE: code crosses the game/renderer boundary outside its allowance (tools/boundary-rules.json says why each rule exists):', file=sys.stderr)
+        print('BOUNDARY TRIPWIRE: code crosses a boundary outside its allowance (tools/boundary-rules.json says why each rule exists):', file=sys.stderr)
         for line in problems:
             print(line, file=sys.stderr)
         return 1

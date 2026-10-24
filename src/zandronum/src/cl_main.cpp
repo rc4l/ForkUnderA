@@ -148,6 +148,12 @@
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
+#include "features/latency/latency.h"   // [rc4l] latency/ counters
+#include "features/net-protocol/lineflags.h"   // [rc4l] the line flags a server sends
+#include "features/net-client/netclient.h"   // [rc4l] the packets applied, for the render copy
+#include "features/net-client/rejoin.h"   // [rc4l] a player the map command sent back comes back playing
+#include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
+#include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -404,7 +410,8 @@ static	LONG				g_lPacketSequence[PACKET_BUFFER_SIZE];
 static	LONG				g_lPacketSize[PACKET_BUFFER_SIZE];
 
 // This is the index of the incoming packet.
-static	BYTE				g_bPacketNum;
+// [rc4l] Wide enough for every slot, where a BYTE wrapped at 256 and the ring kept an eighth of what it holds.
+static	ULONG				g_ulPacketNum;
 
 // This is the current position in the received packet buffer.
 static	LONG				g_lCurrentPosition;
@@ -904,7 +911,7 @@ void CLIENT_AttemptConnection( void )
 	g_bServerLagging = false;
 	g_bClientLagging = false;
 
-	g_bPacketNum = 0;
+	g_ulPacketNum = 0;
 	g_lCurrentPosition = 0;
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
@@ -918,8 +925,10 @@ void CLIENT_AttemptConnection( void )
 	g_LocalBuffer.ByteStream.WriteByte( CLCC_ATTEMPTCONNECTION );
 	g_LocalBuffer.ByteStream.WriteString( DOTVERSIONSTR );
 	g_LocalBuffer.ByteStream.WriteString( cl_password );
-	g_LocalBuffer.ByteStream.WriteByte( cl_connect_flags );
-	g_LocalBuffer.ByteStream.WriteByte( NETGAMEVERSION );
+	// [rc4l] features/net-client: a player the map command sent back asks to play again.
+	g_LocalBuffer.ByteStream.WriteByte( zx::netclient::ConnectFlags( cl_connect_flags ));
+	// [rc4l] The whole revision, where its low byte let one mismatched build in 256 through to misread the wire.
+	g_LocalBuffer.ByteStream.WriteLong( GetRevisionNumber( ));
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
 
 	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one
@@ -941,7 +950,7 @@ void CLIENT_AttemptAuthentication( char *pszMapName )
 	Printf( "Authenticating level...\n" );
 
 	memset( g_lPacketSequence, -1, sizeof(g_lPacketSequence) );
-	g_bPacketNum = 0;
+	g_ulPacketNum = 0;
 
 	g_LocalBuffer.ByteStream.WriteByte( CLCC_ATTEMPTAUTHENTICATION );
 
@@ -969,7 +978,7 @@ void CLIENT_RequestSnapshot( void )
 	Printf( "Requesting snapshot...\n" );
 
 	memset( g_lPacketSequence, -1, sizeof (g_lPacketSequence) );
-	g_bPacketNum = 0;
+	g_ulPacketNum = 0;
 
 	// Send them a message to get data from the server, along with our userinfo.
 	g_LocalBuffer.ByteStream.WriteByte( CLCC_REQUESTSNAPSHOT );
@@ -1047,7 +1056,7 @@ void CLIENT_GetPackets( void )
 			pByteStream->pbStream = pSavedStream;
 
 			const zx::LauncherCommands commands = {
-				SERVER_LAUNCHER_CHALLENGE, SERVER_LAUNCHER_CHALLENGE_SEGMENTED };
+				SERVER_LAUNCHER_CHALLENGE, SERVER_LAUNCHER_CHALLENGE_SEGMENTED, SERVER_LAUNCHER_IGNORING };
 			bLauncherReply = zx::ShouldRouteToBrowser( bAwaiting, lPeeked, commands );
 		}
 
@@ -1297,7 +1306,9 @@ void CLIENT_CheckForMissingPackets( void )
 		if (( g_lHighestReceivedSequence - g_lLastParsedSequence ) >= PACKET_BUFFER_SIZE )
 		{
 			FString quitMessage;
-			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets. Unable to recover.", PACKET_BUFFER_SIZE );
+			// [rc4l] With the two sequences, so a log says whether the server ran ahead or the client never parsed its first packet.
+			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets (last parsed %d, highest received %d). Unable to recover.", PACKET_BUFFER_SIZE,
+				static_cast<int>( g_lLastParsedSequence ), static_cast<int>( g_lHighestReceivedSequence ));
 			CLIENT_QuitNetworkGame( quitMessage.GetChars() );
 			return;
 		}
@@ -1363,15 +1374,19 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 
 	// If this is an unreliable packet, just break out of here and begin parsing it. There's no
 	// need to store it.
-	if ( lCommand == SVC_UNRELIABLEPACKET )
+	const zx::netclient::PacketHeaderKind kind = zx::netclient::ComputePacketHeaderKind( lCommand, SVC_HEADER, SVC_UNRELIABLEPACKET );
+	if ( kind == zx::netclient::kPacketUnreliable )
 		return ( true );
-	else
+	// [rc4l] A packet with neither header carries no sequence; reading one from its body set the highest sequence to garbage, which ends the game as 2048 packets missing.
+	if ( kind == zx::netclient::kPacketStray )
 	{
-		// Read in the sequence. This is the # of the packet the server has sent us.
-		lSequence = pByteStream->ReadLong();
+		Printf( "CLIENT_ReadPacketHeader: WARNING! Expected SVC_HEADER or SVC_UNRELIABLEPACKET, got %d in a %d-byte packet; dropped it\n",
+			static_cast<int>( lCommand ), static_cast<int>( NETWORK_GetNetworkMessageBuffer( )->CalcSize( )));
+		return ( false );
 	}
-	if ( lCommand != SVC_HEADER )
-		Printf( "CLIENT_ReadPacketHeader: WARNING! Expected SVC_HEADER or SVC_UNRELIABLEPACKET!\n" );
+
+	// Read in the sequence. This is the # of the packet the server has sent us.
+	lSequence = pByteStream->ReadLong();
 
 	// Check to see if we've already received this packet. If so, skip it.
 	for ( lIdx = 0; lIdx < PACKET_BUFFER_SIZE; lIdx++ )
@@ -1384,19 +1399,33 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 	if (( g_lCurrentPosition + ( NETWORK_GetNetworkMessageBuffer( )->CalcSize())) >= g_ReceivedPacketBuffer.lMaxSize )
 		g_lCurrentPosition = 0;
 
+	// [rc4l] A slot whose bytes this packet overwrites holds it no longer, so it is forgotten and asked for again if it was still awaited.
+	for ( lIdx = 0; lIdx < PACKET_BUFFER_SIZE; lIdx++ )
+	{
+		if (( lIdx != static_cast<LONG>( g_ulPacketNum )) && ( g_lPacketSequence[lIdx] != -1 ) && zx::netclient::ComputeOverwritesSlot( g_lPacketBeginning[lIdx],
+			g_lPacketSize[lIdx], g_lCurrentPosition, NETWORK_GetNetworkMessageBuffer( )->CalcSize()))
+		{
+			g_lPacketSequence[lIdx] = -1;
+		}
+	}
+
 	// Save a bunch of information about this incoming packet.
-	g_lPacketBeginning[g_bPacketNum] = g_lCurrentPosition;
-	g_lPacketSize[g_bPacketNum] = NETWORK_GetNetworkMessageBuffer( )->CalcSize();
-	g_lPacketSequence[g_bPacketNum] = lSequence;
+	g_lPacketBeginning[g_ulPacketNum] = g_lCurrentPosition;
+	g_lPacketSize[g_ulPacketNum] = NETWORK_GetNetworkMessageBuffer( )->CalcSize();
+	g_lPacketSequence[g_ulPacketNum] = lSequence;
 
 	// Save the received packet.
-	memcpy( g_ReceivedPacketBuffer.abData + g_lPacketBeginning[g_bPacketNum], NETWORK_GetNetworkMessageBuffer( )->ByteStream.pbStream, NETWORK_GetNetworkMessageBuffer( )->CalcSize());
+	memcpy( g_ReceivedPacketBuffer.abData + g_lPacketBeginning[g_ulPacketNum], NETWORK_GetNetworkMessageBuffer( )->ByteStream.pbStream, NETWORK_GetNetworkMessageBuffer( )->CalcSize());
 	g_lCurrentPosition += NETWORK_GetNetworkMessageBuffer( )->CalcSize();
 
+	// [rc4l] A jump this big is a server whose sequence restarted or ran on without us, which ends the game once it passes PACKET_BUFFER_SIZE.
+	if ( lSequence > g_lHighestReceivedSequence + 256 )
+		Printf( "CLIENT_ReadPacketHeader: WARNING! sequence jumped from %d to %d (last parsed %d)\n", static_cast<int>( g_lHighestReceivedSequence ),
+			static_cast<int>( lSequence ), static_cast<int>( g_lLastParsedSequence ));
 	if ( lSequence > g_lHighestReceivedSequence )
 		g_lHighestReceivedSequence = lSequence;
 
-	g_bPacketNum++;
+	g_ulPacketNum = zx::netclient::ComputeNextPacketSlot( g_ulPacketNum, PACKET_BUFFER_SIZE );
 
 	return ( false );
 }
@@ -1405,7 +1434,13 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 //
 void CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket )
 {
+	ZX_SEAM( "net/parse", Main );
 	LONG	lCommand;
+
+	// [rc4l] features/latency: a server packet applied, which the next frame to end draws.
+	zx::latency::NotePacketApplied();
+	// [rc4l] And the render copy takes it, which no longer refills every frame.
+	zx::netclient::NoteParsedPacket();
 
 	// We're currently parsing a packet.
 	g_bIsParsingPacket = true;
@@ -2241,7 +2276,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			case SVC2_SCROLL3DMIDTEX:
 				{
-					const int i = pByteStream->ReadByte();
+					const int i = pByteStream->ReadLong();
 					const int move = pByteStream->ReadLong();
 					const bool ceiling = !!pByteStream->ReadByte();
 
@@ -2301,12 +2336,12 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			case SVC2_SETTHINGHEALTH:
 				{
 					const unsigned short netID = pByteStream->ReadShort();
-					const int health = pByteStream->ReadByte();
+					const int health = pByteStream->ReadLong();
 					AActor* mo = CLIENT_FindThingByNetID( netID );
 
 					if ( mo == NULL )
 					{
-						CLIENT_PrintWarning( "SVC2_SETTHINGSPECIAL: Couldn't find thing: %u\n", netID );
+						CLIENT_PrintWarning( "SVC2_SETTHINGHEALTH: Couldn't find thing: %u\n", netID );
 						break;
 					}
 
@@ -2626,6 +2661,7 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// [rc4l] Every way of leaving a server is the same way of leaving. The gate decides whether this
 	// teardown is one at all -- a join tidying up on its way in, and a reconnect, are not.
 	zx::Continue_NoteLeftServer( );
+	zx::netclient::ForgetRejoin( );
 
 	if ( pszString )
 		Printf( "%s\n", pszString );
@@ -3563,6 +3599,7 @@ void ServerCommands::EndSnapshot::Execute()
 {
 	// We're all done! Set the new client connection state to active.
 	CLIENT_SetConnectionState( CTS_ACTIVE );
+	zx::netclient::ForgetRejoin( );
 
 	// [rc4l] Remember this server, whichever way we got here.
 	//
@@ -7291,8 +7328,9 @@ void ServerCommands::SetLineTextureScaleByID::Execute()
 //
 void ServerCommands::SetSomeLineFlags::Execute()
 {
-	line->flags &= ~(ML_BLOCKING|ML_BLOCK_PLAYERS|ML_BLOCKEVERYTHING|ML_RAILING|ML_ADDTRANS);
-	line->flags |= blockFlags;
+	// [rc4l] The same flags the server sends, replaced whole.
+	line->flags &= ~zx::netprotocol::kClientLineFlags;
+	line->flags |= ( blockFlags & zx::netprotocol::kClientLineFlags );
 }
 
 //*****************************************************************************
@@ -7555,6 +7593,9 @@ void ServerCommands::MapNew::Execute()
 
 	// [AK] We're reconnecting so we don't have RCON access anymore.
 	g_HasRCONAccess = false;
+
+	// [rc4l] features/net-client: whether we come back playing, read while the player list still says.
+	zx::netclient::NoteMapNew( );
 
 	// [AK] Close the server setup menu if we're still in it.
 	if ( M_InServerSetupMenu( ))

@@ -8,13 +8,13 @@ import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } fr
 import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
-import { sampleProcess, sampleTable } from "./sample.mjs";
+import { sampleNotes, sampleProcess, sampleTable } from "./sample.mjs";
 import { summarizeGlTimers, liveOnPort } from "./proto.mjs";
 import * as ui from "./ui.mjs";
 import { runBench } from "./bench.mjs";
 import * as cap from "./capture.mjs";
 import { play, quitInstance, defaultPwadStore, resolvePreset, readView, MODES, describeMode } from "./play.mjs";
-import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem } from "./queue.mjs";
+import { loadQueue, saveQueue, nextId, spotNameFor, addItem, noteItem, closeItem, nextOpen, formatItem, netQueueInfo } from "./queue.mjs";
 import { findMapLumps, mapReport } from "./mapdata.mjs";
 import { activateEngineWindows, engineWindows, resizeEngineWindow } from "./window.mjs";
 import { captureSeconds, formatRecap, parseCaptureCsv, slowSecondsGrew } from "./recap.mjs";
@@ -37,6 +37,9 @@ import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
 import { runCoverage } from "./coverage.mjs";
+import * as netplay from "./netplay.mjs";
+import * as netdiffMod from "./netdiff.mjs";
+import * as netcap from "./netcap.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { recentCrashes, summarizeCrash } from "./crashes.mjs";
@@ -162,10 +165,13 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL) (stays up until Ctrl-C)
-  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows; --table prints them as text
+  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--thread game] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows, --thread game samples the thread running tics instead of the main one; --table prints them as text
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
+  netplay [--map M] [--iwad W] [--file a.wad,b.pk3] [--players N] [--observers N] [--lag MS,MS] [--loss PCT,PCT] [--port P] [--game-port G] [--for-user] [--cvar k=v] | --quit   a locked server and clients joined to it as players and observers on loopback, each client's simulated ping and loss from the lists, recorded in .netplay-session.json until Ctrl-C (--for-user leaves the first client's input to you); --quit stops a set by its tokens
+  netdiff [--seconds N]   the running netplay set's server against each client: actors by network id at the server tic each last heard, sectors and sidedefs; exit 1 when any differ
+  netcap record --out FILE [--seconds N] | netcap diff A B   every command the running set's server writes for its clients, captured to FILE.netcap; diff names the commands whose counts changed and where each client's stream parts
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   queue add <description> [--port P] [--name SPOT] [--no-instance [--map M]]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill); --no-instance queues one seen where no engine answers (a browser page, an engine already gone), with its map when known and no spot
@@ -173,7 +179,7 @@ const USAGE = `fuactl <command>
   burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
-  travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, the way a player reached it
+  travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, pressing use through each intermission, the way a player reached it
   quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; one that refuses (no token) and whose launcher is gone is stopped as \`reap --kill\` would; exit 1 if it would not go; --park files its camera, wads and renderer first
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
@@ -200,7 +206,7 @@ const USAGE = `fuactl <command>
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
   privacy [--since REF | --staged]   what a change adds since REF (default HEAD, untracked files included), or what is staged, that could identify its author: a home folder's path, an email address, this machine's user or host name, or a pattern in ~/.forkundera/private-patterns.txt; exit 1 on any
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
-  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a UDMF level's summary, sectors, lines, things of the given types and ACS source lines, read from its files
+  mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a level's summary (UDMF, Doom or Hexen format), sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
   scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
@@ -231,7 +237,7 @@ const USAGE = `fuactl <command>
   memdiff [A] [B] [--port P]         what changed between snapshots A and B, or between A and now
   soak [--action reload|"STEP|STEP..."] [--cycles N] [--warmup W] [--settle MS] [--ignore PREFIX,...] [--judge-port P [--judge-token T]] [--sites] [--port P]   repeat an action's console steps N times, waiting on each that starts a level, and fail if memory, objects, handles or threads kept growing after W warm-up cycles (fua_soak) or the cycles got slower; a step "check: resize WxH" sizes the game window, --ignore leaves readings under those prefixes out, --judge-port judges a server this instance joins and leaves, and --sites prints the allocation stacks that grew
   compare A.json B.json [--share F] [--floor MS]   two fua_stats json readings side by side; a timing whose p50 or p99 grew by over F (0.15) and FLOOR ms (0.1) is marked
-  perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; exit 1 on a regression
+  perfgate NAME [PREFIX] [--spot S | --at x,y,z --face yaw,pitch] [--steps "A|B"] [--runs N] [--settle MS] [--update] [--port P]   the counters at a view against this machine's saved baseline NAME, the first run saving it; --steps runs console steps after the move ("give all|+attack" for a fight) and --runs takes N readings a settle apart, each counter judged on their median; exit 1 on a regression
   mcp                                run as an MCP stdio server for agents
 `;
 
@@ -513,7 +519,7 @@ async function main() {
           if (Date.now() > until) { console.error(`nextmap left the instance on ${was}`); process.exit(1); }
           await new Promise((r) => setTimeout(r, 250));
         }
-        await cap.waitInLevel(c, 60000);
+        await cap.waitInLevel(c, 60000, { pressThrough: true });
       }
       console.log(`on ${want} after ${hops} nextmap(s)`);
       c.close();
@@ -529,9 +535,14 @@ async function main() {
         let where = { map: flags.map && flags.map !== true ? String(flags.map) : null, at: null };
         if (!flags["no-instance"]) {
           const c = await connectTarget(flags, usage);
-          const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
+          // [rc4l] A netgame's side of the report, its role and ping; a dedicated server has no camera to save, so it files no spot.
+          const net = netQueueInfo(await c.rpc("net.state", {}).catch(() => null));
+          if (net?.role !== "server") {
+            const cam = await captureSpot(c, flags.name ? String(flags.name) : spotNameFor(nextId(q), description), description);
+            where = { map: cam.map, at: shot.atFromCamera(cam) };
+          }
+          where.net = net;
           c.close();
-          where = { map: cam.map, at: shot.atFromCamera(cam) };
         }
         const r = addItem(q, { description, spot: flags.name ? String(flags.name) : undefined, ...where });
         saveQueue(r.queue);
@@ -620,6 +631,8 @@ async function main() {
         top: flags.top ? Number(flags.top) : 12,
         engineOnly: !!flags.engine,
         stacks: !!flags.stacks,
+        // [rc4l] --thread game samples the thread running tics (fua_gamethread) rather than the main one.
+        game: flags.thread === "game",
       };
       // [rc4l] The Windows backend lives inside the engine, so it needs a connection rather than a
       // pid. Opened only when --port was given; the external backends never touch it.
@@ -628,7 +641,7 @@ async function main() {
         : await sampleProcess(pid, opts);
       // [rc4l] --table prints the shares as text, the JSON otherwise.
       if (flags.table) console.log(sampleTable(r, { top: opts.top }).join("\n"));
-      else console.log(JSON.stringify(r, null, 2));
+      else console.log(JSON.stringify({ ...r, notes: sampleNotes(r) }, null, 2));
       break;
     }
     case "hang": {
@@ -667,7 +680,9 @@ async function main() {
           targets.push({ label: "MCP (ZANDRONUM_EXE)", exe: process.env.ZANDRONUM_EXE });
         }
       }
-      const reports = targets.map((t) => doctorEngine({ ...t, srcDir }));
+      // [rc4l] The repo root is three up from the engine source, where deps/DiligentCore must be checked out.
+      const repoRoot = srcDir ? path.resolve(srcDir, "..", "..", "..") : null;
+      const reports = targets.map((t) => doctorEngine({ ...t, srcDir, repoRoot }));
       console.log(JSON.stringify(reports, null, 2));
       if (reports.some((r) => r.problems.length)) process.exitCode = 1;
       break;
@@ -1015,7 +1030,7 @@ async function main() {
     // [rc4l] `fuactl build` -- compile and stage, failing loudly rather than staging nothing.
     case "build": {
       const r = shot.build({ root: flags.root || undefined, stage: !flags["no-stage"], tests: !!flags.tests });
-      if (r.tests) console.log(`unit tests: ${r.tests.passed} passed`);
+      if (r.tests) console.log(`unit tests: ${r.tests.passed} passed in ${r.tests.binaries} binaries`);
       if (!r.staged) { console.log("build ok, not staged"); break; }
       const when = new Date(fs.statSync(r.staged).mtime).toTimeString().slice(0, 8);
       console.log(`build ok, staged ${when} (+${r.entries} catalogue entries)`);
@@ -1099,7 +1114,9 @@ async function main() {
     // [rc4l] The views that are one console command each (telemetry.mjs), their output printed as the engine wrote it.
     case "console": case "stats": case "hitches": case "flight": case "memsnap": case "memdiff": {
       const text = telemetry.consoleTextFor(cmd, rest, flags);
-      process.stdout.write(await withUi(flags, (c) => telemetry.execSlow(c, text)));
+      const reply = await withUi(flags, (c) => telemetry.execSlow(c, text));
+      // [rc4l] stats --json prints its JSON alone, so a game message printed meanwhile cannot break the reader.
+      process.stdout.write(cmd === "stats" && flags.json ? `${JSON.stringify(telemetry.parseConsoleJson(reply))}\n` : reply);
       break;
     }
     case "record": {
@@ -1153,8 +1170,15 @@ async function main() {
       const at = shot.cameraFromFlags(flags, SPOTS);
       const readings = await withUi(flags, async (c) => {
         if (at) await shot.moveTo(c, at);
-        await cap.sleep(num(flags.settle) ?? 4000);
-        return telemetry.parseConsoleJson(await telemetry.execSlow(c, `fua_stats json ${rest[1] ?? ""}`.trim()));
+        // [rc4l] --steps sets the scene up after the move (give all|+attack for a fight), and --runs takes that many readings a settle apart.
+        for (const step of String(flags.steps && flags.steps !== true ? flags.steps : "").split("|").map((s) => s.trim()).filter(Boolean))
+          await c.rpc("console.exec", { text: step });
+        const runs = [];
+        for (let i = 0; i < Math.max(1, num(flags.runs) ?? 1); i++) {
+          await cap.sleep(num(flags.settle) ?? 4000);
+          runs.push(telemetry.parseConsoleJson(await telemetry.execSlow(c, `fua_stats json ${rest[1] ?? ""}`.trim())));
+        }
+        return telemetry.medianReadings(runs);
       });
       const gate = telemetry.perfGate(rest[0], readings, { update: !!flags.update, share: num(flags.share), floor: num(flags.floor) });
       if (gate.saved) { console.log(`perfgate: saved ${readings.length} counters as the baseline ${gate.saved}`); break; }
@@ -1402,6 +1426,65 @@ async function main() {
       const info = await c.rpc("renderer.info");
       c.close();
       console.log(JSON.stringify(info, null, 2));
+      break;
+    }
+    case "netplay": {
+      if (flags.quit) {
+        const session = netplay.readNetplaySession();
+        for (const m of [...session.clients].reverse().concat([session.server])) {
+          console.log(`${m.role} on ${m.port}: ${await quitInstance({ port: m.port, token: m.token })}`);
+        }
+        break;
+      }
+      const set = await netplay.launchNetplay(netplay.netplayOptionsFromFlags(flags, shot.parseCvarFlag));
+      const session = netplay.netplaySession(set);
+      netplay.writeNetplaySession(session);
+      console.log(`server on bridge ${session.server.port}, game port ${session.gamePort}, ${session.map}`);
+      for (const c of session.clients) console.log(`${c.role} player ${c.player} on bridge ${c.port}${c.lag ? `, ping +${c.lag} ms` : ""}${c.loss ? `, ${c.loss}% loss` : ""}`);
+      console.log("recorded in .netplay-session.json; Ctrl-C stops the set");
+      process.on("SIGINT", async () => { await netplay.closeNetplay(set); process.exit(0); });
+      await new Promise(() => {});
+      break;
+    }
+    case "netdiff": {
+      const session = netplay.readNetplaySession();
+      const open = async (m) => { const c = new BridgeClient(); await c.connect(m.port, { token: m.token }); await c.waitHello(); return c; };
+      const sc = await open(session.server);
+      let differ = 0;
+      try {
+        for (const m of session.clients) {
+          const cc = await open(m);
+          try {
+            const r = await netdiffMod.netdiff(sc, cc, { seconds: flags.seconds ? Number(flags.seconds) : 2 });
+            for (const l of netdiffMod.diffLines(`${m.role} player ${m.player} (server tic ${r.alignedTic})`, r.diffs, r.compared)) console.log(l);
+            if (r.diffs.length) differ++;
+          } finally { cc.close(); }
+        }
+      } finally { sc.close(); }
+      process.exitCode = differ ? 1 : 0;
+      break;
+    }
+    case "netcap": {
+      const names = netcap.commandNames(fs.readFileSync(netcap.ENUMS, "utf8"));
+      if (rest[0] === "diff") {
+        if (rest.length < 3) throw new Error(usageFor(USAGE, "netcap"));
+        const read = (f) => netcap.parseCapture(fs.readFileSync(f, "utf8"));
+        const d = netcap.diffCaptures(read(rest[1]), read(rest[2]), names);
+        for (const l of netcap.diffCaptureLines(d, names)) console.log(l);
+        process.exitCode = d.same ? 0 : 1;
+        break;
+      }
+      if (rest[0] !== "record" || !flags.out) throw new Error(usageFor(USAGE, "netcap"));
+      const session = netplay.readNetplaySession();
+      const c = new BridgeClient();
+      await c.connect(session.server.port, { token: session.server.token });
+      await c.waitHello();
+      try {
+        const file = await netcap.recordCapture(c, String(flags.out), { seconds: flags.seconds ? Number(flags.seconds) : 5 });
+        const lines = netcap.parseCapture(fs.readFileSync(file, "utf8"));
+        console.log(`${file}: ${lines.length} commands`);
+        for (const [n, k] of Object.entries(netcap.countByName(lines, names)).sort((a, b) => b[1] - a[1]).slice(0, 12)) console.log(`  ${String(k).padStart(6)}  ${n}`);
+      } finally { c.close(); }
       break;
     }
     case "net-bw": {

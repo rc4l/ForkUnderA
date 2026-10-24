@@ -11,6 +11,10 @@
 #include "features/gamecopy/seen.h"
 #include "features/frame/framedriver.h"   // [rc4l] GLDrawsFrame
 #include "features/telemetry/telemetry.h"
+#include "features/frame/framestall.h"   // [rc4l] DebugPlaysimStall
+
+#include <atomic>
+#include <cstdint>
 
 #include "am_map.h"
 #include "c_console.h"
@@ -47,6 +51,7 @@ G_TickerPart g_part;    // [rc4l] the tic in flight between its two halves
 int g_startedAt = 0;  // [rc4l] the clock tic it started in, which the take-back and the frame's blend are both counted on
 int64_t g_startedNs = 0;   // [rc4l] when it started, for handoff/show_delay
 int g_threadedTics = 0, g_heldFrames = 0;   // [rc4l] for fua_gamethread_report
+std::atomic<int64_t> g_lastPlaysimNs(0);   // [rc4l] the last tic's playsim, whichever thread ran it, for the inline catch-up's budget
 
 void BeforeTic()
 {
@@ -72,7 +77,10 @@ void TickerBegin()
 void PlaysimTic(bool drawn)
 {
 	ZX_SEAM("tic/playsim", GameThread);
+	const int64_t start = zx::telemetry::NowNs ();
+	zx::frame::DebugPlaysimStall ();
 	G_TickerPlaysim ();
+	g_lastPlaysimNs.store (zx::telemetry::NowNs () - start, std::memory_order_relaxed);
 	// [rc4l] Found while the frames still draw, so the handoff takes only what changed.
 	if (drawn) zx::gamecopy::ScanAtTicEnd ();
 }
@@ -182,9 +190,12 @@ bool GameThreadFrame()
 	}
 	if (!ThreadedNow ()) return false;
 
-	// [rc4l] The handoff: input and the clock, inline tics to catch up, then the frame's view of the game and the next tic started.
+	// [rc4l] The handoff: input and the clock, the catch-up tics that fit kInlineCatchUpMs inline, then the frame's view of the game and the next tic started; the rest wait for the game thread, a handoff each, with frames drawn beside them.
 	const int due = Net_TicsDue ();
-	CatchUp (due - 1);
+	ZX_COUNT ("handoff/backlog_tics", "tics", due);
+	const int inlineTics = ComputeInlineCatchUp (due - 1, g_lastPlaysimNs.load (std::memory_order_relaxed) / 1e6, kInlineCatchUpMs);
+	ZX_COUNT ("handoff/inline_catchup", "tics", inlineTics);
+	CatchUp (inlineTics);
 	if (due >= 1 && ThreadedNow ())
 	{
 		D_PrepareDisplay (false);
@@ -219,6 +230,11 @@ bool GameThreadFrame()
 	D_PrepareDisplay (false);
 	D_DisplayBesideTic ();
 	return true;
+}
+
+bool TicsRunThreaded()
+{
+	return ThreadedNow ();
 }
 
 int ThreadedTics()

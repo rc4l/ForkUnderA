@@ -23,7 +23,6 @@
 #include "doomstat.h"     // gametic
 #include "r_defs.h"       // sector_t
 #include "r_state.h"      // sectors
-#include "network.h"      // NETWORK_GetState, NETWORK_InClientMode
 #include "r_utility.h"    // r_TicFrac
 #include "templates.h"
 
@@ -33,6 +32,7 @@
 #include "features/hitboxviz/computation/boxedges_compute.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
 #include "features/handoff/effects.h"   // [rc4l] Deferred
+#include "features/net-session/netrole.h"
 
 EXTERN_CVAR(Bool, sv_cheats)
 
@@ -131,12 +131,12 @@ namespace
 // includes NETSTATE_SINGLE_MULTIPLAYER -- an offline game merely emulating multiplayer (bots,
 // an offline deathmatch) is still one machine with no rules to subvert.
 //
-// NETWORK_InClientMode() is also true while a client demo plays back, which is what we want:
+// zx::net::InClientMode() is also true while a client demo plays back, which is what we want:
 // a recorded netgame keeps the netgame's gate rather than inheriting the viewer's offline
 // status.
 bool IsOfflineGame()
 {
-	return ( NETWORK_InClientMode( ) == false ) && ( NETWORK_GetState( ) != NETSTATE_SERVER );
+	return ( zx::net::InClientMode() == false ) && ( !zx::net::IsServer() );
 }
 
 void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack)

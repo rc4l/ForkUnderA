@@ -80,7 +80,7 @@ static void RenderWorldInto(Diligent::IDeviceContext *ctx, ViewTarget &t)
 	// [rc4l] A stacked view's other skies from its own walk's, a plane mirror's from the player's and the mirrors'.
 	RenderViewSkyLooks(ctx, false, g_pass.stackSlot, g_pass.stackSlot < 0, t.w, t.h);
 	const float clear[4] = { 0.05f, 0.06f, 0.09f, 1.0f };
-	BeginPassTargets(ctx, ViewPassTargets(t.color, depth, FrameViewNormal()), clear);
+	BeginPassTargets(ctx, ViewPassTargets(t.color, depth, FrameViewNormal(), true), clear);
 	DrawWorld(ctx);
 	ForgetViewSkyLooks();
 }

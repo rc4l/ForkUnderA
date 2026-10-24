@@ -31,6 +31,27 @@ if ( NETWORK_InClientMode() == false )        // == server + single-player
 `NETWORK_InClientMode()` is the dominant gate (79 uses in `p_enemy.cpp` alone). `NETWORK_GetState()`
 returns `NETSTATE_SERVER` / `NETSTATE_CLIENT` / `NETSTATE_SINGLE`.
 
+## Where the netcode lives
+
+Five modules own the vendored netcode files, each listing them under its README's `## Owns`:
+`features/net-transport` (socket, encoding), `features/net-protocol` (command ids, capture),
+`features/net-replication` (`SERVERCOMMANDS_*`, the resend store), `features/net-client` (`cl_*`) and
+`features/net-session` (`sv_main`, unlagged, roles). Three rules in `tools/boundary-rules.json` count what code
+outside them does, with allowances that only shrink (`python3 tools/boundary_tripwire.py`, `--update` after
+removing some):
+
+- `net-roles-through-the-session`: outside the netcode ask `zx::net::IsServer()`, `IsClient()`,
+  `IsSinglePlayer()`, `IsLocalMultiplayer()` or `InClientMode()` (`features/net-session/netrole.h`), not
+  `NETWORK_GetState`/`NETWORK_InClientMode`. The vendored code in the pattern above keeps its spelling, under
+  its allowance; code you write uses the header.
+- `net-sends-through-replication`: a new `SERVERCOMMANDS_*` call in game code exceeds its file's allowance. Add
+  the send where its neighbours are only when the pattern above needs it, and say so in the commit, since the
+  allowance is raised by hand.
+- `net-sockets-through-transport`: packets and sockets outside the netcode are the launcher protocol's.
+
+The netcode runs on the main thread, marked by the seams `net/receive`, `net/send`, `net/parse`,
+`net/server_tick` and `net/launcher_reply`; every netgame scenario fails on a seam another thread entered.
+
 ## The rules — in order, case by case
 
 1. **Does it mutate synced state?** position/velocity, state/frame, flags, health/damage, spawn,
@@ -46,6 +67,11 @@ returns `NETSTATE_SERVER` / `NETSTATE_CLIENT` / `NETSTATE_SINGLE`.
    - **Spawn:** `SpawnThing`, `SpawnMissile`, `SpawnPuff`
    - **Destroy:** `DestroyThing`
    - **Sound:** `SoundActor`
+   - **Map state only a server writes** (a sector's flats, colour, fade, gravity, friction, reflection, scale,
+     rotation or special; a line's alpha, blocking flags or textures; a side's flags): no command, call
+     `zx::netreplication::TouchSector`/`TouchLine`/`TouchSide` (`features/net-replication/mapstate.h`) and the
+     change set sends it at the tic's end; a forgotten touch still goes out within a second and fails every
+     netgame scenario (`fua_net_replication`).
 
    Use the existing command; a mutation with **no** matching command is a bigger job (a new net
    command *and* its matching client-side handler in `cl_main`/`network` decode), not a quiet

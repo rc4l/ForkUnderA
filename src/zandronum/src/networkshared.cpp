@@ -51,6 +51,7 @@
 #include "networkshared.h"
 #include "features/net/computation/v6mapped_compute.h"
 #include "features/net/computation/v6prefix_compute.h" // [rc4l] v6 bans are prefixes, not wildcards
+#include "huffman/huffman.h"   // [rc4l] HUFFMAN_Decode, for NETWORK_DecodeIntoMessage
 #include <sstream>
 #include <errno.h>
 #include <iostream>
@@ -181,6 +182,24 @@ int NETWORK_StopTrafficMeasurement ( )
 {
 	g_MeasuringOutboundTraffic = false;
 	return g_OutboundBytesMeasured;
+}
+
+//*****************************************************************************
+//
+ULONG NETWORK_DecodeIntoMessage ( const unsigned char *pbRaw, int lLength, NETBUFFER_s &Message )
+{
+	// [rc4l] The message's own size is the limit, never the raw buffer's: a code can be three bits, so a datagram the size check lets in decodes to eight thirds of it.
+	int iDecoded = static_cast<int>( Message.ulMaxSize );
+	HUFFMAN_Decode( pbRaw, Message.pbData, lLength, &iDecoded );
+	// [rc4l] Filling the whole buffer means the decode was cut short, since nothing we send decodes past MAX_UDP_PACKET.
+	if ( iDecoded <= 0 || static_cast<ULONG>( iDecoded ) >= Message.ulMaxSize )
+		iDecoded = 0;
+	Message.ulCurrentSize = iDecoded;
+	Message.ByteStream.pbStream = Message.pbData;
+	Message.ByteStream.pbStreamEnd = Message.ByteStream.pbStream + Message.ulCurrentSize;
+	Message.ByteStream.bitBuffer = NULL;
+	Message.ByteStream.bitShift = -1;
+	return Message.ulCurrentSize;
 }
 
 //================================================================================

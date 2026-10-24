@@ -1,13 +1,16 @@
 #!/usr/bin/env node
-// [rc4l] The browser build's checks in headless Chrome, in order on one profile: it boots and draws, and a setting survives quitting, leaving and reloading the page.
+// [rc4l] The browser build's checks in headless Chrome, in order on one profile (or those marked firefox in Firefox): it boots and draws, and a setting survives quitting, leaving and reloading the page.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from './serve.mjs';
-import { smoke, gpuLogLines, removeQuietly } from './smoke.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, HEAR_CONSOLE, PIECE_S, inPage, pause, soakInPage } from './page.mjs';
-import { decodePNG, boxStats, px } from '../fuactl/src/pngcore.mjs';
+import { serveLocally } from './serve.mjs';
+import { gpuLogLines, removeQuietly } from './smoke.mjs';
+import { smokeIn } from './firefox.mjs';
+import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
+import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
+import { buildLightTableWad, VANTAGES as LIGHTTABLE_VANTAGES } from '../fuactl/scenarios/lighttable.mjs';
 
 // [rc4l] Counts the animation frames the page asks for from here on, which stop when the engine's loop does.
 const COUNT_FRAMES = `let frames = 0;
@@ -79,9 +82,73 @@ export function configuredOnce(n) {
   return n === 1 ? '' : `the canvas was configured ${n} times`;
 }
 
+// [rc4l] The pointlight scenario's hall, as the light grid check serves it to the page.
+const POINTLIGHT_WAD = 'fua-pointlight.wad';
+const LIGHTTABLE_WAD = 'fua-lighttable.wad';
+
+// [rc4l] The pointlight scenario's vantages the browser frames, its nearest and a middle one, since each frame takes seconds under software WebGPU (--software) and the scenario covers the rest.
+export const LIGHT_VANTAGES = POINTLIGHT_VANTAGES.filter((v) => ['d600', 'd1500'].includes(v.name));
+
+// [rc4l] How much one block of the frame must change with the light on for the comparison to mean anything.
+export const LIT_FLOOR = 4;
+
+// [rc4l] Why the light grid check failed, or '': at each vantage the light changed the frame, and the grid drew what no grid draws at full scale and at half (which must differ from full), judged as the pointlight scenario judges it.
+export function gridMatches(at) {
+  const { box, ceiling } = POINTLIGHT_BOXES.MAP01.frame;
+  for (const { name, grid, none, dark, halfGrid, halfNone } of at) {
+    const [g, n, d, hg, hn] = [grid, none, dark, halfGrid, halfNone].map((b64) => decodePNGBytes(Buffer.from(b64, 'base64')));
+    const lit = boxDiffMax(n, d, box);
+    if (!(lit >= LIT_FLOOR)) return `at ${name} the light changed no block by more than ${lit.toFixed(2)}, so it never drew`;
+    const off = boxDiff(g, n, box);
+    if (!(off <= ceiling)) return `at ${name} the light grid drew ${off.toFixed(3)} away from no grid, over ${ceiling}`;
+    const halfOff = boxDiff(hg, hn, box);
+    if (!(halfOff <= ceiling)) return `at ${name} at half scale the light grid drew ${halfOff.toFixed(3)} away from no grid, over ${ceiling}`;
+    if (!(boxDiff(hn, n, box) > 0)) return `at ${name} the half-scale frame matched the full one, so it never drew below full scale`;
+  }
+  return '';
+}
+
 // [rc4l] Why firing at the floor went wrong, or '': the decal pass drawing no mark, which would leave it untried.
+// [rc4l] Why the sector light table went wrong in the page, or '': its entries never sent while the rooms' light changed, or surface records sent again for changes it should carry, each a second.
+export function lightTableSends({ pieceCopies, tableCopies }) {
+  if (!(tableCopies > 1)) return `the sector light table was sent ${Number(tableCopies).toFixed(1)} times a second, so the rooms' light did not change or did not reach it`;
+  if (!(pieceCopies < 2)) return `surface records were sent ${Number(pieceCopies).toFixed(1)} times a second for light changes the table should carry`;
+  return '';
+}
+
 export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
+}
+
+// [rc4l] Why vid_maxfps went wrong in the page, or '': frames at a limit of 60 not some 16.7 ms apart, or no faster without it.
+export function frameLimited({ held, free }) {
+  if (!(held >= 15.5 && held <= 18.5)) return `vid_maxfps 60 left frames ${held} ms apart`;
+  if (!(free > 0 && free < 15)) return `with no limit frames were ${free} ms apart`;
+  return '';
+}
+
+// [rc4l] Why dynamic resolution went wrong in the page, or '': below full scale with no load, at full scale under GPU load, not back once it ended, or reading frames with the console up or the window out of focus.
+export function dynresFollows({ idle, loaded, after, consoleHeld, blurHeld }) {
+  if (idle !== 1) return `it drew at ${idle} with no load`;
+  if (!(loaded > 0 && loaded < 1)) return `it drew at ${loaded} under GPU load`;
+  if (after !== 1) return `it stayed at ${after} once the load ended`;
+  if (!consoleHeld) return 'it read frames with the console up';
+  if (!blurHeld) return 'it read frames with the window out of focus';
+  return '';
+}
+
+// [rc4l] Why leaving the page went wrong, or '': the store failing, or the console told of it, as it was each time the page was hidden.
+// [rc4l] Why the options a browser build holds were wrong, or '': damage tint, which it draws, could not be changed, or instant replay or the update check, which it cannot do, were not off and greyed out.
+export function browserOptions({ tint, replay, replayAvailable, updates }) {
+  if (tint !== '40') return `cl_damagetint read ${tint} after setting it to 40, so damage tint cannot be changed`;
+  if (replayAvailable !== 'false' || replay !== 'false') return `instant replay reads ${replay}, available ${replayAvailable}, in a build that cannot record`;
+  if (updates !== 'false') return `the update check reads choosable ${updates} in a page that is its own update`;
+  return '';
+}
+
+export function storedQuietly({ stored, said }) {
+  if (stored !== true) return 'the store failed';
+  return /Config saved/.test(said) ? 'the console printed "Config saved."' : '';
 }
 
 // [rc4l] Why a crash in a frame was handled wrongly, or '': not shown, no report offered, the loop going on, a report with no frame in the engine, or a build that may not send saying otherwise.
@@ -220,6 +287,118 @@ export const CHECKS = [
       return seen;`),
     until: EVAL,
     expect: marked,
+  },
+  // [rc4l] Firefox's WebGPU gave gl_FragCoord.w as w rather than 1/w, so every fragment read the light grid's nearest depth slice and a distant light lit nothing (queue #68).
+  {
+    name: 'a distant light draws the same through the light grid as without it, at full and at half scale',
+    firefox: true,
+    query: `file=${POINTLIGHT_WAD}&map=MAP01`,
+    init: serveData(POINTLIGHT_WAD, buildPointlightWad()),
+    evaluate: inPage(`${GRAB_FRAME}
+      const frame = async (command) => { Module.fuaCommand(command); ${pause(300)} return grabFrame(); };
+      ${pause(3000)}
+      // [rc4l] At full scale throughout, so a slow adapter's dynamic resolution cannot change the scale between frames compared.
+      Module.fuaCommand('fua_dg_dynres_force 1');
+      const at = [];
+      for (const v of ${JSON.stringify(LIGHT_VANTAGES.map(({ name, at: { x, y } }) => ({ name, x, y })))}) {
+        Module.fuaCommand('warp ' + v.x + ' ' + v.y);
+        ${pause(1000)}
+        const grid = await frame('fua_dg_clusters 1'), none = await frame('fua_dg_clusters 0'), dark = await frame('fua_dg_dynlights 0');
+        Module.fuaCommand('fua_dg_dynlights 1');
+        // [rc4l] The same at half scale (features/dynres), whose tiles are cut from the scene's pixels rather than the frame's.
+        Module.fuaCommand('fua_dg_dynres_force 0.5');
+        const halfNone = await frame('fua_dg_clusters 0'), halfGrid = await frame('fua_dg_clusters 1');
+        Module.fuaCommand('fua_dg_dynres_force 1');
+        at.push({ name: v.name, grid, none, dark, halfGrid, halfNone });
+      }
+      Module.fuaCommand('fua_dg_dynres_force 0');
+      return at;`),
+    until: EVAL,
+    expect: gridMatches,
+  },
+  // [rc4l] A browser carries every write through its GPU process, so rooms whose light changes every tic reach it as sector light table entries, never as their surfaces sent again.
+  {
+    name: 'light changing every tic reaches the page as sector light table entries, not surfaces sent again',
+    firefox: true,
+    query: `file=${LIGHTTABLE_WAD}&map=MAP02`,
+    init: `${WATCH_GPU_CALLS}\n${serveData(LIGHTTABLE_WAD, buildLightTableWad())}`,
+    evaluate: inPage(`
+      ${pause(3000)}
+      Module.fuaCommand('r_drawplayersprites 0');
+      const glow = ${JSON.stringify(LIGHTTABLE_VANTAGES.find((v) => v.name === 'glow').at)};
+      Module.fuaCommand('warp ' + glow.x + ' ' + glow.y);
+      ${pause(1500)}
+      window.fuaGpuCalls.from = performance.now();
+      window.fuaGpuCalls.by = {};
+      ${pause(3000)}
+      const by = window.fuaGpuCalls.by, seconds = (performance.now() - window.fuaGpuCalls.from) / 1000;
+      const calls = (k) => (by[k] ? by[k].calls : 0) / seconds;
+      return { pieceCopies: calls('copy to fua scene piece data'), tableCopies: calls('copy to fua sector light') };`),
+    until: EVAL,
+    expect: lightTableSends,
+  },
+  // [rc4l] A browser's present reset the deadline its frames kept, so every frame was due and the limit held nothing there.
+  {
+    name: 'vid_maxfps holds the page to its frame rate',
+    firefox: true,
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const apart = async () => {
+        const before = log.textContent.length;
+        Module.fuaCommand('fua_stats frame/present_ms');
+        ${pause(300)}
+        const m = /frame\\/present_ms\\s+ms\\s+[\\d.]+\\s+([\\d.]+)/.exec(log.textContent.slice(before));
+        return m ? Number(m[1]) : -1;
+      };
+      ${pause(3000)}
+      Module.fuaCommand('vid_maxfps 60');
+      ${pause(5000)}
+      const held = await apart();
+      Module.fuaCommand('vid_maxfps 0');
+      ${pause(3000)}
+      const free = await apart();
+      Module.fuaCommand('vid_maxfps 500');
+      return { held, free };`),
+    until: EVAL,
+    expect: frameLimited,
+  },
+  // [rc4l] A browser times no GPU, so its frames are what the scale follows, and an open console's once-a-tic frames or a page out of focus once stepped it to its lowest.
+  {
+    name: 'dynamic resolution steps down under GPU load and back after it, reading no frame with the console up or out of focus',
+    firefox: true,
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const report = async () => {
+        const before = log.textContent.length;
+        Module.fuaCommand('fua_dynres_report');
+        ${pause(200)}
+        const said = log.textContent.slice(before), m = /scale ([\\d.]+)/.exec(said);
+        return { scale: m ? Number(m[1]) : -1, held: /held while/.test(said) };
+      };
+      // [rc4l] The default target, which a browser aims at 60 fps since it times no GPU, met at rest.
+      ${pause(4000)}
+      const idle = (await report()).scale;
+      Module.fuaCommand('fua_dg_gpuload 60000');
+      ${pause(8000)}
+      const loaded = (await report()).scale;
+      // [rc4l] Back within a few seconds, which a wait doubled under the load once held to many more.
+      Module.fuaCommand('fua_dg_gpuload 0');
+      ${pause(4000)}
+      const after = (await report()).scale;
+      Module.fuaCommand('toggleconsole');
+      ${pause(1000)}
+      const consoleHeld = (await report()).held;
+      Module.fuaCommand('toggleconsole');
+      ${pause(1000)}
+      // [rc4l] What an alt-tab sends the page.
+      window.dispatchEvent(new Event('blur'));
+      ${pause(1000)}
+      const blurHeld = (await report()).held;
+      window.dispatchEvent(new Event('focus'));
+      ${pause(500)}
+      return { idle, loaded, after, consoleHeld, blurHeld };`),
+    until: EVAL,
+    expect: dynresFollows,
   },
   {
     name: 'the sound waits for a click and plays after one',
@@ -424,6 +603,25 @@ export const CHECKS = [
     until: EVAL,
     expect: (focused) => (focused === 'canvas' ? '' : `Tab moved the focus to ${focused}`),
   },
+  // [rc4l] Damage tint showed 0 and could not be changed, and instant replay could be turned on, in a build without GL or FFmpeg.
+  {
+    name: 'damage tint can be changed, and instant replay and the update check are off and greyed out',
+    evaluate: inPage(`
+      const log = document.getElementById('console');
+      const read = async (name) => {
+        const before = log.textContent.length;
+        Module.fuaCommand(name);
+        ${pause(300)}
+        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(log.textContent.slice(before));
+        return m ? m[1] : null;
+      };
+      Module.fuaCommand('cl_damagetint 40');
+      const tint = await read('cl_damagetint');
+      Module.fuaCommand('cl_damagetint 100');
+      return { tint, replay: await read('cl_fua_replay'), replayAvailable: await read('cl_fua_replay_available'), updates: await read('cl_fua_update_choosable') };`),
+    until: EVAL,
+    expect: browserOptions,
+  },
   // [rc4l] Game keys did nothing until a frame off the game thread's schedule built SDL's key table, which fullscreen happened to cause; holding up must move the player.
   {
     name: 'a game key moves the player',
@@ -502,10 +700,16 @@ export const CHECKS = [
   },
   { name: 'a reload keeps what was set before quitting', evaluate: inPage(`Module.fuaCommand('screenblocks');`), until: '"screenblocks" is "11"' },
   {
-    name: 'leaving the page stores the config',
-    evaluate: inPage(`Module.fuaCommand('screenblocks 9'); window.dispatchEvent(new Event('pagehide')); return await Module.fuaSaving;`),
+    name: 'leaving the page stores the config without a word in the console',
+    evaluate: inPage(`
+      const log = document.getElementById('console'), before = log.textContent.length;
+      Module.fuaCommand('screenblocks 9');
+      window.dispatchEvent(new Event('pagehide'));
+      const stored = await Module.fuaSaving;
+      ${pause(300)}
+      return { stored, said: log.textContent.slice(before) };`),
     until: EVAL,
-    expect: (stored) => (stored === true ? '' : 'the store failed'),
+    expect: storedQuietly,
   },
   { name: 'a reload keeps what was set before leaving', evaluate: inPage(`Module.fuaCommand('screenblocks');`), until: '"screenblocks" is "9"' },
   {
@@ -595,27 +799,46 @@ export function heardAtDistance({ control, peak, contexts }) {
 
 // [rc4l] The checks whose names contain `only`, or all of them; a later check may need the state an earlier one left.
 export function selectChecks(checks, only) {
-  return only ? checks.filter((c) => c.name.includes(only)) : checks;
+  if (!only) return checks;
+  // [rc4l] Several texts split at |, each check that holds any of them run in the suite's order, so a sequence on one profile (a check before a soak) runs without the rest.
+  const texts = only.split('|').map((s) => s.trim()).filter(Boolean);
+  return checks.filter((c) => texts.some((s) => c.name.includes(s)));
 }
 
-export async function check({ url, checks = CHECKS, seconds = 60, software = false, throttle = 0, onResult = console.log }) {
+// [rc4l] The page a check opens: the run's own, or the run's with the check's query in place of its own.
+export function checkUrl(url, c) {
+  if (!c.query) return url;
+  const u = new URL(url);
+  u.search = c.query;
+  return u.href;
+}
+
+// [rc4l] Why a check does not run in this browser, or '': the Firefox driver has no input, screenshot or carried profile, so only a check marked firefox runs there.
+export function notIn(browser, c) {
+  return browser === 'firefox' && !c.firefox ? 'it needs what only the Chrome driver does' : '';
+}
+
+export async function check({ url, checks = CHECKS, seconds = 60, software = false, throttle = 0, browser = 'chrome', onResult = console.log }) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-'));
   const shots = fs.mkdtempSync(path.join(os.tmpdir(), 'fua-check-shots-'));
-  let failed = 0;
+  const run = smokeIn(browser);
+  let failed = 0, named = false;
   try {
     for (const [i, c] of checks.entries()) {
+      const elsewhere = notIn(browser, c);
+      if (elsewhere) { onResult(`SKIP ${c.name}: ${elsewhere}`); continue; }
       const shot = c.shot ? path.join(shots, `check-${i}.png`) : undefined;
       const downloadDir = c.download ? fs.mkdtempSync(path.join(shots, `check-${i}-`)) : undefined;
       const logFile = path.join(shots, `check-${i}-chrome.log`);
-      const { matched, lines, version } = await smoke({ url, profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
-      if (i === 0) onResult(`browser: ${version}`);
+      const { matched, lines, version } = await run({ url: checkUrl(url, c), profile, seconds, software, throttle, autoplay: !!c.autoplay, focus: !!c.focused, shot, downloadDir, logFile, until: c.until, evaluate: c.evaluate, after: 1, init: c.init, onLine: () => {} });
+      if (!named) { onResult(`browser: ${version}`); named = true; }
       const picture = shot || (downloadDir && fs.readdirSync(downloadDir).filter((f) => f.endsWith('.png')).map((f) => path.join(downloadDir, f))[0]);
       const { ok, reason, skip } = judge(c, matched, picture && fs.existsSync(picture) ? decodePNG(picture) : null, lines);
       onResult(`${skip ? 'SKIP' : ok ? 'PASS' : 'FAIL'} ${c.name}${skip ? ': ' + skip : ok ? '' : ': ' + reason}`);
       if (!ok) {
         failed++;
-        for (const line of lines.slice(-20)) onResult(`  ${line}`);
-        for (const line of gpuLogLines(fs.readFileSync(logFile, 'utf8'))) onResult(`  [chrome] ${line}`);
+        for (const line of lines.slice(-20)) onResult(`  ${line.slice(0, 300)}`);
+        if (fs.existsSync(logFile)) for (const line of gpuLogLines(fs.readFileSync(logFile, 'utf8'))) onResult(`  [chrome] ${line}`);
         if (shot || downloadDir) onResult(`  screenshot: ${shot || downloadDir}`);
       }
     }
@@ -629,18 +852,20 @@ export async function check({ url, checks = CHECKS, seconds = 60, software = fal
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
-  // [rc4l] --throttle N slows the page's own thread N times, as a slow runner's is, to reproduce CI's timing here.
+  // [rc4l] --throttle N slows the page's own thread N times, as a slow machine's is.
   const throttle = args.includes('--throttle') ? Number(args[args.indexOf('--throttle') + 1]) : 0;
-  const root = args.find((a, i) => !a.startsWith('--') && args[i - 1] !== '--only' && args[i - 1] !== '--throttle') ?? 'dist-web';
+  // [rc4l] --browser firefox runs the checks marked firefox in Firefox (firefox.mjs), whose WebGPU differs from Chrome's.
+  const browser = args.includes('--browser') ? args[args.indexOf('--browser') + 1] : 'chrome';
+  const root = args.find((a, i) => !a.startsWith('--') && !['--only', '--throttle', '--browser'].includes(args[i - 1])) ?? 'dist-web';
   const checks = selectChecks(CHECKS, only);
   if (!checks.length) { console.error(`no check's name contains "${only}"`); process.exit(2); }
-  const server = createServer(root).listen(0, '127.0.0.1');
-  await new Promise((r) => server.once('listening', r));
+  const { server, origin } = await serveLocally(root);
   const failed = await check({
-    url: `http://127.0.0.1:${server.address().port}/?map=MAP01`,
+    url: `${origin}/?map=MAP01`,
     checks,
     software: args.includes('--software'),
     throttle,
+    browser,
     seconds: args.includes('--software') || throttle > 1 ? 180 : 60,
   });
   server.close();

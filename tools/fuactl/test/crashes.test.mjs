@@ -33,6 +33,26 @@ test("an abort is summed up by its reason and its backtrace", () => {
   assert.deepEqual(summarizeCrash("nothing"), { why: "", seams: "", stack: [] });
 });
 
+// [rc4l] The mac file: a signal line and backtrace_symbols frames with no '#', which used to sum up as no stack at all.
+const MAC = `=== MCP ENGINE CRASH ===
+signal: 11 SIGSEGV (segmentation fault)
+fault_addr: 0x348
+pid: 3311
+seams: main none, game none
+
+backtrace:
+0   forkundera                          0x000000010351e1c4 _ZN12_GLOBAL__N_112CrashHandlerEiP9__siginfoPv + 296
+1   libsystem_platform.dylib            0x000000018a699744 _sigtramp + 56
+2   forkundera                          0x000000010351e410 _Z16Cmd_dumprendererR12FCommandLineP11APlayerPawni + 280`;
+
+test("a macOS crash is summed up by its signal and its backtrace_symbols frames", () => {
+  const s = summarizeCrash(MAC, 3);
+  assert.equal(s.why, "signal: 11 SIGSEGV (segmentation fault)");
+  assert.equal(s.seams, "main none, game none");
+  assert.equal(s.stack.length, 3);
+  assert.match(s.stack[2], /^2 +forkundera +0x000000010351e410 _Z16Cmd_dumprenderer/);
+});
+
 test("a crash names the seam each thread was in", () => {
   const text = CRASH.replace("pid: 31504\n", "pid: 31504\nseams: main copy/fill, game none\n");
   assert.equal(summarizeCrash(text).seams, "main copy/fill, game none");

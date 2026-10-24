@@ -38,6 +38,7 @@
 // [CW] New includes.
 #include "cl_demo.h"
 #include "sv_commands.h"
+#include "features/net-replication/mapstate.h"
 
 
 // [RH]
@@ -712,7 +713,7 @@ void sector_t::SetColor(int r, int g, int b, int desat, bool bInformClients, boo
 	// Tell clients about the sector color update.
 	// [BB] Only if instructed to.
 	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && bInformClients )
-		SERVERCOMMANDS_SetSectorColor( sectornum );
+		zx::netreplication::TouchSector( sectornum );
 }
 
 // [BB] Added bInformClients and bExecuteOnClient.
@@ -731,7 +732,7 @@ void sector_t::SetFade(int r, int g, int b, bool bInformClients, bool bExecuteOn
 	// [BC] Tell clients about the sector fade update.
 	// [BB] Only if instructed to.
 	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && bInformClients )
-		SERVERCOMMANDS_SetSectorFade( sectornum );
+		zx::netreplication::TouchSector( sectornum );
 }
 
 //===========================================================================

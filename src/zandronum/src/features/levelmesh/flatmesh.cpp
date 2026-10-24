@@ -190,6 +190,7 @@ struct FlatSource
 	int           mirrorSector = -1;   // [rc4l] see MeshPiece::mirrorSector
 	bool          mirrorCeiling = false;
 	bool          fake = false;        // [rc4l] see FlatKey::fake
+	SectorLightRef lightFrom;          // [rc4l] the sector plane that lights it, for the sector light table, or sector -1
 };
 
 static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
@@ -271,6 +272,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		now.blendFactor = flat.Colormap.blendfactor;
 		now.alpha = FLOAT2FIXED(flat.alpha);
 		now.renderStyle = (int)flat.renderstyle;
+		now.shadeGeneration = LevelShadeGeneration();
 	}
 	FlatChange change = ComputeFlatChange(slot->stamped && slot->range.count > 0, slot->stamp, now, slot->scrolled);
 	// [rc4l] A scroll is where the plane maps the origin under the offsets now, less under the baked ones, and one a float cannot carry goes back into the vertices.
@@ -384,7 +386,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	mp.lightColor = flat.Colormap.LightColor.d;
 	mp.fadeColor = flat.Colormap.FadeColor.d;
 	// GLFlat::Draw's GLPASS_PLAIN arm, with its `rel = getExtraLight()`.
-	CaptureLevelShading(flat.light, getExtraLight(), flat.Colormap, mp);
+	CaptureLevelShadingFrom(flat.light, getExtraLight(), flat.Colormap, mp, false, flat.lightFrom);
 
 	// [rc4l] Flats are NOT all opaque, and 3D floors are where that shows.
 	//
@@ -442,7 +444,8 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 // produced across a walk that visited the sector from every side.
 // [rc4l] planeFrom, when given, is where the plane itself is read (a height transfer's gl_FakeFlat copy), model staying the flat's key.
 static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool ceiling,
-	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false, bool fake = false, sector_t *planeFrom = NULL)
+	int lightlevel, FColormap cm, float alpha, ERenderStyle style, bool reflects = false, bool fake = false, sector_t *planeFrom = NULL,
+	const SectorLightRef &lightFrom = SectorLightRef())
 {
 	if (model == NULL || sub == NULL) return;
 	sector_t *from = planeFrom != NULL ? planeFrom : model;
@@ -452,6 +455,8 @@ static void BakeOnePlane(subsector_t *sub, sector_t *model, int whichPlane, bool
 	if (f.plane.texture == skyflatnum) return;
 	f.gltexture = zx::materials::MaterialForTextureId(f.plane.texture);
 	if (f.gltexture == NULL) return;
+	// [rc4l] A fullbright flat takes no light from its sector, so it is not lit from the table.
+	f.lightFrom = zx::materials::MaterialIsFullbright(f.gltexture) ? SectorLightRef() : lightFrom;
 	ApplyFullbright(f.gltexture, cm, lightlevel);
 	// GLFlat::Process's own rule, and the reason a transfer-heights door's floor does not z-fight
 	// with the one it sits on.
@@ -529,7 +534,14 @@ static int BakeSectorPlane(subsector_t *sub, sector_t *real, bool ceiling, bool 
 		cm.CopyLightColor(light->extra_colormap);
 	}
 	if (alpha == 0.0f && !reflects) return 0;
-	BakeOnePlane(sub, real, which, ceiling, ll, cm, alpha, STYLE_Translucent, reflects, fake, src);
+	// [rc4l] Lit from the table only when nothing but the sector's own plane lights it: no height transfer, no 3D floor's light list, no missing-texture fill.
+	SectorLightRef lightFrom;
+	if (!fake && src == real && (real->e == NULL || real->e->rcXFloor.ffloors.Size() == 0))
+	{
+		lightFrom.sector = (int)(real - sectors);
+		lightFrom.kind = ceiling ? kSectorLitCeiling : kSectorLitFloor;
+	}
+	BakeOnePlane(sub, real, which, ceiling, ll, cm, alpha, STYLE_Translucent, reflects, fake, src, lightFrom);
 	return 1;
 }
 

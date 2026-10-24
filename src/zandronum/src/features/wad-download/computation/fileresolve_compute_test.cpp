@@ -231,3 +231,20 @@ TEST(FileResolve, ADefaultStepReadsAsTheExpensiveKind)
 	EXPECT_EQ(ResolveCheck::Hash, fresh.check);
 	EXPECT_TRUE(fresh.path.empty());
 }
+
+TEST(ComputeFileIsNamed, TheFileNameAloneIgnoringCaseAndSeparators)
+{
+	EXPECT_TRUE(ComputeFileIsNamed("F:/ForkUnderA/tools/freedoom/freedoom2.wad", "freedoom2.wad"));
+	EXPECT_TRUE(ComputeFileIsNamed("C:\\Games\\DOOM2.WAD", "doom2.wad"));
+	EXPECT_TRUE(ComputeFileIsNamed("doom2.wad", "DOOM2.wad"));
+	// [rc4l] A folder of that name, a longer name and no name at all are not the file.
+	EXPECT_FALSE(ComputeFileIsNamed("C:/doom2.wad/other.wad", "doom2.wad"));
+	EXPECT_FALSE(ComputeFileIsNamed("C:/x/mydoom2.wad", "doom2.wad"));
+	EXPECT_FALSE(ComputeFileIsNamed("C:/x/doom2.wad", ""));
+}
+
+TEST(ComputeSamePath, OnePathSpelledTwoWays)
+{
+	EXPECT_TRUE(ComputeSamePath("C:\\x\\a.wad", "c:/x/a.wad"));
+	EXPECT_FALSE(ComputeSamePath("C:/x/a.wad", "C:/y/a.wad"));
+}

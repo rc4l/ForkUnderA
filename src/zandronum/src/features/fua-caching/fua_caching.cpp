@@ -27,6 +27,11 @@
 #include "thingdef/thingdef.h"
 #include "thingdef/thingdef_exp.h"
 #include "features/fua-caching/fua_caching.h"
+#include "decallib.h"
+#include "textures/textures.h"
+#include "features/fua-caching/computation/animmarks_compute.h"
+#include "p_terrain.h"   // [rc4l] Splashes
+#include <vector>
 
 CVAR (Int, cl_fua_caching, 2, CVAR_ARCHIVE)
 
@@ -133,6 +138,13 @@ static void CollectCachedClasses (TArray<const PClass *> &out)
 	{
 		for (unsigned int c = 0; c < level.info->PrecacheClasses.Size (); ++c)
 			AddClass (PClass::FindClass (level.info->PrecacheClasses[c]), open, seen);
+	}
+	// [rc4l] TERRAIN's splashes, which a shot landing in lava or water spawns by no constant any state names.
+	for (unsigned int t = 0; t < Splashes.Size (); ++t)
+	{
+		AddClass (Splashes[t].SmallSplash, open, seen);
+		AddClass (Splashes[t].SplashBase, open, seen);
+		AddClass (Splashes[t].SplashChunk, open, seen);
 	}
 
 	while (open.Size () > 0 && out.Size () < FUA_CACHING_MAX_CLASSES)
@@ -254,5 +266,78 @@ void FUA_MarkCachedSounds ()
 				}
 			}
 		}
+	}
+}
+
+//==========================================================================
+//
+// [rc4l] Decal graphics, which no hitlist marks.
+//
+//==========================================================================
+
+static FUA_DecalPrecacheFn g_decalPrecache = NULL;
+
+void FUA_SetDecalPrecache (FUA_DecalPrecacheFn fn)
+{
+	g_decalPrecache = fn;
+}
+
+// [rc4l] One template's graphic sent with the translation and shading its marks draw with.
+static void SendDecalTemplate (const FDecalTemplate *t, void *)
+{
+	FTexture *tex = TexMan[t->PicNum];
+	if (tex != NULL)
+		g_decalPrecache (tex, (int)t->Translation, (t->RenderStyle.Flags & STYLEF_RedIsAlpha) != 0);
+}
+
+void FUA_PrecacheDecals ()
+{
+	if (FUA_CachingMode () <= 0 || g_decalPrecache == NULL)
+		return;
+	DecalLibrary.ForEachTemplate (SendDecalTemplate, NULL);
+}
+
+//==========================================================================
+//
+// [rc4l] The pictures a marked texture turns into, which the hitlist marks only the first of.
+//
+//==========================================================================
+
+// [rc4l] A switch's pictures: the one it shows, the frames it plays and those of the switch it turns into.
+static void AddSwitchFrames (const FSwitchDef *sw, std::vector<int> &frames)
+{
+	frames.push_back (sw->PreTexture.GetIndex ());
+	for (int f = 0; f < sw->NumFrames; f++)
+		frames.push_back (sw->frames[f].Texture.GetIndex ());
+}
+
+void FUA_MarkAnimatedTextures (BYTE *hitlist)
+{
+	if (FUA_CachingMode () <= 0)
+		return;
+	const int count = TexMan.NumTextures ();
+	const TArray<FAnimDef *> &anims = TexMan.GetAnimations ();
+	for (unsigned int i = 0; i < anims.Size (); ++i)
+	{
+		const FAnimDef *a = anims[i];
+		std::vector<int> listed;
+		if (a->bDiscrete)
+			for (int f = 0; f < a->NumFrames; f++)
+				listed.push_back (a->Frames[f].FramePic.GetIndex ());
+		zx::caching::ComputeSpreadMarks (hitlist, count, zx::caching::ComputeAnimationFrames (a->bDiscrete, a->BasePic.GetIndex (), a->NumFrames, listed, count));
+	}
+	for (int i = 0; i < count; ++i)
+	{
+		FTexture *tex = TexMan.ByIndex (i);
+		if (!(hitlist[i] & FTextureManager::HIT_Wall) || tex == NULL)
+			continue;
+		const FSwitchDef *sw = TexMan.FindSwitch (tex->id);
+		if (sw == NULL)
+			continue;
+		std::vector<int> frames;
+		AddSwitchFrames (sw, frames);
+		if (sw->PairDef != NULL)
+			AddSwitchFrames (sw->PairDef, frames);
+		zx::caching::ComputeSpreadMarks (hitlist, count, frames);
 	}
 }

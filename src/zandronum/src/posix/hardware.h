@@ -88,8 +88,6 @@ void I_InitGraphics ();
 void I_ShutdownGraphics ();
 void I_CreateRenderer();
 
-extern Semaphore FPSLimitSemaphore;
-void I_SetFPSLimit(int limit);
 
 extern IVideo *Video;
 

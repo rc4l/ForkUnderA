@@ -21,6 +21,8 @@ never reads what that tic is changing.
   and also moves the live game and bumps `validcount`); the copied light lists and height transfers set the blend;
   `R_ClearPastViewer` works by id; `FRenderer::RenderCameraRecord` draws a camera texture from a record.
 - `d_main.cpp` `D_PrepareDisplay` and `features/gameloop/loop.cpp` `AfterTic`: `FillMap` between tics.
+  On a client it fills again when a server packet was applied since (`features/net-client` `ParsedPackets`,
+  `ComputeFillDue`), where it filled every frame, comparing the whole map each time.
 - `features/gameloop/loop.cpp` `Playsim`: `ScanAtTicEnd`, the sectors, sides and lines the tic changed found on the
   thread that ran it against the states the copy last took (`g_sectorTaken`, `g_sideTaken`, `g_lineTaken`), so the
   fill compares only those, what the frames blended and what they marked seen (`computation/prescan_compute`). A
@@ -114,6 +116,11 @@ Seams:
 - `handoff/snapshot` (Handoff), `features/handoff/snapshot.cpp`
 - `handoff/ticker_begin` (Handoff), `features/gameloop/loop.cpp`
 - `handoff/ticker_end` (Handoff), `features/gameloop/loop.cpp`
+- `net/launcher_reply` (Main), `features/federated-server-registry/sv_serverregistry.cpp`
+- `net/parse` (Main), `cl_main.cpp`
+- `net/receive` (Main), `network.cpp`
+- `net/send` (Main), `network.cpp`
+- `net/server_tick` (Main), `sv_main.cpp`
 - `sky/map` (Main), `r_sky.cpp`
 - `sound/channels` (GameData), `s_sound.cpp`
 - `sound/deferred` (Handoff), `s_sound.cpp`

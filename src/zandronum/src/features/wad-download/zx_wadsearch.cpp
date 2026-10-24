@@ -10,11 +10,13 @@
 #include "doomtype.h"
 #include "gameconfigfile.h"
 #include "i_system.h"		// I_GetSteamPath
+#include "w_wad.h"
 #include "zstring.h"
 
 #include "zx_waddownload_lists.h"	// kKnownWadDirs, generated from waddirectories.txt
 
 #include "features/wad-download/zx_wadsearch.h"
+#include "features/wad-download/computation/fileresolve_compute.h"
 
 namespace
 {
@@ -63,12 +65,32 @@ void AddPathOnce( const char *section, const char *value )
 namespace zx
 {
 
+int RunningIwadWadnum( void )
+{
+	ULONG seen = 0;
+	for ( ULONG idx = 0; Wads.GetWadName( idx ) != NULL; ++idx )
+	{
+		if ( Wads.GetLoadedAutomatically( idx ))
+			continue;
+		if ( seen == static_cast<ULONG>( FWadCollection::IWAD_FILENUM ))
+			return static_cast<int>( idx );
+		seen++;
+	}
+	return -1;
+}
+
 void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 {
 	out.Clear( );
 
 	if (( name == NULL ) || ( name[0] == '\0' ) || ( GameConfig == NULL ))
 		return;
+
+	// [rc4l] The IWAD this game runs first, wherever it came from: a player started with -iwad from another folder was told to download the file in use.
+	const int running = RunningIwadWadnum( );
+	const char *runningPath = ( running >= 0 ) ? Wads.GetWadFullName( running ) : NULL;
+	if (( runningPath != NULL ) && ComputeFileIsNamed( runningPath, name ))
+		out.Push( runningPath );
 
 	// The config's IWAD list first, in its own order -- the same walk IdentifyVersion does.
 	if ( GameConfig->SetSection( "IWADSearch.Directories" ))
@@ -85,7 +107,7 @@ void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 			FixPathSeperator( dir );
 
 			const FString candidate = JoinPath( dir, name );
-			if ( DirEntryExists( candidate ))
+			if ( DirEntryExists( candidate ) && !(( out.Size( ) > 0 ) && ComputeSamePath( out[0].GetChars( ), candidate.GetChars( ))))
 				out.Push( candidate );
 		}
 	}
@@ -99,7 +121,7 @@ void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 		FixPathSeperator( dir );
 
 		const FString candidate = JoinPath( dir, name );
-		if ( DirEntryExists( candidate ))
+		if ( DirEntryExists( candidate ) && !(( out.Size( ) > 0 ) && ComputeSamePath( out[0].GetChars( ), candidate.GetChars( ))))
 			out.Push( candidate );
 	}
 }

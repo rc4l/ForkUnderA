@@ -62,6 +62,7 @@
 #include "deathmatch.h"
 #include "chat.h"
 #include "network_enums.h"
+#include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_unlagged_ticoffset
 #include "p_acs.h"
 #include "v_video.h"
 // [MGOOOOOO] Predicate for when the full 32-bit button set must be transmitted.
@@ -303,7 +304,8 @@ static CLIENT_MOVE_COMMAND_s clientcommand_CreateMoveCommand( void )
 	CLIENT_MOVE_COMMAND_s moveCMD;
 
 	moveCMD.ulGametic = gametic;
-	moveCMD.ulServerGametic = CLIENT_GetLatestServerGametic( ) + CLIENT_GetServerGameticOffset( );
+	// [rc4l] features/net-protocol: less fua_debug_unlagged_ticoffset, which proves unlaggedhit fails on a screen behind.
+	moveCMD.ulServerGametic = zx::netprotocol::ReportedServerTic( CLIENT_GetLatestServerGametic( ) + CLIENT_GetServerGameticOffset( ));
 	moveCMD.cmd = players[consoleplayer].cmd;
 
 	// [BB] If we think that we can't move, don't even try to tell the server that we

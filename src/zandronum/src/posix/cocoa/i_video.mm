@@ -1343,31 +1343,6 @@ void I_ClosestResolution(int *width, int *height, int bits)
 // ---------------------------------------------------------------------------
 
 
-EXTERN_CVAR(Int, vid_maxfps);
-EXTERN_CVAR(Bool, cl_capfps);
-
-// So Apple doesn't support POSIX timers and I can't find a good substitute short of
-// having Objective-C Cocoa events or something like that.
-void I_SetFPSLimit(int limit)
-{
-}
-
-CUSTOM_CVAR(Int, vid_maxfps, 200, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	if (vid_maxfps < TICRATE && vid_maxfps != 0)
-	{
-		vid_maxfps = TICRATE;
-	}
-	else if (vid_maxfps > 1000)
-	{
-		vid_maxfps = 1000;
-	}
-	else if (cl_capfps == 0)
-	{
-		I_SetFPSLimit(vid_maxfps);
-	}
-}
-
 CUSTOM_CVAR(Bool, vid_hidpi, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
 	if (I_IsHiDPISupported())

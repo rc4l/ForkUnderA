@@ -5,6 +5,9 @@ instead of rendering the picked "mode" into a corner and leaving the rest black.
 faithful, tested port of upstream's `r_videoscale` scale math as the foundation for genuine
 sub-native render scaling later.
 
+The scale here sizes the whole frame, HUD and menus included. `features/dynres` scales only the
+3D scene inside that frame, below it, as the GPU's load asks.
+
 ## Why this exists
 
 After borderless-video, fullscreen is a borderless desktop window that never switches the display

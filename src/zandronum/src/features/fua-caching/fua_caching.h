@@ -31,6 +31,16 @@ void FUA_MarkCachedSprites (BYTE *spritelist, unsigned int numsprites);
 // no-op in mode 0.
 void FUA_MarkCachedSounds ();
 
+// [rc4l] Marks every frame of a marked texture's ANIMDEFS animation and a marked switch's other pictures with its marks, so neither is first loaded when it turns; no-op in mode 0.
+void FUA_MarkAnimatedTextures (BYTE *hitlist);
+
+// [rc4l] Where FUA_PrecacheDecals sends each template's graphic with the translation and shading its marks draw with, which a renderer making textures ahead installs.
+typedef void (*FUA_DecalPrecacheFn) (const void *texture, int translation, bool redToAlpha);
+void FUA_SetDecalPrecache (FUA_DecalPrecacheFn fn);
+
+// [rc4l] Sends every DECALDEF template's graphic to the installed FUA_DecalPrecacheFn; no-op in mode 0 or with none installed.
+void FUA_PrecacheDecals ();
+
 // Once per session, draws one masked point per reachable (shader program,
 // blend state) combo so the driver compiles every pipeline at load instead
 // of at first use mid-fight (fua_warmup.cpp). Called after the material

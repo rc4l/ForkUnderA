@@ -11,6 +11,9 @@ namespace zx { namespace frame {
 // [rc4l] Burn the debug stall due this frame, once the loop's tics for it have run.
 void DebugFrameStall(bool ticRan);
 
+// [rc4l] Burn fua_debug_playsim_us inside a tic's playsim, on whichever thread runs it, as a heavy fight's tic costs.
+void DebugPlaysimStall();
+
 }} // namespace zx::frame
 
 #endif // ZX_FRAMESTALL_H
