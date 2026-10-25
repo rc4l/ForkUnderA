@@ -92,6 +92,7 @@
 #include "callvote.h"
 #include "features/damage-taken/damagetaken.h"
 #include "features/net-session/computation/joinupdate_compute.h"
+#include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
 #include <memory>
 
 CVAR (Bool, sv_showwarnings, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
@@ -464,6 +465,16 @@ void SERVERCOMMANDS_FuaDamageTaken( ULONG ulPlayer, const zx::damagetaken::Repor
 	command.SetLethal( report.lethal );
 
 	command.sendCommandToClients( ulPlayer, SVCF_ONLYTHISCLIENT );
+}
+
+//*****************************************************************************
+//
+// [Doruk-Aksoy] ACS SetMusicVolume's factor, to every client or, with SVCF_ONLYTHISCLIENT, a joiner.
+void SERVERCOMMANDS_FuaSetMusicVolume( float volume, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::FuaSetMusicVolume command;
+	command.SetVolume( volume );
+	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
 //*****************************************************************************
@@ -3688,7 +3699,7 @@ void SERVERCOMMANDS_Sound( LONG lChannel, const char *pszSound, float fVolume, f
 	ServerCommands::Sound command;
 	command.SetChannel( lChannel );
 	command.SetSound( pszSound );
-	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
+	command.SetVolume( ComputeSoundVolumeToWire( fVolume ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
 	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -3726,7 +3737,7 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	command.SetActor( pActor );
 	command.SetChannel( lChannel );
 	command.SetSound( pszSound );
-	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
+	command.SetVolume( ComputeSoundVolumeToWire( fVolume ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ));
 	command.SetPitch( pitch );	// [rc4l] -1 = default (client computes its own); >=0 = explicit
 	command.sendCommandToClients( ulPlayerExtra, flags );
@@ -3743,7 +3754,7 @@ void SERVERCOMMANDS_SoundSector( sector_t *sector, int channel, const char *soun
 	command.SetSector( sector );
 	command.SetChannel( channel );
 	command.SetSound( sound );
-	command.SetVolume( LONG ( clamp( volume, 0.0f, 2.0f ) * 127 ) );
+	command.SetVolume( ComputeSoundVolumeToWire( volume ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( attenuation ));
 	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients( ulPlayerExtra, flags );
@@ -3759,7 +3770,7 @@ void SERVERCOMMANDS_SoundPoint( LONG lX, LONG lY, LONG lZ, LONG lChannel, const 
 	command.SetZ( lZ );
 	command.SetChannel( lChannel );
 	command.SetSound( pszSound );
-	command.SetVolume( LONG ( clamp( fVolume, 0.0f, 2.0f ) * 127 ) );
+	command.SetVolume( ComputeSoundVolumeToWire( fVolume ) );
 	command.SetAttenuation( NETWORK_AttenuationFloatToInt ( fAttenuation ) );
 	command.SetPitch( pitch );	// [rc4l] -1 = default
 	command.sendCommandToClients ( ulPlayerExtra, flags );

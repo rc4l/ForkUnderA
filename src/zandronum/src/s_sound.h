@@ -67,6 +67,7 @@ struct sfxinfo_t
 	WORD		bSingular:1;
 	WORD		bTentative:1;
 	WORD		bPlayerSilent:1;		// This player sound is intentionally silent.
+	WORD		bAllowAmplify:1;		// [Doruk-Aksoy] SNDINFO's $fua_allow_amplify covered this sound, so it may play louder than 1.
 
 	int			LoopStart;				// -1 means no specific loop defined
 
@@ -272,6 +273,8 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, floa
 #define CHAN_NOPAUSE			64	// Do not pause this sound in menus.
 #define CHAN_AREA				128	// Sound plays from all around. Only valid with sector sounds.
 #define CHAN_LOOP				256
+#define CHAN_NOSTOP				4096	// [Doruk-Aksoy] uzdoom@e82565373f: start nothing while the actor already plays this sound on the channel.
+#define CHAN_OVERLAP			8192	// [Doruk-Aksoy] uzdoom@e82565373f: play beside what the channel already holds instead of stopping it.
 
 #define CHAN_PICKUP				(CHAN_ITEM|CHAN_MAYBE_LOCAL)
 

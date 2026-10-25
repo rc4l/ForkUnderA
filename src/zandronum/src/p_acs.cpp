@@ -88,6 +88,7 @@
 #include "invasion.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
+#include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include "network/nettraffic.h"
 #include "za_database.h"
 #include "cl_commands.h"
@@ -5662,6 +5663,9 @@ enum EACSFunctions
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
 
+	// [Doruk-Aksoy] uzdoom@a1e8d83724: out of order, at upstream's number, which ACC compiles SetMusicVolume to (-97).
+	ACSF_SetMusicVolume = 97,
+
 	/* Zandronum's - these must be skipped when we reach 99!
 	-100:ResetMap(0),
 	-101 : PlayerIsSpectator(1),
@@ -7341,6 +7345,17 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			}
 			break;
 		}
+
+		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
+		case ACSF_SetMusicVolume:
+			level.SetMusicVolume(FIXED2FLOAT(args[0]));
+			// [Doruk-Aksoy] Only clients play music, so the server sends them the level's factor and keeps it for those joining.
+			if (zx::net::IsServer())
+			{
+				SERVERCOMMANDS_FuaSetMusicVolume(level.MusicVolume);
+				SERVER_SetMapMusicVolume(level.MusicVolume);
+			}
+			break;
 
 		// [BL] Skulltag function
 		case ACSF_AnnouncerSound:

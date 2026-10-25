@@ -179,31 +179,34 @@ export function readWad(buf) {
 }
 
 // [rc4l] A pk3 from files by path ({ name, data }), stored rather than deflated: what MODELDEF needs, since it finds a model by full path and a wad's lumps have none.
-export function pk3(files) {
+// [Doruk-Aksoy] { deflate: true } compresses every file as most mods ship theirs, which the engine then inflates whole to read.
+export function pk3(files, { deflate = false } = {}) {
   const datas = files.map((f) => (Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data || "", "latin1")));
   const names = files.map((f) => Buffer.from(f.name, "latin1"));
   const locals = [], central = [];
   let at = 0;
   files.forEach((f, i) => {
     const crc = zlib.crc32(datas[i]);
+    const stored = deflate ? zlib.deflateRawSync(datas[i], { level: 9 }) : datas[i];
     // [rc4l] The fields a local header and its central directory entry share, from the version needed on: 1980-01-01, no flags, method 0.
     const common = Buffer.alloc(26);
     common.writeUInt16LE(20, 0);
+    common.writeUInt16LE(deflate ? 8 : 0, 4);
     common.writeUInt16LE(0x21, 8);
     common.writeUInt32LE(crc, 10);
-    common.writeUInt32LE(datas[i].length, 14);
+    common.writeUInt32LE(stored.length, 14);
     common.writeUInt32LE(datas[i].length, 18);
     common.writeUInt16LE(names[i].length, 22);
     const local = Buffer.alloc(4);
     local.writeUInt32LE(0x04034b50, 0);
-    locals.push(local, common, names[i], datas[i]);
+    locals.push(local, common, names[i], stored);
     const entry = Buffer.alloc(46);
     entry.writeUInt32LE(0x02014b50, 0);
     entry.writeUInt16LE(20, 4);
     common.copy(entry, 6);
     entry.writeUInt32LE(at, 42);
     central.push(entry, names[i]);
-    at += 30 + names[i].length + datas[i].length;
+    at += 30 + names[i].length + stored.length;
   });
   const dir = Buffer.concat(central);
   const end = Buffer.alloc(22);
@@ -216,6 +219,7 @@ export function pk3(files) {
 }
 
 // [rc4l] A stored pk3's files in directory order, as { name, data }, each checked against its CRC; pk3() written backwards.
+// [Doruk-Aksoy] A deflated file comes back inflated, with deflated set; any other method is refused by name.
 export function readPk3(buf) {
   const endAt = buf.length - 22;
   if (endAt < 0 || buf.readUInt32LE(endAt) !== 0x06054b50) throw new Error("not a pk3: no end of central directory");
@@ -223,13 +227,15 @@ export function readPk3(buf) {
   let e = buf.readUInt32LE(endAt + 16);
   const out = [];
   for (let i = 0; i < count; i++) {
-    const nameLen = buf.readUInt16LE(e + 28), crc = buf.readUInt32LE(e + 16), size = buf.readUInt32LE(e + 20);
+    const nameLen = buf.readUInt16LE(e + 28), crc = buf.readUInt32LE(e + 16), size = buf.readUInt32LE(e + 20), method = buf.readUInt16LE(e + 10);
     const name = buf.toString("latin1", e + 46, e + 46 + nameLen);
+    if (method !== 0 && method !== 8) throw new Error(`${name}: compression method ${method}, not stored or deflated`);
     const local = buf.readUInt32LE(e + 42);
     const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
-    const data = buf.subarray(start, start + size);
+    const raw = buf.subarray(start, start + size);
+    const data = method === 8 ? zlib.inflateRawSync(raw) : raw;
     if (zlib.crc32(data) !== crc) throw new Error(`${name}: CRC mismatch`);
-    out.push({ name, data });
+    out.push(method === 8 ? { name, data, deflated: true } : { name, data });
     e += 46 + nameLen;
   }
   return out;

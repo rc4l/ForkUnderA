@@ -721,6 +721,7 @@ ULONG		SERVER_GetMaxPacketSize( void );
 const char	*SERVER_GetMapMusic( void );
 int			SERVER_GetMapMusicOrder( void );
 void		SERVER_SetMapMusic( const char *pszMusic, int order );
+void		SERVER_SetMapMusicVolume( float volume );   // [Doruk-Aksoy] what clients play the map music at, for those joining
 void		SERVER_ResetInventory( ULONG ulClient, const bool bChangeClientWeapon = true, bool bGiveReverseOrder = true ); // [RK] Added bGiveReverseOrder
 void		SERVER_AddEditedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulPal1, ULONG ulPal2 );
 void		SERVER_AddEditedTranslation( ULONG ulTranslation, ULONG ulStart, ULONG ulEnd, ULONG ulR1, ULONG ulG1, ULONG ulB1, ULONG ulR2, ULONG ulG2, ULONG ulB2 );

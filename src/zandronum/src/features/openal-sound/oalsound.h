@@ -264,6 +264,10 @@ private:
 	ALfloat SfxVolume;
 	ALfloat MusicVolume;
 
+	// [Doruk-Aksoy] Whether the device pans as oal_pan_compute models (basic stereo), and the AL_MAX_GAIN a sound source accepts.
+	bool PanBasicStereo;
+	ALfloat SourceMaxGain;
+
 	int SFXPaused;
 	TArray<ALuint> FreeSfx;
 	TArray<ALuint> PausableSfx;

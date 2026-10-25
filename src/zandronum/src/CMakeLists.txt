@@ -1634,6 +1634,7 @@ add_executable( zdoom WIN32
 	features/playerclass-fallback/zx_playerclassfallback.cpp
 	features/fua-caching/fua_caching.cpp
 	features/fua-caching/fua_warmup.cpp
+	features/music-cache/musiccache.cpp
 	features/iwad-registry/zx_iwadregistry.cpp
 	${ONLINE_SOURCES}
 	features/net/zx_offline.cpp

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readWad } from "../src/udmf.mjs";
+import { readWad, readPk3 } from "../src/udmf.mjs";
 import { buildNetSyncWad, serverChanged, AFTER as SYNC_AFTER, CONFIGS as SYNC_CONFIGS } from "../scenarios/netsync.mjs";
 import { buildUnlaggedHitWad, shotOffsets, judgeUnlagged, OFFSET_BAR, CONFIGS as HIT_CONFIGS } from "../scenarios/unlaggedhit.mjs";
 import { buildNetBroadcastWad, judgeBroadcast } from "../scenarios/netbroadcast.mjs";
@@ -143,4 +143,38 @@ test("netmapchange judges each change by what each client saw, its account and t
   assert.deepEqual(judgeChange(STEPS[1], { clients: [{ ...good, sawIntermission: false, zombieHealth: 20 }], zombieDied: true, agreed }), ["player player 0 holds the zombieman at 20"]);
   assert.deepEqual(judgeChange(STEPS[1], { clients: [{ ...good, account: "", playing: false }], zombieDied: true, agreed }), ["player player 0 came back not in the game", "player player 0 has no account"]);
   assert.deepEqual(judgeChange(STEPS[2], { clients: [{ ...good, sawIntermission: false, map: "MAP03" }], zombieDied: true, agreed }), []);
+});
+
+test("netmusic builds its wad and deflated pk3, reads what a client hears and holds, and names each client that hears or holds otherwise", async () => {
+  const { buildNetMusicWad, buildNetMusicPk3, silentWav, parseHeard, parseMusicCache, cacheFaults, judgeNetMusic, STEPS, SONGS, CONFIGS, QUIET } = await import("../scenarios/netmusic.mjs");
+  assert.deepEqual(lumpNames(buildNetMusicWad()), ["MAPINFO", ...SONGS, "MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP"]);
+  assert.match(readWad(buildNetMusicWad())[0].data.toString("latin1"), /music = "FUASONG1"/);
+  const files = readPk3(buildNetMusicPk3());
+  assert.deepEqual(files.map((f) => f.name), ["mapinfo.txt", "music/fuasong1.wav", "music/fuasong2.wav", "music/fuasong3.wav", "maps/map01.wad"]);
+  assert.ok(files.every((f) => f.deflated), "every file deflated, as a mod ships them");
+  assert.deepEqual(lumpNames(files[4].data), ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP"]);
+  assert.deepEqual(CONFIGS.map((c) => [c.name, c.songsKept, !!c.wad, c.clientCvars]), [["wad", 0, false, QUIET], ["pk3", 3, true, QUIET]]);
+  const song = silentWav(0.5, 8000);
+  assert.equal(song.length, 44 + 4000);
+  assert.equal(song.toString("latin1", 0, 4) + song.toString("latin1", 8, 16) + song.toString("latin1", 36, 40), "RIFFWAVEfmt data");
+  assert.deepEqual([song.readUInt32LE(4), song.readUInt32LE(24), song.readUInt16LE(34), song.readUInt32LE(40), song[44]], [36 + 4000, 8000, 8, 4000, 0x80]);
+  assert.equal(parseHeard("currently playing fuasong2\n", "Current relative volume is 0.50\n"), "FUASONG2 @ 0.50");
+  assert.equal(parseHeard("no music playing\n", ""), "nothing @ ?");
+  const kept = parseMusicCache("music/fuasong1.wav: 10 KB\n3 songs kept, 32 KB of 131072 KB\nmusic changes since the level's precache: 2 from memory, 0 inflated\n");
+  assert.deepEqual(kept, { kept: 3, fromMemory: 2, inflated: 0 });
+  assert.deepEqual(parseMusicCache('Unknown command "fua_musiccache"'), { kept: null, fromMemory: null, inflated: null });
+  const none = { kept: 0, fromMemory: 0, inflated: 0 };
+  assert.deepEqual(cacheFaults({ server: none, player: kept, joiners: [{ ...kept, fromMemory: 0 }] }, 3), []);
+  assert.deepEqual(cacheFaults({ server: none, player: none, joiners: [none] }, 0), []);
+  assert.deepEqual(cacheFaults({ server: { kept: 3 }, player: { kept: 0, fromMemory: 0, inflated: 2 }, joiners: [{ kept: null, inflated: null }] }, 3),
+    ["the server keeps 3 songs, not 0", "the player keeps 0 songs, not 3", "the player inflated a song at 2 music changes", "late joiner 1 keeps ? songs, not 3",
+      "late joiner 1 inflated a song at ? music changes", "the player played 0 music changes from memory, not at least 2"]);
+  assert.deepEqual(cacheFaults({ server: {}, player: kept, joiners: [] }, 0), ["the server keeps ? songs, not 0", "the player keeps 3 songs, not 0", "the player played 2 music changes from memory, not 0"]);
+  const rows = STEPS.map((s) => ({ step: s.name, want: s.want, player: s.want, joiner: s.want }));
+  const caches = { server: none, player: kept, joiners: [kept, kept, kept] };
+  assert.match(judgeNetMusic("x", { rows, caches, songsKept: 3 }).line, /^PASS x: .* 3 steps hear FUASONG2 @ 1\.00, then FUASONG2 @ 0\.50, then FUASONG3 @ 1\.00; each keeps 3 songs and inflated none at a change$/);
+  const bad = judgeNetMusic("x", { rows: rows.map((r, i) => (i === 2 ? { ...r, joiner: "FUASONG3 @ 0.50" } : i === 1 ? { ...r, player: "FUASONG2 @ 1.00" } : r)), caches, songsKept: 3 });
+  assert.equal(bad.failed, 1);
+  assert.equal(bad.line, "FAIL x: after SetMusicVolume(0.5), the player hears FUASONG2 @ 1.00, not FUASONG2 @ 0.50; after SetMusic(FUASONG3), the client joining then hears FUASONG3 @ 0.50, not FUASONG3 @ 1.00");
+  assert.match(judgeNetMusic("x", { rows, caches, songsKept: 0 }).line, /^FAIL x: the player keeps 3 songs, not 0; late joiner 1/);
 });

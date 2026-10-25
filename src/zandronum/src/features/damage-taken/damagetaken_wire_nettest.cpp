@@ -96,7 +96,8 @@ TEST(DamageTakenWire, IsAppendedAfterTheLastExistingCommand) {
 	// [MobiusU9B] The ids shipped before this command keep their values, and the new one fits the SVC2 byte.
 	EXPECT_EQ(72, SVC2_SETTHINGSPRITEORIENTATION);
 	EXPECT_EQ(73, SVC2_FUADAMAGETAKEN);
-	EXPECT_EQ(SVC2_FUADAMAGETAKEN + 1, NUM_SVC2_COMMANDS);
+	// [Doruk-Aksoy] FuaSetMusicVolume was appended after it, so nothing sits between the two.
+	EXPECT_EQ(SVC2_FUADAMAGETAKEN + 1, SVC2_FUASETMUSICVOLUME);
 	EXPECT_LE(NUM_SVC2_COMMANDS, 0x100);
 }
 

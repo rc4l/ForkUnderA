@@ -88,6 +88,7 @@
 #include "features/jumpifinput/computation/jumpifinput_compute.h"
 #include "features/actorresize/actorresize.h"
 #include "features/spawnprojectile/computation/spawnprojectile_compute.h"
+#include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] A_StartSound's flags as a channel
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -576,11 +577,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PlaySoundEx)
 		// [AK] If we're the server, we have to update the list of looping sound channels.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
+			// [Doruk-Aksoy] The slot, as the looping branch below uses, not the channel name's index, which recorded a loop on the wrong slot.
+			const int slot = int(channel) - NAME_Auto;
+
 			// [AK] Don't loop this sound if it's already looping on this channel.
-			if (( channel & CHAN_LOOP ) && ( SERVER_IsChannelLooping( self, ( int(channel) - NAME_Auto ) & 7, soundid ) ))
+			if (( slot & CHAN_LOOP ) && ( SERVER_IsChannelLooping( self, slot & 7, soundid ) ))
 				return;
 
-			SERVER_UpdateLoopingChannels( self, channel, soundid, 1, attenuation, ( channel & CHAN_LOOP ) == false );
+			SERVER_UpdateLoopingChannels( self, slot, soundid, 1, attenuation, ( slot & CHAN_LOOP ) == false );
 		}
 
 		S_Sound (self, int(channel) - NAME_Auto, soundid, 1, attenuation, true );	// [BB] Inform the clients.
@@ -611,9 +615,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PlaySoundEx)
 // [rc4l] A_StartSound -- the modern successor to A_PlaySound. Ported from
 // uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514 (actor.zs A_StartSound). Mods (Eviternity II
 // among them) call it by name from DECORATE. `flags` carries uzdoom's EChanFlags:
-//   CHANF_OVERLAP -- never cut an existing sound; maps onto CHAN_AUTO's free-channel search.
-//   CHANF_NOSTOP  -- do not start if the channel is already playing anything.
+//   CHANF_OVERLAP -- play beside what the slot already holds (features/sound-overlap).
+//   CHANF_NOSTOP  -- do not start while the actor already plays this sound on the slot, as uzdoom's S_PlaySoundPitch checks.
 //   CHANF_LOOP    -- loop, with the same server-side looping-channel bookkeeping as A_PlaySound.
+//   CHANF_LISTENERZ, CHANF_MAYBE_LOCAL, CHANF_UI, CHANF_NOPAUSE -- passed on with the sound, as the channel flags they are here.
 // `pitch` is honoured by the networked-sound-pitch change; `startTime` has no backend here and is
 // accepted for signature parity only.
 //
@@ -621,8 +626,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PlaySoundEx)
 enum
 {
 	CHANF_LOOP		= 256,
-	CHANF_NOSTOP	= 4096,
-	CHANF_OVERLAP	= 8192,
 };
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
@@ -642,18 +645,13 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_StartSound)
 			return;
 	}
 
-	int channel = slot & 7;
-	if ( flags & CHANF_OVERLAP )
-		channel = CHAN_AUTO;	// free-channel search never cuts an existing sound
+	// [Doruk-Aksoy] uzdoom@e82565373f: the flags go on with the sound, so CHANF_OVERLAP plays on the slot asked for and S_Sound weighs CHANF_NOSTOP.
+	int channel = ComputeStartSoundChannel( slot, flags );
 
 	// [rc4l] uzdoom pitch is a playback-rate multiplier (1.0 = normal, 0.0 = "use default"). Convert
 	// to this engine's NORM_PITCH=128 integer scale; -1 means "no explicit pitch" so the normal
 	// (possibly randomised) default is used and the client computes its own.
 	int enginePitch = ( pitch > 0.f ) ? int( pitch * 128.f ) : -1;
-
-	// CHANF_NOSTOP: bail if this channel is already playing anything.
-	if (( flags & CHANF_NOSTOP ) && S_IsActorPlayingSomething( self, channel & 7, -1 ))
-		return;
 
 	if ( flags & CHANF_LOOP )
 	{

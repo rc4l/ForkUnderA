@@ -41,6 +41,7 @@
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "g_game.h"
 #include "s_sound.h"
+#include "sound/i_music.h"	// [Doruk-Aksoy] I_SetMusicVolume
 #include "d_event.h"
 #include "m_random.h"
 #include "doomerrors.h"
@@ -809,7 +810,9 @@ void G_ChangeLevel(const char *levelname, int position, int flags, int nextSkill
 
 	startpos = position;
 	gameaction = ga_completed;
-		
+	// [Doruk-Aksoy] uzdoom@da74b9df95: a script's music volume does not outlast its level.
+	level.SetMusicVolume(1.0f);
+
 	if (nextinfo != NULL) 
 	{
 		if (thiscluster != nextcluster || (thiscluster && !(thiscluster->flags & CLUSTER_HUB)))
@@ -2138,6 +2141,7 @@ void G_InitLevelLocals ()
 
 	level.gravity = sv_gravity * 35/TICRATE;
 	level.aircontrol = (fixed_t)(sv_aircontrol * 65536.f);
+	level.MusicVolume = 1.f;	// [Doruk-Aksoy] uzdoom@da74b9df95
 	level.teamdamage = teamdamage;
 	level.flags = 0;
 	level.flags2 = 0;
@@ -2224,6 +2228,18 @@ void G_InitLevelLocals ()
 
 	level.DefaultEnvironment = info->DefaultEnvironment;
 	level.DefaultSkybox = NULL;
+}
+
+//==========================================================================
+//
+// [Doruk-Aksoy] uzdoom@da74b9df95: the level's music volume factor, kept so a save and a dialogue can restore it.
+//
+//==========================================================================
+
+void FLevelLocals::SetMusicVolume(float f)
+{
+	MusicVolume = f;
+	I_SetMusicVolume(f);
 }
 
 //==========================================================================

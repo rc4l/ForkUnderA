@@ -12,9 +12,11 @@ DECORATE-callable port of GZDoom's `A_StartSound`, the modern successor to `A_Pl
 
 | Flag | Value | Behavior here |
 |------|-------|---------------|
-| `CHANF_OVERLAP` | 8192 | never cut an existing sound — maps onto this base's `CHAN_AUTO` free-channel search |
-| `CHANF_NOSTOP`  | 4096 | do not start if the channel is already playing anything (`S_IsActorPlayingSomething`) |
+| `CHANF_OVERLAP` | 8192 | play beside what the slot already holds, on that slot (`features/sound-overlap`) |
+| `CHANF_NOSTOP`  | 4096 | do not start while the actor already plays this sound on the slot, as uzdoom checks; decided in `S_Sound`, by each client online |
 | `CHANF_LOOP`    | 256  | loop, with the same server looping-channel bookkeeping as `A_PlaySound` |
+| `CHANF_LISTENERZ`, `CHANF_MAYBE_LOCAL`, `CHANF_UI`, `CHANF_NOPAUSE` | 8, 16, 32, 64 | passed on with the sound, as `A_PlaySound`'s channel flags are |
+| `CHANF_LOOPING` | 4352 | `CHANF_LOOP\|CHANF_NOSTOP` |
 
 `pitch` is honoured through the networked-sound-pitch path (see the sound-pitch feature).
 `startTime` has no backend equivalent in this engine and is accepted for signature parity only.

@@ -3649,7 +3649,7 @@ e7c0fd26ba95b81c0b55bc789e507f8b0c1c32f8	2016-04-16T19:28:08Z	- restored an acci
 bc2a5b3f1617662bb58a601723b4a20d16d03cc9	2016-04-17T08:19:56Z	- fixed typo in automap background position calculation.	pending		/
 0a35027f67e94c9237fc83eef9c030db33d39088	2016-04-17T08:39:29Z	- fixed use of validcount for the GL renderer.	pending		/
 5e73cdc670ec02946578262e91d5bd4661af38a6	2016-04-17T08:41:13Z	- deleted leftover label in trace code.	pending		/
-a1e8d83724d3d86b1b0f92970d007abbaa479eed	2016-04-17T08:56:46Z	- added SetMusicVolume ACS function.	pending		/
+a1e8d83724d3d86b1b0f92970d007abbaa479eed	2016-04-17T08:56:46Z	- added SetMusicVolume ACS function.	adapted	ACSF_SetMusicVolume 97 as upstream; only clients play music, so the server sends SVC2_FUASETMUSICVOLUME and keeps the factor clients hear (dropped by a new song) for late joiners (features/acs-setmusicvolume)	70a0a8c2
 8a010ab871129712b9e9552c72ec090dbbaf56ab	2016-04-17T09:58:26Z	- allow 90° rotations in skybox sectors.	pending		/
 a199fe182548ac9d5d11cd29cd9697175500203d	2016-04-17T10:04:32Z	- fixed: loading polyobjects from a savegame was incomplete.	pending		/
 dcc77e5fb21be76d478afdc1734772237df995e6	2016-04-17T10:06:26Z	Merge remote-tracking branch 'remotes/zdoom/master'	pending		/
@@ -8005,7 +8005,7 @@ cd015f9340320660b339b16e3a76071df3967fb0	2017-03-15T21:04:59Z	- make the colorma
 91da8aecdb29d419bc75c8c994e6ba68e98dc326	2017-03-15T22:38:12Z	- fixed fog init for SW Truecolor.	pending		/
 3aa7687d91287d5163e11ae1b7d5a854d77abbf1	2017-03-15T23:56:03Z	- made 'nocoloredspritelighting' a global option and also implemented it in the software renderer.	pending		/
 889a2ae6aaff4d166c8f02a6347bc9ad3eafff82	2017-03-16T09:13:02Z	Fixed compilation with GCC/Clang	pending		/
-005e6871f9324d408eb719c496b6ad4360e06003	2017-03-16T09:38:56Z	- increased the snd_channels default and minimum.	pending		/
+005e6871f9324d408eb719c496b6ad4360e06003	2017-03-16T09:38:56Z	- increased the snd_channels default and minimum.	adapted	the default of 128 as upstream; its minimum of 64 not taken, since 2a489e7753 later put it back to 8	70a0a8c2
 b529b1e3a7a320a09c223301d75c4c74bd0fec1e	2017-03-16T12:49:34Z	- removed several unneeded GL headers from the software renderer's sources. - consolidated the code to calculate a sprite's display angle for all 3 renderers.	pending		/
 f1b03b48e9fcf97d53653ccc91c3b802e0b529c6	2017-03-16T16:53:12Z	- add thread safety to GetSpecialLights	pending		/
 dbea29e02c0c4daa614dd1d7f2d60efcae0b9e16	2017-03-16T16:58:41Z	- added missing memory barrier	pending		/
@@ -9864,7 +9864,7 @@ bd7791ad9cedf2e8047ee51f7fe754f21ec4a934	2018-03-24T09:20:39Z	Allow setting stri
 69c6e95b08b11eca19e13e2f61231ef155ccc97e	2018-03-24T09:23:31Z	Add worldlineactivated event, triggered after successful line activation.	pending		/
 3072c9bf7c2bc31c7e88da678356b5e8eaa2fd68	2018-03-24T09:24:13Z	Add PostUiTick(). Happens after all other tickers. Useful for handling changes in the play side within the same tic.	pending		/
 40bf8a421ea5d7804f73ec3aa6e8aa7f9e1e123b	2018-03-24T10:09:23Z	User's OpenAL library has precedence over Apple's framework	pending		/
-da74b9df9510a058a888af999279204e7868a2fd	2018-03-24T12:07:18Z	- serialize the temporary music volume that can be set through ACS.	pending		/
+da74b9df9510a058a888af999279204e7868a2fd	2018-03-24T12:07:18Z	- serialize the temporary music volume that can be set through ACS.	adapted	the factor saved after the music name and order in P_SerializeSounds; our saves are not keyed, so SAVEVER 4525 guards the field and older saves load at 1	70a0a8c2
 4f6a853bfb5ba7fb59cd60a225d70b5be696929b	2018-03-24T12:09:55Z	Added validation of sound position and velocity	pending		/
 c4b3dcf266b8670de45944f0c727594ebb2dbd25	2018-03-24T12:53:47Z	Fixed indent of OpenAL initialization messages	pending		/
 a4bee610b4a43305ed84772a6cadb688fcfc7341	2018-03-24T13:00:36Z	Added runtime warning about usage of unsupported OpenAL implementation	pending		/
@@ -13914,7 +13914,7 @@ a4ca7cfb8dbc2a05d4ad4dff3438c5c4c9d170bc	2019-12-15T16:14:34Z	Merge branch 'mast
 b44c40a63ddf51cbbd7b7988c77e9b271e079f57	2019-12-15T16:33:49Z	Implement EFF_FOGBOUNDARY	pending		/
 c5717d98dbd798d068c07c8d15ad029d69fd4052	2019-12-15T19:05:13Z	Implement the other light modes and fix dynamic lights being calculated twice(!)	pending		/
 b09e9f10edc6f513b15e1d722d714b66a3e132fd	2019-12-16T20:45:34Z	- sound engine update.	pending		/
-e82565373fed34d952a2ab4f2ddc053c28ced94d	2019-12-16T22:52:39Z	- separated the channel number from the flags in the sound interface so that the 8 channel limit can be eliminated. - added Marisa Kirisame's CHAN_OVERLAP flag. - exported S_IsActorPlayingSomething to ZScript.	pending		/
+e82565373fed34d952a2ab4f2ddc053c28ced94d	2019-12-16T22:52:39Z	- separated the channel number from the flags in the sound interface so that the 8 channel limit can be eliminated. - added Marisa Kirisame's CHAN_OVERLAP flag. - exported S_IsActorPlayingSomething to ZScript.	adapted	CHAN_OVERLAP/CHANF_OVERLAP and S_IsActorPlayingSomething over every sound (features/sound-overlap); not the channel numbers past 7, since the channel and its flags share the short SoundActor sends, nor the ZScript export	70a0a8c2
 639e9d3cd46b48309f03b8827e7713ddcdb5d51a	2019-12-16T23:05:35Z	- fixed VOC loader. Its 16 bit code did not work because it set the variable to -16 instead of 16. - removed a few MAX calls with std::max.	pending		/
 3808e85c3e9cf6bc68ac4162149266137ecf233c	2019-12-16T23:28:32Z	- the old bit masking for the channel needs to go, of course.	pending		/
 0a8effaf9e9937ae5cbc74497437f64730ef86b5	2019-12-17T07:49:50Z	- fixed inverted listener check when using compatibility options.	pending		/
@@ -14564,7 +14564,7 @@ dbb181923894fb8e4c5d598622a9b94ea8a94402	2020-05-25T19:17:28Z	- fixed setup for 
 555845222d19482b6b3c38c6f8874195d4c00f90	2020-05-26T07:02:16Z	- fixed fullscreen toggle via shortcut	pending		/
 12a55ff161ae8f93b660d8a78b453b90de2b519e	2020-05-26T09:51:15Z	- removed entry for non-functional linear tonemap.	pending		/
 2a063c96da97b8f5eeed517fecf5d6ba15fed73d	2020-05-26T17:18:22Z	more descriptive message for server CVAR change attempt in netgame	pending		/
-4881ec257a8a4cc3f6b5513c8e051757cf1f9a5d	2020-05-26T20:19:30Z	- don't let CHANF_AUTO hijack other channels.	pending		/
+4881ec257a8a4cc3f6b5513c8e051757cf1f9a5d	2020-05-26T20:19:30Z	- don't let CHANF_AUTO hijack other channels.	adapted	CHAN_AUTO plays on channel 0 beside the actor's other auto sounds instead of taking a free slot (ComputeSoundChanFlags); compat_soundslots still moves it to CHAN_WEAPON	70a0a8c2
 c892fb1ddb50521b18d1e6cdb1a0cdfdf5f71129	2020-05-26T20:59:50Z	- backend sync with Raze	pending		/
 332dfa4d6fb33fb9cd106c3d1d274d14887b5724	2020-05-27T19:35:09Z	- Remove wrong GL includes.	pending		/
 a517b04908349f1ed3b98c8cc224b13b49c462ed	2020-05-28T20:51:17Z	- texture sampler cleanup.	pending		/
@@ -19197,7 +19197,7 @@ aff98a65b631106152cad01bcc5d2d735c350ec4	2026-06-08T15:31:38Z	overhaul pathing	p
 09b1905098cd1dd6f65622b03fe322f88eff30bb	2026-06-13T13:55:55Z	Add self to CONTRIBUTORS	pending		/
 72791b330afe99f390e36580949ce7f05853c4f4	2026-06-13T15:44:58Z	Improved auto transparency handling	pending		/
 e6c96ea887884cf34149e23fad13f6bf608d290d	2026-06-13T15:54:19Z	Colorpicker slider VM Abort fix	pending		/
-2a489e7753e592f2314ecdbb4b7a56ee891fbe6a	2026-06-13T18:18:03Z	Change minimum sound channels from 64 back to 8.	pending		/
+2a489e7753e592f2314ecdbb4b7a56ee891fbe6a	2026-06-13T18:18:03Z	Change minimum sound channels from 64 back to 8.	ported	snd_channels never goes under 8	70a0a8c2
 05220ec7556c156013e09abaa6ceb96114ba1b84	2026-06-13T18:18:03Z	Sound channels minimum is 64 in the options.	pending		/
 f73e14bc7ebe22e45176642a8c9b2f2bb01a29ef	2026-06-13T22:57:58Z	Squashed 'libraries/Translation/' changes from 84a2b8fe7c..96e6a0be3c (#1461)	pending		/
 ab0af7c8c31fef978a071fdfe33ff51c698ffce2	2026-06-14T14:07:25Z	Disabled CLIENTSIDE ACS scripts	pending		/

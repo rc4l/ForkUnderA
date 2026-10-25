@@ -518,6 +518,10 @@ struct FLevelLocals
 
 	float		teamdamage;
 
+	// [Doruk-Aksoy] uzdoom@da74b9df95: the music volume factor ACS SetMusicVolume set, 1 at each level's start.
+	float		MusicVolume;
+	void		SetMusicVolume(float v);
+
 	bool		IsJumpingAllowed() const;
 	bool		IsCrouchingAllowed() const;
 	bool		IsFreelookAllowed() const;

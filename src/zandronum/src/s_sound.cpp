@@ -64,6 +64,19 @@
 #include "features/telemetry/telemetry.h"
 #include "features/handoff/seam.h"   // [rc4l] the channels and music are game data
 #include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI, QueuedForHandoff, QueuedBesideTic
+#include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] volume limits under $fua_allow_amplify
+#include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] several sounds on one channel
+#include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated once
+
+// [Doruk-Aksoy] sound_overlap_compute mirrors the channel values; keep them synced.
+static_assert(ZX_CHAN_AUTO == CHAN_AUTO, "channel mirror out of sync");
+static_assert(ZX_CHAN_LISTENERZ == CHAN_LISTENERZ, "channel mirror out of sync");
+static_assert(ZX_CHAN_MAYBE_LOCAL == CHAN_MAYBE_LOCAL, "channel mirror out of sync");
+static_assert(ZX_CHAN_UI == CHAN_UI, "channel mirror out of sync");
+static_assert(ZX_CHAN_NOPAUSE == CHAN_NOPAUSE, "channel mirror out of sync");
+static_assert(ZX_CHAN_LOOP == CHAN_LOOP, "channel mirror out of sync");
+static_assert(ZX_CHAN_NOSTOP == CHAN_NOSTOP, "channel mirror out of sync");
+static_assert(ZX_CHAN_OVERLAP == CHAN_OVERLAP, "channel mirror out of sync");
 
 #include <vector>
 
@@ -117,7 +130,6 @@ extern float S_GetMusicVolume (const char *music);
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
 static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, AActor *actor, int channel);
-static bool S_IsChannelUsed(AActor *actor, int channel, int *seen);
 static void S_ActivatePlayList(bool goBack);
 static void CalcPosVel(FSoundChan *chan, FVector3 *pos, FVector3 *vel);
 static void CalcPosVel(int type, const AActor *actor, const sector_t *sector, const FPolyObj *poly,
@@ -154,7 +166,11 @@ BYTE *S_SoundCurve;
 int S_SoundCurveSize;
 
 FBoolCVar noisedebug ("noise", false, 0);	// [RH] Print sound debugging info?
-CVAR (Int, snd_channels, 32, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)	// number of channels available
+// [Doruk-Aksoy] uzdoom@005e6871f9 and uzdoom@2a489e7753: 128 by default, since overlapping sounds use more voices, and never under 8.
+CUSTOM_CVAR (Int, snd_channels, 128, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)	// number of channels available
+{
+	if (self < 8) self = 8;
+}
 CVAR (Bool, snd_flipstereo, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 EXTERN_CVAR (Bool, snd_pitched)	// [rc4l] gates the random PitchMask variation (see S_StartSound)
 
@@ -982,7 +998,8 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	sfx = &S_sfx[sound_id];
 
 	// Scale volume according to SNDINFO data.
-	volume = MIN(volume * sfx->Volume, 1.f);
+	// [Doruk-Aksoy] Held to 1, or to 2 for a sound $fua_allow_amplify covers.
+	volume = ComputeSoundVolume(volume, sfx->Volume, sfx->bAllowAmplify);
 	if (volume <= 0)
 		return NULL;
 
@@ -1102,36 +1119,16 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		basepriority = 0;
 	}
 
-	int seen = 0;
-	if (actor != NULL && channel == CHAN_AUTO)
-	{
-		// Select a channel that isn't already playing something.
-		// Try channel 0 first, then travel from channel 7 down.
-		if (!S_IsChannelUsed(actor, 0, &seen))
-		{
-			channel = 0;
-		}
-		else
-		{
-			for (channel = 7; channel > 0; --channel)
-			{
-				if (!S_IsChannelUsed(actor, channel, &seen))
-				{
-					break;
-				}
-			}
-			if (channel == 0)
-			{ // Crap. No free channels.
-				return NULL;
-			}
-		}
-	}
+	// [Doruk-Aksoy] uzdoom@4881ec257a: CHAN_AUTO overlaps on channel 0 instead of taking a free channel, so an actor's sounds are no longer capped at eight.
+	chanflags = ComputeSoundChanFlags(channel, chanflags);
 
 	// If this actor is already playing something on the selected channel, stop it.
-	if (type != SOURCE_None && ((actor == NULL && channel != CHAN_AUTO) || (actor != NULL && S_IsChannelUsed(actor, channel, &seen))))
+	// [Doruk-Aksoy] uzdoom@e82565373f: all of it, since overlapping sounds share a channel, and nothing when this one overlaps.
+	if (ComputeStartStopsChannel(chanflags, type != SOURCE_None))
 	{
-		for (chan = Channels; chan != NULL; chan = chan->NextChan)
+		for (chan = Channels; chan != NULL; )
 		{
+			FSoundChan *next = chan->NextChan;
 			if (chan->SourceType == type && chan->EntChannel == channel)
 			{
 				bool foundit;
@@ -1147,9 +1144,9 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 				if (foundit)
 				{
 					S_StopChannel(chan);
-					break;
 				}
 			}
+			chan = next;
 		}
 	}
 
@@ -1349,12 +1346,15 @@ void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float a
 {
 	if (ent == NULL || ent->Sector->Flags & SECF_SILENT)
 		return;
-	S_StartSound (ent, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
+	// [Doruk-Aksoy] uzdoom@e82565373f: CHAN_NOSTOP, which clients decide for themselves online, since only they hold the sounds.
+	const bool noStop = (channel & CHAN_NOSTOP) != 0;
+	if (!ComputeNoStopBlocks(channel, noStop && S_IsActorPlayingSomething(ent, channel & 7, sound_id)))
+		S_StartSound (ent, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
 	// [rc4l] Forward the explicit pitch so the client plays it at the same pitch.
 	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
-		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, false, pitch );
+		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, noStop, pitch );
 }
 
 //==========================================================================
@@ -1845,20 +1845,24 @@ void S_RelinkSound (AActor *from, AActor *to)
 bool S_ChangeSoundVolume(AActor *actor, int channel, float volume)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	bool changed = false;
 	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
 	{
+		// [Doruk-Aksoy] uzdoom@e82565373f: every sound on the channel, as overlapping ones share it.
 		if (chan->SourceType == SOURCE_Actor &&
 			chan->Actor == actor &&
 			(chan->EntChannel == channel || (i_compatflags & COMPATF_MAGICSILENCE)))
 		{
+			// [Doruk-Aksoy] The backend no longer caps a source at 1, so each sound's own limit applies here.
+			const float chanVolume = ComputeSoundVolume(volume, 1.f, S_sfx[chan->OrgID].bAllowAmplify);
 			// [rc4l] features/handoff: a tic on its own thread sets the voice's volume in the handoff.
-			if (zx::handoff::Deferring ()) DeferredVolumes.push_back(std::make_pair(chan, volume));
-			else GSnd->ChannelVolume(chan, volume);
-			chan->Volume = volume;
-			return true;
+			if (zx::handoff::Deferring ()) DeferredVolumes.push_back(std::make_pair(chan, chanVolume));
+			else GSnd->ChannelVolume(chan, chanVolume);
+			chan->Volume = chanVolume;
+			changed = true;
 		}
 	}
-	return false;
+	return changed;
 }
 
 //==========================================================================
@@ -1924,36 +1928,6 @@ bool S_GetSoundPlayingInfo (const FPolyObj *poly, int sound_id)
 
 //==========================================================================
 //
-// S_IsChannelUsed
-//
-// Returns true if the channel is in use. Also fills in a bitmask of
-// channels seen while scanning for this one, to make searching for unused
-// channels faster. Initialize seen to 0 for the first call.
-//
-//==========================================================================
-
-static bool S_IsChannelUsed(AActor *actor, int channel, int *seen)
-{
-	if (*seen & (1 << channel))
-	{
-		return true;
-	}
-	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
-	{
-		if (chan->SourceType == SOURCE_Actor && chan->Actor == actor)
-		{
-			*seen |= 1 << chan->EntChannel;
-			if (chan->EntChannel == channel)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-//==========================================================================
-//
 // S_IsActorPlayingSomething
 //
 //==========================================================================
@@ -1968,12 +1942,12 @@ bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 
 	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
 	{
-		if (chan->SourceType == SOURCE_Actor && chan->Actor == actor)
+		// [Doruk-Aksoy] Every sound is weighed, as overlapping ones share a channel and the first found need not be the one asked about.
+		if (chan->SourceType == SOURCE_Actor && chan->Actor == actor &&
+			(channel == 0 || chan->EntChannel == channel) &&
+			(sound_id <= 0 || chan->OrgID == sound_id))
 		{
-			if (channel == 0 || chan->EntChannel == channel)
-			{
-				return sound_id <= 0 || chan->OrgID == sound_id;
-			}
+			return true;
 		}
 	}
 	return false;
@@ -2778,8 +2752,6 @@ bool S_StartMusic (const char *m_id)
 // specified, it will only be played if the specified CD is in a drive.
 //==========================================================================
 
-TArray<BYTE> musiccache;
-
 bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 {
 	ZX_SEAM_UNTIMED("sound/music", GameData);   // [rc4l] features/handoff: the music is game data, a tic's or the handoff's
@@ -2794,6 +2766,8 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return ( false );
+
+	ZX_ZONE("audio/music_change");   // [Doruk-Aksoy] a music change, which the frame it lands in waits for
 
 	// [AK] Don't change if we also want to lock the music.
 	if (!force && ( PlayList || snd_lockmusic ))
@@ -2873,7 +2847,6 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 	else
 	{
 		int lumpnum = -1;
-		int length = 0;
 		int device = MDEV_DEFAULT;
 		MusInfo *handle = NULL;
 		FName musicasname = musicname;
@@ -2922,19 +2895,14 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 				if (!Wads.IsUncompressedFile(lumpnum))
 				{
 					// We must cache the music data and use it from memory.
-
-					// shut down old music before reallocating and overwriting the cache!
-					S_StopMusic (true);
-
-					length = Wads.LumpLength (lumpnum);
-					if (length == 0)
+					// [Doruk-Aksoy] features/music-cache: kept for the level or still playing, else inflated now, and held by the reader.
+					std::shared_ptr<const zx::musiccache::Bytes> bytes = zx::musiccache::Load(lumpnum);
+					if (bytes == nullptr)
 					{
+						S_StopMusic (true);
 						return false;
 					}
-					musiccache.Resize(length);
-					Wads.ReadLump(lumpnum, &musiccache[0]);
-
-					reader = new MemoryReader((const char*)&musiccache[0], musiccache.Size());
+					reader = zx::musiccache::Reader(std::move(bytes));
 				}
 				else
 				{
@@ -2976,6 +2944,7 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 		}
 		else
 		{
+			ZX_ZONE("audio/music_open");   // [Doruk-Aksoy] identifying the song and opening its decoder or player
 			mus_playing.handle = I_RegisterSong (reader, device);
 		}
 	}
@@ -2987,6 +2956,7 @@ bool S_ChangeMusic (const char *musicname, int order, bool looping, bool force)
 
 	if (mus_playing.handle != 0)
 	{ // play it
+		ZX_ZONE("audio/music_start");   // [Doruk-Aksoy] starting the song, its first buffers decoded
 		mus_playing.handle->Start(looping, S_GetMusicVolume (musicname), order);
 		mus_playing.baseorder = order;
 		return true;
@@ -3080,6 +3050,7 @@ void S_StopMusic (bool force)
 	{
 		if (mus_playing.handle != NULL)
 		{
+			ZX_ZONE("audio/music_stop");   // [Doruk-Aksoy] the old song stopped and freed
 			if (MusicPaused)
 				mus_playing.handle->Resume();
 
@@ -3525,7 +3496,9 @@ CCMD(listsoundchannels)
 
 			CalcPosVel(chan, &chanorigin, NULL);
 
-			Printf("%s at (%1.5f, %1.5f, %1.5f)\n", (const char*)chan->SoundID, chanorigin.X, chanorigin.Y, chanorigin.Z);
+			// [Doruk-Aksoy] With its channel (+ when it overlaps) and flags, the volume it was asked for and the gain the device plays it at.
+			Printf("%s at (%1.5f, %1.5f, %1.5f), channel %d%s, flags 0x%x, volume %.2f, gain %.4f\n", (const char*)chan->SoundID, chanorigin.X, chanorigin.Y, chanorigin.Z,
+				chan->EntChannel, (chan->ChanFlags & CHAN_OVERLAP) ? "+" : "", chan->ChanFlags, chan->Volume, GSnd->GetAudibility(chan));
 			count++;
 		}
 	}

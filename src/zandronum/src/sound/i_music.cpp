@@ -677,11 +677,14 @@ void I_SetMusicVolume (float factor)
 
 CCMD(testmusicvol)
 {
-	if (argv.argc() > 1) 
+	if (argv.argc() > 1)
 	{
 		relative_volume = (float)strtod(argv[1], NULL);
 		snd_musicvolume.Callback();
 	}
+	// [Doruk-Aksoy] As uzdoom's does, which is how ACS SetMusicVolume's factor can be read back.
+	else
+		Printf("Current relative volume is %1.2f\n", relative_volume);
 }
 
 //==========================================================================

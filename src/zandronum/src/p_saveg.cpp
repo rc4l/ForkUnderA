@@ -57,6 +57,7 @@
 #include "cl_demo.h"
 #include "network.h"
 #include "version.h"
+#include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 
 // [rc4l] fixed_t has no dedicated FArchive overload, so `arc << <fixed_t>` binds to the QWORD
 // operator and writes 8 bytes now that fixed_t is 64-bit -- level snapshots serialize every
@@ -631,6 +632,10 @@ void P_SerializeSounds (FArchive &arc)
 		order = S_GetMusic (&name);
 	}
 	arc << name << order;
+	// [Doruk-Aksoy] uzdoom@da74b9df95: the music volume ACS set, which saves before 4525 do not hold (they keep the level's 1).
+	float musvol = level.MusicVolume;
+	if (SaveVersion >= 4525)
+		arc << musvol;
 	if (arc.IsLoading ())
 	{
 		// [BB] Save the music change.
@@ -640,6 +645,10 @@ void P_SerializeSounds (FArchive &arc)
 		if (!S_ChangeMusic (name, order))
 			if (level.cdtrack == 0 || !S_ChangeCDMusic (level.cdtrack, level.cdid))
 				S_ChangeMusic (level.Music, level.musicorder);
+		level.SetMusicVolume (musvol);
+		// [Doruk-Aksoy] A loaded factor applies to the song it restarted, so clients joining hear it too.
+		if ( zx::net::IsServer( ))
+			SERVER_SetMapMusicVolume( musvol );
 	}
 	delete[] name;
 }

@@ -88,6 +88,7 @@
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
 #include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
 #include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_server_stall_ms
+#include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] the looping sounds a late joiner is sent
 #include "sv_ban.h"
 #include "i_system.h"
 #include "c_console.h"
@@ -184,6 +185,7 @@ static	void	server_PerformBacktrace( ULONG ulClient, ULONG ulNumLateMoveCMDs );
 static	bool	server_ShouldPerformBacktrace( ULONG ulClient );
 static	void	server_FixZFromBacktrace( APlayerPawn *pmo, fixed_t oldFloorZ );
 static	void	server_ForceRenamePlayer( ULONG playerIndex ); // [SB]
+static	void	server_SendMapMusicVolume( ULONG ulClient );
 
 // [RC]
 #ifdef CREATE_PACKET_LOG
@@ -244,6 +246,8 @@ static	char		g_szCurrentFont[16];
 // This is the music the loaded map is currently using.
 static	FString		g_MapMusic;
 static	int			g_MapMusicOrder;
+// [Doruk-Aksoy] The ACS SetMusicVolume factor clients play that music at, which a new song drops as it starts at its own volume.
+static	float		g_MapMusicVolume = 1.f;
 
 // Maximum packet size.
 static	ULONG		g_ulMaxPacketSize = 0;
@@ -255,7 +259,8 @@ static	TArray<EDITEDTRANSLATION_s>		g_EditedTranslationList;
 static	TArray<SECTORLINK_s>		g_SectorLinkList;
 
 // [AK] List of all actor sound channels containing looping sounds.
-static	TArray<FSoundChan>		g_LoopingChannelList;
+// [Doruk-Aksoy] One entry per loop rather than per channel, since overlapping loops share one (features/sound-overlap).
+static	std::vector<ZxLoopingSound>	g_LoopingSounds;
 
 // [RC] File to log packets to.
 #ifdef CREATE_PACKET_LOG
@@ -1568,6 +1573,7 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 */
 	// Send the map music.
 	SERVERCOMMANDS_SetMapMusic( SERVER_GetMapMusic( ), SERVER_GetMapMusicOrder( ), g_lCurrentClient, SVCF_ONLYTHISCLIENT );
+	server_SendMapMusicVolume( g_lCurrentClient );   // [Doruk-Aksoy] after the music, whose start resets the song's volume
 
 	// Send the message of the day.
 	FString motd = *sv_motd;
@@ -3025,8 +3031,8 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 	}
 
 	// [AK] Send out any looping sounds that might be playing on an actor's sound channels.
-	for ( ulIdx = 0; ulIdx < g_LoopingChannelList.Size(); ulIdx++ )
-		SERVERCOMMANDS_SoundActor( g_LoopingChannelList[ulIdx].Actor, g_LoopingChannelList[ulIdx].EntChannel | g_LoopingChannelList[ulIdx].ChanFlags | CHAN_LOOP, S_GetName( g_LoopingChannelList[ulIdx].SoundID ), g_LoopingChannelList[ulIdx].Volume, g_LoopingChannelList[ulIdx].DistanceScale, ulClient, SVCF_ONLYTHISCLIENT, true );
+	for ( const ZxLoopingSound &loop : g_LoopingSounds )
+		SERVERCOMMANDS_SoundActor( static_cast<AActor *>( loop.actor ), loop.channel | loop.flags | CHAN_LOOP, S_GetName( loop.soundId ), loop.volume, loop.attenuation, ulClient, SVCF_ONLYTHISCLIENT, true );
 
 	// [BB] If the sky differs from the standard sky, let the client know about it.
 	if ( level.info 
@@ -4155,6 +4161,23 @@ void SERVER_SetMapMusic( const char *pszMusic, int order )
 		g_MapMusic = "";
 
 	g_MapMusicOrder = order;
+	g_MapMusicVolume = 1.f;
+}
+
+//*****************************************************************************
+//
+void SERVER_SetMapMusicVolume( float volume )
+{
+	g_MapMusicVolume = volume;
+}
+
+//*****************************************************************************
+//
+// [Doruk-Aksoy] The factor the others play the current song at, unless that is the song's own volume.
+static void server_SendMapMusicVolume( ULONG ulClient )
+{
+	if ( g_MapMusicVolume != 1.f )
+		SERVERCOMMANDS_FuaSetMusicVolume( g_MapMusicVolume, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 //*****************************************************************************
@@ -4387,68 +4410,25 @@ void SERVER_ClearSectorLinks( void )
 //
 void SERVER_UpdateLoopingChannels( AActor *pActor, int channel, FSoundID soundid, float fVolume, float fAttenuation, bool bRemove )
 {
-	FSoundChan chan = { };
-
-	chan.NextChan = nullptr;
-	chan.PrevChan = nullptr;
-	chan.Actor = pActor;
-	chan.EntChannel = channel & 7;
-	chan.ChanFlags = channel & ~7;
-	chan.SoundID = soundid;
-	chan.Volume = fVolume;
-	chan.DistanceScale = fAttenuation;
-
-	for ( unsigned int i = 0; i < g_LoopingChannelList.Size(); i++ )
-	{
-		if (( g_LoopingChannelList[i].Actor == pActor ) && ( g_LoopingChannelList[i].EntChannel == ( channel & 7 ) ))
-		{
-			if ( bRemove )
-				g_LoopingChannelList.Delete( i );
-			else
-				g_LoopingChannelList[i] = chan;
-
-			return;
-		}
-	}
-
-	if ( bRemove == false )
-		g_LoopingChannelList.Push( chan );
+	// [Doruk-Aksoy] Callers stop a channel with sound 0, and otherwise bRemove marks a one-shot sound rather than a loop.
+	if ( soundid == 0 )
+		ComputeLoopingSoundStopped( g_LoopingSounds, pActor, channel & 7 );
+	else
+		ComputeLoopingSoundStarted( g_LoopingSounds, pActor, channel, soundid, fVolume, fAttenuation, bRemove == false );
 }
 
 //*****************************************************************************
 //
 bool SERVER_IsChannelLooping( AActor *pActor, int channel, int soundid )
 {
-	for ( unsigned int i = 0; i < g_LoopingChannelList.Size(); i++ )
-	{
-		if (( g_LoopingChannelList[i].Actor == pActor ) &&
-			( g_LoopingChannelList[i].EntChannel == channel ) && ( g_LoopingChannelList[i].SoundID == soundid ))
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return ComputeIsLooping( g_LoopingSounds, pActor, channel, soundid );
 }
 
 //*****************************************************************************
 //
 void SERVER_ClearLoopingChannels( AActor *pActor )
 {
-	unsigned int i = 0;
-
-	if ( pActor != NULL )
-	{
-		for ( unsigned int i = 0; i < g_LoopingChannelList.Size(); i++ )
-		{
-			if ( g_LoopingChannelList[i].Actor == pActor )
-				g_LoopingChannelList.Delete( i-- );
-		}
-
-		return;
-	}
-
-	g_LoopingChannelList.Clear( );
+	ComputeForgetLooping( g_LoopingSounds, pActor );
 }
 
 //*****************************************************************************
@@ -7252,6 +7232,7 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 
 	// Send the map music.
 	SERVERCOMMANDS_SetMapMusic( SERVER_GetMapMusic( ), SERVER_GetMapMusicOrder( ), g_lCurrentClient, SVCF_ONLYTHISCLIENT );
+	server_SendMapMusicVolume( g_lCurrentClient );   // [Doruk-Aksoy] after the music, whose start resets the song's volume
 
 	// If we're in a duel or LMS mode, tell him the state of the game mode.
 	if ( duel || lastmanstanding || teamlms || possession || teampossession || survival || invasion )
