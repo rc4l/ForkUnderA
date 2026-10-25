@@ -11,7 +11,7 @@ export const NETPLAY_GAME_PORT = 10820;
 
 // [rc4l] A server's arguments: its wads, -host on the game port (a +port cvar is ignored), no announcing to the registry and none on the LAN unless broadcast (then left to its cvar), cheats from launch (a later change never reaches a joined client), any number of clients from one address (every client of a set is 127.0.0.1), and loopback only.
 export function serverArgs({ files = [], gamePort = NETPLAY_GAME_PORT, broadcast = false } = {}) {
-  return [...(files.length ? ["-file", ...files] : []), "-host", "-port", String(gamePort), ...(broadcast ? [] : ["+sv_broadcast", "0"]), "+sv_updatemaster", "0",
+  return [...(files.length ? ["-file", ...files] : []), "-host", "-port", String(gamePort), ...(broadcast ? [] : ["+sv_broadcast", "0"]), "+sv_fua_serverregistry_announce", "0",
     "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"];
 }
 
