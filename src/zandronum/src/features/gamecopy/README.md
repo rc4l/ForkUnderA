@@ -138,6 +138,6 @@ Handed to the handoff, by helper:
 - `QueuePrint`: `c_console.cpp`
 - `QueueUI`: `s_sound.cpp`
 - `QueuedBesideTic`: `features/video-scale/videoscale.cpp`, `s_sound.cpp`
-- `QueuedForHandoff`: `am_map.cpp`, `c_console.cpp`, `menu/menu.cpp`, `r_data/r_translate.cpp`, `r_sky.cpp`, `r_utility.cpp`, `s_sound.cpp`
+- `QueuedForHandoff`: `am_map.cpp`, `c_console.cpp`, `features/music-cache/musiccache.cpp`, `menu/menu.cpp`, `r_data/r_translate.cpp`, `r_sky.cpp`, `r_utility.cpp`, `s_sound.cpp`
 - `RunOrQueue`: `p_conversation.cpp`, `p_user.cpp`
 <!-- boundary:end -->

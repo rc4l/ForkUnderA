@@ -54,6 +54,7 @@
 // [BC] New #includes.
 #include "network.h"
 #include "cl_demo.h"
+#include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] let go of with the sound data
 
 // MACROS ------------------------------------------------------------------
 
@@ -157,6 +158,7 @@ enum SICommands
 	SI_MusicAlias,
 	SI_EDFOverride,
 	SI_Attenuation,
+	SI_FuaAllowAmplify,
 };
 
 // Blood was a cool game. If Monolith ever releases the source for it,
@@ -254,6 +256,7 @@ static const char *SICommandStrings[] =
 	"$musicalias",
 	"$edfoverride",
 	"$attenuation",
+	"$fua_allow_amplify",
 	NULL
 };
 
@@ -272,6 +275,8 @@ static FString DefPlayerClassName;
 static int DefPlayerClass;
 
 static BYTE CurrentPitchMask;
+// [Doruk-Aksoy] $fua_allow_amplify's state, stamped on each sound the current SNDINFO lump defines or gives a $volume, and off at every lump's start.
+static bool CurrentAllowAmplify;
 
 static FRandom pr_randsound ("RandSound");
 
@@ -521,6 +526,7 @@ int S_AddSoundLump (const char *logicalname, int lump)
 	newsfx.bSingular = false;
 	newsfx.bTentative = false;
 	newsfx.bPlayerSilent = false;
+	newsfx.bAllowAmplify = CurrentAllowAmplify;
 	newsfx.RawRate = 0;
 	newsfx.link = sfxinfo_t::NO_LINK;
 	newsfx.Rolloff.RolloffType = ROLLOFF_Doom;
@@ -609,6 +615,7 @@ static int S_AddSound (const char *logicalname, int lumpnum, FScanner *sc)
 			sfx->LimitRange = 256*256;
 		}
 		//sfx->PitchMask = CurrentPitchMask;
+		sfx->bAllowAmplify = CurrentAllowAmplify;
 	}
 	else
 	{ // Otherwise, create a new definition.
@@ -891,6 +898,7 @@ static void S_ClearSoundData()
 	MusicAliases.Clear();
 	MidiDevices.Clear();
 	HexenMusic.Clear();
+	zx::musiccache::Clear();   // [Doruk-Aksoy] its songs are kept by lump, which a reload renumbers
 }
 
 //==========================================================================
@@ -910,6 +918,7 @@ void S_ParseSndInfo (bool redefine)
 	S_ClearSoundData();	// remove old sound data first!
 
 	CurrentPitchMask = 0;
+	CurrentAllowAmplify = false;
 	S_AddSound ("{ no sound }", "DSEMPTY");	// Sound 0 is no sound at all
 	for (lump = 0; lump < Wads.GetNumLumps(); ++lump)
 	{
@@ -980,6 +989,7 @@ static void S_AddSNDINFO (int lump)
 
 	FScanner sc(lump);
 	skipToEndIf = false;
+	CurrentAllowAmplify = false;
 
 	while (sc.GetString ())
 	{
@@ -1231,7 +1241,14 @@ static void S_AddSNDINFO (int lump)
 				sfx = S_FindSoundTentative(sc.String);
 				sc.MustGetFloat();
 				S_sfx[sfx].Volume = (float)sc.Float;
+				S_sfx[sfx].bAllowAmplify = CurrentAllowAmplify;
 				}
+				break;
+
+			case SI_FuaAllowAmplify:
+				// [Doruk-Aksoy] $fua_allow_amplify <0|1>: the sounds this lump defines after it may play louder than 1.
+				sc.MustGetNumber();
+				CurrentAllowAmplify = sc.Number != 0;
 				break;
 
 			case SI_Attenuation: {
@@ -1396,6 +1413,7 @@ static void S_AddSNDINFO (int lump)
 			S_AddSound (name, sc.String, &sc);
 		}
 	}
+	CurrentAllowAmplify = false;
 }
 
 //==========================================================================

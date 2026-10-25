@@ -170,7 +170,9 @@ int GetRevisionNumber();
 // [rc4l] 4523: uzdoom@3463b8787, MUSINFO state moved onto player_t.
 // [rc4l] 4524: level snapshots hold DFlatDecal, features/decals' floor and ceiling marks, a class older
 // builds do not know; from here a build refuses a save newer than its own (ComputeSaveVersionVerdict).
-#define SAVEVER 4524
+// [Doruk-Aksoy] 4525: the level snapshot's music holds the volume factor ACS SetMusicVolume set
+// (uzdoom@da74b9df95, guarded in P_SerializeSounds). Upstream's keyed saves needed no bump.
+#define SAVEVER 4525
 
 
 #define SAVEVERSTRINGIFY2(x) #x

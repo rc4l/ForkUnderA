@@ -308,16 +308,26 @@ enum
 	CHAN_LISTENERZ = 8,
 	CHAN_MAYBE_LOCAL = 16,
 	CHAN_UI = 32,
-	CHAN_NOPAUSE = 64
+	CHAN_NOPAUSE = 64,
+	// [Doruk-Aksoy] uzdoom@e82565373f: the rest of uzdoom's channel flags this engine honours, at uzdoom's values.
+	CHAN_LOOP = 256,
+	CHAN_PICKUP = CHAN_ITEM|CHAN_MAYBE_LOCAL,
+	CHAN_NOSTOP = 4096,		// start nothing while the actor already plays this sound on the slot
+	CHAN_OVERLAP = 8192		// play beside what the slot already holds
 };
 
 // Flags for A_StartSound (uzdoom EChanFlags)
 enum
 {
 	CHANF_DEFAULT = 0,
+	CHANF_LISTENERZ = 8,	// [Doruk-Aksoy] uzdoom@e82565373f: these four now reach the sound, as A_PlaySound's channel flags do
+	CHANF_MAYBE_LOCAL = 16,
+	CHANF_UI = 32,
+	CHANF_NOPAUSE = 64,
 	CHANF_LOOP = 256,
 	CHANF_NOSTOP = 4096,
-	CHANF_OVERLAP = 8192
+	CHANF_OVERLAP = 8192,
+	CHANF_LOOPING = CHANF_LOOP|CHANF_NOSTOP	// [Doruk-Aksoy] uzdoom's stand-in for A_PlaySound's old looping argument
 };
 
 // Flags for A_FireProjectile

@@ -133,3 +133,9 @@ Command FuaDamageTaken
 	String damageType
 	Bool lethal
 EndCommand
+
+# [Doruk-Aksoy] ACS SetMusicVolume (uzdoom@a1e8d83724): the level's music volume factor, sent to every client and to a joiner after its map music; appended last so no existing id moves.
+Command FuaSetMusicVolume
+	ExtendedCommand
+	Float volume
+EndCommand

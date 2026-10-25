@@ -81,6 +81,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   - `dgtexture.cpp`: `load/precache_backend` and `load/precached_textures`, the level's marked textures made ahead.
   - `dgscene.cpp` `UpdateBufferIfChanged`: `gpu/upload_spared`, the bytes a frame did not send because the buffer already held them (the light grid and the 2D layer).
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
+- `s_sound.cpp` `S_ChangeMusic`: `audio/music_change`, and inside it `audio/music_open` (`I_RegisterSong`) and `audio/music_start`; `S_StopMusic`: `audio/music_stop`.
+- `features/music-cache/musiccache.cpp`: `audio/music_read` (a compressed song inflated whole, at a music change that missed the cache or at the level's precache), `load/music_precache` (the level's songs found and inflated) and the gauge `audio/music_cache_bytes`.
 - `network.cpp`: the `net/` totals. `files.cpp` `FileReader::Read`: `io/read_bytes`.
 - The netcode's own: `features/net-transport`'s `net/held`, `net/fake_dropped`, `net/held_released` and
   `net/held_send_failed`, and a server receive thread's `net/receive_dropped`; `features/net-replication`'s `net/replication_sent` and `net/replication_missed`;

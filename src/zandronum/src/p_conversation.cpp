@@ -811,7 +811,7 @@ public:
 	{
 		V_FreeBrokenLines(mDialogueLines);
 		mDialogueLines = NULL;
-		I_SetMusicVolume (1.f);
+		I_SetMusicVolume (level.MusicVolume);	// [Doruk-Aksoy] uzdoom@da74b9df95: back to the script's volume, not to 1
 	}
 
 	bool DimAllowed()
@@ -1454,7 +1454,7 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 
 	if (isconsole)
 	{
-		I_SetMusicVolume (1.f);
+		I_SetMusicVolume (level.MusicVolume);	// [Doruk-Aksoy] uzdoom@da74b9df95: back to the script's volume, not to 1
 	}
 }
 

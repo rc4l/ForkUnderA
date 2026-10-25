@@ -1956,6 +1956,8 @@ OptionMenu SoundOptions
 	Option "Play connect sound", "cl_connectsound", "YesNo" // [TP]
 	Option "Multiple announcer sounds", "cl_allowmultipleannouncersounds", "YesNo" // [TP]
 	Option "Lock music",		"snd_lockmusic", "YesNo" // [AK]
+	Option "Precache level music", "snd_fua_musiccache", "OnOff" // [Doruk-Aksoy]
+	Slider "Level music cache (MB)", "snd_fua_musiccache_mb", 16, 256, 16, 0 // [Doruk-Aksoy]
 	Option "Sound in background", "i_soundinbackground", "OnOff" // [rc4l]
 	StaticText " "
 	Command "Restart sound",	"snd_reset"

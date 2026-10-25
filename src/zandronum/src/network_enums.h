@@ -400,6 +400,8 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SETTHINGSPRITEORIENTATION ),
 	// [MobiusU9B] fua_damagetaken: one damage roll, sent only to the player who took it.
 	ENUM_ELEMENT ( SVC2_FUADAMAGETAKEN ),
+	// [Doruk-Aksoy] ACS SetMusicVolume: the level's music volume factor.
+	ENUM_ELEMENT ( SVC2_FUASETMUSICVOLUME ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

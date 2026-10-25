@@ -339,6 +339,7 @@ void	SERVERCOMMANDS_SetMapNumTotalMonsters( ULONG ulPlayerExtra = MAXPLAYERS, Se
 void	SERVERCOMMANDS_SetMapNumTotalItems( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetMapNumTotalSecrets( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetMapMusic( const char *pszMusic, int track, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+void	SERVERCOMMANDS_FuaSetMusicVolume( float volume, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );	// [Doruk-Aksoy] ACS SetMusicVolume
 void	SERVERCOMMANDS_SetMapSky( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetMapSkyScrollSpeed( bool isSky1, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 
