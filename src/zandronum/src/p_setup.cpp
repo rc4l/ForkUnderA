@@ -99,6 +99,7 @@
 // [BB] New #includes..
 #include "features/dynlights/dynlight.h"
 #include "features/telemetry/telemetry.h"
+#include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated at its load
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
 
@@ -3961,6 +3962,8 @@ void P_SetupLevel (const char *lumpname, int position)
 
 	if (!savegamerestore)
 	{
+		// [Doruk-Aksoy] uzdoom@da74b9df95: a fresh level plays at its own volume, which a restored one takes from the save.
+		level.SetMusicVolume(level.MusicVolume);
 		for (i = 0; i < MAXPLAYERS; ++i)
 		{
 			players[i].killcount = players[i].secretcount 
@@ -4671,6 +4674,7 @@ void P_SetupLevel (const char *lumpname, int position)
 	{
 		TexMan.PrecacheLevel ();
 		S_PrecacheLevel ();
+		zx::musiccache::PrecacheLevel ();   // [Doruk-Aksoy] features/music-cache: the songs MAPINFO and the scripts name
 	}
 	times[17].Unclock();
 

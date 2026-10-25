@@ -154,6 +154,8 @@
 #include "features/net-client/rejoin.h"   // [rc4l] a player the map command sent back comes back playing
 #include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
+#include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
+#include "features/acs-setmusicvolume/computation/musicvolume_compute.h"   // [Doruk-Aksoy] FuaSetMusicVolume's factor
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -7391,61 +7393,52 @@ void ServerCommands::ACSSendString::Execute()
 //
 void ServerCommands::Sound::Execute()
 {
-	if ( volume > 127 )
-		volume = 127;
-
+	// [Doruk-Aksoy] Not capped at 1 here, so S_StartSound applies the sound's own limit ($fua_allow_amplify).
 	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
-	S_Sound( channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
+	S_Sound( channel, sound, ComputeSoundVolumeFromWire( volume ), NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
 //
 void ServerCommands::SoundActor::Execute()
 {
-	if ( volume > 127 )
-		volume = 127;
-
+	// [Doruk-Aksoy] Not capped at 1 here, so S_StartSound applies the sound's own limit ($fua_allow_amplify).
 	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
-	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
+	S_Sound( actor, channel, sound, ComputeSoundVolumeFromWire( volume ), NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
 //
 void ServerCommands::SoundActorIfNotPlaying::Execute()
 {
-	if ( volume > 127 )
-		volume = 127;
-
 	// [BB] Check whether the actor is already playing something.
 	// Note: The checking may not include CHAN_LOOP.
-	if ( S_IsActorPlayingSomething (actor, channel & (~CHAN_LOOP), S_FindSound ( sound ) ) )
+	// [Doruk-Aksoy] The slot alone, since a flag left in (CHAN_OVERLAP or any other) never matches a playing sound's channel.
+	if ( S_IsActorPlayingSomething (actor, channel & 7, S_FindSound ( sound ) ) )
 		return;
 
+	// [Doruk-Aksoy] Not capped at 1 here, so S_StartSound applies the sound's own limit ($fua_allow_amplify).
 	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
-	S_Sound( actor, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
+	S_Sound( actor, channel, sound, ComputeSoundVolumeFromWire( volume ), NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
 //
 void ServerCommands::SoundSector::Execute()
 {
-	if ( volume > 127 )
-		volume = 127;
-
+	// [Doruk-Aksoy] Not capped at 1 here, so S_StartSound applies the sound's own limit ($fua_allow_amplify).
 	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
-	S_Sound( sector, channel, sound, (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), pitch );
+	S_Sound( sector, channel, sound, ComputeSoundVolumeFromWire( volume ), NETWORK_AttenuationIntToFloat ( attenuation ), pitch );
 }
 
 //*****************************************************************************
 //
 void ServerCommands::SoundPoint::Execute()
 {
-	if ( volume > 127 )
-		volume = 127;
-
 	// Finally, play the sound.
+	// [Doruk-Aksoy] Not capped at 1 here, so S_StartSound applies the sound's own limit ($fua_allow_amplify).
 	// [rc4l] pitch: -1 means the server left it default, so the client computes its own.
-	S_Sound( x, y, z, channel, S_FindSound(sound), (float)volume / 127.f, NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
+	S_Sound( x, y, z, channel, S_FindSound(sound), ComputeSoundVolumeFromWire( volume ), NETWORK_AttenuationIntToFloat ( attenuation ), false, pitch );
 }
 
 //*****************************************************************************
@@ -7715,6 +7708,14 @@ void ServerCommands::SetMapNumTotalSecrets::Execute()
 void ServerCommands::SetMapMusic::Execute()
 {
 	S_ChangeMusic( music, order );
+}
+
+//*****************************************************************************
+//
+void ServerCommands::FuaSetMusicVolume::Execute()
+{
+	// [Doruk-Aksoy] ACS SetMusicVolume, run on the server, kept to a factor the music can play at.
+	level.SetMusicVolume( ComputeNetMusicVolume( volume ));
 }
 
 //*****************************************************************************

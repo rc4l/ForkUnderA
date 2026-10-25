@@ -123,6 +123,14 @@ static void ZX_ReplayAudioFill(short *out, int frames)
 #include "features/openal-sound/computation/oal_format_compute.h"
 #include "features/openal-sound/computation/oal_playback_compute.h"
 #include "features/openal-sound/computation/oal_menu_compute.h"
+#include "features/openal-sound/computation/oal_pan_compute.h"
+#include "features/sound-amplify/computation/sound_amplify_compute.h"
+
+// [Doruk-Aksoy] oal_pan_compute mirrors ALC_SOFT_output_mode, which older headers (and Emscripten's) lack.
+#ifdef ALC_OUTPUT_MODE_SOFT
+static_assert(ZX_ALC_OUTPUT_MODE_SOFT == ALC_OUTPUT_MODE_SOFT, "output-mode mirror out of sync");
+static_assert(ZX_ALC_STEREO_BASIC_SOFT == ALC_STEREO_BASIC_SOFT, "output-mode mirror out of sync");
+#endif
 
 // [rc4l] The computation units mirror the engine's AL/format/rolloff constants; keep synced.
 static_assert(ZX_AL_NONE == AL_NONE, "AL format mirror out of sync");
@@ -1093,7 +1101,7 @@ static void LoadALCFunc(ALCdevice* device, const char* name, T* x)
 #define LOAD_FUNC(x)  (LoadALFunc(#x, &x))
 #define LOAD_DEV_FUNC(d, x)  (LoadALCFunc(d, #x, &x))
 OpenALSoundRenderer::OpenALSoundRenderer()
-    : Device(NULL), Context(NULL), SFXPaused(0), PrevEnvironment(NULL), EnvSlot(0)
+    : Device(NULL), Context(NULL), PanBasicStereo(false), SourceMaxGain(1.f), SFXPaused(0), PrevEnvironment(NULL), EnvSlot(0)
 {
         EnvFilters[0] = EnvFilters[1] = 0;
 
@@ -1203,6 +1211,14 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         AL.SOFT_UHJ = !!alIsExtensionPresent("AL_SOFT_UHJ");
         AL.SOFT_direct_channels_remix = !!alIsExtensionPresent("AL_SOFT_direct_channels_remix");
 
+        // [Doruk-Aksoy] Mono is lifted to equal power only where OpenAL Soft pans it as oal_pan_compute models, plain stereo speakers.
+        const bool hasOutputMode = !!alcIsExtensionPresent(Device, "ALC_SOFT_output_mode");
+        ALCint outputMode = 0;
+        if (hasOutputMode)
+            alcGetIntegerv(Device, ZX_ALC_OUTPUT_MODE_SOFT, 1, &outputMode);
+        PanBasicStereo = ComputeBasicStereoOutput(hasOutputMode, outputMode);
+        DPrintf("	Equal-power mono: %s\n", PanBasicStereo ? "on" : "off (not basic stereo output)");
+
         alDopplerFactor(0.5f);
         alSpeedOfSound(343.3f * 96.0f);
         if (ALC.EXT_EFX)
@@ -1273,6 +1289,11 @@ OpenALSoundRenderer::OpenALSoundRenderer()
         }
         FreeSfx = Sources;
         DPrintf("	Allocated " TEXTCOLOR_BLUE"%u" TEXTCOLOR_NORMAL" sources\n", Sources.Size());
+
+        // [Doruk-Aksoy] Emscripten's OpenAL refuses an AL_MAX_GAIN past 1, and that error would fail the next sound's start, so ask once, quietly.
+        alGetError();
+        alSourcef(Sources[0], AL_MAX_GAIN, ComputeSourceMaxGain(true, ZX_MAX_AMPLIFIED_VOLUME));
+        SourceMaxGain = ComputeSourceMaxGain(alGetError() == AL_NO_ERROR, ZX_MAX_AMPLIFIED_VOLUME);
 
         WasInWater = false;
         if (*snd_efx && ALC.EXT_EFX)
@@ -1444,8 +1465,8 @@ void OpenALSoundRenderer::SetSfxVolume(float volume)
             volume = SfxVolume;
 
             alDeferUpdatesSOFT();
-            alSourcef(source, AL_MAX_GAIN, volume);
-            alSourcef(source, AL_GAIN, volume * schan->Volume);
+            alSourcef(source, AL_MAX_GAIN, SourceMaxGain);
+            alSourcef(source, AL_GAIN, volume * schan->Volume * schan->PanGain);
         }
         schan = schan->NextChan;
     }
@@ -1743,11 +1764,16 @@ FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int 
 
     alSourcei(source, AL_LOOPING, (chanflags & SNDF_LOOP) ? AL_TRUE : AL_FALSE);
 
+    // [Doruk-Aksoy] A 2D source sits on the listener, where a mono one plays front centre.
+    ALint channels = 0;
+    alGetBufferi(buffer, AL_CHANNELS, &channels);
+    const float panGain = ComputeMonoPanGain(PanBasicStereo, channels, ZxPanVector{ 0.f, 0.f, 0.f }, 0.f);
+
     alSourcef(source, AL_REFERENCE_DISTANCE, 1.f);
     alSourcef(source, AL_MAX_DISTANCE, 1000.f);
     alSourcef(source, AL_ROLLOFF_FACTOR, 0.f);
-    alSourcef(source, AL_MAX_GAIN, SfxVolume);
-    alSourcef(source, AL_GAIN, SfxVolume * vol);
+    alSourcef(source, AL_MAX_GAIN, SourceMaxGain);
+    alSourcef(source, AL_GAIN, SfxVolume * vol * panGain);
     if (AL.EXT_SOURCE_RADIUS)
         alSourcef(source, AL_SOURCE_RADIUS, 0.f);
 	if (AL.SOFT_source_spatialize)
@@ -1799,6 +1825,9 @@ FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int 
     chan->Rolloff.MinDistance = 1.f;
     chan->DistanceSqr = 0.f;
     chan->ManualRolloff = false;
+    chan->PanGain = panGain;
+    chan->PanTracked = false;
+    chan->PanRadius = 0.f;
 
     return chan;
 }
@@ -1842,6 +1871,9 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
         alSourcef(source, AL_ROLLOFF_FACTOR, 1.f);
         manualRolloff = false;
     }
+    // [Doruk-Aksoy] Where OpenAL places the source from the listener, and its radius, for the mono pan lift below.
+    FVector3 offset(0.f, 0.f, 0.f);
+    float radius;
     if (manualRolloff)
     {
         // How manual rolloff works:
@@ -1879,14 +1911,13 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
             float gain = GetRolloff(rolloff, sqrtf(dist_sqr) * distscale);
             dir.Resize((gain > 0.00001f) ? 1.f / gain : 100000.f);
         }
+        /* Since the OpenAL distance is decoupled from the sound's distance, get the OpenAL
+         * distance that corresponds to the area radius. */
+        radius = ComputeSourceRadius(AL.EXT_SOURCE_RADIUS, (chanflags & SNDF_AREA) != 0, true,
+            AREA_SOUND_RADIUS, GetRolloff(rolloff, AREA_SOUND_RADIUS));
         if (AL.EXT_SOURCE_RADIUS)
         {
-            /* Since the OpenAL distance is decoupled from the sound's distance, get the OpenAL
-             * distance that corresponds to the area radius. */
-            alSourcef(source, AL_SOURCE_RADIUS, (chanflags & SNDF_AREA) ?
-                // Clamp in case the max distance is <= the area radius
-                1.f / MAX<float>(GetRolloff(rolloff, AREA_SOUND_RADIUS), 0.00001f) : 0.f
-            );
+            alSourcef(source, AL_SOURCE_RADIUS, radius);
         }
         else if ((chanflags & SNDF_AREA) && dist_sqr < AREA_SOUND_RADIUS * AREA_SOUND_RADIUS)
         {
@@ -1906,13 +1937,15 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
         {
             alSourcei(source, AL_SOURCE_RELATIVE, AL_FALSE);
             alSource3f(source, AL_POSITION, dir[0], dir[1], -dir[2]);
+            offset = dir - listener->position;
         }
     }
     else
     {
         FVector3 dir = pos;
+        radius = ComputeSourceRadius(AL.EXT_SOURCE_RADIUS, (chanflags & SNDF_AREA) != 0, false, AREA_SOUND_RADIUS, 0.f);
         if (AL.EXT_SOURCE_RADIUS)
-            alSourcef(source, AL_SOURCE_RADIUS, (chanflags & SNDF_AREA) ? AREA_SOUND_RADIUS : 0.f);
+            alSourcef(source, AL_SOURCE_RADIUS, radius);
         else if ((chanflags & SNDF_AREA) && dist_sqr < AREA_SOUND_RADIUS * AREA_SOUND_RADIUS)
         {
             dir -= listener->position;
@@ -1934,6 +1967,7 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
         {
             alSourcei(source, AL_SOURCE_RELATIVE, AL_FALSE);
             alSource3f(source, AL_POSITION, dir[0], dir[1], -dir[2]);
+            offset = dir - listener->position;
         }
     }
 
@@ -1942,8 +1976,14 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
 
     alSourcei(source, AL_LOOPING, (chanflags & SNDF_LOOP) ? AL_TRUE : AL_FALSE);
 
-    alSourcef(source, AL_MAX_GAIN, SfxVolume);
-    alSourcef(source, AL_GAIN, SfxVolume * vol);
+    // [Doruk-Aksoy] A mono source is lifted to equal power for where it sits around the listener, kept up by UpdateSoundParams3D as either moves.
+    ALint channels = 0;
+    alGetBufferi(buffer, AL_CHANNELS, &channels);
+    const float panGain = ComputeMonoPanGain(PanBasicStereo, channels,
+        ComputeListenerFrameOffset(offset.X, offset.Y, offset.Z, listener->angle), radius);
+
+    alSourcef(source, AL_MAX_GAIN, SourceMaxGain);
+    alSourcef(source, AL_GAIN, SfxVolume * vol * panGain);
 	if (AL.SOFT_source_spatialize)
 		alSourcei(source, AL_SOURCE_SPATIALIZE_SOFT, AL_TRUE);
 
@@ -1991,6 +2031,9 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
     chan->Rolloff = *rolloff;
     chan->DistanceSqr = dist_sqr;
     chan->ManualRolloff = manualRolloff;
+    chan->PanGain = panGain;
+    chan->PanTracked = PanBasicStereo && channels == 1;
+    chan->PanRadius = radius;
 
     return chan;
 }
@@ -2003,7 +2046,7 @@ void OpenALSoundRenderer::ChannelVolume(FISoundChannel *chan, float volume)
     alDeferUpdatesSOFT();
 
     ALuint source = GET_PTRID(chan->SysChannel);
-    alSourcef(source, AL_GAIN, SfxVolume * volume);
+    alSourcef(source, AL_GAIN, SfxVolume * volume * chan->PanGain);
 }
 
 void OpenALSoundRenderer::StopChannel(FISoundChannel *chan)
@@ -2164,12 +2207,15 @@ void OpenALSoundRenderer::UpdateSoundParams3D(SoundListener *listener, FISoundCh
 		float a = sqrtf(chan->DistanceSqr) / AREA_SOUND_RADIUS;
 		dir = amb + (dir-amb)*a;
 	}
+	// [Doruk-Aksoy] Where OpenAL places the source from the listener, nowhere when it is head-relative.
+	const bool headRelative = chan->DistanceSqr < (0.0004f*0.0004f);
+	const FVector3 offset = headRelative ? FVector3(0.f, 0.f, 0.f) : dir;
 	dir += listener->position;
 
 	alDeferUpdatesSOFT();
 	ALuint source = GET_PTRID(chan->SysChannel);
 
-	if(chan->DistanceSqr < (0.0004f*0.0004f))
+	if(headRelative)
 	{
 		alSourcei(source, AL_SOURCE_RELATIVE, AL_TRUE);
 		alSource3f(source, AL_POSITION, 0.f, 0.f, 0.f);
@@ -2180,6 +2226,18 @@ void OpenALSoundRenderer::UpdateSoundParams3D(SoundListener *listener, FISoundCh
 		alSource3f(source, AL_POSITION, dir[0], dir[1], -dir[2]);
 	}
 	alSource3f(source, AL_VELOCITY, vel[0], vel[1], -vel[2]);
+
+	// [Doruk-Aksoy] A mono source's equal-power lift follows it around the listener, so it is set again whenever it changes.
+	if(chan->PanTracked)
+	{
+		const float panGain = ComputeMonoPanGain(PanBasicStereo, 1,
+			ComputeListenerFrameOffset(offset.X, offset.Y, offset.Z, listener->angle), chan->PanRadius);
+		if(panGain != chan->PanGain)
+		{
+			chan->PanGain = panGain;
+			alSourcef(source, AL_GAIN, SfxVolume * static_cast<FSoundChan *>(chan)->Volume * panGain);
+		}
+	}
 	getALError();
 }
 

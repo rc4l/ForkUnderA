@@ -113,8 +113,7 @@ export async function compareTemplate({ name, wad, maps, vantages, boxes, sides 
   const others = sides.some((sd) => sd.gl || sideBesideGl(sd)) ? engineProcessCount() : 0;
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = slashed(resolveEngine());
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
+  const wadPath = writeTemplateFile(name, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) {
@@ -208,8 +207,7 @@ export function judgeQuit(label, { gone, crashed }) {
 
 // [rc4l] Runs judgeLaunch(c, inst, label, { wadPath, iwad }) in a launch of each side on each map, collecting each { line, failed } verdict, and a launch that throws as a failure.
 async function eachLaunch({ name, wad, maps, sides, iwad = FREEDOOM2, port = 7796, size = [1280, 720] }, judgeLaunch) {
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
+  const wadPath = writeTemplateFile(name, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) {
@@ -246,8 +244,7 @@ export function compareEachLaunch(opts) {
 
 // [rc4l] Each map hosted by a server with the scenario's wad and joined by a client of each side playing it, both locked, judged together by judgeHosted(server, client, label): for what a netgame splits between the two, such as what only a client draws.
 export async function compareHosted({ name, wad, maps, sides = [{ name: "vk" }], iwad = FREEDOOM2, port = 7796, gamePort = 10790, judgeHosted }) {
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
+  const wadPath = writeTemplateFile(name, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) for (const side of sides) {
@@ -378,6 +375,14 @@ export function directRunArgs(argv) {
 }
 
 // [rc4l] Run a scenario only when its own file is invoked (compareTemplate unless it names another), so importing its wad builder launches nothing; directRunArgs reads its port and engine.
+// [Doruk-Aksoy] A scenario's file written to the temp folder and named for what it holds, a pk3 by its zip header and otherwise a wad: its path.
+export function writeTemplateFile(name, data, dir = os.tmpdir(), write = fs.writeFileSync) {
+  const zip = data.length >= 4 && data.readUInt32LE(0) === 0x04034b50;
+  const file = path.join(dir, `fua-${name}-template.${zip ? "pk3" : "wad"}`);
+  write(file, data);
+  return file;
+}
+
 export function runScenarioIfMain(metaUrl, options, compare = compareTemplate) {
   if (!isMain(metaUrl)) { registered.set(metaUrl, { options, compare }); return; }
   const direct = directRunArgs(process.argv.slice(2));
@@ -429,8 +434,7 @@ export function judgeCounter(map, text, { label, pattern, ceiling, floor }) {
 
 // [rc4l] One Vulkan launch of the wad per map, body(c, map) giving that map's { lines, failed }, and a launch that throws one FAIL line: the shape the comparisons below share.
 async function eachVulkanLaunch({ name, wad, maps, iwad, port, size, side }, body) {
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
+  const wadPath = writeTemplateFile(name, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) {
@@ -511,19 +515,20 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
 export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
   const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
-  const wadPath = path.join(os.tmpdir(), `fua-${name}-template.wad`);
-  fs.writeFileSync(wadPath, wad);
+  const wadPath = writeTemplateFile(name, wad);
   const lines = [];
   let failed = 0;
   for (const map of maps) for (const config of configs) {
     // [rc4l] A config naming its maps runs on those alone.
     if (config.maps && !config.maps.includes(map)) continue;
     const label = `${map} ${config.name}`;
+    // [Doruk-Aksoy] A config may bring its own file in place of the scenario's, such as its map in a pk3.
+    const filePath = config.wad ? writeTemplateFile(`${name}-${config.name}`, config.wad) : wadPath;
     let set = null;
     try {
-      set = await launch({ iwad, map, files: [wadPath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "",
+      set = await launch({ iwad, map, files: [filePath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "",
         basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: config.clientCvars || {}, broadcast: !!config.broadcast });
-      const r = await judgeNetplay(set, label, { wadPath, iwad, map, config });
+      const r = await judgeNetplay(set, label, { wadPath: filePath, iwad, map, config });
       lines.push(...(r.lines || [r.line]));
       failed += r.failed;
       // [rc4l] And the netcode stayed on the threads its seams name, on every instance.

@@ -104,6 +104,11 @@ struct FISoundChannel
 	float		DistanceScale;
 	float		DistanceSqr;
 	bool		ManualRolloff;
+
+	// [Doruk-Aksoy] The backend's lift for how quietly it pans this sound, whether that follows the sound's direction, and the source radius it is worked out with.
+	float		PanGain;
+	bool		PanTracked;
+	float		PanRadius;
 };
 
 // [OpenAL] Sample/channel description + the decoder abstraction the OpenAL

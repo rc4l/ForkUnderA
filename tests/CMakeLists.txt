@@ -189,6 +189,8 @@ if(NET_TEST_SOURCES AND NOT EMSCRIPTEN)
     "${ENGINE_SRC}/features/net/computation/v6mapped_compute.cpp"
     # [rc4l] ...and matches v6 bans through this one, for the same reason.
     "${ENGINE_SRC}/features/net/computation/v6prefix_compute.cpp"
+    # [Doruk-Aksoy] The sound commands' volume byte, which soundactor_wire_nettest.cpp encodes the way the server does.
+    "${ENGINE_SRC}/features/sound-amplify/computation/sound_amplify_compute.cpp"
     "${ENGINE_SRC}/platform.cpp"
     # [rc4l] The ini parser, here for the same reason as networkshared.cpp: it is vendored engine
     # code whose only heavy dependency is shimmed away, and a truncation bug in it reached players.

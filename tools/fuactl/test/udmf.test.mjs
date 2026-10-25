@@ -454,6 +454,19 @@ test("a pk3 that is not one, or whose file was changed, is refused", () => {
   assert.throws(() => readPk3(buf), /a\.txt: CRC mismatch/);
 });
 
+test("a deflated pk3 reads back inflated, and a compression method it cannot read is refused by name", () => {
+  const files = [{ name: "music/a.wav", data: Buffer.alloc(4096, 0x80) }, { name: "mapinfo.txt", data: "map MAP01 {}" }, { name: "empty", data: "" }];
+  const buf = pk3(files, { deflate: true });
+  assert.ok(buf.length < 4096, "silence deflates to far less than it holds");
+  const back = readPk3(buf);
+  assert.deepEqual(back.map((f) => [f.name, f.data.length, f.deflated]), [["music/a.wav", 4096, true], ["mapinfo.txt", 12, true], ["empty", 0, true]]);
+  assert.equal(back[1].data.toString("latin1"), "map MAP01 {}");
+  assert.equal(readPk3(pk3(files))[0].deflated, undefined);
+  const odd = Buffer.from(buf);
+  odd.writeUInt16LE(14, odd.readUInt32LE(odd.length - 22 + 16) + 10);
+  assert.throws(() => readPk3(odd), /music\/a\.wav: compression method 14, not stored or deflated/);
+});
+
 test("the wipe scenario reads fua_wipe_report and fails a wipe never presented, a cut, a wrong start or end, and the old map before the second", async () => {
   const { buildWipeWad, parseWipeReport, wipeFault, judgeWipes } = await import("../scenarios/wipe.mjs");
   assert.ok(buildWipeWad().length > 0);

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, writeTemplateFile, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -376,6 +376,26 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
   assert.deepEqual([launched[0].broadcast, launched[1].broadcast], [true, false]);
   assert.equal(compareNetplay.judgedAlone, true);
   assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
+});
+
+test("a netplay configuration may bring its own file, a pk3 named as one beside the scenario's wad", async () => {
+  const launched = [], judgedFiles = [];
+  const deps = { launch: async (o) => { launched.push(o); return { id: launched.length }; }, close: async () => {}, seams: async () => [], replication: async () => "" };
+  const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2]);
+  await compareNetplay({ name: "ntfile", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs: [{ name: "wad" }, { name: "pk3", wad: zip }],
+    judgeNetplay: async (set, label, info) => { judgedFiles.push(info.wadPath); return { line: `PASS ${label}`, failed: 0 }; } }, deps);
+  assert.deepEqual(launched.map((o) => path.basename(o.files[0])), ["fua-ntfile-template.wad", "fua-ntfile-pk3-template.pk3"]);
+  assert.deepEqual(judgedFiles, launched.map((o) => o.files[0]));
+  assert.deepEqual(fs.readFileSync(launched[1].files[0]), zip);
+});
+
+test("a template file is named for what it holds, a pk3 by its zip header", () => {
+  const written = [];
+  const write = (file, data) => written.push(data.length);
+  assert.equal(writeTemplateFile("a", Buffer.from("PWAD...."), "/t", write), path.join("/t", "fua-a-template.wad"));
+  assert.equal(writeTemplateFile("b", Buffer.from([0x50, 0x4b, 3, 4]), "/t", write), path.join("/t", "fua-b-template.pk3"));
+  assert.equal(writeTemplateFile("c", Buffer.from("PK"), "/t", write), path.join("/t", "fua-c-template.wad"));
+  assert.deepEqual(written, [8, 4, 2]);
 });
 
 test("--side names a netplay configuration and its cvars reach that configuration's server and clients", () => {
