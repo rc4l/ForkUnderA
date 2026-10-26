@@ -10,13 +10,20 @@
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsCapacity
 #include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLightCapacity
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the world pass's shaders
+#include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] load/user_shaders
 
 #include <string.h>
+#include <deque>
+#include <map>
+#include <set>
 #include "w_wad.h"   // [rc4l] the shader lumps
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_loopcommits, true, 0)
 EXTERN_CVAR(Float, r_texture_filter_anisotropic)
+EXTERN_CVAR(Int, fua_dg_spirv_optimize)
+// [Doruk-Aksoy] Off makes pipelines one after another, and a frame first drawing with a GLDEFS shader's pipeline wait for it rather than draw that piece plain until it is ready.
+CVAR(Bool, fua_dg_async_pipelines, true, CVAR_ARCHIVE)
 
 namespace zx { namespace hwrender {
 
@@ -547,9 +554,14 @@ static bool g_pieceBindFailed = false;
 // [rc4l] Drop the pipelines and everything bound to them, so the next upload rebuilds with current
 // settings. SRBs are created from a PSO and cannot outlive it.
 static int g_builtCull = -1;
+static int g_builtOptimize = -1;   // [Doruk-Aksoy] fua_dg_spirv_optimize as the pipelines' shaders were compiled
 static unsigned g_builtSlots = 0;   // [rc4l] the material array size the pipelines were built for
 static float g_builtAniso = 0.f;    // [rc4l] the anisotropy the samplers were built with
 static int g_builtFilter = -1;
+
+// [Doruk-Aksoy] Each GLDEFS shader's world pipelines, by (pipeline, shader), empty for one that could not be made; and every pair ever asked for, which EnsureScenePipeline makes again with the plain ones.
+static UserPipelineTable g_userPSOs;
+static std::set<std::pair<int, int>> g_userWanted;
 
 void ReleaseScenePipelines()
 {
@@ -571,7 +583,15 @@ void ReleaseScenePipelines()
 	ReleaseDecalPipelines();
 	for (unsigned i = 0; i < g_scene.batches.Size(); i++) g_scene.batches[i].srb = NULL;
 	ReleaseSkyPipelines();
+	g_userPSOs.made.clear();
 	for (auto &p : g_pso.world) p.Release();
+}
+
+int UserPipelineStatus(Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso, bool wait)
+{
+	const Diligent::PIPELINE_STATE_STATUS s = pso->GetStatus(wait);
+	if (s == Diligent::PIPELINE_STATE_STATUS_READY) return kUserPipelineReady;
+	return s == Diligent::PIPELINE_STATE_STATUS_COMPILING ? kUserPipelineCompiling : kUserPipelineFailed;
 }
 
 // [rc4l] Sample textures the way the engine's own renderer is configured to, not the way that looks
@@ -602,51 +622,357 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 	}
 }
 
-// [rc4l] Off once the scene shaders failed with the hardware shaders in them, so the world still draws, plainly.
-static bool g_userShadersOff = false;
+// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per lump name, and whether its program could not be made, which is noted once.
+struct UserShaderSource { std::string lump, adapted; bool newStyle = false, broken = false; };
+static std::vector<UserShaderSource> g_userSources;
 
-const std::string &UserShaderBlock()
+static UserShaderSource &UserSource(int shader)
 {
-	static std::string block;
-	static int builtFor = -1;
-	static bool builtOff = false;
-	const int count = g_userShadersOff ? 0 : zx::hwshaders::UserShaderCount();
-	if (builtFor == count && builtOff == g_userShadersOff) return block;
-	builtFor = count;
-	builtOff = g_userShadersOff;
-	std::vector<std::string> adapted;
-	std::vector<bool> styles;
-	for (int i = 0; i < count; i++)
+	if (g_userSources.size() <= (size_t)shader) g_userSources.resize(shader + 1);
+	UserShaderSource &s = g_userSources[shader];
+	const char *lump = zx::hwshaders::UserShaderLump(shader);
+	if (s.lump == lump) return s;
+	s = UserShaderSource();
+	s.lump = lump;
+	const int num = Wads.CheckNumForFullName(lump);
+	if (num >= 0)
 	{
-		std::string code, probeCode;
-		bool style = false;
-		const int lump = Wads.CheckNumForFullName(zx::hwshaders::UserShaderLump(i));
-		if (lump >= 0)
-		{
-			FMemLump data = Wads.ReadLump(lump);
-			const std::string src = data.GetString().GetChars();
-			style = zx::hwshaders::ComputeAdaptUserShader(src, i, code);
-			// [rc4l] Alone, against stand-ins for what the scene shader gives it, so one that leans on more of GL's main.fp than the backend offers is left out rather than taking the world down.
-			const bool probeStyle = zx::hwshaders::ComputeAdaptUserShader(src, 0, probeCode);
-			const std::string probe = std::string("#version 450\n"
-				"layout(location = 0) in vec2 vUV;\n"
-				"layout(location = 1) flat in vec2 vWarp;\n"
-				"layout(binding = 0) uniform Probe { vec4 uFrame; };\n"
-				"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
-				"layout(location = 0) out vec4 outColor;\n"
-				"vec4 fuaTexel(vec2 uv) { return texture(sampler2D(uTex, uTex_sampler), uv); }\n"
-				"vec4 fuaTexMode(vec4 t) { return t; }\n") +
-				zx::hwshaders::ComputeUserShaderBlock({ probeCode }, { probeStyle }) +
-				"void main() { outColor = fuaSurfaceTexel(vUV); }\n";
-			if (!CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua hardware shader probe", probe.c_str())) code.clear();
-		}
-		// [Doruk-Aksoy] GL notes the same through the same text; Diligent has already logged the compiler's reason.
-		if (code.empty()) Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", zx::hwshaders::UserShaderLump(i), "").c_str());
-		adapted.push_back(code);
-		styles.push_back(style);
+		FMemLump data = Wads.ReadLump(num);
+		s.newStyle = zx::hwshaders::ComputeAdaptUserShader(data.GetString().GetChars(), shader, s.adapted);
 	}
-	block = zx::hwshaders::ComputeUserShaderBlock(adapted, styles);
-	return block;
+	else s.broken = true;
+	return s;
+}
+
+// [Doruk-Aksoy] Leave a shader out for good, with the console note GL prints for one of its own.
+static void BreakUserShader(UserShaderSource &s, const char *why)
+{
+	if (s.broken) return;
+	s.broken = true;
+	Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", s.lump, why).c_str());
+}
+
+std::string ProgramBlock(zx::hwshaders::ProgramKind kind, int userShader)
+{
+	if (userShader < 0 || userShader >= zx::hwshaders::UserShaderCount()) return zx::hwshaders::ComputePlainProgramBlock(kind);
+	const UserShaderSource &s = UserSource(userShader);
+	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.newStyle, userShader);
+}
+
+bool UserShaderUsable(int shader)
+{
+	return shader >= 0 && shader < zx::hwshaders::UserShaderCount() && !UserSource(shader).broken;
+}
+
+bool KeepUserPipeline(int shader, Diligent::IPipelineState *plain, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &made)
+{
+	UserShaderSource &src = UserSource(shader);
+	if (!made) { BreakUserShader(src, ""); return false; }
+	// [Doruk-Aksoy] Its draws commit the plain pipeline's bindings, so it must take the same resources, as a shader declaring its own cannot.
+	if (!made->IsCompatibleWith(plain)) { made.Release(); BreakUserShader(src, "its program does not take the plain pipeline's bindings"); return false; }
+	return true;
+}
+
+const char *UserShaderName(int shader)
+{
+	return UserSource(shader).lump.c_str();
+}
+
+// [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
+// a macro, so the qualified name does not survive the preprocessor here.
+static const Diligent::LayoutElement kSceneLayout[] = {
+	Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},   // position
+	Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},   // uv
+	Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},   // piece index
+};
+// [rc4l] The dynamic stream's one attribute, a reference into its words (ComputeSpriteRef, ComputeGeneralRef).
+static const Diligent::LayoutElement kDynLayout[] = {
+	Diligent::LayoutElement{0, 0, 1, Diligent::VT_UINT32, false},
+};
+
+static const Diligent::ShaderResourceVariableDesc kSceneVars[] = {
+	{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	// [rc4l] The material array is MUTABLE, which is to say it lives on the BINDING.
+	//
+	// It was static, and static means Diligent stores it on the pipeline and copies it into
+	// every binding at the moment that binding is made -- after which it cannot be rewritten.
+	// Following a texture to its next animation frame therefore meant making all thirteen
+	// pipelines again, shader compiles and all, twenty times a second. That was reported from
+	// play as mouse stutter and as a lowering floor that could not decide what texture it was.
+	//
+	// On the binding, the same update is one SetArray call on the slots that actually changed.
+	{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+};
+
+// [Doruk-Aksoy] The world samplers as the last EnsureScenePipeline made them, so a GLDEFS shader's pipeline made later has the same and shares the plain one's bindings.
+static Diligent::SamplerDesc g_sceneSampler;
+
+// [Doruk-Aksoy] The scene fragment stages by kWpStage*, and their names.
+static const char *const kStageSources[] = { kScenePSOpaque, kScenePS, kScenePSTrans, kScenePSRedAlpha, kScenePSGBuffer };
+static const char *const kStageNames[] = { "fua scene PS opaque", "fua scene PS masked", "fua scene PS translucent", "fua scene PS red alpha", "fua scene PS masked + gbuffer" };
+
+// [rc4l] Every one has its statics bound, sprites' and decals' included: a pipeline created with none bound died on launch with "No resource is assigned to static shader variable 'Constants'".
+static void BindWorldStatics(Diligent::IPipelineState *pso)
+{
+	BindSceneConstants(pso);
+	BindLightBuffers(pso);
+
+	// [rc4l] The per-piece records, read by the VERTEX stage. Shared by every world pass, so it is
+	// static like the others -- and it is why a new piece buffer means new pipelines: a static
+	// variable cannot be re-pointed once its pipeline has handed out a binding.
+	if (g_scene.pieceBuf)
+	{
+		auto *pv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Pieces");
+		if (pv) pv->Set(g_scene.pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+		else g_pieceBindFailed = true;
+	}
+	if (g_scene.stackVisBuf)
+		if (auto *sv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "StackVis"))
+			sv->Set(g_scene.stackVisBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+	if (auto *rv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
+		rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+	if (auto *dv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "DynData"))
+		dv->Set(g_scene.dynDataBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+	if (auto *lv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SectorLight"))
+		lv->Set(g_scene.sectorLightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+	if (auto *hv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
+		hv->Set(g_scene.skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+}
+
+// [rc4l] A world pipeline over one vertex layout and set of resources, as ComputeWorldPipelineDesc describes it, the blended ones never writing depth.
+// [Doruk-Aksoy] Made on the device's pool when fua_dg_async_pipelines is on, so its statics are bound by the caller once it is ready (BindWorldStatics).
+static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader *ps, const char *name, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &out)
+{
+	const WorldPipelineDesc d = ComputeWorldPipelineDesc(pass);
+	const bool gbuffer = d.stage == kWpStageGBuffer;
+	const bool blended = d.blend != kWpBlendNone;
+	auto *swap = GetSwapChain();
+	if (swap == NULL) return;
+
+	Diligent::GraphicsPipelineStateCreateInfo pci;
+	pci.PSODesc.Name = name;
+	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pci.GraphicsPipeline.NumRenderTargets = gbuffer ? 2 : 1;
+	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	if (gbuffer) pci.GraphicsPipeline.RTVFormats[1] = Diligent::TEX_FORMAT_RGBA8_UNORM;
+	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
+	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pci.GraphicsPipeline.RasterizerDesc.CullMode = !d.level ? Diligent::CULL_MODE_NONE :
+		(fua_dg_cull == 1) ? Diligent::CULL_MODE_BACK :
+		(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended || d.depthWrite;
+	ClampDepthLikeGL(pci.GraphicsPipeline);
+	if (d.depthBias)
+	{
+		// [rc4l] GL's glPolygonOffset(-1, -128): -1 times the slope and -128 resolvable steps, which on a float buffer scale with the primitive's depth; swapped, a decal seen square on had no slope to lift it and fought its wall.
+		pci.GraphicsPipeline.RasterizerDesc.DepthBias = -128;
+		pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.f;
+	}
+	if (blended) SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0], d.blend);
+	// [rc4l] The level's pipelines read its vertices; the others draw the dynamic stream.
+	pci.GraphicsPipeline.InputLayout.LayoutElements = d.level ? kSceneLayout : kDynLayout;
+	pci.GraphicsPipeline.InputLayout.NumElements = d.level ? 3 : 1;
+	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+	// [rc4l] Per call, never static: the filter is the engine's at this rebuild, and a static array would keep the first one forever.
+	const Diligent::ImmutableSamplerDesc samplers[] = {
+		{ Diligent::SHADER_TYPE_PIXEL, "uTex", g_sceneSampler },
+		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", g_sceneSampler },
+		// [rc4l] The material array's sampler, uMaterials_sampler, is immutable as well, or it is a variable nothing binds.
+		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", g_sceneSampler },
+	};
+	// [rc4l] The material array is the last of each, left out where the shaders have none (FUA_BINDLESS).
+	const Diligent::Uint32 noArray = MaterialSlotCapacity() > 0 ? 0 : 1;
+	pci.PSODesc.ResourceLayout.Variables = kSceneVars;
+	pci.PSODesc.ResourceLayout.NumVariables = (Diligent::Uint32)(sizeof(kSceneVars) / sizeof(kSceneVars[0])) - noArray;
+	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+	pci.PSODesc.ResourceLayout.NumImmutableSamplers = (Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0])) - noArray;
+	pci.pVS = vs;
+	pci.pPS = ps;
+	if (fua_dg_async_pipelines) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
+	CreatePipeline(pci, &out);
+}
+
+// [Doruk-Aksoy] A GLDEFS shader's world pipeline once ready: its statics bound and kept only if it takes the plain one's bindings.
+static bool FinishUserScenePSO(const std::pair<int, int> &key, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+{
+	if (pso) BindWorldStatics(pso);
+	return KeepUserPipeline(key.second, g_pso.world[key.first], pso);
+}
+
+// [Doruk-Aksoy] Every GLDEFS shader world pipeline started and not yet ready, waited for.
+static void LandUserScenePSOs()
+{
+	ComputeLandAllUserPipelines(g_userPSOs, UserPipelineStatus, FinishUserScenePSO);
+}
+
+// [Doruk-Aksoy] GLDEFS shader `userShader`'s twin of world pipeline `pipeline`, started the first time it is asked for, or the plain one while it is made and for good once left out; `wait` waits for it instead.
+static Diligent::IPipelineState *UserScenePSO(int pipeline, int userShader, bool wait)
+{
+	if (pipeline < 0 || pipeline >= kWorldPipelines) return NULL;
+	Diligent::IPipelineState *plain = g_pso.world[pipeline];
+	if (plain == NULL || !UserShaderUsable(userShader) || !ComputeWorldPipelineTakesUserShader(pipeline)) return plain;
+	const std::pair<int, int> key(pipeline, userShader);
+	auto start = [&]() {
+		g_userWanted.insert(key);
+		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
+		const WorldPipelineDesc d = ComputeWorldPipelineDesc(pipeline);
+		// [Doruk-Aksoy] One vertex shader serves every GLDEFS shader's program, since only its fragment stage differs.
+		auto vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, d.level ? "fua scene VS user" : "fua dynamic VS user", d.level ? kSceneVS.c_str() : kDynamicVS.c_str(), userShader);
+		FString name;
+		name.Format("%s %s", kStageNames[d.stage], UserShaderName(userShader));
+		auto ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, name.GetChars(), kStageSources[d.stage], userShader);
+		name.Format("%s %s", d.name, UserShaderName(userShader));
+		if (vs && ps) MakeWorldPipeline(pipeline, vs, ps, name.GetChars(), made);
+		return made;
+	};
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> *made = ComputeUserPipeline(g_userPSOs, key, wait, start, UserPipelineStatus, FinishUserScenePSO);
+	return made != NULL ? made->RawPtr() : plain;
+}
+
+Diligent::IPipelineState *ScenePSO(int pipeline, int userShader)
+{
+	return UserScenePSO(pipeline, userShader, !fua_dg_async_pipelines);
+}
+
+void PrewarmUserPipelines()
+{
+	const size_t before = g_userPSOs.made.size();
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
+	// [Doruk-Aksoy] Every one the level's surfaces take started first, so the pool makes them side by side, then all waited for.
+	for (unsigned i = 0; i < g_scene.batches.Size(); i++)
+	{
+		const SceneBatch &b = g_scene.batches[i];
+		if (b.userShader < 0) continue;
+		if (b.blend != 0) { UserScenePSO(ComputeBatchPipeline(b.blend), b.userShader, false); continue; }
+		UserScenePSO(kWpMasked, b.userShader, false);
+		UserScenePSO(kWpMaskedGBuffer, b.userShader, false);
+	}
+	LandUserScenePSOs();
+	clock.Unclock();
+	if (g_userPSOs.made.size() > before)
+		Printf("vulkan: %d GLDEFS shader pipelines made ahead in %.0f ms\n", (int)(g_userPSOs.made.size() - before), clock.TimeMS());
+}
+
+void UserShaderReport(FString &out)
+{
+	const int count = zx::hwshaders::UserShaderCount();
+	int ran = 0;
+	FString lines;
+	// [Doruk-Aksoy] Timed, as what a pipeline costs beyond its shaders is the driver's part of the bill.
+	const size_t before = g_userPSOs.made.size();
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
+	// [Doruk-Aksoy] A level surface's program and a sprite's translucent one, the two fragment stages a shader's pieces mostly take, all started before any is waited for.
+	for (int i = 0; i < count && g_pso.world[kWpMasked]; i++)
+	{
+		UserScenePSO(kWpMasked, i, false);
+		UserScenePSO(kWpTransNoCull, i, false);
+	}
+	LandUserScenePSOs();
+	clock.Unclock();
+	for (int i = 0; i < count && g_pso.world[kWpMasked]; i++)
+	{
+		const bool ok = !UserSource(i).broken;
+		ran += ok ? 1 : 0;
+		lines.AppendFormat("  %s  %s\n", ok ? "runs" : "out ", zx::hwshaders::UserShaderLump(i));
+	}
+	out.Format("%d GLDEFS hardware shaders, %d running; %d pipelines made in %.1f ms\n%s", count, ran,
+		(int)(g_userPSOs.made.size() - before), clock.TimeMS(), lines.GetChars());
+	if (!g_pso.world[kWpMasked] && count > 0) out += "  (no level is up, so none was made)\n";
+}
+
+// [Doruk-Aksoy] Off leaves each GLDEFS shader's programs to the frame that first draws with one, as before, for timing a launch against.
+CVAR(Bool, fua_dg_precompile_shaders, true, CVAR_ARCHIVE)
+// [Doruk-Aksoy] Off compiles them one after another on this thread, for timing the device's pool against.
+CVAR(Bool, fua_dg_precompile_async, true, CVAR_ARCHIVE)
+
+// [Doruk-Aksoy] The fragment stages a GLDEFS shader's pieces draw with (ComputeWorldPipelineDesc's, the opaque one never asked for), compiled ahead with the 2D layer's.
+static const int kUserStages[] = { kWpStageMasked, kWpStageTrans, kWpStageGBuffer };
+
+// [Doruk-Aksoy] Each fragment program a usable GLDEFS shader is compiled into ahead of its first draw: its scene stages and its 2D one, by name and source.
+template <class Each> static void ForEachUserProgram(Each each)
+{
+	for (int i = 0; i < zx::hwshaders::UserShaderCount(); i++)
+	{
+		if (!UserShaderUsable(i)) continue;
+		FString name;
+		for (const int stage : kUserStages)
+		{
+			name.Format("%s %s", kStageNames[stage], UserShaderName(i));
+			each(i, name.GetChars(), kStageSources[stage]);
+		}
+		name.Format("fua 2D PS %s", UserShaderName(i));
+		each(i, name.GetChars(), Ps2DSource());
+	}
+}
+
+void PrecompileUserShaders()
+{
+	static int doneFor = -1;
+	const int count = zx::hwshaders::UserShaderCount();
+	if (!fua_dg_precompile_shaders || GetDevice() == NULL || count == doneFor) return;
+	doneFor = count;
+	if (count == 0) return;
+	ZX_ZONE("load/user_shaders");   // [Doruk-Aksoy] every GLDEFS shader's programs compiled at launch
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
+	auto compile = fua_dg_precompile_async ? CompileShaderAsync : CompileShader;
+	compile(Diligent::SHADER_TYPE_VERTEX, "fua scene VS user", kSceneVS.c_str(), 0);
+	compile(Diligent::SHADER_TYPE_VERTEX, "fua dynamic VS user", kDynamicVS.c_str(), 0);
+	// [Doruk-Aksoy] Every program asked for first, so the pool has them all at once, then each waited for in turn.
+	std::vector<std::pair<int, Diligent::RefCntAutoPtr<Diligent::IShader>>> made;
+	int leftOut = 0;
+	for (int i = 0; i < count; i++) leftOut += UserShaderUsable(i) ? 0 : 1;
+	ForEachUserProgram([&](int shader, const char *name, const char *source) {
+		made.emplace_back(shader, compile(Diligent::SHADER_TYPE_PIXEL, name, source, shader));
+	});
+	int programs = 0;
+	for (auto &m : made)
+	{
+		const bool ok = m.second && m.second->GetStatus(true) == Diligent::SHADER_STATUS_READY;
+		programs += ok ? 1 : 0;
+		// [Doruk-Aksoy] Noted now, at launch, as GL notes its own.
+		if (!ok && UserShaderUsable(m.first)) { BreakUserShader(UserSource(m.first), ""); leftOut++; }
+	}
+	clock.Unclock();
+	Printf("%s", zx::hwshaders::ComputePrecompileNote(count, programs, leftOut, clock.TimeMS()).c_str());
+}
+
+void ShaderCompileBench(int inFlight, FString &out)
+{
+	static int run = 0;
+	run++;
+	// [Doruk-Aksoy] Each text made new by a trailing comment, so the cache answers none of them and each is compiled in full.
+	std::vector<std::string> texts;
+	ForEachUserProgram([&](int shader, const char *, const char *source) {
+		texts.push_back(ShaderText(source, shader) + "// fua_dg_shaderbench " + std::to_string(run) + "\n");
+	});
+	if (texts.empty()) { out = "no GLDEFS shader to compile\n"; return; }
+	inFlight = std::max(1, inFlight);
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
+	std::deque<Diligent::RefCntAutoPtr<Diligent::IShader>> flying;
+	int failed = 0;
+	auto land = [&]() {
+		failed += flying.front() && flying.front()->GetStatus(true) == Diligent::SHADER_STATUS_READY ? 0 : 1;
+		flying.pop_front();
+	};
+	for (const std::string &text : texts)
+	{
+		if ((int)flying.size() >= inFlight) land();
+		flying.push_back(CompileShaderText(Diligent::SHADER_TYPE_PIXEL, "fua shader bench", text, true));
+	}
+	while (!flying.empty()) land();
+	clock.Unclock();
+	out.Format("%d programs, at most %d at a time: %.0f ms, %.1f ms each%s\n", (int)texts.size(), inFlight, clock.TimeMS(),
+		clock.TimeMS() / texts.size(), failed ? " (some failed)" : "");
 }
 
 bool EnsureScenePipeline(FString &err)
@@ -657,6 +983,9 @@ bool EnsureScenePipeline(FString &err)
 	g_builtAniso = r_texture_filter_anisotropic;
 	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
+	// [Doruk-Aksoy] The kept shaders were compiled the other way, so they go with the pipelines holding them.
+	if (g_pso.world[kWpOpaque] && g_builtOptimize != (int)fua_dg_spirv_optimize) { ReleaseScenePipelines(); ReleaseShaderCache(); }
+	g_builtOptimize = (int)fua_dg_spirv_optimize;
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.
 	if (g_pso.world[kWpOpaque] && g_builtSlots != MaterialSlotCapacity()) ReleaseScenePipelines();
 	// [rc4l] A level with more sectors than the sector light table holds makes it again, and the pipelines binding it.
@@ -667,11 +996,16 @@ bool EnsureScenePipeline(FString &err)
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) { err = "no device/swapchain"; return false; }
 
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, dynVS, psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer;
+	Diligent::RefCntAutoPtr<Diligent::IShader> vs, dynVS, stages[kWpStageGBuffer + 1];
 	vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua scene VS", kSceneVS.c_str());
 	dynVS = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua dynamic VS", kDynamicVS.c_str());
-	psOpaque = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS opaque", kScenePSOpaque);
-	psMasked = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS masked", kScenePS);
+	bool staged = true;
+	for (int s = 0; s <= kWpStageGBuffer; s++)
+	{
+		stages[s] = CompileShader(Diligent::SHADER_TYPE_PIXEL, kStageNames[s], kStageSources[s]);
+		staged = staged && stages[s];
+	}
+	Diligent::IShader *psMasked = stages[kWpStageMasked];
 	// [rc4l] Ask the SHADER what it declared, before any pipeline has an opinion about it.
 	// "Not in the pipeline resource list" has two very different causes -- the shader never declared
 	// it, or the layout classified it somewhere else -- and only the shader can tell them apart.
@@ -688,20 +1022,7 @@ bool EnsureScenePipeline(FString &err)
 		g_scenePSResources = names;
 		Printf("Diligent scene PS declares (%u):%s\n", psMasked->GetResourceCount(), names.GetChars());
 	}
-	psGBuffer = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS masked + gbuffer", kScenePSGBuffer);
-	psTrans = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS translucent", kScenePSTrans);
-	psRedAlpha = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS red alpha", kScenePSRedAlpha);
-	if (!vs || !dynVS || !psOpaque || !psMasked || !psTrans || !psRedAlpha)
-	{
-		// [rc4l] Shaders that compiled alone can still clash together, over a helper both define, so the world is drawn without them rather than not at all.
-		if (!g_userShadersOff && zx::hwshaders::UserShaderCount() > 0)
-		{
-			Printf("vulkan: the hardware shaders together break the scene shaders; drawing without them\n");
-			g_userShadersOff = true;
-			return EnsureScenePipeline(err);
-		}
-		err = "scene shader compilation failed"; return false;
-	}
+	if (!vs || !dynVS || !staged) { err = "scene shader compilation failed"; return false; }
 
 	// [rc4l] Created once and never replaced, since pipelines that outlive a level change bind it statically and a replaced one is never mapped again.
 	if (!g_cb)
@@ -744,125 +1065,42 @@ bool EnsureScenePipeline(FString &err)
 		g_scene.dynDataCapacity = words;
 	}
 
-	// [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
-	// a macro, so the qualified name does not survive the preprocessor here.
-	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 3, Diligent::VT_FLOAT32, false},   // position
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},   // uv
-		Diligent::LayoutElement{2, 0, 1, Diligent::VT_FLOAT32, false},   // piece index
-	};
-	// [rc4l] The dynamic stream's one attribute, a reference into its words (ComputeSpriteRef, ComputeGeneralRef).
-	Diligent::LayoutElement dynLayout[] = {
-		Diligent::LayoutElement{0, 0, 1, Diligent::VT_UINT32, false},
-	};
-
-	static Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		// [rc4l] The material array is MUTABLE, which is to say it lives on the BINDING.
-		//
-		// It was static, and static means Diligent stores it on the pipeline and copies it into
-		// every binding at the moment that binding is made -- after which it cannot be rewritten.
-		// Following a texture to its next animation frame therefore meant making all thirteen
-		// pipelines again, shader compiles and all, twenty times a second. That was reported from
-		// play as mouse stutter and as a lowering floor that could not decide what texture it was.
-		//
-		// On the binding, the same update is one SetArray call on the slots that actually changed.
-		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-	};
 	// [rc4l] Per call, never static: the filter is the engine's at this rebuild, and a static array would keep the first one forever.
-	Diligent::SamplerDesc samp;
-	FillSamplerFromEngine(samp);
-	samp.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
-	samp.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
-	const Diligent::ImmutableSamplerDesc samplers[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
-		// [rc4l] The material array's sampler, uMaterials_sampler, is immutable as well, or it is a variable nothing binds.
-		{ Diligent::SHADER_TYPE_PIXEL, "uMaterials", samp },
-	};
-
-	// [rc4l] Every world pipeline over one vertex layout and set of resources, as ComputeWorldPipelineDesc describes it, the blended ones never writing depth.
-	Diligent::IShader *stages[] = { psOpaque, psMasked, psTrans, psRedAlpha, psGBuffer };
+	g_sceneSampler = Diligent::SamplerDesc();
+	FillSamplerFromEngine(g_sceneSampler);
+	g_sceneSampler.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
+	g_sceneSampler.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
+	cycle_t clock;
+	clock.Reset();
+	clock.Clock();
 	for (int pass = 0; pass < kWorldPipelines; pass++)
 	{
 		const WorldPipelineDesc d = ComputeWorldPipelineDesc(pass);
-		const bool gbuffer = d.stage == kWpStageGBuffer;
-		const bool blended = d.blend != kWpBlendNone;
-
-		Diligent::GraphicsPipelineStateCreateInfo pci;
-		pci.PSODesc.Name = d.name;
-		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-		pci.GraphicsPipeline.NumRenderTargets = gbuffer ? 2 : 1;
-		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-		if (gbuffer) pci.GraphicsPipeline.RTVFormats[1] = Diligent::TEX_FORMAT_RGBA8_UNORM;
-		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
-		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-		pci.GraphicsPipeline.RasterizerDesc.CullMode = !d.level ? Diligent::CULL_MODE_NONE :
-			(fua_dg_cull == 1) ? Diligent::CULL_MODE_BACK :
-			(fua_dg_cull == 2) ? Diligent::CULL_MODE_FRONT : Diligent::CULL_MODE_NONE;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = true;
-		pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = !blended || d.depthWrite;
-		ClampDepthLikeGL(pci.GraphicsPipeline);
-		if (d.depthBias)
-		{
-			// [rc4l] GL's glPolygonOffset(-1, -128): -1 times the slope and -128 resolvable steps, which on a float buffer scale with the primitive's depth; swapped, a decal seen square on had no slope to lift it and fought its wall.
-			pci.GraphicsPipeline.RasterizerDesc.DepthBias = -128;
-			pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.f;
-		}
-		if (blended) SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0], d.blend);
-		// [rc4l] The level's pipelines read its vertices; the others draw the dynamic stream.
-		pci.GraphicsPipeline.InputLayout.LayoutElements = d.level ? layout : dynLayout;
-		pci.GraphicsPipeline.InputLayout.NumElements = d.level ? 3 : 1;
-		pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
-		// [rc4l] The material array is the last of each, left out where the shaders have none (FUA_BINDLESS).
-		const Diligent::Uint32 noArray = MaterialSlotCapacity() > 0 ? 0 : 1;
-		pci.PSODesc.ResourceLayout.Variables = vars;
-		pci.PSODesc.ResourceLayout.NumVariables =
-			(Diligent::Uint32)(sizeof(vars) / sizeof(vars[0])) - noArray;
-		pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-		pci.PSODesc.ResourceLayout.NumImmutableSamplers =
-			(Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0])) - noArray;
-		pci.pVS = d.level ? vs : dynVS;
-		pci.pPS = stages[d.stage];
-		CreatePipeline(pci, &g_pso.world[pass]);
-		if (!g_pso.world[pass]) { err = "scene pipeline creation failed"; return false; }
+		MakeWorldPipeline(pass, d.level ? vs : dynVS, stages[d.stage], d.name, g_pso.world[pass]);
 	}
-
-	// [rc4l] Every one has its statics bound, sprites' and decals' included: a pipeline created with none bound died on launch with "No resource is assigned to static shader variable 'Constants'".
+	// [Doruk-Aksoy] All started before any is waited for, so the pool makes them side by side; a failed one leaves none, for the next frame to try again.
+	for (auto &p : g_pso.world)
+	{
+		if (!p || p->GetStatus(true) != Diligent::PIPELINE_STATE_STATUS_READY)
+		{
+			for (auto &q : g_pso.world) q.Release();
+			err = "scene pipeline creation failed";
+			return false;
+		}
+		BindWorldStatics(p);
+	}
 	ReleaseWorldSRBs();
 	g_matSlotsDirty = true;
 	// [rc4l] Nothing to pre-fill: the material array is mutable, so it belongs to each binding and is
 	// filled when that binding is made. A pipeline can hand out as many as it likes without the array
 	// ever being read from it -- which is exactly the property that was missing when it was static.
-	for (int i = 0; i < kWorldPipelines; i++)
-	{
-		Diligent::IPipelineState *pso = g_pso.world[i];
-		BindSceneConstants(pso);
-		BindLightBuffers(pso);
-
-		// [rc4l] The per-piece records, read by the VERTEX stage. Shared by every world pass, so it is
-		// static like the others -- and it is why a new piece buffer means new pipelines: a static
-		// variable cannot be re-pointed once its pipeline has handed out a binding.
-		if (g_scene.pieceBuf)
-		{
-			auto *pv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "Pieces");
-			if (pv) pv->Set(g_scene.pieceBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-			else g_pieceBindFailed = true;
-		}
-		if (g_scene.stackVisBuf)
-			if (auto *sv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "StackVis"))
-				sv->Set(g_scene.stackVisBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *rv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SlotRemap"))
-			rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *dv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "DynData"))
-			dv->Set(g_scene.dynDataBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *lv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SectorLight"))
-			lv->Set(g_scene.sectorLightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-		if (auto *hv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
-			hv->Set(g_scene.skyHoleBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
-
-	}
+	// [Doruk-Aksoy] Every GLDEFS shader's pipeline asked for before is made again with them, so the frame that next shows one does not wait on it.
+	for (const std::pair<int, int> &want : g_userWanted) UserScenePSO(want.first, want.second, false);
+	LandUserScenePSOs();
+	clock.Unclock();
+	FString again;
+	if (!g_userPSOs.made.empty()) again.Format(", %d GLDEFS shader ones among them made again", (int)g_userPSOs.made.size());
+	Printf("vulkan: %d world pipelines made in %.0f ms%s\n", kWorldPipelines + (int)g_userPSOs.made.size(), clock.TimeMS(), again.GetChars());
 	return true;
 }
 

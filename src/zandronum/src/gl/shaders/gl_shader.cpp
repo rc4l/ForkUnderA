@@ -186,6 +186,8 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 	vp_comb << defines << i_data.GetString().GetChars();
 	FString fp_comb = vp_comb;
+	// [Doruk-Aksoy] Where main.fp starts, which an old GLDEFS shader's define goes ahead of.
+	const long fpStart = (long)fp_comb.Len();
 
 	vp_comb << vp_data.GetString().GetChars() << "\n";
 	fp_comb << fp_data.GetString().GetChars() << "\n";
@@ -204,11 +206,11 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 			if (pp_data.GetString().IndexOf("ProcessTexel") < 0)
 			{
 				// this looks like an old custom hardware shader.
-				// We need to replace the ProcessTexel call to make it work.
-
-				fp_comb.Substitute("vec4 frag = ProcessTexel();", "vec4 frag = Process(vec4(1.0));");
+				// [Doruk-Aksoy] main.fp calls its Process(color) as Zandronum 3.3 did, with the draw's alpha, keeping the alpha it returns (FUA_OLD_PROCESS).
+				fp_comb = fp_comb.Left(fpStart) + "#define FUA_OLD_PROCESS\n" + fp_comb.Mid(fpStart);
 			}
-			fp_comb << pp_data.GetString().GetChars();
+			// [Doruk-Aksoy] Zandronum 3.3's camerapos and gl_TextureMatrix read through the names this base shader has.
+			fp_comb << zx::hwshaders::ComputeLegacyShaderNames(pp_data.GetString().GetChars()).c_str();
 			fp_comb.Substitute("gl_TexCoord[0]", "vTexCoord");	// fix old custom shaders.
 
 			if (pp_data.GetString().IndexOf("ProcessLight") < 0)

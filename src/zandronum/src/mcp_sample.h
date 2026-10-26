@@ -36,7 +36,8 @@
 // first read as renderer-bound. Pair it with perf.ticprof to find the expensive tics, then re-ask
 // for just those.
 // [rc4l] gameThread samples the thread running tics beside the main one instead, false when it has not run (fua_gamethread off).
-bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks, bool gameThread = false );
+// [Doruk-Aksoy] allThreads samples every thread the process has when armed, their self time together and without stacks, for work on threads the engine does not name (a driver's or a library's pool).
+bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks, bool gameThread = false, bool allThreads = false );
 
 // Publish the current leveltime for the sampler thread to stamp onto samples. Called from the game
 // thread once per bridge tick; the sampler only ever READS it, through an atomic, because the
@@ -51,7 +52,7 @@ bool MCP_Sample_Running();
 
 #else
 
-inline bool MCP_Sample_Arm( double, int, bool, int, int, int, bool, bool = false ) { return false; }
+inline bool MCP_Sample_Arm( double, int, bool, int, int, int, bool, bool = false, bool = false ) { return false; }
 inline void MCP_Sample_PublishTic( int ) {}
 inline bool MCP_Sample_ReportReady( std::string & ) { return false; }
 inline bool MCP_Sample_Running() { return false; }

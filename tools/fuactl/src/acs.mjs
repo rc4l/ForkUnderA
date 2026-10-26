@@ -57,12 +57,17 @@ export function printString(i) {
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, i, PCD.PRINTSTRING, PCD.ENDPRINT];
 }
 
+// [Doruk-Aksoy] HUDMSG_ALPHA, the type flag that takes the message's alpha as its last optional argument.
+export const HUDMSG_ALPHA = 0x10000000;
+
 // [rc4l] The words of `HudMessage(s:strings[i]; type, id, color, x, y, holdTime)`, the last three in map units as 16.16 fixed point, and with `fade` a fade-out of that many seconds.
-export function hudMessage(i, { type = 0, id = 0, color = 0, x = 0.5, y = 0.5, hold = 1, fade = null } = {}) {
+// [Doruk-Aksoy] With `alpha`, drawn at that alpha (HUDMSG_ALPHA), after the fade when there is one.
+export function hudMessage(i, { type = 0, id = 0, color = 0, x = 0.5, y = 0.5, hold = 1, fade = null, alpha = null } = {}) {
   const fixed = (v) => Math.round(v * 65536);
+  const opts = [fade, alpha].filter((v) => v !== null);
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, i, PCD.PRINTSTRING, PCD.MOREHUDMESSAGE,
-    ...[type, id, color, fixed(x), fixed(y), fixed(hold)].flatMap((v) => [PCD.PUSHNUMBER, v]),
-    ...(fade === null ? [] : [PCD.OPTHUDMESSAGE, PCD.PUSHNUMBER, fixed(fade)]), PCD.ENDHUDMESSAGE];
+    ...[alpha === null ? type : type | HUDMSG_ALPHA, id, color, fixed(x), fixed(y), fixed(hold)].flatMap((v) => [PCD.PUSHNUMBER, v]),
+    ...(opts.length ? [PCD.OPTHUDMESSAGE, ...opts.flatMap((v) => [PCD.PUSHNUMBER, fixed(v)])] : []), PCD.ENDHUDMESSAGE];
 }
 
 // [rc4l] The words of `ConsoleCommand(strings[i])`, which the engine pops as three words, the string first.

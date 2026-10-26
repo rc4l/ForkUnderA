@@ -34,6 +34,7 @@ DFrameBuffer *CreateBackendFrameBuffer(void *, int, int, int, int, bool) { retur
 int BackendPaletteBrightness() { return 0; }
 bool OpenBackendOutput(int, int) { return false; }
 void ForgetBackendWindow(void *) {}
+void PrecompileUserShaders() {}
 int BackendMaxTextureSize() { return 0; }
 const char *BackendApiName() { return ""; }
 void NoteWorldView() {}

@@ -247,8 +247,13 @@ vec4 applyFog(vec4 frag, float fogfactor)
 
 void main()
 {
+#ifdef FUA_OLD_PROCESS
+	// [Doruk-Aksoy] Zandronum 3.3's Process(color): the draw's alpha in, and the alpha it returns the one drawn; the light still multiplies its colour below.
+	vec4 frag = Process(vec4(1.0, 1.0, 1.0, vColor.a));
+#else
 	vec4 frag = ProcessTexel();
-	
+#endif
+
 #ifndef NO_ALPHATEST
 	if (frag.a <= uAlphaThreshold) discard;
 #endif
@@ -279,8 +284,12 @@ void main()
 			}
 			
 			
+#ifdef FUA_OLD_PROCESS
+			frag.rgb *= getLightColor(fogdist, fogfactor).rgb;
+#else
 			frag *= getLightColor(fogdist, fogfactor);
-			
+#endif
+
 			if (uLightIndex >= 0)
 			{
 				ivec4 lightRange = ivec4(lights[uLightIndex]) + ivec4(uLightIndex + 1);

@@ -47,6 +47,14 @@ static const char *kSceneVSCommon =
 	"layout(location = 20) flat out vec4 vGlowBottom;\n"
 	"layout(location = 21) flat out vec4 vTint;\n"
 	"layout(location = 22) flat out vec3 vTintRange;\n"
+	// [Doruk-Aksoy] A GLDEFS shader's program reads its ModelMatrix from these (ComputeUserProgramBlock), identity but on a model.
+	"#ifdef FUA_USER_SHADER\n"
+	"layout(location = 23) flat out vec4 vModel0;\n"
+	"layout(location = 24) flat out vec4 vModel1;\n"
+	"layout(location = 25) flat out vec4 vModel2;\n"
+	"layout(location = 26) flat out vec4 vModel3;\n"
+	"void fuaModelOut(mat4 m) { vModel0 = m[0]; vModel1 = m[1]; vModel2 = m[2]; vModel3 = m[3]; }\n"
+	"#endif\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; } StackVisIn;\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; } SlotRemapIn;\n"
 	// [rc4l] ComputeStackVisible, line for line: whether walk slot's walk drew id this frame.
@@ -55,6 +63,9 @@ static const char *kSceneVSCommon =
 	"    return (StackVisIn.stackVis[bit >> 5] & (1u << uint(bit & 31))) != 0u;\n"
 	"}\n"
 	"void fuaSceneVertex(PieceData pd, vec3 aPos, vec2 aUV) {\n"
+	"#ifdef FUA_USER_SHADER\n"
+	"    fuaModelOut(mat4(1.0));\n"
+	"#endif\n"
 	"    pd = fuaSectorLit(pd);\n"
 	"    vWarp = vec2(pd.fogColor.w, pd.normal.w);\n"
 	"    vFloodU = pd.floodU;\n"
@@ -136,7 +147,16 @@ static const std::string kDynamicVS = std::string(
 	"void main() {\n"
 	"    if ((aRef & 0x80000000u) == 0u) {\n"
 	"        uint b = aRef * 6u;\n"
-	"        fuaSceneVertex(PiecesIn.pieces[int(fuaWordF(b + 5u) + 0.5)], vec3(fuaWordF(b), fuaWordF(b + 1u), fuaWordF(b + 2u)), vec2(fuaWordF(b + 3u), fuaWordF(b + 4u)));\n"
+	"        PieceData gpd = PiecesIn.pieces[int(fuaWordF(b + 5u) + 0.5)];\n"
+	"        fuaSceneVertex(gpd, vec3(fuaWordF(b), fuaWordF(b + 1u), fuaWordF(b + 2u)), vec2(fuaWordF(b + 3u), fuaWordF(b + 4u)));\n"
+	// [Doruk-Aksoy] A model's matrix sits in the words its record names in tintRange.w, plus one (ComputeModelMatrixWord).
+	"#ifdef FUA_USER_SHADER\n"
+	"        if (gpd.tintRange.w > 0.5) {\n"
+	"            uint m = uint(gpd.tintRange.w + 0.5) - 1u;\n"
+	"            fuaModelOut(mat4(fuaWordF(m), fuaWordF(m + 1u), fuaWordF(m + 2u), fuaWordF(m + 3u), fuaWordF(m + 4u), fuaWordF(m + 5u), fuaWordF(m + 6u), fuaWordF(m + 7u),\n"
+	"                             fuaWordF(m + 8u), fuaWordF(m + 9u), fuaWordF(m + 10u), fuaWordF(m + 11u), fuaWordF(m + 12u), fuaWordF(m + 13u), fuaWordF(m + 14u), fuaWordF(m + 15u)));\n"
+	"        }\n"
+	"#endif\n"
 	"        return;\n"
 	"    }\n"
 	// [rc4l] ComputeSpriteUnpack, word for word.
@@ -527,8 +547,12 @@ static const std::string kDynamicVS = std::string(
 	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \
 	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n" \
-	/* [rc4l] CompileShader puts GLDEFS' hardware shaders here, with fuaSurfaceTexel, which runs a piece's or samples its texture (features/hwshaders). */ \
-	"//FUA_USER_SHADERS\n"
+	/* [Doruk-Aksoy] The piece's texel, through its GLDEFS shader in that shader's own program, and the alpha it is drawn at, which an old shader's Process has already taken; defined at FUA_PROGRAM_BLOCK. */ \
+	"vec4 fuaSurfaceTexel(vec2 fuaUV);\n" \
+	"float fuaSurfaceAlpha();\n"
+
+// [Doruk-Aksoy] Every scene fragment shader ends here, where CompileShader puts fuaSurfaceTexel: plain, or one GLDEFS shader's program (features/hwshaders), last so its macros reach nothing of ours.
+#define FUA_PROGRAM_BLOCK "//FUA_USER_SHADERS\n"
 
 // [rc4l] Opaque: no discard, so early-Z survives and overdrawn fragments are never shaded.
 static const char *kScenePSOpaque =
@@ -536,7 +560,8 @@ static const char *kScenePSOpaque =
 	FUA_LIGHT_GLSL
 	"void main() {\n"
 	"    outColor = vec4(fuaShade(fuaSurfaceTexel(vUV).rgb), 1.0);\n"
-	"}\n";
+	"}\n"
+	FUA_PROGRAM_BLOCK;
 
 static const char *kScenePS =
 	"#version 450\n"
@@ -546,7 +571,8 @@ static const char *kScenePS =
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
 	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
-	"}\n";
+	"}\n"
+	FUA_PROGRAM_BLOCK;
 
 // [rc4l] Translucent: no alpha test, and the texture's own alpha multiplied by the piece's. The
 // blend factors live in the pipeline, not here, so this one shader serves both the normal and the
@@ -582,7 +608,8 @@ static const char *kScenePSGBuffer =
 	   impact, and neither needs better than a degree or so. */
 	/* [rc4l] Alpha says what the decal pass may paint: 1 a surface that takes marks, 0.75 one features/decals refuses (texFlags 16384), 0 nothing drawn. */
 	"    outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, (int(vTexFlags + 0.5) & 16384) != 0 ? 0.75 : 1.0);\n"
-	"}\n";
+	"}\n"
+	FUA_PROGRAM_BLOCK;
 
 static const char *kScenePSTrans =
 	"#version 450\n"
@@ -600,7 +627,7 @@ static const char *kScenePSTrans =
 	"        vec4 ft = fuaSurfaceTexel(vUV);\n"
 	"        if (ft.a <= 0.0 || fuaBehindSkyHole()) discard;\n"
 	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz")
-	"        outColor = vec4(vFog.rgb, (1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz)) * ft.a * 0.75 * vLightParm.z);\n"
+	"        outColor = vec4(vFog.rgb, (1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz)) * ft.a * 0.75 * fuaSurfaceAlpha());\n"
 	"        return;\n"
 	"    }\n"
 	/* [rc4l] A fuzzy sprite under r_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
@@ -611,8 +638,9 @@ static const char *kScenePSTrans =
 	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
 	"    vec3 c = fuaShade(t.rgb);\n"
 	/* [rc4l] A sprite blended by its own colour (texFlags 32) is GL's GL_SRC_COLOR onto one, colour squared onto the screen, which the additive pipeline draws at alpha 1. */
-	"    outColor = (int(vTexFlags + 0.5) & 32) != 0 ? vec4(c * c, 1.0) : vec4(c, t.a * vLightParm.z);\n"
-	"}\n";
+	"    outColor = (int(vTexFlags + 0.5) & 32) != 0 ? vec4(c * c, 1.0) : vec4(c, t.a * fuaSurfaceAlpha());\n"
+	"}\n"
+	FUA_PROGRAM_BLOCK;
 
 // [rc4l] The texture is an ALPHA MASK: its red channel is the shape, the colour is the vertex light.
 //
@@ -630,6 +658,7 @@ static const char *kScenePSRedAlpha =
 	// the dynamic light term would be the only thing left in it -- every burn mark in the room lit
 	// up with the muzzle flash's colour when the weapon fired.
 	"    outColor = vec4(fuaShadeEx(vec3(1.0), false), a);\n"
-	"}\n";
+	"}\n"
+	FUA_PROGRAM_BLOCK;
 
 #endif // ZX_DGSCENE_GLSL_H

@@ -7,6 +7,7 @@
 #include "features/hwrender/computation/pieceorder_compute.h"   // [rc4l] ComputePieceOrderKey
 #include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
+#include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeUserShaderOf
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
 #include "features/telemetry/telemetry.h"
 #include <string.h>   // [rc4l] memcpy
@@ -249,8 +250,13 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		ZX_COUNT("gpu/sprites_whole", "pieces", (double)layout.size() - totals.sprites);
 		// [rc4l] The words: the general vertices first, as SceneVertex, then the packed sprites from a multiple of four.
 		const unsigned spriteBase = (totals.general * 6 + 3) & ~3u;
+		// [Doruk-Aksoy] ...then the frame's model matrices, which a GLDEFS shader's program reads its ModelMatrix from.
+		int nmatrices = 0;
+		const float *matrices = zx::levelmesh::DynMatrices(nmatrices);
+		const unsigned matBase = spriteBase + (unsigned)totals.sprites * zx::hwrender::kSpriteWords;
 		static TArray<unsigned> words;
-		words.Resize(spriteBase + (unsigned)totals.sprites * zx::hwrender::kSpriteWords);
+		words.Resize(matBase + (unsigned)nmatrices * zx::hwrender::kModelMatrixWords);
+		if (nmatrices > 0) memcpy(&words[matBase], matrices, (size_t)nmatrices * zx::hwrender::kModelMatrixWords * sizeof(unsigned));
 		static TArray<unsigned> refs;
 		refs.Resize(totals.stream);
 		runs.Resize((unsigned)layout.size());
@@ -299,7 +305,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const zx::levelmesh::MeshPiece *pieces;
 			const zx::levelmesh::MeshVertex *src;
 			int count;
-			unsigned spriteBase;
+			unsigned spriteBase, matBase;
 			void operator()(int chunk, int) const
 			{
 				static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
@@ -325,6 +331,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					const AtlasEntry *ae = atlased[slot.piece];
 					r.atlasPage = ae != NULL ? ae->page : -1;
 					r.general = slot.sprite >= 0 ? -1 : (int)slot.general;
+					r.userShader = zx::hwshaders::ComputeUserShaderOf((int)(filled[slot.piece].warpStyle + 0.5f));
 					if (slot.sprite >= 0)
 					{
 						// [rc4l] A packed sprite: its words, and six references to its corners.
@@ -341,7 +348,11 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 						continue;
 					}
 					const unsigned int dynPieceIndex = slot.record >= 0 ? base + (unsigned)slot.record : lastRecord;
-					if (slot.record >= 0) dynPieces[slot.record] = filled[slot.piece];
+					if (slot.record >= 0)
+					{
+						dynPieces[slot.record] = filled[slot.piece];
+						dynPieces[slot.record].tintRange[3] = zx::hwrender::ComputeModelMatrixWord(matBase, p.modelMatrix);
+					}
 					for (unsigned v = 0; v < slot.count; v++)
 					{
 						const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
@@ -356,7 +367,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			}
 		};
 		const int chunks = (int)((layout.size() + kDynChunk - 1) / kDynChunk);
-		Fill fill = { pieces, src, (int)layout.size(), spriteBase };
+		Fill fill = { pieces, src, (int)layout.size(), spriteBase, matBase };
 		zx::jobs::Pool().ParallelFor(chunks, fill);
 	if (refs.Size() == 0) return;
 
@@ -413,7 +424,8 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 
 	Diligent::IBuffer *vbs[] = { g_dynVB };
 	const Diligent::Uint64 offsets[] = { 0 };
-	bool bound = false;
+	bool started = false;
+	Diligent::IPipelineState *bound = NULL;
 	Diligent::IShaderResourceBinding *committed = NULL;
 	zx::hwrender::LoopCommits commits = zx::hwrender::ComputeLoopCommitsStart();
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
@@ -424,13 +436,15 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 		if (srb) g_stats.dynBindless++;
 		else { g_stats.dynPerMaterial++; srb = DynSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r); }
 		if (!srb) continue;
-		if (!bound)
+		if (!started)
 		{
 			ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
-			ctx->SetPipelineState(g_pso.world[kWpMaskedNoCull]);
-			bound = true;
+			started = true;
 		}
+		// [Doruk-Aksoy] A run's own program, committed with the plain pipeline's binding (ScenePSO).
+		Diligent::IPipelineState *run = ScenePSO(kWpMaskedNoCull, r.userShader);
+		if (run != bound) { ctx->SetPipelineState(run); bound = run; committed = NULL; }
 		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
 		Diligent::DrawAttribs dr;
 		dr.NumVertices = r.count;
@@ -453,7 +467,8 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
 		if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, -1, -1, line)) continue;
-		Diligent::IPipelineState *pso = g_pso.world[ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud)].RawPtr();
+		const int pipeline = ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud);
+		Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
 		if (!pso) continue;
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
 		if (!srb) srb = DynSRB(pso, r);
@@ -472,7 +487,8 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 				Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 			started = true;
 		}
-		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; committed = NULL; }
+		Diligent::IPipelineState *run = ScenePSO(pipeline, r.userShader);
+		if (run != bound) { ctx->SetPipelineState(run); bound = run; committed = NULL; }
 		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
 		Diligent::DrawAttribs dr;
 		dr.NumVertices = r.count;
@@ -489,7 +505,8 @@ static int g_blendPlaneHeights = 0;
 void DrawBlended(Diligent::IDeviceContext *ctx)
 {
 	// [rc4l] `pipeline` is its world pipeline's index, chosen once where the draw is made and the key a run of draws merges on.
-	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation, pipeline; const void *material;
+	// [Doruk-Aksoy] `user` is the GLDEFS shader whose program it draws with (ScenePSO), which a run merges on too.
+	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation, pipeline, user; const void *material;
 	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red, hud;
 	                   float cx, cy, cz;      // [rc4l] the centre too: distance alone cannot tell two
 	                                          // marks on ONE spot from two marks on two walls
@@ -518,7 +535,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
 		BlendDraw d;
 		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
-		d.translation = 0; d.pipeline = ComputeBatchPipeline(b.blend); d.material = b.material; d.srb = b.srb;
+		d.translation = 0; d.pipeline = ComputeBatchPipeline(b.blend); d.user = b.userShader; d.material = b.material; d.srb = b.srb;
 		d.bias = false; d.red = false; d.hud = false;
 		d.cx = b.sortX; d.cy = b.sortY; d.cz = b.sortZ;
 		d.lo = b.minY; d.hi = b.maxY;   // [rc4l] SceneVertex y is height
@@ -549,7 +566,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (!srb) continue;
 			BlendDraw d;
 			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
-			d.translation = r.translation; d.pipeline = pipeline; d.material = r.material; d.srb = srb;
+			d.translation = r.translation; d.pipeline = pipeline; d.user = r.userShader; d.material = r.material; d.srb = srb;
 			d.bias = r.depthBias;
 			d.red = r.redAlpha;
 			d.hud = r.hud;
@@ -699,7 +716,9 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		}
 		Diligent::IPipelineState *pso = g_pso.world[d.pipeline].RawPtr();
 		if (!pso) { idxCursor += d.count; continue; }
-		if (pso != bound) { ctx->SetPipelineState(pso); bound = pso; boundSRB = NULL; }
+		// [Doruk-Aksoy] The draw's own program, committed with the plain pipeline's binding (ScenePSO).
+		Diligent::IPipelineState *run = ScenePSO(d.pipeline, d.user);
+		if (run != bound) { ctx->SetPipelineState(run); bound = run; boundSRB = NULL; }
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
 		// where the per-pipeline binding can be asked for.
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
@@ -724,7 +743,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		{
 			const BlendDraw &n = list[i + 1];
 			if ((n.dyn ? 1 : 0) != want) break;
-			if (n.pipeline != d.pipeline) break;
+			if (n.pipeline != d.pipeline || n.user != d.user) break;
 			// Without bindless the binding IS the material, so it has to match too.
 			if (!WorldSRB(pso) && n.srb != srb) break;
 			idxCount += n.count;

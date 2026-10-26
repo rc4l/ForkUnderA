@@ -32,11 +32,11 @@ const OLD = `vec4 Process(vec4 color)
 }
 `;
 
-// [Doruk-Aksoy] Zandronum 3.3's base shader declared camerapos and ours does not, so this one compiles on neither renderer, as DnD's do not.
+// [Doruk-Aksoy] A name no base shader declares, so this one compiles on neither renderer.
 const BROKEN = `vec4 ProcessTexel()
 {
 \tvec4 t = getTexel(vTexCoord.st);
-\treturn vec4(t.rgb * fract(camerapos.x), t.a);
+\treturn vec4(t.rgb * fract(notABaseShaderName.x), t.a);
 }
 `;
 

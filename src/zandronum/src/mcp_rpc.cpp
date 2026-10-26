@@ -990,9 +990,12 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// [rc4l] game 1 samples the thread running tics beside the main one (fua_gamethread), which the main thread's samples never show.
 		long game = 0;
 		GetInt( args, "game", game );
+		// [Doruk-Aksoy] all 1 samples every thread the process has, together, for work on threads the engine does not name (Diligent's shader compile pool).
+		long all = 0;
+		GetInt( args, "all", all );
 
 		if ( !MCP_Sample_Arm( (double)seconds, (int)hz, engineOnly != 0, (int)top,
-			(int)ticMin, (int)ticMax, stacks != 0, game != 0 ) )
+			(int)ticMin, (int)ticMax, stacks != 0, game != 0, all != 0 ) )
 		{
 			SendErr( id, game != 0 ? "the game thread has not run a tic yet (fua_gamethread off, or no level)"
 				: "no in-engine sampler on this platform (macOS and Linux use fuactl's external sample/perf backend)" );

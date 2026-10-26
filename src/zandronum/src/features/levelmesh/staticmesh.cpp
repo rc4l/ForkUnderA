@@ -153,6 +153,7 @@ void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out)
 
 static TArray<MeshVertex> g_dynVerts;
 static TArray<MeshPiece>   g_dynPieces;
+static TArray<float>       g_dynMatrices;
 
 static unsigned int g_dynGen = 1;
 
@@ -162,7 +163,20 @@ void DynClear()
 	// allocating entirely.
 	g_dynVerts.Clear();
 	g_dynPieces.Clear();
+	g_dynMatrices.Clear();
 	g_dynGen++;
+}
+
+int DynAddMatrix(const float *matrix)
+{
+	for (int i = 0; i < 16; i++) g_dynMatrices.Push(matrix[i]);
+	return (int)(g_dynMatrices.Size() / 16) - 1;
+}
+
+const float *DynMatrices(int &count)
+{
+	count = (int)(g_dynMatrices.Size() / 16);
+	return count ? &g_dynMatrices[0] : NULL;
 }
 
 unsigned int DynGeneration() { return g_dynGen; }

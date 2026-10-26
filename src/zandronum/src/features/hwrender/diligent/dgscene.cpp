@@ -7,6 +7,8 @@
 #include "features/hwrender/computation/framepacing_compute.h"
 #include "features/hwrender/computation/shaderdump_compute.h"
 #include "features/hwrender/computation/layoutvars_compute.h"
+#include "features/hwrender/computation/shadercache_compute.h"   // [Doruk-Aksoy] ComputeCachedShader
+#include "features/hwrender/computation/spirvoptimize_compute.h"   // [Doruk-Aksoy] ComputeOptimizeSpirv
 #include "features/mainloop/mainloop.h"   // [rc4l] Stepped, a browser pacing the frames
 #include "features/wipe/wipetrace.h"   // [rc4l] fua_wipe_trace
 #include "cmdlib.h"   // [rc4l] CreatePath
@@ -209,6 +211,9 @@ static_assert(zx::hwrender::kClusterTilesX == 32 && zx::hwrender::kClusterTilesY
 // [rc4l] A script cannot choose where shaders are dumped (features/command-safety).
 CVAR(String, fua_dg_shaderdump, "", CVAR_NOSETBYACS)
 
+// [Doruk-Aksoy] Whether a shader's SPIR-V goes through SPIRV-Tools' optimizer before its pipeline is made: 1 always, 0 never, -1 only on WebGPU (ComputeOptimizeSpirv).
+CVAR(Int, fua_dg_spirv_optimize, -1, CVAR_ARCHIVE)
+
 namespace zx { namespace hwrender {
 
 // [rc4l] Backend chatter, off by default: here, when the scene targets are rebuilt and at what size.
@@ -270,17 +275,33 @@ static const bool s_madeCounted = (
 	zx::telemetry::Register(zx::telemetry::CounterSpec{ "gpu/made/pipelines", "pipelines", zx::telemetry::CounterKind::Gauge, 500 }, PipelinesMade),
 	true);
 
-Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source)
+// [Doruk-Aksoy] Every shader compiled, by stage and final text, so a level's pipelines made again take the last level's shaders instead of compiling them again.
+static zx::hwrender::ShaderCache<Diligent::RefCntAutoPtr<Diligent::IShader>> s_shaderCache;
+static double ShaderHits() { return (double)s_shaderCache.hits; }
+static const bool s_shaderHitsCounted = (zx::telemetry::Register(
+	zx::telemetry::CounterSpec{ "gpu/made/shader_hits", "shaders", zx::telemetry::CounterKind::Gauge, 500 }, ShaderHits), true);
+
+void ReleaseShaderCache() { s_shaderCache.kept.clear(); }
+
+std::string ShaderText(const char *source, int userShader)
+{
+	// [rc4l] Every shader learns the material array's size on this device, and whether it has the array at all.
+	// [Doruk-Aksoy] A GLDEFS shader's program is told so, which its vertex stage hands the model matrix on for.
+	std::string text = zx::hwrender::ComputeShaderWithDefines(source, zx::hwrender::ComputeMaterialShaderDefines(MaterialSlotCapacity()) +
+		(userShader >= 0 ? "#define FUA_USER_SHADER 1\n" : ""));
+	// [rc4l] A scene shader takes GLDEFS' hardware shaders at its marker; nothing else has one.
+	// [Doruk-Aksoy] ...nor the 2D layer's, at its own.
+	for (const zx::hwshaders::ProgramKind kind : { zx::hwshaders::kSceneProgram, zx::hwshaders::k2DProgram })
+		if (text.find(zx::hwshaders::ComputeProgramMarker(kind)) != std::string::npos)
+			text = zx::hwshaders::ComputeSpliceShaderBlock(text, zx::hwshaders::ComputeProgramMarker(kind), ProgramBlock(kind, userShader));
+	return text;
+}
+
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShaderText(Diligent::SHADER_TYPE type, const char *name, const std::string &text, bool async)
 {
 	Diligent::RefCntAutoPtr<Diligent::IShader> shader;
 	auto *dev = GetDevice();
 	if (dev == NULL) return shader;
-	// [rc4l] Every shader learns the material array's size on this device, and whether it has the array at all.
-	std::string text = zx::hwrender::ComputeShaderWithDefines(source, zx::hwrender::ComputeMaterialShaderDefines(MaterialSlotCapacity()));
-	// [rc4l] A scene shader takes GLDEFS' hardware shaders at its marker; nothing else has one, so checking each of them alone cannot come back here.
-	if (text.find(kUserShaderMarker) != std::string::npos)
-		text = zx::hwshaders::ComputeSpliceShaderBlock(text, kUserShaderMarker, UserShaderBlock());
-	DumpShader(type, name, text);
 	Diligent::ShaderCreateInfo ci;
 	ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
 	// [rc4l] Each texture's sampler is declared apart as <texture>_sampler, since WGSL has no combined sampler, and this pairs the two for the bindings and immutable samplers named by texture.
@@ -288,11 +309,39 @@ Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE t
 	ci.Desc.ShaderType = type;
 	ci.Desc.Name = name;
 	ci.Source = text.c_str();
+	// [Doruk-Aksoy] Asked for, compiled on the device's pool and waited for later; ignored by a device without the pool.
+	if (async) ci.CompileFlags |= Diligent::SHADER_COMPILE_FLAG_ASYNCHRONOUS;
+	// [Doruk-Aksoy] Off skips SPIRV-Tools' performance passes after glslang, which the driver's own compile of the pipeline repeats.
+	if (!zx::hwrender::ComputeOptimizeSpirv(fua_dg_spirv_optimize, dev->GetDeviceInfo().Type == Diligent::RENDER_DEVICE_TYPE_WEBGPU))
+		ci.ShaderOptimizationLevel = Diligent::SHADER_OPTIMIZATION_LEVEL_DISABLED;
 	ZX_ZONE("gpu/make_shader");   // [rc4l] a shader compiled
 	dev->CreateShader(ci, &shader);
 	s_shadersMade += 1.0;
 	NoteMadeInPlay("shader", name);
 	return shader;
+}
+
+static Diligent::RefCntAutoPtr<Diligent::IShader> CompileShaderWith(Diligent::SHADER_TYPE type, const char *name, const char *source, int userShader, bool async)
+{
+	if (GetDevice() == NULL) return Diligent::RefCntAutoPtr<Diligent::IShader>();
+	const std::string text = ShaderText(source, userShader);
+	return zx::hwrender::ComputeCachedShader(s_shaderCache, (int)type, text, [&]() {
+		DumpShader(type, name, text);
+		return CompileShaderText(type, name, text, async);
+	});
+}
+
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source, int userShader)
+{
+	Diligent::RefCntAutoPtr<Diligent::IShader> shader = CompileShaderWith(type, name, source, userShader, false);
+	// [Doruk-Aksoy] One still compiling in the background is waited for, and one that failed there answers null as a failed compile here does.
+	if (shader && shader->GetStatus(true) != Diligent::SHADER_STATUS_READY) return Diligent::RefCntAutoPtr<Diligent::IShader>();
+	return shader;
+}
+
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShaderAsync(Diligent::SHADER_TYPE type, const char *name, const char *source, int userShader)
+{
+	return CompileShaderWith(type, name, source, userShader, true);
 }
 
 void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Diligent::IPipelineState **pso)
@@ -1099,7 +1148,9 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// materials FMaterial::isMasked() calls opaque made their transparent texels paint over detail
 	// behind them. The lesson is that isMasked() answers a GL-pipeline question, not "does this
 	// texture have see-through pixels", so it cannot drive a pass split on its own.
-	ctx->SetPipelineState(g_pass.gbufBound ? g_pso.world[kWpMaskedGBuffer] : g_pso.world[kWpMasked]);
+	const int maskedPipeline = g_pass.gbufBound ? kWpMaskedGBuffer : kWpMasked;
+	Diligent::IPipelineState *boundRun = g_pso.world[maskedPipeline];
+	ctx->SetPipelineState(boundRun);
 
 	// [rc4l] g_frame.drawRepeat re-draws the whole scene N times per frame.
 	//
@@ -1144,12 +1195,15 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 				take = false;
 
 			Diligent::IShaderResourceBinding *srb = NULL;
+			Diligent::IPipelineState *run = NULL;
 			if (take)
 			{
 				// [rc4l] One binding for the whole pass when the array is carrying the materials. This
 				// is the cost the culling experiment could not remove: 166 batches were 0.445 ms of
 				// submit on Sunder MAP16, almost all of it committing a descriptor set per batch.
-				srb = WorldSRB(g_pass.gbufBound ? g_pso.world[kWpMaskedGBuffer].RawPtr() : g_pso.world[kWpMasked].RawPtr());
+				srb = WorldSRB(g_pso.world[maskedPipeline].RawPtr());
+				// [Doruk-Aksoy] A batch with a GLDEFS shader draws with that shader's program, under the same binding.
+				run = ScenePSO(maskedPipeline, b->userShader);
 				if (srb == NULL)
 				{
 					// Re-resolve rather than skip: a binding dropped by a resize would otherwise leave
@@ -1161,7 +1215,8 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 
 			// A run continues only while the next range starts where the last one ended AND wants the
 			// same binding. Without bindless that is one batch at a time, exactly as before.
-			const bool extends = fua_dg_mergedraws && take && runCount != 0 && srb == bound &&
+			// [Doruk-Aksoy] ...and the same program.
+			const bool extends = fua_dg_mergedraws && take && runCount != 0 && srb == bound && run == boundRun &&
 				b->first == runFirst + runCount;
 			if (extends) { runCount += b->count; g_stats.batchesDrawn++; continue; }
 
@@ -1177,6 +1232,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 			}
 			// [rc4l] A batch skipped draws nothing and binds nothing, so the binding stays committed across it; the sky pass skips most of the level.
 			if (!take) { if (!fua_dg_loopcommits) bound = NULL; continue; }
+			if (run != boundRun) { ctx->SetPipelineState(run); boundRun = run; bound = NULL; }
 			if (srb != bound)
 			{
 				ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

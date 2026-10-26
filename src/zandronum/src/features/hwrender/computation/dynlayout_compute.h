@@ -20,7 +20,14 @@ struct DynLayoutTotals { unsigned stream, general; int sprites; };
 DynLayoutTotals ComputeDynLayout(const int *order, int count, const unsigned *vertices, const bool *packed, int recordsLeft, std::vector<DynSlot> &out);
 
 // [rc4l] The most dynamic words a frame of `pieces` pieces over `vertices` engine vertices can take: every piece packed (kSpriteWords) and every vertex general, a quad's four corners as six, plus the alignment before the sprites.
-unsigned ComputeDynWordsBound(unsigned pieces, unsigned vertices);
+// [Doruk-Aksoy] ...and its `matrices` model matrices behind the sprites.
+unsigned ComputeDynWordsBound(unsigned pieces, unsigned vertices, unsigned matrices);
+
+// [Doruk-Aksoy] Words a model matrix takes in the dynamic stream, its columns one after another.
+const unsigned kModelMatrixWords = 16;
+
+// [Doruk-Aksoy] What a piece record carries for its model matrix, the `index`th of the frame's from word `matBase`: that word plus one, so 0 says it has none (index -1).
+float ComputeModelMatrixWord(unsigned matBase, int index);
 
 // [rc4l] The dynamic words to make room for when `need` are wanted: half as many again, and never under 1 M words (4 MB), which a Complex Doom fight or nuts.wad's horde stays inside, since growing it makes the pipelines binding it again.
 unsigned ComputeDynWordsCapacity(unsigned need);

@@ -187,8 +187,8 @@ test("the HUD force-cull template flags the pistol's model and gives MAP01 the s
   assert.deepEqual([3, 4, 5, 6].map((i) => TRANSLUCENT_PLAYER.readInt32LE(8 + 4 * i)), [4, PCD.PUSHNUMBER, 64, PCD.SETACTORPROPERTY]);
 });
 
-// [Doruk-Aksoy] The broken variant adds a shader reading camerapos on STARTAN3's west wall, and the plain one is hwshader's room as it was.
-test("the hardware shader template's broken variant adds a third shader that reads Zandronum 3.3's camerapos, on its own wall", async () => {
+// [Doruk-Aksoy] The broken variant adds a shader reading a name no base shader has on STARTAN3's west wall, and the plain one is hwshader's room as it was.
+test("the hardware shader template's broken variant adds a third shader that reads an undeclared name, on its own wall", async () => {
   const { buildHwShaderPk3 } = await import("../scenarios/hwshader.mjs");
   const plain = Object.fromEntries(readPk3(buildHwShaderPk3()).map((f) => [f.name, f.data]));
   const broken = Object.fromEntries(readPk3(buildHwShaderPk3({ broken: true })).map((f) => [f.name, f.data]));
@@ -196,8 +196,26 @@ test("the hardware shader template's broken variant adds a third shader that rea
   assert.doesNotMatch(plain["gldefs.txt"].toString("latin1"), /STARTAN3/);
   assert.doesNotMatch(lumpsOf(plain["maps/MAP01.wad"])[1].text, /STARTAN3/);
   assert.match(broken["gldefs.txt"].toString("latin1"), /HardwareShader Texture "STARTAN3"\n\{\n\tShader "shaders\/broken.fp"\n\}/);
-  assert.match(broken["shaders/broken.fp"].toString("latin1"), /camerapos/);
+  assert.match(broken["shaders/broken.fp"].toString("latin1"), /notABaseShaderName/);
   assert.match(lumpsOf(broken["maps/MAP01.wad"])[1].text, /texturemiddle = "STARTAN3";/);
+});
+
+// [Doruk-Aksoy] MAP01 puts a shader on three walls and the cube's graphics/ skin; MAP02 has plain magenta in each place, and the two clashing shaders define EDGE apart.
+test("the hardware shader names template shades three walls and a model in MAP01 and leaves MAP02 plain magenta", async () => {
+  const { buildHwShaderNamesPk3 } = await import("../scenarios/hwshadernames.mjs");
+  const files = Object.fromEntries(readPk3(buildHwShaderNamesPk3()).map((f) => [f.name, f.data]));
+  assert.match(files["gldefs.txt"].toString("latin1"), /HardwareShader ZXSKIN \{ Shader "shaders\/model.fp" \}/);
+  assert.match(files["shaders/names.fp"].toString("latin1"), /uniform vec3 camerapos;\nvarying vec4 pixelpos;/);
+  assert.match(files["shaders/clash_a.fp"].toString("latin1"), /#define EDGE 0\.25/);
+  assert.match(files["shaders/clash_b.fp"].toString("latin1"), /#define EDGE 0\.75/);
+  assert.match(files["shaders/model.fp"].toString("latin1"), /gl_TextureMatrix\[7\]\[3\]/);
+  const shaded = lumpsOf(files["maps/MAP01.wad"])[1].text, plain = lumpsOf(files["maps/MAP02.wad"])[1].text;
+  assert.match(shaded, /texturemiddle = "STARTAN2";/);
+  assert.doesNotMatch(shaded, /ZXMAG/);
+  assert.match(shaded, /type = 20110;/);
+  assert.equal((plain.match(/texturemiddle = "ZXMAG";/g) ?? []).length, 3);
+  assert.match(plain, /type = 20111;/);
+  assert.match(files["modeldef.txt"].toString("latin1"), /Path "graphics\/"\n  Skin 0 "ZXSKIN.png"/);
 });
 
 test("the sky templates carry what reproduces each fault: a scripted reflective pool, and a court too wide for the sky walls", async () => {

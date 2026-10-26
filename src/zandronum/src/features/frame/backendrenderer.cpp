@@ -168,6 +168,8 @@ struct FBackendRenderer : public zx::frame::FLevelRenderer
 	{
 		FLevelRenderer::Init();
 		zx::viewsetup::InstallSpriteView();
+		// [Doruk-Aksoy] GLDEFS is read and the device is up, so the mod's shaders compile at launch rather than when a piece first shows one.
+		zx::hwrender::PrecompileUserShaders();
 	}
 };
 
