@@ -27,6 +27,7 @@
 extern HWND Window;
 
 #include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Diligent-free, so this TU still never sees a Diligent header
+#include "mcp_bridge.h"   // [Doruk-Aksoy] MCP_NoFocus
 using zx::hwrender::Fua_WantEmbeddedWindow;
 
 namespace zx { namespace hwrender {
@@ -166,7 +167,8 @@ void *Fua_CreateBackendWindow(const char *title, int w, int h)
 
 		// TOPMOST, not TOP: this window never takes focus (WS_EX_NOACTIVATE), so it cannot steal
 		// input, and staying above the game window is the entire point of a side-by-side build.
-		SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+		// [Doruk-Aksoy] An instance leaving the user its foreground (MCP_NoFocus) has it under every window instead, as its game window does, so it never sits over the user's clicks.
+		SetWindowPos(hwnd, MCP_NoFocus() ? HWND_BOTTOM : HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
 	}
 	return (void *)hwnd;
 }

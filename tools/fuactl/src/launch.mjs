@@ -193,6 +193,8 @@ export function engineArgs(opts = {}, configPath) {
     "+set", "use_joystick", "0",
     // [rc4l] A driven launch measures and compares frames, so its scene stays at full scale (features/dynres) unless its cvars pin one; a hands-on one runs as players do.
     ...(opts.allowOsInput ? [] : ["+set", "vid_fua_dynres", "0"]),
+    // [Doruk-Aksoy] A driven launch is silent, netplay's server and client and the MCP's included, unless its own cvars (set after) raise a volume, as a song that must start does.
+    ...(opts.allowOsInput ? [] : ["+set", "snd_sfxvolume", "0", "+set", "snd_musicvolume", "0"]),
     // [rc4l] m_use_mouse is deliberately LEFT ALONE. It used to be forced to 0 here to silence the
     // menu cursor, but menu.cpp:859 drops every GUI mouse event when it is 0 -- including the ones
     // the harness injects. So `ui click`, `ui rightclick` and `ui drag` returned {"clicked":[x,y]}
@@ -251,7 +253,15 @@ export function missingCoreData(dir, listing = fs.readdirSync(dir)) {
   return `no fua_core_*.pk3 beside ${dir} -- copy the staged folder's *.pk3 next to the binary, or the engine stops on a modal error`;
 }
 
-// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
+// [Doruk-Aksoy] Whether an instance opens without taking the user's foreground: `focus` false or true decides for this launch (--no-focus, --focus, the MCP tool's `focus`), else FUACTL_NO_FOCUS (set, and not 0) for every launch; a hands-off instance never takes it either way.
+export function launchesWithoutFocus(opts = {}, env = process.env) {
+  if (opts.focus === false) return true;
+  if (opts.focus === true) return false;
+  const v = env.FUACTL_NO_FOCUS;
+  return v != null && v !== "" && v !== "0";
+}
+
+// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host, focus }.
 export async function launchInstance(opts = {}) {
   const bin = opts.engine || resolveEngine();
   const dir = path.dirname(bin);
@@ -287,6 +297,8 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_LOG: log,
       // Hands-off: the window drops OS keyboard/mouse; only harness-injected input reaches the sim.
       ZANDRONUM_BRIDGE_INPUT_LOCK: opts.allowOsInput ? "" : "1",
+      // [Doruk-Aksoy] The window opens under the user's and never pulls itself forward (the engine's MCP_NoFocus).
+      ZANDRONUM_BRIDGE_NO_FOCUS: launchesWithoutFocus(opts) ? "1" : "",
     },
   });
   return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };
