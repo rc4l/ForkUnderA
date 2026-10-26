@@ -162,6 +162,11 @@ unsigned int I_FPSTime();
 // [RH] Used by the display code to set the normal window procedure
 void I_SetWndProc();
 
+// [Doruk-Aksoy] The ShowWindow command, SetWindowPos flags and extended style the game window is shown, moved and made with: an instance leaving the user the foreground (MCP_NoFocus) never takes it, and a hands-off one (MCP_InputLocked) not even when clicked.
+int I_WindowShowCommand();
+unsigned int I_WindowPosFlags(unsigned int flags);
+unsigned int I_WindowExStyle(unsigned int exStyle);
+
 // [rc4l] Is the game window the one the user is looking at?
 //
 // Exposed because the background-render switch has to be able to ask, from cross-platform code, what

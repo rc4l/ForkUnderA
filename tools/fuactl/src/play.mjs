@@ -274,6 +274,8 @@ async function launchChecked(opts, port) {
     // capture is running both perturbs the measurement and yanks the user's cursor into a game they
     // did not ask to be playing.
     allowOsInput: !opts.lock,
+    // [Doruk-Aksoy] --no-focus or --focus, forwarded; neither leaves it to FUACTL_NO_FOCUS.
+    focus: opts.focus,
     // [rc4l] --res, forwarded. Without this it was accepted and silently dropped.
     width: opts.width, height: opts.height,
     extraArgs: playArgs(files, launchMode(opts)),

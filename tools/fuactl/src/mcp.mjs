@@ -21,8 +21,9 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} } },
   { name: "reap", description: "Prune dead instances; with kill, SIGTERM only orphans (safe for other sessions); with all, every live instance.",
     inputSchema: { type: "object", properties: { kill: { type: "boolean" }, all: { type: "boolean" } } } },
-  { name: "launch_instance", description: "Launch one supervised bridge-enabled engine instance.",
-    inputSchema: { type: "object", properties: { map: { type: "string" }, seed: { type: "number" } } } },
+  { name: "launch_instance", description: "Launch one supervised bridge-enabled engine instance. It is hands-off, so its window never takes the user's foreground, mouse or clicks; focus false says so outright, and FUACTL_NO_FOCUS in this server's env makes every fuactl launch open without the foreground.",
+    inputSchema: { type: "object", properties: { map: { type: "string" }, seed: { type: "number" },
+      focus: { type: "boolean", description: "false: open under the user's windows without taking the foreground; true: may take it; unset: FUACTL_NO_FOCUS decides" } } } },
   { name: "session_check", description: "Run the determinism + desync check across N instances.",
     inputSchema: { type: "object", properties: {
       instances: { type: "number" }, seed: { type: "number" }, map: { type: "string" }, tics: { type: "number" } } } },
@@ -86,7 +87,7 @@ async function callTool(name, a = {}) {
   switch (name) {
     case "list_instances": return readRegistry().map((e) => ({ pid: e.pid, port: e.port, ppid: e.ppid }));
     case "reap": { const r = reap({ kill: !!a.kill, all: !!a.all }); return { orphans: r.orphan.length, owned: r.owned.length, killed: r.killed.length, pruned: r.prunedCount }; }
-    case "launch_instance": { const i = await launchInstance({ map: a.map, seed: a.seed }); return { pid: i.pid, port: i.port, token: i.token }; }
+    case "launch_instance": { const i = await launchInstance({ map: a.map, seed: a.seed, focus: a.focus }); return { pid: i.pid, port: i.port, token: i.token }; }
     case "session_check": return runDeterminismCheck({ instances: a.instances, seed: a.seed, map: a.map, tics: a.tics });
     case "perf_ablation": return runPerfAblation({ seed: a.seed, map: a.map, spawn: a.spawn, count: a.count, frames: a.frames });
     case "gl_timers": return runGlTimers({ port: a.port, token: a.token, frames: a.frames, warmup: a.warmup });

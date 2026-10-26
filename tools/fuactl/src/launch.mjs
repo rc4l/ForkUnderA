@@ -251,7 +251,15 @@ export function missingCoreData(dir, listing = fs.readdirSync(dir)) {
   return `no fua_core_*.pk3 beside ${dir} -- copy the staged folder's *.pk3 next to the binary, or the engine stops on a modal error`;
 }
 
-// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host }.
+// [Doruk-Aksoy] Whether an instance opens without taking the user's foreground: `focus` false or true decides for this launch (--no-focus, --focus, the MCP tool's `focus`), else FUACTL_NO_FOCUS (set, and not 0) for every launch; a hands-off instance never takes it either way.
+export function launchesWithoutFocus(opts = {}, env = process.env) {
+  if (opts.focus === false) return true;
+  if (opts.focus === true) return false;
+  const v = env.FUACTL_NO_FOCUS;
+  return v != null && v !== "" && v !== "0";
+}
+
+// Spawn one instance. opts: { iwad, map, skill, seed, port, token, logDir, extraArgs, host, focus }.
 export async function launchInstance(opts = {}) {
   const bin = opts.engine || resolveEngine();
   const dir = path.dirname(bin);
@@ -287,6 +295,8 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_LOG: log,
       // Hands-off: the window drops OS keyboard/mouse; only harness-injected input reaches the sim.
       ZANDRONUM_BRIDGE_INPUT_LOCK: opts.allowOsInput ? "" : "1",
+      // [Doruk-Aksoy] The window opens under the user's and never pulls itself forward (the engine's MCP_NoFocus).
+      ZANDRONUM_BRIDGE_NO_FOCUS: launchesWithoutFocus(opts) ? "1" : "",
     },
   });
   return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };

@@ -53,6 +53,9 @@ void MCP_RPC_OverrideAxes( float *axes );
 // Anchored at the top of the platform event pump (I_ProcessEvent). Read once, cached.
 bool MCP_InputLocked();
 
+// [Doruk-Aksoy] True when this instance must leave the user's foreground alone (ZANDRONUM_BRIDGE_NO_FOCUS set, as fuactl's --no-focus or FUACTL_NO_FOCUS asks, or a hands-off one): its window opens without activating, under the user's, and never pulls itself forward.
+bool MCP_NoFocus();
+
 #else
 
 // Release build: no bridge. The anchors compile to nothing.
@@ -67,6 +70,7 @@ inline void MCP_RPC_FrameEnd() {}
 inline void MCP_NetProf_Recv( int, int ) {}
 inline void MCP_RPC_OverrideAxes( float * ) {}
 inline bool MCP_InputLocked() { return false; }
+inline bool MCP_NoFocus() { return false; }
 
 #endif // FUA_MCP_BRIDGE
 

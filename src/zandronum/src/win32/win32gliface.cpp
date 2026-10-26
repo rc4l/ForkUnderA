@@ -946,7 +946,7 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	// rather than branching on the flag directly, so the intent lives in one tested place.
 	zx::WindowKind windowKind = zx::WindowKindForFullscreen(fullscreen);
 
-	ShowWindow (Window, SW_SHOW);
+	ShowWindow (Window, I_WindowShowCommand());
 	GetWindowRect(Window, &r);
 	style = WS_VISIBLE | WS_CLIPSIBLINGS;
 	exStyle = 0;
@@ -960,8 +960,8 @@ Win32GLFrameBuffer::Win32GLFrameBuffer(void *hMonitor, int width, int height, in
 	}
 
 	SetWindowLong(Window, GWL_STYLE, style);
-	SetWindowLong(Window, GWL_EXSTYLE, exStyle);
-	SetWindowPos(Window, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+	SetWindowLong(Window, GWL_EXSTYLE, I_WindowExStyle(exStyle));
+	SetWindowPos(Window, 0, 0, 0, 0, 0, I_WindowPosFlags(SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED));
 
 	if (windowKind == zx::WINDOW_BORDERLESS_DESKTOP)
 	{
@@ -1043,10 +1043,10 @@ Win32GLFrameBuffer::~Win32GLFrameBuffer()
 
 	static_cast<Win32GLVideo *>(Video)->SetFullscreen(m_displayDeviceName, 0,0,0,0);
 
-	ShowWindow (Window, SW_SHOW);
+	ShowWindow (Window, I_WindowShowCommand());
 	SetWindowLong(Window, GWL_STYLE, WS_VISIBLE | WS_CLIPSIBLINGS | WS_OVERLAPPEDWINDOW);
-	SetWindowLong(Window, GWL_EXSTYLE, WS_EX_WINDOWEDGE);
-	SetWindowPos(Window, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+	SetWindowLong(Window, GWL_EXSTYLE, I_WindowExStyle(WS_EX_WINDOWEDGE));
+	SetWindowPos(Window, 0, 0, 0, 0, 0, I_WindowPosFlags(SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED));
 	I_GetEvent();
 
 	static_cast<Win32GLVideo *>(Video)->Shutdown();
@@ -1087,7 +1087,7 @@ void Win32GLFrameBuffer::SetWindowSize (int w, int h)
 	AdjustWindowRectEx(&rect, GetWindowLong(Window, GWL_STYLE), FALSE,
 		GetWindowLong(Window, GWL_EXSTYLE));
 	SetWindowPos(Window, NULL, 0, 0, rect.right - rect.left, rect.bottom - rect.top,
-		SWP_NOMOVE | SWP_NOZORDER);
+		I_WindowPosFlags(SWP_NOMOVE | SWP_NOZORDER));
 }
 
 //==========================================================================
