@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, DEFAULT_IWAD, loopbackArgs, gamePortArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, launchesWithoutFocus, DEFAULT_IWAD, loopbackArgs, gamePortArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, testBinaries, combineGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -86,6 +86,16 @@ test("a harness instance keeps the OS mouse out of the game", () => {
   assert.equal(setValue(args, "use_joystick"), "0");
 });
 
+// [Doruk-Aksoy] focus false or true decides for one launch, and otherwise FUACTL_NO_FOCUS (set, and not 0) for every launch.
+test("a launch leaves the user's foreground alone when asked to, or when FUACTL_NO_FOCUS says so", () => {
+  assert.equal(launchesWithoutFocus({}, {}), false);
+  assert.equal(launchesWithoutFocus({}, { FUACTL_NO_FOCUS: "1" }), true);
+  assert.equal(launchesWithoutFocus({}, { FUACTL_NO_FOCUS: "0" }), false);
+  assert.equal(launchesWithoutFocus({}, { FUACTL_NO_FOCUS: "" }), false);
+  assert.equal(launchesWithoutFocus({ focus: false }, {}), true);
+  assert.equal(launchesWithoutFocus({ focus: true }, { FUACTL_NO_FOCUS: "1" }), false);
+});
+
 // [Doruk-Aksoy] A launch naming no IWAD gets the Freedoom 2 that ships beside the binary, since one the engine cannot find opens its modal IWAD picker and hangs the launch.
 test("a launch naming no IWAD runs freedoom2.wad", () => {
   assert.deepEqual(engineArgs({}, "x.ini").slice(0, 2), ["-iwad", DEFAULT_IWAD]);
@@ -100,6 +110,15 @@ test("a driven instance draws its scene at full scale, and a hands-on one as pla
   // [rc4l] A side's own cvars come after, so a scenario pinning a scale is not overruled.
   const args = engineArgs({ cvars: { vid_fua_dynres: 1 } }, "x.ini");
   assert.ok(args.lastIndexOf("vid_fua_dynres") > args.indexOf("vid_fua_dynres"));
+});
+
+// [Doruk-Aksoy] Every driven launch is silent, the netplay pairs and the MCP's too, while a hands-on one plays as players hear it and a scenario's own volume still wins.
+test("a driven instance is muted, and a hands-on one is not", () => {
+  assert.equal(setValue(engineArgs({}, "x.ini"), "snd_sfxvolume"), "0");
+  assert.equal(setValue(engineArgs({}, "x.ini"), "snd_musicvolume"), "0");
+  assert.equal(setValue(engineArgs({ allowOsInput: true }, "x.ini"), "snd_sfxvolume"), undefined);
+  const args = engineArgs({ cvars: { snd_musicvolume: 0.001 } }, "x.ini");
+  assert.ok(args.lastIndexOf("snd_musicvolume") > args.indexOf("snd_musicvolume"));
 });
 
 test("a harness instance does NOT disable the menu mouse it injects into", () => {

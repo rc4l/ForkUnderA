@@ -43,6 +43,7 @@
 #include "features/video-scale/computation/videoscale_compute.h"
 #include "i_system.h"
 #include "c_console.h"
+#include "mcp_bridge.h"   // [Doruk-Aksoy] MCP_NoFocus
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "v_text.h"
@@ -142,7 +143,8 @@ void I_InitGraphics ()
 
 	// If the focus window is destroyed, it doesn't go back to the active window.
 	// (e.g. because the net pane was up, and a button on it had focus)
-	if (GetFocus() == NULL && GetActiveWindow() == Window)
+	// [Doruk-Aksoy] Never on an instance that leaves the foreground to the user (MCP_NoFocus).
+	if (GetFocus() == NULL && GetActiveWindow() == Window && !MCP_NoFocus())
 	{
 		// Make sure it's in the foreground and focused. (It probably is
 		// already foregrounded but may not be focused.)
