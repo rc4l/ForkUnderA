@@ -36,6 +36,17 @@ struct RpcRequest
 // Parse one NDJSON line into a request. A line with no "cmd" is not a request (valid=false).
 RpcRequest ParseRequest(const std::string &line);
 
+// ---- Held console commands -------------------------------------------------
+
+// [Doruk-Aksoy] Console commands held while the engine starts (as after a wad_reload restart), since the console stores one then as a thinker the title's first demo or level throws away.
+struct HeldCommands { std::vector<std::string> waiting; };
+
+// [Doruk-Aksoy] Whether `text` waits rather than runs now: while `startingUp`, or behind commands already held, so they run in the order sent.
+bool ComputeHoldCommand(HeldCommands &held, const std::string &text, bool startingUp);
+
+// [Doruk-Aksoy] The held commands to run now, in the order sent, and none while `startingUp`.
+std::vector<std::string> ComputeReleaseCommands(HeldCommands &held, bool startingUp);
+
 // ---- Minimal JSON field extraction (flat objects; values are int/string) ---
 
 // Extract an integer field ("key":N, N may be negative) from a flat JSON object substring.

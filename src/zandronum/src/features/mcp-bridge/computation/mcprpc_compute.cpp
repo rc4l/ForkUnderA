@@ -116,6 +116,20 @@ bool GetStr(const std::string &obj, const char *key, std::string &out)
 	return false; // unterminated string
 }
 
+bool ComputeHoldCommand(HeldCommands &held, const std::string &text, bool startingUp)
+{
+	if (!startingUp && held.waiting.empty()) return false;
+	held.waiting.push_back(text);
+	return true;
+}
+
+std::vector<std::string> ComputeReleaseCommands(HeldCommands &held, bool startingUp)
+{
+	std::vector<std::string> ready;
+	if (!startingUp) ready.swap(held.waiting);
+	return ready;
+}
+
 RpcRequest ParseRequest(const std::string &line)
 {
 	RpcRequest r;
