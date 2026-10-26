@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { resolveEngine, engineArgs, loopbackArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
+import { resolveEngine, engineArgs, DEFAULT_IWAD, loopbackArgs, gamePortArgs, envEngineArgs, commandWords, warpNumber, describeExit, countEngineLines, missingCoreData, resFlag, exited, stopInstance, slashed } from "../src/launch.mjs";
 import { sweepDirFor, pickCmake, resolveTarget, readSession, sessionFileFor, restartSessionFile, cameraFromFlags, cvarValueFrom, parseCvarFlag, spotLaunch, spotMode, parkFileFor, parkedLaunch, PARKED, clearPortSessions, liveTarget, pidAlive, buildErrors, summarizeGtest, testBinaries, combineGtest, sourcesStamp, standAt, launchFileFor, holdingLaunchFile, launchInProgress, awaitLaunch, atFromCamera, releaseOf, stepTag, sameFrameCommand, stageCompanions } from "../src/shot.mjs";
 
 // Run `fn` with cwd moved to `dir` and FUACTL_ENGINE cleared, then put both back.
@@ -84,6 +84,13 @@ test("a harness instance keeps the OS mouse out of the game", () => {
 
   assert.equal(setValue(args, "use_mouse"), "0");
   assert.equal(setValue(args, "use_joystick"), "0");
+});
+
+// [Doruk-Aksoy] A launch naming no IWAD gets the Freedoom 2 that ships beside the binary, since one the engine cannot find opens its modal IWAD picker and hangs the launch.
+test("a launch naming no IWAD runs freedoom2.wad", () => {
+  assert.deepEqual(engineArgs({}, "x.ini").slice(0, 2), ["-iwad", DEFAULT_IWAD]);
+  assert.equal(DEFAULT_IWAD, "freedoom2.wad");
+  assert.deepEqual(engineArgs({ iwad: "doom2.wad" }, "x.ini").slice(0, 2), ["-iwad", "doom2.wad"]);
 });
 
 // [rc4l] A driven run compares frames and frame times, which a scale chosen by the GPU's load would make differ between runs.
@@ -522,4 +529,16 @@ test("a harness launch keeps its game socket on loopback unless it hosts, joins,
   assert.deepEqual(loopbackArgs({ allowOsInput: true }), []);
   const args = engineArgs({}, "x.ini");
   assert.deepEqual(args.slice(args.indexOf("-useip"), args.indexOf("-useip") + 2), ["-useip", "127.0.0.1"]);
+});
+
+// [Doruk-Aksoy] A Zandronum 3.3 client beside a harness one both took UDP 10667, the port every client binds by default, so each launch gets one of its own, kept clear of 10666, 10667 and netplay's 10950.
+test("a launch binds its own game port from its bridge port, unless it hosts or names one", () => {
+  assert.deepEqual(gamePortArgs({ port: 7799 }), ["-port", "14799"]);
+  assert.deepEqual(gamePortArgs({ port: 52000 }), ["-port", "11000"]);
+  assert.deepEqual(gamePortArgs({ port: 65535 }), ["-port", "12535"]);
+  assert.deepEqual(gamePortArgs({ port: 7799, extraArgs: ["-host", "+sv_hostname", "x"] }), []);
+  assert.deepEqual(gamePortArgs({ port: 7799, extraArgs: ["-port", "10700"] }), []);
+  assert.deepEqual(gamePortArgs({}), []);
+  const args = engineArgs({ port: 7799 }, "x.ini");
+  assert.deepEqual(args.slice(args.indexOf("-port"), args.indexOf("-port") + 2), ["-port", "14799"]);
 });

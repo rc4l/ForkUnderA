@@ -153,8 +153,21 @@ export function loopbackArgs({ extraArgs = [], connect, allowOsInput } = {}) {
   return ownNetwork || connect || allowOsInput ? [] : ["-useip", "127.0.0.1"];
 }
 
+// [Doruk-Aksoy] Where a launch's own game port comes from: clear of Zandronum's 10666 and 10667 and of netplay's server at 10950.
+export const GAME_PORT_BASE = 11000;
+export const GAME_PORT_SPAN = 4000;
+
+// [Doruk-Aksoy] A launch's -port from its bridge port, unless it hosts or names its own, since a client binds 10667 by default and another client there shares the socket.
+export function gamePortArgs({ port, extraArgs = [] } = {}) {
+  if (port == null || extraArgs.some((a) => a === "-host" || a === "-port")) return [];
+  return ["-port", String(GAME_PORT_BASE + (port % GAME_PORT_SPAN))];
+}
+
+// [Doruk-Aksoy] The IWAD every launch naming none runs, the one shipped beside the binary, as one the engine cannot find opens its modal picker.
+export const DEFAULT_IWAD = "freedoom2.wad";
+
 export function engineArgs(opts = {}, configPath) {
-  const args = ["-iwad", opts.iwad || "freedoom2.wad"];
+  const args = ["-iwad", opts.iwad || DEFAULT_IWAD];
   // Isolated config, per instance. Without -config the engine reads AND writes the user's shared
   // ini, so a bridge run would both inherit whatever cvars the user happens to have archived (not a
   // clean, reproducible baseline) and, on exit, save its own overrides -- e.g. use_mouse 0 -- back
@@ -196,6 +209,7 @@ export function engineArgs(opts = {}, configPath) {
   }
   if (opts.extraArgs) args.push(...opts.extraArgs);
   args.push(...loopbackArgs(opts));
+  args.push(...gamePortArgs(opts));
   args.push(...envEngineArgs(opts.env));
   // [rc4l] A harness launch runs as players do, the engine's own choice (Vulkan alone), unless it asks for GL (gl), alone or with the backend beside it as fua_vulkan says.
   if (opts.gl && !args.includes("-gl")) args.push("-gl");
@@ -250,7 +264,8 @@ export async function launchInstance(opts = {}) {
   const iniPath = path.join(logDir, "fua-bridge.ini");
   // Written BEFORE the engine starts, or the video mode is already chosen by the time it is read.
   writeInstanceIni(iniPath, opts);
-  const args = engineArgs(opts, iniPath);
+  // [Doruk-Aksoy] With the bridge port resolved, which the game port is drawn from.
+  const args = engineArgs({ ...opts, port }, iniPath);
 
   // [rc4l] CAPTURE the engine's own stdout and stderr. This was "ignore".
   //

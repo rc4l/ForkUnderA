@@ -357,6 +357,8 @@ enum
 	MDL_ALIGNANGLE					= 128,
 	MDL_ALIGNPITCH					= 256,
 	MDL_ROLLAGAINSTANGLE			= 512,
+	MDL_DONTCULLBACKFACES			= 1024,	// [Doruk-Aksoy] UZDoom's 1<<8, renumbered past Zandronum's flags.
+	MDL_FORCECULLBACKFACES			= 2048,	// [Doruk-Aksoy] UZDoom's 1<<14, renumbered likewise.
 };
 
 struct FSpriteModelFrame

@@ -122,10 +122,12 @@ SpriteDrawLook ComputePlainDrawLook(float alpha)
 	return look;
 }
 
-int ComputeModelCull(bool normalStyle, bool hud)
+int ComputeModelCull(bool normalStyle, bool hud, int modelCull)
 {
-	if (normalStyle) return kCullNone;
-	return hud ? kCullFrontCounterClockwise : kCullFrontClockwise;
+	const int cull = hud ? kCullFrontCounterClockwise : kCullFrontClockwise;
+	if (modelCull & kModelForceCull) return cull;
+	if (normalStyle || (!hud && (modelCull & kModelDontCull))) return kCullNone;
+	return cull;
 }
 
 SpriteDrawLook ComputeSpriteDrawLook(const SpriteStyle &style, float trans, bool blackFog, int fadeAlpha, float dist, bool model)

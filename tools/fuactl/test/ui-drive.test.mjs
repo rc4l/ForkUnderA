@@ -148,7 +148,7 @@ test("verifyMenu opens, navigates, and screenshots", async () => {
   const engineBin = path.join(dir, "forkundera");
   const calls = [];
   const c = {
-    rpc: async (cmd, args) => { calls.push({ cmd, args }); if (cmd === "console.exec" && String(args.text).startsWith("screenshot")) fs.writeFileSync(path.join(dir, "fuactl_verify.png"), "V"); return {}; },
+    rpc: async (cmd, args) => { calls.push({ cmd, args }); if (cmd === "console.exec" && String(args.text).startsWith("screenshot")) fs.writeFileSync(path.join(dir, "sweep", "fuactl_verify.png"), "V"); return {}; },
     onEvent: () => () => {},
   };
   const s = await verifyMenu(c, engineBin, { open: "menu_main", steps: ["down"] });
@@ -158,7 +158,8 @@ test("verifyMenu opens, navigates, and screenshots", async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("screenshot execs the CCMD and reads the PNG back as base64", async (t) => {
+// [Doruk-Aksoy] A bare name lands in sweep/ beside the binary, so a staged dist-windows/ never collects PNGs, where a name with a folder is used as given.
+test("screenshot execs the CCMD into sweep/ and reads the PNG back as base64", async (t) => {
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
@@ -168,13 +169,17 @@ test("screenshot execs the CCMD and reads the PNG back as base64", async (t) => 
     calls: [],
     rpc: async (cmd, args) => {
       c.calls.push({ cmd, args });
-      if (cmd === "console.exec") fs.writeFileSync(path.join(dir, "shotX.png"), Buffer.from("PNGDATA"));
+      if (cmd === "console.exec") fs.writeFileSync(path.join(dir, `${String(args.text).split(" ")[1]}.png`), Buffer.from("PNGDATA"));
       return {};
     },
     onEvent: () => () => {},
   };
   const s = await screenshot(c, engineBin, "shotX");
-  assert.equal(c.calls[0].args.text, "screenshot shotX");
+  assert.equal(c.calls[0].args.text, "screenshot sweep/shotX");
+  assert.equal(s.path, path.join(dir, "sweep", "shotX.png"));
   assert.equal(Buffer.from(s.base64, "base64").toString(), "PNGDATA");
+  assert.equal(fs.existsSync(path.join(dir, "shotX.png")), false);
+  await screenshot(c, engineBin, "sweep/shotY");
+  assert.equal(c.calls[1].args.text, "screenshot sweep/shotY");
   fs.rmSync(dir, { recursive: true, force: true });
 });
