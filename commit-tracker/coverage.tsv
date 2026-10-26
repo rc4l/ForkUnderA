@@ -17009,7 +17009,7 @@ f3d44f8131c46bc0ec525f6736f2440799808ec7	2023-10-25T14:23:29Z	Exposed P_GetMidTe
 731cad7553d1116d991a69f69bdbd416ec249983	2023-10-25T14:23:44Z	do not print all GL extensions to the log for the GLES renderer.	pending		/
 82c492f3d7cdc028562d8df5776e264e85f7bb34	2023-10-25T14:24:21Z	widen the special field in FBoomArgs.	pending		/
 70e4dd17b7dcddba2235f51b1df96c3dc3674dd0	2023-10-25T14:25:24Z	fix UMAPINFO's intermusic being used at the summary screen.	pending		/
-6d1ebf5f2736cca2722aa09246f858b0acf5da3c	2023-10-25T14:57:48Z	- allow FORCEBACKCULLFACES to work with hud models	ported	FORCECULLBACKFACES on HUD models too, in gl_RenderHUDModel and the backend weapon alike	38457028
+6d1ebf5f2736cca2722aa09246f858b0acf5da3c	2023-10-25T14:57:48Z	- allow FORCEBACKCULLFACES to work with hud models	ported	FORCECULLBACKFACES on HUD models too, in gl_RenderHUDModel and the backend weapon alike; no-file-overlap: upstream culls HUD models in its FModelRenderer (hw_models.cpp, modelrenderer.h, models.cpp), which we do not have; ours is gl_RenderHUDModel in gl_models.cpp and ActorModelCull for the backend weapon (pspritebuild.cpp)	38457028
 28400a12f16d51558f89dcbbb273bccf1e40c836	2023-10-25T15:27:41Z	fixed savegame file name check.	pending		/
 1f5df23818314b21096909f2ccfa159e6da156f5	2023-10-25T19:19:58Z	took several functions out of HWDrawInfo.	pending		/
 eeac40fffc9c26646c26771b66f76bbd51f3260d	2023-10-25T19:35:42Z	take most direct drawinfo references out of HWWall.	pending		/
