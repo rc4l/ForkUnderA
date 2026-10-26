@@ -7314,7 +7314,7 @@ ccecfeb45ceaacf9e19b8099a35c70f73c11311c	2017-02-09T00:34:07Z	- to avoid problem
 4dd7e02721d60f0184e7cb57bb5901caaa9f9948	2017-02-09T08:15:05Z	AActor::GiveInventory() is now functional	pending		/
 4f0747c59e7ec1ecfd24fa33965c05f386125874	2017-02-09T10:11:54Z	- fixed: Class pointers were accepted for objects of the base type 'Object'.	pending		/
 845f5e083366f109d558659e2fa080d48801c3a0	2017-02-09T10:22:36Z	- fixed: A_Teleport and A_Warp had incorrect declarations for their state parameter.	pending		/
-a4d146c843570561ac83a83c6d76b5f358e3ba8e	2017-02-09T10:24:10Z	Added DONTCULLBACKFACES MODELDEF flag to forcefully disable backface culling on models	pending		/
+a4d146c843570561ac83a83c6d76b5f358e3ba8e	2017-02-09T10:24:10Z	Added DONTCULLBACKFACES MODELDEF flag to forcefully disable backface culling on models	ported	MODELDEF dontcullbackfaces (MDL_DONTCULLBACKFACES renumbered to 1024 past our flags); GL and the Vulkan backend decide through ComputeModelCull	38457028
 3d9673af44e54c92a963458089016b963f4e40b7	2017-02-09T10:29:10Z	Fixed: Models did not take SpriteRotation into account	pending		/
 325ef6d7d7fd80421bcb7230fbf0b2d810ffc4a7	2017-02-09T10:56:01Z	Merge https://github.com/coelckers/gzdoom	pending		/
 4e1300ecbe0611e193c1fc8448e596ff236b2753	2017-02-09T11:02:07Z	- added a script export for ACS's ReplaceTextures function.	pending		/
@@ -16996,7 +16996,7 @@ d9a88d708097b3b9195e9c4fa191c4b29f13f1f9	2023-10-11T17:12:48Z	Fix deserializatio
 0e9135132daa464134f735b91817ece8f946951e	2023-10-11T17:12:48Z	Allow FindFunctionPointer to return non-virtual methods	pending		/
 c935a95cb0c54537fe935f6999aebfbf8c4bb698	2023-10-11T17:12:48Z	Add function pointer Properties	pending		/
 dccce46d5b89344703b153921869606e10b01318	2023-10-11T17:46:53Z	allow "&" instead of "out" in function pointer parameters	pending		/
-bac12948e5f1a62b1820dc8d66e5fd1a8a503d8c	2023-10-14T18:37:40Z	- add `forcecullbackfaces` in `modeldef`	pending		/
+bac12948e5f1a62b1820dc8d66e5fd1a8a503d8c	2023-10-14T18:37:40Z	- add `forcecullbackfaces` in `modeldef`	ported	MODELDEF forcecullbackfaces (MDL_FORCECULLBACKFACES 2048) for world models; its 1>>N renumbering of the flag enum is not taken, our bits are our own	38457028
 e2a9208c568a084c9c0b24832c51fe367395c13c	2023-10-15T15:16:24Z	- fix error in last commit, >> should be <<	pending		/
 d699ba248e939c82e525e8c5785d26ff9ea093a2	2023-10-15T16:51:05Z	warn when fewer returns than expected are given for a function	pending		/
 1957c15a41d4b90c2b6aa624b5559ee950e1eb53	2023-10-15T16:51:05Z	give error instead of warning for zscript 4.12+ on return count mismatch	pending		/
@@ -17009,7 +17009,7 @@ f3d44f8131c46bc0ec525f6736f2440799808ec7	2023-10-25T14:23:29Z	Exposed P_GetMidTe
 731cad7553d1116d991a69f69bdbd416ec249983	2023-10-25T14:23:44Z	do not print all GL extensions to the log for the GLES renderer.	pending		/
 82c492f3d7cdc028562d8df5776e264e85f7bb34	2023-10-25T14:24:21Z	widen the special field in FBoomArgs.	pending		/
 70e4dd17b7dcddba2235f51b1df96c3dc3674dd0	2023-10-25T14:25:24Z	fix UMAPINFO's intermusic being used at the summary screen.	pending		/
-6d1ebf5f2736cca2722aa09246f858b0acf5da3c	2023-10-25T14:57:48Z	- allow FORCEBACKCULLFACES to work with hud models	pending		/
+6d1ebf5f2736cca2722aa09246f858b0acf5da3c	2023-10-25T14:57:48Z	- allow FORCEBACKCULLFACES to work with hud models	ported	FORCECULLBACKFACES on HUD models too, in gl_RenderHUDModel and the backend weapon alike	38457028
 28400a12f16d51558f89dcbbb273bccf1e40c836	2023-10-25T15:27:41Z	fixed savegame file name check.	pending		/
 1f5df23818314b21096909f2ccfa159e6da156f5	2023-10-25T19:19:58Z	took several functions out of HWDrawInfo.	pending		/
 eeac40fffc9c26646c26771b66f76bbd51f3260d	2023-10-25T19:35:42Z	take most direct drawinfo references out of HWWall.	pending		/
