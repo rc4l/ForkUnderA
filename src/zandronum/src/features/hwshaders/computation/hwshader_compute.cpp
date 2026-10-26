@@ -117,4 +117,18 @@ std::string ComputeSpliceShaderBlock(const std::string &source, const std::strin
 	return source.substr(0, from) + block + source.substr(to);
 }
 
+std::string ComputeUserShaderSkipNote(const std::string &renderer, const std::string &lump, const std::string &why)
+{
+	std::string note = renderer + ": hardware shader " + lump + " does not compile here; its textures draw without it\n";
+	size_t from = 0;
+	while (from < why.size())
+	{
+		size_t to = why.find('\n', from);
+		if (to == std::string::npos) to = why.size();
+		if (to > from) note += "  " + why.substr(from, to - from) + "\n";
+		from = to + 1;
+	}
+	return note;
+}
+
 }} // namespace zx::hwshaders

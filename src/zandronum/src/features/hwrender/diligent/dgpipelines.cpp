@@ -640,7 +640,8 @@ const std::string &UserShaderBlock()
 				"void main() { outColor = fuaSurfaceTexel(vUV); }\n";
 			if (!CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua hardware shader probe", probe.c_str())) code.clear();
 		}
-		if (code.empty()) Printf("vulkan: hardware shader %s does not compile here; its textures draw without it\n", zx::hwshaders::UserShaderLump(i));
+		// [Doruk-Aksoy] GL notes the same through the same text; Diligent has already logged the compiler's reason.
+		if (code.empty()) Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", zx::hwshaders::UserShaderLump(i), "").c_str());
 		adapted.push_back(code);
 		styles.push_back(style);
 	}

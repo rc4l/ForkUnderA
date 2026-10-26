@@ -187,6 +187,19 @@ test("the HUD force-cull template flags the pistol's model and gives MAP01 the s
   assert.deepEqual([3, 4, 5, 6].map((i) => TRANSLUCENT_PLAYER.readInt32LE(8 + 4 * i)), [4, PCD.PUSHNUMBER, 64, PCD.SETACTORPROPERTY]);
 });
 
+// [Doruk-Aksoy] The broken variant adds a shader reading camerapos on STARTAN3's west wall, and the plain one is hwshader's room as it was.
+test("the hardware shader template's broken variant adds a third shader that reads Zandronum 3.3's camerapos, on its own wall", async () => {
+  const { buildHwShaderPk3 } = await import("../scenarios/hwshader.mjs");
+  const plain = Object.fromEntries(readPk3(buildHwShaderPk3()).map((f) => [f.name, f.data]));
+  const broken = Object.fromEntries(readPk3(buildHwShaderPk3({ broken: true })).map((f) => [f.name, f.data]));
+  assert.equal(plain["shaders/broken.fp"], undefined);
+  assert.doesNotMatch(plain["gldefs.txt"].toString("latin1"), /STARTAN3/);
+  assert.doesNotMatch(lumpsOf(plain["maps/MAP01.wad"])[1].text, /STARTAN3/);
+  assert.match(broken["gldefs.txt"].toString("latin1"), /HardwareShader Texture "STARTAN3"\n\{\n\tShader "shaders\/broken.fp"\n\}/);
+  assert.match(broken["shaders/broken.fp"].toString("latin1"), /camerapos/);
+  assert.match(lumpsOf(broken["maps/MAP01.wad"])[1].text, /texturemiddle = "STARTAN3";/);
+});
+
 test("the sky templates carry what reproduces each fault: a scripted reflective pool, and a court too wide for the sky walls", async () => {
   const { buildSkymirrorWad } = await import("../scenarios/skymirror.mjs");
   const { buildSkyzenithWad } = await import("../scenarios/skyzenith.mjs");

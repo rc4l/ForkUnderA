@@ -71,3 +71,15 @@ TEST(HwShader, TheBlockReplacesTheMarkersLine)
 	EXPECT_EQ("a\nBLOCK\n", ComputeSpliceShaderBlock("a\n//MARK", "//MARK", "BLOCK\n"));
 	EXPECT_EQ("plain", ComputeSpliceShaderBlock("plain", "//MARK", "BLOCK\n"));
 }
+
+// [Doruk-Aksoy] Both renderers note a shader they leave out alike, GL with the compiler's complaint under it, indented and ending in a newline.
+TEST(HwShader, ASkippedShaderIsNotedByRendererAndLump)
+{
+	EXPECT_EQ("vulkan: hardware shader shaders/a.fp does not compile here; its textures draw without it\n",
+		ComputeUserShaderSkipNote("vulkan", "shaders/a.fp", ""));
+	EXPECT_EQ("GL: hardware shader shaders/a.fp does not compile here; its textures draw without it\n"
+		"  Fragment shader:\n  0(3) : error: undefined variable \"camerapos\"\n",
+		ComputeUserShaderSkipNote("GL", "shaders/a.fp", "Fragment shader:\n0(3) : error: undefined variable \"camerapos\"\n\n"));
+	EXPECT_EQ("GL: hardware shader b.fp does not compile here; its textures draw without it\n  no newline\n",
+		ComputeUserShaderSkipNote("GL", "b.fp", "no newline"));
+}

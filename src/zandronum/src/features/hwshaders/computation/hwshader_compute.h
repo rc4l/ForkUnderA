@@ -26,6 +26,9 @@ std::string ComputeUserShaderBlock(const std::vector<std::string> &adapted, cons
 // [rc4l] source with the line holding `marker` replaced by block, or source as it is when it has no marker.
 std::string ComputeSpliceShaderBlock(const std::string &source, const std::string &marker, const std::string &block);
 
+// [Doruk-Aksoy] The console note a renderer prints for a GLDEFS shader it leaves out, with `why`'s non-blank lines indented under it.
+std::string ComputeUserShaderSkipNote(const std::string &renderer, const std::string &lump, const std::string &why);
+
 }} // namespace zx::hwshaders
 
 #endif // ZX_HWSHADER_COMPUTE_H

@@ -358,30 +358,39 @@ bool FShader::Bind()
 //==========================================================================
 //
 // Since all shaders are REQUIRED, any error here needs to be fatal
+// [Doruk-Aksoy] All but a GLDEFS one, which CompileShaders leaves out instead.
 //
 //==========================================================================
 
-FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath, bool usediscard)
+// [Doruk-Aksoy] Compile's build without its fatal error: NULL, and the compiler's reason in `error`, when the shader does not build.
+static FShader *TryCompile(const char *ShaderName, const char *ShaderPath, bool usediscard, FString &error)
 {
 	FString defines;
 	// this can't be in the shader code due to ATI strangeness.
 	if (gl.MaxLights() == 128) defines += "#define MAXLIGHTS128\n";
 	if (!usediscard) defines += "#define NO_ALPHATEST\n";
 
-	FShader *shader = NULL;
+	FShader *shader = new FShader(ShaderName);
 	try
 	{
-		shader = new FShader(ShaderName);
-		if (!shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars()))
-		{
-			I_FatalError("Unable to load shader %s\n", ShaderName);
-		}
+		if (shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars())) return shader;
 	}
 	catch(CRecoverableError &err)
 	{
-		if (shader != NULL) delete shader;
-		shader = NULL;
-		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, err.GetMessage());
+		if (err.GetMessage()) error = err.GetMessage();
+	}
+	delete shader;
+	return NULL;
+}
+
+FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath, bool usediscard)
+{
+	FString error;
+	FShader *shader = TryCompile(ShaderName, ShaderPath, usediscard, error);
+	if (shader == NULL)
+	{
+		if (error.IsEmpty()) I_FatalError("Unable to load shader %s\n", ShaderName);
+		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, error.GetChars());
 	}
 	return shader;
 }
@@ -505,7 +514,14 @@ void FShaderManager::CompileShaders()
 		FString name = ExtractFileBase(zx::hwshaders::UserShaderLump(i));
 		FName sfn = name;
 
-		FShader *shc = Compile(sfn, zx::hwshaders::UserShaderLump(i), true);
+		// [Doruk-Aksoy] One that does not compile here is noted and its textures drawn with the default shader under its name, as the backend leaves it out, rather than ending the game.
+		FString error;
+		FShader *shc = TryCompile(sfn, zx::hwshaders::UserShaderLump(i), true, error);
+		if (shc == NULL)
+		{
+			Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("GL", zx::hwshaders::UserShaderLump(i), error.GetChars()).c_str());
+			shc = Compile(sfn, defaultshaders[0].gettexelfunc, true);
+		}
 		mTextureEffects.Push(shc);
 	}
 

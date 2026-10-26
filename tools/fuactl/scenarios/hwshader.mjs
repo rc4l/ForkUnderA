@@ -32,17 +32,28 @@ const OLD = `vec4 Process(vec4 color)
 }
 `;
 
+// [Doruk-Aksoy] Zandronum 3.3's base shader declared camerapos and ours does not, so this one compiles on neither renderer, as DnD's do not.
+const BROKEN = `vec4 ProcessTexel()
+{
+\tvec4 t = getTexel(vTexCoord.st);
+\treturn vec4(t.rgb * fract(camerapos.x), t.a);
+}
+`;
+
 // [rc4l] A pk3, since GL finds a shader by its full path and a wad's lumps have none.
-export function buildHwShaderPk3() {
+// [Doruk-Aksoy] With `broken`, the west wall is STARTAN3 under a shader that does not compile.
+export function buildHwShaderPk3({ broken = false } = {}) {
   const m = new UdmfMap();
+  const west = broken ? "STARTAN3" : "COMPBLUE";
   m.room(0, 0, 512, 512, { heightfloor: 0, heightceiling: 160, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 },
-    (edge) => ({ side: { texturemiddle: edge === "north" ? "STARTAN2" : edge === "south" ? "BRICK1" : "COMPBLUE" } }));
+    (edge) => ({ side: { texturemiddle: edge === "north" ? "STARTAN2" : edge === "south" ? "BRICK1" : edge === "west" ? west : "COMPBLUE" } }));
   m.thing({ x: 256, y: 256, angle: 90, type: 1 });
   return pk3([
     { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m)) },
-    { name: "gldefs.txt", data: GLDEFS },
+    { name: "gldefs.txt", data: broken ? `${GLDEFS}HardwareShader Texture "STARTAN3"\n{\n\tShader "shaders/broken.fp"\n}\n` : GLDEFS },
     { name: "shaders/red.fp", data: RED },
     { name: "shaders/old.fp", data: OLD },
+    ...(broken ? [{ name: "shaders/broken.fp", data: BROKEN }] : []),
   ]);
 }
 
