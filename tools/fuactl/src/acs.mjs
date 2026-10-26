@@ -80,6 +80,11 @@ export function callFunc(fn, args) {
   return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.CALLFUNC, args.length, fn];
 }
 
+// [Doruk-Aksoy] The words of `SetCVar(strings[i], GetCVar(strings[i]) + 1)`, its result dropped: a CVARINFO counter a scenario reads back.
+export function incrementCVar(i) {
+  return [PCD.PUSHNUMBER, i, PCD.PUSHNUMBER, i, PCD.GETCVAR, PCD.PUSHNUMBER, 1, PCD.ADD, PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP];
+}
+
 // [rc4l] A script built word by word with named jump targets, resolved to ACS0 byte offsets by words().
 export class AcsScript {
   constructor() { this.parts = []; this.labels = new Map(); }

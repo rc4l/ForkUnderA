@@ -101,6 +101,7 @@
 #include "features/quake-movement/quakemove.h"
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
+#include "features/compat-oldnodelay/computation/oldnodelay_compute.h" // [Doruk-Aksoy] compat_fua_oldnodelay's tics
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -4734,7 +4735,15 @@ void AActor::Tick ()
 	if ((flags7 & MF7_HANDLENODELAY) && !(flags2 & MF2_DORMANT))
 	{
 		flags7 &= ~MF7_HANDLENODELAY;
-		if (state->GetNoDelay())
+		if (state->GetNoDelay() && (zacompatflags & ZACOMPATF_FUA_OLD_NODELAY))
+		{
+			// [Doruk-Aksoy] Ported from zandronum@c3543573546a9691bc19ead5a0e3614254929ed5 for compat_fua_oldnodelay: Zandronum 3.3's re-entry into SetState and its extra tic, which mods built for it time their spawn scripts by.
+			int starttics = tics;
+			if (!SetState(state))
+				return;				// freed itself
+			tics = zx::compat::ComputeOldNoDelayTics(starttics, tics);
+		}
+		else if (state->GetNoDelay())
 		{
 			// [rc4l] uzdoom@5aba252b8 -- calling the state's function directly avoids the
 			// re-entry into SetState and the tic fudging that went with it.

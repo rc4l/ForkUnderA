@@ -103,6 +103,7 @@
 
 #include "g_shared/a_pickups.h"
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the script's decal
+#include "features/acs-lineattack/computation/lineattack_compute.h"   // [Doruk-Aksoy] LineAttack's shooter
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -6684,14 +6685,34 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 				FName damagetype	= argCount > 5 && args[5]? FName(FBehavior::StaticLookupString(args[5])) : NAME_None;
 				fixed_t	range		= argCount > 6 && args[6]? args[6] : MISSILERANGE;
 				int flags			= argCount > 7 && args[7]? args[7] : 0;
+				int pufftid			= argCount > 8 && args[8]? args[8] : 0;
 
 				int fhflags = 0;
 				if (flags & FHF_NORANDOMPUFFZ) fhflags |= LAF_NORANDOMPUFFZ;
 				if (flags & FHF_NOIMPACTDECAL) fhflags |= LAF_NOIMPACTDECAL;
 
-				if (args[0] == 0)
+				// [Doruk-Aksoy] Ported from uzdoom@c9afb199caf363e1387bd9111b31137d5c44d972 and uzdoom@b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0: the puff an attack leaves takes pufftid, as Zandronum 3.3's does.
+				auto fire = [&](AActor *source)
 				{
-					P_LineAttack(activator,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
+					AActor *puff = P_LineAttack(source,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
+					if (puff != NULL && pufftid != 0)
+					{
+						puff->tid = pufftid;
+						puff->AddToHash();
+					}
+				};
+
+				// [Doruk-Aksoy] Tid 0 with no activator (a world script, or one whose activator was removed) fires nothing, warned once per script, instead of P_LineAttack dereferencing the missing shooter.
+				const int shooter = zx::acs::ComputeLineAttackShooter(args[0], activator != NULL);
+				if (shooter == zx::acs::kLineAttackNothing)
+				{
+					static std::vector<int> warned;
+					if (zx::acs::ComputeFirstWarning(warned, script))
+						Printf("LineAttack in %s has no activator to fire from, so it fires nothing\n", ScriptPresentation(script).GetChars());
+				}
+				else if (shooter == zx::acs::kLineAttackFromActivator)
+				{
+					fire(activator);
 				}
 				else
 				{
@@ -6700,7 +6721,7 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 
 					while ((source = it.Next()) != NULL)
 					{
-						P_LineAttack(source,(angle_t)( angle), range,(int)( pitch), damage, damagetype, pufftype, fhflags);
+						fire(source);
 					}
 				}
 			}
