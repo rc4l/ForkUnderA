@@ -6,7 +6,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, AS
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
-  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97 };
+  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
 export const ACSF = { SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75 };
@@ -78,6 +78,11 @@ export function gotoWord(index) {
 // [rc4l] The words of an ACS function called with these pushed arguments (string arguments as their string index), its result left on the stack.
 export function callFunc(fn, args) {
   return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.CALLFUNC, args.length, fn];
+}
+
+// [Doruk-Aksoy] The words of `SetCVar(strings[i], GetCVar(strings[i]) + 1)`, its result dropped: a CVARINFO counter a scenario reads back.
+export function incrementCVar(i) {
+  return [PCD.PUSHNUMBER, i, PCD.PUSHNUMBER, i, PCD.GETCVAR, PCD.PUSHNUMBER, 1, PCD.ADD, PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP];
 }
 
 // [rc4l] A script built word by word with named jump targets, resolved to ACS0 byte offsets by words().

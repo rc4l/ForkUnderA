@@ -899,6 +899,7 @@ CVAR (Flag, compat_silentwestspawns,	zacompatflags, ZACOMPATF_SILENT_WEST_SPAWNS
 CVAR (Flag, compat_skulltagjumping,	zacompatflags, ZACOMPATF_SKULLTAG_JUMPING);
 CVAR (Flag, compat_resetglobalvarsonmapreset, zacompatflags, ZACOMPATF_RESET_GLOBALVARS_ON_MAPRESET);
 CVAR (Flag, compat_noobituaries, zacompatflags, ZACOMPATF_NO_OBITUARIES);
+CVAR (Flag, compat_fua_oldnodelay, zacompatflags, ZACOMPATF_FUA_OLD_NODELAY);	// [Doruk-Aksoy] features/compat-oldnodelay
 
 //==========================================================================
 //
