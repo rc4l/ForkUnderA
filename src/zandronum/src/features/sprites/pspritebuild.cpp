@@ -169,7 +169,7 @@ void HUDModelLayer(const PlayerRecord *player, const pspdef_t *psp, fixed_t sx, 
 	look.fogDensity = 0.f;
 	look.fogMode = 0;
 	look.hud = true;
-	look.cullFace = ActorModelCull(mo->RenderStyle, true);
+	look.cullFace = ActorModelCull(mo->RenderStyle, true, smf->flags);
 	zx::levelmesh::ModelCaptureBegin(look, toMesh, mo->who, zx::levelmesh::kModelDraw);
 	CaptureModelFrames(smf, psp->state, psp->tics, weapon, 0);
 	zx::levelmesh::ModelCaptureEnd();

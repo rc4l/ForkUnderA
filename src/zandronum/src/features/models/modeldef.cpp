@@ -483,6 +483,16 @@ void gl_InitModels()
 					{
 						smf.flags |= MDL_ROLLAGAINSTANGLE;
 					}
+					// [Doruk-Aksoy] Ported from uzdoom@a4d146c843570561ac83a83c6d76b5f358e3ba8e: DONTCULLBACKFACES draws a blended model's back faces.
+					else if (sc.Compare("dontcullbackfaces"))
+					{
+						smf.flags |= MDL_DONTCULLBACKFACES;
+					}
+					// [Doruk-Aksoy] Ported from uzdoom@bac12948e5f1a62b1820dc8d66e5fd1a8a503d8c: FORCECULLBACKFACES culls a model whatever its actor's style.
+					else if (sc.Compare("forcecullbackfaces"))
+					{
+						smf.flags |= MDL_FORCECULLBACKFACES;
+					}
 					else if (sc.Compare("skin"))
 					{
 						sc.MustGetNumber();

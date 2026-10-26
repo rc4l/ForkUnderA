@@ -1,5 +1,8 @@
+// [Doruk-Aksoy] A slab's top-face bit in KVX's visible-face mask, which FVoxelModel::MakeSlabPolys meshes from.
+export const KVX_TOP = 16;
+
 // [rc4l] A solid box as a KVX voxel, the model format small enough to write from a template, laid out (header, offset tables, a slab per column, a 768-byte palette of 6-bit values) as R_LoadKVX checks it.
-export function kvxBox(sx, sy, sz, { color = [63, 0, 0] } = {}) {
+export function kvxBox(sx, sy, sz, { color = [63, 0, 0], faces = 63 } = {}) {
   const offsetSize = (sx + 1) * 4 + sx * (sy + 1) * 2;
   const slab = 3 + sz;                               // [rc4l] ztop, zleng, visible faces, then a colour per voxel
   const voxData = sx * sy * slab;
@@ -15,7 +18,7 @@ export function kvxBox(sx, sy, sz, { color = [63, 0, 0] } = {}) {
   for (let x = 0; x < sx; x++)
     for (let y = 0; y <= sy; y++) { out.writeInt16LE(y * slab, at); at += 2; }
   for (let i = 0; i < sx * sy; i++) {
-    out[at++] = 0; out[at++] = sz; out[at++] = 63;   // [rc4l] the whole column, every face visible
+    out[at++] = 0; out[at++] = sz; out[at++] = faces;   // [rc4l] the whole column, every face visible unless `faces` says otherwise
     for (let z = 0; z < sz; z++) out[at++] = 1;
   }
   // [rc4l] Index 1 is the box's colour; the rest of the palette stays black.

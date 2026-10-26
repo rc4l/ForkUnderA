@@ -55,7 +55,7 @@ Every call takes `--port P --token T`:
 | `ui nav down down enter` | `ui_menu_nav` | menu keys: up, down, left, right, enter, back, backspace |
 | `ui click <x> <y>` | `ui_click` | a mouse click (the MCP tool can also click a `label`) |
 | `ui type <text>` | `ui_type` | text input |
-| `ui screenshot [name]` | `ui_screenshot` | a PNG written next to the engine |
+| `ui screenshot [name]` | `ui_screenshot` | a PNG written to `sweep/` beside the engine (a name with a folder in it is used as given) |
 | `ui exec <ccmd>` | `rpc` with `console.exec` | any console command |
 
 `ui exec openmenu <MenuName>` opens any menu by name. Load a custom `MENUDEF` with

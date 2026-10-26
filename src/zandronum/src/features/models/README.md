@@ -12,7 +12,9 @@ so the backend's model path read GL's vertex buffer class to find a model's vert
 - `modeldef.cpp`: MODELDEF and the voxels VOXELDEF names (`gl_InitModels`), the sprite frame to model lookup
   (`gl_FindModelFrame`, `gl_IsHUDModelForPlayerAvailable`), the skins (`LoadSkin`), every model loaded
   (`ModelCount`, `ModelAt`), and the cvars both renderers read (`r_use_models`,
-  `r_interpolate_model_frames`). The names are GL's, kept so GL's callers read them unchanged.
+  `r_interpolate_model_frames`). The names are GL's, kept so GL's callers read them unchanged. Its flags are
+  Zandronum's, plus UZDoom's `DONTCULLBACKFACES` and `FORCECULLBACKFACES` (`MDL_DONTCULLBACKFACES` 1024 and
+  `MDL_FORCECULLBACKFACES` 2048, renumbered past ours), which both renderers' culling reads through `ActorModelCull`.
 
 GL's `gl/models/gl_models.cpp` keeps a vertex buffer per model, made from its geometry on first draw, and
 draws a frame's surfaces in one function for all three formats. The backend lerps the same geometry on the

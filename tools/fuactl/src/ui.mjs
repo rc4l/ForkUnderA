@@ -134,10 +134,12 @@ export async function stickHold(c, axes, { hold = 300 } = {}) {
 export const look = (c, { yaw = 0, pitch = 0 } = {}) => c.rpc("input.look", { yaw, pitch });
 export async function typeText(c, text, { delay = 30 } = {}) { for (const ch of text) { await post(c, charEvent(ch)); await sleep(delay); } }
 
-// Capture the frame via the engine's built-in `screenshot` CCMD (writes <name>.png beside the binary),
+// Capture the frame via the engine's built-in `screenshot` CCMD (writes <name>.png relative to the binary),
 // then read it back. engineBinPath is FUACTL_ENGINE (the folder that also holds the IWAD/pk3).
+// [Doruk-Aksoy] A bare name goes into sweep/, as every other capture does, so the staged folder beside the binary collects no PNGs.
 export function screenshot(c, engineBinPath, name = "fuactl_shot", opts = {}) {
-  return commandShot(c, `screenshot ${name}`, path.join(path.dirname(engineBinPath), `${name}.png`), opts);
+  const rel = /[\\/]/.test(name) ? name : `sweep/${name}`;
+  return commandShot(c, `screenshot ${rel}`, path.join(path.dirname(engineBinPath), `${rel}.png`), opts);
 }
 
 // [rc4l] Run a console command that writes the image at file and read it back once it lands.

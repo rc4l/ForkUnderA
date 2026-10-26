@@ -159,6 +159,34 @@ test("the point-light template stands a white light above eye level, inside its 
   assert.deepEqual([...ys].sort((p, q) => q - p), ys);
 });
 
+// [Doruk-Aksoy] Each flag on its own actor's model, a top-only voxel, and MAP02 standing whole, whole and culled slabs where MAP01 stands the dont, plain and forced ones.
+test("the model culling template flags one actor each way and stands each against a slab of known culling", async () => {
+  const { buildModelCullFlagsPk3 } = await import("../scenarios/modelcullflags.mjs");
+  const files = Object.fromEntries(readPk3(buildModelCullFlagsPk3()).map((f) => [f.name, f.data]));
+  const modeldef = files["modeldef.txt"].toString("latin1"), decorate = files["decorate.txt"].toString("latin1");
+  assert.match(modeldef, /Model ZXDont\n\{[^}]*\n  DONTCULLBACKFACES\n/);
+  assert.match(modeldef, /Model ZXForced\n\{[^}]*\n  FORCECULLBACKFACES\n/);
+  assert.doesNotMatch(modeldef, /Model ZX(Plain|Whole)\n\{[^}]*CULLBACKFACES/);
+  assert.match(decorate, /Actor ZXDont 20100\n\{\n  RenderStyle Translucent/);
+  assert.match(decorate, /Actor ZXForced 20102\n\{\n  RenderStyle Normal/);
+  const kvx = files["models/flat.kvx"];
+  assert.equal(kvx[4 + 24 + 17 * 4 + 16 * 17 * 2 + 2], 16, "only the top face is meshed");
+  const typesOf = (name) => [...lumpsOf(files[name])[1].text.matchAll(/type = (\d+);/g)].map((t) => Number(t[1]));
+  assert.deepEqual(typesOf("maps/MAP01.wad"), [20100, 20101, 20102, 1]);
+  assert.deepEqual(typesOf("maps/MAP02.wad"), [20103, 20103, 20101, 1]);
+});
+
+// [Doruk-Aksoy] The pistol's model carries FORCECULLBACKFACES, and closed script 2 sets its puker's render style to ACS's Translucent.
+test("the HUD force-cull template flags the pistol's model and gives MAP01 the script that makes the player translucent", async () => {
+  const { buildHudForceCullPk3, TRANSLUCENT_PLAYER } = await import("../scenarios/hudforcecull.mjs");
+  const files = Object.fromEntries(readPk3(buildHudForceCullPk3()).map((f) => [f.name, f.data]));
+  assert.match(files["modeldef.txt"].toString("latin1"), /Model Pistol\n\{[^}]*\n  FORCECULLBACKFACES\n[^}]*FrameIndex PISG A/);
+  const map = readWad(files["maps/MAP01.wad"]);
+  assert.deepEqual(map.map((l) => l.name), ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP"]);
+  assert.deepEqual(map[2].data, TRANSLUCENT_PLAYER);
+  assert.deepEqual([3, 4, 5, 6].map((i) => TRANSLUCENT_PLAYER.readInt32LE(8 + 4 * i)), [4, PCD.PUSHNUMBER, 64, PCD.SETACTORPROPERTY]);
+});
+
 test("the sky templates carry what reproduces each fault: a scripted reflective pool, and a court too wide for the sky walls", async () => {
   const { buildSkymirrorWad } = await import("../scenarios/skymirror.mjs");
   const { buildSkyzenithWad } = await import("../scenarios/skyzenith.mjs");

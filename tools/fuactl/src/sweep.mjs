@@ -41,7 +41,7 @@ export async function changeMap(c, map, { timeoutMs = 90000 } = {}) {
 // is the one path a single-map test can never reach.
 export async function sweep({
   maps = ["MAP01", "MAP02", "MAP07", "MAP11", "MAP15", "MAP27"],
-  port = 7902, iwad = "doom2.wad", outDir = sweepDirFor(resolveEngine()),
+  port = 7902, iwad, outDir = sweepDirFor(resolveEngine()),
   log = console.error,
 } = {}) {
   fs.mkdirSync(outDir, { recursive: true });

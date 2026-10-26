@@ -66,8 +66,12 @@ int ComputeSpriteBlendMode(int blendOp, int destAlpha, float trans);
 // [rc4l] Which faces of a model GL culls: none, or the back ones with its front faces clockwise (a world model) or counter-clockwise (a HUD model).
 enum { kCullNone = 0, kCullFrontClockwise = 1, kCullFrontCounterClockwise = 2 };
 
+// [Doruk-Aksoy] MODELDEF's culling flags as ComputeModelCull takes them: DONTCULLBACKFACES and FORCECULLBACKFACES.
+enum { kModelDontCull = 1, kModelForceCull = 2 };
+
 // [rc4l] gl_RenderModel's and gl_RenderHUDModel's culling, which covers every actor not in exactly STYLE_Normal to hide the far side GL cannot sort.
-int ComputeModelCull(bool normalStyle, bool hud);
+// [Doruk-Aksoy] `modelCull` (kModel* bits) forces it on for any model or, on a world model only, turns it off.
+int ComputeModelCull(bool normalStyle, bool hud, int modelCull);
 
 // [rc4l] The blend op GL draws a model with: Draw turns a subtract model's op to fuzz only after it set the blend, so fuzz there means the actor's own op.
 int ComputeModelBlendOp(int drawOp, int actorOp, int fuzzOp);

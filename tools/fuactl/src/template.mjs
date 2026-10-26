@@ -31,6 +31,9 @@ export function vantageCommands(side) {
 // [rc4l] The two launches a template compares by default; a scenario may name its own, each with the cvars it sets.
 export const GL_VS_VULKAN = [{ name: "gl", gl: true }, { name: "vk", gl: false }];
 
+// [Doruk-Aksoy] A side's launchCvars that silence it from the command line, before a map's music can start.
+export const MUTE = Object.freeze({ snd_sfxvolume: 0, snd_musicvolume: 0 });
+
 // [rc4l] Vulkan with the scene pinned at full scale against at half (features/dynres), for a pass that must land at half scale where it does at full.
 export const FULL_VS_HALF = [{ name: "full", cvars: { fua_dg_dynres_force: 1 } }, { name: "half", cvars: { fua_dg_dynres_force: 0.5 } }];
 
