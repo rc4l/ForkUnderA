@@ -90,6 +90,7 @@
 
 #include "stats.h"
 #include "st_start.h"
+#include "mcp_bridge.h"   // [Doruk-Aksoy] MCP_NoFocus and MCP_InputLocked: an instance leaving the user the foreground, or hands-off
 
 #include <assert.h>
 
@@ -647,6 +648,21 @@ INT_PTR CALLBACK ErrorPaneProc (HWND hDlg, UINT msg, WPARAM wParam, LPARAM lPara
 //
 //==========================================================================
 
+int I_WindowShowCommand()
+{
+	return MCP_NoFocus() ? SW_SHOWNOACTIVATE : SW_SHOW;
+}
+
+unsigned int I_WindowPosFlags(unsigned int flags)
+{
+	return MCP_NoFocus() ? flags | SWP_NOACTIVATE : flags;
+}
+
+unsigned int I_WindowExStyle(unsigned int exStyle)
+{
+	return MCP_InputLocked() ? exStyle | WS_EX_NOACTIVATE : exStyle;
+}
+
 void I_SetWndProc()
 {
 	if (GetWindowLongPtr (Window, GWLP_USERDATA) == 0)
@@ -675,13 +691,13 @@ void RestoreConView()
 	if (GetWindowLong (Window, GWL_EXSTYLE) & WS_EX_TOPMOST)
 	{
 		SetWindowPos (Window, HWND_BOTTOM, 0, 0, 512, 384,
-			SWP_DRAWFRAME | SWP_NOCOPYBITS | SWP_NOMOVE);
-		SetWindowPos (Window, HWND_TOP, 0, 0, 0, 0, SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOSIZE);
+			I_WindowPosFlags(SWP_DRAWFRAME | SWP_NOCOPYBITS | SWP_NOMOVE));
+		SetWindowPos (Window, HWND_TOP, 0, 0, 0, 0, I_WindowPosFlags(SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOSIZE));
 	}
 	else
 	{
 		SetWindowPos (Window, NULL, 0, 0, 512, 384,
-			SWP_DRAWFRAME | SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOZORDER);
+			I_WindowPosFlags(SWP_DRAWFRAME | SWP_NOCOPYBITS | SWP_NOMOVE | SWP_NOZORDER));
 	}
 
 	SetWindowLongPtr (Window, GWLP_WNDPROC, (WLONG_PTR)LConProc);
@@ -1021,11 +1037,12 @@ void DoMain (HINSTANCE hInstance)
 					mysnprintf(caption, countof(caption), FUA_NAME " %s " X64 " (experimental %s)",
 						tag, GetGitHash());
 			}
+			// [Doruk-Aksoy] One leaving the user the foreground (MCP_NoFocus) is shown after, without activating it and under every other window, since one made visible takes the foreground and the clicks over it.
 			Window = CreateWindowEx(
-					WS_EX_APPWINDOW,
+					I_WindowExStyle(WS_EX_APPWINDOW),
 					(LPCTSTR)WinClassName,
 					(LPCTSTR)caption,
-					WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_CLIPCHILDREN,
+					WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | (MCP_NoFocus() ? 0 : WS_VISIBLE),
 					x, y, width, height,
 					(HWND)   NULL,
 					(HMENU)  NULL,
@@ -1034,6 +1051,11 @@ void DoMain (HINSTANCE hInstance)
 
 			if (!Window)
 				I_FatalError ("Could not open window");
+			if (MCP_NoFocus())
+			{
+				ShowWindow(Window, I_WindowShowCommand());
+				SetWindowPos(Window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+			}
 
 			if (kernel != NULL)
 			{

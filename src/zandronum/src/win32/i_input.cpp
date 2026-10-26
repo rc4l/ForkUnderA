@@ -208,7 +208,8 @@ static void I_CheckGUICapture ()
 
 void I_SetMouseCapture()
 {
-	SetCapture(Window);
+	// [Doruk-Aksoy] Never on a hands-off instance, whose menus take no physical clicks to hold the mouse for.
+	if (!MCP_InputLocked()) SetCapture(Window);
 }
 
 void I_ReleaseMouseCapture()
@@ -533,7 +534,8 @@ LRESULT CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_SETCURSOR:
-		if (!CursorState)
+		// [Doruk-Aksoy] A hands-off instance's window leaves the user's pointer showing as it passes over.
+		if (!CursorState && !MCP_InputLocked())
 		{
 			SetCursor(NULL); // turn off window cursor
 			return TRUE;	// Prevent Windows from setting cursor to window class cursor

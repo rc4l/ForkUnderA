@@ -285,6 +285,8 @@ void I_CheckNativeMouse(bool preferNative)
 	}
 
 	//Printf ("%d %d %d\n", wantNative, preferNative, NativeMouse);
+	// [Doruk-Aksoy] A hands-off instance never grabs, clips or recentres the user's pointer, fullscreen or not.
+	if (MCP_InputLocked()) want_native = true;
 
 	if (want_native != NativeMouse)
 	{

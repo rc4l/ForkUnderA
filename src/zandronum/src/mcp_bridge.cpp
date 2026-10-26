@@ -449,15 +449,25 @@ void MCP_Bridge_Shutdown()
 	RemovePidfile();
 }
 
+// [Doruk-Aksoy] Whether environment flag `name` is on: set, and neither empty nor 0.
+static bool EnvFlagOn( const char *name )
+{
+	const char *env = getenv( name );
+	return env != NULL && env[0] != '\0' && env[0] != '0';
+}
+
 bool MCP_InputLocked()
 {
 	// Opt-in per instance and read once. A harness-driven instance sets ZANDRONUM_BRIDGE_INPUT_LOCK so
 	// its on-screen window is hands-off: the OS input pump drops keyboard/mouse and only bridge-injected
 	// events (input.event / input.look / input.axis, which bypass the OS layer) move the sim. Leaving it
 	// unset keeps a bridge instance manually controllable, e.g. for debugging.
-	static const bool locked = []{
-		const char *env = getenv( "ZANDRONUM_BRIDGE_INPUT_LOCK" );
-		return env != NULL && env[0] != '\0' && env[0] != '0';
-	}();
+	static const bool locked = EnvFlagOn( "ZANDRONUM_BRIDGE_INPUT_LOCK" );
 	return locked;
+}
+
+bool MCP_NoFocus()
+{
+	static const bool noFocus = MCP_InputLocked( ) || EnvFlagOn( "ZANDRONUM_BRIDGE_NO_FOCUS" );
+	return noFocus;
 }

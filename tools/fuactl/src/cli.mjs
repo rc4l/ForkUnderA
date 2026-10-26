@@ -114,6 +114,12 @@ async function captureSpot(c, name, note, file = SPOTS) {
   return cam;
 }
 
+// [Doruk-Aksoy] --no-focus as false, --focus as true, neither as undefined, for launchesWithoutFocus to fall back to FUACTL_NO_FOCUS.
+function focusFlag(flags) {
+  if (flags["no-focus"]) return false;
+  return flags.focus ? true : undefined;
+}
+
 // [rc4l] Where --preset finds its catalogue entry and its wads: --store, then FUACTL_PWADS, then the in-engine downloader's store.
 function presetDirs(flags) {
   return {
@@ -164,7 +170,7 @@ function parseFlags(argv) {
 const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
-  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL) (stays up until Ctrl-C)
+  launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play] [--no-focus | --focus]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL), its window opening under yours without taking the foreground with --no-focus or FUACTL_NO_FOCUS=1 (--focus overrides that; a hands-off one never takes it) (stays up until Ctrl-C)
   sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--thread game|all] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows, --thread game samples the thread running tics instead of the main one and --thread all every thread together (no stacks), as a library's own pool; --table prints them as text
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
@@ -200,7 +206,7 @@ const USAGE = `fuactl <command>
   trace --port P [--token T] [--seconds N] [--out FILE.csv]   every frame of a running instance for N seconds (fua_viewtrace): frame lengths apart from tic waits, what the slow frames spent more on, where it sat paused or unfocused, and the mouse input it got, gaps included
   walkcheck --port P [--runs N] [--seconds S] [--spot S | --at x,y,z --face yaw,pitch]   the W key held as a player holds it from the spot, N runs of S seconds each traced (fua_viewtrace): exit 1 when any frame stepped back or lurched ahead of the steady speed, a view that rubber-bands
   present [--seconds N] [--process NAME.exe] [--port P [--token T]] [--out FILE.csv]   what Windows put on screen, from PresentMon run as administrator (a UAC prompt): each app's frames handed over and shown a second and the compositor's own updates; with --port the instance's frames are recorded alongside and lined up second by second
-  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --gl-beside | --side-by-side | --webgpu] [--rt] [--monsters [--targetable]] [--lock] [--res WxH]   a build to walk around in, god and notarget on unless --targetable leaves monsters able to hear and chase the player, Vulkan alone as players run it unless --gl (GL alone), --gl-beside (the backend beside GL, to compare the two; --side-by-side gives it its own window) or --webgpu asks otherwise, or the mode a --spot or --unpark was recorded in; --no-gl is the default spelled out; sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
+  play [--restart] [--port P] [--token T] [--spot NAME | --unpark] [--map M] [--file a.pk3,b.pk3] [--cvar k=v,k2=v2] [--preset ID --variant V --store DIR] [--gl | --gl-beside | --side-by-side | --webgpu] [--rt] [--monsters [--targetable]] [--lock] [--no-focus | --focus] [--res WxH]   a build to walk around in, opening under your windows without the foreground with --no-focus or FUACTL_NO_FOCUS=1, god and notarget on unless --targetable leaves monsters able to hear and chase the player, Vulkan alone as players run it unless --gl (GL alone), --gl-beside (the backend beside GL, to compare the two; --side-by-side gives it its own window) or --webgpu asks otherwise, or the mode a --spot or --unpark was recorded in; --no-gl is the default spelled out; sized to --res or the spot's view by vid_setsize and read back; stays up until Ctrl-C
   build [--root DIR] [--no-stage] [--tests]   compile the engine (with --tests the unit tests too, and run them) and stage it unless --no-stage, failing loudly instead of staging a stale binary
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
@@ -286,6 +292,7 @@ async function main() {
         // its twin. That is right for measuring and useless for the case where the point IS to walk
         // around and look at something, which until now needed the env var set by hand.
         allowOsInput: !!flags.play,
+        focus: focusFlag(flags),
         // [rc4l] --res WxH, because a stutter report is resolution-shaped.
         //
         // launch was pinned to 1024x640 with no way to say otherwise, so a frame-time tail reported
@@ -1346,7 +1353,7 @@ async function main() {
         // [rc4l] --res WxH, so a capture can be framed exactly like the window a report came from.
         ...resFlag(flags.res),
         gl: mode === MODES.gl, glBeside: mode === MODES.beside, webgpu: mode === MODES.webgpu, sideBySide, rt: !!flags.rt,
-        monsters: !!flags.monsters, targetable: !!flags.targetable, lock: !!flags.lock,
+        monsters: !!flags.monsters, targetable: !!flags.targetable, lock: !!flags.lock, focus: focusFlag(flags),
         extra: shot.parseCvarFlag(flags.cvar) || {},
         at: spotAt, view: spotView,
         sessionFile,

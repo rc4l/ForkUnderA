@@ -41,6 +41,12 @@ debugging the wrong layer.
   reads or writes the user's settings.
 - **ignores the real keyboard and mouse** (`ZANDRONUM_BRIDGE_INPUT_LOCK`), so the user can keep
   working and only injected input reaches the game.
+- **never takes the user's focus or mouse**. A hands-off window opens under every other window
+  without activating, is never activated by a click, and never grabs, clips or hides the pointer.
+  `--no-focus` (MCP: `focus: false`) or `FUACTL_NO_FOCUS=1` gives a hands-on `play`/`launch --play`
+  the same opening, though it can still be clicked into and played; `--focus` overrides the
+  variable. The project's `.mcp.json` sets `FUACTL_NO_FOCUS=1`. Engine side: `MCP_NoFocus` and
+  `MCP_InputLocked` in `win32/i_main.cpp`, `i_input.cpp`, `i_mouse.cpp` and `dgwin32.cpp`.
 
 `--iwad`, `--file a.pk3,b.pk3`, `--seed` and `--arg` (raw engine arguments) pass through.
 
