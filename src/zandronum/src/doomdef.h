@@ -555,6 +555,10 @@ enum
 
 	// [BB] Clients use the vanilla Doom weapon on pickup behavior.
 	ZACOMPATF_OLD_WEAPON_SWITCH		= 1 << 26,
+
+	// [Doruk-Aksoy] FUA's own bits count down from 30, so Zandronum's next ones counting up from 27 cannot take them on a re-sync.
+	// [Doruk-Aksoy] A NoDelay spawn state lasts its whole duration after its action, as in Zandronum 3.3 (features/compat-oldnodelay).
+	ZACOMPATF_FUA_OLD_NODELAY		= 1 << 30,
 };
 
 // Emulate old bugs for select maps. These are not exposed by a cvar

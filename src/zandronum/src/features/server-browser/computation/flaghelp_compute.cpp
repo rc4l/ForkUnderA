@@ -184,6 +184,7 @@ const HelpEntry kHelp[] =
 	{ "compat_limited_airmovement", "Steering while in the air is limited." },
 	{ "compat_skulltagjumping",	"Jumping behaves the way it did in Skulltag." },
 	{ "compat_resetglobalvarsonmapreset", "Global ACS variables are cleared when the map resets." },
+	{ "compat_fua_oldnodelay",	"NoDelay spawn states keep their whole duration, as in Zandronum 3.3." },
 
 	// ------------------------------------------------------------------ sv_forbidvoteflags
 	{ "sv_nokickvote",			"No votes to kick a player." },

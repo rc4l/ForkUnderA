@@ -46,7 +46,7 @@ void CheckFrameSprites();
 SpriteStyle StyleOf(const FRenderStyle &s);
 FRenderStyle RenderStyleOf(const SpriteStyle &s);
 // [rc4l] The faces GL culls of a model drawn in an actor's style (ComputeModelCull), as the weapon or in the world.
-int ActorModelCull(const FRenderStyle &style, bool hud);
+int ActorModelCull(const FRenderStyle &style, bool hud, unsigned int modelFlags);
 // [rc4l] The blend (MeshPiece::blendMode) an engine render style draws with at `alpha`.
 int StyleBlendMode(const FRenderStyle &s, float alpha);
 

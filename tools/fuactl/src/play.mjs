@@ -268,7 +268,7 @@ async function launchChecked(opts, port) {
     // and is written by whichever launch went last, which is the wrong answer when two are up.
     token: opts.token,
     map: opts.map || "MAP01",
-    iwad: opts.iwad || "doom2.wad",
+    iwad: opts.iwad,
     // [rc4l] Hands-on unless told otherwise -- but --lock exists because MY OWN launches must use
     // it. A hands-on instance takes the foreground and reads the mouse, so a stray movement while a
     // capture is running both perturbs the measurement and yanks the user's cursor into a game they
