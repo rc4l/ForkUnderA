@@ -22,11 +22,14 @@ toward black. Every op `gl_GetRenderStyle` has no equation for (the shadow, a fu
 with its `DST_COLOR` / `ONE_MINUS_SRC_ALPHA` fallback, the projected decals' fuzz pass included. Before this a
 spectre drew solid at the default fuzz type. A model whose actor is not in exactly `STYLE_Normal` loses the
 faces `gl_RenderModel` culls (clockwise front faces, counter-clockwise on the HUD; `ComputeModelCull`, tested
-against `gl_FrontFacing` in the shader), and a blended HUD model writes depth as GL's HUD step does. GL does
+against `gl_FrontFacing` in the shader), unless MODELDEF gives a world model `DONTCULLBACKFACES` (a HUD model
+ignores it, as UZDoom's does); `FORCECULLBACKFACES` culls any model, in the world or on the HUD, whatever
+its style, and wins over `DONTCULLBACKFACES`. A blended HUD model writes depth as GL's HUD step does. GL does
 subtract a subtract-style model: `Draw` turns its style to fuzz only after setting the subtract blend.
 A subtract sprite in coloured fog is drawn as GL draws it, in two pieces: the subtraction without fog,
 then `CM_FOGLAYER`'s fog colour at the fog's opacity over it (`CaptureFogLayer`, texFlags 8192); before
-this the backend subtracted the fog's colour. Scenarios `shadowstyles`, `hudmodelcull` and `subtract`.
+this the backend subtracted the fog's colour. Scenarios `shadowstyles`, `hudmodelcull`, `modelcullflags`,
+`hudforcecull` and `subtract`.
 
 Models too (`modelbuild.cpp`): the actor's light and style as a single-band sprite's, the pose from
 `computation/modelpose_compute` (`ComputeModelMatrix`, `gl_RenderModel`'s VSMatrix calls; the momentum,
@@ -77,7 +80,8 @@ neither there.
   (`NoteDerivedSprite`). A sprite's frame is `features/materials/spriteframe`, and the dynamic light on it
   `features/levelmesh/pointlight`.
 - `gl/models/gl_models.cpp` `gl_RenderModel` and `gl_RenderFrameModels`: `ModelPoseFor` with
-  `ComputeModelMatrix`, `NextModelFrame`, and each slot's surfaces and blend from `ModelSlotSurfaces`.
+  `ComputeModelMatrix`, `NextModelFrame`, each slot's surfaces and blend from `ModelSlotSurfaces`, and
+  whether to cull from `ActorModelCull`.
 - `features/models/md2model.cpp`, `md3model.cpp`, `voxelmodel.cpp`: `FrameSurfaces`, each model's
   surfaces worked out without GL and drawn from.
 - `features/frame/playerview.cpp` `RenderPlayerView`, every frame the backend draws: `CheckFrameSprites` after

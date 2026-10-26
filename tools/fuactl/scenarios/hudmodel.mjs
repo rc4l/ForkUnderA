@@ -7,7 +7,8 @@ import { encodePNG } from "../src/pngcore.mjs";
 import { runScenarioIfMain } from "../src/template.mjs";
 
 // [rc4l] A plain room and a MODELDEF that puts a 16-unit voxel box, skinned plain green, on every frame of the pistol, 64 units ahead of the eye and below it.
-export function buildHudModelPk3({ offset = "0 -64 -24", scale = "1.0 1.0 1.0", voxel = kvxBox(16, 16, 16) } = {}) {
+// [Doruk-Aksoy] `flags` are MODELDEF flag lines added to the model, and `behavior` the map's ACS.
+export function buildHudModelPk3({ offset = "0 -64 -24", scale = "1.0 1.0 1.0", voxel = kvxBox(16, 16, 16), flags = [], behavior = null } = {}) {
   const m = new UdmfMap();
   m.room(0, 0, 512, 512, { heightfloor: 0, heightceiling: 192, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 },
     () => ({ side: { texturemiddle: "STARTAN2" } }));
@@ -15,9 +16,10 @@ export function buildHudModelPk3({ offset = "0 -64 -24", scale = "1.0 1.0 1.0", 
   const skin = Buffer.alloc(16 * 16 * 3);
   for (let i = 0; i < 16 * 16; i++) { skin[i * 3] = 32; skin[i * 3 + 1] = 200; skin[i * 3 + 2] = 64; }
   const frames = ["A", "B", "C", "D", "E"].map((f) => `  FrameIndex PISG ${f} 0 0`).join("\n");
-  const modeldef = `Model Pistol\n{\n  Path "models/"\n  Model 0 "hudbox.kvx"\n  Skin 0 "hudskin.png"\n  Scale ${scale}\n  Offset ${offset}\n${frames}\n}\n`;
+  const modeldef = `Model Pistol\n{\n  Path "models/"\n  Model 0 "hudbox.kvx"\n  Skin 0 "hudskin.png"\n  Scale ${scale}\n  Offset ${offset}\n` +
+    flags.map((f) => `  ${f}\n`).join("") + `${frames}\n}\n`;
   return pk3([
-    { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m)) },
+    { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior })) },
     { name: "modeldef.txt", data: modeldef },
     { name: "models/hudbox.kvx", data: voxel },
     { name: "models/hudskin.png", data: encodePNG(16, 16, skin) },

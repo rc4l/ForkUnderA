@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { kvxBox, voxelLumps } from "../src/kvx.mjs";
+import { kvxBox, voxelLumps, KVX_TOP } from "../src/kvx.mjs";
 
 // [rc4l] R_LoadKVX's own checks, restated: the first x offset is the offset table's size, the last ends the slab data, and the palette fills the tail.
 test("a box voxel has the layout R_LoadKVX accepts", () => {
@@ -22,6 +22,14 @@ test("palette index 1 carries the colour", () => {
   const palette = v.subarray(v.length - 768);
   assert.deepEqual([...palette.subarray(3, 6)], [10, 20, 30]);
   assert.deepEqual([...palette.subarray(0, 3)], [0, 0, 0]);
+});
+
+// [Doruk-Aksoy] Every column's face mask, so a slab with only KVX_TOP set meshes into one flat face.
+test("a box voxel draws only the faces it is given", () => {
+  const v = kvxBox(2, 1, 1, { faces: KVX_TOP });
+  const firstSlab = 4 + 24 + 3 * 4 + 2 * 2 * 2;
+  assert.equal(KVX_TOP, 16);
+  assert.deepEqual([...v.subarray(firstSlab, firstSlab + 8)], [0, 1, KVX_TOP, 1, 0, 1, KVX_TOP, 1]);
 });
 
 test("a voxel lump sits between the voxel namespace markers", () => {

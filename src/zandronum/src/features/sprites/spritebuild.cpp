@@ -99,9 +99,10 @@ static const int kMaxBands = 16;
 // [rc4l] A band and the fog layer GL draws over it.
 static const int kMaxPieces = kMaxBands * 2;
 
-int ActorModelCull(const FRenderStyle &style, bool hud)
+int ActorModelCull(const FRenderStyle &style, bool hud, unsigned int modelFlags)
 {
-	return ComputeModelCull(style == LegacyRenderStyles[STYLE_Normal], hud);
+	const int modelCull = ((modelFlags & MDL_DONTCULLBACKFACES) ? kModelDontCull : 0) | ((modelFlags & MDL_FORCECULLBACKFACES) ? kModelForceCull : 0);
+	return ComputeModelCull(style == LegacyRenderStyles[STYLE_Normal], hud, modelCull);
 }
 
 SpriteStyle StyleOf(const FRenderStyle &s)
@@ -315,7 +316,7 @@ static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &
 		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y, true),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
-	look.cullFace = ActorModelCull(thing->RenderStyle, false);
+	look.cullFace = ActorModelCull(thing->RenderStyle, false, s.model->flags);
 
 	ModelPose pose;
 	ModelPoseFor(*thing, s.model, s.x, s.y, s.z, pose);

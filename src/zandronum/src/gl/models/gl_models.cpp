@@ -58,6 +58,7 @@
 #include "gl/data/gl_vertexbuffer.h"
 #include "gl/scene/gl_observer.h"
 #include "features/sprites/modelbuild.h"
+#include "features/sprites/spritebuild.h"   // [Doruk-Aksoy] ActorModelCull, the culling the backend's models share
 #include "features/gamecopy/actors.h"   // [rc4l] the record a model's pose reads   // [rc4l] the pose and frame blend the backend's derived models share
 #include "features/sprites/computation/modelpose_compute.h"
 #include "gl/textures/gl_material.h"
@@ -239,7 +240,9 @@ void gl_RenderModel(GLSprite * spr)
 	// [BB] In case the model should be rendered translucent, do back face culling.
 	// This solves a few of the problems caused by the lack of depth sorting.
 	// TO-DO: Implement proper depth sorting.
-	if (!( spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
+	// [Doruk-Aksoy] Ported from uzdoom@a4d146c843570561ac83a83c6d76b5f358e3ba8e and uzdoom@bac12948e5f1a62b1820dc8d66e5fd1a8a503d8c: MODELDEF's DONTCULLBACKFACES skips it and FORCECULLBACKFACES forces it.
+	const bool cull = zx::sprites::ActorModelCull(spr->actor->RenderStyle, false, smf->flags) != zx::sprites::kCullNone;
+	if (cull)
 	{
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CW);
@@ -267,7 +270,7 @@ void gl_RenderModel(GLSprite * spr)
 	gl_RenderState.EnableModelMatrix(false);
 
 	glDepthFunc(GL_LESS);
-	if (!( spr->actor->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
+	if (cull)
 		glDisable(GL_CULL_FACE);
 }
 
@@ -292,7 +295,9 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy)
 	// [BB] In case the model should be rendered translucent, do back face culling.
 	// This solves a few of the problems caused by the lack of depth sorting.
 	// TO-DO: Implement proper depth sorting.
-	if (!( playermo->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
+	// [Doruk-Aksoy] Ported from uzdoom@6d1ebf5f2736cca2722aa09246f858b0acf5da3c: MODELDEF's FORCECULLBACKFACES forces it on the HUD too.
+	const bool cull = zx::sprites::ActorModelCull(playermo->RenderStyle, true, smf->flags) != zx::sprites::kCullNone;
+	if (cull)
 	{
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
@@ -324,7 +329,7 @@ void gl_RenderHUDModel(pspdef_t *psp, fixed_t ofsx, fixed_t ofsy)
 	gl_RenderFrameModels( smf, psp->state, psp->tics, playermo->player->ReadyWeapon->GetClass(), NULL, 0 );
 
 	glDepthFunc(GL_LESS);
-	if (!( playermo->RenderStyle == LegacyRenderStyles[STYLE_Normal] ))
+	if (cull)
 		glDisable(GL_CULL_FACE);
 }
 

@@ -44,6 +44,9 @@ died and left no token, as `reap --kill` stops every such orphan; never stop eng
 - For a netgame, `netplay` (see `netplay-testing`) launches a locked server and clients on loopback and
   `netplay --for-user` leaves the first client's input to the user while the others stay locked;
   `netplay --quit` stops the whole set by its tokens.
+- Every launch binds its own UDP game port, 11000 + its bridge port mod 4000 (7799 binds 14799), unless it hosts
+  or passes `-port`. A client binds 10667 by default, so a Zandronum client run beside fuactl's no longer shares
+  a socket with them.
 - `--file a.pk3,b.wad` for pwads, `--iwad` for another IWAD (an absolute path works), `--gl` for GL
   alone, `--gl-beside` for the backend beside GL in one process, which only the GL/Vulkan comparisons
   need (`shot` pairs, `fua_*_check`, the live `fua_vulkan 0/1` toggle) and players never run, `--side-by-side`

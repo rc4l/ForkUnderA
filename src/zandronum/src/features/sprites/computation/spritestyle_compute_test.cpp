@@ -139,10 +139,30 @@ TEST(SpriteStyle, EveryFuzzOpTakesTheFuzzBlend)
 // [rc4l] An actor in STYLE_Normal draws its model whole; any other culls, clockwise front faces in the world and counter-clockwise on the HUD.
 TEST(SpriteStyle, AModelIsCulledUnlessItsActorIsNormal)
 {
-	EXPECT_EQ(kCullNone, ComputeModelCull(true, false));
-	EXPECT_EQ(kCullNone, ComputeModelCull(true, true));
-	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(false, false));
-	EXPECT_EQ(kCullFrontCounterClockwise, ComputeModelCull(false, true));
+	EXPECT_EQ(kCullNone, ComputeModelCull(true, false, 0));
+	EXPECT_EQ(kCullNone, ComputeModelCull(true, true, 0));
+	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(false, false, 0));
+	EXPECT_EQ(kCullFrontCounterClockwise, ComputeModelCull(false, true, 0));
+}
+
+// [Doruk-Aksoy] MODELDEF's DONTCULLBACKFACES draws a blended world model whole, while a HUD model still culls as UZDoom's does.
+TEST(SpriteStyle, DontCullBackfacesKeepsABlendedWorldModelWhole)
+{
+	EXPECT_EQ(kCullNone, ComputeModelCull(false, false, kModelDontCull));
+	EXPECT_EQ(kCullNone, ComputeModelCull(true, false, kModelDontCull));
+	EXPECT_EQ(kCullNone, ComputeModelCull(true, true, kModelDontCull));
+	EXPECT_EQ(kCullFrontCounterClockwise, ComputeModelCull(false, true, kModelDontCull));
+}
+
+// [Doruk-Aksoy] MODELDEF's FORCECULLBACKFACES culls a model in STYLE_Normal too, in the world and on the HUD, and wins over DONTCULLBACKFACES.
+TEST(SpriteStyle, ForceCullBackfacesCullsEvenANormalModel)
+{
+	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(true, false, kModelForceCull));
+	EXPECT_EQ(kCullFrontCounterClockwise, ComputeModelCull(true, true, kModelForceCull));
+	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(false, false, kModelForceCull));
+	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(true, false, kModelForceCull | kModelDontCull));
+	EXPECT_EQ(kCullFrontClockwise, ComputeModelCull(false, false, kModelForceCull | kModelDontCull));
+	EXPECT_EQ(kCullFrontCounterClockwise, ComputeModelCull(true, true, kModelForceCull | kModelDontCull));
 }
 
 // [rc4l] A shadow is grey at 0.44 alpha, fogged to black and thinned by coloured fog; additive and fade-to-black styles fog to black; the rest keep their alpha and fog.

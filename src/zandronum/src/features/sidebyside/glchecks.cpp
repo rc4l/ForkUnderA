@@ -23,6 +23,7 @@
 #include "features/sprites/pspritebuild.h"
 #include "features/sprites/spritebuild.h"
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] kHwNoAlphaTest
+#include "features/models/models.h"   // [Doruk-Aksoy] FSpriteModelFrame, whose flags a model's culling reads
 
 #include "c_cvars.h"
 #include "r_state.h"   // [rc4l] lines
@@ -179,7 +180,7 @@ struct FGLChecks : public FGLObserver
 		zx::levelmesh::ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn,
 			spr->ThingColor.d, zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr->RenderStyle), spr->trans, spr->Colormap, spr->x, spr->y, true),
 			zx::sprites::StyleBlendMode(blend, spr->trans), spr->x, spr->y, spr->z, look);
-		look.cullFace = zx::sprites::ActorModelCull(spr->actor->RenderStyle, false);
+		look.cullFace = zx::sprites::ActorModelCull(spr->actor->RenderStyle, false, spr->modelframe->flags);
 		zx::levelmesh::ModelCaptureBegin(look, model.get(), spr->actor, zx::levelmesh::kModelFromGL);
 	}
 	void ModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2, float inter,
