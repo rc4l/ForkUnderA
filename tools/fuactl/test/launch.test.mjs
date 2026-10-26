@@ -112,6 +112,15 @@ test("a driven instance draws its scene at full scale, and a hands-on one as pla
   assert.ok(args.lastIndexOf("vid_fua_dynres") > args.indexOf("vid_fua_dynres"));
 });
 
+// [Doruk-Aksoy] Every driven launch is silent, the netplay pairs and the MCP's too, while a hands-on one plays as players hear it and a scenario's own volume still wins.
+test("a driven instance is muted, and a hands-on one is not", () => {
+  assert.equal(setValue(engineArgs({}, "x.ini"), "snd_sfxvolume"), "0");
+  assert.equal(setValue(engineArgs({}, "x.ini"), "snd_musicvolume"), "0");
+  assert.equal(setValue(engineArgs({ allowOsInput: true }, "x.ini"), "snd_sfxvolume"), undefined);
+  const args = engineArgs({ cvars: { snd_musicvolume: 0.001 } }, "x.ini");
+  assert.ok(args.lastIndexOf("snd_musicvolume") > args.indexOf("snd_musicvolume"));
+});
+
 test("a harness instance does NOT disable the menu mouse it injects into", () => {
   // [rc4l] m_use_mouse used to be forced to 0 here. menu.cpp drops every GUI mouse event when it is
   // 0, injected ones included, so `ui click` reported {"clicked":[x,y]} and did nothing -- on every

@@ -193,6 +193,8 @@ export function engineArgs(opts = {}, configPath) {
     "+set", "use_joystick", "0",
     // [rc4l] A driven launch measures and compares frames, so its scene stays at full scale (features/dynres) unless its cvars pin one; a hands-on one runs as players do.
     ...(opts.allowOsInput ? [] : ["+set", "vid_fua_dynres", "0"]),
+    // [Doruk-Aksoy] A driven launch is silent, netplay's server and client and the MCP's included, unless its own cvars (set after) raise a volume, as a song that must start does.
+    ...(opts.allowOsInput ? [] : ["+set", "snd_sfxvolume", "0", "+set", "snd_musicvolume", "0"]),
     // [rc4l] m_use_mouse is deliberately LEFT ALONE. It used to be forced to 0 here to silence the
     // menu cursor, but menu.cpp:859 drops every GUI mouse event when it is 0 -- including the ones
     // the harness injects. So `ui click`, `ui rightclick` and `ui drag` returned {"clicked":[x,y]}
