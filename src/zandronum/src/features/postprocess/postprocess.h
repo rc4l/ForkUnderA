@@ -32,8 +32,8 @@ struct ShaderDecl
 	std::vector<std::string> textureFiles;
 };
 
-// [Doruk-Aksoy] Drops every declaration, as GLDEFS is read again on a restart.
-void ClearPostProcessShaders();
+// [Doruk-Aksoy] Drops every declaration, as GLDEFS is read again on a restart, and keeps the game's own *DEFS lump (NULL for none) for a reread.
+void ClearPostProcessShaders(const char *gameDefsLump);
 
 // [Doruk-Aksoy] One `HardwareShader PostProcess <target> { ... }` block, the scanner past `PostProcess`.
 void ParsePostProcessShader(FScanner &sc);
@@ -43,17 +43,28 @@ const ShaderDecl &PostShader(int i);
 // [Doruk-Aksoy] Bumped whenever the declarations change, so a renderer makes its programs again.
 unsigned PostShadersGeneration();
 
-// [Doruk-Aksoy] Says once at launch that a GL window draws without the declared shaders.
-void NotePostProcessRenderer();
+// [Doruk-Aksoy] Says once at launch that a GL window draws without the declared shaders, `backendDraws` false there.
+void NotePostProcessRenderer(bool backendDraws);
 
-// [Doruk-Aksoy] Reads only the post-process blocks of the game's *DEFS lump and every GLDEFS, for a dedicated server whose null renderer reads none of the rest.
-void ReadPostProcessDeclarations();
+// [Doruk-Aksoy] Reads only the post-process blocks of the game's *DEFS lump (NULL for none) and every GLDEFS, for a dedicated server whose null renderer reads none of the rest.
+void ReadPostProcessDeclarations(const char *gameDefsLump);
 
 // [Doruk-Aksoy] Whether GLDEFS declares `shader` and, unless `uniform` is empty, that uniform of it; anything else a script names is ignored.
 bool PostShaderDeclared(const char *shader, const char *uniform);
 
 // [Doruk-Aksoy] Whether post-process shaders run at all (gl_custompost).
 bool PostProcessAllowed();
+
+// [Doruk-Aksoy] The shader state a frame draws and the level time it was copied at.
+struct DrawnShaders
+{
+	const ShaderTable *table;
+	int maptime;
+};
+typedef DrawnShaders (*DrawnShadersSource)();
+
+// [Doruk-Aksoy] Where the frame's state comes from, which features/gamecopy installs since this feature sits below it.
+void SetDrawnShaders(DrawnShadersSource source);
 
 // [Doruk-Aksoy] Whether shader i runs this frame for the console player, from the render copy of the level, and the tic it went on.
 EffectiveEnabled PostShaderEnabledNow(int i);

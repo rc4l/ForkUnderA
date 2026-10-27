@@ -63,6 +63,7 @@
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
 #include "features/postprocess/postprocess.h"
+#include "features/hwrender/backendonly.h"   // [Doruk-Aksoy] BackendOnly, for the post-process note
 #include "features/materials/skyboxtexture.h"
 // [BB] New #includes.
 #include "network.h"
@@ -1390,12 +1391,12 @@ void gl_ParseDefs()
 	atterm( gl_ReleaseLights );
 	gl_ReleaseLights();
 	// [Doruk-Aksoy] A restart reads GLDEFS again, so the post-process shaders it declares start over.
-	zx::postprocess::ClearPostProcessShaders();
+	zx::postprocess::ClearPostProcessShaders(defsLump);
 	gl_ParseVavoomSkybox();
 	if (defsLump != NULL) gl_LoadGLDefs(defsLump);
 	gl_LoadGLDefs("GLDEFS");
 	gl_InitializeActorLights();
-	zx::postprocess::NotePostProcessRenderer();
+	zx::postprocess::NotePostProcessRenderer(zx::hwrender::BackendOnly());
 }
 
 

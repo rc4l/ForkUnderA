@@ -11,6 +11,7 @@
 #include "features/gamecopy/decals.h"
 #include "features/gamecopy/seen.h"
 #include "features/gamecopy/polyobjs.h"
+#include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] SetDrawnShaders
 #include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] kTorchPower, kLightAmpPower
 #include "features/gamecopy/computation/recordlinks_compute.h"
@@ -842,6 +843,19 @@ const LevelRecord &Level()
 }
 
 const zx::postprocess::ShaderTable &LevelShaders() { return g_levelShaders; }
+
+namespace {
+
+zx::postprocess::DrawnShaders DrawnPostShaders()
+{
+	const zx::postprocess::DrawnShaders drawn = { &g_levelShaders, g_level_.maptime };
+	return drawn;
+}
+
+// [Doruk-Aksoy] features/postprocess sits below the copy, so the shader state the frame draws reaches it through what this installs.
+const bool g_bDrawnShadersInstalled = ( zx::postprocess::SetDrawnShaders( &DrawnPostShaders ), true );
+
+} // namespace
 
 const std::vector<CameraTexture> &CameraTextures()
 {

@@ -159,12 +159,13 @@ Each mode breaks in its own way, and a pass in one says nothing about the other:
   `ParsePostProcessShader`.
 - `features/hwshaders/computation/hwshader_compute`: `ComputeIndentedLines`, shared with the texture
   shaders' skip note.
-- `features/gldefs/gldefs.cpp` `gl_ParseDefs`: `ClearPostProcessShaders` before GLDEFS is read,
-  `NotePostProcessRenderer` after; `gl_GameDefsLump` names the game's own lump for both readers.
-- `r_nullrenderer.h` `Init`: a dedicated server's `ReadPostProcessDeclarations`.
+- `features/gldefs/gldefs.cpp` `gl_ParseDefs`: `ClearPostProcessShaders` with the game's own `*DEFS` lump
+  before GLDEFS is read, kept for `fua_postshaders_reread`, and `NotePostProcessRenderer` with `BackendOnly`
+  after.
+- `r_nullrenderer.h` `Init`: a dedicated server's `ReadPostProcessDeclarations`, with `gl_GameDefsLump`.
 - `g_level.h`/`g_level.cpp`: `FLevelLocals::fua_postShaders`, reset by `G_InitLevelLocals`.
 - `features/gamecopy/level.h`/`gamecopy.cpp`: `LevelShaders`, taken by `TakeLevel` when its generation
-  moved.
+  moved, and `SetDrawnShaders`, which it installs so this feature, below it, reads what the frame draws.
 - `tools/boundary-rules.json`: `fua_postShaders` in the live level state a frame must not read.
 - `features/draw2d/record.{h,cpp}`: `MarkViewQuads` and `ViewQuads`. `features/frame/playerview.cpp`
   marks them after the screen's tint.

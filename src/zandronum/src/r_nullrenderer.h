@@ -12,6 +12,7 @@
 
 #include "r_renderer.h"
 #include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] ReadPostProcessDeclarations
+#include "features/gldefs/gldefs.h"   // [Doruk-Aksoy] gl_GameDefsLump
 
 struct FNullRenderer : public FRenderer
 {
@@ -22,7 +23,7 @@ struct FNullRenderer : public FRenderer
 	int GetMaxViewPitch(bool down) { return 56; }
 	void ClearBuffer(int color) {}
 	// [Doruk-Aksoy] A dedicated server reads GLDEFS's post-process shaders alone, so it ignores a script's undeclared names as a client does.
-	void Init() { zx::postprocess::ReadPostProcessDeclarations(); }
+	void Init() { zx::postprocess::ReadPostProcessDeclarations(gl_GameDefsLump()); }
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov) {}
 	sector_t *FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back)
 	{

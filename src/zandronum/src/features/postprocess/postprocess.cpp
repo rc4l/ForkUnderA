@@ -2,10 +2,7 @@
 // Copyright (C) 2026 Doruk-Aksoy
 
 #include "features/postprocess/postprocess.h"
-#include "features/gamecopy/level.h"
 #include "features/handoff/effects.h"   // [Doruk-Aksoy] QueuedBesideTic
-#include "features/hwrender/backendonly.h"
-#include "features/gldefs/gldefs.h"   // [Doruk-Aksoy] gl_GameDefsLump
 
 #include "doomtype.h"
 #include "doomstat.h"
@@ -28,6 +25,17 @@ namespace {
 
 std::vector<ShaderDecl> g_shaders;
 unsigned g_generation = 0;
+std::string g_gameDefsLump;
+DrawnShadersSource g_drawnSource = NULL;
+
+// [Doruk-Aksoy] What the frame draws, from the copy SetDrawnShaders installed, or nothing before it is.
+DrawnShaders Drawn()
+{
+	static const ShaderTable none;
+	if (g_drawnSource != NULL) return g_drawnSource();
+	const DrawnShaders empty = { &none, 0 };
+	return empty;
+}
 
 CvarKind KindOf(const FBaseCVar *cvar)
 {
@@ -153,7 +161,7 @@ void ChangeLevelShaders(ConsoleChange *change)
 // [Doruk-Aksoy] A uniform's values as the console's listing shows them, from the render copy since a tic may be running: the level's, else its cvar's or default.
 void CurrentValues(const ShaderDecl &d, size_t i, double out[4])
 {
-	if (const double *set = ComputeEffectiveUniform(zx::gamecopy::LevelShaders(), d.name, consoleplayer, d.uniforms[i].name))
+	if (const double *set = ComputeEffectiveUniform(*Drawn().table, d.name, consoleplayer, d.uniforms[i].name))
 	{
 		memcpy(out, set, sizeof(double) * 4);
 		return;
@@ -164,11 +172,14 @@ void CurrentValues(const ShaderDecl &d, size_t i, double out[4])
 
 } // namespace
 
-void ClearPostProcessShaders()
+void ClearPostProcessShaders(const char *gameDefsLump)
 {
 	g_shaders.clear();
 	g_generation++;
+	g_gameDefsLump = gameDefsLump != NULL ? gameDefsLump : "";
 }
+
+void SetDrawnShaders(DrawnShadersSource source) { g_drawnSource = source; }
 
 // [Doruk-Aksoy] Ported from uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad (src/r_data/gldefs.cpp ParseHardwareShader): a post-process block's Name, Shader and version, Uniforms with their defaults or cvars, Textures and Enabled.
 void ParsePostProcessShader(FScanner &sc)
@@ -227,9 +238,9 @@ void ParsePostProcessShader(FScanner &sc)
 	g_generation++;
 }
 
-void NotePostProcessRenderer()
+void NotePostProcessRenderer(bool backendDraws)
 {
-	if (!g_shaders.empty() && !zx::hwrender::BackendOnly())
+	if (!g_shaders.empty() && !backendDraws)
 		Printf("%d post-process shaders draw only on the Vulkan renderer\n", (int)g_shaders.size());
 }
 
@@ -263,16 +274,17 @@ void ReadDeclarationsNamed(const char *name)
 
 void RereadDeclarations(intptr_t, intptr_t)
 {
-	ReadPostProcessDeclarations();
+	const std::string game = g_gameDefsLump;
+	ReadPostProcessDeclarations(game.empty() ? NULL : game.c_str());
 	Printf("fua_postshaders_reread: %d declared\n", PostShaderCount());
 }
 
 } // namespace
 
-void ReadPostProcessDeclarations()
+void ReadPostProcessDeclarations(const char *gameDefsLump)
 {
-	ClearPostProcessShaders();
-	if (const char *game = gl_GameDefsLump()) ReadDeclarationsNamed(game);
+	ClearPostProcessShaders(gameDefsLump);
+	if (gameDefsLump != NULL) ReadDeclarationsNamed(gameDefsLump);
 	ReadDeclarationsNamed("GLDEFS");
 }
 
@@ -302,17 +314,19 @@ bool PostProcessAllowed() { return gl_custompost; }
 EffectiveEnabled PostShaderEnabledNow(int i)
 {
 	const ShaderDecl &d = g_shaders[i];
-	return ComputeEffectiveEnabled(zx::gamecopy::LevelShaders(), d.name, consoleplayer, d.enabled, zx::gamecopy::Level().maptime);
+	const DrawnShaders drawn = Drawn();
+	return ComputeEffectiveEnabled(*drawn.table, d.name, consoleplayer, d.enabled, drawn.maptime);
 }
 
 void PostShaderBlock(int i, unsigned char *block)
 {
 	const ShaderDecl &d = g_shaders[i];
+	const ShaderTable &table = *Drawn().table;
 	memset(block, 0, d.blockSize);
 	for (size_t u = 0; u < d.uniforms.size(); u++)
 	{
 		double values[4];
-		if (const double *set = ComputeEffectiveUniform(zx::gamecopy::LevelShaders(), d.name, consoleplayer, d.uniforms[u].name))
+		if (const double *set = ComputeEffectiveUniform(table, d.name, consoleplayer, d.uniforms[u].name))
 			memcpy(values, set, sizeof(values));
 		else if (d.cvars[u] != NULL) CvarValues(d.cvars[u], values);
 		else for (int k = 0; k < 4; k++) values[k] = d.defaults[u][k];
@@ -374,7 +388,8 @@ CCMD(shaderuniform)
 // [Doruk-Aksoy] Each shader as this player sees it now, from the render copy: on or off and since when, and every uniform's value; for tests reading a client's state.
 CCMD(fua_postshaders)
 {
-	Printf("fua_postshaders: %d entries at %d\n", (int)zx::gamecopy::LevelShaders().entries.size(), zx::gamecopy::Level().maptime);
+	const DrawnShaders drawn = Drawn();
+	Printf("fua_postshaders: %d entries at %d\n", (int)drawn.table->entries.size(), drawn.maptime);
 	for (int i = 0; i < PostShaderCount(); i++)
 	{
 		const ShaderDecl &d = PostShader(i);

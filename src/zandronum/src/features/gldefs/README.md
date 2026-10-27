@@ -25,5 +25,5 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
 - `gl/renderer/gl_lightdata.h`: includes `gldefs.h` in place of the declarations it held;
   `gl/renderer/gl_renderer.cpp` drops the lights when GL shuts down.
 - `gl/scene/*`: `glow.h` for the glowing flats.
-- `features/postprocess/postprocess.cpp`: `gl_GameDefsLump`, so a dedicated server reads the same lumps'
-  post-process blocks.
+- `r_nullrenderer.h` `Init`: `gl_GameDefsLump`, so a dedicated server reads the same lumps' post-process
+  blocks; `gl_ParseDefs` hands the same name to `features/postprocess`.

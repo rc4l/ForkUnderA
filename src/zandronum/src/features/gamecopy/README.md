@@ -35,6 +35,8 @@ never reads what that tic is changing.
   The actor records are taken across the job pool. `fua_copy_prescan_check` holds each such fill to the whole-map
   scan it spared (`fuactl fixture prescancheck`, with tics on the game thread).
 - `actor.h`: `AActor::rcListed`, an actor's place in the list the tic's end made.
+- `features/postprocess`: `SetDrawnShaders`, installed at startup, hands it the copied shader state and the copy's
+  level time, since it sits below this feature.
 - `features/frame/playerview.cpp`: `BeginRecordViewpoint`, and the camera textures from `CameraTextures`.
 - `gl/scene/gl_scene.cpp` `FGLInterface::BeginFrame`: GL finds its live particles' subsectors itself.
 - `p_effect.h`: guarded, and `ActiveParticles` declared for the particle copy.

@@ -108,7 +108,8 @@ loads with none.
 - `r_nullrenderer.h` `Init`: `ReadPostProcessDeclarations`.
 - `features/postprocess`: a uniform's `kind`, `PostShaderDeclared`, `ReadPostProcessDeclarations`, and the
   `fua_postshaders` and `fua_postshaders_reread` commands.
-- `features/gldefs/gldefs.cpp`: `gl_GameDefsLump`, the game's own `*DEFS` lump, shared with that reader.
+- `features/gldefs/gldefs.cpp`: `gl_GameDefsLump`, the game's own `*DEFS` lump, which `gl_ParseDefs` and
+  `r_nullrenderer.h` hand that reader.
 - `features/acs-setmusicvolume/musicvolume_wire_nettest.cpp`: no longer assumes its command is last.
 - `tools/boundary-allow.json`: `acsshaders.cpp`'s four sends.
 - `src/CMakeLists.txt`: `acsshaders.cpp` in the engine's sources.
