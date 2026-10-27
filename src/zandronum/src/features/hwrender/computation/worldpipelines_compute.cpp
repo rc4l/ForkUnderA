@@ -34,6 +34,11 @@ WorldPipelineDesc ComputeWorldPipelineDesc(int pipeline)
 	return kDescs[(pipeline >= 0 && pipeline < kWorldPipelines) ? pipeline : kWpOpaque];
 }
 
+bool ComputeWorldPipelineTakesUserShader(int pipeline)
+{
+	return pipeline >= 0 && pipeline < kWorldPipelines && ComputeWorldPipelineDesc(pipeline).stage != kWpStageRedAlpha;
+}
+
 int ComputeBatchPipeline(int blendMode)
 {
 	if (blendMode == 0) return kWpMasked;

@@ -578,6 +578,28 @@ CCMD( fua_dg_bindless_rebuild )
 	Printf( "material array will be rebuilt next frame\n" );
 }
 
+// [Doruk-Aksoy] Which GLDEFS shaders compile into programs here, rather than only those a piece has drawn with so far.
+CCMD( fua_dg_hwshaders )
+{
+	FString report;
+	zx::hwrender::UserShaderReport( report );
+	Printf( "%s", report.GetChars( ) );
+}
+
+// [Doruk-Aksoy] fua_dg_shaderbench [n ...]: the launch's GLDEFS programs compiled again, uncached, at most n at a time (each n given, else 1 and the pool's size), for how far the device's pool speeds them up.
+CCMD( fua_dg_shaderbench )
+{
+	std::vector<int> counts;
+	for ( int i = 1; i < argv.argc( ); i++ ) counts.push_back( atoi( argv[i] ) );
+	if ( counts.empty( ) ) counts = { 1, 1000 };
+	for ( int n : counts )
+	{
+		FString report;
+		zx::hwrender::ShaderCompileBench( n, report );
+		Printf( "%s", report.GetChars( ) );
+	}
+}
+
 CCMD( fua_dg_slots )
 {
 	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 12;

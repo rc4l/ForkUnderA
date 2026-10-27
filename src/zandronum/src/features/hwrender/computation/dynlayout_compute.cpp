@@ -29,9 +29,14 @@ DynLayoutTotals ComputeDynLayout(const int *order, int count, const unsigned *ve
 	return t;
 }
 
-unsigned ComputeDynWordsBound(unsigned pieces, unsigned vertices)
+unsigned ComputeDynWordsBound(unsigned pieces, unsigned vertices, unsigned matrices)
 {
-	return pieces * kSpriteWords + (vertices + (vertices + 1) / 2) * 6 + 4;
+	return pieces * kSpriteWords + (vertices + (vertices + 1) / 2) * 6 + 4 + matrices * kModelMatrixWords;
+}
+
+float ComputeModelMatrixWord(unsigned matBase, int index)
+{
+	return index < 0 ? 0.f : (float)(matBase + (unsigned)index * kModelMatrixWords + 1);
 }
 
 unsigned ComputeDynWordsCapacity(unsigned need)

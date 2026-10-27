@@ -74,11 +74,13 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   - `dgmemory.cpp`: every texture and buffer made through `CreateDeviceTexture`/`CreateDeviceBuffer`, under `gpu/mem/` and the breakdown `gpu/mem/tag/`. At shutdown it reports what is still held.
   - `dgdevice_vk.cpp`: `VK_EXT_memory_budget` under `gpu/vk_`, the device's heaps and the host's apart.
   - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`, and `dgprobe.cpp`'s `CreateDeviceTexture` and `CreateDeviceBuffer`: the shaders and
-    pipelines made, under `gpu/made/`, each timed (`gpu/make_shader`, `gpu/make_pipeline`, `gpu/make_texture`, `gpu/make_buffer`), and
+    pipelines made, under `gpu/made/`, each timed (`gpu/make_shader`, `gpu/make_pipeline`, `gpu/make_texture`, `gpu/make_buffer`), with
+    `gpu/made/shader_hits` the shaders `CompileShader` found already compiled, and
     `dgtexture.cpp`'s `gpu/make_material`, a material decoded, uploaded and mipped.
   - `dgframe.cpp`: `gpu/made/in_play` and the per-frame `gpu/made_in_play`, what was made while the level was played rather than loaded,
     which `fua_dg_made` lists (`computation/madeinplay_compute`) and `fuactl scenarios madeinplay` holds at no shader or pipeline.
   - `dgtexture.cpp`: `load/precache_backend` and `load/precached_textures`, the level's marked textures made ahead.
+  - `dgpipelines.cpp`: `load/user_shaders`, every GLDEFS shader's programs compiled at launch (`PrecompileUserShaders`).
   - `dgscene.cpp` `UpdateBufferIfChanged`: `gpu/upload_spared`, the bytes a frame did not send because the buffer already held them (the light grid and the 2D layer).
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
 - `s_sound.cpp` `S_ChangeMusic`: `audio/music_change`, and inside it `audio/music_open` (`I_RegisterSong`) and `audio/music_start`; `S_StopMusic`: `audio/music_stop`.

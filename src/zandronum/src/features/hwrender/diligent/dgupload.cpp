@@ -196,12 +196,13 @@ static bool MakePieceBuffer(Diligent::IDeviceContext *ctx, unsigned int want)
 // [rc4l] The piece buffer made bigger before this frame's dynamic pieces are laid out, when they outnumber the records behind the level's: past them each sprite drew with the last record's material, and nuts.wad's 10,600 monsters showed as rows of one wrong monster.
 void EnsureDynamicRecords()
 {
-	int count = 0, vertices = 0;
+	int count = 0, vertices = 0, matrices = 0;
 	zx::levelmesh::DynPieces(count);
 	zx::levelmesh::DynVertices(vertices);
+	zx::levelmesh::DynMatrices(matrices);
 	const unsigned int dynamic = (unsigned int)count;
 	if (dynamic > g_scene.dynPeak) g_scene.dynPeak = dynamic;
-	const unsigned int words = zx::hwrender::ComputeDynWordsBound(dynamic, (unsigned int)vertices);
+	const unsigned int words = zx::hwrender::ComputeDynWordsBound(dynamic, (unsigned int)vertices, (unsigned int)matrices);
 	if (words > g_scene.dynWordsPeak) g_scene.dynWordsPeak = words;
 	auto *ctx = GetContext();
 	if (!g_scene.pieceBuf || ctx == NULL) return;
@@ -322,6 +323,7 @@ static bool BuildSceneBuffer(FString &err)
 			b.minX = b.minY = b.minZ =  1e30f;
 			b.maxX = b.maxY = b.maxZ = -1e30f;
 			b.walkId = -1;
+			b.userShader = -1;
 			g_scene.batches.Push(b);
 			if (b.blend != 0) g_scene.blendBatches.Push((int)g_scene.batches.Size() - 1);
 			cur = p.material;
@@ -340,6 +342,8 @@ static bool BuildSceneBuffer(FString &err)
 			g_scene.pieces.Push(pd);
 			// [rc4l] A blended piece is a batch of its own, so the batch can be skipped by the walk that reached the piece.
 			if (p.blendMode != 0) g_scene.batches[g_scene.batches.Size() - 1].walkId = (int)(pd.stackId + 0.5f) - 1;
+			// [Doruk-Aksoy] Its pieces share a material, and with it the GLDEFS shader its record names.
+			g_scene.batches[g_scene.batches.Size() - 1].userShader = zx::hwshaders::ComputeUserShaderOf((int)(pd.warpStyle + 0.5f));
 		}
 		for (unsigned int v = 0; v < p.range.count; v++)
 		{
@@ -475,6 +479,8 @@ static bool BuildSceneBuffer(FString &err)
 	for (unsigned i = 0; i < g_scene.batches.Size(); i++) BatchSRB(g_scene.batches[i]);
 	// [rc4l] The decal pass's pipelines go whenever the scene's do (ReleaseScenePipelines), so they are made with the scene: made by the first floor or ceiling mark instead, they stalled that frame some 18 ms on every level.
 	EnsureDecalPipelines();
+	// [Doruk-Aksoy] So are the GLDEFS shaders' programs the level's surfaces draw with.
+	PrewarmUserPipelines();
 	return true;
 }
 // See ReleaseMaterialSRBs. The batches keep raw copies of bindings they do not own.
@@ -491,6 +497,8 @@ bool SceneUpload(FString &report)
 	// against a 640x480 2D layer squashed the HUD to 75% height and point-sampled it into mush.
 	if (screen != NULL) Fua_SetBackendWindowSize(screen->GetWidth(), screen->GetHeight());
 	if (!DiligentShowWindow(err)) { report = err; return false; }
+	// [Doruk-Aksoy] A launch whose device came up after GLDEFS was read (GL beside the backend) compiles the mod's shaders with its first level instead.
+	PrecompileUserShaders();
 	if (!EnsureScenePipeline(err)) { report = err; return false; }
 	// [rc4l] The level goes up in one frame, and a browser's device would keep a page for every 8 MB of it; asked once the window has made the device.
 	UploadFlushing flushing;
@@ -584,6 +592,7 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	b.maxX = b.maxY = b.maxZ = -1e30f;
 	b.srb = NULL;
 	b.walkId = -1;
+	b.userShader = -1;
 	if (BatchSRB(b) == NULL) return false;   // [rc4l] no binding, no draw -- and a rebuild will do it properly
 	g_scene.batches.Push(b);
 	g_scene.batchesGen++;
@@ -605,6 +614,7 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 		g_scene.pieces.Push(pd);
 		SendToBuffer(ctx, g_scene.pieceBuf, (Diligent::Uint64)slot.pieceIndex * sizeof(ScenePieceData),
 			sizeof(ScenePieceData), &pd);
+		g_scene.batches[slot.batch].userShader = zx::hwshaders::ComputeUserShaderOf((int)(pd.warpStyle + 0.5f));
 	}
 	slot.blended = false;
 

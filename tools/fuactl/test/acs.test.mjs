@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, incrementCVar, PCD, printString } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -73,6 +73,16 @@ test("a print, a HUD message, a console command and a jump compile as the engine
 test("a fading HUD message takes its fade time after the optional-arguments code", () => {
   const hud = hudMessage(0, { type: 1, fade: 2 });
   assert.deepEqual(hud.slice(-4), [PCD.OPTHUDMESSAGE, PCD.PUSHNUMBER, 131072, PCD.ENDHUDMESSAGE]);
+});
+
+// [Doruk-Aksoy] An alpha sets HUDMSG_ALPHA on the type and comes last of the optional arguments, after a fade.
+test("a HUD message with an alpha flags its type and pushes the alpha after any fade", () => {
+  const plain = hudMessage(0, { alpha: 0.75 });
+  assert.equal(plain[6], HUDMSG_ALPHA);
+  assert.deepEqual(plain.slice(-4), [PCD.OPTHUDMESSAGE, PCD.PUSHNUMBER, 49152, PCD.ENDHUDMESSAGE]);
+  const fading = hudMessage(0, { type: 1, fade: 2, alpha: 0.5 });
+  assert.equal(fading[6], 1 | HUDMSG_ALPHA);
+  assert.deepEqual(fading.slice(-6), [PCD.OPTHUDMESSAGE, PCD.PUSHNUMBER, 131072, PCD.PUSHNUMBER, 32768, PCD.ENDHUDMESSAGE]);
 });
 
 // [Doruk-Aksoy] SetCVar(s, GetCVar(s) + 1) with SetCVar's result dropped, so a script can count how often it ran.
