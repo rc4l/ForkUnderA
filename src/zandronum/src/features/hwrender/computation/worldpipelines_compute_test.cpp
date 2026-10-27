@@ -37,6 +37,15 @@ TEST(WorldPipelines, EachPipelineIsBuiltForWhatItDraws)
 	EXPECT_STREQ(ComputeWorldPipelineDesc(kWpOpaque).name, ComputeWorldPipelineDesc(kWorldPipelines).name);
 }
 
+// [Doruk-Aksoy] Every pipeline but the red-alpha decals' runs a hardware shader's own program, and nothing outside the table does.
+TEST(WorldPipelines, AllButRedAlphaTakeAUserShader)
+{
+	for (int p = 0; p < kWorldPipelines; p++)
+		EXPECT_EQ(p != kWpTransRedAlpha && p != kWpAddRedAlpha, ComputeWorldPipelineTakesUserShader(p)) << p;
+	EXPECT_FALSE(ComputeWorldPipelineTakesUserShader(-1));
+	EXPECT_FALSE(ComputeWorldPipelineTakesUserShader(kWorldPipelines));
+}
+
 TEST(WorldPipelines, ABatchIsMaskedAdditiveOrTranslucent)
 {
 	EXPECT_EQ(kWpMasked, ComputeBatchPipeline(0));

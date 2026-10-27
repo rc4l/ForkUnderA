@@ -105,6 +105,8 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	// [rc4l] Duration queries time the backend's passes for features/telemetry (dggputimer.cpp).
 	ci.Features.TimestampQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [Doruk-Aksoy] A thread pool for shaders compiled in the background, which the GLDEFS shaders' programs take at launch (CompileShaderAsync).
+	ci.Features.AsyncShaderCompilation = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	factory->CreateDeviceAndContextsVk(ci, device, context);
 	if (*device == nullptr)
 	{

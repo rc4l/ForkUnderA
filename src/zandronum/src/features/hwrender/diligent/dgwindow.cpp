@@ -133,6 +133,7 @@ static void ShutdownBackend()
 	// [rc4l] What is still held once the level's resources are gone is the backend's own (targets, pipelines, constants) or a leak, which the console log keeps.
 	ReleaseLevelResources();
 	ResetAtlas();
+	ReleaseShaderCache();
 	ReportHeldDeviceObjects("at shutdown, after the level's resources were released");
 	ReleaseGpuPasses();
 	ReleaseGpuLoad();

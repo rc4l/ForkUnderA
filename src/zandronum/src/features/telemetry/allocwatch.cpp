@@ -6,6 +6,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/telemetry/osprobe.h"
 #include "features/telemetry/computation/allocsites_compute.h"
+#include "features/telemetry/computation/shardedcounter_compute.h"
 #include "features/sanitizer/sanitizer.h"
 
 #include "c_dispatch.h"
@@ -21,8 +22,18 @@ using zx::telemetry::AllocTable;
 namespace {
 
 // [rc4l] Constant-initialised, so a static constructor's new before any other code runs counts too.
-std::atomic<long long> s_news{ 0 };
-std::atomic<long long> s_deletes{ 0 };
+// [Doruk-Aksoy] A slot per thread, as one shared counter had every new and delete in the process fight over its cache line: 15 threads compiling shaders spent over half their time on it.
+const int kCountSlots = 64;
+zx::telemetry::ShardedCounter<kCountSlots> s_news;
+zx::telemetry::ShardedCounter<kCountSlots> s_deletes;
+std::atomic<unsigned> s_nextSlot{ 0 };
+thread_local int t_slot = -1;
+
+int CountSlot()
+{
+	if (t_slot < 0) t_slot = zx::telemetry::ComputeCounterSlot(s_nextSlot.fetch_add(1, std::memory_order_relaxed), kCountSlots);
+	return t_slot;
+}
 
 // [rc4l] The table fua_allocsites records into while it runs, and the lock around it.
 std::atomic<AllocTable *> s_sites{ nullptr };
@@ -38,14 +49,14 @@ struct HoldSites
 
 double LiveAllocations()
 {
-	return (double)(s_news.load(std::memory_order_relaxed) - s_deletes.load(std::memory_order_relaxed));
+	return (double)(s_news.Sum() - s_deletes.Sum());
 }
 
 // [rc4l] The news since the last read, read every frame.
 double AllocationsThisFrame()
 {
 	static long long last = 0;
-	const long long now = s_news.load(std::memory_order_relaxed);
+	const long long now = s_news.Sum();
 	const double made = (double)(now - last);
 	last = now;
 	return made;
@@ -71,7 +82,7 @@ void *Allocate(std::size_t size)
 {
 	void *p = std::malloc(size != 0 ? size : 1);
 	if (p == nullptr) return p;
-	s_news.fetch_add(1, std::memory_order_relaxed);
+	s_news.Add(CountSlot(), 1);
 	if (s_sites.load(std::memory_order_acquire) != nullptr && !t_holding) Record(p, size);
 	return p;
 }
@@ -79,7 +90,7 @@ void *Allocate(std::size_t size)
 void Free(void *p)
 {
 	if (p == nullptr) return;
-	s_deletes.fetch_add(1, std::memory_order_relaxed);
+	s_deletes.Add(CountSlot(), 1);
 	if (s_sites.load(std::memory_order_acquire) != nullptr && !t_holding)
 	{
 		HoldSites hold;

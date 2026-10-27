@@ -30,6 +30,8 @@ MeshPiece g_look;
 const float *g_matrix = NULL;
 const void *g_who = NULL;
 ModelCaptureKind g_kind = kModelDraw;
+// [Doruk-Aksoy] The matrix's index among the frame's (DynAddMatrix), added with the model's first surface, or -1.
+int g_matrixIndex = -1;
 
 int g_models = 0, g_surfaces = 0, g_triangles = 0, g_skipped = 0;
 // [rc4l] Every model GL started to draw, captured or not, and the walk the last one was in, so "not drawn" and "not ours" read apart.
@@ -101,6 +103,7 @@ void ModelCaptureBegin(const MeshPiece &look, const float *modelToWorld, const v
 	g_matrix = modelToWorld;
 	g_who = who;
 	g_kind = kind;
+	g_matrixIndex = -1;
 	g_begins++;
 	g_lastMainView = MainView();
 	if (ModelCaptureActive()) g_models++;
@@ -223,6 +226,8 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 		return;
 	}
 	if (g_kind == kModelChecked && g_pieceListener != NULL) g_pieceListener(g_who, false, mp, &g_tris[0], (int)indexCount);
+	if (g_matrixIndex < 0) g_matrixIndex = DynAddMatrix(m);
+	mp.modelMatrix = g_matrixIndex;
 	DynAppend(&g_tris[0], indexCount, mp);
 	g_surfaces++;
 	g_triangles += (int)(indexCount / 3);

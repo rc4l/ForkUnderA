@@ -81,7 +81,8 @@ export function sideBesideGl(side = {}) {
 function withEngine({ port, map, iwad, wadPath, gl, side = {}, size }, body) {
   const glBeside = sideBesideGl(side);
   const want = launchMode({ gl, glBeside, webgpu: !!side.webgpu });
-  return withLockedInstance({ port, map, iwad, file: wadPath, gl, glBeside, webgpu: !!side.webgpu, extra: side.launchCvars, width: size[0], height: size[1] }, async (c, inst) => {
+  // [Doruk-Aksoy] Muted unless the side's own launchCvars say otherwise, so a scenario on the default sides plays nothing aloud.
+  return withLockedInstance({ port, map, iwad, file: wadPath, gl, glBeside, webgpu: !!side.webgpu, extra: { ...MUTE, ...side.launchCvars }, width: size[0], height: size[1] }, async (c, inst) => {
     // [rc4l] A side really runs the renderers it asked for: a binary that ignored -vulkan would pass as GL beside the backend, and a WebGPU device that failed falls back to Vulkan.
     const got = cap.launchModeOf(await cap.exec(c, cap.RENDERER_PROBE, { quietMs: 300 }));
     if (got !== want) throw new Error(`side ${side.name} asked for ${describeMode(want)} and the launch reports ${got ? describeMode(got) : "no renderer"}`);

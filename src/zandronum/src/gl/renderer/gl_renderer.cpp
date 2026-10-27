@@ -65,6 +65,7 @@
 #include "features/materials/textureinfo.h"
 #include "features/materials/translationpalette.h"
 #include "gl/textures/gl_material.h"
+#include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeDrawTextureShader
 #include "gl/textures/gl_samplers.h"
 #include "gl/utility/gl_clock.h"
 #include "gl/utility/gl_templates.h"
@@ -299,7 +300,9 @@ void FGLRenderer::DrawTexture(FTexture *img, DCanvas::DrawParms &parms)
 	if (!img->bHasCanvas)
 	{
 		// [rc4l] GL applies the remap in the shader from a palette texture, so it takes the index negated.
-		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, -d.translation, 0, !!(parms.style.Flags & STYLEF_RedIsAlpha));
+		// [Doruk-Aksoy] A GLDEFS shader runs on a HUD image too, as Zandronum 3.3's BindPatch ran it.
+		gl_RenderState.SetMaterial(gltex, CLAMP_XY_NOMIP, -d.translation, zx::hwshaders::ComputeDrawTextureShader(gltex->GetShaderIndex()),
+			!!(parms.style.Flags & STYLEF_RedIsAlpha));
 	}
 	else
 	{

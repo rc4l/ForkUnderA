@@ -171,7 +171,7 @@ const USAGE = `fuactl <command>
   ls                                 list registered engine instances
   reap [--kill] [--all]              prune dead; --kill SIGTERMs ORPHANS only (other sessions safe); --all kills every live instance
   launch [--map M] [--seed S] [--port P] [--token T] [--iwad W] [--skill N] [--file a.wad,b.pk3] [--cvar k=v,k2=v2] [--arg "-host,+sv_hostname,X"] [--gl | --gl-beside] [--play] [--no-focus | --focus]   launch one supervised bridge instance, Vulkan alone unless --gl (GL alone) or --gl-beside (the backend beside GL), its window opening under yours without taking the foreground with --no-focus or FUACTL_NO_FOCUS=1 (--focus overrides that; a hands-off one never takes it) (stays up until Ctrl-C)
-  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--thread game] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows, --thread game samples the thread running tics instead of the main one; --table prints them as text
+  sample --pid P | --port P [--seconds N] [--top N] [--engine] [--stacks] [--thread game|all] [--table]   hottest functions (macOS sample / Linux perf / Windows in-engine, which needs --port); --stacks adds each function's inclusive share on Windows, --thread game samples the thread running tics instead of the main one and --thread all every thread together (no stacks), as a library's own pool; --table prints them as text
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
@@ -640,6 +640,8 @@ async function main() {
         stacks: !!flags.stacks,
         // [rc4l] --thread game samples the thread running tics (fua_gamethread) rather than the main one.
         game: flags.thread === "game",
+        // [Doruk-Aksoy] --thread all samples every thread of the process together, without stacks.
+        all: flags.thread === "all",
       };
       // [rc4l] The Windows backend lives inside the engine, so it needs a connection rather than a
       // pid. Opened only when --port was given; the external backends never touch it.

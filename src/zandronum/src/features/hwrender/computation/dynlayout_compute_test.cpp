@@ -75,16 +75,26 @@ TEST(DynLayout, PackedSpritesTakeASpriteInsteadOfARecord)
 TEST(DynLayout, TheWordsBoundCoversEveryPiecePackedAndEveryVertexGeneral)
 {
 	// [rc4l] Two quads of four corners each: 56 words packed, or twelve general vertices of six words, plus four of alignment.
-	EXPECT_EQ(2u * 28 + 12u * 6 + 4, ComputeDynWordsBound(2, 8));
-	EXPECT_EQ(4u, ComputeDynWordsBound(0, 0));
+	EXPECT_EQ(2u * 28 + 12u * 6 + 4, ComputeDynWordsBound(2, 8, 0));
+	EXPECT_EQ(4u, ComputeDynWordsBound(0, 0, 0));
 	// [rc4l] An odd count rounds its half up.
-	EXPECT_EQ(2u * 6 + 4, ComputeDynWordsBound(0, 1));
+	EXPECT_EQ(2u * 6 + 4, ComputeDynWordsBound(0, 1, 0));
+	// [Doruk-Aksoy] Each model matrix takes sixteen more.
+	EXPECT_EQ(4u + 2u * 16, ComputeDynWordsBound(0, 0, 2));
+}
+
+// [Doruk-Aksoy] A record names its model matrix by the word it starts at plus one, 0 for none.
+TEST(DynLayout, AModelMatrixIsNamedByItsWordPlusOne)
+{
+	EXPECT_EQ(0.f, ComputeModelMatrixWord(400, -1));
+	EXPECT_EQ(401.f, ComputeModelMatrixWord(400, 0));
+	EXPECT_EQ(400.f + 2 * 16 + 1, ComputeModelMatrixWord(400, 2));
 }
 
 TEST(DynLayout, TheWordsCapacityLeavesHalfSpareAndAFloor)
 {
 	EXPECT_EQ(1u << 20, ComputeDynWordsCapacity(0));
 	// [rc4l] The Complex Doom chamber fight's bound, 8,267 pieces over 33,068 vertices, fits the floor.
-	EXPECT_EQ(1u << 20, ComputeDynWordsCapacity(ComputeDynWordsBound(8267, 33068)));
+	EXPECT_EQ(1u << 20, ComputeDynWordsCapacity(ComputeDynWordsBound(8267, 33068, 0)));
 	EXPECT_EQ(3000000u, ComputeDynWordsCapacity(2000000));
 }

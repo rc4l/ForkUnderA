@@ -22,6 +22,7 @@
 #ifdef _WIN32
   #include <windows.h>
   #include <dbghelp.h>
+  #include <tlhelp32.h>   // [Doruk-Aksoy] the process's threads, for sampling them all
   #pragma comment(lib, "dbghelp.lib")   // MSVC-only; ignored by GCC/Clang
   #include "features/telemetry/osprobe.h"   // [rc4l] DbgHelpLock
 #endif
@@ -112,9 +113,11 @@ unsigned WalkStack( CONTEXT ctx, DWORD64 stackHigh, std::vector<DWORD64> &frames
 }
 
 // One run: interrupt `thread` at `hz`, then resolve what was collected. Owns `thread` and closes it.
-void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax,
+// [Doruk-Aksoy] threads is one thread, or every thread of the process (allThreads), each sampled once a tick; stacks are walked for one alone, whose stack top is known.
+void SampleRun( std::vector<HANDLE> threads, double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax,
 	bool stacks, DWORD64 stackHigh )
 {
+	stacks = stacks && threads.size( ) == 1;
 	std::vector<DWORD64> pcs;
 	std::vector<int> tics;					// the leveltime each sample landed in, parallel to pcs
 	std::vector<DWORD64> frames;			// [rc4l] every sample's stack, back to back
@@ -141,7 +144,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	double elapsed = 0.0;
 
 	// [rc4l] Room for every sample up front, since growing a vector while the main thread is suspended can wait on a heap lock that thread holds.
-	const size_t capacity = (size_t)( budget * ( hz > 0 ? hz : 1000 ) * 1.25 ) + 64;
+	const size_t capacity = (size_t)( budget * ( hz > 0 ? hz : 1000 ) * 1.25 * threads.size( )) + 64;
 	pcs.reserve( capacity );
 	tics.reserve( capacity );
 	if ( stacks )
@@ -150,32 +153,35 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 		depths.reserve( capacity );
 	}
 
-	while (( elapsed < budget ) && ( pcs.size( ) < capacity ))
+	while (( elapsed < budget ) && ( pcs.size( ) + threads.size( ) <= capacity ))
 	{
-		// Suspend, read the instruction pointer, resume. Nothing else happens in here: every
-		// microsecond between these two calls is a microsecond the game is not running, so the
-		// profiler would be measuring itself.
-		if ( SuspendThread( thread ) != (DWORD)-1 )
+		for ( HANDLE thread : threads )
 		{
-			CONTEXT ctx;
-			memset( &ctx, 0, sizeof( ctx ));
-			// [rc4l] Unwinding restores the non-volatile registers, so a stack walk needs them too.
-			ctx.ContextFlags = stacks ? CONTEXT_FULL : CONTEXT_CONTROL;
-
-			if ( GetThreadContext( thread, &ctx ))
+			// Suspend, read the instruction pointer, resume. Nothing else happens in here: every
+			// microsecond between these two calls is a microsecond the game is not running, so the
+			// profiler would be measuring itself.
+			if ( SuspendThread( thread ) != (DWORD)-1 )
 			{
-#if defined( _M_X64 ) || defined( __x86_64__ )
-				pcs.push_back( (DWORD64)ctx.Rip );
-#elif defined( _M_ARM64 )
-				pcs.push_back( (DWORD64)ctx.Pc );
-#else
-				pcs.push_back( (DWORD64)ctx.Eip );
-#endif
-				tics.push_back( g_publishedTic.load( std::memory_order_relaxed ));
-				if ( stacks ) depths.push_back( WalkStack( ctx, stackHigh, frames ));
-			}
+				CONTEXT ctx;
+				memset( &ctx, 0, sizeof( ctx ));
+				// [rc4l] Unwinding restores the non-volatile registers, so a stack walk needs them too.
+				ctx.ContextFlags = stacks ? CONTEXT_FULL : CONTEXT_CONTROL;
 
-			ResumeThread( thread );
+				if ( GetThreadContext( thread, &ctx ))
+				{
+#if defined( _M_X64 ) || defined( __x86_64__ )
+					pcs.push_back( (DWORD64)ctx.Rip );
+#elif defined( _M_ARM64 )
+					pcs.push_back( (DWORD64)ctx.Pc );
+#else
+					pcs.push_back( (DWORD64)ctx.Eip );
+#endif
+					tics.push_back( g_publishedTic.load( std::memory_order_relaxed ));
+					if ( stacks ) depths.push_back( WalkStack( ctx, stackHigh, frames ));
+				}
+
+				ResumeThread( thread );
+			}
 		}
 
 		if ( timer != NULL )
@@ -243,7 +249,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 	const std::string json = zx::SampleReportJson( zx::RankSamples( hits, rows ), zx::ComputeInclusiveRanks( stackHits, rows ),
 		elapsed, (unsigned long long)hits.size( ));
 
-	CloseHandle( thread );
+	for ( HANDLE thread : threads ) CloseHandle( thread );
 
 	std::lock_guard<std::mutex> guard( g_lock );
 	g_report = json;
@@ -255,7 +261,7 @@ void SampleRun( HANDLE thread, double seconds, int hz, bool engineOnly, int top,
 
 } // namespace
 
-bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks, bool gameThread )
+bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMin, int ticMax, bool stacks, bool gameThread, bool allThreads )
 {
 #ifdef _WIN32
 	{
@@ -296,7 +302,25 @@ bool MCP_Sample_Arm( double seconds, int hz, bool engineOnly, int top, int ticMi
 		GetCurrentThreadStackLimits( &stackLow, &stackHigh );
 	}
 
-	std::thread( SampleRun, thread, seconds, hz, engineOnly, top, ticMin, ticMax, stacks, (DWORD64)stackHigh ).detach( );
+	std::vector<HANDLE> threads( 1, thread );
+	// [Doruk-Aksoy] Every thread the process has now, the one armed above among them; the sampler's own is made after and so is never in it.
+	if ( allThreads )
+	{
+		HANDLE snapshot = CreateToolhelp32Snapshot( TH32CS_SNAPTHREAD, 0 );
+		THREADENTRY32 entry;
+		entry.dwSize = sizeof( entry );
+		const DWORD self = GetCurrentProcessId( ), armedId = GetThreadId( thread );
+		if ( snapshot != INVALID_HANDLE_VALUE && Thread32First( snapshot, &entry ))
+			do
+			{
+				if ( entry.th32OwnerProcessID != self || entry.th32ThreadID == armedId ) continue;
+				HANDLE other = OpenThread( THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, entry.th32ThreadID );
+				if ( other != NULL ) threads.push_back( other );
+			} while ( Thread32Next( snapshot, &entry ));
+		if ( snapshot != INVALID_HANDLE_VALUE ) CloseHandle( snapshot );
+	}
+
+	std::thread( SampleRun, threads, seconds, hz, engineOnly, top, ticMin, ticMax, stacks, (DWORD64)stackHigh ).detach( );
 	return true;
 #else
 	// mac and Linux keep the external samplers, which walk the whole stack and see every thread.
