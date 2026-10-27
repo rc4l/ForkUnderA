@@ -190,6 +190,7 @@ struct MeshPiece
 	bool          mirrorCeiling;
 	// [rc4l] How far a scroller has moved the texture since the vertices were baked, added to every u and v by the shader.
 	float         scrollU, scrollV;
+	int           modelMatrix;  // [Doruk-Aksoy] a model surface's model-to-world matrix among the frame's (DynMatrices), which a GLDEFS shader reads as ModelMatrix, or -1
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -220,6 +221,7 @@ struct MeshPiece
 		onMirror = -1;
 		linkId = -1;
 		plain = false;
+		modelMatrix = -1;
 		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}
 };
@@ -328,6 +330,11 @@ void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto);
 // This frame's dynamic vertices and pieces.
 const MeshVertex *DynVertices(int &count);
 const MeshPiece   *DynPieces(int &count);
+
+// [Doruk-Aksoy] A model's matrix for this frame, column-major as VSMatrix keeps it, and the index its surfaces name it by (MeshPiece::modelMatrix).
+int DynAddMatrix(const float *matrix);
+// [Doruk-Aksoy] This frame's model matrices, sixteen floats each, and how many.
+const float *DynMatrices(int &count);
 
 // [rc4l] Bumped by every DynClear, so a backend can tell "same data as last time" from "new frame".
 //

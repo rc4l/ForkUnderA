@@ -41,6 +41,9 @@ struct WorldPipelineDesc
 // [rc4l] What `pipeline` (a WorldPipeline) is built with.
 WorldPipelineDesc ComputeWorldPipelineDesc(int pipeline);
 
+// [Doruk-Aksoy] Whether `pipeline` draws a GLDEFS shader's pieces with that shader's own program: every one but the red-alpha decals', whose stage never samples through fuaSurfaceTexel.
+bool ComputeWorldPipelineTakesUserShader(int pipeline);
+
 // [rc4l] A level batch's pipeline from its blend mode (MeshPiece::blendMode): 0 masked, 2 additive, anything else translucent.
 int ComputeBatchPipeline(int blendMode);
 

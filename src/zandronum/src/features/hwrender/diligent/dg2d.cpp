@@ -13,12 +13,15 @@
 #include "features/hwrender/computation/warp_compute.h"   // [rc4l] ComputeWarpTimer, the fuzz clock
 #include "features/rendersettings/rendersettings.h"   // [rc4l] gl_frameMS, the frame's clock
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
+#include "features/materials/materials.h"   // [Doruk-Aksoy] a quad's GLDEFS shader and its speed
+#include <map>
 #include "v_video.h"
 #include "tarray.h"
 #include "c_cvars.h"
 #include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, fua_dg_hud)
+EXTERN_CVAR(Bool, fua_dg_async_pipelines)
 
 namespace zx { namespace hwrender {
 
@@ -33,7 +36,8 @@ namespace zx { namespace hwrender {
 // Submission order is draw order and must not be reordered -- no material batching here. A 2D layer
 // sorted by texture would put the status bar behind the world and the console behind the menu.
 // [rc4l] fixedCm is 1 for a weapon layer, which takes the view's fixed colormap, and fuzz its fuzz shader (fuzz_compute's kFuzz*).
-struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz, tint[4], tintRange[3]; };
+// [Doruk-Aksoy] speed is the GLDEFS shader's, which its timer runs at.
+struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz, tint[4], tintRange[3], speed; };
 
 // [rc4l] The 2D constant block both stages read: the screen's reciprocal size and the fuzz clock in seconds (z), then the weapon's fixed colormap as the scene block carries it.
 #define FUA_SCREEN2D_GLSL "layout(binding = 0) uniform Screen { vec4 uInvScreen; vec4 uFixedColormap; vec4 uFixedRange; };\n"
@@ -46,6 +50,8 @@ struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz, tint[4],
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D[3];
 // [rc4l] A polygon's triangles, alpha-blended with the texture repeating, as FillSimplePoly samples a flat.
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2DWrap;
+// [Doruk-Aksoy] Each GLDEFS shader's twin of a 2D pipeline (0 to 2 by blend, 3 the polygons'), started the first time a quad draws with it, empty for one that could not be made.
+static UserPipelineTable g_user2D;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb2D;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb2D;
 static unsigned int g_vb2DCapacity = 0;
@@ -61,6 +67,7 @@ static const char *k2DVS =
 	"layout(location = 5) in float aFuzz;\n"
 	"layout(location = 6) in vec4 aTint;\n"
 	"layout(location = 7) in vec3 aTintRange;\n"
+	"layout(location = 8) in float aSpeed;\n"
 	FUA_SCREEN2D_GLSL
 	"layout(location = 0) out vec2 vUV;\n"
 	"layout(location = 1) out vec4 vColor;\n"
@@ -69,6 +76,7 @@ static const char *k2DVS =
 	"layout(location = 4) flat out float vFuzz;\n"
 	"layout(location = 5) flat out vec4 vTint;\n"
 	"layout(location = 6) flat out vec3 vTintRange;\n"
+	"layout(location = 7) flat out float vSpeed;\n"
 	"void main() {\n"
 	// Engine 2D space is ortho(0, W, H, 0): origin top-left, Y down. The Y is INVERTED here rather
 	// than passed through, because Diligent's Vulkan backend renders with a negative-height viewport
@@ -84,6 +92,7 @@ static const char *k2DVS =
 	"    vFuzz = aFuzz;\n"
 	"    vTint = aTint;\n"
 	"    vTintRange = aTintRange;\n"
+	"    vSpeed = aSpeed;\n"
 	"}\n";
 
 // [rc4l] The texture modes from gl_interface.h's TexMode, transcribed from getTexel() in main.fp.
@@ -101,33 +110,105 @@ static const char *k2DPS =
 	"layout(location = 4) flat in float vFuzz;\n"
 	"layout(location = 5) flat in vec4 vTint;\n"
 	"layout(location = 6) flat in vec3 vTintRange;\n"
+	"layout(location = 7) flat in float vSpeed;\n"
 	FUA_SCREEN2D_GLSL
 	FUA_FIXED_COLORMAP_GLSL
 	FUA_FUZZ_GLSL
 	FUA_DAMAGE_TINT_GLSL
 	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
-	"void main() {\n"
+	"vec4 fua2DRaw(vec2 uv) { return texture(sampler2D(uTex, uTex_sampler), uv); }\n"
+	"vec4 fua2DTexel(vec2 uv) {\n"
 	// [rc4l] A fuzzy weapon under r_fuzztype takes GL's fuzz shader on its texel, the jagged one sampling a splat of its coordinate.
 	"    int fuzz = int(vFuzz + 0.5);\n"
-	"    vec4 t = texture(sampler2D(uTex, uTex_sampler), fuzz == 5 ? fuaFuzzSplat(vUV, uInvScreen.z) : vUV);\n"
+	"    vec4 t = fua2DRaw(fuzz == 5 ? fuaFuzzSplat(uv, uInvScreen.z) : uv);\n"
 	"    if (vTexMode == 1)      t.rgb = vec3(1.0);\n"                       // TM_MASK
 	"    else if (vTexMode == 2) t.a = 1.0;\n"                               // TM_OPAQUE
 	"    else if (vTexMode == 3) t = vec4(1.0-t.r, 1.0-t.b, 1.0-t.g, t.a);\n"// TM_INVERSE
 	"    else if (vTexMode == 4) t = vec4(1.0, 1.0, 1.0, t.r);\n"            // TM_REDTOALPHA
-	"    else if (vTexMode == 5 && (vUV.t < 0.0 || vUV.t > 1.0)) t.a = 0.0;\n"// TM_CLAMPY
+	"    else if (vTexMode == 5 && (uv.t < 0.0 || uv.t > 1.0)) t.a = 0.0;\n"// TM_CLAMPY
 	/* [rc4l] getTexel's damage tint on the weapon or the status bar face, before the fuzz shader takes the texel. */
-	"    t = fuaDamageTint(t, vUV.t, vTint, vTintRange);\n"
-	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uInvScreen.z, t);\n"
-	"    outColor = t * vColor;\n"
+	"    t = fuaDamageTint(t, uv.t, vTint, vTintRange);\n"
+	"    if (fuzz > 0) t = fuaFuzz(fuzz, uv, uInvScreen.z, t);\n"
+	"    return t;\n"
+	"}\n"
+	/* [Doruk-Aksoy] The quad's colour, through its GLDEFS shader in that shader's own program; defined at the block below. */
+	"vec4 fua2DColor(vec2 fuaUV);\n"
+	"void main() {\n"
+	"    outColor = fua2DColor(vUV);\n"
 	"    if (vFixed > 0.5 && uFixedColormap.w > 0.5) outColor.rgb = fuaFixedColormap(outColor.rgb);\n"
-	"}\n";
+	"}\n"
+	"//FUA_2D_SHADERS\n";
 
 // [rc4l] The 2D constants on both stages of a 2D pipeline.
 static void BindScreen2D(Diligent::IPipelineState *pso)
 {
 	for (Diligent::SHADER_TYPE stage : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
 		if (auto *v = pso->GetStaticVariableByName(stage, "Screen")) v->Set(g_cb2D);
+}
+
+static const Diligent::LayoutElement k2DLayout[] = {
+	Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{4, 0, 1, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{5, 0, 1, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{6, 0, 4, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{7, 0, 3, Diligent::VT_FLOAT32, false},
+	Diligent::LayoutElement{8, 0, 1, Diligent::VT_FLOAT32, false},
+};
+static const Diligent::ShaderResourceVariableDesc k2DVars[] = {
+	{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+};
+
+// [rc4l] 2D pipeline `mode` over these shaders, its constants bound: 0 alpha, 1 additive, 2 multiply, and 3 a polygon's triangles, alpha-blended with the texture repeating.
+// [Doruk-Aksoy] A GLDEFS shader's (`user`) is made on the device's pool when fua_dg_async_pipelines is on, its constants bound once it is ready (FinishUser2DPipeline).
+static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *ps, const char *name, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &out, bool user = false)
+{
+	auto *swap = GetSwapChain();
+	if (swap == NULL) return;
+	Diligent::SamplerDesc samp;
+	// [rc4l] CLAMP, and no mips: the engine draws 2D with CLAMP_XY_NOMIP. Wrapping would bleed the
+	// opposite edge of a font glyph into its neighbour, and a mipped status bar goes soft.
+	samp.MinFilter = Diligent::FILTER_TYPE_POINT;
+	samp.MagFilter = Diligent::FILTER_TYPE_POINT;
+	samp.MipFilter = Diligent::FILTER_TYPE_POINT;
+	samp.AddressU = samp.AddressV = mode == 3 ? Diligent::TEXTURE_ADDRESS_WRAP : Diligent::TEXTURE_ADDRESS_CLAMP;
+	const Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uTex", samp } };
+
+	Diligent::GraphicsPipelineStateCreateInfo pci;
+	pci.PSODesc.Name = name;
+	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
+	pci.GraphicsPipeline.NumRenderTargets = 1;
+	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
+	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
+	pci.GraphicsPipeline.RasterizerDesc.ScissorEnable = true;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
+	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
+	auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
+	rt.BlendEnable = true;
+	// GL_DST_COLOR / GL_ZERO -- the screen multiplied by the blend colour.
+	rt.SrcBlend  = mode == 2 ? Diligent::BLEND_FACTOR_DEST_COLOR : Diligent::BLEND_FACTOR_SRC_ALPHA;
+	rt.DestBlend = mode == 2 ? Diligent::BLEND_FACTOR_ZERO : mode == 1 ? Diligent::BLEND_FACTOR_ONE : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+	rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
+	rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
+	rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
+	rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
+	pci.GraphicsPipeline.InputLayout.LayoutElements = k2DLayout;
+	pci.GraphicsPipeline.InputLayout.NumElements = sizeof(k2DLayout) / sizeof(k2DLayout[0]);
+	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
+	pci.PSODesc.ResourceLayout.Variables = k2DVars;
+	pci.PSODesc.ResourceLayout.NumVariables = sizeof(k2DVars) / sizeof(k2DVars[0]);
+	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
+	pci.PSODesc.ResourceLayout.NumImmutableSamplers = sizeof(samplers) / sizeof(samplers[0]);
+	pci.pVS = vs;
+	pci.pPS = ps;
+	if (user && fua_dg_async_pipelines) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
+	CreatePipeline(pci, &out);
+	if (out && !user) BindScreen2D(out);
 }
 
 static bool Ensure2DPipeline()
@@ -151,101 +232,54 @@ static bool Ensure2DPipeline()
 	CreateDeviceBuffer(cbd, nullptr, &g_cb2D);
 	if (!g_cb2D) return false;
 
-	Diligent::LayoutElement layout[] = {
-		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{2, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{3, 0, 1, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{4, 0, 1, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{5, 0, 1, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{6, 0, 4, Diligent::VT_FLOAT32, false},
-		Diligent::LayoutElement{7, 0, 3, Diligent::VT_FLOAT32, false},
-	};
-	static Diligent::ShaderResourceVariableDesc vars[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
-	};
-	Diligent::SamplerDesc samp;
-	// [rc4l] CLAMP, and no mips: the engine draws 2D with CLAMP_XY_NOMIP. Wrapping would bleed the
-	// opposite edge of a font glyph into its neighbour, and a mipped status bar goes soft.
-	samp.MinFilter = Diligent::FILTER_TYPE_POINT;
-	samp.MagFilter = Diligent::FILTER_TYPE_POINT;
-	samp.MipFilter = Diligent::FILTER_TYPE_POINT;
-	samp.AddressU = Diligent::TEXTURE_ADDRESS_CLAMP;
-	samp.AddressV = Diligent::TEXTURE_ADDRESS_CLAMP;
-	const Diligent::ImmutableSamplerDesc samplers[] = {
-		{ Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
-		{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", samp },
-	};
-
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = "fua 2D PSO";
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	pci.GraphicsPipeline.RasterizerDesc.ScissorEnable = true;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthWriteEnable = false;
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOp = Diligent::BLEND_OPERATION_ADD;
-		rt.SrcBlendAlpha  = Diligent::BLEND_FACTOR_ONE;
-		rt.DestBlendAlpha = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		rt.BlendOpAlpha = Diligent::BLEND_OPERATION_ADD;
-	}
-	pci.GraphicsPipeline.InputLayout.LayoutElements = layout;
-	pci.GraphicsPipeline.InputLayout.NumElements = sizeof(layout) / sizeof(layout[0]);
-	pci.PSODesc.ResourceLayout.DefaultVariableType = Diligent::SHADER_RESOURCE_VARIABLE_TYPE_STATIC;
-	pci.PSODesc.ResourceLayout.Variables = vars;
-	pci.PSODesc.ResourceLayout.NumVariables = 1;
-	pci.PSODesc.ResourceLayout.ImmutableSamplers = samplers;
-	pci.PSODesc.ResourceLayout.NumImmutableSamplers = 1;
-	pci.pVS = vs;
-	pci.pPS = ps;
 	for (int mode = 0; mode < 3; mode++)
 	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.BlendEnable = true;
-		if (mode == 2)
-		{
-			// GL_DST_COLOR / GL_ZERO -- the screen multiplied by the blend colour.
-			rt.SrcBlend  = Diligent::BLEND_FACTOR_DEST_COLOR;
-			rt.DestBlend = Diligent::BLEND_FACTOR_ZERO;
-		}
-		else
-		{
-			rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-			rt.DestBlend = (mode == 1) ? Diligent::BLEND_FACTOR_ONE
-			                           : Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		}
-		CreatePipeline(pci, &g_pso2D[mode]);
+		Make2DPipeline(mode, vs, ps, "fua 2D PSO", g_pso2D[mode]);
 		if (!g_pso2D[mode]) return false;
-		BindScreen2D(g_pso2D[mode]);
 	}
-	{
-		auto &rt = pci.GraphicsPipeline.BlendDesc.RenderTargets[0];
-		rt.SrcBlend  = Diligent::BLEND_FACTOR_SRC_ALPHA;
-		rt.DestBlend = Diligent::BLEND_FACTOR_INV_SRC_ALPHA;
-		Diligent::SamplerDesc wrap = samp;
-		wrap.AddressU = Diligent::TEXTURE_ADDRESS_WRAP;
-		wrap.AddressV = Diligent::TEXTURE_ADDRESS_WRAP;
-		const Diligent::ImmutableSamplerDesc wrapSamplers[] = {
-			{ Diligent::SHADER_TYPE_PIXEL, "uTex", wrap },
-			{ Diligent::SHADER_TYPE_PIXEL, "uBrightmap", wrap },
-		};
-		pci.PSODesc.Name = "fua 2D polygon PSO";
-		pci.PSODesc.ResourceLayout.ImmutableSamplers = wrapSamplers;
-		CreatePipeline(pci, &g_pso2DWrap);
-		if (!g_pso2DWrap) return false;
-		BindScreen2D(g_pso2DWrap);
-	}
-	return true;
+	Make2DPipeline(3, vs, ps, "fua 2D polygon PSO", g_pso2DWrap);
+	return g_pso2DWrap.RawPtr() != NULL;
+}
+
+// [Doruk-Aksoy] The plain 2D pipeline a GLDEFS shader's twin of `mode` stands in for.
+static Diligent::IPipelineState *Plain2D(int mode)
+{
+	return mode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[mode].RawPtr();
+}
+
+// [Doruk-Aksoy] A GLDEFS shader's 2D pipeline once ready: its constants bound and kept only if it takes the plain one's bindings.
+static bool FinishUser2DPipeline(const std::pair<int, int> &key, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+{
+	if (pso) BindScreen2D(pso);
+	return KeepUserPipeline(key.second, Plain2D(key.first), pso);
+}
+
+// [Doruk-Aksoy] 2D pipeline `mode` running GLDEFS shader `shader`'s own program, started the first time a quad asks and committed with the plain one's bindings; the plain one for -1, while it is made, and for a shader left out.
+static Diligent::IPipelineState *Pso2D(int mode, int shader)
+{
+	Diligent::IPipelineState *plain = Plain2D(mode);
+	if (plain == NULL || !UserShaderUsable(shader)) return plain;
+	auto start = [&]() {
+		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
+		auto vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua 2D VS", k2DVS);
+		auto ps = Compile2DUserShader(shader);
+		FString name;
+		name.Format("fua 2D PSO %s", UserShaderName(shader));
+		if (vs && ps) Make2DPipeline(mode, vs, ps, name.GetChars(), made, true);
+		return made;
+	};
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> *made =
+		ComputeUserPipeline(g_user2D, std::make_pair(mode, shader), !fua_dg_async_pipelines, start, UserPipelineStatus, FinishUser2DPipeline);
+	return made != NULL ? made->RawPtr() : plain;
+}
+
+const char *Ps2DSource() { return k2DPS; }
+
+Diligent::RefCntAutoPtr<Diligent::IShader> Compile2DUserShader(int shader, bool async)
+{
+	FString name;
+	name.Format("fua 2D PS %s", UserShaderName(shader));
+	return (async ? CompileShaderAsync : CompileShader)(Diligent::SHADER_TYPE_PIXEL, name.GetChars(), k2DPS, shader);
 }
 
 void Draw2D(Diligent::IDeviceContext *ctx)
@@ -271,6 +305,8 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	static int builtQuads2D = 0;
 	// [rc4l] The fixed colormap this frame's weapon was recorded under, one for the whole frame as GL's render state holds one.
 	static int fixed2D = 0;
+	// [Doruk-Aksoy] Each quad's GLDEFS shader, -1 for none, as Zandronum 3.3 runs a HUD image's shader too.
+	static std::vector<int> quadShader;
 	const unsigned int gen = zx::draw2d::Generation2D();
 	if (zx::draw2d::ComputeRebuild2DVertices(gen, built2D, nq, builtQuads2D))
 	{
@@ -278,9 +314,16 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		builtQuads2D = nq;
 		vb.Clear();
 		fixed2D = 0;
+		quadShader.assign(nq, -1);
+		const void *describedMat = (const void *)(size_t)-1;
+		zx::materials::MaterialInfo info;
+		bool described = false;
 		for (int i = 0; i < nq; i++)
 		{
 			const zx::draw2d::Quad2D &q = quads[i];
+			if (q.material != describedMat) { describedMat = q.material; described = zx::materials::DescribeMaterial(q.material, info); }
+			const bool shaded = described && q.kind != zx::draw2d::kQuadLine && info.userShader >= 0;
+			quadShader[i] = shaded ? info.userShader : -1;
 			Vertex2D v[4];
 			if (q.kind == zx::draw2d::kQuadLine)
 			{
@@ -318,6 +361,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 				v[k].r = q.r; v[k].g = q.g; v[k].b = q.b; v[k].a = q.a; v[k].texMode = (float)q.texMode; v[k].fixedCm = q.fixedColormap != 0 ? 1.f : 0.f; v[k].fuzz = (float)q.fuzz;
 				v[k].tint[0] = q.tint.r; v[k].tint[1] = q.tint.g; v[k].tint[2] = q.tint.b; v[k].tint[3] = q.tint.strength;
 				v[k].tintRange[0] = q.tint.top; v[k].tintRange[1] = q.tint.bottom; v[k].tintRange[2] = q.tint.glow ? 1.f : 0.f;
+				v[k].speed = shaded ? info.shaderSpeed : 1.f;
 			}
 			vb.Push(v[0]); vb.Push(v[1]); vb.Push(v[2]);
 			vb.Push(v[2]); vb.Push(v[1]); vb.Push(v[3]);
@@ -345,7 +389,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	ctx->SetVertexBuffers(0, 1, vbs, offsets, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::SET_VERTEX_BUFFERS_FLAG_RESET);
 	// The pipeline is chosen per quad now, so this only primes it.
-	int curBlend = -1;
+	Diligent::IPipelineState *curRun = NULL;
 
 	// The backend window is its own size, so the engine's scissor rects scale with the viewport.
 	const int fw = FrameWidth(), fh = FrameHeight();
@@ -362,10 +406,12 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 		// [rc4l] A polygon's triangles take the repeating pipeline, numbered past the three blends.
 		const int blendMode = q.kind == zx::draw2d::kQuadTri ? 3 : (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
 		Diligent::IPipelineState *pso = blendMode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[blendMode].RawPtr();
-		if (blendMode != curBlend)
+		// [Doruk-Aksoy] Its GLDEFS shader's program, committed with the plain pipeline's binding.
+		Diligent::IPipelineState *run = Pso2D(blendMode, i < quadShader.size() ? quadShader[i] : -1);
+		if (run != curRun)
 		{
-			curBlend = blendMode;
-			ctx->SetPipelineState(pso);
+			curRun = run;
+			ctx->SetPipelineState(run);
 			// A pipeline change drops what was committed, so the next quad has to commit again even
 			// if it wants the same material.
 			curMat = (const void *)(size_t)-1;

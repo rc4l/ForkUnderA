@@ -101,8 +101,10 @@ export function sampleTable(report, { top = 30 } = {}) {
     ...(report.inclusive ? rows("inclusive", report.inclusive) : []), ...sampleNotes(report)];
 }
 
-export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false, game = false) {
-  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0, ...(stacks ? { stacks: 1 } : {}), ...(game ? { game: 1 } : {}) });
+// [Doruk-Aksoy] `all` samples every thread of the process together (perf.sample's all), without stacks.
+export async function sampleBridge(conn, seconds, top, engineOnly, stacks = false, game = false, all = false) {
+  const started = await conn.rpc("perf.sample", { seconds, top, engine: engineOnly ? 1 : 0, ...(stacks ? { stacks: 1 } : {}), ...(game ? { game: 1 } : {}),
+    ...(all ? { all: 1 } : {}) });
   if (!started) return { available: false, backend: "bridge", error: "perf.sample was refused", functions: [] };
 
   // The run itself takes `seconds`; symbolising thousands of addresses afterwards takes a moment
@@ -126,11 +128,11 @@ export async function sampleBridge(conn, seconds, top, engineOnly, stacks = fals
 // sampler where the OS has a good one, the in-engine sampler on Windows where it does not.
 // `_run`/`_platform` are test seams (default to the real spawn / host platform); production never
 // passes them.
-export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, stacks = false, game = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
+export function sampleProcess(pid, { seconds = 2, top = 12, engineOnly = false, stacks = false, game = false, all = false, conn = null, _run = realRun, _platform = os.platform() } = {}) {
   const plat = _platform;
   if (plat === "darwin") return sampleMac(pid, seconds, top, engineOnly, _run);
   if (plat === "linux") return sampleLinux(pid, seconds, top, engineOnly, _run);
-  if (conn) return sampleBridge(conn, seconds, top, engineOnly, stacks, game);
+  if (conn) return sampleBridge(conn, seconds, top, engineOnly, stacks, game, all);
   return Promise.resolve({
     available: false, backend: "none",
     error: "the Windows sampler is in-engine and needs a bridge connection: pass --port (and --token), not --pid",

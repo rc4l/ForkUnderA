@@ -186,6 +186,8 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 
 	vp_comb << defines << i_data.GetString().GetChars();
 	FString fp_comb = vp_comb;
+	// [Doruk-Aksoy] Where main.fp starts, which an old GLDEFS shader's define goes ahead of.
+	const long fpStart = (long)fp_comb.Len();
 
 	vp_comb << vp_data.GetString().GetChars() << "\n";
 	fp_comb << fp_data.GetString().GetChars() << "\n";
@@ -204,11 +206,11 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 			if (pp_data.GetString().IndexOf("ProcessTexel") < 0)
 			{
 				// this looks like an old custom hardware shader.
-				// We need to replace the ProcessTexel call to make it work.
-
-				fp_comb.Substitute("vec4 frag = ProcessTexel();", "vec4 frag = Process(vec4(1.0));");
+				// [Doruk-Aksoy] main.fp calls its Process(color) as Zandronum 3.3 did, with the draw's alpha, keeping the alpha it returns (FUA_OLD_PROCESS).
+				fp_comb = fp_comb.Left(fpStart) + "#define FUA_OLD_PROCESS\n" + fp_comb.Mid(fpStart);
 			}
-			fp_comb << pp_data.GetString().GetChars();
+			// [Doruk-Aksoy] Zandronum 3.3's camerapos and gl_TextureMatrix read through the names this base shader has.
+			fp_comb << zx::hwshaders::ComputeLegacyShaderNames(pp_data.GetString().GetChars()).c_str();
 			fp_comb.Substitute("gl_TexCoord[0]", "vTexCoord");	// fix old custom shaders.
 
 			if (pp_data.GetString().IndexOf("ProcessLight") < 0)
@@ -358,30 +360,39 @@ bool FShader::Bind()
 //==========================================================================
 //
 // Since all shaders are REQUIRED, any error here needs to be fatal
+// [Doruk-Aksoy] All but a GLDEFS one, which CompileShaders leaves out instead.
 //
 //==========================================================================
 
-FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath, bool usediscard)
+// [Doruk-Aksoy] Compile's build without its fatal error: NULL, and the compiler's reason in `error`, when the shader does not build.
+static FShader *TryCompile(const char *ShaderName, const char *ShaderPath, bool usediscard, FString &error)
 {
 	FString defines;
 	// this can't be in the shader code due to ATI strangeness.
 	if (gl.MaxLights() == 128) defines += "#define MAXLIGHTS128\n";
 	if (!usediscard) defines += "#define NO_ALPHATEST\n";
 
-	FShader *shader = NULL;
+	FShader *shader = new FShader(ShaderName);
 	try
 	{
-		shader = new FShader(ShaderName);
-		if (!shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars()))
-		{
-			I_FatalError("Unable to load shader %s\n", ShaderName);
-		}
+		if (shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars())) return shader;
 	}
 	catch(CRecoverableError &err)
 	{
-		if (shader != NULL) delete shader;
-		shader = NULL;
-		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, err.GetMessage());
+		if (err.GetMessage()) error = err.GetMessage();
+	}
+	delete shader;
+	return NULL;
+}
+
+FShader *FShaderManager::Compile (const char *ShaderName, const char *ShaderPath, bool usediscard)
+{
+	FString error;
+	FShader *shader = TryCompile(ShaderName, ShaderPath, usediscard, error);
+	if (shader == NULL)
+	{
+		if (error.IsEmpty()) I_FatalError("Unable to load shader %s\n", ShaderName);
+		I_FatalError("Unable to load shader %s:\n%s\n", ShaderName, error.GetChars());
 	}
 	return shader;
 }
@@ -505,7 +516,14 @@ void FShaderManager::CompileShaders()
 		FString name = ExtractFileBase(zx::hwshaders::UserShaderLump(i));
 		FName sfn = name;
 
-		FShader *shc = Compile(sfn, zx::hwshaders::UserShaderLump(i), true);
+		// [Doruk-Aksoy] One that does not compile here is noted and its textures drawn with the default shader under its name, as the backend leaves it out, rather than ending the game.
+		FString error;
+		FShader *shc = TryCompile(sfn, zx::hwshaders::UserShaderLump(i), true, error);
+		if (shc == NULL)
+		{
+			Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("GL", zx::hwshaders::UserShaderLump(i), error.GetChars()).c_str());
+			shc = Compile(sfn, defaultshaders[0].gettexelfunc, true);
+		}
 		mTextureEffects.Push(shc);
 	}
 

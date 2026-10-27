@@ -42,6 +42,8 @@ int BackendPaletteBrightness();
 bool OpenBackendOutput(int width, int height);
 // [rc4l] A window is about to be destroyed (an SDL frame buffer's, on a mode change): the swapchain made on it goes first, and the next OpenBackendOutput makes one on the new window.
 void ForgetBackendWindow(void *window);
+// [Doruk-Aksoy] Every GLDEFS shader's programs compiled now, at launch once GLDEFS is read, as GL compiles its own at startup; a no-op before the device is up, once done, or with fua_dg_precompile_shaders off.
+void PrecompileUserShaders();
 
 // [rc4l] The largest 2D texture the device takes, which camera textures are sized against; 0 before the device is up.
 int BackendMaxTextureSize();

@@ -14,8 +14,8 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 
 | File | What |
 |---|---|
-| `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants; `UpdateBufferInPages` and `EnsureGrowingBuffer`, which every per-frame upload and grow-only buffer goes through |
-| `dgpipelines.cpp` | the world pipelines and their material bindings: bindless array, slots, animated slots |
+| `dgscene.cpp` | the world pass: frame prep, `DrawWorld`, `DrawSceneOnce`, scene depth and constants; `UpdateBufferInPages` and `EnsureGrowingBuffer`, which every per-frame upload and grow-only buffer goes through; every shader's compile (`CompileShaderText`), whose SPIR-V skips SPIRV-Tools' optimizer (about 93% of a compile, no GPU time saved) except on WebGPU, whose WGSL conversion is unchecked without it (`fua_dg_spirv_optimize` 1 always, 0 never, -1 that default; `computation/spirvoptimize_compute`), a change letting go of every shader and pipeline made the other way |
+| `dgpipelines.cpp` | the world pipelines and their material bindings: bindless array, slots, animated slots; every world pipeline started on the device's pool before any is waited for, and a GLDEFS shader's twin drawn as the plain pipeline until the driver has it (`computation/userpipelines_compute`, `fua_dg_async_pipelines 0` to wait instead) |
 | `dgatlas.cpp` | the sprite atlas: on the path with a binding per material (WebGPU, or `fua_dg_bindless 0`) and point sampling without mipmaps (`r_texture_filter 0`), sprites draw from shared 2048-texel pages with their texture coordinates moved onto them, so the sorted pass binds a page rather than a texture a sprite (`computation/spriteatlas_compute`; `fua_dg_spriteatlas 0` for the A/B; scenario `spriteatlas`) |
 | `dgupload.cpp` | the scene buffer: the material-sorted build and its in-place patches; a surface that changes material or pass (a switch, a lowering floor) moves to an appended batch, and the whole scene is rebuilt only when the change list overflows or a translucent surface changes (`ComputeRebatchPlan`); the piece records grow before a frame's sprites outnumber the room behind the level's (`EnsureDynamicRecords`, `ComputePieceCapacity`; scenario `spritecrowd`) |
 | `dgdynamic.cpp` | sprites, models and decals each frame, and the sorted translucent pass |
@@ -76,7 +76,7 @@ The world, sprites, models, the 2D layer, wipes, fixed colormaps (invulnerabilit
 torches, `fixedcolormap` and `lightamp`), mirrors, stacked sectors, skyboxes and horizons are ported, each
 with a GL-against-Vulkan scenario in `tools/fuactl/scenarios`. Still missing or different:
 
-- a GLDEFS hardware shader's own `ProcessLight`, or one leaning on more of GL's `main.fp` than `getTexel`, `vTexCoord` and `timer`, which draws without it (see `features/hwshaders`);
+- a GLDEFS hardware shader's own `ProcessLight`, or one leaning on a name of GL's `main.fp` past those `features/hwshaders` lists (`ViewMatrix`, `ProjectionMatrix`, `uObjectColor`, ...), which draws without it;
 - ray-traced mirrors (`fua_dg_rtmirrors`, off by default) show the opaque sprites each reflection's walk took, as
   the quads that walk faced (`fua_dg_rtsprites`, scenario `rtsprites`), lit and fogged as GL's reflected view
   is; they leave out dynamic lights, brightmaps, animated textures, translucent sprites and models;

@@ -8,6 +8,7 @@
 
 #include "features/hwrender/computation/tracedsprite_compute.h"   // [rc4l] TracedSprite
 #include "features/hwrender/computation/texflags_compute.h"   // [rc4l] ComputePieceTexFlags, the bits the scene shaders test
+#include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ProgramKind
 #include "c_dispatch.h"
 #include "c_console.h"
 
@@ -202,6 +203,7 @@ struct SceneBatch
 	bool         mirrorCeiling;
 	int          mirrorSlot;
 	int          walkId;   // [rc4l] a blended batch's one piece's PieceStackId, which the walk marks it reached by, or -1
+	int          userShader;   // [Doruk-Aksoy] the GLDEFS shader its pieces draw with (ScenePSO), or -1
 };
 
 // [rc4l] One dynamic draw: a contiguous span of this frame's sprite stream sharing a material, a
@@ -230,6 +232,7 @@ struct DynRun
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
 	int          general;      // [rc4l] its first general vertex, or -1 for a packed sprite, which has none
+	int          userShader;   // [Doruk-Aksoy] the GLDEFS shader it draws with (ScenePSO), or -1
 };
 
 // [rc4l] The array's size on this device (ComputeMaterialSlotCapacity), which CompileShader hands every shader as FUA_MAT_SLOTS; 0 means a binding per material.
@@ -397,7 +400,14 @@ void ReleaseWorldSRBs();
 void ResetMaterialSlots();
 void SlotReport(int n, FString &out);
 Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
-const TArray<MatSlot> &MaterialSlots();
+// [Doruk-Aksoy] World pipeline `pipeline` running GLDEFS shader userShader's own program, made the first time it is asked for and committed with the plain one's bindings; the plain one for -1, for a shader that does not compile, or where none runs (ComputeWorldPipelineTakesUserShader).
+Diligent::IPipelineState *ScenePSO(int pipeline, int userShader);
+// [Doruk-Aksoy] The programs the level's own batches draw with, made at upload rather than on the frame that first shows one.
+void PrewarmUserPipelines();
+// [Doruk-Aksoy] Every GLDEFS shader's program made (and kept for the session), and which of them run, for fua_dg_hwshaders.
+void UserShaderReport(FString &out);
+// [Doruk-Aksoy] fua_dg_shaderbench: the launch's GLDEFS programs compiled again, uncached, at most `inFlight` at a time on the device's pool, and how long that took.
+void ShaderCompileBench(int inFlight, FString &out);const TArray<MatSlot> &MaterialSlots();
 int FilledSlotCount();
 void MarkMaterialSlotsCurrent();
 
@@ -503,9 +513,8 @@ bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Dilige
 
 // [rc4l] The sky (dgsky.cpp, dgskyportal.cpp, dgskylooks.cpp).
 void EnsureSky();
-// [rc4l] The marker a scene shader takes GLDEFS' hardware shaders at, and the block that replaces it (dgpipelines.cpp), each shader checked to compile alone and all of them dropped if together they break the scene shaders.
-#define kUserShaderMarker "//FUA_USER_SHADERS"
-const std::string &UserShaderBlock();
+// [Doruk-Aksoy] The block CompileShader puts at a kind's marker (ComputeProgramMarker): GLDEFS shader userShader's program, or the plain one for -1 (dgpipelines.cpp).
+std::string ProgramBlock(zx::hwshaders::ProgramKind kind, int userShader);
 // [rc4l] Each sky other than the level's that the player's sky surfaces show this frame, drawn into a picture of its own before the frame, which DrawSkySurfaces paints them from.
 void RenderSkyLooks(Diligent::IDeviceContext *ctx);
 // [rc4l] The same for another view about to be drawn at w by h from the eye in g_mvp (a camera texture, a stacked view by slot, a mirror), before its target is bound; ForgetViewSkyLooks once it is drawn.

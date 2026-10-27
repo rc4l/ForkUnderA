@@ -165,8 +165,10 @@
 #include "ShaderResourceBinding.h"
 #include "Shader.h"
 #include "RefCntAutoPtr.hpp"
+#include <string>
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture, CreateDeviceBuffer
 #include "features/hwrender/computation/uploadguard_compute.h"   // [rc4l] UploadShadow
+#include "features/hwrender/computation/userpipelines_compute.h"   // [Doruk-Aksoy] UserPipelines
 
 class FString;
 
@@ -211,7 +213,27 @@ void ClampDepthLikeGL(Diligent::GraphicsPipelineDesc &gp);
 void SetBlendEquation(Diligent::RenderTargetBlendDesc &rt, int blend);
 
 // [rc4l] One GLSL stage compiled as written, or null when it fails (Diligent says why through its message callback).
-Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source);
+// [Doruk-Aksoy] userShader 0 up compiles GLDEFS shader userShader's own program of a scene stage (FUA_USER_SHADER defined, its block at the marker), and each text is compiled once (ReleaseShaderCache).
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShader(Diligent::SHADER_TYPE type, const char *name, const char *source, int userShader = -1);
+// [Doruk-Aksoy] The same, compiled in the background on the device's pool: the shader comes back at once, to be waited for with GetStatus(true) (CompileShader waits for one itself).
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShaderAsync(Diligent::SHADER_TYPE type, const char *name, const char *source, int userShader = -1);
+// [Doruk-Aksoy] The compiled shaders let go, before the device is.
+void ReleaseShaderCache();
+// [Doruk-Aksoy] CompileShader's final text for a source and GLDEFS shader (its defines and program block), and that text compiled with no cache, in the background with `async`.
+std::string ShaderText(const char *source, int userShader);
+Diligent::RefCntAutoPtr<Diligent::IShader> CompileShaderText(Diligent::SHADER_TYPE type, const char *name, const std::string &text, bool async);
+// [Doruk-Aksoy] The 2D layer's fragment source (dg2d.cpp), for compiling its GLDEFS programs outside it.
+const char *Ps2DSource();
+// [Doruk-Aksoy] Whether GLDEFS shader `shader` may have programs made: its lump read and none of them failed; and its lump's name (dgpipelines.cpp).
+bool UserShaderUsable(int shader);
+const char *UserShaderName(int shader);
+// [Doruk-Aksoy] Whether `made`, GLDEFS shader `shader`'s twin of `plain`, is kept: made, and taking plain's bindings, else released and the shader left out with its console note.
+bool KeepUserPipeline(int shader, Diligent::IPipelineState *plain, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &made);
+// [Doruk-Aksoy] GLDEFS shaders' twins of one kind of pipeline, made on the device's pool (userpipelines_compute.h), and a pipeline's status as that reads it, waited for with `wait`.
+typedef UserPipelines<Diligent::RefCntAutoPtr<Diligent::IPipelineState>> UserPipelineTable;
+int UserPipelineStatus(Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso, bool wait);
+// [Doruk-Aksoy] GLDEFS shader `shader`'s 2D fragment program (dg2d.cpp), compiled once and kept by CompileShader, in the background with `async`; null when it does not compile.
+Diligent::RefCntAutoPtr<Diligent::IShader> Compile2DUserShader(int shader, bool async = false);
 // [rc4l] Every backend pipeline is made here, its shaders' storage buffers marked as never bound with a dynamic offset (none is), since WebGPU allows a pipeline only 8 that are.
 void CreatePipeline(const Diligent::GraphicsPipelineStateCreateInfo &pci, Diligent::IPipelineState **pso);
 
