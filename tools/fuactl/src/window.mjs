@@ -99,7 +99,8 @@ export function gameWindowOf(windows, pid) {
 }
 
 function runPowerShell(script) {
-  const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { encoding: "utf8" });
+  // [Doruk-Aksoy] Add-Type compiles with LIB's folders and fails on one that no longer exists (a Visual Studio update leaves it stale), and it needs none.
+  const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { encoding: "utf8", env: { ...process.env, LIB: "" } });
   if (r.error) throw r.error;
   return r.stdout || "";
 }
