@@ -367,7 +367,9 @@ void Fua_SetBackendWindowSize(int w, int h);
 void ReleaseMaterials();
 
 // [rc4l] The world pass and frame composition (dgscene.cpp).
-bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color);
+// [Doruk-Aksoy] In `format`, or the swapchain's when TEX_FORMAT_UNKNOWN.
+bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color,
+	Diligent::TEXTURE_FORMAT format = Diligent::TEX_FORMAT_UNKNOWN);
 bool CreateDepthTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth);
 zx::hwrender::BackendCamera CurrentCamera();
 void DrawSceneOnce(bool present = true, bool pump = true);
@@ -509,8 +511,10 @@ bool CreateNormalTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<
 // [rc4l] A GL vertex (x, y, height) as the mesh stores it (x, height, y), tagged with its piece.
 SceneVertex ToSceneVertex(const zx::levelmesh::MeshVertex &sv, unsigned int pieceIndex);
 Diligent::ITextureView *EnsureSceneDepth();
+// [Doruk-Aksoy] The colour in `format`, or the swapchain's when TEX_FORMAT_UNKNOWN.
 bool CreateViewTextures(int w, int h, const char *name,
-	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth);
+	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth,
+	Diligent::TEXTURE_FORMAT format = Diligent::TEX_FORMAT_UNKNOWN);
 bool CreatePictureBinding(Diligent::IPipelineState *pso, const char *var, Diligent::ITexture *tex,
 	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> &srb);
 
@@ -532,8 +536,9 @@ void ResetSkyForLevel();
 void GetSkyConstants(float &angle, float &xScale, float &vScale, unsigned char &capR, unsigned char &capG, unsigned char &capB);
 int SkyDraws();
 Diligent::IPipelineState *SkyPortalPicturePSO();
+// [Doruk-Aksoy] Drawing into `rtvFormat`, or the swapchain's when TEX_FORMAT_UNKNOWN.
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso);
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso, Diligent::TEXTURE_FORMAT rtvFormat = Diligent::TEX_FORMAT_UNKNOWN);
 // [Doruk-Aksoy] This frame's post-process shaders decided, once before the main view; true when the 3D must be drawn apart from the frame for them.
 bool BeginPostProcessFrame(bool stereo);
 // [Doruk-Aksoy] The beforebloom and scene stages, which leave their result in the frame with the view's own 2D under the scene ones (first2D the quad the rest starts at); false when none ran.
@@ -547,7 +552,8 @@ void PostProcessPresented();
 const char *PictureVS();
 // [rc4l] CreatePicturePSO with `count` pictures named in `pictures`, each mutable and sampled with filter; any other resource of ps is static.
 bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
-	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso);
+	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso,
+	Diligent::TEXTURE_FORMAT rtvFormat = Diligent::TEX_FORMAT_UNKNOWN);
 Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const char *name,
 	Diligent::SHADER_RESOURCE_VARIABLE_TYPE texType, bool depthOnly = false);
 bool BindScreenSurfaces(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Diligent::IBuffer> &vb,

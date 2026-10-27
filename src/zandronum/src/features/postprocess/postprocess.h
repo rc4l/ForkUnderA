@@ -46,6 +46,12 @@ unsigned PostShadersGeneration();
 // [Doruk-Aksoy] Says once at launch that a GL window draws without the declared shaders.
 void NotePostProcessRenderer();
 
+// [Doruk-Aksoy] Reads only the post-process blocks of the game's *DEFS lump and every GLDEFS, for a dedicated server whose null renderer reads none of the rest.
+void ReadPostProcessDeclarations();
+
+// [Doruk-Aksoy] Whether GLDEFS declares `shader` and, unless `uniform` is empty, that uniform of it; anything else a script names is ignored.
+bool PostShaderDeclared(const char *shader, const char *uniform);
+
 // [Doruk-Aksoy] Whether post-process shaders run at all (gl_custompost).
 bool PostProcessAllowed();
 

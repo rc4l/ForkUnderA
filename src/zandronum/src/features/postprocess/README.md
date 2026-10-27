@@ -46,28 +46,53 @@ With no bloom, a `beforebloom` shader differs from a `scene` one only by running
 ## State
 
 - GLDEFS `Enabled` is how each level starts.
-- `shaderenable` and `shaderuniform` change the level's state (`FLevelLocals::fua_postShaders`), which lasts
-  until the level ends. A player's own entry wins over everyone's. A timed entry that runs out leaves
-  everyone's in place.
+- `shaderenable` and `shaderuniform`, and the `fua_` ACS functions (`features/acs-shaders`), change the
+  level's state (`FLevelLocals::fua_postShaders`), which lasts until the level ends or a round resets. A
+  player's own entry wins over everyone's. A timed entry that runs out leaves everyone's in place.
+- A call that asks for what already stands changes nothing and bumps nothing. A name GLDEFS does not
+  declare is ignored (`PostShaderDeclared`). A dedicated server, whose null renderer reads nothing else,
+  reads the post-process blocks alone (`ReadPostProcessDeclarations`). `fua_postshaders_reread` does that
+  on any build.
+- A uniform the level set keeps its `kind` (an int, or 1 to 4 floats), so a joiner and a savegame get it
+  as it was sent.
 - The renderer reads the level's state through `features/gamecopy`, which copies it only when its
   generation moves. The console's changes wait for the handoff when a tic is running beside the frame.
 - A uniform's value is the level's if it set one, else its cvar's, else the declaration's.
   - A cvar is read each frame the shader runs, since mod cvars have no change callbacks.
   - A `server` cvar replicates to clients like any other.
 - `gl_custompost 0` turns them all off. `listshaders` and `listuniforms` show what GLDEFS declared.
+  `fua_postshaders` shows the state's entry count and the tic, then each shader as this machine draws it
+  now (`ComputeShaderStateLine`).
+
+## Precision
+
+Everything every stage reads and writes is 16-bit float (`RGBA16_FLOAT`), as UZDoom's is: the world and
+the HUD (the backend's scene format, `fua_dg_scene16`, see `features/hwrender/diligent/README.md`), the two
+ping-pong pictures and the previous frame's.
+- A shader reads the world's light past 1 and below 0, and its precision between 8-bit steps.
+- A chain passes those on from one shader to the next.
+- A frame fed back through `LastInputTexture` fades all the way out, where 8 bits stick near 10 of 255.
+- With both `beforebloom` and `scene` shaders on, the weapon is drawn between them, into the scene in its
+  format, after the `beforebloom` result goes back into it.
+- A copy pass writes each stage's result into the frame. The `screen` stage reads that frame with the HUD
+  in it, 16-bit, as UZDoom's reads its pipeline image.
+- With `fua_dg_scene16 0` the world and the HUD are 8-bit again.
 
 ## What it costs
 
 - **Nothing declared:** nothing; the frame is the frame without this feature.
-- **Shaders declared:** from the first frame on, two frame-sized pictures to alternate between, plus the
-  previous frame's picture if any shader reads it, so turning one on in play makes nothing (`scenarios
-  madeinplay`).
-- **Shaders running:** each is one full-screen pass.
+- **Shaders declared:** from the first frame on, the scene target and two frame-sized 16-bit pictures to alternate between,
+  plus the previous frame's if any shader reads it (15.5 MB each at 1920×1080), so turning one on in play
+  makes nothing (`scenarios madeinplay`).
+- **Shaders running:** each is one full-screen pass, and each stage one copy into the frame.
   - The scene stages run over the share of the scene target that dynres draws, so they get cheaper when the
-    scale drops.
-  - Their last pass writes the frame at full size, so there is no separate upscale pass.
-  - Three shaders (an invert, one reading the previous frame, and a screen one) measured 0.06 ms and
-    0.03 ms of GPU and about 0.05 ms of CPU at 1280×720.
+    scale drops. Their last pass upscales to the full size, so there is no separate upscale pass.
+  - At 1920×1080 on a desktop NVIDIA GPU, three shaders measured:
+    - **GPU, 16-bit:** 0.16 ms for the scene stage (an invert and one reading the previous frame), 0.07 ms
+      for the screen stage (one shader).
+    - **GPU, 8-bit (before):** 0.09 ms and 0.05 ms.
+    - **Frame time:** unchanged within noise.
+  - With none on, both timers read 0.
 
 ## How the backend makes them
 
@@ -88,8 +113,14 @@ Telemetry:
 
 `fuactl scenarios postprocess` judges every stage, the orientation, the order, the weapon and the HUD,
 `LastInputTexture`, `Texture` lines and a missing one reading white, a console uniform, and half scale. It
-also checks a shader with no resources and one with an unused uniform and texture, and flips the optimizer
-on and back off midway. `postprocessopt` runs the same checks launched with the optimizer on.
+also checks:
+- a shader with no resources, and one with an unused uniform and texture;
+- the optimizer flipped on and back off midway;
+- a chain four times as bright then a quarter giving the scene back, and a frame fed back fading to black
+  (both fail at 8 bits);
+- the weapon between the two scene stages.
+
+`postprocessopt` runs the same checks launched with the optimizer on.
 
 ## Testing a shader change: both SPIR-V modes, always
 
@@ -129,7 +160,8 @@ Each mode breaks in its own way, and a pass in one says nothing about the other:
 - `features/hwshaders/computation/hwshader_compute`: `ComputeIndentedLines`, shared with the texture
   shaders' skip note.
 - `features/gldefs/gldefs.cpp` `gl_ParseDefs`: `ClearPostProcessShaders` before GLDEFS is read,
-  `NotePostProcessRenderer` after.
+  `NotePostProcessRenderer` after; `gl_GameDefsLump` names the game's own lump for both readers.
+- `r_nullrenderer.h` `Init`: a dedicated server's `ReadPostProcessDeclarations`.
 - `g_level.h`/`g_level.cpp`: `FLevelLocals::fua_postShaders`, reset by `G_InitLevelLocals`.
 - `features/gamecopy/level.h`/`gamecopy.cpp`: `LevelShaders`, taken by `TakeLevel` when its generation
   moved.
@@ -143,7 +175,7 @@ Each mode breaks in its own way, and a pass in one says nothing about the other:
   - `dg2d.cpp`: `Draw2D` takes a range of quads and a target.
   - `dgframe.cpp` `DrawOverlay`: the `screen` stage on a frame drawn afresh.
   - `dgskyportal.cpp`: `PictureVS`.
-  - `dggputimer`: the two passes.
+  - `dggputimer`: the two passes, each reading 0 on frames it did not run (`QueryRing::Idle`).
   - `dgpipelines.cpp`: `PrecompileUserShaders` starts them, and a change of `fua_dg_spirv_optimize` lets
     them go.
   - `dgwindow.cpp` `ShutdownBackend`: lets them go.

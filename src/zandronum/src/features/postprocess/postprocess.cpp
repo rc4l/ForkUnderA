@@ -5,6 +5,7 @@
 #include "features/gamecopy/level.h"
 #include "features/handoff/effects.h"   // [Doruk-Aksoy] QueuedBesideTic
 #include "features/hwrender/backendonly.h"
+#include "features/gldefs/gldefs.h"   // [Doruk-Aksoy] gl_GameDefsLump
 
 #include "doomtype.h"
 #include "doomstat.h"
@@ -13,6 +14,7 @@
 #include "c_dispatch.h"
 #include "g_level.h"
 #include "sc_man.h"
+#include "w_wad.h"
 
 #include <cstring>
 #include <memory>
@@ -231,6 +233,67 @@ void NotePostProcessRenderer()
 		Printf("%d post-process shaders draw only on the Vulkan renderer\n", (int)g_shaders.size());
 }
 
+namespace {
+
+// [Doruk-Aksoy] One GLDEFS lump's post-process blocks and those of the lumps it includes, `depth` stopping an include loop.
+void ReadDeclarationsFrom(int lump, int depth)
+{
+	if (depth > 16) return;
+	FMemLump data = Wads.ReadLump(lump);
+	const std::string text((const char *)data.GetMem(), data.GetSize());
+	for (const DeclarationPart &part : ComputePostProcessDeclarations(text))
+	{
+		if (part.include)
+		{
+			const int included = Wads.CheckNumForFullName(part.text.c_str(), true);
+			if (included >= 0) ReadDeclarationsFrom(included, depth + 1);
+			continue;
+		}
+		FScanner sc;
+		sc.OpenMem(Wads.GetLumpFullName(lump), part.text.c_str(), (int)part.text.size());
+		ParsePostProcessShader(sc);
+	}
+}
+
+void ReadDeclarationsNamed(const char *name)
+{
+	int lump, last = 0;
+	while ((lump = Wads.FindLump(name, &last)) != -1) ReadDeclarationsFrom(lump, 0);
+}
+
+void RereadDeclarations(intptr_t, intptr_t)
+{
+	ReadPostProcessDeclarations();
+	Printf("fua_postshaders_reread: %d declared\n", PostShaderCount());
+}
+
+} // namespace
+
+void ReadPostProcessDeclarations()
+{
+	ClearPostProcessShaders();
+	if (const char *game = gl_GameDefsLump()) ReadDeclarationsNamed(game);
+	ReadDeclarationsNamed("GLDEFS");
+}
+
+bool PostShaderDeclared(const char *shader, const char *uniform)
+{
+	static std::vector<DeclaredShader> declared;
+	static unsigned madeFor = ~0u;
+	if (madeFor != g_generation)
+	{
+		declared.clear();
+		for (const ShaderDecl &d : g_shaders)
+		{
+			DeclaredShader s = { d.name, {} };
+			for (const UniformField &u : d.uniforms) s.uniforms.push_back(u.name);
+			declared.push_back(s);
+		}
+		madeFor = g_generation;
+	}
+	return ComputeShaderCallDeclared(declared, shader, uniform);
+}
+
 int PostShaderCount() { return (int)g_shaders.size(); }
 const ShaderDecl &PostShader(int i) { return g_shaders[i]; }
 unsigned PostShadersGeneration() { return g_generation; }
@@ -306,6 +369,30 @@ CCMD(shaderuniform)
 	c->setUniform = true;
 	for (int k = 0; k < 3; k++) c->values[k] = argv.argc() > 3 + k ? atof(argv[3 + k]) : 0.0;
 	ChangeLevelShaders(c);
+}
+
+// [Doruk-Aksoy] Each shader as this player sees it now, from the render copy: on or off and since when, and every uniform's value; for tests reading a client's state.
+CCMD(fua_postshaders)
+{
+	Printf("fua_postshaders: %d entries at %d\n", (int)zx::gamecopy::LevelShaders().entries.size(), zx::gamecopy::Level().maptime);
+	for (int i = 0; i < PostShaderCount(); i++)
+	{
+		const ShaderDecl &d = PostShader(i);
+		std::vector<UniformState> uniforms(d.uniforms.size());
+		for (size_t u = 0; u < d.uniforms.size(); u++)
+		{
+			uniforms[u].name = d.uniforms[u].name;
+			CurrentValues(d, u, uniforms[u].values);
+		}
+		Printf("fua_postshaders: %s\n", ComputeShaderStateLine(d.name, PostShaderEnabledNow(i), uniforms).c_str());
+	}
+}
+
+// [Doruk-Aksoy] Reads GLDEFS's post-process declarations again as a dedicated server's null renderer does, so a netgame test checks that path on any build.
+CCMD(fua_postshaders_reread)
+{
+	const zx::handoff::UIEffect effect = { &RereadDeclarations, 0, 0 };
+	if (!zx::handoff::QueuedBesideTic(effect)) effect.run(effect.a, effect.b);
 }
 
 CCMD(listshaders)

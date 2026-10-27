@@ -1702,6 +1702,7 @@ add_executable( zdoom WIN32
 	features/hwshaders/hwshaders.cpp
 	features/hwshaders/computation/hwshader_compute.cpp
 	features/postprocess/postprocess.cpp
+	features/acs-shaders/acsshaders.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp

@@ -44,7 +44,7 @@ static bool EnsureViewTarget(ViewTarget &t, Diligent::IPipelineState *pso, const
 	const int w = FrameWidth(), h = FrameHeight();
 	if (t.color && t.srb && t.w == w && t.h == h) return true;
 	t.Release();
-	if (!CreateColorTarget(w, h, name, t.color) ||
+	if (!CreateColorTarget(w, h, name, t.color, SceneColorFormat()) ||
 		!CreatePictureBinding(pso, var, t.color, t.srb)) return false;
 	t.w = w; t.h = h;
 	return true;
@@ -153,7 +153,7 @@ static bool EnsurePlaneMirrorResources(int planes)
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		ClampDepthLikeGL(pci.GraphicsPipeline);
 		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
+		pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 		pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;

@@ -11,6 +11,9 @@ class AActor;
 // [rc4l] Read the game's *DEFS lump and every GLDEFS, then attach their lights to the actor classes.
 void gl_ParseDefs();
 
+// [Doruk-Aksoy] The game's own *DEFS lump read before GLDEFS, or null for a game with none.
+const char *gl_GameDefsLump();
+
 // [rc4l] Attach the lights an actor's sprite frame or state names, putting the rest to sleep.
 void gl_SetActorLights(AActor *actor);
 

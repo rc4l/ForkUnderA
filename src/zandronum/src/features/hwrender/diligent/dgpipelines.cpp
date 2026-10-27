@@ -615,6 +615,7 @@ static bool g_pieceBindFailed = false;
 // settings. SRBs are created from a PSO and cannot outlive it.
 static int g_builtCull = -1;
 static int g_builtOptimize = -1;   // [Doruk-Aksoy] fua_dg_spirv_optimize as the pipelines' shaders were compiled
+static Diligent::TEXTURE_FORMAT g_builtSceneFormat = Diligent::TEX_FORMAT_UNKNOWN;   // [Doruk-Aksoy] the scene's format the pipelines draw in
 static unsigned g_builtSlots = 0;   // [rc4l] the material array size the pipelines were built for
 static float g_builtAniso = 0.f;    // [rc4l] the anisotropy the samplers were built with
 static int g_builtFilter = -1;
@@ -814,7 +815,7 @@ static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader
 	pci.PSODesc.Name = name;
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = gbuffer ? 2 : 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 	if (gbuffer) pci.GraphicsPipeline.RTVFormats[1] = Diligent::TEX_FORMAT_RGBA8_UNORM;
 	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -1048,6 +1049,9 @@ bool EnsureScenePipeline(FString &err)
 	// [Doruk-Aksoy] The kept shaders were compiled the other way, so they go with the pipelines holding them.
 	if (g_pso.world[kWpOpaque] && g_builtOptimize != (int)fua_dg_spirv_optimize) { ReleaseScenePipelines(); ReleasePostProcess(); ReleaseShaderCache(); }
 	g_builtOptimize = (int)fua_dg_spirv_optimize;
+	// [Doruk-Aksoy] Every pipeline and view target of the 3D is in the scene's format, so a change of fua_dg_scene16 makes them again, the cameras' pictures with them.
+	if (g_pso.world[kWpOpaque] && g_builtSceneFormat != SceneColorFormat()) { ReleaseScenePipelines(); ReleaseCameraTargets(); }
+	g_builtSceneFormat = SceneColorFormat();
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.
 	if (g_pso.world[kWpOpaque] && g_builtSlots != MaterialSlotCapacity()) ReleaseScenePipelines();
 	// [rc4l] A level with more sectors than the sector light table holds makes it again, and the pipelines binding it.

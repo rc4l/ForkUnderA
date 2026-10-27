@@ -1,4 +1,4 @@
-// [Doruk-Aksoy] GLDEFS post-process shaders on Vulkan, captured after each is turned on from the console: exit 0 when one that copies its input changes nothing at full and half scale, GL's y-up TexCoord and gl_FragCoord read the right way round, two run in order, a scene shader runs over the weapon but not the HUD, a beforebloom one under the weapon, a screen one over the HUD, a uniform set from the console takes, and turning them off leaves the frame as it was.
+// [Doruk-Aksoy] GLDEFS post-process shaders on Vulkan, captured after each is turned on from the console: exit 0 when one that copies its input changes nothing at full and half scale, GL's y-up TexCoord and gl_FragCoord read the right way round, two run in order, a scene shader runs over the weapon but not the HUD, a beforebloom one under the weapon, a screen one over the HUD, a uniform set from the console takes, turning them off leaves the frame as it was, a chain and a frame fed back keep 16 bits, and with both scene stages on the weapon lands between them.
 //
 // usage:  node scenarios/postprocess.mjs [port]
 import { UdmfMap, wad, pk3, mapLumps } from "../src/udmf.mjs";
@@ -24,6 +24,13 @@ export const GLDEFS = [
   block("scene", "constant", "constant"),
   block("scene", "constfill", "fill", "\tUniform vec3 fillColor = 0.25 0.5 0.75\n"),
   block("scene", "unused", "identity", "\tUniform float unusedValue = 2.0\n\tTexture unusedPic \"STARTAN2\"\n"),
+  // [Doruk-Aksoy] A chain only 16-bit pictures keep: four times as bright, then a quarter, gives the scene back where 8 bits clip it.
+  block("scene", "times4", "times4"),
+  block("scene", "quarter", "quarter"),
+  // [Doruk-Aksoy] The previous frame dimmed each frame, which 16 bits take to black and 8 bits leave stuck near 10 of 255.
+  block("scene", "decay", "decay"),
+  block("scene", "black", "fill", "\tUniform vec3 fillColor = 0.0 0.0 0.0\n"),
+  block("scene", "magenta", "fill", "\tUniform vec3 fillColor = 1.0 0.0 1.0\n"),
 ].join("");
 
 export const SHADERS = {
@@ -38,6 +45,9 @@ export const SHADERS = {
   lastframe: "void main()\n{\n\tFragColor = texture(LastInputTexture, TexCoord);\n}\n",
   textured: "void main()\n{\n\tFragColor = vec4(texture(pic, TexCoord).rgb, 1.0);\n}\n",
   constant: "void main()\n{\n\tFragColor = vec4(0.25, 0.5, 0.75, 1.0);\n}\n",
+  times4: "void main()\n{\n\tFragColor = vec4(texture(InputTexture, TexCoord).rgb * 4.0, 1.0);\n}\n",
+  quarter: "void main()\n{\n\tFragColor = vec4(texture(InputTexture, TexCoord).rgb * 0.25, 1.0);\n}\n",
+  decay: "void main()\n{\n\tFragColor = vec4(texture(LastInputTexture, TexCoord).rgb * 0.95, 1.0);\n}\n",
 };
 
 // [Doruk-Aksoy] One lit hall with detailed walls, so a picture moved, flipped or scaled shows.
@@ -82,7 +92,14 @@ export const buildSteps = (other, home) => [
   { name: "constant", commands: [on("constant"), 800] },
   { name: "constFill", commands: [off("constant"), on("constfill"), 800] },
   { name: "unused", commands: [off("constfill"), on("unused"), 800] },
-  { name: "flipPlain", commands: [off("unused"), `fua_dg_spirv_optimize ${other}`, 3000] },
+  { name: "brightDark", commands: [off("unused"), on("times4"), on("quarter"), 800] },
+  { name: "decayed", commands: [off("times4"), off("quarter"), on("decay"), 4000] },
+  { name: "black", commands: [off("decay"), on("black"), 800] },
+  // [Doruk-Aksoy] Both stages at once: a beforebloom fill, the weapon over it, then the scene inverting both.
+  { name: "hop", commands: [off("black"), on("greenbefore"), on("invert1"), 800] },
+  { name: "hopNoWeapon", commands: ["r_drawplayersprites 0", 800] },
+  { name: "magenta", commands: ["r_drawplayersprites 1", off("greenbefore"), off("invert1"), on("magenta"), 800] },
+  { name: "flipPlain", commands: [off("magenta"),`fua_dg_spirv_optimize ${other}`, 3000] },
   { name: "flipIdentity", commands: [on("identity"), 1000] },
   { name: "flipConstant", commands: [off("identity"), on("constant"), 800] },
   { name: "flipConstFill", commands: [off("constant"), on("constfill"), 800] },
@@ -122,6 +139,10 @@ export const BOXES = { MAP01: {
   offAgain: { box: [0.0, 0.06, 1.0, 1.0], pair: ["plain", "plainThird"], ceiling: 0.5 },
   constantIsConstFill: { box: VIEW, pair: ["constant", "constFill"], ceiling: 0.5 },
   unusedIsIdentity: { box: VIEW, pair: ["plain", "unused"], ceiling: 0.5 },
+  chainKeepsBrightness: { box: VIEW, pair: ["plain", "brightDark"], ceiling: 0.5 },
+  feedbackFadesToBlack: { box: VIEW, pair: ["black", "decayed"], ceiling: 1 },
+  weaponBetweenStages: { box: WEAPON, pair: ["hop", "hopNoWeapon"], floor: 5 },
+  stagesInOrder: { box: TOP, pair: ["magenta", "hop"], ceiling: 0.5 },
   flipKeepsTheWorld: { box: VIEW, pair: ["plain", "flipPlain"], ceiling: 1 },
   flipIdentity: { box: VIEW, pair: ["flipPlain", "flipIdentity"], ceiling: 0.5 },
   flipConstant: { box: VIEW, pair: ["constant", "flipConstant"], ceiling: 0.5 },

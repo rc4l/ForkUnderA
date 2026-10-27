@@ -479,6 +479,38 @@ void SERVERCOMMANDS_FuaSetMusicVolume( float volume, ULONG ulPlayerExtra, Server
 
 //*****************************************************************************
 //
+// [Doruk-Aksoy] features/acs-shaders: a post-process shader on or off, to every client or, with SVCF_ONLYTHISCLIENT, one.
+void SERVERCOMMANDS_FuaSetShaderEnabled( const char *shader, bool own, bool enabled, int remainingTics, int elapsedTics, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::FuaSetShaderEnabled command;
+	command.SetShader( shader );
+	command.SetOwn( own );
+	command.SetEnabled( enabled );
+	command.SetDuration( remainingTics );
+	command.SetElapsed( elapsedTics );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+// [Doruk-Aksoy] features/acs-shaders: one uniform of a post-process shader, kind 0 an int and 1 to 4 that many floats.
+void SERVERCOMMANDS_FuaSetShaderUniform( const char *shader, const char *uniform, bool own, int kind, const double values[4], ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::FuaSetShaderUniform command;
+	command.SetShader( shader );
+	command.SetUniform( uniform );
+	command.SetOwn( own );
+	command.SetKind( kind );
+	command.SetIntValue( kind == 0 ? int( values[0] ) : 0 );
+	command.SetX( float( values[0] ));
+	command.SetY( float( values[1] ));
+	command.SetZ( float( values[2] ));
+	command.SetW( float( values[3] ));
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
 void SERVERCOMMANDS_KillPlayer( ULONG ulPlayer, AActor *pSource, AActor *pInflictor, FName MOD )
 {
 	if ( PLAYER_IsValidPlayer( ulPlayer ) == false )

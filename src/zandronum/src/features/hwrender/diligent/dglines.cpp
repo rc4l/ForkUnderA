@@ -61,6 +61,9 @@ unsigned int g_lineVBCapacity = 0;
 
 bool EnsureLinePipelines()
 {
+	// [Doruk-Aksoy] They draw into the scene, so a change of its format (fua_dg_scene16) makes them again.
+	if (g_linePSO[0] && g_linePSO[0]->GetGraphicsPipelineDesc().RTVFormats[0] != SceneColorFormat())
+		for (int k = 0; k < 2; k++) { g_lineSRB[k].Release(); g_linePSO[k].Release(); }
 	if (g_linePSO[0] && g_linePSO[1]) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -93,7 +96,7 @@ bool EnsureLinePipelines()
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		ClampDepthLikeGL(pci.GraphicsPipeline);
 		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+		pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;

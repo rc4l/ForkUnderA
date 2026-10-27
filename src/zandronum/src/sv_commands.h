@@ -340,6 +340,8 @@ void	SERVERCOMMANDS_SetMapNumTotalItems( ULONG ulPlayerExtra = MAXPLAYERS, Serve
 void	SERVERCOMMANDS_SetMapNumTotalSecrets( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetMapMusic( const char *pszMusic, int track, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_FuaSetMusicVolume( float volume, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );	// [Doruk-Aksoy] ACS SetMusicVolume
+void	SERVERCOMMANDS_FuaSetShaderEnabled( const char *shader, bool own, bool enabled, int remainingTics, int elapsedTics, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );	// [Doruk-Aksoy] ACS fua_SetShaderEnabled
+void	SERVERCOMMANDS_FuaSetShaderUniform( const char *shader, const char *uniform, bool own, int kind, const double values[4], ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );	// [Doruk-Aksoy] ACS fua_SetShaderUniform
 void	SERVERCOMMANDS_SetMapSky( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_SetMapSkyScrollSpeed( bool isSky1, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 

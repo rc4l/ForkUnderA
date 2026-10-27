@@ -181,6 +181,8 @@ bool FrameOffscreen();
 Diligent::ITextureView *FrameRTV();
 Diligent::ITextureView *FrameDSV();
 Diligent::ITexture *FrameTexture();
+// [Doruk-Aksoy] The frame as 8-bit RGBA for what reads its bytes (fua_clip's recorder): the frame itself, or a 16-bit one copied down into a picture of its own.
+Diligent::ITexture *FrameAs8Bit(Diligent::IDeviceContext *ctx);
 // [rc4l] Which making of the offscreen target this is, so a picture drawn into an earlier one is not taken for this one's.
 unsigned int FrameGeneration();
 int FrameWidth();
@@ -198,6 +200,10 @@ int SceneHeight();
 bool EnsureSceneTarget();
 // [Doruk-Aksoy] Whether the 3D is in the scene target rather than the frame: below full scale, or for post-process shaders to read.
 bool SceneSeparate();
+// [Doruk-Aksoy] Whether the 3D is drawn in 16-bit float (fua_dg_scene16 in a launch without GL), as UZDoom's scene buffer is.
+bool Scene16();
+// [Doruk-Aksoy] The format of the frame and of every target the 3D is drawn into, and of every pipeline drawing them: 16-bit float with Scene16, as UZDoom's scene and pipeline images are, else the swapchain's.
+Diligent::TEXTURE_FORMAT SceneColorFormat();
 // [Doruk-Aksoy] The texture the player's view is drawn into this frame.
 Diligent::ITexture *SceneTexture();
 // [rc4l] Where the player's view draws: the scene target below full scale, else the frame itself.

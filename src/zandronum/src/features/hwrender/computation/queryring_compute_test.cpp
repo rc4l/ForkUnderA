@@ -24,6 +24,17 @@ TEST(QueryRing, SlotsAreReadOldestFirstAndOnlyOnceTheirResultIsIn)
 	EXPECT_EQ(ring.Collect([](int) { return true; }), 0);
 }
 
+// [Doruk-Aksoy] A ring is idle with nothing begun or everything read, and busy while a slot waits.
+TEST(QueryRing, IsIdleOnlyWithNothingWaiting)
+{
+	QueryRing ring;
+	EXPECT_TRUE(ring.Idle());
+	ring.Begin();
+	EXPECT_FALSE(ring.Idle());
+	ring.Collect([](int) { return true; });
+	EXPECT_TRUE(ring.Idle());
+}
+
 TEST(QueryRing, AFullRingSkipsTimingUntilASlotIsReadAndWrapsAround)
 {
 	QueryRing ring;

@@ -22,6 +22,53 @@ std::string Lower(const std::string &s)
 
 bool SameName(const std::string &a, const std::string &b) { return Lower(a) == Lower(b); }
 
+// [Doruk-Aksoy] A GLDEFS token: a word, a brace, or a quoted string's text, and where it ends.
+struct Token
+{
+	std::string text;
+	bool quoted;
+	size_t end;
+};
+
+bool CommentAt(const std::string &s, size_t i) { return s.compare(i, 2, "//") == 0 || s.compare(i, 2, "/*") == 0; }
+
+// [Doruk-Aksoy] A GLDEFS lump's tokens, its comments left out, as FScanner reads them.
+std::vector<Token> Tokens(const std::string &s)
+{
+	std::vector<Token> out;
+	size_t i = 0;
+	while (i < s.size())
+	{
+		if (std::isspace((unsigned char)s[i])) { i++; continue; }
+		if (s.compare(i, 2, "//") == 0) { i = std::min(s.size(), s.find('\n', i)); continue; }
+		if (s.compare(i, 2, "/*") == 0)
+		{
+			const size_t close = s.find("*/", i + 2);
+			i = close == std::string::npos ? s.size() : close + 2;
+			continue;
+		}
+		Token t;
+		t.quoted = s[i] == '"';
+		if (t.quoted)
+		{
+			const size_t from = ++i;
+			while (i < s.size() && s[i] != '"') i += (s[i] == '\\' && i + 1 < s.size()) ? 2 : 1;
+			t.text = s.substr(from, std::min(i, s.size()) - from);
+			i = std::min(i + 1, s.size());
+		}
+		else if (s[i] == '{' || s[i] == '}') t.text = std::string(1, s[i++]);
+		else
+		{
+			const size_t from = i;
+			while (i < s.size() && !std::isspace((unsigned char)s[i]) && s[i] != '{' && s[i] != '}' && s[i] != '"' && !CommentAt(s, i)) i++;
+			t.text = s.substr(from, i - from);
+		}
+		t.end = i;
+		out.push_back(t);
+	}
+	return out;
+}
+
 const char *GlslType(UniformType type)
 {
 	switch (type)
@@ -246,30 +293,87 @@ std::string ComputePostShaderSkipNote(const std::string &renderer, const std::st
 
 bool ComputeReadsLastInput(const std::string &source) { return source.find("LastInputTexture") != std::string::npos; }
 
-void ComputeSetShaderEnabled(ShaderTable &table, const std::string &shader, int player, bool enabled, int now, int expires)
+bool ComputeSetShaderEnabled(ShaderTable &table, const std::string &shader, int player, bool enabled, int now, int expires, int since)
 {
 	ShaderEntry *e = EntryFor(table, shader, player, true);
-	// [Doruk-Aksoy] A shader turned on again while it runs keeps its clock, as a timed one is only lengthened.
-	if (enabled && (e->enabled != 1 || Expired(*e, now))) e->enabledTic = now;
-	e->enabled = enabled ? 1 : 0;
-	e->expiresTic = enabled ? expires : 0;
+	const int state = enabled ? 1 : 0;
+	const int until = enabled ? expires : 0;
+	// [Doruk-Aksoy] Asked again for what it already is, untimed, nothing changes; a timed call always moves the end.
+	if (e->enabled == state && e->expiresTic == 0 && until == 0) return false;
+	// [Doruk-Aksoy] A shader turned on again while it runs keeps its clock, its end moving to the new one.
+	if (enabled && (e->enabled != 1 || Expired(*e, now))) e->enabledTic = since == kSinceNow ? now : since;
+	e->enabled = state;
+	e->expiresTic = until;
+	table.generation++;
+	return true;
+}
+
+bool ComputeSetShaderUniform(ShaderTable &table, const std::string &shader, int player, const std::string &uniform, const double values[4], int kind)
+{
+	ShaderEntry *e = EntryFor(table, shader, player, true);
+	ShaderEntry::Uniform *u = nullptr;
+	for (ShaderEntry::Uniform &existing : e->uniforms)
+		if (existing.name == uniform) u = &existing;
+	if (u != nullptr && u->kind == kind && memcmp(u->values, values, sizeof(u->values)) == 0) return false;
+	if (u == nullptr)
+	{
+		e->uniforms.emplace_back();
+		u = &e->uniforms.back();
+		u->name = uniform;
+	}
+	memcpy(u->values, values, sizeof(u->values));
+	u->kind = kind;
+	table.generation++;
+	return true;
+}
+
+const ShaderEntry *ComputeShaderEntry(const ShaderTable &table, const std::string &shader, int player) { return FindEntry(table, shader, player); }
+
+void ComputeClearShaderTable(ShaderTable &table)
+{
+	if (table.entries.empty()) return;
+	table.entries.clear();
 	table.generation++;
 }
 
-void ComputeSetShaderUniform(ShaderTable &table, const std::string &shader, int player, const std::string &uniform, const double values[4])
+bool ComputeShaderCallDeclared(const std::vector<DeclaredShader> &declared, const std::string &shader, const std::string &uniform)
 {
-	ShaderEntry *e = EntryFor(table, shader, player, true);
-	for (ShaderEntry::Uniform &u : e->uniforms)
-		if (u.name == uniform)
+	for (const DeclaredShader &d : declared)
+	{
+		if (!SameName(d.name, shader)) continue;
+		if (uniform.empty()) return true;
+		for (const std::string &u : d.uniforms)
+			if (u == uniform) return true;
+	}
+	return false;
+}
+
+std::vector<DeclarationPart> ComputePostProcessDeclarations(const std::string &lump)
+{
+	const std::vector<Token> t = Tokens(lump);
+	std::vector<DeclarationPart> out;
+	int depth = 0;
+	for (size_t k = 0; k < t.size(); k++)
+	{
+		if (!t[k].quoted && t[k].text == "{") { depth++; continue; }
+		if (!t[k].quoted && t[k].text == "}") { depth = std::max(0, depth - 1); continue; }
+		if (depth > 0 || t[k].quoted || k + 1 >= t.size()) continue;
+		if (SameName(t[k].text, "#include") && t[k + 1].quoted) out.push_back({ true, t[++k].text });
+		else if (SameName(t[k].text, "hardwareshader") && !t[k + 1].quoted && SameName(t[k + 1].text, "postprocess"))
 		{
-			memcpy(u.values, values, sizeof(u.values));
-			table.generation++;
-			return;
+			const size_t start = t[++k].end;
+			size_t end = lump.size();
+			// [Doruk-Aksoy] The block runs to the brace closing its first one.
+			for (int inner = 0; ++k < t.size();)
+			{
+				if (t[k].quoted) continue;
+				if (t[k].text == "{") inner++;
+				else if (t[k].text == "}" && --inner == 0) { end = t[k].end; break; }
+			}
+			out.push_back({ false, lump.substr(start, end - start) });
 		}
-	e->uniforms.emplace_back();
-	e->uniforms.back().name = uniform;
-	memcpy(e->uniforms.back().values, values, sizeof(e->uniforms.back().values));
-	table.generation++;
+	}
+	return out;
 }
 
 EffectiveEnabled ComputeEffectiveEnabled(const ShaderTable &table, const std::string &shader, int consolePlayer, bool declared, int now)
@@ -294,6 +398,15 @@ const double *ComputeEffectiveUniform(const ShaderTable &table, const std::strin
 	return UniformOf(FindEntry(table, shader, -1), uniform);
 }
 
+std::string ComputeShaderStateLine(const std::string &name, const EffectiveEnabled &state, const std::vector<UniformState> &uniforms)
+{
+	std::ostringstream s;
+	s << name << (state.enabled ? " on since " + std::to_string(state.sinceTic) : std::string(" off"));
+	for (const UniformState &u : uniforms)
+		s << " " << u.name << "=" << u.values[0] << "," << u.values[1] << "," << u.values[2] << "," << u.values[3];
+	return s.str();
+}
+
 bool ComputeConsoleEnable(int value, bool current) { return value == -1 ? !current : value != 0; }
 
 std::vector<int> ComputePostProcessChain(const std::vector<int> &stages, const std::vector<bool> &enabled, const std::vector<bool> &ready, int stage)
@@ -304,14 +417,13 @@ std::vector<int> ComputePostProcessChain(const std::vector<int> &stages, const s
 	return chain;
 }
 
-std::vector<Pass> ComputePingPong(int passes, int first, bool lastToFinal)
+std::vector<Pass> ComputePingPong(int passes, int first)
 {
 	std::vector<Pass> out;
 	int from = first;
 	for (int i = 0; i < passes; i++)
 	{
-		const bool last = i == passes - 1;
-		const int to = (last && lastToFinal) ? kPictureFinal : (from == kPictureA ? kPictureB : kPictureA);
+		const int to = from == kPictureA ? kPictureB : kPictureA;
 		out.push_back({ from, to });
 		from = to;
 	}

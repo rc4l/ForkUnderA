@@ -117,6 +117,8 @@
 #include "g_hub.h"
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 #include "features/telemetry/telemetry.h"
+#include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SerializeLevelShaders
+#include "features/handoff/effects.h"   // [Doruk-Aksoy] Deferred, for the music volume a tic sets
 
 void STAT_StartNewGame(const char *lev);
 void STAT_ChangeLevel(const char *newl);
@@ -2239,10 +2241,14 @@ void G_InitLevelLocals ()
 //
 //==========================================================================
 
+// [Doruk-Aksoy] The song's volume belongs to the sound device, so a tic on its own thread (a script, a round reset) sets it in the handoff.
+static void ApplyMusicVolume(const float &f) { I_SetMusicVolume(f); }
+static zx::handoff::Deferred<float> g_musicVolume(&ApplyMusicVolume);
+
 void FLevelLocals::SetMusicVolume(float f)
 {
 	MusicVolume = f;
-	I_SetMusicVolume(f);
+	g_musicVolume.Make(f);
 }
 
 //==========================================================================
@@ -2472,6 +2478,8 @@ void G_SerializeLevel (FArchive &arc, bool hubLoad)
 	P_SerializePlayers (arc, hubLoad);
 	CHAT_SerializeMessages (arc); // [AK]
 	P_SerializeSounds (arc);
+	// [Doruk-Aksoy] features/acs-shaders: what scripts turned the level's post-process shaders to.
+	zx::acsshaders::SerializeLevelShaders (arc);
 	if (arc.IsLoading())
 	{
 		for (i = 0; i < numsectors; i++)

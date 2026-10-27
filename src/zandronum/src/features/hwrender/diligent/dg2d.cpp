@@ -47,11 +47,12 @@ struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz, tint[4],
 // There used to be one, always alpha, and Quad2D::blend was recorded and then ignored -- so additive
 // 2D drew as ordinary alpha. Multiply is what a fixed colormap needs (invulnerability tints the
 // screen by multiplying it), and neither can be faked with the alpha state.
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D[3];
+// [Doruk-Aksoy] Each in two formats: the frame's (slot 0), and the 16-bit scene's (slot 1) for the weapon drawn under the scene's post-process shaders.
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2D[2][3];
 // [rc4l] A polygon's triangles, alpha-blended with the texture repeating, as FillSimplePoly samples a flat.
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2DWrap;
+static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso2DWrap[2];
 // [Doruk-Aksoy] Each GLDEFS shader's twin of a 2D pipeline (0 to 2 by blend, 3 the polygons'), started the first time a quad draws with it, empty for one that could not be made.
-static UserPipelineTable g_user2D;
+static UserPipelineTable g_user2D[2];
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_vb2D;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_cb2D;
 static unsigned int g_vb2DCapacity = 0;
@@ -163,8 +164,8 @@ static const Diligent::ShaderResourceVariableDesc k2DVars[] = {
 };
 
 // [rc4l] 2D pipeline `mode` over these shaders, its constants bound: 0 alpha, 1 additive, 2 multiply, and 3 a polygon's triangles, alpha-blended with the texture repeating.
-// [Doruk-Aksoy] A GLDEFS shader's (`user`) is made on the device's pool when fua_dg_async_pipelines is on, its constants bound once it is ready (FinishUser2DPipeline).
-static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *ps, const char *name, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &out, bool user = false)
+// [Doruk-Aksoy] A GLDEFS shader's (`user`) is made on the device's pool when fua_dg_async_pipelines is on, its constants bound once it is ready (Pso2D); `slot` 1 draws into the 16-bit scene.
+static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *ps, const char *name, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &out, int slot, bool user = false)
 {
 	auto *swap = GetSwapChain();
 	if (swap == NULL) return;
@@ -181,7 +182,7 @@ static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *p
 	pci.PSODesc.Name = name;
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = slot == 1 ? Diligent::TEX_FORMAT_RGBA16_FLOAT : swap->GetDesc().ColorBufferFormat;
 	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
@@ -211,9 +212,10 @@ static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *p
 	if (out && !user) BindScreen2D(out);
 }
 
+// [Doruk-Aksoy] The plain 2D pipelines of the frame's format and, while the scene is 16-bit, of the scene's, made together so a frame never waits on them.
 static bool Ensure2DPipeline()
 {
-	if (g_pso2D[0]) return true;
+	if (g_pso2D[0][0] && (g_pso2D[1][0] || !Scene16())) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
 	if (!dev || !swap) return false;
@@ -223,41 +225,43 @@ static bool Ensure2DPipeline()
 	ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua 2D PS", k2DPS);
 	if (!vs || !ps) return false;
 
-	Diligent::BufferDesc cbd;
-	cbd.Name = "fua 2D constants";
-	cbd.Size = sizeof(float) * 12;
-	cbd.Usage = Diligent::USAGE_DYNAMIC;
-	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
-	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	CreateDeviceBuffer(cbd, nullptr, &g_cb2D);
-	if (!g_cb2D) return false;
-
-	for (int mode = 0; mode < 3; mode++)
+	// [Doruk-Aksoy] One constant buffer for both formats, made once, as the pipelines already made keep it bound.
+	if (!g_cb2D)
 	{
-		Make2DPipeline(mode, vs, ps, "fua 2D PSO", g_pso2D[mode]);
-		if (!g_pso2D[mode]) return false;
+		Diligent::BufferDesc cbd;
+		cbd.Name = "fua 2D constants";
+		cbd.Size = sizeof(float) * 12;
+		cbd.Usage = Diligent::USAGE_DYNAMIC;
+		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		CreateDeviceBuffer(cbd, nullptr, &g_cb2D);
+		if (!g_cb2D) return false;
 	}
-	Make2DPipeline(3, vs, ps, "fua 2D polygon PSO", g_pso2DWrap);
-	return g_pso2DWrap.RawPtr() != NULL;
+
+	for (int slot = 0; slot < (Scene16() ? 2 : 1); slot++)
+	{
+		if (g_pso2D[slot][0]) continue;
+		for (int mode = 0; mode < 3; mode++)
+		{
+			Make2DPipeline(mode, vs, ps, slot == 1 ? "fua 2D scene PSO" : "fua 2D PSO", g_pso2D[slot][mode], slot);
+			if (!g_pso2D[slot][mode]) return false;
+		}
+		Make2DPipeline(3, vs, ps, slot == 1 ? "fua 2D scene polygon PSO" : "fua 2D polygon PSO", g_pso2DWrap[slot], slot);
+		if (!g_pso2DWrap[slot]) return false;
+	}
+	return true;
 }
 
 // [Doruk-Aksoy] The plain 2D pipeline a GLDEFS shader's twin of `mode` stands in for.
-static Diligent::IPipelineState *Plain2D(int mode)
+static Diligent::IPipelineState *Plain2D(int mode, int slot)
 {
-	return mode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[mode].RawPtr();
+	return mode == 3 ? g_pso2DWrap[slot].RawPtr() : g_pso2D[slot][mode].RawPtr();
 }
 
-// [Doruk-Aksoy] A GLDEFS shader's 2D pipeline once ready: its constants bound and kept only if it takes the plain one's bindings.
-static bool FinishUser2DPipeline(const std::pair<int, int> &key, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+// [Doruk-Aksoy] 2D pipeline `mode` of format `slot` running GLDEFS shader `shader`'s own program, started the first time a quad asks and committed with the plain one's bindings; the plain one for -1, while it is made, and for a shader left out.
+static Diligent::IPipelineState *Pso2D(int mode, int shader, int slot)
 {
-	if (pso) BindScreen2D(pso);
-	return KeepUserPipeline(key.second, Plain2D(key.first), pso);
-}
-
-// [Doruk-Aksoy] 2D pipeline `mode` running GLDEFS shader `shader`'s own program, started the first time a quad asks and committed with the plain one's bindings; the plain one for -1, while it is made, and for a shader left out.
-static Diligent::IPipelineState *Pso2D(int mode, int shader)
-{
-	Diligent::IPipelineState *plain = Plain2D(mode);
+	Diligent::IPipelineState *plain = Plain2D(mode, slot);
 	if (plain == NULL || !UserShaderUsable(shader)) return plain;
 	auto start = [&]() {
 		Diligent::RefCntAutoPtr<Diligent::IPipelineState> made;
@@ -265,11 +269,16 @@ static Diligent::IPipelineState *Pso2D(int mode, int shader)
 		auto ps = Compile2DUserShader(shader);
 		FString name;
 		name.Format("fua 2D PSO %s", UserShaderName(shader));
-		if (vs && ps) Make2DPipeline(mode, vs, ps, name.GetChars(), made, true);
+		if (vs && ps) Make2DPipeline(mode, vs, ps, name.GetChars(), made, slot, true);
 		return made;
 	};
+	// [Doruk-Aksoy] Once ready, its constants bound and kept only if it takes the plain one's bindings.
+	auto finish = [slot](const std::pair<int, int> &key, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso) {
+		if (pso) BindScreen2D(pso);
+		return KeepUserPipeline(key.second, Plain2D(key.first, slot), pso);
+	};
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> *made =
-		ComputeUserPipeline(g_user2D, std::make_pair(mode, shader), !fua_dg_async_pipelines, start, UserPipelineStatus, FinishUser2DPipeline);
+		ComputeUserPipeline(g_user2D[slot], std::make_pair(mode, shader), !fua_dg_async_pipelines, start, UserPipelineStatus, finish);
 	return made != NULL ? made->RawPtr() : plain;
 }
 
@@ -380,6 +389,10 @@ void Draw2D(Diligent::IDeviceContext *ctx, int first, int end, Diligent::ITextur
 	// [Doruk-Aksoy] Another target is drawn at its top left viewW x viewH, the share of it the scene covers.
 	const int rtW = target != NULL ? (int)target->GetTexture()->GetDesc().Width : FrameWidth();
 	const int rtH = target != NULL ? (int)target->GetTexture()->GetDesc().Height : FrameHeight();
+	// [Doruk-Aksoy] A 16-bit target (the frame or the scene) takes the pipelines of its format.
+	Diligent::ITexture *rtTex = target != NULL ? target->GetTexture() : FrameTexture();
+	const int slot = rtTex != NULL && rtTex->GetDesc().Format == Diligent::TEX_FORMAT_RGBA16_FLOAT ? 1 : 0;
+	if (!g_pso2D[slot][0]) return;
 	const int fw = target != NULL ? viewW : rtW, fh = target != NULL ? viewH : rtH;
 	if (target != NULL)
 	{
@@ -416,9 +429,9 @@ void Draw2D(Diligent::IDeviceContext *ctx, int first, int end, Diligent::ITextur
 		if (q.target == zx::draw2d::k2DGLOnly) continue;
 		// [rc4l] A polygon's triangles take the repeating pipeline, numbered past the three blends.
 		const int blendMode = q.kind == zx::draw2d::kQuadTri ? 3 : (q.blend >= 0 && q.blend < 3) ? q.blend : 0;
-		Diligent::IPipelineState *pso = blendMode == 3 ? g_pso2DWrap.RawPtr() : g_pso2D[blendMode].RawPtr();
+		Diligent::IPipelineState *pso = Plain2D(blendMode, slot);
 		// [Doruk-Aksoy] Its GLDEFS shader's program, committed with the plain pipeline's binding.
-		Diligent::IPipelineState *run = Pso2D(blendMode, i < quadShader.size() ? quadShader[i] : -1);
+		Diligent::IPipelineState *run = Pso2D(blendMode, i < quadShader.size() ? quadShader[i] : -1, slot);
 		if (run != curRun)
 		{
 			curRun = run;

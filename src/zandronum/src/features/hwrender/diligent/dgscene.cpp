@@ -403,7 +403,7 @@ SceneVertex ToSceneVertex(const zx::levelmesh::MeshVertex &sv, unsigned int piec
 }
 
 // [rc4l] A w by h picture in the swapchain's colour format, drawn into and then sampled.
-bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color)
+bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::TEXTURE_FORMAT format)
 {
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -414,7 +414,7 @@ bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 	td.Name = colorName.GetChars();
 	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
 	td.Width = (Diligent::Uint32)w; td.Height = (Diligent::Uint32)h;
-	td.Format = swap->GetDesc().ColorBufferFormat;
+	td.Format = format != Diligent::TEX_FORMAT_UNKNOWN ? format : swap->GetDesc().ColorBufferFormat;
 	td.MipLevels = 1;
 	td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 	color.Release();
@@ -424,9 +424,9 @@ bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 
 // [rc4l] A w x h colour target the shaders can read and its depth buffer, in the swapchain's formats, for a view rendered off screen; false if either cannot be made.
 bool CreateViewTextures(int w, int h, const char *name,
-	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
+	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth, Diligent::TEXTURE_FORMAT format)
 {
-	return CreateColorTarget(w, h, name, color) && CreateDepthTarget(w, h, name, depth);
+	return CreateColorTarget(w, h, name, color, format) && CreateDepthTarget(w, h, name, depth);
 }
 
 // [rc4l] A w by h depth buffer in the swapchain's depth format, for a view rendered off screen.

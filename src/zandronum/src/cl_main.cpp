@@ -156,6 +156,7 @@
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
 #include "features/acs-setmusicvolume/computation/musicvolume_compute.h"   // [Doruk-Aksoy] FuaSetMusicVolume's factor
+#include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] FuaSetShaderEnabled and FuaSetShaderUniform
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -7716,6 +7717,22 @@ void ServerCommands::FuaSetMusicVolume::Execute()
 {
 	// [Doruk-Aksoy] ACS SetMusicVolume, run on the server, kept to a factor the music can play at.
 	level.SetMusicVolume( ComputeNetMusicVolume( volume ));
+}
+
+//*****************************************************************************
+//
+void ServerCommands::FuaSetShaderEnabled::Execute()
+{
+	// [Doruk-Aksoy] features/acs-shaders: what a server's script did to a post-process shader, only the level's state changing here.
+	zx::acsshaders::ApplyShaderEnabled( shader.GetChars(), own, enabled, duration, elapsed );
+}
+
+//*****************************************************************************
+//
+void ServerCommands::FuaSetShaderUniform::Execute()
+{
+	const zx::acsshaders::UniformValue value = { kind, { kind == 0 ? double( intValue ) : double( x ), double( y ), double( z ), double( w ) } };
+	zx::acsshaders::ApplyShaderUniform( shader.GetChars(), uniform.GetChars(), own, value );
 }
 
 //*****************************************************************************

@@ -1364,34 +1364,33 @@ void gl_LoadGLDefs(const char * defsLump)
 //
 //==========================================================================
 
-void gl_ParseDefs()
+const char *gl_GameDefsLump()
 {
-	const char *defsLump = NULL;
-
-	atterm( gl_ReleaseLights ); 
-	gl_ReleaseLights();
-	// [Doruk-Aksoy] A restart reads GLDEFS again, so the post-process shaders it declares start over.
-	zx::postprocess::ClearPostProcessShaders();
 	switch (gameinfo.gametype)
 	{
 	case GAME_Heretic:
-		defsLump = "HTICDEFS";
-		break;
+		return "HTICDEFS";
 	case GAME_Hexen:
-		defsLump = "HEXNDEFS";
-		break;
+		return "HEXNDEFS";
 	case GAME_Strife:
-		defsLump = "STRFDEFS";
-		break;
+		return "STRFDEFS";
 	case GAME_Doom:
-		defsLump = "DOOMDEFS";
-		break;
+		return "DOOMDEFS";
 	case GAME_Chex:
-		defsLump = "CHEXDEFS";
-		break;
+		return "CHEXDEFS";
 	default: // silence GCC
-		break;
+		return NULL;
 	}
+}
+
+void gl_ParseDefs()
+{
+	const char *defsLump = gl_GameDefsLump();
+
+	atterm( gl_ReleaseLights );
+	gl_ReleaseLights();
+	// [Doruk-Aksoy] A restart reads GLDEFS again, so the post-process shaders it declares start over.
+	zx::postprocess::ClearPostProcessShaders();
 	gl_ParseVavoomSkybox();
 	if (defsLump != NULL) gl_LoadGLDefs(defsLump);
 	gl_LoadGLDefs("GLDEFS");

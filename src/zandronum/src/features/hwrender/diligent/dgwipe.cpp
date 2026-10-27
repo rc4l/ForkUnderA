@@ -108,6 +108,14 @@ bool CreateMaskTexture(const char *name, const unsigned char *alpha, int w, int 
 
 bool EnsurePipeline()
 {
+	// [Doruk-Aksoy] It draws into the frame, so a change of its format (fua_dg_scene16) makes it again, with the bindings made from it.
+	if (g_wipePSO && FrameTexture() != NULL && g_wipePSO->GetGraphicsPipelineDesc().RTVFormats[0] != FrameTexture()->GetDesc().Format)
+	{
+		g_srbStart.Release();
+		g_srbEnd.Release();
+		g_srbEndMasked.Release();
+		g_wipePSO.Release();
+	}
 	if (g_wipePSO) return true;
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -115,14 +123,17 @@ bool EnsurePipeline()
 	Diligent::RefCntAutoPtr<Diligent::IShader> vs = CompileShader(Diligent::SHADER_TYPE_VERTEX, "fua wipe VS", kWipeVS);
 	Diligent::RefCntAutoPtr<Diligent::IShader> ps = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua wipe PS", kWipePS);
 	if (!vs || !ps) return false;
-	Diligent::BufferDesc cbd;
-	cbd.Name = "fua wipe constants";
-	cbd.Size = sizeof(float) * 4;
-	cbd.Usage = Diligent::USAGE_DYNAMIC;
-	cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
-	cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
-	CreateDeviceBuffer(cbd, nullptr, &g_wipeCB);
-	if (!g_wipeCB) return false;
+	if (!g_wipeCB)
+	{
+		Diligent::BufferDesc cbd;
+		cbd.Name = "fua wipe constants";
+		cbd.Size = sizeof(float) * 4;
+		cbd.Usage = Diligent::USAGE_DYNAMIC;
+		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
+		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
+		CreateDeviceBuffer(cbd, nullptr, &g_wipeCB);
+		if (!g_wipeCB) return false;
+	}
 	Diligent::LayoutElement layout[] = {
 		Diligent::LayoutElement{0, 0, 2, Diligent::VT_FLOAT32, false},
 		Diligent::LayoutElement{1, 0, 2, Diligent::VT_FLOAT32, false},
@@ -146,7 +157,7 @@ bool EnsurePipeline()
 	pci.PSODesc.Name = "fua wipe PSO";
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = FrameTexture() != NULL ? FrameTexture()->GetDesc().Format : swap->GetDesc().ColorBufferFormat;
 	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;

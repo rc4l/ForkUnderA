@@ -211,6 +211,7 @@
   "d_main.cpp": 2,
   "domination.cpp": 3,
   "duel.cpp": 7,
+  "features/acs-shaders/acsshaders.cpp": 4,
   "features/damage-taken/damagetaken.cpp": 1,
   "features/federated-server-registry/sv_serverregistry.cpp": 1,
   "features/quake-movement/quakemove.cpp": 3,

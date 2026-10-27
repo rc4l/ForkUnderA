@@ -97,7 +97,7 @@ static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const 
 		SkyLookPicture &pic = set.pictures[p];
 		if (!pic.color || pic.w != w || pic.h != h)
 		{
-			if (!CreateColorTarget(w, h, "fua sky look", pic.color) ||
+			if (!CreateColorTarget(w, h, "fua sky look", pic.color, SceneColorFormat()) ||
 				!CreatePictureBinding(g_lookSurfPSO, "uSky", pic.color, pic.srb)) { set.count = p; break; }
 			pic.w = w; pic.h = h;
 		}

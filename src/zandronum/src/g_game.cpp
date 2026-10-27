@@ -30,6 +30,8 @@
 #include "features/gamecopy/level.h"   // [rc4l] the level as the copy holds it
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
+#include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
+#include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -3521,6 +3523,12 @@ void GAME_ResetMap( bool bRunEnterScripts )
 
 	// [AK] Also make sure that the game isn't frozen.
 	level.flags2 &= ~LEVEL2_FROZEN;
+
+	// [Doruk-Aksoy] A round starts clean, the song at its own volume and the post-process shaders as GLDEFS has them, on the server and on each client resetting its own.
+	level.SetMusicVolume( 1.f );
+	if ( zx::net::IsServer( ))
+		SERVER_SetMapMusicVolume( 1.f );
+	zx::acsshaders::ResetLevelShaders( );
 
 	// [BB] We are going to reset the map now, so any request for a reset is fulfilled.
 	g_bResetMap = false;

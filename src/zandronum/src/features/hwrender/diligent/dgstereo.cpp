@@ -42,15 +42,18 @@ const char *kBlendPS =
 	"    outColor = vec4(texture(sampler2D(uLeft, uLeft_sampler), vUV).rgb * uLeftMask.rgb + texture(sampler2D(uRight, uRight_sampler), vUV).rgb * uRightMask.rgb, 1.0);\n"
 	"}\n";
 
+// [Doruk-Aksoy] The eyes are kept from the texture the view is drawn into and blended back into it, in its format, so a 16-bit scene stays 16 bits.
 bool EnsureEyePictures(int w, int h)
 {
 	auto *dev = GetDevice();
-	auto *frame = FrameTexture();
-	if (!dev || !frame) return false;
-	const auto &fd = frame->GetDesc();
+	auto *scene = SceneTexture();
+	if (!dev || !scene) return false;
+	const auto &fd = scene->GetDesc();
+	if (g_blendPSO && g_blendPSO->GetGraphicsPipelineDesc().RTVFormats[0] != SceneColorFormat()) { g_blendSRB.Release(); g_blendPSO.Release(); }
 	for (int e = 0; e < 2; e++)
 	{
-		if (g_eyePicture[e] && g_eyePicture[e]->GetDesc().Width == (Diligent::Uint32)w && g_eyePicture[e]->GetDesc().Height == (Diligent::Uint32)h) continue;
+		if (g_eyePicture[e] && g_eyePicture[e]->GetDesc().Width == (Diligent::Uint32)w && g_eyePicture[e]->GetDesc().Height == (Diligent::Uint32)h &&
+			g_eyePicture[e]->GetDesc().Format == fd.Format) continue;
 		g_blendSRB.Release();
 		g_eyePicture[e].Release();
 		Diligent::TextureDesc td;
@@ -62,7 +65,7 @@ bool EnsureEyePictures(int w, int h)
 		CreateDeviceTexture(td, nullptr, &g_eyePicture[e]);
 		if (!g_eyePicture[e]) return false;
 	}
-	if (!g_blendPSO)
+	if (!g_blendCB)
 	{
 		Diligent::BufferDesc cbd;
 		cbd.Name = "fua stereo masks";
@@ -72,8 +75,11 @@ bool EnsureEyePictures(int w, int h)
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
 		CreateDeviceBuffer(cbd, nullptr, &g_blendCB);
 		if (!g_blendCB) return false;
+	}
+	if (!g_blendPSO)
+	{
 		static const char *const kEyes[] = { "uLeft", "uRight" };
-		if (!CreatePicturesPSO("fua stereo blend", kBlendPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, kEyes, 2, g_blendPSO)) return false;
+		if (!CreatePicturesPSO("fua stereo blend", kBlendPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, kEyes, 2, g_blendPSO, SceneColorFormat())) return false;
 		if (auto *v = g_blendPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Masks")) v->Set(g_blendCB);
 	}
 	if (!g_blendSRB)
@@ -108,7 +114,7 @@ void ShiftCameraForEye(BackendCamera &c, float &ndcShift)
 void KeepEyePicture(Diligent::IDeviceContext *ctx, int eye)
 {
 	if (eye < 0 || eye > 1 || !EnsureEyePictures(FrameWidth(), FrameHeight())) return;
-	Diligent::CopyTextureAttribs copy(FrameTexture(), Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
+	Diligent::CopyTextureAttribs copy(SceneTexture(), Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		g_eyePicture[eye], Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->CopyTexture(copy);
 }
@@ -127,7 +133,7 @@ void BlendEyes(Diligent::IDeviceContext *ctx, const StereoMode &mode)
 			Diligent::STATE_TRANSITION_FLAG_UPDATE_STATE);
 		ctx->TransitionResourceStates(1, &barrier);
 	}
-	auto *rtv = FrameRTV();
+	auto *rtv = SceneRTV();
 	ctx->SetRenderTargets(1, &rtv, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	ctx->SetPipelineState(g_blendPSO);
 	ctx->CommitShaderResources(g_blendSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);

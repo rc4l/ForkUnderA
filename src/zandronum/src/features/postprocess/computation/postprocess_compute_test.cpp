@@ -217,7 +217,120 @@ TEST(PostProcess, UniformsAreSetOncePerName)
 	ASSERT_EQ(1u, t.entries.size());
 	ASSERT_EQ(2u, t.entries[0].uniforms.size());
 	EXPECT_EQ(5, t.entries[0].uniforms[0].values[0]);
-	EXPECT_EQ(3u, t.generation);
+	EXPECT_EQ(4, t.entries[0].uniforms[0].kind);
+	ComputeSetShaderUniform(t, "vig", -1, "intensity", a, 0);
+	EXPECT_EQ(0, t.entries[0].uniforms[1].kind);
+	EXPECT_EQ(4u, t.generation);
+}
+
+// [Doruk-Aksoy] Asking again for what a shader already is changes nothing, while a timed call always does, as it moves the end.
+TEST(PostProcess, OnlyARealChangeCounts)
+{
+	ShaderTable t;
+	EXPECT_TRUE(ComputeSetShaderEnabled(t, "fire", -1, true, 10, 0));
+	EXPECT_FALSE(ComputeSetShaderEnabled(t, "FIRE", -1, true, 20, 0));
+	EXPECT_EQ(1u, t.generation);
+	EXPECT_TRUE(ComputeSetShaderEnabled(t, "fire", -1, true, 30, 65));
+	EXPECT_TRUE(ComputeSetShaderEnabled(t, "fire", -1, true, 40, 75));
+	EXPECT_EQ(10, t.entries[0].enabledTic);
+	EXPECT_EQ(75, t.entries[0].expiresTic);
+	EXPECT_TRUE(ComputeSetShaderEnabled(t, "fire", -1, false, 50, 0));
+	EXPECT_FALSE(ComputeSetShaderEnabled(t, "fire", -1, false, 60, 90));
+	EXPECT_EQ(4u, t.generation);
+	const double a[4] = { 1, 0, 0, 1 }, b[4] = { 2, 0, 0, 1 };
+	EXPECT_TRUE(ComputeSetShaderUniform(t, "fire", -1, "x", a, 1));
+	EXPECT_FALSE(ComputeSetShaderUniform(t, "fire", -1, "x", a, 1));
+	EXPECT_TRUE(ComputeSetShaderUniform(t, "fire", -1, "x", a, 0));
+	EXPECT_TRUE(ComputeSetShaderUniform(t, "fire", -1, "x", b, 0));
+	EXPECT_EQ(7u, t.generation);
+}
+
+// [Doruk-Aksoy] A joiner told how long a shader ran starts its clock that far back, and one already running keeps its own.
+TEST(PostProcess, AClockCanStartEarlier)
+{
+	ShaderTable t;
+	ComputeSetShaderEnabled(t, "fire", -1, true, 500, 0, 430);
+	EXPECT_EQ(430, ComputeShaderEntry(t, "fire", -1)->enabledTic);
+	ComputeSetShaderEnabled(t, "fire", -1, true, 510, 600, 200);
+	EXPECT_EQ(430, ComputeShaderEntry(t, "fire", -1)->enabledTic);
+	EXPECT_EQ(nullptr, ComputeShaderEntry(t, "fire", 3));
+}
+
+// [Doruk-Aksoy] A round reset empties the level's state, bumping the generation only when there was some.
+TEST(PostProcess, ARoundResetEmptiesTheTable)
+{
+	ShaderTable t;
+	ComputeClearShaderTable(t);
+	EXPECT_EQ(0u, t.generation);
+	ComputeSetShaderEnabled(t, "fire", 2, true, 0, 0);
+	ComputeClearShaderTable(t);
+	EXPECT_TRUE(t.entries.empty());
+	EXPECT_EQ(2u, t.generation);
+}
+
+// [Doruk-Aksoy] A call is checked against GLDEFS: the shader by name in any case, a uniform by its exact name on any declaration of that name.
+TEST(PostProcess, OnlyDeclaredNamesAreTaken)
+{
+	const std::vector<DeclaredShader> d = { { "Fire", { "strength" } }, { "vig", {} }, { "fire", { "tint" } } };
+	EXPECT_TRUE(ComputeShaderCallDeclared(d, "FIRE", ""));
+	EXPECT_TRUE(ComputeShaderCallDeclared(d, "fire", "strength"));
+	EXPECT_TRUE(ComputeShaderCallDeclared(d, "fire", "tint"));
+	EXPECT_FALSE(ComputeShaderCallDeclared(d, "fire", "Strength"));
+	EXPECT_FALSE(ComputeShaderCallDeclared(d, "vig", "x"));
+	EXPECT_FALSE(ComputeShaderCallDeclared(d, "nosuch", ""));
+	EXPECT_FALSE(ComputeShaderCallDeclared({}, "fire", ""));
+}
+
+// [Doruk-Aksoy] A server reads a lump's includes and post-process blocks in order, skipping every other block, comments and strings with braces in them.
+TEST(PostProcess, AServerReadsOnlyThePostProcessBlocks)
+{
+	const std::string lump =
+		"// a light { not a block\n"
+		"pointlight L { color 1 0 0 size 64 }\n"
+		"#include \"lights/more.txt\"\n"
+		"HardwareShader texture STARTAN2 { Shader \"x.fp\" Speed 1 }\n"
+		"/* HardwareShader PostProcess scene { Name \"hidden\" } */\n"
+		"HardwareShader PostProcess scene\n{\n\tName \"fire\" // brace } in a comment\n\tShader \"s/a\\\"b{.fp\" 330\n\tUniform vec3 c\n}\n"
+		"brightmap texture X { map \"y\" }\n"
+		"}\n"
+		"hardwareshader postprocess screen { Name \"vig\" Enabled }";
+	const std::vector<DeclarationPart> parts = ComputePostProcessDeclarations(lump);
+	ASSERT_EQ(3u, parts.size());
+	EXPECT_TRUE(parts[0].include);
+	EXPECT_EQ("lights/more.txt", parts[0].text);
+	EXPECT_FALSE(parts[1].include);
+	EXPECT_EQ(" scene\n{\n\tName \"fire\" // brace } in a comment\n\tShader \"s/a\\\"b{.fp\" 330\n\tUniform vec3 c\n}", parts[1].text);
+	EXPECT_EQ(" screen { Name \"vig\" Enabled }", parts[2].text);
+}
+
+// [Doruk-Aksoy] What a broken lump leaves: an include with no name, a block cut short, an unclosed string or comment, and a last word.
+TEST(PostProcess, ABrokenLumpEndsWhereItEnds)
+{
+	EXPECT_TRUE(ComputePostProcessDeclarations("#include lights").empty());
+	EXPECT_TRUE(ComputePostProcessDeclarations("HardwareShader").empty());
+	EXPECT_TRUE(ComputePostProcessDeclarations("HardwareShader \"PostProcess\" scene { }").empty());
+	EXPECT_TRUE(ComputePostProcessDeclarations("/* never closed HardwareShader PostProcess scene { }").empty());
+	std::vector<DeclarationPart> cut = ComputePostProcessDeclarations("HardwareShader PostProcess scene { Name \"x\"");
+	ASSERT_EQ(1u, cut.size());
+	EXPECT_EQ(" scene { Name \"x\"", cut[0].text);
+	cut = ComputePostProcessDeclarations("HardwareShader PostProcess scene { Name \"never closed");
+	ASSERT_EQ(1u, cut.size());
+	EXPECT_EQ(" scene { Name \"never closed", cut[0].text);
+	cut = ComputePostProcessDeclarations("HardwareShader PostProcess scene } { }");
+	ASSERT_EQ(1u, cut.size());
+	EXPECT_EQ(" scene } { }", cut[0].text);
+	cut = ComputePostProcessDeclarations("HardwareShader PostProcess scene { \"x\\");
+	ASSERT_EQ(1u, cut.size());
+	EXPECT_EQ(" scene { \"x\\", cut[0].text);
+	EXPECT_TRUE(ComputePostProcessDeclarations("HardwareShader // trailing").empty());
+}
+
+// [Doruk-Aksoy] A word ends at a brace, a quote or a comment written right against it.
+TEST(PostProcess, WordsEndAtWhatFollowsThem)
+{
+	const std::vector<DeclarationPart> parts = ComputePostProcessDeclarations("HardwareShader PostProcess scene{Name//c\n\"a\" Shader\"b\" Enabled/*e*/ x}tail");
+	ASSERT_EQ(1u, parts.size());
+	EXPECT_EQ(" scene{Name//c\n\"a\" Shader\"b\" Enabled/*e*/ x}", parts[0].text);
 }
 
 // [Doruk-Aksoy] The declaration until a level says otherwise, a player's own over everyone's, and a run-out timed one as if never set.
@@ -262,6 +375,13 @@ TEST(PostProcess, TheConsolePlayersOwnUniformWins)
 	EXPECT_EQ(nullptr, ComputeEffectiveUniform(t, "vig", 0, "y"));
 }
 
+// [Doruk-Aksoy] The state line names the shader, whether it runs and since when, then each uniform.
+TEST(PostProcess, AShadersStateLine)
+{
+	EXPECT_EQ("vig off", ComputeShaderStateLine("vig", { false, 0 }, {}));
+	EXPECT_EQ("fire on since 35 alpha=0.5,0,0,1 one=1,0,0,1", ComputeShaderStateLine("fire", { true, 35 }, { { "alpha", { 0.5, 0, 0, 1 } }, { "one", { 1, 0, 0, 1 } } }));
+}
+
 TEST(PostProcess, TheConsoleTogglesOnMinusOne)
 {
 	EXPECT_FALSE(ComputeConsoleEnable(-1, true));
@@ -283,23 +403,20 @@ TEST(PostProcess, AStageRunsItsShadersThatAreOnAndMade)
 	EXPECT_TRUE(ComputePostProcessChain(stages, { false, true }, { true }, kStageScreen).empty());
 }
 
-// [Doruk-Aksoy] Passes alternate between A and B from their source, the screen's last one writing the frame.
+// [Doruk-Aksoy] Passes alternate between A and B from their source, the result in the last one's.
 TEST(PostProcess, PassesPingPong)
 {
-	EXPECT_TRUE(ComputePingPong(0, kPictureSource, false).empty());
-	std::vector<Pass> p = ComputePingPong(3, kPictureSource, false);
+	EXPECT_TRUE(ComputePingPong(0, kPictureSource).empty());
+	std::vector<Pass> p = ComputePingPong(3, kPictureSource);
 	ASSERT_EQ(3u, p.size());
 	EXPECT_EQ(kPictureSource, p[0].source); EXPECT_EQ(kPictureA, p[0].target);
 	EXPECT_EQ(kPictureA, p[1].source); EXPECT_EQ(kPictureB, p[1].target);
 	EXPECT_EQ(kPictureB, p[2].source); EXPECT_EQ(kPictureA, p[2].target);
-	p = ComputePingPong(1, kPictureA, true);
-	ASSERT_EQ(1u, p.size());
-	EXPECT_EQ(kPictureA, p[0].source); EXPECT_EQ(kPictureFinal, p[0].target);
-	p = ComputePingPong(2, kPictureB, true);
+	p = ComputePingPong(2, kPictureB);
 	EXPECT_EQ(kPictureA, p[0].target);
-	EXPECT_EQ(kPictureFinal, p[1].target);
+	EXPECT_EQ(kPictureB, p[1].target);
 	EXPECT_EQ(kPictureSource, ComputeStageResult({}, kPictureSource));
-	EXPECT_EQ(kPictureB, ComputeStageResult(ComputePingPong(2, kPictureSource, false), kPictureSource));
+	EXPECT_EQ(kPictureB, ComputeStageResult(ComputePingPong(2, kPictureSource), kPictureSource));
 }
 
 // [Doruk-Aksoy] Real seconds and the frame's step from the frame clock, game seconds from the tic and its share, and the time since going on never below 0.

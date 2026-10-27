@@ -46,14 +46,29 @@ struct Program
 
 std::vector<Program> g_programs;
 unsigned g_madeFor = ~0u;
+// [Doruk-Aksoy] The pictures shaders draw into are 16-bit float, as UZDoom's are, so a chain or a frame fed back keeps what 8 bits round away.
+const Diligent::TEXTURE_FORMAT kPictureFormat = Diligent::TEX_FORMAT_RGBA16_FLOAT;
 // [Doruk-Aksoy] The two pictures passes alternate between, at the frame's size, and the previous frame's for programs that read it.
 Diligent::RefCntAutoPtr<Diligent::ITexture> g_ping[2], g_last;
+// [Doruk-Aksoy] A picture copied pixel for pixel into a picture (0) or into the frame's format (1), with a binding per picture it reads.
+Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_copyPSO[2];
+struct CopyBinding
+{
+	Diligent::ITexture *from = nullptr;
+	Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> srb;
+};
+CopyBinding g_copySRB[2][4];
+const char *kCopyPS =
+	"#version 450\n"
+	"layout(location = 0) in vec2 vUV;\n"
+	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
+	"layout(location = 0) out vec4 outColor;\n"
+	"void main() { outColor = texelFetch(sampler2D(uTex, uTex_sampler), ivec2(gl_FragCoord.xy), 0); }\n";
 float g_lastRegion[4] = { 1.f, 1.f, 1.f, 1.f };
 bool g_lastValid = false;
 unsigned g_previousFrameMs = 0;
 // [Doruk-Aksoy] This frame's programs for each stage, decided before the main view.
 std::vector<int> g_chain[pp::kStageCount];
-bool g_stereo = false;
 
 void Note(const pp::ShaderDecl &d, const char *why)
 {
@@ -160,7 +175,7 @@ void MakePipeline(int i, Program &p)
 	pci.PSODesc.Name = psoName.GetChars();
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = GetSwapChain()->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = kPictureFormat;
 	pci.GraphicsPipeline.DSVFormat = Diligent::TEX_FORMAT_UNKNOWN;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
@@ -202,6 +217,11 @@ void EnsurePrograms()
 	for (int i = 0; i < pp::PostShaderCount(); i++) MakeProgram(i, g_programs[i]);
 	// [Doruk-Aksoy] Each waited for in turn once all are compiling, as PrecompileUserShaders does, since its layout needs the compiled shader.
 	for (int i = 0; i < pp::PostShaderCount(); i++) MakePipeline(i, g_programs[i]);
+	if (pp::PostShaderCount() > 0)
+	{
+		CreatePicturePSO("fua post copy", kCopyPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, g_copyPSO[0], kPictureFormat);
+		CreatePicturePSO("fua post copy to frame", kCopyPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, g_copyPSO[1]);
+	}
 }
 
 bool SameSize(const Diligent::RefCntAutoPtr<Diligent::ITexture> &t, int w, int h)
@@ -214,13 +234,13 @@ bool EnsurePictures(bool last)
 {
 	const int w = FrameWidth(), h = FrameHeight();
 	for (int k = 0; k < 2; k++)
-		if (!SameSize(g_ping[k], w, h) && !CreateColorTarget(w, h, k == 0 ? "fua post A" : "fua post B", g_ping[k])) return false;
+		if (!SameSize(g_ping[k], w, h) && !CreateColorTarget(w, h, k == 0 ? "fua post A" : "fua post B", g_ping[k], kPictureFormat)) return false;
 	if (last && !SameSize(g_last, w, h))
 	{
 		g_lastValid = false;
-		if (!CreateColorTarget(w, h, "fua post last", g_last)) return false;
+		if (!CreateColorTarget(w, h, "fua post last", g_last, kPictureFormat)) return false;
 	}
-	return true;
+	return g_copyPSO[0] && g_copyPSO[1];
 }
 
 Diligent::ITexture *PictureOf(int picture, Diligent::ITexture *source)
@@ -253,7 +273,7 @@ Diligent::IShaderResourceBinding *BindingFor(int i, int slot, Diligent::ITexture
 	return p.srb[slot];
 }
 
-// [Doruk-Aksoy] The top left w x h of `from` copied into `to`, with nothing bound to draw into while it is.
+// [Doruk-Aksoy] The top left w x h of `from` copied into `to` of the same format, with nothing bound to draw into while it is.
 void CopyPicture(Diligent::IDeviceContext *ctx, Diligent::ITexture *from, Diligent::ITexture *to, int w, int h)
 {
 	ctx->SetRenderTargets(0, nullptr, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_NONE);
@@ -263,6 +283,34 @@ void CopyPicture(Diligent::IDeviceContext *ctx, Diligent::ITexture *from, Dilige
 	ctx->CopyTexture(c);
 }
 
+// [Doruk-Aksoy] The top left w x h of `from` drawn pixel for pixel into `to`, as a copy cannot cross formats; `from` is a picture, the scene or the frame, each with its one binding.
+void DrawCopy(Diligent::IDeviceContext *ctx, Diligent::ITexture *from, Diligent::ITexture *to, int w, int h)
+{
+	const int into = to->GetDesc().Format == kPictureFormat ? 0 : 1;
+	Diligent::ITexture *const sources[4] = { g_ping[0], g_ping[1], SceneTexture(), FrameTexture() };
+	int role = 0;
+	while (role < 4 && sources[role] != from) role++;
+	if (role == 4) return;
+	CopyBinding &b = g_copySRB[into][role];
+	if (b.from != from)
+	{
+		b.srb.Release();
+		if (!CreatePictureBinding(g_copyPSO[into], "uTex", from, b.srb)) return;
+		b.from = from;
+	}
+	Diligent::ITextureView *rtv = to->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	ctx->SetRenderTargets(1, &rtv, nullptr, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::Viewport vp;
+	vp.Width = (float)w;
+	vp.Height = (float)h;
+	ctx->SetViewports(1, &vp, to->GetDesc().Width, to->GetDesc().Height);
+	ctx->SetPipelineState(g_copyPSO[into]);
+	ctx->CommitShaderResources(b.srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::DrawAttribs draw;
+	draw.NumVertices = 3;
+	ctx->Draw(draw);
+}
+
 // [Doruk-Aksoy] Program i reading picture `slot` (`input`, its share `region`), drawn into the top left outW x outH of `target`.
 void RunPass(Diligent::IDeviceContext *ctx, int i, int slot, Diligent::ITexture *input, const float region[4], Diligent::ITextureView *target, int outW, int outH)
 {
@@ -270,7 +318,7 @@ void RunPass(Diligent::IDeviceContext *ctx, int i, int slot, Diligent::ITexture 
 	if (p.lastInput && !g_lastValid && g_last)
 	{
 		// [Doruk-Aksoy] With no previous frame kept, it reads this one, as a shader just turned on has none yet.
-		CopyPicture(ctx, input, g_last, (int)region[2], (int)region[3]);
+		DrawCopy(ctx, input, g_last, (int)region[2], (int)region[3]);
 		memcpy(g_lastRegion, region, sizeof(g_lastRegion));
 		g_lastValid = true;
 	}
@@ -304,24 +352,18 @@ void RunPass(Diligent::IDeviceContext *ctx, int i, int slot, Diligent::ITexture 
 	ZX_COUNT("gpu/post/passes", "passes", 1);
 }
 
-// [Doruk-Aksoy] Runs `chain` from picture `first` (`source`, its share `region`), the last pass into the frame at its full size.
-void RunChain(Diligent::IDeviceContext *ctx, const std::vector<int> &chain, int first, Diligent::ITexture *source, const float region[4], int w, int h,
-	int weaponAt, int viewQuads, int &first2D)
+// [Doruk-Aksoy] Runs `chain` from `source` (w x h of it, its share `region`), each pass into a picture and the last at outW x outH: the picture it leaves the result in.
+Diligent::ITexture *RunSegment(Diligent::IDeviceContext *ctx, const std::vector<int> &chain, Diligent::ITexture *source, const float region[4], int w, int h, int outW, int outH)
 {
-	const std::vector<pp::Pass> passes = pp::ComputePingPong((int)chain.size(), first, true);
+	const std::vector<pp::Pass> passes = pp::ComputePingPong((int)chain.size(), pp::kPictureSource);
 	for (size_t k = 0; k < passes.size(); k++)
 	{
-		Diligent::ITexture *input = PictureOf(passes[k].source, source);
-		// [Doruk-Aksoy] The weapon goes under the scene shaders, drawn into the picture they read at its share of the frame.
-		if ((int)k == weaponAt && viewQuads > 0)
-		{
-			Draw2D(ctx, 0, viewQuads, input->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET), w, h);
-			first2D = viewQuads;
-		}
-		const bool last = passes[k].target == pp::kPictureFinal;
-		Diligent::ITextureView *target = last ? FrameRTV() : PictureOf(passes[k].target, source)->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
-		RunPass(ctx, chain[k], passes[k].source, input, region, target, last ? FrameWidth() : w, last ? FrameHeight() : h);
+		const bool last = k + 1 == passes.size();
+		Diligent::ITexture *target = PictureOf(passes[k].target, source);
+		RunPass(ctx, chain[k], passes[k].source, PictureOf(passes[k].source, source), region, target->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET),
+			last ? outW : w, last ? outH : h);
 	}
+	return PictureOf(pp::ComputeStageResult(passes, pp::kPictureSource), source);
 }
 
 bool AnyReadsLast(const std::vector<int> &chain)
@@ -347,13 +389,17 @@ void ReleasePostProcess()
 	g_ping[1].Release();
 	g_last.Release();
 	g_lastValid = false;
+	for (int into = 0; into < 2; into++)
+	{
+		g_copyPSO[into].Release();
+		for (CopyBinding &b : g_copySRB[into]) b = CopyBinding();
+	}
 	for (std::vector<int> &c : g_chain) c.clear();
 }
 
 bool BeginPostProcessFrame(bool stereo)
 {
 	for (std::vector<int> &c : g_chain) c.clear();
-	g_stereo = stereo;
 	if (!pp::PostProcessAllowed() || pp::PostShaderCount() == 0 || !FrameOffscreen()) return false;
 	EnsurePrograms();
 	// [Doruk-Aksoy] Every picture a declared shader could need is made with the frame's size from the first frame on, so turning one on in play makes nothing.
@@ -379,29 +425,32 @@ bool RunScenePostProcess(Diligent::IDeviceContext *ctx, int viewQuads, bool pres
 	if (before.empty() && scene.empty()) return false;
 	ZX_ZONE("draw/postprocess_scene");   // [Doruk-Aksoy] the beforebloom and scene stages
 	BeginGpuPass(ctx, kGpuPostScene);
-	std::vector<int> chain(before);
-	chain.insert(chain.end(), scene.begin(), scene.end());
-	const int weaponAt = scene.empty() ? -1 : (int)before.size();
+	// [Doruk-Aksoy] The stages read what the view was drawn into (in stereo, what the eyes were blended back into), and leave the full-size result in a picture.
+	Diligent::ITexture *source = SceneTexture();
+	const int w = SceneWidth(), h = SceneHeight();
 	float region[4];
-	if (g_stereo)
+	pp::ComputePostRegion(w, h, FrameWidth(), FrameHeight(), region);
+	Diligent::ITexture *result = source;
+	if (!before.empty()) result = RunSegment(ctx, before, source, region, w, h, scene.empty() ? FrameWidth() : w, scene.empty() ? FrameHeight() : h);
+	if (!scene.empty())
 	{
-		// [Doruk-Aksoy] The eyes are already blended into the frame, so the stages read a copy of it.
-		CopyPicture(ctx, FrameTexture(), g_ping[0], FrameWidth(), FrameHeight());
-		pp::ComputePostRegion(FrameWidth(), FrameHeight(), FrameWidth(), FrameHeight(), region);
-		RunChain(ctx, chain, pp::kPictureA, nullptr, region, FrameWidth(), FrameHeight(), weaponAt, viewQuads, first2D);
+		// [Doruk-Aksoy] The weapon goes under the scene shaders, drawn into the source in its format, so a beforebloom result goes back into the source first.
+		if (result != source) DrawCopy(ctx, result, source, w, h);
+		if (viewQuads > 0)
+		{
+			Draw2D(ctx, 0, viewQuads, source->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET), w, h);
+			first2D = viewQuads;
+		}
+		result = RunSegment(ctx, scene, source, region, w, h, FrameWidth(), FrameHeight());
 	}
-	else
-	{
-		pp::ComputePostRegion(SceneWidth(), SceneHeight(), FrameWidth(), FrameHeight(), region);
-		RunChain(ctx, chain, pp::kPictureSource, SceneTexture(), region, SceneWidth(), SceneHeight(), weaponAt, viewQuads, first2D);
-	}
-	// [Doruk-Aksoy] The scene as it ends up is the next frame's LastInputTexture, kept only on a presented frame and only while a program reads it.
+	DrawCopy(ctx, result, FrameTexture(), FrameWidth(), FrameHeight());
+	// [Doruk-Aksoy] The scene as it ends up is the next frame's LastInputTexture, kept at 16 bits, only on a presented frame and only while a program reads it.
 	if (present)
 	{
 		g_lastValid = false;
-		if (g_last && AnyReadsLast(chain))
+		if (g_last && (AnyReadsLast(before) || AnyReadsLast(scene)))
 		{
-			CopyPicture(ctx, FrameTexture(), g_last, FrameWidth(), FrameHeight());
+			CopyPicture(ctx, result, g_last, FrameWidth(), FrameHeight());
 			pp::ComputePostRegion(FrameWidth(), FrameHeight(), FrameWidth(), FrameHeight(), g_lastRegion);
 			g_lastValid = true;
 		}
@@ -416,11 +465,10 @@ void RunScreenPostProcess(Diligent::IDeviceContext *ctx)
 	if (chain.empty() || !g_ping[0]) return;
 	ZX_ZONE("draw/postprocess_screen");   // [Doruk-Aksoy] the screen stage, over the 2D too
 	BeginGpuPass(ctx, kGpuPostScreen);
-	CopyPicture(ctx, FrameTexture(), g_ping[0], FrameWidth(), FrameHeight());
 	float region[4];
 	pp::ComputePostRegion(FrameWidth(), FrameHeight(), FrameWidth(), FrameHeight(), region);
-	int unused = 0;
-	RunChain(ctx, chain, pp::kPictureA, nullptr, region, FrameWidth(), FrameHeight(), -1, 0, unused);
+	Diligent::ITexture *result = RunSegment(ctx, chain, FrameTexture(), region, FrameWidth(), FrameHeight(), FrameWidth(), FrameHeight());
+	DrawCopy(ctx, result, FrameTexture(), FrameWidth(), FrameHeight());
 	EndGpuPass(ctx, kGpuPostScreen);
 }
 

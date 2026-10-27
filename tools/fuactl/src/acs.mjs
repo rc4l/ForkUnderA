@@ -1,4 +1,5 @@
 // [rc4l] A BEHAVIOR lump in the old ACS0 format, so a template map can run an OPEN script without an ACS compiler.
+// [Doruk-Aksoy] Or ACSE, when a script carries the CLIENTSIDE or NET flag.
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
@@ -6,18 +7,29 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, AS
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
-  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59 };
+  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59, TAGSTRING: 225 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75 };
+export const ACSF = { SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75,
+  fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
+  fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 
 // [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
 export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
   return acsScripts([{ code, open, number }], strings);
 }
 
+// [Doruk-Aksoy] Script types (the thousands of an ACS0 script number) and flags, as p_acs.h numbers them; a flag is what CLIENTSIDE or NET compiles to.
+export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4 };
+export const SCRIPTF = { NET: 1, CLIENTSIDE: 2 };
+
+// [Doruk-Aksoy] A script's type: its own, else OPEN unless `open` is false.
+const scriptType = (s) => s.type ?? ((s.open ?? true) ? SCRIPT.OPEN : SCRIPT.CLOSED);
+
 // [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings.
-export function acsScripts(scripts, strings = []) {
+// [Doruk-Aksoy] A script may also give its `type` and `flags`; with any flags, or `enhanced` as a library is compiled, the lump is ACSE, since ACS0 has nowhere to keep them.
+export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
+  if (enhanced || scripts.some((s) => s.flags)) return acseScripts(scripts, strings);
   const code = scripts.flatMap((s) => s.code);
   const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
   const strStart = 8 + 4 * code.length;
@@ -35,7 +47,7 @@ export function acsScripts(scripts, strings = []) {
   let address = 8;
   scripts.forEach((s, i) => {
     const entry = dirOffset + 4 + 12 * i;
-    out.writeInt32LE((s.open ?? true ? 1000 : 0) + (s.number ?? 1), entry);
+    out.writeInt32LE(scriptType(s) * 1000 + (s.number ?? 1), entry);
     out.writeInt32LE(address, entry + 4);
     out.writeInt32LE(0, entry + 8);
     address += 4 * s.code.length;
@@ -44,6 +56,41 @@ export function acsScripts(scripts, strings = []) {
   out.writeInt32LE(strings.length, table);
   offsets.forEach((o, i) => out.writeInt32LE(o, table + 4 + 4 * i));
   return out;
+}
+
+// [Doruk-Aksoy] The same scripts as an ACSE lump: the code, then SPTR (each script's number, type and address), SFLG (each flagged script's flags) and STRL (the strings, their offsets from the table's start), as FBehavior reads them.
+function acseScripts(scripts, strings) {
+  const code = scripts.flatMap((s) => s.code);
+  const chunk = (id, data) => {
+    const size = Buffer.alloc(4);
+    size.writeUInt32LE(data.length, 0);
+    return Buffer.concat([Buffer.from(id, "latin1"), size, data]);
+  };
+  const sptr = Buffer.alloc(12 * scripts.length);
+  let address = 8;
+  scripts.forEach((s, i) => {
+    sptr.writeInt16LE(s.number ?? 1, 12 * i);
+    sptr.writeUInt16LE(scriptType(s), 12 * i + 2);
+    sptr.writeInt32LE(address, 12 * i + 4);
+    sptr.writeInt32LE(0, 12 * i + 8);
+    address += 4 * s.code.length;
+  });
+  const flagged = scripts.filter((s) => s.flags);
+  const sflg = Buffer.alloc(4 * flagged.length);
+  flagged.forEach((s, i) => { sflg.writeInt16LE(s.number ?? 1, 4 * i); sflg.writeUInt16LE(s.flags, 4 * i + 2); });
+  const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
+  const head = Buffer.alloc(12 + 4 * strings.length);
+  head.writeInt32LE(strings.length, 4);
+  let at = head.length;
+  strBytes.forEach((b, i) => { head.writeInt32LE(at, 12 + 4 * i); at += b.length; });
+  const strlData = Buffer.concat([head, ...strBytes]);
+  const strl = Buffer.concat([strlData, Buffer.alloc((4 - (strlData.length % 4)) % 4)]);
+  const codeBytes = Buffer.alloc(4 * code.length);
+  code.forEach((w, i) => codeBytes.writeInt32LE(w, 4 * i));
+  const header = Buffer.alloc(8);
+  header.write("ACSE", 0, "latin1");
+  header.writeInt32LE(8 + codeBytes.length, 4);
+  return Buffer.concat([header, codeBytes, chunk("SPTR", sptr), chunk("SFLG", sflg), chunk("STRL", strl)]);
 }
 
 // [rc4l] The words that call action special `special` with up to five arguments, as `Special(a, b, c)` compiles.

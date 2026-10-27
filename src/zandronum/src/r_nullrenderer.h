@@ -11,6 +11,7 @@
 #define __R_NULLRENDERER_H
 
 #include "r_renderer.h"
+#include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] ReadPostProcessDeclarations
 
 struct FNullRenderer : public FRenderer
 {
@@ -20,7 +21,8 @@ struct FNullRenderer : public FRenderer
 	void WriteSavePic(player_t *player, FILE *file, int width, int height) {}
 	int GetMaxViewPitch(bool down) { return 56; }
 	void ClearBuffer(int color) {}
-	void Init() {}
+	// [Doruk-Aksoy] A dedicated server reads GLDEFS's post-process shaders alone, so it ignores a script's undeclared names as a client does.
+	void Init() { zx::postprocess::ReadPostProcessDeclarations(); }
 	void RenderTextureView(FCanvasTexture *tex, AActor *viewpoint, int fov) {}
 	sector_t *FakeFlat(sector_t *sec, sector_t *tempsec, int *floorlightlevel, int *ceilinglightlevel, bool back)
 	{

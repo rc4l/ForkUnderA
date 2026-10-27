@@ -115,7 +115,7 @@ async function heard(c) {
 const cacheOf = async (c) => parseMusicCache(await cap.exec(c, "fua_musiccache", { quietMs: 300 }));
 
 // [Doruk-Aksoy] A client that plays its music at an audible volume or its sounds at all is refused before anything starts.
-async function assertQuiet(c, who) {
+export async function assertQuiet(c, who) {
   const text = (await cap.exec(c, "snd_musicvolume")) + (await cap.exec(c, "snd_sfxvolume"));
   if (!/"snd_musicvolume" is "0\.001"/.test(text) || !/"snd_sfxvolume" is "0"/.test(text)) throw new Error(`${who} is not muted: ${text.trim()}`);
 }

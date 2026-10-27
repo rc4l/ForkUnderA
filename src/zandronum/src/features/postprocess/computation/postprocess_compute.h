@@ -6,6 +6,7 @@
 #ifndef ZX_POSTPROCESS_COMPUTE_H
 #define ZX_POSTPROCESS_COMPUTE_H
 
+#include <climits>
 #include <string>
 #include <vector>
 
@@ -96,6 +97,7 @@ struct ShaderEntry
 	{
 		std::string name;
 		double values[4];
+		int kind;   // [Doruk-Aksoy] how it was set: 0 one int, 1 to 4 that many floats
 	};
 	std::string shader;
 	int player = -1;
@@ -112,11 +114,40 @@ struct ShaderTable
 	std::vector<ShaderEntry> entries;
 };
 
-// [Doruk-Aksoy] Turns `shader` on or off for `player` (-1 everyone) at tic `now`, going off again at `expires` (0 never).
-void ComputeSetShaderEnabled(ShaderTable &table, const std::string &shader, int player, bool enabled, int now, int expires);
+// [Doruk-Aksoy] The `since` that starts a shader's clock at the tic it is turned on.
+const int kSinceNow = INT_MIN;
 
-// [Doruk-Aksoy] Sets a uniform of `shader` for `player` (-1 everyone).
-void ComputeSetShaderUniform(ShaderTable &table, const std::string &shader, int player, const std::string &uniform, const double values[4]);
+// [Doruk-Aksoy] Turns `shader` on or off for `player` (-1 everyone) at tic `now`, going off again at `expires` (0 never); one not yet running starts its clock at `since` (now, or earlier for a joiner told how long it ran), and false means nothing changed.
+bool ComputeSetShaderEnabled(ShaderTable &table, const std::string &shader, int player, bool enabled, int now, int expires, int since = kSinceNow);
+
+// [Doruk-Aksoy] Sets a uniform of `shader` for `player` (-1 everyone), `kind` saying how (0 one int, 1 to 4 that many floats) so it can be sent on as it was set; false when it already stood there, set the same way.
+bool ComputeSetShaderUniform(ShaderTable &table, const std::string &shader, int player, const std::string &uniform, const double values[4], int kind = 4);
+
+// [Doruk-Aksoy] The level's entry for (`shader`, `player`), or null.
+const ShaderEntry *ComputeShaderEntry(const ShaderTable &table, const std::string &shader, int player);
+
+// [Doruk-Aksoy] Empties a level's shader state, as a round reset starts the level afresh.
+void ComputeClearShaderTable(ShaderTable &table);
+
+// [Doruk-Aksoy] A GLDEFS post-process shader's name and its uniforms', all a call needs to be checked against.
+struct DeclaredShader
+{
+	std::string name;
+	std::vector<std::string> uniforms;
+};
+
+// [Doruk-Aksoy] Whether GLDEFS declares `shader` and, when `uniform` is not empty, one of that name's declarations has that uniform; a call naming anything else is ignored.
+bool ComputeShaderCallDeclared(const std::vector<DeclaredShader> &declared, const std::string &shader, const std::string &uniform);
+
+// [Doruk-Aksoy] A piece of a GLDEFS lump a server reads for its post-process shaders alone: an `#include`'s lump name, or a `HardwareShader PostProcess` block's text after `PostProcess`.
+struct DeclarationPart
+{
+	bool include;
+	std::string text;
+};
+
+// [Doruk-Aksoy] A GLDEFS lump's includes and post-process blocks in order, every other block skipped, for a server that has no renderer to read the rest.
+std::vector<DeclarationPart> ComputePostProcessDeclarations(const std::string &lump);
 
 // [Doruk-Aksoy] Whether `shader` runs at tic `now` for the console player, and the tic it went on: the player's own entry over everyone's, over the declaration's Enabled from the level's start.
 struct EffectiveEnabled
@@ -129,14 +160,24 @@ EffectiveEnabled ComputeEffectiveEnabled(const ShaderTable &table, const std::st
 // [Doruk-Aksoy] The values a level set for a uniform of `shader`, the console player's over everyone's, or null for the declaration's.
 const double *ComputeEffectiveUniform(const ShaderTable &table, const std::string &shader, int consolePlayer, const std::string &uniform);
 
+// [Doruk-Aksoy] A uniform's name and the four numbers it stands at, as fua_postshaders lists it.
+struct UniformState
+{
+	std::string name;
+	double values[4];
+};
+
+// [Doruk-Aksoy] One shader's line in fua_postshaders: its name, `on since <tic>` or `off`, then each uniform as name=x,y,z,w.
+std::string ComputeShaderStateLine(const std::string &name, const EffectiveEnabled &state, const std::vector<UniformState> &uniforms);
+
 // [Doruk-Aksoy] What the console's shaderenable sets a shader to: `value` 1 or 0, or -1 for the other of `current`.
 bool ComputeConsoleEnable(int value, bool current);
 
 // [Doruk-Aksoy] The shaders of `stage` that run this frame, in GLDEFS order: those of that stage, on, and with their pipeline made.
 std::vector<int> ComputePostProcessChain(const std::vector<int> &stages, const std::vector<bool> &enabled, const std::vector<bool> &ready, int stage);
 
-// [Doruk-Aksoy] The pictures a stage's passes read and write: the source, the two ping-pong targets, and the frame's own target.
-enum Picture { kPictureSource, kPictureA, kPictureB, kPictureFinal };
+// [Doruk-Aksoy] The pictures a stage's passes read and write: the source and the two ping-pong targets.
+enum Picture { kPictureSource, kPictureA, kPictureB };
 
 struct Pass
 {
@@ -144,8 +185,8 @@ struct Pass
 	int target;
 };
 
-// [Doruk-Aksoy] `passes` passes, the first reading `first` and each the one before's, alternating between A and B, the last writing the frame's target when `lastToFinal`.
-std::vector<Pass> ComputePingPong(int passes, int first, bool lastToFinal);
+// [Doruk-Aksoy] `passes` passes, the first reading `first` and each the one before's, alternating between A and B.
+std::vector<Pass> ComputePingPong(int passes, int first);
 
 // [Doruk-Aksoy] The picture a stage leaves its result in: the last pass's target, or `first` when none ran.
 int ComputeStageResult(const std::vector<Pass> &passes, int first);
