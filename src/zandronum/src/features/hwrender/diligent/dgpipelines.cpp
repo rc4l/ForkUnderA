@@ -6,6 +6,7 @@
 #include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
 #include "features/hwshaders/computation/hwshader_compute.h"
 #include "features/hwrender/computation/materialindex_compute.h"
+#include "features/hwrender/computation/retiredbindings_compute.h"   // [Doruk-Aksoy] RetiredBindings
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsCapacity
 #include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLightCapacity
@@ -310,6 +311,19 @@ void DirtyMaterialSlots() { g_matSlotsDirty = true; g_matSlotRetries = 0; }
 // one binding per world pipeline serves the whole world. See docs/bindless-attempt-notes.md.
 static Diligent::IShaderResourceBinding *g_worldSRBs[kWorldPipelines] = { 0 };
 static bool g_bindlessReady = false;
+
+// [Doruk-Aksoy] One fill's bindings, a pointer per world pipeline, a shared one holding a reference of its own.
+struct WorldBindings { Diligent::IShaderResourceBinding *srbs[kWorldPipelines]; };
+
+static void ReleaseBindings(WorldBindings &b)
+{
+	for (Diligent::IShaderResourceBinding *&srb : b.srbs)
+		if (srb) { srb->Release(); srb = NULL; }
+}
+
+// [Doruk-Aksoy] Fills a refill replaced, filled again once the GPU has finished with them, since each new one is a descriptor set whose memory NVIDIA's driver keeps once freed.
+static zx::hwrender::RetiredBindings<WorldBindings> g_retiredWorld;
+static const size_t kRetiredWorldKept = 4;
 // [rc4l] What the array was last filled FROM, so a rebuild that changes nothing rebuilds nothing.
 //
 // A scene rebuild resets the slot table and re-emits every vertex, and on a level with moving
@@ -336,13 +350,32 @@ void ReleaseWorldSRBs()
 {
 	for (int i = 0; i < kWorldPipelines; i++)
 		if (g_worldSRBs[i]) { g_worldSRBs[i]->Release(); g_worldSRBs[i] = NULL; }
+	// [Doruk-Aksoy] The retired fills go too, as they were made from the same pipelines.
+	WorldBindings retired = {};
+	while (zx::hwrender::ComputeTakeRetiredBindings(g_retiredWorld, ~Diligent::Uint64{ 0 }, retired)) ReleaseBindings(retired);
+}
+
+// [Doruk-Aksoy] The current fill moved to the retired ones, last drawn in the frame being built; past kRetiredWorldKept the oldest is let go.
+static void RetireWorldSRBs()
+{
+	WorldBindings current = {};
+	bool any = false;
+	for (int i = 0; i < kWorldPipelines; i++)
+	{
+		current.srbs[i] = g_worldSRBs[i];
+		any = any || current.srbs[i] != NULL;
+		g_worldSRBs[i] = NULL;
+	}
+	WorldBindings dropped = {};
+	if (any && zx::hwrender::ComputeRetireBindings(g_retiredWorld, FrameBeingBuilt(), current, kRetiredWorldKept, dropped)) ReleaseBindings(dropped);
 }
 
 // [rc4l] Fill the material array on a BINDING.
 //
 // Every element, always: an unassigned element is not "mostly bound", and the white placeholder
 // covers the slots past the live ones as well as anything whose own upload failed.
-static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb)
+// [Doruk-Aksoy] `flags` lets a retired fill's array be written again.
+static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb, Diligent::SET_SHADER_RESOURCE_FLAGS flags)
 {
 	if (!srb) return false;
 	auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials");
@@ -383,7 +416,7 @@ static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb)
 			g_stats.fillNames[i] = zx::materials::MaterialName(g_matSlotTable[i].material);
 			g_stats.fillViews[i] = (const void *)obj;
 		}
-		v->SetArray(&obj, i, 1);
+		v->SetArray(&obj, i, 1, flags);
 	}
 	return true;
 }
@@ -421,33 +454,59 @@ void RefreshBindless()
 	if (zx::hwrender::ComputeKeepsMaterialFill(g_bindlessReady, MaterialSlotsMatchFill(), g_stats.matSlotsWhite)) return;
 	g_bindlessReady = false;
 	g_filledFrom.Clear();
-	ReleaseWorldSRBs();
+	// [Doruk-Aksoy] The fill being replaced waits for the GPU to finish with it, and a retired one it has finished with is filled again rather than new bindings made.
+	RetireWorldSRBs();
+	WorldBindings reused = {};
+	zx::hwrender::ComputeTakeRetiredBindings(g_retiredWorld, FrameFinishedOnGpu(), reused);
 	// [rc4l] '-' for a pipeline the fill has not reached.
 	memset(g_stats.fillState, '-', kWorldPipelines);
 	for (int i = 0; i < kWorldPipelines; i++)
 	{
-		if (!g_pso.world[i]) return;
-		g_pso.world[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
-		if (!g_worldSRBs[i]) { ReleaseWorldSRBs(); return; }
-		g_stats.fillState[i] = 'b';
+		if (!g_pso.world[i]) { ReleaseBindings(reused); return; }
+		// [Doruk-Aksoy] A pipeline taking the same resources as an earlier one commits that one's binding, so a fill makes 2 material arrays rather than 22.
+		const int shared = zx::hwrender::ComputeSharedWorldBinding(i, [i](int earlier) { return g_pso.world[i]->IsCompatibleWith(g_pso.world[earlier]); });
+		if (shared >= 0 && g_worldSRBs[shared])
+		{
+			g_worldSRBs[i] = g_worldSRBs[shared];
+			g_worldSRBs[i]->AddRef();
+			g_stats.fillState[i] = 's';
+			continue;
+		}
+		Diligent::SET_SHADER_RESOURCE_FLAGS flags = Diligent::SET_SHADER_RESOURCE_FLAG_NONE;
+		if (reused.srbs[i])
+		{
+			g_worldSRBs[i] = reused.srbs[i];
+			reused.srbs[i] = NULL;
+			flags = Diligent::SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE;
+			g_stats.fillState[i] = 'r';
+		}
+		else
+		{
+			g_pso.world[i]->CreateShaderResourceBinding(&g_worldSRBs[i], true);
+			if (!g_worldSRBs[i]) { ReleaseBindings(reused); ReleaseWorldSRBs(); return; }
+			g_stats.fillState[i] = 'b';
+		}
 		// uTex and uBrightmap are still declared and still mutable. The shader does not read them
 		// while the array is live, but an unassigned sampler is undefined rather than unused.
 		Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
 		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-			v->Set(white);
+			v->Set(white, flags);
 		if (auto *v = g_worldSRBs[i]->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uBrightmap"))
 		{
 			Diligent::IDeviceObject *bm = GetBrightmapSRV(NULL);
-			v->Set(bm ? bm : white);
+			v->Set(bm ? bm : white, flags);
 		}
-		if (!FillMaterialArraySRB(g_worldSRBs[i]))
+		if (!FillMaterialArraySRB(g_worldSRBs[i], flags))
 		{
+			ReleaseBindings(reused);
 			ReleaseWorldSRBs();
 			static bool said = false;
 			if (!said) { said = true; Printf("Diligent bindless: staying on per-material bindings" "\n"); }
 			return;
 		}
 	}
+	// [Doruk-Aksoy] What a filled-again fill still holds: its shared pipelines' references.
+	ReleaseBindings(reused);
 	g_bindlessReady = true;
 	g_stats.fillCount++;
 	g_filledFrom = g_matSlotTable;
@@ -481,7 +540,8 @@ void FlushTextureCache()
 	DirtyMaterialSlots();
 }
 
-bool BindlessActive() { return fua_dg_bindless && MaterialSlotCapacity() > 0 && g_bindlessReady && !g_matSlotOverflow; }
+bool BindlessWanted() { return fua_dg_bindless && MaterialSlotCapacity() > 0 && !g_matSlotOverflow; }
+bool BindlessActive() { return BindlessWanted() && g_bindlessReady; }
 
 
 // [rc4l] Commit srb inside one draw loop, checking its resources' states only the first time the loop commits it.
