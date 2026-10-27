@@ -248,3 +248,26 @@ TEST(McpRpc, GetIntCannotReadAJsonBoolean)
 	EXPECT_FALSE(zx::mcp::GetInt("{\"on\":false}", "on", v));
 	EXPECT_EQ(1, v);
 }
+
+// ---- Held console commands -------------------------------------------------
+
+// [Doruk-Aksoy] A command arriving while the engine starts (a wad_reload restart) is held, not run, so the console cannot store it as a thinker the title throws away.
+TEST(McpHeldCommands, ACommandDuringStartupIsHeldAndRunsOnceUp)
+{
+	HeldCommands held;
+	EXPECT_TRUE(ComputeHoldCommand(held, "wad_reload a.wad", true));
+	EXPECT_TRUE(ComputeReleaseCommands(held, true).empty());
+	EXPECT_EQ(std::vector<std::string>{ "wad_reload a.wad" }, ComputeReleaseCommands(held, false));
+	EXPECT_TRUE(ComputeReleaseCommands(held, false).empty());
+}
+
+// [Doruk-Aksoy] Once up, a command runs at once; one arriving behind held ones waits its turn, so they run in the order sent.
+TEST(McpHeldCommands, CommandsRunInTheOrderSent)
+{
+	HeldCommands held;
+	EXPECT_FALSE(ComputeHoldCommand(held, "god", false));
+	EXPECT_TRUE(ComputeHoldCommand(held, "first", true));
+	EXPECT_TRUE(ComputeHoldCommand(held, "second", false));
+	EXPECT_EQ((std::vector<std::string>{ "first", "second" }), ComputeReleaseCommands(held, false));
+	EXPECT_FALSE(ComputeHoldCommand(held, "third", false));
+}

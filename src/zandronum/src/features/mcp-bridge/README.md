@@ -68,7 +68,7 @@ hello    {"t":"hello","engine":"forkundera","bridge":"2.0.0","pid":N,"caps":[...
 
 ### Commands
 
-- `ping`, `capabilities` (self-describing), `console.exec {text}`
+- `ping`, `capabilities` (self-describing), `console.exec {text}` (held while the engine starts, as after a `wad_reload`, and run in order once it is up, since the console stores a command then as a thinker the title's first demo throws away; answers `{"held":true}`)
 - **Determinism**: `sim.tic`, `sim.hash`, `sim.seed {op:get|set,value}`, `sim.pause`, `sim.resume`,
   `sim.step {tics}`, `sim.snapshot {slot}`, `sim.restore {slot}`
 - **Structured state**: `state.player`, `state.actors {limit}`; `world.actors {netid, limit, players, all, owned}`

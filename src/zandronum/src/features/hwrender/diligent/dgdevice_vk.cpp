@@ -15,10 +15,36 @@
 #include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
 #include "features/telemetry/telemetry.h"
 
+#include "c_cvars.h"
+
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
+// [Doruk-Aksoy] On at launch, the Vulkan driver's own memory goes through the engine's operator new, counted and traced as the rest is (fua_allocsites); read once, when the device is made.
+CVAR(Bool, fua_dg_vk_alloc_trace, false, 0)
+
 namespace zx { namespace hwrender {
+
+namespace {
+
+void *VKAPI_PTR DriverAlloc(void *, size_t size, size_t alignment, VkSystemAllocationScope) { return AllocateAlignedNew(size, alignment); }
+void VKAPI_PTR DriverFree(void *, void *memory) { FreeAlignedNew(memory); }
+
+void *VKAPI_PTR DriverRealloc(void *, void *original, size_t size, size_t alignment, VkSystemAllocationScope)
+{
+	if (original == nullptr) return AllocateAlignedNew(size, alignment);
+	if (size == 0) { FreeAlignedNew(original); return nullptr; }
+	void *moved = AllocateAlignedNew(size, alignment);
+	if (moved == nullptr) return nullptr;
+	memcpy(moved, original, std::min(size, AlignedNewSize(original)));
+	FreeAlignedNew(original);
+	return moved;
+}
+
+VkAllocationCallbacks g_driverAllocator = { nullptr, DriverAlloc, DriverRealloc, DriverFree, nullptr, nullptr };
+
+} // namespace
 
 // [rc4l] The device's own descriptor limits, so a GPU smaller than a desktop one draws with a binding per material instead of failing pipeline creation.
 static DescriptorLimits ReadLimits(Diligent::IRenderDevice *device)
@@ -107,6 +133,8 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	// [Doruk-Aksoy] A thread pool for shaders compiled in the background, which the GLDEFS shaders' programs take at launch (CompileShaderAsync).
 	ci.Features.AsyncShaderCompilation = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	factory->SetMemoryAllocator(zx::hwrender::EngineMemoryAllocator());
+	if (fua_dg_vk_alloc_trace) ci.pVkAllocator = &g_driverAllocator;
 	factory->CreateDeviceAndContextsVk(ci, device, context);
 	if (*device == nullptr)
 	{

@@ -61,6 +61,14 @@ BlendEquation ComputeBlendEquation(int blend);
 // [rc4l] The kWpBlend* a projected decal's pass draws with: fuzz's fallback, additive, or alpha over.
 int ComputeDecalPassBlend(bool fuzzPass, bool additivePass);
 
+// [Doruk-Aksoy] The first pipeline before `pipeline` whose binding it can take (`compatible(earlier)`), or -1 for one that needs its own; the world's 22 pipelines take 2 layouts between them.
+template <class Compatible> int ComputeSharedWorldBinding(int pipeline, Compatible compatible)
+{
+	for (int earlier = 0; earlier < pipeline; earlier++)
+		if (compatible(earlier)) return earlier;
+	return -1;
+}
+
 }} // namespace zx::hwrender
 
 #endif // ZX_WORLDPIPELINES_COMPUTE_H

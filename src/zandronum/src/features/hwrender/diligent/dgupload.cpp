@@ -476,7 +476,9 @@ static bool BuildSceneBuffer(FString &err)
 	DirtyMaterialSlots();
 
 	ReleaseBatchSRBs();
-	for (unsigned i = 0; i < g_scene.batches.Size(); i++) BatchSRB(g_scene.batches[i]);
+	// [Doruk-Aksoy] Ahead only when the array will not carry them, as BatchSRB makes one the first time a batch draws without it.
+	if (!BindlessWanted())
+		for (unsigned i = 0; i < g_scene.batches.Size(); i++) BatchSRB(g_scene.batches[i]);
 	// [rc4l] The decal pass's pipelines go whenever the scene's do (ReleaseScenePipelines), so they are made with the scene: made by the first floor or ceiling mark instead, they stalled that frame some 18 ms on every level.
 	EnsureDecalPipelines();
 	// [Doruk-Aksoy] So are the GLDEFS shaders' programs the level's surfaces draw with.
@@ -593,7 +595,8 @@ static bool AppendPiece(Diligent::IDeviceContext *ctx, const zx::levelmesh::Mesh
 	b.srb = NULL;
 	b.walkId = -1;
 	b.userShader = -1;
-	if (BatchSRB(b) == NULL) return false;   // [rc4l] no binding, no draw -- and a rebuild will do it properly
+	// [Doruk-Aksoy] With the array to carry it, only the pipeline: a binding per batch made from a world pipeline is a 4096-descriptor set nothing reads, and NVIDIA's driver keeps its memory once freed.
+	if (BindlessWanted() ? BatchPSO(b.blend) == NULL : BatchSRB(b) == NULL) return false;   // [rc4l] no binding, no draw -- and a rebuild will do it properly
 	g_scene.batches.Push(b);
 	g_scene.batchesGen++;
 

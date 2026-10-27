@@ -108,3 +108,17 @@ TEST(WorldPipelines, AHudModelTakesItsDepthWritingBlend)
 	EXPECT_EQ(kWpSubHud, ComputeDynamicPipeline(5, false, false, true));
 	EXPECT_EQ(kWpTransHud, ComputeDynamicPipeline(-1, false, false, true));
 }
+
+// [Doruk-Aksoy] A pipeline takes the binding of the first earlier one it is compatible with, and the first of each layout makes its own.
+TEST(WorldPipelines, APipelineSharesTheFirstCompatibleBinding)
+{
+	const int layout[] = { 0, 1, 0, 0, 1, 2 };
+	int shared[6];
+	for (int i = 0; i < 6; i++) shared[i] = ComputeSharedWorldBinding(i, [&](int earlier) { return layout[earlier] == layout[i]; });
+	EXPECT_EQ(-1, shared[0]);
+	EXPECT_EQ(-1, shared[1]);
+	EXPECT_EQ(0, shared[2]);
+	EXPECT_EQ(0, shared[3]);
+	EXPECT_EQ(1, shared[4]);
+	EXPECT_EQ(-1, shared[5]);
+}

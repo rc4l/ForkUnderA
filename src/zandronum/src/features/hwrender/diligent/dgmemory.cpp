@@ -4,16 +4,61 @@
 // [rc4l] Every texture and buffer made through CreateDeviceTexture and CreateDeviceBuffer, held weakly so counting changes no lifetime and swept as each is released, as features/telemetry's gpu/mem counters and tags.
 
 #include "features/hwrender/diligent/dgmemory.h"
+#include "features/hwrender/diligent/dgdevice.h"   // [Doruk-Aksoy] EngineMemoryAllocator, AllocateAlignedNew
 #include "features/telemetry/telemetry.h"
 
 #include "GraphicsAccessories.hpp"
 #include "RefCntAutoPtr.hpp"
 #include "doomtype.h"
 
+#include "features/hwrender/computation/alignedblock_compute.h"
+
+#include <algorithm>
 #include <mutex>
+#include <new>
 #include <vector>
 
 namespace zx { namespace hwrender {
+
+namespace {
+
+// [Doruk-Aksoy] What sits before each aligned block: the larger block it was cut from, and its size for a reallocation's copy.
+struct AlignedHeader { void *base; size_t size; };
+
+// [Doruk-Aksoy] Diligent's default allocator calls malloc, which the engine's counters never see; this one calls operator new, aligned blocks included.
+struct EngineAllocator final : Diligent::IMemoryAllocator
+{
+	void *Allocate(size_t size, const Diligent::Char *, const char *, const Diligent::Int32) override { return ::operator new(size); }
+	void Free(void *ptr) override { ::operator delete(ptr); }
+	void *AllocateAligned(size_t size, size_t alignment, const Diligent::Char *, const char *, const Diligent::Int32) override { return AllocateAlignedNew(size, alignment); }
+	void FreeAligned(void *ptr) override { FreeAlignedNew(ptr); }
+};
+
+EngineAllocator g_engineAllocator;
+
+} // namespace
+
+Diligent::IMemoryAllocator *EngineMemoryAllocator() { return &g_engineAllocator; }
+
+void *AllocateAlignedNew(size_t size, size_t alignment)
+{
+	const size_t align = std::max(alignment, alignof(AlignedHeader));
+	char *base = static_cast<char *>(::operator new(ComputeAlignedBlockBytes(size, align, sizeof(AlignedHeader)), std::nothrow));
+	if (base == nullptr) return nullptr;
+	AlignedHeader *block = reinterpret_cast<AlignedHeader *>(ComputeAlignedBlockStart(reinterpret_cast<uintptr_t>(base), align, sizeof(AlignedHeader)));
+	block[-1] = AlignedHeader{ base, size };
+	return block;
+}
+
+void FreeAlignedNew(void *ptr)
+{
+	if (ptr != nullptr) ::operator delete(static_cast<AlignedHeader *>(ptr)[-1].base);
+}
+
+size_t AlignedNewSize(void *ptr)
+{
+	return static_cast<AlignedHeader *>(ptr)[-1].size;
+}
 
 namespace {
 
