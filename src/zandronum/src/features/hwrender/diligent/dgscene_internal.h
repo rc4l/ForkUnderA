@@ -330,6 +330,7 @@ struct SceneStats
 	int     dynSlotRefused = 0, dynSlotNoMaterial = 0, dynSlotSeen = 0, dynSlotMax = 0;
 	int     dynSlotUnfilled = 0, dynSlotUnfilledTotal = 0;   // [rc4l] dynamic slots past the array's fill this frame and since load
 	// [rc4l] Per pipeline: '-' untouched, 'x' the array is not there, 'f' filled, 'b' filled and bound.
+	// [Doruk-Aksoy] ...'s' sharing an earlier compatible pipeline's binding, and 'r' a retired binding filled again.
 	char    fillState[kWorldPipelines + 1] = {};
 	FString fillNames[8];
 	const void *fillViews[8] = {};
@@ -383,6 +384,8 @@ int AnimationOf(const void *material);
 Diligent::IPipelineState *BatchPSO(int blend);
 Diligent::IShaderResourceBinding *BatchSRB(SceneBatch &b);
 bool BindlessActive();
+// [Doruk-Aksoy] Whether the material array is to carry the world once it is filled, so a batch needs no binding of its own until something draws it without the array.
+bool BindlessWanted();
 void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop, Diligent::IShaderResourceBinding *srb);
 void DirtyMaterialSlots();
 bool EnsureScenePipeline(FString &err);

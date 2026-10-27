@@ -311,9 +311,15 @@ void MCP_RPC_FrameEnd()
 	}
 }
 
+// [Doruk-Aksoy] console.exec's commands that arrived while the engine was starting, run once it is up.
+static zx::mcp::HeldCommands s_heldCommands;
+
 void MCP_RPC_Tick()
 {
 	MCP_HUD_BeginFrame(); // snapshot the frame the engine just drew (for screenshots/HUD reads)
+
+	for ( std::string &text : zx::mcp::ComputeReleaseCommands( s_heldCommands, gamestate == GS_STARTUP ) )
+		AddCommandString( const_cast<char *>( text.c_str() ), 0 );
 
 	// GPU profiler (gl.timers): the render-thread anchors accumulate timer-query results across frames;
 	// when a capture completes, its report is waiting here and goes out as a "glperf" event, mirroring
@@ -391,6 +397,12 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		if ( !GetStr( args, "text", text ) || text.empty() )
 		{
 			SendErr( id, "console.exec requires args.text" );
+			return;
+		}
+		// [Doruk-Aksoy] Held while the engine starts, as after a wad_reload restart, and run in order once it is up (MCP_RPC_Tick).
+		if ( zx::mcp::ComputeHoldCommand( s_heldCommands, text, gamestate == GS_STARTUP ) )
+		{
+			SendOk( id, "{\"executed\":false,\"held\":true}" );
 			return;
 		}
 		AddCommandString( const_cast<char *>( text.c_str() ), 0 );

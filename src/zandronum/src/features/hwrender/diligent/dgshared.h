@@ -202,6 +202,9 @@ void DrawGpuLoad(Diligent::IDeviceContext *ctx);
 void ReleaseGpuLoad();
 // [rc4l] The frame fence released at the backend's shutdown (dgwindow.cpp), while the console its destructor reports to is still there.
 void ReleaseFrameFence();
+// [Doruk-Aksoy] The number the frame being built signals the frame fence with, and the last the GPU has finished.
+Diligent::Uint64 FrameBeingBuilt();
+Diligent::Uint64 FrameFinishedOnGpu();
 // [rc4l] Everything a level owned on the GPU (dgframe.cpp), for a level change and for shutdown's report of what is still held.
 void ReleaseLevelResources();
 // [rc4l] The sprite atlas's pages and images dropped (dgatlas.cpp), which outlive a level and go only when the engine's pixels change or the backend stops.

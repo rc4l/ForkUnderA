@@ -908,6 +908,9 @@ void ReleaseFrameFence()
 	g_frameSignalled = 0;
 }
 
+Diligent::Uint64 FrameBeingBuilt() { return g_frameSignalled + 1; }
+Diligent::Uint64 FrameFinishedOnGpu() { return g_frameFence ? g_frameFence->GetCompletedValue() : 0; }
+
 // [rc4l] features/wipe's trace of what is about to be presented, read back whole, so only while fua_wipe_trace is on.
 static void TraceWipeFrame()
 {

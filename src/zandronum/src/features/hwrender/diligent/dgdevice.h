@@ -12,6 +12,8 @@
 #include "NativeWindow.h"
 #include "features/hwrender/computation/materialslots_compute.h"   // [rc4l] DescriptorLimits
 
+namespace Diligent { struct IMemoryAllocator; }
+
 class FString;
 
 namespace zx { namespace hwrender {
@@ -56,6 +58,13 @@ void NoteMadeInPlay(const char *kind, const char *name);
 
 // [rc4l] After a present: keeps the swapchain's own textures, which a resize makes again, and frees every kept object nothing holds any more.
 void FreeReleasedObjects(Diligent::ISwapChain *swap);
+
+// [Doruk-Aksoy] The allocator a device factory is given before it makes the device, so Diligent's memory goes through the engine's operator new, counted and traced by features/telemetry (mem/allocations_live, fua_allocsites) as the rest is.
+Diligent::IMemoryAllocator *EngineMemoryAllocator();
+// [Doruk-Aksoy] An aligned block cut from operator new, so it is counted and traced too; freed with FreeAlignedNew, and its asked size read back for a reallocation.
+void *AllocateAlignedNew(size_t size, size_t alignment);
+void FreeAlignedNew(void *ptr);
+size_t AlignedNewSize(void *ptr);
 
 }} // namespace zx::hwrender
 
