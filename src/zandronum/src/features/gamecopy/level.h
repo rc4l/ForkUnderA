@@ -24,6 +24,9 @@ struct LevelRecord
 // [rc4l] The level as the last fill took it.
 const LevelRecord &Level();
 
+// [Doruk-Aksoy] The level's post-process shader state as the last fill took it, copied only when it changed.
+const zx::postprocess::ShaderTable &LevelShaders();
+
 }} // namespace zx::gamecopy
 
 #endif // ZX_GAMECOPY_LEVEL_H

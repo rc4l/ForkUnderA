@@ -282,10 +282,10 @@ Diligent::RefCntAutoPtr<Diligent::IShader> Compile2DUserShader(int shader, bool 
 	return (async ? CompileShaderAsync : CompileShader)(Diligent::SHADER_TYPE_PIXEL, name.GetChars(), k2DPS, shader);
 }
 
-void Draw2D(Diligent::IDeviceContext *ctx)
+void Draw2D(Diligent::IDeviceContext *ctx, int first, int end, Diligent::ITextureView *target, int viewW, int viewH)
 {
 	ZX_ZONE("draw/2d");   // [rc4l] the frame's 2D layer
-	g_draws2D = g_quads2D = 0;
+	if (first == 0) g_draws2D = g_quads2D = 0;
 	if (!fua_dg_hud) return;
 
 	int nq = 0;
@@ -375,8 +375,19 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	if (vb.Size() == 0 || !g_vb2D) return;
 
 	// [rc4l] The frame's colour alone, whichever pass this follows, since the 2D pipelines declare no depth and WebGPU holds a pipeline to its pass's attachments.
-	Diligent::ITextureView *rtv2D = FrameRTV();
+	Diligent::ITextureView *rtv2D = target != NULL ? target : FrameRTV();
 	ctx->SetRenderTargets(1, &rtv2D, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	// [Doruk-Aksoy] Another target is drawn at its top left viewW x viewH, the share of it the scene covers.
+	const int rtW = target != NULL ? (int)target->GetTexture()->GetDesc().Width : FrameWidth();
+	const int rtH = target != NULL ? (int)target->GetTexture()->GetDesc().Height : FrameHeight();
+	const int fw = target != NULL ? viewW : rtW, fh = target != NULL ? viewH : rtH;
+	if (target != NULL)
+	{
+		Diligent::Viewport vp;
+		vp.Width = (float)fw;
+		vp.Height = (float)fh;
+		ctx->SetViewports(1, &vp, (Diligent::Uint32)rtW, (Diligent::Uint32)rtH);
+	}
 
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb2D, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
@@ -392,13 +403,13 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 	Diligent::IPipelineState *curRun = NULL;
 
 	// The backend window is its own size, so the engine's scissor rects scale with the viewport.
-	const int fw = FrameWidth(), fh = FrameHeight();
 	const float sx = (float)fw / scrW, sy = (float)fh / scrH;
 
 	const void *curMat = (const void *)(size_t)-1;
 	int curTrans = -99999;
 	int cl = -1, ctp = -1, cr = -1, cb2 = -1;
-	for (unsigned i = 0; i < (unsigned)nq; i++)
+	const int last = end < 0 || end > nq ? nq : end;
+	for (unsigned i = (unsigned)first; i < (unsigned)last; i++)
 	{
 		const zx::draw2d::Quad2D &q = quads[i];
 		// [rc4l] GL's own vid_fps line; this window shows the backend's (zx::draw2d::k2DBackendOnly).
@@ -440,7 +451,7 @@ void Draw2D(Diligent::IDeviceContext *ctx)
 			sc.bottom = (Diligent::Int32)(cb2 * sy);
 			if (sc.right <= sc.left || sc.bottom <= sc.top)
 			{ sc.left = 0; sc.top = 0; sc.right = (Diligent::Int32)fw; sc.bottom = (Diligent::Int32)fh; }
-			ctx->SetScissorRects(1, &sc, fw, fh);
+			ctx->SetScissorRects(1, &sc, rtW, rtH);
 		}
 
 		// [rc4l] One draw per quad, and that is fine.

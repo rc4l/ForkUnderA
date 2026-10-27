@@ -2142,6 +2142,9 @@ void G_InitLevelLocals ()
 	level.gravity = sv_gravity * 35/TICRATE;
 	level.aircontrol = (fixed_t)(sv_aircontrol * 65536.f);
 	level.MusicVolume = 1.f;	// [Doruk-Aksoy] uzdoom@da74b9df95
+	// [Doruk-Aksoy] A level starts its post-process shaders from their declarations, the generation moving on so the render copy takes it.
+	level.fua_postShaders.entries.clear();
+	level.fua_postShaders.generation++;
 	level.teamdamage = teamdamage;
 	level.flags = 0;
 	level.flags2 = 0;

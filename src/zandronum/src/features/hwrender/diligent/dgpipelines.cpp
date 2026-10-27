@@ -973,6 +973,8 @@ template <class Each> static void ForEachUserProgram(Each each)
 
 void PrecompileUserShaders()
 {
+	// [Doruk-Aksoy] features/postprocess's programs start at launch with these, each on its own guard.
+	PrecompilePostShaders();
 	static int doneFor = -1;
 	const int count = zx::hwshaders::UserShaderCount();
 	if (!fua_dg_precompile_shaders || GetDevice() == NULL || count == doneFor) return;
@@ -1044,7 +1046,7 @@ bool EnsureScenePipeline(FString &err)
 	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
 	// [Doruk-Aksoy] The kept shaders were compiled the other way, so they go with the pipelines holding them.
-	if (g_pso.world[kWpOpaque] && g_builtOptimize != (int)fua_dg_spirv_optimize) { ReleaseScenePipelines(); ReleaseShaderCache(); }
+	if (g_pso.world[kWpOpaque] && g_builtOptimize != (int)fua_dg_spirv_optimize) { ReleaseScenePipelines(); ReleasePostProcess(); ReleaseShaderCache(); }
 	g_builtOptimize = (int)fua_dg_spirv_optimize;
 	// [rc4l] The shaders declare the array at its size, so a new size is new pipelines.
 	if (g_pso.world[kWpOpaque] && g_builtSlots != MaterialSlotCapacity()) ReleaseScenePipelines();

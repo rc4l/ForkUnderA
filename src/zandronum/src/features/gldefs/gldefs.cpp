@@ -62,6 +62,7 @@
 #include "features/gldefs/gldefs.h"
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
+#include "features/postprocess/postprocess.h"
 #include "features/materials/skyboxtexture.h"
 // [BB] New #includes.
 #include "network.h"
@@ -1369,6 +1370,8 @@ void gl_ParseDefs()
 
 	atterm( gl_ReleaseLights ); 
 	gl_ReleaseLights();
+	// [Doruk-Aksoy] A restart reads GLDEFS again, so the post-process shaders it declares start over.
+	zx::postprocess::ClearPostProcessShaders();
 	switch (gameinfo.gametype)
 	{
 	case GAME_Heretic:
@@ -1393,6 +1396,7 @@ void gl_ParseDefs()
 	if (defsLump != NULL) gl_LoadGLDefs(defsLump);
 	gl_LoadGLDefs("GLDEFS");
 	gl_InitializeActorLights();
+	zx::postprocess::NotePostProcessRenderer();
 }
 
 

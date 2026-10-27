@@ -534,6 +534,17 @@ int SkyDraws();
 Diligent::IPipelineState *SkyPortalPicturePSO();
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso);
+// [Doruk-Aksoy] This frame's post-process shaders decided, once before the main view; true when the 3D must be drawn apart from the frame for them.
+bool BeginPostProcessFrame(bool stereo);
+// [Doruk-Aksoy] The beforebloom and scene stages, which leave their result in the frame with the view's own 2D under the scene ones (first2D the quad the rest starts at); false when none ran.
+bool RunScenePostProcess(Diligent::IDeviceContext *ctx, int viewQuads, bool present, int &first2D);
+// [Doruk-Aksoy] The screen stage, over the frame and its 2D.
+void RunScreenPostProcess(Diligent::IDeviceContext *ctx);
+// [Doruk-Aksoy] A presented frame, the clock InputTimeDelta counts from.
+void PostProcessPresented();
+
+// [Doruk-Aksoy] The full-screen triangle every picture pipeline draws with, vUV 0,0 at the top left.
+const char *PictureVS();
 // [rc4l] CreatePicturePSO with `count` pictures named in `pictures`, each mutable and sampled with filter; any other resource of ps is static.
 bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
 	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso);

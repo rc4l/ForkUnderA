@@ -26,6 +26,7 @@
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
 #include "features/frame-limit/framelimit.h"   // [rc4l] WaitBeforePresent
+#include "features/draw2d/record.h"   // [Doruk-Aksoy] ViewQuads, the 2D a post-process scene shader runs over
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
@@ -817,7 +818,7 @@ void DrawSceneOnce(bool present, bool pump)
 	// [rc4l] GL's stereo 3D (vr_mode): each eye draws the world from its own place, an anaglyph keeping its first eye's picture to blend under the 2D.
 	const zx::hwrender::StereoMode stereo = CurrentStereoMode();
 	// [rc4l] features/dynres: the scale every screen-sized pass of this frame draws at, full while two eyes share the frame.
-	BeginSceneFrame(stereo.eyes <= 1);
+	BeginSceneFrame(stereo.eyes <= 1, BeginPostProcessFrame(stereo.eyes > 1));
 	for (int eye = 0; eye < stereo.eyes; eye++)
 	{
 		SetStereoEye(stereo.shift[eye]);
@@ -857,15 +858,22 @@ void DrawSceneOnce(bool present, bool pump)
 	ShowStackView(ctx);
 	DrawHitboxes(ctx);
 	DrawGpuLoad(ctx);
-	UpscaleScene(ctx);
+	// [Doruk-Aksoy] features/postprocess: its scene stages write the frame themselves, the weapon under them, else the scene is drawn up as before.
+	int first2D = 0;
+	if (!RunScenePostProcess(ctx, zx::draw2d::ViewQuads(), present, first2D)) UpscaleScene(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	BeginGpuPass(ctx, kGpu2D);
-	Draw2D(ctx);
+	Draw2D(ctx, first2D);
 	EndGpuPass(ctx, kGpu2D);
+	RunScreenPostProcess(ctx);
 	EndGpuPass(ctx, kGpuFrame);
 
-	if (present) PresentFrame(ctx, swap, pump);
+	if (present)
+	{
+		PostProcessPresented();
+		PresentFrame(ctx, swap, pump);
+	}
 }
 
 bool SceneDrawable() { return g_scene.vb && g_pso.world[kWpOpaque] && g_scene.verts > 0; }

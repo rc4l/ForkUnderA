@@ -55,6 +55,8 @@ static const char *kSkyPortalPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() { outColor = vec4(texture(sampler2D(uTex, uTex_sampler), vUV).rgb, 1.0); }\n";
 
+const char *PictureVS() { return kSkyPortalVS; }
+
 // [rc4l] A pipeline that paints one picture, uTex, over its whole target with kSkyPortalVS's triangle and the fragment stage ps, never against depth; dsvFormat is whatever depth buffer is bound beside it.
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)

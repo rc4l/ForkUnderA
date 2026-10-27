@@ -83,6 +83,7 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
     which `fua_dg_made` lists (`computation/madeinplay_compute`) and `fuactl scenarios madeinplay` holds at no shader or pipeline.
   - `dgtexture.cpp`: `load/precache_backend` and `load/precached_textures`, the level's marked textures made ahead.
   - `dgpipelines.cpp`: `load/user_shaders`, every GLDEFS shader's programs compiled at launch (`PrecompileUserShaders`).
+  - `dgpostprocess.cpp`: `load/post_shaders`, the GLDEFS post-process shaders' programs started at launch; `draw/postprocess_scene` and `draw/postprocess_screen`, their stages; `gpu/post/passes`, the passes a frame ran; and `dggputimer.cpp`'s `gpu/post_scene_ms` and `gpu/post_screen_ms` (`features/postprocess`).
   - `dgscene.cpp` `UpdateBufferIfChanged`: `gpu/upload_spared`, the bytes a frame did not send because the buffer already held them (the light grid and the 2D layer).
 - `g_level.cpp`, `p_setup.cpp`, `textures/texturemanager.cpp` and `s_sound.cpp`: the `load/` zones and `audio/update`.
 - `s_sound.cpp` `S_ChangeMusic`: `audio/music_change`, and inside it `audio/music_open` (`I_RegisterSong`) and `audio/music_start`; `S_StopMusic`: `audio/music_stop`.

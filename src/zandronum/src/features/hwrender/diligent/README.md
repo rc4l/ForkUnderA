@@ -22,6 +22,7 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 | `dgviews.cpp` | line mirrors (raster and ray-traced), reflective planes, stacked sectors |
 | `dgsky.cpp`, `dglights.cpp`, `dg2d.cpp`, `dgdecals.cpp`, `dghorizon.cpp` | sky and portals, dynamic lights, 2D, projected decals, horizon lines |
 | `dgcamera.cpp` | camera textures |
+| `dgpostprocess.cpp` | `features/postprocess`'s GLDEFS post-process shaders: each one's program, made at launch on the device's pool. Its `beforebloom` and `scene` stages run over the scaled scene with the weapon drawn between them, the last pass writing the frame at full size, and its `screen` stage runs over the 2D. They alternate between two frame-sized pictures, each with a binding made once per picture |
 | `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
 | `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
 | `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures (a mip chain only when the filter reads one, `ComputeMaterialMips`), the swapchain, the device |

@@ -28,7 +28,7 @@ struct PassTimer
 	double lastMs = -1.0;
 };
 
-PassTimer g_passes[kGpuPasses] = { { "gpu/frame_ms" }, { "gpu/world_ms" }, { "gpu/2d_ms" } };
+PassTimer g_passes[kGpuPasses] = { { "gpu/frame_ms" }, { "gpu/world_ms" }, { "gpu/2d_ms" }, { "gpu/post_scene_ms" }, { "gpu/post_screen_ms" } };
 
 // [rc4l] The pass's queries, made the first time it is timed; false, its gauge marked unavailable, where the device has no duration queries.
 bool Ready(PassTimer &t)
