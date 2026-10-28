@@ -132,6 +132,7 @@
 #include "p_lnspec.h"
 #include "unlagged.h"
 #include "scoreboard.h"
+#include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SendShaderStateTo, DropPlayerShaders
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -3096,6 +3097,9 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 			}
 		}
 	}
+
+	// [Doruk-Aksoy] features/acs-shaders: the level's post-process shaders as scripts left them, everyone's and the joiner's own.
+	zx::acsshaders::SendShaderStateTo( ulClient );
 }
 
 //*****************************************************************************
@@ -3256,6 +3260,9 @@ void SERVER_DisconnectClient( ULONG ulClient, bool bBroadcast, bool bSaveInfo, L
 
 	// [RK] Disconnectd players need their vote removed/cancelled.
 	CALLVOTE_DisconnectedVoter( ulClient );
+
+	// [Doruk-Aksoy] A leaving player's own post-process shaders go, so whoever takes the slot starts from everyone's.
+	zx::acsshaders::DropPlayerShaders( ulClient );
 
 	// [AK] Clear all the saved chat messages this player said.
 	CHAT_ClearChatMessages( ulClient );

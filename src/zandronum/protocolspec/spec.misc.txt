@@ -139,3 +139,37 @@ Command FuaSetMusicVolume
 	ExtendedCommand
 	Float volume
 EndCommand
+
+# [Doruk-Aksoy] ACS fua_SetShaderEnabled (features/acs-shaders): a GLDEFS post-process shader on or off for every client, or with own only for the client it is sent to, going off after duration tics (0 never), having run elapsed tics; appended last so no existing id moves.
+Command FuaSetShaderEnabled
+	ExtendedCommand
+	String shader
+	Bool own
+	Bool enabled
+	Variable duration
+	Variable elapsed
+EndCommand
+
+# [Doruk-Aksoy] ACS fua_SetShaderUniform1f..4f and 1i: one uniform of a GLDEFS post-process shader, kind 0 one int, 1 to 4 that many floats.
+Command FuaSetShaderUniform
+	ExtendedCommand
+	String shader
+	String uniform
+	Bool own
+	Byte kind
+	If (kind == 0)
+		Long intValue
+	EndIf
+	If (kind >= 1)
+		Float x
+	EndIf
+	If (kind >= 2)
+		Float y
+	EndIf
+	If (kind >= 3)
+		Float z
+	EndIf
+	If (kind >= 4)
+		Float w
+	EndIf
+EndCommand

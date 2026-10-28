@@ -1,7 +1,7 @@
 # ZandroX modding reference
 
 Reference documentation for everything ZandroX adds to, or changes in, the modding surface it
-inherits from Zandronum — DECORATE, ACS, and MAPINFO.
+inherits from Zandronum — DECORATE, ACS, GLDEFS and MAPINFO.
 
 This is the **modder-facing** half of the documentation. It is deliberately separate from the
 engineering notes in [`src/zandronum/src/features/`](../../src/zandronum/src/features/), which
@@ -100,6 +100,15 @@ than only at class-definition time.
 - [Actor size properties](acs/Actor_size_properties.md) — `APROP_Radius`, `APROP_Height`,
   `APROP_HitRadius`, `APROP_HitHeight`
   ([#104](https://github.com/rc4l/ZandroX/pull/104))
+- [Post-process shaders](acs/Post-process_shaders.md) — `fua_SetShaderEnabled` and
+  `fua_SetShaderUniform*`, for everyone or only the activator, optionally timed. Declared for ACC in
+  [`fua.acs`](acs/fua.acs).
+
+### GLDEFS
+
+- [Post-process shaders](gldefs/Post-process_shaders.md) — UZDoom's `HardwareShader PostProcess` blocks:
+  full-screen shaders over the 3D view or the whole screen, on Vulkan and WebGPU. What a shader reads,
+  the stages, precision, cost and the console commands.
 
 ### DECORATE — state jumps
 

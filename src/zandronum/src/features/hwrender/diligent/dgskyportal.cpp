@@ -55,16 +55,18 @@ static const char *kSkyPortalPS =
 	"layout(location = 0) out vec4 outColor;\n"
 	"void main() { outColor = vec4(texture(sampler2D(uTex, uTex_sampler), vUV).rgb, 1.0); }\n";
 
+const char *PictureVS() { return kSkyPortalVS; }
+
 // [rc4l] A pipeline that paints one picture, uTex, over its whole target with kSkyPortalVS's triangle and the fragment stage ps, never against depth; dsvFormat is whatever depth buffer is bound beside it.
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
-	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso, Diligent::TEXTURE_FORMAT rtvFormat)
 {
 	static const char *const kPicture[] = { "uTex" };
-	return CreatePicturesPSO(name, ps, filter, dsvFormat, kPicture, 1, pso);
+	return CreatePicturesPSO(name, ps, filter, dsvFormat, kPicture, 1, pso, rtvFormat);
 }
 
 bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
-	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso)
+	const char *const *pictures, int count, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso, Diligent::TEXTURE_FORMAT rtvFormat)
 {
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -90,7 +92,7 @@ bool CreatePicturesPSO(const char *name, const char *ps, Diligent::FILTER_TYPE f
 	pci.PSODesc.Name = psoName.GetChars();
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = rtvFormat != Diligent::TEX_FORMAT_UNKNOWN ? rtvFormat : swap->GetDesc().ColorBufferFormat;
 	pci.GraphicsPipeline.DSVFormat = dsvFormat;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
@@ -181,7 +183,7 @@ Diligent::RefCntAutoPtr<Diligent::IPipelineState> CreateScreenSurfacePSO(const c
 	pci.PSODesc.Name = name;
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = sd.ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 	pci.GraphicsPipeline.DSVFormat = sd.DepthBufferFormat;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
@@ -238,13 +240,13 @@ bool EnsureSkyPortalResources()
 		g_skyPortalSRB.Release();
 		g_skySurfPSO.Release();
 		g_skySurfSRB.Release();
-		if (!CreateViewTextures(w, h, "fua sky portal", g_skyPortalColor, g_skyPortalDepth)) return false;
+		if (!CreateViewTextures(w, h, "fua sky portal", g_skyPortalColor, g_skyPortalDepth, SceneColorFormat())) return false;
 		CreateNormalTarget(w, h, "fua sky portal", g_skyPortalNormal);
 		g_skyPortalW = w; g_skyPortalH = h;
 	}
 
 	// [rc4l] Same standing as the dome it replaces: drawn first, never against the depth buffer, into the frame's own targets.
-	if (!g_skyPortalPSO && !CreatePicturePSO("fua sky portal", kSkyPortalPS, Diligent::FILTER_TYPE_LINEAR, swap->GetDesc().DepthBufferFormat, g_skyPortalPSO))
+	if (!g_skyPortalPSO && !CreatePicturePSO("fua sky portal", kSkyPortalPS, Diligent::FILTER_TYPE_LINEAR, swap->GetDesc().DepthBufferFormat, g_skyPortalPSO, SceneColorFormat()))
 		return false;
 	if (!g_skySurfPSO)
 	{

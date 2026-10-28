@@ -11,6 +11,7 @@
 #include "features/gamecopy/decals.h"
 #include "features/gamecopy/seen.h"
 #include "features/gamecopy/polyobjs.h"
+#include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] SetDrawnShaders
 #include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] kTorchPower, kLightAmpPower
 #include "features/gamecopy/computation/recordlinks_compute.h"
@@ -599,6 +600,7 @@ const char *PlayerDiffers(const PlayerRecord &a, const PlayerRecord &b)
 }
 
 LevelRecord g_level_;   // [rc4l] the level as the last fill took it
+zx::postprocess::ShaderTable g_levelShaders;   // [Doruk-Aksoy] the level's post-process shader state the last fill took
 
 void TakeLevel(LevelRecord &out)
 {
@@ -609,6 +611,7 @@ void TakeLevel(LevelRecord &out)
 	out.sky2 = sky2texture;
 	out.endLevelDelay = GAME_GetEndLevelDelay () != 0;
 	out.freeSpectate = CLIENTDEMO_IsInFreeSpectateMode ();
+	if (g_levelShaders.generation != level.fua_postShaders.generation) g_levelShaders = level.fua_postShaders;
 }
 
 const char *LevelDiffers(const LevelRecord &a, const LevelRecord &b)
@@ -838,6 +841,21 @@ const LevelRecord &Level()
 {
 	return g_level_;
 }
+
+const zx::postprocess::ShaderTable &LevelShaders() { return g_levelShaders; }
+
+namespace {
+
+zx::postprocess::DrawnShaders DrawnPostShaders()
+{
+	const zx::postprocess::DrawnShaders drawn = { &g_levelShaders, g_level_.maptime };
+	return drawn;
+}
+
+// [Doruk-Aksoy] features/postprocess sits below the copy, so the shader state the frame draws reaches it through what this installs.
+const bool g_bDrawnShadersInstalled = ( zx::postprocess::SetDrawnShaders( &DrawnPostShaders ), true );
+
+} // namespace
 
 const std::vector<CameraTexture> &CameraTextures()
 {

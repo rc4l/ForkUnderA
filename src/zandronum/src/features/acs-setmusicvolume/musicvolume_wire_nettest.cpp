@@ -50,7 +50,8 @@ TEST(FuaSetMusicVolumeWire, IsAppendedAfterTheLastExistingCommand) {
 	// [Doruk-Aksoy] The ids shipped before it keep their values, and it fits the SVC2 byte.
 	EXPECT_EQ(73, SVC2_FUADAMAGETAKEN);
 	EXPECT_EQ(74, SVC2_FUASETMUSICVOLUME);
-	EXPECT_EQ(SVC2_FUASETMUSICVOLUME + 1, NUM_SVC2_COMMANDS);
+	// [Doruk-Aksoy] features/acs-shaders' commands were appended after it.
+	EXPECT_EQ(SVC2_FUASETMUSICVOLUME + 1, SVC2_FUASETSHADERENABLED);
 	EXPECT_LE(NUM_SVC2_COMMANDS, 0x100);
 }
 

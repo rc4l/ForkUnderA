@@ -22,11 +22,39 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 | `dgviews.cpp` | line mirrors (raster and ray-traced), reflective planes, stacked sectors |
 | `dgsky.cpp`, `dglights.cpp`, `dg2d.cpp`, `dgdecals.cpp`, `dghorizon.cpp` | sky and portals, dynamic lights, 2D, projected decals, horizon lines |
 | `dgcamera.cpp` | camera textures |
+| `dgpostprocess.cpp` | `features/postprocess`'s GLDEFS post-process shaders: each one's program, made at launch on the device's pool. Its `beforebloom` and `scene` stages run over the scaled scene with the weapon drawn between them, the last pass writing the frame at full size, and its `screen` stage runs over the 2D. They alternate between two frame-sized pictures, each with a binding made once per picture |
 | `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
 | `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
 | `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures (a mip chain only when the filter reads one, `ComputeMaterialMips`), the swapchain, the device |
 | `dgmemory.cpp`, `dggputimer.cpp` | `features/telemetry`'s GPU memory by tag and its per-pass GPU times; Diligent's own allocations through the engine's `operator new` (`EngineMemoryAllocator`), and the Vulkan driver's with `fua_dg_vk_alloc_trace 1` at launch (`computation/alignedblock_compute`) |
 | `dgplatform.h`, `dgwin32.cpp`, `dgsdl.cpp`, `dgcocoa.mm` | each platform's window and the handles its Vulkan surface takes: an HWND; an X11 window or Wayland surface through SDL2; a CAMetalLayer view drawn through MoltenVK (`posix/cocoa/metalview.h`'s `CocoaMetalView`, shared with the engine's window), with the .app's own Vulkan loader |
+
+## The scene's format
+
+In a launch without GL the 3D and the 2D are drawn in 16-bit float (`RGBA16_FLOAT`), as UZDoom's scene
+buffer and pipeline images are, and converted to the 8-bit swapchain only at present (`SceneColorFormat`,
+`Scene16`, `fua_dg_scene16`, on by default). It covers:
+- the frame target, so the HUD and the `screen` post-process stage are 16-bit as UZDoom's are;
+- the scene target used below full scale or for post-process;
+- every view feeding them: the sky portal, sky looks, line and plane mirrors, stacked sectors and the
+  cameras' pictures;
+- every pipeline drawing into them: the world's, sky, decals, horizon, mirrors, upscale, wipe, stereo, and
+  a 16-bit set of 2D pipelines beside the 8-bit one.
+
+So light past 1 (dynamic lights to 1.4 times a texel, additive styles), values below 0 (subtractive styles)
+and precision between 8-bit steps reach post-process shaders. The present's blit writes the swapchain's 8
+bits, which clamps them as UZDoom's present does. The normal G-buffer stays 8-bit as UZDoom's does. Beside
+GL the frame is the swapchain's and stays 8-bit.
+- **Rebuilds:** turning the cvar off or on makes every 3D pipeline and view target again
+  (`EnsureScenePipeline`). The frame, upscale, wipe, stereo, lines and GPU-load pipelines remake themselves
+  when their format no longer matches.
+- **Readbacks:** screenshots and save pictures read 16-bit pixels through `ComputeHalfRowsToRGB`.
+  `fua_clip`'s recorder takes 8-bit bytes, so while it records the frame is copied down first
+  (`FrameAs8Bit`).
+- **Mirrors:** their shaders no longer clamp their sheen to 1. An 8-bit target clamps it as GL's
+  framebuffer does.
+- **Tests:** `fuactl scenarios scene16` (and `scene16opt` with the SPIR-V optimizer on) checks that a shader
+  reads an additive sprite's light past 1 and a subtractive one's below 0.
 
 ## Status: TEXTURED world rendering on Sunder, through Vulkan
 

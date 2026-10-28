@@ -16,6 +16,7 @@ static unsigned int   g_gen = 1;
 static int            g_screenW = 0, g_screenH = 0;
 static int            g_target = k2DBoth;
 static std::vector<Quad2D> *g_capture = NULL;   // [rc4l] where quads go while a capture runs
+static int            g_viewQuads = 0;   // [Doruk-Aksoy] how many of the first quads are the view's own
 
 void Set2DTarget(int target) { g_target = target; }
 int  Get2DTarget() { return g_target; }
@@ -26,7 +27,11 @@ void Clear2D()
 	g_quads.Clear();
 	g_gen++;
 	g_screenW = g_screenH = 0;
+	g_viewQuads = 0;
 }
+
+void MarkViewQuads() { g_viewQuads = (int)g_quads.Size(); }
+int ViewQuads() { return g_viewQuads; }
 
 void BeginCapture2D(std::vector<Quad2D> &into)
 {

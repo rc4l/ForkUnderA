@@ -45,9 +45,11 @@ bool EnsureLoad()
 		CreateDeviceBuffer(cbd, nullptr, &g_loadCB);
 		if (!g_loadCB) return false;
 	}
+	// [Doruk-Aksoy] It draws into the scene, so a change of its format (fua_dg_scene16) makes it again.
+	if (g_loadPSO && g_loadPSO->GetGraphicsPipelineDesc().RTVFormats[0] != SceneColorFormat()) { g_loadSRB.Release(); g_loadPSO.Release(); }
 	if (!g_loadPSO)
 	{
-		if (!CreatePicturesPSO("fua gpu load", kLoadPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, nullptr, 0, g_loadPSO)) return false;
+		if (!CreatePicturesPSO("fua gpu load", kLoadPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, nullptr, 0, g_loadPSO, SceneColorFormat())) return false;
 		if (auto *v = g_loadPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Load")) v->Set(g_loadCB);
 		g_loadPSO->CreateShaderResourceBinding(&g_loadSRB, true);
 	}

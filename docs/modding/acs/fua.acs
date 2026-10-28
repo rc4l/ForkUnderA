@@ -1,0 +1,10 @@
+// [Doruk-Aksoy] ZandroX's ACS functions for ACC, included after zcommon.acs.
+// [Doruk-Aksoy] A negative number is an ACS function, and the pair is its least and most arguments.
+
+special
+	-24000:fua_SetShaderEnabled(2,4),
+	-24001:fua_SetShaderUniform1f(3,4),
+	-24002:fua_SetShaderUniform2f(4,5),
+	-24003:fua_SetShaderUniform3f(5,6),
+	-24004:fua_SetShaderUniform4f(6,7),
+	-24005:fua_SetShaderUniform1i(3,4);

@@ -291,18 +291,23 @@ std::string ComputePrecompileNote(int shaders, int programs, int leftOut, double
 	return note + "\n";
 }
 
-std::string ComputeUserShaderSkipNote(const std::string &renderer, const std::string &lump, const std::string &why)
+std::string ComputeIndentedLines(const std::string &text)
 {
-	std::string note = renderer + ": hardware shader " + lump + " does not compile here; its textures draw without it\n";
+	std::string out;
 	size_t from = 0;
-	while (from < why.size())
+	while (from < text.size())
 	{
-		size_t to = why.find('\n', from);
-		if (to == std::string::npos) to = why.size();
-		if (to > from) note += "  " + why.substr(from, to - from) + "\n";
+		size_t to = text.find('\n', from);
+		if (to == std::string::npos) to = text.size();
+		if (to > from) out += "  " + text.substr(from, to - from) + "\n";
 		from = to + 1;
 	}
-	return note;
+	return out;
+}
+
+std::string ComputeUserShaderSkipNote(const std::string &renderer, const std::string &lump, const std::string &why)
+{
+	return renderer + ": hardware shader " + lump + " does not compile here; its textures draw without it\n" + ComputeIndentedLines(why);
 }
 
 }} // namespace zx::hwshaders

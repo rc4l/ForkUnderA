@@ -200,6 +200,8 @@
  42 SVC2_SETTHINGSPRITEORIENTATION         [Extended] : Actor Byte AproxAngle?{orientflags & SPRITEORIENT_ROLL}
  43 SVC2_FUADAMAGETAKEN                    [Extended] : Variable Variable Variable Variable Byte Class Class String Bool
  44 SVC2_FUASETMUSICVOLUME                 [Extended] : Float
+ 45 SVC2_FUASETSHADERENABLED               [Extended] : String Bool Bool Variable Variable
+ 46 SVC2_FUASETSHADERUNIFORM               [Extended] : String String Bool Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -514,7 +516,9 @@
  72 SVC2_SETTHINGSPRITEORIENTATION
  73 SVC2_FUADAMAGETAKEN
  74 SVC2_FUASETMUSICVOLUME
- 75 NUM_SVC2_COMMANDS
+ 75 SVC2_FUASETSHADERENABLED
+ 76 SVC2_FUASETSHADERUNIFORM
+ 77 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION

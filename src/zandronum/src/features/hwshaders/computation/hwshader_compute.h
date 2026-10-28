@@ -49,6 +49,9 @@ std::string ComputeSpliceShaderBlock(const std::string &source, const std::strin
 // [Doruk-Aksoy] The console line the backend prints after compiling the GLDEFS shaders at launch: how many shaders, into how many programs, in how long, and how many were left out.
 std::string ComputePrecompileNote(int shaders, int programs, int leftOut, double ms);
 
+// [Doruk-Aksoy] text's non-blank lines, each indented two spaces, as a console note lists its reasons.
+std::string ComputeIndentedLines(const std::string &text);
+
 // [Doruk-Aksoy] The console note a renderer prints for a GLDEFS shader it leaves out, with `why`'s non-blank lines indented under it.
 std::string ComputeUserShaderSkipNote(const std::string &renderer, const std::string &lump, const std::string &why);
 

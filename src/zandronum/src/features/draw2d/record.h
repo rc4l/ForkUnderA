@@ -29,6 +29,11 @@ void EndCapture2D();
 // [rc4l] Records captured quads into this frame's list, each for the windows it was captured for.
 void Replay2D(const std::vector<Quad2D> &quads);
 
+// [Doruk-Aksoy] Marks the quads recorded so far as the view's own (the weapon, the targeter and the screen's tint), which a post-process scene shader runs over.
+void MarkViewQuads();
+// [Doruk-Aksoy] How many of this frame's first quads are the view's own, 0 when no view was drawn.
+int ViewQuads();
+
 // [rc4l] This frame's quads in submission order, which is the draw order, since 2D is painted back to front.
 const Quad2D *Quads2D(int &count);
 

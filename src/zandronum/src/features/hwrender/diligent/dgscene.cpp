@@ -26,6 +26,7 @@
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
 #include "features/viewsetup/viewsetup.h"   // [MobiusU9B] the view's lens
 #include "features/frame-limit/framelimit.h"   // [rc4l] WaitBeforePresent
+#include "features/draw2d/record.h"   // [Doruk-Aksoy] ViewQuads, the 2D a post-process scene shader runs over
 
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
@@ -402,7 +403,7 @@ SceneVertex ToSceneVertex(const zx::levelmesh::MeshVertex &sv, unsigned int piec
 }
 
 // [rc4l] A w by h picture in the swapchain's colour format, drawn into and then sampled.
-bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color)
+bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::TEXTURE_FORMAT format)
 {
 	auto *dev = GetDevice();
 	auto *swap = GetSwapChain();
@@ -413,7 +414,7 @@ bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 	td.Name = colorName.GetChars();
 	td.Type = Diligent::RESOURCE_DIM_TEX_2D;
 	td.Width = (Diligent::Uint32)w; td.Height = (Diligent::Uint32)h;
-	td.Format = swap->GetDesc().ColorBufferFormat;
+	td.Format = format != Diligent::TEX_FORMAT_UNKNOWN ? format : swap->GetDesc().ColorBufferFormat;
 	td.MipLevels = 1;
 	td.BindFlags = Diligent::BIND_RENDER_TARGET | Diligent::BIND_SHADER_RESOURCE;
 	color.Release();
@@ -423,9 +424,9 @@ bool CreateColorTarget(int w, int h, const char *name, Diligent::RefCntAutoPtr<D
 
 // [rc4l] A w x h colour target the shaders can read and its depth buffer, in the swapchain's formats, for a view rendered off screen; false if either cannot be made.
 bool CreateViewTextures(int w, int h, const char *name,
-	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth)
+	Diligent::RefCntAutoPtr<Diligent::ITexture> &color, Diligent::RefCntAutoPtr<Diligent::ITexture> &depth, Diligent::TEXTURE_FORMAT format)
 {
-	return CreateColorTarget(w, h, name, color) && CreateDepthTarget(w, h, name, depth);
+	return CreateColorTarget(w, h, name, color, format) && CreateDepthTarget(w, h, name, depth);
 }
 
 // [rc4l] A w by h depth buffer in the swapchain's depth format, for a view rendered off screen.
@@ -817,7 +818,7 @@ void DrawSceneOnce(bool present, bool pump)
 	// [rc4l] GL's stereo 3D (vr_mode): each eye draws the world from its own place, an anaglyph keeping its first eye's picture to blend under the 2D.
 	const zx::hwrender::StereoMode stereo = CurrentStereoMode();
 	// [rc4l] features/dynres: the scale every screen-sized pass of this frame draws at, full while two eyes share the frame.
-	BeginSceneFrame(stereo.eyes <= 1);
+	BeginSceneFrame(stereo.eyes <= 1, BeginPostProcessFrame(stereo.eyes > 1));
 	for (int eye = 0; eye < stereo.eyes; eye++)
 	{
 		SetStereoEye(stereo.shift[eye]);
@@ -857,15 +858,22 @@ void DrawSceneOnce(bool present, bool pump)
 	ShowStackView(ctx);
 	DrawHitboxes(ctx);
 	DrawGpuLoad(ctx);
-	UpscaleScene(ctx);
+	// [Doruk-Aksoy] features/postprocess: its scene stages write the frame themselves, the weapon under them, else the scene is drawn up as before.
+	int first2D = 0;
+	if (!RunScenePostProcess(ctx, zx::draw2d::ViewQuads(), present, first2D)) UpscaleScene(ctx);
 
 	// [rc4l] 2D last, over everything, with depth off entirely -- it is the frame's top layer.
 	BeginGpuPass(ctx, kGpu2D);
-	Draw2D(ctx);
+	Draw2D(ctx, first2D);
 	EndGpuPass(ctx, kGpu2D);
+	RunScreenPostProcess(ctx);
 	EndGpuPass(ctx, kGpuFrame);
 
-	if (present) PresentFrame(ctx, swap, pump);
+	if (present)
+	{
+		PostProcessPresented();
+		PresentFrame(ctx, swap, pump);
+	}
 }
 
 bool SceneDrawable() { return g_scene.vb && g_pso.world[kWpOpaque] && g_scene.verts > 0; }

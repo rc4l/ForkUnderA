@@ -25,10 +25,12 @@ struct PassTimer
 	Diligent::RefCntAutoPtr<Diligent::IQuery> queries[QueryRing::kSlots];
 	int open = -1;
 	bool unsupported = false;
+	// [Doruk-Aksoy] Whether the pass was timed since the last collect, as the post-process passes run only on frames with a shader on.
+	bool timed = false;
 	double lastMs = -1.0;
 };
 
-PassTimer g_passes[kGpuPasses] = { { "gpu/frame_ms" }, { "gpu/world_ms" }, { "gpu/2d_ms" } };
+PassTimer g_passes[kGpuPasses] = { { "gpu/frame_ms" }, { "gpu/world_ms" }, { "gpu/2d_ms" }, { "gpu/post_scene_ms" }, { "gpu/post_screen_ms" } };
 
 // [rc4l] The pass's queries, made the first time it is timed; false, its gauge marked unavailable, where the device has no duration queries.
 bool Ready(PassTimer &t)
@@ -59,6 +61,7 @@ void BeginGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass)
 	const bool wanted = zx::telemetry::g_enabled || (pass == kGpuFrame && zx::dynres::WantsGpuTime());
 	if (!wanted || t.open >= 0 || !Ready(t)) return;
 	t.open = t.ring.Begin();
+	t.timed = true;
 	if (t.open >= 0 && t.queries[t.open]) ctx->BeginQuery(t.queries[t.open]);
 }
 
@@ -83,6 +86,9 @@ void CollectGpuPasses()
 			zx::telemetry::Set(t.counter, t.lastMs);
 			return true;
 		});
+		// [Doruk-Aksoy] A pass that did not run since and has nothing left to read cost nothing, rather than holding its last time.
+		if (!t.timed && t.ring.Idle() && t.counter >= 0 && !t.unsupported) zx::telemetry::Set(t.counter, 0.0);
+		t.timed = false;
 	}
 }
 

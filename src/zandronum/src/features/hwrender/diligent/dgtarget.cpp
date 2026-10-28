@@ -17,6 +17,9 @@
 
 EXTERN_CVAR(Int, r_texture_filter)
 
+// [Doruk-Aksoy] The 3D and the 2D in 16-bit float, as UZDoom's scene and pipeline images are, so post-process shaders read light past 1, below 0 and between 8-bit steps; off draws both in the swapchain's 8 bits.
+CVAR(Bool, fua_dg_scene16, true, CVAR_ARCHIVE)
+
 namespace zx { namespace hwrender {
 
 namespace {
@@ -26,10 +29,16 @@ int g_frameW = 0, g_frameH = 0;
 unsigned int g_frameGen = 0;   // [rc4l] bumped each time the target is made, whose contents start undefined
 Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_blitPSO;
 Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_blitSRB;
+// [Doruk-Aksoy] A 16-bit frame copied to 8 bits for what reads it as bytes (fua_clip's recorder), made only while one does.
+Diligent::RefCntAutoPtr<Diligent::ITexture> g_frame8;
+Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_frame8PSO;
+Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_frame8SRB;
 
 // [rc4l] features/dynres: the scene's own colour target at the frame's size, which a frame below full scale draws its 3D into the top left of, and the pixels it covers this frame.
 Diligent::RefCntAutoPtr<Diligent::ITexture> g_sceneColor;
 int g_sceneW = 0, g_sceneH = 0;
+// [Doruk-Aksoy] features/postprocess: the 3D drawn into the scene target at full scale too, for its shaders to read while the 2D goes into the frame.
+bool g_sceneSeparate = false;
 // [rc4l] The upscale over the frame, by point and by linear filtering, and the share of the scene target it reads.
 Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_upscalePSO[2];
 Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_upscaleSRB[2];
@@ -63,13 +72,15 @@ void WantedSize(int &w, int &h)
 	}
 }
 
+// [Doruk-Aksoy] In the scene's format too, as UZDoom draws its 2D into its 16-bit pipeline image, made again when fua_dg_scene16 changes it.
 bool EnsureFrameTarget()
 {
 	int w = 0, h = 0;
 	WantedSize(w, h);
-	if (g_frameColor && w == g_frameW && h == g_frameH) return true;
+	if (g_frameColor && w == g_frameW && h == g_frameH && g_frameColor->GetDesc().Format == SceneColorFormat()) return true;
 	g_blitSRB.Release();
-	if (!CreateViewTextures(w, h, "fua frame", g_frameColor, g_frameDepth))
+	g_frame8SRB.Release();
+	if (!CreateViewTextures(w, h, "fua frame", g_frameColor, g_frameDepth, SceneColorFormat()))
 	{
 		g_frameColor.Release();
 		g_frameDepth.Release();
@@ -133,12 +144,14 @@ unsigned int FrameGeneration() { return g_frameGen; }
 namespace {
 
 // [rc4l] The scene target at the frame's size, its upscale bindings made again with it.
+// [Doruk-Aksoy] And in the scene's format, made again when fua_dg_scene16 changes it.
 bool EnsureSceneColor()
 {
-	if (g_sceneColor && (int)g_sceneColor->GetDesc().Width == g_frameW && (int)g_sceneColor->GetDesc().Height == g_frameH) return true;
+	if (g_sceneColor && (int)g_sceneColor->GetDesc().Width == g_frameW && (int)g_sceneColor->GetDesc().Height == g_frameH &&
+		g_sceneColor->GetDesc().Format == SceneColorFormat()) return true;
 	g_upscaleSRB[0].Release();
 	g_upscaleSRB[1].Release();
-	return CreateColorTarget(g_frameW, g_frameH, "fua scene", g_sceneColor);
+	return CreateColorTarget(g_frameW, g_frameH, "fua scene", g_sceneColor, SceneColorFormat());
 }
 
 // [rc4l] The upscale by point (0) or linear (1) filtering, its constants and its binding of the scene target.
@@ -155,10 +168,12 @@ bool EnsureUpscale(int linear)
 		CreateDeviceBuffer(cbd, nullptr, &g_upscaleCB);
 		if (!g_upscaleCB) return false;
 	}
+	// [Doruk-Aksoy] It draws into the frame, so a change of its format makes it again.
+	if (g_upscalePSO[linear] && g_upscalePSO[linear]->GetGraphicsPipelineDesc().RTVFormats[0] != SceneColorFormat()) { g_upscaleSRB[linear].Release(); g_upscalePSO[linear].Release(); }
 	if (!g_upscalePSO[linear])
 	{
 		if (!CreatePicturePSO(linear ? "fua scene upscale linear" : "fua scene upscale point", kUpscalePS,
-			linear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, g_upscalePSO[linear])) return false;
+			linear ? Diligent::FILTER_TYPE_LINEAR : Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, g_upscalePSO[linear], SceneColorFormat())) return false;
 		if (auto *v = g_upscalePSO[linear]->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "Upscale")) v->Set(g_upscaleCB);
 	}
 	return g_upscaleSRB[linear] || CreatePictureBinding(g_upscalePSO[linear], "uTex", g_sceneColor, g_upscaleSRB[linear]);
@@ -166,12 +181,13 @@ bool EnsureUpscale(int linear)
 
 }
 
-void BeginSceneFrame(bool mayScale)
+void BeginSceneFrame(bool mayScale, bool separate)
 {
 	g_sceneW = FrameWidth();
 	g_sceneH = FrameHeight();
 	const bool canScale = mayScale && FrameOffscreen();
 	const float scale = zx::dynres::ScaleForFrame(LastGpuPassMs(kGpuFrame), canScale, (unsigned)zx::levelmesh::LevelGeneration());
+	g_sceneSeparate = separate && FrameOffscreen() && EnsureSceneColor();
 	// [rc4l] Made while the scale is still full, so the first step down neither allocates nor compiles anything.
 	if (!canScale || !zx::dynres::Active() || !EnsureSceneColor() || !EnsureUpscale(0) || !EnsureUpscale(1)) return;
 	const zx::dynres::SceneRect r = zx::dynres::ComputeSceneRect(g_frameW, g_frameH, scale);
@@ -179,18 +195,29 @@ void BeginSceneFrame(bool mayScale)
 	g_sceneH = r.h;
 }
 
+bool EnsureSceneTarget() { return FrameOffscreen() && EnsureSceneColor() && EnsureUpscale(0) && EnsureUpscale(1); }
+
+bool Scene16() { return fua_dg_scene16 && BackendOnly(); }
+
+Diligent::TEXTURE_FORMAT SceneColorFormat()
+{
+	return Scene16() ? Diligent::TEX_FORMAT_RGBA16_FLOAT : GetSwapChain()->GetDesc().ColorBufferFormat;
+}
+
 bool SceneScaled() { return g_sceneColor && (g_sceneW < g_frameW || g_sceneH < g_frameH); }
+bool SceneSeparate() { return g_sceneSeparate || SceneScaled(); }
+Diligent::ITexture *SceneTexture() { return SceneSeparate() ? g_sceneColor.RawPtr() : FrameTexture(); }
 int SceneWidth() { return g_sceneW > 0 ? g_sceneW : FrameWidth(); }
 int SceneHeight() { return g_sceneH > 0 ? g_sceneH : FrameHeight(); }
 
 Diligent::ITextureView *SceneRTV()
 {
-	return SceneScaled() ? g_sceneColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET) : FrameRTV();
+	return SceneSeparate() ? g_sceneColor->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET) : FrameRTV();
 }
 
 void UpscaleScene(Diligent::IDeviceContext *ctx)
 {
-	if (!SceneScaled()) return;
+	if (!SceneSeparate()) return;
 	const int linear = zx::hwrender::ComputeTextureFilter(r_texture_filter).magLinear ? 1 : 0;
 	if (!EnsureUpscale(linear)) return;
 	{
@@ -214,8 +241,34 @@ Diligent::ITexture *FrameTexture()
 	return FrameOffscreen() ? g_frameColor.RawPtr() : GetSwapChain()->GetCurrentBackBufferRTV()->GetTexture();
 }
 
+Diligent::ITexture *FrameAs8Bit(Diligent::IDeviceContext *ctx)
+{
+	Diligent::ITexture *frame = FrameTexture();
+	if (frame == NULL || frame->GetDesc().Format != Diligent::TEX_FORMAT_RGBA16_FLOAT) return frame;
+	const auto &fd = frame->GetDesc();
+	if (!g_frame8 || g_frame8->GetDesc().Width != fd.Width || g_frame8->GetDesc().Height != fd.Height)
+	{
+		g_frame8SRB.Release();
+		if (!CreateColorTarget((int)fd.Width, (int)fd.Height, "fua frame 8-bit", g_frame8, Diligent::TEX_FORMAT_RGBA8_UNORM)) return NULL;
+	}
+	if (!g_frame8PSO && !CreatePicturePSO("fua frame 8-bit", kBlitPS, Diligent::FILTER_TYPE_POINT, Diligent::TEX_FORMAT_UNKNOWN, g_frame8PSO, Diligent::TEX_FORMAT_RGBA8_UNORM)) return NULL;
+	if (!g_frame8SRB && !CreatePictureBinding(g_frame8PSO, "uTex", frame, g_frame8SRB)) return NULL;
+	Diligent::ITextureView *rtv = g_frame8->GetDefaultView(Diligent::TEXTURE_VIEW_RENDER_TARGET);
+	ctx->SetRenderTargets(1, &rtv, NULL, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	ctx->SetViewports(1, NULL, fd.Width, fd.Height);
+	ctx->SetPipelineState(g_frame8PSO);
+	ctx->CommitShaderResources(g_frame8SRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	Diligent::DrawAttribs draw;
+	draw.NumVertices = 3;
+	ctx->Draw(draw);
+	return g_frame8;
+}
+
 void ReleaseFrameTarget()
 {
+	g_frame8SRB.Release();
+	g_frame8PSO.Release();
+	g_frame8.Release();
 	g_frameColor.Release();
 	g_frameDepth.Release();
 	g_frameW = g_frameH = 0;

@@ -543,7 +543,7 @@ static const char *kMirrorPS =
 	"    vec3 sheen = fuaMirrorSheen();\n"
 	// [rc4l] GL draws a mirror past r_mirror_recursions deep (uSheenLight.w) black under its sheen, ClearScreen's dim, and with 0 that is the first one.
 	"    int levels = int(uSheenLight.w + 0.5);\n"
-	"    if (levels < 1) { outColor = vec4(min(sheen, vec3(1.0)), 1.0); return; }\n"
+	"    if (levels < 1) { outColor = vec4(sheen, 1.0); return; }\n"
 	"    vec3 n = normalize(vNormal);\n"
 	"    vec3 eye = normalize(vWorld - uCameraPos.xyz);\n"
 	"    vec3 dir = reflect(eye, n);\n"
@@ -577,7 +577,7 @@ static const char *kMirrorPS =
 	"        if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionNoneEXT) break;\n"
 	"        if (rayQueryGetIntersectionInstanceCustomIndexEXT(rq, true) != 1) break;\n"
 	// [rc4l] Another mirror: GL renders it a level deeper, reflecting the view again, unless that is past its recursions.
-	"        if (level >= levels) { outColor = vec4(min(glaze, vec3(1.0)), 1.0); return; }\n"
+	"        if (level >= levels) { outColor = vec4(glaze, 1.0); return; }\n"
 	"        vec4 mp = MirrorPlanesIn.mirrorPlanes[uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true)) / 2u];\n"
 	"        vec3 m = mp.xyz;\n"
 	"        view = fuaNextView(view, int(mp.w));\n"
@@ -600,16 +600,16 @@ static const char *kMirrorPS =
 	"        float su = (atan(d.z, d.x) + uLightParams.y) / 6.28318531;\n"
 	// The dome spans the horizon to 60 degrees over its texture, so map elevation the same way.
 	"        float sv = clamp((1.0472 - el) / 1.0472, 0.0, 1.0);\n"
-	"        outColor = vec4(min(texture(sampler2D(uSky, uSky_sampler), vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, vec3(1.0)), 1.0);\n"
+	"        outColor = vec4(texture(sampler2D(uSky, uSky_sampler), vec2(su * uScreen.z, sv * uScreen.w)).rgb + glaze, 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	// [rc4l] A sprite: its texel in the light its own record carries, shaded as the level's surfaces are.
 	"    if (rayQueryGetIntersectionTypeEXT(rq, true) == gl_RayQueryCommittedIntersectionGeneratedEXT) {\n"
 	"        vec3 st = textureLod(sampler2D(uMaterials[nonuniformEXT(spriteMat(hitSprite))], uMaterials_sampler), hitUV, 0.0).rgb;\n"
-	"        if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(st) + glaze, vec3(1.0)), 1.0); return; }\n"
+	"        if (uFixedColormap.w > 0.5) { outColor = vec4(fuaFixedColormap(st) + glaze, 1.0); return; }\n"
 	"        uint sp = spritePiece(hitSprite);\n"
 	"        vec3 sc = fuaTracedShade(st, sp, fuaPiece(sp).colorLight.rgb, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
-	"        outColor = vec4(min(sc + glaze, vec3(1.0)), 1.0);\n"
+	"        outColor = vec4(sc + glaze, 1.0);\n"
 	"        return;\n"
 	"    }\n"
 	"    uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(rq, true));\n"
@@ -626,14 +626,15 @@ static const char *kMirrorPS =
 	"    uint mat = pieceMat(vertPiece(i0));\n"
 	"    vec3 texel = texture(sampler2D(uMaterials[nonuniformEXT(mat)], uMaterials_sampler), uv).rgb;\n"
 	// [rc4l] A fixed colormap recolours what the ray hit in white light, as the raster path does a level surface.
-	"    if (uFixedColormap.w > 0.5) { outColor = vec4(min(fuaFixedColormap(texel) + glaze, vec3(1.0)), 1.0); return; }\n"
+	"    if (uFixedColormap.w > 0.5) { outColor = vec4(fuaFixedColormap(texel) + glaze, 1.0); return; }\n"
 	"    c = fuaTracedShade(texel, vertPiece(i0), c, travelled + rayQueryGetIntersectionTEXT(rq, true));\n"
-	"    outColor = vec4(min(c + glaze, vec3(1.0)), 1.0);\n"
+	"    outColor = vec4(c + glaze, 1.0);\n"
 	"}\n";
 
 // [rc4l] The planar path's surface: the reflection RenderMirrors rendered from the mirrored eye, by screen position, with no ray query so an adapter without one can still draw it.
 // [rc4l] Flipped left to right, since the mirrored eye sees the room the right way round and a mirror shows it reversed.
 // [rc4l] GL's sheen goes on top, clamped as its additive blend into the framebuffer clamps.
+// [Doruk-Aksoy] Left unclamped: an 8-bit target clamps it as GL's framebuffer does, and the 16-bit scene keeps it as UZDoom's float buffer does.
 static const char *kMirrorPlanarPS =
 	"#version 450\n"
 	FUA_CONSTANTS_GLSL
@@ -647,7 +648,7 @@ static const char *kMirrorPlanarPS =
 	"    vec2 size = vec2(textureSize(sampler2D(uTex, uTex_sampler), 0));\n"
 	"    vec2 uv = gl_FragCoord.xy / size;\n"
 	/* [rc4l] Flipped across the pass's own width, uScreen.x, since below full scale the reflection fills only the left of its picture (features/dynres). */
-	"    outColor = vec4(min(texture(sampler2D(uTex, uTex_sampler), vec2(uScreen.x / size.x - uv.x, uv.y)).rgb + sheen, vec3(1.0)), 1.0);\n"
+	"    outColor = vec4(texture(sampler2D(uTex, uTex_sampler), vec2(uScreen.x / size.x - uv.x, uv.y)).rgb + sheen, 1.0);\n"
 	"}\n";
 
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
@@ -814,7 +815,7 @@ bool EnsureMirrorResources()
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		ClampDepthLikeGL(pci.GraphicsPipeline);
 		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+		pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 		pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 		pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
@@ -1058,7 +1059,7 @@ static MirrorPicture *PoolPicture(int level, int slot)
 	MirrorPicture &p = pool[slot];
 	if (!p.color || !p.srb || p.w != g_mirrorW || p.h != g_mirrorH)
 	{
-		if (!CreateViewTextures(g_mirrorW, g_mirrorH, "fua mirror picture", p.color, p.depth) || !BindMirrorPicture(p.color, p.srb)) return NULL;
+		if (!CreateViewTextures(g_mirrorW, g_mirrorH, "fua mirror picture", p.color, p.depth, SceneColorFormat()) || !BindMirrorPicture(p.color, p.srb)) return NULL;
 		p.w = g_mirrorW; p.h = g_mirrorH;
 	}
 	return &p;

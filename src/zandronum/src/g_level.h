@@ -41,6 +41,7 @@
 #include "textures/textures.h"
 //[BL] New Includes
 #include "sectinfo.h"
+#include "features/postprocess/computation/postprocess_compute.h"   // [Doruk-Aksoy] ShaderTable
 
 struct level_info_t;
 struct cluster_info_t;
@@ -521,6 +522,9 @@ struct FLevelLocals
 	// [Doruk-Aksoy] uzdoom@da74b9df95: the music volume factor ACS SetMusicVolume set, 1 at each level's start.
 	float		MusicVolume;
 	void		SetMusicVolume(float v);
+
+	// [Doruk-Aksoy] features/postprocess: what this level turned its post-process shaders to, from the declarations at its start.
+	zx::postprocess::ShaderTable fua_postShaders;
 
 	bool		IsJumpingAllowed() const;
 	bool		IsCrouchingAllowed() const;

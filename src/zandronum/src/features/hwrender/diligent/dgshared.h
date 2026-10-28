@@ -181,6 +181,8 @@ bool FrameOffscreen();
 Diligent::ITextureView *FrameRTV();
 Diligent::ITextureView *FrameDSV();
 Diligent::ITexture *FrameTexture();
+// [Doruk-Aksoy] The frame as 8-bit RGBA for what reads its bytes (fua_clip's recorder): the frame itself, or a 16-bit one copied down into a picture of its own.
+Diligent::ITexture *FrameAs8Bit(Diligent::IDeviceContext *ctx);
 // [rc4l] Which making of the offscreen target this is, so a picture drawn into an earlier one is not taken for this one's.
 unsigned int FrameGeneration();
 int FrameWidth();
@@ -188,11 +190,22 @@ int FrameHeight();
 void FinishFrame(Diligent::IDeviceContext *ctx);
 void ReleaseFrameTarget();
 // [rc4l] features/dynres: the frame's scene scale, asked once a frame before its first 3D pass; mayScale false holds full scale.
-void BeginSceneFrame(bool mayScale);
+// [Doruk-Aksoy] separate draws the 3D into the scene target at full scale too, for features/postprocess.
+void BeginSceneFrame(bool mayScale, bool separate);
 // [rc4l] Whether this frame's 3D is drawn below full scale, into the top left SceneWidth by SceneHeight of every screen-sized target.
 bool SceneScaled();
 int SceneWidth();
 int SceneHeight();
+// [Doruk-Aksoy] The scene target and its upscale made for the frame's size, ahead of a frame that needs them.
+bool EnsureSceneTarget();
+// [Doruk-Aksoy] Whether the 3D is in the scene target rather than the frame: below full scale, or for post-process shaders to read.
+bool SceneSeparate();
+// [Doruk-Aksoy] Whether the 3D is drawn in 16-bit float (fua_dg_scene16 in a launch without GL), as UZDoom's scene buffer is.
+bool Scene16();
+// [Doruk-Aksoy] The format of the frame and of every target the 3D is drawn into, and of every pipeline drawing them: 16-bit float with Scene16, as UZDoom's scene and pipeline images are, else the swapchain's.
+Diligent::TEXTURE_FORMAT SceneColorFormat();
+// [Doruk-Aksoy] The texture the player's view is drawn into this frame.
+Diligent::ITexture *SceneTexture();
 // [rc4l] Where the player's view draws: the scene target below full scale, else the frame itself.
 Diligent::ITextureView *SceneRTV();
 // [rc4l] The scene painted over the whole frame, before the 2D, when it was drawn below full scale.
@@ -322,7 +335,12 @@ bool UploadGrowingVB(Diligent::IDeviceContext *ctx, Diligent::RefCntAutoPtr<Dili
 	zx::hwrender::UploadShadow *shadow = nullptr);
 
 // [rc4l] The 2D pass (dg2d.cpp): the captured HUD, menus and console over the frame, and what it drew last.
-void Draw2D(Diligent::IDeviceContext *ctx);
+// [Doruk-Aksoy] features/postprocess (dgpostprocess.cpp): its programs started at launch, and let go with the device or a change of how shaders compile.
+void PrecompilePostShaders();
+void ReleasePostProcess();
+
+// [Doruk-Aksoy] Quads [first, end) of the frame's 2D, end -1 for the rest, into target's top left viewW x viewH, or the whole frame for none.
+void Draw2D(Diligent::IDeviceContext *ctx, int first = 0, int end = -1, Diligent::ITextureView *target = NULL, int viewW = 0, int viewH = 0);
 void Get2DStats(int &quads, int &draws);
 
 // [rc4l] The light pass (dglights.cpp): its buffers, created once and bound statically to every world pipeline, the per-tic light list, the per-pass cluster grid and its counters.

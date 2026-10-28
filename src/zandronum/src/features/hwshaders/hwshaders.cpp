@@ -3,6 +3,7 @@
 
 #include "features/hwshaders/hwshaders.h"
 #include "features/hwshaders/computation/hwshader_compute.h"
+#include "features/postprocess/postprocess.h"
 
 #include "doomtype.h"
 #include "zstring.h"
@@ -23,6 +24,12 @@ void ParseHardwareShader(FScanner &sc, int deflump)
 	float speed = 1.f;
 
 	sc.MustGetString();
+	// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: a post-process shader is a block of its own, not a texture's.
+	if (sc.Compare("postprocess"))
+	{
+		zx::postprocess::ParsePostProcessShader(sc);
+		return;
+	}
 	if (sc.Compare("texture")) type = FTexture::TEX_Wall;
 	else if (sc.Compare("flat")) type = FTexture::TEX_Flat;
 	else if (sc.Compare("sprite")) type = FTexture::TEX_Sprite;

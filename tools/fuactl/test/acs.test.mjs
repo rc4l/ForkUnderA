@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -40,6 +40,31 @@ test("several scripts lie end to end, each directory entry at its own code", () 
   const { scripts, strings } = parse(buf);
   assert.deepEqual(scripts, [{ number: 1001, address: 8, args: 0 }, { number: 2, address: 20, args: 0 }]);
   assert.deepEqual(strings, ["S"]);
+  assert.equal(buf.readInt32LE(20), PCD.TERMINATE);
+});
+
+// [Doruk-Aksoy] ENTER's thousand in ACS0, and a flagged script making the lump ACSE: SPTR, SFLG and STRL as FBehavior reads them.
+test("an ENTER script is numbered in the four thousands", () => {
+  const { scripts } = parse(acsScripts([{ code: [PCD.TERMINATE], type: SCRIPT.ENTER, number: 5 }]));
+  assert.deepEqual(scripts, [{ number: 4005, address: 8, args: 0 }]);
+});
+
+test("a CLIENTSIDE script makes the lump ACSE, its flags in SFLG and the strings in STRL", () => {
+  const buf = acsScripts([{ code: [PCD.PUSHNUMBER, 1, PCD.TERMINATE] }, { code: [PCD.TERMINATE], open: false, number: 7, flags: SCRIPTF.CLIENTSIDE }], ["AB", "C"]);
+  assert.equal(buf.toString("latin1", 0, 4), "ACSE");
+  const chunks = {};
+  for (let at = buf.readInt32LE(4); at < buf.length; at += 8 + buf.readUInt32LE(at + 4))
+    chunks[buf.toString("latin1", at, at + 4)] = buf.subarray(at + 8, at + 8 + buf.readUInt32LE(at + 4));
+  assert.deepEqual(Object.keys(chunks), ["SPTR", "SFLG", "STRL"]);
+  const sptr = chunks.SPTR;
+  assert.deepEqual([sptr.readInt16LE(0), sptr.readUInt16LE(2), sptr.readInt32LE(4)], [1, SCRIPT.OPEN, 8]);
+  assert.deepEqual([sptr.readInt16LE(12), sptr.readUInt16LE(14), sptr.readInt32LE(16)], [7, SCRIPT.CLOSED, 20]);
+  assert.deepEqual([chunks.SFLG.readInt16LE(0), chunks.SFLG.readUInt16LE(2)], [7, SCRIPTF.CLIENTSIDE]);
+  const strl = chunks.STRL;
+  assert.equal(strl.readInt32LE(4), 2);
+  const str = (i) => { const at = strl.readInt32LE(12 + 4 * i); return strl.toString("latin1", at, strl.indexOf(0, at)); };
+  assert.deepEqual([str(0), str(1)], ["AB", "C"]);
+  assert.equal(strl.length % 4, 0);
   assert.equal(buf.readInt32LE(20), PCD.TERMINATE);
 });
 

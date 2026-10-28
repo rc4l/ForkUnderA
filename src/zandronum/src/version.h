@@ -172,7 +172,9 @@ int GetRevisionNumber();
 // builds do not know; from here a build refuses a save newer than its own (ComputeSaveVersionVerdict).
 // [Doruk-Aksoy] 4525: the level snapshot's music holds the volume factor ACS SetMusicVolume set
 // (uzdoom@da74b9df95, guarded in P_SerializeSounds). Upstream's keyed saves needed no bump.
-#define SAVEVER 4525
+// [Doruk-Aksoy] 4526: the level snapshot holds what the fua_ ACS functions turned its post-process shaders to
+// (features/acs-shaders, guarded in SerializeLevelShaders).
+#define SAVEVER 4526
 
 
 #define SAVEVERSTRINGIFY2(x) #x

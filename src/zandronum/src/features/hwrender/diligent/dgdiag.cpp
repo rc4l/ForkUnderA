@@ -252,7 +252,8 @@ void CaptureReplayFrame(Diligent::IDeviceContext *ctx, Diligent::ISwapChain *swa
 
 	auto *dev = GetDevice();
 	if (!dev || !ctx || !swap) return;
-	auto *backTex = FrameTexture();
+	// [Doruk-Aksoy] The encoder takes 8-bit pixels, so a 16-bit frame is copied down first.
+	auto *backTex = FrameAs8Bit(ctx);
 	if (!backTex) return;
 	const auto &bd = backTex->GetDesc();
 
@@ -379,7 +380,9 @@ static unsigned char *StagingRGB(Diligent::ITexture *staging, int &w, int &h, in
 	        bd.Format == Diligent::TEX_FORMAT_BGRA8_UNORM_SRGB);
 
 	BYTE *rgb = new BYTE[w * h * 3];
-	zx::ComputeRowsToRGB((const unsigned char *)mapped.pData, (size_t)mapped.Stride, w, h, bgra, rgb);
+	// [Doruk-Aksoy] A target drawn in the 16-bit scene format, such as a camera's or the save picture's, is read as it is presented.
+	if (bd.Format == Diligent::TEX_FORMAT_RGBA16_FLOAT) zx::ComputeHalfRowsToRGB((const unsigned char *)mapped.pData, (size_t)mapped.Stride, w, h, rgb);
+	else zx::ComputeRowsToRGB((const unsigned char *)mapped.pData, (size_t)mapped.Stride, w, h, bgra, rgb);
 	ctx->UnmapTextureSubresource(staging, 0, 0);
 	return rgb;
 }

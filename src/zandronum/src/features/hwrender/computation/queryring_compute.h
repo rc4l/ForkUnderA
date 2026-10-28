@@ -27,6 +27,8 @@ public:
 		}
 		return n;
 	}
+	// [Doruk-Aksoy] Whether no slot waits to be read, so a pass that did not run reports nothing late.
+	bool Idle() const { return m_waiting == 0; }
 
 private:
 	int m_head = 0, m_tail = 0, m_waiting = 0;

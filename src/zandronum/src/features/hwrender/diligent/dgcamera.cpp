@@ -74,7 +74,7 @@ static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 	c->material = material; c->w = w; c->h = h;
 	c->rtv = c->dsv = c->srv = NULL;
 
-	if (!CreateViewTextures(w, h, "fua camera", c->scratch, c->depth) || !CreateColorTarget(w, h, "fua camera flipped", c->color))
+	if (!CreateViewTextures(w, h, "fua camera", c->scratch, c->depth, SceneColorFormat()) || !CreateColorTarget(w, h, "fua camera flipped", c->color))
 	{ delete c; return NULL; }
 	// [rc4l] Without normals the camera's picture still draws, only without its marks.
 	CreateNormalTarget(w, h, "fua camera", c->normal);

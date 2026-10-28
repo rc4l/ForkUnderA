@@ -14,6 +14,11 @@ SetMusicVolume(1.0);   // back to normal
   `I_SetMusicVolume`. `snd_musicvolume` still applies on top.
 - It lasts until the level ends: a new level starts at 1, a savegame keeps it, and a Strife dialogue,
   which lowers the music while a voice plays, restores it rather than 1.
+- A round reset (`GAME_ResetMap`, in survival, LMS and the other modes that reset the map) puts it back
+  to 1 on the server and on each client, which run their own reset. `fuactl scenarios netshaders`'
+  roundreset configuration holds the players and a joiner after it to the song at 1.
+- The song's volume belongs to the sound device, so a tic on its own thread (the game thread) sets it
+  in the handoff (`SetMusicVolume`'s `Deferred`).
 - As upstream, a new song (ACS `SetMusic`, MUSINFO) starts at its own volume and drops the factor until
   the next `SetMusicVolume`, though the level keeps the value for a save.
 
@@ -38,6 +43,7 @@ or earlier loads at 1. Upstream's keyed saves needed no bump for the same change
   `net-sends-through-replication` allowance by one (`tools/boundary-allow.json`).
 - `g_level.h` / `g_level.cpp`: `FLevelLocals::MusicVolume` and `SetMusicVolume`, 1 in
   `G_InitLevelLocals`, reset in `G_ChangeLevel`.
+- `g_game.cpp` `GAME_ResetMap`: back to 1, with `SERVER_SetMapMusicVolume` on a server.
 - `p_setup.cpp`: a fresh level applies its volume; `p_saveg.cpp`: the save field; `version.h`: `SAVEVER`.
 - `p_conversation.cpp`: both dialogue exits restore the level's volume.
 - `protocolspec/spec.misc.txt`, `network_enums.h`, `sv_commands.{h,cpp}`, `cl_main.cpp`, `sv_main.cpp`

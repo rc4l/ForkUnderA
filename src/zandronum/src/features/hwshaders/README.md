@@ -11,7 +11,10 @@ shader lumps itself; it lives here now, so the Vulkan backend can compile the sa
   (`ComputeUserProgramBlock`, `ComputePlainProgramBlock` for none) and splicing it in
   (`ComputeSpliceShaderBlock`), the piece's shader number in the warp slot and back
   (`ComputePieceShader`, `ComputeUserShaderOf`), and the console note for a shader left out
-  (`ComputeUserShaderSkipNote`).
+  (`ComputeUserShaderSkipNote`, its reasons indented by `ComputeIndentedLines`).
+
+A `HardwareShader PostProcess` block is not a texture's: `ParseHardwareShader` hands it to
+`features/postprocess`.
 
 A shader that does not compile draws its textures plainly on both renderers instead of ending the game
 at startup, as GL used to. Both print `<renderer>: hardware shader <lump> does not compile here; its

@@ -166,7 +166,7 @@ static bool EnsureHorizonPipeline()
 	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 	ClampDepthLikeGL(pci.GraphicsPipeline);
 	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+	pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 	pci.GraphicsPipeline.DSVFormat = swap->GetDesc().DepthBufferFormat;
 	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	// [rc4l] The side test is made per pass on the CPU, from that pass's own eye, so no winding has to agree.

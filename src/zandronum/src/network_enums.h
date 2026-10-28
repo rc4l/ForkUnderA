@@ -402,6 +402,9 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_FUADAMAGETAKEN ),
 	// [Doruk-Aksoy] ACS SetMusicVolume: the level's music volume factor.
 	ENUM_ELEMENT ( SVC2_FUASETMUSICVOLUME ),
+	// [Doruk-Aksoy] ACS fua_SetShaderEnabled and fua_SetShaderUniform: a GLDEFS post-process shader for every client or one.
+	ENUM_ELEMENT ( SVC2_FUASETSHADERENABLED ),
+	ENUM_ELEMENT ( SVC2_FUASETSHADERUNIFORM ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

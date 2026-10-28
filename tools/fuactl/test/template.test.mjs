@@ -407,3 +407,18 @@ test("--side names a netplay configuration and its cvars reach that configuratio
   assert.equal(sideAdjust("wan", {})(opts), null);
   assert.equal(sideAdjust("lan", { x: 1 })(opts).configs[0].clientCvars.x, 1);
 });
+
+// [Doruk-Aksoy] An engine already closing is given time to go; one that stays is still counted once the time is up.
+test("othersAfterClosing waits for engines that are closing", async () => {
+  const { othersAfterClosing } = await import("../src/template.mjs");
+  let clock = 0;
+  const counts = [1, 1, 0];
+  const going = await othersAfterClosing({ count: () => counts.shift() ?? 0, ms: 5000, sleep: async (ms) => { clock += ms; }, now: () => clock });
+  assert.equal(going, 0);
+  assert.equal(clock, 1000);
+  clock = 0;
+  const staying = await othersAfterClosing({ count: () => 2, ms: 1500, sleep: async (ms) => { clock += ms; }, now: () => clock });
+  assert.equal(staying, 2);
+  assert.equal(clock, 1500);
+  assert.equal(await othersAfterClosing({ count: () => 0 }), 0);
+});

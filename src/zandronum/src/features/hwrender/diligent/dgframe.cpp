@@ -390,14 +390,23 @@ static void DrawOverlay(bool present)
 	// [rc4l] A wipe under way is the picture under the console and menus, and an overlay with nothing to draw keeps the last picture, since the intermission draws nothing once Use is pressed and clearing it presented black frames the next map then melted in from.
 	int quads = 0;
 	zx::draw2d::Quads2D(quads);
+	bool cleared = false;
 	if (WipeActive()) WipeDraw(ctx);
 	else if (!zx::frame::ComputeOverlayKeepsPicture(FrameOffscreen(), g_paintedGen == FrameGeneration(), quads))
 	{
 		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 		ctx->ClearRenderTarget(rtv, black, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		cleared = true;
 	}
 	Draw2D(ctx);
-	if (present) PresentFrame(ctx, swap, true);
+	// [Doruk-Aksoy] features/postprocess: a kept picture or a wipe's already had its screen shaders, so only a fresh one runs them.
+	BeginPostProcessFrame(false);
+	if (cleared) RunScreenPostProcess(ctx);
+	if (present)
+	{
+		PostProcessPresented();
+		PresentFrame(ctx, swap, true);
+	}
 }
 
 // [rc4l] Whether the last frame drew the world under its 2D, so a screenshot redraws what was shown.

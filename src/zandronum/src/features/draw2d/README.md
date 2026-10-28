@@ -16,7 +16,9 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
 - `record.h`/`.cpp`: the frame's 2D capture, its quads in draw order (`Record2D`, `Quads2D`, `Generation2D`,
   `GetScreen2D`), dropped at the top of each frame and each wipe step (`Clear2D`), each draw for both windows
   or one (`Set2DTarget`); `fua_2d_list` lists it. Moved from `features/hwrender/hud2d`, so the engine and
-  GL's frame buffer record without reaching into the backend.
+  GL's frame buffer record without reaching into the backend. `MarkViewQuads` and `ViewQuads` say how many of
+  the first quads are the view's own (the weapon, the targeter, the screen's tint), which
+  `features/postprocess`'s scene shaders run over.
 - `record2d.h`/`.cpp`: `Record2DCanvas`, the canvas every 2D draw is recorded through, moved from
   `features/hwrender`.
 - `draw2d.cpp`: `PrepareTexture`, the glue that reads the `DrawParms`, the material's corners and the
@@ -47,4 +49,5 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
 - `v_video.cpp`: `Set2DTarget` around `vid_fps`, drawn once for each window.
 - `features/sidebyside/sidebyside.cpp`: GL's frame buffer records through `Record2DCanvas`, and GL leaves out
   a draw meant for the backend's window alone (`Get2DTarget`).
-- `features/hwrender/diligent/dg2d.cpp`: the backend draws `Quads2D`.
+- `features/hwrender/diligent/dg2d.cpp`: the backend draws `Quads2D`, all of them or a range into another target.
+- `features/frame/playerview.cpp` `RenderPlayerView`: `MarkViewQuads` once the view's own are recorded.

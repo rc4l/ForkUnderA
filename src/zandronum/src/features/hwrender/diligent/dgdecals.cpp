@@ -518,7 +518,7 @@ bool EnsureDecalPipelines()
 		pci.PSODesc.Name = kNames[pass];
 		pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
 		pci.GraphicsPipeline.NumRenderTargets = 1;
-		pci.GraphicsPipeline.RTVFormats[0] = swap->GetDesc().ColorBufferFormat;
+		pci.GraphicsPipeline.RTVFormats[0] = SceneColorFormat();
 		// [rc4l] NO depth attachment, which is not the same as "depth test off".
 		//
 		// This pass READS the scene depth as a texture, and it is the texture the world pass just drew

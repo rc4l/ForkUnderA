@@ -126,6 +126,8 @@ void RenderPlayerView(int player, int paletteBrightness)
 	zx::draw2d::ScreenFill fills[2];
 	const int n = zx::draw2d::ScreenBlends(sector, in_area, gl_fixedcolormap != 0, paletteBrightness, fills);
 	for (int i = 0; i < n; i++) zx::draw2d::Record2D(zx::draw2d::PrepareScreenFill(fills[i]));
+	// [Doruk-Aksoy] features/postprocess: the 2D a scene shader runs over ends here, as UZDoom draws the weapon before its scene shaders.
+	zx::draw2d::MarkViewQuads();
 
 	zx::hwrender::NoteWorldView();
 	EndViewpoint(savedMain);

@@ -10,7 +10,8 @@
 
 namespace zx { namespace hwrender {
 
-enum GpuPass { kGpuFrame, kGpuWorld, kGpu2D, kGpuPasses };
+// [Doruk-Aksoy] kGpuPostScene and kGpuPostScreen are features/postprocess's two stages.
+enum GpuPass { kGpuFrame, kGpuWorld, kGpu2D, kGpuPostScene, kGpuPostScreen, kGpuPasses };
 
 void BeginGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass);
 void EndGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass);

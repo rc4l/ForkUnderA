@@ -104,6 +104,7 @@
 #include "g_shared/a_pickups.h"
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the script's decal
 #include "features/acs-lineattack/computation/lineattack_compute.h"   // [Doruk-Aksoy] LineAttack's shooter
+#include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] CallShaderFunction
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -5771,7 +5772,17 @@ enum EACSFunctions
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
 	ACSF_SetTeamScore,			// (int team, int value)
+
+	// [Doruk-Aksoy] features/acs-shaders, a block no upstream reaches; compiled into mods, these never move.
+	ACSF_fua_SetShaderEnabled = 24000,	// (str shader, bool enable [, bool activatorOnly [, int durationTics]])
+	ACSF_fua_SetShaderUniform1f,		// (str shader, str uniform, fixed x [, bool activatorOnly])
+	ACSF_fua_SetShaderUniform2f,
+	ACSF_fua_SetShaderUniform3f,
+	ACSF_fua_SetShaderUniform4f,
+	ACSF_fua_SetShaderUniform1i,		// (str shader, str uniform, int x [, bool activatorOnly])
 };
+
+static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
 {
@@ -7366,6 +7377,15 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			}
 			break;
 		}
+
+		// [Doruk-Aksoy] features/acs-shaders: GLDEFS post-process shaders, as UZDoom's ZScript PPShader sets them.
+		case ACSF_fua_SetShaderEnabled:
+		case ACSF_fua_SetShaderUniform1f:
+		case ACSF_fua_SetShaderUniform2f:
+		case ACSF_fua_SetShaderUniform3f:
+		case ACSF_fua_SetShaderUniform4f:
+		case ACSF_fua_SetShaderUniform1i:
+			return zx::acsshaders::CallShaderFunction( activator, funcIndex, args, argCount );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:

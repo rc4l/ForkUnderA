@@ -110,11 +110,22 @@ export async function grab(c, exe, tag, at, side) {
   return pairFrame(side, await shot.shotPair(c, tag, { engineBin: exe }));
 }
 
+// [Doruk-Aksoy] How many other engines are left once those already closing (the last scenario's) have had `ms` to go; the readbacks beside GL refuse to run with any.
+export async function othersAfterClosing({ count = engineProcessCount, ms = 15000, sleep = cap.sleep, now = () => Date.now() } = {}) {
+  const deadline = now() + ms;
+  let n = count();
+  while (n > 0 && now() < deadline) {
+    await sleep(500);
+    n = count();
+  }
+  return n;
+}
+
 // [rc4l] Build the wad, capture every map at every vantage from both sides, and judge; returns { lines, failed }.
 export async function compareTemplate({ name, wad, maps, vantages, boxes, sides = GL_VS_VULKAN, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720] }) {
   // [rc4l] GL reads its frame back out of the window, so another engine on top can make it garbage.
-  const others = sides.some((sd) => sd.gl || sideBesideGl(sd)) ? engineProcessCount() : 0;
+  const others = sides.some((sd) => sd.gl || sideBesideGl(sd)) ? await othersAfterClosing() : 0;
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = slashed(resolveEngine());
   const wadPath = writeTemplateFile(name, wad);
@@ -469,7 +480,7 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
 
 // [rc4l] GL against Vulkan from ONE frame of one Vulkan launch, for what moves with time (a scroller, an animation), where two launches never agree on the moment; `commands` run once the level is up, as a side's do.
 export async function compareSameFrame({ name, wad, maps, vantages, boxes, iwad = FREEDOOM2, port = 7796, size = [1280, 720], settleTics = 70, commands = [] }) {
-  const others = engineProcessCount();
+  const others = await othersAfterClosing();
   if (others > 0) return { lines: [`${others} other engine window(s) open -- close them first`], failed: 1, refused: true };
   const exe = slashed(resolveEngine());
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: { name: "pair", glDraws: true, commands } }, async (c, map) => {
