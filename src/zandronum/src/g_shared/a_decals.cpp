@@ -41,6 +41,7 @@
 #include "decallib.h"
 #include "features/decals/decals.h"   // [rc4l] every decal is made and judged there
 #include "features/decals/computation/markrules_compute.h"   // [rc4l] ComputeMarksToEvict
+#include "features/gamecopy/decals.h"   // [Doruk-Aksoy] NoteDecalSide, so the render copy lists the sides holding decals without looking at every side
 #include "statnums.h"
 #include "c_dispatch.h"
 #include "d_net.h"
@@ -264,6 +265,7 @@ FTextureID DBaseDecal::StickToWall (side_t *wall, fixed_t x, fixed_t y, F3DFloor
 	*prev = this;
 	WallNext = NULL;
 	WallPrev = prev;
+	zx::gamecopy::NoteDecalSide (wall);
 
 	const line_t *line = wall->linedef;
 	const sector_t *front = (line->sidedef[0] == wall) ? line->frontsector : line->backsector;

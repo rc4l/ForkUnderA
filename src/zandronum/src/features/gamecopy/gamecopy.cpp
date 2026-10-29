@@ -18,6 +18,7 @@
 #include "features/gamecopy/computation/filldue_compute.h"
 #include "features/gamecopy/computation/serial_compute.h"
 #include "features/gamecopy/computation/prescan_compute.h"
+#include "features/gamecopy/computation/changelog_compute.h"
 #include "features/handoff/effects.h"   // [rc4l] EffectsRun, Deferring
 #include "features/gamecopy/actorlists.h"
 #include "features/gamecopy/tintsubject.h"
@@ -370,6 +371,12 @@ template <class Change> static void ScanChanges(int count, std::vector<int> &out
 std::vector<SectorState> g_sectorTaken;
 std::vector<SideState> g_sideTaken;
 std::vector<LineState> g_lineTaken;
+
+// [Doruk-Aksoy] The sides changed since the last fill, as their setters noted them, which a tic's end compares instead of all of them.
+ChangeLog g_sideLog;
+int g_sideSlice = 0;   // [Doruk-Aksoy] where the next slice compared whole starts
+// [Doruk-Aksoy] Sides compared whole at each tic's end besides those noted, so a write nobody noted is still taken within a few seconds and counted.
+const int kSideSlice = 1024;
 
 // [rc4l] Every item's state as the copy holds it now kept for the next scan, as a level starts.
 void KeepAllTaken()
@@ -936,6 +943,10 @@ void InitLevel()
 	g_blends.Clear();
 	g_gathering.Clear();
 	KeepAllTaken();
+	// [Doruk-Aksoy] The sides a save restores after this are written without the setters, so the first scan of a level compares every side.
+	ComputeLogReset(g_sideLog, numsides, true);
+	g_sideSlice = 0;
+	ResetDecalSides();
 	g_prescan.stamp.found = false;
 	g_actors.clear();
 	g_byIdBuilt = false;
@@ -961,6 +972,8 @@ void InitLevel()
 void ForgetLevel()
 {
 	g_levelLoaded = false;
+	ComputeLogReset(g_sideLog, 0, true);
+	ResetDecalSides();
 	ForgetXFloors();
 	InitPolyBSPs();
 	InitLights();
@@ -1013,6 +1026,39 @@ PrescanStamp StampNow(bool found)
 	return s;
 }
 
+void NoteSideChanged(const side_t *side)
+{
+	ComputeLogNote(g_sideLog, ComputeIndexIn((uintptr_t)side, (uintptr_t)sides, sizeof(side_t), numsides));
+}
+
+void NoteMapLoaded()
+{
+	g_sideLog.whole = true;
+	ResetDecalSides();
+}
+
+// [Doruk-Aksoy] The sides changed since the copy last took them: those noted that differ, and any in this tic's slice that differ unnoted, which are counted.
+static void ListSideChanges(std::vector<int> &out)
+{
+	const auto changed = [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; };
+	if (g_sideLog.whole || g_sideLog.noted.size() != (size_t)numsides)
+	{
+		ListChanges(numsides, out, changed);
+		return;
+	}
+	out.clear();
+	for (int i : g_sideLog.list) if (changed(i)) out.push_back(i);
+	int lo, hi, untracked = 0;
+	ComputeVerifySlice(numsides, kSideSlice, g_sideSlice, lo, hi);
+	for (int i = lo; i < hi; i++)
+		if (!g_sideLog.noted[i] && changed(i))
+		{
+			out.push_back(i);
+			untracked++;
+		}
+	ZX_COUNT("copy/sides_untracked", "sides", untracked);
+}
+
 void ScanAtTicEnd()
 {
 	ZX_ZONE("copy/prescan");
@@ -1020,7 +1066,7 @@ void ScanAtTicEnd()
 	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) return;
 	// [rc4l] Each part timed on its own, since in a Complex Doom fight the whole was a quarter of the tic.
 	{ ZX_ZONE("copy/prescan_sectors"); ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; }); }
-	{ ZX_ZONE("copy/prescan_sides"); ListChanges(numsides, g_prescan.sides, [](int i) { return SideChangeFrom(g_sideTaken[i], sides[i]) != 0; }); }
+	{ ZX_ZONE("copy/prescan_sides"); ListSideChanges(g_prescan.sides); }
 	{ ZX_ZONE("copy/prescan_lines"); ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; }); }
 	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed); }
 	{ ZX_ZONE("copy/prescan_links"); LinkListed(g_listed, g_listedFirstIn, g_listedNext); }
@@ -1071,6 +1117,9 @@ void FillNow()
 	g_blends.scrolls.swap(g_gathering.scrolls);
 	g_blends.walls.swap(g_gathering.walls);
 	g_blends.polys.swap(g_gathering.polys);
+	// [Doruk-Aksoy] Every side's change up to now is taken, whichever way the sides were found, so the log starts over.
+	if (g_sideLog.noted.size() != (size_t)numsides) ComputeLogReset(g_sideLog, numsides, false);
+	else ComputeLogClear(g_sideLog);
 }
 
 void BlendMap(fixed_t smoothratio)

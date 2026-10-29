@@ -181,6 +181,17 @@ static void P_RecursiveSound(sector_t *sec, AActor *soundtarget, bool splash, AA
 		else
 			other = check->sidedef[0]->sector;
 
+		// [Doruk-Aksoy] The level the neighbour would be flooded at, and nothing to do when it already was at that or better, as NoiseMarkSector would find, so the pure door test below runs only for a sector it will mark.
+		int blocks = soundblocks;
+		if (check->flags & ML_SOUNDBLOCK)
+		{
+			if (soundblocks)
+				continue;
+			blocks = 1;
+		}
+		if (other->validcount == validcount && other->soundtraversed <= blocks + 1)
+			continue;
+
 		// check for closed door
 		if ((sec->floorplane.ZatPoint (check->v1->x, check->v1->y) >=
 			 other->ceilingplane.ZatPoint (check->v1->x, check->v1->y) &&
@@ -198,15 +209,7 @@ static void P_RecursiveSound(sector_t *sec, AActor *soundtarget, bool splash, AA
 			continue;
 		}
 
-		if (check->flags & ML_SOUNDBLOCK)
-		{
-			if (!soundblocks)
-				NoiseMarkSector(other, soundtarget, splash, emitter, 1, maxdist);
-		}
-		else
-		{
-			NoiseMarkSector(other, soundtarget, splash, emitter, soundblocks, maxdist);
-		}
+		NoiseMarkSector(other, soundtarget, splash, emitter, blocks, maxdist);
 	}
 }
 

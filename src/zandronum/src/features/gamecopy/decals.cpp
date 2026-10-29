@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/gamecopy/decals.h"
+#include "features/gamecopy/computation/changelog_compute.h"
 #include "features/telemetry/telemetry.h"
 #include "features/jobs/jobs.h"
 
@@ -23,7 +24,8 @@ std::vector<DecalRecord> g_decals;
 std::vector<int> g_first, g_count;   // [rc4l] each side's run in g_decals
 std::vector<std::vector<DecalRecord>> g_chunks;   // [rc4l] each pool chunk's decals, joined in side order
 const int kChunk = 4096;   // [rc4l] sides a pool lane walks at a time
-std::vector<int> g_scannedSides;   // [rc4l] the sides holding decals as the tic ended
+// [Doruk-Aksoy] Every side a decal stuck to since a whole scan, kept while it holds one; as the tic ends, the sides holding decals, in order.
+ChangeLog g_decalSides;
 std::vector<int> g_withDecals;     // [rc4l] the sides the last fill took decals from
 std::vector<FlatDecalRecord> g_flats;   // [rc4l] the floor and ceiling marks
 
@@ -80,15 +82,34 @@ void DecalXY(const DecalRecord &decal, const side_t *side, fixed_t &x, fixed_t &
 
 void ScanDecalSides()
 {
-	g_scannedSides.clear();
-	for (int i = 0; i < numsides; i++) if (sides[i].AttachedDecals != NULL) g_scannedSides.push_back(i);
+	// [Doruk-Aksoy] Every side looked at only when the decals' sides are unknown, as after a level's start or a load, which lists them from then on.
+	if (g_decalSides.whole || g_decalSides.noted.size() != (size_t)numsides)
+	{
+		ComputeLogReset(g_decalSides, numsides, false);
+		for (int i = 0; i < numsides; i++)
+			if (sides[i].AttachedDecals != NULL)
+				ComputeLogNote(g_decalSides, i);
+		return;
+	}
+	ComputeLogKeepIf(g_decalSides, [](int i) { return sides[i].AttachedDecals != NULL; });
+	std::sort(g_decalSides.list.begin(), g_decalSides.list.end());
+}
+
+void NoteDecalSide(const side_t *side)
+{
+	ComputeLogNote(g_decalSides, ComputeIndexIn((uintptr_t)side, (uintptr_t)sides, sizeof(side_t), numsides));
+}
+
+void ResetDecalSides()
+{
+	ComputeLogReset(g_decalSides, 0, true);
 }
 
 int DecalSidesMissed()
 {
 	int missed = 0;
 	for (int i = 0; i < numsides; i++)
-		if (sides[i].AttachedDecals != NULL && !std::binary_search(g_scannedSides.begin(), g_scannedSides.end(), i)) missed++;
+		if (sides[i].AttachedDecals != NULL && !std::binary_search(g_decalSides.list.begin(), g_decalSides.list.end(), i)) missed++;
 	return missed;
 }
 
@@ -102,7 +123,7 @@ void FillDecals(bool scanned)
 		// [rc4l] Only the sides the tic's end found holding decals, read live here, so one hit after it shows a tic later at worst.
 		for (int i : g_withDecals) g_count[i] = 0;
 		g_withDecals.clear();
-		for (int i : g_scannedSides)
+		for (int i : g_decalSides.list)
 		{
 			g_first[i] = (int)g_decals.size();
 			TakeSideDecals(i, g_decals);

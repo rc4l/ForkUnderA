@@ -61,7 +61,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   3D floors, polyobjects, actors with their list, take and links, lights with their records and subsector lists,
   particles, decals, views, interpolations,
   sides taken, polyobject subsectors), `copy/prescan` (the tic-end scan, on the game thread when tics run there),
-  `copy/prescanned` (fills that used it) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
+  `copy/prescanned` (fills that used it), `copy/sides_untracked` (sides the scan's slice found changed that no setter
+  noted, which should read 0) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
   `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace;
   `features/gameloop/loop.cpp`: `handoff/backlog_tics` (the tics a threaded frame was owed) and `handoff/inline_catchup` (those it ran inline).
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones.

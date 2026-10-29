@@ -72,6 +72,13 @@ CVAR( Bool, sv_measureoutboundtraffic, false, 0 )
 
 //*****************************************************************************
 //
+bool NETTRAFFIC_IsMeasuring ( )
+{
+	return ( NETWORK_GetState( ) == NETSTATE_SERVER ) && sv_measureoutboundtraffic;
+}
+
+//*****************************************************************************
+//
 void NETTRAFFIC_AddActorTraffic ( const AActor* pActor, const int BytesUsed )
 {
 	if ( ( pActor == NULL ) || ( BytesUsed == 0 ) )

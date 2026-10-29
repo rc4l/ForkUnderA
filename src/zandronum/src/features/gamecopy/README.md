@@ -34,6 +34,22 @@ never reads what that tic is changing.
   `LinkToWorld`, `p_user.cpp`'s prediction restore), since the medals ticked after the playsim spawn icons.
   The actor records are taken across the job pool. `fua_copy_prescan_check` holds each such fill to the whole-map
   scan it spared (`fuactl fixture prescancheck`, with tics on the game thread).
+- Sides and their decals are not compared whole at a tic's end. They are noted where they change
+  (`computation/changelog_compute`):
+  - `r_defs.h`: every `side_t` setter calls `NoteChanged` (`NoteSideChanged`). So do the code writing a side's
+    fields directly: `g_game.cpp` `GAME_ResetMap`'s offset and scale restore, and `p_spec.cpp`'s scrollers setting
+    `WALLF_NOAUTODECALS`. A client's side updates (`cl_main.cpp`) write directly too, but a client never uses the
+    scan.
+  - `g_shared/a_decals.cpp` `StickToWall` calls `NoteDecalSide`, which keeps the side listed until its last decal goes.
+
+  The scan compares only the sides noted since the last fill, plus a slice of `kSideSlice` sides compared whole.
+  - A change nobody noted is still taken within a few seconds, and counted in `copy/sides_untracked`, which should
+    read 0.
+  - A level's start compares every side, and `p_saveg.cpp` `P_SerializeWorld` calls `NoteMapLoaded` after a load,
+    which writes the sides and decal lists without the setters. Its next scan therefore compares every side and
+    finds every decal.
+
+  On Sunder MAP11 the side compare had been 5.4-7.2 ms of a tic, with 65,929 sides of 624 bytes.
 - `actor.h`: `AActor::rcListed`, an actor's place in the list the tic's end made.
 - `features/postprocess`: `SetDrawnShaders`, installed at startup, hands it the copied shader state and the copy's
   level time, since it sits below this feature.

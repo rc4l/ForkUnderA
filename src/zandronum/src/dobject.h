@@ -223,6 +223,7 @@ enum EObjectFlags
 	OF_JustSpawned		= 1 << 8,		// Thinker was spawned this tic
 	OF_SerialSuccess	= 1 << 9,		// For debugging Serialize() calls
 	OF_Sentinel			= 1 << 10,		// Object is serving as the sentinel in a ring list
+	OF_FuaSoundChannel	= 1 << 11,		// [Doruk-Aksoy] an actor a sound channel has pointed at, so the channel walks for one that never had a sound end at once
 };
 
 template<class T> class TObjPtr;

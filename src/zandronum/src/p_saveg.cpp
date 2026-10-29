@@ -58,6 +58,7 @@
 #include "network.h"
 #include "version.h"
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
+#include "features/gamecopy/gamecopy.h"   // [Doruk-Aksoy] NoteMapLoaded
 
 // [rc4l] fixed_t has no dedicated FArchive overload, so `arc << <fixed_t>` binds to the QWORD
 // operator and writes 8 bytes now that fixed_t is 64-bit -- level snapshots serialize every
@@ -563,6 +564,10 @@ void P_SerializeWorld (FArchive &arc)
 	{
 		arc << zn->Environment;
 	}
+
+	// [Doruk-Aksoy] A save or a hub return wrote the sides and their decals directly, so the render copy's next scan compares them all.
+	if (arc.IsLoading())
+		zx::gamecopy::NoteMapLoaded();
 }
 
 void extsector_t::Serialize(FArchive &arc)

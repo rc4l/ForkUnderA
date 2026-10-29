@@ -38,6 +38,7 @@
 #include <ctype.h>
 
 #include "v_text.h"
+#include "features/text-layout/computation/linebreak_compute.h"   // [Doruk-Aksoy] ComputeLineBreaks
 
 #include "i_system.h"
 #include "v_video.h"
@@ -864,131 +865,36 @@ void V_RemoveInvalidColorCodes( FString &String )
 //
 // Break long lines of text into multiple lines no longer than maxwidth pixels
 //
-static void breakit (FBrokenLines *line, FFont *font, const BYTE *start, const BYTE *stop, FString &linecolor)
+// [Doruk-Aksoy] A line's string made with the colour code it opens with, and its width.
+static void breakit (FBrokenLines *line, FFont *font, const zx::textlayout::LineBreak &at)
 {
-	if (!linecolor.IsEmpty())
+	if (at.colorLen != 0)
 	{
 		line->Text = TEXTCOLOR_ESCAPE;
-		line->Text += linecolor;
+		line->Text.AppendCStrPart ((const char *)at.color, at.colorLen);
 	}
-	line->Text.AppendCStrPart ((const char *)start, stop - start);
+	line->Text.AppendCStrPart ((const char *)at.start, at.stop - at.start);
 	line->Width = font->StringWidth (line->Text);
 }
 
+static int BreakCharWidth (void *font, int c)
+{
+	return static_cast<FFont *>(font)->GetCharWidth (c);
+}
+
+// [rc4l] uzdoom@9d846395b: the console buffer re-breaks stored lines and needs the colour state carried across a newline (preservecolor).
 FBrokenLines *V_BreakLines (FFont *font, int maxwidth, const BYTE *string, bool preservecolor)
 {
-	FBrokenLines lines[128];	// Support up to 128 lines (should be plenty)
+	zx::textlayout::LineBreak lines[128];	// Support up to 128 lines (should be plenty)
+	const int count = zx::textlayout::ComputeLineBreaks (string, maxwidth, preservecolor, font->GetDefaultKerning (), &BreakCharWidth, font, lines, (int)countof(lines));
 
-	const BYTE *space = NULL, *start = string;
-	size_t i, ii;
-	int c, w, nw;
-	FString lastcolor, linecolor;
-	bool lastWasSpace = false;
-	int kerning = font->GetDefaultKerning ();
-
-	i = w = 0;
-
-	while ( (c = *string++) && i < countof(lines) )
+	// [Doruk-Aksoy] Each line's string made once, in the array returned, instead of in a scratch array and copied over.
+	FBrokenLines *broken = new FBrokenLines[count+1];
+	for (int i = 0; i < count; ++i)
 	{
-		if (c == TEXTCOLOR_ESCAPE)
-		{
-			if (*string)
-			{
-				if (*string == '[')
-				{
-					const BYTE *start = string;
-					while (*string != ']' && *string != '\0')
-					{
-						string++;
-					}
-					if (*string != '\0')
-					{
-						string++;
-					}
-					lastcolor = FString((const char *)start, string - start);
-				}
-				else
-				{
-					lastcolor = *string++;
-				}
-			}
-			continue;
-		}
-
-		if (isspace(c)) 
-		{
-			if (!lastWasSpace)
-			{
-				space = string - 1;
-				lastWasSpace = true;
-			}
-		}
-		else
-		{
-			lastWasSpace = false;
-		}
-
-		nw = font->GetCharWidth (c);
-
-		if ((w > 0 && w + nw > maxwidth) || c == '\n')
-		{ // Time to break the line
-			if (!space)
-				space = string - 1;
-
-			breakit (&lines[i], font, start, space, linecolor);
-			// [rc4l] uzdoom@9d846395b: the console buffer re-breaks stored lines and needs the
-			// colour state carried across the break rather than reset at each newline.
-			if (c == '\n' && !preservecolor)
-			{
-				lastcolor = "";		// Why, oh why, did I do it like this?
-			}
-			linecolor = lastcolor;
-
-			i++;
-			w = 0;
-			lastWasSpace = false;
-			start = space;
-			space = NULL;
-
-			while (*start && isspace (*start) && *start != '\n')
-				start++;
-			if (*start == '\n')
-				start++;
-			else
-				while (*start && isspace (*start))
-					start++;
-			string = start;
-		}
-		else
-		{
-			w += nw + kerning;
-		}
+		breakit (&broken[i], font, lines[i]);
 	}
-
-	// String here is pointing one character after the '\0'
-	if (i < countof(lines) && --string - start >= 1)
-	{
-		const BYTE *s = start;
-
-		while (s < string)
-		{
-			// If there is any non-white space in the remainder of the string, add it.
-			if (!isspace (*s++))
-			{
-				breakit (&lines[i++], font, start, string, linecolor);
-				break;
-			}
-		}
-	}
-
-	// Make a copy of the broken lines and return them
-	FBrokenLines *broken = new FBrokenLines[i+1];
-
-	for (ii = 0; ii < i; ++ii)
-	{
-		broken[ii] = lines[ii];
-	}
-	broken[ii].Width = -1;
+	broken[count].Width = -1;
 
 	return broken;
 }

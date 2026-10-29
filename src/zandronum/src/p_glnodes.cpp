@@ -67,6 +67,7 @@
 #include "m_misc.h"
 // [BB] New #includes.
 #include "network.h"
+#include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
 
 void P_GetPolySpots (MapData * lump, TArray<FNodeBuilder::FPolyStart> &spots, TArray<FNodeBuilder::FPolyStart> &anchors);
 
@@ -1347,8 +1348,12 @@ subsector_t *P_PointInSubsector (fixed_t x, fixed_t y)
 	// single subsector is a special case
 	if (numgamenodes == 0)
 		return gamesubsectors;
-				
-	node = gamenodes + numgamenodes - 1;
+
+	// [Doruk-Aksoy] features/bspgrid: from the deepest node every point of this one's grid cell reaches the same way, which lands on the same subsector.
+	const int start = zx::bspgrid::GameStart (x, y);
+	if (start < 0)
+		return gamesubsectors + (-1 - start);
+	node = gamenodes + start;
 
 	do
 	{

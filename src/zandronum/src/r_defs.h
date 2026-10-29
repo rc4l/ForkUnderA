@@ -1079,6 +1079,10 @@ struct SideState : SideReads<SideState>
 	BYTE Flags;
 };
 
+// [Doruk-Aksoy] features/gamecopy: a side whose copied fields changed, so a tic's end compares the sides noted instead of every side.
+struct side_t;
+namespace zx { namespace gamecopy { void NoteSideChanged(const side_t *side); } }
+
 struct side_t : SideReads<side_t>
 {
 	enum ETexpart
@@ -1109,77 +1113,94 @@ struct side_t : SideReads<side_t>
 	// [rc4l] features/gamecopy: GetLightLevel from the render copy.
 	int GetRcLightLevel (bool foggy, int baselight, bool noabsolute=false, int *pfakecontrast_usedbygzdoom=NULL) const;
 
+	// [Doruk-Aksoy] Tells features/gamecopy this side's textures, offsets, scales, light or flags changed; code writing those fields directly calls it too.
+	void NoteChanged() { zx::gamecopy::NoteSideChanged(this); }
+
 	void SetLight(SWORD l)
 	{
 		Light = l;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache: Transfer_WallLight re-lights a side every time its source sector's light changes
+		NoteChanged();
 	}
 
 	void SetTexture(int which, FTextureID tex)
 	{
 		textures[which].texture = tex;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
+		NoteChanged();
 	}
 
 	void SetTextureXOffset(int which, fixed_t offset)
 	{
 		textures[which].xoffset = offset;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
+		NoteChanged();
 	}
 	void SetTextureXOffset(fixed_t offset)
 	{
 		textures[top].xoffset =
 		textures[mid].xoffset =
 		textures[bottom].xoffset = offset;
+		NoteChanged();
 	}
 	void AddTextureXOffset(int which, fixed_t delta)
 	{
 		textures[which].xoffset += delta;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
+		NoteChanged();
 	}
 
 	void SetTextureYOffset(int which, fixed_t offset)
 	{
 		textures[which].yoffset = offset;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
+		NoteChanged();
 	}
 	void SetTextureYOffset(fixed_t offset)
 	{
 		textures[top].yoffset =
 		textures[mid].yoffset =
 		textures[bottom].yoffset = offset;
+		NoteChanged();
 	}
 	void AddTextureYOffset(int which, fixed_t delta)
 	{
 		textures[which].yoffset += delta;
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
+		NoteChanged();
 	}
 
 	void SetTextureXScale(int which, fixed_t scale)
 	{
 		textures[which].xscale = scale == 0 ? FRACUNIT : scale;
+		NoteChanged();
 	}
 	void SetTextureXScale(fixed_t scale)
 	{
 		textures[top].xscale = textures[mid].xscale = textures[bottom].xscale = scale == 0 ? FRACUNIT : scale;
+		NoteChanged();
 	}
 	void MultiplyTextureXScale(int which, fixed_t delta)
 	{
 		textures[which].xscale = FixedMul(textures[which].xscale, delta);
+		NoteChanged();
 	}
 
 
 	void SetTextureYScale(int which, fixed_t scale)
 	{
 		textures[which].yscale = scale == 0 ? FRACUNIT : scale;
+		NoteChanged();
 	}
 	void SetTextureYScale(fixed_t scale)
 	{
 		textures[top].yscale = textures[mid].yscale = textures[bottom].yscale = scale == 0 ? FRACUNIT : scale;
+		NoteChanged();
 	}
 	void MultiplyTextureYScale(int which, fixed_t delta)
 	{
 		textures[which].yscale = FixedMul(textures[which].yscale, delta);
+		NoteChanged();
 	}
 
 	DInterpolation *SetInterpolation(int position);

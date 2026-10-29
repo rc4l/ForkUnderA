@@ -100,6 +100,7 @@
 #include "features/dynlights/dynlight.h"
 #include "features/telemetry/telemetry.h"
 #include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated at its load
+#include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
 
@@ -3741,6 +3742,8 @@ extern polyblock_t **PolyBlockMap;
 
 void P_FreeLevelData ()
 {
+	// [Doruk-Aksoy] Before the nodes go, so no walk starts from a grid of them.
+	zx::bspgrid::ForgetLevel();
 	Renderer->CleanLevelData();
 	FPolyObj::ClearAllSubsectorLinks(); // can't be done as part of the polyobj deletion process.
 	SN_StopAllSequences ();
@@ -4374,6 +4377,9 @@ void P_SetupLevel (const char *lumpname, int position)
 	{
 		hasglnodes = P_CheckForGLNodes();
 	}
+
+	// [Doruk-Aksoy] Both trees are final here, so where a point's walk to its subsector can start is worked out once.
+	zx::bspgrid::BuildForLevel();
 
 	times[10].Clock();
 	P_LoadBlockMap (map);

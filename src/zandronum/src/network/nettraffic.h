@@ -50,6 +50,8 @@
 
 #include "actor.h"
 
+// [Doruk-Aksoy] Whether outbound traffic is measured at all: only a server with sv_measureoutboundtraffic keeps the numbers.
+bool	NETTRAFFIC_IsMeasuring ( );
 void	NETTRAFFIC_AddActorTraffic ( const AActor* pActor, const int BytesUsed );
 void	NETTRAFFIC_AddACSScriptTraffic ( const int ScriptNum, const int BytesUsed );
 void	NETTRAFFIC_Reset ( );
