@@ -9302,6 +9302,7 @@ int DLevelScript::RunScript ()
 	FRemapTable *translation = 0;
 	int resultValue = 1;
 	bool bIsFirstTic = false; // [AK]
+	bool isEventScript = false; // [Doruk-Aksoy] looked up once on the first tic, which is the only tic SetResultValue asks
 
 	if (InModuleScriptNumber >= 0)
 	{
@@ -9317,7 +9318,10 @@ int DLevelScript::RunScript ()
 	const int specialargmask = ((level.flags2 & LEVEL2_HEXENHACK) && activeBehavior->GetFormat() == ACS_Old) ? 255 : ~0;
 
 	// [BB] Start to measure how much outbound net traffic this call of DLevelScript::RunScript() needs.
-	NETWORK_StartTrafficMeasurement ( );
+	// [Doruk-Aksoy] Only where the numbers are kept, as AActor::Tick does.
+	const bool measureTraffic = NETTRAFFIC_IsMeasuring ( );
+	if ( measureTraffic )
+		NETWORK_StartTrafficMeasurement ( );
 
 	switch (state)
 	{
@@ -9325,7 +9329,8 @@ int DLevelScript::RunScript ()
 	// event's result value is supposed to be at this moment. This is so that in case there's multiple event
 	// scripts, the result of the event can easily be transferred from one script to the next.
 	case SCRIPT_Running:
-		if ( ACS_IsEventScript( script ))
+		isEventScript = ACS_IsEventScript( script );
+		if ( isEventScript )
 			resultValue = GAMEMODE_GetEventResult( );
 
 		bIsFirstTic = true;
@@ -9426,7 +9431,7 @@ int DLevelScript::RunScript ()
 			activeBehavior = savedActiveBehavior;
 			// fall through
 		case PCD_TERMINATE:
-			DPrintf ("%s finished\n", ScriptPresentation(script).GetChars());
+			if (developer) DPrintf ("%s finished\n", ScriptPresentation(script).GetChars());	// [Doruk-Aksoy] the name built only when it is printed
 			state = SCRIPT_PleaseRemove;
 			break;
 
@@ -10638,7 +10643,7 @@ int DLevelScript::RunScript ()
 			// [AK] If this is an event script and the result value differs from the event's result value, update it.
 			// This can only happen during the first tic that the event script is running. Updating an event's result
 			// value is irrelevant after the first tic because it will be too late.
-			if (( bIsFirstTic ) && ( ACS_IsEventScript( script )) && ( resultValue != GAMEMODE_GetEventResult( )))
+			if (( bIsFirstTic ) && ( isEventScript ) && ( resultValue != GAMEMODE_GetEventResult( )))
 				GAMEMODE_SetEventResult( resultValue );
 
 		case PCD_DROP: //fall through.
@@ -13215,7 +13220,8 @@ scriptwait:
 	g_pCurrentScript = NULL;
 
 	// [BB] Stop the net traffic measurement and add the result to this script's traffic.
-	NETTRAFFIC_AddACSScriptTraffic ( script, NETWORK_StopTrafficMeasurement ( ) );
+	if ( measureTraffic )
+		NETTRAFFIC_AddACSScriptTraffic ( script, NETWORK_StopTrafficMeasurement ( ) );
 
 	return resultValue;
 }
@@ -13267,7 +13273,9 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 	// [BC] Since the server doesn't have a screen, we have to save the active font some
 	// other way.
 	// [TP] We need to store this as activefontname instead.
-	activefontname = "SmallFont";
+	// [Doruk-Aksoy] One shared string, so a script's start allocates no buffer for its font's name.
+	static const FString smallFontName ("SmallFont");
+	activefontname = smallFontName;
 
 	// [AK] Check if this is an event script triggered by GAMEEVENT_ACTOR_DAMAGED or
 	// GAMEEVENT_ACTOR_DAMAGED_PREMOD. This is where we initialize the script's target,
@@ -13307,7 +13315,7 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 		PutLast();
 	}
 
-	DPrintf("%s started.\n", ScriptPresentation(num).GetChars());
+	if (developer) DPrintf("%s started.\n", ScriptPresentation(num).GetChars());	// [Doruk-Aksoy] the name built only when it is printed
 }
 
 static void SetScriptState (int script, DLevelScript::EScriptState state)

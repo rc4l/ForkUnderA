@@ -4148,7 +4148,10 @@ void AActor::SetRoll(angle_t r, bool interpolate)
 void AActor::Tick ()
 {
 	// [BB] Start to measure how much outbound net traffic this call of AActor::Tick() needs.
-	NETWORK_StartTrafficMeasurement ( );
+	// [Doruk-Aksoy] Only where the numbers are kept, as elsewhere it cost a thread-local write each way around every actor's tick.
+	const bool measureTraffic = NETTRAFFIC_IsMeasuring ( );
+	if ( measureTraffic )
+		NETWORK_StartTrafficMeasurement ( );
 
 	// [rc4l] Self-register for this tic's P_RunEffects pass (see p_effect.cpp) --
 	// the effects walk no longer scans every thinker.
@@ -4806,7 +4809,8 @@ void AActor::Tick ()
 	}
 
 	// [BB] Stop the net traffic measurement and add the result to this actor's traffic.
-	NETTRAFFIC_AddActorTraffic ( this, NETWORK_StopTrafficMeasurement ( ) );
+	if ( measureTraffic )
+		NETTRAFFIC_AddActorTraffic ( this, NETWORK_StopTrafficMeasurement ( ) );
 }
 
 //==========================================================================

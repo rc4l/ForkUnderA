@@ -36,6 +36,9 @@
 #include "a_keys.h"
 #include "d_dehacked.h"
 
+// [Doruk-Aksoy] A state name found in the name table once for its call site, as every pickup and give looks its states up by name.
+#define ZX_STATE_NAME(name) ([]() -> FName { static const FName found (name); return found; }())
+
 static FRandom pr_restore ("RestorePos");
 
 TArray<unsigned short> g_keysFound;
@@ -164,11 +167,11 @@ AInventory *AAmmo::CreateCopy (AActor *other)
 			// [BC] In certain modes, hide this item indefinitely so we can respawn it if
 			// necessary.
 			if ((( flags & MF_DROPPED ) == false ) && ( GAMEMODE_GetCurrentFlags() & GMF_MAPRESETS ))
-				SetState ( FindState("HideIndefinitely") );
+				SetState ( FindState(ZX_STATE_NAME("HideIndefinitely")) );
 			// [BC] Changed this so it stays around for one frame.
 			else
 			{
-				SetState ( FindState("HoldAndDestroy") );
+				SetState ( FindState(ZX_STATE_NAME("HoldAndDestroy")) );
 //				Destroy ();
 			}
 		}
@@ -751,9 +754,9 @@ void AInventory::GoAwayAndDie ()
 		// [BC] In certain modes, hide this item indefinitely so we can respawn it if
 		// necessary.
 		if ((( flags & MF_DROPPED ) == false ) && ( GAMEMODE_GetCurrentFlags() & GMF_MAPRESETS ))
-			SetState(FindState("HideIndefinitely"));
+			SetState(FindState(ZX_STATE_NAME("HideIndefinitely")));
 		else
-			SetState (FindState("HoldAndDestroy"));
+			SetState (FindState(ZX_STATE_NAME("HoldAndDestroy")));
 	}
 }
 
@@ -869,7 +872,7 @@ void AInventory::BecomeItem ()
 	}
 	RemoveFromHash ();
 	flags &= ~MF_SPECIAL;
-	SetState (FindState("Held"));
+	SetState (FindState(ZX_STATE_NAME("Held")));
 }
 
 //===========================================================================
@@ -1007,18 +1010,18 @@ void AInventory::Hide ()
 
 	if (gameinfo.gametype & GAME_Raven)
 	{
-		HideSpecialState = FindState("HideSpecial");
+		HideSpecialState = FindState(ZX_STATE_NAME("HideSpecial"));
 		if (HideSpecialState == NULL)
 		{
-			HideDoomishState = FindState("HideDoomish");
+			HideDoomishState = FindState(ZX_STATE_NAME("HideDoomish"));
 		}
 	}
 	else
 	{
-		HideDoomishState = FindState("HideDoomish");
+		HideDoomishState = FindState(ZX_STATE_NAME("HideDoomish"));
 		if (HideDoomishState == NULL)
 		{
-			HideSpecialState = FindState("HideSpecial");
+			HideSpecialState = FindState(ZX_STATE_NAME("HideSpecial"));
 		}
 	}
 
@@ -1057,7 +1060,7 @@ void AInventory::HideIndefinitely ()
 	flags = (flags & ~MF_SPECIAL) | MF_NOGRAVITY;
 	renderflags |= RF_INVISIBLE;
 
-	SetState(FindState("HideIndefinitely"));
+	SetState(FindState(ZX_STATE_NAME("HideIndefinitely")));
 }
 
 //===========================================================================
@@ -1260,15 +1263,15 @@ void AInventory::Touch (AActor *toucher)
 	{
 		// If this item was destroyed, and we're the server, tell clients to
 		// destroy the object.
-		if (( this->state == FindState("HoldAndDestroy") ) ||
-			( this->state == FindState("Held") ))
+		if (( this->state == FindState(ZX_STATE_NAME("HoldAndDestroy")) ) ||
+			( this->state == FindState(ZX_STATE_NAME("Held")) ))
 		{
 			SERVERCOMMANDS_DestroyThing( this );
 		}
 		// If this item was hidden, tell clients to hide the object.
-		else if (( this->state == FindState("HideIndefinitely") ) ||
-			( this->state == FindState("HideDoomish") ) ||
-			( this->state == FindState("HideSpecial") ))
+		else if (( this->state == FindState(ZX_STATE_NAME("HideIndefinitely")) ) ||
+			( this->state == FindState(ZX_STATE_NAME("HideDoomish")) ) ||
+			( this->state == FindState(ZX_STATE_NAME("HideSpecial")) ))
 		{
 			SERVERCOMMANDS_HideThing( this );
 		}
@@ -1662,7 +1665,7 @@ bool AInventory::TryPickup (AActor *&toucher)
 				if (--copy->Amount <= 0)
 				{
 					copy->flags &= ~MF_SPECIAL;
-					copy->SetState (copy->FindState("HoldAndDestroy"));
+					copy->SetState (copy->FindState(ZX_STATE_NAME("HoldAndDestroy")));
 				}
 			}
 		}
