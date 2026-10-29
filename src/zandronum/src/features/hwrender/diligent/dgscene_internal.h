@@ -241,9 +241,8 @@ unsigned MaterialSlotCapacity();
 // [rc4l] The walk slot the pass being drawn draws alone (ComputePassWalkSlot), which the scene shader culls by, or -1 for one that draws everything.
 int PassWalkSlot();
 
+// [Doruk-Aksoy] A material and the key its translation is filed under (ComputeSlotTranslation), kBrightmapTranslation for its brightmap.
 struct MatSlot { const void *material; int translation; };
-// [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
-static const int kBrightmapTranslation = -0x7fffffff;
 
 // [rc4l] The scene as the backend holds it on the GPU: one owner for the buffers and batches every pass draws from.
 struct SceneGeometry

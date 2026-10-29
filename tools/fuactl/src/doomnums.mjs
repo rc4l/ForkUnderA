@@ -22,6 +22,7 @@ export const SPECIAL = Object.freeze({
   Autosave: 15,
   Thing_Remove: 132,
   Sector_SetPlaneReflection: 159,
+  Thing_SetTranslation: 180,
   Sector_SetFloorScale2: 171,
   Sector_SetRotation: 185,
   Sector_Set3DFloor: 160,

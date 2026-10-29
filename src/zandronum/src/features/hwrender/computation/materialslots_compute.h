@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 //
 // [rc4l] How many textures the bindless material array holds on the device in hand, and the shader source that declares it.
+// [Doruk-Aksoy] And the translation key each slot is filed under.
 
 #ifndef ZX_MATERIALSLOTS_COMPUTE_H
 #define ZX_MATERIALSLOTS_COMPUTE_H
@@ -12,6 +13,12 @@ namespace zx { namespace hwrender {
 
 // [rc4l] The most the array is ever given, past what content plausibly asks for (a nine-PWAD Whodunit load wants 835), the fewest worth keeping bindless for, and what the rest of a fragment stage may bind beside it.
 enum { kMaxMaterialSlots = 4096, kMinMaterialSlots = 64, kOtherStageResources = 32 };
+
+// [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
+static const int kBrightmapTranslation = -0x7fffffff;
+
+// [Doruk-Aksoy] The key a slot or binding files `translation` under: a brightmap's as given, any other as its palette's index negated (`contentIndex`, MaterialTranslation's), since a game translation keeps its number while its colours change.
+int ComputeSlotTranslation(int translation, int contentIndex);
 
 // [rc4l] The Vulkan limits a fragment stage's sampler array counts against, as VkPhysicalDeviceLimits names them.
 struct DescriptorLimits

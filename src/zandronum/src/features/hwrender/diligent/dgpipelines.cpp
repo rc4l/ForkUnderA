@@ -60,10 +60,17 @@ void ReleaseBatchSRBs()
 struct MatSRB { const void *material; const void *pso; int translation; Diligent::IShaderResourceBinding *srb; };
 static TArray<MatSRB> g_matSRBs;
 
+// [Doruk-Aksoy] The key the slot table and the bindings file a translation under, so redefined colours get their own slot or binding rather than the old one's.
+static int SlotKey(int translation)
+{
+	return zx::hwrender::ComputeSlotTranslation(translation, zx::materials::MaterialTranslation(translation));
+}
+
 Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 	const void *material, int translation)
 {
 	if (!pso) return NULL;
+	translation = SlotKey(translation);
 	for (unsigned i = 0; i < g_matSRBs.Size(); i++)
 		if (g_matSRBs[i].material == material && g_matSRBs[i].pso == pso &&
 		    g_matSRBs[i].translation == translation) return g_matSRBs[i].srb;
@@ -244,7 +251,7 @@ static void Stamp(std::vector<zx::hwrender::SlotStamp> &stamps, int at)
 void NoteDynamicSlotUse(int slot, const void *material, int translation)
 {
 	if (slot > 0) { Stamp(g_slotStamps, slot); return; }
-	const int refused = material != NULL ? zx::hwrender::ComputeMaterialIndexFind(g_refusedIndex, material, translation) : -1;
+	const int refused = material != NULL ? zx::hwrender::ComputeMaterialIndexFind(g_refusedIndex, material, SlotKey(translation)) : -1;
 	if (refused >= 0) Stamp(g_refusedStamps, refused);
 }
 
@@ -329,6 +336,7 @@ int AnimationOf(const void *material)
 int MaterialSlotFor(const void *material, int translation)
 {
 	if (g_matSlotTable.Size() == 0) ResetMaterialSlots();
+	translation = SlotKey(translation);
 	{
 		const int found = MatIndexFind(material, translation);
 		if (found >= 0) return found;
