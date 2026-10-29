@@ -51,3 +51,24 @@ TEST(MaterialSlots, TheShaderDefinesFollowTheArray)
 	EXPECT_EQ("#define FUA_MAT_SLOTS 4096\n#define FUA_BINDLESS 1\n", ComputeMaterialShaderDefines(4096));
 	EXPECT_EQ("#define FUA_MAT_SLOTS 1\n", ComputeMaterialShaderDefines(0));
 }
+
+// [Doruk-Aksoy] A game translation is filed under its palette, so a redefined one gets a new key while its number stays.
+TEST(MaterialSlots, AGameTranslationIsKeyedByItsPalette)
+{
+	EXPECT_EQ(-12, ComputeSlotTranslation(3, 12));
+	EXPECT_EQ(-13, ComputeSlotTranslation(3, 13));
+	EXPECT_EQ(0, ComputeSlotTranslation(0, 0));
+}
+
+// [Doruk-Aksoy] A key already negated reads back as itself, so a slot's own key normalises to the same slot.
+TEST(MaterialSlots, APaletteKeyStaysItself)
+{
+	EXPECT_EQ(-12, ComputeSlotTranslation(-12, 12));
+}
+
+// [Doruk-Aksoy] The brightmap key is kept, though MaterialTranslation reads it as a palette like any negative one.
+TEST(MaterialSlots, TheBrightmapKeyIsKept)
+{
+	EXPECT_EQ(kBrightmapTranslation, ComputeSlotTranslation(kBrightmapTranslation, -kBrightmapTranslation));
+}
+

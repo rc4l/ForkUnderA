@@ -40,4 +40,9 @@ unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned fille
 	return from == 0 ? capacity : (filled < capacity ? filled : capacity);
 }
 
+int ComputeSlotTranslation(int translation, int contentIndex)
+{
+	return translation == kBrightmapTranslation ? translation : -contentIndex;
+}
+
 }} // namespace zx::hwrender

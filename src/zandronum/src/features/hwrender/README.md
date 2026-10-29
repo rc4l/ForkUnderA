@@ -81,7 +81,9 @@ Every page one frame needs stays in that pool, and a level goes up in one frame,
 loaded and flown around, and Firefox ran out of GPU memory.
 A material and translation are found in the texture cache and the slot table by `computation/materialindex_compute`,
 where a walk over thousands of Complex Doom sprite frames, for every slot of every binding refill, took 11% of a
-fight's frame.
+fight's frame. The slot table and the bindings per material file a game translation under its palette
+(`ComputeSlotTranslation`), since ACS, a player's colour change or a reused corpse slot redefines a translation
+under the same number (scenario `translationchange`).
 `fua_dg_slotreport [n]` counts the slots a level asked for by kind (`computation/slotreport_compute`), the ones
 refused once the table filled among them, packs the plain sprites as the atlas would to say how many slots its pages
 would leave and what pages and the sprites' own textures cost, gives the working set dynamic pieces asked for in the
