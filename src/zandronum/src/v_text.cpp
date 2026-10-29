@@ -57,7 +57,7 @@
 //
 // Write a single character using the given font
 //
-void STACK_ARGS DCanvas::DrawChar (FFont *font, int normalcolor, int x, int y, BYTE character, ...)
+void STACK_ARGS DCanvas::DrawCharList (FFont *font, int normalcolor, int x, int y, BYTE character, ...)
 {
 	if (font == NULL)
 		return;
@@ -324,15 +324,8 @@ void DCanvas::DrawTextV(FFont *font, int normalcolor, int x, int y, const char *
 	va_end(taglist);
 }
 
-void STACK_ARGS DCanvas::DrawText (FFont *font, int normalcolor, int x, int y, const char *string, ...)
-{
-	va_list tags;
-	va_start(tags, string);
-	DrawTextV(font, normalcolor, x, y, string, tags);
-}
-
-// A synonym so that this can still be used in files that #include Windows headers
-void STACK_ARGS DCanvas::DrawTextA (FFont *font, int normalcolor, int x, int y, const char *string, ...)
+// [Doruk-Aksoy] DrawText and its Windows-header synonym DrawTextA both land here once their tags are checked (v_video.h).
+void STACK_ARGS DCanvas::DrawTextList (FFont *font, int normalcolor, int x, int y, const char *string, ...)
 {
 	va_list tags;
 	va_start(tags, string);

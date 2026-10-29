@@ -460,7 +460,7 @@ private:
 				screen->DrawTexture (Images[CursorImage],
 					42 + 35*i + ST_X, 12 + ST_Y,
 					DTA_Bottom320x200, Scaled,
-					DTA_Alpha, FRACUNIT - ItemFlash,
+					DTA_Alpha, int(FRACUNIT - ItemFlash),
 					TAG_DONE);
 			}
 			if (item->Icon.isValid())
@@ -536,7 +536,7 @@ private:
 						DTA_HUDRules, HUD_Normal,
 						DTA_LeftOffset, cursor->GetWidth(),
 						DTA_TopOffset, cursor->GetHeight(),
-						DTA_Alpha, ItemFlash,
+						DTA_Alpha, int(ItemFlash),
 						TAG_DONE);
 				}
 				DrINumberOuter (CPlayer->mo->InvSel->Amount, -51, -10, false, 7);
@@ -560,7 +560,7 @@ private:
 					{
 						screen->DrawTexture (Images[CursorImage], -100+i*35, -21,
 							DTA_HUDRules, HUD_HorizCenter,
-							DTA_Alpha, TRANSLUC75,
+							DTA_Alpha, int(TRANSLUC75),
 							TAG_DONE);
 					}
 					if (item->Icon.isValid())
@@ -593,7 +593,7 @@ private:
 		left = screen->GetWidth()/2 - 160*CleanXfac;
 		top = bottom + height * yscale;
 
-		screen->DrawTexture (Images[back], left, top, DTA_CleanNoMove, true, DTA_Alpha, FRACUNIT*3/4, TAG_DONE);
+		screen->DrawTexture (Images[back], left, top, DTA_CleanNoMove, true, DTA_Alpha, int(FRACUNIT*3/4), TAG_DONE);
 		screen->DrawTexture (Images[bars], left, top, DTA_CleanNoMove, true, TAG_DONE);
 
 		switch (CurrentPop)

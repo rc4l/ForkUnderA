@@ -43,6 +43,7 @@
 
 // [BB] New #includes
 #include "network.h"
+#include "features/draw2d/computation/drawtags_compute.h"   // [Doruk-Aksoy] ComputeTagArgsAreSafe, every 2D draw's tag list checked at compile time
 
 extern int CleanWidth, CleanHeight, CleanXfac, CleanYfac;
 extern int CleanWidth_1, CleanHeight_1, CleanXfac_1, CleanYfac_1;
@@ -219,7 +220,13 @@ public:
 	// Text drawing functions -----------------------------------------------
 
 	// 2D Texture drawing
-	void STACK_ARGS DrawTexture (FTexture *img, double x, double y, int tags, ...);
+	// [Doruk-Aksoy] Each tag value checked to travel at the width its reader takes, then the list drawn by DrawTextureList.
+	template <typename... Tags> void DrawTexture (FTexture *img, double x, double y, int tags_first, Tags... tags)
+	{
+		static_assert (zx::draw2d::ComputeTagArgsAreSafe<Tags...> (), ZX_DRAWTAGS_REFUSED);
+		DrawTextureList (img, x, y, tags_first, tags...);
+	}
+	void STACK_ARGS DrawTextureList (FTexture *img, double x, double y, int tags, ...);
 	void FillBorder (FTexture *img);	// Fills the border around a 4:3 part of the screen on non-4:3 displays
 	void VirtualToRealCoords(double &x, double &y, double &w, double &h, double vwidth, double vheight, bool vbottom=false, bool handleaspect=true) const;
 
@@ -228,12 +235,28 @@ public:
 	void VirtualToRealCoordsInt(int &x, int &y, int &w, int &h, int vwidth, int vheight, bool vbottom=false, bool handleaspect=true) const;
 
 	// 2D Text drawing
-	void STACK_ARGS DrawText (FFont *font, int normalcolor, int x, int y, const char *string, ...);
+	// [Doruk-Aksoy] Each tag value checked as DrawTexture's are, then the list drawn by DrawTextList.
+	template <typename... Tags> void DrawText (FFont *font, int normalcolor, int x, int y, const char *string, Tags... tags)
+	{
+		static_assert (zx::draw2d::ComputeTagArgsAreSafe<Tags...> (), ZX_DRAWTAGS_REFUSED);
+		DrawTextList (font, normalcolor, x, y, string, tags...);
+	}
 #ifndef DrawText	// See WinUser.h for the definition of DrawText as a macro
-	void STACK_ARGS DrawTextA (FFont *font, int normalcolor, int x, int y, const char *string, ...);
+	template <typename... Tags> void DrawTextA (FFont *font, int normalcolor, int x, int y, const char *string, Tags... tags)
+	{
+		static_assert (zx::draw2d::ComputeTagArgsAreSafe<Tags...> (), ZX_DRAWTAGS_REFUSED);
+		DrawTextList (font, normalcolor, x, y, string, tags...);
+	}
 #endif
+	void STACK_ARGS DrawTextList (FFont *font, int normalcolor, int x, int y, const char *string, ...);
 	void DrawTextV (FFont *font, int normalcolor, int x, int y, const char *string, va_list tags);
-	void STACK_ARGS DrawChar (FFont *font, int normalcolor, int x, int y, BYTE character, ...);
+	// [Doruk-Aksoy] Each tag value checked as DrawTexture's are, then the character drawn by DrawCharList.
+	template <typename... Tags> void DrawChar (FFont *font, int normalcolor, int x, int y, BYTE character, Tags... tags)
+	{
+		static_assert (zx::draw2d::ComputeTagArgsAreSafe<Tags...> (), ZX_DRAWTAGS_REFUSED);
+		DrawCharList (font, normalcolor, x, y, character, tags...);
+	}
+	void STACK_ARGS DrawCharList (FFont *font, int normalcolor, int x, int y, BYTE character, ...);
 
 	struct DrawParms
 	{

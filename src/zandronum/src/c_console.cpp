@@ -1142,13 +1142,13 @@ static void C_DrawNotifyText ()
 			if (!center)
 				screen->DrawText (SmallFont, color, 0, line, NotifyStrings[i].Text,
 					DTA_UseVirtualScreen, g_bScale, // [BB]
-					DTA_Alpha, alpha, TAG_DONE);
+					DTA_Alpha, int(alpha), TAG_DONE);
 			else
 				screen->DrawText (SmallFont, color, ( HUD_GetWidth( ) -
 					SmallFont->StringWidth (NotifyStrings[i].Text))/2,
 					line, NotifyStrings[i].Text,
 					DTA_UseVirtualScreen, g_bScale, // [BB]
-					DTA_Alpha, alpha, TAG_DONE);
+					DTA_Alpha, int(alpha), TAG_DONE);
 
 			line += lineadv;
 			canskip = false;
@@ -1249,7 +1249,7 @@ void C_DrawConsole (bool hw2d)
 			DTA_DestWidth, screen->GetWidth(),
 			DTA_DestHeight, screen->GetHeight(),
 			DTA_ColorOverlay, conshade,
-			DTA_Alpha, (hw2d && gamestate != GS_FULLCONSOLE) ? FLOAT2FIXED(con_alpha) : FRACUNIT,
+			DTA_Alpha, int((hw2d && gamestate != GS_FULLCONSOLE) ? FLOAT2FIXED(con_alpha) : FRACUNIT),
 			DTA_Masked, false,
 			TAG_DONE);
 		if (conline && visheight < screen->GetHeight())

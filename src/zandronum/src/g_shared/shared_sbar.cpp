@@ -611,7 +611,7 @@ void DBaseStatusBar::DrawFadedImage (FTexture *img,
 	if (img != NULL)
 	{
 		screen->DrawTexture (img, x + ST_X, y + ST_Y,
-			DTA_Alpha, shade,
+			DTA_Alpha, int(shade),
 			DTA_Bottom320x200, Scaled,
 			TAG_DONE);
 	}

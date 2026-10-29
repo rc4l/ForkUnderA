@@ -2815,15 +2815,15 @@ static void DrawMarker (FTexture *tex, fixed_t x, fixed_t y, int yadjust,
 		AM_rotatePoint (&x, &y);
 	}
 	screen->DrawTexture (tex, (double)(CXMTOF(x) + f_x), (double)(CYMTOF(y) + yadjust + f_y),
-		DTA_DestWidth, MulScale16 (tex->GetScaledWidth() * CleanXfac, xscale),
-		DTA_DestHeight, MulScale16 (tex->GetScaledHeight() * CleanYfac, yscale),
+		DTA_DestWidth, int(MulScale16 (tex->GetScaledWidth() * CleanXfac, xscale)),
+		DTA_DestHeight, int(MulScale16 (tex->GetScaledHeight() * CleanYfac, yscale)),
 		DTA_ClipTop, f_y,
 		DTA_ClipBottom, f_y + f_h,
 		DTA_ClipLeft, f_x,
 		DTA_ClipRight, f_x + f_w,
 		DTA_FlipX, flip,
 		DTA_Translation, TranslationToTable(translation),
-		DTA_Alpha, alpha,
+		DTA_Alpha, int(alpha),
 		DTA_FillColor, fillcolor,
 		DTA_RenderStyle, DWORD(renderstyle),
 		TAG_DONE);

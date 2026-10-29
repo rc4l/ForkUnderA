@@ -119,7 +119,7 @@ static int PalFromRGB(uint32 rgb)
 	return LastPal;
 }
 
-void STACK_ARGS DCanvas::DrawTexture (FTexture *img, double x, double y, int tags_first, ...)
+void STACK_ARGS DCanvas::DrawTextureList (FTexture *img, double x, double y, int tags_first, ...)
 {
 	va_list tags;
 	MCP_HUD_TeeTexture( x, y, img );
@@ -553,7 +553,8 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, double x, double y, DWORD tag
 			break;
 
 		case DTA_Alpha:
-			parms->alpha = MIN<fixed_t>(FRACUNIT, va_arg (tags, fixed_t));
+			// [Doruk-Aksoy] At the width callers pass it, since a fixed_t-wide read took the upper half of the slot from whatever the stack held.
+			parms->alpha = fixed_t(zx::draw2d::ComputeTagAlpha(va_arg (tags, zx::draw2d::TagFixed)));
 			break;
 
 		case DTA_AlphaChannel:
@@ -661,7 +662,8 @@ bool DCanvas::ParseDrawTextureTags (FTexture *img, double x, double y, DWORD tag
 			break;
 
 		case DTA_ShadowAlpha:
-			parms->shadowAlpha = MIN<fixed_t>(FRACUNIT, va_arg (tags, fixed_t));
+			// [Doruk-Aksoy] At the width callers pass it, as DTA_Alpha is.
+			parms->shadowAlpha = fixed_t(zx::draw2d::ComputeTagAlpha(va_arg (tags, zx::draw2d::TagFixed)));
 			break;
 
 		case DTA_ShadowColor:

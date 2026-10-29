@@ -455,7 +455,7 @@ void DrawBesideCrosshair(AActor *viewer, const TargetText *identify)
 			DTA_VirtualWidth, canvas.width,
 			DTA_VirtualHeight, canvas.height,
 			DTA_KeepRatio, true,
-			DTA_Alpha, fixed_t(FLOAT2FIXED(g_Beside[i].Alpha())),
+			DTA_Alpha, int(FLOAT2FIXED(g_Beside[i].Alpha())),
 			TAG_DONE);
 	}
 }

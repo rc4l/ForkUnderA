@@ -880,7 +880,7 @@ static int WI_DrawCharPatch (FFont *font, int charcode, int x, int y, EColorRang
 	int width;
 	screen->DrawTexture(font->GetChar(charcode, &width), x, y,
 		nomove ? DTA_CleanNoMove : DTA_Clean, true,
-		DTA_ShadowAlpha, (gameinfo.gametype & GAME_DoomChex) ? 0 : FRACUNIT/2,
+		DTA_ShadowAlpha, int((gameinfo.gametype & GAME_DoomChex) ? 0 : FRACUNIT/2),
 		DTA_Translation, font->GetColorTranslation(translation),
 		TAG_DONE);
 	return x - width;
@@ -1718,7 +1718,7 @@ void WI_DrawCampaignStats (void)
 
 		lX = WI_drawNum (IntermissionFont, 320 - SP_STATSX, 50+2*lh, cnt_NumPlayers, -1, false);
 		screen->DrawTexture (slash, lX - slash->GetWidth( ), 50+2*lh,
-			DTA_ShadowAlpha, FRACUNIT/2,
+			DTA_ShadowAlpha, int(FRACUNIT/2),
 			DTA_Clean, true,
 			TAG_DONE);
 		WI_drawNum (IntermissionFont, lX - slash->GetWidth( ), 50+2*lh, cnt_Rank, -1, false);
