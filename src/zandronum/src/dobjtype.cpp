@@ -255,7 +255,8 @@ const PClass *PClass::FindClass (FName zaname)
 // Create a new object that this class represents
 DObject *PClass::CreateNew () const
 {
-	BYTE *mem = (BYTE *)M_Malloc (Size);
+	// [Doruk-Aksoy] Through DObject's pool, which the GC's sweep already fills with dead objects' blocks, so a spawn reuses one instead of calling the allocator; the pool counts GC::AllocBytes as M_Malloc does.
+	BYTE *mem = (BYTE *)DObject::operator new (Size);
 	assert (mem != NULL);
 
 	// Set this object's defaults before constructing it.
