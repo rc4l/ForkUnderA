@@ -1,16 +1,44 @@
-// [Doruk-Aksoy] HUD draws through SBARINFO and ACS, Vulkan against itself: exit 0 when a font string, a number and a translucent image the status bar draws after an image anchored at the right edge (DnD's credit panel) match the same draws made before it, and when ACS's HudMessage text, translucent text and font image all show.
+// [Doruk-Aksoy] HUD draws through SBARINFO and ACS, Vulkan against itself: exit 0 when a font string, a number and a translucent image the status bar draws after an image anchored at the right edge (DnD's credit panel) match the same draws made before it, when ACS's HudMessage text, translucent text and font image all show, and when a truecolor font's glyphs draw their own pixels, recoloured by brightness in a colour.
 //
 // usage:  node scenarios/huddraws.mjs [port]
+import { Buffer } from "node:buffer";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { encodePNG } from "../src/pngcore.mjs";
 import { runScenarioIfMain, MUTE } from "../src/template.mjs";
 import { acs0, hudMessage, PCD } from "../src/acs.mjs";
+import { luminosityRamp, luminosityRange, luminosityTable, recolor } from "../src/fontcolor.mjs";
 
-const solid = (w, h, rgb) => { const px = Buffer.alloc(w * h * 3); for (let i = 0; i < w * h; i++) px.set(rgb, i * 3); return encodePNG(w, h, px); };
+const solid = (w, h, rgb) => { const px = Buffer.alloc(w * h * 3); for (let i = 0; i < w * h; i++) px.set(rgb, i * 3); return px; };
+const fontDef = (name, lines) => `${name}\n{\n${lines.map((l) => `  ${l}`).join("\n")}\n}\n`;
 
 // [Doruk-Aksoy] A digit font from graphics/ as DnD's SHOPFONT is, each glyph an orange cell.
 const GLYPHS = [..."0123456789"].map((c) => ({ c, lump: `ZXNUM${c}` })).concat([{ c: "$", lump: "ZXNUMD" }]);
-const FONTDEFS = `ZXFONT\n{\n${GLYPHS.map((g) => `  ${g.c} ${g.lump}`).join("\n")}\n}\n`;
+
+// [Doruk-Aksoy] A truecolor font of four glyphs in many shades, as SHOPFONT's are; ZXTCFIX is the same glyphs under DONTTRANSLATE.
+export const TC = { w: 16, h: 24, chars: "0123", x: 40, y: [420, 460, 500] };
+const tcGlyph = (k) => {
+  const px = Buffer.alloc(TC.w * TC.h * 3);
+  for (let y = 0; y < TC.h; y++) {
+    for (let x = 0; x < TC.w; x++) px.set([60 + 7 * y, 40 + 9 * x + 20 * k, 30 + ((13 * x + 7 * y + 29 * k) % 90)], (y * TC.w + x) * 3);
+  }
+  return px;
+};
+export const TC_GLYPHS = [...TC.chars].map((_, k) => tcGlyph(k));
+const TC_LINES = [...TC.chars].map((c, k) => `${c} ZXTC${k}`);
+
+// [Doruk-Aksoy] Gold as wadsrc/static/textcolors.txt defines it, one step over every brightness, and the glyphs as the engine recolours them to it.
+export const GOLD = [{ start: 0, end: 256, from: [0x73, 0x2b, 0x00], to: [0xff, 0xff, 0x73] }];
+const range = luminosityRange(TC_GLYPHS);
+export const TG_GLYPHS = TC_GLYPHS.map((g) => recolor(g, luminosityTable(luminosityRamp(GOLD), range.min, range.max)));
+
+// [Doruk-Aksoy] Glyphs side by side, as a HudMessage of the four draws them.
+const row = (glyphs) => {
+  const px = Buffer.alloc(glyphs.length * TC.w * TC.h * 3);
+  for (let y = 0; y < TC.h; y++) glyphs.forEach((g, k) => g.copy(px, (y * glyphs.length * TC.w + k * TC.w) * 3, y * TC.w * 3, (y + 1) * TC.w * 3));
+  return px;
+};
+
+const FONTDEFS = fontDef("ZXFONT", GLYPHS.map((g) => `${g.c} ${g.lump}`)) + fontDef("ZXTCFONT", TC_LINES) + fontDef("ZXTCFIX", ["DONTTRANSLATE", ...TC_LINES]);
 
 // [Doruk-Aksoy] The panel anchored at the right edge first and the text, number and translucent image after it, as DnD draws its credits; holding ZXHudOracle draws the same with the panel last.
 // [Doruk-Aksoy] The string does not start with $, which SBARINFO would look up in LANGUAGE.
@@ -20,20 +48,46 @@ const AFTER = [
   'alpha 0.5 { drawimage "ZXSQUARE", -100, 110; }',
 ];
 const PANEL = 'drawimage "ZXPANEL", -256, 0;';
-const body = () => `  InInventory ZXHudOracle\n  {\n    ${[...AFTER, PANEL].join("\n    ")}\n  }\n  else\n  {\n    ${[PANEL, ...AFTER].join("\n    ")}\n  }\n`;
+
+// [Doruk-Aksoy] The truecolor font untranslated, the same in Gold, and the DONTTRANSLATE font in Red; holding ZXFontOracle draws each glyph as an image where drawstring puts it, one pixel in and a glyph's width apart.
+export const TC_STRINGS = [
+  { font: "ZXTCFONT", color: "Untranslated", images: "ZXTC" },
+  { font: "ZXTCFONT", color: "Gold", images: "ZXTG" },
+  { font: "ZXTCFIX", color: "Red", images: "ZXTC" },
+];
+const TC_DRAWS = TC_STRINGS.map((s, i) => `drawstring ${s.font}, ${s.color}, "${TC.chars}", ${TC.x}, ${TC.y[i]}, 0, alignment(left);`);
+const TC_IMAGES = TC_STRINGS.flatMap((s, i) => [...TC.chars].map((_, k) => `drawimage "${s.images}${k}", ${TC.x + 1 + k * TC.w}, ${TC.y[i]};`));
+
+const either = (item, held, unheld) => `  InInventory ${item}\n  {\n    ${held.join("\n    ")}\n  }\n  else\n  {\n    ${unheld.join("\n    ")}\n  }\n`;
+const body = () => either("ZXHudOracle", [...AFTER, PANEL], [PANEL, ...AFTER]) + either("ZXFontOracle", TC_IMAGES, TC_DRAWS);
 export const SBARINFO = `height 0;\nstatusbar fullscreen, fullscreenoffsets\n{\n${body()}}\nstatusbar normal, fullscreenoffsets\n{\n${body()}}\n`;
 
-const DECORATE = "Actor ZXHudOracle : Inventory\n{\n  Inventory.MaxAmount 1\n}\n";
+const DECORATE = ["ZXHudOracle", "ZXFontOracle"].map((n) => `Actor ${n} : Inventory\n{\n  Inventory.MaxAmount 1\n}\n`).join("");
 
-// [Doruk-Aksoy] MAP01's OPEN script leaves three HudMessages up: BigFont text, BigFont text at alpha 0.5, and a font image at alpha 0.75.
-export const ACS_AT = { text: { x: 0.2, y: 0.4 }, half: { x: 0.4, y: 0.4 }, image: { x: 0.6, y: 0.4 } };
+// [Doruk-Aksoy] MAP01's OPEN script leaves five HudMessages up: BigFont text, BigFont text at alpha 0.5, a font image at alpha 0.75, and the truecolor font untranslated and in Gold.
+export const ACS_AT = { text: { x: 0.2, y: 0.4 }, half: { x: 0.4, y: 0.4 }, image: { x: 0.6, y: 0.4 }, tc: { x: 0.3, y: 0.85 }, tcGold: { x: 0.6, y: 0.85 } };
+const CR = { GOLD: 5, UNTRANSLATED: 11 };
 function hudScript() {
-  const strings = ["ACS", "HALF", "ZXSQUARE", "A", "BIGFONT"];
+  const strings = ["ACS", "HALF", "ZXSQUARE", "A", "BIGFONT", "ZXTCFONT", TC.chars];
   return acs0([
     PCD.PUSHNUMBER, 4, PCD.SETFONT,
     ...hudMessage(0, { id: 10, color: 9, hold: 0, ...ACS_AT.text }),
     ...hudMessage(1, { id: 11, color: 9, hold: 0, alpha: 0.5, ...ACS_AT.half }),
     PCD.PUSHNUMBER, 2, PCD.SETFONT, ...hudMessage(3, { id: 12, hold: 0, alpha: 0.75, ...ACS_AT.image }),
+    PCD.PUSHNUMBER, 5, PCD.SETFONT,
+    ...hudMessage(6, { id: 13, color: CR.UNTRANSLATED, hold: 0, ...ACS_AT.tc }),
+    ...hudMessage(6, { id: 14, color: CR.GOLD, hold: 0, ...ACS_AT.tcGold }),
+    PCD.TERMINATE,
+  ], strings);
+}
+
+// [Doruk-Aksoy] MAP03's OPEN script gives every player ZXFontOracle and shows each truecolor message's glyphs as one image, untranslated and recoloured to Gold.
+function fontOracleScript() {
+  const strings = ["ZXFontOracle", "ZXTCROW", "A", "ZXTGROW"];
+  return acs0([
+    PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 1, PCD.GIVEINVENTORY,
+    PCD.PUSHNUMBER, 1, PCD.SETFONT, ...hudMessage(2, { id: 13, hold: 0, ...ACS_AT.tc }),
+    PCD.PUSHNUMBER, 3, PCD.SETFONT, ...hudMessage(2, { id: 14, hold: 0, ...ACS_AT.tcGold }),
     PCD.TERMINATE,
   ], strings);
 }
@@ -47,16 +101,23 @@ function room() {
   return m;
 }
 
+const graphic = (name, w, h, rgb) => ({ name: `graphics/${name}.png`, data: encodePNG(w, h, rgb) });
+
 export function buildHudDrawsPk3() {
   return pk3([
     { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", room(), { behavior: hudScript() })) },
     { name: "maps/MAP02.wad", data: wad(mapLumps("MAP02", room())) },
+    { name: "maps/MAP03.wad", data: wad(mapLumps("MAP03", room(), { behavior: fontOracleScript() })) },
     { name: "sbarinfo.txt", data: SBARINFO },
     { name: "fontdefs.txt", data: FONTDEFS },
     { name: "decorate.txt", data: DECORATE },
-    { name: "graphics/ZXPANEL.png", data: solid(32, 16, [64, 64, 64]) },
-    { name: "graphics/ZXSQUARE.png", data: solid(16, 16, [0, 255, 0]) },
-    ...GLYPHS.map((g) => ({ name: `graphics/${g.lump}.png`, data: solid(8, 12, [255, 140, 0]) })),
+    graphic("ZXPANEL", 32, 16, solid(32, 16, [64, 64, 64])),
+    graphic("ZXSQUARE", 16, 16, solid(16, 16, [0, 255, 0])),
+    ...GLYPHS.map((g) => graphic(g.lump, 8, 12, solid(8, 12, [255, 140, 0]))),
+    ...TC_GLYPHS.map((g, k) => graphic(`ZXTC${k}`, TC.w, TC.h, g)),
+    ...TG_GLYPHS.map((g, k) => graphic(`ZXTG${k}`, TC.w, TC.h, g)),
+    graphic("ZXTCROW", TC.w * TC_GLYPHS.length, TC.h, row(TC_GLYPHS)),
+    graphic("ZXTGROW", TC.w * TG_GLYPHS.length, TC.h, row(TG_GLYPHS)),
   ]);
 }
 
@@ -69,6 +130,7 @@ export const SIDES = [
   { name: "oracle", launchCvars: HUD, commands: ["give ZXHudOracle"] },
   { name: "bare", launchCvars: HUD, commands: ["map MAP02"] },
   { name: "nohud", launchCvars: { ...HUD, screenblocks: 12 } },
+  { name: "fontoracle", launchCvars: HUD, commands: ["map MAP03"] },
 ];
 
 // [Doruk-Aksoy] Each status bar draw where it lands right of x 1280 - 40 and below the panel, judged against the safe order and against no status bar, and each HudMessage around its point.
@@ -76,6 +138,9 @@ export const SIDES = [
 const acsBox = ({ x, y }, half) => [x - half, y - 0.03, x + half, y + 0.03];
 const SBAR_AT = { String: [0.90, 0.045, 0.98, 0.085], Number: [0.90, 0.09, 0.98, 0.125], AlphaImage: [0.915, 0.145, 0.94, 0.18] };
 const SHOWN_CEILING = { AlphaImage: 19 };
+// [Doruk-Aksoy] Each truecolor string's glyphs inside their edges, judged per pixel against the same pixels drawn as images, which a glyph reduced to the palette or recoloured by palette index misses.
+const TC_AT = TC.y.map((y) => [(TC.x + 2) / 1280, (y + 1) / 720, (TC.x + TC.chars.length * TC.w) / 1280, (y + TC.h - 1) / 720]);
+const TC_BOX = { pair: ["after", "fontoracle"], ceiling: 1, block: 1 };
 export const BOXES = { MAP01: {
   ...Object.fromEntries(Object.entries(SBAR_AT).flatMap(([n, box]) => [
     [`sbar${n}`, { box, pair: ["after", "oracle"], ceiling: 1, block: 4 }],
@@ -84,6 +149,11 @@ export const BOXES = { MAP01: {
   acsText: { box: acsBox(ACS_AT.text, 0.05), pair: ["after", "bare"], ceiling: 255, floor: 5, block: 4 },
   acsHalfText: { box: acsBox(ACS_AT.half, 0.06), pair: ["after", "bare"], ceiling: 5.5, floor: 3, block: 4 },
   acsImage: { box: acsBox(ACS_AT.image, 0.015), pair: ["after", "bare"], ceiling: 255, floor: 5, block: 4 },
+  sbarTrueColor: { box: TC_AT[0], ...TC_BOX },
+  sbarRecolored: { box: TC_AT[1], ...TC_BOX },
+  sbarDontTranslate: { box: TC_AT[2], ...TC_BOX },
+  acsTrueColor: { box: acsBox(ACS_AT.tc, 0.04), ...TC_BOX },
+  acsRecolored: { box: acsBox(ACS_AT.tcGold, 0.04), ...TC_BOX },
 } };
 
 runScenarioIfMain(import.meta.url, () => ({ name: "huddraws", wad: buildHudDrawsPk3(), maps: ["MAP01"],

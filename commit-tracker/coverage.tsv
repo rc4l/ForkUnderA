@@ -15302,7 +15302,7 @@ c7b0f3778739d8eba37a14e6998efc71ae353a15	2021-05-22T16:48:14Z	- language update	
 5cde02141c52751cbd40da6422e73a5e2e7521a8	2021-05-22T16:48:46Z	- version bump	pending		/
 8c75c2382218561ab330ba04ade85db23d99d4ab	2021-05-23T17:42:38Z	- Fixed bug with BishopPuff moving in wrong direction	pending		/
 0236271ef6638caa39528c9d0203025a0d4bcfb0	2021-05-23T17:57:41Z	- pull new widepix fix for hexen sprites	pending		/
-5f02b92cd0843026a6bc20743915333041c96cd7	2021-05-24T19:28:21Z	- font system overhaul.	pending		/
+5f02b92cd0843026a6bc20743915333041c96cd7	2021-05-24T19:28:21Z	- font system overhaul.	adapted	adapted the truecolor glyph half: FONTDEFS/template glyphs keep their truecolor source, Untranslated draws it, colours are luminosity tables applied in CreateTexBuffer, DONTTRANSLATE (features/truecolorfont); paletted fonts, FON1/FON2 and the rest of the overhaul not taken	af49f81a7be28fdd72ead1c6540cad66838eda2c
 dfe6a09b8c03831f9d46bf629d3181fd193b68a7	2021-05-25T08:12:51Z	- fix for "Return to Phobos (return01.wad) has an ancient bug in map E1M2 where the switch to raise the exit bridge doesn't work in versions of Doom past patch 1.2."	pending		/
 0fe52e479b8567bcd1584b44168091208903954a	2021-05-26T03:00:12Z	- widepix update	pending		/
 2ca2076a3f4458c18a1099591fbac9991713b6ab	2021-05-26T03:02:16Z	- add missing break statement	pending		/
