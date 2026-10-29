@@ -25,5 +25,8 @@ export const BOXES = { MAP01: {
   still: { box: [0.3, 0.85, 0.7, 0.95], ceiling: 0.05, block: 1 },
 } };
 
+// [Doruk-Aksoy] Stepped, not timed: FLAT14 repeats every 64 units and the scroller moves 2 a tic, so captures 32 tics apart match, and 600 ms plus a capture's own time landed there.
+export const STEP_TICS = 5;
+
 runScenarioIfMain(import.meta.url, () => ({ name: "scrollfloor", wad: buildScrollFloorWad(), maps: ["MAP01"],
-  vantages: VANTAGES, boxes: BOXES, intervalMs: 600 }), compareOverTime);
+  vantages: VANTAGES, boxes: BOXES, stepTics: STEP_TICS }), compareOverTime);

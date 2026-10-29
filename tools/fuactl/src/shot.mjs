@@ -341,30 +341,53 @@ export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 
   return out;
 }
 
+// [Doruk-Aksoy] Advances a paused sim n tics and waits until the engine says it froze again.
+export async function stepPausedTics(c, n, timeoutMs = 20000) {
+  const stepped = c.waitEvent("stepped", timeoutMs);
+  await c.rpc("sim.step", { tics: n });
+  await stepped;
+}
+
+// [Doruk-Aksoy] How long a stepped capture waits for frames to draw the tic it stepped to, since a capture redraws what the last frame uploaded.
+export const STEP_SETTLE_MS = 250;
+
 // [rc4l] At `at` with the sim RUNNING, a capture after each step in turn, once its commands have run and its waitMs passed: Vulkan's, and GL's too when gl is set, by the step's name; a command is a console line, a number of ms to wait, or a camera ({x, y, z, angle, pitch}) to stand at.
+// [Doruk-Aksoy] A step with stepTics holds the sim paused for the whole sequence instead and advances it that many tics before its capture.
 export async function captureSequence(c, { at = null, engineBin, outDir, tag = "sequence", steps, gl = false }) {
   if (gl) await requireGlFrame(c);
   outDir = outDir || sweepDirFor(engineBin);
   fs.mkdirSync(outDir, { recursive: true });
   if (at) await moveTo(c, at);
-  await c.rpc("sim.resume", {}).catch(() => {});
+  const stepped = steps.some((s) => s.stepTics > 0);
+  await c.rpc(stepped ? "sim.pause" : "sim.resume", {}).catch(() => {});
   const vk = {}, glFiles = {};
-  for (const step of steps) {
-    for (const command of step.commands || []) {
-      if (typeof command === "number") await sleep(command);
-      else if (typeof command === "object") await moveTo(c, command);
-      else await exec(c, command);
+  try {
+    for (const step of steps) {
+      for (const command of step.commands || []) {
+        if (typeof command === "number") await sleep(command);
+        else if (typeof command === "object") await moveTo(c, command);
+        else await exec(c, command);
+      }
+      if (step.waitMs) await sleep(step.waitMs);
+      if (step.stepTics > 0) { await stepPausedTics(c, step.stepTics); await sleep(STEP_SETTLE_MS); }
+      vk[step.name] = await captureVulkan(c, path.posix.join(outDir, `${tag}_${step.name}_vk.png`));
+      if (gl) glFiles[step.name] = (await ui.screenshot(c, engineBin, `sweep/${tag}_${step.name}_gl`).catch(() => ({ path: null }))).path;
     }
-    if (step.waitMs) await sleep(step.waitMs);
-    vk[step.name] = await captureVulkan(c, path.posix.join(outDir, `${tag}_${step.name}_vk.png`));
-    if (gl) glFiles[step.name] = (await ui.screenshot(c, engineBin, `sweep/${tag}_${step.name}_gl`).catch(() => ({ path: null }))).path;
+  } finally {
+    if (stepped) await c.rpc("sim.resume", {}).catch(() => {});
   }
   return { vk, gl: gl ? glFiles : null };
 }
 
+// [Doruk-Aksoy] An over-time pair's steps: intervalMs apart with the sim running, or stepTics tics apart with it paused, which a motion with a period (a flat scrolled a whole tile) cannot alias.
+export function overTimeSteps({ intervalMs = 600, stepTics = 0 } = {}) {
+  return stepTics > 0 ? [{ name: "0" }, { name: "1", stepTics }] : [{ name: "0" }, { name: "1", waitMs: intervalMs }];
+}
+
 // [rc4l] Two captures intervalMs apart with the sim RUNNING, Vulkan and optionally GL, for what must move: a warp, a scroller, an animation.
-export async function captureOverTime(c, { at = null, engineBin, outDir, tag = "motion", intervalMs = 600, gl = false }) {
-  const got = await captureSequence(c, { at, engineBin, outDir, tag, gl, steps: [{ name: "0" }, { name: "1", waitMs: intervalMs }] });
+// [Doruk-Aksoy] Or stepTics tics apart in a paused sim, for a motion whose period an interval can land on.
+export async function captureOverTime(c, { at = null, engineBin, outDir, tag = "motion", intervalMs = 600, stepTics = 0, gl = false }) {
+  const got = await captureSequence(c, { at, engineBin, outDir, tag, gl, steps: overTimeSteps({ intervalMs, stepTics }) });
   const pair = (files) => [files["0"], files["1"]];
   return { vk: pair(got.vk), gl: gl ? pair(got.gl) : null };
 }

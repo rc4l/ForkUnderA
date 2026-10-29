@@ -512,14 +512,15 @@ export async function compareSequence({ name, wad, maps, vantages, steps, boxes,
 }
 
 // [rc4l] One Vulkan launch per map, each vantage captured twice intervalMs apart, judged before against after: for what must move (a warp) or must not; the launch takes the first non-GL side's settings.
-export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, iwad = FREEDOOM2, port = 7796,
+// [Doruk-Aksoy] stepTics captures them that many tics apart in a paused sim instead.
+export async function compareOverTime({ name, wad, maps, vantages, boxes, intervalMs = 600, stepTics = 0, iwad = FREEDOOM2, port = 7796,
   size = [1280, 720], sides = [] }) {
   const exe = slashed(resolveEngine());
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     const frames = {};
     for (const v of vantages) {
       const { vk: [before, after] } = await shot.captureOverTime(c, { at: v.at, engineBin: exe,
-        tag: `${name}_${map}_${v.name}`, intervalMs });
+        tag: `${name}_${map}_${v.name}`, intervalMs, stepTics });
       frames[v.name] = { before: before ? decodePNG(before) : null, after: after ? decodePNG(after) : null };
     }
     return judge(map, frames, boxes[map], size, ["before", "after"]);
