@@ -42,6 +42,7 @@
 #include "r_data/r_translate.h"
 #include "features/materials/translationpalette.h"
 #include "m_crc32.h"
+#include "features/handoff/seam.h"   // [Doruk-Aksoy] translation/palette
 
 TArray<FTranslationPalette::PalData> FTranslationPalette::AllPalettes;
 
@@ -55,6 +56,7 @@ FTranslationPalette *FTranslationPalette::CreatePalette(FRemapTable *remap)
 
 bool FTranslationPalette::Update()
 {
+	ZX_SEAM_UNTIMED ("translation/palette", Main);   // [Doruk-Aksoy] features/handoff: only the main thread adds to the palettes a frame reads
 	PalData pd;
 
 	memset(pd.pe, 0, sizeof(pd.pe));

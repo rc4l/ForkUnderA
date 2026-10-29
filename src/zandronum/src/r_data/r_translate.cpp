@@ -1142,6 +1142,14 @@ void R_BuildPlayerTranslation (int player)
 		translationtables[TRANSLATION_PlayersExtra][player]);
 }
 
+void R_UpdateTranslationNative (int translation)
+{
+	// [Doruk-Aksoy] features/handoff: queued by number, so a table freed before the handoff is skipped rather than read.
+	if (zx::handoff::QueuedForHandoff ({ [](intptr_t t, intptr_t) { R_UpdateTranslationNative (int (t)); }, translation, 0 })) return;
+	FRemapTable *table = TranslationToTable (translation);
+	if (table != NULL) table->UpdateNative ();
+}
+
 //----------------------------------------------------------------------------
 //
 //

@@ -145,6 +145,7 @@ Seams:
 - `sound/music` (GameData), `s_sound.cpp`
 - `texture/grow` (Idle), `textures/texturemanager.cpp`
 - `tic/playsim` (GameThread), `features/gameloop/loop.cpp`
+- `translation/palette` (Main), `features/materials/translationpalette.cpp`
 - `translation/player` (Main), `r_data/r_translate.cpp`
 - `wad/read` (Main), `resourcefiles/resourcefile.cpp`
 - `wad/read` (Main), `w_wad.cpp`

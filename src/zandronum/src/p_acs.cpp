@@ -12373,7 +12373,8 @@ scriptwait:
 		case PCD_ENDTRANSLATION:
 			if (translation != NULL)
 			{
-				translation->UpdateNative();
+				// [Doruk-Aksoy] features/handoff: from a tic on its own thread the palette is remade in the handoff, since a frame beside it reads the palettes.
+				R_UpdateTranslationNative(TRANSLATION(TRANSLATION_LevelScripted, ACS_GetTranslationIndex(translation) - 1));
 				translation = NULL;
 			}
 			break;
