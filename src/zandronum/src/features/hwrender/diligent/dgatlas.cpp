@@ -135,6 +135,8 @@ bool AtlasActive()
 
 int AtlasPageSize() { return kPageSize; }
 
+int AtlasMaxSide() { return kMaxSide; }
+
 const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite)
 {
 	// [rc4l] A translated sprite keeps its own binding, since a translation's colours can change between levels while its number stays.

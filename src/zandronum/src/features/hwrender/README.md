@@ -82,6 +82,10 @@ loaded and flown around, and Firefox ran out of GPU memory.
 A material and translation are found in the texture cache and the slot table by `computation/materialindex_compute`,
 where a walk over thousands of Complex Doom sprite frames, for every slot of every binding refill, took 11% of a
 fight's frame.
+`fua_dg_slotreport [n]` counts the slots a level asked for by kind (`computation/slotreport_compute`), the ones
+refused once the table filled among them, packs the plain sprites as the atlas would to say how many slots its pages
+would leave and what pages and the sprites' own textures cost, gives the working set dynamic pieces asked for in the
+last frame and the last 1, 2 and 5 s with their peaks, and names the n sprite families taking most.
 `features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
 Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
 

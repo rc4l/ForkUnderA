@@ -16,11 +16,25 @@ namespace zx { namespace materials {
 
 static const FMaterial *Mat(MaterialRef m) { return (const FMaterial *)m; }
 
+// [Doruk-Aksoy] The texture manager's use type as a MaterialUse.
+static int UseOf(int useType)
+{
+	switch (useType)
+	{
+	case FTexture::TEX_Wall: case FTexture::TEX_Flat: case FTexture::TEX_WallPatch: case FTexture::TEX_Build: return kMaterialUseWorld;
+	case FTexture::TEX_Sprite: return kMaterialUseSprite;
+	case FTexture::TEX_SkinSprite: case FTexture::TEX_SkinGraphic: return kMaterialUseSkin;
+	case FTexture::TEX_MiscPatch: case FTexture::TEX_FontChar: case FTexture::TEX_Autopage: return kMaterialUseGraphic;
+	default: return kMaterialUseOther;
+	}
+}
+
 bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 {
 	if (m == NULL || Mat(m)->tex == NULL) return false;
 	FTexture *tex = Mat(m)->tex;
 	info.name = tex->Name.GetChars();
+	info.use = UseOf(tex->UseType);
 	info.textureIndex = tex->id.GetIndex();
 	info.width = tex->GetWidth();
 	info.height = tex->GetHeight();

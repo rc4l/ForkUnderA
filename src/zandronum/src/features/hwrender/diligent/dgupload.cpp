@@ -30,7 +30,14 @@ PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool
 	const bool described = zx::materials::DescribeMaterial(p.material, info);
 	out.mat = (float)MaterialSlotFor(slotMat, translation);
 	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
-	out.bright = (out.animates || (described && info.brightmap)) ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation) : 0.f;
+	const bool bright = out.animates || (described && info.brightmap);
+	out.bright = bright ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation) : 0.f;
+	// [Doruk-Aksoy] What a dynamic piece asks for, stamped for fua_dg_slotreport's working set.
+	if (!inMesh)
+	{
+		NoteDynamicSlotUse((int)out.mat, slotMat, translation);
+		if (bright) NoteDynamicSlotUse((int)out.bright, slotMat, kBrightmapTranslation);
+	}
 	return out;
 }
 

@@ -18,9 +18,13 @@ namespace zx { namespace materials {
 typedef const void *MaterialRef;
 
 // [rc4l] What a renderer asks of a material besides its pixels.
+// [Doruk-Aksoy] What a texture is for: a wall or flat, a sprite frame, a skin, a graphic (HUD pictures, and model skins under Graphics/), or anything else.
+enum MaterialUse { kMaterialUseWorld, kMaterialUseSprite, kMaterialUseSkin, kMaterialUseGraphic, kMaterialUseOther };
+
 struct MaterialInfo
 {
 	const char *name;
+	int   use;            // [Doruk-Aksoy] a MaterialUse
 	int   textureIndex;   // [rc4l] its index in the texture manager, which ANIMDEFS frames are numbered by
 	int   width, height;
 	int   renderWidth, renderHeight;   // [rc4l] the size GL draws it at, after scaling and trimming

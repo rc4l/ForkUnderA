@@ -6,6 +6,7 @@
 #include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
 #include "features/hwshaders/computation/hwshader_compute.h"
 #include "features/hwrender/computation/materialindex_compute.h"
+#include "features/hwrender/computation/slotreport_compute.h"   // [Doruk-Aksoy] fua_dg_slotreport
 #include "features/hwrender/computation/retiredbindings_compute.h"   // [Doruk-Aksoy] RetiredBindings
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynWordsCapacity
@@ -211,6 +212,57 @@ static int MatIndexFind(const void *material, int translation)
 	return zx::hwrender::ComputeMaterialIndexFind(g_matIndex, material, translation);
 }
 
+// [Doruk-Aksoy] What the level asked for once the table was full, each key once, so fua_dg_slotreport can say how many slots it wanted.
+static TArray<MatSlot> g_matSlotRefused;
+static zx::hwrender::MaterialIndex g_refusedIndex;
+
+static void NoteRefused(const void *material, int translation)
+{
+	if (zx::hwrender::ComputeMaterialIndexFind(g_refusedIndex, material, translation) >= 0) return;
+	zx::hwrender::ComputeMaterialIndexInsert(g_refusedIndex, material, translation, (int)g_matSlotRefused.Size());
+	MatSlot e; e.material = material; e.translation = translation;
+	g_matSlotRefused.Push(e);
+}
+
+// [Doruk-Aksoy] When a dynamic piece last asked for each slot and each refused key, and the working set's peaks this level, for fua_dg_slotreport.
+static std::vector<zx::hwrender::SlotStamp> g_slotStamps, g_refusedStamps;
+static std::vector<int> g_workingSet, g_workingPeaks;
+static int g_keysMeasured = 0;
+static const std::vector<double> kWorkingWindowsMs = { 1000, 2000, 5000 };
+
+static void Stamp(std::vector<zx::hwrender::SlotStamp> &stamps, int at)
+{
+	// [Doruk-Aksoy] The clock read once a frame, not once a sprite, since every dynamic piece stamps twice a frame and the windows need no finer time.
+	static long long clockFrame = -1;
+	static double clockMs = 0;
+	const long long frame = (long long)FrameBeingBuilt();
+	if (frame != clockFrame) { clockFrame = frame; clockMs = zx::telemetry::NowNs() / 1e6; }
+	if ((int)stamps.size() <= at) stamps.resize(at + 1);
+	stamps[at] = { frame, clockMs };
+}
+
+void NoteDynamicSlotUse(int slot, const void *material, int translation)
+{
+	if (slot > 0) { Stamp(g_slotStamps, slot); return; }
+	const int refused = material != NULL ? zx::hwrender::ComputeMaterialIndexFind(g_refusedIndex, material, translation) : -1;
+	if (refused >= 0) Stamp(g_refusedStamps, refused);
+}
+
+void MeasureSlotWorkingSet()
+{
+	const long long frame = (long long)FrameBeingBuilt() - 1;
+	const double now = zx::telemetry::NowNs() / 1e6;
+	g_workingSet.clear();
+	zx::hwrender::ComputeWorkingSet(g_slotStamps, frame, now, kWorkingWindowsMs, g_workingSet);
+	zx::hwrender::ComputeWorkingSet(g_refusedStamps, frame, now, kWorkingWindowsMs, g_workingSet);
+	zx::hwrender::ComputeKeepPeaks(g_workingPeaks, g_workingSet);
+	const int keys = (int)(g_matSlotTable.Size() + g_matSlotRefused.Size());
+	ZX_COUNT("gpu/slots/frame_set", "slots", g_workingSet[0]);
+	ZX_COUNT("gpu/slots/window_2s", "slots", g_workingSet[2]);
+	ZX_COUNT("gpu/slots/new", "keys", keys > g_keysMeasured ? keys - g_keysMeasured : 0);
+	g_keysMeasured = keys;
+}
+
 void ResetMaterialSlots()
 {
 	g_matSlotTable.Clear();
@@ -218,6 +270,12 @@ void ResetMaterialSlots()
 	MatSlot white; white.material = NULL; white.translation = 0;
 	g_matSlotTable.Push(white);
 	MatIndexInsert(white.material, white.translation, 0);
+	g_matSlotRefused.Clear();
+	zx::hwrender::ComputeMaterialIndexClear(g_refusedIndex);
+	g_slotStamps.clear();
+	g_refusedStamps.clear();
+	g_workingPeaks.clear();
+	g_keysMeasured = 0;
 	g_matSlotOverflow = false;
 	g_matSlotRetries = 0;
 	g_matSlotsDirty = true;
@@ -283,6 +341,7 @@ int MaterialSlotFor(const void *material, int translation)
 			Printf("Diligent bindless: more than %u materials on this level -- falling back to a binding per material"
 				"\n", MaterialSlotCapacity());
 		g_matSlotOverflow = true;
+		NoteRefused(material, translation);
 		return 0;
 	}
 	const int slot = PushMaterialSlot(material, translation);
@@ -292,8 +351,9 @@ int MaterialSlotFor(const void *material, int translation)
 		for (const int frame : zx::hwrender::ComputeAnimationFrames(g_anims[anim]))
 		{
 			const void *fm = zx::materials::MaterialForTextureIndex(frame);
-			if (fm != NULL && MatIndexFind(fm, translation) < 0 && g_matSlotTable.Size() < MaterialSlotCapacity())
-				PushMaterialSlot(fm, translation);
+			if (fm == NULL || MatIndexFind(fm, translation) >= 0) continue;
+			if (g_matSlotTable.Size() < MaterialSlotCapacity()) PushMaterialSlot(fm, translation);
+			else NoteRefused(fm, translation);
 		}
 	return slot;
 }
@@ -418,6 +478,7 @@ static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb, Diligent
 		}
 		v->SetArray(&obj, i, 1, flags);
 	}
+	ZX_COUNT("gpu/slots/written", "writes", (int)MaterialSlotCapacity());
 	return true;
 }
 
@@ -452,6 +513,7 @@ void RefreshBindless()
 	// A table that has not changed needs no new bindings -- see g_filledFrom.
 	// [rc4l] Unless the last fill left a live material white, which is what the retry that dirtied it is for.
 	if (zx::hwrender::ComputeKeepsMaterialFill(g_bindlessReady, MaterialSlotsMatchFill(), g_stats.matSlotsWhite)) return;
+	ZX_ZONE("draw/bindless_refill");
 	g_bindlessReady = false;
 	g_filledFrom.Clear();
 	// [Doruk-Aksoy] The fill being replaced waits for the GPU to finish with it, and a retired one it has finished with is filled again rather than new bindings made.
@@ -1198,6 +1260,42 @@ void SlotReport(int n, FString &out)
 		out.AppendFormat("  batch %d verts %u..%u material %s -> slot %d holding %s (view %p) | vertex says %d = %s" "\n",
 			i, b.first, b.first + b.count, bname, slot, sname, srv, inVB, vname);
 	}
+}
+
+// [Doruk-Aksoy] A slot's facts for the slot report, a brightmap slot's from the texture it belongs to.
+static zx::hwrender::SlotFacts FactsOf(const MatSlot &e)
+{
+	static_assert((int)zx::materials::kMaterialUseWorld == (int)zx::hwrender::kSlotUseWorld &&
+		(int)zx::materials::kMaterialUseOther == (int)zx::hwrender::kSlotUseOther, "SlotUse follows MaterialUse");
+	zx::hwrender::SlotFacts f;
+	f.brightmap = e.translation == kBrightmapTranslation;
+	f.translated = !f.brightmap && e.translation != 0;
+	zx::materials::MaterialInfo info;
+	if (!zx::materials::DescribeMaterial(e.material, info)) return f;
+	f.use = info.use;
+	f.shaded = info.userShader >= 0;
+	f.special = info.canvas || info.warp != 0;
+	f.width = info.width;
+	f.height = info.height;
+	f.name = info.name != NULL ? info.name : "";
+	f.hasBrightmap = !f.brightmap && info.brightmap;
+	return f;
+}
+
+void SlotDemandReport(int top, FString &out)
+{
+	std::vector<zx::hwrender::SlotFacts> facts;
+	for (unsigned i = 1; i < g_matSlotTable.Size(); i++) facts.push_back(FactsOf(g_matSlotTable[i]));
+	const int inTable = (int)facts.size();
+	for (unsigned i = 0; i < g_matSlotRefused.Size(); i++) facts.push_back(FactsOf(g_matSlotRefused[i]));
+	zx::hwrender::SlotTally r;
+	zx::hwrender::ComputeSlotReport(facts, AtlasPageSize(), AtlasMaxSide(), r);
+	out = zx::hwrender::ComputeSlotReportText(r, inTable, (int)MaterialSlotCapacity(), AtlasPageSize(), AtlasMaxSide(), top).c_str();
+	out += "\n";
+	out += zx::hwrender::ComputeWorkingSetText(g_workingSet, g_workingPeaks, kWorkingWindowsMs, (int)facts.size()).c_str();
+	int cached = 0, batch = 0;
+	MaterialSRBCounts(cached, batch);
+	out.AppendFormat("\n  bindless %s, %d material bindings live", BindlessActive() ? "on" : "off", cached + batch);
 }
 
 // [rc4l] The slot table, for a pass that fills a material array of its own.
