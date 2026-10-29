@@ -5,6 +5,7 @@
 #include "features/fixed64/computation/fixed64_scale_compute.h"
 
 #include <climits>
+#include <cstddef>
 
 namespace zx { namespace bspgrid {
 
