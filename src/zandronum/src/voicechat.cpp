@@ -2058,7 +2058,7 @@ void VOIPPanel::Render( void )
 
 		screen->DrawText( SmallFont, it->color, it->textXPos, it->textYPos, it->text,
 			DTA_UseVirtualScreen, g_bScale,
-			DTA_Alpha, alpha,
+			DTA_Alpha, int(alpha),
 			TAG_DONE );
 
 		if ( speakerIcon == nullptr )
@@ -2066,7 +2066,7 @@ void VOIPPanel::Render( void )
 
 		screen->DrawTexture( speakerIcon, speakerXPos, it->speakerYPos,
 			DTA_UseVirtualScreen, g_bScale,
-			DTA_Alpha, alpha,
+			DTA_Alpha, int(alpha),
 			TAG_DONE );
 	}
 }
@@ -2178,7 +2178,7 @@ void FOptionMenuMicTestBar::DrawBar( const DWORD color, const int x, const int y
 		DTA_ClipRight, x + width,
 		DTA_ClipTop, y,
 		DTA_ClipBottom, y + height,
-		DTA_Alpha, grayed ? FRACUNIT >> 1 : FRACUNIT,
+		DTA_Alpha, int(grayed ? FRACUNIT >> 1 : FRACUNIT),
 		TAG_DONE );
 }
 

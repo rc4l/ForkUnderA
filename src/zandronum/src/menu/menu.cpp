@@ -356,7 +356,7 @@ void DMenu::Drawer ()
 		}
 		else
 		{
-			screen->DrawTexture(tex, x, y, DTA_CleanNoMove, true, DTA_Alpha, BackbuttonAlpha, TAG_DONE);
+			screen->DrawTexture(tex, x, y, DTA_CleanNoMove, true, DTA_Alpha, int(BackbuttonAlpha), TAG_DONE);
 		}
 	}
 }

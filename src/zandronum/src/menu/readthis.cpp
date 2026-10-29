@@ -110,7 +110,7 @@ void DReadThisMenu::Drawer()
 	{
 		screen->DrawTexture (prevpic, 0, 0, DTA_Fullscreen, true, TAG_DONE);
 	}
-	screen->DrawTexture (tex, 0, 0, DTA_Fullscreen, true, DTA_Alpha, alpha,	TAG_DONE);
+	screen->DrawTexture (tex, 0, 0, DTA_Fullscreen, true, DTA_Alpha, int(alpha),	TAG_DONE);
 
 }
 
