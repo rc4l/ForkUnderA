@@ -37,6 +37,7 @@
 
 // [rc4l] GL's FMaterial and the CPU half of its FGLTexture, moved from gl/textures/gl_material.cpp; GL's binding of them stays there.
 
+#include <cstdint>
 #include "w_wad.h"
 #include "templates.h"
 #include "c_cvars.h"
@@ -44,7 +45,9 @@
 #include "features/materials/materials.h"   // [rc4l] NoteTexturesFlushed
 #include "features/materials/textureinfo.h"   // [rc4l] hires lookup, upsampling
 #include "features/materials/texturebitmap.h"
+#include "features/materials/translationpalette.h"   // [Doruk-Aksoy] a truecolor font colour's brightness table
 #include "features/hwshaders/computation/hwshader_compute.h"   // [rc4l] kFirstUserShader
+#include "features/truecolorfont/computation/truecolorfont_compute.h"
 
 EXTERN_CVAR(Bool, r_texture_usehires)
 
@@ -151,6 +154,14 @@ void FTexturePixels::Clean(bool all)
 	}
 }
 
+// [Doruk-Aksoy] RGBA pixels recoloured through a truecolor font colour's brightness table.
+static void RecolorByLuminance(unsigned char *buffer, int count, const PalEntry *table)
+{
+	uint32_t argb[256];
+	for (int i = 0; i < 256; i++) argb[i] = table[i].d;
+	zx::truecolorfont::ComputeLuminanceRecolor(buffer, count, zx::truecolorfont::kRGBA, argb);
+}
+
 //===========================================================================
 //
 //	Initializes the buffer for the texture data
@@ -162,6 +173,9 @@ unsigned char * FTexturePixels::CreateTexBuffer(int translation, int & w, int & 
 	unsigned char * buffer;
 	int W, H;
 
+	// [Doruk-Aksoy] Ported from uzdoom@5f02b92cd0843026a6bc20743915333041c96cd7: a luminosity translation makes the pixels untranslated, then recolours them by brightness.
+	const PalEntry *luminance = FTranslationPalette::GetLuminanceTable(translation);
+	if (luminance != NULL) translation = 0;
 
 	// Textures that are already scaled in the texture lump will not get replaced
 	// by hires textures
@@ -170,6 +184,7 @@ unsigned char * FTexturePixels::CreateTexBuffer(int translation, int & w, int & 
 		buffer = LoadHiresTexture (hirescheck, &w, &h);
 		if (buffer)
 		{
+			if (luminance != NULL) RecolorByLuminance(buffer, w * h, luminance);
 			return buffer;
 		}
 	}
@@ -215,6 +230,7 @@ unsigned char * FTexturePixels::CreateTexBuffer(int translation, int & w, int & 
 		tex->FTexture::CopyTrueColorPixels(&bmp, exx, exx);
 		bIsTransparent = 0;
 	}
+	if (luminance != NULL) RecolorByLuminance(buffer, W * H, luminance);
 
 	// if we just want the texture for some checks there's no need for upsampling.
 	if (!createexpanded) return buffer;

@@ -20,6 +20,7 @@ class FTranslationPalette : public FNativePalette
 	{
 		int crc32;
 		PalEntry pe[256];
+		bool byLuminance;	// [Doruk-Aksoy] pe is indexed by a texel's brightness (FRemapTable::ByLuminance)
 	};
 	static TArray<PalData> AllPalettes;
 
@@ -35,6 +36,11 @@ public:
 	static PalEntry *GetPalette(unsigned int index)
 	{
 		return index > 0 && index <= AllPalettes.Size()? AllPalettes[index-1].pe : NULL;
+	}
+	// [Doruk-Aksoy] The brightness-indexed table a truecolor font's colour recolours by, NULL for any other translation.
+	static PalEntry *GetLuminanceTable(int index)
+	{
+		return index > 0 && unsigned(index) <= AllPalettes.Size() && AllPalettes[index-1].byLuminance ? AllPalettes[index-1].pe : NULL;
 	}
 	bool Update();
 	int GetIndex() const { return Index; }

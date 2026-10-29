@@ -47,6 +47,7 @@ struct FRemapTable
 	FNativePalette *Native;		// The Palette stored in a HW texture
 	int NumEntries;				// # of elements in this table (usually 256)
 	bool Inactive;				// This table is inactive and should be treated as if it was passed as NULL
+	bool ByLuminance;			// [Doruk-Aksoy] Palette is indexed by a true-colour texel's brightness, not a palette index (a truecolor font's colour)
 
 private:
 	void Free();
