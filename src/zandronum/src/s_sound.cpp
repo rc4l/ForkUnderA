@@ -130,6 +130,18 @@ extern float S_GetMusicVolume (const char *music);
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
 static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, AActor *actor, int channel);
+
+// [Doruk-Aksoy] Marks an actor a channel now points at, which stays marked, so asking about one that never had a sound needs no walk over every channel.
+static void NoteChannelActor (AActor *actor)
+{
+	if (actor != NULL) actor->ObjectFlags |= OF_FuaSoundChannel;
+}
+
+// [Doruk-Aksoy] Whether no channel can point at actor: one never marked, since a channel being forgotten keeps its actor type with no actor, which NULL must still find.
+static bool NoChannelFor (const AActor *actor)
+{
+	return actor != NULL && !(actor->ObjectFlags & OF_FuaSoundChannel);
+}
 static void S_ActivatePlayList(bool goBack);
 static void CalcPosVel(FSoundChan *chan, FVector3 *pos, FVector3 *vel);
 static void CalcPosVel(int type, const AActor *actor, const sector_t *sector, const FPolyObj *poly,
@@ -1124,7 +1136,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 	// If this actor is already playing something on the selected channel, stop it.
 	// [Doruk-Aksoy] uzdoom@e82565373f: all of it, since overlapping sounds share a channel, and nothing when this one overlaps.
-	if (ComputeStartStopsChannel(chanflags, type != SOURCE_None))
+	if (ComputeStartStopsChannel(chanflags, type != SOURCE_None) && !(type == SOURCE_Actor && NoChannelFor(actor)))
 	{
 		for (chan = Channels; chan != NULL; )
 		{
@@ -1243,7 +1255,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		chan->SourceType = type;
 		switch (type)
 		{
-		case SOURCE_Actor:		chan->Actor = actor;	break;
+		case SOURCE_Actor:		chan->Actor = actor; NoteChannelActor (actor);	break;
 		case SOURCE_Sector:		chan->Sector = sec;		break;
 		case SOURCE_Polyobj:	chan->Poly = poly;		break;
 		case SOURCE_Unattached:	chan->Point[0] = pt->X; chan->Point[1] = pt->Y; chan->Point[2] = pt->Z;	break;
@@ -1654,6 +1666,7 @@ void S_StopSound (int channel)
 void S_StopSound (AActor *actor, int channel)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	if (NoChannelFor(actor)) return;
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1751,6 +1764,8 @@ void S_StopAllSoundsFromActor (AActor *ent)
 	// [AK] The server doesn't play sounds.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
+	if ( NoChannelFor( ent ))
+		return;
 
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
@@ -1807,6 +1822,9 @@ void S_RelinkSound (AActor *from, AActor *to)
 	if (from == NULL)
 		return;
 
+	if (NoChannelFor(from))
+		return;
+
 	FSoundChan *chan = Channels;
 	while (chan != NULL)
 	{
@@ -1816,6 +1834,7 @@ void S_RelinkSound (AActor *from, AActor *to)
 			if (to != NULL)
 			{
 				chan->Actor = to;
+				NoteChannelActor (to);
 			}
 			// [rc4l] uzdoom@ef5707d73: compat_soundcutoff stops the sound instead of orphaning it.
 			else if (!(chan->ChanFlags & CHAN_LOOP) && !(compatflags2 & COMPATF2_SOUNDCUTOFF))
@@ -1875,6 +1894,7 @@ bool S_ChangeSoundVolume(AActor *actor, int channel, float volume)
 bool S_GetSoundPlayingInfo (const AActor *actor, int sound_id)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	if (NoChannelFor(actor)) return false;
 	if (sound_id > 0)
 	{
 		for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
@@ -1935,6 +1955,7 @@ bool S_GetSoundPlayingInfo (const FPolyObj *poly, int sound_id)
 bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
+	if (NoChannelFor(actor)) return false;
 	if (i_compatflags & COMPATF_MAGICSILENCE)
 	{
 		channel = 0;
@@ -2577,7 +2598,7 @@ static FArchive &operator<<(FArchive &arc, FSoundChan &chan)
 	switch (chan.SourceType)
 	{
 	case SOURCE_None:								break;
-	case SOURCE_Actor:		arc << chan.Actor;		break;
+	case SOURCE_Actor:		arc << chan.Actor; if (arc.IsLoading()) NoteChannelActor (chan.Actor);	break;
 	case SOURCE_Sector:		arc << chan.Sector;		break;
 	case SOURCE_Polyobj:	arc << chan.Poly;		break;
 	case SOURCE_Unattached:	arc << chan.Point[0] << chan.Point[1] << chan.Point[2];	break;
