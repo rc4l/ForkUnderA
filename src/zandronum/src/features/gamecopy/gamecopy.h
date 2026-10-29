@@ -20,6 +20,8 @@ void ScanAtTicEnd();
 void InitLevel();
 // [rc4l] The level's data is about to be freed: no list keeps an index into it, and nothing is filled until the next InitLevel.
 void ForgetLevel();
+// [Doruk-Aksoy] A save or hub return rewrote the map without the setters noting it, so the next scan compares every side and finds every decal.
+void NoteMapLoaded();
 // [rc4l] Moves the copy's moving planes, scrolls and polyobjects to smoothratio of the way through the last tic, as the interpolations move the live game for one view.
 void BlendMap(zx::Fixed smoothratio);
 // [rc4l] Where each interpolation adds its values at the start and end of the tic while FillMap gathers them.

@@ -3740,6 +3740,9 @@ void GAME_ResetMap( bool bRunEnterScripts )
 						SERVERCOMMANDS_SetLineTextureScale( ulIdx, side, position );
 				}
 			}
+
+			// [Doruk-Aksoy] The offsets and scales put back above are written directly, so the render copy is told.
+			lines[ulIdx].sidedef[side]->NoteChanged( );
 		}
 
 		// Restore the line's alpha if it changed.

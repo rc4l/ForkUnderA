@@ -42,6 +42,10 @@ void DecalXY(const DecalRecord &decal, const side_t *side, fixed_t &x, fixed_t &
 
 // [rc4l] As a tic ends: the sides holding decals found, for the next fill to take alone.
 void ScanDecalSides();
+// [Doruk-Aksoy] A side a decal stuck to, which the tic's end keeps among the sides holding decals until its last decal goes.
+void NoteDecalSide(const side_t *side);
+// [Doruk-Aksoy] A level's start: which sides hold decals is unknown until a whole scan finds them.
+void ResetDecalSides();
 // [rc4l] The sides holding decals now that the tic's end did not find, for fua_copy_prescan_check.
 int DecalSidesMissed();
 // [rc4l] Takes every side's decals, or with scanned those of the sides the tic's end found; part of the fill.

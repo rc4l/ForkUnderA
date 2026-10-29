@@ -2010,6 +2010,7 @@ DScroller::DScroller (EScrollType type, fixed_t dx, fixed_t dy,
 
 	case sc_side:
 		sides[affectee].Flags |= WALLF_NOAUTODECALS;
+		sides[affectee].NoteChanged();	// [Doruk-Aksoy] a scroller an ACS or line special starts mid-level changes a copied flag
 		if (m_Parts & scw_top)
 		{
 			m_Interpolations[0] = sides[m_Affectee].SetInterpolation(side_t::top);
@@ -2080,6 +2081,7 @@ DScroller::DScroller (fixed_t dx, fixed_t dy, const line_t *l,
 		m_LastHeight = sectors[control].CenterFloor() + sectors[control].CenterCeiling();
 	m_Affectee = int(l->sidedef[0] - sides);
 	sides[m_Affectee].Flags |= WALLF_NOAUTODECALS;
+	sides[m_Affectee].NoteChanged();	// [Doruk-Aksoy] a scroller an ACS or line special starts mid-level changes a copied flag
 	m_Interpolations[0] = m_Interpolations[1] = m_Interpolations[2] = NULL;
 
 	if (m_Parts & scw_top)
