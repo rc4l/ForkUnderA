@@ -116,7 +116,9 @@ namespace
 	// Set by the SIGTERM/SIGINT handler; honoured on the main thread so GL/Cocoa teardown runs
 	// on the main thread between frames -- a clean exit(0) instead of a mid-render hard kill that
 	// wedges the macOS window server.
-	volatile sig_atomic_t    g_quitRequested = 0;
+	// [Doruk-Aksoy] Atomic, not volatile sig_atomic_t, since the signal lands on whichever thread the kernel picks (a Diligent pool worker under ThreadSanitizer) and the watchdog thread sets it too.
+	std::atomic<int>         g_quitRequested( 0 );
+	static_assert( ATOMIC_INT_LOCK_FREE == 2, "a signal handler may only touch a lock-free atomic" );
 
 	int BridgePort()
 	{
@@ -181,7 +183,7 @@ namespace
 	}
 
 #ifndef _WIN32
-	void OnTermSignal( int ) { g_quitRequested = 1; }
+	void OnTermSignal( int ) { g_quitRequested.store( 1, std::memory_order_relaxed ); }
 	void InstallSignalHandlers()
 	{
 		// Only SIGTERM/SIGINT. Fault signals (SEGV/BUS/ILL/FPE) belong to sentry-native's crash
@@ -193,7 +195,7 @@ namespace
 		sigaction( SIGINT, &sa, NULL );
 	}
 #else
-	static BOOL WINAPI CtrlHandler( DWORD ) { g_quitRequested = 1; return TRUE; }
+	static BOOL WINAPI CtrlHandler( DWORD ) { g_quitRequested.store( 1, std::memory_order_relaxed ); return TRUE; }
 	void InstallSignalHandlers() { SetConsoleCtrlHandler( CtrlHandler, TRUE ); }
 #endif
 }
@@ -287,7 +289,7 @@ namespace
 				fflush( stderr );
 				// Ask for a CLEAN quit first (main thread runs GL/Cocoa teardown), then hard-exit as a
 				// last resort if the loop is wedged and doesn't honour the flag within a grace window.
-				g_quitRequested = 1;
+				g_quitRequested.store( 1, std::memory_order_relaxed );
 				std::this_thread::sleep_for( std::chrono::milliseconds( 3000 ) );
 #ifdef _WIN32
 				TerminateProcess( GetCurrentProcess(), 0 );
@@ -407,7 +409,7 @@ void MCP_Bridge_Poll()
 
 	// Honour a pending clean-quit request from a signal or the watchdog, between frames, on the main
 	// thread -- so exit(0) runs the full atexit/call_terms teardown (GL, SDL, Cocoa) with no wedge.
-	if ( g_quitRequested )
+	if ( g_quitRequested.load( std::memory_order_relaxed ) )
 	{
 		RemovePidfile();
 		exit( 0 );
