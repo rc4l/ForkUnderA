@@ -73,6 +73,7 @@
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "g_game.h"
+#include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
 
 
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
@@ -542,8 +543,12 @@ subsector_t *R_PointInSubsector (fixed_t x, fixed_t y)
 	// single subsector is a special case
 	if (numnodes == 0)
 		return subsectors;
-				
-	node = nodes + numnodes - 1;
+
+	// [Doruk-Aksoy] features/bspgrid: from the deepest node every point of this one's grid cell reaches the same way, which lands on the same subsector.
+	const int start = zx::bspgrid::RenderStart (x, y);
+	if (start < 0)
+		return subsectors + (-1 - start);
+	node = nodes + start;
 
 	do
 	{
