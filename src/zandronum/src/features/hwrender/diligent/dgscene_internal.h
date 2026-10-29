@@ -404,6 +404,12 @@ void ReleaseScenePipelines();
 void ReleaseWorldSRBs();
 void ResetMaterialSlots();
 void SlotReport(int n, FString &out);
+// [Doruk-Aksoy] fua_dg_slotreport: the slots the level asked for by kind, those refused once the table filled among them, and the top `top` sprite families.
+void SlotDemandReport(int top, FString &out);
+// [Doruk-Aksoy] Stamps the slot a dynamic piece got, or its refused key when it got none, for the working set.
+void NoteDynamicSlotUse(int slot, const void *material, int translation);
+// [Doruk-Aksoy] The last frame's working set and each window's counted, their peaks kept and the gpu/slots/ counters sent.
+void MeasureSlotWorkingSet();
 Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
 // [Doruk-Aksoy] World pipeline `pipeline` running GLDEFS shader userShader's own program, made the first time it is asked for and committed with the plain one's bindings; the plain one for -1, for a shader that does not compile, or where none runs (ComputeWorldPipelineTakesUserShader).
 Diligent::IPipelineState *ScenePSO(int pipeline, int userShader);
@@ -420,6 +426,8 @@ void MarkMaterialSlotsCurrent();
 struct AtlasEntry { int page, x, y, w, h; };
 bool AtlasActive();
 int AtlasPageSize();
+// [Doruk-Aksoy] The largest side an image may have to go on a page.
+int AtlasMaxSide();
 // [rc4l] Where a material's image sits on a page, placing it the first time, NULL when it may not or does not fit; sprite says the piece is a flat sprite.
 const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite);
 Diligent::IShaderResourceBinding *AtlasSRB(Diligent::IPipelineState *pso, int page);

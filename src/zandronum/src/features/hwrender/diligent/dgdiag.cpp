@@ -620,6 +620,15 @@ CCMD( fua_dg_slots )
 	Printf( "%s" "\n", report.GetChars( ) );
 }
 
+// [Doruk-Aksoy] fua_dg_slotreport [n]: the material slots this level asked for by kind, how many an atlas of sprite pages would leave, and the n sprite families taking most.
+CCMD( fua_dg_slotreport )
+{
+	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 15;
+	FString report;
+	zx::hwrender::SlotDemandReport( n, report );
+	Printf( "%s" "\n", report.GetChars( ) );
+}
+
 CCMD( fua_dg_srbcost )
 {
 	const int slots = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 512;

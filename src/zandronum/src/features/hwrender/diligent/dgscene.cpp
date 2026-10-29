@@ -1040,7 +1040,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	EnsureDynamicRecords();
 	UpdateSectorLightTable(ctx);
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
-	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { ReserveDynamicSlots(); RefreshBindless(); }
+	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { MeasureSlotWorkingSet(); ReserveDynamicSlots(); RefreshBindless(); }
 	g_phase.animation.Clock();
 	// [rc4l] Re-resolve animated textures, since a batch's material was resolved once at bake time and would freeze on its first frame.
 	// [rc4l] Each base texture asked once, its batches gathered by ComputeGroupByKey: wdiex01's 48,000 batches share about 700 textures, and asking per batch cost 0.06 ms a frame.
