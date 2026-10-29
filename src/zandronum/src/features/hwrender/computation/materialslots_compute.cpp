@@ -45,4 +45,10 @@ int ComputeSlotTranslation(int translation, int contentIndex)
 	return translation == kBrightmapTranslation ? translation : -contentIndex;
 }
 
+SlotKind ComputeSlotKind(const void *material, int translation)
+{
+	if (material == nullptr) return kSlotWhite;
+	return translation == kBrightmapTranslation ? kSlotBrightmap : kSlotMaterial;
+}
+
 }} // namespace zx::hwrender

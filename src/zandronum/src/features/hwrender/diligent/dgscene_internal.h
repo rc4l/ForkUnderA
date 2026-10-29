@@ -243,6 +243,8 @@ int PassWalkSlot();
 
 // [Doruk-Aksoy] A material and the key its translation is filed under (ComputeSlotTranslation), kBrightmapTranslation for its brightmap.
 struct MatSlot { const void *material; int translation; };
+// [Doruk-Aksoy] The texture a slot holds by its kind (ComputeSlotKind), for every pass that fills a material array.
+Diligent::IDeviceObject *MaterialSlotSRV(const MatSlot &e);
 
 // [rc4l] The scene as the backend holds it on the GPU: one owner for the buffers and batches every pass draws from.
 struct SceneGeometry

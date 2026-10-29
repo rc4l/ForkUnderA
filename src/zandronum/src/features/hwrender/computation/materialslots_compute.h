@@ -20,6 +20,12 @@ static const int kBrightmapTranslation = -0x7fffffff;
 // [Doruk-Aksoy] The key a slot or binding files `translation` under: a brightmap's as given, any other as its palette's index negated (`contentIndex`, MaterialTranslation's), since a game translation keeps its number while its colours change.
 int ComputeSlotTranslation(int translation, int contentIndex);
 
+// [Doruk-Aksoy] What a slot holds: the white placeholder (no material), a material in its translation, or a material's brightmap.
+enum SlotKind { kSlotWhite, kSlotMaterial, kSlotBrightmap };
+
+// [Doruk-Aksoy] The kind of slot a material and translation key make.
+SlotKind ComputeSlotKind(const void *material, int translation);
+
 // [rc4l] The Vulkan limits a fragment stage's sampler array counts against, as VkPhysicalDeviceLimits names them.
 struct DescriptorLimits
 {

@@ -289,10 +289,14 @@ void ResetMaterialSlots()
 }
 
 // [rc4l] What a slot holds: a material in its translation, or, under kBrightmapTranslation, that material's brightmap (black for none).
-static Diligent::IDeviceObject *SlotSRV(const MatSlot &e)
+Diligent::IDeviceObject *MaterialSlotSRV(const MatSlot &e)
 {
-	if (e.translation == kBrightmapTranslation) return GetBrightmapSRV(e.material);
-	return GetMaterialSRV(e.material, e.translation);
+	switch (zx::hwrender::ComputeSlotKind(e.material, e.translation))
+	{
+	case zx::hwrender::kSlotBrightmap: return GetBrightmapSRV(e.material);
+	case zx::hwrender::kSlotMaterial: return GetMaterialSRV(e.material, e.translation);
+	default: return GetMaterialSRV(NULL, 0);
+	}
 }
 
 static int PushMaterialSlot(const void *material, int translation)
@@ -465,7 +469,7 @@ static bool FillMaterialArraySRB(Diligent::IShaderResourceBinding *srb, Diligent
 	{
 		Diligent::IDeviceObject *obj = NULL;
 		if (i < g_matSlotTable.Size())
-			obj = SlotSRV(g_matSlotTable[i]);
+			obj = MaterialSlotSRV(g_matSlotTable[i]);
 		const bool live = (i < g_matSlotTable.Size()) && g_matSlotTable[i].material != NULL;
 		if (obj == NULL) obj = white;
 		// [rc4l] A slot that came back WHITE for a real material is not filled, it is wrong.
