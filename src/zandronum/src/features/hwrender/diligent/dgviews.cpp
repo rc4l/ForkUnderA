@@ -686,8 +686,8 @@ static bool BindMirrorMaterials(unsigned from, bool report)
 	for (Diligent::Uint32 mi = from; mi < to; mi++)
 	{
 		const void *mat = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].material : NULL;
-		const int tr = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].translation : 0;
-		Diligent::IDeviceObject *obj = GetMaterialSRV(mat, tr);
+		// [Doruk-Aksoy] A brightmap's slot holds its brightmap, as the scene's array does, not the material made again under the brightmap key.
+		Diligent::IDeviceObject *obj = mi < MaterialSlots().Size() ? MaterialSlotSRV(MaterialSlots()[mi]) : white;
 		if (obj == nullptr) obj = white;
 		if (mi < MaterialSlots().Size() && mat != NULL && obj == white) fellBack++;
 		v->SetArray(&obj, mi, 1, flags);

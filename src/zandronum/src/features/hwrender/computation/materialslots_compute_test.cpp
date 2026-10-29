@@ -72,3 +72,13 @@ TEST(MaterialSlots, TheBrightmapKeyIsKept)
 	EXPECT_EQ(kBrightmapTranslation, ComputeSlotTranslation(kBrightmapTranslation, -kBrightmapTranslation));
 }
 
+// [Doruk-Aksoy] A slot with no material is the placeholder whatever its key, the brightmap key reads as the brightmap and every other key as the material.
+TEST(MaterialSlots, ASlotsKindFollowsItsMaterialAndKey)
+{
+	static const int material = 0;
+	EXPECT_EQ(kSlotWhite, ComputeSlotKind(nullptr, 0));
+	EXPECT_EQ(kSlotWhite, ComputeSlotKind(nullptr, kBrightmapTranslation));
+	EXPECT_EQ(kSlotBrightmap, ComputeSlotKind(&material, kBrightmapTranslation));
+	EXPECT_EQ(kSlotMaterial, ComputeSlotKind(&material, 0));
+	EXPECT_EQ(kSlotMaterial, ComputeSlotKind(&material, -12));
+}
