@@ -84,6 +84,7 @@ FRemapTable::FRemapTable(int count)
 {
 	assert(count <= 256);
 	Inactive = false;
+	ByLuminance = false;
 	Alloc(count);
 
 	// Note that the tables are left uninitialized. It is assumed that
@@ -169,6 +170,7 @@ FRemapTable &FRemapTable::operator=(const FRemapTable &o)
 		Alloc(o.NumEntries);
 	}
 	Inactive = o.Inactive;
+	ByLuminance = o.ByLuminance;
 	memcpy(Remap, o.Remap, NumEntries*sizeof(*Remap) + NumEntries*sizeof(*Palette));
 	return *this;
 }
@@ -185,6 +187,8 @@ bool FRemapTable::operator==(const FRemapTable &o)
 	// and the palette values for both are identical.
 	if (&o == this) return true;
 	if (o.NumEntries != NumEntries) return false;
+	// [Doruk-Aksoy] A brightness-indexed table recolours differently from an index remap with the same entries.
+	if (o.ByLuminance != ByLuminance) return false;
 	return !memcmp(o.Palette, Palette, NumEntries * sizeof(*Palette));
 }
 

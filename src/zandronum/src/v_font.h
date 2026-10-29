@@ -76,7 +76,7 @@ extern int NumTextColors;
 class FFont
 {
 public:
-	FFont (const char *fontname, const char *nametemplate, int first, int count, int base, int fdlump, int spacewidth=-1);
+	FFont (const char *fontname, const char *nametemplate, int first, int count, int base, int fdlump, int spacewidth=-1, bool donttranslate=false);
 	virtual ~FFont ();
 
 	virtual FTexture *GetChar (int code, int *const width) const;
@@ -108,6 +108,9 @@ protected:
 	void BuildTranslations (const double *luminosity, const BYTE *identity,
 		const void *ranges, int total_colors, const PalEntry *palette);
 	void FixXMoves();
+	// [Doruk-Aksoy] features/truecolorfont: the glyphs from their sources, kept whole when every one is truecolor, and that font's colours.
+	void MakeGlyphs (FTexture **charlumps, int count);
+	void LoadLuminosityTranslations ();
 
 	static int SimpleTranslation (BYTE *colorsused, BYTE *translation,
 		BYTE *identity, double **luminosity);
@@ -117,6 +120,9 @@ protected:
 	int FontHeight;
 	int GlobalKerning;
 	char Cursor;
+	bool TrueColor;			// [Doruk-Aksoy] each glyph is its truecolor source texture, drawn with its own pixels
+	bool DontTranslate;		// [Doruk-Aksoy] FONTDEFS DONTTRANSLATE: every colour draws as Untranslated
+	int MinLum, MaxLum;		// [Doruk-Aksoy] a truecolor font's darkest and brightest texel
 	struct CharData
 	{
 		FTexture *Pic;

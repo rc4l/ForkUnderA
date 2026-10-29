@@ -78,6 +78,8 @@ The FON2 header is followed by variable length data:
 #include <string.h>
 #include <math.h>
 #include <ctype.h>
+#include <climits>
+#include <cstdint>
 
 #include "templates.h"
 #include "doomtype.h"
@@ -92,6 +94,7 @@ The FON2 header is followed by variable length data:
 #include "hu_stuff.h"
 #include "farchive.h"
 #include "textures/textures.h"
+#include "textures/bitmap.h"   // [Doruk-Aksoy] a truecolor glyph's pixels, for its font's brightness range
 #include "r_data/r_translate.h"
 #include "colormatcher.h"
 #include "v_palette.h"
@@ -101,6 +104,7 @@ The FON2 header is followed by variable length data:
 #include "features/handoff/effects.h"   // [rc4l] Deferring
 #include "features/handoff/gamethread.h"   // [rc4l] AskMain
 #include "features/handoff/seam.h"   // [rc4l] font/load
+#include "features/truecolorfont/computation/truecolorfont_compute.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -110,13 +114,7 @@ The FON2 header is followed by variable length data:
 void RecordTextureColors (FTexture *pic, BYTE *colorsused);
 
 // This structure is used by BuildTranslations() to hold color information.
-struct TranslationParm
-{
-	short RangeStart;	// First level for this range
-	short RangeEnd;		// Last level for this range
-	BYTE Start[3];		// Start color for this range
-	BYTE End[3];		// End color for this range
-};
+using zx::truecolorfont::TranslationParm;
 
 struct TranslationMap
 {
@@ -169,7 +167,7 @@ protected:
 class FSpecialFont : public FFont
 {
 public:
-	FSpecialFont (const char *name, int first, int count, FTexture **lumplist, const bool *notranslate, int lump);
+	FSpecialFont (const char *name, int first, int count, FTexture **lumplist, const bool *notranslate, int lump, bool donttranslate);
 
 	void LoadTranslations();
 
@@ -408,7 +406,7 @@ FArchive &SerializeFFontPtr (FArchive &arc, FFont* &font)
 //
 //==========================================================================
 
-FFont::FFont (const char *name, const char *nametemplate, int first, int count, int start, int fdlump, int spacewidth)
+FFont::FFont (const char *name, const char *nametemplate, int first, int count, int start, int fdlump, int spacewidth, bool donttranslate)
 {
 	int i;
 	FTextureID lump;
@@ -430,6 +428,7 @@ FFont::FFont (const char *name, const char *nametemplate, int first, int count, 
 	Next = FirstFont;
 	FirstFont = this;
 	Cursor = '_';
+	DontTranslate = donttranslate;
 
 	maxyoffs = 0;
 
@@ -478,18 +477,8 @@ FFont::FFont (const char *name, const char *nametemplate, int first, int count, 
 				}
 			}
 		}
-
-		if (charlumps[i] != NULL)
-		{
-			Chars[i].Pic = new FFontChar1 (charlumps[i]);
-			Chars[i].XMove = Chars[i].Pic->GetScaledWidth();
-		}
-		else
-		{
-			Chars[i].Pic = NULL;
-			Chars[i].XMove = INT_MIN;
-		}
 	}
+	MakeGlyphs (charlumps, count);
 
 	if (spacewidth != -1)
 	{
@@ -523,7 +512,8 @@ FFont::~FFont ()
 	{
 		int count = LastChar - FirstChar + 1;
 
-		for (int i = 0; i < count; ++i)
+		// [Doruk-Aksoy] A truecolor font's glyphs are the texture manager's own textures.
+		for (int i = 0; i < count && !TrueColor; ++i)
 		{
 			if (Chars[i].Pic != NULL && Chars[i].Pic->Name[0] == 0)
 			{
@@ -760,38 +750,99 @@ void FFont::BuildTranslations (const double *luminosity, const BYTE *identity,
 
 		for (j = 1; j < ActiveColors; j++)
 		{
-			int v = int(luminosity[j] * 256.0);
-
-			// Find the color range that this luminosity value lies within.
-			const TranslationParm *parms = parmstart - 1;
-			do
-			{
-				parms++;
-				if (parms->RangeStart <= v && parms->RangeEnd >= v)
-					break;
-			}
-			while (parms[1].RangeStart > parms[0].RangeEnd);
-
-			// Linearly interpolate to find out which color this luminosity level gets.
-			int rangev = ((v - parms->RangeStart) << 8) / (parms->RangeEnd - parms->RangeStart);
-			int r = ((parms->Start[0] << 8) + rangev * (parms->End[0] - parms->Start[0])) >> 8; // red
-			int g = ((parms->Start[1] << 8) + rangev * (parms->End[1] - parms->Start[1])) >> 8; // green
-			int b = ((parms->Start[2] << 8) + rangev * (parms->End[2] - parms->Start[2])) >> 8; // blue
-			r = clamp(r, 0, 255);
-			g = clamp(g, 0, 255);
-			b = clamp(b, 0, 255);
-			remap.Remap[j] = ColorMatcher.Pick(r, g, b);
-			remap.Palette[j] = PalEntry(255,r,g,b);
+			// [Doruk-Aksoy] The colour this luminosity level gets, as a truecolor font's brightness ramp works it out.
+			const PalEntry c = zx::truecolorfont::ComputeRangeColor(parmstart, int(luminosity[j] * 256.0));
+			remap.Remap[j] = ColorMatcher.Pick(c.r, c.g, c.b);
+			remap.Palette[j] = c;
 		}
 		Ranges.Push(remap);
 
-		// Advance to the next color range.
-		while (parmstart[1].RangeStart > parmstart[0].RangeEnd)
-		{
-			parmstart++;
-		}
-		parmstart++;
+		parmstart = zx::truecolorfont::ComputeNextColorParms(parmstart);
 	}
+}
+
+//==========================================================================
+//
+// FFont :: MakeGlyphs
+//
+//==========================================================================
+
+// [Doruk-Aksoy] Ported from uzdoom@5f02b92cd0843026a6bc20743915333041c96cd7: a font whose glyphs are all truecolor draws each from its source texture, so it keeps its colours; any other wraps its glyphs to be mapped to the palette.
+void FFont::MakeGlyphs (FTexture **charlumps, int count)
+{
+	TArray<zx::truecolorfont::GlyphSource> sources(count);
+	for (int i = 0; i < count; i++)
+	{
+		sources.Push(charlumps[i] == NULL ? zx::truecolorfont::kGlyphAbsent
+			: charlumps[i]->GetFormat() == TEX_Pal ? zx::truecolorfont::kGlyphPaletted : zx::truecolorfont::kGlyphTrueColor);
+	}
+	TrueColor = zx::truecolorfont::ComputeFontKeepsTrueColor(count > 0 ? &sources[0] : NULL, count);
+
+	MinLum = 255;
+	MaxLum = 0;
+	for (int i = 0; i < count; i++)
+	{
+		FTexture *pic = charlumps[i];
+		if (pic == NULL)
+		{
+			Chars[i].Pic = NULL;
+			Chars[i].XMove = INT_MIN;
+			continue;
+		}
+		Chars[i].Pic = TrueColor ? pic : new FFontChar1 (pic);
+		Chars[i].XMove = Chars[i].Pic->GetScaledWidth();
+		if (TrueColor)
+		{
+			// [Doruk-Aksoy] The glyphs' brightness range, read once here, since a colour's table stretches its ramp over it.
+			FBitmap bmp;
+			if (bmp.Create(pic->GetWidth(), pic->GetHeight()))
+			{
+				pic->CopyTrueColorPixels(&bmp, 0, 0);
+				zx::truecolorfont::ComputeLuminosityRange(bmp.GetPixels(), bmp.GetWidth() * bmp.GetHeight(),
+					zx::truecolorfont::kBGRA, MinLum, MaxLum);
+			}
+		}
+	}
+}
+
+//==========================================================================
+//
+// FFont :: LoadLuminosityTranslations
+//
+//==========================================================================
+
+// [Doruk-Aksoy] Ported from uzdoom@5f02b92cd0843026a6bc20743915333041c96cd7: Untranslated is an inactive table, so the glyphs draw their own pixels, and each other colour is its brightness ramp stretched over the font's texels.
+void FFont::LoadLuminosityTranslations ()
+{
+	const TranslationParm *parmstart = &TranslationParms[0][0];
+	FRemapTable remap(256);
+	uint32_t ramp[256], table[256];
+
+	Ranges.Clear();
+	for (int i = 0; i < NumTextColors; i++)
+	{
+		const bool untranslated = i == CR_UNTRANSLATED;
+		if (untranslated)
+		{
+			// [Doruk-Aksoy] A grey ramp, as UZDoom keeps for Untranslated, for any caller that reads a colour off the table.
+			for (int j = 0; j < 256; j++) table[j] = MAKEARGB(255, j, j, j);
+		}
+		else
+		{
+			zx::truecolorfont::ComputeLuminosityRamp(parmstart, ramp);
+			zx::truecolorfont::ComputeLuminosityTable(ramp, MinLum, MaxLum, table);
+			parmstart = zx::truecolorfont::ComputeNextColorParms(parmstart);
+		}
+		for (int j = 0; j < 256; j++)
+		{
+			remap.Palette[j] = table[j];
+			remap.Remap[j] = ColorMatcher.Pick(remap.Palette[j].r, remap.Palette[j].g, remap.Palette[j].b);
+		}
+		remap.Inactive = untranslated;
+		remap.ByLuminance = !untranslated;
+		Ranges.Push(remap);
+	}
+	ActiveColors = 256;
 }
 
 //==========================================================================
@@ -804,7 +855,8 @@ FRemapTable *FFont::GetColorTranslation (EColorRange range) const
 {
 	if (ActiveColors == 0)
 		return NULL;
-	else if (range >= NumTextColors)
+	// [Doruk-Aksoy] A DONTTRANSLATE font draws every colour as its own pixels, as UZDoom gives it no colours.
+	else if (range >= NumTextColors || DontTranslate)
 		range = CR_UNTRANSLATED;
 	return &Ranges[range];
 }
@@ -963,6 +1015,11 @@ int FFont::StringHeight(const char *str, int *yOffset) const
 
 void FFont::LoadTranslations()
 {
+	if (TrueColor)
+	{
+		LoadLuminosityTranslations();
+		return;
+	}
 	unsigned int count = LastChar - FirstChar + 1;
 	BYTE usedcolors[256], identity[256];
 	double *luminosity;
@@ -1049,6 +1106,10 @@ FFont::FFont (int lump)
 	PatchRemap = NULL;
 	Name = NULL;
 	Cursor = '_';
+	TrueColor = false;
+	DontTranslate = false;
+	MinLum = 255;
+	MaxLum = 0;
 }
 
 //==========================================================================
@@ -2004,7 +2065,7 @@ void FFontChar2::MakeTexture ()
 //
 //==========================================================================
 
-FSpecialFont::FSpecialFont (const char *name, int first, int count, FTexture **lumplist, const bool *notranslate, int lump) : FFont(lump)
+FSpecialFont::FSpecialFont (const char *name, int first, int count, FTexture **lumplist, const bool *notranslate, int lump, bool donttranslate) : FFont(lump)
 {
 	int i;
 	FTexture **charlumps;
@@ -2012,6 +2073,7 @@ FSpecialFont::FSpecialFont (const char *name, int first, int count, FTexture **l
 	FTexture *pic;
 
 	memcpy(this->notranslate, notranslate, 256*sizeof(bool));
+	DontTranslate = donttranslate;
 
 	Name = copystring(name);
 	Chars = new CharData[count];
@@ -2044,18 +2106,8 @@ FSpecialFont::FSpecialFont (const char *name, int first, int count, FTexture **l
 				FontHeight = height;
 			}
 		}
-
-		if (charlumps[i] != NULL)
-		{
-			Chars[i].Pic = new FFontChar1 (charlumps[i]);
-			Chars[i].XMove = Chars[i].Pic->GetScaledWidth();
-		}
-		else
-		{
-			Chars[i].Pic = NULL;
-			Chars[i].XMove = INT_MIN;
-		}
 	}
+	MakeGlyphs (charlumps, count);
 
 	// Special fonts normally don't have all characters so be careful here!
 	if ('N'-first >= 0 && 'N'-first < count && Chars['N' - first].Pic != NULL)
@@ -2082,6 +2134,12 @@ FSpecialFont::FSpecialFont (const char *name, int first, int count, FTexture **l
 
 void FSpecialFont::LoadTranslations()
 {
+	// [Doruk-Aksoy] NOTRANSLATION names palette indices, which a truecolor font's pixels are not, as in UZDoom.
+	if (TrueColor)
+	{
+		LoadLuminosityTranslations();
+		return;
+	}
 	int count = LastChar - FirstChar + 1;
 	BYTE usedcolors[256], identity[256];
 	double *luminosity;
@@ -2208,6 +2266,7 @@ void V_InitCustomFonts()
 	int first;
 	int count;
 	int spacewidth;
+	bool donttranslate;
 	char cursor = '_';
 
 	while ((llump = Wads.FindLump ("FONTDEFS", &lastlump)) != -1)
@@ -2223,6 +2282,7 @@ void V_InitCustomFonts()
 			first = 33;
 			count = 223;
 			spacewidth = -1;
+			donttranslate = false;
 
 			sc.MustGetStringName ("{");
 			while (!sc.CheckString ("}"))
@@ -2268,6 +2328,11 @@ void V_InitCustomFonts()
 					spacewidth = sc.Number;
 					format = 1;
 				}
+				// [Doruk-Aksoy] Ported from uzdoom@5f02b92cd0843026a6bc20743915333041c96cd7: a font of either format that never recolours.
+				else if (sc.Compare ("DONTTRANSLATE"))
+				{
+					donttranslate = true;
+				}
 				else if (sc.Compare ("NOTRANSLATION"))
 				{
 					if (format == 1) goto wrong;
@@ -2298,7 +2363,7 @@ void V_InitCustomFonts()
 			}
 			if (format == 1)
 			{
-				FFont *fnt = new FFont (namebuffer, templatebuf, first, count, start, llump, spacewidth);
+				FFont *fnt = new FFont (namebuffer, templatebuf, first, count, start, llump, spacewidth, donttranslate);
 				fnt->SetCursor(cursor);
 			}
 			else if (format == 2)
@@ -2321,7 +2386,7 @@ void V_InitCustomFonts()
 				}
 				if (count > 0)
 				{
-					FFont *fnt = new FSpecialFont (namebuffer, first, count, &lumplist[first], notranslate, llump);
+					FFont *fnt = new FSpecialFont (namebuffer, first, count, &lumplist[first], notranslate, llump, donttranslate);
 					fnt->SetCursor(cursor);
 				}
 			}

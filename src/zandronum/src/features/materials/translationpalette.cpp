@@ -59,10 +59,12 @@ bool FTranslationPalette::Update()
 
 	memset(pd.pe, 0, sizeof(pd.pe));
 	memcpy(pd.pe, remap->Palette, remap->NumEntries * sizeof(*remap->Palette));
-	pd.crc32 = CalcCRC32((BYTE*)pd.pe, sizeof(pd.pe));
+	pd.byLuminance = remap->ByLuminance;
+	// [Doruk-Aksoy] The flag is in the key, so a brightness table never shares an index with an index remap of the same entries.
+	pd.crc32 = CalcCRC32((BYTE*)pd.pe, sizeof(pd.pe)) ^ (pd.byLuminance ? 0x4C554D41 : 0);
 	for(unsigned int i=0;i< AllPalettes.Size(); i++)
 	{
-		if (pd.crc32 == AllPalettes[i].crc32)
+		if (pd.crc32 == AllPalettes[i].crc32 && pd.byLuminance == AllPalettes[i].byLuminance)
 		{
 			if (!memcmp(pd.pe, AllPalettes[i].pe, sizeof(pd.pe))) 
 			{
