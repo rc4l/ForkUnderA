@@ -5,7 +5,7 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/pieceorder_compute.h"   // [rc4l] ComputePieceOrderKey
-#include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV
+#include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV, ComputeAtlasPieceEligible
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeUserShaderOf
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
@@ -192,7 +192,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			if (dynVerts[k] == 0) continue;
 			const zx::levelmesh::MeshPiece &p = pieces[k];
 			slots[k] = PieceSlots(p, p.translation, false);
-			if (atlas) atlased[k] = AtlasFor(p.material, p.translation, p.quad && !p.depthBias && !p.solid && !p.hud && p.mirrorView < 0 && p.onMirror < 0);
+			if (atlas) atlased[k] = AtlasFor(p.material, p.translation,
+				zx::hwrender::ComputeAtlasPieceEligible({ p.quad, p.depthBias, p.solid, p.hud, p.mirrorView, p.onMirror, p.fuzz }));
 			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
 		}
 		// [rc4l] Every record filled on the pool, and each plain quad packed with its corners (ComputeSpritePack) unless a traced mirror reads its record.

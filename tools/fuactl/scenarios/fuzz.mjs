@@ -4,7 +4,9 @@
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
 import { runScenarioIfMain, GL_VS_VULKAN } from "../src/template.mjs";
 
-const FUZZY_PILLAR = 15003;
+export const FUZZY_PILLAR = 15003;
+// [Doruk-Aksoy] The fuzzy pillar's actor as a lump, so another template can stand one too.
+export const FUZZY_DECORATE = { name: "DECORATE", data: `actor ZXFuzzyPillar : TechPillar ${FUZZY_PILLAR}\n{\n  RenderStyle Fuzzy\n}\n` };
 
 // [rc4l] A tech pillar drawn fuzzy, as a spectre is, against a bright wall; MAP01 to MAP07 draw it under r_fuzztype 1 to 7.
 export function buildFuzzWad() {
@@ -13,8 +15,7 @@ export function buildFuzzWad() {
     lightlevel: 255 }, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.thing({ x: 256, y: 300, angle: 90, type: FUZZY_PILLAR });
   m.thing({ x: 256, y: 160, angle: 90, type: 1 });
-  return wad([...mapLumps("MAP01", m),
-    { name: "DECORATE", data: `actor ZXFuzzyPillar : TechPillar ${FUZZY_PILLAR}\n{\n  RenderStyle Fuzzy\n}\n` }]);
+  return wad([...mapLumps("MAP01", m), FUZZY_DECORATE]);
 }
 
 export const VANTAGES = [{ name: "facing", at: { x: 256, y: 160, z: 0, angle: 90, pitch: 0 } }];

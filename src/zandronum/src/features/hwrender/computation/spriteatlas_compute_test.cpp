@@ -82,6 +82,27 @@ TEST(SpriteAtlasCompute, OnlyPlainPointSampledSpritesOnThePerMaterialPathDrawFro
 	EXPECT_FALSE(ComputeAtlasEligible(c, 512));
 }
 
+// [Doruk-Aksoy] Only a plain flat sprite counts, and each fact that makes a piece something else refuses it alone.
+TEST(SpriteAtlasCompute, OnlyAPlainFlatSpriteCountsAsOne)
+{
+	const AtlasPieceFacts yes = { true, false, false, false, -1, -1, 0 };
+	EXPECT_TRUE(ComputeAtlasPieceEligible(yes));
+	AtlasPieceFacts f = yes; f.quad = false;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f));
+	f = yes; f.depthBias = true;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f));
+	f = yes; f.solid = true;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f));
+	f = yes; f.hud = true;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f));
+	f = yes; f.mirrorView = 0;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f));
+	f = yes; f.onMirror = 0;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f));
+	f = yes; f.fuzz = 5;
+	EXPECT_FALSE(ComputeAtlasPieceEligible(f)) << "fuzz reads the sprite's own coordinates, which a page would change";
+}
+
 TEST(SpriteAtlasCompute, AnImageIsFramedInTransparentTexels)
 {
 	const unsigned char px[2 * 1 * 4] = { 1, 2, 3, 4, 5, 6, 7, 8 };
