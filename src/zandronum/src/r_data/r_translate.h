@@ -100,6 +100,8 @@ void R_InitTranslationTables (void);
 void R_DeinitTranslationTables();
 
 void R_BuildPlayerTranslation (int player);		// [RH] Actually create a player's translation table.
+// [Doruk-Aksoy] Remakes a translation's palette after its table changed, in the handoff when a tic on its own thread asks (features/handoff).
+void R_UpdateTranslationNative (int translation);
 void R_GetPlayerTranslation (int color, const struct FPlayerColorSet *colorset, class FPlayerSkin *skin, struct FRemapTable *table);
 
 // [Dusk] Does R_BuildPlayerTranslation for all active players.
