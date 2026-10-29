@@ -291,6 +291,13 @@ test("the scroll-floor template's block carries the scrolling sector type and th
   assert.ok(at[0].at.y < 512, "the camera must not stand on the scroller, which would carry it");
 });
 
+// [Doruk-Aksoy] The step between its captures moves the floor 2 units a tic, never a whole 64-unit tile of FLAT14, so the two can never match.
+test("the scroll-floor template steps a distance that is not a whole tile", async () => {
+  const { STEP_TICS } = await import("../scenarios/scrollfloor.mjs");
+  assert.ok(STEP_TICS > 0);
+  assert.notEqual((STEP_TICS * 2) % 64, 0);
+});
+
 // [rc4l] Each new template's ingredient read back out of its own TEXTMAP, so a builder that drops it fails here rather than as a scenario that tests nothing.
 const textmaps = (buf) => readWad(buf).filter((l) => l.name === "TEXTMAP").map((l) => parseUdmf(l.data.toString("latin1")));
 
