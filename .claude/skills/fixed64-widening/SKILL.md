@@ -13,7 +13,7 @@ on right turns, doors flung across the map — but they are **all one bug told m
 > **A piece of code assumed `fixed_t` is exactly 32 bits. Widening silently changed its result.**
 
 The value of this skill is that you do **not** need to remember the ~15 fix commits. You need
-the **six shapes** below, the **tools that surface them**, and the **fix protocol**. The real
+the **seven shapes** below, the **tools that surface them**, and the **fix protocol**. The real
 commits are worked examples in `references/prior-art.md` — reach for them only to see a shape
 in the flesh.
 
@@ -50,7 +50,7 @@ meant to stay narrow.
 
 ---
 
-## The six shapes (this is the whole taxonomy)
+## The seven shapes (this is the whole taxonomy)
 
 | # | Shape | The tell in the code | Why widening breaks it | The durable fix |
 |---|---|---|---|---|
@@ -60,6 +60,7 @@ meant to stay narrow.
 | 4 | **Wrap reliance** | a bare `*` that *wanted* the 32-bit product to overflow (compat slopes, some bot math) | the product is now full-magnitude, not wrapped | make the wrap explicit: `zx::Mul32Wrap` |
 | 5 | **Overload flip (strong type)** | `FRACUNIT * sin(x)` / `Fixed * <float>` / integer-literal calls tied between a `fixed_t` and a `double` overload | `FRACUNIT` is now a strong `Fixed`, so `Fixed * double` bound to `Fixed * int` and truncated the float to 0 (this **zeroed the whole finesine table** → puffs/movement/sight/render dead at non-cardinal angles) | close it in the type (already SFINAE-deleted); at call sites wrap the intended float math as `double(...)`; cast ambiguous integer-literal args to `fixed_t` |
 | 6 | **Signed-shift UB** | `a << n` where `a` is signed and can be negative | left-shifting a negative is undefined behaviour; UBSan flags it | multiply by `1 << n` (positive shift, then a defined signed multiply) |
+| 7 | **Vararg width mismatch** | `va_arg(tags, fixed_t)`, or a `fixed_t` passed through `...` (a `DTA_*` tag list, a `Printf`) | an x64 vararg slot is 8 bytes and an `int` writes only its low half, so a 64-bit read takes the upper half from whatever the stack last held (DnD's credits read alpha `0xC070000000010000`, the `-256.0` of the image drawn before them, and vanished); a `fixed_t` read back as `int` happens to work on x64 and misaligns the list on a 32-bit target | read one declared 32-bit type (`zx::draw2d::TagFixed`), and refuse a `fixed_t` or 64-bit integer in the list at compile time (`ComputeTagArgsAreSafe` behind `DCanvas::DrawTexture`/`DrawText`/`DrawChar`); callers pass `int(...)` |
 
 Symptom → shape shortcuts:
 - **"wrong only at non-cardinal angles"** → shape 5 or 2 (a trig table got zeroed/corrupted).
@@ -67,6 +68,8 @@ Symptom → shape shortcuts:
 - **"wrong only far away / on giant maps"** → shape 1 (truncation past 32k units).
 - **"builds fine, wrong at runtime, no warning"** → shapes 1/3 (implicit narrowings are silent).
 - **"UBSan fails but local ctest passes"** → shape 6 (see the halt_on_error gotcha below).
+- **"a HUD or menu element vanishes, or loses its translucency, only after some other draw"** → shape 7
+  (its alpha took the previous call's leftover bits; `features/draw2d/computation/drawtags_compute.h`).
 - **"wrong only when aiming up / pitch is negative, netgame only"** → shape 3 at a *conversion* (an
   `angle_t`/`unsigned` holding a signed pitch was ZERO-extended into the widened `fixed_t`). This is
   the reverse of the mask case and shipped a real bug: `fixed_t(moveCmd.pitch)` with an unsigned
@@ -124,7 +127,10 @@ grep -rnE "memcpy\(|sizeof\(angle_t\)|sizeof\(fixed_t\)" $S           # shape 2
 grep -rnE "0x[0-9A-Fa-f]{8}\b" $S                                     # shape 3 (32-bit masks)
 grep -rnE "\b(FixedMul|MulScale[0-9]*|DMulScale[0-9]*|Scale)\b" $S    # shapes 3/4 (audit operands)
 grep -rnE "fixed_t[^;]*;\s*//.*(on-disk|lump|wire)" $S                # shape 2 (on-disk fields)
+grep -rnE "va_arg *\([^,]+, *(fixed_t|zx::Fixed)" $S                  # shape 7 (a 64-bit vararg read)
 ```
+A `fixed_t` handed to a 2D draw's tag list no longer compiles (`ZX_DRAWTAGS_REFUSED`); a variadic API of
+its own needs the same guard, and `tools/fuactl/scenarios/huddraws.mjs` shows one failing in the engine.
 For the `FixedMul`/`MulScale`/`Scale` family, check every operand: is any operand an **unsigned**
 quantity (angle delta) or a value that can exceed 32-bit fixed? Those are the shape-3/4 sites.
 
@@ -177,8 +183,8 @@ genuinely new shape, add a new `Compute*` next to these with its own colocated `
 
 ## The one-paragraph version
 
-Widening `fixed_t` to 64-bit broke code that assumed it was 32-bit. There are six shapes:
-truncation, sizeof/width, unsigned-as-signed, wrap-reliance, overload-flip, signed-shift-UB. Find
+Widening `fixed_t` to 64-bit broke code that assumed it was 32-bit. There are seven shapes:
+truncation, sizeof/width, unsigned-as-signed, wrap-reliance, overload-flip, signed-shift-UB, vararg-width. Find
 them with a `-Wshorten-64-to-32` sweep, UBSan `halt_on_error=1`, and greps of the `FixedMul` family
 and 8-hex-digit masks. Fix them by extracting a pure `zx::Compute*` helper, writing a test that
 reproduces the wrong value first, and closing the class in the type — never a lone spot fix. Keep

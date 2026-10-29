@@ -37,6 +37,14 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
   (`ComputePolyTexCoords`) and colour (`CapturePolyColor`) as GL works them, recorded as the fan's triangles
   (`ComputePolyTriangles`, records of kind `kQuadTri`), which the backend draws with the texture repeating.
 
+- `computation/drawtags_compute`: what a 2D draw's tag list carries. `TagFixed` is the 32-bit int a 16.16
+  tag (`DTA_Alpha`, `DTA_ShadowAlpha`) is passed and read as, and `ComputeTagAlpha` keeps it at most opaque.
+  Reading those as the 64-bit `fixed_t` took the slot's upper half from whatever the stack held, so a status
+  bar string drawn after an image at a negative x (DnD's credits) came out with a negative alpha and vanished.
+  `ComputeTagArgsAreSafe` refuses a `fixed_t` or 64-bit integer anywhere in a tag list at compile time:
+  pass `int(...)`, as every tag is read 32 bits wide, or a double or pointer where the tag takes one.
+  `tools/fuactl/scenarios/huddraws.mjs` holds SBARINFO and ACS draws to it in the engine.
+
 ## In-engine hooks
 
 - `gl/renderer/gl_renderer.cpp` `FGLRenderer::DrawTexture`, `DrawLine`, `DrawPixel`, `Dim` and `Clear`:
@@ -51,3 +59,6 @@ is not GL can take the 2D layer from here directly (P5), and the two cannot drif
   a draw meant for the backend's window alone (`Get2DTarget`).
 - `features/hwrender/diligent/dg2d.cpp`: the backend draws `Quads2D`, all of them or a range into another target.
 - `features/frame/playerview.cpp` `RenderPlayerView`: `MarkViewQuads` once the view's own are recorded.
+- `v_video.h` `DCanvas::DrawTexture`, `DrawText`, `DrawTextA` and `DrawChar`: templates that check every tag
+  value with `ComputeTagArgsAreSafe`, then hand the list to `DrawTextureList`, `DrawTextList` and `DrawCharList`.
+- `v_draw.cpp` `ParseDrawTextureTags`: `DTA_Alpha` and `DTA_ShadowAlpha` read as `TagFixed` through `ComputeTagAlpha`.
