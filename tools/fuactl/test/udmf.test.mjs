@@ -590,3 +590,26 @@ test("the translation-change template recolours its tagged pillar from MAP01's s
   assert.ok(at(first, [PCD.LSPEC1 + 1, SPECIAL.Thing_SetTranslation]) >= 0);
   assert.ok(at(second, range(RED[0])) >= 0 && at(second, range(GREEN[0])) < 0, "MAP02 red from its start");
 });
+
+test("the slot-recycle template gives every pillar a class and translation of its own, more of them than 128 slots, 40 to a room", async () => {
+  const { buildSlotRecycleWad, ROOMS, PER_ROOM, FIRST_EDNUM, judgeSlotRecycle, SLOT_LINE } = await import("../scenarios/slotrecycle.mjs");
+  const buf = buildSlotRecycleWad();
+  const decorate = readWad(buf).find((l) => l.name === "DECORATE").data.toString("latin1");
+  const translations = [...decorate.matchAll(/Translation "([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(translations.length, ROOMS * PER_ROOM);
+  assert.equal(new Set(translations).size, translations.length, "every pillar's palette is its own");
+  assert.ok(ROOMS * PER_ROOM > 128 && PER_ROOM < 128);
+  const [u] = textmaps(buf);
+  const pillars = u.thing.filter((t) => t.type >= FIRST_EDNUM);
+  assert.equal(new Set(pillars.map((t) => t.type)).size, ROOMS * PER_ROOM);
+  // [Doruk-Aksoy] The verdict wants the table line, recycling, bindless on and every visit alike.
+  const line = "material slots: 128 of 128 in the table, 4 pinned, 118 recycled since load, bindless on, past the fill (0 since load)";
+  assert.match(line, SLOT_LINE);
+  assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 0, room: 0, diff: 0 }] }).failed, 0);
+  assert.equal(judgeSlotRecycle("t", { stats: line.replace("118 recycled", "0 recycled"), diffs: [] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line.replace("bindless on", "bindless off"), diffs: [] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line.replace("(0 since", "(3 since"), diffs: [] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 5, room: 0, diff: 0.5 }] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 5, room: 0, diff: null }] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: "no line", diffs: [] }).failed, 1);
+});

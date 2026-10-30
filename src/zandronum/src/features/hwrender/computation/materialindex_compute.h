@@ -30,6 +30,9 @@ void ComputeMaterialIndexInsert(MaterialIndex &index, const void *material, int 
 // [rc4l] The key's value, -1 when absent.
 int ComputeMaterialIndexFind(const MaterialIndex &index, const void *material, int translation);
 
+// [Doruk-Aksoy] Removes the key, shifting the keys probed past it back so each stays findable; false when it was absent.
+bool ComputeMaterialIndexErase(MaterialIndex &index, const void *material, int translation);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_MATERIALINDEX_COMPUTE_H

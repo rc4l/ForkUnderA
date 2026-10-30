@@ -507,6 +507,7 @@ static const bool s_uploadBreakdown = (zx::telemetry::RegisterBreakdown("gpu/upl
 void SendToBuffer(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
 {
 	ctx->UpdateBuffer(buf, offset, bytes, data, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	NoteBufferWritten(buf);
 	ZX_COUNT("gpu/upload_bytes", "bytes", (double)bytes);
 	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
 	zx::hwrender::ComputeUploadTallyAdd(g_uploadTally, buf->GetDesc().Name, (double)bytes);
@@ -1028,6 +1029,8 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 {
 	if (fua_dg_frameprep && g_preparedSerial == g_frame.serial) return;
 	g_preparedSerial = g_frame.serial;
+	// [Doruk-Aksoy] Slots may give way to new keys until this frame's fill, and not after it.
+	OpenMaterialSlots();
 	g_phase.Reset();
 	{
 		const zx::framephase::Scope uploadPhase(zx::framephase::kPhaseUpload);
@@ -1041,6 +1044,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	UpdateSectorLightTable(ctx);
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
 	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { MeasureSlotWorkingSet(); ReserveDynamicSlots(); RefreshBindless(); }
+	SealMaterialSlots();
 	g_phase.animation.Clock();
 	// [rc4l] Re-resolve animated textures, since a batch's material was resolved once at bake time and would freeze on its first frame.
 	// [rc4l] Each base texture asked once, its batches gathered by ComputeGroupByKey: wdiex01's 48,000 batches share about 700 textures, and asking per batch cost 0.06 ms a frame.
@@ -1075,6 +1079,8 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 				if (now == b.resolved) continue;
 				b.resolved = now;
 				g_stats.animSwaps++;
+				// [Doruk-Aksoy] The world binding draws it while the material array is live, so none of its own is made; BatchSRB makes one for the frame showing if bindless goes off.
+				if (BindlessActive()) { b.srb = NULL; continue; }
 				Diligent::IPipelineState *pso = BatchPSO(b.blend);
 				if (pso != psoAsked) { psoAsked = pso; srbAsked = GetMaterialSRB(pso, now); }
 				if (srbAsked) b.srb = srbAsked;
@@ -1180,6 +1186,7 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// The run is flushed whenever the chain breaks -- a translucent batch in the middle, an empty
 	// one, a culled one -- so this is exactly the old loop with the boundaries removed, and it stays
 	// correct when batch culling is on.
+	zx::hwrender::LoopCommits commits = zx::hwrender::ComputeLoopCommitsStart();
 	for (int rep = 0; rep < g_frame.drawRepeat; rep++)
 	{
 		Diligent::IShaderResourceBinding *bound = NULL;
@@ -1243,12 +1250,9 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 			}
 			// [rc4l] A batch skipped draws nothing and binds nothing, so the binding stays committed across it; the sky pass skips most of the level.
 			if (!take) { if (!fua_dg_loopcommits) bound = NULL; continue; }
-			if (run != boundRun) { ctx->SetPipelineState(run); boundRun = run; bound = NULL; }
-			if (srb != bound)
-			{
-				ctx->CommitShaderResources(srb, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-				bound = srb;
-			}
+			if (SwitchPipeline(ctx, boundRun, run)) bound = NULL;
+			// [Doruk-Aksoy] Committed again after each switch, its resources' states checked only the first time, since nothing in the loop changes them.
+			if (srb != bound) { CommitInLoop(ctx, commits, srb); bound = srb; }
 			runFirst = b->first; runCount = b->count;
 			g_stats.batchesDrawn++;
 		}

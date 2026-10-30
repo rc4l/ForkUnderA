@@ -35,11 +35,6 @@ std::string ComputeMaterialShaderDefines(unsigned slots)
 	return d;
 }
 
-unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned filled)
-{
-	return from == 0 ? capacity : (filled < capacity ? filled : capacity);
-}
-
 int ComputeSlotTranslation(int translation, int contentIndex)
 {
 	return translation == kBrightmapTranslation ? translation : -contentIndex;

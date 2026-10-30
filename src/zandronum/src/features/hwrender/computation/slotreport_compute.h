@@ -71,8 +71,11 @@ void ComputeSlotReport(const std::vector<SlotFacts> &slots, int pageSize, int ma
 // [Doruk-Aksoy] The slots an atlas leaves: the ones it does not take, a slot per page, and a brightmap page per page when it takes any brightmaps.
 int ComputeSlotsWithAtlas(int slots, int images, int brightmaps, int pages);
 
-// [Doruk-Aksoy] The report as text: inTable of its slots in the table of capacity, the rest refused once it filled, and the top sprite families.
-std::string ComputeSlotReportText(const SlotTally &r, int inTable, int capacity, int pageSize, int maxSide, int top);
+// [Doruk-Aksoy] The table the keys went into: the slots it holds of its capacity, those pinned, how often a slot was given to a new key, and the keys refused once none could give way.
+struct SlotTableFacts { int inTable, capacity, pinned, recycled, refused; };
+
+// [Doruk-Aksoy] The report as text: the keys wanted against the table, what an atlas would leave, and the top sprite families.
+std::string ComputeSlotReportText(const SlotTally &r, const SlotTableFacts &table, int pageSize, int maxSide, int top);
 
 }} // namespace zx::hwrender
 

@@ -85,6 +85,17 @@ fight's frame. The slot table and the bindings per material file a game translat
 (`ComputeSlotTranslation`), since ACS, a player's colour change or a reused corpse slot redefines a translation
 under the same number (scenario `translationchange`); every material array is filled through `MaterialSlotSRV`,
 which hands a brightmap's slot its brightmap (`ComputeSlotKind`).
+The array holds up to 8192 slots (`kMaxMaterialSlots`; `dgdevice_vk.cpp` sizes the descriptor pools for four of its
+bindings), and a full table gives a new key the slot least recently reserved that neither of the last two dynamic
+reservations used and no baked record pins (`computation/slotrecycle_compute`). A reservation finds every sprite's
+keys before it makes any (`ComputeReserveSlots`), once per sprite list, and `BuildDynamic` draws with the slots it
+kept (`DynamicPieceSlots`). A world binding's resources are checked once after each fill, not on every
+draw loop's commit, and a buffer, texture or camera target written since is made ready to read before the next one
+(`fua_dg_checkonce`, `computation/resourcestate_compute`). A frame's slots are all settled
+before its fill and the table is sealed from the fill to the frame's end, so a recycled slot never changes under a
+binding a frame draws with. A fill on a retired binding writes only the slots changed since that binding was filled,
+and with the array live a translucent or animated batch draws with the world binding rather than a binding of its own,
+each of which held the whole array (scenario `slotrecycle`).
 `fua_dg_slotreport [n]` counts the slots a level asked for by kind (`computation/slotreport_compute`), the ones
 refused once the table filled among them, packs the plain sprites as the atlas would to say how many slots its pages
 would leave and what pages and the sprites' own textures cost, gives the working set dynamic pieces asked for in the
