@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
+import { validationMode, validationLaunch, noteValidation } from "./validation.mjs";
 
 // Where each platform's compile script leaves a staged binary, relative to the repo root. The
 // folder is the data dir too: it holds the pk3s and iwads/, so a launched engine finds its game
@@ -203,6 +204,8 @@ export function engineArgs(opts = {}, configPath) {
     // (ZANDRONUM_BRIDGE_INPUT_LOCK), not a cvar's.
   );
   if (opts.seed != null) args.push("-rngseed", String(opts.seed));
+  // [Doruk-Aksoy] The validation layer from the device's creation, for a launch made under FUACTL_VALIDATE (validationLaunch).
+  args.push(...validationLaunch(opts.validate || "").args);
   // [rc4l] Arbitrary cvars, applied BEFORE the map loads. Some only take effect at level start --
   // sv_nomonsters is the obvious one -- so setting them over the bridge afterwards is too late and
   // the instance comes up full of monsters shooting at whatever is being measured.
@@ -275,7 +278,8 @@ export async function launchInstance(opts = {}) {
   // Written BEFORE the engine starts, or the video mode is already chosen by the time it is read.
   writeInstanceIni(iniPath, opts);
   // [Doruk-Aksoy] With the bridge port resolved, which the game port is drawn from.
-  const args = engineArgs({ ...opts, port }, iniPath);
+  const validate = opts.validate ?? validationMode();
+  const args = engineArgs({ ...opts, port, validate }, iniPath);
 
   // [rc4l] CAPTURE the engine's own stdout and stderr. This was "ignore".
   //
@@ -291,6 +295,7 @@ export async function launchInstance(opts = {}) {
     stdio: ["ignore", stdioFd, stdioFd],
     env: {
       ...process.env,
+      ...validationLaunch(validate).env,
       ZANDRONUM_BRIDGE_PORT: String(port),
       ZANDRONUM_BRIDGE_PARENT_PID: String(process.pid), // watchdog reaps if fuactl dies
       ZANDRONUM_BRIDGE_TOKEN: token,
@@ -301,7 +306,7 @@ export async function launchInstance(opts = {}) {
       ZANDRONUM_BRIDGE_NO_FOCUS: launchesWithoutFocus(opts) ? "1" : "",
     },
   });
-  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin };
+  return { proc, pid: proc.pid, port, token, host: opts.host || "127.0.0.1", log, stdioLog, logDir, engine: bin, validate };
 }
 
 // [rc4l] How proc ended ({ code, signal }) once it has, or null when it is still running after timeoutMs.
@@ -315,6 +320,13 @@ export function exited(proc, timeoutMs) {
 
 // Ask an instance to quit cleanly (SIGTERM -> engine's clean-quit path), then hard-kill after grace.
 export async function stopInstance(inst, graceMs = 4000) {
+  const how = await endInstance(inst, graceMs);
+  // [Doruk-Aksoy] Read once the engine is gone, so its log holds every message the validation layer sent.
+  noteValidation(inst);
+  return how;
+}
+
+async function endInstance(inst, graceMs) {
   if (!inst.proc || inst.proc.exitCode != null || inst.proc.signalCode) return "already-exited";
   const gone = exited(inst.proc, graceMs);
   try { inst.proc.kill("SIGTERM"); } catch { /* ignore */ }

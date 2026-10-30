@@ -27,6 +27,7 @@ import { actorsNear } from "./actors.mjs";
 import { pixelToFace } from "./camera.mjs";
 import { sectorOf } from "./sectorof.mjs";
 import { scenarioOptions, scenarioRun, templateScenarioFiles, probeScenario, sideAdjust, matrixSets, matrixAdjust, webgpuOptions, launchRenderer } from "./template.mjs";
+import { describeValidation, takeValidationReports } from "./validation.mjs";
 import { abPerf } from "./abperf.mjs";
 import { measureCosts, formatCosts } from "./costs.mjs";
 import { runFps, fpsModes } from "./fps.mjs";
@@ -215,7 +216,7 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a level's summary (UDMF, Doom or Hexen format), sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1)
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b] [--validate core|sync|gpu]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1); --validate runs every launch under the Khronos validation layer (sync adds its synchronization checks, gpu its checks inside shaders; the Vulkan SDK's layer must be installed) and fails a scenario whose launches reported anything
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -407,6 +408,11 @@ async function main() {
     // [rc4l] `fuactl scenarios` -- the whole regression set as one command, where it was a shell loop over scenarios/*.mjs.
     case "scenarios": {
       if (flags.engine) process.env.FUACTL_ENGINE = String(flags.engine);
+      // [Doruk-Aksoy] --validate core|sync|gpu puts every launch under the validation layer (FUACTL_VALIDATE), each scenario then failing on what its launches reported.
+      if (flags.validate !== undefined) {
+        if (!["core", "sync", "gpu"].includes(String(flags.validate))) { console.error("--validate takes core, sync or gpu"); process.exit(2); }
+        process.env.FUACTL_VALIDATE = String(flags.validate);
+      }
       const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "scenarios");
       const files = templateScenarioFiles(dir, rest);
       // [rc4l] --side S --cvar k=v runs a scenario with one side changed, to show a regression test fails under the behaviour it guards against.
@@ -425,8 +431,11 @@ async function main() {
           const run = scenarioRun(url, r.adjust);
           if (!run) continue;
           let out;
+          takeValidationReports();
           // [rc4l] A scenario that throws is one failure, not the end of the run.
           try { out = await run(); } catch (e) { out = { lines: [`error: ${e.message}`], code: 1 }; }
+          const validation = describeValidation(takeValidationReports());
+          if (validation.length) out = { ...out, lines: [...out.lines, ...validation], code: 1 };
           // [rc4l] Named scenarios print their passing boxes too, each with what it measured, which is what a new scenario's ceiling is set from.
           for (const l of out.lines.filter((x) => rest.length > 0 || !x.startsWith("PASS"))) console.log(`${(r.label ? `${r.label} ` : "") + f.slice(0, -4).padEnd(18)} ${l}`);
           if (out.skipped) skipped++;
