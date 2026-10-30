@@ -5,6 +5,7 @@
 #include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 
 #include "features/sprites/computation/modelpose_compute.h"
+#include "features/frame/computation/frameclock_compute.h"   // [Doruk-Aksoy] ComputeFrameClock
 #include "features/levelmesh/modelmesh.h"      // [rc4l] CaptureModelSurface
 #include "features/materials/materials.h"
 
@@ -22,6 +23,7 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 
 EXTERN_CVAR(Bool, r_interpolate_model_frames)
+EXTERN_CVAR(Int, fua_debug_frameclock)
 
 namespace zx { namespace sprites {
 
@@ -46,7 +48,8 @@ void ModelPoseFor(const zx::gamecopy::ActorRecord &a, const FSpriteModelFrame *s
 		? ComputeRollAgainstAngle(ANGLE2FLOAT(R_PointToAngle(actor->x, actor->y)), angle, actor->z > viewz) : -roll;
 
 	p.rotating = (smf->flags & MDL_ROTATING) != 0;
-	p.spin = p.rotating ? ComputeModelSpin(smf->rotationSpeed, (float)I_MSTime() * (float)TICRATE / 1000.0f) : 0.f;
+	// [Doruk-Aksoy] On the frame clock, so a capture that pins it (fua_debug_frameclock) holds a ROTATING model still as it holds warps and fuzz.
+	p.spin = p.rotating ? ComputeModelSpin(smf->rotationSpeed, (float)zx::frame::ComputeFrameClock(fua_debug_frameclock, I_MSTime()) * (float)TICRATE / 1000.0f) : 0.f;
 	p.spinCenter[0] = smf->rotationCenterX; p.spinCenter[1] = smf->rotationCenterY; p.spinCenter[2] = smf->rotationCenterZ;
 	p.spinAxis[0] = smf->xrotate; p.spinAxis[1] = smf->yrotate; p.spinAxis[2] = smf->zrotate;
 
