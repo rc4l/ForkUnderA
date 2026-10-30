@@ -1076,6 +1076,8 @@ void ScanAtTicEnd()
 	g_prescan.stamp = StampNow(true);
 }
 
+unsigned Fills() { return g_fills; }
+
 void FillNow()
 {
 	// [rc4l] Between a level's data being freed and the next set up, as at the full console endgame leaves, there is nothing to copy.

@@ -160,7 +160,8 @@ are stable radix sorts that skip the key bytes every key shares (`computation/ra
 
 The sector light table (`fua sector light`, `kSectorLightWords` a sector) holds each sector's light level, floor
 and ceiling lights and colormap, read from the render copy and its changed entries sent once a frame
-(`UpdateSectorLightTable`, `ComputeChangedRuns`). A level surface its sector lights carries where its light comes
+(`UpdateSectorLightTable`, `ComputeChangedRuns`), and only on a frame after the copy was filled or the level changed
+(`features/gamecopy` `Fills`, `ComputeCopyTableStale`). A level surface its sector lights carries where its light comes
 from in its record (`computation/sectorlitrecord_compute`, `kTexFlagSectorLit`), and the scene and traced-mirror
 shaders shade it from the table each frame (`FUA_SECTORLIT_GLSL`, `ComputeSectorLitShade` its CPU twin), the
 level's light settings and the player's weapon light in `uShadeEnv`, `uShadeEnv2` and `uShadeFog`. On Sunder
