@@ -21,6 +21,10 @@
 #include "features/levelmesh/projdecals.h"   // [rc4l] the marks fua_projdecals_stats lists
 #include "features/levelmesh/computation/decalproject_compute.h"   // [rc4l] ComputeDecalPass
 #include "features/hwrender/computation/worldpipelines_compute.h"   // [rc4l] ComputeDecalPassBlend, the blend a pass draws with
+#include "features/hwrender/computation/decalbounds_compute.h"   // [Doruk-Aksoy] ComputeDecalClippedRect, each mark's rectangle
+#include "features/hwrender/diligent/dgscene_internal.h"   // [Doruk-Aksoy] g_pass, which view the pass draws
+#include "features/telemetry/telemetry.h"
+#include <algorithm>
 
 #include "c_dispatch.h"              // CCMD
 #include "r_defs.h"                  // sector_t
@@ -108,7 +112,7 @@ static const char *kDeferredDecalVS =
 	FUA_CONSTANTS_GLSL
 	/* One record per mark: where it landed, which way its picture is turned, how far it reaches,
 	   what to paint, and which texture to paint it with. */
-	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; vec4 params; vec4 anchor; };\n"
+	"struct DecalRec { vec4 centre; vec4 axisU; vec4 axisV; vec4 axisN; vec4 color; vec4 params; vec4 anchor; vec4 bounds; };\n"
 	"layout(std430, binding = 9) readonly buffer Decals { DecalRec decals[]; } DecalsIn;\n"
 	/* [rc4l] Every sector's floor and ceiling height, refreshed once a frame.
 
@@ -127,9 +131,6 @@ static const char *kDeferredDecalVS =
 	"layout(location = 4) out vec4 vColor;\n"
 	"layout(location = 5) out vec4 vParams;\n"
 	"layout(location = 6) flat out int vTex;\n"
-	"const vec3 kCorner[8] = vec3[8](\n"
-	"    vec3(-1,-1,-1), vec3( 1,-1,-1), vec3( 1, 1,-1), vec3(-1, 1,-1),\n"
-	"    vec3(-1,-1, 1), vec3( 1,-1, 1), vec3( 1, 1, 1), vec3(-1, 1, 1));\n"
 	"const vec2 kQuad[6] = vec2[6](\n"
 	"    vec2(0,0), vec2(1,0), vec2(1,1), vec2(0,0), vec2(1,1), vec2(0,1));\n"
 	"void main() {\n"
@@ -152,24 +153,8 @@ static const char *kDeferredDecalVS =
 	"    vColor = d.color;\n"
 	"    vParams = d.params;\n"
 	"    vTex = int(d.centre.w);\n"
-	/* Where this mark's box lands on screen. Its eight corners are projected and the extremes kept
-	   -- conservative, which is all a bound has to be, and it means the pixel stage only runs where
-	   the mark could possibly be rather than over the whole screen for every mark. */
-	"    float reach = max(d.params.x, max(d.params.y, d.params.z));\n"
-	"    vec2 lo = vec2( 1e9), hi = vec2(-1e9);\n"
-	"    bool whole = false;\n"
-	/* Inside the box, or straddling the plane through the camera, and there are no honest screen
-	   bounds to compute -- so take the whole screen and let the pixel stage decide. This is the case
-	   that made a box vanish when you stood in it. */
-	"    if (distance(uCameraPos.xyz, c) < reach * 1.75) whole = true;\n"
-	"    for (int i = 0; i < 8 && !whole; i++) {\n"
-	"        vec4 cp = uMVP * vec4(c + kCorner[i] * reach, 1.0);\n"
-	"        if (cp.w <= 0.0001) { whole = true; break; }\n"
-	"        vec2 ndc = cp.xy / cp.w;\n"
-	"        lo = min(lo, ndc); hi = max(hi, ndc);\n"
-	"    }\n"
-	"    if (whole) { lo = vec2(-1.0); hi = vec2(1.0); }\n"
-	"    lo = max(lo, vec2(-1.0)); hi = min(hi, vec2(1.0));\n"
+	/* [Doruk-Aksoy] Where this mark lands on screen, worked out on the CPU (computation/decalbounds_compute): the cube round everything it can paint, cut at the near plane, so a mark beside or behind the eye no longer covers the whole screen. */
+	"    vec2 lo = d.bounds.xy, hi = d.bounds.zw;\n"
 	/* Straight to clip space. Depth is unused -- the pass neither tests nor writes it -- so the quad
 	   sits at the near plane and nothing can clip it away. */
 	"    vec2 q = kQuad[gl_VertexIndex];\n"
@@ -378,6 +363,7 @@ struct DeferredDecalInstance
 	// [rc4l] Which sector plane this mark rides: (sector, 0 floor / 1 ceiling, height above it).
 	// sector < 0 means it rides nothing, which is every mark on a wall.
 	float anchor[4];
+	float bounds[4];   // [Doruk-Aksoy] the screen rectangle it is drawn over, low x and y then high, in NDC
 };
 
 using zx::levelmesh::kDecalPasses;
@@ -606,6 +592,40 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		cb[19] = (float)fua_decal_aspect;
 	}
 
+	// [rc4l] Refresh the plane heights. O(sectors), and nothing here depends on how many marks
+	// exist -- which is the reason the anchor is resolved on the GPU rather than folded into every
+	// decal record by the CPU.
+	static TArray<float> planeData;
+	if (g_ddPlaneBuf && numsectors > 0)
+	{
+		planeData.Resize((unsigned)numsectors * 8);
+		for (int si = 0; si < numsectors; si++)
+		{
+			const sector_t &sec = sectors[si];
+			// [rc4l] The plane EQUATION, not a height. secplane_t is Ax + By + Cz + D = 0 in fixed
+			// point, so the float form is z = -(Ax + By + D)/C and 1/C is stored ready to multiply.
+			// Storing a height instead only works for a level plane, and got every small mark on a
+			// slope placed far enough off the surface to disappear.
+			const secplane_core_t *pl[2] = { &sec.rc.floorplane, &sec.rc.ceilingplane };
+			for (int q = 0; q < 2; q++)
+			{
+				const float C = FIXED2FLOAT(pl[q]->c);
+				planeData[si*8 + q*4 + 0] = FIXED2FLOAT(pl[q]->a);
+				planeData[si*8 + q*4 + 1] = FIXED2FLOAT(pl[q]->b);
+				planeData[si*8 + q*4 + 2] = FIXED2FLOAT(pl[q]->d);
+				planeData[si*8 + q*4 + 3] = (C != 0.f) ? (1.f / C) : 0.f;
+			}
+		}
+		UpdateBufferInPages(ctx, g_ddPlaneBuf, 0, (size_t)numsectors * 32, &planeData[0]);
+	}
+
+	// [Doruk-Aksoy] The eye this pass's projection looks from, which a mark's rectangle is cut for; without one every mark takes the whole screen, as all near ones once did.
+	float eye[3];
+	const bool haveEye = ComputeDecalEye(invMVP, eye);
+	const bool countCost = zx::telemetry::g_enabled && g_pass.mainView;
+	int wholeMarks = 0;
+	double markPixels = 0.0;
+
 	// [rc4l] Every graphic this frame needs, gathered into ONE array the shader indexes per mark.
 	//
 	// This is what makes the whole level one draw. Grouping by texture instead -- which is what a
@@ -624,6 +644,22 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	{
 		const zx::levelmesh::GpuDecal &d = decals[i];
 		if (d.a <= 0.004f || d.material == NULL) continue;
+
+		// [Doruk-Aksoy] The rectangle the mark is drawn over: the cube round everything it can paint, its centre riding its plane as the vertex stage rides it, cut at the near plane; one that shows nothing is not drawn.
+		const float paint[4] = { d.near_, d.far_, sqrtf(d.halfW*d.halfW + d.halfH*d.halfH) + d.near_, 0.f };
+		float at[3] = { d.centre[0], d.centre[1], d.centre[2] };
+		if (d.anchorSector >= 0 && d.anchorSector < numsectors && planeData.Size() == (unsigned)numsectors * 8)
+			at[1] = ComputeDecalRiddenHeight(at, &planeData[d.anchorSector * 8 + d.anchorPlane * 4], d.anchorOffset);
+		// [Doruk-Aksoy] The texel views paint before the run-out cuts anything, so they take the whole reach of the box.
+		const float radius = fua_dg_decaldebug > 3 ? std::max(paint[0], std::max(paint[1], paint[2])) : ComputeDecalPaintRadius(paint, d.right, d.up);
+		DecalScreenRect rect = { true, { -1.f, -1.f }, { 1.f, 1.f } };
+		if (haveEye) rect = ComputeDecalClippedRect(at, radius, eye, SceneMVP());
+		if (!ComputeDecalRectShows(rect)) continue;
+		if (countCost)
+		{
+			if (rect.whole) wholeMarks++;
+			markPixels += ComputeDecalRectPixels(rect, (float)PassWidth(), (float)PassHeight());
+		}
 
 		// [rc4l] Keyed on the material AND its translation, because one graphic under two remaps is
 		// two different pictures. Keyed on the material alone, the second remap silently reuses the
@@ -700,6 +736,8 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 		mark.anchor[1] = (float)d.anchorPlane;
 		mark.anchor[2] = d.anchorOffset;
 		mark.anchor[3] = 0.f;
+		mark.bounds[0] = rect.lo[0]; mark.bounds[1] = rect.lo[1];
+		mark.bounds[2] = rect.hi[0]; mark.bounds[3] = rect.hi[1];
 		inst[zx::levelmesh::ComputeDecalPass(d.blend)].Push(mark);
 	}
 
@@ -722,7 +760,14 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 
 	unsigned total = 0;
 	for (int p = 0; p < kDecalPasses; p++) total += inst[p].Size();
-	if (total == 0) { g_ddBail = "every mark filtered out (no texture, or faded to nothing)"; return; }
+	// [Doruk-Aksoy] The main view's marks drawn, those over the whole screen, and the pixels their rectangles cover.
+	if (countCost)
+	{
+		ZX_COUNT("gpu/decal_marks", "marks", total);
+		ZX_COUNT("gpu/decal_whole", "marks", wholeMarks);
+		ZX_COUNT("gpu/decal_mpixels", "Mpx", markPixels / 1e6);
+	}
+	if (total == 0) { g_ddBail = "every mark filtered out (no texture, or faded to nothing, or off the screen)"; return; }
 	g_ddBoxes = (int)total;
 	g_ddTextures = (int)mats.Size();
 
@@ -742,33 +787,6 @@ void DrawDeferredDecals(Diligent::IDeviceContext *ctx)
 	}
 	if (all.Size() > g_ddCapacity) all.Resize(g_ddCapacity);
 	passFirst[kDecalPasses] = all.Size();
-	// [rc4l] Refresh the plane heights. O(sectors), and nothing here depends on how many marks
-	// exist -- which is the reason the anchor is resolved on the GPU rather than folded into every
-	// decal record by the CPU.
-	if (g_ddPlaneBuf && numsectors > 0)
-	{
-		static TArray<float> planeData;
-		planeData.Resize((unsigned)numsectors * 8);
-		for (int si = 0; si < numsectors; si++)
-		{
-			const sector_t &sec = sectors[si];
-			// [rc4l] The plane EQUATION, not a height. secplane_t is Ax + By + Cz + D = 0 in fixed
-			// point, so the float form is z = -(Ax + By + D)/C and 1/C is stored ready to multiply.
-			// Storing a height instead only works for a level plane, and got every small mark on a
-			// slope placed far enough off the surface to disappear.
-			const secplane_core_t *pl[2] = { &sec.rc.floorplane, &sec.rc.ceilingplane };
-			for (int q = 0; q < 2; q++)
-			{
-				const float C = FIXED2FLOAT(pl[q]->c);
-				planeData[si*8 + q*4 + 0] = FIXED2FLOAT(pl[q]->a);
-				planeData[si*8 + q*4 + 1] = FIXED2FLOAT(pl[q]->b);
-				planeData[si*8 + q*4 + 2] = FIXED2FLOAT(pl[q]->d);
-				planeData[si*8 + q*4 + 3] = (C != 0.f) ? (1.f / C) : 0.f;
-			}
-		}
-		UpdateBufferInPages(ctx, g_ddPlaneBuf, 0, (size_t)numsectors * 32, &planeData[0]);
-	}
-
 	UpdateBufferInPages(ctx, g_ddInstBuf, 0, (size_t)all.Size() * sizeof(DeferredDecalInstance), &all[0]);
 
 	// The depth buffer comes off the render target for this pass -- it is being READ.
