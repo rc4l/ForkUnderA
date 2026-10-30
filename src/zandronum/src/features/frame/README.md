@@ -22,7 +22,9 @@ first has the backend forget its textures (`ForgetBackendTextures`), since the s
 - the sweep of the actors in view (`features/sprites`).
 
 `computation/actorcull_compute` is the sweep's frustum test, padded by the actor's size since a sprite
-is wider than the point it stands on.
+is wider than the point it stands on. The sweep culls chunks of the actor records on the job lanes and joins their
+kept lists in chunk order, so the batch is in record order as one pass made it (`scene/actor_sweep`);
+`fua_vis_sweepjobs 0` culls them on the main thread alone.
 
 `playerview` is the player's view, shared by GL and the backend:
 
