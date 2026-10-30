@@ -11,6 +11,7 @@
 #include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLitRecord
 #include "features/hwrender/computation/uploadguard_compute.h"   // [rc4l] ComputeChangedRuns
 #include "features/levelmesh/captureshading.h"   // [rc4l] SectorLightEntryOf
+#include "features/gamecopy/gamecopy.h"   // [Doruk-Aksoy] Fills, which the sector light table is kept by
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
@@ -159,6 +160,14 @@ void UpdateSectorLightTable(Diligent::IDeviceContext *ctx)
 	if (!g_scene.sectorLightBuf || ctx == NULL || numsectors <= 0 || (unsigned)numsectors > g_scene.sectorLightCapacity) return;
 	static TArray<unsigned> now;
 	const unsigned words = (unsigned)numsectors * zx::levelmesh::kSectorLightWords;
+	// [Doruk-Aksoy] The table is read from the render copy, which changes only when it is filled, so the frames between fills keep it as it is.
+	static zx::hwrender::CopyTableKey made;
+	zx::hwrender::CopyTableKey key;
+	key.fills = zx::gamecopy::Fills();
+	key.sectors = sectors;
+	key.count = numsectors;
+	if (!zx::hwrender::ComputeCopyTableStale(made, key, g_scene.sectorLightWords.Size() == words)) return;
+	made = key;
 	now.Resize(words);
 	for (int i = 0; i < numsectors; i++)
 		zx::levelmesh::ComputeSectorLightWords(zx::levelmesh::SectorLightEntryOf(i), &now[(unsigned)i * zx::levelmesh::kSectorLightWords]);

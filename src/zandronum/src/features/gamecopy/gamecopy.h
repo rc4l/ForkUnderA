@@ -14,6 +14,8 @@ namespace zx { namespace gamecopy {
 void FillMap();
 // [rc4l] FillMap whether or not a tic ran since, for a view asked for before the level's first fill.
 void FillNow();
+// [Doruk-Aksoy] Fills since the start, which moves whenever the copy may have changed.
+unsigned Fills();
 // [rc4l] The map's changes since the copy last took it, found as a tic's playsim ends on the thread that ran it, so the next fill takes only those.
 void ScanAtTicEnd();
 // [rc4l] A new level: every copy taken whole and its counters started over.
