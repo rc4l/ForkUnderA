@@ -220,6 +220,11 @@ const char *MaterialName(MaterialRef m)
 	return (m != NULL && Mat(m)->tex != NULL && Mat(m)->tex->Name.IsNotEmpty()) ? Mat(m)->tex->Name.GetChars() : "?";
 }
 
+bool MaterialHasBrightmap(MaterialRef m)
+{
+	return m != NULL && Mat(m)->tex != NULL && Mat(m)->tex->gl_info.Brightmap != NULL;
+}
+
 MaterialRef MaterialBrightmap(MaterialRef m)
 {
 	if (m == NULL || Mat(m)->tex == NULL || Mat(m)->tex->gl_info.Brightmap == NULL) return NULL;

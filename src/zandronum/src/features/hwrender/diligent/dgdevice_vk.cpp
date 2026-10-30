@@ -14,6 +14,7 @@
 #include "RefCntAutoPtr.hpp"
 #include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
 #include "features/telemetry/telemetry.h"
+#include "features/hwrender/computation/materialslots_compute.h"   // [Doruk-Aksoy] kMaxMaterialSlots, which the descriptor pools are sized for
 
 #include "c_cvars.h"
 
@@ -133,6 +134,8 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	// [Doruk-Aksoy] A thread pool for shaders compiled in the background, which the GLDEFS shaders' programs take at launch (CompileShaderAsync).
 	ci.Features.AsyncShaderCompilation = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [Doruk-Aksoy] One descriptor set must fit one pool, and a binding of a world pipeline holds the whole material array, so a pool holds four of those.
+	ci.MainDescriptorPoolSize.NumSampledImageDescriptors = 4 * (zx::hwrender::kMaxMaterialSlots + zx::hwrender::kOtherStageResources);
 	factory->SetMemoryAllocator(zx::hwrender::EngineMemoryAllocator());
 	if (fua_dg_vk_alloc_trace) ci.pVkAllocator = &g_driverAllocator;
 	factory->CreateDeviceAndContextsVk(ci, device, context);

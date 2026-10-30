@@ -181,8 +181,9 @@ TEST(SlotReport, TheTextSaysWhatWasWanted)
 	ComputeSlotReport({ Slot(kSlotUseWorld, "STARTAN2", 64, 128), Slot(kSlotUseSprite, "TROOA1", 40, 56),
 		Bright(Slot(kSlotUseSprite, "TROOA1", 40, 56)), Translated(Slot(kSlotUseSprite, "TROOB1", 40, 56)),
 		Slot(kSlotUseSprite, "BOSSA1", 40, 56) }, 2048, 512, r);
-	const std::string text = ComputeSlotReportText(r, 4, 4096, 2048, 512, 1);
-	EXPECT_NE(std::string::npos, text.find("slots wanted: 5 (4 in the table of 4096, 1 refused once it filled)"));
+	const SlotTableFacts table = { 4, 4096, 1, 2, 1 };
+	const std::string text = ComputeSlotReportText(r, table, 2048, 512, 1);
+	EXPECT_NE(std::string::npos, text.find("slots wanted: 5 (4 in the table of 4096, 1 pinned, 2 recycled, 1 refused once none could give way)"));
 	EXPECT_NE(std::string::npos, text.find(" world 1 + 0 brightmaps | sprites 3 + 1 brightmaps | skins 0 + 0 brightmaps"));
 	EXPECT_NE(std::string::npos, text.find("translated 1, GLDEFS-shaded 0, camera or warp 0, over 512 px 0"));
 	EXPECT_NE(std::string::npos, text.find("atlas of 2048 pages: 2 plain sprite images and 1 brightmaps on 1 pages, so 5 slots become 4"));
@@ -191,7 +192,7 @@ TEST(SlotReport, TheTextSaysWhatWasWanted)
 		" | brightmapped images on pages of their own: 1 + 0 = 16 MiB"));
 	EXPECT_NE(std::string::npos, text.find("sprite families by slots: TROO 3 (1 brightmaps, 1 translated)"));
 	EXPECT_EQ(std::string::npos, text.find("BOSS")) << "only the top one";
-	EXPECT_NE(std::string::npos, ComputeSlotReportText(r, 4, 4096, 2048, 512, 2).find("TROO 3 (1 brightmaps, 1 translated), BOSS 1"));
-	EXPECT_NE(std::string::npos, ComputeSlotReportText(SlotTally(), 0, 4096, 2048, 512, 5).find("sprite families by slots: none"));
-	EXPECT_NE(std::string::npos, ComputeSlotReportText(r, 4, 4096, 2048, 512, 0).find("sprite families by slots: none"));
+	EXPECT_NE(std::string::npos, ComputeSlotReportText(r, table, 2048, 512, 2).find("TROO 3 (1 brightmaps, 1 translated), BOSS 1"));
+	EXPECT_NE(std::string::npos, ComputeSlotReportText(SlotTally(), SlotTableFacts{ 0, 4096, 0, 0, 0 }, 2048, 512, 5).find("sprite families by slots: none"));
+	EXPECT_NE(std::string::npos, ComputeSlotReportText(r, table, 2048, 512, 0).find("sprite families by slots: none"));
 }

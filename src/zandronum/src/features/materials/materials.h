@@ -101,6 +101,8 @@ bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out);
 
 // [rc4l] The material's brightmap, NULL when it has none.
 MaterialRef MaterialBrightmap(MaterialRef m);
+// [Doruk-Aksoy] Whether the material has a brightmap, as DescribeMaterial's brightmap says, without describing the rest.
+bool MaterialHasBrightmap(MaterialRef m);
 
 // [rc4l] What a sprite frame is drawn with: its rectangle about the actor's origin and the texture coordinates of its trimmed edges.
 struct SpriteFrameInfo

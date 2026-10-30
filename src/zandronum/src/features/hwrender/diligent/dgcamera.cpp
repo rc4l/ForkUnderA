@@ -57,6 +57,8 @@ static void CopyCameraFlipped(Diligent::IDeviceContext *ctx, CameraTarget &cam)
 	Diligent::DrawAttribs dr;
 	dr.NumVertices = 3;
 	ctx->Draw(dr);
+	// [Doruk-Aksoy] Drawn into, so it is made ready to read before the world binding that samples it is next committed.
+	NoteTextureWritten(cam.color);
 }
 
 static CameraTarget *GetCameraTarget(const void *material, int w, int h)
@@ -83,7 +85,7 @@ static CameraTarget *GetCameraTarget(const void *material, int w, int h)
 	c->dsv = c->depth->GetDefaultView(Diligent::TEXTURE_VIEW_DEPTH_STENCIL);
 	g_cameraTargets.Push(c);
 	// [rc4l] Its material may already sit in the bindless array, or in a binding of its own, as white, made before this first render.
-	DirtyMaterialSlots();
+	ForceMaterialRefill();
 	ForgetMaterialSRBs(material);
 	return c;
 }

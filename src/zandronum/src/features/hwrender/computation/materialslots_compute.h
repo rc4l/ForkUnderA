@@ -12,7 +12,8 @@
 namespace zx { namespace hwrender {
 
 // [rc4l] The most the array is ever given, past what content plausibly asks for (a nine-PWAD Whodunit load wants 835), the fewest worth keeping bindless for, and what the rest of a fragment stage may bind beside it.
-enum { kMaxMaterialSlots = 4096, kMinMaterialSlots = 64, kOtherStageResources = 32 };
+// [Doruk-Aksoy] 8192, since slots a level no longer draws are given to new keys and the array need only hold what it draws at once (DnD peaked at 3,632 keys in 5 s).
+enum { kMaxMaterialSlots = 8192, kMinMaterialSlots = 64, kOtherStageResources = 32 };
 
 // [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
 static const int kBrightmapTranslation = -0x7fffffff;
@@ -41,9 +42,6 @@ std::string ComputeShaderWithDefines(const char *source, const std::string &defi
 
 // [rc4l] The defines every backend shader is compiled with: the array's size, at least one so a declaration stays legal, and FUA_BINDLESS where the device has the array at all.
 std::string ComputeMaterialShaderDefines(unsigned slots);
-
-// [rc4l] Where a material array's binding from slot `from` stops: every slot to its capacity the first time (from 0, the placeholder past the filled ones), else only the slots filled since.
-unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned filled);
 
 }} // namespace zx::hwrender
 

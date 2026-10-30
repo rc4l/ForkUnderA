@@ -268,6 +268,7 @@ Diligent::ITextureView *GetMaterialSRV(const void *materialPtr, int translation)
 		GetContext()->UpdateTexture(e.tex, 0, 0, box, sub,
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+		NoteTextureWritten(e.tex);
 		NoteUploadSent(GetContext(), (size_t)w * h * 4);
 	}
 	delete[] buf;

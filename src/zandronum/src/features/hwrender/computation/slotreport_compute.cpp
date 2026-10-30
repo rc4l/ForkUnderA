@@ -94,12 +94,13 @@ int ComputeSlotsWithAtlas(int slots, int images, int brightmaps, int pages)
 	return slots - images - brightmaps + pages * (brightmaps > 0 ? 2 : 1);
 }
 
-std::string ComputeSlotReportText(const SlotTally &r, int inTable, int capacity, int pageSize, int maxSide, int top)
+std::string ComputeSlotReportText(const SlotTally &r, const SlotTableFacts &table, int pageSize, int maxSide, int top)
 {
 	static const char *const kUses[kSlotUseCount] = { "world", "sprites", "skins", "graphics", "other" };
 	const std::string n = "\n";
-	std::string s = "slots wanted: " + std::to_string(r.slots) + " (" + std::to_string(inTable) + " in the table of " +
-		std::to_string(capacity) + ", " + std::to_string(r.slots - inTable) + " refused once it filled)" + n + " ";
+	std::string s = "slots wanted: " + std::to_string(r.slots) + " (" + std::to_string(table.inTable) + " in the table of " +
+		std::to_string(table.capacity) + ", " + std::to_string(table.pinned) + " pinned, " + std::to_string(table.recycled) + " recycled, " +
+		std::to_string(table.refused) + " refused once none could give way)" + n + " ";
 	for (int u = 0; u < kSlotUseCount; u++)
 		s += std::string(u ? " |" : "") + " " + kUses[u] + " " + std::to_string(r.images[u]) + " + " + std::to_string(r.brightmaps[u]) + " brightmaps";
 	s += n + "  translated " + std::to_string(r.translated) + ", GLDEFS-shaded " + std::to_string(r.shaded) + ", camera or warp " +

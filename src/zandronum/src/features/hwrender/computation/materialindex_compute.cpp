@@ -62,4 +62,25 @@ int ComputeMaterialIndexFind(const MaterialIndex &index, const void *material, i
 	return index.buckets[Probe(index, material, translation)].value;
 }
 
+bool ComputeMaterialIndexErase(MaterialIndex &index, const void *material, int translation)
+{
+	if (index.buckets.empty()) return false;
+	const unsigned size = (unsigned)index.buckets.size();
+	unsigned hole = Probe(index, material, translation);
+	if (index.buckets[hole].value < 0) return false;
+	// [Doruk-Aksoy] Each key after the hole in its run moves into it unless its own bucket lies cyclically in (hole, at], where a probe from that bucket still reaches it.
+	for (unsigned at = (hole + 1) & (size - 1); index.buckets[at].value >= 0; at = (at + 1) & (size - 1))
+	{
+		const MaterialIndex::Entry &e = index.buckets[at];
+		const unsigned home = ComputeMaterialIndexHash(e.material, e.translation, size);
+		const bool stays = hole <= at ? (hole < home && home <= at) : (hole < home || home <= at);
+		if (stays) continue;
+		index.buckets[hole] = e;
+		hole = at;
+	}
+	index.buckets[hole].value = -1;
+	index.count--;
+	return true;
+}
+
 }} // namespace zx::hwrender
