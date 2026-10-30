@@ -181,7 +181,8 @@ whole. The words buffer (`fua dynamic data`) is bound statically, so it grows wi
 The deferred decal pass draws each floor or ceiling mark over a screen rectangle the CPU works out
 (`computation/decalbounds_compute`): the cube round everything the mark can paint, its run-out radius, its centre riding
 its plane, cut at the near plane, so a mark behind the eye is not drawn and one beside it covers only the part in front.
-In a DnD fight the vertex stage's own rule had drawn three in four marks over the whole screen.
+In a DnD fight the vertex stage's own rule had drawn three in four marks over the whole screen. The mark's record
+carries the centre already riding its plane, so no table of every sector's planes is built or sent each frame.
 
 Nothing the GPU needs is made by the frame that first draws it. The deferred decal pass's pipelines are built
 with the scene's (`EnsureDecalPipelines` in `BuildSceneBuffer`), and once the level is uploaded the backend makes
