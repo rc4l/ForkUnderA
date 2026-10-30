@@ -105,6 +105,7 @@
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the script's decal
 #include "features/acs-lineattack/computation/lineattack_compute.h"   // [Doruk-Aksoy] LineAttack's shooter
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] CallShaderFunction
+#include "features/acs-argcount/computation/acsargcount_compute.h"   // [Doruk-Aksoy] ComputeShortCall
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -1740,7 +1741,7 @@ static int RequestScriptPuke ( FBehavior* module, int script, int* args, int arg
 		scriptArgs[i] = args[i];
 
 	DPrintf( "RequestScriptPuke: Requesting puke of script %s (%d, %d, %d, %d)\n",
-		rep.GetChars(), args[0], args[1], args[2], args[3] );
+		rep.GetChars(), scriptArgs[0], scriptArgs[1], scriptArgs[2], scriptArgs[3] );
 	CLIENTCOMMANDS_Puke( script, scriptArgs, true );
 	return 1;
 }
@@ -6153,6 +6154,13 @@ static void SetActorPitch(AActor *activator, int tid, int angle, bool interpolat
 // [TDRR] Added "locals" parameter to allow accessing local arrays.
 int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct ACSLocals *locals)
 {
+	// [Doruk-Aksoy] Ported from uzdoom@258f4b6786d2da1306615582e5fb583d80f82ef3: a function called with fewer arguments than it reads does nothing and returns 0, rather than read the stack past them.
+	if (const zx::acsargcount::FunctionArgs *shortCall = zx::acsargcount::ComputeShortCall(funcIndex, argCount))
+	{
+		Printf("Called ACS function %s (index %d) with too few args: %d (need %d)\n", shortCall->name, funcIndex, argCount, shortCall->needed);
+		return 0;
+	}
+
 	AActor *actor;
 	switch(funcIndex)
 	{
@@ -6347,11 +6355,12 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 			return args[0] == ARMORINFO_CLASSNAME ? GlobalACSStrings.AddString("None") : 0;
 		}
 
+		// [Doruk-Aksoy] BCC lets a script leave out the TID and angle, which are then 0 rather than the stack past its arguments.
 		case ACSF_SpawnSpotForced:
-			return DoSpawnSpot(args[0], args[1], args[2], args[3], true);
+			return DoSpawnSpot(args[0], args[1], argCount > 2 ? args[2] : 0, argCount > 3 ? args[3] : 0, true);
 
 		case ACSF_SpawnSpotFacingForced:
-			return DoSpawnSpotFacing(args[0], args[1], args[2], true);
+			return DoSpawnSpotFacing(args[0], args[1], argCount > 2 ? args[2] : 0, true);
 
 		case ACSF_CheckActorProperty:
 			return (CheckActorProperty(args[0], args[1], args[2]));
@@ -6588,8 +6597,9 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
             return 0;
         }
 
+		// [Doruk-Aksoy] Ported from uzdoom@258f4b6786d2da1306615582e5fb583d80f82ef3: a TID and angle the script left out are 0.
 		case ACSF_SpawnForced:
-			return DoSpawn(args[0], args[1], args[2], args[3], args[4], args[5], true);
+			return DoSpawn(args[0], args[1], args[2], args[3], argCount > 4 ? args[4] : 0, argCount > 5 ? args[5] : 0, true);
 
 		case ACSF_ACS_NamedExecute:
 		case ACSF_ACS_NamedSuspend:
@@ -6638,53 +6648,25 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 			break;
 
 		case ACSF_GetCVarString:
-			if (argCount == 1)
-			{
-				return GetCVar(activator, FBehavior::StaticLookupString(args[0]), true);
-			}
-			break;
+			return GetCVar(activator, FBehavior::StaticLookupString(args[0]), true);
 
 		case ACSF_SetCVar:
-			if (argCount == 2)
-			{
-				return SetCVar(activator, FBehavior::StaticLookupString(args[0]), args[1], false);
-			}
-			break;
+			return SetCVar(activator, FBehavior::StaticLookupString(args[0]), args[1], false);
 
 		case ACSF_SetCVarString:
-			if (argCount == 2)
-			{
-				return SetCVar(activator, FBehavior::StaticLookupString(args[0]), args[1], true);
-			}
-			break;
+			return SetCVar(activator, FBehavior::StaticLookupString(args[0]), args[1], true);
 
 		case ACSF_GetUserCVar:
-			if (argCount == 2)
-			{
-				return GetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), false);
-			}
-			break;
+			return GetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), false);
 
 		case ACSF_GetUserCVarString:
-			if (argCount == 2)
-			{
-				return GetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), true);
-			}
-			break;
+			return GetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), true);
 
 		case ACSF_SetUserCVar:
-			if (argCount == 3)
-			{
-				return SetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), args[2], false);
-			}
-			break;
+			return SetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), args[2], false);
 
 		case ACSF_SetUserCVarString:
-			if (argCount == 3)
-			{
-				return SetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), args[2], true);
-			}
-			break;
+			return SetUserCVar(args[0], FBehavior::StaticLookupString(args[1]), args[2], true);
 
 		//[RC] A bullet firing function for ACS. Thanks to DavidPH.
 		case ACSF_LineAttack:
@@ -6879,7 +6861,6 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_strcmp:
 		case ACSF_stricmp:
-			if (argCount >= 2)
 			{
 				const char *a, *b;
 				a = FBehavior::StaticLookupString(args[0]);
@@ -6903,7 +6884,6 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_StrLeft:
 		case ACSF_StrRight:
-			if (argCount >= 2)
 			{
 				const char *oldstr = FBehavior::StaticLookupString(args[0]);
 				if (oldstr == NULL || *oldstr == '\0')
@@ -6923,7 +6903,6 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			break;
 
 		case ACSF_StrMid:
-			if (argCount >= 3)
 			{
 				const char *oldstr = FBehavior::StaticLookupString(args[0]);
 				if (oldstr == NULL || *oldstr == '\0')
@@ -7076,7 +7055,6 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		}
 
 		case ACSF_SetLineActivation:
-			if (argCount >= 2)
 			{
 				int line = -1;
 
@@ -7088,7 +7066,6 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			break;
 
 		case ACSF_GetLineActivation:
-			if (argCount > 0)
 			{
 				int line = P_FindLineFromID(args[0], -1);
 				return line >= 0 ? lines[line].activation : 0;
@@ -7096,7 +7073,6 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			break;
 
 		case ACSF_GetActorPowerupTics:
-			if (argCount >= 2)
 			{
 				const PClass *powerupclass = PClass::FindClass(FBehavior::StaticLookupString(args[1]));
 				if (powerupclass == NULL || !RUNTIME_CLASS(APowerup)->IsAncestorOf(powerupclass))
@@ -7117,21 +7093,14 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			break;
 
 		case ACSF_ChangeActorAngle:
-			if (argCount >= 2)
-			{
-				SetActorAngle(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
-			}
+			SetActorAngle(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
 			break;
 
 		case ACSF_ChangeActorPitch:
-			if (argCount >= 2)
-			{
-				SetActorPitch(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
-			}
+			SetActorPitch(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
 			break;
 
 		case ACSF_PickActor:
-			if (argCount >= 5)
 			{
 				actor = SingleActorFromTID(args[0], activator);
 				if (actor == NULL)
@@ -7194,7 +7163,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			break;
 
 		case ACSF_CanRaiseActor:
-			if (argCount >= 1) {
+			{
 				if (args[0] == 0) {
 					actor = SingleActorFromTID(args[0], activator);
 					if (actor != NULL) {
@@ -8205,7 +8174,8 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				if ( MAPROTATION_GetNumEntries() == 0 )
 					return 0;
 
-				const int positionType = args[0];
+				// [Doruk-Aksoy] Without an argument it is the current position, as older Zandronum declared it GetCurrentMapPosition().
+				const int positionType = argCount > 0 ? args[0] : MAPPOSITION_CURRENT;
 				unsigned int position = 0;
 
 				if ( positionType == MAPPOSITION_CURRENT )
@@ -9195,10 +9165,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			return 0;
 
 		case ACSF_ChangeActorRoll:
-			if (argCount >= 2)
-			{
-				SetActorRoll(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
-			}
+			SetActorRoll(activator, args[0], args[1], argCount > 2 ? !!args[2] : false);
 			break;
 
 		case ACSF_GetActorRoll:
