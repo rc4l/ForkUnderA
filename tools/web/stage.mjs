@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// [rc4l] The loading screen's logo, the app icon's one copy rather than a second in web/.
+const LOGO = fileURLToPath(new URL('../../src/zandronum/wadsrc/static/fua_appicon.png', import.meta.url));
+
 // [rc4l] The engine's own data in a build directory: every pk3 its wadsrc targets wrote there.
 export function engineData(buildDir) {
   return fs.readdirSync(buildDir).filter((f) => f.toLowerCase().endsWith('.pk3')).sort().map((f) => path.join(buildDir, f));
@@ -24,6 +27,7 @@ export function stage({ buildDir, outDir, pageDir, freedoomDir, module = 'forkun
     fs.copyFileSync(src, path.join(outDir, module + ext));
   }
   for (const f of fs.readdirSync(pageDir)) fs.copyFileSync(path.join(pageDir, f), path.join(outDir, f));
+  fs.copyFileSync(LOGO, path.join(outDir, 'logo.png'));
   const files = [...engineData(buildDir), path.join(freedoomDir, 'freedoom2.wad'), ...wads];
   for (const f of files) fs.copyFileSync(f, path.join(data, path.basename(f)));
   fs.copyFileSync(path.join(freedoomDir, 'License.txt'), path.join(data, 'freedoom-license.txt'));
