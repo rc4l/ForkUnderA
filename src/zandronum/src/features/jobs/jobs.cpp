@@ -4,6 +4,7 @@
 #include "features/jobs/jobs.h"
 
 #include "c_cvars.h"
+#include "features/mainloop/mainloop.h"
 
 #include <cstdio>
 #include <thread>
@@ -52,7 +53,11 @@ JobPool &Pool()
 	if (want < 0) want = ComputeAutoWorkers((int)std::thread::hardware_concurrency(), 7, fua_gamethread ? 2 : 1);
 	if (want > kMaxWorkers) want = kMaxWorkers;
 	if (g_pool == NULL) g_pool = new JobPool(want);
-	else if (want != g_pool->Workers()) g_pool->Resize(want);
+	else
+	{
+		want = ComputePoolWorkers(want, g_pool->Workers(), !zx::mainloop::Stepped());
+		if (want != g_pool->Workers()) g_pool->Resize(want);
+	}
 	if (g_pool->SpinMicros() != fua_jobs_spin_us) g_pool->SetSpinMicros(fua_jobs_spin_us);
 	return *g_pool;
 }

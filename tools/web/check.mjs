@@ -421,6 +421,15 @@ export const CHECKS = [
     until: EVAL,
     expect: soundStarts,
   },
+  // [rc4l] A change of worker count as the level starts once joined workers still starting, which only the main thread it blocked could start, and the page never answered again.
+  {
+    name: 'the game thread turned off as a level starts leaves the page answering',
+    evaluate: inPage(`
+      Module.fuaCommand('fua_gamethread 0');
+      ${pause(1000)}
+      return 'answering';`),
+    until: EVAL,
+  },
   // [rc4l] The canvas follows the page's layout, and the frame follows the canvas rather than being cut to it.
   {
     name: 'the frame follows the page when it is resized',
