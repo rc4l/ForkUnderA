@@ -14,6 +14,7 @@
 #include "RefCntAutoPtr.hpp"
 #include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
 #include "features/telemetry/telemetry.h"
+#include "features/hwrender/computation/materialslots_compute.h"   // [Doruk-Aksoy] kMaxMaterialSlots, which the descriptor pools are sized for
 
 #include "c_cvars.h"
 
@@ -23,6 +24,8 @@
 
 // [Doruk-Aksoy] On at launch, the Vulkan driver's own memory goes through the engine's operator new, counted and traced as the rest is (fua_allocsites); read once, when the device is made.
 CVAR(Bool, fua_dg_vk_alloc_trace, false, 0)
+// [Doruk-Aksoy] On at launch, the Khronos validation layer checks every Vulkan call and its messages reach the console, for correctness runs only since it slows every frame; read once, when the device is made, and needs the Vulkan SDK's layer installed.
+CVAR(Bool, fua_dg_validation, false, 0)
 
 namespace zx { namespace hwrender {
 
@@ -133,8 +136,11 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	ci.Features.DurationQueries = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
 	// [Doruk-Aksoy] A thread pool for shaders compiled in the background, which the GLDEFS shaders' programs take at launch (CompileShaderAsync).
 	ci.Features.AsyncShaderCompilation = Diligent::DEVICE_FEATURE_STATE_OPTIONAL;
+	// [Doruk-Aksoy] One descriptor set must fit one pool, and a binding of a world pipeline holds the whole material array, so a pool holds four of those.
+	ci.MainDescriptorPoolSize.NumSampledImageDescriptors = 4 * (zx::hwrender::kMaxMaterialSlots + zx::hwrender::kOtherStageResources);
 	factory->SetMemoryAllocator(zx::hwrender::EngineMemoryAllocator());
 	if (fua_dg_vk_alloc_trace) ci.pVkAllocator = &g_driverAllocator;
+	ci.EnableValidation = fua_dg_validation;
 	factory->CreateDeviceAndContextsVk(ci, device, context);
 	if (*device == nullptr)
 	{

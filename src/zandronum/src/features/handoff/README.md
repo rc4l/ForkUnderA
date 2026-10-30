@@ -39,9 +39,10 @@ sends out goes through a queue. This folder is the low layer any feature may use
   and `D_PrepareDisplay` sets the new view up before it records the HUD.
 - Seams on shared engine state: `sound/channels` and `sound/music` (s_sound.cpp, game data), `gc/object`
   (every `DObject`, game data), `gc/collect` and `gc/full`, `texture/grow` (a texture added past the headroom,
-  idle only), `wipe/randoms`, and the main thread's own `font/load`, `sky/map` and `translation/player`, which a
-  tic reaches only through `AskMain` or the UI effects. `fuactl fixture seamcheck` fails a fixture on any
-  violation; gtmod loads a font and changes the sky from a tic so it does.
+  idle only), `wipe/randoms`, and the main thread's own `font/load`, `sky/map`, `translation/player` and
+  `translation/palette` (a translation's palette remade, `R_UpdateTranslationNative`), which a tic reaches only
+  through `AskMain` or the UI effects. `fuactl fixture seamcheck` fails a fixture on any violation; gtmod loads a
+  font, changes the sky and redefines an ACS translation from a tic so it does.
 - Shared engine data both threads read: `FString` buffers are counted atomically, and the name table takes a lock
   and keeps every array it outgrew (`name.cpp`).
 - `computation/lock_compute`: `zx::Lock`, the one lock for state both threads touch, named, counting the takes that
@@ -112,6 +113,7 @@ Seams:
 - `sound/music` (GameData), `s_sound.cpp`
 - `texture/grow` (Idle), `textures/texturemanager.cpp`
 - `tic/playsim` (GameThread), `features/gameloop/loop.cpp`
+- `translation/palette` (Main), `features/materials/translationpalette.cpp`
 - `translation/player` (Main), `r_data/r_translate.cpp`
 - `wad/read` (Main), `resourcefiles/resourcefile.cpp`
 - `wad/read` (Main), `w_wad.cpp`

@@ -2829,7 +2829,8 @@ FPlayerStart *G_PickPlayerStart(int playernum, int flags)
 	{
 		*translationtables[TRANSLATION_PlayerCorpses][modslot] = *TranslationToTable(body->Translation);
 		body->Translation = TRANSLATION(TRANSLATION_PlayerCorpses,modslot);
-		translationtables[TRANSLATION_PlayerCorpses][modslot]->UpdateNative();
+		// [Doruk-Aksoy] features/handoff: remade in the handoff from a tic on its own thread, since a frame beside it reads the palettes.
+		R_UpdateTranslationNative(TRANSLATION(TRANSLATION_PlayerCorpses,modslot));
 	}
 
 	// [AK] Apply skin's scale to actor's scale, it will be lost otherwise.

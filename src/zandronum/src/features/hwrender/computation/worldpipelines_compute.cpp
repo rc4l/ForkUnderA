@@ -59,11 +59,16 @@ int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias, bool hu
 	return kByBlend[(blendMode >= 0 && blendMode < 6) ? blendMode : 1][hud ? 1 : 0];
 }
 
+int ComputePremulPipeline(int pipeline, bool premul, int userShader)
+{
+	return premul && userShader < 0 && pipeline == kWpAddNoCull ? kWpTransNoCull : pipeline;
+}
+
 BlendEquation ComputeBlendEquation(int blend)
 {
 	BlendEquation e;
-	e.src = blend == kWpBlendFuzz ? kBlendFactorDestColor : kBlendFactorSrcAlpha;
-	e.dst = (blend == kWpBlendAlpha || blend == kWpBlendFuzz) ? kBlendFactorInvSrcAlpha : kBlendFactorOne;
+	e.src = blend == kWpBlendFuzz ? kBlendFactorDestColor : blend == kWpBlendPremul ? kBlendFactorOne : kBlendFactorSrcAlpha;
+	e.dst = (blend == kWpBlendAlpha || blend == kWpBlendFuzz || blend == kWpBlendPremul) ? kBlendFactorInvSrcAlpha : kBlendFactorOne;
 	e.op = blend == kWpBlendRevSub ? kBlendOpRevSubtract : blend == kWpBlendSub ? kBlendOpSubtract : kBlendOpAdd;
 	return e;
 }

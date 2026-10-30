@@ -16,6 +16,10 @@
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
 #include "c_dispatch.h"   // [rc4l] fua_dg_sectorlit_report
 #include "features/hwrender/computation/texflags_compute.h"   // [rc4l] kTexFlagSectorLit
+#include "features/hwrender/computation/slotrecycle_compute.h"   // [Doruk-Aksoy] ComputeReserveSlots
+#include <vector>
+
+EXTERN_CVAR(Bool, fua_dg_premulblend)
 
 namespace zx { namespace hwrender {
 
@@ -28,11 +32,22 @@ PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool
 	const void *slotMat = out.animates ? base : p.material;
 	zx::materials::MaterialInfo info;
 	const bool described = zx::materials::DescribeMaterial(p.material, info);
-	out.mat = (float)MaterialSlotFor(slotMat, translation);
+	out.mat = (float)MaterialSlotFor(slotMat, translation, inMesh);
 	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
-	out.bright = (out.animates || (described && info.brightmap)) ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation) : 0.f;
+	const bool bright = out.animates || (described && info.brightmap);
+	out.bright = bright ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation, inMesh) : 0.f;
+	// [Doruk-Aksoy] What a dynamic piece asks for, stamped for fua_dg_slotreport's working set.
+	if (!inMesh)
+	{
+		NoteDynamicSlotUse((int)out.mat, slotMat, translation);
+		if (bright) NoteDynamicSlotUse((int)out.bright, slotMat, kBrightmapTranslation);
+	}
 	return out;
 }
+
+// [Doruk-Aksoy] The slots ReserveDynamicSlots found for each piece of sprite list g_keptGen in table g_keptTable, which BuildDynamic reads rather than look up again.
+static std::vector<PieceSlotSet> g_keptSlots;
+static unsigned int g_keptGen = 0, g_keptTable = 0;
 
 // [rc4l] This frame's sprites, models and decals given their slots before RefreshBindless fills the array, since BuildDynamic runs after it and a slot first made there sampled the white placeholder for a frame.
 void ReserveDynamicSlots()
@@ -43,7 +58,32 @@ void ReserveDynamicSlots()
 	reservedGen = gen;
 	int npieces = 0;
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
-	for (int i = 0; i < npieces; i++) PieceSlots(pieces[i], pieces[i].translation, false);
+	// [Doruk-Aksoy] Two keys a piece, its colour and, when its material has a brightmap, its brightmap, so key k is piece k / 2's.
+	static std::vector<char> bright;
+	bright.resize(npieces);
+	for (int i = 0; i < npieces; i++) bright[i] = zx::materials::MaterialHasBrightmap(pieces[i].material);
+	auto translationOf = [&](int k) { return k % 2 == 0 ? pieces[k / 2].translation : kBrightmapTranslation; };
+	BeginSlotReservation();
+	static std::vector<int> slots;
+	zx::hwrender::ComputeReserveSlots(npieces * 2,
+		[&](int k) { return k % 2 == 0 || bright[k / 2] ? FindReservedSlot(pieces[k / 2].material, translationOf(k)) : 0; },
+		[&](int k) { return MaterialSlotFor(pieces[k / 2].material, translationOf(k), false); }, slots);
+	g_keptSlots.resize(npieces);
+	for (int i = 0; i < npieces; i++)
+	{
+		g_keptSlots[i] = PieceSlotSet{ (float)slots[2 * i], (float)slots[2 * i + 1], false };
+		NoteDynamicSlotUse(slots[2 * i], pieces[i].material, pieces[i].translation);
+		if (bright[i]) NoteDynamicSlotUse(slots[2 * i + 1], pieces[i].material, kBrightmapTranslation);
+	}
+	g_keptGen = gen;
+	g_keptTable = MaterialSlotTableId();
+}
+
+PieceSlotSet DynamicPieceSlots(int index, const zx::levelmesh::MeshPiece &p)
+{
+	if (g_keptGen == zx::levelmesh::DynGeneration() && g_keptTable == MaterialSlotTableId() && index >= 0 && index < (int)g_keptSlots.size())
+		return g_keptSlots[index];
+	return PieceSlots(p, p.translation, false);
 }
 
 // [rc4l] Level surfaces their sector's light reproduces are lit from the sector light table (fuaSectorLit); 0 bakes every surface's shading into its record, to compare against.
@@ -96,7 +136,8 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	const bool wallPiece = p.linkId >= numsubsectors && p.linkId - numsubsectors < numsides;
 	const bool noMarks = inMesh && base != NULL &&
 		zx::decals::SurfaceRefusesMarks(base->id, wallPiece, wallPiece ? sides[p.linkId - numsubsectors].rc.Flags : 0);
-	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass, noMarks };
+	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass, noMarks,
+		fua_dg_premulblend && p.blendMode == 2 };
 	pd.texFlags = (float)zx::hwrender::ComputePieceTexFlags(tex);
 	// [rc4l] A flicker then rewrites its sector's entry in the table rather than this record.
 	if (inMesh && fua_dg_sectorlit && p.sectorLight.sector >= 0) zx::hwrender::ComputeSectorLitRecord(pd, p.sectorLight, p.sectorLitNoFog);
@@ -504,6 +545,8 @@ bool SceneUpload(FString &report)
 	if (!EnsureScenePipeline(err)) { report = err; return false; }
 	// [rc4l] The level goes up in one frame, and a browser's device would keep a page for every 8 MB of it; asked once the window has made the device.
 	UploadFlushing flushing;
+	// [Doruk-Aksoy] The bake pins again every slot a baked record still uses, so a texture the level stopped showing may give way.
+	UnpinMaterialSlots();
 	if (!BuildSceneBuffer(err)) { report = err; return false; }
 
 	g_scene.verts = (int)g_scene.cpuVerts.Size();

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -124,4 +124,10 @@ test("a script's named jump targets become byte offsets, and an unnamed one thro
   const s = new AcsScript().label("top").emit(PCD.PUSHNUMBER, 1).jump(PCD.IFGOTO, "end").jump(PCD.GOTO, "top").label("end").emit(PCD.TERMINATE);
   assert.deepEqual(s.words(), [PCD.PUSHNUMBER, 1, PCD.IFGOTO, 8 + 4 * 6, PCD.GOTO, 8, PCD.TERMINATE]);
   assert.throws(() => new AcsScript().jump(PCD.GOTO, "nowhere").words(), /no label nowhere/);
+});
+
+test("CreateTranslation pushes the number, then each range's four indices before its TRANSLATIONRANGE1, and ends the translation", () => {
+  assert.deepEqual(createTranslation(2, [[0, 255, 112, 127], [16, 31, 176, 191]]), [PCD.PUSHNUMBER, 2, PCD.STARTTRANSLATION,
+    PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 255, PCD.PUSHNUMBER, 112, PCD.PUSHNUMBER, 127, PCD.TRANSLATIONRANGE1,
+    PCD.PUSHNUMBER, 16, PCD.PUSHNUMBER, 31, PCD.PUSHNUMBER, 176, PCD.PUSHNUMBER, 191, PCD.TRANSLATIONRANGE1, PCD.ENDTRANSLATION]);
 });

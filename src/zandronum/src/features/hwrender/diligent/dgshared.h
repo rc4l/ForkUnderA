@@ -113,7 +113,8 @@
 	"    return 0.0;\n" \
 	"}\n" \
 	"PieceData fuaSectorLit(PieceData pd) {\n" \
-	"    if ((int(pd.extra.w) & 32768) == 0) return pd;\n" \
+	/* [Doruk-Aksoy] A level surface's bit 15, since a dynamic piece's is kTexFlagAdditive. */ \
+	"    if ((int(pd.extra.w) & 32776) != 32776) return pd;\n" \
 	"    uint b = uint(pd.colorLight.x) * 8u;\n" \
 	"    int kind = int(pd.colorLight.y), sideLight = int(pd.colorLight.z), contrast = int(pd.colorLight.w);\n" \
 	"    bool sideAbsolute = pd.fogColor.x > 0.5, sideLightFog = pd.fogColor.y > 0.5, noFog = pd.fogColor.z > 0.5;\n" \
@@ -322,6 +323,9 @@ struct UploadFlushing
 void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data);
 // [rc4l] Counts bytes another upload sent, such as a texture's, toward the flush an UploadFlushing makes due.
 void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes);
+// [Doruk-Aksoy] A buffer or texture written outside a fill, made ready to read before the next world binding is committed, since that commit checks nothing (fua_dg_checkonce).
+void NoteBufferWritten(Diligent::IBuffer *buffer);
+void NoteTextureWritten(Diligent::ITexture *texture);
 // [rc4l] The translation the floor mark pass asks a decal's graphic for (ComputeDecalPassTranslation), shared with the precache that makes it ahead.
 int DecalPassTranslation(const void *material, int translation, bool redToAlpha);
 // [rc4l] The textures the engine marked for this level (QueueMaterialPrecache) made now, as its scene is set up, rather than by the frames that first draw them (dgtexture.cpp).

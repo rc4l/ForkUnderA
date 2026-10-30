@@ -109,6 +109,8 @@ void DynStats(FString &report)
 	int sprites = zx::levelmesh::SpritePieceCount();
 	int quads2D = 0, draws2D = 0;
 	Get2DStats(quads2D, draws2D);
+	FString slots;
+	MaterialSlotStats(slots);
 	report.Format("2D: %d quads -> %d draws | dynamic: %d sprites -> %d draws (%d submitted), %d tris "
 		"[opaque %d, translucent %d, additive %d, fuzz %d]",
 		quads2D, draws2D, sprites, g_stats.dynDraws, g_stats.blendSubmits, g_stats.dynTris,
@@ -124,6 +126,7 @@ void DynStats(FString &report)
 	cull.Format(" | batches: %d drawn in %d draw calls | bindless %s: %d slots, %d white",
 		g_stats.batchesDrawn, g_stats.worldDraws,
 		BindlessActive() ? "on" : "off", MaterialSlotCount(), g_stats.matSlotsWhite);
+	cull.AppendFormat(", %s", slots.GetChars());
 	cull.AppendFormat(", dyn slots: %d seen, max %d, %d refused, %d with no material, %d past the fill (%d since load)",
 		g_stats.dynSlotSeen, g_stats.dynSlotMax, g_stats.dynSlotRefused, g_stats.dynSlotNoMaterial, g_stats.dynSlotUnfilled, g_stats.dynSlotUnfilledTotal);
 	cull.AppendFormat(", dyn draws: %d bindless, %d per-material, pipelines [%s]",
@@ -586,7 +589,7 @@ CCMD( fua_dg_flushtextures )
 
 CCMD( fua_dg_bindless_rebuild )
 {
-	zx::hwrender::DirtyMaterialSlots( );
+	zx::hwrender::ForceMaterialRefill( );
 	Printf( "material array will be rebuilt next frame\n" );
 }
 
@@ -617,6 +620,15 @@ CCMD( fua_dg_slots )
 	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 12;
 	FString report;
 	zx::hwrender::SlotReport( n, report );
+	Printf( "%s" "\n", report.GetChars( ) );
+}
+
+// [Doruk-Aksoy] fua_dg_slotreport [n]: the material slots this level asked for by kind, how many an atlas of sprite pages would leave, and the n sprite families taking most.
+CCMD( fua_dg_slotreport )
+{
+	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 15;
+	FString report;
+	zx::hwrender::SlotDemandReport( n, report );
 	Printf( "%s" "\n", report.GetChars( ) );
 }
 

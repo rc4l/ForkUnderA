@@ -575,3 +575,61 @@ test("the command-safety template ships a script and both menu kinds trying atex
   assert.match(judgeCommandSafetyFrom("x", { listed: "", refusals: 2, saved: { file: "../fua-commandsafety", exists: true } }).line, /writeini wrote \.\.\/fua-commandsafety/);
   assert.match(judgeCommandSafetyFrom("x", { listed: "", refusals: 2, saved: { ...saved, exists: false } }).line, /which is not there/);
 });
+
+test("the translation-change template recolours its tagged pillar from MAP01's start and redefines the colours only when puked, MAP02 starting in them", async () => {
+  const { buildTranslationChangeWad, GREEN, RED } = await import("../scenarios/translationchange.mjs");
+  const buf = buildTranslationChangeWad();
+  const maps = textmaps(buf);
+  assert.equal(maps.length, 2);
+  for (const u of maps) assert.ok(u.thing.some((t) => t.type === THING.TechPillar && t.id > 0));
+  const words = (b) => { const out = []; for (let i = 8; i + 4 <= b.readInt32LE(4); i += 4) out.push(b.readInt32LE(i)); return out; };
+  const [first, second] = readWad(buf).filter((l) => l.name === "BEHAVIOR").map((l) => words(l.data));
+  const range = (r) => [PCD.PUSHNUMBER, r[0], PCD.PUSHNUMBER, r[1], PCD.PUSHNUMBER, r[2], PCD.PUSHNUMBER, r[3], PCD.TRANSLATIONRANGE1];
+  const at = (ws, seq) => ws.findIndex((_, i) => seq.every((w, k) => ws[i + k] === w));
+  assert.ok(at(first, range(GREEN[0])) >= 0 && at(first, range(RED[0])) > at(first, range(GREEN[0])), "MAP01 green, then red in the closed script");
+  assert.ok(at(first, [PCD.LSPEC1 + 1, SPECIAL.Thing_SetTranslation]) >= 0);
+  assert.ok(at(second, range(RED[0])) >= 0 && at(second, range(GREEN[0])) < 0, "MAP02 red from its start");
+});
+
+test("the premultiplied-blend template puts an additive and a translucent column and pane in MAP01, and MAP02 has both columns translucent", async () => {
+  const { buildPremulBlendWad, ADD_EDNUM, TRANS_EDNUM, SIDES, BOXES } = await import("../scenarios/premulblend.mjs");
+  const buf = buildPremulBlendWad();
+  const decorate = readWad(buf).find((l) => l.name === "DECORATE").data.toString("latin1");
+  assert.match(decorate, new RegExp(`ZXPremulAdd : ShortGreenColumn ${ADD_EDNUM}\\n\\{\\n  RenderStyle Add\\n  Alpha 0.6`));
+  assert.match(decorate, new RegExp(`ZXPremulTrans : ShortGreenColumn ${TRANS_EDNUM}\\n\\{\\n  RenderStyle Translucent\\n  Alpha 0.6`));
+  const [scene, oracle] = textmaps(buf);
+  const columns = (u) => u.thing.filter((t) => t.type >= ADD_EDNUM).map((t) => t.type);
+  assert.deepEqual(columns(scene), [ADD_EDNUM, TRANS_EDNUM]);
+  assert.deepEqual(columns(oracle), [TRANS_EDNUM, TRANS_EDNUM]);
+  const panes = scene.linedef.filter((l) => l.alpha === 0.5).map((l) => l.renderstyle);
+  assert.deepEqual(panes, ["add", "translucent"]);
+  // [Doruk-Aksoy] Off against on holds everything to a ceiling, and the additive column against MAP02's translucent one to a floor.
+  assert.deepEqual(SIDES.map((s) => s.cvars.fua_dg_premulblend), [0, 1, 1]);
+  assert.deepEqual(SIDES[2].commands, ["map MAP02"]);
+  const { scene: all, addcol, transcol, addpane, transpane, apart } = BOXES.MAP01;
+  for (const b of [all, addcol, transcol, addpane, transpane]) assert.deepEqual([b.pair, b.floor], [["off", "on"], undefined]);
+  assert.deepEqual([apart.pair, apart.box, apart.ceiling], [["on", "trans"], addcol.box, undefined]);
+});
+
+test("the slot-recycle template gives every pillar a class and translation of its own, more of them than 128 slots, 40 to a room", async () => {
+  const { buildSlotRecycleWad, ROOMS, PER_ROOM, FIRST_EDNUM, judgeSlotRecycle, SLOT_LINE } = await import("../scenarios/slotrecycle.mjs");
+  const buf = buildSlotRecycleWad();
+  const decorate = readWad(buf).find((l) => l.name === "DECORATE").data.toString("latin1");
+  const translations = [...decorate.matchAll(/Translation "([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(translations.length, ROOMS * PER_ROOM);
+  assert.equal(new Set(translations).size, translations.length, "every pillar's palette is its own");
+  assert.ok(ROOMS * PER_ROOM > 128 && PER_ROOM < 128);
+  const [u] = textmaps(buf);
+  const pillars = u.thing.filter((t) => t.type >= FIRST_EDNUM);
+  assert.equal(new Set(pillars.map((t) => t.type)).size, ROOMS * PER_ROOM);
+  // [Doruk-Aksoy] The verdict wants the table line, recycling, bindless on and every visit alike.
+  const line = "material slots: 128 of 128 in the table, 4 pinned, 118 recycled since load, bindless on, past the fill (0 since load)";
+  assert.match(line, SLOT_LINE);
+  assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 0, room: 0, diff: 0 }] }).failed, 0);
+  assert.equal(judgeSlotRecycle("t", { stats: line.replace("118 recycled", "0 recycled"), diffs: [] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line.replace("bindless on", "bindless off"), diffs: [] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line.replace("(0 since", "(3 since"), diffs: [] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 5, room: 0, diff: 0.5 }] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 5, room: 0, diff: null }] }).failed, 1);
+  assert.equal(judgeSlotRecycle("t", { stats: "no line", diffs: [] }).failed, 1);
+});

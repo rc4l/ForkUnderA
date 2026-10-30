@@ -3,6 +3,7 @@
 
 #include "features/hwrender/computation/spriteatlas_compute.h"
 
+#include <cstddef>
 #include <cstring>
 
 namespace zx { namespace hwrender {
@@ -34,6 +35,11 @@ void ComputeAtlasUV(int x, int y, int w, int h, int pageW, int pageH, float &u, 
 {
 	u = (x + u * w) / (float)pageW;
 	v = (y + v * h) / (float)pageH;
+}
+
+bool ComputeAtlasPieceEligible(const AtlasPieceFacts &f)
+{
+	return f.quad && !f.depthBias && !f.solid && !f.hud && f.mirrorView < 0 && f.onMirror < 0 && f.fuzz == 0;
 }
 
 bool ComputeAtlasEligible(const AtlasCandidate &c, int maxSide)
