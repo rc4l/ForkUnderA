@@ -46,12 +46,12 @@ namespace zx { namespace frame {
 
 namespace {
 
-// [rc4l] The particles in a subsector a walk reached, derived.
+// [rc4l] The particles in a subsector a walk reached, queued for deriving once the walk is done.
 void WalkParticles(subsector_t *sub, sector_t *sector)
 {
 	if (!gl_render_things) return;
 	for (WORD i = zx::gamecopy::FirstParticleIn(int(sub - subsectors)); i != NO_PARTICLE; i = zx::gamecopy::CopiedParticle(i)->snext)
-		zx::sprites::BuildParticle(zx::gamecopy::CopiedParticle(i), zx::gamecopy::ParticleIdentity(i), sector);
+		zx::sprites::QueueParticle(zx::gamecopy::CopiedParticle(i), zx::gamecopy::ParticleIdentity(i), sector);
 }
 
 // [rc4l] An actor a stacked view's or mirror's walk reached, its sprite or model derived inside that view.
@@ -180,7 +180,7 @@ void StandaloneScene()
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
 	if (walked)
 	{
-		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals };
+		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals, zx::sprites::BuildQueuedParticles };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(fua_vis_cull, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);

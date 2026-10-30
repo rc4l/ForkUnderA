@@ -18,6 +18,7 @@ struct WalkHooks
 	void (*particles)(subsector_t *sub, sector_t *sector);
 	void (*sprite)(const zx::gamecopy::ActorRecord &thing);
 	void (*decals)(const int *sides, int count);
+	void (*walked)();   // [Doruk-Aksoy] the view's walk done and its decals not yet handed, while the view it walked from still stands
 };
 
 // [rc4l] Walk the BSP from the current view as GL's walk does; `publish` hands what it reaches to the player's walk bits, `derive` makes the player's sky surfaces and collects the stacked views, skyboxes and mirrors it looks into, and `hooks` takes its particles and decals.
