@@ -758,7 +758,8 @@ struct LaneSprite
 // [rc4l] One chunk of a batch's actors, derived on a lane.
 struct SpriteChunk
 {
-	std::vector<SpritePiece> pieces;
+	std::vector<SpritePiece> pieces;   // [Doruk-Aksoy] only grows, since sizing it to each actor's kMaxPieces constructed them all again; `used` of them are this frame's
+	int used = 0;
 	std::vector<LaneSprite> sprites;
 };
 
@@ -769,23 +770,24 @@ static const int kSpriteChunk = 32;
 static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 {
 	SpriteChunk &c = g_spriteChunks[chunk];
-	c.pieces.clear();
+	c.used = 0;
 	c.sprites.clear();
 	const int end = (chunk + 1) * kSpriteChunk < count ? (chunk + 1) * kSpriteChunk : count;
 	for (int i = chunk * kSpriteChunk; i < end; i++)
 	{
-		LaneSprite ls = { (int)c.pieces.size(), 0, false };
+		LaneSprite ls = { c.used, 0, false };
 		Subject s;
 		if (SubjectOf(things[i], s))
 		{
 			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->isPlayer)) ls.onGameThread = true;
 			else
 			{
-				c.pieces.resize(ls.first + kMaxPieces);
-				const int n = DeriveSprite(things[i], s, &c.pieces[ls.first], kMaxPieces, true);
+				// [Doruk-Aksoy] DeriveSprite writes every piece it draws afresh, so last frame's records are reused as they stand.
+				if ((int)c.pieces.size() < c.used + kMaxPieces) c.pieces.resize(c.used + kMaxPieces);
+				const int n = DeriveSprite(things[i], s, &c.pieces[c.used], kMaxPieces, true);
 				ls.onGameThread = n < 0;
 				ls.count = n < 0 ? 0 : n;
-				c.pieces.resize(ls.first + ls.count);
+				c.used += ls.count;
 			}
 		}
 		c.sprites.push_back(ls);

@@ -152,6 +152,12 @@ A frame's sprites, models and decals are laid out on the main thread (`computati
 slot found there, since finding one may make it) and their records and vertices written on the job pool in
 chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` from 0.13 to 0.09 ms.
 
+`BuildLightClusters` bins the frame's dynamic lights into the cluster grid a band of cells at a time, each depth
+slice's rows in `kClusterRowGroups` bands on the job lanes, every band walking the lights in order and writing only its
+own cells, so each cell lists its lights as one pass would (`computation/lightbin_compute`); `fua_dg_clusterjobs 0`
+bins them as one band on the main thread. The frame's two sorts, the dynamic pieces' order and the translucent draws',
+are stable radix sorts that skip the key bytes every key shares (`computation/radixsort_compute`).
+
 The sector light table (`fua sector light`, `kSectorLightWords` a sector) holds each sector's light level, floor
 and ceiling lights and colormap, read from the render copy and its changed entries sent once a frame
 (`UpdateSectorLightTable`, `ComputeChangedRuns`). A level surface its sector lights carries where its light comes
