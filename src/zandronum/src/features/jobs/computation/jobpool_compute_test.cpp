@@ -143,6 +143,19 @@ TEST(JobPool, StopsWorkersWhetherSpinningOrAsleep)
 	SUCCEED();
 }
 
+// [rc4l] The page froze for good when fua_gamethread changed the wanted size while the workers were still starting.
+TEST(JobPool, ACallerThatMayNotBlockKeepsTheWorkersItHas)
+{
+	EXPECT_EQ(5, zx::jobs::ComputePoolWorkers(6, 5, false));
+	EXPECT_EQ(5, zx::jobs::ComputePoolWorkers(0, 5, false));
+}
+
+TEST(JobPool, ACallerThatMayBlockGetsTheWorkersItWants)
+{
+	EXPECT_EQ(6, zx::jobs::ComputePoolWorkers(6, 5, true));
+	EXPECT_EQ(0, zx::jobs::ComputePoolWorkers(0, 5, true));
+}
+
 TEST(JobPool, AutoWorkersTakeHalfTheMachineLessTheCallerUpToTheCap)
 {
 	EXPECT_EQ(0, ComputeAutoWorkers(1, 7, 1));

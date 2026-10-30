@@ -21,6 +21,8 @@ EMSDK=/path/to/emsdk ./web_compile.sh
 EMSDK=/path/to/emsdk ./web_run.sh [--no-build] [--no-open] [--port N] [query]
 ```
 
+A player's page is the game and the Discord link. `?dev=1` brings back the console, the WAD panel, the fullscreen button and the Freedoom licence link.
+
 `web_compile.sh` builds the `web` preset into `build-web/` and stages the page, module and data into `dist-web/`. `ZX_WITH_SYMBOLS=1` keeps function names in the wasm for readable crash stacks, `JOBS=N` caps the compile, and `ZX_KEEP_GOING=1` reports every compile error at once. `web_run.sh` builds when anything changed, serves `dist-web/` and opens the browser at it, with the query on the address (such as `map=MAP01`).
 
 ## serve.mjs
@@ -46,6 +48,16 @@ Loads a page in headless Chrome with WebGPU on and prints its console.
 - Chrome always runs muted, since a headless Chrome still plays to the machine's speakers; a run's caller can let the page's audio start without a click (`smoke({ autoplay })`).
 - `--downloadDir DIR` keeps the page's downloads in DIR, and the run waits for them to finish.
 - The page can ask for input a person would give by logging `check: click` (the page's middle), `check: press Tab` (also `Escape`, `Enter`) or `check: resize 900x700` (the window). Input from inside the page doesn't count as a person's, so a click can't start the sound that way.
+
+A check or run that matches nothing also says when the page stopped answering, which means it hung rather than ran slowly. `--stacks true` catches where, with the debugger on from the start, so leave it off for anything timed: it slows WebAssembly.
+
+## safari.mjs
+
+```bash
+node tools/web/safari.mjs dist-web [--map MAP01] [--next MAP02] [--shot out.png]
+```
+
+Runs a staged build in real Safari through `safaridriver`, which needs Develop > Allow Remote Automation: it starts, a click starts the sound, a second map loads, and nothing is logged as an error. Exit 1 names each fault. `check.mjs` is Chrome's and Firefox's, so this is the one to run for a change to the page.
 
 ## stage.mjs
 

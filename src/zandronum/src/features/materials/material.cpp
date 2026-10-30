@@ -264,7 +264,8 @@ FTexturePixels * FMaterial::ValidateSysTexture(FTexture * tex, bool expand)
 // Constructor
 //
 //===========================================================================
-TArray<FMaterial *> FMaterial::mMaterials;
+// [rc4l] Never destroyed, since the texture manager's own destruction at exit comes after it and each texture's material still looks itself up here.
+TArray<FMaterial *> &FMaterial::mMaterials = *new TArray<FMaterial *>;
 
 FMaterial::FMaterial(FTexture * tx, bool expanded)
 {

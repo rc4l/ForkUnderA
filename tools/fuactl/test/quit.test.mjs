@@ -136,3 +136,9 @@ test("waiting for a level gives up at its deadline and says so when the engine e
   await assert.rejects(waitInLevel({ port: 7799, proc: { exitCode: null } }, { connect: never, pollMs: 1, timeoutMs: 20 }), /no playable level after 0s/);
   await assert.rejects(waitInLevel({ port: 7799, proc: { exitCode: 1 } }, { connect: never, pollMs: 1, timeoutMs: 20 }), /engine exited .* before reaching a level/);
 });
+
+test("a quit reports the crash file its own instance left", async () => {
+  const b = fakeBridge(3);
+  const crashes = () => [{ file: "/tmp/fuactl-1/engine-7801.log.crash", at: 1 }];
+  assert.equal(await quitInstance({ port: 7801, token: "t" }, { connect: b.connect, pollMs: 1, crashes }), "crashed quitting (/tmp/fuactl-1/engine-7801.log.crash)");
+});

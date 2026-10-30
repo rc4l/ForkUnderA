@@ -20,7 +20,6 @@
 #include <cstring>
 #include <vector>
 
-EXTERN_CVAR(Bool, fua_dg_async_pipelines)
 
 namespace zx { namespace hwrender {
 
@@ -187,7 +186,7 @@ void MakePipeline(int i, Program &p)
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = (Diligent::Uint32)samplers.size();
 	pci.pVS = p.vs;
 	pci.pPS = p.ps;
-	if (fua_dg_async_pipelines) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
+	if (AsyncPipelines()) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
 	CreatePipeline(pci, &p.pso);
 	if (!p.pso) { p.broken = true; Note(d, ""); }
 }

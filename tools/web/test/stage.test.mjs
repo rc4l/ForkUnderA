@@ -28,6 +28,7 @@ test('staging copies the module, the page and the data, with Freedoom and its li
   assert.deepEqual(stage({ buildDir: build, outDir: out, pageDir: page, freedoomDir: freedoom }), ['fua_core_k.pk3', 'freedoom2.wad']);
   assert.equal(fs.readFileSync(path.join(out, 'forkundera.wasm'), 'utf8'), 'wasm');
   assert.equal(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), '<p>');
+  assert.ok(fs.statSync(path.join(out, 'logo.png')).size > 0);
   assert.equal(fs.readFileSync(path.join(out, 'data', 'freedoom-license.txt'), 'utf8'), 'bsd');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, 'data', 'files.json'), 'utf8')),
     [{ name: 'fua_core_k.pk3', size: 4 }, { name: 'freedoom2.wad', size: 4 }]);

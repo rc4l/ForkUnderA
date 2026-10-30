@@ -18,6 +18,7 @@ adapted rather than ported:
 - The wait is upstream's `DFrameBuffer::FPSLimit`: sleep to 2 ms before the deadline, then yield
   and look again, just before each present. Each deadline is a period after the last one rather
   than after the last wake, so the rate holds instead of drifting under the limit.
+- `vid_maxfps` is clamped as upstream's is (`framelimit.cpp` owns the range), so a value below it reads as its lowest.
 - `cl_capfps` limits to `TICRATE` here, where upstream skips the limit for it, because upstream's
   tic wait applies to every frame and ours does not.
 - A stepped loop (a browser, `features/mainloop`) cannot wait, so it skips an animation frame

@@ -5,9 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serveLocally } from './serve.mjs';
-import { gpuLogLines, removeQuietly } from './smoke.mjs';
+import { HUNG, gpuLogLines, removeQuietly } from './smoke.mjs';
 import { smokeIn } from './firefox.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { CONSOLE_AFTER, WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
 import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
 import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
 import { buildLightTableWad, VANTAGES as LIGHTTABLE_VANTAGES } from '../fuactl/scenarios/lighttable.mjs';
@@ -31,6 +31,22 @@ export function blankGame(img) {
   const s = boxStats(img, [0.05, 0.05, 0.95, 0.8]);
   if (s.mean < 10) return `the game is black (mean ${s.mean.toFixed(1)})`;
   if (s.hi - s.lo < 40) return `the game is one flat colour (${s.lo.toFixed(0)}..${s.hi.toFixed(0)})`;
+  return '';
+}
+
+// [rc4l] Why a player's page is wrong, or '': its tools showing, or the Discord link gone or pointing elsewhere.
+export function pageTrimmed({ tools, discord, link }) {
+  if (tools) return 'the page tools are showing';
+  if (!discord) return 'the Discord link is hidden';
+  if (!link.startsWith('https://discord.gg/')) return `the Discord link goes to ${link}`;
+  return '';
+}
+
+// [rc4l] Why the loading screen is wrong, or '': its logo did not load, its chunks do not read as the name, or it did not say the engine was starting.
+export function splashReady({ loaded, name, said }) {
+  if (!loaded) return 'the logo did not load';
+  if (name !== 'ForkUnderA') return `the name reads ${name}`;
+  if (said !== 'Launching FUA...') return `the screen said ${said} while the engine started`;
   return '';
 }
 
@@ -120,10 +136,10 @@ export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
 }
 
-// [rc4l] Why vid_maxfps went wrong in the page, or '': frames at a limit of 60 not some 16.7 ms apart, or no faster without it.
+// [rc4l] Why vid_maxfps went wrong in the page, or '': frames at the lowest limit, 35, not some 28.6 ms apart, or no faster without it, which 35 shows whatever the display, where a limit of 60 cannot on a 60 Hz one.
 export function frameLimited({ held, free }) {
-  if (!(held >= 15.5 && held <= 18.5)) return `vid_maxfps 60 left frames ${held} ms apart`;
-  if (!(free > 0 && free < 15)) return `with no limit frames were ${free} ms apart`;
+  if (!(held >= 27 && held <= 30.5)) return `vid_maxfps 35 left frames ${held} ms apart`;
+  if (!(free > 0 && free < 25)) return `with no limit frames were ${free} ms apart`;
   return '';
 }
 
@@ -266,7 +282,7 @@ export const CHECKS = [
   {
     name: 'a mark on the floor draws without a device error',
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       let seen = { boxes: 0, draws: 0 };
       // [rc4l] A few tries, since a software adapter can be slow enough that the level is not in play yet.
       for (let i = 0; i < 5 && !seen.draws; i++) {
@@ -278,10 +294,7 @@ export const CHECKS = [
         ${pause(800)}
         Module.fuaCommand('-attack');
         ${pause(1000)}
-        const before = log.textContent.length;
-        Module.fuaCommand('fua_projdecals_stats');
-        ${pause(300)}
-        const pass = /deferred pass: (\\d+) boxes in (\\d+) draws/.exec(log.textContent.slice(before));
+        const pass = /deferred pass: (\\d+) boxes in (\\d+) draws/.exec(await consoleAfter('fua_projdecals_stats'));
         if (pass) seen = { boxes: Number(pass[1]), draws: Number(pass[2]) };
       }
       return seen;`),
@@ -342,17 +355,15 @@ export const CHECKS = [
     name: 'vid_maxfps holds the page to its frame rate',
     firefox: true,
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       const apart = async () => {
-        const before = log.textContent.length;
-        Module.fuaCommand('fua_stats frame/present_ms');
-        ${pause(300)}
-        const m = /frame\\/present_ms\\s+ms\\s+[\\d.]+\\s+([\\d.]+)/.exec(log.textContent.slice(before));
+        const m = /frame\\/present_ms\\s+ms\\s+[\\d.]+\\s+([\\d.]+)/.exec(await consoleAfter('fua_stats frame/present_ms'));
         return m ? Number(m[1]) : -1;
       };
       ${pause(3000)}
-      Module.fuaCommand('vid_maxfps 60');
-      ${pause(5000)}
+      Module.fuaCommand('vid_maxfps 35');
+      // [rc4l] Long enough for the stat's window (kStatsFrames in telemetry.cpp) to hold only frames at this limit.
+      ${pause(8000)}
       const held = await apart();
       Module.fuaCommand('vid_maxfps 0');
       ${pause(3000)}
@@ -367,24 +378,22 @@ export const CHECKS = [
     name: 'dynamic resolution steps down under GPU load and back after it, reading no frame with the console up or out of focus',
     firefox: true,
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       const report = async () => {
-        const before = log.textContent.length;
-        Module.fuaCommand('fua_dynres_report');
-        ${pause(200)}
-        const said = log.textContent.slice(before), m = /scale ([\\d.]+)/.exec(said);
+        const said = await consoleAfter('fua_dynres_report', 200), m = /scale ([\\d.]+)/.exec(said);
         return { scale: m ? Number(m[1]) : -1, held: /held while/.test(said) };
       };
       // [rc4l] The default target, which a browser aims at 60 fps since it times no GPU, met at rest.
       ${pause(4000)}
       const idle = (await report()).scale;
       Module.fuaCommand('fua_dg_gpuload 60000');
-      ${pause(8000)}
-      const loaded = (await report()).scale;
-      // [rc4l] Back within a few seconds, which a wait doubled under the load once held to many more.
+      // [rc4l] The lowest of the load's readings, since a trial step up can read full scale at any one moment.
+      let loaded = 1;
+      for (let i = 0; i < 8; i++) { ${pause(800)} const { scale } = await report(); if (scale >= 0 && scale < loaded) loaded = scale; }
       Module.fuaCommand('fua_dg_gpuload 0');
-      ${pause(4000)}
-      const after = (await report()).scale;
+      // [rc4l] Back within twenty seconds, since frames paced to a 60 Hz display show no room and each step up waits for its trial, doubled by one the load undid; a wait doubled under the load once held to many more.
+      let after = -1;
+      for (let i = 0; i < 20 && after !== 1; i++) { ${pause(800)} after = (await report()).scale; }
       Module.fuaCommand('toggleconsole');
       ${pause(1000)}
       const consoleHeld = (await report()).held;
@@ -418,6 +427,34 @@ export const CHECKS = [
       return { before, after: window.fuaAudio.map((c) => c.state), played: window.fuaBuffers - buffers };`),
     until: EVAL,
     expect: soundStarts,
+  },
+  // [rc4l] A player's page is the game and the Discord link alone, the tools coming back only with ?dev=1.
+  {
+    name: 'the page shows the game and the Discord link, its tools only with dev=1',
+    evaluate: inPage(`
+      const shown = (id) => document.getElementById(id).getClientRects().length > 0;
+      return { tools: shown('page-tools'), discord: shown('discord'), link: document.getElementById('discord').href };`),
+    until: EVAL,
+    expect: pageTrimmed,
+  },
+  // [rc4l] The loading screen's logo is staged beside the page and its name reads as one word once it closes up.
+  {
+    name: 'the loading screen has its logo and name',
+    evaluate: inPage(`
+      const logo = document.querySelector('#splash img');
+      for (let i = 0; i < 50 && !logo.complete; i++) ${pause(100)}
+      return { loaded: logo.naturalWidth > 0, name: document.getElementById('wordmark').textContent, said: document.getElementById('status-text').textContent };`),
+    until: EVAL,
+    expect: splashReady,
+  },
+  // [rc4l] A change of worker count as the level starts once joined workers still starting, which only the main thread it blocked could start, and the page never answered again.
+  {
+    name: 'the game thread turned off as a level starts leaves the page answering',
+    evaluate: inPage(`
+      Module.fuaCommand('fua_gamethread 0');
+      ${pause(1000)}
+      return 'answering';`),
+    until: EVAL,
   },
   // [rc4l] The canvas follows the page's layout, and the frame follows the canvas rather than being cut to it.
   {
@@ -540,6 +577,7 @@ export const CHECKS = [
   // [rc4l] SDL scales mouse motion by its window over the canvas, axis by axis, and learned the canvas's size only from the window's resize event, so fullscreen left the axes scaled apart; its window must match the canvas there and after.
   {
     name: 'the mouse is scaled alike on both axes through fullscreen',
+    query: 'map=MAP01&dev=1',
     focused: true,
     evaluate: inPage(`
       ${HEAR_CONSOLE}
@@ -607,12 +645,9 @@ export const CHECKS = [
   {
     name: 'damage tint can be changed, and instant replay and the update check are off and greyed out',
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       const read = async (name) => {
-        const before = log.textContent.length;
-        Module.fuaCommand(name);
-        ${pause(300)}
-        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(log.textContent.slice(before));
+        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(await consoleAfter(name));
         return m ? m[1] : null;
       };
       Module.fuaCommand('cl_damagetint 40');
@@ -782,7 +817,7 @@ export const CHECKS = [
 
 // [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError); an expect answering { skip } is a check this browser cannot judge, with the reason.
 export function judge(check, matched, img = null, lines = []) {
-  if (!matched) return { ok: false, reason: `no line matched /${check.until}/` };
+  if (!matched) return { ok: false, reason: `no line matched /${check.until}/${lines.includes(HUNG) ? ', and the page stopped answering: smoke.mjs --stacks true names where' : ''}` };
   if (matched.startsWith('[eval] threw')) return { ok: false, reason: matched.slice('[eval] '.length) };
   const reason = (check.deviceError ? '' : gpuError(lines))
     || (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gatedUnits, parseCobertura, judgeCoverage, unitsTouched, findOpenCppCoverage, isJumpLine } from "../src/coverage.mjs";
+import { gatedUnits, parseCobertura, judgeCoverage, unitsTouched, findOpenCppCoverage, isJumpLine, coverageEnv, parseCoverageGate } from "../src/coverage.mjs";
 
 test("a test gates the sibling source and header that exist", () => {
   const exists = (p) => ["a/x.cpp", "a/x.h", "b/y.h"].includes(p);
@@ -48,4 +48,26 @@ test("OpenCppCoverage is found from the flag first, then the environment", () =>
   const exists = (p) => p === "D:/tool.exe" || p === "E:/env.exe";
   assert.equal(findOpenCppCoverage("D:/tool.exe", { FUACTL_OPENCPPCOVERAGE: "E:/env.exe" }, exists), "D:/tool.exe");
   assert.equal(findOpenCppCoverage(undefined, { FUACTL_OPENCPPCOVERAGE: "E:/env.exe" }, exists), "E:/env.exe");
+});
+
+test("coverage.sh's gate lines become a verdict per unit", () => {
+  const out = "COVERAGE GATE OK:   src/a_compute.cpp 100%\nnoise\nCOVERAGE GATE FAIL: src/b_compute.cpp is at 97.5% line coverage (need 100%)\n";
+  assert.deepEqual(parseCoverageGate(out), [
+    { unit: "src/a_compute.cpp", ok: true, hit: 100, total: 100, missed: [] },
+    { unit: "src/b_compute.cpp", ok: false, hit: 97.5, total: 100, missed: [] },
+  ]);
+  assert.deepEqual(parseCoverageGate("nothing here"), []);
+});
+
+test("coverage on macOS takes Homebrew's LLVM and the SDK, and elsewhere only a tree of its own", () => {
+  const mac = coverageEnv({ PATH: "/bin" }, { platform: "darwin", llvm: "/l", exists: () => true, sdk: () => "/sdk" });
+  assert.equal(mac.CXX, "/l/clang++");
+  assert.equal(mac.SDKROOT, "/sdk");
+  assert.equal(mac.PATH, "/l:/bin");
+  assert.match(mac.COVERAGE_BUILD_DIR, /build-cov-fuactl$/);
+  const noLlvm = coverageEnv({ PATH: "/bin" }, { platform: "darwin", llvm: "/l", exists: () => false, sdk: () => "/sdk" });
+  assert.equal(noLlvm.CXX, undefined);
+  const linux = coverageEnv({ PATH: "/bin" }, { platform: "linux" });
+  assert.equal(linux.PATH, "/bin");
+  assert.equal(linux.SDKROOT, undefined);
 });
