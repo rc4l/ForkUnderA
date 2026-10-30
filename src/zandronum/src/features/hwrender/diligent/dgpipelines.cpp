@@ -1127,7 +1127,7 @@ static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = (Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0])) - noArray;
 	pci.pVS = vs;
 	pci.pPS = ps;
-	if (fua_dg_async_pipelines) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
+	if (AsyncPipelines()) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
 	CreatePipeline(pci, &out);
 }
 
@@ -1170,7 +1170,7 @@ static Diligent::IPipelineState *UserScenePSO(int pipeline, int userShader, bool
 
 Diligent::IPipelineState *ScenePSO(int pipeline, int userShader)
 {
-	return UserScenePSO(pipeline, userShader, !fua_dg_async_pipelines);
+	return UserScenePSO(pipeline, userShader, !AsyncPipelines());
 }
 
 void PrewarmUserPipelines()

@@ -6,6 +6,7 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/draw2d/record.h"   // [rc4l] Clear2D
+#include "i_system.h"   // [rc4l] I_FatalError
 #include "features/hwrender/backendonly.h"
 #include "features/hwrender/computation/levelsetup_compute.h"
 #include "features/hwrender/computation/madeinplay_compute.h"
@@ -122,6 +123,8 @@ static bool AutoSetupForLevel()
 			if (g_setup.state == kSetupReady) PrecacheQueuedMaterials();
 			if (g_setup.state == kSetupReady) Printf("vulkan: %s\n", report.GetChars());
 			else if (g_setup.state == kSetupGaveUp) Printf("vulkan: setup failed after %d attempts -- %s\n", g_setup.tries, report.GetChars());
+			if (zx::hwrender::ComputeLevelSetupFatal(g_setup, zx::hwrender::BackendOnly()))
+				I_FatalError("The level could not be set up to draw: %s", report.GetChars());
 		}
 		return g_setup.state == kSetupReady;
 	case kSetupReady:

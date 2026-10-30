@@ -36,3 +36,14 @@ TEST(LevelSetup, AFailedUploadRearmsUntilItGivesUp)
 	ComputeLevelSetupUploaded(s, false);
 	EXPECT_EQ(kSetupGaveUp, s.state);
 }
+
+TEST(LevelSetup, GivingUpIsFatalOnlyWithNothingElseToDrawTheLevel)
+{
+	LevelSetup s = ComputeLevelSetupStart();
+	EXPECT_FALSE(ComputeLevelSetupFatal(s, true));
+	s.state = kSetupReady;
+	EXPECT_FALSE(ComputeLevelSetupFatal(s, true));
+	s.state = kSetupGaveUp;
+	EXPECT_TRUE(ComputeLevelSetupFatal(s, true));
+	EXPECT_FALSE(ComputeLevelSetupFatal(s, false));
+}
