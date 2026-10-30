@@ -178,6 +178,11 @@ each to 136, and its uploads from 3.5 to 1.8 MB a frame in Firefox; `fua_dg_spri
 whole. The words buffer (`fua dynamic data`) is bound statically, so it grows with the piece buffer in
 `EnsureDynamicRecords` (`ComputeDynWordsBound`) and the pipelines are made again with it.
 
+The deferred decal pass draws each floor or ceiling mark over a screen rectangle the CPU works out
+(`computation/decalbounds_compute`): the cube round everything the mark can paint, its run-out radius, its centre riding
+its plane, cut at the near plane, so a mark behind the eye is not drawn and one beside it covers only the part in front.
+In a DnD fight the vertex stage's own rule had drawn three in four marks over the whole screen.
+
 Nothing the GPU needs is made by the frame that first draws it. The deferred decal pass's pipelines are built
 with the scene's (`EnsureDecalPipelines` in `BuildSceneBuffer`), and once the level is uploaded the backend makes
 every texture the engine marked for precache (`FBackendRenderer::PrecacheTexture`, `features/fua-caching`): the
