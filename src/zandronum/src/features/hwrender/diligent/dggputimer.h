@@ -11,7 +11,8 @@
 namespace zx { namespace hwrender {
 
 // [Doruk-Aksoy] kGpuPostScene and kGpuPostScreen are features/postprocess's two stages.
-enum GpuPass { kGpuFrame, kGpuWorld, kGpu2D, kGpuPostScene, kGpuPostScreen, kGpuPasses };
+// [Doruk-Aksoy] kGpuDecals and kGpuSorted are the main view's deferred decals and sorted pass, inside its world pass.
+enum GpuPass { kGpuFrame, kGpuWorld, kGpu2D, kGpuPostScene, kGpuPostScreen, kGpuDecals, kGpuSorted, kGpuPasses };
 
 void BeginGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass);
 void EndGpuPass(Diligent::IDeviceContext *ctx, GpuPass pass);

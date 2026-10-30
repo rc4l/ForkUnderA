@@ -1270,7 +1270,12 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// sprites. Anything standing in front of a mark is then drawn over it because it is in a LATER
 	// pass, which is a fact about the frame rather than something a sort has to rediscover.
 	// [rc4l] The floor and ceiling marks features/decals made, whenever there are any.
-	if (zx::levelmesh::ProjectedDecalsActive()) DrawDeferredDecals(ctx);
+	if (zx::levelmesh::ProjectedDecalsActive())
+	{
+		if (g_pass.mainView) BeginGpuPass(ctx, kGpuDecals);
+		DrawDeferredDecals(ctx);
+		if (g_pass.mainView) EndGpuPass(ctx, kGpuDecals);
+	}
 
 	// [rc4l] Sprites were built in PrepareFrame and draw in the sorted pass below, except the solid ones, which belong with the world: a model has to occlude itself.
 	DrawSolidDyn(ctx);
@@ -1288,7 +1293,9 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	// [rc4l] Then everything that blends -- translucent 3D floors, translucent middle textures and
 	// translucent sprites -- in ONE back-to-front pass, so the world and the sprites sort against each
 	// other rather than being layered by which pass came last.
+	if (g_pass.mainView) BeginGpuPass(ctx, kGpuSorted);
 	DrawBlended(ctx);
+	if (g_pass.mainView) EndGpuPass(ctx, kGpuSorted);
 	g_phase.draw.Unclock();
 }
 
