@@ -96,6 +96,11 @@ before its fill and the table is sealed from the fill to the frame's end, so a r
 binding a frame draws with. A fill on a retired binding writes only the slots changed since that binding was filled,
 and with the array live a translucent or animated batch draws with the world binding rather than a binding of its own,
 each of which held the whole array (scenario `slotrecycle`).
+A plain additive sprite draws on the translucent sprites' pipeline, whose shader leaves its colour multiplied by its
+alpha and an additive piece's alpha 0 (`kWpBlendPremul`, `ComputePremulPipeline`), so each keeps its own blend while
+the sorted pass binds one pipeline where it switched between two; a colour lands within one level of the two
+pipelines' (scenario `premulblend`), a GLDEFS-shaded sprite keeps its own pipeline, and `fua_dg_premulblend`
+("Batch translucency" in Video Mode) turns it off.
 `fua_dg_slotreport [n]` counts the slots a level asked for by kind (`computation/slotreport_compute`), the ones
 refused once the table filled among them, packs the plain sprites as the atlas would to say how many slots its pages
 would leave and what pages and the sprites' own textures cost, gives the working set dynamic pieces asked for in the

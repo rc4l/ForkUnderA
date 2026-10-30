@@ -614,12 +614,18 @@ static const char *kScenePSGBuffer =
 static const char *kScenePSTrans =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
+	/* [Doruk-Aksoy] Under FUA_PREMUL (fua_dg_premulblend) the colour leaves multiplied by its alpha, with alpha 0 for an additive piece, whose screen the premultiplied blend then keeps whole; else as it is. */
+	"#ifdef FUA_PREMUL\n"
+	"vec4 fuaBlendOut(vec4 c) { return vec4(c.rgb * c.a, (int(vTexFlags + 0.5) & 32768) != 0 ? 0.0 : c.a); }\n"
+	"#else\n"
+	"vec4 fuaBlendOut(vec4 c) { return c; }\n"
+	"#endif\n"
 	"void main() {\n"
 	/* [rc4l] A fog boundary sheet (texFlags 1024) is fogboundary.fp: its fog's colour at the fog's opacity there, none with fog off or under a fixed colormap, as gl_CheckFog and RenderFogBoundary decide. */
 	"    if ((int(vTexFlags + 0.5) & 1024) != 0) {\n"
 	"        if (uFixedColormap.w > 0.5 || vFog.a == 0.0) discard;\n"
 	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz")
-	"        outColor = vec4(vFog.rgb, 1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz));\n"
+	"        outColor = fuaBlendOut(vec4(vFog.rgb, 1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz)));\n"
 	"        return;\n"
 	"    }\n"
 	/* [rc4l] GL's CM_FOGLAYER pass over a subtract sprite in coloured fog (texFlags 8192): the fog's colour at its opacity there, 0.75 of the texel's and the piece's alpha. */
@@ -627,7 +633,7 @@ static const char *kScenePSTrans =
 	"        vec4 ft = fuaSurfaceTexel(vUV);\n"
 	"        if (ft.a <= 0.0 || fuaBehindSkyHole()) discard;\n"
 	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz")
-	"        outColor = vec4(vFog.rgb, (1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz)) * ft.a * 0.75 * fuaSurfaceAlpha());\n"
+	"        outColor = fuaBlendOut(vec4(vFog.rgb, (1.0 - fuaFogFactor(vFog.a, vLightParm.y, vPixelPos, uCameraPos.xyz)) * ft.a * 0.75 * fuaSurfaceAlpha()));\n"
 	"        return;\n"
 	"    }\n"
 	/* [rc4l] A fuzzy sprite under r_fuzztype takes GL's fuzz shader (texFlags / 128), the jagged one sampling a splat of its coordinate. */
@@ -638,7 +644,7 @@ static const char *kScenePSTrans =
 	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
 	"    vec3 c = fuaShade(t.rgb);\n"
 	/* [rc4l] A sprite blended by its own colour (texFlags 32) is GL's GL_SRC_COLOR onto one, colour squared onto the screen, which the additive pipeline draws at alpha 1. */
-	"    outColor = (int(vTexFlags + 0.5) & 32) != 0 ? vec4(c * c, 1.0) : vec4(c, t.a * fuaSurfaceAlpha());\n"
+	"    outColor = fuaBlendOut((int(vTexFlags + 0.5) & 32) != 0 ? vec4(c * c, 1.0) : vec4(c, t.a * fuaSurfaceAlpha()));\n"
 	"}\n"
 	FUA_PROGRAM_BLOCK;
 
