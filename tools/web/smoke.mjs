@@ -127,7 +127,13 @@ export function removeQuietly(dir, rm = fs.rmSync, warn = console.warn) {
 }
 
 // [rc4l] `init` runs in the page before its own scripts, the page may ask for input (inputAsked), its downloads land in `downloadDir`, and Chrome's own log goes to `logFile`; the browser's version comes back too.
-export async function smoke({ url, until, seconds = 30, shot, chrome, headless = true, software = false, throttle = 0, autoplay = false, focus = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
+// [rc4l] The lines a hung page's run reports, with the stack --stacks caught.
+export const HUNG = '[hung] the page stopped answering';
+export function hungLines(frames) {
+  return [HUNG, ...frames.map((f) => `[stack] ${f}`)];
+}
+
+export async function smoke({ url, until, stacks = false, seconds = 30, shot, chrome, headless = true, software = false, throttle = 0, autoplay = false, focus = false, onLine = console.log, evaluate, after = 10, profile, init, downloadDir, logFile }) {
   const exe = chrome ?? CHROME_CANDIDATES.find(p => fs.existsSync(p));
   if (!exe) throw new Error('no Chrome found');
   // [rc4l] A named profile keeps the page's storage between runs, for checking what survives a reload; otherwise a fresh one each time.
@@ -149,6 +155,8 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     let id = 0;
     const pending = new Map();
     let matched = null;
+    let pausedAt = null;
+    let hung = false;
     let wake = () => {};
     // [rc4l] Heap snapshots the page asked for (check: heap LABEL), each summed by heap.mjs, and the pieces of the one being taken.
     const heaps = {};
@@ -163,6 +171,7 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
     ws.onmessage = ev => {
       const msg = JSON.parse(ev.data);
       if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); return; }
+      if (msg.method === 'Debugger.paused') { pausedAt = msg.params.callFrames; return; }
       if (msg.method === 'HeapProfiler.addHeapSnapshotChunk') { if (heapChunks) heapChunks.push(msg.params.chunk); return; }
       const line = formatConsole(msg.method, msg.params ?? {});
       if (line !== null) take(line);
@@ -207,6 +216,7 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
       await key('keyUp');
     };
     await send('Runtime.enable');
+    if (stacks) await send('Debugger.enable');
     await send('Log.enable');
     await send('Page.enable');
     // [rc4l] A focused page, as a player's is: headless Chrome's fullscreen otherwise resizes the whole viewport, which hid a canvas resized without a resize event.
@@ -224,8 +234,16 @@ export async function smoke({ url, until, seconds = 30, shot, chrome, headless =
       }, Number(after) * 1000).unref();
     }
     await new Promise(res => { wake = res; setTimeout(res, Math.max(0, deadline - Date.now())); });
+    // [rc4l] A page that stopped answering has hung rather than run slowly, which only a stack from --stacks can place.
+    if (until && !matched) {
+      hung = !(await Promise.race([send('Runtime.evaluate', { expression: '1' }).then(() => true), new Promise((r) => setTimeout(() => r(false), 2000))]));
+      if (hung) {
+        if (stacks) { send('Debugger.pause'); await new Promise((r) => setTimeout(r, 3000)); }
+        for (const line of hungLines((pausedAt || []).map((f) => f.functionName))) take(line);
+      }
+    }
     if (downloadDir) await downloadsSettled(downloadDir);
-    if (shot) {
+    if (shot && !hung) {
       const r = await send('Page.captureScreenshot', { format: 'png' });
       if (r.result?.data) fs.writeFileSync(shot, Buffer.from(r.result.data, 'base64'));
     }
@@ -252,6 +270,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (opt.seconds) opt.seconds = Number(opt.seconds);
   if (opt.headless) opt.headless = opt.headless !== 'false';
   if (opt.software) opt.software = opt.software !== 'false';
+  if (opt.stacks) opt.stacks = opt.stacks !== 'false';
   const { matched } = await smoke(opt);
   if (opt.until && !matched) { console.error(`no line matched /${opt.until}/`); process.exit(1); }
   process.exit(0);

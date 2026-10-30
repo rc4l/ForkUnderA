@@ -32,6 +32,9 @@ void ComputeLevelSetupBaked(LevelSetup &s);
 // [rc4l] The upload's outcome: ready, armed again for another try, or given up after kSetupMaxTries.
 void ComputeLevelSetupUploaded(LevelSetup &s, bool ok);
 
+// [rc4l] Whether the level is given up with nothing else to draw it: GL beside the backend can, but alone the world would stay black with the game running.
+bool ComputeLevelSetupFatal(const LevelSetup &s, bool backendOnly);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_LEVELSETUP_COMPUTE_H

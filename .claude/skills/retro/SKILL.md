@@ -33,8 +33,8 @@ how things "usually are".
    existing code doing the same job) and check it does: `Compute*` helpers for logic, feature folders
    for new files, one predicate where two places decide the same thing, `[rc4l]` one-sentence comments.
 5. **Coverage and shared helpers.** Every branch the session added is in a `*_compute.cpp` with a
-   `*_compute_test.cpp`, or in a `.mjs` with a `.test.mjs`; `fuactl coverage --since main` on Windows,
-   `tests/coverage.sh --auto` elsewhere. Then look for the same decision made in two places (two
+   `*_compute_test.cpp`, or in a `.mjs` with a `.test.mjs`; `fuactl coverage --since main`, on every
+   system. Then look for the same decision made in two places (two
    platforms' ship lists, two scripts' submodule handling) and either share it or make the tool check
    that they agree.
 6. **Drift-prone docs.** A comment or doc that restates a value, a list or a path that lives elsewhere

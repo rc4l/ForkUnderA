@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
+import { pageTrimmed, splashReady, CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -259,11 +259,12 @@ test('Firefox runs only the checks marked for it, and Chrome runs every one', ()
 });
 
 test('the frame limit holds the page near 16.7 ms at 60 and lets it run faster without', () => {
-  assert.equal(frameLimited({ held: 16.7, free: 2.08 }), '');
-  assert.equal(frameLimited({ held: 2.08, free: 2.08 }), 'vid_maxfps 60 left frames 2.08 ms apart');
-  assert.equal(frameLimited({ held: -1, free: 2.08 }), 'vid_maxfps 60 left frames -1 ms apart');
-  assert.equal(frameLimited({ held: 16.7, free: 16.7 }), 'with no limit frames were 16.7 ms apart');
-  assert.equal(frameLimited({ held: 16.7, free: -1 }), 'with no limit frames were -1 ms apart');
+  assert.equal(frameLimited({ held: 28.6, free: 2.08 }), '');
+  assert.equal(frameLimited({ held: 28.6, free: 16.7 }), '');
+  assert.equal(frameLimited({ held: 16.7, free: 16.7 }), 'vid_maxfps 35 left frames 16.7 ms apart');
+  assert.equal(frameLimited({ held: -1, free: 2.08 }), 'vid_maxfps 35 left frames -1 ms apart');
+  assert.equal(frameLimited({ held: 28.6, free: 28.6 }), 'with no limit frames were 28.6 ms apart');
+  assert.equal(frameLimited({ held: 28.6, free: -1 }), 'with no limit frames were -1 ms apart');
 });
 
 test('dynamic resolution in the page is judged at rest, under load, after it, and through the console and a blur', () => {
@@ -296,4 +297,31 @@ test('lightTableSends names a table never sent and surfaces sent again', () => {
   assert.equal(lightTableSends({ pieceCopies: 0, tableCopies: 35 }), '');
   assert.match(lightTableSends({ pieceCopies: 0, tableCopies: 0 }), /sector light table was sent 0.0 times a second/);
   assert.match(lightTableSends({ pieceCopies: 70, tableCopies: 35 }), /surface records were sent 70.0 times a second/);
+});
+
+test('the loading screen needs its logo and the whole name', () => {
+  const good = { loaded: true, name: 'ForkUnderA', said: 'Launching FUA...' };
+  assert.equal(splashReady(good), '');
+  assert.equal(splashReady({ ...good, loaded: false }), 'the logo did not load');
+  assert.equal(splashReady({ ...good, name: 'ForkUnder' }), 'the name reads ForkUnder');
+  assert.equal(splashReady({ ...good, said: 'Loading…' }), 'the screen said Loading… while the engine started');
+});
+
+test('a player sees the Discord link and none of the page tools', () => {
+  const good = { tools: false, discord: true, link: 'https://discord.gg/katKpQMYMe' };
+  assert.equal(pageTrimmed(good), '');
+  assert.equal(pageTrimmed({ ...good, tools: true }), 'the page tools are showing');
+  assert.equal(pageTrimmed({ ...good, discord: false }), 'the Discord link is hidden');
+  assert.equal(pageTrimmed({ ...good, link: 'https://example.com/' }), 'the Discord link goes to https://example.com/');
+});
+
+// [rc4l] A mistyped option is ignored in silence, as `focus` for `focused` once was, so a check that thinks it set one proves nothing.
+test('every check uses only options the runner reads', () => {
+  const known = new Set(['name', 'evaluate', 'until', 'expect', 'expectShot', 'query', 'init', 'shot', 'download', 'deviceError', 'focused', 'autoplay', 'firefox', 'state']);
+  for (const c of CHECKS) for (const key of Object.keys(c)) assert.ok(known.has(key), `${c.name}: ${key}`);
+});
+
+test('a run with no match says when the page hung', () => {
+  assert.equal(judge({ until: 'x' }, null).reason, 'no line matched /x/');
+  assert.match(judge({ until: 'x' }, null, null, ['[hung] the page stopped answering']).reason, /the page stopped answering/);
 });

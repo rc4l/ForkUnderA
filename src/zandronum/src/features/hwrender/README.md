@@ -91,7 +91,7 @@ reservations used and no baked record pins (`computation/slotrecycle_compute`). 
 keys before it makes any (`ComputeReserveSlots`), once per sprite list, and `BuildDynamic` draws with the slots it
 kept (`DynamicPieceSlots`). A world binding's resources are checked once after each fill, not on every
 draw loop's commit, and a buffer, texture or camera target written since is made ready to read before the next one
-(`fua_dg_checkonce`, `computation/resourcestate_compute`). A frame's slots are all settled
+(`fua_dg_checkonce`, `computation/resourcestate_compute`), which only a device with a material array tracks, since only a world commit lets go of what was written. A frame's slots are all settled
 before its fill and the table is sealed from the fill to the frame's end, so a recycled slot never changes under a
 binding a frame draws with. A fill on a retired binding writes only the slots changed since that binding was filled,
 and with the array live a translucent or animated batch draws with the world binding rather than a binding of its own,
@@ -191,7 +191,9 @@ level's walls, flats and skies, its actors' sprites, animation and switch frames
 `computation/precache_compute` orders and budgets them. `fua_dg_made` lists what was made while the level was
 played instead, and `fuactl scenarios madeinplay` fails on any shader or pipeline among them.
 
-`computation/levelsetup_compute` steps a level's set-up (bake from the map, upload, retry, give up);
+The device takes a reference at creation that is never let go (`dgprobe.cpp`), so exit does not destroy it: its destruction finalizes glslang, whose global mutex is gone by then on macOS, and the many static objects holding the device rule out releasing it sooner.
+
+`computation/levelsetup_compute` steps a level's set-up (bake from the map, upload, retry, give up, which stops the game where nothing else can draw the level);
 `PresentFrame` and `SceneDrawable` are shared by the world's frames and the 2D-only
 ones. A build without the backend (`FUA_DILIGENT` off, a dedicated server) takes its entry points from
 `backendstubs.cpp`, each answering that there is none.

@@ -37,13 +37,13 @@ import { nativeStacks } from "./stacks.mjs";
 import * as trace from "./trace.mjs";
 import * as present from "./present.mjs";
 import { refreshNote } from "./stats.mjs";
-import { runCoverage } from "./coverage.mjs";
+import { runCoverage, runLlvmCoverage } from "./coverage.mjs";
 import * as netplay from "./netplay.mjs";
 import * as netdiffMod from "./netdiff.mjs";
 import * as netcap from "./netcap.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
-import { recentCrashes, summarizeCrash } from "./crashes.mjs";
+import { quitFailed, recentCrashes, summarizeCrash } from "./crashes.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
@@ -596,7 +596,7 @@ async function main() {
         if (orphans.length) outcome = `stopped orphan pid ${orphans.map((e) => e.pid).join(", ")}`;
       }
       console.log(`${outcome}: port ${t.port}`);
-      process.exitCode = outcome === "running" || outcome === "refused" ? 1 : 0;
+      process.exitCode = quitFailed(outcome) ? 1 : 0;
       break;
     }
     case "rpc": {
@@ -1083,7 +1083,7 @@ async function main() {
       process.exit(issues.length ? 1 : 0);
     }
     case "coverage": {
-      const { results, report } = runCoverage({ root: fileURLToPath(new URL("../../../", import.meta.url)), tool: flags.tool, since: flags.since && flags.since !== true ? String(flags.since) : null });
+      const { results, report } = (process.platform === "win32" ? runCoverage : runLlvmCoverage)({ root: fileURLToPath(new URL("../../../", import.meta.url)), tool: flags.tool, since: flags.since && flags.since !== true ? String(flags.since) : null });
       const bad = results.filter((r) => !r.ok);
       for (const r of bad) console.log(`${r.unit}: ${r.unseen ? "not in the report" : `${r.hit}/${r.total}, missed lines ${r.missed.slice(0, 25).join(",")}`}`);
       console.log(`${results.length} unit(s) gated, ${bad.length} below 100% (report ${report})`);

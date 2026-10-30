@@ -104,6 +104,9 @@ private:
 // [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the `reserved` threads that run beside it (the caller, and the game thread when it is on), at most `cap`, none when that leaves none.
 int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved);
 
+// [rc4l] The workers a running pool of `have` keeps when `want` are asked for: resizing joins them, so a caller that may not block keeps what it has, since in a browser a worker still starting needs the main thread that would be waiting for it.
+int ComputePoolWorkers(int want, int have, bool mayBlock);
+
 }} // namespace zx::jobs
 
 #endif // ZX_JOBPOOL_COMPUTE_H

@@ -30,4 +30,9 @@ void ComputeLevelSetupUploaded(LevelSetup &s, bool ok)
 	else s.state = ++s.tries < kSetupMaxTries ? kSetupArm : kSetupGaveUp;
 }
 
+bool ComputeLevelSetupFatal(const LevelSetup &s, bool backendOnly)
+{
+	return s.state == kSetupGaveUp && backendOnly;
+}
+
 }} // namespace zx::hwrender
