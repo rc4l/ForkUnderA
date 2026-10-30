@@ -25,4 +25,9 @@ bool ComputeNoteOnce(std::vector<const void *> &list, const void *item)
 	return true;
 }
 
+bool ComputeTracksWrites(bool checkOnce, unsigned materialSlots)
+{
+	return checkOnce && materialSlots > 0;
+}
+
 }} // namespace zx::hwrender
