@@ -87,7 +87,8 @@ never reads what that tic is changing.
 - `xfloors.cpp`: each sector's 3D floors and light list copied into `extsector_t::rcXFloor`, their planes, textures
   and light levels pointed at the copy's (`computation/memberindex_compute`), the colormaps their `GetColormap` gave
   kept beside them, and blended with their models' planes; `GetPlaneLight` and `HeightSecOf` read them.
-- `lights.cpp`: every dynamic light and each subsector's light list, its links kept while it stands still.
+- `lights.cpp`: every dynamic light and each subsector's light list, its links kept while it stands still; the
+  records are taken across `features/jobs`' pool, each lane writing only its own, as the actors are.
 - `particles.cpp`, `decals.cpp`: the particles with their subsector lists, and each side's wall decals.
 - `tintsubject.cpp`: features/damage-tint's game half, read into each actor record: the sector damage table and
   whether an actor's floor hurts it unprotected (`TintSubjectOf`).
