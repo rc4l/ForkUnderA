@@ -82,7 +82,7 @@ class FMaterial
 		bool animated;
 	};
 
-	static TArray<FMaterial *> mMaterials;
+	static TArray<FMaterial *> &mMaterials;
 
 	FTexturePixels *mBaseLayer;
 	TArray<FTextureLayer> mTextureLayers;

@@ -27,6 +27,14 @@ export const HEAR_CONSOLE = `const said = [];
       const lastJson = (start, none) => { const line = said.slice().reverse().find((l) => l.startsWith(start)); return line ? JSON.parse(line) : none; };
       const ask = async (command, ms = 300) => { const from = said.length; Module.fuaCommand(command); ${pause('ms')} return said.slice(from); };`;
 
+// [rc4l] Page code giving what the page's console gained over a command and the ms after it.
+export const CONSOLE_AFTER = `const consoleAfter = async (command, ms = 300) => {
+        const log = document.getElementById('console'), before = log.textContent.length;
+        Module.fuaCommand(command);
+        ${pause('ms')}
+        return log.textContent.slice(before);
+      };`;
+
 // [rc4l] Page code that repeats a soak action's steps (fuactl's soakSteps) cycles times on map, marking memory after each cycle once each level a step started has printed its title, or a moment has passed, and the page's garbage is collected (window.gc, with --expose-gc), and returns the engine's verdict on the cycles after warmup.
 export function soakInPage(action, cycles, settleMs, map = 'MAP01', warmup = 1, { heap = false } = {}) {
   return inPage(`

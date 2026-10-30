@@ -149,4 +149,9 @@ int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved)
 	return workers < cap ? workers : cap;
 }
 
+int ComputePoolWorkers(int want, int have, bool mayBlock)
+{
+	return mayBlock ? want : have;
+}
+
 }} // namespace zx::jobs

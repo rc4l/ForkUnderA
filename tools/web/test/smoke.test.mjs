@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromeArgs, devToolsPort, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly, retry } from '../smoke.mjs';
+import { chromeArgs, devToolsPort, downloadsSettled, formatConsole, formatEval, gpuLogLines, inputAsked, removeQuietly, retry, HUNG, hungLines } from '../smoke.mjs';
 import { scratch } from './scratch.mjs';
 
 test("Chrome's log is read for what it says about its GPU process, not for the page's console", () => {
@@ -117,4 +117,9 @@ test('a page asks for a heap snapshot by its label', () => {
 test('a page asks for a full collection by its number', () => {
   assert.deepEqual(inputAsked('[log] check: gc 3'), { gc: 3 });
   assert.equal(inputAsked('[log] check: gc soon'), null);
+});
+
+test('a hung page is reported with whatever stack was caught', () => {
+  assert.deepEqual(hungLines([]), [HUNG]);
+  assert.deepEqual(hungLines(['join', 'Resize']), [HUNG, '[stack] join', '[stack] Resize']);
 });
