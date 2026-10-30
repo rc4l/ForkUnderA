@@ -12,6 +12,8 @@
 #include "features/hwrender/diligent/dgshared.h"
 #include "features/hwrender/computation/lightcluster_compute.h"
 #include "features/hwrender/computation/lighttouch_compute.h"
+#include "features/hwrender/computation/lightbin_compute.h"   // [Doruk-Aksoy] the binning a band of cells at a time
+#include "features/jobs/jobs.h"   // [Doruk-Aksoy] the lanes the bands bin on
 #include "features/levelmesh/levelmesh.h"
 #include "features/levelmesh/wallcache.h"
 #include "features/dynlights/dynlight.h"
@@ -30,6 +32,8 @@ EXTERN_CVAR(Bool, r_lights_additive)
 EXTERN_CVAR(Bool, fua_dg_dynlights)
 EXTERN_CVAR(Bool, fua_dg_lightlinks)
 EXTERN_CVAR(Bool, fua_dg_clusters)
+// [Doruk-Aksoy] Off bins the lights on the main thread alone, as one band, to bisect or compare in one session.
+CVAR(Bool, fua_dg_clusterjobs, true, 0)
 
 namespace zx { namespace hwrender {
 
@@ -267,6 +271,9 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 	}
 }
 
+// [Doruk-Aksoy] The groups each depth slice's rows split into for the lanes, since lights crowd a few slices near the camera.
+static const int kClusterRowGroups = 3;
+
 // [rc4l] Bin this frame's lights into the cluster grid.
 //
 // One pass to count what lands in each cell, a prefix sum, and a second pass to fill the runs --
@@ -313,15 +320,15 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	for (int l = 0; l < g_lightCount; l++)
 	{
 		const float *lp = &g_lightData[l * 8];
-		const zx::hwrender::ClusterRange r =
-			zx::hwrender::ComputeLightClustersFromMVP(grid, SceneMVP(), lp, lp[3]);
-		ranges[l] = r;
-		if (r.empty) continue;
-		for (int z = r.z0; z <= r.z1; z++)
-			for (int y = r.y0; y <= r.y1; y++)
-				for (int x = r.x0; x <= r.x1; x++)
-					counts[zx::hwrender::ComputeClusterIndex(grid, x, y, z)]++;
+		ranges[l] = zx::hwrender::ComputeLightClustersFromMVP(grid, SceneMVP(), lp, lp[3]);
 	}
+	// [Doruk-Aksoy] Bands of a slice's rows binned on the job lanes, each writing only its own cells, so every cell gets its lights in light order as one pass gave them.
+	const bool jobs = fua_dg_clusterjobs;
+	const int bands = jobs ? zx::hwrender::ComputeClusterBandCount(grid, kClusterRowGroups) : 1;
+	auto bandOf = [&](int k) { return jobs ? zx::hwrender::ComputeClusterBand(grid, k, kClusterRowGroups) : zx::hwrender::ComputeWholeGridBand(grid); };
+	auto count = [&](int k, int) { zx::hwrender::ComputeLightBinCounts(grid, &ranges[0], g_lightCount, bandOf(k), &counts[0]); };
+	if (jobs) zx::jobs::Pool().ParallelFor(bands, count);
+	else count(0, 0);
 
 	// [rc4l] A ceiling per CELL, not a ceiling on the buffer.
 	//
@@ -335,50 +342,28 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	// 256 lights reaching one cell is already far past anything a map does; the packed stress field
 	// is the only thing that has ever hit it.
 	enum { kMaxLightsPerCell = 256 };
-	for (int i = 0; i < cells; i++)
-		if (counts[i] > (unsigned)kMaxLightsPerCell) { counts[i] = kMaxLightsPerCell; g_clusterTruncated++; }
 
 	// The prefix sum, and the ceiling that keeps a pathological frame from running off the buffer.
+	//
+	// [rc4l] Overflow TRUNCATES this cell and says so. It does not empty it.
+	//
+	// Emptying a cell removes every light from a patch of the world at once, which is a black
+	// rectangle rather than a dim one -- and when this first ran it dropped enough cells to make
+	// 85% of the frame disagree with the brute-force path, reported by nothing louder than a
+	// number in a stats line. Keeping what fits degrades the picture gently; the flag is what
+	// makes the degradation visible, because a renderer that silently draws something else is
+	// worse than one that stops.
 	offsets.Resize((unsigned)cells);
-	unsigned int total = 0;
-	for (int i = 0; i < cells; i++)
-	{
-		offsets[i] = total;
-		// [rc4l] Overflow TRUNCATES this cell and says so. It does not empty it.
-		//
-		// Emptying a cell removes every light from a patch of the world at once, which is a black
-		// rectangle rather than a dim one -- and when this first ran it dropped enough cells to make
-		// 85% of the frame disagree with the brute-force path, reported by nothing louder than a
-		// number in a stats line. Keeping what fits degrades the picture gently; the flag is what
-		// makes the degradation visible, because a renderer that silently draws something else is
-		// worse than one that stops.
-		if (total + counts[i] > g_lightIndexCapacity)
-		{
-			counts[i] = (g_lightIndexCapacity > total) ? (g_lightIndexCapacity - total) : 0;
-			g_clusterTruncated++;
-		}
-		total += counts[i];
-	}
+	const unsigned int total = zx::hwrender::ComputeLightBinOffsets(&counts[0], cells, kMaxLightsPerCell, g_lightIndexCapacity, &offsets[0], g_clusterTruncated);
 
 	// Pass two: write the runs. `filled` walks each cell's slot as entries arrive.
 	static TArray<unsigned int> filled;
 	filled.Resize((unsigned)cells);
 	for (int i = 0; i < cells; i++) filled[i] = 0;
 	indices.Resize(total > 0 ? total : 1);
-	for (int l = 0; l < g_lightCount; l++)
-	{
-		const zx::hwrender::ClusterRange &r = ranges[l];
-		if (r.empty) continue;
-		for (int z = r.z0; z <= r.z1; z++)
-			for (int y = r.y0; y <= r.y1; y++)
-				for (int x = r.x0; x <= r.x1; x++)
-				{
-					const int cell = zx::hwrender::ComputeClusterIndex(grid, x, y, z);
-					if (filled[cell] >= counts[cell]) continue;   // the dropped cells above
-					indices[offsets[cell] + filled[cell]] = (unsigned int)l;
-					filled[cell]++;
-				}
-	}
+	auto fill = [&](int k, int) { zx::hwrender::ComputeLightBinFill(grid, &ranges[0], g_lightCount, bandOf(k), &counts[0], &offsets[0], &filled[0], &indices[0]); };
+	if (jobs) zx::jobs::Pool().ParallelFor(bands, fill);
+	else fill(0, 0);
 
 	table.Resize((unsigned)cells * 2);
 	for (int i = 0; i < cells; i++) { table[i * 2] = offsets[i]; table[i * 2 + 1] = counts[i]; }
