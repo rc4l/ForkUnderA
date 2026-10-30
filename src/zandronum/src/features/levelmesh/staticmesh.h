@@ -25,6 +25,7 @@
 #include <stddef.h>
 #include "features/levelmesh/computation/shading_compute.h"
 #include "features/levelmesh/computation/sectorlight_compute.h"   // [rc4l] SectorLightRef
+#include "features/levelmesh/computation/dynquads_compute.h"   // [Doruk-Aksoy] DynQuadRun
 #include "features/damage-tint/computation/damagetint_compute.h"   // [rc4l] TintGradient
 
 namespace zx { namespace levelmesh {
@@ -326,6 +327,12 @@ void DynClear();
 // Append one piece's triangle-list vertices. `proto` carries the material and shading; its range is
 // filled in by this call.
 void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto);
+
+// [Doruk-Aksoy] Room for `count` quads at the stream's end, in order, false (nothing reserved) when they would pass the ceiling; each is then written by DynPlaceQuad.
+bool DynReserveQuads(unsigned count, DynQuadRun &run);
+
+// [Doruk-Aksoy] The run's quad `k` written in place, as DynAppend would have; lanes may write different quads of a run at once.
+void DynPlaceQuad(const DynQuadRun &run, unsigned k, const MeshVertex *verts, const MeshPiece &proto);
 
 // This frame's dynamic vertices and pieces.
 const MeshVertex *DynVertices(int &count);

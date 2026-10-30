@@ -5,10 +5,13 @@ The Vulkan backend's sprites, derived from the actors instead of taken from GL's
 actor: visibility, interpolation, the rotation the viewer sees, the trimmed frame and its scale, the
 floor and ceiling clip, light (glow, colormap, 3D-floor light bands, the actor's dynamic light),
 render style, and the quad, billboarded or rolled. The decisions are `Compute*` units in
-`computation/`; the glue reads the engine and appends to the level mesh's dynamic stream.
+`computation/`; the glue reads the engine and appends to the level mesh's dynamic stream, the pieces the lanes
+derived placed there in runs across the pool (`AppendQuads`), each run ending before an actor the main thread derives.
 
-Particles too (`BuildParticle`, `GLSprite::ProcessParticle`'s light and quad), each walk handing over
-the particles in the subsectors it reaches. A sprite's `ThingColor` (a particle's colour, a stencil
+Particles too (`GLSprite::ProcessParticle`'s light and quad): the player's walk queues the particles in the
+subsectors it reaches (`QueueParticle`), and once it is done `BuildQueuedParticles` derives them on
+`features/jobs`' pool and appends them in the order they were reached (`scene/particles`;
+`fua_sprite_particlejobs 0` derives them on the main thread). A sprite's `ThingColor` (a particle's colour, a stencil
 actor's fill), which GL's shader multiplies it by, is folded into its shading here and in the copy of GL's
 sprite the check reads; without it every particle drew in its texture's white (scenario `particlecolor`).
 Night vision's inverted monsters and items take GL's `TM_INVERSE` (`ComputeTextureMode`, scenario `lightamp`), and
@@ -70,7 +73,8 @@ neither there.
 - `features/frame/standaloneframe.cpp`, the sprite sweep: `BuildSprites` for the actors in view, derived in
   chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the main thread)
   and appended in sweep order, or one at a time with a check on; `BuildSprite` for each actor a stacked
-  view's or mirror's walk reaches; `BuildParticle` for each particle the player's walk reaches.
+  view's or mirror's walk reaches; `QueueParticle` for each particle the player's walk reaches, and
+  `BuildQueuedParticles` as its `WalkHooks::walked`.
 - `features/sidebyside/glchecks.cpp`: GL's sprites, models and weapon as GL reports them, for the checks.
 - `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check, and the
   `ThingColor` fold.
