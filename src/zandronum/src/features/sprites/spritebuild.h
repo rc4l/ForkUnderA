@@ -29,8 +29,11 @@ void BuildSprite(const zx::gamecopy::ActorRecord &thing);
 // [rc4l] BuildSprite for `count` actors, in that order: sprites derived on the job pool and appended in turn, models and a sprite whose material is not made yet on the main thread; not for the checks, which compare one actor at a time.
 void BuildSprites(const zx::gamecopy::ActorRecord *const *things, int count);
 
-// [rc4l] Derive a particle in `sector` (as GL's walk sees it) into the dynamic stream, noted for the check likewise.
-void BuildParticle(particle_t *particle, const void *who, sector_t *sector);
+// [Doruk-Aksoy] A particle in `sector` (as GL's walk sees it) held for BuildQueuedParticles, in the order the walk reached it.
+void QueueParticle(particle_t *particle, const void *who, sector_t *sector);
+
+// [Doruk-Aksoy] The queued particles derived on the job pool from the view that queued them, then appended to the dynamic stream in queue order and noted for the check likewise.
+void BuildQueuedParticles();
 
 // [rc4l] With fua_sprite_check on, what GL drew for an actor or a particle, its `count` vertices with it, so the derivation can be compared against it.
 void NoteGLSprite(const void *who, bool particle, const zx::levelmesh::MeshPiece &piece, const zx::levelmesh::MeshVertex *verts, int count);
