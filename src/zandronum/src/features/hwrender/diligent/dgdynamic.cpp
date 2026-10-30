@@ -32,6 +32,7 @@ CCMD( fua_dg_blendorder )
 }
 
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
+EXTERN_CVAR(Bool, fua_dg_premulblend)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
 // [rc4l] Plain sprites drawn from packed words (ComputeSpritePack); 0 sends every dynamic piece its whole record and vertices, to compare against.
 CVAR(Bool, fua_dg_spritepack, true, 0)
@@ -134,10 +135,13 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	// dynamic heap is only recycled when a frame completes -- so mapping here unconditionally
 	// exhausted an 8 MB heap after a few hundred draws ("Space in dynamic heap is exhausted").
 	static unsigned int builtGen = 0;
+	// [Doruk-Aksoy] Records hold the additive flag fua_dg_premulblend sets, so a change of it fills them again, a paused frame's included.
+	static bool builtPremul = false;
 	const unsigned int gen = zx::levelmesh::DynGeneration();
-	if (gen != builtGen)
+	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend)
 	{
 		builtGen = gen;
+		builtPremul = fua_dg_premulblend;
 		// [rc4l] Emptied with each refill, which a frame drawn again without a walk (a screenshot) does not get, so a frame with no sprites keeps none of the last fill's.
 		g_scene.tracedSprites.Clear();
 		g_scene.tracedSteps.clear();
@@ -560,7 +564,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			// sprites live in one sorted list with depth writes off, and splitting them into an
 			// opaque depth-writing pass let an alpha-tested impact sprite occlude the additive glow
 			// behind it: black holes where a plasma burst's bright core should be.
-			const int pipeline = ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud);
+			const int pipeline = zx::hwrender::ComputePremulPipeline(ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud), fua_dg_premulblend, r.userShader);
 			Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
 			auto *srb = WorldSRB(pso);
 			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = DynSRB(pso, r); }

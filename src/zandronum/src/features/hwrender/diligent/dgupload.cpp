@@ -19,6 +19,8 @@
 #include "features/hwrender/computation/slotrecycle_compute.h"   // [Doruk-Aksoy] ComputeReserveSlots
 #include <vector>
 
+EXTERN_CVAR(Bool, fua_dg_premulblend)
+
 namespace zx { namespace hwrender {
 
 // [rc4l] The material and brightmap slots a piece samples, made if it has none yet; a baked piece on an animated texture keys them on its untranslated base, which SlotRemap maps to the frame showing, since the bake froze whichever frame it saw.
@@ -134,7 +136,8 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	const bool wallPiece = p.linkId >= numsubsectors && p.linkId - numsubsectors < numsides;
 	const bool noMarks = inMesh && base != NULL &&
 		zx::decals::SurfaceRefusesMarks(base->id, wallPiece, wallPiece ? sides[p.linkId - numsubsectors].rc.Flags : 0);
-	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass, noMarks };
+	const zx::hwrender::PieceTexInputs tex = { p.stencil, p.alphaTest, p.hud, inMesh, p.inverse, p.colorBlend, p.fogLayer, p.fuzz, p.fogBoundary, p.cullFace, p.fogPass, noMarks,
+		fua_dg_premulblend && p.blendMode == 2 };
 	pd.texFlags = (float)zx::hwrender::ComputePieceTexFlags(tex);
 	// [rc4l] A flicker then rewrites its sector's entry in the table rather than this record.
 	if (inMesh && fua_dg_sectorlit && p.sectorLight.sector >= 0) zx::hwrender::ComputeSectorLitRecord(pd, p.sectorLight, p.sectorLitNoFog);

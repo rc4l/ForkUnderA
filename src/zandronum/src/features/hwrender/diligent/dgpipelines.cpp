@@ -23,12 +23,15 @@
 #include <map>
 #include <vector>
 #include <set>
+#include <string>
 #include "w_wad.h"   // [rc4l] the shader lumps
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
 CVAR(Bool, fua_dg_loopcommits, true, 0)
 // [Doruk-Aksoy] A world binding's resources checked once after each fill rather than once per draw loop, what changed since made ready before it is next committed; 0 checks them per loop, to bisect or compare.
 CVAR(Bool, fua_dg_checkonce, true, 0)
+// [Doruk-Aksoy] Translucent and additive sprites drawn by one premultiplied pipeline, each by its own blend, so the sorted pass switches less; a colour differs by at most one level from off, which the Video Mode menu offers.
+CVAR(Bool, fua_dg_premulblend, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Float, r_texture_filter_anisotropic)
 EXTERN_CVAR(Int, fua_dg_spirv_optimize)
 // [Doruk-Aksoy] Off makes pipelines one after another, and a frame first drawing with a GLDEFS shader's pipeline wait for it rather than draw that piece plain until it is ready.
@@ -888,6 +891,7 @@ static int g_builtCull = -1;
 static int g_builtOptimize = -1;   // [Doruk-Aksoy] fua_dg_spirv_optimize as the pipelines' shaders were compiled
 static Diligent::TEXTURE_FORMAT g_builtSceneFormat = Diligent::TEX_FORMAT_UNKNOWN;   // [Doruk-Aksoy] the scene's format the pipelines draw in
 static unsigned g_builtSlots = 0;   // [rc4l] the material array size the pipelines were built for
+static int g_builtPremul = -1;   // [Doruk-Aksoy] fua_dg_premulblend as the sprite translucent pipeline was made
 static float g_builtAniso = 0.f;    // [rc4l] the anisotropy the samplers were built with
 static int g_builtFilter = -1;
 
@@ -1074,7 +1078,8 @@ static void BindWorldStatics(Diligent::IPipelineState *pso)
 
 // [rc4l] A world pipeline over one vertex layout and set of resources, as ComputeWorldPipelineDesc describes it, the blended ones never writing depth.
 // [Doruk-Aksoy] Made on the device's pool when fua_dg_async_pipelines is on, so its statics are bound by the caller once it is ready (BindWorldStatics).
-static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader *ps, const char *name, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &out)
+// [Doruk-Aksoy] `premul` blends ps's colour as already multiplied by its alpha (kWpBlendPremul), for the premultiplied sprite pipeline.
+static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader *ps, const char *name, Diligent::RefCntAutoPtr<Diligent::IPipelineState> &out, bool premul = false)
 {
 	const WorldPipelineDesc d = ComputeWorldPipelineDesc(pass);
 	const bool gbuffer = d.stage == kWpStageGBuffer;
@@ -1102,7 +1107,7 @@ static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader
 		pci.GraphicsPipeline.RasterizerDesc.DepthBias = -128;
 		pci.GraphicsPipeline.RasterizerDesc.SlopeScaledDepthBias = -1.f;
 	}
-	if (blended) SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0], d.blend);
+	if (blended) SetBlendEquation(pci.GraphicsPipeline.BlendDesc.RenderTargets[0], premul ? kWpBlendPremul : d.blend);
 	// [rc4l] The level's pipelines read its vertices; the others draw the dynamic stream.
 	pci.GraphicsPipeline.InputLayout.LayoutElements = d.level ? kSceneLayout : kDynLayout;
 	pci.GraphicsPipeline.InputLayout.NumElements = d.level ? 3 : 1;
@@ -1317,6 +1322,8 @@ bool EnsureScenePipeline(FString &err)
 	g_builtAniso = r_texture_filter_anisotropic;
 	if (g_pso.world[kWpOpaque] && g_builtCull != (int)fua_dg_cull) ReleaseScenePipelines();
 	g_builtCull = (int)fua_dg_cull;
+	if (g_pso.world[kWpOpaque] && g_builtPremul != (int)fua_dg_premulblend) ReleaseScenePipelines();
+	g_builtPremul = (int)fua_dg_premulblend;
 	// [Doruk-Aksoy] The kept shaders were compiled the other way, so they go with the pipelines holding them.
 	if (g_pso.world[kWpOpaque] && g_builtOptimize != (int)fua_dg_spirv_optimize) { ReleaseScenePipelines(); ReleasePostProcess(); ReleaseShaderCache(); }
 	g_builtOptimize = (int)fua_dg_spirv_optimize;
@@ -1346,6 +1353,15 @@ bool EnsureScenePipeline(FString &err)
 	{
 		stages[s] = CompileShader(Diligent::SHADER_TYPE_PIXEL, kStageNames[s], kStageSources[s]);
 		staged = staged && stages[s];
+	}
+	// [Doruk-Aksoy] The translucent stage once more with FUA_PREMUL for the premultiplied sprite pipeline, under fua_dg_premulblend.
+	Diligent::RefCntAutoPtr<Diligent::IShader> premulPS;
+	if (fua_dg_premulblend)
+	{
+		std::string source = kScenePSTrans;
+		source.insert(source.find('\n') + 1, "#define FUA_PREMUL 1\n");
+		premulPS = CompileShader(Diligent::SHADER_TYPE_PIXEL, "fua scene PS translucent premultiplied", source.c_str());
+		staged = staged && premulPS;
 	}
 	Diligent::IShader *psMasked = stages[kWpStageMasked];
 	// [rc4l] Ask the SHADER what it declared, before any pipeline has an opinion about it.
@@ -1418,7 +1434,8 @@ bool EnsureScenePipeline(FString &err)
 	for (int pass = 0; pass < kWorldPipelines; pass++)
 	{
 		const WorldPipelineDesc d = ComputeWorldPipelineDesc(pass);
-		MakeWorldPipeline(pass, d.level ? vs : dynVS, stages[d.stage], d.name, g_pso.world[pass]);
+		const bool premul = premulPS && pass == kWpTransNoCull;
+		MakeWorldPipeline(pass, d.level ? vs : dynVS, premul ? premulPS.RawPtr() : stages[d.stage], d.name, g_pso.world[pass], premul);
 	}
 	// [Doruk-Aksoy] All started before any is waited for, so the pool makes them side by side; a failed one leaves none, for the next frame to try again.
 	for (auto &p : g_pso.world)

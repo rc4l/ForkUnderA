@@ -11,7 +11,7 @@ namespace {
 
 PieceTexInputs None()
 {
-	PieceTexInputs in = { false, false, false, false, false, false, false, 0, false, 0, false, false };
+	PieceTexInputs in = { false, false, false, false, false, false, false, 0, false, 0, false, false, false };
 	return in;
 }
 
@@ -31,6 +31,15 @@ TEST(TexFlags, EachFlagIsTheBitTheShadersTest)
 	in = None(); in.fogBoundary = true; EXPECT_EQ(1024u, ComputePieceTexFlags(in));
 	in = None(); in.fogPass = true; EXPECT_EQ(8192u, ComputePieceTexFlags(in));
 	in = None(); in.noMarks = true; EXPECT_EQ(16384u, ComputePieceTexFlags(in));
+	in = None(); in.additive = true; EXPECT_EQ(32768u, ComputePieceTexFlags(in));
+}
+
+// [Doruk-Aksoy] Bit 15 is additive only on a dynamic piece, since on a level surface it marks one lit from the sector light table.
+TEST(TexFlags, AdditiveIsLeftOffALevelSurface)
+{
+	PieceTexInputs in = None();
+	in.additive = true; in.level = true;
+	EXPECT_EQ(8u, ComputePieceTexFlags(in));
 }
 
 // [rc4l] The fuzz shader and the culled faces each read back from their own bits, and a value too big for its field cannot spill into the next.

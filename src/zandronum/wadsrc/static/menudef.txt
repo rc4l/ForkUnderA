@@ -2259,6 +2259,8 @@ OptionMenu VideoModeMenu
 		Option "Target frame rate",		"vid_fua_dynres_target", "DynresTargets", "vid_fua_dynres"
 	}
 	Slider "Lowest resolution",		"vid_fua_dynres_min", 0.25, 1.0, 0.125, 3
+	// [Doruk-Aksoy] Vulkan draws translucent and additive effects through one pipeline (fua_dg_premulblend), greyed out under GL.
+	Option "Batch translucency",	"fua_dg_premulblend", "OnOff", "vid_backend_launched"
 	StaticText " "
 	// [rc4l] In a browser the page sizes the canvas and the game follows it, so there is no window to size.
 	IfOption(Web)
