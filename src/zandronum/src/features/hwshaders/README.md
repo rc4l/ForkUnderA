@@ -34,7 +34,7 @@ their first draw), and a shader that does not compile is noted then. A shader's 
 device's pool: the first time a piece asks for one (`ScenePSO`, `Pso2D`), which draws as the plain pipeline
 until the driver has it rather than holding the frame, the level's own surfaces at upload
 (`PrewarmUserPipelines`, all started before any is waited for), and every pair asked for again whenever the
-world pipelines are made (`fua_dg_async_pipelines 0` waits for each in turn). Each takes the same resources as the plain
+world pipelines are made (`fua_dg_async_pipelines 0` waits for each in turn, as a device that cannot wait for the GPU always does, a browser's among them: `computation/asyncpipelines_compute`). Each takes the same resources as the plain
 pipeline and commits its bindings (`IsCompatibleWith`), so the bindless material array is not repeated per
 shader; one that does not fit them is left out with the note above. Compiled shaders are kept by their
 text for the session (`gpu/made/shader_hits`), so a level change compiles none it has compiled before.

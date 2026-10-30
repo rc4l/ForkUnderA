@@ -26,6 +26,7 @@
 #include "RefCntAutoPtr.hpp"
 #include "DebugOutput.h"
 #include "m_argv.h"
+#include "features/hwrender/computation/asyncpipelines_compute.h"
 #include "features/hwrender/computation/backendchoice_compute.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] PrintDiligentMessages
 #include "features/handoff/seam.h"   // [rc4l] OnMainThread
@@ -36,6 +37,7 @@
 #include "features/telemetry/telemetry.h"   // [rc4l] gpu/make_texture, gpu/make_buffer
 
 EXTERN_CVAR(Int, vid_backend)
+EXTERN_CVAR(Bool, fua_dg_async_pipelines)
 
 namespace zx { namespace hwrender {
 
@@ -200,6 +202,8 @@ bool ProbeVulkan(FString &report)
 const char *BackendApiName() { return ChosenDeviceApi()->name; }
 
 bool CanWaitForGPU() { return ChosenDeviceApi()->canWaitForGPU; }
+
+bool AsyncPipelines() { return zx::hwrender::ComputeAsyncPipelines(fua_dg_async_pipelines, CanWaitForGPU()); }
 
 bool PagePaced() { return ChosenDeviceApi()->pagePaced; }
 
