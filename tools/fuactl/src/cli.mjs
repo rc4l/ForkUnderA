@@ -43,7 +43,7 @@ import * as netdiffMod from "./netdiff.mjs";
 import * as netcap from "./netcap.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
-import { recentCrashes, summarizeCrash } from "./crashes.mjs";
+import { quitFailed, recentCrashes, summarizeCrash } from "./crashes.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import * as telemetry from "./telemetry.mjs";
 import { decodePNG, abDiff, boxDiff } from "./pngcore.mjs";
@@ -596,7 +596,7 @@ async function main() {
         if (orphans.length) outcome = `stopped orphan pid ${orphans.map((e) => e.pid).join(", ")}`;
       }
       console.log(`${outcome}: port ${t.port}`);
-      process.exitCode = outcome === "running" || outcome === "refused" ? 1 : 0;
+      process.exitCode = quitFailed(outcome) ? 1 : 0;
       break;
     }
     case "rpc": {
