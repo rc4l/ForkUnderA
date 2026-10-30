@@ -300,9 +300,11 @@ test('lightTableSends names a table never sent and surfaces sent again', () => {
 });
 
 test('the loading screen needs its logo and the whole name', () => {
-  assert.equal(splashReady({ loaded: true, name: 'ForkUnderA' }), '');
-  assert.equal(splashReady({ loaded: false, name: 'ForkUnderA' }), 'the logo did not load');
-  assert.equal(splashReady({ loaded: true, name: 'ForkUnder' }), 'the name reads ForkUnder');
+  const good = { loaded: true, name: 'ForkUnderA', said: 'Launching FUA...' };
+  assert.equal(splashReady(good), '');
+  assert.equal(splashReady({ ...good, loaded: false }), 'the logo did not load');
+  assert.equal(splashReady({ ...good, name: 'ForkUnder' }), 'the name reads ForkUnder');
+  assert.equal(splashReady({ ...good, said: 'Loading…' }), 'the screen said Loading… while the engine started');
 });
 
 test('a player sees the Discord link and none of the page tools', () => {
@@ -311,4 +313,15 @@ test('a player sees the Discord link and none of the page tools', () => {
   assert.equal(pageTrimmed({ ...good, tools: true }), 'the page tools are showing');
   assert.equal(pageTrimmed({ ...good, discord: false }), 'the Discord link is hidden');
   assert.equal(pageTrimmed({ ...good, link: 'https://example.com/' }), 'the Discord link goes to https://example.com/');
+});
+
+// [rc4l] A mistyped option is ignored in silence, as `focus` for `focused` once was, so a check that thinks it set one proves nothing.
+test('every check uses only options the runner reads', () => {
+  const known = new Set(['name', 'evaluate', 'until', 'expect', 'expectShot', 'query', 'init', 'shot', 'download', 'deviceError', 'focused', 'autoplay', 'firefox', 'state']);
+  for (const c of CHECKS) for (const key of Object.keys(c)) assert.ok(known.has(key), `${c.name}: ${key}`);
+});
+
+test('a run with no match says when the page hung', () => {
+  assert.equal(judge({ until: 'x' }, null).reason, 'no line matched /x/');
+  assert.match(judge({ until: 'x' }, null, null, ['[hung] the page stopped answering']).reason, /the page stopped answering/);
 });

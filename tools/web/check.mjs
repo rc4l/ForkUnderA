@@ -5,9 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serveLocally } from './serve.mjs';
-import { gpuLogLines, removeQuietly } from './smoke.mjs';
+import { HUNG, gpuLogLines, removeQuietly } from './smoke.mjs';
 import { smokeIn } from './firefox.mjs';
-import { WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
+import { CONSOLE_AFTER, WATCH_SOUNDS, WATCH_TEXTURES, WATCH_LEVEL, WATCH_GPU_CALLS, HEAR_CONSOLE, PIECE_S, GRAB_FRAME, inPage, pause, serveData, soakInPage } from './page.mjs';
 import { decodePNG, decodePNGBytes, boxDiff, boxDiffMax, boxStats, px } from '../fuactl/src/pngcore.mjs';
 import { buildPointlightWad, VANTAGES as POINTLIGHT_VANTAGES, BOXES as POINTLIGHT_BOXES } from '../fuactl/scenarios/pointlight.mjs';
 import { buildLightTableWad, VANTAGES as LIGHTTABLE_VANTAGES } from '../fuactl/scenarios/lighttable.mjs';
@@ -42,10 +42,11 @@ export function pageTrimmed({ tools, discord, link }) {
   return '';
 }
 
-// [rc4l] Why the loading screen is wrong, or '': its logo did not load or its chunks do not read as the name.
-export function splashReady({ loaded, name }) {
+// [rc4l] Why the loading screen is wrong, or '': its logo did not load, its chunks do not read as the name, or it did not say the engine was starting.
+export function splashReady({ loaded, name, said }) {
   if (!loaded) return 'the logo did not load';
   if (name !== 'ForkUnderA') return `the name reads ${name}`;
+  if (said !== 'Launching FUA...') return `the screen said ${said} while the engine started`;
   return '';
 }
 
@@ -281,7 +282,7 @@ export const CHECKS = [
   {
     name: 'a mark on the floor draws without a device error',
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       let seen = { boxes: 0, draws: 0 };
       // [rc4l] A few tries, since a software adapter can be slow enough that the level is not in play yet.
       for (let i = 0; i < 5 && !seen.draws; i++) {
@@ -293,10 +294,7 @@ export const CHECKS = [
         ${pause(800)}
         Module.fuaCommand('-attack');
         ${pause(1000)}
-        const before = log.textContent.length;
-        Module.fuaCommand('fua_projdecals_stats');
-        ${pause(300)}
-        const pass = /deferred pass: (\\d+) boxes in (\\d+) draws/.exec(log.textContent.slice(before));
+        const pass = /deferred pass: (\\d+) boxes in (\\d+) draws/.exec(await consoleAfter('fua_projdecals_stats'));
         if (pass) seen = { boxes: Number(pass[1]), draws: Number(pass[2]) };
       }
       return seen;`),
@@ -357,17 +355,14 @@ export const CHECKS = [
     name: 'vid_maxfps holds the page to its frame rate',
     firefox: true,
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       const apart = async () => {
-        const before = log.textContent.length;
-        Module.fuaCommand('fua_stats frame/present_ms');
-        ${pause(300)}
-        const m = /frame\\/present_ms\\s+ms\\s+[\\d.]+\\s+([\\d.]+)/.exec(log.textContent.slice(before));
+        const m = /frame\\/present_ms\\s+ms\\s+[\\d.]+\\s+([\\d.]+)/.exec(await consoleAfter('fua_stats frame/present_ms'));
         return m ? Number(m[1]) : -1;
       };
       ${pause(3000)}
       Module.fuaCommand('vid_maxfps 35');
-      // [rc4l] The stat averages its last 240 frames, some seven seconds' worth at this limit.
+      // [rc4l] Long enough for the stat's window (kStatsFrames in telemetry.cpp) to hold only frames at this limit.
       ${pause(8000)}
       const held = await apart();
       Module.fuaCommand('vid_maxfps 0');
@@ -383,12 +378,9 @@ export const CHECKS = [
     name: 'dynamic resolution steps down under GPU load and back after it, reading no frame with the console up or out of focus',
     firefox: true,
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       const report = async () => {
-        const before = log.textContent.length;
-        Module.fuaCommand('fua_dynres_report');
-        ${pause(200)}
-        const said = log.textContent.slice(before), m = /scale ([\\d.]+)/.exec(said);
+        const said = await consoleAfter('fua_dynres_report', 200), m = /scale ([\\d.]+)/.exec(said);
         return { scale: m ? Number(m[1]) : -1, held: /held while/.test(said) };
       };
       // [rc4l] The default target, which a browser aims at 60 fps since it times no GPU, met at rest.
@@ -451,7 +443,7 @@ export const CHECKS = [
     evaluate: inPage(`
       const logo = document.querySelector('#splash img');
       for (let i = 0; i < 50 && !logo.complete; i++) ${pause(100)}
-      return { loaded: logo.naturalWidth > 0, name: document.getElementById('wordmark').textContent };`),
+      return { loaded: logo.naturalWidth > 0, name: document.getElementById('wordmark').textContent, said: document.getElementById('status-text').textContent };`),
     until: EVAL,
     expect: splashReady,
   },
@@ -653,12 +645,9 @@ export const CHECKS = [
   {
     name: 'damage tint can be changed, and instant replay and the update check are off and greyed out',
     evaluate: inPage(`
-      const log = document.getElementById('console');
+      ${CONSOLE_AFTER}
       const read = async (name) => {
-        const before = log.textContent.length;
-        Module.fuaCommand(name);
-        ${pause(300)}
-        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(log.textContent.slice(before));
+        const m = new RegExp('"' + name + '" is "([^"]*)"').exec(await consoleAfter(name));
         return m ? m[1] : null;
       };
       Module.fuaCommand('cl_damagetint 40');
@@ -828,7 +817,7 @@ export const CHECKS = [
 
 // [rc4l] Whether a check passed: its line matched, an evaluation returned what the check wants, a screenshot (img, decoded) shows what it should, and its lines hold no device error unless it makes one (deviceError); an expect answering { skip } is a check this browser cannot judge, with the reason.
 export function judge(check, matched, img = null, lines = []) {
-  if (!matched) return { ok: false, reason: `no line matched /${check.until}/` };
+  if (!matched) return { ok: false, reason: `no line matched /${check.until}/${lines.includes(HUNG) ? ', and the page stopped answering: smoke.mjs --stacks true names where' : ''}` };
   if (matched.startsWith('[eval] threw')) return { ok: false, reason: matched.slice('[eval] '.length) };
   const reason = (check.deviceError ? '' : gpuError(lines))
     || (check.expect && check.expect(JSON.parse(matched.replace(/^\[eval\] /, ''))))
