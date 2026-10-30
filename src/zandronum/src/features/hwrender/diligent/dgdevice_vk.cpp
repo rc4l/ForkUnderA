@@ -24,6 +24,8 @@
 
 // [Doruk-Aksoy] On at launch, the Vulkan driver's own memory goes through the engine's operator new, counted and traced as the rest is (fua_allocsites); read once, when the device is made.
 CVAR(Bool, fua_dg_vk_alloc_trace, false, 0)
+// [Doruk-Aksoy] On at launch, the Khronos validation layer checks every Vulkan call and its messages reach the console, for correctness runs only since it slows every frame; read once, when the device is made, and needs the Vulkan SDK's layer installed.
+CVAR(Bool, fua_dg_validation, false, 0)
 
 namespace zx { namespace hwrender {
 
@@ -138,6 +140,7 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	ci.MainDescriptorPoolSize.NumSampledImageDescriptors = 4 * (zx::hwrender::kMaxMaterialSlots + zx::hwrender::kOtherStageResources);
 	factory->SetMemoryAllocator(zx::hwrender::EngineMemoryAllocator());
 	if (fua_dg_vk_alloc_trace) ci.pVkAllocator = &g_driverAllocator;
+	ci.EnableValidation = fua_dg_validation;
 	factory->CreateDeviceAndContextsVk(ci, device, context);
 	if (*device == nullptr)
 	{
