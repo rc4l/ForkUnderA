@@ -259,11 +259,12 @@ test('Firefox runs only the checks marked for it, and Chrome runs every one', ()
 });
 
 test('the frame limit holds the page near 16.7 ms at 60 and lets it run faster without', () => {
-  assert.equal(frameLimited({ held: 16.7, free: 2.08 }), '');
-  assert.equal(frameLimited({ held: 2.08, free: 2.08 }), 'vid_maxfps 60 left frames 2.08 ms apart');
-  assert.equal(frameLimited({ held: -1, free: 2.08 }), 'vid_maxfps 60 left frames -1 ms apart');
-  assert.equal(frameLimited({ held: 16.7, free: 16.7 }), 'with no limit frames were 16.7 ms apart');
-  assert.equal(frameLimited({ held: 16.7, free: -1 }), 'with no limit frames were -1 ms apart');
+  assert.equal(frameLimited({ held: 28.6, free: 2.08 }), '');
+  assert.equal(frameLimited({ held: 28.6, free: 16.7 }), '');
+  assert.equal(frameLimited({ held: 16.7, free: 16.7 }), 'vid_maxfps 35 left frames 16.7 ms apart');
+  assert.equal(frameLimited({ held: -1, free: 2.08 }), 'vid_maxfps 35 left frames -1 ms apart');
+  assert.equal(frameLimited({ held: 28.6, free: 28.6 }), 'with no limit frames were 28.6 ms apart');
+  assert.equal(frameLimited({ held: 28.6, free: -1 }), 'with no limit frames were -1 ms apart');
 });
 
 test('dynamic resolution in the page is judged at rest, under load, after it, and through the console and a blur', () => {

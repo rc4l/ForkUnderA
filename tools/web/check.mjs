@@ -120,10 +120,10 @@ export function marked({ draws }) {
   return draws > 0 ? '' : 'the decal pass drew no mark';
 }
 
-// [rc4l] Why vid_maxfps went wrong in the page, or '': frames at a limit of 60 not some 16.7 ms apart, or no faster without it.
+// [rc4l] Why vid_maxfps went wrong in the page, or '': frames at the lowest limit, 35, not some 28.6 ms apart, or no faster without it, which 35 shows whatever the display, where a limit of 60 cannot on a 60 Hz one.
 export function frameLimited({ held, free }) {
-  if (!(held >= 15.5 && held <= 18.5)) return `vid_maxfps 60 left frames ${held} ms apart`;
-  if (!(free > 0 && free < 15)) return `with no limit frames were ${free} ms apart`;
+  if (!(held >= 27 && held <= 30.5)) return `vid_maxfps 35 left frames ${held} ms apart`;
+  if (!(free > 0 && free < 25)) return `with no limit frames were ${free} ms apart`;
   return '';
 }
 
@@ -351,8 +351,9 @@ export const CHECKS = [
         return m ? Number(m[1]) : -1;
       };
       ${pause(3000)}
-      Module.fuaCommand('vid_maxfps 60');
-      ${pause(5000)}
+      Module.fuaCommand('vid_maxfps 35');
+      // [rc4l] The stat averages its last 240 frames, some seven seconds' worth at this limit.
+      ${pause(8000)}
       const held = await apart();
       Module.fuaCommand('vid_maxfps 0');
       ${pause(3000)}
@@ -379,12 +380,13 @@ export const CHECKS = [
       ${pause(4000)}
       const idle = (await report()).scale;
       Module.fuaCommand('fua_dg_gpuload 60000');
-      ${pause(8000)}
-      const loaded = (await report()).scale;
-      // [rc4l] Back within a few seconds, which a wait doubled under the load once held to many more.
+      // [rc4l] The lowest of the load's readings, since a trial step up can read full scale at any one moment.
+      let loaded = 1;
+      for (let i = 0; i < 8; i++) { ${pause(800)} const { scale } = await report(); if (scale >= 0 && scale < loaded) loaded = scale; }
       Module.fuaCommand('fua_dg_gpuload 0');
-      ${pause(4000)}
-      const after = (await report()).scale;
+      // [rc4l] Back within twenty seconds, since frames paced to a 60 Hz display show no room and each step up waits for its trial, doubled by one the load undid; a wait doubled under the load once held to many more.
+      let after = -1;
+      for (let i = 0; i < 20 && after !== 1; i++) { ${pause(800)} after = (await report()).scale; }
       Module.fuaCommand('toggleconsole');
       ${pause(1000)}
       const consoleHeld = (await report()).held;
