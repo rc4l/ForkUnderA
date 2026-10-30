@@ -34,6 +34,21 @@ export function blankGame(img) {
   return '';
 }
 
+// [rc4l] Why a player's page is wrong, or '': its tools showing, or the Discord link gone or pointing elsewhere.
+export function pageTrimmed({ tools, discord, link }) {
+  if (tools) return 'the page tools are showing';
+  if (!discord) return 'the Discord link is hidden';
+  if (!link.startsWith('https://discord.gg/')) return `the Discord link goes to ${link}`;
+  return '';
+}
+
+// [rc4l] Why the loading screen is wrong, or '': its logo did not load or its chunks do not read as the name.
+export function splashReady({ loaded, name }) {
+  if (!loaded) return 'the logo did not load';
+  if (name !== 'ForkUnderA') return `the name reads ${name}`;
+  return '';
+}
+
 // [rc4l] Why the sound check failed, or '': the engine's audio contexts held until a click (a page may not play before one), all ran after it, and buffers went on playing (the level's music streams them).
 export function soundStarts({ before, after, played }) {
   if (!after.length) return 'the engine made no audio context';
@@ -421,6 +436,25 @@ export const CHECKS = [
     until: EVAL,
     expect: soundStarts,
   },
+  // [rc4l] A player's page is the game and the Discord link alone, the tools coming back only with ?dev=1.
+  {
+    name: 'the page shows the game and the Discord link, its tools only with dev=1',
+    evaluate: inPage(`
+      const shown = (id) => document.getElementById(id).getClientRects().length > 0;
+      return { tools: shown('page-tools'), discord: shown('discord'), link: document.getElementById('discord').href };`),
+    until: EVAL,
+    expect: pageTrimmed,
+  },
+  // [rc4l] The loading screen's logo is staged beside the page and its name reads as one word once it closes up.
+  {
+    name: 'the loading screen has its logo and name',
+    evaluate: inPage(`
+      const logo = document.querySelector('#splash img');
+      for (let i = 0; i < 50 && !logo.complete; i++) ${pause(100)}
+      return { loaded: logo.naturalWidth > 0, name: document.getElementById('wordmark').textContent };`),
+    until: EVAL,
+    expect: splashReady,
+  },
   // [rc4l] A change of worker count as the level starts once joined workers still starting, which only the main thread it blocked could start, and the page never answered again.
   {
     name: 'the game thread turned off as a level starts leaves the page answering',
@@ -551,6 +585,7 @@ export const CHECKS = [
   // [rc4l] SDL scales mouse motion by its window over the canvas, axis by axis, and learned the canvas's size only from the window's resize event, so fullscreen left the axes scaled apart; its window must match the canvas there and after.
   {
     name: 'the mouse is scaled alike on both axes through fullscreen',
+    query: 'map=MAP01&dev=1',
     focused: true,
     evaluate: inPage(`
       ${HEAR_CONSOLE}

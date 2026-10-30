@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
+import { pageTrimmed, splashReady, CHECKS, LIGHT_VANTAGES, LIT_FLOOR, blankGame, browserOptions, lightTableSends, checkUrl, configuredOnce, crashOffered, crosshairCentred, destroyedAsReleased, dynresFollows, everyFormatPlayed, frameLimited, gpuError, gridMatches, heardAtDistance, heldOnce, judge, marked, notIn, playedOnce, reportSent, saveLoads, savePicture, selectChecks, soakHeld, soundStarts, stoppedOffered, storedQuietly, threadedWithSound } from '../check.mjs';
 import { encodePNG } from '../../fuactl/src/pngcore.mjs';
 import { BOXES as POINTLIGHT_BOXES } from '../../fuactl/scenarios/pointlight.mjs';
 
@@ -297,4 +297,18 @@ test('lightTableSends names a table never sent and surfaces sent again', () => {
   assert.equal(lightTableSends({ pieceCopies: 0, tableCopies: 35 }), '');
   assert.match(lightTableSends({ pieceCopies: 0, tableCopies: 0 }), /sector light table was sent 0.0 times a second/);
   assert.match(lightTableSends({ pieceCopies: 70, tableCopies: 35 }), /surface records were sent 70.0 times a second/);
+});
+
+test('the loading screen needs its logo and the whole name', () => {
+  assert.equal(splashReady({ loaded: true, name: 'ForkUnderA' }), '');
+  assert.equal(splashReady({ loaded: false, name: 'ForkUnderA' }), 'the logo did not load');
+  assert.equal(splashReady({ loaded: true, name: 'ForkUnder' }), 'the name reads ForkUnder');
+});
+
+test('a player sees the Discord link and none of the page tools', () => {
+  const good = { tools: false, discord: true, link: 'https://discord.gg/katKpQMYMe' };
+  assert.equal(pageTrimmed(good), '');
+  assert.equal(pageTrimmed({ ...good, tools: true }), 'the page tools are showing');
+  assert.equal(pageTrimmed({ ...good, discord: false }), 'the Discord link is hidden');
+  assert.equal(pageTrimmed({ ...good, link: 'https://example.com/' }), 'the Discord link goes to https://example.com/');
 });
