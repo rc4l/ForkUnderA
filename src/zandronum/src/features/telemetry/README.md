@@ -74,7 +74,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
 - `features/hwrender/diligent/`:
   - `dgscene.cpp`, `dg2d.cpp`, `dgsky.cpp`, `dgviews.cpp` and `dgdynamic.cpp`: the `draw/` and `scene/` zones and the `frame/vsync` gauge.
   - `dgframe.cpp` and `dgupload.cpp`: the `load/` zones, the present interval and `fua_frametimes`'s per-frame parts under `frame/` and `levelmesh/`, and the scene buffer's rebuilds.
-  - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries; the frame's is timed for `features/dynres` with telemetry off too.
+  - `dggputimer.cpp`: each pass's GPU time under `gpu/`, from duration queries; the frame's is timed for `features/dynres` with telemetry off too;
+    `gpu/decals_ms` and `gpu/sorted_ms` are the main view's deferred decals and sorted pass, inside its `gpu/world_ms`.
   - `dgmemory.cpp`: every texture and buffer made through `CreateDeviceTexture`/`CreateDeviceBuffer`, under `gpu/mem/` and the breakdown `gpu/mem/tag/`. At shutdown it reports what is still held.
   - `dgdevice_vk.cpp`: `VK_EXT_memory_budget` under `gpu/vk_`, the device's heaps and the host's apart.
   - `dgscene.cpp`'s `CompileShader` and `CreatePipeline`, and `dgprobe.cpp`'s `CreateDeviceTexture` and `CreateDeviceBuffer`: the shaders and
