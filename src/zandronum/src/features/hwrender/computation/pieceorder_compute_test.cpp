@@ -40,9 +40,9 @@ TEST(PieceOrder, TheKeysOrderPiecesAsTheComparatorDid)
 	std::vector<int> want;
 	for (int i = 0; i < (int)pieces.size(); i++) want.push_back(i);
 	std::sort(want.begin(), want.end(), [&](int a, int b) { return Before(pieces, a, b); });
-	std::vector<PieceOrderKey> keys;
+	std::vector<PieceOrderKey> keys, scratch;
 	for (int i = 0; i < (int)pieces.size(); i++) keys.push_back({ ComputePieceOrderKey(pieces[i].blended, pieces[i].material, pieces[i].dist), i });
-	ComputeSortPieceOrder(keys);
+	ComputeSortPieceOrder(keys, scratch);
 	for (size_t i = 0; i < keys.size(); i++) EXPECT_EQ(want[i], keys[i].index) << "at " << i;
 }
 

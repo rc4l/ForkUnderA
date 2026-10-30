@@ -178,7 +178,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			orderKeys[i].key = zx::hwrender::ComputePieceOrderKey(p.blendMode != 0, (uintptr_t)p.material, dx*dx + dy*dy + dz*dz);
 			orderKeys[i].index = i;
 		}
-		zx::hwrender::ComputeSortPieceOrder(orderKeys);
+		static std::vector<zx::hwrender::PieceOrderKey> orderScratch;
+		zx::hwrender::ComputeSortPieceOrder(orderKeys, orderScratch);
 		for (int i = 0; i < npieces; i++) order[i] = orderKeys[i].index;
 
 		// [rc4l] Every slot found and every atlas place taken in draw order, on this thread, since placing a sprite the first time uploads it.
@@ -621,10 +622,9 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// a test written with the real numbers off a real wall.
 	{
 		// [rc4l] Sorted as 128-bit keys holding the rule, and the draws then moved once.
-		struct SortKey { zx::hwrender::TranslucentSortKey key; unsigned index; };
-		static TArray<SortKey> keys;
+		static std::vector<zx::hwrender::TranslucentOrder> keys, keyScratch;
 		static TArray<BlendDraw> sorted;
-		keys.Resize(list.Size());
+		keys.resize(list.Size());
 		for (unsigned i = 0; i < list.Size(); i++)
 		{
 			const BlendDraw &d = list[i];
@@ -634,9 +634,10 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			keys[i].key = zx::hwrender::ComputeTranslucentSortKey(k);
 			keys[i].index = i;
 		}
-		std::sort(&keys[0], &keys[0] + keys.Size(), [](const SortKey &a, const SortKey &b) { return a.key < b.key; });
+		// [Doruk-Aksoy] A stable radix sort, so equal keys, which the vertex offset ending each key makes rare, keep their place in the list rather than any std::sort chose.
+		zx::hwrender::ComputeSortTranslucentOrder(keys, keyScratch);
 		sorted.Resize(list.Size());
-		for (unsigned i = 0; i < keys.Size(); i++) sorted[i] = list[keys[i].index];
+		for (unsigned i = 0; i < keys.size(); i++) sorted[i] = list[keys[i].index];
 		for (unsigned i = 0; i < sorted.Size(); i++) list[i] = sorted[i];
 	}
 

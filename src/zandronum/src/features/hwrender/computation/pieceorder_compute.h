@@ -21,7 +21,8 @@ struct PieceOrderKey
 uint64_t ComputePieceOrderKey(bool blended, uintptr_t material, float distSq);
 
 // [rc4l] Sorts keys by key, then index, which sorting the pieces themselves did by reading two of them a comparison.
-void ComputeSortPieceOrder(std::vector<PieceOrderKey> &keys);
+// [Doruk-Aksoy] The keys must arrive in index order, as BuildDynamic makes them, and scratch is the radix sort's second buffer.
+void ComputeSortPieceOrder(std::vector<PieceOrderKey> &keys, std::vector<PieceOrderKey> &scratch);
 
 }} // namespace zx::hwrender
 

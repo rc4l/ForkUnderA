@@ -23,6 +23,8 @@
 #ifndef ZX_SURFACEORDER_COMPUTE_H
 #define ZX_SURFACEORDER_COMPUTE_H
 
+#include <vector>
+
 namespace zx { namespace hwrender {
 
 // One entry in the translucent pass, reduced to what the order actually depends on.
@@ -55,6 +57,16 @@ struct TranslucentSortKey
 	bool operator<(const TranslucentSortKey &o) const { return hi != o.hi ? hi < o.hi : lo < o.lo; }
 };
 TranslucentSortKey ComputeTranslucentSortKey(const TranslucentDraw &d);
+
+// [Doruk-Aksoy] A translucent draw's key with its place in the list, as the sort moves them.
+struct TranslucentOrder
+{
+	TranslucentSortKey key;
+	unsigned index;
+};
+
+// [Doruk-Aksoy] Sorts by key, equal keys kept in their order, with scratch as the radix sort's second buffer.
+void ComputeSortTranslucentOrder(std::vector<TranslucentOrder> &keys, std::vector<TranslucentOrder> &scratch);
 
 // [rc4l] A translucent draw's height span, and whether it is a piece of the level (a sprite never splits the order).
 struct BlendSpan
