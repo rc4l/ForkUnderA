@@ -89,4 +89,4 @@ export async function judgeLaunch(c, inst, label) {
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "slotrecycle", wad: buildSlotRecycleWad(), maps: ["MAP01"],
-  sides: [{ name: "vk", noGl: true, launchCvars: { con_notifylines: 0 } }], judgeLaunch }), compareEachLaunch);
+  sides: [{ name: "vk", noGl: true, launchCvars: { show_messages: 0 } }], judgeLaunch }), compareEachLaunch);
