@@ -28,6 +28,9 @@ unsigned ComputeBufferReadState(unsigned bindFlags);
 // [Doruk-Aksoy] Adds `item` to `list` unless it is there already, and says whether it was added.
 bool ComputeNoteOnce(std::vector<const void *> &list, const void *item);
 
+// [rc4l] Whether what is written has to be remembered for the next world commit: only a world commit lets go of it, and a device with no material array or fua_dg_checkonce off never reaches one, so the list would hold every texture and buffer for the life of the game.
+bool ComputeTracksWrites(bool checkOnce, unsigned materialSlots);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_RESOURCESTATE_COMPUTE_H
