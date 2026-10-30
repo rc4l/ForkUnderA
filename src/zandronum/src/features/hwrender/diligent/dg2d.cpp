@@ -21,7 +21,6 @@
 #include "features/telemetry/telemetry.h"
 
 EXTERN_CVAR(Bool, fua_dg_hud)
-EXTERN_CVAR(Bool, fua_dg_async_pipelines)
 
 namespace zx { namespace hwrender {
 
@@ -207,7 +206,7 @@ static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *p
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = sizeof(samplers) / sizeof(samplers[0]);
 	pci.pVS = vs;
 	pci.pPS = ps;
-	if (user && fua_dg_async_pipelines) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
+	if (user && AsyncPipelines()) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
 	CreatePipeline(pci, &out);
 	if (out && !user) BindScreen2D(out);
 }
@@ -278,7 +277,7 @@ static Diligent::IPipelineState *Pso2D(int mode, int shader, int slot)
 		return KeepUserPipeline(key.second, Plain2D(key.first, slot), pso);
 	};
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> *made =
-		ComputeUserPipeline(g_user2D[slot], std::make_pair(mode, shader), !fua_dg_async_pipelines, start, UserPipelineStatus, finish);
+		ComputeUserPipeline(g_user2D[slot], std::make_pair(mode, shader), !AsyncPipelines(), start, UserPipelineStatus, finish);
 	return made != NULL ? made->RawPtr() : plain;
 }
 

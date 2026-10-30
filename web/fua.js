@@ -32,6 +32,8 @@
     setTimeout(() => URL.revokeObjectURL(link.href), 10000);
   }
 
+  let keepSplash = () => {};
+
   function fail(text) {
     statusEl.hidden = true;
     errorEl.hidden = false;
@@ -99,6 +101,7 @@
     running = false;
     saveHome(false).finally(() => {
       if (!errorEl.hidden) return;
+      keepSplash();
       setStatus('You quit the game.');
       progress.hidden = true;
       again.hidden = false;
@@ -170,13 +173,21 @@
     deviceReady();
   }).catch((e) => fail(String(e.message || e)));
 
-  Promise.all([device, runtime]).then(() => {
+  // [rc4l] --splash-ms in fua.css is the animation's length, kept beside its timings; the engine's start blocks the page, so it waits for the animation.
+  const splashLength = parseFloat(getComputedStyle(statusEl).getPropertyValue('--splash-ms')) || 0;
+  const splash = FuaSplash.played(FuaSplash.holdMs(performance.now(), splashLength, matchMedia('(prefers-reduced-motion: reduce)').matches));
+
+  Promise.all([device, runtime, splash]).then(() => {
+    setStatus('Launching FUA...', 1);
+    statusEl.classList.add('launching');
+    return FuaSplash.painted();
+  }).then(() => {
     // [rc4l] A console command, for the page's controls and for tests driving the engine; one that quits ends the engine rather than failing.
     Module.fuaCommand = (text) => {
       try { Module.ccall('fua_command', null, ['string'], [text]); }
       catch (e) { if (!e || e.name !== 'ExitStatus') throw e; }
     };
-    statusEl.hidden = true;
+    keepSplash = FuaSplash.reveal(statusEl);
     // [rc4l] Module.fuaSaving is the store in progress, or the last one, for tests to wait on.
     // [rc4l] The config written quietly, false when the engine could not write it.
     Module.fuaWriteConfig = () => Module.ccall('fua_write_config', 'number', [], []) !== 0;
@@ -186,6 +197,7 @@
     Module.callMain(Module.fuaRestartArgs || wadArgs);
   });
 
+  document.getElementById('page-tools').hidden = !FuaSplash.toolsShown(location.search);
   document.getElementById('fullscreen').addEventListener('click', () => canvas.requestFullscreen());
   again.addEventListener('click', () => location.reload());
 })();

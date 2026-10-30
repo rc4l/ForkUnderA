@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { recentCrashes, summarizeCrash } from "../src/crashes.mjs";
+import { quitFailed, quitOutcome, recentCrashes, summarizeCrash } from "../src/crashes.mjs";
 
 const CRASH = `=== MCP ENGINE CRASH ===
 code: 0xc0000005
@@ -70,4 +70,23 @@ test("recent crash files are found in fuactl's folders, newest first, and older 
   fs.writeFileSync(path.join(dir, "fuactl-file"), "not a folder");
   const found = recentCrashes(Date.now() - 3600 * 1000, dir).map((c) => path.basename(path.dirname(c.file)));
   assert.deepEqual(found, ["fuactl-b", "fuactl-a"]);
+});
+
+test("a quit that left its own crash file did not stop cleanly, however the port closed", () => {
+  const crash = { file: "/tmp/fuactl-1/engine-7799.log.crash", at: 1 };
+  assert.equal(quitOutcome("stopped", [], 7799), "stopped");
+  assert.equal(quitOutcome("stopped", [crash], 7799), "crashed quitting (/tmp/fuactl-1/engine-7799.log.crash)");
+  assert.equal(quitOutcome("refused", [crash], 7799), "refused");
+  assert.equal(quitOutcome("absent", [crash], 7799), "absent");
+});
+
+test("another instance's crash says nothing of the one that quit", () => {
+  const other = { file: "/tmp/fuactl-1/engine-7796.log.crash", at: 1 };
+  assert.equal(quitOutcome("stopped", [other], 7799), "stopped");
+  assert.equal(quitOutcome("stopped", [other, { file: "/tmp/fuactl-2/engine-7799.log.crash", at: 2 }], 7799), "crashed quitting (/tmp/fuactl-2/engine-7799.log.crash)");
+});
+
+test("a quit fails when it was refused, timed out or crashed", () => {
+  for (const outcome of ["running", "refused", "crashed quitting (x)"]) assert.equal(quitFailed(outcome), true);
+  for (const outcome of ["stopped", "absent", "stopped orphan pid 12"]) assert.equal(quitFailed(outcome), false);
 });

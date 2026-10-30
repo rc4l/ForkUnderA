@@ -18,9 +18,10 @@ namespace zx { namespace handoff {
 
 namespace {
 
-std::mutex g_mutex;
-std::condition_variable g_wake;
-Asks g_asks;   // [rc4l] what the game thread waits on the main thread for, served while the main thread waits on it too
+// [rc4l] Never destroyed, as the job pool is not, since the game thread is still waiting on these when the process exits.
+std::mutex &g_mutex = *new std::mutex;
+std::condition_variable &g_wake = *new std::condition_variable;
+Asks &g_asks = *new Asks;   // [rc4l] what the game thread waits on the main thread for, served while the main thread waits on it too
 void (*g_work)() = nullptr;     // [rc4l] what the game thread runs next, under g_mutex
 std::atomic<bool> g_done(true);
 std::atomic<bool> g_inFlight(false);

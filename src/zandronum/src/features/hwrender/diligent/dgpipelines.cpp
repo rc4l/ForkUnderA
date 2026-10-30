@@ -771,15 +771,25 @@ static_assert(zx::hwrender::kStateVertexBuffer == Diligent::RESOURCE_STATE_VERTE
 	zx::hwrender::kStateIndirectArgument == Diligent::RESOURCE_STATE_INDIRECT_ARGUMENT, "resourcestate_compute's states are Diligent's");
 
 
+// [rc4l] Whether writes are tracked, letting go of what was held before fua_dg_checkonce went off, since no commit will.
+static bool WritesTracked()
+{
+	if (zx::hwrender::ComputeTracksWrites(fua_dg_checkonce, MaterialSlotCapacity())) return true;
+	g_writtenSeen.clear();
+	g_writtenBuffers.clear();
+	g_writtenTextures.clear();
+	return false;
+}
+
 void NoteBufferWritten(Diligent::IBuffer *buffer)
 {
-	if (buffer == NULL || zx::hwrender::ComputeBufferReadState(buffer->GetDesc().BindFlags) == 0) return;
+	if (buffer == NULL || !WritesTracked() || zx::hwrender::ComputeBufferReadState(buffer->GetDesc().BindFlags) == 0) return;
 	if (zx::hwrender::ComputeNoteOnce(g_writtenSeen, buffer)) g_writtenBuffers.emplace_back(buffer);
 }
 
 void NoteTextureWritten(Diligent::ITexture *texture)
 {
-	if (texture != NULL && zx::hwrender::ComputeNoteOnce(g_writtenSeen, texture)) g_writtenTextures.emplace_back(texture);
+	if (texture != NULL && WritesTracked() && zx::hwrender::ComputeNoteOnce(g_writtenSeen, texture)) g_writtenTextures.emplace_back(texture);
 }
 
 static void ReadyWrittenResources(Diligent::IDeviceContext *ctx)
@@ -1127,7 +1137,7 @@ static void MakeWorldPipeline(int pass, Diligent::IShader *vs, Diligent::IShader
 	pci.PSODesc.ResourceLayout.NumImmutableSamplers = (Diligent::Uint32)(sizeof(samplers) / sizeof(samplers[0])) - noArray;
 	pci.pVS = vs;
 	pci.pPS = ps;
-	if (fua_dg_async_pipelines) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
+	if (AsyncPipelines()) pci.Flags |= Diligent::PSO_CREATE_FLAG_ASYNCHRONOUS;
 	CreatePipeline(pci, &out);
 }
 
@@ -1170,7 +1180,7 @@ static Diligent::IPipelineState *UserScenePSO(int pipeline, int userShader, bool
 
 Diligent::IPipelineState *ScenePSO(int pipeline, int userShader)
 {
-	return UserScenePSO(pipeline, userShader, !fua_dg_async_pipelines);
+	return UserScenePSO(pipeline, userShader, !AsyncPipelines());
 }
 
 void PrewarmUserPipelines()

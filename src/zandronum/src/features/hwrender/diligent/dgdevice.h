@@ -46,6 +46,9 @@ const DeviceApi *ChosenDeviceApi();
 // [rc4l] ChosenDeviceApi's canWaitForGPU, for the readbacks and idle waits that need it.
 bool CanWaitForGPU();
 
+// [rc4l] Whether pipelines are made in the background (ComputeAsyncPipelines over fua_dg_async_pipelines and CanWaitForGPU).
+bool AsyncPipelines();
+
 // [rc4l] ChosenDeviceApi's pagePaced, for the present interval.
 bool PagePaced();
 

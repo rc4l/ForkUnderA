@@ -15,6 +15,17 @@ export function summarizeCrash(text, frames = 4) {
   return { why: why.trim(), seams, stack };
 }
 
+// [rc4l] What a quit on port came to once its own crash file is counted: a port that closed because the engine aborted on its way out has not stopped cleanly, which a closed port alone cannot tell, and another instance's crash says nothing of this one.
+export function quitOutcome(outcome, crashes, port) {
+  const own = crashes.find((c) => path.basename(c.file).includes(`-${port}.`));
+  return outcome === "stopped" && own ? `crashed quitting (${own.file})` : outcome;
+}
+
+// [rc4l] Whether a quit's outcome is a failure for the command that asked for it.
+export function quitFailed(outcome) {
+  return outcome === "running" || outcome === "refused" || outcome.startsWith("crashed");
+}
+
 // [rc4l] The crash files under dir's fuactl folders changed since sinceMs, newest first.
 export function recentCrashes(sinceMs, dir = os.tmpdir()) {
   const found = [];

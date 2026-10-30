@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { launchInstance, stopInstance, describeExit } from "./launch.mjs";
-import { summarizeCrash } from "./crashes.mjs";
+import { quitOutcome, recentCrashes, summarizeCrash } from "./crashes.mjs";
 import { sessionFileFor, clearPortSessions, standAt, holdingLaunchFile } from "./shot.mjs";
 import { sleep } from "./capture.mjs";
 
@@ -372,7 +372,12 @@ async function bridgeConnect(port, token, { connectMs, helloMs } = {}) {
 }
 
 // [rc4l] Quit the instance on port by its token and wait for the port to close: "stopped", "absent" when nothing answered, or "running" when it would not go.
-export async function quitInstance({ port, token = null }, { connect = bridgeConnect, timeoutMs = 10000, pollMs = 200 } = {}) {
+export async function quitInstance(target, { crashes = recentCrashes, ...waits } = {}) {
+  const from = Date.now();
+  return quitOutcome(await askToQuit(target, waits), crashes(from), target.port);
+}
+
+async function askToQuit({ port, token = null }, { connect = bridgeConnect, timeoutMs = 10000, pollMs = 200 } = {}) {
   let c;
   try { c = await connect(Number(port), token); } catch { return "absent"; }
   let failed = false;
