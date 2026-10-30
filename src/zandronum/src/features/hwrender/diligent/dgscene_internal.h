@@ -87,7 +87,9 @@
 #include "i_system.h"
 #include <math.h>
 #include <algorithm>
+#include <cstdint>
 #include <functional>
+#include <vector>
 #include <stdio.h>
 #include "m_png.h"
 #ifdef ZX_ENABLE_REPLAY
@@ -241,9 +243,10 @@ unsigned MaterialSlotCapacity();
 // [rc4l] The walk slot the pass being drawn draws alone (ComputePassWalkSlot), which the scene shader culls by, or -1 for one that draws everything.
 int PassWalkSlot();
 
+// [Doruk-Aksoy] A material and the key its translation is filed under (ComputeSlotTranslation), kBrightmapTranslation for its brightmap.
 struct MatSlot { const void *material; int translation; };
-// [rc4l] The translation a brightmap's slot is filed under: no real one is this, so a material and its brightmap never share a slot.
-static const int kBrightmapTranslation = -0x7fffffff;
+// [Doruk-Aksoy] The texture a slot holds by its kind (ComputeSlotKind), for every pass that fills a material array.
+Diligent::IDeviceObject *MaterialSlotSRV(const MatSlot &e);
 
 // [rc4l] The scene as the backend holds it on the GPU: one owner for the buffers and batches every pass draws from.
 struct SceneGeometry
@@ -389,14 +392,30 @@ bool BindlessActive();
 // [Doruk-Aksoy] Whether the material array is to carry the world once it is filled, so a batch needs no binding of its own until something draws it without the array.
 bool BindlessWanted();
 void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop, Diligent::IShaderResourceBinding *srb);
+// [Doruk-Aksoy] Binds run unless it is bound already, counting the switch, and says whether it bound one, after which a binding must be committed again.
+bool SwitchPipeline(Diligent::IDeviceContext *ctx, Diligent::IPipelineState *&bound, Diligent::IPipelineState *run);
 void DirtyMaterialSlots();
+// [Doruk-Aksoy] Every slot written again at the next fill, for when the textures behind the slots changed rather than the table.
+void ForceMaterialRefill();
 bool EnsureScenePipeline(FString &err);
 void FlushTextureCache();
 // [rc4l] Drop one material's per-material bindings and the batches' copies, so its next draw binds what it shows now.
 void ForgetMaterialSRBs(const void *material);
 void MaterialSRBCounts(int &cached, int &batch);
 int MaterialSlotCount();
-int MaterialSlotFor(const void *material, int translation);
+// [Doruk-Aksoy] `inMesh` for a baked piece's key, whose slot is pinned with its ANIMDEFS frames, since the bake froze the number into its record.
+int MaterialSlotFor(const void *material, int translation, bool inMesh);
+// [Doruk-Aksoy] A key's slot, marked as used by the reservation running, or -1 when the table lacks it, found before any slot is given to a missing key.
+int FindReservedSlot(const void *material, int translation);
+// [Doruk-Aksoy] Counts the slot table's resets, so slots kept for a sprite list are read only against the table they came from.
+unsigned int MaterialSlotTableId();
+// [Doruk-Aksoy] Starts a dynamic reservation, whose slots and the last one's never give way to a new key.
+void BeginSlotReservation();
+// [Doruk-Aksoy] From a frame's fill to its end no slot may give way, since the frame draws with that fill; preparing the next frame opens the table again.
+void OpenMaterialSlots();
+void SealMaterialSlots();
+// [Doruk-Aksoy] Lets every baked slot go before a bake pins again those it still uses, so a texture the level no longer shows may give way.
+void UnpinMaterialSlots();
 void RefreshBindless();
 void ReleaseBatchSRBs();
 void ReleaseMaterialSRBs();
@@ -404,6 +423,12 @@ void ReleaseScenePipelines();
 void ReleaseWorldSRBs();
 void ResetMaterialSlots();
 void SlotReport(int n, FString &out);
+// [Doruk-Aksoy] fua_dg_slotreport: the slots the level asked for by kind, those refused once the table filled among them, and the top `top` sprite families.
+void SlotDemandReport(int top, FString &out);
+// [Doruk-Aksoy] Stamps the key a dynamic piece asked for, which slot holds, for the working set.
+void NoteDynamicSlotUse(int slot, const void *material, int translation);
+// [Doruk-Aksoy] The last frame's working set and each window's counted, their peaks kept and the gpu/slots/ counters sent.
+void MeasureSlotWorkingSet();
 Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
 // [Doruk-Aksoy] World pipeline `pipeline` running GLDEFS shader userShader's own program, made the first time it is asked for and committed with the plain one's bindings; the plain one for -1, for a shader that does not compile, or where none runs (ComputeWorldPipelineTakesUserShader).
 Diligent::IPipelineState *ScenePSO(int pipeline, int userShader);
@@ -413,13 +438,22 @@ void PrewarmUserPipelines();
 void UserShaderReport(FString &out);
 // [Doruk-Aksoy] fua_dg_shaderbench: the launch's GLDEFS programs compiled again, uncached, at most `inFlight` at a time on the device's pool, and how long that took.
 void ShaderCompileBench(int inFlight, FString &out);const TArray<MatSlot> &MaterialSlots();
-int FilledSlotCount();
+// [Doruk-Aksoy] How many of a piece's slots changed after the current fill, and so sample what they held before.
+int MaterialSlotsUnfilled(int matSlot, int brightSlot);
+// [Doruk-Aksoy] The slot table's generation, which a pass filling an array of its own compares with the one it filled at.
+uint32_t MaterialSlotGeneration();
+// [Doruk-Aksoy] The slots such a pass writes: every one when `fresh`, else those changed since `filledGen`.
+void MaterialSlotsToWrite(uint32_t filledGen, bool fresh, std::vector<unsigned> &out);
+// [Doruk-Aksoy] The table in one line for fua_dg_dynstats: its slots, those pinned and recycled, and whether bindless is on.
+void MaterialSlotStats(FString &out);
 void MarkMaterialSlotsCurrent();
 
 // [rc4l] The sprite atlas (dgatlas.cpp): sprites on the per-material path drawn from shared pages, an entry's rectangle in texels on its page.
 struct AtlasEntry { int page, x, y, w, h; };
 bool AtlasActive();
 int AtlasPageSize();
+// [Doruk-Aksoy] The largest side an image may have to go on a page.
+int AtlasMaxSide();
 // [rc4l] Where a material's image sits on a page, placing it the first time, NULL when it may not or does not fit; sprite says the piece is a flat sprite.
 const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite);
 Diligent::IShaderResourceBinding *AtlasSRB(Diligent::IPipelineState *pso, int page);
@@ -447,6 +481,8 @@ void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePiec
 // [rc4l] A piece's material and brightmap slots and whether its texture animates, which may give a material a slot, so they are found on one thread before records are filled on many.
 struct PieceSlotSet { float mat, bright; bool animates; };
 PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool inMesh);
+// [Doruk-Aksoy] Dynamic piece `index`'s slots as ReserveDynamicSlots found them for this sprite list, or found now when it found none.
+PieceSlotSet DynamicPieceSlots(int index, const zx::levelmesh::MeshPiece &p);
 // [rc4l] FillPieceData with the slots already found, which only reads, so lanes can run it.
 void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &slots, ScenePieceData &pd, bool inMesh);
 void ForgetBatchSRBs();

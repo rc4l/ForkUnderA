@@ -26,7 +26,8 @@ enum WorldPipeline
 enum { kWpStageOpaque, kWpStageMasked, kWpStageTrans, kWpStageRedAlpha, kWpStageGBuffer };
 
 // [rc4l] Their blends: none, which writes depth, source alpha over, source alpha added, source alpha taken from the screen or the screen from it, and GL's DST_COLOR / ONE_MINUS_SRC_ALPHA fuzz fallback.
-enum { kWpBlendNone, kWpBlendAlpha, kWpBlendAdd, kWpBlendRevSub, kWpBlendSub, kWpBlendFuzz };
+// [Doruk-Aksoy] kWpBlendPremul is a colour already multiplied by its alpha over the screen, which draws translucent and additive alike (fua_dg_premulblend).
+enum { kWpBlendNone, kWpBlendAlpha, kWpBlendAdd, kWpBlendRevSub, kWpBlendSub, kWpBlendFuzz, kWpBlendPremul };
 
 struct WorldPipelineDesc
 {
@@ -49,6 +50,9 @@ int ComputeBatchPipeline(int blendMode);
 
 // [rc4l] A sprite's, model's or decal's pipeline in the translucent pass, from its blend mode (2 additive, 3 fuzz, 4 and 5 the subtract styles), whether its texture is a red-channel mask, whether it is a decal and whether it is a HUD model's; DECALDEF has no subtract style, so a decal never asks for one.
 int ComputeDynamicPipeline(int blendMode, bool redAlpha, bool depthBias, bool hud);
+
+// [Doruk-Aksoy] Under `premul` (fua_dg_premulblend) a plain additive sprite's pipeline is the premultiplied translucent one; a GLDEFS-shaded one (userShader 0 or more) and every other keeps its own.
+int ComputePremulPipeline(int pipeline, bool premul, int userShader);
 
 // [rc4l] A blend's source and destination factors and its operation, apart from any graphics API.
 enum { kBlendFactorSrcAlpha, kBlendFactorInvSrcAlpha, kBlendFactorOne, kBlendFactorDestColor };

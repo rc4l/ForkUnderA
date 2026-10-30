@@ -35,9 +35,15 @@ std::string ComputeMaterialShaderDefines(unsigned slots)
 	return d;
 }
 
-unsigned ComputeMaterialBindEnd(unsigned from, unsigned capacity, unsigned filled)
+int ComputeSlotTranslation(int translation, int contentIndex)
 {
-	return from == 0 ? capacity : (filled < capacity ? filled : capacity);
+	return translation == kBrightmapTranslation ? translation : -contentIndex;
+}
+
+SlotKind ComputeSlotKind(const void *material, int translation)
+{
+	if (material == nullptr) return kSlotWhite;
+	return translation == kBrightmapTranslation ? kSlotBrightmap : kSlotMaterial;
 }
 
 }} // namespace zx::hwrender

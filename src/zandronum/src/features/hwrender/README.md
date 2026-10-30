@@ -81,7 +81,30 @@ Every page one frame needs stays in that pool, and a level goes up in one frame,
 loaded and flown around, and Firefox ran out of GPU memory.
 A material and translation are found in the texture cache and the slot table by `computation/materialindex_compute`,
 where a walk over thousands of Complex Doom sprite frames, for every slot of every binding refill, took 11% of a
-fight's frame.
+fight's frame. The slot table and the bindings per material file a game translation under its palette
+(`ComputeSlotTranslation`), since ACS, a player's colour change or a reused corpse slot redefines a translation
+under the same number (scenario `translationchange`); every material array is filled through `MaterialSlotSRV`,
+which hands a brightmap's slot its brightmap (`ComputeSlotKind`).
+The array holds up to 8192 slots (`kMaxMaterialSlots`; `dgdevice_vk.cpp` sizes the descriptor pools for four of its
+bindings), and a full table gives a new key the slot least recently reserved that neither of the last two dynamic
+reservations used and no baked record pins (`computation/slotrecycle_compute`). A reservation finds every sprite's
+keys before it makes any (`ComputeReserveSlots`), once per sprite list, and `BuildDynamic` draws with the slots it
+kept (`DynamicPieceSlots`). A world binding's resources are checked once after each fill, not on every
+draw loop's commit, and a buffer, texture or camera target written since is made ready to read before the next one
+(`fua_dg_checkonce`, `computation/resourcestate_compute`). A frame's slots are all settled
+before its fill and the table is sealed from the fill to the frame's end, so a recycled slot never changes under a
+binding a frame draws with. A fill on a retired binding writes only the slots changed since that binding was filled,
+and with the array live a translucent or animated batch draws with the world binding rather than a binding of its own,
+each of which held the whole array (scenario `slotrecycle`).
+A plain additive sprite draws on the translucent sprites' pipeline, whose shader leaves its colour multiplied by its
+alpha and an additive piece's alpha 0 (`kWpBlendPremul`, `ComputePremulPipeline`), so each keeps its own blend while
+the sorted pass binds one pipeline where it switched between two; a colour lands within one level of the two
+pipelines' (scenario `premulblend`), a GLDEFS-shaded sprite keeps its own pipeline, and `fua_dg_premulblend`
+("Batch translucency" in Video Mode) turns it off.
+`fua_dg_slotreport [n]` counts the slots a level asked for by kind (`computation/slotreport_compute`), the ones
+refused once the table filled among them, packs the plain sprites as the atlas would to say how many slots its pages
+would leave and what pages and the sprites' own textures cost, gives the working set dynamic pieces asked for in the
+last frame and the last 1, 2 and 5 s with their peaks, and names the n sprite families taking most.
 `features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
 Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
 

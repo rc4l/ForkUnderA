@@ -67,22 +67,3 @@ TEST(SlotRemapCompute, SlotZeroAndAnswersOutsideTheTableKeepTheirOwnSlot)
 	EXPECT_EQ((std::vector<unsigned>{ 9, 1, 0 }), remap);   // [rc4l] slot 0 is never asked, a brightmap frame with none maps to 0
 	EXPECT_FALSE(ComputeSlotRemap(0, shows, remap));
 }
-
-// [rc4l] WDI20's TV: a camera texture filled into the array before its first render came back white, and an unchanged table kept that fill for good.
-TEST(SlotRemapCompute, AFillWithAWhiteLiveSlotIsTriedAgain)
-{
-	EXPECT_TRUE(ComputeKeepsMaterialFill(true, true, 0));
-	EXPECT_FALSE(ComputeKeepsMaterialFill(true, true, 1));
-	EXPECT_FALSE(ComputeKeepsMaterialFill(true, false, 0));
-	EXPECT_FALSE(ComputeKeepsMaterialFill(false, true, 0));
-}
-
-// [rc4l] AoW's monsters: a sprite frame first drawn after the array was filled sampled white for that frame, and its brightmap added white light.
-TEST(SlotRemapCompute, ASlotPastTheFillSamplesThePlaceholder)
-{
-	EXPECT_EQ(0, ComputeSlotsUnfilled(5, 0, 10));
-	EXPECT_EQ(0, ComputeSlotsUnfilled(5, 9, 10));
-	EXPECT_EQ(1, ComputeSlotsUnfilled(10, 0, 10));     // [rc4l] no brightmap
-	EXPECT_EQ(1, ComputeSlotsUnfilled(5, 10, 10));
-	EXPECT_EQ(2, ComputeSlotsUnfilled(10, 11, 10));
-}

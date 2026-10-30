@@ -55,6 +55,17 @@ TEST(WorldPipelines, ABatchIsMaskedAdditiveOrTranslucent)
 }
 
 // [rc4l] A red-alpha mask wins over a decal's bias, which wins over a sprite's, each additive or not.
+// [Doruk-Aksoy] Only a plain additive sprite moves onto the premultiplied translucent pipeline, and only while fua_dg_premulblend is on.
+TEST(WorldPipelines, PremultipliedBlendMergesOnlyPlainAdditiveSprites)
+{
+	EXPECT_EQ(kWpTransNoCull, ComputePremulPipeline(kWpAddNoCull, true, -1));
+	EXPECT_EQ(kWpAddNoCull, ComputePremulPipeline(kWpAddNoCull, false, -1)) << "off";
+	EXPECT_EQ(kWpAddNoCull, ComputePremulPipeline(kWpAddNoCull, true, 0)) << "a GLDEFS shader's program keeps its own blend";
+	EXPECT_EQ(kWpTransNoCull, ComputePremulPipeline(kWpTransNoCull, true, -1));
+	EXPECT_EQ(kWpAddDecal, ComputePremulPipeline(kWpAddDecal, true, -1));
+	EXPECT_EQ(kWpAddHud, ComputePremulPipeline(kWpAddHud, true, -1));
+}
+
 TEST(WorldPipelines, ADynamicDrawTakesItsMaskDecalOrSpritePipeline)
 {
 	EXPECT_EQ(kWpAddRedAlpha, ComputeDynamicPipeline(2, true, true, false));
@@ -85,6 +96,7 @@ TEST(WorldPipelines, EachBlendIsGLsEquation)
 		{ kWpBlendRevSub, kBlendFactorSrcAlpha, kBlendFactorOne, kBlendOpRevSubtract },
 		{ kWpBlendSub, kBlendFactorSrcAlpha, kBlendFactorOne, kBlendOpSubtract },
 		{ kWpBlendFuzz, kBlendFactorDestColor, kBlendFactorInvSrcAlpha, kBlendOpAdd },
+		{ kWpBlendPremul, kBlendFactorOne, kBlendFactorInvSrcAlpha, kBlendOpAdd },
 	};
 	for (const auto &w : want)
 	{

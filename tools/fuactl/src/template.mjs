@@ -174,6 +174,14 @@ export function matrixSets(text) {
   return m[2].split(",").map((v) => ({ [m[1]]: v }));
 }
 
+// [Doruk-Aksoy] An adjustment that runs each scenario's engine on `port` over whatever the run adjusts, so one session's suite never meets another's on the default port.
+export function portAdjust(port, adjust = (o) => o) {
+  return (opts, compare) => {
+    const a = adjust(opts, compare);
+    return a && !a.skip ? { ...a, port } : a;
+  };
+}
+
 // [rc4l] An adjustment with one matrix setting laid over whatever the run adjusts, a skipped or absent scenario left as it is.
 export function matrixAdjust(cvars, adjust = (o) => o) {
   return (opts) => {

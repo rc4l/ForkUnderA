@@ -81,6 +81,7 @@ void Upload(Diligent::ITexture *tex, int x, int y, int w, int h, const unsigned 
 	sub.Stride = (Diligent::Uint64)w * 4;
 	GetContext()->UpdateTexture(tex, 0, 0, box, sub, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION,
 		Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	NoteTextureWritten(tex);
 }
 
 // [rc4l] Black over an image's rectangle and border on a brightmap page, since a brightmap adds to the lit colour.
@@ -134,6 +135,8 @@ bool AtlasActive()
 }
 
 int AtlasPageSize() { return kPageSize; }
+
+int AtlasMaxSide() { return kMaxSide; }
 
 const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite)
 {

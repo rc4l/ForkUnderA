@@ -654,7 +654,8 @@ static const char *kMirrorPlanarPS =
 // [rc4l] Which shader g_mirrorPSO was built with; the traced one only where the structure exists and fua_dg_rtmirrors asks for it.
 static bool g_mirrorPSOTraced = false;
 // [rc4l] The material slots the traced pipeline's array was last filled with, so a sprite's slot made since is bound before a ray meets it.
-static unsigned g_mirrorMaterialSlots = 0;
+// [Doruk-Aksoy] The slot table generation the traced pipeline's array was last filled at.
+static uint32_t g_mirrorFilledGen = 0;
 
 // [rc4l] Every material the level uses, bound once on the PIPELINE.
 //
@@ -670,7 +671,7 @@ static unsigned g_mirrorMaterialSlots = 0;
 // nothing in the log. So the white placeholder fills everything past the batch list AND
 // anything whose own upload failed, and if even the placeholder is unavailable the traced
 // path is abandoned rather than half-built.
-static bool BindMirrorMaterials(unsigned from, bool report)
+static bool BindMirrorMaterials(bool fresh, bool report)
 {
 	auto *v = g_mirrorPSO->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "uMaterials");
 	Diligent::IDeviceObject *white = GetMaterialSRV(NULL, 0);
@@ -680,19 +681,20 @@ static bool BindMirrorMaterials(unsigned from, bool report)
 		return false;
 	}
 	unsigned fellBack = 0;
-	// [rc4l] A rebind replaces only the white placeholders under the new slots, which Diligent keeps unless told to overwrite.
-	const Diligent::Uint32 to = zx::hwrender::ComputeMaterialBindEnd(from, MaterialSlotCapacity(), MaterialSlots().Size());
-	const Diligent::SET_SHADER_RESOURCE_FLAGS flags = from == 0 ? Diligent::SET_SHADER_RESOURCE_FLAG_NONE : Diligent::SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE;
-	for (Diligent::Uint32 mi = from; mi < to; mi++)
+	// [Doruk-Aksoy] A rebind writes every slot changed since the last fill, a recycled one as well as a new one, overwriting what Diligent would otherwise keep.
+	static std::vector<unsigned> slots;
+	MaterialSlotsToWrite(g_mirrorFilledGen, fresh, slots);
+	const Diligent::SET_SHADER_RESOURCE_FLAGS flags = fresh ? Diligent::SET_SHADER_RESOURCE_FLAG_NONE : Diligent::SET_SHADER_RESOURCE_FLAG_ALLOW_OVERWRITE;
+	for (const Diligent::Uint32 mi : slots)
 	{
 		const void *mat = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].material : NULL;
-		const int tr = (mi < MaterialSlots().Size()) ? MaterialSlots()[mi].translation : 0;
-		Diligent::IDeviceObject *obj = GetMaterialSRV(mat, tr);
+		// [Doruk-Aksoy] A brightmap's slot holds its brightmap, as the scene's array does, not the material made again under the brightmap key.
+		Diligent::IDeviceObject *obj = mi < MaterialSlots().Size() ? MaterialSlotSRV(MaterialSlots()[mi]) : white;
 		if (obj == nullptr) obj = white;
 		if (mi < MaterialSlots().Size() && mat != NULL && obj == white) fellBack++;
 		v->SetArray(&obj, mi, 1, flags);
 	}
-	g_mirrorMaterialSlots = MaterialSlots().Size();
+	g_mirrorFilledGen = MaterialSlotGeneration();
 	// [rc4l] Count how many came back as the white placeholder. A reflection showing flat white
 	// surfaces looks the same whether the texture failed to upload or the index is wrong, and
 	// this separates the two without reading it off a screenshot.
@@ -703,7 +705,7 @@ static bool BindMirrorMaterials(unsigned from, bool report)
 // [rc4l] Whether materials were made since the traced pipeline's array was filled, which a ray meeting one would sample as white.
 static bool MirrorMaterialsStale()
 {
-	return g_mirrorPSO && g_mirrorPSOTraced && MaterialSlots().Size() > g_mirrorMaterialSlots;
+	return g_mirrorPSO && g_mirrorPSOTraced && MaterialSlotGeneration() != g_mirrorFilledGen;
 }
 
 // [rc4l] The sprites' records on the traced binding, whose buffer a growth may have replaced.
@@ -866,7 +868,7 @@ bool EnsureMirrorResources()
 		for (Diligent::SHADER_TYPE st : { Diligent::SHADER_TYPE_VERTEX, Diligent::SHADER_TYPE_PIXEL })
 			if (auto *v = g_mirrorPSO->GetStaticVariableByName(st, "Sheen")) v->Set(g_sheenCB);
 		// [rc4l] Every material the level uses, on the pipeline (BindMirrorMaterials).
-		if (wantTraced && !BindMirrorMaterials(0, true))
+		if (wantTraced && !BindMirrorMaterials(true, true))
 		{
 			g_mirrorPSO.Release();
 			return false;
@@ -877,7 +879,7 @@ bool EnsureMirrorResources()
 	// [rc4l] Slots made since the array was filled (a sprite's, first drawn this frame), bound and a fresh binding taken so it copies them.
 	if (MirrorMaterialsStale())
 	{
-		BindMirrorMaterials(g_mirrorMaterialSlots, false);
+		BindMirrorMaterials(false, false);
 		g_mirrorSRB.Release();
 	}
 

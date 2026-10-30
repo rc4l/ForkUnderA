@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { UdmfMap, wad, mapLumps } from "./udmf.mjs";
-import { AcsScript, ACSF, acs0, callFunc, callSpecial, consoleCommand, gotoWord, hudMessage, PCD, printString } from "./acs.mjs";
+import { AcsScript, ACSF, acs0, callFunc, callSpecial, consoleCommand, createTranslation, gotoWord, hudMessage, PCD, printString } from "./acs.mjs";
 import { ENGINE_THING, SPECIAL, THING } from "./doomnums.mjs";
 import { launchInstance, resolveEngine, stopInstance } from "./launch.mjs";
 import { FREEDOOM2 } from "./template.mjs";
@@ -87,10 +87,13 @@ const MOD_LUMPS = {
 };
 // [rc4l] The things gtmod's script names by tid.
 const MOD_TID = { sky: 20, camera: 21, screen: 22, lamp: 23, quake: 24, pool: 25 };
+// [Doruk-Aksoy] The lamp's colours, every palette index onto the greens and then onto the reds.
+export const GTMOD_LAMP_COLOURS = [[[0, 255, 112, 127]], [[0, 255, 176, 191]]];
 // [rc4l] The map variables gtmod's script keeps what it read in, which the trace's ACS fingerprint holds.
 const MOD_VAR = { tic: 0, set: 1, alias: 2, command: 3, screenWidth: 4, renderCvar: 5, justHit: 6, camera: 7, floorZ: 8, gravity: 9 };
 
 // [rc4l] gtmod's OPEN script: every tic it sets a mod cvar and runs console commands, reading each back in the same tic, reads the screen, a render cvar, the skybox's JUSTHIT, the player's camera, a moving floor and the gravity, and plays a looping sound; at set tics it removes the camera the player looks through, sets a render cvar and the gravity from the console, quakes, sets the mugshot, writes a HUD message in a font no one loaded yet, changes the sky, fades a HUD message, shoots the liquid, autosaves and exits the level.
+// [Doruk-Aksoy] It also recolours the lamp with an ACS translation and redefines that translation once a frame has drawn with it, which remakes the palette a frame reads.
 export function gtmodScript() {
   const strings = ["gtm_probe", "gtm_alias", "gtm_probe 11", "r_drawfuzz", "JUSTHIT", "GTMCAM", "weapons/pistol", "sv_gravity 400", "gtm hud", "Grin", "sv_gravity", "r_drawfuzz 1",
     "STKEYS0", "a", "SKY3"];
@@ -116,7 +119,9 @@ export function gtmodScript() {
   s.emit(PCD.PUSHNUMBER, TAG.lift, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 0, PCD.GETSECTORFLOORZ, PCD.ASSIGNMAPVAR, MOD_VAR.floorZ);
   read(10, MOD_VAR.gravity);
   s.emit(...callFunc(ACSF.PlaySound, [MOD_TID.lamp, 6, 2, 65536, 1]), PCD.DROP);
+  at(30, [...createTranslation(1, GTMOD_LAMP_COLOURS[0]), ...callSpecial(SPECIAL.Thing_SetTranslation, [MOD_TID.lamp, 1])]);
   at(100, callSpecial(SPECIAL.Thing_Remove, [MOD_TID.camera]));
+  at(130, createTranslation(1, GTMOD_LAMP_COLOURS[1]));
   at(150, consoleCommand(11));
   at(200, consoleCommand(7));
   at(250, [...callSpecial(SPECIAL.Radius_Quake, [3, 30, 0, 12, MOD_TID.quake]), PCD.PUSHNUMBER, 9, PCD.SETMUGSHOTSTATE]);
@@ -403,7 +408,8 @@ export async function checkFixtures(list, { engine, store, dir = fixtureDir(), c
 export const PICTURES = {
   gtfix: { tic: 420, views: [{ name: "player" }, { name: "machines", at: { x: 600, y: 300, z: 0, angle: 45, pitch: 0 } },
     { name: "screen", at: { x: 1300, y: 512, z: 0, angle: 0, pitch: 0 } }] },
-  gtmod: { tic: 320, views: [{ name: "player" }] },
+  // [Doruk-Aksoy] And the lamp close up, whose colours the script redefined from a tic.
+  gtmod: { tic: 320, views: [{ name: "player" }, { name: "lamp", at: { x: 880, y: 512, z: 0, angle: 0, pitch: 0 } }] },
   "freedoom2-map01": { tic: 420, views: [{ name: "player" }] },
   "freedoom2-map04": { tic: 420, views: [{ name: "player" }] },
   "sunder-map11": { tic: 350, views: [{ name: "player" }] },

@@ -33,6 +33,17 @@ struct AtlasCandidate
 	int width, height;
 };
 
+// [Doruk-Aksoy] What a dynamic piece is, for whether it counts as a flat sprite the atlas may take.
+struct AtlasPieceFacts
+{
+	bool quad, depthBias, solid, hud;
+	int mirrorView, onMirror;   // [Doruk-Aksoy] -1 when the piece is in no mirror's view and on no mirror
+	int fuzz;                   // [Doruk-Aksoy] its fuzz shader, 0 for none, whose noise and splat read the sprite's own texture coordinates
+};
+
+// [Doruk-Aksoy] Whether a piece is a plain flat sprite the atlas may take: a quad without depth bias, not solid, not on the HUD, outside every mirror and not fuzzy.
+bool ComputeAtlasPieceEligible(const AtlasPieceFacts &f);
+
 // [rc4l] Whether a piece draws from the atlas: all of the above and no side over maxSide texels.
 bool ComputeAtlasEligible(const AtlasCandidate &c, int maxSide);
 

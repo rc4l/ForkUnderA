@@ -18,9 +18,13 @@ namespace zx { namespace materials {
 typedef const void *MaterialRef;
 
 // [rc4l] What a renderer asks of a material besides its pixels.
+// [Doruk-Aksoy] What a texture is for: a wall or flat, a sprite frame, a skin, a graphic (HUD pictures, and model skins under Graphics/), or anything else.
+enum MaterialUse { kMaterialUseWorld, kMaterialUseSprite, kMaterialUseSkin, kMaterialUseGraphic, kMaterialUseOther };
+
 struct MaterialInfo
 {
 	const char *name;
+	int   use;            // [Doruk-Aksoy] a MaterialUse
 	int   textureIndex;   // [rc4l] its index in the texture manager, which ANIMDEFS frames are numbered by
 	int   width, height;
 	int   renderWidth, renderHeight;   // [rc4l] the size GL draws it at, after scaling and trimming
@@ -97,6 +101,8 @@ bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out);
 
 // [rc4l] The material's brightmap, NULL when it has none.
 MaterialRef MaterialBrightmap(MaterialRef m);
+// [Doruk-Aksoy] Whether the material has a brightmap, as DescribeMaterial's brightmap says, without describing the rest.
+bool MaterialHasBrightmap(MaterialRef m);
 
 // [rc4l] What a sprite frame is drawn with: its rectangle about the actor's origin and the texture coordinates of its trimmed edges.
 struct SpriteFrameInfo

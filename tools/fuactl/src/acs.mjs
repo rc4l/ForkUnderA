@@ -8,7 +8,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, AS
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
   CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59, TAGSTRING: 225, GIVEINVENTORY: 143,
-  GETACTORANGLE: 260 };
+  GETACTORANGLE: 260, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
 export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75,
@@ -98,6 +98,12 @@ function acseScripts(scripts, strings) {
 export function callSpecial(special, args) {
   if (args.length < 1 || args.length > 5) throw new Error(`a special takes 1 to 5 arguments, not ${args.length}`);
   return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.LSPEC1 + args.length - 1, special];
+}
+
+// [Doruk-Aksoy] The words of `CreateTranslation(number, "a:b=c:d", ...)`, each range [a, b, c, d] mapping palette indices a..b onto c..d.
+export function createTranslation(number, ranges) {
+  return [PCD.PUSHNUMBER, number, PCD.STARTTRANSLATION,
+    ...ranges.flatMap((r) => [...r.flatMap((v) => [PCD.PUSHNUMBER, v]), PCD.TRANSLATIONRANGE1]), PCD.ENDTRANSLATION];
 }
 
 // [rc4l] The words of `Print(s:strings[i])`.

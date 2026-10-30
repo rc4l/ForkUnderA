@@ -103,6 +103,13 @@ test("a launch naming no IWAD runs freedoom2.wad", () => {
   assert.deepEqual(engineArgs({ iwad: "doom2.wad" }, "x.ini").slice(0, 2), ["-iwad", "doom2.wad"]);
 });
 
+// [Doruk-Aksoy] The layer has to be on when the device is made, so it rides the command line rather than a cvar set once the level is up.
+test("a validated launch turns fua_dg_validation on from the command line, and an ordinary one leaves it alone", () => {
+  assert.equal(setValue(engineArgs({ validate: "core" }, "x.ini"), "fua_dg_validation"), "1");
+  assert.equal(setValue(engineArgs({ validate: "sync" }, "x.ini"), "fua_dg_validation"), "1");
+  assert.equal(setValue(engineArgs({}, "x.ini"), "fua_dg_validation"), undefined);
+});
+
 // [rc4l] A driven run compares frames and frame times, which a scale chosen by the GPU's load would make differ between runs.
 test("a driven instance draws its scene at full scale, and a hands-on one as players do", () => {
   assert.equal(setValue(engineArgs({}, "x.ini"), "vid_fua_dynres"), "0");

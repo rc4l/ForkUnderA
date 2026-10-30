@@ -29,14 +29,4 @@ std::vector<int> ComputeAnimationFrames(const AnimationDef &anim)
 	return frames;
 }
 
-bool ComputeKeepsMaterialFill(bool ready, bool tableMatches, int whiteLiveSlots)
-{
-	return ready && tableMatches && whiteLiveSlots == 0;
-}
-
-int ComputeSlotsUnfilled(int matSlot, int brightSlot, int filled)
-{
-	return (matSlot >= filled ? 1 : 0) + (brightSlot > 0 && brightSlot >= filled ? 1 : 0);
-}
-
 }} // namespace zx::hwrender

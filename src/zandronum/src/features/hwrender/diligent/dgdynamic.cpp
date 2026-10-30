@@ -5,7 +5,8 @@
 
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/computation/pieceorder_compute.h"   // [rc4l] ComputePieceOrderKey
-#include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV
+#include "features/hwrender/computation/pipelineswitch_compute.h"   // [Doruk-Aksoy] fua_dg_blendorder's switch tally
+#include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV, ComputeAtlasPieceEligible
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
 #include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeUserShaderOf
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
@@ -31,6 +32,7 @@ CCMD( fua_dg_blendorder )
 }
 
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
+EXTERN_CVAR(Bool, fua_dg_premulblend)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
 // [rc4l] Plain sprites drawn from packed words (ComputeSpritePack); 0 sends every dynamic piece its whole record and vertices, to compare against.
 CVAR(Bool, fua_dg_spritepack, true, 0)
@@ -133,10 +135,13 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	// dynamic heap is only recycled when a frame completes -- so mapping here unconditionally
 	// exhausted an 8 MB heap after a few hundred draws ("Space in dynamic heap is exhausted").
 	static unsigned int builtGen = 0;
+	// [Doruk-Aksoy] Records hold the additive flag fua_dg_premulblend sets, so a change of it fills them again, a paused frame's included.
+	static bool builtPremul = false;
 	const unsigned int gen = zx::levelmesh::DynGeneration();
-	if (gen != builtGen)
+	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend)
 	{
 		builtGen = gen;
+		builtPremul = fua_dg_premulblend;
 		// [rc4l] Emptied with each refill, which a frame drawn again without a walk (a screenshot) does not get, so a frame with no sprites keeps none of the last fill's.
 		g_scene.tracedSprites.Clear();
 		g_scene.tracedSteps.clear();
@@ -191,8 +196,9 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const int k = order[i];
 			if (dynVerts[k] == 0) continue;
 			const zx::levelmesh::MeshPiece &p = pieces[k];
-			slots[k] = PieceSlots(p, p.translation, false);
-			if (atlas) atlased[k] = AtlasFor(p.material, p.translation, p.quad && !p.depthBias && !p.solid && !p.hud && p.mirrorView < 0 && p.onMirror < 0);
+			slots[k] = DynamicPieceSlots(k, p);
+			if (atlas) atlased[k] = AtlasFor(p.material, p.translation,
+				zx::hwrender::ComputeAtlasPieceEligible({ p.quad, p.depthBias, p.solid, p.hud, p.mirrorView, p.onMirror, p.fuzz }));
 			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
 		}
 		// [rc4l] Every record filled on the pool, and each plain quad packed with its corners (ComputeSpritePack) unless a traced mirror reads its record.
@@ -218,7 +224,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 				ScenePieceData &pd = filled[k];
 				FillPieceDataWith(p, slots[k], pd, false);
 				if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
-				else if (BindlessActive()) missed += zx::hwrender::ComputeSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot, (int)FilledSlotCount());
+				else if (BindlessActive()) missed += MaterialSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot);
 				if (!packing || !p.quad || p.range.count != 4) continue;
 				if (tracing && zx::hwrender::ComputeTracesRun(6, p.solid, p.depthBias, p.hud, p.stackSlot, p.onMirror, p.mirrorView, p.blendMode)) continue;
 				zx::hwrender::SpriteCorner corners[4];
@@ -444,7 +450,7 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 		}
 		// [Doruk-Aksoy] A run's own program, committed with the plain pipeline's binding (ScenePSO).
 		Diligent::IPipelineState *run = ScenePSO(kWpMaskedNoCull, r.userShader);
-		if (run != bound) { ctx->SetPipelineState(run); bound = run; committed = NULL; }
+		if (SwitchPipeline(ctx, bound, run)) committed = NULL;
 		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
 		Diligent::DrawAttribs dr;
 		dr.NumVertices = r.count;
@@ -488,7 +494,7 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 			started = true;
 		}
 		Diligent::IPipelineState *run = ScenePSO(pipeline, r.userShader);
-		if (run != bound) { ctx->SetPipelineState(run); bound = run; committed = NULL; }
+		if (SwitchPipeline(ctx, bound, run)) committed = NULL;
 		if (srb != committed) { CommitInLoop(ctx, commits, srb); committed = srb; }
 		Diligent::DrawAttribs dr;
 		dr.NumVertices = r.count;
@@ -558,7 +564,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			// sprites live in one sorted list with depth writes off, and splitting them into an
 			// opaque depth-writing pass let an alpha-tested impact sprite occlude the additive glow
 			// behind it: black holes where a plasma burst's bright core should be.
-			const int pipeline = ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud);
+			const int pipeline = zx::hwrender::ComputePremulPipeline(ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud), fua_dg_premulblend, r.userShader);
 			Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
 			auto *srb = WorldSRB(pso);
 			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = DynSRB(pso, r); }
@@ -660,6 +666,14 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 				d.lo, d.hi, d.count, d.first );
 		}
 		Printf( "  %u draws total\n", list.Size() );
+		// [Doruk-Aksoy] The pipeline switches the loop below makes over this order, by pair, the cost a merge of two pipelines would save.
+		std::vector<zx::hwrender::PipelineKey> keys;
+		for (unsigned i = 0; i < list.Size(); i++) keys.push_back({ list[i].pipeline, list[i].user });
+		const std::vector<zx::hwrender::PipelineSwitchCount> tally = zx::hwrender::ComputePipelineSwitches(keys);
+		Printf( "  %d pipeline switches over them, most first:\n", zx::hwrender::ComputeSwitchTotal(tally) );
+		for (size_t i = 0; i < tally.size() && i < 8; i++)
+			Printf( "    %5d  %s > %s\n", tally[i].count, zx::hwrender::ComputeWorldPipelineDesc(tally[i].from).name,
+				zx::hwrender::ComputeWorldPipelineDesc(tally[i].to).name );
 	}
 
 	// [rc4l] The sorted order, written once into indices -- see g_blendIB.
@@ -718,7 +732,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		if (!pso) { idxCursor += d.count; continue; }
 		// [Doruk-Aksoy] The draw's own program, committed with the plain pipeline's binding (ScenePSO).
 		Diligent::IPipelineState *run = ScenePSO(d.pipeline, d.user);
-		if (run != bound) { ctx->SetPipelineState(run); bound = run; boundSRB = NULL; }
+		if (SwitchPipeline(ctx, bound, run)) boundSRB = NULL;
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
 		// where the per-pipeline binding can be asked for.
 		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);

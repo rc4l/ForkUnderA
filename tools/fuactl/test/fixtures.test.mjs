@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, GTMOD_LAMP_COLOURS, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -139,6 +139,19 @@ test("gtmod carries a mod's lumps, two maps and its probe script", async () => {
   for (const n of ["MAPINFO", "CVARINFO", "KEYCONF", "DECORATE", "GLDEFS", "SBARINFO", "ANIMDEFS", "MAP01", "BEHAVIOR", "MAP02"]) assert.ok(names.includes(n), n);
   assert.equal(gtmodScript().toString("latin1", 0, 4), "ACS\0");
   assert.ok(FIXTURES.some((f) => f.name === "gtmod" && f.build === buildGameThreadModWad));
+});
+
+// [Doruk-Aksoy] Defining the translation, giving it to the lamp and defining it again from a tic is what remakes a palette a frame reads.
+test("gtmod's script recolours the lamp, then redefines its translation", async () => {
+  const { createTranslation, callSpecial } = await import("../src/acs.mjs");
+  const { SPECIAL } = await import("../src/doomnums.mjs");
+  const b = gtmodScript();
+  const words = [];
+  for (let i = 8; i + 4 <= b.readInt32LE(4); i += 4) words.push(b.readInt32LE(i));
+  const at = (seq) => words.findIndex((_, i) => seq.every((w, k) => words[i + k] === w));
+  const define = at(createTranslation(1, GTMOD_LAMP_COLOURS[0])), redefine = at(createTranslation(1, GTMOD_LAMP_COLOURS[1]));
+  assert.ok(define >= 0 && redefine > define);
+  assert.ok(at(callSpecial(SPECIAL.Thing_SetTranslation, [23, 1])) > define);
 });
 
 test("the tic's end scan report gives the fills held to the whole-map scan and what it missed", () => {
