@@ -76,7 +76,9 @@ bash tests/coverage.sh --auto
   before `main` and CMake's discovery step deletes it as "timed out". Configure with Homebrew LLVM
   instead: `CC=$(brew --prefix llvm)/bin/clang CXX=$(brew --prefix llvm)/bin/clang++ cmake -S tests
   -B build-tests -DZANDROX_TESTS_SANITIZE=ON`. CI's `macos-latest` is unaffected.
-- Coverage needs the **Clang** toolchain (llvm-cov); `coverage.sh` forces it.
+- Coverage needs the **Clang** toolchain (llvm-cov); `coverage.sh` forces it. On macOS and Linux,
+  `node tools/fuactl/src/cli.mjs coverage --since REF` gates only what changed, with Homebrew's LLVM and the
+  SDK on macOS, in `build-cov-fuactl/`.
 
 ## Run it locally (Windows)
 

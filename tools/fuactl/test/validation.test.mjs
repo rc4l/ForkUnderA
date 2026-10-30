@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validationMode, validationLaunch, parseValidationMessages, noteValidation, takeValidationReports, describeValidation } from "../src/validation.mjs";
+import { validationMode, validationLaunch, parseValidationMessages, noteValidation, takeValidationReports, describeValidation, missingLayer } from "../src/validation.mjs";
 
 // [Doruk-Aksoy] Two layer messages as the engine console prints them, with a plain Diligent warning that is no layer message between them.
 const LOG = [
@@ -69,4 +69,9 @@ test("a run's reports read as one failing line, errors first and each id summed 
     "FAIL validation: 8 message(s): SYNC-HAZARD-WRITE-AFTER-READ error x3, Z-WARN warning x4, BestPractices-vkAllocateMemory-small-allocation warning x1 (a.log, b.log)",
   ]);
   assert.deepEqual(describeValidation([]), []);
+});
+
+test("a run with no validation layer fails rather than passing unchecked", () => {
+  assert.deepEqual(missingLayer("[Diligent warn] Validation layer VK_LAYER_KHRONOS_validation is not available.\n").map((m) => m.id), ["VALIDATION-LAYER-NOT-INSTALLED"]);
+  assert.deepEqual(missingLayer("vulkan: uploaded\n"), []);
 });

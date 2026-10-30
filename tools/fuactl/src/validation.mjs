@@ -35,6 +35,11 @@ export function parseValidationMessages(text, known = KNOWN_VALIDATION) {
   return [...counts.values()].sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
 }
 
+// [rc4l] A report for a log whose device came up without the layer, since a run that checked nothing must not read as one that found nothing.
+export function missingLayer(text) {
+  return /Validation layer \S+ is not available/.test(String(text)) ? [{ severity: "error", kind: "setup", id: "VALIDATION-LAYER-NOT-INSTALLED", count: 1 }] : [];
+}
+
 const reports = [];
 
 // [Doruk-Aksoy] Reads a stopped instance's log for the layer's messages when it ran under validation, keeping them for takeValidationReports.
@@ -42,7 +47,7 @@ export function noteValidation(inst, read = (file) => fs.readFileSync(file, "utf
   if (!inst || !inst.validate || !inst.log) return;
   let text;
   try { text = read(inst.log); } catch { return; }
-  const messages = parseValidationMessages(text);
+  const messages = [...missingLayer(text), ...parseValidationMessages(text)];
   if (messages.length) reports.push({ log: inst.log, messages });
 }
 
