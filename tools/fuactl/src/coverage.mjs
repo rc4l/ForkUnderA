@@ -1,4 +1,4 @@
-// [rc4l] The 100% line-coverage gate on Windows, which tests/coverage.sh --auto runs with llvm-cov elsewhere: each NAME_test.cpp gates its NAME.cpp and NAME.h, measured by OpenCppCoverage over the unit tests.
+// [rc4l] The 100% line-coverage gate, by OpenCppCoverage on Windows and tests/coverage.sh's llvm-cov elsewhere: each NAME_test.cpp gates its NAME.cpp and NAME.h, measured by OpenCppCoverage over the unit tests.
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -74,6 +74,45 @@ function listTests(dir, out = []) {
   return out;
 }
 
+// [rc4l] Every unit a test gates, or those changed since `since`, relative to the repository.
+function unitsToGate(root, since) {
+  const src = path.join(root, "src", "zandronum", "src");
+  const units = gatedUnits(listTests(src), fs.existsSync).map((u) => path.relative(root, u).replace(/\\/g, "/"));
+  if (!since) return units;
+  const diff = spawnSync("git", ["-C", root, "diff", "--name-only", since], { encoding: "utf8" });
+  if (diff.status !== 0) throw new Error(`git diff ${since} failed: ${diff.stderr}`);
+  // [rc4l] A new file is untracked until it is added, and a gate that skipped it would pass the unit most likely to lack tests.
+  const fresh = spawnSync("git", ["-C", root, "ls-files", "--others", "--exclude-standard"], { encoding: "utf8" });
+  return unitsTouched(units, `${diff.stdout}\n${fresh.stdout || ""}`.split(/\r?\n/).filter(Boolean));
+}
+
+// [rc4l] Each unit's verdict from the lines tests/coverage.sh gates with, in the shape judgeCoverage gives, its percentage out of 100 standing for the line counts.
+export function parseCoverageGate(text) {
+  const results = [];
+  for (const m of String(text).matchAll(/^COVERAGE GATE (OK|FAIL):\s+(\S+?)(?: is at ([\d.]+)%| 100%)/gm)) {
+    results.push({ unit: m[2], ok: m[1] === "OK", hit: m[1] === "OK" ? 100 : Number(m[3]), total: 100, missed: [] });
+  }
+  return results;
+}
+
+// [rc4l] What tests/coverage.sh needs beside the environment: on macOS Homebrew's LLVM and the SDK it builds against, since Apple's clang lacks what the tests' C++ asks of it, in a tree of its own, since a compiler changed under an old tree loses the coverage flag.
+export function coverageEnv(env, { platform = process.platform, llvm = "/opt/homebrew/opt/llvm/bin", exists = fs.existsSync, sdk = () => spawnSync("xcrun", ["--show-sdk-path"], { encoding: "utf8" }).stdout.trim() } = {}) {
+  const dir = { COVERAGE_BUILD_DIR: path.resolve("build-cov-fuactl") };
+  if (platform !== "darwin" || !exists(`${llvm}/clang++`)) return { ...env, ...dir };
+  return { ...env, ...dir, PATH: `${llvm}:${env.PATH}`, CC: `${llvm}/clang`, CXX: `${llvm}/clang++`, SDKROOT: sdk() };
+}
+
+// [rc4l] tests/coverage.sh over the gated units, for every system but Windows; returns what runCoverage does.
+export function runLlvmCoverage({ root, since, log = console.error }) {
+  const units = unitsToGate(root, since).filter((u) => u.endsWith(".cpp"));
+  log(`coverage: ${units.length} unit(s)`);
+  if (!units.length) return { results: [], report: "none" };
+  const run = spawnSync("bash", ["tests/coverage.sh", "--enforce", ...units], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, env: coverageEnv(process.env) });
+  const results = parseCoverageGate(`${run.stdout || ""}\n${run.stderr || ""}`);
+  if (!results.length) throw new Error(`tests/coverage.sh gave no verdict:\n${(run.stderr || run.stdout || "").slice(-2000)}`);
+  return { results, report: "tests/coverage.sh" };
+}
+
 // [rc4l] Run the unit tests under OpenCppCoverage and judge the gated units, all of them or those changed since `since`; returns the results and the report's path.
 export function runCoverage({ root, tool, since, log = console.error }) {
   const exe = findOpenCppCoverage(tool);
@@ -82,14 +121,7 @@ export function runCoverage({ root, tool, since, log = console.error }) {
   compile(pickCmake(), root, "build-tests", "zandrox_tests", log, "Debug");
   const tests = path.join(root, "build-tests", "Debug", "zandrox_tests.exe");
   const src = path.join(root, "src", "zandronum", "src");
-  let units = gatedUnits(listTests(src), fs.existsSync).map((u) => path.relative(root, u).replace(/\\/g, "/"));
-  if (since) {
-    const diff = spawnSync("git", ["-C", root, "diff", "--name-only", since], { encoding: "utf8" });
-    if (diff.status !== 0) throw new Error(`git diff ${since} failed: ${diff.stderr}`);
-    // [rc4l] A new file is untracked until it is added, and a gate that skipped it would pass the unit most likely to lack tests.
-    const fresh = spawnSync("git", ["-C", root, "ls-files", "--others", "--exclude-standard"], { encoding: "utf8" });
-    units = unitsTouched(units, `${diff.stdout}\n${fresh.stdout || ""}`.split(/\r?\n/).filter(Boolean));
-  }
+  const units = unitsToGate(root, since);
   const report = path.join(root, "build-tests", "coverage.xml");
   log(`coverage: ${units.length} unit(s), report ${report}`);
   const run = spawnSync(exe, ["--quiet", "--sources", src, "--export_type", `cobertura:${report}`, "--", tests, "--gtest_brief=1"],
