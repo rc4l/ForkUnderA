@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, writeTemplateFile, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
+import { directRunArgs, compareCounter, compareEachLaunch, compareNetplay, withConfigCvars, compareOverTime, compareQuit, compareSameFrame, compareSequence, compareSoak, judge, judgeCounter, judgeQuit, judgeSoak, judgeWindowPoint, judgeNoteBeside, scenarioOutcome, isMain, sideCommands, vantageCommands, boxWithin, runScenarioIfMain, scenarioOptions, scenarioRun, templateScenarioFiles, probeChoices, pairFrame, withSideCvars, withEverySideCvars, matrixSets, matrixAdjust, portAdjust, launchRenderer, sideAdjust, sideBesideGl, webgpuOptions, launchBackendApi, writeTemplateFile, WEBGPU_CEILING, GL_VS_VULKAN } from "../src/template.mjs";
 import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
@@ -341,6 +341,18 @@ test("a matrix names one cvar set per value, each laid on every side over the ru
   assert.equal(matrixAdjust({ y: "1" }, () => null)(opts), null);
   assert.deepEqual(matrixAdjust({ y: "1" }, () => ({ skip: "why" }))(opts), { skip: "why" });
   assert.deepEqual(matrixAdjust({ y: "1" })(opts).sides[0].cvars, { y: "1" });
+});
+
+test("a suite's port goes on every scenario over the run's own adjustment, a skipped or absent one left as it is", () => {
+  const opts = { name: "t", port: 7796, sides: [{ name: "vk", gl: false }] };
+  assert.equal(portAdjust(7872)(opts).port, 7872);
+  assert.equal(opts.port, 7796, "the scenario's own options are left alone");
+  const seen = [];
+  const run = portAdjust(7872, (o, compare) => { seen.push(compare); return withEverySideCvars(o, { y: "1" }); });
+  const out = run(opts, "compare");
+  assert.deepEqual([out.port, out.sides[0].cvars, seen], [7872, { y: "1" }, ["compare"]]);
+  assert.equal(portAdjust(7872, () => null)(opts), null);
+  assert.deepEqual(portAdjust(7872, () => ({ skip: "why" }))(opts), { skip: "why" });
 });
 
 // [rc4l] Only a side judged against GL in one frame runs the backend beside GL; every other Vulkan side runs as players do.
