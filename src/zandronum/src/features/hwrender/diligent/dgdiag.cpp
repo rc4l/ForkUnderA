@@ -6,11 +6,20 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CanWaitForGPU
 #include "features/hwrender/computation/readback_compute.h"
+#include "features/hwrender/computation/scenedraw_compute.h"   // [Doruk-Aksoy] ComputeSceneDrawRefusal
 #include <functional>
 #include <vector>
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
 
 namespace zx { namespace hwrender {
+
+// [Doruk-Aksoy] Whether a command may draw the scene itself now, report saying why not when it may not.
+static bool SceneDrawAllowed(FString &report)
+{
+	const char *refusal = ComputeSceneDrawRefusal(gamestate == GS_LEVEL, SceneDrawable());
+	if (refusal != nullptr) report = refusal;
+	return refusal == nullptr;
+}
 
 // [rc4l] `n` frames of the scene drawn and finished without presenting.
 static void DrawUnpresentedFrames(int n)
@@ -50,7 +59,7 @@ static double MeasureGpuMs(int frames)
 
 bool SceneBench(int frames, FString &report)
 {
-	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
+	if (!SceneDrawAllowed(report)) return false;
 	if (frames < 1) frames = 1;
 
 	for (int i = 0; i < 20; i++) DrawSceneOnce(true, true);   // warmup
@@ -180,7 +189,7 @@ void DynStats(FString &report)
 // the form the answer is actually needed in.
 bool SceneScale(int frames, FString &report)
 {
-	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
+	if (!SceneDrawAllowed(report)) return false;
 	if (frames < 1) frames = 60;
 
 	static const int kSteps[] = { 1, 2, 5, 10, 25, 50, 100 };
@@ -457,7 +466,7 @@ void PollLaterReadbacks()
 
 bool SceneScreenshot(const char *path, FString &report)
 {
-	if (!SceneDrawable()) { report = "call fua_diligent_scene first"; return false; }
+	if (!SceneDrawAllowed(report)) return false;
 
 	// [rc4l] Always from the CURRENT camera. The MVP used to be whatever `fua_diligent_scene` had
 	// snapshotted, so a screenshot taken after the player turned showed the room they used to be

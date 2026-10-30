@@ -216,6 +216,9 @@ mesh, uploads, screenshots and runs the benchmark in the order they actually req
 
 Requires `gl_wallmesh 1` and a walked level, so the mesh has baked geometry to hand over.
 
+Outside a level, after `endgame` or a demo's end, the bench, `fua_diligent_scale` and the shot refuse
+(`computation/scenedraw_compute`), since the game copy still points into the freed level; scenario `scenenolevel`.
+
 ## Other backends: Metal and D3D12
 
 **Metal** is not in DiligentCore: `Graphics/GraphicsEngineMetal` holds only its interface headers, and
