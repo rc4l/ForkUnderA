@@ -2,8 +2,8 @@
 // Copyright (C) 2026 rc4l
 
 #include "pieceorder_compute.h"
+#include "features/hwrender/computation/radixsort_compute.h"
 
-#include <algorithm>
 #include <cstring>
 
 namespace zx { namespace hwrender {
@@ -18,12 +18,10 @@ uint64_t ComputePieceOrderKey(bool blended, uintptr_t material, float distSq)
 	return blendBit | (uint64_t)(0xFFFFFFFFu - bits);
 }
 
-void ComputeSortPieceOrder(std::vector<PieceOrderKey> &keys)
+void ComputeSortPieceOrder(std::vector<PieceOrderKey> &keys, std::vector<PieceOrderKey> &scratch)
 {
-	std::sort(keys.begin(), keys.end(), [](const PieceOrderKey &a, const PieceOrderKey &b)
-	{
-		return a.key != b.key ? a.key < b.key : a.index < b.index;
-	});
+	// [Doruk-Aksoy] Stable on the key alone, since the keys arrive in index order and so the index already breaks every tie.
+	ComputeRadixSort<8>(keys, scratch, [](const PieceOrderKey &k, int b) { return (unsigned)(k.key >> (8 * b)) & 0xFF; });
 }
 
 }} // namespace zx::hwrender

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/hwrender/computation/surfaceorder_compute.h"
+#include "features/hwrender/computation/radixsort_compute.h"
 
 #include <algorithm>
 #include <string.h>
@@ -75,6 +76,14 @@ TranslucentSortKey ComputeTranslucentSortKey(const TranslucentDraw &d)
 	const unsigned long long layer = (unsigned long long)(0xffff - (d.layer < 0 ? 0 : d.layer > 0xffff ? 0xffff : d.layer));
 	k.hi = (1ull << 63) | (layer << 47) | ((d.plane ? 0ull : 1ull) << 46) | ((unsigned long long)(~bits) << 14) | (additive << 13);
 	return k;
+}
+
+void ComputeSortTranslucentOrder(std::vector<TranslucentOrder> &keys, std::vector<TranslucentOrder> &scratch)
+{
+	ComputeRadixSort<16>(keys, scratch, [](const TranslucentOrder &k, int b)
+	{
+		return (unsigned)((b < 8 ? k.key.lo >> (8 * b) : k.key.hi >> (8 * (b - 8))) & 0xFF);
+	});
 }
 
 int ComputeBlendLayers(const BlendSpan *spans, int n, float viewZ, int *layers, bool *planes)

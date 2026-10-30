@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "features/hwrender/computation/surfaceorder_compute.h"
@@ -424,6 +425,30 @@ TEST(SurfaceOrder, TheSortKeyIsTheRule)
 		for (size_t j = 0; j < draws.size(); j++)
 			ASSERT_EQ(ComputeDrawsBefore(draws[i], draws[j]),
 				ComputeTranslucentSortKey(draws[i]) < ComputeTranslucentSortKey(draws[j])) << i << " " << j;
+}
+
+// [Doruk-Aksoy] The sort puts the draws in the order their keys give, equal keys in list order, as std::stable_sort would.
+TEST(SurfaceOrder, TheSortOrdersByTheKey)
+{
+	std::vector<TranslucentOrder> keys, scratch;
+	const float dists[] = { 0.f, 1.5f, 64.f, 1.e9f };
+	unsigned n = 0;
+	for (int decal = 0; decal < 2; decal++)
+		for (int blend = 1; blend <= 2; blend++)
+			for (int layer = 0; layer < 3; layer++)
+				for (float dist : dists)
+					for (int age = 0; age < 3; age++)
+					{
+						TranslucentDraw d;
+						d.distSq = dist; d.blend = blend; d.decal = decal != 0; d.layer = layer; d.plane = (n & 1) != 0;
+						d.first = (n * 2654435761u) >> 20;
+						keys.push_back({ ComputeTranslucentSortKey(d), n++ });
+					}
+	std::vector<TranslucentOrder> want = keys;
+	std::stable_sort(want.begin(), want.end(), [](const TranslucentOrder &a, const TranslucentOrder &b) { return a.key < b.key; });
+	ComputeSortTranslucentOrder(keys, scratch);
+	ASSERT_EQ(want.size(), keys.size());
+	for (size_t i = 0; i < want.size(); i++) EXPECT_EQ(want[i].index, keys[i].index) << "at " << i;
 }
 
 TEST(SurfaceOrder, TheSortKeyClampsTheLayer)

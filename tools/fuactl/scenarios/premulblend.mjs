@@ -35,9 +35,9 @@ export const VANTAGES = [{ name: "front", at: { x: 512, y: 200, z: 0, angle: 90,
 
 // [Doruk-Aksoy] Off sets the merge's own pipelines aside once the level is up, so it also covers a change of the setting in play.
 export const SIDES = [
-  { name: "off", launchCvars: { con_notifylines: 0 }, cvars: { fua_dg_premulblend: 0 } },
-  { name: "on", launchCvars: { con_notifylines: 0 }, cvars: { fua_dg_premulblend: 1 } },
-  { name: "trans", launchCvars: { con_notifylines: 0 }, cvars: { fua_dg_premulblend: 1 }, commands: ["map MAP02"] },
+  { name: "off", launchCvars: { show_messages: 0 }, cvars: { fua_dg_premulblend: 0 } },
+  { name: "on", launchCvars: { show_messages: 0 }, cvars: { fua_dg_premulblend: 1 } },
+  { name: "trans", launchCvars: { show_messages: 0 }, cvars: { fua_dg_premulblend: 1 }, commands: ["map MAP02"] },
 ];
 
 // [Doruk-Aksoy] Per pixel, since the merge moves a colour by at most one level; the additive column against a translucent one must differ by far more.

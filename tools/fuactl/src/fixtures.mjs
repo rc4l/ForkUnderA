@@ -440,8 +440,8 @@ export function parseVisReport(text) {
 
 // [rc4l] Plays a fixture's demo with the frame clock pinned, so animations are at the same moment in every run, and attaches once its level is up.
 async function playTo(f, { engine, store, dir, cvars, gl = false }) {
-  // [rc4l] No console notices either, since a capture's own "wrote <file>" would land in the next one with its path and process id.
-  const inst = await launchDemo(f, { engine, store, dir, cvars: { fua_debug_frameclock: 1000, con_notifylines: 0, ...cvars }, gl });
+  // [Doruk-Aksoy] No console notices either, since a capture's own "wrote <file>" lands in the next one, and con_notifylines keeps at least one line.
+  const inst = await launchDemo(f, { engine, store, dir, cvars: { fua_debug_frameclock: 1000, show_messages: 0, ...cvars }, gl });
   const c = await attach(inst);
   await waitInLevel(c, scaled(60000));
   return { inst, c };
