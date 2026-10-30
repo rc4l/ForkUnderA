@@ -66,7 +66,7 @@ const views = (prefix) => [["mirror", MIRROR], ["camera", CAMERA], ["wall", WALL
   .map(([name, at]) => ({ name: `${prefix}${name}`, commands: [at], waitMs: 400 }));
 export const STEPS = [
   // [rc4l] A locked launch is already in god mode, which keeps the blasts from killing the player; no notices, since a capture's own line lands in the next.
-  { name: "setup", commands: ["con_notifylines 0", "r_drawplayersprites 0", "crosshair 0", "give RocketLauncher", "give ammo", "slot 5", 1000] },
+  { name: "setup", commands: ["show_messages 0","r_drawplayersprites 0", "crosshair 0", "give RocketLauncher", "give ammo", "slot 5", 1000] },
   ...views("clean"),
   { name: "fired", commands: [...fire(FIRE_MIRROR), ...fire(FIRE_CAMERA), ...fire(FIRE_WALL), ...fire(FIRE_STACK), ...fire(FIRE_REFLECT)] },
   ...views("marked"),
