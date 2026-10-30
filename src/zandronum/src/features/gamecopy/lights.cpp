@@ -5,6 +5,7 @@
 #include "features/gamecopy/computation/serial_compute.h"
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeLightLinksStale, ComputeSortedTouches
 #include "features/dynlights/dynlight.h"
+#include "features/jobs/jobs.h"   // [Doruk-Aksoy] the light records taken across the pool
 #include "features/telemetry/telemetry.h"
 
 #include "r_defs.h"
@@ -19,8 +20,10 @@ namespace {
 std::vector<LightRecord> g_lights;
 std::vector<int> g_subFirst, g_subCount;   // [rc4l] each subsector's run in g_subLights
 std::vector<int> g_subLights;
-std::unordered_map<const ADynamicLight *, int> g_indexOf;   // [rc4l] each live light's place in g_lights, this fill only
 std::vector<int> g_scanFirst, g_scanCount, g_scanLights;   // [rc4l] each subsector's lights as the tic ended
+
+// [Doruk-Aksoy] Lights each pool lane takes at a time.
+const int kLightChunk = 64;
 
 // [rc4l] Each subsector's lights in its light list's order, the order GL sums a sprite's light in, each by its light's place in thinker order.
 void ListSubsectorLights(std::vector<int> &first, std::vector<int> &count, std::vector<int> &out)
@@ -56,6 +59,25 @@ void CollectLinks(ADynamicLight *light, std::vector<unsigned> &out)
 	zx::hwrender::ComputeSortedTouches(out);
 }
 
+// [Doruk-Aksoy] A light's record, its links collected again only when it moved or another light took its place.
+void TakeLight(ADynamicLight *light, LightRecord &r)
+{
+	// [rc4l] A light's id is its actor's, given by the actor fill before this one.
+	const zx::hwrender::LightLinkKey kept = { r.id, r.x.Raw(), r.y.Raw(), r.z.Raw(), FIXED2FLOAT(r.linkRadius) };
+	const zx::hwrender::LightLinkKey now = { light->rcSerial, light->x.Raw(), light->y.Raw(), light->z.Raw(), FIXED2FLOAT(light->radius) };
+	if (kept.light == kNoId || zx::hwrender::ComputeLightLinksStale(kept, now)) CollectLinks(light, r.links);
+	r.id = light->rcSerial;
+	r.target = light->target;
+	r.x = light->x; r.y = light->y; r.z = light->z;
+	r.linkRadius = light->radius;
+	r.radius = light->GetRadius();
+	r.red = light->GetRed(); r.green = light->GetGreen(); r.blue = light->GetBlue();
+	r.active = light->IsActive();
+	r.subtractive = light->IsSubtractive();
+	r.additive = light->IsAdditive();
+	r.dontLightSelf = (light->flags4 & MF4_DONTLIGHTSELF) != 0;
+}
+
 } // namespace
 
 const LightRecord *Lights(int &count)
@@ -73,7 +95,6 @@ const int *SubsectorLights(int subsector, int &count)
 void InitLights()
 {
 	g_lights.clear();
-	g_indexOf.clear();
 	g_subFirst.clear();
 	g_subCount.clear();
 	g_subLights.clear();
@@ -94,32 +115,17 @@ bool LightListsMissed()
 void FillLights(bool listed)
 {
 	ZX_ZONE("copy/light_fill");   // [rc4l] the light records and subsector light lists taken
-	size_t n = 0;
-	g_indexOf.clear();
 	{
 	ZX_ZONE("copy/light_records");
+	static std::vector<ADynamicLight *> live;
+	live.clear();
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
-	for (ADynamicLight *light; (light = it.Next()) != NULL; n++)
-	{
-		if (n >= g_lights.size()) g_lights.emplace_back();
-		LightRecord &r = g_lights[n];
-		// [rc4l] A light's id is its actor's, given by the actor fill before this one.
-		const zx::hwrender::LightLinkKey kept = { r.id, r.x.Raw(), r.y.Raw(), r.z.Raw(), FIXED2FLOAT(r.linkRadius) };
-		const zx::hwrender::LightLinkKey now = { light->rcSerial, light->x.Raw(), light->y.Raw(), light->z.Raw(), FIXED2FLOAT(light->radius) };
-		if (kept.light == kNoId || zx::hwrender::ComputeLightLinksStale(kept, now)) CollectLinks(light, r.links);
-		r.id = light->rcSerial;
-		r.target = light->target;
-		r.x = light->x; r.y = light->y; r.z = light->z;
-		r.linkRadius = light->radius;
-		r.radius = light->GetRadius();
-		r.red = light->GetRed(); r.green = light->GetGreen(); r.blue = light->GetBlue();
-		r.active = light->IsActive();
-		r.subtractive = light->IsSubtractive();
-		r.additive = light->IsAdditive();
-		r.dontLightSelf = (light->flags4 & MF4_DONTLIGHTSELF) != 0;
-		g_indexOf[light] = (int)n;
-	}
-	g_lights.resize(n);
+	for (ADynamicLight *light; (light = it.Next()) != NULL; ) live.push_back(light);
+	// [Doruk-Aksoy] Each record keeps the place it had last fill, which its links are checked against.
+	g_lights.resize(live.size());
+	// [Doruk-Aksoy] Taken across the pool, each lane writing only its own records, as the actor fill does.
+	auto take = [](int lo, int hi, int) { for (int i = lo; i < hi; i++) TakeLight(live[i], g_lights[i]); };
+	zx::jobs::Pool().ParallelChunks((int)live.size(), kLightChunk, take);
 	}
 	// [rc4l] The lists the tic's end made when no light came or went since, which on Sunder MAP16 spared walking every subsector in the handoff.
 	if (listed && (int)g_scanFirst.size() == numsubsectors)
@@ -133,7 +139,7 @@ void FillLights(bool listed)
 		ZX_ZONE("copy/light_lists");
 		ListSubsectorLights(g_subFirst, g_subCount, g_subLights);
 	}
-	ZX_COUNT("copy/lights", "lights", n);
+	ZX_COUNT("copy/lights", "lights", g_lights.size());
 }
 
 }} // namespace zx::gamecopy

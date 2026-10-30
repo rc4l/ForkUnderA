@@ -68,7 +68,10 @@ The dynamic stream is refilled each frame for each view: sprites, models and par
 glued to walls (`walldecals.cpp`). Those are built for the sidedefs each view's walk saw, on each plain wall piece
 GL would draw them on, a light band at a time: `computation/walldecal_compute` is `GLWall::DrawDecal`'s
 height, quad and clipping, and `DerivedPartBands` the bake's own band split and light. A stacked view's or
-mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptureView`). Decals on a 3D
+mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptureView`). Its pieces only grow,
+assigned over last frame's, and a run of quads can be reserved at its end (`DynReserveQuads`,
+`computation/dynquads_compute`) and written in place from the job pool (`DynPlaceQuad`) in the order appending
+them would have given. Decals on a 3D
 floor's face, on a mirror's sheen and on a mid texture GL draws through a sky (`GLWF_SKYHACK`) are not built
 yet. Scenario `walldecal`.
 

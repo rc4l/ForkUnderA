@@ -1747,6 +1747,7 @@ void WalkView(bool publish, bool derive, const WalkHooks *hooks)
 		ComputeBalancedSlices(&g_sliceEdges[0], &g_sliceWork[0], count, 0.25 / count, &g_sliceNext[0]);
 		g_sliceEdges.swap(g_sliceNext);
 	}
+	if (hooks != NULL && hooks->walked != NULL) hooks->walked();
 	HandDecals(hooks);
 	if (derive)
 	{

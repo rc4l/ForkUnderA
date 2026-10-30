@@ -75,6 +75,11 @@ EXTERN_CVAR(Float, transsouls)
 // [rc4l] Derive every sprite beside GL's and compare them bit for bit, counting what differs for fua_sprite_report.
 CVAR(Bool, fua_sprite_check, false, 0)
 
+// [Doruk-Aksoy] Off derives the walk's particles one by one on the main thread, for an A/B in one session.
+CVAR(Bool, fua_sprite_particlejobs, true, 0)
+// [Doruk-Aksoy] Off appends derived pieces to the dynamic stream one at a time on the main thread, for an A/B in one session.
+CVAR(Bool, fua_sprite_placejobs, true, 0)
+
 using zx::levelmesh::MeshPiece;
 using zx::levelmesh::MeshVertex;
 
@@ -516,16 +521,32 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	return drawn;
 }
 
+// [Doruk-Aksoy] What every particle of a frame draws with, made on the main thread since a texture or material is made on first use.
+struct ParticleLook
+{
+	const void *material;
+	float ul, vt, ur, vb;
+};
+
+// [Doruk-Aksoy] The particle style's look, false when the style has no texture.
+static bool ParticleLookOf(ParticleLook &look)
+{
+	// [rc4l] Only a round or smooth particle has a texture, and the backend draws no sprite without one.
+	FTexture *lump = r_particles_style ? zx::materials::ParticleTexture(r_particles_style) : NULL;
+	look.material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
+	if (look.material == NULL) return false;
+	look.ul = 0.f; look.vt = 0.f; look.ur = 1.f; look.vb = 1.f;
+	zx::materials::MaterialCorners(look.material, look.ul, look.vt, look.ur, look.vb);
+	return true;
+}
+
 // [rc4l] Derive a particle as GLSprite::ProcessParticle and Draw do: false when it draws nothing, as an untextured square does not reach the backend.
-static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &p)
+static bool DeriveParticle(particle_t *particle, sector_t *sector, const ParticleLook &look, SpritePiece &p)
 {
 	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
 	if (view.PortalRejectsPoint(particle->x, particle->y)) return false;
 	if (particle->trans == 0) return false;
-	// [rc4l] Only a round or smooth particle has a texture, and the backend draws no sprite without one.
-	FTexture *lump = r_particles_style ? zx::materials::ParticleTexture(r_particles_style) : NULL;
-	const void *material = lump != NULL ? zx::materials::MaterialForTexture(lump, true) : NULL;
-	if (material == NULL) return false;
+	const void *material = look.material;
 
 	int lightlevel = gl_ClampLight(sector->rc.GetTexture(sector_t::ceiling) == skyflatnum ? sector->rc.GetCeilingLight() : sector->rc.GetFloorLight());
 	FColormap cm;
@@ -556,8 +577,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, SpritePiece &
 	const float trans = particle->trans / 255.0f;
 	PalEntry color = particle->color;
 	color.a = 255;
-	float ul = 0.f, vt = 0.f, ur = 1.f, vb = 1.f;
-	zx::materials::MaterialCorners(material, ul, vt, ur, vb);
+	const float ul = look.ul, vt = look.vt, ur = look.ur, vb = look.vb;
 
 	const float x = FIXED2FLOAT(particle->x), y = FIXED2FLOAT(particle->y), z = FIXED2FLOAT(particle->z);
 	float scalefac = particle->size / 4.0f;
@@ -794,6 +814,28 @@ static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 	}
 }
 
+// [Doruk-Aksoy] Below this many quads a run is appended one at a time, since sharing it out costs more than it saves.
+static const unsigned kPlaceAlone = 128;
+// [Doruk-Aksoy] Quads a lane places at a time.
+static const int kPlaceChunk = 256;
+
+// [Doruk-Aksoy] Derived pieces put on the dynamic stream in order, written in place across the pool when there are enough.
+static void AppendQuads(const std::vector<const SpritePiece *> &run)
+{
+	const unsigned n = (unsigned)run.size();
+	zx::levelmesh::DynQuadRun at;
+	if (!fua_sprite_placejobs || n < kPlaceAlone || !zx::levelmesh::DynReserveQuads(n, at))
+	{
+		for (const SpritePiece *p : run) zx::levelmesh::DynAppend(p->quad, 4, p->piece);
+		return;
+	}
+	auto place = [&run, &at](int lo, int hi, int)
+	{
+		for (int i = lo; i < hi; i++) zx::levelmesh::DynPlaceQuad(at, (unsigned)i, run[i]->quad, run[i]->piece);
+	};
+	zx::jobs::Pool().ParallelChunks((int)n, kPlaceChunk, place);
+}
+
 void BuildSprites(const ActorRecord *const *things, int count)
 {
 	ZX_ZONE("scene/sprites");   // [rc4l] the actors in view derived as sprites
@@ -808,29 +850,79 @@ void BuildSprites(const ActorRecord *const *things, int count)
 	} derive = { things, count };
 	zx::jobs::Pool().ParallelFor(chunks, derive);
 	const bool capture = zx::levelmesh::DynamicCaptureActive();
+	// [Doruk-Aksoy] The lanes' pieces gathered in order, each run put on the stream before an actor the main thread derives, so the stream keeps the sweep's order.
+	static std::vector<const SpritePiece *> run;
+	run.clear();
 	for (int c = 0; c < chunks; c++)
 	{
 		const SpriteChunk &chunk = g_spriteChunks[c];
 		for (size_t k = 0; k < chunk.sprites.size(); k++)
 		{
 			const LaneSprite &ls = chunk.sprites[k];
-			if (ls.onGameThread) BuildSprite(*things[c * kSpriteChunk + (int)k]);
+			if (ls.onGameThread)
+			{
+				AppendQuads(run);
+				run.clear();
+				BuildSprite(*things[c * kSpriteChunk + (int)k]);
+			}
 			else if (capture)
-				for (int i = 0; i < ls.count; i++) zx::levelmesh::DynAppend(chunk.pieces[ls.first + i].quad, 4, chunk.pieces[ls.first + i].piece);
+				for (int i = 0; i < ls.count; i++) run.push_back(&chunk.pieces[ls.first + i]);
 		}
 	}
+	AppendQuads(run);
 }
 
-void BuildParticle(particle_t *particle, const void *who, sector_t *sector)
+// [Doruk-Aksoy] A particle the walk reached, waiting for BuildQueuedParticles.
+struct QueuedParticle
 {
-	SpritePiece p;
-	const bool drawn = DeriveParticle(particle, sector, p);
-	if (drawn && fua_sprite_check) Note(g_ours, who, true, p.piece, p.quad, 4);
-	if (drawn && zx::levelmesh::DynamicCaptureActive())
+	particle_t *particle;
+	const void *who;
+	sector_t *sector;
+};
+
+static std::vector<QueuedParticle> g_queuedParticles;
+static std::vector<SpritePiece> g_particlePieces;   // [Doruk-Aksoy] one a queued particle, and only grows, as a sprite chunk's pieces do
+static std::vector<unsigned char> g_particleDrawn;
+// [Doruk-Aksoy] Particles a lane derives at a time.
+static const int kParticleChunk = 64;
+
+void QueueParticle(particle_t *particle, const void *who, sector_t *sector)
+{
+	const QueuedParticle q = { particle, who, sector };
+	g_queuedParticles.push_back(q);
+}
+
+void BuildQueuedParticles()
+{
+	const int n = (int)g_queuedParticles.size();
+	if (n == 0) return;
+	ZX_ZONE("scene/particles");   // [Doruk-Aksoy] the particles the walk reached derived and appended
+	ParticleLook look;
+	if (ParticleLookOf(look))
 	{
-		zx::levelmesh::DynAppend(p.quad, 4, p.piece);
-		zx::levelmesh::CountParticle();
+		if ((int)g_particlePieces.size() < n) g_particlePieces.resize(n);
+		g_particleDrawn.resize(n);
+		auto derive = [&look](int lo, int hi, int)
+		{
+			for (int i = lo; i < hi; i++)
+				g_particleDrawn[i] = DeriveParticle(g_queuedParticles[i].particle, g_queuedParticles[i].sector, look, g_particlePieces[i]) ? 1 : 0;
+		};
+		if (fua_sprite_particlejobs) zx::jobs::Pool().ParallelChunks(n, kParticleChunk, derive);
+		else derive(0, n, 0);
+		const bool capture = zx::levelmesh::DynamicCaptureActive();
+		static std::vector<const SpritePiece *> run;
+		run.clear();
+		for (int i = 0; i < n; i++)
+		{
+			if (!g_particleDrawn[i]) continue;
+			const SpritePiece &p = g_particlePieces[i];
+			if (fua_sprite_check) Note(g_ours, g_queuedParticles[i].who, true, p.piece, p.quad, 4);
+			if (capture) run.push_back(&p);
+		}
+		AppendQuads(run);
+		for (size_t i = 0; i < run.size(); i++) zx::levelmesh::CountParticle();
 	}
+	g_queuedParticles.clear();
 }
 
 }} // namespace zx::sprites

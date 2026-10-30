@@ -10,6 +10,9 @@
 #include "c_console.h"
 #include "i_system.h"
 
+#include <string.h>
+#include <vector>
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] Hard cap. An earlier attempt at this feature grew without bound and reached 47 GB before
@@ -152,7 +155,9 @@ void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out)
 // ---------------------------------------------------------------------------
 
 static TArray<MeshVertex> g_dynVerts;
-static TArray<MeshPiece>   g_dynPieces;
+// [Doruk-Aksoy] Only grows, its first g_dynPieceCount this frame's, so a frame's pieces are assigned over last frame's rather than constructed again.
+static std::vector<MeshPiece> g_dynPieces;
+static unsigned int g_dynPieceCount = 0;
 static TArray<float>       g_dynMatrices;
 
 static unsigned int g_dynGen = 1;
@@ -162,7 +167,7 @@ void DynClear()
 	// Clear, not free: the arrays settle at the frame's high-water mark after a few frames and stop
 	// allocating entirely.
 	g_dynVerts.Clear();
-	g_dynPieces.Clear();
+	g_dynPieceCount = 0;
 	g_dynMatrices.Clear();
 	g_dynGen++;
 }
@@ -186,7 +191,7 @@ void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 	if (verts == NULL || count <= 0) return;
 	// [rc4l] A sane ceiling, so a pathological frame cannot eat memory the way the first wall cache
 	// did. 300k vertices is 100k triangles of sprites, far past anything a Doom frame produces.
-	if (g_dynVerts.Size() + (unsigned)count > 300000) return;
+	if (g_dynVerts.Size() + (unsigned)count > kDynVertexCeiling) return;
 
 	// [rc4l] One grow check and one copy, not one of each per vertex.
 	//
@@ -198,10 +203,30 @@ void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 	g_dynVerts.Resize(base + (unsigned)count);
 	memcpy(&g_dynVerts[base], verts, (size_t)count * sizeof(MeshVertex));
 
-	g_dynPieces.Push(proto);
-	MeshPiece &p = g_dynPieces[g_dynPieces.Size() - 1];
+	if (g_dynPieceCount == g_dynPieces.size()) g_dynPieces.push_back(proto);
+	else g_dynPieces[g_dynPieceCount] = proto;
+	MeshPiece &p = g_dynPieces[g_dynPieceCount++];
 	p.range.offset = base;
 	p.range.count = (unsigned)count;
+}
+
+bool DynReserveQuads(unsigned count, DynQuadRun &run)
+{
+	if (!ComputeDynQuadRun(g_dynVerts.Size(), g_dynPieceCount, count, kDynVertexCeiling, run)) return false;
+	g_dynVerts.Resize(run.firstVert + 4 * count);
+	if (g_dynPieces.size() < run.firstPiece + count) g_dynPieces.resize(run.firstPiece + count);
+	g_dynPieceCount = run.firstPiece + count;
+	return true;
+}
+
+void DynPlaceQuad(const DynQuadRun &run, unsigned k, const MeshVertex *verts, const MeshPiece &proto)
+{
+	const unsigned vert = ComputeDynQuadVertex(run, k);
+	memcpy(&g_dynVerts[vert], verts, 4 * sizeof(MeshVertex));
+	MeshPiece &p = g_dynPieces[run.firstPiece + k];
+	p = proto;
+	p.range.offset = vert;
+	p.range.count = 4;
 }
 
 const MeshVertex *DynVertices(int &count)
@@ -212,7 +237,7 @@ const MeshVertex *DynVertices(int &count)
 
 const MeshPiece *DynPieces(int &count)
 {
-	count = (int)g_dynPieces.Size();
+	count = (int)g_dynPieceCount;
 	return count ? &g_dynPieces[0] : NULL;
 }
 

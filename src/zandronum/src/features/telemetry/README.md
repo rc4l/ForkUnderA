@@ -65,7 +65,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   noted, which should read 0) and `copy/stale_ids`; `features/handoff/`: every seam's `group/name` timing, `handoff/threaded_tics`,
   `handoff/held_frames` and `handoff/show_delay`, and the game thread named "game" in a recording's trace;
   `features/gameloop/loop.cpp`: `handoff/backlog_tics` (the tics a threaded frame was owed) and `handoff/inline_catchup` (those it ran inline).
-- `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones; `features/frame/standaloneframe.cpp`: `scene/actor_sweep`, the actors culled against the view before any is derived.
+- `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones, `scene/particles` the
+  particles the player's walk reached; `features/frame/standaloneframe.cpp`: `scene/actor_sweep`, the actors culled against the view before any is derived.
 - `features/jobs/jobs.cpp`: a `JobObserver` (`jobpool_compute.h`) on telemetry's clock times the `jobs/` regions and names each worker "job N".
 - `features/hwrender/rendererrate.cpp`: vid_fps's split, under `frame/`.
 - `features/frame-limit/framelimit.cpp`: the `frame/limit_wait` zone, the wait before a present that `vid_maxfps` or `cl_capfps` holds.
