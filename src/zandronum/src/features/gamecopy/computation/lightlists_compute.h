@@ -2,6 +2,7 @@
 #ifndef ZX_LIGHTLISTS_COMPUTE_H
 #define ZX_LIGHTLISTS_COMPUTE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

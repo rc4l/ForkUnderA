@@ -9,6 +9,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
 
