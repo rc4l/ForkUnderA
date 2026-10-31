@@ -33,7 +33,8 @@ never reads what that tic is changing.
   `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`, `p_maputl.cpp` `UnlinkFromWorld` and
   `LinkToWorld`, `p_user.cpp`'s prediction restore), since the medals ticked after the playsim spawn icons.
   The actor records are taken across the job pool. `fua_copy_prescan_check` holds each such fill to the whole-map
-  scan it spared (`fuactl fixture prescancheck`, with tics on the game thread).
+  scan it spared (`fuactl fixture prescancheck`, with tics on the game thread). A netgame client makes no scan
+  (`ComputePrescanWanted`): its fill never trusts one, and its tics run inline, so a scan there only held its frames back.
 - Sides and their decals are not compared whole at a tic's end. They are noted where they change
   (`computation/changelog_compute`):
   - `r_defs.h`: every `side_t` setter calls `NoteChanged` (`NoteSideChanged`). So do the code writing a side's

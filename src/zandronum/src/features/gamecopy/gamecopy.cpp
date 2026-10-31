@@ -1063,6 +1063,8 @@ void ScanAtTicEnd()
 {
 	ZX_ZONE("copy/prescan");
 	g_prescan.stamp.found = false;
+	// [Doruk-Aksoy] A client's fill never trusts a scan, and a client runs its tics inline, so a scan there only held its frames back.
+	if (!ComputePrescanWanted(zx::net::InClientMode())) return;
 	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) return;
 	// [rc4l] Each part timed on its own, since in a Complex Doom fight the whole was a quarter of the tic.
 	{ ZX_ZONE("copy/prescan_sectors"); ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; }); }
