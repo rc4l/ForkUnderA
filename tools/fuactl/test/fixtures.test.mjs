@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, GTMOD_LAMP_COLOURS, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, GTMOD_LAMP_COLOURS, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDemo, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, PICTURES, PLAYED_DIR, recordFixture, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -166,4 +166,16 @@ test("a refused load is told by the last line of the log naming why", () => {
   assert.equal(loadRefusal(["loading", "Unknown class 'FlatDecal'", "more"].join(String.fromCharCode(13, 10))), "Unknown class 'FlatDecal'");
   assert.equal(loadRefusal("Savegame is from an incompatible version: 4525 (4524 is the newest supported)"), "Savegame is from an incompatible version: 4525 (4524 is the newest supported)");
   assert.equal(loadRefusal("all fine"), null);
+});
+
+test("a played fixture's demo is a person's game kept in the repo, which record leaves as it is", async () => {
+  const played = FIXTURES.filter((f) => f.played);
+  assert.ok(played.length > 0);
+  for (const f of played) {
+    assert.equal(fixtureDemo(f, "/h"), path.join(PLAYED_DIR, `${f.name}.lmp`));
+    assert.ok(fs.statSync(fixtureDemo(f)).size > 0, f.name);
+    assert.ok(PICTURES[f.name] && PICTURES[f.name].tic < f.tics, f.name);
+    assert.match(await recordFixture(f, { dir: "/h" }), /played, so left as it is/);
+  }
+  assert.equal(fixtureDemo({ name: "driven" }, "/h"), path.join("/h", "driven.lmp"));
 });
