@@ -67,3 +67,12 @@ TEST(PrescanCompute, CandidatesOutsideTheMapAreDropped)
 	ComputeTakeCandidates({}, {}, {}, 10, out);
 	EXPECT_TRUE(out.empty());
 }
+
+// [Doruk-Aksoy] A client makes no scan, since none it could make is ever fresh there, and every other role does.
+TEST(PrescanCompute, AClientMakesNoScan)
+{
+	EXPECT_FALSE(ComputePrescanWanted(true));
+	EXPECT_TRUE(ComputePrescanWanted(false));
+	EXPECT_FALSE(ComputePrescanFresh(kNow, kNow, true));
+	EXPECT_FALSE(ComputeActorScanFresh(kNow, kNow, true));
+}

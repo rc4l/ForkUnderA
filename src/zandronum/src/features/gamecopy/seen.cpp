@@ -2,12 +2,15 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/gamecopy/seen.h"
+#include "features/gamecopy/computation/seenmerge_compute.h"   // [Doruk-Aksoy] the sector and line bits a fill keeps
 #include "features/handoff/seam.h"
 
 #include "doomdata.h"
 #include "r_defs.h"
 #include "r_state.h"
 
+#include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace zx { namespace gamecopy {
@@ -16,7 +19,8 @@ namespace {
 
 std::vector<unsigned char> g_bits[kSeenKinds];
 std::vector<int> g_marked[kSeenKinds];   // [rc4l] what the walks marked since the last merge
-std::vector<unsigned char> g_scanned[kSeenKinds];   // [rc4l] the live map's bits as the tic ended
+std::vector<unsigned char> g_scanned;   // [rc4l] the live map's subsector bits as the tic ended
+std::vector<std::pair<int, unsigned char>> g_scannedChanged[kSeenKinds];   // [Doruk-Aksoy] the live bits as the tic ended of the sectors and lines its end found changed
 
 bool LiveSeen(SeenKind kind, int i)
 {
@@ -79,14 +83,15 @@ void ApplySeen()
 	}
 }
 
-void ScanSeen()
+void ScanSeen(const std::vector<int> &sectorsChanged, const std::vector<int> &linesChanged)
 {
-	for (int k = 0; k < kSeenKinds; k++)
+	g_scanned.resize(numsubsectors);
+	for (int i = 0; i < numsubsectors; i++) g_scanned[i] = LiveSeen(kSeenSubsector, i);
+	const std::vector<int> *changed[kSeenKinds] = { NULL, &sectorsChanged, &linesChanged };
+	for (int k = kSeenSector; k < kSeenKinds; k++)
 	{
-		const SeenKind kind = SeenKind(k);
-		const int n = CountOf(kind);
-		g_scanned[k].resize(n);
-		for (int i = 0; i < n; i++) g_scanned[k][i] = LiveSeen(kind, i);
+		g_scannedChanged[k].clear();
+		for (int i : *changed[k]) g_scannedChanged[k].push_back(std::make_pair(i, (unsigned char)LiveSeen(SeenKind(k), i)));
 	}
 }
 
@@ -106,8 +111,8 @@ void MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &lin
 {
 	sectorsSet = g_marked[kSeenSector];
 	linesSet = g_marked[kSeenLine];
-	bool whole = true;
-	for (int k = 0; k < kSeenKinds; k++) whole &= g_scanned[k].size() == (size_t)CountOf(SeenKind(k));
+	bool whole = g_scanned.size() == (size_t)numsubsectors;
+	for (int k = 0; k < kSeenKinds; k++) whole &= g_bits[k].size() == (size_t)CountOf(SeenKind(k));
 	if (!scanned || !whole)
 	{
 		ApplySeen();
@@ -115,10 +120,11 @@ void MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &lin
 		return;
 	}
 	// [rc4l] The bits the tic's end read, with what the frames marked since, are the live map's once ApplySeen sets those.
-	for (int k = 0; k < kSeenKinds; k++)
-		for (int i : g_marked[k]) if (i >= 0 && i < (int)g_scanned[k].size()) g_scanned[k][i] = 1;
+	for (int i : g_marked[kSeenSubsector]) if (i >= 0 && i < (int)g_scanned.size()) g_scanned[i] = 1;
+	g_bits[kSeenSubsector].swap(g_scanned);
+	// [Doruk-Aksoy] A sector or line its end found unchanged is as the last fill took it, bit and all, so only the changed take their live bit.
+	for (int k = kSeenSector; k < kSeenKinds; k++) ComputeSeenMerge(g_bits[k], g_scannedChanged[k], g_marked[k]);
 	ApplySeen();
-	for (int k = 0; k < kSeenKinds; k++) g_bits[k].swap(g_scanned[k]);
 }
 
 void InitSeen()

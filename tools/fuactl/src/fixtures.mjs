@@ -172,11 +172,21 @@ export const FIXTURES = [
   { name: "freedoom2-map01", iwad: "freedoom2.wad", map: "MAP01", tics: 1050 },
   { name: "freedoom2-map04", iwad: "freedoom2.wad", map: "MAP04", tics: 1050 },
   { name: "sunder-map11", iwad: "doom2.wad", pwads: ["sunder_2512.wad"], map: "MAP11", tics: 700 },
+  // [Doruk-Aksoy] A person's game of MAP01 to its exit, played rather than driven, so record leaves its demo as it is.
+  { name: "freedoom2-map01-played", iwad: "freedoom2.wad", map: "MAP01", tics: 2540, played: true },
 ];
 
 // [rc4l] Where demos, baselines and the generated wad are kept, outside the repo since a demo plays only against the wads it was recorded on.
 export function fixtureDir(home = os.homedir()) {
   return path.join(home, ".forkundera", "fixtures");
+}
+
+// [Doruk-Aksoy] Where the played fixtures' demos are kept, in the repo, since a person's game cannot be recorded again.
+export const PLAYED_DIR = fileURLToPath(new URL("../fixtures/", import.meta.url));
+
+// [Doruk-Aksoy] A fixture's demo: a played one's from the repo, any other's from dir, where record writes it.
+export function fixtureDemo(f, dir = fixtureDir()) {
+  return path.join(f.played ? PLAYED_DIR : dir, `${f.name}.lmp`);
 }
 
 // [rc4l] The fixtures named, or every one when none is; a name not in the set throws.
@@ -286,9 +296,11 @@ async function waitForFile(file, timeoutMs, proc, giveUp = () => null) {
 
 // [rc4l] Records a fixture's demo: a new game on its map, the fight, then the recording stopped and written; cvars apply to the recording, as --cvar does to a check.
 export async function recordFixture(f, { engine, store, dir = fixtureDir(), cvars = {}, log = () => {} } = {}) {
+  // [Doruk-Aksoy] A played demo is a person's game, which no drive can record again.
+  if (f.played) return `${fixtureDemo(f, dir)}, played, so left as it is`;
   const { files, missing } = fixtureFiles(f, dir, store);
   if (missing.length) throw new Error(`${f.name} needs ${missing.join(", ")}, not in ${store}`);
-  const demo = path.join(dir, `${f.name}.lmp`);
+  const demo = fixtureDemo(f, dir);
   fs.rmSync(demo, { force: true });
   const iwad = fixtureIwad(f, store, path.dirname(engine || resolveEngine()));
   const inst = await launchInstance({ engine, iwad, map: f.map, cvars: { ...RUN_UNFOCUSED, ...cvars },
@@ -310,7 +322,7 @@ export async function recordFixture(f, { engine, store, dir = fixtureDir(), cvar
 
 // [rc4l] Launches a fixture's demo on the wads it was recorded on, the Vulkan backend alone unless gl, the game running unfocused.
 async function launchDemo(f, { engine, store, dir, cvars = {}, gl = false, postMap = [] }) {
-  const demo = path.join(dir, `${f.name}.lmp`);
+  const demo = fixtureDemo(f, dir);
   if (!fs.existsSync(demo)) throw new Error(`${f.name} has no demo yet: fuactl fixture record ${f.name}`);
   const { files, missing } = fixtureFiles(f, dir, store);
   if (missing.length) throw new Error(`${f.name} needs ${missing.join(", ")}, not in ${store}`);
@@ -413,6 +425,8 @@ export const PICTURES = {
   "freedoom2-map01": { tic: 420, views: [{ name: "player" }] },
   "freedoom2-map04": { tic: 420, views: [{ name: "player" }] },
   "sunder-map11": { tic: 350, views: [{ name: "player" }] },
+  // [Doruk-Aksoy] Late in the game, so the checks that play to this tic cover nearly all of it.
+  "freedoom2-map01-played": { tic: 2400, views: [{ name: "player" }] },
 };
 
 // [rc4l] A capture held to its baseline PNG by its block differences: saved when there is none or update asks, and differing when its largest block moved more than tolerance.

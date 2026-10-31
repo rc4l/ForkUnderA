@@ -18,6 +18,11 @@ bool ComputeActorScanFresh(const PrescanStamp &found, const PrescanStamp &now, b
 	return ComputePrescanFresh(found, now, client) && found.lists == now.lists;
 }
 
+bool ComputePrescanWanted(bool client)
+{
+	return !client;
+}
+
 void ComputeTakeCandidates(const std::vector<int> &changed, const std::vector<int> &blended, const std::vector<int> &seen, int count,
 	std::vector<int> &out)
 {

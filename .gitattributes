@@ -11,3 +11,6 @@
 src/zandronum/wadsrc/**     -text
 src/zandronum/wadsrc_st/**  -text
 src/zandronum/wadsrc_bm/**  -text
+
+# [Doruk-Aksoy] A fixture demo is a person's recorded game, kept byte for byte.
+tools/fuactl/fixtures/**    binary
