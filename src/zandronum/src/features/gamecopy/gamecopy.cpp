@@ -1104,7 +1104,7 @@ void ScanAtTicEnd()
 	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed, &chains); }
 	{ ZX_ZONE("copy/prescan_links"); LinkChains(g_listed, chains, g_listedFirstIn, g_listedNext); }
 	{ ZX_ZONE("copy/prescan_decals"); ScanDecalSides(); }
-	{ ZX_ZONE("copy/prescan_seen"); ScanSeen(); }
+	{ ZX_ZONE("copy/prescan_seen"); ScanSeen(g_prescan.sectors, g_prescan.lines); }
 	{ ZX_ZONE("copy/prescan_lights"); ScanLights(); }
 	g_prescan.stamp = StampNow(true);
 }
