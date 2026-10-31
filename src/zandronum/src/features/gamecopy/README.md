@@ -51,6 +51,8 @@ never reads what that tic is changing.
 
   On Sunder MAP11 the side compare had been 5.4-7.2 ms of a tic, with 65,929 sides of 624 bytes.
 - `actor.h`: `AActor::rcListed`, an actor's place in the list the tic's end made.
+- `features/dynlights/dynlight.h`: `ADynamicLight::rcPlace` and `rcPlaceStamp`, a light's place in the listing that last
+  made the subsector light lists, which `lights.cpp` reads in place of a hash of every light.
 - `features/postprocess`: `SetDrawnShaders`, installed at startup, hands it the copied shader state and the copy's
   level time, since it sits below this feature.
 - `features/frame/playerview.cpp`: `BeginRecordViewpoint`, and the camera textures from `CameraTextures`.
@@ -88,7 +90,8 @@ never reads what that tic is changing.
   and light levels pointed at the copy's (`computation/memberindex_compute`), the colormaps their `GetColormap` gave
   kept beside them, and blended with their models' planes; `GetPlaneLight` and `HeightSecOf` read them.
 - `lights.cpp`: every dynamic light and each subsector's light list, its links kept while it stands still; the
-  records are taken across `features/jobs`' pool, each lane writing only its own, as the actors are.
+  records are taken across `features/jobs`' pool, each lane writing only its own, as the actors are. The subsector
+  lists walk only the subsectors the lights touch (`computation/lightlists_compute`), not every subsector.
 - `particles.cpp`, `decals.cpp`: the particles with their subsector lists, and each side's wall decals.
 - `tintsubject.cpp`: features/damage-tint's game half, read into each actor record: the sector damage table and
   whether an actor's floor hurts it unprotected (`TintSubjectOf`).
