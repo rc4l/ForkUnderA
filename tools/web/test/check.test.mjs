@@ -307,12 +307,17 @@ test('the loading screen needs its logo and the whole name', () => {
   assert.equal(splashReady({ ...good, said: 'Loading…' }), 'the screen said Loading… while the engine started');
 });
 
-test('a player sees the Discord link and none of the page tools', () => {
-  const good = { tools: false, discord: true, link: 'https://discord.gg/katKpQMYMe' };
+test('a player sees the footer links and none of the page tools', () => {
+  const commit = '0123456789abcdef0123456789abcdef01234567';
+  const good = { tools: false, discord: true, link: 'https://discord.gg/katKpQMYMe', source: true, sourceLink: `https://github.com/rc4l/ForkUnderA/tree/${commit}`, license: true, licenseLink: 'https://github.com/rc4l/ForkUnderA/blob/main/LICENSE.txt' };
   assert.equal(pageTrimmed(good), '');
   assert.equal(pageTrimmed({ ...good, tools: true }), 'the page tools are showing');
   assert.equal(pageTrimmed({ ...good, discord: false }), 'the Discord link is hidden');
   assert.equal(pageTrimmed({ ...good, link: 'https://example.com/' }), 'the Discord link goes to https://example.com/');
+  assert.equal(pageTrimmed({ ...good, source: false }), 'the Source link is hidden');
+  assert.equal(pageTrimmed({ ...good, sourceLink: 'https://github.com/rc4l/ForkUnderA/tree/main' }), 'the Source link goes to https://github.com/rc4l/ForkUnderA/tree/main');
+  assert.equal(pageTrimmed({ ...good, license: false }), 'the License link is hidden');
+  assert.equal(pageTrimmed({ ...good, licenseLink: 'https://example.com/' }), 'the License link goes to https://example.com/');
 });
 
 // [rc4l] A mistyped option is ignored in silence, as `focus` for `focused` once was, so a check that thinks it set one proves nothing.

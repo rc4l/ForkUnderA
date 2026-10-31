@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { engineData, manifest, stage } from '../stage.mjs';
+import { engineData, headCommit, manifest, pinSource, stage } from '../stage.mjs';
 import { scratch } from './scratch.mjs';
 
 test('the engine data is every pk3 in the build directory, in name order', () => {
@@ -44,4 +44,30 @@ test('staging adds the wads it is given to the data and its manifest', () => {
   const staged = stage({ buildDir: build, outDir: out, pageDir: page, freedoomDir: freedoom, wads: [path.join(extra, 'doom2.wad')] });
   assert.deepEqual(staged, ['freedoom2.wad', 'doom2.wad']);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, 'data', 'files.json'), 'utf8')).map((f) => f.name), ['freedoom2.wad', 'doom2.wad']);
+});
+
+test('the Source link moves to the commit, and only that link', () => {
+  const html = '<a href="https://github.com/rc4l/ForkUnderA/tree/main">Source</a><a href="https://github.com/rc4l/ForkUnderA/blob/main/LICENSE.txt">License</a>';
+  assert.equal(pinSource(html, 'abc'), '<a href="https://github.com/rc4l/ForkUnderA/tree/abc">Source</a><a href="https://github.com/rc4l/ForkUnderA/blob/main/LICENSE.txt">License</a>');
+});
+
+test('a stage given a commit writes it into its page, and one without leaves the page as it was', () => {
+  const build = scratch(), page = scratch(), freedoom = scratch();
+  fs.writeFileSync(path.join(build, 'forkundera.js'), 'js');
+  fs.writeFileSync(path.join(build, 'forkundera.wasm'), 'wasm');
+  fs.writeFileSync(path.join(page, 'index.html'), 'https://github.com/rc4l/ForkUnderA/tree/main');
+  fs.writeFileSync(path.join(freedoom, 'freedoom2.wad'), 'iwad');
+  fs.writeFileSync(path.join(freedoom, 'License.txt'), 'bsd');
+  const staged = (commit) => {
+    const out = path.join(scratch(), 'dist');
+    stage({ buildDir: build, outDir: out, pageDir: page, freedoomDir: freedoom, commit });
+    return fs.readFileSync(path.join(out, 'index.html'), 'utf8');
+  };
+  assert.equal(staged('abc'), 'https://github.com/rc4l/ForkUnderA/tree/abc');
+  assert.equal(staged(null), 'https://github.com/rc4l/ForkUnderA/tree/main');
+});
+
+test('the head commit is a full hash in a checkout, and null outside one', () => {
+  assert.match(headCommit(path.resolve(import.meta.dirname)), /^[0-9a-f]{40}$/);
+  assert.equal(headCommit(path.join(scratch(), 'nowhere')), null);
 });
