@@ -106,6 +106,8 @@ public:
 	FLightNode * touching_sides;
 	FLightNode * touching_subsectors;
 	FLightNode * touching_sector;
+	int rcPlace;	// [Doruk-Aksoy] features/gamecopy: its place in thinker order when the subsector light lists were last made
+	unsigned int rcPlaceStamp;	// [Doruk-Aksoy] which making of those lists rcPlace belongs to, so a light not listed in it is told apart
 
 private:
 	float DistToSeg(seg_t *seg);

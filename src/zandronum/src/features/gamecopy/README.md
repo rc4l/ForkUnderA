@@ -10,7 +10,9 @@ never reads what that tic is changing.
   record's members, copied or worked out by the fill.
 - Map structures keep their copy beside the live fields (`sector->rc`, `side->rc`, ...), so the renderer walks the
   same pointers and reads `rc`; actors are copied as records (`actors.h`), in thinker order and linked per sector
-  in thinglist order, so the renderer holds no live actor.
+  in thinglist order, so the renderer holds no live actor. The links come from what the walk of the actor list
+  notes of each actor's chain (`computation/actorchains_compute`), and every sector's chain is walked only when a
+  chain's head is not in the list.
 - `select.h`: code GL and the backend both run takes a `Sel`, `LiveSel` for GL (the live structures, through the
   setters whose dirty counters GL's caches key on) or `CopySel` for the backend. GL's height transfers are scratch
   sectors whose copy is never filled, so a helper GL calls must read live.
@@ -33,7 +35,8 @@ never reads what that tic is changing.
   `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`, `p_maputl.cpp` `UnlinkFromWorld` and
   `LinkToWorld`, `p_user.cpp`'s prediction restore), since the medals ticked after the playsim spawn icons.
   The actor records are taken across the job pool. `fua_copy_prescan_check` holds each such fill to the whole-map
-  scan it spared (`fuactl fixture prescancheck`, with tics on the game thread).
+  scan it spared (`fuactl fixture prescancheck`, with tics on the game thread). A netgame client makes no scan
+  (`ComputePrescanWanted`): its fill never trusts one, and its tics run inline, so a scan there only held its frames back.
 - Sides and their decals are not compared whole at a tic's end. They are noted where they change
   (`computation/changelog_compute`):
   - `r_defs.h`: every `side_t` setter calls `NoteChanged` (`NoteSideChanged`). So do the code writing a side's
@@ -51,6 +54,8 @@ never reads what that tic is changing.
 
   On Sunder MAP11 the side compare had been 5.4-7.2 ms of a tic, with 65,929 sides of 624 bytes.
 - `actor.h`: `AActor::rcListed`, an actor's place in the list the tic's end made.
+- `features/dynlights/dynlight.h`: `ADynamicLight::rcPlace` and `rcPlaceStamp`, a light's place in the listing that last
+  made the subsector light lists, which `lights.cpp` reads in place of a hash of every light.
 - `features/postprocess`: `SetDrawnShaders`, installed at startup, hands it the copied shader state and the copy's
   level time, since it sits below this feature.
 - `features/frame/playerview.cpp`: `BeginRecordViewpoint`, and the camera textures from `CameraTextures`.
@@ -88,13 +93,16 @@ never reads what that tic is changing.
   and light levels pointed at the copy's (`computation/memberindex_compute`), the colormaps their `GetColormap` gave
   kept beside them, and blended with their models' planes; `GetPlaneLight` and `HeightSecOf` read them.
 - `lights.cpp`: every dynamic light and each subsector's light list, its links kept while it stands still; the
-  records are taken across `features/jobs`' pool, each lane writing only its own, as the actors are.
+  records are taken across `features/jobs`' pool, each lane writing only its own, as the actors are. The subsector
+  lists walk only the subsectors the lights touch (`computation/lightlists_compute`), not every subsector.
 - `particles.cpp`, `decals.cpp`: the particles with their subsector lists, and each side's wall decals.
 - `tintsubject.cpp`: features/damage-tint's game half, read into each actor record: the sector damage table and
   whether an actor's floor hurts it unprotected (`TintSubjectOf`).
 - `level.h`: the level's clocks, flags, sky scroll, fog and skies (`ZX_LEVEL_FIELD` lines in `fields.h`).
 - `seen.cpp`: the seen bits the walks mark, kept by the renderer and merged into the live map before each tic
-  (`ApplySeen`) and at each fill (`MergeSeen`), which also takes back what a load or reset changed.
+  (`ApplySeen`) and at each fill (`MergeSeen`), which also takes back what a load or reset changed. The tic's end
+  reads every subsector's bit, but a sector's or line's only when its own scan found it changed since the last
+  fill (`computation/seenmerge_compute`), since the rest still hold the bits that fill took.
 - `polyobjs.cpp`: every polyobject linked and the BSP of each subsector one is in built between tics, then copied,
   its vertices riding their polyobject lines (`computation/polyblend_compute`) as the blend moves them.
 - Sky viewpoints (`SkyBoxOf`, `DefaultSkyBox`) and camera textures (`CameraTextures`) are records too.

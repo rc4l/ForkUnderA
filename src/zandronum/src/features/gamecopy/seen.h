@@ -20,7 +20,8 @@ void MarkSeen(SeenKind kind, int index);
 // [rc4l] Before a tic: what the walks marked since set on the live map, which bots read.
 void ApplySeen();
 // [rc4l] As a tic ends: the live map's bits read, for MergeSeen to take instead of reading them again.
-void ScanSeen();
+// [Doruk-Aksoy] Of the sectors and lines only those the scan found changed since the last fill are read, since the rest still hold the bits that fill took.
+void ScanSeen(const std::vector<int> &sectorsChanged, const std::vector<int> &linesChanged);
 // [rc4l] Between tics: ApplySeen, giving the sectors and lines it set, then the live map's bits taken back, which a savegame load or a reset may have changed, from ScanSeen's when the tic's end scanned.
 void MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &linesSet);
 // [rc4l] The bits the renderer holds that the live map does not, for fua_copy_prescan_check after a merge.

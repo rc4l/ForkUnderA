@@ -26,6 +26,9 @@ bool ComputePrescanFresh(const PrescanStamp &found, const PrescanStamp &now, boo
 // [rc4l] Whether the actor list and sector links a scan made still hold: the scan is fresh and no thinker or actor joined or left a list since, which the medals ticked after the playsim do.
 bool ComputeActorScanFresh(const PrescanStamp &found, const PrescanStamp &now, bool client);
 
+// [Doruk-Aksoy] Whether a tic's end scans at all: not on a client, where no scan is ever fresh.
+bool ComputePrescanWanted(bool client);
+
 // [rc4l] The items the handoff compares and takes: what the tic changed, what the frames blended and what they marked seen, each once, in order, and within count.
 void ComputeTakeCandidates(const std::vector<int> &changed, const std::vector<int> &blended, const std::vector<int> &seen, int count,
 	std::vector<int> &out);
