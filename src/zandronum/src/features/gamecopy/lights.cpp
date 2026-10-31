@@ -3,6 +3,7 @@
 
 #include "features/gamecopy/lights.h"
 #include "features/gamecopy/computation/serial_compute.h"
+#include "features/gamecopy/computation/lightlists_compute.h"   // [Doruk-Aksoy] the subsector runs made from the lit subsectors
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeLightLinksStale, ComputeSortedTouches
 #include "features/dynlights/dynlight.h"
 #include "features/jobs/jobs.h"   // [Doruk-Aksoy] the light records taken across the pool
@@ -11,7 +12,8 @@
 #include "r_defs.h"
 #include "r_state.h"
 
-#include <unordered_map>
+#include <cstdint>
+#include <vector>
 
 namespace zx { namespace gamecopy {
 
@@ -28,24 +30,27 @@ const int kLightChunk = 64;
 // [rc4l] Each subsector's lights in its light list's order, the order GL sums a sprite's light in, each by its light's place in thinker order.
 void ListSubsectorLights(std::vector<int> &first, std::vector<int> &count, std::vector<int> &out)
 {
-	static std::unordered_map<const void *, int> placeOf;
-	placeOf.clear();
+	// [Doruk-Aksoy] Each light's place stamped on it and the subsectors it touches marked, so only lit subsectors are walked and no light is looked up by hash.
+	static unsigned int stamp = 0;
+	if (++stamp == 0) stamp = 1;
+	static std::vector<int> touched;
+	touched.clear();
 	int n = 0;
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
-	for (ADynamicLight *light; (light = it.Next()) != NULL; ) placeOf[light] = n++;
-	first.assign(numsubsectors, 0);
-	count.assign(numsubsectors, 0);
-	out.clear();
-	for (int s = 0; s < numsubsectors; s++)
+	for (ADynamicLight *light; (light = it.Next()) != NULL; )
 	{
-		first[s] = (int)out.size();
-		for (FLightNode *node = subsectors[s].lighthead; node != NULL; node = node->nextLight)
-		{
-			const auto i = placeOf.find(node->lightsource);
-			if (i != placeOf.end()) out.push_back(i->second);
-		}
-		count[s] = (int)out.size() - first[s];
+		light->rcPlace = n++;
+		light->rcPlaceStamp = stamp;
+		for (FLightNode *node = light->touching_subsectors; node != NULL; node = node->nextTarget)
+			if (node->targSubsector != NULL) touched.push_back(int(node->targSubsector - subsectors));
 	}
+	static std::vector<uint64_t> lit;
+	ComputeLitSubsectors(touched.empty() ? NULL : &touched[0], (int)touched.size(), numsubsectors, lit);
+	ComputeSubsectorRuns(lit, numsubsectors, first, count, out, [](int s, std::vector<int> &runs)
+	{
+		for (FLightNode *node = subsectors[s].lighthead; node != NULL; node = node->nextLight)
+			if (node->lightsource != NULL && node->lightsource->rcPlaceStamp == stamp) runs.push_back(node->lightsource->rcPlace);
+	});
 }
 
 // [rc4l] The ids a light is linked to, as PieceStackId names surfaces.
