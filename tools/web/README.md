@@ -21,7 +21,7 @@ EMSDK=/path/to/emsdk ./web_compile.sh
 EMSDK=/path/to/emsdk ./web_run.sh [--no-build] [--no-open] [--port N] [query]
 ```
 
-A player's page is the game and the Discord link. `?dev=1` brings back the console, the WAD panel, the fullscreen button and the Freedoom licence link.
+A player's page is the game, the Discord link, and the Source and License links under it. `?dev=1` brings back the console, the WAD panel, the fullscreen button and the Freedoom licence link.
 
 `web_compile.sh` builds the `web` preset into `build-web/` and stages the page, module and data into `dist-web/`. `ZX_WITH_SYMBOLS=1` keeps function names in the wasm for readable crash stacks, `JOBS=N` caps the compile, and `ZX_KEEP_GOING=1` reports every compile error at once. `web_run.sh` builds when anything changed, serves `dist-web/` and opens the browser at it, with the query on the address (such as `map=MAP01`).
 
@@ -65,7 +65,7 @@ Runs a staged build in real Safari through `safaridriver`, which needs Develop >
 node tools/web/stage.mjs [build-web] [dist-web] [--wads a.wad,b.wad]
 ```
 
-Copies the module, the page and the data the page writes into the engine's file system, with its manifest. `--wads` adds files of your own, such as an IWAD and a map the query then names (`?iwad=doom2.wad&file=map.wad&map=MAP01`).
+Copies the module, the page and the data the page writes into the engine's file system, with its manifest, and points the page's Source link at the commit checked out. `--wads` adds files of your own, such as an IWAD and a map the query then names (`?iwad=doom2.wad&file=map.wad&map=MAP01`).
 
 ## demo/
 

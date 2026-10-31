@@ -34,11 +34,15 @@ export function blankGame(img) {
   return '';
 }
 
-// [rc4l] Why a player's page is wrong, or '': its tools showing, or the Discord link gone or pointing elsewhere.
-export function pageTrimmed({ tools, discord, link }) {
+// [rc4l] Why a player's page is wrong, or '': its tools showing, or the Discord, Source or License link gone or pointing elsewhere.
+export function pageTrimmed({ tools, discord, link, source, sourceLink, license, licenseLink }) {
   if (tools) return 'the page tools are showing';
   if (!discord) return 'the Discord link is hidden';
   if (!link.startsWith('https://discord.gg/')) return `the Discord link goes to ${link}`;
+  if (!source) return 'the Source link is hidden';
+  if (!/^https:\/\/github\.com\/rc4l\/ForkUnderA\/tree\/[0-9a-f]{40}$/.test(sourceLink)) return `the Source link goes to ${sourceLink}`;
+  if (!license) return 'the License link is hidden';
+  if (!licenseLink.endsWith('/LICENSE.txt')) return `the License link goes to ${licenseLink}`;
   return '';
 }
 
@@ -428,12 +432,13 @@ export const CHECKS = [
     until: EVAL,
     expect: soundStarts,
   },
-  // [rc4l] A player's page is the game and the Discord link alone, the tools coming back only with ?dev=1.
+  // [rc4l] A player's page is the game and its footer's links alone, the tools coming back only with ?dev=1.
   {
-    name: 'the page shows the game and the Discord link, its tools only with dev=1',
+    name: 'the page shows the game and its footer links, its tools only with dev=1',
     evaluate: inPage(`
       const shown = (id) => document.getElementById(id).getClientRects().length > 0;
-      return { tools: shown('page-tools'), discord: shown('discord'), link: document.getElementById('discord').href };`),
+      const href = (id) => document.getElementById(id).href;
+      return { tools: shown('page-tools'), discord: shown('discord'), link: href('discord'), source: shown('source'), sourceLink: href('source'), license: shown('license'), licenseLink: href('license') };`),
     until: EVAL,
     expect: pageTrimmed,
   },

@@ -42,9 +42,12 @@ canvas { display: block; width: 100%; height: 100%; outline: none; background: #
 #report { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #report p { flex-basis: 100%; margin: 0; color: var(--muted); }
 #report button { background: #20242b; color: var(--fg); border: 1px solid #2a2f37; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
-footer { display: flex; justify-content: center; padding: 12px 16px; }
+footer { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 16px; }
 #discord { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 6px; color: var(--fg); text-decoration: none; }
 #discord:hover, #discord:focus-visible { color: #fff; background: #5865f2; }
+#legal { color: var(--muted); font-size: 12px; }
+#legal a { color: inherit; text-decoration: none; }
+#legal a:hover, #legal a:focus-visible { color: var(--fg); text-decoration: underline; }
 /* [rc4l] What a player does not see, kept for ?dev=1: the console, the WAD panel's button, fullscreen and the licence link, which the checks and debugging use. */
 #page-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 6px 16px; color: var(--muted); }
 #page-tools[hidden] { display: none; }
