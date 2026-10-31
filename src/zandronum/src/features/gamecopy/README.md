@@ -10,7 +10,9 @@ never reads what that tic is changing.
   record's members, copied or worked out by the fill.
 - Map structures keep their copy beside the live fields (`sector->rc`, `side->rc`, ...), so the renderer walks the
   same pointers and reads `rc`; actors are copied as records (`actors.h`), in thinker order and linked per sector
-  in thinglist order, so the renderer holds no live actor.
+  in thinglist order, so the renderer holds no live actor. The links come from what the walk of the actor list
+  notes of each actor's chain (`computation/actorchains_compute`), and every sector's chain is walked only when a
+  chain's head is not in the list.
 - `select.h`: code GL and the backend both run takes a `Sel`, `LiveSel` for GL (the live structures, through the
   setters whose dirty counters GL's caches key on) or `CopySel` for the backend. GL's height transfers are scratch
   sectors whose copy is never filled, so a helper GL calls must read live.

@@ -15,6 +15,7 @@
 #include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] kTorchPower, kLightAmpPower
 #include "features/gamecopy/computation/recordlinks_compute.h"
+#include "features/gamecopy/computation/actorchains_compute.h"   // [Doruk-Aksoy] sector links from the walk of the actor list
 #include "features/gamecopy/computation/filldue_compute.h"
 #include "features/gamecopy/computation/serial_compute.h"
 #include "features/gamecopy/computation/prescan_compute.h"
@@ -53,6 +54,7 @@
 #include "textures/textures.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <type_traits>
 #include <unordered_map>
@@ -504,10 +506,23 @@ int g_level = 0;   // [rc4l] which level the copy is of
 // [rc4l] Actors each pool lane takes at a time.
 static const int kActorChunk = 256;
 
+// [Doruk-Aksoy] What the walk of the actor list notes of each actor's sector chain, its head and next, by its place.
+struct ActorChains
+{
+	std::vector<int> head;
+	std::vector<AActor *> next;
+};
+
 // [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
-void ListActors(std::vector<AActor *> &out)
+void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 {
 	out.clear();
+	if (chains != NULL)
+	{
+		chains->head.clear();
+		chains->next.clear();
+	}
+	const uintptr_t firstHead = numsectors > 0 ? reinterpret_cast<uintptr_t>(&sectors[0].thinglist) : 0;
 	TThinkerIterator<AActor> it;
 	for (AActor *a; (a = it.Next()) != NULL; )
 	{
@@ -515,6 +530,12 @@ void ListActors(std::vector<AActor *> &out)
 		// [rc4l] Its place noted while it is in cache, which LinkListed reads; a pass of its own cost a Complex Doom fight half a millisecond a tic.
 		a->rcListed = (int)out.size();
 		out.push_back(a);
+		// [Doruk-Aksoy] Its chain noted here too, which spares LinkChains a walk of every sector's chain, a millisecond of a DnD fight's tic.
+		if (chains != NULL)
+		{
+			chains->head.push_back(ComputeChainHead(reinterpret_cast<uintptr_t>(a->sprev), firstHead, sizeof(sector_t), numsectors));
+			chains->next.push_back(a->snext);
+		}
 	}
 }
 
@@ -535,6 +556,14 @@ void LinkListed(const std::vector<AActor *> &list, std::vector<int> &firstIn, st
 	}
 }
 
+// [Doruk-Aksoy] Each sector's actors linked as LinkListed links them, from the chains the walk of list noted, or by LinkListed when a chain's head was not listed.
+void LinkChains(const std::vector<AActor *> &list, const ActorChains &chains, std::vector<int> &firstIn, std::vector<int> &next)
+{
+	const int count = (int)list.size();
+	const auto placeOf = [&list, count](AActor *a) { const int r = a->rcListed; return ComputeHoldsRecord(r, count) && list[r] == a ? r : -1; };
+	if (!ComputeChainLinks(chains.head, chains.next, numsectors, placeOf, [](AActor *a) { return a->snext; }, firstIn, next)) LinkListed(list, firstIn, next);
+}
+
 std::vector<AActor *> g_listed;                    // [rc4l] the actors as the tic ended, in thinker order
 std::vector<int> g_listedFirstIn, g_listedNext;   // [rc4l] and each sector's list of them
 
@@ -553,8 +582,9 @@ void FillActors(bool listed)
 	}
 	else
 	{
-		{ ZX_ZONE("copy/actor_list"); ListActors(live); }
-		{ ZX_ZONE("copy/actor_link"); LinkListed(live, g_firstIn, next); }
+		static ActorChains chains;
+		{ ZX_ZONE("copy/actor_list"); ListActors(live, &chains); }
+		{ ZX_ZONE("copy/actor_link"); LinkChains(live, chains, g_firstIn, next); }
 	}
 	// [rc4l] The camera's read barrier settled before the lanes read it, since one finding it destroyed clears it.
 	AActor *const camera = players[consoleplayer].camera;
@@ -1070,8 +1100,9 @@ void ScanAtTicEnd()
 	{ ZX_ZONE("copy/prescan_sectors"); ListChanges(numsectors, g_prescan.sectors, [](int i) { return SectorChangeFrom(g_sectorTaken[i], sectors[i]) != 0; }); }
 	{ ZX_ZONE("copy/prescan_sides"); ListSideChanges(g_prescan.sides); }
 	{ ZX_ZONE("copy/prescan_lines"); ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; }); }
-	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed); }
-	{ ZX_ZONE("copy/prescan_links"); LinkListed(g_listed, g_listedFirstIn, g_listedNext); }
+	static ActorChains chains;
+	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed, &chains); }
+	{ ZX_ZONE("copy/prescan_links"); LinkChains(g_listed, chains, g_listedFirstIn, g_listedNext); }
 	{ ZX_ZONE("copy/prescan_decals"); ScanDecalSides(); }
 	{ ZX_ZONE("copy/prescan_seen"); ScanSeen(); }
 	{ ZX_ZONE("copy/prescan_lights"); ScanLights(); }
