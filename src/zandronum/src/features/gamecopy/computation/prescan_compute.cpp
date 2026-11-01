@@ -28,6 +28,11 @@ bool ComputeFillListsSides(bool scanned, bool client)
 	return client && !scanned;
 }
 
+bool ComputeActorListKept(const ActorListStamp &made, const ActorListStamp &now)
+{
+	return made.made && made.level == now.level && made.thinkerLists == now.thinkerLists;
+}
+
 void ComputeTakeCandidates(const std::vector<int> &changed, const std::vector<int> &blended, const std::vector<int> &seen, int count,
 	std::vector<int> &out)
 {

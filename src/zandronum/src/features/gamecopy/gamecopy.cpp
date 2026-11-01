@@ -68,6 +68,7 @@ CVAR(Bool, fua_copy_prescan_check, false, 0)
 namespace zx { namespace gamecopy {
 
 unsigned int g_actorLists = 0;
+unsigned int g_thinkerLists = 0;
 
 namespace {
 
@@ -416,10 +417,13 @@ template <class Changed> static void ListChanges(int count, std::vector<int> &ou
 	for (int i = 0; i < count; i++) if (flags[i]) out.push_back(i);
 }
 
+// [Doruk-Aksoy] The sectors fills took since the backend's sector light table last read them, which on a client read every sector every frame.
+ChangeLog g_sectorsTaken;
+
 // [rc4l] Sector i taken if it changed, and the state its copy is in now kept for the next scan; true when taken.
 bool FillSector(int i, int change)
 {
-	if (change != 0) { TakeSector(sectors[i]); Bump(sectors[i], change); }
+	if (change != 0) { TakeSector(sectors[i]); Bump(sectors[i], change); ComputeLogNote(g_sectorsTaken, i); }
 	g_sectorTaken[i] = sectors[i].rc;
 	return change != 0;
 }
@@ -490,6 +494,14 @@ struct ActorChains
 	std::vector<AActor *> next;
 };
 
+// [Doruk-Aksoy] Where the sector chain an actor is in starts and what follows it there, as LinkChains reads them.
+uintptr_t FirstChainHead() { return numsectors > 0 ? reinterpret_cast<uintptr_t>(&sectors[0].thinglist) : 0; }
+void NoteChain(const AActor *a, uintptr_t firstHead, int &head, AActor *&next)
+{
+	head = ComputeChainHead(reinterpret_cast<uintptr_t>(a->sprev), firstHead, sizeof(sector_t), numsectors);
+	next = a->snext;
+}
+
 // [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
 void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 {
@@ -499,7 +511,7 @@ void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 		chains->head.clear();
 		chains->next.clear();
 	}
-	const uintptr_t firstHead = numsectors > 0 ? reinterpret_cast<uintptr_t>(&sectors[0].thinglist) : 0;
+	const uintptr_t firstHead = FirstChainHead();
 	TThinkerIterator<AActor> it;
 	for (AActor *a; (a = it.Next()) != NULL; )
 	{
@@ -510,10 +522,22 @@ void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 		// [Doruk-Aksoy] Its chain noted here too, which spares LinkChains a walk of every sector's chain, a millisecond of a DnD fight's tic.
 		if (chains != NULL)
 		{
-			chains->head.push_back(ComputeChainHead(reinterpret_cast<uintptr_t>(a->sprev), firstHead, sizeof(sector_t), numsectors));
-			chains->next.push_back(a->snext);
+			chains->head.emplace_back();
+			chains->next.emplace_back();
+			NoteChain(a, firstHead, chains->head.back(), chains->next.back());
 		}
 	}
+}
+
+// [Doruk-Aksoy] Each actor of a list kept from the last fill has its chain read again, across the pool, since its actors only moved; walking the thinkers for it took 0.57 ms of each of a DnD client's fills.
+void NoteChains(const std::vector<AActor *> &list, ActorChains &chains)
+{
+	const int count = (int)list.size();
+	chains.head.resize(count);
+	chains.next.resize(count);
+	const uintptr_t firstHead = FirstChainHead();
+	auto note = [&](int lo, int hi, int) { for (int i = lo; i < hi; i++) NoteChain(list[i], firstHead, chains.head[i], chains.next[i]); };
+	zx::jobs::Pool().ParallelChunks(count, kActorChunk, note);
 }
 
 // [rc4l] Each sector's actors linked by their places in list, in its thinglist's order: its first in firstIn, each one's next in next; list is ListActors', whose places each actor holds.
@@ -544,40 +568,56 @@ void LinkChains(const std::vector<AActor *> &list, const ActorChains &chains, st
 std::vector<AActor *> g_listed;                    // [rc4l] the actors as the tic ended, in thinker order
 std::vector<int> g_listedFirstIn, g_listedNext;   // [rc4l] and each sector's list of them
 
+std::vector<AActor *> g_held;   // [Doruk-Aksoy] the actors the last fill took, in thinker order
+std::vector<int> g_heldNext;    // [Doruk-Aksoy] and each one's next in its sector
+ActorListStamp g_heldMade;      // [Doruk-Aksoy] and when that list was made
+
+// [Doruk-Aksoy] The actor list as it stands now: this level, after this many thinker list changes.
+ActorListStamp ListStampNow()
+{
+	ActorListStamp s;
+	s.made = true;
+	s.level = g_level;
+	s.thinkerLists = g_thinkerLists;
+	return s;
+}
+
 // [rc4l] Every actor in thinker order, then each sector's records linked in its thinglist's order, the list and links the tic's end made when they still hold (listed).
-void FillActors(bool listed)
+// [Doruk-Aksoy] Or the list the last fill held, its chains read again, when no thinker joined or left a list since (kept).
+void FillActors(bool listed, bool kept)
 {
 	ZX_ZONE("copy/actor_fill");   // [rc4l] the actor records taken
 	g_byIdBuilt = false;
-	static std::vector<AActor *> live;
-	static std::vector<int> next;
 	if (listed)
 	{
-		live.swap(g_listed);
-		next.swap(g_listedNext);
+		g_held.swap(g_listed);
+		g_heldNext.swap(g_listedNext);
 		g_firstIn.swap(g_listedFirstIn);
 	}
 	else
 	{
 		static ActorChains chains;
-		{ ZX_ZONE("copy/actor_list"); ListActors(live, &chains); }
-		{ ZX_ZONE("copy/actor_link"); LinkChains(live, chains, g_firstIn, next); }
+		if (kept) { ZX_ZONE("copy/actor_chains"); NoteChains(g_held, chains); }
+		else { ZX_ZONE("copy/actor_list"); ListActors(g_held, &chains); }
+		{ ZX_ZONE("copy/actor_link"); LinkChains(g_held, chains, g_firstIn, g_heldNext); }
 	}
+	ZX_COUNT("copy/actor_list_kept", "fills", kept ? 1 : 0);
+	g_heldMade = ListStampNow();
 	// [rc4l] The camera's read barrier settled before the lanes read it, since one finding it destroyed clears it.
 	AActor *const camera = players[consoleplayer].camera;
 	(void)camera;
-	g_actors.resize(live.size());
+	g_actors.resize(g_held.size());
 	// [rc4l] Taken across the pool, each lane writing only its own actors and records, since Sunder MAP11's 6,029 took 0.9 ms of a browser's handoff.
 	ZX_ZONE("copy/actor_take");
 	auto take = [](int lo, int hi, int) {
 		for (int i = lo; i < hi; i++)
 		{
-			live[i]->rcRecord = i;
-			TakeActor(*live[i], g_actors[i]);
-			g_actors[i].nextInSector = next[i];
+			g_held[i]->rcRecord = i;
+			TakeActor(*g_held[i], g_actors[i]);
+			g_actors[i].nextInSector = g_heldNext[i];
 		}
 	};
-	zx::jobs::Pool().ParallelChunks((int)live.size(), kActorChunk, take);
+	zx::jobs::Pool().ParallelChunks((int)g_held.size(), kActorChunk, take);
 	ZX_COUNT("copy/actors", "actors", g_actors.size());
 }
 
@@ -954,7 +994,10 @@ void InitLevel()
 	ComputeLogReset(g_sideLog, numsides, true);
 	g_sideSlice = 0;
 	ResetDecalSides();
+	// [Doruk-Aksoy] Every sector was taken above unlisted, so the sector light table reads them all.
+	ComputeLogReset(g_sectorsTaken, numsectors, true);
 	g_prescan.stamp.found = false;
+	g_heldMade = ActorListStamp();
 	g_actors.clear();
 	g_byIdBuilt = false;
 	g_level++;
@@ -980,6 +1023,10 @@ void ForgetLevel()
 {
 	g_levelLoaded = false;
 	ComputeLogReset(g_sideLog, 0, true);
+	ComputeLogReset(g_sectorsTaken, 0, true);
+	// [Doruk-Aksoy] The actors the held list points at are about to be freed.
+	g_held.clear();
+	g_heldMade = ActorListStamp();
 	ResetDecalSides();
 	ForgetXFloors();
 	InitPolyBSPs();
@@ -994,6 +1041,7 @@ void FillMap()
 
 zx::frame::OracleTally g_prescanCheck;   // [rc4l] fua_copy_prescan_check's count since the last report
 int g_prescanListed = 0;                 // [rc4l] and how many of its fills took the actor list too
+int g_prescanKept = 0;                   // [Doruk-Aksoy] and how many kept the last fill's
 
 // [rc4l] One thing the tic's end scan or the change logs missed counted, the first few described.
 void PrescanMissed(const char *what, int index)
@@ -1010,7 +1058,8 @@ template <class Changed> void CheckCandidates(const char *what, int count, const
 }
 
 // [rc4l] Of what the fill did not compare whole: an item the whole-map scan would take that is no candidate, a side changed with no note, a side holding decals the listing did not find, an actor list or sector links unlike the game's now.
-void CheckFill(const std::vector<int> *sectorCandidates, const std::vector<int> *sideCandidates, const std::vector<int> *lineCandidates, bool decalsListed, bool listed)
+void CheckFill(const std::vector<int> *sectorCandidates, const std::vector<int> *sideCandidates, const std::vector<int> *lineCandidates, bool decalsListed, bool listed,
+	bool kept)
 {
 	g_prescanCheck.checked++;
 	CheckCandidates("sector", numsectors, sectorCandidates, [](int i) { return SectorChange(sectors[i]) != 0; });
@@ -1021,11 +1070,18 @@ void CheckFill(const std::vector<int> *sectorCandidates, const std::vector<int> 
 	const int decals = decalsListed ? DecalSidesMissed() : 0;
 	if (decals > 0) PrescanMissed("sides holding decals, count", decals);
 	if (listed && LightListsMissed()) PrescanMissed("subsector light lists, subsectors", numsubsectors);
-	if (!listed) return;
-	g_prescanListed++;
+	if (!listed && !kept) return;
 	static std::vector<AActor *> now;
 	static std::vector<int> firstIn, next;
 	ListActors(now);
+	// [Doruk-Aksoy] A kept list's links are read again by the fill, so only the list is held to the game's.
+	if (kept)
+	{
+		g_prescanKept++;
+		if (now != g_held) PrescanMissed("kept actor list, length", (int)now.size());
+		return;
+	}
+	g_prescanListed++;
 	if (now != g_listed) { PrescanMissed("actor list, length", (int)now.size()); return; }
 	LinkListed(now, firstIn, next);
 	if (firstIn != g_listedFirstIn || next != g_listedNext) PrescanMissed("sector links, actors", (int)now.size());
@@ -1099,7 +1155,7 @@ void ScanAtTicEnd()
 	g_prescan.stamp = StampNow(true);
 }
 
-unsigned Fills() { return g_fills; }
+bool DrainTakenSectors(std::vector<int> &out) { return ComputeLogDrain(g_sectorsTaken, numsectors, out); }
 
 void FillNow()
 {
@@ -1113,6 +1169,8 @@ void FillNow()
 	const bool listed = ComputeActorScanFresh(g_prescan.stamp, StampNow(true), client);
 	// [Doruk-Aksoy] A client's tics leave no scan, so its fill lists the sides from their logs itself, where comparing all 65,929 of Sunder MAP11's took 5 ms of a DnD client's tic.
 	const bool logged = ComputeFillListsSides(scanned, client);
+	// [Doruk-Aksoy] A client fills on almost every frame a server packet reaches, and between its tics no thinker joins or leaves a list 97% of the time.
+	const bool kept = !listed && ComputeActorListKept(g_heldMade, ListStampNow());
 	g_prescan.stamp.found = false;
 	g_fills++;
 	ZX_COUNT("copy/prescanned", "fills", scanned ? 1 : 0);
@@ -1137,7 +1195,7 @@ void FillNow()
 	ComputeTakeCandidates(scanned ? g_prescan.sides : logged ? loggedSides : kNoneScanned, blendedSides, kNoneScanned, numsides, sideCandidates);
 	ComputeTakeCandidates(scanned ? g_prescan.lines : kNoneScanned, kNoneScanned, seenLines, numlines, lineCandidates);
 	if (fua_copy_prescan_check)
-		CheckFill(scanned ? &sectorCandidates : NULL, sidesListed ? &sideCandidates : NULL, scanned ? &lineCandidates : NULL, sidesListed, listed);
+		CheckFill(scanned ? &sectorCandidates : NULL, sidesListed ? &sideCandidates : NULL, scanned ? &lineCandidates : NULL, sidesListed, listed, kept);
 	{ ZX_ZONE("copy/sector_fill"); FillChanged(numsectors, sectorCandidates, scanned, [](int i) { return SectorChange(sectors[i]); }, FillSector, sectorsTaken); }
 	{ ZX_ZONE("copy/xfloor_fill"); FillXFloors(); }
 	{
@@ -1151,7 +1209,7 @@ void FillNow()
 	if (fua_copy_prescan_check) CheckSeen();
 	{ ZX_ZONE("copy/polyobj_fill"); FillPolyobjects(); FillPolyBSPs(); }
 	TakeLevel(g_level_);
-	FillActors(listed);
+	FillActors(listed, kept);
 	FillLights(listed);
 	FillParticles();
 	FillDecals(sidesListed);
@@ -1352,10 +1410,11 @@ CCMD(fua_seen_count)
 CCMD(fua_copy_prescan_report)
 {
 	using namespace zx::gamecopy;
-	Printf("prescan: %d fills checked, %d with the actor list, %d missed\n%s", g_prescanCheck.checked, g_prescanListed, g_prescanCheck.differed,
-		g_prescanCheck.firsts.c_str());
+	Printf("prescan: %d fills checked, %d with the actor list, %d missed, %d keeping the last fill's actor list\n%s", g_prescanCheck.checked, g_prescanListed,
+		g_prescanCheck.differed, g_prescanKept, g_prescanCheck.firsts.c_str());
 	zx::frame::ComputeOracleReset(g_prescanCheck);
 	g_prescanListed = 0;
+	g_prescanKept = 0;
 }
 
 // [rc4l] What fua_copy_check found since the last report: the copy against the live game before the views, and its blends against the interpolations.

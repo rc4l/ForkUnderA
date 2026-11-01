@@ -54,20 +54,19 @@ TEST(ComputeChangedRuns, OnlyTheChangedEntriesNearbyOnesJoined)
 	EXPECT_EQ(3u, ComputeChangedRuns(was, now, 10, 2, 0).size());
 }
 
-// [Doruk-Aksoy] The sector light table is read again only after a fill or a level change, or when it is not held.
-TEST(ComputeCopyTableStale, ReadAgainOnlyWhenTheCopyOrLevelChanged)
+// [Doruk-Aksoy] The sector light table reads only the sectors the fills took, and every sector after a level change, when it is not held, or when the taken sectors are not known.
+TEST(ComputeCopyTableWhole, EverySectorOnlyWhenTheTakenOnesAreNotEnough)
 {
 	int a = 0, b = 0;
 	CopyTableKey was;
-	was.fills = 7; was.sectors = &a; was.count = 10;
+	was.sectors = &a; was.count = 10;
 	CopyTableKey now = was;
-	EXPECT_FALSE(ComputeCopyTableStale(was, now, true));
-	EXPECT_TRUE(ComputeCopyTableStale(was, now, false)) << "a table not held is always read";
-	now.fills = 8;
-	EXPECT_TRUE(ComputeCopyTableStale(was, now, true));
-	now = was; now.sectors = &b;
-	EXPECT_TRUE(ComputeCopyTableStale(was, now, true));
+	EXPECT_FALSE(ComputeCopyTableWhole(was, now, true, true));
+	EXPECT_TRUE(ComputeCopyTableWhole(was, now, false, true)) << "a table not held is always read whole";
+	EXPECT_TRUE(ComputeCopyTableWhole(was, now, true, false)) << "a level's start took every sector without listing them";
+	now.sectors = &b;
+	EXPECT_TRUE(ComputeCopyTableWhole(was, now, true, true));
 	now = was; now.count = 11;
-	EXPECT_TRUE(ComputeCopyTableStale(was, now, true));
-	EXPECT_TRUE(ComputeCopyTableStale(CopyTableKey(), was, true)) << "a table never made from the copy is read";
+	EXPECT_TRUE(ComputeCopyTableWhole(was, now, true, true));
+	EXPECT_TRUE(ComputeCopyTableWhole(CopyTableKey(), was, true, true)) << "a table never made from the copy is read whole";
 }
