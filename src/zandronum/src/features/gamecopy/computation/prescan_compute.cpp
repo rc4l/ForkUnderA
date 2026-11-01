@@ -23,6 +23,11 @@ bool ComputePrescanWanted(bool client)
 	return !client;
 }
 
+bool ComputeFillListsSides(bool scanned, bool client)
+{
+	return client && !scanned;
+}
+
 void ComputeTakeCandidates(const std::vector<int> &changed, const std::vector<int> &blended, const std::vector<int> &seen, int count,
 	std::vector<int> &out)
 {

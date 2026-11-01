@@ -87,16 +87,28 @@ test("lanbrowse passes a LAN row under the server's name and names each miss", a
 });
 
 test("netmapstate holds the server to every scripted family before judging agreement", async () => {
-  const { buildNetMapStateWad, serverChanged, AFTER } = await import("../scenarios/netmapstate.mjs");
+  const { buildNetMapStateWad, serverChanged, AFTER, WALLF_NOAUTODECALS } = await import("../scenarios/netmapstate.mjs");
   assert.deepEqual(lumpNames(buildNetMapStateWad()), ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP"]);
+  const text = readWad(buildNetMapStateWad())[1].data.toString("latin1");
+  for (const id of [41, 42, 43, 44]) assert.match(text, new RegExp(`id = ${id};`), `the block's walls each carry their own id, ${id} among them`);
   const look = { light: 160, gravity: AFTER.gravity, color: AFTER.color, fade: AFTER.fade, friction: 0.7, rotation: AFTER.rotation, scale: [2, 2, 1, 1], reflect: [0.25, 0], floorTex: AFTER.floorTex };
-  const changed = { sectors: [look], sides: [{ mid: AFTER.wallTex }], lines: [{ flags: AFTER.lineFlags | 1, alpha: 0.5 }] };
+  const changed = { sectors: [look], sides: [{ mid: AFTER.wallTex, flags: 0 }, { mid: "STARTAN2", flags: WALLF_NOAUTODECALS }], lines: [{ flags: AFTER.lineFlags | 1, alpha: 0.5 }] };
   assert.deepEqual(serverChanged(changed), []);
   const still = { sectors: [{ light: 160, gravity: 1, color: 0xffffff, fade: 0, friction: 0.90625, rotation: [0, 0], scale: [1, 1, 1, 1], reflect: [0, 0], floorTex: "FLOOR4_8" }],
-    sides: [{ mid: "STARTAN2" }], lines: [{ flags: 1, alpha: 1 }] };
+    sides: [{ mid: "STARTAN2", flags: 0 }], lines: [{ flags: 1, alpha: 1 }] };
   assert.deepEqual(serverChanged(still), ["gravity 1", "colour 16777215", "fade 0", "friction never changed", "rotation 0,0", "floor scale never changed",
-    "floor reflection never changed", "floor FLOOR4_8", "the wall texture never changed", "the line's blocking or translucency never changed"]);
+    "floor reflection never changed", "floor FLOOR4_8", "the wall texture never changed", "the wall's flags never changed", "the line's blocking or translucency never changed"]);
   assert.deepEqual(serverChanged({ sectors: [], sides: [], lines: [] }), ["the changed sector is not there"]);
+});
+
+test("decalnet fails a client whose fills missed a wall holding a mark, or that never reported them", async () => {
+  const { judgeDecalNet } = await import("../scenarios/decalnet.mjs");
+  const client = { walls: 1, flats: 1, counts: { "wall made": 1, "floor made": 1 } }, server = { walls: 0, flats: 0, counts: { "wall server": 1, "floor server": 1 } };
+  assert.equal(judgeDecalNet("x", { client, server }).failed, 0);
+  assert.equal(judgeDecalNet("x", { client, server, fills: { found: true, differed: 0 } }).failed, 0);
+  assert.match(judgeDecalNet("x", { client, server, fills: { found: true, differed: 2, first: "sides holding decals, count 2 changed past the tic's end scan or the change logs" } }).line,
+    /render copy missed 2 changes, the first sides holding decals, count 2/);
+  assert.match(judgeDecalNet("x", { client, server, fills: { found: false } }).line, /gave no fua_copy_prescan_report/);
 });
 
 test("netstall passes a ping measured through the stalls and names each fault", async () => {

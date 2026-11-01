@@ -1,4 +1,4 @@
-// [rc4l] A hosted map whose server script changes everything only a server writes of a sector and a line (gravity, colour, fade, friction, rotation, scale, reflection, floor, blocking, translucency, texture): exit 0 when the player, an observer and a late joiner hold all of it as the server does, at 100 ms of ping and with the observer losing a tenth of its packets, and the server sent every change the tic it happened.
+// [rc4l] A hosted map whose server script changes everything only a server writes of a sector and a line (gravity, colour, fade, friction, rotation, scale, reflection, floor, blocking, translucency, texture) and of a wall (offset, scale, flags, each on a wall of its own): exit 0 when the player, an observer and a late joiner hold all of it as the server does, at 100 ms of ping and with the observer losing a tenth of its packets, the server sent every change the tic it happened, and each client's render copy took every change.
 //
 // usage:  node scenarios/netmapstate.mjs
 import { UdmfMap, wad, mapLumps } from "../src/udmf.mjs";
@@ -9,19 +9,23 @@ import { addClient } from "../src/netplay.mjs";
 import { clientAgreement, readWorld } from "../src/netdiff.mjs";
 import * as cap from "../src/capture.mjs";
 
-const LOOK_TAG = 40, LINE_ID = 41;
+const LOOK_TAG = 40, LINE_ID = 41, OFFSET_ID = 42, SCALE_ID = 43, FLAGS_ID = 44;
 const flats = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5" };
+// [Doruk-Aksoy] Each wall the script changes, by the block's edge; a late joiner gets the offset, scale and flags walls by the commands that write a side past its setters.
+const EDGE_IDS = { south: LINE_ID, east: OFFSET_ID, west: SCALE_ID, north: FLAGS_ID };
+const FRAC = 65536, ALL_PARTS = 7;
+export const WALLF_NOAUTODECALS = 2;
 
 // [rc4l] What script 2 leaves: the line blocks monsters, projectiles and hitscans (Line_SetBlocking's bits 2, 16 and 512), which clients were never told before.
 export const AFTER = { gravity: 0.5, color: 0x20a0ff, fade: 0x101030, rotation: [45, 90], floorTex: "FLAT14", wallTex: "SW1BRCOM",
   lineFlags: 0x00000002 | 0x01000000 | 0x08000000 };
 
-// [rc4l] One room: three starts and a block whose sector script 2 changes and whose south wall, two-sided, it changes too.
+// [rc4l] One room: three starts and a block whose sector script 2 changes and whose two-sided walls it changes too.
 export function buildNetMapStateWad() {
   const m = new UdmfMap();
   const room = m.room(0, 0, 1024, 768, { ...flats, lightlevel: 192 }, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.block(500, 400, 760, 640, { ...flats, lightlevel: 160, id: LOOK_TAG }, room, () => ({}), () => ({ texturemiddle: "STARTAN2" }),
-    (edge) => (edge === "south" ? { id: LINE_ID } : {}));
+    (edge) => ({ id: EDGE_IDS[edge] }));
   for (const [i, y] of [[1, 384], [2, 256], [3, 512]]) m.thing({ x: 128, y, angle: 0, type: i });
   const change = [
     ...callSpecial(SPECIAL.Sector_SetGravity, [LOOK_TAG, 0, 50]),
@@ -35,6 +39,13 @@ export function buildNetMapStateWad() {
     ...callSpecial(SPECIAL.Line_SetBlocking, [LINE_ID, 2 | 16 | 512, 0]),
     ...callSpecial(SPECIAL.TranslucentLine, [LINE_ID, 128]),
     PCD.PUSHNUMBER, LINE_ID, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 1, PCD.PUSHNUMBER, 1, PCD.SETLINETEXTURE,
+    ...callSpecial(SPECIAL.Line_SetTextureOffset, [OFFSET_ID, 16 * FRAC, 8 * FRAC, 0, ALL_PARTS]),
+    ...callSpecial(SPECIAL.Line_SetTextureScale, [SCALE_ID, 2 * FRAC, 2 * FRAC, 0, ALL_PARTS]),
+    // [Doruk-Aksoy] A wall scroller marks its wall WALLF_NOAUTODECALS, which stays once it is stopped and the offset it moved put back.
+    ...callSpecial(SPECIAL.Scroll_Wall, [FLAGS_ID, FRAC, 0, 0, ALL_PARTS]),
+    PCD.DELAYDIRECT, 2,
+    ...callSpecial(SPECIAL.Scroll_Wall, [FLAGS_ID, 0, 0, 0, ALL_PARTS]),
+    ...callSpecial(SPECIAL.Line_SetTextureOffset, [FLAGS_ID, 0, 0, 0, ALL_PARTS]),
     PCD.TERMINATE];
   return wad(mapLumps("MAP01", m, { behavior: acsScripts([{ code: change, open: false, number: 2 }], [AFTER.floorTex, AFTER.wallTex]) }));
 }
@@ -53,6 +64,7 @@ export function serverChanged({ sectors, sides, lines }) {
   if (!(look.reflect?.[0] > 0)) faults.push("floor reflection never changed");
   if (look.floorTex !== AFTER.floorTex) faults.push(`floor ${look.floorTex}`);
   if (!sides.some((s) => s.mid === AFTER.wallTex)) faults.push("the wall texture never changed");
+  if (!sides.some((s) => s.flags & WALLF_NOAUTODECALS)) faults.push("the wall's flags never changed");
   if (!lines.some((l) => (l.flags & AFTER.lineFlags) === AFTER.lineFlags && l.alpha < 0.75)) faults.push("the line's blocking or translucency never changed");
   return faults;
 }
