@@ -15,6 +15,7 @@ import { boxDiff, boxDiffMax, decodePNG } from "./pngcore.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import { scaled } from "./timeouts.mjs";
 import { parseSeamReport } from "./seams.mjs";
+import { parsePrescanReport } from "./copycheck.mjs";
 
 const ARENA = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 160 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -612,11 +613,7 @@ export async function seamCheckFixture(f, opts = {}) {
     describe: (r) => (r.found ? `${r.walked} seams entered, ${r.differed} violations${r.first ? `, the first in ${r.first}` : ""}${r.sites.length ? `; most: ${r.sites.slice(0, 3).join("; ")}` : ""}` : "the seams were not listed") });
 }
 
-// [rc4l] The numbers fua_copy_prescan_report gives: the fills that took the tic's end scan and were held to the whole-map scan, how many took its actor list too, and what it missed.
-export function parsePrescanReport(text) {
-  const m = /prescan: (\d+) fills checked, (\d+) with the actor list, (\d+) missed/.exec(text);
-  return { walked: m ? Number(m[1]) : 0, listed: m ? Number(m[2]) : 0, differed: m ? Number(m[3]) : 0, found: !!m, text };
-}
+export { parsePrescanReport };
 
 // [rc4l] A fixture's demo on Vulkan alone, its tics on the game thread, each fill that took the tic's end scan held to the whole-map scan it spared (fua_copy_prescan_check), which fua_copy_check cannot do since it runs tics inline.
 export async function prescanCheckFixture(f, opts = {}) {

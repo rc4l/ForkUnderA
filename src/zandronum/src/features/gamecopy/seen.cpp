@@ -47,16 +47,24 @@ int CountOf(SeenKind kind)
 	return kind == kSeenSubsector ? numsubsectors : kind == kSeenSector ? numsectors : numlines;
 }
 
+void TakeLiveOf(SeenKind kind)
+{
+	const int n = CountOf(kind);
+	g_bits[kind].resize(n);
+	for (int i = 0; i < n; i++) g_bits[kind][i] = LiveSeen(kind, i);
+	g_marked[kind].clear();
+}
+
 void TakeLive()
 {
-	for (int k = 0; k < kSeenKinds; k++)
-	{
-		const SeenKind kind = SeenKind(k);
-		const int n = CountOf(kind);
-		g_bits[k].resize(n);
-		for (int i = 0; i < n; i++) g_bits[k][i] = LiveSeen(kind, i);
-		g_marked[k].clear();
-	}
+	for (int k = 0; k < kSeenKinds; k++) TakeLiveOf(SeenKind(k));
+}
+
+// [Doruk-Aksoy] Each of the items changed with its live bit.
+void LiveOf(SeenKind kind, const std::vector<int> &changed, std::vector<std::pair<int, unsigned char>> &out)
+{
+	out.clear();
+	for (int i : changed) out.push_back(std::make_pair(i, (unsigned char)LiveSeen(kind, i)));
 }
 
 } // namespace
@@ -88,11 +96,7 @@ void ScanSeen(const std::vector<int> &sectorsChanged, const std::vector<int> &li
 	g_scanned.resize(numsubsectors);
 	for (int i = 0; i < numsubsectors; i++) g_scanned[i] = LiveSeen(kSeenSubsector, i);
 	const std::vector<int> *changed[kSeenKinds] = { NULL, &sectorsChanged, &linesChanged };
-	for (int k = kSeenSector; k < kSeenKinds; k++)
-	{
-		g_scannedChanged[k].clear();
-		for (int i : *changed[k]) g_scannedChanged[k].push_back(std::make_pair(i, (unsigned char)LiveSeen(SeenKind(k), i)));
-	}
+	for (int k = kSeenSector; k < kSeenKinds; k++) LiveOf(SeenKind(k), *changed[k], g_scannedChanged[k]);
 }
 
 int SeenMissed()
@@ -107,24 +111,44 @@ int SeenMissed()
 	return missed;
 }
 
-void MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &linesSet)
+bool MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &linesSet)
 {
 	sectorsSet = g_marked[kSeenSector];
 	linesSet = g_marked[kSeenLine];
-	bool whole = g_scanned.size() == (size_t)numsubsectors;
-	for (int k = 0; k < kSeenKinds; k++) whole &= g_bits[k].size() == (size_t)CountOf(SeenKind(k));
-	if (!scanned || !whole)
+	bool sized = true;
+	for (int k = 0; k < kSeenKinds; k++) sized &= g_bits[k].size() == (size_t)CountOf(SeenKind(k));
+	switch (ComputeSeenSource(scanned, sized, g_scanned.size() == (size_t)numsubsectors))
 	{
+	case kSeenReadWhole:
 		ApplySeen();
 		TakeLive();
-		return;
+		return false;
+	case kSeenFromScan:
+		// [rc4l] The bits the tic's end read, with what the frames marked since, are the live map's once ApplySeen sets those.
+		for (int i : g_marked[kSeenSubsector]) if (i >= 0 && i < (int)g_scanned.size()) g_scanned[i] = 1;
+		g_bits[kSeenSubsector].swap(g_scanned);
+		// [Doruk-Aksoy] A sector or line its end found unchanged is as the last fill took it, bit and all, so only the changed take their live bit.
+		for (int k = kSeenSector; k < kSeenKinds; k++) ComputeSeenMerge(g_bits[k], g_scannedChanged[k], g_marked[k]);
+		ApplySeen();
+		return false;
+	default:
+		// [Doruk-Aksoy] The marks set on the live map before the fill compares it, so a sector or line whose bit changed is among those it finds changed.
+		ApplySeen();
+		TakeLiveOf(kSeenSubsector);
+		return true;
 	}
-	// [rc4l] The bits the tic's end read, with what the frames marked since, are the live map's once ApplySeen sets those.
-	for (int i : g_marked[kSeenSubsector]) if (i >= 0 && i < (int)g_scanned.size()) g_scanned[i] = 1;
-	g_bits[kSeenSubsector].swap(g_scanned);
-	// [Doruk-Aksoy] A sector or line its end found unchanged is as the last fill took it, bit and all, so only the changed take their live bit.
-	for (int k = kSeenSector; k < kSeenKinds; k++) ComputeSeenMerge(g_bits[k], g_scannedChanged[k], g_marked[k]);
-	ApplySeen();
+}
+
+void TakeChangedSeen(const std::vector<int> &sectorsChanged, const std::vector<int> &linesChanged)
+{
+	static std::vector<std::pair<int, unsigned char>> live;
+	static const std::vector<int> kNoneMarked;
+	const std::vector<int> *changed[kSeenKinds] = { NULL, &sectorsChanged, &linesChanged };
+	for (int k = kSeenSector; k < kSeenKinds; k++)
+	{
+		LiveOf(SeenKind(k), *changed[k], live);
+		ComputeSeenMerge(g_bits[k], live, kNoneMarked);
+	}
 }
 
 void InitSeen()

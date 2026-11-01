@@ -23,7 +23,10 @@ void ApplySeen();
 // [Doruk-Aksoy] Of the sectors and lines only those the scan found changed since the last fill are read, since the rest still hold the bits that fill took.
 void ScanSeen(const std::vector<int> &sectorsChanged, const std::vector<int> &linesChanged);
 // [rc4l] Between tics: ApplySeen, giving the sectors and lines it set, then the live map's bits taken back, which a savegame load or a reset may have changed, from ScanSeen's when the tic's end scanned.
-void MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &linesSet);
+// [Doruk-Aksoy] True when the sectors' and lines' bits are left for TakeChangedSeen, the fill comparing them whole.
+bool MergeSeen(bool scanned, std::vector<int> &sectorsSet, std::vector<int> &linesSet);
+// [Doruk-Aksoy] After a fill that compared the sectors and lines whole: the live bits of those it found changed, since the rest still hold the bits the last fill took.
+void TakeChangedSeen(const std::vector<int> &sectorsChanged, const std::vector<int> &linesChanged);
 // [rc4l] The bits the renderer holds that the live map does not, for fua_copy_prescan_check after a merge.
 int SeenMissed();
 // [rc4l] A new level's bits, taken from the live map.

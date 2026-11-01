@@ -5,6 +5,7 @@ import { attach } from "./session.mjs";
 import * as cap from "./capture.mjs";
 import { scaled } from "./timeouts.mjs";
 import { parseSeamReport } from "./seams.mjs";
+import { parsePrescanReport } from "./copycheck.mjs";
 
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
@@ -78,7 +79,7 @@ export async function joinThroughBrowser(c, address, deps = {}, { lan = false } 
 }
 
 // [rc4l] Launches one client into a set, joins it to the game and waits until the server holds it playing; via "browser" joins from the browser by address and "lan" from its LAN listing, and files replaces the set's wads, empty for a client that has to fetch them.
-export async function addClient(set, { role = "player", lag = 0, loss = 0, cvars = {}, forUser = false, files = set.files, via = "connect" } = {}, deps = {}) {
+export async function addClient(set, { role = "player", lag = 0, loss = 0, cvars = set.clientCvars || {}, forUser = false, files = set.files, via = "connect" } = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000) } = deps;
   const index = set.clients.length;
   // [rc4l] The slot is taken before the launch, so clients added at once each get their own port.
@@ -126,6 +127,17 @@ export async function seamViolations(set, exec = cap.exec) {
   return out;
 }
 
+// [Doruk-Aksoy] Each client whose fills the change logs left short of the whole-map compare (fua_copy_prescan_check), as "who: count missed, the first".
+export async function fillMisses(set, exec = cap.exec) {
+  const out = [];
+  for (const m of set.clients || []) {
+    if (!m?.c) continue;
+    const r = parsePrescanReport(await exec(m.c, "fua_copy_prescan_report", { quietMs: 400 }));
+    if (r.differed > 0) out.push(`${m.role}${m.player >= 0 ? ` player ${m.player}` : ""}: its render copy missed ${r.differed} changes of the map, the first ${r.first}`);
+  }
+  return out;
+}
+
 // [rc4l] What fua_net_replication says a server sent late, a change no Touch marked, or "" when nothing was.
 export function replicationMisses(text) {
   const m = /replication: (\d+) rows sent, (\d+) missed(?:, the first (.+))?/.exec(String(text ?? ""));
@@ -167,7 +179,7 @@ export async function launchNetplay(opts = {}, deps = {}) {
     forUser = false, cvars = {}, clientCvars: perClientCvars = {}, broadcast = false } = opts;
   const roles = clientRoles({ players, observers });
   const lags = perClient(lag, roles.length), losses = perClient(loss, roles.length);
-  const set = { iwad, map, files, basePort, gamePort, server: null, clients: [] };
+  const set = { iwad, map, files, basePort, gamePort, clientCvars: perClientCvars, server: null, clients: [] };
   try {
     // [rc4l] Announcing through its cvar, so a caller's sv_broadcast 0 still turns it off.
     const inst = await launch({ port: basePort, iwad, map, extraArgs: serverArgs({ files, gamePort, broadcast }), cvars: { ...(broadcast ? { sv_broadcast: 1 } : {}), ...cvars } });

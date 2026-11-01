@@ -10,4 +10,11 @@ void ComputeSeenMerge(std::vector<unsigned char> &bits, const std::vector<std::p
 	for (int i : marked) if (i >= 0 && i < n) bits[i] = 1;
 }
 
+SeenSource ComputeSeenSource(bool scanned, bool sized, bool subsectorsScanned)
+{
+	if (!sized) return kSeenReadWhole;
+	if (!scanned) return kSeenFromFill;
+	return subsectorsScanned ? kSeenFromScan : kSeenReadWhole;
+}
+
 }} // namespace zx::gamecopy

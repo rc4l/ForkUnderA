@@ -59,7 +59,7 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 to `judgeNetplay(set, label, { wadPath, config })`. The models: `netsync` (scripted changes, a kill, a late
 joiner), `unlaggedhit` (rewound hits), `netbroadcast` (what an observer sees of another's actions),
 `waddownload` (fetching a missing wad, two clients at once), `lanbrowse` (a LAN listing joined) and
-`netmapstate` (every family only a server writes of a sector and a line), `netstall` (ping measured through a
+`netmapstate` (every family only a server writes of a sector and a line, and a wall's offset, scale and flags, each on a wall of its own so a late joiner gets them by the commands that write a side past its setters), `netstall` (ping measured through a
 server tick stalled by `fua_debug_server_stall_ms`) and `farhitscan` (a pistol at 400 monsters 6,400+ units away, each
 shot's client trace against the server's, what the observer holds) and `netmapchange` (`changemap` through the
 intermission, each client's own `reconnect`, then `map`, each judged on the accounts, playing, the world and a
@@ -67,7 +67,9 @@ kill) and `netmusic` (ACS `SetMusic` and `SetMusicVolume` from the server, the s
 late joiner after each hear, and each one's music cache, from a wad and from a deflated pk3). `fireUntilDead` holds a client's fire on the first live actor of a class and `joinGame` waits a join out. A config's `maps` limits it to those maps, and its `wad`
 (a wad or a pk3 buffer, such as udmf.mjs's `pk3(files, { deflate: true })` writes as mods ship them) replaces the
 scenario's file for it. After each judge it fails an instance
-whose netcode seams another thread entered (`fua_seams`) and a server that sent a map change a tic late because
+whose netcode seams another thread entered (`fua_seams`), a client whose render copy missed a change its change
+logs should have listed (`fua_copy_prescan_check`, on for every client from launch, late joiners included, since
+a late joiner takes the set's client cvars; `fillMisses`), and a server that sent a map change a tic late because
 no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints each).
 
 - **Joining as a player does.** `addClient(set, { files: [], via: "browser" })` launches a client without the

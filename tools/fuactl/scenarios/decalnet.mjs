@@ -1,13 +1,16 @@
-// [rc4l] features/decals' marks are a client's alone: a client joined to a hosted map fires at a wall and at the floor, its fua_decal_report has both made and alive, and the server's has the same shots refused as a server's with none alive.
+// [rc4l] features/decals' marks are a client's alone: a client joined to a hosted map fires at a wall and at the floor, its fua_decal_report has both made and alive, the server's has the same shots refused as a server's with none alive, and the client's render copy found every wall holding a mark.
 //
 // usage:  node scenarios/decalnet.mjs [port]
 import { runScenarioIfMain, compareHosted } from "../src/template.mjs";
 import { buildDecalRulesWad, parseDecalReport } from "./decalrules.mjs";
+import { parsePrescanReport } from "../src/copycheck.mjs";
 import * as cap from "../src/capture.mjs";
 
-// [rc4l] The verdict: the client made a wall and a floor mark and holds them, the server refused both as a server's and holds none.
-export function judgeDecalNet(label, { client, server }) {
+// [rc4l] The verdict: the client made a wall and a floor mark and holds them, the server refused both as a server's and holds none, and the client's fills, which list the walls holding marks from a log, missed none.
+export function judgeDecalNet(label, { client, server, fills }) {
   const faults = [];
+  if (fills && !fills.found) faults.push("the client gave no fua_copy_prescan_report");
+  else if (fills && fills.differed > 0) faults.push(`the client's render copy missed ${fills.differed} changes, the first ${fills.first}`);
   if (!client || client.walls === null) faults.push("the client gave no fua_decal_report");
   else {
     if (!(client.counts["wall made"] > 0) || !(client.walls > 0)) faults.push("the client made no wall mark");
@@ -36,12 +39,14 @@ const report = async (c) => parseDecalReport(await cap.exec(c, "fua_decal_report
 
 export async function judgeHosted(sc, cc, label) {
   for (const c of [sc, cc]) await cap.exec(c, "fua_decal_report reset");
+  await cap.exec(cc, "fua_copy_prescan_check 1");
   // [rc4l] At the north wall the start faces, then at the floor, since a netgame refuses setpos and only looks.
   await fire(cc);
   await cc.rpc("input.look", { pitch: 60 });
   await cap.waitTics(cc, 10);
   await fire(cc);
-  return judgeDecalNet(label, { client: await report(cc), server: await report(sc) });
+  const fills = parsePrescanReport(await cap.exec(cc, "fua_copy_prescan_report", { quietMs: 400 }));
+  return judgeDecalNet(label, { client: await report(cc), server: await report(sc), fills });
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "decalnet", wad: buildDecalRulesWad().wad, maps: ["MAP01"], judgeHosted }), compareHosted);
