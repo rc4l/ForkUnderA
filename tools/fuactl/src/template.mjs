@@ -12,7 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
-import { launchNetplay, closeNetplay, seamViolations, replicationMisses } from "./netplay.mjs";
+import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -536,9 +536,13 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 }
 
 // [rc4l] The comparisons that judge a launch against itself rather than GL, which a WebGPU run runs on WebGPU alone (webgpuOptions).
+// [Doruk-Aksoy] Every netplay client holds each fill to the whole-map compare, late joiners included, which fillMisses reads back.
+export const FILL_CHECK = { fua_copy_prescan_check: 1 };
+
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
 export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
-  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
+  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses,
+    replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
   const wadPath = writeTemplateFile(name, wad);
   const lines = [];
   let failed = 0;
@@ -551,13 +555,16 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
     let set = null;
     try {
       set = await launch({ iwad, map, files: [filePath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "",
-        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: config.clientCvars || {}, broadcast: !!config.broadcast });
+        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: { ...FILL_CHECK, ...(config.clientCvars || {}) }, broadcast: !!config.broadcast });
       const r = await judgeNetplay(set, label, { wadPath: filePath, iwad, map, config });
       lines.push(...(r.lines || [r.line]));
       failed += r.failed;
       // [rc4l] And the netcode stayed on the threads its seams name, on every instance.
       const crossed = await seams(set);
       if (crossed.length) { lines.push(`FAIL ${label}: ${crossed.join("; ")}`); failed++; }
+      // [Doruk-Aksoy] And each client's render copy took every change its map made, which a fill finds from change logs on a client.
+      const missed = await fills(set);
+      if (missed.length) { lines.push(`FAIL ${label}: ${missed.join("; ")}`); failed++; }
       // [rc4l] And every map change it sent went out the tic it happened.
       const late = await replication(set);
       if (late) { lines.push(`FAIL ${label}: ${late}`); failed++; }

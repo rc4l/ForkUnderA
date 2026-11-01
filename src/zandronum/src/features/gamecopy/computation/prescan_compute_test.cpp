@@ -76,3 +76,12 @@ TEST(PrescanCompute, AClientMakesNoScan)
 	EXPECT_FALSE(ComputePrescanFresh(kNow, kNow, true));
 	EXPECT_FALSE(ComputeActorScanFresh(kNow, kNow, true));
 }
+
+// [Doruk-Aksoy] A client's fill finds its own sides from the logs, where every other fill has a scan or compares them whole.
+TEST(PrescanCompute, OnlyAClientFillListsItsOwnSides)
+{
+	EXPECT_TRUE(ComputeFillListsSides(false, true));
+	EXPECT_FALSE(ComputeFillListsSides(true, true)) << "a fresh scan already lists them";
+	EXPECT_FALSE(ComputeFillListsSides(false, false)) << "single player compares whole when no scan holds";
+	EXPECT_FALSE(ComputeFillListsSides(true, false));
+}
