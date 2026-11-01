@@ -16,6 +16,17 @@ TEST(SeenMerge, ChangedTakeTheirLiveBitAndMarksWin)
 	EXPECT_EQ((std::vector<unsigned char>{ 0, 0, 1, 1, 1 }), bits);
 }
 
+// [Doruk-Aksoy] A fill that compares the sectors and lines whole takes their bits from what it found changed, one the tic's end scanned from the scan, and bits of another map's sizes are read whole.
+TEST(SeenMerge, EachFillTakesTheBitsFromWhatItHas)
+{
+	EXPECT_EQ(kSeenFromFill, ComputeSeenSource(false, true, false));
+	EXPECT_EQ(kSeenFromFill, ComputeSeenSource(false, true, true)) << "a stale scan's subsectors are no use to an unscanned fill";
+	EXPECT_EQ(kSeenFromScan, ComputeSeenSource(true, true, true));
+	EXPECT_EQ(kSeenReadWhole, ComputeSeenSource(true, true, false)) << "a scan that read another map's subsectors";
+	EXPECT_EQ(kSeenReadWhole, ComputeSeenSource(false, false, true)) << "a new level's bits";
+	EXPECT_EQ(kSeenReadWhole, ComputeSeenSource(true, false, true));
+}
+
 // [Doruk-Aksoy] Indices past either end change nothing.
 TEST(SeenMerge, IndicesOutOfRangeAreIgnored)
 {
