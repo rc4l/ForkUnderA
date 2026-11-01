@@ -81,6 +81,9 @@ public:
 
 	static DThinker *FirstThinker (int statnum);
 
+	// [Doruk-Aksoy] features/gamecopy: where the array mirroring this thinker's list holds it, -1 when none does.
+	int rcOrderBucket = -1, rcOrderSlot = -1;
+
 private:
 	enum no_link_type { NO_LINK };
 	DThinker(no_link_type) throw();

@@ -20,6 +20,7 @@
 #include "features/gamecopy/computation/serial_compute.h"
 #include "features/gamecopy/computation/prescan_compute.h"
 #include "features/gamecopy/computation/changelog_compute.h"
+#include "features/gamecopy/computation/thinkerorder_compute.h"   // [Doruk-Aksoy] the thinker lists' arrays
 #include "features/handoff/effects.h"   // [rc4l] EffectsRun, Deferring
 #include "features/gamecopy/actorlists.h"
 #include "features/gamecopy/tintsubject.h"
@@ -54,8 +55,12 @@
 #include "textures/textures.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <xmmintrin.h>   // [Doruk-Aksoy] _mm_prefetch
+#endif
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -502,6 +507,63 @@ void NoteChain(const AActor *a, uintptr_t firstHead, int &head, AActor *&next)
 	next = a->snext;
 }
 
+// [Doruk-Aksoy] Each thinker list as an array in its order (DThinker::Thinkers[i] bucket i, FreshThinkers[i] bucket kFreshBucket + i), kept by FThinkerList::AddTail and DThinker::Remove.
+OrderBuckets g_order;
+const int kFreshBucket = MAX_STATNUM + 2;
+
+// [Doruk-Aksoy] A hint to start loading the cache line at p, which never faults, so a pointer to anything is safe to give it.
+inline void Prefetch(const void *p)
+{
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+	_mm_prefetch(static_cast<const char *>(p), _MM_HINT_T0);
+#elif defined(__GNUC__) || defined(__clang__)
+	__builtin_prefetch(p);
+#else
+	(void)p;
+#endif
+}
+
+// [Doruk-Aksoy] Slots ahead an array's actors are fetched, as many as their loads can overlap.
+const size_t kFetchAhead = 16;
+
+// [Doruk-Aksoy] Each actor the thinker lists hold, in TThinkerIterator<AActor>'s order (the thinking statnums, each one's list then its fresh list), read from their arrays, each actor's class, links and ids fetched slots ahead, which a walk down the lists' links cannot do.
+template <class Visit> void ForEachMirroredActor(Visit visit)
+{
+	for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
+		for (const int bucket : { stat, kFreshBucket + stat })
+		{
+			if (bucket >= (int)g_order.items.size()) continue;
+			const std::vector<void *> &items = g_order.items[bucket];
+			for (size_t k = 0; k < items.size(); k++)
+			{
+				if (k + kFetchAhead < items.size() && items[k + kFetchAhead] != NULL)
+				{
+					const AActor *const ahead = static_cast<const AActor *>(items[k + kFetchAhead]);
+					Prefetch(ahead);
+					Prefetch(&ahead->snext);
+					Prefetch(&ahead->rcSerial);
+				}
+				void *const item = items[k];
+				if (item != NULL && static_cast<DThinker *>(item)->IsKindOf(RUNTIME_CLASS(AActor))) visit(static_cast<AActor *>(item));
+			}
+		}
+}
+
+// [Doruk-Aksoy] The arrays closed up where more has left than stays, each moved thinker told its slot.
+void CompactMirror()
+{
+	for (int b = 0; b < (int)g_order.items.size(); b++)
+		if (ComputeOrderSparse(g_order, b)) ComputeOrderCompact(g_order, b, [](void *item, int slot) { static_cast<DThinker *>(item)->rcOrderSlot = slot; });
+}
+
+// [Doruk-Aksoy] Every actor in thinker order walked down the lists themselves, which fua_copy_prescan_check holds the arrays to.
+void WalkActors(std::vector<AActor *> &out)
+{
+	out.clear();
+	TThinkerIterator<AActor> it;
+	for (AActor *a; (a = it.Next()) != NULL; ) out.push_back(a);
+}
+
 // [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
 void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 {
@@ -512,8 +574,8 @@ void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 		chains->next.clear();
 	}
 	const uintptr_t firstHead = FirstChainHead();
-	TThinkerIterator<AActor> it;
-	for (AActor *a; (a = it.Next()) != NULL; )
+	CompactMirror();
+	ForEachMirroredActor([&](AActor *a)
 	{
 		if (a->rcSerial == kNoId) a->rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
 		// [rc4l] Its place noted while it is in cache, which LinkListed reads; a pass of its own cost a Complex Doom fight half a millisecond a tic.
@@ -526,7 +588,7 @@ void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
 			chains->next.emplace_back();
 			NoteChain(a, firstHead, chains->head.back(), chains->next.back());
 		}
-	}
+	});
 }
 
 // [Doruk-Aksoy] Each actor of a list kept from the last fill has its chain read again, across the pool, since its actors only moved; walking the thinkers for it took 0.57 ms of each of a DnD client's fills.
@@ -1070,10 +1132,14 @@ void CheckFill(const std::vector<int> *sectorCandidates, const std::vector<int> 
 	const int decals = decalsListed ? DecalSidesMissed() : 0;
 	if (decals > 0) PrescanMissed("sides holding decals, count", decals);
 	if (listed && LightListsMissed()) PrescanMissed("subsector light lists, subsectors", numsubsectors);
-	if (!listed && !kept) return;
-	static std::vector<AActor *> now;
+	static std::vector<AActor *> now, mirrored;
 	static std::vector<int> firstIn, next;
-	ListActors(now);
+	// [Doruk-Aksoy] The arrays every actor list is read from, held to the thinker lists themselves on every fill.
+	WalkActors(now);
+	mirrored.clear();
+	ForEachMirroredActor([](AActor *a) { mirrored.push_back(a); });
+	if (now != mirrored) PrescanMissed("thinker arrays, actors", (int)now.size());
+	if (!listed && !kept) return;
 	// [Doruk-Aksoy] A kept list's links are read again by the fill, so only the list is held to the game's.
 	if (kept)
 	{
@@ -1099,6 +1165,18 @@ PrescanStamp StampNow(bool found)
 {
 	const PrescanStamp s = { found, g_fills, g_level, zx::handoff::EffectsRun(), g_actorLists, numsectors, numsides, numlines };
 	return s;
+}
+
+void NoteThinkerAdded(DThinker *thinker, int bucket)
+{
+	thinker->rcOrderSlot = ComputeOrderAppend(g_order, bucket, thinker);
+	thinker->rcOrderBucket = thinker->rcOrderSlot < 0 ? -1 : bucket;
+}
+
+void NoteThinkerRemoved(DThinker *thinker)
+{
+	if (thinker->rcOrderBucket >= 0) ComputeOrderRemove(g_order, thinker->rcOrderBucket, thinker->rcOrderSlot, thinker);
+	thinker->rcOrderBucket = thinker->rcOrderSlot = -1;
 }
 
 void NoteSideChanged(const side_t *side)

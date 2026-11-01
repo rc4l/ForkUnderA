@@ -47,7 +47,10 @@
 #include "cl_demo.h"
 #include "doomstat.h"
 #include "features/telemetry/telemetry.h"
-#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists; [Doruk-Aksoy] NoteThinkerLists
+#include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists; [Doruk-Aksoy] NoteThinkerLists, NoteThinkerAdded, NoteThinkerRemoved
+#include "features/gamecopy/computation/thinkerorder_compute.h"   // [Doruk-Aksoy] ComputeListBucket
+
+#include <cstdint>
 
 
 static cycle_t ThinkCycles;
@@ -83,6 +86,9 @@ void FThinkerList::AddTail(DThinker *thinker)
 	GC::WriteBarrier(thinker, Sentinel);
 	GC::WriteBarrier(tail, thinker);
 	GC::WriteBarrier(Sentinel, thinker);
+	// [Doruk-Aksoy] features/gamecopy keeps each list as an array too, which the render copy reads the actors from in this order.
+	zx::gamecopy::NoteThinkerAdded(thinker, zx::gamecopy::ComputeListBucket((uintptr_t)this, (uintptr_t)DThinker::Thinkers, MAX_STATNUM + 2,
+		(uintptr_t)DThinker::FreshThinkers, MAX_STATNUM + 1, sizeof(FThinkerList)));
 }
 
 DThinker *FThinkerList::GetHead() const
@@ -251,6 +257,7 @@ void DThinker::Destroy ()
 void DThinker::Remove()
 {
 	zx::gamecopy::NoteThinkerLists();
+	zx::gamecopy::NoteThinkerRemoved(this);
 	if (this == NextToThink)
 	{
 		NextToThink = NextThinker;

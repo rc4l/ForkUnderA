@@ -36,6 +36,11 @@ never reads what that tic is changing.
   from `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`), since the medals ticked after the playsim
   spawn icons. A fill without that list keeps the last fill's while no thinker joined or left a thinker list
   (`ComputeActorListKept`), reading each actor's sector chain again across the pool instead of walking the thinkers.
+  Every actor list is read from arrays mirroring the thinker lists in their order (`computation/thinkerorder_compute`,
+  kept by `NoteThinkerAdded` and `NoteThinkerRemoved` from `dthinker.cpp` `FThinkerList::AddTail` and
+  `DThinker::Remove`, each thinker holding its place in `dthinker.h` `DThinker::rcOrderBucket`/`rcOrderSlot`), whose
+  loads do not wait on each other as a walk down the lists' links does; `fua_copy_prescan_check` holds the arrays to
+  the lists on every fill.
   The actor records are taken across the job pool. A netgame client makes no scan (`ComputePrescanWanted`): its fill
   never trusts one, and its tics run inline, so a scan there only held its frames back. Its fill lists the changed
   sides and the sides holding decals from their logs itself, as a tic's end does (`ComputeFillListsSides`), and
