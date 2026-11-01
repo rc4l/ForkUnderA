@@ -34,15 +34,19 @@ never reads what that tic is changing.
   when no thinker or actor joined or left a list since (`actorlists.h` `NoteActorLists`, called from
   `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`, `p_maputl.cpp` `UnlinkFromWorld` and
   `LinkToWorld`, `p_user.cpp`'s prediction restore), since the medals ticked after the playsim spawn icons.
-  The actor records are taken across the job pool. `fua_copy_prescan_check` holds each such fill to the whole-map
-  scan it spared (`fuactl fixture prescancheck`, with tics on the game thread). A netgame client makes no scan
-  (`ComputePrescanWanted`): its fill never trusts one, and its tics run inline, so a scan there only held its frames back.
-- Sides and their decals are not compared whole at a tic's end. They are noted where they change
+  The actor records are taken across the job pool. A netgame client makes no scan (`ComputePrescanWanted`): its fill
+  never trusts one, and its tics run inline, so a scan there only held its frames back. Its fill lists the changed
+  sides and the sides holding decals from their logs itself, as a tic's end does (`ComputeFillListsSides`), and
+  compares its sectors and lines whole.
+- `fua_copy_prescan_check` holds each fill to the whole-map scan that the tic's end scan or a client's logs spared
+  it, a side the slice found changed with no note counted as missed (`fuactl fixture prescancheck`, with tics on the
+  game thread). Every client of `fuactl`'s netplay scenarios runs with it on (`fillMisses`).
+- Sides and their decals are not compared whole at a tic's end or a client's fill. They are noted where they change
   (`computation/changelog_compute`):
   - `r_defs.h`: every `side_t` setter calls `NoteChanged` (`NoteSideChanged`). So do the code writing a side's
-    fields directly: `g_game.cpp` `GAME_ResetMap`'s offset and scale restore, and `p_spec.cpp`'s scrollers setting
-    `WALLF_NOAUTODECALS`. A client's side updates (`cl_main.cpp`) write directly too, but a client never uses the
-    scan.
+    fields directly: `g_game.cpp` `GAME_ResetMap`'s offset and scale restore, `p_spec.cpp`'s scrollers setting
+    `WALLF_NOAUTODECALS`, and `cl_main.cpp`'s `SetSideFlags`. `cl_main.cpp`'s `SetLineTextureOffset` and
+    `SetLineTextureScale`, which a late joiner is sent, call the setters.
   - `g_shared/a_decals.cpp` `StickToWall` calls `NoteDecalSide`, which keeps the side listed until its last decal goes.
 
   The scan compares only the sides noted since the last fill, plus a slice of `kSideSlice` sides compared whole.

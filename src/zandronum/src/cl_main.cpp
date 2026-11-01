@@ -7298,8 +7298,9 @@ void ServerCommands::SetLineTextureOffset::Execute()
 	if ( line->sidedef[side] == NULL )
 		return;
 
-	line->sidedef[side]->textures[position].xoffset = XOffset;
-	line->sidedef[side]->textures[position].yoffset = YOffset;
+	// [Doruk-Aksoy] Through the setters, which tell the render copy, since a client's fill compares only the sides noted.
+	line->sidedef[side]->SetTextureXOffset( position, XOffset );
+	line->sidedef[side]->SetTextureYOffset( position, YOffset );
 }
 
 //*****************************************************************************
@@ -7316,8 +7317,9 @@ void ServerCommands::SetLineTextureScale::Execute()
 	if ( line->sidedef[side] == NULL )
 		return;
 
-	line->sidedef[side]->textures[position].xscale = XScale;
-	line->sidedef[side]->textures[position].yscale = YScale;
+	// [Doruk-Aksoy] Through the setters, as the offsets are; a server's scale is never 0, which they would make 1.
+	line->sidedef[side]->SetTextureXScale( position, XScale );
+	line->sidedef[side]->SetTextureYScale( position, YScale );
 }
 
 //*****************************************************************************
@@ -7341,6 +7343,7 @@ void ServerCommands::SetSomeLineFlags::Execute()
 void ServerCommands::SetSideFlags::Execute()
 {
 	side->Flags = flags;
+	side->NoteChanged( );	// [Doruk-Aksoy] a side has no flags setter, so the render copy is told here
 }
 
 //*****************************************************************************
