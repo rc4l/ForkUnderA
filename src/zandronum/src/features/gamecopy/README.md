@@ -106,7 +106,9 @@ never reads what that tic is changing.
 - `seen.cpp`: the seen bits the walks mark, kept by the renderer and merged into the live map before each tic
   (`ApplySeen`) and at each fill (`MergeSeen`), which also takes back what a load or reset changed. The tic's end
   reads every subsector's bit, but a sector's or line's only when its own scan found it changed since the last
-  fill (`computation/seenmerge_compute`), since the rest still hold the bits that fill took.
+  fill (`computation/seenmerge_compute`), since the rest still hold the bits that fill took. A fill with no scan,
+  as every client's is, reads every subsector's bit too, and a sector's or line's only when its own whole compare
+  found it changed (`TakeChangedSeen`, `ComputeSeenSource`).
 - `polyobjs.cpp`: every polyobject linked and the BSP of each subsector one is in built between tics, then copied,
   its vertices riding their polyobject lines (`computation/polyblend_compute`) as the blend moves them.
 - Sky viewpoints (`SkyBoxOf`, `DefaultSkyBox`) and camera textures (`CameraTextures`) are records too.

@@ -1117,9 +1117,11 @@ void FillNow()
 	g_fills++;
 	ZX_COUNT("copy/prescanned", "fills", scanned ? 1 : 0);
 	if (g_sectorTaken.size() != (size_t)numsectors || g_sideTaken.size() != (size_t)numsides || g_lineTaken.size() != (size_t)numlines) KeepAllTaken();
-	static std::vector<int> seenSectors, seenLines, blendedSectors, blendedSides, loggedSides, sectorCandidates, sideCandidates, lineCandidates, taken;
+	static std::vector<int> seenSectors, seenLines, blendedSectors, blendedSides, loggedSides, sectorCandidates, sideCandidates, lineCandidates;
+	static std::vector<int> sectorsTaken, sidesTaken, linesTaken;
 	// [rc4l] Each step timed on its own, since on Sunder MAP16 the fill was 5 ms a tic and only the actor, light, decal and particle steps said where.
-	{ ZX_ZONE("copy/seen_merge"); MergeSeen(scanned, seenSectors, seenLines); }
+	bool seenLeft;
+	{ ZX_ZONE("copy/seen_merge"); seenLeft = MergeSeen(scanned, seenSectors, seenLines); }
 	if (logged)
 	{
 		{ ZX_ZONE("copy/side_list"); ListSideChanges(loggedSides); }
@@ -1136,14 +1138,16 @@ void FillNow()
 	ComputeTakeCandidates(scanned ? g_prescan.lines : kNoneScanned, kNoneScanned, seenLines, numlines, lineCandidates);
 	if (fua_copy_prescan_check)
 		CheckFill(scanned ? &sectorCandidates : NULL, sidesListed ? &sideCandidates : NULL, scanned ? &lineCandidates : NULL, sidesListed, listed);
-	{ ZX_ZONE("copy/sector_fill"); FillChanged(numsectors, sectorCandidates, scanned, [](int i) { return SectorChange(sectors[i]); }, FillSector, taken); }
+	{ ZX_ZONE("copy/sector_fill"); FillChanged(numsectors, sectorCandidates, scanned, [](int i) { return SectorChange(sectors[i]); }, FillSector, sectorsTaken); }
 	{ ZX_ZONE("copy/xfloor_fill"); FillXFloors(); }
 	{
 		ZX_ZONE("copy/side_fill");
-		FillChanged(numsides, sideCandidates, sidesListed, [](int i) { return SideChange(sides[i]); }, FillSide, taken);
-		ZX_COUNT("copy/sides_taken", "sides", taken.size());
+		FillChanged(numsides, sideCandidates, sidesListed, [](int i) { return SideChange(sides[i]); }, FillSide, sidesTaken);
+		ZX_COUNT("copy/sides_taken", "sides", sidesTaken.size());
 	}
-	{ ZX_ZONE("copy/line_fill"); FillChanged(numlines, lineCandidates, scanned, [](int i) { return LineChange(lines[i]); }, FillLine, taken); }
+	{ ZX_ZONE("copy/line_fill"); FillChanged(numlines, lineCandidates, scanned, [](int i) { return LineChange(lines[i]); }, FillLine, linesTaken); }
+	// [Doruk-Aksoy] A whole compare found every sector and line whose seen bit changed, so only those bits are read again.
+	if (seenLeft) { ZX_ZONE("copy/seen_take"); TakeChangedSeen(sectorsTaken, linesTaken); }
 	if (fua_copy_prescan_check) CheckSeen();
 	{ ZX_ZONE("copy/polyobj_fill"); FillPolyobjects(); FillPolyBSPs(); }
 	TakeLevel(g_level_);
