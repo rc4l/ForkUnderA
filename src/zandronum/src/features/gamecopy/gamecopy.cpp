@@ -438,7 +438,7 @@ bool FillLine(int i, int change)
 	return change != 0;
 }
 
-// [rc4l] The items of one kind that changed taken, of the candidates alone when they were listed and else of all count, the candidates' kept states refreshed either way since a blended copy can match the game untaken; taken gets those taken.
+// [Doruk-Aksoy] The items of one kind that changed taken, of the candidates alone when they were listed and else of all count, the candidates' kept states refreshed either way since a blended copy can match the game untaken; taken gets those taken.
 template <class Change, class Fill> static void FillChanged(int count, const std::vector<int> &candidates, bool listed, Change change, Fill fill, std::vector<int> &taken)
 {
 	taken.clear();
@@ -1031,7 +1031,7 @@ void CheckFill(const std::vector<int> *sectorCandidates, const std::vector<int> 
 	if (firstIn != g_listedFirstIn || next != g_listedNext) PrescanMissed("sector links, actors", (int)now.size());
 }
 
-// [rc4l] Once the fill has merged them, a seen bit unlike the live map's.
+// [Doruk-Aksoy] Once the fill has merged them, a seen bit unlike the live map's.
 void CheckSeen()
 {
 	const int seen = SeenMissed();
