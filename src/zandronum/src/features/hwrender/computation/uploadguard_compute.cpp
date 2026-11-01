@@ -28,9 +28,9 @@ std::vector<UploadRun> ComputeChangedRuns(const unsigned *was, const unsigned *n
 	return runs;
 }
 
-bool ComputeCopyTableStale(const CopyTableKey &was, const CopyTableKey &now, bool held)
+bool ComputeCopyTableWhole(const CopyTableKey &was, const CopyTableKey &now, bool held, bool listed)
 {
-	return !held || was.fills != now.fills || was.sectors != now.sectors || was.count != now.count;
+	return !held || !listed || was.sectors != now.sectors || was.count != now.count;
 }
 
 }} // namespace zx::hwrender

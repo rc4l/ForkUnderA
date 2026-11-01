@@ -44,6 +44,19 @@ void ComputeLogKeepIf(ChangeLog &log, const std::function<bool(int)> &keep)
 	log.list.resize(kept);
 }
 
+bool ComputeLogDrain(ChangeLog &log, int count, std::vector<int> &out)
+{
+	out.clear();
+	if (log.whole || log.noted.size() != (size_t)(count > 0 ? count : 0))
+	{
+		ComputeLogReset(log, count, false);
+		return false;
+	}
+	out = log.list;
+	ComputeLogClear(log);
+	return true;
+}
+
 int ComputeIndexIn(uintptr_t at, uintptr_t first, size_t size, int count)
 {
 	if (first == 0 || size == 0 || count <= 0 || at < first) return -1;
