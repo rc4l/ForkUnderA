@@ -29,6 +29,9 @@ bool ComputeActorScanFresh(const PrescanStamp &found, const PrescanStamp &now, b
 // [Doruk-Aksoy] Whether a tic's end scans at all: not on a client, where no scan is ever fresh.
 bool ComputePrescanWanted(bool client);
 
+// [Doruk-Aksoy] Whether a fill lists the changed sides and the sides holding decals itself, from their logs: on a client, whose tics leave no scan.
+bool ComputeFillListsSides(bool scanned, bool client);
+
 // [rc4l] The items the handoff compares and takes: what the tic changed, what the frames blended and what they marked seen, each once, in order, and within count.
 void ComputeTakeCandidates(const std::vector<int> &changed, const std::vector<int> &blended, const std::vector<int> &seen, int count,
 	std::vector<int> &out);

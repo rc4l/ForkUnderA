@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");
@@ -114,10 +114,13 @@ test("a set launches the server in the map, then each client joined with its own
 
 test("a late joiner joins a running set, and a set that fails to launch is torn down", async () => {
   const f = fakes();
-  const set = await launchNetplay({ players: 1, basePort: 7900 }, f.deps);
+  const set = await launchNetplay({ players: 1, basePort: 7900, clientCvars: { fua_copy_prescan_check: 1 } }, f.deps);
   const late = await addClient(set, { role: "latejoin" }, f.deps);
   assert.equal(late.inst.port, 7902);
   assert.equal(set.clients.length, 2);
+  assert.equal(late.inst.opts.cvars.fua_copy_prescan_check, 1, "a late joiner takes the cvars the set's clients were launched with");
+  const own = await addClient(set, { role: "latejoin", cvars: { cl_unlagged: 1 } }, f.deps);
+  assert.equal(own.inst.opts.cvars.fua_copy_prescan_check, undefined, "unless it is given its own");
   const g = fakes({ failOn: 1 });
   await assert.rejects(launchNetplay({ players: 1, basePort: 7900 }, g.deps), /launch failed/);
   assert.deepEqual(g.stopped, [7900]);
@@ -157,6 +160,17 @@ test("each instance whose netcode seams another thread entered is named", async 
   const set = { server: { c: "s", role: "server", player: -1 }, clients: [{ c: "a", role: "player", player: 0 }, { c: "b", role: "observer", player: 1 }, { c: null, role: "latejoin" }] };
   const said = { s: "0 violations; 0 locks taken while holding another", a: "net/parse  main  9 entries  1 violations\n1 violations, the first in net/parse on the game thread in CLIENT_ParsePacket:1430; 0 locks", b: "Unknown command" };
   assert.deepEqual(await seamViolations(set, async (c) => said[c]), ["player player 0: 1 seam violations, the first in net/parse (game, CLIENT_ParsePacket:1430)"]);
+});
+
+test("each client whose render copy missed a change of its map is named with the first", async () => {
+  const set = { server: { c: "s", role: "server", player: -1 }, clients: [{ c: "a", role: "player", player: 0 }, { c: "b", role: "latejoin", player: 2 }, { c: "x", role: "observer", player: 1 }, { c: null, role: "latejoin" }] };
+  const said = { a: "prescan: 90 fills checked, 0 with the actor list, 0 missed\n",
+    b: "prescan: 60 fills checked, 0 with the actor list, 3 missed\n  sides changed with no note, count 3 changed past the tic's end scan or the change logs\n", x: "Unknown command" };
+  const asked = [];
+  assert.deepEqual(await fillMisses(set, async (c, text) => { asked.push([c, text]); return said[c]; }),
+    ["latejoin player 2: its render copy missed 3 changes of the map, the first sides changed with no note, count 3 changed past the tic's end scan or the change logs"]);
+  assert.deepEqual(asked.map((a) => a[0]), ["a", "b", "x"], "the server draws nothing, so only the clients are asked");
+  assert.deepEqual(await fillMisses({ id: 1 }, async () => ""), [], "a set with no clients names none");
 });
 
 test("a server that sent a change late, untouched, is named with the first", () => {
