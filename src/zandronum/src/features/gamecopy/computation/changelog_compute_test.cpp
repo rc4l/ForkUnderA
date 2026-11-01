@@ -71,6 +71,29 @@ TEST(ChangeLogCompute, KeepIfDropsWhatItRefuses)
 	EXPECT_EQ(log.list, (std::vector<int>{ 1, 3, 4 }));
 }
 
+// [Doruk-Aksoy] A drain hands over what was noted since the last one, once each, and a log that knows nothing (a new level's, or one over another count) hands over nothing and asks for every item.
+TEST(ChangeLogCompute, ADrainGivesWhatWasNotedSinceTheLast)
+{
+	ChangeLog log;
+	std::vector<int> out = { 9 };
+	EXPECT_FALSE(ComputeLogDrain(log, 4, out)) << "a log never reset knows nothing";
+	EXPECT_TRUE(out.empty());
+	for (int i : { 2, 0, 2 }) ComputeLogNote(log, i);
+	EXPECT_TRUE(ComputeLogDrain(log, 4, out));
+	EXPECT_EQ(out, (std::vector<int>{ 2, 0 }));
+	EXPECT_TRUE(ComputeLogDrain(log, 4, out));
+	EXPECT_TRUE(out.empty()) << "each item is handed over once";
+	ComputeLogNote(log, 2);
+	EXPECT_FALSE(ComputeLogDrain(log, 5, out)) << "a level of another size";
+	EXPECT_TRUE(out.empty());
+	EXPECT_EQ(log.noted.size(), 5u);
+	ComputeLogNote(log, 7);
+	EXPECT_FALSE(ComputeLogDrain(log, 5, out)) << "a note outside the items";
+	EXPECT_FALSE(ComputeLogDrain(log, -1, out)) << "a level with no items after one with five";
+	EXPECT_TRUE(ComputeLogDrain(log, -1, out)) << "then an empty, known log";
+	EXPECT_TRUE(out.empty());
+}
+
 // [Doruk-Aksoy] An item's address gives its index, and anything outside the items or between two of them gives none.
 TEST(ChangeLogCompute, AnAddressFindsItsItem)
 {

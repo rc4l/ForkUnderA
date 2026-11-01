@@ -77,6 +77,20 @@ TEST(PrescanCompute, AClientMakesNoScan)
 	EXPECT_FALSE(ComputeActorScanFresh(kNow, kNow, true));
 }
 
+// [Doruk-Aksoy] The last fill's actor list is kept until a thinker joins or leaves a list or the level changes, and a fill with none made walks the thinkers.
+TEST(PrescanCompute, TheActorListIsKeptWhileNoThinkerJoinsOrLeaves)
+{
+	ActorListStamp made;
+	made.made = true; made.level = 3; made.thinkerLists = 40;
+	ActorListStamp now = made;
+	EXPECT_TRUE(ComputeActorListKept(made, now));
+	now.thinkerLists = 41;
+	EXPECT_FALSE(ComputeActorListKept(made, now)) << "a thinker spawned, died or changed its statnum";
+	now = made; now.level = 4;
+	EXPECT_FALSE(ComputeActorListKept(made, now)) << "a new level's actors";
+	EXPECT_FALSE(ComputeActorListKept(ActorListStamp(), now)) << "no list made yet";
+}
+
 // [Doruk-Aksoy] A client's fill finds its own sides from the logs, where every other fill has a scan or compares them whole.
 TEST(PrescanCompute, OnlyAClientFillListsItsOwnSides)
 {

@@ -5,12 +5,22 @@
 #ifndef ZX_GAMECOPY_ACTORLISTS_H
 #define ZX_GAMECOPY_ACTORLISTS_H
 
+class DThinker;
+
 namespace zx { namespace gamecopy {
 
+// [Doruk-Aksoy] A thinker put at the end of the list bucket names (ComputeListBucket), or taken out of its list, which the arrays mirroring the lists follow.
+void NoteThinkerAdded(DThinker *thinker, int bucket);
+void NoteThinkerRemoved(DThinker *thinker);
+
 extern unsigned int g_actorLists;
+// [Doruk-Aksoy] A count that moves on only when a thinker joins or leaves a thinker list, which an actor's move does not, so a fill knows the actor list it holds still holds.
+extern unsigned int g_thinkerLists;
 
 // [rc4l] A thinker list or a sector's actor list changed.
 inline void NoteActorLists() { g_actorLists++; }
+// [Doruk-Aksoy] A thinker list changed, which is a change of the actor lists too.
+inline void NoteThinkerLists() { g_thinkerLists++; g_actorLists++; }
 
 }} // namespace zx::gamecopy
 

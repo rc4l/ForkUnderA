@@ -8,14 +8,16 @@
 
 #include "features/gamecopy/computation/blend_compute.h"
 
+#include <vector>
+
 namespace zx { namespace gamecopy {
 
 // [rc4l] Copies every sector, side, line, polyobject vertex and actor the renderer reads, bumping each one's change counters where its copy changed, and gathers the interpolations' blends; between tics only, and once a tic (ComputeFillDue).
 void FillMap();
 // [rc4l] FillMap whether or not a tic ran since, for a view asked for before the level's first fill.
 void FillNow();
-// [Doruk-Aksoy] Fills since the start, which moves whenever the copy may have changed.
-unsigned Fills();
+// [Doruk-Aksoy] The sectors fills took since the last call, for the one table kept of them (the backend's sector light table); false, with none, when every sector must be read, as after a level's start.
+bool DrainTakenSectors(std::vector<int> &out);
 // [rc4l] The map's changes since the copy last took it, found as a tic's playsim ends on the thread that ran it, so the next fill takes only those.
 void ScanAtTicEnd();
 // [rc4l] A new level: every copy taken whole and its counters started over.
