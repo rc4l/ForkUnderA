@@ -32,12 +32,14 @@ never reads what that tic is changing.
   turns the fill back to the whole map. The same scan lists the actors in thinker order with each sector's links,
   each subsector's lights, the sides holding decals and the seen bits; the actor list and light lists are taken only
   when no thinker or actor joined or left a list since (`actorlists.h` `NoteActorLists`, called from
-  `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`, `p_maputl.cpp` `UnlinkFromWorld` and
-  `LinkToWorld`, `p_user.cpp`'s prediction restore), since the medals ticked after the playsim spawn icons.
+  `p_maputl.cpp` `UnlinkFromWorld` and `LinkToWorld` and `p_user.cpp`'s prediction restore, and `NoteThinkerLists`,
+  from `dthinker.cpp` `FThinkerList::AddTail` and `DThinker::Remove`), since the medals ticked after the playsim
+  spawn icons. A fill without that list keeps the last fill's while no thinker joined or left a thinker list
+  (`ComputeActorListKept`), reading each actor's sector chain again across the pool instead of walking the thinkers.
   The actor records are taken across the job pool. A netgame client makes no scan (`ComputePrescanWanted`): its fill
   never trusts one, and its tics run inline, so a scan there only held its frames back. Its fill lists the changed
   sides and the sides holding decals from their logs itself, as a tic's end does (`ComputeFillListsSides`), and
-  compares its sectors and lines whole.
+  compares its sectors and lines whole. It fills on almost every frame a server packet reaches (`ComputeFillDue`).
 - `fua_copy_prescan_check` holds each fill to the whole-map scan that the tic's end scan or a client's logs spared
   it, a side the slice found changed with no note counted as missed (`fuactl fixture prescancheck`, with tics on the
   game thread). Every client of `fuactl`'s netplay scenarios runs with it on (`fillMisses`).

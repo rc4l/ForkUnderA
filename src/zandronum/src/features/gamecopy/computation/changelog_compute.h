@@ -24,6 +24,8 @@ void ComputeLogNote(ChangeLog &log, int index);
 void ComputeLogClear(ChangeLog &log);
 // [Doruk-Aksoy] Only the noted items keep says to keep, in their order.
 void ComputeLogKeepIf(ChangeLog &log, const std::function<bool(int)> &keep);
+// [Doruk-Aksoy] The items noted since the last drain, in the order noted, with nothing noted after; false and none when they are unknown (whole, or a log over another count), the log then holding count items.
+bool ComputeLogDrain(ChangeLog &log, int count, std::vector<int> &out);
 // [Doruk-Aksoy] Which of count items of size bytes from first the address at is, or -1 when it is none of them.
 int ComputeIndexIn(uintptr_t at, uintptr_t first, size_t size, int count);
 // [Doruk-Aksoy] The next size items of count to compare whole, from cursor, wrapping to the start once it reaches the end.

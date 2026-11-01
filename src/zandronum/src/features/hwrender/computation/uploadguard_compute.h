@@ -26,16 +26,15 @@ struct UploadRun { unsigned first, count; };
 // [rc4l] The runs of entries (stride words each, `entries` of them) where now differs from was, two runs fewer than bridge unchanged entries apart joined, so a handful of writes carries every change.
 std::vector<UploadRun> ComputeChangedRuns(const unsigned *was, const unsigned *now, unsigned entries, unsigned stride, unsigned bridge);
 
-// [Doruk-Aksoy] What a table read from the render copy was last made from: the copy's fill, and the level's sector array and how many sectors it holds.
+// [Doruk-Aksoy] What a table read from the render copy was last made from: the level's sector array and how many sectors it holds.
 struct CopyTableKey
 {
-	unsigned fills = 0;
 	const void *sectors = nullptr;
 	int count = -1;
 };
 
-// [Doruk-Aksoy] Whether the table must be read again: it is not held, or the copy was filled or the level changed since it was made.
-bool ComputeCopyTableStale(const CopyTableKey &was, const CopyTableKey &now, bool held);
+// [Doruk-Aksoy] Whether every entry must be read again rather than those of the sectors the fills took: it is not held, the level changed since it was made, or which sectors were taken is not known (listed false).
+bool ComputeCopyTableWhole(const CopyTableKey &was, const CopyTableKey &now, bool held, bool listed);
 
 }} // namespace zx::hwrender
 

@@ -32,6 +32,17 @@ bool ComputePrescanWanted(bool client);
 // [Doruk-Aksoy] Whether a fill lists the changed sides and the sides holding decals itself, from their logs: on a client, whose tics leave no scan.
 bool ComputeFillListsSides(bool scanned, bool client);
 
+// [Doruk-Aksoy] What the actor list a fill holds was made at: which level, after how many thinker list changes.
+struct ActorListStamp
+{
+	bool made = false;
+	int level = 0;
+	unsigned thinkerLists = 0;
+};
+
+// [Doruk-Aksoy] Whether a fill keeps the actor list the last fill held, reading only its sector links again: one was made, on this level, and no thinker joined or left a list since, which an actor's move does not do.
+bool ComputeActorListKept(const ActorListStamp &made, const ActorListStamp &now);
+
 // [rc4l] The items the handoff compares and takes: what the tic changed, what the frames blended and what they marked seen, each once, in order, and within count.
 void ComputeTakeCandidates(const std::vector<int> &changed, const std::vector<int> &blended, const std::vector<int> &seen, int count,
 	std::vector<int> &out);

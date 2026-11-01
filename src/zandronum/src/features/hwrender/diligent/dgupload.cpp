@@ -11,7 +11,7 @@
 #include "features/hwrender/computation/sectorlitrecord_compute.h"   // [rc4l] ComputeSectorLitRecord
 #include "features/hwrender/computation/uploadguard_compute.h"   // [rc4l] ComputeChangedRuns
 #include "features/levelmesh/captureshading.h"   // [rc4l] SectorLightEntryOf
-#include "features/gamecopy/gamecopy.h"   // [Doruk-Aksoy] Fills, which the sector light table is kept by
+#include "features/gamecopy/gamecopy.h"   // [Doruk-Aksoy] DrainTakenSectors, the sectors whose light table entries are read again
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
@@ -158,27 +158,31 @@ void UpdateSectorLightTable(Diligent::IDeviceContext *ctx)
 {
 	ZX_ZONE("scene/sectorlight");   // [rc4l] the sector light table read from the render copy and its changes sent
 	if (!g_scene.sectorLightBuf || ctx == NULL || numsectors <= 0 || (unsigned)numsectors > g_scene.sectorLightCapacity) return;
-	static TArray<unsigned> now;
+	static TArray<unsigned> now;   // [Doruk-Aksoy] the table as sent, between calls, once its changes are
 	const unsigned words = (unsigned)numsectors * zx::levelmesh::kSectorLightWords;
-	// [Doruk-Aksoy] The table is read from the render copy, which changes only when it is filled, so the frames between fills keep it as it is.
+	const unsigned stride = zx::levelmesh::kSectorLightWords;
+	// [Doruk-Aksoy] The table is read from the render copy, which changes only where a fill takes a sector, so only those entries are read again; a client fills on almost every frame.
 	static zx::hwrender::CopyTableKey made;
+	static std::vector<int> taken;
 	zx::hwrender::CopyTableKey key;
-	key.fills = zx::gamecopy::Fills();
 	key.sectors = sectors;
 	key.count = numsectors;
-	if (!zx::hwrender::ComputeCopyTableStale(made, key, g_scene.sectorLightWords.Size() == words)) return;
-	made = key;
-	now.Resize(words);
-	for (int i = 0; i < numsectors; i++)
-		zx::levelmesh::ComputeSectorLightWords(zx::levelmesh::SectorLightEntryOf(i), &now[(unsigned)i * zx::levelmesh::kSectorLightWords]);
+	const bool listed = zx::gamecopy::DrainTakenSectors(taken);
 	TArray<unsigned> &was = g_scene.sectorLightWords;
+	if (zx::hwrender::ComputeCopyTableWhole(made, key, was.Size() == words, listed))
+	{
+		made = key;
+		now.Resize(words);
+		for (int i = 0; i < numsectors; i++) zx::levelmesh::ComputeSectorLightWords(zx::levelmesh::SectorLightEntryOf(i), &now[(unsigned)i * stride]);
+	}
+	else if (taken.empty()) return;
+	else for (int i : taken) zx::levelmesh::ComputeSectorLightWords(zx::levelmesh::SectorLightEntryOf(i), &now[(unsigned)i * stride]);
 	if (was.Size() != words)
 	{
 		was = now;
 		UpdateBufferInPages(ctx, g_scene.sectorLightBuf, 0, (size_t)words * sizeof(unsigned), &now[0]);
 		return;
 	}
-	const unsigned stride = zx::levelmesh::kSectorLightWords;
 	for (const zx::hwrender::UploadRun &run : zx::hwrender::ComputeChangedRuns(&was[0], &now[0], (unsigned)numsectors, stride, 64))
 	{
 		memcpy(&was[run.first * stride], &now[run.first * stride], (size_t)run.count * stride * sizeof(unsigned));
