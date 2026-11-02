@@ -18,9 +18,16 @@ The engine's one pool of worker threads, for work a frame splits across cores.
   main thread). It is resized on the next call after the cvar changes, except in a browser, where the main thread may not wait for workers that may still need it to start (`ComputePoolWorkers`), and is never destroyed, so no worker
   is joined while the process exits. Its observer times `jobs/run` and `jobs/wait` into `features/telemetry`
   and names each worker "job N" in its traces.
+  `TicPool()` is the game thread's own, sized by `fua_jobs_tic_threads` (-1 picks by the machine, at most 3; 0
+  runs its jobs on the game thread alone), so a tic's end can split its reads without taking the frames' pool.
+  A pool can report to an observer of its own (`SetObserver`): this one times `jobs/tic_run` and `jobs/tic_wait`
+  and names its workers "tic job N".
 
 ## In-engine hooks
 
 None: features call `zx::jobs::Pool()` from the main thread. `features/visibility` splits the player's
 walk across it, and scans its marks into lists and walk bits on it; `features/sprites` derives the swept
-actors' sprites on it.
+actors' sprites on it. `features/gamecopy`'s scan at a tic's end calls `TicPool()` from the game thread.
+`computation/joinparts_compute` joins the parts a job's chunks gathered into the list one thread makes, each part
+padded to two cache lines so lanes growing neighbouring parts never share one; `ComputeChunkFor` takes a job whole on
+a pool of no workers, so such a gather makes a single part.
