@@ -14,10 +14,14 @@ void ComputeLitSubsectors(const std::vector<zx::jobs::Part<int>> &touched, int n
 void ComputeShiftRuns(const std::vector<int> &starts, int chunk, std::vector<int> &first)
 {
 	if (chunk <= 0) return;
-	for (size_t s = 0; s < first.size(); s++)
+	// [Doruk-Aksoy] Chunk by chunk rather than a division a subsector, and a chunk whose part landed at the start left alone.
+	const size_t n = first.size(), step = (size_t)chunk;
+	for (size_t k = 0, lo = 0; k < starts.size() && lo < n; k++, lo += step)
 	{
-		const size_t k = s / (size_t)chunk;
-		if (k < starts.size()) first[s] += starts[k];
+		const int shift = starts[k];
+		if (shift == 0) continue;
+		const size_t hi = lo + step < n ? lo + step : n;
+		for (size_t s = lo; s < hi; s++) first[s] += shift;
 	}
 }
 

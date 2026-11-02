@@ -4,6 +4,7 @@
 #include "features/levelmesh/projdecals.h"
 #include "features/levelmesh/computation/decalproject_compute.h"
 #include "features/levelmesh/computation/packedcolor_compute.h"
+#include "features/levelmesh/computation/keptorder_compute.h"   // [Doruk-Aksoy] the boxes kept in the marks' order
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeSpriteBlendMode
 #include "features/gamecopy/decals.h"   // [rc4l] the floor and ceiling marks as the copy holds them
 #include "features/materials/materials.h"
@@ -12,8 +13,8 @@
 #include "c_cvars.h"
 #include "textures/textures.h"
 
+#include <cstddef>
 #include <math.h>
-#include <unordered_map>
 #include <vector>
 
 // [rc4l] The most oblique a mark is allowed to be, as the cosine of the angle off head-on: 0.7 is 45 degrees and a 1.41x stretch, 1.0 lands every mark square-on.
@@ -39,7 +40,10 @@ struct CachedBox
 	bool boxed;
 };
 
-std::unordered_map<const void *, CachedBox> g_boxes;
+// [Doruk-Aksoy] Kept in the marks' order, oldest first as the thinkers hold them, since probing a hash for every mark every frame cost more than working along beside them.
+KeptOrder<CachedBox> g_boxes;
+// [Doruk-Aksoy] Marks ahead a mark's last box is looked for before it is worked out again.
+const size_t kBoxWindow = 64;
 TArray<GpuDecal> g_gpuDecals;
 
 // [rc4l] Whether two records give the same box, which a fade or a colour change does not touch.
@@ -87,8 +91,9 @@ bool BuildBox(const FlatDecalRecord &m, DecalBox &box)
 // [rc4l] A record's box, from the cache while it still has the shape it was worked out for.
 const CachedBox &BoxOf(const FlatDecalRecord &r)
 {
-	CachedBox &c = g_boxes[r.who];
-	if (c.from.who != r.who || !SameShape(c.from, r))
+	bool found = false;
+	CachedBox &c = ComputeKeptFind(g_boxes, r.who, kBoxWindow, [](const CachedBox &b) { return b.from.who; }, found);
+	if (!found || !SameShape(c.from, r))
 	{
 		c.from = r;
 		c.boxed = BuildBox(r, c.box);
@@ -102,7 +107,8 @@ bool ProjectedDecalsActive() { return !zx::gamecopy::FlatDecals().empty(); }
 
 void ClearProjectedDecals()
 {
-	g_boxes.clear();
+	g_boxes.entries.clear();
+	ComputeKeptBegin(g_boxes);
 	g_gpuDecals.Clear();
 }
 
@@ -110,8 +116,7 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 {
 	g_gpuDecals.Clear();
 	const std::vector<FlatDecalRecord> &marks = zx::gamecopy::FlatDecals();
-	// [rc4l] A cache that outgrew the marks by much has kept boxes for marks that are gone.
-	if (g_boxes.size() > 2 * marks.size() + 64) g_boxes.clear();
+	ComputeKeptBegin(g_boxes);
 	for (const FlatDecalRecord &d : marks)
 	{
 		const float alpha = (d.RenderFlags & RF_INVISIBLE) ? 0.f : FIXED2FLOAT(d.Alpha);
@@ -149,6 +154,7 @@ int GetProjectedDecalsGpu(const GpuDecal **out)
 		g.material = mat;
 		g_gpuDecals.Push(g);
 	}
+	ComputeKeptEnd(g_boxes);
 	if (out) *out = g_gpuDecals.Size() ? &g_gpuDecals[0] : NULL;
 	return (int)g_gpuDecals.Size();
 }

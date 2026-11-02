@@ -665,7 +665,18 @@ void LinkChains(const std::vector<AActor *> &list, const ActorChains &chains, st
 {
 	const int count = (int)list.size();
 	const auto placeOf = [&list, count](AActor *a) { const int r = a->rcListed; return ComputeHoldsRecord(r, count) && list[r] == a ? r : -1; };
-	if (!ComputeChainLinks(chains.head, chains.next, numsectors, placeOf, [](AActor *a) { return a->snext; }, firstIn, next)) LinkListed(list, firstIn, next);
+	// [Doruk-Aksoy] Linked by chunks across the scanning thread's pool, since each next's place is a line the listing's lanes just wrote on other cores.
+	zx::jobs::JobPool &pool = ScanPool();
+	const int chunk = zx::jobs::ComputeChunkFor(count, kActorChunk, pool.Workers());
+	static std::vector<RangeCount> counts;
+	counts.assign(zx::jobs::ComputeChunkCount(count, chunk), RangeCount());
+	ComputeChainLinksBegin(chains.head.size(), numsectors, firstIn, next);
+	auto link = [&](int lo, int hi, int)
+	{
+		ComputeChainLinksIn(lo, hi, chains.head, chains.next, numsectors, placeOf, [](AActor *a) { return a->snext; }, firstIn, next, counts[lo / chunk].value);
+	};
+	pool.ParallelChunks(count, chunk, link);
+	if (!ComputeChainLinksWhole(counts)) LinkListed(list, firstIn, next);
 }
 
 std::vector<AActor *> g_listed;                    // [rc4l] the actors as the tic ended, in thinker order

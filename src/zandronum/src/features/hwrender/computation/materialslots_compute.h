@@ -37,6 +37,9 @@ struct DescriptorLimits
 // [rc4l] The array's size: the smallest limit less what the stage binds beside it, at most kMaxMaterialSlots, and 0 (bindless off, a binding per material instead) when that leaves fewer than kMinMaterialSlots.
 unsigned ComputeMaterialSlotCapacity(const DescriptorLimits &limits);
 
+// [Doruk-Aksoy] The array's size on a device whose limits are each cut to cap first, as a smaller device's would be; a cap of 0 or less leaves them as they are.
+unsigned ComputeCappedSlotCapacity(const DescriptorLimits &limits, int cap);
+
 // [rc4l] GLSL `source` with `defines` inserted after its first line, the #version a shader must start with; a source with no line break is returned as it was.
 std::string ComputeShaderWithDefines(const char *source, const std::string &defines);
 

@@ -114,7 +114,31 @@ TEST(ActorChains, LinksFromTheListMatchAWalkOfEverySector)
 		EXPECT_TRUE(whole) << "round " << round;
 		EXPECT_EQ(wantFirst, firstIn) << "round " << round;
 		EXPECT_EQ(wantNext, links) << "round " << round;
+		// [Doruk-Aksoy] Linked a range at a time, as threads of a pool do, the links and the answer are the same.
+		const size_t chunk = 1 + next() % 30;
+		std::vector<int> chunkedFirst, chunkedNext;
+		ComputeChainLinksBegin(head.size(), (int)sectors.size(), chunkedFirst, chunkedNext);
+		std::vector<RangeCount> counts((head.size() + chunk - 1) / chunk);
+		for (size_t lo = 0; lo < head.size(); lo += chunk)
+			ComputeChainLinksIn(lo, std::min(lo + chunk, head.size()), head, chainNext, (int)sectors.size(), [](Node *n) { return n->place; },
+				[](Node *n) { return n->next; }, chunkedFirst, chunkedNext, counts[lo / chunk].value);
+		EXPECT_TRUE(ComputeChainLinksWhole(counts)) << "round " << round;
+		EXPECT_EQ(wantFirst, chunkedFirst) << "round " << round;
+		EXPECT_EQ(wantNext, chunkedNext) << "round " << round;
 	}
+}
+
+// [Doruk-Aksoy] One range whose chained place went unlinked makes the whole unlinked, whatever the other ranges counted.
+TEST(ActorChains, OneShortRangeMakesTheWholeShort)
+{
+	std::vector<RangeCount> counts(3);
+	counts[0].value.chained = counts[0].value.linked = 4;
+	counts[2].value.chained = counts[2].value.linked = 1;
+	EXPECT_TRUE(ComputeChainLinksWhole(counts));
+	counts[1].value.chained = 2;
+	counts[1].value.linked = 1;
+	EXPECT_FALSE(ComputeChainLinksWhole(counts));
+	EXPECT_TRUE(ComputeChainLinksWhole(std::vector<RangeCount>()));
 }
 
 // [Doruk-Aksoy] A chain whose head is not listed cannot be linked from the list, and says so.
