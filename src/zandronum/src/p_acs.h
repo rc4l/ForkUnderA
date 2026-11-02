@@ -151,7 +151,7 @@ private:
 };
 extern ACSStringPool GlobalACSStrings;
 
-void P_CollectACSGlobalStrings();
+size_t P_CollectACSGlobalStrings();   // [Doruk-Aksoy] the strings it freed
 void P_ReadACSVars(PNGHandle *);
 void P_WriteACSVars(FILE*);
 void P_ClearACSVars(bool);
