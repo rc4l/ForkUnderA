@@ -61,4 +61,16 @@ void ComputeOrderCompact(OrderBuckets &b, int bucket, const std::function<void(v
 	b.gone[bucket] = 0;
 }
 
+void ComputeOrderChunks(const OrderBuckets &b, const std::vector<int> &buckets, int chunk, std::vector<OrderChunk> &out)
+{
+	out.clear();
+	if (chunk <= 0) chunk = 1;
+	for (const int bucket : buckets)
+	{
+		if (bucket < 0 || (size_t)bucket >= b.items.size()) continue;
+		const int size = (int)b.items[bucket].size();
+		for (int lo = 0; lo < size; lo += chunk) out.push_back({ bucket, lo, lo + chunk < size ? lo + chunk : size });
+	}
+}
+
 }} // namespace zx::gamecopy

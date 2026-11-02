@@ -41,6 +41,11 @@ never reads what that tic is changing.
   `DThinker::Remove`, each thinker holding its place in `dthinker.h` `DThinker::rcOrderBucket`/`rcOrderSlot`), whose
   loads do not wait on each other as a walk down the lists' links does; `fua_copy_prescan_check` holds the arrays to
   the lists on every fill.
+  The scan's sector and line compares, its actor list and its subsector light lists are split across the pool of
+  the thread scanning (`scanpool.h` `ScanPool`): on the game thread its own (`features/jobs` `TicPool`), which
+  leaves the frames' pool to them. Each chunk gathers into a part of its own and the parts are joined in order
+  (`features/jobs/computation/joinparts_compute`, `ComputeOrderChunks`, `ComputeShiftRuns`), so every list is the
+  one a single thread makes; the few actors with no id get theirs after the join, in thinker order.
   The actor records are taken across the job pool. A netgame client makes no scan (`ComputePrescanWanted`): its fill
   never trusts one, and its tics run inline, so a scan there only held its frames back. Its fill lists the changed
   sides and the sides holding decals from their logs itself, as a tic's end does (`ComputeFillListsSides`), and
