@@ -14,6 +14,8 @@ first has the backend forget its textures (`ForgetBackendTextures`), since the s
 
 `StandaloneScene` is the backend's scene for the view set up now:
 
+- the job pool woken (`features/jobs` `Wake`), since its workers sleep between frames and the walk's clip is the
+  frame's first job;
 - the upkeep: the dynamic stream, last frame's sprites, projected decals, horizons;
 - the visibility walks (`features/visibility`), with the particles, the actors in stacked views and
   mirrors, and the decals each view saw;
