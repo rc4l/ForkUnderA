@@ -7,6 +7,7 @@
 #include "actor.h"
 #include "doomstat.h"   // [rc4l] zadmflags, for OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 #include "features/dynlights/cycler.h"
+#include <vector>
 
 
 EXTERN_CVAR(Bool, r_lights)
@@ -108,6 +109,7 @@ public:
 	FLightNode * touching_sector;
 	int rcPlace;	// [Doruk-Aksoy] features/gamecopy: its place in thinker order when the subsector light lists were last made
 	unsigned int rcPlaceStamp;	// [Doruk-Aksoy] which making of those lists rcPlace belongs to, so a light not listed in it is told apart
+	std::vector<const void *> rcLinked;	// [Doruk-Aksoy] what the last relink linked, in walk order, so one that would link the same is skipped
 
 private:
 	float DistToSeg(seg_t *seg);
