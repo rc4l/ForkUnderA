@@ -29,9 +29,12 @@ const int kMaxWorkers = 63;
 // [Doruk-Aksoy] The game thread's pool at most, since it works only at a tic's end, beside the frames' pool.
 const int kTicWorkersCap = 3;
 
-// [Doruk-Aksoy] What a pool is called in features/telemetry: its workers in traces, its lanes' runs summed, its caller's wait for the rest, and that wait again by the zone it was in.
-struct PoolNames { const char *worker, *run, *wait, *waitIn; };
-const PoolNames kNames[] = { { "job", "jobs/run", "jobs/wait", "jobwait" }, { "tic job", "jobs/tic_run", "jobs/tic_wait", "ticjobwait" } };
+// [Doruk-Aksoy] What a pool is called in features/telemetry: its workers in traces, its lanes' runs summed, its caller's wait for the rest, and by the zone it was in that wait, its last worker's start, the workers asleep, the workers that ran and the jobs.
+struct PoolNames { const char *worker, *run, *wait, *waitIn, *startIn, *asleepIn, *lanesIn, *callsIn; };
+const PoolNames kNames[] = {
+	{ "job", "jobs/run", "jobs/wait", "jobwait", "jobstart", "jobasleep", "joblanes", "jobcalls" },
+	{ "tic job", "jobs/tic_run", "jobs/tic_wait", "ticjobwait", "ticjobstart", "ticjobasleep", "ticjoblanes", "ticjobcalls" },
+};
 
 // [rc4l] A pool's work in features/telemetry: each worker named in traces, every lane's runs summed, and the caller's wait for the rest.
 template <int P> void WorkerStarted(int lane)
@@ -48,12 +51,19 @@ template <int P> void RanItems(int, int64_t start, int64_t end)
 	zx::telemetry::Region(run, start, end);
 }
 
-template <int P> void Waited(int64_t start, int64_t end)
+template <int P> void Waited(const JobWait &w)
 {
+	using namespace zx::telemetry;
 	const char *const name = kNames[P].wait;
-	static const zx::telemetry::Counter wait = zx::telemetry::Register(zx::telemetry::CounterSpec{ name, "ms", zx::telemetry::CounterKind::Time, 0 });
-	zx::telemetry::Region(wait, start, end);
-	if (zx::telemetry::g_enabled) zx::telemetry::Region(zx::telemetry::CounterUnderZone(kNames[P].waitIn, zx::telemetry::t_innermostZone), start, end);
+	static const Counter wait = Register(CounterSpec{ name, "ms", CounterKind::Time, 0 });
+	Region(wait, w.start, w.end);
+	if (!g_enabled) return;
+	const ZoneSite *const zone = t_innermostZone;
+	Region(CounterUnderZone(kNames[P].waitIn, zone), w.start, w.end);
+	Region(CounterUnderZone(kNames[P].startIn, zone), w.opened, w.lastStart);
+	Add(CounterUnderZone(kNames[P].asleepIn, zone, "workers", CounterKind::Total), w.asleep);
+	Add(CounterUnderZone(kNames[P].lanesIn, zone, "workers", CounterKind::Total), w.lanes);
+	Add(CounterUnderZone(kNames[P].callsIn, zone, "jobs", CounterKind::Total), 1);
 }
 
 const JobObserver kTelemetry[] = {
