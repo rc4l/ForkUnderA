@@ -85,4 +85,53 @@ void ComputeLightBinFill(const ClusterGrid &g, const ClusterRange *ranges, int l
 		});
 }
 
+void ComputeClusterBandCells(const ClusterGrid &g, const ClusterBand &band, int &first, int &end)
+{
+	first = (band.zBegin * g.tilesY + band.yBegin) * g.tilesX;
+	end = ((band.zEnd - 1) * g.tilesY + band.yEnd) * g.tilesX;
+}
+
+unsigned ComputeLightBinBandCounts(const ClusterGrid &g, const ClusterRange *ranges, int lightCount, const ClusterBand &band,
+	unsigned perCell, unsigned *counts, int &truncated)
+{
+	int first, end;
+	ComputeClusterBandCells(g, band, first, end);
+	for (int i = first; i < end; i++) counts[i] = 0;
+	ComputeLightBinCounts(g, ranges, lightCount, band, counts);
+	unsigned total = 0;
+	for (int i = first; i < end; i++)
+	{
+		if (counts[i] > perCell) { counts[i] = perCell; truncated++; }
+		total += counts[i];
+	}
+	return total;
+}
+
+bool ComputeLightBinBandStarts(const unsigned *totals, int bands, unsigned capacity, unsigned *starts, unsigned &total)
+{
+	// [Doruk-Aksoy] Summed wide, since a sum past capacity is only told apart from one that wrapped round in more than 32 bits.
+	unsigned long long sum = 0;
+	for (int k = 0; k < bands; k++)
+	{
+		starts[k] = (unsigned)sum;
+		sum += totals[k];
+	}
+	total = (unsigned)sum;
+	return sum <= capacity;
+}
+
+void ComputeLightBinBandFill(const ClusterGrid &g, const ClusterRange *ranges, int lightCount, const ClusterBand &band,
+	bool layOut, unsigned start, const unsigned *counts, unsigned *offsets, unsigned *filled, unsigned *indices, unsigned *table)
+{
+	int first, end;
+	ComputeClusterBandCells(g, band, first, end);
+	for (int i = first; i < end; i++)
+	{
+		if (layOut) { offsets[i] = start; start += counts[i]; }
+		filled[i] = 0;
+	}
+	ComputeLightBinFill(g, ranges, lightCount, band, counts, offsets, filled, indices);
+	for (int i = first; i < end; i++) { table[i * 2] = offsets[i]; table[i * 2 + 1] = counts[i]; }
+}
+
 }} // namespace zx::hwrender

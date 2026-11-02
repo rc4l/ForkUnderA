@@ -166,6 +166,7 @@
 #include "ShaderResourceBinding.h"
 #include "Shader.h"
 #include "RefCntAutoPtr.hpp"
+#include <cstddef>
 #include <string>
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] CreateDeviceTexture, CreateDeviceBuffer
 #include "features/hwrender/computation/uploadguard_compute.h"   // [rc4l] UploadShadow
@@ -320,7 +321,8 @@ struct UploadFlushing
 	~UploadFlushing();
 };
 // [rc4l] UpdateBufferInPages, unless buf already holds those bytes from the last upload through shadow (uploadguard_compute), counting what it spared under gpu/upload_spared.
-void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data);
+// [Doruk-Aksoy] With changing, sent without the compare or the copy (ComputeUploadDue).
+void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data, bool changing = false);
 // [rc4l] Counts bytes another upload sent, such as a texture's, toward the flush an UploadFlushing makes due.
 void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes);
 // [Doruk-Aksoy] A buffer or texture written outside a fill, made ready to read before the next world binding is committed, since that commit checks nothing (fua_dg_checkonce).
