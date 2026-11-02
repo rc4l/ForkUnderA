@@ -1,6 +1,7 @@
 // [Doruk-Aksoy] Tests for lightbin_compute: the banded binning against the single pass BuildLightClusters made before it.
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <vector>
 
 #include "features/hwrender/computation/lightbin_compute.h"
@@ -83,6 +84,36 @@ Bins Banded(const ClusterGrid &g, const std::vector<ClusterRange> &ranges, unsig
 	return b;
 }
 
+// [Doruk-Aksoy] BuildLightClusters' way: each band zeroes, counts and caps its cells, the runs are laid out by the bands from their starts or cut in one pass, and each band fills its cells and table pairs, the bands' order its own each pass.
+Bins BandsOwnCells(const ClusterGrid &g, const std::vector<ClusterRange> &ranges, unsigned perCell, unsigned capacity, int rowGroups, bool reverse,
+	std::vector<unsigned> &table)
+{
+	const int cells = ComputeClusterCount(g);
+	const int bands = rowGroups > 0 ? ComputeClusterBandCount(g, rowGroups) : 1;
+	auto bandOf = [&](int k) { return rowGroups > 0 ? ComputeClusterBand(g, k, rowGroups) : ComputeWholeGridBand(g); };
+	Bins b;
+	b.counts.assign(cells, 77u); b.offsets.assign(cells, 0); b.truncated = 0;
+	std::vector<unsigned> totals(bands), starts(bands), filled(cells, 55u);
+	std::vector<int> truncated(bands, 0);
+	for (int i = 0; i < bands; i++)
+	{
+		const int k = reverse ? bands - 1 - i : i;
+		totals[k] = ComputeLightBinBandCounts(g, ranges.data(), (int)ranges.size(), bandOf(k), perCell, b.counts.data(), truncated[k]);
+	}
+	for (int t : truncated) b.truncated += t;
+	const bool laid = ComputeLightBinBandStarts(totals.data(), bands, capacity, starts.data(), b.total);
+	if (!laid) b.total = ComputeLightBinOffsets(b.counts.data(), cells, perCell, capacity, b.offsets.data(), b.truncated);
+	b.indices.assign(b.total > 0 ? b.total : 1, 0);
+	table.assign((size_t)cells * 2, 0);
+	for (int i = 0; i < bands; i++)
+	{
+		const int k = reverse ? i : bands - 1 - i;
+		ComputeLightBinBandFill(g, ranges.data(), (int)ranges.size(), bandOf(k), laid, starts[k], b.counts.data(), b.offsets.data(), filled.data(),
+			b.indices.data(), table.data());
+	}
+	return b;
+}
+
 // [Doruk-Aksoy] Ranges inside the grid of every size, one in seven empty, from a fixed seed.
 std::vector<ClusterRange> RandomRanges(const ClusterGrid &g, int n, unsigned seed)
 {
@@ -128,6 +159,59 @@ TEST(LightBin, BandsBinEveryLightAsOnePassDid)
 	}
 	EXPECT_GT(Reference(g, ranges, 8u, 1u << 20).truncated, 0) << "the small ceiling is reached";
 	EXPECT_GT(Reference(g, ranges, 256u, 30000u).truncated, 0) << "the small buffer is reached";
+}
+
+// [Doruk-Aksoy] Bands that zero, cap, lay out and fill their own cells, in any order, give what one pass gave, and the table pairs each cell's run start and count; a buffer too small is cut in one pass as before.
+TEST(LightBin, BandsOwningTheirCellsBinAsOnePassDid)
+{
+	const ClusterGrid g = Grid(kClusterTilesX, kClusterTilesY, kClusterSlices);
+	const std::vector<ClusterRange> ranges = RandomRanges(g, 400, 11u);
+	const unsigned limits[][2] = { { 256u, 1u << 20 }, { 8u, 1u << 20 }, { 256u, 30000u } };
+	for (const auto &lim : limits)
+	{
+		const Bins ref = Reference(g, ranges, lim[0], lim[1]);
+		for (int rowGroups : { 0, 1, 3, (int)kClusterTilesY, 40 })
+			for (bool reverse : { false, true })
+			{
+				SCOPED_TRACE(testing::Message() << "perCell " << lim[0] << " capacity " << lim[1] << " rowGroups " << rowGroups << (reverse ? " reversed" : ""));
+				std::vector<unsigned> table;
+				const Bins b = BandsOwnCells(g, ranges, lim[0], lim[1], rowGroups, reverse, table);
+				ExpectSame(ref, b);
+				for (int i = 0; i < ComputeClusterCount(g); i++)
+				{
+					EXPECT_EQ(ref.offsets[i], table[i * 2]);
+					EXPECT_EQ(ref.counts[i], table[i * 2 + 1]);
+				}
+			}
+	}
+}
+
+// [Doruk-Aksoy] A band of one slice, or of every row, is one run of cells in ComputeClusterIndex's numbering.
+TEST(LightBin, ABandsCellsAreOneRun)
+{
+	const ClusterGrid g = Grid(4, 6, 3);
+	int first = -1, end = -1;
+	const ClusterBand rows = { 1, 2, 2, 4 };
+	ComputeClusterBandCells(g, rows, first, end);
+	EXPECT_EQ(ComputeClusterIndex(g, 0, 2, 1), first);
+	EXPECT_EQ(ComputeClusterIndex(g, 3, 3, 1) + 1, end);
+	ComputeClusterBandCells(g, ComputeWholeGridBand(g), first, end);
+	EXPECT_EQ(0, first);
+	EXPECT_EQ(ComputeClusterCount(g), end);
+}
+
+// [Doruk-Aksoy] Band starts are the totals' running sum, and a sum past capacity, even one past 32 bits, is told so.
+TEST(LightBin, BandStartsSumTheTotalsAndSayWhenTheyPassCapacity)
+{
+	const unsigned totals[] = { 3, 0, 5, 2 };
+	unsigned starts[4] = { 9, 9, 9, 9 }, total = 0;
+	EXPECT_TRUE(ComputeLightBinBandStarts(totals, 4, 10u, starts, total));
+	EXPECT_EQ(0u, starts[0]); EXPECT_EQ(3u, starts[1]); EXPECT_EQ(3u, starts[2]); EXPECT_EQ(8u, starts[3]);
+	EXPECT_EQ(10u, total);
+	EXPECT_FALSE(ComputeLightBinBandStarts(totals, 4, 9u, starts, total));
+	const unsigned huge[] = { 0xFFFFFFFFu, 2u };
+	unsigned hugeStarts[2];
+	EXPECT_FALSE(ComputeLightBinBandStarts(huge, 2, 0xFFFFFFFFu, hugeStarts, total));
 }
 
 // [Doruk-Aksoy] Past a cell's ceiling the cell keeps its first lights and counts once as truncated.

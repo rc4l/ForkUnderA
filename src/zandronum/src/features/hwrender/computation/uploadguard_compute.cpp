@@ -16,6 +16,21 @@ bool ComputeUploadChanged(UploadShadow &s, long long object, const void *data, s
 	return true;
 }
 
+bool ComputeUploadDue(UploadShadow &s, long long object, const void *data, size_t bytes, bool changing)
+{
+	if (!changing) return ComputeUploadChanged(s, object, data, bytes);
+	s.object = -1;
+	s.bytes.clear();
+	return true;
+}
+
+bool ComputeKeptDiffers(float *last, const float *now, int count)
+{
+	const bool differs = std::memcmp(last, now, (size_t)count * sizeof(float)) != 0;
+	if (differs) std::memcpy(last, now, (size_t)count * sizeof(float));
+	return differs;
+}
+
 std::vector<UploadRun> ComputeChangedRuns(const unsigned *was, const unsigned *now, unsigned entries, unsigned stride, unsigned bridge)
 {
 	std::vector<UploadRun> runs;
