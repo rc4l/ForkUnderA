@@ -8,6 +8,7 @@
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 #include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
+#include "features/jobs/computation/joinparts_compute.h"   // [Doruk-Aksoy] Padded, each lane's chunk on lines of its own
 
 #include "features/sprites/computation/spritestyle_compute.h"
 #include "features/draw2d/computation/quad2d_compute.h"   // [rc4l] ComputeTextureMode
@@ -783,13 +784,14 @@ struct SpriteChunk
 	std::vector<LaneSprite> sprites;
 };
 
-static std::vector<SpriteChunk> g_spriteChunks;
+// [Doruk-Aksoy] Padded, since lanes take neighbouring chunks at once and each actor wrote a line both chunks' headers were in.
+static std::vector<zx::jobs::Padded<SpriteChunk>> g_spriteChunks;
 // [rc4l] Actors a lane derives at a time: enough that a chunk outweighs taking it, few enough to spread a frame's actors.
 static const int kSpriteChunk = 32;
 
 static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 {
-	SpriteChunk &c = g_spriteChunks[chunk];
+	SpriteChunk &c = g_spriteChunks[chunk].value;
 	c.used = 0;
 	c.sprites.clear();
 	const int end = (chunk + 1) * kSpriteChunk < count ? (chunk + 1) * kSpriteChunk : count;
@@ -855,7 +857,7 @@ void BuildSprites(const ActorRecord *const *things, int count)
 	run.clear();
 	for (int c = 0; c < chunks; c++)
 	{
-		const SpriteChunk &chunk = g_spriteChunks[c];
+		const SpriteChunk &chunk = g_spriteChunks[c].value;
 		for (size_t k = 0; k < chunk.sprites.size(); k++)
 		{
 			const LaneSprite &ls = chunk.sprites[k];
