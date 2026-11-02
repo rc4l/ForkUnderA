@@ -41,6 +41,7 @@
 // [BB] New #includes.
 #include "r_data/r_translate.h"
 #include <algorithm>
+#include <cstddef>
 #include <iterator>
 #include "i_system.h"
 #include "sv_commands.h"
@@ -122,7 +123,7 @@ public:
 	void UnlockStringArray(const int *strnum, unsigned int count);
 	void MarkStringArray(const int *strnum, unsigned int count);
 	void MarkStringMap(const FWorldGlobalArray &array);
-	void PurgeStrings();
+	size_t PurgeStrings();   // [Doruk-Aksoy] the strings it freed
 	void Clear();
 	void Dump() const;
 	void ReadStrings(PNGHandle *png, DWORD id);

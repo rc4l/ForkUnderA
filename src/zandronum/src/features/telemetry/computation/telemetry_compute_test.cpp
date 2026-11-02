@@ -341,6 +341,11 @@ TEST(TelemetryText, PrefixesAndValuesInTheirUnit)
 	EXPECT_TRUE(ComputeStartsWith("gpu/mem/tag", "gpu/"));
 	EXPECT_TRUE(ComputeStartsWith("gpu/", ""));
 	EXPECT_FALSE(ComputeStartsWith("gpu/", "gpu/mem/"));
+	// [Doruk-Aksoy] A zone's own group joins the name by dots, and no zone or an empty one is filed under none.
+	EXPECT_EQ(ComputeZoneCounterName("jobwait", "scene/actor_sweep"), "jobwait/scene.actor_sweep");
+	EXPECT_EQ(ComputeZoneCounterName("jobwait", "a/b/c"), "jobwait/a.b.c");
+	EXPECT_EQ(ComputeZoneCounterName("jobwait", nullptr), "jobwait/none");
+	EXPECT_EQ(ComputeZoneCounterName("jobwait", ""), "jobwait/none");
 	EXPECT_EQ(ComputeValueText(2.0 * 1048576.0, "bytes"), "2.0 MB");
 	EXPECT_EQ(ComputeValueText(3.5, "ms"), "3.50");
 	EXPECT_EQ(ComputeValueText(-1500.0, "objects"), "-1500");

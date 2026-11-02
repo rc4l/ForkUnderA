@@ -58,6 +58,13 @@ bool ComputeStartsWith(const std::string &text, const std::string &prefix)
 	return text.compare(0, prefix.size(), prefix) == 0;
 }
 
+std::string ComputeZoneCounterName(const char *group, const char *zone)
+{
+	std::string tail = zone != nullptr && zone[0] != '\0' ? zone : "none";
+	for (char &c : tail) if (c == '/') c = '.';
+	return std::string(group) + "/" + tail;
+}
+
 std::string ComputeValueText(double v, const std::string &unit)
 {
 	if (unit == "bytes") return ComputeBytesText(v);
