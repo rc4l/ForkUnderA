@@ -72,6 +72,7 @@ void JobPool::Stop()
 void JobPool::Resize(int workers)
 {
 	Stop();
+	m_laneStart.assign(workers > 0 ? workers : 0, -1);
 	for (int i = 0; i < workers; i++) m_threads.push_back(std::thread(&JobPool::WorkerMain, this, i + 1));
 }
 
@@ -126,6 +127,7 @@ void JobPool::RunItems(int lane)
 		ran++;
 	}
 	if (o != nullptr && ran > 0) o->ranItems(lane, start, o->now());
+	if (lane > 0 && ran > 0) m_laneStart[lane - 1] = start;
 }
 
 void JobPool::ParallelFor(int count, IndexFn fn, void *user)
@@ -135,23 +137,48 @@ void JobPool::ParallelFor(int count, IndexFn fn, void *user)
 		for (int i = 0; i < count; i++) fn(user, i, 0);
 		return;
 	}
+	const JobObserver *o = Observer();
+	const int64_t opened = o != nullptr ? o->now() : 0;
 	m_fn = fn;
 	m_user = user;
 	m_count = count;
 	m_next.store(0);
 	m_done.store(0);
+	for (int64_t &start : m_laneStart) start = -1;
 	m_open.store(true);
 	m_generation.fetch_add(1);
 	// [rc4l] Taking the lock orders the new generation before a sleeper's check of it, so no wake is lost.
-	if (m_sleeping.load() > 0) { std::lock_guard<std::mutex> lock(m_mutex); }
+	const int asleep = m_sleeping.load();
+	if (asleep > 0) { std::lock_guard<std::mutex> lock(m_mutex); }
 	m_wake.notify_all();
 	RunItems(0);
-	const JobObserver *o = Observer();
 	const int64_t waitStart = o != nullptr ? o->now() : 0;
 	while (m_done.load() < count) std::this_thread::yield();
 	m_open.store(false);
 	while (m_active.load() != 0) std::this_thread::yield();
-	if (o != nullptr) o->waited(waitStart, o->now());
+	if (o == nullptr) return;
+	JobWait wait = { opened, waitStart, o->now(), asleep, 0, opened };
+	ComputeLaneStarts(m_laneStart.data(), (int)m_laneStart.size(), wait.lanes, wait.lastStart);
+	o->waited(wait);
+}
+
+void JobPool::Wake()
+{
+	if (m_sleeping.load() == 0) return;
+	// [Doruk-Aksoy] A new generation with no job open, which a woken worker joins and leaves at once, as one that comes after a job closed.
+	m_generation.fetch_add(1);
+	{ std::lock_guard<std::mutex> lock(m_mutex); }
+	m_wake.notify_all();
+}
+
+void ComputeLaneStarts(const int64_t *starts, int workers, int &ran, int64_t &last)
+{
+	for (int i = 0; i < workers; i++)
+	{
+		if (starts[i] < 0) continue;
+		ran++;
+		if (starts[i] > last) last = starts[i];
+	}
 }
 
 int ComputeAutoWorkers(int hardwareThreads, int cap, int reserved)
