@@ -31,6 +31,17 @@ TEST(MaterialSlots, ASmallDeviceTurnsBindlessOff)
 	EXPECT_EQ((unsigned)kMinMaterialSlots, ComputeMaterialSlotCapacity({ kMinMaterialSlots + kOtherStageResources, 4096, 4096, 4096, 4096 }));
 }
 
+// [Doruk-Aksoy] A cap cuts every limit above it, one below leaves a limit alone, and none leaves the device's own size.
+TEST(MaterialSlots, ACapDrawsAsASmallerDeviceWould)
+{
+	const DescriptorLimits big = { 1048576, 1048576, 4294967295u, 1048576, 1048576 };
+	EXPECT_EQ((unsigned)kMaxMaterialSlots, ComputeCappedSlotCapacity(big, 0));
+	EXPECT_EQ((unsigned)kMaxMaterialSlots, ComputeCappedSlotCapacity(big, -5));
+	EXPECT_EQ(1024u - kOtherStageResources, ComputeCappedSlotCapacity(big, 1024));
+	EXPECT_EQ(500u - kOtherStageResources, ComputeCappedSlotCapacity({ 1048576, 500, 1048576, 1048576, 1048576 }, 1024));
+	EXPECT_EQ(0u, ComputeCappedSlotCapacity(big, 16));
+}
+
 TEST(MaterialSlots, DefinesGoRightAfterTheVersionLine)
 {
 	EXPECT_EQ("#version 450\n#define N 7\nvoid main() {}\n", ComputeShaderWithDefines("#version 450\nvoid main() {}\n", "#define N 7\n"));

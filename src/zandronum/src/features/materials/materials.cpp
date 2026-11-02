@@ -225,6 +225,16 @@ bool MaterialHasBrightmap(MaterialRef m)
 	return m != NULL && Mat(m)->tex != NULL && Mat(m)->tex->gl_info.Brightmap != NULL;
 }
 
+bool MaterialShading(MaterialRef m, int &warp, int &userShader, float &shaderSpeed)
+{
+	if (m == NULL || Mat(m)->tex == NULL) return false;
+	const FTexture *tex = Mat(m)->tex;
+	warp = tex->bWarped;
+	userShader = zx::hwshaders::UserShaderOf(tex->gl_info.shaderindex);
+	shaderSpeed = tex->gl_info.shaderspeed;
+	return true;
+}
+
 MaterialRef MaterialBrightmap(MaterialRef m)
 {
 	if (m == NULL || Mat(m)->tex == NULL || Mat(m)->tex->gl_info.Brightmap == NULL) return NULL;

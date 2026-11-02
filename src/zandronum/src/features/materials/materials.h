@@ -103,6 +103,8 @@ bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out);
 MaterialRef MaterialBrightmap(MaterialRef m);
 // [Doruk-Aksoy] Whether the material has a brightmap, as DescribeMaterial's brightmap says, without describing the rest.
 bool MaterialHasBrightmap(MaterialRef m);
+// [Doruk-Aksoy] DescribeMaterial's warp, userShader and shaderSpeed alone, which every piece's record reads each frame; false, leaving them, when it would be.
+bool MaterialShading(MaterialRef m, int &warp, int &userShader, float &shaderSpeed);
 
 // [rc4l] What a sprite frame is drawn with: its rectangle about the actor's origin and the texture coordinates of its trimmed edges.
 struct SpriteFrameInfo

@@ -5,6 +5,7 @@
 #include "features/hwrender/computation/radixsort_compute.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <string.h>
 #include <vector>
 
@@ -78,12 +79,28 @@ TranslucentSortKey ComputeTranslucentSortKey(const TranslucentDraw &d)
 	return k;
 }
 
-void ComputeSortTranslucentOrder(std::vector<TranslucentOrder> &keys, std::vector<TranslucentOrder> &scratch)
+void ComputeSortTranslucentOrder(std::vector<TranslucentOrder> &keys, std::vector<TranslucentHalf> &halves, std::vector<TranslucentHalf> &scratch, std::vector<TranslucentOrder> &moved)
 {
-	ComputeRadixSort<16>(keys, scratch, [](const TranslucentOrder &k, int b)
+	// [Doruk-Aksoy] Sorted by the high half alone, so the low half's passes and moving whole keys are spared, then each run of equal high halves put in its low halves' order.
+	const size_t n = keys.size();
+	halves.resize(n);
+	for (size_t i = 0; i < n; i++) halves[i] = TranslucentHalf{ keys[i].key.hi, (unsigned)i };
+	ComputeRadixSort<8>(halves, scratch, [](const TranslucentHalf &h, int b) { return (unsigned)(h.hi >> (8 * b)) & 0xFF; });
+	for (size_t lo = 0, hi = 0; lo < n; lo = hi)
 	{
-		return (unsigned)((b < 8 ? k.key.lo >> (8 * b) : k.key.hi >> (8 * (b - 8))) & 0xFF);
-	});
+		for (hi = lo + 1; hi < n && halves[hi].hi == halves[lo].hi; ) hi++;
+		// [Doruk-Aksoy] An insertion sort, stable and quick on the runs of one or two that ties make.
+		for (size_t k = lo + 1; k < hi; k++)
+		{
+			const TranslucentHalf h = halves[k];
+			size_t j = k;
+			for (; j > lo && keys[h.place].key.lo < keys[halves[j - 1].place].key.lo; j--) halves[j] = halves[j - 1];
+			halves[j] = h;
+		}
+	}
+	moved.resize(n);
+	for (size_t k = 0; k < n; k++) moved[k] = keys[halves[k].place];
+	keys.swap(moved);
 }
 
 int ComputeBlendLayers(const BlendSpan *spans, int n, float viewZ, int *layers, bool *planes)

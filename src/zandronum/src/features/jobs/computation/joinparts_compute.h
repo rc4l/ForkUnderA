@@ -21,6 +21,14 @@ template <class T> struct Part
 	char pad[kPartBytes - sizeof(std::vector<T>)];
 };
 
+// [Doruk-Aksoy] A chunk's own state of at most one line, padded as a part is, so lanes working on neighbouring chunks never write one line.
+template <class T> struct Padded
+{
+	static_assert(sizeof(T) <= kPartBytes / 2, "a padded value fits one line");
+	T value;
+	char pad[kPartBytes - sizeof(T)];
+};
+
 // [Doruk-Aksoy] parts sized to chunks, each emptied, so a job's chunks can gather into them.
 template <class T> void ComputeEmptyParts(std::vector<Part<T>> &parts, int chunks)
 {

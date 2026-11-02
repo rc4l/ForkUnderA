@@ -49,18 +49,26 @@ struct ZoneSite
 	const char *name;
 };
 
+// [Doruk-Aksoy] The innermost zone open on this thread, NULL outside every zone.
+extern thread_local const ZoneSite *t_innermostZone;
+
 // [rc4l] Times its scope into its site's counter, and into the trace while one is captured.
+// [Doruk-Aksoy] And is the thread's innermost zone while it is open.
 class ZoneScope
 {
 public:
-	explicit ZoneScope(const ZoneSite &site) : m_site(&site), m_start(g_enabled ? NowNs() : 0) {}
-	~ZoneScope() { if (m_start != 0) Close(); }
+	explicit ZoneScope(const ZoneSite &site) : m_site(&site), m_outer(t_innermostZone), m_start(g_enabled ? NowNs() : 0) { t_innermostZone = &site; }
+	~ZoneScope() { t_innermostZone = m_outer; if (m_start != 0) Close(); }
 
 private:
 	void Close();
 	const ZoneSite *m_site;
+	const ZoneSite *m_outer;
 	int64_t m_start;
 };
+
+// [Doruk-Aksoy] The timing counter group/<zone> (ComputeZoneCounterName) for a region timed by hand inside zone, as a job pool's wait inside the zone that called it; registered on first use.
+Counter CounterUnderZone(const char *group, const ZoneSite *zone);
 
 #define ZX_TELEMETRY_CAT2(a, b) a##b
 #define ZX_TELEMETRY_CAT(a, b) ZX_TELEMETRY_CAT2(a, b)

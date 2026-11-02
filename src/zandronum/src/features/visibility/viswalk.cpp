@@ -18,6 +18,7 @@
 #include "features/visibility/computation/walkslices_compute.h"
 #include "features/jobs/jobs.h"   // [rc4l] the pool a sliced walk runs on
 #include "features/jobs/computation/sharedarray_compute.h"   // [rc4l] the marks a walk's lanes share
+#include "features/jobs/computation/joinparts_compute.h"   // [Doruk-Aksoy] Part, each chunk's ids on lines of its own
 #include "features/horizon/horizon.h"   // [rc4l] OwnsSky
 #include "features/levelmesh/wallcache.h"   // [rc4l] the backend's walk bits and sky surfaces
 #include "features/levelmesh/flatmesh.h"    // [rc4l] the stacked views, and the scene nesting a stacked view's sprites are captured in
@@ -963,7 +964,8 @@ void ReplayRank(int rank, int count)
 
 // [rc4l] Ids (subsectors, then sidedefs) a chunk of the publish or seen-list scans covers; a multiple of the ids one word of walk bits holds.
 const int kScanChunk = 4096;
-std::vector<std::vector<int> > g_chunkIds;
+// [Doruk-Aksoy] Parts, since lanes scan neighbouring chunks at once and each id found wrote a line both chunks' lists began in.
+std::vector<zx::jobs::Part<int> > g_chunkIds;
 
 // [rc4l] The ids [0, aCount) whose stamp in `a` is `stamp` and then aCount on those of `b` (bCount of them), scanned in chunks on the job pool into `out` in id order; with a slot, each chunk marks its ids' walk bits as it goes.
 void ScanStamped(const zx::jobs::SharedArray<unsigned> *a, int aCount, const zx::jobs::SharedArray<unsigned> *b, int bCount, unsigned stamp, int slot,
@@ -979,7 +981,7 @@ void ScanStamped(const zx::jobs::SharedArray<unsigned> *a, int aCount, const zx:
 		unsigned stamp;
 		void operator()(int chunk, int) const
 		{
-			std::vector<int> &found = g_chunkIds[chunk];
+			std::vector<int> &found = g_chunkIds[chunk].items;
 			found.clear();
 			const int end = (chunk + 1) * kScanChunk < ids ? (chunk + 1) * kScanChunk : ids;
 			for (int id = chunk * kScanChunk; id < end; id++)
@@ -992,7 +994,7 @@ void ScanStamped(const zx::jobs::SharedArray<unsigned> *a, int aCount, const zx:
 		zx::jobs::Pool().ParallelFor(chunks, scan);
 	}
 	out.clear();
-	for (int c = 0; c < chunks; c++) out.insert(out.end(), g_chunkIds[c].begin(), g_chunkIds[c].end());
+	for (int c = 0; c < chunks; c++) out.insert(out.end(), g_chunkIds[c].items.begin(), g_chunkIds[c].items.end());
 }
 
 // [rc4l] The level's sectors with a height transfer, found once a level, whose transfer may still be switched off.

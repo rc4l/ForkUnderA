@@ -84,6 +84,16 @@
 // List of all parsed servers.
 static	SERVER_t		g_BrowserServerList[MAX_BROWSER_SERVERS];
 
+// [Doruk-Aksoy] One past the last row a lookup ever handed out, so the tick each frame walks the rows that can hold a server rather than all of them.
+static	ULONG			g_ulRowsHandedOut = 0;
+
+static LONG browser_NoteRowHandedOut( LONG lIdx )
+{
+	if (( lIdx >= 0 ) && ( static_cast<ULONG>( lIdx ) >= g_ulRowsHandedOut ))
+		g_ulRowsHandedOut = static_cast<ULONG>( lIdx ) + 1;
+	return ( lIdx );
+}
+
 // [rc4l] Every server registry this client queries. Plural here and singular on the server side, and
 // that asymmetry is the design: discovery composes, authority does not.
 //
@@ -777,7 +787,8 @@ void BROWSER_QueryTick( void )
 {
 	const LONG lNow = I_MSTime( );
 
-	for ( ULONG ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
+	// [Doruk-Aksoy] A row no lookup handed out was never armed, so StepRow and FirstChallengeDue have nothing for it.
+	for ( ULONG ulIdx = 0; ulIdx < g_ulRowsHandedOut; ulIdx++ )
 	{
 		// [rc4l] Read the row, ask what to do, do it. No judgement lives here any more.
 		//
@@ -2412,7 +2423,7 @@ static LONG browser_GetNewListID( void )
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		if ( g_BrowserServerList[ulIdx].ulActiveState == AS_INACTIVE )
-			return ( ulIdx );
+			return ( browser_NoteRowHandedOut( ulIdx ));
 	}
 
 	return ( -1 );
@@ -2427,7 +2438,7 @@ static LONG browser_GetListIDByAddress( NETADDRESS_s Address )
 	for ( ulIdx = 0; ulIdx < MAX_BROWSER_SERVERS; ulIdx++ )
 	{
 		if ( g_BrowserServerList[ulIdx].Address.Compare( Address ))
-			return ( ulIdx );
+			return ( browser_NoteRowHandedOut( ulIdx ));
 	}
 
 	return ( -1 );
