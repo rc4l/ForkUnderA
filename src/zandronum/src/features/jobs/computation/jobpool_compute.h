@@ -33,6 +33,9 @@ int ComputeChunkCount(int count, int chunk);
 // [rc4l] The items [lo, hi) chunk number index covers, the last one cut short at count.
 void ComputeChunkBounds(int count, int chunk, int index, int &lo, int &hi);
 
+// [Doruk-Aksoy] The chunk a job splits count items by on a pool of workers: chunk, or all of them at once on a pool of none, so a gather by parts makes the one part a single thread does.
+int ComputeChunkFor(int count, int chunk, int workers);
+
 class JobPool
 {
 public:
@@ -52,6 +55,8 @@ public:
 	// [rc4l] How long an idle worker polls for the next job before it sleeps, from its next idle spell on.
 	void SetSpinMicros(int micros) { m_spinMicros.store(micros < 0 ? 0 : micros); }
 	int SpinMicros() const { return m_spinMicros.load(); }
+	// [Doruk-Aksoy] The observer this pool reports to in place of the one SetJobObserver sets, NULL for that one.
+	void SetObserver(const JobObserver *observer) { m_observer.store(observer, std::memory_order_release); }
 
 	// [rc4l] Run fn(user, index, lane) once for each index in [0, count): the caller is lane 0 and each worker its own lane, and the call returns once every index has run.
 	void ParallelFor(int count, IndexFn fn, void *user);
@@ -82,6 +87,7 @@ private:
 	void Sleep(unsigned seen);
 	void RunItems(int lane);
 	void Stop();
+	const JobObserver *Observer() const;
 
 	std::vector<std::thread> m_threads;
 	std::mutex m_mutex;
@@ -99,6 +105,7 @@ private:
 	std::atomic<int> m_active;
 	std::atomic<int> m_sleeping;
 	std::atomic<bool> m_stop;
+	std::atomic<const JobObserver *> m_observer;
 };
 
 // [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the `reserved` threads that run beside it (the caller, and the game thread when it is on), at most `cap`, none when that leaves none.

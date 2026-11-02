@@ -7,6 +7,8 @@
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeLightLinksStale, ComputeSortedTouches
 #include "features/dynlights/dynlight.h"
 #include "features/jobs/jobs.h"   // [Doruk-Aksoy] the light records taken across the pool
+#include "features/gamecopy/scanpool.h"   // [Doruk-Aksoy] the subsector light lists made across the scanning thread's pool
+#include "features/jobs/computation/joinparts_compute.h"
 #include "features/telemetry/telemetry.h"
 
 #include "r_defs.h"
@@ -26,6 +28,8 @@ std::vector<int> g_scanFirst, g_scanCount, g_scanLights;   // [rc4l] each subsec
 
 // [Doruk-Aksoy] Lights each pool lane takes at a time.
 const int kLightChunk = 64;
+// [Doruk-Aksoy] Subsectors each pool lane lists the lights of at a time.
+const int kSubsectorChunk = 1024;
 
 // [rc4l] Each subsector's lights in its light list's order, the order GL sums a sprite's light in, each by its light's place in thinker order.
 void ListSubsectorLights(std::vector<int> &first, std::vector<int> &count, std::vector<int> &out)
@@ -33,24 +37,44 @@ void ListSubsectorLights(std::vector<int> &first, std::vector<int> &count, std::
 	// [Doruk-Aksoy] Each light's place stamped on it and the subsectors it touches marked, so only lit subsectors are walked and no light is looked up by hash.
 	static unsigned int stamp = 0;
 	if (++stamp == 0) stamp = 1;
-	static std::vector<int> touched;
-	touched.clear();
-	int n = 0;
+	static std::vector<ADynamicLight *> live;
+	live.clear();
 	TThinkerIterator<ADynamicLight> it(STAT_DLIGHT);
-	for (ADynamicLight *light; (light = it.Next()) != NULL; )
+	for (ADynamicLight *light; (light = it.Next()) != NULL; ) live.push_back(light);
+	// [Doruk-Aksoy] Both walks chase links cold, so they are split across the scanning thread's pool, each lane or chunk gathering apart and joined in order after.
+	zx::jobs::JobPool &pool = ScanPool();
+	static std::vector<zx::jobs::Part<int>> touched, parts;
+	zx::jobs::ComputeEmptyParts(touched, pool.Lanes());
+	auto mark = [](int lo, int hi, int lane)
 	{
-		light->rcPlace = n++;
-		light->rcPlaceStamp = stamp;
-		for (FLightNode *node = light->touching_subsectors; node != NULL; node = node->nextTarget)
-			if (node->targSubsector != NULL) touched.push_back(int(node->targSubsector - subsectors));
-	}
+		for (int i = lo; i < hi; i++)
+		{
+			ADynamicLight *const light = live[i];
+			light->rcPlace = i;
+			light->rcPlaceStamp = stamp;
+			for (FLightNode *node = light->touching_subsectors; node != NULL; node = node->nextTarget)
+				if (node->targSubsector != NULL) touched[lane].items.push_back(int(node->targSubsector - subsectors));
+		}
+	};
+	pool.ParallelChunks((int)live.size(), kLightChunk, mark);
 	static std::vector<uint64_t> lit;
-	ComputeLitSubsectors(touched.empty() ? NULL : &touched[0], (int)touched.size(), numsubsectors, lit);
-	ComputeSubsectorRuns(lit, numsubsectors, first, count, out, [](int s, std::vector<int> &runs)
+	ComputeLitSubsectors(touched, numsubsectors, lit);
+	first.resize(numsubsectors > 0 ? numsubsectors : 0);
+	count.resize(first.size());
+	const int chunk = zx::jobs::ComputeChunkFor(numsubsectors, kSubsectorChunk, pool.Workers());
+	zx::jobs::ComputeEmptyParts(parts, zx::jobs::ComputeChunkCount(numsubsectors, chunk));
+	auto runs = [&first, &count, chunk](int lo, int hi, int)
 	{
-		for (FLightNode *node = subsectors[s].lighthead; node != NULL; node = node->nextLight)
-			if (node->lightsource != NULL && node->lightsource->rcPlaceStamp == stamp) runs.push_back(node->lightsource->rcPlace);
-	});
+		ComputeSubsectorRuns(lit, lo, hi, first, count, parts[lo / chunk].items, [](int s, std::vector<int> &into)
+		{
+			for (FLightNode *node = subsectors[s].lighthead; node != NULL; node = node->nextLight)
+				if (node->lightsource != NULL && node->lightsource->rcPlaceStamp == stamp) into.push_back(node->lightsource->rcPlace);
+		});
+	};
+	pool.ParallelChunks(numsubsectors, chunk, runs);
+	static std::vector<int> starts;
+	zx::jobs::ComputeJoinParts(parts, out, starts);
+	if (parts.size() > 1) ComputeShiftRuns(starts, chunk, first);
 }
 
 // [rc4l] The ids a light is linked to, as PieceStackId names surfaces.

@@ -201,6 +201,41 @@ TEST(JobPool, TheObserverHearsWorkersRunsAndTheWait)
 	EXPECT_LE(s_started.load(), 2);
 }
 
+namespace {
+
+std::atomic<int> s_ownWaited{ 0 };
+void OwnWait(int64_t, int64_t) { s_ownWaited++; }
+const zx::jobs::JobObserver kOwn = { Ticks, HeardStart, HeardRun, OwnWait };
+
+} // namespace
+
+// [Doruk-Aksoy] The game thread's pool reports under counters of its own, so the shared observer never hears it while it has one.
+TEST(JobPool, APoolsOwnObserverHearsItInPlaceOfTheShared)
+{
+	JobPool pool(1, 0);
+	pool.SetObserver(&kOwn);
+	zx::jobs::SetJobObserver(&kHeard);
+	const int sharedBefore = s_waited.load();
+	struct Idle { void operator()(int, int) const {} } idle;
+	pool.ParallelFor(8, idle);
+	EXPECT_EQ(s_ownWaited.load(), 1);
+	EXPECT_EQ(s_waited.load(), sharedBefore);
+	pool.SetObserver(nullptr);
+	pool.ParallelFor(8, idle);
+	EXPECT_EQ(s_ownWaited.load(), 1);
+	EXPECT_EQ(s_waited.load(), sharedBefore + 1);
+	zx::jobs::SetJobObserver(nullptr);
+}
+
+// [Doruk-Aksoy] A pool of none takes a job whole, in one part, and a pool with workers by the chunk asked for.
+TEST(JobPool, APoolOfNoWorkersTakesAJobWhole)
+{
+	EXPECT_EQ(zx::jobs::ComputeChunkFor(3544, 512, 3), 512);
+	EXPECT_EQ(zx::jobs::ComputeChunkFor(3544, 512, 0), 3544);
+	EXPECT_EQ(zx::jobs::ComputeChunkCount(3544, zx::jobs::ComputeChunkFor(3544, 512, 0)), 1);
+	EXPECT_EQ(zx::jobs::ComputeChunkFor(0, 512, 0), 1);
+}
+
 // [rc4l] The copy's change scans split 62,000 sides into chunks; every item must fall in exactly one.
 TEST(JobPool, ChunksCoverEveryItemOnce)
 {
