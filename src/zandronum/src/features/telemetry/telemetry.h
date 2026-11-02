@@ -67,8 +67,8 @@ private:
 	int64_t m_start;
 };
 
-// [Doruk-Aksoy] The timing counter group/<zone> (ComputeZoneCounterName) for a region timed by hand inside zone, as a job pool's wait inside the zone that called it; registered on first use.
-Counter CounterUnderZone(const char *group, const ZoneSite *zone);
+// [Doruk-Aksoy] The counter group/<zone> (ComputeZoneCounterName) for a region timed or an amount counted by hand inside zone, as a job pool's wait inside the zone that called it; registered on first use.
+Counter CounterUnderZone(const char *group, const ZoneSite *zone, const char *unit = "ms", CounterKind kind = CounterKind::Time);
 
 #define ZX_TELEMETRY_CAT2(a, b) a##b
 #define ZX_TELEMETRY_CAT(a, b) ZX_TELEMETRY_CAT2(a, b)
