@@ -36,6 +36,29 @@ TEST(UploadGuard, NothingSentTwiceIsUnchanged)
 	EXPECT_FALSE(ComputeUploadChanged(s, 3, nullptr, 0));
 }
 
+// [Doruk-Aksoy] A moved view's grid is always sent with nothing kept, so the frame after it, though its bytes match the old shadow's, is sent again, and only then kept.
+TEST(UploadGuard, ChangingBytesAreSentAndForgottenSoNoLaterFrameMatchesThem)
+{
+	UploadShadow s;
+	const unsigned a[3] = { 1, 2, 3 }, b[3] = { 4, 5, 6 };
+	EXPECT_TRUE(ComputeUploadDue(s, 7, a, sizeof(a), false));
+	EXPECT_FALSE(ComputeUploadDue(s, 7, a, sizeof(a), false));
+	EXPECT_TRUE(ComputeUploadDue(s, 7, b, sizeof(b), true));
+	EXPECT_TRUE(s.bytes.empty());
+	EXPECT_TRUE(ComputeUploadDue(s, 7, a, sizeof(a), false));
+	EXPECT_FALSE(ComputeUploadDue(s, 7, a, sizeof(a), false));
+}
+
+// [Doruk-Aksoy] Kept floats say whether they changed and hold the new ones after.
+TEST(UploadGuard, KeptFloatsSayWhenTheyChanged)
+{
+	float last[3] = { 0.f, 0.f, 0.f };
+	const float now[3] = { 1.f, 2.f, 3.f };
+	EXPECT_TRUE(ComputeKeptDiffers(last, now, 3));
+	EXPECT_EQ(2.f, last[1]);
+	EXPECT_FALSE(ComputeKeptDiffers(last, now, 3));
+}
+
 // [rc4l] The sector light table sends only the sectors whose light changed, neighbours a few apart in one write.
 TEST(ComputeChangedRuns, OnlyTheChangedEntriesNearbyOnesJoined)
 {

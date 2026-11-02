@@ -20,6 +20,12 @@ struct UploadShadow
 // [rc4l] Whether data differs from what buffer `object` holds, keeping it as the buffer's contents when it does; a different buffer always differs.
 bool ComputeUploadChanged(UploadShadow &s, long long object, const void *data, size_t bytes);
 
+// [Doruk-Aksoy] Whether to send data to buffer `object`: always when `changing` says it differs anyway (a moved view's light grid), forgetting the shadow so no later frame matches it, else as ComputeUploadChanged says.
+bool ComputeUploadDue(UploadShadow &s, long long object, const void *data, size_t bytes, bool changing);
+
+// [Doruk-Aksoy] Whether the count floats at now differ from those last kept, keeping now in their place.
+bool ComputeKeptDiffers(float *last, const float *now, int count);
+
 // [rc4l] A run of entries to send, the first and how many.
 struct UploadRun { unsigned first, count; };
 

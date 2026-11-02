@@ -32,6 +32,20 @@ unsigned ComputeLightBinOffsets(unsigned *counts, int cells, unsigned perCell, u
 void ComputeLightBinFill(const ClusterGrid &g, const ClusterRange *ranges, int lightCount, const ClusterBand &band,
 	const unsigned *counts, const unsigned *offsets, unsigned *filled, unsigned *indices);
 
+// [Doruk-Aksoy] The cells [first, end) of `band` as ComputeClusterIndex numbers them, one run for a band of one slice or of every row.
+void ComputeClusterBandCells(const ClusterGrid &g, const ClusterBand &band, int &first, int &end);
+
+// [Doruk-Aksoy] One band's count pass: its cells zeroed, counted as ComputeLightBinCounts counts them and capped at perCell (each cap added to truncated); returns the band's total.
+unsigned ComputeLightBinBandCounts(const ClusterGrid &g, const ClusterRange *ranges, int lightCount, const ClusterBand &band,
+	unsigned perCell, unsigned *counts, int &truncated);
+
+// [Doruk-Aksoy] Each band's first run start from the bands' totals in band order, their sum in total; false when it passes capacity, where ComputeLightBinOffsets must cut the runs as one pass does.
+bool ComputeLightBinBandStarts(const unsigned *totals, int bands, unsigned capacity, unsigned *starts, unsigned &total);
+
+// [Doruk-Aksoy] One band's fill pass: with layOut its runs laid from start in cell order first, then its cells' filled zeroed, its lights written as ComputeLightBinFill writes them, and each cell's (run start, count) pair put in table.
+void ComputeLightBinBandFill(const ClusterGrid &g, const ClusterRange *ranges, int lightCount, const ClusterBand &band,
+	bool layOut, unsigned start, const unsigned *counts, unsigned *offsets, unsigned *filled, unsigned *indices, unsigned *table);
+
 }} // namespace zx::hwrender
 
 #endif
