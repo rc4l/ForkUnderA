@@ -106,6 +106,8 @@
 #include "features/acs-lineattack/computation/lineattack_compute.h"   // [Doruk-Aksoy] LineAttack's shooter
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] CallShaderFunction
 #include "features/acs-argcount/computation/acsargcount_compute.h"   // [Doruk-Aksoy] ComputeShortCall
+#include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how often the string pool is collected and what that frees
+#include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -702,7 +704,7 @@ void ACSStringPool::UnlockAll()
 //
 //============================================================================
 
-void ACSStringPool::PurgeStrings()
+size_t ACSStringPool::PurgeStrings()
 {
 	// Clear the hash buckets. We'll rebuild them as we decide what strings
 	// to keep and which to toss.
@@ -737,6 +739,7 @@ void ACSStringPool::PurgeStrings()
 			}
 		}
 	}
+	return freedcount;
 }
 
 //============================================================================
@@ -989,6 +992,7 @@ void P_MarkGlobalVarStrings()
 
 void P_CollectACSGlobalStrings()
 {
+	ZX_ZONE("acs/string_collect");
 	for (FACSStack *stack = FACSStack::head; stack != NULL; stack = stack->next)
 	{
 		const int32_t sp = stack->sp;
@@ -1009,7 +1013,9 @@ void P_CollectACSGlobalStrings()
 	FBehavior::StaticMarkLevelVarStrings();
 	P_MarkWorldVarStrings();
 	P_MarkGlobalVarStrings();
-	GlobalACSStrings.PurgeStrings();
+	const size_t freed = GlobalACSStrings.PurgeStrings();
+	ZX_COUNT("acs/string_collects", "collects", 1);
+	ZX_COUNT("acs/strings_freed", "strings", freed);
 }
 
 #ifdef _DEBUG

@@ -51,6 +51,7 @@
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 #include "features/net-session/netrole.h"
+#include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how many relinks a tic, how many changed nothing, and what the walk costs of them
 
 EXTERN_CVAR (Float, r_lights_size);
 EXTERN_CVAR (Bool, r_lights_additive);
@@ -441,6 +442,8 @@ size_t ADynamicLight::PointerSubstitution (DObject *old, DObject *notOld)
 
 // [rc4l] The relinking light's nodes by target, built by LinkLight: walking the light's list for each target made a relink of a light touching n of them n*n, half of a Sunder MAP14 tic.
 static zx::dynlights::PointerIndex g_linkIndex;
+// [Doruk-Aksoy] Nodes made since the start, so a relink can tell whether it linked anything new.
+static unsigned g_nodesMade = 0;
 
 FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * light, FLightNode *& nextnode)
 {
@@ -457,6 +460,7 @@ FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * l
 	// of the list.
 	
 	node = new FLightNode;
+	g_nodesMade++;
 	
 	node->targ = linkto;
 	node->lightsource = light; 
@@ -595,6 +599,9 @@ void ADynamicLight::CollectWithinRadius(subsector_t *subSec, float radius)
 
 void ADynamicLight::LinkLight()
 {
+	ZX_ZONE("lights/link");
+	const unsigned madeBefore = g_nodesMade;
+	int unlinked = 0;
 	// mark the old light nodes
 	FLightNode * node;
 	// [rc4l] ...and index them by target for AddLightNode; a side, a subsector and a sector are never the same object, so one index serves all three lists.
@@ -630,6 +637,7 @@ void ADynamicLight::LinkLight()
 		{
 			float fradius = FIXED2FLOAT(radius);
 			::validcount++;
+			ZX_ZONE("lights/link_walk");
 			CollectWithinRadius(subSec, fradius*fradius);
 		}
 	}
@@ -643,6 +651,7 @@ void ADynamicLight::LinkLight()
 		if (node->lightsource == NULL)
 		{
 			node = DeleteLightNode(node);
+			unlinked++;
 		}
 		else
 			node = node->nextTarget;
@@ -654,6 +663,7 @@ void ADynamicLight::LinkLight()
 		if (node->lightsource == NULL)
 		{
 			node = DeleteLightNode(node);
+			unlinked++;
 		}
 		else
 			node = node->nextTarget;
@@ -665,10 +675,13 @@ void ADynamicLight::LinkLight()
 		if (node->lightsource == NULL)
 		{
 			node = DeleteLightNode(node);
+			unlinked++;
 		}
 		else
 			node = node->nextTarget;
 	}
+	ZX_COUNT("lights/relinks", "relinks", 1);
+	ZX_COUNT("lights/relinks_same", "relinks", g_nodesMade == madeBefore && unlinked == 0 ? 1 : 0);
 }
 
 

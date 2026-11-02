@@ -29,9 +29,9 @@ const int kMaxWorkers = 63;
 // [Doruk-Aksoy] The game thread's pool at most, since it works only at a tic's end, beside the frames' pool.
 const int kTicWorkersCap = 3;
 
-// [Doruk-Aksoy] What a pool is called in features/telemetry: its workers in traces, its lanes' runs summed and its caller's wait for the rest.
-struct PoolNames { const char *worker, *run, *wait; };
-const PoolNames kNames[] = { { "job", "jobs/run", "jobs/wait" }, { "tic job", "jobs/tic_run", "jobs/tic_wait" } };
+// [Doruk-Aksoy] What a pool is called in features/telemetry: its workers in traces, its lanes' runs summed, its caller's wait for the rest, and that wait again by the zone it was in.
+struct PoolNames { const char *worker, *run, *wait, *waitIn; };
+const PoolNames kNames[] = { { "job", "jobs/run", "jobs/wait", "jobwait" }, { "tic job", "jobs/tic_run", "jobs/tic_wait", "ticjobwait" } };
 
 // [rc4l] A pool's work in features/telemetry: each worker named in traces, every lane's runs summed, and the caller's wait for the rest.
 template <int P> void WorkerStarted(int lane)
@@ -53,6 +53,7 @@ template <int P> void Waited(int64_t start, int64_t end)
 	const char *const name = kNames[P].wait;
 	static const zx::telemetry::Counter wait = zx::telemetry::Register(zx::telemetry::CounterSpec{ name, "ms", zx::telemetry::CounterKind::Time, 0 });
 	zx::telemetry::Region(wait, start, end);
+	if (zx::telemetry::g_enabled) zx::telemetry::Region(zx::telemetry::CounterUnderZone(kNames[P].waitIn, zx::telemetry::t_innermostZone), start, end);
 }
 
 const JobObserver kTelemetry[] = {

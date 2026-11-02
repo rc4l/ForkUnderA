@@ -52,6 +52,9 @@ private:
 // [rc4l] Whether text starts with prefix.
 bool ComputeStartsWith(const std::string &text, const std::string &prefix);
 
+// [Doruk-Aksoy] The counter name group/<zone> for what was timed inside a zone, its slashes dots so the name keeps one group, "none" for no zone.
+std::string ComputeZoneCounterName(const char *group, const char *zone);
+
 // [rc4l] A value as the tables show it: bytes in their unit, large values whole and the rest to two places.
 std::string ComputeValueText(double value, const std::string &unit);
 
