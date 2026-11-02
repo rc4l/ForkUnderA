@@ -111,3 +111,11 @@ TEST(LightLists, ShiftsOnlyWhereAPartLanded)
 	ComputeShiftRuns({ 5 }, 0, first);
 	EXPECT_EQ(std::vector<int>({ 0, 1, 10, 12, 0 }), first);
 }
+
+// [Doruk-Aksoy] The last chunk is cut at the subsectors' end, and starts past it move nothing.
+TEST(LightLists, ShiftsTheShortLastChunk)
+{
+	std::vector<int> first = { 0, 1, 0, 2, 0 };
+	ComputeShiftRuns({ 0, 10, 20, 30 }, 2, first);
+	EXPECT_EQ(std::vector<int>({ 0, 1, 10, 12, 20 }), first);
+}

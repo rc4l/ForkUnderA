@@ -47,23 +47,23 @@ static Diligent::RefCntAutoPtr<Diligent::IRenderDevice>  g_device;
 static Diligent::RefCntAutoPtr<Diligent::IDeviceContext> g_context;
 // [rc4l] The device's descriptor limits, read once it exists; all zero (no bindless) before that or without the feature.
 static DescriptorLimits g_limits = { 0, 0, 0, 0, 0 };
+// [Doruk-Aksoy] The array's size, worked out again only when the device or fua_dg_slotcap changes, since every batch and dynamic piece asks it every frame.
+static unsigned g_slotCapacity = 0;
+static void RefreshSlotCapacity();
 
 }} // namespace zx::hwrender
 
 // [rc4l] A smaller device's limits, for drawing as one would (0 is the device's own); the pipelines are rebuilt with the new array size.
-CVAR(Int, fua_dg_slotcap, 0, 0)
+CUSTOM_CVAR(Int, fua_dg_slotcap, 0, 0)
+{
+	zx::hwrender::RefreshSlotCapacity();
+}
 
 namespace zx { namespace hwrender {
 
-unsigned MaterialSlotCapacity()
-{
-	DescriptorLimits l = g_limits;
-	const unsigned cap = fua_dg_slotcap > 0 ? (unsigned)fua_dg_slotcap : 0;
-	if (cap > 0)
-		for (unsigned *v : { &l.perStageSampledImages, &l.perStageSamplers, &l.perStageResources, &l.setSampledImages, &l.setSamplers })
-			if (*v > cap) *v = cap;
-	return ComputeMaterialSlotCapacity(l);
-}
+static void RefreshSlotCapacity() { g_slotCapacity = ComputeCappedSlotCapacity(g_limits, fua_dg_slotcap); }
+
+unsigned MaterialSlotCapacity() { return g_slotCapacity; }
 
 const DeviceApi *ChosenDeviceApi()
 {
@@ -169,6 +169,7 @@ bool ProbeVulkan(FString &report)
 
 	const DeviceApi *api = ChosenDeviceApi();
 	if (!api->createDevice(&g_device, &g_context, g_limits, report)) return false;
+	RefreshSlotCapacity();
 	// [rc4l] A reference never let go, so the device outlives exit: destroying it finalizes glslang, whose global mutex is gone by then on macOS and whose lock aborts the quit, and the dozens of static objects that each hold the device make releasing it any sooner impossible.
 	g_device->AddRef();
 	if (MaterialSlotCapacity() > 0)
