@@ -50,6 +50,7 @@
 #include "features/dynlights/dynlight.h"
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
+#include "features/dynlights/computation/samelinks_compute.h"   // [Doruk-Aksoy] a relink that would change no link skipped
 #include "features/net-session/netrole.h"
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how many relinks a tic, how many changed nothing, and what the walk costs of them
 
@@ -442,8 +443,14 @@ size_t ADynamicLight::PointerSubstitution (DObject *old, DObject *notOld)
 
 // [rc4l] The relinking light's nodes by target, built by LinkLight: walking the light's list for each target made a relink of a light touching n of them n*n, half of a Sunder MAP14 tic.
 static zx::dynlights::PointerIndex g_linkIndex;
-// [Doruk-Aksoy] Nodes made since the start, so a relink can tell whether it linked anything new.
-static unsigned g_nodesMade = 0;
+
+// [Doruk-Aksoy] What a relink's walk reached, in walk order, linked only once it is known to differ from the last relink's: the list a target joins, its list head and itself.
+namespace {
+enum LinkKind { kLinkSubsector, kLinkSector, kLinkSide };
+struct ReachedTarget { LinkKind kind; FLightNode **thread; void *linkto; };
+std::vector<ReachedTarget> g_reached;
+const void *TargetOf(const ReachedTarget &t) { return t.linkto; }
+}
 
 FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * light, FLightNode *& nextnode)
 {
@@ -460,7 +467,6 @@ FLightNode * AddLightNode(FLightNode ** thread, void * linkto, ADynamicLight * l
 	// of the list.
 	
 	node = new FLightNode;
-	g_nodesMade++;
 	
 	node->targ = linkto;
 	node->lightsource = light; 
@@ -554,10 +560,10 @@ void ADynamicLight::CollectWithinRadius(subsector_t *subSec, float radius)
 
 	subSec->validcount = ::validcount;
 
-	touching_subsectors = AddLightNode(&subSec->lighthead, subSec, this, touching_subsectors);
+	g_reached.push_back(ReachedTarget{ kLinkSubsector, &subSec->lighthead, subSec });
 	if (subSec->sector->validcount != ::validcount)
 	{
-		touching_sector = AddLightNode(&subSec->render_sector->lighthead, subSec->sector, this, touching_sector);
+		g_reached.push_back(ReachedTarget{ kLinkSector, &subSec->render_sector->lighthead, subSec->sector });
 		subSec->sector->validcount = ::validcount;
 	}
 
@@ -571,7 +577,7 @@ void ADynamicLight::CollectWithinRadius(subsector_t *subSec, float radius)
 			if (DMulScale32 (y-seg->v1->y, seg->v2->x-seg->v1->x, seg->v1->x-x, seg->v2->y-seg->v1->y) <=0)
 			{
 				seg->linedef->validcount=validcount;
-				touching_sides = AddLightNode(&seg->sidedef->lighthead, seg->sidedef, this, touching_sides);
+				g_reached.push_back(ReachedTarget{ kLinkSide, &seg->sidedef->lighthead, seg->sidedef });
 			}
 		}
 
@@ -600,8 +606,27 @@ void ADynamicLight::CollectWithinRadius(subsector_t *subSec, float radius)
 void ADynamicLight::LinkLight()
 {
 	ZX_ZONE("lights/link");
-	const unsigned madeBefore = g_nodesMade;
-	int unlinked = 0;
+	ZX_COUNT("lights/relinks", "relinks", 1);
+	// [Doruk-Aksoy] The walk first, which links nothing itself and reads no node, so what it reached can be held to the last relink's.
+	g_reached.clear();
+	if (radius>0)
+	{
+		// passing in radius*radius allows us to do a distance check without any calls to sqrtf
+		subsector_t * subSec = R_PointInSubsector(x, y);
+		if (subSec)
+		{
+			float fradius = FIXED2FLOAT(radius);
+			::validcount++;
+			ZX_ZONE("lights/link_walk");
+			CollectWithinRadius(subSec, fradius*fradius);
+		}
+	}
+	// [Doruk-Aksoy] The very targets of the last relink in its order have their nodes already, so marking, linking and sweeping would change nothing (lights/relinks_same).
+	if (zx::dynlights::ComputeSameLinks(rcLinked, g_reached, TargetOf))
+	{
+		ZX_COUNT("lights/relinks_same", "relinks", 1);
+		return;
+	}
 	// mark the old light nodes
 	FLightNode * node;
 	// [rc4l] ...and index them by target for AddLightNode; a side, a subsector and a sector are never the same object, so one index serves all three lists.
@@ -629,18 +654,14 @@ void ADynamicLight::LinkLight()
 		node = node->nextTarget;
 	}
 
-	if (radius>0)
+	// [Doruk-Aksoy] Linked in walk order, as the walk itself linked them before.
+	for (const ReachedTarget &t : g_reached)
 	{
-		// passing in radius*radius allows us to do a distance check without any calls to sqrtf
-		subsector_t * subSec = R_PointInSubsector(x, y);
-		if (subSec)
-		{
-			float fradius = FIXED2FLOAT(radius);
-			::validcount++;
-			ZX_ZONE("lights/link_walk");
-			CollectWithinRadius(subSec, fradius*fradius);
-		}
+		if (t.kind == kLinkSubsector) touching_subsectors = AddLightNode(t.thread, t.linkto, this, touching_subsectors);
+		else if (t.kind == kLinkSector) touching_sector = AddLightNode(t.thread, t.linkto, this, touching_sector);
+		else touching_sides = AddLightNode(t.thread, t.linkto, this, touching_sides);
 	}
+	zx::dynlights::ComputeKeepLinks(g_reached, TargetOf, rcLinked);
 		
 	// Now delete any nodes that won't be used. These are the ones where
 	// m_thing is still NULL.
@@ -651,7 +672,6 @@ void ADynamicLight::LinkLight()
 		if (node->lightsource == NULL)
 		{
 			node = DeleteLightNode(node);
-			unlinked++;
 		}
 		else
 			node = node->nextTarget;
@@ -663,7 +683,6 @@ void ADynamicLight::LinkLight()
 		if (node->lightsource == NULL)
 		{
 			node = DeleteLightNode(node);
-			unlinked++;
 		}
 		else
 			node = node->nextTarget;
@@ -675,13 +694,10 @@ void ADynamicLight::LinkLight()
 		if (node->lightsource == NULL)
 		{
 			node = DeleteLightNode(node);
-			unlinked++;
 		}
 		else
 			node = node->nextTarget;
 	}
-	ZX_COUNT("lights/relinks", "relinks", 1);
-	ZX_COUNT("lights/relinks_same", "relinks", g_nodesMade == madeBefore && unlinked == 0 ? 1 : 0);
 }
 
 
@@ -707,6 +723,7 @@ void ADynamicLight::UnlinkLight ()
 	while (touching_sides) touching_sides = DeleteLightNode(touching_sides);
 	while (touching_subsectors) touching_subsectors = DeleteLightNode(touching_subsectors);
 	while (touching_sector) touching_sector = DeleteLightNode(touching_sector);
+	rcLinked.clear();
 }
 
 void ADynamicLight::Destroy()
