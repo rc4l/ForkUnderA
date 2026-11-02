@@ -19,6 +19,7 @@
 #include "features/gamecopy/particles.h"     // [rc4l] the particles the walks reach
 #include "features/gamecopy/players.h"       // [rc4l] the camera textures the copy holds
 #include "features/jobs/jobs.h"                // [Doruk-Aksoy] the lanes the sweep culls on
+#include "features/jobs/computation/joinparts_compute.h"   // [Doruk-Aksoy] Padded, each lane's chunk on lines of its own
 #include "features/telemetry/telemetry.h"      // [Doruk-Aksoy] scene/actor_sweep
 
 #include "actor.h"
@@ -83,7 +84,8 @@ struct SweepChunk
 	std::vector<const zx::gamecopy::ActorRecord *> kept;
 	int verdicts[kSweepVerdicts];
 };
-std::vector<SweepChunk> g_sweepChunks;
+// [Doruk-Aksoy] Padded, since lanes cull neighbouring chunks at once and every actor's verdict wrote a line both chunks were in.
+std::vector<zx::jobs::Padded<SweepChunk>> g_sweepChunks;
 // [Doruk-Aksoy] Actors a lane culls at a time.
 const int kSweepChunk = 512;
 
@@ -106,7 +108,7 @@ void SweepActors()
 			if ((int)g_sweepChunks.size() < chunks) g_sweepChunks.resize(chunks);
 			auto sweep = [&](int lo, int hi, int)
 			{
-				SweepChunk &sc = g_sweepChunks[lo / kSweepChunk];
+				SweepChunk &sc = g_sweepChunks[lo / kSweepChunk].value;
 				sc.kept.clear();
 				for (int &v : sc.verdicts) v = 0;
 				for (int i = lo; i < hi; i++)
@@ -119,7 +121,7 @@ void SweepActors()
 			zx::jobs::Pool().ParallelChunks(count, kSweepChunk, sweep);
 			for (int c = 0; c < chunks; c++)
 			{
-				const SweepChunk &sc = g_sweepChunks[c];
+				const SweepChunk &sc = g_sweepChunks[c].value;
 				g_swept.insert(g_swept.end(), sc.kept.begin(), sc.kept.end());
 				for (int v = 0; v < kSweepVerdicts; v++) verdicts[v] += sc.verdicts[v];
 			}

@@ -31,11 +31,9 @@ PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool
 	PieceSlotSet out;
 	out.animates = AnimationOf(base) >= 0;
 	const void *slotMat = out.animates ? base : p.material;
-	zx::materials::MaterialInfo info;
-	const bool described = zx::materials::DescribeMaterial(p.material, info);
 	out.mat = (float)MaterialSlotFor(slotMat, translation, inMesh);
 	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
-	const bool bright = out.animates || (described && info.brightmap);
+	const bool bright = out.animates || zx::materials::MaterialHasBrightmap(p.material);
 	out.bright = bright ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation, inMesh) : 0.f;
 	// [Doruk-Aksoy] What a dynamic piece asks for, stamped for fua_dg_slotreport's working set.
 	if (!inMesh)
@@ -111,12 +109,13 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	pd.brightSlot = slots.bright;
 	zx::levelmesh::ComputeUnpackRGB(p.fogColor, pd.fogR, pd.fogG, pd.fogB);
 	// [rc4l] A warp texture ripples in the shader, as GL's func_warp does; the upload already holds its unwarped source.
-	zx::materials::MaterialInfo info;
-	const bool described = zx::materials::DescribeMaterial(p.material, info);
+	int warp = 0, userShader = -1;
+	float shaderSpeed = 1.f;
+	zx::materials::MaterialShading(p.material, warp, userShader, shaderSpeed);
 	// [rc4l] A warp, or a GLDEFS hardware shader from 3 up, in the slot the shaders read the piece's effect from.
-	pd.warpStyle = (float)zx::hwshaders::ComputePieceShader(zx::hwrender::ComputeWarpStyle(described ? info.warp : 0), described ? info.userShader : -1);
+	pd.warpStyle = (float)zx::hwshaders::ComputePieceShader(zx::hwrender::ComputeWarpStyle(warp), userShader);
 	pd.nx = p.normX; pd.ny = p.normY; pd.nz = p.normZ;
-	pd.warpSpeed = described ? info.shaderSpeed : 1.f;
+	pd.warpSpeed = shaderSpeed;
 	pd.floodUx = p.floodUV[0]; pd.floodUy = p.floodUV[1]; pd.floodU0 = p.floodUV[2]; pd.floodZ = p.floodZ;
 	pd.floodVx = p.floodUV[3]; pd.floodVy = p.floodUV[4]; pd.floodV0 = p.floodUV[5]; pd.flood = p.flood ? 1.f : 0.f;
 	pd.actorR = p.dynR; pd.actorG = p.dynG; pd.actorB = p.dynB; pd.cpuLight = p.cpuLight ? 1.f : 0.f;

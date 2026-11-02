@@ -454,6 +454,21 @@ ZoneSite::ZoneSite(const char *n) : counter(Register(CounterSpec{ n, "ms", Count
 {
 }
 
+thread_local const ZoneSite *t_innermostZone = nullptr;
+
+Counter CounterUnderZone(const char *group, const ZoneSite *zone)
+{
+	// [Doruk-Aksoy] Each thread's own pairs asked for so far, so a lookup needs no lock and registers only once a pair.
+	struct Filed { const char *group; const ZoneSite *zone; Counter counter; };
+	thread_local std::vector<Filed> filed;
+	for (const Filed &f : filed) if (f.group == group && f.zone == zone) return f.counter;
+	const std::string name = ComputeZoneCounterName(group, zone != nullptr ? zone->name : nullptr);
+	const char *const filedName = name.c_str();
+	const Counter c = Register(CounterSpec{ filedName, "ms", CounterKind::Time, 0 });
+	filed.push_back(Filed{ group, zone, c });
+	return c;
+}
+
 void Region(Counter c, int64_t startNs, int64_t endNs)
 {
 	if (c < 0 || !g_enabled) return;

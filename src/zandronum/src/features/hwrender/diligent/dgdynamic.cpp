@@ -179,7 +179,11 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			orderKeys[i].index = i;
 		}
 		static std::vector<zx::hwrender::PieceOrderKey> orderScratch;
-		zx::hwrender::ComputeSortPieceOrder(orderKeys, orderScratch);
+		{
+			ZX_ZONE("scene/piece_sort");
+			ZX_COUNT("scene/pieces_sorted", "pieces", npieces);
+			zx::hwrender::ComputeSortPieceOrder(orderKeys, orderScratch);
+		}
 		for (int i = 0; i < npieces; i++) order[i] = orderKeys[i].index;
 
 		// [rc4l] Every slot found and every atlas place taken in draw order, on this thread, since placing a sprite the first time uploads it.
@@ -214,6 +218,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		unfilled.assign(packChunks, 0);
 		const bool tracing = fua_dg_rtmirrors && fua_dg_rtsprites;
 		const bool packing = fua_dg_spritepack;
+		const bool bindless = BindlessActive();
 		auto pack = [&](int chunk, int)
 		{
 			static const int kQuadOrder[4] = { 0, 1, 2, 3 };
@@ -225,7 +230,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 				ScenePieceData &pd = filled[k];
 				FillPieceDataWith(p, slots[k], pd, false);
 				if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
-				else if (BindlessActive()) missed += MaterialSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot);
+				else if (bindless) missed += MaterialSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot);
 				if (!packing || !p.quad || p.range.count != 4) continue;
 				if (tracing && zx::hwrender::ComputeTracesRun(6, p.solid, p.depthBias, p.hud, p.stackSlot, p.onMirror, p.mirrorView, p.blendMode)) continue;
 				zx::hwrender::SpriteCorner corners[4];
@@ -622,7 +627,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// a test written with the real numbers off a real wall.
 	{
 		// [rc4l] Sorted as 128-bit keys holding the rule, and the draws then moved once.
-		static std::vector<zx::hwrender::TranslucentOrder> keys, keyScratch;
+		static std::vector<zx::hwrender::TranslucentOrder> keys, keysMoved;
+		static std::vector<zx::hwrender::TranslucentHalf> halves, halfScratch;
 		static TArray<BlendDraw> sorted;
 		keys.resize(list.Size());
 		for (unsigned i = 0; i < list.Size(); i++)
@@ -635,7 +641,11 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			keys[i].index = i;
 		}
 		// [Doruk-Aksoy] A stable radix sort, so equal keys, which the vertex offset ending each key makes rare, keep their place in the list rather than any std::sort chose.
-		zx::hwrender::ComputeSortTranslucentOrder(keys, keyScratch);
+		{
+			ZX_ZONE("scene/blend_sort");
+			ZX_COUNT("scene/blends_sorted", "draws", keys.size());
+			zx::hwrender::ComputeSortTranslucentOrder(keys, halves, halfScratch, keysMoved);
+		}
 		sorted.Resize(list.Size());
 		for (unsigned i = 0; i < keys.size(); i++) sorted[i] = list[keys[i].index];
 		for (unsigned i = 0; i < sorted.Size(); i++) list[i] = sorted[i];

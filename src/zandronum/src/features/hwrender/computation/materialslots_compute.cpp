@@ -3,6 +3,7 @@
 
 #include "features/hwrender/computation/materialslots_compute.h"
 
+#include <initializer_list>
 #include <string.h>
 
 namespace zx { namespace hwrender {
@@ -16,6 +17,15 @@ unsigned ComputeMaterialSlotCapacity(const DescriptorLimits &limits)
 	const unsigned room = least > (unsigned)kOtherStageResources ? least - kOtherStageResources : 0;
 	if (room < (unsigned)kMinMaterialSlots) return 0;
 	return room < (unsigned)kMaxMaterialSlots ? room : (unsigned)kMaxMaterialSlots;
+}
+
+unsigned ComputeCappedSlotCapacity(const DescriptorLimits &limits, int cap)
+{
+	DescriptorLimits l = limits;
+	if (cap > 0)
+		for (unsigned *v : { &l.perStageSampledImages, &l.perStageSamplers, &l.perStageResources, &l.setSampledImages, &l.setSamplers })
+			if (*v > (unsigned)cap) *v = (unsigned)cap;
+	return ComputeMaterialSlotCapacity(l);
 }
 
 std::string ComputeShaderWithDefines(const char *source, const std::string &defines)

@@ -106,6 +106,9 @@
 #include "features/acs-lineattack/computation/lineattack_compute.h"   // [Doruk-Aksoy] LineAttack's shooter
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] CallShaderFunction
 #include "features/acs-argcount/computation/acsargcount_compute.h"   // [Doruk-Aksoy] ComputeShortCall
+#include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how often the string pool is collected and what that frees
+#include "features/acs-strings/computation/stringpool_compute.h"   // [Doruk-Aksoy] ComputeStringPoolGrowth
+#include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
 std::vector<TArray<std::pair<FString, FString> > > g_dbQueries;
@@ -702,7 +705,7 @@ void ACSStringPool::UnlockAll()
 //
 //============================================================================
 
-void ACSStringPool::PurgeStrings()
+size_t ACSStringPool::PurgeStrings()
 {
 	// Clear the hash buckets. We'll rebuild them as we decide what strings
 	// to keep and which to toss.
@@ -737,6 +740,7 @@ void ACSStringPool::PurgeStrings()
 			}
 		}
 	}
+	return freedcount;
 }
 
 //============================================================================
@@ -778,8 +782,10 @@ int ACSStringPool::InsertString(FString &str, unsigned int h, unsigned int bucke
 	unsigned int index = FirstFreeEntry;
 	if (index >= MIN_GC_SIZE && index == Pool.Max())
 	{ // We will need to grow the array. Try a garbage collection first.
-		P_CollectACSGlobalStrings();
+		const size_t freed = P_CollectACSGlobalStrings();
 		index = FirstFreeEntry;
+		// [Doruk-Aksoy] A collection that freed little grows the pool's room, so the next one waits for that many strings rather than the few it freed.
+		Pool.Grow(zx::acsstrings::ComputeStringPoolGrowth((unsigned)freed, Pool.Size()));
 	}
 	if (FirstFreeEntry >= STRPOOL_LIBRARYID_OR)
 	{ // If we go any higher, we'll collide with the library ID marker.
@@ -987,8 +993,9 @@ void P_MarkGlobalVarStrings()
 //
 //============================================================================
 
-void P_CollectACSGlobalStrings()
+size_t P_CollectACSGlobalStrings()
 {
+	ZX_ZONE("acs/string_collect");
 	for (FACSStack *stack = FACSStack::head; stack != NULL; stack = stack->next)
 	{
 		const int32_t sp = stack->sp;
@@ -1009,7 +1016,10 @@ void P_CollectACSGlobalStrings()
 	FBehavior::StaticMarkLevelVarStrings();
 	P_MarkWorldVarStrings();
 	P_MarkGlobalVarStrings();
-	GlobalACSStrings.PurgeStrings();
+	const size_t freed = GlobalACSStrings.PurgeStrings();
+	ZX_COUNT("acs/string_collects", "collects", 1);
+	ZX_COUNT("acs/strings_freed", "strings", freed);
+	return freed;
 }
 
 #ifdef _DEBUG

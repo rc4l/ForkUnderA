@@ -14,6 +14,7 @@
 using zx::jobs::ComputeEmptyParts;
 using zx::jobs::ComputeJoinParts;
 using zx::jobs::Part;
+using zx::jobs::Padded;
 
 namespace {
 
@@ -26,6 +27,20 @@ std::vector<Part<int>> PartsOf(const std::vector<std::vector<int>> &lists)
 }
 
 } // namespace
+
+// [Doruk-Aksoy] A padded value takes a part's room, so neighbours in an array start a part apart and keep their values apart.
+TEST(JoinParts, APaddedValueTakesAPartsRoom)
+{
+	struct Lane { std::vector<int> kept; int count = 0; };
+	static_assert(sizeof(Padded<Lane>) == zx::jobs::kPartBytes, "a padded value fills a part");
+	std::vector<Padded<Lane>> lanes(3);
+	lanes[1].value.kept.push_back(7);
+	lanes[1].value.count = 2;
+	EXPECT_EQ((size_t)zx::jobs::kPartBytes, (size_t)((const char *)&lanes[1].value - (const char *)&lanes[0].value));
+	EXPECT_TRUE(lanes[0].value.kept.empty());
+	EXPECT_EQ(0, lanes[2].value.count);
+	EXPECT_EQ(2, lanes[1].value.count);
+}
 
 // [Doruk-Aksoy] Parts join in their order whatever their sizes, empty ones included, and each start is where its part landed.
 TEST(JoinParts, PartsJoinInOrderWithTheirStarts)
