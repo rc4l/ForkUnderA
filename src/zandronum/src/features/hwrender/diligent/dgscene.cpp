@@ -21,6 +21,7 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/telemetry/telemetry.h"
 #include "features/hwrender/computation/uploadtally_compute.h"
+#include <cstddef>
 #include <mutex>
 #include "features/hwrender/diligent/dggputimer.h"   // [rc4l] gpu/frame_ms, gpu/world_ms, gpu/2d_ms
 #include "features/hwrender/diligent/dgdevice.h"   // [rc4l] PagePaced
@@ -486,9 +487,9 @@ void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes)
 	if (zx::hwrender::ComputeUploadFlushDue(g_uploadSinceFlush, bytes, g_uploadFlushBudget)) ctx->Flush();
 }
 
-void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data)
+void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data, bool changing)
 {
-	if (zx::hwrender::ComputeUploadChanged(shadow, buf->GetUniqueID(), data, bytes)) UpdateBufferInPages(ctx, buf, 0, bytes, data);
+	if (zx::hwrender::ComputeUploadDue(shadow, buf->GetUniqueID(), data, bytes, changing)) UpdateBufferInPages(ctx, buf, 0, bytes, data);
 	else ZX_COUNT("gpu/upload_spared", "bytes", (double)bytes);
 }
 
