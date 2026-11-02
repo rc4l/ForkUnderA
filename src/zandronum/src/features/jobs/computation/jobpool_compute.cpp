@@ -22,6 +22,12 @@ void ComputeChunkBounds(int count, int chunk, int index, int &lo, int &hi)
 	if (lo > hi) lo = hi;
 }
 
+int ComputeChunkFor(int count, int chunk, int workers)
+{
+	if (workers > 0) return chunk;
+	return count > 0 ? count : 1;
+}
+
 namespace {
 
 std::atomic<const JobObserver *> g_observer{ nullptr };
@@ -35,7 +41,7 @@ void SetJobObserver(const JobObserver *observer)
 
 JobPool::JobPool(int workers, int spinMicros)
 	: m_spinMicros(spinMicros), m_fn(NULL), m_user(NULL), m_count(0), m_next(0), m_done(0), m_open(false),
-	  m_generation(0), m_active(0), m_sleeping(0), m_stop(false)
+	  m_generation(0), m_active(0), m_sleeping(0), m_stop(false), m_observer(nullptr)
 {
 	Resize(workers);
 }
@@ -43,6 +49,12 @@ JobPool::JobPool(int workers, int spinMicros)
 JobPool::~JobPool()
 {
 	Stop();
+}
+
+const JobObserver *JobPool::Observer() const
+{
+	const JobObserver *own = m_observer.load(std::memory_order_acquire);
+	return own != nullptr ? own : g_observer.load(std::memory_order_acquire);
 }
 
 void JobPool::Stop()
@@ -95,7 +107,7 @@ void JobPool::WorkerMain(int lane)
 		seen = g;
 		// [rc4l] Joining before looking at the job lets the caller wait for every worker that may still touch it; one that joins after the job closed leaves at once.
 		m_active.fetch_add(1);
-		const JobObserver *o = g_observer.load(std::memory_order_acquire);
+		const JobObserver *o = Observer();
 		if (o != nullptr && !announced) { o->workerStarted(lane); announced = true; }
 		if (m_open.load() && m_generation.load() == g) RunItems(lane);
 		m_active.fetch_sub(1);
@@ -104,7 +116,7 @@ void JobPool::WorkerMain(int lane)
 
 void JobPool::RunItems(int lane)
 {
-	const JobObserver *o = g_observer.load(std::memory_order_acquire);
+	const JobObserver *o = Observer();
 	const int64_t start = o != nullptr ? o->now() : 0;
 	int ran = 0;
 	for (int i = m_next.fetch_add(1); i < m_count; i = m_next.fetch_add(1))
@@ -134,7 +146,7 @@ void JobPool::ParallelFor(int count, IndexFn fn, void *user)
 	if (m_sleeping.load() > 0) { std::lock_guard<std::mutex> lock(m_mutex); }
 	m_wake.notify_all();
 	RunItems(0);
-	const JobObserver *o = g_observer.load(std::memory_order_acquire);
+	const JobObserver *o = Observer();
 	const int64_t waitStart = o != nullptr ? o->now() : 0;
 	while (m_done.load() < count) std::this_thread::yield();
 	m_open.store(false);

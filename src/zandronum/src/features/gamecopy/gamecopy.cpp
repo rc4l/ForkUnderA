@@ -11,6 +11,7 @@
 #include "features/gamecopy/decals.h"
 #include "features/gamecopy/seen.h"
 #include "features/gamecopy/polyobjs.h"
+#include "features/gamecopy/scanpool.h"   // [Doruk-Aksoy] the game thread's own pool at a tic's end
 #include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] SetDrawnShaders
 #include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] kTorchPower, kLightAmpPower
@@ -42,6 +43,7 @@
 #include "r_utility.h"
 #include "v_palette.h"
 #include "features/jobs/jobs.h"   // [rc4l] the change scans split across the pool
+#include "features/jobs/computation/joinparts_compute.h"   // [Doruk-Aksoy] the actor list gathered by chunks
 #include "g_level.h"
 #include "g_game.h"   // [rc4l] GAME_GetEndLevelDelay
 #include "cl_demo.h"   // [rc4l] CLIENTDEMO_IsInFreeSpectateMode
@@ -365,14 +367,15 @@ void Bump(sector_t &s, int change)
 }
 
 // [rc4l] Items each pool lane compares at a time.
-static const int kScanChunk = 2048;
+// [Doruk-Aksoy] Few enough that Sunder MAP11's 3,544 sectors make a chunk for every lane of the game thread's pool.
+static const int kScanChunk = 512;
 
 // [rc4l] Each of count items' change worked out across the job pool, since on Sunder MAP16 the sector and side scans alone were 2.4 ms of a tic's handoff; it only reads, so the copy is taken afterwards on this thread.
 template <class Change> static void ScanChanges(int count, std::vector<int> &out, Change change)
 {
 	out.resize(count > 0 ? count : 0);
 	auto scan = [&](int lo, int hi, int) { for (int i = lo; i < hi; i++) out[i] = change(i); };
-	zx::jobs::Pool().ParallelChunks(count, kScanChunk, scan);
+	ScanPool().ParallelChunks(count, kScanChunk, scan);
 }
 
 // [rc4l] The map as the copy last took it, which a scan beside the frames compares against, since the frames blend the copy itself.
@@ -408,18 +411,21 @@ Prescan g_prescan;
 unsigned g_fills = 0;   // [rc4l] fills since the start, which a scan is stamped with
 const std::vector<int> kNoneScanned;
 
-// [rc4l] The indices of count items that changed: across the pool on the main thread, one by one on the game thread, which leaves the pool to the frames.
+// [Doruk-Aksoy] The indices of count items that changed, each chunk listing its own across the scanning thread's pool, joined in order.
 template <class Changed> static void ListChanges(int count, std::vector<int> &out, Changed changed)
 {
-	out.clear();
-	if (zx::handoff::Deferring())
+	zx::jobs::JobPool &pool = ScanPool();
+	const int chunk = zx::jobs::ComputeChunkFor(count, kScanChunk, pool.Workers());
+	static std::vector<zx::jobs::Part<int>> parts;
+	zx::jobs::ComputeEmptyParts(parts, zx::jobs::ComputeChunkCount(count, chunk));
+	auto list = [&](int lo, int hi, int)
 	{
-		for (int i = 0; i < count; i++) if (changed(i)) out.push_back(i);
-		return;
-	}
-	static std::vector<int> flags;
-	ScanChanges(count, flags, [&](int i) { return changed(i) ? 1 : 0; });
-	for (int i = 0; i < count; i++) if (flags[i]) out.push_back(i);
+		std::vector<int> &into = parts[lo / chunk].items;
+		for (int i = lo; i < hi; i++) if (changed(i)) into.push_back(i);
+	};
+	pool.ParallelChunks(count, chunk, list);
+	static std::vector<int> starts;
+	zx::jobs::ComputeJoinParts(parts, out, starts);
 }
 
 // [Doruk-Aksoy] The sectors fills took since the backend's sector light table last read them, which on a client read every sector every frame.
@@ -526,27 +532,41 @@ inline void Prefetch(const void *p)
 // [Doruk-Aksoy] Slots ahead an array's actors are fetched, as many as their loads can overlap.
 const size_t kFetchAhead = 16;
 
-// [Doruk-Aksoy] Each actor the thinker lists hold, in TThinkerIterator<AActor>'s order (the thinking statnums, each one's list then its fresh list), read from their arrays, each actor's class, links and ids fetched slots ahead, which a walk down the lists' links cannot do.
+// [Doruk-Aksoy] Each actor in slots [lo, hi) of a thinker list's array, each one's class, links and ids fetched slots ahead, which a walk down the lists' links cannot do.
+template <class Visit> void VisitSlots(const std::vector<void *> &items, int lo, int hi, Visit visit)
+{
+	for (int k = lo; k < hi; k++)
+	{
+		if (k + (int)kFetchAhead < hi && items[k + kFetchAhead] != NULL)
+		{
+			const AActor *const ahead = static_cast<const AActor *>(items[k + kFetchAhead]);
+			Prefetch(ahead);
+			Prefetch(&ahead->snext);
+			Prefetch(&ahead->rcSerial);
+		}
+		void *const item = items[k];
+		if (item != NULL && static_cast<DThinker *>(item)->IsKindOf(RUNTIME_CLASS(AActor))) visit(static_cast<AActor *>(item));
+	}
+}
+
+// [Doruk-Aksoy] The buckets holding actors in TThinkerIterator<AActor>'s order: the thinking statnums, each one's list then its fresh list.
+const std::vector<int> &ActorBuckets()
+{
+	static std::vector<int> buckets;
+	if (buckets.empty())
+		for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
+		{
+			buckets.push_back(stat);
+			buckets.push_back(kFreshBucket + stat);
+		}
+	return buckets;
+}
+
+// [Doruk-Aksoy] Each actor the thinker lists hold, in TThinkerIterator<AActor>'s order, read from their arrays.
 template <class Visit> void ForEachMirroredActor(Visit visit)
 {
-	for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
-		for (const int bucket : { stat, kFreshBucket + stat })
-		{
-			if (bucket >= (int)g_order.items.size()) continue;
-			const std::vector<void *> &items = g_order.items[bucket];
-			for (size_t k = 0; k < items.size(); k++)
-			{
-				if (k + kFetchAhead < items.size() && items[k + kFetchAhead] != NULL)
-				{
-					const AActor *const ahead = static_cast<const AActor *>(items[k + kFetchAhead]);
-					Prefetch(ahead);
-					Prefetch(&ahead->snext);
-					Prefetch(&ahead->rcSerial);
-				}
-				void *const item = items[k];
-				if (item != NULL && static_cast<DThinker *>(item)->IsKindOf(RUNTIME_CLASS(AActor))) visit(static_cast<AActor *>(item));
-			}
-		}
+	for (const int bucket : ActorBuckets())
+		if (bucket < (int)g_order.items.size()) VisitSlots(g_order.items[bucket], 0, (int)g_order.items[bucket].size(), visit);
 }
 
 // [Doruk-Aksoy] The arrays closed up where more has left than stays, each moved thinker told its slot.
@@ -565,30 +585,51 @@ void WalkActors(std::vector<AActor *> &out)
 }
 
 // [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
-void ListActors(std::vector<AActor *> &out, ActorChains *chains = NULL)
+// [Doruk-Aksoy] Gathered by chunks of the thinker arrays across the scanning thread's pool, since each actor is three cold lines, then joined in order; the few with no id get theirs after, in order.
+void ListActors(std::vector<AActor *> &out, ActorChains &chains)
 {
-	out.clear();
-	if (chains != NULL)
-	{
-		chains->head.clear();
-		chains->next.clear();
-	}
 	const uintptr_t firstHead = FirstChainHead();
 	CompactMirror();
-	ForEachMirroredActor([&](AActor *a)
+	static std::vector<OrderChunk> chunks;
+	ComputeOrderChunks(g_order, ActorBuckets(), kActorChunk, chunks);
+	zx::jobs::JobPool &pool = ScanPool();
+	// [Doruk-Aksoy] A part a chunk, or one part of every chunk on a pool of no workers, whose places need no moving after.
+	const int n = (int)chunks.size();
+	const int group = zx::jobs::ComputeChunkFor(n, 1, pool.Workers());
+	const int groups = zx::jobs::ComputeChunkCount(n, group);
+	static std::vector<zx::jobs::Part<AActor *>> parts, nexts;
+	static std::vector<zx::jobs::Part<int>> heads, unnamed;
+	zx::jobs::ComputeEmptyParts(parts, groups);
+	zx::jobs::ComputeEmptyParts(nexts, groups);
+	zx::jobs::ComputeEmptyParts(heads, groups);
+	zx::jobs::ComputeEmptyParts(unnamed, groups);
+	auto gather = [firstHead, group](int lo, int hi, int)
 	{
-		if (a->rcSerial == kNoId) a->rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
-		// [rc4l] Its place noted while it is in cache, which LinkListed reads; a pass of its own cost a Complex Doom fight half a millisecond a tic.
-		a->rcListed = (int)out.size();
-		out.push_back(a);
-		// [Doruk-Aksoy] Its chain noted here too, which spares LinkChains a walk of every sector's chain, a millisecond of a DnD fight's tic.
-		if (chains != NULL)
-		{
-			chains->head.emplace_back();
-			chains->next.emplace_back();
-			NoteChain(a, firstHead, chains->head.back(), chains->next.back());
-		}
-	});
+		const int g = lo / group;
+		for (int c = lo; c < hi; c++)
+			VisitSlots(g_order.items[chunks[c].bucket], chunks[c].lo, chunks[c].hi, [firstHead, g](AActor *a)
+			{
+				// [rc4l] Its place noted while it is in cache, which LinkListed reads; a pass of its own cost a Complex Doom fight half a millisecond a tic.
+				std::vector<AActor *> &listed = parts[g].items;
+				a->rcListed = (int)listed.size();
+				if (a->rcSerial == kNoId) unnamed[g].items.push_back((int)listed.size());
+				listed.push_back(a);
+				// [Doruk-Aksoy] Its chain noted here too, which spares LinkChains a walk of every sector's chain, a millisecond of a DnD fight's tic.
+				heads[g].items.emplace_back();
+				nexts[g].items.emplace_back();
+				NoteChain(a, firstHead, heads[g].items.back(), nexts[g].items.back());
+			});
+	};
+	pool.ParallelChunks(n, group, gather);
+	static std::vector<int> starts;
+	zx::jobs::ComputeJoinParts(parts, out, starts);
+	zx::jobs::ComputeJoinParts(heads, chains.head, starts);
+	zx::jobs::ComputeJoinParts(nexts, chains.next, starts);
+	// [Doruk-Aksoy] Each place in its part moved to its place in the list, across the pool while those actors are still in cache.
+	auto place = [](int g, int) { if (starts[g] != 0) for (AActor *a : parts[g].items) a->rcListed += starts[g]; };
+	if (groups > 1) pool.ParallelFor(groups, place);
+	for (int g = 0; g < groups; g++)
+		for (const int k : unnamed[g].items) parts[g].items[k]->rcSerial = g_lastSerial = ComputeNextSerial(g_lastSerial);
 }
 
 // [Doruk-Aksoy] Each actor of a list kept from the last fill has its chain read again, across the pool, since its actors only moved; walking the thinkers for it took 0.57 ms of each of a DnD client's fills.
@@ -660,7 +701,7 @@ void FillActors(bool listed, bool kept)
 	{
 		static ActorChains chains;
 		if (kept) { ZX_ZONE("copy/actor_chains"); NoteChains(g_held, chains); }
-		else { ZX_ZONE("copy/actor_list"); ListActors(g_held, &chains); }
+		else { ZX_ZONE("copy/actor_list"); ListActors(g_held, chains); }
 		{ ZX_ZONE("copy/actor_link"); LinkChains(g_held, chains, g_firstIn, g_heldNext); }
 	}
 	ZX_COUNT("copy/actor_list_kept", "fills", kept ? 1 : 0);
@@ -1225,7 +1266,7 @@ void ScanAtTicEnd()
 	{ ZX_ZONE("copy/prescan_sides"); ListSideChanges(g_prescan.sides); }
 	{ ZX_ZONE("copy/prescan_lines"); ListChanges(numlines, g_prescan.lines, [](int i) { return LineChangeFrom(g_lineTaken[i], lines[i]) != 0; }); }
 	static ActorChains chains;
-	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed, &chains); }
+	{ ZX_ZONE("copy/prescan_actors"); ListActors(g_listed, chains); }
 	{ ZX_ZONE("copy/prescan_links"); LinkChains(g_listed, chains, g_listedFirstIn, g_listedNext); }
 	{ ZX_ZONE("copy/prescan_decals"); ScanDecalSides(); }
 	{ ZX_ZONE("copy/prescan_seen"); ScanSeen(g_prescan.sectors, g_prescan.lines); }

@@ -95,3 +95,28 @@ TEST(ThinkerOrderCompute, CompactingAFullBucketMovesNothing)
 	ComputeOrderCompact(o, 0, [&](void *, int) { ADD_FAILURE() << "nothing moved"; });
 	EXPECT_EQ(o.items[0], (std::vector<void *>{ &a, &b }));
 }
+
+// [Doruk-Aksoy] Chunks follow the buckets named in that order, cut at the chunk size, past empty, missing and negative buckets.
+TEST(ThinkerOrderCompute, ChunksWalkTheNamedBucketsInOrder)
+{
+	OrderBuckets o;
+	for (int i = 0; i < 5; i++) ComputeOrderAppend(o, 2, &a);
+	ComputeOrderAppend(o, 0, &b);
+	ComputeOrderAppend(o, 3, &c);
+	ComputeOrderRemove(o, 3, 0, &c);
+	o.items[3].clear();
+	std::vector<OrderChunk> chunks;
+	ComputeOrderChunks(o, { 2, 3, -1, 9, 0 }, 2, chunks);
+	ASSERT_EQ(chunks.size(), 4u);
+	const int want[4][3] = { { 2, 0, 2 }, { 2, 2, 4 }, { 2, 4, 5 }, { 0, 0, 1 } };
+	for (int k = 0; k < 4; k++)
+	{
+		EXPECT_EQ(chunks[k].bucket, want[k][0]) << k;
+		EXPECT_EQ(chunks[k].lo, want[k][1]) << k;
+		EXPECT_EQ(chunks[k].hi, want[k][2]) << k;
+	}
+	// [Doruk-Aksoy] A chunk size of none takes one slot a chunk.
+	ComputeOrderChunks(o, { 0 }, 0, chunks);
+	ASSERT_EQ(chunks.size(), 1u);
+	EXPECT_EQ(chunks[0].hi, 1);
+}
