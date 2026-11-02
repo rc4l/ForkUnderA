@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <vector>
 
 #include "features/hwrender/computation/surfaceorder_compute.h"
@@ -430,7 +431,8 @@ TEST(SurfaceOrder, TheSortKeyIsTheRule)
 // [Doruk-Aksoy] The sort puts the draws in the order their keys give, equal keys in list order, as std::stable_sort would.
 TEST(SurfaceOrder, TheSortOrdersByTheKey)
 {
-	std::vector<TranslucentOrder> keys, scratch;
+	std::vector<TranslucentOrder> keys, moved;
+	std::vector<TranslucentHalf> halves, scratch;
 	const float dists[] = { 0.f, 1.5f, 64.f, 1.e9f };
 	unsigned n = 0;
 	for (int decal = 0; decal < 2; decal++)
@@ -446,9 +448,39 @@ TEST(SurfaceOrder, TheSortOrdersByTheKey)
 					}
 	std::vector<TranslucentOrder> want = keys;
 	std::stable_sort(want.begin(), want.end(), [](const TranslucentOrder &a, const TranslucentOrder &b) { return a.key < b.key; });
-	ComputeSortTranslucentOrder(keys, scratch);
+	ComputeSortTranslucentOrder(keys, halves, scratch, moved);
 	ASSERT_EQ(want.size(), keys.size());
 	for (size_t i = 0; i < want.size(); i++) EXPECT_EQ(want[i].index, keys[i].index) << "at " << i;
+}
+
+// [Doruk-Aksoy] Keys sharing high halves, low halves and both, in every order, sort as std::stable_sort by the whole key does, and none or one key is left alone.
+TEST(SurfaceOrder, TiesOnTheHighHalfAreOrderedByTheLow)
+{
+	unsigned seed = 3;
+	auto next = [&seed]() { seed = seed * 1103515245u + 12345u; return (seed >> 16) & 0x7fff; };
+	std::vector<TranslucentOrder> keys, moved;
+	std::vector<TranslucentHalf> halves, scratch;
+	for (int round = 0; round < 40; round++)
+	{
+		keys.clear();
+		const unsigned n = next() % 300;
+		for (unsigned i = 0; i < n; i++)
+		{
+			TranslucentSortKey k;
+			k.hi = (unsigned long long)(next() % 6) << (8 * (next() % 8));
+			k.lo = next() % 4;
+			keys.push_back({ k, i });
+		}
+		std::vector<TranslucentOrder> want = keys;
+		std::stable_sort(want.begin(), want.end(), [](const TranslucentOrder &a, const TranslucentOrder &b) { return a.key < b.key; });
+		ComputeSortTranslucentOrder(keys, halves, scratch, moved);
+		ASSERT_EQ(want.size(), keys.size()) << "round " << round;
+		for (size_t i = 0; i < want.size(); i++) EXPECT_EQ(want[i].index, keys[i].index) << "round " << round << " at " << i;
+	}
+	keys.assign(1, TranslucentOrder{ TranslucentSortKey{ 5, 9 }, 7 });
+	ComputeSortTranslucentOrder(keys, halves, scratch, moved);
+	ASSERT_EQ(1u, keys.size());
+	EXPECT_EQ(7u, keys[0].index);
 }
 
 TEST(SurfaceOrder, TheSortKeyClampsTheLayer)

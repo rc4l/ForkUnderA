@@ -65,8 +65,15 @@ struct TranslucentOrder
 	unsigned index;
 };
 
-// [Doruk-Aksoy] Sorts by key, equal keys kept in their order, with scratch as the radix sort's second buffer.
-void ComputeSortTranslucentOrder(std::vector<TranslucentOrder> &keys, std::vector<TranslucentOrder> &scratch);
+// [Doruk-Aksoy] A key's high half with the place in the list its key has, which the sort moves rather than the whole key.
+struct TranslucentHalf
+{
+	unsigned long long hi;
+	unsigned place;
+};
+
+// [Doruk-Aksoy] Sorts by key, equal keys kept in their order, with halves and scratch as the radix sort's two buffers and moved as keys' second.
+void ComputeSortTranslucentOrder(std::vector<TranslucentOrder> &keys, std::vector<TranslucentHalf> &halves, std::vector<TranslucentHalf> &scratch, std::vector<TranslucentOrder> &moved);
 
 // [rc4l] A translucent draw's height span, and whether it is a piece of the level (a sprite never splits the order).
 struct BlendSpan
