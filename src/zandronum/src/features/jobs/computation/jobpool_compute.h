@@ -15,14 +15,25 @@
 
 namespace zx { namespace jobs {
 
+// [Doruk-Aksoy] One job as its caller saw it: when it opened, the caller's wait for the rest, the workers asleep as it opened, and the workers that ran an item with the latest one's start (opened when none did).
+struct JobWait
+{
+	int64_t opened, start, end;
+	int asleep, lanes;
+	int64_t lastStart;
+};
+
 // [rc4l] Who hears every pool's work, which features/jobs points at features/telemetry: a worker's first job, a lane's run of items and the caller's wait for the rest, timed on the observer's own clock.
 struct JobObserver
 {
 	int64_t (*now)();
 	void (*workerStarted)(int lane);
 	void (*ranItems)(int lane, int64_t start, int64_t end);
-	void (*waited)(int64_t start, int64_t end);
+	void (*waited)(const JobWait &wait);
 };
+
+// [Doruk-Aksoy] Adds to ran the workers whose start is not negative (none ran), and raises last to the latest of those starts.
+void ComputeLaneStarts(const int64_t *starts, int workers, int &ran, int64_t &last);
 
 // [rc4l] Sets the observer every pool reports to, NULL for none.
 void SetJobObserver(const JobObserver *observer);
@@ -66,6 +77,9 @@ public:
 		ParallelFor(count, &Trampoline<F>, &f);
 	}
 
+	// [Doruk-Aksoy] Wakes the sleeping workers with no job, so they spin for the one the caller opens next; from the caller's thread only, as ParallelFor.
+	void Wake();
+
 	// [rc4l] Run f(lo, hi, lane) over [0, count) in chunks of at most chunk items, so a caller splits a scan without working the bounds out itself.
 	template <class F> void ParallelChunks(int count, int chunk, F &f)
 	{
@@ -106,6 +120,8 @@ private:
 	std::atomic<int> m_sleeping;
 	std::atomic<bool> m_stop;
 	std::atomic<const JobObserver *> m_observer;
+	// [Doruk-Aksoy] When each worker began the job in flight, -1 until it runs an item, read by the caller once every worker has left it.
+	std::vector<int64_t> m_laneStart;
 };
 
 // [rc4l] The workers a pool gets by default on a machine with `hardwareThreads` logical processors: half of them less the `reserved` threads that run beside it (the caller, and the game thread when it is on), at most `cap`, none when that leaves none.

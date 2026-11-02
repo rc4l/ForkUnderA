@@ -170,6 +170,8 @@ void MarkSeenCameraTextures(const zx::levelmesh::WalkedThisFrame &walked)
 void StandaloneScene()
 {
 	if (!zx::hwrender::StandaloneActive()) return;
+	// [Doruk-Aksoy] The pool's workers sleep between frames, so they are woken here to spin into the walk's clip, the frame's first job, instead of waking ~13 us into it.
+	zx::jobs::Pool().Wake();
 	const zx::levelmesh::SceneScope scene;
 	// [rc4l] Last frame's sprites are dead the moment the camera moves, marks age on the frame clock, and a sector that moved has invalidated its cached geometry.
 	if (zx::levelmesh::PlayerWalkActive())

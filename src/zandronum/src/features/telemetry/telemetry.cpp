@@ -37,7 +37,8 @@ bool g_enabled = true;
 
 namespace {
 
-const int kMaxCounters = 256;
+// [Doruk-Aksoy] Room past the ~300 a DnD lap registers with the job pools' counters by zone, since one past the last is dropped.
+const int kMaxCounters = 384;
 const int kFrameRows = 2048;
 const int kSecondRows = 600;
 const size_t kHitchKeep = 64;
@@ -456,7 +457,7 @@ ZoneSite::ZoneSite(const char *n) : counter(Register(CounterSpec{ n, "ms", Count
 
 thread_local const ZoneSite *t_innermostZone = nullptr;
 
-Counter CounterUnderZone(const char *group, const ZoneSite *zone)
+Counter CounterUnderZone(const char *group, const ZoneSite *zone, const char *unit, CounterKind kind)
 {
 	// [Doruk-Aksoy] Each thread's own pairs asked for so far, so a lookup needs no lock and registers only once a pair.
 	struct Filed { const char *group; const ZoneSite *zone; Counter counter; };
@@ -464,7 +465,7 @@ Counter CounterUnderZone(const char *group, const ZoneSite *zone)
 	for (const Filed &f : filed) if (f.group == group && f.zone == zone) return f.counter;
 	const std::string name = ComputeZoneCounterName(group, zone != nullptr ? zone->name : nullptr);
 	const char *const filedName = name.c_str();
-	const Counter c = Register(CounterSpec{ filedName, "ms", CounterKind::Time, 0 });
+	const Counter c = Register(CounterSpec{ filedName, unit, kind, 0 });
 	filed.push_back(Filed{ group, zone, c });
 	return c;
 }
