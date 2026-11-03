@@ -33,6 +33,8 @@ const RULES = {
   FuaOvPickup: { what: "CHAN_PICKUP is slot 3 with CHAN_MAYBE_LOCAL", expect: { "fua/ovk1": { copies: 1, channel: "3", flags: 0x10 } } },
   FuaOvLooping: { what: "CHANF_LOOPING loops once", expect: { "fua/ovm1": { copies: 1, channel: "4" } } },
   FuaOvUI: { what: "CHANF_UI reaches the sound", expect: { "fua/ovu1": { copies: 1, channel: "4", flags: 0x20 } } },
+  FuaOvSingular: { what: "a $singular loop plays, with its tic on the game thread", expect: { "fua/ovg1": { copies: 1, channel: "4" } } },
+  FuaOvNearLimit: { what: "one sound on four slots in a tic plays twice, the near limit counting what the tic queued", expect: { "fua/ovh1": { copies: 2 } } },
 };
 // Checked on its own: it stops its slot 3 s after spawning, so it is judged before (both play) and after (none).
 const START = { what: "A_StartSound CHANF_OVERLAP shares the slot, and A_StopSound(slot) stops all of it", expect: { "fua/ovs1": { copies: 1, channel: "4+" }, "fua/ovs2": { copies: 1, channel: "4+" } } };
@@ -56,7 +58,7 @@ function judge(label, sounds, rules) {
       const got = sounds[s] || [];
       if (got.length !== e.copies) bad.push(`${s}: ${got.length} copies, want ${e.copies}`);
       else if (got.length && got[0].channel === null) continue;
-      else if (got.length && got[0].channel !== e.channel) bad.push(`${s}: channel ${got[0].channel}, want ${e.channel}`);
+      else if (got.length && e.channel !== undefined && got[0].channel !== e.channel) bad.push(`${s}: channel ${got[0].channel}, want ${e.channel}`);
       else if (e.flags && got.length && (got[0].flags & e.flags) !== e.flags) bad.push(`${s}: flags 0x${got[0].flags.toString(16)}, want 0x${e.flags.toString(16)} set`);
     }
     for (const s of rule.gone || []) if (sounds[s]) bad.push(`${s} still playing`);

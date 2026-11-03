@@ -296,7 +296,7 @@ int S_PickReplacement (int refid);
 void S_CacheRandomSound (sfxinfo_t *sfx);
 
 // Checks if a copy of this sound is already playing.
-bool S_CheckSingular (int sound_id);
+bool S_CheckSingular (int sound_id, const FSoundChan *starting = NULL);   // [Doruk-Aksoy] starting: the channel being started, which does not count
 
 // [BB]
 bool S_IsMusicPaused ( void );
