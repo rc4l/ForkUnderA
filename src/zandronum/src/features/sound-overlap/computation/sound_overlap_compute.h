@@ -11,6 +11,7 @@
 enum
 {
 	ZX_CHAN_AUTO       = 0,
+	ZX_CHAN_EVICTED    = 2,       // [Doruk-Aksoy] internal: no voice
 	ZX_CHAN_LISTENERZ  = 8,
 	ZX_CHAN_MAYBE_LOCAL = 16,
 	ZX_CHAN_UI         = 32,
@@ -18,6 +19,7 @@ enum
 	ZX_CHAN_LOOP       = 256,
 	ZX_CHAN_NOSTOP     = 4096,
 	ZX_CHAN_OVERLAP    = 8192,
+	ZX_CHAN_QUEUED     = 16384,   // [Doruk-Aksoy] internal: started by a tic on the game thread, waiting for its voice
 };
 
 // [Doruk-Aksoy] A sound's channel flags once its channel is known: a CHAN_AUTO sound overlaps, playing on channel 0 beside its source's others instead of taking a free channel.
@@ -28,6 +30,12 @@ bool ComputeStartStopsChannel(int chanflags, bool hasSource);
 
 // [Doruk-Aksoy] uzdoom@e82565373f: whether CHAN_NOSTOP keeps a sound from starting, which it does while the actor already plays that sound on the slot.
 bool ComputeNoStopBlocks(int chanflags, bool alreadyPlaying);
+
+// [Doruk-Aksoy] Whether a channel counts toward a sound's near limit: one with a voice, or, when the asking tic counts them, one a tic queued that waits for its voice, as it counts as playing for the rest of the tic.
+bool ComputeCountsTowardLimit(int chanflags, bool countQueued);
+
+// [Doruk-Aksoy] Whether a channel started with orgId keeps a $singular soundId from starting: one playing it does, unless it is the channel being started, which is not playing it yet.
+bool ComputeSingularBlocks(int orgId, int soundId, bool isStarting);
 
 // [Doruk-Aksoy] A_StartSound's slot and flags as this engine's channel, slot 0-7 with the flags UZDoom passes on to the sound (CHANF_LOOP is left to the looping path).
 int ComputeStartSoundChannel(int slot, int flags);

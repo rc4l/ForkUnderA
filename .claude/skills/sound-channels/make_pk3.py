@@ -24,6 +24,9 @@ def start(s, flags):
     return f'A_StartSound("fua/{s}", CHAN_BODY, {flags})'
 
 
+# The sounds SNDINFO marks $singular.
+SINGULAR = {'ovg1'}
+
 # Each emitter's calls, all in one tic after it spawns.
 CASES = {
     'FuaOvAuto': [play(f'ova{i}', 'CHAN_AUTO') for i in range(1, 11)],
@@ -39,6 +42,10 @@ CASES = {
     'FuaOvPickup': [play('ovk1', 'CHAN_PICKUP')],
     'FuaOvLooping': [start('ovm1', 'CHANF_LOOPING'), start('ovm1', 'CHANF_LOOPING')],
     'FuaOvUI': [start('ovu1', 'CHANF_UI|CHANF_LOOP')],
+    # A $singular loop (SINGULAR above), which a tic on the game thread once restarted against its own channel and never played.
+    'FuaOvSingular': [play('ovg1', 'CHAN_BODY')],
+    # The same loop on four slots of one actor in one tic, which SNDINFO's default near limit (2 within 256 units) holds to two.
+    'FuaOvNearLimit': [play('ovh1', 'CHAN_BODY'), play('ovh1', 'CHAN_WEAPON'), play('ovh1', 'CHAN_VOICE'), play('ovh1', 'CHAN_ITEM')],
     # Checked on its own (check.mjs --only FuaOvStart): it stops its slot 3 seconds after spawning.
     'FuaOvStart': [start('ovs1', 'CHANF_OVERLAP|CHANF_LOOP'), start('ovs2', 'CHANF_OVERLAP|CHANF_LOOP')],
 }
@@ -60,7 +67,7 @@ def main():
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         for i, s in enumerate(sounds):
             z.writestr(f'sounds/{lump[s]}.wav', tone(300 + 23 * i))
-        z.writestr('SNDINFO', ''.join(f'fua/{s} {lump[s]}\n' for s in sounds))
+        z.writestr('SNDINFO', ''.join(f'fua/{s} {lump[s]}\n' for s in sounds) + ''.join(f'$singular fua/{s}\n' for s in sorted(SINGULAR)))
         z.writestr('DECORATE', decorate)
     print(f'{out}: {len(sounds)} sounds, {len(CASES)} emitters{" (numeric flags)" if numeric else ""}')
 

@@ -66,6 +66,7 @@
 #include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI, QueuedForHandoff, QueuedBesideTic
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] volume limits under $fua_allow_amplify
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] several sounds on one channel
+#include "features/openal-sound/computation/oal_playback_compute.h"   // [Doruk-Aksoy] ComputeNeverHeard
 #include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated once
 
 // [Doruk-Aksoy] sound_overlap_compute mirrors the channel values; keep them synced.
@@ -77,7 +78,12 @@ static_assert(ZX_CHAN_NOPAUSE == CHAN_NOPAUSE, "channel mirror out of sync");
 static_assert(ZX_CHAN_LOOP == CHAN_LOOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_NOSTOP == CHAN_NOSTOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_OVERLAP == CHAN_OVERLAP, "channel mirror out of sync");
+static_assert(ZX_CHAN_EVICTED == CHAN_EVICTED && ZX_CHAN_QUEUED == CHAN_QUEUED, "channel mirror out of sync");
+static_assert(ZX_ROLLOFF_LOG == ROLLOFF_Log, "rolloff mirror out of sync");
 
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 // MACROS ------------------------------------------------------------------
@@ -129,7 +135,7 @@ extern float S_GetMusicVolume (const char *music);
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
-static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, AActor *actor, int channel);
+static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, AActor *actor, int channel, bool countQueued = false);
 
 // [Doruk-Aksoy] Marks an actor a channel now points at, which stays marked, so asking about one that never had a sound needs no walk over every channel.
 static void NoteChannelActor (AActor *actor)
@@ -151,6 +157,24 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
+
+// [Doruk-Aksoy] The fastest a listener closes on a sound, in distance units a second: a running player covers about 600 to 830.
+static const float kListenerCloseSpeed = 1000.f;
+
+// [Doruk-Aksoy] Whether a one-shot starting at pos can never be heard before it ends, its listener and its source closing at their fastest; it is not started, since it would only take a voice to play nothing, and a crowd's tic queued hundreds such.
+static bool S_NeverHeard(sfxinfo_t *sfx, int chanflags, const FRolloffInfo *rolloff, float distanceScale, int pitch,
+	const FVector3 &pos, const FVector3 &vel, const SoundListener &listener)
+{
+	if (!listener.valid || !sfx->data.isValid()) return false;
+	// [Doruk-Aksoy] Each sound's length kept by its loaded buffer, since asking the device costs a lock per query; none known (0) decides nothing.
+	static std::unordered_map<const sfxinfo_t *, std::pair<void *, unsigned int>> lengths;
+	std::pair<void *, unsigned int> &known = lengths[sfx];
+	if (known.first != sfx->data.data) known = std::make_pair(sfx->data.data, GSnd->GetMSLength(sfx->data));
+	if (known.second == 0) return false;
+	const float seconds = known.second / 1000.f * (pitch > 0 ? float(NORM_PITCH) / pitch : 1.f);
+	return ComputeNeverHeard((chanflags & CHAN_LOOP) != 0, (chanflags & CHAN_AREA) == 0, rolloff->RolloffType,
+		(pos - listener.position).Length() * distanceScale, rolloff->MaxDistance, seconds, (kListenerCloseSpeed + vel.Length()) * distanceScale);
+}
 
 // [rc4l] uzdoom@3ea49a66d: dedicated pitch-variation stream -- see the use site in S_StartSound.
 static FRandom pr_soundpitch ("SoundPitch");
@@ -1092,7 +1116,8 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 	// If this sound doesn't like playing near itself, don't play it if
 	// that's what would happen.
-	if (near_limit > 0 && S_CheckSoundLimit(sfx, pos, near_limit, limit_range, actor, channel))
+	// [Doruk-Aksoy] Counting what this tic already queued, which plays as soon as the tic hands over, so a crowd sounding at once is held to the limit before a channel is made for each.
+	if (near_limit > 0 && S_CheckSoundLimit(sfx, pos, near_limit, limit_range, actor, channel, true))
 	{
 		chanflags |= CHAN_EVICTED;
 	}
@@ -1202,7 +1227,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		// [rc4l] features/handoff: the channel with no voice yet, which counts as playing for the rest of the tic as a started one would.
 		chan = (FSoundChan*)S_GetChannel(NULL);
 		chan->StartTime.AsOne = 0;
-		chanflags |= CHAN_EVICTED;
+		chanflags |= CHAN_EVICTED | CHAN_QUEUED;
 		DeferredStarts.push_back(chan);
 	}
 	else 
@@ -1217,6 +1242,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		{
 			SoundListener listener;
 			S_SetListener(listener, players[consoleplayer].camera);
+			if (S_NeverHeard(sfx, chanflags, rolloff, attenuation, pitch, pos, vel, listener)) return NULL;
 			chan = (FSoundChan*)GSnd->StartSound3D (sfx->data, &listener, volume, rolloff, attenuation, pitch, basepriority, pos, vel, channel, startflags, NULL);
 		}
 		else
@@ -1282,7 +1308,8 @@ void S_RestartSound(FSoundChan *chan)
 	sfxinfo_t *sfx = &S_sfx[chan->SoundID];
 
 	// If this is a singular sound, don't play it if it's already playing.
-	if (sfx->bSingular && S_CheckSingular(chan->SoundID))
+	// [Doruk-Aksoy] Not counting chan itself, which a tic on the game thread queued and so is linked before it plays.
+	if (sfx->bSingular && S_CheckSingular(chan->SoundID, chan))
 		return;
 
 	sfx = S_LoadSound(sfx);
@@ -1307,15 +1334,19 @@ void S_RestartSound(FSoundChan *chan)
 
 		CalcPosVel(chan, &pos, &vel);
 
+		SoundListener listener;
+		S_SetListener(listener, players[consoleplayer].camera);
+		if (S_NeverHeard(sfx, chan->ChanFlags, &chan->Rolloff, chan->DistanceScale, chan->Pitch, pos, vel, listener))
+		{
+			return;
+		}
+
 		// If this sound doesn't like playing near itself, don't play it if
 		// that's what would happen.
 		if (chan->NearLimit > 0 && S_CheckSoundLimit(&S_sfx[chan->SoundID], pos, chan->NearLimit, chan->LimitRange, NULL, 0))
 		{
 			return;
 		}
-
-		SoundListener listener;
-		S_SetListener(listener, players[consoleplayer].camera);
 
 		chan->ChanFlags &= ~(CHAN_EVICTED|CHAN_ABSTIME);
 		ochan = (FSoundChan*)GSnd->StartSound3D(sfx->data, &listener, chan->Volume, &chan->Rolloff, chan->DistanceScale, chan->Pitch,
@@ -1545,11 +1576,11 @@ sfxinfo_t *S_LoadSound(sfxinfo_t *sfx)
 //
 //==========================================================================
 
-bool S_CheckSingular(int sound_id)
+bool S_CheckSingular(int sound_id, const FSoundChan *starting)
 {
 	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
 	{
-		if (chan->OrgID == sound_id)
+		if (ComputeSingularBlocks(chan->OrgID, sound_id, chan == starting))
 		{
 			return true;
 		}
@@ -1575,14 +1606,14 @@ bool S_CheckSingular(int sound_id)
 //==========================================================================
 
 bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range,
-	AActor *actor, int channel)
+	AActor *actor, int channel, bool countQueued)
 {
 	FSoundChan *chan;
 	int count;
 	
 	for (chan = Channels, count = 0; chan != NULL && count < near_limit; chan = chan->NextChan)
 	{
-		if (!(chan->ChanFlags & CHAN_EVICTED) && &S_sfx[chan->SoundID] == sfx)
+		if (ComputeCountsTowardLimit(chan->ChanFlags, countQueued) && &S_sfx[chan->SoundID] == sfx)
 		{
 			FVector3 chanorigin;
 
@@ -2548,20 +2579,36 @@ static bool S_IsLinked(FSoundChan *chan)
 void S_RunDeferredSounds()
 {
 	ZX_SEAM_UNTIMED("sound/deferred", Handoff);
+	ZX_ZONE("sound/start_deferred");   // [Doruk-Aksoy] a tic's queued sounds given voices, which a crowd once made 20 ms
+	ZX_COUNT("sound/deferred_starts", "sounds", DeferredStarts.size());
 	for (FSoundChan *chan : DeferredStops)
 		if (S_IsLinked(chan) && chan->SysChannel != NULL) GSnd->StopChannel(chan);
 	for (const auto &v : DeferredVolumes)
 		if (S_IsLinked(v.first) && v.first->SysChannel != NULL) GSnd->ChannelVolume(v.first, v.second);
 	// [rc4l] In the order the tic started them, each loaded and started as an evicted sound restarts, and forgotten when it cannot start and does not loop.
+	// [Doruk-Aksoy] A crowd's tic can start a thousand sounds, so a repeat is found in a set rather than by a walk back over the list, and a channel's link by its flag: one returned to the free pool is zeroed, so only a linked one can still be evicted.
+	static std::unordered_set<FSoundChan *> started;
+	static std::vector<FSoundChan *> waiting;
+	started.clear();
+	waiting.clear();
 	for (size_t i = 0; i < DeferredStarts.size(); i++)
 	{
 		FSoundChan *chan = DeferredStarts[i];
-		bool repeated = false;
-		for (size_t k = 0; k < i; k++) repeated |= DeferredStarts[k] == chan;
-		if (repeated || !S_IsLinked(chan) || !(chan->ChanFlags & CHAN_EVICTED)) continue;
+		if (!started.insert(chan).second || !(chan->ChanFlags & CHAN_EVICTED)) continue;
+		// [Doruk-Aksoy] Handed over now, so the restart's own limit counts it only once it has a voice.
+		chan->ChanFlags &= ~CHAN_QUEUED;
+		waiting.push_back(chan);
+	}
+	// [Doruk-Aksoy] The waiting channels leave the list while the others start, since each start's walks (the near limit, $singular, the device's lowest voice) skip a voiceless channel anyway; each is linked back at the head as it starts, which is where and in the order its tic made it.
+	for (FSoundChan *chan : waiting) S_UnlinkChannel(chan);
+	GSnd->KeepLowestVoice(true);
+	for (FSoundChan *chan : waiting)
+	{
+		S_LinkChannel(chan, &Channels);
 		S_RestartSound(chan);
 		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
 	}
+	GSnd->KeepLowestVoice(false);
 	DeferredStarts.clear();
 	DeferredStops.clear();
 	DeferredVolumes.clear();

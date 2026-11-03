@@ -116,7 +116,11 @@ static TMap<unsigned int, unsigned int> g_pieceByOffset;
 // [rc4l] See staticmesh.h; a second, hand-kept copy of GL's lighting once drifted and lost rellight, extralight and desaturation, which is why this one is ComputeShading, tested against GL's arithmetic.
 void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out)
 {
-	const Shading s = ComputeShading(in, env);
+	ApplyShading(ComputeShading(in, env), out);
+}
+
+void ApplyShading(const Shading &s, MeshPiece &out)
+{
 	out.colorR = s.r; out.colorG = s.g; out.colorB = s.b;
 	out.softLight    = s.softLight;
 	out.fogDensity   = s.fogDensity;

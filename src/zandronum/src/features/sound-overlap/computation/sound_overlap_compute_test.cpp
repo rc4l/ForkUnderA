@@ -171,3 +171,23 @@ TEST(ComputeForgetLooping, OneActorOrAll)
 	EXPECT_TRUE(list.empty());
 }
 }
+
+// [Doruk-Aksoy] A crowd's tic on the game thread queued a thousand copies of one sight sound, none of which the near limit saw, so it held only once each had failed to find a voice.
+TEST(SoundOverlap, AQueuedSoundCountsTowardTheNearLimitOnlyWhereTheTicAsks)
+{
+	EXPECT_TRUE(ComputeCountsTowardLimit(0, false));
+	EXPECT_TRUE(ComputeCountsTowardLimit(ZX_CHAN_LOOP, true));
+	EXPECT_FALSE(ComputeCountsTowardLimit(ZX_CHAN_EVICTED, false));
+	EXPECT_FALSE(ComputeCountsTowardLimit(ZX_CHAN_EVICTED, true));
+	EXPECT_FALSE(ComputeCountsTowardLimit(ZX_CHAN_EVICTED | ZX_CHAN_QUEUED, false));
+	EXPECT_TRUE(ComputeCountsTowardLimit(ZX_CHAN_EVICTED | ZX_CHAN_QUEUED, true));
+}
+
+// [Doruk-Aksoy] Every sound a tic on the game thread starts is restarted at the handoff, and a $singular one found its own channel playing it and never played.
+TEST(SoundOverlap, ASingularSoundIsBlockedByAnotherChannelPlayingItNotByItsOwn)
+{
+	EXPECT_TRUE(ComputeSingularBlocks(7, 7, false));
+	EXPECT_FALSE(ComputeSingularBlocks(7, 7, true));
+	EXPECT_FALSE(ComputeSingularBlocks(8, 7, false));
+	EXPECT_FALSE(ComputeSingularBlocks(8, 7, true));
+}

@@ -18,6 +18,10 @@ namespace zx { namespace levelmesh {
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out,
                     bool noFog = false, bool additive = false);
 
+// [Doruk-Aksoy] CaptureShading for a run of pieces under one shading environment, as one walk's wall decals are: the environment read once a run and the last piece's shading reused while its inputs match, since a band's decals share their light; StartShadingRun begins a run.
+void StartShadingRun();
+void CaptureRunShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out);
+
 // [rc4l] Shade a sprite or model piece as GLSprite::Draw does under `look`: fogged to black when additive and not at all under a fog layer, a shadow's fixed grey for its light, the actor's ThingColor over either, and the look's alpha.
 void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
                           unsigned thingColor, MeshPiece &out);

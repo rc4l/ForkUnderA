@@ -25,6 +25,9 @@ enum
 float ComputeRolloff(int rolloffType, float minDistance, float maxDistanceOrFactor,
 	float distance, const unsigned char *soundCurve, int soundCurveSize);
 
+// [Doruk-Aksoy] Whether a sound starting now can never be heard: a positioned one-shot on a curve that goes silent at silentAt, already past it by more than the gap can close (closingSpeed, distance units a second) before it ends (seconds); a loop plays on for whoever comes near, and logarithmic rolloff never goes silent.
+bool ComputeNeverHeard(bool looping, bool positioned, int rolloffType, float distance, float silentAt, float seconds, float closingSpeed);
+
 // [rc4l] Resolved sample-space loop points.
 struct ZxLoopPoints
 {

@@ -1257,7 +1257,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
 	mp.lightLevel = lightlevel;
 	mp.lightColor = colormap.LightColor.d;
 	mp.fadeColor = colormap.FadeColor.d;
-	CaptureShading(lightlevel, rel, colormap, mp);
+	CaptureRunShading(lightlevel, rel, colormap, mp);
 
 	mp.translation = translation;
 	mp.alpha = alpha;
