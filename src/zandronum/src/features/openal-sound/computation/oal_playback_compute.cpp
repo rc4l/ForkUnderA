@@ -39,6 +39,12 @@ float ComputeRolloff(int rolloffType, float minDistance, float maxDistanceOrFact
 	return (powf(10.f, volume) - 1.f) / 9.f;
 }
 
+bool ComputeNeverHeard(bool looping, bool positioned, int rolloffType, float distance, float silentAt, float seconds, float closingSpeed)
+{
+	if (looping || !positioned || rolloffType == ZX_ROLLOFF_LOG) return false;
+	return distance - silentAt > seconds * closingSpeed;
+}
+
 ZxLoopPoints ComputeLoopPoints(unsigned int start, unsigned int end,
 	bool startAssigned, bool endAssigned, int srate, unsigned int samples)
 {

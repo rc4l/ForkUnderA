@@ -50,7 +50,8 @@ overlapping loop, and an overlapping one-shot sound no longer drops the slot's l
 ## In-engine hooks
 
 - `s_sound.h`: `CHAN_NOSTOP`, `CHAN_OVERLAP`.
-- `s_sound.cpp`: `S_StartSound` (CHAN_AUTO's flags, stopping every sound on the slot), `S_Sound(actor)`
+- `s_sound.cpp`: `S_StartSound` (CHAN_AUTO's flags, stopping every sound on the slot, the near limit counting a tic's
+  queued sounds through `ComputeCountsTowardLimit`), `S_Sound(actor)`
   (`CHAN_NOSTOP`), `S_IsActorPlayingSomething` and `S_ChangeSoundVolume` over every sound;
   `snd_channels`; `listsoundchannels` prints each sound's channel and flags.
 - `thingdef/thingdef_codeptr.cpp`: `A_StartSound` builds its channel with `ComputeStartSoundChannel`;

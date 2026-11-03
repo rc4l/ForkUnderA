@@ -115,6 +115,12 @@ Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env)
 	return s;
 }
 
+bool ComputeSameShadingInput(const ShadingInput &a, const ShadingInput &b)
+{
+	return a.lightLevel == b.lightLevel && a.relLight == b.relLight && a.lightColor == b.lightColor && a.fadeColor == b.fadeColor &&
+		a.blendFactor == b.blendFactor && a.desaturation == b.desaturation && a.noFog == b.noFog && a.additive == b.additive;
+}
+
 bool ComputeSameLevelShading(const ShadingEnv &a, const ShadingEnv &b)
 {
 	return a.lightMode == b.lightMode && a.ambient == b.ambient && a.fogMode == b.fogMode && a.distFog == b.distFog &&

@@ -51,6 +51,8 @@ server crashes at startup (a separate bug, `G_InitNew` → `SetLogText` with no 
 | `FuaOvPickup` | `CHAN_PICKUP` is slot 3 with `CHAN_MAYBE_LOCAL` (flags `0x10`). |
 | `FuaOvLooping` | `CHANF_LOOPING` loops once. |
 | `FuaOvUI` | `CHANF_UI` reaches the sound (flags `0x20`); A_StartSound used to drop it. |
+| `FuaOvSingular` | A `$singular` loop plays with its tic on the game thread; its restart once found its own channel playing the sound and refused it. |
+| `FuaOvNearLimit` | One loop on four slots of one actor in one tic plays twice: the near limit counts what a tic on the game thread queued. |
 | `FuaOvStart` | `A_StartSound` + `CHANF_OVERLAP` shares the slot, and `A_StopSound(slot)` stops all of it. Judged on its own, before and after its stop 3 s in. |
 
 A new channel rule gets an emitter in `make_pk3.py`'s `CASES` and a row in `check.mjs`'s `RULES`,

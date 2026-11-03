@@ -284,6 +284,7 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, floa
 #define CHAN_JUSTSTARTED		512	// internal: Sound has not been updated yet.
 #define CHAN_ABSTIME			1024// internal: Start time is absolute and does not depend on current time.
 #define CHAN_VIRTUAL			2048// internal: Channel is currently virtual
+#define CHAN_QUEUED				16384// internal: [Doruk-Aksoy] started by a tic on the game thread and waiting for S_RunDeferredSounds to give it a voice
 
 // sound attenuation values
 #define ATTN_NONE				0.f	// full volume the entire level
@@ -295,7 +296,7 @@ int S_PickReplacement (int refid);
 void S_CacheRandomSound (sfxinfo_t *sfx);
 
 // Checks if a copy of this sound is already playing.
-bool S_CheckSingular (int sound_id);
+bool S_CheckSingular (int sound_id, const FSoundChan *starting = NULL);   // [Doruk-Aksoy] starting: the channel being started, which does not count
 
 // [BB]
 bool S_IsMusicPaused ( void );

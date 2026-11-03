@@ -5697,8 +5697,7 @@ void G_DoPlayDemo (void)
 	}
 	else
 	{
-		// don't spend a lot of time in loadlevel 
-		precache = false;
+		// [Doruk-Aksoy] The level precaches as a player's start does, its sounds and textures loaded before play, since a demo left to load each on first use stalled frames a player never sees; nothing it loads is game state, so playback is unchanged.
 		demonew = true;
 		if (mapname.Len() != 0)
 		{

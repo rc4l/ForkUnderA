@@ -229,6 +229,8 @@ struct MeshPiece
 
 // [rc4l] Shade a piece by the light model (ComputeShading), the one place that decides how a surface is lit, and reset what shading does not decide.
 void ShadePiece(const ShadingInput &in, const ShadingEnv &env, MeshPiece &out);
+// [Doruk-Aksoy] A shading ComputeShading worked out put on `out`, the half of ShadePiece a reused shading still needs.
+void ApplyShading(const Shading &s, MeshPiece &out);
 
 void MeshInitForLevel();
 void MeshFreeLevel();
