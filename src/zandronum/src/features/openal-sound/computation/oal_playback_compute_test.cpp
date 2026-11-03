@@ -137,3 +137,17 @@ TEST(ComputeRestoredSampleOffset, InsideTheBufferWrappedOrOver)
 	EXPECT_EQ(250, ComputeRestoredSampleOffset(2250, 1000, true));
 	EXPECT_EQ(0, ComputeRestoredSampleOffset(5000, 0, false));
 }
+
+// [Doruk-Aksoy] A crowd's queued sounds were nine in ten past the distance their curve goes silent at, each taking a start and fighting for a voice to play nothing.
+TEST(OalPlayback, ASoundIsNeverHeardOnlyWhenItEndsBeforeTheGapCanClose)
+{
+	// [Doruk-Aksoy] 1200 is where the curve goes silent; 1 second at 1000 units a second of closing makes the margin 1000.
+	EXPECT_TRUE(ComputeNeverHeard(false, true, ZX_ROLLOFF_DOOM, 2201.f, 1200.f, 1.f, 1000.f));
+	EXPECT_FALSE(ComputeNeverHeard(false, true, ZX_ROLLOFF_DOOM, 2200.f, 1200.f, 1.f, 1000.f));   // [Doruk-Aksoy] could just reach earshot
+	EXPECT_FALSE(ComputeNeverHeard(false, true, ZX_ROLLOFF_DOOM, 1100.f, 1200.f, 0.f, 0.f));      // [Doruk-Aksoy] audible now
+	EXPECT_TRUE(ComputeNeverHeard(false, true, ZX_ROLLOFF_LINEAR, 1300.f, 1200.f, 0.05f, 1000.f));
+	EXPECT_TRUE(ComputeNeverHeard(false, true, ZX_ROLLOFF_CUSTOM, 5000.f, 1200.f, 1.f, 1000.f));
+	EXPECT_FALSE(ComputeNeverHeard(true, true, ZX_ROLLOFF_DOOM, 9000.f, 1200.f, 1.f, 1000.f));   // [Doruk-Aksoy] a loop plays on for whoever comes near
+	EXPECT_FALSE(ComputeNeverHeard(false, false, ZX_ROLLOFF_DOOM, 9000.f, 1200.f, 1.f, 1000.f));   // [Doruk-Aksoy] heard everywhere
+	EXPECT_FALSE(ComputeNeverHeard(false, true, ZX_ROLLOFF_LOG, 9000.f, 1200.f, 1.f, 1000.f));     // [Doruk-Aksoy] never goes silent
+}
