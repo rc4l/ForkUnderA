@@ -66,6 +66,7 @@
 #include "features/handoff/effects.h"   // [rc4l] Deferring, QueueUI, QueuedForHandoff, QueuedBesideTic
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] volume limits under $fua_allow_amplify
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] several sounds on one channel
+#include "features/openal-sound/computation/oal_playback_compute.h"   // [Doruk-Aksoy] ComputeNeverHeard
 #include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated once
 
 // [Doruk-Aksoy] sound_overlap_compute mirrors the channel values; keep them synced.
@@ -78,8 +79,11 @@ static_assert(ZX_CHAN_LOOP == CHAN_LOOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_NOSTOP == CHAN_NOSTOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_OVERLAP == CHAN_OVERLAP, "channel mirror out of sync");
 static_assert(ZX_CHAN_EVICTED == CHAN_EVICTED && ZX_CHAN_QUEUED == CHAN_QUEUED, "channel mirror out of sync");
+static_assert(ZX_ROLLOFF_LOG == ROLLOFF_Log, "rolloff mirror out of sync");
 
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 // MACROS ------------------------------------------------------------------
@@ -153,6 +157,24 @@ static void CalcPolyobjSoundOrg(const FPolyObj *poly, fixed_t *x, fixed_t *y, fi
 static FSoundChan *S_StartSound(AActor *mover, const sector_t *sec, const FPolyObj *poly,
 	const FVector3 *pt, int channel, FSoundID sound_id, float volume, float attenuation, FRolloffInfo *rolloff, int pitch_override);
 static void S_SetListener(SoundListener &listener, AActor *listenactor);
+
+// [Doruk-Aksoy] The fastest a listener closes on a sound, in distance units a second: a running player covers about 600 to 830.
+static const float kListenerCloseSpeed = 1000.f;
+
+// [Doruk-Aksoy] Whether a one-shot starting at pos can never be heard before it ends, its listener and its source closing at their fastest; it is not started, since it would only take a voice to play nothing, and a crowd's tic queued hundreds such.
+static bool S_NeverHeard(sfxinfo_t *sfx, int chanflags, const FRolloffInfo *rolloff, float distanceScale, int pitch,
+	const FVector3 &pos, const FVector3 &vel, const SoundListener &listener)
+{
+	if (!listener.valid || !sfx->data.isValid()) return false;
+	// [Doruk-Aksoy] Each sound's length kept by its loaded buffer, since asking the device costs a lock per query; none known (0) decides nothing.
+	static std::unordered_map<const sfxinfo_t *, std::pair<void *, unsigned int>> lengths;
+	std::pair<void *, unsigned int> &known = lengths[sfx];
+	if (known.first != sfx->data.data) known = std::make_pair(sfx->data.data, GSnd->GetMSLength(sfx->data));
+	if (known.second == 0) return false;
+	const float seconds = known.second / 1000.f * (pitch > 0 ? float(NORM_PITCH) / pitch : 1.f);
+	return ComputeNeverHeard((chanflags & CHAN_LOOP) != 0, (chanflags & CHAN_AREA) == 0, rolloff->RolloffType,
+		(pos - listener.position).Length() * distanceScale, rolloff->MaxDistance, seconds, (kListenerCloseSpeed + vel.Length()) * distanceScale);
+}
 
 // [rc4l] uzdoom@3ea49a66d: dedicated pitch-variation stream -- see the use site in S_StartSound.
 static FRandom pr_soundpitch ("SoundPitch");
@@ -1220,6 +1242,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		{
 			SoundListener listener;
 			S_SetListener(listener, players[consoleplayer].camera);
+			if (S_NeverHeard(sfx, chanflags, rolloff, attenuation, pitch, pos, vel, listener)) return NULL;
 			chan = (FSoundChan*)GSnd->StartSound3D (sfx->data, &listener, volume, rolloff, attenuation, pitch, basepriority, pos, vel, channel, startflags, NULL);
 		}
 		else
@@ -1311,15 +1334,19 @@ void S_RestartSound(FSoundChan *chan)
 
 		CalcPosVel(chan, &pos, &vel);
 
+		SoundListener listener;
+		S_SetListener(listener, players[consoleplayer].camera);
+		if (S_NeverHeard(sfx, chan->ChanFlags, &chan->Rolloff, chan->DistanceScale, chan->Pitch, pos, vel, listener))
+		{
+			return;
+		}
+
 		// If this sound doesn't like playing near itself, don't play it if
 		// that's what would happen.
 		if (chan->NearLimit > 0 && S_CheckSoundLimit(&S_sfx[chan->SoundID], pos, chan->NearLimit, chan->LimitRange, NULL, 0))
 		{
 			return;
 		}
-
-		SoundListener listener;
-		S_SetListener(listener, players[consoleplayer].camera);
 
 		chan->ChanFlags &= ~(CHAN_EVICTED|CHAN_ABSTIME);
 		ochan = (FSoundChan*)GSnd->StartSound3D(sfx->data, &listener, chan->Volume, &chan->Rolloff, chan->DistanceScale, chan->Pitch,
