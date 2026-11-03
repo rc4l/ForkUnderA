@@ -31,6 +31,7 @@
 #include "doomtype.h"
 #include "i_soundinternal.h"
 #include "dobject.h"
+#include "features/sound-index/computation/soundindex_compute.h"
 
 class AActor;
 class FScanner;
@@ -198,6 +199,8 @@ struct FSoundChan : public FISoundChannel
 	SWORD		NearLimit;
 	BYTE		SourceType;
 	float		LimitRange;
+	ZxIndexLink	SoundLink;	// [Doruk-Aksoy] features/sound-index: its place among its sound's channels
+	ZxIndexLink	ActorLink;	// [Doruk-Aksoy] features/sound-index: its place among its actor's channels
 	union
 	{
 		AActor			*Actor;		// Used for position and velocity.
