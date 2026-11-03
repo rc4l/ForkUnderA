@@ -4,6 +4,7 @@
 #include "features/levelmesh/walldecals.h"
 #include "features/levelmesh/computation/walldecal_compute.h"
 #include "features/levelmesh/flatmesh.h"                       // [rc4l] RegisterDecal
+#include "features/levelmesh/captureshading.h"   // [Doruk-Aksoy] StartShadingRun
 #include "features/levelmesh/wallcache.h"                      // [rc4l] the bake's parts and bands
 #include "features/materials/materials.h"
 #include "features/levelmesh/pointlight.h"   // [rc4l] PointDynamicLight
@@ -52,17 +53,18 @@ DecalHeightIn HeightIn(const zx::gamecopy::DecalRecord *decal, const seg_t *seg,
 
 // [rc4l] One decal on one band of one part, registered as DrawDecal would draw it there.
 void BuildDecal(const zx::gamecopy::DecalRecord *decal, side_t *side, const seg_t *seg, int part, const zx::surfaces::DerivedWallSpan &d,
-	const zx::surfaces::DerivedWallLight &dl, const FColormap &partColormap, const PartBand &band, int onMirror)
+	const zx::surfaces::DerivedWallLight &dl, const FColormap &partColormap, const PartBand &band, int onMirror, bool lit)
 {
 	if (decal->RenderFlags & RF_INVISIBLE) return;
+	// [Doruk-Aksoy] The part first, since a decal is on one of a side's three parts and its material is not needed to tell which.
+	double zpos;
+	if (!ComputeDecalHeight(HeightIn(decal, seg, part), zpos)) return;
 	FTexture *texture = TexMan[decal->PicNum];
 	if (texture == NULL) return;
 	const zx::materials::MaterialRef mat = zx::materials::MaterialForTexture(texture, true);
 	zx::materials::MaterialInfo info;
 	if (!zx::materials::DescribeMaterial(mat, info)) return;
 
-	double zpos;
-	if (!ComputeDecalHeight(HeightIn(decal, seg, part), zpos)) return;
 	const float scaleX = FIXED2FLOAT(decal->ScaleX), scaleY = FIXED2FLOAT(decal->ScaleY);
 	DecalPicture pic;
 	pic.width = info.renderWidth * scaleX;
@@ -94,7 +96,6 @@ void BuildDecal(const zx::gamecopy::DecalRecord *decal, side_t *side, const seg_
 	if (glset.nocoloredspritelighting) cm.Decolorize();
 
 	float dyn[3];
-	const bool lit = zx::viewsetup::SpritesTakeDynamicLight();
 	if (lit)
 	{
 		fixed_t x, y;
@@ -115,6 +116,9 @@ void BuildDecal(const zx::gamecopy::DecalRecord *decal, side_t *side, const seg_
 void BuildWallDecals(const int *sideList, int count)
 {
 	ZX_ZONE("scene/decals");   // [rc4l] the decals on the walls the walks saw
+	// [Doruk-Aksoy] Asked once a walk, as neither the dynamic lights nor the shading settings change while one hands its decals over.
+	const bool lit = zx::viewsetup::SpritesTakeDynamicLight();
+	StartShadingRun();
 	for (int i = 0; i < count; i++)
 	{
 		side_t *side = &sides[sideList[i]];
@@ -151,7 +155,7 @@ void BuildWallDecals(const int *sideList, int count)
 			// [rc4l] Each band is a wall piece of its own in GL, which draws every decal of the side on it in turn.
 			for (int b = 0; b < n; b++)
 				for (int k = 0; k < decals; k++)
-					BuildDecal(&decal0[k], side, seg, part, d, dl, partColormap, bands[b], onMirror);
+					BuildDecal(&decal0[k], side, seg, part, d, dl, partColormap, bands[b], onMirror, lit);
 		}
 		// [rc4l] ...and on each face the back sector's 3D floors put on this side, which GL draws with the plain walls unless the slab is fog, blends, or its texture is masked.
 		FFFace faces[kMaxFFFaces];
@@ -174,7 +178,7 @@ void BuildWallDecals(const int *sideList, int count)
 			band.lightFrom = f.lightFrom;
 			band.lightEntry = f.lightIndex;
 			for (int k = 0; k < decals; k++)
-				BuildDecal(&decal0[k], side, seg, kPartMiddle, d, dl, partColormap, band, onMirror);
+				BuildDecal(&decal0[k], side, seg, kPartMiddle, d, dl, partColormap, band, onMirror, lit);
 		}
 	}
 }
