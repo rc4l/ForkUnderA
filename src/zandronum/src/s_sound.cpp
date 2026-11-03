@@ -78,6 +78,7 @@ static_assert(ZX_CHAN_LOOP == CHAN_LOOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_NOSTOP == CHAN_NOSTOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_OVERLAP == CHAN_OVERLAP, "channel mirror out of sync");
 
+#include <unordered_set>
 #include <vector>
 
 // MACROS ------------------------------------------------------------------
@@ -2553,12 +2554,13 @@ void S_RunDeferredSounds()
 	for (const auto &v : DeferredVolumes)
 		if (S_IsLinked(v.first) && v.first->SysChannel != NULL) GSnd->ChannelVolume(v.first, v.second);
 	// [rc4l] In the order the tic started them, each loaded and started as an evicted sound restarts, and forgotten when it cannot start and does not loop.
+	// [Doruk-Aksoy] A crowd's tic can start a thousand sounds, so a repeat is found in a set rather than by a walk back over the list, and a channel's link by its flag: one returned to the free pool is zeroed, so only a linked one can still be evicted.
+	static std::unordered_set<FSoundChan *> started;
+	started.clear();
 	for (size_t i = 0; i < DeferredStarts.size(); i++)
 	{
 		FSoundChan *chan = DeferredStarts[i];
-		bool repeated = false;
-		for (size_t k = 0; k < i; k++) repeated |= DeferredStarts[k] == chan;
-		if (repeated || !S_IsLinked(chan) || !(chan->ChanFlags & CHAN_EVICTED)) continue;
+		if (!started.insert(chan).second || !(chan->ChanFlags & CHAN_EVICTED)) continue;
 		S_RestartSound(chan);
 		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
 	}
