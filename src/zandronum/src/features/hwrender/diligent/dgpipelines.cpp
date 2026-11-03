@@ -6,6 +6,7 @@
 #include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
 #include "features/hwshaders/computation/hwshader_compute.h"
 #include "features/hwrender/computation/materialindex_compute.h"
+#include "features/hwrender/computation/bindingkey_compute.h"   // [Doruk-Aksoy] the material bindings by key
 #include "features/hwrender/computation/slotreport_compute.h"   // [Doruk-Aksoy] fua_dg_slotreport
 #include "features/hwrender/computation/slotrecycle_compute.h"   // [Doruk-Aksoy] which slot gives way, which a fill writes
 #include "features/hwrender/computation/retiredbindings_compute.h"   // [Doruk-Aksoy] RetiredBindings
@@ -24,6 +25,7 @@
 #include <vector>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include "w_wad.h"   // [rc4l] the shader lumps
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
@@ -67,8 +69,8 @@ void ReleaseBatchSRBs()
 // Keyed on the FMaterial pointer, which is stable per level.
 // [rc4l] Keyed on (PSO, material), not material alone: an SRB is created from a pipeline and is only
 // valid with it, so the translucent and additive passes need their own even for the same texture.
-struct MatSRB { const void *material; const void *pso; int translation; Diligent::IShaderResourceBinding *srb; };
-static TArray<MatSRB> g_matSRBs;
+// [Doruk-Aksoy] Each material's binding by (material, pipeline, -, translation), hashed since a modded level makes thousands and the 2D pass asks each time its material changes.
+static std::unordered_map<zx::hwrender::BindingKey, Diligent::IShaderResourceBinding *, zx::hwrender::BindingKeyHash> g_matSRBs;
 
 // [Doruk-Aksoy] The key the slot table and the bindings file a translation under, so redefined colours get their own slot or binding rather than the old one's.
 static int SlotKey(int translation)
@@ -81,19 +83,15 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 {
 	if (!pso) return NULL;
 	translation = SlotKey(translation);
-	for (unsigned i = 0; i < g_matSRBs.Size(); i++)
-		if (g_matSRBs[i].material == material && g_matSRBs[i].pso == pso &&
-		    g_matSRBs[i].translation == translation) return g_matSRBs[i].srb;
+	const zx::hwrender::BindingKey key = { material, pso, NULL, translation };
+	const auto found = g_matSRBs.find(key);
+	if (found != g_matSRBs.end()) return found->second;
 
-	MatSRB e;
-	e.material = material;
-	e.pso = pso;
-	e.translation = translation;
-	e.srb = NULL;
-	pso->CreateShaderResourceBinding(&e.srb, true);
-	if (e.srb)
+	Diligent::IShaderResourceBinding *srb = NULL;
+	pso->CreateShaderResourceBinding(&srb, true);
+	if (srb)
 	{
-		if (auto *v = e.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
+		if (auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
 			v->Set(GetMaterialSRV(material, translation));
 		// [rc4l] Every material gets a brightmap, black when it has none, so the shader needs no
 		// flag and no second pipeline permutation. See GetBrightmapSRV.
@@ -103,7 +101,7 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 		// surface to white. "The variable was not found" and "the black texture failed to create"
 		// both produce exactly that, and neither says anything on its own.
 		{
-			auto *v = e.srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uBrightmap");
+			auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uBrightmap");
 			Diligent::ITextureView *bmv = GetBrightmapSRV(material);
 			static bool reported = false;
 			if (!reported)
@@ -116,8 +114,8 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 			if (v && bmv) v->Set(bmv);
 		}
 	}
-	g_matSRBs.Push(e);
-	return e.srb;
+	g_matSRBs.emplace(key, srb);
+	return srb;
 }
 
 // [rc4l] The scene pipeline a static batch draws with.
@@ -869,18 +867,19 @@ Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 // [rc4l] How many SRBs are alive, for fua_dg_srbcost -- see the CCMD for why the number matters.
 void MaterialSRBCounts(int &cached, int &batch)
 {
-	cached = (int)g_matSRBs.Size();
+	cached = (int)g_matSRBs.size();
 	batch = (int)g_batchSRBs.Size();
 }
 
 void ForgetMaterialSRBs(const void *material)
 {
-	for (unsigned i = g_matSRBs.Size(); i-- > 0;)
-		if (g_matSRBs[i].material == material)
+	for (auto it = g_matSRBs.begin(); it != g_matSRBs.end();)
+		if (it->first.a == material)
 		{
-			if (g_matSRBs[i].srb) g_matSRBs[i].srb->Release();
-			g_matSRBs.Delete(i);
+			if (it->second) it->second->Release();
+			it = g_matSRBs.erase(it);
 		}
+		else ++it;
 	for (unsigned b = 0; b < g_scene.batches.Size(); b++)
 		if (g_scene.batches[b].resolved == material) g_scene.batches[b].srb = NULL;
 }
@@ -889,9 +888,9 @@ void ReleaseMaterialSRBs()
 {
 	ReleaseAtlasSRBs();
 	ForgetBatchSRBs();
-	for (unsigned i = 0; i < g_matSRBs.Size(); i++)
-		if (g_matSRBs[i].srb) g_matSRBs[i].srb->Release();
-	g_matSRBs.Clear();
+	for (auto &e : g_matSRBs)
+		if (e.second) e.second->Release();
+	g_matSRBs.clear();
 }
 
 static bool g_pieceBindFailed = false;
