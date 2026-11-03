@@ -34,6 +34,9 @@ bool ComputeNoStopBlocks(int chanflags, bool alreadyPlaying);
 // [Doruk-Aksoy] Whether a channel counts toward a sound's near limit: one with a voice, or, when the asking tic counts them, one a tic queued that waits for its voice, as it counts as playing for the rest of the tic.
 bool ComputeCountsTowardLimit(int chanflags, bool countQueued);
 
+// [Doruk-Aksoy] Whether a channel started with orgId keeps a $singular soundId from starting: one playing it does, unless it is the channel being started, which is not playing it yet.
+bool ComputeSingularBlocks(int orgId, int soundId, bool isStarting);
+
 // [Doruk-Aksoy] A_StartSound's slot and flags as this engine's channel, slot 0-7 with the flags UZDoom passes on to the sound (CHANF_LOOP is left to the looping path).
 int ComputeStartSoundChannel(int slot, int flags);
 

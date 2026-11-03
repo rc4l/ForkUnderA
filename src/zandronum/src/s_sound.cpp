@@ -1285,7 +1285,8 @@ void S_RestartSound(FSoundChan *chan)
 	sfxinfo_t *sfx = &S_sfx[chan->SoundID];
 
 	// If this is a singular sound, don't play it if it's already playing.
-	if (sfx->bSingular && S_CheckSingular(chan->SoundID))
+	// [Doruk-Aksoy] Not counting chan itself, which a tic on the game thread queued and so is linked before it plays.
+	if (sfx->bSingular && S_CheckSingular(chan->SoundID, chan))
 		return;
 
 	sfx = S_LoadSound(sfx);
@@ -1548,11 +1549,11 @@ sfxinfo_t *S_LoadSound(sfxinfo_t *sfx)
 //
 //==========================================================================
 
-bool S_CheckSingular(int sound_id)
+bool S_CheckSingular(int sound_id, const FSoundChan *starting)
 {
 	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
 	{
-		if (chan->OrgID == sound_id)
+		if (ComputeSingularBlocks(chan->OrgID, sound_id, chan == starting))
 		{
 			return true;
 		}
