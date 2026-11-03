@@ -2561,13 +2561,22 @@ void S_RunDeferredSounds()
 	// [rc4l] In the order the tic started them, each loaded and started as an evicted sound restarts, and forgotten when it cannot start and does not loop.
 	// [Doruk-Aksoy] A crowd's tic can start a thousand sounds, so a repeat is found in a set rather than by a walk back over the list, and a channel's link by its flag: one returned to the free pool is zeroed, so only a linked one can still be evicted.
 	static std::unordered_set<FSoundChan *> started;
+	static std::vector<FSoundChan *> waiting;
 	started.clear();
+	waiting.clear();
 	for (size_t i = 0; i < DeferredStarts.size(); i++)
 	{
 		FSoundChan *chan = DeferredStarts[i];
 		if (!started.insert(chan).second || !(chan->ChanFlags & CHAN_EVICTED)) continue;
 		// [Doruk-Aksoy] Handed over now, so the restart's own limit counts it only once it has a voice.
 		chan->ChanFlags &= ~CHAN_QUEUED;
+		waiting.push_back(chan);
+	}
+	// [Doruk-Aksoy] The waiting channels leave the list while the others start, since each start's walks (the near limit, $singular, the device's lowest voice) skip a voiceless channel anyway; each is linked back at the head as it starts, which is where and in the order its tic made it.
+	for (FSoundChan *chan : waiting) S_UnlinkChannel(chan);
+	for (FSoundChan *chan : waiting)
+	{
+		S_LinkChannel(chan, &Channels);
 		S_RestartSound(chan);
 		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
 	}
