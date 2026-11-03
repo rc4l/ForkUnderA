@@ -77,6 +77,7 @@ static_assert(ZX_CHAN_NOPAUSE == CHAN_NOPAUSE, "channel mirror out of sync");
 static_assert(ZX_CHAN_LOOP == CHAN_LOOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_NOSTOP == CHAN_NOSTOP, "channel mirror out of sync");
 static_assert(ZX_CHAN_OVERLAP == CHAN_OVERLAP, "channel mirror out of sync");
+static_assert(ZX_CHAN_EVICTED == CHAN_EVICTED && ZX_CHAN_QUEUED == CHAN_QUEUED, "channel mirror out of sync");
 
 #include <unordered_set>
 #include <vector>
@@ -130,7 +131,7 @@ extern float S_GetMusicVolume (const char *music);
 
 // PRIVATE FUNCTION PROTOTYPES ---------------------------------------------
 
-static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, AActor *actor, int channel);
+static bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range, AActor *actor, int channel, bool countQueued = false);
 
 // [Doruk-Aksoy] Marks an actor a channel now points at, which stays marked, so asking about one that never had a sound needs no walk over every channel.
 static void NoteChannelActor (AActor *actor)
@@ -1093,7 +1094,8 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 	// If this sound doesn't like playing near itself, don't play it if
 	// that's what would happen.
-	if (near_limit > 0 && S_CheckSoundLimit(sfx, pos, near_limit, limit_range, actor, channel))
+	// [Doruk-Aksoy] Counting what this tic already queued, which plays as soon as the tic hands over, so a crowd sounding at once is held to the limit before a channel is made for each.
+	if (near_limit > 0 && S_CheckSoundLimit(sfx, pos, near_limit, limit_range, actor, channel, true))
 	{
 		chanflags |= CHAN_EVICTED;
 	}
@@ -1203,7 +1205,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		// [rc4l] features/handoff: the channel with no voice yet, which counts as playing for the rest of the tic as a started one would.
 		chan = (FSoundChan*)S_GetChannel(NULL);
 		chan->StartTime.AsOne = 0;
-		chanflags |= CHAN_EVICTED;
+		chanflags |= CHAN_EVICTED | CHAN_QUEUED;
 		DeferredStarts.push_back(chan);
 	}
 	else 
@@ -1576,14 +1578,14 @@ bool S_CheckSingular(int sound_id)
 //==========================================================================
 
 bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range,
-	AActor *actor, int channel)
+	AActor *actor, int channel, bool countQueued)
 {
 	FSoundChan *chan;
 	int count;
 	
 	for (chan = Channels, count = 0; chan != NULL && count < near_limit; chan = chan->NextChan)
 	{
-		if (!(chan->ChanFlags & CHAN_EVICTED) && &S_sfx[chan->SoundID] == sfx)
+		if (ComputeCountsTowardLimit(chan->ChanFlags, countQueued) && &S_sfx[chan->SoundID] == sfx)
 		{
 			FVector3 chanorigin;
 
@@ -2549,6 +2551,8 @@ static bool S_IsLinked(FSoundChan *chan)
 void S_RunDeferredSounds()
 {
 	ZX_SEAM_UNTIMED("sound/deferred", Handoff);
+	ZX_ZONE("sound/start_deferred");   // [Doruk-Aksoy] a tic's queued sounds given voices, which a crowd once made 20 ms
+	ZX_COUNT("sound/deferred_starts", "sounds", DeferredStarts.size());
 	for (FSoundChan *chan : DeferredStops)
 		if (S_IsLinked(chan) && chan->SysChannel != NULL) GSnd->StopChannel(chan);
 	for (const auto &v : DeferredVolumes)
@@ -2561,6 +2565,8 @@ void S_RunDeferredSounds()
 	{
 		FSoundChan *chan = DeferredStarts[i];
 		if (!started.insert(chan).second || !(chan->ChanFlags & CHAN_EVICTED)) continue;
+		// [Doruk-Aksoy] Handed over now, so the restart's own limit counts it only once it has a voice.
+		chan->ChanFlags &= ~CHAN_QUEUED;
 		S_RestartSound(chan);
 		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
 	}
