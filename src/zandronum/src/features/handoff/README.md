@@ -30,7 +30,8 @@ sends out goes through a queue. This folder is the low layer any feature may use
   loaded before the tic (`V_FontsForTic`).
 - `snapshot.cpp`: the screen's size for ACS `GetScreenWidth`/`GetScreenHeight`, taken before each tic.
 - The sound seam (`s_sound.cpp`): a tic on its own thread keeps the channels' bookkeeping, so a sound it starts
-  counts as playing for the rest of the tic, but asks nothing of the device; its starts (loaded then), stops and
+  counts as playing for the rest of the tic (its near limit too: `CHAN_QUEUED` marks it until the handoff gives it a voice, so a
+  crowd sounding at once is held to the limit before a channel is made for each), but asks nothing of the device; its starts (loaded then), stops and
   volume changes wait in order for `S_RunDeferredSounds`, which the handoff runs as it takes the tic back, on the
   boundary its picture starts showing on, and its music changes and its pauses and resumes of the device go through the UI effects. A page's OpenAL, which
   plays only on the page thread, is reached from the handoff alone that way. A focus change the window reports

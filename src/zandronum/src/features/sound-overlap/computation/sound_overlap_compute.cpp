@@ -77,3 +77,8 @@ void ComputeForgetLooping(std::vector<ZxLoopingSound> &list, const void *actor)
 	else
 		EraseIf(list, [&](const ZxLoopingSound &s) { return s.actor == actor; });
 }
+
+bool ComputeCountsTowardLimit(int chanflags, bool countQueued)
+{
+	return !(chanflags & ZX_CHAN_EVICTED) || (countQueued && (chanflags & ZX_CHAN_QUEUED));
+}
