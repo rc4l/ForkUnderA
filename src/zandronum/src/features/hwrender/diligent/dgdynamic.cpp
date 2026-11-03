@@ -524,6 +524,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	                                          // marks on ONE spot from two marks on two walls
 	                   float lo, hi; int layer; bool plane; };   // [rc4l] height span, and its place among the translucent planes
 	static TArray<BlendDraw> list;
+	static TArray<BlendDraw> sorted;   // [Doruk-Aksoy] list gathered into draw order, which everything after the sort reads instead of copying it back
 	list.Clear();
 
 	const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
@@ -629,7 +630,6 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		// [rc4l] Sorted as 128-bit keys holding the rule, and the draws then moved once.
 		static std::vector<zx::hwrender::TranslucentOrder> keys, keysMoved;
 		static std::vector<zx::hwrender::TranslucentHalf> halves, halfScratch;
-		static TArray<BlendDraw> sorted;
 		keys.resize(list.Size());
 		for (unsigned i = 0; i < list.Size(); i++)
 		{
@@ -648,7 +648,6 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		}
 		sorted.Resize(list.Size());
 		for (unsigned i = 0; i < keys.size(); i++) sorted[i] = list[keys[i].index];
-		for (unsigned i = 0; i < sorted.Size(); i++) list[i] = sorted[i];
 	}
 
 	if (g_dumpBlendOrder && g_pass.mainView)
@@ -666,20 +665,20 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			empty, unbound, g_pso.world[kWpTrans] ? "ok" : "NULL", g_pso.world[kWpAdd] ? "ok" : "NULL" );
 		Printf( "%d translucent plane heights split the order\n", g_blendPlaneHeights );
 		Printf( "translucent pass, in draw order (first drawn = furthest back):\n" );
-		const unsigned from = (list.Size() > 40 && !g_dumpBlendAtZ) ? list.Size() - 40 : 0;   // [rc4l] the NEAREST 40; the far end is scenery
-		for (unsigned i = from; i < list.Size(); i++)
+		const unsigned from = (sorted.Size() > 40 && !g_dumpBlendAtZ) ? sorted.Size() - 40 : 0;   // [rc4l] the NEAREST 40; the far end is scenery
+		for (unsigned i = from; i < sorted.Size(); i++)
 		{
-			const BlendDraw &d = list[i];
+			const BlendDraw &d = sorted[i];
 			if (g_dumpBlendAtZ && (d.lo > g_dumpBlendZ || d.hi < g_dumpBlendZ)) continue;
 			Printf( "  %2u  dist %9.0f  %s  blend %d%s%s  layer %d%s  z %.0f..%.0f  verts %u at %u\n", i, d.dist,
 				d.dyn ? "dyn " : "batch", d.blend,
 				d.bias ? "  DECAL" : "", d.red ? " redToAlpha" : "", d.layer, d.plane ? " PLANE" : "",
 				d.lo, d.hi, d.count, d.first );
 		}
-		Printf( "  %u draws total\n", list.Size() );
+		Printf( "  %u draws total\n", sorted.Size() );
 		// [Doruk-Aksoy] The pipeline switches the loop below makes over this order, by pair, the cost a merge of two pipelines would save.
 		std::vector<zx::hwrender::PipelineKey> keys;
-		for (unsigned i = 0; i < list.Size(); i++) keys.push_back({ list[i].pipeline, list[i].user });
+		for (unsigned i = 0; i < sorted.Size(); i++) keys.push_back({ sorted[i].pipeline, sorted[i].user });
 		const std::vector<zx::hwrender::PipelineSwitchCount> tally = zx::hwrender::ComputePipelineSwitches(keys);
 		Printf( "  %d pipeline switches over them, most first:\n", zx::hwrender::ComputeSwitchTotal(tally) );
 		for (size_t i = 0; i < tally.size() && i < 8; i++)
@@ -690,15 +689,15 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// [rc4l] The sorted order, written once into indices -- see g_blendIB.
 	{
 		unsigned int total = 0;
-		for (unsigned i = 0; i < list.Size(); i++) total += list[i].count;
+		for (unsigned i = 0; i < sorted.Size(); i++) total += sorted[i].count;
 		g_blendIndices.Clear();
 		if (total > 0)
 		{
 			g_blendIndices.Reserve(total);
 			unsigned int w = 0;
-			for (unsigned i = 0; i < list.Size(); i++)
+			for (unsigned i = 0; i < sorted.Size(); i++)
 			{
-				const BlendDraw &d = list[i];
+				const BlendDraw &d = sorted[i];
 				for (unsigned k = 0; k < d.count; k++) g_blendIndices[w++] = (Diligent::Uint32)(d.first + k);
 			}
 			if (EnsureBlendIndexBuffer(GetDevice(), total))
@@ -727,9 +726,9 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	zx::hwrender::LoopCommits commits = zx::hwrender::ComputeLoopCommitsStart();
 	int boundVB = -1;
 	const Diligent::Uint64 offsets[] = { 0 };
-	for (unsigned i = 0; i < list.Size(); i++)
+	for (unsigned i = 0; i < sorted.Size(); i++)
 	{
-		const BlendDraw &d = list[i];
+		const BlendDraw &d = sorted[i];
 		const int want = d.dyn ? 1 : 0;
 		if (want != boundVB)
 		{
@@ -764,9 +763,9 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		const unsigned int idxStart = idxCursor;
 		unsigned int idxCount = d.count;
 		idxCursor += d.count;
-		while (i + 1 < list.Size())
+		while (i + 1 < sorted.Size())
 		{
-			const BlendDraw &n = list[i + 1];
+			const BlendDraw &n = sorted[i + 1];
 			if ((n.dyn ? 1 : 0) != want) break;
 			if (n.pipeline != d.pipeline || n.user != d.user) break;
 			// Without bindless the binding IS the material, so it has to match too.
