@@ -178,6 +178,8 @@ public:
 	void UpdateSounds();
 
 	void MarkStartTime(FISoundChannel*);
+	// [Doruk-Aksoy] See SoundRenderer::KeepLowestVoice.
+	void KeepLowestVoice(bool keep);
 	float GetAudibility(FISoundChannel*);
 
 

@@ -122,6 +122,9 @@ public:
 	// Marks a channel's start time without actually playing it.
 	virtual void MarkStartTime (FISoundChannel *chan) = 0;
 
+	// [Doruk-Aksoy] Opens (true) and closes (false) a run of starts in which the device may keep the lowest voice it finds until a voice starts or stops; nothing by default.
+	virtual void KeepLowestVoice (bool keep) {}
+
 	// Returns position of sound on this channel, in samples.
 	virtual unsigned int GetPosition(FISoundChannel *chan) = 0;
 

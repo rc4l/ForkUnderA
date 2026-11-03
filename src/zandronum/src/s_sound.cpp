@@ -2574,12 +2574,14 @@ void S_RunDeferredSounds()
 	}
 	// [Doruk-Aksoy] The waiting channels leave the list while the others start, since each start's walks (the near limit, $singular, the device's lowest voice) skip a voiceless channel anyway; each is linked back at the head as it starts, which is where and in the order its tic made it.
 	for (FSoundChan *chan : waiting) S_UnlinkChannel(chan);
+	GSnd->KeepLowestVoice(true);
 	for (FSoundChan *chan : waiting)
 	{
 		S_LinkChannel(chan, &Channels);
 		S_RestartSound(chan);
 		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
 	}
+	GSnd->KeepLowestVoice(false);
 	DeferredStarts.clear();
 	DeferredStops.clear();
 	DeferredVolumes.clear();

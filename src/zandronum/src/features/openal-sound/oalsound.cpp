@@ -122,9 +122,16 @@ static void ZX_ReplayAudioFill(short *out, int frames)
 // [rc4l] Pure format/sizing and playback math live in dependency-free, unit-tested units.
 #include "features/openal-sound/computation/oal_format_compute.h"
 #include "features/openal-sound/computation/oal_playback_compute.h"
+#include "features/openal-sound/computation/oal_voice_compute.h"   // [Doruk-Aksoy] the lowest voice kept through a run of starts
 #include "features/openal-sound/computation/oal_menu_compute.h"
 #include "features/openal-sound/computation/oal_pan_compute.h"
 #include "features/sound-amplify/computation/sound_amplify_compute.h"
+
+// [Doruk-Aksoy] FindLowestChannel's answer, kept while a tic's queued sounds start (KeepLowestVoice) and forgotten whenever a voice is taken or freed or a voice's distance changes.
+#ifndef NO_OPENAL
+static LowestVoiceMemo g_lowestVoice;
+static void VoicesChanged() { ComputeMemoForget(g_lowestVoice); }
+#endif
 
 // [Doruk-Aksoy] oal_pan_compute mirrors ALC_SOFT_output_mode, which older headers (and Emscripten's) lack.
 #ifdef ALC_OUTPUT_MODE_SOFT
@@ -638,6 +645,7 @@ class OpenALSoundStream : public SoundStream
                 return false;
         }
         Renderer->FreeSfx.Pop(Source);
+        VoicesChanged();
 
 
         /* Set the default properties for localized playback */
@@ -696,6 +704,7 @@ public:
             alSourcei(Source, AL_BUFFER, 0);
 
             Renderer->FreeSfx.Push(Source);
+            VoicesChanged();
             Source = 0;
         }
 
@@ -1424,6 +1433,7 @@ OpenALSoundRenderer::~OpenALSoundRenderer()
     alDeleteSources(Sources.Size(), &Sources[0]);
     Sources.Clear();
     FreeSfx.Clear();
+    VoicesChanged();
     SfxGroup.Clear();
     PausableSfx.Clear();
     ReverbSfx.Clear();
@@ -1815,6 +1825,7 @@ FISoundChannel *OpenALSoundRenderer::StartSound(SoundHandle sfx, float vol, int 
         PausableSfx.Push(source);
     SfxGroup.Push(source);
     FreeSfx.Pop();
+    VoicesChanged();
 
     FISoundChannel* chan = reuse_chan;
     if (!chan) chan = S_GetChannel(MAKE_PTRID(source));
@@ -2023,6 +2034,7 @@ FISoundChannel *OpenALSoundRenderer::StartSound3D(SoundHandle sfx, SoundListener
         PausableSfx.Push(source);
     SfxGroup.Push(source);
     FreeSfx.Pop();
+    VoicesChanged();
 
     FISoundChannel *chan = reuse_chan;
     if(!chan) chan = S_GetChannel(MAKE_PTRID(source));
@@ -2071,6 +2083,7 @@ void OpenALSoundRenderer::StopChannel(FISoundChannel *chan)
 
     SfxGroup.Delete(SfxGroup.Find(source));
     FreeSfx.Push(source);
+    VoicesChanged();
 }
 
 unsigned int OpenALSoundRenderer::GetPosition(FISoundChannel *chan)
@@ -2183,6 +2196,7 @@ void OpenALSoundRenderer::UpdateSoundParams3D(SoundListener *listener, FISoundCh
 
 	FVector3 dir = pos - listener->position;
 	chan->DistanceSqr = (float)dir.LengthSquared();
+	VoicesChanged();
 
 	if(chan->ManualRolloff)
 	{
@@ -2615,20 +2629,28 @@ void OpenALSoundRenderer::LoadReverb(const ReverbContainer *env)
 
 FSoundChan *OpenALSoundRenderer::FindLowestChannel()
 {
+    // [Doruk-Aksoy] While a tic's queued sounds start, most find every voice busy and ask again for an answer only a voice starting or stopping changes.
+    const void *kept;
+    if (ComputeMemoRecall(g_lowestVoice, kept)) return (FSoundChan *)kept;
     FSoundChan *schan = Channels;
     FSoundChan *lowest = NULL;
     while(schan)
     {
         if(schan->SysChannel != NULL)
         {
-            if(!lowest || schan->Priority < lowest->Priority ||
-               (schan->Priority == lowest->Priority &&
-                schan->DistanceSqr > lowest->DistanceSqr))
+            if(!lowest || ComputeVoiceLower(schan->Priority, schan->DistanceSqr, lowest->Priority, lowest->DistanceSqr))
                 lowest = schan;
         }
         schan = schan->NextChan;
     }
+    ComputeMemoKeep(g_lowestVoice, lowest);
     return lowest;
+}
+
+void OpenALSoundRenderer::KeepLowestVoice(bool keep)
+{
+    if (keep) ComputeMemoBegin(g_lowestVoice);
+    else ComputeMemoEnd(g_lowestVoice);
 }
 
 #endif // NO_OPENAL
