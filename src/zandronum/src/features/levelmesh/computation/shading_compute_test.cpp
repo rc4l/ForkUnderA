@@ -209,3 +209,20 @@ TEST(ComputeSameLevelShading, EverySettingButTheFixedColormapAndSkybox)
 	EXPECT_TRUE(differs([](ShadingEnv &e) { e.outsideFogDensity = 30; }));
 	EXPECT_TRUE(differs([](ShadingEnv &e) { e.outsideFogColor = 0x00102030; }));
 }
+
+TEST(ComputeSameShadingInput, EveryFieldCounts)
+{
+	ShadingInput a;
+	a.lightLevel = 160; a.relLight = 16; a.lightColor = 0xffffff; a.fadeColor = 0; a.blendFactor = 0; a.desaturation = 0;
+	a.noFog = false; a.additive = false;
+	EXPECT_TRUE(ComputeSameShadingInput(a, a));
+	const auto differs = [&](void (*edit)(ShadingInput &)) { ShadingInput c = a; edit(c); return !ComputeSameShadingInput(a, c); };
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.lightLevel = 161; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.relLight = 0; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.lightColor = 0xff0000; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.fadeColor = 0x202020; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.blendFactor = 1; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.desaturation = 31; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.noFog = true; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.additive = true; }));
+}
