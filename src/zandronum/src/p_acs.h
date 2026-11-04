@@ -45,6 +45,7 @@
 #include <iterator>
 #include "i_system.h"
 #include "sv_commands.h"
+#include "features/acs-strings/computation/stringpool_compute.h"
 
 #define LOCAL_SIZE				20
 #define NUM_MAPVARS				128
@@ -128,6 +129,8 @@ public:
 	void Dump() const;
 	void ReadStrings(PNGHandle *png, DWORD id);
 	void WriteStrings(FILE *file, DWORD id) const;
+	// [Doruk-Aksoy] features/acs-strings: moves on whenever a string's id can change (purge, clear, load), which a module's cached literal ids are held to.
+	unsigned Generation() const { return m_Generation; }
 
 private:
 	int FindString(const char *str, size_t len, unsigned int h, unsigned int bucketnum);
@@ -148,6 +151,7 @@ private:
 	TArray<PoolEntry> Pool;
 	unsigned int PoolBuckets[NUM_BUCKETS];
 	unsigned int FirstFreeEntry;
+	unsigned int m_Generation = 1;
 };
 extern ACSStringPool GlobalACSStrings;
 
@@ -500,6 +504,7 @@ public:
 	ACSProfileInfo *GetFunctionProfileData(int index) { return index >= 0 && index < NumFunctions ? &FunctionProfileData[index] : NULL; }
 	ACSProfileInfo *GetFunctionProfileData(ScriptFunction *func) { return GetFunctionProfileData((int)(func - (ScriptFunction *)Functions)); }
 	const char *LookupString (DWORD index) const;
+	zx::acsstrings::TagCache TagIds;	// [Doruk-Aksoy] features/acs-strings: this module's literals as PCD_TAGSTRING made them pool ids
 
 	BoundsCheckingArray<SDWORD *, NUM_MAPVARS> MapVars;
 

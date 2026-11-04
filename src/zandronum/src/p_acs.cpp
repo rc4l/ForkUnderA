@@ -469,6 +469,7 @@ ACSStringPool::ACSStringPool()
 
 void ACSStringPool::Clear()
 {
+	m_Generation++;
 	Pool.Clear();
 	memset(PoolBuckets, 0xFF, sizeof(PoolBuckets));
 	FirstFreeEntry = 0;
@@ -707,6 +708,7 @@ void ACSStringPool::UnlockAll()
 
 size_t ACSStringPool::PurgeStrings()
 {
+	m_Generation++;
 	// Clear the hash buckets. We'll rebuild them as we decide what strings
 	// to keep and which to toss.
 	memset(PoolBuckets, 0xFF, sizeof(PoolBuckets));
@@ -9421,7 +9423,17 @@ int DLevelScript::RunScript ()
 
 		case PCD_TAGSTRING:
 			//Stack[sp-1] |= activeBehavior->GetLibraryID();
-			Stack[sp-1] = GlobalACSStrings.AddString(activeBehavior->LookupString(Stack[sp-1]));
+			{
+				// [Doruk-Aksoy] features/acs-strings: a literal's pool id stays the same until a purge, clear or load, so it is hashed and looked up once a generation instead of every push.
+				const unsigned index = (unsigned)Stack[sp-1];
+				int id = zx::acsstrings::ComputeTagCacheFind(activeBehavior->TagIds, GlobalACSStrings.Generation(), index);
+				if (id == -1)
+				{
+					id = GlobalACSStrings.AddString(activeBehavior->LookupString(Stack[sp-1]));
+					zx::acsstrings::ComputeTagCacheStore(activeBehavior->TagIds, GlobalACSStrings.Generation(), index, id);
+				}
+				Stack[sp-1] = id;
+			}
 			break;
 
 		case PCD_PUSHNUMBER:
