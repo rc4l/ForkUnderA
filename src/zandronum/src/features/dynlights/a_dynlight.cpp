@@ -35,6 +35,7 @@
 **
 */
 
+#include <cstdint>
 #include "templates.h"
 #include "m_random.h"
 #include "p_local.h"
@@ -341,6 +342,9 @@ void ADynamicLight::Tick()
 //
 //
 //
+// [Doruk-Aksoy] Map units a light attached to a moving actor travels before the surfaces it may touch are found again, 0 for every move.
+CVAR(Int, fua_light_relink_slack, 16, CVAR_ARCHIVE)
+
 //==========================================================================
 void ADynamicLight::UpdateLocation()
 {
@@ -385,10 +389,16 @@ void ADynamicLight::UpdateLocation()
 
 		radius = FLOAT2FIXED(intensity * 2.0f * r_lights_size);
 
-		if (x!=oldx || y!=oldy || radius!=oldradius) 
+		// [Doruk-Aksoy] A light that moved less than fua_light_relink_slack units from its last relink keeps the surfaces that relink found, which differ at most at the faint edge of its reach.
+		const bool moved = x!=oldx || y!=oldy;
+		if (radius!=oldradius || (moved && !zx::dynlights::ComputeLightKeepsLinks(m_linkedAt, x.Raw(), y.Raw(), int64_t(fua_light_relink_slack) << FRACBITS)))
 		{
 			//Update the light lists
 			LinkLight();
+		}
+		else if (moved)
+		{
+			ZX_COUNT("lights/relinks_kept", "relinks", 1);
 		}
 	}
 }
@@ -610,6 +620,7 @@ void ADynamicLight::CollectWithinRadius(subsector_t *subSec, float radius)
 
 void ADynamicLight::LinkLight()
 {
+	m_linkedAt = zx::dynlights::LinkSpot{ x.Raw(), y.Raw(), true };
 	ZX_ZONE("lights/link");
 	ZX_COUNT("lights/relinks", "relinks", 1);
 	// [Doruk-Aksoy] The walk first, which links nothing itself and reads no node, so what it reached can be held to the last relink's.
