@@ -330,11 +330,11 @@ void DynClear();
 // filled in by this call.
 void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto);
 
-// [Doruk-Aksoy] Room for `count` quads at the stream's end, in order, false (nothing reserved) when they would pass the ceiling; each is then written by DynPlaceQuad.
-bool DynReserveQuads(unsigned count, DynQuadRun &run);
+// [Doruk-Aksoy] Room for `pieces` pieces of `verts` vertices in all at the stream's end, in order, false (nothing reserved) when they would pass the ceiling; each is then written by DynPlace.
+bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run);
 
-// [Doruk-Aksoy] The run's quad `k` written in place, as DynAppend would have; lanes may write different quads of a run at once.
-void DynPlaceQuad(const DynQuadRun &run, unsigned k, const MeshVertex *verts, const MeshPiece &proto);
+// [Doruk-Aksoy] The run's piece `piece`, its `count` vertices from the run's vertex `vert`, written in place as DynAppend would have; lanes may write different pieces of a run at once.
+void DynPlace(const DynQuadRun &run, unsigned piece, unsigned vert, const MeshVertex *verts, unsigned count, const MeshPiece &proto);
 
 // This frame's dynamic vertices and pieces.
 const MeshVertex *DynVertices(int &count);

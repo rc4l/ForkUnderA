@@ -5,6 +5,7 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureView
+#include "features/levelmesh/computation/modelsurface_compute.h"   // [Doruk-Aksoy] ComputeModelSurfaceCorners
 
 #include "features/models/modelgeometry.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
@@ -17,6 +18,9 @@
 CVAR(Bool, fua_mesh_models, true, CVAR_ARCHIVE)
 
 namespace zx { namespace levelmesh {
+
+// [Doruk-Aksoy] ComputeModelSurfaceCorners reads and writes both as five floats a vertex.
+static_assert(sizeof(FModelVertex) == 5 * sizeof(float) && sizeof(MeshVertex) == 5 * sizeof(float), "five floats a vertex");
 
 // [rc4l] Who hears the captured pieces (SetModelPieceListener).
 static ModelPieceListener g_pieceListener = NULL;
@@ -51,15 +55,6 @@ bool g_haveBB = false;
 // Scratch, kept across surfaces: a model surface is a few hundred triangles and this function runs
 // per surface per model per frame, so the allocation is worth not repeating.
 TArray<MeshVertex> g_tris;
-
-// The model matrix, applied to one vertex. VSMatrix is column-major, as GL wants it, so a column is
-// four consecutive floats and the translation lives in the last one.
-inline void Transform(const float *m, float x, float y, float z, float *out)
-{
-	out[0] = m[0] * x + m[4] * y + m[8]  * z + m[12];
-	out[1] = m[1] * x + m[5] * y + m[9]  * z + m[13];
-	out[2] = m[2] * x + m[6] * y + m[10] * z + m[14];
-}
 
 } // namespace
 
@@ -150,54 +145,29 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 	const void *material, int translation)
 {
 	if (!ModelCaptureActive() || geometry == NULL || material == NULL) return;
-
-	const FModelVertex *verts = geometry->verts.Size() ? &geometry->verts[0] : NULL;
-	// [rc4l] No index buffer means the draw was sequential, not that there is nothing to draw. MD2
-	// keeps one vertex per corner and calls glDrawArrays; MD3 and voxels are indexed. Both arrive
-	// here, so the absence of indices is a numbering scheme rather than a failure.
+	// [rc4l] No index buffer means the draw was sequential, not that there is nothing to draw: MD2 keeps one vertex per corner, MD3 and voxels are indexed.
 	const unsigned int *idx = geometry->indexed && geometry->indices.Size() ? &geometry->indices[0] : NULL;
-	if (verts == NULL || indexCount < 3)
-	{
-		g_skipped++;
-		return;
-	}
-	// [rc4l] Bounds checked rather than trusted. These offsets come from a file on disk -- a model
-	// whose surface header disagrees with its vertex count would otherwise walk off the array, and
-	// the loaders do not validate them.
-	if (idx != NULL && firstIndex + indexCount > geometry->indices.Size())
-	{
-		g_skipped++;
-		return;
-	}
-
-	const float *m = g_matrix;
-	const unsigned int nverts = geometry->verts.Size();
-	const bool lerp = (base1 != base2) && (inter > 0.f);
-
 	g_tris.Resize(indexCount);
-	for (unsigned int i = 0; i < indexCount; i++)
+	if (!ComputeModelSurfaceCorners(geometry->verts.Size() ? &geometry->verts[0].x : NULL, geometry->verts.Size(), idx, geometry->indices.Size(),
+		ModelSurfaceSpan{ base1, base2, inter, firstIndex, indexCount }, g_matrix, indexCount ? &g_tris[0].x : NULL))
 	{
-		const unsigned int vi = idx ? idx[firstIndex + i] : (firstIndex + i);
-		if (base1 + vi >= nverts || base2 + vi >= nverts)
-		{
-			g_skipped++;
-			return;
-		}
-		const FModelVertex &a = verts[base1 + vi];
-		float x = a.x, y = a.y, z = a.z;
-		if (lerp)
-		{
-			// [rc4l] The lerp GL's vertex shader does, done here. Frames are keyframes of the same
-			// vertex list, so this is the same arithmetic on the same pairs -- what changes is who
-			// runs it, and the bill is per visible model rather than per level vertex.
-			const FModelVertex &b = verts[base2 + vi];
-			x += (b.x - x) * inter;
-			y += (b.y - y) * inter;
-			z += (b.z - z) * inter;
-		}
-		float w[3];
-		Transform(m, x, y, z, w);
-		g_tris[i].Set(w[0], w[1], w[2], a.u, a.v);
+		g_skipped++;
+		return;
+	}
+	EmitModelSurface(&g_tris[0], indexCount, material, translation);
+}
+
+void ModelSurfaceSkipped()
+{
+	if (ModelCaptureActive()) g_skipped++;
+}
+
+// [Doruk-Aksoy] The box fua_models reports grown to take in a surface's corners.
+static void NoteBounds(const MeshVertex *tris, unsigned int count)
+{
+	for (unsigned int i = 0; i < count; i++)
+	{
+		const float w[3] = { tris[i].x, tris[i].z, tris[i].y };
 		for (int c = 0; c < 3; c++)
 		{
 			if (!g_haveBB || w[c] < g_bbMin[c]) g_bbMin[c] = w[c];
@@ -205,30 +175,68 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 		}
 		g_haveBB = true;
 	}
+}
 
-	MeshPiece mp = g_look;
-	// [rc4l] The FMaterial itself, not its FTexture. MeshPiece::material is an identity the backend
-	// resolves to its own texture, and it resolves it AS an FMaterial -- handing it the inner pointer
-	// type-checks, then faults inside CreateTexBuffer on the first frame that draws a model.
-	mp.material = material;
-	mp.mirrorView = MirrorCaptureView();
-	mp.stackSlot = StackCaptureSlot();
-	mp.translation = translation;
+// [Doruk-Aksoy] The piece fua_models reports as the last one handed over: its look and its material.
+static void NoteLast(const MeshPiece &mp, const void *material)
+{
 	g_lastSort[0] = mp.sortX; g_lastSort[1] = mp.sortY; g_lastSort[2] = mp.sortZ;
 	g_lastAlpha = mp.alpha; g_lastBlend = mp.blendMode; g_lastLight = mp.lightLevel;
 	g_lastRGB[0] = mp.colorR; g_lastRGB[1] = mp.colorG; g_lastRGB[2] = mp.colorB;
-	g_lastMaterial = mp.material;
+	g_lastMaterial = material;
+}
+
+ModelPlacing ModelPlacingNow()
+{
+	const ModelPlacing at = { fua_mesh_models && DynamicCaptureActive(), MirrorCaptureView(), StackCaptureSlot() };
+	return at;
+}
+
+void ModelSurfacePiece(const MeshPiece &look, const ModelPlacing &at, const void *material, int translation, int matrixIndex, MeshPiece &out)
+{
+	out = look;
+	// [rc4l] The FMaterial itself, not its FTexture, as the backend resolves MeshPiece::material AS an FMaterial and faults on the inner pointer.
+	out.material = material;
+	out.mirrorView = at.mirrorView;
+	out.stackSlot = at.stackSlot;
+	out.translation = translation;
+	out.modelMatrix = matrixIndex;
+}
+
+int ModelPlaced(const float *matrix, const MeshPiece &look, const void *lastMaterial, const MeshVertex *verts, unsigned int nverts, unsigned int surfaces, unsigned int triangles, unsigned int skipped)
+{
+	g_begins++;
+	g_lastMainView = MainView();
+	if (!fua_mesh_models || !DynamicCaptureActive()) return -1;
+	g_models++;
+	g_skipped += (int)skipped;
+	if (surfaces == 0) return -1;
+	NoteBounds(verts, nverts);
+	NoteLast(look, lastMaterial);
+	g_surfaces += (int)surfaces;
+	g_triangles += (int)triangles;
+	return DynAddMatrix(matrix);
+}
+
+void EmitModelSurface(const MeshVertex *tris, unsigned int indexCount, const void *material, int translation)
+{
+	if (!ModelCaptureActive() || material == NULL || indexCount == 0) return;
+	NoteBounds(tris, indexCount);
+	MeshPiece mp;
+	const ModelPlacing at = { true, MirrorCaptureView(), StackCaptureSlot() };
+	ModelSurfacePiece(g_look, at, material, translation, g_look.modelMatrix, mp);
+	NoteLast(mp, mp.material);
 
 	// [rc4l] GL's surfaces are only compared: GL draws its frame before the backend's scene, which clears the stream they would go to.
 	if (g_kind == kModelFromGL)
 	{
-		if (g_pieceListener != NULL) g_pieceListener(g_who, true, mp, &g_tris[0], (int)indexCount);
+		if (g_pieceListener != NULL) g_pieceListener(g_who, true, mp, tris, (int)indexCount);
 		return;
 	}
-	if (g_kind == kModelChecked && g_pieceListener != NULL) g_pieceListener(g_who, false, mp, &g_tris[0], (int)indexCount);
-	if (g_matrixIndex < 0) g_matrixIndex = DynAddMatrix(m);
+	if (g_kind == kModelChecked && g_pieceListener != NULL) g_pieceListener(g_who, false, mp, tris, (int)indexCount);
+	if (g_matrixIndex < 0) g_matrixIndex = DynAddMatrix(g_matrix);
 	mp.modelMatrix = g_matrixIndex;
-	DynAppend(&g_tris[0], indexCount, mp);
+	DynAppend(tris, indexCount, mp);
 	g_surfaces++;
 	g_triangles += (int)(indexCount / 3);
 }

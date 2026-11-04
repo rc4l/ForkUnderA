@@ -524,7 +524,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	                                          // marks on ONE spot from two marks on two walls
 	                   float lo, hi; int layer; bool plane; };   // [rc4l] height span, and its place among the translucent planes
 	static TArray<BlendDraw> list;
-	static TArray<BlendDraw> sorted;   // [Doruk-Aksoy] list gathered into draw order, which everything after the sort reads instead of copying it back
+	static TArray<const BlendDraw *> sorted;   // [Doruk-Aksoy] list's entries in draw order, pointed at rather than copied
 	list.Clear();
 
 	const float cx = FIXED2FLOAT(viewx), cy = FIXED2FLOAT(viewy), cz = FIXED2FLOAT(viewz);
@@ -558,6 +558,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 
 	if (g_scene.dynReady)
 	{
+		// [Doruk-Aksoy] The last run's pipeline, its state and its bindless binding, which the next run takes when it draws with the same look.
+		struct LastLook { int blend, user; bool red, bias, hud; int pipeline; Diligent::IPipelineState *pso; Diligent::IShaderResourceBinding *srb; } last = { -1, 0, false, false, false, 0, NULL, NULL };
 		for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_scene.dynRuns[i];
@@ -571,9 +573,16 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			// sprites live in one sorted list with depth writes off, and splitting them into an
 			// opaque depth-writing pass let an alpha-tested impact sprite occlude the additive glow
 			// behind it: black holes where a plasma burst's bright core should be.
-			const int pipeline = zx::hwrender::ComputePremulPipeline(ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud), fua_dg_premulblend, r.userShader);
-			Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
-			auto *srb = WorldSRB(pso);
+			if (r.blend != last.blend || r.userShader != last.user || r.redAlpha != last.red || r.depthBias != last.bias || r.hud != last.hud)
+			{
+				last.blend = r.blend; last.user = r.userShader; last.red = r.redAlpha; last.bias = r.depthBias; last.hud = r.hud;
+				last.pipeline = zx::hwrender::ComputePremulPipeline(ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud), fua_dg_premulblend, r.userShader);
+				last.pso = g_pso.world[last.pipeline].RawPtr();
+				last.srb = WorldSRB(last.pso);
+			}
+			const int pipeline = last.pipeline;
+			Diligent::IPipelineState *pso = last.pso;
+			auto *srb = last.srb;
 			if (srb) g_stats.dynBindless++; else { g_stats.dynPerMaterial++; srb = DynSRB(pso, r); }
 			if (r.atlasPage >= 0) g_stats.dynAtlas++;
 			if (!srb) continue;
@@ -647,7 +656,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			zx::hwrender::ComputeSortTranslucentOrder(keys, halves, halfScratch, keysMoved);
 		}
 		sorted.Resize(list.Size());
-		for (unsigned i = 0; i < keys.size(); i++) sorted[i] = list[keys[i].index];
+		for (unsigned i = 0; i < keys.size(); i++) sorted[i] = &list[keys[i].index];
 	}
 
 	if (g_dumpBlendOrder && g_pass.mainView)
@@ -668,7 +677,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		const unsigned from = (sorted.Size() > 40 && !g_dumpBlendAtZ) ? sorted.Size() - 40 : 0;   // [rc4l] the NEAREST 40; the far end is scenery
 		for (unsigned i = from; i < sorted.Size(); i++)
 		{
-			const BlendDraw &d = sorted[i];
+			const BlendDraw &d = *sorted[i];
 			if (g_dumpBlendAtZ && (d.lo > g_dumpBlendZ || d.hi < g_dumpBlendZ)) continue;
 			Printf( "  %2u  dist %9.0f  %s  blend %d%s%s  layer %d%s  z %.0f..%.0f  verts %u at %u\n", i, d.dist,
 				d.dyn ? "dyn " : "batch", d.blend,
@@ -678,7 +687,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		Printf( "  %u draws total\n", sorted.Size() );
 		// [Doruk-Aksoy] The pipeline switches the loop below makes over this order, by pair, the cost a merge of two pipelines would save.
 		std::vector<zx::hwrender::PipelineKey> keys;
-		for (unsigned i = 0; i < sorted.Size(); i++) keys.push_back({ sorted[i].pipeline, sorted[i].user });
+		for (unsigned i = 0; i < sorted.Size(); i++) keys.push_back({ sorted[i]->pipeline, sorted[i]->user });
 		const std::vector<zx::hwrender::PipelineSwitchCount> tally = zx::hwrender::ComputePipelineSwitches(keys);
 		Printf( "  %d pipeline switches over them, most first:\n", zx::hwrender::ComputeSwitchTotal(tally) );
 		for (size_t i = 0; i < tally.size() && i < 8; i++)
@@ -689,7 +698,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	// [rc4l] The sorted order, written once into indices -- see g_blendIB.
 	{
 		unsigned int total = 0;
-		for (unsigned i = 0; i < sorted.Size(); i++) total += sorted[i].count;
+		for (unsigned i = 0; i < sorted.Size(); i++) total += sorted[i]->count;
 		g_blendIndices.Clear();
 		if (total > 0)
 		{
@@ -697,7 +706,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			unsigned int w = 0;
 			for (unsigned i = 0; i < sorted.Size(); i++)
 			{
-				const BlendDraw &d = sorted[i];
+				const BlendDraw &d = *sorted[i];
 				for (unsigned k = 0; k < d.count; k++) g_blendIndices[w++] = (Diligent::Uint32)(d.first + k);
 			}
 			if (EnsureBlendIndexBuffer(GetDevice(), total))
@@ -728,7 +737,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	const Diligent::Uint64 offsets[] = { 0 };
 	for (unsigned i = 0; i < sorted.Size(); i++)
 	{
-		const BlendDraw &d = sorted[i];
+		const BlendDraw &d = *sorted[i];
 		const int want = d.dyn ? 1 : 0;
 		if (want != boundVB)
 		{
@@ -745,8 +754,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		if (SwitchPipeline(ctx, bound, run)) boundSRB = NULL;
 		// The pipeline is only known here -- the pass sorts by distance, not by material -- so this is
 		// where the per-pipeline binding can be asked for.
-		Diligent::IShaderResourceBinding *srb = WorldSRB(pso);
-		if (!srb) srb = d.srb;
+		Diligent::IShaderResourceBinding *const worldSrb = WorldSRB(pso);
+		Diligent::IShaderResourceBinding *srb = worldSrb != NULL ? worldSrb : d.srb;
 		if (!srb) { idxCursor += d.count; continue; }
 		if (srb != boundSRB)
 		{
@@ -765,11 +774,11 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		idxCursor += d.count;
 		while (i + 1 < sorted.Size())
 		{
-			const BlendDraw &n = sorted[i + 1];
+			const BlendDraw &n = *sorted[i + 1];
 			if ((n.dyn ? 1 : 0) != want) break;
 			if (n.pipeline != d.pipeline || n.user != d.user) break;
 			// Without bindless the binding IS the material, so it has to match too.
-			if (!WorldSRB(pso) && n.srb != srb) break;
+			if (worldSrb == NULL && n.srb != srb) break;
 			idxCount += n.count;
 			idxCursor += n.count;
 			i++;

@@ -7,6 +7,8 @@
 #include "features/sprites/computation/modelpose_compute.h"
 #include "features/frame/computation/frameclock_compute.h"   // [Doruk-Aksoy] ComputeFrameClock
 #include "features/levelmesh/modelmesh.h"      // [rc4l] CaptureModelSurface
+#include "features/levelmesh/computation/modelsurface_compute.h"   // [Doruk-Aksoy] ComputeModelSurfaceCorners
+#include "features/models/modelgeometry.h"   // [Doruk-Aksoy] FModelGeometry
 #include "features/materials/materials.h"
 
 #include "c_console.h"
@@ -17,6 +19,7 @@
 #include "r_utility.h"
 #include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "info.h"
+#include <cstddef>   // [Doruk-Aksoy] size_t
 
 // [rc4l] GL's model data and settings the derivation still reads, until model data leaves gl/ (P5).
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
@@ -95,7 +98,7 @@ int ModelSlotSurfaces(const FSpriteModelFrame *smf, int i, const FSpriteModelFra
 	FModel *mdl = smf->models[i];
 	const bool differ = smfNext != NULL && smf->modelframes[i] != smfNext->modelframes[i];
 	blend = ComputeModelSlotBlend(differ, mdl->Interpolates(), inter);
-	return mdl->FrameSurfaces(smf->skins[i], smf->modelframes[i], differ ? smfNext->modelframes[i] : smf->modelframes[i], surfs);
+	return mdl->FrameSurfaces(smf, i, smf->skins[i], smf->modelframes[i], differ ? smfNext->modelframes[i] : smf->modelframes[i], surfs);
 }
 
 void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation)
@@ -106,7 +109,6 @@ void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, in
 	{
 		FModel *mdl = smf->models[i];
 		if (mdl == NULL) continue;
-		mdl->PushSpriteMDLFrame(smf, i);
 		mdl->BuildGeometry();
 		FModelSurface surfs[MD3_MAX_SURFACES];
 		float blend;
@@ -115,6 +117,51 @@ void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, in
 			zx::levelmesh::CaptureModelSurface(&mdl->mGeometry, surfs[k].base1, surfs[k].base2, blend,
 				surfs[k].firstIndex, surfs[k].count, zx::materials::MaterialForTexture(surfs[k].skin), translation);
 	}
+}
+
+// [Doruk-Aksoy] One slot's surfaces into surfaces and verts, false when the slot's geometry or a skin's material is not made yet.
+static bool ResolveModelSlot(const FSpriteModelFrame *smf, int i, const FSpriteModelFrame *smfNext, double inter, int translation, const float *modelToWorld,
+	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts)
+{
+	const FModelGeometry &g = smf->models[i]->mGeometry;
+	if (!g.built) return false;
+	FModelSurface surfs[MD3_MAX_SURFACES];
+	float blend;
+	const int n = ModelSlotSurfaces(smf, i, smfNext, inter, surfs, blend);
+	const unsigned *idx = g.indexed && g.indices.Size() ? &g.indices[0] : NULL;
+	for (int k = 0; k < n; k++)
+	{
+		zx::materials::MaterialRef material = NULL;
+		if (!zx::materials::MaterialIfMade(surfs[k].skin, false, material)) return false;
+		if (material == NULL) continue;
+		ResolvedModelSurface r = { material, translation, (unsigned)verts.size(), surfs[k].count };
+		verts.resize(verts.size() + r.count);
+		const zx::levelmesh::ModelSurfaceSpan span = { surfs[k].base1, surfs[k].base2, blend, surfs[k].firstIndex, surfs[k].count };
+		if (!zx::levelmesh::ComputeModelSurfaceCorners(g.verts.Size() ? &g.verts[0].x : NULL, g.verts.Size(), idx, g.indices.Size(), span, modelToWorld,
+			r.count ? &verts[r.first].x : NULL))
+		{
+			verts.resize(r.first);
+			r.count = 0;
+		}
+		surfaces.push_back(r);
+	}
+	return true;
+}
+
+bool ResolveModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation, const float *modelToWorld,
+	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts)
+{
+	const size_t surfacesBefore = surfaces.size(), vertsBefore = verts.size();
+	double inter = 0.;
+	const FSpriteModelFrame *smfNext = NextModelFrame(smf, curState, curTics, ti, inter);
+	for (int i = 0; i < MAX_MODELS_PER_FRAME; i++)
+	{
+		if (smf->models[i] == NULL || ResolveModelSlot(smf, i, smfNext, inter, translation, modelToWorld, surfaces, verts)) continue;
+		surfaces.resize(surfacesBefore);
+		verts.resize(vertsBefore);
+		return false;
+	}
+	return true;
 }
 
 }} // namespace zx::sprites
