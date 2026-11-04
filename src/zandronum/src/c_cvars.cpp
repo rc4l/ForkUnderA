@@ -72,6 +72,9 @@
 #include "scoreboard.h"
 #include "name.h"
 #include "features/cvar-alias/computation/cvaralias_compute.h"   // [rc4l] the fua_ names other cvars answer to
+#include "features/cvar-memo/computation/cvarmemo_compute.h"   // [Doruk-Aksoy] lookups remembered by the name's pointer
+
+#include <atomic>
 
 // [rc4l] Name-keyed cache in front of FindCVar's linked-list walk. ACS GetCVar resolves a
 // cvar by name on every script call, and mods poll cvars every tic, so the O(cvars) stricmp
@@ -85,11 +88,21 @@ static TMap<FName, FBaseCVar *> &CVarCache()
 	return cache;
 }
 
+// [Doruk-Aksoy] features/cvar-memo: each thread's lookups by the name's pointer, ahead of the name cache, whose string hash and name-table lock cost ~150 ns each for a script polling cvars; a changed name cache or a destroyed cvar starts a new generation.
+static std::atomic<unsigned> CVarMemoGeneration{ 1 };
+static thread_local ZxCVarMemo t_cvarMemo;
+
+static void CVarMemoForget()
+{
+	CVarMemoGeneration.fetch_add(1, std::memory_order_relaxed);
+}
+
 // [rc4l] Flushed on the wad_reload restart path: mod-defined cvars (CVARINFO) are
 // destroyed and recreated across a rebuild.
 void C_ClearCVarCache()
 {
 	CVarCache().Clear();
+	CVarMemoForget();
 }
 
 struct FLatchedValue
@@ -197,6 +210,7 @@ FBaseCVar::~FBaseCVar ()
 					CVarCache().Remove (key);
 			}
 		}
+		CVarMemoForget();
 		delete[] Name;
 	}
 }
@@ -1658,12 +1672,20 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 	// lookups of nonexistent cvars from growing the global name table.
 	if (!wantsPrev)
 	{
+		// [Doruk-Aksoy] features/cvar-memo: the name is compared, since a pointer can come back holding another name.
+		const unsigned generation = CVarMemoGeneration.load(std::memory_order_relaxed);
+		FBaseCVar *memo = static_cast<FBaseCVar *>(ComputeCVarMemoFind(t_cvarMemo, var_name, generation));
+		if (memo != NULL && stricmp(memo->GetName(), var_name) == 0)
+			return memo;
 		FName key (var_name, true);
 		if (key != NAME_None)
 		{
 			FBaseCVar **cached = CVarCache().CheckKey (key);
 			if (cached != NULL)
+			{
+				ComputeCVarMemoStore(t_cvarMemo, var_name, *cached, generation);
 				return *cached;
+			}
 		}
 	}
 
@@ -1680,7 +1702,10 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 		var = var->m_Next;
 	}
 	if (var != NULL && !wantsPrev)
+	{
 		CVarCache()[FName (var->GetName ())] = var;
+		CVarMemoForget();
+	}
 	// [rc4l] features/cvar-alias: a fua_ name for another cvar finds that cvar.
 	if (var == NULL)
 	{
