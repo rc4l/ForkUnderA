@@ -8,6 +8,7 @@
 #include "doomstat.h"   // [rc4l] zadmflags, for OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 #include "features/dynlights/cycler.h"
 #include "features/dynlights/computation/lightspot_compute.h"
+#include "features/dynlights/computation/relinkslack_compute.h"
 #include <vector>
 
 
@@ -124,6 +125,7 @@ protected:
 	FCycler m_cycler;
 	subsector_t * subsector;
 	zx::dynlights::LightSpot m_subsectorAt;	// [Doruk-Aksoy] the point UpdateLocation last looked subsector up for, and what it found
+	zx::dynlights::LinkSpot m_linkedAt;	// [Doruk-Aksoy] where the last relink put the light, which a move within fua_light_relink_slack keeps
 
 public:
 	int m_intensity[2];

@@ -17,6 +17,12 @@ so every module that lit a sprite or a wall included GL's headers to see a light
   The tic there went from 1.09 to 0.53 ms.
 - A light keeps its subsector when `UpdateLocation` finds it at the very point it last looked it up for
   (`computation/lightspot_compute`), instead of a BSP lookup: 81% of ~2,000 updates a tic on Complex Doom's crowd.
+- A moving light keeps the surfaces its last relink found until it has moved more than `fua_light_relink_slack`
+  map units (default 16, `0` relinks every move) from where that relink put it (`computation/relinkslack_compute`);
+  its position and so its shading still follow it every tic. The surfaces decide which a light may touch (GL's walls
+  and flats, the backend's light links), and a few units of movement change them at most at the faint edge of its
+  reach: recorded on both renderers in an open room and through a doorway, no visible difference even at 64.
+  On Complex Doom's crowd, 27% fewer relinks, `lights/link` 1.98 -> 1.57 ms a tic; `lights/relinks_kept` counts them.
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 
