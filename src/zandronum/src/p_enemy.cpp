@@ -60,6 +60,8 @@
 #include "invasion.h"
 
 #include "gi.h"
+#include "features/alert-reuse/computation/alertreuse_compute.h"
+#include "features/telemetry/telemetry.h"
 
 static FRandom pr_checkmissilerange ("CheckMissileRange");
 static FRandom pr_opendoor ("OpenDoor");
@@ -135,6 +137,16 @@ struct NoiseTarget
 };
 static TArray<NoiseTarget> NoiseList(128);
 
+// [Doruk-Aksoy] features/alert-reuse: tics an alert from inside the area its target's last full alert reached is skipped for, 0 runs every alert.
+CVAR(Int, sv_fua_alertreuse, 8, CVAR_SERVERINFO | CVAR_ARCHIVE)
+static ZxAlertReuse AlertReuse;
+static ZxAlertMemo *AlertMemo;
+
+void P_ForgetNoiseAlerts ()
+{
+	ComputeAlertForget(AlertReuse);
+}
+
 static void NoiseMarkSector(sector_t *sec, AActor *soundtarget, bool splash, AActor *emitter, int soundblocks, fixed_t maxdist)
 {
 	// wake up all monsters in this sector
@@ -147,6 +159,7 @@ static void NoiseMarkSector(sector_t *sec, AActor *soundtarget, bool splash, AAc
 	sec->validcount = validcount;
 	sec->soundtraversed = soundblocks + 1;
 	sec->SoundTarget = soundtarget;
+	if (soundblocks == 0 && AlertMemo != NULL) ComputeAlertCovers(*AlertMemo, int(sec - sectors));
 
 	// [RH] Set this in the actors in the sector instead of the sector itself.
 	for (AActor *actor = sec->thinglist; actor != NULL; actor = actor->snext)
@@ -227,11 +240,16 @@ static void P_RecursiveSound(sector_t *sec, AActor *soundtarget, bool splash, AA
 
 void P_NoiseAlert (AActor *target, AActor *emitter, bool splash, fixed_t maxdist)
 {
+	ZX_ZONE("sim/noise_alert");   // [Doruk-Aksoy] features/alert-reuse: an alert, skipped or flooding
 	if (emitter == NULL)
 		return;
 
 	if (target != NULL && target->player && (target->player->cheats & CF_NOTARGET))
 		return;
+
+	if (ComputeAlertRepeats(AlertReuse, target, splash, maxdist != 0, int(emitter->Sector - sectors), level.time, sv_fua_alertreuse))
+		return;
+	AlertMemo = (maxdist == 0 && sv_fua_alertreuse > 0) ? &ComputeAlertBegin(AlertReuse, target, splash, level.time, numsectors) : NULL;
 
 	validcount++;
 	NoiseList.Clear();
@@ -240,6 +258,7 @@ void P_NoiseAlert (AActor *target, AActor *emitter, bool splash, fixed_t maxdist
 	{
 		P_RecursiveSound(NoiseList[i].sec, target, splash, emitter, NoiseList[i].soundblocks, maxdist);
 	}
+	AlertMemo = NULL;
 }
 
 

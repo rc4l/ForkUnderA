@@ -81,6 +81,7 @@ static_assert(ZX_CHAN_OVERLAP == CHAN_OVERLAP, "channel mirror out of sync");
 static_assert(ZX_CHAN_EVICTED == CHAN_EVICTED && ZX_CHAN_QUEUED == CHAN_QUEUED, "channel mirror out of sync");
 static_assert(ZX_ROLLOFF_LOG == ROLLOFF_Log, "rolloff mirror out of sync");
 
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -147,6 +148,47 @@ static void NoteChannelActor (AActor *actor)
 static bool NoChannelFor (const AActor *actor)
 {
 	return actor != NULL && !(actor->ObjectFlags & OF_FuaSoundChannel);
+}
+
+// [Doruk-Aksoy] features/sound-index: each sound's channels in the channel list's own order, and each actor's, so a walk about one visits only its own.
+static ZxIndexHeads SoundChannels;
+static ZxIndexHeads ActorChannels;
+
+// [Doruk-Aksoy] Lists a channel under its sound and its actor, where it is not listed already.
+static void IndexChannel (FSoundChan *chan)
+{
+	ComputeIndexAdd(SoundChannels, (int)chan->SoundID, &chan->SoundLink, chan);
+	if (chan->SourceType == SOURCE_Actor && chan->Actor != NULL) ComputeIndexAdd(ActorChannels, (intptr_t)chan->Actor, &chan->ActorLink, chan);
+}
+
+static void UnindexSound (FSoundChan *chan)
+{
+	ComputeIndexRemove(SoundChannels, (int)chan->SoundID, &chan->SoundLink);
+}
+
+static void UnindexActor (FSoundChan *chan)
+{
+	ComputeIndexRemove(ActorChannels, (intptr_t)chan->Actor, &chan->ActorLink);
+}
+
+// [Doruk-Aksoy] Calls visit on each of actor's channels until it returns true, visit free to stop or move the one it is given; NULL walks every channel for the forgotten ones, which keep their actor type with no actor.
+template <class Visit> static void ForActorChannels (const AActor *actor, Visit visit)
+{
+	if (actor == NULL)
+	{
+		for (FSoundChan *chan = Channels, *next; chan != NULL; chan = next)
+		{
+			next = chan->NextChan;
+			if (chan->SourceType == SOURCE_Actor && chan->Actor == NULL && visit(chan)) return;
+		}
+		return;
+	}
+	if (NoChannelFor(actor)) return;
+	for (ZxIndexLink *link = ComputeIndexFirst(ActorChannels, (intptr_t)actor), *next; link != NULL; link = next)
+	{
+		next = link->next;
+		if (visit(static_cast<FSoundChan *>(link->owner))) return;
+	}
 }
 static void S_ActivatePlayList(bool goBack);
 static void CalcPosVel(FSoundChan *chan, FVector3 *pos, FVector3 *vel);
@@ -457,6 +499,8 @@ void S_Shutdown ()
 		delete chan;
 	}
 	FreeChannels = NULL;
+	SoundChannels.clear();
+	ActorChannels.clear();
 
 	if (S_SoundCurve != NULL)
 	{
@@ -721,6 +765,8 @@ FISoundChannel *S_GetChannel(void *syschan)
 
 void S_ReturnChannel(FSoundChan *chan)
 {
+	UnindexSound(chan);
+	UnindexActor(chan);
 	S_UnlinkChannel(chan);
 	memset(chan, 0, sizeof(*chan));
 	S_LinkChannel(chan, &FreeChannels);
@@ -1161,7 +1207,11 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 	// If this actor is already playing something on the selected channel, stop it.
 	// [Doruk-Aksoy] uzdoom@e82565373f: all of it, since overlapping sounds share a channel, and nothing when this one overlaps.
-	if (ComputeStartStopsChannel(chanflags, type != SOURCE_None) && !(type == SOURCE_Actor && NoChannelFor(actor)))
+	if (type == SOURCE_Actor && ComputeStartStopsChannel(chanflags, true))
+	{
+		ForActorChannels(actor, [channel](FSoundChan *chan) { if (chan->EntChannel == channel) S_StopChannel(chan); return false; });
+	}
+	else if (ComputeStartStopsChannel(chanflags, type != SOURCE_None))
 	{
 		for (chan = Channels; chan != NULL; )
 		{
@@ -1172,7 +1222,6 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 
 				switch (type)
 				{
-				case SOURCE_Actor:		foundit = (chan->Actor == actor);	break;
 				case SOURCE_Sector:		foundit = (chan->Sector == sec);	break;
 				case SOURCE_Polyobj:	foundit = (chan->Poly == poly);		break;
 				case SOURCE_Unattached:	foundit = (chan->Point[0] == pt->X && chan->Point[2] == pt->Z && chan->Point[1] == pt->Y);		break;
@@ -1287,6 +1336,7 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		case SOURCE_Unattached:	chan->Point[0] = pt->X; chan->Point[1] = pt->Y; chan->Point[2] = pt->Z;	break;
 		default:										break;
 		}
+		IndexChannel (chan);
 	}
 	return chan;
 }
@@ -1608,12 +1658,13 @@ bool S_CheckSingular(int sound_id, const FSoundChan *starting)
 bool S_CheckSoundLimit(sfxinfo_t *sfx, const FVector3 &pos, int near_limit, float limit_range,
 	AActor *actor, int channel, bool countQueued)
 {
-	FSoundChan *chan;
-	int count;
-	
-	for (chan = Channels, count = 0; chan != NULL && count < near_limit; chan = chan->NextChan)
+	int count = 0;
+
+	// [Doruk-Aksoy] Only this sound's channels, in the channel list's order, so the walk ends where the whole list's would.
+	for (ZxIndexLink *link = ComputeIndexFirst(SoundChannels, int(sfx - &S_sfx[0])); link != NULL && count < near_limit; link = link->next)
 	{
-		if (ComputeCountsTowardLimit(chan->ChanFlags, countQueued) && &S_sfx[chan->SoundID] == sfx)
+		FSoundChan *chan = static_cast<FSoundChan *>(link->owner);
+		if (ComputeCountsTowardLimit(chan->ChanFlags, countQueued))
 		{
 			FVector3 chanorigin;
 
@@ -1697,19 +1748,11 @@ void S_StopSound (int channel)
 void S_StopSound (AActor *actor, int channel)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
-	if (NoChannelFor(actor)) return;
-	FSoundChan *chan = Channels;
-	while (chan != NULL)
+	ForActorChannels(actor, [channel](FSoundChan *chan)
 	{
-		FSoundChan *next = chan->NextChan;
-		if (chan->SourceType == SOURCE_Actor &&
-			chan->Actor == actor &&
-			(chan->EntChannel == channel || (i_compatflags & COMPATF_MAGICSILENCE)))
-		{
-			S_StopChannel(chan);
-		}
-		chan = next;
-	}
+		if (chan->EntChannel == channel || (i_compatflags & COMPATF_MAGICSILENCE)) S_StopChannel(chan);
+		return false;
+	});
 }
 
 //==========================================================================
@@ -1795,20 +1838,7 @@ void S_StopAllSoundsFromActor (AActor *ent)
 	// [AK] The server doesn't play sounds.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return;
-	if ( NoChannelFor( ent ))
-		return;
-
-	FSoundChan *chan = Channels;
-	while (chan != NULL)
-	{
-		FSoundChan *next = chan->NextChan;
-		if ( chan->Actor == ent )
-		{
-			S_StopChannel(chan);
-		}
-
-		chan = next;
-	}
+	ForActorChannels(ent, [](FSoundChan *chan) { S_StopChannel(chan); return false; });
 }
 
 //==========================================================================
@@ -1853,36 +1883,31 @@ void S_RelinkSound (AActor *from, AActor *to)
 	if (from == NULL)
 		return;
 
-	if (NoChannelFor(from))
-		return;
-
-	FSoundChan *chan = Channels;
-	while (chan != NULL)
+	ForActorChannels(from, [from, to](FSoundChan *chan)
 	{
-		FSoundChan *next = chan->NextChan;
-		if (chan->SourceType == SOURCE_Actor && chan->Actor == from)
+		if (to != NULL)
 		{
-			if (to != NULL)
-			{
-				chan->Actor = to;
-				NoteChannelActor (to);
-			}
-			// [rc4l] uzdoom@ef5707d73: compat_soundcutoff stops the sound instead of orphaning it.
-			else if (!(chan->ChanFlags & CHAN_LOOP) && !(compatflags2 & COMPATF2_SOUNDCUTOFF))
-			{
-				chan->Actor = NULL;
-				chan->SourceType = SOURCE_Unattached;
-				chan->Point[0] = FIXED2FLOAT(from->x);
-				chan->Point[1] = FIXED2FLOAT(from->z);
-				chan->Point[2] = FIXED2FLOAT(from->y);
-			}
-			else
-			{
-				S_StopChannel(chan);
-			}
+			UnindexActor(chan);
+			chan->Actor = to;
+			IndexChannel(chan);
+			NoteChannelActor (to);
 		}
-		chan = next;
-	}
+		// [rc4l] uzdoom@ef5707d73: compat_soundcutoff stops the sound instead of orphaning it.
+		else if (!(chan->ChanFlags & CHAN_LOOP) && !(compatflags2 & COMPATF2_SOUNDCUTOFF))
+		{
+			UnindexActor(chan);
+			chan->Actor = NULL;
+			chan->SourceType = SOURCE_Unattached;
+			chan->Point[0] = FIXED2FLOAT(from->x);
+			chan->Point[1] = FIXED2FLOAT(from->z);
+			chan->Point[2] = FIXED2FLOAT(from->y);
+		}
+		else
+		{
+			S_StopChannel(chan);
+		}
+		return false;
+	});
 }
 
 
@@ -1925,20 +1950,9 @@ bool S_ChangeSoundVolume(AActor *actor, int channel, float volume)
 bool S_GetSoundPlayingInfo (const AActor *actor, int sound_id)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
-	if (NoChannelFor(actor)) return false;
-	if (sound_id > 0)
-	{
-		for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
-		{
-			if (chan->OrgID == sound_id &&
-				chan->SourceType == SOURCE_Actor &&
-				chan->Actor == actor)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
+	bool found = false;
+	if (sound_id > 0) ForActorChannels(actor, [&](FSoundChan *chan) { return found = (chan->OrgID == sound_id); });
+	return found;
 }
 
 bool S_GetSoundPlayingInfo (const sector_t *sec, int sound_id)
@@ -1986,23 +2000,18 @@ bool S_GetSoundPlayingInfo (const FPolyObj *poly, int sound_id)
 bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 {
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
-	if (NoChannelFor(actor)) return false;
 	if (i_compatflags & COMPATF_MAGICSILENCE)
 	{
 		channel = 0;
 	}
 
-	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
+	// [Doruk-Aksoy] Every sound is weighed, as overlapping ones share a channel and the first found need not be the one asked about.
+	bool found = false;
+	ForActorChannels(actor, [&](FSoundChan *chan)
 	{
-		// [Doruk-Aksoy] Every sound is weighed, as overlapping ones share a channel and the first found need not be the one asked about.
-		if (chan->SourceType == SOURCE_Actor && chan->Actor == actor &&
-			(channel == 0 || chan->EntChannel == channel) &&
-			(sound_id <= 0 || chan->OrgID == sound_id))
-		{
-			return true;
-		}
-	}
-	return false;
+		return found = ((channel == 0 || chan->EntChannel == channel) && (sound_id <= 0 || chan->OrgID == sound_id));
+	});
+	return found;
 }
 
 //==========================================================================
@@ -2556,6 +2565,7 @@ void S_StopChannel(FSoundChan *chan)
 			chan->ChanFlags |= CHAN_FORGETTABLE;
 			if (chan->SourceType == SOURCE_Actor)
 			{
+				UnindexActor(chan);
 				chan->Actor = NULL;
 			}
 		}
@@ -2600,11 +2610,16 @@ void S_RunDeferredSounds()
 		waiting.push_back(chan);
 	}
 	// [Doruk-Aksoy] The waiting channels leave the list while the others start, since each start's walks (the near limit, $singular, the device's lowest voice) skip a voiceless channel anyway; each is linked back at the head as it starts, which is where and in the order its tic made it.
-	for (FSoundChan *chan : waiting) S_UnlinkChannel(chan);
+	for (FSoundChan *chan : waiting)
+	{
+		S_UnlinkChannel(chan);
+		UnindexSound(chan);
+	}
 	GSnd->KeepLowestVoice(true);
 	for (FSoundChan *chan : waiting)
 	{
 		S_LinkChannel(chan, &Channels);
+		IndexChannel(chan);
 		S_RestartSound(chan);
 		if ((chan->ChanFlags & CHAN_EVICTED) && !(chan->ChanFlags & CHAN_LOOP)) S_ReturnChannel(chan);
 	}
@@ -2721,6 +2736,7 @@ void S_SerializeSounds(FArchive &arc)
 		{
 			chan = (FSoundChan*)S_GetChannel(NULL);
 			arc << *chan;
+			IndexChannel(chan);
 			// Sounds always start out evicted when restored from a save.
 			chan->ChanFlags |= CHAN_EVICTED | CHAN_ABSTIME;
 		}

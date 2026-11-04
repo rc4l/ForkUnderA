@@ -86,6 +86,8 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "d_netinf.h"
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
+#include "features/thing-walks/computation/thingwalk_compute.h"
+static_assert(ZX_MF2_THRUACTORS == MF2_THRUACTORS, "features/thing-walks mirrors MF2_THRUACTORS");
 
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
 // helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
@@ -1748,6 +1750,8 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	tm.stepthing = NULL;
 	FBoundingBox box(x, y, thing->radius);
 
+	// [Doruk-Aksoy] features/thing-walks: a THRUACTORS mover clips against no thing, so the walk that would pass each one is skipped.
+	if (!ComputeMoverPassesThings(thing->flags2))
 	{
 		FBlockThingsIterator it2(box);
 		AActor *th;
@@ -2023,6 +2027,13 @@ bool P_TestMobjZ(AActor *actor, bool quick, AActor **pOnmobj)
 
 	// [BB] For people want to have the buggy behavior of non-SOLID things dropping through bridges.
 	if ( ( zacompatflags & ZACOMPATF_OLD_BRIDGE_DROPS ) && !(actor->flags & MF_SOLID) )
+	{
+		if (pOnmobj) *pOnmobj = NULL;
+		return true;
+	}
+
+	// [Doruk-Aksoy] features/thing-walks: a THRUACTORS actor stands on no thing, which the walk would pass one by one.
+	if (ComputeMoverPassesThings(actor->flags2))
 	{
 		if (pOnmobj) *pOnmobj = NULL;
 		return true;

@@ -48,6 +48,7 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "p_effect.h"
+#include "p_enemy.h"
 #include "p_terrain.h"
 #include "nodebuild.h"
 #include "s_sound.h"
@@ -3947,6 +3948,7 @@ void P_SetupLevel (const char *lumpname, int position)
 	// [MGOOOOOO] Debug hitbox overlay: recorded explosion regions are map coordinates, so anything
 	// left over from the previous level would be drawn in the wrong place here.
 	zx::hitboxviz::ClearBlasts();
+	P_ForgetNoiseAlerts();
 
 	// [rc4l] features/levelmesh's boxes belong to the last level's marks, and features/decals counts this level's afresh.
 	zx::levelmesh::ClearProjectedDecals();
