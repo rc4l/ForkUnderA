@@ -1,6 +1,7 @@
 ---
 name: netplay-testing
-description: How to test real netplay in ForkUnderA: a locked server and clients on loopback (fuactl netplay), simulated ping and loss per client, comparing a server's world with a client's (netdiff), capturing what a server sends (netcap), and writing a hosted scenario that fails first, with observer clients where they judge something. Use for any change to netcode, the transport, unlagged, client prediction, server sends, or anything a netgame splits between machines, and whenever a report says desync, rubber-banding, missed hits or "the other player didn't see it".
+description: >-
+  How to test real netplay in ForkUnderA: a locked server and clients on loopback (fuactl netplay), simulated ping and loss per client, comparing a server's world with a client's (netdiff), capturing what a server sends (netcap), and writing a hosted scenario that fails first, with observer clients where they judge something. Use for any change to netcode, the transport, unlagged, client prediction, server sends, or anything a netgame splits between machines, and whenever a report says desync, rubber-banding, missed hits or "the other player didn't see it".
 ---
 
 # Testing netplay
