@@ -21,6 +21,7 @@
 #include "features/sprites/computation/spriteframe_compute.h"   // [rc4l] ComputeSpriteOnGameThread
 #include "features/sprites/computation/modelpose_compute.h"
 #include "features/sprites/modelbuild.h"
+#include <memory>   // [Doruk-Aksoy] std::unique_ptr
 #include "features/sprite-roll/computation/spriteroll_compute.h"
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/flatmesh.h"            // [rc4l] the walk the stream's pieces belong to
@@ -302,7 +303,8 @@ static PalEntry ThingColorOf(const ActorRecord *thing)
 }
 
 // [rc4l] A model as Process, Draw and gl_RenderModel take it: one band, lit from the light list entry at the actor's middle, its surfaces captured under the pose's matrix.
-static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &l, bool checked)
+// [Doruk-Aksoy] This half is its look and matrix, which a lane may work out.
+static void ModelLookOf(const ActorRecord *thing, const Subject &s, const Look &l, MeshPiece &look, float modelToWorld[16])
 {
 	int lightlevel = l.light;
 	FColormap cm = l.cm;
@@ -317,7 +319,6 @@ static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &
 	DrawFade(l.so, lightlevel, cm);
 	float dyn[3];
 	DrawLight(thing, l, dyn);
-	MeshPiece look;
 	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d,
 		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y, true),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
@@ -326,10 +327,22 @@ static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &
 
 	ModelPose pose;
 	ModelPoseFor(*thing, s.model, s.x, s.y, s.z, pose);
-	float modelToWorld[16];
 	ComputeModelMatrix(pose, modelToWorld);
+}
+
+// [Doruk-Aksoy] The translation a model's surfaces take.
+static int ModelTranslationOf(const ActorRecord *thing, const FSpriteModelFrame *model)
+{
+	return (model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation);
+}
+
+static void DeriveModel(const ActorRecord *thing, const Subject &s, const Look &l, bool checked)
+{
+	MeshPiece look;
+	float modelToWorld[16];
+	ModelLookOf(thing, s, l, look, modelToWorld);
 	zx::levelmesh::ModelCaptureBegin(look, modelToWorld, thing->who, checked ? zx::levelmesh::kModelChecked : zx::levelmesh::kModelDraw);
-	CaptureModelFrames(s.model, thing->state, thing->tics, thing->type, (s.model->flags & MDL_IGNORETRANSLATION) ? 0 : int(thing->Translation));
+	CaptureModelFrames(s.model, thing->state, thing->tics, thing->type, ModelTranslationOf(thing, s.model));
 	zx::levelmesh::ModelCaptureEnd();
 }
 
@@ -770,10 +783,28 @@ void BuildSprite(const ActorRecord &record)
 }
 
 // [rc4l] An actor a lane derived: its pieces in the lane's list, or that the main thread derives it.
+// [Doruk-Aksoy] `model` is its derived model among the chunk's, or -1.
 struct LaneSprite
 {
 	int first, count;
 	bool onGameThread;
+	int model;
+};
+
+// [Doruk-Aksoy] A model a lane derived: its look, its matrix and its run of the chunk's resolved surfaces.
+struct LaneModel
+{
+	MeshPiece look;
+	float matrix[16];
+	unsigned firstSurface, surfaces;
+};
+
+// [Doruk-Aksoy] A chunk's models this frame, with their surfaces and those surfaces' corners.
+struct LaneModels
+{
+	std::vector<LaneModel> models;
+	std::vector<ResolvedModelSurface> surfaces;
+	std::vector<MeshVertex> verts;
 };
 
 // [rc4l] One chunk of a batch's actors, derived on a lane.
@@ -782,7 +813,41 @@ struct SpriteChunk
 	std::vector<SpritePiece> pieces;   // [Doruk-Aksoy] only grows, since sizing it to each actor's kMaxPieces constructed them all again; `used` of them are this frame's
 	int used = 0;
 	std::vector<LaneSprite> sprites;
+	std::unique_ptr<LaneModels> models;   // [Doruk-Aksoy] made with the chunk's first model, apart from the chunk so it keeps to one line
 };
+
+// [Doruk-Aksoy] Models derived on the lanes (default), else every model on the main thread as before, to compare against.
+CVAR(Bool, fua_sprite_modeljobs, true, 0)
+
+// [Doruk-Aksoy] DeriveModel on a lane into the chunk, for the main thread to hand on in the sweep's order; false when the main thread must derive it.
+static bool DeriveLaneModel(const ActorRecord *thing, const Subject &s, SpriteChunk &c, LaneSprite &ls)
+{
+	Look l;
+	if (!LookOf(thing, s, false, false, l)) return true;
+	if (!c.models) c.models.reset(new LaneModels);
+	LaneModels &store = *c.models;
+	LaneModel m;
+	ModelLookOf(thing, s, l, m.look, m.matrix);
+	m.firstSurface = (unsigned)store.surfaces.size();
+	if (!ResolveModelFrames(s.model, thing->state, thing->tics, thing->type, ModelTranslationOf(thing, s.model), m.matrix, store.surfaces, store.verts)) return false;
+	m.surfaces = (unsigned)store.surfaces.size() - m.firstSurface;
+	ls.model = (int)store.models.size();
+	store.models.push_back(m);
+	return true;
+}
+
+// [Doruk-Aksoy] A lane's model handed to the capture as DeriveModel hands its own.
+static void EmitLaneModel(const LaneModels &c, const LaneModel &m, const void *who)
+{
+	zx::levelmesh::ModelCaptureBegin(m.look, m.matrix, who, fua_sprite_check ? zx::levelmesh::kModelChecked : zx::levelmesh::kModelDraw);
+	for (unsigned k = 0; k < m.surfaces; k++)
+	{
+		const ResolvedModelSurface &f = c.surfaces[m.firstSurface + k];
+		if (f.count == 0) zx::levelmesh::ModelSurfaceSkipped();
+		else zx::levelmesh::EmitModelSurface(&c.verts[f.first], f.count, f.material, f.translation);
+	}
+	zx::levelmesh::ModelCaptureEnd();
+}
 
 // [Doruk-Aksoy] Padded, since lanes take neighbouring chunks at once and each actor wrote a line both chunks' headers were in.
 static std::vector<zx::jobs::Padded<SpriteChunk>> g_spriteChunks;
@@ -794,14 +859,21 @@ static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 	SpriteChunk &c = g_spriteChunks[chunk].value;
 	c.used = 0;
 	c.sprites.clear();
+	if (c.models)
+	{
+		c.models->models.clear();
+		c.models->surfaces.clear();
+		c.models->verts.clear();
+	}
 	const int end = (chunk + 1) * kSpriteChunk < count ? (chunk + 1) * kSpriteChunk : count;
 	for (int i = chunk * kSpriteChunk; i < end; i++)
 	{
-		LaneSprite ls = { c.used, 0, false };
+		LaneSprite ls = { c.used, 0, false, -1 };
 		Subject s;
 		if (SubjectOf(things[i], s))
 		{
-			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->isPlayer)) ls.onGameThread = true;
+			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->isPlayer, fua_sprite_modeljobs)) ls.onGameThread = true;
+			else if (s.model != NULL) ls.onGameThread = !DeriveLaneModel(things[i], s, c, ls);
 			else
 			{
 				// [Doruk-Aksoy] DeriveSprite writes every piece it draws afresh, so last frame's records are reused as they stand.
@@ -816,24 +888,109 @@ static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 	}
 }
 
-// [Doruk-Aksoy] Below this many quads a run is appended one at a time, since sharing it out costs more than it saves.
+// [Doruk-Aksoy] Below this many items a run is appended one at a time, since sharing it out costs more than it saves.
 static const unsigned kPlaceAlone = 128;
-// [Doruk-Aksoy] Quads a lane places at a time.
+// [Doruk-Aksoy] Items a lane places at a time.
 static const int kPlaceChunk = 256;
 
-// [Doruk-Aksoy] Derived pieces put on the dynamic stream in order, written in place across the pool when there are enough.
-static void AppendQuads(const std::vector<const SpritePiece *> &run)
+// [Doruk-Aksoy] One thing the gather puts on the stream, a derived quad or a lane's model, and where in the run PlaceItems lands it.
+struct PlaceItem
 {
-	const unsigned n = (unsigned)run.size();
-	zx::levelmesh::DynQuadRun at;
-	if (!fua_sprite_placejobs || n < kPlaceAlone || !zx::levelmesh::DynReserveQuads(n, at))
+	const SpritePiece *quad;   // [Doruk-Aksoy] NULL for a model
+	const LaneModels *store;
+	int model;
+	const void *who;
+	unsigned piece, vert;
+	int matrix;
+	unsigned surfaces, verts, triangles;   // [Doruk-Aksoy] a model's, from ModelExtent
+};
+
+// [Doruk-Aksoy] A lane model's surfaces drawn, their corners and their triangles.
+static void ModelExtent(const LaneModels &store, const LaneModel &m, unsigned &surfaces, unsigned &verts, unsigned &triangles)
+{
+	surfaces = verts = triangles = 0;
+	for (unsigned k = 0; k < m.surfaces; k++)
 	{
-		for (const SpritePiece *p : run) zx::levelmesh::DynAppend(p->quad, 4, p->piece);
+		const ResolvedModelSurface &f = store.surfaces[m.firstSurface + k];
+		if (f.count == 0) continue;
+		surfaces++;
+		verts += f.count;
+		triangles += f.count / 3;
+	}
+}
+
+// [Doruk-Aksoy] A lane model counted for fua_models and its matrix added, as its surfaces' appends would have; the matrix's index.
+static int CountPlacedModel(const PlaceItem &it)
+{
+	const LaneModels &store = *it.store;
+	const LaneModel &m = store.models[it.model];
+	const void *last = NULL;
+	const MeshVertex *first = NULL;
+	for (unsigned k = 0; k < m.surfaces; k++)
+	{
+		const ResolvedModelSurface &f = store.surfaces[m.firstSurface + k];
+		if (f.count == 0) continue;
+		if (first == NULL) first = &store.verts[f.first];
+		last = f.material;
+	}
+	return zx::levelmesh::ModelPlaced(m.matrix, m.look, last, first, it.verts, it.surfaces, it.triangles, m.surfaces - it.surfaces);
+}
+
+// [Doruk-Aksoy] One gathered item written into its place in the run.
+static void PlaceOne(const zx::levelmesh::DynQuadRun &at, const zx::levelmesh::ModelPlacing &placing, const PlaceItem &it)
+{
+	if (it.quad != NULL) { zx::levelmesh::DynPlace(at, it.piece, it.vert, it.quad->quad, 4, it.quad->piece); return; }
+	const LaneModels &store = *it.store;
+	const LaneModel &m = store.models[it.model];
+	unsigned piece = it.piece, vert = it.vert;
+	for (unsigned k = 0; k < m.surfaces; k++)
+	{
+		const ResolvedModelSurface &f = store.surfaces[m.firstSurface + k];
+		if (f.count == 0) continue;
+		MeshPiece mp;
+		zx::levelmesh::ModelSurfacePiece(m.look, placing, f.material, f.translation, it.matrix, mp);
+		zx::levelmesh::DynPlace(at, piece++, vert, &store.verts[f.first], f.count, mp);
+		vert += f.count;
+	}
+}
+
+// [Doruk-Aksoy] The gathered items put on the dynamic stream in order, written in place across the pool when there are enough, as appending them one at a time would.
+static void PlaceItems(std::vector<PlaceItem> &items)
+{
+	const unsigned n = (unsigned)items.size();
+	if (n == 0) return;
+	// [Doruk-Aksoy] A run the pool may place wakes it first, so its workers are spinning once the run is laid out and its models counted.
+	if (fua_sprite_placejobs && n >= kPlaceAlone) zx::jobs::Pool().Wake();
+	unsigned verts = 0, pieces = 0;
+	bool models = false;
+	for (PlaceItem &it : items)
+	{
+		it.piece = pieces;
+		it.vert = verts;
+		if (it.quad != NULL) { pieces++; verts += 4; continue; }
+		ModelExtent(*it.store, it.store->models[it.model], it.surfaces, it.verts, it.triangles);
+		pieces += it.surfaces;
+		verts += it.verts;
+		models = true;
+	}
+	const zx::levelmesh::ModelPlacing placing = zx::levelmesh::ModelPlacingNow();
+	zx::levelmesh::DynQuadRun at;
+	// [Doruk-Aksoy] fua_sprite_check notes each model surface as the capture hands it over, so it keeps the one-at-a-time path.
+	if (!fua_sprite_placejobs || n < kPlaceAlone || (models && (fua_sprite_check || !placing.active)) || !zx::levelmesh::DynReserve(verts, pieces, at))
+	{
+		for (const PlaceItem &it : items)
+		{
+			if (it.quad != NULL) zx::levelmesh::DynAppend(it.quad->quad, 4, it.quad->piece);
+			else EmitLaneModel(*it.store, it.store->models[it.model], it.who);
+		}
 		return;
 	}
-	auto place = [&run, &at](int lo, int hi, int)
+	// [Doruk-Aksoy] Each model counted and its matrix added in order, as its first surface's append did.
+	for (PlaceItem &it : items)
+		if (it.quad == NULL) it.matrix = CountPlacedModel(it);
+	auto place = [&items, &at, &placing](int lo, int hi, int)
 	{
-		for (int i = lo; i < hi; i++) zx::levelmesh::DynPlaceQuad(at, (unsigned)i, run[i]->quad, run[i]->piece);
+		for (int i = lo; i < hi; i++) PlaceOne(at, placing, items[i]);
 	};
 	zx::jobs::Pool().ParallelChunks((int)n, kPlaceChunk, place);
 }
@@ -852,8 +1009,8 @@ void BuildSprites(const ActorRecord *const *things, int count)
 	} derive = { things, count };
 	zx::jobs::Pool().ParallelFor(chunks, derive);
 	const bool capture = zx::levelmesh::DynamicCaptureActive();
-	// [Doruk-Aksoy] The lanes' pieces gathered in order, each run put on the stream before an actor the main thread derives, so the stream keeps the sweep's order.
-	static std::vector<const SpritePiece *> run;
+	// [Doruk-Aksoy] The lanes' quads and models gathered in order, each run put on the stream before an actor the main thread derives, so the stream keeps the sweep's order.
+	static std::vector<PlaceItem> run;
 	run.clear();
 	for (int c = 0; c < chunks; c++)
 	{
@@ -863,15 +1020,16 @@ void BuildSprites(const ActorRecord *const *things, int count)
 			const LaneSprite &ls = chunk.sprites[k];
 			if (ls.onGameThread)
 			{
-				AppendQuads(run);
+				PlaceItems(run);
 				run.clear();
 				BuildSprite(*things[c * kSpriteChunk + (int)k]);
 			}
-			else if (capture)
-				for (int i = 0; i < ls.count; i++) run.push_back(&chunk.pieces[ls.first + i]);
+			else if (!capture) continue;
+			else if (ls.model >= 0) run.push_back(PlaceItem{ NULL, chunk.models.get(), ls.model, things[c * kSpriteChunk + (int)k]->who, 0, 0, -1, 0, 0, 0 });
+			else for (int i = 0; i < ls.count; i++) run.push_back(PlaceItem{ &chunk.pieces[ls.first + i], NULL, -1, NULL, 0, 0, -1, 0, 0, 0 });
 		}
 	}
-	AppendQuads(run);
+	PlaceItems(run);
 }
 
 // [Doruk-Aksoy] A particle the walk reached, waiting for BuildQueuedParticles.
@@ -912,16 +1070,16 @@ void BuildQueuedParticles()
 		if (fua_sprite_particlejobs) zx::jobs::Pool().ParallelChunks(n, kParticleChunk, derive);
 		else derive(0, n, 0);
 		const bool capture = zx::levelmesh::DynamicCaptureActive();
-		static std::vector<const SpritePiece *> run;
+		static std::vector<PlaceItem> run;
 		run.clear();
 		for (int i = 0; i < n; i++)
 		{
 			if (!g_particleDrawn[i]) continue;
 			const SpritePiece &p = g_particlePieces[i];
 			if (fua_sprite_check) Note(g_ours, g_queuedParticles[i].who, true, p.piece, p.quad, 4);
-			if (capture) run.push_back(&p);
+			if (capture) run.push_back(PlaceItem{ &p, NULL, -1, NULL, 0, 0, -1, 0, 0, 0 });
 		}
-		AppendQuads(run);
+		PlaceItems(run);
 		for (size_t i = 0; i < run.size(); i++) zx::levelmesh::CountParticle();
 	}
 	g_queuedParticles.clear();

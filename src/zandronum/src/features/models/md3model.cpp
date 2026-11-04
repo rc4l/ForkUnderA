@@ -321,7 +321,7 @@ int FMD3Model::FindFrame(const char * name)
 
 // [rc4l] upstream 03916d75d merged RenderFrame and RenderFrameInterpolated into one
 // function; the [BB] per-surface MODELDEF skin fallback is preserved.
-int FMD3Model::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelSurface * out)
+int FMD3Model::FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * skin, int frameno, int frameno2, FModelSurface * out)
 {
 	if (frameno>=numFrames || frameno2>=numFrames) return 0;
 
@@ -335,9 +335,9 @@ int FMD3Model::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelS
 		FTexture *surfaceSkin = skin;
 		if (!surfaceSkin)
 		{
-			if (curSpriteMDLFrame->surfaceskins[curMDLIndex][i])
+			if (smf->surfaceskins[slot][i])
 			{
-				surfaceSkin = curSpriteMDLFrame->surfaceskins[curMDLIndex][i];
+				surfaceSkin = smf->surfaceskins[slot][i];
 			}
 			else if(surf->numSkins > 0 && surf->skins[0])
 			{

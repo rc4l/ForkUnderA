@@ -213,8 +213,6 @@ void gl_RenderFrameModels( const FSpriteModelFrame *smf,
 
 		if (mdl!=NULL)
 		{
-			mdl->PushSpriteMDLFrame(smf, i);
-
 			FModelVertexBuffer *buffer = gl_ModelBuffer(mdl);
 			gl_RenderState.SetVertexBuffer(buffer);
 

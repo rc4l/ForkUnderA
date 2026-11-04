@@ -6,7 +6,10 @@
 #ifndef ZX_MODELBUILD_H
 #define ZX_MODELBUILD_H
 
+#include <vector>
+
 namespace zx { namespace gamecopy { struct ActorRecord; } }
+namespace zx { namespace levelmesh { struct MeshVertex; } }
 struct PClass;
 struct FState;
 struct FSpriteModelFrame;
@@ -28,6 +31,18 @@ int ModelSlotSurfaces(const FSpriteModelFrame *smf, int i, const FSpriteModelFra
 
 // [rc4l] Every surface of a model's frame into the model capture already begun, blended toward the next frame: gl_RenderFrameModels without GL.
 void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation);
+
+// [Doruk-Aksoy] A surface ResolveModelFrames resolved: its material and translation, and its corners in the caller's list, none for one whose corners were refused.
+struct ResolvedModelSurface
+{
+	const void *material;
+	int translation;
+	unsigned first, count;
+};
+
+// [Doruk-Aksoy] CaptureModelFrames without the capture, so a lane may run it: each surface's corners under modelToWorld appended to verts and listed in surfaces; false, with neither grown, when a slot's geometry or a skin's material is not made yet, which only the main thread may do.
+bool ResolveModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation, const float *modelToWorld,
+	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts);
 
 }} // namespace zx::sprites
 

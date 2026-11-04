@@ -425,7 +425,7 @@ float FVoxelModel::getAspectFactor()
 //
 //===========================================================================
 
-int FVoxelModel::FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out)
+int FVoxelModel::FrameSurfaces(const FSpriteModelFrame *, int, FTexture * skin, int frame, int frame2, FModelSurface * out)
 {
 	// [rc4l] A voxel model is one frame, so there is nothing to interpolate -- but it is the same
 	// geometry through the same buffers, which is why voxels come back with models rather than
