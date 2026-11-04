@@ -7,6 +7,7 @@
 #include "actor.h"
 #include "doomstat.h"   // [rc4l] zadmflags, for OVERRIDE_LIGHTS_SIZE_IF_NECESSARY
 #include "features/dynlights/cycler.h"
+#include "features/dynlights/computation/lightspot_compute.h"
 #include <vector>
 
 
@@ -122,6 +123,7 @@ protected:
 	unsigned int m_lastUpdate;
 	FCycler m_cycler;
 	subsector_t * subsector;
+	zx::dynlights::LightSpot m_subsectorAt;	// [Doruk-Aksoy] the point UpdateLocation last looked subsector up for, and what it found
 
 public:
 	int m_intensity[2];
