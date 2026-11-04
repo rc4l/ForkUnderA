@@ -6,7 +6,9 @@ actor: visibility, interpolation, the rotation the viewer sees, the trimmed fram
 floor and ceiling clip, light (glow, colormap, 3D-floor light bands, the actor's dynamic light),
 render style, and the quad, billboarded or rolled. The decisions are `Compute*` units in
 `computation/`; the glue reads the engine and appends to the level mesh's dynamic stream, the pieces the lanes
-derived placed there in runs across the pool (`AppendQuads`), each run ending before an actor the main thread derives.
+derived placed there in runs across the pool (`PlaceItems`), each run ending before an actor the main thread derives.
+Models are derived on the lanes too (`ResolveModelFrames`, `fua_sprite_modeljobs 0` derives them on the main thread),
+except the first frame a model's geometry or skin is not made yet, and players stay on the main thread.
 
 Particles too (`GLSprite::ProcessParticle`'s light and quad): the player's walk queues the particles in the
 subsectors it reaches (`QueueParticle`), and once it is done `BuildQueuedParticles` derives them on

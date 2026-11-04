@@ -45,7 +45,8 @@ public:
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length) = 0;
 	virtual int FindFrame(const char * name) = 0;
 	// [rc4l] The surfaces a frame pair draws, after BuildGeometry; how many, at most MD3_MAX_SURFACES.
-	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out) = 0;
+	// [Doruk-Aksoy] smf and slot name the MODELDEF frame asking, whose per-surface skins an MD3 falls back to, passed rather than kept on the model so lanes may ask at once.
+	virtual int FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * skin, int frame, int frame2, FModelSurface * out) = 0;
 	// [rc4l] Fill mGeometry from the model's file, once; FrameSurfaces' offsets are into it.
 	virtual void BuildGeometry() = 0;
 	virtual float getAspectFactor() { return 1.f; }
@@ -55,9 +56,6 @@ public:
 
 	// [rc4l] The geometry, on the CPU, which each renderer draws from its own way.
 	FModelGeometry mGeometry;
-	const FSpriteModelFrame *curSpriteMDLFrame;
-	int curMDLIndex;
-	void PushSpriteMDLFrame(const FSpriteModelFrame *smf, int index) { curSpriteMDLFrame = smf; curMDLIndex = index; };
 
 	FString mFileName;
 };
@@ -170,7 +168,7 @@ public:
 
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	virtual int FindFrame(const char * name);
-	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out);
+	virtual int FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * skin, int frame, int frame2, FModelSurface * out);
 	virtual void LoadGeometry();
 	void UnloadGeometry();
 	void BuildGeometry();
@@ -274,7 +272,7 @@ public:
 
 	virtual bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	virtual int FindFrame(const char * name);
-	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out);
+	virtual int FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * skin, int frame, int frame2, FModelSurface * out);
 	void LoadGeometry();
 	void BuildGeometry();
 };
@@ -328,7 +326,7 @@ public:
 	bool Load(const char * fn, int lumpnum, const char * buffer, int length);
 	void Initialize();
 	virtual int FindFrame(const char * name);
-	virtual int FrameSurfaces(FTexture * skin, int frame, int frame2, FModelSurface * out);
+	virtual int FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * skin, int frame, int frame2, FModelSurface * out);
 	FTexture *GetPaletteTexture() const { return mPalette; }
 	void BuildGeometry();
 	float getAspectFactor();

@@ -40,6 +40,20 @@ bool ModelCaptureActive();
 void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, unsigned int base2,
 	float inter, unsigned int firstIndex, unsigned int indexCount,
 	const void *material, int translation);
+// [Doruk-Aksoy] A surface whose corners are already resolved (ComputeModelSurfaceCorners), handed on as CaptureModelSurface hands its own, from the main thread.
+void EmitModelSurface(const MeshVertex *tris, unsigned int indexCount, const void *material, int translation);
+// [Doruk-Aksoy] A surface whose corners were refused, counted for fua_models as CaptureModelSurface counts its own.
+void ModelSurfaceSkipped();
+
+// [Doruk-Aksoy] What a model surface's piece takes from the capture, read once on the main thread so lanes may build pieces: whether the capture takes models at all, and the walk's mirror view and stack slot.
+struct ModelPlacing { bool active; int mirrorView, stackSlot; };
+ModelPlacing ModelPlacingNow();
+
+// [Doruk-Aksoy] A surface's piece as EmitModelSurface appends it, from any thread; its range is the caller's.
+void ModelSurfacePiece(const MeshPiece &look, const ModelPlacing &at, const void *material, int translation, int matrixIndex, MeshPiece &out);
+
+// [Doruk-Aksoy] A model whose surfaces its caller places (DynPlace), counted for fua_models as ModelCaptureBegin and EmitModelSurface count one, from its look, its last surface's material and its surfaces' corners; the index DynAddMatrix gave its matrix, -1 when nothing of it is drawn.
+int ModelPlaced(const float *matrix, const MeshPiece &look, const void *lastMaterial, const MeshVertex *verts, unsigned int nverts, unsigned int surfaces, unsigned int triangles, unsigned int skipped);
 
 // Per-frame counters, for fua_models.
 void ModelStatsReset();
