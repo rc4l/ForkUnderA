@@ -15,6 +15,8 @@ so every module that lit a sprite or a wall included GL's headers to see a light
   - A relink finds a light's existing node for a target in an index (`computation/nodeindex_compute`), not
     by walking the light's list for every target it touches, which made a relink of n targets n*n.
   The tic there went from 1.09 to 0.53 ms.
+- A light keeps its subsector when `UpdateLocation` finds it at the very point it last looked it up for
+  (`computation/lightspot_compute`), instead of a BSP lookup: 81% of ~2,000 updates a tic on Complex Doom's crowd.
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 
