@@ -54,6 +54,11 @@ ZxAlertMemo &ComputeAlertBegin(ZxAlertReuse &reuse, const void *target, bool spl
 	return *memo;
 }
 
+void ComputeAlertForget(ZxAlertReuse &reuse)
+{
+	reuse.memos.clear();
+}
+
 void ComputeAlertCovers(ZxAlertMemo &memo, int sector)
 {
 	if (sector >= 0 && sector < (int)memo.covered.size()) memo.covered[sector] = memo.stamp;

@@ -11,5 +11,5 @@ so a monster that walks into the area, or spawns there, during the window learns
 most that many tics later. Alerts with a maximum distance always run in full.
 
 - `computation/alertreuse_compute.*`: the memo of each target's last full alert and the decision.
-- Hook: `p_enemy.cpp` `P_NoiseAlert` (decide, start the memo) and `NoiseMarkSector` (mark sectors
+- Hooks: `p_setup.cpp` `P_SetupLevel` (`P_ForgetNoiseAlerts`, a new level starts with no memos), `p_enemy.cpp` `P_NoiseAlert` (decide, start the memo) and `NoiseMarkSector` (mark sectors
   reached unblocked).
