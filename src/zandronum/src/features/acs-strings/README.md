@@ -17,8 +17,17 @@ each time, ~1.8 ms a collection on the game thread.
   entries a growth adds, not when collections run, and are not needed here, since growing the room adds no
   entry.
 
+## Literal ids cached per module
+
+Every string literal a script pushes runs `PCD_TAGSTRING`, which turned the module's string into a pool id by
+hashing it and searching a bucket each time; Complex Doom's effect actors run a script each that pushes a few
+cvar and state names, ~460 starts a tic. A pool id only changes when strings are purged, cleared or loaded, so each
+module now keeps its literals' ids (`TagCache`, `ComputeTagCacheFind`/`ComputeTagCacheStore`) for the pool's
+generation, which `Clear` and `PurgeStrings` move on (`ReadStrings` clears first).
+
 ## Hooks
 
 - `p_acs.cpp` `ACSStringPool::InsertString`: grows the pool's room by `ComputeStringPoolGrowth` after a
   collection; `P_CollectACSGlobalStrings` returns what it freed.
 - Telemetry: `acs/string_collect` (time), `acs/string_collects`, `acs/strings_freed`.
+- `p_acs.h`/`p_acs.cpp`: `ACSStringPool::Generation` (moved on in `Clear` and `PurgeStrings`), `FBehavior::TagIds`, and `PCD_TAGSTRING` reading through them.
