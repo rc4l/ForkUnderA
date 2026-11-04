@@ -86,6 +86,16 @@ TEST(ComputeAlertBegin, ReplacesTheOldestWhenFull)
 	EXPECT_TRUE(ComputeAlertRepeats(reuse, &targets[4], false, false, 1, 105, kReuse));
 }
 
+// [Doruk-Aksoy] A new level forgets every memo, since its clock restarts and a target may take a gone one's address, so its first alerts run in full.
+TEST(ComputeAlertForget, ANewLevelRunsInFull)
+{
+	ZxAlertReuse reuse;
+	Alert(reuse, kPlayerA, 20, { 1 });
+	ComputeAlertForget(reuse);
+	EXPECT_FALSE(ComputeAlertRepeats(reuse, kPlayerA, false, false, 1, 25, kReuse));
+	EXPECT_TRUE(reuse.memos.empty());
+}
+
 // [Doruk-Aksoy] A level with another sector count starts the memo's area afresh, and a sector out of range is never marked.
 TEST(ComputeAlertBegin, ANewSectorCountStartsAfresh)
 {

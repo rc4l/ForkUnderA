@@ -32,6 +32,9 @@ bool ComputeAlertRepeats(const ZxAlertReuse &reuse, const void *target, bool spl
 // [Doruk-Aksoy] Starts a full alert's memo for target and splash at now over numSectors sectors, replacing the oldest memo when all are taken, and returns it to mark sectors on.
 ZxAlertMemo &ComputeAlertBegin(ZxAlertReuse &reuse, const void *target, bool splash, int now, int numSectors);
 
+// [Doruk-Aksoy] Forgets every memo, as a new level must, since its clock restarts and a target may take a gone one's address.
+void ComputeAlertForget(ZxAlertReuse &reuse);
+
 // [Doruk-Aksoy] Marks a sector the full alert reached without crossing a sound-blocking line.
 void ComputeAlertCovers(ZxAlertMemo &memo, int sector);
 

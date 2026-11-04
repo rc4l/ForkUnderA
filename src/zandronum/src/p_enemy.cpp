@@ -142,6 +142,11 @@ CVAR(Int, sv_fua_alertreuse, 8, CVAR_SERVERINFO | CVAR_ARCHIVE)
 static ZxAlertReuse AlertReuse;
 static ZxAlertMemo *AlertMemo;
 
+void P_ForgetNoiseAlerts ()
+{
+	ComputeAlertForget(AlertReuse);
+}
+
 static void NoiseMarkSector(sector_t *sec, AActor *soundtarget, bool splash, AActor *emitter, int soundblocks, fixed_t maxdist)
 {
 	// wake up all monsters in this sector

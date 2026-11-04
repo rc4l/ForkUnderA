@@ -49,6 +49,8 @@ struct FLookExParams
 void P_DaggerAlert (AActor *target, AActor *emitter);
 bool P_HitFriend (AActor *self);
 void P_NoiseAlert (AActor *target, AActor *emmiter, bool splash=false, fixed_t maxdist=0);
+// [Doruk-Aksoy] features/alert-reuse: a new level's alerts owe nothing to the last level's.
+void P_ForgetNoiseAlerts ();
 bool P_CheckMeleeRange2 (AActor *actor);
 bool P_Move (AActor *actor);
 bool P_TryWalk (AActor *actor);
