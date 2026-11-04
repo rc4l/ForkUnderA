@@ -30,6 +30,7 @@
 #define __P_MOBJ_H__
 
 // Basics.
+#include "features/relink-in-place/computation/relink_compute.h"
 #include "tables.h"
 
 // We need the thinker_t stuff.
@@ -1309,6 +1310,7 @@ public:
 
 	// a linked list of sectors where this object appears
 	struct msecnode_t	*touching_sectorlist;				// phares 3/14/98
+	ZxLinkedAt		FuaLinkedAt;		// [Doruk-Aksoy] features/relink-in-place: where and how the last link put this actor
 
 	TObjPtr<AInventory>	Inventory;		// [RH] This actor's inventory
 	DWORD			InventoryID;	// A unique ID to keep track of inventory items
@@ -1440,6 +1442,7 @@ public:
 	void LinkToWorld (bool buggy=false);
 	void LinkToWorld (sector_t *sector);
 	void UnlinkFromWorld ();
+	void RelinkInPlace ();		// [Doruk-Aksoy] features/relink-in-place: what unlinking and linking again where the last link was would do
 	// [ZandroX] Change radius/height at runtime (relinks to the world so blockmap
 	// and sector-touch lists stay valid). If testpos is true, reverts and returns
 	// false when the new size does not fit at the actor's current position.

@@ -589,6 +589,7 @@ void	P_RadiusAttack (AActor *spot, AActor *source, int damage, int distance,
 void	P_DelSector_List();
 void	P_DelSeclist(msecnode_t *);							// phares 3/16/98
 void	P_CreateSecNodeList(AActor*,fixed_t,fixed_t);		// phares 3/14/98
+void	P_DiscardSecnodeReplay();		// [Doruk-Aksoy] features/relink-in-place: a link that builds no list still uses up the recording
 int		P_GetMoveFactor(const AActor *mo, int *frictionp);	// phares  3/6/98
 int		P_GetFriction(const AActor *mo, int *frictionfactor);
 bool	Check_Sides(AActor *, int, int);					// phares

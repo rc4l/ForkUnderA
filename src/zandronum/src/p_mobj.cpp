@@ -95,6 +95,7 @@
 #include "domination.h"
 #include "network_enums.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip ledger gating
+#include <cstddef>
 #include <set>
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
@@ -4231,13 +4232,25 @@ void AActor::Tick ()
 			}
 		}
 
-		UnlinkFromWorld ();
-		flags |= MF_NOBLOCKMAP;
+		// [Doruk-Aksoy] features/relink-in-place: an actor still in x and y where its last link put it needs only what that relink would change.
+		const ZxRelinkAsk still = { velx != 0 || vely != 0, BlockNode != NULL, (flags & MF_NOSECTOR) || (sprev != NULL && sprev != (AActor **)(size_t)0xBeefCafe),
+			(flags & MF_NOSECTOR) != 0, x.Raw(), y.Raw(), radius.Raw() };
+		if (ComputeRelinkInPlace(still, FuaLinkedAt, po_NumPolyobjs > 0))
+		{
+			RelinkInPlace ();
+			flags |= MF_NOBLOCKMAP;
+			z += velz;
+		}
+		else
+		{
+			UnlinkFromWorld ();
+			flags |= MF_NOBLOCKMAP;
 
-		x += velx;
-		y += vely;
-		z += velz;
-		LinkToWorld ();
+			x += velx;
+			y += vely;
+			z += velz;
+			LinkToWorld ();
+		}
 	}
 	else
 	{
