@@ -357,7 +357,12 @@ void ADynamicLight::UpdateLocation()
 			PrevX = x = target->x + FixedMul(m_offX, finecosine[angle]) + FixedMul(m_offZ, finesine[angle]);
 			PrevY = y = target->y + FixedMul(m_offX, finesine[angle]) - FixedMul(m_offZ, finecosine[angle]);
 			PrevZ = z = target->z + m_offY + target->GetBobOffset();
-			subsector = R_PointInSubsector(x, y);
+			// [Doruk-Aksoy] Most updates find the light where the last lookup put it, whose subsector the BSP would find again.
+			if (!zx::dynlights::ComputeLightKeepsSubsector(m_subsectorAt, x.Raw(), y.Raw(), subsector))
+			{
+				subsector = R_PointInSubsector(x, y);
+				m_subsectorAt = zx::dynlights::LightSpot{ x.Raw(), y.Raw(), subsector };
+			}
 			Sector = subsector->sector;
 		}
 
