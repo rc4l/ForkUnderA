@@ -178,8 +178,10 @@ void DynClear()
 
 int DynAddMatrix(const float *matrix)
 {
-	for (int i = 0; i < 16; i++) g_dynMatrices.Push(matrix[i]);
-	return (int)(g_dynMatrices.Size() / 16) - 1;
+	const unsigned at = g_dynMatrices.Size();
+	g_dynMatrices.Resize(at + 16);
+	memcpy(&g_dynMatrices[at], matrix, 16 * sizeof(float));
+	return (int)(at / 16);
 }
 
 const float *DynMatrices(int &count)
@@ -214,23 +216,23 @@ void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 	p.range.count = (unsigned)count;
 }
 
-bool DynReserveQuads(unsigned count, DynQuadRun &run)
+bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run)
 {
-	if (!ComputeDynQuadRun(g_dynVerts.Size(), g_dynPieceCount, count, kDynVertexCeiling, run)) return false;
-	g_dynVerts.Resize(run.firstVert + 4 * count);
-	if (g_dynPieces.size() < run.firstPiece + count) g_dynPieces.resize(run.firstPiece + count);
-	g_dynPieceCount = run.firstPiece + count;
+	if (!ComputeDynRun(g_dynVerts.Size(), g_dynPieceCount, verts, kDynVertexCeiling, run)) return false;
+	g_dynVerts.Resize(run.firstVert + verts);
+	if (g_dynPieces.size() < run.firstPiece + pieces) g_dynPieces.resize(run.firstPiece + pieces);
+	g_dynPieceCount = run.firstPiece + pieces;
 	return true;
 }
 
-void DynPlaceQuad(const DynQuadRun &run, unsigned k, const MeshVertex *verts, const MeshPiece &proto)
+void DynPlace(const DynQuadRun &run, unsigned piece, unsigned vert, const MeshVertex *verts, unsigned count, const MeshPiece &proto)
 {
-	const unsigned vert = ComputeDynQuadVertex(run, k);
-	memcpy(&g_dynVerts[vert], verts, 4 * sizeof(MeshVertex));
-	MeshPiece &p = g_dynPieces[run.firstPiece + k];
+	const unsigned at = run.firstVert + vert;
+	memcpy(&g_dynVerts[at], verts, count * sizeof(MeshVertex));
+	MeshPiece &p = g_dynPieces[run.firstPiece + piece];
 	p = proto;
-	p.range.offset = vert;
-	p.range.count = 4;
+	p.range.offset = at;
+	p.range.count = count;
 }
 
 const MeshVertex *DynVertices(int &count)
@@ -687,3 +689,4 @@ void MeshGetStats(int &bakedPieces, int &vertices, int &bytes, int &reallocs)
 }
 
 }} // namespace zx::levelmesh
+

@@ -352,7 +352,7 @@ int FDMDModel::FindFrame(const char * name)
 //
 //===========================================================================
 
-int FDMDModel::FrameSurfaces(FTexture * skin, int frameno, int frameno2, FModelSurface * out)
+int FDMDModel::FrameSurfaces(const FSpriteModelFrame *, int, FTexture * skin, int frameno, int frameno2, FModelSurface * out)
 {
 	if (frameno >= info.numFrames || frameno2 >= info.numFrames) return 0;
 
