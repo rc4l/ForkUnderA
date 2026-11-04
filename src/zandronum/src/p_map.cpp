@@ -159,6 +159,11 @@ static bool SecnodeReplayValid;
 // Temporary holder for thing_sectorlist threads
 msecnode_t* sector_list = NULL;		// phares 3/16/98
 
+void P_DiscardSecnodeReplay()
+{
+	SecnodeReplayValid = false;
+}
+
 //==========================================================================
 //
 // GetCoefficientClosestPointInLine24
@@ -7325,11 +7330,12 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y;
 	SecnodeReplayValid = false;
 
+	// [Doruk-Aksoy] features/relink-in-place: a radius-0 box has one corner, so no line straddles it and the walk would add nothing.
 	FBlockLinesIterator it(box);
 	line_t *ld;
 	unsigned int ri = 0;
 
-	for (;;)
+	for (; ComputeSecNodesWalkLines(thing->radius.Raw());)
 	{
 		if (replay)
 		{

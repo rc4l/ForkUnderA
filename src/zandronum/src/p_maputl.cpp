@@ -352,6 +352,8 @@ void AActor::LinkToWorld (bool buggy)
 	}
 
 	LinkToWorld (sec);
+	// [Doruk-Aksoy] features/relink-in-place: this sector came from the point, which a relink there would find again.
+	if (!buggy || numgamenodes == 0) FuaLinkedAt.byPoint = true;
 }
 
 void AActor::LinkToWorld (sector_t *sec)
@@ -445,6 +447,22 @@ void AActor::LinkToWorld (sector_t *sec)
 			}
 		}
 	}
+	FuaLinkedAt = ZxLinkedAt{ x.Raw(), y.Raw(), radius.Raw(), false, (flags & MF_NOSECTOR) != 0, Sector, subsector };
+}
+
+// [Doruk-Aksoy] features/relink-in-place: unlinking and linking at the last link's point leaves every list as it was but for this actor at the head of its sector's things, so that is all this does, with the sector and subsector that link found.
+void AActor::RelinkInPlace ()
+{
+	Sector = static_cast<sector_t *>(FuaLinkedAt.sector);
+	subsector = static_cast<subsector_t *>(FuaLinkedAt.subsector);
+	if (flags & MF_NOSECTOR) return;
+	zx::gamecopy::NoteActorLists();
+	if ((*sprev = snext)) snext->sprev = sprev;
+	AActor **link = &Sector->thinglist;
+	if ((snext = *link)) snext->sprev = &snext;
+	sprev = link;
+	*link = this;
+	P_DiscardSecnodeReplay();
 }
 
 //==========================================================================
