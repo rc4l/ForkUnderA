@@ -620,6 +620,7 @@ void Continue_NoteQuit( void )
 	in.inMap = ( gamestate == GS_LEVEL ) && usergame;
 	in.connecting = ( CLIENT_GetConnectionState( ) == CTS_ATTEMPTINGCONNECTION );
 	in.crashing = false;			// this path is only ever reached by a deliberate quit
+	in.dedicatedServer = zx::net::IsServer( );	// [KI] a server holds the map but no player to put back into it
 
 	if ( DecideContinueWrite( in ) != ContinueWriteVerdict::Write )
 		return;
@@ -669,6 +670,7 @@ void Continue_NoteLeavingLocalGame( void )
 	in.connecting = ( CLIENT_GetConnectionState( ) == CTS_ATTEMPTINGCONNECTION );
 	in.crashing = false;
 	in.hosting = HostIsActive( );
+	in.dedicatedServer = zx::net::IsServer( );	// [KI] a server holds the map but no player to put back into it
 
 	if ( DecideContinueWrite( in ) != ContinueWriteVerdict::Write )
 		return;
