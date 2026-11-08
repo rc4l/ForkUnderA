@@ -34,6 +34,9 @@ What a client does with what arrives from its server.
 
 - `computation/packetheader_compute.{h,cpp}` with its `_test.cpp`.
 - `computation/rejoin_compute.{h,cpp}` with its `_test.cpp`.
+- `computation/netstats_compute.{h,cpp}` (`ComputeSharePercent`, the percentage behind `stat nettraffic`'s
+  compression factor and zstd share from Zandronum 3.3, called by `cl_statistics.cpp`'s tracker getters)
+  with its `_test.cpp`.
 - `netclient.{h,cpp}` (the packets applied) and `rejoin.{h,cpp}` (the map command's reconnect).
 
 ## In-engine hooks
