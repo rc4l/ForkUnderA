@@ -1,6 +1,7 @@
-# Build artifacts (fetched/built by mac_compile.sh), except DiligentCore, the Vulkan backend's submodule
+# Build artifacts (fetched/built by mac_compile.sh), except DiligentCore, the Vulkan backend's submodule, and zstd, the network packet codec vendored as source
 deps/*
 !deps/DiligentCore
+!deps/zstd
 build/
 
 # Visual Studio outputs
