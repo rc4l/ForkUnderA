@@ -95,6 +95,7 @@
 #include "c_dispatch.h"
 #include "m_argv.h"
 #include "m_random.h"
+#include "features/net-session/computation/dumpfilter_compute.h"   // [KI] the sv_dumppackets decisions
 #include "network.h"
 #include "possession.h"
 #include "s_sndseq.h"
@@ -306,6 +307,11 @@ CVAR( Int, sv_showcommands, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY )
 CVAR( Int, sv_smoothplayers_debuginfo, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY ) // [AK]
 CVAR( Bool, sv_noplayertimeout, false, CVAR_NOSETBYACS|CVAR_DEBUGONLY ) // [SB]
 CVAR( Bool, sv_printconnectionmessages, true, CVAR_ARCHIVE|CVAR_NOSETBYACS ) // [SB]
+
+// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b with zandronum@c904783b837b912dfd2659ec3f4b9b3a0c85223f: capture of packet payloads for training zstd dictionaries, sampled at sv_dumppackets_chance.
+CVAR( Bool, sv_dumppackets, false, CVAR_NOSETBYACS );
+CVAR( String, sv_dumppackets_dir, "", CVAR_NOSETBYACS );
+CVAR( Float, sv_dumppackets_chance, 1.0, CVAR_NOSETBYACS );
 
 //*****************************************************************************
 // [AK] Smooths the movement of lagging players using extrapolation and correction.
@@ -4882,8 +4888,10 @@ void SERVER_ParsePacket( BYTESTREAM_s *pByteStream )
 	bool	bPlayerKicked;
 	LONG	lCommand;
 
-	while ( 1 )	 
-	{  
+	while ( 1 )
+	{
+		// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b: where this command's bytes begin, so the dump writes exactly one command's payload.
+		const BYTE *commandStart = pByteStream->pbStream;
 		lCommand = pByteStream->ReadByte();
 
 		// End of message.
@@ -4945,6 +4953,12 @@ void SERVER_ParsePacket( BYTESTREAM_s *pByteStream )
 			// This returns true if the player was kicked as a result.
 			if ( SERVER_ProcessCommand( lCommand, pByteStream ))
 				return;
+
+			// [SB] Possibly dump the packet for collecting Zstandard dictionary data.
+			if ( SERVER_ShouldDumpClientCommand( static_cast<CLC>( lCommand ) ) )
+			{
+				SERVER_DumpPacket( commandStart, pByteStream->pbStream - commandStart, true );
+			}
 
 			break;
 		}
@@ -8060,6 +8074,71 @@ static void server_ForceRenamePlayer( ULONG playerIndex )
 
 	// Update clients using the RCON utility.
 	SERVER_RCON_UpdateInfo( SVRCU_PLAYERDATA );
+}
+
+//*****************************************************************************
+// [SB]
+// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b with zandronum@c904783b837b912dfd2659ec3f4b9b3a0c85223f: one command's payload into a file for dictionary training, sampled, with the naming and counter decisions in dumpfilter_compute.
+void SERVER_DumpPacket( const BYTE *buffer, const size_t length, const bool fromClient )
+{
+	static FRandom pr_dumppackets( "DumpPackets" );
+
+	if ( !sv_dumppackets || buffer == nullptr || length == 0 )
+	{
+		return;
+	}
+
+	if ( SERVER_CalcNumConnectedClients() == 0 )
+	{
+		return;
+	}
+
+	if ( pr_dumppackets.GenRand_Real1() > sv_dumppackets_chance )
+	{
+		return;
+	}
+
+	static FString lastTimestamp = "";
+	static unsigned int counter = 0U;
+
+	const time_t now = time( nullptr );
+	const tm *t = localtime( &now );
+
+	char timebuf[128];
+	strftime( timebuf, countof(timebuf), "%Y-%m-%d_%H-%M-%S", t );
+
+	counter = zx::netsession::ComputeDumpCounter( lastTimestamp.Compare( timebuf ) == 0, counter );
+	lastTimestamp = timebuf;
+
+	const std::string path = zx::netsession::ComputeDumpFileName(
+		sv_dumppackets_dir.GetGenericRep( CVAR_String ).String, fromClient, timebuf, counter );
+	FILE *f = fopen( path.c_str(), "wb" );
+	if ( f != nullptr )
+	{
+		fwrite( buffer, 1, length, f );
+		fclose( f );
+	}
+}
+
+//*****************************************************************************
+// [SB]
+bool SERVER_ShouldDumpServerCommand( const SVC command, const SVC2 extcommand )
+{
+	// [KI] The cvar is glue; the command filter itself is the tested computation.
+	if ( !sv_dumppackets )
+		return false;
+
+	return zx::netsession::ComputeShouldDumpServerCommand( command, extcommand );
+}
+
+//*****************************************************************************
+// [SB]
+bool SERVER_ShouldDumpClientCommand( const CLC command )
+{
+	if ( !sv_dumppackets )
+		return false;
+
+	return zx::netsession::ComputeShouldDumpClientCommand( command );
 }
 
 //*****************************************************************************
