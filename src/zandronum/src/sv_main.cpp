@@ -643,7 +643,8 @@ void SERVER_Destruct( void )
 		if ( SERVER_IsValidClient( ulIdx ))
 		{
 			SERVER_KickPlayer( ulIdx, "Server is shutting down" );
-			NETWORK_LaunchPacket( &SERVER_GetClient( ulIdx )->PacketBuffer, SERVER_GetClient( ulIdx )->Address );
+			// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the shutdown kick goes to connected clients, as zstd.
+			NETWORK_LaunchPacket( &SERVER_GetClient( ulIdx )->PacketBuffer, SERVER_GetClient( ulIdx )->Address, true );
 		}
 
 		g_aClients[ulIdx].PacketBuffer.Free();
@@ -1010,7 +1011,11 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 	pClient->UnreliablePacketBuffer.WriteTo ( TempBuffer.ByteStream );
 
 	// Finally, send the packet, and clear the buffer.
-	NETWORK_LaunchPacket( &TempBuffer, pClient->Address );
+	// [AK] For the sake of reverse-compatibility with clients running older
+	// versions that don't support ZStd compression, always use Huffman encoding
+	// when sending out packets to clients who aren't connected.
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the per-client send, zstd once the client is connected.
+	NETWORK_LaunchPacket( &TempBuffer, pClient->Address, pClient->State >= CLS_CONNECTED );
 	pClient->UnreliablePacketBuffer.Clear();
 }
 
@@ -2172,6 +2177,16 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 		return;
 	}
 
+	// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7 with zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841: both ends must compress against the same zstddict, so a mismatch is refused before the client counts as connected.
+	const auto zstdDictId = static_cast<unsigned>( pByteStream->ReadLong() );
+
+	// [SB] A matching Zstandard dictionary is required.
+	if ( zstdDictId != NETWORK_GetZstdDictId() )
+	{
+		SERVER_ClientError( lClient, NETWORK_ERRORCODE_WRONGZSTDDICTIONARY );
+		return;
+	}
+
 	// [rc4l] Anonymous accounts: mint this slot's challenge, or replay the one it already has.
 	if ( SERVER_FuaAuthReadHello( lClient, pByteStream ) == false )
 	{
@@ -2519,8 +2534,11 @@ void SERVER_ConnectionError( NETADDRESS_s Address, const char *pszMessage, ULONG
 	TempBuffer.ByteStream.WriteByte( SVCC_ERROR );
 	TempBuffer.ByteStream.WriteByte( ulErrorCode );
 
-//	NETWORK_LaunchPacket( TempBuffer, Address, true );
-	NETWORK_LaunchPacket( &TempBuffer, Address );
+	// [AK] For the sake of reverse-compatibility with clients running older
+	// versions that don't support ZStd compression, always use Huffman encoding
+	// when sending out this packet.
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: a refusal must be readable by any peer, so it is explicit here even though false is the default.
+	NETWORK_LaunchPacket( &TempBuffer, Address, false );
 	TempBuffer.Free();
 }
 
@@ -2593,6 +2611,11 @@ void SERVER_ClientError( ULONG ulClient, ULONG ulErrorCode )
 	case NETWORK_ERRORCODE_USERINFOREJECTED:
 
 		printMessage.Format( "Userinfo rejected.\n" );
+		break;
+	// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841: the server's console names the refusal too.
+	case NETWORK_ERRORCODE_WRONGZSTDDICTIONARY:
+
+		printMessage.Format( "Mismatched Zstandard dictionary.\n" );
 		break;
 	}
 

@@ -54,6 +54,7 @@
 #include "stats.h"
 #include "doomdef.h"
 #include "doomstat.h"
+#include "features/net-client/computation/netstats_compute.h"   // [KI] the nettraffic percentage
 
 //*****************************************************************************
 //	CLASSES
@@ -66,6 +67,21 @@ class StatTracker
 	unsigned int _valueThisSecond;
 	unsigned int _valueLastSecond;
 	unsigned int _maxValuePerSecond;
+
+	// [AK] Values for compressed stats.
+	// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e and zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e: the wire-size and zstd-count lanes beside each byte count.
+	unsigned int _compressedValueThisTick;
+	unsigned int _compressedValueThisSecond;
+	unsigned int _compressedValueLastSecond;
+
+	unsigned int _packetsThisTick;
+	unsigned int _packetsThisSecond;
+	unsigned int _packetsLastSecond;
+
+	unsigned int _numZstdThisTick;
+	unsigned int _numZstdThisSecond;
+	unsigned int _numZstdLastSecond;
+
 public:
 	StatTracker ( )
 	{
@@ -79,11 +95,27 @@ public:
 		_valueThisSecond = 0;
 		_valueLastSecond = 0;
 		_maxValuePerSecond = 0;
+		_compressedValueThisTick = 0;
+		_compressedValueThisSecond = 0;
+		_compressedValueLastSecond = 0;
+		_packetsThisTick = 0;
+		_packetsThisSecond = 0;
+		_packetsLastSecond = 0;
+		_numZstdThisTick = 0;
+		_numZstdThisSecond = 0;
+		_numZstdLastSecond = 0;
 	}
 
-	void AddToTic ( const int Value )
+	void AddToTic ( const int Value, const int CompressedValue = 0, const bool WasZstd = false )
 	{
 		_valueThisTick += Value;
+
+		// [AK] Add to the compressed value for this tick.
+		_compressedValueThisTick += CompressedValue;
+
+		_packetsThisTick++;
+		if (WasZstd)
+			_numZstdThisTick++;
 	}
 
 	void TicPassed ( )
@@ -91,6 +123,16 @@ public:
 		_value += _valueThisTick;
 		_valueThisSecond += _valueThisTick;
 		_valueThisTick = 0;
+
+		// [AK] Add the compressed value from this tick to this second too.
+		_compressedValueThisSecond += _compressedValueThisTick;
+		_compressedValueThisTick = 0;
+
+		_packetsThisSecond += _packetsThisTick;
+		_packetsThisTick = 0;
+
+		_numZstdThisSecond += _numZstdThisTick;
+		_numZstdThisTick = 0;
 	}
 
 	void SecondPassed ( )
@@ -99,6 +141,16 @@ public:
 		_valueThisSecond = 0;
 		if ( _maxValuePerSecond < _valueLastSecond )
 			_maxValuePerSecond = _valueLastSecond;
+
+		// [AK] Save the compressed value from this second too.
+		_compressedValueLastSecond = _compressedValueThisSecond;
+		_compressedValueThisSecond = 0;
+
+		_packetsLastSecond = _packetsThisSecond;
+		_packetsThisSecond = 0;
+
+		_numZstdLastSecond = _numZstdThisSecond;
+		_numZstdThisSecond = 0;
 	}
 
 	unsigned int getTotalValue ( ) const
@@ -119,6 +171,17 @@ public:
 	unsigned int getMaxValuePerSecond ( ) const
 	{
 		return _maxValuePerSecond;
+	}
+
+	// [AK] Returns a percentage of compressed to uncompressed stats.
+	float getCompressionFactorLastSecond ( ) const
+	{
+		return zx::netclient::ComputeSharePercent( _compressedValueLastSecond, _valueLastSecond );
+	}
+
+	float getZstdPercentageLastSecond ( ) const
+	{
+		return zx::netclient::ComputeSharePercent( _numZstdLastSecond, _packetsLastSecond );
 	}
 };
 
@@ -160,16 +223,16 @@ void CLIENTSTATISTICS_Tick( void )
 
 //*****************************************************************************
 //
-void CLIENTSTATISTICS_AddToBytesSent( ULONG ulBytes )
+void CLIENTSTATISTICS_AddToBytesSent( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket )
 {
-	g_bytesSentStatTracker.AddToTic ( ulBytes );
+	g_bytesSentStatTracker.AddToTic ( uncompressedBytes, compressedBytes, wasZstdPacket );
 }
 
 //*****************************************************************************
 //
-void CLIENTSTATISTICS_AddToBytesReceived( ULONG ulBytes )
+void CLIENTSTATISTICS_AddToBytesReceived( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket )
 {
-	g_bytesReceivedStatTracker.AddToTic ( ulBytes );
+	g_bytesReceivedStatTracker.AddToTic ( uncompressedBytes, compressedBytes, wasZstdPacket );
 }
 
 //*****************************************************************************
@@ -186,15 +249,20 @@ ADD_STAT( nettraffic )
 {
 	FString	Out;
 
-	Out.Format( "In: %5d/%5d/%5d        Out: %5d/%5d/%5d        Loss: %5d/%5d", 
-		static_cast<int> (g_bytesReceivedStatTracker.getValueThisTick()),
-		static_cast<int> (g_bytesReceivedStatTracker.getValueLastSecond()),
-		static_cast<int> (g_bytesReceivedStatTracker.getMaxValuePerSecond()),
-		static_cast<int> (g_bytesSentStatTracker.getValueThisTick()),
-		static_cast<int> (g_bytesSentStatTracker.getValueLastSecond()),
-		static_cast<int> (g_bytesSentStatTracker.getMaxValuePerSecond()),
-		static_cast<int> (g_missingPacketsRequestedStatTracker.getValueLastSecond()),
-		static_cast<int> (g_missingPacketsRequestedStatTracker.getMaxValuePerSecond()) );
+	// [KI] Ported from zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e at zandronum@133666f6ef9b9468cefd86ac004124ca4d5e6dc5's one-line-per-statistic layout.
+	Out.Format( "In:   %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nOut:  %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nLoss: %5u/%5u",
+		g_bytesReceivedStatTracker.getValueThisTick( ),
+		g_bytesReceivedStatTracker.getValueLastSecond( ),
+		g_bytesReceivedStatTracker.getMaxValuePerSecond( ),
+		g_bytesReceivedStatTracker.getCompressionFactorLastSecond( ),
+		g_bytesReceivedStatTracker.getZstdPercentageLastSecond(),
+		g_bytesSentStatTracker.getValueThisTick( ),
+		g_bytesSentStatTracker.getValueLastSecond( ),
+		g_bytesSentStatTracker.getMaxValuePerSecond( ),
+		g_bytesSentStatTracker.getCompressionFactorLastSecond( ),
+		g_bytesSentStatTracker.getZstdPercentageLastSecond(),
+		g_missingPacketsRequestedStatTracker.getValueLastSecond( ),
+		g_missingPacketsRequestedStatTracker.getMaxValuePerSecond( ));
 
 	return ( Out );
 }

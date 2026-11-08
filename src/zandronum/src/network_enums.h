@@ -515,6 +515,10 @@ BEGIN_ENUM ( NetworkErrorCode )
 	// [rc4l] Somebody holding the same key is already playing here.
 	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYINUSE ),
 
+	// [SB] The client is using a different Zstandard dictionary than the server.
+	// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841, appended after our own codes rather than at 3.3's position so none of ours renumber.
+	ENUM_ELEMENT( NETWORK_ERRORCODE_WRONGZSTDDICTIONARY ),
+
 	ENUM_ELEMENT( NUM_NETWORK_ERRORCODES )
 }
 END_ENUM ( NetworkErrorCode )
