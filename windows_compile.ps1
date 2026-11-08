@@ -116,7 +116,8 @@ function Resolve-Vcpkg {
             & git clone --depth 1 https://github.com/microsoft/vcpkg.git $local
             if ($LASTEXITCODE -ne 0) { throw "git clone of vcpkg failed" }
         }
-        & (Join-Path $local "bootstrap-vcpkg.bat") -disableMetrics
+        # [KI] Out-Host, or the bat's stdout joins this function's return value and the caller binds Join-Path to an empty first element.
+        & (Join-Path $local "bootstrap-vcpkg.bat") -disableMetrics | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "bootstrap-vcpkg.bat failed" }
     }
     return $local

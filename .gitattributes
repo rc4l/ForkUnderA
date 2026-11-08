@@ -14,3 +14,6 @@ src/zandronum/wadsrc_bm/**  -text
 
 # [Doruk-Aksoy] A fixture demo is a person's recorded game, kept byte for byte.
 tools/fuactl/fixtures/**    binary
+
+# [KI] The vendored zstd amalgamation is kept byte for byte as its upstream release, so its checksum in deps/zstd/README.md stays verifiable on every platform.
+deps/zstd/**                -text

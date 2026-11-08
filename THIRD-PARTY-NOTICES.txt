@@ -106,8 +106,13 @@ Statically linked into the client, as the Vulkan render backend:
   Abseil          Apache-2.0          https://github.com/abseil/abseil-cpp
   xxHash          BSD-2-clause        https://github.com/Cyan4973/xxHash
 
-Their licence texts are in deps/DiligentCore and its ThirdParty directory in the
-source published under SOURCE CODE above. Apache-2.0 is compatible with this
+Statically linked into the client and server, as the network packet codec:
+
+  zstd            BSD-3-clause        https://github.com/facebook/zstd
+                  (v1.5.7, vendored as its official single-file library in deps/zstd)
+
+Their licence texts are in deps/DiligentCore and its ThirdParty directory, and
+zstd's in deps/zstd/LICENSE, in the source published under SOURCE CODE above. Apache-2.0 is compatible with this
 project's GPL-3.0-or-later.
 
 The LGPL components are dynamically linked and shipped unmodified, so they may
