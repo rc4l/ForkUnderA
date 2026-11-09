@@ -21,11 +21,12 @@ TEST(DownloadBar, AnUnknownSizeHasNoFraction)
 	EXPECT_FLOAT_EQ(-1.f, ComputeDownloadFraction(10, 0));
 }
 
-TEST(DownloadBar, StripCoversTheHeaderWhenOneShows)
+TEST(DownloadBar, StripSitsUnderTheHeaderWhenOneShows)
 {
+	// [Doruk-Aksoy] Under the bar rather than over it, so the tabs a click still reaches are never hidden.
 	const NoticeStrip s = ComputeNoticeStrip(48, 10, 20);
-	EXPECT_EQ(0, s.top);
-	EXPECT_EQ(48, s.height);
+	EXPECT_EQ(48, s.top);
+	EXPECT_EQ(20, s.height);
 }
 
 TEST(DownloadBar, StripIsThePlainBandWithoutAHeader)
