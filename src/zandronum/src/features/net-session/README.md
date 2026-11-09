@@ -28,6 +28,10 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
 
 - `computation/unlaggedreport_compute.{h,cpp}` (the shot log and its JSON) with its `_test.cpp`.
 - `computation/joinupdate_compute.{h,cpp}` (`ComputeSpawnRoundsPosition`) with its `_test.cpp`.
+- `computation/dumpfilter_compute.{h,cpp}` (the `sv_dumppackets` command filters, counter and file name,
+  ported from Zandronum 3.3's zstd dictionary-training capture; the cvar reads stay in `sv_main.cpp`'s
+  `SERVER_DumpPacket` and `SERVER_ShouldDump*Command` glue, hooked from `SERVER_ParsePacket` and
+  `network/netcommand.cpp`'s `sendCommandToClients`) with its `_test.cpp`.
 - `unlaggedreport.{h,cpp}` (`NoteServerShot`, `NoteClientShot`, the command).
 - `netrole.h` (the role queries, inline).
 

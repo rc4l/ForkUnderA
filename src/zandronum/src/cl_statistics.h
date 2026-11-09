@@ -59,8 +59,9 @@
 void	CLIENTSTATISTICS_Construct( void );
 void	CLIENTSTATISTICS_Tick( void );
 
-void	CLIENTSTATISTICS_AddToBytesSent( ULONG ulBytes );
-void	CLIENTSTATISTICS_AddToBytesReceived( ULONG ulBytes );
+// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e with zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e: each packet reports its payload size, its wire size and whether it travelled as zstd, from the transport that knows all three.
+void	CLIENTSTATISTICS_AddToBytesSent( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket );
+void	CLIENTSTATISTICS_AddToBytesReceived( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket );
 void	CLIENTSTATISTICS_AddToMissingPacketsRequested( unsigned int Num );
 
 #endif // __CL_STATISTICS_H__
