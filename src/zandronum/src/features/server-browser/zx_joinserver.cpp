@@ -41,6 +41,9 @@
 #include "features/server-browser/computation/joinplan_compute.h"
 #include "features/server-browser/computation/joinresume_compute.h"
 #include "features/server-browser/computation/stableline_compute.h"
+#include "features/server-browser/computation/downloadbar_compute.h"
+#include "features/updater/computation/promptpanel_compute.h"
+#include "i_system.h"
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
 #include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_wadsearch.h"
@@ -595,6 +598,17 @@ bool JoinSelectedServer()
 // the only way to know, after the restart, that the connect being attempted is one we started rather
 // than something the player typed.
 bool g_joinInFlight = false;
+
+// [Doruk-Aksoy] How far down the download bar should cover, installed by the header so this feature never includes it.
+int ( *g_NoticeCover )( void ) = NULL;
+
+// [Doruk-Aksoy] The bar's colours: the header's dark strip, a green fill while downloading, gold once ready.
+const PanelColor kStripTop = { 26, 27, 38, 255 };
+const PanelColor kStripBottom = { 12, 12, 19, 255 };
+const PanelColor kFillTop = { 70, 200, 120, 255 };
+const PanelColor kFillBottom = { 25, 105, 65, 255 };
+const PanelColor kReadyTop = { 230, 180, 60, 255 };
+const PanelColor kReadyBottom = { 140, 95, 20, 255 };
 FString g_joiningName;
 bool g_joinFailed = false;
 FString g_joinFailReason;
@@ -735,6 +749,11 @@ bool IsJoinInFlight()
 	return g_joinInFlight;
 }
 
+void SetNoticeCover( int ( *cover )( void ) )
+{
+	g_NoticeCover = cover;
+}
+
 const char *JoiningServerName()
 {
 	return g_joinInFlight ? g_joiningName.GetChars( ) : "";
@@ -814,69 +833,65 @@ void DrawJoinReadyNotice( bool afterMenus )
 		text = progress;
 	}
 
-	// Ready pulses hard, because it wants to be noticed and then acted on. Progress barely moves --
-	// it is there to be glanced at, not to compete with the game for attention.
+	// Ready pulses hard, because it wants to be noticed and then acted on; progress holds steady.
 	float alpha = 1.0f;
 	if ( bReady )
 	{
 		const double phase = ( gametic % 46 ) / 46.0;
 		alpha = 0.35f + 0.65f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
 	}
-	else
-	{
-		alpha = 0.72f;
-	}
 
+	// [Doruk-Aksoy] An opaque strip, over the whole header bar when one is up, so its tabs can no longer show through the text.
 	const int virtW = 640;
 	const int virtH = 400;
-	const int y = 12;
-
-	// Centred on its own width. The band no longer has one, so there is no second axis to agree with.
-	const int x = ( virtW / 2 ) - ( SmallFont->StringWidth( text ) / 2 );
-
-	// A backing band, so the line stays readable over a bright wall or a lit sky.
-	//
-	// Placed through VirtualToRealCoordsInt, the SAME conversion DTA_VirtualWidth puts the text
-	// through -- NOT Scale(), which is a plain stretch. DTA_Virtual* corrects for aspect ratio,
-	// letterboxing the virtual space inside the window, so scaling by SCREENWIDTH/virtW agreed with
-	// the text only on a display that happened to be 16:10 and put the band visibly off-centre under
-	// it everywhere else. Same mistake, same fix, as the browser's own panel edges.
-	// [rc4l] EDGE TO EDGE, so the band stops depending on the string at all.
-	//
-	// Only the vertical extent is converted from virtual space. The horizontal is the real surface,
-	// 0 to SCREENWIDTH, which is the one measurement that cannot be pulled off-centre by the aspect
-	// correction DTA_Virtual* applies -- and the measurement that is right at every resolution
-	// without anybody working it out.
-	//
-	// This is what retires the masked-string machinery above. Sizing a box to text meant fighting
-	// the font: '1' is narrower than '0', so the panel shuffled as the percentage ticked, and the
-	// fix was to measure a copy of the line with every digit replaced by the widest one. A band that
-	// spans the screen has no width to get wrong, so the whole class of problem goes away rather
-	// than being compensated for.
-	int bandY = y - 3;
+	int bandY = 9;
 	int bandH = SmallFont->GetHeight( ) + 6;
-
 	int ignoreX = 0;
 	int ignoreW = virtW;
 	screen->VirtualToRealCoordsInt( ignoreX, bandY, ignoreW, bandH, virtW, virtH, false, true );
 
-	screen->Dim( PalEntry( 0, 0, 0 ), 0.45f * alpha, 0, bandY, SCREENWIDTH, bandH );
+	const NoticeStrip strip = ComputeNoticeStrip(( g_NoticeCover != NULL ) ? g_NoticeCover( ) : 0, bandY, bandH );
+	if ( strip.height <= 0 )
+		return;
+
+	const int w = SCREENWIDTH;
+	for ( int row = 0; row < strip.height; ++row )
+	{
+		const PanelColor c = ComputePanelGradient( row, strip.height, kStripTop, kStripBottom );
+		screen->Dim( PalEntry( c.r, c.g, c.b ), 1.f, 0, strip.top + row, w, 1 );
+	}
+
+	// [Doruk-Aksoy] Progress fills green from the left with a sweeping sheen; ready fills the strip and pulses gold.
+	std::string file;
+	long long received = 0, total = -1;
+	const float fraction = bReady ? 1.f
+		: ( waddownload::Progress( file, received, total ) ? ComputeDownloadFraction( received, total ) : 0.f );
+	const DownloadBarFill fill = ComputeDownloadBarFill( w, fraction, I_MSTime( ));
+	const PanelColor fillTop = bReady ? kReadyTop : kFillTop;
+	const PanelColor fillBottom = bReady ? kReadyBottom : kFillBottom;
+
+	for ( int row = 0; ( row < strip.height ) && ( fill.fillW > 0 ); ++row )
+	{
+		const PanelColor c = ComputePanelGradient( row, strip.height, fillTop, fillBottom );
+		screen->Dim( PalEntry( c.r, c.g, c.b ), ( c.a / 255.f ) * alpha, fill.fillX, strip.top + row, fill.fillW, 1 );
+	}
+	if ( fill.sheenW > 0 )
+		screen->Dim( PalEntry( 255, 255, 255 ), 0.16f, fill.sheenX, strip.top, fill.sheenW, strip.height );
+	if (( fill.fillW > 0 ) && ( fill.fillX + fill.fillW < w ))
+		screen->Dim( PalEntry( 190, 255, 215 ), 0.9f, fill.fillX + fill.fillW - 2, strip.top, 2, strip.height );
+
+	// A bright hairline along the bottom edge, as the header bar has.
+	screen->Dim( PalEntry( 120, 140, 200 ), 0.75f, 0, strip.top + strip.height - 1, w, 1 );
 
 	// [rc4l] The text is drawn OPAQUE, and the pulse lives in the band behind it and in the colour.
-	//
-	// It used to carry DTA_Alpha, and the result was a line whose brightness depended on what had been
-	// drawn just before it: full strength while the pointer was over a main-menu item, dimmer when it
-	// was not. Translucent text picks up state the menu leaves behind, and this band is drawn after
-	// everything precisely so it is not part of anyone else's pass.
-	//
-	// Nothing is lost. The backing band still fades with the pulse, and the ready state alternates
-	// between gold and white, which reads harder across a room than an alpha wobble ever did.
-	EColorRange colour = CR_GRAY;
+	EColorRange colour = CR_WHITE;
 	if ( bReady )
 		colour = (( gametic % 46 ) < 23 ) ? CR_GOLD : CR_WHITE;
 
-	screen->DrawText( SmallFont, colour, x, y, text,
-		DTA_VirtualWidth, virtW, DTA_VirtualHeight, virtH, TAG_DONE );
+	const int textW = SmallFont->StringWidth( text ) * CleanXfac_1;
+	const int textH = SmallFont->GetHeight( ) * CleanYfac_1;
+	screen->DrawText( SmallFont, colour, ( w - textW ) / 2, strip.top + ( strip.height - textH ) / 2, text,
+		DTA_CleanNoMove_1, true, TAG_DONE );
 }
 
 } // namespace zx
