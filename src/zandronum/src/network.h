@@ -384,7 +384,9 @@ void			NETWORK_Destruct( void );
 int				NETWORK_GetPackets( void );
 int				NETWORK_GetLANPackets( void );
 NETADDRESS_s	NETWORK_GetFromAddress( void );
-void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: bUseZStd picks zstd for the game paths that pass true.
+// [KI] bUseZStd defaults to false, which 3.3 has no default for, so a caller that omits it gets the always-readable encoding and stays right whatever that encoding becomes.
+void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUseZStd = false );
 
 // [rc4l] Broadcast onto the LAN via the dedicated send-only v4 socket (see network.cpp).
 void			NETWORK_LaunchBroadcast( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
@@ -399,6 +401,8 @@ void			NETWORK_OverrideFromAddressPort( USHORT usPort );
 NETADDRESS_s	NETWORK_GetLocalAddress( void );
 NETADDRESS_s	NETWORK_GetCachedLocalAddress( void );
 NETBUFFER_s		*NETWORK_GetNetworkMessageBuffer( void );
+// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the loaded zstddict's dictionary id, 0 with none, which the connect handshake carries.
+unsigned		NETWORK_GetZstdDictId( void );
 USHORT			NETWORK_ntohs( ULONG ul );
 bool			NETWORK_IsGeoIPAvailable( void );
 ULONG			NETWORK_GetCountryIndexFromAddress( NETADDRESS_s Address );

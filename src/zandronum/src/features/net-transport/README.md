@@ -32,6 +32,9 @@ the netcode are counted by `net-sockets-through-transport` (`tools/boundary-rule
 
 - `computation/netconditions_compute.{h,cpp}`: the delay, the drop and the held-packet queue, tested in
   `computation/netconditions_compute_test.cpp`.
+- `computation/zstdwire_compute.{h,cpp}`: Zandronum 3.3's zstd wire decisions — the level clamp, the try-zstd
+  gate, the smart Huffman fallback and the frame check with its one-in-2^32 misread — tested in
+  `computation/zstdwire_compute_test.cpp`.
 - `netconditions.{h,cpp}`: the cvars, the two queues and `fua_net_conditions`.
 - `recvthread.{h,cpp}`: a server's receive thread and its queue.
 
@@ -47,6 +50,35 @@ the netcode are counted by `net-sockets-through-transport` (`tools/boundary-rule
   `network_SendHeldPackets` sends those due.
 - `network.cpp` `NETWORK_GetPackets`: under conditions, `network_TakeHeldInbound` holds every waiting datagram
   and returns the oldest due one through the ordinary decode.
-- `network.cpp` decodes every datagram through `NETWORK_DecodeIntoMessage` (`networkshared.cpp`), which
-  never writes past the message: the raw buffer's size as the limit let a crafted datagram decode to 58 KB
-  in a 21 KB buffer (`networkshared_decode_nettest.cpp`).
+- `network.cpp` decodes every datagram through `network_DecodeDatagram`: a zstd frame (by its first four
+  bytes) is decompressed with `g_NetworkMessage.ulMaxSize` as the hard limit, anything else goes through
+  `NETWORK_DecodeIntoMessage` (`networkshared.cpp`), which never writes past the message: the raw buffer's
+  size as the limit let a crafted datagram decode to 58 KB in a 21 KB buffer
+  (`networkshared_decode_nettest.cpp`).
+
+## zstd packet compression (Zandronum 3.3)
+
+Ported from upstream `7279c8b..bdd0f7b` (the 15-commit set in the zstd plan). The mechanism as 3.3 wrote
+it: a caller that passes `bUseZStd` and a packet of at least `net_zstd_threshold` bytes goes as zstd,
+compressed with the `zstddict` lump's dictionary when one loaded (the connect handshake refuses a
+mismatched dictionary id with `NETWORK_ERRORCODE_WRONGZSTDDICTIONARY`); everything else, everything before
+connection, and every launcher reply stays Huffman, so Doomseeker keeps querying servers. Receive detects
+zstd by the frame's first four bytes.
+
+Deviations from 3.3, each marked at its line:
+
+- No auth-server branch anywhere: ForkUnderA removed the auth server, so no raw-bytes path exists.
+- `bUseZStd` defaults to `false` in `network.h`, so the launcher and infrastructure callers needed no edit
+  and an unaware caller gets the always-readable encoding.
+- `NETWORK_ERRORCODE_WRONGZSTDDICTIONARY` is appended after our own error codes, not at 3.3's position, so
+  none of ours renumber; a foreign peer reading the new code sees "Unknown error code", which 3.3 accepts.
+- Version identity needs no change: `GAMEVER_STRING` is already the fork's own release tag and the server
+  compares the full revision, so stock 3.2.1 and 3.3 peers are refused at connect, before the dictionary id
+  is read, with a Huffman-readable message.
+- The library is the vendored single-file zstd in `deps/zstd` (`fua_zstd`), not 3.3's `find_package`,
+  so the Emscripten build compiles the same code with no `#ifdef`s.
+- Upstream's `docs/zandronum-history.txt` lines are not carried: the fork does not maintain that doc past
+  3.2.1.
+- A packet held by `fua_net_fakeping`/`fua_net_fakeloss` is compressed before it is held, so the queues
+  hold wire bytes; a server's receive thread queues raw datagrams and decompression stays on the main
+  thread, so 3.3's single contexts need no lock.

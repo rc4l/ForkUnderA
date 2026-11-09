@@ -1658,7 +1658,8 @@ CCMD( callvote )
 	if ( g_lBytesSent > g_lMaxBytesSent )
 		g_lMaxBytesSent = g_lBytesSent;
 */
-	NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ));
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: vote traffic flows on an established connection, as zstd.
+	NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ), true );
 	CLIENT_GetLocalBuffer( )->Clear();
 }
 
@@ -1681,7 +1682,8 @@ CCMD( vote_yes )
 	if ( g_lBytesSent > g_lMaxBytesSent )
 		g_lMaxBytesSent = g_lBytesSent;
 */
-	NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ));
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: vote traffic flows on an established connection, as zstd.
+	NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ), true );
 	CLIENT_GetLocalBuffer( )->Clear();
 }
 
@@ -1704,7 +1706,8 @@ CCMD( vote_no )
 	if ( g_lBytesSent > g_lMaxBytesSent )
 		g_lMaxBytesSent = g_lBytesSent;
 */
-	NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ));
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: vote traffic flows on an established connection, as zstd.
+	NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ), true );
 	CLIENT_GetLocalBuffer( )->Clear();
 }
 
@@ -1728,7 +1731,8 @@ CCMD ( cancelvote )
 		if ( CLIENT_GetConnectionState( ) == CTS_ACTIVE )
 		{
 			CLIENTCOMMANDS_Vote( false );
-			NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ));
+			// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: vote traffic flows on an established connection, as zstd.
+			NETWORK_LaunchPacket( CLIENT_GetLocalBuffer( ), CLIENT_GetServerAddress( ), true );
 			CLIENT_GetLocalBuffer( )->Clear();
 		}
 	}
