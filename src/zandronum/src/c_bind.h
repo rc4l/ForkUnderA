@@ -36,6 +36,7 @@
 
 #include "doomdef.h"
 #include <bitset>
+#include <cstddef>
 
 struct event_t;
 class FConfigFile;

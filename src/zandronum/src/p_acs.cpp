@@ -88,6 +88,7 @@
 #include "invasion.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
+#include "features/net-replication/playerstate.h"   // [MobiusU9B] SendUserCVar
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include "network/nettraffic.h"
 #include "za_database.h"
@@ -6014,9 +6015,7 @@ static int SetUserCVar(int playernum, const char *cvarname, int value, bool is_s
 	// [MobiusU9B] A server tells every client of a real change, the player's own client included, whose own cvar and ini only learn it this way.
 	if (zx::ComputeSendsUserCVarChange(zx::net::IsServer(), before.GetChars(), cvar->GetGenericRep(CVAR_String).String))
 	{
-		std::set<FName> names;
-		names.insert(key);
-		SERVERCOMMANDS_SetPlayerUserInfo(playernum, names);
+		zx::netreplication::SendUserCVar(playernum, key);
 	}
 
 	// If we are this player, then also reflect this change in the local version of this cvar.

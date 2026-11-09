@@ -32,13 +32,18 @@ however many hits it took (`NoteDamaged`, `SendWoundedHealth` from `SendChanges`
 `ComputeAddPendingHealth`). Stock Zandronum sends only the death, to save the bytes, so anything a client reads of a
 wounded monster's health (a health bar, a client script, `netdiff`) read its spawn health (`farhitscan`).
 
+## Players
+
+A server script's `SetUserCVar` that changes a player's mod user cvar sends it to every client at once
+(`SendUserCVar`), not at the tic's end, so a client script the server starts later in the tic reads the new value.
+
 ## Owns
 
 `sv_commands.cpp`, `sv_commands.h`, `network/packetarchive.cpp` and `network/packetarchive.h`.
 
 ## Public header
 
-`mapstate.h` for the map state above, and `sv_commands.h` for the rest. Calls to `sv_commands.h` from game
+`mapstate.h` for the map state above, `actorstate.h` and `playerstate.h` for actors and players, and `sv_commands.h` for the rest. Calls to `sv_commands.h` from game
 code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`), which may only shrink.
 
 ## Files
@@ -47,11 +52,13 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
   `_test.cpp`.
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
 - `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`).
+- `playerstate.{h,cpp}` (`SendUserCVar`).
 
 ## In-engine hooks
 
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
 - `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
+- `p_acs.cpp` `SetUserCVar`: `SendUserCVar` when a server script changed the cvar's value.
 - `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between
   `SERVER_UpdateLines` and `SERVER_UpdateSectors`, which keep only the families not here.
 - Touches in `p_acs.cpp`, `p_ceiling.cpp`, `p_doors.cpp`, `p_floor.cpp`, `p_lnspec.cpp`, `p_plats.cpp`,
