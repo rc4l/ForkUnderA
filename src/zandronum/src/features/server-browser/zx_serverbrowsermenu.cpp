@@ -40,6 +40,7 @@
 #include "cl_main.h"		// [rc4l] cl_password, handed to the join from the password prompt
 #include "features/server-browser/computation/browserchrome_compute.h"
 #include "features/server-browser/computation/choicerow_compute.h"
+#include "features/server-browser/computation/doubleclick_compute.h"
 #include "features/server-browser/computation/scrollbar_compute.h"
 #include "features/server-browser/computation/scrollview_compute.h"
 #include "features/server-browser/computation/pointerdrag_compute.h"
@@ -2129,8 +2130,7 @@ static bool serverbrowser_DownloadRunning( void )
 // timed here. 20 tics is a little under 0.6s at 35Hz, which is forgiving without joining a server
 // because somebody clicked twice on purpose a moment apart.
 #define SB_DOUBLECLICK_TICS	20
-static	int				g_LastClickRow = -1;
-static	int				g_LastClickTime = -1000;
+static	zx::ClickClock	g_RowClicks;
 
 // [rc4l] The selected server's file set and whether we already hold each one.
 //
@@ -18194,16 +18194,11 @@ public:
 					g_RevealSelection = true;
 					SetFocus( zx::BrowserFocus::Rows );
 
-					const int now = static_cast<int>( DMenu::MenuTime );
-					const bool bDouble = ( row == g_LastClickRow ) &&
-						(( now - g_LastClickTime ) <= SB_DOUBLECLICK_TICS );
-					g_LastClickRow = row;
-					g_LastClickTime = now;
-
-					if ( bDouble )
+					// [Doruk-Aksoy] A double-click presses JOIN itself, since Enter on a row only walks focus to the button.
+					if ( zx::ComputeDoubleClick( g_RowClicks, row, static_cast<int>( DMenu::MenuTime ), SB_DOUBLECLICK_TICS ))
 					{
-						g_LastClickRow = -1;		// so a third click is not a second double
-						return MenuEvent( MKEY_Enter, false );
+						SetFocus( zx::BrowserFocus::Action );
+						PressActionButton( );
 					}
 					return true;
 				}
