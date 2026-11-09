@@ -58,6 +58,7 @@
 #include "s_sndseq.h"
 #include "r_data/sprites.h"
 #include "network/packetarchive.h"
+#include "network_enums.h"   // [KI] SVC, SVC2 and CLC in the sv_dumppackets declarations below
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] zx::ListingProof, header-pure
 #include <list>
 #include <queue>
@@ -758,6 +759,10 @@ bool		SERVER_IsBacktracingPlayer( ULONG ulClient );
 void		SERVER_ResetClientTicBuffer( ULONG ulClient );
 void		SERVER_ResetClientExtrapolation( ULONG ulClient, bool bAfterBacktrace = false );
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
+// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b: sv_dumppackets writes command payloads for zstd dictionary training.
+void		SERVER_DumpPacket( const BYTE *buffer, const size_t length, const bool fromClient );
+bool		SERVER_ShouldDumpServerCommand( const SVC command, const SVC2 extcommand );
+bool		SERVER_ShouldDumpClientCommand( const CLC command );
 
 // From sv_serverregistry.cpp
 void		SERVER_SERVERREGISTRY_Construct( void );

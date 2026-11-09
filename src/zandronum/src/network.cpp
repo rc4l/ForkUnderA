@@ -86,8 +86,10 @@
 #include "c_dispatch.h"
 #include "cl_demo.h"
 #include "cl_main.h"
+#include "cl_statistics.h"   // [KI] the client's nettraffic counters, fed from the transport since zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e
 #include "doomtype.h"
 #include "huffman.h"
+#include <zstd.h>   // [KI] deps/zstd, the vendored single-file library
 #include "i_system.h"
 #include "sv_main.h"
 #include "m_random.h"
@@ -109,6 +111,7 @@
 #include "features/net-transport/netconditions.h"   // [rc4l] fua_net_fakeping, fua_net_fakeloss
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-transport/recvthread.h"   // [rc4l] a server's receive thread
+#include "features/net-transport/computation/zstdwire_compute.h"   // [KI] the pure zstd wire decisions
 
 enum LumpAuthenticationMode {
 	LAST_LUMP,
@@ -244,6 +247,14 @@ static bool g_bSocketIsDualStack = false;
 // already be off. So we create a special index of script names here.
 static TArray<FName> g_ACSNameIndex;
 
+// [SB] Zstandard (de)compression contexts
+// [KI] Ported from zandronum@5a3f5b736dd2c07377fa0fe90859c3c81ce90c54 and zandronum@c9821884f337747e632725491f1bb82712b9eee7: the contexts and the zstddict dictionary both ends must share.
+static ZSTD_CCtx *g_zstdCctx = nullptr;
+static ZSTD_DCtx *g_zstdDctx = nullptr;
+static unsigned g_zstdDictId = 0;
+static ZSTD_CDict *g_zstdCdict = nullptr;
+static ZSTD_DDict *g_zstdDdict = nullptr;
+
 // [SB] Hashes for Freedoom lumps that must be detected for Doom network compatibility.
 static const std::vector<std::string> g_FreedoomPlayPalHashes = {
 	"2e01ae6258f2a0fdad32125537efe1af", // Freedoom PLAYPAL hash
@@ -275,6 +286,9 @@ static const std::vector<std::string> g_FreedoomDehackedHashes = {
 //*****************************************************************************
 //	PROTOTYPES
 
+static	void			network_InitZstd( void );
+static	void			network_DestructZstd( void );
+static	ULONG			network_DecodeDatagram( LONG lNumBytes );
 static	void			network_InitPWADList( void );
 static	void			network_Error( const char *pszError );
 static	SOCKET			network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack );
@@ -283,6 +297,31 @@ static	bool			network_GenerateLumpMD5HashAndWarnIfNeeded( const int LumpNum, con
 static	void			network_CheckIfDuplicateLump( const int LumpNum ); // [AK]
 static	void			network_AddSpritesToList( std::set<AUTHENTICATELUMP_s> &list, const char *name, const std::set<char> frames, const LumpAuthenticationMode mode ); // [AK]
 static	void			network_ParseLumpAuthenticationMode( FScanner &sc, LumpAuthenticationMode &mode );
+
+//*****************************************************************************
+//	CONSOLE VARIABLES
+
+// [KI] Ported from zandronum@c0269bd8dbb5b50d434bc77bbe14a6cc1b6417a6: the zstd level, threshold and smart-fallback cvars, the clamp through the tested helper.
+CUSTOM_CVAR( Int, net_zstd_level, 12, CVAR_ARCHIVE|CVAR_NOSETBYACS )
+{
+	// [SB] Clamp the value to the valid range of compression levels.
+	const int clamped = zx::nettransport::ComputeZstdLevelClamped( self, ZSTD_maxCLevel( ));
+	if ( clamped != self )
+	{
+		self = clamped;
+		return;
+	}
+
+	// [SB] The compression level is part of the CDict object, so we need to re-init Zstandard.
+	if ( gamestate != GS_STARTUP )
+	{
+		network_DestructZstd();
+		network_InitZstd();
+	}
+}
+
+CVAR( Int, net_zstd_threshold, 100, CVAR_ARCHIVE|CVAR_NOSETBYACS )
+CVAR( Bool, net_zstd_smart, false, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -424,6 +463,9 @@ void NETWORK_Construct( USHORT usPort, bool bAllocateLANSocket )
 {
 	// Initialize the Huffman buffer.
 	HUFFMAN_Construct( );
+
+	// [SB] Initialise the Zstandard contexts.
+	network_InitZstd( );
 
 	if ( !restart )
 	{
@@ -825,6 +867,54 @@ void NETWORK_Destruct( void )
 		closesocket( g_LANBroadcastSocket );
 		g_LANBroadcastSocket = INVALID_SOCKET;
 	}
+
+	// [SB] Destroy the Zstandard contexts.
+	network_DestructZstd();
+}
+
+//*****************************************************************************
+// [SB]
+// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
+static void network_InitZstd( void )
+{
+	g_zstdCctx = ZSTD_createCCtx( );
+	g_zstdDctx = ZSTD_createDCtx( );
+
+	int lumpnum = Wads.CheckNumForName( "zstddict" );
+	if ( lumpnum != -1 )
+	{
+		auto lump = Wads.ReadLump( lumpnum );
+		g_zstdDictId = ZSTD_getDictID_fromDict( lump.GetMem(), lump.GetSize() );
+		if ( g_zstdDictId == 0 )
+		{
+			Printf( TEXTCOLOR_YELLOW "The Zstandard dictionary is invalid!\n" );
+			return;
+		}
+
+		g_zstdCdict = ZSTD_createCDict( lump.GetMem(), lump.GetSize(), net_zstd_level );
+		g_zstdDdict = ZSTD_createDDict( lump.GetMem(), lump.GetSize() );
+
+		DPrintf( "Using Zstandard dictionary with ID %08x\n", g_zstdDictId );
+	}
+	else
+	{
+		Printf( TEXTCOLOR_YELLOW "No Zstandard dictionary could be loaded!\n" );
+	}
+}
+
+//*****************************************************************************
+// [SB]
+// [KI] Ported from zandronum@5a3f5b736dd2c07377fa0fe90859c3c81ce90c54: freeing in reverse of creation, each pointer nulled so a net_zstd_level change can rebuild them.
+static void network_DestructZstd( void )
+{
+	ZSTD_freeDDict( g_zstdDdict );
+	g_zstdDdict = nullptr;
+	ZSTD_freeCDict( g_zstdCdict );
+	g_zstdCdict = nullptr;
+	ZSTD_freeDCtx( g_zstdDctx );
+	g_zstdDctx = nullptr;
+	ZSTD_freeCCtx( g_zstdCctx );
+	g_zstdCctx = nullptr;
 }
 
 //*****************************************************************************
@@ -894,6 +984,47 @@ static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 	// [rc4l] A held datagram arrives when its fake delay lets it go.
 	g_ulArrivalMS = I_MSTime( );
 	return static_cast<LONG>( held.bytes.size( ));
+}
+
+//*****************************************************************************
+// [KI] Ported from zandronum@4a7242a77c625515fbf95814e5c036165fed60bc with zandronum@8f805e4e1db71ce34eda3c9975b3fad5dd8b5009: one received datagram into g_NetworkMessage, decompressed as zstd when its first four bytes say so and Huffman-decoded otherwise.
+static ULONG network_DecodeDatagram( LONG lNumBytes )
+{
+	if ( zx::nettransport::ComputeIsZstdFrame( g_ucHuffmanBuffer, lNumBytes ))
+	{
+		size_t zstdResult;
+
+		if ( g_zstdDdict != nullptr )
+			zstdResult = ZSTD_decompress_usingDDict( g_zstdDctx, g_NetworkMessage.pbData, g_NetworkMessage.ulMaxSize, g_ucHuffmanBuffer, lNumBytes, g_zstdDdict );
+		else
+			zstdResult = ZSTD_decompressDCtx( g_zstdDctx, g_NetworkMessage.pbData, g_NetworkMessage.ulMaxSize, g_ucHuffmanBuffer, lNumBytes );
+
+		if ( ZSTD_isError( zstdResult ))
+		{
+			Printf( "network_DecodeDatagram: Zstandard decompression error! '%s'\n", ZSTD_getErrorName( zstdResult ));
+			return 0;
+		}
+
+		g_NetworkMessage.ulCurrentSize = static_cast<ULONG>( zstdResult );
+		g_NetworkMessage.ByteStream.pbStream = g_NetworkMessage.pbData;
+		g_NetworkMessage.ByteStream.pbStreamEnd = g_NetworkMessage.ByteStream.pbStream + g_NetworkMessage.ulCurrentSize;
+		g_NetworkMessage.ByteStream.bitBuffer = NULL;
+		g_NetworkMessage.ByteStream.bitShift = -1;
+
+		// [AK] Clients add the size of the packet to the number of bytes received.
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( g_AddressFrom.Compare( CLIENT_GetServerAddress( ))))
+			CLIENTSTATISTICS_AddToBytesReceived( g_NetworkMessage.ulCurrentSize, lNumBytes, true );
+
+		return g_NetworkMessage.ulCurrentSize;
+	}
+
+	const ULONG ulDecoded = NETWORK_DecodeIntoMessage( g_ucHuffmanBuffer, lNumBytes, g_NetworkMessage );
+
+	// [AK] Clients add the size of the packet to the number of bytes received.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( g_AddressFrom.Compare( CLIENT_GetServerAddress( ))))
+		CLIENTSTATISTICS_AddToBytesReceived( ulDecoded, lNumBytes, false );
+
+	return ulDecoded;
 }
 
 int NETWORK_GetPackets( void )
@@ -983,7 +1114,7 @@ int NETWORK_GetPackets( void )
 	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
-	return ( NETWORK_DecodeIntoMessage( g_ucHuffmanBuffer, lNumBytes, g_NetworkMessage ));
+	return ( network_DecodeDatagram( lNumBytes ));
 }
 
 //*****************************************************************************
@@ -1056,7 +1187,7 @@ int NETWORK_GetLANPackets( void )
 	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
-	return ( NETWORK_DecodeIntoMessage( g_ucHuffmanBuffer, lNumBytes, g_NetworkMessage ));
+	return ( network_DecodeDatagram( lNumBytes ));
 }
 
 //*****************************************************************************
@@ -1068,7 +1199,7 @@ NETADDRESS_s NETWORK_GetFromAddress( void )
 
 //*****************************************************************************
 //
-void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
+void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUseZStd )
 {
 	ZX_SEAM_UNTIMED( "net/send", Main );
 	LONG				lNumBytes;
@@ -1090,20 +1221,43 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
 	struct sockaddr_storage SocketAddress;
 	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
-	// [BB] Communication with the auth server is not Huffman-encoded.
-	if ( false == false )
-		HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
-	else
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad with zandronum@4a7242a77c625515fbf95814e5c036165fed60bc and zandronum@c0269bd8dbb5b50d434bc77bbe14a6cc1b6417a6: zstd for a caller that asked and a packet at the threshold, Huffman otherwise, without 3.3's auth-server branch because ForkUnderA removed the auth server.
+	bool bUsedZstd = false; // [SB]
+
+	// [AK] Choose between compressing the packet using ZStd or Huffman.
+	if ( zx::nettransport::ComputeShouldTryZstd( bUseZStd, pBuffer->ulCurrentSize, net_zstd_threshold ))
 	{
-		// [BB] We don't need to encode, so we just copy the data.
-		// Not very efficient, but this keeps the changes at a minimum for now.
-		memcpy ( g_ucHuffmanBuffer, pBuffer->pbData, pBuffer->ulCurrentSize );
-		iNumBytesOut = pBuffer->ulCurrentSize;
+		size_t zstdResult;
+		if ( g_zstdCdict != nullptr )
+			zstdResult = ZSTD_compress_usingCDict( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), pBuffer->pbData, pBuffer->ulCurrentSize, g_zstdCdict );
+		else
+			zstdResult = ZSTD_compressCCtx( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), pBuffer->pbData, pBuffer->ulCurrentSize, net_zstd_level );
+
+		if ( ZSTD_isError( zstdResult ))
+		{
+			Printf( "NETWORK_LaunchPacket: Zstandard compression error! '%s'\n", ZSTD_getErrorName( zstdResult ) );
+			return;
+		}
+
+		iNumBytesOut = static_cast<int>( zstdResult );
+		bUsedZstd = true;
 	}
+	// [SB] net_zstd_smart will cause Huffman to be used if a packet's Zstandard-compressed size
+	// is greater than its original uncompressed size.
+	const bool bFellBackToHuffman = zx::nettransport::ComputeHuffmanFallback( bUsedZstd, net_zstd_smart, iNumBytesOut, pBuffer->ulCurrentSize );
+	if ( bFellBackToHuffman )
+	{
+		iNumBytesOut = sizeof( g_ucHuffmanBuffer );
+		HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
+	}
+	bUsedZstd = zx::nettransport::ComputeUsedZstd( bUsedZstd, bFellBackToHuffman );
 
 	// [rc4l] features/net-transport: under a fake ping or loss the packet waits its turn behind those held before it, or is dropped.
 	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, iNumBytesOut, &SocketAddress, iAddressLength ))
 	{
+		// [KI] A held packet counts when it is held, with the wire size it will travel at, since this call never reaches the send below.
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( Address.Compare( CLIENT_GetServerAddress( ))))
+			CLIENTSTATISTICS_AddToBytesSent( pBuffer->ulCurrentSize, iNumBytesOut, bUsedZstd );
 		network_SendHeldPackets( );
 		return;
 	}
@@ -1166,6 +1320,9 @@ return;
 	// Record this for our statistics window.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVER_STATISTIC_AddToOutboundDataTransfer( lNumBytes );
+	// [AK] Clients add the size of this packet to the number of bytes sent.
+	else if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( Address.Compare( CLIENT_GetServerAddress( ))))
+		CLIENTSTATISTICS_AddToBytesSent( pBuffer->ulCurrentSize, lNumBytes, bUsedZstd );
 }
 
 //*****************************************************************************
@@ -1332,6 +1489,14 @@ NETADDRESS_s	NETWORK_GetCachedLocalAddress( void )
 NETBUFFER_s *NETWORK_GetNetworkMessageBuffer( void )
 {
 	return ( &g_NetworkMessage );
+}
+
+//*****************************************************************************
+// [SB]
+// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the loaded dictionary's id for the connect handshake.
+unsigned NETWORK_GetZstdDictId( void )
+{
+	return g_zstdDictId;
 }
 
 //*****************************************************************************
