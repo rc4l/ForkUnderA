@@ -463,7 +463,8 @@ void CLIENTCOMMANDS_Pong( unsigned int time )
 	TempBuffer.Init( MAX_UDP_PACKET, BUFFERTYPE_WRITE );
 	TempBuffer.ByteStream.WriteByte( CLC_PONG );
 	TempBuffer.ByteStream.WriteLong( time );
-	NETWORK_LaunchPacket( &TempBuffer, NETWORK_GetFromAddress( ) );
+	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the immediate pong reply goes as zstd.
+	NETWORK_LaunchPacket( &TempBuffer, NETWORK_GetFromAddress( ), true );
 	TempBuffer.Free();
 }
 

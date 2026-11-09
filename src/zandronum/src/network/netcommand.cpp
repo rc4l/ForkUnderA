@@ -311,6 +311,14 @@ void NetCommand::sendCommandToClients ( ULONG ulPlayerExtra, ServerCommandFlags 
 
 	for ( ClientIterator it ( ulPlayerExtra, flags ); it.notAtEnd(); ++it )
 		sendCommandToOneClient( *it );
+
+	// [SB] Possibly dump the packet for collecting Zstandard dictionary data.
+	// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b: every broadcast command offered to the dictionary-training dump.
+	const SVC2 command2 = static_cast<SVC2>( command == SVC_EXTENDEDCOMMAND ? _buffer.pbData[1] : 0 );
+	if ( SERVER_ShouldDumpServerCommand( command, command2 ))
+	{
+		SERVER_DumpPacket( _buffer.pbData, _buffer.CalcSize(), false );
+	}
 }
 
 //*****************************************************************************

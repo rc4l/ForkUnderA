@@ -667,6 +667,12 @@ else ()
 	set( ZDOOM_LIBS ${ZDOOM_LIBS} ${OPUS_LIBRARIES} rnnoise )
 endif ()
 
+# [AK] We also need ZStd for encoding/decoding network packets.
+# [KI] Adapted from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: a vendored single-file zstd (deps/zstd) replaces find_package so every platform, Emscripten included, builds one pinned copy.
+add_library( fua_zstd STATIC "${CMAKE_SOURCE_DIR}/../../deps/zstd/zstd.c" )
+include_directories( "${CMAKE_SOURCE_DIR}/../../deps/zstd" )
+set( ZDOOM_LIBS ${ZDOOM_LIBS} fua_zstd )
+
 if( NOT DYN_FLUIDSYNTH)
 	if( FLUIDSYNTH_FOUND )
 		set( ZDOOM_LIBS ${ZDOOM_LIBS} "${FLUIDSYNTH_LIBRARIES}" )
