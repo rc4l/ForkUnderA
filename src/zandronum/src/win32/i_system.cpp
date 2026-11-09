@@ -87,6 +87,11 @@
 #include "doomstat.h"
 #include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
 #include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
+#include "features/hwrender/computation/backendchoice_compute.h" // [rc4l] vid_backend's values, for the welcome dialog
+#include "features/wad-folders/zx_folderpicker.h" // [rc4l] the welcome dialog's Add WAD folder
+#include "features/wad-folders/zx_wadfolders.h"
+#include "features/iwad-startup/computation/iwadstartup_compute.h" // [rc4l] kIwadPickRescan
+#include <string>
 #include "v_palette.h"
 #include "stats.h"
 #include "textures/bitmap.h"
@@ -140,7 +145,7 @@ EXTERN_CVAR(String, language);
 EXTERN_CVAR (Bool, queryiwad);
 
 // Used on welcome/IWAD screen.
-EXTERN_CVAR (Int, vid_renderer)
+EXTERN_CVAR (Int, vid_backend)	// [rc4l] the welcome dialog's renderer radios
 EXTERN_CVAR (Bool, fullscreen)
 
 
@@ -1200,6 +1205,30 @@ static void SetQueryIWad(HWND dialog)
 	queryiwad = query;
 }
 
+// [rc4l] The welcome dialog's "Add WAD folder...", which closes the dialog for a rescan when the folder holds an IWAD so the list offers it.
+static void WelcomeAddWadFolder(HWND hDlg)
+{
+	std::string folder;
+	const zx::wadfolders::PickResult picked = zx::wadfolders::PickFolderNative( hDlg, "Choose a folder of WADs", folder );
+	if ( picked == zx::wadfolders::PickResult::Cancelled )
+		return;
+	if (( picked == zx::wadfolders::PickResult::Unavailable ) || !zx::wadfolders::Add( folder.c_str( )))
+	{
+		SetDlgItemText( hDlg, IDC_WELCOME_WADFOLDERNOTE, "Not added (listed already?)" );
+		return;
+	}
+
+	if (( g_IWadMan != NULL ) && !g_IWadMan->DoesDirectoryHaveIWADs( folder.c_str( )))
+	{
+		SetDlgItemText( hDlg, IDC_WELCOME_WADFOLDERNOTE, "Added; servers' files are found there." );
+		return;
+	}
+
+	// [rc4l] Not a restart: the config cannot be written before game setup, so a relaunch forgot the folder and showed this dialog again.
+	SetQueryIWad( hDlg );
+	EndDialog( hDlg, zx::kIwadPickRescan );
+}
+
 //==========================================================================
 //
 // IWADBoxCallback
@@ -1238,7 +1267,8 @@ BOOL CALLBACK IWADBoxCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 		SetDlgItemText (hDlg, IDC_WELCOME_RENDERER, szString);
 
 		// Check the current video settings.
-		SendDlgItemMessage( hDlg, vid_renderer ? IDC_WELCOME_OPENGL : IDC_WELCOME_SOFTWARE, BM_SETCHECK, BST_CHECKED, 0 );
+		// [rc4l] The renderer is vid_backend's choice now; the old OpenGL/Software pair named a vid_renderer that only has one value.
+		SendDlgItemMessage( hDlg, ( vid_backend == zx::hwrender::kVidBackendGL ) ? IDC_WELCOME_GL : IDC_WELCOME_VULKAN, BM_SETCHECK, BST_CHECKED, 0 );
 		SendDlgItemMessage( hDlg, IDC_WELCOME_FULLSCREEN, BM_SETCHECK, fullscreen ? BST_CHECKED : BST_UNCHECKED, 0 );
 
 		// Set the state of the "Don't ask me again" checkbox.
@@ -1288,6 +1318,10 @@ BOOL CALLBACK IWADBoxCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 
 			SetDlgItemText (hDlg, IDC_WELCOME_SHIFTLABEL, szString);
 		}
+		else if (LOWORD(wParam) == IDC_WELCOME_WADFOLDER)
+		{
+			WelcomeAddWadFolder(hDlg);
+		}
 		else if(LOWORD(wParam) == IDC_WELCOME_COMPAT)
 		{
 			// Tell the user about this setting.
@@ -1304,7 +1338,7 @@ BOOL CALLBACK IWADBoxCallback(HWND hDlg, UINT message, WPARAM wParam, LPARAM lPa
 			/* [RC] No longer the primary control. > || (LOWORD(wParam) == IDC_IWADLIST && HIWORD(wParam) == LBN_DBLCLK)<*/)
 		{
 			SetQueryIWad(hDlg);
-			vid_renderer = SendDlgItemMessage( hDlg, IDC_WELCOME_OPENGL, BM_GETCHECK, 0, 0 ) == BST_CHECKED;
+			vid_backend = ( SendDlgItemMessage( hDlg, IDC_WELCOME_GL, BM_GETCHECK, 0, 0 ) == BST_CHECKED ) ? zx::hwrender::kVidBackendGL : zx::hwrender::kVidBackendVulkan;
 			fullscreen = SendDlgItemMessage( hDlg, IDC_WELCOME_FULLSCREEN, BM_GETCHECK, 0, 0 ) == BST_CHECKED;
 			ctrl = GetDlgItem (hDlg, IDC_IWADLIST);
 			EndDialog(hDlg, SendMessage (ctrl, LB_GETCURSEL, 0, 0));
