@@ -192,6 +192,7 @@ private:
 	friend void UnlatchCVars (void);
 	friend void DestroyCVarsFlagged (DWORD flags);
 	friend void C_ArchiveCVars (FConfigFile *f, uint32 filter);
+	friend void C_RestoreProtectedCVars (void);
 	friend void C_SetCVarsToDefaults (void);
 	friend void FilterCompactCVars (TArray<FBaseCVar *> &cvars, uint32 filter);
 	friend void C_DeinitConsole();
@@ -231,6 +232,9 @@ void DestroyCVarsFlagged (DWORD flags);
 
 // archive cvars to FILE f
 void C_ArchiveCVars (FConfigFile *f, uint32 filter);
+
+// [MobiusU9B] Puts each engine cvar a script's ConsoleCommand changed back to its recorded value and forgets the records, for the restart before a server hop or wad reload.
+void C_RestoreProtectedCVars (void);
 
 // initialize cvars to default values after they are created
 void C_SetCVarsToDefaults (void);

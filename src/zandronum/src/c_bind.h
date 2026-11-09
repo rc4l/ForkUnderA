@@ -35,12 +35,19 @@
 #define __C_BINDINGS_H__
 
 #include "doomdef.h"
+#include <bitset>
 
 struct event_t;
 class FConfigFile;
 class FCommandLine;
 
 void C_NameKeys (char *str, int first, int second);
+
+// [MobiusU9B] Saves each KEYCONF key section, marking the keys it wrote in the claim sets that the general Bindings and DoubleBindings passes then skip (keysections.cpp).
+void M_SaveCustomKeys (FConfigFile *config, char *section, char *subsection, size_t sublen, std::bitset<NUM_KEYS> &claimedSingle, std::bitset<NUM_KEYS> &claimedDouble);
+
+// [MobiusU9B] Binds each KEYCONF key section's keys again from the config, as its addkeysection did at startup (keysections.cpp).
+void M_LoadCustomKeys ();
 
 struct FBinding
 {
@@ -56,7 +63,8 @@ public:
 	void PerformBind(FCommandLine &argv, const char *msg);
 	void SetBinds(const FBinding *binds);
 	bool DoKey(event_t *ev);
-	void ArchiveBindings(FConfigFile *F, const char *matchcmd = NULL);
+	// [MobiusU9B] A save only reads the bindings: a matchcmd pass sets the bits of the keys it writes in `claimed`, and the general pass leaves those keys' entries alone.
+	void ArchiveBindings(FConfigFile *F, const char *matchcmd = NULL, std::bitset<NUM_KEYS> *claimed = NULL);
 	int  GetKeysForCommand (const char *cmd, int *first, int *second);
 	void UnbindACommand (const char *str);
 	void UnbindAll ();

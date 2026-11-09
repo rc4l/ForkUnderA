@@ -65,6 +65,7 @@ extern HWND Window;
 // [BC] New #includes.
 #include "network.h"
 #include "g_shared/pwo.h"
+#include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeResetChangesCVar
 // [RC] For name cleaning
 #include "v_text.h"
 
@@ -499,6 +500,18 @@ void FGameConfigFile::DoModSetup(const char *gamename)
 	bModSetup = true;
 }
 
+void FGameConfigFile::ResetToSaved (const char *gamename)
+{
+	bOnlyChangedCVars = true;
+	DoGlobalSetup ();
+	DoGameSetup (gamename);
+	DoModSetup (gamename);
+	bOnlyChangedCVars = false;
+	// [MobiusU9B] The keys moved out of DoGameSetup into the startup-only DoKeySetup (uzdoom@c36222d2e), and the mod's KEYCONF keys go over them as at startup.
+	DoKeySetup (gamename);
+	M_LoadCustomKeys ();
+}
+
 void FGameConfigFile::ReadNetVars ()
 {
 	strncpy (subsection, "NetServerInfo", sublen);
@@ -538,6 +551,11 @@ void FGameConfigFile::ReadCVars (DWORD flags)
 		if (cvar == NULL)
 		{
 			cvar = new FStringCVar (key, NULL, flags);
+		}
+		// [MobiusU9B] A set runs the cvar's callback even for the same value, and gl_wallmesh's dropped every floor and ceiling.
+		else if (bOnlyChangedCVars && !zx::ComputeResetChangesCVar (cvar->GetGenericRep (CVAR_String).String, value))
+		{
+			continue;
 		}
 		val.String = const_cast<char *>(value);
 
@@ -617,15 +635,17 @@ void FGameConfigFile::ArchiveGameData (const char *gamename)
 	ClearCurrentSection ();
 	C_ArchiveAliases (this);
 
-	M_SaveCustomKeys (this, section, subsection, sublen);
+	// [MobiusU9B] The mod key sections claim their keys, and the general sections skip them without unbinding them in the running game.
+	std::bitset<NUM_KEYS> claimedSingle, claimedDouble;
+	M_SaveCustomKeys (this, section, subsection, sublen, claimedSingle, claimedDouble);
 
 	strcpy (subsection, "Bindings");
 	SetSection (section, true);
-	Bindings.ArchiveBindings (this);
+	Bindings.ArchiveBindings (this, NULL, &claimedSingle);
 
 	strncpy (subsection, "DoubleBindings", sublen);
 	SetSection (section, true);
-	DoubleBindings.ArchiveBindings (this);
+	DoubleBindings.ArchiveBindings (this, NULL, &claimedDouble);
 
 	strncpy (subsection, "AutomapBindings", sublen);
 	SetSection (section, true);
