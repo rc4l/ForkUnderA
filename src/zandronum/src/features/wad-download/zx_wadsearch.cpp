@@ -17,6 +17,11 @@
 
 #include "features/wad-download/zx_wadsearch.h"
 #include "features/wad-download/computation/fileresolve_compute.h"
+#include "features/wad-folders/zx_wadfolders.h"
+
+#include <cstddef>
+#include <string>
+#include <vector>
 
 namespace
 {
@@ -58,6 +63,21 @@ void AddPathOnce( const char *section, const char *value )
 	if ( !GameConfig->SetSection( section, true ))
 		return;
 	GameConfig->SetValueForKey( "Path", value, true );
+}
+
+// [rc4l] The copies the player's WAD folders hold, subfolders too, after the search paths' and without repeating one of theirs.
+void PushWadFolderHits( const char *name, TArray<FString> &out )
+{
+	std::vector<std::string> hits;
+	zx::wadfolders::FindAll( name, hits );
+	for ( size_t i = 0; i < hits.size( ); ++i )
+	{
+		bool seen = false;
+		for ( unsigned j = 0; j < out.Size( ) && !seen; ++j )
+			seen = zx::ComputeSamePath( out[j].GetChars( ), hits[i] );
+		if ( !seen && DirEntryExists( hits[i].c_str( )))
+			out.Push( FString( hits[i].c_str( )));
+	}
 }
 
 } // namespace
@@ -124,6 +144,8 @@ void FindAllIwadsInEngineSearchPaths( const char *name, TArray<FString> &out )
 		if ( DirEntryExists( candidate ) && !(( out.Size( ) > 0 ) && ComputeSamePath( out[0].GetChars( ), candidate.GetChars( ))))
 			out.Push( candidate );
 	}
+
+	PushWadFolderHits( name, out );
 }
 
 void FindAllFilesInEngineSearchPaths( const char *name, TArray<FString> &out )
@@ -160,6 +182,8 @@ void FindAllFilesInEngineSearchPaths( const char *name, TArray<FString> &out )
 				out.Push( candidate );
 		}
 	}
+
+	PushWadFolderHits( name, out );
 }
 
 FString FindFileInEngineSearchPaths( const char *name )
@@ -210,6 +234,9 @@ void RegisterKnownWadDirectories( void )
 	// the section does not exist yet. A player updating from a build that kept the IWADs loose beside
 	// the exe already has the section, would never be told about the new folder, and would open a
 	// build that could not find the game data it had just shipped with.
+	// [rc4l] The binary's own folder, which Linux's default lists lack, so a doom2.wad dropped beside it is found there too.
+	AddPathOnce( "FileSearch.Directories", "$PROGDIR" );
+	AddPathOnce( "IWADSearch.Directories", "$PROGDIR" );
 	AddPathOnce( "FileSearch.Directories", "$PROGDIR/iwads" );
 	AddPathOnce( "IWADSearch.Directories", "$PROGDIR/iwads" );
 
