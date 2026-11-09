@@ -4,6 +4,7 @@
 // [rc4l] See zx_wadlibrary.h for the design and the threading contract it inherits.
 
 #include "features/wad-library/zx_wadlibrary.h"
+#include "features/wad-folders/zx_wadfolders.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -238,6 +239,10 @@ std::vector<std::string> CollectRoots()
 			roots.push_back(std::string(dir.GetChars()));
 		}
 	}
+
+	// [rc4l] The player's WAD folders, which the library lists as well as searching.
+	const std::vector<std::string> own = zx::wadfolders::SearchRoots();
+	roots.insert(roots.end(), own.begin(), own.end());
 
 	// [rc4l] Deduplicated, because the same folder legitimately appears twice: our download folder
 	// is registered in FileSearch.Directories by design. Walking it twice would list every file in

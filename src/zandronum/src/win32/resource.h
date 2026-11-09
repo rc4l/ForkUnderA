@@ -194,8 +194,8 @@
 #define UWM_TRAY_TRAYID                 32769
 #define UWM_TRAY_NOP                    32770
 #define IDC_WELCOME_VERSION				4019 // [RC] "Welcome" screen.
-#define IDC_WELCOME_OPENGL				4020
-#define IDC_WELCOME_SOFTWARE			4021
+#define IDC_WELCOME_VULKAN				4020 // [rc4l] the renderer radios, vid_backend's Vulkan and GL
+#define IDC_WELCOME_GL					4021
 #define IDC_WELCOME_FULLSCREEN			4022
 #define IDC_WELCOME_COMPAT				4023
 #define IDC_WELCOME_SHIFTLABEL			4024
@@ -203,6 +203,8 @@
 // from FUA_NAME rather than the .rc spelling a brand the next rename would have to hunt for.
 #define IDC_WELCOME_TITLE				4025
 #define IDC_WELCOME_RENDERER			4026
+#define IDC_WELCOME_WADFOLDER			4027 // [rc4l] adds a WAD folder (features/wad-folders)
+#define IDC_WELCOME_WADFOLDERNOTE		4028
 #define IDC_SPIN2                       4043
 #define IDC_SPIN3                       4044
 #define G15_ICON_ORION					4045 // [RC] G15 LCD console.

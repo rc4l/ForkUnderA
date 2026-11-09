@@ -52,10 +52,18 @@
 #include "doomerrors.h"
 
 #include "features/iwad-registry/zx_iwadregistry.h" // [rc4l] fua IWAD registration
+#include "features/iwad-startup/computation/iwadstartup_compute.h" // [rc4l] which IWAD starts, and whether to ask
+#include "features/wad-folders/zx_wadfolders.h" // [rc4l] the player's WAD folders
+#include <cstddef>
+#include <cstring>
+#include <string>
+#include <vector>
 
 
 CVAR (Bool, queryiwad, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 CVAR (String, defaultiwad, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
+// [rc4l] The IWADs found when defaultiwad was last picked, so an IWAD added since is offered once.
+CVAR (String, fua_iwads_seen, "", CVAR_ARCHIVE|CVAR_GLOBALCONFIG);
 
 //==========================================================================
 //
@@ -464,6 +472,26 @@ void FIWadManager::RegisterIWADsIn(const char *dir)
 	}
 }
 
+#ifndef _WIN32
+// [rc4l] Every entry name in `dir`, for the case-insensitive IWAD lookup below.
+static void ListFolderNames (const char *dir, std::vector<std::string> &out)
+{
+	findstate_t entry;
+	FString spec;
+	spec.Format ("%s%s*", dir, (dir[strlen (dir)-1] != '/') ? "/" : "");
+	void *handle = I_FindFirst (spec, &entry);
+	if (handle == (void *)-1)
+		return;
+	do
+	{
+		const char *name = I_FindName (&entry);
+		if (name != NULL && name[0] != '\0')
+			out.push_back (name);
+	} while (I_FindNext (handle, &entry) == 0);
+	I_FindClose (handle);
+}
+#endif
+
 int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads, unsigned int numwadslots)
 {
 	const char *slash;
@@ -472,6 +500,12 @@ int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads, unsigned in
 	numfound = 0;
 
 	slash = (doomwaddir[0] && doomwaddir[strlen (doomwaddir)-1] != '/') ? "/" : "";
+
+#ifndef _WIN32
+	// [rc4l] The folder's names, listed only when a lower-case IWAD name is missing, so a DOOM2.WAD from Steam or GOG is found on a case-sensitive disk.
+	std::vector<std::string> entries;
+	bool listed = (doomwaddir[0] == '\0');
+#endif
 
 	// Search for a pre-defined IWAD.
 	//
@@ -489,6 +523,22 @@ int FIWadManager::CheckIWAD (const char *doomwaddir, WadStuff *wads, unsigned in
 			
 			iwad.Format ("%s%s%s", doomwaddir, slash, mIWadNames[i].GetChars());
 			FixPathSeperator (iwad);
+#ifndef _WIN32
+			if (!FileExists (iwad))
+			{
+				if (!listed)
+				{
+					ListFolderNames (doomwaddir, entries);
+					listed = true;
+				}
+				const std::string match = zx::ComputeFindNameIgnoringCase (entries, mIWadNames[i].GetChars());
+				if (!match.empty())
+				{
+					iwad.Format ("%s%s%s", doomwaddir, slash, match.c_str());
+					FixPathSeperator (iwad);
+				}
+			}
+#endif
 			if (FileExists (iwad))
 			{
 				wads[i].Type = ScanIWAD (iwad);
@@ -541,6 +591,12 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 	bool iwadparmfound = false;
 	FString custwad;
 
+	// [rc4l] The IWAD dialog comes back here after adding a WAD folder, since the config cannot be saved for a restart this early.
+rescan:
+	wads.Clear();
+	foundwads.Clear();
+	iwadparm = Args->CheckValue ("-iwad");
+	iwadparmfound = false;
 	wads.Resize(mIWadNames.Size());
 	foundwads.Resize(mIWads.Size());
 	memset(&foundwads[0], 0, foundwads.Size() * sizeof(foundwads[0]));
@@ -583,6 +639,12 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 					CheckIWAD(nice, &wads[0], wads.Size());
 				}
 			}
+		}
+		// [rc4l] The top of each of the player's WAD folders too, so an IWAD kept in a WAD dump is offered (features/wad-folders).
+		const std::vector<std::string> wadFolders = zx::wadfolders::SearchRoots();
+		for (i = 0; i < wadFolders.size(); ++i)
+		{
+			CheckIWAD(wadFolders[i].c_str(), &wads[0], wads.Size());
 		}
 		// [rc4l] uzdoom@86372fce3: Steam IWAD detection is no longer Windows-only. The candidate
 		// directories move into each platform's I_GetSteamPath -- the registry on Windows,
@@ -701,27 +763,30 @@ int FIWadManager::IdentifyVersion (TArray<FString> &wadfiles, const char *iwad, 
 
 	if (!iwadparmfound && numwads > 1)
 	{
-		int defiwad = 0;
-
-		// Locate the user's prefered IWAD, if it was found.
-		if (defaultiwad[0] != '\0')
+		// [rc4l] Freedoom alone starts without asking, and a player's own IWAD new since the last pick is offered even past "don't ask" (features/iwad-startup).
+		std::vector<zx::IwadStartupCandidate> found;
+		for (i = 0; i < numwads; ++i)
 		{
-			for (i = 0; i < numwads; ++i)
-			{
-				FString basename = ExtractFileBase (wads[i].Path);
-				if (stricmp (basename, defaultiwad) == 0)
-				{
-					defiwad = (int)i;
-					break;
-				}
-			}
+			zx::IwadStartupCandidate candidate;
+			candidate.base = ExtractFileBase (wads[i].Path).GetChars();
+			candidate.autoname = mIWads[wads[i].Type].Autoname.GetChars();
+			found.push_back(candidate);
 		}
-		pickwad = I_PickIWad (&wads[0], (int)numwads, queryiwad, defiwad);
+		const zx::IwadStartupChoice choice = zx::ComputeIwadStartup(found, *defaultiwad, *fua_iwads_seen, queryiwad);
+#ifdef _WIN32
+		// [rc4l] The welcome dialog's Add WAD folder asks this manager whether a folder holds an IWAD.
+		extern FIWadManager *g_IWadMan;
+		g_IWadMan = this;
+#endif
+		pickwad = I_PickIWad (&wads[0], (int)numwads, choice.ask, choice.pick);
+		if (pickwad == zx::kIwadPickRescan)
+			goto rescan;
 		if (pickwad >= 0)
 		{
 			// The newly selected IWAD becomes the new default
 			FString basename = ExtractFileBase (wads[pickwad].Path);
 			defaultiwad = basename;
+			fua_iwads_seen = zx::ComputeIwadSeenList(found).c_str();
 		}
 	}
 
@@ -777,6 +842,10 @@ const FIWADInfo *FIWadManager::FindIWAD(TArray<FString> &wadfiles, const char *i
 	RegisterIWADsIn(progdir);
 
 	static const char *const kSections[] = { "IWADSearch.Directories", "FileSearch.Directories" };
+
+	const std::vector<std::string> wadFolders = zx::wadfolders::SearchRoots();
+	for (size_t f = 0; f < wadFolders.size(); ++f)
+		RegisterIWADsIn(wadFolders[f].c_str());
 
 	for (size_t s = 0; s < sizeof(kSections) / sizeof(kSections[0]); ++s)
 	{

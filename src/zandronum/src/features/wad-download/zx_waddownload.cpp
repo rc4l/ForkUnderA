@@ -45,6 +45,7 @@
 #include "features/net/zx_httpfile.h"
 #include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_wadsearch.h"
+#include "features/wad-folders/zx_wadfolders.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wad-download/computation/downloadplan_compute.h"
 #include "features/wad-download/computation/fileresolve_compute.h"
@@ -813,6 +814,8 @@ std::vector<zx::ResolveStep> PlanVerifiedCopy(const char *name, const char *md5H
 	// [rc4l] The half that must stay on the main thread: FindAllFilesInEngineSearchPaths reads
 	// GameConfig, and DownloadDir builds an FString. Both are stats and string work -- cheap. What
 	// comes out is plain paths, which is exactly what a worker can be handed.
+	// [rc4l] The player's WAD folders are indexed on a worker, so a walk under way is waited for before deciding to download.
+	zx::wadfolders::PrepareLookup(name);
 	TArray<FString> found;
 	zx::FindAllFilesInEngineSearchPaths(name, found);
 
@@ -1084,6 +1087,24 @@ CCMD( fua_download )
 	std::vector<zx::waddownload::WantedFile> files;
 	files.push_back( zx::waddownload::WantedFile( argv[1], false ));
 	zx::waddownload::Start( std::vector<std::string>( ), std::vector<std::string>( ), files, NULL );
+}
+
+// [rc4l] Every copy of a file the search before a download finds, the player's WAD folders included, in the order it tries them.
+CCMD( fua_wadwhere )
+{
+	if ( argv.argc( ) < 2 )
+	{
+		Printf( "Usage: fua_wadwhere <filename>\n" );
+		return;
+	}
+
+	zx::wadfolders::PrepareLookup( argv[1] );
+	TArray<FString> found;
+	zx::FindAllFilesInEngineSearchPaths( argv[1], found );
+	if ( found.Size( ) == 0 )
+		Printf( "%s: not on this machine, so a join would download it.\n", argv[1] );
+	for ( unsigned i = 0; i < found.Size( ); ++i )
+		Printf( "%u. %s\n", i + 1, found[i].GetChars( ));
 }
 
 CCMD( fua_download_stop )

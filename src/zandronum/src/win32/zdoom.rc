@@ -234,7 +234,8 @@ BEGIN
                     IDC_STATIC,7,7,116,42
 END
 */
-IDD_IWADDIALOG DIALOGEX 0, 0, 224, 236
+// [rc4l] Add WAD folder adds a folder searched for IWADs and server files, and the renderer radios are the two vid_backend values.
+IDD_IWADDIALOG DIALOGEX 0, 0, 224, 254
 STYLE DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | 
     WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
@@ -244,23 +245,25 @@ BEGIN
 	ICON            IDI_ICONST,IDC_STATIC,7,7,32,32
 	LTEXT           "<Welcome>",IDC_WELCOME_TITLE,42,8,180,8
 	LTEXT           "<Version info>",IDC_WELCOME_VERSION,42,18,180,8
-	GROUPBOX        "IWAD selection",IDC_STATIC,8,32,224-16,102
+	GROUPBOX        "IWAD selection",IDC_STATIC,8,32,224-16,120
 	LTEXT           "Select which game file (IWAD) to run.", IDC_STATIC,12,32+12,190,8
     LISTBOX         IDC_IWADLIST,12,32+24,224-24,72,LBS_NOINTEGRALHEIGHT | 
                     WS_VSCROLL | WS_TABSTOP
-	GROUPBOX        "Video settings",IDC_STATIC,8,138,224-16,48
-	LTEXT           "<Renderer>", IDC_WELCOME_RENDERER,12,148,190,8
-	CONTROL         "Hardware (OpenGL)",IDC_WELCOME_OPENGL,"Button",
-                    BS_AUTORADIOBUTTON,12,170,93,10
-	CONTROL         "Software (Doom)",IDC_WELCOME_SOFTWARE,"Button",
-                    BS_AUTORADIOBUTTON,12,160,93,10
+	PUSHBUTTON      "Add WAD folder...",IDC_WELCOME_WADFOLDER,12,132,80,14,WS_TABSTOP
+	LTEXT           "",IDC_WELCOME_WADFOLDERNOTE,96,135,116,8
+	GROUPBOX        "Video settings",IDC_STATIC,8,156,224-16,48
+	LTEXT           "<Renderer>", IDC_WELCOME_RENDERER,12,166,190,8
+	CONTROL         "Vulkan (Recommended)",IDC_WELCOME_VULKAN,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,12,178,100,10
+	CONTROL         "GL (Legacy)",IDC_WELCOME_GL,"Button",
+                    BS_AUTORADIOBUTTON,12,188,100,10
 	CONTROL         "Fullscreen",IDC_WELCOME_FULLSCREEN,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP, 124,160,48,10
+                    BS_AUTOCHECKBOX | WS_GROUP | WS_TABSTOP, 124,178,48,10
 	CONTROL         "Don't ask me this again",IDC_DONTASKIWAD,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,72,192,87,10
-	CTEXT           "", IDC_WELCOME_SHIFTLABEL,12,204,200,8
-    DEFPUSHBUTTON   "Play",IDOK,8,236-18,90,14
-    PUSHBUTTON      "Exit",IDCANCEL,224-58,236-18,50,14
+                    BS_AUTOCHECKBOX | WS_TABSTOP,72,210,87,10
+	CTEXT           "", IDC_WELCOME_SHIFTLABEL,12,222,200,8
+    DEFPUSHBUTTON   "Play",IDOK,8,254-18,90,14
+    PUSHBUTTON      "Exit",IDCANCEL,224-58,254-18,50,14
 
 END
 
