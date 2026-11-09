@@ -125,8 +125,13 @@ the dome in the fog `features/visibility` derives, and not over a sky box, as GL
 
 A frame signals a fence as it is presented, and one more than `fua_dg_frames_ahead` (2) ahead of the GPU waits
 for it (`computation/framepacing_compute`). `vid_vsync` picks the present interval, FIFO when on and mailbox
-when off, and the swapchain has three images: with Diligent's default two, mailbox had none free to draw into
-until the next vblank and Sunder MAP10 ran at the monitor's refresh interval instead of 1.0 ms. The
+when off, and the swapchain's image count (`ComputeSwapchainImages`): three for mailbox, since with two it had
+none free to draw into until the next vblank and Sunder MAP10 ran at the monitor's refresh interval instead of
+1.0 ms; two for FIFO, since with three the CPU queued a second frame and at 144 Hz could settle into
+1.1/5.7/13.9 ms frames that each showed for one refresh, a judder on screen. Diligent keeps a swapchain's count
+for its life, so a `vid_vsync` toggle remakes it at the next frame's start (`FollowBackendSurface`).
+`fua_debug_swapchain_images N` forces the count, and scenario `vsyncpacing` (a real display, locally) fails
+with it at 3: twenty one-frame stalls, each followed by a recorded second held to even frame times. The
 benchmark's unpresented frames are submitted and finished as Present does both; it finished none, so on wdiex02
 Diligent's dynamic heap ran out inside `fua_diligent_bench` and the engine died.
 
