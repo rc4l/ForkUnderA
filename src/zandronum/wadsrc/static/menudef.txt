@@ -414,6 +414,11 @@ OptionMenu "FUAOptions"
 	Submenu "Hitbox Visualization",		"HitboxVizOptions"
 	Submenu "Damage Tint",				"FUADamageTintOptions"
 	Submenu "Speedometer",				"FUASpeedometerOptions"
+	// [rc4l] The player's own WAD folders, searched before a server's files are downloaded (features/wad-folders); a browser has no folders to give.
+	IfOption(Windows, Mac, Unix)
+	{
+		Command "WAD Folders",			"fua_wadfolders_menu"
+	}
 	StaticText " "
 	// [rc4l] Auto-update notice: check GitHub for a newer release at startup and show the main-menu
 	// notice. On by default; off means no update check and no network call.
@@ -427,6 +432,12 @@ OptionMenu "FUAOptions"
 		Option	"Check for updates",	"cl_fua_update_notify",		"OnOff",			"cl_fua_update_choosable"
 	}
 	Option	"Asset caching",			"cl_fua_caching",			"FuaCachingModes"
+}
+
+// [rc4l] Filled by features/wad-folders (RefreshMenu) each time it opens: an Add button and the folders, each removable.
+OptionMenu "FUAWadFolders"
+{
+	Title "WAD FOLDERS"
 }
 
 // [rc4l] features/damage-tint: players on damaging floors pick up the floor's color -- a glow

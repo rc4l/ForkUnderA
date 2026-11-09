@@ -76,6 +76,7 @@
 #include "features/updater/zx_updater.h" // [rc4l] background auto-update check
 #include "features/wad-download/zx_waddownload.h" // [rc4l] background WAD downloads
 #include "features/wad-download/zx_wadsearch.h" // [rc4l] where to look for IWADs and PWADs
+#include "features/wad-folders/zx_wadfolders.h" // [rc4l] the player's WAD folders, searched before downloading
 #include "features/wad-serve/zx_wadserve.h" // [rc4l] serving this server's own WADs to joiners
 #include "features/server-hosting/zx_hosting.h" // [rc4l] hosting a server from inside the game
 #include "features/server-hosting/zx_hostwatchdog.h" // [rc4l] and dying with the game that started us
@@ -3284,6 +3285,9 @@ void D_DoomMain (void)
 		//
 		// Registering twice is free: AddPathOnce is idempotent and only adds directories that exist.
 		zx::RegisterKnownWadDirectories();
+
+		// [rc4l] And start indexing the player's WAD folders, so a join has their files without waiting.
+		zx::wadfolders::StartIndex(false);
 
 		// [rc4l] And our own download folder, before anything searches it.
 		zx::waddownload::RegisterDownloadDirEarly();

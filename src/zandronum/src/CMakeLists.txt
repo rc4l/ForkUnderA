@@ -109,6 +109,7 @@ if( WIN32 )
 		ws2_32
 		setupapi
 		oleaut32
+		uuid
 		winhttp
 		DelayImp )
 else( WIN32 )
@@ -845,6 +846,17 @@ elseif( APPLE )
 	set( FUA_TELEMETRY_PROBE features/telemetry/osprobe_mac.cpp features/telemetry/osprobe_stack_posix.cpp )
 else()
 	set( FUA_TELEMETRY_PROBE features/telemetry/osprobe_linux.cpp features/telemetry/osprobe_stack_posix.cpp )
+endif()
+
+# [rc4l] features/wad-folders' folder picker: one file per platform behind zx_folderpicker.h, as the telemetry probe's.
+if( WIN32 )
+	set( FUA_FOLDERPICKER_SOURCES features/wad-folders/zx_folderpicker_win32.cpp )
+elseif( EMSCRIPTEN )
+	set( FUA_FOLDERPICKER_SOURCES features/wad-folders/zx_folderpicker_web.cpp )
+elseif( APPLE )
+	set( FUA_FOLDERPICKER_SOURCES features/wad-folders/zx_folderpicker_mac.mm )
+else()
+	set( FUA_FOLDERPICKER_SOURCES features/wad-folders/zx_folderpicker_linux.cpp )
 endif()
 set( SYSTEM_SOURCES ${SYSTEM_SOURCES} ${FUA_TELEMETRY_PROBE} )
 
@@ -1649,6 +1661,9 @@ add_executable( zdoom WIN32
 	# [rc4l] Wad hashing and the search of the player's own folders, which an offline build needs too.
 	features/wad-download/zx_filehash.cpp
 	features/wad-download/zx_wadsearch.cpp
+	# [rc4l] The player's WAD folders and the OS folder picker that adds them.
+	features/wad-folders/zx_wadfolders.cpp
+	${FUA_FOLDERPICKER_SOURCES}
 	# [rc4l] Generated, and listed so the custom command above runs for this target, offline builds included, whose wad search reads it.
 	${CMAKE_CURRENT_BINARY_DIR}/zx_waddownload_lists.h
 	features/damage-tint/damagetint.cpp

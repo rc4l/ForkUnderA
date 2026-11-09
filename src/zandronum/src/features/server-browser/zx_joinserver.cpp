@@ -47,6 +47,7 @@
 #include "features/wad-download/computation/iwadsubstitute_compute.h"
 #include "features/wad-download/zx_filehash.h"
 #include "features/wad-download/zx_wadsearch.h"
+#include "features/wad-folders/zx_wadfolders.h"
 #include "features/wad-download/zx_waddownload.h"
 #include "features/wadreload/zx_wadreload.h"
 #include "features/net-session/netrole.h"
@@ -256,6 +257,9 @@ bool AttemptJoin(const JoinPlan &plan, bool mayDownload)
 
 	if (plan.iwadName.IsNotEmpty())
 	{
+		// [rc4l] An IWAD in the player's WAD folders counts too, once their index is ready.
+		zx::wadfolders::PrepareLookup(plan.iwadName.GetChars());
+
 		// [rc4l] One name is not one file. doom2.wad shipped as 1.666, 1.7, 1.8, 1.9, a French build,
 		// BFG Edition and the 2024 KEX re-release, and a player can easily hold two of them -- one
 		// from Steam, one in their own WAD folder. Taking whichever the search order reaches first
