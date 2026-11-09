@@ -283,7 +283,7 @@ static const char *kDeferredDecalPS =
 	"        return;\n"
 	"    }\n"
 	"    bool redAlpha = vParams.w > 0.5;\n"
-	"    float mask = redAlpha ? texel.r : texel.a;\n"
+	"    float mask = redAlpha ? texel.r * texel.a : texel.a;\n"   /* [Doruk-Aksoy] As main.fp's TM_REDTOALPHA. */
 	"    float a = mask * vColor.a;\n"
 	/* [rc4l] The run-out, per fragment. Inside the picture's own radius nothing fades, so the mark on
 	   the surface that was actually hit is exactly what the decal says it is; beyond that the mark is
