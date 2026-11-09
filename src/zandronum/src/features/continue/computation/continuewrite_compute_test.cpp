@@ -127,3 +127,12 @@ TEST(ContinueWrite, ADedicatedServerIsNeverRecorded)
 	in.dedicatedServer = true;
 	EXPECT_EQ(ContinueWriteVerdict::Skip, DecideContinueWrite(in));
 }
+
+TEST( ContinueWrite, AServersMapIsNeverSnapshottedAsAnOfflineGame )
+{
+	// [Doruk-Aksoy] `connect` from a server quits it first, so the netstate reads offline while the server's map is still loaded.
+	ContinueWriteInputs in = InAMap();
+	in.leavingServer = true;
+
+	EXPECT_EQ( ContinueWriteVerdict::Skip, DecideContinueWrite( in ));
+}

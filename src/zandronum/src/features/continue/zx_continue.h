@@ -55,6 +55,9 @@ void Continue_NoteQuit();
 // Without this, going from one game straight into another silently loses the first.
 void Continue_NoteLeavingLocalGame();
 
+// [Doruk-Aksoy] `bLeavingServer`: the caller just quit a server, whose map is still loaded and is not a local game.
+void Continue_NoteLeavingLocalGame( bool bLeavingServer );
+
 // [rc4l] Record a game we are hosting, so leaving it can start the same one again. There is nothing
 // to snapshot -- the world lives in the child process -- so what is kept is the config that made it.
 void Continue_NoteHosting( const HostConfig &config );

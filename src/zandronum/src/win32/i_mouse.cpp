@@ -20,6 +20,7 @@
 #include "rawinput.h"
 #include "menu/menu.h"
 #include "features/frame/viewtrace.h"   // [rc4l] NoteRawMouse, NoteMouseGrabbed
+#include "features/mouse-capture/computation/nativemouse_compute.h"   // [Doruk-Aksoy] ComputeWantNativeMouse
 
 // MACROS ------------------------------------------------------------------
 
@@ -259,34 +260,21 @@ static bool CaptureMode_InGame()
 
 void I_CheckNativeMouse(bool preferNative)
 {
-	bool windowed = (screen == NULL) || !screen->IsFullscreen();
-	bool want_native;
-
-	if (!windowed)
-	{
-		// ungrab mouse when in the menu with mouse control on.		
-		want_native = m_use_mouse && (menuactive == MENU_On || menuactive == MENU_OnNoPause);
-	}
-	else
-	{
-		if ((GetForegroundWindow() != Window) || preferNative || !use_mouse)
-		{
-			want_native = true;
-		}
-		else if (menuactive == MENU_WaitKey)
-		{
-			want_native = false;
-		}
-		else
-		{
-			want_native = ((!m_use_mouse || menuactive != MENU_WaitKey) &&
-				(!CaptureMode_InGame() || GUICapture ||	paused || demoplayback));
-		}
-	}
-
-	//Printf ("%d %d %d\n", wantNative, preferNative, NativeMouse);
-	// [Doruk-Aksoy] A hands-off instance never grabs, clips or recentres the user's pointer, fullscreen or not.
-	if (MCP_InputLocked()) want_native = true;
+	// [Doruk-Aksoy] features/mouse-capture decides; fullscreen now lets go once our window is not in front, as windowed always did.
+	zx::NativeMouseInputs in;
+	in.fullscreen = (screen != NULL) && screen->IsFullscreen();
+	in.foreground = (GetForegroundWindow() == Window);
+	in.preferNative = preferNative;
+	in.useMouse = use_mouse != 0;
+	in.menuMouse = m_use_mouse != 0;
+	in.menuOpen = (menuactive == MENU_On || menuactive == MENU_OnNoPause);
+	in.menuWaitKey = (menuactive == MENU_WaitKey);
+	in.captureInGame = CaptureMode_InGame();
+	in.guiCapture = GUICapture != 0;
+	in.paused = paused != 0;
+	in.demoPlayback = demoplayback;
+	in.inputLocked = MCP_InputLocked();
+	const bool want_native = zx::ComputeWantNativeMouse(in);
 
 	if (want_native != NativeMouse)
 	{

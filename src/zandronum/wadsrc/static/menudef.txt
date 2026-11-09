@@ -932,6 +932,15 @@ OptionMenu "VideoOptions"
 {
 	Title "DISPLAY OPTIONS"
 	
+	// [Doruk-Aksoy] The window mode is also here, where players look for it first.
+	IfOption(Web)
+	{
+		Option "Fullscreen",				"fullscreen", "YesNo"
+	}
+	else
+	{
+		Option "Display mode",				"fullscreen", "DisplayModes"
+	}
 	Submenu "OpenGL Options", 			"OpenGLOptions"
 	// [TP] Zandronum's scoreboard does not use these options
 	// Submenu "Scoreboard Options", 		"ScoreboardOptions"
@@ -2208,11 +2217,25 @@ OptionValue DynresTargetsWeb
 // blit-upscaled to fill), and the windowed size is set below (or by dragging the window edges).
 // Labels match upstream's VideoModeMenu ("Scale mode" / "Scale factor"). See features/video-scale
 // and features/windowed-video.
+// [Doruk-Aksoy] Fullscreen is a borderless window covering the display (features/borderless-video), so the switch says so.
+OptionValue DisplayModes
+{
+	0, "Windowed"
+	1, "Borderless fullscreen"
+}
+
 OptionMenu VideoModeMenu
 {
 	Title "VIDEO MODE"
 
-	Option "Fullscreen",			"fullscreen", "YesNo"
+	IfOption(Web)
+	{
+		Option "Fullscreen",			"fullscreen", "YesNo"
+	}
+	else
+	{
+		Option "Display mode",			"fullscreen", "DisplayModes"
+	}
 	// [rc4l] uzdoom@f3cc87267
 	IfOption(Mac)
 	{
