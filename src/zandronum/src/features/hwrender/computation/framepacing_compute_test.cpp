@@ -7,6 +7,7 @@
 
 using zx::hwrender::ComputeFenceWaitValue;
 using zx::hwrender::ComputePresentInterval;
+using zx::hwrender::ComputeSwapchainImages;
 
 TEST(FramePacing, TheFirstFramesWaitForNothing)
 {
@@ -41,4 +42,40 @@ TEST(FramePacing, APageAlwaysPresentsAtItsCompositorsPace)
 {
 	EXPECT_EQ(1, ComputePresentInterval(false, true));
 	EXPECT_EQ(1, ComputePresentInterval(true, true));
+}
+
+// [Doruk-Aksoy] Three images under FIFO let the CPU queue two frames, and at 144 Hz it settled into 1.1/5.7/13.9 ms frames that each showed for one refresh: a judder on screen.
+TEST(FramePacing, VsyncAsksForTwoImagesSoNoSecondFrameQueues)
+{
+	EXPECT_EQ(2, ComputeSwapchainImages(true, false));
+}
+
+// [Doruk-Aksoy] With two, mailbox had no image free to draw into until the next vblank and ran no faster than the monitor.
+TEST(FramePacing, MailboxKeepsThreeImages)
+{
+	EXPECT_EQ(3, ComputeSwapchainImages(false, false));
+}
+
+TEST(FramePacing, APageCanvasKeepsThreeImagesWhateverVsyncSays)
+{
+	EXPECT_EQ(3, ComputeSwapchainImages(true, true));
+	EXPECT_EQ(3, ComputeSwapchainImages(false, true));
+}
+
+// [Doruk-Aksoy] fua_debug_swapchain_images 3 brings back the old count under vsync, so the vsyncpacing scenario can show it fails there.
+TEST(FramePacing, AForcedCountWinsOverVsync)
+{
+	EXPECT_EQ(3, ComputeSwapchainImages(true, false, 3));
+	EXPECT_EQ(2, ComputeSwapchainImages(false, false, 2));
+}
+
+TEST(FramePacing, ForcingNothingOrLessIsTheVsyncChoice)
+{
+	EXPECT_EQ(2, ComputeSwapchainImages(true, false, 0));
+	EXPECT_EQ(3, ComputeSwapchainImages(false, false, -1));
+}
+
+TEST(FramePacing, APageCanvasIgnoresAForcedCount)
+{
+	EXPECT_EQ(3, ComputeSwapchainImages(true, true, 2));
 }

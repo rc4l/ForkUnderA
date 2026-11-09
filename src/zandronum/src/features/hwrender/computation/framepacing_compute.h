@@ -14,6 +14,9 @@ unsigned long long ComputeFenceWaitValue(unsigned long long signalled, int maxAh
 // [rc4l] The swapchain's present interval: 1 with vsync on, or on a page's canvas, which the browser presents at its compositor's pace whatever is asked and whose swapchain is remade each time the interval changes; else 0.
 int ComputePresentInterval(bool vsync, bool pagePaced);
 
+// [Doruk-Aksoy] The swapchain images to ask for: `forced` when above 0, else two with vsync on, so the CPU cannot queue a second frame ahead and fall into a 1/6/14 ms rhythm at 144 Hz, and three for mailbox; a page's canvas, which is never remade, always three.
+int ComputeSwapchainImages(bool vsync, bool pagePaced, int forced = 0);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_FRAMEPACING_COMPUTE_H
