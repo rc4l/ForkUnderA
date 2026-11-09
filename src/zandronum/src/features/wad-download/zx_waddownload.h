@@ -102,6 +102,9 @@ void Abandon();
 // "brutal.wad  43%  (3.2 of 7.4 MB)".
 FString StatusLine();
 
+// [Doruk-Aksoy] The file being fetched and its byte counts, for a progress bar; false when idle (total is -1 when unknown).
+bool Progress(std::string &file, long long &received, long long &total);
+
 // Call once per frame from the main loop (D_DoomLoop). Prints whatever the worker queued and fires
 // the completion callback. A no-op when idle.
 void Tick();

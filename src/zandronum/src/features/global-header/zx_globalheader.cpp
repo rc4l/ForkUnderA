@@ -881,3 +881,10 @@ bool GlobalHeader_MouseClick( int screenX, int screenY )
 // [rc4l] The server browser's menu below the bar asks it where its bottom is and whether it has the keyboard.
 static const zx::MenuChrome g_GlobalHeaderChrome = { zx::GlobalHeader_ScreenBottom, zx::GlobalHeader_HasFocus };
 static const bool g_bGlobalHeaderChromeInstalled = ( zx::SetMenuChrome( &g_GlobalHeaderChrome ), true );
+
+// [Doruk-Aksoy] The download bar covers the whole bar while it is drawn, which is while a menu is up and the bar is shown.
+static int GlobalHeader_NoticeCover( )
+{
+	return (( menuactive != MENU_Off ) && zx::GlobalHeader_IsShown( )) ? zx::GlobalHeader_ScreenBottom( ) : 0;
+}
+static const bool g_bGlobalHeaderNoticeInstalled = ( zx::SetNoticeCover( &GlobalHeader_NoticeCover ), true );

@@ -55,6 +55,9 @@ bool IsJoinInFlight();
 // [Doruk-Aksoy] The name of the server a join in flight is going to, for the join screen; empty when none.
 const char *JoiningServerName();
 
+// [Doruk-Aksoy] The global header installs this: the screen row its bar ends on while showing, 0 otherwise, which the download bar covers.
+void SetNoticeCover( int ( *cover )( void ) );
+
 // [rc4l] A join we started is now in flight -- the WAD set has been reloaded and the connect is
 // being attempted. `serverName` is only for the message if it goes wrong.
 //
