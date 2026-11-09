@@ -735,6 +735,11 @@ bool IsJoinInFlight()
 	return g_joinInFlight;
 }
 
+const char *JoiningServerName()
+{
+	return g_joinInFlight ? g_joiningName.GetChars( ) : "";
+}
+
 bool IsJoinResumeHeld()
 {
 	return g_resumeHeld;

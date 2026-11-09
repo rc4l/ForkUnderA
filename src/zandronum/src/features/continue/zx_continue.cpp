@@ -9,6 +9,7 @@
 #include "features/continue/computation/continuerehost_compute.h"
 #include "features/continue/computation/continuereturn_compute.h"
 #include "features/continue/computation/continueshow_compute.h"
+#include "features/continue/computation/continuetext_compute.h"
 #include "features/continue/computation/continuewrite_compute.h"
 #include "features/identity/zx_identity.h"
 #include "features/server-hosting/zx_hosting.h"
@@ -552,60 +553,32 @@ bool Continue_IsShown( void )
 	return ( Verdict( ).target != ContinueTarget::None );
 }
 
+// [Doruk-Aksoy] The verdict and the record it acts on, so the label and tooltip describe exactly what a press does.
+static ContinueTextInputs TextInputs( void )
+{
+	ContinueTextInputs in;
+	if ( Continue_IsShown( ) == false )
+		return in;
+
+	in.verdict = Verdict( );
+	const ContinueRecord &rec = Chosen( );
+	in.serverName = rec.serverName;
+	in.address = rec.address;
+	in.mapName = rec.mapName;
+	in.mapWad = rec.mapWad;
+	in.hostMap = rec.host.map;
+	return in;
+}
+
 const char *Continue_Tooltip( void )
 {
-	if ( Continue_IsShown( ) == false )
-	{
-		g_Tooltip = "";
-		return g_Tooltip.GetChars( );
-	}
-
-	// [rc4l] Leaving says where it will put you, because that is the part nobody can guess.
-	if ( Continue_IsDisconnect( ))
-	{
-		const ContinueButtonVerdict v = Verdict( );
-
-		if ( v.target == ContinueTarget::Hosted )
-			g_Tooltip.Format( "Leave and go back to hosting %s", g_Offline.host.map.c_str( ));
-		else if ( v.target == ContinueTarget::Offline )
-			g_Tooltip.Format( "Leave and go back to %s", g_Offline.mapName.c_str( ));
-		else
-			g_Tooltip = "Leave and go back to the main menu";
-
-		return g_Tooltip.GetChars( );
-	}
-
-	const ContinueRecord &rec = Chosen( );
-
-	if ( rec.kind == ContinueKind::Server )
-	{
-		// The name if we have one, the address if we never learned it.
-		const char *where = rec.serverName.empty( )
-			? rec.address.c_str( ) : rec.serverName.c_str( );
-		g_Tooltip.Format( "Continue playing online in %s", where );
-	}
-	else if ( rec.kind == ContinueKind::Hosted )
-		g_Tooltip.Format( "Continue hosting %s", rec.host.map.c_str( ) );
-	else if ( rec.mapWad.empty( ) == false )
-		g_Tooltip.Format( "Continue singleplayer in %s on %s", rec.mapName.c_str( ), rec.mapWad.c_str( ) );
-	else
-		g_Tooltip.Format( "Continue singleplayer in %s", rec.mapName.c_str( ) );
-
+	g_Tooltip = ComputeContinueTooltip( TextInputs( )).c_str( );
 	return g_Tooltip.GetChars( );
 }
 
 const char *Continue_Label( void )
 {
-	if ( Continue_IsShown( ) == false )
-	{
-		g_Label = "";
-		return g_Label.GetChars( );
-	}
-
-	// [rc4l] Just the word, either way. The pill is sized to its label and sits beside two fixed
-	// ones, so a label that grew with the map name would move the bar's left edge every time the
-	// player changed level.
-	g_Label = Continue_IsDisconnect( ) ? "Disconnect" : "Continue";
+	g_Label = ComputeContinueLabel( TextInputs( ).verdict.mode ).c_str( );
 	return g_Label.GetChars( );
 }
 
@@ -663,6 +636,11 @@ void WriteLocalSnapshot( void )
 
 void Continue_NoteLeavingLocalGame( void )
 {
+	Continue_NoteLeavingLocalGame( false );
+}
+
+void Continue_NoteLeavingLocalGame( bool bLeavingServer )
+{
 	// Same rules as quitting: a crash is not a session, mid-connect there is nothing to go back to,
 	// and a menu is not a place to be returned to.
 	ContinueWriteInputs in;
@@ -671,6 +649,7 @@ void Continue_NoteLeavingLocalGame( void )
 	in.crashing = false;
 	in.hosting = HostIsActive( );
 	in.dedicatedServer = zx::net::IsServer( );	// [KI] a server holds the map but no player to put back into it
+	in.leavingServer = bLeavingServer;
 
 	if ( DecideContinueWrite( in ) != ContinueWriteVerdict::Write )
 		return;
@@ -1163,4 +1142,4 @@ CCMD( fua_continue )
 }
 
 // [rc4l] Hosting and the join, both below the continue tab, tell it when a local game ends or a server starts.
-static const bool g_bContinueListening = ( zx::SetHostingListener( zx::Continue_NoteHosting ), zx::SetLeavingLocalGameListener( zx::Continue_NoteLeavingLocalGame ), true );
+static const bool g_bContinueListening = ( zx::SetHostingListener( zx::Continue_NoteHosting ), zx::SetLeavingLocalGameListener( static_cast<void ( * )( void )>( zx::Continue_NoteLeavingLocalGame )), true );
