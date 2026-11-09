@@ -10027,13 +10027,15 @@ CCMD( connect )
 
 	// Potentially disconnect from the current server.
 	// [EP] Makes sense only for clients.
-	if ( NETWORK_GetState() == NETSTATE_CLIENT )
+	// [Doruk-Aksoy] Kept so the server's map, still loaded after the quit, is not recorded as an offline game below.
+	const bool bWasClient = ( NETWORK_GetState() == NETSTATE_CLIENT );
+	if ( bWasClient )
 		CLIENT_QuitNetworkGame( NULL );
 
 	// Put the game in client mode.
 	// [rc4l] Remember the local game BEFORE the netstate flips, because after this line we look
 	// like a client and there is nothing left that says we were playing something of our own.
-	zx::Continue_NoteLeavingLocalGame( );
+	zx::Continue_NoteLeavingLocalGame( bWasClient );
 
 	NETWORK_SetState( NETSTATE_CLIENT );
 

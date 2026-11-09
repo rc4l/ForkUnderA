@@ -38,7 +38,10 @@ struct ContinueWriteInputs
 	// snapshotting it dereferenced a player that was never there and took the server down on quit.
 	bool dedicatedServer;
 
-	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false), dedicatedServer(false) {}
+	// [Doruk-Aksoy] The map loaded is a server's we are leaving, so it is not an offline game to come back to.
+	bool leavingServer;
+
+	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false), dedicatedServer(false), leavingServer(false) {}
 };
 
 enum class ContinueWriteVerdict
