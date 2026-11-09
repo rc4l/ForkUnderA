@@ -35,6 +35,10 @@
 // [rc4l] Keep the level mesh the backend draws from, and CUSTOM so turning it over drops what the mesh held; the name is GL's, from when GL's walk filled it.
 CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 {
+	// [MobiusU9B] A set to the value it has drops nothing, since the map bake makes a level's flats once and every floor and ceiling but a moving sector's stayed gone (Reset to last saved, an exec, a typed gl_wallmesh 1).
+	static int lastApplied = -1;
+	if (lastApplied == (self ? 1 : 0)) return;
+	lastApplied = self ? 1 : 0;
 	zx::levelmesh::InvalidateAll();
 }
 EXTERN_CVAR(Bool, r_mirrors)

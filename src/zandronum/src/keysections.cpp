@@ -64,25 +64,34 @@ static void LoadKeys (const char *modname, bool dbl)
 	}
 }
 
-static void DoSaveKeys (FConfigFile *config, const char *section, FKeySection *keysection, bool dbl)
+static void DoSaveKeys (FConfigFile *config, const char *section, FKeySection *keysection, bool dbl, std::bitset<NUM_KEYS> &claimed)
 {
 	config->SetSection (section, true);
 	config->ClearCurrentSection ();
 	FKeyBindings *bindings = dbl? &DoubleBindings : &Bindings;
 	for (unsigned i = 0; i < keysection->mActions.Size(); ++i)
 	{
-		bindings->ArchiveBindings (config, keysection->mActions[i].mAction);
+		bindings->ArchiveBindings (config, keysection->mActions[i].mAction, &claimed);
 	}
 }
 
-void M_SaveCustomKeys (FConfigFile *config, char *section, char *subsection, size_t sublen)
+void M_SaveCustomKeys (FConfigFile *config, char *section, char *subsection, size_t sublen, std::bitset<NUM_KEYS> &claimedSingle, std::bitset<NUM_KEYS> &claimedDouble)
 {
 	for (unsigned i=0; i<KeySections.Size(); i++)
 	{
 		mysnprintf (subsection, sublen, "%s.Bindings", KeySections[i].mSection.GetChars());
-		DoSaveKeys (config, section, &KeySections[i], false);
+		DoSaveKeys (config, section, &KeySections[i], false, claimedSingle);
 		mysnprintf (subsection, sublen, "%s.DoubleBindings", KeySections[i].mSection.GetChars());
-		DoSaveKeys (config, section, &KeySections[i], true);
+		DoSaveKeys (config, section, &KeySections[i], true, claimedDouble);
+	}
+}
+
+void M_LoadCustomKeys ()
+{
+	for (unsigned i = 0; i < KeySections.Size(); i++)
+	{
+		LoadKeys (KeySections[i].mSection.GetChars(), false);
+		LoadKeys (KeySections[i].mSection.GetChars(), true);
 	}
 }
 

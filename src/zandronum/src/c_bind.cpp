@@ -48,6 +48,7 @@
 #include "chat.h"
 #include "p_local.h"
 #include "p_acs.h"
+#include "features/save-settings/computation/bindarchive_compute.h" // [MobiusU9B] ComputeBindArchive
 
 #include <math.h>
 #include <stdlib.h>
@@ -409,45 +410,29 @@ void FKeyBindings::PerformBind(FCommandLine &argv, const char *msg)
 
 //=============================================================================
 //
-// This function is first called for functions in custom key sections.
-// In this case, matchcmd is non-NULL, and only keys bound to that command
-// are stored. If a match is found, its binding is set to "\1".
-// After all custom key sections are saved, it is called one more for the
-// normal Bindings and DoubleBindings sections for this game. In this case
-// matchcmd is NULL and all keys will be stored. The config section was not
-// previously cleared, so all old bindings are still in place. If the binding
-// for a key is empty, the corresponding key in the config is removed as well.
-// If a binding is "\1", then the binding itself is cleared, but nothing
-// happens to the entry in the config.
+// [MobiusU9B] Custom key sections save first, each claiming the keys bound to its action, then the general pass skips claimed keys without unbinding them as the old "\1" marker did.
 //
 //=============================================================================
 
-void FKeyBindings::ArchiveBindings(FConfigFile *f, const char *matchcmd)
+void FKeyBindings::ArchiveBindings(FConfigFile *f, const char *matchcmd, std::bitset<NUM_KEYS> *claimed)
 {
-	int i;
-
-	for (i = 0; i < NUM_KEYS; i++)
+	for (int i = 0; i < NUM_KEYS; i++)
 	{
-		if (Binds[i].IsEmpty())
+		const bool isClaimed = (claimed != NULL) && claimed->test(i);
+		switch (zx::ComputeBindArchive(Binds[i].GetChars(), matchcmd, isClaimed))
 		{
-			if (matchcmd == NULL)
-			{
-				f->ClearKey(ConfigKeyName(i));
-			}
-		}
-		else if (matchcmd == NULL || stricmp(Binds[i], matchcmd) == 0)
-		{
-			if (Binds[i][0] == '\1')
-			{
-				Binds[i] = "";
-				continue;
-			}
+		case zx::EBindArchive::Clear:
+			f->ClearKey(ConfigKeyName(i));
+			break;
+
+		case zx::EBindArchive::Write:
 			f->SetValueForKey(ConfigKeyName(i), Binds[i]);
-			if (matchcmd != NULL)
-			{ // If saving a specific command, set a marker so that
-			  // it does not get saved in the general binding list.
-				Binds[i] = "\1";
-			}
+			if (matchcmd != NULL && claimed != NULL)
+				claimed->set(i);
+			break;
+
+		case zx::EBindArchive::Skip:
+			break;
 		}
 	}
 }

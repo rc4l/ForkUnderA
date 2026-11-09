@@ -3875,6 +3875,7 @@ void D_DoomMain (void)
 			P_FreeLevelData();
 			P_FreeExtraLevelData();
 
+			C_RestoreProtectedCVars();		// [MobiusU9B] A server's script changes to engine cvars end at a hop, as the save before it used to do.
 			M_SaveDefaults(NULL);			// save config before the restart
 
 			// delete all data that cannot be left until reinitialization
