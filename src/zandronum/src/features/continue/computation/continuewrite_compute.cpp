@@ -13,10 +13,6 @@ ContinueWriteVerdict DecideContinueWrite(const ContinueWriteInputs &in)
 	if (in.crashing)
 		return ContinueWriteVerdict::Skip;
 
-	// [Doruk-Aksoy] A dedicated server has no player, so a snapshot of it would crash rather than record anything.
-	if (in.dedicatedServer)
-		return ContinueWriteVerdict::Skip;
-
 	// [Doruk-Aksoy] A server's map left loaded by a `connect` elsewhere was never ours, and recording it made Disconnect land in it later.
 	if (in.leavingServer)
 		return ContinueWriteVerdict::Skip;
@@ -24,6 +20,11 @@ ContinueWriteVerdict DecideContinueWrite(const ContinueWriteInputs &in)
 	// Mid-connect there is nothing to go back to: the old session is gone and the new one never
 	// arrived, so recording either would be a lie.
 	if (in.connecting)
+		return ContinueWriteVerdict::Skip;
+
+	// [KI] A dedicated server has a map but nobody standing in it, and Continue exists to put a
+	// player back where they were, so there is nothing here to return to in the first place.
+	if (in.dedicatedServer)
 		return ContinueWriteVerdict::Skip;
 
 	// Our own server is running, so the offline record already says what to come back to and this

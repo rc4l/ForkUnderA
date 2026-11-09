@@ -119,13 +119,13 @@ TEST( ContinueWrite, HostingOutranksBeingInAPerfectlyGoodMap )
 	}
 }
 
-TEST( ContinueWrite, ADedicatedServerQuittingWritesNothing )
+TEST(ContinueWrite, ADedicatedServerIsNeverRecorded)
 {
-	// [Doruk-Aksoy] A dedicated server has no player to snapshot, and G_DoSaveGame on one crashed `exit` at g_game.cpp:5107.
+	// [KI] A dedicated server quitting crashed in G_SnapshotLevel, which snapshots a local player a
+	// dedicated server does not have, so the record it has nothing to offer is skipped before that.
 	ContinueWriteInputs in = InAMap();
 	in.dedicatedServer = true;
-
-	EXPECT_EQ( ContinueWriteVerdict::Skip, DecideContinueWrite( in ));
+	EXPECT_EQ(ContinueWriteVerdict::Skip, DecideContinueWrite(in));
 }
 
 TEST( ContinueWrite, AServersMapIsNeverSnapshottedAsAnOfflineGame )
