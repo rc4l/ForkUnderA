@@ -37,6 +37,14 @@ std::vector<int> Ids(std::initializer_list<int> list)
 	return std::vector<int>(list);
 }
 
+TEST(ControlRow, ADefaultRowIsAnUntitledItem)
+{
+	const ControlRow row;
+	EXPECT_EQ(ControlRowKind::Item, row.kind);
+	EXPECT_TRUE(row.label.empty());
+	EXPECT_TRUE(row.command.empty());
+}
+
 TEST(ControlPatternMatch, EmptyOrBlankMatchesEverything)
 {
 	EXPECT_TRUE(ComputeControlPatternMatch("", "Fire"));
