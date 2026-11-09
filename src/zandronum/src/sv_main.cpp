@@ -84,6 +84,7 @@
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
 #include "features/net-session/computation/joinupdate_compute.h"
+#include "features/net-session/computation/levelauth_compute.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
 #include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
@@ -1400,6 +1401,7 @@ void SERVER_RequestClientToAuthenticate( ULONG ulClient )
 	// [rc4l] uzdoom@24886b673: MapName is an FString now. WriteString is NUL-terminated and
 	// variable-length, so the bytes for any name we could previously send are byte-identical.
 	g_aClients[ulClient].PacketBuffer.ByteStream.WriteString( level.MapName.GetChars() );
+	g_aClients[ulClient].authenticatingMap = level.MapName;
 	// [CK] This lets the client start off with a reasonable gametic. In case
 	// the client would like to do any kind of prediction from gametics in the
 	// future, we can use the current gametic as the base. This also prevents
@@ -1423,19 +1425,27 @@ void SERVER_AuthenticateClientLevel( BYTESTREAM_s *pByteStream )
 	// judged before the level is: an identity we cannot confirm is the more basic refusal.
 	const bool bIdentityHolds = SERVER_FuaAuthReadProof( g_lCurrentClient, pByteStream );
 
-	if ( bIdentityHolds == false )
+	switch ( zx::netsession::ComputeLevelAuthVerdict( bIdentityHolds,
+		g_aClients[g_lCurrentClient].authenticatingMap.GetChars( ), level.MapName.GetChars( ), bLevelMatches ))
 	{
+	case zx::netsession::LevelAuthVerdict::RejectIdentity:
 		// [rc4l] SERVER_FuaAuthReadProof reports the duplicate-account case itself, so say nothing
 		// more when it has already disconnected this client.
 		if ( SERVER_IsValidClient( g_lCurrentClient ))
 			SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_IDENTITYREJECTED );
 		return;
-	}
 
-	if ( bLevelMatches == false )
-	{
+	// [Doruk-Aksoy] The map changed while the client answered, as an empty server's held script does on the first connection, so it is asked for the new one.
+	case zx::netsession::LevelAuthVerdict::AskAgain:
+		SERVER_RequestClientToAuthenticate( g_lCurrentClient );
+		return;
+
+	case zx::netsession::LevelAuthVerdict::RejectLevel:
 		SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_AUTHENTICATIONFAILED );
 		return;
+
+	case zx::netsession::LevelAuthVerdict::Accept:
+		break;
 	}
 
 	// [BB] Don't timeout.
