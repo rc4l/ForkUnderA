@@ -211,4 +211,31 @@ bool CursorAtTopRow(const bool *selectable, int count, int selected)
 	return true;
 }
 
+HeaderKeyRoute ComputeHeaderKeyRoute(HeaderKey key, bool barHasFocus, bool barShown, bool menuAtTopRow,
+	bool menuWrapsAtTop)
+{
+	if (key == HeaderKey::Back)
+		return HeaderKeyRoute::ReleaseThenMenu;
+
+	if (barHasFocus)
+	{
+		switch (key)
+		{
+		case HeaderKey::Left:	return HeaderKeyRoute::BarLeft;
+		case HeaderKey::Right:	return HeaderKeyRoute::BarRight;
+		case HeaderKey::Down:	return HeaderKeyRoute::BarLeave;
+		case HeaderKey::Enter:	return HeaderKeyRoute::BarActivate;
+		// [Doruk-Aksoy] Hands Up back to the menu on its top row, whose own Up wraps round to the bottom.
+		case HeaderKey::Up:
+			return menuWrapsAtTop ? HeaderKeyRoute::ReleaseThenMenu : HeaderKeyRoute::BarHold;
+		default:				return HeaderKeyRoute::Menu;
+		}
+	}
+
+	if (key == HeaderKey::Up && menuAtTopRow && barShown)
+		return HeaderKeyRoute::EnterBar;
+
+	return HeaderKeyRoute::Menu;
+}
+
 } // namespace zx

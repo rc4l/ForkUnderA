@@ -299,6 +299,9 @@ public:
 	// the point of is worse than one more menu where Up wraps.
 	virtual bool AtTopRow();
 
+	// [Doruk-Aksoy] Does this menu's own Up wrap from its top row to its bottom one, so Up on the tab bar can carry on round it?
+	virtual bool WrapsAtTop();
+
 	void SetCapture();
 	void ReleaseCapture();
 	bool HasCapture()
@@ -637,6 +640,7 @@ public:
 	bool MenuEvent (int mkey, bool fromcontroller);
 	bool MouseEvent(int type, int x, int y);
 	bool AtTopRow();
+	bool WrapsAtTop() { return true; }
 	void Ticker ();
 	void Drawer ();
 	void SetFocus(FListMenuItem *fc)
@@ -879,6 +883,7 @@ public:
 	bool MenuEvent (int mkey, bool fromcontroller);
 	bool MouseEvent(int type, int x, int y);
 	bool AtTopRow();
+	bool WrapsAtTop() { return true; }
 	void Ticker ();
 	void Drawer ();
 	const FOptionMenuDescriptor *GetDescriptor() const { return mDesc; }

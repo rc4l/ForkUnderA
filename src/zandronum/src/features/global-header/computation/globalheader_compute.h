@@ -161,6 +161,35 @@ int StepHeaderTab(int index, int count, int step);
 // stealing it would leave a menu the keyboard can never enter.
 bool CursorAtTopRow(const bool *selectable, int count, int selected);
 
+// [Doruk-Aksoy] The menu keys the bar cares about, kept apart from the engine's MKEY numbering.
+enum class HeaderKey
+{
+	Up,
+	Down,
+	Left,
+	Right,
+	Enter,
+	Back,
+	Other,
+};
+
+// [Doruk-Aksoy] Where one menu key goes: to the bar, to the menu underneath, or across between them.
+enum class HeaderKeyRoute
+{
+	Menu,             // the menu underneath handles it
+	ReleaseThenMenu,  // the bar lets go of the arrows, then the menu still gets the key
+	BarLeft,
+	BarRight,
+	BarLeave,         // Down off the bar, back to the menu's row
+	BarActivate,
+	BarHold,          // the bar keeps the key and nothing moves
+	EnterBar,         // Up off the menu's top row
+};
+
+// [Doruk-Aksoy] Routes a press or held-key repeat so the menu sees no arrows while the bar has them, and Up on the bar returns to a wrapping menu.
+HeaderKeyRoute ComputeHeaderKeyRoute(HeaderKey key, bool barHasFocus, bool barShown, bool menuAtTopRow,
+	bool menuWrapsAtTop);
+
 } // namespace zx
 
 #endif // ZX_GLOBALHEADER_COMPUTE_H
