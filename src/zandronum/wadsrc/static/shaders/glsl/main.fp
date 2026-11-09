@@ -73,7 +73,8 @@ vec4 getTexel(vec2 st)
 			break;
 			
 		case 4:	// TM_REDTOALPHA
-			texel = vec4(1.0, 1.0, 1.0, texel.r);
+			// [Doruk-Aksoy] Times its own alpha, as upstream's TM_ALPHATEXTURE does, so SmoothEdges' colour in a clear texel stays clear (the triangle crosshair filled in).
+			texel = vec4(1.0, 1.0, 1.0, texel.r * texel.a);
 			break;
 			
 		case 5:	// TM_CLAMPY

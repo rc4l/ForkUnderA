@@ -66,6 +66,7 @@ extern HWND Window;
 #include "network.h"
 #include "g_shared/pwo.h"
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeResetChangesCVar
+#include "features/config-migrate/computation/configmigrate_compute.h"   // [Doruk-Aksoy] Version-fua resets
 // [RC] For name cleaning
 #include "v_text.h"
 
@@ -384,6 +385,18 @@ void FGameConfigFile::DoGlobalSetup ()
 			// double last = atof( lastver );
 		}
 	}
+
+	// [Doruk-Aksoy] Settings this fork put back to their defaults, once for configs saved before the change.
+	if (SetSection ("LastRun"))
+	{
+		const int last = zx::configmigrate::ComputeConfigLastVersion( GetValueForKey( "Version-fua" ));
+		for ( const char *name : zx::configmigrate::ComputeConfigResets( last ))
+		{
+			FBaseCVar *var = FindCVar( name, NULL );
+			if ( var != NULL )
+				var->ResetToDefault( );
+		}
+	}
 }
 
 void FGameConfigFile::DoGameSetup (const char *gamename)
@@ -668,6 +681,9 @@ void FGameConfigFile::ArchiveGlobalData ()
 	ClearCurrentSection ();
 	SetValueForKey ("Version", LASTRUNVERSION);
 	SetValueForKey( "Version-" GAMESIG, LASTZARUNVERSION ); // [TP]
+	char fuaVersion[16]; // [Doruk-Aksoy]
+	mysnprintf( fuaVersion, countof( fuaVersion ), "%d", zx::configmigrate::ComputeConfigVersion( ));
+	SetValueForKey( "Version-fua", fuaVersion );
 
 	SetSection ("GlobalSettings", true);
 	ClearCurrentSection ();

@@ -125,7 +125,7 @@ static const char *k2DPS =
 	"    if (vTexMode == 1)      t.rgb = vec3(1.0);\n"                       // TM_MASK
 	"    else if (vTexMode == 2) t.a = 1.0;\n"                               // TM_OPAQUE
 	"    else if (vTexMode == 3) t = vec4(1.0-t.r, 1.0-t.b, 1.0-t.g, t.a);\n"// TM_INVERSE
-	"    else if (vTexMode == 4) t = vec4(1.0, 1.0, 1.0, t.r);\n"            // TM_REDTOALPHA
+	"    else if (vTexMode == 4) t = vec4(1.0, 1.0, 1.0, t.r * t.a);\n"      // TM_REDTOALPHA, as main.fp
 	"    else if (vTexMode == 5 && (uv.t < 0.0 || uv.t > 1.0)) t.a = 0.0;\n"// TM_CLAMPY
 	/* [rc4l] getTexel's damage tint on the weapon or the status bar face, before the fuzz shader takes the texel. */
 	"    t = fuaDamageTint(t, uv.t, vTint, vTintRange);\n"
@@ -444,13 +444,15 @@ void Draw2D(Diligent::IDeviceContext *ctx, int first, int end, Diligent::ITextur
 		// This is a lookup keyed on (material, translation) and it ran once per QUAD -- for a status
 		// bar that is the same handful of textures over and over, and for a line of text it is the
 		// same font page for every glyph.
-		if (q.material != curMat || q.translation != curTrans)
+		// [Doruk-Aksoy] A red-to-alpha image without its own palette takes its colour index as alpha, as GL's SetMaterial binds it.
+		const int quadTrans = q.texMode == zx::draw2d::kTexRedToAlpha ? DecalPassTranslation(q.material, q.translation, true) : q.translation;
+		if (q.material != curMat || quadTrans != curTrans)
 		{
-			auto *found = GetMaterialSRB(pso, q.material, q.translation);
+			auto *found = GetMaterialSRB(pso, q.material, quadTrans);
 			if (!found) continue;
 			ctx->CommitShaderResources(found, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 			curMat = q.material;
-			curTrans = q.translation;
+			curTrans = quadTrans;
 		}
 
 		if (q.clipL != cl || q.clipT != ctp || q.clipR != cr || q.clipB != cb2)
