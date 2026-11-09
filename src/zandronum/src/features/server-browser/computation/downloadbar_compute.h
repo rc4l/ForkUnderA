@@ -18,8 +18,8 @@ struct NoticeStrip
 	int height;
 };
 
-// [Doruk-Aksoy] Over the whole header bar when one is showing (coverBottom > 0), so no tab peeks through, else the plain band.
-NoticeStrip ComputeNoticeStrip(int coverBottom, int bandTop, int bandHeight);
+// [Doruk-Aksoy] Directly under the header bar when one is showing (headerBottom > 0), so its tabs stay visible and clickable, else the plain band.
+NoticeStrip ComputeNoticeStrip(int headerBottom, int bandTop, int bandHeight);
 
 // [Doruk-Aksoy] The filled part and the highlight inside it, in pixels from the strip's left edge.
 struct DownloadBarFill
