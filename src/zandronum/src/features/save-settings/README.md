@@ -64,7 +64,7 @@ moment the player saved.
 - `src/d_main.cpp` — the restart before a server hop or wad reload calls `C_RestoreProtectedCVars`
   before its save, so a server's script changes to engine cvars still end there.
 - `src/p_acs.cpp` `SetUserCVar` — a server tells every client when a script changes a player's mod
-  user cvar; before, only the server's copy changed and the player's client sent its old value back
+  user cvar, through net-replication's `SendUserCVar`; before, only the server's copy changed and the player's client sent its old value back
   on the next connect.
 - `src/cl_main.cpp` `ServerCommands::SetPlayerUserInfo::Execute` — the client copies such a value for
   its own player into its own cvar without sending it back, so the ini saves it. No new message, so
