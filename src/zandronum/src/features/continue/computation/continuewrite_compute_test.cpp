@@ -118,3 +118,21 @@ TEST( ContinueWrite, HostingOutranksBeingInAPerfectlyGoodMap )
 		EXPECT_EQ( expected, DecideContinueWrite( in ) == ContinueWriteVerdict::Write );
 	}
 }
+
+TEST( ContinueWrite, ADedicatedServerQuittingWritesNothing )
+{
+	// [Doruk-Aksoy] A dedicated server has no player to snapshot, and G_DoSaveGame on one crashed `exit` at g_game.cpp:5107.
+	ContinueWriteInputs in = InAMap();
+	in.dedicatedServer = true;
+
+	EXPECT_EQ( ContinueWriteVerdict::Skip, DecideContinueWrite( in ));
+}
+
+TEST( ContinueWrite, AServersMapIsNeverSnapshottedAsAnOfflineGame )
+{
+	// [Doruk-Aksoy] `connect` from a server quits it first, so the netstate reads offline while the server's map is still loaded.
+	ContinueWriteInputs in = InAMap();
+	in.leavingServer = true;
+
+	EXPECT_EQ( ContinueWriteVerdict::Skip, DecideContinueWrite( in ));
+}

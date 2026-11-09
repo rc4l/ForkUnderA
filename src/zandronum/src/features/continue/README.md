@@ -61,7 +61,7 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 | `src/CMakeLists.txt` | registers `features/continue/zx_continue.cpp` |
 | `c_cmds.cpp` | `quit`/`exit` record the session before exiting |
 | `features/server-browser/zx_joinserver.cpp` | `NoteJoinSucceeded` records the server; `SetLeavingLocalGameListener`, which this tab installs, hears a local game being left |
-| `features/global-header/zx_globalheader.cpp` | the Continue tab: label, count, pinned index, activation |
+| `features/global-header/zx_globalheader.cpp` | the Continue tab: label (`TabLabel` asks `Continue_Label`, so it reads Disconnect online), count, pinned index, activation |
 | `features/global-header/computation/globalheader_compute.{h,cpp}` | `pinnedIndex` layout and `StepHeaderTabPinned` |
 | `mcp_rpc.cpp` | `ui.continue`, for `fuactl continue` |
 | `features/server-browser/browser.{h,cpp}` | exports `BROWSER_AddServerToList` and `BROWSER_GetListIDByAddress` |
@@ -74,5 +74,6 @@ already takes. Same asymmetry `headerreach_compute` settles for "Play Online!".
 
 * `continuerecord_compute` — the on-disk format, versioned, refusing anything newer.
 * `continueshow_compute` — whether the button exists.
-* `continuewrite_compute` — whether this shutdown is worth remembering.
+* `continuewrite_compute` — whether this shutdown is worth remembering; never on a dedicated server, which has no player to snapshot.
+* `continuetext_compute` — the pill's label and its two-line tooltip: what a press does now and where it lands, with server names' colour codes stripped.
 * `continuerehost_compute` — whether a remembered server can be started as we are, needs a reload first, or is missing.
