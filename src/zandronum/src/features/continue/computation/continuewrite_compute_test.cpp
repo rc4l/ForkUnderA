@@ -118,3 +118,12 @@ TEST( ContinueWrite, HostingOutranksBeingInAPerfectlyGoodMap )
 		EXPECT_EQ( expected, DecideContinueWrite( in ) == ContinueWriteVerdict::Write );
 	}
 }
+
+TEST(ContinueWrite, ADedicatedServerIsNeverRecorded)
+{
+	// [KI] A dedicated server quitting crashed in G_SnapshotLevel, which snapshots a local player a
+	// dedicated server does not have, so the record it has nothing to offer is skipped before that.
+	ContinueWriteInputs in = InAMap();
+	in.dedicatedServer = true;
+	EXPECT_EQ(ContinueWriteVerdict::Skip, DecideContinueWrite(in));
+}

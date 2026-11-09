@@ -34,7 +34,11 @@ struct ContinueWriteInputs
 	// starting the server again. The hosted record already describes what to come back to.
 	bool hosting;
 
-	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false) {}
+	// [KI] This process is the dedicated server itself, which holds a map but no local player, so
+	// snapshotting it dereferenced a player that was never there and took the server down on quit.
+	bool dedicatedServer;
+
+	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false), dedicatedServer(false) {}
 };
 
 enum class ContinueWriteVerdict
