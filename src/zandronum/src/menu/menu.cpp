@@ -70,6 +70,7 @@
 #include "features/server-browser/zx_joinserver.h" // [rc4l] a finished download redirects to the browser
 #include "features/server-hosting/zx_hosting.h" // [rc4l] starting a game closes a server we are running
 #include "features/global-header/zx_globalheader.h" // [rc4l] the tab bar drawn over every menu
+#include "features/global-header/computation/globalheader_compute.h" // [Doruk-Aksoy] ComputeHeaderKeyRoute
 
 //
 // Todo: Move these elsewhere
@@ -254,6 +255,55 @@ bool DMenu::MouseEvent(int type, int x, int y)
 bool DMenu::AtTopRow()
 {
 	return false;
+}
+
+bool DMenu::WrapsAtTop()
+{
+	return false;
+}
+
+// [Doruk-Aksoy] The engine's menu keys in the tab bar router's own vocabulary.
+static zx::HeaderKey M_HeaderKey(int mkey)
+{
+	switch (mkey)
+	{
+	case MKEY_Up:		return zx::HeaderKey::Up;
+	case MKEY_Down:		return zx::HeaderKey::Down;
+	case MKEY_Left:		return zx::HeaderKey::Left;
+	case MKEY_Right:	return zx::HeaderKey::Right;
+	case MKEY_Enter:	return zx::HeaderKey::Enter;
+	case MKEY_Back:		return zx::HeaderKey::Back;
+	default:			return zx::HeaderKey::Other;
+	}
+}
+
+// [Doruk-Aksoy] Sends one menu key to the global tab bar or the menu under it, for presses and held-key repeats alike.
+static void M_RouteMenuKey(int mkey, bool fromcontroller)
+{
+	DMenu *menu = DMenu::CurrentMenu;
+	const bool bBarFocus = zx::GlobalHeader_HasFocus();
+	const zx::HeaderKeyRoute route = zx::ComputeHeaderKeyRoute(M_HeaderKey(mkey), bBarFocus,
+		zx::GlobalHeader_IsShown(), !bBarFocus && menu->AtTopRow(), menu->WrapsAtTop());
+
+	switch (route)
+	{
+	case zx::HeaderKeyRoute::BarLeft:		zx::GlobalHeader_NavLeft();		return;
+	case zx::HeaderKeyRoute::BarRight:		zx::GlobalHeader_NavRight();	return;
+	case zx::HeaderKeyRoute::BarLeave:		zx::GlobalHeader_NavDown();		return;
+	case zx::HeaderKeyRoute::BarActivate:	zx::GlobalHeader_Activate();	return;
+	case zx::HeaderKeyRoute::BarHold:		return;
+	case zx::HeaderKeyRoute::EnterBar:
+		zx::GlobalHeader_TakeFocus();
+		S_Sound(CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE);
+		return;
+	case zx::HeaderKeyRoute::ReleaseThenMenu:
+		zx::GlobalHeader_ReleaseFocus();
+		break;
+	case zx::HeaderKeyRoute::Menu:
+		break;
+	}
+
+	menu->MenuEvent(mkey, fromcontroller);
 }
 
 //=============================================================================
@@ -983,59 +1033,8 @@ bool M_Responder (event_t *ev)
 				{
 					MenuButtonTickers[mkey] = KEY_REPEAT_DELAY;
 				}
-				// [rc4l] While the tab bar holds the arrows, the menu underneath sees none of them.
-				//
-				// That is what having focus means, and routing the key to both would move the bar's
-				// cursor and the menu's selection at the same time -- two carets, one keypress.
-				// [rc4l] ESCAPE MEANS ESCAPE, and it is dealt with before the bar gets a look in.
-				//
-				// It used to be one of the bar's cases, which spent the keypress handing the arrows
-				// back: a player who had walked up to the bar then had to press Escape twice, once
-				// to leave the bar and once to leave the menu. Escape is the one key that must never
-				// be absorbed by something the player did not ask to be in, so the bar's focus is
-				// dropped here as a side effect and the key carries on to the menu regardless.
-				if (mkey == MKEY_Back)
-				{
-					zx::GlobalHeader_ReleaseFocus();
-				}
-				else if (zx::GlobalHeader_HasFocus())
-				{
-					// While the tab bar holds the arrows, the menu underneath sees none of them.
-					// That is what having focus means, and routing the key to both would move the
-					// bar's cursor and the menu's selection at once: two carets, one keypress.
-					bool handled = false;
-					switch (mkey)
-					{
-					case MKEY_Left:		handled = zx::GlobalHeader_NavLeft();	break;
-					case MKEY_Right:	handled = zx::GlobalHeader_NavRight();	break;
-					case MKEY_Down:		handled = zx::GlobalHeader_NavDown();	break;
-					case MKEY_Enter:	handled = zx::GlobalHeader_Activate();	break;
-
-					// Up is already at the top of everything.
-					case MKEY_Up:		handled = true;							break;
-					default:											break;
-					}
-
-					if (handled)
-						return true;
-				}
-				// [rc4l] Up off the top row of a menu is how the keyboard reaches the bar.
-				//
-				// Asked here rather than inside each menu's Up because the bar sits above ALL of
-				// them: putting the question in one place is what stops the answer drifting apart
-				// menu by menu, and a mod's own menu inherits the behaviour without knowing.
-				//
-				// It costs the wrap from the top row to the bottom one, which is the trade every
-				// game with a tab strip makes: there is now something above the first row, so Up
-				// goes to it.
-				else if (mkey == MKEY_Up && DMenu::CurrentMenu->AtTopRow())
-				{
-					zx::GlobalHeader_TakeFocus();
-					S_Sound(CHAN_VOICE | CHAN_UI, "menu/cursor", snd_menuvolume, ATTN_NONE);
-					return true;
-				}
-
-				DMenu::CurrentMenu->MenuEvent(mkey, fromcontroller);
+				// [Doruk-Aksoy] The tab bar and the menu share one router so a held key's repeats go where its press went.
+				M_RouteMenuKey(mkey, fromcontroller);
 				return true;
 			}
 		}
@@ -1104,7 +1103,7 @@ void M_Ticker (void)
 				if (MenuButtonTickers[i] > 0 &&	--MenuButtonTickers[i] <= 0)
 				{
 					MenuButtonTickers[i] = KEY_REPEAT_RATE;
-					DMenu::CurrentMenu->MenuEvent(i, MenuButtonOrigin[i]);
+					M_RouteMenuKey(i, MenuButtonOrigin[i]);
 				}
 			}
 		}
