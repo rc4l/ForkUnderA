@@ -190,6 +190,7 @@
 
 #include "win32/g15/g15.h"
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
+#include "features/join-screen/joinscreen.h" // [Doruk-Aksoy] JoinScreen_Draw
 EXTERN_CVAR(Bool, hud_althud)
 void DrawHUD();
 
@@ -1165,7 +1166,8 @@ void D_Display ()
 drawfullconsole:
 			screen->SetBlendingRect(0,0,0,0);
 			hw2d = screen->Begin2D(false);
-			C_DrawConsole (false);
+			if (!zx::JoinScreen_Draw ()) // [Doruk-Aksoy] features/join-screen: the loading screen stands in for the console while joining
+				C_DrawConsole (false);
 			M_Drawer ();
 			// [rc4l] This case returns before the shared call below ever runs, so the band needs its
 			// own -- a download outlives dropping to the full console.
@@ -1326,6 +1328,7 @@ drawfullconsole:
 			NetUpdate ();			// send out any new accumulation
 		}
 		// normal update
+		zx::JoinScreen_Draw ();	// [Doruk-Aksoy] features/join-screen: the frame a browser join is pressed in, which stays up through the reload
 		C_DrawConsole (hw2d);	// draw console
 		M_Drawer ();			// menu is drawn even on top of everything
 
