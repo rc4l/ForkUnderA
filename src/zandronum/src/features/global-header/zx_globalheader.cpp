@@ -59,6 +59,12 @@ int PinnedIndex( )
 	return Continue_IsShown( ) ? static_cast<int>( HeaderTab::Continue ) : -1;
 }
 
+// [Doruk-Aksoy] The Continue pill asks the feature for its word, so online it reads Disconnect as it acts.
+const char *TabLabel( int tab )
+{
+	return ( tab == static_cast<int>( HeaderTab::Continue )) ? Continue_Label( ) : kTabLabels[tab];
+}
+
 // Where the keyboard is on the bar, and whether the bar owns it at all. The LIT tab is not stored
 // here -- that is asked of the world in CurrentTab() -- this is only the cursor while somebody is
 // walking along the row before they press anything.
@@ -190,7 +196,7 @@ int ToVirtualY( int py )
 void MeasureLabels( int *out )
 {
 	for ( int i = 0; i < TabCount( ); ++i )
-		out[i] = SmallFont->StringWidth( kTabLabels[i] );
+		out[i] = SmallFont->StringWidth( TabLabel( i ));
 }
 
 // [rc4l] Which tab is LIT, asked rather than remembered.
@@ -580,7 +586,7 @@ void GlobalHeader_Draw( )
 		const ReachTint tint = bOnline ? HeaderReachTint( reach ) : ReachTint::Neutral;
 		const bool bEnabled = !bOnline || PlayOnlineSelectable( reach );
 
-		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), kTabLabels[i], ( i == lit ),
+		DrawPill( HeaderTabRect( m, widths, TabCount( ), i, PinnedIndex( ) ), TabLabel( i ), ( i == lit ),
 			( i == g_HotTab ), ( g_HasFocus && ( i == g_FocusTab )), tint, bEnabled );
 	}
 

@@ -38,12 +38,24 @@ raw CVAR.
 - **macOS + Linux (SDL2, `src/sdl/sdlglvideo.cpp`)**: already request
   `SDL_WINDOW_FULLSCREEN_DESKTOP` and toggle with `SDL_SetWindowFullscreen` — this *is* the
   borderless-desktop model. No change.
-- **Menu (`wadsrc/static/menudef.txt`)**: `Option "Fullscreen", "fullscreen", "YesNo"` already
-  matches UZDoom's `Fullscreen: Yes/No`. `fullscreen` now means borderless, so the label is
-  correct as-is. No change.
+- **Menu (`wadsrc/static/menudef.txt`)**: `fullscreen` is shown as `Display mode: Windowed /
+  Borderless fullscreen` (`DisplayModes`) in both Display Options and Set video mode, since
+  fullscreen means borderless; the web build keeps `Fullscreen: Yes/No`.
 
 ## Not in scope (tracked follow-ups)
 
 Post-process gamma (borderless can't use hardware gamma ramps — a 2016-era backport),
 `vid_scalemode` sub-native render scaling, and window position/size persistence. See
 `docs/borderless-feasibility.md`.
+
+### Open: fullscreen size and placement can name different monitors (Windows, multi-monitor)
+
+Found by reading the code on a one-monitor machine, so not reproduced. In fullscreen the render
+and client size comes from the **primary** monitor (`GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN)` in
+`win32/hardware.cpp` `I_SetMode`), while the window is placed on the monitor `vid_adapter` picks
+by its position in `EnumDisplayMonitors` order (`win32/win32gliface.cpp`
+`GetDisplayDeviceNameMonitorEnumProc` and the `Win32GLFrameBuffer` constructor). With monitors of
+different resolutions the game can render at one monitor's size and cover another, or land on an
+unexpected monitor, as Windows does not promise the primary monitor comes first. The likely fix is to
+take both from one monitor (`MonitorFromWindow`, or the `vid_adapter` one), with the choice in this
+feature's computation unit and a test.

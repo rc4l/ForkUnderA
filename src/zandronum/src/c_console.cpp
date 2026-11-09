@@ -45,6 +45,7 @@
 
 #include "version.h"
 #include "features/fua-branding/computation/fua_version_compute.h"
+#include "features/join-screen/joinscreen.h" // [Doruk-Aksoy] JoinScreen_TogglePeek
 #include "g_game.h"
 #include "c_bind.h"
 #include "c_console.h"
@@ -1437,7 +1438,10 @@ void C_ToggleConsole ()
 	// [Leo] Don't let the console close while requesting/receiving a snapshot.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) ||
 		( NETWORK_InClientMode() && ( CLIENT_GetConnectionState() != CTS_ACTIVE )))
+	{
+		zx::JoinScreen_TogglePeek(); // [Doruk-Aksoy] features/join-screen: the console key swaps the loading screen for the console
 		return;
+	}
 
 	if (gamestate == GS_DEMOSCREEN || demoplayback)
 	{
