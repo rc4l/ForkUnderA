@@ -52,6 +52,9 @@ bool IsJoinResumeHeld();
 // would drag the player out of the join they are half way through.
 bool IsJoinInFlight();
 
+// [Doruk-Aksoy] The name of the server a join in flight is going to, for the join screen; empty when none.
+const char *JoiningServerName();
+
 // [rc4l] A join we started is now in flight -- the WAD set has been reloaded and the connect is
 // being attempted. `serverName` is only for the message if it goes wrong.
 //
