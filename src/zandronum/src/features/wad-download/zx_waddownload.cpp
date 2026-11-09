@@ -997,6 +997,17 @@ FString StatusLine()
 	return FString(zx::FormatDownloadStatus(file, received, total).c_str());
 }
 
+bool Progress(std::string &file, long long &received, long long &total)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	if (g_state != RunState::Running || g_currentFile.empty())
+		return false;
+	file = g_currentFile;
+	received = g_received;
+	total = g_total;
+	return true;
+}
+
 void Tick()
 {
 	std::vector<std::string> lines;
