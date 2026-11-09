@@ -16,4 +16,11 @@ int ComputePresentInterval(bool vsync, bool pagePaced)
 	return vsync || pagePaced ? 1 : 0;
 }
 
+int ComputeSwapchainImages(bool vsync, bool pagePaced, int forced)
+{
+	if (pagePaced) return 3;
+	if (forced > 0) return forced;
+	return vsync ? 2 : 3;
+}
+
 }} // namespace zx::hwrender
