@@ -50,6 +50,8 @@ public:
 	void DoGameSetup (const char *gamename);
 	void DoKeySetup (const char *gamename);
 	void DoModSetup (const char *gamename);
+	// [MobiusU9B] Reset to last saved: the saved cvars that differ from their live values, then the saved keys and each mod's KEYCONF keys.
+	void ResetToSaved (const char *gamename);
 	void ArchiveGlobalData ();
 	void ArchiveGameData (const char *gamename);
 	void AddAutoexec (DArgs *list, const char *gamename);
@@ -68,6 +70,8 @@ private:
 	void ReadCVars (DWORD flags);
 
 	bool bModSetup;
+	// [MobiusU9B] ReadCVars leaves a cvar already at its saved value alone, for ResetToSaved.
+	bool bOnlyChangedCVars = false;
 
 	char section[64];
 	char *subsection;
