@@ -18,6 +18,7 @@
 #include "c_dispatch.h"
 #include "c_cvars.h"
 #include "c_console.h"
+#include "i_system.h"   // [Doruk-Aksoy] atterm
 #include "v_text.h"   // [rc4l] TEXTCOLOR_ORANGE
 
 #ifdef FUA_DILIGENT
@@ -113,6 +114,13 @@ void PrintDiligentMessages()
 	DiligentMessages().Drain([](const std::string &text) { Printf("%s", text.c_str()); });
 }
 
+// [Doruk-Aksoy] At exit, while the console is alive: a device that never got a swapchain (a -host server) skips ShutdownBackend, and its unflushed context's destructor printed to the freed console.
+static void DetachDeviceAtExit()
+{
+	Diligent::SetDebugMessageCallback(nullptr);
+	if (g_context) g_context->Flush();
+}
+
 static const char *AdapterTypeName(Diligent::ADAPTER_TYPE t)
 {
 	switch (t)
@@ -169,6 +177,7 @@ bool ProbeVulkan(FString &report)
 
 	const DeviceApi *api = ChosenDeviceApi();
 	if (!api->createDevice(&g_device, &g_context, g_limits, report)) return false;
+	atterm(DetachDeviceAtExit);
 	RefreshSlotCapacity();
 	// [rc4l] A reference never let go, so the device outlives exit: destroying it finalizes glslang, whose global mutex is gone by then on macOS and whose lock aborts the quit, and the dozens of static objects that each hold the device make releasing it any sooner impossible.
 	g_device->AddRef();
