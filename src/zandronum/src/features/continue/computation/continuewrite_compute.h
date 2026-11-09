@@ -34,7 +34,13 @@ struct ContinueWriteInputs
 	// starting the server again. The hosted record already describes what to come back to.
 	bool hosting;
 
-	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false) {}
+	// [Doruk-Aksoy] This process is a dedicated server, which has no player or local game to remember.
+	bool dedicatedServer;
+
+	// [Doruk-Aksoy] The map loaded is a server's we are leaving, so it is not an offline game to come back to.
+	bool leavingServer;
+
+	ContinueWriteInputs() : inMap(false), connecting(false), crashing(false), hosting(false), dedicatedServer(false), leavingServer(false) {}
 };
 
 enum class ContinueWriteVerdict
