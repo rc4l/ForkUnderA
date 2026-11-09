@@ -88,6 +88,7 @@
 #include "invasion.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
+#include "features/net-replication/playerstate.h"   // [MobiusU9B] SendUserCVar
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include "network/nettraffic.h"
 #include "za_database.h"
@@ -108,6 +109,7 @@
 #include "features/acs-argcount/computation/acsargcount_compute.h"   // [Doruk-Aksoy] ComputeShortCall
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how often the string pool is collected and what that frees
 #include "features/acs-strings/computation/stringpool_compute.h"   // [Doruk-Aksoy] ComputeStringPoolGrowth
+#include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeSendsUserCVarChange
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -5999,14 +6001,22 @@ static int SetUserCVar(int playernum, const char *cvarname, int value, bool is_s
 	{
 		return 0;
 	}
-	FBaseCVar **cvar_p = players[playernum].userinfo.CheckKey(FName(cvarname, true));
+	const FName key(cvarname, true);
+	FBaseCVar **cvar_p = players[playernum].userinfo.CheckKey(key);
 	FBaseCVar *cvar;
 	// Only mod-created cvars may be set.
 	if (cvar_p == NULL || (cvar = *cvar_p) == NULL || (cvar->GetFlags() & CVAR_IGNORE) || !(cvar->GetFlags() & CVAR_MOD))
 	{
 		return 0;
 	}
+	const FString before = cvar->GetGenericRep(CVAR_String).String;
 	DoSetCVar(cvar, value, is_string);
+
+	// [MobiusU9B] A server tells every client of a real change, the player's own client included, whose own cvar and ini only learn it this way.
+	if (zx::ComputeSendsUserCVarChange(zx::net::IsServer(), before.GetChars(), cvar->GetGenericRep(CVAR_String).String))
+	{
+		zx::netreplication::SendUserCVar(playernum, key);
+	}
 
 	// If we are this player, then also reflect this change in the local version of this cvar.
 	if (playernum == consoleplayer)
