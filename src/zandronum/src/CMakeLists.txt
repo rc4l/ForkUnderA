@@ -1809,6 +1809,7 @@ add_executable( zdoom WIN32
 	features/dynres/computation/dynres_compute.cpp
 	features/dynlights/computation/nodeindex_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp
+	features/config-migrate/computation/configmigrate_compute.cpp
 	features/rendersettings/computation/forcedvideo_compute.cpp
 	features/display/computation/display_compute.cpp
 	features/draw2d/computation/flatfill_compute.cpp

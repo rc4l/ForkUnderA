@@ -19,21 +19,14 @@
 #include "c_dispatch.h"   // CCMD
 #include "features/replay/computation/replay_compute.h"
 
-// [rc4l] Master on/off, default ON: an instant replay is only useful if it was already running when
-// the thing worth keeping happened. A recorder you have to switch on first cannot catch the shot you
-// did not know you were about to make, which is the whole point of a rolling buffer -- so this is
-// opt-OUT (`cl_fua_replay 0`), not opt-in.
-//
-// The cost is bounded and configurable below: a rolling buffer of cl_fua_replay_duration seconds at
-// cl_fua_replay_fps, capped at cl_fua_replay_maxheight, encoded on a worker thread off the render
-// path. Nothing reaches disk until the player asks for a clip -- the buffer is overwritten in place.
+// [Doruk-Aksoy] Master on/off, default off since clients crashed joining servers with it on; features/config-migrate turns configs that saved it on back off once.
 #ifdef ZX_ENABLE_REPLAY
 static const bool kReplayBuilt = true;
 #else
 static const bool kReplayBuilt = false;
 #endif
 // [rc4l] Off and fixed, and never saved, where the build cannot record (a browser's, or one built without FFmpeg), so a shared config keeps the player's choice.
-CVAR(Bool, cl_fua_replay,           kReplayBuilt,  zx::ComputeReplaySwitchFlags(kReplayBuilt, CVAR_ARCHIVE | CVAR_GLOBALCONFIG, CVAR_NOSET))
+CVAR(Bool, cl_fua_replay,           false,         zx::ComputeReplaySwitchFlags(kReplayBuilt, CVAR_ARCHIVE | CVAR_GLOBALCONFIG, CVAR_NOSET))
 // [rc4l] Whether this build can record instant replays, which the replay menu's Enable row greys out without, as vid_backend_choosable does the renderer's.
 CVAR(Bool, cl_fua_replay_available, kReplayBuilt, CVAR_NOSET)
 // Seconds of history kept in the rolling buffer (the "last N seconds").
