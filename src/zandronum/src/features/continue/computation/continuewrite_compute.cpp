@@ -18,6 +18,11 @@ ContinueWriteVerdict DecideContinueWrite(const ContinueWriteInputs &in)
 	if (in.connecting)
 		return ContinueWriteVerdict::Skip;
 
+	// [KI] A dedicated server has a map but nobody standing in it, and Continue exists to put a
+	// player back where they were, so there is nothing here to return to in the first place.
+	if (in.dedicatedServer)
+		return ContinueWriteVerdict::Skip;
+
 	// Our own server is running, so the offline record already says what to come back to and this
 	// snapshot would replace it with wherever we were standing when we started it.
 	if (in.hosting)
