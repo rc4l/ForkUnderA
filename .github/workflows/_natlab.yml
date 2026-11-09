@@ -19,7 +19,8 @@ on:
 jobs:
   # [rc4l] The engine with the control bridge, built once for every case below rather than once in each.
   engine:
-    runs-on: ubuntu-latest
+    # [KI] Pinned to the distro tools/natlab/Dockerfile.peer runs, because glibc is backward compatible and not forward: once ubuntu-latest rolled ahead of the peer image, every case failed at exec with "GLIBC_2.43 not found" and read as the host never opening its bridge.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       # [rc4l] CMake takes these as its compiler launcher, so every compile goes through the cache restored below.
