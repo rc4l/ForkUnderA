@@ -34,6 +34,8 @@
 #ifndef NAME_H
 #define NAME_H
 
+#include <cstddef>   // [Doruk-Aksoy] size_t, which Linux GCC does not get from a header included before this one
+
 enum ENamedName
 {
 #define xx(n) NAME_##n,
