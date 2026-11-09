@@ -1630,6 +1630,7 @@ add_executable( zdoom WIN32
 	features/wadreload/zx_wadreload.cpp
 	features/bot-save/zx_botsave.cpp
 	features/continue/zx_continue.cpp
+	features/controls-search/controlsmenu.cpp
 	features/host-command/zx_hostcommand.cpp
 	features/playerclass-fallback/zx_playerclassfallback.cpp
 	features/fua-caching/fua_caching.cpp
