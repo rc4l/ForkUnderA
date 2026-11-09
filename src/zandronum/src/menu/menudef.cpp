@@ -56,6 +56,7 @@
 
 #include "features/freeform-menu/freeformmenuitems.h"
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeMenuCommandUnsafe
+#include "features/controls-search/controlsmenu.h" // [Doruk-Aksoy] ControlsSearch_Install
 #include "menu/menuplatform_compute.h"
 #include "optionmenuitems.h"
 
@@ -2421,6 +2422,7 @@ static void InitKeySections()
 		if ((*desc)->mType == MDESC_OptionsMenu)
 		{
 			FOptionMenuDescriptor *menu = static_cast<FOptionMenuDescriptor*>(*desc);
+			zx::ControlsSearch_Install(menu); // [Doruk-Aksoy] features/controls-search: the searchable key list
 
 			for (unsigned i = 0; i < KeySections.Size(); i++)
 			{
