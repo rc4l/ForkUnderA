@@ -96,7 +96,7 @@ bool ResolveHostV6( const char *, NETADDRESS_s & ) { return false; }
 // [rc4l] Joining a server from the browser, which an offline build never does.
 bool IsJoinInFlight( ) { return false; }
 const char *JoiningServerName( ) { return ""; }
-void SetNoticeCover( int ( * )( void ) ) {}
+void SetNoticeTop( int ( * )( void ) ) {}
 bool IsServerBrowserOpen( ) { return false; }
 bool ConsumeJoinReady( ) { return false; }
 void JoinTick( ) {}

@@ -599,8 +599,8 @@ bool JoinSelectedServer()
 // than something the player typed.
 bool g_joinInFlight = false;
 
-// [Doruk-Aksoy] How far down the download bar should cover, installed by the header so this feature never includes it.
-int ( *g_NoticeCover )( void ) = NULL;
+// [Doruk-Aksoy] Where the header bar ends, so the download bar sits under it, installed by the header so this feature never includes it.
+int ( *g_NoticeTop )( void ) = NULL;
 
 // [Doruk-Aksoy] The bar's colours: the header's dark strip, a green fill while downloading, gold once ready.
 const PanelColor kStripTop = { 26, 27, 38, 255 };
@@ -749,9 +749,9 @@ bool IsJoinInFlight()
 	return g_joinInFlight;
 }
 
-void SetNoticeCover( int ( *cover )( void ) )
+void SetNoticeTop( int ( *top )( void ) )
 {
-	g_NoticeCover = cover;
+	g_NoticeTop = top;
 }
 
 const char *JoiningServerName()
@@ -841,7 +841,7 @@ void DrawJoinReadyNotice( bool afterMenus )
 		alpha = 0.35f + 0.65f * static_cast<float>( fabs( 1.0 - 2.0 * phase ));
 	}
 
-	// [Doruk-Aksoy] An opaque strip, over the whole header bar when one is up, so its tabs can no longer show through the text.
+	// [Doruk-Aksoy] An opaque strip, under the header bar when one is up, so nothing shows through the text and the tabs stay in view.
 	const int virtW = 640;
 	const int virtH = 400;
 	int bandY = 9;
@@ -850,7 +850,7 @@ void DrawJoinReadyNotice( bool afterMenus )
 	int ignoreW = virtW;
 	screen->VirtualToRealCoordsInt( ignoreX, bandY, ignoreW, bandH, virtW, virtH, false, true );
 
-	const NoticeStrip strip = ComputeNoticeStrip(( g_NoticeCover != NULL ) ? g_NoticeCover( ) : 0, bandY, bandH );
+	const NoticeStrip strip = ComputeNoticeStrip(( g_NoticeTop != NULL ) ? g_NoticeTop( ) : 0, bandY, bandH );
 	if ( strip.height <= 0 )
 		return;
 

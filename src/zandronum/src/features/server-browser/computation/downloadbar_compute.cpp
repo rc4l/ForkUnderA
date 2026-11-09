@@ -24,19 +24,11 @@ float ComputeDownloadFraction(long long received, long long total)
 	return static_cast<float>(std::min(1.0, f));
 }
 
-NoticeStrip ComputeNoticeStrip(int coverBottom, int bandTop, int bandHeight)
+NoticeStrip ComputeNoticeStrip(int headerBottom, int bandTop, int bandHeight)
 {
 	NoticeStrip out;
-	if (coverBottom > 0)
-	{
-		out.top = 0;
-		out.height = coverBottom;
-	}
-	else
-	{
-		out.top = bandTop;
-		out.height = std::max(0, bandHeight);
-	}
+	out.top = (headerBottom > 0) ? headerBottom : bandTop;
+	out.height = std::max(0, bandHeight);
 	return out;
 }
 
