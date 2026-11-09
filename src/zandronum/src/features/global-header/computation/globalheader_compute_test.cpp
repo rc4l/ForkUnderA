@@ -445,6 +445,85 @@ TEST( GlobalHeader, ExactlyOneRowIsEverTheTop )
 	EXPECT_EQ( 1, tops );
 }
 
+// ---------------------------------------------------------------- routing keys
+
+using zx::ComputeHeaderKeyRoute;
+using zx::HeaderKey;
+using zx::HeaderKeyRoute;
+
+TEST( GlobalHeader, UpOnTheBarWrapsRoundToTheMenusBottomRow )
+{
+	// [Doruk-Aksoy] The menu gets Up back from its top row, and its own Up is what wraps to the bottom.
+	EXPECT_EQ( HeaderKeyRoute::ReleaseThenMenu, ComputeHeaderKeyRoute( HeaderKey::Up, true, true, true, true ));
+	EXPECT_EQ( HeaderKeyRoute::ReleaseThenMenu, ComputeHeaderKeyRoute( HeaderKey::Up, true, true, false, true ));
+}
+
+TEST( GlobalHeader, UpOnTheBarOfAMenuThatDoesNotWrapStaysOnTheBar )
+{
+	// [Doruk-Aksoy] The browser's top row is its tab strip, so handing Up back would move focus down.
+	EXPECT_EQ( HeaderKeyRoute::BarHold, ComputeHeaderKeyRoute( HeaderKey::Up, true, true, true, false ));
+}
+
+TEST( GlobalHeader, TheBarOwnsEveryArrowAndEnterWhileItHasFocus )
+{
+	// [Doruk-Aksoy] A key the bar cannot use is still the bar's, or it would change a setting nobody can see.
+	EXPECT_EQ( HeaderKeyRoute::BarLeft, ComputeHeaderKeyRoute( HeaderKey::Left, true, true, false, true ));
+	EXPECT_EQ( HeaderKeyRoute::BarRight, ComputeHeaderKeyRoute( HeaderKey::Right, true, true, false, true ));
+	EXPECT_EQ( HeaderKeyRoute::BarLeave, ComputeHeaderKeyRoute( HeaderKey::Down, true, true, false, true ));
+	EXPECT_EQ( HeaderKeyRoute::BarActivate, ComputeHeaderKeyRoute( HeaderKey::Enter, true, true, false, true ));
+}
+
+TEST( GlobalHeader, OtherKeysPassThroughTheBarToTheMenu )
+{
+	EXPECT_EQ( HeaderKeyRoute::Menu, ComputeHeaderKeyRoute( HeaderKey::Other, true, true, true, true ));
+	EXPECT_EQ( HeaderKeyRoute::Menu, ComputeHeaderKeyRoute( HeaderKey::Other, false, true, true, true ));
+}
+
+TEST( GlobalHeader, BackAlwaysReachesTheMenu )
+{
+	// [Doruk-Aksoy] Escape never gets spent on leaving the bar first.
+	EXPECT_EQ( HeaderKeyRoute::ReleaseThenMenu, ComputeHeaderKeyRoute( HeaderKey::Back, true, true, false, true ));
+	EXPECT_EQ( HeaderKeyRoute::ReleaseThenMenu, ComputeHeaderKeyRoute( HeaderKey::Back, false, true, true, false ));
+}
+
+TEST( GlobalHeader, UpOffTheTopRowGoesToTheBar )
+{
+	EXPECT_EQ( HeaderKeyRoute::EnterBar, ComputeHeaderKeyRoute( HeaderKey::Up, false, true, true, true ));
+	EXPECT_EQ( HeaderKeyRoute::EnterBar, ComputeHeaderKeyRoute( HeaderKey::Up, false, true, true, false ));
+}
+
+TEST( GlobalHeader, UpBelowTheTopRowMovesTheMenu )
+{
+	EXPECT_EQ( HeaderKeyRoute::Menu, ComputeHeaderKeyRoute( HeaderKey::Up, false, true, false, true ));
+}
+
+TEST( GlobalHeader, WithNoBarShownUpOffTheTopRowIsTheMenusOwn )
+{
+	// [Doruk-Aksoy] An in-game menu hides the bar, so its Up wraps as it always did instead of doing nothing.
+	EXPECT_EQ( HeaderKeyRoute::Menu, ComputeHeaderKeyRoute( HeaderKey::Up, false, false, true, true ));
+}
+
+TEST( GlobalHeader, WithoutFocusTheMenuGetsTheArrows )
+{
+	const HeaderKey keys[] = { HeaderKey::Down, HeaderKey::Left, HeaderKey::Right, HeaderKey::Enter };
+
+	for ( HeaderKey key : keys )
+		EXPECT_EQ( HeaderKeyRoute::Menu, ComputeHeaderKeyRoute( key, false, true, true, true ));
+}
+
+TEST( GlobalHeader, HoldingUpCyclesFromTheTopRowThroughTheBarAndBackToTheMenu )
+{
+	// [Doruk-Aksoy] The reported bug: holding Up stuck on the bar instead of carrying on round the menu.
+	bool barHasFocus = false;
+
+	ASSERT_EQ( HeaderKeyRoute::EnterBar, ComputeHeaderKeyRoute( HeaderKey::Up, barHasFocus, true, true, true ));
+	barHasFocus = true;
+
+	const HeaderKeyRoute next = ComputeHeaderKeyRoute( HeaderKey::Up, barHasFocus, true, true, true );
+	EXPECT_NE( HeaderKeyRoute::BarHold, next );
+	EXPECT_EQ( HeaderKeyRoute::ReleaseThenMenu, next );
+}
+
 // ---------------------------------------------------------------- the pinned tab
 
 namespace
