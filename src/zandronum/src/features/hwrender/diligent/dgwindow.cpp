@@ -34,6 +34,12 @@
 #include "features/hwrender/backendonly.h"   // [rc4l] ForgetBackendWindow
 #include "DebugOutput.h"
 #include "i_system.h"   // [rc4l] atterm
+#include "c_cvars.h"
+#include "v_text.h"   // [Doruk-Aksoy] TEXTCOLOR_ORANGE
+
+EXTERN_CVAR(Bool, vid_vsync)   // [Doruk-Aksoy] picks the swapchain's image count (ComputeSwapchainImages)
+// [Doruk-Aksoy] Forces the swapchain's image count when above 0, so a test can bring back the three that stuttered under vsync.
+CVAR(Int, fua_debug_swapchain_images, 0, 0)
 
 namespace zx { namespace hwrender {
 
@@ -49,6 +55,7 @@ void Fua_SetBackendWindowSize(int w, int h) { g_wantW = w; g_wantH = h; }
 static Diligent::RefCntAutoPtr<Diligent::ISwapChain>  g_swap;
 static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso;
 static int                                            g_frames = 0;
+static int                                            g_swapImages = 0;
 
 static bool EnsureWindow(FString &err)
 {
@@ -143,50 +150,59 @@ static void ShutdownBackend()
 	Diligent::SetDebugMessageCallback(nullptr);
 }
 
+static int WantedSwapchainImages()
+{
+	return ComputeSwapchainImages(vid_vsync, PagePaced(), fua_debug_swapchain_images);
+}
+
+static bool CreateSwapChain(int images, FString &report)
+{
+	Diligent::SwapChainDesc scd;
+	// [rc4l] Match the engine's own framebuffer: plain UNORM, not Diligent's default sRGB.
+	//
+	// With an sRGB target the hardware encodes the shader's output on write, so the stored bytes
+	// are numerically much brighter than what was written. The GL renderer writes to a plain
+	// UNORM buffer whose contents are treated as already-sRGB. Both end up looking the same on
+	// screen, but their BUFFERS differ -- which made every readback comparison against GL wrong,
+	// and sent a long hunt after a lighting bug that was really a screenshot bug.
+	scd.ColorBufferFormat = Diligent::TEX_FORMAT_RGBA8_UNORM;
+	// [Doruk-Aksoy] Two with vsync and three for mailbox (ComputeSwapchainImages).
+	scd.BufferCount = (Diligent::Uint32)images;
+	// [rc4l] The window as this platform's Vulkan surface takes it: an HWND, an X11 window or a Wayland surface, or a Metal-layered view.
+	BackendWindowHandles handles;
+	if (!Fua_BackendWindowHandles(g_hwnd, handles)) { report = "the backend window is on a window system Vulkan cannot draw to here"; return false; }
+	Diligent::NativeWindow win;
+#if PLATFORM_WIN32
+	win.hWnd = handles.hwnd;
+#elif PLATFORM_LINUX
+	win.WindowId = (Diligent::Uint32)handles.x11Window;
+	win.pDisplay = handles.x11Display != NULL ? handles.x11Display : handles.waylandDisplay;
+	win.pWaylandSurface = handles.waylandSurface;
+#elif PLATFORM_MACOS
+	win.pNSView = handles.nsView;
+#elif PLATFORM_WEB
+	win.pCanvasId = handles.canvasId;
+#endif
+	ChosenDeviceApi()->createSwapChain(GetDevice(), GetContext(), scd, win, &g_swap);
+	if (!g_swap) { report = "swapchain creation failed"; return false; }
+	g_swapImages = images;
+	static bool shutdownSet = false;
+	if (!shutdownSet) { atterm(ShutdownBackend); shutdownSet = true; }
+	// [rc4l] Say what depth format we actually got. Z-fighting the GL renderer does not have is
+	// first a question about depth precision, and "Diligent probably defaults to D32" is not an
+	// answer -- a 16-bit depth buffer against a 5..65536 frustum would fight everywhere.
+	Printf("Diligent swapchain: color %d, depth %d (%dx%d), %d images\n",
+		(int)g_swap->GetDesc().ColorBufferFormat, (int)g_swap->GetDesc().DepthBufferFormat,
+		(int)g_swap->GetDesc().Width, (int)g_swap->GetDesc().Height, (int)g_swap->GetDesc().BufferCount);
+	return true;
+}
+
 bool DiligentShowWindow(FString &report)
 {
 	FString err;
 	if (!ProbeVulkan(err)) { report = err; return false; }
 	if (!EnsureWindow(err)) { report = err; return false; }
-
-	if (!g_swap)
-	{
-		Diligent::SwapChainDesc scd;
-		// [rc4l] Match the engine's own framebuffer: plain UNORM, not Diligent's default sRGB.
-		//
-		// With an sRGB target the hardware encodes the shader's output on write, so the stored bytes
-		// are numerically much brighter than what was written. The GL renderer writes to a plain
-		// UNORM buffer whose contents are treated as already-sRGB. Both end up looking the same on
-		// screen, but their BUFFERS differ -- which made every readback comparison against GL wrong,
-		// and sent a long hunt after a lighting bug that was really a screenshot bug.
-		scd.ColorBufferFormat = Diligent::TEX_FORMAT_RGBA8_UNORM;
-		// [rc4l] Three images, or mailbox has none free to draw into until the next vblank and runs no faster than the monitor.
-		scd.BufferCount = 3;
-		// [rc4l] The window as this platform's Vulkan surface takes it: an HWND, an X11 window or a Wayland surface, or a Metal-layered view.
-		BackendWindowHandles handles;
-		if (!Fua_BackendWindowHandles(g_hwnd, handles)) { report = "the backend window is on a window system Vulkan cannot draw to here"; return false; }
-		Diligent::NativeWindow win;
-#if PLATFORM_WIN32
-		win.hWnd = handles.hwnd;
-#elif PLATFORM_LINUX
-		win.WindowId = (Diligent::Uint32)handles.x11Window;
-		win.pDisplay = handles.x11Display != NULL ? handles.x11Display : handles.waylandDisplay;
-		win.pWaylandSurface = handles.waylandSurface;
-#elif PLATFORM_MACOS
-		win.pNSView = handles.nsView;
-#elif PLATFORM_WEB
-		win.pCanvasId = handles.canvasId;
-#endif
-		ChosenDeviceApi()->createSwapChain(GetDevice(), GetContext(), scd, win, &g_swap);
-		if (!g_swap) { report = "swapchain creation failed"; return false; }
-		atterm(ShutdownBackend);
-		// [rc4l] Say what depth format we actually got. Z-fighting the GL renderer does not have is
-		// first a question about depth precision, and "Diligent probably defaults to D32" is not an
-		// answer -- a 16-bit depth buffer against a 5..65536 frustum would fight everywhere.
-		Printf("Diligent swapchain: color %d, depth %d (%dx%d)\n",
-			(int)g_swap->GetDesc().ColorBufferFormat, (int)g_swap->GetDesc().DepthBufferFormat,
-			(int)g_swap->GetDesc().Width, (int)g_swap->GetDesc().Height);
-	}
+	if (!g_swap && !CreateSwapChain(WantedSwapchainImages(), report)) return false;
 
 	if (!EnsurePipeline(err)) { report = err; return false; }
 
@@ -242,8 +258,21 @@ void ForgetBackendWindow(void *window)
 // [rc4l] Accessors for dgscene.cpp -- one swapchain and one window, shared.
 Diligent::ISwapChain *GetSwapChain() { return g_swap; }
 
+// [Doruk-Aksoy] Diligent keeps a swapchain's image count for its life, so a vsync toggle that wants another count remakes it, keeping the old count if the new one cannot be made.
+static void FollowBackendVsync()
+{
+	const int images = WantedSwapchainImages();
+	if (!g_swap || images == g_swapImages) return;
+	const int had = g_swapImages;
+	g_swap.Release();
+	FString report;
+	if (!CreateSwapChain(images, report) && !CreateSwapChain(had, report))
+		Printf(TEXTCOLOR_ORANGE "Diligent swapchain could not be remade: %s\n", report.GetChars());
+}
+
 void FollowBackendSurface()
 {
+	FollowBackendVsync();
 	int w = 0, h = 0;
 	if (!g_swap || !Fua_BackendSurfaceSize(g_hwnd, w, h)) return;
 	const Diligent::SwapChainDesc &d = g_swap->GetDesc();
