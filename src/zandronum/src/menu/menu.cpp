@@ -1452,8 +1452,7 @@ CCMD(reset2defaults)
 
 CCMD(reset2saved)
 {
-	GameConfig->DoGlobalSetup ();
-	GameConfig->DoGameSetup (gameinfo.ConfigName);
-	GameConfig->DoModSetup (gameinfo.ConfigName);
+	// [MobiusU9B] Only the cvars that changed since the save, then the saved keys too (features/save-settings).
+	GameConfig->ResetToSaved (gameinfo.ConfigName);
 	R_SetViewSize (screenblocks);
 }

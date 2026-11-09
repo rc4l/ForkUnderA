@@ -51,7 +51,6 @@ void M_ScreenShot (const char *filename);
 void M_LoadDefaults (FIWadManager *iwad_man);
 
 bool M_SaveDefaults (const char *filename);
-void M_SaveCustomKeys (FConfigFile *config, char *section, char *subsection, size_t sublen);
 
 
 

@@ -147,6 +147,7 @@
 #include "wi_stuff.h"
 
 #include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeMirrorsToOwnCVar
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 #include "features/net-protocol/lineflags.h"   // [rc4l] the line flags a server sends
@@ -4538,6 +4539,17 @@ void ServerCommands::SetPlayerUserInfo::Execute()
 				UCVarValue cvarValue;
 				cvarValue.String = value;
 				cvar->SetGenericRep( cvarValue, CVAR_String );
+			}
+
+			// [MobiusU9B] A server script's value for your own mod user cvar also goes into your own cvar, the one your ini saves, without sending it back.
+			FBaseCVar *own = FindCVar( name.GetChars( ), NULL );
+			if (( own != NULL ) && zx::ComputeMirrorsToOwnCVar( player == &players[consoleplayer], CLIENTDEMO_IsPlaying( ),
+				( own->GetFlags( ) & ( CVAR_MOD | CVAR_USERINFO )) == ( CVAR_MOD | CVAR_USERINFO ), ( own->GetFlags( ) & CVAR_IGNORE ) != 0,
+				own->GetGenericRep( CVAR_String ).String, value.GetChars( )))
+			{
+				UCVarValue ownValue;
+				ownValue.String = value.GetChars( );
+				own->ForceSet( ownValue, CVAR_String, true );
 			}
 		}
 	}

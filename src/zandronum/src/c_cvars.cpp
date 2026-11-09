@@ -73,6 +73,7 @@
 #include "name.h"
 #include "features/cvar-alias/computation/cvaralias_compute.h"   // [rc4l] the fua_ names other cvars answer to
 #include "features/cvar-memo/computation/cvarmemo_compute.h"   // [Doruk-Aksoy] lookups remembered by the name's pointer
+#include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] which value cl_protectcvars records and a save writes
 
 #include <atomic>
 
@@ -126,7 +127,19 @@ FBaseCVar *CVars = NULL;
 int cvar_defflags;
 
 // [AK] Prevents CVars changed by ConsoleCommand from being written into the user's config file.
+// [MobiusU9B] Engine CVars only, since a mod's own CVars are its to change and save.
 CVAR( Bool, cl_protectcvars, true, CVAR_ARCHIVE | CVAR_NOSETBYACS );
+
+// [MobiusU9B] The pre-script value cl_protectcvars recorded for `cvar`, or NULL when there is none.
+static const FLatchedValue *FindSavedValue( const FBaseCVar *cvar )
+{
+	for ( unsigned int i = 0; i < SavedValues.Size( ); i++ )
+	{
+		if ( SavedValues[i].Variable == cvar )
+			return &SavedValues[i];
+	}
+	return NULL;
+}
 
 EXTERN_CVAR( Bool, sv_cheats );
 
@@ -244,31 +257,18 @@ void FBaseCVar::SetGenericRep (UCVarValue value, ECVarType type)
 		if ( Flags & CVAR_NOSETBYACS )
 			return;
 
-		const char *originalValue = GetGenericRep( CVAR_String ).String;
+		// [MobiusU9B] Copied, since ToString below can write the same static buffer GetGenericRep returned.
+		const FString originalValue = GetGenericRep( CVAR_String ).String;
+		const bool engineCVar = ( Flags & ( CVAR_MOD | CVAR_AUTO )) == 0;
 
 		// [AK] If the value is changed, keep a copy of the original value. This way,
 		// the CVar can be reset back to its original value upon exit.
-		if ( strcmp( originalValue, ToString( value, type )) != 0 )
+		if ( zx::ComputeRecordsPreScriptValue( engineCVar, FindSavedValue( this ) != NULL, originalValue.GetChars( ), ToString( value, type )))
 		{
-			bool bSaveValue = true;
-
-			// [AK] First check if this CVar isn't already on the list.
-			for ( unsigned int i = 0; i < SavedValues.Size( ); i++ )
-			{
-				if ( SavedValues[i].Variable == this )
-				{
-					bSaveValue = false;
-					break;
-				}
-			}
-
-			if ( bSaveValue )
-			{
-				FLatchedValue saved;
-				saved.Variable = this;
-				saved.Value.String = ncopystring( originalValue );
-				SavedValues.Push( saved );
-			}
+			FLatchedValue saved;
+			saved.Variable = this;
+			saved.Value.String = ncopystring( originalValue.GetChars( ));
+			SavedValues.Push( saved );
 		}
 	}
 
@@ -1830,40 +1830,44 @@ void C_ArchiveCVars (FConfigFile *f, uint32 filter)
 			(CVAR_GLOBALCONFIG|CVAR_ARCHIVE|CVAR_MOD|CVAR_AUTO|CVAR_USERINFO|CVAR_SERVERINFO|CVAR_NOSAVE))
 			== filter)
 		{
-			// [AK] Reset the CVar back to its original value if it was changed by ConsoleCommand.
-			if ( cl_protectcvars )
-			{
-				// [AK] We're just resetting the value, so don't execute any callbacks.
-				FBaseCVar::DisableCallbacks( );
-				for ( unsigned int i = 0; i < SavedValues.Size( ); i++ )
-				{
-					if ( SavedValues[i].Variable == cvar )
-					{
-						cvar->ForceSet( SavedValues[i].Value, CVAR_String, true );
-						if ( SavedValues[i].Value.String != NULL )
-							delete[] SavedValues[i].Value.String;
-						SavedValues.Delete( i );
-						break;
-					}
-				}
-
-				FBaseCVar::m_UseCallback = true;
-			}
-
+			// [MobiusU9B] A CVar a script changed is written at its value from before the script, and the running game keeps the script's value, which a save made mid-game used to reset.
+			const FLatchedValue *saved = FindSavedValue( cvar );
 			UCVarValue val;
 			val = cvar->GetGenericRep (CVAR_String);
+			const char *text = zx::ComputeArchivedCVarValue( cl_protectcvars, val.String, saved != NULL, ( saved != NULL ) ? saved->Value.String : NULL );
 			// [BB] This is ancient code from Skulltag...
 			if ( filter == (CVAR_ARCHIVE|CVAR_USERINFO) )
 			{
-				FString uncolorized = val.String;
+				FString uncolorized = text;
 				V_UnColorizeString( uncolorized );
 				f->SetValueForKey( cvar->GetName(), uncolorized );
 			}
 			else
-				f->SetValueForKey (cvar->GetName (), val.String);
+				f->SetValueForKey (cvar->GetName (), text);
 		}
 		cvar = cvar->m_Next;
 	}
+}
+
+void C_RestoreProtectedCVars (void)
+{
+	if ( cl_protectcvars )
+	{
+		// [AK] We're just resetting the value, so don't execute any callbacks.
+		const bool useCallback = FBaseCVar::m_UseCallback;
+		FBaseCVar::DisableCallbacks( );
+		for ( unsigned int i = 0; i < SavedValues.Size( ); i++ )
+		{
+			UCVarValue original;
+			original.String = ( SavedValues[i].Value.String != NULL ) ? SavedValues[i].Value.String : "";
+			SavedValues[i].Variable->ForceSet( original, CVAR_String, true );
+		}
+		FBaseCVar::m_UseCallback = useCallback;
+	}
+
+	for ( unsigned int i = 0; i < SavedValues.Size( ); i++ )
+		delete[] SavedValues[i].Value.String;
+	SavedValues.Clear( );
 }
 
 // [Dusk]
