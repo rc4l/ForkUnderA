@@ -34,7 +34,8 @@ struct ContinueWriteInputs
 	// starting the server again. The hosted record already describes what to come back to.
 	bool hosting;
 
-	// [Doruk-Aksoy] This process is a dedicated server, which has no player or local game to remember.
+	// [KI] This process is the dedicated server itself, which holds a map but no local player, so
+	// snapshotting it dereferenced a player that was never there and took the server down on quit.
 	bool dedicatedServer;
 
 	// [Doruk-Aksoy] The map loaded is a server's we are leaving, so it is not an offline game to come back to.
