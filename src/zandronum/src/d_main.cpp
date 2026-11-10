@@ -229,6 +229,7 @@ static const char *BaseFileSearch (const char *file, const char *ext, bool lookf
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
 
 EXTERN_CVAR (Float, turbo)
+EXTERN_CVAR (String, gender)
 EXTERN_CVAR (Bool, freelook)
 EXTERN_CVAR (Float, m_pitch)
 EXTERN_CVAR (Float, m_yaw)
@@ -1544,6 +1545,9 @@ void D_RunFrame ()
 			// [rc4l] features/handoff: a quit takes the game back from a tic in flight first.
 			if (zx::mainloop::QuitPending ()) zx::gameloop::FinishInFlight ();
 			zx::mainloop::FinishPendingQuit ();
+
+			// [Doruk-Aksoy] uzdoom@f2d7bbea99: LANGUAGE gender macros read the local player's gender, which the gender cvar holds.
+			GStrings.SetDefaultGender (D_GenderToInt (gender));
 
 			// [rc4l] A wipe a stepped loop is running takes the whole frame, as D_Display's own loop does on the desktop.
 			if (D_WipeRunning ())
