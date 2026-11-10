@@ -381,6 +381,14 @@ void FMapInfoParser::ParseGameInfo()
 			sc.MustGetToken(TK_IntConst);
 			normsidemove[1] = float(sc.Number);
 		}
+		// [Doruk-Aksoy] A mod's choice for every map that does not make its own (features/monster-stairs).
+		else if(nextKey.CompareNoCase("fua_monsterstairs") == 0)
+		{
+			const bool on = !sc.CheckToken(TK_False);
+			if (on)
+				sc.MustGetToken(TK_True);
+			gameinfo.fua_monsterStairs = zx::monsterstairs::ComputeSettingFromBool(on);
+		}
 		// [AK] Adds or removes a set of custom data that will be used by a custom column.
 		else if (( nextKey.CompareNoCase( "addcustomdata" ) == 0 ) || ( nextKey.CompareNoCase( "removecustomdata" ) == 0 ))
 		{

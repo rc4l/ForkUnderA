@@ -1882,12 +1882,14 @@ add_executable( zdoom WIN32
 	features/quake-movement/elevatorjump.cpp
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
+	features/monster-stairs/monsterstairs.cpp
 	features/damage-taken/damagetaken.cpp
 	features/net-transport/netconditions.cpp
 	features/net-transport/recvthread.cpp
 	features/net-protocol/commandcapture.cpp
 	features/net-protocol/testfaults.cpp
 	features/net-session/unlaggedreport.cpp
+	features/net-session/syncedcvars.cpp
 	features/net-replication/mapstate.cpp
 	features/net-replication/actorstate.cpp
 	features/net-replication/playerstate.cpp

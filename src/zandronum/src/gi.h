@@ -51,6 +51,7 @@
 #define GI_NOTEXTCOLOR			0x00000100	// Chex Quest 3 would have everything green
 
 #include "gametype.h"
+#include "features/monster-stairs/computation/monsterstairs_compute.h"   // [Doruk-Aksoy] gameinfo_t::fua_monsterStairs
 
 extern const char *GameNames[17];
 
@@ -115,6 +116,7 @@ struct gameinfo_t
 	bool intermissioncounter;
 	bool hidepartimes;	// [ZandroX] uzdoom@a2f8b7d0d: hide par times on the intermission
 	bool dontcrunchcorpses;	// [ZandroX] uzdoom@388f09f78: crushers don't gib corpses
+	zx::monsterstairs::Setting fua_monsterStairs;	// [Doruk-Aksoy] fua_monsterstairs, Unset unless GAMEINFO chose (features/monster-stairs)
 	bool nightmarefast;
 	bool swapmenu;
 	TArray<FName> creditPages;
