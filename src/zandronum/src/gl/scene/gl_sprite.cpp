@@ -561,7 +561,7 @@ void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_
 //
 //==========================================================================
 
-void GLSprite::Process(AActor* thing,sector_t * sector)
+void GLSprite::Process(AActor* thing,sector_t * sector, bool footprint)
 {
 	sector_t rs;
 	sector_t * rendersector;
@@ -569,7 +569,8 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	if (thing == gl_SpriteView().ViewActor()) return;
 
 	// Don't waste time projecting sprites that are definitely not visible.
-	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer())
+	// [Doruk-Aksoy] A negative RenderRadius is never drawn, as in UZDoom.
+	if (thing == NULL || thing->sprite == 0 || !thing->IsVisibleToPlayer() || thing->renderradius < 0)
 	{
 		return;
 	}
@@ -589,7 +590,8 @@ void GLSprite::Process(AActor* thing,sector_t * sector)
 	}
 
 	// If this thing is in a map section that's not in view it can't possibly be visible
-	if (!(currentmapsection[thing->subsector->mapsection>>3] & (1 << (thing->subsector->mapsection & 7)))) return;
+	// [Doruk-Aksoy] unless it is a wide actor offered from a sector under it that the walk reached.
+	if (!footprint && !(currentmapsection[thing->subsector->mapsection>>3] & (1 << (thing->subsector->mapsection & 7)))) return;
 
 	// [AK] Unless the sprite's in a horizontal mirror or the local player's using
 	// the chasecam, don't render icons above the heads of players being spied on.

@@ -4,6 +4,7 @@
 #define ZX_MODELS_H
 
 #include "features/models/modelgeometry.h"
+#include "features/modelreach/computation/modelreach_compute.h"   // [Doruk-Aksoy] ModelReach
 #include "p_pspr.h"
 #include "r_data/voxels.h"
 #include "xs_Float.h"
@@ -390,5 +391,8 @@ bool gl_IsHUDModelFor (const PClass *weapon, FState *state);   // [rc4l] whether
 // [rc4l] Every model MODELDEF and VOXELDEF loaded, for a renderer that keeps something per model.
 int ModelCount();
 FModel *ModelAt(int index);
+
+// [Doruk-Aksoy] How far the models a sprite can be drawn as reach from the actor, the largest of every MODELDEF frame and VOXELDEF voxel on it, whatever class or cvar picks them; nothing for a sprite no model replaces.
+const zx::modelreach::ModelReach &SpriteModelReach(int sprite);
 
 #endif // ZX_MODELS_H

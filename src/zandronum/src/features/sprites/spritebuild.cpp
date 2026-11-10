@@ -48,6 +48,7 @@
 // [rc4l] GL's settings and view state the derivation still reads, until the renderer interface supplies them (P5).
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
 #include "features/models/models.h"   // [rc4l] gl_FindModelFrame and the models
+#include "features/modelreach/modelreach.h"   // [Doruk-Aksoy] FootprintReached
 #include "features/dynlights/dynlight.h"   // [rc4l] ADynamicLight, FLightNode
 #include "features/levelmesh/pointlight.h"
 
@@ -181,7 +182,9 @@ static bool SubjectOf(const ActorRecord *thing, Subject &s)
 	{
 		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision) return false;
 	}
-	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7)))) return false;
+	// [Doruk-Aksoy] A model wider than its radius is in view from a sector under it the walk reached, though its centre's map section is not.
+	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7))) &&
+	    !zx::modelreach::FootprintReached(zx::gamecopy::IndexOf(thing))) return false;
 	if (!view.PortalIsMirror() && thing->cameraIcon) return false;
 
 	s.frac = r_ActorFrac;

@@ -88,6 +88,7 @@
 #include "features/frame/playerview.h"      // [rc4l] SetViewpointUp, EndViewpoint, MarkMapSection
 #include "features/levelmesh/flatmesh.h"     // [rc4l] MainView, SetMainView
 #include "features/gamecopy/players.h"       // [rc4l] the view actor's record and the eye's HUD model
+#include "features/modelreach/modelreach.h"    // [Doruk-Aksoy] PrepareWide
 #include "mcp_glperf.h" // [rc4l] GPU render-pass timer anchors (no-op unless FUA_MCP_BRIDGE)
 
 //==========================================================================
@@ -319,6 +320,9 @@ void FGLRenderer::CreateScene()
 	// [rc4l] A check against GL's walk learns which view this walk's sky surfaces belong to.
 	if (gl_observer) gl_observer->WalkBegins();
 
+	// [Doruk-Aksoy] The actors wider than their radius, found once per fill.
+	zx::modelreach::PrepareWide();
+
 	// reset the portal manager
 	GLPortal::StartFrame();
 	PO_LinkToSubsectors();
@@ -332,6 +336,8 @@ void FGLRenderer::CreateScene()
 	const area_t areaBefore = in_area;
 	gl_RenderBSPNode (nodes + numnodes - 1);
 	Bsp.Unclock();
+	// [Doruk-Aksoy] Big models whose centre this walk never reached, while the sectors it reached still carry its validcount.
+	gl_RenderWideThings();
 	// [rc4l] A check against GL's walk compares now, while the draw info holds it, from the view area GL started with.
 	if (gl_observer)
 	{

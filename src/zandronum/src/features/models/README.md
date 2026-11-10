@@ -17,6 +17,7 @@ so the backend's model path read GL's vertex buffer class to find a model's vert
   `MDL_FORCECULLBACKFACES` 2048, renumbered past ours), which both renderers' culling reads through `ActorModelCull`.
 - `computation/modelskin_compute`: the skin a surface draws with, MODELDEF's `Skin`, then `SurfaceSkin`, then the
   file's own; a MODELDEF voxel with no `Skin` takes its palette, as a VOXELDEF one does, where GL crashed on it.
+- `SpriteModelReach`: how far each sprite's models reach, built at the end of `gl_InitModels` for features/modelreach.
 
 GL's `gl/models/gl_models.cpp` keeps a vertex buffer per model, made from its geometry on first draw, and
 draws a frame's surfaces in one function for all three formats. The backend lerps the same geometry on the

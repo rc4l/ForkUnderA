@@ -7,7 +7,7 @@
     "features/frame/", "features/sprites/", "features/levelmesh/", "features/visibility/", "features/hwrender/",
     "r_utility.cpp", "features/dynlights/pointlight.cpp", "features/dynlights/pointlight.h", "features/stackportals/", "features/horizon/",
     "features/surfaces/", "features/fakeflat/", "features/viewsetup/", "features/fov-interp/fovinterp.cpp",
-    "features/materials/", "features/draw2d/screenblend.cpp", "features/damage-tint/", "features/hitboxviz/", "features/models/"
+    "features/materials/", "features/draw2d/screenblend.cpp", "features/damage-tint/", "features/hitboxviz/", "features/models/", "features/modelreach/"
    ],
    "exclude": ["*/computation/*", "*_test.cpp", "*_gl.cpp", "features/damage-tint/tintsubject.*"],
    "why_excluded": "GL draws only while tics run inline (the *_gl.cpp files and gl/), and tintsubject is the damage tint's game half the fill calls.",
