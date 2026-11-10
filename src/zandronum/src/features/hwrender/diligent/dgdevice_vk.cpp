@@ -15,6 +15,8 @@
 #include "features/hwrender/diligent/dgplatform.h"   // [rc4l] Fua_PrepareVulkanLoader
 #include "features/telemetry/telemetry.h"
 #include "features/hwrender/computation/materialslots_compute.h"   // [Doruk-Aksoy] kMaxMaterialSlots, which the descriptor pools are sized for
+#include "features/hwrender/computation/dynlayout_compute.h"   // [Doruk-Aksoy] ComputeDynVertexCeiling
+#include "features/levelmesh/staticmesh.h"   // [Doruk-Aksoy] SetDynVertexCeiling
 
 #include "c_cvars.h"
 
@@ -61,6 +63,16 @@ static DescriptorLimits ReadLimits(Diligent::IRenderDevice *device)
 	DescriptorLimits got = { l.maxPerStageDescriptorSampledImages, l.maxPerStageDescriptorSamplers, l.maxPerStageResources,
 		l.maxDescriptorSetSampledImages, l.maxDescriptorSetSamplers };
 	return got;
+}
+
+// [Doruk-Aksoy] The dynamic stream's vertex ceiling from the storage buffers this device binds, so Vulkan draws every model GL does up to what the device holds, where a fixed 300k dropped any over 100k triangles.
+static void SetDynamicCeiling(Diligent::IRenderDevice *device)
+{
+	Diligent::RefCntAutoPtr<Diligent::IRenderDeviceVk> vk(device, Diligent::IID_RenderDeviceVk);
+	if (!vk || vkGetPhysicalDeviceProperties == NULL) return;
+	VkPhysicalDeviceProperties props;
+	vkGetPhysicalDeviceProperties(vk->GetVkPhysicalDevice(), &props);
+	zx::levelmesh::SetDynVertexCeiling(zx::hwrender::ComputeDynVertexCeiling(props.limits.maxStorageBufferRange));
 }
 
 // [rc4l] The device the memory budget is read from, which lives for the process once made.
@@ -149,6 +161,7 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	}
 	limits = ReadLimits(*device);
 	g_budgetDevice = *device;
+	SetDynamicCeiling(*device);
 	return true;
 }
 

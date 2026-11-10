@@ -98,3 +98,43 @@ TEST(DynLayout, TheWordsCapacityLeavesHalfSpareAndAFloor)
 	EXPECT_EQ(1u << 20, ComputeDynWordsCapacity(ComputeDynWordsBound(8267, 33068, 0)));
 	EXPECT_EQ(3000000u, ComputeDynWordsCapacity(2000000));
 }
+
+namespace {
+
+// [Doruk-Aksoy] The words a frame of `vertices` takes at its worst, a piece and a matrix every three vertices, in the bytes of the capacity it grows to.
+unsigned long long WorstBytes(unsigned vertices)
+{
+	const unsigned pieces = vertices / 3 + 1;
+	return 4ull * ComputeDynWordsCapacity(ComputeDynWordsBound(pieces, vertices, pieces));
+}
+
+} // namespace
+
+// [Doruk-Aksoy] The least storage buffer every Vulkan device binds holds three times the 300,000 vertices the old fixed ceiling dropped past, and one vertex more no longer fits.
+TEST(DynVertexCeiling, TheLeastVulkanDeviceHoldsFarMoreThanTheOldCeiling)
+{
+	const unsigned v = ComputeDynVertexCeiling(kMinStorageBufferBytes);
+	EXPECT_GT(v, 900000u);
+	EXPECT_LE(WorstBytes(v), kMinStorageBufferBytes);
+	EXPECT_GT(WorstBytes(v + 1), kMinStorageBufferBytes);
+}
+
+// [Doruk-Aksoy] A bigger buffer holds more, up to the limit that keeps the stream's sums in 32 bits.
+TEST(DynVertexCeiling, GrowsWithTheDeviceUpToTheLimit)
+{
+	const unsigned oneGig = ComputeDynVertexCeiling(1ull << 30);
+	EXPECT_GT(oneGig, ComputeDynVertexCeiling(kMinStorageBufferBytes));
+	EXPECT_LE(WorstBytes(oneGig), 1ull << 30);
+	const unsigned fourGig = ComputeDynVertexCeiling(0xFFFFFFFFull);
+	EXPECT_GT(fourGig, oneGig);
+	EXPECT_LE(WorstBytes(fourGig), 0xFFFFFFFFull);
+	EXPECT_EQ(kDynVertexLimit, ComputeDynVertexCeiling(1ull << 40));
+}
+
+// [Doruk-Aksoy] A buffer smaller than the least capacity the stream makes (4 MB) holds nothing.
+TEST(DynVertexCeiling, TooSmallABufferHoldsNothing)
+{
+	EXPECT_EQ(0u, ComputeDynVertexCeiling(0));
+	EXPECT_EQ(0u, ComputeDynVertexCeiling((1ull << 22) - 1));
+	EXPECT_GT(ComputeDynVertexCeiling(1ull << 22), 0u);
+}

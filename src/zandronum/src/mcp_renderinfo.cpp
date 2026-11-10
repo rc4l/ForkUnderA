@@ -17,6 +17,7 @@
 #include "st_stuff.h"
 #include "gl/system/gl_interface.h"
 #include "features/hwrender/backendonly.h"   // [rc4l] BackendOnly
+#include "features/levelmesh/staticmesh.h"   // [Doruk-Aksoy] DynVertexCeiling
 #include "features/mcp-bridge/computation/renderinfo_compute.h"   // [rc4l] ComputeRendererName, ComputeGlLive
 #if defined( ZX_COCOA_BACKEND ) && !defined( NO_GL )
 #include "gl/system/gl_system.h"
@@ -41,6 +42,8 @@ CCMD( dumprenderer )
 	Printf( "renderer=%s\n", zx::mcp::ComputeRendererName( zx::hwrender::BackendOnly( ), currentrenderer ) );
 	// [rc4l] Which API that backend's device runs on, so a -webgpu launch that came up on Vulkan says so.
 	Printf( "backend_api=%s\n", zx::hwrender::BackendApiName( ) );
+	// [Doruk-Aksoy] The most vertices the backend's per-frame stream holds, set from the device's storage buffers; models past it are counted in levelmesh/dyn_dropped.
+	Printf( "dyn_vertex_ceiling=%u\n", zx::levelmesh::DynVertexCeiling( ) );
 
 	if ( screen != NULL )
 	{

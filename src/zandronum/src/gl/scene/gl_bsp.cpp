@@ -53,6 +53,8 @@
 #include "gl/scene/gl_wall.h"
 #include "gl/utility/gl_clock.h"
 #include "features/hitboxviz/hitboxviz.h"
+#include "features/modelreach/modelreach.h"   // [Doruk-Aksoy] the wide actors and the sectors under them
+#include "features/gamecopy/actors.h"         // [Doruk-Aksoy] their records' live actors
 #include "gl/scene/gl_wallcache.h"
 #include "gl/scene/gl_observer.h"
 
@@ -364,6 +366,34 @@ static inline void AddLines(subsector_t * sub, sector_t * sector)
 	ClipWall.Unclock();
 }
 
+
+//==========================================================================
+//
+// [Doruk-Aksoy] A walk reached a sector by stamping it with validcount, so this must run before anything bumps it again.
+//
+//==========================================================================
+
+void gl_RenderWideThings ()
+{
+	if (!gl_render_things) return;
+	SetupSprite.Clock();
+	int count;
+	const int *wide = zx::modelreach::WideRecords(count);
+	for (int i = 0; i < count; i++)
+	{
+		AActor *thing = zx::gamecopy::LiveOf(zx::gamecopy::Record(wide[i]));
+		if (thing == NULL || thing->Sector == NULL || thing->Sector->validcount == validcount) continue;
+		int under;
+		const int *list = zx::modelreach::FootprintSectors(wide[i], under);
+		for (int k = 0; k < under; k++)
+		{
+			if (sectors[list[k]].validcount != validcount) continue;
+			GLRenderer->ProcessSprite(thing, &sectors[list[k]], true);
+			break;
+		}
+	}
+	SetupSprite.Unclock();
+}
 
 //==========================================================================
 //

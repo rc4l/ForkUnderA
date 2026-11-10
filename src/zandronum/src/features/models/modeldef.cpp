@@ -49,6 +49,10 @@
 #include "d_player.h"
 #include "textures/textures.h"
 #include "features/models/models.h"
+#include "features/net-session/netrole.h"   // [Doruk-Aksoy] IsServer, which draws no model
+#include "r_data/sprites.h"                 // [Doruk-Aksoy] the sprite frames VOXELDEF's voxels are on
+
+#include <unordered_map>
 
 // [rc4l] MODELDEF's switches, which the frame lookup and the frame blend read in either renderer.
 CVAR(Bool, r_interpolate_model_frames, true, CVAR_ARCHIVE)
@@ -101,6 +105,74 @@ static void DeleteModelHash()
 {
 	if (SpriteModelHash != NULL) delete [] SpriteModelHash;
 	SpriteModelHash = NULL;
+}
+
+// [Doruk-Aksoy] Every sprite's model reach, built once the models are loaded; empty on a dedicated server, which draws nothing.
+static TArray<zx::modelreach::ModelReach> SpriteReach;
+
+const zx::modelreach::ModelReach &SpriteModelReach(int sprite)
+{
+	static const zx::modelreach::ModelReach none = {};
+	return sprite >= 0 && (unsigned)sprite < SpriteReach.Size() ? SpriteReach[sprite] : none;
+}
+
+// [Doruk-Aksoy] How a MODELDEF frame places its models, in ModelPoseFor's (x, up, y).
+static zx::modelreach::FramePlacement PlacementOf(const FSpriteModelFrame &smf)
+{
+	zx::modelreach::FramePlacement p = {};
+	p.scale[0] = smf.xscale; p.scale[1] = smf.zscale; p.scale[2] = smf.yscale;
+	p.offset[0] = smf.xoffset; p.offset[1] = smf.zoffset; p.offset[2] = smf.yoffset;
+	p.stretch = smf.models[0] != NULL ? smf.models[0]->getAspectFactor() : 1.f;
+	p.rotating = (smf.flags & MDL_ROTATING) != 0;
+	p.spinCenter[0] = smf.rotationCenterX; p.spinCenter[1] = smf.rotationCenterY; p.spinCenter[2] = smf.rotationCenterZ;
+	p.spinAxis[0] = smf.xrotate; p.spinAxis[1] = smf.yrotate; p.spinAxis[2] = smf.zrotate;
+	p.tilts = (smf.flags & (MDL_PITCHFROMMOMENTUM | MDL_INHERITACTORPITCH | MDL_INHERITACTORROLL | MDL_ALIGNPITCH | MDL_ROLLAGAINSTANGLE)) != 0 ||
+		smf.pitchoffset != 0 || smf.rolloffset != 0;
+	return p;
+}
+
+// [Doruk-Aksoy] How far a model's vertices reach, every frame of it; built only to be measured, it is let go again, so a model no level draws holds no vertices and its first draw builds it once more.
+static zx::modelreach::VertexReach ReachOfModel(FModel *model, std::unordered_map<FModel *, zx::modelreach::VertexReach> &known)
+{
+	const std::unordered_map<FModel *, zx::modelreach::VertexReach>::const_iterator found = known.find(model);
+	if (found != known.end()) return found->second;
+	const bool built = model->mGeometry.built;
+	model->BuildGeometry();
+	const FModelGeometry &g = model->mGeometry;
+	const zx::modelreach::VertexReach r = zx::modelreach::ComputeVertexReach(g.verts.Size() ? &g.verts[0].x : NULL, (int)g.verts.Size(),
+		int(sizeof(FModelVertex) / sizeof(float)));
+	if (!built) model->mGeometry = FModelGeometry();
+	known[model] = r;
+	return r;
+}
+
+// [Doruk-Aksoy] Each sprite's reach from the MODELDEF frames on it and the VOXELDEF voxels on its frames, found as gl_FindModelFrame finds them.
+static void BuildSpriteReach()
+{
+	SpriteReach.Clear();
+	if (zx::net::IsServer()) return;
+	static const zx::modelreach::ModelReach none = {};
+	SpriteReach.Resize(sprites.Size());
+	for (unsigned i = 0; i < SpriteReach.Size(); i++) SpriteReach[i] = none;
+	std::unordered_map<FModel *, zx::modelreach::VertexReach> known;
+	const auto add = [&](unsigned frameIndex, unsigned sprite)
+	{
+		if (frameIndex >= SpriteModelFrames.Size() || sprite >= SpriteReach.Size()) return;
+		const FSpriteModelFrame &smf = SpriteModelFrames[frameIndex];
+		const zx::modelreach::FramePlacement p = PlacementOf(smf);
+		for (int k = 0; k < MAX_MODELS_PER_FRAME; k++)
+			if (smf.models[k] != NULL) zx::modelreach::ComputeAddFrameReach(ReachOfModel(smf.models[k], known), p, SpriteReach[sprite]);
+	};
+	for (unsigned i = 0; i < SpriteModelFrames.Size(); i++)
+		if (SpriteModelFrames[i].type != NULL) add(i, (unsigned)SpriteModelFrames[i].sprite);
+	for (unsigned s = 0; s < sprites.Size(); s++)
+		for (int f = 0; f < sprites[s].numframes; f++)
+		{
+			const FVoxelDef *voxel = SpriteFrames[sprites[s].spriteframes + f].Voxel;
+			if (voxel == NULL) continue;
+			add((unsigned)voxel->VoxeldefIndex, s);
+			if (voxel->DroppedSpin != voxel->PlacedSpin) add((unsigned)voxel->VoxeldefIndex + 1, s);
+		}
 }
 
 //===========================================================================
@@ -634,6 +706,7 @@ void gl_InitModels()
 		SpriteModelFrames[i].hashnext = SpriteModelHash[j];
 		SpriteModelHash[j]=i;
 	}
+	BuildSpriteReach();
 }
 
 

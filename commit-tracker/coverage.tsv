@@ -6438,25 +6438,25 @@ a76cd3533357962f3211a7d06004dffe24ad5ac4	2016-12-25T06:49:44Z	Dynamic lights to 
 08fd81802d518e0fbb1eb537ceefcea5d0661465	2016-12-25T07:01:21Z	Remove useRt	pending		/
 5ec989d563b3baed133d1a84580d82be8dcab965	2016-12-25T07:08:01Z	Make particles always square	pending		/
 66b9e2208d827908fced4cc4810464f48d2a6a34	2016-12-25T10:07:50Z	Draw a rect where the voxels would be	pending		/
-87b23d160bcbfe8ed35d6ff0921b72f54109ae41	2016-12-25T11:09:32Z	Ported RenderRadius and related code from gzdoom branch	pending		/
-98657f6844aff32747a2cdef79424323bc864bc5	2016-12-25T11:19:45Z	STYLE_None actors are no more subject to P_LinkRenderSectors	pending		/
-fcd8a0ce9259f1bf22daca836067a525b786cdfc	2016-12-25T11:35:03Z	Reverted STYLE_None change to P_LinkRenderSectors, implemented zero RenderRadius that effectively disables rendering of an actor entirely	pending		/
-40a180c15f0282ee20d41b6e473b9c7454b60937	2016-12-25T11:37:45Z	Changed zero RenderRadius logic - thing should still link to own sector	pending		/
-44c19b5ad9936902770f0bb0d348c5dfdfe90396	2016-12-25T11:40:21Z	Changed zero RenderRadius logic - negative values now used for 'no rendering', restored old logic with max(radius, renderradius)	pending		/
-38cb7aeaaa2001c2039e73a671a2ba679792a374	2016-12-25T11:43:32Z	Invisible and Custom bridges now have RenderRadius -1 to prevent excessive linking	pending		/
+87b23d160bcbfe8ed35d6ff0921b72f54109ae41	2016-12-25T11:09:32Z	Ported RenderRadius and related code from gzdoom branch	adapted	24005c2f: RenderRadius ported; drawn from the sectors under a footprint the model's own reach sets (features/modelreach) instead of per-sector render links, 0 = from the model	24005c2f
+98657f6844aff32747a2cdef79424323bc864bc5	2016-12-25T11:19:45Z	STYLE_None actors are no more subject to P_LinkRenderSectors	skip	reverted upstream by fcd8a0ce	/
+fcd8a0ce9259f1bf22daca836067a525b786cdfc	2016-12-25T11:35:03Z	Reverted STYLE_None change to P_LinkRenderSectors, implemented zero RenderRadius that effectively disables rendering of an actor entirely	skip	its zero RenderRadius rule superseded upstream by 44c19b5a	/
+40a180c15f0282ee20d41b6e473b9c7454b60937	2016-12-25T11:37:45Z	Changed zero RenderRadius logic - thing should still link to own sector	skip	superseded upstream by 44c19b5a	/
+44c19b5ad9936902770f0bb0d348c5dfdfe90396	2016-12-25T11:40:21Z	Changed zero RenderRadius logic - negative values now used for 'no rendering', restored old logic with max(radius, renderradius)	adapted	24005c2f: negative RenderRadius never drawn and max(radius, renderradius) kept; 0 means the model's reach here; no-file-overlap: upstream applied it in p_map.cpp's render-sector linking, which this design has none of, so it lives in gamecopy.cpp (record visible) and gl_sprite.cpp	24005c2f
+38cb7aeaaa2001c2039e73a671a2ba679792a374	2016-12-25T11:43:32Z	Invisible and Custom bridges now have RenderRadius -1 to prevent excessive linking	skip	no per-sector render links here (features/modelreach finds footprints per frame), so nothing to keep bridges out of	/
 ad2993950a525fd5ef742c77d1deb563b72e9511	2016-12-25T11:58:29Z	- fixed light level calculation for low light levels.	pending		/
-89b7cf4262d5e3c9ac22b2a742acc5169e552627	2016-12-25T13:35:35Z	- fixed: RenderRadius needs to be serialized. - fixed: CustomBridge can be visible so it shouldn't be completely excluded from the render lists.	pending		/
+89b7cf4262d5e3c9ac22b2a742acc5169e552627	2016-12-25T13:35:35Z	- fixed: RenderRadius needs to be serialized. - fixed: CustomBridge can be visible so it shouldn't be completely excluded from the render lists.	skip	renderradius is a class default nothing changes in play here (no ZScript), so there is nothing to serialize; no render lists to exclude bridges from	/
 2901e2d8342d8e76a6af641298636536735409a1	2016-12-25T15:43:13Z	Added missing Intel intrinsics #include	pending		/
 2ce55e54164eec6de759de3ca93bcb04a727f906	2016-12-25T18:19:49Z	- fixed: non-damaging attacks should not cause infighting, unless some relevant pain flags are being set.	pending		/
 663b305eec40b86fd916ff2e63039cd3d23f49fd	2016-12-25T18:25:19Z	- include proper headers for std::find.	pending		/
-5723f10cc35c2832257c24eb5db3a7ca7937fe24	2016-12-25T18:37:07Z	- use 'for' iterator syntax to check touching_renderlists.	pending		/
+5723f10cc35c2832257c24eb5db3a7ca7937fe24	2016-12-25T18:37:07Z	- use 'for' iterator syntax to check touching_renderlists.	skip	touching_renderlists internals; no render links here	/
 04ff4282ef0e07f3c4844068304f13f26df69a7f	2016-12-25T21:40:26Z	- removed the global 'sector_list' variable.	pending		/
 c5d75c18b419b962e3868b8a2dda138909dc9d07	2016-12-25T21:56:18Z	- make gl_finishbeforeswap more useful by handling the case where it causes stalls on NVidia.	pending		/
 19856d6ccbbfd62c44062ba2db60414088304a71	2016-12-25T21:56:35Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-6f16597668f2335ada5008225b8ad5afdd504cec	2016-12-25T22:46:03Z	GL renderer now uses RenderRadius links too	pending		/
+6f16597668f2335ada5008225b8ad5afdd504cec	2016-12-25T22:46:03Z	GL renderer now uses RenderRadius links too	adapted	24005c2f: GL offers a wide actor from a reached footprint sector after its walk (gl_RenderWideThings), no render links	24005c2f
 100b80143a109f0422bab7912d79d9fa15f74c2b	2016-12-26T04:09:01Z	Add basic voxel drawing showing how to use the input data structures	pending		/
-7f72de6b7188bf62ecca0f5db6c98237e4e6211a	2016-12-26T10:58:08Z	- use msecnode_t's for the touching_renderlists instead of std::forward_list. - preparations for checking the proper sector to get a sprite's lighting info.	pending		/
-f5883d3f86364706bb8649d8718276f1490c9a3e	2016-12-26T11:04:03Z	- fixed: DynamicLight needs a render radius of -1 so that it gets excluded from the touching_renderlist.	pending		/
+7f72de6b7188bf62ecca0f5db6c98237e4e6211a	2016-12-26T10:58:08Z	- use msecnode_t's for the touching_renderlists instead of std::forward_list. - preparations for checking the proper sector to get a sprite's lighting info.	skip	touching_renderlists internals; no render links here (lighting sector is the actor's own, as GL had it)	/
+f5883d3f86364706bb8649d8718276f1490c9a3e	2016-12-26T11:04:03Z	- fixed: DynamicLight needs a render radius of -1 so that it gets excluded from the touching_renderlist.	skip	no per-sector render links here, so nothing to keep dynamic lights out of	/
 9cb2a8f931878a831ebdcfb95817fa1874961284	2016-12-26T11:04:13Z	Merge remote-tracking branch 'remotes/zdoom/master'	pending		/
 be508bc6700b559823d21082f8608cc9a33a9c91	2016-12-26T11:11:55Z	- adjust to using msecnode_t's.	pending		/
 5d6d75385e7170f4f1a3216be913a04d2328e82d	2016-12-26T12:41:52Z	- pulled some things out of the loop for the fill drawer	pending		/

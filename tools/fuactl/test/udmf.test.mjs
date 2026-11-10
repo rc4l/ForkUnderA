@@ -176,6 +176,33 @@ test("the model culling template flags one actor each way and stands each agains
   assert.deepEqual(typesOf("maps/MAP02.wad"), [20103, 20103, 20101, 1]);
 });
 
+// [Doruk-Aksoy] One model past 300k vertices on its own and six that pass it only together, each voxel meshing twelve triangles a column.
+test("the high-poly template places one model over the old ceiling and six that pass it together", async () => {
+  const { buildModelHighPolyPk3, MODELS, MID_AT } = await import("../scenarios/modelhighpoly.mjs");
+  const files = Object.fromEntries(readPk3(buildModelHighPolyPk3()).map((f) => [f.name, f.data]));
+  const vertices = (m) => m.voxel[0] * m.voxel[1] * 12 * 3;
+  assert.ok(vertices(MODELS[0]) > 300000, "the slab alone passes the old ceiling");
+  assert.ok(vertices(MODELS[1]) * 3 < 300000 && vertices(MODELS[1]) * MID_AT.length > 300000, "the blocks pass it only together");
+  for (const m of MODELS) assert.equal(files[`models/${m.file}`].readInt32LE(4), m.voxel[0], `${m.file} is ${m.voxel[0]} columns wide`);
+  const types = [...lumpsOf(files["maps/MAP01.wad"])[1].text.matchAll(/type = (\d+);/g)].map((t) => Number(t[1]));
+  assert.equal(types.filter((t) => t === MODELS[0].num).length, 1);
+  assert.equal(types.filter((t) => t === MODELS[1].num).length, MID_AT.length);
+});
+
+// [Doruk-Aksoy] MAP01 splits the slab's centre into a pad sector and has the slab behind the wall, MAP02 differs only by the pad and that slab, MAP03 has no slab.
+test("the model render radius template puts the slab's centre where each map needs it", async () => {
+  const { buildModelRenderRadiusPk3, BIG } = await import("../scenarios/modelrenderradius.mjs");
+  const files = Object.fromEntries(readPk3(buildModelRenderRadiusPk3()).map((f) => [f.name, f.data]));
+  assert.match(files["decorate.txt"].toString("latin1"), new RegExp(`Actor ${BIG.name} ${BIG.num}\n\{\n  Radius 16\n`));
+  assert.doesNotMatch(files["modeldef.txt"].toString("latin1"), /Skin/, "the voxel draws with its own palette");
+  const textOf = (name) => lumpsOf(files[name])[1].text;
+  const count = (text, re) => [...text.matchAll(re)].length;
+  assert.equal(count(textOf("maps/MAP01.wad"), new RegExp(`type = ${BIG.num};`, "g")), 2);
+  assert.equal(count(textOf("maps/MAP02.wad"), new RegExp(`type = ${BIG.num};`, "g")), 1);
+  assert.equal(count(textOf("maps/MAP03.wad"), new RegExp(`type = ${BIG.num};`, "g")), 0);
+  assert.equal(count(textOf("maps/MAP01.wad"), /^sector$/gm), count(textOf("maps/MAP02.wad"), /^sector$/gm) + 1, "only MAP01 has the pad");
+});
+
 // [Doruk-Aksoy] The pistol's model carries FORCECULLBACKFACES, and closed script 2 sets its puker's render style to ACS's Translucent.
 test("the HUD force-cull template flags the pistol's model and gives MAP01 the script that makes the player translucent", async () => {
   const { buildHudForceCullPk3, TRANSLUCENT_PLAYER } = await import("../scenarios/hudforcecull.mjs");

@@ -67,6 +67,8 @@ The `soak`, `wadsoak` and `wadsoaktitle` scenarios, the browser checks on reload
   `features/gameloop/loop.cpp`: `handoff/backlog_tics` (the tics a threaded frame was owed) and `handoff/inline_catchup` (those it ran inline).
 - `features/sprites/spritebuild.cpp` and `features/levelmesh/walldecals.cpp`: `scene/` zones, `scene/particles` the
   particles the player's walk reached; `features/frame/standaloneframe.cpp`: `scene/actor_sweep`, the actors culled against the view before any is derived.
+- `features/levelmesh/staticmesh.cpp` `DynAppend`, `DynReserve`: `levelmesh/dyn_dropped`, the vertices a frame's dynamic stream turned away past the ceiling the device's storage buffers set, which should read 0.
+- `features/modelreach/modelreach.cpp`: `modelreach/prepare`, the sectors found under the actors wider than their radius, and `modelreach/wide`, how many there were.
 - `features/jobs/jobs.cpp`: a `JobObserver` (`jobpool_compute.h`) on telemetry's clock times the `jobs/` regions and names each worker "job N".
 - `features/hwrender/rendererrate.cpp`: vid_fps's split, under `frame/`.
 - `features/frame-limit/framelimit.cpp`: the `frame/limit_wait` zone, the wait before a present that `vid_maxfps` or `cl_capfps` holds.

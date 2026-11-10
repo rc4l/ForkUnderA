@@ -4,9 +4,6 @@
 
 namespace zx { namespace levelmesh {
 
-// [Doruk-Aksoy] The most vertices the dynamic stream holds in a frame; an append past it is dropped.
-const unsigned kDynVertexCeiling = 300000;
-
 // [Doruk-Aksoy] A run's first piece and first vertex in the stream.
 struct DynQuadRun
 {
