@@ -76,6 +76,11 @@ by `EmitModelSurface`, or placed by their caller with `ModelSurfacePiece` and co
 floor's face, on a mirror's sheen and on a mid texture GL draws through a sky (`GLWF_SKYHACK`) are not built
 yet. Scenario `walldecal`.
 
+The stream holds as many vertices a frame as the device's storage buffers bind (`SetDynVertexCeiling`, from
+`maxStorageBufferRange` through `ComputeDynVertexCeiling` in `features/hwrender/computation/dynlayout_compute`,
+30.2 M on a 4 GB range), where a fixed 300k dropped every model over 100k triangles that GL drew; what passes it
+is counted in `levelmesh/dyn_dropped`, and `dumprenderer` prints it as `dyn_vertex_ceiling`. Scenario `modelhighpoly`.
+
 ## In-engine hooks
 
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::PreprocessLevel` and `CleanLevelData`: `AllocForLevel`,

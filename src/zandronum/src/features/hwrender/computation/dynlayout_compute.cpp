@@ -45,4 +45,28 @@ unsigned ComputeDynWordsCapacity(unsigned need)
 	return grown > (1u << 20) ? grown : (1u << 20);
 }
 
+namespace {
+
+// [Doruk-Aksoy] Whether `vertices`, a piece and a matrix every three of them, fit a storage buffer of `maxStorageBytes` at the capacity the stream would grow to.
+bool DynVerticesFit(unsigned vertices, unsigned long long maxStorageBytes)
+{
+	const unsigned pieces = vertices / 3 + 1;
+	return 4ull * ComputeDynWordsCapacity(ComputeDynWordsBound(pieces, vertices, pieces)) <= maxStorageBytes;
+}
+
+} // namespace
+
+unsigned ComputeDynVertexCeiling(unsigned long long maxStorageBytes)
+{
+	if (!DynVerticesFit(0, maxStorageBytes)) return 0;
+	unsigned lo = 0, hi = kDynVertexLimit;
+	while (lo < hi)
+	{
+		const unsigned mid = lo + (hi - lo + 1) / 2;
+		if (DynVerticesFit(mid, maxStorageBytes)) lo = mid;
+		else hi = mid - 1;
+	}
+	return lo;
+}
+
 }} // namespace zx::hwrender

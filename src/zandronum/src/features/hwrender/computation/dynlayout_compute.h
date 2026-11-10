@@ -32,6 +32,15 @@ float ComputeModelMatrixWord(unsigned matBase, int index);
 // [rc4l] The dynamic words to make room for when `need` are wanted: half as many again, and never under 1 M words (4 MB), which a Complex Doom fight or nuts.wad's horde stays inside, since growing it makes the pipelines binding it again.
 unsigned ComputeDynWordsCapacity(unsigned need);
 
+// [Doruk-Aksoy] The storage buffer every Vulkan device can bind (maxStorageBufferRange's guaranteed least, 128 MB), which the dynamic stream assumes until the device says more.
+const unsigned long long kMinStorageBufferBytes = 1ull << 27;
+
+// [Doruk-Aksoy] The most engine vertices the dynamic stream takes in a frame, never past this, which keeps its word sums inside 32 bits.
+const unsigned kDynVertexLimit = 100000000u;
+
+// [Doruk-Aksoy] The most engine vertices a frame's dynamic stream may hold when the device binds storage buffers of up to `maxStorageBytes`: the most whose words, at the capacity ComputeDynWordsCapacity grows to and with a piece and a model matrix every three vertices, still fit; 0 when not even the smallest capacity does.
+unsigned ComputeDynVertexCeiling(unsigned long long maxStorageBytes);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_HWRENDER_DYNLAYOUT_COMPUTE_H
