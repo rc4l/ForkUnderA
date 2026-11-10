@@ -182,7 +182,7 @@ test("the OBJ template ships the prism and every broken file under MODELDEF", as
   const files = Object.fromEntries(readPk3(buildObjModelPk3()).map((f) => [f.name, f.data]));
   const prism = prismObj();
   assert.ok(prism.includes("\r\n") && prism.startsWith("#"), "CRLF and a comment");
-  assert.ok(prism.indexOf("f 8 7 6 5 4 3 2 1") < prism.indexOf("usemtl"), "a face before any usemtl");
+  assert.ok(prism.indexOf("f 1 2 3 4 5 6 7 8") < prism.indexOf("usemtl"), "a face before any usemtl");
   assert.match(prism, /usemtl STARTAN2(\r\nf \d+\/\d+ \d+\/\d+ \d+\/\d+ \d+\/\d+){8}/, "eight quad sides");
   assert.match(prism, /f( -\d\/-1){8}\r\n$/, "an eight-cornered cap by negative indices");
   for (const file of Object.keys(BROKEN)) assert.ok(`models/${file}` in files, file);
