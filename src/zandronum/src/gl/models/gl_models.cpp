@@ -175,6 +175,8 @@ static void gl_RenderModelFrame(FModel *mdl, FModelVertexBuffer *buffer, const F
 	{
 		const FModelSurface &surf = surfs[i];
 		FMaterial * tex = FMaterial::ValidateTexture(surf.skin, false);
+		// [Doruk-Aksoy] A surface with no material is left out, as the backend leaves it, rather than dereferenced.
+		if (tex == NULL) continue;
 		gl_RenderState.SetMaterial(tex, mdl->NoFilter() ? CLAMP_NOFILTER : CLAMP_NONE, translation, -1, false);
 
 		// [rc4l] The surface, for a check against GL's models.

@@ -1692,6 +1692,7 @@ add_executable( zdoom WIN32
 	features/models/md2model.cpp
 	features/models/md3model.cpp
 	features/models/voxelmodel.cpp
+	features/modelreach/modelreach.cpp
 	features/dynlights/a_dynlight.cpp
 	features/levelmesh/pointlight.cpp
 	features/gldefs/lightsettings.cpp

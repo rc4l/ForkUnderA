@@ -120,6 +120,8 @@ ZX_ACTOR_DERIVED(fixed_t, attackHeight)
 ZX_ACTOR_DERIVED(bool, playerBody)           // [rc4l] a player's own body, the only actor its floor tints
 ZX_ACTOR_DERIVED(bool, tintActive)           // [rc4l] its floor hurts it and nothing protects it
 ZX_ACTOR_DERIVED(FTextureID, tintTexture)    // [rc4l] the floor whose colour tints it
+ZX_ACTOR_DERIVED(float, modelFootprint)      // [Doruk-Aksoy] how far its model reaches across the flat axes, which sectors it is drawn from (features/modelreach)
+ZX_ACTOR_DERIVED(float, modelReach)          // [Doruk-Aksoy] and in all three, which the frustum test pads by
 
 ZX_PLAYER_FIELD(viewz)
 ZX_PLAYER_FIELD(playerstate)

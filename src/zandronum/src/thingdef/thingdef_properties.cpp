@@ -648,6 +648,17 @@ DEFINE_PROPERTY(projectilepassradius, F, Actor)
 
 //==========================================================================
 //
+// [Doruk-Aksoy] Ported from uzdoom@87b23d160bcbfe8ed35d6ff0921b72f54109ae41: how far round itself an actor is drawn from, for a model wider than its radius; features/modelreach.
+//
+//==========================================================================
+DEFINE_PROPERTY(renderradius, F, Actor)
+{
+	PROP_FLOAT_PARM(r, 0);
+	defaults->renderradius = r;
+}
+
+//==========================================================================
+//
 //==========================================================================
 DEFINE_PROPERTY(mass, I, Actor)
 {
