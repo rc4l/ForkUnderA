@@ -17,6 +17,14 @@ so the backend's model path read GL's vertex buffer class to find a model's vert
   `MDL_FORCECULLBACKFACES` 2048, renumbered past ours), which both renderers' culling reads through `ActorModelCull`.
 - `computation/modelskin_compute`: the skin a surface draws with, MODELDEF's `Skin`, then `SurfaceSkin`, then the
   file's own; a MODELDEF voxel with no `Skin` takes its palette, as a VOXELDEF one does, where GL crashed on it.
+- `objmodel.cpp`, `computation/objmodel_compute`: Wavefront OBJ, ported from UZDoom's `FOBJModel` (MODELDEF names a
+  `.obj`, known by its extension). One frame, a surface per `usemtl`, each the texture or graphic its material names
+  (`LoadSkin` now looks a name up as a texture when no graphic file has it, as UZDoom's does). Laid out as UZDoom does
+  (z negated, v flipped, each triangle wound back to front, a quad split 0-1-3 and 1-2-3); where UZDoom read a bad
+  corner past its arrays, took only four corners of a larger face and lost faces before the first `usemtl`, the parse
+  drops the bad face, fans the larger one and keeps the rest, and the load names what it left out. Normals and
+  smoothing groups are not read, since `FModelVertex` has none. At most `MD3_MAX_SURFACES` (32) surfaces are drawn,
+  as UZDoom allows `SurfaceSkin` for; past that the load says so. Scenario `objmodel`.
 - `SpriteModelReach`: how far each sprite's models reach, built at the end of `gl_InitModels` for features/modelreach.
 
 GL's `gl/models/gl_models.cpp` keeps a vertex buffer per model, made from its geometry on first draw, and
