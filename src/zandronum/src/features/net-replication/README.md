@@ -32,6 +32,13 @@ however many hits it took (`NoteDamaged`, `SendWoundedHealth` from `SendChanges`
 `ComputeAddPendingHealth`). Stock Zandronum sends only the death, to save the bytes, so anything a client reads of a
 wounded monster's health (a health bar, a client script, `netdiff`) read its spawn health (`farhitscan`).
 
+A non-player's death goes out with its place whole (`SERVERCOMMANDS_MoveThingExactWhole` from `AActor::Die`): the
+exact move used to leave out, or have the client reuse, any coordinate the server had last sent, but a client walks a
+monster itself between updates and keeps a walking update's whole-unit coordinates as its last, so corpses lay a unit
+off on a flat floor and a step off on narrow stairs (`netmonsterstairs`). A walker killed after stepping onto a higher
+floor, before the next tic's `P_ZMovement` raised it there, is first stood on that floor (`ComputeSettledDeathZ`, on a
+server only): the raise came after the send, and every client kept the corpse a step low.
+
 ## Players
 
 A server script's `SetUserCVar` that changes a player's mod user cvar sends it to every client at once
