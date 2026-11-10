@@ -7,6 +7,7 @@
 #include "features/gamecopy/seen.h"   // [rc4l] the seen bits the walk marks
 #include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/gamecopy/actors.h"   // [rc4l] the actor records a portal view hands out
+#include "features/modelreach/modelreach.h"   // [Doruk-Aksoy] the wide actors a portal view's walk left out
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
 
 #include "features/visibility/computation/clipranges_compute.h"
@@ -1477,6 +1478,10 @@ const zx::viewsetup::SpriteViewProvider g_portalView =
 	PortalViewActor, PortalViewVector, PortalSpriteIndex, PortalRejects, PortalMirrors, PortalLightCount, PortalViewAngles
 };
 
+// [Doruk-Aksoy] The portal view's sprite hook, which a wide actor its walk left out is handed to.
+void (*g_portalSprite)(const zx::gamecopy::ActorRecord &thing) = NULL;
+void PortalWideSprite(int record) { g_portalSprite(*zx::gamecopy::Record(record)); }
+
 // [rc4l] The actors in the sectors the last walk reached, handed to `sprite` inside a portal view, as GL's walk hands them to ProcessSprite.
 void PortalSprites(void (*sprite)(const zx::gamecopy::ActorRecord &thing), line_t *mirror)
 {
@@ -1486,8 +1491,13 @@ void PortalSprites(void (*sprite)(const zx::gamecopy::ActorRecord &thing), line_
 	zx::viewsetup::SetSpriteViewProvider(&g_portalView);
 	int count;
 	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
+	// [Doruk-Aksoy] What this view reached, which a wide actor's footprint is judged against.
+	zx::modelreach::MarkReached(reached.empty() ? NULL : &reached[0], (int)reached.size());
 	for (size_t i = 0; i < reached.size(); i++)
 		for (int r = zx::gamecopy::FirstActorIn(reached[i]); r >= 0; r = records[r].nextInSector) sprite(records[r]);
+	// [Doruk-Aksoy] And the actors wider than their radius standing in a sector the view never reached, over one it did.
+	g_portalSprite = sprite;
+	zx::modelreach::EachWideMissed(PortalWideSprite);
 	zx::viewsetup::SetSpriteViewProvider(g_outerView);
 	g_viewMirror = NULL;
 }

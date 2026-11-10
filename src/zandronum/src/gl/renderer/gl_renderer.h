@@ -117,7 +117,8 @@ public:
 	void Clear(int left, int top, int right, int bottom, int palcolor, uint32 color);
 
 	void ProcessLowerMiniseg(seg_t *seg, sector_t * frontsector, sector_t * backsector);
-	void ProcessSprite(AActor *thing, sector_t *sector);
+	// [Doruk-Aksoy] footprint: offered from a sector under a wide actor the walk reached, rather than its own.
+	void ProcessSprite(AActor *thing, sector_t *sector, bool footprint = false);
 	void ProcessParticle(particle_t *part, sector_t *sector);
 	void ProcessSector(sector_t *fakesector);
 	void SetupLevel();
@@ -142,6 +143,8 @@ public:
 
 // Global functions. Make them members of GLRenderer later?
 void gl_RenderBSPNode (void *node);
+// [Doruk-Aksoy] After a walk: the actors wider than their radius whose own sector it never reached, offered from a sector under them it did.
+void gl_RenderWideThings ();
 
 #include "features/fakeflat/fakeflat.h"   // [rc4l] gl_FakeFlat, gl_CheckViewArea, gl_CheckClip, area_t and in_area
 

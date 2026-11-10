@@ -15,6 +15,7 @@
 #include "features/visibility/viswalk.h"
 #include "features/hwrender/backendonly.h"
 #include "features/sprites/spritebuild.h"
+#include "features/modelreach/modelreach.h"     // [Doruk-Aksoy] the wide actors and the sectors the walks reached
 #include "features/gamecopy/actors.h"        // [rc4l] the actor records the sweep reads
 #include "features/gamecopy/particles.h"     // [rc4l] the particles the walks reach
 #include "features/gamecopy/players.h"       // [rc4l] the camera textures the copy holds
@@ -31,6 +32,7 @@
 #include "r_state.h"   // [rc4l] subsectors
 #include "textures/textures.h"
 
+#include <algorithm>
 #include <vector>
 
 // [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
@@ -72,7 +74,8 @@ SweepVerdict VerdictOf(const zx::gamecopy::ActorRecord *thing, const float *mvp)
 	if (thing->Sector == NULL) return kSweepNoSector;
 	if (mvp == NULL) return kSweepKept;
 	// [rc4l] Mesh space is (x, up, y), and the actor's size pads the test since a sprite is wider than the point it stands on.
-	const float pad = FIXED2FLOAT(thing->radius) + FIXED2FLOAT(thing->height) + 64.f;
+	// [Doruk-Aksoy] A model reaching past the radius pads it by its reach, or a big one went as its centre left the view.
+	const float pad = std::max(FIXED2FLOAT(thing->radius), thing->modelReach) + FIXED2FLOAT(thing->height) + 64.f;
 	const int cull = ComputeActorCull(mvp, FIXED2FLOAT(thing->x), FIXED2FLOAT(thing->z) + FIXED2FLOAT(thing->height) * 0.5f,
 		FIXED2FLOAT(thing->y), pad);
 	return cull == kActorBehind ? kSweepBehind : cull == kActorOffScreen ? kSweepOffScreen : kSweepKept;
@@ -180,6 +183,8 @@ void StandaloneScene()
 		zx::levelmesh::ClearSprites();
 	}
 	zx::horizon::UpdateHorizons();
+	// [Doruk-Aksoy] The actors wider than their radius, before a stacked view's or mirror's walk hands its actors over.
+	zx::modelreach::PrepareWide();
 	// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
 	if (walked)
@@ -204,6 +209,8 @@ void StandaloneScene()
 	if (zx::levelmesh::PlayerWalkActive()) zx::hitboxviz::CollectBackendFrame(camera, walkedSet.sectors, walkedSet.sectorCount);
 #endif
 	const zx::framephase::Scope actorsPhase(zx::framephase::kPhaseActors);
+	// [Doruk-Aksoy] What the walks reached, so a wide actor whose centre is in a map section out of view is still drawn from a sector under it.
+	zx::modelreach::MarkReached(walkedSet.sectors, walkedSet.sectorCount);
 	SweepActors();
 }
 

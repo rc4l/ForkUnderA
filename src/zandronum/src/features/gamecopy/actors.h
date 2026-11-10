@@ -39,6 +39,10 @@ const ActorRecord *RecordById(unsigned int id);
 int CopyTic();
 // [rc4l] Which level the copy is of, a count that moves on with each level started.
 int CopyLevel();
+// [Doruk-Aksoy] Fills since the start, which moves on with every fill, so a reader can tell a new fill from the one it last read.
+unsigned FillCount();
+// [Doruk-Aksoy] The records of the last fill whose model reaches past their radius, in record order.
+const int *WideActors(int &count);
 // [rc4l] The first record in a sector's actor list, as its thinglist orders them, -1 for none.
 int FirstActorIn(const sector_t *sector);
 // [rc4l] The record of the sky viewpoint a sector's floor or ceiling shows, as GetSkyBox finds it, -1 for none.

@@ -13,7 +13,8 @@
 #include "features/gamecopy/polyobjs.h"
 #include "features/gamecopy/scanpool.h"   // [Doruk-Aksoy] the game thread's own pool at a tic's end
 #include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] SetDrawnShaders
-#include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor
+#include "features/models/models.h"   // [rc4l] gl_IsHUDModelFor; [Doruk-Aksoy] SpriteModelReach
+#include "features/modelreach/computation/modelreach_compute.h"   // [Doruk-Aksoy] an actor's reach at its scale
 #include "features/viewsetup/computation/viewsetup_compute.h"   // [rc4l] kTorchPower, kLightAmpPower
 #include "features/gamecopy/computation/recordlinks_compute.h"
 #include "features/gamecopy/computation/actorchains_compute.h"   // [Doruk-Aksoy] sector links from the walk of the actor list
@@ -696,6 +697,10 @@ ActorListStamp ListStampNow()
 	return s;
 }
 
+// [Doruk-Aksoy] The records whose model reaches past their radius, in record order, and each chunk's share of them as the take found them.
+std::vector<int> g_wide;
+std::vector<zx::jobs::Padded<std::vector<int>>> g_wideChunks;
+
 // [rc4l] Every actor in thinker order, then each sector's records linked in its thinglist's order, the list and links the tic's end made when they still hold (listed).
 // [Doruk-Aksoy] Or the list the last fill held, its chains read again, when no thinker joined or left a list since (kept).
 void FillActors(bool listed, bool kept)
@@ -723,15 +728,23 @@ void FillActors(bool listed, bool kept)
 	g_actors.resize(g_held.size());
 	// [rc4l] Taken across the pool, each lane writing only its own actors and records, since Sunder MAP11's 6,029 took 0.9 ms of a browser's handoff.
 	ZX_ZONE("copy/actor_take");
+	// [Doruk-Aksoy] Each chunk notes its wide actors while their records are at hand, where a pass over the records afterwards took 0.09 ms of Sunder MAP11's fill.
+	const int chunks = zx::jobs::ComputeChunkCount((int)g_held.size(), kActorChunk);
+	if ((int)g_wideChunks.size() < chunks) g_wideChunks.resize(chunks);
 	auto take = [](int lo, int hi, int) {
+		std::vector<int> &wide = g_wideChunks[lo / kActorChunk].value;
+		wide.clear();
 		for (int i = lo; i < hi; i++)
 		{
 			g_held[i]->rcRecord = i;
 			TakeActor(*g_held[i], g_actors[i]);
 			g_actors[i].nextInSector = g_heldNext[i];
+			if (g_actors[i].Sector != NULL && zx::modelreach::ComputeReachIsWide(g_actors[i].modelFootprint, FIXED2FLOAT(g_actors[i].radius))) wide.push_back(i);
 		}
 	};
 	zx::jobs::Pool().ParallelChunks((int)g_held.size(), kActorChunk, take);
+	g_wide.clear();
+	for (int c = 0; c < chunks; c++) g_wide.insert(g_wide.end(), g_wideChunks[c].value.begin(), g_wideChunks[c].value.end());
 	ZX_COUNT("copy/actors", "actors", g_actors.size());
 }
 
@@ -935,7 +948,12 @@ void TakeActor(AActor &live, ActorRecord &out)
 	out.shownSprite = sprite;
 	out.shownScaleX = scaleX;
 	out.shownScaleY = scaleY;
-	out.visible = live.IsVisibleToPlayer();
+	// [Doruk-Aksoy] A negative RenderRadius is never drawn, as in UZDoom.
+	out.visible = live.IsVisibleToPlayer() && live.renderradius >= 0;
+	// [Doruk-Aksoy] How far its sprite's models reach round it at its shown scale, at least its RenderRadius.
+	zx::modelreach::ModelReach reach = SpriteModelReach(sprite);
+	zx::modelreach::ComputeApplyRenderRadius(live.renderradius, reach);
+	zx::modelreach::ComputeActorReach(reach, FIXED2FLOAT(scaleX), FIXED2FLOAT(scaleY), out.modelFootprint, out.modelReach);
 	out.isPlayer = live.player != NULL;
 	out.playerIndex = live.player != NULL ? int(live.player - players) : -1;
 	out.inventory = live.IsKindOf(RUNTIME_CLASS(AInventory));
@@ -1081,6 +1099,17 @@ int SkyBoxOf(const sector_t *sector, int plane)
 int DefaultSkyBox()
 {
 	return g_defaultSkyBox;
+}
+
+unsigned FillCount()
+{
+	return g_fills;
+}
+
+const int *WideActors(int &count)
+{
+	count = (int)g_wide.size();
+	return g_wide.empty() ? NULL : &g_wide[0];
 }
 
 int FirstActorIn(const sector_t *sector)
