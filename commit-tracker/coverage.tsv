@@ -12406,7 +12406,7 @@ c5156d459875beb7364aef33b9ab9322fed2a166	2019-02-23T17:57:49Z	- moved around a f
 bae0094039fcb869f6a91b5ab28e689a2b7ea9fc	2019-02-23T18:44:00Z	- fixed the status bar string drawers which weren't UTF-8 capable yet.	pending		/
 7098748e9e79db33cddeb6b96e071481ceb71264	2019-02-23T18:51:24Z	- fix building on case sensitive systems	pending		/
 413412f603e076744acde6e22a2a86b842b028e3	2019-02-23T18:53:38Z	Merge branch 'master' into vulkan2	pending		/
-d5f138f14dfa28821a54e3b0dd9b457a153c4d7d	2019-02-23T19:23:04Z	- made the text comparison for Dehacked case insensitive so that the contents of the string table can be properly capitalized without breaking old-style string replacements.	pending		/
+d5f138f14dfa28821a54e3b0dd9b457a153c4d7d	2019-02-23T19:23:04Z	- made the text comparison for Dehacked case insensitive so that the contents of the string table can be properly capitalized without breaking old-style string replacements.	adapted	MatchString ignores case	862569b4
 6129f9a9ccc23afa9dd731a9cc30c4bdeba7eeb6	2019-02-24T09:05:01Z	- fixed a warning and set NOINITCALL for a few CVARs accessing the current level.	pending		/
 0676a98efc13dacb94aff616171412b9325f446e	2019-02-24T11:10:56Z	- fixed: ACS must use COPY_AAPTREX for all pointer transfers.	pending		/
 b670d5f372dcb622307c974784ddd5269f934032	2019-02-24T12:55:08Z	- fixed utf8_decode.	pending		/
@@ -12467,7 +12467,7 @@ d86a56086c123acbb38483469ef598d4566b35ef	2019-03-01T20:50:06Z	Merge remote-track
 fa123f37c7d0ed910350f2f9ab66bccec1df505c	2019-03-01T21:04:39Z	- adjustment for renamed spreadsheet.	pending		/
 1430d9012e969b67e29ca0fe7f71880f1b7cf48e	2019-03-01T23:46:25Z	- fix shutdown crash and some minor adjustments	pending		/
 05a6896d4ff09c662fa98f026fdff0641fc43aea	2019-03-02T00:56:08Z	- Pass vertex color and normal via uniform buffer when the attribute isn't available	pending		/
-ce1ecd0d4ba15ff6fc3f57b8b4471a5d21c35396	2019-03-02T11:06:24Z	- implemented string table macros.	pending		/
+ce1ecd0d4ba15ff6fc3f57b8b4471a5d21c35396	2019-03-02T11:06:24Z	- implemented string table macros.	adapted	LMACROS @[name] per gender; macros of every LMACROS lump kept, later replacing earlier	862569b4
 5ac5a0a85696310bf558463d10a715b2668d9085	2019-03-02T11:06:40Z	French characters for Raven games	pending		/
 805cf6c098ead0dab26b4e8fd7caddd619c50485	2019-03-02T11:20:58Z	- moved the sprite box on the player menu up a bit because this was badly overlapping with some long texts in most languages.	pending		/
 5f6198f4e438a65bd97e0c5d821d5588a6de15aa	2019-03-02T11:54:46Z	- let IWAD and PWAD BigFonts override BigUpper for consistency.	pending		/
@@ -12557,7 +12557,7 @@ d23fbb07cd25f320c5ea8f6fb798e5efd4e78606	2019-03-04T14:24:30Z	Merge branch 'vulk
 c70aff99e7ce2ee43610f0aa3b5ad23dc220493e	2019-03-04T14:55:43Z	- enable RenderFirstSkyPortal	pending		/
 a3554bda7021a7e376ab7fc8e0155f1482046f56	2019-03-04T15:35:38Z	- replaced all usages of insecure vsprintf() function	pending		/
 614c23d4f2608cd74e700fc801962edfab460e27	2019-03-04T16:23:42Z	Extra Bulgarian letters	pending		/
-525b0214a7e5024e8033f36d8550c6080005a33e	2019-03-04T16:31:11Z	- fixed macro substitution.	pending		/
+525b0214a7e5024e8033f36d8550c6080005a33e	2019-03-04T16:31:11Z	- fixed macro substitution.	adapted	macros replaced left to right, a macro's text never rescanned	862569b4
 77cb9ae86677ef0ae2c6610a8bc0dde8cbd8fde4	2019-03-04T18:16:51Z	added MakeScreenShot and MakeAutoSave functions to FLevelLocals	pending		/
 97ae74081a0e461885aa1c59ac9edd9b5027f826	2019-03-04T19:06:19Z	- special remapping for the Hungarian double accented letters.	pending		/
 077ba290a61f547be0d3222cb2ef6a44f8f78dac	2019-03-04T20:33:00Z	Hungarian character set (all games)	pending		/
@@ -12725,7 +12725,7 @@ b62d5784af2416b3a965fadab6de2fe39ae0fd1f	2019-03-17T22:24:50Z	- bind a texture i
 7b3350ae1e5d2d47d581dbe3c7fdc1886a745efe	2019-03-17T23:38:09Z	- the material descriptor set must be bound again if the pipeline changes and the new shader uses more textures than the old one	pending		/
 dd4ef010ab7f5ec39d845066dcb1c66016bfc37e	2019-03-18T08:05:19Z	Merge remote-tracking branch 'origin/master' into vulkan2	pending		/
 1f16fd7801e7270fcc7015d64aff79f818be2965	2019-03-18T08:23:55Z	- fixed clipping of automap background with althud and screenblocks < 10	pending		/
-c2c9126453ed57cb4fd063f8d7faa21c0d9020f7	2019-03-18T09:18:30Z	- replaced the XLSX parser with a CSV parser.	pending		/
+c2c9126453ed57cb4fd063f8d7faa21c0d9020f7	2019-03-18T09:18:30Z	- replaced the XLSX parser with a CSV parser.	adapted	CSV LANGUAGE lumps applied per Zandronum language pass; LMACROS kept from the macros part	862569b4
 86f9824c2a9951b288fe971611871383b3190ae0	2019-03-18T09:18:31Z	- updated the text data to the content of the Google spreadsheet.	pending		/
 8f93dcc884ac1c8a0e0081871296c5ac92387039	2019-03-18T09:54:26Z	- fixed the option menu indentation.	pending		/
 4120e72dbd8c7cf78a2f64e4688d36bec1a419bd	2019-03-18T10:45:00Z	- explicitly mark all unresolved textures as invalid.	pending		/
@@ -12936,8 +12936,8 @@ bcf7bc8d34b24c0b7d27c5d93106ca830dda7547	2019-04-13T07:31:36Z	- added some UTF-8
 f7561f25d60279e5df07200460a513270a8c355d	2019-04-13T08:12:33Z	- added Unicode aware MakeUpper/MakeLower functions to FString and ZScript's String and deprecated ToUpper/ToLower because their semantics did not allow fixing them.	pending		/
 393811919287d1e306a8b2aece4c0ba6f4402b22	2019-04-13T08:26:55Z	- added CharUpper and CharLower functions to ZScript.	pending		/
 d73f8faafa4d22e45af92cb2442d1b629ed8196f	2019-04-13T10:17:38Z	- added monospacing support to Screen.DrawText and its native counterparts.	pending		/
-5f2d41884c6ab643252aa06fd1d45fe02dce7887	2019-04-13T11:58:37Z	- make sure that the global and default language tables are always separate, if some other tables is being attempted to be filled in along with them, these tables should be ignored.	pending		/
-4668fa95e35d002f3d0fdc2d208c4452969f6018	2019-04-13T12:43:49Z	- when altering the default string table, make sure that all existing text for the given label is removed that comes from an older resource file.	pending		/
+5f2d41884c6ab643252aa06fd1d45fe02dce7887	2019-04-13T11:58:37Z	- make sure that the global and default language tables are always separate, if some other tables is being attempted to be filled in along with them, these tables should be ignored.	adapted	'*' and 'default' keep a header to themselves	862569b4
+4668fa95e35d002f3d0fdc2d208c4452969f6018	2019-04-13T12:43:49Z	- when altering the default string table, make sure that all existing text for the given label is removed that comes from an older resource file.	adapted	later file's default text replaces older files' text on the pass-ranked table; CSV purges older text per row	862569b4
 747906730c8a6306b818014a136d08b3afa9818d	2019-04-13T16:10:58Z	Added support for monospacing alignment modes to HUDFont / BaseStatusBar.DrawString (#810)	pending		/
 8ab6747d77fb44423fb605908de52d3aa6e55d5c	2019-04-13T20:13:52Z	- Added "const" qualifiers to the new UTF-8-aware string methods	pending		/
 ad23726cb64ee8810486cbb76daf6f8e0e8837f4	2019-04-14T09:40:23Z	- Fixed conditions tested for when checking whether "Force respawn" or "Respawn protection" dmflags are enabled	pending		/
@@ -13010,7 +13010,7 @@ c1b0122558a8cd852ab14c6c80285f78d2210bf1	2019-04-21T06:42:27Z	- always construct
 86897560ac28f9c56818b6e1f54128e98fa618ad	2019-04-21T08:02:33Z	- only use the Doom SmallFont extensions with the commercial IWADs.	pending		/
 13841655aa4447d3589c6af9ccb3470e1d552aec	2019-04-21T08:49:27Z	- add color remapping for NewSmallFont as well.	pending		/
 5b6bae409ef6e3823c8210a5ee46d08499fab261	2019-04-21T10:38:43Z	- automated the SmallFont selection based on a filter string in the language table.	pending		/
-68c33a6e4397a21e2eeb80ff38b4df2c3681b9d8	2019-04-21T22:21:01Z	- fixed string prioritization when a mod replaces the default language for a given string.	pending		/
+68c33a6e4397a21e2eeb80ff38b4df2c3681b9d8	2019-04-21T22:21:01Z	- fixed string prioritization when a mod replaces the default language for a given string.	adapted	the replacement keyed on the header naming default and on the resource file	862569b4
 e0a0be4f7b6f5af7cc08a23acedb2744d98bdfe2	2019-04-22T07:08:43Z	- added a CanPrint function to FFont and used that to handle the statistics display on the automap HUD to only replace the font when actually needed, not based on the language.	pending		/
 e6ab6785157ca04f59cffeb01ad876fb7ec4d83c	2019-04-22T08:20:39Z	- fixed: The minimal window size was not calculated properly.	ported	windowed min size now a fixed 320x200 floor instead of SCREENWIDTH/HEIGHT; upstream VID_MIN_WIDTH/HEIGHT substituted with our identical zx::VID_SCALE_MIN_WIDTH/HEIGHT; also swaps hardcoded SM_CXSIZEFRAME maths for AdjustWindowRectEx, which matters for borderless mode	d529745f444ec9cff05273f878272073c5d590e9
 6f3982865f3c30bffde17b230352aaaaf74ff8e4	2019-04-22T08:23:28Z	- refinement of font substitution logic.	pending		/
@@ -13907,7 +13907,7 @@ bf8305062a4d4d117afdf06bd37e05594f3ee565	2019-12-12T01:13:19Z	- do not allow sum
 1a19dbb52f6f3b98b2c56fe3c2f33033e2a577dd	2019-12-12T14:14:30Z	- added 'damageonland' property to terrain definition	pending		/
 c3ede69d16065e2d2d3f0f03106131ef9e1ac882	2019-12-12T16:37:10Z	- fixed linked sound resolving	pending		/
 e0fb9a45e21daba6afa40ef192aa7d9e3923ef20	2019-12-12T22:26:32Z	Marking final class to suppress build warning with clang.	pending		/
-71d701325520671933676dc7ae66349cec3b3925	2019-12-15T15:42:24Z	- better validation checks for CSV-based string files.	pending		/
+71d701325520671933676dc7ae66349cec3b3925	2019-12-15T15:42:24Z	- better validation checks for CSV-based string files.	adapted	CSV detection by a 'default,' or 'identifier,' header	862569b4
 5632c80ab270713c559170d0b11030099d0074cb	2019-12-15T16:14:23Z	Split softpoly into more files	pending		/
 a4ca7cfb8dbc2a05d4ad4dff3438c5c4c9d170bc	2019-12-15T16:14:34Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending		/
 0fd964ec4f1ff9ddf4626c0301ca4bf3bee89008	2019-12-15T16:32:12Z	Fix compile error	pending		/
@@ -14028,7 +14028,7 @@ cb7a097ed4d4ed894d3013ee133957dabdd465f7	2020-01-04T20:05:35Z	- vid_scalemode 1 
 b209fd95726ceaabb07bdf0e126e6e329e4e7a24	2020-01-05T16:36:44Z	add "nosave" cvar token	pending		/
 98ee0a7035829fab93be04a4008c9be775343344	2020-01-05T21:30:01Z	- move colorization parser from 'textures' to 'gldefs'	pending		/
 a83fff0eb4b1a81cdf4fc776c396f93aeeaacd89	2020-01-05T22:07:03Z	Disabled default blocks in mixins for now.	pending		/
-83f46c4b2fbd9f5f3079fe2aad5440951c3546b2	2020-01-06T08:22:42Z	- fixed erroneous override of default language strings	pending		/
+83f46c4b2fbd9f5f3079fe2aad5440951c3546b2	2020-01-06T08:22:42Z	- fixed erroneous override of default language strings	adapted	isDefault taken from each header, not carried over	862569b4
 cad14d1c935f3a869ecccedf67de32702820743f	2020-01-06T09:15:17Z	- fixed resolving of music aliases with full filenames	pending		/
 eeddd724587c10c9d2b3997c5a4dba4d99e72155	2020-01-06T11:07:07Z	fix nosave cvar keyword (saved to config, not saved to savegame)	pending		/
 fca492df2b1c10aa1f5fb23aeccc1c4a6c651f84	2020-01-06T12:26:16Z	- fixed compilation of debug target with older macOS SDKs	pending		/
@@ -14807,7 +14807,7 @@ c415518066841e7136007db282f1f6847a317f5e	2020-09-27T07:19:12Z	- allow drawing fo
 700304bf4641f7c3aedb31ac19f3612ffa02eff7	2020-09-27T07:35:06Z	- update of console code.	pending		/
 2b64f8fb19faedc393d2a7a960bc02f2cf8785fc	2020-09-27T07:38:14Z	- added custom sound stream feature from Raze.	pending		/
 c65f707a206409f971b6350a9b0fcc39c6d76a85	2020-09-27T07:46:12Z	- added a proper 'sound finished' callback to the sound engine.	pending		/
-96ceb11af04f6b14ddf9aa1364039652c3c0ab51	2020-09-27T08:17:58Z	- various engine updates from Raze.	pending		/
+96ceb11af04f6b14ddf9aa1364039652c3c0ab51	2020-09-27T08:17:58Z	- various engine updates from Raze.	adapted	only the $$ string indirection, with a loop/depth guard upstream lacks; the rest of the Raze update is not taken	862569b4
 528e4e46b37e51a2e176456e44c184dfbaa962e0	2020-09-27T08:38:12Z	- texture manager update from Raze	pending		/
 31628a70c87260bc5636e990207e5b7e4e6d9729	2020-09-27T08:45:45Z	- added some 'overrides' and block 'forcelookup' for script access to textures.	pending		/
 79ac41c5b3a1911bed8c90fed64ba057c95d89b9	2020-09-27T08:48:38Z	- more 'override's.	pending		/
@@ -15264,7 +15264,7 @@ ebbc94280e6dda47375673961446e701da4dd8dc	2021-05-17T09:51:06Z	- fixed: The Priso
 f4143f7624f4c92608ceb5dc9e53b7333baa4b25	2021-05-17T10:07:10Z	- added a few missing statusbar constants-	pending		/
 a94f5dd1b3b106d08a0040e568874014321ad1b5	2021-05-17T10:27:27Z	- added a proper error message when '--' or '++' gets used on 8 or 16 bit values.	pending		/
 668f8f2cf6eb535c45c003c6edc3997450771bec	2021-05-17T10:42:22Z	- fixed some uses of postincre,ment/decrements on narrow types.	pending		/
-0b5b919352bf02237f5eb78756629d49fef95d40	2021-05-17T10:42:45Z	- let the CSV parser for the string table handle hex escapes.	pending		/
+0b5b919352bf02237f5eb78756629d49fef95d40	2021-05-17T10:42:45Z	- let the CSV parser for the string table handle hex escapes.	adapted	\xHH escapes in both lump forms; a trailing backslash ends the string instead of reading past it	862569b4
 5bf2a26b82b6db13ff4336e35a02a6f3a80eb090	2021-05-17T10:48:22Z	- removed bogus assert from FxMinMax.	pending		/
 6071cf66cc4deb9b433db0a6628d1074c446ebed	2021-05-17T11:02:01Z	- added proper string labels for Doom 2 episodes.	pending		/
 6e9c85791cfe91639ad5eae020e5b56e281de794	2021-05-17T11:11:41Z	- pick the proper dot for cutting off the extension in ExtractFileBase.	pending		/
@@ -17467,7 +17467,7 @@ f2d3275db55fe759665c9ed77941a1b4ff6df01c	2024-04-20T08:38:58Z	convert leftover f
 d63d720d4cc574cfb5e33ee752a4b9c4a3bbc6a9	2024-04-21T06:59:39Z	- version g4.13pre	pending		/
 f4a42dae1de666c0f995f22e2951819039af9e7a	2024-04-21T07:21:08Z	Added pistol start gameplay option	pending		/
 ebd4ebf29836ce6d87bcf8af389cd65513426dc9	2024-04-21T08:34:44Z	StringTable cleanup and improvements	pending		/
-f2d7bbea99d1174a63a3a0a4aae302fb2d582bb9	2024-04-21T08:35:56Z	Instead of going through a global callback function set the string table's default gender at the start of each frame	pending		/
+f2d7bbea99d1174a63a3a0a4aae302fb2d582bb9	2024-04-21T08:35:56Z	Instead of going through a global callback function set the string table's default gender at the start of each frame	adapted	local gender cvar read each frame in D_RunFrame; our 'other' reads the object column	862569b4
 b0137e50eefd006132efd222db1717f5c08cc7e9	2024-04-21T08:44:54Z	Exported FTeam getters	pending		/
 c622c6312780307e41748e62d6d9cd960e13a0c0	2024-04-21T08:45:32Z	Added PSpriteTick virtual	pending		/
 1fe6556e6e4b2596b4105cba19e0c54f6a240511	2024-04-21T10:13:03Z	ZWidgets: disabled SetClientFrame.	pending		/
@@ -17507,7 +17507,7 @@ c03f7889bf071ddc8992320d153e90920d33d312	2024-04-29T08:51:13Z	restore old fadest
 3318e540b665c0ffffaa93ba1b8f993b34d2460e	2024-04-30T05:58:31Z	Added missing checking for LOOKALLAROUND.	pending		/
 81dade9ed5fd80bed0fb0fcd4477bea0b160e915	2024-05-01T07:50:19Z	fixed: for deleting files and folders on Windows we have to call the Unicode variants of these functions.	pending		/
 f2d582f680b72eb50480e7c704f90b9bd38c7529	2024-05-01T07:50:19Z	fixed: The savegame's PNG loader must use a caching FileReader to avoid holding a handle to the containing file.	pending		/
-6f2bc8379adbde57fbe38778e10e8c5ab4f97536	2024-05-01T09:58:30Z	strip spaces from language labels.	pending		/
+6f2bc8379adbde57fbe38778e10e8c5ab4f97536	2024-05-01T09:58:30Z	strip spaces from language labels.	adapted	CSV labels trimmed	862569b4
 3a5838c8f5a24bbe198faa41574736694848992e	2024-05-01T10:20:06Z	don't abort when parsing the Steam config fails.	pending		/
 370bec6c559ec3b3be2552ae4cf829750599f915	2024-05-01T15:57:11Z	fixed GL nodes loader for maps loaded from mounted folders.	pending		/
 a6e1114d3cea82cf9aeaa74f36eea7f94a544e67	2024-05-02T05:46:34Z	add mbf21 and mbf21 (strict) compatibility presets	pending		/
@@ -18512,7 +18512,7 @@ b962357589da0a3897c2f3c5b23f366c74c9c544	2025-10-28T20:33:49Z	fix chex "all" key
 38cea11123769e25fd4c64c35c53f1d7cec4b102	2025-10-28T20:35:49Z	Add translucent canvas textures support	pending		/
 605d627e24d34a6e5d1782dae3f6e2c4bd29ba7b	2025-10-28T20:42:31Z	add bounds checking to FString	pending		/
 3c146f443d273c7578d9c4f94d48c74d9321a506	2025-10-28T20:42:31Z	allow loading saves from gzdoom versions 4.14.2 and below (up to 4.0.0, older saves aren't compatible)	pending		/
-762d4250f87ace06c5f84121198b75649f45ba44	2025-10-28T20:42:31Z	fix string OOB accesses	pending		/
+762d4250f87ace06c5f84121198b75649f45ba44	2025-10-28T20:42:31Z	fix string OOB accesses	adapted	short rows and a missing identifier column skipped rather than read past	862569b4
 d1d12cfc6b2f2008d07cffc363a6ba45af3388fc	2025-10-28T20:42:31Z	fix another string OOB	pending		/
 7cd21d4aac7c8420e388b491565ceebbfaa17c60	2025-10-29T01:24:44Z	Fix string localize + format OOB errors	pending		/
 84dae8326d10245cdd7e2680bb391dd627a8a44b	2025-10-29T02:14:21Z	Fix null access in DoDim	pending		/
@@ -18814,7 +18814,7 @@ a04b1d517ae20360cad2d04971ace08d73bf6dca	2026-02-04T01:31:25Z	Always use netgame
 d1e95305f77fa193e06baac95a96d8e481e3d844	2026-02-04T01:31:25Z	Move window init to after netgame lobby	pending		/
 631ac5adfbae6b46b807b50c7059ae6024b966d1	2026-02-04T01:31:25Z	Add basic net lobby updates to console	pending		/
 e4c5f8ab1669721904f6f7e2d0157c621dd47bdd	2026-02-04T01:31:25Z	Fixup imports	pending		/
-a7c9e29ae87a303d70b2aee5e9f2e25b8c0e2e3e	2026-02-04T01:53:36Z	Log missing translations	pending		/
+a7c9e29ae87a303d70b2aee5e9f2e25b8c0e2e3e	2026-02-04T01:53:36Z	Log missing translations	adapted	under developer, each missing label logged once (mutex-guarded set)	862569b4
 3999c7d1086838374bef6ba543d163f37b6091a8	2026-02-04T01:53:36Z	Replace hardcoded strings	pending		/
 dc41ef51ab15d7e48691603bebcc97671094aa2e	2026-02-04T19:54:38Z	Remove fatal error in InitWidgetResources	pending		/
 aefc1591ecffde56d2b2c63b682e73758c3fbf13	2026-02-04T20:06:31Z	Added the Menu and Notify Backend	pending		/
@@ -19014,7 +19014,7 @@ abc1196f03a2b3a5ff4138ab47dd6c3da4512649	2026-03-30T15:21:59Z	fetch trunk as wel
 61fa2ee09ef4c069b24ebe73c3bc1d10afc90a8c	2026-03-30T15:58:34Z	Enable a default crosshair with a more sensible scale size for modern displays	pending		/
 0121bebd42734e202034e9ec275bc272e7c2ef76	2026-03-30T15:58:34Z	Nice pixel-perfect crosshairs	pending		/
 e69fe8b5cfd27e9d09900a3473ccc561110c2b31	2026-03-31T01:55:10Z	Allow DPrintf to get flags	pending		/
-d453019a61435ca965ea93a6eac2abad18e5ece9	2026-03-31T01:55:10Z	BOA workaround: Limit translation warning length	pending		/
+d453019a61435ca965ea93a6eac2abad18e5ece9	2026-03-31T01:55:10Z	BOA workaround: Limit translation warning length	adapted	language_debug_maxlen cuts the logged label	862569b4
 aa432d5599c99e55ce957a71d09ba50c6c5957b0	2026-04-01T14:25:44Z	Update release logic	pending		/
 3b3b5e3e3e334953bdba7e45701d712f8abe63d6	2026-04-01T14:50:56Z	fix bug in SetAnimationLayerFrameRate	pending		/
 4e10e6e731e2bbcf139a8af471468af3ba2c3597	2026-04-02T01:03:28Z	Fix crash during shutdown	pending		/
