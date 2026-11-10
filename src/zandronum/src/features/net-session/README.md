@@ -28,6 +28,7 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
 
 - `computation/unlaggedreport_compute.{h,cpp}` (the shot log and its JSON) with its `_test.cpp`.
 - `computation/joinupdate_compute.{h,cpp}` (`ComputeSpawnRoundsPosition`) with its `_test.cpp`.
+- `computation/levelauth_compute.{h,cpp}` (`ComputeLevelAuthVerdict`) with its `_test.cpp`.
 - `computation/dumpfilter_compute.{h,cpp}` (the `sv_dumppackets` command filters, counter and file name,
   ported from Zandronum 3.3's zstd dictionary-training capture; the cvar reads stay in `sv_main.cpp`'s
   `SERVER_DumpPacket` and `SERVER_ShouldDump*Command` glue, hooked from `SERVER_ParsePacket` and
@@ -41,6 +42,11 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
   `SERVER_SERVERREGISTRY_SendServerInfo` the seam `net/launcher_reply`, both owned by the main thread.
 - `sv_main.cpp` `SERVER_SetupNewConnection` compares the whole revision a client sends with its own
   (`cl_main.cpp` `CLIENT_AttemptConnection` writes it), so a different build is refused every time.
+- `sv_main.cpp` `SERVER_RequestClientToAuthenticate` records the map it names in `CLIENT_s::authenticatingMap`,
+  and `SERVER_AuthenticateClientLevel` judges the answer with `ComputeLevelAuthVerdict`: a map changed since
+  asking (an empty server holds a puked `map` until the first connection wakes its playsim, as DnD's
+  `setsoftcore` does) asks the client again instead of refusing it for level authentication
+  (`tools/fuactl/scenarios/netjoinmapchange.mjs`).
 - `p_map.cpp` `P_LineAttack`: `NoteClientShot` before a client returns, `NoteServerShot` and `NoteClientTrace` after
   `Trace` and before `UNLAGGED_Restore`.
 - `sv_main.cpp` `SERVER_SendFullUpdate` sends a joiner each hurt or dead actor's health, which it held at

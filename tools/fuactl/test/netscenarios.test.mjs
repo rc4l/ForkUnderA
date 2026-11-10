@@ -190,3 +190,19 @@ test("netmusic builds its wad and deflated pk3, reads what a client hears and ho
   assert.equal(bad.line, "FAIL x: after SetMusicVolume(0.5), the player hears FUASONG2 @ 1.00, not FUASONG2 @ 0.50; after SetMusic(FUASONG3), the client joining then hears FUASONG3 @ 0.50, not FUASONG3 @ 1.00");
   assert.match(judgeNetMusic("x", { rows, caches, songsKept: 0 }).line, /^FAIL x: the player keeps 3 songs, not 0; late joiner 1/);
 });
+
+test("netjoinmapchange puts the change in MAP01's closed script and fails a joiner refused, left behind or never playing", async () => {
+  const { buildNetJoinMapChangeWad, judgeJoin, SCRIPT, CONFIGS } = await import("../scenarios/netjoinmapchange.mjs");
+  const lumps = readWad(buildNetJoinMapChangeWad());
+  assert.deepEqual(lumps.map((l) => l.name), ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP", "MAP02", "TEXTMAP", "ENDMAP"]);
+  const behavior = lumps[2].data;
+  assert.equal(behavior.readInt32LE(behavior.readInt32LE(4) + 4), SCRIPT, "a closed script only puke runs");
+  assert.ok(behavior.toString("latin1").includes("map MAP02"));
+  assert.ok(CONFIGS.every((c) => c.players === 0 && c.observers === 0) && CONFIGS.some((c) => c.lag));
+  const good = { heldMap: "MAP01", serverMap: "MAP02", clientMap: "MAP02", playing: true, trouble: null };
+  assert.deepEqual(judgeJoin(good), []);
+  assert.deepEqual(judgeJoin({ ...good, trouble: "Level authentication failed.", clientMap: "MAP01", playing: false }),
+    ["the joiner was refused: \"Level authentication failed.\"", "the joiner is on MAP01, not MAP02", "the server does not hold the joiner playing"]);
+  assert.deepEqual(judgeJoin({ ...good, heldMap: "MAP02", serverMap: undefined, clientMap: undefined }),
+    ["the empty server ran the change before anybody joined (on MAP02), so the race was never set up", "the server is on no map, not MAP02", "the joiner is on no map, not MAP02"]);
+});
