@@ -44,15 +44,16 @@
 
 
 #include <stdlib.h>
+#include <atomic>
 #include "doomtype.h"
 
 class FStringTable
 {
 public:
-	struct StringEntry;
-
 	FStringTable ();
 	~FStringTable ();
+	FStringTable (const FStringTable &) = delete;
+	FStringTable &operator= (const FStringTable &) = delete;
 
 	void LoadStrings (bool enuOnly);
 
@@ -62,6 +63,9 @@ public:
 	const char *MatchString (const char *string) const;
 	void SetString (const char *name, const char *newString);
 
+	// [Doruk-Aksoy] uzdoom@f2d7bbea99: the gender LMACROS texts are read for, the local player's, set once a frame.
+	void SetDefaultGender (int gender) { DefaultGender.store (gender, std::memory_order_relaxed); }
+
 	// [rc4l] Drop EVERYTHING, including the DEHACKED-set entries that LoadStrings deliberately
 	// preserves. Only the engine restart path wants this -- see the restart block in D_DoomMain for
 	// why. Additive wrapper rather than making FreeData public, so re-syncing this header stays a
@@ -69,15 +73,13 @@ public:
 	void FlushAllForRestart () { FreeData (); }
 
 private:
-	enum { HASH_SIZE = 128 };
-
-	StringEntry *Buckets[HASH_SIZE];
+	// [Doruk-Aksoy] features/language-lumps' LanguageTable, kept out of this widely included header.
+	struct Table;
+	Table *Strings;
+	std::atomic<int> DefaultGender;
 
 	void FreeData ();
 	void FreeNonDehackedStrings ();
-	void LoadLanguage (int lumpnum, DWORD code, bool exactMatch, int passnum);
-	static size_t ProcessEscapes (char *str);
-	void FindString (const char *stringName, StringEntry **&pentry, StringEntry *&entry);
 };
 
 #endif //__STRINGTABLE_H__

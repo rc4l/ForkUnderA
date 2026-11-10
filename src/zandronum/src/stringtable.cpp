@@ -34,6 +34,11 @@
 
 #include <string.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <mutex>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "stringtable.h"
 #include "cmdlib.h"
@@ -41,310 +46,215 @@
 #include "w_wad.h"
 #include "i_system.h"
 #include "sc_man.h"
+#include "c_cvars.h"
 #include "c_dispatch.h"
 #include "v_text.h"
 #include "gi.h"
+#include "features/language-lumps/computation/languagetable_compute.h"
 
-// PassNum identifies which language pass this string is from.
-// PassNum 0 is for DeHacked.
-// PassNum 1 is for * strings.
-// PassNum 2+ are for specific locales.
+// [Doruk-Aksoy] features/language-lumps: the parsing and the table's rules are Compute* helpers, this file reads the lumps.
+using namespace zx::language;
 
-struct FStringTable::StringEntry
+static_assert (kLanguageColorEscape == TEXTCOLOR_ESCAPE, "a LANGUAGE colour escape must be the text colour escape");
+static_assert (ComputeLanguageCode ('e','n','u') == MAKE_ID ('e','n','u',0), "LANGUAGE codes pack as LanguageIDs does");
+
+EXTERN_CVAR (Bool, developer)
+
+// [Doruk-Aksoy] uzdoom@d453019a61: how much of a missing label the developer log prints.
+CVAR (Int, language_debug_maxlen, 64, 0)
+
+struct FStringTable::Table
 {
-	StringEntry *Next;
-	char *Name;
-	BYTE PassNum;
-	char String[];
+	LanguageTable Entries;
 };
 
 FStringTable::FStringTable ()
+	: Strings (new Table), DefaultGender (0)
 {
-	for (int i = 0; i < HASH_SIZE; ++i)
-	{
-		Buckets[i] = NULL;
-	}
 }
 
 FStringTable::~FStringTable ()
 {
-	FreeData ();
+	delete Strings;
 }
 
 void FStringTable::FreeData ()
 {
-	for (int i = 0; i < HASH_SIZE; ++i)
-	{
-		StringEntry *entry = Buckets[i], *next;
-		Buckets[i] = NULL;
-		while (entry != NULL)
-		{
-			next = entry->Next;
-			M_Free (entry);
-			entry = next;
-		}
-	}
+	Strings->Entries.clear ();
 }
 
 void FStringTable::FreeNonDehackedStrings ()
 {
-	for (int i = 0; i < HASH_SIZE; ++i)
-	{
-		StringEntry *entry, *next, **pentry;
-
-		for (pentry = &Buckets[i], entry = *pentry; entry != NULL; )
-		{
-			next = entry->Next;
-			if (entry->PassNum != 0)
-			{
-				*pentry = next;
-				M_Free (entry);
-			}
-			else
-			{
-				pentry = &entry->Next;
-			}
-			entry = next;
-		}
-	}
+	ComputeLanguageClearLoaded (Strings->Entries);
 }
 
-#include "doomerrors.h"
-void FStringTable::LoadStrings (bool enuOnly)
+// [Doruk-Aksoy] Replaces a string's '@[macro]'s with their gender texts and keeps it if its pass and file let it.
+static void InsertString (LanguageTable &table, const std::string &name, const std::string &text, int passnum, int filenum, bool isDefault, const LanguageMacros &macros, bool report)
 {
-	int lastlump, lump;
-	int i, j;
-
-	FreeNonDehackedStrings ();
-
-	lastlump = 0;
-
-	while ((lump = Wads.FindLump ("LANGUAGE", &lastlump)) != -1)
-	{
-		j = 0;
-		if (!enuOnly)
-		{
-			LoadLanguage (lump, MAKE_ID('*',0,0,0), true, ++j);
-			for (i = 0; i < 4; ++i)
-			{
-				LoadLanguage (lump, LanguageIDs[i], true, ++j);
-				LoadLanguage (lump, LanguageIDs[i] & MAKE_ID(0xff,0xff,0,0), true, ++j);
-				LoadLanguage (lump, LanguageIDs[i], false, ++j);
-			}
-		}
-
-		// Fill in any missing strings with the default language
-		LoadLanguage (lump, MAKE_ID('*','*',0,0), true, ++j);
-	}
+	const LanguageMacroResult result = ComputeSubstituteLanguageMacros (text, macros);
+	if (result.badMacro && report) Printf ("Bad macro in LANGUAGE string %s\n", name.c_str ());
+	ComputeLanguageInsert (table, name, result.strings, passnum, filenum, isDefault);
 }
 
-void FStringTable::LoadLanguage (int lumpnum, DWORD code, bool exactMatch, int passnum)
+// [Doruk-Aksoy] One pass over a text LANGUAGE lump, keeping the strings whose header names the pass's language.
+static void LoadLanguage (LanguageTable &table, int lumpnum, int filenum, const LanguagePass &pass, int passnum, const LanguageMacros &macros, bool report)
 {
-	static bool errordone = false;
-	const DWORD orMask = exactMatch ? 0 : MAKE_ID(0,0,0xff,0);
-	DWORD inCode = 0;
-	StringEntry *entry, **pentry;
-	DWORD bucket;
-	int cmpval;
-	bool skip = true;
+	static bool binarydone = false;
+	bool sawHeader = false;
+	bool isDefault = false;
+	bool skipSection = true;
 
-	code |= orMask;
-
-	FScanner sc(lumpnum);
+	FScanner sc (lumpnum);
 	sc.SetCMode (true);
 	while (sc.GetString ())
 	{
 		if (sc.Compare ("["))
 		{ // Process language identifiers
-			bool donot = false;
-			bool forceskip = false;
-			skip = true;
+			std::vector<std::string> tokens;
 			sc.MustGetString ();
-			do
+			while (!sc.Compare ("]"))
 			{
-				size_t len = sc.StringLen;
-				if (len != 2 && len != 3)
-				{
-					if (len == 1 && sc.String[0] == '~')
-					{
-						donot = true;
-						sc.MustGetString ();
-						continue;
-					}
-					if (len == 1 && sc.String[0] == '*')
-					{
-						inCode = MAKE_ID('*',0,0,0);
-					}
-					else if (len == 7 && stricmp (sc.String, "default") == 0)
-					{
-						inCode = MAKE_ID('*','*',0,0);
-					}
-					else
-					{
-						sc.ScriptError ("The language code must be 2 or 3 characters long.\n'%s' is %lu characters long.",
-							sc.String, len);
-					}
-				}
-				else
-				{
-					inCode = MAKE_ID(tolower(sc.String[0]), tolower(sc.String[1]), tolower(sc.String[2]), 0);
-				}
-				if ((inCode | orMask) == code)
-				{
-					if (donot)
-					{
-						forceskip = true;
-						donot = false;
-					}
-					else
-					{
-						skip = false;
-					}
-				}
+				tokens.push_back (std::string (sc.String, sc.StringLen));
 				sc.MustGetString ();
-			} while (!sc.Compare ("]"));
-			if (donot)
-			{
-				sc.ScriptError ("You must specify a language after ~");
 			}
-			skip |= forceskip;
+			const LanguageHeader header = ComputeLanguageHeader (tokens);
+			if (header.emptyCode)
+			{
+				sc.ScriptError ("The language code may not be empty.");
+			}
+			if (header.tilde && report && passnum == 1)
+			{
+				sc.ScriptMessage ("Deprecated option '~' found in language list");
+			}
+			sawHeader = true;
+			isDefault = header.isDefault;
+			skipSection = !ComputeLanguageHeaderMatches (header, pass.code, pass.exact);
+			continue;
 		}
-		else
-		{ // Process string definitions.
-			if (inCode == 0)
+
+		// Process string definitions.
+		if (!sawHeader)
+		{
+			// LANGUAGE lump is bad. We need to check if this is an old binary
+			// lump and if so just skip it to allow old WADs to run which contain
+			// such a lump.
+			if (!sc.isText ())
 			{
-				// LANGUAGE lump is bad. We need to check if this is an old binary
-				// lump and if so just skip it to allow old WADs to run which contain
-				// such a lump.
-				if (!sc.isText())
-				{
-					if (!errordone) Printf("Skipping binary 'LANGUAGE' lump.\n"); 
-					errordone = true;
-					return;
-				}
-				sc.ScriptError ("Found a string without a language specified.");
+				if (!binarydone) Printf ("Skipping binary 'LANGUAGE' lump.\n");
+				binarydone = true;
+				return;
 			}
+			// [Doruk-Aksoy] uzdoom@cec46eccb8: the lump is skipped rather than ending the game.
+			if (report && passnum == 1) Printf (TEXTCOLOR_RED "Found a string without a language specified in %s.\n", Wads.GetLumpFullPath (lumpnum).GetChars ());
+			return;
+		}
 
-			bool savedskip = skip;
-			if (sc.Compare("$"))
-			{
-				sc.MustGetStringName("ifgame");
-				sc.MustGetStringName("(");
-				sc.MustGetString();
-				skip |= !sc.Compare(GameTypeName());
-				sc.MustGetStringName(")");
-				sc.MustGetString();
-
-			}
-
-			if (skip)
-			{ // We're not interested in this language, so skip the string.
-				sc.MustGetStringName ("=");
-				sc.MustGetString ();
-				do
-				{
-					sc.MustGetString ();
-				} 
-				while (!sc.Compare (";"));
-				skip = savedskip;
-				continue;
-			}
-
-			FString strName (sc.String);
-			sc.MustGetStringName ("=");
+		bool skip = skipSection;
+		if (sc.Compare ("$"))
+		{
+			sc.MustGetStringName ("ifgame");
+			sc.MustGetStringName ("(");
 			sc.MustGetString ();
-			FString strText (sc.String, ProcessEscapes (sc.String));
+			skip |= !sc.Compare (GameTypeName ());
+			sc.MustGetStringName (")");
 			sc.MustGetString ();
-			while (!sc.Compare (";"))
-			{
-				ProcessEscapes (sc.String);
-				strText += sc.String;
-				sc.MustGetString ();
-			}
+		}
 
-			// Does this string exist? If so, should we overwrite it?
-			bucket = MakeKey (strName.GetChars()) & (HASH_SIZE-1);
-			pentry = &Buckets[bucket];
-			entry = *pentry;
-			cmpval = 1;
-			while (entry != NULL)
+		const std::string name (sc.String);
+		sc.MustGetStringName ("=");
+		sc.MustGetString ();
+		std::string text;
+		do
+		{
+			if (!skip) text.append (sc.String, ComputeLanguageEscapes (sc.String));
+			sc.MustGetString ();
+		}
+		while (!sc.Compare (";"));
+
+		if (!skip) InsertString (table, name, text, passnum, filenum, isDefault, macros, report);
+	}
+}
+
+// [Doruk-Aksoy] uzdoom@c2c9126453: a CSV LANGUAGE lump, parsed once and applied for every pass.
+static void LoadLanguageCSV (LanguageTable &table, int lumpnum, int filenum, const char *buffer, size_t size, const std::vector<LanguagePass> &passes, const LanguageMacros &macros, bool report)
+{
+	const std::vector<std::vector<std::string>> rows = ComputeParseLanguageCSV (buffer, size);
+	const LanguageCSVLayout layout = ComputeLanguageCSVLayout (rows[0]);
+	if (layout.labelColumn < 0)
+	{
+		if (report) Printf (TEXTCOLOR_RED "%s has no 'identifier' column.\n", Wads.GetLumpFullPath (lumpnum).GetChars ());
+		return;
+	}
+
+	for (size_t i = 0; i < passes.size (); ++i)
+	{
+		const int passnum = int (i) + 1;
+		for (const LanguageCSVOp &op : ComputeLanguageCSVOps (rows, layout, passes[i].code, passes[i].exact, GameTypeName ()))
+		{
+			switch (op.kind)
 			{
-				cmpval = stricmp (entry->Name, strName.GetChars());
-				if (cmpval >= 0)
-					break;
-				pentry = &entry->Next;
-				entry = *pentry;
-			}
-			if (cmpval == 0 && entry->PassNum >= passnum)
-			{
-				*pentry = entry->Next;
-				M_Free (entry);
-				entry = NULL;
-			}
-			if (entry == NULL || cmpval > 0)
-			{
-				entry = (StringEntry *)M_Malloc (sizeof(*entry) + strText.Len() + strName.Len() + 2);
-				entry->Next = *pentry;
-				*pentry = entry;
-				strcpy (entry->String, strText.GetChars());
-				strcpy (entry->Name = entry->String + strText.Len() + 1, strName.GetChars());
-				entry->PassNum = passnum;
+			case LanguageCSVOp::Set:		InsertString (table, op.label, op.text, passnum, filenum, layout.isDefault, macros, report); break;
+			case LanguageCSVOp::Remove:		ComputeLanguageRemove (table, op.label, passnum); break;
+			case LanguageCSVOp::PurgeOlder:	ComputeLanguagePurgeOlder (table, op.label, filenum); break;
 			}
 		}
 	}
 }
 
-// Replace \ escape sequences in a string with the escaped characters.
-size_t FStringTable::ProcessEscapes (char *iptr)
+void FStringTable::LoadStrings (bool enuOnly)
 {
-	char *sptr = iptr, *optr = iptr, c;
+	int lastlump, lump;
+	const bool report = !enuOnly;
 
-	while ((c = *iptr++) != '\0')
+	FreeNonDehackedStrings ();
+
+	// [Doruk-Aksoy] uzdoom@ce1ecd0d4b: LMACROS lumps give the gender texts an '@[name]' in a string stands for.
+	LanguageMacros macros;
+	lastlump = 0;
+	while ((lump = Wads.FindLump ("LMACROS", &lastlump)) != -1)
 	{
-		if (c == '\\')
-		{
-			c = *iptr++;
-			if (c == 'n')
-				c = '\n';
-			else if (c == 'c')
-				c = TEXTCOLOR_ESCAPE;
-			else if (c == 'r')
-				c = '\r';
-			else if (c == 't')
-				c = '\t';
-			else if (c == '\n')
-				continue;
-		}
-		*optr++ = c;
+		FMemLump data = Wads.ReadLump (lump);
+		ComputeReadLanguageMacros (macros, (const char *)data.GetMem (), data.GetSize ());
 	}
-	*optr = '\0';
-	return optr - sptr;
+
+	const std::vector<LanguagePass> passes = ComputeLanguagePasses (LanguageIDs, enuOnly);
+	lastlump = 0;
+	while ((lump = Wads.FindLump ("LANGUAGE", &lastlump)) != -1)
+	{
+		const int filenum = Wads.GetLumpFile (lump);
+		FMemLump data = Wads.ReadLump (lump);
+		const char *buffer = (const char *)data.GetMem ();
+		if (ComputeIsLanguageCSV (buffer, data.GetSize ()))
+		{
+			LoadLanguageCSV (Strings->Entries, lump, filenum, buffer, data.GetSize (), passes, macros, report);
+			continue;
+		}
+		for (size_t i = 0; i < passes.size (); ++i)
+		{
+			LoadLanguage (Strings->Entries, lump, filenum, passes[i], int (i) + 1, macros, report);
+		}
+	}
+}
+
+// [Doruk-Aksoy] uzdoom@a7c9e29ae8: under developer, each missing label is logged once.
+static void ReportMissingString (const char *name)
+{
+	static std::mutex lock;
+	static std::set<std::string> reported;
+
+	const int maxlen = language_debug_maxlen;
+	const LanguageMissingReport report = ComputeLanguageMissingReport (name, size_t (maxlen < 0 ? 0 : maxlen));
+	{
+		std::lock_guard<std::mutex> guard (lock);
+		if (!reported.insert (report.key).second) return;
+	}
+	DPrintf ("%s\n", report.message.c_str ());
 }
 
 // Finds a string by name and returns its value
 const char *FStringTable::operator[] (const char *name) const
 {
-	if (name == NULL)
-	{
-		return NULL;
-	}
-	DWORD bucket = MakeKey (name) & (HASH_SIZE - 1);
-	StringEntry *entry = Buckets[bucket];
-
-	while (entry != NULL)
-	{
-		int cmpval = stricmp (entry->Name, name);
-		if (cmpval == 0)
-		{
-			return entry->String;
-		}
-		if (cmpval == 1)
-		{
-			return NULL;
-		}
-		entry = entry->Next;
-	}
-	return NULL;
+	return ComputeLanguageFind (Strings->Entries, name, ComputeLanguageGenderIndex (DefaultGender.load (std::memory_order_relaxed)));
 }
 
 // Finds a string by name and returns its value. If the string does
@@ -352,78 +262,17 @@ const char *FStringTable::operator[] (const char *name) const
 const char *FStringTable::operator() (const char *name) const
 {
 	const char *str = operator[] (name);
+	if (str == NULL && name != NULL && developer) ReportMissingString (name);
 	return str ? str : name;
-}
-
-// Find a string by name. pentry1 is a pointer to a pointer to it, and entry1 is a
-// pointer to it. Return NULL for entry1 if it wasn't found.
-void FStringTable::FindString (const char *name, StringEntry **&pentry1, StringEntry *&entry1)
-{
-	DWORD bucket = MakeKey (name) & (HASH_SIZE - 1);
-	StringEntry **pentry = &Buckets[bucket], *entry = *pentry;
-
-	while (entry != NULL)
-	{
-		int cmpval = stricmp (entry->Name, name);
-		if (cmpval == 0)
-		{
-			pentry1 = pentry;
-			entry1 = entry;
-			return;
-		}
-		if (cmpval == 1)
-		{
-			pentry1 = pentry;
-			entry1 = NULL;
-			return;
-		}
-		pentry = &entry->Next;
-		entry = *pentry;
-	}
-	pentry1 = pentry;
-	entry1 = entry;
 }
 
 // Find a string with the same exact text. Returns its name.
 const char *FStringTable::MatchString (const char *string) const
 {
-	for (int i = 0; i < HASH_SIZE; ++i)
-	{
-		for (StringEntry *entry = Buckets[i]; entry != NULL; entry = entry->Next)
-		{
-			if (strcmp (entry->String, string) == 0)
-			{
-				return entry->Name;
-			}
-		}
-	}
-	return NULL;
+	return ComputeLanguageMatch (Strings->Entries, string);
 }
 
 void FStringTable::SetString (const char *name, const char *newString)
 {
-	StringEntry **pentry, *oentry;
-	FindString (name, pentry, oentry);
-
-	size_t newlen = strlen (newString);
-	size_t namelen = strlen (name);
-
-	// Create a new string entry
-	StringEntry *entry = (StringEntry *)M_Malloc (sizeof(*entry) + newlen + namelen + 2);
-	strcpy (entry->String, newString);
-	strcpy (entry->Name = entry->String + newlen + 1, name);
-	entry->PassNum = 0;
-
-	// If this is a new string, insert it. Otherwise, replace the old one.
-	if (oentry == NULL)
-	{
-		entry->Next = *pentry;
-		*pentry = entry;
-	}
-	else
-	{
-		*pentry = entry;
-		entry->Next = oentry->Next;
-		M_Free (oentry);
-	}
+	ComputeLanguageSet (Strings->Entries, name, newString);
 }
