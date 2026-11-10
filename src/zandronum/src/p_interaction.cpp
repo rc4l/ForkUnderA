@@ -89,6 +89,7 @@
 #include "features/mbf21/computation/damage_groups_compute.h"
 #include "features/damage-taken/damagetaken.h"
 #include "features/net-replication/actorstate.h"
+#include "features/net-replication/computation/actorstate_compute.h"   // [Doruk-Aksoy] ComputeSettledDeathZ
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -833,8 +834,10 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 		// [rc4l] With where it died and which way it faced: a client simulating its last steps until a late death arrives kept its own facing for good (netsync's lossy observer).
 		if ( player == NULL )
 		{
+			// [Doruk-Aksoy] Stood on the floor it stepped onto, as the next tic's P_ZMovement would after this send, so the place sent is where it rests.
+			z = fixed_t::FromRaw( zx::netreplication::ComputeSettledDeathZ( z.Raw( ), floorz.Raw( ), ( flags & MF_NOGRAVITY ) != 0 ));
 			SERVERCOMMANDS_KillThing( this, source, inflictor );
-			SERVERCOMMANDS_MoveThingExact( this, CM_X|CM_Y|CM_Z|CM_ANGLE );
+			SERVERCOMMANDS_MoveThingExactWhole( this, CM_X|CM_Y|CM_Z|CM_ANGLE );	// [Doruk-Aksoy] nothing trimmed: a client may not hold what was last sent
 		}
 		else
 			SERVERCOMMANDS_KillPlayer( ULONG( player - players ), source, inflictor, MeansOfDeath );

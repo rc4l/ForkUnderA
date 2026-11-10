@@ -16,4 +16,9 @@ bool ComputeAddPendingHealth(std::vector<int> &pending, int netId)
 	return true;
 }
 
+int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity)
+{
+	return (!noGravity && z < floorz) ? floorz : z;
+}
+
 }} // namespace zx::netreplication

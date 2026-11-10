@@ -85,6 +85,7 @@
 #include "features/identity/zx_identitynet.h"
 #include "features/net-session/computation/joinupdate_compute.h"
 #include "features/net-session/computation/levelauth_compute.h"
+#include "features/net-session/syncedcvars.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
 #include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
@@ -1563,6 +1564,9 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 
 	// [AK] Send the name of the server.
 	SERVERCOMMANDS_SetCVar( sv_hostname, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
+
+	// [Doruk-Aksoy] The server cvars the client's own simulation reads (features/net-session/syncedcvars).
+	zx::net::SendSyncedCVarsTo( g_lCurrentClient );
 
 	// [AK] Send the current state of the skip correction.
 	// SERVERCOMMANDS_SetCVar( sv_smoothplayers, g_lCurrentClient, SVCF_ONLYTHISCLIENT );

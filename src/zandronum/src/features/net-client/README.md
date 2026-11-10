@@ -20,6 +20,17 @@ What a client does with what arrives from its server.
   every client used to come back spectating (`netmapchange`). The server's own rules (join password, teams, join
   queue) still decide.
 
+- An actor the server places stands on the floor under its box, but never above the height the server gave it
+  (`ComputeServerHeldFloorZ`). When the box floor read above that height (a position a fraction of a unit off put the box
+  over one more step), the client fell back to the floor under the actor's centre, and gravity dropped it there: on
+  narrow stairs an Arachnotron the server held at -64 lay dead at -128 on every client (`netmonsterstairs`). A spawn
+  the server sends, as a late joiner gets every actor, reads the box floor the same way, where it read the centre's (after
+  the 3D-floor pass in `CLIENT_SpawnThing`, which set the centre's floor again and undid it when it ran first).
+- `P_CheckPosition` stops at the first actor it touches, before it reads a line, so an actor the server places
+  against another kept the floor under its centre: a Mancubus touching an Arachnotron on narrow steps sank 48 on a
+  client. Its floor is then read from the map's lines alone (`ComputeRereadFloorFromLines`, `P_FindFloorCeiling`),
+  except for the console player, whose prediction keeps its own.
+
 ## Owns
 
 `cl_main.cpp`, `cl_main.h`, `cl_commands.cpp`, `cl_commands.h`, `cl_pred.cpp`, `cl_demo.cpp`, `cl_demo.h`,
@@ -37,6 +48,7 @@ What a client does with what arrives from its server.
 - `computation/netstats_compute.{h,cpp}` (`ComputeSharePercent`, the percentage behind `stat nettraffic`'s
   compression factor and zstd share from Zandronum 3.3, called by `cl_statistics.cpp`'s tracker getters)
   with its `_test.cpp`.
+- `computation/serverfloor_compute.{h,cpp}` (`ComputeServerHeldFloorZ`, `ComputeRereadFloorFromLines`) with its `_test.cpp`.
 - `netclient.{h,cpp}` (the packets applied) and `rejoin.{h,cpp}` (the map command's reconnect).
 
 ## In-engine hooks
@@ -49,3 +61,5 @@ What a client does with what arrives from its server.
   browser.
 - `cl_main.cpp` `MapNew::Execute` (`NoteMapNew`), `CLIENT_AttemptConnection` (`ConnectFlags`), and
   `EndSnapshot::Execute` and `CLIENT_QuitNetworkGame` (`ForgetRejoin`).
+- `cl_main.cpp` `CLIENT_MoveThing` (the floor read again from the lines when blocked, then `ComputeServerHeldFloorZ`) and
+  `CLIENT_SpawnThing` (`ComputeServerHeldFloorZ` after the 3D-floor pass).

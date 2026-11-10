@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, callFunc, callSpecial, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, addToCVar, callFunc, callSpecial, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -114,6 +114,13 @@ test("a HUD message with an alpha flags its type and pushes the alpha after any 
 test("incrementing a cvar reads it, adds one and sets it, leaving the stack as it was", () => {
   assert.deepEqual(incrementCVar(2), [PCD.PUSHNUMBER, 2, PCD.PUSHNUMBER, 2, PCD.GETCVAR, PCD.PUSHNUMBER, 1, PCD.ADD,
     PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP]);
+});
+
+// [Doruk-Aksoy] A counter that a later script takes back, so it can say how many of something have not happened yet.
+test("adding to a cvar adds any amount, a negative one taking away", () => {
+  assert.deepEqual(addToCVar(1, -1), [PCD.PUSHNUMBER, 1, PCD.PUSHNUMBER, 1, PCD.GETCVAR, PCD.PUSHNUMBER, -1, PCD.ADD,
+    PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP]);
+  assert.equal(acs0(addToCVar(0, -1)).readInt32LE(8 + 4 * 6), -1, "ACS0 keeps the sign");
 });
 
 test("an ACS function call pushes its arguments then CALLFUNC with their count and the function", () => {

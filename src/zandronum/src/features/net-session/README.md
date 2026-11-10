@@ -35,11 +35,15 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
   `network/netcommand.cpp`'s `sendCommandToClients`) with its `_test.cpp`.
 - `unlaggedreport.{h,cpp}` (`NoteServerShot`, `NoteClientShot`, the command).
 - `netrole.h` (the role queries, inline).
+- `syncedcvars.{h,cpp}` (`SyncedCVar`, `SendSyncedCVar`, `SendSyncedCVarsTo`): a server cvar a client's own simulation
+  reads registers here and goes out through `SERVERCOMMANDS_SetCVar` when it changes and to each joiner, so game
+  code never sends it (`sv_fua_monsterstairs`, `features/monster-stairs`).
 
 ## In-engine hooks
 
 - `sv_main.cpp` `SERVER_Tick` is the seam `net/server_tick` and `features/federated-server-registry`'s
   `SERVER_SERVERREGISTRY_SendServerInfo` the seam `net/launcher_reply`, both owned by the main thread.
+- `sv_main.cpp` `SERVER_ConnectNewPlayer` sends the joiner every `SyncedCVar` after `sv_hostname`.
 - `sv_main.cpp` `SERVER_SetupNewConnection` compares the whole revision a client sends with its own
   (`cl_main.cpp` `CLIENT_AttemptConnection` writes it), so a different build is refused every time.
 - `sv_main.cpp` `SERVER_RequestClientToAuthenticate` records the map it names in `CLIENT_s::authenticatingMap`,

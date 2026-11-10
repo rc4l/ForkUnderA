@@ -62,6 +62,7 @@
 #include "gi.h"
 #include "features/alert-reuse/computation/alertreuse_compute.h"
 #include "features/telemetry/telemetry.h"
+#include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] LiftOntoStairs
 
 static FRandom pr_checkmissilerange ("CheckMissileRange");
 static FRandom pr_opendoor ("OpenDoor");
@@ -610,6 +611,10 @@ bool P_Move (AActor *actor)
 			}
 		}
 	}
+
+	// [Doruk-Aksoy] features/monster-stairs: a walker sunk into stairs it overlaps stands on them now and walks again next tic.
+	if (!try_ok)
+		zx::monsterstairs::LiftOntoStairs(actor);
 
 	if (!try_ok)
 	{
