@@ -447,6 +447,9 @@ struct CLIENT_s
 	// Client state (free, in game, etc.).
 	CLIENTSTATE_e	State;
 
+	// [Doruk-Aksoy] The map this client was last asked to authenticate, so an answer about an older one is asked again.
+	FString			authenticatingMap;
+
 	// The buffer in which this client's commands are written.
 	NETBUFFER_s		PacketBuffer;
 
