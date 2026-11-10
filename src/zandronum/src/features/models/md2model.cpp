@@ -42,6 +42,7 @@
 #include "cmdlib.h"
 #include "sc_man.h"
 #include "m_crc32.h"
+#include "features/models/computation/modelskin_compute.h"   // [Doruk-Aksoy] the skin a surface draws with
 
 
 static float   avertexnormals[NUMVERTEXNORMALS][3] = {
@@ -356,12 +357,8 @@ int FDMDModel::FrameSurfaces(const FSpriteModelFrame *, int, FTexture * skin, in
 {
 	if (frameno >= info.numFrames || frameno2 >= info.numFrames) return 0;
 
-	if (!skin)
-	{
-		if (info.numSkins == 0) return 0;
-		skin = skins[0];
-		if (!skin) return 0;
-	}
+	skin = zx::models::ComputeModelSurfaceSkin(skin, NULL, info.numSkins > 0 ? skins[0] : NULL);
+	if (skin == NULL) return 0;
 	// [rc4l] Consecutive vertices rather than indexed, so firstIndex is 0 and count the vertices.
 	out->skin = skin;
 	out->base1 = frames[frameno].vindex;

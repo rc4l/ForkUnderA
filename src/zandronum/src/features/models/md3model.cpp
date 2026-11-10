@@ -40,6 +40,7 @@
 #include "cmdlib.h"
 #include "sc_man.h"
 #include "m_crc32.h"
+#include "features/models/computation/modelskin_compute.h"   // [Doruk-Aksoy] the skin a surface draws with
 
 
 #define MAX_QPATH 64
@@ -332,21 +333,9 @@ int FMD3Model::FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * 
 
 		// [BB] In case no skin is specified via MODELDEF, check if the MD3 has a skin for the current surface.
 		// Note: Each surface may have a different skin.
-		FTexture *surfaceSkin = skin;
-		if (!surfaceSkin)
-		{
-			if (smf->surfaceskins[slot][i])
-			{
-				surfaceSkin = smf->surfaceskins[slot][i];
-			}
-			else if(surf->numSkins > 0 && surf->skins[0])
-			{
-				surfaceSkin = surf->skins[0];
-			}
-
-			// [rc4l] A surface without a skin ends the frame there, as the draw loop returned on it.
-			if (!surfaceSkin) break;
-		}
+		FTexture *surfaceSkin = zx::models::ComputeModelSurfaceSkin(skin, smf->surfaceskins[slot][i], surf->numSkins > 0 ? surf->skins[0] : NULL);
+		// [rc4l] A surface without a skin ends the frame there, as the draw loop returned on it.
+		if (!surfaceSkin) break;
 		out[n].skin = surfaceSkin;
 		out[n].base1 = surf->vindex + frameno * surf->numVertices;
 		out[n].base2 = surf->vindex + frameno2 * surf->numVertices;

@@ -49,6 +49,7 @@
 #include "g_level.h"
 #include "colormatcher.h"
 #include "textures/bitmap.h"
+#include "features/models/computation/modelskin_compute.h"   // [Doruk-Aksoy] the skin a surface draws with
 
 
 
@@ -430,7 +431,8 @@ int FVoxelModel::FrameSurfaces(const FSpriteModelFrame *, int, FTexture * skin, 
 	// [rc4l] A voxel model is one frame, so there is nothing to interpolate -- but it is the same
 	// geometry through the same buffers, which is why voxels come back with models rather than
 	// needing a path of their own.
-	out->skin = skin;
+	// [Doruk-Aksoy] A MODELDEF voxel with no Skin draws with its own palette, as a VOXELDEF one does, where the null skin crashed GL's draw.
+	out->skin = zx::models::ComputeModelSurfaceSkin(skin, NULL, mPalette);
 	out->base1 = out->base2 = 0;
 	out->firstIndex = 0;
 	out->count = mNumIndices;
