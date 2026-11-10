@@ -12,14 +12,15 @@ export function prismObj(radius = 32, height = 96) {
   ring(height);
   for (let i = 0; i < 8; i++) lines.push(`vt ${i / 8} 0`, `vt ${i / 8} 1`);
   lines.push("vt 1 0", "vt 1 1", "vt 0.5 0.5");
-  lines.push(`f ${[8, 7, 6, 5, 4, 3, 2, 1].join(" ")}`);
+  // [Doruk-Aksoy] Every face counter-clockwise seen from outside, as OBJ fronts are, so it draws the same with back faces culled (checked against UZDoom).
+  lines.push(`f ${[1, 2, 3, 4, 5, 6, 7, 8].join(" ")}`);
   lines.push("usemtl STARTAN2");
   for (let i = 0; i < 8; i++) {
     const j = (i + 1) % 8, ti = i * 2 + 1, tj = i === 7 ? 17 : (i + 1) * 2 + 1;
-    lines.push(`f ${i + 1}/${ti} ${j + 1}/${tj} ${j + 9}/${tj + 1} ${i + 9}/${ti + 1}`);
+    lines.push(`f ${i + 1}/${ti} ${i + 9}/${ti + 1} ${j + 9}/${tj + 1} ${j + 1}/${tj}`);
   }
   lines.push("usemtl BROWN1", "s off");
-  lines.push(`f ${[-8, -7, -6, -5, -4, -3, -2, -1].map((v) => `${v}/-1`).join(" ")}`);
+  lines.push(`f ${[-1, -2, -3, -4, -5, -6, -7, -8].map((v) => `${v}/-1`).join(" ")}`);
   return lines.join("\r\n") + "\r\n";
 }
 
