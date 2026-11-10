@@ -330,6 +330,10 @@ void DynClear();
 // filled in by this call.
 void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto);
 
+// [Doruk-Aksoy] The most vertices a frame's dynamic stream holds, which the backend sets from the storage buffers its device binds; an append past it is dropped and counted (levelmesh/dyn_dropped).
+void SetDynVertexCeiling(unsigned vertices);
+unsigned DynVertexCeiling();
+
 // [Doruk-Aksoy] Room for `pieces` pieces of `verts` vertices in all at the stream's end, in order, false (nothing reserved) when they would pass the ceiling; each is then written by DynPlace.
 bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run);
 

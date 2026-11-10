@@ -4,6 +4,7 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/surfaces/computation/surfacechange_compute.h"
 #include "features/telemetry/telemetry.h"
+#include "features/hwrender/computation/dynlayout_compute.h"   // [Doruk-Aksoy] ComputeDynVertexCeiling, the stream's ceiling from the device
 
 #include "tarray.h"
 #include "c_dispatch.h"
@@ -192,12 +193,22 @@ const float *DynMatrices(int &count)
 
 unsigned int DynGeneration() { return g_dynGen; }
 
+// [Doruk-Aksoy] The most vertices a frame's stream holds: what every Vulkan device binds until the device says how much it does.
+static unsigned g_dynCeiling = zx::hwrender::ComputeDynVertexCeiling(zx::hwrender::kMinStorageBufferBytes);
+
+void SetDynVertexCeiling(unsigned vertices) { g_dynCeiling = vertices; }
+unsigned DynVertexCeiling() { return g_dynCeiling; }
+
 void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 {
 	if (verts == NULL || count <= 0) return;
-	// [rc4l] A sane ceiling, so a pathological frame cannot eat memory the way the first wall cache
-	// did. 300k vertices is 100k triangles of sprites, far past anything a Doom frame produces.
-	if (g_dynVerts.Size() + (unsigned)count > kDynVertexCeiling) return;
+	// [Doruk-Aksoy] Past the most the device's buffers bind, counted rather than dropped unseen, where a fixed 300k ceiling dropped every model of over 100k triangles that GL drew.
+	DynQuadRun fits;
+	if (!ComputeDynRun(g_dynVerts.Size(), g_dynPieceCount, (unsigned)count, g_dynCeiling, fits))
+	{
+		ZX_COUNT("levelmesh/dyn_dropped", "vertices", count);
+		return;
+	}
 
 	// [rc4l] One grow check and one copy, not one of each per vertex.
 	//
@@ -218,7 +229,11 @@ void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 
 bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run)
 {
-	if (!ComputeDynRun(g_dynVerts.Size(), g_dynPieceCount, verts, kDynVertexCeiling, run)) return false;
+	if (!ComputeDynRun(g_dynVerts.Size(), g_dynPieceCount, verts, g_dynCeiling, run))
+	{
+		ZX_COUNT("levelmesh/dyn_dropped", "vertices", verts);
+		return false;
+	}
 	g_dynVerts.Resize(run.firstVert + verts);
 	if (g_dynPieces.size() < run.firstPiece + pieces) g_dynPieces.resize(run.firstPiece + pieces);
 	g_dynPieceCount = run.firstPiece + pieces;

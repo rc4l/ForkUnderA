@@ -9,7 +9,7 @@ using namespace zx::levelmesh;
 TEST(DynQuads, ARunFollowsTheStream)
 {
 	DynQuadRun run = { 0, 0 };
-	ASSERT_TRUE(ComputeDynRun(40, 7, 12, kDynVertexCeiling, run));
+	ASSERT_TRUE(ComputeDynRun(40, 7, 12, 300000, run));
 	EXPECT_EQ(7u, run.firstPiece);
 	EXPECT_EQ(40u, run.firstVert);
 }
@@ -30,5 +30,5 @@ TEST(DynQuads, EmptyAndHugeRuns)
 {
 	DynQuadRun run = { 0, 0 };
 	EXPECT_TRUE(ComputeDynRun(100, 0, 0, 100, run));
-	EXPECT_FALSE(ComputeDynRun(10, 0, 0xFFFFFFFFu, kDynVertexCeiling, run));
+	EXPECT_FALSE(ComputeDynRun(10, 0, 0xFFFFFFFFu, 0x7FFFFFFFu, run));
 }
