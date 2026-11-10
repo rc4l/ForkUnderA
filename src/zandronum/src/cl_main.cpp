@@ -158,6 +158,7 @@
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
 #include "features/acs-setmusicvolume/computation/musicvolume_compute.h"   // [Doruk-Aksoy] FuaSetMusicVolume's factor
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] FuaSetShaderEnabled and FuaSetShaderUniform
+#include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -2964,6 +2965,17 @@ AActor *CLIENT_SpawnThing( const PClass *pType, fixed_t X, fixed_t Y, fixed_t Z,
 			P_FindFloorCeiling ( pActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
 		}
 
+		// [Doruk-Aksoy] A spawn reads only the floor under the centre, so a monster the server holds across narrow steps, sent to a late joiner, fell below them; its floor is the box's, never above the server's height.
+		// [Doruk-Aksoy] After the 3D-floor pass above, which set the floor under the centre again and undid this when it ran first.
+		if (( pActor->flags & ( MF_NOGRAVITY | MF_MISSILE | MF_NOBLOCKMAP )) == 0 )
+		{
+			const fixed_t oldceilingz = pActor->ceilingz;
+			P_FindFloorCeiling( pActor );
+			pActor->floorz = fixed_t::FromRaw( zx::netclient::ComputeServerHeldFloorZ( pActor->floorz.Raw( ), pActor->z.Raw( ), false ));
+			if ( pActor->ceilingz < pActor->z + pActor->height )
+				pActor->ceilingz = oldceilingz;
+		}
+
 		// [BB] The current position of the actor comes straight from the server, so it's safe
 		// to assume that it's correct and thus a valid value for the last updated position.
 		pActor->lastX = X;
@@ -3056,20 +3068,19 @@ void CLIENT_MoveThing( AActor *pActor, fixed_t X, fixed_t Y, fixed_t Z )
 		// [BB] Unfortunately, P_OldAdjustFloorCeil messes up the floorz value under some circumstances.
 		// Save the old value, so that we can restore it if necessary.
 		// [EP] It seems it messes also with the ceilingz value.
-		fixed_t oldfloorz = pActor->floorz;
 		fixed_t oldceilingz = pActor->ceilingz;
-		P_OldAdjustFloorCeil( pActor );
+		const bool positionGood = P_OldAdjustFloorCeil( pActor );
+		// [Doruk-Aksoy] P_CheckPosition stops at the first actor this one touches, before it reads a line, so the floor is read from the map's lines alone.
+		if ( zx::netclient::ComputeRereadFloorFromLines( positionGood, NETWORK_IsConsolePlayer( pActor )))
+			P_FindFloorCeiling( pActor );
+		// [Doruk-Aksoy] A box floor above the server's height becomes that height, not the floor under the centre SetOrigin left, which gravity dropped a monster spanning narrow steps to.
+		pActor->floorz = fixed_t::FromRaw( zx::netclient::ComputeServerHeldFloorZ( pActor->floorz.Raw( ), pActor->z.Raw( ), NETWORK_IsConsolePlayer( pActor ) ));
 		// [BB] An actor can't be below its floorz, if the value is correct.
 		// In this case, P_OldAdjustFloorCeil apparently didn't work, so revert to the old value.
 		// [BB] But don't do this for the console player, it messes up the prediction.
 		// [EP] Ditto for ceilingz.
-		if ( NETWORK_IsConsolePlayer ( pActor ) == false )
-		{
-			if ( pActor->floorz > pActor->z )
-				pActor->floorz = oldfloorz;
-			if ( pActor->ceilingz < pActor->z + pActor->height )
-				pActor->ceilingz = oldceilingz;
-		}
+		if (( NETWORK_IsConsolePlayer ( pActor ) == false ) && ( pActor->ceilingz < pActor->z + pActor->height ))
+			pActor->ceilingz = oldceilingz;
 	}
 }
 

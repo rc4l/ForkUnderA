@@ -52,7 +52,7 @@ std::string ComputeNetClientJson(const NetClientRow &row)
 
 std::string ComputeWorldActorJson(const WorldActorRow &row)
 {
-	return "{\"netid\":" + std::to_string(row.netId) + ",\"c\":" + Quoted(row.cls) + ",\"x\":" + Num(row.x) + ",\"y\":" + Num(row.y) + ",\"z\":" + Num(row.z) +
+	return "{\"netid\":" + std::to_string(row.netId) + ",\"c\":" + Quoted(row.cls) + ",\"x\":" + Num(row.x) + ",\"y\":" + Num(row.y) + ",\"z\":" + Num(row.z) + ",\"fz\":" + Num(row.floorZ) +
 		",\"vx\":" + Num(row.velX) + ",\"vy\":" + Num(row.velY) + ",\"vz\":" + Num(row.velZ) + ",\"angle\":" + Num(row.angle) +
 		",\"health\":" + std::to_string(row.health) + ",\"player\":" + std::to_string(row.player) + ",\"sprite\":" + Quoted(row.sprite) + "}";
 }
