@@ -52,6 +52,7 @@
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] IsServer, which draws no model
 #include "r_data/sprites.h"                 // [Doruk-Aksoy] the sprite frames VOXELDEF's voxels are on
 
+#include <cstring>
 #include <unordered_map>
 
 // [rc4l] MODELDEF's switches, which the frame lookup and the frame blend read in either renderer.
@@ -211,15 +212,10 @@ FTexture * LoadSkin(const char * path, const char * fn)
 
 	buffer.Format("%s%s", path, fn);
 
+	// [Doruk-Aksoy] Ported from uzdoom@cf9a364f719319666f2260ce6f1cc3236c0ad2db: a name that is no graphic file is looked up as a texture, so a skin or an OBJ material can name STARTAN2.
 	int texlump = FindGFXFile(buffer);
-	if (texlump>=0)
-	{
-		return TexMan.FindTexture(Wads.GetLumpFullName(texlump), FTexture::TEX_Any, FTextureManager::TEXMAN_TryAny);
-	}
-	else 
-	{
-		return NULL;
-	}
+	const char *texname = texlump >= 0 ? Wads.GetLumpFullName(texlump) : fn;
+	return TexMan.FindTexture(texname, FTexture::TEX_Any, FTextureManager::TEXMAN_TryAny);
 }
 
 //===========================================================================
@@ -272,7 +268,16 @@ static FModel * FindModel(const char * path, const char * modelfile)
 	FMemLump lumpd = Wads.ReadLump(lump);
 	char * buffer = (char*)lumpd.GetMem();
 
-	if (!memcmp(buffer, "DMDM", 4))
+	// [Doruk-Aksoy] Ported from uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: an OBJ is text with no magic, so it is known by its extension; and a file under four bytes is no binary model, rather than compared past its end.
+	if (fullname.Len() >= 4 && !stricmp(fullname.GetChars() + fullname.Len() - 4, ".obj"))
+	{
+		model = new FOBJModel;
+	}
+	else if (len < 4)
+	{
+		model = NULL;
+	}
+	else if (!memcmp(buffer, "DMDM", 4))
 	{
 		model = new FDMDModel;
 	}
