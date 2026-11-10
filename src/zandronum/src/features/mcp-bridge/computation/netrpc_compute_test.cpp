@@ -69,11 +69,12 @@ TEST(ComputeWorldActorJson, PositionsToAThousandthAndEveryField)
 	r.x = 1.5;
 	r.y = -2.25;
 	r.z = 0.0005;
+	r.floorZ = -64;
 	r.velX = 3;
 	r.angle = 90;
 	r.health = 60;
 	r.sprite = "TROOA";
-	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sprite\":\"TROOA\"}",
+	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"fz\":-64.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sprite\":\"TROOA\"}",
 		ComputeWorldActorJson(r));
 }
 

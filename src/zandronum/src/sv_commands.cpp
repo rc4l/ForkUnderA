@@ -1743,19 +1743,24 @@ void SERVERCOMMANDS_MoveThing( AActor *actor, ULONG bits, ULONG ulPlayerExtra, S
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_MoveThingExact( AActor *actor, ULONG bits, ULONG ulPlayerExtra, ServerCommandFlags flags )
+// [Doruk-Aksoy] With `trim` off every coordinate in `bits` goes out exactly, neither left out as already sent nor sent as the client's last one to reuse.
+static void MoveThingExactCommand( AActor *actor, ULONG bits, ULONG ulPlayerExtra, ServerCommandFlags flags, bool trim )
 {
 	if ( !EnsureActorHasNetID (actor) )
 		return;
 
 	// [BB] Only skip updates, if sent to all players.
 	if ( flags == 0 )
-		RemoveUnnecessaryPositionUpdateFlags ( actor, bits );
+	{
+		if ( trim )
+			RemoveUnnecessaryPositionUpdateFlags ( actor, bits );
+	}
 	else // [WS] This will inform clients not to set their lastX/Y/Z with the new position.
 		bits |= CM_NOLAST;
 
 	// [WS] Check to see if the position can be re-used by the client.
-	CheckPositionReuse( actor, bits );
+	if ( trim )
+		CheckPositionReuse( actor, bits );
 
 	// Nothing to update.
 	if ( bits == 0 )
@@ -1781,6 +1786,21 @@ void SERVERCOMMANDS_MoveThingExact( AActor *actor, ULONG bits, ULONG ulPlayerExt
 	// [BB] Only mark something as updated, if it the update was sent to all players.
 	if ( flags == 0 )
 		ActorNetPositionUpdated ( actor, bits );
+}
+
+//*****************************************************************************
+//
+void SERVERCOMMANDS_MoveThingExact( AActor *actor, ULONG bits, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	MoveThingExactCommand( actor, bits, ulPlayerExtra, flags, true );
+}
+
+//*****************************************************************************
+//
+// [Doruk-Aksoy] A death's place: a client walks a monster itself between updates and keeps a walking update's rounded coordinates as its last, so one left out or reused put a corpse a unit, or a step of narrow stairs, from the server's.
+void SERVERCOMMANDS_MoveThingExactWhole( AActor *actor, ULONG bits )
+{
+	MoveThingExactCommand( actor, bits, MAXPLAYERS, 0, false );
 }
 
 //*****************************************************************************

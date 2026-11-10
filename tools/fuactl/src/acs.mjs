@@ -3,12 +3,12 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, ASSIGNMAPVAR: 26, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LE: 23, GE: 24, ASSIGNMAPVAR: 26, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
   CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59, TAGSTRING: 225, GIVEINVENTORY: 143,
-  GETACTORANGLE: 260, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
+  GETACTORANGLE: 260, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
 export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75,
@@ -139,9 +139,14 @@ export function callFunc(fn, args) {
   return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.CALLFUNC, args.length, fn];
 }
 
-// [Doruk-Aksoy] The words of `SetCVar(strings[i], GetCVar(strings[i]) + 1)`, its result dropped: a CVARINFO counter a scenario reads back.
+// [Doruk-Aksoy] The words of `SetCVar(strings[i], GetCVar(strings[i]) + n)`, its result dropped: a CVARINFO counter a scenario reads back, n negative to take away.
+export function addToCVar(i, n) {
+  return [PCD.PUSHNUMBER, i, PCD.PUSHNUMBER, i, PCD.GETCVAR, PCD.PUSHNUMBER, n, PCD.ADD, PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP];
+}
+
+// [Doruk-Aksoy] addToCVar(i, 1).
 export function incrementCVar(i) {
-  return [PCD.PUSHNUMBER, i, PCD.PUSHNUMBER, i, PCD.GETCVAR, PCD.PUSHNUMBER, 1, PCD.ADD, PCD.CALLFUNC, 2, ACSF.SetCVar, PCD.DROP];
+  return addToCVar(i, 1);
 }
 
 // [rc4l] A script built word by word with named jump targets, resolved to ACS0 byte offsets by words().

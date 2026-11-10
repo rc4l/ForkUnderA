@@ -429,6 +429,8 @@ struct FCheckPosition
 	fixed_t			floorz;
 	fixed_t			ceilingz;
 	fixed_t			dropoffz;
+	// [Doruk-Aksoy] The largest floor drop across any one line the box crosses, which tells a staircase from a cliff (features/monster-stairs).
+	fixed_t			maxlinedrop;
 	FTextureID		floorpic;
 	sector_t		*floorsector;
 	FTextureID		ceilingpic;

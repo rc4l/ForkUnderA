@@ -33,3 +33,19 @@ TEST(ComputeAddPendingHealth, AnActorWithoutANetworkIdIsNeverSent)
 	EXPECT_FALSE(ComputeAddPendingHealth(pending, -1));
 	EXPECT_TRUE(pending.empty());
 }
+
+// [Doruk-Aksoy] An Arachnotron killed between its step onto the -16 step and the raise sent its death at -32, and every client kept it a step low.
+TEST(ComputeSettledDeathZ, AWalkerBelowTheFloorItSteppedOntoIsSentStandingOnIt)
+{
+	const int64_t UNIT = 65536;
+	EXPECT_EQ(-16 * UNIT, ComputeSettledDeathZ(-32 * UNIT, -16 * UNIT, false));
+}
+
+// [Doruk-Aksoy] Standing on its floor or above it, falling, a death goes out where it is, and one without gravity is never moved.
+TEST(ComputeSettledDeathZ, OnOrAboveTheFloorOrWithoutGravityItIsWhereItIs)
+{
+	const int64_t UNIT = 65536;
+	EXPECT_EQ(-16 * UNIT, ComputeSettledDeathZ(-16 * UNIT, -16 * UNIT, false));
+	EXPECT_EQ(40 * UNIT, ComputeSettledDeathZ(40 * UNIT, 0, false));
+	EXPECT_EQ(-32 * UNIT, ComputeSettledDeathZ(-32 * UNIT, -16 * UNIT, true));
+}
