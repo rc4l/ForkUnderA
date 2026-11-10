@@ -5,6 +5,7 @@
 
 #include "features/models/modelgeometry.h"
 #include "features/modelreach/computation/modelreach_compute.h"   // [Doruk-Aksoy] ModelReach
+#include "features/models/computation/objmodel_compute.h"   // [Doruk-Aksoy] ObjData, an OBJ model's parse
 #include "p_pspr.h"
 #include "r_data/voxels.h"
 #include "xs_Float.h"
@@ -336,6 +337,21 @@ public:
 };
 
 
+
+// [Doruk-Aksoy] A Wavefront OBJ model, ported from uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad's FOBJModel: one frame, a surface per `usemtl`, its skin the texture or graphic the material names; parsed and laid out by computation/objmodel_compute.
+class FOBJModel : public FModel
+{
+	zx::models::ObjData mData;
+	TArray<FTexture *> mSkins;           // [Doruk-Aksoy] each surface's own skin, NULL where its material names none that loads
+	TArray<unsigned int> mSurfaceFirst, mSurfaceCount;
+
+public:
+	bool Load(const char * fn, int lumpnum, const char * buffer, int length);
+	int FindFrame(const char * name);
+	int FrameSurfaces(const FSpriteModelFrame *smf, int slot, FTexture * skin, int frame, int frame2, FModelSurface * out);
+	void BuildGeometry();
+	bool Interpolates() const { return false; }
+};
 
 #define MAX_MODELS_PER_FRAME 4
 

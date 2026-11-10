@@ -9284,7 +9284,7 @@ f1405f68a7156cf81614d14b05249b7b4f184f12	2017-11-18T19:08:33Z	Merge remote-track
 351de94311fef64d9c45e1341f36c4d5bec957ad	2017-11-19T09:46:52Z	- fixed: Accidentally committed in-progress work... again	pending		/
 de19efa79d64cf2a9f3cd06b829cce276e5b59e2	2017-11-19T09:48:30Z	- trying again: fix shader targets being case sensitive	pending		/
 f0dc619b5b3e45739858e83592a85dc0f0022160	2017-11-19T14:30:45Z	- fixed bad use of FScanner::GetNumber and GetFloat in code inherited from ZDoomGL.	pending		/
-cf9a364f719319666f2260ce6f1cc3236c0ad2db	2017-11-19T16:02:14Z	textures for models	pending		/
+cf9a364f719319666f2260ce6f1cc3236c0ad2db	2017-11-19T16:02:14Z	textures for models	ported	ab069f5d: LoadSkin looks a name up as a texture when no graphic file has it; no-file-overlap: LoadSkin is features/models/modeldef.cpp here, gl_models.cpp upstream	ab069f5d
 6389b6b9148947e9b856238e785c496376f17249	2017-11-19T22:04:15Z	- UMAPINFO parser, including some convenience additions to FScanner.	pending		/
 5532266b147858d2184f42dd42d59722c20f6d3d	2017-11-20T21:43:44Z	- Fix softpoly sprite positioning bug	pending		/
 2bc86b52c8e8cf2005e8ab3d894f7a62625d1caf	2017-11-21T09:06:24Z	- fixed a few of the more obvious logic errors	pending		/
@@ -10856,9 +10856,9 @@ ccd2f58fb44ae6600ca35eaf7a344ba889ca46a4	2018-08-31T04:57:30Z	- implement emitte
 050d72724f049bed04b74a1c8f2ee7014248ecc7	2018-08-31T07:42:53Z	- fixed: always initialize active colors in special font	pending		/
 c8e55fed4628eeb0bf0010ce0cc9496a2b18adee	2018-08-31T12:29:37Z	Moved FConfigFile over to FileReader/FileWriter	pending		/
 7c4dd9408da7df674ee6b26d25c203bd3e901599	2018-08-31T22:01:51Z	- update french language translation from Tapwave	pending		/
-1c15fb240876a8b8538aa631f42f9af14c0d87fd	2018-09-01T05:28:26Z	Initial work on OBJ model support	pending		/
-bb8c66b3a0a0d68a667e2779b6307fe791a80dfd	2018-09-01T05:28:26Z	Fix rendering and parsing of OBJ models	pending		/
-a38b0813cf0b2c52ccf93da86b59ee311f875843	2018-09-01T05:28:26Z	Fix OBJ rendering in software renderers, and other things	pending		/
+1c15fb240876a8b8538aa631f42f9af14c0d87fd	2018-09-01T05:28:26Z	Initial work on OBJ model support	adapted	ab069f5d: the OBJ loader, its parse rewritten as a pure unit that drops bad faces, fans faces past four corners and keeps faces before the first usemtl; no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
+bb8c66b3a0a0d68a667e2779b6307fe791a80dfd	2018-09-01T05:28:26Z	Fix rendering and parsing of OBJ models	adapted	ab069f5d: folded into the rewritten parse and layout; no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
+a38b0813cf0b2c52ccf93da86b59ee311f875843	2018-09-01T05:28:26Z	Fix OBJ rendering in software renderers, and other things	adapted	ab069f5d: the loader's part, folded into the rewrite; its software-renderer part has no counterpart here; no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
 55d1613ea4ff5146bc065fdda0ce61318844d6ce	2018-09-01T05:28:26Z	Update usage of LastIndexOf	pending		/
 323d290c9941f1e13b58cf61f12242b04b2ab27b	2018-09-02T01:39:02Z	- implemented LBIT, SBIT, VTBL, SCOPE, NEW, NEW_K, THROW, EQA_R and EQA_K	pending		/
 55955b9c224dc0194816184536f726cfec7526b4	2018-09-02T01:46:06Z	Merge remote-tracking branch 'gzdoom/master' into asmjit	pending		/
@@ -10918,7 +10918,7 @@ d09a377f12b115afee499ea765a4a80bd22c91e9	2018-09-13T23:07:05Z	- fix clang errors
 ce9925d257ca16018bcffcc234235c641eb9f902	2018-09-14T23:06:48Z	- fix bug in LKF_R	pending		/
 b83f4f48d6ae5ed3c976d873994ec2482cbc9878	2018-09-14T23:25:13Z	- implemented SS_R, LCS_R, and LKS_R	pending		/
 407418a92ec180ed9bd41a274aea5161c7dbe5da	2018-09-14T23:26:14Z	- fixed typo in last commit	pending		/
-53ee7cfc7babd1b604d33ea09767745466e6fb06	2018-09-15T10:27:14Z	- fixed some warnings in OBJ model code.	pending		/
+53ee7cfc7babd1b604d33ea09767745466e6fb06	2018-09-15T10:27:14Z	- fixed some warnings in OBJ model code.	skip	compiler warnings in OBJ code that was rewritten rather than carried (ab069f5d)	/
 3046a7dd814fe623721e9e7b1b80798c48e3badc	2018-09-15T10:30:05Z	- be more thorough with 'in menu' checks for certain protected functions.	pending		/
 c505e4eb79c32c3f1127c40560aed1363bc86696	2018-09-15T11:09:07Z	Merge pull request #575 from Gutawer/asmjit	pending		/
 7d1af25b46eb28e9d154a68f92ab3143a4091e08	2018-09-15T11:19:28Z	Fixed code generation of infinite for loop	pending		/
@@ -10947,8 +10947,8 @@ f61df6024059c4fbb3c7341165ac21b244ce8132	2018-09-17T07:02:23Z	- implement OP_TAI
 ad260aa971adb4cf6a8d2692c6814bc65ad03f5f	2018-09-17T19:52:21Z	- create a very basic OP_IJMP implementation	pending		/
 05ac219ba66d8b788d9ab251674fbcbdc5eccaa4	2018-09-18T16:05:53Z	- switch from ASMJIT_ARCH_X64 to ASMJIT_ARCH_64BIT when checking if we need to use 64-bit pointers	pending		/
 5bf76523d612fd0144c726373673d9a5d7b1439c	2018-09-18T16:13:53Z	- switch ToMemAddress to imm_ptr where allowed	pending		/
-7d4895d9df907ac83803c85762f8b97beb44eb7f	2018-09-22T14:24:01Z	Calculate normals for OBJ models with smooth groups	pending		/
-525ab8eda385380dab712443ac1b9944fabaa586	2018-09-22T16:49:54Z	Attempt to fix warnings from VS2017 Win64 compiler	pending		/
+7d4895d9df907ac83803c85762f8b97beb44eb7f	2018-09-22T14:24:01Z	Calculate normals for OBJ models with smooth groups	skip	smoothing-group normals; FModelVertex carries no normals here, so ab069f5d reads none	/
+525ab8eda385380dab712443ac1b9944fabaa586	2018-09-22T16:49:54Z	Attempt to fix warnings from VS2017 Win64 compiler	skip	compiler warnings in OBJ code that was rewritten rather than carried (ab069f5d)	/
 3b8b312fae669c60e78617ab8dd2f6f5b4bf7ef7	2018-09-23T15:58:17Z	- clamp the software light to never get brighter than the initial light level	pending		/
 a9b25242cdfe28804ff77d28fa12dae103bd401d	2018-09-23T21:40:58Z	Hotfix: The output from CheckReplacement no longer permanently overrides an actor's replacement.	pending		/
 670c86cd470aa5f5be9819378a86843b15cc72ba	2018-09-25T19:00:04Z	Fix a major oversight that caused UE1 models to use the normals of the first frame for all frames.	pending		/
@@ -11506,7 +11506,7 @@ b1bb82fe01dc151a1689208f7d35959bccf046a1	2018-11-29T18:44:26Z	- fix WriteSLEB128
 cb1153272ab0c9b6e03a7704311c1c8382e9d6c4	2018-11-30T15:55:22Z	- fix native call crash and assertion error	pending		/
 024870ba1168564c256f1854b24ed888b1285ba7	2018-11-30T16:02:39Z	- merged DCanvas and DSimpleCanvas and use a TArray to hold its memory.	pending		/
 25ad71a113360179217e5848683d18a729e73aa9	2018-11-30T16:07:42Z	- Changed a few allocations into usin TArrays	pending		/
-a3df67bdd4c14a45baea3d67ca283643d33f3aa0	2018-11-30T16:12:36Z	- let FOBJModel::ParseVector actually use its templated size parameter	pending		/
+a3df67bdd4c14a45baea3d67ca283643d33f3aa0	2018-11-30T16:12:36Z	- let FOBJModel::ParseVector actually use its templated size parameter	adapted	ab069f5d: the parse reads v as three numbers and vt as two; no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
 00d97197db7874a67b3c92c5d3158f131b327c84	2018-11-30T16:16:21Z	- removed deprecated method to retrieve OpenGL extensions	pending		/
 8e46cb3a217eec49622ca70d6b47b1a38436ccdd	2018-11-30T17:49:28Z	Merge remote-tracking branch 'remotes/origin/master' into asmjit	pending		/
 b79e3f8904b319771a5f80c4a2a9a0793b84d7a7	2018-11-30T17:53:57Z	- Added a flag to make bouncing objects disappear when hitting sky surfaces	pending		/
@@ -13177,7 +13177,7 @@ a5608c67b55d4fad2e48526520fac0c509000868	2019-05-31T03:42:04Z	- upload using all
 f4f39becbd462619dab99b7a1bdffad28315ae57	2019-05-31T19:40:12Z	Add support for musl-fts library	pending		/
 1802b7c6fe219f2774724a8c32f803bbd3e4d567	2019-05-31T19:40:12Z	Check for execinfo.h and add libexecinfo if needed	pending		/
 6ba8faa7fb8d35dc7bcfbe961baf3de4fc0ea1aa	2019-06-02T05:28:30Z	Inclusion of check symbol cmake's module.	pending		/
-9f99d1b2cc8bc529ca805bdd08ec4353de5d3ed1	2019-06-02T19:19:10Z	Fix OBJ face normal direction	pending		/
+9f99d1b2cc8bc529ca805bdd08ec4353de5d3ed1	2019-06-02T19:19:10Z	Fix OBJ face normal direction	ported	ab069f5d: each triangle written last corner first (ComputeObjTriangles); no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
 74e69567efbb6396c2e7c9a663236d4d27d0b7b5	2019-06-02T19:20:19Z	- Fixed a buffer overflow with Timidity++ when playing Sigil e5m5 music.	pending		/
 589f9b5c24ece3261cde330e785849c036eaa3b4	2019-06-02T19:20:53Z	- Fixed uninitialized variable in case GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS does not exist.	pending		/
 5661e39ca742e283b6c5221c56852c7df1602300	2019-06-03T10:12:57Z	- reset internal console state on clear CCMD	pending		/
@@ -15333,7 +15333,7 @@ e166eeb13ddfa70df37610b1d21adf043279b222	2021-06-08T07:25:05Z	- added detection 
 adad028b331781c09c85603bfa7c150f4158ec66	2021-06-08T11:56:44Z	- Fixed impassable exit line in 007ltsd.wad E4M7	pending		/
 e0f07d708885e25edaf90e50285ea66531d5ad78	2021-06-10T08:54:26Z	- fixed initialization of model frames	pending		/
 e8f007c6cea2728b6dc13c063d6981fd6bfbf7b6	2021-06-11T13:17:49Z	- fix missing border flat on heretic shareware	pending		/
-ff784fc905bbc8d7d9afaf6059edc9070316a243	2021-06-13T07:42:34Z	- fixed parsing of 2D vectors in OBJ model loader	pending		/
+ff784fc905bbc8d7d9afaf6059edc9070316a243	2021-06-13T07:42:34Z	- fixed parsing of 2D vectors in OBJ model loader	adapted	ab069f5d: vt read as u and v, a lone u taking v 0; no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
 38f2402d2d2f62663bff162dabb70f02c7d89755	2021-06-13T07:42:34Z	- added `TVector2<>` constructor from `float*`	pending		/
 4e46a83734d26520a035287a3a5d3a09bb5a27e5	2021-06-14T06:00:08Z	- fixed bad type in FxFontCast.	pending		/
 cf4c72d4a7403baf0cfda9daa422919c6b05f783	2021-06-14T06:30:51Z	- fixed potential crash when sound sequence is destroyed	pending		/
@@ -15835,7 +15835,7 @@ a491085822cfb9b0728d856eaaa9d56ceead572b	2022-04-17T22:09:38Z	- added missing ra
 0fa830ddd7ab081ecfa439430f2adc0dd3bb3371	2022-04-21T06:49:39Z	Revert "- change cvars `gl_custompost` and `gl_customshader` to archive and save to .ini since there are uses for these shaders beyond mere debugging."	pending		/
 6cb035b7b2c88a1fbd1870dd8d979f56cb90f4f4	2022-04-21T22:53:27Z	- added workaround to Dehacked so that „Doom“ only replaces the music name	pending		/
 4aa04f11ce99b29a119ba41558b804ff38830b90	2022-04-22T09:10:25Z	- zip64 handling	pending		/
-ecc0afd2f2db2f03c13b7dd84065b79e254cdb29	2022-04-24T17:40:08Z	Fix usage of -1 as OBJ model FrameIndex	pending		/
+ecc0afd2f2db2f03c13b7dd84065b79e254cdb29	2022-04-24T17:40:08Z	Fix usage of -1 as OBJ model FrameIndex	adapted	ab069f5d: a negative frame draws no surface (FOBJModel::FrameSurfaces); no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
 339419240c1a143f9c3d08d4518d507c5d055fe1	2022-04-25T18:52:24Z	- added compat_nombf21 for cchest2.wad, map 19.	pending		/
 69a7715a02fd3f167357193f0a4bfc54a3338099	2022-04-26T18:50:34Z	- added all the prerequisites for the cutscene system from Raze:	pending		/
 5aaabbeb01701fcdcf22cbb59492ea1aebf88c78	2022-04-26T18:50:34Z	- did some project file cleanup.	pending		/
@@ -16467,7 +16467,7 @@ f32279278356303ea1c0e12766737c7a97b1d7d4	2022-11-24T23:39:05Z	Added animation su
 28f8d4570d9d272468195a1c614ffd732e234595	2022-11-25T11:27:54Z	- silence compiler warning	pending		/
 4103b282bb10f37aa3875dbf49a95420b35229fb	2022-11-25T11:29:36Z	- fixed: The raw texture caching in the texture manager did not work.	pending		/
 70df34674be9d5c549e61fd01f06e4f9f7f4eb5d	2022-11-25T18:20:24Z	AST debug cleanup	pending		/
-f256e7bb3d69908ea28467441d2d22759736d0eb	2022-11-25T22:57:44Z	Fix UV "fix" for OBJ models.	pending		/
+f256e7bb3d69908ea28467441d2d22759736d0eb	2022-11-25T22:57:44Z	Fix UV "fix" for OBJ models.	ported	ab069f5d: v laid out as 1 - v; no-file-overlap: the loader is features/models/objmodel.cpp with its parse in computation/objmodel_compute, where upstream's is models_obj.cpp	ab069f5d
 d4f4b9b599ba09d569c0f82adead96907c99975a	2022-11-26T07:39:48Z	- fixed continuous integration of Windows targets	pending		/
 1a7a56ce3922e9538909c3daf17c291bf6c40243	2022-11-27T07:19:41Z	Fix GC ignoring DynArrays inside fixed Arrays	pending		/
 6cf3dc045f41fe0747a2b61572b62018e2ac3274	2022-11-27T20:02:07Z	Fix SNDINFO $rolloff always changing global rolloff	pending		/
