@@ -42,6 +42,7 @@
 //[BL] New Includes
 #include "sectinfo.h"
 #include "features/postprocess/computation/postprocess_compute.h"   // [Doruk-Aksoy] ShaderTable
+#include "features/monster-stairs/computation/monsterstairs_compute.h"   // [Doruk-Aksoy] level_info_t::fua_monsterStairs
 
 struct level_info_t;
 struct cluster_info_t;
@@ -368,6 +369,9 @@ struct level_info_t
 	// ParseLumpOrTextureName, which takes an FString& as of uzdoom@bf6a193e5, and it is a map name
 	// so the 8-character ceiling was just as wrong here.
 	FString		RedirectCVARMap;
+
+	// [Doruk-Aksoy] fua_monsterstairs / fua_nomonsterstairs, Unset when the map says neither (features/monster-stairs).
+	zx::monsterstairs::Setting fua_monsterStairs;
 
 	FString		EnterPic;
 	FString		ExitPic;

@@ -474,12 +474,13 @@ async function eachVulkanLaunch({ name, wad, maps, iwad, port, size, side }, bod
 }
 
 // [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts; the launch takes the first non-GL side's cvars.
-export async function compareCounter({ name, wad, maps, vantages, counter, sides = [], iwad = FREEDOOM2, port = 7796, size = [1280, 720] }) {
+// [Doruk-Aksoy] `holdTics` is how long it stands at each vantage, longer for something that takes the level a while, such as monsters crossing it.
+export async function compareCounter({ name, wad, maps, vantages, counter, sides = [], iwad = FREEDOOM2, port = 7796, size = [1280, 720], holdTics = 35 }) {
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     for (const v of vantages) {
       await c.rpc("sim.resume", {}).catch(() => {});
       await c.rpc("player.setpos", v.at);
-      await cap.waitTics(c, 35);
+      await cap.waitTics(c, holdTics);
     }
     const r = judgeCounter(map, await cap.exec(c, counter.command, { quietMs: 400 }), counter);
     return { lines: [r.line], failed: r.failed };

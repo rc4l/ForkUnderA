@@ -53,6 +53,7 @@
 #include "version.h"
 #include "v_text.h"
 #include "c_cvars.h"
+#include "features/monster-stairs/monsterstairs.h"	// [Doruk-Aksoy] ResetGameInfo
 
 TArray<cluster_info_t> wadclusterinfos;
 TArray<level_info_t> wadlevelinfos;
@@ -286,6 +287,7 @@ void level_info_t::Reset()
 	RedirectMapName = "";
 	RedirectCVAR = 0;
 	RedirectCVARMap = "";
+	fua_monsterStairs = zx::monsterstairs::Setting::Unset;	// [Doruk-Aksoy] features/monster-stairs
 	EnterPic = "";
 	ExitPic = "";
 	InterMusic = "";
@@ -1320,6 +1322,18 @@ DEFINE_MAP_OPTION(cvar_redirect, true)
 	info->RedirectCVAR = parse.sc.String;
 	parse.ParseComma();
 	parse.ParseLumpOrTextureName(info->RedirectCVARMap);
+}
+
+// [Doruk-Aksoy] Walkers on this map climb and descend stairs narrower than themselves, whatever GAMEINFO and sv_fua_monsterstairs say (features/monster-stairs).
+DEFINE_MAP_OPTION(fua_monsterstairs, false)
+{
+	info->fua_monsterStairs = zx::monsterstairs::Setting::On;
+}
+
+// [Doruk-Aksoy] Walkers on this map keep Doom's whole-box dropoff rule, whatever GAMEINFO and sv_fua_monsterstairs say.
+DEFINE_MAP_OPTION(fua_nomonsterstairs, false)
+{
+	info->fua_monsterStairs = zx::monsterstairs::Setting::Off;
 }
 
 DEFINE_MAP_OPTION(sndseq, true)
@@ -2441,6 +2455,7 @@ void G_ParseMapInfo (FString basemapinfo)
 
 	ClearMapinfo();
 	atterm(ClearMapinfo);
+	zx::monsterstairs::ResetGameInfo();	// [Doruk-Aksoy] GAMEINFO's choice is read again below, never inherited from the last wad set
 
 	// Parse the default MAPINFO for the current game. This lump *MUST* come from zdoom.pk3.
 	if (basemapinfo.IsNotEmpty())

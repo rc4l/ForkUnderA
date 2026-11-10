@@ -87,6 +87,8 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
 #include "features/thing-walks/computation/thingwalk_compute.h"
+#include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] walkers on narrow stairs
+#include "features/monster-stairs/computation/monsterstairs_compute.h"
 static_assert(ZX_MF2_THRUACTORS == MF2_THRUACTORS, "features/thing-walks mirrors MF2_THRUACTORS");
 
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
@@ -1001,6 +1003,11 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 	if (open.lowfloor < tm.dropoffz)
 		tm.dropoffz = open.lowfloor;
 
+	// [Doruk-Aksoy] features/monster-stairs: this line's own drop, so a run of small steps is not read as one cliff.
+	const fixed_t linedrop = fixed_t::FromRaw(zx::monsterstairs::ComputeLineFloorDrop(open.bottom.Raw(), open.lowfloor.Raw()));
+	if (linedrop > tm.maxlinedrop)
+		tm.maxlinedrop = linedrop;
+
 	// if contacted a special line, add it to the list
 	if (ld->special)
 	{
@@ -1692,6 +1699,7 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	// The base floor / ceiling is from the subsector that contains the point.
 	// Any contacted lines the step closer together will adjust them.
 	tm.floorz = tm.dropoffz = newsec->floorplane.ZatPoint(x, y);
+	tm.maxlinedrop = 0;   // [Doruk-Aksoy] features/monster-stairs
 	tm.ceilingz = newsec->ceilingplane.ZatPoint(x, y);
 	tm.floorpic = newsec->GetTexture(sector_t::floor);
 	tm.floorsector = newsec;
@@ -2403,7 +2411,9 @@ bool P_TryMove(AActor *thing, fixed_t x, fixed_t y,
 					floorz = MAX(thing->z, tm.floorz);
 				}
 
-				if (floorz - tm.dropoffz > thing->MaxDropOffHeight &&
+				// [Doruk-Aksoy] features/monster-stairs: judged line by line when the level asks, except on top of a thing, which no line measures.
+				const bool stairs = !(thing->flags2 & MF2_ONMOBJ) && tm.stepthing == NULL && zx::monsterstairs::Active();
+				if (zx::monsterstairs::ComputeDropoffBlocked(floorz.Raw(), tm.dropoffz.Raw(), tm.maxlinedrop.Raw(), thing->MaxDropOffHeight.Raw(), stairs) &&
 					!(thing->flags2 & MF2_BLASTED) && !missileCheck)
 				{ // Can't move over a dropoff unless it's been blasted
 					// [GZ] Or missile-spawned
