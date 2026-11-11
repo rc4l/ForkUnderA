@@ -722,7 +722,8 @@ void DrawFullHUD_GameInformation()
 			// [AK] Using a percentage should only be done in game modes where players earn kills.
 			if (( playersEarnKills ) || ( cl_showscoreleft ))
 			{
-				if (( playersEarnKills ) && ( dmflags2 & DF2_KILL_MONSTERS ))
+				// [rc4l] Ported from zandronum@35a706fa323fa47a00374fef2af830c4d12535d5: invasion counts monsters left, never a percentage.
+				if (( playersEarnKills ) && ( invasion == false ) && ( dmflags2 & DF2_KILL_MONSTERS ))
 					sprintf( szString + strlen( szString ), TEXTCOLOR_TAN " (%ld%% left)", left );
 				else
 					sprintf( szString + strlen( szString ), TEXTCOLOR_TAN " (%ld left)", left );
