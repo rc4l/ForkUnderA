@@ -98,6 +98,14 @@ static void CVarMemoForget()
 	CVarMemoGeneration.fetch_add(1, std::memory_order_relaxed);
 }
 
+// [Doruk-Aksoy] Set once the process is destroying its globals, whose order across files is unspecified, so a cvar destroyed then must not touch the name table or the cache.
+static bool CVarStaticTeardown = false;
+
+void C_MarkStaticTeardown()
+{
+	CVarStaticTeardown = true;
+}
+
 // [rc4l] Flushed on the wad_reload restart path: mod-defined cvars (CVARINFO) are
 // destroyed and recreated across a rebuild.
 void C_ClearCVarCache()
@@ -198,6 +206,12 @@ FBaseCVar::FBaseCVar (const char *var_name, DWORD flags, void (*callback)(FBaseC
 
 FBaseCVar::~FBaseCVar ()
 {
+	// [Doruk-Aksoy] At exit every list and table this would update is going too, and may already be gone: the bookkeeping read a freed name table on Linux.
+	if (CVarStaticTeardown)
+	{
+		delete[] Name;
+		return;
+	}
 	if (Name)
 	{
 		FBaseCVar *var, *prev;
