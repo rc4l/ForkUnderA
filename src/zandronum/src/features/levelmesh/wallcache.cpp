@@ -1426,14 +1426,6 @@ DEV_MODE_CCMD( fua_mesh_rebuild )
 
 // [rc4l] The flat cache, which had no cache at all until it was measured: every visible flat was rebuilt from scratch every frame, 3406 times a frame on Sunder MAP16.
 
-CCMD( fua_flatcache_stats )
-{
-	int fh = 0, fr = 0;
-	zx::levelmesh::GetFlatCacheStats( fh, fr );
-	Printf( "flats: %d left alone, %d rebuilt, %d reshaded (%.1f%% hit)\n", fh, fr, zx::levelmesh::GetFlatReshades( ),
-		fh + fr > 0 ? 100.0 * (double)fh / (double)( fh + fr ) : 0.0 );
-}
-
 //==========================================================================
 //
 // fua_line_mesh <linedef>

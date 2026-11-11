@@ -11,9 +11,6 @@ namespace zx { namespace sprites {
 // [rc4l] The rotation for a view angle relative to the actor (BAM) and whether it is drawn mirrored, a symmetric frame (first two rotations sharing a texture) not being offset by half a step.
 int ComputeSpriteRotation(unsigned int angle, bool symmetric, unsigned int flipMask, bool &mirror);
 
-// [rc4l] Whether an actor is derived on the main thread rather than a lane: a player, whose damage tint keeps per-actor state, and a model unless models are derived on the lanes (fua_sprite_modeljobs).
-bool ComputeSpriteOnGameThread(bool model, bool player, bool modelJobs);
-
 }} // namespace zx::sprites
 
 #endif // ZX_SPRITEFRAME_COMPUTE_H

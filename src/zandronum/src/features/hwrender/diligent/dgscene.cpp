@@ -95,10 +95,6 @@ CVAR(Bool, fua_dg_embed, true, CVAR_ARCHIVE)
 // be visible. 0 none, 1 back, 2 front (front is a diagnostic: it should show the level inside out).
 CVAR(Int, fua_dg_cull, 1, CVAR_ARCHIVE)
 
-// [rc4l] Draw the sky. Off is a diagnostic: the sky fills every pixel the world does not cover, so
-// with it on, "missing world geometry" and "correctly visible sky" look identical. Turning it off
-// leaves holes against the clear colour, which is unambiguous.
-CVAR(Bool, fua_dg_sky, true, 0)
 // [rc4l] Reflections are ALWAYS on; this only picks how they are produced.
 //
 //   on  -- ray traced: one ray per mirror pixel against the level's acceleration structure
@@ -116,8 +112,6 @@ CVAR(Bool, fua_dg_mirrors_on, true, CVAR_ARCHIVE)
 CVAR(Bool, fua_dg_planemirrors, true, CVAR_ARCHIVE)
 // [rc4l] Stacked-sector views (GL's GLSectorStackPortal) get rendered, each a render of the world, as many as the level has portals; 0 turns them off.
 CVAR(Bool, fua_dg_stackportals, true, CVAR_ARCHIVE)
-// [rc4l] Shows the first stacked view's picture over the whole frame, to see what it holds beyond the planes it is painted on.
-CVAR(Bool, fua_dg_stackshow, false, 0)
 // The sky that is a place: render the world from an ASkyViewpoint and use it as the background.
 CVAR(Bool, fua_dg_skyportal, true, CVAR_ARCHIVE)
 // [rc4l] The portal's render scale as a DIVISOR of the swapchain: 1 is full, 2 is half. See
@@ -129,12 +123,6 @@ CVAR(Int, fua_dg_skyportal_scale, 1, CVAR_ARCHIVE)
 // rectangle. 2048 measured best of 2048/4096/8192 on wdiex02 -- 5.1 mean|d| against 7.0 for
 // the wider two, which let map geometry back into the room.
 CVAR(Float, fua_dg_skyportal_reach, 2048.f, CVAR_ARCHIVE)
-
-// [rc4l] Re-resolve animated textures per frame. See the loop in DrawSceneOnce.
-CVAR(Bool, fua_dg_animate, true, 0)
-
-// [rc4l] Draw the captured 2D layer (HUD, menus, console) over the world.
-CVAR(Bool, fua_dg_hud, true, 0)
 
 // [rc4l] Dynamic lights: muzzle flashes, plasma, rocket trails, lamps.
 CVAR(Bool, fua_dg_dynlights, true, 0)
@@ -190,14 +178,9 @@ CVAR(Bool, fua_dg_standalone, true, CVAR_ARCHIVE)
 // whose sides could not decide what texture they were. The array is mutable now and lives on the
 // bindings, so the same update is thirteen descriptor writes.
 CVAR(Bool, fua_dg_bindless, true, CVAR_ARCHIVE)
-// Sprites and decals on the shared binding as well. Off: see WorldSRB.
-CVAR(Bool, fua_dg_bindless_dyn, true, 0)
 // [rc4l] Collapse adjacent batches into one draw. Only ever possible with bindless on, and separable
 // from it so "the array is wrong" and "the merge is wrong" can be told apart in one run.
 CVAR(Bool, fua_dg_mergedraws, true, 0)
-// [rc4l] Let the material array follow animated textures. Separable because following them means
-// rebuilding thirteen bindings, and a binding the GPU is still reading is its own kind of wrong.
-CVAR(Bool, fua_dg_bindless_anim, true, 0)
 
 // [rc4l] The shader spells 32, 18 and 24 out since a GLSL string cannot read a C++ constant, so a grid change stops the build until the shader changes with it.
 static_assert(zx::hwrender::kClusterTilesX == 32 && zx::hwrender::kClusterTilesY == 18 && zx::hwrender::kClusterSlices == 24,
@@ -855,7 +838,6 @@ void DrawSceneOnce(bool present, bool pump)
 	SetStereoEye(0.f);
 	BuildMVP(g_mvp);
 	if (stereo.eyes > 1) BlendEyes(ctx, stereo);
-	ShowStackView(ctx);
 	DrawHitboxes(ctx);
 	DrawGpuLoad(ctx);
 	// [Doruk-Aksoy] features/postprocess: its scene stages write the frame themselves, the weapon under them, else the scene is drawn up as before.
@@ -1047,7 +1029,6 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	g_phase.animation.Clock();
 	// [rc4l] Re-resolve animated textures, since a batch's material was resolved once at bake time and would freeze on its first frame.
 	// [rc4l] Each base texture asked once, its batches gathered by ComputeGroupByKey: wdiex01's 48,000 batches share about 700 textures, and asking per batch cost 0.06 ms a frame.
-	if (fua_dg_animate)
 	{
 		static std::vector<int> order;
 		static std::vector<::hwrender::BatchRun> groups;
@@ -1142,14 +1123,11 @@ void DrawWorld(Diligent::IDeviceContext *ctx)
 	g_phase.draw.Clock();
 
 	// [rc4l] Sky first, with depth off, so the world paints over whatever it does not cover.
-	if (fua_dg_sky)
-	{
-		// [rc4l] Under colour and depth alone, the G-buffer bound again after, since the sky's pipelines declare one colour target and WebGPU holds a pipeline to its pass's.
-		const bool gbuf = g_pass.gbufBound;
-		if (gbuf) BindWorldTargets(ctx, false);
-		DrawSkyBackground(ctx);
-		if (gbuf) BindWorldTargets(ctx, true);
-	}
+	// [rc4l] Under colour and depth alone, the G-buffer bound again after, since the sky's pipelines declare one colour target and WebGPU holds a pipeline to its pass's.
+	const bool gbuf = g_pass.gbufBound;
+	if (gbuf) BindWorldTargets(ctx, false);
+	DrawSkyBackground(ctx);
+	if (gbuf) BindWorldTargets(ctx, true);
 
 	Diligent::IBuffer *vbs[] = { g_scene.vb };
 	const Diligent::Uint64 offsets[] = { 0 };

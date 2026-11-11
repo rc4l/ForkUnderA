@@ -21,7 +21,7 @@
 #ifdef FUA_DILIGENT
 
 #include "features/hwrender/diligent/dgdevice.h"
-#include "features/hwrender/computation/framepacing_compute.h"   // [rc4l] ComputePresentInterval
+#include "features/hwrender/computation/framepacing_compute.h"   // [rc4l] ComputeSwapchainImages
 #include "RenderDevice.h"
 #include "DeviceContext.h"
 #include "SwapChain.h"
@@ -53,8 +53,6 @@ static int g_wantW = 0, g_wantH = 0;
 // [rc4l] Set by the caller before the window exists; see EnsureWindow.
 void Fua_SetBackendWindowSize(int w, int h) { g_wantW = w; g_wantH = h; }
 static Diligent::RefCntAutoPtr<Diligent::ISwapChain>  g_swap;
-static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_pso;
-static int                                            g_frames = 0;
 static int                                            g_swapImages = 0;
 
 static bool EnsureWindow(FString &err)
@@ -65,72 +63,6 @@ static bool EnsureWindow(FString &err)
 	g_hwnd = Fua_CreateBackendWindow("ForkUnderA - Diligent (Vulkan) backend",
 		g_wantW > 0 ? g_wantW : 640, g_wantH > 0 ? g_wantH : 480);
 	if (!g_hwnd) { err = "backend window creation failed"; return false; }
-	return true;
-}
-
-// [rc4l] GLSL rather than HLSL: the engine's shaders are GLSL, so proving Diligent's GLSL path works
-// is what matters for a future port. Diligent runs it through glslang to SPIR-V internally.
-//
-// VERBATIM, not plain GLSL: the plain mode applies Diligent's own preprocessing and expects its
-// conventions, while this is raw `#version 450` using gl_VertexIndex. Verbatim compiles it as-is,
-// which is also how the engine's existing GLSL would have to be fed in.
-static const char *kVS =
-	"#version 450\n"
-	"layout(location = 0) out vec3 vColor;\n"
-	"void main() {\n"
-	"    vec2 p[3] = vec2[3](vec2(-0.6, -0.5), vec2(0.6, -0.5), vec2(0.0, 0.6));\n"
-	"    vec3 c[3] = vec3[3](vec3(1,0,0), vec3(0,1,0), vec3(0,0,1));\n"
-	"    gl_Position = vec4(p[gl_VertexIndex], 0.0, 1.0);\n"
-	"    vColor = c[gl_VertexIndex];\n"
-	"}\n";
-
-static const char *kPS =
-	"#version 450\n"
-	"layout(location = 0) in vec3 vColor;\n"
-	"layout(location = 0) out vec4 outColor;\n"
-	"void main() { outColor = vec4(vColor, 1.0); }\n";
-
-static bool EnsurePipeline(FString &err)
-{
-	if (g_pso) return true;
-
-	auto *dev = GetDevice();
-	if (dev == NULL || !g_swap) { err = "no device/swapchain"; return false; }
-
-	Diligent::RefCntAutoPtr<Diligent::IShader> vs, ps;
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.UseCombinedTextureSamplers = true;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_VERTEX;
-		ci.Desc.Name = "fua tri VS";
-		ci.Source = kVS;
-		dev->CreateShader(ci, &vs);
-	}
-	{
-		Diligent::ShaderCreateInfo ci;
-		ci.SourceLanguage = Diligent::SHADER_SOURCE_LANGUAGE_GLSL_VERBATIM;
-		ci.Desc.UseCombinedTextureSamplers = true;
-		ci.Desc.ShaderType = Diligent::SHADER_TYPE_PIXEL;
-		ci.Desc.Name = "fua tri PS";
-		ci.Source = kPS;
-		dev->CreateShader(ci, &ps);
-	}
-	if (!vs || !ps) { err = "shader compilation failed (GLSL -> SPIR-V)"; return false; }
-
-	Diligent::GraphicsPipelineStateCreateInfo pci;
-	pci.PSODesc.Name = "fua tri PSO";
-	pci.PSODesc.PipelineType = Diligent::PIPELINE_TYPE_GRAPHICS;
-	pci.GraphicsPipeline.NumRenderTargets = 1;
-	pci.GraphicsPipeline.RTVFormats[0] = g_swap->GetDesc().ColorBufferFormat;
-	pci.GraphicsPipeline.DSVFormat = g_swap->GetDesc().DepthBufferFormat;
-	pci.GraphicsPipeline.PrimitiveTopology = Diligent::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	pci.GraphicsPipeline.RasterizerDesc.CullMode = Diligent::CULL_MODE_NONE;
-	pci.GraphicsPipeline.DepthStencilDesc.DepthEnable = false;
-	pci.pVS = vs;
-	pci.pPS = ps;
-	dev->CreateGraphicsPipelineState(pci, &g_pso);
-	if (!g_pso) { err = "pipeline state creation failed"; return false; }
 	return true;
 }
 
@@ -204,44 +136,8 @@ bool DiligentShowWindow(FString &report)
 	if (!EnsureWindow(err)) { report = err; return false; }
 	if (!g_swap && !CreateSwapChain(WantedSwapchainImages(), report)) return false;
 
-	if (!EnsurePipeline(err)) { report = err; return false; }
-
-	report.Format("Diligent swapchain %dx%d, pipeline ready. Use fua_diligent_frame to present.",
+	report.Format("Diligent swapchain %dx%d",
 		(int)g_swap->GetDesc().Width, (int)g_swap->GetDesc().Height);
-	return true;
-}
-
-bool DiligentFrame(int count, FString &report)
-{
-	if (!g_swap || !g_pso) { report = "call fua_diligent_window first"; return false; }
-	auto *ctx = GetContext();
-
-	for (int i = 0; i < count; i++)
-	{
-		auto *rtv = g_swap->GetCurrentBackBufferRTV();
-		auto *dsv = g_swap->GetDepthBufferDSV();
-		ctx->SetRenderTargets(1, &rtv, dsv, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-		// [rc4l] A slowly cycling clear colour, so a still screenshot proves frames are actually
-		// being presented rather than one frame sitting there.
-		const float t = (float)((g_frames + i) % 120) / 120.0f;
-		const float clear[4] = { 0.08f, 0.10f + 0.35f * t, 0.22f, 1.0f };
-		ctx->ClearRenderTarget(rtv, clear, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-		if (dsv) ctx->ClearDepthStencil(dsv, Diligent::CLEAR_DEPTH_FLAG, 1.0f, 0,
-			Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-
-		ctx->SetPipelineState(g_pso);
-		Diligent::DrawAttribs draw;
-		draw.NumVertices = 3;
-		draw.Flags = Diligent::DRAW_FLAG_VERIFY_ALL;
-		ctx->Draw(draw);
-
-		g_swap->Present(ComputePresentInterval(false, PagePaced()));
-		Fua_PumpBackendWindow(g_hwnd);
-	}
-	g_frames += count;
-
-	report.Format("presented %d frame(s); %d total", count, g_frames);
 	return true;
 }
 
@@ -250,7 +146,6 @@ void ForgetBackendWindow(void *window)
 	if (window == NULL || window != g_hwnd) return;
 	// [rc4l] The device is done with the swapchain's images before the surface under them goes; a browser's canvas outlives its swapchain, and its GPU cannot be waited on.
 	if (GetDevice() != NULL && CanWaitForGPU()) GetDevice()->IdleGPU();
-	g_pso.Release();
 	g_swap.Release();
 	g_hwnd = NULL;
 }
@@ -282,28 +177,11 @@ void *GetBackendWindow() { return g_hwnd; }
 
 }} // namespace zx::hwrender
 
-CCMD( fua_diligent_window )
-{
-	FString report;
-	const bool ok = zx::hwrender::DiligentShowWindow( report );
-	Printf( "%s%s\n", ok ? "" : "FAILED: ", report.GetChars( ) );
-}
-
-CCMD( fua_diligent_frame )
-{
-	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 1;
-	FString report;
-	const bool ok = zx::hwrender::DiligentFrame( n, report );
-	Printf( "%s%s\n", ok ? "" : "FAILED: ", report.GetChars( ) );
-}
-
 // [rc4l] fuactl's shot asks this when GL's frame comes back blank, the tell of a minimized window.
 CCMD( fua_window_restore ) { Printf( "%s\n", zx::hwrender::Fua_RestoreEngineWindow( ) ? "restored" : "not minimized" ); }
 
 #else // !FUA_DILIGENT
 
-CCMD( fua_diligent_window ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-CCMD( fua_diligent_frame )  { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 CCMD( fua_window_restore )  { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 
 #endif // FUA_DILIGENT

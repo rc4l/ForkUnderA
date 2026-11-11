@@ -18,7 +18,6 @@
 #include "features/sprites/computation/spriteclip_compute.h"
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame
 #include "features/damage-tint/damagetint.h"   // [rc4l] DamageTint_SpriteGradient
-#include "features/sprites/computation/spriteframe_compute.h"   // [rc4l] ComputeSpriteOnGameThread
 #include "features/sprites/computation/modelpose_compute.h"
 #include "features/sprites/modelbuild.h"
 #include <memory>   // [Doruk-Aksoy] std::unique_ptr
@@ -78,11 +77,6 @@ EXTERN_CVAR(Float, transsouls)
 
 // [rc4l] Derive every sprite beside GL's and compare them bit for bit, counting what differs for fua_sprite_report.
 CVAR(Bool, fua_sprite_check, false, 0)
-
-// [Doruk-Aksoy] Off derives the walk's particles one by one on the main thread, for an A/B in one session.
-CVAR(Bool, fua_sprite_particlejobs, true, 0)
-// [Doruk-Aksoy] Off appends derived pieces to the dynamic stream one at a time on the main thread, for an A/B in one session.
-CVAR(Bool, fua_sprite_placejobs, true, 0)
 
 using zx::levelmesh::MeshPiece;
 using zx::levelmesh::MeshVertex;
@@ -829,9 +823,6 @@ struct SpriteChunk
 	std::unique_ptr<LaneModels> models;   // [Doruk-Aksoy] made with the chunk's first model, apart from the chunk so it keeps to one line
 };
 
-// [Doruk-Aksoy] Models derived on the lanes (default), else every model on the main thread as before, to compare against.
-CVAR(Bool, fua_sprite_modeljobs, true, 0)
-
 // [Doruk-Aksoy] DeriveModel on a lane into the chunk, for the main thread to hand on in the sweep's order; false when the main thread must derive it.
 static bool DeriveLaneModel(const ActorRecord *thing, const Subject &s, SpriteChunk &c, LaneSprite &ls)
 {
@@ -885,7 +876,7 @@ static void DeriveChunk(const ActorRecord *const *things, int count, int chunk)
 		Subject s;
 		if (SubjectOf(things[i], s))
 		{
-			if (ComputeSpriteOnGameThread(s.model != NULL, things[i]->isPlayer, fua_sprite_modeljobs)) ls.onGameThread = true;
+			if (things[i]->isPlayer) ls.onGameThread = true;   // [rc4l] a player's damage tint keeps per-actor state
 			else if (s.model != NULL) ls.onGameThread = !DeriveLaneModel(things[i], s, c, ls);
 			else
 			{
@@ -973,7 +964,7 @@ static void PlaceItems(std::vector<PlaceItem> &items)
 	const unsigned n = (unsigned)items.size();
 	if (n == 0) return;
 	// [Doruk-Aksoy] A run the pool may place wakes it first, so its workers are spinning once the run is laid out and its models counted.
-	if (fua_sprite_placejobs && n >= kPlaceAlone) zx::jobs::Pool().Wake();
+	if (n >= kPlaceAlone) zx::jobs::Pool().Wake();
 	unsigned verts = 0, pieces = 0;
 	bool models = false;
 	for (PlaceItem &it : items)
@@ -989,7 +980,7 @@ static void PlaceItems(std::vector<PlaceItem> &items)
 	const zx::levelmesh::ModelPlacing placing = zx::levelmesh::ModelPlacingNow();
 	zx::levelmesh::DynQuadRun at;
 	// [Doruk-Aksoy] fua_sprite_check notes each model surface as the capture hands it over, so it keeps the one-at-a-time path.
-	if (!fua_sprite_placejobs || n < kPlaceAlone || (models && (fua_sprite_check || !placing.active)) || !zx::levelmesh::DynReserve(verts, pieces, at))
+	if (n < kPlaceAlone || (models && (fua_sprite_check || !placing.active)) || !zx::levelmesh::DynReserve(verts, pieces, at))
 	{
 		for (const PlaceItem &it : items)
 		{
@@ -1080,8 +1071,7 @@ void BuildQueuedParticles()
 			for (int i = lo; i < hi; i++)
 				g_particleDrawn[i] = DeriveParticle(g_queuedParticles[i].particle, g_queuedParticles[i].sector, look, g_particlePieces[i]) ? 1 : 0;
 		};
-		if (fua_sprite_particlejobs) zx::jobs::Pool().ParallelChunks(n, kParticleChunk, derive);
-		else derive(0, n, 0);
+		zx::jobs::Pool().ParallelChunks(n, kParticleChunk, derive);
 		const bool capture = zx::levelmesh::DynamicCaptureActive();
 		static std::vector<PlaceItem> run;
 		run.clear();

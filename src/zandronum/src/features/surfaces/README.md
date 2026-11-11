@@ -43,9 +43,8 @@ looking at a picture costs a day the first time it is wrong.
   the plane.
 - `planeuv.h`/`.cpp` — `PlaneUVFor`, where a sector plane's texture sits on it, as the mesh's flats, the
   walls' 3D faces and the horizons all lay it; moved from `features/levelmesh/flatmesh.cpp`.
-- `features/sidebyside/surfaceverify.cpp` — `fua_surface_verify`, `fua_surface_mapbake`, `fua_surface_bakediff`
-  and `fua_surface_mapcover`, which compare all of it against the walls GL's wall cache recorded on a real
-  level. It reads GL's types, so it lives with the other checks against GL.
+- `features/sidebyside/surfaceverify.cpp` — `fua_surface_verify` and `fua_surface_mapbake`, which compare all
+  of it against the walls GL's wall cache recorded on a real level. It reads GL's types, so it lives with the other checks against GL.
 
 ## Where it stands, measured
 
@@ -192,8 +191,7 @@ came from GL walking the BSP and reporting what it drew.
 0.0% on Doom 2 MAP01 and dbab04. Off by default while the traversal is still what fills in the kinds
 the derivation does not do.
 
-`fua_surface_mapcover` is what said this was possible before it was written, and it is the number to
-watch: on dbab04 the map accounts for 1332 of the 1336 parts GL draws; on Sunder MAP16, 59,477 of
+`fua_surface_mapcover` (a check since removed) is what said this was possible before it was written: on dbab04 the map accounts for 1332 of the 1336 parts GL draws; on Sunder MAP16, 59,477 of
 59,483 across 52,052 segs. Two categories had to be found to get there, and both were in
 `GLWall::Process` rather than in the map:
 
@@ -246,13 +244,13 @@ them instead of one leaving holes in it.
 
 **`fua_surface_mapcover` was only asking half its question.** It skipped segs GL never drew, which
 makes "the map accounts for everything GL drew" true by construction and says nothing about what the
-map draws that GL does not -- the half that was putting a wall through another wall. It counts both
-now.
+map draws that GL does not -- the half that was putting a wall through another wall. It counted both
+from then on.
 
 ## What comes next, in order
 
 1. **The map-driven bake's last percent, which is now identified: coplanar overlap.** Not a
-   derivation fault. `fua_surface_bakediff` compares the whole quad -- material, all four corners,
+   derivation fault. `fua_surface_bakediff` (since removed) compared the whole quad -- material, all four corners,
    light, colormap -- for every captured piece against what the derivation builds for the same seg
    and part, and every input agrees except 13 pieces across three maps. What differs is that the map
    bake builds the WHOLE LEVEL where the capture only ever built what GL walked, and the extra
@@ -340,7 +338,7 @@ artefact of three loads happening to land the same way. MAP10, MAP04 and dbab01-
 
 One horizontal band on one wall comes out grey where GL tints it blue. Its geometry, its texture and
 its extents are all already right; only the colour is wrong, which is the class of fault that
-survives every check that compares shapes -- `fua_surface_bakediff` reports **0 material, 0 light and
+survives every check that compares shapes -- `fua_surface_bakediff` reported **0 material, 0 light and
 0 colormap** differences across 1336 compared pieces, because whatever draws the band is not among
 the pieces being compared.
 

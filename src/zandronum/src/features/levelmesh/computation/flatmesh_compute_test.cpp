@@ -624,7 +624,7 @@ TEST(FlatMeshCompute, AStackedViewMarksEachSubsectorItsWalkReached)
 	ComputeClearStackVisible(bits, 12, 0, W);
 	EXPECT_FALSE(ComputeStackVisible(bits, 4, 12, 0, W));
 	EXPECT_TRUE(ComputeStackVisible(bits, 4, 12, 1, W));
-	// [rc4l] Counted per slot, and set against another set of bits, as the walk check and fua_dg_stackinfo count them.
+	// [rc4l] Counted per slot, and set against another set of bits, as the walk check counts them.
 	EXPECT_EQ(2, ComputeSlotCount(bits, 4, 13, 1, W));     // [rc4l] subsectors 0 and 12, second slot
 	EXPECT_EQ(0, ComputeSlotCount(bits, 4, 13, 0, W));
 	EXPECT_EQ(1, ComputeSlotCount(bits, 4, 12, 1, W));     // [rc4l] subsector 12 is past the ids asked about

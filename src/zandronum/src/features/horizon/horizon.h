@@ -40,8 +40,6 @@ const HorizonWindow *HorizonWindows(int &count);
 // [rc4l] The sky halves for an eye at height eyeZ as triangle-list quads in FFlatVertex's (x, height, y), each starting where its floor half stops (ComputeHorizonSkyBottom).
 const zx::levelmesh::MeshVertex *HorizonSkyVertices(int &count, float eyeZ);
 
-// [rc4l] Whether this feature owns horizon lines, which the GL sky capture asks before standing down for one.
-bool HorizonsActive();
 
 // [rc4l] Whether a line's sky is the horizon's to draw, built for every eye height, and so kept out of the sky list.
 bool OwnsSky(int lineSpecial);

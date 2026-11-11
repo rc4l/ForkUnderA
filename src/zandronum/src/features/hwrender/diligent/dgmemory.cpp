@@ -22,8 +22,8 @@ namespace zx { namespace hwrender {
 
 namespace {
 
-// [Doruk-Aksoy] What sits before each aligned block: the larger block it was cut from, and its size for a reallocation's copy.
-struct AlignedHeader { void *base; size_t size; };
+// [Doruk-Aksoy] What sits before each aligned block: the larger block it was cut from.
+struct AlignedHeader { void *base; };
 
 // [Doruk-Aksoy] Diligent's default allocator calls malloc, which the engine's counters never see; this one calls operator new, aligned blocks included.
 struct EngineAllocator final : Diligent::IMemoryAllocator
@@ -46,18 +46,13 @@ void *AllocateAlignedNew(size_t size, size_t alignment)
 	char *base = static_cast<char *>(::operator new(ComputeAlignedBlockBytes(size, align, sizeof(AlignedHeader)), std::nothrow));
 	if (base == nullptr) return nullptr;
 	AlignedHeader *block = reinterpret_cast<AlignedHeader *>(ComputeAlignedBlockStart(reinterpret_cast<uintptr_t>(base), align, sizeof(AlignedHeader)));
-	block[-1] = AlignedHeader{ base, size };
+	block[-1] = AlignedHeader{ base };
 	return block;
 }
 
 void FreeAlignedNew(void *ptr)
 {
 	if (ptr != nullptr) ::operator delete(static_cast<AlignedHeader *>(ptr)[-1].base);
-}
-
-size_t AlignedNewSize(void *ptr)
-{
-	return static_cast<AlignedHeader *>(ptr)[-1].size;
 }
 
 namespace {

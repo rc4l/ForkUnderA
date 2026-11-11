@@ -164,14 +164,6 @@ DynresState ComputeDynresStep(const DynresState &s, const DynresSample &x, doubl
 	return n;
 }
 
-const char *ComputeDynresWhy(const DynresState &was, const DynresState &now, bool timed)
-{
-	if (now.changes == was.changes) return "";
-	if (timed) return now.step > was.step ? "the GPU is over budget" : "the GPU has room";
-	if (now.trial) return now.trialUp ? "trying a step up" : "trying a step down, the frames were slow";
-	return now.step > was.step ? "a step up that made slow frames longer, undone" : "a step down that left the frames no shorter, undone";
-}
-
 bool ComputeFrameJudged(bool timed, bool running, bool focused)
 {
 	return timed || (running && focused);

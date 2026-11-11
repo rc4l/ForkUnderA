@@ -28,8 +28,7 @@ quads off screen. Shared helpers carry the parts other code needed too: `Compute
 `ComputeFanTriangleVertex` via `MakeWallQuad`, and `hwrender::ComputeBatchRuns` for one draw per material.
 
 Windows are rebuilt from the map every frame (a level has a handful), so light changes, animated or
-scrolling flats and moving floors need no invalidation. `fua_dg_horizon 0` turns the feature off for
-an A/B. `fua_horizons` prints the windows.
+scrolling flats and moving floors need no invalidation.
 
 ## Files
 

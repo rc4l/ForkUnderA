@@ -325,7 +325,7 @@ struct UploadFlushing
 void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, zx::hwrender::UploadShadow &shadow, size_t bytes, const void *data, bool changing = false);
 // [rc4l] Counts bytes another upload sent, such as a texture's, toward the flush an UploadFlushing makes due.
 void NoteUploadSent(Diligent::IDeviceContext *ctx, size_t bytes);
-// [Doruk-Aksoy] A buffer or texture written outside a fill, made ready to read before the next world binding is committed, since that commit checks nothing (fua_dg_checkonce).
+// [Doruk-Aksoy] A buffer or texture written outside a fill, made ready to read before the next world binding is committed, since that commit checks nothing.
 void NoteBufferWritten(Diligent::IBuffer *buffer);
 void NoteTextureWritten(Diligent::ITexture *texture);
 // [rc4l] The translation the floor mark pass asks a decal's graphic for (ComputeDecalPassTranslation), shared with the precache that makes it ahead.

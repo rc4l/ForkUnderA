@@ -31,10 +31,8 @@ struct GLSegCache
 
 TArray<GLSegCache>     g_cache;
 TArray<bool>          g_uncacheable;   // [rc4l] sticky: this seg produced per-frame state, never replay it
-TArray<unsigned char> g_segFate;
 int  g_captureSeg = -1;
 bool g_sawPortal = false;
-int  g_hits = 0, g_misses = 0, g_uncacheableHits = 0, g_animRefresh = 0;
 
 //==========================================================================
 //
@@ -71,20 +69,16 @@ void gl_WallCacheAlloc(int numsegs)
 {
 	g_cache.Clear();
 	g_uncacheable.Clear();
-	g_segFate.Clear();
 	g_captureSeg = -1;
-	g_hits = g_misses = g_uncacheableHits = g_animRefresh = 0;
 	if (numsegs <= 0) return;
 	g_cache.Resize(numsegs);
 	g_uncacheable.Resize(numsegs);
-	g_segFate.Resize(numsegs);
 	for (int i = 0; i < numsegs; i++)
 	{
 		// [rc4l] Resize does not construct a recycled slot, so each is cleared here.
 		g_cache[i].count = 0;
 		g_cache[i].filled = false;
 		g_uncacheable[i] = false;
-		g_segFate[i] = GLSEG_UNSEEN;
 	}
 }
 
@@ -92,7 +86,6 @@ void gl_WallCacheFree()
 {
 	g_cache.Clear();
 	g_uncacheable.Clear();
-	g_segFate.Clear();
 	g_captureSeg = -1;
 }
 
@@ -152,12 +145,7 @@ void gl_WallCacheEndCapture(const zx::levelmesh::WallCacheStamp &stamp, const zx
 	if (g_captureSeg < 0) return;
 	const int idx = g_captureSeg;
 	g_captureSeg = -1;
-	int fate = GLSEG_OK;
-	if (g_sawPortal) fate = GLSEG_PORTAL;
-	else if (!zx::levelmesh::ComputeIsCacheable(e))
-		fate = e.isPolyobject ? GLSEG_POLY : e.hasFFloors ? GLSEG_FFLOOR : e.inArea ? GLSEG_AREA : GLSEG_OTHER;
-	g_segFate[idx] = (unsigned char)fate;
-	if (fate != GLSEG_OK)
+	if (g_sawPortal || !zx::levelmesh::ComputeIsCacheable(e))
 	{
 		g_uncacheable[idx] = true;
 		g_cache[idx].count = 0;
@@ -171,7 +159,7 @@ void gl_WallCacheEndCapture(const zx::levelmesh::WallCacheStamp &stamp, const zx
 bool gl_WallCacheTryReplay(int segIndex, const zx::levelmesh::WallCacheEligibility &e, const zx::levelmesh::WallCacheStamp &current)
 {
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return false;
-	if (g_uncacheable[segIndex]) { g_uncacheableHits++; return false; }
+	if (g_uncacheable[segIndex]) return false;
 	// [rc4l] A seg bordering the sky on either side is always processed, since its sky quad is built inside Process.
 	if (segIndex < numsegs)
 	{
@@ -183,10 +171,7 @@ bool gl_WallCacheTryReplay(int segIndex, const zx::levelmesh::WallCacheEligibili
 	}
 	GLSegCache &sc = g_cache[segIndex];
 	if (gl_wallcacheMode == 2 ? !sc.filled : !zx::levelmesh::ComputeCanReuse(e, sc.filled, sc.stamp, current))
-	{
-		g_misses++;
 		return false;
-	}
 	for (int i = 0; i < sc.count; i++)
 	{
 		GLWall &w = sc.walls[i];
@@ -207,12 +192,11 @@ bool gl_WallCacheTryReplay(int segIndex, const zx::levelmesh::WallCacheEligibili
 			if (part >= 0)
 			{
 				FMaterial *now = FMaterial::ValidateTexture(w.seg->sidedef->GetTexture(part), false, true);
-				if (now != NULL && now != w.gltexture) { w.gltexture = now; g_animRefresh++; }
+				if (now != NULL && now != w.gltexture) w.gltexture = now;
 			}
 		}
 		gl_drawinfo->drawlists[sc.lists[i]].AddStaticWall(gl_WallCachePack(segIndex, i));
 	}
-	g_hits++;
 	return true;
 }
 
@@ -236,41 +220,4 @@ const GLWall *gl_WallCacheWall(int segIndex, int wall)
 {
 	if ((unsigned)segIndex >= g_cache.Size() || wall < 0 || wall >= g_cache[segIndex].count) return NULL;
 	return &g_cache[segIndex].walls[wall];
-}
-
-int gl_WallCacheSegFate(int segIndex)
-{
-	if (segIndex < 0 || (unsigned)segIndex >= g_segFate.Size()) return GLSEG_UNSEEN;
-	return g_segFate[segIndex];
-}
-
-const char *gl_WallCacheFateName(int fate)
-{
-	static const char *kName[] = { "never captured", "cached", "portal or fill", "polyobject", "3D floor", "heightsec area", "other" };
-	return (fate >= GLSEG_UNSEEN && fate <= GLSEG_OTHER) ? kName[fate] : "?";
-}
-
-CCMD( fua_gl_wallcache_stats )
-{
-	const int total = g_hits + g_misses + g_uncacheableHits;
-	Printf( "wallcache since last reset: %d hits, %d misses, %d uncacheable (%d total)\n", g_hits, g_misses, g_uncacheableHits, total );
-	if ( total > 0 )
-		Printf( "  hit rate %.1f%%, uncacheable %.1f%%\n", 100.0 * g_hits / total, 100.0 * g_uncacheableHits / total );
-	Printf( "  animated texture refreshes on replay: %d\n", g_animRefresh );
-	g_hits = g_misses = g_uncacheableHits = g_animRefresh = 0;
-}
-
-CCMD( fua_gl_wallcache_census )
-{
-	int fate[GLSEG_OTHER + 1] = { 0 };
-	int drawable = 0;
-	for ( int i = 0; i < numsegs; i++ )
-	{
-		if ( segs[i].sidedef == NULL || segs[i].linedef == NULL ) continue;   // [rc4l] a miniseg
-		drawable++;
-		fate[gl_WallCacheSegFate( i )]++;
-	}
-	Printf( "wallcache census over %d drawable segs:\n", drawable );
-	for ( int i = 0; i <= GLSEG_OTHER; i++ )
-		if ( fate[i] > 0 ) Printf( "  %-15s %5d segs (%4.1f%%)\n", gl_WallCacheFateName( i ), fate[i], 100.0 * fate[i] / MAX( 1, drawable ) );
 }
