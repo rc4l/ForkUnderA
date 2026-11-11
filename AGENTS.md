@@ -17,3 +17,5 @@ Don't modify the base README file without explicit permission.
 Don't add CI steps that play the game. Tests that launch the engine or the browser page, such as `fuactl scenarios` on their template maps and `tools/web/check.mjs`, live in the repo and run locally.
 
 Never put a Claude session link (`claude.ai/code/session_...`, a `Claude-Session:` trailer) in a pull request, a commit message or anything else pushed; session links are private.
+
+Every test or debug cvar and console command is a dev-mode tool: flag it `CVAR_FUA_DEV_MODE` or declare it `DEV_MODE_CCMD`, never a check of its own. `src/zandronum/src/features/dev-mode/README.md` says which tools are.
