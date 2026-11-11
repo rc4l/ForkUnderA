@@ -50,6 +50,13 @@ Rules:
   block inside an otherwise-original function is ported, tag that block. Don't restate it on
   every line or every sibling statement.
 - Get the SHA from the upstream checkout you ported from: `git -C <repo> rev-parse HEAD`.
+- **`zandronum@` takes a `zandronum-stable` Mercurial node** (40 hex, `hg log -r <rev> -T '{node}'`),
+  the id Heptapod's commit pages and our Zandronum ledger use. The git mirror's shas
+  (TorrSamaho/zandronum) are legacy: the mirror stopped at 2026-06-06, and
+  `commit-tracker/zandronum/aliases.tsv` maps the ones older tags cite to nodes.
+- **A Zandronum twin** (a row with a `twin`, transplanted from UZDoom) ported from UZDoom's diff is
+  tagged `uzdoom@<sha>`; one ported from Zandronum's own copy is tagged `zandronum@<node>`. The
+  ledger row links the other either way.
 
 ## Original fixes get a "why", not a link
 

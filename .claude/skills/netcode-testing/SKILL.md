@@ -11,6 +11,10 @@ bytes on the stream — deterministically, as unit tests, with no processes and 
 how. It is the machine-checkable half of the `netcode-adaptation` skill's "wire-format regression
 tests" rule.
 
+A Zandronum commit that adds or changes a command (the Zandronum ledger tags it `svc:` or `clc:`,
+and `protocolspec/spec.*.txt` changes with it) needs the same: a golden fixture for the new layout,
+and `tools/protocol-snapshot.py --write` to accept the changed signature on purpose.
+
 ## The rigid core: `BYTESTREAM_s`, not the command table
 
 Every one of the ~231 generated `SERVERCOMMANDS_*` reduces to a handful of primitives on

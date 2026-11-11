@@ -1,7 +1,10 @@
 # Commit tracker
 
-Per-commit record of what we've pulled from upstream (GZDoom → UZDoom) into ZandroX, so a
-half-done port can never masquerade as finished and nothing gets silently skipped.
+Per-commit record of what we've pulled from upstream into ZandroX, so a half-done port can never
+masquerade as finished and nothing gets silently skipped. There are two **ledgers**, one per upstream
+(see [Ledgers](#ledgers)): UZDoom (GZDoom → UZDoom) at the top of this folder, and Zandronum in
+`zandronum/`. Everything below describes the UZDoom ledger unless it says otherwise; the Zandronum
+one has the same files and rules.
 
 One row per upstream commit, from our **parity anchor** forward to UZDoom HEAD. The anchor is
 `ad88cfc5e` (GZDoom ~1.8, 2013-12-25) — the point where our `src/gl/` was a structural match to
@@ -15,12 +18,16 @@ tail (after 2025-10) comes last**.
 
 | file           | what it is                                                              |
 |----------------|-------------------------------------------------------------------------|
-| `coverage.tsv` | the tracker — one row per commit, `sha date title status note ours`     |
+| `coverage.tsv` | the tracker — one row per commit, `sha date title status note ours` (+ `twin` in Zandronum's) |
 | `index.tsv`    | `path → the commits that touched it` (for "what changed file X?")        |
-| `regen.sh`     | rebuilds both from the UZDoom clone; re-runnable, never wipes curation   |
-| `progress.sh`  | computes progress toward the current goal into `progress.json` (run by `regen.sh`) |
+| `files.tsv`    | `commit → the paths it touched` (the viewer's file list, the overlap check) |
+| `tags.tsv`, `combined_tags.tsv` | derived tags: paths and `fn:`/`svc:`/`clc:` (`gentags.py`); lumps, keywords, `acs:`, `cvar:` (`gazetteer.py`) |
 | `progress.json`| the goal bar's numbers, precomputed — the viewer draws them, never counts rows |
-| `index.html`   | AG Grid viewer — status filters, search, sortable, commit links (GitHub Pages-ready) |
+| `ledgers.json` | each ledger's upstream, VCS, clone, range, links, goal, ignored paths and twin |
+| `tracker.py`   | the command line (`fuactl tracker` runs it): regen, progress, check, next, show, diff, mark, pull |
+| `ledger.py`, `vcs.py`, `overlap.py` | the shared rules, git/Mercurial history, and the overlap check; tested by `tools/commit_tracker_test.py` |
+| `regen.sh`, `progress.sh` | wrappers for `tracker.py regen` / `progress` |
+| `index.html`   | AG Grid viewer — a ledger switch, status filters, search, commit links (GitHub Pages-ready) |
 
 ## coverage.tsv columns
 
@@ -44,18 +51,17 @@ Commit URL = `https://github.com/UZDoom/UZDoom/commit/<sha>` (their); `ours` lin
 
 The viewer shows one number: **percent of commits handled, up to a goal we pick**. Handled means
 any status other than `pending` — `skip` counts, because a reviewed-and-rejected commit is done
-with, not outstanding. The goal is a release we're aiming at; everything dated after it is out of
-scope for the bar until we move the goal.
+with, not outstanding. The goal is a release we're aiming at, named by its **row**: every row from
+the top of `coverage.tsv` down to it is in scope, the rest waits until we move the goal. A row and
+not a date, because Zandronum's ledger is in revision order and its transplants keep their
+2014–2018 dates.
 
 It is computed in the repo by `progress.sh` and shipped as `progress.json`. Clients never
 calculate it — one definition of progress, and the bar paints instantly instead of waiting on
-the ~5 MB of TSV behind the table.
+the ~5 MB of TSV behind the table. `commit-tracker-check` fails when it is stale.
 
-**To retarget it**, edit the two constants at the top of `progress.sh` and re-run it:
-
-```sh
-GOAL_LABEL="GZDoom 2.1.1"   GOAL_DATE="2016-02-23"   ./progress.sh
-```
+**To retarget it**, edit the ledger's `goal` in `ledgers.json` (`"sha": "tip"` means the last row)
+and re-run `./progress.sh`. UZDoom's goal row is `1f09341d2`, the last commit dated 2016-02-23.
 
 | goal | date | note |
 |---|---|---|
@@ -81,7 +87,9 @@ first release with ZScript**, and 2.3 is the wall to walk to — see `deferred` 
 | `pending` | not yet reviewed (default; this is the "not covered" pile)                      |
 | `ported`  | brought over faithfully — re-diffable against upstream. Note = our commit sha.  |
 | `adapted` | took the idea, built our **own** version (ZScript/float/incompatible → reimplemented in C++). Deliberately diverged, so it can't be re-diffed. Note = our commit sha + what diverged. |
-| `skip`    | reviewed, not porting. Note = why (noise, VM-only, already in base, rejected).  |
+| `skip`    | reviewed, nothing of it applies to our tree. Note = the existence check that says so. |
+| `deferred` | it applies to us, and a written policy holds it back for now. Note = `deferred: <policy>`, what it would give us, and the doc that holds the policy. |
+| `partially-deferred` | part landed, part held back by a policy. Note = both halves. |
 
 A deliberately scoped-down port is **not** `ported` — it's `adapted` (a smaller version on purpose)
 or stays `pending` (debt), with the leftover named in the note. That rule is the whole point.
@@ -111,11 +119,55 @@ file across a rename use `git -C <UZDoom> log --follow -- <path>` and look the s
 ## Regenerating
 
 ```sh
-UZDOOM=/path/to/UZDoom ./regen.sh
+npx fuactl tracker pull                   # fetch both upstreams, regen, tags, progress, check
+./regen.sh --ledger zandronum             # or one step by hand (UZDOOM=/ZANDRONUM= override the clones)
 ```
 
-Re-run after an upstream pull: new commits are appended as `pending`, titles refresh, and every
-status/note you've already set is preserved (keyed by sha).
+Clones default to `../UZDoom` and `../Zandronum` beside this checkout. New commits are appended as
+`pending`, titles refresh, and every status/note/ours/twin you've already set is preserved (keyed by
+sha). A curated row whose commit has left upstream history moves to the ledger's `orphans.tsv`; it is
+never dropped silently.
+
+## Ledgers
+
+| ledger | upstream | rows | order | goal |
+|---|---|---|---|---|
+| `uzdoom` (this folder) | github.com/UZDoom/UZDoom, git | anchor `ad88cfc5e` → HEAD | date | GZDoom 2.1.1 |
+| `zandronum` (`zandronum/`) | foss.heptapod.net/zandronum/zandronum-stable `default`, Mercurial | our base `ZA_3.2.1` → tip | revision | the tip, until 3.3 is tagged |
+
+The page shows one at a time: `?ledger=zandronum`. Zandronum's rows are keyed by Mercurial node.
+The TorrSamaho/zandronum git mirror stopped at 2026-06-06; `zandronum/aliases.tsv` maps its git
+shas, which older tags and commit messages of ours cite, to nodes.
+
+**Twins.** 64 Zandronum commits were `hg transplant`ed from GZDoom/UZDoom. Their `twin` column names
+the UZDoom commit (from Zandronum's backport notes, else by author time and title), and the check
+holds the pair to one verdict: the same status and `ours`, except that one side may stay `pending`
+while the other is `adapted` or `partially-deferred`, since those say part of the change was not
+taken. `fuactl tracker mark` sets both rows at once. A twin is ported once, at whichever row the
+walk reaches first. `zandronum/left_out.tsv` lists the hunks Zandronum's own notes say it could not
+apply; we may have those files, so the walk checks them.
+
+**Ignored paths.** In Zandronum's ledger, `docs/zandronum-history.txt` (77 of the first 235
+commits touch it), the backport-notes files and `.hgtags` never decide a verdict and never tag a row.
+
+**Which design wins.** Where a Zandronum commit overlaps something we already have — our own
+feature, our netcode, a twin we took from UZDoom — Zandronum's version is taken only if it is the
+better design, judged in this order: logic in `Compute` helpers testable without the engine, generic
+over per-case code, `features/` packaging (AGENTS.md); server-authoritative with wire tests; fewer
+special cases and a fit with the subsystem it lands in; measured, when speed is the claim. When it
+is unclear, ours wins. The note opens with `ours-wins:` or `theirs-wins:` and says why in a line;
+`ours-wins:` rows are `adapted`, citing our commit(s).
+
+**Policies.** A `deferred` row names the policy that holds it back:
+
+| policy | held in | refuses |
+|---|---|---|
+| `zscript` | `docs/zscript-insulation.md` | anything that needs the ZScript VM |
+
+A Zandronum row is never `zandronum-base`: every one of them is after our base, so the check
+rejects it. Documented existence checks for Zandronum skips: the auth server was removed, the
+changelog is not maintained past 3.2.1, and stock Zandronum peers are refused at connect
+(`src/zandronum/src/features/net-transport/README.md`).
 
 ## Migrated-ledger orphans
 

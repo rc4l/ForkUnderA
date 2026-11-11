@@ -58,6 +58,19 @@ simply paused. When it is stuck it samples the process and names the top-of-stac
 catches the other trap — a plain release build in the engine path can't be driven at all, and fails
 with "bridge port never opened", which says nothing about the bridge.
 
+### The commit trackers
+
+```sh
+npx fuactl tracker next                                  # the first pending Zandronum row and what judging it needs
+npx fuactl tracker diff <sha> --apply                    # its diff, minus ignored paths, applied under src/zandronum
+npx fuactl tracker mark <sha> ported --ours <our sha> --note "..."   # the verdict, the twin's with it, progress.json
+npx fuactl tracker pull                                  # new upstream commits, born pending
+```
+
+`--ledger uzdoom` walks the UZDoom ledger instead. It runs `commit-tracker/tracker.py` with a real
+Python found for it (not the Windows Store stub) and Mercurial from `$HG` or PATH. See
+`commit-tracker/README.md`.
+
 ## Release builds
 
 The bridge is off unless `ZX_MCP_BRIDGE=1` at build time. Off means: no sockets, no RPC code, every engine anchor compiles to nothing, `nm` finds zero bridge symbols.

@@ -1,6 +1,6 @@
 ---
 name: sequential-backport
-description: How to backport upstream (GZDoom/UZDoom) commits across the whole tree IN ORDER, deciding each commit's relevance DYNAMICALLY from what exists in our tree right now — never from a hardcoded "dropped features" list, because what we keep and drop keeps evolving. Use for systematic sequential porting driven by commit-tracker/, and any time you must decide whether an upstream commit is relevant to us.
+description: How to backport upstream (GZDoom/UZDoom, and Zandronum's zandronum-stable) commits across the whole tree IN ORDER, deciding each commit's relevance DYNAMICALLY from what exists in our tree right now — never from a hardcoded "dropped features" list, because what we keep and drop keeps evolving. Use for systematic sequential porting driven by commit-tracker/, and any time you must decide whether an upstream commit is relevant to us.
 ---
 
 # Sequential backporting — whole-tree, relevance-derived
@@ -29,7 +29,12 @@ portable the day we add that subsystem. Re-triage re-derives it; nothing is froz
 ## Drive from the commit tracker
 
 `commit-tracker/coverage.tsv` — the file with **one row per upstream commit** (anchor→HEAD,
-date-ordered) — is the single source of truth and the running record of this whole effort. It carries
+date-ordered) — is the single source of truth and the running record of this whole effort for UZDoom;
+`commit-tracker/zandronum/coverage.tsv` is the same for Zandronum (see "The Zandronum ledger" below).
+`fuactl tracker next|show|diff|mark` is the loop for either: `next` shows the first pending row with
+its files flagged against our tree, its twin, left-out hunks, tags already in our tree, a presence
+hint and the diffstat; `mark` sets the row, its twin and progress.json in one step, refusing anything
+the check would reject. Each ledger carries
 `status` and auto-derived `tags` (subsystem, `fn:` DECORATE actions, `acs:`, `lump:`, keywords). Walk
 it oldest-first so prerequisites land before dependents; use `commit-tracker/index.tsv` (`path → shas`)
 to see a commit's files and the tags to fast-classify a whole subsystem at once.
@@ -320,6 +325,35 @@ part (see "A skip is decided per HUNK"). The note must cite the **check**, not a
 tripwire)"`, `"ported: 9d12147"`. A future reader (or a re-triage after the tree changes) can then
 re-run the same existence check and confirm or overturn it. That is what keeps the whole thing from
 silently rotting into a stale drop-list.
+
+## The Zandronum ledger
+
+`commit-tracker/zandronum/` follows `zandronum-stable` (`default`, Mercurial) from our base
+`ZA_3.2.1`. Everything above applies; these are the differences.
+
+- **Revision order, node keys.** Rows are Mercurial nodes in revision order. Walk them in file order,
+  never by date: transplants keep their 2014-2018 dates. `fuactl tracker next` (the default ledger)
+  does this. Older tags of ours cite the dead git mirror's shas; `zandronum/aliases.tsv` maps them.
+- **Twins.** A row with a `twin` was transplanted from UZDoom. Port it once, here, even if the UZDoom
+  walk has not reached it: Zandronum already met its prerequisites on the same ZDoom 2.8pre base.
+  Port the **UZDoom** diff (`fuactl tracker diff <twin> --ledger uzdoom`), not Zandronum's: Zandronum
+  left hunks out where it lacked the file (`left_out.tsv`, shown by `next`), and we may have those
+  files. `mark` then sets both rows; the check holds them to one verdict.
+- **Which design wins** (the user's rule): where a Zandronum commit overlaps something we already
+  have, theirs is taken only if it is the better design. Judge in order: `Compute` helpers and generic
+  code in `features/` (AGENTS.md); server-authoritative with wire tests; fewer special cases and a fit
+  with the subsystem; measured, if speed is the claim. Unclear means ours wins. Open the note with
+  `ours-wins:` or `theirs-wins:` and the reason; an `ours-wins:` row is `adapted`, citing our commit.
+- **Ignored paths decide nothing**: `docs/zandronum-history.txt` (most commits touch it), the
+  backport-notes files and `.hgtags`. A commit that touches only those is `skip`.
+- **Known existence checks**: no auth server (removed), the changelog is not maintained past 3.2.1,
+  stock Zandronum peers are refused at connect (`features/net-transport/README.md`). A hunk that
+  only serves one of those is a skip slice, named as such.
+- **Never `zandronum-base`.** Every row is after our base, so a row we already have cites the commit
+  of ours that carries it (`git log -S` on its distinctive line finds it).
+- **Every Zandronum port gets the fixed64 audit**: Zandronum's code still assumes a 32-bit `fixed_t`.
+- **New cvars and commands** keep Zandronum's names (`fua-naming`), and a test or debug one is flagged
+  `CVAR_FUA_DEV_MODE` / `DEV_MODE_CCMD` (AGENTS.md).
 
 ## Zandronum client/server adaptation — see the `netcode-adaptation` skill
 

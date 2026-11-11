@@ -17,6 +17,11 @@ the **seven shapes** below, the **tools that surface them**, and the **fix proto
 commits are worked examples in `references/prior-art.md` — reach for them only to see a shape
 in the flesh.
 
+**Zandronum ports are a standing source of these.** Zandronum's own code (the
+`commit-tracker/zandronum/` ledger) still assumes a 32-bit `fixed_t`, so every commit ported from
+`zandronum-stable` brings that assumption with it. Run the detection playbook on what it touches
+before calling the port done.
+
 Read `references/prior-art.md` for the shape→commit map. Follow the `writing-tests` skill for
 the test mechanics, and `AGENTS.md` for the `Compute*`/100%-coverage rules this fix protocol
 depends on.
