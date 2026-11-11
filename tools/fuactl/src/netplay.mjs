@@ -10,10 +10,10 @@ import { parsePrescanReport } from "./copycheck.mjs";
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
 
-// [rc4l] A server's arguments: its wads, -host on the game port (a +port cvar is ignored), no announcing to the registry and none on the LAN unless broadcast (then left to its cvar), cheats from launch (a later change never reaches a joined client), any number of clients from one address (every client of a set is 127.0.0.1), and loopback only.
-export function serverArgs({ files = [], gamePort = NETPLAY_GAME_PORT, broadcast = false } = {}) {
+// [rc4l] A server's arguments: its wads, -host on the game port (a +port cvar is ignored), no announcing to the registry and none on the LAN unless broadcast (then left to its cvar), sv_cheats from launch, on unless cheats is false (a latched change reaches its clients only with the next map), any number of clients from one address (every client of a set is 127.0.0.1), and loopback only.
+export function serverArgs({ files = [], gamePort = NETPLAY_GAME_PORT, broadcast = false, cheats = true } = {}) {
   return [...(files.length ? ["-file", ...files] : []), "-host", "-port", String(gamePort), ...(broadcast ? [] : ["+sv_broadcast", "0"]), "+sv_fua_serverregistry_announce", "0",
-    "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"];
+    "+sv_cheats", cheats ? "1" : "0", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"];
 }
 
 // [rc4l] A client's arguments: its wads, loopback only, and the WebGPU backend when asked.
@@ -176,13 +176,13 @@ export async function closeNetplay(set, stop = stopInstance) {
 export async function launchNetplay(opts = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, stop = stopInstance, timeoutMs = scaled(60000) } = deps;
   const { iwad, map, files = [], players = 1, observers = 0, lag = "", loss = "", basePort = NETPLAY_BRIDGE_PORT, gamePort = NETPLAY_GAME_PORT,
-    forUser = false, cvars = {}, clientCvars: perClientCvars = {}, broadcast = false } = opts;
+    forUser = false, cvars = {}, clientCvars: perClientCvars = {}, broadcast = false, cheats = true } = opts;
   const roles = clientRoles({ players, observers });
   const lags = perClient(lag, roles.length), losses = perClient(loss, roles.length);
   const set = { iwad, map, files, basePort, gamePort, clientCvars: perClientCvars, server: null, clients: [] };
   try {
     // [rc4l] Announcing through its cvar, so a caller's sv_broadcast 0 still turns it off.
-    const inst = await launch({ port: basePort, iwad, map, extraArgs: serverArgs({ files, gamePort, broadcast }), cvars: { ...(broadcast ? { sv_broadcast: 1 } : {}), ...cvars } });
+    const inst = await launch({ port: basePort, iwad, map, extraArgs: serverArgs({ files, gamePort, broadcast, cheats }), cvars: { ...(broadcast ? { sv_broadcast: 1 } : {}), ...cvars } });
     set.server = { inst, c: null, role: "server" };
     set.server.c = await connect(inst);
     await waitInLevel(set.server.c, timeoutMs);

@@ -662,7 +662,7 @@ CCMD( fua_mesh_change )
 }
 
 // [rc4l] fua_mesh_blank -- empty every piece of the level mesh, so whatever still draws the world is not reading it.
-CCMD( fua_mesh_blank )
+DEV_MODE_CCMD( fua_mesh_blank )
 {
 	unsigned int blanked = 0;
 	for (unsigned i = 0; i < g_pieceList.Size(); i++)
