@@ -554,7 +554,7 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			// [rc4l] cl_interpolateweapons: the weapon and flash eased between tics, GL's own ease beside the backend's.
 			static zx::sprites::WeaponEase eases[2];
 			int64_t easedX, easedY;
-			zx::sprites::ComputeWeaponEase(eases[psp->layer == ps_flash], cl_interpolateweapons, level.time, layerx.Raw(), layery.Raw(),
+			zx::sprites::ComputeWeaponEase(eases[psp->layer == ps_flash], cl_interpolateweapons, level.time, player->mo, layerx.Raw(), layery.Raw(),
 				r_TicFrac.Raw(), &easedX, &easedY);
 			layerx = fixed_t::FromRaw(easedX);
 			layery = fixed_t::FromRaw(easedY);

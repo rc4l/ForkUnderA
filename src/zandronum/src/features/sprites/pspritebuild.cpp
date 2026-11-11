@@ -365,7 +365,8 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 			// [rc4l] cl_interpolateweapons: the weapon and flash eased between tics, this renderer's own ease beside GL's.
 			static WeaponEase eases[2];
 			int64_t easedX, easedY;
-			ComputeWeaponEase(eases[psp->layer == ps_flash], cl_interpolateweapons, player->bobIn.levelTime, layerx.Raw(), layery.Raw(),
+			const ActorRecord *const body = zx::gamecopy::Record(player->mo);
+			ComputeWeaponEase(eases[psp->layer == ps_flash], cl_interpolateweapons, player->bobIn.levelTime, body ? body->who : NULL, layerx.Raw(), layery.Raw(),
 				r_TicFrac.Raw(), &easedX, &easedY);
 			layerx = fixed_t::FromRaw(easedX);
 			layery = fixed_t::FromRaw(easedY);

@@ -13,10 +13,15 @@ const int64_t kUnit = 65536;
 
 struct Drawn { int64_t x, y; };
 
-Drawn Draw(WeaponEase &e, bool on, int tic, int64_t x, int64_t y, int64_t frac)
+// [rc4l] The body every case's layers sit on, and the one a respawn brings.
+const int kBodies[2] = { 0, 0 };
+const void *const kBody = &kBodies[0];
+const void *const kNewBody = &kBodies[1];
+
+Drawn Draw(WeaponEase &e, bool on, int tic, int64_t x, int64_t y, int64_t frac, const void *owner = kBody)
 {
 	Drawn d;
-	ComputeWeaponEase(e, on, tic, x, y, frac, &d.x, &d.y);
+	ComputeWeaponEase(e, on, tic, owner, x, y, frac, &d.x, &d.y);
 	return d;
 }
 
@@ -75,4 +80,16 @@ TEST(WeaponEase, ATicBackwardsOrALongGapSnaps)
 	EXPECT_EQ(Draw(e, true, 5 + 36, 20 * kUnit, 0, kUnit / 2).x, 20 * kUnit);
 	// [rc4l] A gap of up to a second still eases.
 	EXPECT_EQ(Draw(e, true, 5 + 36 + 35, 30 * kUnit, 0, kUnit / 2).x, 25 * kUnit);
+}
+
+TEST(WeaponEase, ANewBodySnapsAndThenEases)
+{
+	// [rc4l] The tic after a respawn draws the new layers where they are, not slid from where the old body's stood.
+	WeaponEase e = {};
+	Draw(e, true, 10, 40 * kUnit, 90 * kUnit, 0);
+	const Drawn respawned = Draw(e, true, 11, 0, 100 * kUnit, kUnit / 2, kNewBody);
+	EXPECT_EQ(respawned.x, 0);
+	EXPECT_EQ(respawned.y, 100 * kUnit);
+	EXPECT_EQ(e.owner, kNewBody);
+	EXPECT_EQ(Draw(e, true, 12, 0, 80 * kUnit, kUnit / 2, kNewBody).y, 90 * kUnit);
 }
