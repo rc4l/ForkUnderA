@@ -251,6 +251,24 @@ bool ComputeDatabaseMaxStamp(DatabaseStatements &statements, double &stamp)
 	return true;
 }
 
+bool ComputeDatabasePageUse(DatabaseStatements &statements, int64_t &pages, int64_t &maxPages, int64_t &pageSize)
+{
+	int64_t *const outputs[] = { &pages, &maxPages, &pageSize };
+	const char *const pragmas[] = { "PRAGMA page_count", "PRAGMA max_page_count", "PRAGMA page_size" };
+	bool ok = true;
+	for (int i = 0; i < 3; ++i)
+	{
+		sqlite3_stmt *statement = nullptr;
+		*outputs[i] = 0;
+		if (sqlite3_prepare_v2(statements.db, pragmas[i], -1, &statement, nullptr) == SQLITE_OK && sqlite3_step(statement) == SQLITE_ROW)
+			*outputs[i] = sqlite3_column_int64(statement, 0);
+		else
+			ok = false;
+		sqlite3_finalize(statement);
+	}
+	return ok;
+}
+
 bool ComputeDatabaseAppliedSeq(DatabaseStatements &statements, const std::string &server, uint64_t &seq)
 {
 	seq = 0;

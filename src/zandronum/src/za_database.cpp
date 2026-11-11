@@ -50,6 +50,7 @@
 #include "g_game.h"
 #include "p_acs.h"
 #include "features/database/computation/database_compute.h"
+#include "features/database/computation/database_path_compute.h"
 #include "features/database/computation/database_store_compute.h"
 #include <sqlite3.h>
 #include <chrono>
@@ -308,13 +309,21 @@ static void database_ReopenIfQueued ( void )
 
 //*****************************************************************************
 //
+// [Doruk-Aksoy] The outboxes' stem, from the file's real path, so a database reached through a symlink or a short name names its outboxes beside the real file whichever path a server was given.
+static std::string database_OutboxStem ( const char *FileName )
+{
+	return zx::ComputeDatabaseOutboxStem ( zx::ComputeDatabaseResolvedPath ( FileName ));
+}
+
+//*****************************************************************************
+//
 static void database_StartQueue ( const char *FileName )
 {
 	if (( g_dbIsFile == false ) || ( fua_db_queue == false ))
 		return;
 
 	g_dbWriterPragmas = database_WriterPragmas ( );
-	if ( zx::ComputeDatabaseStoreOpen ( g_dbStore, FileName, g_dbWriterPragmas, g_dbStatements, database_Now() ))
+	if ( zx::ComputeDatabaseStoreOpen ( g_dbStore, FileName, database_OutboxStem ( FileName ), g_dbWriterPragmas, g_dbStatements, database_Now() ))
 		Printf ( "Database writes are queued through %s.\n", g_dbStore.outbox.path.c_str() );
 	database_PrintMessages ( );
 }

@@ -471,3 +471,19 @@ TEST(DatabaseCompute, AppliedSeqReadsEachServersLastBatch)
 	EXPECT_FALSE(zx::ComputeDatabaseAppliedSeq(noConnection, "a", seq));
 	EXPECT_EQ(seq, 0u);
 }
+
+TEST(DatabaseCompute, PageUseReadsTheFilesSizeAndLimit)
+{
+	MemoryDb memory;
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, memory.db);
+	exec(memory.db, "PRAGMA max_page_count=500");
+	int64_t pages = 0, maxPages = 0, pageSize = 0;
+	EXPECT_TRUE(zx::ComputeDatabasePageUse(statements, pages, maxPages, pageSize));
+	EXPECT_GT(pages, 0);
+	EXPECT_EQ(maxPages, 500);
+	EXPECT_GT(pageSize, 0);
+	zx::DatabaseStatements noConnection;
+	EXPECT_FALSE(zx::ComputeDatabasePageUse(noConnection, pages, maxPages, pageSize));
+	EXPECT_EQ(pages, 0);
+}
