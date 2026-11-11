@@ -49,13 +49,12 @@ moves was the spawn view, and drew no particles and no actors in mirrors at all 
 the visible sets, the sky surfaces, the stacked views, skybox walks, mirrors and sheens bit for bit;
 `fua_vis_report` prints the counts. They matched on about 19,000 frames for the player's walk and its
 sky across wdiex02, wdiexsec, WDI01, WDI03, WDI13, WDI17, WDI18, AOW03 and dbab04, with
-`fua_dg_horizon` on and off; on about 6,900 frames for the stacked views and skyboxes across WDI01,
+horizon windows on and off; on about 6,900 frames for the stacked views and skyboxes across WDI01,
 WDI03, WDI07, WDI12, WDI18, AOW03 and wdiex02; and on 2,220 mirrors and sheens across WDI01, WDI07,
 WDI12 and WDI18. GL's occlusion query sometimes leaves a view it judges hidden unwalked, which these
 walks never do; the report counts such frames apart. `fua_particles` counts the particles handed over.
 
-`fua_vis_walk` (on) runs the walks in standalone; `fua_vis_cull 0` walks without culling the player's
-pass. The actors a stacked view's or mirror's walk reaches go to `features/sprites`, models included.
+`fua_vis_walk` (on) runs the walks in standalone. The actors a stacked view's or mirror's walk reaches go to `features/sprites`, models included.
 
 `fua_vis_report` also times the player's walks and counts what they reach, since a frame capped by vsync
 hides the walk from frame-time A/Bs. On Sunder MAP10 at the start a walk reaches 7,411 subsectors and
@@ -82,8 +81,7 @@ with none without asking every slice: on Sunder MAP10 the walk went from 0.42 to
 
 The first line from the open into a height transfer in force switches the view area (`gl_CheckViewArea`), which
 changes the fake flats behind it. Slices take last walk's switch line as a guess, and clip again from what they
-saw until the guess holds, at most three times (`fua_vis_report` counts these). `fua_vis_threadcheck 1` walks
-in one slice beside the slices every frame and compares the two visit for visit.
+saw until the guess holds, at most three times (`fua_vis_report` counts these).
 
 A node's box keeps whole units, so a vertex between them can lie just outside it (WDIEX02 has one half a unit
 past). One walk enters such a box through any gap in it and then sees the seg that sticks out; a slice whose
@@ -102,7 +100,7 @@ included, and GL's walk on all of them.
 - `features/sidebyside/glchecks.cpp`: `CheckAgainstGL` when GL reports its walk of the player's view done,
   from the view area GL started with, and `CheckPortalViews` when it reports its portal views done.
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: `PO_LinkToSubsectors`, `WalkView` (publishing to
-  the player's walk slot unless `fua_vis_cull` is off) and `WalkPortalViews`, with `WalkHooks` for the
+  the player's walk slot) and `WalkPortalViews`, with `WalkHooks` for the
   particles, actors and decals they reach and `walked`, called when the player's walk is done and before its
   decals are handed; for a camera texture's view, `WalkCameraSky`, its sky surfaces
   alone over its own map section, as GL's walk of `RenderViewpoint` captures them. A mirror's walk fills the

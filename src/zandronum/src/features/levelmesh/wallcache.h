@@ -156,6 +156,10 @@ int LevelGeneration();
 void FreeLevel();
 void InvalidateAll();
 
+// [rc4l] Whether the level mesh is kept, which the backend turns on (and invalidates once) as it first draws a level; nothing turns it off.
+bool Enabled();
+void Enable();
+
 // [rc4l] The kSkyCapture* list the GL walk in progress fills, which BeginSkyWalk picked.
 int WalkSkyList();
 int SkyQuadsCaptured();   // [rc4l] Since the level loaded, for fua_sky_quads.

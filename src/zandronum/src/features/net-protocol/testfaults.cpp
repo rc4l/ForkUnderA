@@ -11,12 +11,12 @@
 #include "network_enums.h"   // [rc4l] SVC_EXTENDEDCOMMAND
 
 // [rc4l] Server commands left unsent, as "id" or "id/extended id" (fuactl netcap names them), to prove a netgame scenario fails without them.
-CVAR(String, fua_debug_netdrop, "", 0)
+CVAR(String, fua_debug_netdrop, "", CVAR_FUA_DEV_MODE)
 // [rc4l] Tics a client takes off the server tic it reports, as a screen that far behind would, to prove unlaggedhit fails.
-CVAR(Int, fua_debug_unlagged_ticoffset, 0, 0)
+CVAR(Int, fua_debug_unlagged_ticoffset, 0, CVAR_FUA_DEV_MODE)
 
 // [rc4l] A server's tick stalls this many ms once a second, so a scenario sees what a slow tick does to ping and to its clients.
-CVAR(Int, fua_debug_server_stall_ms, 0, 0)
+CVAR(Int, fua_debug_server_stall_ms, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace netprotocol {
 

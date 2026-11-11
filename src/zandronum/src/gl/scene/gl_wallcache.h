@@ -38,11 +38,6 @@ int gl_WallCacheSegCount();
 int gl_WallCacheWallCount(int segIndex);
 const GLWall *gl_WallCacheWall(int segIndex, int wall);
 
-// [rc4l] Why each seg ended as it did: never captured, cached, or refused for a portal or fill, a polyobject, a 3D floor, a height-transfer area or another reason.
-enum { GLSEG_UNSEEN = 0, GLSEG_OK, GLSEG_PORTAL, GLSEG_POLY, GLSEG_FFLOOR, GLSEG_AREA, GLSEG_OTHER };
-int gl_WallCacheSegFate(int segIndex);
-const char *gl_WallCacheFateName(int fate);
-
 // [rc4l] gl_wallcache: 0 off, 1 on, 2 a diagnostic that skips validation and renders stale walls.
 extern int gl_wallcacheMode;
 

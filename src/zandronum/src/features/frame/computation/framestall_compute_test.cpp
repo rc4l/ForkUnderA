@@ -7,20 +7,10 @@
 
 using namespace zx::frame;
 
-// [rc4l] The tic stall reproduces a heavy map's tic frame on a light one; the every-frame stall spreads the same cost evenly as the control.
-TEST(FrameStall, TheTicStallLandsOnlyOnFramesThatRanATic)
+// [rc4l] A stall burns what it was asked for, and nothing for zero or a negative.
+TEST(FrameStall, AStallBurnsWhatItWasAskedAndNegativesNone)
 {
-	EXPECT_EQ(1500, ComputeFrameStallUs(true, 1500, 0));
-	EXPECT_EQ(0, ComputeFrameStallUs(false, 1500, 0));
-}
-
-TEST(FrameStall, TheEveryFrameStallLandsAlwaysAndAddsToTheTicStall)
-{
-	EXPECT_EQ(50, ComputeFrameStallUs(false, 1500, 50));
-	EXPECT_EQ(1550, ComputeFrameStallUs(true, 1500, 50));
-}
-
-TEST(FrameStall, NegativeStallsCountAsNone)
-{
-	EXPECT_EQ(0, ComputeFrameStallUs(true, -5, -7));
+	EXPECT_EQ(1500, ComputeStallUs(1500));
+	EXPECT_EQ(0, ComputeStallUs(0));
+	EXPECT_EQ(0, ComputeStallUs(-7));
 }

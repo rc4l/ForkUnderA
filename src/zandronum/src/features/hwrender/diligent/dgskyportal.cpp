@@ -462,7 +462,4 @@ void ReleaseSkyPortal()
 	g_skyOccluderPSO.Release();
 }
 
-// [rc4l] The pipeline that paints one picture over a whole target, which the stacked-view display borrows.
-Diligent::IPipelineState *SkyPortalPicturePSO() { return g_skyPortalPSO; }
-
 }} // namespace zx::hwrender

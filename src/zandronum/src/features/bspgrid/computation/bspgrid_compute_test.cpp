@@ -21,6 +21,34 @@ int Walk(const std::vector<GridNode> &nodes, int from, int64_t x, int64_t y)
 	return ComputeWalk(nodes, from, x, y);
 }
 
+// [rc4l] How many of each cell's corners and `interior` points from `seed` land elsewhere walking from the cell's start than from the root; points tested go to tested.
+int GridMismatches(const std::vector<GridNode> &nodes, const StartGrid &grid, int interior, uint64_t seed, int &tested)
+{
+	int mismatches = 0;
+	tested = 0;
+	if (grid.start.empty()) return 0;
+	const int64_t size = (int64_t)1 << grid.shift;
+	auto check = [&](int64_t x, int64_t y) {
+		tested++;
+		if (Walk(nodes, ComputeGridStart(grid, x, y), x, y) != Walk(nodes, grid.root, x, y)) mismatches++;
+	};
+	for (int r = 0; r < grid.rows; r++)
+		for (int c = 0; c < grid.cols; c++)
+		{
+			const int64_t x0 = grid.originX + ((int64_t)c << grid.shift), y0 = grid.originY + ((int64_t)r << grid.shift);
+			check(x0, y0);
+			check(x0 + size - 1, y0);
+			check(x0, y0 + size - 1);
+			check(x0 + size - 1, y0 + size - 1);
+			for (int i = 0; i < interior; i++)
+			{
+				seed = seed * 6364136223846793005ull + 1442695040888963407ull;
+				check(x0 + (int64_t)((seed >> 20) % (uint64_t)size), y0 + (int64_t)((seed >> 40) % (uint64_t)size));
+			}
+		}
+	return mismatches;
+}
+
 struct Rng
 {
 	uint64_t s;
@@ -99,23 +127,23 @@ TEST(BspGridCompute, StartsLandWhereTheRootDoes)
 			}
 		ExpectSameLeaves(nodes, root, grid, points);
 		int tested = 0;
-		EXPECT_EQ(ComputeGridMismatches(nodes, grid, 3, 99, tested), 0);
+		EXPECT_EQ(GridMismatches(nodes, grid, 3, 99, tested), 0);
 		EXPECT_EQ(tested, grid.cols * grid.rows * 7);
 	}
 }
 
-// [Doruk-Aksoy] The load-time check counts a cell whose start is wrong, and an empty grid tests nothing.
+// [rc4l] The corner check counts a cell whose start is wrong, and an empty grid tests nothing.
 TEST(BspGridCompute, TheCheckFindsAWrongStart)
 {
 	const std::vector<GridNode> nodes = { { 32 * kUnit, 0, 0, 64 * kUnit, { -1, -2 } } };
 	StartGrid grid;
 	ComputeStartGrid(nodes, 0, -1024 * kUnit, -1024 * kUnit, 1024 * kUnit, 1024 * kUnit, 22, 1 << 16, grid);
 	int tested = 0;
-	EXPECT_EQ(ComputeGridMismatches(nodes, grid, 2, 5, tested), 0);
+	EXPECT_EQ(GridMismatches(nodes, grid, 2, 5, tested), 0);
 	for (int &s : grid.start) if (s == -2) s = -1;   // [Doruk-Aksoy] every cell behind the partition now claims the front's subsector
-	EXPECT_GT(ComputeGridMismatches(nodes, grid, 2, 5, tested), 0);
+	EXPECT_GT(GridMismatches(nodes, grid, 2, 5, tested), 0);
 	StartGrid empty;
-	EXPECT_EQ(ComputeGridMismatches(nodes, empty, 2, 5, tested), 0);
+	EXPECT_EQ(GridMismatches(nodes, empty, 2, 5, tested), 0);
 	EXPECT_EQ(tested, 0);
 }
 

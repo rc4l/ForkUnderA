@@ -25,8 +25,7 @@ first has the backend forget its textures (`ForgetBackendTextures`), since the s
 
 `computation/actorcull_compute` is the sweep's frustum test, padded by the actor's size since a sprite
 is wider than the point it stands on. The sweep culls chunks of the actor records on the job lanes and joins their
-kept lists in chunk order, so the batch is in record order as one pass made it (`scene/actor_sweep`);
-`fua_vis_sweepjobs 0` culls them on the main thread alone.
+kept lists in chunk order, so the batch is in record order as one pass made it (`scene/actor_sweep`).
 
 `playerview` is the player's view, shared by GL and the backend:
 
@@ -62,8 +61,8 @@ screen itself):
   to 300000 frames, minutes at any frame rate.
 - `fua_debug_orbit <degrees>` and `fua_debug_orbit_period` (`debugorbit`, `computation/debugorbit_compute`):
   the aim swept in a circle every frame through the mouse's own path, for repeatable motion.
-- `fua_debug_ticstall_us` and `fua_debug_framestall_us` (`framestall`, `computation/framestall_compute`):
-  CPU time burned on tic frames or on every frame, to test what a slow frame does to the picture;
+- `fua_debug_framestall_us` (`framestall`, `computation/framestall_compute`): CPU time burned on every frame,
+  to test what a slow frame does to the picture;
   `fua_debug_playsim_us` burns it inside each tic's playsim, on whichever thread runs it, as a heavy fight's tic does.
 
 ## In-engine hooks

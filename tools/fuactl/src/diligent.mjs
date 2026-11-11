@@ -1,8 +1,8 @@
 // [rc4l] Driver for the Diligent (Vulkan) backend port.
 //
 // The backend is exercised through engine console commands, and driving them by hand means
-// remembering an order that actually matters: the level mesh has to be baked (`gl_wallmesh 1`, plus a
-// level that has been walked so segs are captured) BEFORE geometry can be uploaded, and the camera is
+// remembering an order that actually matters: the level mesh has to be baked (the backend bakes it as
+// it first draws a level) BEFORE geometry can be uploaded, and the camera is
 // snapshotted at upload time. Getting the order wrong reports "no baked geometry", or worse,
 // silently benchmarks a stale viewpoint.
 //
@@ -36,9 +36,6 @@ export async function diligentRun({ port, token, frames = 500, shot = null, swee
 
   try {
     if (pause) await c.rpc("sim.pause").catch(() => {});
-
-    log("baking level mesh (gl_wallmesh 1 invalidates the wall cache so segs re-capture)");
-    await exec("gl_wallmesh 1", 4000);
 
     if (bakeAll) {
       // [rc4l] Without this the mesh only ever holds what the camera has looked at, so every

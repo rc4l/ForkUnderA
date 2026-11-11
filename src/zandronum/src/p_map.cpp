@@ -46,7 +46,6 @@
 #include "features/mbf21/computation/damage_groups_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "p_trace.h"
-EXTERN_CVAR (Bool, fua_decal_log)
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
 

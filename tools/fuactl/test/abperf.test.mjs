@@ -36,22 +36,22 @@ test("a setting is judged against the first within each round, and only a differ
   assert.deepEqual(perfVerdicts([{ round: 1, setting: "only", p50: 1 }]), []);
 });
 
-// [rc4l] The first live run left gl_wallmesh 0 on after round 1, so every later round measured the cache switched off.
+// [rc4l] The first live run left a mesh switch off after round 1, so every later round measured it switched off.
 test("each setting runs with the other settings' cvars put back where they started", () => {
-  assert.deepEqual(settingNames("fua_gl_meshdraw 0; gl_wallmesh 0"), ["fua_gl_meshdraw", "gl_wallmesh"]);
+  assert.deepEqual(settingNames("fua_gl_meshdraw 0; fua_mesh_sky 0"), ["fua_gl_meshdraw", "fua_mesh_sky"]);
   assert.deepEqual(settingNames("stat rendertimes; bench"), ["stat"]);
-  const settings = ["fua_gl_meshdraw 1", "fua_gl_meshdraw 0", "gl_wallmesh 0", "echo base"];
-  assert.deepEqual(isolatedLines(settings, { fua_gl_meshdraw: "false", gl_wallmesh: "true", echo: null }), [
-    "gl_wallmesh true; fua_gl_meshdraw 1",
-    "gl_wallmesh true; fua_gl_meshdraw 0",
-    "fua_gl_meshdraw false; gl_wallmesh 0",
-    "fua_gl_meshdraw false; gl_wallmesh true; echo base",
+  const settings = ["fua_gl_meshdraw 1", "fua_gl_meshdraw 0", "fua_mesh_sky 0", "echo base"];
+  assert.deepEqual(isolatedLines(settings, { fua_gl_meshdraw: "false", fua_mesh_sky: "true", echo: null }), [
+    "fua_mesh_sky true; fua_gl_meshdraw 1",
+    "fua_mesh_sky true; fua_gl_meshdraw 0",
+    "fua_gl_meshdraw false; fua_mesh_sky 0",
+    "fua_gl_meshdraw false; fua_mesh_sky true; echo base",
   ]);
 });
 
 test("a cvar's starting value comes from the console's reply, and anything else is not a cvar", () => {
-  assert.equal(cvarValueOf('"gl_wallmesh" is "true"', "gl_wallmesh"), "true");
+  assert.equal(cvarValueOf('"fua_mesh_sky" is "true"', "fua_mesh_sky"), "true");
   assert.equal(cvarValueOf("", "echo"), null);
-  assert.equal(cvarValueOf('"gl_wallmeshx" is "1"', "gl_wallmesh"), null);
+  assert.equal(cvarValueOf('"fua_mesh_skyx" is "1"', "fua_mesh_sky"), null);
   assert.equal(cvarValueOf('"a.b" is "1"', "a.b"), null);
 });

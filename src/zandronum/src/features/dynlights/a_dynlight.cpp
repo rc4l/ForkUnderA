@@ -771,7 +771,7 @@ size_t AActor::PropagateMark()
 
 
 
-CCMD(listlights)
+DEV_MODE_CCMD(listlights)
 {
 	int walls, sectors, subsecs;
 	int allwalls=0, allsectors=0, allsubsecs = 0;
@@ -831,7 +831,7 @@ CCMD(listlights)
 	Printf("%i dynamic lights, %d walls, %d subsectors, %d sectors\n\n\n", i, allwalls, allsubsecs, allsectors);
 }
 
-CCMD(listsublights)
+DEV_MODE_CCMD(listsublights)
 {
 	for(int i=0;i<numsubsectors;i++)
 	{
