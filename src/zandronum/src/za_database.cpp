@@ -65,6 +65,7 @@
 sqlite3 *g_db = NULL;
 
 // [BB] Filename for the database.
+// [Doruk-Aksoy] Servers sharing this file must share a machine and a local disk, never a network drive (docs/database-shared-file-risk.md).
 CUSTOM_CVAR( String, databasefile, ":memory:", CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	DATABASE_Init ( );
