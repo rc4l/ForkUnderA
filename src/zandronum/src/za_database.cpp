@@ -273,6 +273,14 @@ static void database_ApplyPragmas ( void )
 
 //*****************************************************************************
 //
+// [Doruk-Aksoy] An invalid ACS string id reaches here as null; it is the empty string on every path, queued or direct, as the queue cannot hold a null key.
+static const char *database_Text ( const char *Text )
+{
+	return Text ? Text : "";
+}
+
+//*****************************************************************************
+//
 static void database_PrintError ( const char *CallingFunction )
 {
 	Printf ( "%s error: %s\n", CallingFunction, sqlite3_errmsg ( g_db ) );
@@ -372,6 +380,24 @@ void DATABASE_Init ( void )
 	}
 
 	database_StartQueue ( dbFileName );
+}
+
+//*****************************************************************************
+//
+void DATABASE_LevelScriptsEnding ( void )
+{
+	// [Doruk-Aksoy] A level's scripts die with it, so a transaction one of them began and never ended is closed now, its writes kept, rather than left open into the next map.
+	bool wasOpen = false;
+	if ( g_dbStore.open )
+		wasOpen = zx::ComputeDatabaseStoreEndOrphanedTransaction ( g_dbStore );
+	else if (( g_db != NULL ) && ( sqlite3_get_autocommit ( g_db ) == 0 ))
+	{
+		database_ExecuteCommand ( "END TRANSACTION" );
+		wasOpen = true;
+	}
+
+	if ( wasOpen )
+		Printf ( "A database transaction was still open when its level ended; it is closed with its writes kept.\n" );
 }
 
 //*****************************************************************************
@@ -606,6 +632,9 @@ void DATABASE_SaveSetEntry ( const char *Namespace, const char *EntryName, const
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveSetEntry" ) == false )
 		return;
 
+	Namespace = database_Text ( Namespace );
+	EntryName = database_Text ( EntryName );
+
 	if ( g_dbStore.open )
 	{
 		zx::ComputeDatabaseStoreWrite ( g_dbStore, zx::ComputeDatabaseSetOp ( Namespace, EntryName, EntryValue ));
@@ -633,6 +662,9 @@ FString DATABASE_SaveGetEntry ( const char *Namespace, const char *EntryName )
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveGetEntry" ) == false )
 		return "";
 
+	Namespace = database_Text ( Namespace );
+	EntryName = database_Text ( EntryName );
+
 	std::string value;
 	bool found = false;
 	const bool ok = g_dbStore.open
@@ -650,6 +682,9 @@ void DATABASE_SaveIncrementEntryInt ( const char *Namespace, const char *EntryNa
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveIncrementEntryInt" ) == false )
 		return;
 
+	Namespace = database_Text ( Namespace );
+	EntryName = database_Text ( EntryName );
+
 	if ( g_dbStore.open )
 	{
 		zx::ComputeDatabaseStoreWrite ( g_dbStore, zx::ComputeDatabaseIncrementOp ( Namespace, EntryName, Increment ));
@@ -666,6 +701,9 @@ int DATABASE_GetEntryRank ( const char *Namespace, const char *EntryName, const 
 {
 	if ( DATABASE_IsAvailable ( "DATABASE_GetEntryRank" ) == false )
 		return -1;
+
+	Namespace = database_Text ( Namespace );
+	EntryName = database_Text ( EntryName );
 
 	int rank = -1;
 	const bool ok = g_dbStore.open
@@ -696,6 +734,8 @@ int DATABASE_GetSortedEntries ( const char *Namespace, const int N, const int Of
 		return 0;
 	}
 
+	Namespace = database_Text ( Namespace );
+
 	zx::DatabaseEntries entries;
 	const bool ok = g_dbStore.open
 		? zx::ComputeDatabaseStoreSorted ( g_dbStore, g_dbStatements, Namespace, N, Offset, Descending, entries, database_Now() )
@@ -714,6 +754,8 @@ int DATABASE_GetEntries ( const char *Namespace, TArray<std::pair<FString, FStri
 		Entries.Clear();
 		return 0;
 	}
+
+	Namespace = database_Text ( Namespace );
 
 	zx::DatabaseEntries entries;
 	const bool ok = g_dbStore.open
