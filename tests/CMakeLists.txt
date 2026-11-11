@@ -99,8 +99,11 @@ add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
 set(ZX_SOUND_DECODERS "${ENGINE_SRC}/features/sound-decoders/vendor/decoders_vendor.cpp")
 set_source_files_properties("${ZX_SOUND_DECODERS}" PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
 add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}" "${ZX_GEN_LISTS}")
-target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock)
+# [Doruk-Aksoy] features/database: database_compute.cpp runs its SQL on the engine's own SQLite, built here from the same folder (which downloads it when missing).
+enable_language(C)
+add_subdirectory("${ENGINE_SRC}/../sqlite" "${CMAKE_CURRENT_BINARY_DIR}/sqlite")
+target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${ENGINE_SRC}/../sqlite" "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock sqlite3)
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
 # it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
 # a hard error, not a warning), which silently made that impossible; /W4 is its equivalent. The

@@ -49,7 +49,10 @@
 #include "i_system.h"
 #include "g_game.h"
 #include "p_acs.h"
+#include "features/database/computation/database_compute.h"
 #include <sqlite3.h>
+#include <cstring>
+#include <string>
 
 //*****************************************************************************
 //	DEFINES
@@ -63,6 +66,25 @@
 
 // [BB] Handle to our database.
 sqlite3 *g_db = NULL;
+
+// [Doruk-Aksoy] The ACS calls' prepared statements and the log checkpointer, both tied to g_db.
+static zx::DatabaseStatements g_dbStatements;
+static zx::DatabaseCheckpointer g_dbCheckpointer;
+static bool g_dbIsFile = false;
+
+static void database_ApplyPragmas ( void );
+
+// [Doruk-Aksoy] A database file uses WAL when on, so a commit is one log write, and the rollback journal when off; db_enable_wal and db_disable_wal set it.
+CUSTOM_CVAR( Bool, fua_db_wal, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
+{
+	database_ApplyPragmas ( );
+}
+
+// [Doruk-Aksoy] SQLite's synchronous level for a database file: 2 (FULL) waits for every commit to reach the disk, 1 (NORMAL) can lose the last commits on a power cut.
+CUSTOM_CVAR( Int, fua_db_synchronous, 2, CVAR_ARCHIVE|CVAR_NOSETBYACS )
+{
+	database_ApplyPragmas ( );
+}
 
 // [BB] Filename for the database.
 CUSTOM_CVAR( String, databasefile, ":memory:", CVAR_ARCHIVE|CVAR_NOSETBYACS )
@@ -175,6 +197,10 @@ public:
 
 void database_ClearHandle ( void )
 {
+	// [Doruk-Aksoy] The checkpointer's connection and the cached statements go first, or sqlite3_close refuses.
+	zx::ComputeDatabaseCheckpointerStop ( g_dbCheckpointer );
+	zx::ComputeDatabaseBind ( g_dbStatements, NULL );
+	g_dbIsFile = false;
 	if ( g_db != NULL )
 	{
 		sqlite3_close ( g_db );
@@ -189,6 +215,24 @@ void database_ExecuteCommand ( const char *Command, int (*Callback)(void*,int,ch
 	int error = sqlite3_exec ( g_db, Command, Callback, Data, 0);
 	if ( error != SQLITE_OK )
 		Printf ( "Error: %s\n", sqlite3_errmsg ( g_db ) );
+}
+
+//*****************************************************************************
+//
+static void database_ApplyPragmas ( void )
+{
+	if ( g_db == NULL )
+		return;
+
+	for ( const std::string &pragma : zx::ComputeDatabasePragmas ( !g_dbIsFile, fua_db_wal, fua_db_synchronous ) )
+		database_ExecuteCommand ( pragma.c_str() );
+}
+
+//*****************************************************************************
+//
+static void database_PrintError ( const char *CallingFunction )
+{
+	Printf ( "%s error: %s\n", CallingFunction, sqlite3_errmsg ( g_db ) );
 }
 
 //*****************************************************************************
@@ -238,6 +282,14 @@ void DATABASE_Init ( void )
 
 	// [BB] Now that the database is ready, we can set the max page count.
 	DATABASE_SetMaxPageCount ( database_maxpagecount );
+
+	g_dbIsFile = ( strcmp ( dbFileName, ":memory:" ) != 0 );
+	database_ApplyPragmas ( );
+	zx::ComputeDatabaseBind ( g_dbStatements, g_db );
+
+	// [Doruk-Aksoy] Checkpoints run on their own thread; SQLite's automatic ones stay on only when that thread cannot start.
+	if ( g_dbIsFile )
+		database_ExecuteCommand ( zx::ComputeDatabaseCheckpointerStart ( g_dbCheckpointer, dbFileName, 1000 ) ? "PRAGMA wal_autocheckpoint=0" : "PRAGMA wal_autocheckpoint=1000" );
 }
 
 //*****************************************************************************
@@ -290,6 +342,7 @@ void DATABASE_CreateTable ( )
 		return;
 
 	database_ExecuteCommand ( "CREATE TABLE if not exists " TABLENAME "(Namespace text, KeyName text, Value text, Timestamp text, PRIMARY KEY (Namespace, KeyName))" );
+	database_ExecuteCommand ( zx::ComputeDatabaseIndexSql() );
 }
 
 //*****************************************************************************
@@ -336,22 +389,17 @@ void DATABASE_DumpTable ( )
 
 //*****************************************************************************
 //
+// [Doruk-Aksoy] The journal follows fua_db_wal, so these set it and the last setting applied wins, before or after the file opens.
 void DATABASE_EnableWAL ( )
 {
-	if ( DATABASE_IsAvailable ( "DATABASE_EnableWAL" ) == false )
-		return;
-
-	database_ExecuteCommand ( "PRAGMA journal_mode=WAL" );
+	fua_db_wal = true;
 }
 
 //*****************************************************************************
 //
 void DATABASE_DisableWAL ( )
 {
-	if ( DATABASE_IsAvailable ( "DATABASE_DisableWAL" ) == false )
-		return;
-
-	database_ExecuteCommand ( "PRAGMA journal_mode=DELETE" );
+	fua_db_wal = false;
 }
 
 //*****************************************************************************
@@ -449,17 +497,9 @@ void DATABASE_SaveSetEntry ( const char *Namespace, const char *EntryName, const
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveSetEntry" ) == false )
 		return;
 
-	if ( DATABASE_EntryExists ( Namespace, EntryName ) )
-	{
-		// [BB] Setting an entry to the empty string deletes the entry.
-		if ( EntryValue && ( strlen ( EntryValue ) > 0 ) )
-			DATABASE_SetEntry ( Namespace, EntryName, EntryValue );
-		else
-			DATABASE_DeleteEntry ( Namespace, EntryName );
-	}
-	// [BB] Don't store empty string entries.
-	else if ( EntryValue && ( strlen ( EntryValue ) > 0 ) )
-		DATABASE_AddEntry ( Namespace, EntryName, EntryValue );
+	// [Doruk-Aksoy] One cached upsert, or a delete for an empty value, in place of the exists check and its follow-up.
+	if ( zx::ComputeDatabaseSaveSet ( g_dbStatements, Namespace, EntryName, EntryValue ) == false )
+		database_PrintError ( "DATABASE_SaveSetEntry" );
 }
 
 //*****************************************************************************
@@ -478,10 +518,11 @@ FString DATABASE_SaveGetEntry ( const char *Namespace, const char *EntryName )
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveGetEntry" ) == false )
 		return "";
 
-	if ( DATABASE_EntryExists ( Namespace, EntryName ) )
-		return DATABASE_GetEntry ( Namespace, EntryName );
-	else
-		return "";
+	std::string value;
+	bool found = false;
+	if ( zx::ComputeDatabaseGet ( g_dbStatements, Namespace, EntryName, value, found ) == false )
+		database_PrintError ( "DATABASE_SaveGetEntry" );
+	return value.c_str();
 }
 
 //*****************************************************************************
@@ -491,21 +532,8 @@ void DATABASE_SaveIncrementEntryInt ( const char *Namespace, const char *EntryNa
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveIncrementEntryInt" ) == false )
 		return;
 
-	FString newVal;
-	if ( DATABASE_EntryExists ( Namespace, EntryName ) )
-	{
-		// [BB] Get the old value and set the incremented value in a single query.
-		DataBaseCommand cmd ( "UPDATE " TABLENAME " SET Value=(SELECT CAST(Value AS INTEGER) FROM " TABLENAME " WHERE Namespace=?1 AND KeyName=?2)+?3,Timestamp=(" TIMEQUERY ") WHERE Namespace=?1 AND KeyName=?2" );
-		cmd.bindString ( 1, Namespace );
-		cmd.bindString ( 2, EntryName );
-		cmd.bindInt ( 3, Increment );
-		cmd.exec ( );
-	}
-	else
-	{
-		newVal.AppendFormat ( "%d", Increment );
-		DATABASE_AddEntry ( Namespace, EntryName, newVal.GetChars() );
-	}
+	if ( zx::ComputeDatabaseIncrement ( g_dbStatements, Namespace, EntryName, Increment ) == false )
+		database_PrintError ( "DATABASE_SaveIncrementEntryInt" );
 }
 
 //*****************************************************************************
@@ -515,27 +543,20 @@ int DATABASE_GetEntryRank ( const char *Namespace, const char *EntryName, const 
 	if ( DATABASE_IsAvailable ( "DATABASE_GetEntryRank" ) == false )
 		return -1;
 
-	if ( DATABASE_EntryExists ( Namespace, EntryName ) )
-	{
-		// [BB] To get the rank of a certain entry, we get the value of the entry,
-		// count how many values are lower (or higher) than the value and return
-		// the count + 1.
-		FString commandString;
-		commandString.Format ( "SELECT COUNT(*) from " TABLENAME " WHERE Namespace=?1 AND CAST(Value AS INTEGER)" );
-		commandString += Descending ? ">" : "<";
-		commandString += ( "(SELECT CAST(Value AS INTEGER) FROM " TABLENAME " WHERE Namespace=?2 AND KeyName=?3)" );
-		DataBaseCommand cmd ( commandString.GetChars() );
-		cmd.bindString ( 1, Namespace );
-		cmd.bindString ( 2, Namespace );
-		cmd.bindString ( 3, EntryName );
-		cmd.step( );
-		const int res = cmd.getInteger(0) + 1 ;
-		return res;
-	}
-	else
-	{
-		return -1;
-	}
+	int rank = -1;
+	if ( zx::ComputeDatabaseRank ( g_dbStatements, Namespace, EntryName, Descending, rank ) == false )
+		database_PrintError ( "DATABASE_GetEntryRank" );
+	return rank;
+}
+
+//*****************************************************************************
+//
+static int database_CopyEntries ( const zx::DatabaseEntries &Source, TArray<std::pair<FString, FString> > &Entries )
+{
+	Entries.Clear();
+	for ( const std::pair<std::string, std::string> &entry : Source )
+		Entries.Push ( std::pair<FString, FString> ( entry.first.c_str(), entry.second.c_str() ) );
+	return Entries.Size();
 }
 
 //*****************************************************************************
@@ -548,16 +569,10 @@ int DATABASE_GetSortedEntries ( const char *Namespace, const int N, const int Of
 		return 0;
 	}
 
-	FString commandString;
-	commandString.Format ( "SELECT * from " TABLENAME " WHERE Namespace=?1 ORDER BY CAST(Value AS INTEGER) " );
-	commandString += Descending ? "DESC" : "ASC";
-	commandString += " LIMIT ?2 OFFSET ?3";
-	DataBaseCommand cmd ( commandString.GetChars() );
-	cmd.bindString ( 1, Namespace );
-	cmd.bindInt ( 2, N );
-	cmd.bindInt ( 3, Offset );
-	cmd.iterateAndGetReturnedEntries ( Entries );
-	return Entries.Size();
+	zx::DatabaseEntries entries;
+	if ( zx::ComputeDatabaseSorted ( g_dbStatements, Namespace, N, Offset, Descending, entries ) == false )
+		database_PrintError ( "DATABASE_GetSortedEntries" );
+	return database_CopyEntries ( entries, Entries );
 }
 
 //*****************************************************************************
@@ -570,10 +585,10 @@ int DATABASE_GetEntries ( const char *Namespace, TArray<std::pair<FString, FStri
 		return 0;
 	}
 
-	DataBaseCommand cmd ( "SELECT * from " TABLENAME " WHERE Namespace=?1" );
-	cmd.bindString ( 1, Namespace );
-	cmd.iterateAndGetReturnedEntries ( Entries );
-	return Entries.Size();
+	zx::DatabaseEntries entries;
+	if ( zx::ComputeDatabaseEntries ( g_dbStatements, Namespace, entries ) == false )
+		database_PrintError ( "DATABASE_GetEntries" );
+	return database_CopyEntries ( entries, Entries );
 }
 
 //*****************************************************************************
