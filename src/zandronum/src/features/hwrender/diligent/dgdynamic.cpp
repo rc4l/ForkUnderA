@@ -28,7 +28,7 @@ static bool g_dumpBlendOrder = false;
 // [rc4l] With a height given, the dump lists every draw whose span holds it instead of the nearest 40.
 static bool g_dumpBlendAtZ = false;
 static float g_dumpBlendZ = 0.f;
-CCMD( fua_dg_blendorder )
+DEV_MODE_CCMD( fua_dg_blendorder )
 {
 	g_dumpBlendOrder = true;
 	g_dumpBlendAtZ = argv.argc( ) > 1;
@@ -40,7 +40,7 @@ EXTERN_CVAR(Bool, fua_dg_rtmirrors)
 EXTERN_CVAR(Bool, fua_dg_premulblend)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
 // [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
-CVAR(Bool, fua_dg_blendwalk, true, 0)
+CVAR(Bool, fua_dg_blendwalk, true, CVAR_FUA_DEV_MODE)
 
 // [Doruk-Aksoy] One of the frame's flat planes: its height, footprint, and the view whose walk captured it.
 struct FlatPlaneInfo { float h; zx::hwrender::FlatFootprint area; int mirrorView, stackSlot; };

@@ -160,7 +160,7 @@ void AppendLightStats(FString &report)
 //
 //==========================================================================
 
-CCMD( fua_dg_lights )
+DEV_MODE_CCMD( fua_dg_lights )
 {
 	const float floorz = ( players[consoleplayer].mo != NULL )
 		? FIXED2FLOAT( players[consoleplayer].mo->floorz ) : 0.f;

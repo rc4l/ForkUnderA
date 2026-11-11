@@ -25,7 +25,7 @@
 #include <vector>
 
 // [Doruk-Aksoy] On at launch, the Khronos validation layer checks every Vulkan call and its messages reach the console, for correctness runs only since it slows every frame; read once, when the device is made, and needs the Vulkan SDK's layer installed.
-CVAR(Bool, fua_dg_validation, false, 0)
+CVAR(Bool, fua_dg_validation, false, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace hwrender {
 

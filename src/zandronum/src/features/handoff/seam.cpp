@@ -184,19 +184,19 @@ uint64_t SeamViolations()
 }} // namespace zx::handoff
 
 // [rc4l] Delays about one seam entry in eight by up to this many microseconds, to shake out what only breaks when the two threads interleave differently.
-CUSTOM_CVAR(Int, fua_gamethread_stress, 0, 0)
+CUSTOM_CVAR(Int, fua_gamethread_stress, 0, CVAR_FUA_DEV_MODE)
 {
 	zx::handoff::g_stressMaxUs.store(self < 0 ? 0 : (int)self);
 }
 
 // [rc4l] The stress mode's seed, so a run that broke can be repeated.
-CUSTOM_CVAR(Int, fua_gamethread_stress_seed, 1, 0)
+CUSTOM_CVAR(Int, fua_gamethread_stress_seed, 1, CVAR_FUA_DEV_MODE)
 {
 	zx::handoff::g_stressSeed.store((int)self);
 }
 
 // [rc4l] Lists every seam with its owner, entries and the entries a thread it does not allow made.
-CCMD(fua_seams)
+DEV_MODE_CCMD(fua_seams)
 {
 	Printf("%s", zx::handoff::ComputeSeamTable(zx::handoff::Registry()).c_str());
 	const char *first = zx::handoff::g_firstViolation.load();

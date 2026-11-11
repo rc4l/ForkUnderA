@@ -214,18 +214,21 @@ test("devmode fails a client of a server without cheats that kept or ran a dev-m
   const refused = (name) => `${name} is a dev-mode tool: sv_cheats must be true on this server.\n`;
   const closed = { joined: "true", set: { text: refused("fua_mesh_sky"), value: "true" }, run: refused("fua_mesh_blank"), server: "false", flipped: "false" };
   const closedHitbox = { joined: "false", set: { text: refused("cl_fua_hitbox"), value: "false" }, run: refused("fua_hitbox"), server: "true", flipped: "true" };
-  assert.equal(judgeDevMode("MAP01 nocheats", false, [closed, closedHitbox]).failed, 0);
-  // [rc4l] What a build without the gate reads: the client keeps and uses both tools.
+  const closedLinks = { joined: "true", set: { text: refused("fua_dg_lightlinks"), value: "true" }, run: refused("fua_light"), server: "false", flipped: "false" };
+  assert.equal(judgeDevMode("MAP01 nocheats", false, [closed, closedHitbox, closedLinks]).failed, 0);
+  // [rc4l] What a build without the gate reads: the client keeps and uses every tool.
   const before = judgeDevMode("MAP01 nocheats", false, [
     { ...closed, joined: "false", set: { text: "", value: "false" }, run: "12 mesh pieces blanked\n" },
-    { ...closedHitbox, joined: "true", set: { text: "", value: "true" }, run: "Hitbox overlay off.\n" }]);
+    { ...closedHitbox, joined: "true", set: { text: "", value: "true" }, run: "Hitbox overlay off.\n" },
+    { ...closedLinks, joined: "false", set: { text: "", value: "false" }, run: "usage: fua_light <radius> [r g b] [dz]\n" }]);
   assert.equal(before.failed, 1);
   for (const want of [/own fua_mesh_sky 0 read false, not true/, /was not told fua_mesh_sky/, /fua_mesh_sky 0, fua_mesh_sky read false/, /fua_mesh_blank ran on a client/,
-    /own cl_fua_hitbox 1 read true, not false/, /fua_hitbox ran on a client/]) assert.match(before.line, want);
+    /own cl_fua_hitbox 1 read true, not false/, /fua_hitbox ran on a client/, /own fua_dg_lightlinks 0 read false, not true/, /fua_light ran on a client/]) assert.match(before.line, want);
   assert.match(toolFaults(sky, false, { ...closed, server: "true", flipped: null }).join("; "), /server.s own console, fua_mesh_sky 0 read true.*cheats on, the client.s own fua_mesh_sky 0 read nothing, not false/);
   const open = { joined: "false", set: { text: "", value: "true" }, run: "12 mesh pieces blanked\n", server: "false", flipped: "true" };
   const openHitbox = { joined: "true", set: { text: "", value: "false" }, run: "Hitbox overlay on.\n", server: "true", flipped: "false" };
-  assert.equal(judgeDevMode("MAP01 cheats", true, [open, openHitbox]).failed, 0);
+  const openLinks = { joined: "false", set: { text: "", value: "true" }, run: "usage: fua_light <radius> [r g b] [dz]\n", server: "false", flipped: "true" };
+  assert.equal(judgeDevMode("MAP01 cheats", true, [open, openHitbox, openLinks]).failed, 0);
   assert.match(toolFaults(sky, true, { ...open, set: { text: refused("fua_mesh_sky"), value: "false" }, run: refused("fua_mesh_blank") }).join("; "), /refused fua_mesh_sky with cheats on.*fua_mesh_blank did not run/);
   assert.match(toolFaults(hitbox, true, { ...openHitbox, flipped: "true" }).join("; "), /cheats off, the client.s own cl_fua_hitbox 1 read true, not false/);
 });

@@ -182,7 +182,7 @@ const char *TypeName(int type)
 // It runs on demand rather than at level load because that is how it gets compared: bake, screenshot,
 // and diff against the frame GL's own bake produced. A number in a coverage report is not the same
 // claim as an identical picture.
-CCMD( fua_surface_mapbake )
+DEV_MODE_CCMD( fua_surface_mapbake )
 {
 	if ( segs == NULL || numsegs <= 0 ) { Printf( "no level loaded." "\n" ); return; }
 	// [rc4l] The REASONS, not just the count. "6922 parts" cannot tell a level whose walls are all
@@ -251,7 +251,7 @@ CCMD( fua_surface_mapbake )
 	}
 }
 
-CCMD( fua_surface_verify )
+DEV_MODE_CCMD( fua_surface_verify )
 {
 	using namespace zx::surfaces;
 

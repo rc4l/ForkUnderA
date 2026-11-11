@@ -29,7 +29,7 @@
 #include "features/levelmesh/computation/wallcache_compute.h"   // [rc4l] ComputeIsMirrorWall
 
 // [rc4l] GL's CheckTexturePosition in the derivation, a switch so it stays a measurement: it took dbab04's clamping faults from 75 to 0.
-CVAR(Bool, fua_surface_vshift, true, 0)
+CVAR(Bool, fua_surface_vshift, true, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Bool, r_mirrors)
 
 namespace zx { namespace surfaces {

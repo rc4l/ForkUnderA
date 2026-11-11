@@ -509,7 +509,7 @@ bool SceneScreenshot(const char *path, FString &report)
 
 }} // namespace zx::hwrender
 
-CCMD( fua_diligent_scene )
+DEV_MODE_CCMD( fua_diligent_scene )
 {
 	FString report;
 	const bool ok = zx::hwrender::SceneUpload( report );
@@ -525,7 +525,7 @@ UNSAFE_CCMD( fua_diligent_shot )
 	Printf( "%s%s\n", ok ? "" : "FAILED: ", report.GetChars( ) );
 }
 
-CCMD( fua_diligent_bench )
+DEV_MODE_CCMD( fua_diligent_bench )
 {
 	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 300;
 	FString report;
@@ -533,7 +533,7 @@ CCMD( fua_diligent_bench )
 	Printf( "%s%s\n", ok ? "" : "FAILED: ", report.GetChars( ) );
 }
 
-CCMD( fua_dg_dynstats )
+DEV_MODE_CCMD( fua_dg_dynstats )
 {
 	FString report;
 	zx::hwrender::DynStats( report );
@@ -563,13 +563,13 @@ CCMD( fua_dg_dynstats )
 // a pointer that merely happens to match. That is the standing suspect for bindless coming up wrong
 // after a map change and right on a fresh load, and this is how to ask it directly: if flushing here
 // repairs the frame, the fault is WHEN the cache was filled, not what the array or the vertices say.
-CCMD( fua_dg_flushtextures )
+DEV_MODE_CCMD( fua_dg_flushtextures )
 {
 	zx::hwrender::FlushTextureCache( );
 	Printf( "texture cache and every binding dropped; they rebuild next frame\n" );
 }
 
-CCMD( fua_dg_slots )
+DEV_MODE_CCMD( fua_dg_slots )
 {
 	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 12;
 	FString report;
@@ -577,7 +577,7 @@ CCMD( fua_dg_slots )
 	Printf( "%s" "\n", report.GetChars( ) );
 }
 
-CCMD( fua_dg_srbcost )
+DEV_MODE_CCMD( fua_dg_srbcost )
 {
 	const int slots = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 512;
 	int cached = 0, batch = 0;
@@ -591,7 +591,7 @@ CCMD( fua_dg_srbcost )
 		slots * (int)zx::hwrender::kWorldPipelines );
 }
 
-CCMD( fua_diligent_scale )
+DEV_MODE_CCMD( fua_diligent_scale )
 {
 	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 60;
 	FString report;

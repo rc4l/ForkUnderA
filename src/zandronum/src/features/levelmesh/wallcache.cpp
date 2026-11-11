@@ -35,12 +35,12 @@
 EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Bool, r_seamless)
 // [rc4l] Cut a wall at its 3D floor light bands (wallbands_compute), a switch so the banding can be A/B'd.
-CVAR(Bool, fua_surface_bands, true, 0)
+CVAR(Bool, fua_surface_bands, true, CVAR_FUA_DEV_MODE)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
-CVAR(Bool, fua_band_log, false, 0)
+CVAR(Bool, fua_band_log, false, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Int, r_fogmode)
 // [rc4l] Off bakes a scrolled wall or floor again instead of shifting its texture, the old cost, for an A/B in one session.
-CVAR(Bool, fua_mesh_rescroll, true, 0)
+CVAR(Bool, fua_mesh_rescroll, true, CVAR_FUA_DEV_MODE)
 
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallbands_compute.h"
@@ -1208,12 +1208,12 @@ void SectorDirtyBreakdown(int &lightOnly, int &geometry)
 }
 
 // [rc4l] Re-run the whole-map wall bake now, to tell a bake that was wrong from one that went stale.
-CCMD( fua_mapbake_now )
+DEV_MODE_CCMD( fua_mapbake_now )
 {
 	Printf( "%d wall parts rebuilt from the map\n", zx::levelmesh::BakeLevelFromMap( ) );
 }
 
-CCMD( fua_bake_dirty )
+DEV_MODE_CCMD( fua_bake_dirty )
 {
 	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
 		g_dirtyLightOnly, g_dirtyGeometry, g_movedThisFrame );
@@ -1440,7 +1440,7 @@ DEV_MODE_CCMD( fua_mesh_rebuild )
 //
 //==========================================================================
 
-CCMD( fua_line_mesh )
+DEV_MODE_CCMD( fua_line_mesh )
 {
 	if ( lines == NULL || argv.argc( ) < 2 )
 	{

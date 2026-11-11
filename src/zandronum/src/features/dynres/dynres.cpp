@@ -39,7 +39,7 @@ CUSTOM_CVAR(Float, vid_fua_dynres_window, zx::dynres::kDynresWindowSeconds, CVAR
 	else if (self > 5.f) self = 5.f;
 }
 // [rc4l] Pins the scale for tests and comparisons, 0 leaving it to the controller.
-CVAR(Float, fua_dg_dynres_force, 0.f, 0)
+CVAR(Float, fua_dg_dynres_force, 0.f, CVAR_FUA_DEV_MODE)
 
 EXTERN_CVAR(Bool, vid_vsync)
 EXTERN_CVAR(Int, r_texture_filter)

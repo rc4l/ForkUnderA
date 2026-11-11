@@ -76,7 +76,7 @@ EXTERN_CVAR(Bool, r_billboard_particles)
 EXTERN_CVAR(Float, transsouls)
 
 // [rc4l] Derive every sprite beside GL's and compare them bit for bit, counting what differs for fua_sprite_report.
-CVAR(Bool, fua_sprite_check, false, 0)
+CVAR(Bool, fua_sprite_check, false, CVAR_FUA_DEV_MODE)
 
 using zx::levelmesh::MeshPiece;
 using zx::levelmesh::MeshVertex;
@@ -1090,7 +1090,7 @@ void BuildQueuedParticles()
 
 }} // namespace zx::sprites
 
-CCMD( fua_sprite_report )
+DEV_MODE_CCMD( fua_sprite_report )
 {
 	const zx::frame::OracleTally &t = zx::sprites::g_check;
 	Printf( "sprites: %d actors derived beside GL (%d model surfaces), %d differed (%d only ours, %d only GL's)\n%s",

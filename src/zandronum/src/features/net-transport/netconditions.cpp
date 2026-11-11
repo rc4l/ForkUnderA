@@ -10,9 +10,9 @@
 #include <limits.h>
 
 // [rc4l] Milliseconds added to this instance's round trip on the game's socket, for tests on loopback.
-CVAR(Int, fua_net_fakeping, 0, 0)
+CVAR(Int, fua_net_fakeping, 0, CVAR_FUA_DEV_MODE)
 // [rc4l] Percent of the packets this instance sends, and of those it receives, dropped, for tests on loopback.
-CVAR(Float, fua_net_fakeloss, 0.f, 0)
+CVAR(Float, fua_net_fakeloss, 0.f, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace nettransport {
 

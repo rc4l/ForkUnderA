@@ -39,7 +39,7 @@
 
 EXTERN_CVAR(Bool, vid_vsync)   // [Doruk-Aksoy] picks the swapchain's image count (ComputeSwapchainImages)
 // [Doruk-Aksoy] Forces the swapchain's image count when above 0, so a test can bring back the three that stuttered under vsync.
-CVAR(Int, fua_debug_swapchain_images, 0, 0)
+CVAR(Int, fua_debug_swapchain_images, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace hwrender {
 
@@ -178,10 +178,10 @@ void *GetBackendWindow() { return g_hwnd; }
 }} // namespace zx::hwrender
 
 // [rc4l] fuactl's shot asks this when GL's frame comes back blank, the tell of a minimized window.
-CCMD( fua_window_restore ) { Printf( "%s\n", zx::hwrender::Fua_RestoreEngineWindow( ) ? "restored" : "not minimized" ); }
+DEV_MODE_CCMD( fua_window_restore ) { Printf( "%s\n", zx::hwrender::Fua_RestoreEngineWindow( ) ? "restored" : "not minimized" ); }
 
 #else // !FUA_DILIGENT
 
-CCMD( fua_window_restore )  { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
+DEV_MODE_CCMD( fua_window_restore )  { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 
 #endif // FUA_DILIGENT

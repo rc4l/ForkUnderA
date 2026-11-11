@@ -51,7 +51,7 @@ UNSAFE_CCMD(fua_netcap_start)
 	Printf(g_capture != NULL ? "[netcap] capturing to %s\n" : "[netcap] cannot write %s\n", name.c_str());
 }
 
-CCMD(fua_netcap_stop)
+DEV_MODE_CCMD(fua_netcap_stop)
 {
 	const bool was = g_capture != NULL;
 	Close();

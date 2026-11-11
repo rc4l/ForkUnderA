@@ -29,7 +29,7 @@
 #include "w_wad.h"   // [rc4l] the shader lumps
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
-CVAR(Bool, fua_dg_loopcommits, true, 0)
+CVAR(Bool, fua_dg_loopcommits, true, CVAR_FUA_DEV_MODE)
 // [Doruk-Aksoy] Translucent and additive sprites drawn by one premultiplied pipeline, each by its own blend, so the sorted pass switches less; a colour differs by at most one level from off, which the Video Mode menu offers.
 CVAR(Bool, fua_dg_premulblend, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Float, r_texture_filter_anisotropic)
