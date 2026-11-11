@@ -98,6 +98,7 @@ void writerLoop(DatabaseWriter &writer)
 		{
 			lock.unlock();
 			writer.maintenance(statements);
+			++writer.maintenanceRuns;
 			lock.lock();
 			nextMaintenance = std::chrono::steady_clock::now() + std::chrono::milliseconds(writer.maintenanceMs);
 		}
@@ -208,6 +209,7 @@ bool ComputeDatabaseWriterStart(DatabaseWriter &writer, const char *path, const 
 	writer.applied = 0;
 	writer.busyRetries = 0;
 	writer.failures = 0;
+	writer.maintenanceRuns = 0;
 	writer.thread = std::thread(writerLoop, std::ref(writer));
 	return true;
 }
