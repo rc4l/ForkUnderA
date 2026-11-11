@@ -26,12 +26,12 @@ vec4 ProcessTexel()
 }
 `;
 
-// [Doruk-Aksoy] DnD's FreezingPulse.fp and IceBolt.fp shape: the same macro and helper, defined differently, each right only in its own program.
+// [Doruk-Aksoy] DnD's FreezingPulse.fp and IceBolt.fp shape: the same macro and helper, defined differently, each right only in its own program, and lit by the light Process is handed as the oracle's wall is.
 const clash = (edge, test) => `#define EDGE ${edge}
 float h1(float n) { return fract(sin(n * ${edge}) * 43758.5453); }
 vec4 Process(vec4 color)
 {
-\treturn EDGE ${test} 0.5 && h1(1.0) >= 0.0 ? ${MAGENTA} : ${GREEN};
+\treturn (EDGE ${test} 0.5 && h1(1.0) >= 0.0 ? ${MAGENTA} : ${GREEN}) * color;
 }
 `;
 
