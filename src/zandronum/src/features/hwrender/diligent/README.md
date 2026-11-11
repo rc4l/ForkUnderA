@@ -214,7 +214,7 @@ swapping anything.
 Driven in one step by **`fuactl diligent --port P [--frames N] [--shot FILE]`**, which bakes the
 mesh, uploads, screenshots and runs the benchmark in the order they actually require.
 
-Requires `gl_wallmesh 1` and a walked level, so the mesh has baked geometry to hand over.
+Requires a level the backend has drawn, which bakes the mesh (`zx::levelmesh::Enable`), so it has geometry to hand over.
 
 Outside a level, after `endgame` or a demo's end, the bench, `fua_diligent_scale` and the shot refuse
 (`computation/scenedraw_compute`), since the game copy still points into the freed level; scenario `scenenolevel`.

@@ -22,7 +22,6 @@
 // [rc4l] Draw horizon lines as windows onto their planes; off leaves them empty, for an A/B.
 CVAR(Bool, fua_dg_horizon, true, 0)
 
-EXTERN_CVAR(Bool, gl_wallmesh)
 
 namespace zx { namespace horizon {
 
@@ -129,7 +128,7 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 void UpdateHorizons()
 {
 	g_windows.Clear();
-	if (!fua_dg_horizon || !gl_wallmesh || lines == NULL || numlines <= 0) return;
+	if (!fua_dg_horizon || !zx::levelmesh::Enabled() || lines == NULL || numlines <= 0) return;
 	RescanIfNeeded();
 
 	for (unsigned i = 0; i < g_sides.Size(); i++)

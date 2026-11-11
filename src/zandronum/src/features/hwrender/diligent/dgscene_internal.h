@@ -98,7 +98,6 @@
 
 
 EXTERN_CVAR(Int, r_fogmode)
-EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Int, r_texture_filter)
 EXTERN_CVAR(Float, skyoffset)
 EXTERN_CVAR(Float, r_lights_size)

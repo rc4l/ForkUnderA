@@ -99,11 +99,8 @@ static bool AutoSetupForLevel()
 		ReleaseLevelResources();
 		CollectMirrors();
 		ResetSkyForLevel();
-		// [rc4l] The switch implies the level mesh. gl_wallmesh is off by default, so the first
-		// self-arming run baked nothing and reported "no baked geometry -- set gl_wallmesh 1, walk
-		// the level, then retry" -- advice aimed at a person typing commands, from a path whose whole
-		// point is that nobody is.
-		if (!gl_wallmesh) gl_wallmesh = true;
+		// [rc4l] The backend keeps the level mesh from its first level on.
+		zx::levelmesh::Enable();
 		{
 			ZX_ZONE("load/bake");   // [rc4l] the level mesh baked from the map
 			// [rc4l] Every wall and plane straight from the map, so the level is baked whole before its first view.

@@ -14,7 +14,7 @@ config it saves. The table is `computation/cvaralias_compute.cpp`, one line per 
 
 `r_` because these settings describe the picture, not the API that draws it: GL (Legacy) and Vulkan both
 obey them, as they already obey Doom's own `r_` settings here (`r_particles`, `r_mirror_recursions`). `dg_` and `fua_dg_` name the Vulkan backend's implementation (Diligent) and stay
-for its own switches; settings only GL reads keep `gl_` (`gl_wallmesh`, `gl_texture_format`,
+for its own switches; settings only GL reads keep `gl_` (`gl_texture_format`,
 `gl_render_*`, `gl_vid_multisample`, ...). The software renderer's look-alikes (`r_skyboxes`,
 `r_drawmirrors`, `r_fogboundary`) are its own and unrelated.
 
