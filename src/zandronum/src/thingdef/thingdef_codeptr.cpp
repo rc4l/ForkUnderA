@@ -5534,7 +5534,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 		else
 		{
 			// [BB] The server handles the flag change.
-			if ( NETWORK_InClientMode() )
+			// [rc4l] Ported from zandronum@873abcdc7cf96f2e1daffa583896faed4afd6bc7: a CLIENTSIDEONLY actor changes its own flags.
+			if (NETWORK_InClientModeAndActorNotClientHandled(self))
 				return;
 
 			ActorFlags *flagp = (ActorFlags*) (((char*)self) + fd->structoffset);
