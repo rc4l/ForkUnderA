@@ -71,6 +71,7 @@
 #include "s_sndseq.h"
 #include "sbar.h"
 #include "p_setup.h"
+#include "za_database.h"
 #include "r_data/r_translate.h"
 #include "r_data/r_interpolate.h"
 #include "r_sky.h"
@@ -4044,6 +4045,8 @@ void P_SetupLevel (const char *lumpname, int position)
 		// note: most of this ordering is important 
 		ForceNodeBuild = gennodes;
 
+		// [Doruk-Aksoy] features/database: a transaction the old level's scripts left open ends before they go.
+		DATABASE_LevelScriptsEnding ();
 		// [RH] Load in the BEHAVIOR lump
 		FBehavior::StaticUnloadModules ();
 		if (map->HasBehavior)
