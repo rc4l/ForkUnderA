@@ -50,9 +50,13 @@
 #include "g_game.h"
 #include "p_acs.h"
 #include "features/database/computation/database_compute.h"
+#include "features/database/computation/database_store_compute.h"
 #include <sqlite3.h>
+#include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 //*****************************************************************************
 //	DEFINES
@@ -72,7 +76,22 @@ static zx::DatabaseStatements g_dbStatements;
 static zx::DatabaseCheckpointer g_dbCheckpointer;
 static bool g_dbIsFile = false;
 
+// [Doruk-Aksoy] The durable write queue a database file's ACS writes go through; open only while it runs.
+static zx::DatabaseStore g_dbStore;
+
+// [Doruk-Aksoy] What the open database was opened with, so a cvar set again to the same value reopens nothing.
+static FString g_dbOpenedFile;
+static std::vector<std::string> g_dbWriterPragmas;
+
 static void database_ApplyPragmas ( void );
+static void database_ReopenIfQueued ( void );
+
+// [Doruk-Aksoy] ACS writes to a database file go through this server's outbox and a writer thread, so a write never waits on, or is lost to, another server holding the file.
+CUSTOM_CVAR( Bool, fua_db_queue, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
+{
+	if (( g_db != NULL ) && g_dbIsFile && ( self != g_dbStore.open ))
+		DATABASE_Init ( );
+}
 
 // [Doruk-Aksoy] A database file uses WAL when on, so a commit is one log write, and the rollback journal when off; db_enable_wal and db_disable_wal set it.
 CUSTOM_CVAR( Bool, fua_db_wal, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
@@ -84,11 +103,16 @@ CUSTOM_CVAR( Bool, fua_db_wal, true, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 CUSTOM_CVAR( Int, fua_db_synchronous, 2, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	database_ApplyPragmas ( );
+	database_ReopenIfQueued ( );
 }
 
 // [BB] Filename for the database.
 CUSTOM_CVAR( String, databasefile, ":memory:", CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
+	// [Doruk-Aksoy] Setting the open file's name again, as the ini and the command line both do, keeps it open.
+	if (( g_db != NULL ) && ( g_dbOpenedFile.Compare ( self ) == 0 ))
+		return;
+
 	DATABASE_Init ( );
 }
 
@@ -97,6 +121,7 @@ CUSTOM_CVAR( Int, database_maxpagecount, 32768, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	if ( DATABASE_IsAvailable() )
 		DATABASE_SetMaxPageCount ( self );
+	database_ReopenIfQueued ( );
 }
 
 //*****************************************************************************
@@ -195,8 +220,26 @@ public:
 //*****************************************************************************
 //	FUNCTIONS
 
+static double database_Now ( void )
+{
+	return std::chrono::duration<double> ( std::chrono::system_clock::now().time_since_epoch() ).count();
+}
+
+//*****************************************************************************
+//
+static void database_PrintMessages ( void )
+{
+	for ( const std::string &message : zx::ComputeDatabaseStoreTakeMessages ( g_dbStore ))
+		Printf ( "%s\n", message.c_str() );
+}
+
+//*****************************************************************************
+//
 void database_ClearHandle ( void )
 {
+	// [Doruk-Aksoy] The queue's last writes are made durable and handed on before anything closes; what the writer cannot apply in time waits in the outbox.
+	zx::ComputeDatabaseStoreClose ( g_dbStore, database_Now(), 3000 );
+	database_PrintMessages ( );
 	// [Doruk-Aksoy] The checkpointer's connection and the cached statements go first, or sqlite3_close refuses.
 	zx::ComputeDatabaseCheckpointerStop ( g_dbCheckpointer );
 	zx::ComputeDatabaseBind ( g_dbStatements, NULL );
@@ -233,6 +276,38 @@ static void database_ApplyPragmas ( void )
 static void database_PrintError ( const char *CallingFunction )
 {
 	Printf ( "%s error: %s\n", CallingFunction, sqlite3_errmsg ( g_db ) );
+}
+
+//*****************************************************************************
+//
+static std::vector<std::string> database_WriterPragmas ( void )
+{
+	return {
+		"PRAGMA max_page_count=" + std::to_string ( static_cast<int>( database_maxpagecount ) ),
+		zx::ComputeDatabasePragmas ( false, fua_db_wal, fua_db_synchronous ).back(),
+	};
+}
+
+//*****************************************************************************
+//
+static void database_ReopenIfQueued ( void )
+{
+	// [Doruk-Aksoy] The writer takes its pragmas when it opens, so a change reaches it by reopening.
+	if ( g_dbStore.open && ( database_WriterPragmas ( ) != g_dbWriterPragmas ))
+		DATABASE_Init ( );
+}
+
+//*****************************************************************************
+//
+static void database_StartQueue ( const char *FileName )
+{
+	if (( g_dbIsFile == false ) || ( fua_db_queue == false ))
+		return;
+
+	g_dbWriterPragmas = database_WriterPragmas ( );
+	if ( zx::ComputeDatabaseStoreOpen ( g_dbStore, FileName, g_dbWriterPragmas, g_dbStatements, database_Now() ))
+		Printf ( "Database writes are queued through %s.\n", g_dbStore.outbox.path.c_str() );
+	database_PrintMessages ( );
 }
 
 //*****************************************************************************
@@ -284,12 +359,30 @@ void DATABASE_Init ( void )
 	DATABASE_SetMaxPageCount ( database_maxpagecount );
 
 	g_dbIsFile = ( strcmp ( dbFileName, ":memory:" ) != 0 );
+	g_dbOpenedFile = dbFileName;
 	database_ApplyPragmas ( );
 	zx::ComputeDatabaseBind ( g_dbStatements, g_db );
 
 	// [Doruk-Aksoy] Checkpoints run on their own thread; SQLite's automatic ones stay on only when that thread cannot start.
 	if ( g_dbIsFile )
+	{
 		database_ExecuteCommand ( zx::ComputeDatabaseCheckpointerStart ( g_dbCheckpointer, dbFileName, 1000 ) ? "PRAGMA wal_autocheckpoint=0" : "PRAGMA wal_autocheckpoint=1000" );
+		// [Doruk-Aksoy] A read that meets another connection's commit on the rollback journal waits briefly instead of returning nothing.
+		sqlite3_busy_timeout ( g_db, 20 );
+	}
+
+	database_StartQueue ( dbFileName );
+}
+
+//*****************************************************************************
+//
+void DATABASE_EndTic ( void )
+{
+	if ( g_dbStore.open == false )
+		return;
+
+	zx::ComputeDatabaseStoreTicEnd ( g_dbStore, database_Now() );
+	database_PrintMessages ( );
 }
 
 //*****************************************************************************
@@ -321,6 +414,14 @@ void DATABASE_BeginTransaction ( void )
 	if ( DATABASE_IsAvailable ( "DATABASE_BeginTransaction" ) == false )
 		return;
 
+	// [Doruk-Aksoy] A queued transaction is a batch, with SQLite's own message when one is already open.
+	if ( g_dbStore.open )
+	{
+		if ( zx::ComputeDatabaseStoreBegin ( g_dbStore ) == zx::DatabaseTxnResult::AlreadyOpen )
+			Printf ( "Error: cannot start a transaction within a transaction\n" );
+		return;
+	}
+
 	database_ExecuteCommand ( "BEGIN TRANSACTION" );
 }
 
@@ -330,6 +431,13 @@ void DATABASE_EndTransaction ( void )
 {
 	if ( DATABASE_IsAvailable ( "DATABASE_EndTransaction" ) == false )
 		return;
+
+	if ( g_dbStore.open )
+	{
+		if ( zx::ComputeDatabaseStoreEnd ( g_dbStore ) == zx::DatabaseTxnResult::NotOpen )
+			Printf ( "Error: cannot commit - no transaction is active\n" );
+		return;
+	}
 
 	database_ExecuteCommand ( "END TRANSACTION" );
 }
@@ -342,7 +450,8 @@ void DATABASE_CreateTable ( )
 		return;
 
 	database_ExecuteCommand ( "CREATE TABLE if not exists " TABLENAME "(Namespace text, KeyName text, Value text, Timestamp text, PRIMARY KEY (Namespace, KeyName))" );
-	database_ExecuteCommand ( zx::ComputeDatabaseIndexSql() );
+	for ( const std::string &command : zx::ComputeDatabaseSchemaSql ( ))
+		database_ExecuteCommand ( command.c_str() );
 }
 
 //*****************************************************************************
@@ -497,6 +606,12 @@ void DATABASE_SaveSetEntry ( const char *Namespace, const char *EntryName, const
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveSetEntry" ) == false )
 		return;
 
+	if ( g_dbStore.open )
+	{
+		zx::ComputeDatabaseStoreWrite ( g_dbStore, zx::ComputeDatabaseSetOp ( Namespace, EntryName, EntryValue ));
+		return;
+	}
+
 	// [Doruk-Aksoy] One cached upsert, or a delete for an empty value, in place of the exists check and its follow-up.
 	if ( zx::ComputeDatabaseSaveSet ( g_dbStatements, Namespace, EntryName, EntryValue ) == false )
 		database_PrintError ( "DATABASE_SaveSetEntry" );
@@ -520,7 +635,10 @@ FString DATABASE_SaveGetEntry ( const char *Namespace, const char *EntryName )
 
 	std::string value;
 	bool found = false;
-	if ( zx::ComputeDatabaseGet ( g_dbStatements, Namespace, EntryName, value, found ) == false )
+	const bool ok = g_dbStore.open
+		? zx::ComputeDatabaseStoreGet ( g_dbStore, g_dbStatements, Namespace, EntryName, value, found, database_Now() )
+		: zx::ComputeDatabaseGet ( g_dbStatements, Namespace, EntryName, value, found );
+	if ( ok == false )
 		database_PrintError ( "DATABASE_SaveGetEntry" );
 	return value.c_str();
 }
@@ -531,6 +649,12 @@ void DATABASE_SaveIncrementEntryInt ( const char *Namespace, const char *EntryNa
 {
 	if ( DATABASE_IsAvailable ( "DATABASE_SaveIncrementEntryInt" ) == false )
 		return;
+
+	if ( g_dbStore.open )
+	{
+		zx::ComputeDatabaseStoreWrite ( g_dbStore, zx::ComputeDatabaseIncrementOp ( Namespace, EntryName, Increment ));
+		return;
+	}
 
 	if ( zx::ComputeDatabaseIncrement ( g_dbStatements, Namespace, EntryName, Increment ) == false )
 		database_PrintError ( "DATABASE_SaveIncrementEntryInt" );
@@ -544,7 +668,10 @@ int DATABASE_GetEntryRank ( const char *Namespace, const char *EntryName, const 
 		return -1;
 
 	int rank = -1;
-	if ( zx::ComputeDatabaseRank ( g_dbStatements, Namespace, EntryName, Descending, rank ) == false )
+	const bool ok = g_dbStore.open
+		? zx::ComputeDatabaseStoreRank ( g_dbStore, g_dbStatements, Namespace, EntryName, Descending, rank )
+		: zx::ComputeDatabaseRank ( g_dbStatements, Namespace, EntryName, Descending, rank );
+	if ( ok == false )
 		database_PrintError ( "DATABASE_GetEntryRank" );
 	return rank;
 }
@@ -570,7 +697,10 @@ int DATABASE_GetSortedEntries ( const char *Namespace, const int N, const int Of
 	}
 
 	zx::DatabaseEntries entries;
-	if ( zx::ComputeDatabaseSorted ( g_dbStatements, Namespace, N, Offset, Descending, entries ) == false )
+	const bool ok = g_dbStore.open
+		? zx::ComputeDatabaseStoreSorted ( g_dbStore, g_dbStatements, Namespace, N, Offset, Descending, entries, database_Now() )
+		: zx::ComputeDatabaseSorted ( g_dbStatements, Namespace, N, Offset, Descending, entries );
+	if ( ok == false )
 		database_PrintError ( "DATABASE_GetSortedEntries" );
 	return database_CopyEntries ( entries, Entries );
 }
@@ -586,7 +716,10 @@ int DATABASE_GetEntries ( const char *Namespace, TArray<std::pair<FString, FStri
 	}
 
 	zx::DatabaseEntries entries;
-	if ( zx::ComputeDatabaseEntries ( g_dbStatements, Namespace, entries ) == false )
+	const bool ok = g_dbStore.open
+		? zx::ComputeDatabaseStoreEntries ( g_dbStore, g_dbStatements, Namespace, entries, database_Now() )
+		: zx::ComputeDatabaseEntries ( g_dbStatements, Namespace, entries );
+	if ( ok == false )
 		database_PrintError ( "DATABASE_GetEntries" );
 	return database_CopyEntries ( entries, Entries );
 }
@@ -597,6 +730,13 @@ int DATABASE_GetEntries ( const char *Namespace, TArray<std::pair<FString, FStri
 CCMD ( dumpdb )
 {
 	DATABASE_DumpTable();
+}
+
+// [Doruk-Aksoy] Where this server's database writes stand: its outbox, what the shared file has yet to take, and the writer's retries and errors.
+CCMD ( fua_db_status )
+{
+	for ( const std::string &line : zx::ComputeDatabaseStoreStatus ( g_dbStore ))
+		Printf ( "%s\n", line.c_str() );
 }
 
 CCMD ( db_enable_wal )

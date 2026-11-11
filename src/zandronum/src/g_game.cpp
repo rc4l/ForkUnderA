@@ -73,6 +73,7 @@
 #include "r_main.h"
 #include "r_sky.h"
 #include "g_game.h"
+#include "za_database.h"
 #include "g_level.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "features/bot-save/zx_botsave.h"
@@ -2116,6 +2117,9 @@ void G_TickerEnd (const G_TickerPart &part)
 
 	// [AK] Tick the VoIP controller.
 	VOIPController::GetInstance( ).Tick( );
+
+	// [Doruk-Aksoy] features/database: the tic's ACS database writes become durable in this server's outbox.
+	DATABASE_EndTic( );
 
 	// [BC] If any data has accumulated in our packet, send it out now.
 	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
