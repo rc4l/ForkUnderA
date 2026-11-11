@@ -38,11 +38,24 @@
 #include "templates.h"
 #include "autosegs.h"
 #include "v_text.h"
+#include "features/name-memo/computation/namememo_compute.h"   // [Doruk-Aksoy] class lookups remembered by the name's pointer
+
+#include <atomic>
+#include <memory>
 
 TArray<PClass *> PClass::m_RuntimeActors;
 TArray<PClass *> PClass::m_Types;
 PClass *PClass::TypeHash[PClass::HASH_SIZE];
 bool PClass::bShutdown;
+
+// [Doruk-Aksoy] features/name-memo: each thread's class lookups by the name's pointer, ahead of the name table's hash and lock; a class registered or the table torn down starts a new generation.
+static std::atomic<unsigned> ClassMemoGeneration{ 1 };
+static thread_local std::unique_ptr<ZxNameMemo> t_classMemo;
+
+static void ClassMemoForget()
+{
+	ClassMemoGeneration.fetch_add(1, std::memory_order_relaxed);
+}
 
 // A harmless non-NULL FlatPointer for classes without pointers.
 static const size_t TheEnd = ~(size_t)0;
@@ -59,6 +72,7 @@ static int STACK_ARGS cregcmp (const void *a, const void *b)
 
 void PClass::StaticInit ()
 {
+	ClassMemoForget();
 	atterm (StaticShutdown);
 
 	// Sort classes by name to remove dependance on how the compiler ordered them.
@@ -100,6 +114,7 @@ void PClass::ClearRuntimeData ()
 
 void PClass::StaticShutdown ()
 {
+	ClassMemoForget();
 	TArray<size_t *> uniqueFPs(64);
 	unsigned int i, j;
 
@@ -196,6 +211,7 @@ void ClassReg::RegisterClass () const
 
 void PClass::InsertIntoHash ()
 {
+	ClassMemoForget();
 	// Add class to hash table. Classes are inserted into each bucket
 	// in ascending order by name index.
 	unsigned int bucket = TypeName % HASH_SIZE;
@@ -221,6 +237,21 @@ void PClass::InsertIntoHash ()
 	}
 	HashNext = *hashpos;
 	*hashpos = this;
+}
+
+// [Doruk-Aksoy] features/name-memo: a remembered class is checked against the name, since a pointer can come back holding another name.
+const PClass *PClass::FindClass (const char *name)
+{
+	if (name == NULL)
+		return NULL;
+	const unsigned generation = ClassMemoGeneration.load(std::memory_order_relaxed);
+	const PClass *memo = static_cast<const PClass *>(ComputeNameMemoFind(ComputeNameMemoFor(t_classMemo), name, generation));
+	if (memo != NULL && stricmp(memo->TypeName.GetChars(), name) == 0)
+		return memo;
+	const PClass *cls = FindClass (FName (name, true));
+	if (cls != NULL)
+		ComputeNameMemoStore(ComputeNameMemoFor(t_classMemo), name, const_cast<PClass *>(cls), generation);
+	return cls;
 }
 
 // Find a type, passed the name as a name
