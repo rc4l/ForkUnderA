@@ -57,8 +57,8 @@ the netcode are counted by `net-sockets-through-transport` (`tools/boundary-rule
 
 ## zstd packet compression (Zandronum 3.3)
 
-Ported from upstream `7279c8b..bdd0f7b` (the 15-commit set in the zstd plan). The mechanism as 3.3 wrote
-it: a caller that passes `bUseZStd` and a packet of at least `net_zstd_threshold` bytes goes as zstd,
+Ported from `zandronum-stable`, the 15 zstd rows of `commit-tracker/zandronum/` from `32ff6e13bd13`
+to `caae2b04b3ba`. The mechanism as 3.3 wrote it: a caller that passes `bUseZStd` and a packet of at least `net_zstd_threshold` bytes goes as zstd,
 compressed with the `zstddict` lump's dictionary when one loaded (the connect handshake refuses a
 mismatched dictionary id with `NETWORK_ERRORCODE_WRONGZSTDDICTIONARY`); everything else, everything before
 connection, and every launcher reply stays Huffman, so Doomseeker keeps querying servers. Receive detects

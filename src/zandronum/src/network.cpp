@@ -86,7 +86,7 @@
 #include "c_dispatch.h"
 #include "cl_demo.h"
 #include "cl_main.h"
-#include "cl_statistics.h"   // [KI] the client's nettraffic counters, fed from the transport since zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e
+#include "cl_statistics.h"   // [KI] the client's nettraffic counters, fed from the transport since zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2
 #include "doomtype.h"
 #include "huffman.h"
 #include <zstd.h>   // [KI] deps/zstd, the vendored single-file library
@@ -249,7 +249,7 @@ static bool g_bSocketIsDualStack = false;
 static TArray<FName> g_ACSNameIndex;
 
 // [SB] Zstandard (de)compression contexts
-// [KI] Ported from zandronum@5a3f5b736dd2c07377fa0fe90859c3c81ce90c54 and zandronum@c9821884f337747e632725491f1bb82712b9eee7: the contexts and the zstddict dictionary both ends must share.
+// [KI] Ported from zandronum@899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a and zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the contexts and the zstddict dictionary both ends must share.
 static ZSTD_CCtx *g_zstdCctx = nullptr;
 static ZSTD_DCtx *g_zstdDctx = nullptr;
 static unsigned g_zstdDictId = 0;
@@ -302,7 +302,7 @@ static	void			network_ParseLumpAuthenticationMode( FScanner &sc, LumpAuthenticat
 //*****************************************************************************
 //	CONSOLE VARIABLES
 
-// [KI] Ported from zandronum@c0269bd8dbb5b50d434bc77bbe14a6cc1b6417a6: the zstd level, threshold and smart-fallback cvars, the clamp through the tested helper.
+// [KI] Ported from zandronum@e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c: the zstd level, threshold and smart-fallback cvars, the clamp through the tested helper.
 CUSTOM_CVAR( Int, net_zstd_level, 12, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	// [SB] Clamp the value to the valid range of compression levels.
@@ -875,7 +875,7 @@ void NETWORK_Destruct( void )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
+// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
 static void network_InitZstd( void )
 {
 	g_zstdCctx = ZSTD_createCCtx( );
@@ -905,7 +905,7 @@ static void network_InitZstd( void )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@5a3f5b736dd2c07377fa0fe90859c3c81ce90c54: freeing in reverse of creation, each pointer nulled so a net_zstd_level change can rebuild them.
+// [KI] Ported from zandronum@899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a: freeing in reverse of creation, each pointer nulled so a net_zstd_level change can rebuild them.
 static void network_DestructZstd( void )
 {
 	ZSTD_freeDDict( g_zstdDdict );
@@ -988,7 +988,7 @@ static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 }
 
 //*****************************************************************************
-// [KI] Ported from zandronum@4a7242a77c625515fbf95814e5c036165fed60bc with zandronum@8f805e4e1db71ce34eda3c9975b3fad5dd8b5009: one received datagram into g_NetworkMessage, decompressed as zstd when its first four bytes say so and Huffman-decoded otherwise.
+// [KI] Ported from zandronum@4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7 with zandronum@7ca4cb9b4d9b98e27b09341b15c83f3acaaa595e: one received datagram into g_NetworkMessage, decompressed as zstd when its first four bytes say so and Huffman-decoded otherwise.
 static ULONG network_DecodeDatagram( LONG lNumBytes )
 {
 	if ( zx::nettransport::ComputeIsZstdFrame( g_ucHuffmanBuffer, lNumBytes ))
@@ -1222,7 +1222,7 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUse
 	struct sockaddr_storage SocketAddress;
 	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
 
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad with zandronum@4a7242a77c625515fbf95814e5c036165fed60bc and zandronum@c0269bd8dbb5b50d434bc77bbe14a6cc1b6417a6: zstd for a caller that asked and a packet at the threshold, Huffman otherwise, without 3.3's auth-server branch because ForkUnderA removed the auth server.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935 with zandronum@4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7 and zandronum@e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c: zstd for a caller that asked and a packet at the threshold, Huffman otherwise, without 3.3's auth-server branch because ForkUnderA removed the auth server.
 	bool bUsedZstd = false; // [SB]
 
 	// [AK] Choose between compressing the packet using ZStd or Huffman.
@@ -1494,7 +1494,7 @@ NETBUFFER_s *NETWORK_GetNetworkMessageBuffer( void )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the loaded dictionary's id for the connect handshake.
+// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the loaded dictionary's id for the connect handshake.
 unsigned NETWORK_GetZstdDictId( void )
 {
 	return g_zstdDictId;

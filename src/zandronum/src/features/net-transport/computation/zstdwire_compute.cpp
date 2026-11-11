@@ -34,7 +34,7 @@ bool ComputeHuffmanFallback(bool zstdCompressed, bool smartEnabled, int compress
 
 //*****************************************************************************
 //
-// [KI] Ported from zandronum@66309c7282223dd15e8764448a3e4f2c3e784c0f: the fallback clears 3.3's didUseZstd, so a packet re-encoded as Huffman is no longer counted as a zstd one.
+// [KI] Ported from zandronum@caae2b04b3ba537b2015efd773a81e154327bec5: the fallback clears 3.3's didUseZstd, so a packet re-encoded as Huffman is no longer counted as a zstd one.
 bool ComputeUsedZstd(bool zstdCompressed, bool fellBackToHuffman)
 {
 	return zstdCompressed && !fellBackToHuffman;

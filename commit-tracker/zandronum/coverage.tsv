@@ -1,6 +1,6 @@
 # commit tracker | repo https://foss.heptapod.net/zandronum/zandronum-stable | commit URL = <repo>/-/commit/<sha> | status = pending|ported|adapted|skip|deferred|partially-deferred | ours = OUR commit(s), "/" if pending/skip/deferred | twin = the uzdoom commit this was transplanted from, "/" if none
 sha	date	title	status	note	ours	twin
-9748c4b3be65c9d383c19fd322285f4f3f10166c	2025-08-04T21:40:32Z	Added tag ZA_3.2.1 for changeset a701547f4162	pending		/	/
+9748c4b3be65c9d383c19fd322285f4f3f10166c	2025-08-04T21:40:32Z	Added tag ZA_3.2.1 for changeset a701547f4162	skip	only .hgtags: the ZA_3.2.1 tag of our base	/	/
 697ca180eb436db548171158ab3f0bfef93aa030	2025-08-09T15:25:13Z	- changed the version string to 3.3-alpha	pending		/	/
 98b9d467a0fa13b34487772e5024e31f58751d54	2025-08-10T19:06:30Z	Port sv_terminatorfragaward from Q-Zandronum	pending		/	/
 82def1c76e84d25ba0faeac658ad01b813c48c60	2025-08-20T02:21:03Z	Fixed: A_SpawnItemEx didn't sync the TID of spawned actors to clients in online games.	pending		/	/
@@ -45,8 +45,8 @@ a5e5b25fbe12fd6c7861b10081af46018db4846a	2016-08-22T18:03:08Z	Add vid_maxfps sup
 30f4a0aec568994ac3407356d742184a822bbc5c	2016-08-24T13:44:40Z	Fixed compilation of SDL backend	pending		/	f79c442df533e26888eb748e14041eb71b1e6ab7
 38acb473fa0fa405cb58eb1e31d80217521b0692	2018-05-01T05:48:59Z	- don't force the renderer to remain active in windowed mode when in the background.	pending		/	b35213741f3d0aa9c07365daa755ba2f47401444
 7604bedc1d9829e71c041b20db696295addbb663	2025-10-17T03:10:22Z	Changed the default value of vid_activeinbackground to true, and allow it work while the game's in fullscreen mode.	pending		/	/
-fce034a48d234c8eda75b43901a14e743796643e	2025-10-19T21:36:08Z	Added a node from a GZDoom commit transplanted in 3.2 that should be documented because it was moved to another file manually.	pending		/	/
-efed70b5a652d533af856e5b615cff23252ceb5d	2025-10-19T21:52:56Z	Added reasons for documenting each node that couldn't be merged in a transplant.	pending		/	/
+fce034a48d234c8eda75b43901a14e743796643e	2025-10-19T21:36:08Z	Added a node from a GZDoom commit transplanted in 3.2 that should be documented because it was moved to another file manually.	skip	only docs/zandronum-gzdoom-backport-nodes.txt, which the tracker reads for twins	/	/
+efed70b5a652d533af856e5b615cff23252ceb5d	2025-10-19T21:52:56Z	Added reasons for documenting each node that couldn't be merged in a transplant.	skip	only docs/zandronum-gzdoom-backport-nodes.txt, which the tracker reads for twins	/	/
 3f9bae7cef442bfee05433ab005f006243955cf7	2025-10-20T04:04:55Z	Manually added more screen resolutions to the hardcoded table in "sdlvideo.cpp". Changes were manually copied from: https://github.com/ZDoom/gzdoom/commit/965d602d26167fdec3e6d5c5f6d7f12063d22128	pending		/	/
 a60f6809023fe51ebc78977c3e2324f1cc498ed7	2025-10-20T04:24:10Z	Manually ported missing resolutions to the hardcoded table in "sdlglvideo.cpp". Changes were manually copied from: https://github.com/ZDoom/gzdoom/commit/cab509c4d20f0e5e57099d24792a853a7adaa326	pending		/	/
 bb3253eae8ff018cabf6553da4242b365d192192	2014-12-13T10:32:29Z	Added several missing video resolutions	skip	twin uzdoom@9837721d7: skip: touches only files absent from our tree -- the SDL video/output plug-in, upstream's Steam path handling, or the software renderer's r_bsp.cpp. Verified by checking each path against src/zandronum.	/	9837721d7f882ed2e86206f36e7b10cd5352a79c
@@ -70,7 +70,7 @@ a53fead106e33d53cbbf41eb3ad1693e64b91ff6	2016-09-12T11:59:01Z	Add ActiveRatio to
 2b3171b748094b415d23a47564b7bb3f2bebea21	2025-10-23T22:01:42Z	Fixed: kickfromgame would try to write over the network when called offline through ACS (addresses 4545).	pending		/	/
 7e0d5383e6ab5f7ca2f27f26989c2a9bda059ef1	2025-10-24T16:21:20Z	Fixed: TERRAIN SmallClip wasn't being applied online for SmallSplash effects (addresses 1060).	pending		/	/
 59341a3f3d14af118b2a102e0e65982229dbd030	2025-10-24T17:25:21Z	Cleaned up some code in P_HitWater.	pending		/	/
-62956c2a7073d7700eb94b70eada32b5a7416873	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	twin uzdoom@c9afb199c: ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum 3.3 copy: 54f77bd2da)	d128a82b	c9afb199caf363e1387bd9111b31137d5c44d972
+62956c2a7073d7700eb94b70eada32b5a7416873	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	twin uzdoom@c9afb199c: ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum copy: zandronum@62956c2a7073)	d128a82b	c9afb199caf363e1387bd9111b31137d5c44d972
 10b16591ad9bcf23d6d4cdb0b2cb737915357775	2025-10-27T14:07:35Z	Fixed: Player_SetTeam wouldn't clear coopspy if a player defected to a team while spying on his ally (addresses 1197).	pending		/	/
 2ddec4cfc2f97c6191048b6438d5db9eb51af0da	2025-10-27T18:06:10Z	Fixed: cl_respawninvuleffect also affected the server, and upon loading a new level, could make players appear partially invisible for clients that weren't using the flicker respawn invulnerability effect.	pending		/	/
 4ab1128e5b738dd57134d283dd78d0adebb90a5e	2025-10-27T21:31:30Z	Fixed: Morphed players did not transfer their skin despite the absence of +NOSKIN on their class (addresses 1425).	pending		/	/
@@ -86,7 +86,7 @@ d35bca3529df95ca3e24896cdd50d33097ebd9da	2025-10-31T02:53:41Z	Removed the skip c
 10d1d47852085be81d0f75aa60c55e78f4d9e544	2025-10-31T03:52:57Z	Renamed CLIENT_s::MoveCMDs to CLIENT_s::bufferedCMDs since this didn't just store the client's movement commands, and switched to using smart pointers instead of raw pointers.	pending		/	/
 7feaf8fe410797036f3f6037a74863c51515790a	2025-10-31T18:02:44Z	Slowed down the rate at which the server empties the clients' tick buffers (it used to be four move commands per three ticks). Now, the server only executes one move command per tick unless the client's buffer is too full that two of them need to be executed in the same tick.	pending		/	/
 529ca97fc1be61d4f27e9987b6209c259749ac9c	2025-11-01T13:10:27Z	The server is now more lenient on incrementing the number of missed packets from a client regarding movement commands. It now only increments when it's been more than one tick since it received the last command from the client.	pending		/	/
-d72c28fea4c1267b2df46014b94aae6a0216586a	2025-11-02T22:07:19Z	Zandronum will now be basing itself off UZDoom, so update the backport nodes documentation file to reflect that.	pending		/	/
+d72c28fea4c1267b2df46014b94aae6a0216586a	2025-11-02T22:07:19Z	Zandronum will now be basing itself off UZDoom, so update the backport nodes documentation file to reflect that.	skip	only the backport-nodes docs, which the tracker reads for twins	/	/
 b8fe8ef13df5823c881e65c7a4f2f9fa61f6a60d	2025-10-16T20:38:07Z	Add support for the "BUSY" script flag.	pending		/	3ca5a550fa380e463907c067607c37ab0f337d90
 c346015950993a4ec201acd313d9445fe869b050	2025-10-17T00:40:13Z	Fixed unnecessary runaway counter increase and uninitialized value.	pending		/	d26d39ba729220f64d93a71790f2ccc8ec54e56c
 9cee7e80ec2496a0ad90e0b01dc05be61c760d98	2025-09-25T01:41:33Z	attempt to remove class limit	pending		/	67b3ea2d01949a69ae2459f9eb4c144fc87331b1
@@ -103,7 +103,7 @@ e8b7e77c2fe660682b878ee30a1c776930db8389	2025-11-06T18:06:11Z	Fixed: clientside 
 89e8f15b6b145790be7035d73c0cc88e0e22c496	2025-10-25T14:38:13Z	Added a helper function to reduce code duplication in NETWORK_GetPackets and NETWORK_GetLANPackets.	pending		/	/
 21ed9720a9d585be991a390beb960ebf7499eadb	2025-10-25T17:24:20Z	Cleaned up and refactored NETWORK_LaunchPacket, also removing any use of C-style casts, Hungarian notation, and ULONG/LONG.	pending		/	/
 868ad81c8da1163c55fa7755578d440009c1ef15	2025-10-25T17:26:04Z	Cleaned up and removed a few static casts.	pending		/	/
-173f74aa07b893e0c6451f6947ae20f45eb733c2	2025-10-26T18:26:21Z	"stat nettraffic" now shows the compression factor of packets sent or received in the last second.	pending		/	/
+173f74aa07b893e0c6451f6947ae20f45eb733c2	2025-10-26T18:26:21Z	"stat nettraffic" now shows the compression factor of packets sent or received in the last second.	adapted	compression factor in stat nettraffic; the send and receive counters moved into the transport, the percentage through ComputeSharePercent	46e68dd1	/
 a9a4abc8a69f48442096ed4d90e753c84a0d11f1	2025-10-26T19:01:19Z	Fixed some inconsistent tabulations in the network options menu in MENUDEF.	pending		/	/
 9a8ae9d825e8c2a72bcf0cd644c59da13d55fd70	2025-11-12T05:05:15Z	Added a net graph, enabled with the new CVar "cl_netgraph", that shows changes in network traffic over the last minute, which appears while "stat nettraffic" is active.	pending		/	/
 c461fe1ca6dca804b9849616ffb4a0c1f83aea6b	2025-11-12T06:52:23Z	Cleaned up and refactored NETWORK_GetPackets and NETWORK_LaunchPacket in the master server code too.	pending		/	/
@@ -137,19 +137,19 @@ deffd2fbd79203c4237bd511a2a97ff3626e699c	2015-06-25T00:53:46Z	Use puff decal wit
 38e71b91375ccbd4efc29c4bd2c9944b1ba09c0e	2025-12-01T15:32:53Z	Fixed: clients didn't update the sector color of a 3D floor when the server told them the sector's ceiling changed.	pending		/	/
 0f08c6c87089ebe02eb64e6d4ee295caa5980cf0	2025-12-01T16:57:44Z	Fixed: Sector color of a 3d floor that had its floor or ceiling changed wasn't set back to its default value on map reset (addresses 1876).	pending		/	/
 bde6d45f00092c30d40cd17648978ac6a72de8d9	2025-12-03T04:21:26Z	Fixed error messages in network_ReadPacketsFromSocket using the wrong function name.	pending		/	/
-32ff6e13bd13b4c843ef76e9ed1974a214154935	2025-11-12T15:38:49Z	Experimental work to add ZStd compression to Zandronum.	pending		/	/
-4c37d95d368329a6cf979c2ef83388222952b6fc	2025-11-18T15:06:14Z	Add zstd as a name to find_library in FindZstd.	pending		/	/
-899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a	2025-11-18T15:06:28Z	Use Zstandard (de)compression contexts for better performance.	pending		/	/
-65c18dca9d3cd2a2f9624dc90daa56991ecac303	2025-11-18T15:38:06Z	Added the ability to use a Zstandard dictionary from the ZSTDDICT lump.	pending		/	/
-80cd2315f27379a7bf0692f4c01ab4f49012d40d	2025-11-18T16:38:16Z	Add sv_dumppackets as a way of collecting packet data for training Zstandard dictionaries.	pending		/	/
-4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7	2025-12-02T10:21:24Z	Use proper error handling when (de)compressing packets with Zstandard.	pending		/	/
-1a03a82d780ac7923770605aa631865c04076240	2025-12-02T10:21:16Z	Added some client statistics to show the percentage of packets compressed with Zstandard in stat nettraffic.	pending		/	/
-e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c	2025-11-18T23:13:15Z	Added CVars to configure Zstandard compression.	pending		/	/
-1caada743db48a07d712817cef9e5439bc099512	2025-12-01T16:51:26Z	Add a new network error code for when a client has an incompatible Zstandard dictionary.	pending		/	/
-a1f956b76562a30cae638f364d1c299069eef168	2025-12-02T10:19:25Z	Added sv_dumppackets_chance so packets can be captured using random sampling.	pending		/	/
-7ca4cb9b4d9b98e27b09341b15c83f3acaaa595e	2025-12-02T13:44:51Z	Remove g_LatestPacketUsedZStd as it wasn't used, except for in network_ReadPacketsFromSocket where a local variable is now used instead.	pending		/	/
-3049fa42a7d6310bd6467b621224404fb78af733	2025-12-02T13:48:58Z	Add a history entry about Zstandard compression.	pending		/	/
-2a65e4bcf494a3bde63a18f006ece9154d604e19	2025-12-03T11:49:29Z	Separated each statistic printed when "stat nettraffic" is active on its own line to improve readability.	pending		/	/
+32ff6e13bd13b4c843ef76e9ed1974a214154935	2025-11-12T15:38:49Z	Experimental work to add ZStd compression to Zandronum.	adapted	zstd once connected, Huffman before it and for launchers; bUseZStd defaults false so the browser and rcon callers need no edit; vendored deps/zstd replaces FindZStd.cmake and the CI package; sv_auth.cpp and sv_master.cpp have no file here (features/net-transport/README.md)	46e68dd1,ce6e8230	/
+4c37d95d368329a6cf979c2ef83388222952b6fc	2025-11-18T15:06:14Z	Add zstd as a name to find_library in FindZstd.	skip	FindZStd.cmake absent: zstd is vendored in deps/zstd (ce6e8230)	/	/
+899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a	2025-11-18T15:06:28Z	Use Zstandard (de)compression contexts for better performance.	ported	the zstd contexts, freed in reverse and rebuilt on a net_zstd_level change	46e68dd1	/
+65c18dca9d3cd2a2f9624dc90daa56991ecac303	2025-11-18T15:38:06Z	Added the ability to use a Zstandard dictionary from the ZSTDDICT lump.	ported	the zstddict lump and its dictionary id on the connect packet	46e68dd1	/
+80cd2315f27379a7bf0692f4c01ab4f49012d40d	2025-11-18T16:38:16Z	Add sv_dumppackets as a way of collecting packet data for training Zstandard dictionaries.	adapted	sv_dumppackets; the command filters and file naming moved into net-session dumpfilter_compute	5a157306	/
+4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7	2025-12-02T10:21:24Z	Use proper error handling when (de)compressing packets with Zstandard.	adapted	the error handling lives in network_DecodeDatagram and zstdwire_compute's tested decisions	46e68dd1	/
+1a03a82d780ac7923770605aa631865c04076240	2025-12-02T10:21:16Z	Added some client statistics to show the percentage of packets compressed with Zstandard in stat nettraffic.	adapted	zstd share in stat nettraffic through net-client ComputeSharePercent	46e68dd1	/
+e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c	2025-11-18T23:13:15Z	Added CVars to configure Zstandard compression.	adapted	net_zstd_level/threshold/smart-fallback cvars, the clamp through ComputeZstdLevelClamped	46e68dd1	/
+1caada743db48a07d712817cef9e5439bc099512	2025-12-01T16:51:26Z	Add a new network error code for when a client has an incompatible Zstandard dictionary.	adapted	NETWORK_ERRORCODE_WRONGZSTDDICTIONARY appended after our own error codes so none renumber	46e68dd1	/
+a1f956b76562a30cae638f364d1c299069eef168	2025-12-02T10:19:25Z	Added sv_dumppackets_chance so packets can be captured using random sampling.	ported	sv_dumppackets_chance	5a157306	/
+7ca4cb9b4d9b98e27b09341b15c83f3acaaa595e	2025-12-02T13:44:51Z	Remove g_LatestPacketUsedZStd as it wasn't used, except for in network_ReadPacketsFromSocket where a local variable is now used instead.	adapted	g_LatestPacketUsedZStd never landed; the local lives in network_DecodeDatagram	46e68dd1	/
+3049fa42a7d6310bd6467b621224404fb78af733	2025-12-02T13:48:58Z	Add a history entry about Zstandard compression.	skip	only docs/zandronum-history.txt, not maintained past 3.2.1	/	/
+2a65e4bcf494a3bde63a18f006ece9154d604e19	2025-12-03T11:49:29Z	Separated each statistic printed when "stat nettraffic" is active on its own line to improve readability.	adapted	one statistic per line, through our printer	46e68dd1	/
 402172a25b20b82b5b8ce223af363f4932805243	2025-12-03T11:58:50Z	Fixed a blank line.	pending		/	/
 92ebf777950155f28651186233b53d682acd986e	2025-12-03T17:38:25Z	Added ACS function: "CheckScript", to check if a particular script exists by searching for its name or number.	pending		/	/
 f5b68175b468f0fdfb7119369fa10d5ba87f2464	2025-12-03T18:12:38Z	Add setting to allow scoring in Skulltag without skull at base	pending		/	/
@@ -165,7 +165,7 @@ d4dfc64bdb39123ec5564a7ae9d0a1175ca17ee1	2025-12-08T03:42:58Z	Renamed some varia
 1a6bab827d4bfbd6628265b6f112e6cc60672624	2025-12-21T21:37:34Z	Made formatting corrections to the message that appears when a player is renamed upon sending userinfo changes to the server.	pending		/	/
 5e16123dcc17aadb2e6e24b46e19d4bc6bc8c91a	2025-12-22T17:00:23Z	Added a missing period to a kick message.	pending		/	/
 1a825432a72bacb338cd479daa783cafc36a7177	2025-12-23T04:16:06Z	When removing the visibility flicker effect from a player, restore their default render style instead of guessing whether to set it to normal or translucent. This fixes a regression caused by 2ddec4cfc2f9 that meant a player's render style could differ between clients and the server.	pending		/	/
-57702a36ccbdcb0d260a6bd6ff5f5e1cc702d138	2025-12-23T17:22:22Z	Optimise SERVER_ShouldDumpServerCommand and SERVER_ShouldDumpClientCommand so they return quickly when sv_dumppackets is off, and made the sets static to reduce allocations.	pending		/	/
+57702a36ccbdcb0d260a6bd6ff5f5e1cc702d138	2025-12-23T17:22:22Z	Optimise SERVER_ShouldDumpServerCommand and SERVER_ShouldDumpClientCommand so they return quickly when sv_dumppackets is off, and made the sets static to reduce allocations.	adapted	both dump filters return early with sv_dumppackets off, their sets static in dumpfilter_compute	5a157306	/
 9c7fa2cfd01091633bf8a361a1b8509e688caaf4	2025-12-23T04:58:57Z	A player's z-position and velocity are now sent at full precision in MovePlayer server commands, ensuring maximum smoothness especially at low speeds.	pending		/	/
 43098555ff613adecf40bd1708a218298af6e5ed	2025-12-30T16:44:22Z	Refactored the client's movement command buffers to handle UpdatePlayerExtraData server commands, which need to be buffered too. The "cl_usemovebuffer" CVar has subsequently been renamed to "cl_buffercommands".	pending		/	/
 1d9962b2229fe9ef256e871ba2056e3a18bfce61	2026-01-11T15:10:18Z	Fixed: the intermission countdown timer on the scoreboard still decremented while a clientside demo was paused.	pending		/	/
@@ -184,9 +184,9 @@ b417096783c191bfdf1a4a977c1ec514e850fb0c	2026-03-05T03:12:16Z	Add a noskirmish M
 00538ee632fb3600ad00aad4ed454f1be2b1e76a	2026-03-08T00:17:06Z	Adjust Skulltag assist behavior when sv_requireskulltoscore is disabled	pending		/	/
 25198379d37173b00002fc648c442f351a85edec	2026-03-08T17:45:50Z	Fixed: clientside demos didn't allocate enough memory in the buffer to write userinfo or local commands, causing the recordings to become corrupted on rare occassions.	pending		/	/
 9bd2e71f147647c069c6ad40274a932fddaa3fec	2026-03-08T22:23:33Z	Fixed: the ACS function "RemoveBot" couldn't remove bots with color codes in their name.	pending		/	/
-caae2b04b3ba537b2015efd773a81e154327bec5	2026-03-14T14:01:30Z	Added a dictionary file to improve Zstandard compression even further. Special thanks to Torr Samaho for training the dictionary.	pending		/	/
+caae2b04b3ba537b2015efd773a81e154327bec5	2026-03-14T14:01:30Z	Added a dictionary file to improve Zstandard compression even further. Special thanks to Torr Samaho for training the dictionary.	ported	wadsrc/static/zstddict.bin byte-identical	46e68dd1	/
 7b5866e1922ca90f5a702c0278ae885eae0b81b8	2026-03-10T23:11:39Z	Fix more RemoveBot edge cases, namely around empty and color-coded inputs	pending		/	/
-d49366e537f1a44d88ae721a66cdc916a8adcb18	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	twin uzdoom@b2f860d7a: the puff null check, with c9afb199ca (Zandronum 3.3 copy: 58e9235da3)	d128a82b	b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0
+d49366e537f1a44d88ae721a66cdc916a8adcb18	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	twin uzdoom@b2f860d7a: the puff null check, with c9afb199ca (Zandronum copy: zandronum@d49366e537f1)	d128a82b	b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0
 9a8531095e0b46486155167551074ef334fb3859	2026-03-14T15:33:53Z	A map or team's winner/loser intermission background and music is now usable in team-based game modes. The old behavior of not using them can be restored by enabling compat_oldintermission.	pending		/	/
 ad1ae23c5589ca4a516a8219a18326000284854a	2026-03-28T20:42:00Z	Fixed: the server printed garbled text when a float CVar was changed to infinity or NaN.	pending		/	/
 eb1ce25f51dca7943410108382bbe2d1af92784b	2026-04-12T20:12:06Z	Added an optional parameter to the ACS function "RemoveBot" to specify the index of the bot to remove.	pending		/	/

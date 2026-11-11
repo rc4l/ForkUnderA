@@ -881,12 +881,12 @@ const FString &CLIENT_GetPlayerAccountName( int player )
 //
 void CLIENT_SendServerPacket( void )
 {
-	// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e: the send statistic moved into NETWORK_LaunchPacket, which knows the wire size too.
+	// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2: the send statistic moved into NETWORK_LaunchPacket, which knows the wire size too.
 	// Launch the packet, and clear out the buffer.
 	// [AK] For the sake of reverse-compatibility with servers running older
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out packets upon connecting to a server.
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the connect packet itself, which carries the dictionary id, goes as Huffman.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: the connect packet itself, which carries the dictionary id, goes as Huffman.
 	NETWORK_LaunchPacket( &g_LocalBuffer, g_AddressServer, CLIENT_GetConnectionState( ) != CTS_ATTEMPTINGCONNECTION );
 	g_LocalBuffer.Clear();
 }
@@ -940,7 +940,7 @@ void CLIENT_AttemptConnection( void )
 	// [rc4l] The whole revision, where its low byte let one mismatched build in 256 through to misread the wire.
 	g_LocalBuffer.ByteStream.WriteLong( GetRevisionNumber( ));
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
-	// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the dictionary id the server must match, one long grown onto the connect packet, which the version refusal gates for older peers.
+	// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the dictionary id the server must match, one long grown onto the connect packet, which the version refusal gates for older peers.
 	g_LocalBuffer.ByteStream.WriteLong( static_cast<int>( NETWORK_GetZstdDictId() ) );
 
 	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one
@@ -1076,7 +1076,7 @@ void CLIENT_GetPackets( void )
 			&& NETWORK_GetState() == NETSTATE_CLIENT
 			&& NETWORK_GetFromAddress().Compare( CLIENT_GetServerAddress() ))
 		{
-			// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e: the receive statistic moved into the transport's decode, which knows the wire size and the encoding.
+			// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2: the receive statistic moved into the transport's decode, which knows the wire size and the encoding.
 #ifdef	_DEBUG
 			// Emulate packet loss for debugging.
 			if (( cl_emulatepacketloss ) && gamestate == GS_LEVEL )
@@ -1804,7 +1804,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 				szErrorString = "The server rejected the userinfo.";
 				break;
-			// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841: the client names the dictionary mismatch the server refused it over.
+			// [KI] Ported from zandronum@1caada743db48a07d712817cef9e5439bc099512: the client names the dictionary mismatch the server refused it over.
 			case NETWORK_ERRORCODE_WRONGZSTDDICTIONARY:
 
 				szErrorString = "A different Zstandard dictionary is being used by the server.";

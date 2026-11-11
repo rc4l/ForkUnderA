@@ -8,6 +8,7 @@
 #
 # Stdlib only, no clone, no Mercurial, no network:  python3 tools/commit_tracker_test.py
 import os
+import re
 import sys
 import unittest
 
@@ -271,6 +272,14 @@ class Validation(unittest.TestCase):
     def test_twin_column(self):
         probs = L.validate_rows(ZA, [row(A, twin="nope")], twin_rows=[])
         self.assertTrue(any("bad twin" in p for p in probs))
+
+    def test_tag_pattern(self):
+        pat = re.compile(L.tag_pattern("zandronum", ["d09240b3c71cb", "32ff6e13bd13b"]))
+        self.assertTrue(pat.search("// [KI] Ported from zandronum@32ff6e13bd13b4c8: x"))
+        self.assertTrue(pat.search("zandronum@d09240b"))
+        self.assertFalse(pat.search("Ported from qzandronum@32ff6e13bd13"))
+        self.assertFalse(pat.search("q-zandronum@d09240b3"))
+        self.assertFalse(pat.search("zandronum@32ff6e0"))
 
     def test_tokens(self):
         self.assertEqual(L.our_tokens("abc1234, def5678"), ["abc1234", "def5678"])

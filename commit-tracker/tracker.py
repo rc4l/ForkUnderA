@@ -275,13 +275,9 @@ def presence(diff_text):
 
 def tagged_in_tree(led, sha):
     """Lines in our tree that already credit this commit (`<ledger>@<sha prefix>`, or a legacy alias)."""
-    pats = ["%s@%s" % (led["name"], sha[:7])]
-    for git_sha in L.aliases_of(led, sha):
-        pats.append("%s@%s" % (led["name"], git_sha[:7]))
-    args = ["git", "-C", ROOT, "grep", "-n", "-F"]
-    for p in pats:
-        args += ["-e", p]
-    p = subprocess.run(args + ["--", "src", "tools", "docs"], capture_output=True, text=True)
+    pat = L.tag_pattern(led["name"], [sha] + L.aliases_of(led, sha))
+    p = subprocess.run(["git", "-C", ROOT, "grep", "-n", "-E", "-e", pat, "--", "src", "tools", "docs"],
+                       capture_output=True, text=True)
     return p.stdout.splitlines()
 
 

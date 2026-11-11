@@ -762,7 +762,7 @@ bool		SERVER_IsBacktracingPlayer( ULONG ulClient );
 void		SERVER_ResetClientTicBuffer( ULONG ulClient );
 void		SERVER_ResetClientExtrapolation( ULONG ulClient, bool bAfterBacktrace = false );
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
-// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b: sv_dumppackets writes command payloads for zstd dictionary training.
+// [KI] Ported from zandronum@80cd2315f27379a7bf0692f4c01ab4f49012d40d: sv_dumppackets writes command payloads for zstd dictionary training.
 void		SERVER_DumpPacket( const BYTE *buffer, const size_t length, const bool fromClient );
 bool		SERVER_ShouldDumpServerCommand( const SVC command, const SVC2 extcommand );
 bool		SERVER_ShouldDumpClientCommand( const CLC command );

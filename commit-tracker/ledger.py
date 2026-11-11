@@ -304,6 +304,12 @@ def left_out_text(rows, entries):
     return "\n".join(out) + "\n"
 
 
+def tag_pattern(name, shas):
+    """An extended regex for `<name>@<sha prefix>` tags that a longer name ending in it (qzandronum@) does not match."""
+    alts = "|".join(sorted({s[:7] for s in shas}))
+    return "(^|[^A-Za-z0-9_-])%s@(%s)" % (re.escape(name), alts)
+
+
 def aliases_of(led, sha, root=ROOT):
     """Legacy git-mirror shas recorded for a node in the ledger's aliases.tsv (D1)."""
     path = os.path.join(ledger_dir(led, root), "aliases.tsv")

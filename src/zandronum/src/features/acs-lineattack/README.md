@@ -14,8 +14,8 @@ Found through DnD, whose merchant spawn reached it from a script orphaned by the
 
 `LineAttack` also takes the ninth argument, `pufftid`, which the base (Zandronum 3.2.1) predated: the puff an
 attack leaves takes that tid (`uzdoom@c9afb199caf363e1387bd9111b31137d5c44d972` and its null check
-`uzdoom@b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0`; Zandronum 3.3's copies are `zandronum@54f77bd2daddc918950064ecb68bdd600f220b91`
-and `zandronum@58e9235da3e1ffcbd3fad8184dba14596e3094b0`). DnD finds its hitscan victims through that puff.
+`uzdoom@b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0`; Zandronum 3.3's copies are `zandronum@62956c2a7073d7700eb94b70eada32b5a7416873`
+and `zandronum@d49366e537f1a44d88ae721a66cdc916a8adcb18`). DnD finds its hitscan victims through that puff.
 
 ## In-engine hooks
 

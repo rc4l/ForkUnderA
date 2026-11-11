@@ -310,7 +310,7 @@ CVAR( Int, sv_smoothplayers_debuginfo, 0, CVAR_ARCHIVE|CVAR_DEBUGONLY ) // [AK]
 CVAR( Bool, sv_noplayertimeout, false, CVAR_NOSETBYACS|CVAR_DEBUGONLY ) // [SB]
 CVAR( Bool, sv_printconnectionmessages, true, CVAR_ARCHIVE|CVAR_NOSETBYACS ) // [SB]
 
-// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b with zandronum@c904783b837b912dfd2659ec3f4b9b3a0c85223f: capture of packet payloads for training zstd dictionaries, sampled at sv_dumppackets_chance.
+// [KI] Ported from zandronum@80cd2315f27379a7bf0692f4c01ab4f49012d40d with zandronum@a1f956b76562a30cae638f364d1c299069eef168: capture of packet payloads for training zstd dictionaries, sampled at sv_dumppackets_chance.
 CVAR( Bool, sv_dumppackets, false, CVAR_NOSETBYACS );
 CVAR( String, sv_dumppackets_dir, "", CVAR_NOSETBYACS );
 CVAR( Float, sv_dumppackets_chance, 1.0, CVAR_NOSETBYACS );
@@ -651,7 +651,7 @@ void SERVER_Destruct( void )
 		if ( SERVER_IsValidClient( ulIdx ))
 		{
 			SERVER_KickPlayer( ulIdx, "Server is shutting down" );
-			// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the shutdown kick goes to connected clients, as zstd.
+			// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: the shutdown kick goes to connected clients, as zstd.
 			NETWORK_LaunchPacket( &SERVER_GetClient( ulIdx )->PacketBuffer, SERVER_GetClient( ulIdx )->Address, true );
 		}
 
@@ -1022,7 +1022,7 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 	// [AK] For the sake of reverse-compatibility with clients running older
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out packets to clients who aren't connected.
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the per-client send, zstd once the client is connected.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: the per-client send, zstd once the client is connected.
 	NETWORK_LaunchPacket( &TempBuffer, pClient->Address, pClient->State >= CLS_CONNECTED );
 	pClient->UnreliablePacketBuffer.Clear();
 }
@@ -2197,7 +2197,7 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 		return;
 	}
 
-	// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7 with zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841: both ends must compress against the same zstddict, so a mismatch is refused before the client counts as connected.
+	// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303 with zandronum@1caada743db48a07d712817cef9e5439bc099512: both ends must compress against the same zstddict, so a mismatch is refused before the client counts as connected.
 	const auto zstdDictId = static_cast<unsigned>( pByteStream->ReadLong() );
 
 	// [SB] A matching Zstandard dictionary is required.
@@ -2557,7 +2557,7 @@ void SERVER_ConnectionError( NETADDRESS_s Address, const char *pszMessage, ULONG
 	// [AK] For the sake of reverse-compatibility with clients running older
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out this packet.
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: a refusal must be readable by any peer, so it is explicit here even though false is the default.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: a refusal must be readable by any peer, so it is explicit here even though false is the default.
 	NETWORK_LaunchPacket( &TempBuffer, Address, false );
 	TempBuffer.Free();
 }
@@ -2632,7 +2632,7 @@ void SERVER_ClientError( ULONG ulClient, ULONG ulErrorCode )
 
 		printMessage.Format( "Userinfo rejected.\n" );
 		break;
-	// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841: the server's console names the refusal too.
+	// [KI] Ported from zandronum@1caada743db48a07d712817cef9e5439bc099512: the server's console names the refusal too.
 	case NETWORK_ERRORCODE_WRONGZSTDDICTIONARY:
 
 		printMessage.Format( "Mismatched Zstandard dictionary.\n" );
@@ -4904,7 +4904,7 @@ void SERVER_ParsePacket( BYTESTREAM_s *pByteStream )
 
 	while ( 1 )
 	{
-		// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b: where this command's bytes begin, so the dump writes exactly one command's payload.
+		// [KI] Ported from zandronum@80cd2315f27379a7bf0692f4c01ab4f49012d40d: where this command's bytes begin, so the dump writes exactly one command's payload.
 		const BYTE *commandStart = pByteStream->pbStream;
 		lCommand = pByteStream->ReadByte();
 
@@ -8092,7 +8092,7 @@ static void server_ForceRenamePlayer( ULONG playerIndex )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b with zandronum@c904783b837b912dfd2659ec3f4b9b3a0c85223f: one command's payload into a file for dictionary training, sampled, with the naming and counter decisions in dumpfilter_compute.
+// [KI] Ported from zandronum@80cd2315f27379a7bf0692f4c01ab4f49012d40d with zandronum@a1f956b76562a30cae638f364d1c299069eef168: one command's payload into a file for dictionary training, sampled, with the naming and counter decisions in dumpfilter_compute.
 void SERVER_DumpPacket( const BYTE *buffer, const size_t length, const bool fromClient )
 {
 	static FRandom pr_dumppackets( "DumpPackets" );
@@ -8149,6 +8149,7 @@ bool SERVER_ShouldDumpServerCommand( const SVC command, const SVC2 extcommand )
 // [SB]
 bool SERVER_ShouldDumpClientCommand( const CLC command )
 {
+	// [rc4l] Both filters return early with the cvar off, as zandronum@57702a36ccbdcb0d260a6bd6ff5f5e1cc702d138 made them.
 	if ( !sv_dumppackets )
 		return false;
 

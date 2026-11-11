@@ -516,7 +516,7 @@ BEGIN_ENUM ( NetworkErrorCode )
 	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYINUSE ),
 
 	// [SB] The client is using a different Zstandard dictionary than the server.
-	// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841, appended after our own codes rather than at 3.3's position so none of ours renumber.
+	// [KI] Ported from zandronum@1caada743db48a07d712817cef9e5439bc099512, appended after our own codes rather than at 3.3's position so none of ours renumber.
 	ENUM_ELEMENT( NETWORK_ERRORCODE_WRONGZSTDDICTIONARY ),
 
 	ENUM_ELEMENT( NUM_NETWORK_ERRORCODES )

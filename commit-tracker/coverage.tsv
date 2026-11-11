@@ -2224,10 +2224,10 @@ bd95c5eadf9c1ef79e9ca10de3844d73a1f7b0e5	2016-01-04T10:52:07Z	- fixed: the ambie
 111479063f7120ff2b05b19ee558a0d3c98f8a6d	2016-01-04T20:05:09Z	- fixed a potential overflow issue with calculating a portal's origin point.	pending		/
 d68c97b42abf09f89ab512dcd43cb11ef36bbf48	2016-01-04T20:06:54Z	Merge branch 'zmaster'	pending		/
 a1e0ac0b719d59ce80d29aa01f3deab077695cad	2016-01-05T03:11:46Z	Merge branch 'osx_start_wnd' of git://github.com/alexey-lysiuk/gzdoom into osx_start_wnd	skip	skip: merge commit, no unique content	/
-c9afb199caf363e1387bd9111b31137d5c44d972	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum 3.3 copy: 54f77bd2da)	d128a82b
+c9afb199caf363e1387bd9111b31137d5c44d972	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum copy: zandronum@62956c2a7073)	d128a82b
 6be82cc14916d78b0c7851644982db6d2e0256ca	2016-01-05T08:59:59Z	Merge pull request #463 from DaZombieKiller/pufftid	pending		/
 d7501a1414b3e1e37636c7bfbb4a8279b337e3c4	2016-01-05T09:09:40Z	Merge pull request #457 from j-palomo/turn180_controlmenu	pending		/
-b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	the puff null check, with c9afb199ca (Zandronum 3.3 copy: 58e9235da3)	d128a82b
+b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	the puff null check, with c9afb199ca (Zandronum copy: zandronum@d49366e537f1)	d128a82b
 99bf01365249f3db6ef3ea266c1a95f792aa40f2	2016-01-05T10:16:38Z	- added new IWAD name HERETICSR.WAD so that commercial Heretic and Shadows of the Serpent Riders can coexist.	pending		/
 68501dc78452c560d9176b04ec7a32cd39711b7d	2016-01-05T11:23:50Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a5a069a4b0835191652bb211dfa2a57a6f641042	2016-01-05T13:06:07Z	- use DMENUPIC as titlepic in doom2bfg.	pending		/

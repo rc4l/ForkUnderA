@@ -69,7 +69,7 @@ class StatTracker
 	unsigned int _maxValuePerSecond;
 
 	// [AK] Values for compressed stats.
-	// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e and zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e: the wire-size and zstd-count lanes beside each byte count.
+	// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2 and zandronum@1a03a82d780ac7923770605aa631865c04076240: the wire-size and zstd-count lanes beside each byte count.
 	unsigned int _compressedValueThisTick;
 	unsigned int _compressedValueThisSecond;
 	unsigned int _compressedValueLastSecond;
@@ -249,7 +249,7 @@ ADD_STAT( nettraffic )
 {
 	FString	Out;
 
-	// [KI] Ported from zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e at zandronum@133666f6ef9b9468cefd86ac004124ca4d5e6dc5's one-line-per-statistic layout.
+	// [KI] Ported from zandronum@1a03a82d780ac7923770605aa631865c04076240 at zandronum@2a65e4bcf494a3bde63a18f006ece9154d604e19's one-line-per-statistic layout.
 	Out.Format( "In:   %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nOut:  %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nLoss: %5u/%5u",
 		g_bytesReceivedStatTracker.getValueThisTick( ),
 		g_bytesReceivedStatTracker.getValueLastSecond( ),

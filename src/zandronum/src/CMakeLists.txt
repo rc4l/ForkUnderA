@@ -669,7 +669,7 @@ else ()
 endif ()
 
 # [AK] We also need ZStd for encoding/decoding network packets.
-# [KI] Adapted from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: a vendored single-file zstd (deps/zstd) replaces find_package so every platform, Emscripten included, builds one pinned copy.
+# [KI] Adapted from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: a vendored single-file zstd (deps/zstd) replaces find_package so every platform, Emscripten included, builds one pinned copy.
 add_library( fua_zstd STATIC "${CMAKE_SOURCE_DIR}/../../deps/zstd/zstd.c" )
 include_directories( "${CMAKE_SOURCE_DIR}/../../deps/zstd" )
 set( ZDOOM_LIBS ${ZDOOM_LIBS} fua_zstd )
