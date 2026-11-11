@@ -19,11 +19,11 @@
 #include <vector>
 
 // [Doruk-Aksoy] Turn the local player's view onto the nearest monster in sight each tic, single player only (debug).
-CVAR(Bool, fua_debug_aimassist, false, 0)
+CVAR(Bool, fua_debug_aimassist, false, CVAR_FUA_DEV_MODE)
 // [Doruk-Aksoy] The heading in degrees move input is taken along while the assist turns the view (debug).
-CVAR(Float, fua_debug_aimassist_heading, 0.f, 0)
+CVAR(Float, fua_debug_aimassist_heading, 0.f, CVAR_FUA_DEV_MODE)
 // [Doruk-Aksoy] How far away in map units a monster can be picked (debug).
-CVAR(Float, fua_debug_aimassist_range, 1500.f, 0)
+CVAR(Float, fua_debug_aimassist_range, 1500.f, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace aimassist {
 
