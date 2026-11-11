@@ -1162,7 +1162,23 @@ bool GAMEMODE_IsHandledSpecial ( AActor *Activator, int Special )
 
 	// [EP/BB] Spectators activate a very limited amount of specials and ignore all others.
 	if ( Activator->player->bSpectating )
+	{
+		// [AK] Spectators without physical restrictions should only activate
+		// specials if they're not under the floor or above the ceiling.
+		if ( P_IsSpectatorUnrestricted( Activator ) )
+		{
+			// [rc4l] Ported from zandronum@8a0328cd237a98ebf8b680cb0e990c233287afe2: viewZ is a fixed_t, since an int truncates a 48.16 height.
+			const fixed_t viewZ = Activator->z + static_cast<APlayerPawn *>( Activator )->ViewHeight;
+
+			if ( viewZ < Activator->Sector->floorplane.ZatPoint( Activator->x, Activator->y ) )
+				return false;
+
+			if ( viewZ > Activator->Sector->ceilingplane.ZatPoint( Activator->x, Activator->y ) )
+				return false;
+		}
+
 		return ( GAMEMODE_IsSpectatorAllowedSpecial( Special ) );
+	}
 
 	// [BB] Clients predict a very limited amount of specials for the local player and ignore all others (spectators were already handled)
 	if ( NETWORK_InClientMode() )
