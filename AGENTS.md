@@ -15,3 +15,5 @@ Keep pull request descriptions concise and minimal. Don't write an essay.
 Don't modify the base README file without explicit permission.
 
 Don't add CI steps that play the game. Tests that launch the engine or the browser page, such as `fuactl scenarios` on their template maps and `tools/web/check.mjs`, live in the repo and run locally.
+
+Never put a Claude session link (`claude.ai/code/session_...`, a `Claude-Session:` trailer) in a pull request, a commit message or anything else pushed; session links are private.
