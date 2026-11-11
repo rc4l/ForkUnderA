@@ -73,6 +73,8 @@ const char *const kQuerySql[] = {
 	"SELECT Seq FROM fua_Applied WHERE Server=?1",
 	"INSERT INTO fua_Applied VALUES(?1,?2) ON CONFLICT(Server) DO UPDATE SET Seq=MAX(Seq,excluded.Seq)",
 	"DELETE FROM fua_Deleted WHERE Timestamp<?1",
+	"INSERT INTO fua_Writing VALUES(1)",
+	"DELETE FROM fua_Writing",
 };
 static_assert(sizeof(kQuerySql) / sizeof(kQuerySql[0]) == static_cast<size_t>(DatabaseQuery::Count), "one SQL string per DatabaseQuery");
 
@@ -120,6 +122,12 @@ std::vector<std::string> ComputeDatabaseSchemaSql()
 		"CREATE INDEX IF NOT EXISTS fua_ValueOrder ON " ZX_DB_TABLE "(Namespace, CAST(Value AS INTEGER), KeyName)",
 		"CREATE TABLE IF NOT EXISTS fua_Deleted(Namespace text, KeyName text, Timestamp real, PRIMARY KEY (Namespace, KeyName))",
 		"CREATE TABLE IF NOT EXISTS fua_Applied(Server text PRIMARY KEY, Seq integer)",
+		// [Doruk-Aksoy] Holds a row only inside the queue writer's own transaction, which deletes it before committing, so no other connection ever sees one.
+		"CREATE TABLE IF NOT EXISTS fua_Writing(Id integer)",
+		// [Doruk-Aksoy] Any other connection's delete, a stock server's included, leaves a marker stamped now; old SQL only, since every engine sharing the file must parse it.
+		"CREATE TRIGGER IF NOT EXISTS fua_MarkStockDelete AFTER DELETE ON " ZX_DB_TABLE " WHEN NOT EXISTS (SELECT 1 FROM fua_Writing) BEGIN "
+		"INSERT OR REPLACE INTO fua_Deleted (Namespace, KeyName, Timestamp) VALUES (old.Namespace, old.KeyName, "
+		"MAX((julianday('now') - 2440587.5)*86400.0, COALESCE((SELECT Timestamp FROM fua_Deleted WHERE Namespace=old.Namespace AND KeyName=old.KeyName), 0))); END",
 	};
 }
 
