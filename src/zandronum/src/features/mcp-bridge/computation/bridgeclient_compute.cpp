@@ -45,4 +45,11 @@ FeedResult ComputeClientFeed(ClientFeed &client, const char *data, size_t n, con
 	return out;
 }
 
+SocketStep ComputeSocketStep(int result, bool interrupted)
+{
+	if (result > 0)
+		return SocketStep::Moved;
+	return result < 0 && interrupted ? SocketStep::Retry : SocketStep::Closed;
+}
+
 }} // namespace zx::mcp
