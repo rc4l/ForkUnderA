@@ -51,6 +51,31 @@ std::string value(zx::DatabaseStatements &statements, const char *key)
 	return found ? text : "<missing>";
 }
 
+double markerOf(sqlite3 *db, const char *key)
+{
+	sqlite3_stmt *statement = nullptr;
+	sqlite3_prepare_v2(db, "SELECT Timestamp FROM fua_Deleted WHERE Namespace='ns' AND KeyName=?1", -1, &statement, nullptr);
+	sqlite3_bind_text(statement, 1, key, -1, SQLITE_STATIC);
+	const double stamp = sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_double(statement, 0) : -1;
+	sqlite3_finalize(statement);
+	return stamp;
+}
+
+int64_t countOf(sqlite3 *db, const char *sql)
+{
+	sqlite3_stmt *statement = nullptr;
+	sqlite3_prepare_v2(db, sql, -1, &statement, nullptr);
+	sqlite3_step(statement);
+	const int64_t count = sqlite3_column_int64(statement, 0);
+	sqlite3_finalize(statement);
+	return count;
+}
+
+double nowSeconds()
+{
+	return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
 int64_t appliedOf(sqlite3 *db, const char *server)
 {
 	sqlite3_stmt *statement = nullptr;
@@ -161,6 +186,52 @@ TEST(DatabaseApply, OneBatchCanSetThenDeleteAKeyAtAnyClockStamp)
 	}
 }
 
+// [Doruk-Aksoy] A stock server deletes with plain SQL and no marker of its own; the trigger must make one, or an older queued set brings the key back.
+TEST(DatabaseApply, AStockServersDeleteKeepsAnOlderQueuedSetFromBringingTheKeyBack)
+{
+	MemoryDb memory;
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, memory.db);
+	const double now = nowSeconds();
+	apply(statements, "a", batch(1, now - 100, { set("k", "v") }));
+	exec(memory.db, "DELETE FROM Zandronum WHERE Namespace='ns' AND KeyName='k'");
+	EXPECT_GE(markerOf(memory.db, "k"), now - 1);
+	apply(statements, "a", batch(2, now - 10, { set("k", "queued earlier"), inc("k", 1) }));
+	EXPECT_EQ(value(statements, "k"), "<missing>");
+	apply(statements, "a", batch(3, now + 10, { set("k", "after") }));
+	EXPECT_EQ(value(statements, "k"), "after");
+}
+
+TEST(DatabaseApply, TheQueuesOwnDeletesKeepTheirOwnStamps)
+{
+	MemoryDb memory;
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, memory.db);
+	apply(statements, "a", batch(1, 1000, { set("k", "v") }));
+	apply(statements, "a", batch(2, 2000, { set("k", "") }));
+	EXPECT_EQ(markerOf(memory.db, "k"), 2000);
+	// [Doruk-Aksoy] Had the trigger stamped the delete with the time it was applied, this newer set would be refused.
+	apply(statements, "b", batch(1, 2500, { set("k", "newer") }));
+	EXPECT_EQ(value(statements, "k"), "newer");
+	EXPECT_EQ(countOf(memory.db, "SELECT COUNT(*) FROM fua_Writing"), 0);
+}
+
+TEST(DatabaseApply, AStockDeleteKeepsANewerMarkerAndClearingMarksEveryRow)
+{
+	MemoryDb memory;
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, memory.db);
+	const double later = nowSeconds() + 1000;
+	exec(memory.db, ("INSERT INTO fua_Deleted VALUES('ns','k'," + std::to_string(later) + ")").c_str());
+	exec(memory.db, "INSERT INTO Zandronum VALUES('ns','k','v','1')");
+	exec(memory.db, "INSERT INTO Zandronum VALUES('ns','other','v','1')");
+	exec(memory.db, "INSERT INTO Zandronum VALUES('elsewhere','x','v','1')");
+	exec(memory.db, "DELETE FROM Zandronum");
+	EXPECT_DOUBLE_EQ(markerOf(memory.db, "k"), later);
+	EXPECT_GT(markerOf(memory.db, "other"), 0);
+	EXPECT_EQ(countOf(memory.db, "SELECT COUNT(*) FROM fua_Deleted"), 3);
+}
+
 TEST(DatabaseApply, FailsWithoutTheQueueTables)
 {
 	sqlite3 *db = nullptr;
@@ -189,8 +260,8 @@ TEST(DatabaseApply, FailsWithoutAConnection)
 
 TEST(DatabaseApply, AFailingStepRollsTheWholeBatchBack)
 {
-	for (zx::DatabaseQuery query : { zx::DatabaseQuery::AppliedSeq, zx::DatabaseQuery::MarkerStamp, zx::DatabaseQuery::SetIfNewer, zx::DatabaseQuery::IncrementStamped,
-			 zx::DatabaseQuery::ClearMarker, zx::DatabaseQuery::DeleteIfOlder, zx::DatabaseQuery::MarkDeleted, zx::DatabaseQuery::SetApplied })
+	for (zx::DatabaseQuery query : { zx::DatabaseQuery::WritingBegin, zx::DatabaseQuery::AppliedSeq, zx::DatabaseQuery::MarkerStamp, zx::DatabaseQuery::SetIfNewer, zx::DatabaseQuery::IncrementStamped,
+			 zx::DatabaseQuery::ClearMarker, zx::DatabaseQuery::DeleteIfOlder, zx::DatabaseQuery::MarkDeleted, zx::DatabaseQuery::SetApplied, zx::DatabaseQuery::WritingEnd })
 	{
 		MemoryDb memory;
 		zx::DatabaseStatements statements;

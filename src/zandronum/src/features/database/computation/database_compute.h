@@ -40,6 +40,8 @@ enum class DatabaseQuery
 	AppliedSeq,
 	SetApplied,
 	PruneMarkers,
+	WritingBegin,
+	WritingEnd,
 	Count,
 };
 
