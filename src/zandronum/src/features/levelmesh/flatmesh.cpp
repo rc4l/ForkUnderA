@@ -141,8 +141,8 @@ void ClearFlats()
 	// seen from above those contours are horizontal, which is why it was reported as horizontal
 	// stripes across a lit floor, and only ever under a light.
 	//
-	// InvalidateAll calls this and a gl_wallmesh toggle calls InvalidateAll, so the world's flats
-	// were duplicated on every toggle -- including every time a test harness set gl_wallmesh 1.
+	// InvalidateAll calls this and the old gl_wallmesh toggle called InvalidateAll, so the world's
+	// flats were duplicated on every toggle -- including every time a test harness set gl_wallmesh 1.
 	for (unsigned i = 0; i < g_flats.Size(); i++) MeshRetireRange(g_flats[i].range);
 	g_flats.Clear();
 	// The chains point into the table that was just emptied.

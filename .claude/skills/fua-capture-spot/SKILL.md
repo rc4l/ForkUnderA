@@ -25,7 +25,7 @@ That writes one record into `tools/fuactl/spots.json` holding the camera at full
 (`x, y, z, angle, pitch`), the `map`, the `loaded` wad set — IWAD plus every PWAD **with its md5**,
 read from the engine's own `wads` command rather than from what the launch intended — and the
 `renderer` cvars that change the picture (`fua_vulkan`, `fua_dg_standalone`, `fua_dg_embed`,
-`fua_dg_skyportal`, `gl_wallmesh`), `backend: "vulkan"` when the launch had no GL at all, the `mode` it
+`fua_dg_skyportal`), `backend: "vulkan"` when the launch had no GL at all, the `mode` it
 ran (`vulkan`, `webgpu`, `gl` or `beside`), which `play --spot` launches again, and the
 `view` (render size, `vid_scalefactor` and `fov`), which `play --spot` sets again with `vid_setsize`, since
 a fault seen only at a square size or a wide FOV does not show in another window.

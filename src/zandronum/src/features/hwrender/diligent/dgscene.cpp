@@ -32,8 +32,6 @@
 // [rc4l] Declared outside the namespace: EXTERN_CVAR builds a name from the identifier, so a
 // namespace-qualified one resolves to a symbol the engine never defines and fails only at link time.
 EXTERN_CVAR(Int, r_fogmode)
-// [rc4l] fua_vulkan turns this on itself -- see AutoSetupForLevel.
-EXTERN_CVAR(Bool, gl_wallmesh)
 // [rc4l] The engine's texture filter mode; the backend mirrors it. See FillSamplerFromEngine.
 EXTERN_CVAR(Int, r_texture_filter)
 // [rc4l] The sky's own vertical nudge, both the per-texture one and the global testing cvar.

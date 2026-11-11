@@ -294,7 +294,7 @@ static bool BuildSceneBuffer(FString &err)
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(npieces);
 	if (src == NULL || srcCount <= 0 || pieces == NULL || npieces <= 0)
 	{
-		err = "no baked geometry -- set gl_wallmesh 1, walk the level, then retry";
+		err = "no baked geometry -- the level mesh is baked as the backend first draws a level";
 		return false;
 	}
 

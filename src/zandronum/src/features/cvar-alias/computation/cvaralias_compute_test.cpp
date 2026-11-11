@@ -37,6 +37,6 @@ TEST(CVarAlias, GlsSharedSettingsFindTheirRendererNames)
 	EXPECT_STREQ("r_texture_filter_anisotropic", ComputeCVarAliasTarget("gl_texture_filter_anisotropic", strlen("gl_texture_filter_anisotropic")));
 	EXPECT_STREQ("r_seamless", ComputeCVarAliasTarget("gl_seamless", strlen("gl_seamless")));
 	// [rc4l] GL's own settings keep their names.
-	EXPECT_EQ(NULL, ComputeCVarAliasTarget("gl_wallmesh", strlen("gl_wallmesh")));
+	EXPECT_EQ(NULL, ComputeCVarAliasTarget("gl_vid_multisample", strlen("gl_vid_multisample")));
 	EXPECT_EQ(NULL, ComputeCVarAliasTarget("gl_texture_format", strlen("gl_texture_format")));
 }
