@@ -1,6 +1,6 @@
 // [Doruk-Aksoy] The ACS database through the engine's write queue at its edges: each case starts the engine on a database file, runs fixtures/dbedge's scripts, and checks the console and the file.
 // [Doruk-Aksoy] Cases: fresh (reads while the writer lags, null names, 64-bit overflow, transaction misuse, a transaction its level left open, UNLOADING writes, 5000 writes in a tic, a clean quit),
-// [Doruk-Aksoy] hardkill (a killed process's writes land on restart), stockrows (rows with NULL, old, garbage and future stamps), resume (a crashed server's outbox, part applied), orphan (a stopped server's outbox and a corrupt one).
+// [Doruk-Aksoy] hardkill (a killed process's writes land on restart), stockdelete (a stock server's delete leaves a marker), stockrows (rows with NULL, old, garbage and future stamps), resume (a crashed server's outbox, part applied), orphan (a stopped server's outbox and a corrupt one).
 //
 // usage:  node scenarios/dbedge.mjs [port]
 import fs from "node:fs";
@@ -135,6 +135,19 @@ export const CASES = {
     check("the killed process left its outbox unpruned", outboxOps(file) > 0, String(outboxOps(file)));
     const text = await withEngine(opts, file, check, async () => { await sleep(2500); });
     check("a restart brings in every write the killed process made durable, none twice", /queued through/.test(text) && count(file, "edgebig") === 5000 && get(file, "edgebig", "k4999") === "4999", String(count(file, "edgebig")));
+  },
+
+  async stockdelete(opts, file, check) {
+    await withEngine(opts, file, check, async ({ puke }) => { await puke(951); await sleep(3500); });
+    // [Doruk-Aksoy] A stock server sharing the file deletes with the old engine's plain SQL; the trigger the engine installed must leave a marker.
+    const before = Date.now() / 1000;
+    const db = new DatabaseSync(file);
+    db.exec("DELETE FROM Zandronum WHERE Namespace='edge' AND KeyName='cnt'");
+    const marker = db.prepare("SELECT Timestamp FROM fua_Deleted WHERE Namespace='edge' AND KeyName='cnt'").get();
+    const writing = db.prepare("SELECT COUNT(*) AS n FROM fua_Writing").get().n;
+    db.close();
+    check("a stock delete leaves a delete marker stamped at the time of the delete", marker && marker.Timestamp >= before - 1, marker ? String(marker.Timestamp) : "none");
+    check("the queue writer's own flag row never stays behind", writing === 0, String(writing));
   },
 
   async stockrows(opts, file, check) {
