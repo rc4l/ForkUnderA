@@ -246,11 +246,42 @@ vec4 applyFog(vec4 frag, float fogfactor)
 //
 //===========================================================================
 
+//===========================================================================
+//
+// [Doruk-Aksoy] The fog's distance and factor at this pixel, none when fog is off.
+//
+//===========================================================================
+
+void fogOf(out float fogdist, out float fogfactor)
+{
+	fogdist = 0.0;
+	fogfactor = 0.0;
+	if (uFogEnabled != 0)
+	{
+		if (uFogEnabled == 1 || uFogEnabled == -1)
+		{
+			fogdist = pixelpos.w;
+		}
+		else
+		{
+			fogdist = max(16.0, distance(pixelpos.xyz, uCameraPos.xyz));
+		}
+		fogfactor = exp2 (uFogDensity * fogdist);
+	}
+}
+
 void main()
 {
-#ifdef FUA_OLD_PROCESS
-	// [Doruk-Aksoy] Zandronum 3.3's Process(color): the draw's alpha in, and the alpha it returns the one drawn; the light still multiplies its colour below.
-	vec4 frag = Process(vec4(1.0, 1.0, 1.0, vColor.a));
+	float fogdist = 0.0;
+	float fogfactor = 0.0;
+	if (uFixedColormap == 0) fogOf(fogdist, fogfactor);
+
+#if defined(FUA_PROCESS_ZANDRONUM)
+	// [Doruk-Aksoy] Zandronum 3.3's Process(color): handed the light and the draw's alpha, its result lit no further (white under a fixed colormap, as 3.3's colormap shader handed it).
+	vec4 frag = Process(uFixedColormap == 0 ? vec4(getLightColor(fogdist, fogfactor).rgb, vColor.a) : vec4(1.0));
+#elif defined(FUA_PROCESS_UZDOOM)
+	// [Doruk-Aksoy] UZDoom's Process(color): handed white, its result lit below like a texel.
+	vec4 frag = Process(vec4(1.0));
 #else
 	vec4 frag = ProcessTexel();
 #endif
@@ -263,31 +294,7 @@ void main()
 	{
 		case 0:
 		{
-			float fogdist = 0.0;
-			float fogfactor = 0.0;
-			
-
-			
-			//
-			// calculate fog factor
-			//
-			if (uFogEnabled != 0)
-			{
-				if (uFogEnabled == 1 || uFogEnabled == -1) 
-				{
-					fogdist = pixelpos.w;
-				}
-				else 
-				{
-					fogdist = max(16.0, distance(pixelpos.xyz, uCameraPos.xyz));
-				}
-				fogfactor = exp2 (uFogDensity * fogdist);
-			}
-			
-			
-#ifdef FUA_OLD_PROCESS
-			frag.rgb *= getLightColor(fogdist, fogfactor).rgb;
-#else
+#ifndef FUA_PROCESS_ZANDRONUM
 			frag *= getLightColor(fogdist, fogfactor);
 #endif
 

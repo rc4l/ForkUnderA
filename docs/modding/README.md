@@ -106,6 +106,9 @@ than only at class-definition time.
 
 ### GLDEFS
 
+- [Texture shaders](gldefs/Texture_shaders.md) — `HardwareShader` on a texture, flat or sprite: the
+  `ProcessTexel` and `Process(color)` entries, and `fua_ProcessLighting` to light a `Process` shader as
+  Zandronum 3.3 does or as UZDoom does.
 - [Post-process shaders](gldefs/Post-process_shaders.md) — UZDoom's `HardwareShader PostProcess` blocks:
   full-screen shaders over the 3D view or the whole screen, on Vulkan and WebGPU. What a shader reads,
   the stages, precision, cost and the console commands.

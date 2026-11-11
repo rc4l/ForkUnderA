@@ -4,10 +4,13 @@ GLDEFS `HardwareShader` blocks for every renderer. GL's shader manager used to k
 shader lumps itself; it lives here now, so the Vulkan backend can compile the same shaders.
 
 - `hwshaders.{h,cpp}`: the parse (`ParseHardwareShader`, moved from `gl_ParseHardwareShader`) and
-  the lump list a texture's `gl_info.shaderindex` points into.
+  the shader list a texture's `gl_info.shaderindex` points into, one per lump and `fua_ProcessLighting`
+  (`ComputeUserShaderSlot`, `UserShaderLighting`).
 - `computation/hwshader_compute`: Zandronum 3.3's names made to work on both renderers
-  (`ComputeLegacyShaderNames`, with `ComputeRewriteIndexedName`), a mod's GL fragment code adapted for
-  the backend (`ComputeAdaptUserShader`), the block one shader's program ends in
+  (`ComputeLegacyShaderNames`, with `ComputeRewriteIndexedName`), a shader's style and how its entry is
+  called (`ComputeShaderStyle`, `ComputeStyleRefusal`, `ComputeProcessLightingOf`, `ComputeProgramEntry`,
+  `ComputeGLEntryDefine`), a mod's GL fragment code adapted for the backend (`ComputeAdaptUserShader`),
+  the block one shader's program ends in
   (`ComputeUserProgramBlock`, `ComputePlainProgramBlock` for none) and splicing it in
   (`ComputeSpliceShaderBlock`), the piece's shader number in the warp slot and back
   (`ComputePieceShader`, `ComputeUserShaderOf`), and the console note for a shader left out
@@ -45,11 +48,27 @@ has programs of its own, the same block for `k2DProgram` at `//FUA_2D_SHADERS` (
 
 ## How a shader is called
 
-`ProcessTexel()` is GZDoom's: what it returns is lit and multiplied by the draw's colour and alpha after.
-`Process(color)` is Zandronum 3.3's: it is handed the draw's alpha in `color.a` (white in `rgb`, the light
-multiplying its result after) and the alpha it returns is the one drawn, as 3.3 drew it; DnD packs a state
-into a HUD message's alpha this way. GL does this under `FUA_OLD_PROCESS` in `main.fp`, the backend through
-`fuaSurfaceAlpha` and the 2D entry `fua2DColor`.
+`ComputeShaderStyle` tells a shader's style apart as UZDoom's `gl_shader.cpp` does: `SetupMaterial` or
+`ProcessMaterial` first (UZDoom's materials, refused on both renderers with `ComputeStyleRefusal`'s reason
+until they are ported), then `ProcessTexel`, else an old `Process(color)`. `ComputeProgramEntry` turns the
+style and the block's `fua_ProcessLighting` into one of three entries:
+
+| Entry | Shader | What it is handed | After it |
+|---|---|---|---|
+| `kEntryTexel` | `ProcessTexel()` (GZDoom, UZDoom) | nothing | lit, multiplied by the draw's colour and alpha |
+| `kEntryProcessLit` | `Process(color)`, `fua_ProcessLighting uzdoom` | white, as UZDoom's `func_defaultmat.fp` | lit like a texel |
+| `kEntryProcessFinal` | `Process(color)`, the default | the light (`getLightColor` with modulated dynamic lights, no brightmap) and the draw's alpha, as Zandronum 3.3's `main.fp` | only coloured fog, or a fixed colormap's recolouring of what it returned (handed white then, as 3.3's `main_colormap.fp`) |
+
+So a 3.3 shader's glow, added without `color`, shows in the dark as on 3.3 (DnD's Volcano and Doomguard
+lava; scenario `hwshaderlighting`, with an oracle map per case). A `Process` shader keeps the alpha it
+returns; DnD packs a state into a HUD message's alpha this way. On a HUD image the draw's colour is the
+light: `kEntryProcessFinal` hands it, `kEntryProcessLit` multiplies it after.
+
+GL picks the entry with `ComputeGLEntryDefine` (`FUA_PROCESS_ZANDRONUM` or `FUA_PROCESS_UZDOOM` ahead of
+`main.fp`). The backend's scene stages are split as `main.fp`'s are (`fuaLitAt`, `fuaClipSurface`,
+`fuaLightUp`, then `fuaColouredFog` or `fuaFixedTint`), and each entry's row in `ComputeUserProgramBlock`
+defines `fuaSurfaceTexel`, `fuaSurfaceAlpha` and `fuaSurfaceShade`; `kEntryProcessFinal` calls
+`fuaProcessLight` to hand `Process` the light and `fuaShadeFinal` to finish. The 2D entry is `fua2DColor`.
 
 ## What a shader can read
 
@@ -75,9 +94,10 @@ pixelpos;` lines are dropped, and `gl_TexCoord[0]` reads `vTexCoord`. Not on Vul
 
 - `gl/shaders/gl_shader.cpp`: `gl_ParseHardwareShader` calls `ParseHardwareShader`; a shader's source
   goes through `ComputeLegacyShaderNames`; `CompileShaders` takes the lumps from
-  `UserShaderCount`/`UserShaderLump`, compiling each through `TryCompile` and falling back to the default
-  shader with `ComputeUserShaderSkipNote`'s note; an old `Process(color)` shader defines `FUA_OLD_PROCESS`
-  ahead of `wadsrc/static/shaders/glsl/main.fp`.
+  `UserShaderCount`/`UserShaderLump`/`UserShaderLighting`, compiling each through `TryCompile` and falling
+  back to the default shader with `ComputeUserShaderSkipNote`'s note; `FShader::Load` refuses a material
+  shader (`ComputeStyleRefusal`) and puts `ComputeGLEntryDefine`'s line ahead of
+  `wadsrc/static/shaders/glsl/main.fp`, which calls `Process` as that define says.
 - `gl/renderer/gl_renderer.cpp`: `DrawTexture` takes `ComputeDrawTextureShader`'s shader.
 - `features/materials/materials.cpp`: `MaterialInfo::userShader` from `UserShaderOf`.
 - `features/levelmesh/modelmesh.cpp`: a captured model's matrix added with its first surface
@@ -85,7 +105,8 @@ pixelpos;` lines are dropped, and `gl_TexCoord[0]` reads `vTexCoord`. Not on Vul
 - `features/frame/backendrenderer.cpp`: `Init` calls `PrecompileUserShaders` after GLDEFS is read.
 - `features/hwrender/diligent`: `dgupload.cpp` puts `ComputePieceShader` in the piece's warp slot and a
   batch's shader in `SceneBatch::userShader`; `dgdynamic.cpp` the same per `DynRun`, and the frame's model
-  matrices after its sprites; `dgpipelines.cpp` makes the programs (`ProgramBlock`, `ScenePSO`,
-  `PrewarmUserPipelines`); `CompileShader` (`dgscene.cpp`) splices the block at `//FUA_USER_SHADERS` and
+  matrices after its sprites; `dgpipelines.cpp` makes the programs (`ProgramBlock` with the shader's entry,
+  `ScenePSO`, `PrewarmUserPipelines`) and leaves a refused style out; `dgscene_glsl.h`'s fragment stages
+  shade through `fuaSurfaceShade`; `CompileShader` (`dgscene.cpp`) splices the block at `//FUA_USER_SHADERS` and
   caches what it compiles; the world, solid-model, mirror-decal and translucent loops bind `ScenePSO`;
   `dg2d.cpp` binds `Pso2D` per quad, with the shader's speed on its vertices.

@@ -5,6 +5,7 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <cstddef>
 #include <initializer_list>
 #include <utility>
 #include <vector>
@@ -169,39 +170,90 @@ std::string ComputeLegacyShaderNames(const std::string &source)
 	return pre + rewritten;
 }
 
-bool ComputeAdaptUserShader(const std::string &source, int index, std::string &out)
+ShaderStyle ComputeShaderStyle(const std::string &source)
+{
+	// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad gl_shader.cpp: the material entries are looked for first, then ProcessTexel.
+	if (source.find("ProcessMaterial") != std::string::npos || source.find("SetupMaterial") != std::string::npos) return kStyleMaterial;
+	return source.find("ProcessTexel") != std::string::npos ? kStyleProcessTexel : kStyleProcess;
+}
+
+const char *ComputeStyleRefusal(ShaderStyle style)
+{
+	return style == kStyleMaterial ? "it defines UZDoom's SetupMaterial or ProcessMaterial, which are not supported yet" : nullptr;
+}
+
+bool ComputeProcessLightingOf(const std::string &value, ProcessLighting &out)
+{
+	std::string v;
+	for (char c : value) v += (char)tolower((unsigned char)c);
+	if (v == "zandronum") out = kLightingZandronum;
+	else if (v == "uzdoom") out = kLightingUZDoom;
+	else return false;
+	return true;
+}
+
+ProgramEntry ComputeProgramEntry(ShaderStyle style, ProcessLighting lighting)
+{
+	if (style != kStyleProcess) return kEntryTexel;
+	return lighting == kLightingUZDoom ? kEntryProcessLit : kEntryProcessFinal;
+}
+
+const char *ComputeGLEntryDefine(ProgramEntry entry)
+{
+	static const char *const kDefines[] = { "", "#define FUA_PROCESS_UZDOOM\n", "#define FUA_PROCESS_ZANDRONUM\n" };
+	return kDefines[entry];
+}
+
+int ComputeUserShaderSlot(std::vector<UserShaderKey> &shaders, const std::string &lump, ProcessLighting lighting)
+{
+	const auto same = [](const std::string &a, const std::string &b) {
+		if (a.size() != b.size()) return false;
+		for (size_t i = 0; i < a.size(); i++) if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i])) return false;
+		return true;
+	};
+	for (size_t i = 0; i < shaders.size(); i++)
+		if (shaders[i].lighting == lighting && same(shaders[i].lump, lump)) return (int)i;
+	shaders.push_back({ lump, lighting });
+	return (int)shaders.size() - 1;
+}
+
+ShaderStyle ComputeAdaptUserShader(const std::string &source, int index, std::string &out)
 {
 	std::string kept = ComputeLegacyShaderNames(KeepLines(source, [](const std::string &line) {
 		const size_t first = line.find_first_not_of(" \t\r");
 		return (first != std::string::npos && line.compare(first, 8, "#version") == 0) || IsDeclaration(line, { "uniformfloattimer;" });
 	}));
-	const bool newStyle = kept.find("ProcessTexel") != std::string::npos;
+	const ShaderStyle style = ComputeShaderStyle(kept);
 	const std::string n = std::to_string(index);
 	kept = ReplaceAll(kept, "gl_TexCoord[0]", "vTexCoord");
 	kept = ReplaceWord(kept, "ProcessTexel", "fuaProcessTexel_" + n);
 	kept = ReplaceWord(kept, "ProcessLight", "fuaProcessLight_" + n);
 	kept = ReplaceWord(kept, "Process", "fuaProcess_" + n);
 	out = kept;
-	return newStyle;
+	return style;
 }
 
 namespace {
 
-// [Doruk-Aksoy] What one kind of program hands a GLDEFS shader, and how its entry calls it; an `@` in newCall is the ProcessTexel call.
+// [Doruk-Aksoy] How a program's entry runs its shader for one ProgramEntry: the call, an `@` standing for the shader's entry function, and what fuaSurfaceAlpha and fuaSurfaceShade(t) return, null for a kind without them.
+struct EntryRow { const char *call, *alpha, *shade; };
+
+// [Doruk-Aksoy] What one kind of program hands a GLDEFS shader, and how its entry calls it, a row per ProgramEntry.
 struct ProgramNames
 {
 	const char *marker;
 	const char *inputs;
 	const char *getTexel, *sample;
 	std::vector<std::pair<const char *, const char *>> names;
-	const char *entry, *guard, *timer, *newCall, *oldColor;
-	const char *alphaNew, *alphaOld;   // [Doruk-Aksoy] fuaSurfaceAlpha's value, or null for a kind without one
+	const char *entry, *guard, *timer;
+	EntryRow rows[3];
 	const char *plain;
 };
 
 const ProgramNames &NamesOf(ProgramKind kind)
 {
 	// [Doruk-Aksoy] Locations 23 to 26 are the model matrix's columns, which the scene vertex shaders write under FUA_USER_SHADER.
+	// [Doruk-Aksoy] A warped piece (vWarp.x below 2.5) never runs the shader, so it is shaded as a plain one.
 	static const ProgramNames kScene = {
 		"//FUA_USER_SHADERS",
 		"layout(location = 23) flat in vec4 vModel0;\n"
@@ -214,12 +266,15 @@ const ProgramNames &NamesOf(ProgramKind kind)
 		  { "ModelMatrix", "mat4(vModel0, vModel1, vModel2, vModel3)" }, { "TextureMatrix", "mat4(1.0)" } },
 		"vec4 fuaSurfaceTexel(vec2 fuaUV) {\n",
 		"    if (vWarp.x < 2.5) return fuaTexMode(fuaTexel(fuaUV));\n",
-		"uFrame.x * vWarp.y", "@", "vec4(1.0, 1.0, 1.0, vLightParm.z)",
-		"vLightParm.z", "vWarp.x < 2.5 ? vLightParm.z : 1.0",
+		"uFrame.x * vWarp.y",
+		{ { "@()", "vLightParm.z", "fuaShade(t.rgb)" },
+		  { "@(vec4(1.0))", "vLightParm.z", "fuaShade(t.rgb)" },
+		  { "@(vec4(fuaProcessLight(), vLightParm.z))", "vWarp.x < 2.5 ? vLightParm.z : 1.0", "vWarp.x < 2.5 ? fuaShade(t.rgb) : fuaShadeFinal(t.rgb)" } },
 		"vec4 fuaSurfaceTexel(vec2 fuaUV) { return fuaTexMode(fuaTexel(fuaUV)); }\n"
-		"float fuaSurfaceAlpha() { return vLightParm.z; }\n",
+		"float fuaSurfaceAlpha() { return vLightParm.z; }\n"
+		"vec3 fuaSurfaceShade(vec4 t) { return fuaShade(t.rgb); }\n",
 	};
-	// [Doruk-Aksoy] The 2D layer's own vec4 vColor is GL's, so it is not renamed; a 2D draw has no world to place.
+	// [Doruk-Aksoy] The 2D layer's own vec4 vColor is GL's, so it is not renamed; a 2D draw has no world to place, and its colour is the light either contract hands or multiplies.
 	static const ProgramNames k2D = {
 		"//FUA_2D_SHADERS",
 		"",
@@ -228,8 +283,8 @@ const ProgramNames &NamesOf(ProgramKind kind)
 		  { "uDesaturationFactor", "0.0" }, { "ModelMatrix", "mat4(1.0)" }, { "TextureMatrix", "mat4(1.0)" } },
 		"vec4 fua2DColor(vec2 fuaUV) {\n",
 		"",
-		"uInvScreen.z * vSpeed", "@ * vColor", "vColor",
-		nullptr, nullptr,
+		"uInvScreen.z * vSpeed",
+		{ { "@() * vColor", nullptr, nullptr }, { "@(vec4(1.0)) * vColor", nullptr, nullptr }, { "@(vColor)", nullptr, nullptr } },
 		"vec4 fua2DColor(vec2 fuaUV) { return fua2DTexel(fuaUV) * vColor; }\n",
 	};
 	return kind == k2DProgram ? k2D : kScene;
@@ -242,10 +297,11 @@ const char *ComputeProgramMarker(ProgramKind kind)
 	return NamesOf(kind).marker;
 }
 
-std::string ComputeUserProgramBlock(ProgramKind kind, const std::string &adapted, bool newStyle, int index)
+std::string ComputeUserProgramBlock(ProgramKind kind, const std::string &adapted, ProgramEntry entry, int index)
 {
 	const ProgramNames &p = NamesOf(kind);
-	const std::string n = std::to_string(index);
+	const EntryRow &row = p.rows[entry];
+	const std::string fn = (entry == kEntryTexel ? "fuaProcessTexel_" : "fuaProcess_") + std::to_string(index);
 	std::string b = std::string(p.inputs) +
 		"vec4 vTexCoord;\n"
 		"float timer;\n"
@@ -255,13 +311,13 @@ std::string ComputeUserProgramBlock(ProgramKind kind, const std::string &adapted
 	for (const auto &name : p.names) b += std::string("#define ") + name.first + " " + name.second + "\n";
 	b += adapted + "#undef texture2D\n#undef texture\n";
 	for (const auto &name : p.names) b += std::string("#undef ") + name.first + "\n";
-	// [Doruk-Aksoy] ProcessTexel is GZDoom's, its colour applied after it; Process(color) is Zandronum 3.3's, handed the colour with the draw's alpha and its own alpha kept.
 	b += std::string(p.entry) + p.guard +
 		"    vTexCoord = vec4(fuaUV, 0.0, 1.0);\n"
 		"    timer = " + p.timer + ";\n"
-		"    return " + (newStyle ? ReplaceAll(p.newCall, "@", "fuaProcessTexel_" + n + "()") : "fuaProcess_" + n + "(" + p.oldColor + ")") + ";\n"
+		"    return " + ReplaceAll(row.call, "@", fn) + ";\n"
 		"}\n";
-	if (p.alphaNew != nullptr) b += std::string("float fuaSurfaceAlpha() { return ") + (newStyle ? p.alphaNew : p.alphaOld) + "; }\n";
+	if (row.alpha != nullptr) b += std::string("float fuaSurfaceAlpha() { return ") + row.alpha + "; }\n";
+	if (row.shade != nullptr) b += std::string("vec3 fuaSurfaceShade(vec4 t) { return ") + row.shade + "; }\n";
 	return b;
 }
 

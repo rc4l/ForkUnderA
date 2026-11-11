@@ -13,15 +13,18 @@
 #include "c_console.h"
 #include "textures/textures.h"
 
+#include <vector>
+
 namespace zx { namespace hwshaders {
 
-static TArray<FString> g_userShaders;
+static std::vector<UserShaderKey> g_userShaders;
 
 void ParseHardwareShader(FScanner &sc, int deflump)
 {
 	int type = FTexture::TEX_Any;
 	FString maplumpname;
 	float speed = 1.f;
+	ProcessLighting lighting = kLightingZandronum;
 
 	sc.MustGetString();
 	// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: a post-process shader is a block of its own, not a texture's.
@@ -53,6 +56,12 @@ void ParseHardwareShader(FScanner &sc, int deflump)
 			sc.MustGetFloat();
 			speed = float(sc.Float);
 		}
+		else if (sc.Compare("fua_ProcessLighting"))
+		{
+			sc.MustGetString();
+			if (!ComputeProcessLightingOf(sc.String, lighting))
+				sc.ScriptMessage("Unknown fua_ProcessLighting '%s', expected zandronum or uzdoom; keeping zandronum\n", sc.String);
+		}
 	}
 	if (!tex || maplumpname.IsEmpty()) return;
 	if (tex->bWarped != 0)
@@ -61,22 +70,19 @@ void ParseHardwareShader(FScanner &sc, int deflump)
 		return;
 	}
 	tex->gl_info.shaderspeed = speed;
-	for (unsigned i = 0; i < g_userShaders.Size(); i++)
-	{
-		if (!g_userShaders[i].CompareNoCase(maplumpname))
-		{
-			tex->gl_info.shaderindex = i + kFirstUserShader;
-			return;
-		}
-	}
-	tex->gl_info.shaderindex = g_userShaders.Push(maplumpname) + kFirstUserShader;
+	tex->gl_info.shaderindex = ComputeUserShaderSlot(g_userShaders, maplumpname.GetChars(), lighting) + kFirstUserShader;
 }
 
-int UserShaderCount() { return (int)g_userShaders.Size(); }
+int UserShaderCount() { return (int)g_userShaders.size(); }
 
 const char *UserShaderLump(int i)
 {
-	return (i >= 0 && (unsigned)i < g_userShaders.Size()) ? g_userShaders[i].GetChars() : "";
+	return (i >= 0 && i < UserShaderCount()) ? g_userShaders[i].lump.c_str() : "";
+}
+
+ProcessLighting UserShaderLighting(int i)
+{
+	return (i >= 0 && i < UserShaderCount()) ? g_userShaders[i].lighting : kLightingZandronum;
 }
 
 int UserShaderOf(int shaderIndex)
