@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <thread>
 #include <chrono>
@@ -39,8 +40,12 @@ struct Server
 	}
 	bool open(const std::filesystem::path &path)
 	{
+		return openAs(path.string(), path.string(), { "PRAGMA synchronous=2" });
+	}
+	bool openAs(const std::string &given, const std::string &stem, const std::vector<std::string> &pragmas)
+	{
 		// [Doruk-Aksoy] Waits out the writer's start-up orphan scan, which holds other slots' outboxes for a moment and would push the next server past a free slot.
-		if (!zx::ComputeDatabaseStoreOpen(store, path.string(), { "PRAGMA synchronous=2" }, reader, kWall))
+		if (!zx::ComputeDatabaseStoreOpen(store, given, stem, pragmas, reader, kWall))
 			return false;
 		return !store.writer.maintenance || waitFor([&]() { return store.writer.maintenanceRuns.load() > 0; });
 	}
@@ -379,11 +384,11 @@ TEST(DatabaseStore, DoesNotOpenWithoutAnOutboxOrAFile)
 	zx::DatabaseStatements reader;
 	zx::DatabaseStore nowhere;
 	const std::filesystem::path unreachable = std::filesystem::temp_directory_path() / "zx_db_no_such_folder" / "x.db";
-	EXPECT_FALSE(zx::ComputeDatabaseStoreOpen(nowhere, unreachable.string(), {}, reader, kWall));
+	EXPECT_FALSE(zx::ComputeDatabaseStoreOpen(nowhere, unreachable.string(), unreachable.string(), {}, reader, kWall));
 	EXPECT_NE(zx::ComputeDatabaseStoreTakeMessages(nowhere).front().find("No outbox"), std::string::npos);
 	const std::filesystem::path missing = tempDatabasePath("store_missing");
 	zx::DatabaseStore noFile;
-	EXPECT_FALSE(zx::ComputeDatabaseStoreOpen(noFile, missing.string(), {}, reader, kWall));
+	EXPECT_FALSE(zx::ComputeDatabaseStoreOpen(noFile, missing.string(), missing.string(), {}, reader, kWall));
 	EXPECT_NE(zx::ComputeDatabaseStoreTakeMessages(noFile).front().find("Could not open"), std::string::npos);
 	EXPECT_FALSE(noFile.open);
 	removeDatabaseFiles(missing);
@@ -587,6 +592,115 @@ TEST(DatabaseStore, LeftoversTheFileAlreadyHoldsAreNeitherShownNorResent)
 	EXPECT_NE(restarted.messages().find("Resuming 1 "), std::string::npos);
 	EXPECT_TRUE(waitFor([&]() { return fileValue(file.db, "n") == "5"; }));
 	EXPECT_EQ(fileValue(file.db, "k"), "newer");
+}
+
+// [Doruk-Aksoy] As through a symlink: the server is given one path, but its outboxes are named from the resolved stem, so a restart given any path finds them.
+TEST(DatabaseStore, OutboxesAreNamedFromTheStemNotThePathGiven)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb file("store_stem");
+	const std::string given = file.path.string();
+	const std::string stem = given + "-target";
+	sqlite3 *blocker = nullptr;
+	sqlite3_open(given.c_str(), &blocker);
+	{
+		Server server(file.path);
+		ASSERT_TRUE(server.openAs(given, stem, {}));
+		EXPECT_EQ(server.store.outbox.path, zx::ComputeDatabaseOutboxPath(stem, 0));
+		exec(blocker, "BEGIN IMMEDIATE");
+		zx::ComputeDatabaseStoreWrite(server.store, zx::ComputeDatabaseSetOp("ns", "k", "kept"));
+		zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+		crash(server.store);
+		exec(blocker, "ROLLBACK");
+	}
+	Server restarted(file.path);
+	ASSERT_TRUE(restarted.openAs(given, stem, {}));
+	EXPECT_NE(restarted.messages().find("Resuming 1"), std::string::npos);
+	EXPECT_TRUE(waitFor([&]() { return fileValue(file.db, "k") == "kept"; }));
+	sqlite3_close(blocker);
+	removeDatabaseFiles(stem);
+}
+
+// [Doruk-Aksoy] An outbox named from the path as given, by a build that did not resolve it, is replayed by the scan.
+TEST(DatabaseStore, AnOutboxUnderThePathGivenIsReplayed)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb file("store_given");
+	const std::string given = file.path.string();
+	{
+		zx::DatabaseOutbox old;
+		std::vector<zx::DatabaseBatch> leftover;
+		uint64_t next = 0;
+		ASSERT_EQ(zx::ComputeDatabaseOutboxOpen(old, zx::ComputeDatabaseOutboxPath(given, 0), true, leftover, next), zx::DatabaseOutboxOpen::Opened);
+		zx::DatabaseBatch batch;
+		batch.seq = 1;
+		batch.stamp = 100;
+		batch.ops = { zx::ComputeDatabaseSetOp("ns", "old", "replayed") };
+		zx::ComputeDatabaseOutboxAppend(old, { batch }, 2, 0);
+	}
+	Server server(file.path);
+	ASSERT_TRUE(server.openAs(given, given + "-target", {}));
+	EXPECT_EQ(server.store.slot, 0);
+	EXPECT_TRUE(waitFor([&]() { return fileValue(file.db, "old") == "replayed"; }));
+	removeDatabaseFiles(given + "-target");
+}
+
+TEST(DatabaseStore, AFullFileIsNamedAgainWhileBatchesWaitOnIt)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb file("store_full");
+	sqlite3_stmt *statement = nullptr;
+	sqlite3_prepare_v2(file.db, "PRAGMA page_count", -1, &statement, nullptr);
+	sqlite3_step(statement);
+	const int pages = sqlite3_column_int(statement, 0);
+	sqlite3_finalize(statement);
+	Server server(file.path);
+	server.store.fullWarnSeconds = 0.05;
+	server.store.writer.failedRetryMs = 5;
+	ASSERT_TRUE(server.openAs(file.path.string(), file.path.string(), { "PRAGMA max_page_count=" + std::to_string(pages + 2) }));
+	server.messages();
+	for (int i = 0; i < 400; ++i)
+		zx::ComputeDatabaseStoreWrite(server.store, zx::ComputeDatabaseSetOp("ns", ("key" + std::to_string(i)).c_str(), "a value long enough to need more pages than the limit leaves"));
+	zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+	ASSERT_TRUE(waitFor([&]() { return server.store.writer.lastFailureCode.load() == SQLITE_FULL; }));
+	std::string seen;
+	EXPECT_TRUE(waitFor([&]() {
+		zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+		seen += server.messages();
+		const size_t first = seen.find("has no room for the next batch");
+		return first != std::string::npos && seen.find("has no room for the next batch", first + 1) != std::string::npos;
+	})) << seen;
+	EXPECT_NE(seen.find("database_maxpagecount"), std::string::npos);
+	EXPECT_NE(seen.find("of its " + std::to_string(pages + 2) + " pages"), std::string::npos) << seen;
+	EXPECT_NE(seen.find("1 batch(es) wait"), std::string::npos) << seen;
+	EXPECT_NE(zx::ComputeDatabaseStoreStatus(server.store).back().find("no room for the next batch"), std::string::npos);
+}
+
+TEST(DatabaseStore, AFullWarningOnlyRepeatsAfterItsInterval)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb file("store_fullonce");
+	Server server(file.path);
+	ASSERT_TRUE(server.open(file.path));
+	server.messages();
+	// [Doruk-Aksoy] The writer's state as a full file leaves it, a batch still held, set by hand so the interval alone decides.
+	server.store.writer.lastFailureCode = SQLITE_FULL;
+	{
+		std::lock_guard<std::mutex> lock(server.store.writer.mutex);
+		server.store.writer.queue.push_back(zx::DatabaseBatch());
+	}
+	zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+	zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+	const std::string messages = server.messages();
+	EXPECT_NE(messages.find("has no room for the next batch"), std::string::npos);
+	EXPECT_EQ(messages.find("has no room for the next batch"), messages.rfind("has no room for the next batch"));
+	server.store.writer.lastFailureCode = 0;
+	zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+	EXPECT_FALSE(server.store.fullWarned);
+	{
+		std::lock_guard<std::mutex> lock(server.store.writer.mutex);
+		server.store.writer.queue.clear();
+	}
 }
 
 TEST(DatabaseStore, StatusNamesTheOutboxAndTheQueue)

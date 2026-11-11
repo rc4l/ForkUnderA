@@ -29,7 +29,9 @@ Keeps the ACS database functions (`SetDBEntry`, `GetDBEntry`, `IncrementDBEntry`
 - On open, leftovers the file already holds (a server killed between applying and pruning) are dropped, not shown or sent again.
 - `fua_db_status` prints the outbox slot, the server id, what the shared file has yet to take, and the writer's retries and last error.
 - Stock Zandronum servers can share the file: they write wall-clock stamps the rule compares, and the `fua_MarkStockDelete` trigger, which lives in the file and so runs for every connection, gives their deletes a marker stamped at the time of the delete. The queue writer's own transactions hold a row in `fua_Writing` that never commits, and the trigger skips them, so the queue's deletes keep their own stamps. The trigger uses only SQL that SQLite 3.36, which stock Zandronum 3.3 ships, parses.
-- One file shared over a network drive is not safe in any mode: docs/database-shared-file-risk.md.
+- Outboxes are named from the database's real path (`database_path_compute.cpp`: symlinks followed, Windows short names expanded, one spelling, case kept), so every path a server is given to the same file names the same outboxes; the orphan scan also looks under the path as given, for outboxes an older build named.
+- A file that is full (`database_maxpagecount` or the disk) is named on the console once a minute while batches wait on it, and `fua_db_status` shows its pages.
+- One file shared over a network drive is not safe in any mode: docs/database-shared-file-risk.md. Backups, moves and restores: docs/database-hosting.md. Known limits and their plans: docs/database-future-work.md.
 
 ## Engine hooks
 
