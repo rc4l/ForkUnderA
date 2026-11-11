@@ -33,6 +33,10 @@ class BoundaryTripwire(unittest.TestCase):
         self.assertNotIn('players', out)
         self.assertNotIn('player_t', out)
 
+    def test_a_dev_mode_command_is_a_console_command_too(self):
+        text = 'DEV_MODE_CCMD(look) { f(players[0].mo); }' + NL
+        self.assertNotIn('players', exempted(text, {}))
+
     def test_comments_and_strings_do_not_count(self):
         text = 'a = AActor; // AActor\n/* AActor\nAActor */ s = "AActor";\n'
         stripped = code_only(text)
