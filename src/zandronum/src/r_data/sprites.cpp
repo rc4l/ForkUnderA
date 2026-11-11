@@ -925,9 +925,26 @@ void R_InitSkins (void)
 						memcpy(&lnameint, lname, 4);
 						if (lnameint == intname)
 						{
+							// [AK] Check if there's already an existing sprite for the same lump.
+							// [rc4l] We have no FindTextureByLumpNum, so the sprite of this name counts only when lump k is its source.
+							FTextureID existingpicnum = TexMan.CheckForTexture(lname, FTexture::TEX_Sprite, 0);
+							if (existingpicnum.isValid() && TexMan[existingpicnum]->GetSourceLump() != static_cast<int>(k))
+								existingpicnum.SetInvalid();
 							FTextureID picnum = TexMan.CreateTexture(k, FTexture::TEX_SkinSprite);
 							if (!picnum.isValid())
 								continue;
+
+							// [rc4l] Ported from zandronum@908f125475e684bc499aa092e0934142e46a0577: a skin's sprite takes the brightmap GLDEFS gave the same lump; our flags are Brightmap, bBrightmapChecked and bDisableFullbright.
+							// [AK] If the sprite already existed before, copy its brightmap over to the skin's sprite.
+							if (existingpicnum.isValid() && TexMan[existingpicnum]->UseType == FTexture::TEX_Sprite)
+							{
+								FTexture::MiscGLInfo &skinspriteglinfo = TexMan[picnum]->gl_info;
+								FTexture::MiscGLInfo &existingspriteglinfo = TexMan[existingpicnum]->gl_info;
+
+								skinspriteglinfo.Brightmap = existingspriteglinfo.Brightmap;
+								skinspriteglinfo.bBrightmapChecked = existingspriteglinfo.bBrightmapChecked;
+								skinspriteglinfo.bDisableFullbright = existingspriteglinfo.bDisableFullbright;
+							}
 
 							bool res = R_InstallSpriteLump (picnum, lname[4] - 'A', lname[5], false);
 
