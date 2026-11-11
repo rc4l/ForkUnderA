@@ -33,8 +33,9 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 - `--for-user` leaves the first client's input unlocked for the user to play, with every other client locked.
 - Ports: the user's own game is on bridge 7801; netplay uses 7820 and up and game ports 10820 and up, the
   scenarios 7840 and 10840. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
-- Cheats are on from launch (`sv_cheats 1`), since a later change never reaches a joined client; `god` and
-  `give` typed on a client work. `setpos` and `sim.pause` are refused in a netgame: drive players with
+- Cheats are on from launch (`sv_cheats 1`), since a latched change reaches a joined client only with the next
+  map; `god` and `give` typed on a client work, and so do the dev-mode tools (`features/dev-mode`), which a
+  client of a server without cheats is refused. A scenario config's `cheats: false` launches without. `setpos` and `sim.pause` are refused in a netgame: drive players with
   `+forward`, `+attack`, `input.look`, or place them with the map's starts.
 
 ## Reading a netgame
