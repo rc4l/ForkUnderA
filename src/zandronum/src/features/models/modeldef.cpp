@@ -51,8 +51,12 @@
 #include "features/models/models.h"
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] IsServer, which draws no model
 #include "r_data/sprites.h"                 // [Doruk-Aksoy] the sprite frames VOXELDEF's voxels are on
+#include "features/models/computation/fuamodel_compute.h"   // [Doruk-Aksoy] FUAMODEL
+#include "v_text.h"                         // [Doruk-Aksoy] TEXTCOLOR_ORANGE for FUAMODEL's warnings
 
+#include <cstddef>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 
 // [rc4l] MODELDEF's switches, which the frame lookup and the frame blend read in either renderer.
@@ -696,6 +700,23 @@ void gl_InitModels()
 					}
 				}
 			}
+		}
+	}
+
+	// [Doruk-Aksoy] FUAMODEL after every MODELDEF, marking each named actor's model frames; what it cannot use is warned about, never fatal.
+	lastLump = 0;
+	while ((Lump = Wads.FindLump("FUAMODEL", &lastLump)) != -1)
+	{
+		FMemLump data = Wads.ReadLump(Lump);
+		const zx::models::FuaModelDefs defs = zx::models::ComputeParseFuaModel((const char *)data.GetMem(), (size_t)Wads.LumpLength(Lump));
+		for (const std::string &e : defs.errors) Printf(TEXTCOLOR_ORANGE "FUAMODEL: %s\n", e.c_str());
+		for (const std::string &name : defs.flatSurfaces)
+		{
+			const PClass *cls = PClass::FindClass(name.c_str());
+			unsigned marked = 0;
+			for (unsigned i = 0; cls != NULL && i < SpriteModelFrames.Size(); i++)
+				if (SpriteModelFrames[i].type == cls) { SpriteModelFrames[i].flags |= MDL_FUA_FLATSURFACE; marked++; }
+			if (marked == 0) Printf(TEXTCOLOR_ORANGE "FUAMODEL: '%s' %s, so FlatSurface does nothing for it\n", name.c_str(), cls == NULL ? "is no actor" : "has no model");
 		}
 	}
 

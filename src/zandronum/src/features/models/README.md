@@ -26,6 +26,11 @@ so the backend's model path read GL's vertex buffer class to find a model's vert
   smoothing groups are not read, since `FModelVertex` has none. At most `MD3_MAX_SURFACES` (32) surfaces are drawn,
   as UZDoom allows `SurfaceSkin` for; past that the load says so. Scenario `objmodel`.
 - `SpriteModelReach`: how far each sprite's models reach, built at the end of `gl_InitModels` for features/modelreach.
+- `computation/fuamodel_compute`: FUAMODEL, our own lump read after every MODELDEF, which other engines never open, so
+  a mod marks its models without breaking elsewhere (an unknown MODELDEF keyword is fatal there). `FlatSurface Class
+  [Class ...]` sets `MDL_FUA_FLATSURFACE` (4096) on each class's model frames, which `spritebuild.cpp` carries to the
+  piece as `flatSurface`; the backend then orders that model as a floor or ceiling (features/hwrender). `//` comments;
+  an unknown keyword, an unknown class or a class with no model is warned about, never fatal.
 
 GL's `gl/models/gl_models.cpp` keeps a vertex buffer per model, made from its geometry on first draw, and
 draws a frame's surfaces in one function for all three formats. The backend lerps the same geometry on the

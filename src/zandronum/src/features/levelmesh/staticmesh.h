@@ -166,6 +166,7 @@ struct MeshPiece
 	float         glowTop[4], glowBottom[4], glowTopPlane[4], glowBottomPlane[4];
 	bool          hud;          // [rc4l] a HUD model's surface, drawn over the world as GL draws one after clearing the depth buffer
 	int           cullFace;     // [rc4l] a model's faces GL culls (spritestyle_compute's kCull*), 0 for none
+	bool          flatSurface;  // [Doruk-Aksoy] a model FUAMODEL names a FlatSurface, which the backend may order as a plane
 	bool          fogPass;      // [rc4l] GL's CM_FOGLAYER pass over a subtract sprite in coloured fog: the fog's colour at the fog's opacity there
 
 	// [rc4l] This piece is a QUAD: four corners, not six vertices.
@@ -210,7 +211,7 @@ struct MeshPiece
 		normX = normY = normZ = 0.f;
 		dynR = dynG = dynB = 0.f;
 		quad = false; solid = false;
-		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false; inverse = false; colorBlend = false; fogLayer = false; fuzz = 0; fogBoundary = false; tint = zx::damagetint::TintGradient(); hud = false; cullFace = 0; fogPass = false;
+		facesDown = false; depthBias = false; redToAlpha = false; stencil = false; alphaTest = false; inverse = false; colorBlend = false; fogLayer = false; fuzz = 0; fogBoundary = false; tint = zx::damagetint::TintGradient(); hud = false; cullFace = 0; flatSurface = false; fogPass = false;
 		for (int i = 0; i < 4; i++) glowTop[i] = glowBottom[i] = glowTopPlane[i] = glowBottomPlane[i] = 0.f;
 		flood = false; floodZ = 0.f;
 		mirrorSector = -1; mirrorCeiling = false;
