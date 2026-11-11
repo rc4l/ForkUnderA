@@ -14,7 +14,7 @@ zx::wipe::WipeTraceLog g_log;
 }
 
 // [rc4l] Records what the backend presents around each wipe for fua_wipe_report, afresh each time it is set; each frame is read back, so it is for tests only.
-CUSTOM_CVAR(Bool, fua_wipe_trace, false, 0)
+CUSTOM_CVAR(Bool, fua_wipe_trace, false, CVAR_FUA_DEV_MODE)
 {
 	g_log = zx::wipe::WipeTraceLog();
 }
@@ -38,7 +38,7 @@ void TracePresented(const unsigned char *rgb, int w, int h)
 }} // namespace zx::wipe
 
 // [rc4l] The wipes fua_wipe_trace saw: how many began and how many the backend presented, and each presented frame's distance from the picture before the wipe and the one after.
-CCMD(fua_wipe_report)
+DEV_MODE_CCMD(fua_wipe_report)
 {
 	const std::vector<zx::wipe::WipeRecord> &wipes = g_log.Wipes();
 	Printf("wipes started %d, presented %d\n", g_log.Started(), (int)wipes.size());

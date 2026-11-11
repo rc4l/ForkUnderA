@@ -23,7 +23,7 @@
 #include <vector>
 
 // [rc4l] Off draws every sprite with its own binding again, for an A/B in one session.
-CVAR(Bool, fua_dg_spriteatlas, true, 0)
+CVAR(Bool, fua_dg_spriteatlas, true, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Int, r_texture_filter)
 
 namespace zx { namespace hwrender {

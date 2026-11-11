@@ -11,7 +11,7 @@
 #include <vector>
 
 // [rc4l] Off draws the HUD live every frame, as GL does, so a scenario can hold the recording to it.
-CVAR(Bool, fua_hud_record, true, 0)
+CVAR(Bool, fua_hud_record, true, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace gameloop {
 

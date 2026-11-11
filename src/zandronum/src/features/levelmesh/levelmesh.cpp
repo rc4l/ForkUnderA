@@ -276,7 +276,7 @@ static void PrintOneLine( int idx )
 	}
 }
 
-CCMD( fua_line )
+DEV_MODE_CCMD( fua_line )
 {
 	if ( lines == NULL || numlines <= 0 ) { Printf( "no level loaded.\n" ); return; }
 	if ( argv.argc( ) < 2 ) { Printf( "usage: fua_line <index>\n" ); return; }
@@ -286,7 +286,7 @@ CCMD( fua_line )
 }
 
 // [rc4l] fua_sector_at x y [x y ...] -- the subsector, sector and render sector under each map point, with both planes' heights and textures, for walking a ray past what the engine's trace stops at.
-CCMD( fua_sector_at )
+DEV_MODE_CCMD( fua_sector_at )
 {
 	if ( subsectors == NULL || numsubsectors <= 0 || argv.argc( ) < 3 ) { Printf( "usage: fua_sector_at x y [x y ...]\n" ); return; }
 	for ( int a = 1; a + 1 < argv.argc( ); a += 2 )
@@ -304,7 +304,7 @@ CCMD( fua_sector_at )
 	}
 }
 
-CCMD( fua_lines_at )
+DEV_MODE_CCMD( fua_lines_at )
 {
 	if ( lines == NULL || numlines <= 0 ) { Printf( "no level loaded.\n" ); return; }
 	if ( argv.argc( ) < 3 ) { Printf( "usage: fua_lines_at <x> <y> [radius]\n" ); return; }
@@ -330,7 +330,7 @@ CCMD( fua_lines_at )
 	Printf( "fua_lines_at: %d line(s) within %.0f of (%.0f, %.0f)\n", shown, rad, px, py );
 }
 
-CCMD( fua_find_lines )
+DEV_MODE_CCMD( fua_find_lines )
 {
 	if ( lines == NULL || numlines <= 0 )
 	{
@@ -403,7 +403,7 @@ CCMD( fua_find_lines )
 	Printf( "fua_find_lines: %d shown, %d specialled lines scanned of %d\n", found, scanned, numlines );
 }
 
-CCMD( fua_levelmesh_bakeall )
+DEV_MODE_CCMD( fua_levelmesh_bakeall )
 {
 	Printf( "levelmesh: %d wall parts and %d planes baked from the map.\n", zx::levelmesh::BakeLevelFromMap( ), zx::levelmesh::BakeFlatsFromMap( ) );
 }
@@ -414,7 +414,7 @@ CCMD( fua_levelmesh_bakeall )
 //
 //==========================================================================
 
-CCMD( fua_levelmesh_stats )
+DEV_MODE_CCMD( fua_levelmesh_stats )
 {
 	using namespace zx::levelmesh;
 
@@ -531,7 +531,7 @@ CCMD( fua_levelmesh_stats )
 
 EXTERN_CVAR( Bool, r_mirrors )
 
-CCMD( fua_make_mirror )
+DEV_MODE_CCMD( fua_make_mirror )
 {
 	if ( players[consoleplayer].mo == NULL ) { Printf( "no player\n" ); return; }
 	AActor *mo = players[consoleplayer].mo;
@@ -595,7 +595,7 @@ static void PrintLinkedLights( FLightNode *head )
 	if ( linked == 0 ) Printf( "          no light is linked to it\n" );
 }
 
-CCMD( fua_look )
+DEV_MODE_CCMD( fua_look )
 {
 	if ( players[consoleplayer].mo == NULL ) { Printf( "no player\n" ); return; }
 	AActor *mo = players[consoleplayer].mo;
@@ -850,7 +850,7 @@ CCMD( fua_look )
 //
 //==========================================================================
 
-CCMD( fua_lightnodes )
+DEV_MODE_CCMD( fua_lightnodes )
 {
 	if ( sides == NULL || numsides <= 0 ) { Printf( "no level loaded.\n" ); return; }
 
@@ -932,7 +932,7 @@ CCMD( fua_lightnodes )
 //
 //==========================================================================
 
-CCMD( fua_light_field )
+DEV_MODE_CCMD( fua_light_field )
 {
 	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
 	AActor *pmo = players[consoleplayer].mo;
@@ -981,7 +981,7 @@ CCMD( fua_light_field )
 //==========================================================================
 
 // [rc4l] A sector's 3D-floor light list as the wall split reads it: each entry's plane height at the sector's sound origin, its light and colour.
-CCMD( fua_sector_lights )
+DEV_MODE_CCMD( fua_sector_lights )
 {
 	if ( argv.argc( ) < 2 ) { Printf( "usage: fua_sector_lights <sector>\n" ); return; }
 	const int s = atoi( argv[1] );
@@ -1013,7 +1013,7 @@ CCMD( fua_sector_lights )
 }
 
 // [rc4l] Recolour a sector as a script's Sector_SetColor does, to watch which renderer follows it.
-CCMD( fua_sector_color )
+DEV_MODE_CCMD( fua_sector_color )
 {
 	if ( argv.argc( ) < 5 ) { Printf( "usage: fua_sector_color <sector> <r> <g> <b>\n" ); return; }
 	const int s = atoi( argv[1] );
@@ -1021,7 +1021,7 @@ CCMD( fua_sector_color )
 	sectors[s].SetColor( atoi( argv[2] ), atoi( argv[3] ), atoi( argv[4] ), sectors[s].rc.ColorMap != NULL ? sectors[s].rc.ColorMap->Desaturate : 0 );
 }
 
-CCMD( fua_light )
+DEV_MODE_CCMD( fua_light )
 {
 	if ( sectors == NULL || numsectors <= 0 ) { Printf( "no level loaded.\n" ); return; }
 	if ( argv.argc( ) < 2 )
@@ -1072,7 +1072,7 @@ CCMD( fua_light )
 		FIXED2FLOAT( x ), FIXED2FLOAT( y ), FIXED2FLOAT( z ) );
 }
 
-CCMD( fua_light_clear )
+DEV_MODE_CCMD( fua_light_clear )
 {
 	TThinkerIterator<ADynamicLight> it( STAT_DLIGHT );
 	ADynamicLight *lt;

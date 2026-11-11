@@ -10,6 +10,7 @@ import { cvarValueOf } from "../src/abperf.mjs";
 export const TOOLS = [
   { setting: "fua_mesh_sky", own: 0, command: "fua_mesh_blank", ran: /mesh pieces blanked/ },
   { setting: "cl_fua_hitbox", own: 1, command: "fua_hitbox", ran: /Hitbox overlay (on|off)\./ },
+  { setting: "fua_dg_lightlinks", own: 0, command: "fua_light", ran: /usage: fua_light/ },
 ];
 export const REFUSED = /is a dev-mode tool: sv_cheats must be true on this server/;
 const shown = (v) => (v ? "true" : "false");

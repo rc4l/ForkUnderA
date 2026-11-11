@@ -36,7 +36,7 @@
 #include <vector>
 
 // [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
-CVAR(Bool, fua_vis_walk, true, 0)
+CVAR(Bool, fua_vis_walk, true, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Bool, fua_sprite_check)
 EXTERN_CVAR(Bool, fua_shading_check)
 EXTERN_CVAR(Bool, gl_render_things)

@@ -85,7 +85,7 @@ PieceSlotSet DynamicPieceSlots(int index, const zx::levelmesh::MeshPiece &p)
 }
 
 // [rc4l] Level surfaces their sector's light reproduces are lit from the sector light table (fuaSectorLit); 0 bakes every surface's shading into its record, to compare against.
-CVAR(Bool, fua_dg_sectorlit, true, 0)
+CVAR(Bool, fua_dg_sectorlit, true, CVAR_FUA_DEV_MODE)
 
 // [rc4l] The piece's own record, written once. See ScenePieceData.
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh)

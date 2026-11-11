@@ -65,11 +65,11 @@
 #include "features/telemetry/telemetry.h"
 
 // [rc4l] Compare the walk against GL's own every frame GL walks, counting what differs for fua_vis_report.
-CVAR(Bool, fua_vis_check, false, 0)
+CVAR(Bool, fua_vis_check, false, CVAR_FUA_DEV_MODE)
 // [rc4l] Slices the player's walk is split into by view angle and run on the job pool: -1 is one a lane, 1 walks it on the main thread alone.
-CVAR(Int, fua_vis_slices, -1, 0)
+CVAR(Int, fua_vis_slices, -1, CVAR_FUA_DEV_MODE)
 // [rc4l] Move the player's walk's slice edges walk to walk so each slice has about the same work.
-CVAR(Bool, fua_vis_balance, true, 0)
+CVAR(Bool, fua_vis_balance, true, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Bool, r_noskyboxes)
 EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Bool, r_mirror_envmap)
@@ -1896,7 +1896,7 @@ void CheckPortalViews()
 
 }} // namespace zx::visibility
 
-CCMD( fua_vis_report )
+DEV_MODE_CCMD( fua_vis_report )
 {
 	const int walks = zx::visibility::g_timedWalks;
 	Printf( "player walks: %d, mean %.3f ms (max %.3f), portal views %.3f ms a frame\n", walks,

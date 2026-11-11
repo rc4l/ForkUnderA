@@ -9,9 +9,9 @@
 #include <chrono>
 
 // [rc4l] Microseconds burned on every frame once its tics have run, as a heavy view's frame costs (debug).
-CVAR(Int, fua_debug_framestall_us, 0, 0)
+CVAR(Int, fua_debug_framestall_us, 0, CVAR_FUA_DEV_MODE)
 // [rc4l] Microseconds burned inside each tic's playsim, on whichever thread runs it, as a heavy fight's tic costs (debug).
-CVAR(Int, fua_debug_playsim_us, 0, 0)
+CVAR(Int, fua_debug_playsim_us, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace frame {
 

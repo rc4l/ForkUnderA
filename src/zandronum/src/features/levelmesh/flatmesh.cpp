@@ -1085,12 +1085,12 @@ void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int pr
 }
 
 // [rc4l] How many particles the backend was handed for the last frame, which standalone takes from the visibility walk.
-CCMD( fua_particles )
+DEV_MODE_CCMD( fua_particles )
 {
 	Printf( "particles: %d drawn this frame\n", zx::levelmesh::g_particlesThisFrame );
 }
 
-CCMD( fua_sprite_sweep )
+DEV_MODE_CCMD( fua_sprite_sweep )
 {
 	if (g_swSeen == 0) { Printf( "fua_sprite_sweep: no sweep has run -- needs fua_dg_standalone.\n" ); return; }
 	const int culled = g_swNoSector + g_swBehind + g_swOffScreen;
@@ -1293,7 +1293,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
 }} // namespace zx::levelmesh
 
 // [rc4l] What each sky list holds now, and the walks that filled them since the last ask: two main walks a frame is the fault that hid wdiexsec's sky.
-CCMD(fua_sky_quads)
+DEV_MODE_CCMD(fua_sky_quads)
 {
 	static int lastMain = 0, lastCamera = 0;
 	int heldMain = 0, heldCamera = 0;

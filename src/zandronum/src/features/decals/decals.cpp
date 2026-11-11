@@ -413,7 +413,7 @@ void ResetDecalReport ()
 }} // namespace zx::decals
 
 // [rc4l] What became of every mark since the level began, by surface and verdict, and how many are alive; `fua_decal_report reset` starts the count again.
-CCMD (fua_decal_report)
+DEV_MODE_CCMD (fua_decal_report)
 {
 	if (argv.argc () > 1 && stricmp (argv[1], "reset") == 0)
 	{

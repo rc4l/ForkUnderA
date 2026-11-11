@@ -52,7 +52,7 @@ static void MadeInPlayFrame(bool ready)
 	ComputeMadeInPlayFrame(g_madeInPlay, ready);
 }
 
-CCMD( fua_dg_made )
+DEV_MODE_CCMD( fua_dg_made )
 {
 	std::lock_guard<std::mutex> guard(g_madeLock);
 	Printf("%s", ComputeMadeInPlayReport(g_madeInPlay).c_str());
