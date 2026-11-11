@@ -3427,7 +3427,12 @@ void CSkullBot::PreDelete( void )
 
 	// Delete the actor attached to the player.
 	if ( m_pPlayer->mo )
+	{
+		// [rc4l] Ported from zandronum@2272850a66fbce3b1a1d74e1a6a687e2a2b18177: a removed bot's body falls silent.
+		// [AK] Stop any sounds from this actor before destroying it.
+		S_StopAllSoundsFromActor( m_pPlayer->mo );
 		m_pPlayer->mo->Destroy( );
+	}
 
 	// [RK] Remove the corpse's thinkers to prevent a crash later
 	if (( NETWORK_GetState() == NETSTATE_SINGLE || NETWORK_GetState() == NETSTATE_SINGLE_MULTIPLAYER ) && m_pPlayer->mo )

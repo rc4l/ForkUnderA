@@ -4992,6 +4992,10 @@ void ServerCommands::DisconnectPlayer::Execute()
 				FBehavior::StaticStopMyScripts( player->mo );
 		}
 
+		// [rc4l] Ported from zandronum@2272850a66fbce3b1a1d74e1a6a687e2a2b18177: a disconnecting player's body falls silent.
+		// [AK] Stop any sounds from this actor before destroying it.
+		S_StopAllSoundsFromActor( player->mo );
+
 		// Destroy the actor associated with the player.
 		player->mo->Destroy( );
 		player->mo = nullptr;
