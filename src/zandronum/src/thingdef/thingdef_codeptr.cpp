@@ -3056,6 +3056,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnItemEx)
 
 			// [BB] Set scale if necessary.
 			SERVERCOMMANDS_UpdateThingScaleNotAtDefault ( mo );
+
+			// [rc4l] Ported from zandronum@0b7f9c3c54f6e7e5cf4effecd5326b002a113c6b: SXF_TRANSFERSTENCILCOL reaches clients.
+			// [AK] Set the stencil color if necessary.
+			if ( mo->fillcolor != mo->GetDefault( )->fillcolor )
+				SERVERCOMMANDS_SetThingProperty( mo, APROP_StencilColor );
 		}
 
 		// [BC] Flag this actor as being client-spawned.
