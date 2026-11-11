@@ -40,8 +40,11 @@ enum class DatabaseOutboxOpen
 	Failed,
 };
 
-// [Doruk-Aksoy] The outbox of slot `slot` beside the shared file.
+// [Doruk-Aksoy] The outbox of slot `slot` beside the shared file, `databasePath` being the stem ComputeDatabaseOutboxStem gives.
 std::string ComputeDatabaseOutboxPath(const std::string &databasePath, int slot);
+
+// [Doruk-Aksoy] The database's resolved path in one spelling (forward slashes, no repeated separators or . and .. segments), never folding case, since two files a case-sensitive volume tells apart must never share outboxes.
+std::string ComputeDatabaseOutboxStem(const std::string &resolvedPath);
 
 // [Doruk-Aksoy] Opens and locks an outbox for this process, returning the batches it still holds; Busy when a live process holds it.
 DatabaseOutboxOpen ComputeDatabaseOutboxOpen(DatabaseOutbox &outbox, const std::string &path, bool create, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq);
