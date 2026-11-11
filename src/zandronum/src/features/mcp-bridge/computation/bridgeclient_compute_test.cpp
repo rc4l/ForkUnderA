@@ -73,3 +73,21 @@ TEST(BridgeClient, ATokenShownWhereNoneIsSetIsRefused)
 	EXPECT_EQ(r.replies[0], "{\"t\":\"error\",\"error\":\"bad token\"}");
 	EXPECT_FALSE(c.authed);
 }
+
+TEST(BridgeClient, ASocketCallMovingBytesGoesOn)
+{
+	EXPECT_EQ(ComputeSocketStep(1, false), SocketStep::Moved);
+	EXPECT_EQ(ComputeSocketStep(2048, true), SocketStep::Moved);
+}
+
+TEST(BridgeClient, ASocketCallASignalInterruptedIsMadeAgain)
+{
+	EXPECT_EQ(ComputeSocketStep(-1, true), SocketStep::Retry);
+}
+
+TEST(BridgeClient, AHangUpOrAnyOtherFailureClosesTheConnection)
+{
+	EXPECT_EQ(ComputeSocketStep(0, false), SocketStep::Closed);
+	EXPECT_EQ(ComputeSocketStep(0, true), SocketStep::Closed);
+	EXPECT_EQ(ComputeSocketStep(-1, false), SocketStep::Closed);
+}
