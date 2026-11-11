@@ -1,0 +1,49 @@
+{
+  "uzdoom": {
+    "label": "UZDoom",
+    "dir": ".",
+    "vcs": "git",
+    "clone": "../UZDoom",
+    "clone_env": "UZDOOM",
+    "from": "ad88cfc5e",
+    "to": "HEAD",
+    "floor": "from-date",
+    "order": "date",
+    "remote": "https://github.com/UZDoom/UZDoom.git",
+    "repo_url": "https://github.com/UZDoom/UZDoom",
+    "commit_url": "https://github.com/UZDoom/UZDoom/commit/{sha}",
+    "file_url": "https://github.com/UZDoom/UZDoom/blob/{sha}/{path}",
+    "summary": "One row per upstream commit from anchor <code>ad88cfc5e</code> to UZDoom HEAD",
+    "goal": { "label": "GZDoom 2.1.1", "date": "2016-02-23", "sha": "1f09341d2b8020d5da2c1add45c2708bf40248cf" },
+    "base_rows": true,
+    "ignore": [],
+    "tree": [["wadsrc/", "src/zandronum/wadsrc/"], ["src/", "src/zandronum/src/"]],
+    "converge": {
+      "include": ["src/zandronum/src/gl/", "src/zandronum/wadsrc/static/shaders/"],
+      "exempt": ["src/zandronum/src/gl/system/gl_framebuffer.cpp"]
+    }
+  },
+  "zandronum": {
+    "label": "Zandronum",
+    "dir": "zandronum",
+    "vcs": "hg",
+    "clone": "../Zandronum",
+    "clone_env": "ZANDRONUM",
+    "from": "ZA_3.2.1",
+    "to": "default",
+    "order": "revision",
+    "remote": "https://foss.heptapod.net/zandronum/zandronum-stable",
+    "repo_url": "https://foss.heptapod.net/zandronum/zandronum-stable",
+    "commit_url": "https://foss.heptapod.net/zandronum/zandronum-stable/-/commit/{sha}",
+    "file_url": "https://foss.heptapod.net/zandronum/zandronum-stable/-/blob/{sha}/{path}",
+    "summary": "One row per Zandronum commit from our base <code>ZA_3.2.1</code> to the tip of <code>zandronum-stable</code>, in revision order",
+    "goal": { "label": "zandronum-stable default", "sha": "tip" },
+    "base_rows": false,
+    "ignore": ["docs/zandronum-history.txt", "docs/zandronum-uzdoom-backport-nodes.txt",
+               "docs/zandronum-gzdoom-backport-nodes.txt", ".hgtags"],
+    "tree": [["", "src/zandronum/"]],
+    "twin": "uzdoom",
+    "netcode": true,
+    "converge": { "include": [], "exempt": [] }
+  }
+}

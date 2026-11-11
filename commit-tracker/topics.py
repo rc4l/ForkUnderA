@@ -6,48 +6,29 @@ The "with BERTopic" version: cluster the first-1000 commit messages by MEANING
 Contrast with vocab.py (bag-of-words / TF-IDF, no embeddings): that one counts exact
 terms; this one groups commits that are *about* the same thing even when the words differ.
 
-Run with the uv venv:  /tmp/bt312/bin/python commit-tracker/topics.py
-Env: UZDOOM, ANCHOR, UNTIL.  Writes commit-tracker/bertopic_tags.tsv.
+Run with a venv that has bertopic:  python commit-tracker/topics.py [--ledger NAME] [--limit N]
+Reads titles from the ledger's coverage.tsv.  Writes <ledger>/bertopic_tags.tsv.
 """
-import os, subprocess
+import argparse, os, sys
 from bertopic import BERTopic
 from umap import UMAP
 
-UP     = os.environ.get("UZDOOM", "/Users/username/repos/UZDoom")
-ANCHOR = os.environ.get("ANCHOR", "ad88cfc5e")
-UNTIL  = os.environ.get("UNTIL")
 HERE   = os.path.dirname(os.path.abspath(__file__))
-OUT    = os.path.join(HERE, "bertopic_tags.tsv")
-
-
-def target_shas():
-    shas = []
-    with open(os.path.join(HERE, "coverage.tsv")) as f:
-        for i, line in enumerate(f):
-            if i < 2:
-                continue
-            if len(shas) >= 1000:
-                break
-            shas.append(line.split("\t", 1)[0])
-    return set(shas)
+sys.path.insert(0, HERE)
+import ledger as L  # noqa: E402
 
 
 def main():
-    want = target_shas()
-    args = ["git", "-C", UP, "log", "--format=%H\x1f%s"]
-    if UNTIL:
-        args.append("--until=" + UNTIL)
-    args.append(ANCHOR + "..HEAD")
-    out = subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace").stdout
-
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default="uzdoom")
+    ap.add_argument("--limit", type=int, default=1000)
+    args = ap.parse_args()
+    led = L.load_config()[args.ledger]
     shas, docs = [], []
-    for line in out.splitlines():
-        if "\x1f" not in line:
-            continue
-        sha, subj = line.split("\x1f", 1)
-        subj = subj.strip().lstrip("- ").strip()
-        if sha in want and not subj.startswith("Merge "):   # drop merge-commit boilerplate
-            shas.append(sha)
+    for r in L.read_rows(led)[:args.limit]:
+        subj = r["title"].strip().lstrip("- ").strip()
+        if not subj.startswith("Merge "):   # drop merge-commit boilerplate
+            shas.append(r["sha"])
             docs.append(subj)
     print("documents: %d commit messages (merges dropped)" % len(docs))
 
@@ -66,7 +47,7 @@ def main():
     for _, row in info.iterrows():
         print("  topic %-3d  n=%-4d  %s" % (row["Topic"], row["Count"], row["Name"]))
 
-    with open(OUT, "w") as f:
+    with open(os.path.join(L.ledger_dir(led), "bertopic_tags.tsv"), "w", encoding="utf-8", newline="\n") as f:
         f.write("# sha -> bertopic cluster label (top-3 keywords). topic -1 = outlier.\n")
         for sha, t in zip(shas, topics):
             if t == -1:

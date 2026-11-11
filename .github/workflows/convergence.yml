@@ -55,7 +55,7 @@ jobs:
 
       - name: Convergence sweep
         env:
-          UZDOOM_DIR: ${{ github.workspace }}/upstream
+          UZDOOM: ${{ github.workspace }}/upstream
         run: |
           set -euo pipefail
           python3 tools/commit-tracker-convergence.py --top "${{ inputs.top || '40' }}"

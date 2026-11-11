@@ -13,16 +13,15 @@ Then ranks terms so you can eyeball keep/toss cutoffs. Deterministic, no ML:
   idf  = log(N / df);  a term is a good tag when df is neither tiny (noise) nor
          ~N (ubiquitous filler). Output is sorted by df so both ends are visible.
 
-Env: UZDOOM, ANCHOR, UNTIL (date bound).  Writes commit-tracker/vocab.tsv.
+Usage: vocab.py [--ledger NAME] [--limit N]  (first N rows, default 1000).  Writes <ledger>/vocab.tsv.
 """
-import math, os, re, subprocess
+import argparse, math, os, re, sys
 from collections import defaultdict
 
-UP     = os.environ.get("UZDOOM", "/Users/username/repos/UZDoom")
-ANCHOR = os.environ.get("ANCHOR", "ad88cfc5e")
-UNTIL  = os.environ.get("UNTIL")
 HERE   = os.path.dirname(os.path.abspath(__file__))
-OUT    = os.path.join(HERE, "vocab.tsv")
+sys.path.insert(0, HERE)
+import ledger as L  # noqa: E402
+import tracker  # noqa: E402
 
 STOP = set("""
 the and for that with this are was not but from have has all use used get set add added new old
@@ -59,22 +58,19 @@ def tokens(text):
                 yield w
 
 
-def target_shas():
-    """First-1000 shas straight from coverage.tsv (already floored & ordered)."""
-    cov = os.path.join(HERE, "coverage.tsv")
-    shas = set()
-    with open(cov) as f:
-        for i, line in enumerate(f):
-            if i < 2:  # comment + header
-                continue
-            if len(shas) >= 1000:
-                break
-            shas.add(line.split("\t", 1)[0])
-    return shas
+def target_shas(led, limit):
+    """The first `limit` rows' shas, straight from coverage.tsv (already floored and ordered)."""
+    return {r["sha"] for r in L.read_rows(led)[:limit]}
 
 
 def main():
-    want = target_shas()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default="uzdoom")
+    ap.add_argument("--limit", type=int, default=1000)
+    args = ap.parse_args()
+    led = L.load_config()[args.ledger]
+    repo = tracker.repo_for(led)
+    want = target_shas(led, args.limit)
     N = len(want)
     tf = defaultdict(int)                 # term -> total occurrences
     df = defaultdict(set)                 # term -> set of shas
@@ -86,39 +82,24 @@ def main():
             df[w].add(sha)
             src[w].add(s)
 
-    # --- messages (NUL-separated so multi-line bodies stay intact) ---
-    args = ["git", "-C", UP, "log", "--format=%H%x1f%B%x00"]
-    if UNTIL:
-        args.append("--until=" + UNTIL)
-    args.append(ANCHOR + "..HEAD")
-    blob = subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace").stdout
-    for rec in blob.split("\0"):
-        if "\x1f" not in rec:
-            continue
-        sha, msg = rec.split("\x1f", 1)
-        sha = sha.strip()
+    # --- messages ---
+    for sha, msg in repo.messages(led["from"], led["to"]):
         if sha in want:
             add(sha, msg, "m")
 
     # --- code (added diff lines) + filenames ---
-    args = ["git", "-C", UP, "log", "-p", "--unified=0", "--format=\x01%H"]
-    if UNTIL:
-        args.append("--until=" + UNTIL)
-    args.append(ANCHOR + "..HEAD")
-    p = subprocess.Popen(args, stdout=subprocess.PIPE, encoding="utf-8", errors="replace", bufsize=1)
-    sha, on, budget = None, False, 0
-    for line in p.stdout:
-        line = line.rstrip("\n")[:2000]           # cap pathological minified lines
-        if line.startswith("\x01"):
-            sha = line[1:].strip(); on = sha in want; budget = 0
-        elif not on:
+    cur, budget = None, 0
+    for sha, line in repo.patches(led["from"], led["to"]):
+        if sha != cur:
+            cur, budget = sha, 0
+        if sha not in want:
             continue
-        elif line.startswith("+++ b/"):
+        line = line[:2000]                         # cap pathological minified lines
+        if line.startswith("+++ b/"):
             add(sha, line[6:].replace("/", " "), "f")   # path components + filename
         elif line and line[0] == "+" and not line.startswith("+++") and budget < 600:
             add(sha, line[1:], "c")                # cap code lines/commit (skip huge imports)
             budget += 1
-    p.stdout.close(); p.wait()
 
     rows = []
     for w in tf:
@@ -127,7 +108,7 @@ def main():
         rows.append((w, d, tf[w], round(idf, 2), "".join(sorted(src[w]))))
     rows.sort(key=lambda r: (-r[1], -r[2]))        # by df, then tf
 
-    with open(OUT, "w") as f:
+    with open(os.path.join(L.ledger_dir(led), "vocab.tsv"), "w", encoding="utf-8", newline="\n") as f:
         f.write("# candidate-tag vocabulary over %d commits. term<TAB>commits(df)<TAB>total(tf)"
                 "<TAB>idf<TAB>source(m=msg c=code f=file)\n" % N)
         for r in rows:
