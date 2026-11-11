@@ -87,9 +87,30 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
 #include "features/thing-walks/computation/thingwalk_compute.h"
+#include "features/bounce/computation/bounce_compute.h"   // [Doruk-Aksoy] how bounces end, and what a client leaves to the server
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] walkers on narrow stairs
 #include "features/monster-stairs/computation/monsterstairs_compute.h"
 static_assert(ZX_MF2_THRUACTORS == MF2_THRUACTORS, "features/thing-walks mirrors MF2_THRUACTORS");
+static_assert(zx::bounce::ZX_BOUNCE_Walls == BOUNCE_Walls && zx::bounce::ZX_BOUNCE_Floors == BOUNCE_Floors &&
+	zx::bounce::ZX_BOUNCE_Ceilings == BOUNCE_Ceilings, "features/bounce mirrors the BOUNCE_ plane flags");
+
+// [Doruk-Aksoy] features/bounce: keeps the refusing line the mover runs into most directly, since at a corner it also crosses the face it slides along.
+static void NoteRefusingLine(FCheckPosition &tm, line_t *ld)
+{
+	const double headon = zx::bounce::ComputeHeadOn(FIXED2DBL(ld->dx), FIXED2DBL(ld->dy), FIXED2DBL(tm.thing->velx), FIXED2DBL(tm.thing->vely));
+	if (zx::bounce::ComputeKeepsRefusedLine(tm.refusedline != NULL, tm.refusedheadon, headon))
+	{
+		tm.refusedline = ld;
+		tm.refusedheadon = headon;
+	}
+}
+
+// [Doruk-Aksoy] features/bounce: whether this client leaves the mover's actor collisions to the server, which sends each one's outcome with its position.
+static bool ClientLeavesActorsToServer(const AActor *mover)
+{
+	return zx::bounce::ComputeClientLeavesActorsToServer(NETWORK_InClientModeAndActorNotClientHandled(mover),
+		(mover->flags & MF_MISSILE) != 0, mover->BounceFlags);
+}
 
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
 // helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
@@ -839,6 +860,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 			P_DamageMobj(tm.thing, NULL, NULL, tm.thing->Mass >> 5, NAME_Melee);
 		}
 		tm.thing->BlockingLine = ld;
+		NoteRefusingLine(tm, ld);
 		CheckForPushSpecial(ld, 0, tm.thing, false);
 		return false;
 	}
@@ -870,6 +892,7 @@ bool PIT_CheckLine(line_t *ld, const FBoundingBox &box, FCheckPosition &tm)
 				P_DamageMobj(tm.thing, NULL, NULL, tm.thing->Mass >> 5, NAME_Melee);
 			}
 			tm.thing->BlockingLine = ld;
+			NoteRefusingLine(tm, ld);
 			// Calculate line side based on the actor's original position, not the new one.
 			CheckForPushSpecial(ld, P_PointOnLineSide(tm.thing->x, tm.thing->y, ld), tm.thing, false);
 			return false;
@@ -1695,6 +1718,8 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	newsec = P_PointInSector(x, y);
 	tm.ceilingline = thing->BlockingLine = NULL;
 	tm.floorline = NULL;
+	tm.refusedline = NULL;
+	tm.refusedheadon = 0;
 
 	// The base floor / ceiling is from the subsector that contains the point.
 	// Any contacted lines the step closer together will adjust them.
@@ -1764,7 +1789,8 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	FBoundingBox box(x, y, thing->radius);
 
 	// [Doruk-Aksoy] features/thing-walks: a THRUACTORS mover clips against no thing, so the walk that would pass each one is skipped.
-	if (!ComputeMoverPassesThings(thing->flags2))
+	// [Doruk-Aksoy] features/bounce: so does a client's copy of a server's bouncing missile, which froze against a monster the server's copy missed.
+	if (!ComputeMoverPassesThings(thing->flags2) && !ClientLeavesActorsToServer(thing))
 	{
 		FBlockThingsIterator it2(box);
 		AActor *th;
@@ -2046,7 +2072,8 @@ bool P_TestMobjZ(AActor *actor, bool quick, AActor **pOnmobj)
 	}
 
 	// [Doruk-Aksoy] features/thing-walks: a THRUACTORS actor stands on no thing, which the walk would pass one by one.
-	if (ComputeMoverPassesThings(actor->flags2))
+	// [Doruk-Aksoy] features/bounce: nor does a client's copy of a server's bouncing missile, whose landings on actors the server sends.
+	if (ComputeMoverPassesThings(actor->flags2) || ClientLeavesActorsToServer(actor))
 	{
 		if (pOnmobj) *pOnmobj = NULL;
 		return true;
@@ -2618,12 +2645,11 @@ pushline:
 	//
 	// Decided here because this is the one exit every failed move passes through, with both
 	// candidates in hand: whichever plane the missile is outside of is the one it hit.
-	if ((thing->flags & MF_MISSILE) && !(thing->flags & MF_NOCLIP))
+	// [Doruk-Aksoy] features/bounce: a wall that refused the move comes first, which is the line P_BounceWall falls back on when its corner trace misses.
+	if ((thing->flags & MF_MISSILE || thing->BounceFlags & BOUNCE_MBF) && !(thing->flags & MF_NOCLIP))
 	{
-		if (thing->z < tm.floorz && tm.floorline != NULL)
-			thing->BlockingLine = tm.floorline;
-		else if (thing->z + thing->height > tm.ceilingz && tm.ceilingline != NULL)
-			thing->BlockingLine = tm.ceilingline;
+		thing->BlockingLine = zx::bounce::ComputeBlockedLine(tm.refusedline, tm.floorline, tm.ceilingline, thing->BlockingLine,
+			thing->z < tm.floorz, thing->z + thing->height > tm.ceilingz);
 	}
 	thing->flags6 &= ~MF6_INTRYMOVE;
 /*
@@ -3813,7 +3839,8 @@ bool FSlide::BounceWall(AActor *mo)
 	fixed_t         movelen;
 	line_t			*line;
 
-	if (!(mo->BounceFlags & BOUNCE_Walls))
+	// [Doruk-Aksoy] uzdoom@72ed0c437: the plane flags count too, since a ramp stops an XY move with no line in the way.
+	if (!zx::bounce::ComputeTriesWallBounce(mo->BounceFlags))
 	{
 		return false;
 	}
@@ -3844,16 +3871,19 @@ bool FSlide::BounceWall(AActor *mo)
 	{ // Could not find a wall, so bounce off the floor/ceiling instead.
 		fixed_t floordist = mo->z - mo->floorz;
 		fixed_t ceildist = mo->ceilingz - mo->z;
-		if (floordist <= ceildist)
+		secplane_t &plane = floordist <= ceildist ? mo->Sector->floorplane : mo->Sector->ceilingplane;
+		// [Doruk-Aksoy] uzdoom@72ed0c437: a plane it does not bounce off is no bounce, so it explodes as any missile would instead of pressing into it forever.
+		if (!zx::bounce::ComputeBouncesOffPlane(mo->BounceFlags, plane.c < 0))
 		{
-			mo->FloorBounceMissile(mo->Sector->floorplane);
-			return true;
+			return false;
 		}
-		else
-		{
-			mo->FloorBounceMissile(mo->Sector->ceilingplane);
-			return true;
-		}
+		mo->FloorBounceMissile(plane);
+		return true;
+	}
+
+	if (!(mo->BounceFlags & BOUNCE_Walls))
+	{
+		return false;
 	}
 	line = bestslideline;
 
@@ -3868,7 +3898,7 @@ bool FSlide::BounceWall(AActor *mo)
 	}
 
 	// The amount of bounces is limited
-	if (mo->bouncecount>0 && --mo->bouncecount == 0)
+	if (zx::bounce::ComputeBounceSpent(mo->bouncecount))
 	{
 		if (mo->flags & MF_MISSILE)
 			P_ExplodeMissile(mo, line, NULL);
@@ -3944,7 +3974,20 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 		|| ((BlockingMobj->player == NULL) && (!(BlockingMobj->flags3 & MF3_ISMONSTER)))
 		))
 	{
-		if (mo->bouncecount > 0 && --mo->bouncecount == 0) return false;
+		// [Doruk-Aksoy] uzdoom@1eb2c7532, uzdoom@46ee2c5ec: the last bounce ends the bouncer here, since callers that ignored a false left a spent 0 meaning unlimited.
+		if (zx::bounce::ComputeBounceSpent(mo->bouncecount))
+		{
+			if (mo->flags & MF_MISSILE)
+			{
+				// [Doruk-Aksoy] Credited as the side hit's caller credits it.
+				if ((mo->STFlags & STFL_EXPLODEONDEATH) == false)
+					PLAYER_CheckStruckPlayer(mo->target);
+				P_ExplodeMissile(mo, NULL, BlockingMobj);
+			}
+			else
+				mo->Die(BlockingMobj, NULL);
+			return true;
+		}
 
 		if (mo->flags7 & MF7_HITTARGET)	mo->target = BlockingMobj;
 		if (mo->flags7 & MF7_HITMASTER)	mo->master = BlockingMobj;
@@ -3991,7 +4034,8 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 					mo->flags |= MF_INBOUNCE;
 					mo->SetState(mo->FindState(NAME_Death));
 					mo->flags &= ~MF_INBOUNCE;
-					return false;
+					// [Doruk-Aksoy] features/bounce: it is dying already, so its caller must not explode it a second time.
+					return true;
 				}
 				else
 				{

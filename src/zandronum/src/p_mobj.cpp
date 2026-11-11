@@ -103,6 +103,7 @@
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 #include "features/compat-oldnodelay/computation/oldnodelay_compute.h" // [Doruk-Aksoy] compat_fua_oldnodelay's tics
+#include "features/bounce/computation/bounce_compute.h" // [Doruk-Aksoy] how bounces end
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -1871,19 +1872,12 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		}
 	}
 
-	if (plane.c < 0)
-	{ // on ceiling
-		if (!(BounceFlags & BOUNCE_Ceilings))
-			return true;
-	}
-	else
-	{ // on floor
-		if (!(BounceFlags & BOUNCE_Floors))
-			return true;
-	}
+	// [Doruk-Aksoy] features/bounce: the ceiling (plane.c < 0) or floor it hit must be one it bounces off.
+	if (!zx::bounce::ComputeBouncesOffPlane(BounceFlags, plane.c < 0))
+		return true;
 
 	// The amount of bounces is limited
-	if (bouncecount>0 && --bouncecount==0)
+	if (zx::bounce::ComputeBounceSpent(bouncecount))
 	{
 		if (flags & MF_MISSILE)
 			P_ExplodeMissile(this, NULL, NULL);
@@ -3447,8 +3441,12 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 		}
 	}
 	P_CheckFakeFloorTriggers (mo, oldz);
+}
 
-	// [TIHan/BB] If it's a missile that is bounceable and it bounced, send info to the client
+// [TIHan/BB] If it's a missile that is bounceable and it bounced, send info to the client
+// [Doruk-Aksoy] features/bounce: sent from AActor::Tick once the Z move is done, as P_ZMovement's floor and ceiling bounces returned before its end and a bouncer on an actor skips it.
+static void P_SendBounceOffActor (AActor *mo)
+{
 	if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( mo->NetworkFlags & NETFL_BOUNCED_OFF_ACTOR ) )
 	{
 		SERVERCOMMANDS_MoveThingExact( mo, CM_X|CM_Y|CM_Z|CM_VELX|CM_VELY|CM_VELZ|CM_ANGLE );
@@ -4678,11 +4676,19 @@ void AActor::Tick ()
 								onmo->lastbump = level.maptime + TICRATE;
 						}
 					}
+					// [Doruk-Aksoy] uzdoom@5ca1bb397: a missile it did not bounce off explodes on it and anything else lands, where both hung in the air before.
+					zx::bounce::OnTop ontop = zx::bounce::OnTop::Land;
 					if (velz != 0 && (BounceFlags & BOUNCE_Actors))
 					{
-						P_BounceActor(this, onmo, true);
+						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0);
 					}
-					else
+					if (ontop == zx::bounce::OnTop::Explode)
+					{
+						if ((STFlags & STFL_EXPLODEONDEATH) == false)
+							PLAYER_CheckStruckPlayer(target);
+						P_ExplodeMissile(this, NULL, onmo);
+					}
+					else if (ontop == zx::bounce::OnTop::Land)
 					{
 						flags2 |= MF2_ONMOBJ;
 						velz = 0;
@@ -4704,6 +4710,7 @@ void AActor::Tick ()
 			if (ObjectFlags & OF_EuthanizeMe)
 				return;		// actor was destroyed
 		}
+		P_SendBounceOffActor (this);
 
 		UpdateWaterLevel (oldz);
 
