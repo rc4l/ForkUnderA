@@ -287,6 +287,14 @@ class Validation(unittest.TestCase):
         self.assertEqual(L.our_tokens("/"), [])
 
 
+class Bash(unittest.TestCase):
+    def test_candidates(self):
+        got = vcs.bash_candidates({}, "C:/Program Files/Git/mingw64/libexec/git-core", r"C:\Windows\System32\bash.exe")
+        self.assertEqual(got, [os.path.join("C:/Program Files/Git", "bin", "bash.exe"),
+                               os.path.join("C:/Program Files/Git", "usr", "bin", "bash.exe")])
+        self.assertEqual(vcs.bash_candidates({"FUA_BASH": "/x/bash"}, "", "/usr/bin/bash"), ["/x/bash", "/usr/bin/bash"])
+
+
 class Mark(unittest.TestCase):
     def test_mark(self):
         rows = [row(A), row(B)]

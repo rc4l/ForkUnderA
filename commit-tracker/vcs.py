@@ -216,6 +216,26 @@ def find_hg():
     raise RuntimeError("Mercurial not found: put hg on PATH or set HG to the executable")
 
 
+def bash_candidates(env, git_exec_path, on_path):
+    """Where a POSIX bash may be, best first: $FUA_BASH, Git's own (Git for Windows), then PATH unless it is WSL's."""
+    out = [env.get("FUA_BASH")]
+    if git_exec_path:
+        top = os.path.dirname(os.path.dirname(os.path.dirname(git_exec_path.rstrip("/\\"))))
+        out += [os.path.join(top, "bin", "bash.exe"), os.path.join(top, "usr", "bin", "bash.exe")]
+    if on_path and "system32" not in on_path.lower().replace("\\", "/"):
+        out.append(on_path)
+    return [c for c in out if c]
+
+
+def find_bash():
+    """A bash for the tools/*.sh scripts; on Windows a bare `bash` from Python is WSL's, which has no distro here."""
+    p = subprocess.run(["git", "--exec-path"], capture_output=True, text=True)
+    for cand in bash_candidates(os.environ, p.stdout.strip(), shutil.which("bash")):
+        if os.path.exists(cand):
+            return cand
+    raise RuntimeError("bash not found: install Git for Windows or set FUA_BASH")
+
+
 class HgRepo:
     kind = "hg"
 

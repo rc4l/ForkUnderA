@@ -435,12 +435,11 @@ def cmd_diff(cfg, args):
         sys.stdout.write(d)
         return 0
     # [rc4l] Every ledger's tree map lands under src/zandronum, so the upstream paths apply from there as they are.
-
     fd, tmp = tempfile.mkstemp(suffix=".diff")
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(d)
     try:
-        p = subprocess.run(["bash", os.path.join(ROOT, "tools", "apply-upstream-diff.sh"), tmp],
+        p = subprocess.run([vcs.find_bash(), os.path.join(ROOT, "tools", "apply-upstream-diff.sh"), tmp],
                            cwd=os.path.join(ROOT, "src", "zandronum"))
     finally:
         os.remove(tmp)
