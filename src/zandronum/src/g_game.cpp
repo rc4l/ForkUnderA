@@ -137,6 +137,7 @@
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
+#include "features/aimassist/aimassist.h"   // [Doruk-Aksoy] zx::aimassist::Apply
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -1783,6 +1784,11 @@ G_TickerPart G_TickerBegin ()
 				if ((gametic % ticdup) == 0)
 				{
 					RunNetSpecs (i, buf);
+				}
+				// [Doruk-Aksoy] features/aimassist: the debug aim's turn, before the demo records the ticcmd.
+				if (i == consoleplayer)
+				{
+					zx::aimassist::Apply (newcmd, i);
 				}
 				if (demorecording)
 				{
