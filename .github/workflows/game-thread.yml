@@ -70,14 +70,26 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x720x24" node src/cli.mjs fixture seamcheck gtfix --cvar fua_gamethread=1
 
       # [rc4l] What the engines said before a run failed, since fuactl only reports that the bridge went away.
+      # [Doruk-Aksoy] Always, since an engine that crashes on its way out leaves a passing step and a crash file nobody reads.
       - name: Engine logs
-        if: failure()
+        if: always()
         run: |
+          # [Doruk-Aksoy] Each crash file's engine frames as function and line, from the binary this job built.
+          for f in /tmp/fuactl-*/engine-*.log.crash; do echo "== symbolized $f"; grep -o 'forkundera(+0x[0-9a-f]*' "$f" | grep -o '0x[0-9a-f]*$' | xargs -r addr2line -f -C -i -p -e build-linux/forkundera; done
           # [rc4l] What the engine could see of the fixtures, and how it began, since a first launch once moved ~/.forkundera away and recorded on the IWAD's own map.
           ls -la "$HOME/.forkundera" "$HOME/.forkundera/fixtures" 2>&1 || true
           for f in /tmp/fuactl-*/engine-*.log; do echo "== head $f"; head -60 "$f"; done
           for f in /tmp/fuactl-*/engine-*.log*; do echo "== $f"; tail -80 "$f"; done
           cat "$RUNNER_TEMP/stacks.txt" 2>/dev/null | head -2000 || true
+
+      # [Doruk-Aksoy] Every engine left cleanly, a quit included, since a crash on the way out passes every step before it.
+      - name: No engine crashed
+        if: always()
+        run: |
+          shopt -s nullglob
+          crashes=( /tmp/fuactl-*/engine-*.log.crash )
+          if [ ${#crashes[@]} -gt 0 ]; then echo "${#crashes[@]} engine(s) left a crash file: ${crashes[*]}"; exit 1; fi
+          echo "no engine left a crash file"
 
       # [rc4l] Every report whole, and the hang stacks, since the job prints only each report file's head.
       - name: Keep the reports
