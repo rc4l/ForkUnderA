@@ -33,8 +33,9 @@ CVAR( Bool, fua_mesh_sky, true, CVAR_ARCHIVE | CVAR_FUA_DEV_MODE )
 - `computation/devmode_compute.{h,cpp}`: `ComputeDevModeAllowed`, `ComputeDevModeChange`,
   `ComputeDevModeHolds`, `ComputeDevModeArchivedValue`.
 - `computation/devmode_compute_test.cpp`: their tests.
-- `tools/fuactl/scenarios/devmode.mjs`: a client of a server without cheats is refused a dev-mode setting
-  and command, gets its own value back on leaving, and is allowed both on a server with cheats.
+- `tools/fuactl/scenarios/devmode.mjs`: a client of a server without cheats is refused each setting and
+  command in its `TOOLS` and gets its own values back once the server allows cheats; a server with cheats
+  allows them all until it turns cheats off.
 
 ## In-place engine edits
 
