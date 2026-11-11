@@ -1642,6 +1642,7 @@ add_executable( zdoom WIN32
 	features/video-scale/videoscale.cpp
 	features/windowed-video/windowedvideo.cpp
 	features/crashreport/zx_crashreport.cpp
+	features/fatallog/fatallog.cpp
 	features/replay/zx_replay.cpp
 	features/replay/zx_replay_encoder.cpp
 	features/replay/computation/replay_compute.cpp

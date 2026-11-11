@@ -5,7 +5,7 @@
 // -DFUA_MCP_BRIDGE=ON (ZX_MCP_BRIDGE=1 ./mac_compile.sh) and armed with ZANDRONUM_BRIDGE_PORT.
 import { reap, readRegistry, pidAlive } from "./registry.mjs";
 import { runDeterminismCheck, runPerfAblation, runNetBandwidth, runGlTimers } from "./session.mjs";
-import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed } from "./launch.mjs";
+import { launchInstance, stopInstance, resolveEngine, engineProcessCount, resFlag, slashed, watchFatal } from "./launch.mjs";
 import { BridgeClient } from "./client.mjs";
 import { diligentRun } from "./diligent.mjs";
 import { sampleNotes, sampleProcess, sampleTable } from "./sample.mjs";
@@ -325,6 +325,8 @@ async function main() {
       console.log(`logs: ${inst.log}`);
       console.log(`      ${inst.stdioLog}`);
       console.log(`(rpc it with: fuactl rpc sim.tic --port ${inst.port} --token ${inst.token})`);
+      // [Doruk-Aksoy] A fatal error said as soon as the engine logs it, rather than after its dialog stalls the main loop for 30s.
+      watchFatal(inst.stdioLog, (fatal) => console.error(`engine fatal error (pid ${inst.pid}; its dialog is open, close it with: fuactl quit --port ${inst.port}):\n${fatal}`));
       process.on("SIGINT", async () => { await stopInstance(inst); process.exit(0); });
       await new Promise(() => {}); // stay up
       break;

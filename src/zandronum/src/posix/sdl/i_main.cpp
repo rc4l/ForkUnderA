@@ -59,6 +59,7 @@
 #include "errors.h"
 #include "version.h"
 #include "features/crashreport/zx_crashreport.h"
+#include "features/fatallog/fatallog.h"
 #include "w_wad.h"
 #include "g_level.h"
 #include "r_state.h"
@@ -402,8 +403,7 @@ int main (int argc, char **argv)
 		// signal, so sentry's handler never sees it. Report it (I_FatalError already reports+exit()s
 		// on this platform, so it never reaches here -- no double report). No-op if reporting is off.
 		ZX_CrashReportFatal (error.GetMessage ());
-		if (error.GetMessage ())
-			fprintf (stderr, "%s\n", error.GetMessage ());
+		ZX_FatalLog (error.GetMessage ());
 		exit (-1);
     }
     catch (...)
