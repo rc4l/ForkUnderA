@@ -103,7 +103,7 @@ DatabaseOutboxOpen ComputeDatabaseOutboxOpen(DatabaseOutbox &outbox, const std::
 	if (begin != SQLITE_OK)
 	{
 		ComputeDatabaseOutboxClose(outbox);
-		return (begin & 0xff) == SQLITE_BUSY ? DatabaseOutboxOpen::Busy : DatabaseOutboxOpen::Failed;
+		return (begin & 0xff) == SQLITE_BUSY ? DatabaseOutboxOpen::Busy : DatabaseOutboxOpen::Unreadable;
 	}
 	const std::string claim = "INSERT INTO Meta VALUES('server','" + newServerId() + "') ON CONFLICT(Key) DO UPDATE SET Value=Value";
 	const bool made = exec(outbox.db, "CREATE TABLE IF NOT EXISTS Meta(Key text PRIMARY KEY, Value text)")
@@ -113,7 +113,7 @@ DatabaseOutboxOpen ComputeDatabaseOutboxOpen(DatabaseOutbox &outbox, const std::
 	if (!made)
 	{
 		ComputeDatabaseOutboxClose(outbox);
-		return DatabaseOutboxOpen::Failed;
+		return DatabaseOutboxOpen::Unreadable;
 	}
 	outbox.path = path;
 	outbox.server = singleText(outbox.db, "SELECT Value FROM Meta WHERE Key='server'");
@@ -128,11 +128,17 @@ DatabaseOutboxOpen ComputeDatabaseOutboxOpen(DatabaseOutbox &outbox, const std::
 	return DatabaseOutboxOpen::Opened;
 }
 
-int ComputeDatabaseOutboxClaim(DatabaseOutbox &outbox, const std::string &databasePath, int slots, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq)
+int ComputeDatabaseOutboxClaim(DatabaseOutbox &outbox, const std::string &databasePath, int slots, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq, std::vector<std::string> *unreadable)
 {
 	for (int slot = 0; slot < slots; ++slot)
-		if (ComputeDatabaseOutboxOpen(outbox, ComputeDatabaseOutboxPath(databasePath, slot), true, leftover, nextSeq) == DatabaseOutboxOpen::Opened)
+	{
+		const std::string path = ComputeDatabaseOutboxPath(databasePath, slot);
+		const DatabaseOutboxOpen result = ComputeDatabaseOutboxOpen(outbox, path, true, leftover, nextSeq);
+		if (result == DatabaseOutboxOpen::Opened)
 			return slot;
+		if (result == DatabaseOutboxOpen::Unreadable && unreadable != nullptr)
+			unreadable->push_back(path);
+	}
 	return -1;
 }
 
@@ -181,7 +187,7 @@ void ComputeDatabaseOutboxClose(DatabaseOutbox &outbox)
 	outbox.server.clear();
 }
 
-int ComputeDatabaseOutboxReplayOrphans(DatabaseStatements &shared, const std::string &databasePath, int slots, int ownSlot, std::string &error)
+int ComputeDatabaseOutboxReplayOrphans(DatabaseStatements &shared, const std::string &databasePath, int slots, int ownSlot, std::string &error, std::vector<std::string> *unreadable)
 {
 	int replayed = 0;
 	for (int slot = 0; slot < slots; ++slot)
@@ -191,7 +197,11 @@ int ComputeDatabaseOutboxReplayOrphans(DatabaseStatements &shared, const std::st
 		DatabaseOutbox orphan;
 		std::vector<DatabaseBatch> leftover;
 		uint64_t nextSeq = 0;
-		if (ComputeDatabaseOutboxOpen(orphan, ComputeDatabaseOutboxPath(databasePath, slot), false, leftover, nextSeq) != DatabaseOutboxOpen::Opened)
+		const std::string path = ComputeDatabaseOutboxPath(databasePath, slot);
+		const DatabaseOutboxOpen opened = ComputeDatabaseOutboxOpen(orphan, path, false, leftover, nextSeq);
+		if (opened == DatabaseOutboxOpen::Unreadable && unreadable != nullptr)
+			unreadable->push_back(path);
+		if (opened != DatabaseOutboxOpen::Opened)
 			continue;
 		uint64_t done = 0;
 		for (const DatabaseBatch &batch : leftover)

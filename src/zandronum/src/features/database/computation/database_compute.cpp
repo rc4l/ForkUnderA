@@ -243,6 +243,19 @@ bool ComputeDatabaseMaxStamp(DatabaseStatements &statements, double &stamp)
 	return true;
 }
 
+bool ComputeDatabaseAppliedSeq(DatabaseStatements &statements, const std::string &server, uint64_t &seq)
+{
+	seq = 0;
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, DatabaseQuery::AppliedSeq));
+	if (use.statement == nullptr)
+		return false;
+	sqlite3_bind_text(use.statement, 1, server.c_str(), -1, SQLITE_STATIC);
+	const int result = sqlite3_step(use.statement);
+	if (result == SQLITE_ROW)
+		seq = static_cast<uint64_t>(sqlite3_column_int64(use.statement, 0));
+	return result == SQLITE_ROW || result == SQLITE_DONE;
+}
+
 DatabaseCheckpointer::~DatabaseCheckpointer()
 {
 	ComputeDatabaseCheckpointerStop(*this);

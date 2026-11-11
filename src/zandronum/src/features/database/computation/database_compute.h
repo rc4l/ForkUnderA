@@ -109,6 +109,9 @@ bool ComputeDatabaseCountBeyond(DatabaseStatements &statements, const char *ns, 
 // [Doruk-Aksoy] The newest timestamp in the table or its delete markers, 0 for an empty database.
 bool ComputeDatabaseMaxStamp(DatabaseStatements &statements, double &stamp);
 
+// [Doruk-Aksoy] The last batch of `server` the file holds, 0 when it holds none.
+bool ComputeDatabaseAppliedSeq(DatabaseStatements &statements, const std::string &server, uint64_t &seq);
+
 // [Doruk-Aksoy] A thread with its own connection that checkpoints the write-ahead log, so the game thread never waits on that disk flush.
 struct DatabaseCheckpointer
 {

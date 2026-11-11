@@ -455,3 +455,19 @@ TEST(DatabaseCompute, CountBeyondFailsOnceTheTableIsGone)
 	EXPECT_FALSE(zx::ComputeDatabaseCountBeyond(statements, "ns", 0, true, count));
 	EXPECT_FALSE(zx::ComputeDatabaseMaxStamp(statements, stamp));
 }
+
+TEST(DatabaseCompute, AppliedSeqReadsEachServersLastBatch)
+{
+	MemoryDb memory;
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, memory.db);
+	uint64_t seq = 9;
+	EXPECT_TRUE(zx::ComputeDatabaseAppliedSeq(statements, "a", seq));
+	EXPECT_EQ(seq, 0u);
+	exec(memory.db, "INSERT INTO fua_Applied VALUES('a', 12)");
+	EXPECT_TRUE(zx::ComputeDatabaseAppliedSeq(statements, "a", seq));
+	EXPECT_EQ(seq, 12u);
+	zx::DatabaseStatements noConnection;
+	EXPECT_FALSE(zx::ComputeDatabaseAppliedSeq(noConnection, "a", seq));
+	EXPECT_EQ(seq, 0u);
+}
