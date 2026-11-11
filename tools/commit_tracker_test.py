@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "commit-tracker"))
 import ledger as L  # noqa: E402
 import overlap  # noqa: E402
 import vcs  # noqa: E402
+import tracker  # noqa: E402
 
 RS, FS, LS = vcs.RS, vcs.FS, vcs.LS
 
@@ -293,6 +294,17 @@ class Bash(unittest.TestCase):
         self.assertEqual(got, [os.path.join("C:/Program Files/Git", "bin", "bash.exe"),
                                os.path.join("C:/Program Files/Git", "usr", "bin", "bash.exe")])
         self.assertEqual(vcs.bash_candidates({"FUA_BASH": "/x/bash"}, "", "/usr/bin/bash"), ["/x/bash", "/usr/bin/bash"])
+
+
+class Apply(unittest.TestCase):
+    def test_targets(self):
+        d = "diff --git a/src/a.cpp b/src/a.cpp\n--- a/src/a.cpp\n+++ b/src/a.cpp\n@@ -1 +1 @@\n-x\n+y\n"
+        self.assertEqual(tracker.diff_targets(d), ["src/a.cpp"])
+
+    def test_keep_crlf(self):
+        self.assertEqual(tracker.keep_crlf(b"a\r\nb\r\n", b"a\nc\nb\n"), b"a\r\nc\r\nb\r\n")
+        self.assertEqual(tracker.keep_crlf(b"a\r\nb\r\n", b"a\r\nc\r\n"), b"a\r\nc\r\n")
+        self.assertEqual(tracker.keep_crlf(b"a\nb\n", b"a\nc\n"), b"a\nc\n")
 
 
 class Mark(unittest.TestCase):

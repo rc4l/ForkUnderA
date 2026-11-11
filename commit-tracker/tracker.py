@@ -427,6 +427,18 @@ def cmd_next(cfg, args):
     return cmd_show(cfg, args, pend[0], led)
 
 
+def diff_targets(diff_text):
+    """The paths a git-style diff writes to, from its `+++ b/` lines."""
+    return [ln[6:].strip() for ln in diff_text.splitlines() if ln.startswith("+++ b/")]
+
+
+def keep_crlf(before, after):
+    """`after` with CRLF endings again when `before` had them, since patch writes LF into a CRLF file."""
+    if b"\r\n" not in before or b"\n" not in after.replace(b"\r\n", b""):
+        return after
+    return after.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+
+
 def cmd_diff(cfg, args):
     led = pick_ledger(cfg, args, args.sha)
     row = L.find_row(L.read_rows(led), args.sha)
@@ -438,11 +450,24 @@ def cmd_diff(cfg, args):
     fd, tmp = tempfile.mkstemp(suffix=".diff")
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(d)
+    base = os.path.join(ROOT, "src", "zandronum")
+    before = {}
+    for t in diff_targets(d):
+        path = os.path.join(base, t)
+        if os.path.exists(path):
+            with open(path, "rb") as fh:
+                before[path] = fh.read()
     try:
-        p = subprocess.run([vcs.find_bash(), os.path.join(ROOT, "tools", "apply-upstream-diff.sh"), tmp],
-                           cwd=os.path.join(ROOT, "src", "zandronum"))
+        p = subprocess.run([vcs.find_bash(), os.path.join(ROOT, "tools", "apply-upstream-diff.sh"), tmp], cwd=base)
     finally:
         os.remove(tmp)
+    for path, old in before.items():
+        with open(path, "rb") as fh:
+            new = fh.read()
+        fixed = keep_crlf(old, new)
+        if fixed != new:
+            with open(path, "wb") as fh:
+                fh.write(fixed)
     return p.returncode
 
 
