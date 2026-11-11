@@ -27,6 +27,20 @@ DEV_MODE_CCMD( fua_light ) { ... }
 CVAR( Bool, fua_mesh_sky, true, CVAR_ARCHIVE | CVAR_FUA_DEV_MODE )
 ```
 
+## Which tools are dev-mode
+
+The repo's standard (`AGENTS.md`), as the first sweep sorted every cvar and command:
+
+- **Dev-mode:** anything that exists to test, measure, compare, bisect or debug. That covers a
+  developer command players are never asked to run, a `fua_debug_*` switch, a `*_check`, `*_log`,
+  `*_trace` or `*_stress` switch, and an unarchived `fua_` A/B or diagnostic switch.
+- **Left open:** a player's setting; a menu, hosting or download command; a diagnostic players are asked
+  to run from a netgame (`fua_stats`, `fua_flightdump`, `fua_hitches`).
+- **Not this gate:** a server's setting (`sv_`, `compat_`, `CVAR_SERVERINFO`), which the server already
+  owns, and a player option that gives an edge, which the server must force or limit instead.
+- **Keep the other checks:** the gate replaces a tool's own "offline or cheats" check, not checks such
+  as `demoplayback` or `gamestate`.
+
 ## Files (this folder)
 
 - `devmode.{h,cpp}`: `Refresh`, `MaySet`, `MayRun`, `HeldValue`.
