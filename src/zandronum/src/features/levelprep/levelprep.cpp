@@ -807,7 +807,7 @@ void CleanLevel()
 //
 //==========================================================================
 
-CCMD(listmapsections)
+DEV_MODE_CCMD(listmapsections)
 {
 	for(int i=0;i<100;i++)
 	{
@@ -828,7 +828,7 @@ CCMD(listmapsections)
 //
 //==========================================================================
 
-CCMD(dumpgeometry)
+DEV_MODE_CCMD(dumpgeometry)
 {
 	for(int i=0;i<numsectors;i++)
 	{

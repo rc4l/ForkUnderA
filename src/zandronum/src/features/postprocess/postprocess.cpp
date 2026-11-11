@@ -17,7 +17,7 @@
 #include <memory>
 
 // [Doruk-Aksoy] Ported from uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: off skips every custom post-process shader.
-CVAR(Bool, gl_custompost, true, 0)
+CVAR(Bool, gl_custompost, true, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace postprocess {
 
@@ -339,7 +339,7 @@ void PostShaderBlock(int i, unsigned char *block)
 using namespace zx::postprocess;
 
 // [Doruk-Aksoy] Ported from uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad (hw_postprocessshader_ccmds.cpp): the console's post-process commands, which change the level as a script would.
-CCMD(shaderenable)
+DEV_MODE_CCMD(shaderenable)
 {
 	if (argv.argc() < 3)
 	{
@@ -352,7 +352,7 @@ CCMD(shaderenable)
 	ChangeLevelShaders(c);
 }
 
-CCMD(shaderuniform)
+DEV_MODE_CCMD(shaderuniform)
 {
 	if (argv.argc() < 3)
 	{
@@ -386,7 +386,7 @@ CCMD(shaderuniform)
 }
 
 // [Doruk-Aksoy] Each shader as this player sees it now, from the render copy: on or off and since when, and every uniform's value; for tests reading a client's state.
-CCMD(fua_postshaders)
+DEV_MODE_CCMD(fua_postshaders)
 {
 	const DrawnShaders drawn = Drawn();
 	Printf("fua_postshaders: %d entries at %d\n", (int)drawn.table->entries.size(), drawn.maptime);
@@ -404,18 +404,18 @@ CCMD(fua_postshaders)
 }
 
 // [Doruk-Aksoy] Reads GLDEFS's post-process declarations again as a dedicated server's null renderer does, so a netgame test checks that path on any build.
-CCMD(fua_postshaders_reread)
+DEV_MODE_CCMD(fua_postshaders_reread)
 {
 	const zx::handoff::UIEffect effect = { &RereadDeclarations, 0, 0 };
 	if (!zx::handoff::QueuedBesideTic(effect)) effect.run(effect.a, effect.b);
 }
 
-CCMD(listshaders)
+DEV_MODE_CCMD(listshaders)
 {
 	for (int i = 0; i < PostShaderCount(); i++) Printf("Shader (%i): %s\n", i, PostShader(i).name.c_str());
 }
 
-CCMD(listuniforms)
+DEV_MODE_CCMD(listuniforms)
 {
 	if (argv.argc() < 2)
 	{

@@ -69,9 +69,9 @@
 #include <vector>
 
 // [rc4l] Holds the render copy to the live game while tics run inline: before each frame's views, and after each view's interpolations.
-CVAR(Bool, fua_copy_check, false, 0)
+CVAR(Bool, fua_copy_check, false, CVAR_FUA_DEV_MODE)
 // [rc4l] Holds each fill to the whole-map scan that the tic's end scan or a client's change logs spared it, counting what they missed, for fuactl fixture prescancheck and the netplay scenarios.
-CVAR(Bool, fua_copy_prescan_check, false, 0)
+CVAR(Bool, fua_copy_prescan_check, false, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace gamecopy {
 
@@ -1557,7 +1557,7 @@ void CheckAfterInterpolation()
 }} // namespace zx::gamecopy
 
 // [rc4l] The seen bits the walks have set on the live map, which the automap, savegames and bots read, so a renderer that stops setting them shows here.
-CCMD(fua_seen_count)
+DEV_MODE_CCMD(fua_seen_count)
 {
 	int mapped = 0, drawn = 0;
 	for (int i = 0; i < numlines; i++) if (lines[i].flags & ML_MAPPED) mapped++;
@@ -1566,7 +1566,7 @@ CCMD(fua_seen_count)
 }
 
 // [rc4l] What fua_copy_prescan_check found since the last report.
-CCMD(fua_copy_prescan_report)
+DEV_MODE_CCMD(fua_copy_prescan_report)
 {
 	using namespace zx::gamecopy;
 	Printf("prescan: %d fills checked, %d with the actor list, %d missed, %d keeping the last fill's actor list\n%s", g_prescanCheck.checked, g_prescanListed,
@@ -1577,7 +1577,7 @@ CCMD(fua_copy_prescan_report)
 }
 
 // [rc4l] What fua_copy_check found since the last report: the copy against the live game before the views, and its blends against the interpolations.
-CCMD(fua_copy_report)
+DEV_MODE_CCMD(fua_copy_report)
 {
 	using namespace zx::gamecopy;
 	Printf("copy before views: %d compared, %d differed\n%s", g_before.checked, g_before.differed, g_before.firsts.c_str());

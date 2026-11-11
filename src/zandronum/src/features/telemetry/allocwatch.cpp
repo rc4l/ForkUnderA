@@ -139,7 +139,7 @@ void operator delete[](void *p, const std::nothrow_t &) noexcept { Free(p); }
 #endif
 
 // [rc4l] Where the allocations still live were made: start records each new allocation's stack from then on, report lists the stacks holding the most, and stop ends it.
-CCMD(fua_allocsites)
+DEV_MODE_CCMD(fua_allocsites)
 {
 	const FString what = argv.argc() > 1 ? argv[1] : "report";
 	if (what.CompareNoCase("start") == 0)

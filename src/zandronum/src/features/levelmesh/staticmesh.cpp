@@ -619,50 +619,8 @@ const MeshPiece *MeshFindPiece(unsigned int offset)
 unsigned int MeshRebatchRevision() { return g_rebatchRevision; }
 unsigned int MeshRepaintRevision() { return g_repaintRevision; }
 
-// [rc4l] Re-register a live surface with one field changed, so the change PATH can be tested without
-// waiting for a switch to be pressed in front of the right wall.
-//
-// Every real trigger for these -- a switch, a door, a sector changing its flat -- needs a particular
-// map, a particular spot and a working aim, and three attempts at arranging that produced three
-// different accidents. The path itself is the thing under test, so this pokes it directly: the same
-// MeshRegisterPiece every wall and every floor goes through, with a real piece, and the revisions say
-// what it concluded.
-//
-//   fua_mesh_change material   -- a rebatch: the surface belongs in a different batch now
-//   fua_mesh_change shading    -- a repaint: right place, stale colour
-//   fua_mesh_change nothing    -- neither, and nothing had better move
-CCMD( fua_mesh_change )
-{
-	if (g_pieceList.Size() == 0) { Printf("no baked pieces" "\n"); return; }
-	const char *what = (argv.argc() > 1) ? argv[1] : "material";
-	unsigned int idx = 0;
-	while (idx < g_pieceList.Size() && g_pieceList[idx].range.count == 0) idx++;
-	if (idx >= g_pieceList.Size()) { Printf("no live pieces" "\n"); return; }
-
-	const unsigned int rb0 = g_rebatchRevision, rp0 = g_repaintRevision;
-	MeshPiece p = g_pieceList[idx];
-	if (strcmp(what, "material") == 0)
-	{
-		// [rc4l] Another LIVE material, not a made-up pointer. The first version of this offset the
-		// pointer by one on the theory that identity was all anyone compared -- and the backend
-		// dereferences it to build its texture, so the test crashed the engine instead of testing it.
-		const void *other = NULL;
-		for (unsigned k = 0; k < g_pieceList.Size(); k++)
-			if (g_pieceList[k].range.count != 0 && g_pieceList[k].material != p.material)
-				{ other = g_pieceList[k].material; break; }
-		if (other == NULL) { Printf("only one material on this level" "\n"); return; }
-		p.material = other;
-	}
-	else if (strcmp(what, "shading") == 0)
-		p.colorR = (p.colorR > 0.5f) ? 0.25f : 0.75f;
-	MeshRegisterPiece(p);
-
-	Printf("piece %u: rebatch %u -> %u, repaint %u -> %u" "\n",
-		idx, rb0, g_rebatchRevision, rp0, g_repaintRevision);
-}
-
 // [rc4l] fua_mesh_blank -- empty every piece of the level mesh, so whatever still draws the world is not reading it.
-CCMD( fua_mesh_blank )
+DEV_MODE_CCMD( fua_mesh_blank )
 {
 	unsigned int blanked = 0;
 	for (unsigned i = 0; i < g_pieceList.Size(); i++)

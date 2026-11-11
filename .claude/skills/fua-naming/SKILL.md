@@ -45,3 +45,5 @@ Real examples already in the tree: `cl_fua_replay`, `cl_fua_replay_bitrate`, `cl
    name as-is (it's a port, not ours).
 2. Is it new and ours, sharing a namespace with upstream (CVAR / CCMD / DECORATE / ACS / menu)? →
    sandwich `fua_` after the conventional prefix.
+3. Is it a test or debug tool? → declare it `DEV_MODE_CCMD` or flag it `CVAR_FUA_DEV_MODE`
+   (`src/zandronum/src/features/dev-mode/README.md` says which tools are).

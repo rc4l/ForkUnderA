@@ -21,7 +21,6 @@
 #include "features/hitboxviz/hitboxviz_internal.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
 
-EXTERN_CVAR(Bool, sv_cheats)
 EXTERN_CVAR(Bool, cl_fua_hitbox)
 EXTERN_CVAR(Bool, cl_fua_hitbox_xray)
 EXTERN_CVAR(Float, cl_fua_hitbox_linewidth)
@@ -103,10 +102,7 @@ void BeginFrame()
 	mark.blast    = s_blastVerts.Size();
 	s_marks.Push(mark);
 
-	// Offline, the toggle alone is enough -- there is no server to protect and cheats are already
-	// permitted (iddqd works there with sv_cheats off). Online, sv_cheats is the sole authority.
-	// See vizgate_compute.h.
-	s_frameActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
+	s_frameActive = !!cl_fua_hitbox;   // [rc4l] the dev-mode gate holds it off where cheats are refused
 }
 
 void CollectActor(AActor *thing)

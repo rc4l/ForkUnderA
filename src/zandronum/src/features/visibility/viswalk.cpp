@@ -65,13 +65,11 @@
 #include "features/telemetry/telemetry.h"
 
 // [rc4l] Compare the walk against GL's own every frame GL walks, counting what differs for fua_vis_report.
-CVAR(Bool, fua_vis_check, false, 0)
+CVAR(Bool, fua_vis_check, false, CVAR_FUA_DEV_MODE)
 // [rc4l] Slices the player's walk is split into by view angle and run on the job pool: -1 is one a lane, 1 walks it on the main thread alone.
-CVAR(Int, fua_vis_slices, -1, 0)
-// [rc4l] Walk the player's view in one slice beside the sliced walk and compare the two, for fua_vis_report.
-CVAR(Bool, fua_vis_threadcheck, false, 0)
+CVAR(Int, fua_vis_slices, -1, CVAR_FUA_DEV_MODE)
 // [rc4l] Move the player's walk's slice edges walk to walk so each slice has about the same work.
-CVAR(Bool, fua_vis_balance, true, 0)
+CVAR(Bool, fua_vis_balance, true, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Bool, r_noskyboxes)
 EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Bool, r_mirror_envmap)
@@ -161,7 +159,6 @@ long long g_walkSlices = 0;
 // [rc4l] And how much they reached: subsectors, segs, segs facing the eye, and segs the clipper let through.
 long long g_walkSubs = 0, g_walkSegs = 0, g_walkFacing = 0, g_walkOpen = 0;
 zx::frame::OracleTally g_walkCheck, g_skyCheck, g_portalCheck;   // [rc4l] the player's walk, its sky, and the portal views, each against GL's
-zx::frame::OracleTally g_sliceCheck;   // [rc4l] the sliced walk against one slice
 int g_onlyGL = 0, g_onlyOurs = 0, g_portalUnwalked = 0;
 // [rc4l] What the portal-view check had to compare, summed over its frames.
 int g_stackViewsSeen = 0, g_mirrorsSeen = 0, g_sheensSeen = 0;
@@ -1172,43 +1169,6 @@ template <class F> void ForEachRank(int count, F visit)
 		for (int r = 0; r < numsubsectors; r++) if (g_rankWalked.Load(r) == g_walkStamp) visit(r);
 }
 
-// [rc4l] A walk's outcome flattened for comparison: each subsector reached in order with its particle flag (one slice runs every flats pass in order, so that flag differs by design) and view areas, the sidedefs seen, and the sky events in order.
-void SignWalk(int count, std::vector<long long> &s)
-{
-	s.clear();
-	for (int k = 0; k < count; k++) g_slices[k].cursor = 0;
-	ForEachRank(count, [&s, count](int r)
-	{
-		const int si = g_rankSub.Load(r);
-		s.push_back(r);
-		s.push_back(si);
-		s.push_back(g_subFlags.Load(si) & kSubParticles);
-		s.push_back(g_subAreaIn.Load(si));
-		s.push_back(g_subAreaOut.Load(si));
-		TakeRankCandidates(r, count);
-		for (size_t i = 0; i < g_rankCandidates.size(); i++)
-		{
-			const Slice &sl = g_slices[g_rankCandidates[i].slice];
-			const DeriveCandidate &c = sl.derive[g_rankCandidates[i].index];
-			s.push_back((long long)(c.key & ~kKeyEpochMask));
-			for (int e = 0; e < c.count; e++)
-			{
-				const SkyEvent &ev = sl.events[c.first + e];
-				long long xy;
-				memcpy(&xy, &ev.x1, sizeof(xy));
-				s.push_back(ev.kind);
-				s.push_back(xy);
-				s.push_back((long long)(size_t)ev.portal ^ (long long)ev.skybox ^ (long long)(size_t)ev.mirror);
-				s.push_back(ev.light);
-			}
-		}
-	});
-	s.push_back(-1);
-	for (int side = 0; side < numsides; side++) if (g_sideWalked.Load(side) == g_walkStamp) s.push_back(side);
-}
-
-std::vector<long long> g_signOne, g_signMany;
-
 // [rc4l] A subsector's rank from this eye: the leaves of every front child it lies behind on the way up.
 int RankOf(int si)
 {
@@ -1325,14 +1285,6 @@ void Walk(const WalkSpec &spec, int count = 1, const unsigned *bounds = NULL)
 	g_viewy = viewy.Raw();
 	EnsureLevelArrays();
 	if (po_NumPolyobjs > 0) PreparePolyobjs();
-	const bool check = count > 1 && fua_vis_threadcheck;
-	if (check)
-	{
-		// [rc4l] The same walk in one slice first, which the slices must match; what it marks, it marks alike.
-		NextWalkStamp();
-		ClipSlices(1, NULL);
-		SignWalk(1, g_signOne);
-	}
 	cycle_t clock;
 	clock.Reset();
 	clock.Clock();
@@ -1341,19 +1293,6 @@ void Walk(const WalkSpec &spec, int count = 1, const unsigned *bounds = NULL)
 	else count = ClipOrOne(count, bounds);
 	clock.Unclock();
 	g_clipMs += clock.TimeMS();
-	if (check)
-	{
-		SignWalk(count, g_signMany);
-		g_sliceCheck.checked++;
-		if (g_signOne != g_signMany)
-		{
-			size_t at = 0;
-			while (at < g_signOne.size() && at < g_signMany.size() && g_signOne[at] == g_signMany[at]) at++;
-			if (zx::frame::ComputeOracleDiffer(g_sliceCheck, 6))
-				zx::frame::ComputeOracleNote(g_sliceCheck, "  %d slices: one walk has %u entries, the slices %u, first apart at %u\n", count,
-					unsigned(g_signOne.size()), unsigned(g_signMany.size()), unsigned(at));
-		}
-	}
 	if (count > 1)
 	{
 		// [rc4l] What the final clip saw, marked now that no clip of this walk will be thrown away.
@@ -1957,7 +1896,7 @@ void CheckPortalViews()
 
 }} // namespace zx::visibility
 
-CCMD( fua_vis_report )
+DEV_MODE_CCMD( fua_vis_report )
 {
 	const int walks = zx::visibility::g_timedWalks;
 	Printf( "player walks: %d, mean %.3f ms (max %.3f), portal views %.3f ms a frame\n", walks,
@@ -1981,9 +1920,6 @@ CCMD( fua_vis_report )
 	Printf( "portal views: %d frames derived beside GL (%d stacked views, %d mirrors, %d sheens), %d differed, %d with a view GL's occlusion query left unwalked\n%s",
 		p.checked, zx::visibility::g_stackViewsSeen, zx::visibility::g_mirrorsSeen, zx::visibility::g_sheensSeen,
 		p.differed, zx::visibility::g_portalUnwalked, p.firsts.c_str( ) );
-	const zx::frame::OracleTally &t = zx::visibility::g_sliceCheck;
-	if (t.checked) Printf( "slices: %d walks compared with one walk, %d differed\n%s", t.checked, t.differed, t.firsts.c_str( ) );
-	zx::frame::ComputeOracleReset( zx::visibility::g_sliceCheck );
 	zx::frame::ComputeOracleReset( zx::visibility::g_walkCheck );
 	zx::frame::ComputeOracleReset( zx::visibility::g_skyCheck );
 	zx::frame::ComputeOracleReset( zx::visibility::g_portalCheck );

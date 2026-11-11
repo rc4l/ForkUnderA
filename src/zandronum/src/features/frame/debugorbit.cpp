@@ -10,9 +10,9 @@
 #include <chrono>
 
 // [rc4l] The orbit's radius in degrees, 0 for off (debug).
-CVAR(Float, fua_debug_orbit, 0.f, 0)
+CVAR(Float, fua_debug_orbit, 0.f, CVAR_FUA_DEV_MODE)
 // [rc4l] Seconds for one turn of the orbit (debug).
-CVAR(Float, fua_debug_orbit_period, 1.5f, 0)
+CVAR(Float, fua_debug_orbit_period, 1.5f, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace frame {
 

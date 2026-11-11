@@ -69,7 +69,7 @@ enum
 //  Calculate sky texture
 //
 //==========================================================================
-CVAR(Bool, fua_sky_log, false, 0)
+CVAR(Bool, fua_sky_log, false, CVAR_FUA_DEV_MODE)
 
 void GLWall::SkyPlane(sector_t *sector, int plane, bool allowreflect)
 {

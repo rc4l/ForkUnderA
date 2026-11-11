@@ -55,7 +55,7 @@ static void RefreshSlotCapacity();
 }} // namespace zx::hwrender
 
 // [rc4l] A smaller device's limits, for drawing as one would (0 is the device's own); the pipelines are rebuilt with the new array size.
-CUSTOM_CVAR(Int, fua_dg_slotcap, 0, 0)
+CUSTOM_CVAR(Int, fua_dg_slotcap, 0, CVAR_FUA_DEV_MODE)
 {
 	zx::hwrender::RefreshSlotCapacity();
 }
@@ -83,7 +83,7 @@ const DeviceApi *ChosenDeviceApi()
 // every Vulkan extension the device supports -- and they drown the engine console. Warnings and
 // errors always come through: a shader that fails to compile must not be silent, which is the whole
 // reason this callback exists.
-CVAR(Bool, fua_dg_verbose, false, 0)
+CVAR(Bool, fua_dg_verbose, false, CVAR_FUA_DEV_MODE)
 
 // [rc4l] Messages from Diligent's own threads (its thread pool names each worker through this callback), kept for the main thread, whose console it is.
 static zx::Queue<std::string> &DiligentMessages()
@@ -259,7 +259,7 @@ bool BackendDeviceStarts()
 
 }} // namespace zx::hwrender
 
-CCMD( fua_diligent_probe )
+DEV_MODE_CCMD( fua_diligent_probe )
 {
 	FString report;
 	const bool ok = zx::hwrender::ProbeVulkan( report );
@@ -268,7 +268,7 @@ CCMD( fua_diligent_probe )
 
 #else // !FUA_DILIGENT
 
-CCMD( fua_diligent_probe )
+DEV_MODE_CCMD( fua_diligent_probe )
 {
 	Printf( "This build has no Diligent backend (configure with -DFUA_DILIGENT=ON).\n" );
 }
