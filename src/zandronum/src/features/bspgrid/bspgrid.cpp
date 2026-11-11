@@ -15,9 +15,6 @@
 #include <climits>
 #include <vector>
 
-// [Doruk-Aksoy] At each level's load, every grid cell's corners and some points inside walked from its start and from the root, the landings compared and the differences printed.
-CVAR(Bool, fua_bspgrid_check, false, 0)
-
 namespace zx { namespace bspgrid {
 
 namespace {
@@ -55,19 +52,13 @@ void Convert(const node_t *tree, int count, const subsector_t *subs, std::vector
 	}
 }
 
-void Build(const char *which, const node_t *tree, int count, const subsector_t *subs, int64_t minX, int64_t minY, int64_t maxX, int64_t maxY, TreeGrid &out)
+void Build(const node_t *tree, int count, const subsector_t *subs, int64_t minX, int64_t minY, int64_t maxX, int64_t maxY, TreeGrid &out)
 {
 	std::vector<GridNode> converted;
 	Convert(tree, count, subs, converted);
 	ComputeStartGrid(converted, count - 1, minX, minY, maxX, maxY, kMinShift, kMaxCells, out.grid);
 	out.tree = tree;
 	out.count = count;
-	if (fua_bspgrid_check)
-	{
-		int tested = 0;
-		const int wrong = ComputeGridMismatches(converted, out.grid, 4, 1, tested);
-		Printf("fua_bspgrid_check: %s tree, %d cells, %d points, %d landed elsewhere\n", which, out.grid.cols * out.grid.rows, tested, wrong);
-	}
 }
 
 // [Doruk-Aksoy] Where a walk of tree's count nodes starts for (x, y): from the grid built for that tree, else from the root.
@@ -92,9 +83,9 @@ void BuildForLevel()
 		maxX = std::max(maxX, vertexes[i].x.Raw());
 		maxY = std::max(maxY, vertexes[i].y.Raw());
 	}
-	Build("game", gamenodes, numgamenodes, gamesubsectors, minX, minY, maxX, maxY, g_game);
+	Build(gamenodes, numgamenodes, gamesubsectors, minX, minY, maxX, maxY, g_game);
 	// [Doruk-Aksoy] When the game walks the renderer's tree, both read the one grid.
-	if (nodes != gamenodes) Build("render", nodes, numnodes, subsectors, minX, minY, maxX, maxY, g_render);
+	if (nodes != gamenodes) Build(nodes, numnodes, subsectors, minX, minY, maxX, maxY, g_render);
 	ZX_COUNT("load/bspgrid_cells", "cells", (int)(g_game.grid.start.size() + g_render.grid.start.size()));
 }
 

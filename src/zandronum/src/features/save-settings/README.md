@@ -53,10 +53,6 @@ moment the player saved.
   `DoKeySetup`, then each KEYCONF key section again. It had restored no keys since the bindings left
   `DoGameSetup` for the startup-only `DoKeySetup` (uzdoom@c36222d2e), and never a mod's KEYCONF keys;
   and setting every cvar ran each callback, `gl_wallmesh`'s dropping every floor and ceiling.
-- `src/features/levelmesh/wallcache.cpp` `gl_wallmesh` — a set to the value it already has drops
-  nothing. Its `InvalidateAll` clears every flat, and the map bake makes a level's flats once, so
-  `gl_wallmesh 1` typed, exec'd or reset while already on left every floor and ceiling undrawn but a
-  moving sector's. Turning it off or on still invalidates, as before.
 - `src/c_cvars.{h,cpp}` — `SetGenericRep` records only engine cvars (no `CVAR_MOD` or `CVAR_AUTO`)
   for `cl_protectcvars`, so a mod's own cvars its scripts change are saved like any other.
   `C_ArchiveCVars` writes a recorded cvar's pre-script value without resetting it, and the old reset

@@ -260,7 +260,7 @@ void FrameEnds()
 }} // namespace zx::gameloop
 
 // [rc4l] How many tics ran on the game thread and how many frames beside one held positions, since the start.
-CCMD(fua_gamethread_report)
+DEV_MODE_CCMD(fua_gamethread_report)
 {
 	Printf ("game thread: %d tics on its own thread, %d frames held, %llu calls asked of the main thread\n", zx::gameloop::ThreadedTics (),
 		zx::gameloop::HeldFrames (), (unsigned long long)zx::handoff::AsksServed ());

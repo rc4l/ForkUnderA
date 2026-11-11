@@ -14,9 +14,6 @@ class AActor;
 
 namespace zx { namespace hitboxviz {
 
-// [rc4l] Whether nobody else is in this game: not a client of someone's server, and not a server ourselves.
-bool IsOfflineGame();
-
 // [rc4l] One actor's boxes into `physical` and `attack`, viewActor being the one the camera is attached to.
 void AppendActor(const zx::gamecopy::ActorRecord &thing, const void *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack);
 

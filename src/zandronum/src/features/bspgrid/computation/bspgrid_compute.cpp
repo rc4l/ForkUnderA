@@ -96,31 +96,4 @@ int ComputeWalk(const std::vector<GridNode> &nodes, int from, int64_t x, int64_t
 	return at;
 }
 
-int ComputeGridMismatches(const std::vector<GridNode> &nodes, const StartGrid &grid, int interior, uint64_t seed, int &tested)
-{
-	int mismatches = 0;
-	tested = 0;
-	if (grid.start.empty()) return 0;
-	const int64_t size = (int64_t)1 << grid.shift;
-	auto check = [&](int64_t x, int64_t y) {
-		tested++;
-		if (ComputeWalk(nodes, ComputeGridStart(grid, x, y), x, y) != ComputeWalk(nodes, grid.root, x, y)) mismatches++;
-	};
-	for (int r = 0; r < grid.rows; r++)
-		for (int c = 0; c < grid.cols; c++)
-		{
-			const int64_t x0 = grid.originX + ((int64_t)c << grid.shift), y0 = grid.originY + ((int64_t)r << grid.shift);
-			check(x0, y0);
-			check(x0 + size - 1, y0);
-			check(x0, y0 + size - 1);
-			check(x0 + size - 1, y0 + size - 1);
-			for (int i = 0; i < interior; i++)
-			{
-				seed = seed * 6364136223846793005ull + 1442695040888963407ull;
-				check(x0 + (int64_t)((seed >> 20) % (uint64_t)size), y0 + (int64_t)((seed >> 40) % (uint64_t)size));
-			}
-		}
-	return mismatches;
-}
-
 }} // namespace zx::bspgrid

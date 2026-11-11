@@ -20,8 +20,6 @@ those walks were 3.6-5.6% of the game thread.
 - `bspgrid.{h,cpp}`: the level's two grids, the game's tree and the renderer's (one grid when they are the same).
   - Each grid remembers the tree and node count it was built from, and a lookup checks both, so a tree replaced
     since walks from its root as before.
-  - `fua_bspgrid_check 1`: at each level's load, every cell's corners and four points inside are walked from the
-    cell's start and from the root, and the differences printed. It should read 0.
 
 ## In-engine hooks
 

@@ -30,7 +30,7 @@ enum class DatabaseApplyResult
 };
 
 // [Doruk-Aksoy] Applies one server's batch to the shared file in one transaction: newer sets win, deletes leave a marker, increments add, and the batch is recorded as applied.
-DatabaseApplyResult ComputeDatabaseApplyBatch(DatabaseStatements &statements, const std::string &server, const DatabaseBatch &batch, std::string &error);
+DatabaseApplyResult ComputeDatabaseApplyBatch(DatabaseStatements &statements, const std::string &server, const DatabaseBatch &batch, std::string &error, int *failureCode = nullptr);
 
 // [Doruk-Aksoy] Forgets delete markers older than `before`; a write queued longer than that could bring its key back.
 bool ComputeDatabasePruneMarkers(DatabaseStatements &statements, double before);
@@ -55,6 +55,13 @@ struct DatabaseWriter
 	std::atomic<uint64_t> applied{0};
 	std::atomic<int> busyRetries{0};
 	std::atomic<int> failures{0};
+	// [Doruk-Aksoy] SQLite's code for the last failed attempt, 0 once a batch lands; with SQLITE_FULL, the file's page use as the writer saw it.
+	std::atomic<int> lastFailureCode{0};
+	std::atomic<int64_t> filePages{0};
+	std::atomic<int64_t> fileMaxPages{0};
+	std::atomic<int64_t> filePageSize{0};
+	// [Doruk-Aksoy] How many times maintenance has finished since the writer started.
+	std::atomic<int> maintenanceRuns{0};
 
 	DatabaseWriter() = default;
 	DatabaseWriter(const DatabaseWriter &) = delete;

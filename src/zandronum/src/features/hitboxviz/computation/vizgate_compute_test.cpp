@@ -1,4 +1,4 @@
-// [MGOOOOOO] Tests for the debug overlay's cheat gate and line-width clamp.
+// [MGOOOOOO] Tests for the debug overlay's line-width clamp.
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 MGOOOOOO
 #include "gtest/gtest.h"
@@ -6,67 +6,6 @@
 #include "features/hitboxviz/computation/vizgate_compute.h"
 
 using namespace zx::hitboxviz;
-
-// ---- ShouldDraw ------------------------------------------------------------
-//
-// The whole truth table over (cvarEnabled, svCheats, offlineGame). sv_cheats is not the only way
-// cheats become permitted: offline there is no server whose rules could be subverted and no other
-// player to affect, which is why iddqd works there regardless of sv_cheats. The overlay follows the
-// same rule -- offline it obeys the toggle alone; online sv_cheats is the sole authority.
-
-TEST(HitboxVizGate, DrawsWhenEnabledAndCheatsOn)
-{
-	EXPECT_TRUE(ShouldDraw(/*cvarEnabled=*/true, /*svCheats=*/true, /*offlineGame=*/false));
-}
-
-TEST(HitboxVizGate, DrawsInOfflineSinglePlayerWithCheatsOff)
-{
-	// The point of the whole gate: a local test map is exactly where this overlay is most useful,
-	// and sv_cheats is latched there -- demanding it meant a map change before anything appeared.
-	EXPECT_TRUE(ShouldDraw(/*cvarEnabled=*/true, /*svCheats=*/false, /*offlineGame=*/true));
-}
-
-TEST(HitboxVizGate, DoesNotDrawWhenCheatsAreOffOnline)
-{
-	// Joined a server with sv_cheats 0: the toggle stays set, but nothing is drawn -- so
-	// cl_fua_hitbox_xray cannot become a wallhack in someone else's game.
-	EXPECT_FALSE(ShouldDraw(/*cvarEnabled=*/true, /*svCheats=*/false, /*offlineGame=*/false));
-}
-
-TEST(HitboxVizGate, DoesNotDrawWhenDisabled)
-{
-	// The toggle is not overridden by either permission route.
-	EXPECT_FALSE(ShouldDraw(/*cvarEnabled=*/false, /*svCheats=*/true,  /*offlineGame=*/false));
-	EXPECT_FALSE(ShouldDraw(/*cvarEnabled=*/false, /*svCheats=*/false, /*offlineGame=*/true));
-	EXPECT_FALSE(ShouldDraw(/*cvarEnabled=*/false, /*svCheats=*/true,  /*offlineGame=*/true));
-}
-
-TEST(HitboxVizGate, DoesNotDrawWhenDisabledAndCheatsOff)
-{
-	EXPECT_FALSE(ShouldDraw(/*cvarEnabled=*/false, /*svCheats=*/false, /*offlineGame=*/false));
-}
-
-TEST(HitboxVizGate, OfflineIsEnoughRegardlessOfCheats)
-{
-	// Offline, sv_cheats is not consulted at all -- it is not the authority there.
-	for (int cheats = 0; cheats < 2; ++cheats)
-		EXPECT_TRUE(ShouldDraw(/*cvarEnabled=*/true, cheats != 0, /*offlineGame=*/true));
-}
-
-TEST(HitboxVizGate, OnlineCheatsOffAlwaysWins)
-{
-	// Restated as an invariant: with someone else's game to protect, nothing draws without cheats.
-	for (int enabled = 0; enabled < 2; ++enabled)
-		EXPECT_FALSE(ShouldDraw(enabled != 0, /*svCheats=*/false, /*offlineGame=*/false));
-}
-
-TEST(HitboxVizGate, TheToggleIsNeverBypassed)
-{
-	// Exhaustive over the remaining input space: cvarEnabled is a hard prerequisite.
-	for (int cheats = 0; cheats < 2; ++cheats)
-		for (int offline = 0; offline < 2; ++offline)
-			EXPECT_FALSE(ShouldDraw(/*cvarEnabled=*/false, cheats != 0, offline != 0));
-}
 
 // ---- ResolveLineWidth ------------------------------------------------------
 

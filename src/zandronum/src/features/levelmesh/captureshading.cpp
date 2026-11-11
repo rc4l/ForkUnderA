@@ -14,7 +14,7 @@
 
 
 // [rc4l] Compare every captured surface's light model against GL's own setters, the oracle, counting what differs for fua_shading_report.
-CVAR(Bool, fua_shading_check, false, 0)
+CVAR(Bool, fua_shading_check, false, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace levelmesh {
 
@@ -169,7 +169,7 @@ void CaptureLevelShadingFrom(int lightlevel, int rellight, const FColormap &cm, 
 
 }} // namespace zx::levelmesh
 
-CCMD( fua_shading_report )
+DEV_MODE_CCMD( fua_shading_report )
 {
 	const zx::frame::OracleTally &t = zx::levelmesh::g_check;
 	Printf( "light model: %d surfaces checked against GL, %d differed\n%s", t.checked, t.differed, t.firsts.c_str( ) );

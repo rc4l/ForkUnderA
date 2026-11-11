@@ -90,7 +90,7 @@ void GetScreen2D(int &w, int &h)
 
 
 // [rc4l] fua_2d_list -- the last frame's 2D draws that cover at least a quarter of the screen, with their texture and window, for a picture something is drawn over.
-CCMD(fua_2d_list)
+DEV_MODE_CCMD(fua_2d_list)
 {
 	const float screenArea = (float)(g_screenW > 0 ? g_screenW : 1) * (g_screenH > 0 ? g_screenH : 1);
 	int shown = 0;

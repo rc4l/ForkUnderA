@@ -32,24 +32,15 @@
 #include "c_cvars.h"
 #include "c_console.h"
 
-// [rc4l] Keep the level mesh the backend draws from, and CUSTOM so turning it over drops what the mesh held; the name is GL's, from when GL's walk filled it.
-CUSTOM_CVAR(Bool, gl_wallmesh, false, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
-{
-	// [MobiusU9B] A set to the value it has drops nothing, since the map bake makes a level's flats once and every floor and ceiling but a moving sector's stayed gone (Reset to last saved, an exec, a typed gl_wallmesh 1).
-	static int lastApplied = -1;
-	if (lastApplied == (self ? 1 : 0)) return;
-	lastApplied = self ? 1 : 0;
-	zx::levelmesh::InvalidateAll();
-}
 EXTERN_CVAR(Bool, r_mirrors)
 EXTERN_CVAR(Bool, r_seamless)
 // [rc4l] Cut a wall at its 3D floor light bands (wallbands_compute), a switch so the banding can be A/B'd.
-CVAR(Bool, fua_surface_bands, true, 0)
+CVAR(Bool, fua_surface_bands, true, CVAR_FUA_DEV_MODE)
 // [rc4l] Print each banded wall the map bake splits: its span, the first boundary and the band that lights its top.
-CVAR(Bool, fua_band_log, false, 0)
+CVAR(Bool, fua_band_log, false, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Int, r_fogmode)
 // [rc4l] Off bakes a scrolled wall or floor again instead of shifting its texture, the old cost, for an A/B in one session.
-CVAR(Bool, fua_mesh_rescroll, true, 0)
+CVAR(Bool, fua_mesh_rescroll, true, CVAR_FUA_DEV_MODE)
 
 #include "features/surfaces/surfacebuild.h"
 #include "features/surfaces/computation/wallbands_compute.h"
@@ -57,6 +48,18 @@ CVAR(Bool, fua_mesh_rescroll, true, 0)
 #include "features/horizon/computation/horizon_compute.h"
 
 namespace zx { namespace levelmesh {
+
+// [rc4l] Whether the level mesh is kept: off until the backend first draws a level, then on for the session, since the setting it replaced dropped every floor when typed off and on.
+static bool g_enabled = false;
+
+bool Enabled() { return g_enabled; }
+
+void Enable()
+{
+	if (g_enabled) return;
+	g_enabled = true;
+	InvalidateAll();
+}
 
 static TArray<SegCache> g_cache;
 // [rc4l] Per-sector fua_dirty as of the last invalidation sweep, and the segs each sector owns.
@@ -565,7 +568,7 @@ static zx::levelmesh::SectorLightRef WallLightGuess(const seg_t *seg, zx::materi
 
 static int ReshadeSegFromMap(int segIndex)
 {
-	if (!gl_wallmesh) return -1;
+	if (!g_enabled) return -1;
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return -1;
 	if (segs == NULL || segIndex >= numsegs) return -1;
 	const seg_t *seg = &segs[segIndex];
@@ -813,7 +816,7 @@ static bool BakeFogSheet(const seg_t *seg, MeshRange &range, const zx::surfaces:
 int BakeSegFromMap(int segIndex)
 {
 	// [rc4l] DECLINED (-1) and "took it, made nothing" (0) differ: a declined seg is squashed by its caller, while one taken has already squashed every slot it did not fill, and squashing it again re-dirtied ranges just written, every frame.
-	if (!gl_wallmesh) return -1;
+	if (!g_enabled) return -1;
 	if (segIndex < 0 || (unsigned)segIndex >= g_cache.Size()) return -1;
 	if (segs == NULL || segIndex >= numsegs) return -1;
 	const seg_t *seg = &segs[segIndex];
@@ -1205,12 +1208,12 @@ void SectorDirtyBreakdown(int &lightOnly, int &geometry)
 }
 
 // [rc4l] Re-run the whole-map wall bake now, to tell a bake that was wrong from one that went stale.
-CCMD( fua_mapbake_now )
+DEV_MODE_CCMD( fua_mapbake_now )
 {
 	Printf( "%d wall parts rebuilt from the map\n", zx::levelmesh::BakeLevelFromMap( ) );
 }
 
-CCMD( fua_bake_dirty )
+DEV_MODE_CCMD( fua_bake_dirty )
 {
 	Printf( "sector invalidations since load: %d light-only, %d moved a plane, %d re-baked in the last frame\n",
 		g_dirtyLightOnly, g_dirtyGeometry, g_movedThisFrame );
@@ -1264,7 +1267,7 @@ static void RebakeChangedSeg(int idx, bool geometryChanged)
 
 void RebakeTransferSegs()
 {
-	if (!gl_wallmesh) return;
+	if (!g_enabled) return;
 	for (int s = 0; s < numsectors && (unsigned)s < g_sectorSegs.Size(); s++)
 	{
 		if (!zx::fakeflat::ViewDependent(&sectors[s])) continue;
@@ -1354,7 +1357,7 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 		g_lastLook.Resize((unsigned)numsectors);
 		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
 	}
-	if (!gl_wallmesh || g_sectorDirty.Size() == 0) return;
+	if (!g_enabled || g_sectorDirty.Size() == 0) return;
 	// [rc4l] r_seamless reshapes every wall's fan, so a change bakes the level's walls again.
 	if (g_bakedSeamless != (bool)r_seamless) BakeLevelFromMap();
 	// [rc4l] So does a light setting (r_lightmode, r_fogmode and the rest), which a surface lit from the sector light table follows by itself and one baked keeps until it is baked again.
@@ -1407,14 +1410,21 @@ void GetSegPieceRange(int segIndex, int piece, unsigned int &offset, unsigned in
 
 }} // namespace zx::levelmesh
 
-// [rc4l] The flat cache, which had no cache at all until it was measured: every visible flat was rebuilt from scratch every frame, 3406 times a frame on Sunder MAP16.
-CCMD( fua_flatcache_stats )
+// [rc4l] fua_mesh_rebuild -- the level mesh dropped and baked again from the map, walls and planes, for comparing what was kept up to date against it.
+DEV_MODE_CCMD( fua_mesh_rebuild )
 {
-	int fh = 0, fr = 0;
-	zx::levelmesh::GetFlatCacheStats( fh, fr );
-	Printf( "flats: %d left alone, %d rebuilt, %d reshaded (%.1f%% hit)\n", fh, fr, zx::levelmesh::GetFlatReshades( ),
-		fh + fr > 0 ? 100.0 * (double)fh / (double)( fh + fr ) : 0.0 );
+	if (!zx::levelmesh::Enabled())
+	{
+		Printf("fua_mesh_rebuild: the level mesh is kept only once the Vulkan backend has drawn a level\n");
+		return;
+	}
+	zx::levelmesh::InvalidateAll();
+	const int built = zx::levelmesh::BakeLevelFromMap();
+	const int flats = zx::levelmesh::BakeFlatsFromMap();
+	Printf("fua_mesh_rebuild: %d wall parts and %d planes built from the map\n", built, flats);
 }
+
+// [rc4l] The flat cache, which had no cache at all until it was measured: every visible flat was rebuilt from scratch every frame, 3406 times a frame on Sunder MAP16.
 
 //==========================================================================
 //
@@ -1430,7 +1440,7 @@ CCMD( fua_flatcache_stats )
 //
 //==========================================================================
 
-CCMD( fua_line_mesh )
+DEV_MODE_CCMD( fua_line_mesh )
 {
 	if ( lines == NULL || argv.argc( ) < 2 )
 	{

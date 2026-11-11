@@ -53,7 +53,7 @@
 // Check whether the player can look beyond this line
 //
 //==========================================================================
-CVAR(Bool, gltest_slopeopt, false, 0)
+CVAR(Bool, gltest_slopeopt, false, CVAR_FUA_DEV_MODE)
 
 template <class Sel> static bool CheckClipOf(side_t * sidedef, sector_t * frontsectorptr, sector_t * backsectorptr)
 {

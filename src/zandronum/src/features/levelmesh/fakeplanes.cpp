@@ -9,7 +9,6 @@
 #include "p_lnspec.h"     // Line_Horizon
 #include "p_3dfloors.h"   // FF_FIX, for AddLowerMissingTexture's exception
 #include "features/materials/materials.h"   // [rc4l] MaterialForTextureId, the test Process makes for a tier's texture
-#include "features/levelmesh/flatmesh.h"   // RefreshFakePlanes, for fua_fakeplanes
 #include "c_dispatch.h"   // CCMD
 #include "stats.h"        // cycle_t
 #include "d_player.h"     // players, for the sample move
@@ -295,35 +294,3 @@ void ClearFakePlanes()
 }
 
 }} // namespace zx::levelmesh
-
-// [rc4l] fua_fakeplanes [subsector] -- works GL's missing-texture fills out again from scratch and after a move, how long each takes, how many fake planes they put where, and one subsector's.
-CCMD( fua_fakeplanes )
-{
-	cycle_t full, heights; full.Reset(); heights.Reset();
-	full.Clock();
-	zx::levelmesh::RefreshAllFakePlanes();
-	full.Unclock();
-	// [rc4l] A move of the sector under the player stands for a typical one.
-	TArray<int> moved, noSides;
-	if ( players[consoleplayer].mo != NULL ) moved.Push( players[consoleplayer].mo->Sector->sectornum );
-	heights.Clock();
-	zx::levelmesh::RefreshFakePlanes(moved, noSides);
-	heights.Unclock();
-	int subs = 0, planes = 0;
-	for ( int i = 0; i < numsubsectors; i++ )
-	{
-		int n = 0;
-		if ( zx::levelmesh::FakePlanesFor( i, n ) != NULL ) { subs++; planes += n; }
-	}
-	Printf( "fake planes: %d over %d subsectors, worked out in %.3f ms for every candidate and %.3f ms after a move\n", planes, subs,
-		full.TimeMS( ), heights.TimeMS( ) );
-	Printf( "  after a move: %d of %u candidates %.3f, filing %.3f, %d fills %.3f, grouping %.3f ms\n", zx::levelmesh::g_lastEvaluated,
-		(unsigned)zx::levelmesh::g_candidates.size(), zx::levelmesh::g_stageMs[0], zx::levelmesh::g_stageMs[1], zx::levelmesh::g_lastEntries,
-		zx::levelmesh::g_stageMs[2], zx::levelmesh::g_stageMs[3] );
-	if ( argv.argc( ) < 2 ) return;
-	const int sub = atoi( argv[1] );
-	int n = 0;
-	const zx::levelmesh::FakePlane *p = zx::levelmesh::FakePlanesFor( sub, n );
-	if ( n == 0 ) Printf( "  subsector %d: none\n", sub );
-	for ( int i = 0; i < n; i++ ) Printf( "  subsector %d: sector %d's %s\n", sub, p[i].model, p[i].upper ? "ceiling" : "floor" );
-}

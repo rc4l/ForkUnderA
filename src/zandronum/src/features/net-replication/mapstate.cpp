@@ -22,7 +22,7 @@
 #include <vector>
 
 // [rc4l] Prints each change the audit found that no Touch had marked, naming the row and its families.
-CVAR(Bool, fua_net_replication_misses, false, 0)
+CVAR(Bool, fua_net_replication_misses, false, CVAR_FUA_DEV_MODE)
 
 namespace {
 
@@ -241,7 +241,7 @@ void SendToJoiner(unsigned client)
 }} // namespace zx::netreplication
 
 // [rc4l] What the change set sent since the level started, and what it sent late because no Touch marked it.
-CCMD(fua_net_replication)
+DEV_MODE_CCMD(fua_net_replication)
 {
 	if (!zx::net::IsServer()) { Printf("fua_net_replication: only a server sends map state\n"); return; }
 	Printf("replication: %ld rows sent, %ld missed%s%s\n", g_totalSent, g_totalMissed, g_totalMissed ? ", the first " : "", g_firstMiss.GetChars());

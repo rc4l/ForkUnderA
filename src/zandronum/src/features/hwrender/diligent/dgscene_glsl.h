@@ -185,6 +185,67 @@ static const std::string kDynamicVS = std::string(
 	"    fuaSceneVertex(pd, pos, uv);\n"
 	"}\n";
 
+// [Doruk-Aksoy] main.fp's getLightColor in pieces, as text that fuaShadeEx and fuaProcessLight each inline into one function of their own: passing a struct between functions cost unoptimized SPIR-V about 0.05 ms a frame on Sunder MAP11.
+// [rc4l] A flooded gap is lit and fogged where the plane it shows is, as DrawFloodedPlane's own polygon would be, and takes no dynamic light.
+#define FUA_SURFACE_AT_GLSL \
+	"    vec4 surfPos = vPixelPos;\n" \
+	"    float surfDepth = gl_FragCoord.z;\n" \
+	"    vec4 fq = fuaFloodPoint();\n" \
+	"    if (fq.w > 0.5) { vec4 fc = uMVP * vec4(fq.xyz, 1.0); surfPos = vec4(fq.xyz, fc.w); surfDepth = fc.z / fc.w; wantDynLight = false; }\n" \
+	"    float fogMode = vFog.a;\n" \
+	"    float fogfactor = fuaFogFactor(fogMode, vLightParm.y, surfPos, uCameraPos.xyz);\n"
+
+// [Doruk-Aksoy] What GL never draws, dropped before anything is lit.
+#define FUA_CLIP_SURFACE_GLSL \
+	/* [rc4l] Mirror clipping. Everything on the far side of the mirror plane is behind the glass and
+	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
+	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
+	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
+	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
+	"    if (fuaBehindSkyHole()) discard;\n" \
+	/* [rc4l] A model GL culls (texFlags 2048 with its front faces clockwise, 4096 counter-clockwise) loses the faces GL loses; the test follows the view, so a mirror culls what GL's mirror culls. */ \
+	"    int fuaCull = (int(vTexFlags + 0.5) >> 11) & 3;\n" \
+	"    if (fuaCull != 0 && gl_FrontFacing != (fuaCull == 1)) discard;\n"
+
+// [Doruk-Aksoy] The sector's light at the surface with its glow, into `color`.
+#define FUA_SECTOR_LIGHT_UP_GLSL \
+	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
+	/* [rc4l] main.fp's glowing walls (wallglow_compute): a glowing flat's colour added to the light, fading over its height from the plane. */ \
+	"    if (vGlowTop.w > 0.0 && vGlowDist.x < vGlowTop.w) color += fuaDesaturate(vGlowTop.rgb * (1.0 - vGlowDist.x / vGlowTop.w));\n" \
+	"    if (vGlowBottom.w > 0.0 && vGlowDist.y < vGlowBottom.w) color += fuaDesaturate(vGlowBottom.rgb * (1.0 - vGlowDist.y / vGlowBottom.w));\n" \
+	"    color = min(color, vec3(1.0));\n"
+
+// [Doruk-Aksoy] The brightmap added to `color`.
+#define FUA_BRIGHTMAP_LIGHT_GLSL \
+	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
+	   getLightColor does -- adding after would light the black parts of a texture too. */ \
+	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.
+	   main.fp calls ProcessLight(color) while `color` is still the light colour -- the texel is
+	   multiplied in afterwards -- so a white brightmap texel means "light this texel fully", and the
+	   surface keeps its own colour. Adding the same white to texel * color instead means "make this
+	   texel white", and a lava floor came out as a washed-out pink slab: luminance 41 -> 162 at the
+	   same camera. Right value, right texture, wrong point in the pipeline. */ \
+	/* [rc4l] Under bindless the brightmap is the array's at its own slot, as the texel is, since one binding cannot carry every material's. */ \
+	"    vec2 bmUV = fuaFloodUV(vUV);\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    vec3 bm = (uSkyColor.w > 0.5 && vLightIndex > 0) ? (vBrightSlot > 0 ? texture(sampler2D(uMaterials[nonuniformEXT(vBrightSlot)], uMaterials_sampler), bmUV).rgb : vec3(0.0)) : texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV).rgb;\n" \
+	"#else\n" \
+	"    vec3 bm = texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV).rgb;\n" \
+	"#endif\n" \
+	"    color = min(color + fuaDesaturate(bm), vec3(1.0));\n"
+
+// [Doruk-Aksoy] The actor's or the per-light dynamic light added to `color`, when `wantDynLight`.
+#define FUA_DYN_LIGHT_UP_GLSL \
+	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
+	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the
+	   vertex light, so a black decal has vColor 0 and the dynamic light term is then the ONLY thing
+	   left in it. Firing a weapon lit every burn mark in the room with the muzzle flash's colour.
+	   GL never has this problem: it applies the decal's colour as an OBJECT COLOUR that multiplies
+	   the finished fragment, and zero times anything is still zero. */ \
+	/* [rc4l] A sprite or model takes the light GL worked out for its actor, added after the sector light as main.fp adds uDynLightColor, and never the per-light loop. */ \
+	"    if (vActorLight.w > 0.5) { if (wantDynLight) color = clamp(color + vActorLight.rgb, 0.0, 1.4); }\n" \
+	"    else if (wantDynLight) color = fuaDynLight(color);\n"
+
 // [rc4l] The engine's real lighting, ported.
 //
 // This is a transcription of wadsrc/static/shaders/glsl/main.fp -- R_DoomLightingEquation and the
@@ -486,70 +547,49 @@ static const std::string kDynamicVS = std::string(
 	"    if (dbg == 16.0) return vec3(float(vLightIndex) / 255.0);\n" \
 	"    if (dbg == 17.0) return (uSkyColor.w > 0.5 && vLightIndex > 0) ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);\n" \
 	"    if (dbg == 0.0) return texel * vColor;\n" \
-	/* [rc4l] A flooded gap is lit and fogged where the plane it shows is, as DrawFloodedPlane's own polygon would be, and takes no dynamic light. */ \
-	"    vec4 surfPos = vPixelPos;\n" \
-	"    float surfDepth = gl_FragCoord.z;\n" \
-	"    vec4 fq = fuaFloodPoint();\n" \
-	"    if (fq.w > 0.5) { vec4 fc = uMVP * vec4(fq.xyz, 1.0); surfPos = vec4(fq.xyz, fc.w); surfDepth = fc.z / fc.w; wantDynLight = false; }\n" \
-	"    float fogMode = vFog.a;\n" \
-	"    float fogfactor = fuaFogFactor(fogMode, vLightParm.y, surfPos, uCameraPos.xyz);\n" \
+	FUA_SURFACE_AT_GLSL \
 	"    if (dbg == 5.0) return vec3(fogfactor);\n" \
 	"    if (dbg == 6.0) return vFog.rgb;\n" \
 	"    if (dbg == 7.0) return vec3(clamp(vPixelPos.w / 2000.0, 0.0, 1.0));\n" \
 	"    if (dbg == 8.0) return vec3(clamp(-vLightParm.y * 20000.0, 0.0, 1.0));\n" \
 	"    if (dbg == 9.0) return vec3(fogMode > 0.0 ? 1.0 : 0.0, fogMode < 0.0 ? 1.0 : 0.0, 0.0);\n" \
-	/* [rc4l] Mirror clipping. Everything on the far side of the mirror plane is behind the glass and
-	   must not appear in the reflection -- without this the wall the mirror hangs on renders first
-	   from the reflected camera and fills the whole reflection. w == 0 means no mirror is active. */ \
-	FUA_MIRROR_CLIP_GLSL("vPixelPos.xyz") \
-	/* [rc4l] What GL's walk never drew behind a sky hole is GL's sky there, which the frame painted first. */ \
-	"    if (fuaBehindSkyHole()) discard;\n" \
-	/* [rc4l] A model GL culls (texFlags 2048 with its front faces clockwise, 4096 counter-clockwise) loses the faces GL loses; the test follows the view, so a mirror culls what GL's mirror culls. */ \
-	"    int fuaCull = (int(vTexFlags + 0.5) >> 11) & 3;\n" \
-	"    if (fuaCull != 0 && gl_FrontFacing != (fuaCull == 1)) discard;\n" \
+	FUA_CLIP_SURFACE_GLSL \
 	/* [rc4l] Under a fixed colormap main.fp takes no light, fog, desaturation or dynamic light, recolouring the texel in the piece's own colour: white for a level surface (texFlags 8), whose baked colour is its light, and a sprite's or decal's built under the colormap. */ \
 	/* [rc4l] ...and a 3D fog layer's panel (texFlags 64) is not drawn at all, as GL's walls leave out an untextured one. */ \
 	"    if (uFixedColormap.w > 0.5) {\n" \
 	"        if ((int(vTexFlags + 0.5) & 64) != 0) discard;\n" \
 	"        return fuaFixedColormap(undesaturated * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
 	"    }\n" \
-	"    vec3 color = fuaSectorLight(vColor, vLightParm.x, fogMode, fogfactor, surfDepth);\n" \
-	/* [rc4l] main.fp's glowing walls (wallglow_compute): a glowing flat's colour added to the light, fading over its height from the plane. */ \
-	"    if (vGlowTop.w > 0.0 && vGlowDist.x < vGlowTop.w) color += fuaDesaturate(vGlowTop.rgb * (1.0 - vGlowDist.x / vGlowTop.w));\n" \
-	"    if (vGlowBottom.w > 0.0 && vGlowDist.y < vGlowBottom.w) color += fuaDesaturate(vGlowBottom.rgb * (1.0 - vGlowDist.y / vGlowBottom.w));\n" \
-	"    color = min(color, vec3(1.0));\n" \
-	/* Dynamic lights add to the light COLOUR before the texture is modulated, exactly as
-	   getLightColor does -- adding after would light the black parts of a texture too. */ \
-	/* [rc4l] Brightmaps add to the LIGHT, not to the finished fragment.
-	   main.fp calls ProcessLight(color) while `color` is still the light colour -- the texel is
-	   multiplied in afterwards -- so a white brightmap texel means "light this texel fully", and the
-	   surface keeps its own colour. Adding the same white to texel * color instead means "make this
-	   texel white", and a lava floor came out as a washed-out pink slab: luminance 41 -> 162 at the
-	   same camera. Right value, right texture, wrong point in the pipeline. */ \
-	/* [rc4l] Under bindless the brightmap is the array's at its own slot, as the texel is, since one binding cannot carry every material's. */ \
-	"    vec2 bmUV = fuaFloodUV(vUV);\n" \
-	"#ifdef FUA_BINDLESS\n" \
-	"    vec3 bm = (uSkyColor.w > 0.5 && vLightIndex > 0) ? (vBrightSlot > 0 ? texture(sampler2D(uMaterials[nonuniformEXT(vBrightSlot)], uMaterials_sampler), bmUV).rgb : vec3(0.0)) : texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV).rgb;\n" \
-	"#else\n" \
-	"    vec3 bm = texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV).rgb;\n" \
-	"#endif\n" \
-	"    color = min(color + fuaDesaturate(bm), vec3(1.0));\n" \
-	/* [rc4l] Dynamic lights are optional, because a SHADED DECAL must not take them.
-	   Its colour is its own -- a scorch mark is black -- and that colour arrives folded into the
-	   vertex light, so a black decal has vColor 0 and the dynamic light term is then the ONLY thing
-	   left in it. Firing a weapon lit every burn mark in the room with the muzzle flash's colour.
-	   GL never has this problem: it applies the decal's colour as an OBJECT COLOUR that multiplies
-	   the finished fragment, and zero times anything is still zero. */ \
-	/* [rc4l] A sprite or model takes the light GL worked out for its actor, added after the sector light as main.fp adds uDynLightColor, and never the per-light loop. */ \
-	"    if (vActorLight.w > 0.5) { if (wantDynLight) color = clamp(color + vActorLight.rgb, 0.0, 1.4); }\n" \
-	"    else if (wantDynLight) color = fuaDynLight(color);\n" \
+	FUA_SECTOR_LIGHT_UP_GLSL \
+	FUA_BRIGHTMAP_LIGHT_GLSL \
+	FUA_DYN_LIGHT_UP_GLSL \
 	"    vec3 frag = texel * color;\n" \
 	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \
 	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n" \
-	/* [Doruk-Aksoy] The piece's texel, through its GLDEFS shader in that shader's own program, and the alpha it is drawn at, which an old shader's Process has already taken; defined at FUA_PROGRAM_BLOCK. */ \
+	/* [Doruk-Aksoy] Zandronum 3.3's Process(color) contract: the light it is handed, without a brightmap (white under a fixed colormap), with the fog it took kept for fuaShadeFinal, which only recolours or fogs what Process returned. */ \
+	"vec2 fuaProcessFog;\n" \
+	"vec3 fuaProcessLight() {\n" \
+	"    bool wantDynLight = true;\n" \
+	FUA_SURFACE_AT_GLSL \
+	"    fuaProcessFog = vec2(fogMode, fogfactor);\n" \
+	FUA_CLIP_SURFACE_GLSL \
+	"    if (uFixedColormap.w > 0.5) {\n" \
+	"        if ((int(vTexFlags + 0.5) & 64) != 0) discard;\n" \
+	"        return vec3(1.0);\n" \
+	"    }\n" \
+	FUA_SECTOR_LIGHT_UP_GLSL \
+	FUA_DYN_LIGHT_UP_GLSL \
+	"    return color;\n" \
+	"}\n" \
+	"vec3 fuaShadeFinal(vec3 frag) {\n" \
+	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(frag * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
+	"    return fuaColouredFog(frag, vFog.rgb, fuaProcessFog.x, fuaProcessFog.y);\n" \
+	"}\n" \
+	/* [Doruk-Aksoy] The piece's texel through its GLDEFS shader in that shader's own program, the alpha it is drawn at, and its colour shaded as its shader's entry asks (ComputeUserProgramBlock); defined at FUA_PROGRAM_BLOCK. */ \
 	"vec4 fuaSurfaceTexel(vec2 fuaUV);\n" \
-	"float fuaSurfaceAlpha();\n"
+	"float fuaSurfaceAlpha();\n" \
+	"vec3 fuaSurfaceShade(vec4 t);\n"
 
 // [Doruk-Aksoy] Every scene fragment shader ends here, where CompileShader puts fuaSurfaceTexel: plain, or one GLDEFS shader's program (features/hwshaders), last so its macros reach nothing of ours.
 #define FUA_PROGRAM_BLOCK "//FUA_USER_SHADERS\n"
@@ -559,7 +599,7 @@ static const char *kScenePSOpaque =
 	"#version 450\n"
 	FUA_LIGHT_GLSL
 	"void main() {\n"
-	"    outColor = vec4(fuaShade(fuaSurfaceTexel(vUV).rgb), 1.0);\n"
+	"    outColor = vec4(fuaSurfaceShade(fuaSurfaceTexel(vUV)), 1.0);\n"
 	"}\n"
 	FUA_PROGRAM_BLOCK;
 
@@ -570,7 +610,7 @@ static const char *kScenePS =
 	"    vec4 t = fuaSurfaceTexel(vUV);\n"
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
-	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
+	"    outColor = vec4(fuaSurfaceShade(t), 1.0);\n"
 	"}\n"
 	FUA_PROGRAM_BLOCK;
 
@@ -602,7 +642,7 @@ static const char *kScenePSGBuffer =
 	"    vec4 t = fuaSurfaceTexel(vUV);\n"
 	/* [rc4l] GL's solid pass tests no alpha, so an upper, lower or one-sided middle shows its see-through texels in their own colour. */
 	"    if (t.a < 0.5 && vPlain < 0.5) discard;\n"
-	"    outColor = vec4(fuaShade(t.rgb), 1.0);\n"
+	"    outColor = vec4(fuaSurfaceShade(t), 1.0);\n"
 	/* Encoded to 0..1 because the target is 8-bit unorm. That is coarse for lighting and ample here:
 	   the decal pass uses this to lay axes into a plane and to ask how far a surface is from the
 	   impact, and neither needs better than a degree or so. */
@@ -642,7 +682,8 @@ static const char *kScenePSTrans =
 	"    if (fuzz > 0) t = fuaFuzz(fuzz, vUV, uFrame.x, t);\n"
 	/* [rc4l] An alpha-tested sprite drops what GL's uAlphaThreshold drops (uFrame.w); anything else only what is all but invisible. */
 	"    if ((int(vTexFlags + 0.5) & 2) != 0 ? t.a <= uFrame.w : t.a < 0.04) discard;\n"
-	"    vec3 c = fuaShade(t.rgb);\n"
+	/* [Doruk-Aksoy] The jagged fuzz's splat never ran the shader, so it is shaded as a plain texel. */
+	"    vec3 c = fuzz == 5 ? fuaShade(t.rgb) : fuaSurfaceShade(t);\n"
 	/* [rc4l] A sprite blended by its own colour (texFlags 32) is GL's GL_SRC_COLOR onto one, colour squared onto the screen, which the additive pipeline draws at alpha 1. */
 	"    outColor = fuaBlendOut((int(vTexFlags + 0.5) & 32) != 0 ? vec4(c * c, 1.0) : vec4(c, t.a * fuaSurfaceAlpha()));\n"
 	"}\n"

@@ -24,32 +24,10 @@
 #include <cstring>
 #include <vector>
 
-// [Doruk-Aksoy] On at launch, the Vulkan driver's own memory goes through the engine's operator new, counted and traced as the rest is (fua_allocsites); read once, when the device is made.
-CVAR(Bool, fua_dg_vk_alloc_trace, false, 0)
 // [Doruk-Aksoy] On at launch, the Khronos validation layer checks every Vulkan call and its messages reach the console, for correctness runs only since it slows every frame; read once, when the device is made, and needs the Vulkan SDK's layer installed.
-CVAR(Bool, fua_dg_validation, false, 0)
+CVAR(Bool, fua_dg_validation, false, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace hwrender {
-
-namespace {
-
-void *VKAPI_PTR DriverAlloc(void *, size_t size, size_t alignment, VkSystemAllocationScope) { return AllocateAlignedNew(size, alignment); }
-void VKAPI_PTR DriverFree(void *, void *memory) { FreeAlignedNew(memory); }
-
-void *VKAPI_PTR DriverRealloc(void *, void *original, size_t size, size_t alignment, VkSystemAllocationScope)
-{
-	if (original == nullptr) return AllocateAlignedNew(size, alignment);
-	if (size == 0) { FreeAlignedNew(original); return nullptr; }
-	void *moved = AllocateAlignedNew(size, alignment);
-	if (moved == nullptr) return nullptr;
-	memcpy(moved, original, std::min(size, AlignedNewSize(original)));
-	FreeAlignedNew(original);
-	return moved;
-}
-
-VkAllocationCallbacks g_driverAllocator = { nullptr, DriverAlloc, DriverRealloc, DriverFree, nullptr, nullptr };
-
-} // namespace
 
 // [rc4l] The device's own descriptor limits, so a GPU smaller than a desktop one draws with a binding per material instead of failing pipeline creation.
 static DescriptorLimits ReadLimits(Diligent::IRenderDevice *device)
@@ -151,7 +129,6 @@ static bool CreateDevice(Diligent::IRenderDevice **device, Diligent::IDeviceCont
 	// [Doruk-Aksoy] One descriptor set must fit one pool, and a binding of a world pipeline holds the whole material array, so a pool holds four of those.
 	ci.MainDescriptorPoolSize.NumSampledImageDescriptors = 4 * (zx::hwrender::kMaxMaterialSlots + zx::hwrender::kOtherStageResources);
 	factory->SetMemoryAllocator(zx::hwrender::EngineMemoryAllocator());
-	if (fua_dg_vk_alloc_trace) ci.pVkAllocator = &g_driverAllocator;
 	ci.EnableValidation = fua_dg_validation;
 	factory->CreateDeviceAndContextsVk(ci, device, context);
 	if (*device == nullptr)

@@ -395,21 +395,6 @@ void CollectMirrors()
 		Printf("vulkan: %d mirror surface(s)\n", (int)g_mirrors.Size());
 }
 
-// [rc4l] Re-scan for mirror lines after one has been created at runtime. See the fua_dg_mirrors
-// CCMD, which lives outside this namespace and so cannot reach the statics above.
-int RecollectMirrors()
-{
-	// [rc4l] The surface list only. The SRB is deliberately LEFT ALONE.
-	//
-	// It holds the acceleration structure, the vertex buffer, the sky and the material array --
-	// nothing per-mirror -- so a new surface list does not invalidate it. Releasing it from here
-	// took the process down: this runs from the console, which is not a safe moment to drop a
-	// binding the next frame may already be using. CollectMirrors releases the mirror vertex
-	// buffer, which IS per-surface, and that one is rebuilt on demand.
-	CollectMirrors();
-	return (int)g_mirrors.Size();
-}
-
 // [rc4l] The sheen block both mirror stages read, packed by ComputeMirrorSheenConstants.
 #define FUA_MIRROR_SHEEN_BLOCK_GLSL \
 	"layout(binding = 6) uniform Sheen { mat4 uSheenView; vec4 uSheenNormal; vec4 uSheenColor; vec4 uSheenLight; };\n"

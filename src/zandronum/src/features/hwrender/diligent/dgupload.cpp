@@ -15,7 +15,6 @@
 #include "features/hwrender/diligent/dgscene_internal.h"
 #include "features/decals/decals.h"   // [rc4l] SurfaceRefusesMarks, the G-buffer's no-marks bit
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
-#include "c_dispatch.h"   // [rc4l] fua_dg_sectorlit_report
 #include "features/hwrender/computation/texflags_compute.h"   // [rc4l] kTexFlagSectorLit
 #include "features/hwrender/computation/slotrecycle_compute.h"   // [Doruk-Aksoy] ComputeReserveSlots
 #include <vector>
@@ -35,7 +34,7 @@ PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool
 	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
 	const bool bright = out.animates || zx::materials::MaterialHasBrightmap(p.material);
 	out.bright = bright ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation, inMesh) : 0.f;
-	// [Doruk-Aksoy] What a dynamic piece asks for, stamped for fua_dg_slotreport's working set.
+	// [Doruk-Aksoy] What a dynamic piece asks for, stamped for the slots' working set.
 	if (!inMesh)
 	{
 		NoteDynamicSlotUse((int)out.mat, slotMat, translation);
@@ -86,7 +85,7 @@ PieceSlotSet DynamicPieceSlots(int index, const zx::levelmesh::MeshPiece &p)
 }
 
 // [rc4l] Level surfaces their sector's light reproduces are lit from the sector light table (fuaSectorLit); 0 bakes every surface's shading into its record, to compare against.
-CVAR(Bool, fua_dg_sectorlit, true, 0)
+CVAR(Bool, fua_dg_sectorlit, true, CVAR_FUA_DEV_MODE)
 
 // [rc4l] The piece's own record, written once. See ScenePieceData.
 void FillPieceData(const zx::levelmesh::MeshPiece &p, int translation, ScenePieceData &pd, bool inMesh)
@@ -141,16 +140,6 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	pd.texFlags = (float)zx::hwrender::ComputePieceTexFlags(tex);
 	// [rc4l] A flicker then rewrites its sector's entry in the table rather than this record.
 	if (inMesh && fua_dg_sectorlit && p.sectorLight.sector >= 0) zx::hwrender::ComputeSectorLitRecord(pd, p.sectorLight, p.sectorLitNoFog);
-}
-
-// [rc4l] How many of the level's surfaces are lit from the sector light table, and how many sectors it holds.
-CCMD(fua_dg_sectorlit_report)
-{
-	unsigned lit = 0;
-	for (unsigned i = 0; i < g_scene.pieces.Size(); i++)
-		if ((unsigned)g_scene.pieces[i].texFlags & zx::hwrender::kTexFlagSectorLit) lit++;
-	Printf("sector light table: %u of %u level surfaces lit from it, %d sectors (room for %u), %s\n", lit, g_scene.pieces.Size(),
-		numsectors, g_scene.sectorLightCapacity, fua_dg_sectorlit ? "on" : "off (fua_dg_sectorlit 0)");
 }
 
 void UpdateSectorLightTable(Diligent::IDeviceContext *ctx)
@@ -294,7 +283,7 @@ static bool BuildSceneBuffer(FString &err)
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::MeshPieces(npieces);
 	if (src == NULL || srcCount <= 0 || pieces == NULL || npieces <= 0)
 	{
-		err = "no baked geometry -- set gl_wallmesh 1, walk the level, then retry";
+		err = "no baked geometry -- the level mesh is baked as the backend first draws a level";
 		return false;
 	}
 

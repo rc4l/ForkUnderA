@@ -24,6 +24,7 @@ test("a server hosts on its game port on loopback with no announcing and cheats 
     ["-file", "a.wad", "-host", "-port", "10900", "+sv_broadcast", "0", "+sv_fua_serverregistry_announce", "0", "+sv_cheats", "1", "+sv_maxclientsperip", "0", "-useip", "127.0.0.1"]);
   assert.equal(serverArgs().includes("-file"), false);
   assert.equal(serverArgs({ broadcast: true }).includes("+sv_broadcast"), false);
+  assert.deepEqual(serverArgs({ cheats: false }).slice(-6, -4), ["+sv_cheats", "0"], "a server without cheats closes its clients' dev-mode tools");
 });
 
 test("a client joins on loopback, with WebGPU when asked", () => {
@@ -139,6 +140,8 @@ test("clients added at once each get their own port, and a browser join fetches 
   assert.deepEqual(f.execs.filter((e) => e[0] === 7901).map((e) => e[1]), ["openmenu ZA_Browser", "fua_join_selected_server", "join"]);
   const lan = await launchNetplay({ players: 0, broadcast: true, cvars: { sv_broadcast: 0 }, basePort: 7900, gamePort: 10950 }, f.deps);
   assert.equal(f.launched.at(-1).opts.cvars.sv_broadcast, 0);
+  await launchNetplay({ players: 0, cheats: false, basePort: 7900, gamePort: 10950 }, f.deps);
+  assert.ok(f.launched.at(-1).opts.extraArgs.join(" ").includes("+sv_cheats 0"));
   await addClient(lan, { via: "lan" }, f.deps);
   assert.equal(f.rpcs.filter((r) => r[0] === 7901 && r[1] === "browser.add").length, 1, "a LAN join adds nothing by address");
   assert.match(connectionTrouble("Can't find 'm.wad'\nDownloading 2 files to C:/t/\nDownloading m.wad from 127.0.0.1:10950"), /^Downloading 2 files to/);

@@ -112,6 +112,7 @@
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-transport/recvthread.h"   // [rc4l] a server's receive thread
 #include "features/net-transport/computation/zstdwire_compute.h"   // [KI] the pure zstd wire decisions
+#include "features/dev-mode/devmode.h"   // [rc4l] a change of role opens or closes the dev-mode gate
 
 enum LumpAuthenticationMode {
 	LAST_LUMP,
@@ -2272,6 +2273,9 @@ void NETWORK_SetState( LONG lState )
 	{
 		CLIENT_LimitProtectedCVARs();
 	}
+
+	// [rc4l] Becoming a client closes the dev-mode gate until the server allows cheats; leaving opens it.
+	zx::devmode::Refresh();
 
 	// Alert the status bar that multiplayer status has changed.
 	if (( g_lNetworkState != NETSTATE_SERVER ) &&
