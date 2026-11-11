@@ -22,7 +22,7 @@ under Customize Controls → FUA.
 
 | CVAR | Default | |
 |---|---|---|
-| `cl_fua_hitbox` | off | master toggle; the rest gray out behind it. Offline it is the only thing needed; online it also takes `sv_cheats` |
+| `cl_fua_hitbox` | off | master toggle; the rest gray out behind it. A dev-mode setting: a client of a server without `sv_cheats` is refused it |
 | `cl_fua_hitbox_actors` / `_missiles` | on | which actors get boxes |
 | `cl_fua_hitbox_attackbox` | on | draw the attack box when it differs |
 | `cl_fua_hitbox_explosions` | on | draw explosion regions |
@@ -38,38 +38,17 @@ you are standing inside) also hid the box of whoever a spectator was watching.
 
 ### Cheat gating
 
-| where | draws when |
-|---|---|
-| **Offline single player** | `cl_fua_hitbox` is on. `sv_cheats` is not consulted. |
-| **Client of a server, or a server** | `cl_fua_hitbox` is on **and** `sv_cheats` is true. |
+`cl_fua_hitbox` and `fua_hitbox` are dev-mode tools (`features/dev-mode`). Offline, on a server, or
+as a client of a server with `sv_cheats` on, they work as any setting does. A client of a server
+without cheats is refused them, and a value set before it joined is held off and given back once
+it may have it again. That matters because `cl_fua_hitbox_xray` is a wallhack by construction;
+every other option draws nothing while the toggle is off.
 
-"Offline" is the engine's own definition — neither a client nor a server
-(`NETWORK_InClientMode()` false and state not `NETSTATE_SERVER`), which includes
-`NETSTATE_SINGLE_MULTIPLAYER`, an offline game merely emulating multiplayer with bots. It is
-the same condition that lets `iddqd` work offline with `sv_cheats` off: nobody else is in the
-game and there is no server whose rules could be subverted, so `sv_cheats` is not the
-authority there. Requiring it anyway made this the one debug view unusable in the exact
-situation it is most useful — a local test map, where `sv_cheats` is latched and so needs a
-map change before it applies.
+The toggle stays `CVAR_ARCHIVE`, unlike `am_cheat` ("this is a cheat so don't save it"), since the
+gate saves the user's own value rather than the one it holds.
 
-The moment there *is* someone to protect, `sv_cheats` is the sole authority. That matters
-because `cl_fua_hitbox_xray` is a wallhack by construction; keep it behind this gate.
-
-The gate (`ShouldDraw` in `computation/vizgate_compute.h`) is spelled out from its two inputs
-rather than delegated to `CheckCheatmode()`, which applies the same offline rule but *also*
-refuses on `DisableCheats` skills — a skill definition should not be able to switch off a
-debug renderer.
-
-The check runs every frame rather than resetting the cvar from a callback the way
-Q-Zandronum's `gl_show_hitbox` does, so the settings survive joining a cheats-disabled server
-and simply stop drawing. That is also why they are `CVAR_ARCHIVE`, unlike `am_cheat` ("this
-is a cheat so don't save it"): they are a view preference that is inert where cheats are
-refused, not cheat state.
-
-⚠️ `sv_cheats` is `CVAR_LATCH`: on a server or as a client, a mid-game `sv_cheats 1` is
-queued and **only takes effect on the next map**. Set it before loading, or change map after
-setting it. The `fua_hitbox` CCMD says so when you enable the overlay online with cheats off
-— offline it just confirms the toggle, since the latch is irrelevant there.
+⚠️ `sv_cheats` is `CVAR_LATCH`: on a server, a mid-game `sv_cheats 1` is queued and **only takes
+effect on the next map**, and the client is refused until then.
 
 The **server-side** switches are unaffected: `sv_debugexplosions` and the debug-only hit-size
 replication still require `sv_cheats` (`ServerDebugActive()`), because those are about what a
@@ -121,8 +100,7 @@ so existing traffic is byte-for-byte unchanged. See also
 - `boxedges_compute` — box edges as a `GL_LINES` vertex list, the blast prism, and the
   `fulldamagedistance` clamp mirrored from `P_RadiusAttack`.
 - `blastrecords_compute` — the bounded, insertion-ordered blast store.
-- `vizgate_compute` — `ShouldDraw` (the full offline / `sv_cheats` truth table) and
-  `ResolveLineWidth`.
+- `vizgate_compute` — `ResolveLineWidth`.
 
 `hitboxviz.{h,cpp}` is the engine glue every build has:
 - the cvars and the `fua_hitbox` CCMD;

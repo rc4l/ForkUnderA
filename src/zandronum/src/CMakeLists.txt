@@ -1897,6 +1897,7 @@ add_executable( zdoom WIN32
 	features/net-replication/playerstate.cpp
 	features/net-client/netclient.cpp
 	features/net-client/rejoin.cpp
+	features/dev-mode/devmode.cpp
 	features/latency/latency.cpp
 	zzautozend.cpp
 )

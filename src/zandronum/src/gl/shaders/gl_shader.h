@@ -4,6 +4,7 @@
 
 #include "gl/renderer/gl_renderstate.h"
 #include "name.h"
+#include "features/hwshaders/computation/hwshader_compute.h"
 
 extern bool gl_shaderactive;
 
@@ -252,7 +253,9 @@ public:
 
 	~FShader();
 
-	bool Load(const char * name, const char * vert_prog_lump, const char * fragprog, const char * fragprog2, const char *defines);
+	// [Doruk-Aksoy] lighting picks how an old Process(color) shader in fragprog2 is lit (GLDEFS fua_ProcessLighting).
+	bool Load(const char * name, const char * vert_prog_lump, const char * fragprog, const char * fragprog2, const char *defines,
+		zx::hwshaders::ProcessLighting lighting = zx::hwshaders::kLightingZandronum);
 
 	void SetColormapColor(float r, float g, float b, float r1, float g1, float b1);
 	void SetGlowParams(float *topcolors, float topheight, float *bottomcolors, float bottomheight);

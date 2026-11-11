@@ -7,6 +7,7 @@
 #define ZX_HWSHADER_COMPUTE_H
 
 #include <string>
+#include <vector>
 
 namespace zx { namespace hwshaders {
 
@@ -28,8 +29,34 @@ std::string ComputeRewriteIndexedName(const std::string &source, const std::stri
 // [Doruk-Aksoy] Zandronum 3.3's names made to work on either renderer: loose declarations of camerapos and pixelpos dropped, camerapos read as uCameraPos.xyz unless the shader defines it, and gl_TextureMatrix[i] read through fuaTextureMatrix (7 the model matrix, 0 the texture matrix, else identity).
 std::string ComputeLegacyShaderNames(const std::string &source);
 
-// [rc4l] A GLDEFS shader's GL source made to sit in the backend's: #version lines and the loose `uniform float timer;` dropped, legacy names adapted (ComputeLegacyShaderNames), gl_TexCoord[0] read as vTexCoord as GL's loader does, and ProcessTexel, Process and ProcessLight renamed with `index`; true when it defines ProcessTexel, false for an old one that defines Process(color) instead.
-bool ComputeAdaptUserShader(const std::string &source, int index, std::string &out);
+// [Doruk-Aksoy] What a GLDEFS shader's source defines, told apart in UZDoom's order: a material entry, else ProcessTexel, else an old Process(color).
+enum ShaderStyle { kStyleProcess, kStyleProcessTexel, kStyleMaterial };
+ShaderStyle ComputeShaderStyle(const std::string &source);
+
+// [Doruk-Aksoy] Why a renderer leaves a shader of this style out, or null when it runs.
+const char *ComputeStyleRefusal(ShaderStyle style);
+
+// [Doruk-Aksoy] How an old Process(color) shader is lit (GLDEFS fua_ProcessLighting): handed the light with its result final, as Zandronum 3.3 did, or handed white and lit after, as UZDoom does.
+enum ProcessLighting { kLightingZandronum, kLightingUZDoom };
+
+// [Doruk-Aksoy] The lighting a fua_ProcessLighting value names, in any case; false for an unknown one, leaving out alone.
+bool ComputeProcessLightingOf(const std::string &value, ProcessLighting &out);
+
+// [Doruk-Aksoy] How a program calls its shader: ProcessTexel lit after, Process handed white and lit after, or Process handed the light and final.
+enum ProgramEntry { kEntryTexel, kEntryProcessLit, kEntryProcessFinal };
+ProgramEntry ComputeProgramEntry(ShaderStyle style, ProcessLighting lighting);
+
+// [Doruk-Aksoy] The line GL's main.fp is given ahead of it for an entry, empty for ProcessTexel.
+const char *ComputeGLEntryDefine(ProgramEntry entry);
+
+// [Doruk-Aksoy] One GLDEFS shader as the renderers compile it: its lump, and how an old one is lit.
+struct UserShaderKey { std::string lump; ProcessLighting lighting; };
+
+// [Doruk-Aksoy] The index of the shader for lump (in any case) and lighting in shaders, added at the end when it is new.
+int ComputeUserShaderSlot(std::vector<UserShaderKey> &shaders, const std::string &lump, ProcessLighting lighting);
+
+// [rc4l] A GLDEFS shader's GL source made to sit in the backend's: #version lines and the loose `uniform float timer;` dropped, legacy names adapted (ComputeLegacyShaderNames), gl_TexCoord[0] read as vTexCoord as GL's loader does, and ProcessTexel, Process and ProcessLight renamed with `index`; returns its style (ComputeShaderStyle).
+ShaderStyle ComputeAdaptUserShader(const std::string &source, int index, std::string &out);
 
 // [Doruk-Aksoy] The backend shaders a GLDEFS shader's program is made from: the world's scene stages, whose entry is fuaSurfaceTexel (with fuaSurfaceAlpha), and the 2D layer's, whose entry is fua2DColor.
 enum ProgramKind { kSceneProgram, k2DProgram };
@@ -37,8 +64,8 @@ enum ProgramKind { kSceneProgram, k2DProgram };
 // [Doruk-Aksoy] The line a kind's backend shader marks its program block's place with.
 const char *ComputeProgramMarker(ProgramKind kind);
 
-// [Doruk-Aksoy] The program block of one GLDEFS shader, `adapted` by ComputeAdaptUserShader with `index`: GL main.fp's names for what the kind's shader holds under its own (pixelpos, uCameraPos, vColor, ModelMatrix and the rest), the shader, and the kind's entry running it.
-std::string ComputeUserProgramBlock(ProgramKind kind, const std::string &adapted, bool newStyle, int index);
+// [Doruk-Aksoy] The program block of one GLDEFS shader, `adapted` by ComputeAdaptUserShader with `index`: GL main.fp's names for what the kind's shader holds under its own (pixelpos, uCameraPos, vColor, ModelMatrix and the rest), the shader, and the kind's entry running it as `entry` calls it.
+std::string ComputeUserProgramBlock(ProgramKind kind, const std::string &adapted, ProgramEntry entry, int index);
 
 // [Doruk-Aksoy] The program block of a kind's shader without one: its entry samples the texture.
 std::string ComputePlainProgramBlock(ProgramKind kind);

@@ -83,6 +83,9 @@ is counted in `levelmesh/dyn_dropped`, and `dumprenderer` prints it as `dyn_vert
 
 ## In-engine hooks
 
+- `features/hwrender/diligent/dgframe.cpp` `AutoSetupForLevel`: `Enable`, so the mesh is kept from the
+  backend's first level on. Nothing turns it off, since the `gl_wallmesh` setting it replaced dropped every
+  floor when typed off and on; `fua_mesh_rebuild` bakes it again (scenario `meshfloors`).
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::PreprocessLevel` and `CleanLevelData`: `AllocForLevel`,
   `MeshInitForLevel`, `FreeLevel` and `MeshFreeLevel`, the mesh and bake state for each level.
 - `features/levelprep/levelprep.cpp` `PrepareLevel` and `features/frame/levelrenderer.cpp` `EndSerialize`:

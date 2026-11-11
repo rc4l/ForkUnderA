@@ -72,9 +72,11 @@ std::string failure(sqlite3 *db, int code)
 	return db != nullptr && sqlite3_errcode(db) != SQLITE_OK ? sqlite3_errmsg(db) : sqlite3_errstr(code);
 }
 
-DatabaseApplyResult rollback(DatabaseStatements &statements, int code, std::string &error)
+DatabaseApplyResult rollback(DatabaseStatements &statements, int code, std::string &error, int *failureCode)
 {
 	error = failure(statements.db, code);
+	if (failureCode != nullptr)
+		*failureCode = code & 0xff;
 	sqlite3_exec(statements.db, "ROLLBACK", nullptr, nullptr, nullptr);
 	return isBusy(code) ? DatabaseApplyResult::Busy : DatabaseApplyResult::Failed;
 }
@@ -98,6 +100,7 @@ void writerLoop(DatabaseWriter &writer)
 		{
 			lock.unlock();
 			writer.maintenance(statements);
+			++writer.maintenanceRuns;
 			lock.lock();
 			nextMaintenance = std::chrono::steady_clock::now() + std::chrono::milliseconds(writer.maintenanceMs);
 		}
@@ -117,14 +120,26 @@ void writerLoop(DatabaseWriter &writer)
 		const DatabaseBatch batch = writer.queue.front();
 		lock.unlock();
 		std::string error;
-		const DatabaseApplyResult result = ComputeDatabaseApplyBatch(statements, writer.server, batch, error);
+		int code = SQLITE_OK;
+		const DatabaseApplyResult result = ComputeDatabaseApplyBatch(statements, writer.server, batch, error, &code);
+		// [Doruk-Aksoy] A full file is told apart from other failures, with its page use, for the store's repeated warning.
+		if (code == SQLITE_FULL)
+		{
+			int64_t pages = 0, maxPages = 0, pageSize = 0;
+			ComputeDatabasePageUse(statements, pages, maxPages, pageSize);
+			writer.filePages = pages;
+			writer.fileMaxPages = maxPages;
+			writer.filePageSize = pageSize;
+		}
 		lock.lock();
 		if (result == DatabaseApplyResult::Applied || result == DatabaseApplyResult::AlreadyApplied)
 		{
 			writer.queue.pop_front();
 			writer.applied = batch.seq;
+			writer.lastFailureCode = 0;
 			continue;
 		}
+		writer.lastFailureCode = code;
 		const bool busy = result == DatabaseApplyResult::Busy;
 		++(busy ? writer.busyRetries : writer.failures);
 		if (!busy)
@@ -138,41 +153,45 @@ void writerLoop(DatabaseWriter &writer)
 
 }
 
-DatabaseApplyResult ComputeDatabaseApplyBatch(DatabaseStatements &statements, const std::string &server, const DatabaseBatch &batch, std::string &error)
+DatabaseApplyResult ComputeDatabaseApplyBatch(DatabaseStatements &statements, const std::string &server, const DatabaseBatch &batch, std::string &error, int *failureCode)
 {
 	error.clear();
+	if (failureCode != nullptr)
+		*failureCode = SQLITE_OK;
 	const int begin = sqlite3_exec(statements.db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr);
 	if (begin != SQLITE_OK)
 	{
 		error = failure(statements.db, begin);
+		if (failureCode != nullptr)
+			*failureCode = begin & 0xff;
 		return isBusy(begin) ? DatabaseApplyResult::Busy : DatabaseApplyResult::Failed;
 	}
 	int code = SQLITE_OK;
 	// [Doruk-Aksoy] Marks the transaction as the queue's, so the stock-delete trigger leaves this batch's own stamped markers alone.
 	if (!runQuery(statements, DatabaseQuery::WritingBegin, code, [](sqlite3_stmt *) {}))
-		return rollback(statements, code, error);
+		return rollback(statements, code, error, failureCode);
 	int64_t done = 0;
 	const auto bindServer = [&server](sqlite3_stmt *statement) { sqlite3_bind_text(statement, 1, server.c_str(), -1, SQLITE_STATIC); };
 	if (!runQuery(statements, DatabaseQuery::AppliedSeq, code, bindServer, [&done](sqlite3_stmt *statement) { done = sqlite3_column_int64(statement, 0); }))
-		return rollback(statements, code, error);
+		return rollback(statements, code, error, failureCode);
 	const bool already = done >= static_cast<int64_t>(batch.seq);
 	if (!already)
 	{
 		for (const DatabaseOp &op : batch.ops)
 			if (!applyOp(statements, op, batch.stamp, code))
-				return rollback(statements, code, error);
+				return rollback(statements, code, error, failureCode);
 		const auto bindApplied = [&](sqlite3_stmt *statement) {
 			bindServer(statement);
 			sqlite3_bind_int64(statement, 2, static_cast<int64_t>(batch.seq));
 		};
 		if (!runQuery(statements, DatabaseQuery::SetApplied, code, bindApplied))
-			return rollback(statements, code, error);
+			return rollback(statements, code, error, failureCode);
 	}
 	if (!runQuery(statements, DatabaseQuery::WritingEnd, code, [](sqlite3_stmt *) {}))
-		return rollback(statements, code, error);
+		return rollback(statements, code, error, failureCode);
 	const int commit = sqlite3_exec(statements.db, "COMMIT", nullptr, nullptr, nullptr);
 	if (commit != SQLITE_OK)
-		return rollback(statements, commit, error);
+		return rollback(statements, commit, error, failureCode);
 	return already ? DatabaseApplyResult::AlreadyApplied : DatabaseApplyResult::Applied;
 }
 
@@ -206,8 +225,10 @@ bool ComputeDatabaseWriterStart(DatabaseWriter &writer, const char *path, const 
 	writer.stopping = false;
 	writer.lastError.clear();
 	writer.applied = 0;
+	writer.lastFailureCode = 0;
 	writer.busyRetries = 0;
 	writer.failures = 0;
+	writer.maintenanceRuns = 0;
 	writer.thread = std::thread(writerLoop, std::ref(writer));
 	return true;
 }

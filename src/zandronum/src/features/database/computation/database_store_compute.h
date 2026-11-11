@@ -27,6 +27,8 @@ struct DatabaseStore
 	DatabaseOutbox outbox;
 	DatabaseWriter writer;
 	std::string databasePath;
+	// [Doruk-Aksoy] The stem the outboxes are named from; the orphan scan also looks under databasePath as given, for outboxes an older spelling left.
+	std::string outboxStem;
 	int slot = -1;
 	bool open = false;
 	bool clockWarned = false;
@@ -38,6 +40,10 @@ struct DatabaseStore
 	std::chrono::steady_clock::time_point stallSince;
 	uint64_t stallApplied = 0;
 	bool stallWarned = false;
+	// [Doruk-Aksoy] How often a full file is named again while batches wait on it, since a single line scrolls away on a busy server.
+	double fullWarnSeconds = 60;
+	std::chrono::steady_clock::time_point fullWarnedAt;
+	bool fullWarned = false;
 	std::mutex messagesMutex;
 	std::vector<std::string> messages;
 	// [Doruk-Aksoy] Unreadable outboxes already named, so the minute-by-minute scan names each once.
@@ -45,7 +51,7 @@ struct DatabaseStore
 };
 
 // [Doruk-Aksoy] Claims an outbox, restores what it held and starts the writer; false (with a message) when the queue cannot run, so the caller writes directly.
-bool ComputeDatabaseStoreOpen(DatabaseStore &store, const std::string &databasePath, const std::vector<std::string> &writerPragmas, DatabaseStatements &reader, double wallSeconds);
+bool ComputeDatabaseStoreOpen(DatabaseStore &store, const std::string &databasePath, const std::string &outboxStem, const std::vector<std::string> &writerPragmas, DatabaseStatements &reader, double wallSeconds);
 
 void ComputeDatabaseStoreWrite(DatabaseStore &store, const DatabaseOp &op);
 DatabaseTxnResult ComputeDatabaseStoreBegin(DatabaseStore &store);

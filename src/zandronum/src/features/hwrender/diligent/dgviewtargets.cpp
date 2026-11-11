@@ -264,14 +264,12 @@ void DrawPlaneMirrorSurfaces(Diligent::IDeviceContext *ctx)
 // [rc4l] One target per stacked view the level can show (StackViewCapacity), all made before any comes into view.
 static TArray<ViewTarget> g_stack;
 static int g_stackDrawn = 0;   // [rc4l] Views rendered this frame.
-static Diligent::RefCntAutoPtr<Diligent::IShaderResourceBinding> g_stackShowSRB;   // [rc4l] fua_dg_stackshow's blit
 
 void ReleaseStackPortals()
 {
 	g_stack.Clear();
 	g_viewDepth.Release();
 	g_viewNormal.Release();
-	g_stackShowSRB.Release();
 	g_stackSurfPSO.Release();
 	g_stackDrawn = 0;
 	g_scene.stackVisReady = false;
@@ -324,23 +322,6 @@ void RenderStackPortals(Diligent::IDeviceContext *ctx)
 	for (int k = 0; k < g_stackDrawn; k++) HandOverViewTarget(ctx, g_stack[k]);
 }
 
-// [rc4l] What the stacked views did last frame, for fua_dg_stackinfo: views drawn, whether the cull had its bits, and how many subsectors each view's walk reached.
-void StackInfo(FString &out)
-{
-	int words = 0;
-	const unsigned int *bits = zx::levelmesh::StackVisibility(words);
-	const int slots = zx::levelmesh::WalkSlots();
-	TArray<int> reached;
-	reached.Resize(slots);
-	for (int s = 0; s < slots; s++) reached[s] = zx::levelmesh::ComputeSlotCount(bits, words, numsubsectors + numsides, s, slots);
-	const int view0 = zx::levelmesh::ComputeStackWalkSlot(0), view1 = zx::levelmesh::ComputeStackWalkSlot(1);
-	out.Format("stacked views: %d drawn of %d the level can show, cull %s, %d words; subsectors and sidedefs drawn by view 0: %d, view 1: %d, "
-		"the player's walk: %d, the skybox walk: %d (of %d); %d sky holes; plane mirrors: %d rendered of %d planes",
-		g_stackDrawn, zx::levelmesh::StackViewCapacity(), g_scene.stackVisReady ? "on" : "off", words,
-		view0 < slots ? reached[view0] : 0, view1 < slots ? reached[view1] : 0, reached[zx::levelmesh::kMainWalkSlot],
-		reached[zx::levelmesh::kSkyboxWalkSlot], numsubsectors + numsides, g_scene.skyHoleCount, g_pmUsed, (int)g_pm.Size());
-}
-
 // [rc4l] In the player's view, with the sky: each stacked plane painted from its view's picture, and depth-written so nothing behind it shows through.
 void DrawStackSurfaces(Diligent::IDeviceContext *ctx)
 {
@@ -371,21 +352,6 @@ void DrawStackSurfaces(Diligent::IDeviceContext *ctx)
 	if (!BindScreenSurfaces(ctx, g_stackSurfVB, g_stackSurfVBCapacity, sv, g_stackSurfPSO, "fua stack surface VB")) return;
 	for (int k = 0; k < g_stackDrawn; k++)
 		if (count[k] != 0 && g_stack[k].srb) DrawScreenSurfaceRun(ctx, g_stack[k].srb, first[k], count[k]);
-}
-
-// [rc4l] fua_dg_stackshow: the first stacked view's picture over the frame, through the sky portal's full-screen blit.
-void ShowStackView(Diligent::IDeviceContext *ctx)
-{
-	if (!fua_dg_stackshow || g_stackDrawn == 0 || !SkyPortalPicturePSO() || !g_stack[0].color) return;
-	if (!g_stackShowSRB) SkyPortalPicturePSO()->CreateShaderResourceBinding(&g_stackShowSRB, true);
-	if (!g_stackShowSRB) return;
-	if (auto *v = g_stackShowSRB->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, "uTex"))
-		v->Set(g_stack[0].color->GetDefaultView(Diligent::TEXTURE_VIEW_SHADER_RESOURCE));
-	ctx->SetPipelineState(SkyPortalPicturePSO());
-	ctx->CommitShaderResources(g_stackShowSRB, Diligent::RESOURCE_STATE_TRANSITION_MODE_VERIFY);
-	Diligent::DrawAttribs dr;
-	dr.NumVertices = 3;
-	ctx->Draw(dr);
 }
 
 }} // namespace zx::hwrender

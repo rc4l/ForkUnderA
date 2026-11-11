@@ -28,7 +28,7 @@ static bool g_dumpBlendOrder = false;
 // [rc4l] With a height given, the dump lists every draw whose span holds it instead of the nearest 40.
 static bool g_dumpBlendAtZ = false;
 static float g_dumpBlendZ = 0.f;
-CCMD( fua_dg_blendorder )
+DEV_MODE_CCMD( fua_dg_blendorder )
 {
 	g_dumpBlendOrder = true;
 	g_dumpBlendAtZ = argv.argc( ) > 1;
@@ -39,12 +39,8 @@ CCMD( fua_dg_blendorder )
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
 EXTERN_CVAR(Bool, fua_dg_premulblend)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
-// [rc4l] Plain sprites drawn from packed words (ComputeSpritePack); 0 sends every dynamic piece its whole record and vertices, to compare against.
-CVAR(Bool, fua_dg_spritepack, true, 0)
 // [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
-CVAR(Bool, fua_dg_blendwalk, true, 0)
-// [Doruk-Aksoy] Flat blended model surfaces sort as floors and ceilings do over their footprints, the sprites crossing one split at its height; 0 sorts them by centre as before.
-CVAR(Bool, fua_dg_flatplanes, true, 0)
+CVAR(Bool, fua_dg_blendwalk, true, CVAR_FUA_DEV_MODE)
 
 // [Doruk-Aksoy] One of the frame's flat planes: its height, footprint, and the view whose walk captured it.
 struct FlatPlaneInfo { float h; zx::hwrender::FlatFootprint area; int mirrorView, stackSlot; };
@@ -263,21 +259,18 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	static unsigned int builtGen = 0;
 	// [Doruk-Aksoy] Records hold the additive flag fua_dg_premulblend sets, so a change of it fills them again, a paused frame's included.
 	static bool builtPremul = false;
-	static bool builtFlat = true;   // [Doruk-Aksoy] and the split fua_dg_flatplanes makes, so flipping it on a paused frame shows at once
 	const unsigned int gen = zx::levelmesh::DynGeneration();
-	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend || builtFlat != (bool)fua_dg_flatplanes)
+	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend)
 	{
 		builtGen = gen;
 		builtPremul = fua_dg_premulblend;
-		builtFlat = fua_dg_flatplanes;
 		static std::vector<zx::levelmesh::MeshVertex> splitVerts;
 		static std::vector<zx::levelmesh::MeshPiece> splitPieces;
 		static std::vector<FlatPlaneInfo> flatPlanes;
 		static std::vector<char> isFlatPlane;
 		{
 			ZX_ZONE("scene/flat_split");
-			if (fua_dg_flatplanes) FindFlatPlanes(src, pieces, npieces, flatPlanes, isFlatPlane);
-			else { flatPlanes.clear(); isFlatPlane.assign(npieces, 0); }
+			FindFlatPlanes(src, pieces, npieces, flatPlanes, isFlatPlane);
 			if (SplitAtFlatPlanes(src, nverts, pieces, npieces, flatPlanes, splitVerts, splitPieces))
 			{
 				src = splitVerts.data(); nverts = (int)splitVerts.size();
@@ -360,7 +353,6 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		const int packChunks = (npieces + kDynChunk - 1) / kDynChunk;
 		unfilled.assign(packChunks, 0);
 		const bool tracing = fua_dg_rtmirrors && fua_dg_rtsprites;
-		const bool packing = fua_dg_spritepack;
 		const bool bindless = BindlessActive();
 		auto pack = [&](int chunk, int)
 		{
@@ -372,9 +364,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 				const zx::levelmesh::MeshPiece &p = pieces[k];
 				ScenePieceData &pd = filled[k];
 				FillPieceDataWith(p, slots[k], pd, false);
-				if (!fua_dg_bindless_dyn) pd.matSlot = pd.brightSlot = 0.f;   // back to the bound texture and brightmap
-				else if (bindless) missed += MaterialSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot);
-				if (!packing || !p.quad || p.range.count != 4) continue;
+				if (bindless) missed += MaterialSlotsUnfilled((int)pd.matSlot, (int)pd.brightSlot);
+				if (!p.quad || p.range.count != 4) continue;
 				if (tracing && zx::hwrender::ComputeTracesRun(6, p.solid, p.depthBias, p.hud, p.stackSlot, p.onMirror, p.mirrorView, p.blendMode)) continue;
 				zx::hwrender::SpriteCorner corners[4];
 				const AtlasEntry *ae = atlased[k];
@@ -776,7 +767,6 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	}
 
 	// [Doruk-Aksoy] A flat blended model surface goes behind the sprites standing on it, and what lies beyond it behind it, as a floor or ceiling would (flatplane_compute).
-	if (fua_dg_flatplanes)
 	{
 		static std::vector<zx::hwrender::FlatOrderItem> flat;
 		static std::vector<unsigned> flatOf;

@@ -719,7 +719,7 @@ extern bool CLIENTDEMO_IsInFreeSpectateMode(); // [AK]
 
 // [rc4l] fua_gl_viewstate -- the GL state the next main view draws the world with, for a window that shows 2D but no world.
 static bool g_viewStateArmed = false;
-CCMD(fua_gl_viewstate) { g_viewStateArmed = true; Printf("recording the next main view's GL state\n"); }
+DEV_MODE_CCMD(fua_gl_viewstate) { g_viewStateArmed = true; Printf("recording the next main view's GL state\n"); }
 
 // [rc4l] Armed by the probe below, so the same view also reports how its drawing went.
 static bool g_viewErrorsArmed = false;

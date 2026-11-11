@@ -159,6 +159,7 @@
 #include "features/acs-setmusicvolume/computation/musicvolume_compute.h"   // [Doruk-Aksoy] FuaSetMusicVolume's factor
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] FuaSetShaderEnabled and FuaSetShaderUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
+#include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -493,6 +494,7 @@ static void client_ResetValuesOnConnection( void )
 	// Make sure cheats are off.
 	Val.Bool = false;
 	sv_cheats.ForceSet( Val, CVAR_Bool );
+	zx::devmode::Refresh();
 	am_cheat = 0;
 
 	// Make sure our visibility is normal.
@@ -709,6 +711,7 @@ void CLIENT_SetConnectionState( CONNECTIONSTATE_e State )
 		skulltag.ForceSet( Val, CVAR_Bool );
 
 		sv_cheats.ForceSet( Val, CVAR_Bool );
+		zx::devmode::Refresh();
 
 		Val.Int = false;
 		dmflags.ForceSet( Val, CVAR_Int );
@@ -6450,6 +6453,8 @@ static void client_SetGameModeLimits( BYTESTREAM_s *pByteStream )
 	// Read in, and set the value for sv_cheats.
 	Value.Int = pByteStream->ReadByte();
 	sv_cheats.ForceSet( Value, CVAR_Int );
+	// [rc4l] The server's answer opens or closes the dev-mode gate.
+	zx::devmode::Refresh();
 	// [BB] This ensures that am_cheat respects the sv_cheats value we just set.
 	am_cheat.Callback();
 	// [TP] Same for turbo

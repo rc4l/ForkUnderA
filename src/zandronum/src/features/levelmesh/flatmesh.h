@@ -173,11 +173,6 @@ void RefreshAllFakePlanes();
 // [rc4l] The fake planes modelled on sector baked again, since they take its light, colour and texture.
 void RebakeFakesModelledOn(int sector);
 
-// [rc4l] How often a visible flat was left alone rather than rebuilt. A cache whose hit rate
-// nobody can see is a cache nobody can tell has stopped working.
-void GetFlatCacheStats(int &hits, int &rebuilds);
-// [rc4l] Flats whose shade changed and were re-registered without rebuilding their vertices.
-int GetFlatReshades();
 // [rc4l] Flats whose offsets scrolled and were shifted in the piece without rebuilding their vertices.
 int GetFlatRescrolls();
 

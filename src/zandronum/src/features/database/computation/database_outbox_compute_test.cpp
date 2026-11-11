@@ -60,6 +60,25 @@ TEST(DatabaseOutbox, PathsSitBesideTheSharedFile)
 	EXPECT_EQ(zx::ComputeDatabaseOutboxPath("C:/data/chars.db", 3), "C:/data/chars.db.fua-outbox-3");
 }
 
+TEST(DatabaseOutbox, EverySpellingOfAPathGivesOneStem)
+{
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem(R"(C:\Data\.\db\..\Chars.db)"), "C:/Data/Chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("C:/Data//Chars.db"), "C:/Data/Chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("/srv/./zan//chars.db"), "/srv/zan/chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("/srv/zan/old/../chars.db"), "/srv/zan/chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("/../chars.db"), "/chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("../up/chars.db"), "../up/chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("a/../../b.db"), "../b.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem("c:chars.db"), "c:chars.db");
+	EXPECT_EQ(zx::ComputeDatabaseOutboxStem(""), "");
+}
+
+// [Doruk-Aksoy] Two files only a case-sensitive volume tells apart must never share outboxes, or one's orphans would be replayed into the other.
+TEST(DatabaseOutbox, TheStemKeepsCase)
+{
+	EXPECT_NE(zx::ComputeDatabaseOutboxStem("/srv/A.db"), zx::ComputeDatabaseOutboxStem("/srv/a.db"));
+}
+
 TEST(DatabaseOutbox, OneProcessHoldsAnOutboxAtATime)
 {
 	ZX_REQUIRE_FILE_DATABASES();

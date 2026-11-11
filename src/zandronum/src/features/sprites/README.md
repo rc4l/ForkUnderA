@@ -7,13 +7,12 @@ floor and ceiling clip, light (glow, colormap, 3D-floor light bands, the actor's
 render style, and the quad, billboarded or rolled. The decisions are `Compute*` units in
 `computation/`; the glue reads the engine and appends to the level mesh's dynamic stream, the pieces the lanes
 derived placed there in runs across the pool (`PlaceItems`), each run ending before an actor the main thread derives.
-Models are derived on the lanes too (`ResolveModelFrames`, `fua_sprite_modeljobs 0` derives them on the main thread),
+Models are derived on the lanes too (`ResolveModelFrames`),
 except the first frame a model's geometry or skin is not made yet, and players stay on the main thread.
 
 Particles too (`GLSprite::ProcessParticle`'s light and quad): the player's walk queues the particles in the
 subsectors it reaches (`QueueParticle`), and once it is done `BuildQueuedParticles` derives them on
-`features/jobs`' pool and appends them in the order they were reached (`scene/particles`;
-`fua_sprite_particlejobs 0` derives them on the main thread). A sprite's `ThingColor` (a particle's colour, a stencil
+`features/jobs`' pool and appends them in the order they were reached (`scene/particles`). A sprite's `ThingColor` (a particle's colour, a stencil
 actor's fill), which GL's shader multiplies it by, is folded into its shading here and in the copy of GL's
 sprite the check reads; without it every particle drew in its texture's white (scenario `particlecolor`).
 Night vision's inverted monsters and items take GL's `TM_INVERSE` (`ComputeTextureMode`, scenario `lightamp`), and

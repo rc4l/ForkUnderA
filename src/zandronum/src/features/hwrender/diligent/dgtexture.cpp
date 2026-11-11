@@ -370,7 +370,7 @@ bool MaterialIsMasked(const void *materialPtr)
 // A cut-out texture that draws as a solid rectangle has lost its alpha somewhere between the lump
 // and the sampler, and every stage in between looks fine from outside. This asks the upload's own
 // question -- CreateTexBuffer, with the arguments the upload uses -- and counts what came back.
-CCMD(fua_dg_texalpha)
+DEV_MODE_CCMD(fua_dg_texalpha)
 {
 	if (argv.argc() < 2) { Printf("usage: fua_dg_texalpha [texture name]\n"); return; }
 	const void *mat = zx::materials::MaterialForName(argv[1]);

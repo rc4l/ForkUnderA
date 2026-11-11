@@ -69,7 +69,7 @@ void NoteClientShot(AActor *shooter)
 }} // namespace zx::netsession
 
 // [rc4l] The shots kept as JSON, the server's rewound and the client's own; `reset` empties them and starts the numbering over.
-CCMD(fua_unlagged_report)
+DEV_MODE_CCMD(fua_unlagged_report)
 {
 	if (argv.argc() > 1 && stricmp(argv[1], "reset") == 0)
 	{

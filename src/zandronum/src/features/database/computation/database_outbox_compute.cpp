@@ -9,6 +9,8 @@
 #include <cstdlib>
 #include <random>
 #include <sqlite3.h>
+#include <string>
+#include <vector>
 
 namespace zx
 {
@@ -83,6 +85,41 @@ DatabaseOutbox::~DatabaseOutbox()
 std::string ComputeDatabaseOutboxPath(const std::string &databasePath, int slot)
 {
 	return databasePath + ".fua-outbox-" + std::to_string(slot);
+}
+
+std::string ComputeDatabaseOutboxStem(const std::string &resolvedPath)
+{
+	std::string path = resolvedPath;
+	std::replace(path.begin(), path.end(), '\\', '/');
+	// [Doruk-Aksoy] The root (a leading /, or a drive like c:/) stays; the segments after it are rebuilt without empty, . and .. ones.
+	size_t rootEnd = 0;
+	if (path.size() >= 2 && path[1] == ':')
+		rootEnd = path.size() >= 3 && path[2] == '/' ? 3 : 2;
+	else if (!path.empty() && path[0] == '/')
+		rootEnd = 1;
+	std::vector<std::string> segments;
+	size_t start = rootEnd;
+	while (start <= path.size())
+	{
+		size_t end = path.find('/', start);
+		if (end == std::string::npos)
+			end = path.size();
+		const std::string segment = path.substr(start, end - start);
+		if (segment == "..")
+		{
+			if (!segments.empty() && segments.back() != "..")
+				segments.pop_back();
+			else if (rootEnd == 0)
+				segments.push_back(segment);
+		}
+		else if (!segment.empty() && segment != ".")
+			segments.push_back(segment);
+		start = end + 1;
+	}
+	std::string stem = path.substr(0, rootEnd);
+	for (size_t i = 0; i < segments.size(); ++i)
+		stem += (i == 0 ? "" : "/") + segments[i];
+	return stem;
 }
 
 DatabaseOutboxOpen ComputeDatabaseOutboxOpen(DatabaseOutbox &outbox, const std::string &path, bool create, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq)

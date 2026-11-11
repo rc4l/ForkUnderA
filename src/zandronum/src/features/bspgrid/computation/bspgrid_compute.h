@@ -29,7 +29,5 @@ void ComputeStartGrid(const std::vector<GridNode> &nodes, int root, int64_t minX
 int ComputeGridStart(const StartGrid &grid, int64_t x, int64_t y);
 // [Doruk-Aksoy] The subsector (-1 - its index) a walk from node `from` lands on.
 int ComputeWalk(const std::vector<GridNode> &nodes, int from, int64_t x, int64_t y);
-// [Doruk-Aksoy] How many of each cell's corners and `interior` points from `seed` land elsewhere walking from the cell's start than from the root, for fua_bspgrid_check; points tested go to tested.
-int ComputeGridMismatches(const std::vector<GridNode> &nodes, const StartGrid &grid, int interior, uint64_t seed, int &tested);
 }} // namespace zx::bspgrid
 #endif // ZX_BSPGRID_COMPUTE_H

@@ -111,6 +111,9 @@ bool ComputeDatabaseCountBeyond(DatabaseStatements &statements, const char *ns, 
 // [Doruk-Aksoy] The newest timestamp in the table or its delete markers, 0 for an empty database.
 bool ComputeDatabaseMaxStamp(DatabaseStatements &statements, double &stamp);
 
+// [Doruk-Aksoy] How full the file is for this connection: its pages, the most it may have (max_page_count) and the bytes in a page.
+bool ComputeDatabasePageUse(DatabaseStatements &statements, int64_t &pages, int64_t &maxPages, int64_t &pageSize);
+
 // [Doruk-Aksoy] The last batch of `server` the file holds, 0 when it holds none.
 bool ComputeDatabaseAppliedSeq(DatabaseStatements &statements, const std::string &server, uint64_t &seq);
 

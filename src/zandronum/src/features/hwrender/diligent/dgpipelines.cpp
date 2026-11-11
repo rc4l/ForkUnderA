@@ -7,7 +7,7 @@
 #include "features/hwshaders/computation/hwshader_compute.h"
 #include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/computation/bindingkey_compute.h"   // [Doruk-Aksoy] the material bindings by key
-#include "features/hwrender/computation/slotreport_compute.h"   // [Doruk-Aksoy] fua_dg_slotreport
+#include "features/hwrender/computation/slotreport_compute.h"   // [Doruk-Aksoy] the slots' working set
 #include "features/hwrender/computation/slotrecycle_compute.h"   // [Doruk-Aksoy] which slot gives way, which a fill writes
 #include "features/hwrender/computation/retiredbindings_compute.h"   // [Doruk-Aksoy] RetiredBindings
 #include "features/hwrender/computation/resourcestate_compute.h"   // [Doruk-Aksoy] ComputeBufferReadState
@@ -29,9 +29,7 @@
 #include "w_wad.h"   // [rc4l] the shader lumps
 
 // [rc4l] Off makes every commit in a draw loop check every resource again, the old cost, for an A/B in one session.
-CVAR(Bool, fua_dg_loopcommits, true, 0)
-// [Doruk-Aksoy] A world binding's resources checked once after each fill rather than once per draw loop, what changed since made ready before it is next committed; 0 checks them per loop, to bisect or compare.
-CVAR(Bool, fua_dg_checkonce, true, 0)
+CVAR(Bool, fua_dg_loopcommits, true, CVAR_FUA_DEV_MODE)
 // [Doruk-Aksoy] Translucent and additive sprites drawn by one premultiplied pipeline, each by its own blend, so the sorted pass switches less; a colour differs by at most one level from off, which the Video Mode menu offers.
 CVAR(Bool, fua_dg_premulblend, true, CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 EXTERN_CVAR(Float, r_texture_filter_anisotropic)
@@ -227,7 +225,7 @@ static int MatIndexFind(const void *material, int translation)
 	return zx::hwrender::ComputeMaterialIndexFind(g_matIndex, material, translation);
 }
 
-// [Doruk-Aksoy] Every key the level asked for, each once, and when a dynamic piece last asked for each, so fua_dg_slotreport counts keys rather than slots a recycled one has held for several.
+// [Doruk-Aksoy] Every key the level asked for, each once, and when a dynamic piece last asked for each, so the working set counts keys rather than slots a recycled one has held for several.
 static TArray<MatSlot> g_seenKeys;
 static zx::hwrender::MaterialIndex g_seenIndex;
 static std::vector<zx::hwrender::SlotStamp> g_keyStamps;
@@ -261,7 +259,7 @@ static std::vector<int> g_recycleOrder;
 static size_t g_recycleNext = 0;
 static uint32_t g_recycleOrderFor = 0;
 // [Doruk-Aksoy] Slots given to new keys since the level began, and keys refused once none could give way.
-static int g_slotsRecycled = 0, g_keysRefused = 0;
+static int g_slotsRecycled = 0;
 // [Doruk-Aksoy] Every slot written at the next fill, for when the textures behind the slots changed rather than the table.
 static bool g_forceFill = true;
 static const int kWhiteTries = 120;
@@ -337,7 +335,6 @@ void ResetMaterialSlots()
 	g_keysMeasured = 0;
 	g_recycledMeasured = 0;
 	g_slotsRecycled = 0;
-	g_keysRefused = 0;
 	g_recycleOrder.clear();
 	g_recycleNext = 0;
 	g_recycleOrderFor = 0;
@@ -419,7 +416,6 @@ static int NewMaterialSlot(const void *material, int translation, bool pin)
 		Printf("Diligent bindless: more than %u materials in use at once on this level -- falling back to a binding per material"
 			"\n", MaterialSlotCapacity());
 	g_matSlotOverflow = true;
-	g_keysRefused++;
 	return 0;
 }
 
@@ -636,7 +632,7 @@ void RefreshBindless()
 	}
 	// [rc4l] Animated textures move through SlotRemap, since Diligent ignores a second write to a bound mutable descriptor and rewriting one the GPU still reads is undefined.
 	// [Doruk-Aksoy] Whether or not the last fill is ready, since a recycle may have moved a frame's slot; only a baked animated base is followed.
-	if (fua_dg_animate && g_slotRemapBuf)
+	if (g_slotRemapBuf)
 	{
 		const bool moved = zx::hwrender::ComputeSlotRemap(g_matSlotTable.Size(), [](unsigned i) -> int {
 			if (!g_slotState[i].animated) return -1;
@@ -769,10 +765,10 @@ static_assert(zx::hwrender::kStateVertexBuffer == Diligent::RESOURCE_STATE_VERTE
 	zx::hwrender::kStateIndirectArgument == Diligent::RESOURCE_STATE_INDIRECT_ARGUMENT, "resourcestate_compute's states are Diligent's");
 
 
-// [rc4l] Whether writes are tracked, letting go of what was held before fua_dg_checkonce went off, since no commit will.
+// [rc4l] Whether writes are tracked, letting go of anything held once they are not, since no world commit will.
 static bool WritesTracked()
 {
-	if (zx::hwrender::ComputeTracksWrites(fua_dg_checkonce, MaterialSlotCapacity())) return true;
+	if (zx::hwrender::ComputeTracksWrites(MaterialSlotCapacity())) return true;
 	g_writtenSeen.clear();
 	g_writtenBuffers.clear();
 	g_writtenTextures.clear();
@@ -813,10 +809,10 @@ static bool IsWorldSRB(const Diligent::IShaderResourceBinding *srb)
 }
 
 // [rc4l] Commit srb inside one draw loop, checking its resources' states only the first time the loop commits it.
-// [Doruk-Aksoy] A world binding is checked only on its first commit since its fill, under fua_dg_checkonce, what was written since made ready before it is committed.
+// [Doruk-Aksoy] A world binding is checked only on its first commit since its fill, what was written since made ready before it is committed.
 void CommitInLoop(Diligent::IDeviceContext *ctx, zx::hwrender::LoopCommits &loop, Diligent::IShaderResourceBinding *srb)
 {
-	const bool world = fua_dg_checkonce && IsWorldSRB(srb);
+	const bool world = IsWorldSRB(srb);
 	if (world) ReadyWrittenResources(ctx);
 	const bool transition = world ? zx::hwrender::ComputeNoteOnce(g_worldChecked, srb)
 		: !fua_dg_loopcommits || zx::hwrender::ComputeCommitTransitions(loop, srb);
@@ -839,17 +835,7 @@ Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso)
 {
 	if (!BindlessActive()) return NULL;
 	for (int i = 0; i < kWorldPipelines; i++)
-		if (g_pso.world[i].RawPtr() == pso)
-		{
-			// [rc4l] Sprites and decals are on the array too, and the switch stays for bisecting.
-			//
-			// They used to draw as flat white rectangles, which looked like a second bug and was the same
-			// one: a sprite whose material joined the table after the array had been filled could not be
-			// added to it, because a static variable cannot be rewritten once its pipeline has handed out
-			// a binding. Rebuilding the pipelines fixed both at once.
-			if (!ComputeWorldPipelineDesc(i).level && !fua_dg_bindless_dyn) return NULL;
-			return g_worldSRBs[i];
-		}
+		if (g_pso.world[i].RawPtr() == pso) return g_worldSRBs[i];   // [rc4l] sprites and decals are on the array too
 	return NULL;
 }
 
@@ -967,27 +953,15 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 	}
 }
 
-// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per lump name, and whether its program could not be made, which is noted once.
-struct UserShaderSource { std::string lump, adapted; bool newStyle = false, broken = false; };
-static std::vector<UserShaderSource> g_userSources;
-
-static UserShaderSource &UserSource(int shader)
+// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per lump name and lighting, how its entry calls it, and whether its program could not be made, which is noted once.
+struct UserShaderSource
 {
-	if (g_userSources.size() <= (size_t)shader) g_userSources.resize(shader + 1);
-	UserShaderSource &s = g_userSources[shader];
-	const char *lump = zx::hwshaders::UserShaderLump(shader);
-	if (s.lump == lump) return s;
-	s = UserShaderSource();
-	s.lump = lump;
-	const int num = Wads.CheckNumForFullName(lump);
-	if (num >= 0)
-	{
-		FMemLump data = Wads.ReadLump(num);
-		s.newStyle = zx::hwshaders::ComputeAdaptUserShader(data.GetString().GetChars(), shader, s.adapted);
-	}
-	else s.broken = true;
-	return s;
-}
+	std::string lump, adapted;
+	zx::hwshaders::ProcessLighting lighting = zx::hwshaders::kLightingZandronum;
+	zx::hwshaders::ProgramEntry entry = zx::hwshaders::kEntryTexel;
+	bool broken = false;
+};
+static std::vector<UserShaderSource> g_userSources;
 
 // [Doruk-Aksoy] Leave a shader out for good, with the console note GL prints for one of its own.
 static void BreakUserShader(UserShaderSource &s, const char *why)
@@ -997,11 +971,34 @@ static void BreakUserShader(UserShaderSource &s, const char *why)
 	Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", s.lump, why).c_str());
 }
 
+static UserShaderSource &UserSource(int shader)
+{
+	if (g_userSources.size() <= (size_t)shader) g_userSources.resize(shader + 1);
+	UserShaderSource &s = g_userSources[shader];
+	const char *lump = zx::hwshaders::UserShaderLump(shader);
+	const zx::hwshaders::ProcessLighting lighting = zx::hwshaders::UserShaderLighting(shader);
+	if (s.lump == lump && s.lighting == lighting) return s;
+	s = UserShaderSource();
+	s.lump = lump;
+	s.lighting = lighting;
+	const int num = Wads.CheckNumForFullName(lump);
+	if (num < 0)
+	{
+		s.broken = true;
+		return s;
+	}
+	FMemLump data = Wads.ReadLump(num);
+	const zx::hwshaders::ShaderStyle style = zx::hwshaders::ComputeAdaptUserShader(data.GetString().GetChars(), shader, s.adapted);
+	s.entry = zx::hwshaders::ComputeProgramEntry(style, lighting);
+	if (const char *why = zx::hwshaders::ComputeStyleRefusal(style)) BreakUserShader(s, why);
+	return s;
+}
+
 std::string ProgramBlock(zx::hwshaders::ProgramKind kind, int userShader)
 {
 	if (userShader < 0 || userShader >= zx::hwshaders::UserShaderCount()) return zx::hwshaders::ComputePlainProgramBlock(kind);
 	const UserShaderSource &s = UserSource(userShader);
-	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.newStyle, userShader);
+	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.entry, userShader);
 }
 
 bool UserShaderUsable(int shader)
@@ -1203,35 +1200,6 @@ void PrewarmUserPipelines()
 		Printf("vulkan: %d GLDEFS shader pipelines made ahead in %.0f ms\n", (int)(g_userPSOs.made.size() - before), clock.TimeMS());
 }
 
-void UserShaderReport(FString &out)
-{
-	const int count = zx::hwshaders::UserShaderCount();
-	int ran = 0;
-	FString lines;
-	// [Doruk-Aksoy] Timed, as what a pipeline costs beyond its shaders is the driver's part of the bill.
-	const size_t before = g_userPSOs.made.size();
-	cycle_t clock;
-	clock.Reset();
-	clock.Clock();
-	// [Doruk-Aksoy] A level surface's program and a sprite's translucent one, the two fragment stages a shader's pieces mostly take, all started before any is waited for.
-	for (int i = 0; i < count && g_pso.world[kWpMasked]; i++)
-	{
-		UserScenePSO(kWpMasked, i, false);
-		UserScenePSO(kWpTransNoCull, i, false);
-	}
-	LandUserScenePSOs();
-	clock.Unclock();
-	for (int i = 0; i < count && g_pso.world[kWpMasked]; i++)
-	{
-		const bool ok = !UserSource(i).broken;
-		ran += ok ? 1 : 0;
-		lines.AppendFormat("  %s  %s\n", ok ? "runs" : "out ", zx::hwshaders::UserShaderLump(i));
-	}
-	out.Format("%d GLDEFS hardware shaders, %d running; %d pipelines made in %.1f ms\n%s", count, ran,
-		(int)(g_userPSOs.made.size() - before), clock.TimeMS(), lines.GetChars());
-	if (!g_pso.world[kWpMasked] && count > 0) out += "  (no level is up, so none was made)\n";
-}
-
 // [Doruk-Aksoy] Off leaves each GLDEFS shader's programs to the frame that first draws with one, as before, for timing a launch against.
 CVAR(Bool, fua_dg_precompile_shaders, true, CVAR_ARCHIVE)
 // [Doruk-Aksoy] Off compiles them one after another on this thread, for timing the device's pool against.
@@ -1290,37 +1258,6 @@ void PrecompileUserShaders()
 	}
 	clock.Unclock();
 	Printf("%s", zx::hwshaders::ComputePrecompileNote(count, programs, leftOut, clock.TimeMS()).c_str());
-}
-
-void ShaderCompileBench(int inFlight, FString &out)
-{
-	static int run = 0;
-	run++;
-	// [Doruk-Aksoy] Each text made new by a trailing comment, so the cache answers none of them and each is compiled in full.
-	std::vector<std::string> texts;
-	ForEachUserProgram([&](int shader, const char *, const char *source) {
-		texts.push_back(ShaderText(source, shader) + "// fua_dg_shaderbench " + std::to_string(run) + "\n");
-	});
-	if (texts.empty()) { out = "no GLDEFS shader to compile\n"; return; }
-	inFlight = std::max(1, inFlight);
-	cycle_t clock;
-	clock.Reset();
-	clock.Clock();
-	std::deque<Diligent::RefCntAutoPtr<Diligent::IShader>> flying;
-	int failed = 0;
-	auto land = [&]() {
-		failed += flying.front() && flying.front()->GetStatus(true) == Diligent::SHADER_STATUS_READY ? 0 : 1;
-		flying.pop_front();
-	};
-	for (const std::string &text : texts)
-	{
-		if ((int)flying.size() >= inFlight) land();
-		flying.push_back(CompileShaderText(Diligent::SHADER_TYPE_PIXEL, "fua shader bench", text, true));
-	}
-	while (!flying.empty()) land();
-	clock.Unclock();
-	out.Format("%d programs, at most %d at a time: %.0f ms, %.1f ms each%s\n", (int)texts.size(), inFlight, clock.TimeMS(),
-		clock.TimeMS() / texts.size(), failed ? " (some failed)" : "");
 }
 
 bool EnsureScenePipeline(FString &err)
@@ -1502,48 +1439,12 @@ void SlotReport(int n, FString &out)
 	}
 }
 
-// [Doruk-Aksoy] A slot's facts for the slot report, a brightmap slot's from the texture it belongs to.
-static zx::hwrender::SlotFacts FactsOf(const MatSlot &e)
-{
-	static_assert((int)zx::materials::kMaterialUseWorld == (int)zx::hwrender::kSlotUseWorld &&
-		(int)zx::materials::kMaterialUseOther == (int)zx::hwrender::kSlotUseOther, "SlotUse follows MaterialUse");
-	zx::hwrender::SlotFacts f;
-	f.brightmap = e.translation == kBrightmapTranslation;
-	f.translated = !f.brightmap && e.translation != 0;
-	zx::materials::MaterialInfo info;
-	if (!zx::materials::DescribeMaterial(e.material, info)) return f;
-	f.use = info.use;
-	f.shaded = info.userShader >= 0;
-	f.special = info.canvas || info.warp != 0;
-	f.width = info.width;
-	f.height = info.height;
-	f.name = info.name != NULL ? info.name : "";
-	f.hasBrightmap = !f.brightmap && info.brightmap;
-	return f;
-}
-
 // [Doruk-Aksoy] How many slots are pinned, the white one among them.
 static int PinnedSlotCount()
 {
 	int n = 0;
 	for (const SlotState &st : g_slotState) n += st.pinned ? 1 : 0;
 	return n;
-}
-
-void SlotDemandReport(int top, FString &out)
-{
-	std::vector<zx::hwrender::SlotFacts> facts;
-	for (unsigned i = 0; i < g_seenKeys.Size(); i++)
-		if (g_seenKeys[i].material != NULL) facts.push_back(FactsOf(g_seenKeys[i]));
-	zx::hwrender::SlotTally r;
-	zx::hwrender::ComputeSlotReport(facts, AtlasPageSize(), AtlasMaxSide(), r);
-	const zx::hwrender::SlotTableFacts table = { (int)g_matSlotTable.Size() - 1, (int)MaterialSlotCapacity(), PinnedSlotCount() - 1, g_slotsRecycled, g_keysRefused };
-	out = zx::hwrender::ComputeSlotReportText(r, table, AtlasPageSize(), AtlasMaxSide(), top).c_str();
-	out += "\n";
-	out += zx::hwrender::ComputeWorkingSetText(g_workingSet, g_workingPeaks, kWorkingWindowsMs, (int)facts.size()).c_str();
-	int cached = 0, batch = 0;
-	MaterialSRBCounts(cached, batch);
-	out.AppendFormat("\n  bindless %s, %d material bindings live", BindlessActive() ? "on" : "off", cached + batch);
 }
 
 // [rc4l] The slot table, for a pass that fills a material array of its own.

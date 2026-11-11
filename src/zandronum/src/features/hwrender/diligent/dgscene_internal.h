@@ -98,7 +98,6 @@
 
 
 EXTERN_CVAR(Int, r_fogmode)
-EXTERN_CVAR(Bool, gl_wallmesh)
 EXTERN_CVAR(Int, r_texture_filter)
 EXTERN_CVAR(Float, skyoffset)
 EXTERN_CVAR(Float, r_lights_size)
@@ -109,9 +108,7 @@ EXTERN_CVAR(Bool, fua_dg_skyportal)
 EXTERN_CVAR(Int, fua_dg_skyportal_scale)
 EXTERN_CVAR(Float, fua_dg_skyportal_reach)
 
-EXTERN_CVAR(Bool, fua_dg_animate)
 EXTERN_CVAR(Bool, fua_dg_bindless)
-EXTERN_CVAR(Bool, fua_dg_bindless_dyn)
 EXTERN_CVAR(Int, fua_dg_cull)
 EXTERN_CVAR(Bool, fua_dg_embed)
 EXTERN_CVAR(Int, fua_dg_lightmode)
@@ -120,7 +117,6 @@ EXTERN_CVAR(Bool, fua_dg_mirrors_on)
 EXTERN_CVAR(Bool, fua_dg_planemirrors)
 EXTERN_CVAR(Bool, fua_dg_rtmirrors)
 EXTERN_CVAR(Bool, fua_dg_stackportals)
-EXTERN_CVAR(Bool, fua_dg_stackshow)
 EXTERN_CVAR(Bool, fua_dg_standalone)
 EXTERN_CVAR(Bool, fua_diligent_live)
 EXTERN_CVAR(Bool, fua_vulkan)
@@ -425,8 +421,6 @@ void ReleaseScenePipelines();
 void ReleaseWorldSRBs();
 void ResetMaterialSlots();
 void SlotReport(int n, FString &out);
-// [Doruk-Aksoy] fua_dg_slotreport: the slots the level asked for by kind, those refused once the table filled among them, and the top `top` sprite families.
-void SlotDemandReport(int top, FString &out);
 // [Doruk-Aksoy] Stamps the key a dynamic piece asked for, which slot holds, for the working set.
 void NoteDynamicSlotUse(int slot, const void *material, int translation);
 // [Doruk-Aksoy] The last frame's working set and each window's counted, their peaks kept and the gpu/slots/ counters sent.
@@ -436,10 +430,7 @@ Diligent::IShaderResourceBinding *WorldSRB(Diligent::IPipelineState *pso);
 Diligent::IPipelineState *ScenePSO(int pipeline, int userShader);
 // [Doruk-Aksoy] The programs the level's own batches draw with, made at upload rather than on the frame that first shows one.
 void PrewarmUserPipelines();
-// [Doruk-Aksoy] Every GLDEFS shader's program made (and kept for the session), and which of them run, for fua_dg_hwshaders.
-void UserShaderReport(FString &out);
-// [Doruk-Aksoy] fua_dg_shaderbench: the launch's GLDEFS programs compiled again, uncached, at most `inFlight` at a time on the device's pool, and how long that took.
-void ShaderCompileBench(int inFlight, FString &out);const TArray<MatSlot> &MaterialSlots();
+const TArray<MatSlot> &MaterialSlots();
 // [Doruk-Aksoy] How many of a piece's slots changed after the current fill, and so sample what they held before.
 int MaterialSlotsUnfilled(int matSlot, int brightSlot);
 // [Doruk-Aksoy] The slot table's generation, which a pass filling an array of its own compares with the one it filled at.
@@ -454,8 +445,6 @@ void MarkMaterialSlotsCurrent();
 struct AtlasEntry { int page, x, y, w, h; };
 bool AtlasActive();
 int AtlasPageSize();
-// [Doruk-Aksoy] The largest side an image may have to go on a page.
-int AtlasMaxSide();
 // [rc4l] Where a material's image sits on a page, placing it the first time, NULL when it may not or does not fit; sprite says the piece is a flat sprite.
 const AtlasEntry *AtlasFor(const void *material, int translation, bool sprite);
 Diligent::IShaderResourceBinding *AtlasSRB(Diligent::IPipelineState *pso, int page);
@@ -501,7 +490,6 @@ void DrawStackSurfaces(Diligent::IDeviceContext *ctx);
 bool EnsureAccelerationStructure();
 bool EnsureMirrorResources();
 bool RayTracingAvailable();
-int RecollectMirrors();
 void ReleaseAccelerationStructures();
 void ReleaseLineMirrorPipeline();
 void ReleaseMirrorBinding();
@@ -512,8 +500,6 @@ void RenderMirrors(Diligent::IDeviceContext *ctx);
 void DrawLineMirrorSurfaces(Diligent::IDeviceContext *ctx);
 void RenderPlaneMirrors(Diligent::IDeviceContext *ctx);
 void RenderStackPortals(Diligent::IDeviceContext *ctx);
-void ShowStackView(Diligent::IDeviceContext *ctx);
-void StackInfo(FString &out);
 void UploadWalkVisibility(Diligent::IDeviceContext *ctx);
 void WriteSceneConstants(float *cb, const float *clip, float targetW, float targetH, float materialSlots);
 
@@ -573,7 +559,6 @@ void ReleaseSkyPipelines();
 void ResetSkyForLevel();
 void GetSkyConstants(float &angle, float &xScale, float &vScale, unsigned char &capR, unsigned char &capG, unsigned char &capB);
 int SkyDraws();
-Diligent::IPipelineState *SkyPortalPicturePSO();
 // [Doruk-Aksoy] Drawing into `rtvFormat`, or the swapchain's when TEX_FORMAT_UNKNOWN.
 bool CreatePicturePSO(const char *name, const char *ps, Diligent::FILTER_TYPE filter, Diligent::TEXTURE_FORMAT dsvFormat,
 	Diligent::RefCntAutoPtr<Diligent::IPipelineState> &pso, Diligent::TEXTURE_FORMAT rtvFormat = Diligent::TEX_FORMAT_UNKNOWN);
