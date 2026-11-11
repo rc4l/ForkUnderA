@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -15,7 +16,7 @@ struct sqlite3_stmt;
 namespace zx
 {
 
-// [Doruk-Aksoy] The statements the ACS database functions run, each prepared once per connection.
+// [Doruk-Aksoy] The statements the ACS database functions and the write queue run, each prepared once per connection on first use.
 enum class DatabaseQuery
 {
 	Get,
@@ -27,6 +28,18 @@ enum class DatabaseQuery
 	SortAscending,
 	SortDescending,
 	Entries,
+	CountAbove,
+	CountBelow,
+	MaxStamp,
+	MarkerStamp,
+	SetIfNewer,
+	DeleteIfOlder,
+	MarkDeleted,
+	ClearMarker,
+	IncrementStamped,
+	AppliedSeq,
+	SetApplied,
+	PruneMarkers,
 	Count,
 };
 
@@ -44,11 +57,27 @@ struct DatabaseStatements
 
 using DatabaseEntries = std::vector<std::pair<std::string, std::string>>;
 
-// [Doruk-Aksoy] The SQL of one statement, over the table Zandronum has always used.
+// [Doruk-Aksoy] Resets and unbinds a statement when the call using it returns, so no cached statement keeps a read open.
+struct DatabaseStatementUse
+{
+	sqlite3_stmt *statement;
+	explicit DatabaseStatementUse(sqlite3_stmt *s) : statement(s) {}
+	DatabaseStatementUse(const DatabaseStatementUse &) = delete;
+	DatabaseStatementUse &operator=(const DatabaseStatementUse &) = delete;
+	~DatabaseStatementUse();
+};
+
+// [Doruk-Aksoy] The SQL of one statement, over the table Zandronum has always used and the queue's own two.
 const char *ComputeDatabaseQuerySql(DatabaseQuery query);
 
-// [Doruk-Aksoy] The index that lets sort and rank read a namespace in value order instead of scanning it.
-const char *ComputeDatabaseIndexSql();
+// [Doruk-Aksoy] The statement for a query on this connection, prepared on first use; null when it cannot be prepared.
+sqlite3_stmt *ComputeDatabaseStatement(DatabaseStatements &statements, DatabaseQuery query);
+
+// [Doruk-Aksoy] A column as text, empty for NULL.
+std::string ComputeDatabaseColumnText(sqlite3_stmt *statement, int column);
+
+// [Doruk-Aksoy] What a database gets beside the Zandronum table: the value-order index, delete markers and each server's last applied batch.
+std::vector<std::string> ComputeDatabaseSchemaSql();
 
 // [Doruk-Aksoy] The pragmas a database file gets on open and on a cvar change: WAL or the rollback journal, then the sync level; none in memory.
 std::vector<std::string> ComputeDatabasePragmas(bool memory, bool wal, int synchronous);
@@ -56,8 +85,8 @@ std::vector<std::string> ComputeDatabasePragmas(bool memory, bool wal, int synch
 // [Doruk-Aksoy] Points the cache at a connection, finalizing statements prepared for an earlier one.
 void ComputeDatabaseBind(DatabaseStatements &statements, sqlite3 *db);
 
-// [Doruk-Aksoy] Reads a value; a missing key gives true with found false.
-bool ComputeDatabaseGet(DatabaseStatements &statements, const char *ns, const char *key, std::string &value, bool &found);
+// [Doruk-Aksoy] Reads a value; a missing key gives true with found false; `seenStamp`, when given, rises to the row's timestamp.
+bool ComputeDatabaseGet(DatabaseStatements &statements, const char *ns, const char *key, std::string &value, bool &found, double *seenStamp = nullptr);
 
 // [Doruk-Aksoy] Stores a value, where an empty or null value deletes the key as SetDBEntry always has.
 bool ComputeDatabaseSaveSet(DatabaseStatements &statements, const char *ns, const char *key, const char *value);
@@ -68,11 +97,17 @@ bool ComputeDatabaseIncrement(DatabaseStatements &statements, const char *ns, co
 // [Doruk-Aksoy] One plus the number of entries ranked above the key, or -1 when the key is missing.
 bool ComputeDatabaseRank(DatabaseStatements &statements, const char *ns, const char *key, bool descending, int &rank);
 
-// [Doruk-Aksoy] Up to `count` entries from `offset` in value order, ties in key order.
-bool ComputeDatabaseSorted(DatabaseStatements &statements, const char *ns, int count, int offset, bool descending, DatabaseEntries &entries);
+// [Doruk-Aksoy] Up to `count` entries from `offset` in value order, ties in key order, as SQL's LIMIT and OFFSET read negatives.
+bool ComputeDatabaseSorted(DatabaseStatements &statements, const char *ns, int64_t count, int64_t offset, bool descending, DatabaseEntries &entries, double *seenStamp = nullptr);
 
 // [Doruk-Aksoy] Every entry of a namespace in key order.
-bool ComputeDatabaseEntries(DatabaseStatements &statements, const char *ns, DatabaseEntries &entries);
+bool ComputeDatabaseEntries(DatabaseStatements &statements, const char *ns, DatabaseEntries &entries, double *seenStamp = nullptr);
+
+// [Doruk-Aksoy] How many entries of a namespace have an integer value above (or below) `value`.
+bool ComputeDatabaseCountBeyond(DatabaseStatements &statements, const char *ns, int64_t value, bool above, int64_t &count);
+
+// [Doruk-Aksoy] The newest timestamp in the table or its delete markers, 0 for an empty database.
+bool ComputeDatabaseMaxStamp(DatabaseStatements &statements, double &stamp);
 
 // [Doruk-Aksoy] A thread with its own connection that checkpoints the write-ahead log, so the game thread never waits on that disk flush.
 struct DatabaseCheckpointer
