@@ -170,6 +170,8 @@ void OriginalMainTry(int argc, char** argv)
 	 left in an unstable state.
 	 */
 
+	// [Doruk-Aksoy] Registered first, so it runs after call_terms and before the globals are destroyed.
+	atexit(C_MarkStaticTeardown);
 	atexit(call_terms);
 	atterm(I_Quit);
 

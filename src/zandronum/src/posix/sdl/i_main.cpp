@@ -55,6 +55,7 @@
 #include "i_system.h"
 #include "i_video.h"
 #include "c_console.h"
+#include "c_cvars.h"
 #include "errors.h"
 #include "version.h"
 #include "features/crashreport/zx_crashreport.h"
@@ -365,6 +366,8 @@ int main (int argc, char **argv)
 		  left in an unstable state.
 		*/
 
+		// [Doruk-Aksoy] Registered first, so it runs after call_terms and before the globals are destroyed.
+		atexit (C_MarkStaticTeardown);
 		atexit (call_terms);
 		atterm (I_Quit);
 
