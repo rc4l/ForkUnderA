@@ -70,6 +70,7 @@
 #include "d_main.h"
 #include "i_system.h"
 #include "c_console.h"
+#include "c_cvars.h"
 #include "version.h"
 #include "features/fua-branding/computation/fua_version_compute.h"
 #include "features/crashreport/zx_crashreport.h"
@@ -929,6 +930,8 @@ void DoMain (HINSTANCE hInstance)
 		normally or abnormally.
 		*/
 
+		// [Doruk-Aksoy] Registered first, so it runs after call_terms and before the globals are destroyed.
+		atexit (C_MarkStaticTeardown);
 		atexit (call_terms);
 
 		atterm (I_Quit);
