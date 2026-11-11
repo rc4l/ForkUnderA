@@ -1740,6 +1740,7 @@ add_executable( zdoom WIN32
 	features/frame/viewtrace.cpp
 	features/frame/framestall.cpp
 	features/frame/debugorbit.cpp
+	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
 	features/frame-limit/framelimit.cpp
 	features/dynres/dynres.cpp
