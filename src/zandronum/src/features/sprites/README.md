@@ -49,7 +49,9 @@ The weapon too (`pspritebuild.cpp`, `computation/pspritequad_compute`): each lay
 brighten a fullbright layer gives, bright fog), the 3D floor band the eye is in, the style and alpha
 `AlterWeaponSprite` leaves, the overlay offsets and bob, and the targeter; recorded into the 2D capture
 where GL's quad was. The bob is `P_BobWeapon`'s, which steps once a frame (`r_frameSerial`), so the
-weapon bobs alike whichever renderers draw the frame. The weapon's style and alpha
+weapon bobs alike whichever renderers draw the frame. With `cl_interpolateweapons` (Zandronum 3.3's,
+on by default) the weapon and flash layers are eased from where they stood last tic to where they stand
+now by the tic fraction (`computation/weaponease_compute`), each renderer keeping its own ease. The weapon's style and alpha
 are `ComputeWeaponStyle`, sharing the sprites' fuzz, transsouls and alpha1 rules, and a fullbright layer's
 colour is `ComputeFullbrightColor`; `StyleOf` and `RenderStyleOf` carry an engine style to them and back.
 `fua_psprite_check 1` compares the derived quads with GL's bit for bit (`fua_psprite_report`): about

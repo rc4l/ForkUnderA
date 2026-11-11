@@ -80,6 +80,10 @@ CUSTOM_CVAR( Int, sv_fastweapons, 0, CVAR_SERVERINFO | CVAR_GAMEPLAYSETTING )
 	SERVER_SettingChanged( self, false );
 }
 
+// [rc4l] Ported from zandronum@18867e1e1300c5d19941336a7948595879dc1e3a: the renderers ease the weapon with features/sprites' ComputeWeaponEase.
+// [AK] Controls if whether weapon sprites are interpolated or not.
+CVAR( Bool, cl_interpolateweapons, true, CVAR_ARCHIVE )
+
 // [AK] CVars that control how the weapon bobs.
 CVAR( Bool, cl_alwaysbob, false, CVAR_ARCHIVE )
 CVAR( Bool, cl_usecustombob, false, CVAR_ARCHIVE )

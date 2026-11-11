@@ -10,6 +10,7 @@
 #include "features/sprites/computation/pspritequad_compute.h"
 #include "features/sprites/computation/spritelight_compute.h"
 #include "features/sprites/computation/spritestyle_compute.h"   // [rc4l] ComputeWeaponStyle
+#include "features/sprites/computation/weaponease_compute.h"   // [rc4l] ComputeWeaponEase
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/draw2d/computation/quad2d_compute.h"
 #include "features/hwrender/computation/fuzz_compute.h"   // [rc4l] ComputeFuzzKind
@@ -59,6 +60,7 @@ EXTERN_CVAR(Float, transsouls)
 EXTERN_CVAR(Int, r_fuzztype)
 EXTERN_CVAR(Bool, r_lights)
 EXTERN_CVAR(Bool, r_light_sprites)
+EXTERN_CVAR(Bool, cl_interpolateweapons)
 
 // [rc4l] Derive the weapon beside GL's and compare the two quad for quad, for fua_psprite_report.
 CVAR(Bool, fua_psprite_check, false, CVAR_FUA_DEV_MODE)
@@ -357,7 +359,17 @@ static void BuildLayers(sector_t *viewsector, int viewArea, fixed_t bobX, fixed_
 			drawsx = psp->oldx + FixedMul(psp->sx - psp->oldx, r_TicFrac);
 			drawsy = psp->oldy + FixedMul(psp->sy - psp->oldy, r_TicFrac);
 		}
-		const fixed_t layerx = drawsx + fixed_t::FromRaw(addxRaw), layery = drawsy + fixed_t::FromRaw(addyRaw);
+		fixed_t layerx = drawsx + fixed_t::FromRaw(addxRaw), layery = drawsy + fixed_t::FromRaw(addyRaw);
+		if (ridesBob)
+		{
+			// [rc4l] cl_interpolateweapons: the weapon and flash eased between tics, this renderer's own ease beside GL's.
+			static WeaponEase eases[2];
+			int64_t easedX, easedY;
+			ComputeWeaponEase(eases[psp->layer == ps_flash], cl_interpolateweapons, player->bobIn.levelTime, layerx.Raw(), layery.Raw(),
+				r_TicFrac.Raw(), &easedX, &easedY);
+			layerx = fixed_t::FromRaw(easedX);
+			layery = fixed_t::FromRaw(easedY);
+		}
 		if (hudModels) HUDModelLayer(player, psp, layerx, layery, rgba, dyn, layerStyle);
 		else LayerQuad(player, psp, layerx, layery, LayerTranslation(player, psp), rgba, dyn,
 			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha), zx::draw2d::ComputeTextureMode(layerStyle.Flags, false),
