@@ -36,6 +36,17 @@ std::string ComputeClientHello(int pid, bool tokenRequired);
 // [rc4l] Appends bytes from one connection and returns what its complete lines ask, dropping every line before the right token.
 FeedResult ComputeClientFeed(ClientFeed &client, const char *data, size_t n, const char *token);
 
+// [Doruk-Aksoy] What one recv or send on a connection came to: bytes moved, a call to make again, or a connection gone.
+enum class SocketStep
+{
+	Moved,
+	Retry,
+	Closed,
+};
+
+// [Doruk-Aksoy] A call a signal interrupted is made again, since dropping the client then closed a healthy connection mid-request.
+SocketStep ComputeSocketStep(int result, bool interrupted);
+
 }} // namespace zx::mcp
 
 #endif
