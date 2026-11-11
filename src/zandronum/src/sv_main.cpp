@@ -3777,6 +3777,11 @@ void SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient )
 		&& static_cast<APlayerPawn *>( pActor )->JumpZ != static_cast<APlayerPawn *>( pActor->GetDefault( ) )->JumpZ )
 		SERVERCOMMANDS_SetThingProperty( pActor, APROP_JumpZ, ulClient, SVCF_ONLYTHISCLIENT );
 
+	// [rc4l] Ported from zandronum@8f38a7d08abf6811238ba864526668a31de1559f: a joining client gets each actor's stencil colour.
+	// [AK] Update the actor's stencil color if it's changed.
+	if ( pActor->fillcolor != pActor->GetDefault( )->fillcolor )
+		SERVERCOMMANDS_SetThingProperty( pActor, APROP_StencilColor, ulClient, SVCF_ONLYTHISCLIENT );
+
 	// [AK] Update the actor's species if it's changed.
 	if ( strcmp( pActor->Species, pActor->GetDefault()->Species ) != 0 )
 		SERVERCOMMANDS_SetThingStringProperty( pActor, APROP_Species, ulClient, SVCF_ONLYTHISCLIENT );
