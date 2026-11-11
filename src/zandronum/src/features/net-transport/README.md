@@ -7,8 +7,7 @@ The game's UDP socket as tests drive it: a simulated ping and packet loss, set p
   half on each it receives (`ComputeFakeDelayMs`). Packets keep their order, as a link with a steady ping does.
 - `fua_net_fakeloss` drops that percent of packets each way, from a generator seeded the same every run
   (`ComputeFakeDrop`).
-- `fua_net_conditions` prints what is held each way and when the oldest is due; `net/held`,
-  `net/fake_dropped`, `net/held_released` and `net/held_send_failed` count them.
+- `net/held`, `net/fake_dropped`, `net/held_released` and `net/held_send_failed` count what is held each way.
 - A server reads its game socket on a thread of its own (`sv_fua_receivethread`, on by default and switched in a
   running server): the thread waits in `select`, stamps each datagram's arrival on `I_MSTime`'s clock and queues
   it (`ComputeAdmitDatagram` drops the newest past 4096, counted as `net/receive_dropped`), and the tick's wait
@@ -35,7 +34,7 @@ the netcode are counted by `net-sockets-through-transport` (`tools/boundary-rule
 - `computation/zstdwire_compute.{h,cpp}`: Zandronum 3.3's zstd wire decisions — the level clamp, the try-zstd
   gate, the smart Huffman fallback and the frame check with its one-in-2^32 misread — tested in
   `computation/zstdwire_compute_test.cpp`.
-- `netconditions.{h,cpp}`: the cvars, the two queues and `fua_net_conditions`.
+- `netconditions.{h,cpp}`: the cvars and the two queues.
 - `recvthread.{h,cpp}`: a server's receive thread and its queue.
 
 ## In-engine hooks

@@ -39,7 +39,7 @@
 
 EXTERN_CVAR(Bool, cl_capfps)
 // [rc4l] A frame clock pinned at this many milliseconds (0 runs it), so captures from two launches show shader animation, warps and fuzz, at the same moment.
-CVAR(Int, fua_debug_frameclock, 0, 0)
+CVAR(Int, fua_debug_frameclock, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace frame {
 

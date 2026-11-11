@@ -74,9 +74,7 @@ for (let i = 0; i < STOPS; i++) {
   await cap.exec(c, `fua_diligent_shot ${S}/inc_a.png`);
 
   // Force the thing the incremental path is standing in for: invalidate and rebuild from scratch.
-  await cap.exec(c, 'gl_wallmesh 0');
-  await cap.waitTics(c, 4);
-  await cap.exec(c, 'gl_wallmesh 1');
+  await cap.exec(c, 'fua_mesh_rebuild');
   await cap.waitTics(c, 8);
   await cap.exec(c, `fua_diligent_shot ${S}/inc_b.png`);
   await c.rpc('sim.resume', {}).catch(() => {});

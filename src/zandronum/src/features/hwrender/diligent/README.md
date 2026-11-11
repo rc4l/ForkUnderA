@@ -26,7 +26,7 @@ state lives in four records there: `g_scene` (buffers, batches, the frame's dyna
 | `dgframe.cpp` | the frame driver: level arming, the live frame, the present clock |
 | `dgdiag.cpp` | benches, statistics, replay capture, screenshots and their console commands |
 | `dgtexture.cpp`, `dgwindow.cpp`, `dgprobe.cpp` | textures (a mip chain only when the filter reads one, `ComputeMaterialMips`), the swapchain, the device; `dgdevice_vk.cpp` turns on the Khronos validation layer with `fua_dg_validation 1` at launch, its messages in the console (the Vulkan SDK's layer must be installed) |
-| `dgmemory.cpp`, `dggputimer.cpp` | `features/telemetry`'s GPU memory by tag and its per-pass GPU times; Diligent's own allocations through the engine's `operator new` (`EngineMemoryAllocator`), and the Vulkan driver's with `fua_dg_vk_alloc_trace 1` at launch (`computation/alignedblock_compute`) |
+| `dgmemory.cpp`, `dggputimer.cpp` | `features/telemetry`'s GPU memory by tag and its per-pass GPU times; Diligent's own allocations through the engine's `operator new` (`EngineMemoryAllocator`, `computation/alignedblock_compute`) |
 | `dgplatform.h`, `dgwin32.cpp`, `dgsdl.cpp`, `dgcocoa.mm` | each platform's window and the handles its Vulkan surface takes: an HWND; an X11 window or Wayland surface through SDL2; a CAMetalLayer view drawn through MoltenVK (`posix/cocoa/metalview.h`'s `CocoaMetalView`, shared with the engine's window), with the .app's own Vulkan loader |
 
 ## The scene's format
@@ -205,8 +205,6 @@ swapping anything.
 | command | what |
 |---|---|
 | `fua_diligent_probe` | create the Vulkan device, report the adapter |
-| `fua_diligent_window` | swapchain + triangle pipeline on a separate window |
-| `fua_diligent_frame N` | present N triangle frames |
 | `fua_diligent_scene` | upload the baked level mesh + snapshot the camera |
 | `fua_diligent_bench N` | presented and submit-only timings |
 | `fua_diligent_shot [file]` | read the swapchain back to a PNG -- the only trustworthy visual check |
@@ -214,7 +212,7 @@ swapping anything.
 Driven in one step by **`fuactl diligent --port P [--frames N] [--shot FILE]`**, which bakes the
 mesh, uploads, screenshots and runs the benchmark in the order they actually require.
 
-Requires `gl_wallmesh 1` and a walked level, so the mesh has baked geometry to hand over.
+Requires a level the backend has drawn, which bakes the mesh (`zx::levelmesh::Enable`), so it has geometry to hand over.
 
 Outside a level, after `endgame` or a demo's end, the bench, `fua_diligent_scale` and the shot refuse
 (`computation/scenedraw_compute`), since the game copy still points into the freed level; scenario `scenenolevel`.

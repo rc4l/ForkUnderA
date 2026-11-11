@@ -92,7 +92,7 @@ async function captureSpot(c, name, note, file = SPOTS) {
     .map((m) => (m[2] ? `${m[1]} ${m[2]}` : m[1]));
   const loaded = { iwad: iwad && iwad.trim(), pwads };
   const renderer = {};
-  for (const cv of ["fua_vulkan", "fua_dg_standalone", "fua_dg_embed", "fua_dg_skyportal", "gl_wallmesh"]) {
+  for (const cv of ["fua_vulkan", "fua_dg_standalone", "fua_dg_embed", "fua_dg_skyportal"]) {
     const v = shot.cvarValueFrom(await cap.exec(c, cv, { quietMs: 300, maxMs: 6000 }).catch(() => ""));
     if (v !== null) renderer[cv] = v;
   }

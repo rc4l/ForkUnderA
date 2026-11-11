@@ -61,7 +61,7 @@ EXTERN_CVAR(Bool, r_lights)
 EXTERN_CVAR(Bool, r_light_sprites)
 
 // [rc4l] Derive the weapon beside GL's and compare the two quad for quad, for fua_psprite_report.
-CVAR(Bool, fua_psprite_check, false, 0)
+CVAR(Bool, fua_psprite_check, false, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace sprites {
 
@@ -422,7 +422,7 @@ void CheckFramePSprites()
 
 }} // namespace zx::sprites
 
-CCMD( fua_psprite_report )
+DEV_MODE_CCMD( fua_psprite_report )
 {
 	const zx::frame::OracleTally &t = zx::sprites::g_check;
 	Printf( "weapon: %d frames derived beside GL (%d quads), %d differed\n%s", t.checked, zx::sprites::g_checkedQuads, t.differed, t.firsts.c_str( ) );

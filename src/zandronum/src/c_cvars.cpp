@@ -74,6 +74,8 @@
 #include "features/cvar-alias/computation/cvaralias_compute.h"   // [rc4l] the fua_ names other cvars answer to
 #include "features/cvar-memo/computation/cvarmemo_compute.h"   // [Doruk-Aksoy] lookups remembered by the name's pointer
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] which value cl_protectcvars records and a save writes
+#include "features/dev-mode/devmode.h"   // [rc4l] the gate on CVAR_FUA_DEV_MODE settings
+#include "features/dev-mode/computation/devmode_compute.h"   // [rc4l] ComputeDevModeArchivedValue
 
 #include <atomic>
 
@@ -263,6 +265,10 @@ void FBaseCVar::SetGenericRep (UCVarValue value, ECVarType type)
 	{
 		return;
 	}
+
+	// [rc4l] A dev-mode setting changes only while the gate is open (features/dev-mode).
+	if (( Flags & CVAR_FUA_DEV_MODE ) && !zx::devmode::MaySet( *this ))
+		return;
 
 	// [AK] Was this CVar changed using ConsoleCommand?
 	if ( ACS_IsCalledFromConsoleCommand( ))
@@ -1849,6 +1855,8 @@ void C_ArchiveCVars (FConfigFile *f, uint32 filter)
 			UCVarValue val;
 			val = cvar->GetGenericRep (CVAR_String);
 			const char *text = zx::ComputeArchivedCVarValue( cl_protectcvars, val.String, saved != NULL, ( saved != NULL ) ? saved->Value.String : NULL );
+			// [rc4l] A dev-mode setting the gate holds at its default saves the player's own value.
+			text = zx::devmode::ComputeDevModeArchivedValue( zx::devmode::HeldValue( *cvar ), text );
 			// [BB] This is ancient code from Skulltag...
 			if ( filter == (CVAR_ARCHIVE|CVAR_USERINFO) )
 			{

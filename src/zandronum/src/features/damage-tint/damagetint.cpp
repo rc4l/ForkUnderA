@@ -218,16 +218,6 @@ bool DamageTint_BeginSpriteGlow( const TintSubject &s, int blendOp, DWORD styleF
 	return true;
 }
 
-bool DamageTint_Ramp( unsigned int id, float &intensity, int &lastTic )
-{
-	const TintState *st = g_state.CheckKey( id );
-	if ( st == NULL )
-		return false;
-	intensity = st->intensity;
-	lastTic = st->lastTic;
-	return true;
-}
-
 void DamageTint_EndSpriteGlow()
 {
 	ClearGLTint();
@@ -289,55 +279,6 @@ PalEntry DamageTint_FaceOverlay( float *coverageFracOut, bool *glowOut )
 	if ( glowOut != NULL )
 		*glowOut = glow;
 	return PalEntry( (BYTE)( pct * 255 / 100 ), avg.r, avg.g, avg.b );
-}
-
-CCMD( fua_tintdebug )
-{
-	if ( gamestate != GS_LEVEL || consoleplayer < 0 || !playeringame[consoleplayer] )
-		return;
-	AActor *mo = players[consoleplayer].mo;
-	if ( mo == NULL || mo->Sector == NULL )
-		return;
-	sector_t *sec = mo->Sector;
-	fixed_t fz = sec->floorplane.ZatPoint( mo->x, mo->y );
-	FTextureID dbgTex;
-	dbgTex.SetInvalid();
-	int terrain = P_GetThingFloorType( mo );
-	Printf( "sector #%d  special=%d (0x%x)  damage=%d  computed=%d  terrain=%d(dmg %d)\n",
-		(int)( sec - sectors ), sec->special, sec->special, sec->damage, zx::gamecopy::FloorDamage( mo, dbgTex ),
-		terrain, Terrains[terrain].DamageAmount );
-	Printf( "z=%d floorz=%d planez=%d onfloor=%d waterlevel=%d protected=%d 3dfloors=%d\n",
-		(int)( mo->z >> FRACBITS ), (int)( mo->floorz >> FRACBITS ), (int)( fz >> FRACBITS ),
-		(int)( mo->z == fz ), mo->waterlevel, (int)( mo->player && zx::gamecopy::DamageNegated( mo->player )),
-		sec->e ? (int)sec->e->XFloor.ffloors.Size() : 0 );
-	float intensity;
-	int lastTic;
-	if ( DamageTint_Ramp( mo->rcSerial, intensity, lastTic ))
-		Printf( "intensity=%.2f lastTic=%d (now %d)\n", intensity, lastTic, level.time );
-	else
-		Printf( "no ramp entry yet\n" );
-
-	// Histogram of nonzero specials with a sample position for each.
-	TMap<int, int> counts;
-	TMap<int, int> sample;
-	for ( int i = 0; i < numsectors; ++i )
-	{
-		int sp = sectors[i].special;
-		if ( sp == 0 && sectors[i].damage == 0 ) continue;
-		int key = sp;
-		if ( int *c = counts.CheckKey( key )) ++*c;
-		else { counts.Insert( key, 1 ); sample.Insert( key, i ); }
-	}
-	TMap<int, int>::Iterator it( counts );
-	TMap<int, int>::Pair *p;
-	while ( it.NextPair( p ))
-	{
-		int si = *sample.CheckKey( p->Key );
-		sector_t &s = sectors[si];
-		Printf( "special %d (0x%x): %d sectors, dmg-> %d, e.g. #%d near (%d,%d)\n",
-			p->Key, p->Key, p->Value, DamageTint_SectorDamage( &s ), si,
-			(int)( s.soundorg[0] >> FRACBITS ), (int)( s.soundorg[1] >> FRACBITS ));
-	}
 }
 
 #else // SERVER_ONLY -- the dedicated server: no renderer, no tint.

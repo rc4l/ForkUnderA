@@ -377,7 +377,7 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
     fills: async (set) => (set.id === 1 ? ["latejoin player 2: its render copy missed 1 changes of the map, the first side 3 changed past the tic's end scan or the change logs"] : []),
     replication: async (set) => (set.id === 1 ? "the server sent 3 changed rows a tic late, untouched, the first sector 4 (families 2)" : ""),
   };
-  const configs = [{ name: "lan", players: 1, observers: 1, broadcast: true }, { name: "elsewhere", maps: ["MAP02"] }, { name: "ping", lag: "100", clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
+  const configs = [{ name: "lan", players: 1, observers: 1, broadcast: true }, { name: "elsewhere", maps: ["MAP02"] }, { name: "ping", lag: "100", cheats: false, clientCvars: { cl_unlagged: 1 } }, { name: "broken", lag: "bad" }];
   const judged = [];
   const r = await compareNetplay({ name: "nt", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs, judgeNetplay: async (set, label, info) => { judged.push([set.id, label, info.config.name]); return set.id === 2 ? { line: `FAIL ${label}`, failed: 1 } : { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
   assert.deepEqual(judged, [[1, "MAP01 lan", "lan"], [2, "MAP01 ping", "ping"]]);
@@ -389,6 +389,7 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
   assert.deepEqual([launched[0].players, launched[0].observers, launched[1].players, launched[1].lag], [1, 1, 1, "100"]);
   assert.deepEqual([launched[0].clientCvars, launched[1].clientCvars], [FILL_CHECK, { ...FILL_CHECK, cl_unlagged: 1 }], "every client holds its fills to the whole-map compare");
   assert.deepEqual([launched[0].broadcast, launched[1].broadcast], [true, false]);
+  assert.deepEqual([launched[0].cheats, launched[1].cheats], [true, false]);
   assert.equal(compareNetplay.judgedAlone, true);
   assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
 });

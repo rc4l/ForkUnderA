@@ -1581,10 +1581,9 @@ void D_RunFrame ()
 
 				// Run at least 1 tick.
 				{
-					const int ticBefore = gametic;
 					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
 					TryRunTics( );
-					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
+					zx::frame::DebugFrameStall( );   // [rc4l] fua_debug_framestall_us
 				}
 
 				// Move positional sounds.
@@ -1655,10 +1654,9 @@ void D_RunFrame ()
 				}
 				else
 				{
-					const int ticBefore = gametic;
 					const zx::framephase::Scope simPhase( zx::framephase::kPhaseSim );
 					TryRunTics (); // will run at least one tic
-					zx::frame::DebugFrameStall( gametic != ticBefore );   // [rc4l] fua_debug_ticstall_us
+					zx::frame::DebugFrameStall( );   // [rc4l] fua_debug_framestall_us
 				}
 
 				// Update display, next frame, with current state.

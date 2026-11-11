@@ -102,7 +102,7 @@ def selected(text):
     return text
 
 
-CCMD = re.compile(r'\bCCMD\s*\(\s*\w+\s*\)\s*\{')
+CCMD = re.compile(r'\b(?:DEV_MODE_)?CCMD\s*\(\s*\w+\s*\)\s*\{')
 DECLARATION = re.compile(r'^[ \t]*(?:class|struct)[ \t]+\w+[ \t]*;|^[ \t]*(?:(?!(?:return|else|delete|throw|case|goto|new|do|co_return|co_yield)\b)[\w:<>]+[ \t*&]+)+\w+[ \t]*\([^;{}()]*(?:\([^;{}()]*\)[^;{}()]*)*\)[ \t]*(?:const[ \t]*)?;', re.M)
 
 

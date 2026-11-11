@@ -89,6 +89,9 @@ enum
 
 	// [AK] The CVar is gameplay-related and can be configured in the GAMEMODE lump.
 	CVAR_GAMEPLAYSETTING = 4194304,
+
+	// [rc4l] A test or debug setting: held at its default and refusing changes while features/dev-mode's gate is closed.
+	CVAR_FUA_DEV_MODE = 8388608,
 };
 
 union UCVarValue

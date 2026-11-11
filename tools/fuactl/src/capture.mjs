@@ -207,7 +207,7 @@ export const SANDBOX = [
 export async function sandbox(c, { map = null, vulkan = true } = {}) {
   if (map) { await exec(c, `map ${map}`); await waitTics(c, 35); }
   for (const cmd of SANDBOX) await exec(c, cmd, { quietMs: 60 });
-  if (vulkan) { await exec(c, "gl_wallmesh 1"); await exec(c, "fua_vulkan 1"); await waitTics(c, 25); }
+  if (vulkan) { await exec(c, "fua_vulkan 1"); await waitTics(c, 25); }
 }
 
 // ---------------------------------------------------------------------------------------------

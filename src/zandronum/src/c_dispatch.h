@@ -152,6 +152,23 @@ public:
 	static FUnsafeConsoleCommand Cmd_##n##_Ref (#n, Cmd_##n); \
 	void Cmd_##n (FCommandLine &argv, APlayerPawn *who, int key)
 
+// [rc4l] A test or debug command, refused while features/dev-mode's gate is closed.
+class FDevModeConsoleCommand : public FConsoleCommand
+{
+public:
+	FDevModeConsoleCommand (const char *name, CCmdRun RunFunc)
+	: FConsoleCommand (name, RunFunc)
+	{
+	}
+
+	virtual void Run (FCommandLine &args, APlayerPawn *instigator, int key) override;
+};
+
+#define DEV_MODE_CCMD(n) \
+	static void Cmd_##n (FCommandLine &, APlayerPawn *, int key); \
+	static FDevModeConsoleCommand Cmd_##n##_Ref (#n, Cmd_##n); \
+	void Cmd_##n (FCommandLine &argv, APlayerPawn *who, int key)
+
 const int KEY_DBLCLICKED = 0x8000;
 
 class FConsoleAlias : public FConsoleCommand

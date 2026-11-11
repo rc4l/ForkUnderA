@@ -90,9 +90,6 @@ struct DynresState
 // [rc4l] The state after a frame: a step down when the GPU is over budget and is what holds the frame, up once the next step's predicted cost has fitted for long enough, else as it was; untimed, a slow window of frames steps down and a wait or room steps up, and each step is kept only if the next window bears it out.
 DynresState ComputeDynresStep(const DynresState &s, const DynresSample &x, double budgetMs, const float *steps, int count, const DynresTuning &t);
 
-// [rc4l] Why the controller moved from was to now, for fua_dynres_log; "" when it did not.
-const char *ComputeDynresWhy(const DynresState &was, const DynresState &now, bool timed);
-
 // [rc4l] Whether the controller may read a frame: a timed one always, and an untimed one only while the game runs (no pause, menu or console) in a focused window, since a paused game draws once a tic and a browser slows a page out of focus.
 bool ComputeFrameJudged(bool timed, bool running, bool focused);
 

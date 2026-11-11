@@ -16,7 +16,7 @@
 //                   bit, so the rasteriser stipples between them. 1799 such pairs existed before
 //                   anyone noticed, because the artefact is only visible at certain angles.
 //
-// Engine-free and header-pure: flatmesh.cpp and the fua_mesh_verify diagnostic are the glue.
+// Engine-free and header-pure: flatmesh.cpp is the glue.
 
 #ifndef ZX_FLATMESH_COMPUTE_H
 #define ZX_FLATMESH_COMPUTE_H

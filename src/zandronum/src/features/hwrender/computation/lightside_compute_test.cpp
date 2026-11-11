@@ -209,7 +209,7 @@ TEST(LightSideCompute, AZeroNormalMeansTheCPUAlreadyDidThisSurface)
 {
 	// A sprite turns to face the camera and has no side for a light to be in front of or behind, so
 	// it carries no normal and takes no light from this loop. A wall or a floor reaching here with a
-	// zero normal takes NO dynamic light at all, which is why fua_mesh_verify checks for it.
+	// zero normal takes NO dynamic light at all.
 	const float none[3] = { 0.f, 0.f, 0.f };
 	const float light[3] = { 0.f, 100.f, 0.f };
 	EXPECT_FALSE(ComputeShaderLightReaches(none, 0.f, light));

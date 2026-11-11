@@ -36,11 +36,7 @@
 #include <vector>
 
 // [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
-CVAR(Bool, fua_vis_walk, true, 0)
-// [rc4l] Off walks without culling, so the walk's own cost and the cull's can be measured apart.
-CVAR(Bool, fua_vis_cull, true, 0)
-// [Doruk-Aksoy] Off culls the actors on the main thread alone, to bisect or compare in one session.
-CVAR(Bool, fua_vis_sweepjobs, true, 0)
+CVAR(Bool, fua_vis_walk, true, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Bool, fua_sprite_check)
 EXTERN_CVAR(Bool, fua_shading_check)
 EXTERN_CVAR(Bool, gl_render_things)
@@ -104,7 +100,7 @@ void SweepActors()
 	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
 	{
 		ZX_ZONE("scene/actor_sweep");   // [Doruk-Aksoy] the actors culled against the view, before any is derived
-		if (batch && fua_vis_sweepjobs && count > 0)
+		if (batch && count > 0)
 		{
 			// [Doruk-Aksoy] Chunks of the records culled on the lanes, their kept lists joined in chunk order so the batch is in record order as one pass made it.
 			const int chunks = zx::jobs::ComputeChunkCount(count, kSweepChunk);
@@ -191,7 +187,7 @@ void StandaloneScene()
 	{
 		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals, zx::sprites::BuildQueuedParticles };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
-		zx::visibility::WalkView(fua_vis_cull, true, &hooks);
+		zx::visibility::WalkView(true, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);
 	}
 	// [rc4l] A camera texture's view walks for its sky surfaces alone, so another sky than the level's shows on its screen.

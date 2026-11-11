@@ -20,7 +20,6 @@
 #include "c_cvars.h"
 #include "features/telemetry/telemetry.h"
 
-EXTERN_CVAR(Bool, fua_dg_hud)
 
 namespace zx { namespace hwrender {
 
@@ -294,7 +293,6 @@ void Draw2D(Diligent::IDeviceContext *ctx, int first, int end, Diligent::ITextur
 {
 	ZX_ZONE("draw/2d");   // [rc4l] the frame's 2D layer
 	if (first == 0) g_draws2D = g_quads2D = 0;
-	if (!fua_dg_hud) return;
 
 	int nq = 0;
 	const zx::draw2d::Quad2D *quads = zx::draw2d::Quads2D(nq);

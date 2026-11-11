@@ -5,11 +5,6 @@
 
 namespace zx { namespace hitboxviz {
 
-bool ShouldDraw(bool cvarEnabled, bool svCheats, bool offlineGame)
-{
-	return cvarEnabled && ( svCheats || offlineGame );
-}
-
 float ResolveLineWidth(float requested, float glMin, float glMax)
 {
 	if (glMax < glMin)

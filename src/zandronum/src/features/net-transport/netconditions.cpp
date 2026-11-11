@@ -10,9 +10,9 @@
 #include <limits.h>
 
 // [rc4l] Milliseconds added to this instance's round trip on the game's socket, for tests on loopback.
-CVAR(Int, fua_net_fakeping, 0, 0)
+CVAR(Int, fua_net_fakeping, 0, CVAR_FUA_DEV_MODE)
 // [rc4l] Percent of the packets this instance sends, and of those it receives, dropped, for tests on loopback.
-CVAR(Float, fua_net_fakeloss, 0.f, 0)
+CVAR(Float, fua_net_fakeloss, 0.f, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace nettransport {
 
@@ -81,16 +81,3 @@ bool TakeDueInbound(HeldPacket &out)
 }
 
 }} // namespace zx::nettransport
-
-// [rc4l] What the conditions hold now: each direction's packets and when the oldest is due.
-CCMD(fua_net_conditions)
-{
-	const long long now = zx::nettransport::ClockMs();
-	auto line = [now](const char *name, const zx::nettransport::HeldPackets &h) {
-		if (h.queue.empty()) Printf("  %s: none held\n", name);
-		else Printf("  %s: %d held, the oldest due in %lld ms\n", name, (int)h.queue.size(), h.queue.front().releaseMs - now);
-	};
-	Printf("fua_net_fakeping %d ms, fua_net_fakeloss %g%%\n", (int)fua_net_fakeping, (double)fua_net_fakeloss);
-	line("out", zx::nettransport::g_outbound);
-	line("in", zx::nettransport::g_inbound);
-}

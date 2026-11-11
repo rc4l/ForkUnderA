@@ -35,19 +35,13 @@
 #include "doomstat.h"    // consoleplayer
 
 
-CVAR(Bool, fua_flat_keylog, false, 0)
-
-// [rc4l] At FILE scope, not inside the namespace: p_mobj.cpp externs it to say whether a missile
-// managed to stick its mark, and a namespaced cvar is a different symbol that will not link.
-CVAR(Bool, fua_decal_log, false, 0)
-
 // [rc4l] The sky as SURFACES that write depth, rather than a background painted first and drawn
 // over. Off restores the old behaviour. See docs/skybleed-scope.md.
 // [rc4l] The sky as SURFACES that write depth, taken from GL, rather than a background painted
 // first and drawn over. It cuts the sky at the horizon, which is what removes the bright streak
 // along the waterline: measured 3.86 against GL 1.21 on that row, where the background blit
 // reads 30+. Off restores the old behaviour. See docs/skybleed-scope.md.
-CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
+CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE | CVAR_FUA_DEV_MODE)
 
 EXTERN_CVAR(Bool, fua_mesh_rescroll)
 
@@ -56,10 +50,8 @@ static const int kMaxFanVertices = 128;
 
 namespace zx { namespace levelmesh {
 
-// [rc4l] How often the flat cache answered without rebuilding, printed by fua_flatcache_stats so a cache that stopped working shows.
-static int g_flatHits = 0, g_flatRebuilds = 0, g_flatReshades = 0, g_flatRescrolls = 0;
-void GetFlatCacheStats(int &hits, int &rebuilds) { hits = g_flatHits; rebuilds = g_flatRebuilds; }
-int GetFlatReshades() { return g_flatReshades; }
+// [rc4l] How many flats were shifted in place rather than rebuilt, which fua_levelmesh_stats prints.
+static int g_flatRescrolls = 0;
 int GetFlatRescrolls() { return g_flatRescrolls; }
 
 // [rc4l] Keyed on (subsector, plane) so a subsector's floor and ceiling are each baked once. The
@@ -141,8 +133,8 @@ void ClearFlats()
 	// seen from above those contours are horizontal, which is why it was reported as horizontal
 	// stripes across a lit floor, and only ever under a light.
 	//
-	// InvalidateAll calls this and a gl_wallmesh toggle calls InvalidateAll, so the world's flats
-	// were duplicated on every toggle -- including every time a test harness set gl_wallmesh 1.
+	// InvalidateAll calls this and the old gl_wallmesh toggle called InvalidateAll, so the world's
+	// flats were duplicated on every toggle -- including every time a test harness set gl_wallmesh 1.
 	for (unsigned i = 0; i < g_flats.Size(); i++) MeshRetireRange(g_flats[i].range);
 	g_flats.Clear();
 	// The chains point into the table that was just emptied.
@@ -233,18 +225,6 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 		const unsigned pushed = g_flats.Push(k);
 		g_flatHead[subIndex] = (int)pushed;
 		slot = &g_flats[pushed];
-		// [rc4l] Say when a NEW flat slot is created, and with what key.
-		//
-		// A slot that should have been found and was not is a duplicate surface: the same floor stored
-		// twice under two keys, drawn twice, fighting for the depth buffer. The key is four fields and
-		// the count says nothing about which of them disagreed, so it is printed.
-		if ( fua_flat_keylog )
-		{
-			Printf( "flatkey NEW: sub %d  ceiling %d  model %d  whichPlane %d  (slots %u)\n",
-				sub ? (int)(sub - subsectors) : -1, (int)ceiling,
-				flat.mMeshModel ? (int)(flat.mMeshModel - sectors) : -1,
-				flat.mMeshWhichPlane, g_flats.Size() );
-		}
 	}
 
 
@@ -295,16 +275,12 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	{
 		// The piece is still in the mesh's list from the last time it was registered -- pieces are
 		// keyed by range offset and replaced rather than appended, so nothing needs saying again.
-		g_flatHits++;
 		return;
 	}
 	const bool facesDown = ComputeFlatWindingReversed(ceiling);
-	if (change == kFlatReshade) g_flatReshades++;
-	else if (change == kFlatRescroll) g_flatRescrolls++;
-	else
+	if (change == kFlatRescroll) g_flatRescrolls++;
+	else if (change != kFlatReshade)
 	{
-		g_flatRebuilds++;
-
 		// [rc4l] Cap matches the wall path's staging array; a subsector with more edges than this is
 		// vanishingly rare and is simply left to the GL renderer.
 		static MeshVertex fan[kMaxFanVertices];
@@ -395,8 +371,7 @@ static void StoreFlat(const FlatSource &flat, subsector_t *sub, bool ceiling)
 	// baking it opaque drew the grate as solid lava-lit metal or let the lava beneath win outright.
 	// The same classification the sprite path uses, for the same reason.
 	mp.alpha = flat.alpha;
-	// Which side this surface is viewed from, kept so fua_mesh_verify can check the winding above
-	// rather than take it on trust. See MeshPiece::facesDown.
+	// Which side this surface is viewed from. See MeshPiece::facesDown.
 	mp.facesDown = facesDown;
 	// renderstyle here is an ERenderStyle enum, not an FRenderStyle, so it is compared not inspected.
 	mp.blendMode = ComputeSurfaceBlendMode(flat.renderstyle == STYLE_Add, flat.alpha);
@@ -1110,12 +1085,12 @@ void RecordSpriteSweep(int seen, int noSector, int behind, int offScreen, int pr
 }
 
 // [rc4l] How many particles the backend was handed for the last frame, which standalone takes from the visibility walk.
-CCMD( fua_particles )
+DEV_MODE_CCMD( fua_particles )
 {
 	Printf( "particles: %d drawn this frame\n", zx::levelmesh::g_particlesThisFrame );
 }
 
-CCMD( fua_sprite_sweep )
+DEV_MODE_CCMD( fua_sprite_sweep )
 {
 	if (g_swSeen == 0) { Printf( "fua_sprite_sweep: no sweep has run -- needs fua_dg_standalone.\n" ); return; }
 	const int culled = g_swNoSector + g_swBehind + g_swOffScreen;
@@ -1311,12 +1286,6 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
 
 	mp.sortX = sortX; mp.sortY = sortY; mp.sortZ = sortZ;
 
-	if (fua_decal_log)
-		Printf("decal: %s  blend %d  redToAlpha %d  light %d  rgb %.2f,%.2f,%.2f  alpha %.2f  "
-			   "sort %.0f,%.0f,%.0f\n",
-			material ? "tex" : "none", mp.blendMode, mp.redToAlpha ? 1 : 0, mp.lightLevel,
-			mp.colorR, mp.colorG, mp.colorB, mp.alpha, mp.sortX, mp.sortY, mp.sortZ);
-
 	DynAppend(tris, count, mp);
 	g_decalsThisFrame++;
 }
@@ -1324,7 +1293,7 @@ void RegisterDecal(const MeshVertex *quad, const void *material, int translation
 }} // namespace zx::levelmesh
 
 // [rc4l] What each sky list holds now, and the walks that filled them since the last ask: two main walks a frame is the fault that hid wdiexsec's sky.
-CCMD(fua_sky_quads)
+DEV_MODE_CCMD(fua_sky_quads)
 {
 	static int lastMain = 0, lastCamera = 0;
 	int heldMain = 0, heldCamera = 0;

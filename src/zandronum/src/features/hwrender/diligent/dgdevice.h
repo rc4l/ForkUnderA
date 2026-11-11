@@ -64,10 +64,9 @@ void FreeReleasedObjects(Diligent::ISwapChain *swap);
 
 // [Doruk-Aksoy] The allocator a device factory is given before it makes the device, so Diligent's memory goes through the engine's operator new, counted and traced by features/telemetry (mem/allocations_live, fua_allocsites) as the rest is.
 Diligent::IMemoryAllocator *EngineMemoryAllocator();
-// [Doruk-Aksoy] An aligned block cut from operator new, so it is counted and traced too; freed with FreeAlignedNew, and its asked size read back for a reallocation.
+// [Doruk-Aksoy] An aligned block cut from operator new, so it is counted and traced too; freed with FreeAlignedNew.
 void *AllocateAlignedNew(size_t size, size_t alignment);
 void FreeAlignedNew(void *ptr);
-size_t AlignedNewSize(void *ptr);
 
 }} // namespace zx::hwrender
 
