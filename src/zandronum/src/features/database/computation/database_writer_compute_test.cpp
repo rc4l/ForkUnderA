@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <random>
 #include <sqlite3.h>
 #include <string>
@@ -414,6 +415,31 @@ TEST(DatabaseWriter, StopsWithinItsDrainTimeAndReportsWhatWasLeft)
 	sqlite3_close(other);
 }
 
+TEST(DatabaseWriter, LeavesAQueuedBatchWhenTheDrainTimeIsGoneBeforeItsTurn)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb file("writer_drainover");
+	std::atomic<bool> release{false};
+	zx::DatabaseWriter writer;
+	// [Doruk-Aksoy] Maintenance holds the writer until the stop has set its deadline, so the queued batch meets an expired one.
+	writer.maintenance = [&release](zx::DatabaseStatements &) {
+		while (!release.load())
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	};
+	ASSERT_TRUE(zx::ComputeDatabaseWriterStart(writer, file.path.string().c_str(), "a", {}, 1));
+	zx::ComputeDatabaseWriterPush(writer, { batch(1, 10, { set("k", "v") }) });
+	bool drained = true;
+	std::thread stopper([&]() { drained = zx::ComputeDatabaseWriterStop(writer, 0); });
+	EXPECT_TRUE(waitFor([&]() { std::lock_guard<std::mutex> lock(writer.mutex); return writer.stopping; }));
+	release = true;
+	stopper.join();
+	EXPECT_FALSE(drained);
+	EXPECT_EQ(writer.applied.load(), 0u);
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, file.db);
+	EXPECT_EQ(value(statements, "k"), "<missing>");
+}
+
 TEST(DatabaseWriter, StopsAtOnceWhileWaitingToRetryAFailure)
 {
 	ZX_REQUIRE_FILE_DATABASES();
@@ -443,6 +469,7 @@ TEST(DatabaseWriter, RunsItsMaintenanceAtStartAndThenOnSchedule)
 		};
 		ASSERT_TRUE(zx::ComputeDatabaseWriterStart(writer, file.path.string().c_str(), "a", {}, 1));
 		EXPECT_TRUE(waitFor([&]() { return runs.load() > 2; }));
+		EXPECT_GE(writer.maintenanceRuns.load(), 2);
 	}
 	const int afterDestruction = runs.load();
 	std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -453,12 +480,21 @@ TEST(DatabaseWriter, RestartingResetsItsCounters)
 {
 	ZX_REQUIRE_FILE_DATABASES();
 	FileDb file("writer_restart");
+	std::atomic<bool> release{true};
 	zx::DatabaseWriter writer;
+	// [Doruk-Aksoy] The restarted writer's first maintenance waits for release, so its count still reads the reset.
+	writer.maintenance = [&release](zx::DatabaseStatements &) {
+		while (!release.load())
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	};
 	ASSERT_TRUE(zx::ComputeDatabaseWriterStart(writer, file.path.string().c_str(), "a", {}, 1));
 	zx::ComputeDatabaseWriterPush(writer, { batch(1, 10, { set("k", "v") }) });
-	EXPECT_TRUE(waitFor([&]() { return writer.applied.load() == 1; }));
+	EXPECT_TRUE(waitFor([&]() { return writer.applied.load() == 1 && writer.maintenanceRuns.load() == 1; }));
+	release = false;
 	ASSERT_TRUE(zx::ComputeDatabaseWriterStart(writer, file.path.string().c_str(), "b", {}, 1));
 	EXPECT_EQ(writer.applied.load(), 0u);
+	EXPECT_EQ(writer.maintenanceRuns.load(), 0);
 	EXPECT_EQ(writer.server, "b");
+	release = true;
 }
 
