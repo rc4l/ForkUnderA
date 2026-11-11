@@ -27,7 +27,7 @@ node src/cli.mjs stats --port 7799           # every counter there is; the group
 ```
 
 - Each row gives last, mean, p99 and max over the recent frames. A stutter is a p99 far above the mean. No average shows one.
-- `fua_telemetry_thinkers 1` adds per-class thinker time under `sim/thinker/`.
+- `fua_telemetry_thinkers 1` adds per-class thinker time under `sim/thinker/`. It is a dev-mode setting, refused to a client of a server without `sv_cheats` (`netplay-testing`).
 - `record --seconds 10 --name X` writes every counter for every frame, plus every timed region on every thread, under the engine's `telemetry/` folder. `--recap` (or `recap X` later) reads it back: frames, tics on the game thread and held frames each second, then the counters the slowest quarter of seconds spent more on than the fastest. Open `X-trace.json` in Perfetto to see the job lanes against the game thread.
 - To compare two settings, `abperf` them inside one session. Never compare two launches. It reads each setting back before measuring and fails on one that did not take; never chain a setting after `load ...; wait N`, since a load drops every waiting command with the level's thinkers.
 - `docs/diagnostics.md` says which diagnostics reach players, what each costs, and the rules for adding one.
