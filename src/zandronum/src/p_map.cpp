@@ -1902,7 +1902,9 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	{
 		return false;
 	}
-	if (tm.ceilingz - tm.floorz < thing->height)
+	// [AK] Ignore spectators without physical restrictions; they have noclip.
+	// [rc4l] Ported from zandronum@236f06df1450a63d8bdf3d73aaccbc0feb1f258f: unrestricted spectators pass through slopes.
+	if (tm.ceilingz - tm.floorz < thing->height && P_IsSpectatorUnrestricted(thing) == false)
 	{
 		return false;
 	}
