@@ -10,39 +10,7 @@ namespace zx
 namespace
 {
 
-// [Doruk-Aksoy] Resets a statement when the call using it returns, so no cached statement keeps a read open across tics.
-struct StatementUse
-{
-	sqlite3_stmt *statement;
-	explicit StatementUse(sqlite3_stmt *s) : statement(s) {}
-	~StatementUse()
-	{
-		if (statement != nullptr)
-		{
-			sqlite3_reset(statement);
-			sqlite3_clear_bindings(statement);
-		}
-	}
-};
-
-sqlite3_stmt *statementFor(DatabaseStatements &statements, DatabaseQuery query)
-{
-	sqlite3_stmt *&slot = statements.prepared[static_cast<int>(query)];
-	if (slot == nullptr && sqlite3_prepare_v2(statements.db, ComputeDatabaseQuerySql(query), -1, &slot, nullptr) != SQLITE_OK)
-	{
-		sqlite3_finalize(slot);
-		slot = nullptr;
-	}
-	return slot;
-}
-
-std::string columnText(sqlite3_stmt *statement, int column)
-{
-	const unsigned char *text = sqlite3_column_text(statement, column);
-	return text != nullptr ? reinterpret_cast<const char *>(text) : "";
-}
-
-// [Doruk-Aksoy] Binds the namespace and key every statement starts with.
+// [Doruk-Aksoy] Binds the namespace and key every keyed statement starts with.
 void bindKey(sqlite3_stmt *statement, const char *ns, const char *key)
 {
 	sqlite3_bind_text(statement, 1, ns, -1, SQLITE_STATIC);
@@ -54,22 +22,37 @@ bool runToDone(sqlite3_stmt *statement)
 	return sqlite3_step(statement) == SQLITE_DONE;
 }
 
-bool collectRows(sqlite3_stmt *statement, DatabaseEntries &entries)
+// [Doruk-Aksoy] Raises `seen` to a row's timestamp column when the caller asked for it.
+void noteStamp(double *seen, sqlite3_stmt *statement, int column)
+{
+	if (seen != nullptr && sqlite3_column_type(statement, column) != SQLITE_NULL)
+	{
+		const double stamp = sqlite3_column_double(statement, column);
+		if (stamp > *seen)
+			*seen = stamp;
+	}
+}
+
+bool collectRows(sqlite3_stmt *statement, DatabaseEntries &entries, double *seenStamp)
 {
 	entries.clear();
 	int result;
 	while ((result = sqlite3_step(statement)) == SQLITE_ROW)
-		entries.emplace_back(columnText(statement, 0), columnText(statement, 1));
+	{
+		entries.emplace_back(ComputeDatabaseColumnText(statement, 0), ComputeDatabaseColumnText(statement, 1));
+		noteStamp(seenStamp, statement, 2);
+	}
 	return result == SQLITE_DONE;
 }
 
 #define ZX_DB_TABLE "Zandronum"
 #define ZX_DB_NOW "(SELECT (julianday('now') - 2440587.5)*86400.0)"
 #define ZX_DB_RANK(op) "SELECT (SELECT COUNT(*) FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND CAST(Value AS INTEGER)" op "CAST(v.Value AS INTEGER))+1 FROM " ZX_DB_TABLE " v WHERE v.Namespace=?1 AND v.KeyName=?2"
-#define ZX_DB_SORT(dir) "SELECT KeyName, Value FROM " ZX_DB_TABLE " WHERE Namespace=?1 ORDER BY CAST(Value AS INTEGER) " dir ", KeyName ASC LIMIT ?2 OFFSET ?3"
+#define ZX_DB_SORT(dir) "SELECT KeyName, Value, CAST(Timestamp AS REAL) FROM " ZX_DB_TABLE " WHERE Namespace=?1 ORDER BY CAST(Value AS INTEGER) " dir ", KeyName ASC LIMIT ?2 OFFSET ?3"
+#define ZX_DB_OLDER(stamp) "(" ZX_DB_TABLE ".Timestamp IS NULL OR CAST(" ZX_DB_TABLE ".Timestamp AS REAL)<=" stamp ")"
 
 const char *const kQuerySql[] = {
-	"SELECT Value FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND KeyName=?2",
+	"SELECT Value, CAST(Timestamp AS REAL) FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND KeyName=?2",
 	"INSERT INTO " ZX_DB_TABLE " VALUES(?1,?2,?3," ZX_DB_NOW ") ON CONFLICT(Namespace,KeyName) DO UPDATE SET Value=excluded.Value,Timestamp=excluded.Timestamp",
 	"DELETE FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND KeyName=?2",
 	"INSERT INTO " ZX_DB_TABLE " VALUES(?1,?2,?3," ZX_DB_NOW ") ON CONFLICT(Namespace,KeyName) DO UPDATE SET Value=CAST(Value AS INTEGER)+?3,Timestamp=excluded.Timestamp",
@@ -77,10 +60,31 @@ const char *const kQuerySql[] = {
 	ZX_DB_RANK(">"),
 	ZX_DB_SORT("ASC"),
 	ZX_DB_SORT("DESC"),
-	"SELECT KeyName, Value FROM " ZX_DB_TABLE " WHERE Namespace=?1 ORDER BY KeyName",
+	"SELECT KeyName, Value, CAST(Timestamp AS REAL) FROM " ZX_DB_TABLE " WHERE Namespace=?1 ORDER BY KeyName",
+	"SELECT COUNT(*) FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND CAST(Value AS INTEGER)>?2",
+	"SELECT COUNT(*) FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND CAST(Value AS INTEGER)<?2",
+	"SELECT MAX(m) FROM (SELECT MAX(CAST(Timestamp AS REAL)) AS m FROM " ZX_DB_TABLE " UNION ALL SELECT MAX(Timestamp) FROM fua_Deleted)",
+	"SELECT Timestamp FROM fua_Deleted WHERE Namespace=?1 AND KeyName=?2",
+	"INSERT INTO " ZX_DB_TABLE " VALUES(?1,?2,?3,?4) ON CONFLICT(Namespace,KeyName) DO UPDATE SET Value=excluded.Value,Timestamp=excluded.Timestamp WHERE " ZX_DB_OLDER("CAST(excluded.Timestamp AS REAL)"),
+	"DELETE FROM " ZX_DB_TABLE " WHERE Namespace=?1 AND KeyName=?2 AND " ZX_DB_OLDER("?3"),
+	"INSERT INTO fua_Deleted VALUES(?1,?2,?3) ON CONFLICT(Namespace,KeyName) DO UPDATE SET Timestamp=MAX(Timestamp,excluded.Timestamp)",
+	"DELETE FROM fua_Deleted WHERE Namespace=?1 AND KeyName=?2 AND Timestamp<=?3",
+	"INSERT INTO " ZX_DB_TABLE " VALUES(?1,?2,?3,?4) ON CONFLICT(Namespace,KeyName) DO UPDATE SET Value=CAST(Value AS INTEGER)+?3,Timestamp=MAX(COALESCE(CAST(" ZX_DB_TABLE ".Timestamp AS REAL),0),CAST(excluded.Timestamp AS REAL))",
+	"SELECT Seq FROM fua_Applied WHERE Server=?1",
+	"INSERT INTO fua_Applied VALUES(?1,?2) ON CONFLICT(Server) DO UPDATE SET Seq=MAX(Seq,excluded.Seq)",
+	"DELETE FROM fua_Deleted WHERE Timestamp<?1",
 };
 static_assert(sizeof(kQuerySql) / sizeof(kQuerySql[0]) == static_cast<size_t>(DatabaseQuery::Count), "one SQL string per DatabaseQuery");
 
+}
+
+DatabaseStatementUse::~DatabaseStatementUse()
+{
+	if (statement != nullptr)
+	{
+		sqlite3_reset(statement);
+		sqlite3_clear_bindings(statement);
+	}
 }
 
 DatabaseStatements::~DatabaseStatements()
@@ -93,9 +97,30 @@ const char *ComputeDatabaseQuerySql(DatabaseQuery query)
 	return kQuerySql[static_cast<int>(query)];
 }
 
-const char *ComputeDatabaseIndexSql()
+sqlite3_stmt *ComputeDatabaseStatement(DatabaseStatements &statements, DatabaseQuery query)
 {
-	return "CREATE INDEX IF NOT EXISTS fua_ValueOrder ON " ZX_DB_TABLE "(Namespace, CAST(Value AS INTEGER), KeyName)";
+	sqlite3_stmt *&slot = statements.prepared[static_cast<int>(query)];
+	if (slot == nullptr && sqlite3_prepare_v2(statements.db, ComputeDatabaseQuerySql(query), -1, &slot, nullptr) != SQLITE_OK)
+	{
+		sqlite3_finalize(slot);
+		slot = nullptr;
+	}
+	return slot;
+}
+
+std::string ComputeDatabaseColumnText(sqlite3_stmt *statement, int column)
+{
+	const unsigned char *text = sqlite3_column_text(statement, column);
+	return text != nullptr ? reinterpret_cast<const char *>(text) : "";
+}
+
+std::vector<std::string> ComputeDatabaseSchemaSql()
+{
+	return {
+		"CREATE INDEX IF NOT EXISTS fua_ValueOrder ON " ZX_DB_TABLE "(Namespace, CAST(Value AS INTEGER), KeyName)",
+		"CREATE TABLE IF NOT EXISTS fua_Deleted(Namespace text, KeyName text, Timestamp real, PRIMARY KEY (Namespace, KeyName))",
+		"CREATE TABLE IF NOT EXISTS fua_Applied(Server text PRIMARY KEY, Seq integer)",
+	};
 }
 
 std::vector<std::string> ComputeDatabasePragmas(bool memory, bool wal, int synchronous)
@@ -119,19 +144,20 @@ void ComputeDatabaseBind(DatabaseStatements &statements, sqlite3 *db)
 	statements.db = db;
 }
 
-bool ComputeDatabaseGet(DatabaseStatements &statements, const char *ns, const char *key, std::string &value, bool &found)
+bool ComputeDatabaseGet(DatabaseStatements &statements, const char *ns, const char *key, std::string &value, bool &found, double *seenStamp)
 {
 	value.clear();
 	found = false;
-	StatementUse use(statementFor(statements, DatabaseQuery::Get));
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, DatabaseQuery::Get));
 	if (use.statement == nullptr)
 		return false;
 	bindKey(use.statement, ns, key);
 	const int result = sqlite3_step(use.statement);
 	if (result == SQLITE_ROW)
 	{
-		value = columnText(use.statement, 0);
+		value = ComputeDatabaseColumnText(use.statement, 0);
 		found = true;
+		noteStamp(seenStamp, use.statement, 1);
 	}
 	return result == SQLITE_ROW || result == SQLITE_DONE;
 }
@@ -139,7 +165,7 @@ bool ComputeDatabaseGet(DatabaseStatements &statements, const char *ns, const ch
 bool ComputeDatabaseSaveSet(DatabaseStatements &statements, const char *ns, const char *key, const char *value)
 {
 	const bool erase = value == nullptr || *value == '\0';
-	StatementUse use(statementFor(statements, erase ? DatabaseQuery::Delete : DatabaseQuery::Upsert));
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, erase ? DatabaseQuery::Delete : DatabaseQuery::Upsert));
 	if (use.statement == nullptr)
 		return false;
 	bindKey(use.statement, ns, key);
@@ -150,7 +176,7 @@ bool ComputeDatabaseSaveSet(DatabaseStatements &statements, const char *ns, cons
 
 bool ComputeDatabaseIncrement(DatabaseStatements &statements, const char *ns, const char *key, int increment)
 {
-	StatementUse use(statementFor(statements, DatabaseQuery::Increment));
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, DatabaseQuery::Increment));
 	if (use.statement == nullptr)
 		return false;
 	bindKey(use.statement, ns, key);
@@ -161,7 +187,7 @@ bool ComputeDatabaseIncrement(DatabaseStatements &statements, const char *ns, co
 bool ComputeDatabaseRank(DatabaseStatements &statements, const char *ns, const char *key, bool descending, int &rank)
 {
 	rank = -1;
-	StatementUse use(statementFor(statements, descending ? DatabaseQuery::RankDescending : DatabaseQuery::RankAscending));
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, descending ? DatabaseQuery::RankDescending : DatabaseQuery::RankAscending));
 	if (use.statement == nullptr)
 		return false;
 	bindKey(use.statement, ns, key);
@@ -171,26 +197,50 @@ bool ComputeDatabaseRank(DatabaseStatements &statements, const char *ns, const c
 	return result == SQLITE_ROW || result == SQLITE_DONE;
 }
 
-bool ComputeDatabaseSorted(DatabaseStatements &statements, const char *ns, int count, int offset, bool descending, DatabaseEntries &entries)
+bool ComputeDatabaseSorted(DatabaseStatements &statements, const char *ns, int64_t count, int64_t offset, bool descending, DatabaseEntries &entries, double *seenStamp)
 {
 	entries.clear();
-	StatementUse use(statementFor(statements, descending ? DatabaseQuery::SortDescending : DatabaseQuery::SortAscending));
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, descending ? DatabaseQuery::SortDescending : DatabaseQuery::SortAscending));
 	if (use.statement == nullptr)
 		return false;
 	sqlite3_bind_text(use.statement, 1, ns, -1, SQLITE_STATIC);
-	sqlite3_bind_int(use.statement, 2, count);
-	sqlite3_bind_int(use.statement, 3, offset);
-	return collectRows(use.statement, entries);
+	sqlite3_bind_int64(use.statement, 2, count);
+	sqlite3_bind_int64(use.statement, 3, offset);
+	return collectRows(use.statement, entries, seenStamp);
 }
 
-bool ComputeDatabaseEntries(DatabaseStatements &statements, const char *ns, DatabaseEntries &entries)
+bool ComputeDatabaseEntries(DatabaseStatements &statements, const char *ns, DatabaseEntries &entries, double *seenStamp)
 {
 	entries.clear();
-	StatementUse use(statementFor(statements, DatabaseQuery::Entries));
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, DatabaseQuery::Entries));
 	if (use.statement == nullptr)
 		return false;
 	sqlite3_bind_text(use.statement, 1, ns, -1, SQLITE_STATIC);
-	return collectRows(use.statement, entries);
+	return collectRows(use.statement, entries, seenStamp);
+}
+
+bool ComputeDatabaseCountBeyond(DatabaseStatements &statements, const char *ns, int64_t value, bool above, int64_t &count)
+{
+	count = 0;
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, above ? DatabaseQuery::CountAbove : DatabaseQuery::CountBelow));
+	if (use.statement == nullptr)
+		return false;
+	sqlite3_bind_text(use.statement, 1, ns, -1, SQLITE_STATIC);
+	sqlite3_bind_int64(use.statement, 2, value);
+	if (sqlite3_step(use.statement) != SQLITE_ROW)
+		return false;
+	count = sqlite3_column_int64(use.statement, 0);
+	return true;
+}
+
+bool ComputeDatabaseMaxStamp(DatabaseStatements &statements, double &stamp)
+{
+	stamp = 0;
+	DatabaseStatementUse use(ComputeDatabaseStatement(statements, DatabaseQuery::MaxStamp));
+	if (use.statement == nullptr || sqlite3_step(use.statement) != SQLITE_ROW)
+		return false;
+	noteStamp(&stamp, use.statement, 0);
+	return true;
 }
 
 DatabaseCheckpointer::~DatabaseCheckpointer()
