@@ -33,7 +33,8 @@ static bool IsMonster(const FDropItem *di)
 		return false;
 	}
 
-	return GetDefaultByType(pclass)->flags3 & MF3_ISMONSTER;
+	// [rc4l] Ported from zandronum@c0917d620c6d988e93ce6294ecef204683b6601d: the flag is tested as a bool rather than truncated to one.
+	return 0 != (GetDefaultByType(pclass)->flags3 & MF3_ISMONSTER);
 }
 
 class ARandomSpawner : public AActor
