@@ -39,7 +39,10 @@ struct Server
 	}
 	bool open(const std::filesystem::path &path)
 	{
-		return zx::ComputeDatabaseStoreOpen(store, path.string(), { "PRAGMA synchronous=2" }, reader, kWall);
+		// [Doruk-Aksoy] Waits out the writer's start-up orphan scan, which holds other slots' outboxes for a moment and would push the next server past a free slot.
+		if (!zx::ComputeDatabaseStoreOpen(store, path.string(), { "PRAGMA synchronous=2" }, reader, kWall))
+			return false;
+		return !store.writer.maintenance || waitFor([&]() { return store.writer.maintenanceRuns.load() > 0; });
 	}
 	std::string get(const char *key)
 	{
@@ -202,8 +205,7 @@ TEST(DatabaseStore, TheNextServerOnAFreedSlotResumesItsBatches)
 	second.reset();
 	Server fourth(file.path);
 	ASSERT_TRUE(fourth.open(file.path));
-	// [Doruk-Aksoy] Any free slot will do: another writer's orphan scan can hold one for a moment while a server starts.
-	EXPECT_GT(fourth.store.slot, 1);
+	EXPECT_EQ(fourth.store.slot, 2);
 	sqlite3_close(blocker);
 }
 
