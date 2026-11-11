@@ -226,12 +226,14 @@ struct DynRun
 	// and without depth writes whichever triangle the buffer happens to hold last wins. On a car
 	// that draws the interior floor and seats straight through the bodywork.
 	bool         solid;
+	bool         flatPlane;    // [Doruk-Aksoy] a flat blended model surface the blend list orders as a plane (flatplane_compute)
 	bool         hud;          // [rc4l] a HUD model's surface, whose blended pipelines write depth
 	int          mirrorView;   // [rc4l] the mirror view whose walk alone drew it (MirrorCaptureView), or -1 for the frame's
 	int          stackSlot;    // [rc4l] drawn only in this stacked view, whose walk took it, or -1 for every other pass
 	int          onMirror;     // [rc4l] a decal on this line mirror's face, drawn over its surface by DrawMirrorFaceDecals, or -1
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
+	float        minX, maxX, minZ, maxZ;   // [Doruk-Aksoy] its footprint on the map (SceneVertex x and z), which flat planes are ordered over
 	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
 	int          general;      // [rc4l] its first general vertex, or -1 for a packed sprite, which has none
 	int          userShader;   // [Doruk-Aksoy] the GLDEFS shader it draws with (ScenePSO), or -1
