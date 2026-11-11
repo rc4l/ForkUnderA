@@ -8,10 +8,15 @@
 #include "features/hwrender/computation/pipelineswitch_compute.h"   // [Doruk-Aksoy] fua_dg_blendorder's switch tally
 #include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV, ComputeAtlasPieceEligible
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
+#include "features/hwrender/computation/flatplane_compute.h"   // [Doruk-Aksoy] flat model surfaces ordered as planes
 #include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeUserShaderOf
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
 #include "features/telemetry/telemetry.h"
 #include <string.h>   // [rc4l] memcpy
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <vector>
 
 // [rc4l] Dump the ORDER the translucent pass actually draws in, for one frame.
 //
@@ -38,6 +43,127 @@ EXTERN_CVAR(Bool, fua_dg_rtsprites)
 CVAR(Bool, fua_dg_spritepack, true, 0)
 // [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
 CVAR(Bool, fua_dg_blendwalk, true, 0)
+// [Doruk-Aksoy] Flat blended model surfaces sort as floors and ceilings do over their footprints, the sprites crossing one split at its height; 0 sorts them by centre as before.
+CVAR(Bool, fua_dg_flatplanes, true, 0)
+
+// [Doruk-Aksoy] One of the frame's flat planes: its height, footprint, and the view whose walk captured it.
+struct FlatPlaneInfo { float h; zx::hwrender::FlatFootprint area; int mirrorView, stackSlot; };
+
+// [Doruk-Aksoy] The frame's flat planes, and a flag for each piece that is one; only FUAMODEL's FlatSurface models are looked at, so a mod naming none pays a flag test a piece.
+static void FindFlatPlanes(const zx::levelmesh::MeshVertex *src, const zx::levelmesh::MeshPiece *pieces, int npieces,
+	std::vector<FlatPlaneInfo> &planes, std::vector<char> &isPlane)
+{
+	using namespace zx::hwrender;
+	planes.clear();
+	isPlane.assign(npieces, 0);
+	for (int i = 0; i < npieces; i++)
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if (!p.flatSurface || !p.solid || p.blendMode == 0 || p.hud || p.range.count < 3) continue;
+		const zx::levelmesh::MeshVertex *v = &src[p.range.offset];
+		FlatPlaneInfo pl;
+		float lo = v[0].z, hi = v[0].z;
+		pl.area = { v[0].x, v[0].x, v[0].y, v[0].y };
+		unsigned k = 1;
+		for (; k < p.range.count; k++)
+		{
+			lo = std::min(lo, v[k].z); hi = std::max(hi, v[k].z);
+			if (hi - lo > kFlatSliver) break;
+			pl.area.minX = std::min(pl.area.minX, v[k].x); pl.area.maxX = std::max(pl.area.maxX, v[k].x);
+			pl.area.minY = std::min(pl.area.minY, v[k].y); pl.area.maxY = std::max(pl.area.maxY, v[k].y);
+		}
+		if (k < p.range.count || !ComputeIsFlatPlane(p.flatSurface, p.solid, p.blendMode, p.hud, lo, hi)) continue;
+		pl.h = (lo + hi) * 0.5f; pl.mirrorView = p.mirrorView; pl.stackSlot = p.stackSlot;
+		planes.push_back(pl);
+		isPlane[i] = 1;
+	}
+	ZX_COUNT("scene/flat_planes", "planes", planes.size());
+}
+
+// [Doruk-Aksoy] The frame's pieces with every sprite quad that crosses a flat plane over its footprint cut at the plane's height, copied into verts and out only when one is; false when none is.
+static bool SplitAtFlatPlanes(const zx::levelmesh::MeshVertex *src, int nverts, const zx::levelmesh::MeshPiece *pieces, int npieces,
+	const std::vector<FlatPlaneInfo> &planes, std::vector<zx::levelmesh::MeshVertex> &verts, std::vector<zx::levelmesh::MeshPiece> &out)
+{
+	using namespace zx::hwrender;
+	if (planes.empty()) return false;
+	static std::vector<FlatFootprint> areas;
+	areas.resize(planes.size());
+	for (size_t i = 0; i < planes.size(); i++) areas[i] = planes[i].area;
+	static FlatGrid grid;
+	grid.Build(areas.data(), (int)areas.size(), 128.f, [](int) { return true; });
+	// [Doruk-Aksoy] The planes' heights in order, so a sprite no plane height falls well inside skips the grid.
+	static std::vector<float> sortedHeights;
+	sortedHeights.resize(planes.size());
+	for (size_t i = 0; i < planes.size(); i++) sortedHeights[i] = planes[i].h;
+	std::sort(sortedHeights.begin(), sortedHeights.end());
+
+	// [Doruk-Aksoy] A sprite crossing several planes is cut at each, up to this many pieces.
+	const size_t kMaxPieces = 8;
+	static std::vector<std::array<FlatSplitVertex, 4>> quads;
+	static std::vector<float> heights;
+	bool copied = false;
+	int splits = 0;
+	for (int i = 0; i < npieces; i++)
+	{
+		const zx::levelmesh::MeshPiece &p = pieces[i];
+		if (!p.quad || p.range.count != 4 || p.solid || p.hud || p.depthBias) continue;
+		std::array<FlatSplitVertex, 4> q;
+		float lo = 1e30f, hi = -1e30f;
+		FlatFootprint area = { 1e30f, -1e30f, 1e30f, -1e30f };
+		for (int c = 0; c < 4; c++)
+		{
+			const zx::levelmesh::MeshVertex &mv = src[p.range.offset + c];
+			q[c] = { mv.x, mv.y, mv.z, mv.u, mv.v };
+			lo = std::min(lo, mv.z); hi = std::max(hi, mv.z);
+			area.minX = std::min(area.minX, mv.x); area.maxX = std::max(area.maxX, mv.x);
+			area.minY = std::min(area.minY, mv.y); area.maxY = std::max(area.maxY, mv.y);
+		}
+		if (!ComputeAnyBetween(sortedHeights, lo + kFlatSliver, hi - kFlatSliver)) continue;
+		heights.clear();
+		grid.Query(area, [&](int k) {
+			const FlatPlaneInfo &pl = planes[k];
+			if (pl.mirrorView == p.mirrorView && pl.stackSlot == p.stackSlot && ComputeStraddlesHeight(lo, hi, pl.h)) heights.push_back(pl.h);
+		});
+		if (heights.empty()) continue;
+		quads.clear();
+		quads.push_back(q);
+		for (float h : heights)
+			for (size_t k = 0, n = quads.size(); k < n && quads.size() < kMaxPieces; k++)
+			{
+				std::array<FlatSplitVertex, 4> a, b;
+				if (!ComputeSplitQuadAtHeight(quads[k].data(), h, a.data(), b.data())) continue;
+				quads[k] = a;
+				quads.push_back(b);
+			}
+		if (quads.size() == 1) continue;
+		if (!copied)
+		{
+			verts.assign(src, src + nverts);
+			out.assign(pieces, pieces + npieces);
+			copied = true;
+		}
+		// [Doruk-Aksoy] The first piece keeps the sprite's place and vertices; the rest are appended as copies of it.
+		for (size_t k = 0; k < quads.size(); k++)
+		{
+			unsigned offset = p.range.offset;
+			if (k > 0)
+			{
+				offset = (unsigned)verts.size();
+				verts.resize(verts.size() + 4);
+				out.push_back(p);
+				out.back().range.offset = offset;
+			}
+			for (int c = 0; c < 4; c++)
+			{
+				const FlatSplitVertex &sv = quads[k][c];
+				verts[offset + c].Set(sv.x, sv.h, sv.y, sv.u, sv.v);
+			}
+		}
+		splits++;
+	}
+	ZX_COUNT("scene/flat_splits", "sprites", splits);
+	return copied;
+}
 
 namespace zx { namespace hwrender {
 
@@ -137,11 +263,28 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	static unsigned int builtGen = 0;
 	// [Doruk-Aksoy] Records hold the additive flag fua_dg_premulblend sets, so a change of it fills them again, a paused frame's included.
 	static bool builtPremul = false;
+	static bool builtFlat = true;   // [Doruk-Aksoy] and the split fua_dg_flatplanes makes, so flipping it on a paused frame shows at once
 	const unsigned int gen = zx::levelmesh::DynGeneration();
-	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend)
+	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend || builtFlat != (bool)fua_dg_flatplanes)
 	{
 		builtGen = gen;
 		builtPremul = fua_dg_premulblend;
+		builtFlat = fua_dg_flatplanes;
+		static std::vector<zx::levelmesh::MeshVertex> splitVerts;
+		static std::vector<zx::levelmesh::MeshPiece> splitPieces;
+		static std::vector<FlatPlaneInfo> flatPlanes;
+		static std::vector<char> isFlatPlane;
+		{
+			ZX_ZONE("scene/flat_split");
+			if (fua_dg_flatplanes) FindFlatPlanes(src, pieces, npieces, flatPlanes, isFlatPlane);
+			else { flatPlanes.clear(); isFlatPlane.assign(npieces, 0); }
+			if (SplitAtFlatPlanes(src, nverts, pieces, npieces, flatPlanes, splitVerts, splitPieces))
+			{
+				src = splitVerts.data(); nverts = (int)splitVerts.size();
+				pieces = splitPieces.data(); npieces = (int)splitPieces.size();
+				isFlatPlane.resize(npieces, 0);   // [Doruk-Aksoy] the appended halves are sprites
+			}
+		}
 		// [rc4l] Emptied with each refill, which a frame drawn again without a walk (a screenshot) does not get, so a frame with no sprites keeps none of the last fill's.
 		g_scene.tracedSprites.Clear();
 		g_scene.tracedSteps.clear();
@@ -334,12 +477,14 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					r.depthBias = p.depthBias;
 					r.redAlpha = p.redToAlpha;
 					r.solid = p.solid;
+					r.flatPlane = isFlatPlane[slot.piece] != 0;
 					r.hud = p.hud;
 					r.mirrorView = p.mirrorView;
 					r.stackSlot = p.stackSlot;
 					r.onMirror = p.onMirror;
 					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 					r.lo = 1e30f; r.hi = -1e30f;
+					r.minX = r.minZ = 1e30f; r.maxX = r.maxZ = -1e30f;
 					const AtlasEntry *ae = atlased[slot.piece];
 					r.atlasPage = ae != NULL ? ae->page : -1;
 					r.general = slot.sprite >= 0 ? -1 : (int)slot.general;
@@ -352,10 +497,14 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 						for (unsigned v = 0; v < 6; v++) refs[slot.first + v] = zx::hwrender::ComputeSpriteRef(at, kQuadOrder[v]);
 						for (int c = 0; c < 4; c++)
 						{
-							float y;
+							float x, y, z;
+							memcpy(&x, &words[at + c * 4], sizeof(x));
 							memcpy(&y, &words[at + c * 4 + 1], sizeof(y));
+							memcpy(&z, &words[at + c * 4 + 2], sizeof(z));
 							if (y < r.lo) r.lo = y;
 							if (y > r.hi) r.hi = y;
+							r.minX = std::min(r.minX, x); r.maxX = std::max(r.maxX, x);
+							r.minZ = std::min(r.minZ, z); r.maxZ = std::max(r.maxZ, z);
 						}
 						continue;
 					}
@@ -374,6 +523,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 						refs[slot.first + v] = zx::hwrender::ComputeGeneralRef(slot.general + v);
 						if (dv.y < r.lo) r.lo = dv.y;
 						if (dv.y > r.hi) r.hi = dv.y;
+						r.minX = std::min(r.minX, dv.x); r.maxX = std::max(r.maxX, dv.x);
+						r.minZ = std::min(r.minZ, dv.z); r.maxZ = std::max(r.maxZ, dv.z);
 					}
 				}
 			}
@@ -522,7 +673,8 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red, hud;
 	                   float cx, cy, cz;      // [rc4l] the centre too: distance alone cannot tell two
 	                                          // marks on ONE spot from two marks on two walls
-	                   float lo, hi; int layer; bool plane; };   // [rc4l] height span, and its place among the translucent planes
+	                   float lo, hi; int layer; bool plane;   // [rc4l] height span, and its place among the translucent planes
+	                   bool flatPlane; zx::hwrender::FlatFootprint area; };   // [Doruk-Aksoy] a flat plane's flag and footprint, for flat planes' order
 	static TArray<BlendDraw> list;
 	static TArray<const BlendDraw *> sorted;   // [Doruk-Aksoy] list's entries in draw order, pointed at rather than copied
 	list.Clear();
@@ -552,6 +704,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		d.bias = false; d.red = false; d.hud = false;
 		d.cx = b.sortX; d.cy = b.sortY; d.cz = b.sortZ;
 		d.lo = b.minY; d.hi = b.maxY;   // [rc4l] SceneVertex y is height
+		d.flatPlane = false; d.area = { b.minX, b.maxX, b.minZ, b.maxZ };
 		d.dist = dx*dx + dy*dy + dz*dz;
 		list.Push(d);
 	}
@@ -595,6 +748,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			const float dx = r.cx - cx, dy = r.cy - cy, dz = r.cz - cz;
 			d.cx = r.cx; d.cy = r.cy; d.cz = r.cz;
 			d.lo = r.lo; d.hi = r.hi;
+			d.flatPlane = r.flatPlane; d.area = { r.minX, r.maxX, r.minZ, r.maxZ };
 			d.dist = dx*dx + dy*dy + dz*dz;
 			list.Push(d);
 			g_stats.dynDraws++;
@@ -619,6 +773,32 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		}
 		g_blendPlaneHeights = zx::hwrender::ComputeBlendLayers(&spans[0], (int)list.Size(), cz, &layers[0], &planes[0]);
 		for (unsigned i = 0; i < list.Size(); i++) { list[i].layer = layers[i]; list[i].plane = planes[i]; }
+	}
+
+	// [Doruk-Aksoy] A flat blended model surface goes behind the sprites standing on it, and what lies beyond it behind it, as a floor or ceiling would (flatplane_compute).
+	if (fua_dg_flatplanes)
+	{
+		static std::vector<zx::hwrender::FlatOrderItem> flat;
+		static std::vector<unsigned> flatOf;
+		flat.clear(); flatOf.clear();
+		bool anyPlane = false;
+		for (unsigned i = 0; i < list.Size(); i++)
+		{
+			const BlendDraw &d = list[i];
+			if (!d.dyn || d.bias || d.hud) continue;
+			zx::hwrender::FlatOrderItem it;
+			it.dist = d.dist; it.lo = d.lo; it.hi = d.hi; it.area = d.area; it.plane = d.flatPlane;
+			anyPlane |= it.plane;
+			flat.push_back(it);
+			flatOf.push_back(i);
+		}
+		if (anyPlane)
+		{
+			ZX_ZONE("scene/flat_order");
+			static zx::hwrender::FlatOrderScratch scratch;
+			zx::hwrender::ComputeFlatPlaneOrder(flat.data(), (int)flat.size(), cz, scratch);
+			for (size_t k = 0; k < flat.size(); k++) list[flatOf[k]].dist = flat[k].dist;
+		}
 	}
 
 	// [rc4l] Farthest first, and DETERMINISTIC on a tie.

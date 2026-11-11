@@ -139,6 +139,18 @@ The translucent pass sorts by `ComputeTranslucentSortKey`, the order `ComputeDra
 one 128-bit number per draw (tested to agree with the rule on every pair of 576 draws), so the sort compares
 integers rather than walking the rule.
 
+Sprites in that pass write no depth, so a flat translucent model surface (a ground disc, a ring) sorted by its
+centre painted over the feet of every monster standing on it beyond that centre. `fua_dg_flatplanes` (on by
+default) orders a model FUAMODEL names a `FlatSurface` (features/models) as a floor or ceiling over its own
+footprint: `ComputeFlatPlaneOrder` moves it behind the draws on the eye's side of it and what lies wholly beyond it
+behind it, and `BuildDynamic` first cuts a sprite quad that crosses one at its height (`ComputeSplitQuadAtHeight`),
+so a ring at a monster's waist is under its legs and over its body. It is opt-in because detecting every flat model
+cost a Complex Doom fight 0.85 ms a frame on average (its 1,750 blood pools and decals); a mod naming none pays a
+flag test per model piece. A flagged surface may be up to 12 units thick, a sprite reaching up to 12 units past one
+counts as on the side holding the rest of it (`ComputeFlatSide`), planes never move each other, and a `FlatGrid`
+finds the overlaps. A rolled quad whose sides do not both cross the height stays whole. Our GL renderer keeps its
+centre order; UZDoom's GL is the reference (scenario `flatmodelfeet`).
+
 `vid_fps` gives each renderer its own frame time (`rendererrate.cpp`): the frame is split at `LiveFrame`, GL's
 part before it and the backend's after. Its fps is the frames drawn in the last whole second, which a limit or a
 browser's refresh holds, never what the frame time would allow.
