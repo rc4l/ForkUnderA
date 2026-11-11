@@ -8,11 +8,13 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <random>
 #include <sqlite3.h>
 #include <string>
 #include <thread>
@@ -162,10 +164,12 @@ struct LegacyDb
 	}
 };
 
-// [Doruk-Aksoy] A file path of its own in the temp folder.
+// [Doruk-Aksoy] A file path of its own in the temp folder, unique across test processes started at the same moment.
 inline std::filesystem::path tempDatabasePath(const char *name)
 {
-	return std::filesystem::temp_directory_path() / (std::string("zx_db_") + name + "_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".db");
+	static std::atomic<unsigned> counter{0};
+	static const unsigned long long process = (static_cast<unsigned long long>(std::random_device()()) << 32) ^ std::random_device()();
+	return std::filesystem::temp_directory_path() / (std::string("zx_db_") + name + "_" + std::to_string(process) + "_" + std::to_string(++counter) + ".db");
 }
 
 // [Doruk-Aksoy] Removes a database file with its -wal, -shm and outbox files.

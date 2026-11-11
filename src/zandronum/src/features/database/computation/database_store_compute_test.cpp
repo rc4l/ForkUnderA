@@ -175,14 +175,14 @@ TEST(DatabaseStore, TheNextServerOnAFreedSlotResumesItsBatches)
 	exec(blocker, "ROLLBACK");
 	// [Doruk-Aksoy] Slot 0 stays held, so the next server takes the freed slot 1 and resumes what it kept.
 	Server third(file.path);
-	third.store.writer.maintenanceMs = 5;
 	ASSERT_TRUE(third.open(file.path));
 	EXPECT_EQ(third.store.slot, 1);
 	EXPECT_EQ(third.get("left"), "behind");
 	second.reset();
 	Server fourth(file.path);
 	ASSERT_TRUE(fourth.open(file.path));
-	EXPECT_EQ(fourth.store.slot, 2);
+	// [Doruk-Aksoy] Any free slot will do: another writer's orphan scan can hold one for a moment while a server starts.
+	EXPECT_GT(fourth.store.slot, 1);
 	sqlite3_close(blocker);
 }
 
