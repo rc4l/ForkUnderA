@@ -55,6 +55,7 @@
 void	DATABASE_Construct ( void );
 void	DATABASE_Destruct ( void );
 void	DATABASE_Init ( void );
+void	DATABASE_EndTic ( void );
 bool	DATABASE_IsAvailable ( const char *CallingFunction = NULL );
 void	DATABASE_SetMaxPageCount ( const unsigned int MaxPageCount );
 void	DATABASE_BeginTransaction ( void );
