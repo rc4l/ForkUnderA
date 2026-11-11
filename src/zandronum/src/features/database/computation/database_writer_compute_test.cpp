@@ -443,6 +443,7 @@ TEST(DatabaseWriter, RunsItsMaintenanceAtStartAndThenOnSchedule)
 		};
 		ASSERT_TRUE(zx::ComputeDatabaseWriterStart(writer, file.path.string().c_str(), "a", {}, 1));
 		EXPECT_TRUE(waitFor([&]() { return runs.load() > 2; }));
+		EXPECT_GE(writer.maintenanceRuns.load(), 2);
 	}
 	const int afterDestruction = runs.load();
 	std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -459,6 +460,7 @@ TEST(DatabaseWriter, RestartingResetsItsCounters)
 	EXPECT_TRUE(waitFor([&]() { return writer.applied.load() == 1; }));
 	ASSERT_TRUE(zx::ComputeDatabaseWriterStart(writer, file.path.string().c_str(), "b", {}, 1));
 	EXPECT_EQ(writer.applied.load(), 0u);
+	EXPECT_EQ(writer.maintenanceRuns.load(), 0);
 	EXPECT_EQ(writer.server, "b");
 }
 
