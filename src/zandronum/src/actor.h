@@ -52,6 +52,7 @@
 // [AK] Needed for std::numeric_limits in the IDList class.
 #include <limits>
 #include "features/netids/computation/netidsearch_compute.h"   // [rc4l] IDList's bitmap of free ids
+#include "features/tid-hash/computation/tidhash_compute.h"   // [Doruk-Aksoy] kZxTidHashSize, ComputeTidBucket
 
 struct subsector_t;
 //
@@ -1430,8 +1431,9 @@ public:
 	void RemoveFromHash ();
 
 private:
-	static AActor *TIDHash[128];
-	static inline int TIDHASH (int key) { return key & 127; }
+	// [Doruk-Aksoy] features/tid-hash: 16,384 buckets, not 128, so a mod tagging thousands of monsters keeps its chains short.
+	static AActor *TIDHash[kZxTidHashSize];
+	static inline int TIDHASH (int key) { return ComputeTidBucket (key); }
 	static FSharedStringArena mStringPropertyData;
 
 	friend class FActorIterator;
@@ -1519,7 +1521,7 @@ public:
 		if (id == 0)
 			return NULL;
 		if (!base)
-			base = AActor::TIDHash[id & 127];
+			base = AActor::TIDHash[AActor::TIDHASH (id)];
 		else
 			base = base->inext;
 
