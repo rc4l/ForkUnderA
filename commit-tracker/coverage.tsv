@@ -7069,9 +7069,9 @@ ed05a2edd39c4919339bdcffd9e6af6a23a420a3	2017-01-26T09:22:54Z	Create CameraLight
 6a826f37bd6b244d2a4c483e75ccbf43e071080d	2017-01-26T20:21:22Z	Fixed compilation with GCC/Clang	pending		/
 15b95cc02304ee4fd09d12fee03a488ec12b8b67	2017-01-27T09:51:12Z	- fixed: DECORATE was creating a new global constant namespace for each single included file, not just once per DECORATE lump.	pending		/
 08c252274ab3a5220cb0c9b5a79869b1c4f7d0d7	2017-01-27T11:02:47Z	- fixed issues with uninitialized RNGs and bad assumptions about corpse pointers always being fully initialized when being destroyed.	pending		/
-1eb2c753288a8baf61535aed4c5d25f39013de7e	2017-01-27T15:15:17Z	- explode bouncing objects directly inside P_BounceActor if the bounce count expired. The calling code is too messed up to handle this cleanly.	pending		/
+1eb2c753288a8baf61535aed4c5d25f39013de7e	2017-01-27T15:15:17Z	- explode bouncing objects directly inside P_BounceActor if the bounce count expired. The calling code is too messed up to handle this cleanly.	adapted	the spent bounce ends the bouncer inside P_BounceActor; the missile path also credits the struck player as the side-hit caller does	d026e210
 5cbe829c051370dcf6d3b9faa09d3d7048ff4aaa	2017-01-27T16:33:05Z	Merge https://github.com/coelckers/gzdoom	pending		/
-46ee2c5ec685fc2f926a5008b0b582359e798727	2017-01-27T17:03:09Z	- Fixed HITTARGET, HITMASTER, HITTRACER, crash and xdeath states being broken on bouncing actors that die/explode.	pending		/
+46ee2c5ec685fc2f926a5008b0b582359e798727	2017-01-27T17:03:09Z	- Fixed HITTARGET, HITMASTER, HITTRACER, crash and xdeath states being broken on bouncing actors that die/explode.	adapted	the bouncer spent on an actor explodes or dies with that actor passed on; P_ExplodeMissile state choice kept as Zandronum has it	d026e210
 97ad1496b34cbdb3a8c5523666c70e42b1d88b89	2017-01-27T17:24:32Z	- changed all Hexen lights to being attenuated.	pending		/
 13c6d169058ca5812d175be908e9181b09894c26	2017-01-27T23:32:43Z	Fixed: compile-time error in vararg function call would result in a crash.	pending		/
 00823217c782747dacd492dc89676cb93429ce37	2017-01-28T00:17:24Z	Merge https://github.com/coelckers/gzdoom	pending		/
@@ -13414,7 +13414,7 @@ bf9c5849e86f776e85cb69bf3c02396a985aa0b3	2019-08-08T06:09:31Z	- merged all usefu
 d1026e4b5b4d03d794988e997bd0fe1d6977e8b8	2019-08-08T18:56:11Z	- call vkDeviceWaitIdle before RAII tears down buffers	pending		/
 84475250192dd4274c5a09e35047db6ac21a3c04	2019-08-09T06:32:23Z	- fixed: Takedown of an expired HUD message did not properly detach it from the list.	pending		/
 a239675fb59c4c114820098bed5e44f6b284fed6	2019-08-09T06:42:36Z	- fixed incorrect write barrier in sound sequence code.	pending		/
-5ca1bb39799865523ade57ceb6802172f4b0fbec	2019-08-09T07:36:50Z	- fixed an inconsistency with missiles bouncing off actors.	pending		/
+5ca1bb39799865523ade57ceb6802172f4b0fbec	2019-08-09T07:36:50Z	- fixed an inconsistency with missiles bouncing off actors.	adapted	a missile on top of an actor it did not bounce off explodes on it, and a non-missile lands there instead of hanging	d026e210
 c3e3fda94add6ac82f9c73dd875c997d8d2acd92	2019-08-09T07:58:40Z	- fixed handling of the "ouch" face.	pending		/
 14a21c2a7ec00cc175f26ce496879d444d405e98	2019-08-09T08:18:15Z	- made some changes to the survey code to give clearer output and removed a few obsolete things that are no longer relevant.	pending		/
 afe4a45a76cdff68bd4ddec735e146f9333ca3ce	2019-08-09T08:39:09Z	- fixed: The frozen state was not reset when the global level variable was reset.	pending		/
@@ -17780,7 +17780,7 @@ db6294c48a9c7fd283eb26085c0e7c2b99c602c2	2024-11-26T23:48:17Z	Add WorldRailgunPr
 15fcf60489675be66127742112787ad0d955e0cf	2024-11-28T03:36:38Z	Fixed angleOffsetTargets not being initialized	pending		/
 882017f4bef74bd7df6afb6ee75bd4efc752f2a5	2024-11-28T03:36:48Z	Added ripper damage logic to DoMissileDamage	pending		/
 0010f22faa94cd050883942670e48edd8bd649a9	2024-11-28T03:36:48Z	Fixed successful bounces on Actor tops not damaging them	pending		/
-72ed0c437722d033251aa1eba6bfae657e73264a	2024-11-28T03:37:01Z	Various bouncing fixes	pending		/
+72ed0c437722d033251aa1eba6bfae657e73264a	2024-11-28T03:37:01Z	Various bouncing fixes	adapted	plane bounce flags start a wall bounce off a ramp, and a plane it does not bounce off ends in an explosion instead of a no-op bounce; no 3D-floor normal flip (FloorBounceMissile here takes no 3D floor)	d026e210
 8311e77a26e104606660576605a633bba2e960b2	2024-11-29T16:54:35Z	misc decoupled animation fixes	pending		/
 c6eba62f73d681a5f4c65e1dd8ef611154067853	2024-12-02T05:30:22Z	Fixed A_SprayDecal not working on 3D floors	pending		/
 23a021dfca462e056d1ca625ba7ff7b2340bd50b	2024-12-05T00:38:11Z	Fix M_SaveBitmap stream buffer size - credits to dpJudas for the solution	pending		/
