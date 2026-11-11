@@ -1,6 +1,7 @@
 // Workaround for GCC Objective-C++ with C++ exceptions bug.
 
 #include "doomerrors.h"
+#include "features/fatallog/fatallog.h"
 #include <stdlib.h>
 
 // Import some functions from i_main.mm
@@ -17,10 +18,10 @@ void OriginalMainExcept(int argc, char** argv)
 	catch(const CDoomError& error)
 	{
 		const char* const message = error.GetMessage();
+		ZX_FatalLog(message);
 
 		if (NULL != message)
 		{
-			fprintf(stderr, "%s\n", message);
 			Mac_I_FatalError(message);
 		}
 

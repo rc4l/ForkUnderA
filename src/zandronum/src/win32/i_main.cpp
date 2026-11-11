@@ -74,6 +74,7 @@
 #include "version.h"
 #include "features/fua-branding/computation/fua_version_compute.h"
 #include "features/crashreport/zx_crashreport.h"
+#include "features/fatallog/fatallog.h"
 #include "i_video.h"
 #include "i_sound.h"
 #include "i_input.h"
@@ -1123,6 +1124,8 @@ void DoMain (HINSTANCE hInstance)
 	}
 	catch (class CDoomError &error)
 	{
+		// [Doruk-Aksoy] Logged before the pane, whichever start screen or message box shows it.
+		ZX_FatalLog (error.GetMessage ());
 		I_ShutdownGraphics ();
 		RestoreConView ();
 		if (error.GetMessage ())
@@ -1212,6 +1215,7 @@ DWORD WINAPI MainDoomThread( LPVOID )
 	{
 //		I_ShutdownGraphics ();
 //		RestoreConView ();
+		ZX_FatalLog (error.GetMessage ());
 		if (error.GetMessage ())
 		{
 			ShowErrorPane (error.GetMessage());

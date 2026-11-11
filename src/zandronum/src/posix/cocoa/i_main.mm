@@ -132,13 +132,10 @@ void Mac_I_FatalError(const char* const message)
 
 	// [rc4l] A -host server child has no console window; its fatal errors go to stderr, which the
 	// hosting parent captures over the pipe -- a window (even if one could be made) has no user.
+	// [Doruk-Aksoy] Every caller has already written it there through ZX_FatalLog.
 	if (FConsoleWindow::InstanceExists())
 	{
 		FConsoleWindow::GetInstance().ShowFatalError(message);
-	}
-	else
-	{
-		fprintf(stderr, "%s\n", message);
 	}
 }
 
