@@ -1,0 +1,237 @@
+# commit tracker | repo https://foss.heptapod.net/zandronum/zandronum-stable | commit URL = <repo>/-/commit/<sha> | status = pending|ported|adapted|skip|deferred|partially-deferred | ours = OUR commit(s), "/" if pending/skip/deferred | twin = the uzdoom commit this was transplanted from, "/" if none
+sha	date	title	status	note	ours	twin
+9748c4b3be65c9d383c19fd322285f4f3f10166c	2025-08-04T21:40:32Z	Added tag ZA_3.2.1 for changeset a701547f4162	pending		/	/
+697ca180eb436db548171158ab3f0bfef93aa030	2025-08-09T15:25:13Z	- changed the version string to 3.3-alpha	pending		/	/
+98b9d467a0fa13b34487772e5024e31f58751d54	2025-08-10T19:06:30Z	Port sv_terminatorfragaward from Q-Zandronum	pending		/	/
+82def1c76e84d25ba0faeac658ad01b813c48c60	2025-08-20T02:21:03Z	Fixed: A_SpawnItemEx didn't sync the TID of spawned actors to clients in online games.	pending		/	/
+0b7f9c3c54f6e7e5cf4effecd5326b002a113c6b	2025-08-20T21:42:12Z	Fixed: A_SpawnItemEx's SXF_TRANSFERSTENCILCOL flag didn't work in online games.	pending		/	/
+8f38a7d08abf6811238ba864526668a31de1559f	2025-08-20T21:58:19Z	Fixed: an actor's stencil color wasn't synced to newly connected clients in online games.	pending		/	/
+0f0415a6f289e72638ed8fc76799fc712976ff92	2025-08-20T22:31:24Z	Fixed: clients that gained RCON access erroneously told the server to change the values of compatflags and compatflags2.	pending		/	/
+216fd7bb8845c2cd247cc9cd7de38567b9cbba7c	2025-08-22T03:43:14Z	Added mouse input type selection to MENUDEF so players can toggle the in_mouse CVAR easier and select the desired input mode. Also clarified the function of the old Skulltag mouse option.	pending		/	/
+450ec7604b4e3cd1367b4bdf318a9e950243e57f	2025-08-21T22:44:30Z	Fixed: NETWORK_GetPackets and NETWORK_GetLANPackets passed the full size of the input buffer to HUFFMAN_Decode's outputBufferSize parameter instead of the size of the output buffer.	pending		/	/
+383915d93ee0072827006808fa56f88fed418771	2025-08-21T23:21:22Z	Replace C-style strings for console timestamps with FStrings, fixing a stack use after scope in the process.	pending		/	/
+2272850a66fbce3b1a1d74e1a6a687e2a2b18177	2025-08-22T15:08:12Z	Fixed: any sounds still playing on a player's body weren't stopped when they disconnected.	pending		/	/
+6d3c00306ce0b3ffb462f9a71ad77496084efd15	2025-08-24T20:18:25Z	Added the CVars "cl_bobrangex" and "cl_bobrangey" to allow the x/y-range of a weapon's bob to be customizable by the user.	pending		/	/
+fe131e05e18ce74f9f2514cd4e083726086e63bb	2025-08-24T20:37:09Z	Fixed: actors with the NOINTERACTION flag and without the NOTIMEFREEZE flag weren't frozen when the level was frozen.	pending		/	/
+3bee6855464c6aa9a0e31dae6e373416bb17b701	2025-08-29T00:15:55Z	Added the new MAPINFO property "gamemode", allowing maps to be locked into one specific game mode.	pending		/	/
+33f99da71a1dfbdfe67104680967624b76ffad22	2025-08-30T13:15:55Z	A player's icon is now destroyed at the same time their body is destroyed. This prevents the icon from still lingering after their body's been destroyed (while the game's paused) in offline games.	pending		/	/
+6ec769939007d9027780c0dc01fbb3bd343eadca	2025-08-30T13:19:15Z	Ensure that the player's icon also doesn't appear until they spawned after joining from spectators or changing teams in offline games.	pending		/	/
+35a706fa323fa47a00374fef2af830c4d12535d5	2025-08-30T15:01:01Z	Fixed: the fullscreen HUD showed the remaining monster count as a percentage if sv_killallmonsters was enabled while playing invasion.	pending		/	/
+9c3843520b68edf7b8778ac37c13a72ed663d3e4	2025-08-30T15:08:52Z	Fixed: the scoreboard and fullscreen HUD didn't properly show when there was anywhere between 0 to 1% of monsters left to kill.	pending		/	/
+873abcdc7cf96f2e1daffa583896faed4afd6bc7	2025-09-02T17:30:25Z	Fixed: A_ChangeFlag didn't work on CLIENTSIDEONLY actors in online games.	pending		/	/
+8082d083b3c4b1994c59097964cd274fd2f0bf3f	2025-09-07T18:07:36Z	Fixed: under rare circumstances, a client with cl_telespy enabled crashed upon loading a new level.	pending		/	/
+fe0921dcda031c483b962e3d70917227f340f226	2025-09-14T12:23:25Z	Refactor auth saving code to use a common ENABLE_AUTH_STORAGE macro instead of platform-specific checks.	pending		/	/
+f9ec7ec0cd40165070d4ef3366b8b87dd48c8c87	2025-09-14T14:04:58Z	Add a new ZaAuthStorage condition for IfOption in MENUDEF to control visibility of the cl_autologin menu option.	pending		/	/
+4b196028c75c29f7c9257ec4f8050a9d27695ecb	2025-09-14T12:23:32Z	Added support for using libsecret to save auth credentials on POSIX platforms.	pending		/	/
+236f06df1450a63d8bdf3d73aaccbc0feb1f258f	2025-09-07T21:51:04Z	Fixed: spectators were unable to pass through slopes while using the unrestricted spectator mode.	pending		/	/
+8a0328cd237a98ebf8b680cb0e990c233287afe2	2025-09-07T21:53:55Z	Spectators using the unrestricted spectator mode now only pass through teleporters if they can see into the sector where the teleporter is.	pending		/	/
+1b8273be433593cf9647b196ec9cc02d555e20f8	2025-09-08T14:36:21Z	Spectators now travel at full speed while underwater.	pending		/	/
+908f125475e684bc499aa092e0934142e46a0577	2025-09-08T16:33:36Z	Fixed: brightmaps didn't work at all on skins.	pending		/	/
+18867e1e1300c5d19941336a7948595879dc1e3a	2025-10-01T03:39:31Z	Weapon sprites are now fully interpolated, and can be toggled with the new CVar "cl_interpolateweapons". Based on code from ZCC.	pending		/	/
+7b3e7adb14602e455ab83cdd7d8645fef960b6fa	2025-10-02T21:18:09Z	Added the CVARs sv_minfov and sv_maxfov to set client limits for FOV on the server.	pending		/	/
+0f5e07570b01d7875c1754b6ea85f884a8ba5b79	2015-09-19T15:29:07Z	Fixed crash in RandomSpawner with -nomonsters	pending		/	49519db257d1c717e6d0cf36bb8dfc5086e79064
+cdb771bfe99330b9cd99529f276dfc7ea27b0958	2015-09-19T15:29:59Z	Added error message about missing class to drop from RandomSpawner	pending		/	96ff7160463b93fb9d9401274b16f81dfaf097eb
+c0917d620c6d988e93ce6294ecef204683b6601d	2015-10-11T06:28:38Z	Fixed MSVC warning in a_randomspawner.cpp	pending		/	fe61b8064adf5f42575d4c57056466d49878b9d1
+dab33572e180481c19063c3862fe0e7f6de74c43	2025-10-03T03:22:00Z	Added sliders for the min/max FOV in the server setup menu.	pending		/	/
+fe2d41f5adc2ff49fd60fffc99bd2984f5f25b54	2025-10-03T03:27:02Z	Fixed some indentation to make it more consistent.	pending		/	/
+680dfe9674c66aa901e57d69acc4cb12e4c20133	2025-10-03T04:16:19Z	Fixed: the FOV couldn't be changed while in free spectate mode.	pending		/	/
+0daa6c6df590aa1b6383b1deea9e9a8c4f97bd94	2017-02-28T10:23:40Z	Changed FOV from a CCMD to a CVar, allowing players' FOV settings to persist. Also exported SetFOV to PlayerInfo for ZScript.	pending		/	bb1709228cb0e9b66150094d9d836e50468772b4
+17971b9c0a29a5e4ad6875835c1db1d16de5584a	2021-08-14T06:29:09Z	Add FOV slider to the display options menu	pending		/	d64dd1f631fc06e2d453bc18f56c1ba16828fedf
+cbee266933496f2fedb1e408ed95163e1e7176d3	2025-10-05T20:19:01Z	Added a document to keep track of nodes from GZDoom backports that couldn't be added, or had to be moved to other files manually.	pending		/	/
+6b9fb57464d4a66b65540f1f4bb13a75f5317244	2025-10-06T12:40:30Z	Fixed weapon sprites appearing out of place momentarily when the player respawned.	pending		/	/
+dbd1096345c6a25e7e89fc076c826fba2f8b622d	2025-10-07T05:41:26Z	Renamed "missing-gzdoom-backport-nodes.txt" to "zandronum-gzdoom-backport-nodes.txt" (to distinguish it as a Zandronum-specific document better), touched up the formatting, and added extra information.	pending		/	/
+a76b91c2386ec44efd898c88db2c6491c50be02e	2025-10-12T17:29:40Z	Fixed: cl_stfullscreenhud 0 would always draw the ammo amount and ignore sv_DontHideStats (addresses 1042).	pending		/	/
+a5e5b25fbe12fd6c7861b10081af46018db4846a	2016-08-22T18:03:08Z	Add vid_maxfps support for Windows and Linux	pending		/	276fb7dbb2f43fcb0db6a5fc276495af6254316f
+30f4a0aec568994ac3407356d742184a822bbc5c	2016-08-24T13:44:40Z	Fixed compilation of SDL backend	pending		/	f79c442df533e26888eb748e14041eb71b1e6ab7
+38acb473fa0fa405cb58eb1e31d80217521b0692	2018-05-01T05:48:59Z	- don't force the renderer to remain active in windowed mode when in the background.	pending		/	b35213741f3d0aa9c07365daa755ba2f47401444
+7604bedc1d9829e71c041b20db696295addbb663	2025-10-17T03:10:22Z	Changed the default value of vid_activeinbackground to true, and allow it work while the game's in fullscreen mode.	pending		/	/
+fce034a48d234c8eda75b43901a14e743796643e	2025-10-19T21:36:08Z	Added a node from a GZDoom commit transplanted in 3.2 that should be documented because it was moved to another file manually.	pending		/	/
+efed70b5a652d533af856e5b615cff23252ceb5d	2025-10-19T21:52:56Z	Added reasons for documenting each node that couldn't be merged in a transplant.	pending		/	/
+3f9bae7cef442bfee05433ab005f006243955cf7	2025-10-20T04:04:55Z	Manually added more screen resolutions to the hardcoded table in "sdlvideo.cpp". Changes were manually copied from: https://github.com/ZDoom/gzdoom/commit/965d602d26167fdec3e6d5c5f6d7f12063d22128	pending		/	/
+a60f6809023fe51ebc78977c3e2324f1cc498ed7	2025-10-20T04:24:10Z	Manually ported missing resolutions to the hardcoded table in "sdlglvideo.cpp". Changes were manually copied from: https://github.com/ZDoom/gzdoom/commit/cab509c4d20f0e5e57099d24792a853a7adaa326	pending		/	/
+bb3253eae8ff018cabf6553da4242b365d192192	2014-12-13T10:32:29Z	Added several missing video resolutions	skip	twin uzdoom@9837721d7: skip: touches only files absent from our tree -- the SDL video/output plug-in, upstream's Steam path handling, or the software renderer's r_bsp.cpp. Verified by checking each path against src/zandronum.	/	9837721d7f882ed2e86206f36e7b10cd5352a79c
+bab77c3aab00b84c18fc1fb997af3ef2776d8f07	2016-03-02T10:31:12Z	21:9 aspect ratio support	pending		/	97821a3036f7ba8281f88d39bf2d750bf84c5c61
+02c2c8a3f7bdd24c7746b19d56806969b8e43819	2016-03-02T20:07:11Z	fix: 21:9 AR stretching in intermission, end level screens	pending		/	73c7e513912704e91fac53fab72f874767a5b594
+d80e4191a85bd9f04c2cd7d07f3937b24a21c9bf	2016-03-02T20:33:06Z	21:9 fix for black bars overlapping fullscreen images	pending		/	afb1d438c2611c4e7564c5114868eced67dd6cc0
+5bb2c8e48df90e5173b510e50c7b950a067e0fbc	2016-03-02T20:35:45Z	Slightly improve 21:9 ar	pending		/	3ac49682184b9092e3b02a898c674b6e392d3ffd
+0629232eac7cc102cf8ddec210450d35619ec55d	2016-03-02T20:49:28Z	vid_listmodes crash fix	pending		/	a4705c84047baee72f23db8709a686e8a663a843
+0cb62a890aebc4c13cdf6e09cb0041055c512844	2016-03-02T21:58:29Z	UI support for 21:9	pending		/	a28c8091fc329bb1ef8acc12f281f360851c559f
+8787d4a28c162136518ad6786388b91887e00e8e	2016-03-03T23:32:30Z	Update ratios[] tables for SDL and Cocoa	pending		/	79f07143410af621bde29efaba21d4a4d340e1dc
+69f8e4816350f791668930d35f350325ddb1f9c7	2016-03-03T23:59:55Z	Add some 21:9 resolutions	pending		/	16d8af6b77cb8468c5191750150bfd684c7a1158
+df02f490e78ab86f6b59cb86d9fc491f9349a037	2016-03-04T00:00:06Z	Fix 21:9 base width and height values	pending		/	3c2ed52442cb3eac66ddaeb191b598da1d47fe23
+3e8240c5dee2269db4c2f316cf91b28e025908b2	2016-03-04T10:47:15Z	- added 21:9 handling to GL code.	pending		/	af1b70376b04418a48e3047b614c2196940d005f
+c4d5d88f8699fe75d8a89947ae1cc497a7164b49	2025-10-20T17:05:52Z	Added 21:9 screen resolutions to the hardcoded table in "sdglvideo.cpp".	pending		/	/
+a48630d214dc2d2e185bccaa764f7b9a911a1602	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	pending		/	b003c47e3e02bed94b76757a512b195b1d7d70c8
+a53fead106e33d53cbbf41eb3ad1693e64b91ff6	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	ported	twin uzdoom@572063404: ActiveRatio + ActiveFakeRatio added alongside CheckRatio; our vid_aspect guard stays 1-5 (no 21:9 mode) though the forcedRatioTypes table is carried whole	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c	5720634045b0812bc838eb4671a4039917582a94
+76aed16483dc79bc9262b7c4ea31b1cc21f7f6c3	2016-09-12T14:05:42Z	Fix buffer overrun in CommandAspectRatio for 21:9 aspect ratio	ported	twin uzdoom@4e58e6626: nearest-ratio search replaces the out-of-range ratioMap index; fabs not abs, or the integer overload truncates every distance to zero	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c	4e58e6626cf0372a3fbca5649a66aa7e2441554c
+52bc0caca76d1632afe369dbcc9c91373a71a5ac	2025-10-19T00:18:43Z	Fixed: a player's voice could briefly be heard when they turned into a dead spectator and were forbidden to voice chat with live players.	pending		/	/
+87dfe704d81867e199d4264ecc13aade167649be	2025-10-22T01:48:58Z	Removed a superfluous forward declaration.	pending		/	/
+469e5f569641f993f402e2604bfcf37b236179aa	2025-10-22T04:12:17Z	Player classes that are forbidden are no longer selectable in the player setup menu.	pending		/	/
+2b3171b748094b415d23a47564b7bb3f2bebea21	2025-10-23T22:01:42Z	Fixed: kickfromgame would try to write over the network when called offline through ACS (addresses 4545).	pending		/	/
+7e0d5383e6ab5f7ca2f27f26989c2a9bda059ef1	2025-10-24T16:21:20Z	Fixed: TERRAIN SmallClip wasn't being applied online for SmallSplash effects (addresses 1060).	pending		/	/
+59341a3f3d14af118b2a102e0e65982229dbd030	2025-10-24T17:25:21Z	Cleaned up some code in P_HitWater.	pending		/	/
+62956c2a7073d7700eb94b70eada32b5a7416873	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	twin uzdoom@c9afb199c: ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum 3.3 copy: 54f77bd2da)	d128a82b	c9afb199caf363e1387bd9111b31137d5c44d972
+10b16591ad9bcf23d6d4cdb0b2cb737915357775	2025-10-27T14:07:35Z	Fixed: Player_SetTeam wouldn't clear coopspy if a player defected to a team while spying on his ally (addresses 1197).	pending		/	/
+2ddec4cfc2f97c6191048b6438d5db9eb51af0da	2025-10-27T18:06:10Z	Fixed: cl_respawninvuleffect also affected the server, and upon loading a new level, could make players appear partially invisible for clients that weren't using the flicker respawn invulnerability effect.	pending		/	/
+4ab1128e5b738dd57134d283dd78d0adebb90a5e	2025-10-27T21:31:30Z	Fixed: Morphed players did not transfer their skin despite the absence of +NOSKIN on their class (addresses 1425).	pending		/	/
+8929c493e00ffcaec137209d51b9f37fe4550e8a	2025-10-27T19:39:32Z	Add BotScript commands for move up/down buttons.	pending		/	/
+72b107da6b4032de3ae1bbe2f90734e9afa2f643	2025-10-30T01:01:16Z	Fixed the naming convention of a local variable and consolidated some duplicated code.	pending		/	/
+ed337e36b30715fd381a82f0ca846adcae1b7c34	2025-10-30T01:31:34Z	Fixed: a morphed player's sprites were erroneously changed when cl_skins was changed.	pending		/	/
+93ecf31b5ebd8f30202a8932a2476607b518f081	2025-10-30T18:45:42Z	Removed an extra blank line.	pending		/	/
+49b7c26dc75536557095e15bae6ab1b4edd4e2d4	2025-10-30T18:50:02Z	Fixed: the scale of a skin was applied to the player's body when the skin's sprites weren't visible.	pending		/	/
+4555b5267c471650d983bb5d8e75f2a519eec63b	2025-10-30T18:54:20Z	Fixed: cl_noswitchonfire prevented players from switching to a new weapon if they were pressing the fire button(s) while not having a weapon selected.	pending		/	/
+fd5865b4d69597dfb9620420f1ba3aae87375c12	2025-10-28T21:58:07Z	Copy the actual liboutput_sdl.so to the build directory so it's included in CI artefacts.	pending		/	/
+54bacfebc229802a4c62929f190964020fbc82a9	2025-10-28T21:58:13Z	CI now builds an AppImage from the results of the Linux build job.	pending		/	/
+d35bca3529df95ca3e24896cdd50d33097ebd9da	2025-10-31T02:53:41Z	Removed the skip correction that was sealed away since 3.1 and never used, restoring any old code that was changed by it. Its history entry has also been removed.	pending		/	/
+10d1d47852085be81d0f75aa60c55e78f4d9e544	2025-10-31T03:52:57Z	Renamed CLIENT_s::MoveCMDs to CLIENT_s::bufferedCMDs since this didn't just store the client's movement commands, and switched to using smart pointers instead of raw pointers.	pending		/	/
+7feaf8fe410797036f3f6037a74863c51515790a	2025-10-31T18:02:44Z	Slowed down the rate at which the server empties the clients' tick buffers (it used to be four move commands per three ticks). Now, the server only executes one move command per tick unless the client's buffer is too full that two of them need to be executed in the same tick.	pending		/	/
+529ca97fc1be61d4f27e9987b6209c259749ac9c	2025-11-01T13:10:27Z	The server is now more lenient on incrementing the number of missed packets from a client regarding movement commands. It now only increments when it's been more than one tick since it received the last command from the client.	pending		/	/
+d72c28fea4c1267b2df46014b94aae6a0216586a	2025-11-02T22:07:19Z	Zandronum will now be basing itself off UZDoom, so update the backport nodes documentation file to reflect that.	pending		/	/
+b8fe8ef13df5823c881e65c7a4f2f9fa61f6a60d	2025-10-16T20:38:07Z	Add support for the "BUSY" script flag.	pending		/	3ca5a550fa380e463907c067607c37ab0f337d90
+c346015950993a4ec201acd313d9445fe869b050	2025-10-17T00:40:13Z	Fixed unnecessary runaway counter increase and uninitialized value.	pending		/	d26d39ba729220f64d93a71790f2ccc8ec54e56c
+9cee7e80ec2496a0ad90e0b01dc05be61c760d98	2025-09-25T01:41:33Z	attempt to remove class limit	pending		/	67b3ea2d01949a69ae2459f9eb4c144fc87331b1
+51c804da8b73f39759d9f89da4141ba38ce7e22d	2025-11-03T16:07:44Z	Updated a few spots where player_t::CurrentPlayerClass was still being saved into a BYTE instead of an integer, and send a player's class as an unsigned short in "SpawnPlayer" server commands.	pending		/	/
+7b61ac68326fe38702a97fcec8dbc7703606cb76	2025-11-03T23:44:12Z	Add back the executable permission on appimage/AppRun, as it was lost when 54bacfebc229 was amended.	pending		/	/
+50655250522ffc73fbad70416714e45784a3934f	2025-11-04T00:26:40Z	Ensure that AppRun has the correct permissions when building the AppImage.	pending		/	/
+28e63eb130d75a770e24a34373aab26973b76e37	2025-11-03T23:05:34Z	Fixed: the angles of level-spawned actors weren't properly restored to their original values on map reset (addresses 4572).	pending		/	/
+20f361819af9cb068b5e568be93d4cb0b66f26ef	2025-11-06T17:19:09Z	Removed a bunch of unused forward declarations.	pending		/	/
+e8b7e77c2fe660682b878ee30a1c776930db8389	2025-11-06T18:06:11Z	Fixed: clientside prediction sometimes made the centerview CCMD not work in online games (addresses 4565).	pending		/	/
+9d03d58bde7075cb320c28c206783bd437495413	2025-11-10T04:40:28Z	Added an extra sanity check to avoid a crash in the ACS function "SetAmmoCapacity".	pending		/	/
+227ae3070e3f9e0dcb1889d75b2b50f728f0fa70	2025-11-11T18:26:15Z	Refactored code for checking if a client is spamming the chat or sending userinfo changes too often, and consolidated duplicated code.	pending		/	/
+02962ee6283e5ce454ad1059d68c7a5bb8427590	2025-11-11T18:38:16Z	Fixed: clients didn't tell the server when their userinfo CVars were changed in clientsided ACS scripts.	pending		/	/
+3feb1f49c1cd7e2083e8f521f2213bb204e99f81	2025-10-25T14:35:40Z	Cleaned up and refactored NETWORK_GetPackets and NETWORK_GetLANPackets, also removing any use of C-style casts, Hungarian notation, and ULONG/LONG.	pending		/	/
+89e8f15b6b145790be7035d73c0cc88e0e22c496	2025-10-25T14:38:13Z	Added a helper function to reduce code duplication in NETWORK_GetPackets and NETWORK_GetLANPackets.	pending		/	/
+21ed9720a9d585be991a390beb960ebf7499eadb	2025-10-25T17:24:20Z	Cleaned up and refactored NETWORK_LaunchPacket, also removing any use of C-style casts, Hungarian notation, and ULONG/LONG.	pending		/	/
+868ad81c8da1163c55fa7755578d440009c1ef15	2025-10-25T17:26:04Z	Cleaned up and removed a few static casts.	pending		/	/
+173f74aa07b893e0c6451f6947ae20f45eb733c2	2025-10-26T18:26:21Z	"stat nettraffic" now shows the compression factor of packets sent or received in the last second.	pending		/	/
+a9a4abc8a69f48442096ed4d90e753c84a0d11f1	2025-10-26T19:01:19Z	Fixed some inconsistent tabulations in the network options menu in MENUDEF.	pending		/	/
+9a8ae9d825e8c2a72bcf0cd644c59da13d55fd70	2025-11-12T05:05:15Z	Added a net graph, enabled with the new CVar "cl_netgraph", that shows changes in network traffic over the last minute, which appears while "stat nettraffic" is active.	pending		/	/
+c461fe1ca6dca804b9849616ffb4a0c1f83aea6b	2025-11-12T06:52:23Z	Cleaned up and refactored NETWORK_GetPackets and NETWORK_LaunchPacket in the master server code too.	pending		/	/
+93c67c50fda92df93907d9fe1cf67e12857f8e89	2025-11-01T18:28:16Z	Commands from the server that update the players' movements are now buffered on the client's end so that players move more smoothly.	pending		/	/
+6205f7d50549454848a749ec88c69b00fe934933	2025-11-01T18:31:45Z	Removed ping unlagged, which has long since been obsoleted by the superior gametic unlagged.	pending		/	/
+0e35b4f5c5d42805d0de2eb3ef77388ef9c08820	2025-11-14T01:14:23Z	Fixed: a player's skin would scale their body up or down an extra time when they turned into a dead spectator in offline games.	pending		/	/
+e97ab4a28f1ab1c7a94404422da6bbf32d9c66c8	2025-11-17T18:18:24Z	Fixed a regression where a player's overridden skin didn't apply the correct scale to their body if their states didn't change.	pending		/	/
+57fe0dc1ae24dc4352a3ab04ec232f6ff985062b	2025-11-19T14:24:26Z	Added new constants to the "LumpGetInfo" ACS function that return a lump's namespace and the index of the WAD it belongs to, as well as the new ACS function "GetWadInfo" to return information about a WAD file using its index.	pending		/	/
+57fd93e4e1a07f3bd4efa63e859ad2e2cea85f1d	2025-11-19T14:36:48Z	Added sanity checks to FWadCollection::IsWadOptional and FWadCollection::WadContainsAuthenticatedLumps to ensure that the WAD's index is valid.	pending		/	/
+9f4728f2fdf44e885425fc59342c609dda127146	2025-11-19T14:46:40Z	Added a sanity check to ensure that LUMP_INFO_NAME returns an empty string if the lump's index is invalid.	pending		/	/
+f522876fe386925f508425afceb41474914d4c24	2025-11-19T16:20:30Z	Added ACS function: "SetMapUsedStatus", allowing mods to change the used status of an entry in the map rotation.	pending		/	/
+96f065639407d151b0b82031f636c49cbbe03e3c	2025-11-19T18:14:45Z	Added the GAMEEVENT_PLAYERJOINS EVENT script type, which triggers when a player is just about to join the game, and allows mods to prevent players from joining and queue them instead if the event's result is set to zero.	pending		/	/
+8de7941a63b396885edc2d5c9039e09483d10b8d	2025-11-19T18:58:07Z	Added an extra sanity check to fix a rare crash upon loading a new level caused by 10b16591ad9b.	pending		/	/
+071188cccec9a11bf87a564ca3b31f2dfc67ae0b	2016-02-01T04:05:32Z	Add support for face sprite Y flipping	pending		/	2f4dc1795496ba25217bc0a28325a993039675b0
+442e763f30b92789a71c0de6db9d4bb3c7603fad	2025-11-21T01:04:40Z	Add QuitJoinQueue BotScript command.	pending		/	/
+a84419a6841a8bf9384adae34e97104ef00f9027	2025-11-24T17:20:15Z	Fixed: custom vote submenus were duplicated when the callvote menu itself wasn't closed, but a submenu of it.	pending		/	/
+4d1fea8514d656cf35b3a2295a28ef01c38ef940	2014-06-12T03:30:25Z	Added a check that doesn't print empty obituary strings, as wad's that hide obituary strings in multiplayer games end up spamming a lot of empty lines.	ported	twin uzdoom@67c669068: ported: empty obituary strings are no longer printed	b4e485d	67c6690689b98b36bffecf557dffe9dca875a810
+1a7b71f6930269db768effa9c38c90d8f92c9256	2025-11-18T16:13:24Z	Added SetGoalTID BotScript command.	pending		/	/
+04903d3ae54c054c18731da75bc9afd2a13ef5f0	2025-11-25T03:12:59Z	Add height awareness to bot node cost estimation.	pending		/	/
+beb322058bb72978e589d261234eca2d145545a5	2025-11-25T03:13:50Z	Fix more jumpZ checks and factor in stepheight where appropriate in bot pathing.	pending		/	/
+2e70d6ccc17cb06dc695cb1a98b9e9e071f44788	2025-11-25T04:41:10Z	Rewrite 3D AproxDistance in bot node cost estimate for readability.	pending		/	/
+eb422df3b1be1c5f2aaaa7478757bb043f452248	2025-11-26T17:29:55Z	Fixed a regression caused by 04903d3ae54c where loading a new level without an intermission, but when there's already bots, crashed the game.	pending		/	/
+deffd2fbd79203c4237bd511a2a97ff3626e699c	2015-06-25T00:53:46Z	Use puff decal with MF7_FORCEDECAL	pending		/	8670b7ecf79a91cd4d64025bb11393b8b931afb1
+5b00696ac2e0ca383642341b8952a88cb466ac3d	2016-01-14T17:21:08Z	Added support for puffs to spawn on floors and ceilings if ALWAYSPUFF is used.	pending		/	dd9e7560c4b16b26c8f7bbf2ba72a51c867f46ba
+2e629a9b7b960b49e722e8f183f57ba43c27e9c3	2016-01-16T22:33:19Z	- Puffs should not spawn on floors or ceilings with sky flats without the SKYEXPLODE flag.	pending		/	e4a74e91fcd34f9ad0baf59e43d228529d2ddd48
+26d900809dfc306df34373129d97a3d6099b7c3e	2016-01-16T22:36:42Z	Added NULL check to lines.	pending		/	421dcacb94a95f3f5468d6f54e11f1829a88953a
+7d12f80d364050901f782f5e013f780956202611	2025-11-27T15:20:55Z	Fixed railgun puffs still spawning on floors or ceilings with sky flats without the SKYEXPLODE flag, and their decals not being used, for clients in online games.	pending		/	/
+0d75cf18b6be67da24820e4ab59701f8e4664e01	2025-11-27T21:12:37Z	Fixed: it wasn't possible to set multiple ban (exemption) files via the command line during startup.	pending		/	/
+70735560bb12edf79bdc6b530fdb0ead65aabd02	2025-11-29T14:03:09Z	Fixed: world and global ACS variables didn't persist on the client's end when the map changed in online games.	pending		/	/
+832625b0700b5d923f1381bc1e790f1d2260e223	2025-11-26T05:12:16Z	Moved a check to avoid the "cannot give morph items when starting a game" error if a player fails to pick up an item in APlayerPawn::GiveDefaultInventory. This is consistent with later versions of GZDoom after 1.8.6.	pending		/	/
+38e71b91375ccbd4efc29c4bd2c9944b1ba09c0e	2025-12-01T15:32:53Z	Fixed: clients didn't update the sector color of a 3D floor when the server told them the sector's ceiling changed.	pending		/	/
+0f08c6c87089ebe02eb64e6d4ee295caa5980cf0	2025-12-01T16:57:44Z	Fixed: Sector color of a 3d floor that had its floor or ceiling changed wasn't set back to its default value on map reset (addresses 1876).	pending		/	/
+bde6d45f00092c30d40cd17648978ac6a72de8d9	2025-12-03T04:21:26Z	Fixed error messages in network_ReadPacketsFromSocket using the wrong function name.	pending		/	/
+32ff6e13bd13b4c843ef76e9ed1974a214154935	2025-11-12T15:38:49Z	Experimental work to add ZStd compression to Zandronum.	pending		/	/
+4c37d95d368329a6cf979c2ef83388222952b6fc	2025-11-18T15:06:14Z	Add zstd as a name to find_library in FindZstd.	pending		/	/
+899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a	2025-11-18T15:06:28Z	Use Zstandard (de)compression contexts for better performance.	pending		/	/
+65c18dca9d3cd2a2f9624dc90daa56991ecac303	2025-11-18T15:38:06Z	Added the ability to use a Zstandard dictionary from the ZSTDDICT lump.	pending		/	/
+80cd2315f27379a7bf0692f4c01ab4f49012d40d	2025-11-18T16:38:16Z	Add sv_dumppackets as a way of collecting packet data for training Zstandard dictionaries.	pending		/	/
+4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7	2025-12-02T10:21:24Z	Use proper error handling when (de)compressing packets with Zstandard.	pending		/	/
+1a03a82d780ac7923770605aa631865c04076240	2025-12-02T10:21:16Z	Added some client statistics to show the percentage of packets compressed with Zstandard in stat nettraffic.	pending		/	/
+e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c	2025-11-18T23:13:15Z	Added CVars to configure Zstandard compression.	pending		/	/
+1caada743db48a07d712817cef9e5439bc099512	2025-12-01T16:51:26Z	Add a new network error code for when a client has an incompatible Zstandard dictionary.	pending		/	/
+a1f956b76562a30cae638f364d1c299069eef168	2025-12-02T10:19:25Z	Added sv_dumppackets_chance so packets can be captured using random sampling.	pending		/	/
+7ca4cb9b4d9b98e27b09341b15c83f3acaaa595e	2025-12-02T13:44:51Z	Remove g_LatestPacketUsedZStd as it wasn't used, except for in network_ReadPacketsFromSocket where a local variable is now used instead.	pending		/	/
+3049fa42a7d6310bd6467b621224404fb78af733	2025-12-02T13:48:58Z	Add a history entry about Zstandard compression.	pending		/	/
+2a65e4bcf494a3bde63a18f006ece9154d604e19	2025-12-03T11:49:29Z	Separated each statistic printed when "stat nettraffic" is active on its own line to improve readability.	pending		/	/
+402172a25b20b82b5b8ce223af363f4932805243	2025-12-03T11:58:50Z	Fixed a blank line.	pending		/	/
+92ebf777950155f28651186233b53d682acd986e	2025-12-03T17:38:25Z	Added ACS function: "CheckScript", to check if a particular script exists by searching for its name or number.	pending		/	/
+f5b68175b468f0fdfb7119369fa10d5ba87f2464	2025-12-03T18:12:38Z	Add setting to allow scoring in Skulltag without skull at base	pending		/	/
+59b494f63d585a9c5067c77ff228bb7fe2994cc0	2025-12-06T19:12:47Z	- Added support for custom winning and losing intermission screens using the new MAPINFO properties: "winnermusic", "winnerpic", "losermusic", and "loserpic".	pending		/	/
+6ee2a204c6b55c4e981c8fb168ea732de9f84526	2025-12-07T14:23:48Z	Fixed: bots didn't spawn as the class assigned to them in offline cooperative games.	pending		/	/
+a8d26c5591fafdaa655603fc42e1198ecf860d5b	2025-12-07T19:29:18Z	Fixed: railgun attacks that weren't predicted by clients didn't spawn decals in online games.	pending		/	/
+6eb487e62d34801e290b5a8b5c89c7c9acfa44c3	2025-12-07T19:32:13Z	Added a comment header for P_RailAttackWithPossibleSpread.	pending		/	/
+d4dfc64bdb39123ec5564a7ae9d0a1175ca17ee1	2025-12-08T03:42:58Z	Renamed some variables and removed any use of ULONG/LONG in the "WeaponRailgun" server command.	pending		/	/
+465e1c524db562e2d8fa92bd3acca091f6fba03a	2025-12-08T03:55:09Z	Fixed: the scoreboard always appeared at the bottom of the screen during intermissions in Eviternity.	pending		/	/
+97d5029ebfc08988d7520b088028a3d70dd36cde	2025-12-19T17:35:50Z	A client's FOV setting is no longer synced to other clients.	pending		/	/
+1f63757f0882c5a7cafd4cdcf87967fb3f4dcaa2	2025-12-21T19:19:04Z	Did a cosmetic cleanup of SERVER_GetUserInfo and removed any use of Hungarian notation.	pending		/	/
+8cd5694e6ca6d454f5a179540a4fad6077f16a1c	2025-12-21T21:14:03Z	Clients sending userinfo changes for CVars changed in clientsided ACS scripts will no longer get kicked for "user info change flood".	pending		/	/
+1a6bab827d4bfbd6628265b6f112e6cc60672624	2025-12-21T21:37:34Z	Made formatting corrections to the message that appears when a player is renamed upon sending userinfo changes to the server.	pending		/	/
+5e16123dcc17aadb2e6e24b46e19d4bc6bc8c91a	2025-12-22T17:00:23Z	Added a missing period to a kick message.	pending		/	/
+1a825432a72bacb338cd479daa783cafc36a7177	2025-12-23T04:16:06Z	When removing the visibility flicker effect from a player, restore their default render style instead of guessing whether to set it to normal or translucent. This fixes a regression caused by 2ddec4cfc2f9 that meant a player's render style could differ between clients and the server.	pending		/	/
+57702a36ccbdcb0d260a6bd6ff5f5e1cc702d138	2025-12-23T17:22:22Z	Optimise SERVER_ShouldDumpServerCommand and SERVER_ShouldDumpClientCommand so they return quickly when sv_dumppackets is off, and made the sets static to reduce allocations.	pending		/	/
+9c7fa2cfd01091633bf8a361a1b8509e688caaf4	2025-12-23T04:58:57Z	A player's z-position and velocity are now sent at full precision in MovePlayer server commands, ensuring maximum smoothness especially at low speeds.	pending		/	/
+43098555ff613adecf40bd1708a218298af6e5ed	2025-12-30T16:44:22Z	Refactored the client's movement command buffers to handle UpdatePlayerExtraData server commands, which need to be buffered too. The "cl_usemovebuffer" CVar has subsequently been renamed to "cl_buffercommands".	pending		/	/
+1d9962b2229fe9ef256e871ba2056e3a18bfce61	2026-01-11T15:10:18Z	Fixed: the intermission countdown timer on the scoreboard still decremented while a clientside demo was paused.	pending		/	/
+d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06	2026-01-11T16:34:06Z	Fixed: the client's command buffers didn't work in clientside demos, so players moved abnormally during playback.	pending		/	/
+1a5a49be3bdcaa535335c773ca762df0163845d3	2026-01-11T21:27:11Z	Fixed: players sometimes didn't have the correct skin on the client's end upon connecting to the server. This particularly happens when there's multiple player classes, each with their own set of skins.	pending		/	/
+1c0614e08d1053a084be625d57777a84cb138173	2026-01-12T16:17:30Z	Fixed a Linux compiler error.	pending		/	/
+80b225efc00036de34af1900c2bb956ad41b8537	2026-01-12T16:02:12Z	Fixed the Linux CI build job appearing to succeed when it actually failed.	pending		/	/
+35f34555bd7b11c3fa5dff9dc55611dc68e8c352	2026-01-12T16:08:40Z	Removed the explicit CI artefact expiry time as Heptapod/GitLab have an instance-wide default expiry anyway.	pending		/	/
+f86dfacb7ba1d65df81bc49063140c4fbf815384	2026-01-12T16:09:11Z	Use ninja instead of make in the Linux CI build script.	pending		/	/
+95e81121f043f06796a65a1b8502d14087180c67	2026-01-12T16:37:12Z	The arm64 CI build now uses the same Docker image tag as the x86_64 image.	pending		/	/
+2d4749b0fa1d76c29c17ce1700462577740dd5e1	2026-01-12T18:55:30Z	Smoothly interpolate a player's view when turning 180 degrees or centering it. This is already handled in later versions of GZDoom, albeit differently.	pending		/	/
+50088e45a0184aa3ea1fe2b530e25389439da87b	2026-01-25T19:28:16Z	Fixed: in rare cases, a player's chatting or in console/menu status could be disabled on the server's end if they started typing or entered the console/menu while pressing other buttons.	pending		/	/
+3f8adfdae9dbc2a11340f9d54d55c2bd4143ffcd	2026-02-07T14:58:28Z	Don't transfer the base skin of the player's current class to the morphed class, even if +NOSKIN is disabled.	pending		/	/
+c4b292277231e9f16074db8fe8860f464c4e3cab	2026-03-01T18:34:04Z	Fixed: the client's command buffers weren't executing commands while skipping a clientside demo.	pending		/	/
+b417096783c191bfdf1a4a977c1ec514e850fb0c	2026-03-05T03:12:16Z	Add a noskirmish MAPINFO property to allow hiding maps in menus	pending		/	/
+00538ee632fb3600ad00aad4ed454f1be2b1e76a	2026-03-08T00:17:06Z	Adjust Skulltag assist behavior when sv_requireskulltoscore is disabled	pending		/	/
+25198379d37173b00002fc648c442f351a85edec	2026-03-08T17:45:50Z	Fixed: clientside demos didn't allocate enough memory in the buffer to write userinfo or local commands, causing the recordings to become corrupted on rare occassions.	pending		/	/
+9bd2e71f147647c069c6ad40274a932fddaa3fec	2026-03-08T22:23:33Z	Fixed: the ACS function "RemoveBot" couldn't remove bots with color codes in their name.	pending		/	/
+caae2b04b3ba537b2015efd773a81e154327bec5	2026-03-14T14:01:30Z	Added a dictionary file to improve Zstandard compression even further. Special thanks to Torr Samaho for training the dictionary.	pending		/	/
+7b5866e1922ca90f5a702c0278ae885eae0b81b8	2026-03-10T23:11:39Z	Fix more RemoveBot edge cases, namely around empty and color-coded inputs	pending		/	/
+d49366e537f1a44d88ae721a66cdc916a8adcb18	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	twin uzdoom@b2f860d7a: the puff null check, with c9afb199ca (Zandronum 3.3 copy: 58e9235da3)	d128a82b	b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0
+9a8531095e0b46486155167551074ef334fb3859	2026-03-14T15:33:53Z	A map or team's winner/loser intermission background and music is now usable in team-based game modes. The old behavior of not using them can be restored by enabling compat_oldintermission.	pending		/	/
+ad1ae23c5589ca4a516a8219a18326000284854a	2026-03-28T20:42:00Z	Fixed: the server printed garbled text when a float CVar was changed to infinity or NaN.	pending		/	/
+eb1ce25f51dca7943410108382bbe2d1af92784b	2026-04-12T20:12:06Z	Added an optional parameter to the ACS function "RemoveBot" to specify the index of the bot to remove.	pending		/	/
+4dcae1b00bf2e882905be015aa5acf7cd1d780b7	2026-05-12T19:20:53Z	Fixed: it was not possible to start conversations with actors that have the FRIENDLY flag if sv_shootthroughallies was enabled (addresses 4608).	pending		/	/
+ec468bdf82d3843c98a8bad8940ebfdad350080a	2026-04-21T20:36:57Z	Fixed: the client didn't log out from the auth server while reconnecting due to the 'map' command (addresses 4605).	pending		/	/
+6869793234d6828e47a2aa3b57a9ea7a87736e0b	2026-06-06T04:03:26Z	Add ACS function to check automap status	pending		/	/
+6107a231590b339460158bf55adcc8f1f92cf806	2026-06-14T01:44:30Z	Add ACS functions for getting and setting selected inventory item	pending		/	/
+8fb02634ebdb87f2e97312381a256d58f321fdfe	2026-08-16T23:47:04Z	Fix byte sign extend in lump read functions instead of zero extend.	pending		/	/
+4c658ffc6887bed07f7f9bf31add527be90ef2c6	2026-08-22T17:18:39Z	Fix a vertical height desync with respawning pickups	pending		/	/
+ceb98a637090235fb3948a5333969c2f23bf3e5c	2026-08-23T19:53:16Z	Added support for fluidsynth >= 2.3.0 by replacing calls to "fluid_settings_getstr" with "fluid_settings_copystr", and adding new filename macros that comply with the naming conventions of newer shared library object files.	pending		/	/
+bd99ab95c721d830c1052372e3bb409bdb82314d	2026-09-07T13:39:20Z	Removed the chat files for the built-in bots.	pending		/	/
+8c08098fb3b6974f1bb6f35a66f5087498c86082	2026-09-14T23:42:03Z	Remove some bot definitions, leaving only those with more generic names.	pending		/	/
+4241193f23413533a632fed4c05efd8c9be559ab	2026-09-20T01:08:47Z	Fix sv_requireskulltoscore granting invalid assists	pending		/	/
+318c98576461451b96de517c589204cd3f326725	2026-09-20T13:34:41Z	Added a missing check preventing a spectator's interpolation data from being updated in online games.	pending		/	/
+f6f2e6ee1991123e36a712985f37df73bf1e1ace	2026-10-04T02:44:02Z	Added DECORATE PlayerPawn property: "RejumpDelay", which controls how long the player takes to jump again after landing.	pending		/	/
+2af8e77c023107fb37f6f464df26a5edbcadb7ee	2025-11-06T16:51:48Z	More visually coherent mouse cursors for the vanilla games	pending		/	6b4b060b04d70e69d397b8cba875474fc5091bb7
+7407b2c47a96d851f5397d85601a48ba9b90a88e	2025-11-08T02:20:55Z	polish new cursor gfx a bit	pending		/	f2eeb1f50eb477944adb1d805245681e89ceb6c2
+211fc35752f9581b2d5b7cff7853282c0cc984b7	2025-11-09T06:39:35Z	more chex/strife cursor tweaks	pending		/	e3db4183fe36babe2f93c08f6702d313ac81400b
+69d1a26f785a4867b392a1dc63441ab4d09743db	2014-05-14T10:16:33Z	- allow setting sector planes' plane equations directly from UDMF.	ported	twin uzdoom@47a9dab56: ported: UDMF floor/ceilingplane_a..d parsed into sector_t planes; defaults restored unless all four are present	fad438a	47a9dab56d74fe021f454bccec91e57715f6db94
+bc3f1a8dbee18c68ef4ab38c61416ee241bad10f	2014-06-02T08:51:17Z	- fixed: plane equation vectors must be normalized when being loaded from UDMF.	ported	twin uzdoom@9cd074ddf: ported: normalization plus 2f11a59be's floor/ceiling correction folded in, so the end state matches upstream rather than landing a bug and fixing it later	279a9ff	9cd074ddf3cf65fd2192320d34b8e5a05357deb6
+9a59d78038df32a64607c18a7f1308d56e4dbda7	2014-10-31T07:57:43Z	- fixed: UDMF ceiling plane properties set the map's floor plane values.	ported	twin uzdoom@2f11a59be: ported: folded into the 9cd074ddf port; ceiling plane equation writes ceilingplane, never floorplane	279a9ff	2f11a59be0d743b04d7a7885624ad7925a8f545c
+26b1948308e990e859a96a81483320cb9e988c4d	2014-09-08T20:54:56Z	- added option to set a sector's tag via compatibility.txt (needed by GZDoom)	ported	twin uzdoom@580e580c4: ported: setsectortag (CP_SETTAG parser, executor and enum) arrived with staircase flight 17 (c74fcdac), which ported it to carry 86d9c7ec8's BTSX entries; Zandronum 3.2.1 does not have it, Zandronum 3.3 transplanted it as zandronum@26b1948308e9	c74fcdac	580e580c429885a34d2770fd8a10426510e0eef1
+abbd13c64e5cb4ead2bb1fb78b74ee1aefe51ce0	2014-09-08T21:25:27Z	- missed a line.	ported	twin uzdoom@5e34b7845: ported: the missed line arrived with 580e580c4 in staircase flight 17 (c74fcdac); Zandronum 3.3 transplanted it as zandronum@abbd13c64e5c	c74fcdac	5e34b78451869558b38e8f08fba8102da40d2a0a
+c77618705c930957b752f024079b4a2ff4a46872	2015-01-08T18:52:23Z	- Added zero tag handling for Pillar actions.	ported	twin uzdoom@c3c22315d: ported: EV_DoPillar takes the activating line so a zero tag acts on its back sector (the "manual trigger" pattern the other EV_Do* specials already use), with the three Pillar_Build/BuildAndCrush/Open call sites in p_lnspec.cpp passing ln. Our Zandronum [BC] DPillar pointer local is retained.	3143b9d60	c3c22315d98f57b5e5a10dd73bd6ac8a933800d8
+20a202eba4fcb49df6ae501c24c7af8dcb903fba	2015-03-31T15:09:19Z	- wrapped all accesses to the sector tag into accessor functions, as preparation for allowing multiple tags per sector.	pending		/	238046655c13329a150d65e27d344bf93f38792c
+fdc08e59a2c9931eb6c91f42f27a24ccdfa9d26a	2015-04-14T16:48:19Z	- some minor rework of tag access interface after I realized that some stuff (e.g. Strife's scrolling sector special) need the primary tag to treated specially.	pending		/	2faf836aa143afa2fd378a8fc90effb029d3ce23
+eef80c9f8d1abc80b73574af204228e779f751b7	2015-04-14T20:39:57Z	- replaced P_FindSectorFromTag with an FSectorTagIterator class.	pending		/	425e5b9ffcba30d8bf212a7a76759bab2dc0e73b
+1a2796189d51badd6544a638975d7f2b161dd4bc	2015-04-14T22:47:06Z	- while we're at it, let's also wrap line ID searches in an iterator class so that we can do multiple IDs per line later as well.	pending		/	47543bb7669b6791a98b6f195fd98afa1d539829
+e85773f65ffd05fd6d1626041c7a36fdc2234143	2015-04-15T07:37:06Z	- wrapped all line ID accesss just like sector tags	pending		/	902593198b3b8f7cb5314375707085d483b9e85b
+5efbd48ab08d92629b7c9a62c97353a709ef0483	2015-04-15T18:10:27Z	- some sanitizing of sector tag/line id management:	pending		/	203f88ce6efb0811c06ce2b88085f876102ba42d
+9c5e1cc8d4fab454f766f67a0a00ea9e3d3f6960	2015-04-19T06:48:20Z	- minor bit of cleanup of tags code.	pending		/	f65a07c952d6ed3da49abb06ca8cd7375bd467e7
+5d08c502990d334bfac64fbde6628ad57a0e092b	2015-04-19T07:07:05Z	- moved tag iterators to their own file.	pending		/	6326cd74b444ec668f6db4ab72b841b78ebada8a
+a17262422dfc9f3eddbad14229c01e7551d25481	2015-04-19T10:33:27Z	- uncouple sector tag storage from the sector data to allow multiple tags per sector.	pending		/	b921157f57783003a82842d689c099029320bcc1
+020ebf90362539f07024273371eb0599e52766dc	2015-04-19T15:51:34Z	- allow multiple line IDs as well using the same method as for sector tags.	pending		/	db61c1cb57581876d31bc9dcf01c882767480237
+566770b828b47dee9548579ad947efc046fc712c	2015-04-19T16:22:39Z	- fixed some last issues with the tag manager.	pending		/	cad282142d60dcb1ed53c9545ad4616a4e92542b
+372411db3d0b8347eafc04a7ee54557c9f7743f0	2015-04-22T22:22:57Z	Add p_tags.(cpp|h) to solution	pending		/	3061bcf60403cd5ce598fca8194394f24e987c95
+90fabec29540b8e77566227e8db14f21e7a8fcff	2015-04-23T19:27:36Z	- fixed: The HashTags function considered sector and line #0 invalid.	pending		/	920a4fbf4595ab4f677c19aeb90464b8bdf118ce
+75690467d5f1d10fae045600e4fe9ef1940f0434	2015-05-04T06:55:31Z	- fixed: Searching for tag 0 was no longer possible.	pending		/	6f0caee4babaa517281cdb44b7d0c4b86b4bc917
+e517153e644c1f2cc83ebae14b0694f2b4580107	2015-05-06T21:24:27Z	- fixed: Trying to remove sector tags for line-less sectors crashed when there were no sector tags at all in a map.	pending		/	96fa3b124ee54cd0bb99fb958984a797012f985a
+586a26b91eed81ca108c32dca622ae0b7aeb864b	2015-05-17T19:40:25Z	- Fixed: FTagManager::Clear did not clear the line ID hashing index.	pending		/	1e3230486ec975dfcb823ba3b6c35cfa400dcdfd
+0bf8926534b39096bc4e60573f2b933c021267db	2026-09-25T23:52:59Z	Fixed an old regression in which the ThingCountSector and ThingCountNameSector ACS functions always returned zero if the tag argument was zero.	pending		/	c64d906273cea65f6412b561a658ce3f4f008c16
+201cc5719f7383d2b4182b92a75a0b13d2a274f3	2015-04-15T07:43:43Z	- fixed UDMF user variables could be set for the base namespaces which do not define them.	pending		/	418e6a16b85fb84833a65c80d89110e9c3406577
+6fe64e17fb1eb53dd8c2870e88dddfc35f9ffe55	2015-05-25T17:57:36Z	- fixed: The tag check in Sector_CopyScroller was inverted (it should reject sectors with the given tag, but it rejected everything else.)	pending		/	9f208409f2bb8a62a11ea0a1a515cbe433c7d17b
+58b963341e9093a4f3b19ede7e2470dc293c9004	2015-07-13T06:42:42Z	- fixed: FTagManager::RemoveSectorTags must check if the StartForSector array is large enough to contain the sector whose information is to be removed.	pending		/	eeaea59828d4522b3e24272f5de0a0d1d2a34c12
+762c1585fac5e15faaa7c78666b696de1bde14b1	2015-07-15T07:08:15Z	- fixed signedness warning.	pending		/	585366f8720256019d8da801717e8e56f9de00d7
+a4ccbf23d1b7246e3fae8f0dd63842e8753a2873	2015-12-21T00:13:21Z	- fixed: UDMF with Doom format specials used the line's ID, not the first arg as the tag parameter for its special.	pending		/	03ccf03b8f3161a601cd223a3abfcf345da79f16
+2849267e9bef1f1b81bf9c75bb46373fc04720cf	2026-10-23T13:27:01Z	Force gl_texture and r_3dfloors to be enabled for clients in online games, regardless of the status of sv_forcevideodefaults. There's very little reason for them to be disabled in an online setting, and at worst, they could be used as a cheat.	pending		/	/
+f7888a42ab357e45bcd4c21bf1e6406fdfa8ddbc	2026-10-23T13:30:11Z	Don't forget to use the maximum number of decimals before printing a server CVar that's been changed, if it's supposed to have a finite number of decimals.	pending		/	/
