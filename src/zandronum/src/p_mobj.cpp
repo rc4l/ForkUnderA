@@ -4227,6 +4227,8 @@ void AActor::Tick ()
 				{
 					special2++;
 				}
+				// [rc4l] Ported from zandronum@fe131e05e18ce74f9f2514cd4e083726086e63bb: a NOINTERACTION actor stands still while the level is frozen.
+				return;
 			}
 		}
 
