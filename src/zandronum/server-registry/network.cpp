@@ -286,7 +286,8 @@ static LONG network_ReceiveFromSocket( SOCKET Socket, sockaddr_storage &SocketFr
 int NETWORK_GetPackets( void )
 {
 	LONG				lNumBytes;
-	INT					iDecodedNumBytes = sizeof(g_ucHuffmanBuffer);
+	// [rc4l] Ported from zandronum@450ec7604b4e3cd1367b4bdf318a9e950243e57f: the decode is bounded by the message it writes into.
+	INT					iDecodedNumBytes = g_NetworkMessage.ulMaxSize;
 	sockaddr_storage	SocketFrom;
 
 	lNumBytes = network_ReceiveFromSocket( g_NetworkSocket, SocketFrom );
