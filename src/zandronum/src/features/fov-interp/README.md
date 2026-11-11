@@ -61,7 +61,11 @@ hand-merged on every future flight. Here the flight only has to re-apply **one c
     check and its DEM path. `fov 90` still works from the console, now as a CVAR set. A comment
     marks the spot.
 - `src/p_mobj.cpp`, `src/cl_main.cpp`, `src/cl_demo.cpp`
-  - the three `DesiredFOV = FOV = 90.f` spawn resets now call `zx::FovOnSpawn(...)`.
+  - the three `DesiredFOV = FOV = 90.f` spawn resets now call `FOV_OnSpawn(isLocalPlayer)`
+    (`fovcvar.h`), which hands `zx::FovOnSpawn` the `fov` CVAR and the server's limits.
+- `src/sv_commands.cpp` `SERVERCOMMANDS_SetGameModeLimits` and `src/cl_main.cpp`
+  `client_SetGameModeLimits`: `sv_minfov` and `sv_maxfov` as two floats after `sv_nocallvote`.
+- `src/sv_main.h`: their `EXTERN_CVAR`s.
 - `src/d_player.h`
   - `player_t::lastFOVChangeTic` — gametic of the last accepted change, for the cooldown.
     Client-local, not serialized, never read by the server.
@@ -138,6 +142,20 @@ its own FOV onto everyone it spawned. `fov` is a client CVAR: it is this machine
 another player's, and a server has no meaningful one. Each client re-asserts its own FOV over the
 wire regardless. A hand-edited config is clamped through the same `FovRequestClamp` a typed value
 goes through.
+
+## The server's limits
+
+`sv_minfov` and `sv_maxfov` (zandronum@7b3e7adb1460, defaults 5 and 179) bound every player's FOV
+on a server: what the `fov` CVAR sends, what a player spawns with, and, when either limit changes,
+every player's `DesiredFOV`. The `fov` CVAR itself keeps the player's own choice, so it comes back
+on a server without limits. Each limit is kept within 5..179 and one degree clear of the other
+(`ComputeFovLimit`), except on a client, which takes the server's two values as they arrive: the
+new minimum can land above the client's old maximum before the new maximum does. Zandronum 3.3
+clamps each player's current `FOV` when a limit changes, which bakes a raised scope into the
+player's own; ours clamps `DesiredFOV`, the FOV they chose.
+
+This is a wire change: the two floats ride on `SVC_SETGAMEMODELIMITS`, whose whole layout
+`gamemodelimits_wire_nettest.cpp` pins byte for byte.
 
 ## Not included
 - q-zandronum@65e0aad7f's removal of `DF_NO_FOV`, and its follow-up d3cb7f70e ("Don't send client

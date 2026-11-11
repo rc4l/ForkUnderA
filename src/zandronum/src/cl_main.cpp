@@ -146,7 +146,7 @@
 #include "gameconfigfile.h"
 #include "wi_stuff.h"
 
-#include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/fov-interp/fovcvar.h"
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeMirrorsToOwnCVar
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
@@ -3992,9 +3992,7 @@ void ServerCommands::SpawnPlayer::Execute()
 	}
 
 	// [rc4l] fov-interp: keep our own FOV across a respawn; see p_mobj.cpp.
-	pPlayer->DesiredFOV = pPlayer->FOV = zx::FovOnSpawn (
-		static_cast<ULONG> (consoleplayer) == ulPlayer,
-		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
+	pPlayer->DesiredFOV = pPlayer->FOV = FOV_OnSpawn (static_cast<ULONG> (consoleplayer) == ulPlayer);
 	// If the console player was watching another player in demo mode, continue to follow
 	// that other player.
 	// [AK] And also if the console player just became a dead spectator.
@@ -6536,6 +6534,14 @@ static void client_SetGameModeLimits( BYTESTREAM_s *pByteStream )
 	// [TRSR] Read in, and set the value for sv_nocallvote.
 	Value.Int = pByteStream->ReadByte();
 	sv_nocallvote.ForceSet( Value, CVAR_Int );
+
+	// [RK] Read in, and set the value for sv_minfov.
+	Value.Float = pByteStream->ReadFloat();
+	sv_minfov.ForceSet( Value, CVAR_Float );
+
+	// [RK] Read in, and set the value for sv_maxfov.
+	Value.Float = pByteStream->ReadFloat();
+	sv_maxfov.ForceSet( Value, CVAR_Float );
 }
 
 //*****************************************************************************

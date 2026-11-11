@@ -66,7 +66,28 @@ FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isC
 //   isLocalPlayer - the player being spawned is this machine's own (consoleplayer)
 //   isServer      - NETWORK_GetState() == NETSTATE_SERVER (never has a meaningful local FOV)
 //   playerFovCvar - the `fov` CVAR
-float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar);
+//   minFov/maxFov - the server's sv_minfov and sv_maxfov, which the result keeps within
+float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar, float minFov, float maxFov);
+
+// [rc4l] The FOV a player gets under the server's sv_minfov and sv_maxfov (Zandronum 3.3's limits).
+float ComputeFovWithinServerLimits(float fov, float minFov, float maxFov);
+
+// [rc4l] Why a new sv_minfov or sv_maxfov was moved before it took.
+enum FovLimitVerdict
+{
+	FOV_LIMIT_KEPT,     // [rc4l] Within 5..179 and on its own side of the other limit.
+	FOV_LIMIT_RANGED,   // [rc4l] Outside 5..179 (or not a number), so moved to the end it passed.
+	FOV_LIMIT_CROSSED,  // [rc4l] On the wrong side of the other limit, so moved one degree inside it.
+};
+
+struct FovLimitFix
+{
+	FovLimitVerdict verdict;
+	float value;
+};
+
+// [rc4l] What a new sv_minfov (isMin) or sv_maxfov becomes; a client keeps the server's value, since the two arrive one at a time.
+FovLimitFix ComputeFovLimit(float requested, float otherLimit, bool isMin, bool isClient);
 
 } // namespace zx
 

@@ -28,6 +28,7 @@
 #include "network.h"
 #include "sv_main.h"
 #include "features/net-session/netrole.h"
+#include "fovcvar.h"
 
 EXTERN_CVAR (Int, dmflags)
 
@@ -101,6 +102,8 @@ CUSTOM_CVAR (Float, fov, 90.f, CVAR_ARCHIVE)
 
 	// [rc4l] Same wire path the CCMD used. DEM_FOV sets it for everyone (arbitrator under a
 	// lock); DEM_MYFOV sets only ours.
+	// [rc4l] The server's limits apply to what is sent, while the CVAR keeps the player's own choice for the next server.
+	const float limited = zx::ComputeFovWithinServerLimits (static_cast<float> (requested), sv_minfov, sv_maxfov);
 	if (verdict == zx::FOV_SET_EVERYONE)
 	{
 		Net_WriteByte (DEM_FOV);
@@ -109,11 +112,49 @@ CUSTOM_CVAR (Float, fov, 90.f, CVAR_ARCHIVE)
 	{
 		// Just do this here in client games, matching the old CCMD.
 		if ( zx::net::IsClient() )
-			player->DesiredFOV = static_cast<float> (requested);
+			player->DesiredFOV = limited;
 
 		Net_WriteByte (DEM_MYFOV);
 	}
-	Net_WriteByte (requested);
+	Net_WriteByte (static_cast<int> (limited));
 
 	player->lastFOVChangeTic = gametic;
+}
+
+// [rc4l] Ported from zandronum@7b3e7adb14602e455ab83cdd7d8645fef960b6fa: sv_minfov and sv_maxfov, checked against each other and applied to every player when either changes.
+static void ChangeFovLimit (FFloatCVar &self, float otherLimit, bool isMin)
+{
+	const zx::FovLimitFix fix = zx::ComputeFovLimit (self, otherLimit, isMin, zx::net::IsClient());
+	if (fix.verdict != zx::FOV_LIMIT_KEPT)
+	{
+		if (fix.verdict == zx::FOV_LIMIT_CROSSED)
+			Printf (isMin ? "sv_minfov must be less than sv_maxfov; adjusting value by 1.\n"
+			              : "sv_maxfov must be greater than sv_minfov; adjusting value by 1.\n");
+		self = fix.value;
+		return;
+	}
+
+	SERVER_SettingChanged (self, false);
+
+	// [rc4l] 3.3 clamps each player's current FOV, which bakes a raised scope into their own; we clamp the FOV they chose.
+	for (unsigned int i = 0; i < MAXPLAYERS; i++)
+	{
+		if (PLAYER_IsValidPlayer (i))
+			players[i].DesiredFOV = zx::ComputeFovWithinServerLimits (players[i].DesiredFOV, sv_minfov, sv_maxfov);
+	}
+}
+
+CUSTOM_CVAR (Float, sv_minfov, 5.f, CVAR_ARCHIVE|CVAR_SERVERINFO|CVAR_GAMEPLAYSETTING)
+{
+	ChangeFovLimit (self, sv_maxfov, true);
+}
+
+CUSTOM_CVAR (Float, sv_maxfov, 179.f, CVAR_ARCHIVE|CVAR_SERVERINFO|CVAR_GAMEPLAYSETTING)
+{
+	ChangeFovLimit (self, sv_minfov, false);
+}
+
+float FOV_OnSpawn (bool isLocalPlayer)
+{
+	return zx::FovOnSpawn (isLocalPlayer, zx::net::IsServer(), fov, sv_minfov, sv_maxfov);
 }

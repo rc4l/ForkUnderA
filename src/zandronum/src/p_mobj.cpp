@@ -98,7 +98,7 @@
 #include <cstddef>
 #include <set>
 
-#include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/fov-interp/fovcvar.h"
 #include "features/quake-movement/quakemove.h"
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
@@ -5873,8 +5873,7 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	// Local player only -- `fov` is a client CVAR, so it is not another player's preference,
 	// and a server has none. Weapon zoom is FOVScale, re-applied per tic, so a scope raised at
 	// death does not survive into the next life.
-	p->DesiredFOV = p->FOV = zx::FovOnSpawn (playernum == consoleplayer,
-		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
+	p->DesiredFOV = p->FOV = FOV_OnSpawn (playernum == consoleplayer);
 	p->camera = p->mo;
 	p->playerstate = PST_LIVE;
 	p->refire = 0;

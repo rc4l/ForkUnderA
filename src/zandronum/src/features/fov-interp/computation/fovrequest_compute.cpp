@@ -54,14 +54,45 @@ FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isC
 // The engine's historic spawn value, and what every non-local player still gets.
 static const float FOV_SPAWN_DEFAULT = 90.0f;
 
-float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar)
+float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar, float minFov, float maxFov)
 {
-	if (isServer || !isLocalPlayer)
-		return FOV_SPAWN_DEFAULT;
-
 	// Clamped through the same rule a typed/slid value goes through, so a hand-edited config
 	// cannot spawn someone at an FOV the CVAR would have refused.
-	return static_cast<float> (FovRequestClamp (static_cast<int> (playerFovCvar)));
+	const float own = (isServer || !isLocalPlayer)
+		? FOV_SPAWN_DEFAULT
+		: static_cast<float> (FovRequestClamp (static_cast<int> (playerFovCvar)));
+	return ComputeFovWithinServerLimits (own, minFov, maxFov);
+}
+
+float ComputeFovWithinServerLimits(float fov, float minFov, float maxFov)
+{
+	if (fov < minFov)
+		return minFov;
+	if (fov > maxFov)
+		return maxFov;
+	return fov;
+}
+
+FovLimitFix ComputeFovLimit(float requested, float otherLimit, bool isMin, bool isClient)
+{
+	const FovLimitFix kept = { FOV_LIMIT_KEPT, requested };
+	if (isClient)
+		return kept;
+
+	// [rc4l] Written so a NaN fails the range test too.
+	const float end = static_cast<float> (isMin ? FOV_REQUEST_MIN : FOV_REQUEST_MAX);
+	if (isMin ? !(requested >= end) : !(requested <= end))
+	{
+		const FovLimitFix ranged = { FOV_LIMIT_RANGED, end };
+		return ranged;
+	}
+
+	if (isMin ? requested >= otherLimit : requested <= otherLimit)
+	{
+		const FovLimitFix crossed = { FOV_LIMIT_CROSSED, isMin ? otherLimit - 1.f : otherLimit + 1.f };
+		return crossed;
+	}
+	return kept;
 }
 
 } // namespace zx
