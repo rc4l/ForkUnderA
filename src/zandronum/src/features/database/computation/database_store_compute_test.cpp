@@ -254,6 +254,28 @@ TEST(DatabaseStore, TwoServersIncrementingOneKeyBothCount)
 	EXPECT_TRUE(waitFor([&]() { return fileValue(file.db, "global") == "150"; }));
 }
 
+TEST(DatabaseStore, AStockServersDeleteWinsOverThisServersOlderQueuedWrite)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb file("store_stock");
+	sqlite3 *stock = nullptr;
+	sqlite3_open(file.path.string().c_str(), &stock);
+	Server server(file.path);
+	ASSERT_TRUE(server.open(file.path));
+	zx::ComputeDatabaseStoreWrite(server.store, zx::ComputeDatabaseSetOp("ns", "k", "first"));
+	zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+	ASSERT_TRUE(waitFor([&]() { return fileValue(file.db, "k") == "first"; }));
+	// [Doruk-Aksoy] The stock server holds the file while this server queues a write, then deletes the key with the old engine's plain SQL.
+	exec(stock, "BEGIN IMMEDIATE");
+	zx::ComputeDatabaseStoreWrite(server.store, zx::ComputeDatabaseSetOp("ns", "k", "queued"));
+	zx::ComputeDatabaseStoreTicEnd(server.store, kWall);
+	exec(stock, "DELETE FROM Zandronum WHERE Namespace='ns' AND KeyName='k'");
+	exec(stock, "COMMIT");
+	ASSERT_TRUE(waitFor([&]() { return server.settled(); }));
+	EXPECT_EQ(fileValue(file.db, "k"), "<missing>");
+	sqlite3_close(stock);
+}
+
 TEST(DatabaseStore, ClosingDrainsSoTheOutboxIsEmptyOnTheNextStart)
 {
 	ZX_REQUIRE_FILE_DATABASES();

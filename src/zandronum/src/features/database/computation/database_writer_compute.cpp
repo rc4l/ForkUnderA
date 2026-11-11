@@ -148,6 +148,9 @@ DatabaseApplyResult ComputeDatabaseApplyBatch(DatabaseStatements &statements, co
 		return isBusy(begin) ? DatabaseApplyResult::Busy : DatabaseApplyResult::Failed;
 	}
 	int code = SQLITE_OK;
+	// [Doruk-Aksoy] Marks the transaction as the queue's, so the stock-delete trigger leaves this batch's own stamped markers alone.
+	if (!runQuery(statements, DatabaseQuery::WritingBegin, code, [](sqlite3_stmt *) {}))
+		return rollback(statements, code, error);
 	int64_t done = 0;
 	const auto bindServer = [&server](sqlite3_stmt *statement) { sqlite3_bind_text(statement, 1, server.c_str(), -1, SQLITE_STATIC); };
 	if (!runQuery(statements, DatabaseQuery::AppliedSeq, code, bindServer, [&done](sqlite3_stmt *statement) { done = sqlite3_column_int64(statement, 0); }))
@@ -165,6 +168,8 @@ DatabaseApplyResult ComputeDatabaseApplyBatch(DatabaseStatements &statements, co
 		if (!runQuery(statements, DatabaseQuery::SetApplied, code, bindApplied))
 			return rollback(statements, code, error);
 	}
+	if (!runQuery(statements, DatabaseQuery::WritingEnd, code, [](sqlite3_stmt *) {}))
+		return rollback(statements, code, error);
 	const int commit = sqlite3_exec(statements.db, "COMMIT", nullptr, nullptr, nullptr);
 	if (commit != SQLITE_OK)
 		return rollback(statements, commit, error);
