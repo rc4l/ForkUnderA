@@ -206,3 +206,19 @@ test("netjoinmapchange puts the change in MAP01's closed script and fails a join
   assert.deepEqual(judgeJoin({ ...good, heldMap: "MAP02", serverMap: undefined, clientMap: undefined }),
     ["the empty server ran the change before anybody joined (on MAP02), so the race was never set up", "the server is on no map, not MAP02", "the joiner is on no map, not MAP02"]);
 });
+
+test("devmode fails a client of a server without cheats that kept or ran a dev-mode tool, and one with cheats that was refused", async () => {
+  const { judgeDevMode, CONFIGS } = await import("../scenarios/devmode.mjs");
+  assert.deepEqual(CONFIGS.map((c) => [c.cheats !== false, c.clientCvars.fua_mesh_sky]), [[false, 0], [true, 0]]);
+  const refused = "fua_mesh_sky is a dev-mode tool: sv_cheats must be true on this server.\n";
+  const closed = { open: false, joined: "true", set: { text: refused, value: "true" }, run: refused.replace("fua_mesh_sky", "fua_mesh_blank"), server: "false", flipped: "false" };
+  assert.equal(judgeDevMode("MAP01 nocheats", closed).failed, 0);
+  const before = judgeDevMode("MAP01 nocheats", { ...closed, joined: "false", set: { text: "", value: "false" }, run: "12 mesh pieces blanked\n", flipped: "false" });
+  assert.equal(before.failed, 1);
+  for (const want of [/own fua_mesh_sky 0 read false, not true/, /was not told fua_mesh_sky/, /fua_mesh_sky 0, fua_mesh_sky read false/, /fua_mesh_blank ran on a client/]) assert.match(before.line, want);
+  assert.match(judgeDevMode("x", { ...closed, server: "true", flipped: null }).line, /server.s own console, fua_mesh_sky 0 read true.*cheats on, the client.s own fua_mesh_sky 0 read nothing, not false/);
+  const open = { open: true, joined: "false", set: { text: "", value: "true" }, run: "12 mesh pieces blanked\n", server: "false", flipped: "true" };
+  assert.equal(judgeDevMode("MAP01 cheats", open).failed, 0);
+  assert.match(judgeDevMode("x", { ...open, set: { text: refused, value: "false" }, run: refused }).line, /refused fua_mesh_sky with cheats on.*fua_mesh_blank did not run/);
+  assert.match(judgeDevMode("x", { ...open, flipped: "false" }).line, /cheats off, the client.s own fua_mesh_sky 0 read false, not true/);
+});

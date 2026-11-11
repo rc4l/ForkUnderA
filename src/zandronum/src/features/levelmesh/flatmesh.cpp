@@ -47,7 +47,7 @@ CVAR(Bool, fua_decal_log, false, 0)
 // first and drawn over. It cuts the sky at the horizon, which is what removes the bright streak
 // along the waterline: measured 3.86 against GL 1.21 on that row, where the background blit
 // reads 30+. Off restores the old behaviour. See docs/skybleed-scope.md.
-CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE)
+CVAR(Bool, fua_mesh_sky, true, CVAR_ARCHIVE | CVAR_FUA_DEV_MODE)
 
 EXTERN_CVAR(Bool, fua_mesh_rescroll)
 
