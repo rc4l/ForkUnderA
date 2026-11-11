@@ -30,6 +30,7 @@
 #include "st_hud.h"
 #include "survival.h"
 #include "features/damage-tint/damagetint.h"	// [rc4l] mugshot damage tint
+#include "features/net-session/netrole.h"
 
 
 #define ST_EVILGRINCOUNT		(2*TICRATE)
@@ -1130,7 +1131,10 @@ void DrawFullHUD_GameInformation()
 				DTA_HUDRules, HUD_Normal,
 				DTA_CenterBottomOffset, true,
 				TAG_DONE);
-			DrBNumberOuter (ammo1->Amount, -67, -4 - BigHeight);
+			// [RK] Check if the primary ammo amount is allowed to be drawn.
+			// [rc4l] Ported from zandronum@a76b91c2386ec44efd898c88db2c6491c50be02e: the full-screen HUD hides the ammo count as sv_DontHideStats asks.
+			if (( zx::net::InClientMode() == false ) || ( SERVER_IsPlayerAllowedToKnowHealth( consoleplayer, ULONG( CPlayer - players ))))
+				DrBNumberOuter (ammo1->Amount, -67, -4 - BigHeight);
 			ammotop = -4 - BigHeight;
 			if (ammo2 != NULL && ammo2!=ammo1)
 			{
