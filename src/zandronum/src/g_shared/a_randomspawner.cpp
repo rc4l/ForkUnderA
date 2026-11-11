@@ -15,6 +15,7 @@
 #include "gstrings.h"
 #include "a_action.h"
 #include "thingdef/thingdef.h"
+#include "v_text.h"
 // [BB] New #includes.
 #include "cl_demo.h"
 #include "sv_commands.h"
@@ -136,6 +137,8 @@ class ARandomSpawner : public AActor
 				}
 				else
 				{
+					// [rc4l] Ported from zandronum@cdb771bfe99330b9cd99529f276dfc7ea27b0958: the spawner says which class it could not find.
+					Printf(TEXTCOLOR_RED "Unknown item class %s to drop from a random spawner\n", di->Name.GetChars());
 					Species = NAME_None;
 				}
 			}
