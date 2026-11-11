@@ -66,6 +66,12 @@ float ComputeFogDensity(int lightLevel, unsigned fogColor, const ShadingEnv &env
 	return 0.f;
 }
 
+int ComputeSpriteFogLevel(int sectorLight, int lightLevel, unsigned fadeColor)
+{
+	// [Doruk-Aksoy] gl_sprite.cpp: foglevel is the sector's light as a byte, and gl_isBlack(Colormap.FadeColor) puts the sprite's own back.
+	return (fadeColor & 0xffffff) == 0 ? lightLevel : Clamp(sectorLight, 0, 255);
+}
+
 Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env)
 {
 	Shading s;
@@ -92,7 +98,7 @@ Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env)
 	if (env.fadeTable) { density = 70; color = 0x808080; }
 	else if (!in.noFog && !env.fixedColormap)
 	{
-		density = ComputeFogDensity(in.lightLevel, in.fadeColor, env);
+		density = ComputeFogDensity(in.fogLevel, in.fadeColor, env);
 		color = in.fadeColor & 0xffffff;
 	}
 	else { density = 0; color = 0; }
@@ -117,7 +123,7 @@ Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env)
 
 bool ComputeSameShadingInput(const ShadingInput &a, const ShadingInput &b)
 {
-	return a.lightLevel == b.lightLevel && a.relLight == b.relLight && a.lightColor == b.lightColor && a.fadeColor == b.fadeColor &&
+	return a.lightLevel == b.lightLevel && a.fogLevel == b.fogLevel && a.relLight == b.relLight && a.lightColor == b.lightColor && a.fadeColor == b.fadeColor &&
 		a.blendFactor == b.blendFactor && a.desaturation == b.desaturation && a.noFog == b.noFog && a.additive == b.additive;
 }
 

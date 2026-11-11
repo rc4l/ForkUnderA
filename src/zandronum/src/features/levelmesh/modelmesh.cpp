@@ -58,7 +58,7 @@ TArray<MeshVertex> g_tris;
 
 } // namespace
 
-void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
+void ModelPieceLook(int lightLevel, int fogLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
 	const zx::sprites::SpriteDrawLook &look, int blendMode, float x, float y, float z, MeshPiece &mp)
 {
 	mp = MeshPiece();
@@ -69,7 +69,7 @@ void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fu
 	mp.lightColor = cm.LightColor.d;
 	mp.fadeColor = cm.FadeColor.d;
 	// [rc4l] GL's shader multiplies a model by the actor's ThingColor as it does a sprite.
-	CaptureSpriteShading(lightLevel, extraLight, cm, look, thingColor, mp);
+	CaptureSpriteShading(lightLevel, fogLevel, extraLight, cm, look, thingColor, mp);
 	// [rc4l] The light is the CPU's, exactly as it is for a sprite: gl_SetDynSpriteLight has already
 	// run for this actor and left its answer in the render state, having applied r_light_sprites and
 	// DONTLIGHTSELF. A shader loop over the level's lights knows neither.
