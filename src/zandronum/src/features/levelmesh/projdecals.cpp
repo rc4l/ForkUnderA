@@ -23,9 +23,6 @@ CVAR(Float, fua_projdecal_maxskew, 0.7f, CVAR_ARCHIVE)
 // [rc4l] How far the box reaches behind the contact point, as a fraction of the picture's size, so a mark carries onto the wall beside it (see ComputeDecalBoxDepth).
 CVAR(Float, fua_projdecal_depth, 0.6f, CVAR_ARCHIVE)
 
-// [rc4l] Print each mark's box as it is worked out, since a clipped, a stretched and a dark picture look alike on screen.
-CVAR(Bool, fua_projdecal_debug, false, 0)
-
 namespace zx { namespace levelmesh {
 
 namespace {
@@ -82,9 +79,6 @@ bool BuildBox(const FlatDecalRecord &m, DecalBox &box)
 	const float cornerRadius = sqrtf(halfW*halfW + halfH*halfH);
 	const float cosTheta = -(axis[0]*m.Normal[0] + axis[1]*m.Normal[1] + axis[2]*m.Normal[2]);
 	ComputeDecalBoxDepth(cornerRadius, cosTheta, (float)fua_projdecal_depth, box.near_, box.far_);
-	if (fua_projdecal_debug)
-		Printf("projdecal: half %.1f x %.1f  depth -%.1f..+%.1f  axis (%.2f, %.2f, %.2f)\n",
-			box.halfW, box.halfH, box.near_, box.far_, axis[0], axis[1], axis[2]);
 	return true;
 }
 

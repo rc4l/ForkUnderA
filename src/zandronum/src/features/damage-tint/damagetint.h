@@ -27,8 +27,6 @@ void DamageTint_EndSpriteGlow();
 // [rc4l] A body sprite's gradient over its texture span vt..vb when the actor qualifies, for whichever renderer draws it; false for none.
 bool DamageTint_SpriteGradient( const zx::gamecopy::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );
 
-// [rc4l] An actor's ramp as it stands, for fua_tintdebug; false before it has one.
-bool DamageTint_Ramp( unsigned int id, float &intensity, int &lastTic );
 
 // [rc4l] The first-person weapon's gradient over its frame's vt..vb, judged by the player's own style; false for none.
 bool DamageTint_WeaponGradient( const zx::gamecopy::TintSubject &s, int blendOp, DWORD styleFlags, float vt, float vb, zx::damagetint::TintGradient &out );

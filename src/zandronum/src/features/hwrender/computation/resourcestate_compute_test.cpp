@@ -43,8 +43,6 @@ TEST(ResourceState, AResourceIsNotedOnce)
 // [rc4l] A browser's device has no material array, so its list only ever grew, holding every material of every level played.
 TEST(ResourceState, WritesAreOnlyTrackedWhereAWorldCommitWillLetThemGo)
 {
-	EXPECT_TRUE(ComputeTracksWrites(true, 1024));
-	EXPECT_FALSE(ComputeTracksWrites(true, 0));
-	EXPECT_FALSE(ComputeTracksWrites(false, 1024));
-	EXPECT_FALSE(ComputeTracksWrites(false, 0));
+	EXPECT_TRUE(ComputeTracksWrites(1024));
+	EXPECT_FALSE(ComputeTracksWrites(0));
 }

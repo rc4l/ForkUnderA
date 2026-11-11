@@ -35,8 +35,6 @@ EXTERN_CVAR(Bool, r_lights_additive)
 EXTERN_CVAR(Bool, fua_dg_dynlights)
 EXTERN_CVAR(Bool, fua_dg_lightlinks)
 EXTERN_CVAR(Bool, fua_dg_clusters)
-// [Doruk-Aksoy] Off bins the lights on the main thread alone, as one band, to bisect or compare in one session.
-CVAR(Bool, fua_dg_clusterjobs, true, 0)
 
 namespace zx { namespace hwrender {
 
@@ -321,7 +319,6 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	// free, and it was measurable: the whole binning pass is now the cost that grows with light
 	// count, so the half of it that is pure repetition goes first.
 	// [Doruk-Aksoy] Projected on the job lanes too, each light's range its own.
-	const bool jobs = fua_dg_clusterjobs;
 	static TArray<zx::hwrender::ClusterRange> ranges;
 	ranges.Resize((unsigned)g_lightCount);
 	const float *const mvp = SceneMVP();
@@ -333,8 +330,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 			ranges[l] = zx::hwrender::ComputeLightClustersFromMVP(grid, mvp, lp, lp[3]);
 		}
 	};
-	if (jobs) zx::jobs::Pool().ParallelChunks(g_lightCount, kLightRangeChunk, project);
-	else project(0, g_lightCount, 0);
+	zx::jobs::Pool().ParallelChunks(g_lightCount, kLightRangeChunk, project);
 
 	// [rc4l] A ceiling per CELL, not a ceiling on the buffer.
 	//
@@ -350,8 +346,8 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	enum { kMaxLightsPerCell = 256 };
 
 	// [Doruk-Aksoy] Bands of a slice's rows binned on the job lanes, each zeroing, counting and capping only its own cells, so every cell gets its lights in light order as one pass gave them.
-	const int bands = jobs ? zx::hwrender::ComputeClusterBandCount(grid, kClusterRowGroups) : 1;
-	auto bandOf = [&](int k) { return jobs ? zx::hwrender::ComputeClusterBand(grid, k, kClusterRowGroups) : zx::hwrender::ComputeWholeGridBand(grid); };
+	const int bands = zx::hwrender::ComputeClusterBandCount(grid, kClusterRowGroups);
+	auto bandOf = [&](int k) { return zx::hwrender::ComputeClusterBand(grid, k, kClusterRowGroups); };
 	static std::vector<unsigned> bandTotals, bandStarts;
 	static std::vector<int> bandTruncated;
 	bandTotals.resize((size_t)bands);
@@ -361,8 +357,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	{
 		bandTotals[k] = zx::hwrender::ComputeLightBinBandCounts(grid, &ranges[0], g_lightCount, bandOf(k), kMaxLightsPerCell, &counts[0], bandTruncated[k]);
 	};
-	if (jobs) zx::jobs::Pool().ParallelFor(bands, count);
-	else count(0, 0);
+	zx::jobs::Pool().ParallelFor(bands, count);
 	for (int t : bandTruncated) g_clusterTruncated += t;
 
 	// The prefix sum, and the ceiling that keeps a pathological frame from running off the buffer.
@@ -391,8 +386,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	{
 		zx::hwrender::ComputeLightBinBandFill(grid, &ranges[0], g_lightCount, bandOf(k), laidByBands, bandStarts[k], &counts[0], &offsets[0], &filled[0], &indices[0], &table[0]);
 	};
-	if (jobs) zx::jobs::Pool().ParallelFor(bands, fill);
-	else fill(0, 0);
+	zx::jobs::Pool().ParallelFor(bands, fill);
 
 	// [rc4l] A still view with still lights bins them the same, frame after frame.
 	// [Doruk-Aksoy] A view that moved bins them anew, so its grid is sent without the compare or the shadow's copy.

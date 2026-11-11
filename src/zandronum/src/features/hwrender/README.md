@@ -91,7 +91,7 @@ reservations used and no baked record pins (`computation/slotrecycle_compute`). 
 keys before it makes any (`ComputeReserveSlots`), once per sprite list, and `BuildDynamic` draws with the slots it
 kept (`DynamicPieceSlots`). A world binding's resources are checked once after each fill, not on every
 draw loop's commit, and a buffer, texture or camera target written since is made ready to read before the next one
-(`fua_dg_checkonce`, `computation/resourcestate_compute`), which only a device with a material array tracks, since only a world commit lets go of what was written. A frame's slots are all settled
+(`computation/resourcestate_compute`), which only a device with a material array tracks, since only a world commit lets go of what was written. A frame's slots are all settled
 before its fill and the table is sealed from the fill to the frame's end, so a recycled slot never changes under a
 binding a frame draws with. A fill on a retired binding writes only the slots changed since that binding was filled,
 and with the array live a translucent or animated batch draws with the world binding rather than a binding of its own,
@@ -101,10 +101,8 @@ alpha and an additive piece's alpha 0 (`kWpBlendPremul`, `ComputePremulPipeline`
 the sorted pass binds one pipeline where it switched between two; a colour lands within one level of the two
 pipelines' (scenario `premulblend`), a GLDEFS-shaded sprite keeps its own pipeline, and `fua_dg_premulblend`
 ("Batch translucency" in Video Mode) turns it off.
-`fua_dg_slotreport [n]` counts the slots a level asked for by kind (`computation/slotreport_compute`), the ones
-refused once the table filled among them, packs the plain sprites as the atlas would to say how many slots its pages
-would leave and what pages and the sprites' own textures cost, gives the working set dynamic pieces asked for in the
-last frame and the last 1, 2 and 5 s with their peaks, and names the n sprite families taking most.
+The working set dynamic pieces asked for in the last frame and the last 1, 2 and 5 s, with their peaks, goes to
+`gpu/slots/` (`computation/slotreport_compute`).
 `features/telemetry` reads what the page holds by label (`gpu/page/`) beside the backend's own (`gpu/mem/tag/`).
 Every start, a `wad_reload` restart's included, calls `ForgetBackendTextures` (from `features/frame/framedriver.cpp`), so the caches keyed on the old textures and materials go before new ones can reuse their addresses.
 
@@ -140,8 +138,8 @@ one 128-bit number per draw (tested to agree with the rule on every pair of 576 
 integers rather than walking the rule.
 
 Sprites in that pass write no depth, so a flat translucent model surface (a ground disc, a ring) sorted by its
-centre painted over the feet of every monster standing on it beyond that centre. `fua_dg_flatplanes` (on by
-default) orders a model FUAMODEL names a `FlatSurface` (features/models) as a floor or ceiling over its own
+centre painted over the feet of every monster standing on it beyond that centre. The translucent pass
+orders a model FUAMODEL names a `FlatSurface` (features/models) as a floor or ceiling over its own
 footprint: `ComputeFlatPlaneOrder` moves it behind the draws on the eye's side of it and what lies wholly beyond it
 behind it, and `BuildDynamic` first cuts a sprite quad that crosses one at its height (`ComputeSplitQuadAtHeight`),
 so a ring at a monster's waist is under its legs and over its body. It is opt-in because detecting every flat model
@@ -171,8 +169,8 @@ chunks of 64. On Sunder MAP10 with the monsters awake that took `BuildDynamic` f
 
 `BuildLightClusters` bins the frame's dynamic lights into the cluster grid a band of cells at a time, each depth
 slice's rows in `kClusterRowGroups` bands on the job lanes, every band walking the lights in order and writing only its
-own cells, so each cell lists its lights as one pass would (`computation/lightbin_compute`); `fua_dg_clusterjobs 0`
-bins them as one band on the main thread. The lights' ranges are projected on the lanes too, and each band zeroes,
+own cells, so each cell lists its lights as one pass would (`computation/lightbin_compute`).
+The lights' ranges are projected on the lanes too, and each band zeroes,
 caps, lays out and fills its own cells and table pairs from its start in the bands' running sum; only a frame whose
 runs would pass the index buffer is cut in one pass, as before. A view that moved since the last bin sends the grid
 without comparing it to, or copying it into, the upload shadow (`ComputeUploadDue`), which it forgets so that no later
@@ -187,16 +185,14 @@ from in its record (`computation/sectorlitrecord_compute`, `kTexFlagSectorLit`),
 shaders shade it from the table each frame (`FUA_SECTORLIT_GLSL`, `ComputeSectorLitShade` its CPU twin), the
 level's light settings and the player's weapon light in `uShadeEnv`, `uShadeEnv2` and `uShadeFog`. On Sunder
 MAP11 99.8% of the level's surfaces are lit from it, and a frame's surface records sent for light changes went
-from about 110 to under one; `fua_dg_sectorlit 0` bakes every surface's shading into its record, and
-`fua_dg_sectorlit_report` counts what the table lights.
+from about 110 to under one; `fua_dg_sectorlit 0` bakes every surface's shading into its record.
 
 The dynamic stream is one 32-bit reference a vertex (`kDynamicVS`, which the world pipelines that are not the
 level's use). A plain sprite is packed with its four corners into 112 bytes (`computation/spritepack_compute`)
 and its six references name its corners; anything the packed form cannot carry bit for bit (a warp, a glow, a
 tint, a colour off an 8-bit step, a sprite a traced mirror reads) keeps its whole record behind the level's and
 its vertices among the stream's words. A Complex Doom fight's 6,500 sprites a frame went from about 384 bytes
-each to 136, and its uploads from 3.5 to 1.8 MB a frame in Firefox; `fua_dg_spritepack 0` sends every piece
-whole. The words buffer (`fua dynamic data`) is bound statically, so it grows with the piece buffer in
+each to 136, and its uploads from 3.5 to 1.8 MB a frame in Firefox. The words buffer (`fua dynamic data`) is bound statically, so it grows with the piece buffer in
 `EnsureDynamicRecords` (`ComputeDynWordsBound`) and the pipelines are made again with it.
 
 The deferred decal pass draws each floor or ceiling mark over a screen rectangle the CPU works out

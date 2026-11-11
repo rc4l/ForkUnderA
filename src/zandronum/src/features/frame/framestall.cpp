@@ -8,29 +8,28 @@
 
 #include <chrono>
 
-// [rc4l] Microseconds burned on each frame that ran a game tic, as a heavy map's tic frame costs (debug).
-CVAR(Int, fua_debug_ticstall_us, 0, 0)
-// [rc4l] Microseconds burned on every frame, the same cost spread evenly as the control (debug).
+// [rc4l] Microseconds burned on every frame once its tics have run, as a heavy view's frame costs (debug).
 CVAR(Int, fua_debug_framestall_us, 0, 0)
 // [rc4l] Microseconds burned inside each tic's playsim, on whichever thread runs it, as a heavy fight's tic costs (debug).
 CVAR(Int, fua_debug_playsim_us, 0, 0)
 
 namespace zx { namespace frame {
 
-void DebugFrameStall(bool ticRan)
+namespace {
+
+// [rc4l] Spin on this thread for the stall a debug cvar asks for.
+void Burn(int askedUs)
 {
-	const int us = ComputeFrameStallUs(ticRan, fua_debug_ticstall_us, fua_debug_framestall_us);
+	const int us = ComputeStallUs(askedUs);
 	if (us <= 0) return;
 	const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(us);
 	while (std::chrono::steady_clock::now() < until) {}
 }
 
-void DebugPlaysimStall()
-{
-	const int us = fua_debug_playsim_us;
-	if (us <= 0) return;
-	const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(us);
-	while (std::chrono::steady_clock::now() < until) {}
-}
+} // namespace
+
+void DebugFrameStall() { Burn(fua_debug_framestall_us); }
+
+void DebugPlaysimStall() { Burn(fua_debug_playsim_us); }
 
 }} // namespace zx::frame

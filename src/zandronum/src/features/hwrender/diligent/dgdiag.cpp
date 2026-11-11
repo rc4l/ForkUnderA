@@ -509,24 +509,6 @@ bool SceneScreenshot(const char *path, FString &report)
 
 }} // namespace zx::hwrender
 
-// [rc4l] Re-scan the level for mirror lines, for when one has just been made.
-//
-// CollectMirrors runs when a level is armed and never again, which is correct for a map -- a
-// linedef special does not change by itself. It does change when fua_make_mirror changes it, and
-// without this the backend keeps drawing that wall as a solid one while GL is already reflecting
-// in it. The traced reflection had no other way to be reached, which is most of why it went
-// untested for so long.
-namespace zx { namespace hwrender { void StackInfo(FString &out); }}
-CCMD( fua_dg_stackinfo )
-{
-	FString report;
-	zx::hwrender::StackInfo( report );
-	Printf( "%s\n", report.GetChars( ) );
-}
-CCMD( fua_dg_mirrors )
-{
-	Printf( "fua_dg_mirrors: %d mirror surface(s)\n", zx::hwrender::RecollectMirrors( ) );
-}
 CCMD( fua_diligent_scene )
 {
 	FString report;
@@ -587,48 +569,11 @@ CCMD( fua_dg_flushtextures )
 	Printf( "texture cache and every binding dropped; they rebuild next frame\n" );
 }
 
-CCMD( fua_dg_bindless_rebuild )
-{
-	zx::hwrender::ForceMaterialRefill( );
-	Printf( "material array will be rebuilt next frame\n" );
-}
-
-// [Doruk-Aksoy] Which GLDEFS shaders compile into programs here, rather than only those a piece has drawn with so far.
-CCMD( fua_dg_hwshaders )
-{
-	FString report;
-	zx::hwrender::UserShaderReport( report );
-	Printf( "%s", report.GetChars( ) );
-}
-
-// [Doruk-Aksoy] fua_dg_shaderbench [n ...]: the launch's GLDEFS programs compiled again, uncached, at most n at a time (each n given, else 1 and the pool's size), for how far the device's pool speeds them up.
-CCMD( fua_dg_shaderbench )
-{
-	std::vector<int> counts;
-	for ( int i = 1; i < argv.argc( ); i++ ) counts.push_back( atoi( argv[i] ) );
-	if ( counts.empty( ) ) counts = { 1, 1000 };
-	for ( int n : counts )
-	{
-		FString report;
-		zx::hwrender::ShaderCompileBench( n, report );
-		Printf( "%s", report.GetChars( ) );
-	}
-}
-
 CCMD( fua_dg_slots )
 {
 	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 12;
 	FString report;
 	zx::hwrender::SlotReport( n, report );
-	Printf( "%s" "\n", report.GetChars( ) );
-}
-
-// [Doruk-Aksoy] fua_dg_slotreport [n]: the material slots this level asked for by kind, how many an atlas of sprite pages would leave, and the n sprite families taking most.
-CCMD( fua_dg_slotreport )
-{
-	const int n = ( argv.argc( ) > 1 ) ? atoi( argv[1] ) : 15;
-	FString report;
-	zx::hwrender::SlotDemandReport( n, report );
 	Printf( "%s" "\n", report.GetChars( ) );
 }
 

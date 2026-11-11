@@ -81,16 +81,3 @@ bool TakeDueInbound(HeldPacket &out)
 }
 
 }} // namespace zx::nettransport
-
-// [rc4l] What the conditions hold now: each direction's packets and when the oldest is due.
-CCMD(fua_net_conditions)
-{
-	const long long now = zx::nettransport::ClockMs();
-	auto line = [now](const char *name, const zx::nettransport::HeldPackets &h) {
-		if (h.queue.empty()) Printf("  %s: none held\n", name);
-		else Printf("  %s: %d held, the oldest due in %lld ms\n", name, (int)h.queue.size(), h.queue.front().releaseMs - now);
-	};
-	Printf("fua_net_fakeping %d ms, fua_net_fakeloss %g%%\n", (int)fua_net_fakeping, (double)fua_net_fakeloss);
-	line("out", zx::nettransport::g_outbound);
-	line("in", zx::nettransport::g_inbound);
-}

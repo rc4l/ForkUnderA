@@ -7,7 +7,6 @@
 #include <memory>   // [rc4l] unique_ptr, the views' sky look sets
 #include <vector>
 
-EXTERN_CVAR(Bool, fua_dg_sky)
 
 namespace zx { namespace hwrender {
 
@@ -66,7 +65,7 @@ static bool RenderLookSet(Diligent::IDeviceContext *ctx, SkyLookSet &set, const 
 	set.keys.Clear();
 	set.listCount = listCount;
 	for (int l = 0; l < listCount; l++) set.lists[l] = lists[l];
-	if (!fua_dg_sky || SkyPortalActive() || !EnsureSkyPipeline()) return false;
+	if (SkyPortalActive() || !EnsureSkyPipeline()) return false;
 	const zx::hwrender::SkyLook level = LookOfSky(0);
 	for (int l = 0; l < listCount; l++)
 	{

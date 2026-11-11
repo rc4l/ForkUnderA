@@ -90,7 +90,7 @@ keeps its own size. At full scale every pass draws into the frame as before.
 
 - `frame/dynres_scale`, `frame/dynres_budget_ms` and `frame/dynres_changes`; `fua_dynres_report`
   prints the scale, the budget and the refresh it came from, and what holds it.
-- `fua_dynres_log 1` prints each step and why (`ComputeDynresWhy`); `fua_dg_dynres_force` pins a scale. fuactl's driven launches start with `vid_fua_dynres 0` so a
+- `fua_dg_dynres_force` pins a scale. fuactl's driven launches start with `vid_fua_dynres 0` so a
   measurement or a comparison is never made at a scale the load chose.
 - Scenarios `dynresgrid` (the light grid at half scale), `dynreshud` (the status bar and border
   pixel for pixel, the view window), `dynresmirror`, `dynressky`, `dynresstack` and

@@ -134,8 +134,7 @@ struct MeshPiece
 	//
 	// Recorded so the winding can be verified rather than trusted. Back-face culling deletes any flat
 	// whose triangles wind the wrong way for the side it is viewed from, and that failure is silent
-	// and total -- every ceiling in the level, or every 3D floor top. fua_mesh_verify checks that all
-	// pieces with the same value here wind the same way, which catches it without a camera.
+	// and total -- every ceiling in the level, or every 3D floor top.
 	bool          facesDown;
 
 	// [rc4l] Nudge this piece towards the camera in the depth test.

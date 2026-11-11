@@ -38,8 +38,6 @@ world pipelines are made (`fua_dg_async_pipelines 0` waits for each in turn, as 
 pipeline and commits its bindings (`IsCompatibleWith`), so the bindless material array is not repeated per
 shader; one that does not fit them is left out with the note above. Compiled shaders are kept by their
 text for the session (`gpu/made/shader_hits`), so a level change compiles none it has compiled before.
-Since a program is made only when something draws with it, `fua_dg_hwshaders` makes every shader's and
-lists which run.
 
 A HUD image runs its texture's shader too, as Zandronum 3.3's `BindPatch` ran it (DnD's mana bar is one):
 GL's `DrawTexture` asks for the material's shader (`ComputeDrawTextureShader`), and the backend's 2D layer

@@ -494,24 +494,6 @@ TEST(ComputeFrameBudgetMs, UntimedAimsAtSixtyUnlessATargetIsPicked)
 	EXPECT_NEAR(1000.0 / 30, ComputeFrameBudgetMs(c), 1e-9);
 }
 
-TEST(ComputeDynresWhy, NamesTheStepAndWhatMadeIt)
-{
-	DynresState was, now;
-	EXPECT_STREQ("", ComputeDynresWhy(was, now, false));
-	now.changes = 1;
-	now.step = 1;
-	EXPECT_STREQ("the GPU is over budget", ComputeDynresWhy(was, now, true));
-	EXPECT_STREQ("a step up that made slow frames longer, undone", ComputeDynresWhy(was, now, false));
-	now.trial = true;
-	EXPECT_STREQ("trying a step down, the frames were slow", ComputeDynresWhy(was, now, false));
-	now.trialUp = true;
-	EXPECT_STREQ("trying a step up", ComputeDynresWhy(was, now, false));
-	was.step = 2;
-	now.trial = false;
-	EXPECT_STREQ("the GPU has room", ComputeDynresWhy(was, now, true));
-	EXPECT_STREQ("a step down that left the frames no shorter, undone", ComputeDynresWhy(was, now, false));
-}
-
 // [rc4l] Frames the CPU holds just over the line at a lower scale tried a step down every few seconds, and each undoing restarted the wait to step up, so the probe's Firefox stayed at 3/4 after the load ended.
 TEST(ComputeDynresStep, UntimedStepsDownUndoneLeaveTheWaitToStepUp)
 {
