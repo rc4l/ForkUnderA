@@ -176,7 +176,8 @@ struct PClass
 	}
 
 	// Find a type, given its name.
-	static const PClass *FindClass (const char *name) { return FindClass (FName (name, true)); }
+	// [Doruk-Aksoy] features/name-memo: remembered by the name's pointer, which a script passes the same each call.
+	static const PClass *FindClass (const char *name);
 	static const PClass *FindClass (const FString &name) { return FindClass (FName (name, true)); }
 	static const PClass *FindClass (ENamedName name) { return FindClass (FName (name)); }
 	static const PClass *FindClass (FName name);
