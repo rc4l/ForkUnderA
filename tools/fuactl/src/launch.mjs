@@ -51,6 +51,33 @@ export function describeExit(code) {
   return name ? `${code} (0x${unsigned.toString(16)}: ${name})` : String(code);
 }
 
+// [Doruk-Aksoy] The fatal error an engine log holds (features/fatallog's marker line and the indented lines under it), or null.
+export const FATAL_MARKER = "fua: FATAL ERROR -- ";
+export function fatalFromLog(text) {
+  const lines = String(text).split(/\r?\n/);
+  const at = lines.findIndex((l) => l.startsWith(FATAL_MARKER));
+  if (at < 0) return null;
+  const out = [lines[at].slice(FATAL_MARKER.length)];
+  for (const l of lines.slice(at + 1)) {
+    if (!l.startsWith("  ")) break;
+    out.push(l.slice(2));
+  }
+  return out.join("\n");
+}
+
+// [Doruk-Aksoy] Calls onFatal once with the fatal error the log at logPath comes to hold, polling every intervalMs; returns a function that stops watching.
+export function watchFatal(logPath, onFatal, intervalMs = 500) {
+  const timer = setInterval(() => {
+    let text;
+    try { text = fs.readFileSync(logPath, "utf8"); } catch { return; }
+    const fatal = fatalFromLog(text);
+    if (fatal == null) return;
+    clearInterval(timer);
+    onFatal(fatal);
+  }, intervalMs);
+  return () => clearInterval(timer);
+}
+
 // [rc4l] How many lines of a process listing (tasklist rows, or `ps -A -o comm=` names) are the engine.
 export function countEngineLines(listing) {
   return String(listing).split(/\r?\n/).filter((l) => /^(.*[\\/])?forkundera(\.exe)?(\s|$)/i.test(l.trim())).length;

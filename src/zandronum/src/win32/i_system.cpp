@@ -103,6 +103,7 @@
 #include "cl_main.h"
 #include "campaign.h"
 #include "serverconsole/serverconsole.h"
+#include "features/fatallog/fatallog.h"
 
 // MACROS ------------------------------------------------------------------
 
@@ -909,12 +910,8 @@ void STACK_ARGS I_FatalError(const char *error, ...)
 		// Report it here so bad-WAD / script-error fatals reach GlitchTip/GitHub. No-op if off.
 		ZX_CrashReportFatal(errortext);
 
-		// Record error to log (if logging)
-		if (Logfile)
-		{
-			fprintf(Logfile, "\n**** DIED WITH FATAL ERROR:\n%s\n", errortext);
-			fflush(Logfile);
-		}
+		// [Doruk-Aksoy] To stderr, the log and the bridge's log, before any dialog shows it.
+		ZX_FatalLog(errortext);
 
 		// [BB] Tell the server we're leaving the game.
 		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )

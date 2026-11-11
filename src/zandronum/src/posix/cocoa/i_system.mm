@@ -50,6 +50,7 @@
 #include "x86.h"
 #include "features/updater/computation/openurl_compute.h"   // [rc4l] zx::IsOpenableURL
 #include "features/crashreport/zx_crashreport.h"            // [rc4l] ZX_CrashReportFatal
+#include "features/fatallog/fatallog.h"                     // [Doruk-Aksoy] ZX_FatalLog
 #include "cl_demo.h"                                        // [BC] CLIENTDEMO_*
 #include "cl_main.h"                                        // [BB] CLIENT_QuitNetworkGame
 #include "network.h"                                        // [BB] NETWORK_GetState
@@ -157,6 +158,8 @@ void I_FatalError(const char* const error, ...)
 		// sees it. Report it here (before any blocking dialog) so bad-WAD / script-error fatals reach
 		// GlitchTip/GitHub instead of vanishing. No-op if reporting is off.
 		ZX_CrashReportFatal(errortext);
+		// [Doruk-Aksoy] To stderr, the log and the bridge's log, before the console window shows it.
+		ZX_FatalLog(errortext);
 
 		// [BB] Tell the server we're leaving the game. Must happen before the dialog blocks, or the
 		// server only learns of it by timeout.
@@ -165,15 +168,6 @@ void I_FatalError(const char* const error, ...)
 
 		extern void Mac_I_FatalError(const char*);
 		Mac_I_FatalError(errortext);
-		
-		// Record error to log (if logging)
-		if (Logfile)
-		{
-			fprintf(Logfile, "\n**** DIED WITH FATAL ERROR:\n%s\n", errortext);
-			fflush(Logfile);
-		}
-
-		fprintf(stderr, "%s\n", errortext);
 		exit(-1);
     }
 

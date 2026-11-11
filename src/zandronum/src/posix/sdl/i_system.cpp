@@ -56,6 +56,7 @@
 #include "doomtype.h"
 #include "doomstat.h"
 #include "features/crashreport/zx_crashreport.h" // [rc4l] report graceful fatals to GlitchTip
+#include "features/fatallog/fatallog.h"
 #include "version.h"
 #include "doomdef.h"
 #include "cmdlib.h"
@@ -409,26 +410,20 @@ void STACK_ARGS I_FatalError (const char *error, ...)
 		// sees it. Report it here (before any blocking dialog) so bad-WAD / script-error fatals reach
 		// GlitchTip/GitHub instead of vanishing. No-op if reporting is off.
 		ZX_CrashReportFatal(errortext);
+		// [Doruk-Aksoy] To stderr, the log and the bridge's log, before any dialog shows it.
+		ZX_FatalLog(errortext);
 
 #ifdef __APPLE__
 		Mac_I_FatalError(errortext);
 #endif // __APPLE__
 		// [rc4l] A page has no stderr to look at, so its loop stops and the message shows on it.
 		zx::sdlhost::ShowFatal(errortext);
-		
-		// Record error to log (if logging)
-		if (Logfile)
-		{
-			fprintf (Logfile, "\n**** DIED WITH FATAL ERROR:\n%s\n", errortext);
-			fflush (Logfile);
-		}
 
 		// [BB] Tell the server we're leaving the game.
 		if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
 			CLIENT_QuitNetworkGame( NULL );
 
 //		throw CFatalError (errortext);
-		fprintf (stderr, "%s\n", errortext);
 		exit (-1);
     }
 

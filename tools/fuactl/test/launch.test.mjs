@@ -568,3 +568,28 @@ test("a launch binds its own game port from its bridge port, unless it hosts or 
   const args = engineArgs({ port: 7799 }, "x.ini");
   assert.deepEqual(args.slice(args.indexOf("-port"), args.indexOf("-port") + 2), ["-port", "14799"]);
 });
+
+test("fatalFromLog reads the fatal error features/fatallog writes, with its indented lines", async () => {
+  const { fatalFromLog, FATAL_MARKER } = await import("../src/launch.mjs");
+  assert.equal(fatalFromLog("LoadActors: Load actor definitions.\n"), null);
+  assert.equal(fatalFromLog(`LoadActors\r\n${FATAL_MARKER}Script error, "a.pk3:decorate.txt" line 2:\r\n  Expected '{'\r\nfua: ENGINE HANG\r\n`),
+    "Script error, \"a.pk3:decorate.txt\" line 2:\nExpected '{'");
+  assert.equal(fatalFromLog(`${FATAL_MARKER}Could not find map FEET01`), "Could not find map FEET01");
+});
+
+test("watchFatal calls back once the log holds a fatal error, and not before", async () => {
+  const { watchFatal, FATAL_MARKER } = await import("../src/launch.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-fatal-"));
+  const log = path.join(dir, "engine.stdio.log");
+  const seen = [];
+  const stop = watchFatal(log, (f) => seen.push(f), 10);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.deepEqual(seen, []);
+  fs.writeFileSync(log, `${FATAL_MARKER}broken\n`);
+  await new Promise((r) => setTimeout(r, 60));
+  fs.appendFileSync(log, `${FATAL_MARKER}again\n`);
+  await new Promise((r) => setTimeout(r, 40));
+  stop();
+  assert.deepEqual(seen, ["broken"]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
