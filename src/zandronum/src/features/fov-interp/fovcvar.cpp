@@ -28,6 +28,7 @@
 #include "network.h"
 #include "sv_main.h"
 #include "features/net-session/netrole.h"
+#include "cl_demo.h"
 #include "fovcvar.h"
 
 EXTERN_CVAR (Int, dmflags)
@@ -61,6 +62,7 @@ CUSTOM_CVAR (Float, fov, 90.f, CVAR_ARCHIVE)
 	const int requested = zx::FovRequestClamp (static_cast<int> (self));
 
 	const zx::FovRequestVerdict verdict = zx::FovRequestDecision (
+		CLIENTDEMO_IsInFreeSpectateMode(),
 		(dmflags & DF_NO_FOV) != 0,
 		consoleplayer == Net_Arbitrator,
 		zx::net::IsClient(),
@@ -102,6 +104,13 @@ CUSTOM_CVAR (Float, fov, 90.f, CVAR_ARCHIVE)
 
 	// [rc4l] Same wire path the CCMD used. DEM_FOV sets it for everyone (arbitrator under a
 	// lock); DEM_MYFOV sets only ours.
+	// [rc4l] Ported from zandronum@680dfe9674c66aa901e57d69acc4cb12e4c20133: a demo's free spectator takes the FOV at once, and nothing goes on the wire.
+	if (verdict == zx::FOV_SET_FREE_SPECTATOR)
+	{
+		CLIENTDEMO_GetFreeSpectatorPlayer()->DesiredFOV = static_cast<float> (requested);
+		return;
+	}
+
 	// [rc4l] The server's limits apply to what is sent, while the CVAR keeps the player's own choice for the next server.
 	const float limited = zx::ComputeFovWithinServerLimits (static_cast<float> (requested), sv_minfov, sv_maxfov);
 	if (verdict == zx::FOV_SET_EVERYONE)

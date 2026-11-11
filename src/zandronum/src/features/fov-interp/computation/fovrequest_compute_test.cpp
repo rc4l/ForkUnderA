@@ -54,44 +54,44 @@ TEST(FovRequest, CooldownIgnoresABackwardsClock)
 
 TEST(FovRequest, OrdinaryChangeSetsOwnFov)
 {
-	EXPECT_EQ(FOV_SET_MINE, FovRequestDecision(false, false, false, 100, 0, 0));
-	EXPECT_EQ(FOV_SET_MINE, FovRequestDecision(false, true,  true,  100, 0, 0));
+	EXPECT_EQ(FOV_SET_MINE, FovRequestDecision(false, false, false, false, 100, 0, 0));
+	EXPECT_EQ(FOV_SET_MINE, FovRequestDecision(false, false, true,  true,  100, 0, 0));
 }
 
 TEST(FovRequest, LockedFovDeniesEveryoneButTheArbitrator)
 {
-	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(true, false, true,  100, 0, 0));
-	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(true, false, false, 100, 0, 0));
+	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(false, true, false, true,  100, 0, 0));
+	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(false, true, false, false, 100, 0, 0));
 }
 
 TEST(FovRequest, ArbitratorUnderALockSetsEveryonesFov)
 {
 	// Zandronum's existing DEM_FOV behaviour, kept — Q-Zandronum deleted this path entirely.
-	EXPECT_EQ(FOV_SET_EVERYONE, FovRequestDecision(true, true, false, 100, 0, 0));
+	EXPECT_EQ(FOV_SET_EVERYONE, FovRequestDecision(false, true, true, false, 100, 0, 0));
 }
 
 TEST(FovRequest, ArbitratorUnderALockIsExemptFromTheCooldown)
 {
 	// Administrative change, not a player peeking — the rate limit must not swallow it.
-	EXPECT_EQ(FOV_SET_EVERYONE, FovRequestDecision(true, true, true, 100, 100, 35));
+	EXPECT_EQ(FOV_SET_EVERYONE, FovRequestDecision(false, true, true, true, 100, 100, 35));
 }
 
 TEST(FovRequest, CooldownAppliesToClients)
 {
-	EXPECT_EQ(FOV_DENIED_COOLDOWN, FovRequestDecision(false, false, true, 100, 100, 35));
-	EXPECT_EQ(FOV_SET_MINE,        FovRequestDecision(false, false, true, 200, 100, 35));
+	EXPECT_EQ(FOV_DENIED_COOLDOWN, FovRequestDecision(false, false, false, true, 100, 100, 35));
+	EXPECT_EQ(FOV_SET_MINE,        FovRequestDecision(false, false, false, true, 200, 100, 35));
 }
 
 TEST(FovRequest, CooldownDoesNotApplyOffline)
 {
 	// No server enforcing it and no opponent to gain an advantage over.
-	EXPECT_EQ(FOV_SET_MINE, FovRequestDecision(false, false, false, 100, 100, 35));
+	EXPECT_EQ(FOV_SET_MINE, FovRequestDecision(false, false, false, false, 100, 100, 35));
 }
 
 TEST(FovRequest, LockOutranksCooldownAsTheReportedReason)
 {
 	// Both rules would refuse; the lock is the honest explanation to print.
-	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(true, false, true, 100, 100, 35));
+	EXPECT_EQ(FOV_DENIED_LOCKED, FovRequestDecision(false, true, false, true, 100, 100, 35));
 }
 
 // ---------------------------------------------------------------------------
@@ -192,4 +192,11 @@ TEST(FovRequest, ClientKeepsWhatTheServerSent)
 	EXPECT_EQ(FOV_LIMIT_KEPT, min.verdict);
 	EXPECT_FLOAT_EQ(130.f, min.value);
 	EXPECT_EQ(FOV_LIMIT_KEPT, ComputeFovLimit(1.f, 120.f, true, true).verdict);
+}
+
+TEST(FovRequest, FreeSpectatorIsNeverLockedNorCooledDown)
+{
+	// [rc4l] The free spectator is a camera on this machine, so neither the lock nor the cooldown is about it.
+	EXPECT_EQ(FOV_SET_FREE_SPECTATOR, FovRequestDecision(true, true,  false, true, 100, 100, 35));
+	EXPECT_EQ(FOV_SET_FREE_SPECTATOR, FovRequestDecision(true, false, false, false, 100, 0, 0));
 }

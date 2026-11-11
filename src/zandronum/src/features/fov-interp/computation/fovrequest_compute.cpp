@@ -34,9 +34,12 @@ bool FovCooldownActive(int gametic, int lastChangeTic, int cooldownTics)
 	return elapsed < cooldownTics;
 }
 
-FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isClient,
+FovRequestVerdict FovRequestDecision(bool freeSpectating, bool fovLocked, bool isArbitrator, bool isClient,
                                      int gametic, int lastChangeTic, int cooldownTics)
 {
+	if (freeSpectating)
+		return FOV_SET_FREE_SPECTATOR;
+
 	// The lock is checked first: when a setting controller has disabled FOV changes, that is the
 	// reason to report, and the arbitrator's own change is exempt from the rate limit because it
 	// is an administrative action, not a player peeking.

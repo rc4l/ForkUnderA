@@ -115,6 +115,9 @@ minimum gap between a client's FOV changes — the softer anti-peek measure they
 of* the lock. Here it **stacks with** the lock. The arbitrator is exempt while a lock is in force
 (administrative change, not peeking), and offline play is never rate-limited.
 
+A demo's free spectator is a camera on this machine, so neither rule governs it: its FOV changes at
+once and nothing goes on the wire (`FOV_SET_FREE_SPECTATOR`, zandronum@680dfe9674c6).
+
 Both rules live in `computation/fovrequest_compute.{h,cpp}` (100% covered) so they are testable
 instead of buried in a CVAR callback: `FovRequestDecision()` returns
 `FOV_SET_MINE` / `FOV_SET_EVERYONE` / `FOV_DENIED_LOCKED` / `FOV_DENIED_COOLDOWN`, and the callback

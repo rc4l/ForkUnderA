@@ -35,6 +35,7 @@ enum FovRequestVerdict
 	FOV_SET_EVERYONE,      // FOV is locked and we are the arbitrator: set it for all (DEM_FOV)
 	FOV_DENIED_LOCKED,     // FOV is locked and we are not the arbitrator
 	FOV_DENIED_COOLDOWN,   // too soon after the last change
+	FOV_SET_FREE_SPECTATOR, // [rc4l] A demo's free spectator, which no lock or cooldown governs (zandronum@680dfe9674c66aa901e57d69acc4cb12e4c20133).
 };
 
 // The renderer/CCMD clamp: 5..179 degrees, matching the range the old `fov` CCMD enforced and
@@ -46,11 +47,12 @@ int FovRequestClamp(int fov);
 bool FovCooldownActive(int gametic, int lastChangeTic, int cooldownTics);
 
 // The verdict for a change attempted right now.
+//   freeSpectating - CLIENTDEMO_IsInFreeSpectateMode(), a camera local to this machine
 //   fovLocked     - dmflags & DF_NO_FOV
 //   isArbitrator  - consoleplayer == Net_Arbitrator
 //   isClient      - NETWORK_GetState() == NETSTATE_CLIENT (only clients are rate-limited; a
 //                   local game has no server to enforce it and no exploit to prevent)
-FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isClient,
+FovRequestVerdict FovRequestDecision(bool freeSpectating, bool fovLocked, bool isArbitrator, bool isClient,
                                      int gametic, int lastChangeTic, int cooldownTics);
 
 // The FOV a player should spawn with. Respawning used to hard-reset everyone to 90, throwing away
