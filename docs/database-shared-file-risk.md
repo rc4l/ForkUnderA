@@ -1,6 +1,6 @@
 # Known risk: one ACS database file shared by several servers
 
-**Status: open.** No fix is in the tree yet. Read this before changing `za_database.cpp`, before hosting with
+**Status: open for servers on different machines.** Several servers on one machine are safe since PR #407. Read this before changing `za_database.cpp`, before hosting with
 `databasefile`, or before telling a server owner how to share character data between servers.
 
 ## The risk
@@ -25,30 +25,31 @@ Considerations" on sqlite.org), not an engine bug.
 
 ## Lost writes, even on one machine
 
-When two servers write the same file at once, SQLite refuses the second write with `SQLITE_BUSY`. The engine
-sets no busy timeout and has no retry, so that write is printed to the console as an error and **dropped**. In a
-stress test of two processes writing nonstop, one lost 52 of its 1500 writes and the other all 1500. Real servers
-collide far less often, but a collision always loses data.
+Since PR #407 (`fua_db_queue`, on by default), a write that meets another server's lock waits in this server's
+outbox and is retried until it lands, so collisions no longer lose writes. Writes still bypass the queue, and drop
+on a collision as stock Zandronum's do, in these cases:
+
+- `fua_db_queue 0`;
+- a 65th server on one file, which finds no free outbox slot;
+- a stock Zandronum server sharing the file.
+
+In a stress test of two old-engine processes writing nonstop, one lost 52 of its 1500 writes and the other all 1500.
 
 ## Symptoms
 
-- Console lines such as `database is locked` from a `DATABASE_*` function: a write was dropped.
+- Console lines such as `database is locked` from a `DATABASE_*` function: a write was dropped, on one of the
+  direct paths above.
 - `database disk image is malformed`, or characters and records that revert or vanish: corruption.
 
 ## The fix to consider later
 
-For servers on different machines, one process must own the file and the servers must send it their
-writes over the network. The direction being worked on locally already points there:
-
-1. Each server queues its writes, durable in a small private file of its own, and a background thread applies
-   them to the shared database in batches, retrying on a locked file instead of dropping the write.
-2. Each queued write carries a timestamp and the server's own sequence number. The database applies a set only
-   when it is newer than what is stored (deletes leave a marker for this), and records each server's last
-   applied sequence, so a resend after a crash is never applied twice.
-3. Swapping that background thread's destination from "the SQLite file" to "the owning process" is then the
-   cross-machine fix. The game-side half does not change.
-
-What the owning process still needs before it can be built: authentication of the servers that send to it, a
-wire format, and a decision on where it runs (one of the game servers, or a separate small service).
+For servers on different machines, one process must own the file and the servers must send it their writes over
+the network. The queue made that possible: each server's writes are durable, numbered and stamped batches, and the
+writer thread that applies them can send them to an owning process instead, with the game-side half unchanged.
+The design, what it still needs (local replicas for reads, resync, authentication, where the owner runs) and how
+to test it are in `docs/database-future-work.md`.
 
 Until then: one machine per shared database file, on a local disk.
+
+Backing up, moving and restoring a shared file: `docs/database-hosting.md`. The plan for the owning process, with the
+other known limits: `docs/database-future-work.md`.
