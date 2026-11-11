@@ -318,7 +318,7 @@
   "scoreboard.cpp": 2,
   "survival.cpp": 3,
   "team.cpp": 11,
-  "thingdef/thingdef_codeptr.cpp": 80
+  "thingdef/thingdef_codeptr.cpp": 81
  },
  "net-sockets-through-transport": {
   "callvote.cpp": 3,

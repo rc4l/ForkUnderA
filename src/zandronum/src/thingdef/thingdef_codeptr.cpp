@@ -3041,6 +3041,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnItemEx)
 			// [BB] Set the angle and velocity if necessary.
 			SERVER_SetThingNonZeroAngleAndVelocity( mo );
 
+			// [rc4l] Ported from zandronum@82def1c76e84d25ba0faeac658ad01b813c48c60: a spawned actor's TID reaches clients.
+			// [AK] Sync the TID if necessary.
+			if ( mo->tid != 0 )
+				SERVERCOMMANDS_SetThingTID( mo );
+
 			if ( mo->Translation )
 				SERVERCOMMANDS_SetThingTranslation( mo );
 
