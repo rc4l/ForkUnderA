@@ -1,0 +1,121 @@
+#library "dbedge"
+#include "zcommon.h.bcs"
+
+// [Doruk-Aksoy] Edge cases of the ACS database functions for scenarios/dbedge.mjs, each script logging "EDGE <name> <result>".
+// [Doruk-Aksoy] dbedge.o beside it is this file built with BCC: bcc -i <bcc>/lib dbedge.bcs dbedge.o
+
+// [Doruk-Aksoy] The same functions taking raw string ids, so an invalid id (a null string in the engine) can be passed.
+special
+	-108:RawSetDBEntry(int, int, int):void,
+	-109:RawGetDBEntry(int, int):int,
+	-111:RawGetDBEntryString(int, int):str,
+	-112:RawIncrementDBEntry(int, int, int):void;
+
+// [Doruk-Aksoy] Reads checked every tic while the writer catches up behind them: a counter, a leaderboard and its rank.
+script 951 (void) NET
+{
+	SetDBEntry("edge", "a", 1);
+	Log(s:"EDGE sametic ", d:GetDBEntry("edge", "a"));
+	int mismatches = 0;
+	for (int i = 0; i < 70; i++)
+	{
+		IncrementDBEntry("edge", "cnt", 1);
+		IncrementDBEntry("edgelb", StrParam(s:"p", d:i % 7), i);
+		if (GetDBEntry("edge", "cnt") != i + 1)
+			mismatches++;
+		int h = SortDBEntries("edgelb", 3, 0, true);
+		if (CountDBResults(h) != (i < 2 ? i + 1 : 3))
+			mismatches++;
+		FreeDBResults(h);
+		if (GetDBEntryRank("edgelb", StrParam(s:"p", d:i % 7), true) < 1)
+			mismatches++;
+		Delay(1);
+	}
+	Log(s:"EDGE pertic cnt=", d:GetDBEntry("edge", "cnt"), s:" mismatches=", d:mismatches);
+}
+
+// [Doruk-Aksoy] An invalid string id for the namespace and key, which reaches the engine as a null string.
+script 952 (void) NET
+{
+	RawSetDBEntry(99999, 99998, 7);
+	int first = RawGetDBEntry(99999, 99998);
+	RawIncrementDBEntry(99999, 99998, 1);
+	Log(s:"EDGE null ", d:first, s:" ", d:RawGetDBEntry(99999, 99998), s:" empty=", d:GetDBEntry("", ""), s:" str=", s:RawGetDBEntryString(99999, 99998));
+}
+
+// [Doruk-Aksoy] Past 64 bits SQLite stores a REAL, which must read the same before and after the writer applies it.
+script 953 (void) NET
+{
+	SetDBEntryString("edge", "big", "9223372036854775807");
+	IncrementDBEntry("edge", "big", 1);
+	Log(s:"EDGE bignow ", s:GetDBEntryString("edge", "big"));
+	Delay(35);
+	Log(s:"EDGE biglater ", s:GetDBEntryString("edge", "big"));
+}
+
+// [Doruk-Aksoy] Transaction misuse keeps the old console errors, and one spanning tics stays whole.
+script 954 (void) NET
+{
+	EndDBTransaction();
+	BeginDBTransaction();
+	BeginDBTransaction();
+	SetDBEntry("edge", "t1", 1);
+	Delay(10);
+	SetDBEntry("edge", "t2", 2);
+	EndDBTransaction();
+	Log(s:"EDGE txn ", d:GetDBEntry("edge", "t1"), s:" ", d:GetDBEntry("edge", "t2"));
+}
+
+// [Doruk-Aksoy] A transaction its script never ends before the level does.
+script 955 (void) NET
+{
+	BeginDBTransaction();
+	SetDBEntry("edge", "orphan", 42);
+	Log(s:"EDGE orphanbegun ", d:GetDBEntry("edge", "orphan"));
+}
+
+// [Doruk-Aksoy] Delete by the empty string, then an increment that starts the key again from zero.
+script 956 (void) NET
+{
+	SetDBEntryString("edge", "d", "x");
+	SetDBEntryString("edge", "d", "");
+	str gone = GetDBEntryString("edge", "d");
+	IncrementDBEntry("edge", "d", 3);
+	Log(s:"EDGE delnow [", s:gone, s:"] ", s:GetDBEntryString("edge", "d"));
+	Delay(35);
+	Log(s:"EDGE dellater ", s:GetDBEntryString("edge", "d"));
+}
+
+// [Doruk-Aksoy] A big batch in one tic, then the namespace read back through GetDBEntries.
+script 957 (void) NET
+{
+	BeginDBTransaction();
+	for (int i = 0; i < 5000; i++)
+		SetDBEntry("edgebig", StrParam(s:"k", d:i), i);
+	EndDBTransaction();
+	int h = GetDBEntries("edgebig");
+	Log(s:"EDGE bigbatch ", d:CountDBResults(h), s:" last=", d:GetDBEntry("edgebig", "k4999"));
+	FreeDBResults(h);
+}
+
+// [Doruk-Aksoy] Overwrites stock-written rows whose timestamps are NULL, old, garbage or far in the future.
+script 958 (void) NET
+{
+	SetDBEntryString("edge", "nullstamp", "new");
+	SetDBEntryString("edge", "juliantext", "new");
+	SetDBEntryString("edge", "garbagestamp", "new");
+	SetDBEntryString("edge", "future", "new");
+	Log(s:"EDGE stockrows ", s:GetDBEntryString("edge", "nullstamp"), s:GetDBEntryString("edge", "future"));
+}
+
+// [Doruk-Aksoy] Reads what a resumed or replayed outbox left in the file.
+script 959 (void) NET
+{
+	Log(s:"EDGE resumed [", s:GetDBEntryString("edge", "resumed"), s:"] rc=", d:GetDBEntry("edge", "rc"), s:" orphaned [", s:GetDBEntryString("edge", "orphaned"), s:"]");
+}
+
+// [Doruk-Aksoy] Writes in the level's last moments.
+script "DBEdgeUnloading" UNLOADING
+{
+	IncrementDBEntry("edge", "unloads", 1);
+}
