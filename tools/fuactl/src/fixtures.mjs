@@ -609,7 +609,8 @@ export { parseSeamReport };
 
 // [rc4l] A fixture's demo played to its picture tic on Vulkan alone, judged by fua_seams: no frame touched game data and no tic the main thread's state, outside the handoff.
 export async function seamCheckFixture(f, opts = {}) {
-  return reportCheck(f, { ...opts, check: {}, gl: false, report: "fua_seams", parse: parseSeamReport,
+  // [Doruk-Aksoy] Held at its tic, as its report can outlast the demo; copycheck is not, since a paused copy reads player 0's bobIn off the live player.
+  return reportCheck(f, { ...opts, check: {}, gl: false, hold: true, report: "fua_seams", parse: parseSeamReport,
     describe: (r) => (r.found ? `${r.walked} seams entered, ${r.differed} violations${r.first ? `, the first in ${r.first}` : ""}${r.sites.length ? `; most: ${r.sites.slice(0, 3).join("; ")}` : ""}` : "the seams were not listed") });
 }
 
@@ -625,16 +626,22 @@ export async function prescanCheckFixture(f, opts = {}) {
 export const CHECKS = { vischeck: visCheckFixture, copycheck: copyCheckFixture, spritecheck: spriteCheckFixture, pspritecheck: pspriteCheckFixture, seencheck: seenCheckFixture,
   hudcheck: hudCheckFixture, seamcheck: seamCheckFixture, prescancheck: prescanCheckFixture };
 
+// [Doruk-Aksoy] The report a running demo gives once it reaches `tic`; `hold` pauses the sim there first, since a demo that ends quits the engine and closed the bridge on a slow report (a seamcheck under ThreadSanitizer).
+export async function reportAtTic(c, tic, report, { hold = false, wait = waitLevelTime, exec = execOut } = {}) {
+  await wait(c, tic);
+  if (hold) await c.rpc("sim.pause");
+  return exec(c, report, { maxMs: 6000 });
+}
+
 // [rc4l] A fixture's demo played with a check's cvars on to its picture tic, then judged by the report the check prints: clean when it compared something and nothing differed; `paused` judges only the frames drawn paused there, from each of the views `views` picks.
-async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, paused = false, views = (spec) => spec.views, report, parse, describe,
+async function reportCheck(f, { engine, store, dir = fixtureDir(), cvars = {}, check, gl = false, paused = false, hold = false, views = (spec) => spec.views, report, parse, describe,
   log = () => {} }) {
   const spec = PICTURES[f.name];
   const { inst, c } = await playTo(f, { engine, store, dir, cvars: { ...check, ...cvars }, gl });
   try {
     let r;
     if (!paused) {
-      await waitLevelTime(c, spec.tic);
-      r = parse(await execOut(c, report, { maxMs: 6000 }));
+      r = parse(await reportAtTic(c, spec.tic, report, { hold }));
     } else {
       await c.rpc("sim.pauseat", { tic: spec.tic });
       await waitLevelTime(c, spec.tic, { paused: true });

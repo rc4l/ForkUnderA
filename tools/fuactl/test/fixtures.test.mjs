@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, GTMOD_LAMP_COLOURS, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDemo, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, PICTURES, PLAYED_DIR, recordFixture, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
+import { buildGameThreadFixtureWad, buildGameThreadModWad, gtmodScript, GTMOD_LAMP_COLOURS, CHECKS, comparePicture, FIGHT, FIXTURES, fixtureDemo, fixtureDir, fixtureFiles, fixtureIwad, hudTics, loadRefusal, parseCopyReport, parsePrescanReport, prescanCheckFixture, parsePSpriteReport, reportAtTic, PICTURES, PLAYED_DIR, recordFixture, parseSeamReport, parseSeenReport, parseSpriteReport, parseVisReport, pickFixtures, stepAt, sumReports } from "../src/fixtures.mjs";
 import { writePNG } from "../src/pngcore.mjs";
 import { FREEDOOM2 } from "../src/template.mjs";
 import { parseUdmf, readWad } from "../src/udmf.mjs";
@@ -178,4 +178,36 @@ test("a played fixture's demo is a person's game kept in the repo, which record 
     assert.match(await recordFixture(f, { dir: "/h" }), /played, so left as it is/);
   }
   assert.equal(fixtureDemo({ name: "driven" }, "/h"), path.join("/h", "driven.lmp"));
+});
+
+// [Doruk-Aksoy] An engine whose demo ends, closing its bridge, after `tic` unless the sim was paused first.
+function endingEngine() {
+  const calls = [];
+  let paused = false;
+  const c = { rpc: async (cmd) => { calls.push(cmd); if (cmd === "sim.pause") paused = true; return {}; } };
+  const wait = async (client, tic) => { calls.push(`wait ${tic}`); };
+  const exec = async (client, text) => {
+    calls.push(`exec ${text}`);
+    if (!paused) throw new Error("bridge closed");
+    return "26 seams entered, 0 differed";
+  };
+  return { c, wait, exec, calls };
+}
+
+test("a held report is read with the sim paused at its tic, so the demo's end cannot close the bridge first", async () => {
+  const e = endingEngine();
+  assert.equal(await reportAtTic(e.c, 420, "fua_seams", { hold: true, wait: e.wait, exec: e.exec }), "26 seams entered, 0 differed");
+  assert.deepEqual(e.calls, ["wait 420", "sim.pause", "exec fua_seams"]);
+});
+
+test("without hold a report is read with the sim still running, as the checks other than seamcheck read theirs", async () => {
+  const e = endingEngine();
+  await assert.rejects(reportAtTic(e.c, 420, "fua_copy_report", { wait: e.wait, exec: e.exec }), /bridge closed/);
+  assert.deepEqual(e.calls, ["wait 420", "exec fua_copy_report"]);
+});
+
+test("the ending engine closes the bridge on a report read while the sim runs, as the race did", async () => {
+  const e = endingEngine();
+  await e.wait(e.c, 420);
+  await assert.rejects(e.exec(e.c, "fua_seams"), /bridge closed/);
 });
