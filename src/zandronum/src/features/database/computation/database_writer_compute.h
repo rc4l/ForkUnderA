@@ -55,6 +55,8 @@ struct DatabaseWriter
 	std::atomic<uint64_t> applied{0};
 	std::atomic<int> busyRetries{0};
 	std::atomic<int> failures{0};
+	// [Doruk-Aksoy] How many times maintenance has finished since the writer started.
+	std::atomic<int> maintenanceRuns{0};
 
 	DatabaseWriter() = default;
 	DatabaseWriter(const DatabaseWriter &) = delete;
