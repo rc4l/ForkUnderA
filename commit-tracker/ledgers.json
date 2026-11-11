@@ -40,7 +40,7 @@
     "goal": { "label": "zandronum-stable default", "sha": "tip" },
     "base_rows": false,
     "ignore": ["docs/zandronum-history.txt", "docs/zandronum-uzdoom-backport-nodes.txt",
-               "docs/zandronum-gzdoom-backport-nodes.txt", ".hgtags"],
+               "docs/zandronum-gzdoom-backport-nodes.txt", "docs/missing-gzdoom-backport-nodes.txt", ".hgtags"],
     "tree": [["", "src/zandronum/"]],
     "twin": "uzdoom",
     "netcode": true,
