@@ -448,6 +448,9 @@ struct FCheckPosition
 	// narrows the box, and iteration continues past a block, so the last writer won. A mark was then
 	// offered to a line the missile never touched.
 	line_t			*floorline;
+	// [Doruk-Aksoy] features/bounce: the refusing line the move ran into most directly, which a later line narrowing the box overwrote in BlockingLine.
+	line_t			*refusedline;
+	double			refusedheadon;
 	AActor			*stepthing;
 	// [RH] These are used by PIT_CheckThing and P_XYMovement to apply
 	// ripping damage once per tic instead of once per move.
@@ -468,6 +471,8 @@ struct FCheckPosition
 		PushTime = 0;
 		FromPMove = false;
 		RipStatePending = false;
+		ceilingline = floorline = refusedline = NULL;
+		refusedheadon = 0;
 	}
 };
 
