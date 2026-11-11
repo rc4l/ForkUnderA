@@ -52,6 +52,8 @@
 #include "autosegs.h"
 #include "version.h"
 #include "v_text.h"
+// [AK] New #includes.
+#include "campaign.h"
 #include "c_cvars.h"
 #include "features/monster-stairs/monsterstairs.h"	// [Doruk-Aksoy] ResetGameInfo
 
@@ -293,6 +295,8 @@ void level_info_t::Reset()
 	InterMusic = "";
 	intermusicorder = 0;
 	SoundInfo = "";
+	// [AK] By default, the map can be played in any game mode.
+	GameMode = NUM_GAMEMODES;
 	SndSeq = "";
 	LightningSound = "";
 	HazardColor = -1;
@@ -1431,6 +1435,24 @@ DEFINE_MAP_OPTION(defaultenvironment, false)
 		}
 	}
 	info->DefaultEnvironment = id;
+}
+
+// [rc4l] Ported from zandronum@3bee6855464c6aa9a0e31dae6e373416bb17b701: the gamemode MAPINFO property, on our FString MapName.
+// [AK] Determines which game mode the map is locked into.
+DEFINE_MAP_OPTION(gamemode, false)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->GameMode = static_cast<GAMEMODE_e>(parse.sc.MustGetEnumName("game mode", "GAMEMODE_", GetValueGAMEMODE_e, true));
+
+	const CAMPAIGNINFO_s *campaignInfo = CAMPAIGN_GetCampaignInfo(const_cast<char *>(info->MapName.GetChars()));
+
+	// [AK] Maps with campaign information means that the game mode can't
+	// be forced to anything other than what's chosen for the campaign.
+	if (campaignInfo != nullptr && campaignInfo->GameMode != info->GameMode)
+	{
+		parse.sc.ScriptError("%s has campaign information that forces the game mode to something other than '%s'.", info->MapName.GetChars(), parse.sc.String);
+	}
 }
 
 

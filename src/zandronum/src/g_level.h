@@ -40,6 +40,7 @@
 #include "s_sound.h"
 #include "textures/textures.h"
 //[BL] New Includes
+#include "gamemode_enums.h"
 #include "sectinfo.h"
 #include "features/postprocess/computation/postprocess_compute.h"   // [Doruk-Aksoy] ShaderTable
 #include "features/monster-stairs/computation/monsterstairs_compute.h"   // [Doruk-Aksoy] level_info_t::fua_monsterStairs
@@ -413,6 +414,9 @@ struct level_info_t
 
 	//[BL] Link a sectinfo to a map
 	SectInfo	SectorInfo;
+
+	// [AK] Determines which game mode the map is locked into.
+	GAMEMODE_e	GameMode;
 
 	level_info_t() 
 	{ 
