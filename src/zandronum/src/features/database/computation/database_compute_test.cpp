@@ -325,7 +325,8 @@ TEST(DatabaseCheckpointer, MovesTheLogIntoTheMainFileOffTheCallingThread)
 	zx::DatabaseCheckpointer checkpointer;
 	ASSERT_TRUE(zx::ComputeDatabaseCheckpointerStart(checkpointer, file.path.string().c_str(), 10));
 	EXPECT_TRUE(waitFor([&]() { return file.mainFileSize() > before; }));
-	EXPECT_GT(checkpointer.checkpoints.load(), 0);
+	// [Doruk-Aksoy] The file grows while the checkpoint runs, and the count rises only once it returns.
+	EXPECT_TRUE(waitFor([&]() { return checkpointer.checkpoints.load() > 0; }));
 	EXPECT_TRUE(waitFor([&]() { return checkpointer.lastCopiedFrames.load() > 0; }));
 	zx::ComputeDatabaseCheckpointerStop(checkpointer);
 	EXPECT_EQ(checkpointer.db, nullptr);
