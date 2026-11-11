@@ -101,8 +101,10 @@ TEST(DatabaseOutbox, AFileThatIsNotADatabaseIsSkipped)
 	zx::DatabaseOutbox outbox;
 	std::vector<zx::DatabaseBatch> leftover;
 	uint64_t next = 0;
-	EXPECT_EQ(zx::ComputeDatabaseOutboxOpen(outbox, zx::ComputeDatabaseOutboxPath(base.string(), 0), true, leftover, next), zx::DatabaseOutboxOpen::Failed);
-	EXPECT_EQ(zx::ComputeDatabaseOutboxClaim(outbox, base.string(), 2, leftover, next), 1);
+	EXPECT_EQ(zx::ComputeDatabaseOutboxOpen(outbox, zx::ComputeDatabaseOutboxPath(base.string(), 0), true, leftover, next), zx::DatabaseOutboxOpen::Unreadable);
+	std::vector<std::string> unreadable;
+	EXPECT_EQ(zx::ComputeDatabaseOutboxClaim(outbox, base.string(), 2, leftover, next, &unreadable), 1);
+	EXPECT_EQ(unreadable, (std::vector<std::string>{ zx::ComputeDatabaseOutboxPath(base.string(), 0) }));
 	zx::ComputeDatabaseOutboxClose(outbox);
 	removeDatabaseFiles(base);
 }
@@ -119,7 +121,7 @@ TEST(DatabaseOutbox, ADatabaseWithAForeignSchemaIsNotAnOutbox)
 	zx::DatabaseOutbox outbox;
 	std::vector<zx::DatabaseBatch> leftover;
 	uint64_t next = 0;
-	EXPECT_EQ(zx::ComputeDatabaseOutboxOpen(outbox, path, true, leftover, next), zx::DatabaseOutboxOpen::Failed);
+	EXPECT_EQ(zx::ComputeDatabaseOutboxOpen(outbox, path, true, leftover, next), zx::DatabaseOutboxOpen::Unreadable);
 	EXPECT_EQ(outbox.db, nullptr);
 	removeDatabaseFiles(base);
 }
@@ -270,5 +272,18 @@ TEST(DatabaseOutbox, ALiveServersOutboxIsLeftAlone)
 	std::string error;
 	EXPECT_EQ(zx::ComputeDatabaseOutboxReplayOrphans(statements, shared.path.string(), 2, 0, error), 0);
 	EXPECT_EQ(value(shared.db, "n"), "<missing>");
+}
+
+TEST(DatabaseOutbox, TheOrphanScanListsOutboxesItCannotOpen)
+{
+	ZX_REQUIRE_FILE_DATABASES();
+	FileDb shared("outbox_scanunreadable");
+	std::ofstream(zx::ComputeDatabaseOutboxPath(shared.path.string(), 2), std::ios::binary) << std::string(4096, 'x');
+	zx::DatabaseStatements statements;
+	zx::ComputeDatabaseBind(statements, shared.db);
+	std::string error;
+	std::vector<std::string> unreadable;
+	EXPECT_EQ(zx::ComputeDatabaseOutboxReplayOrphans(statements, shared.path.string(), 4, 0, error, &unreadable), 0);
+	EXPECT_EQ(unreadable, (std::vector<std::string>{ zx::ComputeDatabaseOutboxPath(shared.path.string(), 2) }));
 }
 

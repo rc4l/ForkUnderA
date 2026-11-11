@@ -21,6 +21,12 @@ Keeps the ACS database functions (`SetDBEntry`, `GetDBEntry`, `IncrementDBEntry`
   - An increment is an addition in SQL, so every server's count lands.
   - `fua_Applied` keeps each server's last applied batch, so a replay never applies one twice.
 - Timestamps come from a hybrid logical clock: the later of this machine's clock and the newest stamp seen in the file, in whole 0.1 ms steps, in the `Timestamp` column's own unit. A write made after reading another server's write therefore always orders after it. Synced clocks (NTP) only decide between truly simultaneous writes, and a clock more than a minute behind the file is warned about once.
+- Reads see this server's pending writes exactly once. Each op keeps its batch number, and a read that depends on the file reads it in one transaction with `fua_Applied`'s number for this server, applying only the ops the file does not hold yet. A key with a pending set or delete needs no file at all.
+- Increments follow SQLite's own arithmetic, a step at a time, including the REAL it stores once a sum leaves 64 bits.
+- A null namespace or key (an invalid ACS string id) is the empty string, queued or direct.
+- A mod transaction ends when its level does (`DATABASE_LevelScriptsEnding`, before the old level's scripts are unloaded), or after a minute of tics, with its writes kept and a console line, so a script killed mid-save cannot hold writes back.
+- A failed outbox write is retried every tic until it lands; a writer that makes no progress for 10 s, a mod transaction closed for it, and an outbox file that cannot be opened (at the claim or in a later scan) are each named on the console once.
+- On open, leftovers the file already holds (a server killed between applying and pruning) are dropped, not shown or sent again.
 - `fua_db_status` prints the outbox slot, the server id, what the shared file has yet to take, and the writer's retries and last error.
 - Stock Zandronum servers can share the file: they write wall-clock stamps the rule compares, but ignore delete markers.
 - One file shared over a network drive is not safe in any mode: docs/database-shared-file-risk.md.
@@ -29,4 +35,10 @@ Keeps the ACS database functions (`SetDBEntry`, `GetDBEntry`, `IncrementDBEntry`
 
 - `za_database.cpp`: the ACS-facing `DATABASE_*` calls go through the store when it is open, else straight to `database_compute.cpp`. `DATABASE_Init` applies the pragmas, binds the statements, starts the checkpointer and opens the store. `DATABASE_EndTic` ends the store's tic. `database_ClearHandle` closes the store (draining up to 3 s; the rest waits in the outbox), then the checkpointer and the statements. `DATABASE_EnableWAL`/`DATABASE_DisableWAL` set `fua_db_wal`.
 - `g_game.cpp`: `G_TickerEnd` calls `DATABASE_EndTic`, on clients, with the game thread, and on the dedicated server alike.
+- `p_setup.cpp`: `P_SetupLevel` calls `DATABASE_LevelScriptsEnding` before the old level's ACS modules are unloaded.
 - `tests/CMakeLists.txt` builds the engine's SQLite into the test binary.
+
+## Testing
+
+- Unit tests beside each `computation/*_compute.cpp`, on real SQLite (in memory and on disk), including random comparisons with the old calls while the writer and the acknowledgements lag, and three servers with skewed clocks on one file.
+- `fuactl scenarios dbedge` drives the engine through `tools/fuactl/fixtures/dbedge` (an ACS library, source and BCC build) on prepared database files: reads while the writer lags, null names, 64-bit overflow, transaction misuse, a transaction its level left open, UNLOADING writes, 5000 writes in a tic, clean quit, hard kill and restart, stock-written rows, a crashed server's part-applied outbox, and an orphaned outbox beside a corrupt one.

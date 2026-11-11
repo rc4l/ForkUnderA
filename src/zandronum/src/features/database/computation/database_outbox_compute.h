@@ -35,6 +35,8 @@ enum class DatabaseOutboxOpen
 	Opened,
 	Missing,
 	Busy,
+	// [Doruk-Aksoy] The file is there but is not an outbox SQLite can open, so whatever it holds is not being applied.
+	Unreadable,
 	Failed,
 };
 
@@ -44,16 +46,16 @@ std::string ComputeDatabaseOutboxPath(const std::string &databasePath, int slot)
 // [Doruk-Aksoy] Opens and locks an outbox for this process, returning the batches it still holds; Busy when a live process holds it.
 DatabaseOutboxOpen ComputeDatabaseOutboxOpen(DatabaseOutbox &outbox, const std::string &path, bool create, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq);
 
-// [Doruk-Aksoy] Takes the first slot no live process holds; -1 when every slot is taken or none can be made.
-int ComputeDatabaseOutboxClaim(DatabaseOutbox &outbox, const std::string &databasePath, int slots, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq);
+// [Doruk-Aksoy] Takes the first slot no live process holds, listing the unreadable ones passed over; -1 when every slot is taken or none can be made.
+int ComputeDatabaseOutboxClaim(DatabaseOutbox &outbox, const std::string &databasePath, int slots, std::vector<DatabaseBatch> &leftover, uint64_t &nextSeq, std::vector<std::string> *unreadable = nullptr);
 
 // [Doruk-Aksoy] Makes batches durable in one transaction with a full flush, and forgets those through `appliedThrough`.
 bool ComputeDatabaseOutboxAppend(DatabaseOutbox &outbox, const std::vector<DatabaseBatch> &batches, uint64_t nextSeq, uint64_t appliedThrough);
 
 void ComputeDatabaseOutboxClose(DatabaseOutbox &outbox);
 
-// [Doruk-Aksoy] Applies what other slots' outboxes still hold, for servers that stopped and never came back; returns the batches applied.
-int ComputeDatabaseOutboxReplayOrphans(DatabaseStatements &shared, const std::string &databasePath, int slots, int ownSlot, std::string &error);
+// [Doruk-Aksoy] Applies what other slots' outboxes still hold, for servers that stopped and never came back, listing the unreadable ones; returns the batches applied.
+int ComputeDatabaseOutboxReplayOrphans(DatabaseStatements &shared, const std::string &databasePath, int slots, int ownSlot, std::string &error, std::vector<std::string> *unreadable = nullptr);
 
 }
 
