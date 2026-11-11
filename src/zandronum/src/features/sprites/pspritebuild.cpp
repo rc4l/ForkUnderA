@@ -161,7 +161,7 @@ void HUDModelLayer(const PlayerRecord *player, const pspdef_t *psp, fixed_t sx, 
 	zx::levelmesh::MeshPiece look;
 	const int blend = StyleBlendMode(style, rgba[3]);
 	// [rc4l] Sorted at the eye, so a translucent one is drawn last.
-	zx::levelmesh::ModelPieceLook(255, 0, none, false, dyn, 0xffffff, ComputePlainDrawLook(rgba[3]), blend, cam.x, cam.y, cam.z, look);
+	zx::levelmesh::ModelPieceLook(255, 255, 0, none, false, dyn, 0xffffff, ComputePlainDrawLook(rgba[3]), blend, cam.x, cam.y, cam.z, look);
 	look.colorR = rgba[0];
 	look.colorG = rgba[1];
 	look.colorB = rgba[2];

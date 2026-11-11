@@ -68,7 +68,7 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 	mp.fadeColor = spr.Colormap.FadeColor.d;
 	// [rc4l] GLSprite::Draw's own rel, none for fullbright, and ThingColor over it: a particle's own colour, a stencil actor's fill.
 	const zx::sprites::SpriteDrawLook look = zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr.RenderStyle), spr.trans, spr.Colormap, spr.x, spr.y, false);
-	CaptureSpriteShading(spr.lightlevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, look, spr.ThingColor.d, mp);
+	CaptureSpriteShading(spr.lightlevel, spr.foglevel, spr.fullbright ? 0 : getExtraLight(), spr.Colormap, look, spr.ThingColor.d, mp);
 	// [rc4l] A fixed-colour style draws in TM_MASK, the texture only the shape.
 	mp.stencil = (spr.RenderStyle.Flags & STYLEF_ColorIsFixed) != 0;
 	// [rc4l] Draw's fog layer swaps the alpha test for one that passes any alpha.
@@ -98,13 +98,13 @@ void GLSpritePiece(const GLSprite &spr, const float *c1, const float *c2, const 
 }
 
 // [rc4l] GL's own shading of a surface, read back out of the render state gl_SetColor and gl_SetFog leave, for fua_shading_check.
-void GLShading(int lightlevel, int rellight, const FColormap &cm, bool noFog, bool additive, zx::levelmesh::MeshPiece &out)
+void GLShading(int lightlevel, int foglevel, int rellight, const FColormap &cm, bool noFog, bool additive, zx::levelmesh::MeshPiece &out)
 {
 	const FRenderState::ShadingSnapshot before = gl_RenderState.SaveShading();
 	FColormap local = cm;
 	gl_SetColor(lightlevel, rellight, local, 1.0f);
 	if (noFog) gl_SetFog(255, 0, NULL, false);
-	else       gl_SetFog(lightlevel, rellight, &local, additive);
+	else       gl_SetFog(foglevel, rellight, &local, additive);
 	gl_RenderState.GetColorRGB(out.colorR, out.colorG, out.colorB);
 	const float *lp = gl_RenderState.GetLightParms();
 	out.softLight    = lp[3];
@@ -177,7 +177,7 @@ struct FGLChecks : public FGLObserver
 		FRenderStyle blend = spr->RenderStyle;
 		blend.BlendOp = (BYTE)zx::sprites::ComputeModelBlendOp(blend.BlendOp, spr->actor->RenderStyle.BlendOp, STYLEOP_Fuzz);
 		zx::levelmesh::MeshPiece look;
-		zx::levelmesh::ModelPieceLook(spr->lightlevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn,
+		zx::levelmesh::ModelPieceLook(spr->lightlevel, spr->foglevel, spr->fullbright ? 0 : getExtraLight(), spr->Colormap, spr->fullbright, dyn,
 			spr->ThingColor.d, zx::sprites::SpriteDrawLookAt(zx::sprites::StyleOf(spr->RenderStyle), spr->trans, spr->Colormap, spr->x, spr->y, true),
 			zx::sprites::StyleBlendMode(blend, spr->trans), spr->x, spr->y, spr->z, look);
 		look.cullFace = zx::sprites::ActorModelCull(spr->actor->RenderStyle, false, spr->modelframe->flags);
