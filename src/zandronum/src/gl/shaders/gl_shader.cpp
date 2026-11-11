@@ -113,7 +113,8 @@ static int gl_CoreShaderLump(const char *name)
 	return core;
 }
 
-bool FShader::Load(const char * name, const char * vert_prog_lump, const char * frag_prog_lump, const char * proc_prog_lump, const char * defines)
+bool FShader::Load(const char * name, const char * vert_prog_lump, const char * frag_prog_lump, const char * proc_prog_lump, const char * defines,
+	zx::hwshaders::ProcessLighting lighting)
 {
 	static char buffer[10000];
 	FString error;
@@ -203,12 +204,10 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 			if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
 			FMemLump pp_data = Wads.ReadLump(pp_lump);
 
-			if (pp_data.GetString().IndexOf("ProcessTexel") < 0)
-			{
-				// this looks like an old custom hardware shader.
-				// [Doruk-Aksoy] main.fp calls its Process(color) as Zandronum 3.3 did, with the draw's alpha, keeping the alpha it returns (FUA_OLD_PROCESS).
-				fp_comb = fp_comb.Left(fpStart) + "#define FUA_OLD_PROCESS\n" + fp_comb.Mid(fpStart);
-			}
+			// [Doruk-Aksoy] main.fp calls an old Process(color) shader as its lighting says (FUA_PROCESS_ZANDRONUM or FUA_PROCESS_UZDOOM), and a material one is left out.
+			const zx::hwshaders::ShaderStyle style = zx::hwshaders::ComputeShaderStyle(pp_data.GetString().GetChars());
+			if (const char *why = zx::hwshaders::ComputeStyleRefusal(style)) I_Error("%s", why);
+			fp_comb = fp_comb.Left(fpStart) + zx::hwshaders::ComputeGLEntryDefine(zx::hwshaders::ComputeProgramEntry(style, lighting)) + fp_comb.Mid(fpStart);
 			// [Doruk-Aksoy] Zandronum 3.3's camerapos and gl_TextureMatrix read through the names this base shader has.
 			fp_comb << zx::hwshaders::ComputeLegacyShaderNames(pp_data.GetString().GetChars()).c_str();
 			fp_comb.Substitute("gl_TexCoord[0]", "vTexCoord");	// fix old custom shaders.
@@ -365,7 +364,8 @@ bool FShader::Bind()
 //==========================================================================
 
 // [Doruk-Aksoy] Compile's build without its fatal error: NULL, and the compiler's reason in `error`, when the shader does not build.
-static FShader *TryCompile(const char *ShaderName, const char *ShaderPath, bool usediscard, FString &error)
+static FShader *TryCompile(const char *ShaderName, const char *ShaderPath, bool usediscard, FString &error,
+	zx::hwshaders::ProcessLighting lighting = zx::hwshaders::kLightingZandronum)
 {
 	FString defines;
 	// this can't be in the shader code due to ATI strangeness.
@@ -375,7 +375,7 @@ static FShader *TryCompile(const char *ShaderName, const char *ShaderPath, bool 
 	FShader *shader = new FShader(ShaderName);
 	try
 	{
-		if (shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars())) return shader;
+		if (shader->Load(ShaderName, "shaders/glsl/main.vp", "shaders/glsl/main.fp", ShaderPath, defines.GetChars(), lighting)) return shader;
 	}
 	catch(CRecoverableError &err)
 	{
@@ -518,7 +518,7 @@ void FShaderManager::CompileShaders()
 
 		// [Doruk-Aksoy] One that does not compile here is noted and its textures drawn with the default shader under its name, as the backend leaves it out, rather than ending the game.
 		FString error;
-		FShader *shc = TryCompile(sfn, zx::hwshaders::UserShaderLump(i), true, error);
+		FShader *shc = TryCompile(sfn, zx::hwshaders::UserShaderLump(i), true, error, zx::hwshaders::UserShaderLighting(i));
 		if (shc == NULL)
 		{
 			Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("GL", zx::hwshaders::UserShaderLump(i), error.GetChars()).c_str());

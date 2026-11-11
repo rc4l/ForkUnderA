@@ -953,27 +953,15 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 	}
 }
 
-// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per lump name, and whether its program could not be made, which is noted once.
-struct UserShaderSource { std::string lump, adapted; bool newStyle = false, broken = false; };
-static std::vector<UserShaderSource> g_userSources;
-
-static UserShaderSource &UserSource(int shader)
+// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per lump name and lighting, how its entry calls it, and whether its program could not be made, which is noted once.
+struct UserShaderSource
 {
-	if (g_userSources.size() <= (size_t)shader) g_userSources.resize(shader + 1);
-	UserShaderSource &s = g_userSources[shader];
-	const char *lump = zx::hwshaders::UserShaderLump(shader);
-	if (s.lump == lump) return s;
-	s = UserShaderSource();
-	s.lump = lump;
-	const int num = Wads.CheckNumForFullName(lump);
-	if (num >= 0)
-	{
-		FMemLump data = Wads.ReadLump(num);
-		s.newStyle = zx::hwshaders::ComputeAdaptUserShader(data.GetString().GetChars(), shader, s.adapted);
-	}
-	else s.broken = true;
-	return s;
-}
+	std::string lump, adapted;
+	zx::hwshaders::ProcessLighting lighting = zx::hwshaders::kLightingZandronum;
+	zx::hwshaders::ProgramEntry entry = zx::hwshaders::kEntryTexel;
+	bool broken = false;
+};
+static std::vector<UserShaderSource> g_userSources;
 
 // [Doruk-Aksoy] Leave a shader out for good, with the console note GL prints for one of its own.
 static void BreakUserShader(UserShaderSource &s, const char *why)
@@ -983,11 +971,34 @@ static void BreakUserShader(UserShaderSource &s, const char *why)
 	Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", s.lump, why).c_str());
 }
 
+static UserShaderSource &UserSource(int shader)
+{
+	if (g_userSources.size() <= (size_t)shader) g_userSources.resize(shader + 1);
+	UserShaderSource &s = g_userSources[shader];
+	const char *lump = zx::hwshaders::UserShaderLump(shader);
+	const zx::hwshaders::ProcessLighting lighting = zx::hwshaders::UserShaderLighting(shader);
+	if (s.lump == lump && s.lighting == lighting) return s;
+	s = UserShaderSource();
+	s.lump = lump;
+	s.lighting = lighting;
+	const int num = Wads.CheckNumForFullName(lump);
+	if (num < 0)
+	{
+		s.broken = true;
+		return s;
+	}
+	FMemLump data = Wads.ReadLump(num);
+	const zx::hwshaders::ShaderStyle style = zx::hwshaders::ComputeAdaptUserShader(data.GetString().GetChars(), shader, s.adapted);
+	s.entry = zx::hwshaders::ComputeProgramEntry(style, lighting);
+	if (const char *why = zx::hwshaders::ComputeStyleRefusal(style)) BreakUserShader(s, why);
+	return s;
+}
+
 std::string ProgramBlock(zx::hwshaders::ProgramKind kind, int userShader)
 {
 	if (userShader < 0 || userShader >= zx::hwshaders::UserShaderCount()) return zx::hwshaders::ComputePlainProgramBlock(kind);
 	const UserShaderSource &s = UserSource(userShader);
-	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.newStyle, userShader);
+	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.entry, userShader);
 }
 
 bool UserShaderUsable(int shader)

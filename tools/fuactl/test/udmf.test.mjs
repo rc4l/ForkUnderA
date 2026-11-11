@@ -277,6 +277,26 @@ test("the bright-fog template stands Bright and plain actors in a dark room, col
   assert.deepEqual([grab.readInt32BE(at + 4), grab.readInt32BE(at + 8)], [32, 64]);
 });
 
+// [Doruk-Aksoy] Odd maps are shaded and even ones their oracles, MAP03 and MAP04 fogged; one glow shader serves both contracts and the oracle's glow wall and sprite wear a white brightmap.
+test("the hardware shader lighting template pairs shaded maps with oracles, fogged and not, and names the uzdoom contract once", async () => {
+  const { buildHwShaderLightingPk3 } = await import("../scenarios/hwshaderlighting.mjs");
+  const files = Object.fromEntries(readPk3(buildHwShaderLightingPk3()).map((f) => [f.name, f.data]));
+  const gldefs = files["gldefs.txt"].toString("latin1");
+  assert.equal((gldefs.match(/shaders\/oldglow\.fp/g) ?? []).length, 3);
+  assert.equal((gldefs.match(/fua_ProcessLighting uzdoom/g) ?? []).length, 1);
+  assert.match(gldefs, /HardwareShader Sprite "ZXGLA0"/);
+  assert.match(gldefs, /brightmap texture ZXORF \{ map ZXWHITE \}/);
+  assert.match(gldefs, /brightmap sprite ZXORA0 \{ map ZXWHITE \}/);
+  assert.match(files["shaders/oldglow.fp"].toString("latin1"), /vec4 Process\(vec4 color\)/);
+  assert.match(files["shaders/newglow.fp"].toString("latin1"), /vec4 ProcessTexel\(\)/);
+  const text = (n) => lumpsOf(files[`maps/MAP0${n}.wad`])[1].text;
+  for (const n of [1, 3]) { assert.match(text(n), /texturemiddle = "ZXSHA";/); assert.match(text(n), /type = 20120;/); assert.doesNotMatch(text(n), /ZXORF/); }
+  for (const n of [2, 4]) { assert.match(text(n), /texturemiddle = "ZXORF";/); assert.match(text(n), /type = 20121;/); assert.doesNotMatch(text(n), /ZXSH/); }
+  for (const n of [1, 2]) assert.doesNotMatch(text(n), /fadecolor/);
+  for (const n of [3, 4]) assert.match(text(n), /fadecolor = 2109536;/);
+  assert.doesNotMatch(files["decorate.txt"].toString("latin1"), /Bright/);
+});
+
 test("the sky templates carry what reproduces each fault: a scripted reflective pool, and a court too wide for the sky walls", async () => {
   const { buildSkymirrorWad } = await import("../scenarios/skymirror.mjs");
   const { buildSkyzenithWad } = await import("../scenarios/skyzenith.mjs");
