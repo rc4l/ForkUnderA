@@ -42,6 +42,8 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 
 - `rpc net.state`: role, a client's connection, the server tic it last heard of and its ping, a server's
   clients with each one's slot state, ping and last confirmed tic.
+- `rpc player.camera` on a client: where its player stands, and its `fov` and `desiredFov`, which a server's
+  `sv_minfov` and `sv_maxfov` bound.
 - `rpc world.actors` lists synced actors by network id (carried inventory left out, `owned: 1` keeps it);
   `world.sectorstate` and `world.sidestate` page through the map's look. `sim.hash` is not comparable
   between a server and a client.

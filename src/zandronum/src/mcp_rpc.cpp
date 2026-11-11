@@ -1119,11 +1119,13 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		FString out;
 		out.Format( "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"yaw\":%.4f,\"pitch\":%.4f,"
 					"\"viewz\":%.3f,\"floorz\":%.3f,\"ceilingz\":%.3f,\"sector\":%d,"
-					"\"map\":\"%s\"}",
+					"\"fov\":%.3f,\"desiredFov\":%.3f,\"map\":\"%s\"}",
 					FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ),
 					yaw, pitch,
 					FIXED2FLOAT( viewz ), FIXED2FLOAT( mo->floorz ), FIXED2FLOAT( mo->ceilingz ),
 					sec != NULL ? (int)( sec - sectors ) : -1,
+					// [rc4l] The FOV the view has reached and the one it steps toward, which the server's limits bound.
+					players[consoleplayer].FOV, players[consoleplayer].DesiredFOV,
 					level.MapName.GetChars() );
 		SendOk( id, out.GetChars() );
 	}
