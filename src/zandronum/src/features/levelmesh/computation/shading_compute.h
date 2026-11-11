@@ -28,6 +28,7 @@ struct ShadingEnv
 struct ShadingInput
 {
 	int      lightLevel;
+	int      fogLevel;       // [Doruk-Aksoy] the light level gl_SetFog is given: lightLevel, or a sprite's ComputeSpriteFogLevel
 	int      relLight;
 	unsigned lightColor;     // [rc4l] FColormap::LightColor
 	unsigned fadeColor;      // [rc4l] FColormap::FadeColor
@@ -59,6 +60,9 @@ float ComputeDistFog(int distFog, bool softTable, int light);
 
 // [rc4l] gl_GetFogDensity: the fog density a light level and fog colour get under the level's fog rules.
 float ComputeFogDensity(int lightLevel, unsigned fogColor, const ShadingEnv &env);
+
+// [Doruk-Aksoy] GLSprite::Draw's foglevel: the sector's light clamped to a byte, so a Bright sprite fogs as its room does, or the sprite's own light level under black fog.
+int ComputeSpriteFogLevel(int sectorLight, int lightLevel, unsigned fadeColor);
 
 // [rc4l] gl_SetColor then gl_SetFog for one surface, as the render state holds them afterwards.
 Shading ComputeShading(const ShadingInput &in, const ShadingEnv &env);
