@@ -23,11 +23,12 @@ void StartShadingRun();
 void CaptureRunShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out);
 
 // [rc4l] Shade a sprite or model piece as GLSprite::Draw does under `look`: fogged to black when additive and not at all under a fog layer, a shadow's fixed grey for its light, the actor's ThingColor over either, and the look's alpha.
-void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
+// [Doruk-Aksoy] foglevel is the light its fog takes, Draw's foglevel (ComputeSpriteFogLevel), so a Bright sprite is still fogged as its room is.
+void CaptureSpriteShading(int lightlevel, int foglevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
                           unsigned thingColor, MeshPiece &out);
 
 // [rc4l] Turn a copy of a fog-layer sprite's piece into GL's CM_FOGLAYER pass over it: fogged as gl_SetFog fogs it, drawn alpha-blended.
-void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out);
+void CaptureFogLayer(int lightlevel, int foglevel, int rellight, const FColormap &cm, MeshPiece &out);
 
 // [rc4l] A level surface's shading, as CaptureShading but with no fixed colormap: the cached mesh keeps its light through a power, and the shader applies the colormap over it, so a power starting, blinking or ending never re-bakes the level.
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog = false);
@@ -46,7 +47,7 @@ SectorLightEntry SectorLightEntryOf(int sector);
 void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, float &b);
 
 // [rc4l] Another renderer's shading of the same surface, which fua_shading_check compares the light model against; features/sidebyside sets GL's while the check is on.
-typedef void (*ShadingOracle)(int lightlevel, int rellight, const FColormap &cm, bool noFog, bool additive, MeshPiece &out);
+typedef void (*ShadingOracle)(int lightlevel, int foglevel, int rellight, const FColormap &cm, bool noFog, bool additive, MeshPiece &out);
 void SetShadingOracle(ShadingOracle oracle);
 
 }} // namespace zx::levelmesh

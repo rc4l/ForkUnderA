@@ -23,7 +23,8 @@ struct FColormap;
 namespace zx { namespace levelmesh {
 
 // [rc4l] The look a model's surfaces share, the same for GL's capture and the derived model: light, colour, the actor's dynamic light, Draw's translucent setup and sort point.
-void ModelPieceLook(int lightLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
+// [Doruk-Aksoy] fogLevel is the light its fog takes, Draw's foglevel (ComputeSpriteFogLevel).
+void ModelPieceLook(int lightLevel, int fogLevel, int extraLight, const FColormap &cm, bool fullbright, const float dyn[3], unsigned thingColor,
 	const zx::sprites::SpriteDrawLook &look, int blendMode, float x, float y, float z, MeshPiece &mp);
 
 // [rc4l] What becomes of a model's surfaces: drawn, drawn and noted as derived for fua_sprite_check, or GL's, only noted for it.

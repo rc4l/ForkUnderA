@@ -26,6 +26,7 @@
 #include "features/levelmesh/staticmesh.h"
 #include "features/levelmesh/flatmesh.h"            // [rc4l] the walk the stream's pieces belong to
 #include "features/levelmesh/captureshading.h"
+#include "features/levelmesh/computation/shading_compute.h"   // [Doruk-Aksoy] ComputeSpriteFogLevel
 #include "features/levelmesh/modelmesh.h"           // [rc4l] a derived model's capture
 #include "features/levelmesh/computation/flatmesh_compute.h"
 #include "features/viewsetup/spriteview.h"
@@ -215,6 +216,7 @@ struct Look
 {
 	bool fullbright;
 	int light;   // [rc4l] its light level
+	int sectorLight;   // [Doruk-Aksoy] Process's foglevel, the sector's own light, which coloured fog takes whatever the sprite's light
 	FColormap cm;
 	SpriteStyleOut so;
 	bool inverse;      // [rc4l] drawn in TM_INVERSE, as gl_GetRenderStyle takes InvertSource
@@ -228,6 +230,7 @@ static bool LookOf(const ActorRecord *thing, const Subject &s, bool disableFullb
 	sector_t *rendersector = s.rendersector;
 	l.light = l.fullbright ? 255 : gl_ClampLight(rendersector->rc.GetTexture(sector_t::ceiling) == skyflatnum ?
 		rendersector->rc.GetCeilingLight() : rendersector->rc.GetFloorLight());
+	l.sectorLight = rendersector->rc.lightlevel;
 	{
 		FTexture *floortex = TexMan[rendersector->rc.GetTexture(sector_t::floor)];
 		if (floortex != NULL && floortex->isGlowing())
@@ -319,10 +322,12 @@ static void ModelLookOf(const ActorRecord *thing, const Subject &s, const Look &
 		const int entry = ComputeSpriteColorEntry(s.z, float(thing->y + (thing->height >> 1)), bottoms, n);
 		if (entry >= 0) TakeListLight(thing->Sector->e->rcXFloor.lightlist[entry], false, lightlevel, cm);
 	}
+	// [Doruk-Aksoy] Draw picks its fog level before a fade to black clears the fog's colour.
+	const int foglevel = zx::levelmesh::ComputeSpriteFogLevel(l.sectorLight, lightlevel, cm.FadeColor.d);
 	DrawFade(l.so, lightlevel, cm);
 	float dyn[3];
 	DrawLight(thing, l, dyn);
-	zx::levelmesh::ModelPieceLook(lightlevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d,
+	zx::levelmesh::ModelPieceLook(lightlevel, foglevel, l.fullbright ? 0 : getExtraLight(), cm, l.fullbright, dyn, ThingColorOf(thing).d,
 		SpriteDrawLookAt(l.so.style, l.so.trans, cm, s.x, s.y, true),
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
@@ -486,6 +491,8 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	for (int i = 0; i < nbands && drawn < max; i++)
 	{
 		Band &b = bands[i];
+		// [Doruk-Aksoy] Each band is a split copy keeping Process's foglevel, which Draw takes back for black fog before a fade to black clears the colour.
+		const int foglevel = zx::levelmesh::ComputeSpriteFogLevel(look.sectorLight, b.light, b.cm.FadeColor.d);
 		DrawFade(so, b.light, b.cm);
 
 		SpriteEdges be = e;
@@ -512,7 +519,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		mp.lightColor = b.cm.LightColor.d;
 		mp.fadeColor = b.cm.FadeColor.d;
 		const SpriteDrawLook drawLook = SpriteDrawLookAt(so.style, so.trans, b.cm, x, y, false);
-		zx::levelmesh::CaptureSpriteShading(b.light, rel, b.cm, drawLook, ThingColorOf(thing).d, mp);
+		zx::levelmesh::CaptureSpriteShading(b.light, foglevel, rel, b.cm, drawLook, ThingColorOf(thing).d, mp);
 		mp.stencil = (so.style.flags & STYLEF_ColorIsFixed) != 0;
 		// [rc4l] Under a fog layer GL lets every texel with any alpha through, both passes.
 		mp.alphaTest = so.hw != kHwNoAlphaTest && !drawLook.fogLayer;
@@ -533,7 +540,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		{
 			SpritePiece &f = out[drawn++];
 			f = p;
-			zx::levelmesh::CaptureFogLayer(b.light, rel, b.cm, f.piece);
+			zx::levelmesh::CaptureFogLayer(b.light, foglevel, rel, b.cm, f.piece);
 		}
 	}
 	return drawn;
@@ -624,7 +631,9 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, const Particl
 	mp.lightLevel = lightlevel;
 	mp.lightColor = cm.LightColor.d;
 	mp.fadeColor = cm.FadeColor.d;
-	zx::levelmesh::CaptureSpriteShading(lightlevel, getExtraLight(), cm, ComputePlainDrawLook(trans), color.d, mp);
+	// [Doruk-Aksoy] ProcessParticle's foglevel is the sector's light, so a bright particle is fogged as its room is.
+	const int foglevel = zx::levelmesh::ComputeSpriteFogLevel(sector->rc.lightlevel, lightlevel, cm.FadeColor.d);
+	zx::levelmesh::CaptureSpriteShading(lightlevel, foglevel, getExtraLight(), cm, ComputePlainDrawLook(trans), color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
 		zx::levelmesh::PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);

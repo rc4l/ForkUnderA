@@ -35,6 +35,7 @@ void ComputeSectorLitShade(ScenePieceData &pd, const zx::levelmesh::SectorLightE
 	const zx::levelmesh::SectorLitInput lit = zx::levelmesh::ComputeSectorLitInput(e, r, env.fadeTable);
 	zx::levelmesh::ShadingInput in;
 	in.lightLevel = lit.lightLevel;
+	in.fogLevel = lit.lightLevel;
 	in.relLight = lit.relLight + extraLight;
 	in.lightColor = lit.lightColor;
 	in.fadeColor = lit.fadeColor;
