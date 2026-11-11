@@ -2467,6 +2467,8 @@ void APlayerPawn::TweakSpeeds (int &forward, int &side)
 // super function. This is done to prevent the player from cycling through
 // weapons when it dies.
 //
+// [AK] This function also destroys the icon attached to the player's body.
+//
 //===========================================================================
 
 void APlayerPawn::Destroy( void )
@@ -2475,6 +2477,14 @@ void APlayerPawn::Destroy( void )
 	// is destroyed, a new weapon isn't chosen for the player as his
 	// ready weapon isn't deleted, preventing the playing of upsounds.
 	this->health = 0;
+
+	// [rc4l] Ported from zandronum@33f99da71a1dfbdfe67104680967624b76ffad22: the icon goes with the body.
+	// [AK] Don't destroy the player's icon if the actor is a voodoo doll.
+	if (( player != nullptr ) && ( player->mo == this ) && ( player->pIcon != nullptr ))
+	{
+		player->pIcon->Destroy( );
+		player->pIcon = nullptr;
+	}
 
 	// That's it. Now proceed as normal.
 	Super::Destroy( );
