@@ -2185,7 +2185,9 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 	// that large thrusts can't propel an actor through a wall, because wall
 	// running depends on the player's original movement continuing even after
 	// it gets blocked.
-	if ((mo->player != NULL && (i_compatflags & COMPATF_WALLRUN)) || (mo->waterlevel >= 1) ||
+	// [rc4l] Ported from zandronum@1b8273be433593cf9647b196ec9cc02d555e20f8: spectators keep full speed underwater.
+	// [AK] Spectators can travel underwater without reducing their speed.
+	if ((mo->player != NULL && (i_compatflags & COMPATF_WALLRUN)) || (mo->waterlevel >= 1 && !(mo->player && mo->player->bSpectating)) ||
 		(mo->player != NULL && mo->player->crouchfactor < FRACUNIT*3/4))
 	{
 		// preserve the direction instead of clamping x and y independently.
