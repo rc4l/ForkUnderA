@@ -18,6 +18,8 @@ The turn is in the recorded ticcmds, so a demo recorded with it plays back the s
 recorder turns it on at the start of its firing lap, steers along the heading with no turning input of its own, and
 turns it off at the end.
 
+Its three cvars are dev-mode tools (`CVAR_FUA_DEV_MODE`, `features/dev-mode`).
+
 Off, it costs one cvar read a tic. It is not archived, so every session starts with it off. On, holding a target
 costs a sight check a tic, and picking a new one walks every actor with up to 24 sight checks, in the handoff, so
 only a recording pays it.

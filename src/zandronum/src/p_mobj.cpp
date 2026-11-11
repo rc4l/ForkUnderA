@@ -3731,7 +3731,7 @@ void P_NightmareRespawn (AActor *mobj)
 }
 
 
-AActor *AActor::TIDHash[128];
+AActor *AActor::TIDHash[kZxTidHashSize];
 
 //
 // P_ClearTidHashes
@@ -3803,7 +3803,7 @@ void AActor::RemoveFromHash ()
 
 bool P_IsTIDUsed(int tid)
 {
-	AActor *probe = AActor::TIDHash[tid & 127];
+	AActor *probe = AActor::TIDHash[AActor::TIDHASH (tid)];
 	while (probe != NULL)
 	{
 		if (probe->tid == tid)

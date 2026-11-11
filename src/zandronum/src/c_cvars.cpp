@@ -72,12 +72,13 @@
 #include "scoreboard.h"
 #include "name.h"
 #include "features/cvar-alias/computation/cvaralias_compute.h"   // [rc4l] the fua_ names other cvars answer to
-#include "features/cvar-memo/computation/cvarmemo_compute.h"   // [Doruk-Aksoy] lookups remembered by the name's pointer
+#include "features/name-memo/computation/namememo_compute.h"   // [Doruk-Aksoy] lookups remembered by the name's pointer
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] which value cl_protectcvars records and a save writes
 #include "features/dev-mode/devmode.h"   // [rc4l] the gate on CVAR_FUA_DEV_MODE settings
 #include "features/dev-mode/computation/devmode_compute.h"   // [rc4l] ComputeDevModeArchivedValue
 
 #include <atomic>
+#include <memory>
 
 // [rc4l] Name-keyed cache in front of FindCVar's linked-list walk. ACS GetCVar resolves a
 // cvar by name on every script call, and mods poll cvars every tic, so the O(cvars) stricmp
@@ -91,9 +92,9 @@ static TMap<FName, FBaseCVar *> &CVarCache()
 	return cache;
 }
 
-// [Doruk-Aksoy] features/cvar-memo: each thread's lookups by the name's pointer, ahead of the name cache, whose string hash and name-table lock cost ~150 ns each for a script polling cvars; a changed name cache or a destroyed cvar starts a new generation.
+// [Doruk-Aksoy] features/name-memo: each thread's lookups by the name's pointer, ahead of the name cache, whose string hash and name-table lock cost ~150 ns each for a script polling cvars; a changed name cache or a destroyed cvar starts a new generation.
 static std::atomic<unsigned> CVarMemoGeneration{ 1 };
-static thread_local ZxCVarMemo t_cvarMemo;
+static thread_local std::unique_ptr<ZxNameMemo> t_cvarMemo;
 
 static void CVarMemoForget()
 {
@@ -1692,9 +1693,9 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 	// lookups of nonexistent cvars from growing the global name table.
 	if (!wantsPrev)
 	{
-		// [Doruk-Aksoy] features/cvar-memo: the name is compared, since a pointer can come back holding another name.
+		// [Doruk-Aksoy] features/name-memo: the name is compared, since a pointer can come back holding another name.
 		const unsigned generation = CVarMemoGeneration.load(std::memory_order_relaxed);
-		FBaseCVar *memo = static_cast<FBaseCVar *>(ComputeCVarMemoFind(t_cvarMemo, var_name, generation));
+		FBaseCVar *memo = static_cast<FBaseCVar *>(ComputeNameMemoFind(ComputeNameMemoFor(t_cvarMemo), var_name, generation));
 		if (memo != NULL && stricmp(memo->GetName(), var_name) == 0)
 			return memo;
 		FName key (var_name, true);
@@ -1703,7 +1704,7 @@ FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev)
 			FBaseCVar **cached = CVarCache().CheckKey (key);
 			if (cached != NULL)
 			{
-				ComputeCVarMemoStore(t_cvarMemo, var_name, *cached, generation);
+				ComputeNameMemoStore(ComputeNameMemoFor(t_cvarMemo), var_name, *cached, generation);
 				return *cached;
 			}
 		}
