@@ -66,12 +66,12 @@ Actor ZXSpawnPastMonster : RandomSpawner
 }
 `;
 
-// [rc4l] Script 1 counts each spawner in and spawns it; script 2 counts a monster that should not have come, script 3 counts an item out.
+// [rc4l] Script 1 counts each spawner in, and one more for itself so a puke that never ran reads 0, then spawns them; script 2 counts a monster that should not have come, script 3 counts an item out.
 export function behavior() {
   const strings = [COUNTER_CVAR, ...SPAWNERS];
   const code = SPAWNERS.flatMap((_, i) => [...callFunc(ACSF.SpawnSpotForced, [1 + i, SPOT_TID + i, 0, 0]), PCD.DROP]);
   return acsScripts([
-    { code: [...addToCVar(0, SPAWNERS.length), ...code, PCD.TERMINATE], open: false, number: 1 },
+    { code: [...addToCVar(0, SPAWNERS.length + 1), ...code, PCD.TERMINATE], open: false, number: 1 },
     { code: [...addToCVar(0, 1), PCD.TERMINATE], open: false, number: 2 },
     { code: [...addToCVar(0, -1), PCD.TERMINATE], open: false, number: 3 },
   ], strings);
@@ -88,8 +88,8 @@ export function buildRandomSpawnerPk3() {
 
 export const VANTAGES = [{ name: "west", at: { ...PLAYER, z: 0, angle: 0, pitch: 0 } }];
 
-export const COUNTER = { command: COUNTER_CVAR, label: "spawners that spawned a monster or nothing",
-  pattern: `"${COUNTER_CVAR}" is "(-?\\d+)"`, ceiling: 0, floor: 0 };
+export const COUNTER = { command: COUNTER_CVAR, label: "spawners that spawned a monster or nothing, plus the puke's own one",
+  pattern: `"${COUNTER_CVAR}" is "(-?\\d+)"`, ceiling: 1, floor: 1 };
 
 export const SIDES = [{ name: "nomonsters", launchCvars: { ...MUTE, sv_nomonsters: 1 }, commands: ["puke 1"] }];
 
