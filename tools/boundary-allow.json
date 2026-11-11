@@ -190,7 +190,7 @@
   "team.cpp": 16,
   "textures/texturemanager.cpp": 1,
   "thingdef/olddecorations.cpp": 1,
-  "thingdef/thingdef_codeptr.cpp": 126,
+  "thingdef/thingdef_codeptr.cpp": 125,
   "thingdef/thingdef_expression.cpp": 2,
   "v_font.cpp": 1,
   "v_video.cpp": 1,
