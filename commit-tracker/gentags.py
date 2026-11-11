@@ -119,7 +119,8 @@ def main():
     cats = {}
     for c in reversed(commits):
         cats[c.sha] = set()
-        for p in c.files:
+        # [rc4l] An ignored path (Zandronum's changelog) would tag most of its ledger `docs`; it counts only when it is all there is.
+        for p in [f for f in c.files if not L.is_ignored(led, f)] or c.files:
             cats[c.sha].update(path_tags(p))
 
     syms = {}
