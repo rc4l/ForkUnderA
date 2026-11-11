@@ -714,16 +714,17 @@ void DrawFullHUD_GameInformation()
 			sprintf( szString, "%d", CPlayer->killcount );
 
 		LONG left = SCOREBOARD_GetLeftToLimit( );
+		const bool playersEarnKills = !!( GAMEMODE_GetCurrentFlags( ) & GMF_PLAYERSEARNKILLS );
+		// [rc4l] Ported from zandronum@35a706fa323fa47a00374fef2af830c4d12535d5: invasion counts monsters left, never a percentage.
+		const bool showPercentageMonstersLeft = (( playersEarnKills ) && ( invasion == false ) && ( dmflags2 & DF2_KILL_MONSTERS ));
+
 		if(left > 0)
 		{
-			const bool playersEarnKills = !!( GAMEMODE_GetCurrentFlags( ) & GMF_PLAYERSEARNKILLS );
-
 			// [BB Be careful when using sprintf to append something.
 			// [AK] Using a percentage should only be done in game modes where players earn kills.
 			if (( playersEarnKills ) || ( cl_showscoreleft ))
 			{
-				// [rc4l] Ported from zandronum@35a706fa323fa47a00374fef2af830c4d12535d5: invasion counts monsters left, never a percentage.
-				if (( playersEarnKills ) && ( invasion == false ) && ( dmflags2 & DF2_KILL_MONSTERS ))
+				if ( showPercentageMonstersLeft )
 					sprintf( szString + strlen( szString ), TEXTCOLOR_TAN " (%ld%% left)", left );
 				else
 					sprintf( szString + strlen( szString ), TEXTCOLOR_TAN " (%ld left)", left );
@@ -732,6 +733,12 @@ void DrawFullHUD_GameInformation()
 			{
 				sprintf( szString + strlen( szString ), TEXTCOLOR_TAN " (%ld to win)", left );
 			}
+		}
+		// [rc4l] Ported from zandronum@9c3843520b68edf7b8778ac37c13a72ed663d3e4: under 1% left is said so rather than 0%.
+		// [AK] Properly show when there's anywhere between 0 to 1% of monsters left to kill.
+		else if (( showPercentageMonstersLeft ) && ( level.total_monsters - level.killed_monsters > 0 ))
+		{
+			strcat( szString, TEXTCOLOR_TAN " (less than 1% left)" );
 		}
 
 		HUD_DrawText( ConFont, CR_RED,
