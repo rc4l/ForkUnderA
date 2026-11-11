@@ -84,6 +84,8 @@ CUSTOM_CVAR( Int, sv_fastweapons, 0, CVAR_SERVERINFO | CVAR_GAMEPLAYSETTING )
 CVAR( Bool, cl_alwaysbob, false, CVAR_ARCHIVE )
 CVAR( Bool, cl_usecustombob, false, CVAR_ARCHIVE )
 CVAR( Float, cl_bobspeed, 1.0f, CVAR_ARCHIVE )
+CVAR( Float, cl_bobrangex, 1.0f, CVAR_ARCHIVE )
+CVAR( Float, cl_bobrangey, 1.0f, CVAR_ARCHIVE )
 CVAR( Float, cl_stillbobspeed, 0.0f, CVAR_ARCHIVE )
 CVAR( Float, cl_stillbobrange, 0.0f, CVAR_ARCHIVE )
 
@@ -736,11 +738,20 @@ void WeaponBobFrom (const FWeaponBobIn &in, fixed_t *x, fixed_t *y)
 	}
 
 	// [XA] Get the current weapon's bob properties.
-	// [AK] Adjust the bob style and speed to the client's preference if cl_usecustombob is enabled.
-	int bobstyle = cl_usecustombob ? cl_bobstyle : in.bobStyle;
+	int bobstyle = in.bobStyle;
+	// [AK] Adjust the bob speed to the client's preference if cl_usecustombob is enabled.
 	int bobspeed = (int)(((cl_usecustombob ? FLOAT2FIXED(cl_bobspeed) : in.bobSpeed) * 128) >> 16);
 	fixed_t rangex = in.bobRangeX;
 	fixed_t rangey = in.bobRangeY;
+
+	// [rc4l] Ported from zandronum@6d3c00306ce0b3ffb462f9a71ad77496084efd15: custom bobbing sets the ranges too.
+	// [AK] Adjust the bob style and range if custom bobbing is used too.
+	if (cl_usecustombob)
+	{
+		bobstyle = cl_bobstyle;
+		rangex = FLOAT2FIXED(cl_bobrangex);
+		rangey = FLOAT2FIXED(cl_bobrangey);
+	}
 
 	// Bob the weapon based on movement speed.
 	int angle = (bobspeed*35/TICRATE*in.levelTime)&FINEMASK;
