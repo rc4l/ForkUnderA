@@ -21,7 +21,7 @@ ShadingEnv Env()
 ShadingInput Surface(int light, int rel = 0)
 {
 	ShadingInput in = {};
-	in.lightLevel = light; in.relLight = rel; in.lightColor = 0xffffff;
+	in.lightLevel = light; in.fogLevel = light; in.relLight = rel; in.lightColor = 0xffffff;
 	return in;
 }
 
@@ -188,6 +188,31 @@ TEST(Shading, SoftwareLightingCarriesTheLevelAndBrightFogRaisesIt)
 	EXPECT_EQ(ComputeShading(in, e).softLight, 120 / 255.f);
 }
 
+// [Doruk-Aksoy] GLSprite::Draw fogs at the sector's light, a byte, whatever the sprite's own; under black fog the sprite's own comes back.
+TEST(ComputeSpriteFogLevel, TheSectorsLightUnlessTheFogIsBlack)
+{
+	EXPECT_EQ(64, ComputeSpriteFogLevel(64, 255, 0x00203060));
+	EXPECT_EQ(64, ComputeSpriteFogLevel(64, 255, 0xff203060));   // [Doruk-Aksoy] the fade's alpha is not its colour
+	EXPECT_EQ(255, ComputeSpriteFogLevel(64, 255, 0xff000000));  // [Doruk-Aksoy] black fog, as gl_isBlack reads it
+	EXPECT_EQ(144, ComputeSpriteFogLevel(64, 144, 0));
+	EXPECT_EQ(0, ComputeSpriteFogLevel(-12, 255, 0x102030));
+	EXPECT_EQ(255, ComputeSpriteFogLevel(300, 96, 0x102030));
+}
+
+// [Doruk-Aksoy] A Bright sprite in a dark room's coloured fog is lit at 255 but fogged by the room's 64, where fogging at its own 255 left it unfogged.
+TEST(Shading, ABrightSpriteFogsAtItsSectorsLight)
+{
+	ShadingInput in = Surface(255);
+	in.fadeColor = 0x203060;
+	EXPECT_EQ(ComputeShading(in, Env()).fogMode, 0);
+	in.fogLevel = ComputeSpriteFogLevel(64, 255, in.fadeColor);
+	const Shading s = ComputeShading(in, Env());
+	EXPECT_EQ(s.r, 1.f); EXPECT_EQ(s.g, 1.f); EXPECT_EQ(s.b, 1.f);
+	EXPECT_EQ(s.fogMode, -1);
+	EXPECT_EQ(s.fogColor, 0x203060u);
+	EXPECT_EQ(s.fogDensity, 191.f * kScale);
+}
+
 // [rc4l] Changing the light mode mid-level left every baked surface in the old one, a 3D floor's bands included.
 TEST(ComputeSameLevelShading, EverySettingButTheFixedColormapAndSkybox)
 {
@@ -213,11 +238,12 @@ TEST(ComputeSameLevelShading, EverySettingButTheFixedColormapAndSkybox)
 TEST(ComputeSameShadingInput, EveryFieldCounts)
 {
 	ShadingInput a;
-	a.lightLevel = 160; a.relLight = 16; a.lightColor = 0xffffff; a.fadeColor = 0; a.blendFactor = 0; a.desaturation = 0;
+	a.lightLevel = 160; a.fogLevel = 160; a.relLight = 16; a.lightColor = 0xffffff; a.fadeColor = 0; a.blendFactor = 0; a.desaturation = 0;
 	a.noFog = false; a.additive = false;
 	EXPECT_TRUE(ComputeSameShadingInput(a, a));
 	const auto differs = [&](void (*edit)(ShadingInput &)) { ShadingInput c = a; edit(c); return !ComputeSameShadingInput(a, c); };
 	EXPECT_TRUE(differs([](ShadingInput &i) { i.lightLevel = 161; }));
+	EXPECT_TRUE(differs([](ShadingInput &i) { i.fogLevel = 64; }));
 	EXPECT_TRUE(differs([](ShadingInput &i) { i.relLight = 0; }));
 	EXPECT_TRUE(differs([](ShadingInput &i) { i.lightColor = 0xff0000; }));
 	EXPECT_TRUE(differs([](ShadingInput &i) { i.fadeColor = 0x202020; }));

@@ -96,7 +96,8 @@ export function cropImage(img, box, zoom = 4, gain = 1) {
 }
 
 // [rc4l] An RGB image as PNG bytes, for a capture on disk or a graphic lump inside a template wad.
-export function encodePNG(w, h, rgb) {
+// [Doruk-Aksoy] With grab [x, y], ZDoom's grAb chunk gives a sprite its offsets, so it stands on its actor rather than hanging below it.
+export function encodePNG(w, h, rgb, { grab = null } = {}) {
   const raw = Buffer.alloc((w * 3 + 1) * h);
   for (let y = 0; y < h; y++) {
     raw[y * (w * 3 + 1)] = 0;                                  // filter: none
@@ -111,9 +112,11 @@ export function encodePNG(w, h, rgb) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  const offsets = [];
+  if (grab) { const g = Buffer.alloc(8); g.writeInt32BE(grab[0], 0); g.writeInt32BE(grab[1], 4); offsets.push(chunk("grAb", g)); }
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
+    chunk("IHDR", ihdr), ...offsets, chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
   ]);
 }
 

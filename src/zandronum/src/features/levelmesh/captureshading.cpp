@@ -26,11 +26,12 @@ static bool SameBits(float a, float b) { return memcmp(&a, &b, sizeof(float)) ==
 static ShadingOracle g_oracle = NULL;
 void SetShadingOracle(ShadingOracle oracle) { g_oracle = oracle; }
 
-// [Doruk-Aksoy] A surface's shading input from its light, relative light and colormap.
-static ShadingInput InputOf(int lightlevel, int rellight, const FColormap &cm, bool noFog, bool additive)
+// [Doruk-Aksoy] A surface's shading input from its light, the light its fog takes, relative light and colormap.
+static ShadingInput InputOf(int lightlevel, int foglevel, int rellight, const FColormap &cm, bool noFog, bool additive)
 {
 	ShadingInput in;
 	in.lightLevel = lightlevel;
+	in.fogLevel = foglevel;
 	in.relLight = rellight;
 	in.lightColor = cm.LightColor.d;
 	in.fadeColor = cm.FadeColor.d;
@@ -45,7 +46,7 @@ void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, f
 {
 	ShadingEnv env = RenderShadingEnv(false);
 	if (env.lightMode == 8) env.lightMode = 0;
-	const ShadingInput in = InputOf(lightlevel, 0, cm, true, false);
+	const ShadingInput in = InputOf(lightlevel, lightlevel, 0, cm, true, false);
 	const Shading s = ComputeShading(in, env);
 	r = s.r;
 	g = s.g;
@@ -53,9 +54,9 @@ void CapturePolyColor(int lightlevel, const FColormap &cm, float &r, float &g, f
 }
 
 // [rc4l] Shade `out` in the frame's light model, the fixed colormap left out for a level surface.
-static void Capture(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive, bool levelSurface)
+static void Capture(int lightlevel, int foglevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive, bool levelSurface)
 {
-	const ShadingInput in = InputOf(lightlevel, rellight, cm, noFog, additive);
+	const ShadingInput in = InputOf(lightlevel, foglevel, rellight, cm, noFog, additive);
 	ShadingEnv env = RenderShadingEnv(false);
 	if (levelSurface) env.fixedColormap = false;
 	ShadePiece(in, env, out);
@@ -63,21 +64,21 @@ static void Capture(int lightlevel, int rellight, const FColormap &cm, MeshPiece
 	// [rc4l] GL's setters light a level surface under the fixed colormap, which this one leaves to the shader.
 	if (!fua_shading_check || g_oracle == NULL || (levelSurface && gl_fixedcolormap != CM_DEFAULT)) return;
 	MeshPiece gl = out;
-	g_oracle(lightlevel, rellight, cm, noFog, additive, gl);
+	g_oracle(lightlevel, foglevel, rellight, cm, noFog, additive, gl);
 	g_check.checked++;
 	if (SameBits(gl.colorR, out.colorR) && SameBits(gl.colorG, out.colorG) && SameBits(gl.colorB, out.colorB) &&
 	    SameBits(gl.softLight, out.softLight) && SameBits(gl.fogDensity, out.fogDensity) &&
 	    gl.fogColor == out.fogColor && gl.desaturation == out.desaturation && gl.fogMode == out.fogMode) return;
 	if (zx::frame::ComputeOracleDiffer(g_check, 8))
-		zx::frame::ComputeOracleNote(g_check, "  light %d rel %d lc %08x fc %08x bf %d nofog %d add %d: gl (%g %g %g s%g d%g c%06x m%d ds%d) model (%g %g %g s%g d%g c%06x m%d ds%d)\n",
-			lightlevel, rellight, cm.LightColor.d, cm.FadeColor.d, cm.blendfactor, noFog, additive,
+		zx::frame::ComputeOracleNote(g_check, "  light %d fog %d rel %d lc %08x fc %08x bf %d nofog %d add %d: gl (%g %g %g s%g d%g c%06x m%d ds%d) model (%g %g %g s%g d%g c%06x m%d ds%d)\n",
+			lightlevel, foglevel, rellight, cm.LightColor.d, cm.FadeColor.d, cm.blendfactor, noFog, additive,
 			gl.colorR, gl.colorG, gl.colorB, gl.softLight, gl.fogDensity, gl.fogColor, gl.fogMode, gl.desaturation,
 			out.colorR, out.colorG, out.colorB, out.softLight, out.fogDensity, out.fogColor, out.fogMode, out.desaturation);
 }
 
 void CaptureShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, bool additive)
 {
-	Capture(lightlevel, rellight, cm, out, noFog, additive, false);
+	Capture(lightlevel, lightlevel, rellight, cm, out, noFog, additive, false);
 }
 
 // [Doruk-Aksoy] The run's environment once taken, and the last input it shaded with what came of it.
@@ -92,7 +93,7 @@ void CaptureRunShading(int lightlevel, int rellight, const FColormap &cm, MeshPi
 {
 	// [Doruk-Aksoy] The oracle checks each piece it is asked about, so with it on every piece is captured alone.
 	if (fua_shading_check) { CaptureShading(lightlevel, rellight, cm, out); return; }
-	const ShadingInput in = InputOf(lightlevel, rellight, cm, false, false);
+	const ShadingInput in = InputOf(lightlevel, lightlevel, rellight, cm, false, false);
 	if (!g_run.envTaken) { g_run.env = RenderShadingEnv(false); g_run.envTaken = true; }
 	if (!g_run.kept || !ComputeSameShadingInput(g_run.in, in))
 	{
@@ -103,10 +104,10 @@ void CaptureRunShading(int lightlevel, int rellight, const FColormap &cm, MeshPi
 	ApplyShading(g_run.shading, out);
 }
 
-void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
+void CaptureSpriteShading(int lightlevel, int foglevel, int rellight, const FColormap &cm, const zx::sprites::SpriteDrawLook &look,
                           unsigned thingColor, MeshPiece &out)
 {
-	Capture(lightlevel, rellight, cm, out, false, look.additiveFog, false);
+	Capture(lightlevel, foglevel, rellight, cm, out, false, look.additiveFog, false);
 	if (look.shadow) out.colorR = out.colorG = out.colorB = zx::sprites::kShadowColor;
 	const PalEntry color(thingColor);
 	out.colorR *= color.r / 255.f;
@@ -117,10 +118,10 @@ void CaptureSpriteShading(int lightlevel, int rellight, const FColormap &cm, con
 	if (look.fogLayer) { out.fogMode = 0; out.fogDensity = 0.f; }
 }
 
-void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out)
+void CaptureFogLayer(int lightlevel, int foglevel, int rellight, const FColormap &cm, MeshPiece &out)
 {
 	MeshPiece fogged = out;
-	Capture(lightlevel, rellight, cm, fogged, false, false, false);
+	Capture(lightlevel, foglevel, rellight, cm, fogged, false, false, false);
 	out.fogMode = fogged.fogMode;
 	out.fogDensity = fogged.fogDensity;
 	out.fogColor = fogged.fogColor;
@@ -132,7 +133,7 @@ void CaptureFogLayer(int lightlevel, int rellight, const FColormap &cm, MeshPiec
 
 void CaptureLevelShading(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog)
 {
-	Capture(lightlevel, rellight, cm, out, noFog, false, true);
+	Capture(lightlevel, lightlevel, rellight, cm, out, noFog, false, true);
 }
 
 static unsigned int g_shadeGeneration = 0;
@@ -158,7 +159,7 @@ SectorLightEntry SectorLightEntryOf(int sector)
 
 void CaptureLevelShadingFrom(int lightlevel, int rellight, const FColormap &cm, MeshPiece &out, bool noFog, const SectorLightRef &guess)
 {
-	Capture(lightlevel, rellight, cm, out, noFog, false, true);
+	Capture(lightlevel, lightlevel, rellight, cm, out, noFog, false, true);
 	if (guess.sector < 0) return;
 	const SectorLitInput in = ComputeSectorLitInput(SectorLightEntryOf(guess.sector), guess, RenderShadingEnv(false).fadeTable);
 	if (!ComputeSectorLitReproduces(in, lightlevel, rellight - getExtraLight(), cm.LightColor.d, cm.FadeColor.d, cm.blendfactor, cm.desaturation)) return;

@@ -36,6 +36,18 @@ test("encoded bytes are the PNG writePNG puts on disk", () => {
   assert.equal(encodePNG(2, 1, rgb).subarray(1, 4).toString("latin1"), "PNG");
 });
 
+// [Doruk-Aksoy] A grab puts ZDoom's grAb chunk, signed offsets, between the header and the pixels, which still decode as before.
+test("a grab adds a grAb chunk ahead of the pixels and leaves them as they were", () => {
+  const rgb = Buffer.from([10, 20, 30, 200, 100, 0]);
+  const bytes = encodePNG(2, 1, rgb, { grab: [-3, 64] });
+  const at = bytes.indexOf("grAb", 0, "latin1");
+  assert.ok(at > bytes.indexOf("IHDR", 0, "latin1") && at < bytes.indexOf("IDAT", 0, "latin1"));
+  assert.deepEqual([bytes.readInt32BE(at - 4), bytes.readInt32BE(at + 4), bytes.readInt32BE(at + 8)], [8, -3, 64]);
+  const img = decodePNGBytes(bytes);
+  assert.deepEqual([px(img, 0, 0), px(img, 1, 0)], [[10, 20, 30], [200, 100, 0]]);
+  assert.equal(encodePNG(2, 1, rgb).indexOf("grAb", 0, "latin1"), -1);
+});
+
 // [rc4l] A crop at zoom 0.6 used to write a 614.4-pixel width into the PNG header, which nothing could open.
 test("a crop shrinks to whole pixels and keeps its corners", () => {
   const img = { w: 10, h: 10, channels: 3, colorType: 2, data: Buffer.alloc(300) };
