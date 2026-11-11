@@ -28,7 +28,7 @@ Keeps the ACS database functions (`SetDBEntry`, `GetDBEntry`, `IncrementDBEntry`
 - A failed outbox write is retried every tic until it lands; a writer that makes no progress for 10 s, a mod transaction closed for it, and an outbox file that cannot be opened (at the claim or in a later scan) are each named on the console once.
 - On open, leftovers the file already holds (a server killed between applying and pruning) are dropped, not shown or sent again.
 - `fua_db_status` prints the outbox slot, the server id, what the shared file has yet to take, and the writer's retries and last error.
-- Stock Zandronum servers can share the file: they write wall-clock stamps the rule compares, but ignore delete markers.
+- Stock Zandronum servers can share the file: they write wall-clock stamps the rule compares, and the `fua_MarkStockDelete` trigger, which lives in the file and so runs for every connection, gives their deletes a marker stamped at the time of the delete. The queue writer's own transactions hold a row in `fua_Writing` that never commits, and the trigger skips them, so the queue's deletes keep their own stamps. The trigger uses only SQL that SQLite 3.36, which stock Zandronum 3.3 ships, parses.
 - One file shared over a network drive is not safe in any mode: docs/database-shared-file-risk.md.
 
 ## Engine hooks
