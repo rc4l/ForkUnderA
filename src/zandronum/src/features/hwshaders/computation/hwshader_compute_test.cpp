@@ -33,7 +33,7 @@ TEST(HwShader, ANewShaderLosesItsVersionAndTimerAndIsRenamed)
 {
 	const std::string src = "#version 120\nuniform float timer;\n  uniform   float timer ;\nvec4 ProcessTexel()\n{\n\treturn getTexel(gl_TexCoord[0].st + timer);\n}";
 	std::string out;
-	ASSERT_TRUE(ComputeAdaptUserShader(src, 3, out));
+	ASSERT_EQ(kStyleProcessTexel, ComputeAdaptUserShader(src, 3, out));
 	EXPECT_EQ(std::string::npos, out.find("#version"));
 	EXPECT_EQ(std::string::npos, out.find("uniform"));
 	EXPECT_NE(std::string::npos, out.find("vec4 fuaProcessTexel_3()"));
@@ -46,7 +46,7 @@ TEST(HwShader, AnOldShaderKeepsProcessAndWholeWordsOnly)
 {
 	const std::string src = "vec4 Process(vec4 color) { return getTexel(vTexCoord.st) * color; }\nvec4 ProcessLight(vec4 c) { return c; }\nfloat MyProcess = 1.0; float Processes;\n";
 	std::string out;
-	ASSERT_FALSE(ComputeAdaptUserShader(src, 0, out));
+	ASSERT_EQ(kStyleProcess, ComputeAdaptUserShader(src, 0, out));
 	EXPECT_NE(std::string::npos, out.find("vec4 fuaProcess_0(vec4 color)"));
 	EXPECT_NE(std::string::npos, out.find("vec4 fuaProcessLight_0(vec4 c)"));
 	EXPECT_NE(std::string::npos, out.find("MyProcess"));
@@ -93,7 +93,7 @@ TEST(HwShader, AShadersOwnCameraposIsKept)
 TEST(HwShader, TheBackendsAdaptationTakesLegacyNames)
 {
 	std::string out;
-	ASSERT_FALSE(ComputeAdaptUserShader("uniform vec3 camerapos;\nvec4 Process(vec4 c) { return vec4(gl_TextureMatrix[7][3].xyz - camerapos, 1.0); }\n", 2, out));
+	ASSERT_EQ(kStyleProcess, ComputeAdaptUserShader("uniform vec3 camerapos;\nvec4 Process(vec4 c) { return vec4(gl_TextureMatrix[7][3].xyz - camerapos, 1.0); }\n", 2, out));
 	EXPECT_EQ(0u, out.find("#define camerapos (uCameraPos.xyz)\nmat4 fuaTextureMatrix(int i)"));
 	EXPECT_NE(std::string::npos, out.find("vec4 fuaProcess_2(vec4 c) { return vec4(fuaTextureMatrix(7)[3].xyz - camerapos, 1.0); }"));
 }
@@ -101,7 +101,7 @@ TEST(HwShader, TheBackendsAdaptationTakesLegacyNames)
 // [Doruk-Aksoy] A shader's own program: GL's names over the scene shader's, the shader, and fuaSurfaceTexel calling its entry by style.
 TEST(HwShader, AProgramBlockGivesGLsNamesAndCallsItsEntry)
 {
-	const std::string b = ComputeUserProgramBlock(kSceneProgram, "A\n", true, 4);
+	const std::string b = ComputeUserProgramBlock(kSceneProgram, "A\n", kEntryTexel, 4);
 	EXPECT_NE(std::string::npos, b.find("vec4 getTexel(vec2 st)"));
 	EXPECT_NE(std::string::npos, b.find("#define texture2D(s, uv) fuaTexel(uv)\n"));
 	EXPECT_NE(std::string::npos, b.find("#define texture(s, uv) fuaTexel(uv)\n"));
@@ -122,16 +122,34 @@ TEST(HwShader, AProgramBlockGivesGLsNamesAndCallsItsEntry)
 	// [Doruk-Aksoy] Every name the block defines is undefined again before its own code.
 	for (const char *name : { "texture2D", "texture", "pixelpos", "glowdist", "uCameraPos", "vColor", "uDesaturationFactor", "ModelMatrix", "TextureMatrix" })
 		EXPECT_NE(std::string::npos, b.find(std::string("#undef ") + name + "\n")) << name;
-	// [Doruk-Aksoy] An old shader's entry is Process, handed white and the piece's alpha, as 3.3 handed it, and the alpha it returns is the one drawn.
-	const std::string old = ComputeUserProgramBlock(kSceneProgram, "B\n", false, 0);
-	EXPECT_NE(std::string::npos, old.find("    return fuaProcess_0(vec4(1.0, 1.0, 1.0, vLightParm.z));\n"));
+	EXPECT_NE(std::string::npos, b.find("vec3 fuaSurfaceShade(vec4 t) { return fuaShade(t.rgb); }\n"));
+}
+
+// [Doruk-Aksoy] Zandronum 3.3's Process is handed the light with the piece's alpha and only finished after, keeping its own alpha, while a warped piece stays plain.
+TEST(HwShader, AZandronumProcessIsHandedTheLightAndIsFinal)
+{
+	const std::string old = ComputeUserProgramBlock(kSceneProgram, "B\n", kEntryProcessFinal, 0);
+	EXPECT_NE(std::string::npos, old.find("    if (vWarp.x < 2.5) return fuaTexMode(fuaTexel(fuaUV));\n"));
+	EXPECT_NE(std::string::npos, old.find("    return fuaProcess_0(vec4(fuaProcessLight(), vLightParm.z));\n"));
 	EXPECT_NE(std::string::npos, old.find("float fuaSurfaceAlpha() { return vWarp.x < 2.5 ? vLightParm.z : 1.0; }\n"));
+	EXPECT_NE(std::string::npos, old.find("vec3 fuaSurfaceShade(vec4 t) { return vWarp.x < 2.5 ? fuaShade(t.rgb) : fuaShadeFinal(t.rgb); }\n"));
+	EXPECT_EQ(std::string::npos, old.find("fuaProcessTexel_"));
+}
+
+// [Doruk-Aksoy] UZDoom's Process is handed white and lit after like a texel, its alpha the piece's.
+TEST(HwShader, AUZDoomProcessIsHandedWhiteAndLitAfter)
+{
+	const std::string lit = ComputeUserProgramBlock(kSceneProgram, "B\n", kEntryProcessLit, 5);
+	EXPECT_NE(std::string::npos, lit.find("    return fuaProcess_5(vec4(1.0));\n"));
+	EXPECT_NE(std::string::npos, lit.find("float fuaSurfaceAlpha() { return vLightParm.z; }\n"));
+	EXPECT_NE(std::string::npos, lit.find("vec3 fuaSurfaceShade(vec4 t) { return fuaShade(t.rgb); }\n"));
+	EXPECT_EQ(std::string::npos, lit.find("fuaProcessLight()"));
 }
 
 // [Doruk-Aksoy] A 2D program reads the 2D layer's texel and colour, has no world to place, and its old entry is handed the draw's colour whole.
 TEST(HwShader, A2DProgramBlockTakesThe2DLayersNames)
 {
-	const std::string b = ComputeUserProgramBlock(k2DProgram, "C\n", true, 2);
+	const std::string b = ComputeUserProgramBlock(k2DProgram, "C\n", kEntryTexel, 2);
 	EXPECT_EQ(std::string::npos, b.find("vModel0"));
 	EXPECT_NE(std::string::npos, b.find("vec4 getTexel(vec2 st) { return fua2DTexel(st); }\n"));
 	EXPECT_NE(std::string::npos, b.find("#define texture2D(s, uv) fua2DRaw(uv)\n"));
@@ -141,12 +159,16 @@ TEST(HwShader, A2DProgramBlockTakesThe2DLayersNames)
 	EXPECT_NE(std::string::npos, b.find("vec4 fua2DColor(vec2 fuaUV) {\n    vTexCoord = vec4(fuaUV, 0.0, 1.0);\n    timer = uInvScreen.z * vSpeed;\n"));
 	EXPECT_NE(std::string::npos, b.find("    return fuaProcessTexel_2() * vColor;\n"));
 	EXPECT_EQ(std::string::npos, b.find("fuaSurfaceAlpha"));
-	EXPECT_NE(std::string::npos, ComputeUserProgramBlock(k2DProgram, "D\n", false, 1).find("    return fuaProcess_1(vColor);\n"));
+	EXPECT_EQ(std::string::npos, b.find("fuaSurfaceShade"));
+	// [Doruk-Aksoy] An old 2D entry is handed the draw's colour as 3.3 handed it, or white with the colour multiplied after as UZDoom would light it.
+	EXPECT_NE(std::string::npos, ComputeUserProgramBlock(k2DProgram, "D\n", kEntryProcessFinal, 1).find("    return fuaProcess_1(vColor);\n"));
+	EXPECT_NE(std::string::npos, ComputeUserProgramBlock(k2DProgram, "D\n", kEntryProcessLit, 1).find("    return fuaProcess_1(vec4(1.0)) * vColor;\n"));
 }
 
 TEST(HwShader, APlainBlockSamplesTheTexture)
 {
-	EXPECT_EQ("vec4 fuaSurfaceTexel(vec2 fuaUV) { return fuaTexMode(fuaTexel(fuaUV)); }\nfloat fuaSurfaceAlpha() { return vLightParm.z; }\n",
+	EXPECT_EQ("vec4 fuaSurfaceTexel(vec2 fuaUV) { return fuaTexMode(fuaTexel(fuaUV)); }\nfloat fuaSurfaceAlpha() { return vLightParm.z; }\n"
+		"vec3 fuaSurfaceShade(vec4 t) { return fuaShade(t.rgb); }\n",
 		ComputePlainProgramBlock(kSceneProgram));
 	EXPECT_EQ("vec4 fua2DColor(vec2 fuaUV) { return fua2DTexel(fuaUV) * vColor; }\n", ComputePlainProgramBlock(k2DProgram));
 }
@@ -196,4 +218,66 @@ TEST(HwShader, ASkippedShaderIsNotedByRendererAndLump)
 		ComputeUserShaderSkipNote("GL", "shaders/a.fp", "Fragment shader:\n0(3) : error: undefined variable \"camerapos\"\n\n"));
 	EXPECT_EQ("GL: hardware shader b.fp does not compile here; its textures draw without it\n  no newline\n",
 		ComputeUserShaderSkipNote("GL", "b.fp", "no newline"));
+}
+
+// [Doruk-Aksoy] UZDoom's order: a material entry wins over ProcessTexel, which wins over Process; only a material shader is refused, with its reason.
+TEST(HwShader, AShadersStyleIsToldApartInUZDoomsOrder)
+{
+	EXPECT_EQ(kStyleProcess, ComputeShaderStyle("vec4 Process(vec4 color) { return color; }"));
+	EXPECT_EQ(kStyleProcessTexel, ComputeShaderStyle("vec4 ProcessTexel() { return vec4(1.0); }"));
+	EXPECT_EQ(kStyleMaterial, ComputeShaderStyle("void SetupMaterial(inout Material m) { m.Base = ProcessTexel(); }"));
+	EXPECT_EQ(kStyleMaterial, ComputeShaderStyle("Material ProcessMaterial() { Material m; return m; }"));
+	EXPECT_EQ(nullptr, ComputeStyleRefusal(kStyleProcess));
+	EXPECT_EQ(nullptr, ComputeStyleRefusal(kStyleProcessTexel));
+	ASSERT_NE(nullptr, ComputeStyleRefusal(kStyleMaterial));
+	EXPECT_NE(std::string::npos, std::string(ComputeStyleRefusal(kStyleMaterial)).find("SetupMaterial"));
+	std::string out;
+	EXPECT_EQ(kStyleMaterial, ComputeAdaptUserShader("void SetupMaterial(inout Material m) {}\n", 0, out));
+}
+
+// [Doruk-Aksoy] fua_ProcessLighting takes either name in any case, and an unknown one leaves the lighting as it was.
+TEST(HwShader, AProcessLightingValueIsReadInAnyCase)
+{
+	ProcessLighting l = kLightingZandronum;
+	EXPECT_TRUE(ComputeProcessLightingOf("UZDoom", l));
+	EXPECT_EQ(kLightingUZDoom, l);
+	EXPECT_TRUE(ComputeProcessLightingOf("zandronum", l));
+	EXPECT_EQ(kLightingZandronum, l);
+	l = kLightingUZDoom;
+	EXPECT_FALSE(ComputeProcessLightingOf("gzdoom", l));
+	EXPECT_FALSE(ComputeProcessLightingOf("", l));
+	EXPECT_EQ(kLightingUZDoom, l);
+}
+
+// [Doruk-Aksoy] Only an old Process shader's entry follows the lighting; ProcessTexel and a material shader are lit after whatever it says.
+TEST(HwShader, OnlyAProcessShadersEntryFollowsItsLighting)
+{
+	EXPECT_EQ(kEntryProcessFinal, ComputeProgramEntry(kStyleProcess, kLightingZandronum));
+	EXPECT_EQ(kEntryProcessLit, ComputeProgramEntry(kStyleProcess, kLightingUZDoom));
+	EXPECT_EQ(kEntryTexel, ComputeProgramEntry(kStyleProcessTexel, kLightingZandronum));
+	EXPECT_EQ(kEntryTexel, ComputeProgramEntry(kStyleProcessTexel, kLightingUZDoom));
+	EXPECT_EQ(kEntryTexel, ComputeProgramEntry(kStyleMaterial, kLightingUZDoom));
+}
+
+// [Doruk-Aksoy] GL's main.fp is told an old entry's lighting by a define, and nothing for ProcessTexel.
+TEST(HwShader, GLIsToldAnOldEntrysLightingByADefine)
+{
+	EXPECT_STREQ("", ComputeGLEntryDefine(kEntryTexel));
+	EXPECT_STREQ("#define FUA_PROCESS_UZDOOM\n", ComputeGLEntryDefine(kEntryProcessLit));
+	EXPECT_STREQ("#define FUA_PROCESS_ZANDRONUM\n", ComputeGLEntryDefine(kEntryProcessFinal));
+}
+
+// [Doruk-Aksoy] One lump named twice in any case is one shader, but lit two ways it is two, each added once at the end.
+TEST(HwShader, AShaderIsOneSlotPerLumpAndLighting)
+{
+	std::vector<UserShaderKey> shaders;
+	EXPECT_EQ(0, ComputeUserShaderSlot(shaders, "shaders/glow.fp", kLightingZandronum));
+	EXPECT_EQ(0, ComputeUserShaderSlot(shaders, "SHADERS/Glow.fp", kLightingZandronum));
+	EXPECT_EQ(1, ComputeUserShaderSlot(shaders, "shaders/glow.fp", kLightingUZDoom));
+	EXPECT_EQ(2, ComputeUserShaderSlot(shaders, "shaders/glow2.fp", kLightingZandronum));
+	EXPECT_EQ(3, ComputeUserShaderSlot(shaders, "shaders/glo.fp", kLightingZandronum));
+	EXPECT_EQ(1, ComputeUserShaderSlot(shaders, "Shaders/GLOW.FP", kLightingUZDoom));
+	ASSERT_EQ(4u, shaders.size());
+	EXPECT_EQ("shaders/glow.fp", shaders[1].lump);
+	EXPECT_EQ(kLightingUZDoom, shaders[1].lighting);
 }
