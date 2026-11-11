@@ -32,14 +32,12 @@
 #include "features/hitboxviz/computation/boxedges_compute.h"
 #include "features/hitboxviz/computation/vizgate_compute.h"
 #include "features/handoff/effects.h"   // [rc4l] Deferred
-#include "features/net-session/netrole.h"
 
 EXTERN_CVAR(Bool, sv_cheats)
 
-// [MGOOOOOO] cl_fua_* to match the existing FUA feature cvars. These are CVAR_ARCHIVE on purpose,
-// unlike am_cheat: the cheat check happens at draw time, so the cvar is a view preference that is
-// simply inert while cheats are refused, not cheat state that must not be persisted.
-CVAR(Bool,  cl_fua_hitbox,            false,    CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
+// [MGOOOOOO] cl_fua_* to match the existing FUA feature cvars.
+// [rc4l] CVAR_ARCHIVE on purpose, unlike am_cheat: the dev-mode gate holds the toggle off for a client of a server without cheats and still saves the user's own value.
+CVAR(Bool,  cl_fua_hitbox,            false,    CVAR_ARCHIVE | CVAR_GLOBALCONFIG | CVAR_FUA_DEV_MODE)
 CVAR(Bool,  cl_fua_hitbox_actors,     true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool,  cl_fua_hitbox_missiles,   true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
 CVAR(Bool,  cl_fua_hitbox_attackbox,  true,     CVAR_ARCHIVE | CVAR_GLOBALCONFIG)
@@ -126,19 +124,6 @@ namespace
 	}
 }	// anonymous namespace
 
-// "Nobody else is in this game": not a client of someone's server, and not a server ourselves.
-// This is the same condition CheckCheatmode uses to permit iddqd offline, and it deliberately
-// includes NETSTATE_SINGLE_MULTIPLAYER -- an offline game merely emulating multiplayer (bots,
-// an offline deathmatch) is still one machine with no rules to subvert.
-//
-// zx::net::InClientMode() is also true while a client demo plays back, which is what we want:
-// a recorded netgame keeps the netgame's gate rather than inheriting the viewer's offline
-// status.
-bool IsOfflineGame()
-{
-	return ( zx::net::InClientMode() == false ) && ( !zx::net::IsServer() );
-}
-
 void AppendActor(const zx::gamecopy::ActorRecord &record, const void *viewActor, TArray<Vertex3> &physical, TArray<Vertex3> &attack)
 {
 	// The actor the camera is attached to. Skipping it matches what the sprite path does, and in
@@ -192,7 +177,7 @@ void CollectBackendFrame(const void *viewActor, const int *sectorList, int count
 {
 	for (int k = 0; k < kLineBatches; k++)
 		s_backendVerts[k].Clear();
-	s_backendActive = ShouldDraw(!!cl_fua_hitbox, !!sv_cheats, IsOfflineGame());
+	s_backendActive = !!cl_fua_hitbox;   // [rc4l] the dev-mode gate holds it off where cheats are refused
 	if (!s_backendActive)
 		return;
 	int records;
@@ -254,18 +239,10 @@ bool ServerDebugActive()
 
 // [MGOOOOOO] Bindable toggle, mirroring the replay feature's fua_clip. Flipping the overlay without
 // opening the menu is most of its value in a live firefight.
-CCMD(fua_hitbox)
+DEV_MODE_CCMD(fua_hitbox)
 {
 	cl_fua_hitbox = !cl_fua_hitbox;
-
-	// sv_cheats is CVAR_LATCH, so telling the user to set it is not enough -- a mid-game change
-	// only takes effect on the next map. Say so, rather than leaving them staring at an empty view.
-	// Only relevant online: offline the gate never consults sv_cheats, so there is nothing to warn
-	// about and the plain confirmation is the honest message.
-	if (cl_fua_hitbox && sv_cheats == false && !zx::hitboxviz::IsOfflineGame())
-		Printf("Hitbox overlay enabled, but it will not draw until sv_cheats is true (latched: takes effect next map).\n");
-	else
-		Printf("Hitbox overlay %s.\n", *cl_fua_hitbox ? "on" : "off");
+	Printf("Hitbox overlay %s.\n", *cl_fua_hitbox ? "on" : "off");
 }
 
 // [MGOOOOOO] The colour cvars are CVAR_ARCHIVE, so anyone who ran an earlier build has the old
