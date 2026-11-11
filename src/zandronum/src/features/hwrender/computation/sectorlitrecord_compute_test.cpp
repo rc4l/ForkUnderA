@@ -62,7 +62,7 @@ void ExpectShadedAsBaked(const ScenePieceData &baked, const SectorLightRef &r, b
 ShadingInput InputFor(const SectorLitInput &lit, int extra, bool noFog)
 {
 	ShadingInput in;
-	in.lightLevel = lit.lightLevel; in.relLight = lit.relLight + extra;
+	in.lightLevel = lit.lightLevel; in.fogLevel = lit.lightLevel; in.relLight = lit.relLight + extra;
 	in.lightColor = lit.lightColor; in.fadeColor = lit.fadeColor;
 	in.blendFactor = lit.blendFactor; in.desaturation = lit.desaturation;
 	in.noFog = noFog; in.additive = false;

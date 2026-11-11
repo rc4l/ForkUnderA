@@ -259,6 +259,24 @@ test("the hardware shader names template shades three walls and a model in MAP01
   assert.match(files["modeldef.txt"].toString("latin1"), /Path "graphics\/"\n  Skin 0 "ZXSKIN.png"/);
 });
 
+// [Doruk-Aksoy] Both maps are one dark room, MAP01 in coloured fog and MAP02 in black; two Bright actors and a plain one, the cube drawn as a model.
+test("the bright-fog template stands Bright and plain actors in a dark room, coloured fog in MAP01 and black fog in MAP02", async () => {
+  const { buildBrightFogPk3 } = await import("../scenarios/brightfog.mjs");
+  const files = Object.fromEntries(readPk3(buildBrightFogPk3()).map((f) => [f.name, f.data]));
+  const one = lumpsOf(files["maps/MAP01.wad"])[1].text, two = lumpsOf(files["maps/MAP02.wad"])[1].text;
+  assert.match(one, /fadecolor = 2109536;/);
+  assert.doesNotMatch(two, /fadecolor/);
+  for (const t of [one, two]) { assert.match(t, /lightlevel = 64;/); for (const n of [20130, 20131, 20132]) assert.match(t, new RegExp(`type = ${n};`)); }
+  const dec = files["decorate.txt"].toString("latin1");
+  assert.match(dec, /ZXBS A -1 Bright/);
+  assert.match(dec, /ZXBM A -1 Bright/);
+  assert.match(dec, /ZXPS A -1\n/);
+  assert.match(files["modeldef.txt"].toString("latin1"), /Model ZXBrightModel[\s\S]*FrameIndex ZXBM A 0 0/);
+  const grab = files["sprites/ZXBSA0.png"];
+  const at = grab.indexOf("grAb", 0, "latin1");
+  assert.deepEqual([grab.readInt32BE(at + 4), grab.readInt32BE(at + 8)], [32, 64]);
+});
+
 test("the sky templates carry what reproduces each fault: a scripted reflective pool, and a court too wide for the sky walls", async () => {
   const { buildSkymirrorWad } = await import("../scenarios/skymirror.mjs");
   const { buildSkyzenithWad } = await import("../scenarios/skyzenith.mjs");

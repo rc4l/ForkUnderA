@@ -107,6 +107,7 @@ CUSTOM_CVAR( Int, fua_db_synchronous, 2, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 }
 
 // [BB] Filename for the database.
+// [Doruk-Aksoy] Servers sharing this file must share a machine and a local disk, never a network drive (docs/database-shared-file-risk.md).
 CUSTOM_CVAR( String, databasefile, ":memory:", CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	// [Doruk-Aksoy] Setting the open file's name again, as the ini and the command line both do, keeps it open.

@@ -23,7 +23,9 @@ scenario `colorblend`), as `gl_GetRenderStyle` does.
 The rest of `GLSprite::Draw`'s translucent setup is `ComputeSpriteDrawLook`, which every sprite, model and
 GL's copy for the check shade through (`CaptureSpriteShading`): a fuzzy actor under `r_fuzztype 0` is GL's
 shadow, grey 0.2 at alpha 0.44 thinned by coloured fog over its distance, and additive and shadow styles fog
-toward black. Every op `gl_GetRenderStyle` has no equation for (the shadow, a fuzzy decal's raw fuzz) blends
+toward black. Its fog takes `Draw`'s `foglevel` (`ComputeSpriteFogLevel`), the sector's own light rather than
+the sprite's, as Zandronum 3.3 and UZDoom fog a sprite: a `Bright` sprite, model or particle is lit fully and
+still fogged as its room is, and only under black fog does its own light count (scenario `brightfog`). Every op `gl_GetRenderStyle` has no equation for (the shadow, a fuzzy decal's raw fuzz) blends
 with its `DST_COLOR` / `ONE_MINUS_SRC_ALPHA` fallback, the projected decals' fuzz pass included. Before this a
 spectre drew solid at the default fuzz type. A model whose actor is not in exactly `STYLE_Normal` loses the
 faces `gl_RenderModel` culls (clockwise front faces, counter-clockwise on the HUD; `ComputeModelCull`, tested
