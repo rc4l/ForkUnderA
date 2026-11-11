@@ -132,6 +132,7 @@
 #include "medal.h"
 #include "cl_commands.h"
 #include "cl_main.h"
+#include "features/net-session/netrole.h"
 #include "cl_statistics.h"
 #include "maprotation.h"
 #include "features/server-browser/browser.h"
@@ -835,8 +836,14 @@ CUSTOM_CVAR(Int, compatmode, 0, CVAR_ARCHIVE|CVAR_NOINITCALL|CVAR_SERVERINFO)
 		break;
 
 	}
-	compatflags = v;
-	compatflags2 = w;
+	// [rc4l] Ported from zandronum@0f0415a6f289e72638ed8fc76799fc712976ff92: the role asked through netrole.h.
+	// [AK] Don't let clients with RCON access change compatflags or compatflags2.
+	// The server will send them the updated values of both CVars.
+	if ((zx::net::IsClient() == false) || (CLIENT_HasRCONAccess() == false))
+	{
+		compatflags = v;
+		compatflags2 = w;
+	}
 }
 
 CVAR (Flag, compat_shortTex,			compatflags,  COMPATF_SHORTTEX);
