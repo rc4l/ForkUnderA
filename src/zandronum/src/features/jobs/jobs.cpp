@@ -12,12 +12,12 @@
 #include "features/telemetry/telemetry.h"
 
 // [rc4l] Workers beside the main thread for a frame's parallel work: -1 picks by the machine, 0 runs everything on the main thread.
-CVAR(Int, fua_jobs_threads, -1, 0)
+CVAR(Int, fua_jobs_threads, -1, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Bool, fua_gamethread)   // [rc4l] features/handoff: the game thread runs beside the pool's workers
 // [rc4l] Microseconds an idle worker polls for the next job before it sleeps; a sleeping worker wakes late to a frame's next job.
-CVAR(Int, fua_jobs_spin_us, 200, 0)
+CVAR(Int, fua_jobs_spin_us, 200, CVAR_FUA_DEV_MODE)
 // [Doruk-Aksoy] Workers beside the game thread for the reads a tic splits across threads, as the render copy's scan at its end: -1 picks by the machine, 0 runs them on the game thread alone.
-CVAR(Int, fua_jobs_tic_threads, -1, 0)
+CVAR(Int, fua_jobs_tic_threads, -1, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace jobs {
 

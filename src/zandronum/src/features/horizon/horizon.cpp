@@ -19,11 +19,6 @@
 #include "c_cvars.h"
 #include "tarray.h"
 
-// [rc4l] Draw horizon lines as windows onto their planes; off leaves them empty, for an A/B.
-CVAR(Bool, fua_dg_horizon, true, 0)
-
-EXTERN_CVAR(Bool, gl_wallmesh)
-
 namespace zx { namespace horizon {
 
 struct HorizonSide
@@ -38,9 +33,7 @@ static int                   g_sidesLines = -1;
 static TArray<HorizonWindow> g_windows;
 static TArray<zx::levelmesh::MeshVertex>   g_skyVerts;
 
-bool HorizonsActive() { return fua_dg_horizon; }
-
-bool OwnsSky(int lineSpecial) { return HorizonsActive() && ComputeIsHorizonLine(lineSpecial); }
+bool OwnsSky(int lineSpecial) { return ComputeIsHorizonLine(lineSpecial); }
 
 const HorizonWindow *HorizonWindows(int &count)
 {
@@ -129,7 +122,7 @@ static void BuildPlane(sector_t *sec, int which, HorizonPlane &out)
 void UpdateHorizons()
 {
 	g_windows.Clear();
-	if (!fua_dg_horizon || !gl_wallmesh || lines == NULL || numlines <= 0) return;
+	if (!zx::levelmesh::Enabled() || lines == NULL || numlines <= 0) return;
 	RescanIfNeeded();
 
 	for (unsigned i = 0; i < g_sides.Size(); i++)

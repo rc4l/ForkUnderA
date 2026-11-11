@@ -444,7 +444,7 @@ void DThinker::RunThinkers ()
 }
 
 // [rc4l] fua_telemetry_thinkers times every thinker's tick by class, which fua_stats sim/thinker/ lists, at a clock read a thinker.
-CVAR (Bool, fua_telemetry_thinkers, false, 0)
+CVAR (Bool, fua_telemetry_thinkers, false, CVAR_FUA_DEV_MODE)
 static zx::telemetry::KeyedTimer s_thinkerTimes;
 
 static void ThinkerReadings (std::vector<zx::telemetry::Reading> &out)

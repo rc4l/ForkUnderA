@@ -67,6 +67,7 @@
 #include "menu/menu.h"
 #define NO_IMP
 #include "menu/optionmenuitems.h"
+#include "features/dev-mode/devmode.h"   // [rc4l] the gate on DEV_MODE_CCMD commands
 
 // MACROS ------------------------------------------------------------------
 
@@ -1170,6 +1171,15 @@ void FUnsafeConsoleCommand::Run (FCommandLine &args, APlayerPawn *instigator, in
 		Printf(TEXTCOLOR_RED "Cannot execute unsafe command " TEXTCOLOR_GOLD "%s\n", m_Name);
 		return;
 	}
+
+	FConsoleCommand::Run (args, instigator, key);
+}
+
+void FDevModeConsoleCommand::Run (FCommandLine &args, APlayerPawn *instigator, int key)
+{
+	// [rc4l] Every dev-mode command passes this one check, so none can forget it (features/dev-mode).
+	if (!zx::devmode::MayRun (m_Name))
+		return;
 
 	FConsoleCommand::Run (args, instigator, key);
 }

@@ -9,10 +9,10 @@
 #include "c_dispatch.h"
 #include "c_console.h"
 
-CCMD( fua_diligent_scene ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-CCMD( fua_diligent_bench ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-CCMD( fua_diligent_scale ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
-CCMD( fua_projdecals_stats ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
+DEV_MODE_CCMD( fua_diligent_scene ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
+DEV_MODE_CCMD( fua_diligent_bench ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
+DEV_MODE_CCMD( fua_diligent_scale ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
+DEV_MODE_CCMD( fua_projdecals_stats ) { Printf( "This build has no Diligent backend (-DFUA_DILIGENT=ON).\n" ); }
 
 class DFrameBuffer;
 

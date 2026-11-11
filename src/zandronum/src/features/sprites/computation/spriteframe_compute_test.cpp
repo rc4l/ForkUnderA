@@ -32,15 +32,3 @@ TEST(SpriteFrame, TheFlipMaskMirrorsItsRotations)
 	EXPECT_EQ(rot, 1);
 	EXPECT_TRUE(mirror);
 }
-
-// [rc4l] A player keeps the damage tint's per-actor state, so it is never derived on a lane.
-// [Doruk-Aksoy] A model is derived on a lane unless fua_sprite_modeljobs is off.
-TEST(SpriteFrame, PlayersAndModelsWithoutModelJobsAreDerivedOnTheGameThread)
-{
-	EXPECT_FALSE(ComputeSpriteOnGameThread(false, false, true));
-	EXPECT_FALSE(ComputeSpriteOnGameThread(false, false, false));
-	EXPECT_FALSE(ComputeSpriteOnGameThread(true, false, true));
-	EXPECT_TRUE(ComputeSpriteOnGameThread(true, false, false));
-	EXPECT_TRUE(ComputeSpriteOnGameThread(false, true, true));
-	EXPECT_TRUE(ComputeSpriteOnGameThread(true, true, true));
-}

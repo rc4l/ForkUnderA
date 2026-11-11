@@ -39,9 +39,7 @@ CUSTOM_CVAR(Float, vid_fua_dynres_window, zx::dynres::kDynresWindowSeconds, CVAR
 	else if (self > 5.f) self = 5.f;
 }
 // [rc4l] Pins the scale for tests and comparisons, 0 leaving it to the controller.
-CVAR(Float, fua_dg_dynres_force, 0.f, 0)
-// [rc4l] Prints each step the controller takes and why.
-CVAR(Bool, fua_dynres_log, false, 0)
+CVAR(Float, fua_dg_dynres_force, 0.f, CVAR_FUA_DEV_MODE)
 
 EXTERN_CVAR(Bool, vid_vsync)
 EXTERN_CVAR(Int, r_texture_filter)
@@ -153,12 +151,7 @@ float ScaleForFrame(double gpuMs, bool mayScale, unsigned levelGeneration)
 	const int count = ComputeDynresSteps(vid_fua_dynres_min, !zx::hwrender::ComputeTextureFilter(r_texture_filter).magLinear, steps);
 	DynresTuning tuning;
 	tuning.windowMs = vid_fua_dynres_window * 1000.0;
-	const DynresState was = g_state;
 	g_state = ComputeDynresStep(g_state, x, g_budgetMs, steps, count, tuning);
-	const char *why = ComputeDynresWhy(was, g_state, g_gpuTimed);
-	if (fua_dynres_log && *why)
-		Printf("dynamic resolution: %.3f -> %.3f, %s (%s %.2f ms, budget %.2f ms)\n", g_scale, steps[g_state.step], why,
-			g_gpuTimed ? "GPU" : "frames", g_gpuTimed ? was.gpuAvgMs : g_state.lastWindowMs, g_budgetMs);
 	g_scale = steps[g_state.step];
 	Publish();
 	return g_scale;

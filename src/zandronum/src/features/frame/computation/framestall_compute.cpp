@@ -5,10 +5,9 @@
 
 namespace zx { namespace frame {
 
-int ComputeFrameStallUs(bool ticRan, int ticStallUs, int everyFrameUs)
+int ComputeStallUs(int askedUs)
 {
-	const int tic = ticRan && ticStallUs > 0 ? ticStallUs : 0;
-	return tic + (everyFrameUs > 0 ? everyFrameUs : 0);
+	return askedUs > 0 ? askedUs : 0;
 }
 
 }} // namespace zx::frame

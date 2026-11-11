@@ -243,7 +243,7 @@ void EmitModelSurface(const MeshVertex *tris, unsigned int indexCount, const voi
 
 }} // namespace zx::levelmesh
 
-CCMD(fua_models)
+DEV_MODE_CCMD(fua_models)
 {
 	int models = 0, surfaces = 0, triangles = 0, skipped = 0;
 	zx::levelmesh::ModelStatsGet(models, surfaces, triangles, skipped);

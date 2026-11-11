@@ -434,7 +434,7 @@ int StackPortalsInUse()
 	return (int)used.Size();
 }
 
-CCMD(dumpportals)
+DEV_MODE_CCMD(dumpportals)
 {
 	for(unsigned i=0;i<portals.Size(); i++)
 	{

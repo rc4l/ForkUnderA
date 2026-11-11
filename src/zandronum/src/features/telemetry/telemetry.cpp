@@ -332,7 +332,7 @@ std::string HitchText(Registry &r, size_t limit)
 }
 
 // [rc4l] Every heap walked for the heap gauges, which stalls a frame for tens of milliseconds twice a second in a big level, so only this or a soak asks for it.
-CVAR(Bool, fua_telemetry_heaps, false, 0)
+CVAR(Bool, fua_telemetry_heaps, false, CVAR_FUA_DEV_MODE)
 
 // [rc4l] The OS readings, at once with fresh, else no more than every osEvery; the heaps with them only when a soak, a snapshot or fua_telemetry_heaps wants them.
 const OsReadings &Os(bool fresh = false)

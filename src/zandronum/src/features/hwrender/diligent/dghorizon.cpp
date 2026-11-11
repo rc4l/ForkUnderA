@@ -17,7 +17,6 @@
 #include "features/levelmesh/computation/wallbatch_compute.h"
 
 #include "c_cvars.h"
-#include "c_dispatch.h"   // [rc4l] CCMD, for fua_horizons
 #include "tarray.h"
 
 #include <algorithm>
@@ -120,7 +119,6 @@ static Diligent::RefCntAutoPtr<Diligent::IPipelineState> g_hzPSO;
 static Diligent::RefCntAutoPtr<Diligent::IBuffer>        g_hzVB;
 static unsigned int g_hzVBCapacity = 0;
 static bool         g_hzFailed = false;
-static int          g_hzBusiestHalves = 0, g_hzBusiestDraws = 0;   // [rc4l] the busiest pass since fua_horizons last asked
 
 void ReleaseHorizonPipeline() { g_hzPSO.Release(); }
 
@@ -303,7 +301,6 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx)
 	runs.Resize(halves.Size());
 	for (unsigned i = 0; i < halves.Size(); i++) keys[i] = (uint64_t)(uintptr_t)halves[i].p->material;
 	const int nruns = ::hwrender::ComputeBatchRuns(&keys[0], (int)keys.Size(), &runs[0], (int)runs.Size());
-	if ((int)halves.Size() > g_hzBusiestHalves) { g_hzBusiestHalves = (int)halves.Size(); g_hzBusiestDraws = nruns; }
 	for (int r = 0; r < nruns; r++)
 	{
 		const ::hwrender::BatchRun &run = runs[r];
@@ -319,19 +316,3 @@ void DrawHorizonPlanes(Diligent::IDeviceContext *ctx)
 }
 
 }} // namespace zx::hwrender
-
-// [rc4l] The windows, and the most any one pass has drawn of them since this was last asked.
-CCMD(fua_horizons)
-{
-	int n = 0;
-	const zx::horizon::HorizonWindow *w = zx::horizon::HorizonWindows(n);
-	int sky = 0;
-	for (int i = 0; i < n; i++) sky += w[i].skyAbove ? 1 : 0;
-	Printf("horizons: %d windows, %d sky quads; the busiest pass drew %d halves in %d draws\n",
-		n, sky, zx::hwrender::g_hzBusiestHalves, zx::hwrender::g_hzBusiestDraws);
-	zx::hwrender::g_hzBusiestHalves = zx::hwrender::g_hzBusiestDraws = 0;
-	for (int i = 0; i < n && i < 16; i++)
-		Printf("  (%.0f,%.0f)-(%.0f,%.0f) floor %.0f ceiling %.0f  floor plane %s  ceiling %s\n",
-			w[i].x1, w[i].y1, w[i].x2, w[i].y2, w[i].floorZ, w[i].ceilingZ,
-			w[i].floor.valid ? "yes" : "no", w[i].skyAbove ? "sky" : (w[i].ceiling.valid ? "plane" : "none"));
-}

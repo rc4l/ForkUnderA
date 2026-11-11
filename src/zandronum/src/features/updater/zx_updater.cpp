@@ -153,25 +153,3 @@ CCMD(fua_check_update)
 	Printf("running update check...\n");
 	zx::updater::StartCheck();
 }
-
-// [rc4l] Force the notice to a specific tag (testing/manual). Real arming comes from the background
-// check above; kept for driving the menu without a live network.
-CCMD(fua_update_notify)
-{
-	if (argv.argc() < 2)
-	{
-		Printf("usage: fua_update_notify <tag>   (e.g. fua_update_notify v0.1.19)\n");
-		return;
-	}
-	zx::updater::SetLatestTag(argv[1]);
-	if (zx::updater::IsAvailable())
-		Printf("update notice armed for %s\n", zx::updater::Tag());
-	else
-		Printf("no notice: %s is not newer than this build\n", argv[1]);
-}
-
-CCMD(fua_update_notify_clear)
-{
-	zx::updater::Clear();
-	Printf("update notice cleared\n");
-}

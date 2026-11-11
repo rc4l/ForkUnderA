@@ -9,7 +9,7 @@
 #include "c_cvars.h"
 
 // [rc4l] Loops of shader work at each of the scene's pixels, 0 for none.
-CVAR(Int, fua_dg_gpuload, 0, 0)
+CVAR(Int, fua_dg_gpuload, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace hwrender {
 

@@ -327,7 +327,7 @@ static const char *kDeferredDecalPS =
 // [rc4l] Show what the pass is computing instead of what it paints: the picture coordinate, so a
 // mark that is being cut somewhere says WHERE rather than merely being absent. Every term that can
 // discard a fragment produces the same result on screen, and guessing which one cost several rounds.
-CVAR(Int, fua_dg_decaldebug, 0, 0)
+CVAR(Int, fua_dg_decaldebug, 0, CVAR_FUA_DEV_MODE)
 
 // [rc4l] One record per mark, read by the vertex stage -- see kDeferredDecalVS.
 struct DeferredDecalInstance
@@ -355,7 +355,7 @@ static int g_ddDrawn = 0, g_ddBoxes = 0, g_ddTextures = 0;
 static const char *g_ddBail = "";
 
 // [rc4l] The projected decals live, what the deferred pass drew of them last frame, and the marks themselves, since a count cannot say which mark went missing.
-CCMD(fua_projdecals_stats)
+DEV_MODE_CCMD(fua_projdecals_stats)
 {
 	Printf("projected decals: %d live\n", zx::levelmesh::GetProjectedDecalCount());
 	Printf("deferred pass: %d boxes in %d draws, %d textures%s%s\n",
