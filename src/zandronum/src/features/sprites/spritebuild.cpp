@@ -327,6 +327,7 @@ static void ModelLookOf(const ActorRecord *thing, const Subject &s, const Look &
 		ComputeSpriteBlendMode(l.so.style.blendOp, l.so.style.destAlpha, l.so.trans), s.x, s.y, s.z, look);
 	look.inverse = l.inverse;
 	look.cullFace = ActorModelCull(thing->RenderStyle, false, s.model->flags);
+	look.flatSurface = (s.model->flags & MDL_FUA_FLATSURFACE) != 0;
 
 	ModelPose pose;
 	ModelPoseFor(*thing, s.model, s.x, s.y, s.z, pose);
