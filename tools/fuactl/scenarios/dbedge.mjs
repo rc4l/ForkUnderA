@@ -1,6 +1,6 @@
 // [Doruk-Aksoy] The ACS database through the engine's write queue at its edges: each case starts the engine on a database file, runs fixtures/dbedge's scripts, and checks the console and the file.
 // [Doruk-Aksoy] Cases: fresh (reads while the writer lags, null names, 64-bit overflow, transaction misuse, a transaction its level left open, UNLOADING writes, 5000 writes in a tic, a clean quit),
-// [Doruk-Aksoy] hardkill (a killed process's writes land on restart), stockdelete (a stock server's delete leaves a marker), stockrows (rows with NULL, old, garbage and future stamps), resume (a crashed server's outbox, part applied), orphan (a stopped server's outbox and a corrupt one).
+// [Doruk-Aksoy] hardkill (a killed process's writes land on restart), full (a capped file holds writes back until the cap rises), stockdelete (a stock server's delete leaves a marker), stockrows (rows with NULL, old, garbage and future stamps), resume (a crashed server's outbox, part applied), orphan (a stopped server's outbox and a corrupt one).
 //
 // usage:  node scenarios/dbedge.mjs [port]
 import fs from "node:fs";
@@ -39,7 +39,7 @@ export function writeOutbox(file, server, next, ops) {
 
 // [Doruk-Aksoy] The database file (and outboxes beside it) each case starts from; fresh starts from none.
 export function prepareCase(name, file) {
-  if (name === "fresh" || name === "hardkill") return;
+  if (name === "fresh" || name === "hardkill" || name === "full") return;
   const db = new DatabaseSync(file);
   db.exec(TABLE);
   const row = db.prepare("INSERT INTO Zandronum VALUES(?,?,?,?)");
@@ -148,6 +148,22 @@ export const CASES = {
     db.close();
     check("a stock delete leaves a delete marker stamped at the time of the delete", marker && marker.Timestamp >= before - 1, marker ? String(marker.Timestamp) : "none");
     check("the queue writer's own flag row never stays behind", writing === 0, String(writing));
+  },
+
+  async full(opts, file, check) {
+    const capped = { ...opts, cvars: { ...(opts.cvars || {}), database_maxpagecount: 40 } };
+    await withEngine(capped, file, check, async ({ log, run, puke }) => {
+      await puke(957);
+      for (let i = 0; i < 20 && !/no room for the next batch/.test(log()); i++) await sleep(500);
+      check("a full file is named with its pages and its cap", /no room for the next batch: it holds \d+ of its 40 pages/.test(log()), lineOf(log(), "no room for the next batch"));
+      const status = await run("fua_db_status");
+      check("fua_db_status shows the full file", /no room for the next batch/.test(status), status.trim().split(/\r?\n/).pop());
+      check("the batch waits instead of landing in part", count(file, "edgebig") === 0, String(count(file, "edgebig")));
+      // [Doruk-Aksoy] Raising the cap reopens the file; the waiting batch comes back from the outbox and lands whole.
+      await run("database_maxpagecount 32768");
+      for (let i = 0; i < 30 && count(file, "edgebig") < 5000; i++) await sleep(500);
+      check("raising database_maxpagecount brings every write in", count(file, "edgebig") === 5000, String(count(file, "edgebig")));
+    });
   },
 
   async stockrows(opts, file, check) {

@@ -284,8 +284,10 @@ TEST(DatabaseApply, AFullDatabaseFailsTheBatch)
 	for (int i = 0; i < 400; ++i)
 		ops.push_back(zx::ComputeDatabaseSetOp("ns", ("key" + std::to_string(i)).c_str(), "a value long enough to fill a few pages"));
 	std::string error;
-	EXPECT_EQ(zx::ComputeDatabaseApplyBatch(statements, "a", batch(1, 1, ops), error), zx::DatabaseApplyResult::Failed);
+	int code = 0;
+	EXPECT_EQ(zx::ComputeDatabaseApplyBatch(statements, "a", batch(1, 1, ops), error, &code), zx::DatabaseApplyResult::Failed);
 	EXPECT_NE(error.find("full"), std::string::npos) << error;
+	EXPECT_EQ(code, SQLITE_FULL);
 }
 
 TEST(DatabaseApply, PruningForgetsOldDeleteMarkers)
@@ -311,9 +313,13 @@ TEST(DatabaseApply, AnotherConnectionsWriteLockMakesItBusy)
 	exec(other, "BEGIN IMMEDIATE");
 	zx::DatabaseStatements statements;
 	zx::ComputeDatabaseBind(statements, file.db);
-	EXPECT_EQ(apply(statements, "a", batch(1, 1, { set("k", "v") })), zx::DatabaseApplyResult::Busy);
+	std::string error;
+	int code = 0;
+	EXPECT_EQ(zx::ComputeDatabaseApplyBatch(statements, "a", batch(1, 1, { set("k", "v") }), error, &code), zx::DatabaseApplyResult::Busy);
+	EXPECT_EQ(code, SQLITE_BUSY);
 	exec(other, "ROLLBACK");
-	EXPECT_EQ(apply(statements, "a", batch(1, 1, { set("k", "v") })), zx::DatabaseApplyResult::Applied);
+	EXPECT_EQ(zx::ComputeDatabaseApplyBatch(statements, "a", batch(1, 1, { set("k", "v") }), error, &code), zx::DatabaseApplyResult::Applied);
+	EXPECT_EQ(code, SQLITE_OK);
 	sqlite3_close(other);
 }
 
