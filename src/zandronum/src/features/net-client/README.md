@@ -49,10 +49,14 @@ What a client does with what arrives from its server.
   compression factor and zstd share from Zandronum 3.3, called by `cl_statistics.cpp`'s tracker getters)
   with its `_test.cpp`.
 - `computation/serverfloor_compute.{h,cpp}` (`ComputeServerHeldFloorZ`, `ComputeRereadFloorFromLines`) with its `_test.cpp`.
+- `computation/netgraph_compute.{h,cpp}` (where `cl_netgraph`'s graphs, gridlines, points and legends land, from
+  Zandronum 3.3; `cl_statistics.cpp`'s `NetGraph::Draw` only draws them) with its `_test.cpp`.
 - `netclient.{h,cpp}` (the packets applied) and `rejoin.{h,cpp}` (the map command's reconnect).
 
 ## In-engine hooks
 
+- `stats.cpp` `FStat::PrintStat` draws the net graph above the stats while `nettraffic` is one
+  (`CLIENTSTATISTICS_DrawNetGraph`, `tools/fuactl/scenarios/netgraph.mjs`).
 - `cl_main.cpp` `CLIENT_ParsePacket` is the seam `net/parse`, owned by the main thread, and counts the packet
   (`NoteParsedPacket`) for `features/gamecopy`'s fill.
 - `cl_main.cpp` `CLIENT_ReadPacketHeader` (the header kind, the ring slot, the overwritten slots, the jump warning) and

@@ -119,6 +119,7 @@ OptionMenu ZA_NetworkOptions
 	Option		"Hitscan decals",		"cl_hitscandecalhack",		"OnOff"
 	Option		"Clientside puffs",		"cl_clientsidepuffs",		"OnOff"
 	Option		"Display packet loss",		"cl_showpacketloss",		"YesNo"
+	Option		"Enable net graph",		"cl_netgraph",			"YesNo"
 
 	// [AK] Sending backup commands increases outbound net traffic. If the client decides
 	// to enable this, they should be made aware of this too.

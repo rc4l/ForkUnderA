@@ -63,5 +63,6 @@ void	CLIENTSTATISTICS_Tick( void );
 void	CLIENTSTATISTICS_AddToBytesSent( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket );
 void	CLIENTSTATISTICS_AddToBytesReceived( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket );
 void	CLIENTSTATISTICS_AddToMissingPacketsRequested( unsigned int Num );
+void	CLIENTSTATISTICS_DrawNetGraph( int xPos, int yPos );
 
 #endif // __CL_STATISTICS_H__
