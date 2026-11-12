@@ -7,8 +7,8 @@ import { parseDecalReport } from "./decalrules.mjs";
 import * as cap from "../src/capture.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
-// [rc4l] Two rails that differ only in their puff: one forces its decal, the other only has one.
-const rail = (name, puff) => `actor ${name} : Weapon
+// [rc4l] A rail weapon with no decal of its own, firing the named puff without a beam.
+export const railWeapon = (name, puff) => `actor ${name} : Weapon
 {
 	Weapon.AmmoUse 0
 	States
@@ -39,7 +39,7 @@ actor ZXPlainPuff : BulletPuff
 	+ALWAYSPUFF
 	Decal BulletChip
 }
-${rail("ZXRailForce", "ZXForcePuff")}${rail("ZXRailPlain", "ZXPlainPuff")}`;
+${railWeapon("ZXRailForce", "ZXForcePuff")}${railWeapon("ZXRailPlain", "ZXPlainPuff")}`;
 
 export function buildRailForceDecalPk3() {
   const m = new UdmfMap();
@@ -59,11 +59,11 @@ export function judgeRailDecals({ before, forced, plain }) {
 
 const liveWalls = async (c) => parseDecalReport(await cap.exec(c, "fua_decal_report", { quietMs: 300 })).walls;
 
-// [rc4l] One rail with the named weapon, stood square to the north wall at x.
-async function fireRail(c, weapon, x) {
+// [rc4l] One rail with the named weapon, stood at x, y facing north at pitch.
+export async function fireRail(c, weapon, x, { y = 256, pitch = 0 } = {}) {
   await cap.exec(c, `give ${weapon}`);
   await cap.exec(c, `use ${weapon}`);
-  await c.rpc("player.setpos", { x, y: 256, z: 0, angle: 90, pitch: 0 });
+  await c.rpc("player.setpos", { x, y, z: 0, angle: 90, pitch });
   await cap.waitTics(c, 35);
   await cap.exec(c, "+attack", { quietMs: 60 });
   await cap.waitTics(c, 4);

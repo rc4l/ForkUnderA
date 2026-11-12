@@ -5449,8 +5449,8 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 
 	// Spawn a decal or puff at the point where the trace ended.
 	// [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: the endpoint puff now spawns
-	// on floor/ceiling hits too, not only walls (older Zandronum was wall-only), with a sky-flat guard
-	// that destroys the puff if it landed on the open sky (unless the puff is MF3_SKYEXPLODE). The mark goes
+	// on floor/ceiling hits too, not only walls (older Zandronum was wall-only), and is destroyed when it
+	// went into the sky (ComputeRailPuffInSky, unless the puff is MF3_SKYEXPLODE). The mark goes
 	// wherever the puff does, judged by features/decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
 	const RailEndpointSpawn railEnd = ComputeRailEndpointSpawn(trace.HitType);
 	AActor *endPuff = NULL;
@@ -5469,9 +5469,10 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, endPuff != NULL, endPuff != NULL && endPuff->DecalGenerator != NULL);
 		zx::decals::MarkShot(puffMarks ? endPuff : source, trace, zx::decals::kSourceRail);
 	}
-	if (railEnd.skyGuard && endPuff != NULL && !(endPuff->flags3 & MF3_SKYEXPLODE) &&
-		(((trace.HitType == TRACE_HitFloor) && (endPuff->floorpic == skyflatnum)) ||
-		((trace.HitType == TRACE_HitCeiling) && (endPuff->ceilingpic == skyflatnum))))
+	// [rc4l] Ported from zandronum@2e629a9b7b960b49e722e8f183f57ba43c27e9c3: a wall puff on a horizon line went into the sky too.
+	// [rc4l] Ported from zandronum@26d900809dfc306df34373129d97a3d6099b7c3e: a hit with no line is no horizon.
+	if (endPuff != NULL && ComputeRailPuffInSky(trace.HitType, trace.Line != NULL && trace.Line->special == Line_Horizon,
+		endPuff->floorpic == skyflatnum, endPuff->ceilingpic == skyflatnum, (endPuff->flags3 & MF3_SKYEXPLODE) != 0))
 	{
 		endPuff->Destroy();
 	}
