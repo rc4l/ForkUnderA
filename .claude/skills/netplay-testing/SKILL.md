@@ -44,7 +44,8 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   clients with each one's slot state, ping and last confirmed tic.
 - `rpc player.camera` on a client: where its player stands, and its `fov` and `desiredFov`, which a server's
   `sv_minfov` and `sv_maxfov` bound.
-- `rpc world.actors` lists synced actors by network id (carried inventory left out, `owned: 1` keeps it);
+- `rpc world.actors` lists synced actors by network id, each with its `fz` floor and `clip` floorclip
+  (carried inventory left out, `owned: 1` keeps it);
   `world.sectorstate` and `world.sidestate` page through the map's look. `sim.hash` is not comparable
   between a server and a client.
 - `netdiff` compares the map once and the actors against the server's history at the tic each client last

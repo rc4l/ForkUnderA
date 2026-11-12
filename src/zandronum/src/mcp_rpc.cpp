@@ -747,7 +747,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				zx::mcp::WorldActorRow r;
 				r.netId = mo->NetID;
 				r.cls = ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
-				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z ); r.floorZ = FIXED2DBL( mo->floorz );
+				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z ); r.floorZ = FIXED2DBL( mo->floorz ); r.floorClip = FIXED2DBL( mo->floorclip );
 				r.velX = FIXED2DBL( mo->velx ); r.velY = FIXED2DBL( mo->vely ); r.velZ = FIXED2DBL( mo->velz );
 				r.angle = (double)mo->angle * ( 360.0 / 4294967296.0 );
 				r.health = mo->health;

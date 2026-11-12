@@ -43,6 +43,7 @@ struct WorldActorRow
 	std::string cls;
 	double x = 0, y = 0, z = 0;
 	double floorZ = 0;   // [Doruk-Aksoy] the floor it stands on as this instance worked it out, which a client can hold lower than its server
+	double floorClip = 0; // [rc4l] how far it sinks into a TERRAIN floor, which a server sends for a small splash
 	double velX = 0, velY = 0, velZ = 0;
 	double angle = 0;
 	int health = 0;
