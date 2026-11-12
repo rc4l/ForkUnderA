@@ -51,10 +51,10 @@
 #include "features/frame/framedriver.h"   // [rc4l] CreateLaunchRenderer
 #include "r_renderer.h"
 #include "sdlhost.h"   // [rc4l] fullscreen as the host has it
+#include "features/aspect-ratio/computation/ratiobucket_compute.h"   // [rc4l] ComputeRatioIsWidescreen
 // [rc4l] Software renderer removed (GL-only build); NO_GL server uses the null renderer.
 #ifdef NO_GL
 #include "r_nullrenderer.h"
-#include "features/aspect-ratio/computation/ratiobucket_compute.h"
 #endif
 
 // [rc4l] GL's renderer, which a build with GL hands to CreateLaunchRenderer.
