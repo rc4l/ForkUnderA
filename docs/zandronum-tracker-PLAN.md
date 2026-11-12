@@ -1,6 +1,6 @@
 # Zandronum commit tracker — implementation plan
 
-Status: **proposed** (2026-11-11) · Owner: rc4l · One branch, one PR, merged with a merge commit
+Status: **walked** (2026-11-12): every row resolved, counts in `commit-tracker/zandronum/progress.json` · Owner: rc4l · One branch, one PR, merged with a merge commit
 
 A second commit tracker, built the same way as the UZDoom one, with one row per Zandronum commit
 from our 3.2.1 base to the tip of `zandronum-stable`. Every row ends in a verdict, and the tracker
