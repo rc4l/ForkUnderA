@@ -1612,11 +1612,11 @@ feeebf52659f7aa43e20bf52e3ecd95c2b9dd920	2015-04-12T16:26:52Z	- rework MD2 code 
 6fc63daabd41a4dffbd63045ee72f1f3eb07bf82	2015-04-13T20:08:44Z	- fixed: Zips whose central directory cannot be read need to print an error message.	pending		/
 d7092f40a37fea1f536e4c5a2ba4336b728ee7fb	2015-04-13T20:09:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 ccb49a4242f9b06d3c01daba86ed3893f4ce1f26	2015-04-14T16:13:25Z	Fixed: missing '=' in conversation ID defs	pending		/
-238046655c13329a150d65e27d344bf93f38792c	2015-04-14T16:32:14Z	- wrapped all accesses to the sector tag into accessor functions, as preparation for allowing multiple tags per sector.	pending		/
-2faf836aa143afa2fd378a8fc90effb029d3ce23	2015-04-14T16:48:19Z	- some minor rework of tag access interface after I realized that some stuff (e.g. Strife's scrolling sector special) need the primary tag to treated specially.	pending		/
+238046655c13329a150d65e27d344bf93f38792c	2015-04-14T16:32:14Z	- wrapped all accesses to the sector tag into accessor functions, as preparation for allowing multiple tags per sector.	ported	twin zandronum@20a202eba: two hunks placed by hand where p_sectors.cpp and r_defs.h moved	bd3b97c6
+2faf836aa143afa2fd378a8fc90effb029d3ce23	2015-04-14T16:48:19Z	- some minor rework of tag access interface after I realized that some stuff (e.g. Strife's scrolling sector special) need the primary tag to treated specially.	ported	twin zandronum@fdc08e59a: as written	b3eb6d10
 7b4f950330855acb72f920fb293baaee975e124a	2015-04-14T17:51:37Z	Merge pull request #314 from Blue-Shadow/conv_id_fix	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
-425e5b9ffcba30d8bf212a7a76759bab2dc0e73b	2015-04-14T20:39:57Z	- replaced P_FindSectorFromTag with an FSectorTagIterator class.	pending		/
-47543bb7669b6791a98b6f195fd98afa1d539829	2015-04-14T22:47:06Z	- while we're at it, let's also wrap line ID searches in an iterator class so that we can do multiple IDs per line later as well.	pending		/
+425e5b9ffcba30d8bf212a7a76759bab2dc0e73b	2015-04-14T20:39:57Z	- replaced P_FindSectorFromTag with an FSectorTagIterator class.	ported	twin zandronum@eef80c9f8: eight hunks placed by hand around our fixed64 casts and FrictionToMoveFactor	d8143562
+47543bb7669b6791a98b6f195fd98afa1d539829	2015-04-14T22:47:06Z	- while we're at it, let's also wrap line ID searches in an iterator class so that we can do multiple IDs per line later as well.	ported	twin zandronum@1a2796189: three hunks placed by hand; our MBF21 sidedef scroller's ID search moved to the iterator too	2e348af0
 006868c072f6bbaf995078ec4c8718aab396afd6	2015-04-14T23:02:15Z	Miscellaneous warning fixes	pending		/
 902593198b3b8f7cb5314375707085d483b9e85b	2015-04-15T07:37:06Z	- wrapped all line ID accesss just like sector tags	pending		/
 418e6a16b85fb84833a65c80d89110e9c3406577	2015-04-15T07:43:43Z	- fixed UDMF user variables could be set for the base namespaces which do not define them.	pending		/
@@ -18553,7 +18553,7 @@ bca5c31ac4ab384b58c04094480b293f50df7aed	2025-11-05T20:29:58Z	Fix string OOB acc
 fcba21aebdbe0ef32ed79a9dd3d7426f9fe8a927	2025-11-05T20:31:07Z	Fixed incorrect stat velocity reading	pending		/
 65c25c4e53eacaf9844a67a040dbfc561dacf136	2025-11-05T20:31:07Z	Added support for reading multiple player velocities	pending		/
 4be5c66d38a0b51014d962ceac1182cd9e3f6c3d	2025-11-05T21:58:05Z	Fixed string OOB access when building network addresses	pending		/
-6b4b060b04d70e69d397b8cba875474fc5091bb7	2025-11-06T17:30:37Z	More visually coherent mouse cursors for the vanilla games	pending		/
+6b4b060b04d70e69d397b8cba875474fc5091bb7	2025-11-06T17:30:37Z	More visually coherent mouse cursors for the vanilla games	ported	twin zandronum@2af8e77c0: art only, shown when vid_cursor names one since our default is the OS pointer; test cursors.test.mjs holds each to I_SetCursor's 32 by 32	b6e1ce0c
 b0ddff753ac608b06cad507832962408b8b4b654	2025-11-06T17:54:29Z	fix typo (>= instead of > in length checks) in save compat code	pending		/
 58cf1ea7ed1bbf2defeeef53db7076cf585bea9c	2025-11-07T02:03:32Z	Skin dir follows xdg stuff	pending		/
 459e4eebcd78549c4f620d56088f8c9422565abc	2025-11-07T02:03:32Z	Removed unused constant	pending		/
@@ -18564,8 +18564,8 @@ b0ddff753ac608b06cad507832962408b8b4b654	2025-11-06T17:54:29Z	fix typo (>= inste
 c0f0d6b47b696680d04be4699c575be7febbe0cf	2025-11-08T04:15:04Z	Cleanup CI	pending		/
 81845e887cbf18e799d08e634d545db164612b44	2025-11-09T20:24:50Z	#378 Guard against menu out of bounds crash	pending		/
 f4074930b26e9d399459d0eadc401fdfaca0d2d5	2025-11-09T20:25:05Z	Fix for #347	pending		/
-f2eeb1f50eb477944adb1d805245681e89ceb6c2	2025-11-11T18:22:10Z	polish new cursor gfx a bit	pending		/
-e3db4183fe36babe2f93c08f6702d313ac81400b	2025-11-11T18:22:10Z	more chex/strife cursor tweaks	pending		/
+f2eeb1f50eb477944adb1d805245681e89ceb6c2	2025-11-11T18:22:10Z	polish new cursor gfx a bit	ported	twin zandronum@7407b2c47: art only	c2b6b5fe
+e3db4183fe36babe2f93c08f6702d313ac81400b	2025-11-11T18:22:10Z	more chex/strife cursor tweaks	ported	twin zandronum@211fc3575: art only; every cursor now matches Zandronum's	323dd612
 61280935c8d0c023529bdc90c47425d570a48aff	2025-11-11T23:32:44Z	Build translation files from standard translation database (#242)	pending		/
 886fe11f7c981200a94cc150f1ce48bf8dc006d3	2025-11-13T01:27:43Z	Client-sided dynamic lights	pending		/
 99427356fd63c953ff4dcb6adffdd4c785263a6d	2025-11-13T15:36:54Z	Fixed duplicate splash spawns	pending		/
