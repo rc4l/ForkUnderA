@@ -55,3 +55,15 @@ TEST(PlayerSkin, NoSkinPutsBackTheStatesSpriteForASkins)
 	EXPECT_EQ(SKIN_SPRITE_STATE, ComputeSkinSprite(true, true, false, true));
 	EXPECT_EQ(SKIN_SPRITE_KEEP, ComputeSkinSprite(true, true, false, false));
 }
+
+TEST(DrawnSkinSprite, ABodyShowingItsSpawnSpriteIsDrawnInItsSkin)
+{
+	EXPECT_EQ(zx::skin::ComputeDrawnSkinSprite(10, 42, true, false), 42);
+	EXPECT_EQ(zx::skin::ComputeDrawnSkinSprite(42, 42, true, false), 42);
+}
+
+TEST(DrawnSkinSprite, AMorphOrAnEmptyStateKeepsItsSprite)
+{
+	EXPECT_EQ(zx::skin::ComputeDrawnSkinSprite(10, 42, false, false), 10);
+	EXPECT_EQ(zx::skin::ComputeDrawnSkinSprite(10, 42, true, true), 10);
+}

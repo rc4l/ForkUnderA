@@ -24,4 +24,9 @@ SkinSprite ComputeSkinSprite(bool noSkin, bool showsSpawnSprite, bool showsTNT1,
 	return showsSkinSprite ? SKIN_SPRITE_STATE : SKIN_SPRITE_KEEP;
 }
 
+int ComputeDrawnSkinSprite(int drawnSprite, int skinSprite, bool stateShowsSpawnSprite, bool stateShowsTNT1)
+{
+	return (drawnSprite != skinSprite && stateShowsSpawnSprite && !stateShowsTNT1) ? skinSprite : drawnSprite;
+}
+
 }} // namespace zx::skin

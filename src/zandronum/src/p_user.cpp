@@ -88,6 +88,7 @@
 #include "features/fov-interp/computation/fovinterp_compute.h"
 #include "features/quake-movement/quakemove.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
+#include "computation/playerskin_compute.h"
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -2770,14 +2771,21 @@ void P_CheckPlayerSprite(AActor *actor, int &spritenum, fixed_t &scalex, fixed_t
 	}
 
 	// [BB/AK] An overridden skin also overrides NOSKIN.
-	// [rc4l] Ported from zandronum@49b7c26dc75536557095e15bae6ab1b4edd4e2d4: a skin's scale applies only while its sprite shows.
-	if (skin != 0 && (!(player->mo->flags4 & MF4_NOSKIN) || (overrideSkin != -1)) && (skins[skin].sprite == actor->sprite))
+	if (skin != 0 && (!(player->mo->flags4 & MF4_NOSKIN) || overrideSkin != -1))
 	{
-		// Convert from default scale to skin scale.
-		fixed_t defscaleY = actor->GetDefault()->scaleY;
-		fixed_t defscaleX = actor->GetDefault()->scaleX;
-		scaley = Scale(scaley, skins[skin].ScaleY, defscaleY);
-		scalex = Scale(scalex, skins[skin].ScaleX, defscaleX);
+		// [AK] Set the skin's sprite to the player's body, if it isn't already.
+		// [rc4l] Adapted from zandronum@e97ab4a28f1ab1c7a94404422da6bbf32d9c66c8: the drawn sprite takes the skin's and the actor is left alone, since this runs from the render copy's fill, where writing the live actor made tics depend on the frames drawn.
+		spritenum = zx::skin::ComputeDrawnSkinSprite(spritenum, skins[skin].sprite, actor->state->sprite == actor->SpawnState->sprite, actor->state->sprite == SPR_TNT1);
+
+		// [rc4l] Ported from zandronum@49b7c26dc75536557095e15bae6ab1b4edd4e2d4: a skin's scale applies only while its sprite shows.
+		if (skins[skin].sprite == spritenum)
+		{
+			// Convert from default scale to skin scale.
+			fixed_t defscaleY = actor->GetDefault()->scaleY;
+			fixed_t defscaleX = actor->GetDefault()->scaleX;
+			scaley = Scale(scaley, skins[skin].ScaleY, defscaleY);
+			scalex = Scale(scalex, skins[skin].ScaleX, defscaleX);
+		}
 	}
 
 	// Set the crouch sprite?
