@@ -2552,13 +2552,17 @@ void PLAYER_SetTeam( player_t *pPlayer, ULONG ulTeam, bool bNoBroadcast )
 			SERVER_Printf( "%s joined the \034%s%s " TEXTCOLOR_NORMAL "team.\n", pPlayer->userinfo.GetName(), TEAM_GetTextColorName( ulTeam ), TEAM_GetName( ulTeam ));
 		}		
 	}
-	// [rc4l] Ported from zandronum@10b16591ad9bcf23d6d4cdb0b2cb737915357775: a player who changes team stops spying on a former ally, checking the camera for a destroyed actor's NULL.
+	// [rc4l] Ported from zandronum@10b16591ad9bcf23d6d4cdb0b2cb737915357775: a player who changes team stops spying on a former ally.
+	// [rc4l] Ported from zandronum@8de7941a63b396885edc2d5c9039e09483d10b8d: the camera is checked before its player, as ours already did, and the camera itself is asked whether it is a teammate.
 	// [RK] Reset the player's camera if they switched teams and their camera is an enemy.
 	// Security cameras and alike are excluded because they are not valid players.
-	else if (( oldTeam != ulTeam ) && ( pPlayer->mo ) && ( pPlayer->camera ) && ( pPlayer->camera->player ) && !( pPlayer->mo->IsTeammate( pPlayer->camera->player->mo )))
+	else if (( oldTeam != ulTeam ) && ( pPlayer->mo != nullptr ) && ( pPlayer->camera != nullptr ))
 	{
-		if (( pPlayer->bDeadSpectator == false ) || (( lmsspectatorsettings & LMS_SPF_VIEW ) == false ))
-			pPlayer->camera = pPlayer->mo;
+		if (( pPlayer->camera->player != nullptr ) && ( pPlayer->mo->IsTeammate( pPlayer->camera ) == false ))
+		{
+			if (( pPlayer->bDeadSpectator == false ) || (( lmsspectatorsettings & LMS_SPF_VIEW ) == false ))
+				pPlayer->camera = pPlayer->mo;
+		}
 	}
 
 	// Finally, update the player's color.
