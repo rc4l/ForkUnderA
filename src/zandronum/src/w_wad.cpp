@@ -1364,8 +1364,7 @@ int FWadCollection::GetLastLump (int wadnum) const
 //
 //==========================================================================
 
-// [rc4l] See the header. Matched case-insensitively, because a name written into a record or a
-// server's file list is the player's spelling, not the filesystem's.
+// [rc4l] Matched case-insensitively (see the header), since a name in a record or a server's file list is the player's spelling, not the filesystem's.
 const char *W_GetLoadedWadPath (const char *bareName)
 {
 	if ((bareName == NULL) || (bareName[0] == '\0'))

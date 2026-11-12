@@ -349,8 +349,7 @@ static int network_SendFromSocket( SOCKET socket, bool socketIsDualStack, NETBUF
 
 //*****************************************************************************
 //
-// [rc4l] See network.h. NETWORK_LaunchPacket but for the socket it leaves by, which
-// is the entire point: a different source port means no NAT mapping to ride in on.
+// [rc4l] NETWORK_LaunchPacket from its own socket (network.h), since a different source port has no NAT mapping to ride in on.
 void NETWORK_LaunchProbePacket( NETBUFFER_s *buffer, NETADDRESS_s address )
 {
 	network_SendFromSocket( g_ProbeSocket, g_bProbeSocketIsDualStack, buffer, address );
