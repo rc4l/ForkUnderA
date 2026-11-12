@@ -7807,6 +7807,9 @@ void ServerCommands::MapNew::Execute()
 	// [AK] Reset all command buffers.
 	CLIENT_ResetAllCommandBuffers( );
 
+	// [rc4l] Adapted from zandronum@ec468bdf82d3843c98a8bad8940ebfdad350080a: the reconnect is a new connection, so it earns its account with a fresh challenge.
+	CLIENT_FuaAuthReset( );
+
 	// Back to the full console.
 	gameaction = ga_fullconsole;
 
