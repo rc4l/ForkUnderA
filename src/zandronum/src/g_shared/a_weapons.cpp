@@ -440,8 +440,10 @@ void AWeapon::AttachToOwner (AActor *other)
 				}
 			}
 
+			// [rc4l] Ported from zandronum@4555b5267c471650d983bb5d8e75f2a519eec63b: a player holding no weapon switches to a new one even while firing.
 			// [AK] Don't switch the weapon if we don't want to while pressing the fire button(s).
-			if (( shouldSwitch ) && ( NETWORK_GetState( ) != NETSTATE_SERVER ) && (( Owner->player - players ) == consoleplayer ))
+			if (( shouldSwitch ) && ( NETWORK_GetState( ) != NETSTATE_SERVER ) &&
+				(( Owner->player - players ) == consoleplayer ) && ( Owner->player->ReadyWeapon != nullptr ))
 			{
 				// [AK] It's common for players to respawn on top of weapons in deathmatch levels.
 				// It's reasonable to assume that the player would always want to switch to this
