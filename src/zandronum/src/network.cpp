@@ -1154,16 +1154,16 @@ NETADDRESS_s NETWORK_GetFromAddress( void )
 
 //*****************************************************************************
 //
-void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUseZStd )
+void NETWORK_LaunchPacket( NETBUFFER_s *buffer, NETADDRESS_s address, bool bUseZStd )
 {
 	ZX_SEAM_UNTIMED( "net/send", Main );
-	LONG				lNumBytes;
-	INT					iNumBytesOut = sizeof(g_ucHuffmanBuffer);
+	int numBytesOut = sizeof( g_ucHuffmanBuffer );
+	int numBytes = 0;
 
-	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	buffer->ulCurrentSize = buffer->CalcSize();
 
 	// Nothing to do.
-	if ( pBuffer->ulCurrentSize == 0 )
+	if ( buffer->ulCurrentSize == 0 )
 		return;
 
 	// [rc4l] With no socket (an offline launch), there is nothing to send through.
@@ -1173,20 +1173,20 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUse
 	// Convert the IP address to a socket address.
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
-	struct sockaddr_storage SocketAddress;
-	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
+	struct sockaddr_storage socketAddress;
+	const int addressLength = address.ToSocketAddress( socketAddress, g_bSocketIsDualStack );
 
 	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935 with zandronum@4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7 and zandronum@e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c: zstd for a caller that asked and a packet at the threshold, Huffman otherwise, without 3.3's auth-server branch because ForkUnderA removed the auth server.
 	bool bUsedZstd = false; // [SB]
 
 	// [AK] Choose between compressing the packet using ZStd or Huffman.
-	if ( zx::nettransport::ComputeShouldTryZstd( bUseZStd, pBuffer->ulCurrentSize, net_zstd_threshold ))
+	if ( zx::nettransport::ComputeShouldTryZstd( bUseZStd, buffer->ulCurrentSize, net_zstd_threshold ))
 	{
 		size_t zstdResult;
 		if ( g_zstdCdict != nullptr )
-			zstdResult = ZSTD_compress_usingCDict( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), pBuffer->pbData, pBuffer->ulCurrentSize, g_zstdCdict );
+			zstdResult = ZSTD_compress_usingCDict( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), buffer->pbData, buffer->ulCurrentSize, g_zstdCdict );
 		else
-			zstdResult = ZSTD_compressCCtx( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), pBuffer->pbData, pBuffer->ulCurrentSize, net_zstd_level );
+			zstdResult = ZSTD_compressCCtx( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), buffer->pbData, buffer->ulCurrentSize, net_zstd_level );
 
 		if ( ZSTD_isError( zstdResult ))
 		{
@@ -1194,90 +1194,84 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUse
 			return;
 		}
 
-		iNumBytesOut = static_cast<int>( zstdResult );
+		numBytesOut = static_cast<int>( zstdResult );
 		bUsedZstd = true;
 	}
 	// [SB] net_zstd_smart will cause Huffman to be used if a packet's Zstandard-compressed size
 	// is greater than its original uncompressed size.
-	const bool bFellBackToHuffman = zx::nettransport::ComputeHuffmanFallback( bUsedZstd, net_zstd_smart, iNumBytesOut, pBuffer->ulCurrentSize );
+	const bool bFellBackToHuffman = zx::nettransport::ComputeHuffmanFallback( bUsedZstd, net_zstd_smart, numBytesOut, buffer->ulCurrentSize );
 	if ( bFellBackToHuffman )
 	{
-		iNumBytesOut = sizeof( g_ucHuffmanBuffer );
-		HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
+		numBytesOut = sizeof( g_ucHuffmanBuffer );
+		HUFFMAN_Encode( (unsigned char *)buffer->pbData, g_ucHuffmanBuffer, buffer->ulCurrentSize, &numBytesOut );
 	}
 	bUsedZstd = zx::nettransport::ComputeUsedZstd( bUsedZstd, bFellBackToHuffman );
 
 	// [rc4l] features/net-transport: under a fake ping or loss the packet waits its turn behind those held before it, or is dropped.
-	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, iNumBytesOut, &SocketAddress, iAddressLength ))
+	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, numBytesOut, &socketAddress, addressLength ))
 	{
 		// [KI] A held packet counts when it is held, with the wire size it will travel at, since this call never reaches the send below.
-		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( Address.Compare( CLIENT_GetServerAddress( ))))
-			CLIENTSTATISTICS_AddToBytesSent( pBuffer->ulCurrentSize, iNumBytesOut, bUsedZstd );
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( address.Compare( CLIENT_GetServerAddress( ))))
+			CLIENTSTATISTICS_AddToBytesSent( buffer->ulCurrentSize, numBytesOut, bUsedZstd );
 		network_SendHeldPackets( );
 		return;
 	}
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
+	numBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, numBytesOut, 0, reinterpret_cast<sockaddr*>(&socketAddress), addressLength );
 
 	// If sendto returns -1, there was an error.
-	if ( lNumBytes == -1 )
+	// [rc4l] Ported from zandronum@21ed9720a9d585be991a390beb960ebf7499eadb: a failed send returns on every platform, where POSIX went on to count -1 bytes sent.
+	if ( numBytes == -1 )
 	{
 #ifdef __WIN32__
-		INT	iError = WSAGetLastError( );
+		int error = WSAGetLastError( );
 
 		// Wouldblock is silent.
-		if ( iError == WSAEWOULDBLOCK )
-			return;
-
-		switch ( iError )
+		if ( error != WSAEWOULDBLOCK )
 		{
-		case WSAEACCES:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEACCES: Permission denied for address: %s\n", iError, Address.ToString() );
-			return;
-		case WSAEAFNOSUPPORT:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEAFNOSUPPORT: Address %s incompatible with the requested protocol\n", iError, Address.ToString() );
-			return;
-		case WSAEADDRNOTAVAIL:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEADDRENOTAVAIL: Address %s not available\n", iError, Address.ToString() );
-			return;
-		case WSAEHOSTUNREACH:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEHOSTUNREACH: Address %s unreachable\n", iError, Address.ToString() );
-			return;				
-		default:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d\n", iError );
-			return;
+			switch ( error )
+			{
+				case WSAEACCES:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEACCES: Permission denied for address: %s\n", error, address.ToString( ));
+					break;
+				case WSAEAFNOSUPPORT:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEAFNOSUPPORT: Address %s incompatible with the requested protocol\n", error, address.ToString( ));
+					break;
+				case WSAEADDRNOTAVAIL:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEADDRENOTAVAIL: Address %s not available\n", error, address.ToString( ));
+					break;
+				case WSAEHOSTUNREACH:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEHOSTUNREACH: Address %s unreachable\n", error, address.ToString( ));
+					break;
+				default:
+					Printf( "NETWORK_LaunchPacket: Error #%d\n", error );
+					break;
+			}
 		}
 #else
-	if ( errno == EWOULDBLOCK )
-return;
-
-          if ( errno == ECONNREFUSED )
-              return;
-
-		Printf( "NETWORK_LaunchPacket: %s\n", strerror( errno ));
-		Printf( "NETWORK_LaunchPacket: Address %s\n", Address.ToString() );
-
+		// [AK] Don't print an error message when the connection is blocked or refused.
+		if (( errno != EWOULDBLOCK ) && ( errno != ECONNREFUSED ))
+		{
+			Printf( "NETWORK_LaunchPacket: %s\n", strerror( errno ));
+			Printf( "NETWORK_LaunchPacket: Address %s\n", address.ToString( ));
+		}
 #endif
+		return;
 	}
 
 	// [rc4l] Every packet out, for features/telemetry's net counters.
-	if ( lNumBytes > 0 )
+	if ( numBytes > 0 )
 	{
-		ZX_COUNT( "net/bytes_out", "bytes", lNumBytes );
+		ZX_COUNT( "net/bytes_out", "bytes", numBytes );
 		ZX_COUNT( "net/packets_out", "packets", 1 );
 	}
 
 	// Record this for our statistics window.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVER_STATISTIC_AddToOutboundDataTransfer( lNumBytes );
+		SERVER_STATISTIC_AddToOutboundDataTransfer( numBytes );
 	// [AK] Clients add the size of this packet to the number of bytes sent.
-	else if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( Address.Compare( CLIENT_GetServerAddress( ))))
-		CLIENTSTATISTICS_AddToBytesSent( pBuffer->ulCurrentSize, lNumBytes, bUsedZstd );
+	else if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( address.Compare( CLIENT_GetServerAddress( ))))
+		CLIENTSTATISTICS_AddToBytesSent( buffer->ulCurrentSize, numBytes, bUsedZstd );
 }
 
 //*****************************************************************************

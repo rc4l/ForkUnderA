@@ -386,7 +386,7 @@ int				NETWORK_GetLANPackets( void );
 NETADDRESS_s	NETWORK_GetFromAddress( void );
 // [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: bUseZStd picks zstd for the game paths that pass true.
 // [KI] bUseZStd defaults to false, which 3.3 has no default for, so a caller that omits it gets the always-readable encoding and stays right whatever that encoding becomes.
-void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUseZStd = false );
+void			NETWORK_LaunchPacket( NETBUFFER_s *buffer, NETADDRESS_s address, bool bUseZStd = false );
 
 // [rc4l] Broadcast onto the LAN via the dedicated send-only v4 socket (see network.cpp).
 void			NETWORK_LaunchBroadcast( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
