@@ -290,6 +290,7 @@ static const std::vector<std::string> g_FreedoomDehackedHashes = {
 static	void			network_InitZstd( void );
 static	void			network_DestructZstd( void );
 static	ULONG			network_DecodeDatagram( LONG lNumBytes );
+static	int				network_TakeDatagram( LONG lNumBytes, const sockaddr_storage &SocketFrom );
 static	void			network_InitPWADList( void );
 static	void			network_Error( const char *pszError );
 static	SOCKET			network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack );
@@ -1062,60 +1063,14 @@ int NETWORK_GetPackets( void )
 			g_ulArrivalMS = arrivalMs;
 	}
 
-	// If the number of bytes returned is -1, an error has occured.
-	if ( lNumBytes == -1 ) 
-	{ 
-#ifdef __WIN32__
-		errno = WSAGetLastError( );
-
-		if ( errno == WSAEWOULDBLOCK )
-			return ( false );
-
-		// Connection reset by peer. Doesn't mean anything to the server.
-		if ( errno == WSAECONNRESET )
-			return ( false );
-
-		if ( errno == WSAEMSGSIZE )
-		{
-			Printf( "NETWORK_GetPackets:  WARNING! Oversized packet from %s\n", g_AddressFrom.ToString() );
-			return ( false );
-		}
-
-		Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
-#else
-		if ( errno == EWOULDBLOCK )
-			return ( false );
-
-		if ( errno == ECONNREFUSED )
-			return ( false );
-
-		Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
-#endif
+	// [rc4l] Every packet in, for features/telemetry's net counters.
+	if ( lNumBytes > 0 )
+	{
+		ZX_COUNT( "net/bytes_in", "bytes", lNumBytes );
+		ZX_COUNT( "net/packets_in", "packets", 1 );
 	}
 
-	// No packets or an error, so don't process anything.
-	if ( lNumBytes <= 0 )
-		return ( 0 );
-
-	// [rc4l] Every packet in, for features/telemetry's net counters.
-	ZX_COUNT( "net/bytes_in", "bytes", lNumBytes );
-	ZX_COUNT( "net/packets_in", "packets", 1 );
-
-	// Record this for our statistics window.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVER_STATISTIC_AddToInboundDataTransfer( lNumBytes );
-
-	// If the number of bytes we're receiving exceeds our buffer size, ignore the packet.
-	if ( lNumBytes >= static_cast<LONG>(g_NetworkMessage.ulMaxSize) )
-		return ( 0 );
-
-	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
-
-	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
-	return ( network_DecodeDatagram( lNumBytes ));
+	return network_TakeDatagram( lNumBytes, SocketFrom );
 }
 
 //*****************************************************************************
@@ -1139,56 +1094,55 @@ int NETWORK_GetLANPackets( void )
 	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
+	return network_TakeDatagram( lNumBytes, SocketFrom );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Adapted from zandronum@89e8f15b6b145790be7035d73c0cc88e0e22c496: what both sockets share once a datagram or an error came off them, from our own receives, which keep a v6 sender and the fake conditions' held packets.
+static int network_TakeDatagram( LONG lNumBytes, const sockaddr_storage &SocketFrom )
+{
 	// If the number of bytes returned is -1, an error has occured.
-    if ( lNumBytes == -1 ) 
-    { 
+	if ( lNumBytes == -1 )
+	{
 #ifdef __WIN32__
-        errno = WSAGetLastError( );
+		errno = WSAGetLastError( );
 
-        if ( errno == WSAEWOULDBLOCK )
-            return ( false );
-
-		// Connection reset by peer. Doesn't mean anything to the server.
-		if ( errno == WSAECONNRESET )
-			return ( false );
-
-        if ( errno == WSAEMSGSIZE )
+		// [rc4l] Ported from zandronum@bde6d45f00092c30d40cd17648978ac6a72de8d9: the messages name the function that prints them.
+		if ( errno == WSAEMSGSIZE )
 		{
-             Printf( "NETWORK_GetPackets:  WARNING! Oversized packet from %s\n", g_AddressFrom.ToString() );
-             return ( false );
-        }
-
-        Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
+			NETADDRESS_s from;
+			from.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
+			Printf( "network_TakeDatagram: WARNING! Oversized packet from %s\n", from.ToString( ));
+		}
+		// [AK] Don't print an error message when the connection is blocked or reset.
+		else if (( errno != WSAEWOULDBLOCK ) && ( errno != WSAECONNRESET ))
+			Printf( "network_TakeDatagram: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
 #else
-        if ( errno == EWOULDBLOCK )
-            return ( false );
-
-        if ( errno == ECONNREFUSED )
-            return ( false );
-
-        Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-        return ( false );
+		// [AK] Don't print an error message when the connection is blocked or refused.
+		if (( errno != EWOULDBLOCK ) && ( errno != ECONNREFUSED ))
+			Printf( "network_TakeDatagram: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
 #endif
-    }
+		return 0;
+	}
 
-	// No packets or an error, dont process anything.
+	// No packets or an error, so don't process anything.
 	if ( lNumBytes <= 0 )
-		return ( 0 );
+		return 0;
 
 	// Record this for our statistics window.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVER_STATISTIC_AddToInboundDataTransfer( lNumBytes );
 
 	// If the number of bytes we're receiving exceeds our buffer size, ignore the packet.
-	if ( lNumBytes >= static_cast<LONG>(g_NetworkMessage.ulMaxSize) )
-		return ( 0 );
+	if ( lNumBytes >= static_cast<LONG>( g_NetworkMessage.ulMaxSize ))
+		return 0;
 
 	// Store the IP address of the sender.
 	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
-	return ( network_DecodeDatagram( lNumBytes ));
+	return static_cast<int>( network_DecodeDatagram( lNumBytes ));
 }
 
 //*****************************************************************************
