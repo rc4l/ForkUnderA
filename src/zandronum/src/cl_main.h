@@ -127,6 +127,8 @@ struct PACKETBUFFER_s
 void				CLIENT_Construct( void );
 void				CLIENT_Destruct( void );
 void				CLIENT_Tick( void );
+void				CLIENT_TickCommandBuffers( void );
+bool				CLIENT_UsingCommandBuffers( void );
 void				CLIENT_EndTick( void );
 
 // Access functions.

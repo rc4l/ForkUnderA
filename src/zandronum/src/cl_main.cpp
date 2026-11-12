@@ -199,7 +199,10 @@ EXTERN_CVAR( Bool, sv_unlimited_pickup )
 //*****************************************************************************
 //	STRUCTURES
 
-// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89 and zandronum@43098555ff613adecf40bd1708a218298af6e5ed: each player's movement commands of one kind held until a tic runs them, which CLIENT_Tick drains by ComputeMoveDrainOrder.
+// [AK] A toggle for when buffered commands need to be executed.
+static	bool				g_ExecuteBufferedCMDs = false;
+
+// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89, zandronum@43098555ff613adecf40bd1708a218298af6e5ed and zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06: each player's movement commands of one kind held until a tic runs them, which CLIENT_TickCommandBuffers drains by ComputeMoveDrainOrder.
 struct CommandBuffer
 {
 	TArray<std::shared_ptr<ServerCommands::BaseServerCommand>> cmds;
@@ -208,11 +211,19 @@ struct CommandBuffer
 
 	CommandBuffer( void ) { Reset( ); }
 
+	// [rc4l] Holds the command when ComputeBuffersCommand says it waits, and says whether it did.
 	template <class Command>
-	void Push( Command &command )
+	bool BufferIfNecessary( const Command &command )
 	{
-		cmds.Push( std::make_shared<Command>( command ));
-		lastArrivalTick = gametic;
+		const bool mustBuffer = zx::netclient::ComputeBuffersCommand( g_ExecuteBufferedCMDs, CLIENT_UsingCommandBuffers( ));
+
+		if ( mustBuffer )
+		{
+			cmds.Push( std::make_shared<Command>( command ));
+			lastArrivalTick = gametic;
+		}
+
+		return mustBuffer;
 	}
 
 	void Reset( void )
@@ -248,6 +259,10 @@ CUSTOM_CVAR( Bool, cl_buffercommands, true, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE 
 {
 	if ( self == false )
 		CLIENT_ResetAllCommandBuffers( );
+
+	// [AK] Mark if the command buffers are being used while recording a demo.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENTDEMO_IsRecording( )))
+		CLIENTDEMO_WriteUseCommandBuffer( self );
 }
 
 
@@ -485,9 +500,6 @@ static	bool				g_HasRCONAccess = false;
 
 // [AK] We are in the process of gaining RCON access to the server.
 static  bool				g_GainingRCONAccess = false;
-
-// [AK] A toggle for when buffered commands need to be executed.
-static	bool				g_ExecuteBufferedCMDs = false;
 
 // [AK] A collection of all buffered commands that handle a player's movement.
 static	CommandBuffer		g_BufferedMoveCMDs[MAXPLAYERS];
@@ -730,38 +742,53 @@ void CLIENT_Tick( void )
 
 	case CTS_ACTIVE:
 
-		// [AK] While in a level, execute any buffered commands.
-		if (( cl_buffercommands ) && ( gamestate == GS_LEVEL ))
-		{
-			g_ExecuteBufferedCMDs = true;
-
-			for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
-			{
-				if (( playeringame[i] == false ) || ( players[i].bSpectating ))
-					continue;
-
-				// [AK] Save their current position and angle now to ensure
-				// the best possible smoothness during interpolation.
-				if ( players[i].mo != nullptr )
-				{
-					players[i].mo->PrevX = players[i].mo->x;
-					players[i].mo->PrevY = players[i].mo->y;
-					players[i].mo->PrevZ = players[i].mo->z;
-					players[i].mo->PrevAngle = players[i].mo->angle;
-				}
-			}
-
-			client_DrainCommandBuffers( g_BufferedMoveCMDs );
-			client_DrainCommandBuffers( g_BufferedExtraDataCMDs );
-
-			g_ExecuteBufferedCMDs = false;
-		}
-
+		// [AK] Execute any buffered commands, if possible.
+		CLIENT_TickCommandBuffers( );
 		break;
 
 	default:
 
 		break;
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Whether moves wait in the buffers, by ComputeUsesCommandBuffers, where upstream repeats the rule at each caller.
+bool CLIENT_UsingCommandBuffers( void )
+{
+	return zx::netclient::ComputeUsesCommandBuffers( CLIENTDEMO_IsPlaying( ), CLIENTDEMO_IsUsingCommandBuffers( ), cl_buffercommands );
+}
+
+//*****************************************************************************
+//
+void CLIENT_TickCommandBuffers( void )
+{
+	// [AK] This should only work while in a level.
+	if (( CLIENT_UsingCommandBuffers( )) && ( gamestate == GS_LEVEL ))
+	{
+		g_ExecuteBufferedCMDs = true;
+
+		for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+		{
+			if (( playeringame[i] == false ) || ( players[i].bSpectating ))
+				continue;
+
+			// [AK] Save their current position and angle now to ensure
+			// the best possible smoothness during interpolation.
+			if ( players[i].mo != nullptr )
+			{
+				players[i].mo->PrevX = players[i].mo->x;
+				players[i].mo->PrevY = players[i].mo->y;
+				players[i].mo->PrevZ = players[i].mo->z;
+				players[i].mo->PrevAngle = players[i].mo->angle;
+			}
+		}
+
+		client_DrainCommandBuffers( g_BufferedMoveCMDs );
+		client_DrainCommandBuffers( g_BufferedExtraDataCMDs );
+
+		g_ExecuteBufferedCMDs = false;
 	}
 }
 
@@ -4276,13 +4303,10 @@ void ServerCommands::MovePlayer::Execute()
 		return;
 	}
 
-	// [AK] If the command buffers are being used, save this command into the
-	// player's buffer to be executed later.
-	if (( cl_buffercommands ) && ( g_ExecuteBufferedCMDs == false ))
-	{
-		g_BufferedMoveCMDs[player - players].Push<ServerCommands::MovePlayer>( *this );
+	// [AK] If the command buffers are currently being used, save this command
+	// into the player's buffer to be executed later.
+	if ( g_BufferedMoveCMDs[player - players].BufferIfNecessary<ServerCommands::MovePlayer>( *this ))
 		return;
-	}
 
 	// If we're not allowed to know the player's location, then just make him invisible.
 	if ( IsVisible() == false )
@@ -4930,13 +4954,10 @@ void ServerCommands::UpdatePlayerPing::Execute()
 //
 void ServerCommands::UpdatePlayerExtraData::Execute()
 {
-	// [AK] If the command buffers are being used, save this command into the
-	// player's buffer to be executed later.
-	if (( cl_buffercommands ) && ( g_ExecuteBufferedCMDs == false ))
-	{
-		g_BufferedExtraDataCMDs[player - players].Push<ServerCommands::UpdatePlayerExtraData>( *this );
+	// [AK] If the command buffers are currently being used, save this command
+	// into the player's buffer to be executed later.
+	if ( g_BufferedExtraDataCMDs[player - players].BufferIfNecessary<ServerCommands::UpdatePlayerExtraData>( *this ))
 		return;
-	}
 
 	// [BB] If the spectated player uses the GL renderer and we are using software,
 	// the viewangle has to be limited.	We don't care about cl_disallowfullpitch here.
@@ -4982,13 +5003,10 @@ void ServerCommands::MoveLocalPlayer::Execute()
 	if ( pPlayer->mo == NULL )
 		return;
 
-	// [AK] If the command buffers are being used, save this command into the
-	// local player's buffer to be executed later.
-	if (( cl_buffercommands ) && ( g_ExecuteBufferedCMDs == false ))
-	{
-		g_BufferedMoveCMDs[consoleplayer].Push<ServerCommands::MoveLocalPlayer>( *this );
+	// [AK] If the command buffers are currently being used, save this command
+	// into the local player's buffer to be executed later.
+	if ( g_BufferedMoveCMDs[consoleplayer].BufferIfNecessary<ServerCommands::MoveLocalPlayer>( *this ))
 		return;
-	}
 
 	// [BB] If the server already sent us our position for a later tic,
 	// the current update is outdated and we have to ignore it completely.

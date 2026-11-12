@@ -4200,7 +4200,7 @@ void AActor::Tick ()
 	// [AK] Don't do this for players when using the client's command buffers.
 	// It's already handled when the buffers are emptied in CLIENT_Tick.
 	// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89: the role from features/net-session, the rule ComputeTickSavesPrevPosition.
-	if (zx::netclient::ComputeTickSavesPrevPosition(zx::net::InClientMode(), player != nullptr, cl_buffercommands))
+	if (zx::netclient::ComputeTickSavesPrevPosition(zx::net::InClientMode(), player != nullptr, CLIENT_UsingCommandBuffers()))
 	{
 		PrevX = x;
 		PrevY = y;

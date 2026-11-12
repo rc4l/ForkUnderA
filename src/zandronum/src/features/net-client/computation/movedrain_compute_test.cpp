@@ -48,3 +48,18 @@ TEST(MoveDrain, ATickSavesWherePlayersWereUnlessAClientDrainsThem)
 	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, true, false));
 	EXPECT_FALSE(ComputeTickSavesPrevPosition(true, true, true));
 }
+
+TEST(MoveDrain, ADemosPlaybackBuffersAsItsRecorderDid)
+{
+	EXPECT_TRUE(ComputeUsesCommandBuffers(true, true, false));
+	EXPECT_FALSE(ComputeUsesCommandBuffers(true, false, true));
+	EXPECT_TRUE(ComputeUsesCommandBuffers(false, false, true));
+	EXPECT_FALSE(ComputeUsesCommandBuffers(false, true, false));
+}
+
+TEST(MoveDrain, ACommandWaitsOnlyWhileTheBuffersAreNotBeingDrained)
+{
+	EXPECT_TRUE(ComputeBuffersCommand(false, true));
+	EXPECT_FALSE(ComputeBuffersCommand(true, true));
+	EXPECT_FALSE(ComputeBuffersCommand(false, false));
+}

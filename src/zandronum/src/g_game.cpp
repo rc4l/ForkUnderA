@@ -1747,10 +1747,17 @@ G_TickerPart G_TickerBegin ()
 	{
 		// [BB] .. only if the demo is not currently paused.
 		if ( CLIENTDEMO_IsPaused( ) == false )
+		{
 			CLIENTDEMO_ReadPacket( );
+
+			// [AK] Also execute any buffered commands, if possible.
+			CLIENT_TickCommandBuffers( );
+		}
 		// [BB] If the demo is paused, the tic offset increases.
 		else
+		{
 			CLIENTDEMO_SetGameticOffset ( CLIENTDEMO_GetGameticOffset() + 1 );
+		}
 	}
 
 	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )

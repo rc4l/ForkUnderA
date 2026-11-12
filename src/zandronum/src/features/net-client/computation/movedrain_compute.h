@@ -27,6 +27,12 @@ std::vector<int> ComputeMoveDrainOrder(const std::vector<MoveDrainPlayer> &playe
 // [rc4l] Whether an actor's tick saves where it was for interpolation, which a client draining its buffers does for players itself.
 bool ComputeTickSavesPrevPosition(bool inClientMode, bool isPlayer, bool moveBufferOn);
 
+// [rc4l] Ported from zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06: a clientside demo's playback buffers as its recorder did, any other client as cl_buffercommands says.
+bool ComputeUsesCommandBuffers(bool playingDemo, bool recorderBuffered, bool bufferCvar);
+
+// [rc4l] Ported from zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06: whether an arriving command waits in its buffer, which none does while the buffers are being drained.
+bool ComputeBuffersCommand(bool draining, bool usesBuffers);
+
 }} // namespace zx::netclient
 
 #endif // ZX_MOVEDRAIN_COMPUTE_H

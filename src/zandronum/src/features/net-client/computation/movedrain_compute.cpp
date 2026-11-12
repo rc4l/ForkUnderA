@@ -34,4 +34,14 @@ bool ComputeTickSavesPrevPosition(bool inClientMode, bool isPlayer, bool moveBuf
 	return !inClientMode || !isPlayer || !moveBufferOn;
 }
 
+bool ComputeUsesCommandBuffers(bool playingDemo, bool recorderBuffered, bool bufferCvar)
+{
+	return playingDemo ? recorderBuffered : bufferCvar;
+}
+
+bool ComputeBuffersCommand(bool draining, bool usesBuffers)
+{
+	return !draining && usesBuffers;
+}
+
 }} // namespace zx::netclient
