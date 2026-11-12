@@ -371,7 +371,7 @@ DEV_MODE_CCMD( fua_find_lines )
 		scanned++;
 
 		if ( wantSpecial >= 0 && ln->special != wantSpecial ) continue;
-		if ( wantTag >= 0 && ln->id != wantTag ) continue;
+		if ( wantTag >= 0 && !ln->HasId( wantTag )) continue;
 		// Door_Close, Door_Open, Door_Raise, Door_Animated. Door_LockedRaise (13) is excluded on
 		// purpose: it needs a key, so it will never open for an unattended test.
 		if ( wantDoor && ln->special != 10 && ln->special != 11 && ln->special != 12 &&
@@ -394,7 +394,7 @@ DEV_MODE_CCMD( fua_find_lines )
 		if ( face < 0 ) face += 360;
 
 		Printf( "line %d: special %d tag %d act 0x%x  mid (%d, %d)  stand (%d, %d) face %d%s\n",
-				i, ln->special, ln->id, (unsigned)ln->activation,
+				i, ln->special, ln->GetMainId( ), (unsigned)ln->activation,
 				(int)FIXED2FLOAT( mx ), (int)FIXED2FLOAT( my ), (int)sx, (int)sy, face,
 				ln->locknumber ? "  [LOCKED]" : "" );
 		found++;

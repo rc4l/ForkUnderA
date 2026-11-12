@@ -1273,6 +1273,12 @@ struct line_t
 	fixed_t		SavedAlpha;
 
 	LineState	rc;	// [rc4l] features/gamecopy: as the renderer draws it
+
+	void SetMainId(int newid);
+	int GetMainId() const;
+	void ClearIds();
+	bool HasId(int id) const;
+	static void HashIds();
 };
 
 // phares 3/14/98
