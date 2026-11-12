@@ -18,6 +18,9 @@ int ComputeFakeDelayMs(int pingMs, bool outbound);
 // [rc4l] Whether the next packet is dropped at lossPercent (0 to 100), advancing the deterministic generator in state so a test that seeds it drops the same packets every run.
 bool ComputeFakeDrop(unsigned &state, float lossPercent);
 
+// [rc4l] The extra ms the next packet waits, 0 to jitterMs, from the deterministic generator in state; 0 for no jitter, leaving state alone.
+int ComputeFakeJitterMs(unsigned &state, int jitterMs);
+
 // [rc4l] One packet held back: when it may go, the bytes as they travel and the address they travel to or came from.
 struct HeldPacket
 {

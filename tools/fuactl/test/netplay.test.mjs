@@ -36,6 +36,7 @@ test("a client presents unfocused, asks no public registry and takes its fake pi
   const quiet = { fua_render_in_background: 1, cl_fua_serverregistry_list: "", cl_fua_serverregistrylist_fetch: 0 };
   assert.deepEqual(clientCvars(), quiet);
   assert.deepEqual(clientCvars({ lag: 100, loss: 5, cvars: { cl_unlagged: 1 } }), { ...quiet, fua_net_fakeping: 100, fua_net_fakeloss: 5, cl_unlagged: 1 });
+  assert.deepEqual(clientCvars({ jitter: 40 }), { ...quiet, fua_net_fakejitter: 40 });
 });
 
 test("per-client values spread from a comma list", () => {
@@ -108,7 +109,7 @@ test("a set launches the server in the map, then each client joined with its own
   assert.deepEqual(f.execs.map((e) => e[1]), ["join", "join"]);
   const session = netplaySession(set);
   assert.equal(session.server.port, 7900);
-  assert.deepEqual(session.clients.map((c) => [c.role, c.port, c.lag, c.player]), [["player", 7901, 100, 1], ["observer", 7902, 0, 2]]);
+  assert.deepEqual(session.clients.map((c) => [c.role, c.port, c.lag, c.jitter, c.player]), [["player", 7901, 100, 0, 1], ["observer", 7902, 0, 0, 2]]);
   await closeNetplay(set, f.deps.stop);
   assert.deepEqual(f.stopped, [7902, 7901, 7900]);
 });
@@ -233,8 +234,8 @@ test("a client the server never holds playing times out", async () => {
 });
 
 test("a command line's netplay options, with the defaults and the bad values refused", () => {
-  const o = netplayOptionsFromFlags({ map: "MAP02", file: "a.wad, b.pk3", players: "2", observers: "1", lag: "100,0", "for-user": true, cvar: "x=1" }, () => ({ x: "1" }));
-  assert.deepEqual([o.map, o.files, o.players, o.observers, o.lag, o.forUser, o.clientCvars], ["MAP02", ["a.wad", "b.pk3"], 2, 1, "100,0", true, { x: "1" }]);
+  const o = netplayOptionsFromFlags({ map: "MAP02", file: "a.wad, b.pk3", players: "2", observers: "1", lag: "100,0", jitter: "0,40", "for-user": true, cvar: "x=1" }, () => ({ x: "1" }));
+  assert.deepEqual([o.map, o.files, o.players, o.observers, o.lag, o.jitter, o.forUser, o.clientCvars], ["MAP02", ["a.wad", "b.pk3"], 2, 1, "100,0", "0,40", true, { x: "1" }]);
   const d = netplayOptionsFromFlags({});
   assert.deepEqual([d.map, d.files, d.players, d.observers, d.basePort, d.gamePort, d.forUser], ["MAP01", [], 1, 0, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, false]);
   assert.throws(() => netplayOptionsFromFlags({ players: "two" }), /--players wants a whole number, not two/);

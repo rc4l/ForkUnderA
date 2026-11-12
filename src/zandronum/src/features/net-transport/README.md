@@ -7,6 +7,8 @@ The game's UDP socket as tests drive it: a simulated ping and packet loss, set p
   half on each it receives (`ComputeFakeDelayMs`). Packets keep their order, as a link with a steady ping does.
 - `fua_net_fakeloss` drops that percent of packets each way, from a generator seeded the same every run
   (`ComputeFakeDrop`).
+- `fua_net_fakejitter` holds each packet up to that many milliseconds more each way (`ComputeFakeJitterMs`); one
+  held longer holds those behind it, so they keep their order and arrive in bursts, as on a jittery link.
 - `net/held`, `net/fake_dropped`, `net/held_released` and `net/held_send_failed` count what is held each way.
 - A server reads its game socket on a thread of its own (`sv_fua_receivethread`, on by default and switched in a
   running server): the thread waits in `select`, stamps each datagram's arrival on `I_MSTime`'s clock and queues

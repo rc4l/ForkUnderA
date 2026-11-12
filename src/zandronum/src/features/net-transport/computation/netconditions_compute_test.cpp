@@ -17,6 +17,29 @@ TEST(ComputeFakeDelayMs, HalfOfThePingEachWayTheOddMillisecondOut)
 	EXPECT_EQ(0, ComputeFakeDelayMs(-20, false));
 }
 
+TEST(ComputeFakeJitterMs, NoJitterWaitsNothingAndLeavesTheGeneratorAlone)
+{
+	unsigned state = 7;
+	EXPECT_EQ(ComputeFakeJitterMs(state, 0), 0);
+	EXPECT_EQ(ComputeFakeJitterMs(state, -5), 0);
+	EXPECT_EQ(state, 7u);
+}
+
+TEST(ComputeFakeJitterMs, JitterSpreadsOverItsWholeRangeTheSameWayEachRun)
+{
+	unsigned a = 0x2545F491u, b = 0x2545F491u;
+	int lowest = 1000, highest = -1;
+	for (int i = 0; i < 2000; i++)
+	{
+		const int ms = ComputeFakeJitterMs(a, 40);
+		EXPECT_EQ(ms, ComputeFakeJitterMs(b, 40));
+		lowest = ms < lowest ? ms : lowest;
+		highest = ms > highest ? ms : highest;
+	}
+	EXPECT_EQ(lowest, 0);
+	EXPECT_EQ(highest, 40);
+}
+
 TEST(ComputeFakeDrop, NoLossDropsNothingAndLeavesTheGeneratorAlone)
 {
 	unsigned state = 7;

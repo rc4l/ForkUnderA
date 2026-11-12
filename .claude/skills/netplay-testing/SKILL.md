@@ -29,7 +29,8 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   `.netplay-session.json` for the other commands.
 - `--lag` and `--loss` are per client, comma-separated: `fua_net_fakeping` adds that many ms to the client's
   round trip (half each way) and `fua_net_fakeloss` drops that percent of its packets each way
-  (`features/net-transport`). A lone value applies to every client.
+  (`features/net-transport`). `--jitter` (`fua_net_fakejitter`) holds each packet up to that many ms more, in
+  order, so packets arrive in bursts. A lone value applies to every client; a scenario config takes `jitter` too.
 - `--for-user` leaves the first client's input unlocked for the user to play, with every other client locked.
 - Ports: the user's own game is on bridge 7801; netplay uses 7820 and up and game ports 10820 and up, the
   scenarios 7840 and 10840. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
