@@ -33,6 +33,9 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
   ported from Zandronum 3.3's zstd dictionary-training capture; the cvar reads stay in `sv_main.cpp`'s
   `SERVER_DumpPacket` and `SERVER_ShouldDump*Command` glue, hooked from `SERVER_ParsePacket` and
   `network/netcommand.cpp`'s `sendCommandToClients`) with its `_test.cpp`.
+- `computation/movebuffer_compute.{h,cpp}` (`ComputeRunsSecondMoveCmd`, which `p_tick.cpp`'s server loop asks
+  before a second buffered move command, and `ComputeMoveArrival`, which `SERVER_GetPackets` counts missed and
+  steady arrivals by) with its `_test.cpp`.
 - `unlaggedreport.{h,cpp}` (`NoteServerShot`, `NoteClientShot`, the command).
 - `netrole.h` (the role queries, inline).
 - `syncedcvars.{h,cpp}` (`SyncedCVar`, `SendSyncedCVar`, `SendSyncedCVarsTo`): a server cvar a client's own simulation

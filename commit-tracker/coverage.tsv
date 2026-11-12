@@ -18367,7 +18367,7 @@ c26490a3958fa53bbecb4378c41775c0c00276bc	2025-09-23T05:38:57Z	Fix linker config	
 4505e758f079540f041ba10613e0c064a993a5ed	2025-09-23T05:38:57Z	Link MoltenVK	pending		/
 1ce1e1f6be3934e930700f0f5230b77e6c17df70	2025-09-23T05:38:57Z	Turn off gles by default for apple	pending		/
 376bef703321ae6a7589246aa420b03986910f45	2025-09-23T14:34:50Z	Fix array oob	pending		/
-67b3ea2d01949a69ae2459f9eb4c144fc87331b1	2025-09-25T02:53:39Z	attempt to remove class limit	pending		/
+67b3ea2d01949a69ae2459f9eb4c144fc87331b1	2025-09-25T02:53:39Z	attempt to remove class limit	adapted	twin zandronum@9cee7e80e: ours-wins: SAVEVER 4527 gates the class's width, which theirs changed without a bump; savecompat loads 4526 saves alike; scenario netclasses	0e905214
 0beba423026d2391fda81a7ed40015bda6524eb1	2025-09-27T01:24:49Z	Updated Heretic+Hexen Kex port vanilla WAD locations	pending		/
 896a642e24356fdfc8e98b543216d0b30430ddd3	2025-09-28T21:41:17Z	Fix incorrect usage of strcmp	pending		/
 39cd9508853207450c490a16c77a3f378b51bfd9	2025-09-28T21:41:17Z	Add support for dumb terminals	pending		/
@@ -18466,8 +18466,8 @@ c0f2b35ee626f52274d07c4c0d20568914bfac70	2025-10-19T21:51:13Z	Added two OPN2-LLE
 24c0029af0b9e9e2dff40f6c9a57b0f52b0dc1c4	2025-10-19T21:51:13Z	Fix drawing wide char for TXT_QUITENDOOM	pending		/
 6f136f50e8c1386b08886324b58a60ed33fd06f1	2025-10-19T21:51:13Z	Fix wide char input. KeyChar should be unsigned for full 16-bit unicode	pending		/
 8f8acb56bd2a2bc2aa807bab23692c9554e17b1d	2025-10-19T21:51:13Z	Added support for massacre special 515 used by Heretic+Hexen's UMAPINFO definitions.	pending		/
-3ca5a550fa380e463907c067607c37ab0f337d90	2025-10-19T23:19:44Z	Add support for the "BUSY" script flag. This flag allows the script to skip the runaway limit.	pending		/
-d26d39ba729220f64d93a71790f2ccc8ec54e56c	2025-10-19T23:19:44Z	Fixed unnecessary runaway counter increase and uninitialized value.	pending		/
+3ca5a550fa380e463907c067607c37ab0f337d90	2025-10-19T23:19:44Z	Add support for the "BUSY" script flag. This flag allows the script to skip the runaway limit.	ported	twin zandronum@b8fe8ef13: scenario acsbusy: a BUSY script runs 2.5 times the limit to its end, an unflagged one is still terminated	d38193a7
+d26d39ba729220f64d93a71790f2ccc8ec54e56c	2025-10-19T23:19:44Z	Fixed unnecessary runaway counter increase and uninitialized value.	adapted	twin zandronum@c34601595: ours-wins: ptr starts null as theirs, but every p-code still counts, so acsprofile lists BUSY scripts and a script not found stays held to the limit; acsbusy's profile check fails on theirs	40f561ee
 dd3fe06d3714ec3182dff599d8e7489fcddd7686	2025-10-20T05:47:23Z	Updated tooltip rendering	pending		/
 0035eef03c46d0e4124ba91217f4421605cfe56b	2025-10-20T05:47:23Z	Don't allow potentially null tooltip fonts	pending		/
 78901b55debfec0339d2ea996162894154f038e7	2025-10-20T05:47:23Z	Added versioning to tooltip virtual functions	pending		/
