@@ -3061,7 +3061,7 @@ void SERVERCOMMANDS_WeaponChange( ULONG ulPlayer, ULONG ulPlayerExtra, ServerCom
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const FVector3 &end, LONG color1, LONG color2, float maxdiff, int railflags, angle_t angleoffset, const PClass* spawnclass, int duration, float sparsity, float drift, bool hitSurface, const PClass *puffClass, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const FVector3 &end, int color1, int color2, float maxDiff, int railFlags, angle_t angleOffset, const PClass *spawnClass, int duration, float sparsity, float drift, bool hitSurface, const PClass *puffClass, unsigned int playerExtra, ServerCommandFlags flags )
 {
 	// Evidently, to draw a railgun trail, there must be a source actor.
 	if ( !EnsureActorHasNetID (source) )
@@ -3073,13 +3073,13 @@ void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const 
 	command.SetEnd( end );
 	command.SetColor1( color1 );
 	command.SetColor2( color2 );
-	command.SetMaxdiff( maxdiff );
-	command.SetAngleoffset( angleoffset );
-	command.SetSpawnclass( spawnclass );
+	command.SetMaxDiff( maxDiff );
+	command.SetAngleOffset( angleOffset );
+	command.SetSpawnClass( spawnClass );
 	command.SetDuration( duration );
 	command.SetSparsity( sparsity );
 	command.SetDrift( drift );
-	command.SetFlags( railflags );
+	command.SetFlags( railFlags );
 	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: where the rail stopped and, when its puff marks, the puff's class.
 	command.SetHitSurface( hitSurface );
 	command.SetUsePuffDecal( puffClass != nullptr );
@@ -3087,13 +3087,13 @@ void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const 
 
 	// [TP] Recent ZDoom versions have added more railgun parameters. Add these parameters to the command
 	// only if they're not at defaults.
-	command.SetExtended( angleoffset != 0
-		|| spawnclass != NULL
+	command.SetExtended( angleOffset != 0
+		|| spawnClass != nullptr
 		|| duration != 0
 		|| fabs( sparsity - 1.0f ) > 1e-8
 		|| fabs( drift - 1.0f ) > 1e-8 );
 
-	command.sendCommandToClients ( ulPlayerExtra, flags );
+	command.sendCommandToClients( playerExtra, flags );
 }
 
 //*****************************************************************************

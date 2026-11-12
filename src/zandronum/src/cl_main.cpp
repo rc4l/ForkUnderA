@@ -7043,15 +7043,15 @@ void ServerCommands::WeaponRailgun::Execute()
 	// If this is not an extended railgun command, we'll need to assume some defaults.
 	if ( CheckExtended() == false )
 	{
-		angleoffset = 0;
-		spawnclass = NULL;
+		angleOffset = 0;
+		spawnClass = nullptr;
 		duration = 0;
 		sparsity = 1.0f;
 		drift = 1.0f;
 	}
 
-	angle_t angle = source->angle + angleoffset;
-	P_DrawRailTrail( source, start, end, color1, color2, maxdiff, flags, spawnclass, angle, duration, sparsity, drift );
+	angle_t angle = source->angle + angleOffset;
+	P_DrawRailTrail( source, start, end, color1, color2, maxDiff, flags, spawnClass, angle, duration, sparsity, drift );
 
 	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: a rail this client did not predict marks where it stopped.
 	if ( hitSurface )

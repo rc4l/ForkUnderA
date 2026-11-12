@@ -46,15 +46,15 @@ Command WeaponRailgun
 	Vector3 end
 	Long color1
 	Long color2
-	Float maxdiff
+	Float maxDiff
 	ShortByte<5> flags
 	Bool extended
 	# [rc4l] Ported from zandronum@a8d26c5591fa: the rail stopped on a surface, and its puff's decal marks it.
 	Bool hitSurface
 	Bool usePuffDecal
 	If (extended)
-		Long angleoffset
-		Class spawnclass with NullAllowed
+		Long angleOffset
+		Class spawnClass with NullAllowed
 		# Let's play safe and send this as a short
 		Short duration
 		Float sparsity
