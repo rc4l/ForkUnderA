@@ -4387,6 +4387,19 @@ void SERVERCOMMANDS_SetThingSpriteOrientation( AActor *mobj, unsigned int orient
 }
 
 //*****************************************************************************
+// [RK]
+void SERVERCOMMANDS_SetThingFloorClip( AActor* mobj, unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID (mobj) )
+		return;
+
+	ServerCommands::SetThingFloorClip command;
+	command.SetActor( mobj );
+	command.SetFloorclip( mobj->floorclip );
+	command.sendCommandToClients( playerExtra, flags );
+}
+
+//*****************************************************************************
 //
 void SERVERCOMMANDS_UpdateThingScaleNotAtDefault( AActor* pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {

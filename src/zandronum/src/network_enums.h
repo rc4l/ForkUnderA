@@ -405,6 +405,8 @@ BEGIN_ENUM( SVC2 )
 	// [Doruk-Aksoy] ACS fua_SetShaderEnabled and fua_SetShaderUniform: a GLDEFS post-process shader for every client or one.
 	ENUM_ELEMENT ( SVC2_FUASETSHADERENABLED ),
 	ENUM_ELEMENT ( SVC2_FUASETSHADERUNIFORM ),
+	// [rc4l] Ported from zandronum@7e0d5383e6ab5f7ca2f27f26989c2a9bda059ef1: a TERRAIN SmallClip, appended where 3.3 inserts it after SVC2_GIVEINVENTORYEXTRA.
+	ENUM_ELEMENT ( SVC2_SETTHINGFLOORCLIP ), // [RK] Terrain SmallClip value.
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }
