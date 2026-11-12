@@ -42,6 +42,7 @@ struct WorldActorRow
 	unsigned netId = 0;
 	std::string cls;
 	double x = 0, y = 0, z = 0;
+	double prevX = 0, prevY = 0, prevZ = 0;   // [rc4l] where it was when its last tic began, the start of what the renderer interpolates
 	double floorZ = 0;   // [Doruk-Aksoy] the floor it stands on as this instance worked it out, which a client can hold lower than its server
 	double floorClip = 0; // [rc4l] how far it sinks into a TERRAIN floor, which a server sends for a small splash
 	double velX = 0, velY = 0, velZ = 0;
