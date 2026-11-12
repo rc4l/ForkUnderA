@@ -85,4 +85,9 @@ bool ComputeChoiceFromGameStream(int source, int kind)
 	return kind == kSurfaceWall || source == kSourceHitscan || source == kSourceMissile;
 }
 
+bool ComputeMarksWithPuff(bool forceDecal, bool puffSpawned, bool puffHasDecal)
+{
+	return forceDecal && puffSpawned && puffHasDecal;
+}
+
 }} // namespace zx::decals

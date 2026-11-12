@@ -38,8 +38,8 @@ Every decal in the level is made here, on walls, floors and ceilings alike, unde
 ## In-engine hooks
 
 - `p_map.cpp`:
-  - `P_LineAttack`: `MarkShot` for a wall, floor or ceiling hit; stock's floor splash test runs beside it and is never skipped.
-  - `P_RailAttack`: `MarkShot` wherever the endpoint puff goes (`ComputeRailEndpointSpawn`).
+  - `P_LineAttack`: `MarkShot` for a wall, floor or ceiling hit, from a FORCEDECAL puff where `ComputeMarksWithPuff` says; stock's floor splash test runs beside it and is never skipped.
+  - `P_RailAttack`: `MarkShot` wherever the endpoint puff goes (`ComputeRailEndpointSpawn`), from that puff where `ComputeMarksWithPuff` says.
   - `P_TraceBleed`: `MarkBlood` for any surface its trace reaches.
 - `p_mobj.cpp` `P_ExplodeMissile`: `MarkMissile`, with the velocity it had before it stopped.
 - `d_net.cpp` `DEM_SPRAY`: `MarkSpray`.

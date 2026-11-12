@@ -4798,7 +4798,7 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 					(t1->player != NULL && t1->player->ReadyWeapon != NULL && t1->player->ReadyWeapon->DecalGenerator != NULL))
 				{
 					// [ZK] If puff has FORCEDECAL set, do not use the weapon's decal
-					if (puffDefaults->flags7 & MF7_FORCEDECAL && puff != NULL && puff->DecalGenerator)
+					if (zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, puff != NULL, puff != NULL && puff->DecalGenerator != NULL))
 						decalSource = puff;
 					else
 						decalSource = t1;
@@ -5453,10 +5453,7 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	// that destroys the puff if it landed on the open sky (unless the puff is MF3_SKYEXPLODE). The mark goes
 	// wherever the puff does, judged by features/decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
 	const RailEndpointSpawn railEnd = ComputeRailEndpointSpawn(trace.HitType);
-	if (railEnd.decal)
-	{
-		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail);
-	}
+	AActor *endPuff = NULL;
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
 		// [rc4l] Ported from qzandronum@d33dacfb1ca1dfa3eef1989b1e5c6d5f8443ddce: pull the endpoint puff
@@ -5464,13 +5461,19 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		// the surface instead of embedded in it -- otherwise a wall/ledge hit leaves the puff stuck in the
 		// geometry. UZDoom spawns at the exact hit point and has no equivalent nudge.
 		const fixed_t closer = 4 * FRACUNIT;
-		AActor *puff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0);
-		if (railEnd.skyGuard && puff != NULL && !(puff->flags3 & MF3_SKYEXPLODE) &&
-			(((trace.HitType == TRACE_HitFloor) && (puff->floorpic == skyflatnum)) ||
-			((trace.HitType == TRACE_HitCeiling) && (puff->ceilingpic == skyflatnum))))
-		{
-			puff->Destroy();
-		}
+		endPuff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0);
+	}
+	if (railEnd.decal)
+	{
+		// [rc4l] Ported from zandronum@deffd2fbd79203c4237bd511a2a97ff3626e699c: a FORCEDECAL puff with a decal of its own marks the surface in place of the shooter's weapon.
+		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, endPuff != NULL, endPuff != NULL && endPuff->DecalGenerator != NULL);
+		zx::decals::MarkShot(puffMarks ? endPuff : source, trace, zx::decals::kSourceRail);
+	}
+	if (railEnd.skyGuard && endPuff != NULL && !(endPuff->flags3 & MF3_SKYEXPLODE) &&
+		(((trace.HitType == TRACE_HitFloor) && (endPuff->floorpic == skyflatnum)) ||
+		((trace.HitType == TRACE_HitCeiling) && (endPuff->ceilingpic == skyflatnum))))
+	{
+		endPuff->Destroy();
 	}
 	if (thepuff != NULL)
 	{

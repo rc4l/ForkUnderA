@@ -193,6 +193,14 @@ TEST(MarkRules, TheBudgetRetiresTheOldestToMakeRoom)
 	EXPECT_EQ(ComputeMarksToEvict(5, 0), 5);
 }
 
+TEST(MarkRules, AForceDecalPuffMarksInPlaceOfItsShooterOnlyWithADecalOfItsOwn)
+{
+	EXPECT_TRUE(ComputeMarksWithPuff(true, true, true));
+	EXPECT_FALSE(ComputeMarksWithPuff(false, true, true));
+	EXPECT_FALSE(ComputeMarksWithPuff(true, false, true));   // [rc4l] a client that spawned no puff marks with its shooter's
+	EXPECT_FALSE(ComputeMarksWithPuff(true, true, false));
+}
+
 TEST(MarkRules, AGroupsChoiceDrawsTheGameStreamOnlyWhereShippedBuildsDid)
 {
 	EXPECT_TRUE(ComputeChoiceFromGameStream(kSourceBlood, kSurfaceWall));

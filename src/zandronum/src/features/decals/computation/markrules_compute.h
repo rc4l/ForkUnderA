@@ -62,6 +62,9 @@ int ComputeMarksToEvict(int count, int max);
 // [rc4l] Whether a template group's choice is drawn from the game's random stream: always on a wall, as stock does, and on a floor or ceiling only for the shots and missiles shipped builds already drew it for, so a recorded game's sequence is unchanged.
 bool ComputeChoiceFromGameStream(int source, int kind);
 
+// [rc4l] Whether a shot's puff marks the surface in place of its shooter: the puff is FORCEDECAL, was spawned and has a decal of its own.
+bool ComputeMarksWithPuff(bool forceDecal, bool puffSpawned, bool puffHasDecal);
+
 }} // namespace zx::decals
 
 #endif // ZX_MARKRULES_COMPUTE_H
