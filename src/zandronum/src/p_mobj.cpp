@@ -84,7 +84,7 @@
 #include "cl_main.h"
 #include "features/net-client/computation/movedrain_compute.h"
 #include "features/net-session/netrole.h"
-#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip
+#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff
 #include "cooperative.h"
 #include "invasion.h"
 #include "st_hud.h"
@@ -6768,61 +6768,9 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 	}
 
 	// [BC] If we're the server, tell clients to spawn the thing.
-	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
-		( bTellClientToSpawn ))
-	{
-		// If it's translated, or spawning in a state other than its spawn state,
-		// treat it as a special case.
-		if ( ulState != STATE_SPAWN )
-		{
-			SERVERCOMMANDS_SpawnPuffNoNetID( puff, ulState, false );
-		}
-		// In certain other conditions, we need to spawn the puff with a network
-		// ID so that things like sounds work.
-		else if (( (flags & PF_HITTHING) && puff->SeeSound ) ||
-				 ( puff->AttackSound ) || ( ( puff->GetClass()->Meta.GetMetaString (AMETA_Obituary) != NULL ) && ( flags & PF_TEMPORARY ) ) )
-		{
-			if ( puff->NetID == 0 )
-			{
-				puff->NetID = g_ActorNetIDList.getNewID( );
-				g_ActorNetIDList.useID ( puff->NetID, puff );
-			}
-
-			SERVERCOMMANDS_SpawnPuff( puff );
-		}
-		else
-		{
-			// [CK] If a player is the source that is firing this, check and see
-			// if the attacker is predicting and exclude them (and only them)
-			// from getting the predicted puff if the bullet puff has +NONETID.
-			if ( source && source->player )
-			{
-				// [CK] Only spawn for players who are not predicting puffs.
-				ULONG activatorPlayerNumber = source->player - players;
-				for ( ULONG ulPlayer = 0; ulPlayer < MAXPLAYERS; ulPlayer++ )
-				{
-					// [CK] Don't send to invalid clients
-					if ( SERVER_IsValidClient( ulPlayer ) == false )
-						continue;
-
-					// [CK] If the player is the source, and the player fired a
-					// puff with +NONETID, and the player wants to predict puffs
-					// then we won't send them this command.
-					if ( ( activatorPlayerNumber == ulPlayer ) && ( puff->NetworkFlags & NETFL_NONETID ) && ( source->player->userinfo.GetClientFlags() & CLIENTFLAGS_CLIENTSIDEPUFFS ) )
-						continue;
-
-					// [BB] If the puff has a net ID, it must be spawned with one.
-					SERVERCOMMANDS_SpawnPuff( puff, ulPlayer, SVCF_ONLYTHISCLIENT );
-				}
-			}
-			else
-			{
-				// [CK] It is always sent when fired from a non-player.
-				// [BB] If the puff has a net ID, it must be spawned with one.
-				SERVERCOMMANDS_SpawnPuff( puff );
-			}
-		}
-	}
+	// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: net-replication's SendPuff, which a rail calls itself once its puff survived the sky.
+	if ( bTellClientToSpawn )
+		zx::netreplication::SendPuff( puff, source, ulState, flags );
 
 	if (!(flags & PF_TEMPORARY))
 	{

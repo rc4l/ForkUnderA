@@ -40,6 +40,8 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "features/decals/decals.h"   // [rc4l] every mark, made and judged in one place
+#include "features/net-replication/actorstate.h"   // [rc4l] SendPuff, a rail's puff once it survived the sky
+#include "features/net-session/netrole.h"
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -4819,7 +4821,7 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 					decalSource = t1;
 				}
 
-				zx::decals::MarkShot(decalSource, trace, zx::decals::kSourceHitscan);
+				zx::decals::MarkShot(t1, trace, zx::decals::kSourceHitscan, decalSource);
 			}
 			// [rc4l] Stock's splash test exactly: only a wall decal stands in for it, so a marked floor still splashes.
 			if (!(fuaHitWall && fuaMarks) && puff != NULL &&
@@ -5461,13 +5463,17 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		// the surface instead of embedded in it -- otherwise a wall/ledge hit leaves the puff stuck in the
 		// geometry. UZDoom spawns at the exact hit point and has no equivalent nudge.
 		const fixed_t closer = 4 * FRACUNIT;
-		endPuff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0);
+		// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: clients hear of the puff only once it survived the sky, below.
+		endPuff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0, NULL, false);
 	}
 	if (railEnd.decal)
 	{
+		// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: a client spawns no puff, so the puff class's own actor lends its decal.
+		AActor *decalPuff = endPuff;
+		if (decalPuff == NULL && zx::net::InClientMode() && railEnd.puff && (puffDefaults->flags3 & MF3_ALWAYSPUFF)) decalPuff = puffDefaults;
 		// [rc4l] Ported from zandronum@deffd2fbd79203c4237bd511a2a97ff3626e699c: a FORCEDECAL puff with a decal of its own marks the surface in place of the shooter's weapon.
-		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, endPuff != NULL, endPuff != NULL && endPuff->DecalGenerator != NULL);
-		zx::decals::MarkShot(puffMarks ? endPuff : source, trace, zx::decals::kSourceRail);
+		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, decalPuff != NULL, decalPuff != NULL && decalPuff->DecalGenerator != NULL);
+		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail, puffMarks ? decalPuff : NULL);
 	}
 	// [rc4l] Ported from zandronum@2e629a9b7b960b49e722e8f183f57ba43c27e9c3: a wall puff on a horizon line went into the sky too.
 	// [rc4l] Ported from zandronum@26d900809dfc306df34373129d97a3d6099b7c3e: a hit with no line is no horizon.
@@ -5475,6 +5481,10 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		endPuff->floorpic == skyflatnum, endPuff->ceilingpic == skyflatnum, (endPuff->flags3 & MF3_SKYEXPLODE) != 0))
 	{
 		endPuff->Destroy();
+	}
+	else if (endPuff != NULL)
+	{
+		zx::netreplication::SendPuff(endPuff, source, endPuff->FindState(NAME_Crash) != NULL ? STATE_CRASH : STATE_SPAWN, 0);
 	}
 	if (thepuff != NULL)
 	{

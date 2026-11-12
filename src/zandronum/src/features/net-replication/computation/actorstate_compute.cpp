@@ -21,4 +21,16 @@ int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity)
 	return (!noGravity && z < floorz) ? floorz : z;
 }
 
+int ComputePuffSend(bool spawnState, bool hitThingSeeSound, bool attackSound, bool temporaryObituary)
+{
+	if (!spawnState) return kPuffNoNetID;
+	if (hitThingSeeSound || attackSound || temporaryObituary) return kPuffWithNetID;
+	return kPuffEachClient;
+}
+
+bool ComputeSkipsPuffFor(bool isShooter, bool noNetId, bool clientSidePuffs)
+{
+	return isShooter && noNetId && clientSidePuffs;
+}
+
 }} // namespace zx::netreplication

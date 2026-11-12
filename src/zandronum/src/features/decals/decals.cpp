@@ -286,14 +286,15 @@ bool HitFromTrace (const FTraceResults &trace, float tx, float ty, float tz, Hit
 
 } // namespace
 
-void MarkShot (AActor *shooter, const FTraceResults &trace, int source)
+void MarkShot (AActor *shooter, const FTraceResults &trace, int source, AActor *decalFrom)
 {
 	Hit h;
+	// [rc4l] The travel is the shooter's, since a puff's default actor, a client's stand-in for the puff it never spawned, stands at the map's origin.
 	const float tx = FIXED2FLOAT (trace.X - shooter->x), ty = FIXED2FLOAT (trace.Y - shooter->y);
 	const float tz = FIXED2FLOAT (trace.Z - (shooter->z + (shooter->height >> 1)));
 	if (!HitFromTrace (trace, tx, ty, tz, h)) return;
 	const MarkRequest request = { source, false };
-	Maker::Mark (h, GeneratorOf (shooter), request, 0);
+	Maker::Mark (h, GeneratorOf (decalFrom != NULL ? decalFrom : shooter), request, 0);
 }
 
 void MarkMissile (AActor *mo, line_t *line, AActor *target, fixed_t velx, fixed_t vely, fixed_t velz)

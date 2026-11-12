@@ -49,3 +49,27 @@ TEST(ComputeSettledDeathZ, OnOrAboveTheFloorOrWithoutGravityItIsWhereItIs)
 	EXPECT_EQ(40 * UNIT, ComputeSettledDeathZ(40 * UNIT, 0, false));
 	EXPECT_EQ(-32 * UNIT, ComputeSettledDeathZ(-32 * UNIT, -16 * UNIT, true));
 }
+
+// [rc4l] A puff jumping straight to its crash, death or melee state goes with no net id, whatever its sounds.
+TEST(ComputePuffSend, AnyStateButSpawnGoesWithNoNetId)
+{
+	EXPECT_EQ(kPuffNoNetID, ComputePuffSend(false, true, true, true));
+	EXPECT_EQ(kPuffNoNetID, ComputePuffSend(false, false, false, false));
+}
+
+TEST(ComputePuffSend, SoundsAndATemporaryObituaryNeedANetId)
+{
+	EXPECT_EQ(kPuffWithNetID, ComputePuffSend(true, true, false, false));
+	EXPECT_EQ(kPuffWithNetID, ComputePuffSend(true, false, true, false));
+	EXPECT_EQ(kPuffWithNetID, ComputePuffSend(true, false, false, true));
+	EXPECT_EQ(kPuffEachClient, ComputePuffSend(true, false, false, false));
+}
+
+// [rc4l] Only the shooter predicting its own NONETID puff already has it.
+TEST(ComputeSkipsPuffFor, OnlyTheShooterPredictingANoNetIdPuff)
+{
+	EXPECT_TRUE(ComputeSkipsPuffFor(true, true, true));
+	EXPECT_FALSE(ComputeSkipsPuffFor(false, true, true));
+	EXPECT_FALSE(ComputeSkipsPuffFor(true, false, true));
+	EXPECT_FALSE(ComputeSkipsPuffFor(true, true, false));
+}

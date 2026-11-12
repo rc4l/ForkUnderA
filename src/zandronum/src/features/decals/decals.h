@@ -23,8 +23,8 @@ struct FTraceResults;
 
 namespace zx { namespace decals {
 
-// [rc4l] A hitscan's or a rail's (source) mark where its trace stopped, on a wall, a floor or a ceiling, from the shooter's weapon's generator or the actor's own, as P_LineAttack chose the actor.
-void MarkShot(AActor *shooter, const FTraceResults &trace, int source);
+// [rc4l] A hitscan's or a rail's (source) mark where its trace stopped, on a wall, a floor or a ceiling, travelling from the shooter, with decalFrom's generator (its weapon's for a player), the shooter's when NULL.
+void MarkShot(AActor *shooter, const FTraceResults &trace, int source, AActor *decalFrom = NULL);
 
 // [rc4l] A missile's mark as P_ExplodeMissile lets it go: on the line it struck, else on the floor or ceiling it came to rest against with no target; vel is how it was moving before it stopped.
 void MarkMissile(AActor *missile, line_t *line, AActor *target, fixed_t velx, fixed_t vely, fixed_t velz);

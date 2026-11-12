@@ -19,6 +19,9 @@ void SendWoundedHealth();
 // [rc4l] An actor whose floorclip changed after its spawn went out, on a server: the clip to every client (SVC2_SETTHINGFLOORCLIP).
 void SendFloorClip(AActor *actor);
 
+// [rc4l] A puff a server spawned, to its clients in state (STATE_SPAWN or the one it jumped to) as ComputePuffSend says, flags its P_SpawnPuff flags.
+void SendPuff(AActor *puff, AActor *source, unsigned state, int flags);
+
 }} // namespace zx::netreplication
 
 #endif // ZX_ACTORSTATE_H
