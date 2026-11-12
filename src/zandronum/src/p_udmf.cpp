@@ -752,6 +752,7 @@ public:
 				break;
 
 			default:
+				CHECK_N(Zd | Zdt)
 				if (0 == strnicmp("user_", key.GetChars(), 5))
 				{ // Custom user key - Sets an actor's user variable directly
 					FMapThingUserData ud;
@@ -1085,7 +1086,7 @@ public:
 			}
 
 
-			if (!strnicmp("user_", key.GetChars(), 5))
+			if ((namespace_bits & (Zd | Zdt)) && !strnicmp("user_", key.GetChars(), 5))
 			{
 				AddUserKey(key, UDMF_Line, index);
 			}
@@ -1282,7 +1283,7 @@ public:
 				break;
 
 			}
-			if (!strnicmp("user_", key.GetChars(), 5))
+			if ((namespace_bits & (Zd | Zdt)) && !strnicmp("user_", key.GetChars(), 5))
 			{
 				AddUserKey(key, UDMF_Side, index);
 			}
@@ -1561,7 +1562,7 @@ public:
 				default:
 					break;
 			}
-			if (!strnicmp("user_", key.GetChars(), 5))
+			if ((namespace_bits & (Zd | Zdt)) && !strnicmp("user_", key.GetChars(), 5))
 			{
 				AddUserKey(key, UDMF_Sector, index);
 			}

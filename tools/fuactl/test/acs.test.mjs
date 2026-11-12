@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, addToCVar, callFunc, callSpecial, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, addToCVar, callFunc, callSpecial, checksCounter, checksScript, failedChecks, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { judgeCounter } from "../src/template.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -174,4 +175,25 @@ test("CreateTranslation pushes the number, then each range's four indices before
   assert.deepEqual(createTranslation(2, [[0, 255, 112, 127], [16, 31, 176, 191]]), [PCD.PUSHNUMBER, 2, PCD.STARTTRANSLATION,
     PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 255, PCD.PUSHNUMBER, 112, PCD.PUSHNUMBER, 127, PCD.TRANSLATIONRANGE1,
     PCD.PUSHNUMBER, 16, PCD.PUSHNUMBER, 31, PCD.PUSHNUMBER, 176, PCD.PUSHNUMBER, 191, PCD.TRANSLATIONRANGE1, PCD.ENDTRANSLATION]);
+});
+
+// [rc4l] The bitmask puke tagmanager and udmfuserkeys judge maps by, one bit per check so a failure names which.
+test("a checks puke counts 1 for running and adds each failing check's own bit, read by its kind", () => {
+  const read = { light: (tag) => [PCD.PUSHNUMBER, tag, PCD.GETSECTORLIGHTLEVEL] };
+  const words = checksScript([["a", "light", 5, 128], ["b", "light", 6, 96]], read);
+  const at = (seq) => words.findIndex((_, i) => seq.every((w, j) => words[i + j] === w));
+  assert.deepEqual(words.slice(0, addToCVar(0, 1).length), addToCVar(0, 1));
+  assert.ok(at([PCD.PUSHNUMBER, 5, PCD.GETSECTORLIGHTLEVEL, PCD.PUSHNUMBER, 128, PCD.EQ, PCD.IFGOTO]) >= 0);
+  assert.ok(at(addToCVar(0, 2)) >= 0 && at(addToCVar(0, 4)) >= 0);
+  assert.equal(words.at(-1), PCD.TERMINATE);
+  assert.deepEqual(checksScript([], read), [...addToCVar(0, 1), PCD.TERMINATE]);
+});
+
+test("a checks counter passes at 1 and names the failing checks, or the puke that never ran", () => {
+  const checks = { MAP01: [["first"], ["second"], ["third"]] };
+  assert.deepEqual(failedChecks(checks.MAP01, 1 + 2 + 8), ["first", "third"]);
+  const counter = checksCounter("zx_c", (map) => checks[map]);
+  assert.deepEqual(judgeCounter("MAP01", `"zx_c" is "1"`, counter), { line: `PASS MAP01 ${counter.label}: 1 (ceiling 1)`, failed: 0 });
+  assert.match(judgeCounter("MAP01", `"zx_c" is "5"`, counter).line, /^FAIL MAP01 .*: second$/);
+  assert.match(judgeCounter("MAP01", `"zx_c" is "0"`, counter).line, /: the puke never ran$/);
 });

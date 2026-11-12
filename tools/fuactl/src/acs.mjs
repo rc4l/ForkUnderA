@@ -11,7 +11,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LT
   GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORX: 196, GETACTORY: 197, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SpawnSpotForced: 20, CheckActorProperty: 22, SetActorVelocity: 23, CheckActorClass: 27, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, GetLineActivation: 77, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
+export const ACSF = { GetLineUDMFInt: 1, GetSectorUDMFInt: 5, GetSideUDMFInt: 7, SpawnSpotForced: 20, CheckActorProperty: 22, SetActorVelocity: 23, CheckActorClass: 27, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, GetLineActivation: 77, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 
@@ -177,4 +177,24 @@ export class AcsScript {
       return 8 + 4 * (at + this.labels.get(w.label));
     });
   }
+}
+
+// [rc4l] A puke judged by the cvar named strings[0]: 1 for running, then 2^(k+1) for each check k, [what, kind, arg, want], whose read[kind](arg) words leave a value other than want.
+export function checksScript(checks, read) {
+  const s = new AcsScript().emit(...addToCVar(0, 1));
+  checks.forEach(([, kind, arg, want], k) => {
+    s.emit(...read[kind](arg), PCD.PUSHNUMBER, want, PCD.EQ).jump(PCD.IFGOTO, `ok${k}`).emit(...addToCVar(0, 2 ** (k + 1))).label(`ok${k}`);
+  });
+  return s.emit(PCD.TERMINATE).words();
+}
+
+// [rc4l] The names of the checks a checksScript cvar's value says failed.
+export function failedChecks(checks, value) {
+  return checks.filter((_, k) => (value >> (k + 1)) & 1).map(([what]) => what);
+}
+
+// [rc4l] The scenario counter for a checksScript puke leaving its count in cvar, checksFor(map) giving each map's checks so a failure names them.
+export function checksCounter(cvar, checksFor) {
+  return { command: cvar, label: "1 for the puke, plus 2^(k+1) for each failing check k", pattern: `"${cvar}" is "(-?\\d+)"`, ceiling: 1, floor: 1,
+    explain: (map, value) => (value < 1 ? ["the puke never ran"] : failedChecks(checksFor(map), value)) };
 }

@@ -24,7 +24,9 @@ function rectEdges(x0, y0, x1, y1) {
 }
 
 export class UdmfMap {
-  constructor() {
+  // [rc4l] namespace is the TEXTMAP's, "zdoom" unless a test needs the base namespaces' rules.
+  constructor({ namespace = "zdoom" } = {}) {
+    this.namespace = namespace;
     this.vertices = [];
     this.lines = [];
     this.sides = [];
@@ -122,7 +124,7 @@ export class UdmfMap {
   }
 
   textmap() {
-    const out = ['namespace = "zdoom";', ""];
+    const out = [`namespace = "${this.namespace}";`, ""];
     const block = (kind, obj) => {
       out.push(`${kind}`, "{");
       for (const [k, v] of Object.entries(obj)) out.push(`  ${field(k, v)}`);

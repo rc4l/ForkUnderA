@@ -1,27 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildScript, buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, failedChecks, CHECKS, COUNTER, SPAC, COLUMN } from "../scenarios/tagmanager.mjs";
+import { buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, CHECKS, COUNTER, READ, COLUMN } from "../scenarios/tagmanager.mjs";
 import { judgeCounter } from "../src/template.mjs";
 import { readPk3, readWad, parseUdmf } from "../src/udmf.mjs";
 import { binaryMap } from "../src/mapdata.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
 
-test("each check reads a sector by tag or a line by ID and adds its own bit when the value is wrong", () => {
-  const words = buildScript([["a", "sector", 5, 128], ["b", "line", 7, SPAC.Impact]]);
-  const at = (seq) => words.findIndex((_, i) => seq.every((w, j) => words[i + j] === w));
-  assert.ok(at([PCD.PUSHNUMBER, 5, PCD.GETSECTORLIGHTLEVEL, PCD.PUSHNUMBER, 128, PCD.EQ, PCD.IFGOTO]) >= 0);
-  assert.ok(at([PCD.PUSHNUMBER, 7, PCD.CALLFUNC, 1, ACSF.GetLineActivation, PCD.PUSHNUMBER, SPAC.Impact, PCD.EQ]) >= 0);
-  assert.ok(at([PCD.PUSHNUMBER, 2]) >= 0 && at([PCD.PUSHNUMBER, 4]) >= 0);
-  assert.equal(words.at(-1), PCD.TERMINATE);
-  const counts = buildScript([["c", "count", 0, 1], ["n", "countname", 3, 0]]);
-  assert.ok(counts.join().includes([PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, COLUMN.tid, PCD.PUSHNUMBER, 0, PCD.THINGCOUNTSECTOR].join()));
-  assert.ok(counts.join().includes([PCD.PUSHNUMBER, 1, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 3, PCD.THINGCOUNTNAMESECTOR].join()));
+test("each kind of check reads a sector's light by tag, a line's activation by ID, or the column counted by tid or class", () => {
+  assert.deepEqual(READ.sector(5), [PCD.PUSHNUMBER, 5, PCD.GETSECTORLIGHTLEVEL]);
+  assert.deepEqual(READ.line(7), [PCD.PUSHNUMBER, 7, PCD.CALLFUNC, 1, ACSF.GetLineActivation]);
+  assert.deepEqual(READ.count(0), [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, COLUMN.tid, PCD.PUSHNUMBER, 0, PCD.THINGCOUNTSECTOR]);
+  assert.deepEqual(READ.countname(3), [PCD.PUSHNUMBER, 1, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 3, PCD.THINGCOUNTNAMESECTOR]);
+  assert.ok(Object.values(CHECKS).flat().every(([, kind]) => READ[kind]));
 });
 
-test("a failing counter names the checks whose bits it carries", () => {
-  assert.deepEqual(failedChecks("MAP01", 1 + 2 + 16), [CHECKS.MAP01[0][0], CHECKS.MAP01[3][0]]);
+test("a failing map's counter names its checks", () => {
   assert.match(judgeCounter("MAP02", `"zx_tagmanager_wrong" is "3"`, COUNTER).line, /^FAIL MAP02 .*: Line_SetIdentification/);
-  assert.match(judgeCounter("MAP03", `"zx_tagmanager_wrong" is "0"`, COUNTER).line, /the puke never ran$/);
   assert.equal(judgeCounter("MAP04", `"zx_tagmanager_wrong" is "1"`, COUNTER).failed, 0);
 });
 
