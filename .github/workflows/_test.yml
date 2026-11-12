@@ -94,8 +94,7 @@ jobs:
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
-      # [rc4l] Commit tracker: every ledger (UZDoom, Zandronum) stays machine-parseable, every
-      # ported/adapted row's provenance commit is reachable, twins agree and progress.json is fresh.
+      # [rc4l] Commit tracker: every ledger (UZDoom, Zandronum) stays machine-parseable, every ported/adapted row's provenance commit is reachable, twins agree and progress.json is fresh.
       - name: Commit tracker check
         run: bash tools/commit-tracker-check.sh
 
