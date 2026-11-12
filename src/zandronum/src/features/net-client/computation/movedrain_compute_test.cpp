@@ -43,10 +43,16 @@ TEST(MoveDrain, TheLastWaitingRunsSecondOnlyAfterASecondOfSteadyArrivals)
 
 TEST(MoveDrain, ATickSavesWherePlayersWereUnlessAClientDrainsThem)
 {
-	EXPECT_TRUE(ComputeTickSavesPrevPosition(false, true, true));
-	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, false, true));
-	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, true, false));
-	EXPECT_FALSE(ComputeTickSavesPrevPosition(true, true, true));
+	EXPECT_TRUE(ComputeTickSavesPrevPosition(false, true, false, true));
+	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, false, false, true));
+	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, true, false, false));
+	EXPECT_FALSE(ComputeTickSavesPrevPosition(true, true, false, true));
+}
+
+TEST(MoveDrain, ASpectatorsTickSavesWhereItWasSinceTheDrainSkipsIt)
+{
+	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, true, true, true));
+	EXPECT_TRUE(ComputeTickSavesPrevPosition(true, true, true, false));
 }
 
 TEST(MoveDrain, ADemosPlaybackBuffersAsItsRecorderDid)

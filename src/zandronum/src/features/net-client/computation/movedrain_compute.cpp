@@ -29,9 +29,10 @@ std::vector<int> ComputeMoveDrainOrder(const std::vector<MoveDrainPlayer> &playe
 	return order;
 }
 
-bool ComputeTickSavesPrevPosition(bool inClientMode, bool isPlayer, bool moveBufferOn)
+bool ComputeTickSavesPrevPosition(bool inClientMode, bool isPlayer, bool spectating, bool moveBufferOn)
 {
-	return !inClientMode || !isPlayer || !moveBufferOn;
+	// [rc4l] Ported from zandronum@318c98576461451b96de517c589204cd3f326725: the drain skips spectators, so their tick must save it.
+	return !inClientMode || !isPlayer || spectating || !moveBufferOn;
 }
 
 bool ComputeUsesCommandBuffers(bool playingDemo, bool recorderBuffered, bool bufferCvar)

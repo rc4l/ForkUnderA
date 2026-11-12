@@ -24,8 +24,8 @@ struct MoveDrainPlayer
 // [rc4l] The players whose oldest command runs, in order: one each first, then a second where the server's own rule (ComputeRunsSecondMoveCmd) allows.
 std::vector<int> ComputeMoveDrainOrder(const std::vector<MoveDrainPlayer> &players, unsigned ticRate);
 
-// [rc4l] Whether an actor's tick saves where it was for interpolation, which a client draining its buffers does for players itself.
-bool ComputeTickSavesPrevPosition(bool inClientMode, bool isPlayer, bool moveBufferOn);
+// [rc4l] Whether an actor's tick saves where it was for interpolation, which a client draining its buffers does for players itself, spectators aside (zandronum@318c98576461451b96de517c589204cd3f326725).
+bool ComputeTickSavesPrevPosition(bool inClientMode, bool isPlayer, bool spectating, bool moveBufferOn);
 
 // [rc4l] Ported from zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06: a clientside demo's playback buffers as its recorder did, any other client as cl_buffercommands says.
 bool ComputeUsesCommandBuffers(bool playingDemo, bool recorderBuffered, bool bufferCvar);
