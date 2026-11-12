@@ -7103,7 +7103,7 @@ e96f23142060526af5bedecf3c6242e7ffdae567	2017-01-28T20:02:03Z	- added Doom64 col
 8e469c1343650b3c040936c850bfc2778bff1d03	2017-01-29T08:57:55Z	Corrected bad 'or' operation	pending		/
 7c7d6e99e9101a8153b2f845448fe2b3ff3e70e7	2017-01-29T09:05:37Z	Split DrawerArgs into WallDrawerArgs, ColumnDrawerArgs, SpanDrawerArgs and SkyDrawerArgs	pending		/
 162f469630a25b937581bb6a48f1a5479c4095bf	2017-01-29T09:25:32Z	Remove unused variables from the old 4 column drawers	pending		/
-a2a1d214c0bab6d9fbc564d7c4026a409608ac25	2017-01-29T10:45:28Z	- extended give and take cheat's arguments to full integers.	pending		/
+a2a1d214c0bab6d9fbc564d7c4026a409608ac25	2017-01-29T10:45:28Z	- extended give and take cheat's arguments to full integers.	adapted	amount floored at 1, server/d_net drop negatives, health/armor saturate, CLC_ give/take long too, DEMOGAMEVERSION 0x21C with old demos read as words	47a3bd65
 1884c8a98d570ad534b8fd68a10ae31c849b949b	2017-01-29T11:00:05Z	- ensure that the radius of a dynamic light remains positive to avoid problems with the assumption that a light has an actual size. - extended the maximum settable light size in GLDEFS to 1024 throughout. - fixed: A fullbright flat should not be subjected to a sector's material color.	pending		/
 c0ef052d07d5c8fe0e576277c3197a7dd45f1d01	2017-01-29T12:13:00Z	- added interpolation for actor angles which for models is needed.	pending		/
 eef91463ab702348237a75e5065b9160f5f3a752	2017-01-29T17:23:39Z	- fixed: Non-actor classes never called InitializeDefaults to set up their special variables. - fixed: DThinkerIterator and DBlockThingsIterator did not have a default constructor that was safe to call from an out-of-game context.	pending		/

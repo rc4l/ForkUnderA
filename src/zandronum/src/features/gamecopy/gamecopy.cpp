@@ -782,6 +782,7 @@ const char *PlayerDiffers(const PlayerRecord &a, const PlayerRecord &b)
 
 LevelRecord g_level_;   // [rc4l] the level as the last fill took it
 zx::postprocess::ShaderTable g_levelShaders;   // [Doruk-Aksoy] the level's post-process shader state the last fill took
+zx::actormaterials::InstanceTable g_levelActorMaterials;   // [Doruk-Aksoy] the actors' own fua_Material values the last fill took
 
 void TakeLevel(LevelRecord &out)
 {
@@ -793,6 +794,7 @@ void TakeLevel(LevelRecord &out)
 	out.endLevelDelay = GAME_GetEndLevelDelay () != 0;
 	out.freeSpectate = CLIENTDEMO_IsInFreeSpectateMode ();
 	if (g_levelShaders.generation != level.fua_postShaders.generation) g_levelShaders = level.fua_postShaders;
+	if (g_levelActorMaterials.generation != level.fua_actorMaterials.generation) g_levelActorMaterials = level.fua_actorMaterials;
 }
 
 const char *LevelDiffers(const LevelRecord &a, const LevelRecord &b)
@@ -1029,6 +1031,7 @@ const LevelRecord &Level()
 }
 
 const zx::postprocess::ShaderTable &LevelShaders() { return g_levelShaders; }
+const zx::actormaterials::InstanceTable &LevelActorMaterials() { return g_levelActorMaterials; }
 
 namespace {
 

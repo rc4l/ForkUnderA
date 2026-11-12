@@ -141,6 +141,8 @@
 #include "unlagged.h"
 #include "scoreboard.h"
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SendShaderStateTo, DropPlayerShaders
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] SendActorMaterialTo
+#include "features/cheat-amount/computation/cheatamount_compute.h" // [Doruk-Aksoy] ComputeCheatAmountFromWire
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -2948,6 +2950,9 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 			// almost always, so this costs nothing on a normal level.
 			if ( pActor->roll != 0 )
 				SERVERCOMMANDS_SetThingSpriteOrientation( pActor, SPRITEORIENT_ROLL, ulClient, SVCF_ONLYTHISCLIENT );
+
+			// [Doruk-Aksoy] features/actormaterials: a script's fua_Material and uniforms, set once and never sent again.
+			zx::actormaterials::SendActorMaterialTo( pActor, ulClient );
 
 			// If it's important to update this thing's arguments, do that now.
 			// [BB] Wouldn't it be better, if this is done for all things, for which
@@ -6808,18 +6813,18 @@ static bool server_GenericCheat( BYTESTREAM_s *pByteStream )
 static bool server_GiveCheat( BYTESTREAM_s *pByteStream, bool take )
 {
 	const char	*pszItemName;
-	ULONG		ulAmount;
+	int			amount;
 
 	// Read in the item name.
 	pszItemName = pByteStream->ReadString();
 
-	// Read in the amount.
-	ulAmount = pByteStream->ReadByte();
+	// [Doruk-Aksoy] Read in the amount as the long the client now sends, never negative.
+	amount = zx::cheatamount::ComputeCheatAmountFromWire( pByteStream->ReadLong() );
 
 	// If it's legal, do the cheat.
 	if ( sv_cheats )
 	{
-		( take ? cht_Take : cht_Give )( &players[g_lCurrentClient], pszItemName, ulAmount );
+		( take ? cht_Take : cht_Give )( &players[g_lCurrentClient], pszItemName, amount );
 	}
 	// If not, boot their ass!
 	else

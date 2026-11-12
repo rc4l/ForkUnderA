@@ -1730,6 +1730,7 @@ add_executable( zdoom WIN32
 	features/postprocess/postprocess.cpp
 	features/bspgrid/bspgrid.cpp
 	features/acs-shaders/acsshaders.cpp
+	features/actormaterials/actormaterials.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp
@@ -1740,6 +1741,7 @@ add_executable( zdoom WIN32
 	features/frame/viewtrace.cpp
 	features/frame/framestall.cpp
 	features/frame/debugorbit.cpp
+	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
 	features/frame-limit/framelimit.cpp
 	features/dynres/dynres.cpp

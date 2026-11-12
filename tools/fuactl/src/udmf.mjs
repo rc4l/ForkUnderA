@@ -229,8 +229,10 @@ export function pk3(files, { deflate = false } = {}) {
 
 // [rc4l] A stored pk3's files in directory order, as { name, data }, each checked against its CRC; pk3() written backwards.
 // [Doruk-Aksoy] A deflated file comes back inflated, with deflated set; any other method is refused by name.
+// [Doruk-Aksoy] The end record is found behind an archive comment, and each directory entry steps past its extra field and comment, as other tools' pk3s have them.
 export function readPk3(buf) {
-  const endAt = buf.length - 22;
+  let endAt = buf.length - 22;
+  while (endAt > 0 && endAt > buf.length - 22 - 0xffff && buf.readUInt32LE(endAt) !== 0x06054b50) endAt--;
   if (endAt < 0 || buf.readUInt32LE(endAt) !== 0x06054b50) throw new Error("not a pk3: no end of central directory");
   const count = buf.readUInt16LE(endAt + 10);
   let e = buf.readUInt32LE(endAt + 16);
@@ -245,7 +247,7 @@ export function readPk3(buf) {
     const data = method === 8 ? zlib.inflateRawSync(raw) : raw;
     if (zlib.crc32(data) !== crc) throw new Error(`${name}: CRC mismatch`);
     out.push(method === 8 ? { name, data, deflated: true } : { name, data });
-    e += 46 + nameLen;
+    e += 46 + nameLen + buf.readUInt16LE(e + 30) + buf.readUInt16LE(e + 32);
   }
   return out;
 }

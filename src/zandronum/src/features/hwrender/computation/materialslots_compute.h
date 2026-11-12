@@ -46,6 +46,16 @@ std::string ComputeShaderWithDefines(const char *source, const std::string &defi
 // [rc4l] The defines every backend shader is compiled with: the array's size, at least one so a declaration stays legal, and FUA_BINDLESS where the device has the array at all.
 std::string ComputeMaterialShaderDefines(unsigned slots);
 
+// [Doruk-Aksoy] A material slot's layer row: sixteen 16-bit entries (a GLDEFS material's layer slots, features/hwshaders MaterialLayer), two a word, the low half first, as FUA_MATERIAL_GLSL's fuaLayerSlot unpacks them.
+enum { kLayerRowEntries = 16, kLayerRowWords = 8, kLayerSpareEntry = 7 };
+
+// [Doruk-Aksoy] Where slot's row starts in SlotRemap, after its kMaxMaterialSlots remap entries (FUA_LAYER_ROWS_STR), and the buffer's size in words with every row.
+unsigned ComputeLayerRowWord(int slot);
+unsigned ComputeSlotRemapWords();
+
+// [Doruk-Aksoy] The row for a material's layer slots, its spare entry carrying `spare` (features/hwshaders ComputeSpecularWord) in place of a slot.
+void ComputeLayerRow(const int (&slots)[kLayerRowEntries], unsigned spare, unsigned (&row)[kLayerRowWords]);
+
 }} // namespace zx::hwrender
 
 #endif // ZX_MATERIALSLOTS_COMPUTE_H

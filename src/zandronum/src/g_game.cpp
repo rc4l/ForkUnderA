@@ -31,6 +31,7 @@
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
 #include <stdio.h>
@@ -138,6 +139,7 @@
 #include "computation/mapangle_compute.h"   // [rc4l] ComputeMapThingAngle
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
+#include "features/aimassist/aimassist.h"   // [Doruk-Aksoy] zx::aimassist::Apply
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -1791,6 +1793,11 @@ G_TickerPart G_TickerBegin ()
 				if ((gametic % ticdup) == 0)
 				{
 					RunNetSpecs (i, buf);
+				}
+				// [Doruk-Aksoy] features/aimassist: the debug aim's turn, before the demo records the ticcmd.
+				if (i == consoleplayer)
+				{
+					zx::aimassist::Apply (newcmd, i);
 				}
 				if (demorecording)
 				{
@@ -3543,6 +3550,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	if ( zx::net::IsServer( ))
 		SERVER_SetMapMusicVolume( 1.f );
 	zx::acsshaders::ResetLevelShaders( );
+	zx::actormaterials::ResetRound( );
 
 	// [BB] We are going to reset the map now, so any request for a reset is fulfilled.
 	g_bResetMap = false;

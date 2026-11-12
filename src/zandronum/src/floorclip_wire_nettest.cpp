@@ -35,7 +35,7 @@ bool ReadCommand(BYTESTREAM_s &r, unsigned short &netid, int &floorclip) {
 
 TEST(SetThingFloorClipWire, IsAppendedAfterTheLastExistingCommand) {
 	// [rc4l] 3.3 inserts it after SVC2_GIVEINVENTORYEXTRA, which would shift every id after it; ours goes last.
-	EXPECT_EQ(SVC2_FUASETSHADERUNIFORM + 1, SVC2_SETTHINGFLOORCLIP);
+	EXPECT_EQ(SVC2_FUASETACTORUNIFORM + 1, SVC2_SETTHINGFLOORCLIP);
 	// [rc4l] PlayerSetSelectedInventory was appended after it.
 	EXPECT_EQ(SVC2_SETTHINGFLOORCLIP + 1, SVC2_PLAYERSETSELECTEDINVENTORY);
 	EXPECT_LE(NUM_SVC2_COMMANDS, 0x100);

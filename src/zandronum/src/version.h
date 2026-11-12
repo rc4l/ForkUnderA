@@ -109,7 +109,8 @@ int GetRevisionNumber();
 // demos (uzdoom@4acc04ce6); we were ALREADY at 0x21A for an unrelated reason of our own (the
 // SoundActor pitch field below), so reusing their number would mean two different demo formats
 // sharing one version and every existing 0x21A demo being read with the wrong map-name width.
-#define DEMOGAMEVERSION 0x21B	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
+// [Doruk-Aksoy] 0x21C: DEM_GIVECHEAT/DEM_TAKECHEAT amounts are longs (uzdoom@a2a1d214c0, which left the version alone).
+#define DEMOGAMEVERSION 0x21C	// [rc4l] 0x21A: SoundActor pitch field; 0x21B: full-length map names in demos
 
 // Minimum demo version we can play.
 // Bump it whenever you change or remove existing DEM_ commands.
@@ -174,11 +175,13 @@ int GetRevisionNumber();
 // (uzdoom@da74b9df95, guarded in P_SerializeSounds). Upstream's keyed saves needed no bump.
 // [Doruk-Aksoy] 4526: the level snapshot holds what the fua_ ACS functions turned its post-process shaders to
 // (features/acs-shaders, guarded in SerializeLevelShaders).
-// [rc4l] 4527: player_t's CurrentPlayerClass is an int rather than a byte (zandronum@9cee7e80ec24, which
+// [Doruk-Aksoy] 4527: AActor serializes its GLDEFS fua_Material and the uniforms ACS set on it
+// (features/actormaterials, guarded in SerializeActor).
+// [rc4l] 4528: player_t's CurrentPlayerClass is an int rather than a byte (zandronum@9cee7e80ec24, which
 // did not bump); older saves read it as a byte, guarded in player_t::Serialize.
-// [rc4l] 4528: APlayerPawn serializes RejumpDelay (zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which did not bump), guarded in
+// [rc4l] 4529: APlayerPawn serializes RejumpDelay (zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which did not bump), guarded in
 // APlayerPawn::Serialize.
-#define SAVEVER 4528
+#define SAVEVER 4529
 
 
 #define SAVEVERSTRINGIFY2(x) #x

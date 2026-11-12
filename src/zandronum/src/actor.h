@@ -52,6 +52,7 @@
 // [AK] Needed for std::numeric_limits in the IDList class.
 #include <limits>
 #include "features/netids/computation/netidsearch_compute.h"   // [rc4l] IDList's bitmap of free ids
+#include "features/tid-hash/computation/tidhash_compute.h"   // [Doruk-Aksoy] kZxTidHashSize, ComputeTidBucket
 
 struct subsector_t;
 //
@@ -1164,6 +1165,9 @@ public:
 	fixed_t			radius, height;		// for movement checking
 	fixed_t			projectilepassheight;	// height for clipping projectile movement against this actor
 	fixed_t			projectilepassradius;	// effective radius (half-width) for clipping attacks against this actor, independent of movement radius
+	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
+	int				fua_material;			// [Doruk-Aksoy] this actor's fua_Material plus one, 0 for none
+	int				fua_materialSlot;		// [Doruk-Aksoy] the slot of its own uniform values in level.fua_actorMaterials plus one, 0 for none
 	float			renderradius;			// [Doruk-Aksoy] DECORATE's RenderRadius (uzdoom@87b23d160bcbfe8ed35d6ff0921b72f54109ae41): 0 leaves its reach to its model, above 0 it reaches at least that far, below 0 it is never drawn.
 
 	// [MGOOOOOO] Effective extents used when deciding whether an attack hits this actor. These are
@@ -1430,8 +1434,9 @@ public:
 	void RemoveFromHash ();
 
 private:
-	static AActor *TIDHash[128];
-	static inline int TIDHASH (int key) { return key & 127; }
+	// [Doruk-Aksoy] features/tid-hash: 16,384 buckets, not 128, so a mod tagging thousands of monsters keeps its chains short.
+	static AActor *TIDHash[kZxTidHashSize];
+	static inline int TIDHASH (int key) { return ComputeTidBucket (key); }
 	static FSharedStringArena mStringPropertyData;
 
 	friend class FActorIterator;
@@ -1519,7 +1524,7 @@ public:
 		if (id == 0)
 			return NULL;
 		if (!base)
-			base = AActor::TIDHash[id & 127];
+			base = AActor::TIDHash[AActor::TIDHASH (id)];
 		else
 			base = base->inext;
 

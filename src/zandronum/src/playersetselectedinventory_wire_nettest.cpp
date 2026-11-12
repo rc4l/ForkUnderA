@@ -36,8 +36,8 @@ bool ReadCommand(BYTESTREAM_s &r, int &player, int &itemClass, bool &showInvento
 
 TEST(PlayerSetSelectedInventoryWire, IsAppendedAfterTheLastExistingCommand) {
 	// [rc4l] 3.3 inserts it after SVC2_SETDOMINATIONPOINTSTATE, which would shift every id after it; ours goes last.
-	EXPECT_EQ(77, SVC2_SETTHINGFLOORCLIP);
-	EXPECT_EQ(78, SVC2_PLAYERSETSELECTEDINVENTORY);
+	EXPECT_EQ(79, SVC2_SETTHINGFLOORCLIP);
+	EXPECT_EQ(80, SVC2_PLAYERSETSELECTEDINVENTORY);
 	EXPECT_EQ(SVC2_PLAYERSETSELECTEDINVENTORY + 1, NUM_SVC2_COMMANDS);
 	EXPECT_LE(NUM_SVC2_COMMANDS, 0x100);
 }
@@ -46,7 +46,7 @@ TEST(PlayerSetSelectedInventoryWire, GoldenShownSelection) {
 	Wire wire;
 	WriteCommand(wire, 3, 0x0102, true);
 	const BYTE expected[] = {
-		232, 78,       // SVC_EXTENDEDCOMMAND, SVC2_PLAYERSETSELECTEDINVENTORY
+		232, 80,       // SVC_EXTENDEDCOMMAND, SVC2_PLAYERSETSELECTEDINVENTORY
 		3,             // player
 		0x02, 0x01,    // item class index, little-endian
 		0x01,          // control byte: showInventoryBar true

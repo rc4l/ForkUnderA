@@ -43,6 +43,7 @@
 #include <memory>
 #include <vector>
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include <csignal>   // sig_atomic_t (portable; POSIX also gets sigaction via <signal.h> above)
 #include <stdlib.h>
@@ -85,6 +86,17 @@ void MCP_RPC_Tick();
 #else
   #define MCP_SEND_FLAGS 0
 #endif
+
+// [Doruk-Aksoy] What a recv or send that returned n came to, with this platform's word for a call a signal interrupted.
+static zx::mcp::SocketStep mcp_socket_step( int n )
+{
+#ifdef _WIN32
+	const bool interrupted = n < 0 && WSAGetLastError() == WSAEINTR;
+#else
+	const bool interrupted = n < 0 && errno == EINTR;
+#endif
+	return zx::mcp::ComputeSocketStep( n, interrupted );
+}
 
 namespace
 {
@@ -225,8 +237,9 @@ namespace
 		for ( size_t off = 0; c.open && off < wire.size(); )
 		{
 			int n = (int)send( c.sock, wire.c_str() + off, (int)( wire.size() - off ), MCP_SEND_FLAGS );
-			if ( n <= 0 ) CloseLocked( c );
-			else off += (size_t)n;
+			const zx::mcp::SocketStep step = mcp_socket_step( n );
+			if ( step == zx::mcp::SocketStep::Closed ) CloseLocked( c );
+			else if ( step == zx::mcp::SocketStep::Moved ) off += (size_t)n;
 		}
 	}
 
@@ -314,7 +327,9 @@ namespace
 		for ( ;; )
 		{
 			int n = (int)recv( c->sock, buf, sizeof( buf ), 0 );
-			if ( n <= 0 ) break;
+			const zx::mcp::SocketStep step = mcp_socket_step( n );
+			if ( step == zx::mcp::SocketStep::Retry ) continue;
+			if ( step == zx::mcp::SocketStep::Closed ) break;
 			zx::mcp::FeedResult got = zx::mcp::ComputeClientFeed( feed, buf, (size_t)n, BridgeToken() );
 			{
 				std::lock_guard<std::mutex> lk( g_sendlock );

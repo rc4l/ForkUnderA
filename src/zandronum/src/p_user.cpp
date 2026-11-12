@@ -802,7 +802,7 @@ void APlayerPawn::Serialize (FArchive &arc)
 		MvType = static_cast<APlayerPawn *>( GetDefault() )->MvType;
 	}
 	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which serializes it unguarded; older saves take the class default.
-	if (SaveVersion >= 4528)
+	if (SaveVersion >= 4529)
 	{
 		arc << RejumpDelay;
 	}
@@ -4693,8 +4693,8 @@ void player_t::Serialize (FArchive &arc)
 	//	arc << frags[i];
 	arc << psprites;	// [overlay] serializes the whole dynamic layer container
 
-	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: the class number is an int, which saves before 4527 kept in a byte.
-	if (SaveVersion >= 4527)
+	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: the class number is an int, which saves before 4528 kept in a byte.
+	if (SaveVersion >= 4528)
 	{
 		arc << CurrentPlayerClass;
 	}

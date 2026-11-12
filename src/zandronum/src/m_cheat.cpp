@@ -54,6 +54,7 @@
 #include "gamemode.h"
 #include "cl_commands.h"
 #include "cl_demo.h"
+#include "features/cheat-amount/computation/cheatamount_compute.h" // [Doruk-Aksoy] ComputeSaturatingAdd/Mul
 
 // [RH] Actually handle the cheat. The cheat code in st_stuff.c now just
 // writes some bytes to the network data stream, and the network code
@@ -611,20 +612,17 @@ void GiveSpawner (player_t *player, const PClass *type, int amount)
 		{
 			if (type->IsDescendantOf (RUNTIME_CLASS(ABasicArmorPickup)))
 			{
-				if (static_cast<ABasicArmorPickup*>(item)->SaveAmount != 0)
-				{
-					static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
-				}
-				else
-				{
-					static_cast<ABasicArmorPickup*>(item)->SaveAmount *= amount;
-				}
+				// [Doruk-Aksoy] Saturating, since a give amount can now reach INT_MAX.
+				ABasicArmorPickup *pickup = static_cast<ABasicArmorPickup*>(item);
+				pickup->SaveAmount = zx::cheatamount::ComputeSaturatingMul (pickup->SaveAmount, amount);
 			}
 			else if (type->IsDescendantOf (RUNTIME_CLASS(ABasicArmorBonus)))
 			{
-				static_cast<ABasicArmorBonus*>(item)->SaveAmount *= amount;
+				// [Doruk-Aksoy] Saturating, since a give amount can now reach INT_MAX.
+				ABasicArmorBonus *bonus = static_cast<ABasicArmorBonus*>(item);
+				bonus->SaveAmount = zx::cheatamount::ComputeSaturatingMul (bonus->SaveAmount, amount);
 				// [BB]
-				static_cast<ABasicArmorBonus*>(item)->BonusCount *= amount;
+				bonus->BonusCount = zx::cheatamount::ComputeSaturatingMul (bonus->BonusCount, amount);
 
 			}
 			else
@@ -680,12 +678,13 @@ void cht_Give (player_t *player, const char *name, int amount)
 		{
 			if (player->mo)
 			{
-				player->mo->health += amount;
+				// [Doruk-Aksoy] Saturating, since a give amount can now reach INT_MAX.
+				player->mo->health = zx::cheatamount::ComputeSaturatingAdd (player->mo->health, amount);
 	  			player->health = player->mo->health;
 			}
 			else
 			{
-				player->health += amount;
+				player->health = zx::cheatamount::ComputeSaturatingAdd (player->health, amount);
 			}
 		}
 		else

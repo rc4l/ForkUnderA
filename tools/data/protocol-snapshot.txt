@@ -204,6 +204,8 @@
  46 SVC2_FUASETMUSICVOLUME                 [Extended] : Float
  47 SVC2_FUASETSHADERENABLED               [Extended] : String Bool Bool Variable Variable
  48 SVC2_FUASETSHADERUNIFORM               [Extended] : String String Bool Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
+ 49 SVC2_FUASETACTORMATERIAL               [Extended] : Actor String
+ 50 SVC2_FUASETACTORUNIFORM                [Extended] : Actor Byte Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -520,9 +522,11 @@
  74 SVC2_FUASETMUSICVOLUME
  75 SVC2_FUASETSHADERENABLED
  76 SVC2_FUASETSHADERUNIFORM
- 77 SVC2_SETTHINGFLOORCLIP
- 78 SVC2_PLAYERSETSELECTEDINVENTORY
- 79 NUM_SVC2_COMMANDS
+ 77 SVC2_FUASETACTORMATERIAL
+ 78 SVC2_FUASETACTORUNIFORM
+ 79 SVC2_SETTHINGFLOORCLIP
+ 80 SVC2_PLAYERSETSELECTEDINVENTORY
+ 81 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION

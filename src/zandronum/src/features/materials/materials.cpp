@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 rc4l
 
-#include "features/hwshaders/hwshaders.h"   // [rc4l] UserShaderOf
+#include "features/hwshaders/hwshaders.h"   // [Doruk-Aksoy] TextureUserShader, a texture's shader weighed against its Material maps
 #include "features/materials/materials.h"
 #include "w_wad.h"   // [rc4l] the special textures' lumps
 
@@ -49,7 +49,7 @@ bool DescribeMaterial(MaterialRef m, MaterialInfo &info)
 	info.basePalette = tex->UseBasePalette();
 	info.brightmap = tex->gl_info.Brightmap != NULL;
 	info.shaderSpeed = tex->gl_info.shaderspeed;
-	info.userShader = zx::hwshaders::UserShaderOf(tex->gl_info.shaderindex);
+	info.userShader = zx::hwshaders::TextureUserShader(tex);
 	return true;
 }
 
@@ -230,7 +230,7 @@ bool MaterialShading(MaterialRef m, int &warp, int &userShader, float &shaderSpe
 	if (m == NULL || Mat(m)->tex == NULL) return false;
 	const FTexture *tex = Mat(m)->tex;
 	warp = tex->bWarped;
-	userShader = zx::hwshaders::UserShaderOf(tex->gl_info.shaderindex);
+	userShader = zx::hwshaders::TextureUserShader(tex);
 	shaderSpeed = tex->gl_info.shaderspeed;
 	return true;
 }
@@ -239,6 +239,23 @@ MaterialRef MaterialBrightmap(MaterialRef m)
 {
 	if (m == NULL || Mat(m)->tex == NULL || Mat(m)->tex->gl_info.Brightmap == NULL) return NULL;
 	return FMaterial::ValidateTexture(Mat(m)->tex->gl_info.Brightmap, false);
+}
+
+MaterialRef MaterialLayer(MaterialRef m, int layer)
+{
+	if (m == NULL || Mat(m)->tex == NULL) return NULL;
+	FTexture *tex = zx::hwshaders::LayerTexture(Mat(m)->tex, layer);
+	return tex != NULL ? FMaterial::ValidateTexture(tex, false) : NULL;
+}
+
+bool MaterialHasLayers(MaterialRef m)
+{
+	return m != NULL && Mat(m)->tex != NULL && zx::hwshaders::HasLayers(Mat(m)->tex);
+}
+
+unsigned MaterialSpecularWord(MaterialRef m)
+{
+	return (m != NULL && Mat(m)->tex != NULL) ? zx::hwshaders::SpecularWord(Mat(m)->tex) : 0u;
 }
 
 bool MaterialIsMasked(MaterialRef m) { return m != NULL && ((FMaterial *)m)->isMasked(); }

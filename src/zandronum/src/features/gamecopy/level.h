@@ -27,6 +27,9 @@ const LevelRecord &Level();
 // [Doruk-Aksoy] The level's post-process shader state as the last fill took it, copied only when it changed.
 const zx::postprocess::ShaderTable &LevelShaders();
 
+// [Doruk-Aksoy] The actors' own fua_Material uniform values as the last fill took them, copied only when they changed.
+const zx::actormaterials::InstanceTable &LevelActorMaterials();
+
 }} // namespace zx::gamecopy
 
 #endif // ZX_GAMECOPY_LEVEL_H
