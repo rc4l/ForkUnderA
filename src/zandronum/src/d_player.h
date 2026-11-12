@@ -1048,6 +1048,7 @@ ULONG	PLAYER_CalcRank( ULONG ulPlayer );
 void	PLAYER_ScaleDamageCountWithMaxHealth( player_t *pPlayer, int &damage );
 void	PLAYER_ResetCustomValues( const ULONG ulPlayer );
 void	PLAYER_SetSpriteToSkin( player_t *pPlayer ); // [RK]
+bool	PLAYER_SetSelectedInventory( player_t *player, AInventory *item, bool showInventoryBar );
 
 void P_CheckPlayerSprite(AActor *mo, int &spritenum, fixed_t &scalex, fixed_t &scaley);
 

@@ -91,6 +91,7 @@
 #include "features/net-replication/actorstate.h"
 #include "features/net-replication/computation/actorstate_compute.h"   // [Doruk-Aksoy] ComputeSettledDeathZ
 #include "computation/playerskin_compute.h"
+#include "computation/inventoryselect_compute.h"	// [rc4l] ComputeSelectsInventory, ComputeInventoryBarTics
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -3985,6 +3986,18 @@ void PLAYER_SetSpriteToSkin( player_t *pPlayer )
 	case zx::skin::SKIN_SPRITE_STATE: mo->sprite = mo->state->sprite; break;
 	case zx::skin::SKIN_SPRITE_KEEP: break;
 	}
+}
+
+//*****************************************************************************
+// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: one selection for ACS, the server and its clients, where upstream writes it at each.
+bool PLAYER_SetSelectedInventory( player_t *player, AInventory *item, bool showInventoryBar )
+{
+	if ( !zx::ComputeSelectsInventory( item != nullptr, ( item != nullptr ) && ( item->ItemFlags & IF_INVBAR )))
+		return false;
+
+	player->mo->InvSel = item;
+	player->inventorytics = zx::ComputeInventoryBarTics( showInventoryBar, player->inventorytics, TICRATE );
+	return true;
 }
 
 //*****************************************************************************

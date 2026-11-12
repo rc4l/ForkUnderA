@@ -56,6 +56,13 @@ export async function exec(c, text, { quietMs = 220, maxMs = 4000 } = {}) {
   return out;
 }
 
+// [rc4l] An instance's console output from now until `off()`, for what another instance's action makes it print.
+export function listen(c) {
+  let out = "";
+  const off = c.onEvent((ev, data) => { if (ev === "out" && typeof data.text === "string") out += data.text; });
+  return { text: () => out, off };
+}
+
 // [rc4l] The renderer `dumprenderer` names, or null when it printed none.
 export function launchRenderer(text) {
   const m = /renderer=(\w+)/.exec(String(text || ""));

@@ -48,6 +48,9 @@ server only): the raise came after the send, and every client kept the corpse a 
 A server script's `SetUserCVar` that changes a player's mod user cvar sends it to every client at once
 (`SendUserCVar`), not at the tic's end, so a client script the server starts later in the tic reads the new value.
 
+ACS's `SetSelectedInventory` selects the item on a server as on any machine (`PLAYER_SetSelectedInventory`) and sends it
+through `SendSelectedInventory`, which sends only on a server, as `SVC2_PLAYERSETSELECTEDINVENTORY` (`netinvselect`).
+
 ## Map rotation
 
 ACS's `SetMapUsedStatus` changes an entry's used status on a server and sends it through `SendMapUsedStatus`
@@ -69,7 +72,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
   `_test.cpp`.
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
 - `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`, `SendFloorClip`, `SendPuff`).
-- `playerstate.{h,cpp}` (`SendUserCVar`).
+- `playerstate.{h,cpp}` (`SendUserCVar`, `SendSelectedInventory`).
 - `rotation.{h,cpp}` (`SendMapUsedStatus`).
 
 ## In-engine hooks
@@ -78,6 +81,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
 - `p_acs.cpp` `SetUserCVar`: `SendUserCVar` when a server script changed the cvar's value.
 - `p_acs.cpp` `SetMapUsedStatus`: `SendMapUsedStatus` when a script changed an entry's used status.
+- `p_acs.cpp` `SetSelectedInventory`: `SendSelectedInventory` once a script selected a held inventory-bar item.
 - `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
 - `p_mobj.cpp` `P_SpawnPuff`: `SendPuff` when its caller lets the clients hear of the puff.
 - `p_map.cpp` `P_RailAttack`: `SendPuff` for the endpoint puff once it survived the sky.

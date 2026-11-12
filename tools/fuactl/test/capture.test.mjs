@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND, launchModeOf, glFrameOf, glFrameFor, echoedCvar, rendererReport, RENDERER_PROBE, waitInLevel, GS_INTERMISSION } from "../src/capture.mjs";
+import { viewpoint, SANDBOX, HOLD_TICS, ticOf, sleep, SLOW_COMMAND, launchModeOf, glFrameOf, glFrameFor, echoedCvar, rendererReport, RENDERER_PROBE, waitInLevel, GS_INTERMISSION, listen } from "../src/capture.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // This tool's own directory -- NOT tools/, which holds unrelated CI tripwires that drive nothing.
@@ -156,4 +156,14 @@ test("waiting for a level presses use through an intermission only when asked, a
   await waitInLevel(waiting, 5000, { pollMs: 1 });
   assert.deepEqual(waiting.sent, []);
   await assert.rejects(waitInLevel(ticking([{ gamestate: GS_INTERMISSION }]), 30, { pollMs: 1 }), /instance never reached GS_LEVEL/);
+});
+
+test("listen gathers an instance's console output until it is switched off", async () => {
+  const c = answering((text) => `${text} said\n`);
+  const heard = listen(c);
+  await c.rpc("console.exec", { text: "one" });
+  await c.rpc("console.exec", { text: "two" });
+  heard.off();
+  await c.rpc("console.exec", { text: "three" });
+  assert.equal(heard.text(), "one said\ntwo said\n");
 });

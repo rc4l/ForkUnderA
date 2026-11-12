@@ -317,6 +317,13 @@ Command PlayerDropInventory
 	Class<AInventory> itemType
 EndCommand
 
+Command PlayerSetSelectedInventory
+	ExtendedCommand
+	Player player with MoTest
+	Class<AInventory> itemType
+	Bool showInventoryBar
+EndCommand
+
 Command GiveWeaponHolder
 	ExtendedCommand
 	Player player with MoTest

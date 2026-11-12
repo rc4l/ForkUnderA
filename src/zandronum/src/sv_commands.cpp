@@ -1460,6 +1460,23 @@ void SERVERCOMMANDS_PlayerDropInventory( ULONG ulPlayer, AInventory *pItem, ULON
 }
 
 //*****************************************************************************
+// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806.
+void SERVERCOMMANDS_PlayerSetSelectedInventory( const unsigned int player, const AInventory *item, const bool showInventoryBar, const unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if (( PLAYER_IsValidPlayer( player ) == false ) ||
+		( item == nullptr ))
+	{
+		return;
+	}
+
+	ServerCommands::PlayerSetSelectedInventory command;
+	command.SetPlayer( &players[player] );
+	command.SetItemType( item->GetClass() );
+	command.SetShowInventoryBar( showInventoryBar );
+	command.sendCommandToClients( playerExtra, flags );
+}
+
+//*****************************************************************************
 //
 void SERVERCOMMANDS_PotentiallySendPlayerCommRule( const unsigned int player )
 {

@@ -407,6 +407,8 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_FUASETSHADERUNIFORM ),
 	// [rc4l] Ported from zandronum@7e0d5383e6ab5f7ca2f27f26989c2a9bda059ef1: a TERRAIN SmallClip, appended where 3.3 inserts it after SVC2_GIVEINVENTORYEXTRA.
 	ENUM_ELEMENT ( SVC2_SETTHINGFLOORCLIP ), // [RK] Terrain SmallClip value.
+	// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: ACS SetSelectedInventory, appended where 3.3 adds it after SVC2_SETDOMINATIONPOINTSTATE.
+	ENUM_ELEMENT ( SVC2_PLAYERSETSELECTEDINVENTORY ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

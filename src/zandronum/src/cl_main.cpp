@@ -5342,6 +5342,14 @@ void ServerCommands::PlayerUseInventory::Execute()
 
 //*****************************************************************************
 //
+void ServerCommands::PlayerSetSelectedInventory::Execute()
+{
+	// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: PLAYER_SetSelectedInventory gives up on an item the client doesn't think it holds.
+	PLAYER_SetSelectedInventory( player, player->mo->FindInventory( itemType ), showInventoryBar );
+}
+
+//*****************************************************************************
+//
 void ServerCommands::PlayerDropInventory::Execute()
 {
 	// Try to find this object within the player's personal inventory.

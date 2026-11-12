@@ -88,7 +88,7 @@
 #include "invasion.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
-#include "features/net-replication/playerstate.h"   // [MobiusU9B] SendUserCVar
+#include "features/net-replication/playerstate.h"   // [MobiusU9B] SendUserCVar, [rc4l] SendSelectedInventory
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include "network/nettraffic.h"
 #include "za_database.h"
@@ -5808,6 +5808,9 @@ enum EACSFunctions
 	ACSF_CheckScript,
 	// [rc4l] Adapted from zandronum@6869793234d6828e47a2aa3b57a9ea7a87736e0b: CheckAutomap.
 	ACSF_CheckAutomap,
+	// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: GetSelectedInventory and SetSelectedInventory.
+	ACSF_GetSelectedInventory,
+	ACSF_SetSelectedInventory,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
@@ -9373,6 +9376,28 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		// [rc4l] Adapted from zandronum@6869793234d6828e47a2aa3b57a9ea7a87736e0b: whether the automap is off, full or overlaid, the choice in computation/acsautomap_compute.
 		case ACSF_CheckAutomap:
 			return zx::ComputeAutomapStatus( automapactive, viewactive );
+
+		// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: the activator's selected item by class, empty when it is no player or has none.
+		case ACSF_GetSelectedInventory:
+		{
+			const AInventory *item = (( activator != nullptr ) && ( activator->player != nullptr ) && ( activator->player->mo != nullptr )) ? activator->player->mo->InvSel : nullptr;
+			return GlobalACSStrings.AddString( item ? item->GetClass( )->TypeName.GetChars( ) : "" );
+		}
+
+		// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: the server selects the item itself before its clients hear of it, where upstream's only told them.
+		case ACSF_SetSelectedInventory:
+		{
+			if (( activator == nullptr ) || ( activator->player == nullptr ) || ( activator->player->mo == nullptr ))
+				return false;
+
+			AInventory *item = activator->player->mo->FindInventory( PClass::FindClass( FBehavior::StaticLookupString( args[0] )));
+			const bool showInventoryBar = ( argCount > 1 ) && ( args[1] != 0 );
+			if ( PLAYER_SetSelectedInventory( activator->player, item, showInventoryBar ) == false )
+				return false;
+
+			zx::netreplication::SendSelectedInventory( static_cast<int>( activator->player - players ), item, showInventoryBar );
+			return true;
+		}
 
 		case ACSF_GetActorFloorTexture:
 		{
