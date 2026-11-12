@@ -47,6 +47,7 @@
 
 #include "voicechat.h"
 #include "computation/voicechat_convert_compute.h"
+#include "computation/voicechat_hear_compute.h"
 #include "c_console.h"
 #include "cl_commands.h"
 #include "cl_demo.h"
@@ -708,8 +709,9 @@ void VOIPController::Tick( void )
 		if ( VoIPChannels[i] == nullptr )
 			continue;
 
-		// [AK] Delete this channel if this player's no longer valid, or ignored.
-		if (( PLAYER_IsValidPlayer( i ) == false ) || (( i != static_cast<unsigned>( consoleplayer )) && ( players[i].ignoreVoice.enabled )))
+		// [AK] Delete this channel if this player's no longer valid, ignored,
+		// or forbidden to chat with us.
+		if ( IsForbiddenToHearPlayer( i ))
 		{
 			RemoveVoIPChannel( i );
 			continue;
@@ -1417,11 +1419,9 @@ void VOIPController::ReceiveAudioPacket( const unsigned int player, const unsign
 	if (( isActive == false ) && ( player != static_cast<unsigned>( consoleplayer )))
 		return;
 
-	if (( PLAYER_IsValidPlayer( player ) == false ) || ( data == nullptr ) || ( length == 0 ))
-		return;
-
-	// [AK] Don't process any audio frames from other players that are ignored.
-	if (( player != static_cast<unsigned>( consoleplayer )) && ( players[player].ignoreVoice.enabled ))
+	// [AK] Don't process any audio frames from other players that are ignored
+	// or forbidden to chat with us.
+	if (( IsForbiddenToHearPlayer( player )) || ( data == nullptr ) || ( length == 0 ))
 		return;
 
 	// [AK] If this player's channel doesn't exist yet, create a new one.
@@ -1507,6 +1507,25 @@ void VOIPController::UpdateProximityChat( void )
 void VOIPController::UpdateRolloffDistances( void )
 {
 	// [ZandroX] No proximity rolloff for the OpenAL backend (VoIP is always 2D).
+}
+
+//*****************************************************************************
+//
+// [AK] VOIPController::IsForbiddenToHearPlayer
+//
+// Checks if the local player shouldn't hear another player's voice because
+// they're either ignored or forbidden to voice chat with live players. This is
+// primarily used to see if the player's VoIP channel should be deleted.
+//
+//*****************************************************************************
+
+bool VOIPController::IsForbiddenToHearPlayer( const unsigned int player ) const
+{
+	// [rc4l] Ported from zandronum@52bc0caca76d1632afe369dbcc9c91373a71a5ac: the rule is computation/voicechat_hear_compute's, and our 2D channels need no check in UpdateProximityChat.
+	const bool valid = PLAYER_IsValidPlayer( player );
+	return zx::voice::ComputeVoiceForbiddenToHear( valid, player == static_cast<unsigned>( consoleplayer ),
+		valid && players[player].ignoreVoice.enabled, players[consoleplayer].bSpectating,
+		valid && GAMEMODE_IsClientForbiddenToChatToPlayers( player, true ));
 }
 
 //*****************************************************************************

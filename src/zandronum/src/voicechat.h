@@ -261,6 +261,7 @@ private:
 	void UpdateTestRMSVolume( unsigned char *soundBuffer, const unsigned int length );
 	int EncodeOpusFrame( const float *inBuffer, const unsigned int inLength, unsigned char *outBuffer, const unsigned int outLength );
 	bool IsUsingALSA( void ) const;
+	bool IsForbiddenToHearPlayer( const unsigned int player ) const;
 
 	VOIPChannel *VoIPChannels[MAXPLAYERS];
 	float channelVolumes[MAXPLAYERS];
