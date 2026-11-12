@@ -658,6 +658,15 @@ DEFINE_PROPERTY(renderradius, F, Actor)
 }
 
 //==========================================================================
+// [Doruk-Aksoy] fua_Material: the GLDEFS fua_Material the actor starts with, by name, resolved as it spawns since GLDEFS is read after DECORATE (features/actormaterials).
+//==========================================================================
+DEFINE_PROPERTY(fua_material, S, Actor)
+{
+	PROP_STRING_PARM(str, 0);
+	defaults->fua_MaterialName = stricmp(str, "none") == 0 ? "" : str;
+}
+
+//==========================================================================
 //
 //==========================================================================
 DEFINE_PROPERTY(mass, I, Actor)

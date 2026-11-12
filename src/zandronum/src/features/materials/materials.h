@@ -103,6 +103,11 @@ bool SkyBoxFacesOf(FTexture *tex, SkyBoxFaces &out);
 MaterialRef MaterialBrightmap(MaterialRef m);
 // [Doruk-Aksoy] Whether the material has a brightmap, as DescribeMaterial's brightmap says, without describing the rest.
 bool MaterialHasBrightmap(MaterialRef m);
+// [Doruk-Aksoy] The material a GLDEFS layer of m reads (features/hwshaders MaterialLayer), NULL for none, and whether m has any.
+MaterialRef MaterialLayer(MaterialRef m, int layer);
+bool MaterialHasLayers(MaterialRef m);
+// [Doruk-Aksoy] m's GLDEFS glossiness and specular level as a layer row's spare entry carries them (features/hwrender ComputeSpecularWord), 0 for UZDoom's defaults.
+unsigned MaterialSpecularWord(MaterialRef m);
 // [Doruk-Aksoy] DescribeMaterial's warp, userShader and shaderSpeed alone, which every piece's record reads each frame; false, leaving them, when it would be.
 bool MaterialShading(MaterialRef m, int &warp, int &userShader, float &shaderSpeed);
 

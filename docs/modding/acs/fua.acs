@@ -7,4 +7,10 @@ special
 	-24002:fua_SetShaderUniform2f(4,5),
 	-24003:fua_SetShaderUniform3f(5,6),
 	-24004:fua_SetShaderUniform4f(6,7),
-	-24005:fua_SetShaderUniform1i(3,4);
+	-24005:fua_SetShaderUniform1i(3,4),
+	-24006:fua_SetActorMaterial(2),
+	-24007:fua_SetActorUniform1f(3),
+	-24008:fua_SetActorUniform2f(4),
+	-24009:fua_SetActorUniform3f(5),
+	-24010:fua_SetActorUniform4f(6),
+	-24011:fua_SetActorUniform1i(3);

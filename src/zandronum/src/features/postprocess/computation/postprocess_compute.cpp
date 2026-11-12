@@ -5,6 +5,7 @@
 #include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeIndentedLines
 
 #include <algorithm>
+#include <cstddef>
 #include <cctype>
 #include <cstring>
 #include <sstream>
@@ -67,6 +68,35 @@ std::vector<Token> Tokens(const std::string &s)
 		out.push_back(t);
 	}
 	return out;
+}
+
+// [Doruk-Aksoy] The fua_Name and fua_Uniform lines among tokens [from, to) rebuilt as `{ ... }`, or empty when they name no set (unless `named`, as a fua_Material block names itself); a uniform's values are as many words as its type has.
+std::string TextureSetStatements(const std::vector<Token> &t, size_t from, size_t to, bool named = false)
+{
+	std::string out;
+	for (size_t k = from; k < to; k++)
+	{
+		if (t[k].quoted) continue;
+		if (SameName(t[k].text, "fua_name") && k + 1 < to)
+		{
+			out += "fua_Name \"" + t[++k].text + "\" ";
+			named = true;
+		}
+		else if (SameName(t[k].text, "fua_uniform") && k + 2 < to)
+		{
+			out += "fua_Uniform " + t[k + 1].text + " " + t[k + 2].text + " ";
+			const int values = ComputeUniformComponents(ComputeUniformType(t[k + 1].text));
+			k += 2;
+			if (k + 1 >= to || t[k + 1].text != "=") continue;
+			const bool cvar = k + 2 < to && SameName(t[k + 2].text, "cvar");
+			const size_t last = std::min(to - 1, k + 1 + (cvar ? 2 : values));
+			out += "=";
+			for (k += 2; k <= last; k++) out += " " + t[k].text;
+			out += " ";
+			k = last;
+		}
+	}
+	return named ? "{ " + out + "}" : "";
 }
 
 const char *GlslType(UniformType type)
@@ -372,6 +402,25 @@ std::vector<DeclarationPart> ComputePostProcessDeclarations(const std::string &l
 			}
 			out.push_back({ false, lump.substr(start, end - start) });
 		}
+		else if (SameName(t[k].text, "hardwareshader") || SameName(t[k].text, "fua_material"))
+		{
+			// [Doruk-Aksoy] A texture or fua_Material block, from its first brace to the one closing it.
+			const bool material = SameName(t[k].text, "fua_material");
+			const std::string name = t[k + 1].text;
+			size_t open = k + 1;
+			while (open < t.size() && (t[open].quoted || t[open].text != "{")) open++;
+			size_t close = open;
+			for (int inner = 0; close < t.size(); close++)
+			{
+				if (t[close].quoted) continue;
+				if (t[close].text == "{") inner++;
+				else if (t[close].text == "}" && --inner == 0) break;
+			}
+			const std::string statements = TextureSetStatements(t, std::min(open + 1, t.size()), close, material);
+			if (material) out.push_back({ false, statements, false, name });
+			else if (!statements.empty()) out.push_back({ false, statements, true });
+			k = close;
+		}
 	}
 	return out;
 }
@@ -398,13 +447,28 @@ const double *ComputeEffectiveUniform(const ShaderTable &table, const std::strin
 	return UniformOf(FindEntry(table, shader, -1), uniform);
 }
 
-std::string ComputeShaderStateLine(const std::string &name, const EffectiveEnabled &state, const std::vector<UniformState> &uniforms)
+namespace {
+
+// [Doruk-Aksoy] A state line: its name, what it says of being on, then each uniform as name=x,y,z,w.
+std::string StateLine(const std::string &name, const std::string &state, const std::vector<UniformState> &uniforms)
 {
 	std::ostringstream s;
-	s << name << (state.enabled ? " on since " + std::to_string(state.sinceTic) : std::string(" off"));
+	s << name << " " << state;
 	for (const UniformState &u : uniforms)
 		s << " " << u.name << "=" << u.values[0] << "," << u.values[1] << "," << u.values[2] << "," << u.values[3];
 	return s.str();
+}
+
+} // namespace
+
+std::string ComputeShaderStateLine(const std::string &name, const EffectiveEnabled &state, const std::vector<UniformState> &uniforms)
+{
+	return StateLine(name, state.enabled ? "on since " + std::to_string(state.sinceTic) : "off", uniforms);
+}
+
+std::string ComputeTextureSetStateLine(const std::string &name, const std::vector<UniformState> &uniforms)
+{
+	return StateLine(name, "texture", uniforms);
 }
 
 bool ComputeConsoleEnable(int value, bool current) { return value == -1 ? !current : value != 0; }

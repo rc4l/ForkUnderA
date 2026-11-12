@@ -15,8 +15,19 @@
 #define ZX_DGSHARED_H
 
 // [rc4l] The scene constant block every pass binds, declared once; uFrame.x is the warp clock in seconds.
-#define FUA_CONSTANTS_GLSL \
-	"layout(binding = 0) uniform Constants { mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; vec4 uFixedColormap; vec4 uFixedRange; vec4 uOptions; vec4 uShadeEnv; vec4 uShadeEnv2; vec4 uShadeFog; };\n"
+#define FUA_CONSTANT_FIELDS \
+	"mat4 uMVP; vec4 uCameraPos; vec4 uLightParams; vec4 uClipPlane; vec4 uScreen; vec4 uSkyColor; vec4 uFrame; vec4 uFixedColormap; vec4 uFixedRange; vec4 uOptions; vec4 uShadeEnv; vec4 uShadeEnv2; vec4 uShadeFog;"
+#define FUA_CONSTANTS_GLSL "layout(binding = 0) uniform Constants { " FUA_CONSTANT_FIELDS " };\n"
+
+// [Doruk-Aksoy] The texture shaders' fua_Uniform values (kTextureUniformSlots vec4s), after the scene's and the 2D layer's own constants.
+#define FUA_TEX_UNIFORMS_GLSL "vec4 uFuaTexUniforms[64];"
+// [Doruk-Aksoy] The scene shaders' constant block, whose buffer (g_cb) has room for the texture shaders' uniforms after it.
+#define FUA_SCENE_CONSTANTS_GLSL "layout(binding = 0) uniform Constants { " FUA_CONSTANT_FIELDS " " FUA_TEX_UNIFORMS_GLSL " };\n"
+
+// [Doruk-Aksoy] The vec4s an actor uniform row holds (zx::actormaterials::kActorUniformVec4s).
+#define FUA_ACTOR_UNIFORM_VEC4S_STR "8"
+// [Doruk-Aksoy] Where the actor uniform rows start in the sky-hole buffer, after zx::levelmesh::kMaxSkyHoles holes of two vec4s.
+#define FUA_ACTOR_ROWS_STR "512"
 
 // [rc4l] main.fp's fixed colormap on a lit texel, after a block declaring uFixedColormap and uFixedRange: mode 1 (w) maps its grey into the ramp, as invulnerability inverts, and mode 2 multiplies it, as light amplification and a torch tint.
 #define FUA_FIXED_COLORMAP_GLSL \
@@ -65,8 +76,37 @@
 
 // [rc4l] One piece's record as every shader reads it, declared once so its stride cannot drift from ScenePieceData's.
 #define FUA_PIECEDATA_GLSL \
-	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 glowTop; vec4 glowBottom; vec4 glowTopPlane; vec4 glowBottomPlane; vec4 tint; vec4 tintRange; vec4 extra; };\n" \
+	"struct PieceData { vec4 colorLight; vec4 fogAlphaMat; vec4 fogColor; vec4 normal; vec4 floodU; vec4 floodV; vec4 actorLight; vec4 bright; vec4 glowTop; vec4 glowBottom; vec4 glowTopPlane; vec4 glowBottomPlane; vec4 tint; vec4 tintRange; vec4 extra; vec4 user; };\n" \
 	"layout(std430, binding = 9) readonly buffer Pieces { PieceData pieces[]; } PiecesIn;\n"
+
+// [Doruk-Aksoy] Where a material slot's layer row starts in SlotRemap, after its kMaxMaterialSlots remap entries (ComputeLayerRowWord).
+#define FUA_LAYER_ROWS_STR "8192u"
+
+// [Doruk-Aksoy] UZDoom main.fp's Material, which a GLDEFS program's shader fills and its light model reads.
+#define FUA_MATERIAL_STRUCT_GLSL \
+	"struct Material { vec4 Base; vec4 Bright; vec4 Glow; vec3 Normal; vec3 Specular; float Glossiness; float SpecularLevel; float Metallic; float Roughness; float AO; };\n"
+
+// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad main.fp ApplyNormalMap: an unsigned, green-up normal map turned into the world by the frame the derivatives of position `pos` and coordinate `uv` give, around normal n (none for a sprite).
+#define FUA_NORMAL_MAP_GLSL(pos, uv) \
+	"mat3 fuaCotangentFrame(vec3 n, vec3 p, vec2 tc) {\n" \
+	"    vec3 dp1 = dFdx(p);\n" \
+	/* [Doruk-Aksoy] This framebuffer's y runs down, GL's up, so dFdy is turned back to GL's, else the frame mirrors and a highlight lands on the far side of its light (hwmaterials beside UZDoom). */ \
+	"    vec3 dp2 = -dFdy(p);\n" \
+	"    vec2 duv1 = dFdx(tc);\n" \
+	"    vec2 duv2 = -dFdy(tc);\n" \
+	"    vec3 dp2perp = cross(n, dp2);\n" \
+	"    vec3 dp1perp = cross(dp1, n);\n" \
+	"    vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;\n" \
+	"    vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;\n" \
+	"    float invmax = inversesqrt(max(max(dot(t, t), dot(b, b)), 1e-20));\n" \
+	"    return mat3(t * invmax, b * invmax, n);\n" \
+	"}\n" \
+	"vec3 fuaNormalMapped(vec3 n, vec3 map) {\n" \
+	"    if (dot(n, n) <= 0.0) return n;\n" \
+	"    map = map * 255.0 / 127.0 - 128.0 / 127.0;\n" \
+	"    map.y = -map.y;\n" \
+	"    return normalize(fuaCotangentFrame(n, " pos ", " uv ") * map);\n" \
+	"}\n"
 
 // [rc4l] A level surface lit from the sector light table, after FUA_CONSTANTS_GLSL and FUA_PIECEDATA_GLSL: fuaSectorLit gives a record kTexFlagSectorLit marks the shading ComputeSectorLitShade gives it, ComputeSectorLitInput then ComputeShading line for line, and leaves any other record as it is.
 #define FUA_SECTORLIT_GLSL \

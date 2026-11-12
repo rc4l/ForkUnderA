@@ -139,14 +139,16 @@ struct DeclaredShader
 // [Doruk-Aksoy] Whether GLDEFS declares `shader` and, when `uniform` is not empty, one of that name's declarations has that uniform; a call naming anything else is ignored.
 bool ComputeShaderCallDeclared(const std::vector<DeclaredShader> &declared, const std::string &shader, const std::string &uniform);
 
-// [Doruk-Aksoy] A piece of a GLDEFS lump a server reads for its post-process shaders alone: an `#include`'s lump name, or a `HardwareShader PostProcess` block's text after `PostProcess`.
+// [Doruk-Aksoy] A piece of a GLDEFS lump a server reads for the names scripts may use: an `#include`'s lump name, a `HardwareShader PostProcess` block's text after `PostProcess`, (texture) a texture block's fua_Name and fua_Uniform lines alone, rebuilt as `{ ... }`, or (material, its name) a fua_Material block's fua_Uniform lines likewise.
 struct DeclarationPart
 {
 	bool include;
 	std::string text;
+	bool texture = false;
+	std::string material;
 };
 
-// [Doruk-Aksoy] A GLDEFS lump's includes and post-process blocks in order, every other block skipped, for a server that has no renderer to read the rest.
+// [Doruk-Aksoy] A GLDEFS lump's includes, post-process blocks and texture blocks' fua_ lines in order, everything else skipped, for a server that has no renderer to read the rest.
 std::vector<DeclarationPart> ComputePostProcessDeclarations(const std::string &lump);
 
 // [Doruk-Aksoy] Whether `shader` runs at tic `now` for the console player, and the tic it went on: the player's own entry over everyone's, over the declaration's Enabled from the level's start.
@@ -169,6 +171,9 @@ struct UniformState
 
 // [Doruk-Aksoy] One shader's line in fua_postshaders: its name, `on since <tic>` or `off`, then each uniform as name=x,y,z,w.
 std::string ComputeShaderStateLine(const std::string &name, const EffectiveEnabled &state, const std::vector<UniformState> &uniforms);
+
+// [Doruk-Aksoy] A texture shader set's line in fua_postshaders: its name, `texture`, then each uniform as ComputeShaderStateLine writes them.
+std::string ComputeTextureSetStateLine(const std::string &name, const std::vector<UniformState> &uniforms);
 
 // [Doruk-Aksoy] What the console's shaderenable sets a shader to: `value` 1 or 0, or -1 for the other of `current`.
 bool ComputeConsoleEnable(int value, bool current);

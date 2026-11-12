@@ -173,3 +173,33 @@ Command FuaSetShaderUniform
 		Float w
 	EndIf
 EndCommand
+
+# [Doruk-Aksoy] ACS fua_SetActorMaterial (features/actormaterials): an actor's GLDEFS fua_Material by name, empty for none; appended last so no existing id moves.
+Command FuaSetActorMaterial
+	ExtendedCommand
+	Actor actor
+	String material
+EndCommand
+
+# [Doruk-Aksoy] ACS fua_SetActorUniform1f..4f and 1i: one uniform of an actor's own material by its index there, kind 0 one int, 1 to 4 that many floats.
+Command FuaSetActorUniform
+	ExtendedCommand
+	Actor actor
+	Byte uniform
+	Byte kind
+	If (kind == 0)
+		Long intValue
+	EndIf
+	If (kind >= 1)
+		Float x
+	EndIf
+	If (kind >= 2)
+		Float y
+	EndIf
+	If (kind >= 3)
+		Float z
+	EndIf
+	If (kind >= 4)
+		Float w
+	EndIf
+EndCommand

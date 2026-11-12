@@ -85,3 +85,25 @@ TEST(MaterialSlots, ASlotsKindFollowsItsMaterialAndKey)
 	EXPECT_EQ(kSlotMaterial, ComputeSlotKind(&material, 0));
 	EXPECT_EQ(kSlotMaterial, ComputeSlotKind(&material, -12));
 }
+
+// [Doruk-Aksoy] A slot's row starts after the remap entries, eight words a slot, where FUA_LAYER_ROWS_STR says, and the buffer holds every slot's.
+TEST(MaterialSlots, LayerRowsFollowTheRemapEntries)
+{
+	EXPECT_EQ(8192u, ComputeLayerRowWord(0));
+	EXPECT_EQ(8192u + 8u * 5u, ComputeLayerRowWord(5));
+	EXPECT_EQ(8192u * 9u, ComputeSlotRemapWords());
+}
+
+// [Doruk-Aksoy] Two slots a word, the even layer low, the spare entry carrying its word instead of a slot, and nothing below zero.
+TEST(MaterialSlots, ALayerRowPacksTwoSlotsAWord)
+{
+	int slots[kLayerRowEntries] = { 0 };
+	slots[0] = 3; slots[1] = 4; slots[6] = 0x1234; slots[7] = 99; slots[8] = 8191; slots[15] = -2;
+	unsigned row[kLayerRowWords];
+	ComputeLayerRow(slots, 0xabcdu, row);
+	EXPECT_EQ(3u | (4u << 16), row[0]);
+	EXPECT_EQ(0u, row[1]);
+	EXPECT_EQ(0x1234u | (0xabcdu << 16), row[3]);
+	EXPECT_EQ(8191u, row[4]);
+	EXPECT_EQ(0u, row[7]);
+}

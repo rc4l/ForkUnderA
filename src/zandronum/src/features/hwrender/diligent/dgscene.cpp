@@ -1023,6 +1023,7 @@ static void PrepareFrame(Diligent::IDeviceContext *ctx)
 	}
 	EnsureDynamicRecords();
 	UpdateSectorLightTable(ctx);
+	UploadActorUniforms(ctx);
 	// [rc4l] Before anything is recorded: rebuilding a binding that a command buffer already holds is a use-after-free, and this only works on the frames the material table changed.
 	if (fua_dg_bindless && MaterialSlotCapacity() > 0) { MeasureSlotWorkingSet(); ReserveDynamicSlots(); RefreshBindless(); }
 	SealMaterialSlots();

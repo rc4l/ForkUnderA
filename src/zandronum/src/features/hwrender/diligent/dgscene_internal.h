@@ -276,6 +276,8 @@ struct SceneGeometry
 	bool         stackVisReady = false;
 	// [rc4l] The player's sky holes (zx::levelmesh::SkyHoles), and how many this frame uploaded for the main pass to test.
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> skyHoleBuf;
+	// [Doruk-Aksoy] The table and declaration generations the actor uniform rows after the sky holes were filled at (ComputeActorUniformRows).
+	unsigned     actorUniformsTable = ~0u, actorUniformsDecls = ~0u;
 	int          skyHoleCount = 0;
 	TArray<DynRun> dynRuns;                         // [rc4l] this frame's sprite, model and decal draws
 	bool         dynReady = false;
@@ -403,6 +405,8 @@ void MaterialSRBCounts(int &cached, int &batch);
 int MaterialSlotCount();
 // [Doruk-Aksoy] `inMesh` for a baked piece's key, whose slot is pinned with its ANIMDEFS frames, since the bake froze the number into its record.
 int MaterialSlotFor(const void *material, int translation, bool inMesh);
+// [Doruk-Aksoy] Slot `slot`'s layer row, for a material with a GLDEFS shader: its layers given slots like its own (`inMesh` alike) and the row uploaded at the next RefreshBindless when it changed.
+void FillLayerRow(int slot, const void *material, bool inMesh);
 // [Doruk-Aksoy] A key's slot, marked as used by the reservation running, or -1 when the table lacks it, found before any slot is given to a missing key.
 int FindReservedSlot(const void *material, int translation);
 // [Doruk-Aksoy] Counts the slot table's resets, so slots kept for a sprite list are read only against the table they came from.
@@ -502,6 +506,10 @@ void RenderPlaneMirrors(Diligent::IDeviceContext *ctx);
 void RenderStackPortals(Diligent::IDeviceContext *ctx);
 void UploadWalkVisibility(Diligent::IDeviceContext *ctx);
 void WriteSceneConstants(float *cb, const float *clip, float targetW, float targetH, float materialSlots);
+// [Doruk-Aksoy] The texture shaders' fua_Uniform values into the vec4s after a constant block's own, when any are declared.
+void WriteTextureUniforms(float *tail);
+// [Doruk-Aksoy] The actor uniform rows from the render copy, sent only when its table or the declarations changed.
+void UploadActorUniforms(Diligent::IDeviceContext *ctx);
 
 // [rc4l] Camera textures (dgcamera.cpp).
 void ReleaseCameraTargets();

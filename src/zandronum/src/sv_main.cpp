@@ -136,6 +136,7 @@
 #include "unlagged.h"
 #include "scoreboard.h"
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SendShaderStateTo, DropPlayerShaders
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] SendActorMaterialTo
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -2959,6 +2960,9 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 			// almost always, so this costs nothing on a normal level.
 			if ( pActor->roll != 0 )
 				SERVERCOMMANDS_SetThingSpriteOrientation( pActor, SPRITEORIENT_ROLL, ulClient, SVCF_ONLYTHISCLIENT );
+
+			// [Doruk-Aksoy] features/actormaterials: a script's fua_Material and uniforms, set once and never sent again.
+			zx::actormaterials::SendActorMaterialTo( pActor, ulClient );
 
 			// If it's important to update this thing's arguments, do that now.
 			// [BB] Wouldn't it be better, if this is done for all things, for which
