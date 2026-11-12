@@ -202,6 +202,7 @@ EXTERN_CVAR( Bool, domination )
 
 EXTERN_CVAR( Int, pointlimit )
 EXTERN_CVAR( Int, sv_flagreturntime )
+EXTERN_CVAR( Bool, sv_requireskulltoscore )
 
 EXTERN_CVAR( Int, sv_maxteams )
 

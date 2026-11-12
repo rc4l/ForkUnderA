@@ -6594,6 +6594,10 @@ static void client_SetGameModeLimits( BYTESTREAM_s *pByteStream )
 	Value.Bool = pByteStream->ReadBit();
 	sv_respawninsurvivalinvasion.ForceSet( Value, CVAR_Bool );
 
+	// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: read in, and set the value for sv_requireskulltoscore.
+	Value.Bool = pByteStream->ReadBit();
+	sv_requireskulltoscore.ForceSet( Value, CVAR_Bool );
+
 	// [AM] Read in, and set the value for lobby.
 	Value.String = const_cast<char*>( pByteStream->ReadString());
 	lobby.ForceSet( Value, CVAR_String );

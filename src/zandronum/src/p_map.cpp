@@ -50,6 +50,7 @@
 #include "p_trace.h"
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
+#include "computation/skulltagscore_compute.h"
 
 // [rc4l] rail_puff_compute mirrors these TRACE_Hit* values; keep synced.
 static_assert(ZX_TRACE_HitNone == TRACE_HitNone, "TRACE_Hit mirror out of sync");
@@ -1647,7 +1648,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				( thing->args[0] == static_cast<int> (TEAM_GetNumTeamsWithStarts()) || static_cast<signed>( tm.thing->player->Team ) == thing->args[0] ) &&
 				( thing->args[1] > 0 ))
 			{
-				if ( !TEAM_GetItemTaken( tm.thing->player->Team ) )
+				// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: sv_requireskulltoscore 0 lets a carrier score with its own skull taken.
+				if ( zx::ComputeScoresSkulltagPoint( sv_requireskulltoscore, TEAM_GetItemTaken( tm.thing->player->Team )))
 					TEAM_ScoreSkulltagPoint( tm.thing->player, thing->args[1], thing );
 				else
 					TEAM_DisplayNeedToReturnSkullMessage( tm.thing->player );

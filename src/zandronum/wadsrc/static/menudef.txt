@@ -1794,6 +1794,7 @@ OptionMenu GameplayOptions
 	Option "Don't spawn runes (DM)", "sv_norunes", "YesNo"
 	NumberField	"Flag return time (ST/CTF)", "sv_flagreturntime", 0, 60
 	Option "Instant flag return (ST/CTF)", "sv_instantreturn", "YesNo"
+	Option "Require skull to score (ST)", "sv_requireskulltoscore", "YesNo"
 	Option "Server picks teams (ST/CTF)", "sv_noteamselect", "YesNo"
 	Option "Keep teams across levels", "sv_keepteams", "YesNo"
 	Option "Apply LMS spectator settings",	"sv_applylmsspectatorsettings", "YesNo"

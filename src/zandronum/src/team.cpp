@@ -2134,6 +2134,12 @@ CUSTOM_CVAR( Int, pointlimit, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAME
 // Allow the server to set the return time for flags/skulls.
 CVAR( Int, sv_flagreturntime, 15, CVAR_CAMPAIGNLOCK | CVAR_SERVERINFO | CVAR_GAMEPLAYSETTING );
 
+// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: whether a Skulltag carrier needs its own skull at base to score.
+CUSTOM_CVAR( Bool, sv_requireskulltoscore, true, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEPLAYSETTING )
+{
+	SERVER_SettingChanged( self, false );
+}
+
 CUSTOM_CVAR( Int, sv_maxteams, 2, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_LATCH | CVAR_GAMEPLAYSETTING )
 {
 	// [BB] We didn't initialize TEAMINFO yet, so we can't use teams.Size() to clamp sv_maxteams right now.

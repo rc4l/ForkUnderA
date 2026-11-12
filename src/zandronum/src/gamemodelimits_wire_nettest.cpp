@@ -23,7 +23,7 @@ struct Limits {
 	int fraglimit; float timelimit; int pointlimit;
 	int duellimit, winlimit, wavelimit, cheats, fastweapons, maxlives, maxteams;
 	float gravity, aircontrol, coopDamageFactor;
-	bool alwaysApplyDmflags, unlimitedPickup, limitCommands, respawnInSurvivalInvasion;
+	bool alwaysApplyDmflags, unlimitedPickup, limitCommands, respawnInSurvivalInvasion, requireSkullToScore;
 	std::string lobby;
 	int allowPrivateChat, allowVoiceChat, proximityVoiceChat;
 	float minProximityRolloff, maxProximityRolloff, respawnDelayTime;
@@ -35,7 +35,7 @@ Limits Sample() {
 	Limits l{};
 	l.fraglimit = 20; l.timelimit = 10.f; l.maxteams = 2;
 	l.gravity = 800.f; l.aircontrol = 1.f / 256.f; l.coopDamageFactor = 1.f;
-	l.alwaysApplyDmflags = true; l.limitCommands = true; l.respawnInSurvivalInvasion = true;
+	l.alwaysApplyDmflags = true; l.limitCommands = true; l.respawnInSurvivalInvasion = true; l.requireSkullToScore = true;
 	l.allowPrivateChat = 1;
 	l.minProximityRolloff = 200.f; l.maxProximityRolloff = 1200.f; l.respawnDelayTime = 1.f;
 	l.minFov = 60.f; l.maxFov = 120.f;
@@ -63,6 +63,7 @@ void WriteCommand(Wire &wire, const Limits &l) {
 	w.WriteBit(l.unlimitedPickup);
 	w.WriteBit(l.limitCommands);
 	w.WriteBit(l.respawnInSurvivalInvasion);
+	w.WriteBit(l.requireSkullToScore);
 	w.WriteString(l.lobby.c_str());
 	w.WriteByte(l.allowPrivateChat);
 	w.WriteByte(l.allowVoiceChat);
@@ -94,6 +95,7 @@ bool ReadCommand(BYTESTREAM_s &r, Limits &l) {
 	l.unlimitedPickup = r.ReadBit();
 	l.limitCommands = r.ReadBit();
 	l.respawnInSurvivalInvasion = r.ReadBit();
+	l.requireSkullToScore = r.ReadBit();
 	l.lobby = r.ReadString();
 	l.allowPrivateChat = r.ReadByte();
 	l.allowVoiceChat = r.ReadByte();
@@ -121,7 +123,7 @@ TEST(SetGameModeLimitsWire, Golden) {
 		0x00, 0x00, 0x48, 0x44,  // gravity 800.0f
 		0x00, 0x00, 0x80, 0x3B,  // aircontrol 1/256
 		0x00, 0x00, 0x80, 0x3F,  // sv_coop_damagefactor 1.0f
-		0x0D,                    // the four bits in one byte, first in bit 0: 1, 0, 1, 1
+		0x1D,                    // the five bits in one byte, first in bit 0: 1, 0, 1, 1, and sv_requireskulltoscore 1 (zandronum@f5b68175b468)
 		0x00,                    // an empty lobby
 		1, 0, 0,                 // private chat, voice chat, proximity voice chat
 		0x00, 0x00, 0x48, 0x43,  // min proximity rolloff 200.0f
@@ -139,6 +141,7 @@ TEST(SetGameModeLimitsWire, RoundTripKeepsEveryField) {
 	Limits sent = Sample();
 	sent.lobby = "LOBBY01";
 	sent.unlimitedPickup = true;
+	sent.requireSkullToScore = false;
 	sent.minFov = 5.5f;
 	sent.maxFov = 179.f;
 	Wire wire;
@@ -156,6 +159,7 @@ TEST(SetGameModeLimitsWire, RoundTripKeepsEveryField) {
 	EXPECT_EQ(sent.unlimitedPickup, got.unlimitedPickup);
 	EXPECT_EQ(sent.limitCommands, got.limitCommands);
 	EXPECT_EQ(sent.respawnInSurvivalInvasion, got.respawnInSurvivalInvasion);
+	EXPECT_EQ(sent.requireSkullToScore, got.requireSkullToScore);
 	EXPECT_EQ(sent.lobby, got.lobby);
 	EXPECT_EQ(sent.allowPrivateChat, got.allowPrivateChat);
 	EXPECT_EQ(sent.maxProximityRolloff, got.maxProximityRolloff);
