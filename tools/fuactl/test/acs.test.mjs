@@ -44,9 +44,10 @@ test("several scripts lie end to end, each directory entry at its own code", () 
 });
 
 // [Doruk-Aksoy] ENTER's thousand in ACS0, and a flagged script making the lump ACSE: SPTR, SFLG and STRL as FBehavior reads them.
-test("an ENTER script is numbered in the four thousands", () => {
+test("an ENTER script is numbered in the four thousands, an EVENT one in the sixteen thousands with its arguments", () => {
   const { scripts } = parse(acsScripts([{ code: [PCD.TERMINATE], type: SCRIPT.ENTER, number: 5 }]));
   assert.deepEqual(scripts, [{ number: 4005, address: 8, args: 0 }]);
+  assert.deepEqual(parse(acsScripts([{ code: [PCD.TERMINATE], type: SCRIPT.EVENT, args: 3 }])).scripts, [{ number: 16001, address: 8, args: 3 }]);
 });
 
 test("a CLIENTSIDE script makes the lump ACSE, its flags in SFLG and the strings in STRL", () => {

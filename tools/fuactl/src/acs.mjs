@@ -8,7 +8,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LE
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
   CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59, TAGSTRING: 225, GIVEINVENTORY: 143,
-  GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PLAYERNUMBER: 247, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
+  GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
 export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, GetWadInfo: 186, SetMapUsedStatus: 187,
@@ -21,14 +21,14 @@ export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
 }
 
 // [Doruk-Aksoy] Script types (the thousands of an ACS0 script number) and flags, as p_acs.h numbers them; a flag is what CLIENTSIDE or NET compiles to.
-export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4 };
+export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4, EVENT: 16 };
 // [rc4l] BUSY exempts a script from the runaway limit (zandronum@b8fe8ef13df5).
 export const SCRIPTF = { NET: 1, CLIENTSIDE: 2, BUSY: 4 };
 
 // [Doruk-Aksoy] A script's type: its own, else OPEN unless `open` is false.
 const scriptType = (s) => s.type ?? ((s.open ?? true) ? SCRIPT.OPEN : SCRIPT.CLOSED);
 
-// [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings.
+// [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings; `args` is how many arguments a script takes into its first variables, as an EVENT script's three.
 // [Doruk-Aksoy] A script may also give its `type` and `flags`; with any flags, or `enhanced` as a library is compiled, the lump is ACSE, since ACS0 has nowhere to keep them.
 export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
   if (enhanced || scripts.some((s) => s.flags)) return acseScripts(scripts, strings);
@@ -51,7 +51,7 @@ export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
     const entry = dirOffset + 4 + 12 * i;
     out.writeInt32LE(scriptType(s) * 1000 + (s.number ?? 1), entry);
     out.writeInt32LE(address, entry + 4);
-    out.writeInt32LE(0, entry + 8);
+    out.writeInt32LE(s.args ?? 0, entry + 8);
     address += 4 * s.code.length;
   });
   const table = dirOffset + 4 + 12 * scripts.length;
@@ -74,7 +74,7 @@ function acseScripts(scripts, strings) {
     sptr.writeInt16LE(s.number ?? 1, 12 * i);
     sptr.writeUInt16LE(scriptType(s), 12 * i + 2);
     sptr.writeInt32LE(address, 12 * i + 4);
-    sptr.writeInt32LE(0, 12 * i + 8);
+    sptr.writeInt32LE(s.args ?? 0, 12 * i + 8);
     address += 4 * s.code.length;
   });
   const flagged = scripts.filter((s) => s.flags);
