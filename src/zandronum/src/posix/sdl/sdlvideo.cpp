@@ -48,6 +48,7 @@ extern int zx_pendingClientWidth, zx_pendingClientHeight;
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
 
 // Dummy screen sizes to pass when windowed
+// [rc4l] Ported from zandronum@69f8e4816350f791668930d35f350325ddb1f9c7: four 21:9 sizes, from 1280x540 to 5120x2160.
 static MiniModeInfo WinModes[] =
 {
 	{ 320, 200 },
@@ -78,6 +79,7 @@ static MiniModeInfo WinModes[] =
 	{ 1152, 648 },	// 16:9
 	{ 1152, 720 },	// 16:10
 	{ 1152, 864 },
+	{ 1280, 540 },	// 21:9
 	{ 1280, 720 },	// 16:9
 	{ 1280, 854 },
 	{ 1280, 800 },	// 16:10
@@ -97,14 +99,17 @@ static MiniModeInfo WinModes[] =
 	{ 1920, 1080 },
 	{ 1920, 1200 },
 	{ 2048, 1536 },
+	{ 2560, 1080 }, // 21:9
 	{ 2560, 1440 },
 	{ 2560, 1600 },
 	{ 2560, 2048 },
 	{ 2880, 1800 },
 	{ 3200, 1800 },
+	{ 3440, 1440 }, // 21:9
 	{ 3840, 2160 },
 	{ 3840, 2400 },
 	{ 4096, 2160 },
+	{ 5120, 2160 }, // 21:9
 	{ 5120, 2880 }
 };
 
