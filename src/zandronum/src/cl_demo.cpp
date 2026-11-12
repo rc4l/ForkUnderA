@@ -543,6 +543,9 @@ void CLIENTDEMO_ReadPacket( void )
 			// [BB] If we don't return here, we essentially skip a tic and have to adjust the tic offset.
 			else
 			{
+				// [AK] We must still execute any buffered commands during skips.
+				CLIENT_TickCommandBuffers( );
+
 				g_lGameticOffset--;
 				// [BB] If we are supposed to skip over a certain amount of tics, record that we have skipped one now.
 				if ( g_ulTicsToSkip > 0 )

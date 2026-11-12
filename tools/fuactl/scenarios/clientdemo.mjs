@@ -1,4 +1,4 @@
-// [rc4l] A clientside demo an observer recorded, played back: exit 0 when the running player it watched runs in the playback (zandronum@d04a70a98f3c) and the intermission's countdown holds while the playback is paused (zandronum@1d9962b2229f).
+// [rc4l] A clientside demo an observer recorded, played back: exit 0 when the running player it watched runs in the playback (zandronum@d04a70a98f3c), the intermission's countdown holds while the playback is paused (zandronum@1d9962b2229f), and a skip leaves no moves behind to catch up on (zandronum@c4b292277231).
 //
 // usage:  node scenarios/clientdemo.mjs
 import fs from "node:fs";
@@ -40,18 +40,13 @@ export function buildClientDemoPk3() {
   ]);
 }
 
-// [rc4l] How far one player went across samples a tic or more apart, and their median step a tic apart.
+// [rc4l] How far one player went across samples a tic or more apart, and their mean pace a tic, since a playback moves a watched player only every other tic.
 export function travel(samples, player) {
   const at = samples.map((s) => ({ tic: s.tic, a: (s.actors || []).find((x) => x.player === player) })).filter((s) => s.a);
-  const steps = [];
   let total = 0;
-  for (let i = 1; i < at.length; i++) {
-    const d = Math.hypot(at[i].a.x - at[i - 1].a.x, at[i].a.y - at[i - 1].a.y);
-    total += d;
-    if (at[i].tic - at[i - 1].tic === 1) steps.push(d);
-  }
-  const sorted = [...steps].sort((p, q) => p - q);
-  return { samples: at.length, total, median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0 };
+  for (let i = 1; i < at.length; i++) total += Math.hypot(at[i].a.x - at[i - 1].a.x, at[i].a.y - at[i - 1].a.y);
+  const tics = at.length > 1 ? at[at.length - 1].tic - at[0].tic : 0;
+  return { samples: at.length, total, pace: tics > 0 ? total / tics : 0 };
 }
 
 // [rc4l] Units a run of RUN_TICS covers at least, a third of a running player's 16 a tic.
@@ -121,11 +116,31 @@ async function pausedCountdown(c) {
   return { before, after: secondsLeft((await readMenu(c)).lines) };
 }
 
-export async function judgeNetplay(set, label) {
+// [rc4l] Units a tic the runner may cover after a skip, past a runner's 16.7 and short of the double a backlog drained two a tic gives.
+export const SKIP_PACE_MAX = 22;
+
+// [rc4l] What is wrong with the runner's pace after a skip: they must run, at a runner's pace, not a backlog's.
+export function judgeAfterSkip(r) {
+  if (r.samples < 10) return [`the playback held the runner in only ${r.samples} samples after the skip`];
+  if (!(r.pace > 4)) return [`the runner stood still after the skip, ${r.pace.toFixed(1)} units a tic`];
+  return r.pace <= SKIP_PACE_MAX ? [] : [`the runner caught up on a backlog after the skip, ${r.pace.toFixed(1)} units a tic`];
+}
+
+// [rc4l] Skips tics of the playback mid-run in one go, then measures the runner's steps.
+async function stepsAfterSkip(viewer, runner, tics) {
+  await viewer.c.rpc("console.exec", { text: `demo_skiptics ${tics}` });
+  return travel(await sampleLevel(viewer.c, 1200), runner.player);
+}
+
+export async function judgeNetplay(set, label, { config } = {}) {
   fs.mkdirSync(path.dirname(DEMO), { recursive: true });
   const { runner, viewer, faults } = await recordAndPlay(set);
   let facts = "";
-  if (!faults.length) {
+  if (!faults.length && config?.skipTics) {
+    const r = await stepsAfterSkip(viewer, runner, config.skipTics);
+    faults.push(...judgeAfterSkip(r));
+    facts = `after skipping ${config.skipTics} tics the runner went ${r.pace.toFixed(1)} units a tic`;
+  } else if (!faults.length) {
     const r = travel(await sampleLevel(viewer.c, 30000), runner.player);
     const { before, after } = await pausedCountdown(viewer.c);
     faults.push(...judgeTravel(r), ...judgeCountdown(before, after));
@@ -138,6 +153,7 @@ export async function judgeNetplay(set, label) {
 // [rc4l] The playback's viewer shows the intermission's countdown, which is off by default.
 export const VIEWER_CVARS = { cl_intermissiontimer: 1 };
 // [rc4l] A deathmatch, whose intermission's board counts down to the next map.
-export const CONFIGS = [{ name: "playback", players: 1, observers: 1, serverCvars: { deathmatch: 1 }, clientCvars: { cl_run: 1 }, clientExtraArgs: [[], ["-record", DEMO]] }];
+const RECORDED = { players: 1, observers: 1, serverCvars: { deathmatch: 1 }, clientCvars: { cl_run: 1 }, clientExtraArgs: [[], ["-record", DEMO]] };
+export const CONFIGS = [{ name: "playback", ...RECORDED }, { name: "skip", ...RECORDED, skipTics: 35 }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "clientdemo", wad: buildClientDemoPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);
