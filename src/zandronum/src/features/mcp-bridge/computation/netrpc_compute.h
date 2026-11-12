@@ -48,6 +48,7 @@ struct WorldActorRow
 	double angle = 0;
 	int health = 0;
 	int player = -1;     // [rc4l] the player whose pawn it is, or -1
+	double scaleX = 1, scaleY = 1;   // [rc4l] its sprite's scale, which a player's skin sets on their body
 	std::string sprite;  // [rc4l] the sprite and frame it shows, as "TROOA"
 };
 

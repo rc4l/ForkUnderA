@@ -752,6 +752,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				r.angle = (double)mo->angle * ( 360.0 / 4294967296.0 );
 				r.health = mo->health;
 				r.player = ( mo->player != NULL ) ? (int)( mo->player - players ) : -1;
+				r.scaleX = FIXED2DBL( mo->scaleX ); r.scaleY = FIXED2DBL( mo->scaleY );
 				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
 				rows.push_back( r );
 			}

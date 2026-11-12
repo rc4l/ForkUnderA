@@ -75,7 +75,7 @@ TEST(ComputeWorldActorJson, PositionsToAThousandthAndEveryField)
 	r.angle = 90;
 	r.health = 60;
 	r.sprite = "TROOA";
-	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"fz\":-64.000,\"clip\":10.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sprite\":\"TROOA\"}",
+	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"fz\":-64.000,\"clip\":10.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sx\":1.000,\"sy\":1.000,\"sprite\":\"TROOA\"}",
 		ComputeWorldActorJson(r));
 }
 
