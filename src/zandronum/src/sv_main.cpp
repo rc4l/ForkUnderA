@@ -2471,7 +2471,7 @@ bool SERVER_GetUserInfo( BYTESTREAM_s *byteStream, bool allowKick, bool enforceR
 		if ( missing.size( ) > 0 )
 		{
 			kickPlayer = true;
-			kickReason = "Userinfo is incomplete";
+			kickReason = "Userinfo is incomplete.";
 		}
 	}
 
