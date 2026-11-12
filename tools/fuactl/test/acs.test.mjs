@@ -84,6 +84,23 @@ test("every named p-code is numbered as p_acs.h's enum orders it", async () => {
   for (const [name, num] of Object.entries(PCD)) assert.equal(order.indexOf(`PCD_${name}`), num, name);
 });
 
+// [rc4l] Each ACS function by its value in p_acs.cpp's EACSFunctions, counting on from each explicit number.
+test("every named ACS function is numbered as p_acs.cpp's enum orders it", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../../src/zandronum/src/p_acs.cpp", import.meta.url), "latin1");
+  const start = src.indexOf("enum EACSFunctions");
+  const body = src.slice(src.indexOf("{", start) + 1, src.indexOf("};", start)).replace(/\/\/.*$/gm, "");
+  const values = new Map();
+  let next = 0;
+  for (const m of body.matchAll(/\b(A[CS]{2}F_\w+)\s*(?:=\s*(\d+))?\s*,?/g)) {
+    const v = m[2] !== undefined ? Number(m[2]) : next;
+    values.set(m[1], v);
+    next = v + 1;
+  }
+  assert.equal(values.get("ACSF_SetPlayerSkin"), 175);
+  for (const [name, num] of Object.entries(ACSF)) assert.equal(values.get(`ACSF_${name}`), num, name);
+});
+
 test("a print, a HUD message, a console command and a jump compile as the engine pops them", () => {
   assert.deepEqual(printString(2), [PCD.BEGINPRINT, PCD.PUSHNUMBER, 2, PCD.PRINTSTRING, PCD.ENDPRINT]);
   const hud = hudMessage(1, { id: 7, color: 6, x: 0.5, y: 0.25, hold: 2 });

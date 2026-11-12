@@ -109,6 +109,7 @@
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how often the string pool is collected and what that frees
 #include "features/acs-strings/computation/stringpool_compute.h"   // [Doruk-Aksoy] ComputeStringPoolGrowth
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeSendsUserCVarChange
+#include "computation/wadinfo_compute.h"   // [rc4l] ComputeIndexInRange, ComputeParentWadInfo
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -5796,6 +5797,8 @@ enum EACSFunctions
 	ASCF_SetControlPointInfo,
 	ASCF_GetSkinProperty, // [TRSR]
 	ACSF_IsPlayerContestingControlPoint,
+	// [rc4l] Ported from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: GetWadInfo, number 186 as theirs.
+	ACSF_GetWadInfo,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
@@ -8785,20 +8788,32 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				enum
 				{
 					LUMP_INFO_SIZE,
-					LUMP_INFO_NAME
+					LUMP_INFO_NAME,
+					// [rc4l] Ported from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: a lump's namespace and the wad it belongs to.
+					LUMP_INFO_NAMESPACE,
+					LUMP_INFO_WAD,
 				};
 
-				switch(args[1])
+				const unsigned int lumpNum = args[0];
+				const unsigned int type = args[1];
+
+				switch ( type )
 				{
 					case LUMP_INFO_SIZE:
-						return Wads.LumpLength(args[0]);
+						return Wads.LumpLength( lumpNum );
 
 					case LUMP_INFO_NAME:
-						return GlobalACSStrings.AddString(Wads.GetLumpFullName(args[0]));
+						return GlobalACSStrings.AddString( Wads.GetLumpFullName( lumpNum ));
+
+					case LUMP_INFO_NAMESPACE:
+						return Wads.GetLumpNamespace( lumpNum );
+
+					case LUMP_INFO_WAD:
+						return Wads.GetWadnumFromLumpnum( lumpNum );
 
 					default:
-						Printf("LumpGetInfo: unknown info type %i\n", args[1]);
-					return 0;
+						Printf( "LumpGetInfo: unknown info type %u\n", type );
+						return 0;
 				}
 			}
 
@@ -9226,6 +9241,59 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				argCount > 9 ? FIXED2DBL(args[9]) : 1.0,
 				argCount > 10 ? FIXED2DBL(args[10]) : 1.0,
 				argCount > 11 ? FIXED2DBL(args[11]) : 1.0 );
+		}
+
+		// [rc4l] Adapted from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: a wad's name, lumps, parent and flags, the range and parent rules in computation/wadinfo_compute.
+		case ACSF_GetWadInfo:
+		{
+			enum
+			{
+				WAD_INFO_NAME,
+				WAD_INFO_FIRSTLUMP,
+				WAD_INFO_LASTLUMP,
+				WAD_INFO_PARENTWAD,
+				WAD_INFO_LOADEDAUTOMATICALLY,
+				WAD_INFO_OPTIONAL,
+				WAD_INFO_HASAUTHENTICATEDLUMPS,
+			};
+
+			const unsigned int wadNum = args[0];
+			const unsigned int type = args[1];
+
+			switch( type )
+			{
+				case WAD_INFO_NAME:
+				{
+					if ( zx::wadinfo::ComputeIndexInRange( wadNum, Wads.GetNumWads( )))
+						return GlobalACSStrings.AddString( Wads.GetWadName( wadNum ));
+					else
+						return GlobalACSStrings.AddString( "" );
+				}
+
+				case WAD_INFO_FIRSTLUMP:
+					return Wads.GetFirstLump( wadNum );
+
+				case WAD_INFO_LASTLUMP:
+					return Wads.GetLastLump( wadNum );
+
+				case WAD_INFO_PARENTWAD:
+				{
+					return zx::wadinfo::ComputeParentWadInfo( Wads.GetParentWad( wadNum ), wadNum );
+				}
+
+				case WAD_INFO_LOADEDAUTOMATICALLY:
+					return Wads.GetLoadedAutomatically( wadNum );
+
+				case WAD_INFO_OPTIONAL:
+					return Wads.IsWadOptional( wadNum );
+
+				case WAD_INFO_HASAUTHENTICATEDLUMPS:
+					return Wads.WadContainsAuthenticatedLumps( wadNum );
+
+				default:
+					Printf( "GetWadInfo: unknown info type %u\n", type );
+					return 0;
+			}
 		}
 
 		case ACSF_GetActorFloorTexture:
