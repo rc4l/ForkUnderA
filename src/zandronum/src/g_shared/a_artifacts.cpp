@@ -2225,8 +2225,10 @@ void APowerRespawnInvulnerable::InitEffect ()
 	BlendColor = 0;					// Don't mess with the view.
 	ItemFlags |= IF_UNDROPPABLE;	// Don't drop this.
 
-	// [AK] Make sure the owner is valid.
-	if (Owner == nullptr)
+	// [rc4l] Ported from zandronum@2ddec4cfc2f97c6191048b6438d5db9eb51af0da: the server leaves respawn invulnerability's look to clients.
+	// [AK] Make sure the owner is valid. The server doesn't handle respawn
+	// invulnerability effects either.
+	if ((NETWORK_GetState() == NETSTATE_SERVER) || (Owner == nullptr))
 		return;
 
 	// Apply respawn invulnerability effect.
