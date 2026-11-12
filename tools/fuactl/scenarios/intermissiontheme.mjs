@@ -1,4 +1,4 @@
-// [rc4l] A map's winnermusic and a team's WinnerTheme, each with a track (zandronum@59b494f63d58): exit 0 when TEAMINFO's theme tracks read back through GetTeamProperty and a won deathmatch's intermission plays the map's winnermusic at its track, a won team game's the team's theme at its own, where Skulltag's d_stwin played at track 0.
+// [rc4l] A map's winnermusic and a team's WinnerTheme, each with a track (zandronum@59b494f63d58): exit 0 when TEAMINFO's theme tracks read back through GetTeamProperty and a won deathmatch's intermission plays the map's winnermusic at its track, a won team game's the team's theme at its own, where Skulltag's d_stwin played at track 0, CTF's too (zandronum@9a8531095e0b).
 //
 // usage:  node scenarios/intermissiontheme.mjs
 import { Buffer } from "node:buffer";
@@ -18,7 +18,12 @@ export const STRINGS = ["orders", " "];
 export const MAPINFO = `map MAP01 "Theme"\n{\n  next = "MAP02"\n  winnermusic = "${MAP_WIN.name}", ${MAP_WIN.order}\n}\n\nmap MAP02 "After"\n{\n}\n`;
 
 // [rc4l] Blue and Red as the core TEAMINFO has them less their team starts, which a deathmatch start stands in for, Blue's themes written each way TEAMINFO takes a track.
-export const TEAMINFO = teamInfo({ Blue: [`WinnerTheme "${TEAM_WIN.name}:${TEAM_WIN.order}"`, `LoserTheme "${TEAM_LOSE.name}" ${TEAM_LOSE.order}`], Red: [] });
+// [rc4l] The template's own team start numbers, which a CTF game spawns its teams at.
+export const TEAM_STARTS = { Blue: 31001, Red: 31002 };
+export const TEAMINFO = teamInfo({
+  Blue: [`WinnerTheme "${TEAM_WIN.name}:${TEAM_WIN.order}"`, `LoserTheme "${TEAM_LOSE.name}" ${TEAM_LOSE.order}`, `PlayerStartThingNumber ${TEAM_STARTS.Blue}`],
+  Red: [`PlayerStartThingNumber ${TEAM_STARTS.Red}`],
+});
 
 // [rc4l] Script 1 logs "orders" and Blue's and Red's winner and loser theme tracks; script 2 ends the level.
 export function buildScript() {
@@ -32,6 +37,7 @@ export function buildIntermissionThemePk3() {
   m.room(0, 0, 512, 512, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.thing({ x: 256, y: 64, angle: 90, type: 1 });
   m.thing({ x: 256, y: 256, angle: 90, type: 11 });
+  for (const [type, x] of [[TEAM_STARTS.Blue, 128], [TEAM_STARTS.Red, 384]]) m.thing({ x, y: 448, angle: 270, type });
   const scripts = [{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }, { code: [...callSpecial(SPECIAL.Exit_Normal, [0]), PCD.TERMINATE], type: SCRIPT.CLOSED, number: 2 }];
   const after = new UdmfMap();
   after.room(0, 0, 512, 512, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
@@ -61,8 +67,12 @@ export function judgeMusic(reply, want) {
   return m[1].toUpperCase() === want.name && Number(m[2]) === want.order ? [] : [`the intermission plays "${m[1]}" at track ${m[2]}, not "${want.name}" at ${want.order}`];
 }
 
-// [rc4l] A won deathmatch takes the map's winner music, a won team game its team's theme once the player has joined Blue.
-export const SIDES = [{ name: "dm", launchCvars: { deathmatch: 1 }, want: MAP_WIN }, { name: "team", launchCvars: { deathmatch: 1, teamplay: 1 }, commands: ["changeteam Blue"], want: TEAM_WIN }];
+// [rc4l] A won deathmatch takes the map's winner music, a won team game its team's theme once the player has joined Blue, CTF's tied score a win.
+export const SIDES = [
+  { name: "dm", launchCvars: { deathmatch: 1 }, want: MAP_WIN },
+  { name: "team", launchCvars: { deathmatch: 1, teamplay: 1 }, commands: ["changeteam Blue"], want: TEAM_WIN },
+  { name: "ctf", launchCvars: { ctf: 1 }, commands: ["changeteam Blue"], want: TEAM_WIN },
+];
 
 export async function judgeLaunch(c, inst, label) {
   const side = SIDES.find((s) => label.endsWith(` ${s.name}`));

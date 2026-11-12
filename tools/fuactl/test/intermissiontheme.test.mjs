@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judgeOrders, judgeMusic, buildIntermissionThemePk3, MAPINFO, TEAMINFO, MAP_WIN, TEAM_WIN, TEAM_LOSE, SIDES } from "../scenarios/intermissiontheme.mjs";
+import { judgeOrders, judgeMusic, buildIntermissionThemePk3, MAPINFO, TEAMINFO, MAP_WIN, TEAM_WIN, TEAM_LOSE, TEAM_STARTS, SIDES } from "../scenarios/intermissiontheme.mjs";
 
 test("the theme tracks pass as TEAMINFO gave Blue's and Red's none", () => {
   assert.deepEqual(judgeOrders(`orders ${TEAM_WIN.order} ${TEAM_LOSE.order} 0 0`), []);
@@ -19,5 +19,7 @@ test("MAPINFO, TEAMINFO and the songs are in the pk3, each side wanting its own 
   assert.ok(TEAMINFO.includes(`WinnerTheme "${TEAM_WIN.name}:${TEAM_WIN.order}"`) && TEAMINFO.includes(`LoserTheme "${TEAM_LOSE.name}" ${TEAM_LOSE.order}`));
   const text = buildIntermissionThemePk3().toString("latin1");
   for (const s of [MAP_WIN, TEAM_WIN, TEAM_LOSE]) assert.ok(text.includes(`music/${s.name.toLowerCase()}.mid`), s.name);
-  assert.deepEqual(SIDES.map((s) => s.want), [MAP_WIN, TEAM_WIN]);
+  assert.deepEqual(SIDES.map((s) => s.want), [MAP_WIN, TEAM_WIN, TEAM_WIN]);
+  assert.deepEqual(SIDES.find((s) => s.name === "ctf").launchCvars, { ctf: 1 });
+  for (const n of Object.values(TEAM_STARTS)) assert.ok(TEAMINFO.includes(`PlayerStartThingNumber ${n}`) && text.includes(`type = ${n};`), String(n));
 });
