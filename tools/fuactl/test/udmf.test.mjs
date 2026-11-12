@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UdmfMap, wad, mapLumps, readWad, parseUdmf, pk3, readPk3, teamInfo } from "../src/udmf.mjs";
+import { UdmfMap, wad, mapLumps, readWad, parseUdmf, pk3, readPk3, teamInfo, hexenMapLumps } from "../src/udmf.mjs";
 import { THING, SPECIAL } from "../src/doomnums.mjs";
 import { PCD } from "../src/acs.mjs";
+import { binaryMap } from "../src/mapdata.mjs";
 
 test("teamInfo clears the core teams and declares each named one with its items and own lines", () => {
   assert.equal(teamInfo({ Blue: ["PlayerStartThingNumber 9"], Red: [] }),
@@ -755,4 +756,33 @@ test("the slot-recycle template gives every pillar a class and translation of it
   assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 5, room: 0, diff: 0.5 }] }).failed, 1);
   assert.equal(judgeSlotRecycle("t", { stats: line, diffs: [{ visit: 5, room: 0, diff: null }] }).failed, 1);
   assert.equal(judgeSlotRecycle("t", { stats: "no line", diffs: [] }).failed, 1);
+});
+
+// [rc4l] The binary loaders read what UDMF never reaches, such as Hexen's numbering of its lines.
+test("a Hexen-format map holds the UdmfMap's geometry, flags and things, reads back through binaryMap, and refuses what it cannot hold", () => {
+  const m = new UdmfMap();
+  const room = m.room(0, 0, 256, 128, { heightceiling: 128, texturefloor: "FLOOR4_8", lightlevel: 200, id: 9 }, (edge) => ({
+    side: { texturemiddle: "STARTAN2" }, line: edge === "east" ? { special: 121, arg0: 5, repeatspecial: true, impact: true } : {} }));
+  m.block(64, 32, 128, 96, { heightfloor: 16, heightceiling: 128 }, room);
+  m.thing({ x: 32, y: 64, angle: 90, type: 1, id: 4, skill1: false, skill2: false, single: false });
+  const lumps = hexenMapLumps("MAP01", m);
+  assert.deepEqual(lumps.map((l) => l.name), ["MAP01", "THINGS", "LINEDEFS", "SIDEDEFS", "VERTEXES", "SEGS", "SSECTORS", "NODES", "SECTORS", "REJECT", "BLOCKMAP", "BEHAVIOR"]);
+  assert.equal(lumps.at(-1).data.toString("latin1", 0, 4), "ACS\0");
+  const map = binaryMap(new Map(lumps.map((l) => [l.name, Buffer.isBuffer(l.data) ? l.data : Buffer.alloc(0)])));
+  assert.equal(map.vertex.length, m.vertices.length);
+  assert.deepEqual(map.linedef[2], { v1: m.lines[2].v1, v2: m.lines[2].v2, flags: 0x1 | 0x200 | (3 << 10), special: 121, arg0: 5, arg1: 0, arg2: 0, arg3: 0, arg4: 0, sidefront: 2, sideback: undefined });
+  assert.equal(map.linedef[4].flags, 0x4);
+  assert.equal(map.linedef[4].sideback, 5);
+  assert.deepEqual(map.sidedef[0], { offsetx: 0, offsety: 0, texturetop: "-", texturebottom: "-", texturemiddle: "STARTAN2", sector: 0 });
+  assert.deepEqual(map.sector[0], { heightfloor: 0, heightceiling: 128, texturefloor: "FLOOR4_8", textureceiling: "-", lightlevel: 200, special: 0, id: 9 });
+  assert.equal(map.sector[1].lightlevel, 160);
+  // [rc4l] Hard and nightmare only, co-op and deathmatch, and every class since it names none.
+  assert.deepEqual(map.thing[0], { id: 4, x: 32, y: 64, height: 0, angle: 90, type: 1, flags: 0x2 | 0x4 | 0xe0 | 0x200 | 0x400, special: 0, arg0: 0, arg1: 0, arg2: 0, arg3: 0, arg4: 0 });
+  m.thing({ x: 0, y: 0, type: 1, class2: true });
+  assert.equal(binaryMap(new Map([["BEHAVIOR", Buffer.alloc(0)], ["THINGS", hexenMapLumps("MAP01", m)[1].data]])).thing[1].flags & 0xe0, 0x40);
+  m.lines[0].id = 3;
+  assert.throws(() => hexenMapLumps("MAP01", m), /cannot hold id/);
+  delete m.lines[0].id;
+  Object.assign(m.lines[0], { playeruse: true, playercross: true });
+  assert.throws(() => hexenMapLumps("MAP01", m), /one activation, not playercross and playeruse/);
 });

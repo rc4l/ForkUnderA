@@ -446,13 +446,15 @@ export async function probeScenario(opts, choice = {}, commands = []) {
 }
 
 // [rc4l] A counter the engine printed, held to its ceiling or its floor: the number pattern's first group captures in text, as a PASS/FAIL line and a failure count.
-export function judgeCounter(map, text, { label, pattern, ceiling, floor }) {
+// [rc4l] `explain(map, value)`, when given, names what a failing value means, such as which checks a bitmask counter failed.
+export function judgeCounter(map, text, { label, pattern, ceiling, floor, explain }) {
   const m = new RegExp(pattern).exec(String(text));
   if (!m) return { line: `FAIL ${map}: no ${label} in the engine's answer`, failed: 1 };
   const value = Number(m[1]);
   const ok = (ceiling === undefined || value <= ceiling) && (floor === undefined || value >= floor);
   const limit = ceiling !== undefined ? `ceiling ${ceiling}` : `floor ${floor}`;
-  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (${limit})`, failed: ok ? 0 : 1 };
+  const why = !ok && explain ? `: ${explain(map, value).join("; ")}` : "";
+  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (${limit})${why}`, failed: ok ? 0 : 1 };
 }
 
 // [rc4l] One Vulkan launch of the wad per map, body(c, map) giving that map's { lines, failed }, and a launch that throws one FAIL line: the shape the comparisons below share.

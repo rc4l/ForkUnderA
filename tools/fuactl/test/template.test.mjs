@@ -26,6 +26,12 @@ test("a counter passes at or under its ceiling, and fails over it or when the en
     { line: "FAIL MAP01: no slots past the fill in the engine's answer", failed: 1 });
 });
 
+test("a failing counter says what its value means when it can, and a passing one does not", () => {
+  const counter = { label: "checks", pattern: "is (\\d+)", ceiling: 1, floor: 1, explain: (map, v) => [`${map} bits ${v.toString(2)}`, "second"] };
+  assert.deepEqual(judgeCounter("MAP02", "is 5", counter), { line: "FAIL MAP02 checks: 5 (ceiling 1): MAP02 bits 101; second", failed: 1 });
+  assert.deepEqual(judgeCounter("MAP02", "is 1", counter), { line: "PASS MAP02 checks: 1 (ceiling 1)", failed: 0 });
+});
+
 test("a counter with a floor passes at or over it and fails under it", () => {
   const counter = { label: "particles drawn", pattern: "particles: (\\d+) drawn", floor: 1 };
   assert.deepEqual(judgeCounter("MAP01", "particles: 40 drawn this frame", counter),
