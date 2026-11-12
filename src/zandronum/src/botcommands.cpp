@@ -204,6 +204,7 @@ static  void	botcmd_StopMoveUp( CSkullBot *pBot );
 static  void	botcmd_BeginMoveDown( CSkullBot *pBot );
 static  void	botcmd_StopMoveDown( CSkullBot *pBot );
 static  void	botcmd_QuitJoinQueue( CSkullBot *pBot );
+static  void	botcmd_SetGoalTID( CSkullBot * pBot );
 
 //*****************************************************************************
 //	VARIABLES
@@ -335,6 +336,8 @@ static	BOTCMD_s	g_BotCommands[] =
 	{ "StopMoveDown", botcmd_StopMoveDown, 0, 0, RETURNVAL_VOID },
 	// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: QuitJoinQueue's row.
 	{ "QuitJoinQueue", botcmd_QuitJoinQueue, 0, 0, RETURNVAL_VOID },
+	// [rc4l] Ported from zandronum@1a7b71f6930269db768effa9c38c90d8f92c9256: SetGoalTID's row, taking the TID.
+	{ "SetGoalTID", botcmd_SetGoalTID, 1, 0, RETURNVAL_VOID },
 };
 
 // [rc4l] Ported from zandronum@8929c493e00ffcaec137209d51b9f37fe4550e8a: compiled BotScript names a command by its index here, so the table must hold every BOTCMD_ in order.
@@ -2968,4 +2971,27 @@ static void botcmd_QuitJoinQueue( CSkullBot *pBot )
 	const unsigned int playerIndex = static_cast<unsigned>( pBot->GetPlayer( ) - players );
 
 	JOINQUEUE_RemovePlayerFromQueue ( playerIndex );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Ported from zandronum@1a7b71f6930269db768effa9c38c90d8f92c9256: a bot's goal becomes the first actor with a TID.
+static void botcmd_SetGoalTID( CSkullBot *pBot )
+{
+	int tid = pBot->m_ScriptData.alStack[pBot->m_ScriptData.lStackPosition - 1];
+	pBot->PopStack( );
+
+	if ( tid )
+	{
+		FActorIterator iterator (tid);
+		AActor *actor = iterator.Next();
+		if ( actor )
+		{
+			pBot->m_pGoalActor = actor;
+			pBot->m_ulPathType = BOTPATHTYPE_NONE;
+			return;
+		}
+	}
+
+	Printf( "botcmd_SetGoalTID: WARNING! Tried to set goal to bad TID, %i!\n", tid );
 }
