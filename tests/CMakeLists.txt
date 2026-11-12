@@ -194,6 +194,8 @@ if(NET_TEST_SOURCES AND NOT EMSCRIPTEN)
     "${ENGINE_SRC}/features/net/computation/v6prefix_compute.cpp"
     # [Doruk-Aksoy] The sound commands' volume byte, which soundactor_wire_nettest.cpp encodes the way the server does.
     "${ENGINE_SRC}/features/sound-amplify/computation/sound_amplify_compute.cpp"
+    # [Doruk-Aksoy] The give/take amount, which cheatamount_wire_nettest.cpp encodes and decodes the way client and server do.
+    "${ENGINE_SRC}/features/cheat-amount/computation/cheatamount_compute.cpp"
     "${ENGINE_SRC}/platform.cpp"
     # [rc4l] The ini parser, here for the same reason as networkshared.cpp: it is vendored engine
     # code whose only heavy dependency is shimmed away, and a truncation bug in it reached players.
