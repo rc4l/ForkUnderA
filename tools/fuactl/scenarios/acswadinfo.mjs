@@ -1,4 +1,4 @@
-// [rc4l] ACS's GetWadInfo and LumpGetInfo's namespace and wad (zandronum@57fe0dc1ae24): exit 0 when a script reads a sprite's namespace, the pk3 holding it, that pk3's name, and an embedded wad's parent, and asks an out-of-range wad whether it is optional or authenticated without a crash (@57fd93e4e1a0).
+// [rc4l] ACS's GetWadInfo and LumpGetInfo's namespace and wad (zandronum@57fe0dc1ae24): exit 0 when a script reads a sprite's namespace, the pk3 holding it, that pk3's name, and an embedded wad's parent, and asks an out-of-range wad whether it is optional or authenticated (@57fd93e4e1a0) and an out-of-range lump its name (@9f4728f2fdf4) without a crash.
 //
 // usage:  node scenarios/acswadinfo.mjs
 import path from "node:path";
@@ -20,7 +20,7 @@ const LUMP_OPEN_FULLPATH = 1;
 export const NS_SPRITES = 1;
 export const SPRITE_PATH = "sprites/zxspa0.png", INNER_WAD = "zxinner.wad", INNER_LUMP = "ZXINNER";
 
-export const STRINGS = [SPRITE_PATH, INNER_LUMP, "ns ", " wad ", " name ", " parent ", " innerwad ", " innerparent ", "optional ", " auth "];
+export const STRINGS = [SPRITE_PATH, INNER_LUMP, "ns ", " wad ", " name ", " parent ", " innerwad ", " innerparent ", "optional ", " auth ", "lumpname [", "]"];
 const S = Object.fromEntries(STRINGS.map((s, i) => [s.trim(), i]));
 const SPRITE_VAR = 0, INNER_VAR = 1;
 
@@ -52,12 +52,18 @@ export function buildOutOfRangeScript() {
     ...text(S.auth), ...wadInfo(bad, WAD_INFO.HASAUTHENTICATEDLUMPS), PCD.PRINTNUMBER, PCD.ENDLOG, PCD.TERMINATE];
 }
 
+// [rc4l] Script 3 logs the out-of-range lump's name between brackets.
+export function buildLumpNameScript() {
+  return [PCD.BEGINPRINT, ...text(S["lumpname ["]), PCD.PUSHNUMBER, BAD_INDEX, PCD.PUSHNUMBER, LUMP_INFO.NAME, PCD.CALLFUNC, 2, ACSF.LumpGetInfo, PCD.PRINTSTRING,
+    ...text(S["]"]), PCD.ENDLOG, PCD.TERMINATE];
+}
+
 export function buildAcsWadInfoPk3() {
   const m = new UdmfMap();
   m.room(0, 0, 1024, 512, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.thing({ x: 256, y: 256, angle: 90, type: 1 });
   return pk3([
-    { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts([{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }, { code: buildOutOfRangeScript(), type: SCRIPT.CLOSED, number: 2 }], STRINGS) })) },
+    { name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts([{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }, { code: buildOutOfRangeScript(), type: SCRIPT.CLOSED, number: 2 }, { code: buildLumpNameScript(), type: SCRIPT.CLOSED, number: 3 }], STRINGS) })) },
     { name: SPRITE_PATH, data: solid([0, 200, 255]) },
     { name: INNER_WAD, data: wad([{ name: INNER_LUMP, data: Buffer.from("zx") }]) },
   ]);
@@ -85,6 +91,13 @@ export function judgeOutOfRange(log) {
   return m[1] === "0" && m[2] === "0" ? [] : [`wad ${BAD_INDEX} reads as optional ${m[1]}, authenticated ${m[2]}, not 0 and 0`];
 }
 
+// [rc4l] What is wrong with script 3's log: anything but an empty name for the out-of-range lump.
+export function judgeLumpName(log) {
+  const m = /lumpname \[(.*?)\]/.exec(String(log));
+  if (!m) return [`script 3 logged nothing for lump ${BAD_INDEX} (${String(log).trim().slice(0, 120)})`];
+  return m[1] === "" ? [] : [`lump ${BAD_INDEX} is named "${m[1]}", not ""`];
+}
+
 // [rc4l] A console command's log, or a fault naming the call when the engine dies on it.
 async function logOf(c, command, what) {
   try {
@@ -101,8 +114,10 @@ export async function judgeLaunch(c, inst, label, { wadPath }) {
   if (!first.died) {
     const second = await logOf(c, "puke 2", `GetWadInfo of wad ${BAD_INDEX}`);
     faults.push(...(second.died ? [second.died] : judgeOutOfRange(second.log)));
+    const third = await logOf(c, "puke 3", `LumpGetInfo's name of lump ${BAD_INDEX}`);
+    faults.push(...(third.died ? [third.died] : judgeLumpName(third.log)));
   }
-  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: the sprite's namespace, its pk3 and the embedded wad's parent read back, and an out-of-range wad is neither optional nor authenticated`, failed: faults.length ? 1 : 0 };
+  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: the sprite's namespace, its pk3 and the embedded wad's parent read back, an out-of-range wad is neither optional nor authenticated, and an out-of-range lump has no name`, failed: faults.length ? 1 : 0 };
 }
 
 export const SIDES = [{ name: "vk" }];

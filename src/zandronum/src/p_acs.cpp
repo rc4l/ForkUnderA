@@ -8803,7 +8803,13 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 						return Wads.LumpLength( lumpNum );
 
 					case LUMP_INFO_NAME:
-						return GlobalACSStrings.AddString( Wads.GetLumpFullName( lumpNum ));
+					{
+						// [rc4l] Ported from zandronum@9f4728f2fdf44e885425fc59342c609dda127146: an index past the lumps has an empty name, where its null name crashed the string pool.
+						if ( zx::wadinfo::ComputeIndexInRange( lumpNum, Wads.GetNumLumps( )))
+							return GlobalACSStrings.AddString( Wads.GetLumpFullName( lumpNum ));
+						else
+							return GlobalACSStrings.AddString( "" );
+					}
 
 					case LUMP_INFO_NAMESPACE:
 						return Wads.GetLumpNamespace( lumpNum );

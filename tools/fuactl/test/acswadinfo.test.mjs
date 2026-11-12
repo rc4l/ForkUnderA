@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judgeWadInfo, judgeOutOfRange, buildScript, buildOutOfRangeScript, NS_SPRITES, BAD_INDEX, WAD_INFO } from "../scenarios/acswadinfo.mjs";
+import { judgeWadInfo, judgeOutOfRange, judgeLumpName, buildScript, buildOutOfRangeScript, buildLumpNameScript, LUMP_INFO, NS_SPRITES, BAD_INDEX, WAD_INFO } from "../scenarios/acswadinfo.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
 
 const log = ({ ns = NS_SPRITES, wad = 5, name = "x.pk3", parent = -1, inner = 6, innerParent = 5 } = {}) =>
@@ -27,6 +27,18 @@ test("an out-of-range wad passes only as neither optional nor authenticated", ()
   assert.deepEqual(judgeOutOfRange("optional 0 auth 0"), []);
   assert.deepEqual(judgeOutOfRange("optional 1 auth 0"), [`wad ${BAD_INDEX} reads as optional 1, authenticated 0, not 0 and 0`]);
   assert.match(judgeOutOfRange("")[0], /logged nothing/);
+});
+
+test("an out-of-range lump passes only with an empty name", () => {
+  assert.deepEqual(judgeLumpName("lumpname []"), []);
+  assert.deepEqual(judgeLumpName("lumpname [TEXTMAP]"), [`lump ${BAD_INDEX} is named "TEXTMAP", not ""`]);
+  assert.match(judgeLumpName("")[0], /logged nothing/);
+});
+
+test("script 3 asks the out-of-range lump its name", () => {
+  const code = buildLumpNameScript();
+  const at = code.indexOf(ACSF.LumpGetInfo);
+  assert.deepEqual(code.slice(at - 6, at + 1), [PCD.PUSHNUMBER, BAD_INDEX, PCD.PUSHNUMBER, LUMP_INFO.NAME, PCD.CALLFUNC, 2, ACSF.LumpGetInfo]);
 });
 
 test("script 2 asks the out-of-range wad both questions", () => {
