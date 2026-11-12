@@ -49,6 +49,7 @@
 #include "v_text.h"
 // [BB] New #includes.
 #include "team.h"
+#include "menu/playerclass_compute.h"
 
 EXTERN_CVAR (String, playerclass)
 EXTERN_CVAR (String, name)
@@ -564,9 +565,23 @@ IMPLEMENT_CLASS(DPlayerMenu)
 //
 //=============================================================================
 
+// [rc4l] Whether the local player may pick a class, the question every class list in this menu asks.
+static bool LocalPlayerMayUseClass(int classnum)
+{
+	return TEAM_IsClassAllowedForPlayer(classnum, &players[consoleplayer]);
+}
+
 void DPlayerMenu::Init(DMenu *parent, FListMenuDescriptor *desc)
 {
 	FListMenuItem *li;
+
+	// [AK] Make sure that upon opening the player setup menu, whatever class
+	// the player has selected is allowed. If not, find one that is.
+	if (zx::playerclass::ComputeClassNeedsReplacing(players[consoleplayer].userinfo.GetPlayerClassNum(), gameinfo.norandomplayerclass, (int)PlayerClasses.Size(), LocalPlayerMayUseClass))
+	{
+		const int validClass = players[consoleplayer].userinfo.PlayerClassNumChanged(TEAM_FindValidClassForPlayer(&players[consoleplayer]));
+		cvar_set("playerclass", PlayerClasses[validClass].Type->Meta.GetMetaString(APMETA_DisplayName));
+	}
 
 	Super::Init(parent, desc);
 	PickPlayerClass();
@@ -645,13 +660,15 @@ void DPlayerMenu::Init(DMenu *parent, FListMenuDescriptor *desc)
 			// [XA] Remove the "Random" option if the relevant gameinfo flag is set.
 			if(!gameinfo.norandomplayerclass)
 				li->SetString(0, "Random");
+			// [rc4l] Ported from zandronum@469e5f569641f993f402e2604bfcf37b236179aa: only the classes the local player may use are listed.
+			int row = gameinfo.norandomplayerclass ? 0 : 1;
 			for(unsigned i=0; i< PlayerClasses.Size(); i++)
 			{
-				const char *cls = GetPrintableDisplayName(PlayerClasses[i].Type);
-				li->SetString(gameinfo.norandomplayerclass ? i : i+1, cls);
+				if (!LocalPlayerMayUseClass(i))
+					continue;
+				li->SetString(row++, GetPrintableDisplayName(PlayerClasses[i].Type));
 			}
-			int pclass = players[consoleplayer].userinfo.GetPlayerClassNum();
-			li->SetValue(0, gameinfo.norandomplayerclass && pclass >= 0 ? pclass : pclass + 1);
+			li->SetValue(0, zx::playerclass::ComputeMenuRowOfClass(players[consoleplayer].userinfo.GetPlayerClassNum(), gameinfo.norandomplayerclass, (int)PlayerClasses.Size(), LocalPlayerMayUseClass));
 		}
 	}
 
@@ -960,7 +977,10 @@ void DPlayerMenu::ClassChanged (FListMenuItem *li)
 
 	if (li->GetValue(0, &sel))
 	{
-		players[consoleplayer].userinfo.PlayerClassNumChanged(gameinfo.norandomplayerclass ? sel : sel-1);
+		// [rc4l] A row counts only the allowed classes, and one past them changes nothing.
+		const int pick = zx::playerclass::ComputeClassOfMenuRow(sel, gameinfo.norandomplayerclass, (int)PlayerClasses.Size(), LocalPlayerMayUseClass);
+		if (pick != zx::playerclass::NO_CLASS)
+			players[consoleplayer].userinfo.PlayerClassNumChanged(pick);
 		PickPlayerClass();
 
 		cvar_set ("playerclass", sel == 0 && !gameinfo.norandomplayerclass ? "Random" : PlayerClass->Type->Meta.GetMetaString (APMETA_DisplayName));
