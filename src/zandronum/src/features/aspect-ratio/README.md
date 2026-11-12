@@ -6,9 +6,9 @@ the borders and the status bar take the true ratio instead (`ActiveRatio` and th
 in `v_video.cpp`, from UZDoom's continuous-aspect commits), so a bucket decides only what a mode is
 called, which modes the menu lists, and what `vid_aspect` forces.
 
-`computation/ratiobucket_compute` holds the rules: `ComputeRatioBucket` (a size's bucket, 5:4 only
-under `vid_tft`), `ComputeForcedRatioBucket` (`vid_aspect` 1 to 6 and `vid_nowidescreen`) and
-`ComputeRatioIsWidescreen`, and the video mode menu's `ComputeMenuRatioFilter`. 21:9 is Zandronum 3.3's (zandronum@bab77c3aab00); forcing it gives the
+`computation/ratiobucket_compute` holds the rules: `ComputeRatioBucket` (the bucket whose ratio is
+nearest a size's, zandronum@a48630d214dc), `ComputeForcedRatioBucket` (`vid_aspect` 1 to 6 and
+`vid_nowidescreen`), `ComputeRatioIsWidescreen`, and the video mode menu's `ComputeMenuRatioFilter`. 21:9 is Zandronum 3.3's (zandronum@bab77c3aab00); forcing it gives the
 3D view a 21:9 lens through `ActiveRatio`'s table.
 
 ## In-engine hooks

@@ -9,32 +9,35 @@ using namespace zx::aspect;
 
 TEST(RatioBucket, CommonModesFallInTheirBuckets)
 {
-	EXPECT_EQ(0, ComputeRatioBucket(640, 480, false));
-	EXPECT_EQ(1, ComputeRatioBucket(1920, 1080, false));
-	EXPECT_EQ(2, ComputeRatioBucket(1680, 1050, false));
-	EXPECT_EQ(3, ComputeRatioBucket(1360, 800, false));
+	EXPECT_EQ(0, ComputeRatioBucket(640, 480));
+	EXPECT_EQ(1, ComputeRatioBucket(1920, 1080));
+	EXPECT_EQ(2, ComputeRatioBucket(1680, 1050));
+	EXPECT_EQ(3, ComputeRatioBucket(1360, 800));
+	EXPECT_EQ(4, ComputeRatioBucket(1280, 1024));
 }
 
-TEST(RatioBucket, TheTwoOldSixteenTenSizesAreFourThree)
+TEST(RatioBucket, TheOldSixteenTenSizesAreNowSixteenTen)
 {
-	EXPECT_EQ(0, ComputeRatioBucket(320, 200, false));
-	EXPECT_EQ(0, ComputeRatioBucket(640, 400, false));
+	// [rc4l] The nearest ratio has no exceptions, so 320x200 is the 16:10 it measures.
+	EXPECT_EQ(2, ComputeRatioBucket(320, 200));
+	EXPECT_EQ(2, ComputeRatioBucket(640, 400));
 }
 
-TEST(RatioBucket, FiveFourOnlyUnderTft)
+TEST(RatioBucket, EveryShapeTakesTheNearest)
 {
-	EXPECT_EQ(0, ComputeRatioBucket(1280, 1024, false));
-	EXPECT_EQ(4, ComputeRatioBucket(1280, 1024, true));
+	EXPECT_EQ(6, ComputeRatioBucket(2560, 1080));
+	EXPECT_EQ(6, ComputeRatioBucket(3440, 1440));
+	EXPECT_EQ(6, ComputeRatioBucket(1280, 540));
+	// [rc4l] Wider than 21:9, and taller than 5:4, still land on the nearest end.
+	EXPECT_EQ(6, ComputeRatioBucket(5120, 1440));
+	EXPECT_EQ(4, ComputeRatioBucket(768, 1024));
+	// [rc4l] 3:2 sits nearer 16:10 than 4:3.
+	EXPECT_EQ(2, ComputeRatioBucket(1440, 960));
 }
 
-TEST(RatioBucket, UltrawideModesAreTwentyOneNine)
+TEST(RatioBucket, NoHeightIsFourThree)
 {
-	// [rc4l] 64:27 within 30 pixels, so the marketed 3440x1440 counts with the exact 2560x1080.
-	EXPECT_EQ(6, ComputeRatioBucket(2560, 1080, false));
-	EXPECT_EQ(6, ComputeRatioBucket(3440, 1440, false));
-	EXPECT_EQ(6, ComputeRatioBucket(1280, 540, false));
-	// [rc4l] A super-ultrawide 32:9 is none of them, so it stays 4:3 as every unknown shape does.
-	EXPECT_EQ(0, ComputeRatioBucket(5120, 1440, false));
+	EXPECT_EQ(0, ComputeRatioBucket(640, 0));
 }
 
 TEST(RatioBucket, VidAspectForcesItsBucket)

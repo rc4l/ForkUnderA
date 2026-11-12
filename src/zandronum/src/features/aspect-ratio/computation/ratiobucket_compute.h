@@ -8,8 +8,8 @@
 
 namespace zx { namespace aspect {
 
-// [rc4l] The bucket a width and height fall in, 5:4 only under vid_tft; 21:9 is zandronum@bab77c3aab00b84c18fc1fb997af3ef2776d8f07.
-int ComputeRatioBucket(int width, int height, bool tft);
+// [rc4l] The bucket whose ratio is nearest a width and height's (zandronum@a48630d214dc2d2e185bccaa764f7b9a911a1602), 4:3 for no height.
+int ComputeRatioBucket(int width, int height);
 
 // [rc4l] The bucket vid_aspect (1 to 6) or vid_nowidescreen forces, or -1 for none.
 int ComputeForcedRatioBucket(int vidAspect, bool noWidescreen, bool tft, int width, int height);

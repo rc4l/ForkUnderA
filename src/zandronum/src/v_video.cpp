@@ -1823,7 +1823,7 @@ float ActiveRatio(int width, int height, float *trueratio)
 
 int CheckRatio (int width, int height, int *trueratio)
 {
-	const int ratio = zx::aspect::ComputeRatioBucket(width, height, vid_tft);
+	const int ratio = zx::aspect::ComputeRatioBucket(width, height);
 	const int fakeratio = ActiveFakeRatio(width, height);
 
 	if (trueratio != NULL)
