@@ -179,9 +179,10 @@ export class AcsScript {
   }
 }
 
-// [rc4l] A puke judged by the cvar named strings[0]: 1 for running, then 2^(k+1) for each check k, [what, kind, arg, want], whose read[kind](arg) words leave a value other than want.
-export function checksScript(checks, read) {
+// [rc4l] A puke judged by the cvar named strings[0]: 1 for running, then 2^(k+1) for each check k, [what, kind, arg, want], whose read[kind](arg) words leave a value other than want, all read delayTics after it starts.
+export function checksScript(checks, read, { delayTics = 0 } = {}) {
   const s = new AcsScript().emit(...addToCVar(0, 1));
+  if (delayTics) s.emit(PCD.DELAYDIRECT, delayTics);
   checks.forEach(([, kind, arg, want], k) => {
     s.emit(...read[kind](arg), PCD.PUSHNUMBER, want, PCD.EQ).jump(PCD.IFGOTO, `ok${k}`).emit(...addToCVar(0, 2 ** (k + 1))).label(`ok${k}`);
   });

@@ -3,7 +3,7 @@
 // usage:  node scenarios/tagmanager.mjs
 import { UdmfMap, wad, mapLumps, hexenMapLumps, pk3 } from "../src/udmf.mjs";
 import { acsScripts, callFunc, checksScript, checksCounter, ACSF, PCD } from "../src/acs.mjs";
-import { THING } from "../src/doomnums.mjs";
+import { THING, SPECIAL } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareCounter, MUTE } from "../src/template.mjs";
 
 export const COUNTER_CVAR = "zx_tagmanager_wrong";
@@ -12,11 +12,16 @@ const WALL = { texturemiddle: "STARTAN2" };
 const PLAYER = { x: 960, y: 448 };
 // [rc4l] Activation bits as lines[].activation holds them (SPAC_*), one per line under test so a wrong line reads as a wrong value.
 export const SPAC = { Cross: 1, Use: 2, Impact: 8, Push: 16 };
-const LINE_SET_IDENTIFICATION = 121;
+const FIXED = 65536;
 
 // [rc4l] The column standing in MAP01's untagged sector, which ThingCountSector and ThingCountNameSector find with tag 0.
 export const COLUMN = { x: 160, y: 160, tid: 11, type: THING.TallGreenColumn, name: "TallGreenColumn" };
 const STRINGS = [COUNTER_CVAR, COLUMN.name];
+// [rc4l] MAP05's barrels by tid and starting x, one in the scroller's tagged sector and one in the untagged sector that copies it.
+export const BARRELS = { 12: { x: 160, y: 160 }, 13: { x: 608, y: 160 } };
+// [rc4l] How far east a carried barrel must be after MAP05's wait, and the tag the copy line names.
+const CARRIED = 16, SCROLL_TAG = 9;
+export const CARRY_TICS = 35;
 
 // [rc4l] The words that leave each kind of check's value on the stack: a sector's light by tag, a line's activation by ID, or a count of the column by tid or class in sectors of a tag.
 export const READ = {
@@ -24,6 +29,7 @@ export const READ = {
   line: (id) => callFunc(ACSF.GetLineActivation, [id]),
   count: (tag) => [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, COLUMN.tid, PCD.PUSHNUMBER, tag, PCD.THINGCOUNTSECTOR],
   countname: (tag) => [PCD.PUSHNUMBER, STRINGS.indexOf(COLUMN.name), PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, tag, PCD.THINGCOUNTNAMESECTOR],
+  carried: (tid) => [PCD.PUSHNUMBER, tid, PCD.GETACTORX, PCD.PUSHNUMBER, (BARRELS[tid].x + CARRIED) * FIXED, PCD.GE],
 };
 
 // [rc4l] Each map's checks as [what, kind, tag or ID, expected], read as READ[kind] does.
@@ -51,7 +57,14 @@ export const CHECKS = {
   MAP03: [],
   // [rc4l] A sector with no lines past the last tagged one, outside the tag list until zandronum@58b963341e90 checked its size.
   MAP04: [["the tagged sector before it", "sector", 3, 160]],
+  // [rc4l] A floor scroller that carries, and an untagged sector copying it, which zandronum@6fe64e17fb1e stopped refusing.
+  MAP05: [
+    ["the scroller carries its tagged sector's barrel", "carried", 12, 1],
+    ["Sector_CopyScroller gives an untagged sector the scroller (zandronum@6fe64e17fb1e)", "carried", 13, 1],
+  ],
 };
+// [rc4l] The maps whose checks wait for the level to act first.
+const DELAY = { MAP05: CARRY_TICS };
 
 function room(m, props, walls) {
   return m.room(0, 0, 1024, 512, { ...ROOM, ...props }, (edge) => ({ side: WALL, line: walls[edge] || {} }));
@@ -75,7 +88,7 @@ export function buildMoreIdsMap() {
 // [rc4l] Line 1, the north wall, sets its ID and is the only one used by pressing.
 export function buildHexenMap() {
   const m = new UdmfMap();
-  room(m, { id: 3, lightlevel: 160 }, { north: { special: LINE_SET_IDENTIFICATION, arg0: 7, arg4: 1, playeruse: true } });
+  room(m, { id: 3, lightlevel: 160 }, { north: { special: SPECIAL.Line_SetIdentification, arg0: 7, arg4: 1, playeruse: true } });
   playerStart(m);
   return m;
 }
@@ -89,10 +102,23 @@ export function buildLinelessMap(tagged) {
   return m;
 }
 
-const MAPS = { MAP01: buildMoreIdsMap, MAP02: buildHexenMap, MAP03: () => buildLinelessMap(false), MAP04: () => buildLinelessMap(true) };
+// [rc4l] The south wall's Scroll_Floor carries east in the tagged block, and the untagged block's west line copies it for carrying (arg1 bit 4).
+export function buildCopyScrollerMap() {
+  const m = new UdmfMap();
+  const outer = room(m, { lightlevel: 160 }, { south: { special: SPECIAL.Scroll_Floor, arg0: SCROLL_TAG, arg2: 1, arg3: 192, arg4: 128 } });
+  m.block(64, 64, 256, 256, { ...ROOM, id: SCROLL_TAG, lightlevel: 160 }, outer);
+  m.block(512, 64, 704, 256, { ...ROOM, lightlevel: 160 }, outer, () => ({}), () => ({}),
+    (edge) => (edge === "west" ? { special: SPECIAL.Sector_CopyScroller, arg0: SCROLL_TAG, arg1: 4 } : {}));
+  for (const [tid, at] of Object.entries(BARRELS)) m.thing({ ...at, angle: 0, type: THING.ExplosiveBarrel, id: Number(tid) });
+  playerStart(m);
+  return m;
+}
+
+const MAPS = { MAP01: buildMoreIdsMap, MAP02: buildHexenMap, MAP03: () => buildLinelessMap(false), MAP04: () => buildLinelessMap(true),
+  MAP05: buildCopyScrollerMap };
 
 export function buildTagManagerPk3() {
-  const behavior = (map) => acsScripts([{ code: checksScript(CHECKS[map], READ), open: false, number: 1 }], STRINGS);
+  const behavior = (map) => acsScripts([{ code: checksScript(CHECKS[map], READ, { delayTics: DELAY[map] || 0 }), open: false, number: 1 }], STRINGS);
   const lumps = (map) => (map === "MAP02" ? hexenMapLumps(map, MAPS[map](), { behavior: behavior(map) })
     : mapLumps(map, MAPS[map](), { behavior: behavior(map) }));
   return pk3([
@@ -106,4 +132,4 @@ export const COUNTER = checksCounter(COUNTER_CVAR, (map) => CHECKS[map]);
 
 runScenarioIfMain(import.meta.url, () => ({ name: "tagmanager", wad: buildTagManagerPk3(), maps: Object.keys(MAPS),
   vantages: [{ name: "east", at: { ...PLAYER, z: 0, angle: 180, pitch: 0 } }], counter: COUNTER,
-  sides: [{ name: "tags", launchCvars: { ...MUTE }, commands: ["puke 1"] }] }), compareCounter);
+  sides: [{ name: "tags", launchCvars: { ...MUTE }, commands: ["puke 1"] }], holdTics: 2 * CARRY_TICS }), compareCounter);

@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, CHECKS, COUNTER, READ, COLUMN } from "../scenarios/tagmanager.mjs";
+import { buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, buildCopyScrollerMap, BARRELS, CHECKS, COUNTER, READ, COLUMN } from "../scenarios/tagmanager.mjs";
 import { judgeCounter } from "../src/template.mjs";
 import { readPk3, readWad, parseUdmf } from "../src/udmf.mjs";
 import { binaryMap } from "../src/mapdata.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
+import { THING, SPECIAL } from "../src/doomnums.mjs";
 
 test("each kind of check reads a sector's light by tag, a line's activation by ID, or the column counted by tid or class", () => {
   assert.deepEqual(READ.sector(5), [PCD.PUSHNUMBER, 5, PCD.GETSECTORLIGHTLEVEL]);
@@ -48,4 +49,16 @@ test("the line-less maps have a sector no side faces, tagged or not", () => {
     assert.ok(m.sides.every((s) => s.sector === 0));
     assert.equal(m.sectors[0].id, tagged ? 3 : undefined);
   }
+});
+
+test("the copy-scroller map scrolls the tagged block and copies it to the untagged one, a barrel in each", () => {
+  const u = parseUdmf(buildCopyScrollerMap().textmap());
+  const scroller = u.linedef.find((l) => l.special === SPECIAL.Scroll_Floor);
+  assert.deepEqual([scroller.arg0, scroller.arg2, scroller.arg3], [9, 1, 192]);
+  assert.equal(u.sector.filter((s) => s.id === 9).length, 1);
+  const copy = u.linedef.find((l) => l.special === SPECIAL.Sector_CopyScroller);
+  assert.deepEqual([copy.arg0, copy.arg1], [9, 4]);
+  assert.equal(u.sector[u.sidedef[copy.sidefront].sector].id, undefined);
+  assert.deepEqual(u.thing.filter((t) => t.type === THING.ExplosiveBarrel).map((t) => [t.id, t.x]), Object.entries(BARRELS).map(([tid, at]) => [Number(tid), at.x]));
+  assert.deepEqual(READ.carried(13), [PCD.PUSHNUMBER, 13, PCD.GETACTORX, PCD.PUSHNUMBER, (608 + 16) * 65536, PCD.GE]);
 });

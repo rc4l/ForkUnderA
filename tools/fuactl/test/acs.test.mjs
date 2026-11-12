@@ -187,6 +187,7 @@ test("a checks puke counts 1 for running and adds each failing check's own bit, 
   assert.ok(at(addToCVar(0, 2)) >= 0 && at(addToCVar(0, 4)) >= 0);
   assert.equal(words.at(-1), PCD.TERMINATE);
   assert.deepEqual(checksScript([], read), [...addToCVar(0, 1), PCD.TERMINATE]);
+  assert.deepEqual(checksScript([], read, { delayTics: 35 }), [...addToCVar(0, 1), PCD.DELAYDIRECT, 35, PCD.TERMINATE]);
 });
 
 test("a checks counter passes at 1 and names the failing checks, or the puke that never ran", () => {
