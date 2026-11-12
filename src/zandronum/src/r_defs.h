@@ -813,12 +813,6 @@ struct sector_t : SectorReads<sector_t>
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
-	bool HasTag(int checktag) const;
-	bool HasTags() const;
-	void SetMainTag(int tagnum);
-	int GetMainTag() const;
-	void ClearTags();
-	static void HashTags();
 
 	bool PlaneMoving(int pos);
 
@@ -846,11 +840,8 @@ struct sector_t : SectorReads<sector_t>
 	TObjPtr<AActor> SoundTarget;
 
 	short		special;
-	short		tag;
 	short		lightlevel;
 	short		seqType;		// this sector's sound sequence
-
-	int			nexttag,firsttag;	// killough 1/30/98: improves searches for tags.
 
 	int			sky;
 	FNameNoInit	SeqName;		// Sound sequence name. Setting seqType non-negative will override this.

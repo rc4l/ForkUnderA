@@ -399,9 +399,14 @@ void P_SerializeWorld (FArchive &arc)
 		arc << sec->floorplane
 			<< sec->ceilingplane;
 		arc << sec->lightlevel;
-		arc << sec->special
-			<< sec->tag
-			<< sec->soundtraversed
+		arc << sec->special;
+		// [rc4l] Ported from zandronum@a17262422dfc, whose 4523 is our 4530: tags live in the tag manager now, rebuilt from the map.
+		if (SaveVersion < 4530)
+		{
+			short tag;
+			arc << tag;
+		}
+		arc	<< sec->soundtraversed
 			<< sec->seqType
 			<< sec->friction
 			<< sec->movefactor

@@ -181,7 +181,9 @@ int GetRevisionNumber();
 // did not bump); older saves read it as a byte, guarded in player_t::Serialize.
 // [rc4l] 4529: APlayerPawn serializes RejumpDelay (zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which did not bump), guarded in
 // APlayerPawn::Serialize.
-#define SAVEVER 4529
+// [rc4l] 4530: sectors no longer save their tag, which the tag manager rebuilds from the map (zandronum@a17262422dfc, its 4523);
+// older saves skip it in P_SerializeWorld.
+#define SAVEVER 4530
 
 
 #define SAVEVERSTRINGIFY2(x) #x

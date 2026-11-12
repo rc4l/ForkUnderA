@@ -291,7 +291,7 @@ static AActor *SelectTeleDest (int tid, int tag, bool norandom)
 		int count = 0;
 		while ( (searcher = iterator.Next ()) )
 		{
-			if (tag == 0 || searcher->Sector->HasTag(tag))
+			if (tag == 0 || tagManager.SectorHasTag(searcher->Sector, tag))
 			{
 				count++;
 			}
@@ -330,7 +330,7 @@ static AActor *SelectTeleDest (int tid, int tag, bool norandom)
 			while (count > 0)
 			{
 				searcher = iterator.Next ();
-				if (tag == 0 || searcher->Sector->HasTag(tag))
+				if (tag == 0 || tagManager.SectorHasTag(searcher->Sector, tag))
 				{
 					count--;
 				}

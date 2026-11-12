@@ -4063,7 +4063,7 @@ do_count:
 				if ( actor->player && (actor->player->bSpectating || actor->player->bDeadSpectator) )
 					continue;
 
-				if (actor->Sector->HasTag(tag) || tag == -1)
+				if (tag == -1 || tagManager.SectorHasTag(actor->Sector, tag))
 				{
 					// Don't count items in somebody's inventory
 					if (!actor->IsKindOf (RUNTIME_CLASS(AInventory)) ||
@@ -4089,7 +4089,7 @@ do_count:
 				if ( actor->player && (actor->player->bSpectating || actor->player->bDeadSpectator) )
 					continue;
 
-				if (actor->Sector->HasTag(tag) || tag == -1)
+				if (tag == -1 || tagManager.SectorHasTag(actor->Sector, tag))
 				{
 					// Don't count items in somebody's inventory
 					if (!actor->IsKindOf (RUNTIME_CLASS(AInventory)) ||
