@@ -29,6 +29,7 @@
 #include "deathmatch.h"
 #include "possession.h"
 #include "sv_commands.h"
+#include "features/net-session/netrole.h"   // [rc4l] zx::net::IsServer
 
 static FRandom pr_torch ("Torch");
 
@@ -2228,7 +2229,7 @@ void APowerRespawnInvulnerable::InitEffect ()
 	// [rc4l] Ported from zandronum@2ddec4cfc2f97c6191048b6438d5db9eb51af0da: the server leaves respawn invulnerability's look to clients.
 	// [AK] Make sure the owner is valid. The server doesn't handle respawn
 	// invulnerability effects either.
-	if ((NETWORK_GetState() == NETSTATE_SERVER) || (Owner == nullptr))
+	if (zx::net::IsServer() || (Owner == nullptr))
 		return;
 
 	// Apply respawn invulnerability effect.

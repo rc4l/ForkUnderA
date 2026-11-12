@@ -58,7 +58,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `computation/mapstate_compute.{h,cpp}` (the families, what changed, what a compact send covered) with its
   `_test.cpp`.
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
-- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`).
+- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`, `SendFloorClip`).
 - `playerstate.{h,cpp}` (`SendUserCVar`).
 
 ## In-engine hooks
@@ -66,6 +66,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
 - `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
 - `p_acs.cpp` `SetUserCVar`: `SendUserCVar` when a server script changed the cvar's value.
+- `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
 - `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between
   `SERVER_UpdateLines` and `SERVER_UpdateSectors`, which keep only the families not here.
 - Touches in `p_acs.cpp`, `p_ceiling.cpp`, `p_doors.cpp`, `p_floor.cpp`, `p_lnspec.cpp`, `p_plats.cpp`,

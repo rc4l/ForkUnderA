@@ -84,6 +84,7 @@
 #include "cl_main.h"
 #include "features/net-client/computation/movedrain_compute.h"
 #include "features/net-session/netrole.h"
+#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip
 #include "cooperative.h"
 #include "invasion.h"
 #include "st_hud.h"
@@ -7249,7 +7250,7 @@ foundone:
 
 				// [RK] Update the clients about the floorclip change if we need to.
 				if (oldFloorclip != mo->floorclip)
-					SERVERCOMMANDS_SetThingFloorClip (mo);
+					zx::netreplication::SendFloorClip (mo);
 			}
 		}
 	}

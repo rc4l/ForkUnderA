@@ -34,4 +34,9 @@ void SendWoundedHealth()
 	g_wounded.clear();
 }
 
+void SendFloorClip(AActor *actor)
+{
+	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingFloorClip(actor);
+}
+
 }} // namespace zx::netreplication

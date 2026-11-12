@@ -16,6 +16,9 @@ void NoteDamaged(AActor *target);
 // [rc4l] Each actor wounded this tic and still alive sends its health once, from SendChanges.
 void SendWoundedHealth();
 
+// [rc4l] An actor whose floorclip changed after its spawn went out, on a server: the clip to every client (SVC2_SETTHINGFLOORCLIP).
+void SendFloorClip(AActor *actor);
+
 }} // namespace zx::netreplication
 
 #endif // ZX_ACTORSTATE_H

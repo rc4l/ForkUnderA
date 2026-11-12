@@ -3691,7 +3691,7 @@ void DACSThinker::Tick ()
 	// that this command isn't sent out too frequently, or else mods can
 	// get clients kicked for flooding the server.
 	// [rc4l] Ported from zandronum@02962ee6283e5ce454ad1059d68c7a5bb8427590: a client sends the userinfo its scripts changed, held back while it would flood.
-	if (NETWORK_GetState() == NETSTATE_CLIENT && userInfoChanges.size() > 0)
+	if (zx::net::IsClient() && userInfoChanges.size() > 0)
 	{
 		if (SERVER_CheckTimeInstancesBufferForFlood(userInfoBroadcastInstances, false) == false)
 		{
@@ -6046,7 +6046,7 @@ static int SetUserCVar(int playernum, const char *cvarname, int value, bool is_s
 
 			// [AK] If we're a client, save this change so it can be sent out to the server later.
 			// [rc4l] Ported from zandronum@02962ee6283e5ce454ad1059d68c7a5bb8427590: a client keeps the change for its ACS thinker to send.
-			if (NETWORK_GetState() == NETSTATE_CLIENT && DACSThinker::ActiveThinker != nullptr)
+			if (zx::net::IsClient() && DACSThinker::ActiveThinker != nullptr)
 				DACSThinker::ActiveThinker->userInfoChanges.insert(FName(cvar->GetName()));
 		}
 	}
@@ -12140,7 +12140,7 @@ scriptwait:
 					}
 					// [BB] If the activator is a player, tell the clients about the changed capacity.
 					// [BB] Only bother the clients if MaxAmount has actually changed.
-					if (activator->player && NETWORK_GetState() == NETSTATE_SERVER)
+					if (activator->player && zx::net::IsServer())
 					{
 						// [rc4l] Ported from zandronum@9d03d58bde7075cb320c28c206783bd437495413: no capacity to send when the ammo could not be given.
 						if (item != nullptr && oldMaxAmount != item->MaxAmount)
