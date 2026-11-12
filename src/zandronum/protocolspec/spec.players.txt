@@ -11,7 +11,9 @@ Command SpawnPlayer
 	Fixed x
 	Fixed y
 	Fixed z
-	Byte playerClass
+	# [AK] It's possible that a class's index is larger than what a byte can hold, so use an unsigned short.
+	# [rc4l] Ported from zandronum@51c804da8b73f39759d9f89da4141ba38ce7e22d; spawnplayer_wire_nettest.cpp holds its layout.
+	UShort playerClass
 
 	If (isMorphed)
 		Short morphStyle
