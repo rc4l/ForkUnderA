@@ -201,6 +201,12 @@ TEST(MarkRules, AForceDecalPuffMarksInPlaceOfItsShooterOnlyWithADecalOfItsOwn)
 	EXPECT_FALSE(ComputeMarksWithPuff(true, true, false));
 }
 
+TEST(MarkRules, AClientsRailRetraceRunsPastTheServersEnd)
+{
+	EXPECT_DOUBLE_EQ(ComputeRailRetraceDistance(100.0), 116.0);
+	EXPECT_GT(ComputeRailRetraceDistance(0.0), 0.0);
+}
+
 TEST(MarkRules, AGroupsChoiceDrawsTheGameStreamOnlyWhereShippedBuildsDid)
 {
 	EXPECT_TRUE(ComputeChoiceFromGameStream(kSourceBlood, kSurfaceWall));

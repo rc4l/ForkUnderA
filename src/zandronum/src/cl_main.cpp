@@ -7052,6 +7052,10 @@ void ServerCommands::WeaponRailgun::Execute()
 
 	angle_t angle = source->angle + angleoffset;
 	P_DrawRailTrail( source, start, end, color1, color2, maxdiff, flags, spawnclass, angle, duration, sparsity, drift );
+
+	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: a rail this client did not predict marks where it stopped.
+	if ( hitSurface )
+		zx::decals::MarkRailEnd( source, start, end, usePuffDecal ? puffClass : NULL );
 }
 
 //*****************************************************************************

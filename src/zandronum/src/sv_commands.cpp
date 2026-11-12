@@ -3061,7 +3061,7 @@ void SERVERCOMMANDS_WeaponChange( ULONG ulPlayer, ULONG ulPlayerExtra, ServerCom
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const FVector3 &end, LONG color1, LONG color2, float maxdiff, int railflags, angle_t angleoffset, const PClass* spawnclass, int duration, float sparsity, float drift, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const FVector3 &end, LONG color1, LONG color2, float maxdiff, int railflags, angle_t angleoffset, const PClass* spawnclass, int duration, float sparsity, float drift, bool hitSurface, const PClass *puffClass, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	// Evidently, to draw a railgun trail, there must be a source actor.
 	if ( !EnsureActorHasNetID (source) )
@@ -3080,6 +3080,10 @@ void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const 
 	command.SetSparsity( sparsity );
 	command.SetDrift( drift );
 	command.SetFlags( railflags );
+	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: where the rail stopped and, when its puff marks, the puff's class.
+	command.SetHitSurface( hitSurface );
+	command.SetUsePuffDecal( puffClass != nullptr );
+	command.SetPuffClass( puffClass );
 
 	// [TP] Recent ZDoom versions have added more railgun parameters. Add these parameters to the command
 	// only if they're not at defaults.

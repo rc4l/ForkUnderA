@@ -183,7 +183,7 @@
 143 SVC_MISSILEEXPLODE                     : Actor Short AproxFixed AproxFixed AproxFixed
 144 SVC_WEAPONSOUND                        : Player String
 145 SVC_WEAPONCHANGE                       : Player Class<AWeapon>
-146 SVC_WEAPONRAILGUN                      : Actor Vector3 Vector3 Long Long Float ShortByte<7> Bool Long?{extended} Class?{extended} Short?{extended} Float?{extended} Float?{extended}
+146 SVC_WEAPONRAILGUN                      : Actor Vector3 Vector3 Long Long Float ShortByte<5> Bool Bool Bool Long?{extended} Class?{extended} Short?{extended} Float?{extended} Float?{extended} Class?{usePuffDecal}
  32 SVC2_SETWEAPONZOOMFACTOR               [Extended] : Player Float Byte
 147 SVC_ACSSCRIPTEXECUTE                   : Short Actor Short Byte Variable Variable Variable Variable Bool Bool
  33 SVC2_ACSSENDSTRING                     [Extended] : Short Actor String

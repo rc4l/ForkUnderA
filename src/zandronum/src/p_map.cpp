@@ -5458,6 +5458,8 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	// wherever the puff does, judged by features/decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
 	const RailEndpointSpawn railEnd = ComputeRailEndpointSpawn(trace.HitType);
 	AActor *endPuff = NULL;
+	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: the puff whose decal a client that did not predict the rail marks with.
+	const PClass *decalPuffClass = NULL;
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
 		// [rc4l] Ported from qzandronum@d33dacfb1ca1dfa3eef1989b1e5c6d5f8443ddce: pull the endpoint puff
@@ -5476,6 +5478,8 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		// [rc4l] Ported from zandronum@deffd2fbd79203c4237bd511a2a97ff3626e699c: a FORCEDECAL puff with a decal of its own marks the surface in place of the shooter's weapon.
 		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, decalPuff != NULL, decalPuff != NULL && decalPuff->DecalGenerator != NULL);
 		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail, puffMarks ? decalPuff : NULL);
+		// [rc4l] The spawned puff's class, never the stand-in's, since a class's default actor has no class of its own to ask (netrailpuff crashed a client so).
+		if (puffMarks && decalPuff == endPuff) decalPuffClass = endPuff->GetClass();
 	}
 	// [rc4l] Ported from zandronum@2e629a9b7b960b49e722e8f183f57ba43c27e9c3: a wall puff on a horizon line went into the sky too.
 	// [rc4l] Ported from zandronum@26d900809dfc306df34373129d97a3d6099b7c3e: a hit with no line is no horizon.
@@ -5515,7 +5519,7 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	{
 		const ULONG ulPlayer = source->player ? static_cast<ULONG> ( source->player - players ) : MAXPLAYERS;
 		SERVERCOMMANDS_WeaponRailgun( source, start, end, color1, color2, maxdiff, railflags,
-			angleoffset, spawnclass, duration, sparsity, drift, ulPlayer,
+			angleoffset, spawnclass, duration, sparsity, drift, railEnd.decal, decalPuffClass, ulPlayer,
 			UNLAGGED_DrawRailClientside( source ) ? SVCF_SKIPTHISCLIENT : ServerCommandFlags( 0 ) );
 	}
 }

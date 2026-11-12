@@ -297,6 +297,20 @@ void MarkShot (AActor *shooter, const FTraceResults &trace, int source, AActor *
 	Maker::Mark (h, GeneratorOf (decalFrom != NULL ? decalFrom : shooter), request, 0);
 }
 
+void MarkRailEnd (AActor *shooter, const FVector3 &start, const FVector3 &end, const PClass *puffClass)
+{
+	if (shooter == NULL) return;
+	const FVector3 travel = end - start;
+	const double length = travel.Length ();
+	if (length <= 0) return;
+	const FVector3 dir = travel / float (length);
+	const fixed_t x = FLOAT2FIXED (start.X), y = FLOAT2FIXED (start.Y);
+	FTraceResults trace;
+	if (!Trace (x, y, FLOAT2FIXED (start.Z), P_PointInSector (x, y), FLOAT2FIXED (dir.X), FLOAT2FIXED (dir.Y), FLOAT2FIXED (dir.Z),
+		FLOAT2FIXED (ComputeRailRetraceDistance (length)), 0, ML_BLOCKEVERYTHING, shooter, trace)) return;
+	MarkShot (shooter, trace, kSourceRail, puffClass != NULL ? GetDefaultByType (puffClass) : NULL);
+}
+
 void MarkMissile (AActor *mo, line_t *line, AActor *target, fixed_t velx, fixed_t vely, fixed_t velz)
 {
 	const MarkRequest request = { kSourceMissile, false };

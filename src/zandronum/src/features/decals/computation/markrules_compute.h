@@ -65,6 +65,9 @@ bool ComputeChoiceFromGameStream(int source, int kind);
 // [rc4l] Whether a shot's puff marks the surface in place of its shooter: the puff is FORCEDECAL, was spawned and has a decal of its own.
 bool ComputeMarksWithPuff(bool forceDecal, bool puffSpawned, bool puffHasDecal);
 
+// [rc4l] How far a client retraces a rail its server drew, a little past the server's end so the retrace reaches the surface the rail stopped on.
+double ComputeRailRetraceDistance(double length);
+
 }} // namespace zx::decals
 
 #endif // ZX_MARKRULES_COMPUTE_H

@@ -90,4 +90,9 @@ bool ComputeMarksWithPuff(bool forceDecal, bool puffSpawned, bool puffHasDecal)
 	return forceDecal && puffSpawned && puffHasDecal;
 }
 
+double ComputeRailRetraceDistance(double length)
+{
+	return length + 16.0;
+}
+
 }} // namespace zx::decals
