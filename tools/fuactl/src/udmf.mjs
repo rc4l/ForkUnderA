@@ -178,6 +178,15 @@ export function readWad(buf) {
   return out;
 }
 
+// [rc4l] The core TEAMINFO's colours for the teams a template declares.
+export const CORE_TEAMS = { Blue: { color: "00 00 BF", text: "Blue" }, Red: { color: "BF 00 00", text: "Red" } };
+
+// [rc4l] A teaminfo.txt that clears the core teams and declares each team `lines` names, with its colours, its items and the lines given for it.
+export function teamInfo(lines) {
+  const team = (name) => `Team "${name}"\n{\n  PlayerColor "${CORE_TEAMS[name].color}"\n  TextColor "${CORE_TEAMS[name].text}"\n  FlagItem "${name}Flag"\n  SkullItem "${name}SkullST"\n${lines[name].map((l) => `  ${l}\n`).join("")}}\n`;
+  return `ClearTeams\n\n${Object.keys(lines).map(team).join("\n")}`;
+}
+
 // [rc4l] A pk3 from files by path ({ name, data }), stored rather than deflated: what MODELDEF needs, since it finds a model by full path and a wad's lumps have none.
 // [Doruk-Aksoy] { deflate: true } compresses every file as most mods ship theirs, which the engine then inflates whole to read.
 export function pk3(files, { deflate = false } = {}) {

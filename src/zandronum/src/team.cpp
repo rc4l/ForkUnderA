@@ -80,6 +80,7 @@
 #include "templates.h"
 #include "d_event.h"
 #include "computation/intermissiontheme_compute.h"	// [rc4l] ComputeIntermissionThemeOrder
+#include "computation/skulltagscore_compute.h"	// [rc4l] ComputeAssistPlayer
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -1317,7 +1318,8 @@ void TEAM_SetAssistPlayer( ULONG ulTeamIdx, ULONG ulPlayer )
 	if (( TEAM_CheckIfValid( ulTeamIdx ) == false ) || ( ulPlayer > MAXPLAYERS ))
 		return;
 
-	teams[ulTeamIdx].g_ulAssistPlayer = ulPlayer;
+	// [rc4l] Adapted from zandronum@00538ee632fb3600ad00aad4ed454f1be2b1e76a: refusing the whole call also refused the reset to nobody, leaving an unset assister.
+	teams[ulTeamIdx].g_ulAssistPlayer = zx::ComputeAssistPlayer( ulPlayer, MAXPLAYERS, skulltag, sv_requireskulltoscore );
 }
 
 //*****************************************************************************

@@ -1,8 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UdmfMap, wad, mapLumps, readWad, parseUdmf, pk3, readPk3 } from "../src/udmf.mjs";
+import { UdmfMap, wad, mapLumps, readWad, parseUdmf, pk3, readPk3, teamInfo } from "../src/udmf.mjs";
 import { THING, SPECIAL } from "../src/doomnums.mjs";
 import { PCD } from "../src/acs.mjs";
+
+test("teamInfo clears the core teams and declares each named one with its items and own lines", () => {
+  assert.equal(teamInfo({ Blue: ["PlayerStartThingNumber 9"], Red: [] }),
+    'ClearTeams\n\nTeam "Blue"\n{\n  PlayerColor "00 00 BF"\n  TextColor "Blue"\n  FlagItem "BlueFlag"\n  SkullItem "BlueSkullST"\n  PlayerStartThingNumber 9\n}\n\n'
+    + 'Team "Red"\n{\n  PlayerColor "BF 00 00"\n  TextColor "Red"\n  FlagItem "RedFlag"\n  SkullItem "RedSkullST"\n}\n');
+});
 import { buildHorizonWad } from "../scenarios/horizon.mjs";
 import { buildPointlightWad, VANTAGES } from "../scenarios/pointlight.mjs";
 

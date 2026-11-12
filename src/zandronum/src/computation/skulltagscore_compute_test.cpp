@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 using zx::ComputeScoresSkulltagPoint;
+using zx::ComputeAssistPlayer;
 
 TEST(SkulltagScore, ACarrierScoresWhileItsOwnSkullIsHome)
 {
@@ -17,4 +18,17 @@ TEST(SkulltagScore, ATakenSkullStopsTheScoreOnlyWhenTheServerRequiresIt)
 {
 	EXPECT_FALSE(ComputeScoresSkulltagPoint(true, true));
 	EXPECT_TRUE(ComputeScoresSkulltagPoint(false, true));
+}
+
+TEST(SkulltagScore, AnAssistGoesToItsPlayerOutsideSkulltagOrWithTheHomeSkullRequired)
+{
+	EXPECT_EQ(ComputeAssistPlayer(3, 64, false, false), 3u);
+	EXPECT_EQ(ComputeAssistPlayer(3, 64, false, true), 3u);
+	EXPECT_EQ(ComputeAssistPlayer(3, 64, true, true), 3u);
+}
+
+TEST(SkulltagScore, SkulltagWithoutTheHomeSkullGivesNobodyAndStillClears)
+{
+	EXPECT_EQ(ComputeAssistPlayer(3, 64, true, false), 64u);
+	EXPECT_EQ(ComputeAssistPlayer(64, 64, true, false), 64u);
 }

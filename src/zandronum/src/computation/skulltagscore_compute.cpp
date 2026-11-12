@@ -10,4 +10,9 @@ bool ComputeScoresSkulltagPoint(bool requireSkullToScore, bool ownSkullTaken)
 	return !requireSkullToScore || !ownSkullTaken;
 }
 
+unsigned int ComputeAssistPlayer(unsigned int player, unsigned int nobody, bool skulltag, bool requireSkullToScore)
+{
+	return (skulltag && !requireSkullToScore) ? nobody : player;
+}
+
 } // namespace zx

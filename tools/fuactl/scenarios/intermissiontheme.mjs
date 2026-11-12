@@ -2,7 +2,7 @@
 //
 // usage:  node scenarios/intermissiontheme.mjs
 import { Buffer } from "node:buffer";
-import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
+import { UdmfMap, wad, mapLumps, pk3, teamInfo } from "../src/udmf.mjs";
 import { SPECIAL } from "../src/doomnums.mjs";
 import { acsScripts, ACSF, PCD, SCRIPT, callSpecial } from "../src/acs.mjs";
 import { runScenarioIfMain, compareEachLaunch } from "../src/template.mjs";
@@ -18,8 +18,7 @@ export const STRINGS = ["orders", " "];
 export const MAPINFO = `map MAP01 "Theme"\n{\n  next = "MAP02"\n  winnermusic = "${MAP_WIN.name}", ${MAP_WIN.order}\n}\n\nmap MAP02 "After"\n{\n}\n`;
 
 // [rc4l] Blue and Red as the core TEAMINFO has them less their team starts, which a deathmatch start stands in for, Blue's themes written each way TEAMINFO takes a track.
-const team = (name, color, text, themes) => `Team "${name}"\n{\n  PlayerColor "${color}"\n  TextColor "${text}"\n  FlagItem "${name}Flag"\n  SkullItem "${name}SkullST"\n${themes}}\n`;
-export const TEAMINFO = `ClearTeams\n\n${team("Blue", "00 00 BF", "Blue", `  WinnerTheme "${TEAM_WIN.name}:${TEAM_WIN.order}"\n  LoserTheme "${TEAM_LOSE.name}" ${TEAM_LOSE.order}\n`)}\n${team("Red", "BF 00 00", "Red", "")}`;
+export const TEAMINFO = teamInfo({ Blue: [`WinnerTheme "${TEAM_WIN.name}:${TEAM_WIN.order}"`, `LoserTheme "${TEAM_LOSE.name}" ${TEAM_LOSE.order}`], Red: [] });
 
 // [rc4l] Script 1 logs "orders" and Blue's and Red's winner and loser theme tracks; script 2 ends the level.
 export function buildScript() {
