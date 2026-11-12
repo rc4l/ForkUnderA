@@ -154,6 +154,10 @@ test("seed and map reach the command line, and a client connects instead of load
   const client = engineArgs({ connect: "127.0.0.1:10666" }, "x.ini");
   assert.equal(client[client.indexOf("+connect") + 1], "127.0.0.1:10666");
   assert.equal(client.includes("+map"), false, "a joining client must not also load a local map");
+
+  const recorder = engineArgs({ connect: "127.0.0.1:10666", connectArg: true }, "x.ini");
+  assert.equal(recorder[recorder.indexOf("-connect") + 1], "127.0.0.1:10666");
+  assert.equal(recorder.includes("+connect") || recorder.includes("+map"), false, "a client connecting on its command line neither types connect nor loads a map");
 });
 
 test("cvars are set BEFORE the map loads, not after it", () => {

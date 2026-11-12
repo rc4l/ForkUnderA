@@ -50,7 +50,7 @@ bool BROWSER_GetServerRegistryStatus( unsigned int, std::string &, int &, zx::Re
 // [rc4l] The account handshake, which needs a server to shake hands with.
 void CLIENT_FuaAuthReset( void ) {}
 void CLIENT_FuaAuthWriteHello( BYTESTREAM_s * ) {}
-bool CLIENT_FuaAuthReadChallenge( BYTESTREAM_s * ) { return false; }
+bool CLIENT_FuaAuthReadChallenge( BYTESTREAM_s *, bool ) { return false; }
 void CLIENT_FuaAuthWriteProof( BYTESTREAM_s * ) {}
 bool SERVER_FuaAuthReadHello( ULONG, BYTESTREAM_s * ) { return false; }
 void SERVER_FuaAuthWriteChallenge( ULONG, BYTESTREAM_s * ) {}

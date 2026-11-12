@@ -62,6 +62,9 @@ enum ProofVerdict
 
 ProofVerdict ProofReadiness(bool hasStoredChallenge, size_t accountKeyLength, size_t signatureLength);
 
+// [rc4l] Whether a client judges the server's proof: not in a clientside demo's playback, whose challenge was signed for the recording's nonce and whose answer goes to no server.
+bool ComputeChecksServerProof(bool replayingDemo);
+
 } // namespace zx
 
 #endif // ZX_CONNECTCHALLENGE_COMPUTE_H

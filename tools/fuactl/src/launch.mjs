@@ -253,7 +253,8 @@ export function engineArgs(opts = {}, configPath) {
   // instance came up full of monsters despite being asked for none, including the hands-on build.
   // Monsters shove the player off a recorded position and shoot whatever is being measured, which
   // is the one thing a measurement instance must not have.
-  if (opts.connect) args.push("+connect", opts.connect);
+  // [rc4l] connectArg connects as a shortcut does, with -connect, which -record needs to start a clientside demo.
+  if (opts.connect) args.push(opts.connectArg ? "-connect" : "+connect", opts.connect);
   // [rc4l] A demo brings its own map, which a +map before it would load first and trace as the demo's.
   else if (opts.playdemo) args.push("-playdemo", opts.playdemo);
   // [rc4l] A recording starts with the game the engine itself starts (-record with -warp), since a +recordmap on the command line is dropped and a +map after -record loads the level twice.

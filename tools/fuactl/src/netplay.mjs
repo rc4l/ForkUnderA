@@ -81,7 +81,7 @@ export async function joinThroughBrowser(c, address, deps = {}, { lan = false } 
 }
 
 // [rc4l] Launches one client into a set, joins it to the game and waits until the server holds it playing; via "browser" joins from the browser by address and "lan" from its LAN listing, and files replaces the set's wads, empty for a client that has to fetch them.
-export async function addClient(set, { role = "player", lag = 0, loss = 0, jitter = 0, cvars = set.clientCvars || {}, forUser = false, files = set.files, via = "connect" } = {}, deps = {}) {
+export async function addClient(set, { role = "player", lag = 0, loss = 0, jitter = 0, cvars = set.clientCvars || {}, forUser = false, files = set.files, via = "connect", args = [] } = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000) } = deps;
   const index = set.clients.length;
   // [rc4l] The slot is taken before the launch, so clients added at once each get their own port.
@@ -89,7 +89,9 @@ export async function addClient(set, { role = "player", lag = 0, loss = 0, jitte
   set.clients.push(client);
   const address = `127.0.0.1:${set.gamePort}`;
   const fromBrowser = via === "browser" || via === "lan";
-  const inst = client.inst = await launch({ port: set.basePort + 1 + index, iwad: set.iwad, extraArgs: clientArgs({ ...set, files }), ...(fromBrowser ? {} : { connect: address }),
+  // [rc4l] -record starts a clientside demo only beside -connect on the command line, so a recording client connects that way.
+  const connectArg = via === "launch" || args.includes("-record");
+  const inst = client.inst = await launch({ port: set.basePort + 1 + index, iwad: set.iwad, extraArgs: [...clientArgs({ ...set, files }), ...args], ...(fromBrowser ? {} : { connect: address, connectArg }),
     cvars: clientCvars({ lag, loss, jitter, cvars }), allowOsInput: forUser });
   const readLog = deps.readLog || ((i) => (i.log && fs.existsSync(i.log) ? fs.readFileSync(i.log, "utf8") : ""));
   try {
@@ -182,8 +184,19 @@ export async function fireUntilDead(shooter, server, match, { seconds = 8, exec 
 }
 
 // [rc4l] Every connection closed and every instance stopped, clients first.
+// [rc4l] An offline instance beside the set, on the next free port with the set's wads, such as one that plays a client's demo back; the set closes it with the rest.
+export async function addOffline(set, { args = [], cvars = {} } = {}, deps = {}) {
+  const { launch = launchInstance, connect = attach } = deps;
+  set.offline = set.offline || [];
+  const member = { inst: null, c: null, role: "offline" };
+  set.offline.push(member);
+  member.inst = await launch({ port: set.basePort + 1 + set.clients.length + set.offline.length, iwad: set.iwad, extraArgs: [...clientArgs(set), ...args], cvars: clientCvars({ cvars }) });
+  member.c = await connect(member.inst);
+  return member;
+}
+
 export async function closeNetplay(set, stop = stopInstance) {
-  const all = [...set.clients].reverse().concat(set.server ? [set.server] : []);
+  const all = [...(set.offline || []), ...set.clients].reverse().concat(set.server ? [set.server] : []);
   for (const m of all) if (m.c) m.c.close();
   for (const m of all) if (m.inst) await stop(m.inst);
 }
@@ -192,7 +205,7 @@ export async function closeNetplay(set, stop = stopInstance) {
 export async function launchNetplay(opts = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, stop = stopInstance, timeoutMs = scaled(60000) } = deps;
   const { iwad, map, files = [], players = 1, observers = 0, lag = "", loss = "", jitter = "", basePort = NETPLAY_BRIDGE_PORT, gamePort = NETPLAY_GAME_PORT,
-    forUser = false, cvars = {}, clientCvars: perClientCvars = {}, broadcast = false, cheats = true } = opts;
+    forUser = false, cvars = {}, clientCvars: perClientCvars = {}, clientExtraArgs = [], broadcast = false, cheats = true } = opts;
   const roles = clientRoles({ players, observers });
   const lags = perClient(lag, roles.length), losses = perClient(loss, roles.length), jitters = perClient(jitter, roles.length);
   const set = { iwad, map, files, basePort, gamePort, clientCvars: perClientCvars, server: null, clients: [] };
@@ -203,7 +216,7 @@ export async function launchNetplay(opts = {}, deps = {}) {
     set.server.c = await connect(inst);
     await waitInLevel(set.server.c, timeoutMs);
     for (let i = 0; i < roles.length; i++) {
-      await addClient(set, { role: roles[i], lag: lags[i], loss: losses[i], jitter: jitters[i], cvars: perClientCvars, forUser: forUser && i === 0 }, deps);
+      await addClient(set, { role: roles[i], lag: lags[i], loss: losses[i], jitter: jitters[i], cvars: perClientCvars, forUser: forUser && i === 0, args: clientExtraArgs[i] || [] }, deps);
     }
     return set;
   } catch (e) {

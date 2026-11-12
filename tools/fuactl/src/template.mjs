@@ -558,7 +558,7 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
     let set = null;
     try {
       set = await launch({ iwad, map, files: [filePath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "", jitter: config.jitter ?? "",
-        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: { ...FILL_CHECK, ...(config.clientCvars || {}) }, broadcast: !!config.broadcast, cheats: config.cheats ?? true });
+        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: { ...FILL_CHECK, ...(config.clientCvars || {}) }, clientExtraArgs: config.clientExtraArgs || [], broadcast: !!config.broadcast, cheats: config.cheats ?? true });
       const r = await judgeNetplay(set, label, { wadPath: filePath, iwad, map, config });
       lines.push(...(r.lines || [r.line]));
       failed += r.failed;

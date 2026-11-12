@@ -114,6 +114,16 @@ test("a set launches the server in the map, then each client joined with its own
   assert.deepEqual(f.stopped, [7902, 7901, 7900]);
 });
 
+test("a client's own extra arguments reach only its launch", async () => {
+  const f = fakes();
+  const set = await launchNetplay({ players: 1, observers: 1, basePort: 7900, gamePort: 10950, clientExtraArgs: [[], ["-record", "x.cld"]] }, f.deps);
+  assert.ok(!f.launched[1].opts.extraArgs.includes("-record"));
+  assert.deepEqual([f.launched[1].opts.connect, f.launched[1].opts.connectArg], ["127.0.0.1:10950", false]);
+  assert.deepEqual(f.launched[2].opts.extraArgs.slice(-2), ["-record", "x.cld"]);
+  assert.deepEqual([f.launched[2].opts.connect, f.launched[2].opts.connectArg], ["127.0.0.1:10950", true], "a recording client connects on its command line, as -record needs");
+  await closeNetplay(set, f.deps.stop);
+});
+
 test("a late joiner joins a running set, and a set that fails to launch is torn down", async () => {
   const f = fakes();
   const set = await launchNetplay({ players: 1, basePort: 7900, clientCvars: { fua_copy_prescan_check: 1 } }, f.deps);

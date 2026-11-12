@@ -1670,7 +1670,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 		// [rc4l] Anonymous accounts: the server proves itself here, and we walk away rather than
 		// name an account to something that cannot.
-		if ( CLIENT_FuaAuthReadChallenge( pByteStream ) == false )
+		if ( CLIENT_FuaAuthReadChallenge( pByteStream, CLIENTDEMO_IsPlaying( )) == false )
 		{
 			CLIENT_QuitNetworkGame( "This server could not prove its identity." );
 			return;
