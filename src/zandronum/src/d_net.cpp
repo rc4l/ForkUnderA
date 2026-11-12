@@ -26,6 +26,7 @@
 //-----------------------------------------------------------------------------
 
 #include <stddef.h>
+#include <cstring>
 #include "features/gameloop/loop.h"   // [rc4l] RunTic
 #include "features/gameloop/computation/threadedtic_compute.h"   // [rc4l] ComputeTicDrawn
 
@@ -82,6 +83,10 @@
 #include "decallib.h"                        // [rc4l] DecalLibrary, to resolve a decal by name
 #include "features/telemetry/telemetry.h"
 #include "features/decals/decals.h"   // [rc4l] MarkSpray
+#include "features/cheat-amount/computation/cheatamount_compute.h" // [Doruk-Aksoy] give/take amount width
+
+// [Doruk-Aksoy] Demos recorded now must carry the long give/take amount d_net writes.
+static_assert (DEMOGAMEVERSION >= zx::cheatamount::kLongAmountDemoVersion, "demos would record long give/take amounts under a version read as words");
 
 EXTERN_CVAR (Int, disableautosave)
 EXTERN_CVAR (Int, autosavecount)
@@ -2150,13 +2155,13 @@ void Net_DoCommand (int type, BYTE **stream, int player)
 		break;
 
 	case DEM_GIVECHEAT:
-		s = ReadString (stream);
-		cht_Give (&players[player], s, ReadWord (stream));
-		break;
-
 	case DEM_TAKECHEAT:
-		s = ReadString (stream);
-		cht_Take (&players[player], s, ReadWord (stream));
+		{
+			s = ReadString (stream);
+			// [Doruk-Aksoy] A long since uzdoom@a2a1d214c0; demos recorded before 0x21C still carry a word.
+			const int raw = zx::cheatamount::ComputeCheatAmountWireBytes (demoplayback, demover) == 2 ? ReadWord (stream) : ReadLong (stream);
+			( type == DEM_TAKECHEAT ? cht_Take : cht_Give ) (&players[player], s, zx::cheatamount::ComputeCheatAmountFromWire (raw));
+		}
 		break;
 
 	case DEM_WARPCHEAT:
@@ -2666,7 +2671,7 @@ void Net_SkipCommand (int type, BYTE **stream)
 
 		case DEM_GIVECHEAT:
 		case DEM_TAKECHEAT:
-			skip = strlen ((char *)(*stream)) + 3;
+			skip = strlen ((char *)(*stream)) + 1 + zx::cheatamount::ComputeCheatAmountWireBytes (demoplayback, demover);
 			break;
 
 		case DEM_SUMMON2:

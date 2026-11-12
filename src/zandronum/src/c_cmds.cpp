@@ -87,6 +87,8 @@
 #include "m_cheat.h"
 #include "gamemode.h"
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension, ComputeBareFileName
+#include "features/cheat-amount/computation/cheatamount_compute.h" // [Doruk-Aksoy] ComputeCheatAmountArg
+#include "features/net-session/netrole.h" // [Doruk-Aksoy] zx::net::IsClient
 
 extern FILE *Logfile;
 extern bool insave;
@@ -716,50 +718,37 @@ CCMD (changemap)
 	}
 }
 
-CCMD (give)
+// [Doruk-Aksoy] Sends give or take with a full int amount, as uzdoom@a2a1d214c0 does, online as a client command and offline as a net command.
+static void SendGiveOrTake (FCommandLine &argv, bool take)
 {
 	if (CheckCheatmode () || argv.argc() < 2)
 		return;
 
-	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
+	const int amount = zx::cheatamount::ComputeCheatAmountArg (argv.argc() > 2 ? argv[2] : nullptr);
+
+	// [TP] Handle take cheat online
+	if ( zx::net::IsClient( ) )
 	{
-		if ( argv.argc( ) > 2 )
-			CLIENTCOMMANDS_GiveCheat( argv[1], clamp( atoi( argv[2]), 1, 255 ));
+		if ( take )
+			CLIENTCOMMANDS_TakeCheat( argv[1], amount );
 		else
-			CLIENTCOMMANDS_GiveCheat( argv[1], 0 );
+			CLIENTCOMMANDS_GiveCheat( argv[1], amount );
+		return;
 	}
-	else
-	{
-		Net_WriteByte (DEM_GIVECHEAT);
-		Net_WriteString (argv[1]);
-		if (argv.argc() > 2)
-			Net_WriteWord (clamp (atoi (argv[2]), 1, 32767));
-		else
-			Net_WriteWord (0);
-	}
+
+	Net_WriteByte (take ? DEM_TAKECHEAT : DEM_GIVECHEAT);
+	Net_WriteString (argv[1]);
+	Net_WriteLong (amount);
+}
+
+CCMD (give)
+{
+	SendGiveOrTake (argv, false);
 }
 
 CCMD (take)
 {
-	if (CheckCheatmode () || argv.argc() < 2)
-		return;
-
-	// [TP] Handle take cheat online
-	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
-	{
-		if ( argv.argc( ) > 2 )
-			CLIENTCOMMANDS_TakeCheat( argv[1], clamp( atoi( argv[2]), 1, 255 ));
-		else
-			CLIENTCOMMANDS_TakeCheat( argv[1], 0 );
-		return;
-	}
-
-	Net_WriteByte (DEM_TAKECHEAT);
-	Net_WriteString (argv[1]);
-	if (argv.argc() > 2)
-		Net_WriteWord (clamp (atoi (argv[2]), 1, 32767));
-	else
-		Net_WriteWord (0);
+	SendGiveOrTake (argv, true);
 }
 
 CCMD (gameversion)
