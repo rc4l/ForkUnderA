@@ -35,8 +35,15 @@ TEST(MoveBuffer, ACommandThisTicIsOnTime)
 	EXPECT_EQ(MOVE_ARRIVAL_ON_TIME, ComputeMoveArrival(100, 100));
 }
 
-TEST(MoveBuffer, NoCommandThisTicIsMissed)
+TEST(MoveBuffer, ACommandATicAgoIsLateNotMissed)
 {
-	EXPECT_EQ(MOVE_ARRIVAL_MISSED, ComputeMoveArrival(99, 100));
+	EXPECT_EQ(MOVE_ARRIVAL_LATE, ComputeMoveArrival(99, 100));
+	EXPECT_EQ(MOVE_ARRIVAL_LATE, ComputeMoveArrival(101, 100));
+}
+
+TEST(MoveBuffer, MoreThanATicWithoutACommandIsMissed)
+{
+	EXPECT_EQ(MOVE_ARRIVAL_MISSED, ComputeMoveArrival(98, 100));
 	EXPECT_EQ(MOVE_ARRIVAL_MISSED, ComputeMoveArrival(90, 100));
+	EXPECT_EQ(MOVE_ARRIVAL_MISSED, ComputeMoveArrival(103, 100));
 }

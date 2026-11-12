@@ -723,7 +723,8 @@ void SERVER_Tick( void )
 
 		// [AK] After receiving packets, check if we didn't receive a movement
 		// command from an in-game players during this gametic. If that's the
-		// case, increment the number of missing packets for the player.
+		// case, and it's been more than one tick since the last command was
+		// received, increment the number of missing packets for the player.
 		if ( gamestate == GS_LEVEL )
 		{
 			for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
@@ -739,6 +740,10 @@ void SERVER_Tick( void )
 				{
 				case zx::net::MOVE_ARRIVAL_MISSED:
 					g_aClients[i].numMissingPackets++;
+					g_aClients[i].numConsistentMoveCmdArrivals = 0;
+					break;
+				// [rc4l] Ported from zandronum@529ca97fc1be61d4f27e9987b6209c259749ac9c: a command a tic late breaks the run of steady arrivals but is no missing packet.
+				case zx::net::MOVE_ARRIVAL_LATE:
 					g_aClients[i].numConsistentMoveCmdArrivals = 0;
 					break;
 				case zx::net::MOVE_ARRIVAL_ON_TIME:
