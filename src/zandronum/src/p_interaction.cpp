@@ -2975,7 +2975,10 @@ void PLAYER_SpectatorJoinsGame( player_t *pPlayer )
 	// immediately assume they're missing packets because it doesn't receive their
 	// movement commands right away, depending on their ping.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
 		SERVER_GetClient( pPlayer - players )->lLastMoveTick = 0;
+		SERVER_GetClient( pPlayer - players )->numConsistentMoveCmdArrivals = 0;
+	}
 
 	// [BB] If the spectator used the chasecam or noclip cheat (which is always allowed for spectators)
 	// remove it now that he joins the game.

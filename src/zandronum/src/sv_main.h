@@ -495,6 +495,9 @@ struct CLIENT_s
 	// [AK] The number of times a client's packet (e.g. CLC_CLIENTMOVE) was missing.
 	unsigned int	numMissingPackets;
 
+	// [AK] The number of consecutive ticks a client's move command arrived.
+	unsigned int	numConsistentMoveCmdArrivals;
+
 	// What is the name of the client's skin?
 	FString			skinName;
 

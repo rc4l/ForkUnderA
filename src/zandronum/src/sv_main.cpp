@@ -98,6 +98,7 @@
 #include "m_argv.h"
 #include "m_random.h"
 #include "features/net-session/computation/dumpfilter_compute.h"   // [KI] the sv_dumppackets decisions
+#include "features/net-session/computation/movebuffer_compute.h"   // [rc4l] ComputeMoveArrival
 #include "network.h"
 #include "possession.h"
 #include "s_sndseq.h"
@@ -734,8 +735,18 @@ void SERVER_Tick( void )
 				// recently joined the game and it's still taking time for the
 				// commands to arrive (i.e. their last move tick is still zero),
 				// don't treat it as a missing packet.
-				if (( g_aClients[i].lLastMoveTick != 0 ) && ( g_aClients[i].lLastMoveTick != gametic ))
+				switch ( zx::net::ComputeMoveArrival( g_aClients[i].lLastMoveTick, gametic ))
+				{
+				case zx::net::MOVE_ARRIVAL_MISSED:
 					g_aClients[i].numMissingPackets++;
+					g_aClients[i].numConsistentMoveCmdArrivals = 0;
+					break;
+				case zx::net::MOVE_ARRIVAL_ON_TIME:
+					g_aClients[i].numConsistentMoveCmdArrivals++;
+					break;
+				case zx::net::MOVE_ARRIVAL_UNKNOWN:
+					break;
+				}
 			}
 		}
 
@@ -2197,6 +2208,7 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].bSuspicious = false;
 	g_aClients[lClient].ulNumConsistencyWarnings = 0;
 	g_aClients[lClient].numMissingPackets = 0;
+	g_aClients[lClient].numConsistentMoveCmdArrivals = 0;
 	g_aClients[lClient].skinName = "";
 	g_aClients[lClient].commRules.clear( );
 	g_aClients[lClient].ScreenWidth = 0;
@@ -6653,6 +6665,7 @@ static bool server_ChangeTeam( BYTESTREAM_s *pByteStream )
 		// doesn't immediately assume they're missing packets because it doesn't
 		// receive their movement commands right away, depending on their ping.
 		g_aClients[g_lCurrentClient].lLastMoveTick = 0;
+		g_aClients[g_lCurrentClient].numConsistentMoveCmdArrivals = 0;
 	}
 	else
 	{

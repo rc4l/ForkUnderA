@@ -45,6 +45,7 @@
 #include "botpath.h"
 #include "features/telemetry/telemetry.h"
 #include "features/gameloop/computation/tickerpause_compute.h"   // [rc4l] ComputeMenuPausesTicker
+#include "features/net-session/computation/movebuffer_compute.h"
 
 extern gamestate_t wipegamestate;
 
@@ -338,24 +339,48 @@ void P_Ticker (void)
 	// [BB] Process up to two movement commands for each client.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		for ( int i = 0; i < ( ( gametic % 3 == 0 ) ? 2 : 1 ); i++ )
+		bool alreadyExecutedMoveCMD[MAXPLAYERS] = { false };
+
+		for ( unsigned int i = 0; i < 2; i++ )
 		{
-			for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+			for ( unsigned int j = 0; j < MAXPLAYERS; j++ )
 			{
-				if ( SERVER_IsValidClient( ulIdx ) == false )
+				if ( SERVER_IsValidClient( j ) == false )
 					continue;
 
-				CLIENT_s *client = SERVER_GetClient( ulIdx );
+				CLIENT_s *client = SERVER_GetClient( j );
+
+				// [AK] If one movement command has been executed for this player, then only
+				// execute a second command if there's still more than one command left, or
+				// if the server has received their commands consistently enough that it's
+				// safe to empty their buffer now.
+				// [rc4l] Ported from zandronum@7feaf8fe410797036f3f6037a74863c51515790a: the rule is features/net-session's ComputeRunsSecondMoveCmd.
+				if ( alreadyExecutedMoveCMD[j] )
+				{
+					unsigned int numMoveCMDs = 0;
+
+					for ( unsigned int k = 0; k < client->bufferedCMDs.Size( ); k++ )
+					{
+						if ( client->bufferedCMDs[k]->isMoveCmd( ))
+							numMoveCMDs++;
+					}
+
+					if ( zx::net::ComputeRunsSecondMoveCmd( numMoveCMDs, client->numConsistentMoveCmdArrivals, TICRATE ) == false )
+						continue;
+				}
 
 				while ( client->bufferedCMDs.Size( ) != 0 )
 				{
 					// Process only one movement command.
 					const bool isMoveCMD = client->bufferedCMDs[0]->isMoveCmd( );
-					client->bufferedCMDs[0]->process( ulIdx );
+					client->bufferedCMDs[0]->process( j );
 					client->bufferedCMDs.Delete( 0 );
 
 					if ( isMoveCMD )
+					{
+						alreadyExecutedMoveCMD[j] = true;
 						break;
+					}
 				}
 			}
 		}

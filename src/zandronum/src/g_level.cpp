@@ -1546,6 +1546,7 @@ void G_DoLoadLevel (int position, bool autosave)
 			// the server will most likely not receive their movement commands right away, so
 			// it shouldn't assume they're missing packets.
 			SERVER_GetClient( i )->lLastMoveTick = 0;
+			SERVER_GetClient( i )->numConsistentMoveCmdArrivals = 0;
 		}
 
 //		if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) && ( PLAYER_ShouldSpawnAsSpectator( &players[i] )))
