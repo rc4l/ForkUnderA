@@ -93,7 +93,6 @@
 #include "features/damage-taken/damagetaken.h"
 #include "features/net-session/computation/joinupdate_compute.h"
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
-#include <memory>
 
 CVAR (Bool, sv_showwarnings, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 

@@ -2210,8 +2210,8 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].recentMoveCMDs.clear();
 	g_aClients[lClient].recentSelectCMDs.clear();
 
-	// [AK] Reset the client's tic buffer.
-	SERVER_ResetClientTicBuffer( lClient );
+	// [AK] Reset the client's command buffer.
+	g_aClients[lClient].bufferedCMDs.Clear();
 
 	// [rc4l] Anonymous accounts: unproven until the proof arrives with the level checksum, which
 	// is two messages away and before any slot is committed.
@@ -5494,7 +5494,7 @@ void SERVER_UpdateThingVelocity( AActor *pActor, bool updateZ, bool updateXY )
 template <typename CommandType>
 static bool server_ParseBufferedCommand ( BYTESTREAM_s *pByteStream )
 {
-	CommandType *cmd = new CommandType ( pByteStream );
+	std::shared_ptr<CommandType> cmd = std::make_shared<CommandType>( pByteStream );
 	const ULONG ulClientTic = cmd->getClientTic( );
 	const bool bIsMoveCMD = cmd->isMoveCmd( );
 
@@ -5515,10 +5515,7 @@ static bool server_ParseBufferedCommand ( BYTESTREAM_s *pByteStream )
 				// [AK] Non-move (i.e. weapon select) commands with the same client gametic but
 				// different weapon net ids are not duplicates, so don't delete them.
 				if (( bIsMoveCMD ) || ( cmd->getWeaponNetworkIndex( ) == g_aClients[g_lCurrentClient].usLastWeaponNetworkIndex ))
-				{
-					delete cmd;
 					return false;
-				}
 			}
 		}
 
@@ -5534,40 +5531,25 @@ static bool server_ParseBufferedCommand ( BYTESTREAM_s *pByteStream )
 	{
 		if ( ulClientTic != 0 )
 		{
-			for ( unsigned int i = 0; i < g_aClients[g_lCurrentClient].MoveCMDs.Size( ); i++ )
+			for ( unsigned int i = 0; i < g_aClients[g_lCurrentClient].bufferedCMDs.Size( ); i++ )
 			{
-				ULONG ulBufferClientTic = g_aClients[g_lCurrentClient].MoveCMDs[i]->getClientTic( );
+				ULONG ulBufferClientTic = g_aClients[g_lCurrentClient].bufferedCMDs[i]->getClientTic( );
 
 				// [AK] Reorganize the commands in case they arrived in the wrong order.
 				if (( ulBufferClientTic != 0 ) && ( ulClientTic < ulBufferClientTic ))
 				{
-					g_aClients[g_lCurrentClient].MoveCMDs.Insert( i, cmd );
+					g_aClients[g_lCurrentClient].bufferedCMDs.Insert( i, cmd );
 					return false;
 				}
 			}
 		}
 
-		g_aClients[g_lCurrentClient].MoveCMDs.Push( cmd );
+		g_aClients[g_lCurrentClient].bufferedCMDs.Push( cmd );
 		return false;
 	}
 
 	const bool retValue = cmd->process ( g_lCurrentClient );
-	delete cmd;
 	return retValue;
-}
-
-//*****************************************************************************
-//
-void SERVER_ResetClientTicBuffer( ULONG ulClient )
-{
-	if ( SERVER_IsValidClient( ulClient ) == false )
-		return;
-
-	// [AK] Clear all stored commands in the tic buffer.
-	for ( unsigned int i = 0; i < g_aClients[ulClient].MoveCMDs.Size( ); i++ )
-		delete g_aClients[ulClient].MoveCMDs[i];
-
-	g_aClients[ulClient].MoveCMDs.Clear( );
 }
 
 //*****************************************************************************

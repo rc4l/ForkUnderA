@@ -62,6 +62,7 @@
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] zx::ListingProof, header-pure
 #include <list>
 #include <queue>
+#include <memory>
 
 //*****************************************************************************
 //	DEFINES
@@ -503,8 +504,8 @@ struct CLIENT_s
 	// [K6] Last tic we got some action from the client. Used to determine his presence.
 	LONG			lLastActionTic;
 
-	// [BB] Buffer storing all movement commands received from the client we haven't executed yet.
-	TArray<ClientCommand*>	MoveCMDs;
+	// [BB] Buffer storing all commands received from the client that we haven't executed yet.
+	TArray<std::shared_ptr<ClientCommand>>	bufferedCMDs;
 
 	// [BB] Variables for the account system
 	FString username;
@@ -677,7 +678,6 @@ void		SERVER_KillCheat( const char* what );
 void STACK_ARGS SERVER_PrintWarning( const char* format, ... ) GCCPRINTF( 1, 2 );
 void		SERVER_FlagsetChanged( FIntCVar& flagset, int maxflags = 2 );
 void		SERVER_SettingChanged( FBaseCVar &cvar, bool bUpdateConsole, int maxDecimals = 0 );
-void		SERVER_ResetClientTicBuffer( ULONG ulClient );
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
 // [KI] Ported from zandronum@80cd2315f27379a7bf0692f4c01ab4f49012d40d: sv_dumppackets writes command payloads for zstd dictionary training.
 void		SERVER_DumpPacket( const BYTE *buffer, const size_t length, const bool fromClient );
