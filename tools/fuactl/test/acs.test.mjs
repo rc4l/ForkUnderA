@@ -69,6 +69,24 @@ test("a CLIENTSIDE script makes the lump ACSE, its flags in SFLG and the strings
   assert.equal(buf.readInt32LE(20), PCD.TERMINATE);
 });
 
+test("a named script makes the lump ACSE, numbered from -1 in SPTR and SFLG with its name in SNAM", () => {
+  const buf = acsScripts([{ code: [PCD.TERMINATE], open: false, number: 3 }, { code: [PCD.TERMINATE], open: false, name: "zxone", flags: SCRIPTF.NET }, { code: [PCD.TERMINATE], open: false, name: "zxtwo" }], ["S"]);
+  assert.equal(buf.toString("latin1", 0, 4), "ACSE");
+  const chunks = {};
+  for (let at = buf.readInt32LE(4); at < buf.length; at += 8 + buf.readUInt32LE(at + 4))
+    chunks[buf.toString("latin1", at, at + 4)] = buf.subarray(at + 8, at + 8 + buf.readUInt32LE(at + 4));
+  assert.deepEqual(Object.keys(chunks), ["SPTR", "SFLG", "STRL", "SNAM"]);
+  assert.deepEqual([0, 1, 2].map((i) => chunks.SPTR.readInt16LE(12 * i)), [3, -1, -2]);
+  assert.deepEqual([chunks.SFLG.readInt16LE(0), chunks.SFLG.readUInt16LE(2)], [-1, SCRIPTF.NET]);
+  const snam = chunks.SNAM;
+  assert.equal(snam.readInt32LE(0), 2);
+  const name = (i) => { const at = snam.readInt32LE(4 + 4 * i); return snam.toString("latin1", at, snam.indexOf(0, at)); };
+  assert.deepEqual([name(0), name(1)], ["zxone", "zxtwo"]);
+  assert.equal(snam.length % 4, 0);
+  assert.equal(chunks.STRL.readInt32LE(4), 1, "STRL keeps its own layout");
+  assert.ok(!Object.keys(chunks).includes("SNAM") || acsScripts([{ code: [PCD.TERMINATE], flags: SCRIPTF.NET }]).indexOf("SNAM") < 0, "no names, no SNAM");
+});
+
 test("a special's arguments are pushed in order, then LSPECn names the special", () => {
   // [rc4l] Sector_SetPlaneReflection(125, 66, 0), as wdiexsec's OPEN script calls it.
   assert.deepEqual(callSpecial(159, [125, 66, 0]), [3, 125, 3, 66, 3, 0, 6, 159]);

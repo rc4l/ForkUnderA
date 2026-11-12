@@ -11,7 +11,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LE
   GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, GetWadInfo: 186, SetMapUsedStatus: 187,
+export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 
@@ -25,13 +25,17 @@ export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4, EVENT: 16 };
 // [rc4l] BUSY exempts a script from the runaway limit (zandronum@b8fe8ef13df5).
 export const SCRIPTF = { NET: 1, CLIENTSIDE: 2, BUSY: 4 };
 
+// [rc4l] A script's number as SPTR keeps it: a named script's is -1 less its place among the named, as ACC numbers SNAM entries.
+const sptrNumbers = (scripts) => { let k = 0; return scripts.map((s) => (s.name ? -1 - k++ : s.number ?? 1)); };
+
 // [Doruk-Aksoy] A script's type: its own, else OPEN unless `open` is false.
 const scriptType = (s) => s.type ?? ((s.open ?? true) ? SCRIPT.OPEN : SCRIPT.CLOSED);
 
 // [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings; `args` is how many arguments a script takes into its first variables, as an EVENT script's three.
 // [Doruk-Aksoy] A script may also give its `type` and `flags`; with any flags, or `enhanced` as a library is compiled, the lump is ACSE, since ACS0 has nowhere to keep them.
+// [rc4l] A script given a `name` in place of a number is named, which also makes the lump ACSE, its name in SNAM.
 export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
-  if (enhanced || scripts.some((s) => s.flags)) return acseScripts(scripts, strings);
+  if (enhanced || scripts.some((s) => s.flags || s.name)) return acseScripts(scripts, strings);
   const code = scripts.flatMap((s) => s.code);
   const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
   const strStart = 8 + 4 * code.length;
@@ -68,31 +72,37 @@ function acseScripts(scripts, strings) {
     size.writeUInt32LE(data.length, 0);
     return Buffer.concat([Buffer.from(id, "latin1"), size, data]);
   };
+  const numbers = sptrNumbers(scripts);
   const sptr = Buffer.alloc(12 * scripts.length);
   let address = 8;
   scripts.forEach((s, i) => {
-    sptr.writeInt16LE(s.number ?? 1, 12 * i);
+    sptr.writeInt16LE(numbers[i], 12 * i);
     sptr.writeUInt16LE(scriptType(s), 12 * i + 2);
     sptr.writeInt32LE(address, 12 * i + 4);
     sptr.writeInt32LE(s.args ?? 0, 12 * i + 8);
     address += 4 * s.code.length;
   });
-  const flagged = scripts.filter((s) => s.flags);
+  const flagged = scripts.map((s, i) => ({ s, number: numbers[i] })).filter(({ s }) => s.flags);
   const sflg = Buffer.alloc(4 * flagged.length);
-  flagged.forEach((s, i) => { sflg.writeInt16LE(s.number ?? 1, 4 * i); sflg.writeUInt16LE(s.flags, 4 * i + 2); });
-  const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
-  const head = Buffer.alloc(12 + 4 * strings.length);
-  head.writeInt32LE(strings.length, 4);
-  let at = head.length;
-  strBytes.forEach((b, i) => { head.writeInt32LE(at, 12 + 4 * i); at += b.length; });
-  const strlData = Buffer.concat([head, ...strBytes]);
-  const strl = Buffer.concat([strlData, Buffer.alloc((4 - (strlData.length % 4)) % 4)]);
+  flagged.forEach(({ s, number }, i) => { sflg.writeInt16LE(number, 4 * i); sflg.writeUInt16LE(s.flags, 4 * i + 2); });
+  // [rc4l] A string table as STRL (count at word 1, offsets from word 3) and SNAM (count at word 0, offsets from word 1) keep one, each offset from the table's start, padded to a word.
+  const table = (list, countAt, offsetsAt) => {
+    const bytes = list.map((s) => Buffer.from(`${s}\0`, "latin1"));
+    const head = Buffer.alloc(4 * (offsetsAt + list.length));
+    head.writeInt32LE(list.length, 4 * countAt);
+    let at = head.length;
+    bytes.forEach((b, i) => { head.writeInt32LE(at, 4 * (offsetsAt + i)); at += b.length; });
+    const data = Buffer.concat([head, ...bytes]);
+    return Buffer.concat([data, Buffer.alloc((4 - (data.length % 4)) % 4)]);
+  };
+  const strl = table(strings, 1, 3);
+  const names = scripts.filter((s) => s.name).map((s) => s.name);
   const codeBytes = Buffer.alloc(4 * code.length);
   code.forEach((w, i) => codeBytes.writeInt32LE(w, 4 * i));
   const header = Buffer.alloc(8);
   header.write("ACSE", 0, "latin1");
   header.writeInt32LE(8 + codeBytes.length, 4);
-  return Buffer.concat([header, codeBytes, chunk("SPTR", sptr), chunk("SFLG", sflg), chunk("STRL", strl)]);
+  return Buffer.concat([header, codeBytes, chunk("SPTR", sptr), chunk("SFLG", sflg), chunk("STRL", strl), ...(names.length ? [chunk("SNAM", table(names, 0, 1))] : [])]);
 }
 
 // [rc4l] The words that call action special `special` with up to five arguments, as `Special(a, b, c)` compiles.

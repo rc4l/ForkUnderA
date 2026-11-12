@@ -111,6 +111,7 @@
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeSendsUserCVarChange
 #include "computation/wadinfo_compute.h"   // [rc4l] ComputeIndexInRange, ComputeParentWadInfo
 #include "computation/maprotation_compute.h"   // [rc4l] ComputeSetsMapUsedStatus
+#include "computation/checkscript_compute.h"   // [rc4l] ComputeCheckScriptByName, ComputeCheckScriptNumber
 #include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
 #include <cstddef>
 
@@ -5803,6 +5804,8 @@ enum EACSFunctions
 	ACSF_GetWadInfo,
 	// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: SetMapUsedStatus, number 187 as theirs.
 	ACSF_SetMapUsedStatus,
+	// [rc4l] Ported from zandronum@92ebf777950155f28651186233b53d682acd986e: CheckScript, number 188 as theirs.
+	ACSF_CheckScript,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
@@ -9323,6 +9326,13 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			}
 
 			return 0;
+		}
+
+		// [rc4l] Adapted from zandronum@92ebf777950155f28651186233b53d682acd986e: whether a script exists by name or number, the choice in computation/checkscript_compute and a missing name never added to the name table.
+		case ACSF_CheckScript:
+		{
+			const bool byName = zx::ComputeCheckScriptByName( argCount, argCount > 1 ? args[1] : 0 );
+			return ACS_ExistsScript( zx::ComputeCheckScriptNumber( byName, args[0], byName ? FName( FBehavior::StaticLookupString( args[0] ), true ).GetIndex( ) : 0 ));
 		}
 
 		case ACSF_GetActorFloorTexture:
