@@ -103,6 +103,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated at its load
 #include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
+#include "features/net-session/netrole.h"
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
 
@@ -4398,7 +4399,7 @@ void P_SetupLevel (const char *lumpname, int position)
 	// [BC] Also, build the node list for the bot pathing module.
 	// [K6/BB] This is handled in CSkullBot(), unless we already have bots in game (from the previous map).
 	// [rc4l] Ported from zandronum@eb422df3b1be1c5f2aaaa7478757bb043f452248: the bots' nodes are built once the level has its own nodes, since a node's floor height asks which sector holds it.
-	if (NETWORK_InClientMode() == false && (level.flagsZA & LEVEL_ZA_NOBOTNODES) == false && BOTS_CountBots() > 0)
+	if (!zx::net::InClientMode() && (level.flagsZA & LEVEL_ZA_NOBOTNODES) == false && BOTS_CountBots() > 0)
 	{
 		ASTAR_BuildNodes();
 	}
