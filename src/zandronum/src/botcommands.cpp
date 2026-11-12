@@ -198,11 +198,16 @@ static  void	botcmd_BeginSpeed( CSkullBot *pBot );
 static  void	botcmd_StopSpeed( CSkullBot *pBot );
 static  void	botcmd_PressUse( CSkullBot *pBot );
 static	void	botcmd_ACS_NamedExecuteWithResult( CSkullBot *pBot );
+static  void	botcmd_BeginMoveUp( CSkullBot *pBot );
+static  void	botcmd_StopMoveUp( CSkullBot *pBot );
+//110
+static  void	botcmd_BeginMoveDown( CSkullBot *pBot );
+static  void	botcmd_StopMoveDown( CSkullBot *pBot );
 
 //*****************************************************************************
 //	VARIABLES
 
-static	BOTCMD_s	g_BotCommands[NUM_BOTCMDS] = 
+static	BOTCMD_s	g_BotCommands[] = 
 {
 	{ "changestate", botcmd_ChangeState, 1, 0, RETURNVAL_VOID },
 	{ "delay", botcmd_Delay, 1, 0, RETURNVAL_VOID },
@@ -322,7 +327,15 @@ static	BOTCMD_s	g_BotCommands[NUM_BOTCMDS] =
 	{ "StopSpeed", botcmd_StopSpeed, 0, 0, RETURNVAL_VOID },
 	{ "PressUse", botcmd_PressUse, 0, 0, RETURNVAL_VOID },
 	{ "ACS_NamedExecuteWithResult", botcmd_ACS_NamedExecuteWithResult, 4, 1, RETURNVAL_INT },
+	{ "BeginMoveUp", botcmd_BeginMoveUp, 0, 0, RETURNVAL_VOID },
+	{ "StopMoveUp", botcmd_StopMoveUp, 0, 0, RETURNVAL_VOID },
+	//110
+	{ "BeginMoveDown", botcmd_BeginMoveDown, 0, 0, RETURNVAL_VOID },
+	{ "StopMoveDown", botcmd_StopMoveDown, 0, 0, RETURNVAL_VOID },
 };
+
+// [rc4l] Ported from zandronum@8929c493e00ffcaec137209d51b9f37fe4550e8a: compiled BotScript names a command by its index here, so the table must hold every BOTCMD_ in order.
+static_assert( sizeof( g_BotCommands ) / sizeof( g_BotCommands[0] ) == NUM_BOTCMDS, "g_BotCommands needs one row per BOTCMD_" );
 
 static	int			g_iReturnInt = -1;
 static	bool		g_bReturnBool = false;
@@ -2910,4 +2923,32 @@ static void botcmd_ACS_NamedExecuteWithResult( CSkullBot *pBot )
 	LONG scriptNum = -FName( lScript );
 
 	g_iReturnInt = P_StartScript( pBot->GetPlayer( )->mo, NULL, scriptNum, level.MapName, lArgs, 4, ACS_ALWAYS|ACS_WANTRESULT );
+}
+
+//*****************************************************************************
+//
+static void botcmd_BeginMoveUp( CSkullBot *pBot )
+{
+	pBot->m_lButtons |= BT_MOVEUP;
+}
+
+//*****************************************************************************
+//
+static void botcmd_StopMoveUp( CSkullBot *pBot )
+{
+	pBot->m_lButtons &= ~BT_MOVEUP;
+}
+
+//*****************************************************************************
+//
+static void botcmd_BeginMoveDown( CSkullBot *pBot )
+{
+	pBot->m_lButtons |= BT_MOVEDOWN;
+}
+
+//*****************************************************************************
+//
+static void botcmd_StopMoveDown( CSkullBot *pBot )
+{
+	pBot->m_lButtons &= ~BT_MOVEDOWN;
 }
