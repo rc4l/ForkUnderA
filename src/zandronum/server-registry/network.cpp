@@ -234,89 +234,78 @@ void NETWORK_Construct( USHORT usPort, const char *pszIPAddress )
 // [rc4l] sockaddr_storage, because a sockaddr is sixteen bytes and a sockaddr_in6 is twenty-eight.
 // A dual-stack socket hands back the larger one, and the kernel refuses with EFAULT rather than
 // truncating it, so a v4-sized buffer here does not lose the address: it loses every packet.
-static LONG network_ReceiveFromSocket( SOCKET Socket, sockaddr_storage &SocketFrom )
+static int network_ReceiveFromSocket( SOCKET socket, sockaddr_storage &socketFrom )
 {
-	INT iSocketFromLength = sizeof( SocketFrom );
-	LONG lNumBytes;
+	int socketFromLength = sizeof( socketFrom );
+	int numBytes = 0;
 
-#ifdef	WIN32
-	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), &iSocketFromLength );
+#ifdef WIN32
+	numBytes = recvfrom( socket, reinterpret_cast<char *>( g_ucHuffmanBuffer ), sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &socketFrom ), &socketFromLength );
 #else
-	lNumBytes = recvfrom( Socket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
+	numBytes = recvfrom( socket, reinterpret_cast<char *>( g_ucHuffmanBuffer ), sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &socketFrom ), reinterpret_cast<socklen_t *>( &socketFromLength ));
 #endif
 
 	// If the number of bytes returned is -1, an error has occured.
-    if ( lNumBytes == -1 )
-    {
+	if ( numBytes == -1 )
+	{
 #ifdef __WIN32__
-        errno = WSAGetLastError( );
+		errno = WSAGetLastError( );
 
-        if ( errno == WSAEWOULDBLOCK )
-            return ( -1 );
-
-		// Connection reset by peer. Doesn't mean anything to the server.
-		if ( errno == WSAECONNRESET )
-			return ( -1 );
-
-        if ( errno == WSAEMSGSIZE )
+		// [rc4l] Adapted from zandronum@c461fe1ca6dca804b9849616ffb4a0c1f83aea6b: the oversized packet names its own sender, where theirs names the last packet's.
+		if ( errno == WSAEMSGSIZE )
 		{
-             printf( "NETWORK_GetPackets:  WARNING! Oversize packet from %s\n", g_AddressFrom.ToString() );
-             return ( -1 );
-        }
-
-        printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( -1 );
+			NETADDRESS_s from;
+			from.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( socketFrom ));
+			printf( "NETWORK_GetPackets: WARNING! Oversized packet from %s\n", from.ToString( ));
+		}
+		// [AK] Don't print an error message when the connection is blocked or reset.
+		else if (( errno != WSAEWOULDBLOCK ) && ( errno != WSAECONNRESET ))
+			printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
 #else
-        if ( errno == EWOULDBLOCK )
-            return ( -1 );
-
-        if ( errno == ECONNREFUSED )
-            return ( -1 );
-
-        printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-        return ( -1 );
+		// [AK] Don't print an error message when the connection is blocked or refused.
+		if (( errno != EWOULDBLOCK ) && ( errno != ECONNREFUSED ))
+			printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
 #endif
-    }
+	}
 
-	return ( lNumBytes );
+	return numBytes;
 }
 
 //*****************************************************************************
 //
 int NETWORK_GetPackets( void )
 {
-	LONG				lNumBytes;
 	// [rc4l] Ported from zandronum@450ec7604b4e3cd1367b4bdf318a9e950243e57f: the decode is bounded by the message it writes into.
-	INT					iDecodedNumBytes = g_NetworkMessage.ulMaxSize;
-	sockaddr_storage	SocketFrom;
+	int numDecodedBytes = g_NetworkMessage.ulMaxSize;
+	sockaddr_storage socketFrom;
 
-	lNumBytes = network_ReceiveFromSocket( g_NetworkSocket, SocketFrom );
+	int numBytes = network_ReceiveFromSocket( g_NetworkSocket, socketFrom );
 
 	// [rc4l] The probe socket is NOT write-only, and treating it as though it were took the whole
 	// registry down: verification requests leave by it, servers reply to whatever address the request
 	// arrived from, and so every verification reply lands here and nowhere else. Draining only the
 	// main socket meant no server could ever verify, and therefore none could ever be listed.
-	if (( lNumBytes <= 0 ) && ( g_ProbeSocket != g_NetworkSocket ))
-		lNumBytes = network_ReceiveFromSocket( g_ProbeSocket, SocketFrom );
+	if (( numBytes <= 0 ) && ( g_ProbeSocket != g_NetworkSocket ))
+		numBytes = network_ReceiveFromSocket( g_ProbeSocket, socketFrom );
 
 	// No packets or an error, so don't process anything.
-	if ( lNumBytes <= 0 )
-		return ( 0 );
+	if ( numBytes <= 0 )
+		return 0;
 
 	// If the number of bytes we're receiving exceeds our buffer size, ignore the packet.
-	if ( lNumBytes >= static_cast<LONG>(g_NetworkMessage.ulMaxSize) )
-		return ( 0 );
+	if ( numBytes >= static_cast<int>( g_NetworkMessage.ulMaxSize ))
+		return 0;
 
 	// Decode the huffman-encoded message we received.
-	HUFFMAN_Decode( g_ucHuffmanBuffer, (unsigned char *)g_NetworkMessage.pbData, lNumBytes, &iDecodedNumBytes );
-	g_NetworkMessage.ulCurrentSize = iDecodedNumBytes;
+	HUFFMAN_Decode( g_ucHuffmanBuffer, static_cast<unsigned char *>( g_NetworkMessage.pbData ), numBytes, &numDecodedBytes );
+	g_NetworkMessage.ulCurrentSize = numDecodedBytes;
 	g_NetworkMessage.ByteStream.pbStream = g_NetworkMessage.pbData;
 	g_NetworkMessage.ByteStream.pbStreamEnd = g_NetworkMessage.ByteStream.pbStream + g_NetworkMessage.ulCurrentSize;
 
 	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
+	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( socketFrom ));
 
-	return ( g_NetworkMessage.ulCurrentSize );
+	return g_NetworkMessage.ulCurrentSize;
 }
 
 //*****************************************************************************
@@ -337,90 +326,76 @@ SOCKET NETWORK_MaxSocket( void )
 
 //*****************************************************************************
 //
-// [rc4l] See network.h. Identical to NETWORK_LaunchPacket except for the socket it leaves by, which
-// is the entire point: a different source port means no NAT mapping to ride in on.
-void NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
+// [rc4l] The buffer encoded and sent from socket, returning what sendto did, or 0 with nothing to send.
+static int network_SendFromSocket( SOCKET socket, bool socketIsDualStack, NETBUFFER_s *buffer, const NETADDRESS_s &address )
 {
-	INT iNumBytesOut = sizeof( g_ucHuffmanBuffer );
+	int numBytesOut = sizeof( g_ucHuffmanBuffer );
 
-	pBuffer->ulCurrentSize = pBuffer->CalcSize();
-	if ( pBuffer->ulCurrentSize == 0 )
-		return;
-
-	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
-	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
-	struct sockaddr_storage SocketAddress;
-	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bProbeSocketIsDualStack );
-
-	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize,
-		&iNumBytesOut );
-
-	sendto( g_ProbeSocket, (const char *)g_ucHuffmanBuffer, iNumBytesOut, 0,
-		reinterpret_cast<sockaddr *>( &SocketAddress ), iAddressLength );
-}
-
-//*****************************************************************************
-//
-void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address )
-{
-	LONG				lNumBytes;
-	INT					iNumBytesOut = sizeof(g_ucHuffmanBuffer);
-
-	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	buffer->ulCurrentSize = buffer->CalcSize( );
 
 	// Nothing to do.
-	if ( pBuffer->ulCurrentSize == 0 )
-		return;
+	if ( buffer->ulCurrentSize == 0 )
+		return 0;
 
 	// Convert the IP address to a socket address.
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
-	struct sockaddr_storage SocketAddress;
-	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
+	struct sockaddr_storage socketAddress;
+	const int addressLength = address.ToSocketAddress( socketAddress, socketIsDualStack );
 
-	HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
+	HUFFMAN_Encode( static_cast<unsigned char *>( buffer->pbData ), g_ucHuffmanBuffer, buffer->ulCurrentSize, &numBytesOut );
+	return sendto( socket, reinterpret_cast<const char *>( g_ucHuffmanBuffer ), numBytesOut, 0, reinterpret_cast<sockaddr *>( &socketAddress ), addressLength );
+}
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
+//*****************************************************************************
+//
+// [rc4l] See network.h. NETWORK_LaunchPacket but for the socket it leaves by, which
+// is the entire point: a different source port means no NAT mapping to ride in on.
+void NETWORK_LaunchProbePacket( NETBUFFER_s *buffer, NETADDRESS_s address )
+{
+	network_SendFromSocket( g_ProbeSocket, g_bProbeSocketIsDualStack, buffer, address );
+}
 
+//*****************************************************************************
+//
+void NETWORK_LaunchPacket( NETBUFFER_s *buffer, NETADDRESS_s address )
+{
 	// If sendto returns -1, there was an error.
-	if ( lNumBytes == -1 )
+	// [rc4l] Ported from zandronum@c461fe1ca6dca804b9849616ffb4a0c1f83aea6b: the error handling's layout and names, on our shared send.
+	if ( network_SendFromSocket( g_NetworkSocket, g_bSocketIsDualStack, buffer, address ) == -1 )
 	{
 #ifdef __WIN32__
-		INT	iError = WSAGetLastError( );
+		int error = WSAGetLastError( );
 
 		// Wouldblock is silent.
-		if ( iError == WSAEWOULDBLOCK )
-			return;
-
-		switch ( iError )
+		if ( error != WSAEWOULDBLOCK )
 		{
-		case WSAEACCES:
+			switch ( error )
+			{
+				case WSAEACCES:
+					printf( "NETWORK_LaunchPacket: Error #%d, WSAEACCES: Permission denied for address: %s\n", error, address.ToString( ));
+					return;
 
-			printf( "NETWORK_LaunchPacket: Error #%d, WSAEACCES: Permission denied for address: %s\n", iError, Address.ToString() );
-			return;
-		case WSAEADDRNOTAVAIL:
+				case WSAEADDRNOTAVAIL:
+					printf( "NETWORK_LaunchPacket: Error #%d, WSAEADDRENOTAVAIL: Address %s not available\n", error, address.ToString( ));
+					return;
 
-			printf( "NETWORK_LaunchPacket: Error #%d, WSAEADDRENOTAVAIL: Address %s not available\n", iError, Address.ToString() );
-			return;
-		case WSAEHOSTUNREACH:
+				case WSAEHOSTUNREACH:
+					printf( "NETWORK_LaunchPacket: Error #%d, WSAEHOSTUNREACH: Address %s unreachable\n", error, address.ToString( ));
+					return;
 
-			printf( "NETWORK_LaunchPacket: Error #%d, WSAEHOSTUNREACH: Address %s unreachable\n", iError, Address.ToString() );
-			return;				
-		default:
-
-			printf( "NETWORK_LaunchPacket: Error #%d\n", iError );
-			return;
+				default:
+					printf( "NETWORK_LaunchPacket: Error #%d\n", error );
+					return;
+			}
 		}
 #else
-	if ( errno == EWOULDBLOCK )
-return;
-
-          if ( errno == ECONNREFUSED )
-              return;
-
-		printf( "NETWORK_LaunchPacket: %s\n", strerror( errno ));
-		printf( "NETWORK_LaunchPacket: Address %s\n", Address.ToString() );
-
+		// [AK] Don't print an error message when the connection is blocked or refused.
+		if (( errno != EWOULDBLOCK ) && ( errno != ECONNREFUSED ))
+		{
+			printf( "NETWORK_LaunchPacket: %s\n", strerror( errno ));
+			printf( "NETWORK_LaunchPacket: Address %s\n", address.ToString( ));
+		}
 #endif
 	}
 }

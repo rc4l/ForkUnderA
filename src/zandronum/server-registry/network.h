@@ -75,7 +75,7 @@ NETADDRESS_s	NETWORK_GetFromAddress( void );
 
 // [rc4l] Highest of the sockets we receive on, for select's nfds argument.
 SOCKET			NETWORK_MaxSocket( void );
-void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+void			NETWORK_LaunchPacket( NETBUFFER_s *buffer, NETADDRESS_s address );
 
 // [rc4l] Send from a DIFFERENT socket than the one everybody talks to us on.
 //
@@ -89,7 +89,7 @@ void			NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
 // genuinely open to the world, which is the thing being claimed. Bound to an ephemeral port on
 // purpose: any port will do so long as it is not the one they announced to, and picking a fixed
 // second number would just be another thing for an operator to have to open.
-void			NETWORK_LaunchProbePacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address );
+void			NETWORK_LaunchProbePacket( NETBUFFER_s *buffer, NETADDRESS_s address );
 //AActor			*NETWORK_FindThingByNetID( LONG lID );
 NETADDRESS_s	NETWORK_GetLocalAddress( void );
 NETBUFFER_s		*NETWORK_GetNetworkMessageBuffer( void );
