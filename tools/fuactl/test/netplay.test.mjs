@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble, setCrash, memberName } from "../src/netplay.mjs";
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");
@@ -248,4 +248,17 @@ test("the running set is recorded and read back, and a missing record names the 
   writeNetplaySession({ gamePort: 1 }, "f", (f, text) => { held = text; });
   assert.deepEqual(readNetplaySession("f", () => held), { gamePort: 1 });
   assert.throws(() => readNetplaySession("f", () => { throw new Error("ENOENT"); }), /start one with fuactl netplay/);
+});
+
+test("a set names the first of its instances that left a crash log, and none when none did", () => {
+  const text = "=== MCP ENGINE CRASH ===\nsignal: 11 SIGSEGV\npid: 1\n\nbacktrace:\n0   forkundera   0x1 ZatPoint + 12\n";
+  const _fs = { existsSync: (p) => p === "/l/server.log.crash", readFileSync: () => text };
+  const set = { server: { role: "server", inst: { log: "/l/server.log" } }, clients: [{ role: "player", player: 0, inst: { log: "/l/client.log" } }] };
+  assert.equal(setCrash(set, _fs).message, "server engine crashed -- /l/server.log.crash\n  signal: 11 SIGSEGV\n  0   forkundera   0x1 ZatPoint + 12");
+  const clientOnly = { existsSync: (p) => p === "/l/client.log.crash", readFileSync: () => text };
+  assert.match(setCrash(set, clientOnly).message, /^player player 0 engine crashed -- \/l\/client\.log\.crash/);
+  assert.equal(setCrash(set, { existsSync: () => false }), null);
+  assert.equal(setCrash({ server: null, clients: [] }, _fs), null);
+  assert.equal(setCrash(null, _fs), null);
+  assert.equal(memberName({ role: "observer", player: -1 }), "observer");
 });

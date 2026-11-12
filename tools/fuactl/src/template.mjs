@@ -12,7 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
-import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses } from "./netplay.mjs";
+import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses, setCrash } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -544,7 +544,7 @@ export const FILL_CHECK = { fua_copy_prescan_check: 1 };
 
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
 export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
-  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses,
+  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses, crash = setCrash,
     replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
   const wadPath = writeTemplateFile(name, wad);
   const lines = [];
@@ -562,6 +562,9 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
       const r = await judgeNetplay(set, label, { wadPath: filePath, iwad, map, config });
       lines.push(...(r.lines || [r.line]));
       failed += r.failed;
+      // [rc4l] An instance that crashed under the judge fails with its frames, where the checks after it would only time out.
+      const died = crash(set);
+      if (died) throw died;
       // [rc4l] And the netcode stayed on the threads its seams name, on every instance.
       const crossed = await seams(set);
       if (crossed.length) { lines.push(`FAIL ${label}: ${crossed.join("; ")}`); failed++; }
@@ -572,7 +575,7 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
       const late = await replication(set);
       if (late) { lines.push(`FAIL ${label}: ${late}`); failed++; }
     } catch (e) {
-      lines.push(`FAIL ${label}: ${e.message}`);
+      lines.push(`FAIL ${label}: ${((set && crash(set)) || e).message}`);
       failed++;
     } finally {
       if (set) await close(set);

@@ -394,6 +394,17 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
   assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
 });
 
+test("a netplay instance that crashed under the judge fails with its crash, whether the judge returned or threw", async () => {
+  const checked = [];
+  const deps = { launch: async (o) => ({ id: o.lag }), close: async () => {}, seams: async (set) => { checked.push(set.id); return []; }, fills: async () => [], replication: async () => "",
+    crash: (set) => (set.id === "dead" || set.id === "threw" ? new Error("server engine crashed -- s.log.crash") : null) };
+  const r = await compareNetplay({ name: "ntcrash", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs: [{ name: "dead", lag: "dead" }, { name: "threw", lag: "threw" }, { name: "fine", lag: "fine" }],
+    judgeNetplay: async (set, label) => { if (set.id === "threw") throw new Error("rpc timeout"); return { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
+  assert.deepEqual(r.lines, ["PASS MAP01 dead", "FAIL MAP01 dead: server engine crashed -- s.log.crash", "FAIL MAP01 threw: server engine crashed -- s.log.crash", "PASS MAP01 fine"]);
+  assert.equal(r.failed, 2);
+  assert.deepEqual(checked, ["fine"], "a crashed set skips the checks that would only time out");
+});
+
 test("a netplay configuration may bring its own file, a pk3 named as one beside the scenario's wad", async () => {
   const launched = [], judgedFiles = [];
   const deps = { launch: async (o) => { launched.push(o); return { id: launched.length }; }, close: async () => {}, seams: async () => [], fills: async () => [], replication: async () => "" };

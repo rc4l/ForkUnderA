@@ -6,6 +6,7 @@ import * as cap from "./capture.mjs";
 import { scaled } from "./timeouts.mjs";
 import { parseSeamReport } from "./seams.mjs";
 import { parsePrescanReport } from "./copycheck.mjs";
+import { crashedError } from "./play.mjs";
 
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
@@ -117,13 +118,27 @@ export async function joinGame(client, server, { exec = cap.exec, sleep = cap.sl
   }
 }
 
+// [rc4l] A member of a set by its role and, once it joined, its player number.
+export function memberName(m) {
+  return `${m.role}${m.player >= 0 ? ` player ${m.player}` : ""}`;
+}
+
+// [rc4l] The first instance of a set that left a crash log, as an error naming who crashed and its first frames, else null.
+export function setCrash(set, _fs = fs) {
+  for (const m of [set?.server, ...(set?.clients || [])]) {
+    const crashed = m && crashedError(m.inst, null, _fs);
+    if (crashed) return new Error(`${memberName(m)} ${crashed.message}`);
+  }
+  return null;
+}
+
 // [rc4l] Each instance of a set whose seams a thread their owner does not allow entered, as "who: first (count)", since the netcode's seams run only in a netgame.
 export async function seamViolations(set, exec = cap.exec) {
   const out = [];
   for (const m of [set.server, ...set.clients]) {
     if (!m?.c) continue;
     const r = parseSeamReport(await exec(m.c, "fua_seams"));
-    if (r.differed > 0) out.push(`${m.role}${m.player >= 0 ? ` player ${m.player}` : ""}: ${r.differed} seam violations, the first in ${r.first}`);
+    if (r.differed > 0) out.push(`${memberName(m)}: ${r.differed} seam violations, the first in ${r.first}`);
   }
   return out;
 }
@@ -134,7 +149,7 @@ export async function fillMisses(set, exec = cap.exec) {
   for (const m of set.clients || []) {
     if (!m?.c) continue;
     const r = parsePrescanReport(await exec(m.c, "fua_copy_prescan_report", { quietMs: 400 }));
-    if (r.differed > 0) out.push(`${m.role}${m.player >= 0 ? ` player ${m.player}` : ""}: its render copy missed ${r.differed} changes of the map, the first ${r.first}`);
+    if (r.differed > 0) out.push(`${memberName(m)}: its render copy missed ${r.differed} changes of the map, the first ${r.first}`);
   }
   return out;
 }
