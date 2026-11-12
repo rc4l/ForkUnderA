@@ -73,6 +73,8 @@ struct SectorStateRow
 	double reflectFloor = 0, reflectCeiling = 0;
 	double xScaleFloor = 0, yScaleFloor = 0, xScaleCeiling = 0, yScaleCeiling = 0;
 	double angleFloor = 0, angleCeiling = 0;   // [rc4l] degrees
+	// [rc4l] Each light list entry's plane height at the sector's centre, which the list copies and only a recalculation renews.
+	std::vector<double> lightTops;
 };
 
 std::string ComputeSectorStateJson(const SectorStateRow &row);

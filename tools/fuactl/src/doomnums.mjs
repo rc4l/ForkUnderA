@@ -10,6 +10,7 @@ export const SPECIAL = Object.freeze({
   Floor_LowerByValue: 20,
   Floor_LowerToLowest: 21,
   Floor_RaiseByValue: 23,
+  Ceiling_LowerByValue: 40,
   Scroll_Wall: 52,
   Line_SetTextureOffset: 53,
   Line_SetBlocking: 55,

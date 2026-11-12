@@ -7093,6 +7093,10 @@ void ServerCommands::SetSectorCeilingPlane::Execute()
 	// Change the height.
 	sector->ceilingplane.ChangeHeight( delta );
 
+	// Call this to update various actors within the sector.
+	// [rc4l] Ported from zandronum@38e71b91375ccbd4efc29c4bd2c9944b1ba09c0e: it also renews the 3D floor light lists, which copy the plane.
+	P_ChangeSector( sector, false,(int)( delta), 1, false );
+
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::ceiling, sector->GetPlaneTexZ(sector_t::ceiling) + sector->ceilingplane.HeightDiff( lastPos ) );
 

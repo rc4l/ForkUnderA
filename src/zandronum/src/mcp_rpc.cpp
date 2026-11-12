@@ -808,6 +808,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				r.yScaleCeiling = FIXED2DBL( s.GetYScale( sector_t::ceiling ));
 				r.angleFloor = s.GetAngle( sector_t::floor, false ) * ( 360.0 / 4294967296.0 );
 				r.angleCeiling = s.GetAngle( sector_t::ceiling, false ) * ( 360.0 / 4294967296.0 );
+				for ( unsigned k = 0; k < s.e->XFloor.lightlist.Size( ); k++ )
+					r.lightTops.push_back( FIXED2DBL( s.e->XFloor.lightlist[k].plane.ZatPoint( s.soundorg[0], s.soundorg[1] )));
 				body += zx::mcp::ComputeSectorStateJson( r );
 			}
 			else if ( linesWanted )

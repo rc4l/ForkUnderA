@@ -23,6 +23,13 @@ std::string Quoted(const std::string &s)
 	return zx::json::ComputeJsonQuoted(s);
 }
 
+std::string NumList(const std::vector<double> &values)
+{
+	std::string out;
+	for (size_t i = 0; i < values.size(); ++i) out += (i ? "," : "") + Num(values[i]);
+	return out;
+}
+
 }
 
 const char *ComputeNetRoleName(int netState)
@@ -70,7 +77,7 @@ std::string ComputeSectorStateJson(const SectorStateRow &row)
 		",\"floorTex\":" + Quoted(row.floorTex) + ",\"ceilingTex\":" + Quoted(row.ceilingTex) + ",\"gravity\":" + Num(row.gravity) +
 		",\"friction\":" + Num(row.friction) + ",\"special\":" + std::to_string(row.special) + ",\"reflect\":[" + Num(row.reflectFloor) + "," +
 		Num(row.reflectCeiling) + "],\"scale\":[" + Num(row.xScaleFloor) + "," + Num(row.yScaleFloor) + "," + Num(row.xScaleCeiling) + "," +
-		Num(row.yScaleCeiling) + "],\"rotation\":[" + Num(row.angleFloor) + "," + Num(row.angleCeiling) + "]}";
+		Num(row.yScaleCeiling) + "],\"rotation\":[" + Num(row.angleFloor) + "," + Num(row.angleCeiling) + "],\"lights\":[" + NumList(row.lightTops) + "]}";
 }
 
 std::string ComputeSideStateJson(const SideStateRow &row)
