@@ -2301,13 +2301,9 @@ void APowerRespawnInvulnerable::EndEffect ()
 			// [BC] If the owner is a spectating player, don't make him visible!
 			if ((Owner->player == nullptr) || (Owner->player->bSpectating == false))
 			{
-				// [BB] Restore the default alpha value and set RenderStyle accordingly.
+				// [BB/AK] Restore the default alpha and render style values.
 				Owner->alpha = Owner->GetDefault()->alpha;
-
-				if (Owner->alpha == OPAQUE)
-					Owner->RenderStyle = STYLE_Normal;
-				else
-					Owner->RenderStyle = STYLE_Translucent;
+				Owner->RenderStyle = Owner->GetDefault()->RenderStyle;
 			}
 			else
 			{

@@ -460,7 +460,8 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 	// Also kill the alpha flicker cause by the visibility flicker.
 	if ( effects & FX_VISIBILITYFLICKER )
 	{
-		RenderStyle = STYLE_Normal;
+		alpha = GetDefault()->alpha;
+		RenderStyle = GetDefault()->RenderStyle;
 		effects &= ~FX_VISIBILITYFLICKER;
 	}
 
