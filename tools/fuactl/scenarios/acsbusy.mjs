@@ -45,8 +45,11 @@ export const VANTAGES = [{ name: "room", at: { x: 256, y: 128, z: 0, angle: 90, 
 const EXPECTED = BITS.busyEnded + BITS.plainRan;
 export const COUNTER = { command: "zx_acsbusy_passed", label: "scripts' bits (busy ended 1, plain ended 2, plain ran 4)",
   pattern: "\"zx_acsbusy_passed\" is \"(\\d+)\"", floor: EXPECTED, ceiling: EXPECTED };
+// [rc4l] The profiler still counts every p-code the busy script runs past the limit, which zandronum@c34601595099 stopped counting.
+export const PROFILED = { command: "acsprofile", label: "busy script's profiled p-codes",
+  pattern: "BEHAVIOR\\s+1\\s+(\\d+)\\s+1\\s", floor: 5 * PASSES };
 
 export const SIDES = [{ name: "vk", launchCvars: MUTE }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "acsbusy", wad: buildAcsBusyPk3(), maps: ["MAP01"],
-  vantages: VANTAGES, counter: COUNTER, sides: SIDES }), compareCounter);
+  vantages: VANTAGES, counter: [COUNTER, PROFILED], sides: SIDES }), compareCounter);

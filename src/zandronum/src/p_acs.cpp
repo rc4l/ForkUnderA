@@ -9292,7 +9292,7 @@ int DLevelScript::RunScript ()
 	ACSLocalArrays noarrays;
 	ACSLocalArrays *localarrays = &noarrays;
 	ScriptFunction *activeFunction = NULL;
-	ScriptPtr *ptr;
+	ScriptPtr *ptr = nullptr;
 	FRemapTable *translation = 0;
 	int resultValue = 1;
 	bool bIsFirstTic = false; // [AK]
@@ -9399,7 +9399,8 @@ int DLevelScript::RunScript ()
 	while (state == SCRIPT_Running)
 	{
 		// [rc4l] Ported from zandronum@b8fe8ef13df5823c881e65c7a4f2f9fa61f6a60d: a script flagged BUSY is not held to the runaway limit.
-		if ( (++runaway > 2000000) && ptr && !(ptr->Flags & SCRIPTF_Busy) )
+		// [rc4l] Adapted from zandronum@c346015950993a4ec201acd313d9445fe869b050: every p-code still counts, for acsprofile and the missing-script check, and a script not found is held to the limit.
+		if ( (++runaway > 2000000) && !( ptr && ( ptr->Flags & SCRIPTF_Busy )))
 		{
 			Printf ("Runaway %s terminated\n", ScriptPresentation(script).GetChars());
 			state = SCRIPT_PleaseRemove;
