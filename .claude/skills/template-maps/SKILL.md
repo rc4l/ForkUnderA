@@ -155,7 +155,15 @@ capture can catch it: have the engine count it, and use `compareCounter`, which 
 with the sim running and holds a console command's number to a ceiling (`counter: { command, label,
 pattern, ceiling | floor }`, `pattern`'s first group the number), launched with the first non-GL side's
 cvars. `spriteslots.mjs` reads `fua_dg_dynstats`; `particles.mjs` holds a floor. `compareOverTime` and
-`compareCounter` both launch with the first non-GL side's settings.
+`compareCounter` both launch with the first non-GL side's settings. A counter's `explain(map, value)`
+says what a failing value means.
+
+For many yes-or-no facts a puke can read (a sector's light by tag, a line's activation by ID, an actor's
+x), use `acs.mjs`'s `checksScript(checks, read, { delayTics })` and `checksCounter(cvar, checksFor)`:
+each check `[what, kind, arg, want]` is read by `read[kind](arg)`, a failure adds its own bit, and the
+FAIL line names the checks that failed. `tagmanager.mjs` and `udmfuserkeys.mjs` are the examples.
+`new UdmfMap({ namespace: "doom" })` writes a base-namespace TEXTMAP, and `hexenMapLumps(name, map)`
+writes the same map in Hexen's binary format, for what only the binary loaders do.
 
 For what a command must CHANGE and what must SURVIVE one (a mark made, then a resize), use
 `compareSequence`: `steps` are captures taken in turn, each after its `commands` (console lines, a number
@@ -219,7 +227,7 @@ Export the builder from the scenario; `runScenarioIfMain` keeps the import from 
 
 | file | role |
 |---|---|
-| `tools/fuactl/src/udmf.mjs` | UDMF map + PWAD writer |
+| `tools/fuactl/src/udmf.mjs` | UDMF map + PWAD writer, and Hexen-format lumps from the same map |
 | `tools/fuactl/src/template.mjs` | `compareTemplate` (launch, capture, judge), the other `compare*` comparisons, and the pure `judge*` verdicts |
 | `tools/fuactl/src/pngcore.mjs` | PNG decode/encode, `boxDiff`; `fuactl png --boxdiff` on the CLI |
 | `tools/fuactl/scenarios/horizon.mjs` | the worked example |

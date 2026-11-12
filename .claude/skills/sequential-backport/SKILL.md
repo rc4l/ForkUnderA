@@ -349,6 +349,12 @@ silently rotting into a stale drop-list.
 - **Known existence checks**: no auth server (removed), the changelog is not maintained past 3.2.1,
   stock Zandronum peers are refused at connect (`features/net-transport/README.md`). A hunk that
   only serves one of those is a skip slice, named as such.
+- **A transplanted series can be broken between its commits.** Zandronum took the 2015 `FTagManager`
+  series as ZDoom wrote it: `020ebf903625` does not build without `566770b828b4`, and the rows between
+  `a17262422dfc` and `6fe64e17fb1e` return list indices, skip sector 0, lose tag 0 and invert
+  `Sector_CopyScroller`. Port it in order, pull forward only what a commit needs to build (and say so
+  in its note), and write one scenario for the whole series that each fix fails first on
+  (`scenarios/tagmanager.mjs`, a map per fix).
 - **Never `zandronum-base`.** Every row is after our base, so a row we already have cites the commit
   of ours that carries it (`git log -S` on its distinctive line finds it).
 - **Every Zandronum port gets the fixed64 audit**: Zandronum's code still assumes a 32-bit `fixed_t`.
