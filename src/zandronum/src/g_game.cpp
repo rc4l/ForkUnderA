@@ -3963,6 +3963,13 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		}
 	}
 
+	// [rc4l] Adapted from zandronum@0f08c6c87089ebe02eb64e6d4ee295caa5980cf0: each 3D-floored sector's light list is renewed once every plane is back, its own and its 3D floors'.
+	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
+	{
+		if ( sectors[ulIdx].e && sectors[ulIdx].e->XFloor.ffloors.Size( ) )
+			P_Recalculate3DFloors( &sectors[ulIdx] );
+	}
+
 	// Reset the sky properties of the map.
 	pLevelInfo = level.info;//FindLevelInfo( level.MapName );
 	if ( pLevelInfo )
