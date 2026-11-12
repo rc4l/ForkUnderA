@@ -3114,9 +3114,7 @@ AActor *CLIENT_SpawnThing( const PClass *pType, fixed_t X, fixed_t Y, fixed_t Z,
 		pActor->NetID = netID;
 		g_ActorNetIDList.useID( netID, pActor );
 
-		pActor->SpawnPoint[0] = X;
-		pActor->SpawnPoint[1] = Y;
-		pActor->SpawnPoint[2] = Z;
+		// [rc4l] Adapted from zandronum@4c658ffc6887bed07f7f9bf31add527be90ef2c6: StaticSpawn already set the spawn point, its height above the floor, which an absolute Z here broke.
 
 		// [Zalewa] Bullet puffs don't do 3D floor checks server-side.
 		if (!(spawnFlags & SPAWNFLAG_PUFF))
