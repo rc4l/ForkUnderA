@@ -89,6 +89,7 @@
 #include "features/quake-movement/quakemove.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 #include "computation/playerskin_compute.h"
+#include "computation/startitem_compute.h"   // [rc4l] whether a start item morphed its player
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -1833,15 +1834,16 @@ void APlayerPawn::GiveDefaultInventory ()
 					static_cast<AWeapon*>(item)->AmmoGive1 =
 					static_cast<AWeapon*>(item)->AmmoGive2 = 0;
 				}
-				AActor *check;
-				if (!item->CallTryPickup(this, &check))
+				AActor *check = this;
+				const bool pickedUp = item->CallTryPickup(this, &check);
+				if (zx::ComputeStartItemMorphedPlayer(pickedUp, check == this))
 				{
-					if (check != this)
-					{
-						// Player was morphed. This is illegal at game start.
-						// This problem is only detectable when it's too late to do something about it...
-						I_Error("Cannot give morph items when starting a game");
-					}
+					// Player was morphed. This is illegal at game start.
+					// This problem is only detectable when it's too late to do something about it...
+					I_Error("Cannot give morph items when starting a game");
+				}
+				if (!pickedUp)
+				{
 					item->Destroy ();
 					item = NULL;
 				}
