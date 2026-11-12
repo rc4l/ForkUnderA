@@ -190,6 +190,8 @@ bool		TEAM_IsActorVisibleToPlayer( const AActor *pActor, player_t *pPlayer );
 int		TEAM_GetPlayerStartThingNum( ULONG ulTeam );
 const char*	TEAM_GetTeamItemName( ULONG ulTeam );
 const char*	TEAM_GetIntermissionTheme( ULONG ulTeam, bool bWin );
+int			TEAM_GetIntermissionThemeOrder( ULONG ulTeam, bool bWin );
+int			TEAM_SelectMusicOrder( player_t *pPlayer, const FString TEAMINFO::*teamMusic, const int TEAMINFO::*teamMusicOrder, int defaultOrder );
 
 //*****************************************************************************
 //  EXTERNAL CONSOLE VARIABLES

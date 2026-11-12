@@ -56,6 +56,7 @@
 #include "campaign.h"
 #include "c_cvars.h"
 #include "features/monster-stairs/monsterstairs.h"	// [Doruk-Aksoy] ResetGameInfo
+#include "computation/musicspec_compute.h"	// [rc4l] ComputeMusicSpec
 
 TArray<cluster_info_t> wadclusterinfos;
 TArray<level_info_t> wadlevelinfos;
@@ -297,6 +298,13 @@ void level_info_t::Reset()
 	SoundInfo = "";
 	// [AK] By default, the map can be played in any game mode.
 	GameMode = NUM_GAMEMODES;
+	// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: Skulltag's own winner and loser pictures and music unless MAPINFO names others.
+	WinnerPic = "WINERPIC";
+	LoserPic = "LOSERPIC";
+	WinnerMusic = "d_stwin";
+	LoserMusic = "d_stlose";
+	winnermusicorder = 0;
+	losermusicorder = 0;
 	SndSeq = "";
 	LightningSound = "";
 	HazardColor = -1;
@@ -708,15 +716,11 @@ void FMapInfoParser::ParseMusic(FString &name, int &order)
 {
 	sc.MustGetString();
 
-	order = 0;
-	char *colon = strchr (sc.String, ':');
-	if (colon)
-	{
-		order = atoi(colon+1);
-		*colon = 0;
-	}
-	name = sc.String;
-	if (!colon && CheckNumber())
+	// [rc4l] The "name:order" split is ComputeMusicSpec, shared with TEAMINFO's themes.
+	const zx::MusicSpec spec = zx::ComputeMusicSpec(sc.String);
+	name = spec.name.c_str();
+	order = spec.order;
+	if (!spec.hasOrder && CheckNumber())
 	{
 		order = sc.Number;
 	}
@@ -1054,6 +1058,33 @@ DEFINE_MAP_OPTION(intermusic, true)
 {
 	parse.ParseAssign();
 	parse.ParseMusic(info->InterMusic, info->intermusicorder);
+}
+
+// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the map's Skulltag winner and loser intermission pictures and music.
+DEFINE_MAP_OPTION(winnerpic, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->WinnerPic = parse.sc.String;
+}
+
+DEFINE_MAP_OPTION(loserpic, true)
+{
+	parse.ParseAssign();
+	parse.sc.MustGetString();
+	info->LoserPic = parse.sc.String;
+}
+
+DEFINE_MAP_OPTION(winnermusic, true)
+{
+	parse.ParseAssign();
+	parse.ParseMusic(info->WinnerMusic, info->winnermusicorder);
+}
+
+DEFINE_MAP_OPTION(losermusic, true)
+{
+	parse.ParseAssign();
+	parse.ParseMusic(info->LoserMusic, info->losermusicorder);
 }
 
 DEFINE_MAP_OPTION(fadetable, true)

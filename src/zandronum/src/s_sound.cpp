@@ -3538,6 +3538,15 @@ CCMD (playliststatus)
 	}
 }
 
+// [rc4l] The music playing and its track as S_GetMusic reports them, recorded even at volume 0, so a test can read what an intermission or a map chose.
+DEV_MODE_CCMD (fua_music)
+{
+	char *name = NULL;
+	const int order = S_GetMusic (&name);
+	Printf ("music \"%s\" order %d\n", name != NULL ? name : "", order);
+	delete[] name;
+}
+
 //==========================================================================
 //
 // CCMD cachesound <sound name>

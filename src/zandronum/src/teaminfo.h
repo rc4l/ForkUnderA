@@ -118,6 +118,10 @@ struct TEAMINFO
 	FString		WinnerTheme;
 	FString		LoserTheme;
 
+	// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: each theme's track.
+	int			winnerthemeorder;
+	int			loserthemeorder;
+
 	// [AK] The name of the texture that this team uses as their logo.
 	FString		Logo;
 

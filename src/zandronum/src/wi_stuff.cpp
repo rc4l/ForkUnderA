@@ -65,6 +65,7 @@
 #include "network.h"
 #include "m_misc.h"
 #include "d_event.h"
+#include "computation/intermissiontheme_compute.h"	// [rc4l] ComputePlaysIntermissionTheme
 
 // States for the intermission
 typedef enum
@@ -526,10 +527,11 @@ void WI_LoadBackground(bool isenterpic)
 				if ( WI_UseSkulltagIntermissionAndMusic( ))
 				{
 					// [BB] Possibly select a custom winner / loser pic.
+					// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the map's MAPINFO pictures stand in for Skulltag's.
 					if ( WI_CalcRank( ) <= 1 )
-						lumpname = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::WinnerPic, "WINERPIC" );
+						lumpname = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::WinnerPic, level.info->WinnerPic );
 					else
-						lumpname = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::LoserPic, "LOSERPIC" );
+						lumpname = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::LoserPic, level.info->LoserPic );
 
 					// [BB] If the selected pic doesn't exist (Zandronum itself doesn't have WINERPIC or LOSERPIC)
 					// and is no script, fall back to the default one.
@@ -2603,21 +2605,29 @@ void WI_Ticker(void)
 		// [BC] Use Skulltag's new music.
 		if ( WI_UseSkulltagIntermissionAndMusic( ))
 		{
+			// [rc4l] Adapted from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the map's MAPINFO music and track stand in for Skulltag's, the choice in computation/intermissiontheme_compute.
 			FString musicName;
+			int musicOrder;
 			if ( CAMPAIGN_DidPlayerBeatMap( ))
-				musicName = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::WinnerTheme, "d_stwin" );
+			{
+				musicName = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::WinnerTheme, level.info->WinnerMusic );
+				musicOrder = TEAM_SelectMusicOrder( &players[consoleplayer], &TEAMINFO::WinnerTheme, &TEAMINFO::winnerthemeorder, level.info->winnermusicorder );
+			}
 			else
-				musicName = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::LoserTheme, "d_stlose" );
+			{
+				musicName = TEAM_SelectCustomStringForPlayer( &players[consoleplayer], &TEAMINFO::LoserTheme, level.info->LoserMusic );
+				musicOrder = TEAM_SelectMusicOrder( &players[consoleplayer], &TEAMINFO::LoserTheme, &TEAMINFO::loserthemeorder, level.info->losermusicorder );
+			}
 
-			// [BB] In case we want to use Skulltag's built-in intermission music,
+			// [BB] In case we want to use the map's intermission music,
 			// check if the lump exists and fall back to the default music if it doesn't.
-			// Don't check if the lump exists if it's not d_stwin/d_stlose. S_ChangeMusic
+			// Don't check if the lump exists if it's a team's theme. S_ChangeMusic
 			// supports much more than a simple lump name as argument  and we want to
 			// allow the full flexibility within the TEAMINFO lump.
-			if ( ( ( musicName.Compare ( "d_stwin" ) != 0 ) && ( musicName.Compare ( "d_stlose" ) != 0 ) )
-				|| Wads.CheckNumForName( musicName.GetChars(), ns_music ) != -1 )
+			const bool isMapTheme = ( musicName.CompareNoCase( level.info->WinnerMusic ) == 0 ) || ( musicName.CompareNoCase( level.info->LoserMusic ) == 0 );
+			if ( zx::ComputePlaysIntermissionTheme( isMapTheme, Wads.CheckNumForFullName( musicName.GetChars(), true, ns_music ) != -1 ))
 			{
-				S_ChangeMusic ( musicName.GetChars() );
+				S_ChangeMusic ( musicName.GetChars(), musicOrder );
 				bUsingCustomMusic  = true;
 			}
 		}

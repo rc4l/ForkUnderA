@@ -79,6 +79,7 @@
 #include "v_video.h"
 #include "templates.h"
 #include "d_event.h"
+#include "computation/intermissiontheme_compute.h"	// [rc4l] ComputeIntermissionThemeOrder
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -1713,6 +1714,23 @@ const char* TEAM_GetIntermissionTheme( ULONG ulTeam, bool bWin ) {
 		return teams[ulTeam].WinnerTheme;
 	else
 		return teams[ulTeam].LoserTheme;
+}
+
+//*****************************************************************************
+// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: a team's winner or loser theme's track.
+int TEAM_GetIntermissionThemeOrder( ULONG ulTeam, bool bWin )
+{
+	if ( !TEAM_CheckIfValid( ulTeam ) )
+		return 0;
+	return bWin ? teams[ulTeam].winnerthemeorder : teams[ulTeam].loserthemeorder;
+}
+
+//*****************************************************************************
+// [rc4l] Adapted from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the track to go with TEAM_SelectCustomStringForPlayer's theme, the choice ComputeIntermissionThemeOrder.
+int TEAM_SelectMusicOrder( player_t *pPlayer, const FString TEAMINFO::*teamMusic, const int TEAMINFO::*teamMusicOrder, int defaultOrder )
+{
+	const bool teamHasTheme = ( pPlayer != NULL ) && pPlayer->bOnTeam && TEAM_HasCustomString( pPlayer->Team, teamMusic );
+	return zx::ComputeIntermissionThemeOrder( teamHasTheme, teamHasTheme ? teams[pPlayer->Team].*teamMusicOrder : 0, defaultOrder );
 }
 
 //*****************************************************************************

@@ -470,6 +470,9 @@ enum
 	TPROP_TeamItem,
 	TPROP_WinnerTheme,
 	TPROP_LoserTheme,
+	// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: each theme's track.
+	TPROP_WinnerThemeOrder,
+	TPROP_LoserThemeOrder,
 };
 
 class FBehavior

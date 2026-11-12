@@ -1657,6 +1657,10 @@ static int GetTeamProperty (unsigned int team, int prop) {
 			return TEAM_GetReturnTicks (team);
 		case TPROP_NumPlayers:
 			return TEAM_CountPlayers (team);
+		// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the winner and loser themes' tracks.
+		case TPROP_WinnerThemeOrder:
+		case TPROP_LoserThemeOrder:
+			return TEAM_GetIntermissionThemeOrder (team, prop == TPROP_WinnerThemeOrder);
 		// [Dusk] Now for the strings! Using dynamic strings for this.
 		case TPROP_TeamItem:
 		case TPROP_WinnerTheme:

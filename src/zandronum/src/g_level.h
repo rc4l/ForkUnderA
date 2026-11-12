@@ -418,7 +418,15 @@ struct level_info_t
 	// [AK] Determines which game mode the map is locked into.
 	GAMEMODE_e	GameMode;
 
-	level_info_t() 
+	// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the map's Skulltag winner and loser intermission pictures and music.
+	FString		WinnerPic;
+	FString		LoserPic;
+	FString		WinnerMusic;
+	FString		LoserMusic;
+	int			winnermusicorder;
+	int			losermusicorder;
+
+	level_info_t()
 	{ 
 		Reset(); 
 	}
