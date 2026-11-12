@@ -58,6 +58,8 @@
 #include <tuple>
 #include <vector>
 #include "features/telemetry/telemetry.h"
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] an actor's fua_Material row
+#include "features/hwshaders/hwshaders.h"   // [Doruk-Aksoy] ActorMaterialShader
 
 EXTERN_CVAR(Int, r_spriteclip)
 EXTERN_CVAR(Float, r_sclipfactor)
@@ -302,10 +304,19 @@ static PalEntry ThingColorOf(const ActorRecord *thing)
 	return (thing->RenderStyle.Flags & STYLEF_ColorIsFixed) ? PalEntry(thing->fillcolor) : PalEntry(0xffffff);
 }
 
+// [Doruk-Aksoy] The drawn actor's fua_Material, which its sprite or model draws with over its texture's shader, and its uniform row.
+static void ActorMaterialOf(const ActorRecord *thing, MeshPiece &mp)
+{
+	const int material = thing->fua_material - 1;
+	mp.actorShader = zx::hwshaders::ActorMaterialShader(material);
+	mp.actorRow = mp.actorShader < 0 ? 0 : zx::actormaterials::ComputeActorUniformRow(material, thing->fua_materialSlot - 1, zx::actormaterials::MaterialCount()) + 1;
+}
+
 // [rc4l] A model as Process, Draw and gl_RenderModel take it: one band, lit from the light list entry at the actor's middle, its surfaces captured under the pose's matrix.
 // [Doruk-Aksoy] This half is its look and matrix, which a lane may work out.
 static void ModelLookOf(const ActorRecord *thing, const Subject &s, const Look &l, MeshPiece &look, float modelToWorld[16])
 {
+	ActorMaterialOf(thing, look);
 	int lightlevel = l.light;
 	FColormap cm = l.cm;
 	if (!gl_fixedcolormap && !l.fullbright)
@@ -506,6 +517,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		mp.range.offset = 0;
 		mp.range.count = 0;
 		mp.material = material;
+		ActorMaterialOf(thing, mp);
 		mp.mirrorView = zx::levelmesh::MirrorCaptureView();
 		mp.stackSlot = zx::levelmesh::StackCaptureSlot();
 		mp.dynLightIndex = -1;

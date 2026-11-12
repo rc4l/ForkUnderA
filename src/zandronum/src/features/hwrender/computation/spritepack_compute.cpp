@@ -60,6 +60,8 @@ bool ComputeSpritePack(const ScenePieceData &pd, const SpriteCorner corners[4], 
 	if (!AllZero(flood, 8) || !AllZero(normal, 3) || !AllZero(rest, 6) || pd.warpSpeed != 1.f) return false;
 	if (!AllZero(pd.glowTop, 4) || !AllZero(pd.glowBottom, 4) || !AllZero(pd.glowTopPlane, 4) || !AllZero(pd.glowBottomPlane, 4)) return false;
 	if (!AllZero(pd.tint, 4) || !AllZero(pd.tintRange, 4)) return false;
+	const float user[4] = { pd.actorRow, pd.user1, pd.user2, pd.user3 };
+	if (!AllZero(user, 4)) return false;
 	unsigned r, g, b, fr, fg, fb;
 	if (!Byte(pd.r, r) || !Byte(pd.g, g) || !Byte(pd.b, b) || !Byte(pd.fogR, fr) || !Byte(pd.fogG, fg) || !Byte(pd.fogB, fb)) return false;
 	int fogMode, mat, bright, texFlags, cpuLight;

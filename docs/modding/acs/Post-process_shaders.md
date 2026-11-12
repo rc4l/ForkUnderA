@@ -29,6 +29,10 @@ They are not in stock `acc`. Include [`fua.acs`](fua.acs) after `zcommon.acs`:
 
 `fua_SetShaderEnabled` turns a shader on or off. `fua_SetShaderUniform*` sets one of its uniforms.
 
+`fua_SetShaderUniform*` also sets a texture shader's uniforms, by the `fua_Name` its GLDEFS block gives
+([texture shaders](../gldefs/Texture_shaders.md#uniforms-scripts-set)). Everything below holds for them
+too, except that `fua_SetShaderEnabled` refuses a texture shader's name. They draw on Vulkan only.
+
 - **For everyone, or only the activator.** With `activatorOnly` false (the default) the change applies
   to every player. With it true, only the player who activated the script sees it: fire on one
   player's screen, say.

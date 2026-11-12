@@ -204,10 +204,11 @@ bool FShader::Load(const char * name, const char * vert_prog_lump, const char * 
 			if (pp_lump == -1) I_Error("Unable to load '%s'", proc_prog_lump);
 			FMemLump pp_data = Wads.ReadLump(pp_lump);
 
-			// [Doruk-Aksoy] main.fp calls an old Process(color) shader as its lighting says (FUA_PROCESS_ZANDRONUM or FUA_PROCESS_UZDOOM), and a material one is left out.
-			const zx::hwshaders::ShaderStyle style = zx::hwshaders::ComputeShaderStyle(pp_data.GetString().GetChars());
-			if (const char *why = zx::hwshaders::ComputeStyleRefusal(style)) I_Error("%s", why);
-			fp_comb = fp_comb.Left(fpStart) + zx::hwshaders::ComputeGLEntryDefine(zx::hwshaders::ComputeProgramEntry(style, lighting)) + fp_comb.Mid(fpStart);
+			// [Doruk-Aksoy] main.fp calls an old Process(color) shader as its lighting says (FUA_PROCESS_ZANDRONUM or FUA_PROCESS_UZDOOM), and UZDoom's materials are left out.
+			static const zx::hwshaders::UserShaderKey kPlainKey;
+			const zx::hwshaders::ProgramEntry entry = zx::hwshaders::ComputeProgramEntry(zx::hwshaders::ComputeShaderEntries(pp_data.GetString().GetChars()), lighting);
+			if (const char *why = zx::hwshaders::ComputeGLRefusal(kPlainKey, entry)) I_Error("%s", why);
+			fp_comb = fp_comb.Left(fpStart) + zx::hwshaders::ComputeGLEntryDefine(entry) + fp_comb.Mid(fpStart);
 			// [Doruk-Aksoy] Zandronum 3.3's camerapos and gl_TextureMatrix read through the names this base shader has.
 			fp_comb << zx::hwshaders::ComputeLegacyShaderNames(pp_data.GetString().GetChars()).c_str();
 			fp_comb.Substitute("gl_TexCoord[0]", "vTexCoord");	// fix old custom shaders.
@@ -364,10 +365,13 @@ bool FShader::Bind()
 //==========================================================================
 
 // [Doruk-Aksoy] Compile's build without its fatal error: NULL, and the compiler's reason in `error`, when the shader does not build.
+// [Doruk-Aksoy] key, a GLDEFS shader's, gives its lighting and its Define lines ahead of the shader.
 static FShader *TryCompile(const char *ShaderName, const char *ShaderPath, bool usediscard, FString &error,
-	zx::hwshaders::ProcessLighting lighting = zx::hwshaders::kLightingZandronum)
+	const zx::hwshaders::UserShaderKey *key = NULL)
 {
+	const zx::hwshaders::ProcessLighting lighting = key ? key->lighting : zx::hwshaders::kLightingZandronum;
 	FString defines;
+	if (key) defines += zx::hwshaders::ComputeDefineLines(key->defines).c_str();
 	// this can't be in the shader code due to ATI strangeness.
 	if (gl.MaxLights() == 128) defines += "#define MAXLIGHTS128\n";
 	if (!usediscard) defines += "#define NO_ALPHATEST\n";
@@ -518,7 +522,16 @@ void FShaderManager::CompileShaders()
 
 		// [Doruk-Aksoy] One that does not compile here is noted and its textures drawn with the default shader under its name, as the backend leaves it out, rather than ending the game.
 		FString error;
-		FShader *shc = TryCompile(sfn, zx::hwshaders::UserShaderLump(i), true, error, zx::hwshaders::UserShaderLighting(i));
+		const zx::hwshaders::UserShaderKey *key = zx::hwshaders::UserShaderKeyOf(i);
+		// [Doruk-Aksoy] A built-in material shader is the backend's alone, so GL draws its textures with the default one and says nothing.
+		if (key->lump.empty())
+		{
+			mTextureEffects.Push(Compile(sfn, defaultshaders[0].gettexelfunc, true));
+			continue;
+		}
+		const char *refused = zx::hwshaders::ComputeGLRefusal(*key, zx::hwshaders::kEntryTexel);
+		FShader *shc = refused ? NULL : TryCompile(sfn, zx::hwshaders::UserShaderLump(i), true, error, key);
+		if (refused) error = refused;
 		if (shc == NULL)
 		{
 			Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("GL", zx::hwshaders::UserShaderLump(i), error.GetChars()).c_str());

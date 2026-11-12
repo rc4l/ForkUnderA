@@ -101,14 +101,20 @@ than only at class-definition time.
   `APROP_HitRadius`, `APROP_HitHeight`
   ([#104](https://github.com/rc4l/ZandroX/pull/104))
 - [Post-process shaders](acs/Post-process_shaders.md) — `fua_SetShaderEnabled` and
-  `fua_SetShaderUniform*`, for everyone or only the activator, optionally timed. Declared for ACC in
-  [`fua.acs`](acs/fua.acs).
+  `fua_SetShaderUniform*`, for everyone or only the activator, optionally timed; the uniform calls set a
+  texture shader's `fua_Uniform` lines too. Declared for ACC in [`fua.acs`](acs/fua.acs).
+- [Actor materials](gldefs/Actor_materials.md) — `fua_SetActorMaterial` and `fua_SetActorUniform*`, one
+  actor's material and its own uniforms.
 
 ### GLDEFS
 
-- [Texture shaders](gldefs/Texture_shaders.md) — `HardwareShader` on a texture, flat or sprite: the
-  `ProcessTexel` and `Process(color)` entries, and `fua_ProcessLighting` to light a `Process` shader as
-  Zandronum 3.3 does or as UZDoom does.
+- [Texture shaders](gldefs/Texture_shaders.md) — `HardwareShader` and `Material` on a texture, flat or
+  sprite: UZDoom's entries (`SetupMaterial`, `ProcessMaterial`, `GetTexCoord`, `ProcessTexel`,
+  `ProcessLight`), `Texture` and `Define` lines, normal, specular and PBR maps with their light models,
+  `fua_ProcessLighting` to light a `Process` shader as Zandronum 3.3 does or as UZDoom does, and
+  `fua_Uniform` lines scripts set.
+- [Actor materials](gldefs/Actor_materials.md) — `fua_Material`: a shader an actor draws with, with
+  uniforms of its own, given by DECORATE and changed by ACS.
 - [Post-process shaders](gldefs/Post-process_shaders.md) — UZDoom's `HardwareShader PostProcess` blocks:
   full-screen shaders over the 3D view or the whole screen, on Vulkan and WebGPU. What a shader reads,
   the stages, precision, cost and the console commands.

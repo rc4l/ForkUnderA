@@ -1730,6 +1730,7 @@ add_executable( zdoom WIN32
 	features/postprocess/postprocess.cpp
 	features/bspgrid/bspgrid.cpp
 	features/acs-shaders/acsshaders.cpp
+	features/actormaterials/actormaterials.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp

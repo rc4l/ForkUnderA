@@ -13,7 +13,15 @@ import { scaled } from "../src/timeouts.mjs";
 import { GLDEFS, SHADERS, STRINGS, shaderCalls } from "./acsshaders.mjs";
 import { silentWav, parseHeard, QUIET, assertQuiet } from "./netmusic.mjs";
 
-const NET_STRINGS = [...STRINGS, "nosuch", "nolocal"];
+const NET_STRINGS = [...STRINGS, "nosuch", "nolocal", "zxwall", "glow", "tint"];
+
+// [Doruk-Aksoy] The room's walls carry a texture shader whose fua_Uniform a server script sets like a post-process one's.
+// [Doruk-Aksoy] ...and an actor of tid 9 a fua_Material whose tint a server script sets on it alone.
+const NET_GLDEFS = `${GLDEFS}HardwareShader Texture "STARTAN2" { Shader "shaders/acs/wall.fp" fua_Name "zxwall" fua_Uniform vec3 glow = 0.0 0.0 0.0 }
+fua_Material "zxglow" { Shader "shaders/acs/actor.fp" fua_Uniform vec3 tint = 1.0 0.0 0.0 }\n`;
+const NET_SHADERS = { ...SHADERS, wall: "vec4 ProcessTexel()\n{\n\treturn vec4(glow, 1.0);\n}\n", actor: "vec4 ProcessTexel()\n{\n\treturn vec4(tint, getTexel(vTexCoord.st).a);\n}\n" };
+const NET_DECORATE = "Actor ZXNetGlow 20141\n{\n  +NOGRAVITY\n  +NOINTERACTION\n  fua_Material \"zxglow\"\n  States\n  {\n  Spawn:\n    BON1 A -1\n    Stop\n  }\n}\n";
+const ACTOR_TID = 9;
 const { enable, uniform } = shaderCalls(NET_STRINGS);
 const SET_MUSIC_VOLUME = 97;
 const SONG = "FUASONG1";
@@ -25,7 +33,8 @@ const NOTHING_NEW = [...uniform("u3f", "c", [0, 0, 1]), ...enable("u3f", true), 
 // [Doruk-Aksoy] The scripts, by number: who runs each is in its comment.
 export const SCRIPTS = [
   // [Doruk-Aksoy] Puked on the server: a vec3 and a vec4 for everyone.
-  { number: 1, code: [...uniform("u3f", "c", [0, 0, 1]), ...enable("u3f", true), ...uniform("u4net", "d", [1, 0, 1, 1]), ...enable("u4net", true)] },
+  { number: 1, code: [...uniform("u3f", "c", [0, 0, 1]), ...enable("u3f", true), ...uniform("u4net", "d", [1, 0, 1, 1]), ...enable("u4net", true),
+    ...uniform("zxwall", "glow", [1, 0.5, 0]), ...callFunc(24009, [ACTOR_TID, NET_STRINGS.indexOf("tint"), 0, 65536, 0]), PCD.DROP] },
   // [Doruk-Aksoy] Puked by a client (NET): a float and an int only that player's.
   { number: 2, flags: SCRIPTF.NET, code: [...uniform("u1f", "a", [0.5], { own: true }), ...enable("u1f", true, true), ...uniform("u1i", "m", [3], { int: true, own: true })] },
   // [Doruk-Aksoy] Puked on the server: everyone's for a minute, still running when a late joiner arrives.
@@ -53,13 +62,15 @@ export function buildNetShadersPk3() {
   m.room(0, 0, 768, 512, { heightfloor: 0, heightceiling: 128, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 },
     () => ({ side: { texturemiddle: "STARTAN2" } }));
   for (const [i, y] of [[1, 96], [2, 192], [3, 288], [4, 384]]) m.thing({ x: 96, y, angle: 0, type: i });
+  m.thing({ x: 600, y: 256, angle: 180, type: 20141, id: ACTOR_TID });
   const behavior = acsScripts(SCRIPTS.map((s) => ({ open: false, ...s, code: [...s.code, PCD.TERMINATE] })), NET_STRINGS);
   return pk3([
     ...MAPS.map((name) => ({ name: `maps/${name}.wad`, data: wad(mapLumps(name, m, { behavior })) })),
     { name: "mapinfo.txt", data: MAPINFO },
     { name: `music/${SONG.toLowerCase()}.wav`, data: silentWav() },
-    { name: "gldefs.txt", data: GLDEFS },
-    ...Object.entries(SHADERS).map(([lump, text]) => ({ name: `shaders/acs/${lump}.fp`, data: text })),
+    { name: "gldefs.txt", data: NET_GLDEFS },
+    { name: "decorate.txt", data: NET_DECORATE },
+    ...Object.entries(NET_SHADERS).map(([lump, text]) => ({ name: `shaders/acs/${lump}.fp`, data: text })),
   ]);
 }
 
@@ -69,11 +80,19 @@ export function parseShaderStates(text) {
   for (const line of String(text).split(/\r?\n/)) {
     const head = /fua_postshaders: (\d+) entries at (-?\d+)/.exec(line);
     if (head) { out.entries = Number(head[1]); out.at = Number(head[2]); continue; }
-    const m = /fua_postshaders: (\S+) (on|off)(?: since (-?\d+))?(.*)$/.exec(line);
+    // [Doruk-Aksoy] An actor's fua_Material, listed by fua_actormaterials, under tid<n> with no switch.
+    const a = /fua_actormaterials: tid=(\d+) (\S+)(.*)$/.exec(line);
+    if (a) {
+      const uniforms = {};
+      for (const [, name, values] of a[3].matchAll(/(\w+)=(\S+)/g)) uniforms[name] = values.split(",").map(Number);
+      out.shaders[`tid${a[1]}`] = { on: null, since: null, material: a[2], uniforms };
+      continue;
+    }
+    const m = /fua_postshaders: (\S+) (on|off|texture)(?: since (-?\d+))?(.*)$/.exec(line);
     if (!m) continue;
     const uniforms = {};
     for (const [, name, values] of m[4].matchAll(/(\w+)=(\S+)/g)) uniforms[name] = values.split(",").map(Number);
-    out.shaders[m[1]] = { on: m[2] === "on", since: m[3] === undefined ? null : Number(m[3]), uniforms };
+    out.shaders[m[1]] = { on: m[2] === "texture" ? null : m[2] === "on", since: m[3] === undefined ? null : Number(m[3]), uniforms };
   }
   return out;
 }
@@ -84,7 +103,7 @@ export function stateFaults(shaders, want, who) {
   for (const [shader, w] of Object.entries(want)) {
     const s = shaders[shader];
     if (!s) { faults.push(`${who} lists no ${shader}`); continue; }
-    if (s.on !== w.on) faults.push(`${who} has ${shader} ${s.on ? "on" : "off"}, not ${w.on ? "on" : "off"}`);
+    if (w.on !== undefined && s.on !== w.on) faults.push(`${who} has ${shader} ${s.on ? "on" : "off"}, not ${w.on ? "on" : "off"}`);
     for (const [name, values] of Object.entries(w.uniforms || {})) {
       const got = (s.uniforms[name] || []).slice(0, values.length);
       if (got.length !== values.length || got.some((v, i) => Math.abs(v - values[i]) > 1e-3)) faults.push(`${who} has ${shader}'s ${name} at ${got.join(",")}, not ${values.join(",")}`);
@@ -112,14 +131,16 @@ export function clocksAgree(early, late, gapTics) {
 }
 
 const OWN_GREEN = { u4f: { on: true, uniforms: { d: [0, 1, 0, 1] } } };
-const BLUE = { u3f: { on: true, uniforms: { c: [0, 0, 1] } }, u4net: { on: true, uniforms: { d: [1, 0, 1, 1] } } };
+const BLUE = { u3f: { on: true, uniforms: { c: [0, 0, 1] } }, u4net: { on: true, uniforms: { d: [1, 0, 1, 1] } }, zxwall: { uniforms: { glow: [1, 0.5, 0] } },
+  tid9: { uniforms: { tint: [0, 1, 0] } } };
 const THEIRS_HALF = { u1f: { on: true, uniforms: { a: [0.5] } }, u1i: { on: false, uniforms: { m: [3] } } };
 const NOT_THEIRS = { u1f: { on: false, uniforms: { a: [0] } }, u1i: { on: false, uniforms: { m: [0] } } };
 const TIMED_MINUTE = { u2f: { on: true, uniforms: { b: [0.25, 0.75] } } };
 const LOCAL_SEVEN = { u1i: { on: true, uniforms: { m: [7] } } };
-const FRESH = { u1f: { on: false }, u2f: { on: false }, u3f: { on: false }, u4net: { on: false }, u1i: { on: false }, timed: { on: false } };
+const FRESH = { u1f: { on: false }, u2f: { on: false }, u3f: { on: false }, u4net: { on: false }, u1i: { on: false }, timed: { on: false },
+  zxwall: { uniforms: { glow: [0, 0, 0] } }, tid9: { uniforms: { tint: [1, 0, 0] } } };
 
-const statesOf = async (client) => parseShaderStates(await cap.exec(client.c, "fua_postshaders", { quietMs: 300 }));
+const statesOf = async (client) => parseShaderStates(await cap.exec(client.c, "fua_postshaders; fua_actormaterials", { quietMs: 300 }));
 
 // [Doruk-Aksoy] Until a client is connected and playing on `map`.
 async function arriveOn(client, map, timeoutMs) {
@@ -190,8 +211,10 @@ async function judgeFlow(set, label, config) {
   };
   if (config.reread) {
     const declared = Number((/(\d+) declared/.exec(await cap.exec(sc, "fua_postshaders_reread")) || [])[1]);
-    const want = (GLDEFS.match(/HardwareShader PostProcess/g) || []).length;
+    const want = (NET_GLDEFS.match(/HardwareShader PostProcess/g) || []).length;
     if (declared !== want) faults.push(`the server read ${declared} post-process declarations as a dedicated one does, not ${want}`);
+    const materials = Number((/(\d+) declared/.exec(await cap.exec(sc, "fua_actormaterials_reread")) || [])[1]);
+    if (materials !== 1) faults.push(`the server read ${materials} fua_Material declarations as a dedicated one does, not 1`);
   }
   await cap.waitTics(sc, 35);
   await check("on entering", [[p0, "player 0", OWN_GREEN], [p1, "player 1", OWN_GREEN]]);

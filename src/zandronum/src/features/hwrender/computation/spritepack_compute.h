@@ -27,6 +27,7 @@ struct ScenePieceData
 	// [rc4l] A player's damage tint (MeshPiece::tint): colour and strength, then its texture-V span and 1 when it glows.
 	float tint[4], tintRange[4];
 	float desaturation, scrollU, scrollV, texFlags;   // [rc4l] the colormap's desaturation, 0..1, which main.fp mixes every texel toward grey by, the texture shift a scroller added since the bake, and the piece's texture modes, styles and passes (ComputePieceTexFlags)
+	float actorRow, user1, user2, user3;   // [Doruk-Aksoy] the drawn actor's fua_Material uniform row plus one (0 for none, ComputeActorUniformRow), and three spare
 };
 
 // [rc4l] One corner of a quad, its position and texture coordinate.

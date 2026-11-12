@@ -110,6 +110,7 @@
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how often the string pool is collected and what that frees
 #include "features/acs-strings/computation/stringpool_compute.h"   // [Doruk-Aksoy] ComputeStringPoolGrowth
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeSendsUserCVarChange
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -5795,9 +5796,17 @@ enum EACSFunctions
 	ACSF_fua_SetShaderUniform3f,
 	ACSF_fua_SetShaderUniform4f,
 	ACSF_fua_SetShaderUniform1i,		// (str shader, str uniform, int x [, bool activatorOnly])
+	// [Doruk-Aksoy] features/actormaterials: an actor's GLDEFS fua_Material and its own uniforms, tid 0 the activator.
+	ACSF_fua_SetActorMaterial,			// (int tid, str material)
+	ACSF_fua_SetActorUniform1f,			// (int tid, str uniform, fixed x)
+	ACSF_fua_SetActorUniform2f,
+	ACSF_fua_SetActorUniform3f,
+	ACSF_fua_SetActorUniform4f,
+	ACSF_fua_SetActorUniform1i,			// (int tid, str uniform, int x)
 };
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
+static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
 {
@@ -7377,6 +7386,14 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_fua_SetShaderUniform4f:
 		case ACSF_fua_SetShaderUniform1i:
 			return zx::acsshaders::CallShaderFunction( activator, funcIndex, args, argCount );
+
+		case ACSF_fua_SetActorMaterial:
+		case ACSF_fua_SetActorUniform1f:
+		case ACSF_fua_SetActorUniform2f:
+		case ACSF_fua_SetActorUniform3f:
+		case ACSF_fua_SetActorUniform4f:
+		case ACSF_fua_SetActorUniform1i:
+			return zx::actormaterials::CallActorMaterialFunction( activator, funcIndex, args, argCount );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:

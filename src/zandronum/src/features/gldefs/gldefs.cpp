@@ -63,6 +63,7 @@
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
 #include "features/postprocess/postprocess.h"
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ClearDeclarations, as GLDEFS is read again
 #include "features/hwrender/backendonly.h"   // [Doruk-Aksoy] BackendOnly, for the post-process note
 #include "features/materials/skyboxtexture.h"
 // [BB] New #includes.
@@ -904,6 +905,8 @@ static const char *CoreKeywords[]=
    "hardwareshader",
    "detail",
    "#include",
+   "material",
+   "fua_material",
    NULL
 };
 
@@ -926,6 +929,8 @@ enum
    TAG_HARDWARESHADER,
    TAG_DETAIL,
    TAG_INCLUDE,
+   TAG_MATERIAL,
+   TAG_FUA_MATERIAL,
 };
 
 
@@ -1321,6 +1326,14 @@ void gl_DoParseDefs(FScanner &sc, int workingLump)
 		case TAG_HARDWARESHADER:
 			zx::hwshaders::ParseHardwareShader(sc, workingLump);
 			break;
+		// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad gldefs.cpp: a texture's maps and shader in one Material block.
+		case TAG_MATERIAL:
+			zx::hwshaders::ParseMaterial(sc, workingLump);
+			break;
+		// [Doruk-Aksoy] features/actormaterials: a material DECORATE and ACS give an actor, with uniforms of its own.
+		case TAG_FUA_MATERIAL:
+			zx::hwshaders::ParseActorMaterial(sc);
+			break;
 		case TAG_DETAIL:
 			gl_ParseDetailTexture(sc);
 			break;
@@ -1392,6 +1405,7 @@ void gl_ParseDefs()
 	gl_ReleaseLights();
 	// [Doruk-Aksoy] A restart reads GLDEFS again, so the post-process shaders it declares start over.
 	zx::postprocess::ClearPostProcessShaders(defsLump);
+	zx::actormaterials::ClearDeclarations();
 	gl_ParseVavoomSkybox();
 	if (defsLump != NULL) gl_LoadGLDefs(defsLump);
 	gl_LoadGLDefs("GLDEFS");

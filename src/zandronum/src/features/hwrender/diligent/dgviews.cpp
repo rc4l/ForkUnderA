@@ -10,6 +10,12 @@
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeGrownCapacity
 #include "features/telemetry/telemetry.h"
+#include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] the texture shaders' fua_Uniform values
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] the fua_Material rows
+
+#include <algorithm>
+#include <cstddef>
+#include <vector>
 
 EXTERN_CVAR(Bool, r_lights_checkside)
 
@@ -966,6 +972,29 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.shading = RenderShadingEnv(false);
 	in.extraLight = getExtraLight();
 	zx::hwrender::ComputeSceneConstants(in, cb);
+	WriteTextureUniforms(cb + zx::hwrender::kSceneConstantFloats);
+}
+
+static_assert(zx::hwshaders::kTextureUniformSlots == 64, "FUA_TEX_UNIFORMS_GLSL declares 64 vec4s");
+
+void WriteTextureUniforms(float *tail)
+{
+	if (zx::postprocess::TextureUniformsDeclared()) zx::postprocess::TextureUniformBlock((unsigned char *)tail);
+}
+
+static_assert(zx::actormaterials::kActorUniformVec4s == 8 && zx::levelmesh::kMaxSkyHoles * 2 == 512, "FUA_ACTOR_UNIFORM_VEC4S_STR says 8 vec4s a row, FUA_ACTOR_ROWS_STR 512 vec4s of holes before them");
+
+void UploadActorUniforms(Diligent::IDeviceContext *ctx)
+{
+	const zx::actormaterials::InstanceTable &table = zx::gamecopy::LevelActorMaterials();
+	const unsigned decls = zx::actormaterials::DeclarationsGeneration();
+	if (!g_scene.skyHoleBuf || zx::actormaterials::MaterialCount() == 0 || (table.generation == g_scene.actorUniformsTable && decls == g_scene.actorUniformsDecls)) return;
+	static std::vector<float> rows;
+	zx::actormaterials::ComputeActorUniformRows(zx::actormaterials::Defaults(), table, rows);
+	const size_t most = (size_t)(zx::actormaterials::kMaxActorMaterials + zx::actormaterials::kMaxActorInstances) * zx::actormaterials::kActorUniformVec4s * 4;
+	UpdateBufferInPages(ctx, g_scene.skyHoleBuf, (unsigned long long)zx::levelmesh::kMaxSkyHoles * 2 * 16, std::min(rows.size(), most) * sizeof(float), rows.data());
+	g_scene.actorUniformsTable = table.generation;
+	g_scene.actorUniformsDecls = decls;
 }
 
 // [rc4l] The sheen GL draws over this mirror (RenderMirrorSurface), in the light its walk captured, or none when it drew none.
