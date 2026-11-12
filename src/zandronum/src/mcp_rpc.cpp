@@ -8,7 +8,7 @@
 // Command families:
 //   ping / capabilities / console.exec
 //   sim.tic sim.hash sim.seed sim.pause sim.resume sim.step sim.snapshot sim.restore   (determinism)
-//   state.player state.actors world.actors world.sectors                               (structured state)
+//   state.player state.actors world.actors world.sectors view.angle                    (structured state)
 //   net.state net.clients net.hostdiag net.bandwidth                                   (netgames)
 //   input.event                                                                        (input injection)
 //
@@ -388,7 +388,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"browser.add\",\"browser.select\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\",\"view.angle\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -417,6 +417,15 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// [rc4l] Which map, so a map change is seen arriving where it was sent.
 		body += ",\"map\":\"" + zx::json::ComputeJsonEscape( level.MapName.GetChars() ) + "\"";
 		body += ",\"paused\":" + I( paused ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "view.angle" )
+	{
+		// [rc4l] The angles the last frame was drawn from and how far into its tic, to see whether a turn is interpolated between tics.
+		std::string body = "{\"gametic\":" + I( gametic );
+		body += ",\"frac\":" + std::to_string( FIXED2DBL( r_TicFrac ));
+		body += ",\"yaw\":" + std::to_string( (double)viewangle * ( 360.0 / 4294967296.0 ));
+		body += ",\"pitch\":" + std::to_string( (double)viewpitch * ( 360.0 / 4294967296.0 )) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.hash" )
