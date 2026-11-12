@@ -5672,8 +5672,6 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	//BYTE	  state;
 	fixed_t spawn_x, spawn_y, spawn_z;
 	angle_t spawn_angle;
-	// [BC]
-	LONG		lSkin;
 
 	// not playing?
 	if ((unsigned)playernum >= (unsigned)MAXPLAYERS || !playeringame[playernum])
@@ -5842,32 +5840,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
     mobj->id = playernum;
 
 	// [RH] Set player sprite based on skin
-	// [BC] Handle cl_skins here.
-	if ( cl_skins <= 0 )
-	{
-		lSkin = R_FindSkin( "base", p->CurrentPlayerClass );
-		mobj->flags4 |= MF4_NOSKIN;
-	}
-	else if ( cl_skins >= 2 )
-	{
-		if ( skins[p->userinfo.GetSkin()].bCheat )
-		{
-			lSkin = R_FindSkin( "base", p->CurrentPlayerClass );
-			mobj->flags4 |= MF4_NOSKIN;
-		}
-		else
-			lSkin = p->userinfo.GetSkin();
-	}
-	else
-		lSkin = p->userinfo.GetSkin();
-
-	if (( lSkin < 0 ) || ( static_cast<unsigned> (lSkin) >= skins.Size() ))
-		lSkin = R_FindSkin( "base", p->CurrentPlayerClass );
-
-	if (!(mobj->flags4 & MF4_NOSKIN))
-	{
-		mobj->sprite = skins[lSkin].sprite;
-	}
+	// [RK] Handle this in a helper function.
+	PLAYER_SetSpriteToSkin( mobj->player );
 
 	// [rc4l] fov-interp: respawn keeps the player's own FOV instead of hard-resetting to 90.
 	// Local player only -- `fov` is a client CVAR, so it is not another player's preference,
