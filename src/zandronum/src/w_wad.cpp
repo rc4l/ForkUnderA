@@ -60,6 +60,7 @@
 #include "doomstat.h"
 // [TP]
 #include "c_cvars.h"
+#include "computation/wadinfo_compute.h"   // [rc4l] ComputeIndexInRange
 
 // [BB]
 extern TArray<FString> allwads;
@@ -1530,6 +1531,10 @@ int FWadCollection::GetParentWad( int wadnum ) const
 
 bool FWadCollection::IsWadOptional( int wadnum ) const
 {
+	// [rc4l] Ported from zandronum@57fd93e4e1a07f3bd4efa63e859ad2e2cea85f1d: an index past the loaded wads is no wad, where it read past the file list.
+	if ( !zx::wadinfo::ComputeIndexInRange( wadnum, Files.Size( )))
+		return false;
+
 	// A wad is mandatory if its top level parent is mandatory.
 	return Files[GetParentWad( wadnum )]->IsOptional;
 }
@@ -1579,6 +1584,10 @@ void FWadCollection::LumpIsMandatory( int lumpnum )
 
 bool FWadCollection::WadContainsAuthenticatedLumps( int wadnum ) const
 {
+	// [rc4l] Ported from zandronum@57fd93e4e1a07f3bd4efa63e859ad2e2cea85f1d: an index past the loaded wads holds no lumps.
+	if ( !zx::wadinfo::ComputeIndexInRange( wadnum, Files.Size( )))
+		return false;
+
 	return Files[wadnum]->ContainsAuthenticatedLumps;
 }
 

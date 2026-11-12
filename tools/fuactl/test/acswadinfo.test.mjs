@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judgeWadInfo, buildScript, NS_SPRITES } from "../scenarios/acswadinfo.mjs";
+import { judgeWadInfo, judgeOutOfRange, buildScript, buildOutOfRangeScript, NS_SPRITES, BAD_INDEX, WAD_INFO } from "../scenarios/acswadinfo.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
 
 const log = ({ ns = NS_SPRITES, wad = 5, name = "x.pk3", parent = -1, inner = 6, innerParent = 5 } = {}) =>
@@ -21,4 +21,17 @@ test("each wrong answer names itself", () => {
 test("the script asks GetWadInfo through CALLFUNC", () => {
   const code = buildScript();
   assert.ok(code.some((w, i) => w === PCD.CALLFUNC && code[i + 2] === ACSF.GetWadInfo));
+});
+
+test("an out-of-range wad passes only as neither optional nor authenticated", () => {
+  assert.deepEqual(judgeOutOfRange("optional 0 auth 0"), []);
+  assert.deepEqual(judgeOutOfRange("optional 1 auth 0"), [`wad ${BAD_INDEX} reads as optional 1, authenticated 0, not 0 and 0`]);
+  assert.match(judgeOutOfRange("")[0], /logged nothing/);
+});
+
+test("script 2 asks the out-of-range wad both questions", () => {
+  const code = buildOutOfRangeScript();
+  const asked = code.flatMap((w, i) => (w === ACSF.GetWadInfo && code[i - 2] === PCD.CALLFUNC ? [code[i - 3]] : []));
+  assert.deepEqual(asked, [WAD_INFO.OPTIONAL, WAD_INFO.HASAUTHENTICATEDLUMPS]);
+  assert.equal(code.filter((w, i) => w === BAD_INDEX && code[i - 1] === PCD.PUSHNUMBER).length, 2);
 });
