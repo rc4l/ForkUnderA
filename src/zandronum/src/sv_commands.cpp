@@ -5580,6 +5580,23 @@ void SERVERCOMMANDS_SetNextMapPosition( unsigned int playerExtra, ServerCommandF
 
 //*****************************************************************************
 // [AK]
+// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: the entry's position and its used status.
+// [rc4l] maprotation_wire_nettest.cpp's golden bytes hold these values.
+static_assert( UPDATE_MAPROTATION_SETNEXTPOSITION == 4 && UPDATE_MAPROTATION_SETUSEDSTATUS == 5, "map rotation update types moved" );
+void SERVERCOMMANDS_SetMapUsedStatus( unsigned int position, unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if ( position >= MAPROTATION_GetNumEntries( ))
+		return;
+
+	NetCommand command( SVC2_UPDATEMAPROTATION );
+	command.addByte( UPDATE_MAPROTATION_SETUSEDSTATUS );
+	command.addShort( position );
+	command.addBit( MAPROTATION_IsUsed( position ));
+	command.sendCommandToClients( playerExtra, flags );
+}
+
+//*****************************************************************************
+// [AK]
 void SERVERCOMMANDS_SetCustomPlayerValue( PlayerData &Data, ULONG ulPlayer, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ( PLAYER_IsValidPlayer( ulPlayer ) == false )

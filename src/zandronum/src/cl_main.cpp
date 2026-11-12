@@ -2642,11 +2642,17 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 							break;
 						}
 
+						// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: an entry's used status reads as the next position does, a position then a bit.
 						case UPDATE_MAPROTATION_SETNEXTPOSITION:
+						case UPDATE_MAPROTATION_SETUSEDSTATUS:
 						{
 							const unsigned int position = pByteStream->ReadShort();
-							const bool ignoreLimits = pByteStream->ReadBit();
-							MAPROTATION_SetNextPosition( position, ignoreLimits );
+
+							if ( lType == UPDATE_MAPROTATION_SETNEXTPOSITION )
+								MAPROTATION_SetNextPosition( position, pByteStream->ReadBit() );
+							else
+								MAPROTATION_SetUsed( position, pByteStream->ReadBit() );
+
 							break;
 						}
 					}

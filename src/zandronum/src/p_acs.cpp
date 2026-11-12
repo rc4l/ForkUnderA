@@ -110,6 +110,8 @@
 #include "features/acs-strings/computation/stringpool_compute.h"   // [Doruk-Aksoy] ComputeStringPoolGrowth
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeSendsUserCVarChange
 #include "computation/wadinfo_compute.h"   // [rc4l] ComputeIndexInRange, ComputeParentWadInfo
+#include "computation/maprotation_compute.h"   // [rc4l] ComputeSetsMapUsedStatus
+#include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -5799,6 +5801,8 @@ enum EACSFunctions
 	ACSF_IsPlayerContestingControlPoint,
 	// [rc4l] Ported from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: GetWadInfo, number 186 as theirs.
 	ACSF_GetWadInfo,
+	// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: SetMapUsedStatus, number 187 as theirs.
+	ACSF_SetMapUsedStatus,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
@@ -9300,6 +9304,25 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 					Printf( "GetWadInfo: unknown info type %u\n", type );
 					return 0;
 			}
+		}
+
+		case ACSF_SetMapUsedStatus:
+		{
+			// [rc4l] Adapted from zandronum@f522876fe386925f508425afceb41474914d4c24: the rule is ComputeSetsMapUsedStatus and the send net-replication's, since game code asks no role of the network itself.
+			const unsigned int position = args[0] - 1;
+			const bool used = !!args[1];
+
+			// [AK] Don't let clients set a map's used status themselves.
+			if ( zx::maprotation::ComputeSetsMapUsedStatus( zx::net::InClientMode( ), position, MAPROTATION_GetNumEntries( ), used, MAPROTATION_IsUsed( position )))
+			{
+				MAPROTATION_SetUsed( position, used );
+
+				// [AK] Inform the clients about the map's new used status.
+				zx::netreplication::SendMapUsedStatus( position );
+				return 1;
+			}
+
+			return 0;
 		}
 
 		case ACSF_GetActorFloorTexture:

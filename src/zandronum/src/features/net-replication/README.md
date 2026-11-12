@@ -44,6 +44,12 @@ server only): the raise came after the send, and every client kept the corpse a 
 A server script's `SetUserCVar` that changes a player's mod user cvar sends it to every client at once
 (`SendUserCVar`), not at the tic's end, so a client script the server starts later in the tic reads the new value.
 
+## Map rotation
+
+ACS's `SetMapUsedStatus` changes an entry's used status on a server and sends it through `SendMapUsedStatus`
+(`rotation.h`), which sends only on a server, so the script asks the network nothing itself; clients read it as
+`UPDATE_MAPROTATION_SETUSEDSTATUS` (`netmaprotation`).
+
 ## Owns
 
 `sv_commands.cpp`, `sv_commands.h`, `network/packetarchive.cpp` and `network/packetarchive.h`.
@@ -60,12 +66,14 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
 - `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`, `SendFloorClip`).
 - `playerstate.{h,cpp}` (`SendUserCVar`).
+- `rotation.{h,cpp}` (`SendMapUsedStatus`).
 
 ## In-engine hooks
 
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
 - `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
 - `p_acs.cpp` `SetUserCVar`: `SendUserCVar` when a server script changed the cvar's value.
+- `p_acs.cpp` `SetMapUsedStatus`: `SendMapUsedStatus` when a script changed an entry's used status.
 - `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
 - `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between
   `SERVER_UpdateLines` and `SERVER_UpdateSectors`, which keep only the families not here.

@@ -1895,6 +1895,7 @@ add_executable( zdoom WIN32
 	features/net-replication/mapstate.cpp
 	features/net-replication/actorstate.cpp
 	features/net-replication/playerstate.cpp
+	features/net-replication/rotation.cpp
 	features/net-client/netclient.cpp
 	features/net-client/rejoin.cpp
 	features/dev-mode/devmode.cpp

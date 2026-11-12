@@ -267,6 +267,8 @@ enum UpdateMapRotationType
 	UPDATE_MAPROTATION_CLEAR,
 	UPDATE_MAPROTATION_RESET,
 	UPDATE_MAPROTATION_SETNEXTPOSITION,
+	// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: an entry's used status, after the last as theirs.
+	UPDATE_MAPROTATION_SETUSEDSTATUS,
 };
 
 // [AK] What kind of team score are we sending to clients?
