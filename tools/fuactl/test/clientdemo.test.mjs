@@ -11,9 +11,10 @@ test("travel sums a player's path and takes the median of steps a tic apart", ()
 });
 
 test("the playback passes a running player and names a still or missing one", () => {
-  assert.deepEqual(judgeTravel({ samples: 60, total: 500, median: 10 }), []);
+  assert.deepEqual(judgeTravel({ samples: 60, total: 1500, median: 16 }), []);
   assert.deepEqual(judgeTravel({ samples: 60, total: 0, median: 0 }), ["the runner went 0.0 units in the playback"]);
-  assert.deepEqual(judgeTravel({ samples: 3, total: 500, median: 10 }), ["the playback held the runner in only 3 samples"]);
+  assert.deepEqual(judgeTravel({ samples: 60, total: 101, median: 0 }), ["the runner went 101.0 units in the playback"], "a spawn's jump is not a run");
+  assert.deepEqual(judgeTravel({ samples: 3, total: 1500, median: 16 }), ["the playback held the runner in only 3 samples"]);
 });
 
 test("the observer records to the demo path, and the pk3 holds the map", () => {

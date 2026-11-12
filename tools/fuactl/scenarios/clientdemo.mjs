@@ -16,18 +16,20 @@ const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", tex
 // [rc4l] Where the observer's demo goes, beside no other run's.
 export const DEMO = path.join(os.tmpdir(), "fuactl-clientdemo", `zxdemo-${process.pid}`).split(path.sep).join("/");
 // [rc4l] Tics the runner runs while the observer records, and tics of the intermission recorded after.
-export const RUN_TICS = 105, INTERMISSION_TICS = 140;
+export const RUN_TICS = 105, INTERMISSION_TICS = 280;
 // [rc4l] How long the paused playback is watched for its countdown to move.
 export const PAUSED_MS = 2500;
 export const MAPINFO = `map MAP01 "Run"\n{\n  next = "MAP02"\n}\n\nmap MAP02 "After"\n{\n}\n`;
 
-// [rc4l] A corridor long enough to run up for the whole recording, the runner's start ahead of the observer's, and a closed script that ends the map.
+// [rc4l] Two corridors apart, each long enough to run up for the whole recording, a player's and a deathmatch start in each since the observer plays too, and a closed script that ends the map.
 export function buildClientDemoPk3() {
   const corridor = () => {
     const m = new UdmfMap();
-    m.room(0, -256, 256, 8192, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
-    m.thing({ x: 96, y: 64, angle: 90, type: 1 });
-    m.thing({ x: 160, y: -128, angle: 90, type: 2 });
+    for (const [x, type] of [[0, 1], [512, 2]]) {
+      m.room(x, -256, x + 256, 8192, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
+      m.thing({ x: x + 128, y: 0, angle: 90, type });
+      m.thing({ x: x + 128, y: 0, angle: 90, type: 11 });
+    }
     return m;
   };
   const exit = [{ code: [...callSpecial(SPECIAL.Exit_Normal, [0]), PCD.TERMINATE], type: SCRIPT.CLOSED, number: 1 }];
@@ -52,10 +54,13 @@ export function travel(samples, player) {
   return { samples: at.length, total, median: sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0 };
 }
 
+// [rc4l] Units a run of RUN_TICS covers at least, a third of a running player's 16 a tic.
+export const RUN_UNITS = 560;
+
 // [rc4l] What is wrong with the playback's level: the runner must be there and go the length of a run.
 export function judgeTravel(r) {
   if (r.samples < 20) return [`the playback held the runner in only ${r.samples} samples`];
-  if (!(r.total > 100)) return [`the runner went ${r.total.toFixed(1)} units in the playback`];
+  if (!(r.total > RUN_UNITS)) return [`the runner went ${r.total.toFixed(1)} units in the playback`];
   return [];
 }
 
@@ -99,7 +104,7 @@ export async function recordAndPlay(set) {
   const file = `${DEMO}.cld`;
   for (const until = Date.now() + 10000; !fs.existsSync(file) && Date.now() < until; ) await cap.sleep(100);
   if (!fs.existsSync(file)) return { runner, viewer: null, faults: [`the recorder wrote no demo at ${file}`] };
-  const viewer = await addOffline(set);
+  const viewer = await addOffline(set, { cvars: VIEWER_CVARS });
   await cap.exec(viewer.c, `playdemo ${DEMO}`);
   await cap.waitInLevel(viewer.c);
   return { runner, viewer, faults: [] };
@@ -130,6 +135,9 @@ export async function judgeNetplay(set, label) {
   return { lines: [faults.length ? `FAIL ${label}: ${faults.join("; ")} (${facts})` : `PASS ${label}: ${facts}`], failed: faults.length ? 1 : 0 };
 }
 
-export const CONFIGS = [{ name: "playback", players: 1, observers: 1, clientCvars: { cl_run: 1 }, clientExtraArgs: [[], ["-record", DEMO]] }];
+// [rc4l] The playback's viewer shows the intermission's countdown, which is off by default.
+export const VIEWER_CVARS = { cl_intermissiontimer: 1 };
+// [rc4l] A deathmatch, whose intermission's board counts down to the next map.
+export const CONFIGS = [{ name: "playback", players: 1, observers: 1, serverCvars: { deathmatch: 1 }, clientCvars: { cl_run: 1 }, clientExtraArgs: [[], ["-record", DEMO]] }];
 
 runScenarioIfMain(import.meta.url, () => ({ name: "clientdemo", wad: buildClientDemoPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);

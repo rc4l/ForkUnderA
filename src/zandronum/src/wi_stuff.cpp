@@ -66,6 +66,7 @@
 #include "m_misc.h"
 #include "d_event.h"
 #include "computation/intermissiontheme_compute.h"	// [rc4l] ComputePlaysIntermissionTheme
+#include "computation/intermissionstopwatch_compute.h"	// [rc4l] ComputeClientStopWatch
 
 // States for the intermission
 typedef enum
@@ -2540,8 +2541,8 @@ void WI_checkForAccelerate(void)
 	if ( NETWORK_InClientMode() )
 	{
 		// [AK] Let them still count down the intermission timer.
-		if ( g_lStopWatch > 0 )
-			g_lStopWatch--;
+		// [rc4l] Ported from zandronum@1d9962b2229fe9ef256e871ba2056e3a18bfce61: a paused demo's holds, by ComputeClientStopWatch.
+		g_lStopWatch = zx::ComputeClientStopWatch( g_lStopWatch, CLIENTDEMO_IsPaused( ));
 
 		return;
 	}
