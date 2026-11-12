@@ -36,6 +36,8 @@ counted by `net-roles-through-the-session` (`tools/boundary-rules.json`) and may
 - `computation/movebuffer_compute.{h,cpp}` (`ComputeRunsSecondMoveCmd`, which `p_tick.cpp`'s server loop asks
   before a second buffered move command, and `ComputeMoveArrival`, which `SERVER_GetPackets` counts missed and
   steady arrivals by) with its `_test.cpp`.
+- `computation/floodcheck_compute.{h,cpp}` (`ComputeTimeInstancesFlood`, the chat and userinfo flood rule
+  `SERVER_CheckTimeInstancesBufferForFlood` asks) with its `_test.cpp`.
 - `unlaggedreport.{h,cpp}` (`NoteServerShot`, `NoteClientShot`, the command).
 - `netrole.h` (the role queries, inline).
 - `syncedcvars.{h,cpp}` (`SyncedCVar`, `SendSyncedCVar`, `SendSyncedCVarsTo`): a server cvar a client's own simulation

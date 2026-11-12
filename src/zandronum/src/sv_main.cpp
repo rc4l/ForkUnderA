@@ -99,6 +99,7 @@
 #include "m_random.h"
 #include "features/net-session/computation/dumpfilter_compute.h"   // [KI] the sv_dumppackets decisions
 #include "features/net-session/computation/movebuffer_compute.h"   // [rc4l] ComputeMoveArrival
+#include "features/net-session/computation/floodcheck_compute.h"   // [rc4l] ComputeTimeInstancesFlood
 #include "network.h"
 #include "possession.h"
 #include "s_sndseq.h"
@@ -2196,12 +2197,8 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].bFullUpdateIncomplete = false;
 	g_aClients[lClient].commandInstances.clear();
 	g_aClients[lClient].minorCommandInstances.clear();
-	for ( ulIdx = 0; ulIdx < MAX_CHATINSTANCE_STORAGE; ulIdx++ )
-		g_aClients[lClient].lChatInstances[ulIdx] = 0;
-	g_aClients[lClient].ulLastChatInstance = 0;
-	for ( ulIdx = 0; ulIdx < MAX_USERINFOINSTANCE_STORAGE; ulIdx++ )
-		g_aClients[lClient].lUserInfoInstances[ulIdx] = 0;
-	g_aClients[lClient].ulLastUserInfoInstance = 0;
+	g_aClients[lClient].chatInstances.clear();
+	g_aClients[lClient].userinfoInstances.clear();
 	g_aClients[lClient].ulLastChangeTeamTime = 0;
 	g_aClients[lClient].ulLastSuicideTime = 0;
 	g_aClients[lClient].lLastPacketLossTick = 0;
@@ -2245,7 +2242,6 @@ bool SERVER_GetUserInfo( BYTESTREAM_s *pByteStream, bool bAllowKick, bool bEnfor
 {
 	player_t	*pPlayer;
 	FString		szSkin;
-	ULONG		ulUserInfoInstance;
 	// [BB] We may only kick the player after completely parsing the current message,
 	// otherwise we'll get network parsing errors.
 	bool		bKickPlayer = false;
@@ -2255,49 +2251,10 @@ bool SERVER_GetUserInfo( BYTESTREAM_s *pByteStream, bool bAllowKick, bool bEnfor
 	pPlayer = &players[g_lCurrentClient];
 
 	// [TP] Don't check for userinfo flooding if we're not enforcing command limits.
-	if (( bAllowKick ) && ( sv_limitcommands ))
+	if (( bAllowKick ) && ( SERVER_CheckTimeInstancesBufferForFlood( g_aClients[g_lCurrentClient].userinfoInstances, false )))
 	{
-		ulUserInfoInstance = ( ++g_aClients[g_lCurrentClient].ulLastUserInfoInstance % MAX_USERINFOINSTANCE_STORAGE );
-		g_aClients[g_lCurrentClient].lUserInfoInstances[ulUserInfoInstance] = gametic;
-
-		// If this is the second time a player has updated their userinfo in a 7 tick interval (~1/5 of a second, ~1/5 of a second update interval),
-		// kick him.
-		if (( g_aClients[g_lCurrentClient].lUserInfoInstances[( ulUserInfoInstance + MAX_USERINFOINSTANCE_STORAGE - 1 ) % MAX_USERINFOINSTANCE_STORAGE] ) > 0 )
-		{
-			if ( ( g_aClients[g_lCurrentClient].lUserInfoInstances[ulUserInfoInstance] ) -
-				( g_aClients[g_lCurrentClient].lUserInfoInstances[( ulUserInfoInstance + MAX_USERINFOINSTANCE_STORAGE - 1 ) % MAX_USERINFOINSTANCE_STORAGE] )
-				<= 7 )
-			{
-				bKickPlayer = true;
-				kickReason = "User info change flood.";
-			}
-		}
-
-		// If this is the third time a player has updated their userinfo in a 42 tick interval (~1.5 seconds, ~.75 second update interval),
-		// kick him.
-		if (( g_aClients[g_lCurrentClient].lUserInfoInstances[( ulUserInfoInstance + MAX_USERINFOINSTANCE_STORAGE - 2 ) % MAX_USERINFOINSTANCE_STORAGE] ) > 0 )
-		{
-			if ( ( g_aClients[g_lCurrentClient].lUserInfoInstances[ulUserInfoInstance] ) -
-				( g_aClients[g_lCurrentClient].lUserInfoInstances[( ulUserInfoInstance + MAX_USERINFOINSTANCE_STORAGE - 2 ) % MAX_USERINFOINSTANCE_STORAGE] )
-				<= 42 )
-			{
-				bKickPlayer = true;
-				kickReason = "User info change flood.";
-			}
-		}
-
-		// If this is the fourth time a player has updated their userinfo in a 105 tick interval (~3 seconds, ~1 second interval ),
-		// kick him.
-		if (( g_aClients[g_lCurrentClient].lUserInfoInstances[( ulUserInfoInstance + MAX_USERINFOINSTANCE_STORAGE - 3 ) % MAX_USERINFOINSTANCE_STORAGE] ) > 0 )
-		{
-			if ( ( g_aClients[g_lCurrentClient].lUserInfoInstances[ulUserInfoInstance] ) -
-				( g_aClients[g_lCurrentClient].lUserInfoInstances[( ulUserInfoInstance + MAX_USERINFOINSTANCE_STORAGE - 3 ) % MAX_USERINFOINSTANCE_STORAGE] )
-				<= 105 )
-			{
-				bKickPlayer = true;
-				kickReason = "User info change flood.";
-			}
-		}
+		bKickPlayer = true;
+		kickReason = "User info change flood.";
 	}
 
 	FName name;
@@ -5590,6 +5547,32 @@ void SERVER_DestroyActorIfClientsidedOnly( AActor *actor )
 
 //*****************************************************************************
 //
+// [rc4l] Adapted from zandronum@227ae3070e3f9e0dcb1889d75b2b50f728f0fa70: the rule is features/net-session's ComputeTimeInstancesFlood.
+bool SERVER_CheckTimeInstancesBufferForFlood( TimeInstancesBuffer &instances, bool saveIfFloodDetected )
+{
+	static_assert( MAX_TIME_INSTANCES_STORAGE == zx::net::TIME_INSTANCES, "the buffer holds what the rule looks back over" );
+
+	// [TP] The client isn't flooding if we're not enforcing limits.
+	if ( sv_limitcommands == false )
+		return false;
+
+	int oldestFirst[zx::net::TIME_INSTANCES];
+	for ( int i = 0; i < zx::net::TIME_INSTANCES; i++ )
+		oldestFirst[i] = instances.getOldestEntry( i );
+
+	const bool flooding = zx::net::ComputeTimeInstancesFlood( oldestFirst, gametic );
+
+	// [AK] Add the current game tick to the buffer, even if a flood was
+	// detected, if necessary (e.g. the last time a client chatted still
+	// needs to be saved, even when they get muted).
+	if (( flooding == false ) || saveIfFloodDetected )
+		instances.put( gametic );
+
+	return flooding;
+}
+
+//*****************************************************************************
+//
 ClientCommRule::ClientCommRule( NETADDRESS_s address ) :
 	address( address ),
 	ignoreChat( false ),
@@ -5716,44 +5699,6 @@ static bool server_CheckForClientMinorCommandFlood( ULONG ulClient )
 	return ( false );
 }
 
-static bool server_CheckForChatFlood( ULONG ulPlayer )
-{
-	// [TP] The client isn't flooding if we're not enforcing limits.
-	if ( sv_limitcommands == false )
-		return ( false );
-
-	ULONG ulChatInstance = ( ++g_aClients[ulPlayer].ulLastChatInstance % MAX_CHATINSTANCE_STORAGE );
-	g_aClients[ulPlayer].lChatInstances[ulChatInstance] = gametic;
-
-	// Mute the player if this is the...
-
-	// ...second time he has chatted in a 7 tick interval (~1/5 of a second, ~1/5 of a second chat interval).
-	if ( ( g_aClients[ulPlayer].lChatInstances[ulChatInstance] ) -
-		( g_aClients[ulPlayer].lChatInstances[( ulChatInstance + MAX_CHATINSTANCE_STORAGE - 1 ) % MAX_CHATINSTANCE_STORAGE] )
-		<= 7 )
-	{
-		return true;
-	}
-
-	// ..third time he has chatted in a 42 tick interval (~1.5 seconds, ~.75 second chat interval).
-	if ( ( g_aClients[ulPlayer].lChatInstances[ulChatInstance] ) -
-		( g_aClients[ulPlayer].lChatInstances[( ulChatInstance + MAX_CHATINSTANCE_STORAGE - 2 ) % MAX_CHATINSTANCE_STORAGE] )
-		<= 42 )
-	{
-		return true;
-	}
-
-	// ...fourth time he has chatted in a 105 tick interval (~3 seconds, ~1 second interval).
-	if ( ( g_aClients[ulPlayer].lChatInstances[ulChatInstance] ) -
-		( g_aClients[ulPlayer].lChatInstances[( ulChatInstance + MAX_CHATINSTANCE_STORAGE - 3 ) % MAX_CHATINSTANCE_STORAGE] )
-		<= 105 )
-	{
-		return true;
-	}
-
-	return false;
-}
-
 //*****************************************************************************
 //
 static bool server_Say( BYTESTREAM_s *pByteStream )
@@ -5815,7 +5760,7 @@ static bool server_Say( BYTESTREAM_s *pByteStream )
 		return ( false );
 
 	// Check for chat flooding.
-	if ( server_CheckForChatFlood ( ulPlayer ) == true )
+	if ( SERVER_CheckTimeInstancesBufferForFlood( g_aClients[ulPlayer].chatInstances, true ))
 	{
 		CHAT_IgnorePlayer( ulPlayer, false, 15 * TICRATE, "chatting too much" );
 		return ( false );
