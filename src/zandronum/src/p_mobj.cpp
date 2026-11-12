@@ -4197,10 +4197,10 @@ void AActor::Tick ()
 
 	// This is necessary to properly interpolate movement outside this function
 	// like from an ActorMover
-	// [AK] Don't do this for players when using the client's movement buffers.
+	// [AK] Don't do this for players when using the client's command buffers.
 	// It's already handled when the buffers are emptied in CLIENT_Tick.
 	// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89: the role from features/net-session, the rule ComputeTickSavesPrevPosition.
-	if (zx::netclient::ComputeTickSavesPrevPosition(zx::net::InClientMode(), player != nullptr, cl_usemovebuffer))
+	if (zx::netclient::ComputeTickSavesPrevPosition(zx::net::InClientMode(), player != nullptr, cl_buffercommands))
 	{
 		PrevX = x;
 		PrevY = y;

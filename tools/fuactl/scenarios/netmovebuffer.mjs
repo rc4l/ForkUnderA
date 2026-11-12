@@ -1,4 +1,4 @@
-// [rc4l] The client's move buffers (zandronum@93c67c50fda9): exit 0 when an observer whose packets arrive in bursts sees a running player step unevenly from tic to tic at most half as often with cl_usemovebuffer on as with it off, switched in one session.
+// [rc4l] The client's move buffers (zandronum@93c67c50fda9): exit 0 when an observer whose packets arrive in bursts sees a running player step unevenly from tic to tic at most half as often with cl_buffercommands on as with it off, switched in one session.
 //
 // usage:  node scenarios/netmovebuffer.mjs
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
@@ -68,7 +68,7 @@ export async function judgeNetplay(set, label, { config }) {
   await cap.exec(runner.c, "+forward");
   await cap.waitTics(observer.c, RUN_UP_TICS);
   const on = stepUnevenness(await sampleTics(observer.c, SAMPLE_MS), runner.player);
-  await cap.exec(observer.c, "cl_usemovebuffer 0");
+  await cap.exec(observer.c, "cl_buffercommands 0");
   await cap.waitTics(observer.c, 5);
   const off = stepUnevenness(await sampleTics(observer.c, SAMPLE_MS), runner.player);
   await cap.exec(runner.c, "-forward").catch(() => {});

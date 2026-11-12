@@ -199,14 +199,14 @@ EXTERN_CVAR( Bool, sv_unlimited_pickup )
 //*****************************************************************************
 //	STRUCTURES
 
-// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89: each player's move commands held until a tic runs them, which CLIENT_Tick drains by ComputeMoveDrainOrder.
-struct MoveCommandBuffer
+// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89 and zandronum@43098555ff613adecf40bd1708a218298af6e5ed: each player's movement commands of one kind held until a tic runs them, which CLIENT_Tick drains by ComputeMoveDrainOrder.
+struct CommandBuffer
 {
 	TArray<std::shared_ptr<ServerCommands::BaseServerCommand>> cmds;
 	unsigned int numConsistentArrivals;
 	int lastArrivalTick;
 
-	MoveCommandBuffer( void ) { Reset( ); }
+	CommandBuffer( void ) { Reset( ); }
 
 	template <class Command>
 	void Push( Command &command )
@@ -242,12 +242,12 @@ CVAR( Bool, cl_keepserversettings, false, CVAR_ARCHIVE | CVAR_DEBUGONLY )
 // [JS] Always makes us ready when we are in intermission.
 CVAR( Bool, cl_autoready, false, CVAR_ARCHIVE )
 
-// [AK] Buffers incoming movement commands so that players move more smoothly.
+// [AK] Buffers incoming commands that control a player's movement, so that they move more smoothly.
 // [rc4l] A dev-mode A/B switch, where upstream's debug-only flag leaves a release build unable to turn it off.
-CUSTOM_CVAR( Bool, cl_usemovebuffer, true, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE )
+CUSTOM_CVAR( Bool, cl_buffercommands, true, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE )
 {
 	if ( self == false )
-		CLIENT_ResetMoveCommandBuffers( );
+		CLIENT_ResetAllCommandBuffers( );
 }
 
 
@@ -486,11 +486,12 @@ static	bool				g_HasRCONAccess = false;
 // [AK] We are in the process of gaining RCON access to the server.
 static  bool				g_GainingRCONAccess = false;
 
-// [AK] A toggle for when buffered movement commands need to be executed.
-static	bool				g_ExecuteBufferedMoveCMDs = false;
+// [AK] A toggle for when buffered commands need to be executed.
+static	bool				g_ExecuteBufferedCMDs = false;
 
-// [AK] A collection of all buffered movement commands.
-static	MoveCommandBuffer	g_BufferedMoveCMDs[MAXPLAYERS];
+// [AK] A collection of all buffered commands that handle a player's movement.
+static	CommandBuffer		g_BufferedMoveCMDs[MAXPLAYERS];
+static	CommandBuffer		g_BufferedExtraDataCMDs[MAXPLAYERS];
 
 //*****************************************************************************
 //	FUNCTIONS
@@ -513,8 +514,8 @@ void CLIENT_ClearAllPlayers( void )
 		VOIPController::GetInstance( ).RemoveVoIPChannel( ulIdx );
 	}
 
-	// [AK] Reset all movement command buffers.
-	CLIENT_ResetMoveCommandBuffers( );
+	// [AK] Reset all command buffers.
+	CLIENT_ResetAllCommandBuffers( );
 
 	// [AK] Also clear out saved chat messages from the server.
 	CHAT_ClearChatMessages( MAXPLAYERS );
@@ -522,10 +523,47 @@ void CLIENT_ClearAllPlayers( void )
 
 //*****************************************************************************
 //
-void CLIENT_ResetMoveCommandBuffers( void )
+void CLIENT_ResetAllCommandBuffers( void )
 {
 	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
-		g_BufferedMoveCMDs[i].Reset( );
+		CLIENT_ResetPlayerCommandBuffers( i );
+}
+
+//*****************************************************************************
+//
+void CLIENT_ResetPlayerCommandBuffers( unsigned int player )
+{
+	if ( player < MAXPLAYERS )
+	{
+		g_BufferedMoveCMDs[player].Reset( );
+		g_BufferedExtraDataCMDs[player].Reset( );
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Runs up to two of each playing player's buffered commands of one kind, in ComputeMoveDrainOrder's order.
+static void client_DrainCommandBuffers( CommandBuffer ( &buffers )[MAXPLAYERS] )
+{
+	std::vector<zx::netclient::MoveDrainPlayer> drain( MAXPLAYERS, zx::netclient::MoveDrainPlayer{ false, 0, 0 } );
+
+	// [AK] Check if we received each player's command during this tick to see if they're arriving consistently on our end.
+	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+	{
+		if (( playeringame[i] == false ) || ( players[i].bSpectating ))
+			continue;
+
+		CommandBuffer &buffer = buffers[i];
+		buffer.numConsistentArrivals = zx::netclient::ComputeConsistentArrivals( buffer.numConsistentArrivals, buffer.lastArrivalTick, gametic );
+		drain[i] = zx::netclient::MoveDrainPlayer{ true, buffer.cmds.Size( ), buffer.numConsistentArrivals };
+	}
+
+	// [AK] We may execute up to two commands per player, per tick.
+	for ( int player : zx::netclient::ComputeMoveDrainOrder( drain, TICRATE ))
+	{
+		buffers[player].cmds[0]->Execute( );
+		buffers[player].cmds.Delete( 0 );
+	}
 }
 
 //*****************************************************************************
@@ -692,14 +730,11 @@ void CLIENT_Tick( void )
 
 	case CTS_ACTIVE:
 
-		// [AK] While in a level, execute any buffered movement commands.
-		if (( cl_usemovebuffer ) && ( gamestate == GS_LEVEL ))
+		// [AK] While in a level, execute any buffered commands.
+		if (( cl_buffercommands ) && ( gamestate == GS_LEVEL ))
 		{
-			std::vector<zx::netclient::MoveDrainPlayer> drain( MAXPLAYERS, zx::netclient::MoveDrainPlayer{ false, 0, 0 } );
-			g_ExecuteBufferedMoveCMDs = true;
+			g_ExecuteBufferedCMDs = true;
 
-			// [AK] First, check if we received each player's command during
-			// this tick to see if they're arriving consistently on our end.
 			for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 			{
 				if (( playeringame[i] == false ) || ( players[i].bSpectating ))
@@ -714,20 +749,12 @@ void CLIENT_Tick( void )
 					players[i].mo->PrevZ = players[i].mo->z;
 					players[i].mo->PrevAngle = players[i].mo->angle;
 				}
-
-				MoveCommandBuffer &buffer = g_BufferedMoveCMDs[i];
-				buffer.numConsistentArrivals = zx::netclient::ComputeConsistentArrivals( buffer.numConsistentArrivals, buffer.lastArrivalTick, gametic );
-				drain[i] = zx::netclient::MoveDrainPlayer{ true, buffer.cmds.Size( ), buffer.numConsistentArrivals };
 			}
 
-			// [AK] We may execute up to two commands per player, per tick.
-			for ( int player : zx::netclient::ComputeMoveDrainOrder( drain, TICRATE ))
-			{
-				g_BufferedMoveCMDs[player].cmds[0]->Execute( );
-				g_BufferedMoveCMDs[player].cmds.Delete( 0 );
-			}
+			client_DrainCommandBuffers( g_BufferedMoveCMDs );
+			client_DrainCommandBuffers( g_BufferedExtraDataCMDs );
 
-			g_ExecuteBufferedMoveCMDs = false;
+			g_ExecuteBufferedCMDs = false;
 		}
 
 		break;
@@ -3861,9 +3888,10 @@ void ServerCommands::SpawnPlayer::Execute()
 	if ( cl_showspawnnames )
 		Printf( "Player %d body: (%d, %d, %d), %u\n", static_cast<int>(ulPlayer), x >> FRACBITS, y >> FRACBITS, z >> FRACBITS, netid );
 
-	// [AK] When this player respawns, any saved movement commands in their buffer
-	// are now obsolete, so they must be removed.
+	// [AK] When this player respawns, any saved commands in their buffers are
+	// now obsolete, so they must be removed.
 	g_BufferedMoveCMDs[ulPlayer].cmds.Clear( );
+	g_BufferedExtraDataCMDs[ulPlayer].cmds.Clear( );
 
 	// [BB] Remember if we were already ignoring WeaponSelect commands. If so, the server
 	// told us to ignore them and we need to continue to do so after spawning the player.
@@ -4248,9 +4276,9 @@ void ServerCommands::MovePlayer::Execute()
 		return;
 	}
 
-	// [AK] If the movement command buffer is being used, save this command into
-	// the player's buffer to be executed later.
-	if (( cl_usemovebuffer ) && ( g_ExecuteBufferedMoveCMDs == false ))
+	// [AK] If the command buffers are being used, save this command into the
+	// player's buffer to be executed later.
+	if (( cl_buffercommands ) && ( g_ExecuteBufferedCMDs == false ))
 	{
 		g_BufferedMoveCMDs[player - players].Push<ServerCommands::MovePlayer>( *this );
 		return;
@@ -4902,6 +4930,14 @@ void ServerCommands::UpdatePlayerPing::Execute()
 //
 void ServerCommands::UpdatePlayerExtraData::Execute()
 {
+	// [AK] If the command buffers are being used, save this command into the
+	// player's buffer to be executed later.
+	if (( cl_buffercommands ) && ( g_ExecuteBufferedCMDs == false ))
+	{
+		g_BufferedExtraDataCMDs[player - players].Push<ServerCommands::UpdatePlayerExtraData>( *this );
+		return;
+	}
+
 	// [BB] If the spectated player uses the GL renderer and we are using software,
 	// the viewangle has to be limited.	We don't care about cl_disallowfullpitch here.
 	if ( !currentrenderer )
@@ -4946,9 +4982,9 @@ void ServerCommands::MoveLocalPlayer::Execute()
 	if ( pPlayer->mo == NULL )
 		return;
 
-	// [AK] If the movement command buffer is being used, save this command into
-	// the local player's buffer to be executed later.
-	if (( cl_usemovebuffer ) && ( g_ExecuteBufferedMoveCMDs == false ))
+	// [AK] If the command buffers are being used, save this command into the
+	// local player's buffer to be executed later.
+	if (( cl_buffercommands ) && ( g_ExecuteBufferedCMDs == false ))
 	{
 		g_BufferedMoveCMDs[consoleplayer].Push<ServerCommands::MoveLocalPlayer>( *this );
 		return;
@@ -5084,8 +5120,8 @@ void ServerCommands::DisconnectPlayer::Execute()
 	// [AK] Delete this player's VoIP channel if it exists.
 	VOIPController::GetInstance( ).RemoveVoIPChannel( playerIndex );
 
-	// [AK] Reset this player's movement command buffer.
-	g_BufferedMoveCMDs[playerIndex].Reset( );
+	// [AK] Reset this player's command buffers.
+	CLIENT_ResetPlayerCommandBuffers( playerIndex );
 
 	// Refresh the HUD because this affects the number of players in the game.
 	HUD_ShouldRefreshBeforeRendering( );
@@ -5196,8 +5232,8 @@ void ServerCommands::PlayerIsSpectator::Execute()
 	if ( player == &players[consoleplayer] )
 		g_bClientLagging = false;
 
-	// [AK] Reset this player's movement command buffer.
-	g_BufferedMoveCMDs[player - players].Reset( );
+	// [AK] Reset this player's command buffers.
+	CLIENT_ResetPlayerCommandBuffers( player - players );
 
 	// [EP] Refresh the HUD, since this could affect the number of players left in a dead spectators game.
 	HUD_ShouldRefreshBeforeRendering( );
@@ -7704,8 +7740,8 @@ void ServerCommands::MapLoad::Execute()
 		MAPROTATION_SetCurrentPosition( currentPosition );
 		MAPROTATION_SetUsed( currentPosition );
 
-		// [AK] Reset all movement command buffers.
-		CLIENT_ResetMoveCommandBuffers( );
+		// [AK] Reset all command buffers.
+		CLIENT_ResetAllCommandBuffers( );
 
 		// [BB] We'll receive a full update for the new map from the server.
 		g_bFullUpdateIncomplete = true;
@@ -7748,8 +7784,8 @@ void ServerCommands::MapNew::Execute()
 	// Clear out our local buffer.
 	g_LocalBuffer.Clear();
 
-	// [AK] Reset all movement command buffers.
-	CLIENT_ResetMoveCommandBuffers( );
+	// [AK] Reset all command buffers.
+	CLIENT_ResetAllCommandBuffers( );
 
 	// Back to the full console.
 	gameaction = ga_fullconsole;

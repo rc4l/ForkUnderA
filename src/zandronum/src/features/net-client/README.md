@@ -57,8 +57,9 @@ What a client does with what arrives from its server.
 
 ## In-engine hooks
 
-- `cl_main.cpp` `ServerCommands::MovePlayer` and `MoveLocalPlayer` go into the player's buffer while `cl_usemovebuffer`
-  is on (Zandronum 3.3), and `CLIENT_Tick` runs each tic's by `ComputeMoveDrainOrder`; `p_mobj.cpp` `AActor::Tick`
+- `cl_main.cpp` `ServerCommands::MovePlayer` and `MoveLocalPlayer` go into the player's move buffer, and
+  `UpdatePlayerExtraData` into its extra-data buffer, while `cl_buffercommands` is on (Zandronum 3.3), and `CLIENT_Tick`
+  drains each kind by `ComputeMoveDrainOrder`; `p_mobj.cpp` `AActor::Tick`
   leaves a buffered player's previous position to that drain (`tools/fuactl/scenarios/netmovebuffer.mjs`).
 - `stats.cpp` `FStat::PrintStat` draws the net graph above the stats while `nettraffic` is one
   (`CLIENTSTATISTICS_DrawNetGraph`, `tools/fuactl/scenarios/netgraph.mjs`).
