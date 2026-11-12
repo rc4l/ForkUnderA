@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
 import { exec, waitTics, sleep, rendererReport } from "./capture.mjs";
 import { engineProcessCount, slashed } from "./launch.mjs";
-import { decodePNG, isBlankImage, boxMean } from "./pngcore.mjs";
+import { decodePNG, isBlankImage, boxMean, pngSize } from "./pngcore.mjs";
 
 
 // [rc4l] Find the running hands-on instance without depending on a pipe still existing.
@@ -195,8 +195,8 @@ function pngIsUsable(file) {
     const head = Buffer.alloc(24);
     fs.readSync(fd, head, 0, 24, 0);
     fs.closeSync(fd);
-    if (head.toString("latin1", 1, 4) !== "PNG") return false;
-    return !(head.readUInt32BE(16) <= 1 && head.readUInt32BE(20) <= 1);
+    const size = pngSize(head);
+    return size !== null && !(size.width <= 1 && size.height <= 1);
   } catch { return false; }
 }
 

@@ -6,6 +6,12 @@ export function decodePNG(path) {
   return decodePNGBytes(fs.readFileSync(path));
 }
 
+// [rc4l] A PNG's size from its IHDR, which sits at a fixed offset, for any bit depth and with no decoding; null when the bytes are no PNG.
+export function pngSize(head) {
+  if (head.length < 24 || head.toString("latin1", 1, 4) !== "PNG") return null;
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+}
+
 // [rc4l] A PNG already in memory, such as a frame a browser page handed back.
 export function decodePNGBytes(buf) {
   let p = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
