@@ -1174,7 +1174,6 @@ public:
 	// [AK] Changes to userinfo CVars belonging to the local player that need to be sent to the server.
 	// Also includes a record of the last several game ticks they were sent, to avoid command floods.
 	UserInfoChanges userInfoChanges;
-	TimeInstancesBuffer userInfoBroadcastInstances;
 
 	void DumpScriptStatus();
 	void StopScriptsFor (AActor *actor, bool bRemoveNow = false, int activation = 0); // [RK] Added bRemoveNow and activation

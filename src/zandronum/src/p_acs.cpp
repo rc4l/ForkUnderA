@@ -3694,17 +3694,12 @@ void DACSThinker::Tick ()
 	}
 
 	// [AK] If a client's userinfo CVars were changed from any scripts,
-	// check if it's safe to send a command to the server. It's important
-	// that this command isn't sent out too frequently, or else mods can
-	// get clients kicked for flooding the server.
-	// [rc4l] Ported from zandronum@02962ee6283e5ce454ad1059d68c7a5bb8427590: a client sends the userinfo its scripts changed, held back while it would flood.
+	// send them to the server in a CLC_ACSUSERINFO command.
+	// [rc4l] Ported from zandronum@02962ee6283e5ce454ad1059d68c7a5bb8427590 and zandronum@8cd5694e6ca6d454f5a179540a4fad6077f16a1c: a client sends the userinfo its scripts changed at once, in a command the server never counts as a flood.
 	if (zx::net::IsClient() && userInfoChanges.size() > 0)
 	{
-		if (SERVER_CheckTimeInstancesBufferForFlood(userInfoBroadcastInstances, false) == false)
-		{
-			CLIENTCOMMANDS_UserInfo(userInfoChanges);
-			userInfoChanges.clear();
-		}
+		CLIENTCOMMANDS_UserInfo(userInfoChanges, true);
+		userInfoChanges.clear();
 	}
 }
 

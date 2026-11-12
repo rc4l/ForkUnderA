@@ -3,7 +3,7 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LE: 23, GE: 24, ASSIGNMAPVAR: 26, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LT: 21, LE: 23, GE: 24, ASSIGNSCRIPTVAR: 25, ASSIGNMAPVAR: 26, INCSCRIPTVAR: 46, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
@@ -11,7 +11,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LE
   GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, GetTeamProperty: 103, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188,
+export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 

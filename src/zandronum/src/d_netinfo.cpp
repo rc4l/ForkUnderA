@@ -1120,7 +1120,7 @@ void D_SendPendingUserinfoChanges()
 			}
 		}
 
-		CLIENTCOMMANDS_UserInfo( PendingUserinfoChanges );
+		CLIENTCOMMANDS_UserInfo( PendingUserinfoChanges, false );
 
 		if ( CLIENTDEMO_IsRecording( ))
 			CLIENTDEMO_WriteUserInfo( );

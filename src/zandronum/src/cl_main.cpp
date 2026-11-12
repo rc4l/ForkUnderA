@@ -2884,14 +2884,6 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// [BB] If the server assigned a different name to us, reset that now.
 	if ( strcmp ( static_cast<const char*>(name), players[consoleplayer].userinfo.GetName() ) != 0 )
 		D_SetupUserInfo ();
-
-	// [AK] Clear any pending userinfo changes, and the times when CLC_USERINFO
-	// commands were sent out, because of clientsided ACS scripts.
-	if ( DACSThinker::ActiveThinker != nullptr )
-	{
-		DACSThinker::ActiveThinker->userInfoChanges.clear( );
-		DACSThinker::ActiveThinker->userInfoBroadcastInstances.clear( );
-	}
 }
 
 //*****************************************************************************

@@ -606,7 +606,7 @@ void		SERVER_RequestClientToAuthenticate( ULONG ulClient );
 void		SERVER_AuthenticateClientLevel( BYTESTREAM_s *pByteStream );
 bool		SERVER_PerformAuthenticationChecksum( BYTESTREAM_s *pByteStream );
 void		SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream );
-bool		SERVER_GetUserInfo( BYTESTREAM_s *byteStream, bool allowKick, bool enforceRequired = false );
+bool		SERVER_GetUserInfo( BYTESTREAM_s *byteStream, bool allowKick, bool enforceRequired = false, bool fromACS = false );
 void		SERVER_ConnectionError( NETADDRESS_s Address, const char *pszMessage, ULONG ulErrorCode );
 void		SERVER_ClientError( ULONG ulClient, ULONG ulErrorCode );
 void		SERVER_SendFullUpdate( ULONG ulClient );

@@ -17,6 +17,7 @@ export const SPECIAL = Object.freeze({
   Line_SetTextureScale: 56,
   Plat_PerpetualRaise: 60,
   ACS_Execute: 80,
+  ACS_ExecuteAlways: 226,
   FloorAndCeiling_RaiseByValue: 96,
   Scroll_Texture_Left: 100,
   Light_ChangeToValue: 112,
