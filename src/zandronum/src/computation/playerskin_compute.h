@@ -14,8 +14,10 @@ bool ComputeClSkinsForbids(int clSkins, bool cheatSkin);
 // [rc4l] The skin a player shows: the base skin when cl_skins forbids theirs or theirs is out of range.
 int ComputeShownSkin(int userSkin, int numSkins, bool forbidden, int baseSkin);
 
-// [rc4l] Ported from zandronum@4ab1128e5b738dd57134d283dd78d0adebb90a5e: an unmorphed body always takes its skin's sprite, a morphed one unless its class has NOSKIN.
-bool ComputeSkinSpriteApplies(bool morphed, bool noSkin);
+enum SkinSprite { SKIN_SPRITE_KEEP, SKIN_SPRITE_SKIN, SKIN_SPRITE_STATE };
+
+// [rc4l] Ported from zandronum@ed337e36b30715fd381a82f0ca846adcae1b7c34: a body takes its skin's sprite only while it shows its spawn sprite, so a morph keeps its own, and NOSKIN puts back the state's sprite in place of a skin's.
+SkinSprite ComputeSkinSprite(bool noSkin, bool showsSpawnSprite, bool showsTNT1, bool showsSkinSprite);
 
 }} // namespace zx::skin
 

@@ -38,10 +38,20 @@ TEST(PlayerSkin, AForbiddenOrOutOfRangeSkinShowsTheBase)
 	EXPECT_EQ(1, ComputeShownSkin(-1, 5, false, 1));
 }
 
-TEST(PlayerSkin, AMorphedBodyKeepsItsSkinUnlessItsClassHasNoSkin)
+TEST(PlayerSkin, ABodyShowingItsSpawnSpriteTakesTheSkin)
 {
-	EXPECT_TRUE(ComputeSkinSpriteApplies(false, false));
-	EXPECT_TRUE(ComputeSkinSpriteApplies(false, true));
-	EXPECT_TRUE(ComputeSkinSpriteApplies(true, false));
-	EXPECT_FALSE(ComputeSkinSpriteApplies(true, true));
+	EXPECT_EQ(SKIN_SPRITE_SKIN, ComputeSkinSprite(false, true, false, false));
+}
+
+TEST(PlayerSkin, ABodyShowingAnotherSpriteOrNothingKeepsIt)
+{
+	// [rc4l] A morph, or a state that changed the sprite, is left as it is.
+	EXPECT_EQ(SKIN_SPRITE_KEEP, ComputeSkinSprite(false, false, false, false));
+	EXPECT_EQ(SKIN_SPRITE_KEEP, ComputeSkinSprite(false, true, true, false));
+}
+
+TEST(PlayerSkin, NoSkinPutsBackTheStatesSpriteForASkins)
+{
+	EXPECT_EQ(SKIN_SPRITE_STATE, ComputeSkinSprite(true, true, false, true));
+	EXPECT_EQ(SKIN_SPRITE_KEEP, ComputeSkinSprite(true, true, false, false));
 }

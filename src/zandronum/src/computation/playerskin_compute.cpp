@@ -17,9 +17,11 @@ int ComputeShownSkin(int userSkin, int numSkins, bool forbidden, int baseSkin)
 	return userSkin;
 }
 
-bool ComputeSkinSpriteApplies(bool morphed, bool noSkin)
+SkinSprite ComputeSkinSprite(bool noSkin, bool showsSpawnSprite, bool showsTNT1, bool showsSkinSprite)
 {
-	return !morphed || !noSkin;
+	if (!noSkin)
+		return (showsSpawnSprite && !showsTNT1) ? SKIN_SPRITE_SKIN : SKIN_SPRITE_KEEP;
+	return showsSkinSprite ? SKIN_SPRITE_STATE : SKIN_SPRITE_KEEP;
 }
 
 }} // namespace zx::skin

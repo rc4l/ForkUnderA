@@ -3953,13 +3953,22 @@ void PLAYER_SetSpriteToSkin( player_t *pPlayer )
 	const bool forbidden = zx::skin::ComputeClSkinsForbids( cl_skins, PLAYER_IsCheatSkin( userSkin ));
 	if ( forbidden )
 		pPlayer->mo->flags4 |= MF4_NOSKIN;
+	// [rc4l] An allowed skin drops the NOSKIN cl_skins gave the body, unless its class has its own.
+	else if (( pPlayer->mo->GetDefault( )->flags4 & MF4_NOSKIN ) == 0 )
+		pPlayer->mo->flags4 &= ~MF4_NOSKIN;
 
 	const int skin = zx::skin::ComputeShownSkin( userSkin, static_cast<int>( skins.Size( )), forbidden, R_FindSkin( "base", pPlayer->CurrentPlayerClass ));
 
 	// [BB] There is no skin for the morphed class.
 	// [RK] Let the morph class keep the skin if they don't have +NOSKIN.
-	if ( zx::skin::ComputeSkinSpriteApplies( pPlayer->morphTics != 0, ( pPlayer->mo->flags4 & MF4_NOSKIN ) != 0 ))
-		pPlayer->mo->sprite = skins[skin].sprite;
+	// [rc4l] Ported from zandronum@ed337e36b30715fd381a82f0ca846adcae1b7c34: the sprite changes only from the spawn sprite, so cl_skins no longer swaps a morph's.
+	AActor *const mo = pPlayer->mo;
+	switch ( zx::skin::ComputeSkinSprite(( mo->flags4 & MF4_NOSKIN ) != 0, mo->sprite == mo->SpawnState->sprite, mo->sprite == SPR_TNT1, mo->sprite == skins[skin].sprite ))
+	{
+	case zx::skin::SKIN_SPRITE_SKIN: mo->sprite = skins[skin].sprite; break;
+	case zx::skin::SKIN_SPRITE_STATE: mo->sprite = mo->state->sprite; break;
+	case zx::skin::SKIN_SPRITE_KEEP: break;
+	}
 }
 
 //*****************************************************************************
