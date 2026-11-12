@@ -260,9 +260,9 @@ export function compareQuit(opts) {
   });
 }
 
-// [rc4l] Each side launched on each map and judged by the scenario's own judgeLaunch(c, inst, label), for a check one bridge answer settles.
+// [rc4l] Each side launched on each map and judged by the scenario's own judgeLaunch(c, inst, label, { wadPath, iwad }), for a check one bridge answer settles.
 export function compareEachLaunch(opts) {
-  return eachLaunch(opts, (c, inst, label) => opts.judgeLaunch(c, inst, label));
+  return eachLaunch(opts, (c, inst, label, files) => opts.judgeLaunch(c, inst, label, files));
 }
 
 // [rc4l] Each map hosted by a server with the scenario's wad and joined by a client of each side playing it, both locked, judged together by judgeHosted(server, client, label): for what a netgame splits between the two, such as what only a client draws.
