@@ -183,6 +183,8 @@ typedef enum
 	BOTCMD_STOPMOVEUP,
 	BOTCMD_BEGINMOVEDOWN,					/* 110 */
 	BOTCMD_STOPMOVEDOWN,
+	// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: QuitJoinQueue, after StopMoveDown as theirs, since compiled BotScript names a command by its index.
+	BOTCMD_QUITJOINQUEUE,
 
 	NUM_BOTCMDS
 

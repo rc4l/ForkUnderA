@@ -203,6 +203,7 @@ static  void	botcmd_StopMoveUp( CSkullBot *pBot );
 //110
 static  void	botcmd_BeginMoveDown( CSkullBot *pBot );
 static  void	botcmd_StopMoveDown( CSkullBot *pBot );
+static  void	botcmd_QuitJoinQueue( CSkullBot *pBot );
 
 //*****************************************************************************
 //	VARIABLES
@@ -332,6 +333,8 @@ static	BOTCMD_s	g_BotCommands[] =
 	//110
 	{ "BeginMoveDown", botcmd_BeginMoveDown, 0, 0, RETURNVAL_VOID },
 	{ "StopMoveDown", botcmd_StopMoveDown, 0, 0, RETURNVAL_VOID },
+	// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: QuitJoinQueue's row.
+	{ "QuitJoinQueue", botcmd_QuitJoinQueue, 0, 0, RETURNVAL_VOID },
 };
 
 // [rc4l] Ported from zandronum@8929c493e00ffcaec137209d51b9f37fe4550e8a: compiled BotScript names a command by its index here, so the table must hold every BOTCMD_ in order.
@@ -2955,4 +2958,14 @@ static void botcmd_BeginMoveDown( CSkullBot *pBot )
 static void botcmd_StopMoveDown( CSkullBot *pBot )
 {
 	pBot->m_lButtons &= ~BT_MOVEDOWN;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: a bot leaves the join queue it waits in.
+static void botcmd_QuitJoinQueue( CSkullBot *pBot )
+{
+	const unsigned int playerIndex = static_cast<unsigned>( pBot->GetPlayer( ) - players );
+
+	JOINQUEUE_RemovePlayerFromQueue ( playerIndex );
 }
