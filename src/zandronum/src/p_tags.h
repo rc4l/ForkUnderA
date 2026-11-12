@@ -50,6 +50,7 @@ public:
 		startForSector.Clear();
 		startForLine.Clear();
 		memset(TagHashFirst, -1, sizeof(TagHashFirst));
+		memset(IDHashFirst, -1, sizeof(IDHashFirst));
 	}
 
 	bool SectorHasTags(const sector_t *sector) const;
