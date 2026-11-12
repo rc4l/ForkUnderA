@@ -17,6 +17,9 @@ int ComputeForcedRatioBucket(int vidAspect, bool noWidescreen, bool tft, int wid
 // [rc4l] Whether a bucket is wider than 4:3, which vid_listmodes shows in gold.
 bool ComputeRatioIsWidescreen(int bucket);
 
+// [rc4l] The bucket the video mode menu lists for menu_screenratios, -1 for all, 5:4 only under vid_tft; 21:9 is zandronum@0cb62a890aebc4c13cdf6e09cb0041055c512844.
+int ComputeMenuRatioFilter(int menuScreenRatios, bool tft);
+
 }} // namespace zx::aspect
 
 #endif // ZX_RATIOBUCKET_COMPUTE_H

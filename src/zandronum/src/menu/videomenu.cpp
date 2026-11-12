@@ -56,6 +56,7 @@
 
 #define NO_IMP
 #include "optionmenuitems.h"
+#include "features/aspect-ratio/computation/ratiobucket_compute.h"
 
 
 /*=======================================
@@ -85,13 +86,11 @@ static BYTE BitTranslate[32];
 
 CUSTOM_CVAR (Int, menu_screenratios, -1, CVAR_ARCHIVE)
 {
-	if (self < -1 || self > 4)
+	// [rc4l] Ported from zandronum@0cb62a890aebc4c13cdf6e09cb0041055c512844: the menu lists 21:9 too, through features/aspect-ratio's filter.
+	const int filter = zx::aspect::ComputeMenuRatioFilter(self, vid_tft);
+	if (filter != self)
 	{
-		self = -1;
-	}
-	else if (self == 4 && !vid_tft)
-	{
-		self = 0;
+		self = filter;
 	}
 	else
 	{
@@ -216,14 +215,7 @@ static void BuildModesList (int hiwidth, int hiheight, int hi_bits)
 	bool letterbox=false;
 	int  ratiomatch;
 
-	if (menu_screenratios >= 0 && menu_screenratios <= 4)
-	{
-		ratiomatch = menu_screenratios;
-	}
-	else
-	{
-		ratiomatch = -1;
-	}
+	ratiomatch = zx::aspect::ComputeMenuRatioFilter(menu_screenratios, vid_tft);
 	showbits = BitTranslate[DummyDepthCvar];
 
 	if (Video != NULL)

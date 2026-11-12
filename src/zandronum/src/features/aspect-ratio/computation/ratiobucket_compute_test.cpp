@@ -65,3 +65,15 @@ TEST(RatioBucket, WidescreenBuckets)
 	EXPECT_FALSE(ComputeRatioIsWidescreen(4));
 	EXPECT_TRUE(ComputeRatioIsWidescreen(6));
 }
+
+TEST(RatioBucket, MenuFilterTakesEveryBucketToTwentyOneNine)
+{
+	EXPECT_EQ(-1, ComputeMenuRatioFilter(-1, false));
+	EXPECT_EQ(-1, ComputeMenuRatioFilter(7, false));
+	EXPECT_EQ(-1, ComputeMenuRatioFilter(-2, false));
+	EXPECT_EQ(1, ComputeMenuRatioFilter(1, false));
+	EXPECT_EQ(6, ComputeMenuRatioFilter(6, false));
+	// [rc4l] 5:4 is offered only to a TFT, and otherwise falls back to 4:3.
+	EXPECT_EQ(0, ComputeMenuRatioFilter(4, false));
+	EXPECT_EQ(4, ComputeMenuRatioFilter(4, true));
+}

@@ -8,7 +8,7 @@ called, which modes the menu lists, and what `vid_aspect` forces.
 
 `computation/ratiobucket_compute` holds the rules: `ComputeRatioBucket` (a size's bucket, 5:4 only
 under `vid_tft`), `ComputeForcedRatioBucket` (`vid_aspect` 1 to 6 and `vid_nowidescreen`) and
-`ComputeRatioIsWidescreen`. 21:9 is Zandronum 3.3's (zandronum@bab77c3aab00); forcing it gives the
+`ComputeRatioIsWidescreen`, and the video mode menu's `ComputeMenuRatioFilter`. 21:9 is Zandronum 3.3's (zandronum@bab77c3aab00); forcing it gives the
 3D view a 21:9 lens through `ActiveRatio`'s table.
 
 ## In-engine hooks
@@ -16,4 +16,6 @@ under `vid_tft`), `ComputeForcedRatioBucket` (`vid_aspect` 1 to 6 and `vid_nowid
 - `v_video.cpp`: `ActiveFakeRatio` and `CheckRatio`.
 - `win32/hardware.cpp`, `posix/sdl/hardware.cpp`: `vid_listmodes` names bucket 6 and colours the
   widescreen buckets.
+- `menu/videomenu.cpp`: `menu_screenratios` and the modes `BuildModesList` lists.
+- `wadsrc/static/menudef.txt`: 21:9 in `ForceRatios`, `Ratios` and `RatiosTFT`.
 - `CMakeLists.txt`: `ratiobucket_compute.cpp` in the engine's sources.

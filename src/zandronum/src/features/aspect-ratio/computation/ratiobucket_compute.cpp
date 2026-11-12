@@ -55,4 +55,13 @@ bool ComputeRatioIsWidescreen(int bucket)
 	return (bucket & 3) != 0;
 }
 
+int ComputeMenuRatioFilter(int menuScreenRatios, bool tft)
+{
+	if (menuScreenRatios < 0 || menuScreenRatios > 6)
+		return -1;
+	if (menuScreenRatios == 4 && !tft)
+		return 0;
+	return menuScreenRatios;
+}
+
 }} // namespace zx::aspect
