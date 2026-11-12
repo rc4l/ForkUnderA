@@ -753,6 +753,10 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				r.health = mo->health;
 				r.player = ( mo->player != NULL ) ? (int)( mo->player - players ) : -1;
 				r.scaleX = FIXED2DBL( mo->scaleX ); r.scaleY = FIXED2DBL( mo->scaleY );
+				int drawnSprite = mo->sprite;
+				fixed_t drawnScaleX = mo->scaleX, drawnScaleY = mo->scaleY;
+				if ( mo->player != NULL ) P_CheckPlayerSprite( mo, drawnSprite, drawnScaleX, drawnScaleY );
+				r.drawnScaleX = FIXED2DBL( drawnScaleX ); r.drawnScaleY = FIXED2DBL( drawnScaleY );
 				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
 				rows.push_back( r );
 			}
