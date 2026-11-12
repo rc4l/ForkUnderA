@@ -2247,205 +2247,239 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 
 //*****************************************************************************
 //
-bool SERVER_GetUserInfo( BYTESTREAM_s *pByteStream, bool bAllowKick, bool bEnforceRequired )
+bool SERVER_GetUserInfo( BYTESTREAM_s *byteStream, bool allowKick, bool enforceRequired )
 {
-	player_t	*pPlayer;
-	FString		szSkin;
+	player_t *const player = &players[g_lCurrentClient];
+	FString skin;
 	// [BB] We may only kick the player after completely parsing the current message,
 	// otherwise we'll get network parsing errors.
-	bool		bKickPlayer = false;
-	bool		bOverriddenName = false;
+	bool kickPlayer = false;
+	bool overriddenName = false;
 	FString kickReason;
 
-	pPlayer = &players[g_lCurrentClient];
-
 	// [TP] Don't check for userinfo flooding if we're not enforcing command limits.
-	if (( bAllowKick ) && ( SERVER_CheckTimeInstancesBufferForFlood( g_aClients[g_lCurrentClient].userinfoInstances, false )))
+	if (( allowKick ) && ( SERVER_CheckTimeInstancesBufferForFlood( g_aClients[g_lCurrentClient].userinfoInstances, false )))
 	{
-		bKickPlayer = true;
+		kickPlayer = true;
 		kickReason = "User info change flood.";
 	}
 
 	FName name;
-	FString value;
 	std::set<FName> names;
 
-	while (( name = NETWORK_ReadName( pByteStream ) ) != NAME_None )
+	while (( name = NETWORK_ReadName( byteStream )) != NAME_None )
 	{
 		// [SB] Kick the player if we run out of data.
-		if ( pByteStream->pbStream >= pByteStream->pbStreamEnd )
+		if ( byteStream->pbStream >= byteStream->pbStreamEnd )
 		{
-			bKickPlayer = true;
+			kickPlayer = true;
 			kickReason = "Client sent malformed data.";
 			break;
 		}
 
 		names.insert( name );
-		value = pByteStream->ReadString();
+		FString value = byteStream->ReadString( );
 
-		if ( name == NAME_Name )
+		switch ( name )
 		{
-			FString oldPlayerName = pPlayer->userinfo.GetName();
-			FString nameStringCopy = value;
-
-			// [RC] Remove bad characters from their username.
-			V_CleanPlayerName( value, false );
-
-			// The user really shouldn't have an invalid name unless they are using a hacked executable.
-			if ( value.Compare( nameStringCopy ) != 0 )
+			case NAME_Name:
 			{
-				bKickPlayer = true;
-				kickReason = "User name contains illegal characters." ;
-			}
+				FString oldPlayerName = player->userinfo.GetName( );
+				FString nameStringCopy = value;
+				FString overriddenNameMessage;
 
-			FString message;
+				// [RC] Remove bad characters from their username.
+				V_CleanPlayerName( value, false );
 
-			// [AK] Don't allow players to name themselves as "server" in order to avert
-			// any potential impersonation of the server.
-			if ( PLAYER_NameMatchesServer ( value ) )
-			{
-				message.Format ( "You can't name yourself as the server." );
-				bOverriddenName = true;
-			}
-			// [BB] Check whether the requested name is already in use.
-			// If so, give the player a generic unused name and inform the client.
-			else if ( PLAYER_NameUsed ( value, g_lCurrentClient ) )
-			{
-				message.Format ( "The name '%s' is already in use. ", value.GetChars() );
-				bOverriddenName = true;
-			}
-
-			if ( bOverriddenName )
-			{
-				value = PLAYER_GenerateUniqueName();
-				message.AppendFormat ( "You are renamed to '%s'.\n", value.GetChars() );
-				SERVERCOMMANDS_PrintMid( message, true, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
-			}
-
-			// [BB] It's extremely critical that we NEVER use the uncleaned player name!
-			// If this is omitted, for example the RCON password can be optained by just using
-			// a tampered name.
-			pPlayer->userinfo.NameChanged ( value.GetChars() );
-
-			if ( g_aClients[g_lCurrentClient].State == CLS_SPAWNED )
-			{
-				FString playerNameNoColor = pPlayer->userinfo.GetName();
-				FString oldPlayerNameNoColor = oldPlayerName;
-
-				V_ColorizeString( playerNameNoColor );
-				V_RemoveColorCodes( playerNameNoColor );
-				V_ColorizeString( oldPlayerNameNoColor );
-				V_RemoveColorCodes( oldPlayerNameNoColor );
-
-				if ( playerNameNoColor.CompareNoCase( oldPlayerNameNoColor ) != 0 )
+				// The user really shouldn't have an invalid name unless they are using a hacked executable.
+				if ( value.Compare( nameStringCopy ) != 0 )
 				{
-					SERVER_Printf( "%s is now known as %s\n", oldPlayerName.GetChars(), pPlayer->userinfo.GetName() );
-
-					// [RC] Update clients using the RCON utility.
-					SERVER_RCON_UpdateInfo( SVRCU_PLAYERDATA );
+					kickPlayer = true;
+					kickReason = "User name contains illegal characters.";
 				}
+
+				// [AK] Don't allow players to name themselves as "server" in order to avert
+				// any potential impersonation of the server.
+				if ( PLAYER_NameMatchesServer( value ))
+				{
+					overriddenNameMessage.Format( "You can't name yourself as the server." );
+					overriddenName = true;
+				}
+				// [BB] Check whether the requested name is already in use.
+				// If so, give the player a generic unused name and inform the client.
+				else if ( PLAYER_NameUsed( value, g_lCurrentClient ))
+				{
+					overriddenNameMessage.Format( "The name '%s' is already in use. ", value.GetChars( ));
+					overriddenName = true;
+				}
+
+				if ( overriddenName )
+				{
+					value = PLAYER_GenerateUniqueName( );
+					overriddenNameMessage.AppendFormat( "You are renamed to '%s'.\n", value.GetChars( ));
+					SERVERCOMMANDS_PrintMid( overriddenNameMessage.GetChars( ), true, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
+				}
+
+				// [BB] It's extremely critical that we NEVER use the uncleaned player name!
+				// If this is omitted, for example the RCON password can be optained by just using
+				// a tampered name.
+				player->userinfo.NameChanged( value.GetChars( ));
+
+				if ( g_aClients[g_lCurrentClient].State == CLS_SPAWNED )
+				{
+					FString playerNameNoColor = player->userinfo.GetName( );
+					FString oldPlayerNameNoColor = oldPlayerName;
+
+					V_ColorizeString( playerNameNoColor );
+					V_RemoveColorCodes( playerNameNoColor );
+					V_ColorizeString( oldPlayerNameNoColor );
+					V_RemoveColorCodes( oldPlayerNameNoColor );
+
+					if ( playerNameNoColor.CompareNoCase( oldPlayerNameNoColor ) != 0 )
+					{
+						SERVER_Printf( "%s is now known as %s\n", oldPlayerName.GetChars( ), player->userinfo.GetName( ));
+
+						// [RC] Update clients using the RCON utility.
+						SERVER_RCON_UpdateInfo( SVRCU_PLAYERDATA );
+					}
+				}
+
+				break;
 			}
-		}
-		else if ( name == NAME_Gender )
-			pPlayer->userinfo.GenderNumChanged ( value.ToLong() );
-		else if ( name == NAME_Color )
-			pPlayer->userinfo.ColorChanged ( value );
-		else if ( name == NAME_ColorSet )
-			pPlayer->userinfo.ColorSetChanged ( value.ToLong() );
-		else if ( name == NAME_Autoaim )
-			*static_cast<FFloatCVar *>(pPlayer->userinfo[NAME_Autoaim]) = static_cast<float> ( value.ToDouble() );
-		else if ( name == NAME_Skin )
-			szSkin = value;
-		else if ( name == NAME_RailColor )
-			pPlayer->userinfo.RailColorChanged ( value.ToLong() );
-		else if ( name == NAME_Handicap )
-			pPlayer->userinfo.HandicapChanged ( value.ToLong() );
-		// [BB]
-		else if ( name == NAME_CL_TicsPerUpdate )
-			pPlayer->userinfo.TicsPerUpdateChanged ( value.ToLong() );
-		// [BB]
-		else if ( name == NAME_CL_ConnectionType )
-			pPlayer->userinfo.ConnectionTypeChanged ( value.ToLong() );
-		// [CK] We use a bitfield now.
-		else if ( name == NAME_CL_ClientFlags )
-			pPlayer->userinfo.ClientFlagsChanged ( value.ToLong() );
-		// [AK]
-		else if ( name == NAME_Voice_Enable )
-			pPlayer->userinfo.VoiceEnableChanged ( value.ToLong() );
-		// [AK]
-		else if ( name == NAME_Voice_ListenFilter )
-			pPlayer->userinfo.VoiceListenFilterChanged ( value.ToLong() );
-		// [AK]
-		else if ( name == NAME_Voice_TransmitFilter )
-			pPlayer->userinfo.VoiceTransmitFilterChanged ( value.ToLong() );
-		// If this is a Hexen game, read in the player's class.
-		else if ( name == NAME_PlayerClass )
-		{
-			pPlayer->userinfo.PlayerClassNumChanged ( value.ToLong() );
 
-			// If the player class is changed, we also have to reset cls.
-			// Otherwise cls will not be reinitialized in P_SpawnPlayer.
-			pPlayer->cls = NULL;
-		}
-		else
-		{
-			FBaseCVar **cvarPointer = pPlayer->userinfo.CheckKey( name );
-			FBaseCVar *cvar = cvarPointer ? *cvarPointer : nullptr;
+			case NAME_Gender:
+				player->userinfo.GenderNumChanged( value.ToLong( ));
+				break;
 
-			if ( cvar )
+			case NAME_Color:
+				player->userinfo.ColorChanged( value );
+				break;
+
+			case NAME_ColorSet:
+				player->userinfo.ColorSetChanged( value.ToLong( ));
+				break;
+
+			case NAME_Autoaim:
+				*static_cast<FFloatCVar *>( player->userinfo[NAME_Autoaim] ) = static_cast<float>( value.ToDouble( ));
+				break;
+
+			case NAME_Skin:
+				skin = value;
+				break;
+
+			case NAME_RailColor:
+				player->userinfo.RailColorChanged( value.ToLong( ));
+				break;
+
+			case NAME_Handicap:
+				player->userinfo.HandicapChanged( value.ToLong( ));
+				break;
+
+			// [BB]
+			case NAME_CL_TicsPerUpdate:
+				player->userinfo.TicsPerUpdateChanged( value.ToLong( ));
+				break;
+
+			// [BB]
+			case NAME_CL_ConnectionType:
+				player->userinfo.ConnectionTypeChanged( value.ToLong( ));
+				break;
+
+			// [CK] We use a bitfield now.
+			case NAME_CL_ClientFlags:
+				player->userinfo.ClientFlagsChanged( value.ToLong( ));
+				break;
+
+			// [AK]
+			case NAME_Voice_Enable:
+				player->userinfo.VoiceEnableChanged( value.ToLong( ));
+				break;
+
+			// [AK]
+			case NAME_Voice_ListenFilter:
+				player->userinfo.VoiceListenFilterChanged( value.ToLong( ));
+				break;
+
+			// [AK]
+			case NAME_Voice_TransmitFilter:
+				player->userinfo.VoiceTransmitFilterChanged( value.ToLong( ));
+				break;
+
+			// If this is a Hexen game, read in the player's class.
+			case NAME_PlayerClass:
 			{
-				UCVarValue cvarValue;
-				cvarValue.String = value;
-				cvar->SetGenericRep( cvarValue, CVAR_String );
+				player->userinfo.PlayerClassNumChanged( value.ToLong( ));
+
+				// If the player class is changed, we also have to reset cls.
+				// Otherwise cls will not be reinitialized in P_SpawnPlayer.
+				player->cls = nullptr;
+				break;
+			}
+
+			default:
+			{
+				FBaseCVar **cvarPointer = player->userinfo.CheckKey( name );
+				FBaseCVar *cvar = cvarPointer ? *cvarPointer : nullptr;
+
+				if ( cvar )
+				{
+					UCVarValue cvarValue;
+					cvarValue.String = value;
+					cvar->SetGenericRep( cvarValue, CVAR_String );
+				}
+
+				break;
 			}
 		}
 	}
 
 	// Now that we've (maybe) read in the player's class information, try to find a skin
 	// for him based on his class.
-	if ( szSkin.IsNotEmpty() )
+	if ( skin.IsNotEmpty( ))
 	{
 		// Store the name of the skin the client gave us, so others can view the skin
 		// even if the server doesn't have the skin loaded.
-		g_aClients[g_lCurrentClient].skinName = szSkin;
+		g_aClients[g_lCurrentClient].skinName = skin;
 
 		// [BB] This can't be done if PlayerClass == -1, but shouldn't be necessary anyway,
 		// since it's done as soon as the player is spawned in P_SpawnPlayer.
-		if ( pPlayer->userinfo.GetPlayerClassNum() != -1 )
-			pPlayer->userinfo.SkinNumChanged ( R_FindSkin( szSkin, pPlayer->userinfo.GetPlayerClassNum() ) );
+		if ( player->userinfo.GetPlayerClassNum( ) != -1 )
+			player->userinfo.SkinNumChanged( R_FindSkin( skin, player->userinfo.GetPlayerClassNum( )));
 	}
 
 	// [BB] Make sure that the joining client sends the full user info (sending player class is not mandatory though).
-	// [SB] This check is not done if bKickPlayer is true, allowing any decisions to kick a player to just fall through.
-	if ( bEnforceRequired && !bKickPlayer )
+	// [SB] This check is not done if kickPlayer is true, allowing any decisions to kick a player to just fall through.
+	if (( enforceRequired ) && ( kickPlayer == false ))
 	{
-		static const std::set<FName> required = {
+		static const std::set<FName> required =
+		{
 			NAME_Name, NAME_Autoaim, NAME_Gender, NAME_Skin, NAME_RailColor,
 			NAME_CL_ConnectionType, NAME_CL_ClientFlags,
 			NAME_Handicap, NAME_CL_TicsPerUpdate, NAME_Color, NAME_ColorSet,
 			NAME_Voice_Enable, NAME_Voice_ListenFilter, NAME_Voice_TransmitFilter
 		};
+
 		std::set<FName> missing;
-		std::set_difference( required.begin(), required.end(), names.begin(), names.end(),
-							 std::inserter ( missing, missing.begin() ) );
-		if ( missing.size() > 0 )
+		std::set_difference( required.begin( ), required.end( ), names.begin( ), names.end( ), std::inserter( missing, missing.begin( )));
+
+		if ( missing.size( ) > 0 )
 		{
-			bKickPlayer = true;
+			kickPlayer = true;
 			kickReason = "Userinfo is incomplete";
 		}
 	}
 
-	if ( bKickPlayer )
+	if ( kickPlayer )
 	{
 		// [TP] If the client isn't fully in yet, send an error and disconnect him.
 		if ( g_aClients[g_lCurrentClient].State != CLS_SPAWNED )
 		{
-			SERVER_PrintfPlayer( g_lCurrentClient, "\n%s\n", kickReason.GetChars() );
+			SERVER_PrintfPlayer( g_lCurrentClient, "\n%s\n", kickReason.GetChars( ));
 			SERVER_ClientError( g_lCurrentClient, NETWORK_ERRORCODE_USERINFOREJECTED );
 			return ( false );
 		}
 
-		SERVER_KickPlayer( g_lCurrentClient, kickReason.GetChars() );
+		SERVER_KickPlayer( g_lCurrentClient, kickReason.GetChars( ));
 		return ( false );
 	}
 
@@ -2453,7 +2487,7 @@ bool SERVER_GetUserInfo( BYTESTREAM_s *pByteStream, bool bAllowKick, bool bEnfor
 	SERVERCOMMANDS_SetPlayerUserInfo( g_lCurrentClient, names, g_lCurrentClient, SVCF_SKIPTHISCLIENT );
 
 	// [BB] If his name was overridden, tell him that.
-	if ( bOverriddenName )
+	if ( overriddenName )
 		SERVERCOMMANDS_SetPlayerUserInfo( g_lCurrentClient, { NAME_Name }, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
 
 	// Also, update the scoreboard.
