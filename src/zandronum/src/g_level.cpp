@@ -88,7 +88,9 @@
 #include "r_renderer.h"
 // [BB] New #includes.
 #include "cl_main.h"
+#include "computation/acsvars_compute.h"   // [rc4l] when a new game clears ACS's world and global variables
 #include "deathmatch.h"
+#include "features/net-session/netrole.h"
 #include "network.h"
 #include "sv_commands.h"
 #include "sv_rcon.h"
@@ -648,7 +650,12 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 			}
 			FRandom::StaticClearRandom ();
 		}
-		P_ClearACSVars(true);
+		// [AK] Don't reset world or global ACS variables for clients when they
+		// are changing levels, unless they haven't received the full snapshot.
+		if (zx::ComputeNewGameClearsAcsVars(zx::net::InClientMode(), CLIENT_GetConnectionState() == CTS_ACTIVE))
+		{
+			P_ClearACSVars(true);
+		}
 		level.time = 0;
 		level.maptime = 0;
 		level.totaltime = 0;
