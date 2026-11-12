@@ -793,7 +793,11 @@ static ASTARNODE_t *astar_GetNodeFromPoint( POS_t Point )
 static LONG astar_GetCostToGoalEstimate( ASTARPATH_t *pPath, ASTARNODE_t *pNode )
 {
 	// [rc4l] Ported from zandronum@04903d3ae54c054c18731da75bc9afd2a13ef5f0: the estimate counts the height between node and goal, ours keeping the cast our 64-bit fixed_t needs.
-	return (LONG)(( P_AproxDistance( P_AproxDistance( pNode->Position.x - pPath->pGoalNode->Position.x, pNode->Position.y - pPath->pGoalNode->Position.y ), pNode->Position.z - pPath->pGoalNode->Position.z ) / FRACUNIT ));
+	// [rc4l] Ported from zandronum@2e70d6ccc17cb06dc695cb1a98b9e9e071f44788: the flat distance first, for readability.
+	const fixed_t xyDistance = P_AproxDistance( pNode->Position.x - pPath->pGoalNode->Position.x,
+		pNode->Position.y - pPath->pGoalNode->Position.y);
+
+	return (LONG)(( P_AproxDistance( xyDistance, pNode->Position.z - pPath->pGoalNode->Position.z ) / FRACUNIT ));
 /*
 	POS_t	PosGoal;
 	POS_t	PosNode;
