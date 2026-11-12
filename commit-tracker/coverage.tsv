@@ -3093,15 +3093,15 @@ b8abafb486ac512f26efe68ad64119c2383e3f3b	2016-03-03T12:31:21Z	- disabled all the
 2587e82a671ee9b35fe3fc7a1f8062f4b5b47785	2016-03-03T15:15:42Z	. removed some redundant computation of a trace's hit position.	pending		/
 6d68f69674966b7e48941488448d7edb930abcdd	2016-03-03T19:27:52Z	Use lambdas for more concise code	pending		/
 e3d35f4fe8ada73dced41746f4b94045787d7ce4	2016-03-03T23:31:01Z	PClassPointer should use its own type as the metatype in the type table	pending		/
-97821a3036f7ba8281f88d39bf2d750bf84c5c61	2016-03-03T23:31:12Z	21:9 aspect ratio support	pending		/
-73c7e513912704e91fac53fab72f874767a5b594	2016-03-03T23:31:12Z	fix: 21:9 AR stretching in intermission, end level screens	pending		/
-afb1d438c2611c4e7564c5114868eced67dd6cc0	2016-03-03T23:31:12Z	21:9 fix for black bars overlapping fullscreen images	pending		/
-3ac49682184b9092e3b02a898c674b6e392d3ffd	2016-03-03T23:31:12Z	Slightly improve 21:9 ar	pending		/
-a4705c84047baee72f23db8709a686e8a663a843	2016-03-03T23:31:12Z	vid_listmodes crash fix	pending		/
-a28c8091fc329bb1ef8acc12f281f360851c559f	2016-03-03T23:31:12Z	UI support for 21:9	pending		/
-79f07143410af621bde29efaba21d4a4d340e1dc	2016-03-03T23:32:30Z	Update ratios[] tables for SDL and Cocoa	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at f7e67f0, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	f7e67f0
-16d8af6b77cb8468c5191750150bfd684c7a1158	2016-03-03T23:59:55Z	Add some 21:9 resolutions	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at f7e67f0, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	f7e67f0
-3c2ed52442cb3eac66ddaeb191b598da1d47fe23	2016-03-04T00:00:06Z	Fix 21:9 base width and height values	pending		/
+97821a3036f7ba8281f88d39bf2d750bf84c5c61	2016-03-03T23:31:12Z	21:9 aspect ratio support	adapted	twin zandronum@bab77c3aa: ours-wins: bucket 6 and vid_aspect 6 are features/aspect-ratio's ComputeRatioBucket and ComputeForcedRatioBucket (1e26dcb8); the sizing hunks in shared_sbar.cpp, r_main.cpp, r_utility.cpp, v_draw.cpp and v_video.cpp are UZDoom's continuous aspect (72bbc2cb), which sizes by the true ratio instead of a BaseRatioSizes row per bucket	1e26dcb8,72bbc2cb
+73c7e513912704e91fac53fab72f874767a5b594	2016-03-03T23:31:12Z	fix: 21:9 AR stretching in intermission, end level screens	adapted	twin zandronum@02c2c8a3f: ours-wins: the continuous aspect's ActiveRatio and the Aspect* functions size intermission and end screens by the true ratio, with nothing to special-case for 21:9	72bbc2cb
+afb1d438c2611c4e7564c5114868eced67dd6cc0	2016-03-03T23:31:12Z	21:9 fix for black bars overlapping fullscreen images	adapted	twin zandronum@d80e4191a: ours-wins: fullscreen images letterbox from the continuous aspect's true ratio, so no 21:9 branch	72bbc2cb
+3ac49682184b9092e3b02a898c674b6e392d3ffd	2016-03-03T23:31:12Z	Slightly improve 21:9 ar	adapted	twin zandronum@5bb2c8e48: ours-wins: BaseRatioSizes gave way to AspectBaseWidth, AspectBaseHeight and AspectMultiplier, which take any ratio	72bbc2cb
+a4705c84047baee72f23db8709a686e8a663a843	2016-03-03T23:31:12Z	vid_listmodes crash fix	ported	twin zandronum@0629232ea: pulled forward into 1e26dcb8 with bab77c3aab00, which would overrun its ratios[] without it	1e26dcb8
+a28c8091fc329bb1ef8acc12f281f360851c559f	2016-03-03T23:31:12Z	UI support for 21:9	adapted	twin zandronum@0cb62a890: menu_screenratios and the modes the menu lists go through features/aspect-ratio's ComputeMenuRatioFilter	6ac536df
+79f07143410af621bde29efaba21d4a4d340e1dc	2016-03-03T23:32:30Z	Update ratios[] tables for SDL and Cocoa	ported	twin zandronum@8787d4a28: the SDL ratios[7] is 1e26dcb8's; uzdoom@79f071434's Cocoa half came with the vendored Cocoa backend (f7e67f04)	f7e67f04,1e26dcb8
+16d8af6b77cb8468c5191750150bfd684c7a1158	2016-03-03T23:59:55Z	Add some 21:9 resolutions	ported	twin zandronum@69f8e4816: the four sizes are in posix/sdl/sdlvideo.cpp (ef449dd9); uzdoom@16d8af6b7's Cocoa half came with the vendored Cocoa backend (f7e67f04)	f7e67f04,ef449dd9
+3c2ed52442cb3eac66ddaeb191b598da1d47fe23	2016-03-04T00:00:06Z	Fix 21:9 base width and height values	adapted	twin zandronum@df02f490e: ours-wins: there is no BaseRatioSizes row to correct; AspectBaseWidth and AspectBaseHeight compute 21:9's from the ratio	72bbc2cb
 81b634a798a1ef49963b921e9373e0ed2c293851	2016-03-04T00:13:16Z	- preparation for making Trace portal aware: Added a new flag Trace_PortalRestrict, so that I could disable portals without static offset for P_LinePickActor and A_CheckLOF, because both depend on the target info being retainable which requires a static offset.	pending		/
 9f805daa735bec6cbefef769393da791abf786ba	2016-03-04T00:13:16Z	- added missing handling of ALF_PORTALRESTRICT flag.	pending		/
 0c37a90e32b8c7e1f0ae8f208d90c5ed663d8074	2016-03-04T00:13:17Z	- moved the initial 3D floor check from Trace to TraceTraverse, because that's where it will be needed for handling portals.	pending		/
@@ -3114,7 +3114,7 @@ e4a74f4bbe2574b10edd482de3b7ba21c77a9105	2016-03-04T02:26:41Z	Fix memory leak fr
 93323b64f8bb43136f17d1362c31f07e94fbbd9a	2016-03-04T09:16:23Z	- explicitly force SSE2 for Visual Studio 64 bit projects so that the advanced instruction sets don't get activated by accident.	pending		/
 7ceb6d86dd2ea769f2b09dcaa7e47b4edca35667	2016-03-04T09:39:10Z	- fixed compilation.	pending		/
 9b23b410219b035fcbe245647ccad70f841436cd	2016-03-04T10:32:15Z	Added detection for broken WAD files	pending		/
-af1b70376b04418a48e3047b614c2196940d005f	2016-03-04T10:47:15Z	- added 21:9 handling to GL code.	pending		/
+af1b70376b04418a48e3047b614c2196940d005f	2016-03-04T10:47:15Z	- added 21:9 handling to GL code.	adapted	twin zandronum@3e8240c5d: ours-wins: gl_scene.cpp and gl_weapon.cpp take the continuous WidescreenRatio through the Aspect* functions, so 21:9 needs no case of its own	72bbc2cb
 b427f27e3b52d6469188af26580a344691df020d	2016-03-04T13:09:26Z	- fixed: line portal rotations were not set for all types.	pending		/
 dbd89c2702987278536bb85c346b54df18a07561	2016-03-04T13:10:13Z	- refactoring of portal grouping for the renderer, to allow more efficient clipping.	pending		/
 e9e30a6431e151f84b5aa1cb22c276f89f7cd56e	2016-03-04T13:10:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -4533,7 +4533,7 @@ e22043a25b7f2d61ddcff44b6b014233022ba5eb	2016-08-22T07:46:00Z	Fixed: A_FaceMovem
 7ba5acfb35aeeda77458895c10e0dae6a9b3bc8a	2016-08-22T12:00:25Z	- added quad drawer interface so that this part can be done without altering a vertex buffer.	pending		/
 250be72939aec68b5f27e6efdf956a33c482c5ea	2016-08-22T13:31:23Z	- added handling for drawing with uniform vertices. It draws something but in the wrong place. Right now I have no idea what's happening...	pending		/
 1594cc95700ba77af4956899eb154002d551dcf7	2016-08-22T17:25:13Z	Only use KHR_debug if available	pending		/
-276fb7dbb2f43fcb0db6a5fc276495af6254316f	2016-08-22T20:00:44Z	Add vid_maxfps support for Windows and Linux	pending		/
+276fb7dbb2f43fcb0db6a5fc276495af6254316f	2016-08-22T20:00:44Z	Add vid_maxfps support for Windows and Linux	adapted	twin zandronum@a5e5b25fb: no-file-overlap: our limiter is features/frame-limit, called from the frame loop, so neither swap path changes; ours-wins: vid_maxfps limits every renderer and the browser through one tested ComputeFrameLimit, where this sleeps only in GL's win32gliface.cpp and sdlglvideo.cpp swaps	a8cc9c46
 b946114145fcaa3d62a25fb6a2d41ceaa670b3eb	2016-08-22T20:00:45Z	- removed unused variable.	pending		/
 9555617816206fbe62dee5869aaa0c90223074b3	2016-08-22T20:02:02Z	- fixed: The default for position.w is 1, so gl_quaddrawer.cpp needs to set this, too, for the uniform vertex positions.	pending		/
 13a583faeed26812d0ab957becbbc7db168fc736	2016-08-22T20:02:44Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -4541,7 +4541,7 @@ b946114145fcaa3d62a25fb6a2d41ceaa670b3eb	2016-08-22T20:00:45Z	- removed unused v
 a18588692418bec02f8c62f8e02fc369136aad17	2016-08-24T07:26:11Z	Added compatibility handling for fog and dynamic lights used together	pending		/
 52b51e79b9f40b924c9bbd656312f94b57f75abc	2016-08-24T07:27:14Z	Fixed missing decals in compatibility renderer	pending		/
 2f893af857a5d70031f29fb35a6b07eff01b7f0a	2016-08-24T08:44:33Z	Fixed palette tonemap mode for OpenGL 2.x	pending		/
-f79c442df533e26888eb748e14041eb71b1e6ab7	2016-08-24T13:44:40Z	Fixed compilation of SDL backend	pending		/
+f79c442df533e26888eb748e14041eb71b1e6ab7	2016-08-24T13:44:40Z	Fixed compilation of SDL backend	adapted	twin zandronum@30f4a0aec: no-file-overlap: the SDL half of a5e5b25fbe12's limiter, which features/frame-limit replaces; ours-wins: one limiter for every renderer	a8cc9c46
 9525d3690f64ac06c8f5cb083c122b4bbeaf1cf5	2016-08-25T04:25:05Z	Added gl_light_math and changed pixelpos + lights to be in eye space	pending		/
 48430d9b1a648508f068b7714b68e6cb32a8bfba	2016-08-25T19:15:53Z	- don't assume that deserializing an actor will result in a valid pointer.	pending		/
 9ca6764556aa07e94d5928ae7a8ad7d0b5aaed82	2016-08-25T19:41:17Z	Revert "- removed STAT_INVENTORY."	pending		/
@@ -4678,7 +4678,7 @@ d3246be48805bde32349984141b484857bf4591a	2016-09-10T10:24:13Z	- draw wall sprite
 be647dc7b267e6ee75018218235ca0566f0cd8d7	2016-09-10T22:45:40Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a0b6a0275c5c521455e843709153ed1d7270435b	2016-09-11T09:09:40Z	Fix random texture sampling bug	pending		/
 d3d8180f578924b275defd937e10cd3cb370922e	2016-09-12T11:04:36Z	Resize framebuffer in windowed mode to match the client area	pending		/
-b003c47e3e02bed94b76757a512b195b1d7d70c8	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	pending		/
+b003c47e3e02bed94b76757a512b195b1d7d70c8	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	adapted	twin zandronum@a48630d21: features/aspect-ratio's tested ComputeRatioBucket takes the nearest ratio, with fabsf where this calls abs on a float	b914d88b
 5720634045b0812bc838eb4671a4039917582a94	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	ported	ActiveRatio + ActiveFakeRatio added alongside CheckRatio; our vid_aspect guard stays 1-5 (no 21:9 mode) though the forcedRatioTypes table is carried whole	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c
 6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119	2016-09-12T12:37:10Z	BaseRatioSizes replacement functions	ported	continuous-aspect replacements for the BaseRatioSizes columns; AspectPspriteOffset uses double(FRACUNIT) since ours is a zx::Fixed	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c
 5b438d220f918e4d5b604e970f0f45f96963e8d1	2016-09-12T13:51:50Z	Switch from ratio enum to float	adapted	consumers switched to float; r_swrenderer/r_things hunks N/A (no software renderer); gl_scene + gl_weapon bucket-indexed tables have no upstream counterpart and were replaced with computed values; ultrawide->16:9 clamp adopted, which we lacked; CheckRatio kept for vid_listmodes/videomenu	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c
@@ -4725,7 +4725,7 @@ d128e28044cae54673731e68543605a0a01d31a8	2016-09-14T19:05:45Z	Merge branch 'mast
 95fef442002621c3b85f0d3ea95a44d64db3b429	2016-09-14T22:31:34Z	Merge remote-tracking branch 'gzdoom_upstream/master' into lightmath	pending		/
 976cf07f9c7abcca600209d1a803e09132a50812	2016-09-15T00:26:37Z	Merge http://github.com/coelckers/gzdoom	pending		/
 48f491cfd12ddc489faf296898f9db050e907767	2016-09-15T05:52:53Z	Fix video mode selection bug	pending		/
-0d27996a648a9668650f396b9de544371074f820	2016-09-15T05:52:53Z	Replace CheckRatio with AspectTallerThanWide in DrawHUD	pending		/
+0d27996a648a9668650f396b9de544371074f820	2016-09-15T05:52:53Z	Replace CheckRatio with AspectTallerThanWide in DrawHUD	ported		9e7a05e9
 ac70f77e44c17115f908d85275d868ada936e582	2016-09-15T19:09:36Z	Added the following ccmds:  actorlist, actornum, monsternum, itemsnum, countitemsnum Modified the following ccmds:  monster, items, countitems	pending		/
 a83477e549c24c26448039d9ed56cd74bf500c05	2016-09-15T23:18:56Z	Merge http://github.com/rheit/zdoom	pending		/
 3c1868f7e6bfff93def8884f611d58c796273b6a	2016-09-16T00:53:19Z	Fix wrong flash rectangle size after window resize	pending		/
@@ -10259,7 +10259,7 @@ fbbf2f83465d5502ef004f9bbd6069ba19562a43	2018-04-30T19:42:36Z	- fixed a few thin
 ecb1578a7ac94b893a488389c064b79c9b2da753	2018-04-30T21:06:48Z	- changed model lighting setup to be done in the processing pass.	pending		/
 7aea0108924928e3ead6f776f425bc15fc8ebf95	2018-04-30T21:48:16Z	- added a sector index to the subsector struct.	pending		/
 af76e9a9c4a58c3d68aaea02d2bec20c1089feb9	2018-04-30T21:48:59Z	- allow animated title pics.	pending		/
-b35213741f3d0aa9c07365daa755ba2f47401444	2018-05-01T05:48:59Z	- don't force the renderer to remain active in windowed mode when in the background.	pending		/
+b35213741f3d0aa9c07365daa755ba2f47401444	2018-05-01T05:48:59Z	- don't force the renderer to remain active in windowed mode when in the background.	adapted	twin zandronum@38acb473f: ours-wins: fua_render_in_background, off by default, keeps presenting in a window or fullscreen and also lifts the background pause and idle priority, which vid_activeinbackground leaves in place	3fb0acfa
 3c49804c6c17aa7c5bc5d895e64fc37dcc1c4678	2018-05-01T07:02:24Z	- some Transfer_Heights related optimizations.	pending		/
 f49c6cbde2028f1adfbe24f4f4a2a0525f85acb7	2018-05-01T07:47:09Z	- use sector_t::GetHeightSec consistently and optimize it.	pending		/
 9bdb0f2e49b0e47622326232ba697f0a8d688fc0	2018-05-01T09:29:29Z	- renamed the flag bits for sector_t::MoreFlags, so that they are easier to distinguish from sector_t::Flags. - precalculate if a sector's floor and ceiling plane overlap. This avoids rechecking this for each single call of hw_FakeFlat. - vertices must be marked dirty every time they change after map setup. That means that ChangePlaneTexZ must do this as well, because it cannot rely on interpolation taking care of it. - Having a 'dirty' argument for SetPlaneTexZ's ZScript version makes no sense. If the value changes from the script side the vertices must always be marked to be recalculated.	pending		/
