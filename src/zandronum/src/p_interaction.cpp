@@ -3484,6 +3484,13 @@ int PLAYER_GetOverrideSkin( player_t *player )
 }
 
 //*****************************************************************************
+// [rc4l] Whether a skin index names a cheat skin, an out-of-range one never.
+static bool PLAYER_IsCheatSkin( const int skin )
+{
+	return ( skin >= 0 ) && ( static_cast<unsigned>( skin ) < skins.Size( )) && skins[skin].bCheat;
+}
+
+//*****************************************************************************
 //
 bool PLAYER_ShouldForceBaseSkin( player_t *player )
 {
@@ -3494,7 +3501,7 @@ bool PLAYER_ShouldForceBaseSkin( player_t *player )
 	// skins are are supposed to be disabled and the player's using one.
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 	{
-		if (( cl_skins <= 0 ) || (( cl_skins >= 2 ) && ( skins[player->userinfo.GetSkin( )].bCheat )))
+		if ( zx::skin::ComputeClSkinsForbids( cl_skins, PLAYER_IsCheatSkin( player->userinfo.GetSkin( ))))
 			return true;
 	}
 
@@ -3943,8 +3950,7 @@ void PLAYER_SetSpriteToSkin( player_t *pPlayer )
 
 	// [rc4l] Ported from zandronum@4ab1128e5b738dd57134d283dd78d0adebb90a5e: cl_skins's choice is computation/playerskin_compute's, and an out-of-range skin is never read as a cheat.
 	const int userSkin = pPlayer->userinfo.GetSkin( );
-	const bool inRange = ( userSkin >= 0 ) && ( static_cast<unsigned>( userSkin ) < skins.Size( ));
-	const bool forbidden = zx::skin::ComputeClSkinsForbids( cl_skins, inRange && skins[userSkin].bCheat );
+	const bool forbidden = zx::skin::ComputeClSkinsForbids( cl_skins, PLAYER_IsCheatSkin( userSkin ));
 	if ( forbidden )
 		pPlayer->mo->flags4 |= MF4_NOSKIN;
 
