@@ -135,6 +135,7 @@
 #include "g_hub.h"
 #include "features/telemetry/telemetry.h"
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
+#include "computation/mapangle_compute.h"   // [rc4l] ComputeMapThingAngle
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 
@@ -4086,7 +4087,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				pNewActor->SpawnAngle = pActor->SpawnAngle;
 				pNewActor->SpawnFlags = pActor->SpawnFlags;
 				P_FindFloorCeiling ( pNewActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
-				pNewActor->angle = ANG45 * ( pActor->SpawnAngle / 45 );
+				// [rc4l] Adapted from zandronum@28e63eb130d75a770e24a34373aab26973b76e37: the spawn angle in whole degrees, through the conversion P_SpawnMapThing uses.
+				pNewActor->PrevAngle = pNewActor->angle = zx::map::ComputeMapThingAngle( pNewActor->SpawnAngle );
 				pNewActor->tid = pActor->SavedTID;
 				pNewActor->SavedTID = pActor->SavedTID;
 				pNewActor->special = pActor->SavedSpecial;
@@ -4246,7 +4248,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			pNewActor->SpawnAngle = pActor->SpawnAngle;
 			pNewActor->SpawnFlags = pActor->SpawnFlags;
 			P_FindFloorCeiling ( pNewActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
-			pNewActor->angle = ANG45 * ( pActor->SpawnAngle / 45 );
+			// [rc4l] Adapted from zandronum@28e63eb130d75a770e24a34373aab26973b76e37: the spawn angle in whole degrees, through the conversion P_SpawnMapThing uses.
+			pNewActor->PrevAngle = pNewActor->angle = zx::map::ComputeMapThingAngle( pNewActor->SpawnAngle );
 			pNewActor->tid = pActor->SavedTID;
 			pNewActor->SavedTID = pActor->SavedTID;
 			pNewActor->special = pActor->SavedSpecial;

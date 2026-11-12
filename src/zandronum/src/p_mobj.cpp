@@ -104,6 +104,7 @@
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 #include "features/compat-oldnodelay/computation/oldnodelay_compute.h" // [Doruk-Aksoy] compat_fua_oldnodelay's tics
 #include "features/bounce/computation/bounce_compute.h" // [Doruk-Aksoy] how bounces end
+#include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -6564,7 +6565,8 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [Dusk] Save TID for map resets.
 	mobj->SavedTID = mobj->tid;
 
-	mobj->PrevAngle = mobj->angle = (DWORD)((mthing->angle * CONST64(0x100000000)) / 360);
+	// [rc4l] The conversion GAME_ResetMap shares (zandronum@28e63eb130d75a770e24a34373aab26973b76e37).
+	mobj->PrevAngle = mobj->angle = zx::map::ComputeMapThingAngle( mthing->angle );
 
 	// Check if this actor's mapthing has a conversation defined
 	if (mthing->Conversation > 0)
