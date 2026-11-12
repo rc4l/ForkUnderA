@@ -112,13 +112,13 @@ OptionMenu ZA_NetworkOptions
 {
 	Title "NETWORK OPTIONS"
 
-	Option		"Connection type",			"cl_connectiontype",		"ZA_ConnectionType"
-	Option		"Unlagged",					"cl_unlagged",				"OnOff"
-	Option		"Unlag Type",				"cl_ping_unlagged",			"ZA_UnlagType"
-	Option		"Update Rate",				"cl_ticsperupdate",			"ZA_UpdateRate"
-	Option		"Hitscan decals",			"cl_hitscandecalhack",		"OnOff"
-	Option		"Clientside puffs",			"cl_clientsidepuffs",		"OnOff"
-	Option		"Display packet loss",			"cl_showpacketloss",		"YesNo"
+	Option		"Connection type",		"cl_connectiontype",		"ZA_ConnectionType"
+	Option		"Unlagged",			"cl_unlagged",			"OnOff"
+	Option		"Unlag Type",			"cl_ping_unlagged",		"ZA_UnlagType"
+	Option		"Update Rate",			"cl_ticsperupdate",		"ZA_UpdateRate"
+	Option		"Hitscan decals",		"cl_hitscandecalhack",		"OnOff"
+	Option		"Clientside puffs",		"cl_clientsidepuffs",		"OnOff"
+	Option		"Display packet loss",		"cl_showpacketloss",		"YesNo"
 
 	// [AK] Sending backup commands increases outbound net traffic. If the client decides
 	// to enable this, they should be made aware of this too.
