@@ -199,15 +199,15 @@ EXTERN_CVAR( Bool, sv_unlimited_pickup )
 //*****************************************************************************
 //	STRUCTURES
 
-// [AK] A toggle for when buffered commands need to be executed.
-static	bool				g_ExecuteBufferedCMDs = false;
-
-// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89, zandronum@43098555ff613adecf40bd1708a218298af6e5ed and zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06: each player's movement commands of one kind held until a tic runs them, which CLIENT_TickCommandBuffers drains by ComputeMoveDrainOrder.
+// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89, zandronum@43098555ff613adecf40bd1708a218298af6e5ed, zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06 and zandronum@1c0614e08d1053a084be625d57777a84cb138173: each player's movement commands of one kind held until a tic runs them, which CLIENT_TickCommandBuffers drains by ComputeMoveDrainOrder.
 struct CommandBuffer
 {
 	TArray<std::shared_ptr<ServerCommands::BaseServerCommand>> cmds;
 	unsigned int numConsistentArrivals;
 	int lastArrivalTick;
+
+	// [AK] A toggle for when buffered commands need to be executed.
+	static bool executeBufferedCMDs;
 
 	CommandBuffer( void ) { Reset( ); }
 
@@ -215,7 +215,7 @@ struct CommandBuffer
 	template <class Command>
 	bool BufferIfNecessary( const Command &command )
 	{
-		const bool mustBuffer = zx::netclient::ComputeBuffersCommand( g_ExecuteBufferedCMDs, CLIENT_UsingCommandBuffers( ));
+		const bool mustBuffer = zx::netclient::ComputeBuffersCommand( executeBufferedCMDs, CLIENT_UsingCommandBuffers( ));
 
 		if ( mustBuffer )
 		{
@@ -233,6 +233,8 @@ struct CommandBuffer
 		lastArrivalTick = 0;
 	}
 };
+
+bool CommandBuffer::executeBufferedCMDs = false;
 
 //*****************************************************************************
 //	CONSOLE COMMANDS/VARIABLES
@@ -767,7 +769,7 @@ void CLIENT_TickCommandBuffers( void )
 	// [AK] This should only work while in a level.
 	if (( CLIENT_UsingCommandBuffers( )) && ( gamestate == GS_LEVEL ))
 	{
-		g_ExecuteBufferedCMDs = true;
+		CommandBuffer::executeBufferedCMDs = true;
 
 		for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 		{
@@ -788,7 +790,7 @@ void CLIENT_TickCommandBuffers( void )
 		client_DrainCommandBuffers( g_BufferedMoveCMDs );
 		client_DrainCommandBuffers( g_BufferedExtraDataCMDs );
 
-		g_ExecuteBufferedCMDs = false;
+		CommandBuffer::executeBufferedCMDs = false;
 	}
 }
 
