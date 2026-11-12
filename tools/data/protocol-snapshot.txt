@@ -27,7 +27,7 @@
   3 SVC2_SECRETFOUND                       [Extended] : Actor Byte
   4 SVC2_SECRETMARKSECTORFOUND             [Extended] : Sector
  16 SVC_DOSCROLLER                         : Byte Fixed Fixed Long Bool Bool Bool Sector?{hasControl} Byte?{hasPos}
- 17 SVC_SPAWNPLAYER                        : Player ShortByte<4> Bool Bool Bool Bool NetID Angle Fixed Fixed Fixed Byte Short?{isMorphed} Class?{isMorphed}
+ 17 SVC_SPAWNPLAYER                        : Player ShortByte<4> Bool Bool Bool Bool NetID Angle Fixed Fixed Fixed UShort Short?{isMorphed} Class?{isMorphed}
  18 SVC_MOVEPLAYER                         [Unreliable] : Player Byte Fixed?{flags & PLAYER_VISIBLE} Fixed?{flags & PLAYER_VISIBLE} AproxFixed?{flags & PLAYER_VISIBLE} Angle?{flags & PLAYER_VISIBLE} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELX)} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELY)} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELZ)}
  19 SVC_DAMAGEPLAYER                       : Player Variable Variable Actor
   5 SVC2_DAMAGEPLAYERWITHTYPE              [Extended] : Player Variable Variable String Actor
@@ -114,6 +114,7 @@
  85 SVC_SETWEAPONAMMOGIVE                  : Actor<AWeapon> Short Short
  21 SVC2_SETTHINGSCALE                     [Extended] : Actor Byte Long?{scaleflags & ACTORSCALE_X} Long?{scaleflags & ACTORSCALE_Y}
  22 SVC2_SETTHINGSIZE                      [Extended] : Actor Byte Long?{sizeflags & ACTORSIZE_RADIUS} Long?{sizeflags & ACTORSIZE_HEIGHT} Long?{sizeflags & ACTORSIZE_HITRADIUS} Long?{sizeflags & ACTORSIZE_HITHEIGHT}
+ 23 SVC2_SETTHINGFLOORCLIP                 [Extended] : Actor Fixed
  86 SVC_THINGISCORPSE                      : Actor Bool
  87 SVC_HIDETHING                          : Actor<AInventory>
  88 SVC_TELEPORTTHING                      : Actor AproxFixed AproxFixed AproxFixed AproxFixed AproxFixed AproxFixed Short Angle Bool Bool Bool
@@ -126,9 +127,9 @@
  95 SVC_SPAWNBLOODSPLATTER2                : AproxFixed AproxFixed AproxFixed Actor
  96 SVC_SPAWNPUFF                          : AproxFixed AproxFixed AproxFixed Class NetID
  97 SVC_SPAWNPUFFNONETID                   : AproxFixed AproxFixed AproxFixed Class Byte Bool Long?{receiveTranslation}
- 23 SVC2_STARTCONVERSATION                 [Extended] : Actor Player Long Bool Bool
- 24 SVC2_CONVERSATIONREPLY                 [Extended] : Player Long Long
- 25 SVC2_ENDCONVERSATION                   [Extended] : Player
+ 24 SVC2_STARTCONVERSATION                 [Extended] : Actor Player Long Bool Bool
+ 25 SVC2_CONVERSATIONREPLY                 [Extended] : Player Long Long
+ 26 SVC2_ENDCONVERSATION                   [Extended] : Player
  98 SVC_SETSECTORFLOORPLANE                : Sector AproxFixed
  99 SVC_SETSECTORCEILINGPLANE              : Sector AproxFixed
 100 SVC_SETSECTORFLOORPLANESLOPE           : Sector AproxFixed AproxFixed AproxFixed
@@ -164,44 +165,44 @@
 130 SVC_SETLINETEXTURE                     : Line String Bool Byte
 131 SVC_SETLINETEXTUREBYID                 : UShort String Bool Byte
 132 SVC_SETLINETEXTUREOFFSET               : Line Fixed Fixed Bool Byte
- 26 SVC2_SETLINETEXTUREOFFSETBYID          [Extended] : UShort Fixed Fixed Bool Byte
+ 27 SVC2_SETLINETEXTUREOFFSETBYID          [Extended] : UShort Fixed Fixed Bool Byte
 133 SVC_SETLINETEXTURESCALE                : Line Fixed Fixed Bool Byte
- 27 SVC2_SETLINETEXTURESCALEBYID           [Extended] : UShort Fixed Fixed Bool Byte
+ 28 SVC2_SETLINETEXTURESCALEBYID           [Extended] : UShort Fixed Fixed Bool Byte
 134 SVC_SETSOMELINEFLAGS                   : Line Long
 135 SVC_SETSIDEFLAGS                       : Side Byte
 136 SVC_SOUND                              : Byte String Byte Byte Short
 137 SVC_SOUNDACTOR                         : Actor Short String Byte Byte Short
 138 SVC_SOUNDACTORIFNOTPLAYING             : Actor Short String Byte Byte Short
- 28 SVC2_SOUNDSECTOR                       [Extended] : Sector Short String Byte Byte Short
+ 29 SVC2_SOUNDSECTOR                       [Extended] : Sector Short String Byte Byte Short
 139 SVC_SOUNDPOINT                         : AproxFixed AproxFixed AproxFixed Byte String Byte Byte Short
 140 SVC_ANNOUNCERSOUND                     : String
- 29 SVC2_STOPSOUND                         [Extended] : Actor Byte
- 30 SVC2_STOPORIGINLESSSOUND               [Extended] : Byte
+ 30 SVC2_STOPSOUND                         [Extended] : Actor Byte
+ 31 SVC2_STOPORIGINLESSSOUND               [Extended] : Byte
 141 SVC_SPAWNMISSILE                       : AproxFixed AproxFixed AproxFixed Fixed Fixed Fixed Class<AActor> NetID NetID
 142 SVC_SPAWNMISSILEEXACT                  : Fixed Fixed Fixed Fixed Fixed Fixed Class<AActor> NetID NetID
 143 SVC_MISSILEEXPLODE                     : Actor Short AproxFixed AproxFixed AproxFixed
 144 SVC_WEAPONSOUND                        : Player String
 145 SVC_WEAPONCHANGE                       : Player Class<AWeapon>
 146 SVC_WEAPONRAILGUN                      : Actor Vector3 Vector3 Long Long Float ShortByte<7> Bool Long?{extended} Class?{extended} Short?{extended} Float?{extended} Float?{extended}
- 31 SVC2_SETWEAPONZOOMFACTOR               [Extended] : Player Float Byte
+ 32 SVC2_SETWEAPONZOOMFACTOR               [Extended] : Player Float Byte
 147 SVC_ACSSCRIPTEXECUTE                   : Short Actor Short Byte Variable Variable Variable Variable Bool Bool
- 32 SVC2_ACSSENDSTRING                     [Extended] : Short Actor String
- 33 SVC2_SYNCJOINQUEUE                     [Extended] : Struct
- 34 SVC2_SYNCMAPROTATION                   [Extended] : Struct Short
- 35 SVC2_SYNCPLAYERMEDALCOUNTS             [Extended] : Byte Struct
+ 33 SVC2_ACSSENDSTRING                     [Extended] : Short Actor String
+ 34 SVC2_SYNCJOINQUEUE                     [Extended] : Struct
+ 35 SVC2_SYNCMAPROTATION                   [Extended] : Struct Short
+ 36 SVC2_SYNCPLAYERMEDALCOUNTS             [Extended] : Byte Struct
 148 SVC_REPLACETEXTURES                    : String String Byte
- 36 SVC2_SETCUSTOMPLAYERVALUE              [Extended] : Byte Byte String
- 37 SVC2_RESETCUSTOMPLAYERVALUE            [Extended] : Byte Byte
- 38 SVC2_OPENMENU                          [Extended] : String
- 39 SVC2_CLOSEMENU                         [Extended] : (no fields)
+ 37 SVC2_SETCUSTOMPLAYERVALUE              [Extended] : Byte Byte String
+ 38 SVC2_RESETCUSTOMPLAYERVALUE            [Extended] : Byte Byte
+ 39 SVC2_OPENMENU                          [Extended] : String
+ 40 SVC2_CLOSEMENU                         [Extended] : (no fields)
 149 SVC_SETDOMINATIONPOINTOWNER            : Byte Byte Bool
- 40 SVC2_SETDOMINATIONPOINTSTATE           [Extended] : Byte Bool Byte
- 41 SVC2_DEBUGEXPLOSION                    [Extended] : AproxFixed AproxFixed AproxFixed Short Short
- 42 SVC2_SETTHINGSPRITEORIENTATION         [Extended] : Actor Byte AproxAngle?{orientflags & SPRITEORIENT_ROLL}
- 43 SVC2_FUADAMAGETAKEN                    [Extended] : Variable Variable Variable Variable Byte Class Class String Bool
- 44 SVC2_FUASETMUSICVOLUME                 [Extended] : Float
- 45 SVC2_FUASETSHADERENABLED               [Extended] : String Bool Bool Variable Variable
- 46 SVC2_FUASETSHADERUNIFORM               [Extended] : String String Bool Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
+ 41 SVC2_SETDOMINATIONPOINTSTATE           [Extended] : Byte Bool Byte
+ 42 SVC2_DEBUGEXPLOSION                    [Extended] : AproxFixed AproxFixed AproxFixed Short Short
+ 43 SVC2_SETTHINGSPRITEORIENTATION         [Extended] : Actor Byte AproxAngle?{orientflags & SPRITEORIENT_ROLL}
+ 44 SVC2_FUADAMAGETAKEN                    [Extended] : Variable Variable Variable Variable Byte Class Class String Bool
+ 45 SVC2_FUASETMUSICVOLUME                 [Extended] : Float
+ 46 SVC2_FUASETSHADERENABLED               [Extended] : String Bool Bool Variable Variable
+ 47 SVC2_FUASETSHADERUNIFORM               [Extended] : String String Bool Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -518,7 +519,8 @@
  74 SVC2_FUASETMUSICVOLUME
  75 SVC2_FUASETSHADERENABLED
  76 SVC2_FUASETSHADERUNIFORM
- 77 NUM_SVC2_COMMANDS
+ 77 SVC2_SETTHINGFLOORCLIP
+ 78 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION
