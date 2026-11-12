@@ -79,6 +79,8 @@
 #include "v_video.h"
 #include "templates.h"
 #include "d_event.h"
+#include "computation/intermissiontheme_compute.h"	// [rc4l] ComputeIntermissionThemeOrder
+#include "computation/skulltagscore_compute.h"	// [rc4l] ComputeAssistPlayer
 
 //*****************************************************************************
 //	MISC CRAP THAT SHOULDN'T BE HERE BUT HAS TO BE BECAUSE OF SLOPPY CODING
@@ -1306,7 +1308,8 @@ ULONG TEAM_GetAssistPlayer( ULONG ulTeamIdx )
 	if ( TEAM_CheckIfValid( ulTeamIdx ) == false )
 		return ( MAXPLAYERS );
 
-	return ( teams[ulTeamIdx].g_ulAssistPlayer );
+	// [rc4l] Ported from zandronum@4241193f23413533a632fed4c05efd8c9be559ab: assists don't apply to Skulltag without sv_requireskulltoscore, checked when read so one recorded before the cvar changed is not given.
+	return ( zx::ComputeAssistPlayer( teams[ulTeamIdx].g_ulAssistPlayer, MAXPLAYERS, skulltag, sv_requireskulltoscore ));
 }
 
 //*****************************************************************************
@@ -1716,6 +1719,23 @@ const char* TEAM_GetIntermissionTheme( ULONG ulTeam, bool bWin ) {
 }
 
 //*****************************************************************************
+// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: a team's winner or loser theme's track.
+int TEAM_GetIntermissionThemeOrder( ULONG ulTeam, bool bWin )
+{
+	if ( !TEAM_CheckIfValid( ulTeam ) )
+		return 0;
+	return bWin ? teams[ulTeam].winnerthemeorder : teams[ulTeam].loserthemeorder;
+}
+
+//*****************************************************************************
+// [rc4l] Adapted from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the track to go with TEAM_SelectCustomStringForPlayer's theme, the choice ComputeIntermissionThemeOrder.
+int TEAM_SelectMusicOrder( player_t *pPlayer, const FString TEAMINFO::*teamMusic, const int TEAMINFO::*teamMusicOrder, int defaultOrder )
+{
+	const bool teamHasTheme = ( pPlayer != NULL ) && pPlayer->bOnTeam && TEAM_HasCustomString( pPlayer->Team, teamMusic );
+	return zx::ComputeIntermissionThemeOrder( teamHasTheme, teamHasTheme ? teams[pPlayer->Team].*teamMusicOrder : 0, defaultOrder );
+}
+
+//*****************************************************************************
 //	CONSOLE COMMANDS/VARIABLES
 
 CUSTOM_CVAR( Bool, teamgame, false, CVAR_SERVERINFO | CVAR_LATCH | CVAR_CAMPAIGNLOCK )
@@ -2049,7 +2069,9 @@ CCMD( changeteam )
 	}
 
 	// [BB] If players aren't allowed to join at the moment, just put the consoleplayer in line.
-	if ( GAMEMODE_PreventPlayersFromJoining( consoleplayer ) )
+	// [AK] Also put them in line if the result of GAMEEVENT_PLAYERJOINS is zero.
+	// [rc4l] Ported from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: an offline team join asks the event too.
+	if (( GAMEMODE_PreventPlayersFromJoining( consoleplayer )) || ( GAMEMODE_HandlePlayerJoinsEvent( consoleplayer, lDesiredTeam ) == false ))
 	{
 		JOINQUEUE_AddConsolePlayer ( lDesiredTeam );
 		return;
@@ -2131,6 +2153,12 @@ CUSTOM_CVAR( Int, pointlimit, 0, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAME
 
 // Allow the server to set the return time for flags/skulls.
 CVAR( Int, sv_flagreturntime, 15, CVAR_CAMPAIGNLOCK | CVAR_SERVERINFO | CVAR_GAMEPLAYSETTING );
+
+// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: whether a Skulltag carrier needs its own skull at base to score.
+CUSTOM_CVAR( Bool, sv_requireskulltoscore, true, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_GAMEPLAYSETTING )
+{
+	SERVER_SettingChanged( self, false );
+}
 
 CUSTOM_CVAR( Int, sv_maxteams, 2, CVAR_SERVERINFO | CVAR_CAMPAIGNLOCK | CVAR_LATCH | CVAR_GAMEPLAYSETTING )
 {

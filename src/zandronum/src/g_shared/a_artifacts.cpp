@@ -29,6 +29,7 @@
 #include "deathmatch.h"
 #include "possession.h"
 #include "sv_commands.h"
+#include "features/net-session/netrole.h"   // [rc4l] zx::net::IsServer
 
 static FRandom pr_torch ("Torch");
 
@@ -2225,8 +2226,10 @@ void APowerRespawnInvulnerable::InitEffect ()
 	BlendColor = 0;					// Don't mess with the view.
 	ItemFlags |= IF_UNDROPPABLE;	// Don't drop this.
 
-	// [AK] Make sure the owner is valid.
-	if (Owner == nullptr)
+	// [rc4l] Ported from zandronum@2ddec4cfc2f97c6191048b6438d5db9eb51af0da: the server leaves respawn invulnerability's look to clients.
+	// [AK] Make sure the owner is valid. The server doesn't handle respawn
+	// invulnerability effects either.
+	if (zx::net::IsServer() || (Owner == nullptr))
 		return;
 
 	// Apply respawn invulnerability effect.
@@ -2298,13 +2301,9 @@ void APowerRespawnInvulnerable::EndEffect ()
 			// [BC] If the owner is a spectating player, don't make him visible!
 			if ((Owner->player == nullptr) || (Owner->player->bSpectating == false))
 			{
-				// [BB] Restore the default alpha value and set RenderStyle accordingly.
+				// [BB/AK] Restore the default alpha and render style values.
 				Owner->alpha = Owner->GetDefault()->alpha;
-
-				if (Owner->alpha == OPAQUE)
-					Owner->RenderStyle = STYLE_Normal;
-				else
-					Owner->RenderStyle = STYLE_Translucent;
+				Owner->RenderStyle = Owner->GetDefault()->RenderStyle;
 			}
 			else
 			{

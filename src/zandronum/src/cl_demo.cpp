@@ -76,8 +76,9 @@
 #include "m_cheat.h"
 #include "network_enums.h"
 
-#include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/fov-interp/fovcvar.h"
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
+#include "computation/demobytes_compute.h"	// [rc4l] ComputeDemoBytes
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -124,6 +125,9 @@ static	bool				g_bSkipToNextMap = false;
 
 // [AK] Did the player who recorded the demo use the unrestricted spectator mode?
 static	bool				g_ConsolePlayerUnrestricted = false;
+
+// [AK] Was the player who recorded the demo buffering commands that handle a player's movement?
+static	bool				g_UsingCMDBuffers = false;
 
 // [BB] How many tics are we still supposed to skip in the demo we are playing at the moment?
 static	ULONG				g_ulTicsToSkip = 0;
@@ -240,6 +244,9 @@ void CLIENTDEMO_BeginRecording( const char *pszDemoName )
 	// [AK] When recording begins, mark if whether the local player is using the
 	// unrestricted spectator mode or not.
 	CLIENTDEMO_WriteConsolePlayerUnrestricted( cl_spectatormode == SPECMODE_NO_RESTRICTIONS );
+
+	// [AK] In addition, mark if the local player is using the command buffers.
+	CLIENTDEMO_WriteUseCommandBuffer( cl_buffercommands );
 }
 
 //*****************************************************************************
@@ -349,10 +356,11 @@ void CLIENTDEMO_WriteUserInfo( void )
 {
 	// First, make sure we have enough space to write this command. If not, add
 	// more space.
-	clientdemo_CheckDemoBuffer( 18 +
-		(ULONG)strlen( players[consoleplayer].userinfo.GetName() ) +
-		(ULONG)strlen( skins[players[consoleplayer].userinfo.GetSkin()].name ) +
-		(ULONG)strlen( PlayerClasses[players[consoleplayer].CurrentPlayerClass].Type->Meta.GetMetaString( APMETA_DisplayName )));
+	// [rc4l] Adapted from zandronum@25198379d37173b00002fc648c442f351a85edec: the null terminators counted by ComputeDemoBytes, beside the 19 bytes of the header and fixed fields.
+	clientdemo_CheckDemoBuffer( (ULONG)zx::ComputeDemoBytes( 19, {
+		strlen( players[consoleplayer].userinfo.GetName() ),
+		strlen( skins[players[consoleplayer].userinfo.GetSkin()].name ),
+		strlen( PlayerClasses[players[consoleplayer].CurrentPlayerClass].Type->Meta.GetMetaString( APMETA_DisplayName )) }));
 
 	// Write the header.
 	g_ByteStream.WriteByte( CLD_USERINFO );
@@ -537,6 +545,9 @@ void CLIENTDEMO_ReadPacket( void )
 			// [BB] If we don't return here, we essentially skip a tic and have to adjust the tic offset.
 			else
 			{
+				// [AK] We must still execute any buffered commands during skips.
+				CLIENT_TickCommandBuffers( );
+
 				g_lGameticOffset--;
 				// [BB] If we are supposed to skip over a certain amount of tics, record that we have skipped one now.
 				if ( g_ulTicsToSkip > 0 )
@@ -631,6 +642,15 @@ void CLIENTDEMO_ReadPacket( void )
 							players[consoleplayer].cheats &= ~(CF_NOCLIP | CF_NOCLIP2);
 						}
 					}
+				}
+				break;
+			case CLD_LCMD_USECMDBUFFER:
+
+				{
+					g_UsingCMDBuffers = !!g_ByteStream.ReadByte( );
+
+					if ( g_UsingCMDBuffers == false )
+						CLIENT_ResetAllCommandBuffers( );
 				}
 				break;
 			}
@@ -788,8 +808,9 @@ void CLIENTDEMO_SetGameticOffset( LONG lOffset )
 //
 void CLIENTDEMO_WriteLocalCommand( ClientDemoLocalCommand command, const char* pszArg )
 {
+	// [rc4l] Adapted from zandronum@25198379d37173b00002fc648c442f351a85edec: the argument's null terminator counted by ComputeDemoBytes.
 	if ( pszArg != NULL )
-		clientdemo_CheckDemoBuffer( (ULONG)strlen( pszArg ) + 2 );
+		clientdemo_CheckDemoBuffer( (ULONG)zx::ComputeDemoBytes( 2, { strlen( pszArg ) } ));
 	else
 		clientdemo_CheckDemoBuffer( 2 );
 
@@ -856,6 +877,16 @@ void CLIENTDEMO_WriteConsolePlayerUnrestricted( const bool enable )
 	clientdemo_CheckDemoBuffer( 3 );
 	g_ByteStream.WriteByte( CLD_LOCALCOMMAND );
 	g_ByteStream.WriteByte( CLD_LCMD_CONSOLEPLAYERUNRESTRICTED );
+	g_ByteStream.WriteByte( enable );
+}
+
+//*****************************************************************************
+//
+void CLIENTDEMO_WriteUseCommandBuffer( bool enable )
+{
+	clientdemo_CheckDemoBuffer( 3 );
+	g_ByteStream.WriteByte( CLD_LOCALCOMMAND );
+	g_ByteStream.WriteByte( CLD_LCMD_USECMDBUFFER );
 	g_ByteStream.WriteByte( enable );
 }
 
@@ -940,6 +971,13 @@ bool CLIENTDEMO_IsConsolePlayerUnrestricted( void )
 
 //*****************************************************************************
 //
+bool CLIENTDEMO_IsUsingCommandBuffers( void )
+{
+	return g_UsingCMDBuffers;
+}
+
+//*****************************************************************************
+//
 bool CLIENTDEMO_ShouldLetFreeSpectatorThink( void )
 {
 	// [AK] Let the free spectator "think" while using the free chasecam to control the camera's movement.
@@ -1000,7 +1038,7 @@ void CLIENTDEMO_SpawnFreeSpectatorPlayer( void )
 	p->mo->flags |= (MF_NOGRAVITY);
 	p->mo->player = p;
 	// [rc4l] fov-interp: the free-spectate camera is ours, so it takes our FOV.
-	p->DesiredFOV = p->FOV = zx::FovOnSpawn (true, false, fov);
+	p->DesiredFOV = p->FOV = FOV_OnSpawn (true);
 	p->crouchfactor = FRACUNIT;
 	PLAYER_SetDefaultSpectatorValues( p );
 	p->camera = p->mo;

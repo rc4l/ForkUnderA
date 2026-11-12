@@ -233,7 +233,7 @@ bool OutgoingPacketBuffer::SendPacket( unsigned int packetNumber, const NETADDRE
 	// [AK] For the sake of reverse-compatibility with clients running older
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out packets to clients who aren't connected.
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: reliable resends gated the same as the per-client send.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: reliable resends gated the same as the per-client send.
 	NETWORK_LaunchPacket( &TempBuffer, Address, SERVER_GetClient( _clientIdx )->State >= CLS_CONNECTED );
 	TempBuffer.Free();
 	return true;

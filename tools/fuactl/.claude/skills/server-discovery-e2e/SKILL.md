@@ -32,6 +32,15 @@ node src/cli.mjs browser --port <clientPort> --token <clientToken> --wait 15 \
 `--expect-lan` / `--expect-country` make it exit non-zero on failure, so it gates a release the
 same way a test does. Without them it just reports.
 
+## The registry built from this tree, on loopback
+
+A change to `src/zandronum/server-registry` is checked against a registry run locally, with no
+public registry involved: `node scenarios/registryhost.mjs --engine E` starts the registry from
+beside `E` (`fuactl build` compiles it), hosts one server announcing to `127.0.0.1`, and passes
+when the registry's log shows the server added to its verification list and then its server list,
+and the host's `net.hostdiag` says the registry answered. `FUACTL_REGISTRY` names another registry
+binary, such as an older one to compare against.
+
 ## Reading the result
 
 Each entry carries `lan`, `country` and `flag`. **Assert on `flag`, not `country`**: a server whose

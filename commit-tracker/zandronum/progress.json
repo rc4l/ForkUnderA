@@ -1,0 +1,13 @@
+{
+  "goal": "zandronum-stable default",
+  "goal_sha": "f7888a42ab357e45bcd4c21bf1e6406fdfa8ddbc",
+  "done": 235,
+  "total": 235,
+  "pct": 100.0,
+  "ported": 116,
+  "adapted": 92,
+  "skip": 21,
+  "deferred": 5,
+  "partially-deferred": 1,
+  "generated": "2026-11-12"
+}

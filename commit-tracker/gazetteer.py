@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 """
 Unified, source-derived vocabulary -> tags. Everything below is grepped from the engine's
-OWN source (UZDoom + our tree, at HEAD), then exact-matched in each commit's diff/message.
-Nothing hand-listed; a new lump/keyword/action/ACS-func upstream or ours self-registers.
+OWN source (the ledger's upstream + our tree, at their heads), then exact-matched in each
+commit's diff/message. Nothing hand-listed; a new lump/keyword/action/ACS-func/cvar upstream or
+ours self-registers.
 
   lumps            names passed to lump-lookup calls (minus binary/graphic lumps)      -> lump:MAPINFO
   lump keywords    each lump parser's sc.Compare("...") literals, scoped to that file  -> MAPINFO:sky1
   DECORATE actions A_* from DEFINE_ACTION_FUNCTION                                      -> fn:A_Explode
   ACS builtins     names from the ACSF_ enum                                           -> acs:AddBot
+  cvars            names from CVAR/CUSTOM_CVAR definitions (with an underscore, so      -> cvar:sv_cheats
+                   `name` and `team` don't tag every commit)
 
-Env: UZDOOM, ANCHOR, UNTIL.  Writes commit-tracker/combined_tags.tsv.
+Usage:  gazetteer.py [--ledger uzdoom|zandronum] [--to REV] [--out FILE] [--limit N]
+        writes the ledger's combined_tags.tsv
 """
-import os, re, subprocess
+import argparse
+import os
+import re
+import sys
 from collections import defaultdict
 
-UP     = os.environ.get("UZDOOM", "/Users/username/repos/UZDoom")
-ANCHOR = os.environ.get("ANCHOR", "ad88cfc5e")
-UNTIL  = os.environ.get("UNTIL")
-SINCE  = os.environ.get("SINCE")      # parallel worker: efficient date-range walk lower bound
-HERE   = os.path.dirname(os.path.abspath(__file__))
-REPO   = os.path.dirname(HERE)
-OUT     = os.environ.get("OUT", os.path.join(HERE, "combined_tags.tsv"))
-SHAFILE = os.environ.get("SHAFILE")   # parallel worker: diff only these shas (one per line)
-TREES  = [UP, REPO]
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import ledger as L  # noqa: E402
+import tracker  # noqa: E402
+import vcs  # noqa: E402
 
 LOOKUP = (r"CheckNumForName|GetNumForName|CheckNumForFullName|GetNumForFullName|"
           r"FindLump[A-Za-z]*|CheckLumpName|GetLumpName")
@@ -31,8 +34,10 @@ KW   = re.compile(r"(?:Compare|CheckString|GetString|MatchString)\s*\(\s*\"([a-z
 # generic scanner values/types that aren't feature keywords
 KEYWORD_STOP = {"true", "false", "int", "float", "bool", "string", "void", "yes", "no",
                 "null", "none", "on", "off"}
-DAF  = re.compile(r"DEFINE_ACTION_FUNCTION(?:_NATIVE)?\s*\(\s*[A-Za-z_:]+\s*,\s*(A_[A-Za-z0-9]+)")
+DAF  = re.compile(r"DEFINE_ACTION_FUNCTION[A-Za-z_]*\([^)]*A_[A-Za-z0-9]+")
+ADEF = re.compile(r"A_[A-Za-z0-9]+")
 ACSF = re.compile(r"\bACSF_([A-Za-z][A-Za-z0-9]+)")
+CVARDEF = re.compile(r"\b(?:CUSTOM_)?CVAR\s*\(\s*\w+\s*,\s*([a-z][a-z0-9]*_[a-z0-9_]+)\s*,")
 # binary / graphic / marker lumps to drop (conventions are stable -> effectively no upkeep)
 DENY = re.compile(r"(FONT|^STCFN|^STBFN|^SMALLFNT|^BIGFONT|^CONFONT|^SBIGFONT|^DBIGFONT|^HBIGFONT"
                   r"|^PLAYPAL|^COLORMAP|PAL$|^E\dPAL|^PALVERS|^MAP\d|^E\dM\d|^GL_LEVEL|^MNTRF"
@@ -40,40 +45,15 @@ DENY = re.compile(r"(FONT|^STCFN|^STBFN|^SMALLFNT|^BIGFONT|^CONFONT|^SBIGFONT|^D
                   r"|^DMXGUS|^SNDCURVE|^S_SKIN|^PNAMES|^TEXTURE[12]$|^SPROFS|^STRFHELP)")
 
 
-def grep(tree, pattern, paths, only=False):
-    flag = "-hoE" if only else "-nE"
-    return subprocess.run(["git", "-C", tree, "grep", flag, pattern, "HEAD", "--"] + paths,
-                          capture_output=True, encoding="utf-8", errors="replace").stdout
-
-
-def loc(line):                       # "HEAD:path:lineno:content" -> (path, content)
-    p = line.split(":", 3)
-    return (p[1], p[3]) if len(p) >= 4 else (None, None)
-
-
 def alt(words):
     return re.compile(r"\b(" + "|".join(sorted(map(re.escape, words))) + r")\b") if words else None
 
 
-def target_shas():
-    limit = int(os.environ.get("LIMIT", "0"))   # 0 = all commits; set LIMIT=1000 for a quick trial
-    shas = set()
-    with open(os.path.join(HERE, "coverage.tsv")) as f:
-        for i, line in enumerate(f):
-            if i >= 2:
-                if limit and len(shas) >= limit:
-                    break
-                shas.add(line.split("\t", 1)[0])
-    return shas
-
-
-def main():
+def vocabulary(trees):
+    """(lump -> parser basenames, lump -> keywords, actions, acs funcs, cvars) from every tree's head."""
     lump_files = defaultdict(set)
-    for tree in TREES:
-        for line in grep(tree, LOOKUP, ["*.cpp", "*.h", "*.mm"]).splitlines():
-            path, content = loc(line)
-            if not path:
-                continue
+    for repo, rev in trees:
+        for path, content in repo.grep(LOOKUP, ["*.cpp", "*.h", "*.mm"], rev):
             for m in CALL.finditer(content):
                 name = m.group(1).upper().rsplit("/", 1)[-1]
                 if re.fullmatch(r"[A-Z0-9_]{3,16}", name) and not DENY.search(name):
@@ -81,85 +61,80 @@ def main():
     parser_bases = set().union(*lump_files.values()) if lump_files else set()
 
     base_kw = defaultdict(set)
-    for tree in TREES:
-        for line in grep(tree, r"(Compare|CheckString|GetString|MatchString)\(\"", ["*.cpp"]).splitlines():
-            path, content = loc(line)
-            if not path or os.path.basename(path) not in parser_bases:
-                continue
-            for m in KW.finditer(content):
-                if len(m.group(1)) >= 3 and m.group(1) not in KEYWORD_STOP:
-                    base_kw[os.path.basename(path)].add(m.group(1))
-    lump_kw = {lp: set().union(*(base_kw.get(b, set()) for b in fs))
-               for lp, fs in lump_files.items()}
+    actions, acs, cvars = set(), set(), set()
+    for repo, rev in trees:
+        for path, content in repo.grep(r"(Compare|CheckString|GetString|MatchString)\(\"", ["*.cpp"], rev):
+            if os.path.basename(path) in parser_bases:
+                for m in KW.finditer(content):
+                    if len(m.group(1)) >= 3 and m.group(1) not in KEYWORD_STOP:
+                        base_kw[os.path.basename(path)].add(m.group(1))
+        for _, content in repo.grep(r"DEFINE_ACTION_FUNCTION[A-Za-z_]*\([^)]*A_[A-Za-z0-9]+", ["*.cpp"], rev):
+            for m in DAF.finditer(content):
+                actions.update(ADEF.findall(m.group(0)))
+        for _, content in repo.grep("ACSF_[A-Za-z0-9]+", ["*.cpp"], rev):
+            acs.update(n for n in ACSF.findall(content) if len(n) >= 4)
+        for _, content in repo.grep(r"CVAR *\(", ["*.cpp", "*.h"], rev):
+            cvars.update(CVARDEF.findall(content))
+    lump_kw = {lp: set().union(*(base_kw.get(b, set()) for b in fs)) for lp, fs in lump_files.items()}
     lump_kw = {k: v for k, v in lump_kw.items() if v}
+    return lump_files, lump_kw, actions, acs, cvars
 
-    actions, acs = set(), set()
-    ADEF = re.compile(r"A_[A-Za-z0-9]+")
-    for tree in TREES:
-        out = grep(tree, r"DEFINE_ACTION_FUNCTION[A-Za-z_]*\([^)]*A_[A-Za-z0-9]+", ["*.cpp"], only=True)
-        actions.update(ADEF.findall(out))
-        for m in ACSF.finditer(grep(tree, "ACSF_[A-Za-z0-9]+", ["*.cpp"], only=True)):
-            if len(m.group(1)) >= 4:
-                acs.add(m.group(1))
 
-    print("gazetteer: %d lumps, %d with keywords (%d keyword defs), %d DECORATE actions, %d ACS funcs"
-          % (len(lump_files), len(lump_kw), sum(len(v) for v in lump_kw.values()), len(actions), len(acs)))
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default="uzdoom")
+    ap.add_argument("--to", help="pin the range's end")
+    ap.add_argument("--out", help="write here instead of the ledger's combined_tags.tsv")
+    ap.add_argument("--limit", type=int, default=0, help="only the first N rows (a quick trial)")
+    args = ap.parse_args()
+    led = L.load_config()[args.ledger]
+    repo = tracker.repo_for(led)
+    to = args.to or led["to"]
+    trees = [(repo, to), (vcs.GitRepo(L.ROOT), "HEAD")]
+    lump_files, lump_kw, actions, acs, cvars = vocabulary(trees)
+    print("gazetteer: %d lumps, %d with keywords (%d keyword defs), %d DECORATE actions, %d ACS funcs, %d cvars"
+          % (len(lump_files), len(lump_kw), sum(len(v) for v in lump_kw.values()), len(actions), len(acs), len(cvars)))
 
-    LUMP_RX, ACT_RX, ACS_RX = alt(lump_files), alt(actions), alt(acs)
+    LUMP_RX, ACT_RX, ACS_RX, CVAR_RX = alt(lump_files), alt(actions), alt(acs), alt(cvars)
     base_matchers = defaultdict(list)
     for lp, kws in lump_kw.items():
         rx = alt(kws)
         for b in lump_files[lp]:
             base_matchers[b].append((lp, rx))
 
-    # A worker gets its sha chunk (want) via SHAFILE and an efficient date-range walk via
-    # SINCE/UNTIL. The date window is only the walk bound; `want` does the precise assignment,
-    # so overlapping windows are harmless (each commit is tagged by exactly one worker).
-    want = set(open(SHAFILE).read().split()) if SHAFILE else target_shas()
+    rows = L.read_rows(led)
+    want = {r["sha"] for r in (rows[:args.limit] if args.limit else rows)}
     tags = defaultdict(set)
-    walk = ((["--since=" + SINCE] if SINCE else []) +
-            (["--until=" + UNTIL] if UNTIL else []) + [ANCHOR + "..HEAD"])
 
     # messages: lump names only (keywords need parser scope; actions/acs rarely in prose)
-    args = ["git", "-C", UP, "log", "--format=%H\x1f%B%x00"] + walk
-    blob = subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace").stdout
-    for rec in blob.split("\0"):
-        if "\x1f" in rec:
-            sha, msg = rec.split("\x1f", 1)
-            if sha.strip() in want:
-                for h in LUMP_RX.findall(msg):
-                    tags[sha.strip()].add("lump:" + h)
+    for sha, msg in repo.messages(led["from"], to):
+        if sha in want and LUMP_RX:
+            for h in LUMP_RX.findall(msg):
+                tags[sha].add("lump:" + h)
 
-    # diffs: lump names + actions + acs everywhere; keywords only on their parser file's lines
-    args = ["git", "-C", UP, "log", "-p", "--unified=0", "--format=\x01%H"] + walk
-    p = subprocess.Popen(args, stdout=subprocess.PIPE, encoding="utf-8", errors="replace", bufsize=1)
-    sha, on, budget, base = None, False, 0, ""
-    for line in p.stdout:
-        line = line.rstrip("\n")[:2000]
-        if line.startswith("\x01"):
-            sha = line[1:].strip(); on = sha in want; budget = 0; base = ""
-        elif not on:
+    # diffs: lump names + actions + acs + cvars everywhere; keywords only on their parser file's lines
+    budget, base, cur = 0, "", None
+    for sha, line in repo.patches(led["from"], to):
+        if sha != cur:
+            cur, budget, base = sha, 0, ""
+        if sha not in want:
             continue
-        elif line.startswith("+++ b/"):
+        line = line[:2000]
+        if line.startswith("+++ b/"):
             base = line.rsplit("/", 1)[-1]
         elif line[:1] in "+-" and not line.startswith(("+++", "---")) and budget < 600:
             budget += 1
-            if LUMP_RX:
-                for h in LUMP_RX.findall(line):
-                    tags[sha].add("lump:" + h)
-            if ACT_RX:
-                for h in ACT_RX.findall(line):
-                    tags[sha].add("fn:" + h)
-            if ACS_RX:
-                for h in ACS_RX.findall(line):
-                    tags[sha].add("acs:" + h)
+            for rx, prefix in ((LUMP_RX, "lump:"), (ACT_RX, "fn:"), (ACS_RX, "acs:"), (CVAR_RX, "cvar:")):
+                if rx:
+                    for h in rx.findall(line):
+                        tags[sha].add(prefix + h)
             for lp, rx in base_matchers.get(base, ()):
                 for kw in rx.findall(line):
                     tags[sha].add(lp + ":" + kw)
-    p.stdout.close(); p.wait()
 
-    with open(OUT, "w") as f:
-        f.write("# sha -> source-derived tags: lump:X  X:keyword  fn:A_X  acs:X\n")
+    out = args.out or os.path.join(L.ledger_dir(led), "combined_tags.tsv")
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# sha -> source-derived tags: lump:X  X:keyword  fn:A_X  acs:X  cvar:X\n")
         for sha in sorted(tags):
             f.write(sha + "\t" + " ".join(sorted(tags[sha])) + "\n")
 
@@ -168,11 +143,8 @@ def main():
         for t in s:
             k = "keyword" if re.match(r"[A-Z0-9_]+:[a-z]", t) else t.split(":", 1)[0]
             kind[k] += 1
-    print("commits tagged: %d / 1000" % len(tags))
+    print("commits tagged: %d / %d" % (len(tags), len(want)))
     print("tag counts by kind:", dict(sorted(kind.items(), key=lambda x: -x[1])))
-    print("\n--- sample tagged commits ---")
-    for sha in list(tags)[:8]:
-        print("  %s  %s" % (sha[:9], " ".join(sorted(tags[sha]))[:110]))
 
 
 if __name__ == "__main__":

@@ -59,9 +59,10 @@
 void	CLIENTSTATISTICS_Construct( void );
 void	CLIENTSTATISTICS_Tick( void );
 
-// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e with zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e: each packet reports its payload size, its wire size and whether it travelled as zstd, from the transport that knows all three.
+// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2 with zandronum@1a03a82d780ac7923770605aa631865c04076240: each packet reports its payload size, its wire size and whether it travelled as zstd, from the transport that knows all three.
 void	CLIENTSTATISTICS_AddToBytesSent( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket );
 void	CLIENTSTATISTICS_AddToBytesReceived( unsigned int uncompressedBytes, unsigned int compressedBytes, bool wasZstdPacket );
 void	CLIENTSTATISTICS_AddToMissingPacketsRequested( unsigned int Num );
+void	CLIENTSTATISTICS_DrawNetGraph( int xPos, int yPos );
 
 #endif // __CL_STATISTICS_H__

@@ -68,6 +68,7 @@
 #define NO_IMP
 #include "menu/optionmenuitems.h"
 #include "features/dev-mode/devmode.h"   // [rc4l] the gate on DEV_MODE_CCMD commands
+#include "computation/cmdlinearg_compute.h"   // [rc4l] how BuildString writes an argument back
 
 // MACROS ------------------------------------------------------------------
 
@@ -1214,33 +1215,8 @@ FString BuildString (int argc, FString *argv)
 
 		for (arg = 0; arg < argc; arg++)
 		{
-			if (argv[arg][0] == '\0')
-			{ // It's an empty argument, we need to convert it to '""'
-				buf << "\"\" ";
-			}
-			else if (strchr(argv[arg], '"'))
-			{ // If it contains one or more quotes, we need to escape them.
-				buf << '"';
-				long substr_start = 0, quotepos;
-				while ((quotepos = argv[arg].IndexOf('"', substr_start)) >= 0)
-				{
-					if (substr_start < quotepos)
-					{
-						buf << argv[arg].Mid(substr_start, quotepos - substr_start);
-					}
-					buf << "\\\"";
-					substr_start = quotepos + 1;
-				}
-				buf << argv[arg].Mid(substr_start) << "\" ";
-			}
-			else if (strchr(argv[arg], ' '))
-			{ // If it contains a space, it needs to be quoted.
-				buf << '"' << argv[arg] << "\" ";
-			}
-			else
-			{
-				buf << argv[arg] << ' ';
-			}
+			// [rc4l] An empty, quoted, spaced or semicoloned argument is written so the console reads it back whole.
+			buf << zx::ComputeQuotedArgument(std::string(argv[arg].GetChars(), argv[arg].Len())).c_str() << ' ';
 		}
 		return buf;
 	}

@@ -23,6 +23,13 @@ std::string Quoted(const std::string &s)
 	return zx::json::ComputeJsonQuoted(s);
 }
 
+std::string NumList(const std::vector<double> &values)
+{
+	std::string out;
+	for (size_t i = 0; i < values.size(); ++i) out += (i ? "," : "") + Num(values[i]);
+	return out;
+}
+
 }
 
 const char *ComputeNetRoleName(int netState)
@@ -52,9 +59,10 @@ std::string ComputeNetClientJson(const NetClientRow &row)
 
 std::string ComputeWorldActorJson(const WorldActorRow &row)
 {
-	return "{\"netid\":" + std::to_string(row.netId) + ",\"c\":" + Quoted(row.cls) + ",\"x\":" + Num(row.x) + ",\"y\":" + Num(row.y) + ",\"z\":" + Num(row.z) + ",\"fz\":" + Num(row.floorZ) +
+	return "{\"netid\":" + std::to_string(row.netId) + ",\"c\":" + Quoted(row.cls) + ",\"x\":" + Num(row.x) + ",\"y\":" + Num(row.y) + ",\"z\":" + Num(row.z) + ",\"px\":" + Num(row.prevX) + ",\"py\":" + Num(row.prevY) + ",\"pz\":" + Num(row.prevZ) + ",\"fz\":" + Num(row.floorZ) + ",\"clip\":" + Num(row.floorClip) +
 		",\"vx\":" + Num(row.velX) + ",\"vy\":" + Num(row.velY) + ",\"vz\":" + Num(row.velZ) + ",\"angle\":" + Num(row.angle) +
-		",\"health\":" + std::to_string(row.health) + ",\"player\":" + std::to_string(row.player) + ",\"sprite\":" + Quoted(row.sprite) + "}";
+		",\"health\":" + std::to_string(row.health) + ",\"player\":" + std::to_string(row.player) + ",\"sx\":" + Num(row.scaleX) + ",\"sy\":" + Num(row.scaleY) +
+		",\"dsx\":" + Num(row.drawnScaleX) + ",\"dsy\":" + Num(row.drawnScaleY) + ",\"sprite\":" + Quoted(row.sprite) + "}";
 }
 
 void ComputeSortActorRows(std::vector<WorldActorRow> &rows)
@@ -69,7 +77,7 @@ std::string ComputeSectorStateJson(const SectorStateRow &row)
 		",\"floorTex\":" + Quoted(row.floorTex) + ",\"ceilingTex\":" + Quoted(row.ceilingTex) + ",\"gravity\":" + Num(row.gravity) +
 		",\"friction\":" + Num(row.friction) + ",\"special\":" + std::to_string(row.special) + ",\"reflect\":[" + Num(row.reflectFloor) + "," +
 		Num(row.reflectCeiling) + "],\"scale\":[" + Num(row.xScaleFloor) + "," + Num(row.yScaleFloor) + "," + Num(row.xScaleCeiling) + "," +
-		Num(row.yScaleCeiling) + "],\"rotation\":[" + Num(row.angleFloor) + "," + Num(row.angleCeiling) + "]}";
+		Num(row.yScaleCeiling) + "],\"rotation\":[" + Num(row.angleFloor) + "," + Num(row.angleCeiling) + "],\"lights\":[" + NumList(row.lightTops) + "]}";
 }
 
 std::string ComputeSideStateJson(const SideStateRow &row)

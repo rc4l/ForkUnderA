@@ -106,10 +106,8 @@ int UNLAGGED_Gametic( player_t *player )
 	if ( pClient == NULL )
 		return gametic;
 
-	// [CK] If the client wants ping unlagged, use that.
-	int unlaggedGametic = ( players[playerNum].userinfo.GetClientFlags() & CLIENTFLAGS_PING_UNLAGGED ) ?
-							gametic - ( player->ulPing * TICRATE / 1000 ) :
-							pClient->lLastServerGametic;
+	// [rc4l] Ported from zandronum@6205f7d50549454848a749ec88c69b00fe934933: gametic unlagged alone, ping unlagged gone.
+	int unlaggedGametic = pClient->lLastServerGametic;
 
 	// Do not let the client send us invalid gametics ahead of the server's
 	// gametic. This should be guarded against, but just in case...

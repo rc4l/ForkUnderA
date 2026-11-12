@@ -45,6 +45,7 @@ USAGE
     commit-tracker-convergence.py --changed BASE  only files whose rows changed vs BASE (CI)
     commit-tracker-convergence.py --json          machine-readable
     commit-tracker-convergence.py --file PATH     one file, with the hunks printed
+    commit-tracker-convergence.py --ledger NAME   another ledger in commit-tracker/ledgers.json
 
 An intentional divergence that this cannot infer is declared in the row note as
     no-converge: <reason>
@@ -61,22 +62,18 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-TSV = os.path.join(ROOT, "commit-tracker", "coverage.tsv")
-INDEX = os.path.join(ROOT, "commit-tracker", "index.tsv")
-UPSTREAM = os.environ.get("UZDOOM_DIR", os.path.expanduser("~/repos/uzdoom"))
+sys.path.insert(0, os.path.join(ROOT, "commit-tracker"))
+import ledger as L  # noqa: E402
+import vcs  # noqa: E402
 
 # A hunk whose OUR-side lines carry one of these is a divergence someone signed for.
 FORK_TAGS = re.compile(
     r"\[(rc4l|BB|BC|AK|TP|EP|SB|CW|BL|ZK|RC|WS|Dusk|MGOOOOOO|ZandroX|Zandronum)\]"
 )
 
-# Upstream layout -> ours. Longest prefix wins.
-PATH_MAP = [
-    ("wadsrc/", "src/zandronum/wadsrc/"),
-    ("src/", "src/zandronum/src/"),
-]
-
-# Only files we deliberately WALK toward upstream can be checked this way.
+# Only files we deliberately WALK toward upstream can be checked this way, so each ledger names
+# them in ledgers.json ("converge": include/exempt), and maps upstream paths into our tree by its
+# "tree" prefixes.
 #
 # This is the whole load-bearing assumption. Outside the staircase we port slices: a sweeping
 # upstream commit ("removed STACK_ARGS") touches hundreds of files, and taking the part that
@@ -87,44 +84,19 @@ PATH_MAP = [
 # The renderer staircase is different: docs/renderer-staircase.md walks src/gl commit by
 # commit precisely so our copy tracks upstream's, so "our file should equal upstream's file at
 # the newest commit we claim" is true there by intent. That is also where every miss the audit
-# found actually lived.
-INCLUDE_PREFIXES = (
-    "src/zandronum/src/gl/",
-    "src/zandronum/wadsrc/static/shaders/",
-)
-
-# Within that scope, still ours wholesale or vendored as a snapshot.
-EXEMPT_PREFIXES = (
-    "src/zandronum/src/gl/system/gl_framebuffer.cpp",  # video-scale + Cocoa sizing are ours
-)
+# found actually lived. Zandronum's ledger names no such scope yet, so it sweeps nothing until
+# one is walked that way.
 
 
 def sh(args, **kw):
     return subprocess.run(args, capture_output=True, text=True, errors="ignore", **kw).stdout
 
 
-def load_rows():
-    rows = []
-    with open(TSV, encoding="utf-8", newline="") as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            f = line.rstrip("\n").split("\t")
-            if len(f) < 6 or f[3] not in ("ported", "adapted"):
-                continue
-            rows.append({"sha": f[0], "date": f[1], "title": f[2],
-                         "status": f[3], "note": f[4], "ours": f[5]})
-    return rows
+def load_rows(led):
+    return [r for r in L.read_rows(led) if r["status"] in ("ported", "adapted")]
 
 
-def our_path(up_path):
-    for src, dst in PATH_MAP:
-        if up_path.startswith(src):
-            return dst + up_path[len(src):]
-    return None
-
-
-def newest_claim_per_file(rows):
+def newest_claim_per_file(led, rows):
     """file -> (upstream sha, date, row) for the newest resolved row touching it.
 
     Reads commit-tracker/index.tsv (path -> shas that touched it) rather than shelling out
@@ -133,13 +105,14 @@ def newest_claim_per_file(rows):
     and is the same data.
     """
     by_sha = {r["sha"]: r for r in rows}
+    order = {r["sha"]: i for i, r in enumerate(L.read_rows(led))}
     best = {}
-    with open(INDEX, encoding="utf-8") as fh:
+    with open(os.path.join(L.ledger_dir(led), "index.tsv"), encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("#"):
                 continue
             up_path, _, shas = line.rstrip("\n").partition("\t")
-            ours = our_path(up_path)
+            ours = L.our_path(led, up_path)
             if not ours:
                 continue
             for sha in shas.split():
@@ -147,32 +120,15 @@ def newest_claim_per_file(rows):
                 if r is None:
                     continue
                 cur = best.get(ours)
-                if cur is None or r["date"] > cur["date"]:
+                if cur is None or order[sha] > order[cur["sha"]]:
                     best[ours] = {"date": r["date"], "sha": sha, "up_path": up_path, "row": r}
     return best
 
 
-def batch_blobs(claims):
-    """One `git cat-file --batch` for every upstream blob we need, instead of one per file."""
-    keys = [f"{c['sha']}:{c['up_path']}" for c in claims.values()]
-    if not keys:
-        return {}
-    proc = subprocess.run(["git", "-C", UPSTREAM, "cat-file", "--batch"],
-                          input=("\n".join(keys) + "\n").encode(),
-                          capture_output=True)
-    out, blobs, pos = proc.stdout, {}, 0
-    for key in keys:
-        nl = out.find(b"\n", pos)
-        if nl < 0:
-            break
-        header = out[pos:nl].decode("utf-8", "replace")
-        if header.endswith(("missing", "ambiguous")):
-            pos = nl + 1
-            continue
-        size = int(header.rsplit(" ", 1)[1])
-        blobs[key] = out[nl + 1:nl + 1 + size].decode("utf-8", "replace")
-        pos = nl + 1 + size + 1  # payload plus its trailing newline
-    return blobs
+def batch_blobs(repo, claims):
+    """Every upstream blob we need, in one batch where the VCS allows it."""
+    got = repo.cat_many((c["sha"], c["up_path"]) for c in claims.values())
+    return {"%s:%s" % k: v for k, v in got.items()}
 
 
 def compare(ours_rel, claim, blobs):
@@ -217,17 +173,25 @@ def main():
                     help="only files whose coverage.tsv rows changed vs BASE (for CI)")
     ap.add_argument("--file", help="inspect a single repo-relative path")
     ap.add_argument("--top", type=int, default=25, help="how many to print (default 25)")
+    ap.add_argument("--ledger", default="uzdoom")
     args = ap.parse_args()
-
-    if not os.path.isdir(UPSTREAM):
-        print(f"commit-tracker-convergence: no upstream clone at {UPSTREAM}; skipping.")
+    led = L.load_config()[args.ledger]
+    upstream = L.clone_path(led)
+    if not os.path.isdir(upstream):
+        print(f"commit-tracker-convergence: no upstream clone at {upstream}; skipping.")
+        return 0
+    repo = vcs.open_repo(led["vcs"], upstream)
+    scope = led.get("converge", {})
+    include, skip_paths = tuple(scope.get("include", ())), tuple(scope.get("exempt", ()))
+    if not include:
+        print(f"commit-tracker-convergence: the {led['label']} ledger names no converge scope; nothing to sweep.")
         return 0
 
-    rows = load_rows()
+    rows = load_rows(led)
 
     if args.changed:
         diff = sh(["git", "-C", ROOT, "diff", args.changed, "--unified=0", "--",
-                   "commit-tracker/coverage.tsv"])
+                   os.path.relpath(os.path.join(L.ledger_dir(led), "coverage.tsv"), ROOT).replace(os.sep, "/")])
         touched = {l[1:].split("\t")[0] for l in diff.splitlines()
                    if l.startswith("+") and not l.startswith("+++") and "\t" in l}
         rows = [r for r in rows if r["sha"] in touched]
@@ -238,13 +202,13 @@ def main():
     exempt = {r["sha"] for r in rows if "no-converge:" in r["note"]}
     rows = [r for r in rows if r["sha"] not in exempt]
 
-    claims = newest_claim_per_file(rows)
+    claims = newest_claim_per_file(led, rows)
     if args.file:
         claims = {k: v for k, v in claims.items() if k == args.file}
 
     claims = {k: v for k, v in claims.items()
-              if k.startswith(INCLUDE_PREFIXES) and not k.startswith(EXEMPT_PREFIXES)}
-    blobs = batch_blobs(claims)
+              if k.startswith(include) and not k.startswith(skip_paths)}
+    blobs = batch_blobs(repo, claims)
 
     findings = []
     for ours_rel, claim in sorted(claims.items()):

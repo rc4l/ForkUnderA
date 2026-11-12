@@ -69,6 +69,7 @@
 #include "team.h"
 #include "g_game.h"
 #include "callvote.h"
+#include "menu/callvotemenu_compute.h"   // [rc4l] ComputeMissingVoteMenus
 #include "g_shared/pwo.h"
 #include "deathmatch.h"
 #include "duel.h"
@@ -765,47 +766,24 @@ class DCallVoteMenu : public DOptionMenu
 public:
 	void Init( DMenu *parent, FOptionMenuDescriptor *desc )
 	{
+		// [rc4l] Adapted from zandronum@a84419a6841a8bf9384adae34e97104ef00f9027: the descriptor keeps its custom vote submenus and each open adds only those it lacks, since closing every menu from a submenu never closed this one, and theirs adds them once per process, which a wad reload's new descriptor would never get.
 		const TArray<VOTETYPE_s> &votes = CALLVOTE_GetCustomVotes( );
+		std::vector<std::string> itemActions, voteMenus;
+
+		for ( unsigned int j = 0; j < desc->mItems.Size( ); j++ )
+		{
+			int param = 0;
+			itemActions.push_back( desc->mItems[j]->GetAction( &param ).GetChars( ));
+		}
 
 		for ( unsigned int i = 0; i < votes.Size( ); i++ )
-		{
-			if ( votes[i].menu.IsNotEmpty( ))
-			{
-				FOptionMenuItem *it = new FOptionMenuItemSubmenu( votes[i].menuName.GetChars( ), votes[i].menu.GetChars( ));
-				mCustomVoteItems.Push( it );
-				desc->mItems.Push( it );
-			}
-		}
+			voteMenus.push_back( votes[i].menu.GetChars( ));
+
+		for ( unsigned int i : zx::ComputeMissingVoteMenus( itemActions, voteMenus ))
+			desc->mItems.Push( new FOptionMenuItemSubmenu( votes[i].menuName.GetChars( ), votes[i].menu.GetChars( )));
 
 		Super::Init( parent, desc );
 	}
-
-	virtual void Close( void )
-	{
-		// [AK] When this menu closes, any custom vote menus that were added when it was opened must
-		// be removed from its descriptor and deleted now. Otherwise, the custom vote menus will be
-		// duplicated when this menu is opened again.
-		for ( unsigned int i = 0; i < mCustomVoteItems.Size( ); i++ )
-		{
-			for ( unsigned int j = 0; j < mDesc->mItems.Size( ); j++ )
-			{
-				if ( mDesc->mItems[j] == mCustomVoteItems[i] )
-				{
-					mDesc->mItems.Delete( j );
-					break;
-				}
-			}
-
-			delete mCustomVoteItems[i];
-			mCustomVoteItems[i] = nullptr;
-		}
-
-		mCustomVoteItems.Clear( );
-		Super::Close( );
-	}
-
-private:
-	TDeletingArray<FOptionMenuItem *> mCustomVoteItems;
 };
 
 IMPLEMENT_CLASS( DCallVoteMenu )

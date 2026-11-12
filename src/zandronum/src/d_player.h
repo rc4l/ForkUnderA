@@ -291,6 +291,9 @@ public:
 	fixed_t		AngleDelta;
 	fixed_t		PitchDelta;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: tics from landing until the player may jump again, -1 for the engine's own rules.
+	int			RejumpDelay;
+
 	bool UpdateWaterLevel (fixed_t oldz, bool splash);
 	bool ResetAirSupply (bool playgasp = true);
 
@@ -738,7 +741,8 @@ public:
 										// is used during levels
 
 	int			inventorytics;
-	BYTE		CurrentPlayerClass;		// class # for this player instance
+	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: an int, so more than 256 classes fit.
+	int			CurrentPlayerClass;		// class # for this player instance
 	bool		backpack;
 	
 	int			fragcount;				// [RH] Cumulative frags for this player
@@ -1046,6 +1050,8 @@ LONG	PLAYER_CalcSpread( ULONG ulPlayer );
 ULONG	PLAYER_CalcRank( ULONG ulPlayer );
 void	PLAYER_ScaleDamageCountWithMaxHealth( player_t *pPlayer, int &damage );
 void	PLAYER_ResetCustomValues( const ULONG ulPlayer );
+void	PLAYER_SetSpriteToSkin( player_t *pPlayer ); // [RK]
+bool	PLAYER_SetSelectedInventory( player_t *player, AInventory *item, bool showInventoryBar );
 
 void P_CheckPlayerSprite(AActor *mo, int &spritenum, fixed_t &scalex, fixed_t &scaley);
 

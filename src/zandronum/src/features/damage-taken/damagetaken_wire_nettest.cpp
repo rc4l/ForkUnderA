@@ -6,12 +6,15 @@
 
 #include "doomtype.h"        // BYTE/USHORT and friends (must precede networkshared.h)
 #include "networkshared.h"   // BYTESTREAM_s
+#include "wire_nettest.h"     // zx::nettest::Wire
 #include "network_enums.h"   // SVC_EXTENDEDCOMMAND, SVC2_*
 
 #include <gtest/gtest.h>
 #include <cstring>
 #include <string>
 #include <vector>
+
+using zx::nettest::Wire;
 
 namespace {
 
@@ -35,23 +38,6 @@ struct Payload {
 	int weaponClass;
 	std::string damageType;
 	bool lethal;
-};
-
-// [MobiusU9B] Writer and reader views over the same poisoned bytes, mirroring server-writes / client-reads.
-struct Wire {
-	std::vector<BYTE> buf;
-	BYTESTREAM_s w{}, r{};
-	explicit Wire(size_t n = 256) : buf(n, 0xCC) {
-		w.pbStream = buf.data();
-		w.pbStreamEnd = buf.data() + buf.size();
-	}
-	size_t written() const { return static_cast<size_t>(w.pbStream - buf.data()); }
-	void openReader(size_t truncateTo = static_cast<size_t>(-1)) {
-		const size_t n = (truncateTo == static_cast<size_t>(-1)) ? written() : truncateTo;
-		r = BYTESTREAM_s{};
-		r.pbStream = buf.data();
-		r.pbStreamEnd = buf.data() + n;
-	}
 };
 
 // [MobiusU9B] What the generated FuaDamageTaken::BuildNetCommand writes, header first.

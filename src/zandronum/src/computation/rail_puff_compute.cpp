@@ -10,7 +10,17 @@ RailEndpointSpawn ComputeRailEndpointSpawn(int traceHitType)
 		|| traceHitType == ZX_TRACE_HitFloor
 		|| traceHitType == ZX_TRACE_HitCeiling);
 	out.decal = out.puff;   // [rc4l] features/decals marks any surface and refuses what refuses, sky flats included
-	out.skyGuard = (traceHitType == ZX_TRACE_HitFloor
-		|| traceHitType == ZX_TRACE_HitCeiling);
 	return out;
+}
+
+bool ComputeRailPuffInSky(int traceHitType, bool horizonLine, bool floorSky, bool ceilingSky, bool skyExplode)
+{
+	if (skyExplode) return false;
+	switch (traceHitType)
+	{
+	case ZX_TRACE_HitWall: return horizonLine;
+	case ZX_TRACE_HitFloor: return floorSky;
+	case ZX_TRACE_HitCeiling: return ceilingSky;
+	default: return false;
+	}
 }

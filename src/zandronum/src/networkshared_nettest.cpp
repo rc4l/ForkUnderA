@@ -25,6 +25,7 @@
 
 #include "doomtype.h"        // BYTE/USHORT/SDWORD and friends (must precede networkshared.h)
 #include "networkshared.h"   // BYTESTREAM_s, MAX_NETWORK_STRING
+#include "wire_nettest.h"     // zx::nettest::Wire
 
 #include <gtest/gtest.h>
 #include <cstdint>
@@ -32,28 +33,9 @@
 #include <string>
 #include <vector>
 
-namespace {
+using zx::nettest::Wire;
 
-// A stream backed by a fixed buffer, split into a writer view and a reader view
-// over the SAME bytes -- exactly how the engine writes on the server and reads on
-// the client. Bit state starts as the ctor leaves it (bitBuffer=NULL, bitShift=-1),
-// which forces EnsureBitSpace to claim a fresh byte on the first bit op.
-struct Wire {
-    std::vector<BYTE> buf;
-    BYTESTREAM_s w{}, r{};
-    explicit Wire(size_t n = 4096) : buf(n, 0xCC) {   // 0xCC poison so "unwritten" is visible
-        w.pbStream = buf.data();
-        w.pbStreamEnd = buf.data() + buf.size();
-    }
-    // Rewind a reader over exactly the bytes written so far.
-    void openReader() {
-        r = BYTESTREAM_s{};
-        r.pbStream = buf.data();
-        r.pbStreamEnd = w.pbStream;   // one past the last written byte
-    }
-    size_t written() const { return static_cast<size_t>(w.pbStream - buf.data()); }
-    std::vector<BYTE> bytes() const { return {buf.begin(), buf.begin() + written()}; }
-};
+namespace {
 
 // Golden helper: assert the written bytes equal an exact sequence.
 void expectBytes(const Wire &wire, std::vector<BYTE> golden) {

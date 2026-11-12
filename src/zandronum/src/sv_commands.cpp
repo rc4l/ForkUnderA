@@ -93,7 +93,6 @@
 #include "features/damage-taken/damagetaken.h"
 #include "features/net-session/computation/joinupdate_compute.h"
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
-#include <memory>
 
 CVAR (Bool, sv_showwarnings, false, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 
@@ -1149,34 +1148,15 @@ void SERVERCOMMANDS_MoveLocalPlayer( ULONG ulPlayer )
 	if ( SERVER_IsValidClient( ulPlayer ) == false || players[ulPlayer].mo == NULL )
 		return;
 
-	CLIENT_s *pClient = SERVER_GetClient( ulPlayer );
-
 	ServerCommands::MoveLocalPlayer command;
+	command.SetClientTicOnServerEnd( SERVER_GetClient( ulPlayer )->ulClientGameTic );
 	command.SetLatestServerGametic( gametic );
-
-	// [AK] If this player is being extrapolated, send them their last known position and velocity.
-	// This helps keep their movement smooth for them until we receive commands from them again.
-	if (( pClient->ulExtrapolatedTics > 0 ) && ( pClient->OldData ))
-	{
-		command.SetClientTicOnServerEnd( pClient->LastMoveCMD->getClientTic( ));
-		command.SetX( pClient->OldData->PositionData.x );
-		command.SetY( pClient->OldData->PositionData.y );
-		command.SetZ( pClient->OldData->PositionData.z );
-		command.SetVelx( pClient->OldData->PositionData.velx );
-		command.SetVely( pClient->OldData->PositionData.vely );
-		command.SetVelz( pClient->OldData->PositionData.velz );
-	}
-	else
-	{
-		command.SetClientTicOnServerEnd( pClient->ulClientGameTic );
-		command.SetX( players[ulPlayer].mo->x );
-		command.SetY( players[ulPlayer].mo->y );
-		command.SetZ( players[ulPlayer].mo->z );
-		command.SetVelx( players[ulPlayer].mo->velx );
-		command.SetVely( players[ulPlayer].mo->vely );
-		command.SetVelz( players[ulPlayer].mo->velz );
-	}
-
+	command.SetX( players[ulPlayer].mo->x );
+	command.SetY( players[ulPlayer].mo->y );
+	command.SetZ( players[ulPlayer].mo->z );
+	command.SetVelx( players[ulPlayer].mo->velx );
+	command.SetVely( players[ulPlayer].mo->vely );
+	command.SetVelz( players[ulPlayer].mo->velz );
 	command.sendCommandToClients( ulPlayer, SVCF_ONLYTHISCLIENT );
 }
 
@@ -1184,8 +1164,7 @@ void SERVERCOMMANDS_MoveLocalPlayer( ULONG ulPlayer )
 //
 void SERVERCOMMANDS_SetLocalPlayerJumpTics( ULONG ulPlayer )
 {
-	// [AK] Don't update this client's jump tics while we're extrapolating their movement.
-	if (( SERVER_IsValidClient( ulPlayer ) == false ) || ( SERVER_GetClient( ulPlayer )->ulExtrapolatedTics > 0 ))
+	if ( SERVER_IsValidClient( ulPlayer ) == false )
 		return;
 
 	ServerCommands::SetLocalPlayerJumpTics command;
@@ -1513,6 +1492,23 @@ void SERVERCOMMANDS_PlayerDropInventory( ULONG ulPlayer, AInventory *pItem, ULON
 }
 
 //*****************************************************************************
+// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806.
+void SERVERCOMMANDS_PlayerSetSelectedInventory( const unsigned int player, const AInventory *item, const bool showInventoryBar, const unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if (( PLAYER_IsValidPlayer( player ) == false ) ||
+		( item == nullptr ))
+	{
+		return;
+	}
+
+	ServerCommands::PlayerSetSelectedInventory command;
+	command.SetPlayer( &players[player] );
+	command.SetItemType( item->GetClass() );
+	command.SetShowInventoryBar( showInventoryBar );
+	command.sendCommandToClients( playerExtra, flags );
+}
+
+//*****************************************************************************
 //
 void SERVERCOMMANDS_PotentiallySendPlayerCommRule( const unsigned int player )
 {
@@ -1693,7 +1689,7 @@ void SERVERCOMMANDS_LevelSpawnThingNoNetID( AActor *pActor, ULONG ulPlayerExtra,
 /*
  * [TP] Compares actor position data to a previous state and calls SERVERCOMMANDS_MoveThing to send appropriate updates.
  */
-void SERVERCOMMANDS_MoveThingIfChanged( AActor *actor, const MOVE_THING_DATA_s &oldData, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_MoveThingIfChanged( AActor *actor, const MoveThingData &oldData, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ( EnsureActorHasNetID( actor ) )
 	{
@@ -2084,6 +2080,12 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 	case APROP_MvType:
 		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
 			value = static_cast<APlayerPawn *>( pActor )->MvType;
+		break;
+
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace.
+	case APROP_RejumpDelay:
+		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			value = static_cast<APlayerPawn *>( pActor )->RejumpDelay;
 		break;
 
 	default:
@@ -2743,6 +2745,8 @@ void SERVERCOMMANDS_SetGameModeLimits( ULONG ulPlayerExtra, ServerCommandFlags f
 	command.addBit( sv_limitcommands );
 	// [AK] Send sv_respawninsurvivalinvasion.
 	command.addBit( sv_respawninsurvivalinvasion );
+	// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: send sv_requireskulltoscore.
+	command.addBit( sv_requireskulltoscore );
 	// [AM] Send lobby map.
 	command.addString( lobby );
 	// [AK] Send sv_allowprivatechat.
@@ -2759,6 +2763,10 @@ void SERVERCOMMANDS_SetGameModeLimits( ULONG ulPlayerExtra, ServerCommandFlags f
 	command.addFloat( sv_respawndelaytime );
 	// [TRSR] Send sv_nocallvote.
 	command.addByte( sv_nocallvote );
+	// [RK] Send in the minimum FOV.
+	command.addFloat( sv_minfov );
+	// [RK] Send in the maximum FOV.
+	command.addFloat( sv_maxfov );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
 
@@ -3108,7 +3116,7 @@ void SERVERCOMMANDS_WeaponChange( ULONG ulPlayer, ULONG ulPlayerExtra, ServerCom
 
 //*****************************************************************************
 //
-void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const FVector3 &end, LONG color1, LONG color2, float maxdiff, int railflags, angle_t angleoffset, const PClass* spawnclass, int duration, float sparsity, float drift, ULONG ulPlayerExtra, ServerCommandFlags flags )
+void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const FVector3 &end, int color1, int color2, float maxDiff, int railFlags, angle_t angleOffset, const PClass *spawnClass, int duration, float sparsity, float drift, bool hitSurface, const PClass *puffClass, unsigned int playerExtra, ServerCommandFlags flags )
 {
 	// Evidently, to draw a railgun trail, there must be a source actor.
 	if ( !EnsureActorHasNetID (source) )
@@ -3120,23 +3128,27 @@ void SERVERCOMMANDS_WeaponRailgun( AActor *source, const FVector3 &start, const 
 	command.SetEnd( end );
 	command.SetColor1( color1 );
 	command.SetColor2( color2 );
-	command.SetMaxdiff( maxdiff );
-	command.SetAngleoffset( angleoffset );
-	command.SetSpawnclass( spawnclass );
+	command.SetMaxDiff( maxDiff );
+	command.SetAngleOffset( angleOffset );
+	command.SetSpawnClass( spawnClass );
 	command.SetDuration( duration );
 	command.SetSparsity( sparsity );
 	command.SetDrift( drift );
-	command.SetFlags( railflags );
+	command.SetFlags( railFlags );
+	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: where the rail stopped and, when its puff marks, the puff's class.
+	command.SetHitSurface( hitSurface );
+	command.SetUsePuffDecal( puffClass != nullptr );
+	command.SetPuffClass( puffClass );
 
 	// [TP] Recent ZDoom versions have added more railgun parameters. Add these parameters to the command
 	// only if they're not at defaults.
-	command.SetExtended( angleoffset != 0
-		|| spawnclass != NULL
+	command.SetExtended( angleOffset != 0
+		|| spawnClass != nullptr
 		|| duration != 0
 		|| fabs( sparsity - 1.0f ) > 1e-8
 		|| fabs( drift - 1.0f ) > 1e-8 );
 
-	command.sendCommandToClients ( ulPlayerExtra, flags );
+	command.sendCommandToClients( playerExtra, flags );
 }
 
 //*****************************************************************************
@@ -3796,18 +3808,6 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	if ( pActor == NULL )
 		return;
 
-	// [AK] There's a few sounds that we shouldn't play if it originated from a player who we're backtracing.
-	if (( pActor->player ) && ( SERVER_IsBacktracingPlayer( pActor->player - players )))
-	{
-		static const char *pszRestrictedSounds[7] = { "*grunt", "*land", "*falling", "*jump", "*dive", "*surface", "*gasp" };
-
-		for ( unsigned int i = 0; i < 7; i++ )
-		{
-			if ( stricmp( pszSound, pszRestrictedSounds[i] ) == 0 )
-				return;
-		}
-	}
-
 	// [BB] If the actor doesn't have a NetID, we have to instruct the clients differently how to play the sound.
 	if ( pActor->NetID == 0 )
 	{
@@ -4412,6 +4412,19 @@ void SERVERCOMMANDS_SetThingSpriteOrientation( AActor *mobj, unsigned int orient
 	if ( orientFlags & SPRITEORIENT_ROLL )
 		command.SetRoll( mobj->roll );
 	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+// [RK]
+void SERVERCOMMANDS_SetThingFloorClip( AActor* mobj, unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID (mobj) )
+		return;
+
+	ServerCommands::SetThingFloorClip command;
+	command.SetActor( mobj );
+	command.SetFloorclip( mobj->floorclip );
+	command.sendCommandToClients( playerExtra, flags );
 }
 
 //*****************************************************************************
@@ -5623,6 +5636,23 @@ void SERVERCOMMANDS_SetNextMapPosition( unsigned int playerExtra, ServerCommandF
 	command.addByte( UPDATE_MAPROTATION_SETNEXTPOSITION );
 	command.addShort( MAPROTATION_GetNextPosition( ));
 	command.addBit( MAPROTATION_ShouldNextMapIgnoreLimits( ));
+	command.sendCommandToClients( playerExtra, flags );
+}
+
+//*****************************************************************************
+// [AK]
+// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: the entry's position and its used status.
+// [rc4l] maprotation_wire_nettest.cpp's golden bytes hold these values.
+static_assert( UPDATE_MAPROTATION_SETNEXTPOSITION == 4 && UPDATE_MAPROTATION_SETUSEDSTATUS == 5, "map rotation update types moved" );
+void SERVERCOMMANDS_SetMapUsedStatus( unsigned int position, unsigned int playerExtra, ServerCommandFlags flags )
+{
+	if ( position >= MAPROTATION_GetNumEntries( ))
+		return;
+
+	NetCommand command( SVC2_UPDATEMAPROTATION );
+	command.addByte( UPDATE_MAPROTATION_SETUSEDSTATUS );
+	command.addShort( position );
+	command.addBit( MAPROTATION_IsUsed( position ));
 	command.sendCommandToClients( playerExtra, flags );
 }
 

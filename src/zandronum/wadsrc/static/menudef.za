@@ -81,12 +81,6 @@ OptionMenu ZA_MultiplayerOptions
 //
 // =================================================================================================
 
-OptionValue ZA_UnlagType
-{
-	0.0, "Gametic"
-	1.0, "Ping"
-}
-
 OptionValue ZA_UpdateRate
 {
 	1.0, "Fastest (every tick)"
@@ -112,13 +106,13 @@ OptionMenu ZA_NetworkOptions
 {
 	Title "NETWORK OPTIONS"
 
-	Option		"Connection type",			"cl_connectiontype",		"ZA_ConnectionType"
-	Option		"Unlagged",					"cl_unlagged",				"OnOff"
-	Option		"Unlag Type",				"cl_ping_unlagged",			"ZA_UnlagType"
-	Option		"Update Rate",				"cl_ticsperupdate",			"ZA_UpdateRate"
-	Option		"Hitscan decals",			"cl_hitscandecalhack",		"OnOff"
-	Option		"Clientside puffs",			"cl_clientsidepuffs",		"OnOff"
-	Option		"Display packet loss",			"cl_showpacketloss",		"YesNo"
+	Option		"Connection type",		"cl_connectiontype",		"ZA_ConnectionType"
+	Option		"Unlagged",			"cl_unlagged",			"OnOff"
+	Option		"Update Rate",			"cl_ticsperupdate",		"ZA_UpdateRate"
+	Option		"Hitscan decals",		"cl_hitscandecalhack",		"OnOff"
+	Option		"Clientside puffs",		"cl_clientsidepuffs",		"OnOff"
+	Option		"Display packet loss",		"cl_showpacketloss",		"YesNo"
+	Option		"Enable net graph",		"cl_netgraph",			"YesNo"
 
 	// [AK] Sending backup commands increases outbound net traffic. If the client decides
 	// to enable this, they should be made aware of this too.
@@ -628,12 +622,15 @@ OptionMenu ZA_WeaponSetup
 	Option		"Switch while firing",		"cl_noswitchonfire",		"ZA_SwitchWhileFiring", 	"switchonpickup"
 	Option		"Switch without ammo",		"cl_noammoswitch",		"YesNo"
 	Option		"Railgun color",		"railcolor",			"ZA_RailgunColors"
+	Option		"Interpolate weapons",		"cl_interpolateweapons",	"YesNo"
 	StaticText	" "
 	Option		"Always bob weapon",		"cl_alwaysbob",			"YesNo"
 	Option		"Allow screen bob",		"cl_viewbob",			"YesNo"
 	Option		"Use custom bob",		"cl_usecustombob",		"YesNo"
 	Option		"Bob style",			"cl_bobstyle",			"ZA_WeaponBobStyle"
 	Slider		"Bob speed",			"cl_bobspeed",			0.0, 2.0, 0.1
+	Slider		"Bob x-range",			"cl_bobrangex",			0.0, 2.0, 0.1
+	Slider		"Bob y-range",			"cl_bobrangey",			0.0, 2.0, 0.1
 	Slider		"Still bob speed",		"cl_stillbobspeed",		0.0, 2.0, 0.1
 	Slider		"Still bob range",		"cl_stillbobrange",		0.0, 2.0, 0.1
 	StaticText	" "
@@ -692,44 +689,38 @@ OptionValue ZA_AllowVoiceChat
 	3, "Players or spectators only"
 }
 
-OptionValue ZA_ExtrapolateLimit
-{
-	0, "Never"
-	1, "One tick"
-	2, "Two ticks"
-	3, "Three ticks"
-}
-
 OptionMenu ZA_ServerSetupMenu
 {
 	RequiresRconAccess
 	Title		"SERVER SETTINGS"
 	Indent 150
 
-	Submenu		"Voting setup",				"ZA_VotingSetupMenu"
-	Submenu		"Gameplay Options",			"GameplayOptions"
+	Submenu		"Voting setup",			"ZA_VotingSetupMenu"
+	Submenu		"Gameplay Options",		"GameplayOptions"
 	Submenu		"Compatibility Options",	"CompatibilityOptions"
-	Command		"Log out of RCON",			"rcon_logout"
+	Command		"Log out of RCON",		"rcon_logout"
 	StaticText	" "
-	TextField	"Server name",				"sv_hostname"
-	TextField	"Website",					"sv_website"
-	TextField	"Contact address",			"sv_hostemail"
+	TextField	"Server name",			"sv_hostname"
+	TextField	"Website",			"sv_website"
+	TextField	"Contact address",		"sv_hostemail"
 	StaticText	" "
-	Option		"Use connect password",		"sv_forcepassword",			"YesNo"
-	TextField	"Connect password",			"sv_password",				"sv_forcepassword"
+	Option		"Use connect password",		"sv_forcepassword",		"YesNo"
+	TextField	"Connect password",		"sv_password",			"sv_forcepassword"
 	Option		"Use join password",		"sv_forcejoinpassword",		"YesNo"
-	TextField	"Join password",			"sv_joinpassword",			"sv_forcejoinpassword"
+	TextField	"Join password",		"sv_joinpassword",		"sv_forcejoinpassword"
 	StaticText	" "
-	Option		"Allow private chat",		"sv_allowprivatechat",			"ZA_AllowPrivateChat"
-	Option		"Allow voice chat",		"sv_allowvoicechat",			"ZA_AllowVoiceChat"
-	Option		"Use proximity chat",		"sv_proximityvoicechat",		"YesNo"
-	Slider		"Min rolloff distance",		"sv_minproximityrolloffdist",		0, 2400, 50
-	Slider		"Max rolloff distance",		"sv_maxproximityrolloffdist",		0, 2400, 50
+	Option		"Allow private chat",		"sv_allowprivatechat",		"ZA_AllowPrivateChat"
+	Option		"Allow voice chat",		"sv_allowvoicechat",		"ZA_AllowVoiceChat"
+	Option		"Use proximity chat",		"sv_proximityvoicechat",	"YesNo"
+	Slider		"Min rolloff distance",		"sv_minproximityrolloffdist",	0, 2400, 50
+	Slider		"Max rolloff distance",		"sv_maxproximityrolloffdist",	0, 2400, 50
 	StaticText	" "
-	// Option	"Smooth lagging players",	"sv_smoothplayers",			"ZA_ExtrapolateLimit"
-	NumberField	"Max connected clients",	"sv_maxclients",			0, 64
-	NumberField	"Max players",				"sv_maxplayers",			0, 64
-	NumberField	"Max idle time (minutes)",	"sv_afk2spec",				0, 30
+	Slider		"Min FOV",			"sv_minfov",			5, 179, 1
+	Slider		"Max FOV",			"sv_maxfov",			5, 179, 1
+	StaticText	" "
+	NumberField	"Max connected clients",	"sv_maxclients",		0, 64
+	NumberField	"Max players",			"sv_maxplayers",		0, 64
+	NumberField	"Max idle time (minutes)",	"sv_afk2spec",			0, 30
 }
 
 OptionValue ZA_AllowVoting

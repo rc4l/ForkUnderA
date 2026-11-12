@@ -355,7 +355,11 @@ export async function withLockedInstance(opts, body, { launch = play, connect = 
   try {
     inst = await launch({ ...opts, lock: true });
     c = await connect(inst.port, inst.token);
-    return await body(c, inst);
+    const result = await body(c, inst);
+    // [rc4l] A body that judged a dead engine without throwing, its console command's log come back empty, still fails with the crash's frames.
+    const crashed = crashedError(inst, null);
+    if (crashed) throw crashed;
+    return result;
   } catch (e) {
     throw crashedError(inst, e);
   } finally {

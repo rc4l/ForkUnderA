@@ -82,6 +82,9 @@
 #include "duel.h"
 #include "gamemode.h"
 #include "cl_main.h"
+#include "features/net-client/computation/movedrain_compute.h"
+#include "features/net-session/netrole.h"
+#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff
 #include "cooperative.h"
 #include "invasion.h"
 #include "st_hud.h"
@@ -98,12 +101,14 @@
 #include <cstddef>
 #include <set>
 
-#include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/fov-interp/fovcvar.h"
 #include "features/quake-movement/quakemove.h"
 #include "mcp_simtrace.h" // [ForkUnderA] sim tracer anchor (no-op unless FUA_MCP_BRIDGE)
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 #include "features/compat-oldnodelay/computation/oldnodelay_compute.h" // [Doruk-Aksoy] compat_fua_oldnodelay's tics
 #include "features/bounce/computation/bounce_compute.h" // [Doruk-Aksoy] how bounces end
+#include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
+#include "computation/rejumpdelay_compute.h" // [rc4l] ComputeLandingDelaysJump, ComputeRisingDelaysJump
 #include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
@@ -2188,7 +2193,9 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 	// that large thrusts can't propel an actor through a wall, because wall
 	// running depends on the player's original movement continuing even after
 	// it gets blocked.
-	if ((mo->player != NULL && (i_compatflags & COMPATF_WALLRUN)) || (mo->waterlevel >= 1) ||
+	// [rc4l] Ported from zandronum@1b8273be433593cf9647b196ec9cc02d555e20f8: spectators keep full speed underwater.
+	// [AK] Spectators can travel underwater without reducing their speed.
+	if ((mo->player != NULL && (i_compatflags & COMPATF_WALLRUN)) || (mo->waterlevel >= 1 && !(mo->player && mo->player->bSpectating)) ||
 		(mo->player != NULL && mo->player->crouchfactor < FRACUNIT*3/4))
 	{
 		// preserve the direction instead of clamping x and y independently.
@@ -3233,6 +3240,9 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 		// [AK] Spectators without physical restrictions are allowed to pass through the floor.
 		if (mo->z <= mo->floorz && P_IsSpectatorUnrestricted(mo) == false)
 		{
+			// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a pawn's RejumpDelay, -1 for anything else.
+			const int rejumpDelay = mo->IsKindOf(RUNTIME_CLASS(APlayerPawn)) ? static_cast<APlayerPawn *>(mo)->RejumpDelay : -1;
+
 			// [BC] We need to do the sky check first, otherwise bouncy things
 			// can potentially bounce off the sky (such as grenades).
 			// [BB] But only do this for bouncy things!
@@ -3343,10 +3353,11 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 					// CheckJumpQuake sees the grounded tic it overwrote the negative sentinel that
 					// the re-arm keys off -- so Player.JumpDelay was dead for the main jump and
 					// every Quake pawn silently got 7 tics no matter what it authored.
+					// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a RejumpDelay sets the wait on every landing.
 					if ( zx::quakemove::UsesQuakeMovement( mo ) == false &&
-						( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel) )
+						zx::ComputeLandingDelaysJump( rejumpDelay, ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0, mo->player->jumpTics, mo->velz < minvel ))
 					{ // delay any jumping for a short while
-						mo->player->jumpTics = 7;
+						mo->player->jumpTics = zx::ComputeLandingJumpTics( rejumpDelay );
 
 						// [Leo] Inform the client of the jumpTics change.
 						if ( NETWORK_GetState() == NETSTATE_SERVER )
@@ -3361,6 +3372,11 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 					}
 				}
 				mo->velz = 0;
+			}
+			// [rc4l] Adapted from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: rising on the floor, as up a step, waits too, for a pawn with a player.
+			else if ( zx::ComputeRisingDelaysJump( mo->player != nullptr, rejumpDelay, mo->velz > 0 ))
+			{
+				mo->player->jumpTics = zx::ComputeRisingJumpTics( rejumpDelay );
 			}
 			if (mo->flags & MF_SKULLFLY)
 			{ // The skull slammed into something
@@ -4194,10 +4210,16 @@ void AActor::Tick ()
 
 	// This is necessary to properly interpolate movement outside this function
 	// like from an ActorMover
-	PrevX = x;
-	PrevY = y;
-	PrevZ = z;
-	PrevAngle = angle;
+	// [AK] Don't do this for players when using the client's command buffers.
+	// It's already handled when the buffers are emptied in CLIENT_Tick.
+	// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89: the role from features/net-session, the rule ComputeTickSavesPrevPosition.
+	if (zx::netclient::ComputeTickSavesPrevPosition(zx::net::InClientMode(), player != nullptr, (player != nullptr) && player->bSpectating, CLIENT_UsingCommandBuffers()))
+	{
+		PrevX = x;
+		PrevY = y;
+		PrevZ = z;
+		PrevAngle = angle;
+	}
 	PrevRoll = roll;	// [rc4l]
 
 	// [BC] There are times when we don't want to tick this actor if it's a player.
@@ -4230,6 +4252,8 @@ void AActor::Tick ()
 				{
 					special2++;
 				}
+				// [rc4l] Ported from zandronum@fe131e05e18ce74f9f2514cd4e083726086e63bb: a NOINTERACTION actor stands still while the level is frozen.
+				return;
 			}
 		}
 
@@ -4255,18 +4279,14 @@ void AActor::Tick ()
 	}
 	else
 	{
-		// [AK] Don't handle powerup effects while we're backtracing the player's movement.
-		if (( this->player == NULL ) || ( SERVER_IsBacktracingPlayer( this->player - players ) == false ))
-		{
-			AInventory * item = Inventory;
+		AInventory * item = Inventory;
 
-			// Handle powerup effects here so that the order is controlled
-			// by the order in the inventory, not the order in the thinker table
-			while (item != NULL && item->Owner == this)
-			{
-				item->DoEffect();
-				item = item->Inventory;
-			}
+		// Handle powerup effects here so that the order is controlled
+		// by the order in the inventory, not the order in the thinker table
+		while (item != NULL && item->Owner == this)
+		{
+			item->DoEffect();
+			item = item->Inventory;
 		}
 
 		if (flags & MF_UNMORPHED)
@@ -4492,7 +4512,7 @@ void AActor::Tick ()
 					}
 					else if (scrolltype == Scroll_StrifeCurrent)
 					{ // Strife scroll special
-						int anglespeed = sec->tag - 100;
+						int anglespeed = tagManager.GetFirstSectorTag(sec) - 100;
 						fixed_t carryspeed = DivScale32 (anglespeed % 10, 16*CARRYFACTOR);
 						angle_t fineangle = (anglespeed / 10) << (32-3);
 						fineangle >>= ANGLETOFINESHIFT;
@@ -4741,16 +4761,9 @@ void AActor::Tick ()
 	if ( CLIENT_PREDICT_IsPredicting( ))
 		return;
 
-	if ( this->player )
-	{
-		// [BB] Spectators shall stay in their spawn state and don't execute any code pointers.
-		if ( this->player->bSpectating )
-			return;
-
-		// [AK] Don't tick the player's states while we're backtracing their movement.
-		if ( SERVER_IsBacktracingPlayer( this->player - players ))
-			return;
-	}
+	// [BB] Spectators shall stay in their spawn state and don't execute any code pointers.
+	if (this->player && this->player->bSpectating)
+		return;
 
 	assert (state != NULL);
 	if (state == NULL)
@@ -5676,8 +5689,6 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	//BYTE	  state;
 	fixed_t spawn_x, spawn_y, spawn_z;
 	angle_t spawn_angle;
-	// [BC]
-	LONG		lSkin;
 
 	// not playing?
 	if ((unsigned)playernum >= (unsigned)MAXPLAYERS || !playeringame[playernum])
@@ -5694,7 +5705,8 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 
 	// [BB] We may not filter coop inventory if the player changed the player class.
 	// Thus we need to keep track of the old class.
-	const BYTE oldPlayerClass = p->CurrentPlayerClass;
+	// [rc4l] Ported from zandronum@51c804da8b73f39759d9f89da4141ba38ce7e22d: the old class is an int, as the class number is.
+	const int oldPlayerClass = p->CurrentPlayerClass;
 	const bool bAllowChangingClass = (( p->userinfo.GetPlayerClassNum( ) != p->CurrentPlayerClass ) && ( p->playerstate != PST_LIVE ));
 
 	// [BB] The (p->userinfo.GetPlayerClassNum() != p->CurrentPlayerClass) check allows the player to change its class when respawning.
@@ -5846,39 +5858,14 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
     mobj->id = playernum;
 
 	// [RH] Set player sprite based on skin
-	// [BC] Handle cl_skins here.
-	if ( cl_skins <= 0 )
-	{
-		lSkin = R_FindSkin( "base", p->CurrentPlayerClass );
-		mobj->flags4 |= MF4_NOSKIN;
-	}
-	else if ( cl_skins >= 2 )
-	{
-		if ( skins[p->userinfo.GetSkin()].bCheat )
-		{
-			lSkin = R_FindSkin( "base", p->CurrentPlayerClass );
-			mobj->flags4 |= MF4_NOSKIN;
-		}
-		else
-			lSkin = p->userinfo.GetSkin();
-	}
-	else
-		lSkin = p->userinfo.GetSkin();
-
-	if (( lSkin < 0 ) || ( static_cast<unsigned> (lSkin) >= skins.Size() ))
-		lSkin = R_FindSkin( "base", p->CurrentPlayerClass );
-
-	if (!(mobj->flags4 & MF4_NOSKIN))
-	{
-		mobj->sprite = skins[lSkin].sprite;
-	}
+	// [RK] Handle this in a helper function.
+	PLAYER_SetSpriteToSkin( mobj->player );
 
 	// [rc4l] fov-interp: respawn keeps the player's own FOV instead of hard-resetting to 90.
 	// Local player only -- `fov` is a client CVAR, so it is not another player's preference,
 	// and a server has none. Weapon zoom is FOVScale, re-applied per tic, so a scope raised at
 	// death does not survive into the next life.
-	p->DesiredFOV = p->FOV = zx::FovOnSpawn (playernum == consoleplayer,
-		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
+	p->DesiredFOV = p->FOV = FOV_OnSpawn (playernum == consoleplayer);
 	p->camera = p->mo;
 	p->playerstate = PST_LIVE;
 	p->refire = 0;
@@ -6605,7 +6592,8 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 	// [Dusk] Save TID for map resets.
 	mobj->SavedTID = mobj->tid;
 
-	mobj->PrevAngle = mobj->angle = (DWORD)((mthing->angle * CONST64(0x100000000)) / 360);
+	// [rc4l] The conversion GAME_ResetMap shares (zandronum@28e63eb130d75a770e24a34373aab26973b76e37).
+	mobj->PrevAngle = mobj->angle = zx::map::ComputeMapThingAngle( mthing->angle );
 
 	// Check if this actor's mapthing has a conversation defined
 	if (mthing->Conversation > 0)
@@ -6798,61 +6786,9 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 	}
 
 	// [BC] If we're the server, tell clients to spawn the thing.
-	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
-		( bTellClientToSpawn ))
-	{
-		// If it's translated, or spawning in a state other than its spawn state,
-		// treat it as a special case.
-		if ( ulState != STATE_SPAWN )
-		{
-			SERVERCOMMANDS_SpawnPuffNoNetID( puff, ulState, false );
-		}
-		// In certain other conditions, we need to spawn the puff with a network
-		// ID so that things like sounds work.
-		else if (( (flags & PF_HITTHING) && puff->SeeSound ) ||
-				 ( puff->AttackSound ) || ( ( puff->GetClass()->Meta.GetMetaString (AMETA_Obituary) != NULL ) && ( flags & PF_TEMPORARY ) ) )
-		{
-			if ( puff->NetID == 0 )
-			{
-				puff->NetID = g_ActorNetIDList.getNewID( );
-				g_ActorNetIDList.useID ( puff->NetID, puff );
-			}
-
-			SERVERCOMMANDS_SpawnPuff( puff );
-		}
-		else
-		{
-			// [CK] If a player is the source that is firing this, check and see
-			// if the attacker is predicting and exclude them (and only them)
-			// from getting the predicted puff if the bullet puff has +NONETID.
-			if ( source && source->player )
-			{
-				// [CK] Only spawn for players who are not predicting puffs.
-				ULONG activatorPlayerNumber = source->player - players;
-				for ( ULONG ulPlayer = 0; ulPlayer < MAXPLAYERS; ulPlayer++ )
-				{
-					// [CK] Don't send to invalid clients
-					if ( SERVER_IsValidClient( ulPlayer ) == false )
-						continue;
-
-					// [CK] If the player is the source, and the player fired a
-					// puff with +NONETID, and the player wants to predict puffs
-					// then we won't send them this command.
-					if ( ( activatorPlayerNumber == ulPlayer ) && ( puff->NetworkFlags & NETFL_NONETID ) && ( source->player->userinfo.GetClientFlags() & CLIENTFLAGS_CLIENTSIDEPUFFS ) )
-						continue;
-
-					// [BB] If the puff has a net ID, it must be spawned with one.
-					SERVERCOMMANDS_SpawnPuff( puff, ulPlayer, SVCF_ONLYTHISCLIENT );
-				}
-			}
-			else
-			{
-				// [CK] It is always sent when fired from a non-player.
-				// [BB] If the puff has a net ID, it must be spawned with one.
-				SERVERCOMMANDS_SpawnPuff( puff );
-			}
-		}
-	}
+	// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: net-replication's SendPuff, which a rail calls itself once its puff survived the sky.
+	if ( bTellClientToSpawn )
+		zx::netreplication::SendPuff( puff, source, ulState, flags );
 
 	if (!(flags & PF_TEMPORARY))
 	{
@@ -7266,11 +7202,23 @@ foundone:
 	if (smallsplash && splash->SmallSplash)
 	{
 		mo = Spawn (splash->SmallSplash, x, y, z, ALLOW_REPLACE);
-		if (mo) mo->floorclip += splash->SmallSplashClip;
+		// [rc4l] Ported from zandronum@7e0d5383e6ab5f7ca2f27f26989c2a9bda059ef1: the server sends a small splash's SmallClip, which clients never applied.
+		// [RK] Save the current floorclip before adding SmallClip.
+		if (mo)
+		{
+			const fixed_t oldFloorclip = mo->floorclip;
+			mo->floorclip += splash->SmallSplashClip;
 
-		// [BC/BB] Tell clients to spawn the splash.
-		if ( mo && ( NETWORK_GetState( ) == NETSTATE_SERVER ) )
-			SERVERCOMMANDS_SpawnThing( mo );
+			// [BC/BB] Tell clients to spawn the splash.
+			if (NETWORK_GetState() == NETSTATE_SERVER)
+			{
+				SERVERCOMMANDS_SpawnThing (mo);
+
+				// [RK] Update the clients about the floorclip change if we need to.
+				if (oldFloorclip != mo->floorclip)
+					zx::netreplication::SendFloorClip (mo);
+			}
+		}
 	}
 	else
 	{

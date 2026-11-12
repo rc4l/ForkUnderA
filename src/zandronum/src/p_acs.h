@@ -44,6 +44,7 @@
 #include <cstddef>
 #include <iterator>
 #include "i_system.h"
+#include "cl_commands.h"
 #include "sv_commands.h"
 #include "features/acs-strings/computation/stringpool_compute.h"
 
@@ -360,7 +361,8 @@ enum
 enum
 {
 	SCRIPTF_Net = 0x0001,	// Safe to "puke" in multiplayer
-	SCRIPTF_ClientSide = 0x0002	// [BB] Is executed on the clients, not on the server.
+	SCRIPTF_ClientSide = 0x0002, // [BB] Is executed on the clients, not on the server.
+	SCRIPTF_Busy = 0x0004,		 // [TDRR] Not affected by the runaway script limit
 };
 
 enum ACSFormat { ACS_Old, ACS_Enhanced, ACS_LittleEnhanced, ACS_Unknown };
@@ -445,6 +447,9 @@ enum
 	APROP_IsCrouchSliding	= 53,
 	APROP_IsWallClimbing	= 54,
 	APROP_IsAirWallRunning	= 55,
+
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: Zandronum's own actor properties, numbered as theirs.
+	APROP_RejumpDelay	= 150,
 };
 
 // [Dusk] Enumeration for GetTeamProperty
@@ -468,6 +473,9 @@ enum
 	TPROP_TeamItem,
 	TPROP_WinnerTheme,
 	TPROP_LoserTheme,
+	// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: each theme's track.
+	TPROP_WinnerThemeOrder,
+	TPROP_LoserThemeOrder,
 };
 
 class FBehavior
@@ -1165,6 +1173,10 @@ public:
 	typedef TMap<int, DLevelScript *> ScriptMap;
 	ScriptMap RunningScripts;	// Array of all synchronous scripts
 	static TObjPtr<DACSThinker> ActiveThinker;
+
+	// [AK] Changes to userinfo CVars belonging to the local player that need to be sent to the server.
+	// Also includes a record of the last several game ticks they were sent, to avoid command floods.
+	UserInfoChanges userInfoChanges;
 
 	void DumpScriptStatus();
 	void StopScriptsFor (AActor *actor, bool bRemoveNow = false, int activation = 0); // [RK] Added bRemoveNow and activation

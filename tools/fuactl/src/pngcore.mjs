@@ -6,6 +6,12 @@ export function decodePNG(path) {
   return decodePNGBytes(fs.readFileSync(path));
 }
 
+// [rc4l] A PNG's size from its IHDR, which sits at a fixed offset, for any bit depth and with no decoding; null when the bytes are no PNG.
+export function pngSize(head) {
+  if (head.length < 24 || head.toString("latin1", 1, 4) !== "PNG") return null;
+  return { width: head.readUInt32BE(16), height: head.readUInt32BE(20) };
+}
+
 // [rc4l] A PNG already in memory, such as a frame a browser page handed back.
 export function decodePNGBytes(buf) {
   let p = 8, w = 0, h = 0, bitDepth = 0, colorType = 0;
@@ -93,6 +99,18 @@ export function cropImage(img, box, zoom = 4, gain = 1) {
       for (let c = 0; c < 3; c++) rgb[(y * w + x) * 3 + c] = Math.min(255, Math.round(p[c] * gain));
     }
   return { w, h, rgb, srcW: x1 - x0, srcH: y1 - y0 };
+}
+
+// [rc4l] A w by h image of one colour as RGB bytes.
+export function solidRGB(w, h, rgb) {
+  const out = Buffer.alloc(w * h * 3);
+  for (let i = 0; i < w * h; i++) out.set(rgb, i * 3);
+  return out;
+}
+
+// [rc4l] An n by n PNG of one colour, by default a sprite standing on its bottom middle.
+export function solidPNG(rgb, n = 32, { grab = [n / 2, n] } = {}) {
+  return encodePNG(n, n, solidRGB(n, n, rgb), { grab });
 }
 
 // [rc4l] An RGB image as PNG bytes, for a capture on disk or a graphic lump inside a template wad.

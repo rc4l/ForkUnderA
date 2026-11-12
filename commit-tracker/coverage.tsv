@@ -1,4 +1,4 @@
-# commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip | ours = OUR commit(s), '/' if pending/skip, 'zandronum-base' if base-inherited
+# commit tracker | repo https://github.com/UZDoom/UZDoom | commit URL = <repo>/commit/<sha> | status = pending|ported|adapted|skip|deferred|partially-deferred | ours = OUR commit(s), "/" if pending/skip/deferred, "zandronum-base" if baseline
 sha	date	title	status	note	ours
 455145d611e0707fbf4f6fbcaf9cf7b82cf1b94e	2014-01-01T11:04:32Z	Stall testing for interpolation	skip	P2P-lockstep transport (TryRunTics/Net_CheckLastRecieved resend); not our C/S model, d_net path unused under client/server	/
 853c1c4f1ec963bb28ab6e02b7f59c763b2806b8	2014-01-01T15:51:27Z	Merge branch 'master' of https://github.com/Edward850/zdoom	skip	merge	/
@@ -636,9 +636,9 @@ e29fce6951c70e5c2036e6dfc4ccf0fe38f24f00	2014-09-07T08:52:51Z	Fixed missing tran
 4659a87292cbd512fb673dc19c8008d8a2ec1b04	2014-09-07T14:15:44Z	Merge pull request #15 from alexey-lysiuk/fix_upscale_transparency	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 cfd24f438f0d1f1bc84882d3e2bf9b072bb0881e	2014-09-08T11:02:05Z	- jpalomo's A_Saw flags submission.	ported	ported: A_Saw gains SF_NOPULLIN and SF_NOTURN plus their DECORATE constants	223fd8f
 3d2646cbaefd1e6411bd04f31c9ac3747ae08aa3	2014-09-08T11:02:39Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
-580e580c429885a34d2770fd8a10426510e0eef1	2014-09-08T20:54:56Z	- added option to set a sector's tag via compatibility.txt (needed by GZDoom)	ported	ported: already present -- a content check finds this commit's added lines in our tree (10/10 of them). Inherited via Zandronum, which merged a later ZDoom than our nominal base	zandronum-base
+580e580c429885a34d2770fd8a10426510e0eef1	2014-09-08T20:54:56Z	- added option to set a sector's tag via compatibility.txt (needed by GZDoom)	ported	ported: setsectortag (CP_SETTAG parser, executor and enum) arrived with staircase flight 17 (c74fcdac), which ported it to carry 86d9c7ec8's BTSX entries; Zandronum 3.2.1 does not have it, Zandronum 3.3 transplanted it as zandronum@26b1948308e9	c74fcdac
 0ff061b928af4a480646926fe9c66d839e1ddff3	2014-09-08T20:55:37Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
-5e34b78451869558b38e8f08fba8102da40d2a0a	2014-09-08T21:25:27Z	- missed a line.	ported	ported: already present -- a content check finds this commit's added lines in our tree (1/1 of them). Inherited via Zandronum, which merged a later ZDoom than our nominal base	zandronum-base
+5e34b78451869558b38e8f08fba8102da40d2a0a	2014-09-08T21:25:27Z	- missed a line.	ported	ported: the missed line arrived with 580e580c4 in staircase flight 17 (c74fcdac); Zandronum 3.3 transplanted it as zandronum@abbd13c64e5c	c74fcdac
 e2c2f635ac564d93267d50899bfca235a16cca4e	2014-09-08T21:26:17Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content -- its changes live in the parents, which are triaged on their own rows	/
 86d9c7ec8ee84bee60a459c975f3802d158d2b70	2014-09-08T23:27:41Z	- add some compatibility settings to fix rendering glitches in BTSX_E1 MAP12.	ported	c74fcda	c74fcda
 9b8869e78d5e1d7e55bbafc7f918f1ef6959b8ae	2014-09-08T23:30:11Z	Merge branch 'master' into v2.x	ported	c74fcda	c74fcda
@@ -1612,16 +1612,16 @@ feeebf52659f7aa43e20bf52e3ecd95c2b9dd920	2015-04-12T16:26:52Z	- rework MD2 code 
 6fc63daabd41a4dffbd63045ee72f1f3eb07bf82	2015-04-13T20:08:44Z	- fixed: Zips whose central directory cannot be read need to print an error message.	pending		/
 d7092f40a37fea1f536e4c5a2ba4336b728ee7fb	2015-04-13T20:09:18Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 ccb49a4242f9b06d3c01daba86ed3893f4ce1f26	2015-04-14T16:13:25Z	Fixed: missing '=' in conversation ID defs	pending		/
-238046655c13329a150d65e27d344bf93f38792c	2015-04-14T16:32:14Z	- wrapped all accesses to the sector tag into accessor functions, as preparation for allowing multiple tags per sector.	pending		/
-2faf836aa143afa2fd378a8fc90effb029d3ce23	2015-04-14T16:48:19Z	- some minor rework of tag access interface after I realized that some stuff (e.g. Strife's scrolling sector special) need the primary tag to treated specially.	pending		/
+238046655c13329a150d65e27d344bf93f38792c	2015-04-14T16:32:14Z	- wrapped all accesses to the sector tag into accessor functions, as preparation for allowing multiple tags per sector.	ported	twin zandronum@20a202eba: two hunks placed by hand where p_sectors.cpp and r_defs.h moved	bd3b97c6
+2faf836aa143afa2fd378a8fc90effb029d3ce23	2015-04-14T16:48:19Z	- some minor rework of tag access interface after I realized that some stuff (e.g. Strife's scrolling sector special) need the primary tag to treated specially.	ported	twin zandronum@fdc08e59a: as written	b3eb6d10
 7b4f950330855acb72f920fb293baaee975e124a	2015-04-14T17:51:37Z	Merge pull request #314 from Blue-Shadow/conv_id_fix	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
-425e5b9ffcba30d8bf212a7a76759bab2dc0e73b	2015-04-14T20:39:57Z	- replaced P_FindSectorFromTag with an FSectorTagIterator class.	pending		/
-47543bb7669b6791a98b6f195fd98afa1d539829	2015-04-14T22:47:06Z	- while we're at it, let's also wrap line ID searches in an iterator class so that we can do multiple IDs per line later as well.	pending		/
+425e5b9ffcba30d8bf212a7a76759bab2dc0e73b	2015-04-14T20:39:57Z	- replaced P_FindSectorFromTag with an FSectorTagIterator class.	ported	twin zandronum@eef80c9f8: eight hunks placed by hand around our fixed64 casts and FrictionToMoveFactor	d8143562
+47543bb7669b6791a98b6f195fd98afa1d539829	2015-04-14T22:47:06Z	- while we're at it, let's also wrap line ID searches in an iterator class so that we can do multiple IDs per line later as well.	ported	twin zandronum@1a2796189: three hunks placed by hand; our MBF21 sidedef scroller's ID search moved to the iterator too	2e348af0
 006868c072f6bbaf995078ec4c8718aab396afd6	2015-04-14T23:02:15Z	Miscellaneous warning fixes	pending		/
-902593198b3b8f7cb5314375707085d483b9e85b	2015-04-15T07:37:06Z	- wrapped all line ID accesss just like sector tags	pending		/
-418e6a16b85fb84833a65c80d89110e9c3406577	2015-04-15T07:43:43Z	- fixed UDMF user variables could be set for the base namespaces which do not define them.	pending		/
+902593198b3b8f7cb5314375707085d483b9e85b	2015-04-15T07:37:06Z	- wrapped all line ID accesss just like sector tags	ported	twin zandronum@e85773f65: Line IDs go through line_t accessors; fua_find_lines and MBF21's line lookup moved onto them.	3632359c
+418e6a16b85fb84833a65c80d89110e9c3406577	2015-04-15T07:43:43Z	- fixed UDMF user variables could be set for the base namespaces which do not define them.	ported	twin zandronum@201cc5719: Proof: scenarios/udmfuserkeys.mjs fails on the build before it.	722d2890
 5d819036b3d3910b378ada0f6ccd29c68b543a88	2015-04-15T07:45:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
-203f88ce6efb0811c06ce2b88085f876102ba42d	2015-04-15T18:10:27Z	- some sanitizing of sector tag/line id management:	pending		/
+203f88ce6efb0811c06ce2b88085f876102ba42d	2015-04-15T18:10:27Z	- some sanitizing of sector tag/line id management:	ported		cfb2d891
 3cb4eb44a854a90cf621274a80fe1faf2de93b22	2015-04-16T06:29:21Z	- fixed: APowerRegeneration::DoEffect did not call the super method.	pending		/
 e30958f44315c15f7c69122c85629a3b09985fe1	2015-04-16T16:07:45Z	- fixed: The check for completely invisible 3D floor in the sorting code checked the wrong flags.	pending		/
 45f893f8fc38a5b62544f99bfb911ec36542c14e	2015-04-16T16:08:23Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
@@ -1637,14 +1637,14 @@ f57e08102cc32c510aad3cd3a8d22568436ed5aa	2015-04-17T17:41:08Z	Merge branch 'mast
 f983f778f27ca17b1a45f62d367c174ab0c0b5c5	2015-04-17T19:39:07Z	- moved ScaleCoordsFromWindow to the BaseWinFB base class to eliminate two identical implementations.	pending		/
 887014c32268966557b00f012e92e6744e108409	2015-04-17T19:39:35Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 b3c7b9679a8bf1eadba047ac15e59916b4edd674	2015-04-19T03:51:28Z	Fixed: writeopl broke when the OPL3 cores were added	pending		/
-f65a07c952d6ed3da49abb06ca8cd7375bd467e7	2015-04-19T06:48:20Z	- minor bit of cleanup of tags code.	pending		/
+f65a07c952d6ed3da49abb06ca8cd7375bd467e7	2015-04-19T06:48:20Z	- minor bit of cleanup of tags code.	adapted	twin zandronum@9c5e1cc8d: ours-wins: kept line_t::GetMainId for fua_find_lines' dump until zandronum@020ebf903625, where it became tagManager.GetFirstLineID (uzdoom@94b7ef72ca).	4c317984
 2719ce86dc07c9f7b1ad6d61a9a49c974896abf2	2015-04-19T06:48:41Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
-6326cd74b444ec668f6db4ab72b841b78ebada8a	2015-04-19T07:07:05Z	- moved tag iterators to their own file.	pending		/
-b921157f57783003a82842d689c099029320bcc1	2015-04-19T10:33:27Z	- uncouple sector tag storage from the sector data to allow multiple tags per sector.	pending		/
-db61c1cb57581876d31bc9dcf01c882767480237	2015-04-19T15:51:34Z	- allow multiple line IDs as well using the same method as for sector tags.	pending		/
-cad282142d60dcb1ed53c9545ad4616a4e92542b	2015-04-19T16:22:39Z	- fixed some last issues with the tag manager.	pending		/
+6326cd74b444ec668f6db4ab72b841b78ebada8a	2015-04-19T07:07:05Z	- moved tag iterators to their own file.	ported		20adb29d
+b921157f57783003a82842d689c099029320bcc1	2015-04-19T10:33:27Z	- uncouple sector tag storage from the sector data to allow multiple tags per sector.	ported	twin zandronum@a17262422: Upstream's save version 4523 is our 4530; five hunks placed by hand. Proof: scenarios/tagmanager.mjs MAP01 moreids.	c851a128
+db61c1cb57581876d31bc9dcf01c882767480237	2015-04-19T15:51:34Z	- allow multiple line IDs as well using the same method as for sector tags.	ported	twin zandronum@020ebf903: Line ID save gate is our 4531 (upstream 4523). LineHasIDs pulled forward from zandronum@566770b828b4, which this needs to build; GetFirstLineID pulled from uzdoom@94b7ef72ca for fua_find_lines.	4d7ed422
+cad282142d60dcb1ed53c9545ad4616a4e92542b	2015-04-19T16:22:39Z	- fixed some last issues with the tag manager.	adapted	twin zandronum@566770b82: ours-wins: dumptags is a DEV_MODE_CCMD (AGENTS.md), not a plain CCMD. Proof: scenarios/tagmanager.mjs MAP01 and MAP02.	6b937c71
 3300817d65cb57b2428bc962deda305ae45c1d95	2015-04-20T21:20:56Z	- removed some leftover code from initial development in the DoomEdNum parser.	pending		/
-3061bcf60403cd5ce598fca8194394f24e987c95	2015-04-22T22:22:57Z	Add p_tags.(cpp|h) to solution	pending		/
+3061bcf60403cd5ce598fca8194394f24e987c95	2015-04-22T22:22:57Z	Add p_tags.(cpp|h) to solution	skip	twin zandronum@372411db3: Touches only gzdoom.vcproj, which we do not have; CMakeLists.txt lists p_tags.cpp.	/
 f7bd3acec4bde2223771f60ef7b07a48ee9264b7	2015-04-22T22:34:36Z	Add OpenString to FScanner class	pending		/
 dba76c1aea8fe8e9699d81eee67eeb95d383fa5d	2015-04-22T23:32:45Z	Disable PCM-8 output when not using DirectSound	pending		/
 7ee185340341eecf1d621b01176531cd011f7bb7	2015-04-23T00:09:33Z	Remove OpenAL and Sound Manager output options for FMOD	pending		/
@@ -1657,7 +1657,7 @@ ca16d99445f881ba3b2dac1a37f2fa720a07cde2	2015-04-23T03:57:15Z	Fixed: FOptionMenu
 a54404074a290db80cb6789f273cf8715eef94ac	2015-04-23T18:09:12Z	- fixed: IDs that map to nothing must be removed from the spawn/conversation ID maps.	pending		/
 6a6836b1e7a4e558313ffd630b839ddaf890bb46	2015-04-23T18:11:54Z	Added SpiralOffset to railgun functions.	pending		/
 45b006252a145b823505b14089b9403aa822a47f	2015-04-23T19:17:41Z	Merge pull request #316 from Doom2fan/RailgunSpiralOffset	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
-920a4fbf4595ab4f677c19aeb90464b8bdf118ce	2015-04-23T19:27:36Z	- fixed: The HashTags function considered sector and line #0 invalid.	pending		/
+920a4fbf4595ab4f677c19aeb90464b8bdf118ce	2015-04-23T19:27:36Z	- fixed: The HashTags function considered sector and line #0 invalid.	ported	twin zandronum@90fabec29: Proof: scenarios/tagmanager.mjs MAP01, sector 0 and line 0.	69348af5
 1f2a431d159ed08d6acf2ee398449ea7e37152cc	2015-04-24T07:21:06Z	Merge branch 'master' into openal	skip	skip: merge commit -- no unique content, its changes live in the parents, which are walked separately.	/
 baa775b31c59cdc8a3216a0e366706febc3032ec	2015-04-24T14:55:31Z	- fixed: Light level must be clamped before accessing the distfogtable.	ported	ported: distfogtable index clamped with gl_ClampLight; it was an out-of-bounds read. Found by the convergence sweep after the row wrongly claimed ported	33ee14f
 c91745c71451150634ecd64a890ecb7635a5a56f	2015-04-24T15:42:56Z	- some fixes to make OpenAL branch compile with VC++ 2013 and OpenAL support.	pending		/
@@ -1767,26 +1767,26 @@ db8cd859a6e87f8798d623e1e3d7d87f206aa848	2015-05-02T19:29:29Z	Merge branch 'mast
 6996a15235a1eb2f167ca0bc2657731c58276004	2015-05-02T21:44:54Z	- fixed some overlooked merging problem.	pending		/
 6639f871c6fcb0386c5791edcf73c1f927b1241b	2015-05-03T22:55:01Z	- Fixed A_SetRipMin/Max not working properly.	pending		/
 9c43260ecb170e252433ae597fc60d658bea0409	2015-05-04T06:26:28Z	Merge pull request #327 from MajorCooke/ripminmaxfix	pending		/
-6f0caee4babaa517281cdb44b7d0c4b86b4bc917	2015-05-04T06:55:31Z	- fixed: Searching for tag 0 was no longer possible.	pending		/
+6f0caee4babaa517281cdb44b7d0c4b86b4bc917	2015-05-04T06:55:31Z	- fixed: Searching for tag 0 was no longer possible.	ported	twin zandronum@75690467d: Proof: scenarios/tagmanager.mjs MAP01, tag 0.	b9b0d5c0
 f8fd28118be94132799d7f140ed46b67f23154d4	2015-05-04T06:56:04Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 8c5cc45dbe7317fdd23cf7e4f67f1c92cc851b34	2015-05-04T07:29:46Z	Merge branch 'master' into scripting	pending		/
 9b331b171360d2c077993d77da4b6faa272a816c	2015-05-04T08:54:07Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 535102ae6e376f89e1ee7df7508b05dabd7c35f6	2015-05-05T09:23:41Z	- fixed: NULLing the flash state in P_BringUpWeapon should be done before setting the main weapon state so that it doesn't cancel any flash state effects that get initiated there.	pending		/
 bfc10f4c5ed1f2924a1ac5151b8f74d96793c2e5	2015-05-05T09:24:43Z	Merge branch 'master' into scripting	pending		/
-96fa3b124ee54cd0bb99fb958984a797012f985a	2015-05-06T21:24:27Z	- fixed: Trying to remove sector tags for line-less sectors crashed when there were no sector tags at all in a map.	pending		/
+96fa3b124ee54cd0bb99fb958984a797012f985a	2015-05-06T21:24:27Z	- fixed: Trying to remove sector tags for line-less sectors crashed when there were no sector tags at all in a map.	ported	twin zandronum@e517153e6: Proof: scenarios/tagmanager.mjs MAP03 crashes the build before this in RemoveSectorTags.	27bec028
 b587c85a819c93ffc7caf89d9d63329af005c720	2015-05-06T22:45:36Z	- fixed: On Windows the cache path could end up with double slashes when no AppData folder could be found.	pending		/
 a59824cd8897dea5dd452c31be1328415478f990	2015-05-07T09:36:31Z	- fixed: MD2 vertex indices were signed shorts but should be unsigned. - fixed a few warnings from Visual C++ 2015.	ported	a809457	a809457
 87ff82dba68ca91364a1b963efd5e66a466d2d9b	2015-05-07T11:05:18Z	- fixed: Trying to remove sector tags for line-less sectors crashed when there were no sector tags at all in a map.	pending		/
 f10416af8a3faf223a3c49f3a08145554cc5c87f	2015-05-08T03:52:58Z	- Fixed: Missing WINAPI macro in SHGetFolderPathA (MSDN documentation didn't include it so I didn't.  Apparently Microsoft is just incosistent since it's documented in functions like GetLongPathName.)	pending		/
 92989a8c77354455d68b8b679bc1154d6182e9f0	2015-05-16T10:10:08Z	CMake: Fix building on 32-bit Linux (Fedora 20).	pending		/
 9ed61b5cb6298f0e8875e7f67f0e9674986c750b	2015-05-16T12:57:04Z	Merge pull request #329 from svdijk/master	pending		/
-1e3230486ec975dfcb823ba3b6c35cfa400dcdfd	2015-05-17T19:40:25Z	- Fixed: FTagManager::Clear did not clear the line ID hashing index.	pending		/
+1e3230486ec975dfcb823ba3b6c35cfa400dcdfd	2015-05-17T19:40:25Z	- Fixed: FTagManager::Clear did not clear the line ID hashing index.	ported		cf8c3151
 4d496f8b04d76a0674e2fd599577e4c620129e2a	2015-05-17T19:41:09Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 4d082d93cd561d588fa0e5376123c6e243e67842	2015-05-19T21:09:20Z	- Use SDL_RenderSetLogicalSize to handle animorphic ratios in fullscreen with SDL backend. - Reuse the old window in the SDL backend since in some instances switching windows causes issues (OS X fullscreen for instance (while using the SDL backend of course)). - Clear the SDL render before copying in the framebuffer to remove HOM-like effect.	pending		/
 354ec022b313af7c6c5266e1d70eebabf7dcf4af	2015-05-20T16:32:17Z	- On Windows resizing a window just renders the image to the size of the window, so lets do the same for SDL (makes mouse coordinate scaling easier).	pending		/
 e46b25f6283a0da0fcfa02187f657bf4c89d8a93	2015-05-20T16:54:13Z	- Fixed: god2 didn't trigger invulnerability in SBarInfo.	pending		/
 c9214c1ce98ac5082fc323658e35f265d503c95d	2015-05-20T17:10:08Z	- Fixed: Hexen's status bar top graphic was drawn 1 pixel too low. - Fixed: Artiflash played on initial save loading. I seem to recall this looking like an intentional change, but perhaps I broke it since it's completely pointless to play the animation only on the first load of a save game if nothing has been loaded beforehand.	pending		/
-9f208409f2bb8a62a11ea0a1a515cbe433c7d17b	2015-05-25T17:57:36Z	- fixed: The tag check in Sector_CopyScroller was inverted (it should reject sectors with the given tag, but it rejected everything else.)	pending		/
+9f208409f2bb8a62a11ea0a1a515cbe433c7d17b	2015-05-25T17:57:36Z	- fixed: The tag check in Sector_CopyScroller was inverted (it should reject sectors with the given tag, but it rejected everything else.)	ported	twin zandronum@6fe64e17f: Proof: scenarios/tagmanager.mjs MAP05 fails the copied carry on the build before it.	283e641a
 733873351a9dc3efe86765975c99748478f03497	2015-05-25T17:58:02Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 0b3a22d6d2e5b98394b94b6fdbb681b8ad6e8648	2015-05-26T07:03:53Z	- fixed: The ending flat for No Rest For The Living was wrong.	pending		/
 4546df7dc32519520ff05d2be6b562b582a91658	2015-05-27T22:41:07Z	- Fixed SetActorPitch and ChangeActorPitch issue.	pending		/
@@ -1829,7 +1829,7 @@ d0df4c1744a8b30c147e82b82e1f5a5f27cefc2d	2015-06-07T18:27:20Z	Upgraded the porta
 76c401a41ec655e83f0b375b1c61787fa8b13446	2015-06-18T08:20:04Z	- added 'nopushwindowcheck' for Hexen's MAP30 which abuses a glitch with a 'projectile impact' line on a two-sided wall.	pending		/
 ffa77ff7a623aaacd0a65054a78f8a92bbc7b3a7	2015-06-18T08:20:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 85449a6b8a330b48dfa088a93f4242987ade19fd	2015-06-21T11:04:47Z	- fixed: A_BFGSpray checked the spray actor's class for MTHRUSPECIES, not the actual shooter.	pending		/
-8670b7ecf79a91cd4d64025bb11393b8b931afb1	2015-06-25T00:53:46Z	Use puff decal with MF7_FORCEDECAL	pending		/
+8670b7ecf79a91cd4d64025bb11393b8b931afb1	2015-06-25T00:53:46Z	Use puff decal with MF7_FORCEDECAL	adapted	twin zandronum@deffd2fbd: ours-wins: the FORCEDECAL rule is ComputeMarksWithPuff and the mark goes through decals MarkShot with the puff as its decal source; scenario railforcedecal	079fe600
 2a69ae2a434e00c2c5543ecd9b37dd3b5cb04aba	2015-06-25T01:57:36Z	Change all float calcs in rails to doubles	pending		/
 f0b73b30c098c06c36d15602e647347a2457ddc7	2015-06-25T06:57:03Z	Merge pull request #341 from Edward850/railfix	pending		/
 bbc3173629c8b5eb5b79474377f9f79a72ebb26b	2015-06-25T13:47:37Z	yep	pending		/
@@ -1841,11 +1841,11 @@ bbc3173629c8b5eb5b79474377f9f79a72ebb26b	2015-06-25T13:47:37Z	yep	pending		/
 3adda344b6178f78e28df0eb35beb6601b08f7ce	2015-07-06T06:58:01Z	- Missing common resolution 1680x1050 added to resolution list of SDL and Cocoa.	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at f7e67f0, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	f7e67f0
 9e1a82a83046178bc0509e07caf9667b3ad6e057	2015-07-10T08:45:15Z	fix menus muting themselves when the volume is changed	pending		/
 d8bfaf188cb8eb119d54309090c6257155b962fb	2015-07-12T14:57:23Z	Merge pull request #344 from marrub--/oal-bug	pending		/
-eeaea59828d4522b3e24272f5de0a0d1d2a34c12	2015-07-13T06:42:42Z	- fixed: FTagManager::RemoveSectorTags must check if the StartForSector array is large enough to contain the sector whose information is to be removed.	pending		/
+eeaea59828d4522b3e24272f5de0a0d1d2a34c12	2015-07-13T06:42:42Z	- fixed: FTagManager::RemoveSectorTags must check if the StartForSector array is large enough to contain the sector whose information is to be removed.	ported	twin zandronum@58b963341: Proof: scenarios/tagmanager.mjs MAP04 crashed the 0bf8926534b3 build in RemoveSectorTags (p_tags.cpp:106), intermittently since it reads past the list.	b510a50a
 fe2e293d026a2eafd9393ace445fdf1452cdbc44	2015-07-13T07:08:08Z	- added some error checks for trying to create unsupported animations for textures with full path names.	pending		/
 abf11f1a124b4aeb21a389f30342dab5347ca859	2015-07-13T07:49:02Z	- print an error message if GL_ARB_sampler_objects cannot be found.	ported	a809457	a809457
 d58d38a1d31fb37691c6d32df728f1d6a51867ec	2015-07-13T19:36:19Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-585366f8720256019d8da801717e8e56f9de00d7	2015-07-15T07:08:15Z	- fixed signedness warning.	pending		/
+585366f8720256019d8da801717e8e56f9de00d7	2015-07-15T07:08:15Z	- fixed signedness warning.	ported		c8c53b93
 b5033d29401d4f53d8ee5216d82ecec3c7b5d3a4	2015-07-15T07:11:08Z	- fixed a bad check from pull request #325.	pending		/
 19d15d7fc8c9b0aef52db971a24e421aebfd8e31	2015-07-15T07:25:04Z	- fixed: Levels could be exited multiple times, triggering special exit actions for each one.	pending		/
 1e4bec25c530f197baa730046bb3e6a536bcaf4e	2015-07-15T08:15:12Z	- fixed the distance check for unblocking overlapping monsters. It tested for half the radius as distance threshold when it should have used the full radius	pending		/
@@ -1971,8 +1971,8 @@ b613db4ae5c05655a93792671b50b41d4b4c80d4	2015-09-18T15:41:16Z	Revert "Merge pull
 98bdbb1ad8c9d7e06a5a7d2ed2e64779b12c097d	2015-09-19T01:40:19Z	-Fixed PCD_DROP affecting script result value.	pending		/
 e9a3f7f5fc7a823d792774b5303b8c2049763826	2015-09-19T06:46:54Z	Merge pull request #392 from ZzZombo/PCD_DROP-fix	pending		/
 4e1723eeb7fd465fdb6b23245100a06871fef489	2015-09-19T10:32:22Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-49519db257d1c717e6d0cf36bb8dfc5086e79064	2015-09-19T15:29:07Z	Fixed crash in RandomSpawner with -nomonsters	pending		/
-96ff7160463b93fb9d9401274b16f81dfaf097eb	2015-09-19T15:29:59Z	Added error message about missing class to drop from RandomSpawner	pending		/
+49519db257d1c717e6d0cf36bb8dfc5086e79064	2015-09-19T15:29:07Z	Fixed crash in RandomSpawner with -nomonsters	ported	twin zandronum@0f5e07570: scenario randomspawner crashed the binary before it	010e18af
+96ff7160463b93fb9d9401274b16f81dfaf097eb	2015-09-19T15:29:59Z	Added error message about missing class to drop from RandomSpawner	ported		d87f3e0d
 23577f4be8c3cf4cdd9dbf73043bb3702cb77116	2015-09-19T17:11:03Z	nuked opl emulator update	pending		/
 b1b17beaf6b027ef061b3da6683dcf8b351d323a	2015-09-19T17:14:24Z	nuked opl emulator update	pending		/
 c6aceccab32766773f1e19a01e91579e6efe2937	2015-09-19T17:17:26Z	Merge branch 'opl3' of https://github.com/khokh2001/zdoom	pending		/
@@ -2000,7 +2000,7 @@ bad99613760763e588f685fb168b2dbfb10a2aa2	2015-10-10T12:03:14Z	Fixed crash when c
 455b70630dac9187469df823c2725de136959f5a	2015-10-10T15:11:59Z	- Added A_JumpIfCloser NoZ boolean. Disables Z distance checking if true.	pending		/
 21dc45bdecd811983c4ee94549b698fc290fc20b	2015-10-10T20:30:18Z	This did not save out properly...	pending		/
 ba651ebff7a6037222f7ba718e1d02620f5526ca	2015-10-10T21:11:06Z	Merge pull request #410 from MajorCooke/CloserZDisable	pending		/
-fe61b8064adf5f42575d4c57056466d49878b9d1	2015-10-11T06:28:38Z	Fixed MSVC warning in a_randomspawner.cpp	pending		/
+fe61b8064adf5f42575d4c57056466d49878b9d1	2015-10-11T06:28:38Z	Fixed MSVC warning in a_randomspawner.cpp	ported		1f780076
 8e2810865bd3bf81fbd3108398ff03935799cfbe	2015-10-11T07:41:05Z	Merge pull request #411 from alexey-lysiuk/randomspawner_warning	pending		/
 c1496ea1bff7ba228dc2a1670da9a22864fa31e5	2015-10-11T13:55:32Z	Merge pull request #390 from MajorCooke/SetPainThreshold	pending		/
 380b5c1eb79e747a3f404e8ec746aa9a0d819f34	2015-10-11T14:10:33Z	- Added ICESHATTER flag. - Any inflictor with this flag can break ice corpses	pending		/
@@ -2119,7 +2119,7 @@ e5a4031a7010ac42559bfbcab5ffb71d1440e805	2015-12-15T20:47:43Z	Fixed another memo
 37e8221067017a42ec3148c18f1561a5bd304a58	2015-12-15T21:07:10Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 452c82cbe2154eabe6b7d9519c603480f5013913	2015-12-17T16:34:38Z	- Added TF_SENSITIVEZ to A_Teleport. Fail teleportation instead of adjusting the actor to fit if they cannot. - When checking whether to use spot z or floorz, use spot floorz instead of ref for consistency.	pending		/
 792d3906fd2be890a2f17c8a90f097981cdbc143	2015-12-19T19:32:41Z	- fixed: line activation checks for monster activation could be skipped if the lines also were flagged for player activation.	pending		/
-03ccf03b8f3161a601cd223a3abfcf345da79f16	2015-12-21T00:13:21Z	- fixed: UDMF with Doom format specials used the line's ID, not the first arg as the tag parameter for its special.	pending		/
+03ccf03b8f3161a601cd223a3abfcf345da79f16	2015-12-21T00:13:21Z	- fixed: UDMF with Doom format specials used the line's ID, not the first arg as the tag parameter for its special.	ported	twin zandronum@a4ccbf23d: Proof: scenarios/tagmanager.mjs MAP06 carries the sector of the line's ID on the build before it.	afb2e11e
 c51abb01610fc6eb399da8139eca83856fd3a5b5	2015-12-22T16:01:09Z	Added GetMaxInventory ACS function	pending		/
 beb7a8e4a2ace28fda777d59f5fcbda785713e65	2015-12-22T21:21:59Z	- added /LARGEADDRESSAWARE linker flag to CMake project.	pending		/
 7a96f91591b3f1ca76a5986cf46f5446caee2d38	2015-12-22T21:30:07Z	Merge pull request #449 from Blue-Shadow/getmaxinv	pending		/
@@ -2224,10 +2224,10 @@ bd95c5eadf9c1ef79e9ca10de3844d73a1f7b0e5	2016-01-04T10:52:07Z	- fixed: the ambie
 111479063f7120ff2b05b19ee558a0d3c98f8a6d	2016-01-04T20:05:09Z	- fixed a potential overflow issue with calculating a portal's origin point.	pending		/
 d68c97b42abf09f89ab512dcd43cb11ef36bbf48	2016-01-04T20:06:54Z	Merge branch 'zmaster'	pending		/
 a1e0ac0b719d59ce80d29aa01f3deab077695cad	2016-01-05T03:11:46Z	Merge branch 'osx_start_wnd' of git://github.com/alexey-lysiuk/gzdoom into osx_start_wnd	skip	skip: merge commit, no unique content	/
-c9afb199caf363e1387bd9111b31137d5c44d972	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum 3.3 copy: 54f77bd2da)	d128a82b
+c9afb199caf363e1387bd9111b31137d5c44d972	2016-01-05T03:58:00Z	Added "pufftid" parameter for LineAttack.	ported	ACS LineAttack pufftid, one helper for both the activator and the tid branch (Zandronum copy: zandronum@62956c2a7073)	d128a82b
 6be82cc14916d78b0c7851644982db6d2e0256ca	2016-01-05T08:59:59Z	Merge pull request #463 from DaZombieKiller/pufftid	pending		/
 d7501a1414b3e1e37636c7bfbb4a8279b337e3c4	2016-01-05T09:09:40Z	Merge pull request #457 from j-palomo/turn180_controlmenu	pending		/
-b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	the puff null check, with c9afb199ca (Zandronum 3.3 copy: 58e9235da3)	d128a82b
+b2f860d7ae6842ab0bdf168f6b2bb4a03bf5e9b0	2016-01-05T10:07:59Z	- better add a NULL pointer check here.	ported	the puff null check, with c9afb199ca (Zandronum copy: zandronum@d49366e537f1)	d128a82b
 99bf01365249f3db6ef3ea266c1a95f792aa40f2	2016-01-05T10:16:38Z	- added new IWAD name HERETICSR.WAD so that commercial Heretic and Shadows of the Serpent Riders can coexist.	pending		/
 68501dc78452c560d9176b04ec7a32cd39711b7d	2016-01-05T11:23:50Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a5a069a4b0835191652bb211dfa2a57a6f641042	2016-01-05T13:06:07Z	- use DMENUPIC as titlepic in doom2bfg.	pending		/
@@ -2349,7 +2349,7 @@ f9574a98fde94b2c7e32145a142a048d351d0a2c	2016-01-13T23:25:24Z	Fix Timidity's DLS
 629eaa35a32c10ff77a046cabde88a9edd152d51	2016-01-14T02:26:15Z	- Fixed: A_Fade* could destroy live player bodies because it was calling the Destroy() function directly instead of going through P_RemoveThing.	pending		/
 6a87c6cd19051ef3a3d454f2ab808feb028ba343	2016-01-14T05:49:57Z	- Fixed usage of uninitialized value in skybox rendering.	pending		/
 722ef0271916c6646d7fff8651a6e8baed3d3d12	2016-01-14T08:16:39Z	Merge pull request #473 from MajorCooke/FadeFix	pending		/
-dd9e7560c4b16b26c8f7bbf2ba72a51c867f46ba	2016-01-14T17:21:08Z	Added support for puffs to spawn on floors and ceilings if ALWAYSPUFF is used.	pending		/
+dd9e7560c4b16b26c8f7bbf2ba72a51c867f46ba	2016-01-14T17:21:08Z	Added support for puffs to spawn on floors and ceilings if ALWAYSPUFF is used.	ported	twin zandronum@5b00696ac: present since bd71dbb6, taken from uzdoom HEAD: P_RailAttack spawns ALWAYSPUFF puffs on floors and ceilings	bd71dbb6
 16781e47aea55d46abe022a9ccb7134923d80351	2016-01-15T02:41:09Z	Use a 64k stream buffer for all streams, not just net streams	pending		/
 867b7767ef78f8553fdb0afa7378601562c18d3c	2016-01-15T11:56:27Z	- ignore COMPAT_POINTONSIDE in a few places where the side effects of the old P_PointOn*Side functions are either not needed or problematic:	pending		/
 48232f548df77e6983541fdef6493879b0b6a6c0	2016-01-15T11:56:56Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -2370,8 +2370,8 @@ afed5e62ebe7b91970d6805a779ffdd77433fbdc	2016-01-16T11:22:27Z	Fixed intercept ch
 7740a277d3c5c76b8071207ac9bef0ff4623be5f	2016-01-16T12:15:52Z	Merge pull request #478 from alexey-lysiuk/fix_path_traverse	pending		/
 0e645ad173e21d2a7dbe109af66d98dfd2ca20ff	2016-01-16T15:30:53Z	- added a 'non-modify' mode to P_TeleportMove and let A_Respawn use that, rather than letting P_TeleportMove muck around with the actor properties and then have A_Respawn only partially and haphazardly restoring them afterward.	pending		/
 e6b6fd799df51537032ad493602ca680b93924f0	2016-01-16T15:31:20Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-e4a74e91fcd34f9ad0baf59e43d228529d2ddd48	2016-01-16T22:33:19Z	- Puffs should not spawn on floors or ceilings with sky flats without the SKYEXPLODE flag. - Added line horizon check for puffs as well.	pending		/
-421dcacb94a95f3f5468d6f54e11f1829a88953a	2016-01-16T22:36:42Z	Added NULL check to lines.	pending		/
+e4a74e91fcd34f9ad0baf59e43d228529d2ddd48	2016-01-16T22:33:19Z	- Puffs should not spawn on floors or ceilings with sky flats without the SKYEXPLODE flag. - Added line horizon check for puffs as well.	adapted	twin zandronum@2e629a9b7: ours-wins: the sky rule is ComputeRailPuffInSky, which also takes a horizon line as sky; scenario railskypuff	ecbf69ba
+421dcacb94a95f3f5468d6f54e11f1829a88953a	2016-01-16T22:36:42Z	Added NULL check to lines.	ported	twin zandronum@26d900809: pulled forward into ecbf69ba: the line NULL check sits in ComputeRailPuffInSky's caller	ecbf69ba
 724475823c5e9f31353ed682175b831706b04348	2016-01-16T23:14:59Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 de80a8529da42ecae98b0ff20e7a39ad2377a20e	2016-01-16T23:18:44Z	Merge pull request #479 from MajorCooke/skyfix	pending		/
 bfc116b2a4a64662b8c07eaf0053d1b3c7f9ae8b	2016-01-17T09:51:46Z	Fixed exit crash on legacy OS X	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at f7e67f0. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent)	f7e67f0
@@ -2644,7 +2644,7 @@ bddad29acb79ac0e301574ac7603fa9ff2d5ab8f	2016-02-01T00:50:56Z	Merge branch 'Clip
 1d0a3d19c870d0fdcf83b5e7ffa8f2e58d49edd0	2016-02-01T02:45:37Z	Fix a part in maskwallscan that was missed for right-edge exclusivity	pending		/
 0b9aeb33e13418c9049527ec7768cbf101749a1b	2016-02-01T02:52:56Z	Fixed potential divide by 0 when drawing voxels	pending		/
 809a9d801cb69aedc0f449604954aaddd08e89f7	2016-02-01T03:23:45Z	Got a flag backwards	pending		/
-2f4dc1795496ba25217bc0a28325a993039675b0	2016-02-01T04:05:32Z	Add support for face sprite Y flipping	pending		/
+2f4dc1795496ba25217bc0a28325a993039675b0	2016-02-01T04:05:32Z	Add support for face sprite Y flipping	skip	twin zandronum@071188ccc: r_things.cpp, the software renderer's sprite drawer, is its only file and is not in our tree; a negative y scale flipping a sprite in GL and Vulkan is a separate gap, grep RF_YFLIP gl/scene/gl_sprite.cpp	/
 fd2828b1fe614f62faa2be91a105f89d17608896	2016-02-01T09:00:19Z	- fixed typo in monster movement code.	pending		/
 58196f77ff0e41fa8fc2c708c7477a2372a6e35c	2016-02-01T09:00:39Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 e0608f50d17bee0ccd2e8cb8e3a43428d9a285df	2016-02-01T09:45:33Z	- create a separate translation table for Heretic's rain pillar.	pending		/
@@ -3093,15 +3093,15 @@ b8abafb486ac512f26efe68ad64119c2383e3f3b	2016-03-03T12:31:21Z	- disabled all the
 2587e82a671ee9b35fe3fc7a1f8062f4b5b47785	2016-03-03T15:15:42Z	. removed some redundant computation of a trace's hit position.	pending		/
 6d68f69674966b7e48941488448d7edb930abcdd	2016-03-03T19:27:52Z	Use lambdas for more concise code	pending		/
 e3d35f4fe8ada73dced41746f4b94045787d7ce4	2016-03-03T23:31:01Z	PClassPointer should use its own type as the metatype in the type table	pending		/
-97821a3036f7ba8281f88d39bf2d750bf84c5c61	2016-03-03T23:31:12Z	21:9 aspect ratio support	pending		/
-73c7e513912704e91fac53fab72f874767a5b594	2016-03-03T23:31:12Z	fix: 21:9 AR stretching in intermission, end level screens	pending		/
-afb1d438c2611c4e7564c5114868eced67dd6cc0	2016-03-03T23:31:12Z	21:9 fix for black bars overlapping fullscreen images	pending		/
-3ac49682184b9092e3b02a898c674b6e392d3ffd	2016-03-03T23:31:12Z	Slightly improve 21:9 ar	pending		/
-a4705c84047baee72f23db8709a686e8a663a843	2016-03-03T23:31:12Z	vid_listmodes crash fix	pending		/
-a28c8091fc329bb1ef8acc12f281f360851c559f	2016-03-03T23:31:12Z	UI support for 21:9	pending		/
-79f07143410af621bde29efaba21d4a4d340e1dc	2016-03-03T23:32:30Z	Update ratios[] tables for SDL and Cocoa	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at f7e67f0, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	f7e67f0
-16d8af6b77cb8468c5191750150bfd684c7a1158	2016-03-03T23:59:55Z	Add some 21:9 resolutions	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at f7e67f0, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	f7e67f0
-3c2ed52442cb3eac66ddaeb191b598da1d47fe23	2016-03-04T00:00:06Z	Fix 21:9 base width and height values	pending		/
+97821a3036f7ba8281f88d39bf2d750bf84c5c61	2016-03-03T23:31:12Z	21:9 aspect ratio support	adapted	twin zandronum@bab77c3aa: ours-wins: bucket 6 and vid_aspect 6 are features/aspect-ratio's ComputeRatioBucket and ComputeForcedRatioBucket (1e26dcb8); the sizing hunks in shared_sbar.cpp, r_main.cpp, r_utility.cpp, v_draw.cpp and v_video.cpp are UZDoom's continuous aspect (72bbc2cb), which sizes by the true ratio instead of a BaseRatioSizes row per bucket	1e26dcb8,72bbc2cb
+73c7e513912704e91fac53fab72f874767a5b594	2016-03-03T23:31:12Z	fix: 21:9 AR stretching in intermission, end level screens	adapted	twin zandronum@02c2c8a3f: ours-wins: the continuous aspect's ActiveRatio and the Aspect* functions size intermission and end screens by the true ratio, with nothing to special-case for 21:9	72bbc2cb
+afb1d438c2611c4e7564c5114868eced67dd6cc0	2016-03-03T23:31:12Z	21:9 fix for black bars overlapping fullscreen images	adapted	twin zandronum@d80e4191a: ours-wins: fullscreen images letterbox from the continuous aspect's true ratio, so no 21:9 branch	72bbc2cb
+3ac49682184b9092e3b02a898c674b6e392d3ffd	2016-03-03T23:31:12Z	Slightly improve 21:9 ar	adapted	twin zandronum@5bb2c8e48: ours-wins: BaseRatioSizes gave way to AspectBaseWidth, AspectBaseHeight and AspectMultiplier, which take any ratio	72bbc2cb
+a4705c84047baee72f23db8709a686e8a663a843	2016-03-03T23:31:12Z	vid_listmodes crash fix	ported	twin zandronum@0629232ea: pulled forward into 1e26dcb8 with bab77c3aab00, which would overrun its ratios[] without it	1e26dcb8
+a28c8091fc329bb1ef8acc12f281f360851c559f	2016-03-03T23:31:12Z	UI support for 21:9	adapted	twin zandronum@0cb62a890: menu_screenratios and the modes the menu lists go through features/aspect-ratio's ComputeMenuRatioFilter	6ac536df
+79f07143410af621bde29efaba21d4a4d340e1dc	2016-03-03T23:32:30Z	Update ratios[] tables for SDL and Cocoa	ported	twin zandronum@8787d4a28: the SDL ratios[7] is 1e26dcb8's; uzdoom@79f071434's Cocoa half came with the vendored Cocoa backend (f7e67f04)	f7e67f04,1e26dcb8
+16d8af6b77cb8468c5191750150bfd684c7a1158	2016-03-03T23:59:55Z	Add some 21:9 resolutions	ported	twin zandronum@69f8e4816: the four sizes are in posix/sdl/sdlvideo.cpp (ef449dd9); uzdoom@16d8af6b7's Cocoa half came with the vendored Cocoa backend (f7e67f04)	f7e67f04,ef449dd9
+3c2ed52442cb3eac66ddaeb191b598da1d47fe23	2016-03-04T00:00:06Z	Fix 21:9 base width and height values	adapted	twin zandronum@df02f490e: ours-wins: there is no BaseRatioSizes row to correct; AspectBaseWidth and AspectBaseHeight compute 21:9's from the ratio	72bbc2cb
 81b634a798a1ef49963b921e9373e0ed2c293851	2016-03-04T00:13:16Z	- preparation for making Trace portal aware: Added a new flag Trace_PortalRestrict, so that I could disable portals without static offset for P_LinePickActor and A_CheckLOF, because both depend on the target info being retainable which requires a static offset.	pending		/
 9f805daa735bec6cbefef769393da791abf786ba	2016-03-04T00:13:16Z	- added missing handling of ALF_PORTALRESTRICT flag.	pending		/
 0c37a90e32b8c7e1f0ae8f208d90c5ed663d8074	2016-03-04T00:13:17Z	- moved the initial 3D floor check from Trace to TraceTraverse, because that's where it will be needed for handling portals.	pending		/
@@ -3114,7 +3114,7 @@ e4a74f4bbe2574b10edd482de3b7ba21c77a9105	2016-03-04T02:26:41Z	Fix memory leak fr
 93323b64f8bb43136f17d1362c31f07e94fbbd9a	2016-03-04T09:16:23Z	- explicitly force SSE2 for Visual Studio 64 bit projects so that the advanced instruction sets don't get activated by accident.	pending		/
 7ceb6d86dd2ea769f2b09dcaa7e47b4edca35667	2016-03-04T09:39:10Z	- fixed compilation.	pending		/
 9b23b410219b035fcbe245647ccad70f841436cd	2016-03-04T10:32:15Z	Added detection for broken WAD files	pending		/
-af1b70376b04418a48e3047b614c2196940d005f	2016-03-04T10:47:15Z	- added 21:9 handling to GL code.	pending		/
+af1b70376b04418a48e3047b614c2196940d005f	2016-03-04T10:47:15Z	- added 21:9 handling to GL code.	adapted	twin zandronum@3e8240c5d: ours-wins: gl_scene.cpp and gl_weapon.cpp take the continuous WidescreenRatio through the Aspect* functions, so 21:9 needs no case of its own	72bbc2cb
 b427f27e3b52d6469188af26580a344691df020d	2016-03-04T13:09:26Z	- fixed: line portal rotations were not set for all types.	pending		/
 dbd89c2702987278536bb85c346b54df18a07561	2016-03-04T13:10:13Z	- refactoring of portal grouping for the renderer, to allow more efficient clipping.	pending		/
 e9e30a6431e151f84b5aa1cb22c276f89f7cd56e	2016-03-04T13:10:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -4533,7 +4533,7 @@ e22043a25b7f2d61ddcff44b6b014233022ba5eb	2016-08-22T07:46:00Z	Fixed: A_FaceMovem
 7ba5acfb35aeeda77458895c10e0dae6a9b3bc8a	2016-08-22T12:00:25Z	- added quad drawer interface so that this part can be done without altering a vertex buffer.	pending		/
 250be72939aec68b5f27e6efdf956a33c482c5ea	2016-08-22T13:31:23Z	- added handling for drawing with uniform vertices. It draws something but in the wrong place. Right now I have no idea what's happening...	pending		/
 1594cc95700ba77af4956899eb154002d551dcf7	2016-08-22T17:25:13Z	Only use KHR_debug if available	pending		/
-276fb7dbb2f43fcb0db6a5fc276495af6254316f	2016-08-22T20:00:44Z	Add vid_maxfps support for Windows and Linux	pending		/
+276fb7dbb2f43fcb0db6a5fc276495af6254316f	2016-08-22T20:00:44Z	Add vid_maxfps support for Windows and Linux	adapted	twin zandronum@a5e5b25fb: no-file-overlap: our limiter is features/frame-limit, called from the frame loop, so neither swap path changes; ours-wins: vid_maxfps limits every renderer and the browser through one tested ComputeFrameLimit, where this sleeps only in GL's win32gliface.cpp and sdlglvideo.cpp swaps	a8cc9c46
 b946114145fcaa3d62a25fb6a2d41ceaa670b3eb	2016-08-22T20:00:45Z	- removed unused variable.	pending		/
 9555617816206fbe62dee5869aaa0c90223074b3	2016-08-22T20:02:02Z	- fixed: The default for position.w is 1, so gl_quaddrawer.cpp needs to set this, too, for the uniform vertex positions.	pending		/
 13a583faeed26812d0ab957becbbc7db168fc736	2016-08-22T20:02:44Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -4541,7 +4541,7 @@ b946114145fcaa3d62a25fb6a2d41ceaa670b3eb	2016-08-22T20:00:45Z	- removed unused v
 a18588692418bec02f8c62f8e02fc369136aad17	2016-08-24T07:26:11Z	Added compatibility handling for fog and dynamic lights used together	pending		/
 52b51e79b9f40b924c9bbd656312f94b57f75abc	2016-08-24T07:27:14Z	Fixed missing decals in compatibility renderer	pending		/
 2f893af857a5d70031f29fb35a6b07eff01b7f0a	2016-08-24T08:44:33Z	Fixed palette tonemap mode for OpenGL 2.x	pending		/
-f79c442df533e26888eb748e14041eb71b1e6ab7	2016-08-24T13:44:40Z	Fixed compilation of SDL backend	pending		/
+f79c442df533e26888eb748e14041eb71b1e6ab7	2016-08-24T13:44:40Z	Fixed compilation of SDL backend	adapted	twin zandronum@30f4a0aec: no-file-overlap: the SDL half of a5e5b25fbe12's limiter, which features/frame-limit replaces; ours-wins: one limiter for every renderer	a8cc9c46
 9525d3690f64ac06c8f5cb083c122b4bbeaf1cf5	2016-08-25T04:25:05Z	Added gl_light_math and changed pixelpos + lights to be in eye space	pending		/
 48430d9b1a648508f068b7714b68e6cb32a8bfba	2016-08-25T19:15:53Z	- don't assume that deserializing an actor will result in a valid pointer.	pending		/
 9ca6764556aa07e94d5928ae7a8ad7d0b5aaed82	2016-08-25T19:41:17Z	Revert "- removed STAT_INVENTORY."	pending		/
@@ -4678,7 +4678,7 @@ d3246be48805bde32349984141b484857bf4591a	2016-09-10T10:24:13Z	- draw wall sprite
 be647dc7b267e6ee75018218235ca0566f0cd8d7	2016-09-10T22:45:40Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 a0b6a0275c5c521455e843709153ed1d7270435b	2016-09-11T09:09:40Z	Fix random texture sampling bug	pending		/
 d3d8180f578924b275defd937e10cd3cb370922e	2016-09-12T11:04:36Z	Resize framebuffer in windowed mode to match the client area	pending		/
-b003c47e3e02bed94b76757a512b195b1d7d70c8	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	pending		/
+b003c47e3e02bed94b76757a512b195b1d7d70c8	2016-09-12T11:37:05Z	Improve CheckRatio to always return the closest ratio	adapted	twin zandronum@a48630d21: features/aspect-ratio's tested ComputeRatioBucket takes the nearest ratio, with fabsf where this calls abs on a float	b914d88b
 5720634045b0812bc838eb4671a4039917582a94	2016-09-12T11:59:01Z	Add ActiveRatio to be used where CheckRatio is used today	ported	ActiveRatio + ActiveFakeRatio added alongside CheckRatio; our vid_aspect guard stays 1-5 (no 21:9 mode) though the forcedRatioTypes table is carried whole	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c
 6d4e4dad25ffa3978f5bf54d0fc60dd59b29d119	2016-09-12T12:37:10Z	BaseRatioSizes replacement functions	ported	continuous-aspect replacements for the BaseRatioSizes columns; AspectPspriteOffset uses double(FRACUNIT) since ours is a zx::Fixed	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c
 5b438d220f918e4d5b604e970f0f45f96963e8d1	2016-09-12T13:51:50Z	Switch from ratio enum to float	adapted	consumers switched to float; r_swrenderer/r_things hunks N/A (no software renderer); gl_scene + gl_weapon bucket-indexed tables have no upstream counterpart and were replaced with computed values; ultrawide->16:9 clamp adopted, which we lacked; CheckRatio kept for vid_listmodes/videomenu	72bbc2cbafc5e80d0146aa61053a5fd4fe00c18c
@@ -4725,7 +4725,7 @@ d128e28044cae54673731e68543605a0a01d31a8	2016-09-14T19:05:45Z	Merge branch 'mast
 95fef442002621c3b85f0d3ea95a44d64db3b429	2016-09-14T22:31:34Z	Merge remote-tracking branch 'gzdoom_upstream/master' into lightmath	pending		/
 976cf07f9c7abcca600209d1a803e09132a50812	2016-09-15T00:26:37Z	Merge http://github.com/coelckers/gzdoom	pending		/
 48f491cfd12ddc489faf296898f9db050e907767	2016-09-15T05:52:53Z	Fix video mode selection bug	pending		/
-0d27996a648a9668650f396b9de544371074f820	2016-09-15T05:52:53Z	Replace CheckRatio with AspectTallerThanWide in DrawHUD	pending		/
+0d27996a648a9668650f396b9de544371074f820	2016-09-15T05:52:53Z	Replace CheckRatio with AspectTallerThanWide in DrawHUD	ported		9e7a05e9
 ac70f77e44c17115f908d85275d868ada936e582	2016-09-15T19:09:36Z	Added the following ccmds:  actorlist, actornum, monsternum, itemsnum, countitemsnum Modified the following ccmds:  monster, items, countitems	pending		/
 a83477e549c24c26448039d9ed56cd74bf500c05	2016-09-15T23:18:56Z	Merge http://github.com/rheit/zdoom	pending		/
 3c1868f7e6bfff93def8884f611d58c796273b6a	2016-09-16T00:53:19Z	Fix wrong flash rectangle size after window resize	pending		/
@@ -7706,7 +7706,7 @@ fc125f7eafcac65805f3b62f9ae13eca774f0c47	2017-02-28T13:30:14Z	- reworked the obi
 bc0ffc4185d4c5c42e10b488b925cf2aec2be230	2017-02-28T13:33:46Z	- removed access to the PlayerPawn's DisplayName variable. This one has implicit semantics, so wherever a displayable name is needed GetPrintableDisplayName should be called instead to allow later refactoring of the internal handling.	pending		/
 168627f549a353794d74aa83452b9139c5366f71	2017-02-28T13:38:50Z	- native meta variables are not needed anymore. They were only a temporary aid to properly handle this, but now all have been redone.	pending		/
 5f6da0d2223569ea9f5c346f791ac7e913236d0b	2017-02-28T13:44:18Z	fixed double allocation of metadata.	pending		/
-bb1709228cb0e9b66150094d9d836e50468772b4	2017-02-28T13:46:30Z	Changed FOV from a CCMD to a CVar, allowing players' FOV settings to persist. Also exported SetFOV to PlayerInfo for ZScript.	pending		/
+bb1709228cb0e9b66150094d9d836e50468772b4	2017-02-28T13:46:30Z	Changed FOV from a CCMD to a CVar, allowing players' FOV settings to persist. Also exported SetFOV to PlayerInfo for ZScript.	partially-deferred	twin zandronum@0daa6c6df: ours-wins: fov has been a CVar since 4bc203ed, with tested permission rules, a rollback of refused writes, DEM_FOV for the arbitrator under a lock, and only the local player's own FOV on spawn (77a59437), where 3.3's is CVAR_USERINFO, sends DEM_MYFOV under a lock and spawns every player with the local fov; deferred: zscript, PlayerInfo.SetFOV (UZDoom's player.txt export, commented out in Zandronum's) would let ZScript set a player's FOV, refused under docs/zscript-insulation.md	4bc203ed,77a59437
 314a64252768c504c1c47ce2a6bf7c317645fdf7	2017-02-28T13:47:00Z	Merge branch 'meta'	pending		/
 dc6c91042bb1c34330774a4677fcb33cd785b124	2017-02-28T17:47:18Z	- fixed misordered ACS functions.	pending		/
 12915b5f6e27e36e2eb69356114f287347df2134	2017-02-28T20:45:47Z	- use an inventory flag to decide what items are slipped by DF_NO_HEALTH and DF_NO_ARMOR. With all the changes over the last 10 years this had become too spotty. - use an enum type for ItemFlags, just like it was done for actor flags. Since the flag word is almost full it may soon be necessary to add a second one and then this kind of security check may become necessary.	pending		/
@@ -10259,7 +10259,7 @@ fbbf2f83465d5502ef004f9bbd6069ba19562a43	2018-04-30T19:42:36Z	- fixed a few thin
 ecb1578a7ac94b893a488389c064b79c9b2da753	2018-04-30T21:06:48Z	- changed model lighting setup to be done in the processing pass.	pending		/
 7aea0108924928e3ead6f776f425bc15fc8ebf95	2018-04-30T21:48:16Z	- added a sector index to the subsector struct.	pending		/
 af76e9a9c4a58c3d68aaea02d2bec20c1089feb9	2018-04-30T21:48:59Z	- allow animated title pics.	pending		/
-b35213741f3d0aa9c07365daa755ba2f47401444	2018-05-01T05:48:59Z	- don't force the renderer to remain active in windowed mode when in the background.	pending		/
+b35213741f3d0aa9c07365daa755ba2f47401444	2018-05-01T05:48:59Z	- don't force the renderer to remain active in windowed mode when in the background.	adapted	twin zandronum@38acb473f: ours-wins: fua_render_in_background, off by default, keeps presenting in a window or fullscreen and also lifts the background pause and idle priority, which vid_activeinbackground leaves in place	3fb0acfa
 3c49804c6c17aa7c5bc5d895e64fc37dcc1c4678	2018-05-01T07:02:24Z	- some Transfer_Heights related optimizations.	pending		/
 f49c6cbde2028f1adfbe24f4f4a2a0525f85acb7	2018-05-01T07:47:09Z	- use sector_t::GetHeightSec consistently and optimize it.	pending		/
 9bdb0f2e49b0e47622326232ba697f0a8d688fc0	2018-05-01T09:29:29Z	- renamed the flag bits for sector_t::MoreFlags, so that they are easier to distinguish from sector_t::Flags. - precalculate if a sector's floor and ceiling plane overlap. This avoids rechecking this for each single call of hw_FakeFlat. - vertices must be marked dirty every time they change after map setup. That means that ChangePlaneTexZ must do this as well, because it cannot rely on interpolation taking care of it. - Having a 'dirty' argument for SetPlaneTexZ's ZScript version makes no sense. If the value changes from the script side the vertices must always be marked to be recalculated.	pending		/
@@ -15433,7 +15433,7 @@ c3772fe2036a8778d2e7198570a3ab0658e2e88e	2021-08-11T22:45:59Z	- changed FString 
 f9f48c4a95725966c20fda648eaf841a9d32888d	2021-08-12T18:07:04Z	- replaced the alt HUD's index font with a sheet based variant.	pending		/
 73f73cdf7cfe24083063b218b3e325fdaeedd950	2021-08-12T18:28:04Z	- added a null check to CheckWeaponChange.	pending		/
 92a3731f2064a1cba6c2ef3e248e6fff68df90f1	2021-08-13T12:11:58Z	Merge remote-tracking branch 'origin/master' into gles2_merge	pending		/
-d64dd1f631fc06e2d453bc18f56c1ba16828fedf	2021-08-14T07:04:02Z	Add FOV slider to the display options menu	pending		/
+d64dd1f631fc06e2d453bc18f56c1ba16828fedf	2021-08-14T07:04:02Z	Add FOV slider to the display options menu	adapted	twin zandronum@17971b9c0: no-file-overlap: our slider is in menudef.txt's FUAFovOptions; ours-wins: it runs 5 to 179 within the server's limits, where this one runs 75 to 120	4bc203ed
 109069f718a6289446fc0510d565df38ff7a1109	2021-08-14T07:57:23Z	- removed the unused palette parameter from the V_GetColor family of functions.	pending		/
 13bdd324e16820ced3e23783f3ee2d49d0ff50dd	2021-08-15T06:47:04Z	hud models: add nullptr check for psprites without caller.	pending		/
 2096fefcee1d9b5156c842166edc7d42dfb0796e	2021-08-18T16:31:47Z	Merge remote-tracking branch 'origin/master' into gles2_merge	pending		/
@@ -18367,7 +18367,7 @@ c26490a3958fa53bbecb4378c41775c0c00276bc	2025-09-23T05:38:57Z	Fix linker config	
 4505e758f079540f041ba10613e0c064a993a5ed	2025-09-23T05:38:57Z	Link MoltenVK	pending		/
 1ce1e1f6be3934e930700f0f5230b77e6c17df70	2025-09-23T05:38:57Z	Turn off gles by default for apple	pending		/
 376bef703321ae6a7589246aa420b03986910f45	2025-09-23T14:34:50Z	Fix array oob	pending		/
-67b3ea2d01949a69ae2459f9eb4c144fc87331b1	2025-09-25T02:53:39Z	attempt to remove class limit	pending		/
+67b3ea2d01949a69ae2459f9eb4c144fc87331b1	2025-09-25T02:53:39Z	attempt to remove class limit	adapted	twin zandronum@9cee7e80e: ours-wins: SAVEVER 4527 gates the class's width, which theirs changed without a bump; savecompat loads 4526 saves alike; scenario netclasses	0e905214
 0beba423026d2391fda81a7ed40015bda6524eb1	2025-09-27T01:24:49Z	Updated Heretic+Hexen Kex port vanilla WAD locations	pending		/
 896a642e24356fdfc8e98b543216d0b30430ddd3	2025-09-28T21:41:17Z	Fix incorrect usage of strcmp	pending		/
 39cd9508853207450c490a16c77a3f378b51bfd9	2025-09-28T21:41:17Z	Add support for dumb terminals	pending		/
@@ -18466,8 +18466,8 @@ c0f2b35ee626f52274d07c4c0d20568914bfac70	2025-10-19T21:51:13Z	Added two OPN2-LLE
 24c0029af0b9e9e2dff40f6c9a57b0f52b0dc1c4	2025-10-19T21:51:13Z	Fix drawing wide char for TXT_QUITENDOOM	pending		/
 6f136f50e8c1386b08886324b58a60ed33fd06f1	2025-10-19T21:51:13Z	Fix wide char input. KeyChar should be unsigned for full 16-bit unicode	pending		/
 8f8acb56bd2a2bc2aa807bab23692c9554e17b1d	2025-10-19T21:51:13Z	Added support for massacre special 515 used by Heretic+Hexen's UMAPINFO definitions.	pending		/
-3ca5a550fa380e463907c067607c37ab0f337d90	2025-10-19T23:19:44Z	Add support for the "BUSY" script flag. This flag allows the script to skip the runaway limit.	pending		/
-d26d39ba729220f64d93a71790f2ccc8ec54e56c	2025-10-19T23:19:44Z	Fixed unnecessary runaway counter increase and uninitialized value.	pending		/
+3ca5a550fa380e463907c067607c37ab0f337d90	2025-10-19T23:19:44Z	Add support for the "BUSY" script flag. This flag allows the script to skip the runaway limit.	ported	twin zandronum@b8fe8ef13: scenario acsbusy: a BUSY script runs 2.5 times the limit to its end, an unflagged one is still terminated	d38193a7
+d26d39ba729220f64d93a71790f2ccc8ec54e56c	2025-10-19T23:19:44Z	Fixed unnecessary runaway counter increase and uninitialized value.	adapted	twin zandronum@c34601595: ours-wins: ptr starts null as theirs, but every p-code still counts, so acsprofile lists BUSY scripts and a script not found stays held to the limit; acsbusy's profile check fails on theirs	40f561ee
 dd3fe06d3714ec3182dff599d8e7489fcddd7686	2025-10-20T05:47:23Z	Updated tooltip rendering	pending		/
 0035eef03c46d0e4124ba91217f4421605cfe56b	2025-10-20T05:47:23Z	Don't allow potentially null tooltip fonts	pending		/
 78901b55debfec0339d2ea996162894154f038e7	2025-10-20T05:47:23Z	Added versioning to tooltip virtual functions	pending		/
@@ -18553,7 +18553,7 @@ bca5c31ac4ab384b58c04094480b293f50df7aed	2025-11-05T20:29:58Z	Fix string OOB acc
 fcba21aebdbe0ef32ed79a9dd3d7426f9fe8a927	2025-11-05T20:31:07Z	Fixed incorrect stat velocity reading	pending		/
 65c25c4e53eacaf9844a67a040dbfc561dacf136	2025-11-05T20:31:07Z	Added support for reading multiple player velocities	pending		/
 4be5c66d38a0b51014d962ceac1182cd9e3f6c3d	2025-11-05T21:58:05Z	Fixed string OOB access when building network addresses	pending		/
-6b4b060b04d70e69d397b8cba875474fc5091bb7	2025-11-06T17:30:37Z	More visually coherent mouse cursors for the vanilla games	pending		/
+6b4b060b04d70e69d397b8cba875474fc5091bb7	2025-11-06T17:30:37Z	More visually coherent mouse cursors for the vanilla games	ported	twin zandronum@2af8e77c0: art only, shown when vid_cursor names one since our default is the OS pointer; test cursors.test.mjs holds each to I_SetCursor's 32 by 32	b6e1ce0c
 b0ddff753ac608b06cad507832962408b8b4b654	2025-11-06T17:54:29Z	fix typo (>= instead of > in length checks) in save compat code	pending		/
 58cf1ea7ed1bbf2defeeef53db7076cf585bea9c	2025-11-07T02:03:32Z	Skin dir follows xdg stuff	pending		/
 459e4eebcd78549c4f620d56088f8c9422565abc	2025-11-07T02:03:32Z	Removed unused constant	pending		/
@@ -18564,8 +18564,8 @@ b0ddff753ac608b06cad507832962408b8b4b654	2025-11-06T17:54:29Z	fix typo (>= inste
 c0f0d6b47b696680d04be4699c575be7febbe0cf	2025-11-08T04:15:04Z	Cleanup CI	pending		/
 81845e887cbf18e799d08e634d545db164612b44	2025-11-09T20:24:50Z	#378 Guard against menu out of bounds crash	pending		/
 f4074930b26e9d399459d0eadc401fdfaca0d2d5	2025-11-09T20:25:05Z	Fix for #347	pending		/
-f2eeb1f50eb477944adb1d805245681e89ceb6c2	2025-11-11T18:22:10Z	polish new cursor gfx a bit	pending		/
-e3db4183fe36babe2f93c08f6702d313ac81400b	2025-11-11T18:22:10Z	more chex/strife cursor tweaks	pending		/
+f2eeb1f50eb477944adb1d805245681e89ceb6c2	2025-11-11T18:22:10Z	polish new cursor gfx a bit	ported	twin zandronum@7407b2c47: art only	c2b6b5fe
+e3db4183fe36babe2f93c08f6702d313ac81400b	2025-11-11T18:22:10Z	more chex/strife cursor tweaks	ported	twin zandronum@211fc3575: art only; every cursor now matches Zandronum's	323dd612
 61280935c8d0c023529bdc90c47425d570a48aff	2025-11-11T23:32:44Z	Build translation files from standard translation database (#242)	pending		/
 886fe11f7c981200a94cc150f1ce48bf8dc006d3	2025-11-13T01:27:43Z	Client-sided dynamic lights	pending		/
 99427356fd63c953ff4dcb6adffdd4c785263a6d	2025-11-13T15:36:54Z	Fixed duplicate splash spawns	pending		/

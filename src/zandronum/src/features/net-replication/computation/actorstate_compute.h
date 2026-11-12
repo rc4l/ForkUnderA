@@ -20,6 +20,15 @@ bool ComputeAddPendingHealth(std::vector<int> &pending, int netId);
 // [Doruk-Aksoy] The height a death is sent at: a walker killed after stepping onto a higher floor, before the next tic's P_ZMovement raised it there, stands below it, and that raise came after the send, so clients kept a corpse a step low on narrow stairs; one with gravity is sent standing on the floor.
 int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity);
 
+// [rc4l] How a server sends a puff: with no net id, with one, or to each client in turn.
+enum PuffSend { kPuffNoNetID, kPuffWithNetID, kPuffEachClient };
+
+// [rc4l] A puff in any state but its spawn state goes with no net id, one whose sounds or obituary need it with one, else to each client.
+int ComputePuffSend(bool spawnState, bool hitThingSeeSound, bool attackSound, bool temporaryObituary);
+
+// [rc4l] Whether a client is left out of a puff sent to each in turn: the shooter itself, predicting a NONETID puff.
+bool ComputeSkipsPuffFor(bool isShooter, bool noNetId, bool clientSidePuffs);
+
 }} // namespace zx::netreplication
 
 #endif // ZX_ACTORSTATE_COMPUTE_H

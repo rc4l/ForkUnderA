@@ -69,12 +69,16 @@ TEST(ComputeWorldActorJson, PositionsToAThousandthAndEveryField)
 	r.x = 1.5;
 	r.y = -2.25;
 	r.z = 0.0005;
+	r.prevX = 1;
+	r.prevY = -2;
+	r.prevZ = 0;
 	r.floorZ = -64;
+	r.floorClip = 10;
 	r.velX = 3;
 	r.angle = 90;
 	r.health = 60;
 	r.sprite = "TROOA";
-	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"fz\":-64.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sprite\":\"TROOA\"}",
+	EXPECT_EQ("{\"netid\":12,\"c\":\"DoomImp\",\"x\":1.500,\"y\":-2.250,\"z\":0.001,\"px\":1.000,\"py\":-2.000,\"pz\":0.000,\"fz\":-64.000,\"clip\":10.000,\"vx\":3.000,\"vy\":0.000,\"vz\":0.000,\"angle\":90.000,\"health\":60,\"player\":-1,\"sx\":1.000,\"sy\":1.000,\"dsx\":1.000,\"dsy\":1.000,\"sprite\":\"TROOA\"}",
 		ComputeWorldActorJson(r));
 }
 
@@ -98,8 +102,17 @@ TEST(ComputeSectorStateJson, HeightsLightColoursWithoutAlphaAndFlats)
 	r.yScaleCeiling = 0.5;
 	r.angleFloor = 90;
 	EXPECT_EQ("{\"i\":3,\"floor\":8.000,\"ceiling\":128.250,\"light\":160,\"color\":1122867,\"fade\":4214880,\"desat\":12,\"floorTex\":\"FLOOR4_8\",\"ceilingTex\":\"CEIL3_5\","
-		"\"gravity\":0.500,\"friction\":0.906,\"special\":1024,\"reflect\":[0.250,0.000],\"scale\":[2.000,0.000,0.000,0.500],\"rotation\":[90.000,0.000]}",
+		"\"gravity\":0.500,\"friction\":0.906,\"special\":1024,\"reflect\":[0.250,0.000],\"scale\":[2.000,0.000,0.000,0.500],\"rotation\":[90.000,0.000],\"lights\":[]}",
 		ComputeSectorStateJson(r));
+}
+
+// [rc4l] A sector under a 3D floor lists its own top and each floor's, which a client must renew when a plane moves.
+TEST(ComputeSectorStateJson, ALightListGivesEachEntrysHeight)
+{
+	SectorStateRow r;
+	r.lightTops = { 192, 64.5 };
+	const std::string json = ComputeSectorStateJson(r);
+	EXPECT_NE(std::string::npos, json.find(",\"lights\":[192.000,64.500]}"));
 }
 
 TEST(ComputeSideStateJson, TexturesLightAndFlags)

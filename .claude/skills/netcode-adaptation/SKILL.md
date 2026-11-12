@@ -110,6 +110,17 @@ Handle it in two steps:
 The tell is *where the diff lands*, not the commit title: `d_net.cpp`/ticcmd/`NetUpdate` internals →
 transport (skip); `p_*` actor/gameplay state → possibly real (adapt).
 
+## When the commit is Zandronum's own netcode
+
+A `zandronum-stable` commit (the Zandronum ledger) is already client/server and server-authoritative,
+so none of the lockstep reasoning above applies. What differs is the transport and the modules around
+it: ours carries the netcode in `features/net-*` (transport, replication, client) and refuses stock
+Zandronum peers. So port the **behaviour**, keep our transport, and fit it to the module that owns
+that job here rather than re-adding Zandronum's version beside it. Where both exist, Zandronum's
+design is taken only if it is the better one (`sequential-backport`, "The Zandronum ledger"). A
+changed or new server command gets a wire test (`netcode-testing`), and the result is judged with
+`fuactl netplay` and `netdiff` (`netplay-testing`), never single-player alone.
+
 ## Composition — this skill chains with the porting skills
 
 A change rarely arrives pre-labelled "netcode." It reaches this skill *through* another:

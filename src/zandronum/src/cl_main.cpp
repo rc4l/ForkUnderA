@@ -58,6 +58,7 @@
 #undef OPAQUE
 #endif // _WIN32 && OPAQUE
 
+#include <memory>
 #include "a_action.h"
 #include "a_sharedglobal.h"
 #include "a_doomglobal.h"
@@ -146,7 +147,7 @@
 #include "gameconfigfile.h"
 #include "wi_stuff.h"
 
-#include "features/fov-interp/computation/fovrequest_compute.h"
+#include "features/fov-interp/fovcvar.h"
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeMirrorsToOwnCVar
 #include "features/decals/decals.h"   // [rc4l] ShootMark, the server's script decal
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
@@ -154,6 +155,7 @@
 #include "features/net-client/netclient.h"   // [rc4l] the packets applied, for the render copy
 #include "features/net-client/rejoin.h"   // [rc4l] a player the map command sent back comes back playing
 #include "features/net-client/computation/packetheader_compute.h"   // [rc4l] a stray packet dropped, not stored
+#include "features/net-client/computation/movedrain_compute.h"   // [rc4l] the move buffers' drain
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
 #include "features/acs-setmusicvolume/computation/musicvolume_compute.h"   // [Doruk-Aksoy] FuaSetMusicVolume's factor
@@ -196,6 +198,46 @@ EXTERN_CVAR( Bool, cl_telespy )
 EXTERN_CVAR( Bool, sv_unlimited_pickup )
 
 //*****************************************************************************
+//	STRUCTURES
+
+// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89, zandronum@43098555ff613adecf40bd1708a218298af6e5ed, zandronum@d04a70a98f3cc11f9ba6e05b61f5a35b4b016c06 and zandronum@1c0614e08d1053a084be625d57777a84cb138173: each player's movement commands of one kind held until a tic runs them, which CLIENT_TickCommandBuffers drains by ComputeMoveDrainOrder.
+struct CommandBuffer
+{
+	TArray<std::shared_ptr<ServerCommands::BaseServerCommand>> cmds;
+	unsigned int numConsistentArrivals;
+	int lastArrivalTick;
+
+	// [AK] A toggle for when buffered commands need to be executed.
+	static bool executeBufferedCMDs;
+
+	CommandBuffer( void ) { Reset( ); }
+
+	// [rc4l] Holds the command when ComputeBuffersCommand says it waits, and says whether it did.
+	template <class Command>
+	bool BufferIfNecessary( const Command &command )
+	{
+		const bool mustBuffer = zx::netclient::ComputeBuffersCommand( executeBufferedCMDs, CLIENT_UsingCommandBuffers( ));
+
+		if ( mustBuffer )
+		{
+			cmds.Push( std::make_shared<Command>( command ));
+			lastArrivalTick = gametic;
+		}
+
+		return mustBuffer;
+	}
+
+	void Reset( void )
+	{
+		cmds.Clear( );
+		numConsistentArrivals = 0;
+		lastArrivalTick = 0;
+	}
+};
+
+bool CommandBuffer::executeBufferedCMDs = false;
+
+//*****************************************************************************
 //	CONSOLE COMMANDS/VARIABLES
 
 #ifdef	_DEBUG
@@ -213,6 +255,18 @@ CVAR( Bool, cl_keepserversettings, false, CVAR_ARCHIVE | CVAR_DEBUGONLY )
 
 // [JS] Always makes us ready when we are in intermission.
 CVAR( Bool, cl_autoready, false, CVAR_ARCHIVE )
+
+// [AK] Buffers incoming commands that control a player's movement, so that they move more smoothly.
+// [rc4l] A dev-mode A/B switch, where upstream's debug-only flag leaves a release build unable to turn it off.
+CUSTOM_CVAR( Bool, cl_buffercommands, true, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE )
+{
+	if ( self == false )
+		CLIENT_ResetAllCommandBuffers( );
+
+	// [AK] Mark if the command buffers are being used while recording a demo.
+	if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( CLIENTDEMO_IsRecording( )))
+		CLIENTDEMO_WriteUseCommandBuffer( self );
+}
 
 
 // [AK] Restores the old mouse behaviour from Skulltag.
@@ -450,6 +504,10 @@ static	bool				g_HasRCONAccess = false;
 // [AK] We are in the process of gaining RCON access to the server.
 static  bool				g_GainingRCONAccess = false;
 
+// [AK] A collection of all buffered commands that handle a player's movement.
+static	CommandBuffer		g_BufferedMoveCMDs[MAXPLAYERS];
+static	CommandBuffer		g_BufferedExtraDataCMDs[MAXPLAYERS];
+
 //*****************************************************************************
 //	FUNCTIONS
 
@@ -471,8 +529,56 @@ void CLIENT_ClearAllPlayers( void )
 		VOIPController::GetInstance( ).RemoveVoIPChannel( ulIdx );
 	}
 
+	// [AK] Reset all command buffers.
+	CLIENT_ResetAllCommandBuffers( );
+
 	// [AK] Also clear out saved chat messages from the server.
 	CHAT_ClearChatMessages( MAXPLAYERS );
+}
+
+//*****************************************************************************
+//
+void CLIENT_ResetAllCommandBuffers( void )
+{
+	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+		CLIENT_ResetPlayerCommandBuffers( i );
+}
+
+//*****************************************************************************
+//
+void CLIENT_ResetPlayerCommandBuffers( unsigned int player )
+{
+	if ( player < MAXPLAYERS )
+	{
+		g_BufferedMoveCMDs[player].Reset( );
+		g_BufferedExtraDataCMDs[player].Reset( );
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Runs up to two of each playing player's buffered commands of one kind, in ComputeMoveDrainOrder's order.
+static void client_DrainCommandBuffers( CommandBuffer ( &buffers )[MAXPLAYERS] )
+{
+	std::vector<zx::netclient::MoveDrainPlayer> drain( MAXPLAYERS, zx::netclient::MoveDrainPlayer{ false, 0, 0 } );
+
+	// [AK] Check if we received each player's command during this tick to see if they're arriving consistently on our end.
+	for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+	{
+		if (( playeringame[i] == false ) || ( players[i].bSpectating ))
+			continue;
+
+		CommandBuffer &buffer = buffers[i];
+		buffer.numConsistentArrivals = zx::netclient::ComputeConsistentArrivals( buffer.numConsistentArrivals, buffer.lastArrivalTick, gametic );
+		drain[i] = zx::netclient::MoveDrainPlayer{ true, buffer.cmds.Size( ), buffer.numConsistentArrivals };
+	}
+
+	// [AK] We may execute up to two commands per player, per tick.
+	for ( int player : zx::netclient::ComputeMoveDrainOrder( drain, TICRATE ))
+	{
+		buffers[player].cmds[0]->Execute( );
+		buffers[player].cmds.Delete( 0 );
+	}
 }
 
 //*****************************************************************************
@@ -637,9 +743,55 @@ void CLIENT_Tick( void )
 
 		break;
 
+	case CTS_ACTIVE:
+
+		// [AK] Execute any buffered commands, if possible.
+		CLIENT_TickCommandBuffers( );
+		break;
+
 	default:
 
 		break;
+	}
+}
+
+//*****************************************************************************
+//
+// [rc4l] Whether moves wait in the buffers, by ComputeUsesCommandBuffers, where upstream repeats the rule at each caller.
+bool CLIENT_UsingCommandBuffers( void )
+{
+	return zx::netclient::ComputeUsesCommandBuffers( CLIENTDEMO_IsPlaying( ), CLIENTDEMO_IsUsingCommandBuffers( ), cl_buffercommands );
+}
+
+//*****************************************************************************
+//
+void CLIENT_TickCommandBuffers( void )
+{
+	// [AK] This should only work while in a level.
+	if (( CLIENT_UsingCommandBuffers( )) && ( gamestate == GS_LEVEL ))
+	{
+		CommandBuffer::executeBufferedCMDs = true;
+
+		for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
+		{
+			if (( playeringame[i] == false ) || ( players[i].bSpectating ))
+				continue;
+
+			// [AK] Save their current position and angle now to ensure
+			// the best possible smoothness during interpolation.
+			if ( players[i].mo != nullptr )
+			{
+				players[i].mo->PrevX = players[i].mo->x;
+				players[i].mo->PrevY = players[i].mo->y;
+				players[i].mo->PrevZ = players[i].mo->z;
+				players[i].mo->PrevAngle = players[i].mo->angle;
+			}
+		}
+
+		client_DrainCommandBuffers( g_BufferedMoveCMDs );
+		client_DrainCommandBuffers( g_BufferedExtraDataCMDs );
+
+		CommandBuffer::executeBufferedCMDs = false;
 	}
 }
 
@@ -882,12 +1034,12 @@ const FString &CLIENT_GetPlayerAccountName( int player )
 //
 void CLIENT_SendServerPacket( void )
 {
-	// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e: the send statistic moved into NETWORK_LaunchPacket, which knows the wire size too.
+	// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2: the send statistic moved into NETWORK_LaunchPacket, which knows the wire size too.
 	// Launch the packet, and clear out the buffer.
 	// [AK] For the sake of reverse-compatibility with servers running older
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out packets upon connecting to a server.
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: the connect packet itself, which carries the dictionary id, goes as Huffman.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: the connect packet itself, which carries the dictionary id, goes as Huffman.
 	NETWORK_LaunchPacket( &g_LocalBuffer, g_AddressServer, CLIENT_GetConnectionState( ) != CTS_ATTEMPTINGCONNECTION );
 	g_LocalBuffer.Clear();
 }
@@ -941,7 +1093,7 @@ void CLIENT_AttemptConnection( void )
 	// [rc4l] The whole revision, where its low byte let one mismatched build in 256 through to misread the wire.
 	g_LocalBuffer.ByteStream.WriteLong( GetRevisionNumber( ));
 	g_LocalBuffer.ByteStream.WriteString( g_lumpsAuthenticationChecksum.GetChars() );
-	// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the dictionary id the server must match, one long grown onto the connect packet, which the version refusal gates for older peers.
+	// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the dictionary id the server must match, one long grown onto the connect packet, which the version refusal gates for older peers.
 	g_LocalBuffer.ByteStream.WriteLong( static_cast<int>( NETWORK_GetZstdDictId() ) );
 
 	// [rc4l] Anonymous accounts: the same nonce on every retry, so the answer we get back is one
@@ -1077,7 +1229,7 @@ void CLIENT_GetPackets( void )
 			&& NETWORK_GetState() == NETSTATE_CLIENT
 			&& NETWORK_GetFromAddress().Compare( CLIENT_GetServerAddress() ))
 		{
-			// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e: the receive statistic moved into the transport's decode, which knows the wire size and the encoding.
+			// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2: the receive statistic moved into the transport's decode, which knows the wire size and the encoding.
 #ifdef	_DEBUG
 			// Emulate packet loss for debugging.
 			if (( cl_emulatepacketloss ) && gamestate == GS_LEVEL )
@@ -1548,7 +1700,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 		// [rc4l] Anonymous accounts: the server proves itself here, and we walk away rather than
 		// name an account to something that cannot.
-		if ( CLIENT_FuaAuthReadChallenge( pByteStream ) == false )
+		if ( CLIENT_FuaAuthReadChallenge( pByteStream, CLIENTDEMO_IsPlaying( )) == false )
 		{
 			CLIENT_QuitNetworkGame( "This server could not prove its identity." );
 			return;
@@ -1805,7 +1957,7 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 				szErrorString = "The server rejected the userinfo.";
 				break;
-			// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841: the client names the dictionary mismatch the server refused it over.
+			// [KI] Ported from zandronum@1caada743db48a07d712817cef9e5439bc099512: the client names the dictionary mismatch the server refused it over.
 			case NETWORK_ERRORCODE_WRONGZSTDDICTIONARY:
 
 				szErrorString = "A different Zstandard dictionary is being used by the server.";
@@ -2547,11 +2699,17 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 							break;
 						}
 
+						// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: an entry's used status reads as the next position does, a position then a bit.
 						case UPDATE_MAPROTATION_SETNEXTPOSITION:
+						case UPDATE_MAPROTATION_SETUSEDSTATUS:
 						{
 							const unsigned int position = pByteStream->ReadShort();
-							const bool ignoreLimits = pByteStream->ReadBit();
-							MAPROTATION_SetNextPosition( position, ignoreLimits );
+
+							if ( lType == UPDATE_MAPROTATION_SETNEXTPOSITION )
+								MAPROTATION_SetNextPosition( position, pByteStream->ReadBit() );
+							else
+								MAPROTATION_SetUsed( position, pByteStream->ReadBit() );
+
 							break;
 						}
 					}
@@ -2957,9 +3115,7 @@ AActor *CLIENT_SpawnThing( const PClass *pType, fixed_t X, fixed_t Y, fixed_t Z,
 		pActor->NetID = netID;
 		g_ActorNetIDList.useID( netID, pActor );
 
-		pActor->SpawnPoint[0] = X;
-		pActor->SpawnPoint[1] = Y;
-		pActor->SpawnPoint[2] = Z;
+		// [rc4l] Adapted from zandronum@4c658ffc6887bed07f7f9bf31add527be90ef2c6: StaticSpawn already set the spawn point, its height above the floor, which an absolute Z here broke.
 
 		// [Zalewa] Bullet puffs don't do 3D floor checks server-side.
 		if (!(spawnFlags & SPAWNFLAG_PUFF))
@@ -3298,17 +3454,18 @@ bool CLIENT_IsParsingPacket( void )
 //
 void CLIENT_ResetConsolePlayerCamera( void )
 {
+	// [rc4l] Ported from zandronum@8082d083b3c4b1994c59097964cd274fd2f0bf3f: no teleport to a spied player when the console player has no body yet.
+	AActor *oldCamera = players[consoleplayer].camera;
+
 	// [AK] Check if we were looking through another player's eyes.
-	if (( players[consoleplayer].camera ) && ( players[consoleplayer].camera->player ))
+	if (( players[consoleplayer].mo != nullptr ) && ( oldCamera != nullptr ) && ( oldCamera->player != nullptr ))
 	{
 		// [AK] Teleport to the player's body if we want to.
 		if (( cl_telespy ) && ( players[consoleplayer].bSpectating ))
 		{
-			AActor *pActor = players[consoleplayer].camera;
-
-			P_TeleportMove( players[consoleplayer].mo, pActor->x, pActor->y, pActor->z, false );
-			players[consoleplayer].mo->angle = pActor->angle;
-			players[consoleplayer].mo->pitch = pActor->pitch;
+			P_TeleportMove( players[consoleplayer].mo, oldCamera->x, oldCamera->y, oldCamera->z, false );
+			players[consoleplayer].mo->angle = oldCamera->angle;
+			players[consoleplayer].mo->pitch = oldCamera->pitch;
 		}
 	}
 
@@ -3735,7 +3892,6 @@ void ServerCommands::SpawnPlayer::Execute()
 	ULONG					ulPlayer = player - players;
 	player_t				*pPlayer = player;
 	APlayerPawn				*pActor;
-	LONG					lSkin;
 	bool					bWasWatchingPlayer;
 	bool					hadNoMorphLimitations = false;
 	AActor					*pCameraActor;
@@ -3759,6 +3915,11 @@ void ServerCommands::SpawnPlayer::Execute()
 	// [BB] Potentially print the player number, position, and network ID of the player spawning.
 	if ( cl_showspawnnames )
 		Printf( "Player %d body: (%d, %d, %d), %u\n", static_cast<int>(ulPlayer), x >> FRACBITS, y >> FRACBITS, z >> FRACBITS, netid );
+
+	// [AK] When this player respawns, any saved commands in their buffers are
+	// now obsolete, so they must be removed.
+	g_BufferedMoveCMDs[ulPlayer].cmds.Clear( );
+	g_BufferedExtraDataCMDs[ulPlayer].cmds.Clear( );
 
 	// [BB] Remember if we were already ignoring WeaponSelect commands. If so, the server
 	// told us to ignore them and we need to continue to do so after spawning the player.
@@ -3854,7 +4015,8 @@ void ServerCommands::SpawnPlayer::Execute()
 
 	// [BB] We may not filter coop inventory if the player changed the player class.
 	// Thus we need to keep track of the old class.
-	const BYTE oldPlayerClass = pPlayer->CurrentPlayerClass;
+	// [rc4l] Ported from zandronum@51c804da8b73f39759d9f89da4141ba38ce7e22d: the old class is an int, as the class number is.
+	const int oldPlayerClass = pPlayer->CurrentPlayerClass;
 
 	// Set up the player class.
 	pPlayer->CurrentPlayerClass = clamp<int>( playerClass, 0, PlayerClasses.Size() -1 );
@@ -3962,39 +4124,8 @@ void ServerCommands::SpawnPlayer::Execute()
 	//Added by MC: Identification (number in the players[MAXPLAYERS] array)
 	pActor->id = ulPlayer;
 
-	// [RH] Set player sprite based on skin
-	// [BC] Handle cl_skins here.
-	if ( cl_skins <= 0 )
-	{
-		lSkin = R_FindSkin( "base", pPlayer->CurrentPlayerClass );
-		pActor->flags4 |= MF4_NOSKIN;
-	}
-	else if ( cl_skins >= 2 )
-	{
-		if ( skins[pPlayer->userinfo.GetSkin()].bCheat )
-		{
-			lSkin = R_FindSkin( "base", pPlayer->CurrentPlayerClass );
-			pActor->flags4 |= MF4_NOSKIN;
-		}
-		else
-			lSkin = pPlayer->userinfo.GetSkin();
-	}
-	else
-		lSkin = pPlayer->userinfo.GetSkin();
-
-	if (( lSkin < 0 ) || ( lSkin >= static_cast<LONG>(skins.Size()) ))
-		lSkin = R_FindSkin( "base", pPlayer->CurrentPlayerClass );
-
-	// [BB] There is no skin for the morphed class.
-	if ( !isMorphed )
-	{
-		pActor->sprite = skins[lSkin].sprite;
-	}
-
 	// [rc4l] fov-interp: keep our own FOV across a respawn; see p_mobj.cpp.
-	pPlayer->DesiredFOV = pPlayer->FOV = zx::FovOnSpawn (
-		static_cast<ULONG> (consoleplayer) == ulPlayer,
-		NETWORK_GetState( ) == NETSTATE_SERVER, fov);
+	pPlayer->DesiredFOV = pPlayer->FOV = FOV_OnSpawn (static_cast<ULONG> (consoleplayer) == ulPlayer);
 	// If the console player was watching another player in demo mode, continue to follow
 	// that other player.
 	// [AK] And also if the console player just became a dead spectator.
@@ -4116,6 +4247,10 @@ void ServerCommands::SpawnPlayer::Execute()
 		}
 	}
 
+	// [RH] Set player sprite based on skin
+	// [RK] Handle this in a helper function.
+	// [AK] This must be called after the player's morph properties are set.
+	PLAYER_SetSpriteToSkin( pPlayer );
 
 	// If this is the consoleplayer, set the prediction origin and velocity.
 	if ( ulPlayer == static_cast<ULONG>(consoleplayer) )
@@ -4168,6 +4303,11 @@ void ServerCommands::MovePlayer::Execute()
 		CLIENT_PrintWarning( "MovePlayer: not in a level\n" );
 		return;
 	}
+
+	// [AK] If the command buffers are currently being used, save this command
+	// into the player's buffer to be executed later.
+	if ( g_BufferedMoveCMDs[player - players].BufferIfNecessary<ServerCommands::MovePlayer>( *this ))
+		return;
 
 	// If we're not allowed to know the player's location, then just make him invisible.
 	if ( IsVisible() == false )
@@ -4496,37 +4636,10 @@ void ServerCommands::SetPlayerUserInfo::Execute()
 		// Make sure the skin is valid.
 		else if ( name == NAME_Skin )
 		{
-			int skin;
 			player->userinfo.SkinNumChanged ( R_FindSkin( value, player->CurrentPlayerClass ) );
 
-			// [BC] Handle cl_skins here.
-			if ( cl_skins <= 0 )
-			{
-				skin = R_FindSkin( "base", player->CurrentPlayerClass );
-				if ( player->mo )
-					player->mo->flags4 |= MF4_NOSKIN;
-			}
-			else if ( cl_skins >= 2 )
-			{
-				if ( skins[player->userinfo.GetSkin()].bCheat )
-				{
-					skin = R_FindSkin( "base", player->CurrentPlayerClass );
-					if ( player->mo )
-						player->mo->flags4 |= MF4_NOSKIN;
-				}
-				else
-					skin = player->userinfo.GetSkin();
-			}
-			else
-				skin = player->userinfo.GetSkin();
-
-			if (( skin < 0 ) || ( skin >= static_cast<signed>(skins.Size()) ))
-				skin = R_FindSkin( "base", player->CurrentPlayerClass );
-
-			if ( player->mo )
-			{
-				player->mo->sprite = skins[skin].sprite;
-			}
+			// [RK] Handle skins in a helper function.
+			PLAYER_SetSpriteToSkin( player );
 		}
 		// Read in the player's handicap.
 		else if ( name == NAME_Handicap )
@@ -4842,6 +4955,11 @@ void ServerCommands::UpdatePlayerPing::Execute()
 //
 void ServerCommands::UpdatePlayerExtraData::Execute()
 {
+	// [AK] If the command buffers are currently being used, save this command
+	// into the player's buffer to be executed later.
+	if ( g_BufferedExtraDataCMDs[player - players].BufferIfNecessary<ServerCommands::UpdatePlayerExtraData>( *this ))
+		return;
+
 	// [BB] If the spectated player uses the GL renderer and we are using software,
 	// the viewangle has to be limited.	We don't care about cl_disallowfullpitch here.
 	if ( !currentrenderer )
@@ -4884,6 +5002,11 @@ void ServerCommands::MoveLocalPlayer::Execute()
 
 	// No player object to update.
 	if ( pPlayer->mo == NULL )
+		return;
+
+	// [AK] If the command buffers are currently being used, save this command
+	// into the local player's buffer to be executed later.
+	if ( g_BufferedMoveCMDs[consoleplayer].BufferIfNecessary<ServerCommands::MoveLocalPlayer>( *this ))
 		return;
 
 	// [BB] If the server already sent us our position for a later tic,
@@ -4993,6 +5116,10 @@ void ServerCommands::DisconnectPlayer::Execute()
 				FBehavior::StaticStopMyScripts( player->mo );
 		}
 
+		// [rc4l] Ported from zandronum@2272850a66fbce3b1a1d74e1a6a687e2a2b18177: a disconnecting player's body falls silent.
+		// [AK] Stop any sounds from this actor before destroying it.
+		S_StopAllSoundsFromActor( player->mo );
+
 		// Destroy the actor associated with the player.
 		player->mo->Destroy( );
 		player->mo = nullptr;
@@ -5011,6 +5138,9 @@ void ServerCommands::DisconnectPlayer::Execute()
 
 	// [AK] Delete this player's VoIP channel if it exists.
 	VOIPController::GetInstance( ).RemoveVoIPChannel( playerIndex );
+
+	// [AK] Reset this player's command buffers.
+	CLIENT_ResetPlayerCommandBuffers( playerIndex );
 
 	// Refresh the HUD because this affects the number of players in the game.
 	HUD_ShouldRefreshBeforeRendering( );
@@ -5121,6 +5251,9 @@ void ServerCommands::PlayerIsSpectator::Execute()
 	if ( player == &players[consoleplayer] )
 		g_bClientLagging = false;
 
+	// [AK] Reset this player's command buffers.
+	CLIENT_ResetPlayerCommandBuffers( player - players );
+
 	// [EP] Refresh the HUD, since this could affect the number of players left in a dead spectators game.
 	HUD_ShouldRefreshBeforeRendering( );
 }
@@ -5204,6 +5337,14 @@ void ServerCommands::PlayerUseInventory::Execute()
 			item->Destroy ();
 		}
 	}
+}
+
+//*****************************************************************************
+//
+void ServerCommands::PlayerSetSelectedInventory::Execute()
+{
+	// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: PLAYER_SetSelectedInventory gives up on an item the client doesn't think it holds.
+	PLAYER_SetSelectedInventory( player, player->mo->FindInventory( itemType ), showInventoryBar );
 }
 
 //*****************************************************************************
@@ -5798,6 +5939,12 @@ void ServerCommands::SetThingProperty::Execute()
 			static_cast<APlayerPawn *>( actor )->MvType = value;
 		break;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace.
+	case APROP_RejumpDelay:
+		if ( actor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			static_cast<APlayerPawn *>( actor )->RejumpDelay = value;
+		break;
+
 	default:
 		CLIENT_PrintWarning( "client_SetThingProperty: Unknown property, %d!\n", static_cast<unsigned int> (property) );
 		return;
@@ -6029,6 +6176,13 @@ void ServerCommands::DebugExplosion::Execute()
 		return;
 
 	zx::hitboxviz::PushBlast( x, y, z, distance, fulldamagedistance );
+}
+
+//*****************************************************************************
+// [RK]
+void ServerCommands::SetThingFloorClip::Execute()
+{
+	actor->floorclip = floorclip;
 }
 
 //*****************************************************************************
@@ -6501,6 +6655,10 @@ static void client_SetGameModeLimits( BYTESTREAM_s *pByteStream )
 	Value.Bool = pByteStream->ReadBit();
 	sv_respawninsurvivalinvasion.ForceSet( Value, CVAR_Bool );
 
+	// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: read in, and set the value for sv_requireskulltoscore.
+	Value.Bool = pByteStream->ReadBit();
+	sv_requireskulltoscore.ForceSet( Value, CVAR_Bool );
+
 	// [AM] Read in, and set the value for lobby.
 	Value.String = const_cast<char*>( pByteStream->ReadString());
 	lobby.ForceSet( Value, CVAR_String );
@@ -6532,6 +6690,14 @@ static void client_SetGameModeLimits( BYTESTREAM_s *pByteStream )
 	// [TRSR] Read in, and set the value for sv_nocallvote.
 	Value.Int = pByteStream->ReadByte();
 	sv_nocallvote.ForceSet( Value, CVAR_Int );
+
+	// [RK] Read in, and set the value for sv_minfov.
+	Value.Float = pByteStream->ReadFloat();
+	sv_minfov.ForceSet( Value, CVAR_Float );
+
+	// [RK] Read in, and set the value for sv_maxfov.
+	Value.Float = pByteStream->ReadFloat();
+	sv_maxfov.ForceSet( Value, CVAR_Float );
 }
 
 //*****************************************************************************
@@ -6938,15 +7104,19 @@ void ServerCommands::WeaponRailgun::Execute()
 	// If this is not an extended railgun command, we'll need to assume some defaults.
 	if ( CheckExtended() == false )
 	{
-		angleoffset = 0;
-		spawnclass = NULL;
+		angleOffset = 0;
+		spawnClass = nullptr;
 		duration = 0;
 		sparsity = 1.0f;
 		drift = 1.0f;
 	}
 
-	angle_t angle = source->angle + angleoffset;
-	P_DrawRailTrail( source, start, end, color1, color2, maxdiff, flags, spawnclass, angle, duration, sparsity, drift );
+	angle_t angle = source->angle + angleOffset;
+	P_DrawRailTrail( source, start, end, color1, color2, maxDiff, flags, spawnClass, angle, duration, sparsity, drift );
+
+	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: a rail this client did not predict marks where it stopped.
+	if ( hitSurface )
+		zx::decals::MarkRailEnd( source, start, end, usePuffDecal ? puffClass : NULL );
 }
 
 //*****************************************************************************
@@ -6991,6 +7161,10 @@ void ServerCommands::SetSectorCeilingPlane::Execute()
 
 	// Change the height.
 	sector->ceilingplane.ChangeHeight( delta );
+
+	// Call this to update various actors within the sector.
+	// [rc4l] Ported from zandronum@38e71b91375ccbd4efc29c4bd2c9944b1ba09c0e: it also renews the 3D floor light lists, which copy the plane.
+	P_ChangeSector( sector, false,(int)( delta), 1, false );
 
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::ceiling, sector->GetPlaneTexZ(sector_t::ceiling) + sector->ceilingplane.HeightDiff( lastPos ) );
@@ -7037,9 +7211,10 @@ void ServerCommands::SetSectorColor::Execute()
 //
 void ServerCommands::SetSectorColorByTag::Execute()
 {
-	int secnum = -1;
+	int secnum;
+	FSectorTagIterator itr( tag );
 
-	while (( secnum = P_FindSectorFromTag( tag, secnum )) >= 0 )
+	while (( secnum = itr.Next( )) >= 0 )
 		sectors[secnum].SetColor( red, green, blue, desaturate, false, true );
 }
 
@@ -7054,9 +7229,10 @@ void ServerCommands::SetSectorFade::Execute()
 //
 void ServerCommands::SetSectorFadeByTag::Execute()
 {
-	int secnum = -1;
+	int secnum;
+	FSectorTagIterator itr( tag );
 
-	while (( secnum = P_FindSectorFromTag( tag, secnum )) >= 0 )
+	while (( secnum = itr.Next( )) >= 0 )
 		sectors[secnum].SetFade( red, green, blue, false, true );
 }
 
@@ -7095,9 +7271,10 @@ void ServerCommands::SetSectorRotation::Execute()
 //
 void ServerCommands::SetSectorRotationByTag::Execute()
 {
-	int secnum = -1;
+	int secnum;
+	FSectorTagIterator itr( tag );
 
-	while (( secnum = P_FindSectorFromTag( tag, secnum )) >= 0 )
+	while (( secnum = itr.Next( )) >= 0 )
 	{
 		sectors[secnum].SetAngle( sector_t::floor, floorRotation * ANGLE_1 );
 		sectors[secnum].SetAngle( sector_t::ceiling, ceilingRotation * ANGLE_1 );
@@ -7319,8 +7496,10 @@ void ServerCommands::SetLineTextureByID::Execute()
 
 	if ( texture.Exists() )
 	{
-		int linenum = -1;
-		while (( linenum = P_FindLineFromID( lineID, linenum )) >= 0)
+		int linenum;
+		FLineIdIterator itr( lineID );
+
+		while (( linenum = itr.Next( )) >= 0 )
 			client_SetLineTextureHelper( &lines[linenum], side, position, texture );
 	}
 	else
@@ -7599,6 +7778,9 @@ void ServerCommands::MapLoad::Execute()
 		MAPROTATION_SetCurrentPosition( currentPosition );
 		MAPROTATION_SetUsed( currentPosition );
 
+		// [AK] Reset all command buffers.
+		CLIENT_ResetAllCommandBuffers( );
+
 		// [BB] We'll receive a full update for the new map from the server.
 		g_bFullUpdateIncomplete = true;
 
@@ -7639,6 +7821,12 @@ void ServerCommands::MapNew::Execute()
 
 	// Clear out our local buffer.
 	g_LocalBuffer.Clear();
+
+	// [AK] Reset all command buffers.
+	CLIENT_ResetAllCommandBuffers( );
+
+	// [rc4l] Adapted from zandronum@ec468bdf82d3843c98a8bad8940ebfdad350080a: the reconnect is a new connection, so it earns its account with a fresh challenge.
+	CLIENT_FuaAuthReset( );
 
 	// Back to the full console.
 	gameaction = ga_fullconsole;

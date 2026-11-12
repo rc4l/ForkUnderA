@@ -3,15 +3,15 @@
 import { Buffer } from "node:buffer";
 
 // [rc4l] The p-codes templates use, numbered as in p_acs.h; ACS0 writes every code and argument as a 32-bit word.
-export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LE: 23, GE: 24, ASSIGNMAPVAR: 26, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
+export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LT: 21, LE: 23, GE: 24, ASSIGNSCRIPTVAR: 25, ASSIGNMAPVAR: 26, INCSCRIPTVAR: 46, PUSHMAPVAR: 29, INCMAPVAR: 47, GOTO: 52,
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
-  GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
-  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, THINGCOUNT: 59, TAGSTRING: 225, GIVEINVENTORY: 143,
-  GETACTORANGLE: 260, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
+  GETSECTORFLOORZ: 261, GETSECTORLIGHTLEVEL: 281, THINGCOUNTSECTOR: 342, THINGCOUNTNAMESECTOR: 343, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
+  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, GETACTORPROPERTY: 246, THINGCOUNT: 59, TAGSTRING: 225, PUSHWORLDARRAY: 226, GIVEINVENTORY: 143,
+  GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORX: 196, GETACTORY: 197, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SpawnSpotForced: 20, SpawnForced: 36, SetCVar: 53, LineAttack: 60, PlaySound: 61, CheckFlag: 75,
+export const ACSF = { GetLineUDMFInt: 1, GetSectorUDMFInt: 5, GetSideUDMFInt: 7, SpawnSpotForced: 20, CheckActorProperty: 22, SetActorVelocity: 23, CheckActorClass: 27, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, GetLineActivation: 77, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 
@@ -21,16 +21,21 @@ export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
 }
 
 // [Doruk-Aksoy] Script types (the thousands of an ACS0 script number) and flags, as p_acs.h numbers them; a flag is what CLIENTSIDE or NET compiles to.
-export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4 };
-export const SCRIPTF = { NET: 1, CLIENTSIDE: 2 };
+export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4, EVENT: 16 };
+// [rc4l] BUSY exempts a script from the runaway limit (zandronum@b8fe8ef13df5).
+export const SCRIPTF = { NET: 1, CLIENTSIDE: 2, BUSY: 4 };
+
+// [rc4l] A script's number as SPTR keeps it: a named script's is -1 less its place among the named, as ACC numbers SNAM entries.
+const sptrNumbers = (scripts) => { let k = 0; return scripts.map((s) => (s.name ? -1 - k++ : s.number ?? 1)); };
 
 // [Doruk-Aksoy] A script's type: its own, else OPEN unless `open` is false.
 const scriptType = (s) => s.type ?? ((s.open ?? true) ? SCRIPT.OPEN : SCRIPT.CLOSED);
 
-// [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings.
+// [rc4l] Several scripts in one lump, each { code, open, number } as acs0 takes them, their code laid end to end and sharing the strings; `args` is how many arguments a script takes into its first variables, as an EVENT script's three.
 // [Doruk-Aksoy] A script may also give its `type` and `flags`; with any flags, or `enhanced` as a library is compiled, the lump is ACSE, since ACS0 has nowhere to keep them.
+// [rc4l] A script given a `name` in place of a number is named, which also makes the lump ACSE, its name in SNAM.
 export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
-  if (enhanced || scripts.some((s) => s.flags)) return acseScripts(scripts, strings);
+  if (enhanced || scripts.some((s) => s.flags || s.name)) return acseScripts(scripts, strings);
   const code = scripts.flatMap((s) => s.code);
   const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
   const strStart = 8 + 4 * code.length;
@@ -50,7 +55,7 @@ export function acsScripts(scripts, strings = [], { enhanced = false } = {}) {
     const entry = dirOffset + 4 + 12 * i;
     out.writeInt32LE(scriptType(s) * 1000 + (s.number ?? 1), entry);
     out.writeInt32LE(address, entry + 4);
-    out.writeInt32LE(0, entry + 8);
+    out.writeInt32LE(s.args ?? 0, entry + 8);
     address += 4 * s.code.length;
   });
   const table = dirOffset + 4 + 12 * scripts.length;
@@ -67,31 +72,37 @@ function acseScripts(scripts, strings) {
     size.writeUInt32LE(data.length, 0);
     return Buffer.concat([Buffer.from(id, "latin1"), size, data]);
   };
+  const numbers = sptrNumbers(scripts);
   const sptr = Buffer.alloc(12 * scripts.length);
   let address = 8;
   scripts.forEach((s, i) => {
-    sptr.writeInt16LE(s.number ?? 1, 12 * i);
+    sptr.writeInt16LE(numbers[i], 12 * i);
     sptr.writeUInt16LE(scriptType(s), 12 * i + 2);
     sptr.writeInt32LE(address, 12 * i + 4);
-    sptr.writeInt32LE(0, 12 * i + 8);
+    sptr.writeInt32LE(s.args ?? 0, 12 * i + 8);
     address += 4 * s.code.length;
   });
-  const flagged = scripts.filter((s) => s.flags);
+  const flagged = scripts.map((s, i) => ({ s, number: numbers[i] })).filter(({ s }) => s.flags);
   const sflg = Buffer.alloc(4 * flagged.length);
-  flagged.forEach((s, i) => { sflg.writeInt16LE(s.number ?? 1, 4 * i); sflg.writeUInt16LE(s.flags, 4 * i + 2); });
-  const strBytes = strings.map((s) => Buffer.from(`${s}\0`, "latin1"));
-  const head = Buffer.alloc(12 + 4 * strings.length);
-  head.writeInt32LE(strings.length, 4);
-  let at = head.length;
-  strBytes.forEach((b, i) => { head.writeInt32LE(at, 12 + 4 * i); at += b.length; });
-  const strlData = Buffer.concat([head, ...strBytes]);
-  const strl = Buffer.concat([strlData, Buffer.alloc((4 - (strlData.length % 4)) % 4)]);
+  flagged.forEach(({ s, number }, i) => { sflg.writeInt16LE(number, 4 * i); sflg.writeUInt16LE(s.flags, 4 * i + 2); });
+  // [rc4l] A string table as STRL (count at word 1, offsets from word 3) and SNAM (count at word 0, offsets from word 1) keep one, each offset from the table's start, padded to a word.
+  const table = (list, countAt, offsetsAt) => {
+    const bytes = list.map((s) => Buffer.from(`${s}\0`, "latin1"));
+    const head = Buffer.alloc(4 * (offsetsAt + list.length));
+    head.writeInt32LE(list.length, 4 * countAt);
+    let at = head.length;
+    bytes.forEach((b, i) => { head.writeInt32LE(at, 4 * (offsetsAt + i)); at += b.length; });
+    const data = Buffer.concat([head, ...bytes]);
+    return Buffer.concat([data, Buffer.alloc((4 - (data.length % 4)) % 4)]);
+  };
+  const strl = table(strings, 1, 3);
+  const names = scripts.filter((s) => s.name).map((s) => s.name);
   const codeBytes = Buffer.alloc(4 * code.length);
   code.forEach((w, i) => codeBytes.writeInt32LE(w, 4 * i));
   const header = Buffer.alloc(8);
   header.write("ACSE", 0, "latin1");
   header.writeInt32LE(8 + codeBytes.length, 4);
-  return Buffer.concat([header, codeBytes, chunk("SPTR", sptr), chunk("SFLG", sflg), chunk("STRL", strl)]);
+  return Buffer.concat([header, codeBytes, chunk("SPTR", sptr), chunk("SFLG", sflg), chunk("STRL", strl), ...(names.length ? [chunk("SNAM", table(names, 0, 1))] : [])]);
 }
 
 // [rc4l] The words that call action special `special` with up to five arguments, as `Special(a, b, c)` compiles.
@@ -136,7 +147,7 @@ export function gotoWord(index) {
 
 // [rc4l] The words of an ACS function called with these pushed arguments (string arguments as their string index), its result left on the stack.
 export function callFunc(fn, args) {
-  return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.CALLFUNC, args.length, fn];
+  return [...args.flatMap((a) => (Array.isArray(a) ? a : [PCD.PUSHNUMBER, a])), PCD.CALLFUNC, args.length, fn];
 }
 
 // [Doruk-Aksoy] The words of `SetCVar(strings[i], GetCVar(strings[i]) + n)`, its result dropped: a CVARINFO counter a scenario reads back, n negative to take away.
@@ -158,12 +169,33 @@ export class AcsScript {
   label(name) { this.labels.set(name, this.parts.length); return this; }
   // [rc4l] A jump (GOTO, IFGOTO, IFNOTGOTO) to a named target, resolved once the script is done.
   jump(pcd, name) { this.parts.push(pcd, { label: name }); return this; }
-  // [rc4l] The script's words, every jump target turned into its byte offset; a target never named throws.
-  words() {
+  // [rc4l] The script's words, every jump target turned into its byte offset, `at` the word the script starts at when others precede it in the lump; a target never named throws.
+  words(at = 0) {
     return this.parts.map((w) => {
       if (typeof w === "number") return w;
       if (!this.labels.has(w.label)) throw new Error(`no label ${w.label}`);
-      return 8 + 4 * this.labels.get(w.label);
+      return 8 + 4 * (at + this.labels.get(w.label));
     });
   }
+}
+
+// [rc4l] A puke judged by the cvar named strings[0]: 1 for running, then 2^(k+1) for each check k, [what, kind, arg, want], whose read[kind](arg) words leave a value other than want, all read delayTics after it starts.
+export function checksScript(checks, read, { delayTics = 0 } = {}) {
+  const s = new AcsScript().emit(...addToCVar(0, 1));
+  if (delayTics) s.emit(PCD.DELAYDIRECT, delayTics);
+  checks.forEach(([, kind, arg, want], k) => {
+    s.emit(...read[kind](arg), PCD.PUSHNUMBER, want, PCD.EQ).jump(PCD.IFGOTO, `ok${k}`).emit(...addToCVar(0, 2 ** (k + 1))).label(`ok${k}`);
+  });
+  return s.emit(PCD.TERMINATE).words();
+}
+
+// [rc4l] The names of the checks a checksScript cvar's value says failed.
+export function failedChecks(checks, value) {
+  return checks.filter((_, k) => (value >> (k + 1)) & 1).map(([what]) => what);
+}
+
+// [rc4l] The scenario counter for a checksScript puke leaving its count in cvar, checksFor(map) giving each map's checks so a failure names them.
+export function checksCounter(cvar, checksFor) {
+  return { command: cvar, label: "1 for the puke, plus 2^(k+1) for each failing check k", pattern: `"${cvar}" is "(-?\\d+)"`, ceiling: 1, floor: 1,
+    explain: (map, value) => (value < 1 ? ["the puke never ran"] : failedChecks(checksFor(map), value)) };
 }

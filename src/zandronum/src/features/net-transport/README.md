@@ -7,6 +7,8 @@ The game's UDP socket as tests drive it: a simulated ping and packet loss, set p
   half on each it receives (`ComputeFakeDelayMs`). Packets keep their order, as a link with a steady ping does.
 - `fua_net_fakeloss` drops that percent of packets each way, from a generator seeded the same every run
   (`ComputeFakeDrop`).
+- `fua_net_fakejitter` holds each packet up to that many milliseconds more each way (`ComputeFakeJitterMs`); one
+  held longer holds those behind it, so they keep their order and arrive in bursts, as on a jittery link.
 - `net/held`, `net/fake_dropped`, `net/held_released` and `net/held_send_failed` count what is held each way.
 - A server reads its game socket on a thread of its own (`sv_fua_receivethread`, on by default and switched in a
   running server): the thread waits in `select`, stamps each datagram's arrival on `I_MSTime`'s clock and queues
@@ -57,8 +59,8 @@ the netcode are counted by `net-sockets-through-transport` (`tools/boundary-rule
 
 ## zstd packet compression (Zandronum 3.3)
 
-Ported from upstream `7279c8b..bdd0f7b` (the 15-commit set in the zstd plan). The mechanism as 3.3 wrote
-it: a caller that passes `bUseZStd` and a packet of at least `net_zstd_threshold` bytes goes as zstd,
+Ported from `zandronum-stable`, the 15 zstd rows of `commit-tracker/zandronum/` from `32ff6e13bd13`
+to `caae2b04b3ba`. The mechanism as 3.3 wrote it: a caller that passes `bUseZStd` and a packet of at least `net_zstd_threshold` bytes goes as zstd,
 compressed with the `zstddict` lump's dictionary when one loaded (the connect handshake refuses a
 mismatched dictionary id with `NETWORK_ERRORCODE_WRONGZSTDDICTIONARY`); everything else, everything before
 connection, and every launcher reply stays Huffman, so Doomseeker keeps querying servers. Receive detects

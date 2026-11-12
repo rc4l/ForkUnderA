@@ -8,7 +8,7 @@
 // Command families:
 //   ping / capabilities / console.exec
 //   sim.tic sim.hash sim.seed sim.pause sim.resume sim.step sim.snapshot sim.restore   (determinism)
-//   state.player state.actors world.actors world.sectors                               (structured state)
+//   state.player state.actors world.actors world.sectors view.angle                    (structured state)
 //   net.state net.clients net.hostdiag net.bandwidth                                   (netgames)
 //   input.event                                                                        (input injection)
 //
@@ -388,7 +388,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			"\"sim.tic\",\"sim.hash\",\"sim.seed\",\"sim.pause\",\"sim.resume\",\"sim.step\",\"sim.cheatat\",\"sim.pauseat\",\"browser.refresh\",\"browser.list\",\"browser.add\",\"browser.select\",\"net.hostdiag\",\"net.clients\",\"sim.rngdump\",\"sim.trace\","
 			"\"sim.snapshot\",\"sim.restore\",\"state.player\",\"state.actors\",\"input.event\",\"input.axis\",\"input.look\",\"input.windowpoint\","
 			"\"perf.capture\",\"perf.ticprof\",\"perf.counters\",\"net.bandwidth\",\"gl.timers\",\"renderer.info\","
-			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\""
+			"\"world.sectors\",\"player.setpos\",\"player.camera\",\"ui.continue\",\"perf.sample\",\"world.actors\",\"world.sectorstate\",\"world.sidestate\",\"world.linestate\",\"net.state\",\"view.angle\""
 			"],\"events\":[\"out\",\"stepped\",\"perf\",\"glperf\",\"ticprof\",\"trace\"]}" );
 	}
 	else if ( cmd == "console.exec" )
@@ -417,6 +417,15 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		// [rc4l] Which map, so a map change is seen arriving where it was sent.
 		body += ",\"map\":\"" + zx::json::ComputeJsonEscape( level.MapName.GetChars() ) + "\"";
 		body += ",\"paused\":" + I( paused ) + "}";
+		SendOk( id, body );
+	}
+	else if ( cmd == "view.angle" )
+	{
+		// [rc4l] The angles the last frame was drawn from and how far into its tic, to see whether a turn is interpolated between tics.
+		std::string body = "{\"gametic\":" + I( gametic );
+		body += ",\"frac\":" + std::to_string( FIXED2DBL( r_TicFrac ));
+		body += ",\"yaw\":" + std::to_string( (double)viewangle * ( 360.0 / 4294967296.0 ));
+		body += ",\"pitch\":" + std::to_string( (double)viewpitch * ( 360.0 / 4294967296.0 )) + "}";
 		SendOk( id, body );
 	}
 	else if ( cmd == "sim.hash" )
@@ -747,11 +756,18 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				zx::mcp::WorldActorRow r;
 				r.netId = mo->NetID;
 				r.cls = ( mo->GetClass() != NULL ) ? mo->GetClass()->TypeName.GetChars() : "?";
-				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z ); r.floorZ = FIXED2DBL( mo->floorz );
+				r.x = FIXED2DBL( mo->x ); r.y = FIXED2DBL( mo->y ); r.z = FIXED2DBL( mo->z );
+				r.prevX = FIXED2DBL( mo->PrevX ); r.prevY = FIXED2DBL( mo->PrevY ); r.prevZ = FIXED2DBL( mo->PrevZ );
+				r.floorZ = FIXED2DBL( mo->floorz ); r.floorClip = FIXED2DBL( mo->floorclip );
 				r.velX = FIXED2DBL( mo->velx ); r.velY = FIXED2DBL( mo->vely ); r.velZ = FIXED2DBL( mo->velz );
 				r.angle = (double)mo->angle * ( 360.0 / 4294967296.0 );
 				r.health = mo->health;
 				r.player = ( mo->player != NULL ) ? (int)( mo->player - players ) : -1;
+				r.scaleX = FIXED2DBL( mo->scaleX ); r.scaleY = FIXED2DBL( mo->scaleY );
+				int drawnSprite = mo->sprite;
+				fixed_t drawnScaleX = mo->scaleX, drawnScaleY = mo->scaleY;
+				if ( mo->player != NULL ) P_CheckPlayerSprite( mo, drawnSprite, drawnScaleX, drawnScaleY );
+				r.drawnScaleX = FIXED2DBL( drawnScaleX ); r.drawnScaleY = FIXED2DBL( drawnScaleY );
 				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
 				rows.push_back( r );
 			}
@@ -803,6 +819,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				r.yScaleCeiling = FIXED2DBL( s.GetYScale( sector_t::ceiling ));
 				r.angleFloor = s.GetAngle( sector_t::floor, false ) * ( 360.0 / 4294967296.0 );
 				r.angleCeiling = s.GetAngle( sector_t::ceiling, false ) * ( 360.0 / 4294967296.0 );
+				for ( unsigned k = 0; k < s.e->XFloor.lightlist.Size( ); k++ )
+					r.lightTops.push_back( FIXED2DBL( s.e->XFloor.lightlist[k].plane.ZatPoint( s.soundorg[0], s.soundorg[1] )));
 				body += zx::mcp::ComputeSectorStateJson( r );
 			}
 			else if ( linesWanted )
@@ -1119,11 +1137,13 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		FString out;
 		out.Format( "{\"x\":%.3f,\"y\":%.3f,\"z\":%.3f,\"yaw\":%.4f,\"pitch\":%.4f,"
 					"\"viewz\":%.3f,\"floorz\":%.3f,\"ceilingz\":%.3f,\"sector\":%d,"
-					"\"map\":\"%s\"}",
+					"\"fov\":%.3f,\"desiredFov\":%.3f,\"map\":\"%s\"}",
 					FIXED2FLOAT( mo->x ), FIXED2FLOAT( mo->y ), FIXED2FLOAT( mo->z ),
 					yaw, pitch,
 					FIXED2FLOAT( viewz ), FIXED2FLOAT( mo->floorz ), FIXED2FLOAT( mo->ceilingz ),
 					sec != NULL ? (int)( sec - sectors ) : -1,
+					// [rc4l] The FOV the view has reached and the one it steps toward, which the server's limits bound.
+					players[consoleplayer].FOV, players[consoleplayer].DesiredFOV,
 					level.MapName.GetChars() );
 		SendOk( id, out.GetChars() );
 	}

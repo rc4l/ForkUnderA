@@ -40,6 +40,7 @@
 #include "s_sound.h"
 #include "textures/textures.h"
 //[BL] New Includes
+#include "gamemode_enums.h"
 #include "sectinfo.h"
 #include "features/postprocess/computation/postprocess_compute.h"   // [Doruk-Aksoy] ShaderTable
 #include "features/actormaterials/computation/actormaterial_compute.h"   // [Doruk-Aksoy] InstanceTable
@@ -249,6 +250,8 @@ enum ELevelFlags : unsigned int
 	// [BB] Ceartain game modes are supposed to behave differently on
 	// the map. For example in duel mode the countdown and the map reset are skipped.
 	LEVEL_ZA_ISLOBBY				= 0x00000002,
+	// [TRSR] Hide this map from Offline Skirmish and similar menus
+	LEVEL_ZA_NOSKIRMISH			= 0x00000004,
 };
 
 
@@ -415,7 +418,18 @@ struct level_info_t
 	//[BL] Link a sectinfo to a map
 	SectInfo	SectorInfo;
 
-	level_info_t() 
+	// [AK] Determines which game mode the map is locked into.
+	GAMEMODE_e	GameMode;
+
+	// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the map's Skulltag winner and loser intermission pictures and music.
+	FString		WinnerPic;
+	FString		LoserPic;
+	FString		WinnerMusic;
+	FString		LoserMusic;
+	int			winnermusicorder;
+	int			losermusicorder;
+
+	level_info_t()
 	{ 
 		Reset(); 
 	}

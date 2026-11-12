@@ -12,7 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
-import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses } from "./netplay.mjs";
+import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses, setCrash } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -260,9 +260,9 @@ export function compareQuit(opts) {
   });
 }
 
-// [rc4l] Each side launched on each map and judged by the scenario's own judgeLaunch(c, inst, label), for a check one bridge answer settles.
+// [rc4l] Each side launched on each map and judged by the scenario's own judgeLaunch(c, inst, label, { wadPath, iwad }), for a check one bridge answer settles.
 export function compareEachLaunch(opts) {
-  return eachLaunch(opts, (c, inst, label) => opts.judgeLaunch(c, inst, label));
+  return eachLaunch(opts, (c, inst, label, files) => opts.judgeLaunch(c, inst, label, files));
 }
 
 // [rc4l] Each map hosted by a server with the scenario's wad and joined by a client of each side playing it, both locked, judged together by judgeHosted(server, client, label): for what a netgame splits between the two, such as what only a client draws.
@@ -446,13 +446,15 @@ export async function probeScenario(opts, choice = {}, commands = []) {
 }
 
 // [rc4l] A counter the engine printed, held to its ceiling or its floor: the number pattern's first group captures in text, as a PASS/FAIL line and a failure count.
-export function judgeCounter(map, text, { label, pattern, ceiling, floor }) {
+// [rc4l] `explain(map, value)`, when given, names what a failing value means, such as which checks a bitmask counter failed.
+export function judgeCounter(map, text, { label, pattern, ceiling, floor, explain }) {
   const m = new RegExp(pattern).exec(String(text));
   if (!m) return { line: `FAIL ${map}: no ${label} in the engine's answer`, failed: 1 };
   const value = Number(m[1]);
   const ok = (ceiling === undefined || value <= ceiling) && (floor === undefined || value >= floor);
   const limit = ceiling !== undefined ? `ceiling ${ceiling}` : `floor ${floor}`;
-  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (${limit})`, failed: ok ? 0 : 1 };
+  const why = !ok && explain ? `: ${explain(map, value).join("; ")}` : "";
+  return { line: `${ok ? "PASS" : "FAIL"} ${map} ${label}: ${value} (${limit})${why}`, failed: ok ? 0 : 1 };
 }
 
 // [rc4l] One Vulkan launch of the wad per map, body(c, map) giving that map's { lines, failed }, and a launch that throws one FAIL line: the shape the comparisons below share.
@@ -475,6 +477,7 @@ async function eachVulkanLaunch({ name, wad, maps, iwad, port, size, side }, bod
 
 // [rc4l] One Vulkan launch per map, standing at each vantage with the sim running, then counter.command's number judged by judgeCounter: for a fault no paused frame can show, such as a one-frame flash the engine counts; the launch takes the first non-GL side's cvars.
 // [Doruk-Aksoy] `holdTics` is how long it stands at each vantage, longer for something that takes the level a while, such as monsters crossing it.
+// [rc4l] `counter` may be a list, each judged from its own command's answer.
 export async function compareCounter({ name, wad, maps, vantages, counter, sides = [], iwad = FREEDOOM2, port = 7796, size = [1280, 720], holdTics = 35 }) {
   return eachVulkanLaunch({ name, wad, maps, iwad, port, size, side: sides.find((s) => !s.gl) }, async (c, map) => {
     for (const v of vantages) {
@@ -482,8 +485,9 @@ export async function compareCounter({ name, wad, maps, vantages, counter, sides
       await c.rpc("player.setpos", v.at);
       await cap.waitTics(c, holdTics);
     }
-    const r = judgeCounter(map, await cap.exec(c, counter.command, { quietMs: 400 }), counter);
-    return { lines: [r.line], failed: r.failed };
+    const judged = [];
+    for (const k of [counter].flat()) judged.push(judgeCounter(map, await cap.exec(c, k.command, { quietMs: 400 }), k));
+    return { lines: judged.map((r) => r.line), failed: judged.reduce((n, r) => n + r.failed, 0) };
   });
 }
 
@@ -542,7 +546,7 @@ export const FILL_CHECK = { fua_copy_prescan_check: 1 };
 
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
 export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
-  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses,
+  const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses, crash = setCrash,
     replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
   const wadPath = writeTemplateFile(name, wad);
   const lines = [];
@@ -555,11 +559,14 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
     const filePath = config.wad ? writeTemplateFile(`${name}-${config.name}`, config.wad) : wadPath;
     let set = null;
     try {
-      set = await launch({ iwad, map, files: [filePath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "",
-        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: { ...FILL_CHECK, ...(config.clientCvars || {}) }, broadcast: !!config.broadcast, cheats: config.cheats ?? true });
+      set = await launch({ iwad, map, files: [filePath], players: config.players ?? 1, observers: config.observers ?? 0, lag: config.lag ?? "", loss: config.loss ?? "", jitter: config.jitter ?? "",
+        basePort: port, gamePort, cvars: config.serverCvars || {}, clientCvars: { ...FILL_CHECK, ...(config.clientCvars || {}) }, clientExtraArgs: config.clientExtraArgs || [], broadcast: !!config.broadcast, cheats: config.cheats ?? true });
       const r = await judgeNetplay(set, label, { wadPath: filePath, iwad, map, config });
       lines.push(...(r.lines || [r.line]));
       failed += r.failed;
+      // [rc4l] An instance that crashed under the judge fails with its frames, where the checks after it would only time out.
+      const died = crash(set);
+      if (died) throw died;
       // [rc4l] And the netcode stayed on the threads its seams name, on every instance.
       const crossed = await seams(set);
       if (crossed.length) { lines.push(`FAIL ${label}: ${crossed.join("; ")}`); failed++; }
@@ -570,7 +577,7 @@ export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM
       const late = await replication(set);
       if (late) { lines.push(`FAIL ${label}: ${late}`); failed++; }
     } catch (e) {
-      lines.push(`FAIL ${label}: ${e.message}`);
+      lines.push(`FAIL ${label}: ${((set && crash(set)) || e).message}`);
       failed++;
     } finally {
       if (set) await close(set);

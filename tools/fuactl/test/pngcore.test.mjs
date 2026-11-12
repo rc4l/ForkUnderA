@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { decodePNG, decodePNGBytes, px, writePNG, encodePNG, cropImage, boxDiff, boxDiffMax, blockDiffs, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox, boxArgs } from "../src/pngcore.mjs";
+import { decodePNG, decodePNGBytes, px, writePNG, encodePNG, solidRGB, solidPNG, cropImage, boxDiff, boxDiffMax, blockDiffs, abDiff, samplePoints, isBlankImage, boxMean, boxStats, filesAndBox, boxArgs } from "../src/pngcore.mjs";
 
 // [rc4l] A w x h RGB image whose pixel colour is f(x, y), written and read back through the real codec.
 function image(w, h, f) {
@@ -144,4 +144,12 @@ test("a fault in one block is the largest block difference however quiet it is i
   assert.equal(boxDiff(a, b, [0, 0, 1, 1], 16), 20 / 16);
   assert.equal(blockDiffs(a, b, [0, 0, 1, 1], 16).length, 16);
   assert.equal(boxDiffMax(a, a, [0, 0, 1, 1]), 0);
+});
+
+test("solidPNG fills one colour, standing on its bottom middle unless told otherwise", () => {
+  assert.deepEqual([...solidRGB(2, 1, [1, 2, 3])], [1, 2, 3, 1, 2, 3]);
+  const img = decodePNGBytes(solidPNG([0, 200, 255], 4));
+  assert.deepEqual([img.w, img.h, ...px(img, 3, 3)], [4, 4, 0, 200, 255]);
+  assert.deepEqual(solidPNG([9, 9, 9], 4), encodePNG(4, 4, solidRGB(4, 4, [9, 9, 9]), { grab: [2, 4] }));
+  assert.deepEqual(solidPNG([9, 9, 9], 4, { grab: null }), encodePNG(4, 4, solidRGB(4, 4, [9, 9, 9])));
 });

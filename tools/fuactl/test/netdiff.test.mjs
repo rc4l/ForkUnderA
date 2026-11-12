@@ -55,6 +55,14 @@ test("sectors and sidedefs differ field by field", () => {
   assert.deepEqual(diffMap(more, { ...changed, lines: undefined, sides: [], sectors: more.sectors }), []);
 });
 
+test("a 3D floor's light list differs by its heights or its length, within the height tolerance", () => {
+  const lit = (lights) => ({ sectors: [sector(0, { lights })], sides: [] });
+  assert.deepEqual(diffMap(lit([192, 64]), lit([192, 64.0005])), []);
+  assert.deepEqual(diffMap(lit([192, 64]), lit([256, 64])).map((x) => x.what), ["sector 0: lights 192,64/256,64 (server/client)"]);
+  assert.deepEqual(diffMap(lit([192, 64]), lit([192])).map((x) => x.what), ["sector 0: lights 192,64/192 (server/client)"]);
+  assert.deepEqual(diffMap(lit(undefined), lit([])), [], "a row from an old binary lists none");
+});
+
 test("the verdict lines agree or list each difference", () => {
   assert.deepEqual(diffLines("MAP01", [], { actors: 3, sectors: 9, sides: 30 }), ["AGREE MAP01: 3 actors, 9 sectors, 30 sides"]);
   assert.deepEqual(diffLines("MAP01", [], { actors: 3, sectors: 9, sides: 30, lines: 20 }), ["AGREE MAP01: 3 actors, 9 sectors, 30 sides, 20 lines"]);

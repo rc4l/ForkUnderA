@@ -11,6 +11,10 @@ bytes on the stream — deterministically, as unit tests, with no processes and 
 how. It is the machine-checkable half of the `netcode-adaptation` skill's "wire-format regression
 tests" rule.
 
+A Zandronum commit that adds or changes a command (the Zandronum ledger tags it `svc:` or `clc:`,
+and `protocolspec/spec.*.txt` changes with it) needs the same: a golden fixture for the new layout,
+and `tools/protocol-snapshot.py --write` to accept the changed signature on purpose.
+
 ## The rigid core: `BYTESTREAM_s`, not the command table
 
 Every one of the ~231 generated `SERVERCOMMANDS_*` reduces to a handful of primitives on
@@ -33,6 +37,8 @@ the standalone `zandrox_tests_net` target instead of the monolithic `zandrox_tes
 unit-under-test is vendored engine code that needs the `tests/shims/net/i_system.h` shim (`#define
 Printf printf`, `#define atterm atexit`) placed first on the include path — the masterserver recipe.
 New wire tests are new `*_nettest.cpp` files beside their subject; CMake re-globs, no edit needed.
+Each one models its command on `zx::nettest::Wire` from `wire_nettest.h` (a writer and a reader over
+one poisoned buffer, `openReader(n)` for a packet cut to `n` bytes); don't paste a copy of it.
 `gtest_discover_tests` registers them, so `ctest` (and CI's Build+test steps) run them with no
 workflow change. Runs under ASan+UBSan on Linux and macOS in milliseconds.
 

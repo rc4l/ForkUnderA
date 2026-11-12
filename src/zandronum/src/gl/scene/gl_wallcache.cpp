@@ -56,9 +56,9 @@ void ForgetFrameState(GLWall &w)
 static_assert(RENDERWALL_TOP == zx::levelmesh::kRenderWallTop && RENDERWALL_M1S == zx::levelmesh::kRenderWallM1S &&
 	RENDERWALL_BOTTOM == zx::levelmesh::kRenderWallBottom && RENDERWALL_MIRRORSURFACE == zx::levelmesh::kRenderWallMirrorSurface,
 	"gl_wall.h's RENDERWALL_ order moved: update wallcache_compute.h");
-static_assert(sizeof(GLWall) == 912,
+static_assert(sizeof(GLWall) == 896,
 	"GLWall changed size. Classify the new field as world state or frame state in ForgetFrameState, clear it there if it is frame state, then update this number.");
-static_assert(offsetof(GLWall, seg) == 896, "GLWall fields moved: see ForgetFrameState.");
+static_assert(offsetof(GLWall, seg) == 880, "GLWall fields moved: see ForgetFrameState.");
 static_assert(offsetof(GLWall, numwalls) == 184, "GLWall fields moved: see ForgetFrameState.");
 static_assert(offsetof(GLWall, dynlightindex) == 176, "GLWall fields moved: see ForgetFrameState.");
 #endif

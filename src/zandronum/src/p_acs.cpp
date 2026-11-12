@@ -88,11 +88,10 @@
 #include "invasion.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
-#include "features/net-replication/playerstate.h"   // [MobiusU9B] SendUserCVar
+#include "features/net-replication/playerstate.h"   // [MobiusU9B] SendUserCVar, [rc4l] SendSelectedInventory
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include "network/nettraffic.h"
 #include "za_database.h"
-#include "cl_commands.h"
 #include "cl_main.h"
 #include "chat.h"
 #include "maprotation.h"
@@ -110,6 +109,12 @@
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how often the string pool is collected and what that frees
 #include "features/acs-strings/computation/stringpool_compute.h"   // [Doruk-Aksoy] ComputeStringPoolGrowth
 #include "features/save-settings/computation/cvarsave_compute.h"   // [MobiusU9B] ComputeSendsUserCVarChange
+#include "computation/wadinfo_compute.h"   // [rc4l] ComputeIndexInRange, ComputeParentWadInfo
+#include "computation/maprotation_compute.h"   // [rc4l] ComputeSetsMapUsedStatus
+#include "computation/checkscript_compute.h"   // [rc4l] ComputeCheckScriptByName, ComputeCheckScriptNumber
+#include "computation/acsautomap_compute.h"   // [rc4l] ComputeAutomapStatus
+#include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
+#include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
 #include <cstddef>
 
@@ -1655,6 +1660,10 @@ static int GetTeamProperty (unsigned int team, int prop) {
 			return TEAM_GetReturnTicks (team);
 		case TPROP_NumPlayers:
 			return TEAM_CountPlayers (team);
+		// [rc4l] Ported from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: the winner and loser themes' tracks.
+		case TPROP_WinnerThemeOrder:
+		case TPROP_LoserThemeOrder:
+			return TEAM_GetIntermissionThemeOrder (team, prop == TPROP_WinnerThemeOrder);
 		// [Dusk] Now for the strings! Using dynamic strings for this.
 		case TPROP_TeamItem:
 		case TPROP_WinnerTheme:
@@ -1973,7 +1982,7 @@ DPlaneWatcher::DPlaneWatcher (AActor *it, line_t *line, int lineSide, bool ceili
 {
 	int secnum;
 
-	secnum = P_FindSectorFromTag (tag, -1);
+	secnum = P_FindFirstSectorFromTag (tag);
 	if (secnum >= 0)
 	{
 		secplane_t plane;
@@ -3686,6 +3695,15 @@ void DACSThinker::Tick ()
 		ACS_StringBuilderStack.Clear();
 		I_Error("Error: %d garbage entries on ACS string builder stack.", size);
 	}
+
+	// [AK] If a client's userinfo CVars were changed from any scripts,
+	// send them to the server in a CLC_ACSUSERINFO command.
+	// [rc4l] Ported from zandronum@02962ee6283e5ce454ad1059d68c7a5bb8427590 and zandronum@8cd5694e6ca6d454f5a179540a4fad6077f16a1c: a client sends the userinfo its scripts changed at once, in a command the server never counts as a flood.
+	if (zx::net::IsClient() && userInfoChanges.size() > 0)
+	{
+		CLIENTCOMMANDS_UserInfo(userInfoChanges, true);
+		userInfoChanges.clear();
+	}
 }
 
 //=====================================================================
@@ -4045,7 +4063,8 @@ do_count:
 				if ( actor->player && (actor->player->bSpectating || actor->player->bDeadSpectator) )
 					continue;
 
-				if (actor->Sector->tag == tag || tag == -1)
+				// Zero-tagged sectors must be handled differently, as they have no actual tags.
+				if (tag == -1 || (tag == 0 && !tagManager.SectorHasTags(actor->Sector)) || tagManager.SectorHasTag(actor->Sector, tag))
 				{
 					// Don't count items in somebody's inventory
 					if (!actor->IsKindOf (RUNTIME_CLASS(AInventory)) ||
@@ -4071,7 +4090,8 @@ do_count:
 				if ( actor->player && (actor->player->bSpectating || actor->player->bDeadSpectator) )
 					continue;
 
-				if (actor->Sector->tag == tag || tag == -1)
+				// Zero-tagged sectors must be handled differently, as they have no actual tags.
+				if (tag == -1 || (tag == 0 && !tagManager.SectorHasTags(actor->Sector)) || tagManager.SectorHasTag(actor->Sector, tag))
 				{
 					// Don't count items in somebody's inventory
 					if (!actor->IsKindOf (RUNTIME_CLASS(AInventory)) ||
@@ -4108,7 +4128,8 @@ void DLevelScript::ChangeFlat (int tag, int name, bool floorOrCeiling)
 
 	flat = TexMan.GetTexture (flatname, FTexture::TEX_Flat, FTextureManager::TEXMAN_Overridable);
 
-	while ((secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
+	FSectorTagIterator it(tag);
+	while ((secnum = it.Next()) >= 0)
 	{
 		int pos = floorOrCeiling? sector_t::ceiling : sector_t::floor;
 		sectors[secnum].SetTexture(pos, flat);
@@ -4147,7 +4168,8 @@ void DLevelScript::SetLineTexture (int lineid, int side, int position, int name)
 
 	texture = TexMan.GetTexture (texname, FTexture::TEX_Wall, FTextureManager::TEXMAN_Overridable);
 
-	while ((linenum = P_FindLineFromID (lineid, linenum)) >= 0)
+	FLineIdIterator itr(lineid);
+	while ((linenum = itr.Next()) >= 0)
 	{
 		side_t *sidedef;
 
@@ -4815,6 +4837,20 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		}
 		break;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: sent through net-replication only when it changed.
+	case APROP_RejumpDelay:
+		if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
+		{
+			APlayerPawn *playerActor = static_cast<APlayerPawn *>(actor);
+			oldValue = playerActor->RejumpDelay;
+
+			playerActor->RejumpDelay = value;
+
+			if ( oldValue != playerActor->RejumpDelay )
+				zx::netreplication::SendThingProperty( actor, APROP_RejumpDelay );
+		}
+		break;
+
 	case APROP_ChaseGoal:
 		if (value)
 			actor->flags5 |= MF5_CHASEGOAL;
@@ -5195,6 +5231,10 @@ int DLevelScript::GetActorProperty (int tid, int property)
 								&& static_cast<APlayerPawn *>(actor)->isWallClimbing;
 	case APROP_IsAirWallRunning:return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
 								&& static_cast<APlayerPawn *>(actor)->isAirWallRunning;
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a non-pawn reports 0.
+	case APROP_RejumpDelay:	return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								? static_cast<APlayerPawn *>(actor)->RejumpDelay
+								: 0;
 	case APROP_ReactionTime:return actor->reactiontime;
 	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
@@ -5278,6 +5318,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_IsCrouchSliding:
 		case APROP_IsWallClimbing:
 		case APROP_IsAirWallRunning:
+		case APROP_RejumpDelay:	// [rc4l] upstream left it out, so CheckActorProperty always said no
 			return (GetActorProperty(tid, property) == value);
 
 		// Boolean values need to compare to a binary version of value
@@ -5784,6 +5825,17 @@ enum EACSFunctions
 	ASCF_SetControlPointInfo,
 	ASCF_GetSkinProperty, // [TRSR]
 	ACSF_IsPlayerContestingControlPoint,
+	// [rc4l] Ported from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: GetWadInfo, number 186 as theirs.
+	ACSF_GetWadInfo,
+	// [rc4l] Ported from zandronum@f522876fe386925f508425afceb41474914d4c24: SetMapUsedStatus, number 187 as theirs.
+	ACSF_SetMapUsedStatus,
+	// [rc4l] Ported from zandronum@92ebf777950155f28651186233b53d682acd986e: CheckScript, number 188 as theirs.
+	ACSF_CheckScript,
+	// [rc4l] Adapted from zandronum@6869793234d6828e47a2aa3b57a9ea7a87736e0b: CheckAutomap.
+	ACSF_CheckAutomap,
+	// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: GetSelectedInventory and SetSelectedInventory.
+	ACSF_GetSelectedInventory,
+	ACSF_SetSelectedInventory,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
@@ -5820,7 +5872,7 @@ int DLevelScript::SideFromID(int id, int side)
 	}
 	else
 	{
-		int line = P_FindLineFromID(id, -1);
+		int line = P_FindFirstLineFromID(id);
 		if (line == -1) return -1;
 		if (lines[line].sidedef[side] == NULL) return -1;
 		return lines[line].sidedef[side]->Index;
@@ -5836,7 +5888,7 @@ int DLevelScript::LineFromID(int id)
 	}
 	else
 	{
-		return P_FindLineFromID(id, -1);
+		return P_FindFirstLineFromID(id);
 	}
 }
 
@@ -6036,6 +6088,11 @@ static int SetUserCVar(int playernum, const char *cvarname, int value, bool is_s
 		if (cvar != NULL)
 		{
 			DoSetCVar(cvar, value, is_string, true);
+
+			// [AK] If we're a client, save this change so it can be sent out to the server later.
+			// [rc4l] Ported from zandronum@02962ee6283e5ce454ad1059d68c7a5bb8427590: a client keeps the change for its ACS thinker to send.
+			if (zx::net::IsClient() && DACSThinker::ActiveThinker != nullptr)
+				DACSThinker::ActiveThinker->userInfoChanges.insert(FName(cvar->GetName()));
 		}
 	}
 
@@ -6206,10 +6263,10 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 			return 0;	// Not implemented yet
 
 		case ACSF_GetSectorUDMFInt:
-			return GetUDMFInt(UDMF_Sector, P_FindSectorFromTag(args[0], -1), FBehavior::StaticLookupString(args[1]));
+			return GetUDMFInt(UDMF_Sector, P_FindFirstSectorFromTag(args[0]), FBehavior::StaticLookupString(args[1]));
 
 		case ACSF_GetSectorUDMFFixed:
-			return (int)(GetUDMFFixed(UDMF_Sector, P_FindSectorFromTag(args[0], -1), FBehavior::StaticLookupString(args[1])));
+			return (int)(GetUDMFFixed(UDMF_Sector, P_FindFirstSectorFromTag(args[0]), FBehavior::StaticLookupString(args[1])));
 
 		case ACSF_GetSideUDMFInt:
 			return GetUDMFInt(UDMF_Side, SideFromID(args[0], args[1]), FBehavior::StaticLookupString(args[2]));
@@ -6538,11 +6595,11 @@ int DLevelScript::CallFunction(int argCount, int funcIndex, SDWORD *args, struct
 				int space = args[2] < CHAN_FLOOR || args[2] > CHAN_INTERIOR ? CHAN_FULLHEIGHT : args[2];
 				if (seqname != NULL)
 				{
-					int secnum = -1;
-
-					while ((secnum = P_FindSectorFromTag(args[0], secnum)) >= 0)
+					FSectorTagIterator it(args[0]);
+					int s;
+					while ((s = it.Next()) >= 0)
 					{
-						SN_StartSequence(&sectors[secnum], args[2], seqname, 0);
+						SN_StartSequence(&sectors[s], args[2], seqname, 0);
 					}
 				}
 			}
@@ -7087,9 +7144,9 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_SetLineActivation:
 			{
-				int line = -1;
-
-				while ((line = P_FindLineFromID(args[0], line)) >= 0)
+				int line;
+				FLineIdIterator itr(args[0]);
+				while ((line = itr.Next()) >= 0)
 				{
 					lines[line].activation = args[1];
 				}
@@ -7098,7 +7155,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_GetLineActivation:
 			{
-				int line = P_FindLineFromID(args[0], -1);
+				int line = P_FindFirstLineFromID(args[0]);
 				return line >= 0 ? lines[line].activation : 0;
 			}
 			break;
@@ -7253,7 +7310,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			fixed_t	oldx = caller->x;
 			fixed_t	oldy = caller->y;
 			fixed_t	oldz = caller->z;
-			const MOVE_THING_DATA_s oldPositionData ( caller ); // [TP]
+			const MoveThingData oldPositionData(caller); // [TP]
 
 			if (!(flags & WARPF_ABSOLUTEANGLE))
 			{
@@ -7825,6 +7882,10 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				// [AK] No need to change the game mode if we're already playing it.
 				GAMEMODE_e newmode = static_cast<GAMEMODE_e>( gamemode );
 				if ( newmode == oldmode )
+					return 0;
+
+				// [AK] Don't change to any game mode that the current level isn't locked into.
+				if (( level.info->GameMode != NUM_GAMEMODES ) && ( level.info->GameMode != gamemode ))
 					return 0;
 
 				// [AK] Don't change to any team game if there's no team starts on the map!
@@ -8710,7 +8771,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 						len = args[4];
 				}
 
-				char *buf = new char[len];
+				unsigned char *buf = new unsigned char[len];
 				FWadLump &lump = ACSLumpHandles[args[0]].lump;
 				lump.Seek( args[1], SEEK_SET );
 
@@ -8780,20 +8841,38 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				enum
 				{
 					LUMP_INFO_SIZE,
-					LUMP_INFO_NAME
+					LUMP_INFO_NAME,
+					// [rc4l] Ported from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: a lump's namespace and the wad it belongs to.
+					LUMP_INFO_NAMESPACE,
+					LUMP_INFO_WAD,
 				};
 
-				switch(args[1])
+				const unsigned int lumpNum = args[0];
+				const unsigned int type = args[1];
+
+				switch ( type )
 				{
 					case LUMP_INFO_SIZE:
-						return Wads.LumpLength(args[0]);
+						return Wads.LumpLength( lumpNum );
 
 					case LUMP_INFO_NAME:
-						return GlobalACSStrings.AddString(Wads.GetLumpFullName(args[0]));
+					{
+						// [rc4l] Ported from zandronum@9f4728f2fdf44e885425fc59342c609dda127146: an index past the lumps has an empty name, where its null name crashed the string pool.
+						if ( zx::wadinfo::ComputeIndexInRange( lumpNum, Wads.GetNumLumps( )))
+							return GlobalACSStrings.AddString( Wads.GetLumpFullName( lumpNum ));
+						else
+							return GlobalACSStrings.AddString( "" );
+					}
+
+					case LUMP_INFO_NAMESPACE:
+						return Wads.GetLumpNamespace( lumpNum );
+
+					case LUMP_INFO_WAD:
+						return Wads.GetWadnumFromLumpnum( lumpNum );
 
 					default:
-						Printf("LumpGetInfo: unknown info type %i\n", args[1]);
-					return 0;
+						Printf( "LumpGetInfo: unknown info type %u\n", type );
+						return 0;
 				}
 			}
 
@@ -8859,10 +8938,33 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				if (( NETWORK_InClientMode( )) || ( level.flagsZA & LEVEL_ZA_NOBOTNODES ))
 					return 0;
 
-				// [AK] If a name is provided, remove the bot with that name.
+				const char *botName = nullptr;
+				unsigned int playerIndex = MAXPLAYERS;
+
 				if ( argCount > 0 )
 				{
-					const char *botName = FBehavior::StaticLookupString( args[0] );
+					botName = FBehavior::StaticLookupString( args[0] );
+
+					// [TRSR] ACC doesn't allow not providing an argument, so we should treat empty strings as not provided.
+					if ( botName != nullptr && strlen( botName ) == 0 )
+						botName = nullptr;
+				}
+
+				if ( argCount > 1 )
+				{
+					playerIndex = args[1];
+
+					// [AK] If an invalid player index was passed into the argument, then abort immediately.
+					if ( playerIndex >= MAXPLAYERS )
+						return 0;
+				}
+
+				// [AK] If a name is provided, remove the bot with that name.
+				if ( botName != nullptr )
+				{
+					// [TRSR] Remove color codes from input in case this comes from StrParam(n:x)
+					FString cleanBotName = botName;
+					V_RemoveColorCodes( cleanBotName );
 
 					for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 					{
@@ -8870,9 +8972,10 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 							continue;
 
 						FString playerName = players[i].userinfo.GetName( );
-						V_UnColorizeString( playerName );
+						V_RemoveColorCodes( playerName );
 
-						if ( playerName.CompareNoCase( botName ) == 0 )
+						// [AK] If a valid player index was provided, check if the bot has that index.
+						if (( playerName.CompareNoCase( cleanBotName ) == 0 ) && (( playerIndex == MAXPLAYERS ) || ( playerIndex == i )))
 						{
 							BOTS_RemoveBot( i, true );
 							return 1;
@@ -8880,6 +8983,15 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 					}
 
 					return 0;
+				}
+				// [AK] If a valid player index was provided, check if that player is a bot, then remove them.
+				else if ( playerIndex < MAXPLAYERS )
+				{
+					if (( playeringame[playerIndex] == false ) || ( players[playerIndex].bIsBot == false ))
+						return 0;
+
+					BOTS_RemoveBot( playerIndex, true );
+					return 1;
 				}
 				// [AK] Otherwise, try removing a random bot from the game.
 				else
@@ -9223,6 +9335,111 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				argCount > 11 ? FIXED2DBL(args[11]) : 1.0 );
 		}
 
+		// [rc4l] Adapted from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: a wad's name, lumps, parent and flags, the range and parent rules in computation/wadinfo_compute.
+		case ACSF_GetWadInfo:
+		{
+			enum
+			{
+				WAD_INFO_NAME,
+				WAD_INFO_FIRSTLUMP,
+				WAD_INFO_LASTLUMP,
+				WAD_INFO_PARENTWAD,
+				WAD_INFO_LOADEDAUTOMATICALLY,
+				WAD_INFO_OPTIONAL,
+				WAD_INFO_HASAUTHENTICATEDLUMPS,
+			};
+
+			const unsigned int wadNum = args[0];
+			const unsigned int type = args[1];
+
+			switch( type )
+			{
+				case WAD_INFO_NAME:
+				{
+					if ( zx::wadinfo::ComputeIndexInRange( wadNum, Wads.GetNumWads( )))
+						return GlobalACSStrings.AddString( Wads.GetWadName( wadNum ));
+					else
+						return GlobalACSStrings.AddString( "" );
+				}
+
+				case WAD_INFO_FIRSTLUMP:
+					return Wads.GetFirstLump( wadNum );
+
+				case WAD_INFO_LASTLUMP:
+					return Wads.GetLastLump( wadNum );
+
+				case WAD_INFO_PARENTWAD:
+				{
+					return zx::wadinfo::ComputeParentWadInfo( Wads.GetParentWad( wadNum ), wadNum );
+				}
+
+				case WAD_INFO_LOADEDAUTOMATICALLY:
+					return Wads.GetLoadedAutomatically( wadNum );
+
+				case WAD_INFO_OPTIONAL:
+					return Wads.IsWadOptional( wadNum );
+
+				case WAD_INFO_HASAUTHENTICATEDLUMPS:
+					return Wads.WadContainsAuthenticatedLumps( wadNum );
+
+				default:
+					Printf( "GetWadInfo: unknown info type %u\n", type );
+					return 0;
+			}
+		}
+
+		case ACSF_SetMapUsedStatus:
+		{
+			// [rc4l] Adapted from zandronum@f522876fe386925f508425afceb41474914d4c24: the rule is ComputeSetsMapUsedStatus and the send net-replication's, since game code asks no role of the network itself.
+			const unsigned int position = args[0] - 1;
+			const bool used = !!args[1];
+
+			// [AK] Don't let clients set a map's used status themselves.
+			if ( zx::maprotation::ComputeSetsMapUsedStatus( zx::net::InClientMode( ), position, MAPROTATION_GetNumEntries( ), used, MAPROTATION_IsUsed( position )))
+			{
+				MAPROTATION_SetUsed( position, used );
+
+				// [AK] Inform the clients about the map's new used status.
+				zx::netreplication::SendMapUsedStatus( position );
+				return 1;
+			}
+
+			return 0;
+		}
+
+		// [rc4l] Adapted from zandronum@92ebf777950155f28651186233b53d682acd986e: whether a script exists by name or number, the choice in computation/checkscript_compute and a missing name never added to the name table.
+		case ACSF_CheckScript:
+		{
+			const bool byName = zx::ComputeCheckScriptByName( argCount, argCount > 1 ? args[1] : 0 );
+			return ACS_ExistsScript( zx::ComputeCheckScriptNumber( byName, args[0], byName ? FName( FBehavior::StaticLookupString( args[0] ), true ).GetIndex( ) : 0 ));
+		}
+
+		// [rc4l] Adapted from zandronum@6869793234d6828e47a2aa3b57a9ea7a87736e0b: whether the automap is off, full or overlaid, the choice in computation/acsautomap_compute.
+		case ACSF_CheckAutomap:
+			return zx::ComputeAutomapStatus( automapactive, viewactive );
+
+		// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: the activator's selected item by class, empty when it is no player or has none.
+		case ACSF_GetSelectedInventory:
+		{
+			const AInventory *item = (( activator != nullptr ) && ( activator->player != nullptr ) && ( activator->player->mo != nullptr )) ? activator->player->mo->InvSel : nullptr;
+			return GlobalACSStrings.AddString( item ? item->GetClass( )->TypeName.GetChars( ) : "" );
+		}
+
+		// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: the server selects the item itself before its clients hear of it, where upstream's only told them.
+		case ACSF_SetSelectedInventory:
+		{
+			if (( activator == nullptr ) || ( activator->player == nullptr ) || ( activator->player->mo == nullptr ))
+				return false;
+
+			AInventory *item = activator->player->mo->FindInventory( PClass::FindClass( FBehavior::StaticLookupString( args[0] )));
+			const bool showInventoryBar = ( argCount > 1 ) && ( args[1] != 0 );
+			if ( PLAYER_SetSelectedInventory( activator->player, item, showInventoryBar ) == false )
+				return false;
+
+			zx::netreplication::SendSelectedInventory( static_cast<int>( activator->player - players ), item, showInventoryBar );
+			return true;
+		}
+
 		case ACSF_GetActorFloorTexture:
 		{
 			auto a = SingleActorFromTID(args[0], activator);
@@ -9305,6 +9522,7 @@ int DLevelScript::RunScript ()
 	ACSLocalArrays noarrays;
 	ACSLocalArrays *localarrays = &noarrays;
 	ScriptFunction *activeFunction = NULL;
+	ScriptPtr *ptr = nullptr;
 	FRemapTable *translation = 0;
 	int resultValue = 1;
 	bool bIsFirstTic = false; // [AK]
@@ -9312,7 +9530,7 @@ int DLevelScript::RunScript ()
 
 	if (InModuleScriptNumber >= 0)
 	{
-		ScriptPtr *ptr = activeBehavior->GetScriptPtr(InModuleScriptNumber);
+		ptr = activeBehavior->GetScriptPtr(InModuleScriptNumber);
 		assert(ptr != NULL);
 		if (ptr != NULL)
 		{
@@ -9353,11 +9571,13 @@ int DLevelScript::RunScript ()
 		// Wait for tagged sector(s) to go inactive, then enter
 		// state running
 	{
-		int secnum = -1;
-
-		while ((secnum = P_FindSectorFromTag (statedata, secnum)) >= 0)
+		int secnum;
+		FSectorTagIterator it(statedata);
+		while ((secnum = it.Next()) >= 0)
+		{
 			if (sectors[secnum].floordata || sectors[secnum].ceilingdata)
 				return resultValue;
+		}
 
 		// If we got here, none of the tagged sectors were busy
 		state = SCRIPT_Running;
@@ -9410,7 +9630,9 @@ int DLevelScript::RunScript ()
 
 	while (state == SCRIPT_Running)
 	{
-		if (++runaway > 2000000)
+		// [rc4l] Ported from zandronum@b8fe8ef13df5823c881e65c7a4f2f9fa61f6a60d: a script flagged BUSY is not held to the runaway limit.
+		// [rc4l] Adapted from zandronum@c346015950993a4ec201acd313d9445fe869b050: every p-code still counts, for acsprofile and the missing-script check, and a script not found is held to the limit.
+		if ( (++runaway > 2000000) && !( ptr && ( ptr->Flags & SCRIPTF_Busy )))
 		{
 			Printf ("Runaway %s terminated\n", ScriptPresentation(script).GetChars());
 			state = SCRIPT_PleaseRemove;
@@ -11630,9 +11852,10 @@ scriptwait:
 
 		case PCD_SETLINEBLOCKING:
 			{
-				int line = -1;
+				int line;
 
-				while ((line = P_FindLineFromID (STACK(2), line)) >= 0)
+				FLineIdIterator itr(STACK(2));
+				while ((line = itr.Next()) >= 0)
 				{
 					switch (STACK(1))
 					{
@@ -11669,9 +11892,10 @@ scriptwait:
 
 		case PCD_SETLINEMONSTERBLOCKING:
 			{
-				int line = -1;
+				int line;
 
-				while ((line = P_FindLineFromID (STACK(2), line)) >= 0)
+				FLineIdIterator itr(STACK(2));
+				while ((line = itr.Next()) >= 0)
 				{
 					if (STACK(1))
 						lines[line].flags |= ML_BLOCKMONSTERS;
@@ -11696,7 +11920,8 @@ scriptwait:
 					arg0 = -FName(FBehavior::StaticLookupString(arg0));
 				}
 
-				while ((linenum = P_FindLineFromID (STACK(7), linenum)) >= 0)
+				FLineIdIterator itr(STACK(7));
+				while ((linenum = itr.Next()) >= 0)
 				{
 					line_t *line = &lines[linenum];
 					line->special = specnum;
@@ -12058,8 +12283,12 @@ scriptwait:
 					}
 					// [BB] If the activator is a player, tell the clients about the changed capacity.
 					// [BB] Only bother the clients if MaxAmount has actually changed.
-					if ( activator->player && NETWORK_GetState() == NETSTATE_SERVER && ( oldMaxAmount != item->MaxAmount ) )
-						SERVERCOMMANDS_SetPlayerAmmoCapacity( activator->player - players, item );
+					if (activator->player && zx::net::IsServer())
+					{
+						// [rc4l] Ported from zandronum@9d03d58bde7075cb320c28c206783bd437495413: no capacity to send when the ammo could not be given.
+						if (item != nullptr && oldMaxAmount != item->MaxAmount)
+							SERVERCOMMANDS_SetPlayerAmmoCapacity (activator->player - players, item);
+					}
 				}
 			}
 			sp -= 2;
@@ -12261,7 +12490,7 @@ scriptwait:
 				fixed_t z = 0;
 
 				if (tag != 0)
-					secnum = P_FindSectorFromTag (tag, -1);
+					secnum = P_FindFirstSectorFromTag (tag);
 				else
 					secnum = int(P_PointInSector (x, y) - sectors);
 
@@ -12283,7 +12512,7 @@ scriptwait:
 
 		case PCD_GETSECTORLIGHTLEVEL:
 			{
-				int secnum = P_FindSectorFromTag (STACK(1), -1);
+				int secnum = P_FindFirstSectorFromTag (STACK(1));
 				int z = -1;
 
 				if (secnum >= 0)

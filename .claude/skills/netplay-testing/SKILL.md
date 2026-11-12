@@ -29,7 +29,8 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   `.netplay-session.json` for the other commands.
 - `--lag` and `--loss` are per client, comma-separated: `fua_net_fakeping` adds that many ms to the client's
   round trip (half each way) and `fua_net_fakeloss` drops that percent of its packets each way
-  (`features/net-transport`). A lone value applies to every client.
+  (`features/net-transport`). `--jitter` (`fua_net_fakejitter`) holds each packet up to that many ms more, in
+  order, so packets arrive in bursts. A lone value applies to every client; a scenario config takes `jitter` too.
 - `--for-user` leaves the first client's input unlocked for the user to play, with every other client locked.
 - Ports: the user's own game is on bridge 7801; netplay uses 7820 and up and game ports 10820 and up, the
   scenarios 7840 and 10840. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
@@ -42,7 +43,11 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
 
 - `rpc net.state`: role, a client's connection, the server tic it last heard of and its ping, a server's
   clients with each one's slot state, ping and last confirmed tic.
-- `rpc world.actors` lists synced actors by network id (carried inventory left out, `owned: 1` keeps it);
+- `rpc player.camera` on a client: where its player stands, and its `fov` and `desiredFov`, which a server's
+  `sv_minfov` and `sv_maxfov` bound.
+- `rpc world.actors` lists synced actors by network id, each with its `fz` floor, `clip` floorclip and
+  `px`/`py`/`pz`, where it was when its tic began, which the renderer interpolates from
+  (carried inventory left out, `owned: 1` keeps it);
   `world.sectorstate` and `world.sidestate` page through the map's look. `sim.hash` is not comparable
   between a server and a client.
 - `netdiff` compares the map once and the actors against the server's history at the tic each client last

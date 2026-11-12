@@ -13,6 +13,8 @@
 CVAR(Int, fua_net_fakeping, 0, CVAR_FUA_DEV_MODE)
 // [rc4l] Percent of the packets this instance sends, and of those it receives, dropped, for tests on loopback.
 CVAR(Float, fua_net_fakeloss, 0.f, CVAR_FUA_DEV_MODE)
+// [rc4l] Up to this many milliseconds more each packet this instance sends or receives waits, holding up those behind it, for tests on loopback.
+CVAR(Int, fua_net_fakejitter, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace nettransport {
 
@@ -20,6 +22,7 @@ namespace {
 
 HeldPackets g_outbound, g_inbound;
 unsigned g_dropState = 0x2545F491u;
+unsigned g_jitterState = 0x9E3779B9u;
 
 // [rc4l] A clock of its own: I_MSTime counts from a base set only once the timer is chosen, so a packet held at startup came due nine days later and every one behind it waited too.
 long long ClockMs()
@@ -29,7 +32,7 @@ long long ClockMs()
 
 bool Simulating()
 {
-	return fua_net_fakeping > 0 || fua_net_fakeloss > 0.f;
+	return fua_net_fakeping > 0 || fua_net_fakeloss > 0.f || fua_net_fakejitter > 0;
 }
 
 // [rc4l] The clock packets are held against, or the end of time once the conditions are off so everything held goes.
@@ -46,7 +49,7 @@ bool Hold(HeldPackets &held, bool outbound, const unsigned char *bytes, int leng
 		return true;
 	}
 	ZX_COUNT("net/held", "packets", 1);
-	ComputeHoldPacket(held, ClockMs(), ComputeFakeDelayMs(fua_net_fakeping, outbound), bytes, length,
+	ComputeHoldPacket(held, ClockMs(), ComputeFakeDelayMs(fua_net_fakeping, outbound) + ComputeFakeJitterMs(g_jitterState, fua_net_fakejitter), bytes, length,
 		static_cast<const unsigned char *>(address), addressLength);
 	return true;
 }

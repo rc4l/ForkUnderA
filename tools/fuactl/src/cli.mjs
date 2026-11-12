@@ -43,6 +43,7 @@ import * as netdiffMod from "./netdiff.mjs";
 import * as netcap from "./netcap.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
+import { runTracker } from "./tracker.mjs";
 import { quitFailed, recentCrashes, summarizeCrash } from "./crashes.mjs";
 import { describeSimTraceDiff, diffSimTraces, parseSimTrace } from "./simtrace.mjs";
 import * as telemetry from "./telemetry.mjs";
@@ -176,7 +177,7 @@ const USAGE = `fuactl <command>
   hang --port P [--token T] [--pid P] [--gap MS]   why an instance stopped answering: gone / unreachable / stalled / paused / healthy, plus the function it is stuck in (on Windows from its busiest threads' native stacks)
   doctor [--exe PATH] [--src DIR]      is the configured engine driveable at all (bridge compiled in?) and is it older than the source?
   net-bw [--seed S] [--map M] [--spawn CLS] [--count N] [--seconds N]   client/server bandwidth, baseline vs perturbation
-  netplay [--map M] [--iwad W] [--file a.wad,b.pk3] [--players N] [--observers N] [--lag MS,MS] [--loss PCT,PCT] [--port P] [--game-port G] [--for-user] [--cvar k=v] | --quit   a locked server and clients joined to it as players and observers on loopback, each client's simulated ping and loss from the lists, recorded in .netplay-session.json until Ctrl-C (--for-user leaves the first client's input to you); --quit stops a set by its tokens
+  netplay [--map M] [--iwad W] [--file a.wad,b.pk3] [--players N] [--observers N] [--lag MS,MS] [--loss PCT,PCT] [--jitter MS,MS] [--port P] [--game-port G] [--for-user] [--cvar k=v] | --quit   a locked server and clients joined to it as players and observers on loopback, each client's simulated ping and loss from the lists, recorded in .netplay-session.json until Ctrl-C (--for-user leaves the first client's input to you); --quit stops a set by its tokens
   netdiff [--seconds N]   the running netplay set's server against each client: actors by network id at the server tic each last heard, sectors and sidedefs; exit 1 when any differ
   netcap record --out FILE [--seconds N] | netcap diff A B   every command the running set's server writes for its clients, captured to FILE.netcap; diff names the commands whose counts changed and where each client's stream parts
   cycle --port P [--token T] [--count N] [--settle MS]   advance the map rotation N times, confirming intermissions
@@ -212,6 +213,7 @@ const USAGE = `fuactl <command>
   crashes [--hours N]   the crash files fuactl's launches left in the last N hours (default 24), newest first, each with why it stopped and its first frames
   comments [--since REF]   the [rc4l] comments a change adds since REF (default HEAD, untracked files included) that run past one line or one sentence, as AGENTS.md has them; exit 1 on any
   privacy [--since REF | --staged]   what a change adds since REF (default HEAD, untracked files included), or what is staged, that could identify its author: a home folder's path, an email address, this machine's user or host name, or a pattern in ~/.forkundera/private-patterns.txt; exit 1 on any
+  tracker next|show|diff|mark|pull|check|regen|progress [args]   the commit trackers (UZDoom, Zandronum): the next pending row with what judging it needs, a row's verdict set with its twin's, a diff applied under src/zandronum, upstream pulled in; runs commit-tracker/tracker.py with a real Python and Mercurial found for it (fuactl tracker help)
   coverage [--since REF] [--tool PATH]   the 100% line-coverage gate on Windows: builds the Debug unit tests and runs them under OpenCppCoverage, then checks every unit a NAME_test.cpp gates, or with --since only those changed since REF (new files included); exit 1 on any miss
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a level's summary (UDMF, Doom or Hexen format), sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
@@ -258,6 +260,8 @@ async function main() {
   // [rc4l] A reader that stops early (`| head`) closes the pipe, which ends the command rather than crashing it.
   process.stdout.on("error", (e) => { if (e.code === "EPIPE") process.exit(0); throw e; });
   const [cmd, ...argv] = process.argv.slice(2);
+  // [rc4l] `fuactl tracker` hands its arguments to commit-tracker/tracker.py untouched, --help included.
+  if (cmd === "tracker") process.exit(runTracker(fileURLToPath(new URL("../../../", import.meta.url)), argv));
   const { flags, rest } = parseFlags(argv);
   // [rc4l] --help says what a command takes and does nothing else: `play --help` used to launch an engine.
   if (flags.help) { console.log(usageFor(USAGE, cmd)); return; }

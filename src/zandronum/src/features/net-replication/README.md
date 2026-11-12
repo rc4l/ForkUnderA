@@ -32,6 +32,10 @@ however many hits it took (`NoteDamaged`, `SendWoundedHealth` from `SendChanges`
 `ComputeAddPendingHealth`). Stock Zandronum sends only the death, to save the bytes, so anything a client reads of a
 wounded monster's health (a health bar, a client script, `netdiff`) read its spawn health (`farhitscan`).
 
+A puff goes to the clients through `SendPuff` (`ComputePuffSend`, `ComputeSkipsPuffFor`): `P_SpawnPuff` sends its own,
+and a rail sends its endpoint puff only once the puff survived the sky, since a client kept one the server sent and then
+took away (`netrailpuff`).
+
 A non-player's death goes out with its place whole (`SERVERCOMMANDS_MoveThingExactWhole` from `AActor::Die`): the
 exact move used to leave out, or have the client reuse, any coordinate the server had last sent, but a client walks a
 monster itself between updates and keeps a walking update's whole-unit coordinates as its last, so corpses lay a unit
@@ -43,6 +47,15 @@ server only): the raise came after the send, and every client kept the corpse a 
 
 A server script's `SetUserCVar` that changes a player's mod user cvar sends it to every client at once
 (`SendUserCVar`), not at the tic's end, so a client script the server starts later in the tic reads the new value.
+
+ACS's `SetSelectedInventory` selects the item on a server as on any machine (`PLAYER_SetSelectedInventory`) and sends it
+through `SendSelectedInventory`, which sends only on a server, as `SVC2_PLAYERSETSELECTEDINVENTORY` (`netinvselect`).
+
+## Map rotation
+
+ACS's `SetMapUsedStatus` changes an entry's used status on a server and sends it through `SendMapUsedStatus`
+(`rotation.h`), which sends only on a server, so the script asks the network nothing itself; clients read it as
+`UPDATE_MAPROTATION_SETUSEDSTATUS` (`netmaprotation`).
 
 ## Owns
 
@@ -58,14 +71,21 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `computation/mapstate_compute.{h,cpp}` (the families, what changed, what a compact send covered) with its
   `_test.cpp`.
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
-- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`).
-- `playerstate.{h,cpp}` (`SendUserCVar`).
+- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`, `SendFloorClip`, `SendThingProperty`, `SendPuff`).
+- `playerstate.{h,cpp}` (`SendUserCVar`, `SendSelectedInventory`).
+- `rotation.{h,cpp}` (`SendMapUsedStatus`).
 
 ## In-engine hooks
 
 - `p_spec.cpp` `P_SpawnSpecials`: `BeginLevel` beside the `Saved*` baselines.
 - `p_interaction.cpp` `P_DamageMobj`: `NoteDamaged` once the target has survived the damage.
 - `p_acs.cpp` `SetUserCVar`: `SendUserCVar` when a server script changed the cvar's value.
+- `p_acs.cpp` `SetMapUsedStatus`: `SendMapUsedStatus` when a script changed an entry's used status.
+- `p_acs.cpp` `SetSelectedInventory`: `SendSelectedInventory` once a script selected a held inventory-bar item.
+- `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
+- `p_acs.cpp` `SetActorProperty`: `SendThingProperty` when a script changed a pawn's `APROP_RejumpDelay`.
+- `p_mobj.cpp` `P_SpawnPuff`: `SendPuff` when its caller lets the clients hear of the puff.
+- `p_map.cpp` `P_RailAttack`: `SendPuff` for the endpoint puff once it survived the sky.
 - `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between
   `SERVER_UpdateLines` and `SERVER_UpdateSectors`, which keep only the families not here.
 - Touches in `p_acs.cpp`, `p_ceiling.cpp`, `p_doors.cpp`, `p_floor.cpp`, `p_lnspec.cpp`, `p_plats.cpp`,

@@ -408,6 +408,10 @@ BEGIN_ENUM( SVC2 )
 	// [Doruk-Aksoy] ACS fua_SetActorMaterial and fua_SetActorUniform: an actor's GLDEFS fua_Material and its own uniforms.
 	ENUM_ELEMENT ( SVC2_FUASETACTORMATERIAL ),
 	ENUM_ELEMENT ( SVC2_FUASETACTORUNIFORM ),
+	// [rc4l] Ported from zandronum@7e0d5383e6ab5f7ca2f27f26989c2a9bda059ef1: a TERRAIN SmallClip, appended where 3.3 inserts it after SVC2_GIVEINVENTORYEXTRA.
+	ENUM_ELEMENT ( SVC2_SETTHINGFLOORCLIP ), // [RK] Terrain SmallClip value.
+	// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: ACS SetSelectedInventory, appended where 3.3 adds it after SVC2_SETDOMINATIONPOINTSTATE.
+	ENUM_ELEMENT ( SVC2_PLAYERSETSELECTEDINVENTORY ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }
@@ -478,6 +482,7 @@ BEGIN_ENUM( CLC )
 	ENUM_ELEMENT( CLC_SETVOIPCHANNELVOLUME ),
 	ENUM_ELEMENT( CLC_CONVERSATIONREPLY ),
 	ENUM_ELEMENT( CLC_CONVERSATIONCLOSE ),
+	ENUM_ELEMENT( CLC_ACSUSERINFO ),
 
 	ENUM_ELEMENT( NUM_CLIENT_COMMANDS )
 }
@@ -519,7 +524,7 @@ BEGIN_ENUM ( NetworkErrorCode )
 	ENUM_ELEMENT( NETWORK_ERRORCODE_IDENTITYINUSE ),
 
 	// [SB] The client is using a different Zstandard dictionary than the server.
-	// [KI] Ported from zandronum@7435acc0b7d62e289837336fe81ebaee84e4b841, appended after our own codes rather than at 3.3's position so none of ours renumber.
+	// [KI] Ported from zandronum@1caada743db48a07d712817cef9e5439bc099512, appended after our own codes rather than at 3.3's position so none of ours renumber.
 	ENUM_ELEMENT( NETWORK_ERRORCODE_WRONGZSTDDICTIONARY ),
 
 	ENUM_ELEMENT( NUM_NETWORK_ERRORCODES )

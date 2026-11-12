@@ -11,11 +11,13 @@ export const TOOLS = [
   { setting: "fua_mesh_sky", own: 0, command: "fua_mesh_blank", ran: /mesh pieces blanked/ },
   { setting: "cl_fua_hitbox", own: 1, command: "fua_hitbox", ran: /Hitbox overlay (on|off)\./ },
   { setting: "fua_dg_lightlinks", own: 0, command: "fua_light", ran: /usage: fua_light/ },
+  // [rc4l] GL's untextured view, held at its default for clients where zandronum@2849267e9bef forces it on them.
+  { setting: "gl_texture", own: 0 },
 ];
 export const REFUSED = /is a dev-mode tool: sv_cheats must be true on this server/;
 const shown = (v) => (v ? "true" : "false");
 
-// [rc4l] One tool's faults from what the client and server printed: open allows the client everything until the server turns cheats off; closed holds its value at the default, refuses it both and gives the value back once the server turns cheats on.
+// [rc4l] One tool's faults from what the client and server printed: open allows the client everything until the server turns cheats off; closed holds its value at the default, refuses it both and gives the value back once the server turns cheats on; a tool without a command is judged by its setting alone.
 export function toolFaults({ setting, own, command, ran }, open, { joined, set, run, server, flipped }) {
   const faults = [];
   const want = (got, value, what) => { if (got !== value) faults.push(`${what} read ${got ?? "nothing"}, not ${value}`); };
@@ -23,7 +25,7 @@ export function toolFaults({ setting, own, command, ran }, open, { joined, set, 
   want(joined, open ? mine : fallback, `in the game, the client's own ${setting} ${own}`);
   if (REFUSED.test(set.text) === open) faults.push(open ? `the client was refused ${setting} with cheats on` : `the client was not told ${setting} is a dev-mode tool`);
   want(set.value, fallback, `after the client's ${setting} ${open ? 1 - own : own}, ${setting}`);
-  if (open ? REFUSED.test(run) || !ran.test(run) : !REFUSED.test(run) || ran.test(run)) faults.push(open ? `${command} did not run with cheats on` : `${command} ran on a client without cheats`);
+  if (command && (open ? REFUSED.test(run) || !ran.test(run) : !REFUSED.test(run) || ran.test(run))) faults.push(open ? `${command} did not run with cheats on` : `${command} ran on a client without cheats`);
   want(server, mine, `on the server's own console, ${setting} ${own}`);
   want(flipped, open ? fallback : mine, `once the server turned cheats ${open ? "off" : "on"}, the client's own ${setting} ${own}`);
   return faults;
@@ -55,7 +57,7 @@ export async function judgeNetplay(set, label, { config, map }) {
     const text = await cap.exec(c, `${setting} ${open ? 1 - own : own}`);
     const attempt = { text, value: await read(c, setting) };
     await cap.waitTics(c, 40);
-    const run = await cap.exec(c, command);
+    const run = command ? await cap.exec(c, command) : "";
     await cap.exec(c, `${setting} ${own}`);
     await cap.exec(sc, `${setting} ${own}`);
     const server = await read(sc, setting);

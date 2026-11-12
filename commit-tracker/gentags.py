@@ -1,29 +1,31 @@
 #!/usr/bin/env python3
 """
-Generate commit-tracker/tags.tsv  ->  sha \\t space-separated tags
+Generate a ledger's tags.tsv  ->  sha \\t space-separated tags
 
-Tags are DERIVED from git, never hand-written per commit, and RIGID -- they come from
+Tags are DERIVED from history, never hand-written per commit, and RIGID -- they come from
 literal path structure, not fuzzy substring matching:
 
   * category tags -- every literal directory component a commit touches, plus the
                      filename's subsystem (its ZDoom `xxx_` prefix, or the stem).
   * fn:A_* tags   -- action-function identifiers matched on the diff's changed lines
                      (exact token `A_[A-Z][A-Za-z0-9]*`, pattern-discovered).
+  * svc:x / clc:x -- server and client commands a changed line names: SVC_/SVC2_/CLC_ enum
+                     values, ServerCommands::X, SERVERCOMMANDS_X/CLIENTCOMMANDS_X calls, or a
+                     protocolspec `Command X`, folded to lower case without underscores so every
+                     spelling of one command is one tag. Only for ledgers with "netcode" set.
   * merge         -- a commit with no files (a merge) is tagged `merge`.
 
-Env:  UZDOOM (clone path), ANCHOR (parity commit), SYM_UNTIL / UNTIL (bound the passes to a
-      date window for a fast partial run).  Categories cover every commit up to UNTIL;
-      symbols cover up to SYM_UNTIL (the -p diff pass is the slow one).
+Usage:  gentags.py [--ledger uzdoom|zandronum] [--to REV] [--out FILE]
 """
-import os, re, subprocess, sys
-from collections import OrderedDict
+import argparse
+import os
+import re
+import sys
 
-UP      = os.environ.get("UZDOOM", "/Users/username/repos/UZDoom")
-ANCHOR  = os.environ.get("ANCHOR", "ad88cfc5e")
-UNTIL   = os.environ.get("UNTIL")
-SYM_UNTIL = os.environ.get("SYM_UNTIL")
-HERE    = os.path.dirname(os.path.abspath(__file__))
-OUT     = os.path.join(HERE, "tags.tsv")
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import ledger as L  # noqa: E402
+import tracker  # noqa: E402
 
 SOURCE_ROOTS = ("src/", "wadsrc/static/", "wadsrc/")
 # ZDoom's file-prefix convention -> readable subsystem. Exact-key lookup, not substring.
@@ -37,11 +39,10 @@ ZDOOM_PREFIX = {
 GAMEPLAY = ["src/g_doom", "src/g_heretic", "src/g_hexen", "src/g_strife", "src/g_shared",
             "src/g_raven", "src/thingdef", "src/scripting", "src/p_enemy.cpp",
             "src/p_mobj.cpp", "src/p_pspr.cpp", "wadsrc/static/zscript"]
-
-SEP     = "\x1f"
-MARK    = "\x01"
-ACTION  = re.compile(r"A_[A-Z][A-Za-z0-9]*")
-PREFIX  = re.compile(r"^([a-z0-9]+)_")
+ACTION = re.compile(r"A_[A-Z][A-Za-z0-9]*")
+PREFIX = re.compile(r"^([a-z0-9]+)_")
+SVC = re.compile(r"\b(?:SVC2?_|ServerCommands::|SERVERCOMMANDS_)([A-Za-z0-9_]+)|^Command ([A-Za-z0-9]+)")
+CLC = re.compile(r"\b(?:CLC_|CLIENTCOMMANDS_)([A-Za-z0-9_]+)")
 
 
 def file_subsystems(fname):
@@ -86,68 +87,60 @@ def path_tags(path):
     return tags
 
 
-def git_stream(args):
-    p = subprocess.Popen(["git", "-C", UP] + args, stdout=subprocess.PIPE,
-                         encoding="utf-8", errors="replace", bufsize=1)
-    for line in p.stdout:
-        yield line.rstrip("\n")
-    p.stdout.close()
-    p.wait()
+def command_tags(changed):
+    """svc: and clc: tags for one changed line (without its +/- marker)."""
+    out = set()
+    for prefix, rx in (("svc:", SVC), ("clc:", CLC)):
+        for m in rx.finditer(changed):
+            name = next(g for g in m.groups() if g)
+            out.add(prefix + name.replace("_", "").lower())
+    return out
 
 
-def floor_date():
-    return subprocess.check_output(
-        ["git", "-C", UP, "log", "-1", "--date=short", "--format=%cd", ANCHOR],
-        encoding="utf-8", env={**os.environ, "TZ": "UTC"}).strip()
+def changed_lines(stream, keep):
+    for sha, line in stream:
+        if sha in keep and line[:1] in "+-" and not line.startswith(("+++", "---")):
+            yield sha, line[1:]
 
 
 def main():
-    FLOOR = floor_date()
-    fmt = MARK + "%H" + SEP + "%cs"
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default="uzdoom")
+    ap.add_argument("--to", help="pin the range's end (a golden run)")
+    ap.add_argument("--out", help="write here instead of the ledger's tags.tsv")
+    args = ap.parse_args()
+    led = L.load_config()[args.ledger]
+    repo = tracker.repo_for(led)
+    to = args.to or led["to"]
+    commits = tracker.ledger_commits(led, repo, args.to, renames=False)
+    keep = {c.sha for c in commits}
 
-    # --- categories: every commit's touched paths (all files) ---
-    cats = OrderedDict()          # sha -> set(tags); OrderedDict keeps commit order
-    args = ["log", "--no-renames", "--name-only", "--format=" + fmt]
-    if UNTIL:
-        args.append("--until=" + UNTIL)
-    args.append(ANCHOR + "..HEAD")
-    sha, skip = None, True
-    for line in git_stream(args):
-        if line.startswith(MARK):
-            sha, date = line[1:].split(SEP)
-            skip = date < FLOOR
-            if not skip:
-                cats.setdefault(sha, set())   # register (so merges get an entry)
-        elif line and not skip and sha:
-            cats[sha].update(path_tags(line))
+    # categories: every commit's touched paths, newest first (git log's own order)
+    cats = {}
+    for c in reversed(commits):
+        cats[c.sha] = set()
+        # [rc4l] An ignored path (Zandronum's changelog) would tag most of its ledger `docs`; it counts only when it is all there is.
+        for p in [f for f in c.files if not L.is_ignored(led, f)] or c.files:
+            cats[c.sha].update(path_tags(p))
 
-    # --- symbols: fn:A_* from changed lines in the gameplay dirs (targeted -p, windowed) ---
     syms = {}
-    args = ["log", "--no-renames", "-p", "--unified=0", "--format=" + fmt]
-    if SYM_UNTIL:
-        args.append("--until=" + SYM_UNTIL)
-    args += [ANCHOR + "..HEAD", "--"] + GAMEPLAY
-    sha, skip = None, True
-    for line in git_stream(args):
-        if line.startswith(MARK):
-            sha, date = line[1:].split(SEP)
-            skip = date < FLOOR
-        elif not skip and sha and line[:1] in "+-" and not line.startswith(("+++", "---")):
-            for tok in ACTION.findall(line):
-                syms.setdefault(sha, set()).add("fn:" + tok)
+    for sha, line in changed_lines(repo.patches(led["from"], to, GAMEPLAY), keep):
+        for tok in ACTION.findall(line):
+            syms.setdefault(sha, set()).add("fn:" + tok)
+    if led.get("netcode"):
+        for sha, line in changed_lines(repo.patches(led["from"], to), keep):
+            syms.setdefault(sha, set()).update(command_tags(line))
 
-    # --- write merged ---
-    with open(OUT, "w") as f:
+    out = args.out or os.path.join(L.ledger_dir(led), "tags.tsv")
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write("# sha -> derived tags (space-separated). rigid: literal path components + "
                 "filename subsystem; fn:A_* from diff tokens; merges tagged 'merge'.\n")
-        n = 0
         for sha, tags in cats.items():
             allt = set(tags) | syms.get(sha, set())
             if not allt:
                 allt = {"merge"}
             f.write(sha + "\t" + " ".join(sorted(allt)) + "\n")
-            n += 1
-    print("tags.tsv: %d commits  (with symbols: %d)" % (len(cats), len(syms)))
+    print("tags.tsv [%s]: %d commits  (with symbols: %d)" % (args.ledger, len(cats), len([s for s in syms if syms[s]])))
 
 
 if __name__ == "__main__":

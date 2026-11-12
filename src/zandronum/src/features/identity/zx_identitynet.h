@@ -40,8 +40,8 @@ void SERVER_FuaAuthClearChallenge( ULONG ulClient );
 // Client: append our nonce and ephemeral key, minted once and reused across retries.
 void CLIENT_FuaAuthWriteHello( BYTESTREAM_s *pByteStream );
 
-// Client: check the server proved itself, then work out the account and the proof to answer with.
-bool CLIENT_FuaAuthReadChallenge( BYTESTREAM_s *pByteStream );
+// Client: check the server proved itself, then work out the account and the proof to answer with; a demo's playback only reads it.
+bool CLIENT_FuaAuthReadChallenge( BYTESTREAM_s *pByteStream, bool replayingDemo );
 
 // Client: append the account and the proof worked out above.
 void CLIENT_FuaAuthWriteProof( BYTESTREAM_s *pByteStream );

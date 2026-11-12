@@ -72,6 +72,9 @@ export function diffMap(server, client, { tolerance = DEFAULT_TOLERANCE } = {}) 
     if (!near(a.ceiling, b.ceiling, tolerance.height)) fields.push(`ceiling ${a.ceiling}/${b.ceiling}`);
     for (const f of ["light", "color", "fade", "desat", "floorTex", "ceilingTex", "gravity", "friction", "special"]) if (a[f] !== b[f]) fields.push(`${f} ${a[f]}/${b[f]}`);
     for (const f of ["reflect", "scale", "rotation"]) if (String(a[f]) !== String(b[f])) fields.push(`${f} ${a[f]}/${b[f]}`);
+    // [rc4l] A 3D floor's light list copies its planes, so a client that moved a plane without renewing the list still draws the old heights.
+    const [la, lb] = [a.lights || [], b.lights || []];
+    if (la.length !== lb.length || la.some((h, k) => !near(h, lb[k], tolerance.height))) fields.push(`lights ${la}/${lb}`);
     if (fields.length) out.push({ kind: "sector", i: a.i, what: `sector ${a.i}: ${fields.join(", ")} (server/client)` });
   }
   const m = Math.min(server.sides.length, client.sides.length);

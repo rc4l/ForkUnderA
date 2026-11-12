@@ -61,12 +61,12 @@ export function judgeCommandSafetyFrom(label, { listed, refusals, saved }) {
 }
 
 export async function judgeCommandSafety(c, inst, label) {
-  let said = "";
-  const off = c.onEvent((ev, data) => { if (ev === "out" && typeof data.text === "string") said += data.text; });
+  const heard = cap.listen(c);
   try {
     await activate(c, "FuaSafetyMenu", 2);
     await activate(c, "FuaSafetyFree", 1);
-  } finally { off(); }
+  } finally { heard.off(); }
+  const said = heard.text();
   const listed = await cap.exec(c, "atexit");
   const refusals = (said.match(/Cannot execute unsafe command\S* \S*atexit/g) || []).length;
   const m = /Config saved to (.+)\.\s*$/m.exec(await cap.exec(c, `writeini ${WRITEINI_NAME}`));

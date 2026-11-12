@@ -155,12 +155,23 @@
   .tag-kw   { background: #fdf2f8; color: #9d174d; border-color: #fbcfe8; }              /* lump keyword */
   .tag-acs  { background: #fff7ed; color: #9a3412; border-color: #fed7aa;
               font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }            /* ACS builtin */
+  .tag-svc  { background: #ecfeff; color: #155e75; border-color: #cffafe;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }            /* server/client command */
+  .tag-cvar { background: #f0fdf4; color: #166534; border-color: #dcfce7;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }            /* cvar */
+  /* [rc4l] One page, one ledger at a time: the switch is plain links (?ledger=...), so every view is a URL you can share. */
+  #ledgers { display: inline-flex; margin-left: 10px; vertical-align: 2px; border: 1px solid #d1d5db;
+             border-radius: 8px; overflow: hidden; }
+  #ledgers a { padding: 2px 10px; font-size: 12px; font-weight: 600; color: #1a1a2e; text-decoration: none;
+               background: #f9fafb; }
+  #ledgers a + a { border-left: 1px solid #d1d5db; }
+  #ledgers a.active { background: #1a1a2e; color: #fff; }
 </style>
 </head>
 <body>
 <header>
-  <h1>fua commit tracker</h1>
-  <div class="sub">One row per upstream commit from anchor <code>ad88cfc5e</code> to UZDoom HEAD &middot; click a sha to open the commit</div>
+  <h1>fua commit tracker<nav id="ledgers"></nav></h1>
+  <div class="sub" id="sub">One row per upstream commit from anchor <code>ad88cfc5e</code> to UZDoom HEAD &middot; click a sha to open the commit</div>
   <div id="progress" hidden>
     <div class="label">
       <span class="pct"></span> <span>toward</span> <span class="goal"></span>
@@ -184,8 +195,25 @@
 
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
 <script>
-const REPO = "https://github.com/UZDoom/UZDoom/commit/";
-const REPO_BASE = "https://github.com/UZDoom/UZDoom";
+// [rc4l] ?ledger= picks the upstream (default uzdoom); ledgers.json says where its files live and how to link a commit.
+const PARAMS = new URLSearchParams(location.search);
+const FALLBACK = { uzdoom: { name: "uzdoom", label: "UZDoom", dir: ".", order: "date",
+  commit_url: "https://github.com/UZDoom/UZDoom/commit/{sha}", file_url: "https://github.com/UZDoom/UZDoom/blob/{sha}/{path}" } };
+let LEDGERS = FALLBACK, LED = FALLBACK.uzdoom;
+const at = f => (LED.dir && LED.dir !== "." ? LED.dir + "/" : "") + f;
+const commitUrl = sha => LED.commit_url.replace("{sha}", sha);
+const fileUrl = (sha, path) => LED.file_url.replace("{sha}", sha).replace("{path}", path);
+const rowLink = (ledger, sha) => `?ledger=${encodeURIComponent(ledger)}&sha=${encodeURIComponent(sha)}`;
+const configLoaded = fetch("ledgers.json").then(r => r.ok ? r.json() : FALLBACK).catch(() => FALLBACK).then(cfg => {
+  for (const [k, v] of Object.entries(cfg)) v.name = k;
+  LEDGERS = cfg;
+  LED = cfg[PARAMS.get("ledger")] || cfg.uzdoom || Object.values(cfg)[0];
+  document.getElementById("ledgers").innerHTML = Object.values(cfg).map(l =>
+    `<a href="?ledger=${l.name}" class="${l === LED ? "active" : ""}">${esc(l.label)}</a>`).join("");
+  if (LED.summary) document.getElementById("sub").innerHTML = LED.summary + " &middot; click a sha to open the commit";
+  document.title = "fua commit tracker \u00b7 " + LED.label;
+  return LED;
+});
 const OUR_REPO = "https://github.com/rc4l/ForkUnderA/commit/";  // "our commit" column links here
 const STATUSES = ["pending", "ported", "adapted", "skip", "deferred", "partially-deferred"];
 let gridApi, active = "all";
@@ -194,7 +222,7 @@ let gridApi, active = "all";
 // Fired before the TSV fetches on purpose — progress.json is tiny, so the bar is on screen while
 // the table is still loading. Silently stays hidden if the file is missing: a decoration that
 // takes the page down with it would be a bad trade.
-fetch("progress.json")
+configLoaded.then(() => fetch(at("progress.json")))
   .then(r => r.ok ? r.json() : Promise.reject(new Error("progress.json: HTTP " + r.status)))
   .then(p => {
     const el = document.getElementById("progress");
@@ -211,7 +239,7 @@ fetch("progress.json")
 let filesMap = null, filesLoading = null;
 function loadFiles() {
   if (filesMap) return Promise.resolve(filesMap);
-  if (!filesLoading) filesLoading = fetch("files.tsv").then(r => r.ok ? r.text() : "").catch(() => "").then(text => {
+  if (!filesLoading) filesLoading = fetch(at("files.tsv")).then(r => r.ok ? r.text() : "").catch(() => "").then(text => {
     filesMap = {};
     for (const line of text.split("\n")) {
       if (!line || line[0] === "#") continue;
@@ -234,7 +262,7 @@ function detailHead(d) {
   return `<span class="close" onclick="closeDetail()">&times;</span>`
     + `<div class="title">${esc(d.title)}</div>`
     + `<div class="meta">`
-      + `<a class="sha" href="${REPO}${d.sha}" target="_blank" rel="noopener">${d.sha.slice(0,9)}</a>`
+      + `<a class="sha" href="${commitUrl(d.sha)}" target="_blank" rel="noopener">${d.sha.slice(0,9)}</a>`
       + ` &middot; <span class="s-${esc(d.status)}">${esc(d.status)}</span>`
       + ` &middot; ${new Date(d.date).toLocaleString("en-US", { year: "numeric", month: "short",
             day: "numeric", hour: "numeric", minute: "2-digit" })}`
@@ -246,9 +274,23 @@ function detailHead(d) {
         : d.ours.split(",").map(s => s.trim()).filter(Boolean).map(s =>
             `<a class="sha" href="${OUR_REPO}${esc(s)}" target="_blank" rel="noopener">${esc(s.slice(0,9))}</a>`).join(", ")
       }</div>` : "")
+    + twinLines(d)
     + (d.note ? `<div class="note"><b>note</b> ${esc(d.note)}</div>` : "")
     + (tags.length ? `<div class="dtags">${tags.map(t =>
-        `<span class="tag">${esc(t.replace(/^(fn|acs|lump|f):/, ""))}</span>`).join("")}</div>` : "");
+        `<span class="tag">${esc(t.replace(/^(fn|acs|lump|f|cvar):/, ""))}</span>`).join("")}</div>` : "");
+}
+// [rc4l] A transplant names the commit it came from, a UZDoom row says which Zandronum commit took it,
+// and Zandronum's own backport notes say which hunks it could not apply.
+let takenBy = {}, leftOut = {};
+function twinLines(d) {
+  let out = "";
+  if (LED.twin && d.twin && d.twin !== "/")
+    out += `<div class="note"><b>twin</b> <a class="sha" href="${rowLink(LED.twin, d.twin)}">${esc(LEDGERS[LED.twin]?.label || LED.twin)} ${esc(d.twin.slice(0,9))}</a> &mdash; the commit this was transplanted from</div>`;
+  for (const t of takenBy[d.sha] || [])
+    out += `<div class="note"><b>twin</b> ${esc(LEDGERS[t.ledger]?.label || t.ledger)} took this as <a class="sha" href="${rowLink(t.ledger, t.sha)}">${esc(t.sha.slice(0,9))}</a> (${esc(t.status)})</div>`;
+  for (const e of leftOut[d.sha] || [])
+    out += `<div class="note"><b>left out</b> ${esc(e.files)}: ${esc(e.reason)}</div>`;
+  return out;
 }
 async function onRowClicked(e) {
   const d = e.data, det = document.getElementById("detail");
@@ -259,7 +301,7 @@ async function onRowClicked(e) {
   det.innerHTML = detailHead(d)
     + `<h3>${files.length} file${files.length===1?"":"s"} changed</h3>`
     + `<div class="files">`
-    + (files.length ? files.map(f => `<a href="${REPO_BASE}/blob/${d.sha}/${f}" target="_blank" rel="noopener">${esc(f)}</a>`).join("")
+    + (files.length ? files.map(f => `<a href="${fileUrl(d.sha, f)}" target="_blank" rel="noopener">${esc(f)}</a>`).join("")
                     : "<i>no files listed (merge or empty commit)</i>")
     + `</div>`;
 }
@@ -345,7 +387,13 @@ function jumpToFirstPending() {
   const n = gridApi.getDisplayedRowCount();
   if (!n) return;
   let target = -1, where = "middle";
-  for (let i = 0; i < n; i++) {
+  // [rc4l] A twin link lands on its row with the detail open, so following a transplant is one click.
+  const want = PARAMS.get("sha");
+  if (want) for (let i = 0; i < n; i++) {
+    const node = gridApi.getDisplayedRowAtIndex(i);
+    if (node?.data?.sha.startsWith(want)) { target = i; onRowClicked({ data: node.data }); break; }
+  }
+  if (target < 0) for (let i = 0; i < n; i++) {
     if (gridApi.getDisplayedRowAtIndex(i)?.data?.status === "pending") { target = i; break; }
   }
   // Nothing pending means the whole tracker is triaged: the end of the list is the frontier, so
@@ -364,13 +412,20 @@ function jumpToFirstPending() {
 let fitTimer;
 addEventListener("resize", () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitColumns, 150); });
 
-const columnDefs = [
+const columnDefs = () => [
+  // [rc4l] Zandronum's ledger is in revision order (its transplants keep 2014-2018 dates), so it sorts by row, not date.
+  LED.order !== "date" && { field: "n", headerName: "#", width: 72, minWidth: 60, sort: "asc",
+    filter: "agNumberColumnFilter" },
   { field: "sha", headerName: "their commit", width: 130, minWidth: 92, filter: true,
     // [rc4l] Struck through once the commit is handled — ported, adapted or skip — so the
     // outstanding work is what stands out at a glance. Our own sha is never struck: it is a
     // live pointer into our history, not a to-do that got crossed off.
     cellClass: p => p.data && p.data.status !== "pending" ? "sha-done" : "",
-    cellRenderer: p => `<a class="sha" href="${REPO}${p.value}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
+    cellRenderer: p => `<a class="sha" href="${commitUrl(p.value)}" target="_blank" rel="noopener">${p.value.slice(0,9)}</a>` },
+  LED.twin && { field: "twin", headerName: "twin", width: 110, minWidth: 92, filter: true,
+    tooltipValueGetter: p => p.value && p.value !== "/" ? `the ${LEDGERS[LED.twin]?.label || LED.twin} commit this was transplanted from` : "",
+    cellRenderer: p => p.value && p.value !== "/"
+      ? `<a class="sha" href="${rowLink(LED.twin, p.value)}">${p.value.slice(0,9)}</a>` : `<span class="ours-na">/</span>` },
   { field: "status", headerName: "status", width: 120, minWidth: 78,
     cellClass: p => "s-" + p.value },
   { field: "ours", headerName: "our commit", width: 150, filter: true,
@@ -388,7 +443,7 @@ const columnDefs = [
         .map(s => `<a class="sha" href="${OUR_REPO}${s}" target="_blank" rel="noopener">${s.slice(0,9)}</a>`)
         .join(" ");
     } },
-  { field: "date", headerName: "date", width: 200, minWidth: 150, sort: "asc",
+  { field: "date", headerName: "date", width: 200, minWidth: 150, sort: LED.order === "date" ? "asc" : undefined,
     // stored value is a canonical UTC ISO stamp (sorts precisely); the cell shows the
     // reader's own local time to the minute (am/pm, no "at"); hover for full seconds + UTC.
     valueFormatter: p => {
@@ -407,7 +462,7 @@ const columnDefs = [
   { field: "title", headerName: "title", flex: 3, minWidth: 130, tooltipField: "title" },
   { field: "tags", headerName: "tags (auto-derived)", flex: 2, minWidth: 200, filter: true,
     tooltipValueGetter: p => (p.value || "").split(" ").filter(Boolean)
-      .map(t => t.replace(/^(fn|acs|lump|f):/, "")).join("   ·   "),
+      .map(t => t.replace(/^(fn|acs|lump|f|cvar):/, "")).join("   ·   "),
     // value is a space-joined string (filterable/searchable); rendered as chips.
     // fn:A_* = a DECORATE action the commit's diff touched; the rest = code areas it changed.
     cellRenderer: p => (p.value || "").split(" ").filter(Boolean).map(t => {
@@ -416,11 +471,13 @@ const columnDefs = [
       else if (t.startsWith("acs:"))  { cls = "tag tag-acs";  label = t.slice(4); }
       else if (t.startsWith("lump:")) { cls = "tag tag-lump"; label = t.slice(5); }
       else if (t.startsWith("f:"))    { cls = "tag tag-file"; label = t.slice(2); }
+      else if (t.startsWith("cvar:")) { cls = "tag tag-cvar"; label = t.slice(5); }
+      else if (/^(svc|clc):/.test(t)) { cls = "tag tag-svc"; }   // keeps its prefix: svc goes to clients, clc to the server
       else if (/^[A-Z0-9_]+:[a-z]/.test(t)) { cls = "tag tag-kw"; }   // LUMP:keyword
       return `<span class="${cls}">${label}</span>`;
     }).join("") },
   { field: "note", headerName: "note", flex: 1, minWidth: 130, tooltipField: "note" },
-];
+].filter(Boolean);
 
 function parseTSV(text) {
   const rows = [];
@@ -428,7 +485,8 @@ function parseTSV(text) {
     if (!line || line[0] === "#") continue;
     const f = line.split("\t");
     if (f[0] === "sha" || f.length < 4) continue;
-    rows.push({ sha: f[0], date: f[1], title: f[2], status: f[3], note: f[4] || "", ours: f[5] || "/" });
+    rows.push({ n: rows.length + 1, sha: f[0], date: f[1], title: f[2], status: f[3], note: f[4] || "",
+                ours: f[5] || "/", twin: f[6] || "" });
   }
   return rows;
 }
@@ -467,14 +525,30 @@ async function setStatus(key) {
 }
 
 const loadTags = url => fetch(url).then(r => r.ok ? r.text() : "").catch(() => "");
-Promise.all([
+// [rc4l] The cross-links: which rows of other ledgers twin this one, and this ledger's left-out hunks.
+function loadTwins() {
+  const others = Object.values(LEDGERS).filter(l => l.twin === LED.name);
+  const twinsIn = others.map(l => loadTags((l.dir && l.dir !== "." ? l.dir + "/" : "") + "coverage.tsv").then(text => {
+    for (const r of parseTSV(text))
+      if (r.twin && r.twin !== "/") (takenBy[r.twin] = takenBy[r.twin] || []).push({ ledger: l.name, sha: r.sha, status: r.status });
+  }));
+  const left = LED.twin ? loadTags(at("left_out.tsv")).then(text => {
+    for (const line of text.split("\n")) {
+      const f = line.split("\t");
+      if (f.length === 4 && /^[0-9a-f]{40}$/.test(f[0])) (leftOut[f[0]] = leftOut[f[0]] || []).push({ files: f[2], reason: f[3] });
+    }
+  }) : null;
+  return Promise.all([...twinsIn, left]);
+}
+configLoaded.then(() => Promise.all([
   // [rc4l] coverage.tsv IS the table — a 404 here used to resolve with the error page's HTML,
   // parse to zero rows and render an empty grid. Reject so the catch below says so out loud.
   // The two tag files stay soft-failing (loadTags): they only decorate a column.
-  fetch("coverage.tsv").then(r => r.ok ? r.text() : Promise.reject(new Error("coverage.tsv: HTTP " + r.status))),
-  loadTags("tags.tsv"),           // path/structural tags
-  loadTags("combined_tags.tsv"),  // source-gazetteer tags: lump / keyword / fn / acs
-]).then(([covText, tagText, gazText]) => {
+  fetch(at("coverage.tsv")).then(r => r.ok ? r.text() : Promise.reject(new Error("coverage.tsv: HTTP " + r.status))),
+  loadTags(at("tags.tsv")),           // path/structural tags, svc:/clc: commands
+  loadTags(at("combined_tags.tsv")),  // source-gazetteer tags: lump / keyword / fn / acs / cvar
+  loadTwins(),
+])).then(([covText, tagText, gazText]) => {
   const tagmap = {};              // sha -> Set(tags), unioned across both files
   const ingest = text => {
     for (const line of text.split("\n")) {
@@ -494,7 +568,7 @@ Promise.all([
   // node in place would have it torn out mid-render rather than cleanly removed.
   document.getElementById("loading")?.remove();
   gridApi = agGrid.createGrid(document.getElementById("grid"), {
-    columnDefs,
+    columnDefs: columnDefs(),
     rowData: rows,
     defaultColDef: { sortable: true, filter: true, resizable: true, floatingFilter: true },
     // [rc4l] Nobody reorders these columns on purpose; on touch the header drag just competed

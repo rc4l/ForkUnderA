@@ -88,6 +88,9 @@
 #include "features/fov-interp/computation/fovinterp_compute.h"
 #include "features/quake-movement/quakemove.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
+#include "computation/playerskin_compute.h"
+#include "computation/startitem_compute.h"   // [rc4l] whether a start item morphed its player
+#include "computation/rejumpdelay_compute.h"   // [rc4l] ComputeTakeoffJumpTics
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -797,6 +800,15 @@ void APlayerPawn::Serialize (FArchive &arc)
 		// [rc4l] AActor::GetDefault() is typed AActor*, so downcast to reach the pawn-only field.
 		// Anything reaching APlayerPawn::Serialize has an APlayerPawn class default object.
 		MvType = static_cast<APlayerPawn *>( GetDefault() )->MvType;
+	}
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which serializes it unguarded; older saves take the class default.
+	if (SaveVersion >= 4529)
+	{
+		arc << RejumpDelay;
+	}
+	else
+	{
+		RejumpDelay = static_cast<APlayerPawn *>( GetDefault() )->RejumpDelay;
 	}
 
 	// [rc4l] Live movement state stays deliberately unserialized (it is prediction-saved and
@@ -1832,15 +1844,16 @@ void APlayerPawn::GiveDefaultInventory ()
 					static_cast<AWeapon*>(item)->AmmoGive1 =
 					static_cast<AWeapon*>(item)->AmmoGive2 = 0;
 				}
-				AActor *check;
-				if (!item->CallTryPickup(this, &check))
+				AActor *check = this;
+				const bool pickedUp = item->CallTryPickup(this, &check);
+				if (zx::ComputeStartItemMorphedPlayer(pickedUp, check == this))
 				{
-					if (check != this)
-					{
-						// Player was morphed. This is illegal at game start.
-						// This problem is only detectable when it's too late to do something about it...
-						I_Error("Cannot give morph items when starting a game");
-					}
+					// Player was morphed. This is illegal at game start.
+					// This problem is only detectable when it's too late to do something about it...
+					I_Error("Cannot give morph items when starting a game");
+				}
+				if (!pickedUp)
+				{
 					item->Destroy ();
 					item = NULL;
 				}
@@ -2467,6 +2480,8 @@ void APlayerPawn::TweakSpeeds (int &forward, int &side)
 // super function. This is done to prevent the player from cycling through
 // weapons when it dies.
 //
+// [AK] This function also destroys the icon attached to the player's body.
+//
 //===========================================================================
 
 void APlayerPawn::Destroy( void )
@@ -2475,6 +2490,14 @@ void APlayerPawn::Destroy( void )
 	// is destroyed, a new weapon isn't chosen for the player as his
 	// ready weapon isn't deleted, preventing the playing of upsounds.
 	this->health = 0;
+
+	// [rc4l] Ported from zandronum@33f99da71a1dfbdfe67104680967624b76ffad22: the icon goes with the body.
+	// [AK] Don't destroy the player's icon if the actor is a voodoo doll.
+	if (( player != nullptr ) && ( player->mo == this ) && ( player->pIcon != nullptr ))
+	{
+		player->pIcon->Destroy( );
+		player->pIcon = nullptr;
+	}
 
 	// That's it. Now proceed as normal.
 	Super::Destroy( );
@@ -2760,13 +2783,21 @@ void P_CheckPlayerSprite(AActor *actor, int &spritenum, fixed_t &scalex, fixed_t
 	}
 
 	// [BB/AK] An overridden skin also overrides NOSKIN.
-	if (skin != 0 && ( !(player->mo->flags4 & MF4_NOSKIN) || ( overrideSkin != -1 ) ) )
+	if (skin != 0 && (!(player->mo->flags4 & MF4_NOSKIN) || overrideSkin != -1))
 	{
-		// Convert from default scale to skin scale.
-		fixed_t defscaleY = actor->GetDefault()->scaleY;
-		fixed_t defscaleX = actor->GetDefault()->scaleX;
-		scaley = Scale(scaley, skins[skin].ScaleY, defscaleY);
-		scalex = Scale(scalex, skins[skin].ScaleX, defscaleX);
+		// [AK] Set the skin's sprite to the player's body, if it isn't already.
+		// [rc4l] Adapted from zandronum@e97ab4a28f1ab1c7a94404422da6bbf32d9c66c8: the drawn sprite takes the skin's and the actor is left alone, since this runs from the render copy's fill, where writing the live actor made tics depend on the frames drawn.
+		spritenum = zx::skin::ComputeDrawnSkinSprite(spritenum, skins[skin].sprite, actor->state->sprite == actor->SpawnState->sprite, actor->state->sprite == SPR_TNT1);
+
+		// [rc4l] Ported from zandronum@49b7c26dc75536557095e15bae6ab1b4edd4e2d4: a skin's scale applies only while its sprite shows.
+		if (skins[skin].sprite == spritenum)
+		{
+			// Convert from default scale to skin scale.
+			fixed_t defscaleY = actor->GetDefault()->scaleY;
+			fixed_t defscaleX = actor->GetDefault()->scaleX;
+			scaley = Scale(scaley, skins[skin].ScaleY, defscaleY);
+			scalex = Scale(scalex, skins[skin].ScaleX, defscaleX);
+		}
 	}
 
 	// Set the crouch sprite?
@@ -3185,10 +3216,8 @@ static void P_PlayerJump (player_t *player, ticcmd_t *cmd)
 
 			// Set base jump ticks.
 			// [BB] In ZDoom revision 2970 changed the jumping behavior.
-			if ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING )
-				ulJumpTicks = 18 * TICRATE / 35;
-			else
-				ulJumpTicks = -1;
+			// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a RejumpDelay leaves the wait to the landing.
+			ulJumpTicks = zx::ComputeTakeoffJumpTics( player->mo->RejumpDelay, ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0, TICRATE );
 
 			// [BB] We may not play the sound while predicting, otherwise it'll stutter.
 			if ( CLIENT_PREDICT_IsPredicting( ) == false )
@@ -3248,7 +3277,9 @@ void P_MovePlayer (player_t *player)
 		if (player->turnticks)
 		{
 			player->turnticks--;
-			mo->angle += (ANGLE_180 / TURN180_TICKS);
+			// [AK] Use AActor::SetAngle to interpolate angle changes. This is
+			// interpolated in later versions of GZDoom, but handled differently.
+			mo->SetAngle(mo->angle + (ANGLE_180 / TURN180_TICKS), true);
 		}
 		else
 		{
@@ -3644,7 +3675,9 @@ void PLAYER_JoinGameFromSpectators( int iChar )
 		return;
 
 	// [BB] If players aren't allowed to join at the moment, just put the consoleplayer in line.
-	if ( GAMEMODE_PreventPlayersFromJoining() )
+	// [AK] Also put them in line if the result of GAMEEVENT_PLAYERJOINS is zero.
+	// [rc4l] Ported from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: an offline join asks the event too.
+	if (( GAMEMODE_PreventPlayersFromJoining( )) || ( GAMEMODE_HandlePlayerJoinsEvent( consoleplayer, teams.Size( )) == false ))
 	{
 		JOINQUEUE_AddConsolePlayer ( teams.Size( ) );
 		return;
@@ -4120,15 +4153,19 @@ void P_PlayerThink (player_t *player)
 				}
 			}
 		}
-		if (player->centering)
+		// [AK] Don't try centering the view while predicting.
+		// [rc4l] Ported from zandronum@e8b7e77c2fe660682b878ee30a1c776930db8389: a prediction no longer runs, and ends, the centering.
+		if (player->centering && CLIENT_PREDICT_IsPredicting() == false)
 		{
+			// [AK] Use AActor::SetPitch to interpolate pitch changes. This is
+			// interpolated in later versions of GZDoom, but handled differently.
 			if (abs(player->mo->pitch) > 2*ANGLE_1)
 			{
-				player->mo->pitch = FixedMul(player->mo->pitch, FRACUNIT*2/3);
+				player->mo->SetPitch((int)FixedMul(player->mo->pitch, FRACUNIT*2/3), true);
 			}
 			else
 			{
-				player->mo->pitch = 0;
+				player->mo->SetPitch(0, true);
 				player->centering = false;
 				if (player - players == consoleplayer)
 				{
@@ -4285,13 +4322,7 @@ void P_PlayerThink (player_t *player)
 		}
 
 		// Cycle psprites
-		// [AK] Don't do this while extrapolating the player's movement.
-		if ( SERVER_IsExtrapolatingPlayer( player - players ) == false )
-			P_MovePsprites (player);
-
-		// [AK] Stop here if we're backtracing the player's movement.
-		if ( SERVER_IsBacktracingPlayer( player - players ))
-			return;
+		P_MovePsprites (player);
 
 		// Other Counters
 		if (player->damagecount)
@@ -4662,7 +4693,17 @@ void player_t::Serialize (FArchive &arc)
 	//	arc << frags[i];
 	arc << psprites;	// [overlay] serializes the whole dynamic layer container
 
-	arc << CurrentPlayerClass;
+	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: the class number is an int, which saves before 4528 kept in a byte.
+	if (SaveVersion >= 4528)
+	{
+		arc << CurrentPlayerClass;
+	}
+	else
+	{
+		BYTE byteClass = 0;
+		arc << byteClass;
+		CurrentPlayerClass = byteClass;
+	}
 
 	arc << crouchfactor
 		<< crouching 

@@ -15,6 +15,7 @@
 #include "farchive.h"
 // [BB] New #includes.
 #include "sv_commands.h"
+#include "features/net-session/netrole.h"   // [rc4l] zx::net roles
 
 static FRandom pr_morphmonst ("MorphMonster");
 
@@ -183,8 +184,13 @@ bool P_MorphPlayer (player_t *activator, player_t *p, const PClass *spawntype, i
 	if ((morphed->PlayerFlags & PPF_NOMORPHLIMITATIONS) == false)
 		morphed->ScoreIcon = actor->ScoreIcon;	// [GRB]
 
+	// [RK] Set the skin for offline singleplayer morphing.
+	if ( zx::net::IsSinglePlayer( ) || zx::net::IsLocalMultiplayer( ))
+	{
+		PLAYER_SetSpriteToSkin( morphed->player );
+	}
 	// [BB] Tell the clients to morph the player.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	else if ( zx::net::IsServer( ))
 	{
 		const ULONG ulPlayer = static_cast<ULONG> ( morphed->player-players );
 		SERVERCOMMANDS_SpawnPlayer( ulPlayer, PST_LIVE, MAXPLAYERS, 0, true );

@@ -1974,11 +1974,22 @@ CSkullBot::CSkullBot( const char *pszName, const char *pszTeamName, ULONG ulPlay
 	}
 
 	// Check and see if this bot should spawn as a spectator.
-	m_pPlayer->bSpectating = PLAYER_ShouldSpawnAsSpectator( m_pPlayer );
+	if ( PLAYER_ShouldSpawnAsSpectator( m_pPlayer ) == false )
+	{
+		// [AK] Put them in line if the result of GAMEEVENT_PLAYERJOINS is zero.
+		// [rc4l] Ported from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: a bot spawning into the game asks the event first.
+		if ( GAMEMODE_HandlePlayerJoinsEvent( ulPlayerNum, m_pPlayer->Team ) == false )
+			JOINQUEUE_AddPlayer( ulPlayerNum, m_pPlayer->Team );
+		else
+			m_pPlayer->bSpectating = false;
+	}
 
 	// [BB] If the bot is forced to spectate, make sure he is not on a team.
 	if ( m_pPlayer->bSpectating )
 		PLAYER_SetTeam( m_pPlayer, teams.Size( ), true );
+	// [rc4l] Ported from zandronum@6ee2a204c6b55c4e981c8fb168ea732de9f84526: if not, and it's a singleplayer game, it spawns as its own class.
+	else
+		G_UpdateSinglePlayerClass( ulPlayerNum );
 
 	// [BB] If any of the spawn functions throw an exception, we
 	// have to catch it here. Otherwise the constructor is not properly
@@ -3427,7 +3438,12 @@ void CSkullBot::PreDelete( void )
 
 	// Delete the actor attached to the player.
 	if ( m_pPlayer->mo )
+	{
+		// [rc4l] Ported from zandronum@2272850a66fbce3b1a1d74e1a6a687e2a2b18177: a removed bot's body falls silent.
+		// [AK] Stop any sounds from this actor before destroying it.
+		S_StopAllSoundsFromActor( m_pPlayer->mo );
 		m_pPlayer->mo->Destroy( );
+	}
 
 	// [RK] Remove the corpse's thinkers to prevent a crash later
 	if (( NETWORK_GetState() == NETSTATE_SINGLE || NETWORK_GetState() == NETSTATE_SINGLE_MULTIPLAYER ) && m_pPlayer->mo )

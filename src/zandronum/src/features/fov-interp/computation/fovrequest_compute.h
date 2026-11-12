@@ -35,6 +35,7 @@ enum FovRequestVerdict
 	FOV_SET_EVERYONE,      // FOV is locked and we are the arbitrator: set it for all (DEM_FOV)
 	FOV_DENIED_LOCKED,     // FOV is locked and we are not the arbitrator
 	FOV_DENIED_COOLDOWN,   // too soon after the last change
+	FOV_SET_FREE_SPECTATOR, // [rc4l] A demo's free spectator, which no lock or cooldown governs (zandronum@680dfe9674c66aa901e57d69acc4cb12e4c20133).
 };
 
 // The renderer/CCMD clamp: 5..179 degrees, matching the range the old `fov` CCMD enforced and
@@ -46,11 +47,12 @@ int FovRequestClamp(int fov);
 bool FovCooldownActive(int gametic, int lastChangeTic, int cooldownTics);
 
 // The verdict for a change attempted right now.
+//   freeSpectating - CLIENTDEMO_IsInFreeSpectateMode(), a camera local to this machine
 //   fovLocked     - dmflags & DF_NO_FOV
 //   isArbitrator  - consoleplayer == Net_Arbitrator
 //   isClient      - NETWORK_GetState() == NETSTATE_CLIENT (only clients are rate-limited; a
 //                   local game has no server to enforce it and no exploit to prevent)
-FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isClient,
+FovRequestVerdict FovRequestDecision(bool freeSpectating, bool fovLocked, bool isArbitrator, bool isClient,
                                      int gametic, int lastChangeTic, int cooldownTics);
 
 // The FOV a player should spawn with. Respawning used to hard-reset everyone to 90, throwing away
@@ -66,7 +68,28 @@ FovRequestVerdict FovRequestDecision(bool fovLocked, bool isArbitrator, bool isC
 //   isLocalPlayer - the player being spawned is this machine's own (consoleplayer)
 //   isServer      - NETWORK_GetState() == NETSTATE_SERVER (never has a meaningful local FOV)
 //   playerFovCvar - the `fov` CVAR
-float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar);
+//   minFov/maxFov - the server's sv_minfov and sv_maxfov, which the result keeps within
+float FovOnSpawn(bool isLocalPlayer, bool isServer, float playerFovCvar, float minFov, float maxFov);
+
+// [rc4l] The FOV a player gets under the server's sv_minfov and sv_maxfov (Zandronum 3.3's limits).
+float ComputeFovWithinServerLimits(float fov, float minFov, float maxFov);
+
+// [rc4l] Why a new sv_minfov or sv_maxfov was moved before it took.
+enum FovLimitVerdict
+{
+	FOV_LIMIT_KEPT,     // [rc4l] Within 5..179 and on its own side of the other limit.
+	FOV_LIMIT_RANGED,   // [rc4l] Outside 5..179 (or not a number), so moved to the end it passed.
+	FOV_LIMIT_CROSSED,  // [rc4l] On the wrong side of the other limit, so moved one degree inside it.
+};
+
+struct FovLimitFix
+{
+	FovLimitVerdict verdict;
+	float value;
+};
+
+// [rc4l] What a new sv_minfov (isMin) or sv_maxfov becomes; a client keeps the server's value, since the two arrive one at a time.
+FovLimitFix ComputeFovLimit(float requested, float otherLimit, bool isMin, bool isClient);
 
 } // namespace zx
 

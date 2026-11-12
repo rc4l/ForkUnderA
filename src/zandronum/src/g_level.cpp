@@ -88,7 +88,9 @@
 #include "r_renderer.h"
 // [BB] New #includes.
 #include "cl_main.h"
+#include "computation/acsvars_compute.h"   // [rc4l] when a new game clears ACS's world and global variables
 #include "deathmatch.h"
+#include "features/net-session/netrole.h"
 #include "network.h"
 #include "sv_commands.h"
 #include "sv_rcon.h"
@@ -649,7 +651,12 @@ void G_InitNew (const char *mapname, bool bTitleLevel)
 			}
 			FRandom::StaticClearRandom ();
 		}
-		P_ClearACSVars(true);
+		// [AK] Don't reset world or global ACS variables for clients when they
+		// are changing levels, unless they haven't received the full snapshot.
+		if (zx::ComputeNewGameClearsAcsVars(zx::net::InClientMode(), CLIENT_GetConnectionState() == CTS_ACTIVE))
+		{
+			P_ClearACSVars(true);
+		}
 		level.time = 0;
 		level.maptime = 0;
 		level.totaltime = 0;
@@ -1443,6 +1450,10 @@ void G_DoLoadLevel (int position, bool autosave)
 	if (level.flags2 & LEVEL2_FORCETEAMPLAYOFF)
 		teamplay = false;
 
+	// [AK] Change the game mode to what the level requires, if necessary.
+	if ((level.info->GameMode != NUM_GAMEMODES) && (level.info->GameMode != GAMEMODE_GetCurrentMode()))
+		GAMEMODE_SetCurrentMode(level.info->GameMode);
+
 	// [Dusk] Clear keys found
 	// [RK] Since PuzzleItems are tracked don't do this for hubs.
 	if( !( level.clusterflags & CLUSTER_HUB ) || autosave == false ) // Resets with map command
@@ -1543,6 +1554,7 @@ void G_DoLoadLevel (int position, bool autosave)
 			// the server will most likely not receive their movement commands right away, so
 			// it shouldn't assume they're missing packets.
 			SERVER_GetClient( i )->lLastMoveTick = 0;
+			SERVER_GetClient( i )->numConsistentMoveCmdArrivals = 0;
 		}
 
 //		if (( NETWORK_GetState( ) != NETSTATE_CLIENT ) && ( PLAYER_ShouldSpawnAsSpectator( &players[i] )))

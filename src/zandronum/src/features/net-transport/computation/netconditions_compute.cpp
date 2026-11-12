@@ -20,6 +20,13 @@ bool ComputeFakeDrop(unsigned &state, float lossPercent)
 	return roll < lossPercent;
 }
 
+int ComputeFakeJitterMs(unsigned &state, int jitterMs)
+{
+	if (jitterMs <= 0) return 0;
+	state = state * 1664525u + 1013904223u;
+	return (int)((state >> 8) % (unsigned)(jitterMs + 1));
+}
+
 void ComputeHoldPacket(HeldPackets &held, long long nowMs, int delayMs, const unsigned char *bytes, int length,
 	const unsigned char *address, int addressLength)
 {

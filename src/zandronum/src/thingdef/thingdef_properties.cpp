@@ -3403,3 +3403,12 @@ DEFINE_CLASS_PROPERTY(viewpitchoffset, F, Weapon)
 	PROP_FIXED_PARM(i, 0);
 	defaults->ViewPitchOffset = i;
 }
+
+//==========================================================================
+// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which took it from Q-Zandronum.
+//==========================================================================
+DEFINE_CLASS_PROPERTY_PREFIX(player, rejumpdelay, I, PlayerPawn)
+{
+	PROP_INT_PARM(i, 0);
+	defaults->RejumpDelay = i;
+}

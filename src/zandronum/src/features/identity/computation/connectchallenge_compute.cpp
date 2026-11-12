@@ -36,4 +36,9 @@ ProofVerdict ProofReadiness(bool hasStoredChallenge, size_t accountKeyLength, si
 	return PROOF_JUDGE;
 }
 
+bool ComputeChecksServerProof(bool replayingDemo)
+{
+	return !replayingDemo;
+}
+
 } // namespace zx

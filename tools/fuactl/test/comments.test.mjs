@@ -54,3 +54,21 @@ test("prose past a bare comment line runs the [rc4l] comment on, and the next [r
   ];
   assert.deepEqual(commentIssues(added).map((i) => `${i.file}:${i.line} ${i.why}`), ["c.cpp:1 runs on past a blank comment line"]);
 });
+
+// [rc4l] A port's [rc4l] line above the upstream author's own comment it carried in read as one comment run on, 22 times in the Zandronum walk.
+test("another author's attributed comment after a [rc4l] comment starts a comment of its own", () => {
+  const added = [
+    { file: "d.cpp", line: 1, text: "\t// [rc4l] Ported from zandronum@6d3c00306ce0: custom bobbing sets the ranges too." },
+    { file: "d.cpp", line: 2, text: "\t// [AK] Adjust the bob style and range if custom bobbing is used too." },
+    { file: "d.cpp", line: 3, text: "\tif (cl_usecustombob)" },
+    { file: "d.sh", line: 1, text: "# [rc4l] Fine." },
+    { file: "d.sh", line: 2, text: "# [Doruk-Aksoy] Theirs." },
+    { file: "d.cpp", line: 5, text: "// [rc4l] Starts here" },
+    { file: "d.cpp", line: 6, text: "// and goes on." },
+    { file: "d.cpp", line: 10, text: "//==========================================================================" },
+    { file: "d.cpp", line: 11, text: "// [rc4l] Ported from zandronum@f6f2e6ee1991, inside a function banner." },
+    { file: "d.cpp", line: 12, text: "//==========================================================================" },
+    { file: "d.cpp", line: 13, text: "// and this is past the banner." },
+  ];
+  assert.deepEqual(commentIssues(added).map((i) => `${i.file}:${i.line} ${i.why}`), ["d.cpp:5 runs onto the next line"]);
+});

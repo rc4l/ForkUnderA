@@ -1095,8 +1095,9 @@ void medal_SelectIcon( player_t *player )
 
 		if (( player->pIcon == nullptr ) || ( desiredSprite != player->pIcon->currentSprite ))
 		{
-			// [AK] Don't spawn the icon while the player is still respawning.
-			if (( player->pIcon == nullptr ) && ( player->playerstate != PST_REBORN ))
+			// [rc4l] Ported from zandronum@6ec769939007d9027780c0dc01fbb3bd343eadca: no icon before the player has spawned.
+			// [AK] Don't spawn the icon while the player is still respawning or entering the game.
+			if (( player->pIcon == nullptr ) && ( player->playerstate != PST_REBORN ) && ( player->playerstate != PST_ENTERNOINVENTORY ))
 			{
 				player->pIcon = Spawn<AFloatyIcon>( player->mo->x, player->mo->y, player->mo->z + player->mo->height + ( 4 * FRACUNIT ), ALLOW_REPLACE );
 

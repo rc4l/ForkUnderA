@@ -42,11 +42,15 @@ struct WorldActorRow
 	unsigned netId = 0;
 	std::string cls;
 	double x = 0, y = 0, z = 0;
+	double prevX = 0, prevY = 0, prevZ = 0;   // [rc4l] where it was when its last tic began, the start of what the renderer interpolates
 	double floorZ = 0;   // [Doruk-Aksoy] the floor it stands on as this instance worked it out, which a client can hold lower than its server
+	double floorClip = 0; // [rc4l] how far it sinks into a TERRAIN floor, which a server sends for a small splash
 	double velX = 0, velY = 0, velZ = 0;
 	double angle = 0;
 	int health = 0;
 	int player = -1;     // [rc4l] the player whose pawn it is, or -1
+	double scaleX = 1, scaleY = 1;   // [rc4l] its sprite's scale, which a player's skin sets on their body
+	double drawnScaleX = 1, drawnScaleY = 1;   // [rc4l] the scale it is drawn at, which for a player's pawn is their skin's (P_CheckPlayerSprite)
 	std::string sprite;  // [rc4l] the sprite and frame it shows, as "TROOA"
 };
 
@@ -70,6 +74,8 @@ struct SectorStateRow
 	double reflectFloor = 0, reflectCeiling = 0;
 	double xScaleFloor = 0, yScaleFloor = 0, xScaleCeiling = 0, yScaleCeiling = 0;
 	double angleFloor = 0, angleCeiling = 0;   // [rc4l] degrees
+	// [rc4l] Each light list entry's plane height at the sector's centre, which the list copies and only a recalculation renews.
+	std::vector<double> lightTops;
 };
 
 std::string ComputeSectorStateJson(const SectorStateRow &row);

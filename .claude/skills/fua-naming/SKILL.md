@@ -42,7 +42,9 @@ Real examples already in the tree: `cl_fua_replay`, `cl_fua_replay_bitrate`, `cl
 ## Quick check before naming a new thing
 
 1. Does this identifier already exist in Zandronum / UZDoom / GZDoom / another port? → use their
-   name as-is (it's a port, not ours).
+   name as-is (it's a port, not ours). That includes everything a `zandronum-stable` commit adds:
+   its cvars, commands, ACS functions and DECORATE properties keep Zandronum's names when we port
+   them, so a later Zandronum commit touching them still applies.
 2. Is it new and ours, sharing a namespace with upstream (CVAR / CCMD / DECORATE / ACS / menu)? →
    sandwich `fua_` after the conventional prefix.
 3. Is it a test or debug tool? → declare it `DEV_MODE_CCMD` or flag it `CVAR_FUA_DEV_MODE`

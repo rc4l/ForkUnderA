@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble, setCrash, memberName } from "../src/netplay.mjs";
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");
@@ -36,6 +36,7 @@ test("a client presents unfocused, asks no public registry and takes its fake pi
   const quiet = { fua_render_in_background: 1, cl_fua_serverregistry_list: "", cl_fua_serverregistrylist_fetch: 0 };
   assert.deepEqual(clientCvars(), quiet);
   assert.deepEqual(clientCvars({ lag: 100, loss: 5, cvars: { cl_unlagged: 1 } }), { ...quiet, fua_net_fakeping: 100, fua_net_fakeloss: 5, cl_unlagged: 1 });
+  assert.deepEqual(clientCvars({ jitter: 40 }), { ...quiet, fua_net_fakejitter: 40 });
 });
 
 test("per-client values spread from a comma list", () => {
@@ -108,9 +109,19 @@ test("a set launches the server in the map, then each client joined with its own
   assert.deepEqual(f.execs.map((e) => e[1]), ["join", "join"]);
   const session = netplaySession(set);
   assert.equal(session.server.port, 7900);
-  assert.deepEqual(session.clients.map((c) => [c.role, c.port, c.lag, c.player]), [["player", 7901, 100, 1], ["observer", 7902, 0, 2]]);
+  assert.deepEqual(session.clients.map((c) => [c.role, c.port, c.lag, c.jitter, c.player]), [["player", 7901, 100, 0, 1], ["observer", 7902, 0, 0, 2]]);
   await closeNetplay(set, f.deps.stop);
   assert.deepEqual(f.stopped, [7902, 7901, 7900]);
+});
+
+test("a client's own extra arguments reach only its launch", async () => {
+  const f = fakes();
+  const set = await launchNetplay({ players: 1, observers: 1, basePort: 7900, gamePort: 10950, clientExtraArgs: [[], ["-record", "x.cld"]] }, f.deps);
+  assert.ok(!f.launched[1].opts.extraArgs.includes("-record"));
+  assert.deepEqual([f.launched[1].opts.connect, f.launched[1].opts.connectArg], ["127.0.0.1:10950", false]);
+  assert.deepEqual(f.launched[2].opts.extraArgs.slice(-2), ["-record", "x.cld"]);
+  assert.deepEqual([f.launched[2].opts.connect, f.launched[2].opts.connectArg], ["127.0.0.1:10950", true], "a recording client connects on its command line, as -record needs");
+  await closeNetplay(set, f.deps.stop);
 });
 
 test("a late joiner joins a running set, and a set that fails to launch is torn down", async () => {
@@ -233,8 +244,8 @@ test("a client the server never holds playing times out", async () => {
 });
 
 test("a command line's netplay options, with the defaults and the bad values refused", () => {
-  const o = netplayOptionsFromFlags({ map: "MAP02", file: "a.wad, b.pk3", players: "2", observers: "1", lag: "100,0", "for-user": true, cvar: "x=1" }, () => ({ x: "1" }));
-  assert.deepEqual([o.map, o.files, o.players, o.observers, o.lag, o.forUser, o.clientCvars], ["MAP02", ["a.wad", "b.pk3"], 2, 1, "100,0", true, { x: "1" }]);
+  const o = netplayOptionsFromFlags({ map: "MAP02", file: "a.wad, b.pk3", players: "2", observers: "1", lag: "100,0", jitter: "0,40", "for-user": true, cvar: "x=1" }, () => ({ x: "1" }));
+  assert.deepEqual([o.map, o.files, o.players, o.observers, o.lag, o.jitter, o.forUser, o.clientCvars], ["MAP02", ["a.wad", "b.pk3"], 2, 1, "100,0", "0,40", true, { x: "1" }]);
   const d = netplayOptionsFromFlags({});
   assert.deepEqual([d.map, d.files, d.players, d.observers, d.basePort, d.gamePort, d.forUser], ["MAP01", [], 1, 0, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, false]);
   assert.throws(() => netplayOptionsFromFlags({ players: "two" }), /--players wants a whole number, not two/);
@@ -247,4 +258,17 @@ test("the running set is recorded and read back, and a missing record names the 
   writeNetplaySession({ gamePort: 1 }, "f", (f, text) => { held = text; });
   assert.deepEqual(readNetplaySession("f", () => held), { gamePort: 1 });
   assert.throws(() => readNetplaySession("f", () => { throw new Error("ENOENT"); }), /start one with fuactl netplay/);
+});
+
+test("a set names the first of its instances that left a crash log, and none when none did", () => {
+  const text = "=== MCP ENGINE CRASH ===\nsignal: 11 SIGSEGV\npid: 1\n\nbacktrace:\n0   forkundera   0x1 ZatPoint + 12\n";
+  const _fs = { existsSync: (p) => p === "/l/server.log.crash", readFileSync: () => text };
+  const set = { server: { role: "server", inst: { log: "/l/server.log" } }, clients: [{ role: "player", player: 0, inst: { log: "/l/client.log" } }] };
+  assert.equal(setCrash(set, _fs).message, "server engine crashed -- /l/server.log.crash\n  signal: 11 SIGSEGV\n  0   forkundera   0x1 ZatPoint + 12");
+  const clientOnly = { existsSync: (p) => p === "/l/client.log.crash", readFileSync: () => text };
+  assert.match(setCrash(set, clientOnly).message, /^player player 0 engine crashed -- \/l\/client\.log\.crash/);
+  assert.equal(setCrash(set, { existsSync: () => false }), null);
+  assert.equal(setCrash({ server: null, clients: [] }, _fs), null);
+  assert.equal(setCrash(null, _fs), null);
+  assert.equal(memberName({ role: "observer", player: -1 }), "observer");
 });

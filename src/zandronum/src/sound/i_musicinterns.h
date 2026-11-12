@@ -371,7 +371,8 @@ protected:
 	int (STACK_ARGS *fluid_settings_setnum)(fluid_settings_t *, const char *, double);
 	int (STACK_ARGS *fluid_settings_setstr)(fluid_settings_t *, const char *, const char *);
 	int (STACK_ARGS *fluid_settings_setint)(fluid_settings_t *, const char *, int);
-	int (STACK_ARGS *fluid_settings_getstr)(fluid_settings_t *, const char *, char **);
+	// [rc4l] Ported from zandronum@ceb98a637090235fb3948a5333969c2f23bf3e5c: getstr is gone from newer FluidSynth, copystr has always been there.
+	int (STACK_ARGS *fluid_settings_copystr)(fluid_settings_t *, const char *, char *, int);
 	int (STACK_ARGS *fluid_settings_getint)(fluid_settings_t *, const char *, int *);
 	void (STACK_ARGS *fluid_synth_set_reverb_on)(fluid_synth_t *, int);
 	void (STACK_ARGS *fluid_synth_set_chorus_on)(fluid_synth_t *, int);

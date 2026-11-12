@@ -1090,7 +1090,8 @@ void DrawHUD()
 		}
 		else 
 		{
-			if (CheckRatio(SCREENWIDTH, SCREENHEIGHT) == 4)
+			// [rc4l] Ported from uzdoom@0d27996a648a9668650f396b9de544371074f820: any screen taller than 4:3 takes the inverted multiplier, not only the 5:4 bucket.
+			if (AspectTallerThanWide(WidescreenRatio))
 			{
 				hudheight = hudwidth * 30 / AspectMultiplier(WidescreenRatio);	// BaseRatioSizes is inverted for this mode
 			}

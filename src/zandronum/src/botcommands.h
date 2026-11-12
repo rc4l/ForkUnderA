@@ -179,6 +179,14 @@ typedef enum
 	BOTCMD_STOPSPEED,
 	BOTCMD_PRESSUSE,
 	BOTCMD_ACS_NAMEDEXECUTEWITHRESULT,
+	BOTCMD_BEGINMOVEUP,
+	BOTCMD_STOPMOVEUP,
+	BOTCMD_BEGINMOVEDOWN,					/* 110 */
+	BOTCMD_STOPMOVEDOWN,
+	// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: QuitJoinQueue, after StopMoveDown as theirs, since compiled BotScript names a command by its index.
+	BOTCMD_QUITJOINQUEUE,
+	// [rc4l] Ported from zandronum@1a7b71f6930269db768effa9c38c90d8f92c9256: SetGoalTID, after QuitJoinQueue as theirs.
+	BOTCMD_SETGOALTID,
 
 	NUM_BOTCMDS
 

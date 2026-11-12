@@ -11,7 +11,9 @@ Command SpawnPlayer
 	Fixed x
 	Fixed y
 	Fixed z
-	Byte playerClass
+	# [AK] It's possible that a class's index is larger than what a byte can hold, so use an unsigned short.
+	# [rc4l] Ported from zandronum@51c804da8b73f39759d9f89da4141ba38ce7e22d; spawnplayer_wire_nettest.cpp holds its layout.
+	UShort playerClass
 
 	If (isMorphed)
 		Short morphStyle
@@ -27,28 +29,26 @@ Command MovePlayer
 	# The server only sends position, angle, etc. information if the player is actually visible.
 	If (flags & PLAYER_VISIBLE)
 		CheckFunction IsVisible
-		# [BB] The x/y position has to be sent at full precision, otherwise the player may be rounded to a neighboring
-		# sector on the clients, potentially completely changing its Z position.
 		Fixed x
 		Fixed y
-		AproxFixed z
+		Fixed z
 		Angle angle
 	EndIf
 
 	# [AK] The server should only send the player's velocity when it's not zero.
 	If ((flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELX))
 		CheckFunction IsMovingX
-		AproxFixed velx
+		Fixed velx
 	EndIf
 
 	If ((flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELY))
 		CheckFunction IsMovingY
-		AproxFixed vely
+		Fixed vely
 	EndIf
 
 	If ((flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELZ))
 		CheckFunction IsMovingZ
-		AproxFixed velz
+		Fixed velz
 	EndIf
 EndCommand
 
@@ -315,6 +315,13 @@ EndCommand
 Command PlayerDropInventory
 	Player player with MoTest
 	Class<AInventory> itemType
+EndCommand
+
+Command PlayerSetSelectedInventory
+	ExtendedCommand
+	Player player with MoTest
+	Class<AInventory> itemType
+	Bool showInventoryBar
 EndCommand
 
 Command GiveWeaponHolder

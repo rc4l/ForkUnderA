@@ -11,8 +11,10 @@
 #include "tables.h"   // [rc4l] angle_t
 #include "textures/textures.h"   // [rc4l] FTextureID
 #include "features/decals/computation/markrules_compute.h"
+#include "vectors.h"   // [rc4l] FVector3
 
 class AActor;
+struct PClass;
 class DBaseDecal;
 class FDecalTemplate;
 struct side_t;
@@ -23,8 +25,11 @@ struct FTraceResults;
 
 namespace zx { namespace decals {
 
-// [rc4l] A hitscan's or a rail's (source) mark where its trace stopped, on a wall, a floor or a ceiling, from the shooter's weapon's generator or the actor's own, as P_LineAttack chose the actor.
-void MarkShot(AActor *shooter, const FTraceResults &trace, int source);
+// [rc4l] A hitscan's or a rail's (source) mark where its trace stopped, on a wall, a floor or a ceiling, travelling from the shooter, with decalFrom's generator (its weapon's for a player), the shooter's when NULL.
+void MarkShot(AActor *shooter, const FTraceResults &trace, int source, AActor *decalFrom = NULL);
+
+// [rc4l] Adapted from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: a rail a server drew that this client did not predict, retraced from start through end and marked where it stops, with puffClass's decal when the server sent one.
+void MarkRailEnd(AActor *shooter, const FVector3 &start, const FVector3 &end, const PClass *puffClass);
 
 // [rc4l] A missile's mark as P_ExplodeMissile lets it go: on the line it struck, else on the floor or ceiling it came to rest against with no target; vel is how it was moving before it stopped.
 void MarkMissile(AActor *missile, line_t *line, AActor *target, fixed_t velx, fixed_t vely, fixed_t velz);

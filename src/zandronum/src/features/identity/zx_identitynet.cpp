@@ -236,11 +236,14 @@ void CLIENT_FuaAuthWriteHello( BYTESTREAM_s *pByteStream )
 	WriteBytes( pByteStream, g_ClientEphemeral.publicKey );
 }
 
-bool CLIENT_FuaAuthReadChallenge( BYTESTREAM_s *pByteStream )
+bool CLIENT_FuaAuthReadChallenge( BYTESTREAM_s *pByteStream, bool replayingDemo )
 {
 	const zx::Bytes serverPublic = ReadBytes( pByteStream, zx::kKeyBytes );
 	const zx::Bytes serverEphemeral = ReadBytes( pByteStream, zx::kKeyBytes );
 	const zx::Bytes signature = ReadBytes( pByteStream, zx::kSignatureBytes );
+
+	if ( !zx::ComputeChecksServerProof( replayingDemo ))
+		return true;
 
 	// [rc4l] THE step this design turns on, verified before we derive an account or sign anything,
 	// so a server that only copied a public key gets nothing it could relay onwards.

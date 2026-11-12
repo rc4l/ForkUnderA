@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AcsScript, ACSF, acs0, acsScripts, addToCVar, callFunc, callSpecial, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { AcsScript, ACSF, acs0, acsScripts, addToCVar, callFunc, callSpecial, checksCounter, checksScript, failedChecks, consoleCommand, createTranslation, gotoWord, hudMessage, HUDMSG_ALPHA, incrementCVar, PCD, printString, SCRIPT, SCRIPTF } from "../src/acs.mjs";
+import { judgeCounter } from "../src/template.mjs";
 
 // [rc4l] Read an ACS0 lump back the way FBehavior does: directory at the header's offset, string table right after it.
 function parse(buf) {
@@ -44,9 +45,10 @@ test("several scripts lie end to end, each directory entry at its own code", () 
 });
 
 // [Doruk-Aksoy] ENTER's thousand in ACS0, and a flagged script making the lump ACSE: SPTR, SFLG and STRL as FBehavior reads them.
-test("an ENTER script is numbered in the four thousands", () => {
+test("an ENTER script is numbered in the four thousands, an EVENT one in the sixteen thousands with its arguments", () => {
   const { scripts } = parse(acsScripts([{ code: [PCD.TERMINATE], type: SCRIPT.ENTER, number: 5 }]));
   assert.deepEqual(scripts, [{ number: 4005, address: 8, args: 0 }]);
+  assert.deepEqual(parse(acsScripts([{ code: [PCD.TERMINATE], type: SCRIPT.EVENT, args: 3 }])).scripts, [{ number: 16001, address: 8, args: 3 }]);
 });
 
 test("a CLIENTSIDE script makes the lump ACSE, its flags in SFLG and the strings in STRL", () => {
@@ -68,6 +70,24 @@ test("a CLIENTSIDE script makes the lump ACSE, its flags in SFLG and the strings
   assert.equal(buf.readInt32LE(20), PCD.TERMINATE);
 });
 
+test("a named script makes the lump ACSE, numbered from -1 in SPTR and SFLG with its name in SNAM", () => {
+  const buf = acsScripts([{ code: [PCD.TERMINATE], open: false, number: 3 }, { code: [PCD.TERMINATE], open: false, name: "zxone", flags: SCRIPTF.NET }, { code: [PCD.TERMINATE], open: false, name: "zxtwo" }], ["S"]);
+  assert.equal(buf.toString("latin1", 0, 4), "ACSE");
+  const chunks = {};
+  for (let at = buf.readInt32LE(4); at < buf.length; at += 8 + buf.readUInt32LE(at + 4))
+    chunks[buf.toString("latin1", at, at + 4)] = buf.subarray(at + 8, at + 8 + buf.readUInt32LE(at + 4));
+  assert.deepEqual(Object.keys(chunks), ["SPTR", "SFLG", "STRL", "SNAM"]);
+  assert.deepEqual([0, 1, 2].map((i) => chunks.SPTR.readInt16LE(12 * i)), [3, -1, -2]);
+  assert.deepEqual([chunks.SFLG.readInt16LE(0), chunks.SFLG.readUInt16LE(2)], [-1, SCRIPTF.NET]);
+  const snam = chunks.SNAM;
+  assert.equal(snam.readInt32LE(0), 2);
+  const name = (i) => { const at = snam.readInt32LE(4 + 4 * i); return snam.toString("latin1", at, snam.indexOf(0, at)); };
+  assert.deepEqual([name(0), name(1)], ["zxone", "zxtwo"]);
+  assert.equal(snam.length % 4, 0);
+  assert.equal(chunks.STRL.readInt32LE(4), 1, "STRL keeps its own layout");
+  assert.ok(!Object.keys(chunks).includes("SNAM") || acsScripts([{ code: [PCD.TERMINATE], flags: SCRIPTF.NET }]).indexOf("SNAM") < 0, "no names, no SNAM");
+});
+
 test("a special's arguments are pushed in order, then LSPECn names the special", () => {
   // [rc4l] Sector_SetPlaneReflection(125, 66, 0), as wdiexsec's OPEN script calls it.
   assert.deepEqual(callSpecial(159, [125, 66, 0]), [3, 125, 3, 66, 3, 0, 6, 159]);
@@ -82,6 +102,23 @@ test("every named p-code is numbered as p_acs.h's enum orders it", async () => {
   const header = readFileSync(new URL("../../../src/zandronum/src/p_acs.h", import.meta.url), "latin1");
   const order = [...header.slice(header.indexOf("PCD_NOP")).matchAll(/\b(PCD_\w+)\s*,/g)].map((m) => m[1]);
   for (const [name, num] of Object.entries(PCD)) assert.equal(order.indexOf(`PCD_${name}`), num, name);
+});
+
+// [rc4l] Each ACS function by its value in p_acs.cpp's EACSFunctions, counting on from each explicit number.
+test("every named ACS function is numbered as p_acs.cpp's enum orders it", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../../src/zandronum/src/p_acs.cpp", import.meta.url), "latin1");
+  const start = src.indexOf("enum EACSFunctions");
+  const body = src.slice(src.indexOf("{", start) + 1, src.indexOf("};", start)).replace(/\/\/.*$/gm, "");
+  const values = new Map();
+  let next = 0;
+  for (const m of body.matchAll(/\b(A[CS]{2}F_\w+)\s*(?:=\s*(\d+))?\s*,?/g)) {
+    const v = m[2] !== undefined ? Number(m[2]) : next;
+    values.set(m[1], v);
+    next = v + 1;
+  }
+  assert.equal(values.get("ACSF_SetPlayerSkin"), 175);
+  for (const [name, num] of Object.entries(ACSF)) assert.equal(values.get(`ACSF_${name}`), num, name);
 });
 
 test("a print, a HUD message, a console command and a jump compile as the engine pops them", () => {
@@ -125,6 +162,7 @@ test("adding to a cvar adds any amount, a negative one taking away", () => {
 
 test("an ACS function call pushes its arguments then CALLFUNC with their count and the function", () => {
   assert.deepEqual(callFunc(ACSF.SetCVar, [0, 5]), [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 5, PCD.CALLFUNC, 2, ACSF.SetCVar]);
+  assert.deepEqual(callFunc(ACSF.SetCVar, [[PCD.PUSHMAPVAR, 3], 5]), [PCD.PUSHMAPVAR, 3, PCD.PUSHNUMBER, 5, PCD.CALLFUNC, 2, ACSF.SetCVar]);
 });
 
 test("a script's named jump targets become byte offsets, and an unnamed one throws", () => {
@@ -137,4 +175,26 @@ test("CreateTranslation pushes the number, then each range's four indices before
   assert.deepEqual(createTranslation(2, [[0, 255, 112, 127], [16, 31, 176, 191]]), [PCD.PUSHNUMBER, 2, PCD.STARTTRANSLATION,
     PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 255, PCD.PUSHNUMBER, 112, PCD.PUSHNUMBER, 127, PCD.TRANSLATIONRANGE1,
     PCD.PUSHNUMBER, 16, PCD.PUSHNUMBER, 31, PCD.PUSHNUMBER, 176, PCD.PUSHNUMBER, 191, PCD.TRANSLATIONRANGE1, PCD.ENDTRANSLATION]);
+});
+
+// [rc4l] The bitmask puke tagmanager and udmfuserkeys judge maps by, one bit per check so a failure names which.
+test("a checks puke counts 1 for running and adds each failing check's own bit, read by its kind", () => {
+  const read = { light: (tag) => [PCD.PUSHNUMBER, tag, PCD.GETSECTORLIGHTLEVEL] };
+  const words = checksScript([["a", "light", 5, 128], ["b", "light", 6, 96]], read);
+  const at = (seq) => words.findIndex((_, i) => seq.every((w, j) => words[i + j] === w));
+  assert.deepEqual(words.slice(0, addToCVar(0, 1).length), addToCVar(0, 1));
+  assert.ok(at([PCD.PUSHNUMBER, 5, PCD.GETSECTORLIGHTLEVEL, PCD.PUSHNUMBER, 128, PCD.EQ, PCD.IFGOTO]) >= 0);
+  assert.ok(at(addToCVar(0, 2)) >= 0 && at(addToCVar(0, 4)) >= 0);
+  assert.equal(words.at(-1), PCD.TERMINATE);
+  assert.deepEqual(checksScript([], read), [...addToCVar(0, 1), PCD.TERMINATE]);
+  assert.deepEqual(checksScript([], read, { delayTics: 35 }), [...addToCVar(0, 1), PCD.DELAYDIRECT, 35, PCD.TERMINATE]);
+});
+
+test("a checks counter passes at 1 and names the failing checks, or the puke that never ran", () => {
+  const checks = { MAP01: [["first"], ["second"], ["third"]] };
+  assert.deepEqual(failedChecks(checks.MAP01, 1 + 2 + 8), ["first", "third"]);
+  const counter = checksCounter("zx_c", (map) => checks[map]);
+  assert.deepEqual(judgeCounter("MAP01", `"zx_c" is "1"`, counter), { line: `PASS MAP01 ${counter.label}: 1 (ceiling 1)`, failed: 0 });
+  assert.match(judgeCounter("MAP01", `"zx_c" is "5"`, counter).line, /^FAIL MAP01 .*: second$/);
+  assert.match(judgeCounter("MAP01", `"zx_c" is "0"`, counter).line, /: the puke never ran$/);
 });

@@ -198,11 +198,18 @@ static  void	botcmd_BeginSpeed( CSkullBot *pBot );
 static  void	botcmd_StopSpeed( CSkullBot *pBot );
 static  void	botcmd_PressUse( CSkullBot *pBot );
 static	void	botcmd_ACS_NamedExecuteWithResult( CSkullBot *pBot );
+static  void	botcmd_BeginMoveUp( CSkullBot *pBot );
+static  void	botcmd_StopMoveUp( CSkullBot *pBot );
+//110
+static  void	botcmd_BeginMoveDown( CSkullBot *pBot );
+static  void	botcmd_StopMoveDown( CSkullBot *pBot );
+static  void	botcmd_QuitJoinQueue( CSkullBot *pBot );
+static  void	botcmd_SetGoalTID( CSkullBot * pBot );
 
 //*****************************************************************************
 //	VARIABLES
 
-static	BOTCMD_s	g_BotCommands[NUM_BOTCMDS] = 
+static	BOTCMD_s	g_BotCommands[] = 
 {
 	{ "changestate", botcmd_ChangeState, 1, 0, RETURNVAL_VOID },
 	{ "delay", botcmd_Delay, 1, 0, RETURNVAL_VOID },
@@ -322,7 +329,19 @@ static	BOTCMD_s	g_BotCommands[NUM_BOTCMDS] =
 	{ "StopSpeed", botcmd_StopSpeed, 0, 0, RETURNVAL_VOID },
 	{ "PressUse", botcmd_PressUse, 0, 0, RETURNVAL_VOID },
 	{ "ACS_NamedExecuteWithResult", botcmd_ACS_NamedExecuteWithResult, 4, 1, RETURNVAL_INT },
+	{ "BeginMoveUp", botcmd_BeginMoveUp, 0, 0, RETURNVAL_VOID },
+	{ "StopMoveUp", botcmd_StopMoveUp, 0, 0, RETURNVAL_VOID },
+	//110
+	{ "BeginMoveDown", botcmd_BeginMoveDown, 0, 0, RETURNVAL_VOID },
+	{ "StopMoveDown", botcmd_StopMoveDown, 0, 0, RETURNVAL_VOID },
+	// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: QuitJoinQueue's row.
+	{ "QuitJoinQueue", botcmd_QuitJoinQueue, 0, 0, RETURNVAL_VOID },
+	// [rc4l] Ported from zandronum@1a7b71f6930269db768effa9c38c90d8f92c9256: SetGoalTID's row, taking the TID.
+	{ "SetGoalTID", botcmd_SetGoalTID, 1, 0, RETURNVAL_VOID },
 };
+
+// [rc4l] Ported from zandronum@8929c493e00ffcaec137209d51b9f37fe4550e8a: compiled BotScript names a command by its index here, so the table must hold every BOTCMD_ in order.
+static_assert( sizeof( g_BotCommands ) / sizeof( g_BotCommands[0] ) == NUM_BOTCMDS, "g_BotCommands needs one row per BOTCMD_" );
 
 static	int			g_iReturnInt = -1;
 static	bool		g_bReturnBool = false;
@@ -2327,6 +2346,8 @@ static void botcmd_Respawn( CSkullBot *pBot )
 //
 static void botcmd_TryToJoinGame( CSkullBot *pBot )
 {
+	const unsigned int playerIndex = static_cast<unsigned>( pBot->GetPlayer( ) - players );
+
 	// Can't rejoin game if he's not spectating!
 	if ( pBot->GetPlayer( )->bSpectating == false )
 		return;
@@ -2336,12 +2357,17 @@ static void botcmd_TryToJoinGame( CSkullBot *pBot )
 		return;
 
 	// [BB] If players aren't allowed to join at the moment, just put the bot in line.
-	if ( GAMEMODE_PreventPlayersFromJoining() )
+	// [AK] Also put them in line if the result of GAMEEVENT_PLAYERJOINS is zero.
+	// [rc4l] Ported from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: a bot's join asks the event too.
+	if (( GAMEMODE_PreventPlayersFromJoining( )) || ( GAMEMODE_HandlePlayerJoinsEvent( playerIndex, teams.Size( )) == false ))
 	{
 		// [BB] Don't chose the team before the bot actually joins.
-		JOINQUEUE_AddPlayer( pBot->GetPlayer( ) - players, teams.Size() );
+		JOINQUEUE_AddPlayer( playerIndex, teams.Size( ));
 		return;
 	}
+
+	// [rc4l] Ported from zandronum@6ee2a204c6b55c4e981c8fb168ea732de9f84526: allow the bot to switch its class upon joining the game in singleplayer.
+	G_UpdateSinglePlayerClass( playerIndex );
 
 	// Everything's okay! Go ahead and join!
 	PLAYER_SpectatorJoinsGame ( pBot->GetPlayer( ) );
@@ -2910,4 +2936,65 @@ static void botcmd_ACS_NamedExecuteWithResult( CSkullBot *pBot )
 	LONG scriptNum = -FName( lScript );
 
 	g_iReturnInt = P_StartScript( pBot->GetPlayer( )->mo, NULL, scriptNum, level.MapName, lArgs, 4, ACS_ALWAYS|ACS_WANTRESULT );
+}
+
+//*****************************************************************************
+//
+static void botcmd_BeginMoveUp( CSkullBot *pBot )
+{
+	pBot->m_lButtons |= BT_MOVEUP;
+}
+
+//*****************************************************************************
+//
+static void botcmd_StopMoveUp( CSkullBot *pBot )
+{
+	pBot->m_lButtons &= ~BT_MOVEUP;
+}
+
+//*****************************************************************************
+//
+static void botcmd_BeginMoveDown( CSkullBot *pBot )
+{
+	pBot->m_lButtons |= BT_MOVEDOWN;
+}
+
+//*****************************************************************************
+//
+static void botcmd_StopMoveDown( CSkullBot *pBot )
+{
+	pBot->m_lButtons &= ~BT_MOVEDOWN;
+}
+
+//*****************************************************************************
+//
+// [rc4l] Ported from zandronum@442e763f30b92789a71c0de6db9d4bb3c7603fad: a bot leaves the join queue it waits in.
+static void botcmd_QuitJoinQueue( CSkullBot *pBot )
+{
+	const unsigned int playerIndex = static_cast<unsigned>( pBot->GetPlayer( ) - players );
+
+	JOINQUEUE_RemovePlayerFromQueue ( playerIndex );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Ported from zandronum@1a7b71f6930269db768effa9c38c90d8f92c9256: a bot's goal becomes the first actor with a TID.
+static void botcmd_SetGoalTID( CSkullBot *pBot )
+{
+	int tid = pBot->m_ScriptData.alStack[pBot->m_ScriptData.lStackPosition - 1];
+	pBot->PopStack( );
+
+	if ( tid )
+	{
+		FActorIterator iterator (tid);
+		AActor *actor = iterator.Next();
+		if ( actor )
+		{
+			pBot->m_pGoalActor = actor;
+			pBot->m_ulPathType = BOTPATHTYPE_NONE;
+			return;
+		}
+	}
+
+	Printf( "botcmd_SetGoalTID: WARNING! Tried to set goal to bad TID, %i!\n", tid );
 }

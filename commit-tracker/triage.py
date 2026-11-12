@@ -1,108 +1,75 @@
 #!/usr/bin/env python3
 """
-Evidence-based relevance triage. For each upstream commit, decide ported/skip/candidate from
+Evidence-based relevance triage. For each upstream commit, propose ported/skip/candidate from
 FACTS, never the title:
 
   - merge (no unique content)                                  -> skip (merge)
   - every touched file absent from our tree                    -> skip (subsystem absent)
-  - the change's distinctive added lines already in our tree   -> ported (we have it; base-inherited)
+  - the change's distinctive added lines already in our tree   -> ported (we have it)
   - files exist but the change isn't present                   -> candidate (PENDING; real port)
   - partial / too few distinctive lines                        -> REVIEW (hand-examine)
 
-"already in our tree" is content-based (git grep -F the stripped added lines anywhere under
-src/zandronum), so it survives upstream renames and is immune to title spin.
+Paths the ledger ignores (Zandronum's changelog and backport notes, .hgtags) do not count. "Already
+in our tree" is content-based: the stripped added line appears as a line anywhere under
+src/zandronum, so it survives renames and is immune to title spin. It is a hint, never a verdict
+on its own: the ported zstd commit scored 27% because the code around it had moved.
 
-Env: UZDOOM, N (how many first-pending commits). Prints one verdict line per commit + a summary.
+Usage: triage.py [--ledger NAME] [-n N]   (the first N pending rows; default 100)
+Prints one verdict line per commit plus a summary, and writes <ledger>/triage_out.tsv.
 """
-import os, re, subprocess
+import argparse
+import os
+import sys
 
-UP   = os.environ.get("UZDOOM", "/Users/username/repos/UZDoom")
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # repo root (has src/zandronum)
-OURS = "src/zandronum"
-N    = int(os.environ.get("N", "100"))
-IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
-
-
-def sh(args, **kw):
-    return subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace", **kw).stdout
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import ledger as L  # noqa: E402
+import tracker  # noqa: E402
 
 
-def pending(n):
-    rows = []
-    with open(os.path.join(ROOT, "commit-tracker/coverage.tsv")) as f:
-        for i, line in enumerate(f):
-            if i < 2:
-                continue
-            c = line.rstrip("\n").split("\t")
-            if len(c) >= 4 and c[3] == "pending":
-                rows.append((c[0], c[1][:10], c[2]))
-                if len(rows) >= n:
-                    break
-    return rows
-
-
-def in_our_tree(text):
-    """Is this stripped line present anywhere under src/zandronum? (substring, fixed-string)"""
-    r = subprocess.run(["git", "-C", ROOT, "grep", "-F", "-q", "-e", text, "--", OURS],
-                       capture_output=True)
-    return r.returncode == 0
-
-
-def basename_exists(path):
-    b = os.path.basename(path)
-    return bool(sh(["git", "-C", ROOT, "ls-files", "--", "%s/**/%s" % (OURS, b), "%s/%s" % (OURS, b)]).strip())
-
-
-def triage(sha):
-    parents = sh(["git", "-C", UP, "rev-list", "--parents", "-n1", sha]).split()
-    if len(parents) > 2:
-        return ("skip", "merge")
-    files = [f for f in sh(["git", "-C", UP, "show", "--name-only", "--format=", sha]).splitlines() if f]
+def triage(led, repo, row, files_map, have, ours_lines):
+    sha = row["sha"]
+    files = [f for f in files_map.get(sha, []) if not L.is_ignored(led, f)]
+    if not files_map.get(sha):
+        return ("skip", "merge or no files")
     if not files:
-        return ("skip", "no files")
-    have_file = [f for f in files if basename_exists(f)]
+        return ("skip", "only ignored paths: " + ", ".join(files_map[sha][:4]))
+    have_file = [f for f in files if tracker.in_our_tree(led, f, have)]
     if not have_file:
         return ("skip", "files absent: " + ", ".join(files[:4]))
-
-    # distinctive added lines
-    diff = sh(["git", "-C", UP, "show", "--unified=0", "--format=", sha])
-    added = []
-    for ln in diff.splitlines():
-        if ln.startswith("+") and not ln.startswith("+++"):
-            s = ln[1:].strip()
-            if len(s) >= 12 and IDENT.search(s):
-                added.append(s)
-    added = list(dict.fromkeys(added))[:25]   # dedupe, cap
+    added = tracker.added_lines(tracker.strip_ignored(led, repo.diff(sha, unified=0)))[:25]
     if not added:
         return ("REVIEW", "no distinctive added lines (%d files, have %d)" % (len(files), len(have_file)))
-
-    present = sum(1 for s in added if in_our_tree(s))
+    present = sum(1 for s in added if s in ours_lines)
     ratio = present / len(added)
     ev = "present %d/%d" % (present, len(added))
     if ratio >= 0.7:
-        return ("ported", ev + " (inherited)")
+        return ("ported", ev + " (inherited?)")
     if ratio <= 0.10:
         return ("candidate", ev + " -> PENDING")
     return ("REVIEW", ev + " (partial)")
 
 
 def main():
-    rows = pending(N)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default="uzdoom")
+    ap.add_argument("-n", type=int, default=100)
+    args = ap.parse_args()
+    led = L.load_config()[args.ledger]
+    repo = tracker.repo_for(led)
+    rows = [r for r in L.read_rows(led) if r["status"] == "pending"][:args.n]
+    files_map, have, ours_lines = L.read_files_map(led), tracker.our_basenames(), tracker.our_lines()
     print("triaging %d commits...\n" % len(rows))
-    tally = {}
-    out = []
-    for sha, date, subj in rows:
-        v, ev = triage(sha)
+    tally, out = {}, []
+    for r in rows:
+        v, ev = triage(led, repo, r, files_map, have, ours_lines)
         tally[v] = tally.get(v, 0) + 1
-        out.append((v, sha, date, subj, ev))
-        print("%-9s %s %s | %-52.52s | %s" % (v, sha[:9], date, subj, ev))
+        out.append((r["sha"], v, ev))
+        print("%-9s %s %s | %-52.52s | %s" % (v, r["sha"][:9], r["date"][:10], r["title"], ev))
     print("\n=== summary ===")
     for k in ("ported", "skip", "candidate", "REVIEW"):
         print("  %-10s %d" % (k, tally.get(k, 0)))
-    # write proposed verdicts for the writeback step
-    with open(os.path.join(ROOT, "commit-tracker/triage_out.tsv"), "w") as f:
-        for v, sha, date, subj, ev in out:
-            f.write("%s\t%s\t%s\n" % (sha, v, ev))
+    L.write_text(os.path.join(L.ledger_dir(led), "triage_out.tsv"), "".join("%s\t%s\t%s\n" % o for o in out))
 
 
 if __name__ == "__main__":

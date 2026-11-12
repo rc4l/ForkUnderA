@@ -505,16 +505,8 @@ ASTARRETURNSTRUCT_t ASTAR_Path( ULONG ulPathIdx, POS_t GoalPoint, float fMaxSear
 //
 POS_t ASTAR_GetPosition( ASTARNODE_t *pNode )
 {
-	POS_t	Position;
-
-//	pNode->lXNodeIdx << ASTAR_NODE_SHIFT + (( g_lMapXMin >> ASTAR_NODE_SHIFT ) << ASTAR_NODE_SHIFT )
-//	Position.x = ( pNode->lXNodeIdx << ASTAR_NODE_SHIFT ) + (((( g_lMapXMin / FRACUNIT ) / 64 ) * 64 ) * FRACUNIT ) + ( 32 << FRACBITS );
-//	Position.y = ( pNode->lYNodeIdx << ASTAR_NODE_SHIFT ) + (((( g_lMapYMin / FRACUNIT ) / 64 ) * 64 ) * FRACUNIT ) + ( 32 << FRACBITS );
-	Position.x = ( pNode->lXNodeIdx << ASTAR_NODE_SHIFT ) + (( g_lMapXMin >> ASTAR_NODE_SHIFT ) << ASTAR_NODE_SHIFT ) + ( 32 << FRACBITS );
-	Position.y = ( pNode->lYNodeIdx << ASTAR_NODE_SHIFT ) + (( g_lMapYMin >> ASTAR_NODE_SHIFT ) << ASTAR_NODE_SHIFT ) + ( 32 << FRACBITS );
-	Position.z = 0;
-
-	return ( Position );
+	// [rc4l] Ported from zandronum@04903d3ae54c054c18731da75bc9afd2a13ef5f0: one rule for a node's position.
+	return ( ASTAR_GetPositionFromIndex( pNode->lXNodeIdx, pNode->lYNodeIdx ) );
 }
 
 //*****************************************************************************
@@ -525,7 +517,10 @@ POS_t ASTAR_GetPositionFromIndex( LONG lXIdx, LONG lYIdx )
 
 	Position.x = ( lXIdx << ASTAR_NODE_SHIFT ) + (( g_lMapXMin >> ASTAR_NODE_SHIFT ) << ASTAR_NODE_SHIFT ) + ( 32 << FRACBITS );
 	Position.y = ( lYIdx << ASTAR_NODE_SHIFT ) + (( g_lMapYMin >> ASTAR_NODE_SHIFT ) << ASTAR_NODE_SHIFT ) + ( 32 << FRACBITS );
-	Position.z = 0;
+
+	// [rc4l] Ported from zandronum@04903d3ae54c054c18731da75bc9afd2a13ef5f0: a node stands at its sector's floor height.
+	int secnum = int(P_PointInSector (Position.x, Position.y) - sectors);
+	Position.z = sectors[secnum].floorplane.ZatPoint (Position.x, Position.y);
 
 	return ( Position );
 }
@@ -797,7 +792,12 @@ static ASTARNODE_t *astar_GetNodeFromPoint( POS_t Point )
 //
 static LONG astar_GetCostToGoalEstimate( ASTARPATH_t *pPath, ASTARNODE_t *pNode )
 {
-	return (LONG)(( P_AproxDistance( pNode->Position.x - pPath->pGoalNode->Position.x, pNode->Position.y - pPath->pGoalNode->Position.y ) / FRACUNIT ));
+	// [rc4l] Ported from zandronum@04903d3ae54c054c18731da75bc9afd2a13ef5f0: the estimate counts the height between node and goal, ours keeping the cast our 64-bit fixed_t needs.
+	// [rc4l] Ported from zandronum@2e70d6ccc17cb06dc695cb1a98b9e9e071f44788: the flat distance first, for readability.
+	const fixed_t xyDistance = P_AproxDistance( pNode->Position.x - pPath->pGoalNode->Position.x,
+		pNode->Position.y - pPath->pGoalNode->Position.y);
+
+	return (LONG)(( P_AproxDistance( xyDistance, pNode->Position.z - pPath->pGoalNode->Position.z ) / FRACUNIT ));
 /*
 	POS_t	PosGoal;
 	POS_t	PosNode;

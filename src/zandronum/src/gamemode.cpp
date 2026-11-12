@@ -69,6 +69,7 @@
 #include "p_acs.h"
 #include "gi.h"
 #include "features/restart-reparse/computation/gamemodetable_compute.h"
+#include "computation/playerjoins_compute.h"   // [rc4l] ComputePlayerJoinsEventTeam
 
 //*****************************************************************************
 //	CONSOLE VARIABLES
@@ -1162,7 +1163,23 @@ bool GAMEMODE_IsHandledSpecial ( AActor *Activator, int Special )
 
 	// [EP/BB] Spectators activate a very limited amount of specials and ignore all others.
 	if ( Activator->player->bSpectating )
+	{
+		// [AK] Spectators without physical restrictions should only activate
+		// specials if they're not under the floor or above the ceiling.
+		if ( P_IsSpectatorUnrestricted( Activator ) )
+		{
+			// [rc4l] Ported from zandronum@8a0328cd237a98ebf8b680cb0e990c233287afe2: viewZ is a fixed_t, since an int truncates a 48.16 height.
+			const fixed_t viewZ = Activator->z + static_cast<APlayerPawn *>( Activator )->ViewHeight;
+
+			if ( viewZ < Activator->Sector->floorplane.ZatPoint( Activator->x, Activator->y ) )
+				return false;
+
+			if ( viewZ > Activator->Sector->ceilingplane.ZatPoint( Activator->x, Activator->y ) )
+				return false;
+		}
+
 		return ( GAMEMODE_IsSpectatorAllowedSpecial( Special ) );
+	}
 
 	// [BB] Clients predict a very limited amount of specials for the local player and ignore all others (spectators were already handled)
 	if ( NETWORK_InClientMode() )
@@ -1350,6 +1367,24 @@ bool GAMEMODE_HandleDamageEvent ( AActor *target, AActor *inflictor, AActor *sou
 	// [AK] If the new damage is zero, that means the target shouldn't take damage in P_DamageMobj.
 	// Allow P_DamageMobj to execute anyways if the original damage was zero (i.e. NODAMAGE flag).
 	return ( originalDamage == 0 || damage != 0 );
+}
+
+//*****************************************************************************
+//
+bool GAMEMODE_HandlePlayerJoinsEvent( unsigned int player, unsigned int team )
+{
+	// [AK] The second argument of GAMEEVENT_PLAYERJOINS is the team that the
+	// player is trying to join. If they're not joining a specific team, either
+	// because they want to join a random one or because the current game mode
+	// doesn't support teams, change the argument's value to something that can
+	// be recognized as "none" in ACS.
+	// [rc4l] Adapted from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: the team rule is ComputePlayerJoinsEventTeam.
+	const unsigned int desiredTeam = zx::playerjoins::ComputePlayerJoinsEventTeam( TEAM_CheckIfValid( team ), team, TEAM_None );
+
+	if (( PLAYER_IsValidPlayer( player )) && ( GAMEMODE_HandleEvent( GAMEEVENT_PLAYERJOINS, nullptr, player, desiredTeam, true ) != 0 ))
+		return true;
+
+	return false;
 }
 
 //*****************************************************************************

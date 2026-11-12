@@ -26,6 +26,12 @@ test("a counter passes at or under its ceiling, and fails over it or when the en
     { line: "FAIL MAP01: no slots past the fill in the engine's answer", failed: 1 });
 });
 
+test("a failing counter says what its value means when it can, and a passing one does not", () => {
+  const counter = { label: "checks", pattern: "is (\\d+)", ceiling: 1, floor: 1, explain: (map, v) => [`${map} bits ${v.toString(2)}`, "second"] };
+  assert.deepEqual(judgeCounter("MAP02", "is 5", counter), { line: "FAIL MAP02 checks: 5 (ceiling 1): MAP02 bits 101; second", failed: 1 });
+  assert.deepEqual(judgeCounter("MAP02", "is 1", counter), { line: "PASS MAP02 checks: 1 (ceiling 1)", failed: 0 });
+});
+
 test("a counter with a floor passes at or over it and fails under it", () => {
   const counter = { label: "particles drawn", pattern: "particles: (\\d+) drawn", floor: 1 };
   assert.deepEqual(judgeCounter("MAP01", "particles: 40 drawn this frame", counter),
@@ -392,6 +398,17 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
   assert.deepEqual([launched[0].cheats, launched[1].cheats], [true, false]);
   assert.equal(compareNetplay.judgedAlone, true);
   assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
+});
+
+test("a netplay instance that crashed under the judge fails with its crash, whether the judge returned or threw", async () => {
+  const checked = [];
+  const deps = { launch: async (o) => ({ id: o.lag }), close: async () => {}, seams: async (set) => { checked.push(set.id); return []; }, fills: async () => [], replication: async () => "",
+    crash: (set) => (set.id === "dead" || set.id === "threw" ? new Error("server engine crashed -- s.log.crash") : null) };
+  const r = await compareNetplay({ name: "ntcrash", wad: Buffer.from("PWAD"), maps: ["MAP01"], configs: [{ name: "dead", lag: "dead" }, { name: "threw", lag: "threw" }, { name: "fine", lag: "fine" }],
+    judgeNetplay: async (set, label) => { if (set.id === "threw") throw new Error("rpc timeout"); return { lines: [`PASS ${label}`], failed: 0 }; } }, deps);
+  assert.deepEqual(r.lines, ["PASS MAP01 dead", "FAIL MAP01 dead: server engine crashed -- s.log.crash", "FAIL MAP01 threw: server engine crashed -- s.log.crash", "PASS MAP01 fine"]);
+  assert.equal(r.failed, 2);
+  assert.deepEqual(checked, ["fine"], "a crashed set skips the checks that would only time out");
 });
 
 test("a netplay configuration may bring its own file, a pk3 named as one beside the scenario's wad", async () => {

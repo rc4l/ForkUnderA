@@ -669,7 +669,7 @@ else ()
 endif ()
 
 # [AK] We also need ZStd for encoding/decoding network packets.
-# [KI] Adapted from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad: a vendored single-file zstd (deps/zstd) replaces find_package so every platform, Emscripten included, builds one pinned copy.
+# [KI] Adapted from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: a vendored single-file zstd (deps/zstd) replaces find_package so every platform, Emscripten included, builds one pinned copy.
 add_library( fua_zstd STATIC "${CMAKE_SOURCE_DIR}/../../deps/zstd/zstd.c" )
 include_directories( "${CMAKE_SOURCE_DIR}/../../deps/zstd" )
 set( ZDOOM_LIBS ${ZDOOM_LIBS} fua_zstd )
@@ -1400,6 +1400,7 @@ add_executable( zdoom WIN32
 	p_spec.cpp
 	p_states.cpp
 	p_switch.cpp
+	p_tags.cpp
 	p_teleport.cpp
 	p_terrain.cpp
 	p_things.cpp
@@ -1811,6 +1812,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
 	features/frame-limit/computation/framelimit_compute.cpp
+	features/aspect-ratio/computation/ratiobucket_compute.cpp
 	features/dynres/computation/dynres_compute.cpp
 	features/dynlights/computation/nodeindex_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp
@@ -1896,6 +1898,7 @@ add_executable( zdoom WIN32
 	features/net-replication/mapstate.cpp
 	features/net-replication/actorstate.cpp
 	features/net-replication/playerstate.cpp
+	features/net-replication/rotation.cpp
 	features/net-client/netclient.cpp
 	features/net-client/rejoin.cpp
 	features/dev-mode/devmode.cpp

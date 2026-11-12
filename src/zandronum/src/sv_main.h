@@ -62,18 +62,13 @@
 #include "features/federated-server-registry/computation/listingproof_compute.h" // [rc4l] zx::ListingProof, header-pure
 #include <list>
 #include <queue>
+#include <memory>
 
 //*****************************************************************************
 //	DEFINES
 
-// Interval of time that clients' chat instances are reset at.
-#define	CHATINSTANCE_RESET_INTERVAL	( TICRATE * 2 )
-
-// Maximum amount of chat instance times we store.
-#define	MAX_CHATINSTANCE_STORAGE	4
-
-// Maximum amount of user info change instance times we store.
-#define	MAX_USERINFOINSTANCE_STORAGE	4
+// Maximum amount of instances stored for chatting and userinfo changes, per client.
+#define	MAX_TIME_INSTANCES_STORAGE	3
 
 // Number of seconds before a client times out.
 #define CLIENT_TIMEOUT				40
@@ -199,6 +194,9 @@
 
 #define	MAX_STORED_QUERY_IPS		512
 
+// [AK] A ring buffer for the game ticks a client chatted or sent userinfo changes.
+typedef RingBuffer<int, MAX_TIME_INSTANCES_STORAGE> TimeInstancesBuffer;
+
 //*****************************************************************************
 enum CLIENTSTATE_e
 {
@@ -245,33 +243,8 @@ enum LEAVEREASON_e
 };
 
 //*****************************************************************************
-//
-// [TP] For SERVERCOMMANDS_MoveThingIfChanged
-// [AK] Also used by the skip correction.
-//
-struct MOVE_THING_DATA_s
-{
-	MOVE_THING_DATA_s( ) {}
+//	STRUCTURES
 
-	MOVE_THING_DATA_s( AActor *actor ) :
-	    x ( actor->x ),
-	    y ( actor->y ),
-	    z ( actor->z ),
-	    velx ( actor->velx ),
-	    vely ( actor->vely ),
-	    velz ( actor->velz ),
-	    pitch ( actor->pitch ),
-	    angle ( actor->angle ),
-	    movedir ( actor->movedir ) {}
-
-	fixed_t x, y, z;
-	fixed_t velx, vely, velz;
-	fixed_t pitch;
-	angle_t angle;
-	BYTE movedir;
-};
-
-//*****************************************************************************
 struct STORED_QUERY_IP_s
 {
 	// Address of the person who queried us.
@@ -298,40 +271,6 @@ struct CLIENT_MOVE_COMMAND_s
 	bool operator<(const CLIENT_MOVE_COMMAND_s& other) const {
 	  return ( ulGametic > other.ulGametic );
 	}
-};
-
-//*****************************************************************************
-struct CLIENT_SAVED_SPECIAL_s
-{
-	int				num;
-	line_t			*line;
-	bool			backSide;
-};
-
-//*****************************************************************************
-struct CLIENT_PLAYER_DATA_s
-{
-	ULONG				ulSavedGametic;
-	MOVE_THING_DATA_s	PositionData;
-	const PClass		*pMorphedPlayerClass;
-	SDWORD				reactionTime;
-	int					chickenPeck;
-	int					morphTics;
-	int					inventoryTics;
-	int					jumpTics;
-	BYTE				turnTics;
-	SBYTE				crouching;
-	SBYTE				crouchDirection;
-	fixed_t				crouchFactor;
-	fixed_t				crouchOffset;
-	fixed_t				crouchViewDelta;
-	bool				bTeleported;
-
-	CLIENT_PLAYER_DATA_s ( player_t *player );
-
-	// [AK] Restore's the player's data to whatever's stored in the structure.
-	// We won't restore the morphed player class though.
-	void Restore ( player_t *player );
 };
 
 //*****************************************************************************
@@ -489,9 +428,6 @@ struct CLIENT_s
 	// [BB] Did the client not yet acknowledge receiving the last full update?
 	bool			bFullUpdateIncomplete;
 
-	// [AK] Are we in the middle of backtracing this player's movement via skip correction?
-	bool			bIsBacktracing;
-
 	// [BB] A record of the gametics the client called protected commands, e.g. send_password.
 	RingBuffer<LONG, 8> commandInstances;
 
@@ -504,15 +440,11 @@ struct CLIENT_s
 	// [AK] A list of (non-zero) gametics of the last few weapon select commands the client sent us.
 	RingBuffer<ULONG, MAX_RECENT_COMMANDS>	recentSelectCMDs;
 
-	// A record of the gametic the client spoke at. We store the last MAX_CHATINSTANCE_STORAGE
-	// times the client chatted. This is used to chat spam protection.
-	LONG			lChatInstances[MAX_CHATINSTANCE_STORAGE];
-	ULONG			ulLastChatInstance;
+	// A record of the last several game ticks the client spoke at, used for spam protection.
+	TimeInstancesBuffer		chatInstances;
 
-	// A record of the gametic the client spoke at. We store the last MAX_CHATINSTANCE_STORAGE
-	// times the client chatted. This is used to chat spam protection.
-	LONG			lUserInfoInstances[MAX_USERINFOINSTANCE_STORAGE];
-	ULONG			ulLastUserInfoInstance;
+	// A record of the last several game ticks the client sent userinfo changes, used for spam protection.
+	TimeInstancesBuffer		userinfoInstances;
 
 	// Record the last time this player changed teams, so we can potentially forbid him from
 	// doing it again.
@@ -531,8 +463,8 @@ struct CLIENT_s
 	// Last tick we processed a movement command.
 	LONG			lLastMoveTickProcess;
 
-	// [AK] The last movement command we received from this client.
-	ClientMoveCommand	*LastMoveCMD;
+	// [AK] The last tick the client's statuses changed via CLC_SETSTATUS.
+	int				lastStatusChangeTick;
 
 	// [AK] The network index the client sent with their last weapon select command.
 	USHORT			usLastWeaponNetworkIndex;
@@ -559,6 +491,9 @@ struct CLIENT_s
 	// [AK] The number of times a client's packet (e.g. CLC_CLIENTMOVE) was missing.
 	unsigned int	numMissingPackets;
 
+	// [AK] The number of consecutive ticks a client's move command arrived.
+	unsigned int	numConsistentMoveCmdArrivals;
+
 	// What is the name of the client's skin?
 	FString			skinName;
 
@@ -568,22 +503,8 @@ struct CLIENT_s
 	// [K6] Last tic we got some action from the client. Used to determine his presence.
 	LONG			lLastActionTic;
 
-	// [BB] Buffer storing all movement commands received from the client we haven't executed yet.
-	TArray<ClientCommand*>	MoveCMDs;
-
-	// [AK] All the movement commands we received from this client that came too late (i.e. we tried
-	// predicting these commands through extrapolation).
-	TArray<ClientCommand*>	LateMoveCMDs;
-
-	// [AK] Some of the player's data that was saved before we started extrapolating them, which can
-	// be restored if we need to perform a backtrace on them.
-	CLIENT_PLAYER_DATA_s	*OldData;
-
-	// [AK] The number of tics we extrapolated this player's movement.
-	ULONG			ulExtrapolatedTics;
-
-	// [AK] A list of specials this player executed while being extrapolated.
-	TArray<CLIENT_SAVED_SPECIAL_s>	ExtrapolatedSpecials;
+	// [BB] Buffer storing all commands received from the client that we haven't executed yet.
+	TArray<std::shared_ptr<ClientCommand>>	bufferedCMDs;
 
 	// [BB] Variables for the account system
 	FString username;
@@ -688,7 +609,7 @@ void		SERVER_RequestClientToAuthenticate( ULONG ulClient );
 void		SERVER_AuthenticateClientLevel( BYTESTREAM_s *pByteStream );
 bool		SERVER_PerformAuthenticationChecksum( BYTESTREAM_s *pByteStream );
 void		SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream );
-bool		SERVER_GetUserInfo( BYTESTREAM_s *pByteStream, bool bAllowKick, bool bEnforceRequired = false );
+bool		SERVER_GetUserInfo( BYTESTREAM_s *byteStream, bool allowKick, bool enforceRequired = false, bool fromACS = false );
 void		SERVER_ConnectionError( NETADDRESS_s Address, const char *pszMessage, ULONG ulErrorCode );
 void		SERVER_ClientError( ULONG ulClient, ULONG ulErrorCode );
 void		SERVER_SendFullUpdate( ULONG ulClient );
@@ -748,6 +669,7 @@ void		SERVER_HandleWeaponStateJump( ULONG ulPlayer, FState *pState, LONG lPositi
 void		SERVER_SetThingNonZeroAngleAndVelocity( AActor *pActor );
 void		SERVER_IgnoreIP( NETADDRESS_s Address );
 IPList		*SERVER_GetAdminList( void );
+bool		SERVER_CheckTimeInstancesBufferForFlood( TimeInstancesBuffer &instances, bool saveIfFloodDetected );
 const FString& SERVER_GetServerRegistryBanlistVerificationString( void );
 void		SERVER_UpdateThingVelocity( AActor *pActor, bool updateZ, bool updateXY = true );
 void		SERVER_SyncSharedKeys( int playerToSync, bool withmessage );
@@ -756,13 +678,8 @@ void		SERVER_KillCheat( const char* what );
 void STACK_ARGS SERVER_PrintWarning( const char* format, ... ) GCCPRINTF( 1, 2 );
 void		SERVER_FlagsetChanged( FIntCVar& flagset, int maxflags = 2 );
 void		SERVER_SettingChanged( FBaseCVar &cvar, bool bUpdateConsole, int maxDecimals = 0 );
-void		SERVER_HandleSkipCorrection( ULONG ulClient );
-bool		SERVER_IsExtrapolatingPlayer( ULONG ulClient );
-bool		SERVER_IsBacktracingPlayer( ULONG ulClient );
-void		SERVER_ResetClientTicBuffer( ULONG ulClient );
-void		SERVER_ResetClientExtrapolation( ULONG ulClient, bool bAfterBacktrace = false );
 void		SERVER_DestroyActorIfClientsidedOnly( AActor *actor );
-// [KI] Ported from zandronum@abba1951e37489509f0cf456fbbd2d83a075766b: sv_dumppackets writes command payloads for zstd dictionary training.
+// [KI] Ported from zandronum@80cd2315f27379a7bf0692f4c01ab4f49012d40d: sv_dumppackets writes command payloads for zstd dictionary training.
 void		SERVER_DumpPacket( const BYTE *buffer, const size_t length, const bool fromClient );
 bool		SERVER_ShouldDumpServerCommand( const SVC command, const SVC2 extcommand );
 bool		SERVER_ShouldDumpClientCommand( const CLC command );
@@ -826,8 +743,9 @@ EXTERN_CVAR( Int, sv_colorstripmethod );
 EXTERN_CVAR( Bool, sv_minimizetosystray )
 EXTERN_CVAR( Int, sv_queryignoretime )
 EXTERN_CVAR( Bool, sv_limitcommands )
-EXTERN_CVAR( Int, sv_smoothplayers )
 EXTERN_CVAR( Int, sv_allowprivatechat )
+EXTERN_CVAR( Float, sv_minfov ) // [RK] Minimum FOV allowed
+EXTERN_CVAR( Float, sv_maxfov ) // [RK] Maximum FOV allowed
 
 // From sv_serverregistry.cpp
 EXTERN_CVAR( Bool, sv_fua_serverregistry_announce );

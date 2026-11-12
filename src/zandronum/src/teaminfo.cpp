@@ -46,6 +46,7 @@
 // [CW] New includes.
 #include "team.h"
 #include "version.h"
+#include "computation/musicspec_compute.h"	// [rc4l] ComputeMusicSpec
 
 // MACROS ------------------------------------------------------------------
 
@@ -128,6 +129,17 @@ void TEAMINFO_Init ()
 	sv_maxteams = sv_maxteams.GetGenericRep( CVAR_Int ).Int;
 }
 
+// [rc4l] Adapted from zandronum@59b494f63d585a9c5067c77ff228bb7fe2994cc0: a theme as MAPINFO writes music, "name:order" or the name then its track.
+static void teaminfo_ParseTheme( FScanner &sc, FString &name, int &order )
+{
+	sc.MustGetString( );
+	const zx::MusicSpec spec = zx::ComputeMusicSpec( sc.String );
+	name = spec.name.c_str( );
+	order = spec.order;
+	if ( !spec.hasOrder && sc.CheckNumber( ))
+		order = sc.Number;
+}
+
 //==========================================================================
 //
 // TEAMINFO_ParseTeam
@@ -139,6 +151,8 @@ void TEAMINFO_ParseTeam (FScanner &sc)
 	TEAMINFO team;
 	// [BB] Initialize some values.
 	team.bCustomPlayerColorAllowed = false;
+	team.winnerthemeorder = 0;
+	team.loserthemeorder = 0;
 
 	int i;
 	char *color;
@@ -221,13 +235,11 @@ void TEAMINFO_ParseTeam (FScanner &sc)
 			break;
 
 		case 13:
-			sc.MustGetString( );
-			team.WinnerTheme = sc.String;
+			teaminfo_ParseTheme( sc, team.WinnerTheme, team.winnerthemeorder );
 			break;
 
 		case 14:
-			sc.MustGetString( );
-			team.LoserTheme = sc.String;
+			teaminfo_ParseTheme( sc, team.LoserTheme, team.loserthemeorder );
 			break;
 
 		case 15:

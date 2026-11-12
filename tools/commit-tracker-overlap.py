@@ -43,82 +43,32 @@ gl_material.cpp with a nine-commit buffer-conversion flight). This catches blata
 subtle ones. The stronger signal, when our commit message declares which upstream shas it covers,
 is to check membership in that list by hand.
 """
+import argparse
 import os
-import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COVERAGE = os.path.join(ROOT, "commit-tracker/coverage.tsv")
-FILES = os.path.join(ROOT, "commit-tracker/files.tsv")
-ESCAPE = "no-file-overlap:"
-# Flip to False once the inherited backlog below is triaged; then this blocks CI.
-ADVISORY = False
-
-
-def upstream_files():
-    """upstream sha -> set of basenames it touched."""
-    out = {}
-    with open(FILES, encoding="utf-8") as fh:
-        for line in fh:
-            if line.startswith("#"):
-                continue
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) != 2:
-                continue
-            out[parts[0]] = {os.path.basename(p) for p in parts[1].split()}
-    return out
-
-
-def our_files(sha, cache):
-    """basenames touched by one of our commits; empty set if the sha is unreadable."""
-    if sha not in cache:
-        res = subprocess.run(
-            ["git", "-C", ROOT, "show", "--format=", "--name-only", sha],
-            capture_output=True, text=True)
-        cache[sha] = {os.path.basename(p) for p in res.stdout.split() if "." in p}
-    return cache[sha]
+sys.path.insert(0, os.path.join(ROOT, "commit-tracker"))
+import ledger as L  # noqa: E402
+from overlap import ESCAPE, mismatches  # noqa: E402
 
 
 def main():
-    up = upstream_files()
-    cache = {}
-    mismatches = []
-    checked = 0
-
-    with open(COVERAGE, encoding="utf-8") as fh:
-        for line in fh:
-            f = line.rstrip("\n").split("\t")
-            if len(f) != 6 or f[3] not in ("ported", "adapted"):
-                continue
-            sha, note, ours = f[0], f[4], f[5]
-            # zandronum-base rows describe inheritance, not a port -- nothing to compare.
-            if ours in ("", "/", "zandronum-base"):
-                continue
-            if sha not in up:          # upstream file list unknown (shallow index); cannot judge
-                continue
-            if ESCAPE in note:         # explicitly justified
-                continue
-            checked += 1
-            for tok in ours.split(","):
-                if up[sha] & our_files(tok.strip(), cache):
-                    break
-            else:
-                mismatches.append((sha, f[3], ours, f[2][:52]))
-
-    if mismatches:
-        print("commit-tracker-overlap: rows whose cited commit touched none of the upstream files:")
-        for sha, status, ours, title in mismatches:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default="uzdoom")
+    args = ap.parse_args()
+    led = L.load_config()[args.ledger]
+    found, checked = mismatches(L.read_rows(led), L.read_files_map(led))
+    if found:
+        print("commit-tracker-overlap [%s]: rows whose cited commit touched none of the upstream files:" % args.ledger)
+        for sha, status, ours, title in found:
             print(f"  {sha[:12]} [{status}] -> {ours}   {title}")
         print()
-        print(f"{len(mismatches)} of {checked} checked rows. Each is either a mis-attribution (the")
+        print(f"{len(found)} of {checked} checked rows. Each is either a mis-attribution (the")
         print("upstream commit is then silently OUT of the queue and must go back to pending), or a")
         print(f"real port that landed elsewhere -- say so with '{ESCAPE} <reason>' in the row's note.")
-        if ADVISORY:
-            print("\nADVISORY: not failing the build. Triage these, then set ADVISORY = False.")
-            return 0
         return 1
-
-    print(f"commit-tracker-overlap: clean ({checked} rows cross-checked against their commits).")
+    print(f"commit-tracker-overlap [{args.ledger}]: clean ({checked} rows cross-checked against their commits).")
     return 0
 
 

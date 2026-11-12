@@ -98,6 +98,12 @@ TEST(ConnectChallenge, WidthIsCheckedBeforeTheSlotIs)
 	EXPECT_EQ(PROOF_MALFORMED, ProofReadiness(false, kKeyBytes + 1, kSignatureBytes));
 }
 
+TEST(ConnectChallenge, ADemosPlaybackReadsTheProofWithoutJudgingIt)
+{
+	EXPECT_TRUE(zx::ComputeChecksServerProof(false));
+	EXPECT_FALSE(zx::ComputeChecksServerProof(true));
+}
+
 TEST(ConnectChallenge, TheWidthsAreTheOnesEd25519Uses)
 {
 	EXPECT_EQ(static_cast<size_t>(16), kNonceBytes);

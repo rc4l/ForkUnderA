@@ -90,6 +90,8 @@
 #include "features/damage-taken/damagetaken.h"
 #include "features/net-replication/actorstate.h"
 #include "features/net-replication/computation/actorstate_compute.h"   // [Doruk-Aksoy] ComputeSettledDeathZ
+#include "computation/playerskin_compute.h"
+#include "computation/inventoryselect_compute.h"	// [rc4l] ComputeSelectsInventory, ComputeInventoryBarTics
 
 // [BC] Ugh.
 void SERVERCONSOLE_UpdatePlayerInfo( LONG lPlayer, ULONG ulUpdateFlags );
@@ -111,6 +113,14 @@ EXTERN_CVAR (Bool, show_obituaries)
 // [AK] If true, the intensity of the blood on the screen takes into account
 // the player's max health instead of a hard-coded health of 100.
 CVAR( Bool, blood_fade_usemaxhealth, false, CVAR_ARCHIVE )
+
+// [rc4l] Ported from zandronum@98b9d467a0fa13b34487772e5024e31f58751d54: the Terminator's frag award as a server setting.
+// [TRSR] Adjusts the number of frags gained when fragging the Terminator.
+CUSTOM_CVAR(Int, sv_terminatorfragaward, 10, CVAR_SERVERINFO | CVAR_GAMEPLAYSETTING)
+{
+	if ( self <= 0 )
+		self = 1;
+};
 
 FName MeansOfDeath;
 bool FriendlyFire;
@@ -451,7 +461,8 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 	// Also kill the alpha flicker cause by the visibility flicker.
 	if ( effects & FX_VISIBILITYFLICKER )
 	{
-		RenderStyle = STYLE_Normal;
+		alpha = GetDefault()->alpha;
+		RenderStyle = GetDefault()->RenderStyle;
 		effects &= ~FX_VISIBILITYFLICKER;
 	}
 
@@ -590,8 +601,9 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 			if (player == source->player)	// [RH] Cumulative frag count
 			{
 				// [BC] Frags are server side.
+				// [TRSR] Terminator loses extra frags based on sv_terminatorfragaward
 				if ( NETWORK_InClientMode() == false )
-					PLAYER_SetFragcount( player, player->fragcount - (( bPossessedTerminatorArtifact ) ? 10 : 1 ), true, true );
+					PLAYER_SetFragcount( player, player->fragcount - (( bPossessedTerminatorArtifact ) ? sv_terminatorfragaward : 1 ), true, true );
 			}
 			else
 			{
@@ -599,16 +611,16 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 				GAMEMODE_HandleEvent ( GAMEEVENT_PLAYERFRAGS, source->player->mo, static_cast<int> ( player - players ) );
 
 				// [BC] Frags are server side.
-				// [BC] Player receives 10 frags for killing the terminator!
+				// [BC/TRSR] Players receive extra frags for fragging the Terminator based on sv_terminatorfragaward
 				if ( NETWORK_InClientMode() == false )
 				{
 					if ((dmflags2 & DF2_YES_LOSEFRAG) && deathmatch)
 						PLAYER_SetFragcount( player, player->fragcount - 1, true, true );
 
 					if ( source->IsTeammate( this ))
-						PLAYER_SetFragcount( source->player, source->player->fragcount - (( bPossessedTerminatorArtifact ) ? 10 : 1 ), true, true );
+						PLAYER_SetFragcount( source->player, source->player->fragcount - (( bPossessedTerminatorArtifact ) ? sv_terminatorfragaward : 1 ), true, true );
 					else
-						PLAYER_SetFragcount( source->player, source->player->fragcount + (( bPossessedTerminatorArtifact ) ? 10 : 1 ), true, true );
+						PLAYER_SetFragcount( source->player, source->player->fragcount + (( bPossessedTerminatorArtifact ) ? sv_terminatorfragaward : 1 ), true, true );
 				}
 
 				// [BC] Add this frag to the server's statistic module.
@@ -789,7 +801,8 @@ void AActor::Die (AActor *source, AActor *inflictor, int dmgflags)
 		// count environment kills against you
 		if (!source)
 		{
-			PLAYER_SetFragcount( player, player->fragcount - (( bPossessedTerminatorArtifact ) ? 10 : 1 ), true, true );	// [RH] Cumulative frag count
+			// [TRSR] Terminator loses extra frags based on sv_terminatorfragaward
+			PLAYER_SetFragcount( player, player->fragcount - (( bPossessedTerminatorArtifact ) ? sv_terminatorfragaward : 1 ), true, true );	// [RH] Cumulative frag count
 		}
 						
 		// [BC] Increment team deathcount.
@@ -2491,6 +2504,9 @@ void PLAYER_SetTeam( player_t *pPlayer, ULONG ulTeam, bool bNoBroadcast )
 	else
 		pPlayer->bOnTeam = true;
 
+	// [RK] Grab the old team so we can check if the view needs to be reset.
+	const unsigned int oldTeam = pPlayer->Team;
+
 	// Set the team.
 	pPlayer->Team = ulTeam;
 
@@ -2537,6 +2553,18 @@ void PLAYER_SetTeam( player_t *pPlayer, ULONG ulTeam, bool bNoBroadcast )
 		{
 			SERVER_Printf( "%s joined the \034%s%s " TEXTCOLOR_NORMAL "team.\n", pPlayer->userinfo.GetName(), TEAM_GetTextColorName( ulTeam ), TEAM_GetName( ulTeam ));
 		}		
+	}
+	// [rc4l] Ported from zandronum@10b16591ad9bcf23d6d4cdb0b2cb737915357775: a player who changes team stops spying on a former ally.
+	// [rc4l] Ported from zandronum@8de7941a63b396885edc2d5c9039e09483d10b8d: the camera is checked before its player, as ours already did, and the camera itself is asked whether it is a teammate.
+	// [RK] Reset the player's camera if they switched teams and their camera is an enemy.
+	// Security cameras and alike are excluded because they are not valid players.
+	else if (( oldTeam != ulTeam ) && ( pPlayer->mo != nullptr ) && ( pPlayer->camera != nullptr ))
+	{
+		if (( pPlayer->camera->player != nullptr ) && ( pPlayer->mo->IsTeammate( pPlayer->camera ) == false ))
+		{
+			if (( pPlayer->bDeadSpectator == false ) || (( lmsspectatorsettings & LMS_SPF_VIEW ) == false ))
+				pPlayer->camera = pPlayer->mo;
+		}
 	}
 
 	// Finally, update the player's color.
@@ -2598,8 +2626,6 @@ void PLAYER_SetTeam( player_t *pPlayer, ULONG ulTeam, bool bNoBroadcast )
 
 //*****************************************************************************
 //
-// [BC] *grumble*
-void	G_DoReborn (int playernum, bool freshbot);
 void PLAYER_SetSpectator( player_t *pPlayer, bool bBroadcast, bool bDeadSpectator )
 {
 	AActor	*pOldBody;
@@ -2768,14 +2794,19 @@ void PLAYER_SetSpectator( player_t *pPlayer, bool bBroadcast, bool bDeadSpectato
 						SERVERCOMMANDS_MoveLocalPlayer( ULONG( pPlayer - players ));
 				}
 
+				// [AK] Temporarily set the player's current weapon to what they were using before
+				// turning into a dead spectator. This is necessary because G_QueueBody uses their
+				// current weapon when it calls PLAYER_ApplySkinScaleToBody in it.
+				// [rc4l] Ported from zandronum@0e35b4f5c5d42805d0de2eb3ef77388ef9c08820: G_QueueBody scales the body once, with the weapon the player held.
+				AWeapon *currentWeapon = pPlayer->ReadyWeapon;
+				pPlayer->ReadyWeapon = pOldWeapon;
+
 				// [AK] Disassociate the player from their old body. This prevents the old body from
 				// being frozen and not finishing their animation when they become a spectator.
 				// Add their old body to body queue too.
 				G_QueueBody( pOldBody );
 				pOldBody->player = NULL;
-
-				// [AK] Apply the skin's scale to the old body's scale.
-				PLAYER_ApplySkinScaleToBody( pPlayer, pOldBody, pOldWeapon );
+				pPlayer->ReadyWeapon = currentWeapon;
 			}
 
 			// [AK] If the player was morphed before turning into a dead spectator, unmorph them now.
@@ -2955,7 +2986,10 @@ void PLAYER_SpectatorJoinsGame( player_t *pPlayer )
 	// immediately assume they're missing packets because it doesn't receive their
 	// movement commands right away, depending on their ping.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	{
 		SERVER_GetClient( pPlayer - players )->lLastMoveTick = 0;
+		SERVER_GetClient( pPlayer - players )->numConsistentMoveCmdArrivals = 0;
+	}
 
 	// [BB] If the spectator used the chasecam or noclip cheat (which is always allowed for spectators)
 	// remove it now that he joins the game.
@@ -3464,6 +3498,13 @@ int PLAYER_GetOverrideSkin( player_t *player )
 }
 
 //*****************************************************************************
+// [rc4l] Whether a skin index names a cheat skin, an out-of-range one never.
+static bool PLAYER_IsCheatSkin( const int skin )
+{
+	return ( skin >= 0 ) && ( static_cast<unsigned>( skin ) < skins.Size( )) && skins[skin].bCheat;
+}
+
+//*****************************************************************************
 //
 bool PLAYER_ShouldForceBaseSkin( player_t *player )
 {
@@ -3474,13 +3515,15 @@ bool PLAYER_ShouldForceBaseSkin( player_t *player )
 	// skins are are supposed to be disabled and the player's using one.
 	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 	{
-		if (( cl_skins <= 0 ) || (( cl_skins >= 2 ) && ( skins[player->userinfo.GetSkin( )].bCheat )))
+		if ( zx::skin::ComputeClSkinsForbids( cl_skins, PLAYER_IsCheatSkin( player->userinfo.GetSkin( ))))
 			return true;
 	}
 
 	// [BB] MF4_NOSKIN should force the player to have the base skin too, the
 	// same is true for morphed players.
-	if ((( player->mo != nullptr ) && ( player->mo->flags4 & MF4_NOSKIN )) || ( player->morphTics ))
+	// [RK] In order to be inline with ZDoom and old ST behavior, we'll let
+	// morphed players keep their skin unless their class has NOSKIN.
+	if (( player->mo != nullptr ) && ( player->mo->flags4 & MF4_NOSKIN ))
 		return true;
 
 	return false;
@@ -3909,6 +3952,52 @@ void PLAYER_ResetCustomValues( const ULONG ulPlayer )
 
 	while ( it.NextPair( pair ))
 		pair->Value.ResetToDefault( ulPlayer, false );
+}
+
+//*****************************************************************************
+// [RK]
+void PLAYER_SetSpriteToSkin( player_t *pPlayer )
+{
+	// [RK] Return if we have some null pointers.
+	if ( !pPlayer || !pPlayer->mo )
+		return;
+
+	// [rc4l] Ported from zandronum@4ab1128e5b738dd57134d283dd78d0adebb90a5e: cl_skins's choice is computation/playerskin_compute's, and an out-of-range skin is never read as a cheat.
+	const int userSkin = pPlayer->userinfo.GetSkin( );
+	const bool forbidden = zx::skin::ComputeClSkinsForbids( cl_skins, PLAYER_IsCheatSkin( userSkin ));
+	if ( forbidden )
+		pPlayer->mo->flags4 |= MF4_NOSKIN;
+	// [rc4l] An allowed skin drops the NOSKIN cl_skins gave the body, unless its class has its own.
+	else if (( pPlayer->mo->GetDefault( )->flags4 & MF4_NOSKIN ) == 0 )
+		pPlayer->mo->flags4 &= ~MF4_NOSKIN;
+
+	const int skin = zx::skin::ComputeShownSkin( userSkin, static_cast<int>( skins.Size( )), forbidden, R_FindSkin( "base", pPlayer->CurrentPlayerClass ));
+
+	// [BB] There is no skin for the morphed class.
+	// [RK] Let the morph class keep the skin if they don't have +NOSKIN.
+	// [rc4l] Ported from zandronum@ed337e36b30715fd381a82f0ca846adcae1b7c34: the sprite changes only from the spawn sprite, so cl_skins no longer swaps a morph's.
+	// [AK] Except if the skin is the same as the base skin of the current class.
+	// [rc4l] Ported from zandronum@3f8adfdae9dbc2a11340f9d54d55c2bd4143ffcd, by ComputeWearsSkin.
+	AActor *const mo = pPlayer->mo;
+	const bool wearsSkin = zx::skin::ComputeWearsSkin(( mo->flags4 & MF4_NOSKIN ) != 0, pPlayer->morphTics != 0, skin == pPlayer->CurrentPlayerClass );
+	switch ( zx::skin::ComputeSkinSprite( !wearsSkin, mo->sprite == mo->SpawnState->sprite, mo->sprite == SPR_TNT1, mo->sprite == skins[skin].sprite ))
+	{
+	case zx::skin::SKIN_SPRITE_SKIN: mo->sprite = skins[skin].sprite; break;
+	case zx::skin::SKIN_SPRITE_STATE: mo->sprite = mo->state->sprite; break;
+	case zx::skin::SKIN_SPRITE_KEEP: break;
+	}
+}
+
+//*****************************************************************************
+// [rc4l] Adapted from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: one selection for ACS, the server and its clients, where upstream writes it at each.
+bool PLAYER_SetSelectedInventory( player_t *player, AInventory *item, bool showInventoryBar )
+{
+	if ( !zx::ComputeSelectsInventory( item != nullptr, ( item != nullptr ) && ( item->ItemFlags & IF_INVBAR )))
+		return false;
+
+	player->mo->InvSel = item;
+	player->inventorytics = zx::ComputeInventoryBarTics( showInventoryBar, player->inventorytics, TICRATE );
+	return true;
 }
 
 //*****************************************************************************

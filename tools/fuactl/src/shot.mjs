@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import * as ui from "./ui.mjs";
 import { exec, waitTics, sleep, rendererReport } from "./capture.mjs";
 import { engineProcessCount, slashed } from "./launch.mjs";
-import { decodePNG, isBlankImage, boxMean } from "./pngcore.mjs";
+import { decodePNG, isBlankImage, boxMean, pngSize } from "./pngcore.mjs";
 
 
 // [rc4l] Find the running hands-on instance without depending on a pipe still existing.
@@ -195,8 +195,8 @@ function pngIsUsable(file) {
     const head = Buffer.alloc(24);
     fs.readSync(fd, head, 0, 24, 0);
     fs.closeSync(fd);
-    if (head.toString("latin1", 1, 4) !== "PNG") return false;
-    return !(head.readUInt32BE(16) <= 1 && head.readUInt32BE(20) <= 1);
+    const size = pngSize(head);
+    return size !== null && !(size.width <= 1 && size.height <= 1);
   } catch { return false; }
 }
 
@@ -496,6 +496,8 @@ export function compile(cm, root, dir, target, log, config = "Release") {
 
 // [rc4l] The data pk3s the engine loads from beside its binary, as the build names their targets.
 export const PK3_TARGETS = ["pk3", "brightmaps_pk3", "skulltag_actors_pk3"];
+// [rc4l] Every target a build compiles: the engine, its data pk3s, and the server registry, which scenarios/registryhost.mjs runs from beside the engine.
+export const BUILD_TARGETS = ["zdoom", ...PK3_TARGETS, "forkundera-server-registry"];
 
 // [rc4l] What is staged beside the exe from the build's output: the data pk3s it loads and its symbols, without which a sample or a crash of the staged binary names no function.
 export function stageCompanions(names) {
@@ -507,7 +509,7 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error, sta
   const cm = cmake || pickCmake();
   refreshGlobs(cm, root, "build-win", ["_compute.cpp"], log);
   // [rc4l] The pk3 targets too: building only zdoom left the data pk3s beside it as old as the last full build.
-  compile(cm, root, "build-win", ["zdoom", ...PK3_TARGETS], log);
+  compile(cm, root, "build-win", BUILD_TARGETS, log);
   let testRun = null;
   if (tests) {
     refreshGlobs(cm, root, "build-tests", ["_compute.cpp", "_test.cpp"], log);

@@ -86,7 +86,7 @@
 #include "c_dispatch.h"
 #include "cl_demo.h"
 #include "cl_main.h"
-#include "cl_statistics.h"   // [KI] the client's nettraffic counters, fed from the transport since zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e
+#include "cl_statistics.h"   // [KI] the client's nettraffic counters, fed from the transport since zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2
 #include "doomtype.h"
 #include "huffman.h"
 #include <zstd.h>   // [KI] deps/zstd, the vendored single-file library
@@ -249,7 +249,7 @@ static bool g_bSocketIsDualStack = false;
 static TArray<FName> g_ACSNameIndex;
 
 // [SB] Zstandard (de)compression contexts
-// [KI] Ported from zandronum@5a3f5b736dd2c07377fa0fe90859c3c81ce90c54 and zandronum@c9821884f337747e632725491f1bb82712b9eee7: the contexts and the zstddict dictionary both ends must share.
+// [KI] Ported from zandronum@899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a and zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the contexts and the zstddict dictionary both ends must share.
 static ZSTD_CCtx *g_zstdCctx = nullptr;
 static ZSTD_DCtx *g_zstdDctx = nullptr;
 static unsigned g_zstdDictId = 0;
@@ -290,6 +290,7 @@ static const std::vector<std::string> g_FreedoomDehackedHashes = {
 static	void			network_InitZstd( void );
 static	void			network_DestructZstd( void );
 static	ULONG			network_DecodeDatagram( LONG lNumBytes );
+static	int				network_TakeDatagram( LONG lNumBytes, const sockaddr_storage &SocketFrom );
 static	void			network_InitPWADList( void );
 static	void			network_Error( const char *pszError );
 static	SOCKET			network_AllocateSocket( bool bWantDualStack, bool &bGotDualStack );
@@ -302,7 +303,7 @@ static	void			network_ParseLumpAuthenticationMode( FScanner &sc, LumpAuthenticat
 //*****************************************************************************
 //	CONSOLE VARIABLES
 
-// [KI] Ported from zandronum@c0269bd8dbb5b50d434bc77bbe14a6cc1b6417a6: the zstd level, threshold and smart-fallback cvars, the clamp through the tested helper.
+// [KI] Ported from zandronum@e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c: the zstd level, threshold and smart-fallback cvars, the clamp through the tested helper.
 CUSTOM_CVAR( Int, net_zstd_level, 12, CVAR_ARCHIVE|CVAR_NOSETBYACS )
 {
 	// [SB] Clamp the value to the valid range of compression levels.
@@ -875,7 +876,7 @@ void NETWORK_Destruct( void )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
+// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
 static void network_InitZstd( void )
 {
 	g_zstdCctx = ZSTD_createCCtx( );
@@ -905,7 +906,7 @@ static void network_InitZstd( void )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@5a3f5b736dd2c07377fa0fe90859c3c81ce90c54: freeing in reverse of creation, each pointer nulled so a net_zstd_level change can rebuild them.
+// [KI] Ported from zandronum@899256bbdabd2b9bd3e69f7c72cfeb9f39faed5a: freeing in reverse of creation, each pointer nulled so a net_zstd_level change can rebuild them.
 static void network_DestructZstd( void )
 {
 	ZSTD_freeDDict( g_zstdDdict );
@@ -988,7 +989,7 @@ static LONG network_TakeHeldInbound( sockaddr_storage &From, INT &iFromLength )
 }
 
 //*****************************************************************************
-// [KI] Ported from zandronum@4a7242a77c625515fbf95814e5c036165fed60bc with zandronum@8f805e4e1db71ce34eda3c9975b3fad5dd8b5009: one received datagram into g_NetworkMessage, decompressed as zstd when its first four bytes say so and Huffman-decoded otherwise.
+// [KI] Ported from zandronum@4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7 with zandronum@7ca4cb9b4d9b98e27b09341b15c83f3acaaa595e: one received datagram into g_NetworkMessage, decompressed as zstd when its first four bytes say so and Huffman-decoded otherwise.
 static ULONG network_DecodeDatagram( LONG lNumBytes )
 {
 	if ( zx::nettransport::ComputeIsZstdFrame( g_ucHuffmanBuffer, lNumBytes ))
@@ -1062,60 +1063,14 @@ int NETWORK_GetPackets( void )
 			g_ulArrivalMS = arrivalMs;
 	}
 
-	// If the number of bytes returned is -1, an error has occured.
-	if ( lNumBytes == -1 ) 
-	{ 
-#ifdef __WIN32__
-		errno = WSAGetLastError( );
-
-		if ( errno == WSAEWOULDBLOCK )
-			return ( false );
-
-		// Connection reset by peer. Doesn't mean anything to the server.
-		if ( errno == WSAECONNRESET )
-			return ( false );
-
-		if ( errno == WSAEMSGSIZE )
-		{
-			Printf( "NETWORK_GetPackets:  WARNING! Oversized packet from %s\n", g_AddressFrom.ToString() );
-			return ( false );
-		}
-
-		Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
-#else
-		if ( errno == EWOULDBLOCK )
-			return ( false );
-
-		if ( errno == ECONNREFUSED )
-			return ( false );
-
-		Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
-#endif
+	// [rc4l] Every packet in, for features/telemetry's net counters.
+	if ( lNumBytes > 0 )
+	{
+		ZX_COUNT( "net/bytes_in", "bytes", lNumBytes );
+		ZX_COUNT( "net/packets_in", "packets", 1 );
 	}
 
-	// No packets or an error, so don't process anything.
-	if ( lNumBytes <= 0 )
-		return ( 0 );
-
-	// [rc4l] Every packet in, for features/telemetry's net counters.
-	ZX_COUNT( "net/bytes_in", "bytes", lNumBytes );
-	ZX_COUNT( "net/packets_in", "packets", 1 );
-
-	// Record this for our statistics window.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVER_STATISTIC_AddToInboundDataTransfer( lNumBytes );
-
-	// If the number of bytes we're receiving exceeds our buffer size, ignore the packet.
-	if ( lNumBytes >= static_cast<LONG>(g_NetworkMessage.ulMaxSize) )
-		return ( 0 );
-
-	// Store the IP address of the sender.
-	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
-
-	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
-	return ( network_DecodeDatagram( lNumBytes ));
+	return network_TakeDatagram( lNumBytes, SocketFrom );
 }
 
 //*****************************************************************************
@@ -1139,56 +1094,55 @@ int NETWORK_GetLANPackets( void )
 	lNumBytes = recvfrom( g_LANSocket, (char *)g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), 0, reinterpret_cast<sockaddr *>( &SocketFrom ), (socklen_t *)&iSocketFromLength );
 #endif
 
+	return network_TakeDatagram( lNumBytes, SocketFrom );
+}
+
+//*****************************************************************************
+//
+// [rc4l] Adapted from zandronum@89e8f15b6b145790be7035d73c0cc88e0e22c496: what both sockets share once a datagram or an error came off them, from our own receives, which keep a v6 sender and the fake conditions' held packets.
+static int network_TakeDatagram( LONG lNumBytes, const sockaddr_storage &SocketFrom )
+{
 	// If the number of bytes returned is -1, an error has occured.
-    if ( lNumBytes == -1 ) 
-    { 
+	if ( lNumBytes == -1 )
+	{
 #ifdef __WIN32__
-        errno = WSAGetLastError( );
+		errno = WSAGetLastError( );
 
-        if ( errno == WSAEWOULDBLOCK )
-            return ( false );
-
-		// Connection reset by peer. Doesn't mean anything to the server.
-		if ( errno == WSAECONNRESET )
-			return ( false );
-
-        if ( errno == WSAEMSGSIZE )
+		// [rc4l] Ported from zandronum@bde6d45f00092c30d40cd17648978ac6a72de8d9: the messages name the function that prints them.
+		if ( errno == WSAEMSGSIZE )
 		{
-             Printf( "NETWORK_GetPackets:  WARNING! Oversized packet from %s\n", g_AddressFrom.ToString() );
-             return ( false );
-        }
-
-        Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-		return ( false );
+			NETADDRESS_s from;
+			from.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
+			Printf( "network_TakeDatagram: WARNING! Oversized packet from %s\n", from.ToString( ));
+		}
+		// [AK] Don't print an error message when the connection is blocked or reset.
+		else if (( errno != WSAEWOULDBLOCK ) && ( errno != WSAECONNRESET ))
+			Printf( "network_TakeDatagram: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
 #else
-        if ( errno == EWOULDBLOCK )
-            return ( false );
-
-        if ( errno == ECONNREFUSED )
-            return ( false );
-
-        Printf( "NETWORK_GetPackets: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
-        return ( false );
+		// [AK] Don't print an error message when the connection is blocked or refused.
+		if (( errno != EWOULDBLOCK ) && ( errno != ECONNREFUSED ))
+			Printf( "network_TakeDatagram: WARNING!: Error #%d: %s\n", errno, strerror( errno ));
 #endif
-    }
+		return 0;
+	}
 
-	// No packets or an error, dont process anything.
+	// No packets or an error, so don't process anything.
 	if ( lNumBytes <= 0 )
-		return ( 0 );
+		return 0;
 
 	// Record this for our statistics window.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVER_STATISTIC_AddToInboundDataTransfer( lNumBytes );
 
 	// If the number of bytes we're receiving exceeds our buffer size, ignore the packet.
-	if ( lNumBytes >= static_cast<LONG>(g_NetworkMessage.ulMaxSize) )
-		return ( 0 );
+	if ( lNumBytes >= static_cast<LONG>( g_NetworkMessage.ulMaxSize ))
+		return 0;
 
 	// Store the IP address of the sender.
 	g_AddressFrom.LoadFromSocketAddress( reinterpret_cast<const sockaddr &>( SocketFrom ));
 
 	// [rc4l] Decoded into the message's own size, which the raw buffer's once let a crafted datagram write far past.
-	return ( network_DecodeDatagram( lNumBytes ));
+	return static_cast<int>( network_DecodeDatagram( lNumBytes ));
 }
 
 //*****************************************************************************
@@ -1200,16 +1154,16 @@ NETADDRESS_s NETWORK_GetFromAddress( void )
 
 //*****************************************************************************
 //
-void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUseZStd )
+void NETWORK_LaunchPacket( NETBUFFER_s *buffer, NETADDRESS_s address, bool bUseZStd )
 {
 	ZX_SEAM_UNTIMED( "net/send", Main );
-	LONG				lNumBytes;
-	INT					iNumBytesOut = sizeof(g_ucHuffmanBuffer);
+	int numBytesOut = sizeof( g_ucHuffmanBuffer );
+	int numBytes = 0;
 
-	pBuffer->ulCurrentSize = pBuffer->CalcSize();
+	buffer->ulCurrentSize = buffer->CalcSize();
 
 	// Nothing to do.
-	if ( pBuffer->ulCurrentSize == 0 )
+	if ( buffer->ulCurrentSize == 0 )
 		return;
 
 	// [rc4l] With no socket (an offline launch), there is nothing to send through.
@@ -1219,20 +1173,20 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUse
 	// Convert the IP address to a socket address.
 	// [rc4l] sockaddr_storage, big enough for a v6 address. sockaddr_in is 16 bytes and a v6
 	// socket address is 28, so the old local could not hold what ToSocketAddress now writes.
-	struct sockaddr_storage SocketAddress;
-	const int iAddressLength = Address.ToSocketAddress( SocketAddress, g_bSocketIsDualStack );
+	struct sockaddr_storage socketAddress;
+	const int addressLength = address.ToSocketAddress( socketAddress, g_bSocketIsDualStack );
 
-	// [KI] Ported from zandronum@d09240b3c71cb949ec0f46f347b54e55544963ad with zandronum@4a7242a77c625515fbf95814e5c036165fed60bc and zandronum@c0269bd8dbb5b50d434bc77bbe14a6cc1b6417a6: zstd for a caller that asked and a packet at the threshold, Huffman otherwise, without 3.3's auth-server branch because ForkUnderA removed the auth server.
+	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935 with zandronum@4d4ee5553ee0d2e8e22fdc0b3578f9d1e69a39e7 and zandronum@e877ce1dd86b0b65c4c3b1ea52ecb4e6b3eadc1c: zstd for a caller that asked and a packet at the threshold, Huffman otherwise, without 3.3's auth-server branch because ForkUnderA removed the auth server.
 	bool bUsedZstd = false; // [SB]
 
 	// [AK] Choose between compressing the packet using ZStd or Huffman.
-	if ( zx::nettransport::ComputeShouldTryZstd( bUseZStd, pBuffer->ulCurrentSize, net_zstd_threshold ))
+	if ( zx::nettransport::ComputeShouldTryZstd( bUseZStd, buffer->ulCurrentSize, net_zstd_threshold ))
 	{
 		size_t zstdResult;
 		if ( g_zstdCdict != nullptr )
-			zstdResult = ZSTD_compress_usingCDict( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), pBuffer->pbData, pBuffer->ulCurrentSize, g_zstdCdict );
+			zstdResult = ZSTD_compress_usingCDict( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), buffer->pbData, buffer->ulCurrentSize, g_zstdCdict );
 		else
-			zstdResult = ZSTD_compressCCtx( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), pBuffer->pbData, pBuffer->ulCurrentSize, net_zstd_level );
+			zstdResult = ZSTD_compressCCtx( g_zstdCctx, g_ucHuffmanBuffer, sizeof( g_ucHuffmanBuffer ), buffer->pbData, buffer->ulCurrentSize, net_zstd_level );
 
 		if ( ZSTD_isError( zstdResult ))
 		{
@@ -1240,90 +1194,84 @@ void NETWORK_LaunchPacket( NETBUFFER_s *pBuffer, NETADDRESS_s Address, bool bUse
 			return;
 		}
 
-		iNumBytesOut = static_cast<int>( zstdResult );
+		numBytesOut = static_cast<int>( zstdResult );
 		bUsedZstd = true;
 	}
 	// [SB] net_zstd_smart will cause Huffman to be used if a packet's Zstandard-compressed size
 	// is greater than its original uncompressed size.
-	const bool bFellBackToHuffman = zx::nettransport::ComputeHuffmanFallback( bUsedZstd, net_zstd_smart, iNumBytesOut, pBuffer->ulCurrentSize );
+	const bool bFellBackToHuffman = zx::nettransport::ComputeHuffmanFallback( bUsedZstd, net_zstd_smart, numBytesOut, buffer->ulCurrentSize );
 	if ( bFellBackToHuffman )
 	{
-		iNumBytesOut = sizeof( g_ucHuffmanBuffer );
-		HUFFMAN_Encode( (unsigned char *)pBuffer->pbData, g_ucHuffmanBuffer, pBuffer->ulCurrentSize, &iNumBytesOut );
+		numBytesOut = sizeof( g_ucHuffmanBuffer );
+		HUFFMAN_Encode( (unsigned char *)buffer->pbData, g_ucHuffmanBuffer, buffer->ulCurrentSize, &numBytesOut );
 	}
 	bUsedZstd = zx::nettransport::ComputeUsedZstd( bUsedZstd, bFellBackToHuffman );
 
 	// [rc4l] features/net-transport: under a fake ping or loss the packet waits its turn behind those held before it, or is dropped.
-	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, iNumBytesOut, &SocketAddress, iAddressLength ))
+	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, numBytesOut, &socketAddress, addressLength ))
 	{
 		// [KI] A held packet counts when it is held, with the wire size it will travel at, since this call never reaches the send below.
-		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( Address.Compare( CLIENT_GetServerAddress( ))))
-			CLIENTSTATISTICS_AddToBytesSent( pBuffer->ulCurrentSize, iNumBytesOut, bUsedZstd );
+		if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( address.Compare( CLIENT_GetServerAddress( ))))
+			CLIENTSTATISTICS_AddToBytesSent( buffer->ulCurrentSize, numBytesOut, bUsedZstd );
 		network_SendHeldPackets( );
 		return;
 	}
 
-	lNumBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, iNumBytesOut, 0, reinterpret_cast<sockaddr*>(&SocketAddress), iAddressLength );
+	numBytes = sendto( g_NetworkSocket, (const char*)g_ucHuffmanBuffer, numBytesOut, 0, reinterpret_cast<sockaddr*>(&socketAddress), addressLength );
 
 	// If sendto returns -1, there was an error.
-	if ( lNumBytes == -1 )
+	// [rc4l] Ported from zandronum@21ed9720a9d585be991a390beb960ebf7499eadb: a failed send returns on every platform, where POSIX went on to count -1 bytes sent.
+	if ( numBytes == -1 )
 	{
 #ifdef __WIN32__
-		INT	iError = WSAGetLastError( );
+		int error = WSAGetLastError( );
 
 		// Wouldblock is silent.
-		if ( iError == WSAEWOULDBLOCK )
-			return;
-
-		switch ( iError )
+		if ( error != WSAEWOULDBLOCK )
 		{
-		case WSAEACCES:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEACCES: Permission denied for address: %s\n", iError, Address.ToString() );
-			return;
-		case WSAEAFNOSUPPORT:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEAFNOSUPPORT: Address %s incompatible with the requested protocol\n", iError, Address.ToString() );
-			return;
-		case WSAEADDRNOTAVAIL:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEADDRENOTAVAIL: Address %s not available\n", iError, Address.ToString() );
-			return;
-		case WSAEHOSTUNREACH:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d, WSAEHOSTUNREACH: Address %s unreachable\n", iError, Address.ToString() );
-			return;				
-		default:
-
-			Printf( "NETWORK_LaunchPacket: Error #%d\n", iError );
-			return;
+			switch ( error )
+			{
+				case WSAEACCES:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEACCES: Permission denied for address: %s\n", error, address.ToString( ));
+					break;
+				case WSAEAFNOSUPPORT:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEAFNOSUPPORT: Address %s incompatible with the requested protocol\n", error, address.ToString( ));
+					break;
+				case WSAEADDRNOTAVAIL:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEADDRENOTAVAIL: Address %s not available\n", error, address.ToString( ));
+					break;
+				case WSAEHOSTUNREACH:
+					Printf( "NETWORK_LaunchPacket: Error #%d, WSAEHOSTUNREACH: Address %s unreachable\n", error, address.ToString( ));
+					break;
+				default:
+					Printf( "NETWORK_LaunchPacket: Error #%d\n", error );
+					break;
+			}
 		}
 #else
-	if ( errno == EWOULDBLOCK )
-return;
-
-          if ( errno == ECONNREFUSED )
-              return;
-
-		Printf( "NETWORK_LaunchPacket: %s\n", strerror( errno ));
-		Printf( "NETWORK_LaunchPacket: Address %s\n", Address.ToString() );
-
+		// [AK] Don't print an error message when the connection is blocked or refused.
+		if (( errno != EWOULDBLOCK ) && ( errno != ECONNREFUSED ))
+		{
+			Printf( "NETWORK_LaunchPacket: %s\n", strerror( errno ));
+			Printf( "NETWORK_LaunchPacket: Address %s\n", address.ToString( ));
+		}
 #endif
+		return;
 	}
 
 	// [rc4l] Every packet out, for features/telemetry's net counters.
-	if ( lNumBytes > 0 )
+	if ( numBytes > 0 )
 	{
-		ZX_COUNT( "net/bytes_out", "bytes", lNumBytes );
+		ZX_COUNT( "net/bytes_out", "bytes", numBytes );
 		ZX_COUNT( "net/packets_out", "packets", 1 );
 	}
 
 	// Record this for our statistics window.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVER_STATISTIC_AddToOutboundDataTransfer( lNumBytes );
+		SERVER_STATISTIC_AddToOutboundDataTransfer( numBytes );
 	// [AK] Clients add the size of this packet to the number of bytes sent.
-	else if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( Address.Compare( CLIENT_GetServerAddress( ))))
-		CLIENTSTATISTICS_AddToBytesSent( pBuffer->ulCurrentSize, lNumBytes, bUsedZstd );
+	else if (( NETWORK_GetState( ) == NETSTATE_CLIENT ) && ( address.Compare( CLIENT_GetServerAddress( ))))
+		CLIENTSTATISTICS_AddToBytesSent( buffer->ulCurrentSize, numBytes, bUsedZstd );
 }
 
 //*****************************************************************************
@@ -1494,7 +1442,7 @@ NETBUFFER_s *NETWORK_GetNetworkMessageBuffer( void )
 
 //*****************************************************************************
 // [SB]
-// [KI] Ported from zandronum@c9821884f337747e632725491f1bb82712b9eee7: the loaded dictionary's id for the connect handshake.
+// [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the loaded dictionary's id for the connect handshake.
 unsigned NETWORK_GetZstdDictId( void )
 {
 	return g_zstdDictId;

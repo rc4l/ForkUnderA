@@ -136,6 +136,7 @@
 #include "g_hub.h"
 #include "features/telemetry/telemetry.h"
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
+#include "computation/mapangle_compute.h"   // [rc4l] ComputeMapThingAngle
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 #include "features/aimassist/aimassist.h"   // [Doruk-Aksoy] zx::aimassist::Apply
@@ -1748,10 +1749,17 @@ G_TickerPart G_TickerBegin ()
 	{
 		// [BB] .. only if the demo is not currently paused.
 		if ( CLIENTDEMO_IsPaused( ) == false )
+		{
 			CLIENTDEMO_ReadPacket( );
+
+			// [AK] Also execute any buffered commands, if possible.
+			CLIENT_TickCommandBuffers( );
+		}
 		// [BB] If the demo is paused, the tic offset increases.
 		else
+		{
 			CLIENTDEMO_SetGameticOffset ( CLIENTDEMO_GetGameticOffset() + 1 );
+		}
 	}
 
 	if ( NETWORK_GetState( ) == NETSTATE_CLIENT )
@@ -2272,7 +2280,8 @@ void G_PlayerReborn (int player, bool bGiveInventory)
 	int 		itemcount;
 	int 		secretcount;
 	int			chasecam;
-	BYTE		currclass;
+	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: an int, as CurrentPlayerClass is.
+	int			currclass;
 	userinfo_t  userinfo;	// [RH] Save userinfo
 	// [BB]
 	//botskill_t  b_skill;	//Added by MC:
@@ -2353,8 +2362,8 @@ void G_PlayerReborn (int player, bool bGiveInventory)
 	}
 	else if ( p->bSpectating == false )
 	{
-		// [AK] Reset the client's tic buffer every time they spawn.
-		SERVER_ResetClientTicBuffer( player );
+		// [AK] Reset the client's command buffer every time they spawn.
+		SERVER_GetClient( player )->bufferedCMDs.Clear();
 	}
 
 	// Reset player structure to its defaults
@@ -3969,6 +3978,13 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		}
 	}
 
+	// [rc4l] Adapted from zandronum@0f08c6c87089ebe02eb64e6d4ee295caa5980cf0: each 3D-floored sector's light list is renewed once every plane is back, its own and its 3D floors'.
+	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
+	{
+		if ( sectors[ulIdx].e && sectors[ulIdx].e->XFloor.ffloors.Size( ) )
+			P_Recalculate3DFloors( &sectors[ulIdx] );
+	}
+
 	// Reset the sky properties of the map.
 	pLevelInfo = level.info;//FindLevelInfo( level.MapName );
 	if ( pLevelInfo )
@@ -4093,7 +4109,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				pNewActor->SpawnAngle = pActor->SpawnAngle;
 				pNewActor->SpawnFlags = pActor->SpawnFlags;
 				P_FindFloorCeiling ( pNewActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
-				pNewActor->angle = ANG45 * ( pActor->SpawnAngle / 45 );
+				// [rc4l] Adapted from zandronum@28e63eb130d75a770e24a34373aab26973b76e37: the spawn angle in whole degrees, through the conversion P_SpawnMapThing uses.
+				pNewActor->PrevAngle = pNewActor->angle = zx::map::ComputeMapThingAngle( pNewActor->SpawnAngle );
 				pNewActor->tid = pActor->SavedTID;
 				pNewActor->SavedTID = pActor->SavedTID;
 				pNewActor->special = pActor->SavedSpecial;
@@ -4253,7 +4270,8 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			pNewActor->SpawnAngle = pActor->SpawnAngle;
 			pNewActor->SpawnFlags = pActor->SpawnFlags;
 			P_FindFloorCeiling ( pNewActor, FFCF_SAMESECTOR | FFCF_ONLY3DFLOORS | FFCF_3DRESTRICT );
-			pNewActor->angle = ANG45 * ( pActor->SpawnAngle / 45 );
+			// [rc4l] Adapted from zandronum@28e63eb130d75a770e24a34373aab26973b76e37: the spawn angle in whole degrees, through the conversion P_SpawnMapThing uses.
+			pNewActor->PrevAngle = pNewActor->angle = zx::map::ComputeMapThingAngle( pNewActor->SpawnAngle );
 			pNewActor->tid = pActor->SavedTID;
 			pNewActor->SavedTID = pActor->SavedTID;
 			pNewActor->special = pActor->SavedSpecial;

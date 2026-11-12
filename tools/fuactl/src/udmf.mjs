@@ -24,7 +24,9 @@ function rectEdges(x0, y0, x1, y1) {
 }
 
 export class UdmfMap {
-  constructor() {
+  // [rc4l] namespace is the TEXTMAP's, "zdoom" unless a test needs the base namespaces' rules.
+  constructor({ namespace = "zdoom" } = {}) {
+    this.namespace = namespace;
     this.vertices = [];
     this.lines = [];
     this.sides = [];
@@ -122,7 +124,7 @@ export class UdmfMap {
   }
 
   textmap() {
-    const out = ['namespace = "zdoom";', ""];
+    const out = [`namespace = "${this.namespace}";`, ""];
     const block = (kind, obj) => {
       out.push(`${kind}`, "{");
       for (const [k, v] of Object.entries(obj)) out.push(`  ${field(k, v)}`);
@@ -158,10 +160,82 @@ export function wad(lumps) {
   return out;
 }
 
-// [rc4l] The lumps one UDMF map needs: its marker, its TEXTMAP, a BEHAVIOR when it runs scripts, and ENDMAP.
-export function mapLumps(name, map, { behavior = null } = {}) {
+// [rc4l] The lumps one UDMF map needs: its marker, its TEXTMAP, a BEHAVIOR when it runs scripts, any `extra` map lumps such as DIALOGUE, and ENDMAP.
+export function mapLumps(name, map, { behavior = null, extra = [] } = {}) {
   return [{ name, data: "" }, { name: "TEXTMAP", data: map.textmap() },
-    ...(behavior ? [{ name: "BEHAVIOR", data: behavior }] : []), { name: "ENDMAP", data: "" }];
+    ...(behavior ? [{ name: "BEHAVIOR", data: behavior }] : []), ...extra, { name: "ENDMAP", data: "" }];
+}
+
+// [rc4l] Hexen-format flag bits by UDMF key, and the activation keys by their SPAC number, as p_setup.cpp reads them.
+const HEXEN_LINE_FLAGS = { blocking: 0x1, blockmonsters: 0x2, twosided: 0x4, dontpegtop: 0x8, dontpegbottom: 0x10, secret: 0x20,
+  blocksound: 0x40, dontdraw: 0x80, mapped: 0x100, repeatspecial: 0x200 };
+const HEXEN_SPAC = ["playercross", "playeruse", "monstercross", "impact", "playerpush", "missilecross"];
+const HEXEN_THING_FLAGS = { ambush: 0x8, dormant: 0x10, class1: 0x20, class2: 0x40, class3: 0x80, single: 0x100, coop: 0x200, dm: 0x400 };
+const ARGS = ["arg0", "arg1", "arg2", "arg3", "arg4"];
+
+// [rc4l] Fixed-size records from rows, write(buf, offset, row) filling each, and a key the format cannot hold throwing rather than vanishing.
+function records(rows, size, known, write) {
+  const out = Buffer.alloc(rows.length * size);
+  rows.forEach((row, i) => {
+    const lost = Object.keys(row).filter((k) => !known.has(k));
+    if (lost.length) throw new Error(`Hexen format cannot hold ${lost.join(", ")}`);
+    write(out, i * size, row);
+  });
+  return out;
+}
+
+function name8(buf, at, name = "-") {
+  buf.write(name.toUpperCase().padEnd(8, "\0").slice(0, 8), at, "latin1");
+}
+
+// [rc4l] The lumps of a Hexen-format (binary) map from a UdmfMap, for what only the binary loaders do; empty node lumps make the engine build its own.
+export function hexenMapLumps(name, map, { behavior = acsBehaviorStub() } = {}) {
+  const lineKeys = new Set(["v1", "v2", "sidefront", "sideback", "special", ...ARGS, ...Object.keys(HEXEN_LINE_FLAGS), ...HEXEN_SPAC]);
+  const lines = records(map.lines, 16, lineKeys, (b, o, l) => {
+    const spac = HEXEN_SPAC.filter((k) => l[k]);
+    if (spac.length > 1) throw new Error(`Hexen format holds one activation, not ${spac.join(" and ")}`);
+    const flags = Object.entries(HEXEN_LINE_FLAGS).reduce((f, [k, bit]) => (l[k] ? f | bit : f), 0);
+    b.writeUInt16LE(l.v1, o); b.writeUInt16LE(l.v2, o + 2);
+    b.writeUInt16LE(flags | (spac.length ? HEXEN_SPAC.indexOf(spac[0]) << 10 : 0), o + 4);
+    b[o + 6] = l.special || 0;
+    ARGS.forEach((k, i) => { b[o + 7 + i] = l[k] || 0; });
+    b.writeUInt16LE(l.sidefront ?? 0xffff, o + 12); b.writeUInt16LE(l.sideback ?? 0xffff, o + 14);
+  });
+  const sides = records(map.sides, 30, new Set(["offsetx", "offsety", "texturetop", "texturebottom", "texturemiddle", "sector"]), (b, o, s) => {
+    b.writeInt16LE(s.offsetx || 0, o); b.writeInt16LE(s.offsety || 0, o + 2);
+    name8(b, o + 4, s.texturetop); name8(b, o + 12, s.texturebottom); name8(b, o + 20, s.texturemiddle);
+    b.writeUInt16LE(s.sector, o + 28);
+  });
+  const vertexes = records(map.vertices, 4, new Set(["x", "y"]), (b, o, v) => { b.writeInt16LE(v.x, o); b.writeInt16LE(v.y, o + 2); });
+  const sectorKeys = new Set(["heightfloor", "heightceiling", "texturefloor", "textureceiling", "lightlevel", "special", "id"]);
+  const sectors = records(map.sectors, 26, sectorKeys, (b, o, s) => {
+    b.writeInt16LE(s.heightfloor || 0, o); b.writeInt16LE(s.heightceiling || 0, o + 2);
+    name8(b, o + 4, s.texturefloor); name8(b, o + 12, s.textureceiling);
+    b.writeInt16LE(s.lightlevel ?? 160, o + 20); b.writeUInt16LE(s.special || 0, o + 22); b.writeUInt16LE(s.id || 0, o + 24);
+  });
+  const skills = { skill1: 0x1, skill2: 0x1, skill3: 0x2, skill4: 0x4, skill5: 0x4 };
+  const thingKeys = new Set(["id", "x", "y", "height", "angle", "type", "special", ...ARGS, ...Object.keys(skills), ...Object.keys(HEXEN_THING_FLAGS)]);
+  const things = records(map.things, 20, thingKeys, (b, o, t) => {
+    // [rc4l] A thing naming no class is every class's, as a UDMF thing in a game without classes is.
+    const classless = !t.class1 && !t.class2 && !t.class3 ? 0xe0 : 0;
+    const flags = Object.entries({ ...skills, ...HEXEN_THING_FLAGS }).reduce((f, [k, bit]) => (t[k] ? f | bit : f), classless);
+    b.writeInt16LE(t.id || 0, o); b.writeInt16LE(t.x, o + 2); b.writeInt16LE(t.y, o + 4); b.writeInt16LE(t.height || 0, o + 6);
+    b.writeInt16LE(t.angle || 0, o + 8); b.writeUInt16LE(t.type, o + 10); b.writeUInt16LE(flags, o + 12);
+    b[o + 14] = t.special || 0;
+    ARGS.forEach((k, i) => { b[o + 15 + i] = t[k] || 0; });
+  });
+  const empty = (n) => ({ name: n, data: "" });
+  return [{ name, data: "" }, { name: "THINGS", data: things }, { name: "LINEDEFS", data: lines }, { name: "SIDEDEFS", data: sides },
+    { name: "VERTEXES", data: vertexes }, empty("SEGS"), empty("SSECTORS"), empty("NODES"), { name: "SECTORS", data: sectors },
+    empty("REJECT"), empty("BLOCKMAP"), { name: "BEHAVIOR", data: behavior }];
+}
+
+// [rc4l] An ACS0 BEHAVIOR with no scripts, which is all that marks a binary map as Hexen's format.
+function acsBehaviorStub() {
+  const b = Buffer.alloc(16);
+  b.write("ACS\0", 0, "latin1");
+  b.writeUInt32LE(8, 4);
+  return b;
 }
 
 // [rc4l] A WAD's lumps in directory order, as { name, data } with data a Buffer; wad() written backwards.
@@ -176,6 +250,15 @@ export function readWad(buf) {
     out.push({ name: buf.toString("latin1", e + 8, e + 16).replace(/\0.*$/, ""), data: buf.subarray(pos, pos + size) });
   }
   return out;
+}
+
+// [rc4l] The core TEAMINFO's colours for the teams a template declares.
+export const CORE_TEAMS = { Blue: { color: "00 00 BF", text: "Blue" }, Red: { color: "BF 00 00", text: "Red" } };
+
+// [rc4l] A teaminfo.txt that clears the core teams and declares each team `lines` names, with its colours, its items and the lines given for it.
+export function teamInfo(lines) {
+  const team = (name) => `Team "${name}"\n{\n  PlayerColor "${CORE_TEAMS[name].color}"\n  TextColor "${CORE_TEAMS[name].text}"\n  FlagItem "${name}Flag"\n  SkullItem "${name}SkullST"\n${lines[name].map((l) => `  ${l}\n`).join("")}}\n`;
+  return `ClearTeams\n\n${Object.keys(lines).map(team).join("\n")}`;
 }
 
 // [rc4l] A pk3 from files by path ({ name, data }), stored rather than deflated: what MODELDEF needs, since it finds a model by full path and a wad's lumps have none.

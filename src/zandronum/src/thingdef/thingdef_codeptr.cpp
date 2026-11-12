@@ -74,6 +74,7 @@
 #include "m_bbox.h"
 #include "r_data/r_translate.h"
 #include "p_trace.h"
+#include "p_setup.h"
 #include "gstrings.h"
 // [BB] new #includes.
 #include "deathmatch.h"
@@ -3041,6 +3042,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnItemEx)
 			// [BB] Set the angle and velocity if necessary.
 			SERVER_SetThingNonZeroAngleAndVelocity( mo );
 
+			// [rc4l] Ported from zandronum@82def1c76e84d25ba0faeac658ad01b813c48c60: a spawned actor's TID reaches clients.
+			// [AK] Sync the TID if necessary.
+			if ( mo->tid != 0 )
+				SERVERCOMMANDS_SetThingTID( mo );
+
 			if ( mo->Translation )
 				SERVERCOMMANDS_SetThingTranslation( mo );
 
@@ -3051,6 +3057,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SpawnItemEx)
 
 			// [BB] Set scale if necessary.
 			SERVERCOMMANDS_UpdateThingScaleNotAtDefault ( mo );
+
+			// [rc4l] Ported from zandronum@0b7f9c3c54f6e7e5cf4effecd5326b002a113c6b: SXF_TRANSFERSTENCILCOL reaches clients.
+			// [AK] Set the stencil color if necessary.
+			if ( mo->fillcolor != mo->GetDefault( )->fillcolor )
+				SERVERCOMMANDS_SetThingProperty( mo, APROP_StencilColor );
 		}
 
 		// [BC] Flag this actor as being client-spawned.
@@ -5524,7 +5535,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 		else
 		{
 			// [BB] The server handles the flag change.
-			if ( NETWORK_InClientMode() )
+			// [rc4l] Ported from zandronum@873abcdc7cf96f2e1daffa583896faed4afd6bc7: a CLIENTSIDEONLY actor changes its own flags.
+			if (NETWORK_InClientModeAndActorNotClientHandled(self))
 				return;
 
 			ActorFlags *flagp = (ActorFlags*) (((char*)self) + fd->structoffset);
@@ -6640,7 +6652,6 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Weave)
 //===========================================================================
 
 
-void P_TranslateLineDef (line_t *ld, maplinedef_t *mld);
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_LineEffect)
 {
 	ACTION_PARAM_START(2);
@@ -6851,7 +6862,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 		caller = temp;
 	}
 
-	const MOVE_THING_DATA_s oldPositionData ( caller ); // [TP]
+	const MoveThingData oldPositionData( caller ); // [TP]
 
 	if (!(flags & WARPF_ABSOLUTEANGLE))
 	{

@@ -64,11 +64,6 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 
-void P_MovePlayer (player_t *player);
-void P_CalcHeight (player_t *player);
-void P_DeathThink (player_t *player);
-bool	P_AdjustFloorCeil (AActor *thing);
-
 //*****************************************************************************
 //	VARIABLES
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { overTimeSteps, stepPausedTics } from "../src/shot.mjs";
+import { overTimeSteps, stepPausedTics, BUILD_TARGETS, PK3_TARGETS } from "../src/shot.mjs";
 
 // [Doruk-Aksoy] An over-time pair waits intervalMs with the sim running by default, and steps tics in a paused one when asked.
 test("an over-time pair is timed by default and stepped when asked", () => {
@@ -26,4 +26,8 @@ test("stepping a paused sim listens for the refreeze before asking for the step"
   release();
   await stepping;
   assert.equal(done, true);
+});
+
+test("a build compiles the engine, its data pk3s and the server registry", () => {
+  for (const t of ["zdoom", ...PK3_TARGETS, "forkundera-server-registry"]) assert.ok(BUILD_TARGETS.includes(t), t);
 });

@@ -62,6 +62,8 @@
 #include "features/damage-tint/damagetint.h"
 #include "features/gamecopy/tintsubject.h"   // [rc4l] TintSubjectOf	// [rc4l] damaging-floor weapon tint
 #include "features/draw2d/computation/quad2d_compute.h"	// [rc4l] a layer's 2D blend
+#include "features/sprites/computation/weaponease_compute.h"	// [rc4l] ComputeWeaponEase
+EXTERN_CVAR(Bool, cl_interpolateweapons)
 
 EXTERN_CVAR (Bool, r_drawplayersprites)
 EXTERN_CVAR(Float, transsouls)
@@ -546,7 +548,18 @@ void FGLRenderer::DrawPlayerSprites(sector_t * viewsector, bool hudModelStep)
 			drawsx = psp->oldx + FixedMul(psp->sx - psp->oldx, r_TicFrac);
 			drawsy = psp->oldy + FixedMul(psp->sy - psp->oldy, r_TicFrac);
 		}
-		DrawPSprite (player,psp,drawsx+addx, drawsy+addy, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha),
+		fixed_t layerx = drawsx + addx, layery = drawsy + addy;
+		if (ridesBob)
+		{
+			// [rc4l] cl_interpolateweapons: the weapon and flash eased between tics, GL's own ease beside the backend's.
+			static zx::sprites::WeaponEase eases[2];
+			int64_t easedX, easedY;
+			zx::sprites::ComputeWeaponEase(eases[psp->layer == ps_flash], cl_interpolateweapons, level.time, player->mo, layerx.Raw(), layery.Raw(),
+				r_TicFrac.Raw(), &easedX, &easedY);
+			layerx = fixed_t::FromRaw(easedX);
+			layery = fixed_t::FromRaw(easedY);
+		}
+		DrawPSprite (player,psp,layerx, layery, hudModelStep, layerShader, !!(layerStyle.Flags & STYLEF_RedIsAlpha),
 			zx::draw2d::ComputeQuadBlend(layerStyle.BlendOp, layerStyle.DestAlpha));
 	}
 	gl_RenderState.SetObjectColor(0xffffffff);

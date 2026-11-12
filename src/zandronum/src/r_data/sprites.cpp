@@ -925,9 +925,26 @@ void R_InitSkins (void)
 						memcpy(&lnameint, lname, 4);
 						if (lnameint == intname)
 						{
+							// [AK] Check if there's already an existing sprite for the same lump.
+							// [rc4l] We have no FindTextureByLumpNum, so the sprite of this name counts only when lump k is its source.
+							FTextureID existingpicnum = TexMan.CheckForTexture(lname, FTexture::TEX_Sprite, 0);
+							if (existingpicnum.isValid() && TexMan[existingpicnum]->GetSourceLump() != static_cast<int>(k))
+								existingpicnum.SetInvalid();
 							FTextureID picnum = TexMan.CreateTexture(k, FTexture::TEX_SkinSprite);
 							if (!picnum.isValid())
 								continue;
+
+							// [rc4l] Ported from zandronum@908f125475e684bc499aa092e0934142e46a0577: a skin's sprite takes the brightmap GLDEFS gave the same lump; our flags are Brightmap, bBrightmapChecked and bDisableFullbright.
+							// [AK] If the sprite already existed before, copy its brightmap over to the skin's sprite.
+							if (existingpicnum.isValid() && TexMan[existingpicnum]->UseType == FTexture::TEX_Sprite)
+							{
+								FTexture::MiscGLInfo &skinspriteglinfo = TexMan[picnum]->gl_info;
+								FTexture::MiscGLInfo &existingspriteglinfo = TexMan[existingpicnum]->gl_info;
+
+								skinspriteglinfo.Brightmap = existingspriteglinfo.Brightmap;
+								skinspriteglinfo.bBrightmapChecked = existingspriteglinfo.bBrightmapChecked;
+								skinspriteglinfo.bDisableFullbright = existingspriteglinfo.bDisableFullbright;
+							}
 
 							bool res = R_InstallSpriteLump (picnum, lname[4] - 'A', lname[5], false);
 
@@ -1424,70 +1441,14 @@ void R_DeinitSpriteData()
 }
 
 // [BC] Allow clients to decide whether or not they want skins enabled.
-CUSTOM_CVAR( Int, cl_skins, 1, CVAR_ARCHIVE )
+CUSTOM_CVAR(Int, cl_skins, 1, CVAR_ARCHIVE)
 {
-	LONG	lSkin;
-	ULONG	ulIdx;
-
 	// Loop through all the players and set their sprite according to the value of cl_skins.
-	for ( ulIdx = 0; ulIdx < MAXPLAYERS; ulIdx++ )
+	for (unsigned int i = 0; i < MAXPLAYERS; i++)
 	{
-		if (( playeringame[ulIdx] == false ) || ( players[ulIdx].mo == NULL ))
+		if (playeringame[i] == false)
 			continue;
 
-		// If cl_skins == 0, then the user wishes to disable all skins.
-		if ( self <= 0 )
-		{
-			lSkin = R_FindSkin( "base", players[ulIdx].CurrentPlayerClass );
-
-			// Make sure the player doesn't change sprites when his state changes.
-			players[ulIdx].mo->flags4 |= MF4_NOSKIN;
-		}
-		// If cl_skins >= 2, then the user wants to disable cheat skins, but allow all others.
-		else if ( self >= 2 )
-		{
-			if ( skins[players[ulIdx].userinfo.GetSkin()].bCheat )
-			{
-				lSkin = R_FindSkin( "base", players[ulIdx].CurrentPlayerClass );
-
-				// Make sure the player doesn't change sprites when his state changes.
-				players[ulIdx].mo->flags4 |= MF4_NOSKIN;
-			}
-			else
-			{
-				lSkin = players[ulIdx].userinfo.GetSkin();
-
-				if (( players[ulIdx].mo->GetDefault( )->flags4 & MF4_NOSKIN ) == false )
-					players[ulIdx].mo->flags4 &= ~MF4_NOSKIN;
-			}
-		}
-		// If cl_skins == 1, allow all skins to be used.
-		else
-		{
-			lSkin = players[ulIdx].userinfo.GetSkin();
-
-			if (( players[ulIdx].mo->GetDefault( )->flags4 & MF4_NOSKIN ) == false )
-				players[ulIdx].mo->flags4 &= ~MF4_NOSKIN;
-		}
-
-		// If the skin is valid, set the player's sprite to the skin's sprite.
-		if (( lSkin >= 0 ) && ( static_cast<unsigned> (lSkin) < skins.Size() ))
-		{
-			players[ulIdx].mo->sprite = skins[lSkin].sprite;
-/*
-			players[ulIdx].mo->scaleX = skins[lSkin].ScaleX;
-			players[ulIdx].mo->scaleY = skins[lSkin].ScaleY;
-
-			// Make sure the player doesn't change sprites when his state changes.
-			if ( lSkin == R_FindSkin( "base", players[ulIdx].CurrentPlayerClass ))
-				players[ulIdx].mo->flags4 |= MF4_NOSKIN;
-			else
-			{
-				if (( players[ulIdx].mo->GetDefault( )->flags4 & MF4_NOSKIN ) == false )
-					players[ulIdx].mo->flags4 &= ~MF4_NOSKIN;
-			}
-*/
-		}
+		PLAYER_SetSpriteToSkin(&players[i]);
 	}
 }
-

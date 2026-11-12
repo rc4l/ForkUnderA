@@ -286,14 +286,29 @@ bool HitFromTrace (const FTraceResults &trace, float tx, float ty, float tz, Hit
 
 } // namespace
 
-void MarkShot (AActor *shooter, const FTraceResults &trace, int source)
+void MarkShot (AActor *shooter, const FTraceResults &trace, int source, AActor *decalFrom)
 {
 	Hit h;
+	// [rc4l] The travel is the shooter's, since a puff's default actor, a client's stand-in for the puff it never spawned, stands at the map's origin.
 	const float tx = FIXED2FLOAT (trace.X - shooter->x), ty = FIXED2FLOAT (trace.Y - shooter->y);
 	const float tz = FIXED2FLOAT (trace.Z - (shooter->z + (shooter->height >> 1)));
 	if (!HitFromTrace (trace, tx, ty, tz, h)) return;
 	const MarkRequest request = { source, false };
-	Maker::Mark (h, GeneratorOf (shooter), request, 0);
+	Maker::Mark (h, GeneratorOf (decalFrom != NULL ? decalFrom : shooter), request, 0);
+}
+
+void MarkRailEnd (AActor *shooter, const FVector3 &start, const FVector3 &end, const PClass *puffClass)
+{
+	if (shooter == NULL) return;
+	const FVector3 travel = end - start;
+	const double length = travel.Length ();
+	if (length <= 0) return;
+	const FVector3 dir = travel / float (length);
+	const fixed_t x = FLOAT2FIXED (start.X), y = FLOAT2FIXED (start.Y);
+	FTraceResults trace;
+	if (!Trace (x, y, FLOAT2FIXED (start.Z), P_PointInSector (x, y), FLOAT2FIXED (dir.X), FLOAT2FIXED (dir.Y), FLOAT2FIXED (dir.Z),
+		FLOAT2FIXED (ComputeRailRetraceDistance (length)), 0, ML_BLOCKEVERYTHING, shooter, trace)) return;
+	MarkShot (shooter, trace, kSourceRail, puffClass != NULL ? GetDefaultByType (puffClass) : NULL);
 }
 
 void MarkMissile (AActor *mo, line_t *line, AActor *target, fixed_t velx, fixed_t vely, fixed_t velz)

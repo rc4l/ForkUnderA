@@ -107,6 +107,7 @@ test("a locked instance that crashed reports its crash log, and one that failed 
     await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /capture timed out/);
     fs.writeFileSync(`${log}.crash`, "boom");
     await assert.rejects(() => withLockedInstance({}, async () => { throw new Error("capture timed out"); }, deps), /engine crashed -- .*\.crash/);
+    await assert.rejects(() => withLockedInstance({}, async () => ({ line: "FAIL logged nothing", failed: 1 }), deps), /engine crashed -- .*\.crash/);
     await assert.rejects(() => withLockedInstance({}, async () => 1, { ...deps, launch: async () => { throw new Error("no engine"); } }), /no engine/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

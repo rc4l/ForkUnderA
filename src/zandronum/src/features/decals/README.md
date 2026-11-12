@@ -3,7 +3,7 @@
 Every decal in the level is made here, on walls, floors and ceilings alike, under one rule. The decal classes (`DBaseDecal`, `DImpactDecal`, `DFlatDecal`) keep their constructors from everyone but this module's `Maker`, and the old entry points (`DImpactDecal::StaticCreate`, `ShootDecal`, the projected decal spawners) are gone, so a new caller cannot place a mark around the rule.
 
 - `decals.h`/`.cpp`: the entry points each source calls, which describe the hit and hand it to `Maker::Mark`:
-  - `MarkShot` (a hitscan or a rail), `MarkMissile`, `MarkBlood`, `MarkSpray`, `ShootMark` (a map thing or a script);
+  - `MarkShot` (a hitscan or a rail), `MarkRailEnd` (a rail its server drew that the client did not predict, retraced), `MarkMissile`, `MarkBlood`, `MarkSpray`, `ShootMark` (a map thing or a script);
   - `WallAcceptsClone`, which spreading asks before a clone goes on a neighbouring wall;
   - `SurfaceRefusesMarks`, the world pass's per-pixel bit (texFlags 16384, alpha 0.75 in the G-buffer normal), so a floor mark's projection does not paint a surface that refuses one.
 - `Maker::Mark` takes every mark through the same steps: refused before its template is chosen where stock refused it then, chosen, judged on its surface, then made. A wall decal is stock's `StaticCreate`, its lower decal first and spread with `cl_spreaddecals`. A permanent decal sticks wherever its trace stopped, as stock's does. A floor or ceiling mark and its lower decals are `DFlatDecal`s.
@@ -25,7 +25,7 @@ Every decal in the level is made here, on walls, floors and ceilings alike, unde
 
   A permanent decal keeps stock's leave to ignore the budget, `noautodecals` and refusing textures. `ComputeRefusedBeforeChoice` is what stock refused before drawing a group's choice. `ComputeChoiceFromGameStream` keeps the game's random stream for the draws shipped builds made (walls, and shots' and missiles' floor marks) and gives the rest the renderer's (`ProjDecal`). `ComputeMissilePlaneHit`, `ComputePlaneOwner` and `ComputeMarksToEvict` decide which plane a missile rests on, which 3D floor a flat hit belongs to and how many marks to retire.
 - `fua_decal_report` prints each surface's marks by verdict since the level began, and how many are alive; `fua_decal_report reset` starts the count again. Scenario `decalrules`, which judges counters only, so it runs on WebGPU too.
-- Marks are the client's alone: a server judges its impacts `server` and holds none, while a client makes its own from its shots (`cl_hitscandecalhack`). Scenario `decalnet`, a hosted server and a joined client.
+- Marks are the client's alone: a server judges its impacts `server` and holds none, while a client makes its own from its shots (`cl_hitscandecalhack`), and from each rail its server drew and it did not predict, which the server says stopped on a surface and, when the puff marks, names the puff (`WeaponRailgun`). Scenarios `decalnet`, a hosted server and a joined client, and `netraildecal`.
 - Marks are made in the tic, on the game thread when it runs tics, and reach a frame only through the copy's fill. Scenario `decalrules` runs with tics on the game thread and inline, the same rules either way.
 - A hitscan into a liquid splashes whether or not it marks the floor; scenario `decalrules` counts the splash, and fixture `gtmod` shoots a TERRAIN liquid from its script so the traces hold the splash.
 - How UZDoom settles the cases it shares with this, and what was kept:
@@ -38,11 +38,12 @@ Every decal in the level is made here, on walls, floors and ceilings alike, unde
 ## In-engine hooks
 
 - `p_map.cpp`:
-  - `P_LineAttack`: `MarkShot` for a wall, floor or ceiling hit; stock's floor splash test runs beside it and is never skipped.
-  - `P_RailAttack`: `MarkShot` wherever the endpoint puff goes (`ComputeRailEndpointSpawn`).
+  - `P_LineAttack`: `MarkShot` for a wall, floor or ceiling hit, from a FORCEDECAL puff where `ComputeMarksWithPuff` says; stock's floor splash test runs beside it and is never skipped.
+  - `P_RailAttack`: `MarkShot` wherever the endpoint puff goes (`ComputeRailEndpointSpawn`), from that puff, or on a client from its class's own actor, where `ComputeMarksWithPuff` says; a server sends `WeaponRailgun` whether it stopped on a surface and the puff's class when that puff marked.
   - `P_TraceBleed`: `MarkBlood` for any surface its trace reaches.
 - `p_mobj.cpp` `P_ExplodeMissile`: `MarkMissile`, with the velocity it had before it stopped.
 - `d_net.cpp` `DEM_SPRAY`: `MarkSpray`.
+- `cl_main.cpp` `WeaponRailgun::Execute`: `MarkRailEnd` where the server says the rail stopped on a surface.
 - `p_acs.cpp` `DoSpawnDecal`, `cl_main.cpp` `SVC2_SHOOTDECAL`, `g_shared/a_decals.cpp` `ADecal::BeginPlay`: `ShootMark`.
 - `g_shared/a_decals.cpp`:
   - `CloneSelf` asks `WallAcceptsClone`;

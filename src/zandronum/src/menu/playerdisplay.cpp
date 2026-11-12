@@ -49,6 +49,9 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "r_data/r_translate.h"
+// [AK] New #includes.
+#include "team.h"
+#include "menu/playerclass_compute.h"
 
 
 //=============================================================================
@@ -382,7 +385,10 @@ void FListMenuItemPlayerDisplay::UpdateRandomClass()
 {
 	if (--mRandomTimer < 0)
 	{
-		if (++mRandomClass >= (int)PlayerClasses.Size ()) mRandomClass = 0;
+		// [AK] Only cycle through the classes that are allowed to be selected.
+		// [rc4l] Ported from zandronum@469e5f569641f993f402e2604bfcf37b236179aa: the step is bounded, so a player allowed no class does not hang the menu.
+		mRandomClass = zx::playerclass::ComputeNextPreviewClass(mRandomClass, (int)PlayerClasses.Size(),
+			[](int c) { return TEAM_IsClassAllowedForPlayer(c, &players[consoleplayer]); });
 		mPlayerClass = &PlayerClasses[mRandomClass];
 		mPlayerState = GetDefaultByType (mPlayerClass->Type)->SeeState;
 		if (mPlayerState == NULL)

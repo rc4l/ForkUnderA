@@ -67,6 +67,8 @@
 #include "v_palette.h"
 #include "r_data/r_translate.h"
 #include "voicechat.h"
+#include "g_level.h"
+#include "computation/scoreboardtop_compute.h"
 
 // [AK] Implement the string table and the conversion functions for the scoreboard enums.
 #define GENERATE_ENUM_STRINGS  // Start string generation
@@ -4102,7 +4104,10 @@ void SCOREBOARD_Render( const unsigned int displayPlayer, const int minYPos )
 	if ( displayPlayer >= MAXPLAYERS )
 		return;
 
-	g_Scoreboard.Render( displayPlayer, minYPos, cl_scoreboardalpha );
+	// [rc4l] A title picture as tall as the clean screen, as Eviternity's, lifts the board to near the top rather than pushing it off the bottom.
+	const FTextureID titleId = TexMan.CheckForTexture( level.info->PName, FTexture::TEX_MiscPatch );
+	const int titleHeight = titleId.isValid( ) ? TexMan[titleId]->GetScaledHeight( ) : -1;
+	g_Scoreboard.Render( displayPlayer, zx::ComputeScoreboardTop( minYPos, CleanYfac, titleHeight ), cl_scoreboardalpha );
 }
 
 //*****************************************************************************

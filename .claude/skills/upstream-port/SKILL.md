@@ -1,6 +1,6 @@
 ---
 name: upstream-port
-description: How to port anything from GZDoom/UZDoom into ZandroX — staircase renderer batches, post-wall C++ features, scriptified features, and born-in-ZScript features — using the features/ pattern, the tripwire, the Rosetta index, and the fixed64 + manual-E2E verification gates. Use whenever bringing upstream code, features, or fixes into this engine.
+description: How to port anything from GZDoom/UZDoom (or Zandronum's zandronum-stable) into ZandroX — staircase renderer batches, post-wall C++ features, scriptified features, and born-in-ZScript features — using the features/ pattern, the tripwire, the Rosetta index, and the fixed64 + manual-E2E verification gates. Use whenever bringing upstream code, features, or fixes into this engine.
 ---
 
 # Porting upstream (GZDoom/UZDoom) work into ZandroX
@@ -14,7 +14,7 @@ before touching textures).
 ## Step 0 — always run the scout first
 
 ```
-tools/backport-scout.sh /Users/username/repos/UZDoom <upstream path>
+tools/backport-scout.sh ../UZDoom <upstream path>
 ```
 
 It answers: VM-tainted or clean, scriptification ancestor (Rosetta), and the delta since. Regenerate
@@ -24,14 +24,24 @@ When porting a specific fix rather than a whole file, trace it to its origin com
 
 ## Step 0.5 — the commit tracker is the coverage ledger
 
-`commit-tracker/coverage.tsv` holds one row per upstream commit from our parity anchor
-(`ad88cfc5e`) to UZDoom HEAD, each marked `pending` / `ported` / `adapted` / `skip`. Before
+There are two ledgers: `commit-tracker/coverage.tsv` for UZDoom and `commit-tracker/zandronum/coverage.tsv`
+for Zandronum's `zandronum-stable` (Mercurial, `../Zandronum`). `fuactl tracker show <sha>` finds the row
+in either; `fuactl tracker mark` sets it, and its twin's. `commit-tracker/coverage.tsv` holds one row per
+upstream commit from our parity anchor (`ad88cfc5e`) to UZDoom HEAD, each marked `pending` / `ported` / `adapted` / `skip`. Before
 porting, look the commit up there; when a port lands, set its row (`ported` = faithful/re-diffable,
 `adapted` = our own reimplementation, `skip` = won't take — note why). A deliberately scoped-down
 port is `adapted` or stays `pending` with the leftover in the note — **never** `ported`; that is how
 silent scope-narrowing is caught. To find which commits touched a file, use `commit-tracker/index.tsv`
 (`path → shas`) — see `commit-tracker/README.md` for the query recipes. Re-run `commit-tracker/regen.sh`
 after an upstream pull; it appends new commits as `pending` and preserves every status you've set.
+
+**A Zandronum port** is usually the simplest route of all, because Zandronum's tree is ours: same
+layout under `src/zandronum/`, same netcode, same ACS and DECORATE. `fuactl tracker diff <node> --apply`
+lands it. But it is not free: Zandronum still assumes a **32-bit `fixed_t`**, so every Zandronum port
+gets the `fixed64-widening` audit; Zandronum's netcode commits target its own transport, so the
+behaviour is ported and our transport kept (`netcode-adaptation`); and where it overlaps something of
+ours, its design is taken only if it is the better one (`sequential-backport`, "The Zandronum ledger").
+Tag it `zandronum@<node>` (`provenance-links`).
 
 ## The four routes
 

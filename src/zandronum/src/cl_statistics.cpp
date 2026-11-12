@@ -55,6 +55,13 @@
 #include "doomdef.h"
 #include "doomstat.h"
 #include "features/net-client/computation/netstats_compute.h"   // [KI] the nettraffic percentage
+#include "features/net-client/computation/netgraph_compute.h"   // [rc4l] cl_netgraph's layout
+#include "c_cvars.h"
+#include "networkshared.h"
+#include "v_font.h"
+#include "v_palette.h"
+#include "v_video.h"
+#include <vector>
 
 //*****************************************************************************
 //	CLASSES
@@ -69,7 +76,7 @@ class StatTracker
 	unsigned int _maxValuePerSecond;
 
 	// [AK] Values for compressed stats.
-	// [KI] Ported from zandronum@fbd2198a0a1f315f71c8a4cbcbfccfb37e090d6e and zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e: the wire-size and zstd-count lanes beside each byte count.
+	// [KI] Ported from zandronum@173f74aa07b893e0c6451f6947ae20f45eb733c2 and zandronum@1a03a82d780ac7923770605aa631865c04076240: the wire-size and zstd-count lanes beside each byte count.
 	unsigned int _compressedValueThisTick;
 	unsigned int _compressedValueThisSecond;
 	unsigned int _compressedValueLastSecond;
@@ -81,6 +88,10 @@ class StatTracker
 	unsigned int _numZstdThisTick;
 	unsigned int _numZstdThisSecond;
 	unsigned int _numZstdLastSecond;
+
+	// [rc4l] Ported from zandronum@9a8ae9d825e8c2a72bcf0cd644c59da13d55fd70: each second's value over the last minute, for the net graph.
+	unsigned int _maxValueLastMinute;
+	RingBuffer<unsigned int, zx::netclient::NETGRAPH_SECONDS> _valuesLastMinute;
 
 public:
 	StatTracker ( )
@@ -104,6 +115,8 @@ public:
 		_numZstdThisTick = 0;
 		_numZstdThisSecond = 0;
 		_numZstdLastSecond = 0;
+		_maxValueLastMinute = 0;
+		_valuesLastMinute.clear( );
 	}
 
 	void AddToTic ( const int Value, const int CompressedValue = 0, const bool WasZstd = false )
@@ -151,6 +164,14 @@ public:
 
 		_numZstdLastSecond = _numZstdThisSecond;
 		_numZstdThisSecond = 0;
+
+		// [AK] Add the uncompressed value from this last second to the buffer of
+		// values in the last minute, then determine the new maximum value.
+		_valuesLastMinute.put( _valueLastSecond );
+		unsigned int lastMinute[zx::netclient::NETGRAPH_SECONDS];
+		for ( unsigned int i = 0; i < zx::netclient::NETGRAPH_SECONDS; i++ )
+			lastMinute[i] = _valuesLastMinute.getOldestEntry( i );
+		_maxValueLastMinute = zx::netclient::ComputeLargestValue( lastMinute, zx::netclient::NETGRAPH_SECONDS );
 	}
 
 	unsigned int getTotalValue ( ) const
@@ -183,6 +204,134 @@ public:
 	{
 		return zx::netclient::ComputeSharePercent( _numZstdLastSecond, _packetsLastSecond );
 	}
+
+	// [AK] Returns the largest uncompressed value in the last minute.
+	unsigned int getMaxValueLastMinute ( ) const
+	{
+		return _maxValueLastMinute;
+	}
+
+	// [AK] Returns any uncompressed value in the last minute, from 0-59 seconds.
+	unsigned int getValueLastMinute ( unsigned int second ) const
+	{
+		return ( second < zx::netclient::NETGRAPH_SECONDS ? _valuesLastMinute.getOldestEntry( second ) : 0 );
+	}
+};
+
+//*****************************************************************************
+// [rc4l] Ported from zandronum@9a8ae9d825e8c2a72bcf0cd644c59da13d55fd70: a graph of its lines' last minute, its layout from netgraph_compute.
+class NetGraph
+{
+public:
+	NetGraph( const char *label, const char *scaleLabel, unsigned int scaleDivider, unsigned int defaultScaleMax, unsigned int scaleBonus ) :
+		label( label ),
+		scaleLabel( scaleLabel ),
+		scaleDivider( scaleDivider > 0 ? scaleDivider : 1 ),
+		defaultScaleMax( defaultScaleMax ),
+		scaleBonus( scaleBonus ) { }
+
+	void ClearLines( )
+	{
+		lines.Clear( );
+	}
+
+	void AddLine( const StatTracker &tracker, const char *name, PalEntry color )
+	{
+		Line line = { &tracker, name, color };
+		lines.Push( line );
+	}
+
+	void Draw( const int leftX, const int topY ) const
+	{
+		using namespace zx::netclient;
+		const int rightX = leftX + NETGRAPH_WIDTH;
+		const int bottomY = topY + NETGRAPH_HEIGHT;
+		const uint32 gridColor = MAKERGB( 48, 48, 48 );
+		const uint32 borderColor = MAKERGB( 64, 64, 64 );
+		int textYOffset = 0;
+
+		std::vector<unsigned int> lineMaxes;
+		for ( unsigned int i = 0; i < lines.Size( ); i++ )
+			lineMaxes.push_back( lines[i].tracker->getMaxValueLastMinute( ));
+		const unsigned int scaleMax = ComputeNetGraphScaleMax( defaultScaleMax, scaleBonus, lineMaxes );
+
+		// [AK] Draw the background of the net graph first.
+		screen->Dim( MAKERGB( 16, 16, 16 ), 0.65f, leftX, topY, NETGRAPH_WIDTH, NETGRAPH_HEIGHT );
+
+		// [AK] Next, draw the gridlines. The vertical lines move left as time goes.
+		for ( int x : ComputeNetGraphVerticalGridLines( leftX, gametic / TICRATE ))
+			screen->DrawLine( x, topY, x, bottomY, -1, gridColor );
+		for ( int y : ComputeNetGraphHorizontalGridLines( topY ))
+			screen->DrawLine( leftX, y, rightX, y, -1, gridColor );
+
+		// [AK] Draw each line to be plotted on the graph.
+		for ( unsigned int i = 0; i < lines.Size( ); i++ )
+		{
+			for ( unsigned int second = 1; second < NETGRAPH_SECONDS; second++ )
+			{
+				screen->DrawLine( ComputeNetGraphPointX( leftX, second - 1 ), ComputeNetGraphPointY( lines[i].tracker->getValueLastMinute( second - 1 ), bottomY, scaleMax ),
+					ComputeNetGraphPointX( leftX, second ), ComputeNetGraphPointY( lines[i].tracker->getValueLastMinute( second ), bottomY, scaleMax ), -1, lines[i].color );
+			}
+		}
+
+		// [AK] If this net graph has more than one line to draw, add a legend.
+		if ( lines.Size( ) > 1 )
+		{
+			std::vector<NetGraphLegendEntry> entries;
+			for ( unsigned int i = 0; i < lines.Size( ); i++ )
+				entries.push_back( { lines[i].name.IsNotEmpty( ), ConFont->StringWidth( lines[i].name.GetChars( )) } );
+
+			const std::vector<NetGraphLegendPlace> places = ComputeNetGraphLegend( leftX, topY, entries, ConFont->GetHeight( ));
+			for ( unsigned int i = 0; i < lines.Size( ); i++ )
+			{
+				if ( places[i].drawn == false )
+					continue;
+
+				screen->DrawLine( places[i].x, places[i].y, places[i].x + NETGRAPH_LEGEND_LINE_WIDTH, places[i].y, -1, lines[i].color );
+				const int textY = places[i].y - ConFont->StringHeight( lines[i].name.GetChars( ), &textYOffset ) / 2;
+				screen->DrawText( ConFont, CR_GREY, places[i].x + NETGRAPH_LEGEND_LINE_WIDTH + NETGRAPH_LEGEND_SPACING, textY - textYOffset, lines[i].name.GetChars( ), TAG_DONE );
+			}
+		}
+
+		// [AK] Draw the borders around the graph after drawing the lines.
+		screen->DrawLine( leftX, topY, rightX, topY, -1, borderColor );
+		screen->DrawLine( leftX, bottomY, rightX, bottomY, -1, borderColor );
+		screen->DrawLine( leftX, topY, leftX, bottomY, -1, borderColor );
+		screen->DrawLine( rightX, topY, rightX, bottomY, -1, borderColor );
+
+		// [AK] Draw the graph's label in the top-center, if applicable.
+		if ( label.IsNotEmpty( ))
+		{
+			const int textX = leftX + ( NETGRAPH_WIDTH - ConFont->StringWidth( label.GetChars( ))) / 2;
+			const int textY = topY - ConFont->StringHeight( label.GetChars( ), &textYOffset ) - 2;
+			screen->DrawText( ConFont, CR_WHITE, textX, textY - textYOffset, label.GetChars( ), TAG_DONE );
+		}
+
+		// [AK] Draw the min and max scale values on the right, and the label if there is one.
+		FString scaleText = "0";
+		const int textY = bottomY - ConFont->StringHeight( scaleText.GetChars( ), &textYOffset );
+		screen->DrawText( ConFont, CR_WHITE, rightX + 2, textY - textYOffset, scaleText.GetChars( ), TAG_DONE );
+
+		scaleText.Format( "%u", ComputeNetGraphScaleTop( scaleMax, scaleDivider ));
+		if ( scaleLabel.IsNotEmpty( ))
+			scaleText.AppendFormat( " %s", scaleLabel.GetChars( ));
+		screen->DrawText( ConFont, CR_WHITE, rightX + 2, topY, scaleText.GetChars( ), TAG_DONE );
+	}
+
+private:
+	struct Line
+	{
+		const StatTracker *tracker;
+		FString name;
+		PalEntry color;
+	};
+
+	TArray<Line> lines;
+	const FString label;
+	const FString scaleLabel;
+	const unsigned int scaleDivider;
+	const unsigned int defaultScaleMax;
+	const unsigned int scaleBonus;
 };
 
 //*****************************************************************************
@@ -192,6 +341,15 @@ static	StatTracker			g_bytesSentStatTracker;
 static	StatTracker			g_bytesReceivedStatTracker;
 static	StatTracker			g_missingPacketsRequestedStatTracker;
 
+static	NetGraph			g_NetTrafficGraph( "Network Traffic", "KB/s", 1000, 6000, 2000 );
+static	NetGraph			g_MissingPacketsGraph( "Missing Packets", nullptr, 1, 10, 2 );
+
+//*****************************************************************************
+//	CONSOLE VARIABLES
+
+// [AK] If enabled, shows the net graph when the "nettraffic" stat is active.
+CVAR( Bool, cl_netgraph, false, CVAR_ARCHIVE | CVAR_NOSETBYACS )
+
 //*****************************************************************************
 //	FUNCTIONS
 
@@ -200,6 +358,13 @@ void CLIENTSTATISTICS_Construct( void )
 	g_bytesSentStatTracker.Clear();
 	g_bytesReceivedStatTracker.Clear();
 	g_missingPacketsRequestedStatTracker.Clear();
+
+	// [AK] Add each of the lines to their respective net graphs.
+	g_NetTrafficGraph.ClearLines( );
+	g_MissingPacketsGraph.ClearLines( );
+	g_NetTrafficGraph.AddLine( g_bytesReceivedStatTracker, "In", MAKERGB( 255, 20, 35 ));
+	g_NetTrafficGraph.AddLine( g_bytesSentStatTracker, "Out", MAKERGB( 100, 255, 55 ));
+	g_MissingPacketsGraph.AddLine( g_missingPacketsRequestedStatTracker, "Missing", MAKERGB( 255, 20, 35 ));
 }
 
 //*****************************************************************************
@@ -243,14 +408,25 @@ void CLIENTSTATISTICS_AddToMissingPacketsRequested( unsigned int Num )
 }
 
 //*****************************************************************************
+//
+void CLIENTSTATISTICS_DrawNetGraph( int xPos, int yPos )
+{
+	if ( cl_netgraph == false )
+		return;
+
+	g_NetTrafficGraph.Draw( xPos, zx::netclient::ComputeNetGraphTopY( yPos, 0, ConFont->GetHeight( )));
+	g_MissingPacketsGraph.Draw( xPos, zx::netclient::ComputeNetGraphTopY( yPos, 1, ConFont->GetHeight( )));
+}
+
+//*****************************************************************************
 //	STATISTICS
 
 ADD_STAT( nettraffic )
 {
-	FString	Out;
+	FString out;
 
-	// [KI] Ported from zandronum@62d2ad61e5a57ff112a730596d2b71e5f425836e at zandronum@133666f6ef9b9468cefd86ac004124ca4d5e6dc5's one-line-per-statistic layout.
-	Out.Format( "In:   %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nOut:  %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nLoss: %5u/%5u",
+	// [KI] Ported from zandronum@1a03a82d780ac7923770605aa631865c04076240 at zandronum@2a65e4bcf494a3bde63a18f006ece9154d604e19's one-line-per-statistic layout.
+	out.Format( "In:   %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nOut:  %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nLoss: %5u/%5u",
 		g_bytesReceivedStatTracker.getValueThisTick( ),
 		g_bytesReceivedStatTracker.getValueLastSecond( ),
 		g_bytesReceivedStatTracker.getMaxValuePerSecond( ),
@@ -264,5 +440,5 @@ ADD_STAT( nettraffic )
 		g_missingPacketsRequestedStatTracker.getValueLastSecond( ),
 		g_missingPacketsRequestedStatTracker.getMaxValuePerSecond( ));
 
-	return ( Out );
+	return out;
 }

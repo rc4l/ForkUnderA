@@ -40,6 +40,8 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "features/decals/decals.h"   // [rc4l] every mark, made and judged in one place
+#include "features/net-replication/actorstate.h"   // [rc4l] SendPuff, a rail's puff once it survived the sky
+#include "features/net-session/netrole.h"
 #include "p_lnspec.h"
 #include "p_effect.h"
 #include "p_terrain.h"
@@ -48,6 +50,7 @@
 #include "p_trace.h"
 #include "p_3dmidtex.h"
 #include "computation/rail_puff_compute.h"
+#include "computation/skulltagscore_compute.h"
 
 // [rc4l] rail_puff_compute mirrors these TRACE_Hit* values; keep synced.
 static_assert(ZX_TRACE_HitNone == TRACE_HitNone, "TRACE_Hit mirror out of sync");
@@ -1645,7 +1648,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				( thing->args[0] == static_cast<int> (TEAM_GetNumTeamsWithStarts()) || static_cast<signed>( tm.thing->player->Team ) == thing->args[0] ) &&
 				( thing->args[1] > 0 ))
 			{
-				if ( !TEAM_GetItemTaken( tm.thing->player->Team ) )
+				// [rc4l] Ported from zandronum@f5b68175b468f0fdfb7119369fa10d5ba87f2464: sv_requireskulltoscore 0 lets a carrier score with its own skull taken.
+				if ( zx::ComputeScoresSkulltagPoint( sv_requireskulltoscore, TEAM_GetItemTaken( tm.thing->player->Team )))
 					TEAM_ScoreSkulltagPoint( tm.thing->player, thing->args[1], thing );
 				else
 					TEAM_DisplayNeedToReturnSkullMessage( tm.thing->player );
@@ -1902,7 +1906,9 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	{
 		return false;
 	}
-	if (tm.ceilingz - tm.floorz < thing->height)
+	// [AK] Ignore spectators without physical restrictions; they have noclip.
+	// [rc4l] Ported from zandronum@236f06df1450a63d8bdf3d73aaccbc0feb1f258f: unrestricted spectators pass through slopes.
+	if (tm.ceilingz - tm.floorz < thing->height && P_IsSpectatorUnrestricted(thing) == false)
 	{
 		return false;
 	}
@@ -4796,7 +4802,7 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 					(t1->player != NULL && t1->player->ReadyWeapon != NULL && t1->player->ReadyWeapon->DecalGenerator != NULL))
 				{
 					// [ZK] If puff has FORCEDECAL set, do not use the weapon's decal
-					if (puffDefaults->flags7 & MF7_FORCEDECAL && puff != NULL && puff->DecalGenerator)
+					if (zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, puff != NULL, puff != NULL && puff->DecalGenerator != NULL))
 						decalSource = puff;
 					else
 						decalSource = t1;
@@ -4817,7 +4823,7 @@ AActor *P_LineAttack(AActor *t1, angle_t angle, fixed_t distance,
 					decalSource = t1;
 				}
 
-				zx::decals::MarkShot(decalSource, trace, zx::decals::kSourceHitscan);
+				zx::decals::MarkShot(t1, trace, zx::decals::kSourceHitscan, decalSource);
 			}
 			// [rc4l] Stock's splash test exactly: only a wall decal stands in for it, so a marked floor still splashes.
 			if (!(fuaHitWall && fuaMarks) && puff != NULL &&
@@ -5447,14 +5453,13 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 
 	// Spawn a decal or puff at the point where the trace ended.
 	// [rc4l] Ported from uzdoom@7bfbf612d9d8197c36bb77ab171005bce521a514: the endpoint puff now spawns
-	// on floor/ceiling hits too, not only walls (older Zandronum was wall-only), with a sky-flat guard
-	// that destroys the puff if it landed on the open sky (unless the puff is MF3_SKYEXPLODE). The mark goes
+	// on floor/ceiling hits too, not only walls (older Zandronum was wall-only), and is destroyed when it
+	// went into the sky (ComputeRailPuffInSky, unless the puff is MF3_SKYEXPLODE). The mark goes
 	// wherever the puff does, judged by features/decals. Hit-type branching is the pure ComputeRailEndpointSpawn.
 	const RailEndpointSpawn railEnd = ComputeRailEndpointSpawn(trace.HitType);
-	if (railEnd.decal)
-	{
-		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail);
-	}
+	AActor *endPuff = NULL;
+	// [rc4l] Ported from zandronum@a8d26c5591fafdaa655603fc42e1198ecf860d5b: the puff whose decal a client that did not predict the rail marks with.
+	const PClass *decalPuffClass = NULL;
 	if (railEnd.puff && puffclass != NULL && puffDefaults->flags3 & MF3_ALWAYSPUFF)
 	{
 		// [rc4l] Ported from qzandronum@d33dacfb1ca1dfa3eef1989b1e5c6d5f8443ddce: pull the endpoint puff
@@ -5462,13 +5467,30 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 		// the surface instead of embedded in it -- otherwise a wall/ledge hit leaves the puff stuck in the
 		// geometry. UZDoom spawns at the exact hit point and has no equivalent nudge.
 		const fixed_t closer = 4 * FRACUNIT;
-		AActor *puff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0);
-		if (railEnd.skyGuard && puff != NULL && !(puff->flags3 & MF3_SKYEXPLODE) &&
-			(((trace.HitType == TRACE_HitFloor) && (puff->floorpic == skyflatnum)) ||
-			((trace.HitType == TRACE_HitCeiling) && (puff->ceilingpic == skyflatnum))))
-		{
-			puff->Destroy();
-		}
+		// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: clients hear of the puff only once it survived the sky, below.
+		endPuff = P_SpawnPuff(source, puffclass, trace.X - FixedMul(vx, closer), trace.Y - FixedMul(vy, closer), trace.Z - FixedMul(vz, closer), (source->angle + angleoffset) - ANG90, 1, 0, NULL, false);
+	}
+	if (railEnd.decal)
+	{
+		// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: a client spawns no puff, so the puff class's own actor lends its decal.
+		AActor *decalPuff = endPuff;
+		if (decalPuff == NULL && zx::net::InClientMode() && railEnd.puff && (puffDefaults->flags3 & MF3_ALWAYSPUFF)) decalPuff = puffDefaults;
+		// [rc4l] Ported from zandronum@deffd2fbd79203c4237bd511a2a97ff3626e699c: a FORCEDECAL puff with a decal of its own marks the surface in place of the shooter's weapon.
+		const bool puffMarks = zx::decals::ComputeMarksWithPuff(puffDefaults->flags7 & MF7_FORCEDECAL, decalPuff != NULL, decalPuff != NULL && decalPuff->DecalGenerator != NULL);
+		zx::decals::MarkShot(source, trace, zx::decals::kSourceRail, puffMarks ? decalPuff : NULL);
+		// [rc4l] The spawned puff's class, never the stand-in's, since a class's default actor has no class of its own to ask (netrailpuff crashed a client so).
+		if (puffMarks && decalPuff == endPuff) decalPuffClass = endPuff->GetClass();
+	}
+	// [rc4l] Ported from zandronum@2e629a9b7b960b49e722e8f183f57ba43c27e9c3: a wall puff on a horizon line went into the sky too.
+	// [rc4l] Ported from zandronum@26d900809dfc306df34373129d97a3d6099b7c3e: a hit with no line is no horizon.
+	if (endPuff != NULL && ComputeRailPuffInSky(trace.HitType, trace.Line != NULL && trace.Line->special == Line_Horizon,
+		endPuff->floorpic == skyflatnum, endPuff->ceilingpic == skyflatnum, (endPuff->flags3 & MF3_SKYEXPLODE) != 0))
+	{
+		endPuff->Destroy();
+	}
+	else if (endPuff != NULL)
+	{
+		zx::netreplication::SendPuff(endPuff, source, endPuff->FindState(NAME_Crash) != NULL ? STATE_CRASH : STATE_SPAWN, 0);
 	}
 	if (thepuff != NULL)
 	{
@@ -5495,12 +5517,20 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	// [BC] If we're the server, tell clients to create a railgun trail.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		const ULONG ulPlayer = source->player ? static_cast<ULONG> ( source->player - players ) : MAXPLAYERS;
+		const unsigned int playerIndex = source->player ? static_cast<unsigned>( source->player - players ) : MAXPLAYERS;
 		SERVERCOMMANDS_WeaponRailgun( source, start, end, color1, color2, maxdiff, railflags,
-			angleoffset, spawnclass, duration, sparsity, drift, ulPlayer,
+			angleoffset, spawnclass, duration, sparsity, drift, railEnd.decal, decalPuffClass, playerIndex,
 			UNLAGGED_DrawRailClientside( source ) ? SVCF_SKIPTHISCLIENT : ServerCommandFlags( 0 ) );
 	}
 }
+
+//==========================================================================
+//
+// [BB] P_RailAttackWithPossibleSpread
+//
+// Shoot a railgun with spread applied if necessary.
+//
+//==========================================================================
 
 void P_RailAttackWithPossibleSpread (AActor *source, int damage, int offset_xy, fixed_t offset_z, int color1, int color2, float maxdiff, int railflags, const PClass *puffclass, angle_t angleoffset, angle_t pitchoffset, fixed_t distance, int duration, float sparsity, float drift, const PClass *spawnclass)
 {
@@ -5712,13 +5742,15 @@ bool P_TalkFacing(AActor *player)
 {
 	AActor *linetarget;
 
-	P_AimLineAttack(player, player->angle, TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION);
+	// [SB] Added ALF_FORCEALLYCHECK to all of these so that conversations can be started
+	// with actors that have the FRIENDLY flag when sv_shootthroughallies is enabled.
+	P_AimLineAttack(player, player->angle, TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION | ALF_FORCEALLYCHECK);
 	if (linetarget == NULL)
 	{
-		P_AimLineAttack(player, player->angle + (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION);
+		P_AimLineAttack(player, player->angle + (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION | ALF_FORCEALLYCHECK);
 		if (linetarget == NULL)
 		{
-			P_AimLineAttack(player, player->angle - (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION);
+			P_AimLineAttack(player, player->angle - (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION | ALF_FORCEALLYCHECK);
 			if (linetarget == NULL)
 			{
 				return false;

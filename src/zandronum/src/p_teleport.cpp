@@ -198,14 +198,10 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	}
 
 	// [BC] Teleporting spectators do not create fog.
-	// [AK] Players also don't create fog while they're being backtraced.
-	if ( thing && thing->player )
+	if (thing && thing->player && thing->player->bSpectating)
 	{
-		if ( thing->player->bSpectating || ( SERVER_IsBacktracingPlayer( thing->player - players )))
-		{
-			useFog = false;
-			sourceFog = false;
-		}
+		useFog = false;
+		sourceFog = false;
 	}
 
 	// Spawn teleport fog at source and destination
@@ -295,7 +291,7 @@ static AActor *SelectTeleDest (int tid, int tag, bool norandom)
 		int count = 0;
 		while ( (searcher = iterator.Next ()) )
 		{
-			if (tag == 0 || searcher->Sector->tag == tag)
+			if (tag == 0 || tagManager.SectorHasTag(searcher->Sector, tag))
 			{
 				count++;
 			}
@@ -334,7 +330,7 @@ static AActor *SelectTeleDest (int tid, int tag, bool norandom)
 			while (count > 0)
 			{
 				searcher = iterator.Next ();
-				if (tag == 0 || searcher->Sector->tag == tag)
+				if (tag == 0 || tagManager.SectorHasTag(searcher->Sector, tag))
 				{
 					count--;
 				}
@@ -345,9 +341,10 @@ static AActor *SelectTeleDest (int tid, int tag, bool norandom)
 
 	if (tag != 0)
 	{
-		int secnum = -1;
+		int secnum;
 
-		while ((secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
+		FSectorTagIterator itr(tag);
+		while ((secnum = itr.Next()) >= 0)
 		{
 			// Scanning the snext links of things in the sector will not work, because
 			// TeleportDests have MF_NOSECTOR set. So you have to search *everything*.
@@ -497,7 +494,8 @@ bool EV_SilentLineTeleport (line_t *line, int side, AActor *thing, int id, INTBO
 	if (side || thing->flags2 & MF2_NOTELEPORT || !line || line->sidedef[1] == NULL)
 		return false;
 
-	for (i = -1; (i = P_FindLineFromID (id, i)) >= 0; )
+	FLineIdIterator itr(id);
+	while ((i = itr.Next()) >= 0)
 	{
 		if (line-lines == i)
 			continue;
@@ -815,7 +813,8 @@ bool EV_TeleportSector (int tag, int source_tid, int dest_tid, bool fog, int gro
 	int secnum;
 
 	secnum = -1;
-	while ((secnum = P_FindSectorFromTag (tag, secnum)) >= 0)
+	FSectorTagIterator itr(tag);
+	while ((secnum = itr.Next()) >= 0)
 	{
 		msecnode_t *node;
 		const sector_t * const sec = &sectors[secnum];
