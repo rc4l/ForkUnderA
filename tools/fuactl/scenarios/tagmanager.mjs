@@ -3,6 +3,7 @@
 // usage:  node scenarios/tagmanager.mjs
 import { UdmfMap, wad, mapLumps, hexenMapLumps, pk3 } from "../src/udmf.mjs";
 import { AcsScript, acsScripts, addToCVar, callFunc, ACSF, PCD } from "../src/acs.mjs";
+import { THING } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareCounter, MUTE } from "../src/template.mjs";
 
 export const COUNTER_CVAR = "zx_tagmanager_wrong";
@@ -13,7 +14,19 @@ const PLAYER = { x: 960, y: 448 };
 export const SPAC = { Cross: 1, Use: 2, Impact: 8, Push: 16 };
 const LINE_SET_IDENTIFICATION = 121;
 
-// [rc4l] Each map's checks as [what, kind, tag or ID, expected], kind "sector" reading GetSectorLightLevel and "line" GetLineActivation.
+// [rc4l] The column standing in MAP01's untagged sector, which ThingCountSector and ThingCountNameSector find with tag 0.
+export const COLUMN = { x: 160, y: 160, tid: 11, type: THING.TallGreenColumn, name: "TallGreenColumn" };
+const STRINGS = [COUNTER_CVAR, COLUMN.name];
+
+// [rc4l] The words that leave each kind of check's value on the stack: a sector's light by tag, a line's activation by ID, or a count of the column by tid or class in sectors of a tag.
+const READ = {
+  sector: (tag) => [PCD.PUSHNUMBER, tag, PCD.GETSECTORLIGHTLEVEL],
+  line: (id) => callFunc(ACSF.GetLineActivation, [id]),
+  count: (tag) => [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, COLUMN.tid, PCD.PUSHNUMBER, tag, PCD.THINGCOUNTSECTOR],
+  countname: (tag) => [PCD.PUSHNUMBER, STRINGS.indexOf(COLUMN.name), PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, tag, PCD.THINGCOUNTNAMESECTOR],
+};
+
+// [rc4l] Each map's checks as [what, kind, tag or ID, expected], read as READ[kind] does.
 export const CHECKS = {
   // [rc4l] UDMF ids and moreids on sectors and lines, sector 0 and line 0 among them.
   MAP01: [
@@ -25,6 +38,9 @@ export const CHECKS = {
     ["line 0's id (zandronum@90fabec29540)", "line", 7, SPAC.Impact],
     ["a line's id", "line", 8, SPAC.Push],
     ["a line's moreids (zandronum@020ebf903625)", "line", 10, SPAC.Push],
+    ["ThingCountSector's tag 0 counts untagged sectors (zandronum@0bf8926534b3)", "count", 0, 1],
+    ["ThingCountNameSector's tag 0 counts untagged sectors (zandronum@0bf8926534b3)", "countname", 0, 1],
+    ["ThingCountSector by tag skips the column's untagged sector", "count", 3, 0],
   ],
   // [rc4l] A Hexen-format map, whose loader numbered its lines backwards until zandronum@566770b828b4.
   MAP02: [
@@ -41,9 +57,7 @@ export const CHECKS = {
 export function buildScript(checks) {
   const s = new AcsScript().emit(...addToCVar(0, 1));
   checks.forEach(([, kind, id, want], k) => {
-    if (kind === "sector") s.emit(PCD.PUSHNUMBER, id, PCD.GETSECTORLIGHTLEVEL);
-    else s.emit(...callFunc(ACSF.GetLineActivation, [id]));
-    s.emit(PCD.PUSHNUMBER, want, PCD.EQ).jump(PCD.IFGOTO, `ok${k}`).emit(...addToCVar(0, 2 ** (k + 1))).label(`ok${k}`);
+    s.emit(...READ[kind](id), PCD.PUSHNUMBER, want, PCD.EQ).jump(PCD.IFGOTO, `ok${k}`).emit(...addToCVar(0, 2 ** (k + 1))).label(`ok${k}`);
   });
   return s.emit(PCD.TERMINATE).words();
 }
@@ -67,6 +81,7 @@ export function buildMoreIdsMap() {
   const outer = room(m, { id: 3, lightlevel: 160 }, { west: { id: 7, impact: true }, north: { id: 8, moreids: "9 10", playerpush: true } });
   m.block(64, 64, 256, 256, { ...ROOM, lightlevel: 144 }, outer);
   m.block(512, 64, 704, 256, { ...ROOM, id: 4, moreids: "5 6", lightlevel: 128 }, outer);
+  m.thing({ x: COLUMN.x, y: COLUMN.y, angle: 0, type: COLUMN.type, id: COLUMN.tid });
   playerStart(m);
   return m;
 }
@@ -91,7 +106,7 @@ export function buildLinelessMap(tagged) {
 const MAPS = { MAP01: buildMoreIdsMap, MAP02: buildHexenMap, MAP03: () => buildLinelessMap(false), MAP04: () => buildLinelessMap(true) };
 
 export function buildTagManagerPk3() {
-  const behavior = (map) => acsScripts([{ code: buildScript(CHECKS[map]), open: false, number: 1 }], [COUNTER_CVAR]);
+  const behavior = (map) => acsScripts([{ code: buildScript(CHECKS[map]), open: false, number: 1 }], STRINGS);
   const lumps = (map) => (map === "MAP02" ? hexenMapLumps(map, MAPS[map](), { behavior: behavior(map) })
     : mapLumps(map, MAPS[map](), { behavior: behavior(map) }));
   return pk3([

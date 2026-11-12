@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildScript, buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, failedChecks, CHECKS, COUNTER, SPAC } from "../scenarios/tagmanager.mjs";
+import { buildScript, buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, failedChecks, CHECKS, COUNTER, SPAC, COLUMN } from "../scenarios/tagmanager.mjs";
 import { judgeCounter } from "../src/template.mjs";
 import { readPk3, readWad, parseUdmf } from "../src/udmf.mjs";
 import { binaryMap } from "../src/mapdata.mjs";
@@ -13,6 +13,9 @@ test("each check reads a sector by tag or a line by ID and adds its own bit when
   assert.ok(at([PCD.PUSHNUMBER, 7, PCD.CALLFUNC, 1, ACSF.GetLineActivation, PCD.PUSHNUMBER, SPAC.Impact, PCD.EQ]) >= 0);
   assert.ok(at([PCD.PUSHNUMBER, 2]) >= 0 && at([PCD.PUSHNUMBER, 4]) >= 0);
   assert.equal(words.at(-1), PCD.TERMINATE);
+  const counts = buildScript([["c", "count", 0, 1], ["n", "countname", 3, 0]]);
+  assert.ok(counts.join().includes([PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, COLUMN.tid, PCD.PUSHNUMBER, 0, PCD.THINGCOUNTSECTOR].join()));
+  assert.ok(counts.join().includes([PCD.PUSHNUMBER, 1, PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 3, PCD.THINGCOUNTNAMESECTOR].join()));
 });
 
 test("a failing counter names the checks whose bits it carries", () => {
@@ -28,6 +31,10 @@ test("the UDMF map tags sector 0 and line 0 and gives a sector and a line moreid
   assert.deepEqual([u.sector[2].id, u.sector[2].moreids], [4, "5 6"]);
   assert.deepEqual([u.linedef[0].id, u.linedef[0].impact], [7, true]);
   assert.deepEqual([u.linedef[1].id, u.linedef[1].moreids, u.linedef[1].playerpush], [8, "9 10", true]);
+  // [rc4l] The column stands inside sector 1's block, the only untagged sector.
+  const column = u.thing.find((t) => t.id === COLUMN.tid);
+  assert.equal(column.type, COLUMN.type);
+  assert.ok(column.x > 64 && column.x < 256 && column.y > 64 && column.y < 256 && u.sector[1].id === undefined);
 });
 
 test("the Hexen map's line 1 sets ID 263 and is the one used by pressing", () => {
