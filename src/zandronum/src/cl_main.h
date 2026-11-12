@@ -193,6 +193,7 @@ void				CLIENT_LogHUDMessage( const char *pszString, LONG lColor );
 void				CLIENT_UpdatePendingWeapon( const player_t *pPlayer );
 void				CLIENT_SetActorToLastDeathStateFrame ( AActor *pActor );
 void				CLIENT_ClearAllPlayers( void );
+void				CLIENT_ResetMoveCommandBuffers( void );
 void				CLIENT_LimitProtectedCVARs( void );
 bool				CLIENT_CanClipMovement( AActor *pActor );
 void STACK_ARGS		CLIENT_PrintWarning( const char* format, ... ) GCCPRINTF( 1, 2 );
@@ -226,6 +227,7 @@ EXTERN_CVAR( String, cl_joinpassword )
 EXTERN_CVAR( Bool, cl_hitscandecalhack )
 EXTERN_CVAR( Bool, cl_useskulltagmouse ) // [AK]
 EXTERN_CVAR( Int, cl_backupcommands ) // [AK]
+EXTERN_CVAR( Bool, cl_usemovebuffer ) // [AK]
 
 // Not in cl_main.cpp, but this seems like a good enough place for it.
 EXTERN_CVAR( Int, cl_skins )

@@ -51,10 +51,15 @@ What a client does with what arrives from its server.
 - `computation/serverfloor_compute.{h,cpp}` (`ComputeServerHeldFloorZ`, `ComputeRereadFloorFromLines`) with its `_test.cpp`.
 - `computation/netgraph_compute.{h,cpp}` (where `cl_netgraph`'s graphs, gridlines, points and legends land, from
   Zandronum 3.3; `cl_statistics.cpp`'s `NetGraph::Draw` only draws them) with its `_test.cpp`.
+- `computation/movedrain_compute.{h,cpp}` (`ComputeConsistentArrivals`, `ComputeMoveDrainOrder` on the server's own
+  `ComputeRunsSecondMoveCmd`, `ComputeTickSavesPrevPosition`) with its `_test.cpp`.
 - `netclient.{h,cpp}` (the packets applied) and `rejoin.{h,cpp}` (the map command's reconnect).
 
 ## In-engine hooks
 
+- `cl_main.cpp` `ServerCommands::MovePlayer` and `MoveLocalPlayer` go into the player's buffer while `cl_usemovebuffer`
+  is on (Zandronum 3.3), and `CLIENT_Tick` runs each tic's by `ComputeMoveDrainOrder`; `p_mobj.cpp` `AActor::Tick`
+  leaves a buffered player's previous position to that drain (`tools/fuactl/scenarios/netmovebuffer.mjs`).
 - `stats.cpp` `FStat::PrintStat` draws the net graph above the stats while `nettraffic` is one
   (`CLIENTSTATISTICS_DrawNetGraph`, `tools/fuactl/scenarios/netgraph.mjs`).
 - `cl_main.cpp` `CLIENT_ParsePacket` is the seam `net/parse`, owned by the main thread, and counts the packet

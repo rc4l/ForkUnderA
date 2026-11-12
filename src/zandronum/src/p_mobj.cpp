@@ -82,6 +82,8 @@
 #include "duel.h"
 #include "gamemode.h"
 #include "cl_main.h"
+#include "features/net-client/computation/movedrain_compute.h"
+#include "features/net-session/netrole.h"
 #include "cooperative.h"
 #include "invasion.h"
 #include "st_hud.h"
@@ -4194,10 +4196,16 @@ void AActor::Tick ()
 
 	// This is necessary to properly interpolate movement outside this function
 	// like from an ActorMover
-	PrevX = x;
-	PrevY = y;
-	PrevZ = z;
-	PrevAngle = angle;
+	// [AK] Don't do this for players when using the client's movement buffers.
+	// It's already handled when the buffers are emptied in CLIENT_Tick.
+	// [rc4l] Ported from zandronum@93c67c50fda92df93907d9fe1cf67e12857f8e89: the role from features/net-session, the rule ComputeTickSavesPrevPosition.
+	if (zx::netclient::ComputeTickSavesPrevPosition(zx::net::InClientMode(), player != nullptr, cl_usemovebuffer))
+	{
+		PrevX = x;
+		PrevY = y;
+		PrevZ = z;
+		PrevAngle = angle;
+	}
 	PrevRoll = roll;	// [rc4l]
 
 	// [BC] There are times when we don't want to tick this actor if it's a player.
