@@ -12,6 +12,7 @@ struct FTagItem
 };
 
 class FSectorTagIterator;
+class FLineIdIterator;
 
 class FTagManager
 {
@@ -21,18 +22,25 @@ class FTagManager
 	};
 
 	friend class FSectorTagIterator;
+	friend class FLineIdIterator;
 
 	TArray<FTagItem> allTags;
 	TArray<FTagItem> allIDs;
 	TArray<int> startForSector;
 	TArray<int> startForLine;
 	int TagHashFirst[TAG_HASH_SIZE];
+	int IDHashFirst[TAG_HASH_SIZE];
 
 	bool SectorHasTags(int sect) const
 	{
 		return sect >= 0 && sect < (int)startForSector.Size() && startForSector[sect] >= 0;
 	}
 
+	// [rc4l] Pulled forward from zandronum@566770b828b4, without which zandronum@020ebf903625 does not build.
+	bool LineHasIDs(int sect) const
+	{
+		return sect >= 0 && sect < (int)startForLine.Size() && startForLine[sect] >= 0;
+	}
 
 public:
 	void Clear()
@@ -49,9 +57,14 @@ public:
 	bool SectorHasTag(int sector, int tag) const;
 	bool SectorHasTag(const sector_t *sector, int tag) const;
 
-	bool LineHasID(int line, int id);
+	// [rc4l] Pulled forward from uzdoom@94b7ef72ca for fua_find_lines' dump, which printed line_t::id.
+	int GetFirstLineID(const line_t *line) const;
+	bool LineHasID(int line, int id) const;
+	bool LineHasID(const line_t *line, int id) const;
+
 	void HashTags();
 	void AddSectorTag(int sector, int tag);
+	void AddLineID(int line, int tag);
 	void RemoveSectorTags(int sect);
 };
 
@@ -99,7 +112,7 @@ public:
 	FLineIdIterator(int id)
 	{
 		searchtag = id;
-		start = lines[(unsigned) id % (unsigned) numlines].firstid;
+		start = tagManager.IDHashFirst[((unsigned int)id) % FTagManager::TAG_HASH_SIZE];
 	}
 
 	int Next();

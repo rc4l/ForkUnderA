@@ -183,7 +183,8 @@ int GetRevisionNumber();
 // APlayerPawn::Serialize.
 // [rc4l] 4530: sectors no longer save their tag, which the tag manager rebuilds from the map (zandronum@a17262422dfc, its 4523);
 // older saves skip it in P_SerializeWorld.
-#define SAVEVER 4530
+// [rc4l] 4531: lines no longer save their ID either (zandronum@020ebf903625, also its 4523); older saves skip it in P_SerializeWorld.
+#define SAVEVER 4531
 
 
 #define SAVEVERSTRINGIFY2(x) #x

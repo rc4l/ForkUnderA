@@ -515,8 +515,14 @@ void P_SerializeWorld (FArchive &arc)
 		arc << li->flags
 			<< li->activation
 			<< li->special
-			<< li->Alpha
-			<< li->id;
+			<< li->Alpha;
+
+		// [rc4l] Ported from zandronum@020ebf903625, whose 4523 is our 4531: line IDs live in the tag manager now, rebuilt from the map.
+		if (SaveVersion < 4531)
+		{
+			int id;
+			arc << id;
+		}
 		if (P_IsACSSpecial(li->special))
 		{
 			P_SerializeACSScriptNumber(arc, li->args[0], false);
