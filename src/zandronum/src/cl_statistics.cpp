@@ -247,10 +247,10 @@ void CLIENTSTATISTICS_AddToMissingPacketsRequested( unsigned int Num )
 
 ADD_STAT( nettraffic )
 {
-	FString	Out;
+	FString out;
 
 	// [KI] Ported from zandronum@1a03a82d780ac7923770605aa631865c04076240 at zandronum@2a65e4bcf494a3bde63a18f006ece9154d604e19's one-line-per-statistic layout.
-	Out.Format( "In:   %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nOut:  %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nLoss: %5u/%5u",
+	out.Format( "In:   %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nOut:  %5u/%5u/%5u (comp: %.1f%%, zstd: %.1f%%)\nLoss: %5u/%5u",
 		g_bytesReceivedStatTracker.getValueThisTick( ),
 		g_bytesReceivedStatTracker.getValueLastSecond( ),
 		g_bytesReceivedStatTracker.getMaxValuePerSecond( ),
@@ -264,5 +264,5 @@ ADD_STAT( nettraffic )
 		g_missingPacketsRequestedStatTracker.getValueLastSecond( ),
 		g_missingPacketsRequestedStatTracker.getMaxValuePerSecond( ));
 
-	return ( Out );
+	return out;
 }
