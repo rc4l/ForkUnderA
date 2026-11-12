@@ -102,6 +102,7 @@
 #include "features/net-session/computation/floodcheck_compute.h"   // [rc4l] ComputeTimeInstancesFlood
 #include "computation/acsuserinfo_compute.h"   // [rc4l] ComputeSendsUserinfoCvar, ComputeUserinfoMayKick
 #include "computation/statuschange_compute.h"   // [rc4l] ComputeMoveClearsStatuses
+#include "computation/settingtext_compute.h"   // [rc4l] ComputeFloatSettingText
 #include "network.h"
 #include "possession.h"
 #include "s_sndseq.h"
@@ -4736,10 +4737,8 @@ void SERVER_SettingChanged( FBaseCVar &cvar, bool bUpdateConsole, int maxDecimal
 	switch ( cvar.GetRealType( ))
 	{
 		case CVAR_Float:
-			if ( maxDecimals <= 0 )
-				result.Format( "%f", cvar.GetGenericRep( CVAR_Float ).Float );
-			else
-				result.Format( "%.*f", maxDecimals, cvar.GetGenericRep( CVAR_Float ).Float );
+			// [rc4l] Adapted from zandronum@ad1ae23c5589ca4a516a8219a18326000284854a: infinity and NaN by name, through ComputeFloatSettingText.
+			result = zx::ComputeFloatSettingText( cvar.GetGenericRep( CVAR_Float ).Float, maxDecimals ).c_str( );
 			break;
 
 		case CVAR_String:
