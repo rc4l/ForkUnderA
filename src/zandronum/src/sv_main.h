@@ -463,6 +463,9 @@ struct CLIENT_s
 	// Last tick we processed a movement command.
 	LONG			lLastMoveTickProcess;
 
+	// [AK] The last tick the client's statuses changed via CLC_SETSTATUS.
+	int				lastStatusChangeTick;
+
 	// [AK] The network index the client sent with their last weapon select command.
 	USHORT			usLastWeaponNetworkIndex;
 
