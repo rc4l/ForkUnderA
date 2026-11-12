@@ -2340,6 +2340,8 @@ static void botcmd_Respawn( CSkullBot *pBot )
 //
 static void botcmd_TryToJoinGame( CSkullBot *pBot )
 {
+	const unsigned int playerIndex = static_cast<unsigned>( pBot->GetPlayer( ) - players );
+
 	// Can't rejoin game if he's not spectating!
 	if ( pBot->GetPlayer( )->bSpectating == false )
 		return;
@@ -2349,10 +2351,12 @@ static void botcmd_TryToJoinGame( CSkullBot *pBot )
 		return;
 
 	// [BB] If players aren't allowed to join at the moment, just put the bot in line.
-	if ( GAMEMODE_PreventPlayersFromJoining() )
+	// [AK] Also put them in line if the result of GAMEEVENT_PLAYERJOINS is zero.
+	// [rc4l] Ported from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: a bot's join asks the event too.
+	if (( GAMEMODE_PreventPlayersFromJoining( )) || ( GAMEMODE_HandlePlayerJoinsEvent( playerIndex, teams.Size( )) == false ))
 	{
 		// [BB] Don't chose the team before the bot actually joins.
-		JOINQUEUE_AddPlayer( pBot->GetPlayer( ) - players, teams.Size() );
+		JOINQUEUE_AddPlayer( playerIndex, teams.Size( ));
 		return;
 	}
 

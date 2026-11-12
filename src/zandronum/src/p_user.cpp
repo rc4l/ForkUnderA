@@ -3663,7 +3663,9 @@ void PLAYER_JoinGameFromSpectators( int iChar )
 		return;
 
 	// [BB] If players aren't allowed to join at the moment, just put the consoleplayer in line.
-	if ( GAMEMODE_PreventPlayersFromJoining() )
+	// [AK] Also put them in line if the result of GAMEEVENT_PLAYERJOINS is zero.
+	// [rc4l] Ported from zandronum@96f065639407d151b0b82031f636c49cbbe03e3c: an offline join asks the event too.
+	if (( GAMEMODE_PreventPlayersFromJoining( )) || ( GAMEMODE_HandlePlayerJoinsEvent( consoleplayer, teams.Size( )) == false ))
 	{
 		JOINQUEUE_AddConsolePlayer ( teams.Size( ) );
 		return;
