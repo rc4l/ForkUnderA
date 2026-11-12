@@ -1308,7 +1308,8 @@ ULONG TEAM_GetAssistPlayer( ULONG ulTeamIdx )
 	if ( TEAM_CheckIfValid( ulTeamIdx ) == false )
 		return ( MAXPLAYERS );
 
-	return ( teams[ulTeamIdx].g_ulAssistPlayer );
+	// [rc4l] Ported from zandronum@4241193f23413533a632fed4c05efd8c9be559ab: assists don't apply to Skulltag without sv_requireskulltoscore, checked when read so one recorded before the cvar changed is not given.
+	return ( zx::ComputeAssistPlayer( teams[ulTeamIdx].g_ulAssistPlayer, MAXPLAYERS, skulltag, sv_requireskulltoscore ));
 }
 
 //*****************************************************************************
@@ -1318,8 +1319,7 @@ void TEAM_SetAssistPlayer( ULONG ulTeamIdx, ULONG ulPlayer )
 	if (( TEAM_CheckIfValid( ulTeamIdx ) == false ) || ( ulPlayer > MAXPLAYERS ))
 		return;
 
-	// [rc4l] Adapted from zandronum@00538ee632fb3600ad00aad4ed454f1be2b1e76a: refusing the whole call also refused the reset to nobody, leaving an unset assister.
-	teams[ulTeamIdx].g_ulAssistPlayer = zx::ComputeAssistPlayer( ulPlayer, MAXPLAYERS, skulltag, sv_requireskulltoscore );
+	teams[ulTeamIdx].g_ulAssistPlayer = ulPlayer;
 }
 
 //*****************************************************************************

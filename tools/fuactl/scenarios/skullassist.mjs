@@ -1,4 +1,4 @@
-// [rc4l] Skulltag's assist under sv_requireskulltoscore 0 (zandronum@00538ee632fb): exit 0 when returning your skull while carrying the enemy's earns no assist with the cvar off, and still does with it on.
+// [rc4l] Skulltag's assist under sv_requireskulltoscore 0 (zandronum@00538ee632fb, zandronum@4241193f2341): exit 0 when returning your skull while carrying the enemy's earns no assist with the cvar off, even one recorded before it was turned off, and still does with it on.
 //
 // usage:  node scenarios/skullassist.mjs
 import { UdmfMap, wad, mapLumps, pk3, teamInfo } from "../src/udmf.mjs";
@@ -45,10 +45,11 @@ export function judgeLog(log, want) {
 }
 
 const SKULLTAG = { skulltag: 1, sv_cheats: 1 };
-// [rc4l] The cvar on keeps the assist for player 0, off it goes to nobody.
+// [rc4l] The cvar on keeps the assist for player 0, off it goes to nobody, and turned off after the return it goes to nobody too.
 export const SIDES = [
   { name: "require", launchCvars: { ...SKULLTAG, sv_requireskulltoscore: 1 }, want: 0 },
   { name: "free", launchCvars: { ...SKULLTAG, sv_requireskulltoscore: 0 }, want: -1 },
+  { name: "toggled", launchCvars: { ...SKULLTAG, sv_requireskulltoscore: 1 }, turnOff: true, want: -1 },
 ];
 
 export async function judgeLaunch(c, inst, label) {
@@ -62,6 +63,10 @@ export async function judgeLaunch(c, inst, label) {
   // [rc4l] A given skull is dropped, so giving Blue its own returns it.
   await cap.exec(c, "give BlueSkullST");
   await cap.waitTics(c, 5);
+  if (side.turnOff) {
+    const now = cap.echoedCvar(await cap.exec(c, "sv_requireskulltoscore 0; sv_requireskulltoscore"), "sv_requireskulltoscore");
+    if (now !== "false") return { line: `FAIL ${label}: sv_requireskulltoscore read back ${now}, not false`, failed: 1 };
+  }
   const faults = judgeLog(await cap.exec(c, "puke 1", { quietMs: 300 }), side.want);
   return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: carrying Red's skull and returning Blue's leaves Blue's assist with ${side.want}`, failed: faults.length ? 1 : 0 };
 }

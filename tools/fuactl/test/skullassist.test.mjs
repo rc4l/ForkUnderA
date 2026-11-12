@@ -16,8 +16,8 @@ test("the script reads Red's carrier then Blue's assister", () => {
   assert.equal(code.filter((op) => op === ACSF.GetTeamProperty).length, 2);
 });
 
-test("the cvar's two sides want player 0 and nobody, and the pk3 holds both team starts", () => {
-  assert.deepEqual(SIDES.map((s) => [s.launchCvars.sv_requireskulltoscore, s.want]), [[1, 0], [0, -1]]);
+test("the cvar on wants player 0, off or turned off after the return wants nobody, and the pk3 holds both team starts", () => {
+  assert.deepEqual(SIDES.map((s) => [s.launchCvars.sv_requireskulltoscore, !!s.turnOff, s.want]), [[1, false, 0], [0, false, -1], [1, true, -1]]);
   assert.ok(TEAMINFO.includes(`PlayerStartThingNumber ${TEAM_STARTS.Blue}`) && TEAMINFO.includes(`PlayerStartThingNumber ${TEAM_STARTS.Red}`));
   const bytes = buildSkullAssistPk3().toString("latin1");
   for (const n of ["botinfo.txt", "teaminfo.txt", `type = ${TEAM_STARTS.Blue};`, `type = ${TEAM_STARTS.Red};`]) assert.ok(bytes.includes(n), n);
