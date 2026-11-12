@@ -43,9 +43,10 @@ export function commentIssues(added) {
     const start = `${marker} [rc4l]`;
     if (!text.startsWith(start)) continue;
     if (sentenceCount(text.slice(start.length)) > 1) issues.push({ ...a, why: "more than one sentence" });
-    // [rc4l] The comment lines after it up to the next [rc4l] comment or the first line of code.
+    // [rc4l] The comment lines after it up to the next attributed comment (ours or an upstream author's like [AK]), a banner's rule line or the first line of code.
+    const ends = (t) => t.startsWith(`${marker} [`) || /^\S+[=*-]{8,}$/.test(t);
     const block = [];
-    for (let n = a.line + 1, next; (next = at.get(`${a.file}:${n}`)) && next.text.trim().startsWith(marker) && !next.text.trim().startsWith(start); n++) block.push(next.text.trim());
+    for (let n = a.line + 1, next; (next = at.get(`${a.file}:${n}`)) && next.text.trim().startsWith(marker) && !ends(next.text.trim()); n++) block.push(next.text.trim());
     if (block.length && block[0] !== marker) issues.push({ ...a, why: "runs onto the next line" });
     else if (block.some((t) => t !== marker && /[.!?](\s|$)/.test(t))) issues.push({ ...a, why: "runs on past a blank comment line" });
   }
