@@ -96,7 +96,8 @@
 // CVARs
 //
 //==========================================================================
-CVAR(Bool, gl_texture, true, 0)
+// [rc4l] A dev-mode tool, held at its default for clients without cheats, where zandronum@2849267e9bef forces it on for every client.
+CVAR(Bool, gl_texture, true, CVAR_FUA_DEV_MODE)
 CVAR(Bool, gl_no_skyclear, false, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 // [BB] Don't allow this in release builds.
 CVAR(Float, gl_mask_threshold, 0.5f,CVAR_ARCHIVE|CVAR_GLOBALCONFIG|CVAR_DEBUGONLY)
