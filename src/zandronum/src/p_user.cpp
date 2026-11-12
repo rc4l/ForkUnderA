@@ -4131,7 +4131,9 @@ void P_PlayerThink (player_t *player)
 				}
 			}
 		}
-		if (player->centering)
+		// [AK] Don't try centering the view while predicting.
+		// [rc4l] Ported from zandronum@e8b7e77c2fe660682b878ee30a1c776930db8389: a prediction no longer runs, and ends, the centering.
+		if (player->centering && CLIENT_PREDICT_IsPredicting() == false)
 		{
 			if (abs(player->mo->pitch) > 2*ANGLE_1)
 			{
