@@ -8,7 +8,7 @@
 
 namespace zx {
 
-// [rc4l] Ported from zandronum@465e1c524db5cbbfdc2ae10b8e17fdcb41fe43e5: a title graphic of a whole 320x200 screen (Eviternity's) would push the board off the bottom, so it starts 32 clean pixels down instead; titleHeight is negative with no graphic.
+// [rc4l] Ported from zandronum@465e1c524db562e2d8fa92bd3acca091f6fba03a: a title graphic of a whole 320x200 screen (Eviternity's) would push the board off the bottom, so it starts 32 clean pixels down instead; titleHeight is negative with no graphic.
 int ComputeScoreboardTop(int minYPos, int cleanYfac, int titleHeight);
 
 } // namespace zx
