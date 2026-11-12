@@ -1829,7 +1829,7 @@ d0df4c1744a8b30c147e82b82e1f5a5f27cefc2d	2015-06-07T18:27:20Z	Upgraded the porta
 76c401a41ec655e83f0b375b1c61787fa8b13446	2015-06-18T08:20:04Z	- added 'nopushwindowcheck' for Hexen's MAP30 which abuses a glitch with a 'projectile impact' line on a two-sided wall.	pending		/
 ffa77ff7a623aaacd0a65054a78f8a92bbc7b3a7	2015-06-18T08:20:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 85449a6b8a330b48dfa088a93f4242987ade19fd	2015-06-21T11:04:47Z	- fixed: A_BFGSpray checked the spray actor's class for MTHRUSPECIES, not the actual shooter.	pending		/
-8670b7ecf79a91cd4d64025bb11393b8b931afb1	2015-06-25T00:53:46Z	Use puff decal with MF7_FORCEDECAL	pending		/
+8670b7ecf79a91cd4d64025bb11393b8b931afb1	2015-06-25T00:53:46Z	Use puff decal with MF7_FORCEDECAL	adapted	twin zandronum@deffd2fbd: ours-wins: the FORCEDECAL rule is ComputeMarksWithPuff and the mark goes through decals MarkShot with the puff as its decal source; scenario railforcedecal	079fe600
 2a69ae2a434e00c2c5543ecd9b37dd3b5cb04aba	2015-06-25T01:57:36Z	Change all float calcs in rails to doubles	pending		/
 f0b73b30c098c06c36d15602e647347a2457ddc7	2015-06-25T06:57:03Z	Merge pull request #341 from Edward850/railfix	pending		/
 bbc3173629c8b5eb5b79474377f9f79a72ebb26b	2015-06-25T13:47:37Z	yep	pending		/
@@ -2349,7 +2349,7 @@ f9574a98fde94b2c7e32145a142a048d351d0a2c	2016-01-13T23:25:24Z	Fix Timidity's DLS
 629eaa35a32c10ff77a046cabde88a9edd152d51	2016-01-14T02:26:15Z	- Fixed: A_Fade* could destroy live player bodies because it was calling the Destroy() function directly instead of going through P_RemoveThing.	pending		/
 6a87c6cd19051ef3a3d454f2ab808feb028ba343	2016-01-14T05:49:57Z	- Fixed usage of uninitialized value in skybox rendering.	pending		/
 722ef0271916c6646d7fff8651a6e8baed3d3d12	2016-01-14T08:16:39Z	Merge pull request #473 from MajorCooke/FadeFix	pending		/
-dd9e7560c4b16b26c8f7bbf2ba72a51c867f46ba	2016-01-14T17:21:08Z	Added support for puffs to spawn on floors and ceilings if ALWAYSPUFF is used.	pending		/
+dd9e7560c4b16b26c8f7bbf2ba72a51c867f46ba	2016-01-14T17:21:08Z	Added support for puffs to spawn on floors and ceilings if ALWAYSPUFF is used.	ported	twin zandronum@5b00696ac: present since bd71dbb6, taken from uzdoom HEAD: P_RailAttack spawns ALWAYSPUFF puffs on floors and ceilings	bd71dbb6
 16781e47aea55d46abe022a9ccb7134923d80351	2016-01-15T02:41:09Z	Use a 64k stream buffer for all streams, not just net streams	pending		/
 867b7767ef78f8553fdb0afa7378601562c18d3c	2016-01-15T11:56:27Z	- ignore COMPAT_POINTONSIDE in a few places where the side effects of the old P_PointOn*Side functions are either not needed or problematic:	pending		/
 48232f548df77e6983541fdef6493879b0b6a6c0	2016-01-15T11:56:56Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -2370,8 +2370,8 @@ afed5e62ebe7b91970d6805a779ffdd77433fbdc	2016-01-16T11:22:27Z	Fixed intercept ch
 7740a277d3c5c76b8071207ac9bef0ff4623be5f	2016-01-16T12:15:52Z	Merge pull request #478 from alexey-lysiuk/fix_path_traverse	pending		/
 0e645ad173e21d2a7dbe109af66d98dfd2ca20ff	2016-01-16T15:30:53Z	- added a 'non-modify' mode to P_TeleportMove and let A_Respawn use that, rather than letting P_TeleportMove muck around with the actor properties and then have A_Respawn only partially and haphazardly restoring them afterward.	pending		/
 e6b6fd799df51537032ad493602ca680b93924f0	2016-01-16T15:31:20Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
-e4a74e91fcd34f9ad0baf59e43d228529d2ddd48	2016-01-16T22:33:19Z	- Puffs should not spawn on floors or ceilings with sky flats without the SKYEXPLODE flag. - Added line horizon check for puffs as well.	pending		/
-421dcacb94a95f3f5468d6f54e11f1829a88953a	2016-01-16T22:36:42Z	Added NULL check to lines.	pending		/
+e4a74e91fcd34f9ad0baf59e43d228529d2ddd48	2016-01-16T22:33:19Z	- Puffs should not spawn on floors or ceilings with sky flats without the SKYEXPLODE flag. - Added line horizon check for puffs as well.	adapted	twin zandronum@2e629a9b7: ours-wins: the sky rule is ComputeRailPuffInSky, which also takes a horizon line as sky; scenario railskypuff	ecbf69ba
+421dcacb94a95f3f5468d6f54e11f1829a88953a	2016-01-16T22:36:42Z	Added NULL check to lines.	ported	twin zandronum@26d900809: pulled forward into ecbf69ba: the line NULL check sits in ComputeRailPuffInSky's caller	ecbf69ba
 724475823c5e9f31353ed682175b831706b04348	2016-01-16T23:14:59Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 de80a8529da42ecae98b0ff20e7a39ad2377a20e	2016-01-16T23:18:44Z	Merge pull request #479 from MajorCooke/skyfix	pending		/
 bfc116b2a4a64662b8c07eaf0053d1b3c7f9ae8b	2016-01-17T09:51:46Z	Fixed exit crash on legacy OS X	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at f7e67f0. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent)	f7e67f0
