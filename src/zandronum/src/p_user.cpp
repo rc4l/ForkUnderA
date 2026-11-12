@@ -3269,7 +3269,9 @@ void P_MovePlayer (player_t *player)
 		if (player->turnticks)
 		{
 			player->turnticks--;
-			mo->angle += (ANGLE_180 / TURN180_TICKS);
+			// [AK] Use AActor::SetAngle to interpolate angle changes. This is
+			// interpolated in later versions of GZDoom, but handled differently.
+			mo->SetAngle(mo->angle + (ANGLE_180 / TURN180_TICKS), true);
 		}
 		else
 		{
@@ -4147,13 +4149,15 @@ void P_PlayerThink (player_t *player)
 		// [rc4l] Ported from zandronum@e8b7e77c2fe660682b878ee30a1c776930db8389: a prediction no longer runs, and ends, the centering.
 		if (player->centering && CLIENT_PREDICT_IsPredicting() == false)
 		{
+			// [AK] Use AActor::SetPitch to interpolate pitch changes. This is
+			// interpolated in later versions of GZDoom, but handled differently.
 			if (abs(player->mo->pitch) > 2*ANGLE_1)
 			{
-				player->mo->pitch = FixedMul(player->mo->pitch, FRACUNIT*2/3);
+				player->mo->SetPitch((int)FixedMul(player->mo->pitch, FRACUNIT*2/3), true);
 			}
 			else
 			{
-				player->mo->pitch = 0;
+				player->mo->SetPitch(0, true);
 				player->centering = false;
 				if (player - players == consoleplayer)
 				{
