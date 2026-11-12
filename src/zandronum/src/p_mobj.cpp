@@ -108,6 +108,7 @@
 #include "features/compat-oldnodelay/computation/oldnodelay_compute.h" // [Doruk-Aksoy] compat_fua_oldnodelay's tics
 #include "features/bounce/computation/bounce_compute.h" // [Doruk-Aksoy] how bounces end
 #include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
+#include "computation/rejumpdelay_compute.h" // [rc4l] ComputeLandingDelaysJump, ComputeRisingDelaysJump
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -3236,6 +3237,9 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 		// [AK] Spectators without physical restrictions are allowed to pass through the floor.
 		if (mo->z <= mo->floorz && P_IsSpectatorUnrestricted(mo) == false)
 		{
+			// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a pawn's RejumpDelay, -1 for anything else.
+			const int rejumpDelay = mo->IsKindOf(RUNTIME_CLASS(APlayerPawn)) ? static_cast<APlayerPawn *>(mo)->RejumpDelay : -1;
+
 			// [BC] We need to do the sky check first, otherwise bouncy things
 			// can potentially bounce off the sky (such as grenades).
 			// [BB] But only do this for bouncy things!
@@ -3346,10 +3350,11 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 					// CheckJumpQuake sees the grounded tic it overwrote the negative sentinel that
 					// the re-arm keys off -- so Player.JumpDelay was dead for the main jump and
 					// every Quake pawn silently got 7 tics no matter what it authored.
+					// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a RejumpDelay sets the wait on every landing.
 					if ( zx::quakemove::UsesQuakeMovement( mo ) == false &&
-						( ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) || mo->player->jumpTics < 0 || mo->velz < minvel) )
+						zx::ComputeLandingDelaysJump( rejumpDelay, ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0, mo->player->jumpTics, mo->velz < minvel ))
 					{ // delay any jumping for a short while
-						mo->player->jumpTics = 7;
+						mo->player->jumpTics = zx::ComputeLandingJumpTics( rejumpDelay );
 
 						// [Leo] Inform the client of the jumpTics change.
 						if ( NETWORK_GetState() == NETSTATE_SERVER )
@@ -3364,6 +3369,11 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 					}
 				}
 				mo->velz = 0;
+			}
+			// [rc4l] Adapted from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: rising on the floor, as up a step, waits too, for a pawn with a player.
+			else if ( zx::ComputeRisingDelaysJump( mo->player != nullptr, rejumpDelay, mo->velz > 0 ))
+			{
+				mo->player->jumpTics = zx::ComputeRisingJumpTics( rejumpDelay );
 			}
 			if (mo->flags & MF_SKULLFLY)
 			{ // The skull slammed into something

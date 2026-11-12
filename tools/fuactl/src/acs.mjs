@@ -11,7 +11,7 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LT
   GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORX: 196, GETACTORY: 197, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SpawnSpotForced: 20, SetActorVelocity: 23, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
+export const ACSF = { SpawnSpotForced: 20, CheckActorProperty: 22, SetActorVelocity: 23, CheckActorClass: 27, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 

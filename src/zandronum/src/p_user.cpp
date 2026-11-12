@@ -90,6 +90,7 @@
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
 #include "computation/playerskin_compute.h"
 #include "computation/startitem_compute.h"   // [rc4l] whether a start item morphed its player
+#include "computation/rejumpdelay_compute.h"   // [rc4l] ComputeTakeoffJumpTics
 
 static FRandom pr_skullpop ("SkullPop");
 
@@ -799,6 +800,15 @@ void APlayerPawn::Serialize (FArchive &arc)
 		// [rc4l] AActor::GetDefault() is typed AActor*, so downcast to reach the pawn-only field.
 		// Anything reaching APlayerPawn::Serialize has an APlayerPawn class default object.
 		MvType = static_cast<APlayerPawn *>( GetDefault() )->MvType;
+	}
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which serializes it unguarded; older saves take the class default.
+	if (SaveVersion >= 4528)
+	{
+		arc << RejumpDelay;
+	}
+	else
+	{
+		RejumpDelay = static_cast<APlayerPawn *>( GetDefault() )->RejumpDelay;
 	}
 
 	// [rc4l] Live movement state stays deliberately unserialized (it is prediction-saved and
@@ -3206,10 +3216,8 @@ static void P_PlayerJump (player_t *player, ticcmd_t *cmd)
 
 			// Set base jump ticks.
 			// [BB] In ZDoom revision 2970 changed the jumping behavior.
-			if ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING )
-				ulJumpTicks = 18 * TICRATE / 35;
-			else
-				ulJumpTicks = -1;
+			// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a RejumpDelay leaves the wait to the landing.
+			ulJumpTicks = zx::ComputeTakeoffJumpTics( player->mo->RejumpDelay, ( zacompatflags & ZACOMPATF_SKULLTAG_JUMPING ) != 0, TICRATE );
 
 			// [BB] We may not play the sound while predicting, otherwise it'll stutter.
 			if ( CLIENT_PREDICT_IsPredicting( ) == false )

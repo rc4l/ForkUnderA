@@ -447,6 +447,9 @@ enum
 	APROP_IsCrouchSliding	= 53,
 	APROP_IsWallClimbing	= 54,
 	APROP_IsAirWallRunning	= 55,
+
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: Zandronum's own actor properties, numbered as theirs.
+	APROP_RejumpDelay	= 150,
 };
 
 // [Dusk] Enumeration for GetTeamProperty

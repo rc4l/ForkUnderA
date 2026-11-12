@@ -2050,6 +2050,12 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 			value = static_cast<APlayerPawn *>( pActor )->MvType;
 		break;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace.
+	case APROP_RejumpDelay:
+		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			value = static_cast<APlayerPawn *>( pActor )->RejumpDelay;
+		break;
+
 	default:
 		return;
 	}

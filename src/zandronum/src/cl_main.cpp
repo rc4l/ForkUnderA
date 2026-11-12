@@ -5938,6 +5938,12 @@ void ServerCommands::SetThingProperty::Execute()
 			static_cast<APlayerPawn *>( actor )->MvType = value;
 		break;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace.
+	case APROP_RejumpDelay:
+		if ( actor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
+			static_cast<APlayerPawn *>( actor )->RejumpDelay = value;
+		break;
+
 	default:
 		CLIENT_PrintWarning( "client_SetThingProperty: Unknown property, %d!\n", static_cast<unsigned int> (property) );
 		return;

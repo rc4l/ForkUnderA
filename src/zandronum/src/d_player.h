@@ -291,6 +291,9 @@ public:
 	fixed_t		AngleDelta;
 	fixed_t		PitchDelta;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: tics from landing until the player may jump again, -1 for the engine's own rules.
+	int			RejumpDelay;
+
 	bool UpdateWaterLevel (fixed_t oldz, bool splash);
 	bool ResetAirSupply (bool playgasp = true);
 

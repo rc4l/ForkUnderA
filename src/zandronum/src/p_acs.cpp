@@ -114,6 +114,7 @@
 #include "computation/checkscript_compute.h"   // [rc4l] ComputeCheckScriptByName, ComputeCheckScriptNumber
 #include "computation/acsautomap_compute.h"   // [rc4l] ComputeAutomapStatus
 #include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
+#include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -4831,6 +4832,20 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 		}
 		break;
 
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: sent through net-replication only when it changed.
+	case APROP_RejumpDelay:
+		if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
+		{
+			APlayerPawn *playerActor = static_cast<APlayerPawn *>(actor);
+			oldValue = playerActor->RejumpDelay;
+
+			playerActor->RejumpDelay = value;
+
+			if ( oldValue != playerActor->RejumpDelay )
+				zx::netreplication::SendThingProperty( actor, APROP_RejumpDelay );
+		}
+		break;
+
 	case APROP_ChaseGoal:
 		if (value)
 			actor->flags5 |= MF5_CHASEGOAL;
@@ -5211,6 +5226,10 @@ int DLevelScript::GetActorProperty (int tid, int property)
 								&& static_cast<APlayerPawn *>(actor)->isWallClimbing;
 	case APROP_IsAirWallRunning:return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
 								&& static_cast<APlayerPawn *>(actor)->isAirWallRunning;
+	// [rc4l] Ported from zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace: a non-pawn reports 0.
+	case APROP_RejumpDelay:	return actor->IsKindOf (RUNTIME_CLASS (APlayerPawn))
+								? static_cast<APlayerPawn *>(actor)->RejumpDelay
+								: 0;
 	case APROP_ReactionTime:return actor->reactiontime;
 	case APROP_MeleeRange:	return (int)(actor->meleerange);
 	case APROP_ViewHeight:	if (actor->IsKindOf (RUNTIME_CLASS (APlayerPawn)))
@@ -5294,6 +5313,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_IsCrouchSliding:
 		case APROP_IsWallClimbing:
 		case APROP_IsAirWallRunning:
+		case APROP_RejumpDelay:	// [rc4l] upstream left it out, so CheckActorProperty always said no
 			return (GetActorProperty(tid, property) == value);
 
 		// Boolean values need to compare to a binary version of value

@@ -44,6 +44,11 @@ void SendFloorClip(AActor *actor)
 	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingFloorClip(actor);
 }
 
+void SendThingProperty(AActor *actor, int property)
+{
+	if (actor != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingProperty(actor, property);
+}
+
 // [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: the send P_SpawnPuff made, on its own so a rail sends its puff once the puff survived the sky.
 void SendPuff(AActor *puff, AActor *source, unsigned state, int flags)
 {
