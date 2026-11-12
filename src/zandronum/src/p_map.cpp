@@ -5524,6 +5524,14 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	}
 }
 
+//==========================================================================
+//
+// [BB] P_RailAttackWithPossibleSpread
+//
+// Shoot a railgun with spread applied if necessary.
+//
+//==========================================================================
+
 void P_RailAttackWithPossibleSpread (AActor *source, int damage, int offset_xy, fixed_t offset_z, int color1, int color2, float maxdiff, int railflags, const PClass *puffclass, angle_t angleoffset, angle_t pitchoffset, fixed_t distance, int duration, float sparsity, float drift, const PClass *spawnclass)
 {
 	// [BB] Sanity check.
