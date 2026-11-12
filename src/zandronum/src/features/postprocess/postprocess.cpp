@@ -3,6 +3,7 @@
 
 #include "features/postprocess/postprocess.h"
 #include "features/handoff/effects.h"   // [Doruk-Aksoy] QueuedBesideTic
+#include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] kTextureUniformSlots
 
 #include "doomtype.h"
 #include "doomstat.h"
@@ -13,7 +14,9 @@
 #include "sc_man.h"
 #include "w_wad.h"
 
+#include <cstddef>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 
 // [Doruk-Aksoy] Ported from uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: off skips every custom post-process shader.
@@ -24,6 +27,9 @@ namespace zx { namespace postprocess {
 namespace {
 
 std::vector<ShaderDecl> g_shaders;
+// [Doruk-Aksoy] Texture shaders' fua_Uniform sets by fua_Name, each uniform at its shared vec4's offset.
+std::vector<ShaderDecl> g_textureSets;
+int g_textureUniforms = 0;
 unsigned g_generation = 0;
 std::string g_gameDefsLump;
 DrawnShadersSource g_drawnSource = NULL;
@@ -145,6 +151,13 @@ void ApplyConsoleChange(intptr_t change, intptr_t)
 		const bool now = ComputeEffectiveEnabled(level.fua_postShaders, d.name, -1, d.enabled, level.maptime).enabled;
 		ComputeSetShaderEnabled(level.fua_postShaders, d.name, -1, ComputeConsoleEnable(c->value, now), level.maptime, 0);
 	}
+	// [Doruk-Aksoy] A texture shader set has uniforms to set but nothing to turn on or off.
+	for (const ShaderDecl &d : g_textureSets)
+	{
+		if (d.name != c->shader || !c->setUniform) continue;
+		found = true;
+		ComputeSetShaderUniform(level.fua_postShaders, d.name, -1, c->uniform, c->values);
+	}
 	if (!found) Printf("No shader named '%s' found\n", c->shader.c_str());
 	else if (c->setUniform) Printf("Changed uniforms of %s named %s\n", c->shader.c_str(), c->uniform.c_str());
 	else if (c->value != -1) Printf("Changed active state of all instances of %s to %s\n", c->shader.c_str(), c->value ? "On" : "Off");
@@ -170,11 +183,104 @@ void CurrentValues(const ShaderDecl &d, size_t i, double out[4])
 	for (int k = 0; k < 4; k++) out[k] = d.defaults[i][k];
 }
 
+// [Doruk-Aksoy] Each of d's uniforms with its current values into its place in block.
+void WriteUniforms(const ShaderDecl &d, unsigned char *block)
+{
+	for (size_t u = 0; u < d.uniforms.size(); u++)
+	{
+		double values[4];
+		CurrentValues(d, u, values);
+		ComputeWriteUniform(block, d.uniforms[u], values);
+	}
+}
+
+// [Doruk-Aksoy] Each uniform of d by name with its current values, for fua_postshaders.
+std::vector<UniformState> UniformStates(const ShaderDecl &d)
+{
+	std::vector<UniformState> out(d.uniforms.size());
+	for (size_t u = 0; u < d.uniforms.size(); u++)
+	{
+		out[u].name = d.uniforms[u].name;
+		CurrentValues(d, u, out[u].values);
+	}
+	return out;
+}
+
+ShaderDecl *FindTextureSet(const char *name)
+{
+	for (ShaderDecl &d : g_textureSets)
+		if (stricmp(d.name.c_str(), name) == 0) return &d;
+	return NULL;
+}
+
+// [Doruk-Aksoy] A rebuilt texture block (ComputePostProcessDeclarations): its fua_Name, then its fua_Uniform lines.
+void ParseTextureSetStatements(FScanner &sc)
+{
+	std::string set;
+	sc.MustGetToken('{');
+	while (!sc.CheckToken('}'))
+	{
+		sc.MustGetString();
+		if (sc.Compare("fua_name"))
+		{
+			sc.MustGetString();
+			set = sc.String;
+		}
+		else ParseTextureShaderUniform(sc, set);
+	}
+}
+
 } // namespace
+
+void ParseTextureShaderUniform(FScanner &sc, const std::string &set)
+{
+	if (set.empty()) sc.ScriptError("fua_Uniform needs the block's fua_Name before it");
+	sc.MustGetString();
+	const UniformType type = ComputeUniformType(sc.String);
+	if (type == kUniformUndefined) sc.ScriptError("Unrecognized uniform type '%s'", sc.String);
+	sc.MustGetString();
+	const std::string name = sc.String;
+	double values[4] = { 0.0, 0.0, 0.0, 1.0 };
+	FBaseCVar *cvar = NULL;
+	ParseUniformValues(sc, type, set, values, cvar);
+
+	ShaderDecl *d = FindTextureSet(set.c_str());
+	if (d == NULL)
+	{
+		g_textureSets.push_back(ShaderDecl());
+		d = &g_textureSets.back();
+		d->name = set;
+	}
+	bool known = false;
+	for (const UniformField &u : d->uniforms)
+	{
+		if (u.name != name) continue;
+		if (u.type != type) sc.ScriptError("fua_Uniform '%s' of '%s' is declared again as another type", name.c_str(), set.c_str());
+		known = true;
+	}
+	if (!known && g_textureUniforms >= zx::hwshaders::kTextureUniformSlots)
+		sc.ScriptError("Too many fua_Uniform lines: texture shaders share %d", (int)zx::hwshaders::kTextureUniformSlots);
+	AddUniform(*d, name, type, values, cvar);
+	// [Doruk-Aksoy] A new uniform takes the next shared vec4; one declared again keeps its own.
+	if (!known) d->uniforms.back().offset = 16u * (unsigned)g_textureUniforms++;
+	g_generation++;
+}
+
+const ShaderDecl *TextureShaderSet(const char *name) { return FindTextureSet(name); }
+
+bool TextureUniformsDeclared() { return g_textureUniforms > 0; }
+
+void TextureUniformBlock(unsigned char *block)
+{
+	memset(block, 0, 16u * zx::hwshaders::kTextureUniformSlots);
+	for (const ShaderDecl &d : g_textureSets) WriteUniforms(d, block);
+}
 
 void ClearPostProcessShaders(const char *gameDefsLump)
 {
 	g_shaders.clear();
+	g_textureSets.clear();
+	g_textureUniforms = 0;
 	g_generation++;
 	g_gameDefsLump = gameDefsLump != NULL ? gameDefsLump : "";
 }
@@ -246,30 +352,34 @@ void NotePostProcessRenderer(bool backendDraws)
 
 namespace {
 
-// [Doruk-Aksoy] One GLDEFS lump's post-process blocks and those of the lumps it includes, `depth` stopping an include loop.
-void ReadDeclarationsFrom(int lump, int depth)
+// [Doruk-Aksoy] One GLDEFS lump's parts and those of the lumps it includes, each handed to `use`, `depth` stopping an include loop.
+void PartsFrom(int lump, int depth, DefsPartReader use)
 {
 	if (depth > 16) return;
 	FMemLump data = Wads.ReadLump(lump);
 	const std::string text((const char *)data.GetMem(), data.GetSize());
 	for (const DeclarationPart &part : ComputePostProcessDeclarations(text))
 	{
-		if (part.include)
-		{
-			const int included = Wads.CheckNumForFullName(part.text.c_str(), true);
-			if (included >= 0) ReadDeclarationsFrom(included, depth + 1);
-			continue;
-		}
-		FScanner sc;
-		sc.OpenMem(Wads.GetLumpFullName(lump), part.text.c_str(), (int)part.text.size());
-		ParsePostProcessShader(sc);
+		if (!part.include) { use(lump, part); continue; }
+		const int included = Wads.CheckNumForFullName(part.text.c_str(), true);
+		if (included >= 0) PartsFrom(included, depth + 1, use);
 	}
 }
 
-void ReadDeclarationsNamed(const char *name)
+void PartsNamed(const char *name, DefsPartReader use)
 {
 	int lump, last = 0;
-	while ((lump = Wads.FindLump(name, &last)) != -1) ReadDeclarationsFrom(lump, 0);
+	while ((lump = Wads.FindLump(name, &last)) != -1) PartsFrom(lump, 0, use);
+}
+
+// [Doruk-Aksoy] A post-process block or a texture block's fua_ lines; a fua_Material block is features/actormaterials'.
+void ReadPostProcessPart(int lump, const DeclarationPart &part)
+{
+	if (!part.material.empty()) return;
+	FScanner sc;
+	sc.OpenMem(Wads.GetLumpFullName(lump), part.text.c_str(), (int)part.text.size());
+	if (part.texture) ParseTextureSetStatements(sc);
+	else ParsePostProcessShader(sc);
 }
 
 void RereadDeclarations(intptr_t, intptr_t)
@@ -281,29 +391,41 @@ void RereadDeclarations(intptr_t, intptr_t)
 
 } // namespace
 
+void ForEachDefsPart(const char *gameDefsLump, DefsPartReader use)
+{
+	if (gameDefsLump == NULL && !g_gameDefsLump.empty()) gameDefsLump = g_gameDefsLump.c_str();
+	if (gameDefsLump != NULL) PartsNamed(gameDefsLump, use);
+	PartsNamed("GLDEFS", use);
+}
+
 void ReadPostProcessDeclarations(const char *gameDefsLump)
 {
 	ClearPostProcessShaders(gameDefsLump);
-	if (gameDefsLump != NULL) ReadDeclarationsNamed(gameDefsLump);
-	ReadDeclarationsNamed("GLDEFS");
+	ForEachDefsPart(gameDefsLump, &ReadPostProcessPart);
 }
 
 bool PostShaderDeclared(const char *shader, const char *uniform)
 {
-	static std::vector<DeclaredShader> declared;
+	// [Doruk-Aksoy] Texture shader sets count only for a uniform, as they have nothing to turn on.
+	static std::vector<DeclaredShader> declared, withTextures;
 	static unsigned madeFor = ~0u;
 	if (madeFor != g_generation)
 	{
+		const auto add = [](const std::vector<ShaderDecl> &list, std::vector<DeclaredShader> &out) {
+			for (const ShaderDecl &d : list)
+			{
+				DeclaredShader s = { d.name, {} };
+				for (const UniformField &u : d.uniforms) s.uniforms.push_back(u.name);
+				out.push_back(s);
+			}
+		};
 		declared.clear();
-		for (const ShaderDecl &d : g_shaders)
-		{
-			DeclaredShader s = { d.name, {} };
-			for (const UniformField &u : d.uniforms) s.uniforms.push_back(u.name);
-			declared.push_back(s);
-		}
+		add(g_shaders, declared);
+		withTextures = declared;
+		add(g_textureSets, withTextures);
 		madeFor = g_generation;
 	}
-	return ComputeShaderCallDeclared(declared, shader, uniform);
+	return ComputeShaderCallDeclared(uniform[0] != '\0' ? withTextures : declared, shader, uniform);
 }
 
 int PostShaderCount() { return (int)g_shaders.size(); }
@@ -320,18 +442,8 @@ EffectiveEnabled PostShaderEnabledNow(int i)
 
 void PostShaderBlock(int i, unsigned char *block)
 {
-	const ShaderDecl &d = g_shaders[i];
-	const ShaderTable &table = *Drawn().table;
-	memset(block, 0, d.blockSize);
-	for (size_t u = 0; u < d.uniforms.size(); u++)
-	{
-		double values[4];
-		if (const double *set = ComputeEffectiveUniform(table, d.name, consoleplayer, d.uniforms[u].name))
-			memcpy(values, set, sizeof(values));
-		else if (d.cvars[u] != NULL) CvarValues(d.cvars[u], values);
-		else for (int k = 0; k < 4; k++) values[k] = d.defaults[u][k];
-		ComputeWriteUniform(block, d.uniforms[u], values);
-	}
+	memset(block, 0, g_shaders[i].blockSize);
+	WriteUniforms(g_shaders[i], block);
 }
 
 }} // namespace zx::postprocess
@@ -391,16 +503,9 @@ DEV_MODE_CCMD(fua_postshaders)
 	const DrawnShaders drawn = Drawn();
 	Printf("fua_postshaders: %d entries at %d\n", (int)drawn.table->entries.size(), drawn.maptime);
 	for (int i = 0; i < PostShaderCount(); i++)
-	{
-		const ShaderDecl &d = PostShader(i);
-		std::vector<UniformState> uniforms(d.uniforms.size());
-		for (size_t u = 0; u < d.uniforms.size(); u++)
-		{
-			uniforms[u].name = d.uniforms[u].name;
-			CurrentValues(d, u, uniforms[u].values);
-		}
-		Printf("fua_postshaders: %s\n", ComputeShaderStateLine(d.name, PostShaderEnabledNow(i), uniforms).c_str());
-	}
+		Printf("fua_postshaders: %s\n", ComputeShaderStateLine(PostShader(i).name, PostShaderEnabledNow(i), UniformStates(PostShader(i))).c_str());
+	for (const ShaderDecl &d : g_textureSets)
+		Printf("fua_postshaders: %s\n", ComputeTextureSetStateLine(d.name, UniformStates(d)).c_str());
 }
 
 // [Doruk-Aksoy] Reads GLDEFS's post-process declarations again as a dedicated server's null renderer does, so a netgame test checks that path on any build.
@@ -423,9 +528,9 @@ DEV_MODE_CCMD(listuniforms)
 		return;
 	}
 	bool found = false;
-	for (int i = 0; i < PostShaderCount(); i++)
+	for (const std::vector<ShaderDecl> *list : { &g_shaders, &g_textureSets })
+	for (const ShaderDecl &d : *list)
 	{
-		const ShaderDecl &d = PostShader(i);
 		if (d.name != argv[1]) continue;
 		found = true;
 		Printf("Shader '%s' uniforms:\n", argv[1]);

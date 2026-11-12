@@ -192,6 +192,8 @@ struct MeshPiece
 	// [rc4l] How far a scroller has moved the texture since the vertices were baked, added to every u and v by the shader.
 	float         scrollU, scrollV;
 	int           modelMatrix;  // [Doruk-Aksoy] a model surface's model-to-world matrix among the frame's (DynMatrices), which a GLDEFS shader reads as ModelMatrix, or -1
+	int           actorShader;  // [Doruk-Aksoy] the GLDEFS shader of the drawn actor's fua_Material, which it draws with over its texture's, or -1
+	int           actorRow;     // [Doruk-Aksoy] that actor's uniform row plus one (ComputeActorUniformRow), 0 for none
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -223,6 +225,7 @@ struct MeshPiece
 		linkId = -1;
 		plain = false;
 		modelMatrix = -1;
+		actorShader = -1; actorRow = 0;
 		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}
 };

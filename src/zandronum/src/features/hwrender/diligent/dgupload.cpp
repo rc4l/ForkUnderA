@@ -31,6 +31,7 @@ PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool
 	out.animates = AnimationOf(base) >= 0;
 	const void *slotMat = out.animates ? base : p.material;
 	out.mat = (float)MaterialSlotFor(slotMat, translation, inMesh);
+	FillLayerRow((int)out.mat, slotMat, inMesh);
 	// [rc4l] An animated one always takes a brightmap slot, since another frame may have a brightmap where this one has none.
 	const bool bright = out.animates || zx::materials::MaterialHasBrightmap(p.material);
 	out.bright = bright ? (float)MaterialSlotFor(slotMat, kBrightmapTranslation, inMesh) : 0.f;
@@ -72,6 +73,8 @@ void ReserveDynamicSlots()
 		g_keptSlots[i] = PieceSlotSet{ (float)slots[2 * i], (float)slots[2 * i + 1], false };
 		NoteDynamicSlotUse(slots[2 * i], pieces[i].material, pieces[i].translation);
 		if (bright[i]) NoteDynamicSlotUse(slots[2 * i + 1], pieces[i].material, kBrightmapTranslation);
+		// [Doruk-Aksoy] Its GLDEFS layers take their slots in the same reservation, so none gives way while it draws.
+		FillLayerRow(slots[2 * i], pieces[i].material, false);
 	}
 	g_keptGen = gen;
 	g_keptTable = MaterialSlotTableId();
@@ -111,6 +114,9 @@ void FillPieceDataWith(const zx::levelmesh::MeshPiece &p, const PieceSlotSet &sl
 	int warp = 0, userShader = -1;
 	float shaderSpeed = 1.f;
 	zx::materials::MaterialShading(p.material, warp, userShader, shaderSpeed);
+	// [Doruk-Aksoy] An actor's fua_Material draws over its texture's own shader, reading the actor's uniform row.
+	if (p.actorShader >= 0) userShader = p.actorShader;
+	pd.actorRow = (float)p.actorRow;
 	// [rc4l] A warp, or a GLDEFS hardware shader from 3 up, in the slot the shaders read the piece's effect from.
 	pd.warpStyle = (float)zx::hwshaders::ComputePieceShader(zx::hwrender::ComputeWarpStyle(warp), userShader);
 	pd.nx = p.normX; pd.ny = p.normY; pd.nz = p.normZ;

@@ -118,6 +118,7 @@
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 #include "features/telemetry/telemetry.h"
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SerializeLevelShaders
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetLevelInstances
 #include "features/handoff/effects.h"   // [Doruk-Aksoy] Deferred, for the music volume a tic sets
 
 void STAT_StartNewGame(const char *lev);
@@ -2147,6 +2148,7 @@ void G_InitLevelLocals ()
 	// [Doruk-Aksoy] A level starts its post-process shaders from their declarations, the generation moving on so the render copy takes it.
 	level.fua_postShaders.entries.clear();
 	level.fua_postShaders.generation++;
+	zx::actormaterials::ResetLevelInstances();
 	level.teamdamage = teamdamage;
 	level.flags = 0;
 	level.flags2 = 0;

@@ -297,6 +297,39 @@ test("the hardware shader lighting template pairs shaded maps with oracles, fogg
   assert.doesNotMatch(files["decorate.txt"].toString("latin1"), /Bright/);
 });
 
+// [Doruk-Aksoy] Each UZDoom row has its shader and GLDEFS line, odd maps shaded and even ones their oracles, the sprite only in the first pair.
+test("the hardware shader parity template gives each UZDoom row a shaded wall and an oracle", async () => {
+  const { buildHwShaderParityPk3 } = await import("../scenarios/hwshaderparity.mjs");
+  const files = Object.fromEntries(readPk3(buildHwShaderParityPk3()).map((f) => [f.name, f.data]));
+  const gldefs = files["gldefs.txt"].toString("latin1");
+  assert.match(gldefs, /Texture redtex "ZXRED" Texture greentex "ZXGRN"/);
+  assert.match(gldefs, /Define ZXUSEBLUE Define ZXBLUE = "\(220\.0 \/ 255\.0\)"/);
+  assert.match(gldefs, /HardwareShader Sprite "ZXPSA0" \{ Shader "shaders\/sprite\.fp" Texture bluetex "ZXBLU" \}/);
+  assert.match(gldefs, /brightmap texture ZXPTC \{ map ZXHALF \}/);
+  for (const [lump, entry] of [["textures", /ProcessTexel/], ["texcoord", /vec2 GetTexCoord\(\)/], ["setup", /void SetupMaterial/],
+    ["legacy", /Material ProcessMaterial\(\)/], ["newlight", /vec4 ProcessLight\(Material material, vec4 color\)/], ["oldprocess", /vec4 Process\(vec4 color\)/]])
+    assert.match(files[`shaders/${lump}.fp`].toString("latin1"), entry, lump);
+  const text = (n) => lumpsOf(files[`maps/MAP0${n}.wad`])[1].text;
+  assert.match(text(1), /texturemiddle = "ZXPTA";/);
+  assert.match(text(1), /type = 20130;/);
+  assert.match(text(2), /texturemiddle = "ZXORYEL";/);
+  assert.match(text(2), /type = 20131;/);
+  assert.match(text(3), /texturemiddle = "ZXPTE";/);
+  assert.match(text(4), /texturemiddle = "ZXORBLU";/);
+  for (const n of [3, 4]) assert.doesNotMatch(text(n), /type = 2013/);
+  for (const n of [2, 4]) assert.doesNotMatch(text(n), /ZXPT/);
+  // [Doruk-Aksoy] Per wall, sixteen maps whose player faces the wall PER_WALL names.
+  const { PER_WALL } = await import("../scenarios/hwshaderparity.mjs");
+  const walls = Object.fromEntries(readPk3(buildHwShaderParityPk3({ perWall: true })).map((f) => [f.name, f.data]));
+  assert.equal(PER_WALL.length, 16);
+  assert.ok(walls["maps/MAP16.wad"]);
+  const start = (n) => lumpsOf(walls[`maps/MAP${String(n).padStart(2, "0")}.wad`])[1].text.match(/type = 1;[\s\S]*?\}|angle = (\d+);\s*type = 1;/)[0];
+  assert.match(start(2), /angle = 270;/);
+  assert.match(start(4), /angle = 0;/);
+  assert.equal(PER_WALL[5].shaded, false);
+  assert.equal(PER_WALL[8].pair, 1);
+});
+
 test("the sky templates carry what reproduces each fault: a scripted reflective pool, and a court too wide for the sky walls", async () => {
   const { buildSkymirrorWad } = await import("../scenarios/skymirror.mjs");
   const { buildSkyzenithWad } = await import("../scenarios/skyzenith.mjs");

@@ -5,6 +5,7 @@
 
 #include "features/hwshaders/hwshaders.h"   // [rc4l] the GLDEFS shader list
 #include "features/hwshaders/computation/hwshader_compute.h"
+#include "features/actormaterials/computation/actormaterial_compute.h"   // [Doruk-Aksoy] the actor uniform rows' most
 #include "features/hwrender/computation/materialindex_compute.h"
 #include "features/hwrender/computation/bindingkey_compute.h"   // [Doruk-Aksoy] the material bindings by key
 #include "features/hwrender/computation/slotreport_compute.h"   // [Doruk-Aksoy] the slots' working set
@@ -19,6 +20,7 @@
 
 #include <string.h>
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -111,6 +113,17 @@ Diligent::IShaderResourceBinding *GetMaterialSRB(Diligent::IPipelineState *pso,
 			}
 			if (v && bmv) v->Set(bmv);
 		}
+		// [Doruk-Aksoy] A 2D draw's GLDEFS Texture lines, each its own texture untranslated, and black where the material has none (GetBrightmapSRV's placeholder).
+		for (int i = 0; i < zx::hwshaders::kLayerCount - zx::hwshaders::kLayerCustom; i++)
+		{
+			char name[16];
+			snprintf(name, sizeof(name), "uExtra%d", i);
+			auto *v = srb->GetVariableByName(Diligent::SHADER_TYPE_PIXEL, name);
+			if (v == NULL) continue;
+			const void *layer = zx::materials::MaterialLayer(material, zx::hwshaders::kLayerCustom + i);
+			Diligent::ITextureView *view = layer != NULL ? GetMaterialSRV(layer, 0) : GetBrightmapSRV(NULL);
+			if (view) v->Set(view);
+		}
 	}
 	g_matSRBs.emplace(key, srb);
 	return srb;
@@ -186,6 +199,9 @@ static TArray<MatSlot> g_matSlotTable;
 // [rc4l] Per slot, the slot showing its texture's current ANIMDEFS frame, on the GPU as SlotRemap; made once, since a static binding cannot follow a replaced buffer.
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_slotRemapBuf;
 static std::vector<unsigned> g_slotRemap;
+// [Doruk-Aksoy] Per slot, its GLDEFS material's layer row (ComputeLayerRow), uploaded after the remap entries from the lowest word changed to past the highest.
+static std::vector<unsigned> g_layerRows;
+static unsigned g_layerDirtyLo = ~0u, g_layerDirtyHi = 0;
 static bool g_matSlotOverflow = false;
 // The static array copied into the pipelines is only as fresh as the last fill. Anything that
 // changes what a slot should point at -- a new material, an animated texture reaching its next
@@ -342,6 +358,9 @@ void ResetMaterialSlots()
 	g_matSlotOverflow = false;
 	g_matSlotsDirty = true;
 	g_forceFill = true;
+	g_layerRows.assign((size_t)zx::hwrender::kMaxMaterialSlots * zx::hwrender::kLayerRowWords, 0u);
+	g_layerDirtyLo = 0;
+	g_layerDirtyHi = (unsigned)g_layerRows.size();
 }
 
 // [rc4l] What a slot holds: a material in its translation, or, under kBrightmapTranslation, that material's brightmap (black for none).
@@ -463,6 +482,8 @@ static void PinWithFrames(int slot, const void *material, int translation)
 		int at = MatIndexFind(fm, translation);
 		if (at < 0) at = NewMaterialSlot(fm, translation, true);
 		if (at > 0) g_slotState[at].pinned = true;
+		// [Doruk-Aksoy] SlotRemap shows the frame's slot, so the frame's own layers are the row read there.
+		if (at > 0) FillLayerRow(at, fm, true);
 	}
 }
 
@@ -477,6 +498,32 @@ int MaterialSlotFor(const void *material, int translation, bool inMesh)
 	// [Doruk-Aksoy] Only a baked key's ANIMDEFS frames take slots, since a dynamic piece is given the frame it shows and never reads SlotRemap.
 	if (slot > 0 && inMesh) PinWithFrames(slot, material, translation);
 	return slot;
+}
+
+void FillLayerRow(int slot, const void *material, bool inMesh)
+{
+	if (slot <= 0 || slot >= (int)zx::hwrender::kMaxMaterialSlots || MaterialSlotCapacity() == 0) return;
+	int warp = 0, userShader = -1;
+	float speed = 0;
+	if (!zx::materials::MaterialShading(material, warp, userShader, speed) || userShader < 0) return;
+	if (g_layerRows.empty()) g_layerRows.assign((size_t)zx::hwrender::kMaxMaterialSlots * zx::hwrender::kLayerRowWords, 0u);
+	int slots[zx::hwrender::kLayerRowEntries] = { 0 };
+	if (zx::materials::MaterialHasLayers(material))
+		for (int k = 0; k < zx::hwrender::kLayerRowEntries; k++)
+		{
+			if (k == zx::hwrender::kLayerSpareEntry) continue;
+			const void *layer = zx::materials::MaterialLayer(material, k);
+			if (layer == NULL) continue;
+			slots[k] = MaterialSlotFor(layer, 0, inMesh);
+			if (!inMesh) NoteDynamicSlotUse(slots[k], layer, 0);
+		}
+	unsigned row[zx::hwrender::kLayerRowWords];
+	zx::hwrender::ComputeLayerRow(slots, zx::materials::MaterialSpecularWord(material), row);
+	const unsigned at = (unsigned)slot * zx::hwrender::kLayerRowWords;
+	if (memcmp(&g_layerRows[at], row, sizeof(row)) == 0) return;
+	memcpy(&g_layerRows[at], row, sizeof(row));
+	if (at < g_layerDirtyLo) g_layerDirtyLo = at;
+	if (at + zx::hwrender::kLayerRowWords > g_layerDirtyHi) g_layerDirtyHi = at + zx::hwrender::kLayerRowWords;
 }
 
 int FindReservedSlot(const void *material, int translation)
@@ -645,6 +692,14 @@ void RefreshBindless()
 		{
 			SendToBuffer(ctx, g_slotRemapBuf, 0, (Diligent::Uint64)g_slotRemap.size() * sizeof(unsigned), &g_slotRemap[0]);
 			g_stats.remapUploads++;
+		}
+		// [Doruk-Aksoy] The layer rows changed since the last upload, in one span after the remap entries.
+		if (ctx && g_layerDirtyLo < g_layerDirtyHi)
+		{
+			SendToBuffer(ctx, g_slotRemapBuf, (Diligent::Uint64)(zx::hwrender::ComputeLayerRowWord(0) + g_layerDirtyLo) * sizeof(unsigned),
+				(Diligent::Uint64)(g_layerDirtyHi - g_layerDirtyLo) * sizeof(unsigned), &g_layerRows[g_layerDirtyLo]);
+			g_layerDirtyLo = ~0u;
+			g_layerDirtyHi = 0;
 		}
 	}
 	if (!g_matSlotsDirty) return;
@@ -953,13 +1008,15 @@ void FillSamplerFromEngine(Diligent::SamplerDesc &samp)
 	}
 }
 
-// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per lump name and lighting, how its entry calls it, and whether its program could not be made, which is noted once.
+// [Doruk-Aksoy] A GLDEFS shader's source as its program takes it, read once per key, how its program is put together around it, and whether its program could not be made, which is noted once.
 struct UserShaderSource
 {
-	std::string lump, adapted;
-	zx::hwshaders::ProcessLighting lighting = zx::hwshaders::kLightingZandronum;
-	zx::hwshaders::ProgramEntry entry = zx::hwshaders::kEntryTexel;
+	zx::hwshaders::UserShaderKey key;
+	std::string adapted;
+	zx::hwshaders::ProgramSpec spec;
 	bool broken = false;
+	bool made = false;
+	std::string name;
 };
 static std::vector<UserShaderSource> g_userSources;
 
@@ -968,37 +1025,52 @@ static void BreakUserShader(UserShaderSource &s, const char *why)
 {
 	if (s.broken) return;
 	s.broken = true;
-	Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", s.lump, why).c_str());
+	Printf("%s", zx::hwshaders::ComputeUserShaderSkipNote("vulkan", s.name, why).c_str());
 }
 
 static UserShaderSource &UserSource(int shader)
 {
 	if (g_userSources.size() <= (size_t)shader) g_userSources.resize(shader + 1);
 	UserShaderSource &s = g_userSources[shader];
-	const char *lump = zx::hwshaders::UserShaderLump(shader);
-	const zx::hwshaders::ProcessLighting lighting = zx::hwshaders::UserShaderLighting(shader);
-	if (s.lump == lump && s.lighting == lighting) return s;
+	static const zx::hwshaders::UserShaderKey kNone;
+	const zx::hwshaders::UserShaderKey *key = zx::hwshaders::UserShaderKeyOf(shader);
+	if (key == NULL) key = &kNone;
+	if (s.made && zx::hwshaders::ComputeSameUserShader(s.key, *key)) return s;
 	s = UserShaderSource();
-	s.lump = lump;
-	s.lighting = lighting;
-	const int num = Wads.CheckNumForFullName(lump);
-	if (num < 0)
+	s.key = *key;
+	s.made = key != &kNone;
+	s.name = zx::hwshaders::ComputeUserShaderName(s.key);
+	// [Doruk-Aksoy] A built-in shader, for a texture whose Material maps have no fitting shader, has no lump and adapts UZDoom's default material.
+	std::string source = zx::hwshaders::ComputeBuiltinMaterialSource(s.key.type);
+	if (!s.key.lump.empty())
+	{
+		const int num = Wads.CheckNumForFullName(s.key.lump.c_str());
+		if (num < 0)
+		{
+			s.broken = true;
+			return s;
+		}
+		FMemLump data = Wads.ReadLump(num);
+		source = data.GetString().GetChars();
+	}
+	else if (!s.made)
 	{
 		s.broken = true;
 		return s;
 	}
-	FMemLump data = Wads.ReadLump(num);
-	const zx::hwshaders::ShaderStyle style = zx::hwshaders::ComputeAdaptUserShader(data.GetString().GetChars(), shader, s.adapted);
-	s.entry = zx::hwshaders::ComputeProgramEntry(style, lighting);
-	if (const char *why = zx::hwshaders::ComputeStyleRefusal(style)) BreakUserShader(s, why);
+	const zx::hwshaders::ShaderEntries entries = zx::hwshaders::ComputeAdaptUserShader(source, shader, s.adapted);
+	s.spec.entry = zx::hwshaders::ComputeProgramEntry(entries, s.key.lighting);
+	s.spec.light = zx::hwshaders::ComputeLightHook(entries);
 	return s;
 }
 
 std::string ProgramBlock(zx::hwshaders::ProgramKind kind, int userShader)
 {
 	if (userShader < 0 || userShader >= zx::hwshaders::UserShaderCount()) return zx::hwshaders::ComputePlainProgramBlock(kind);
-	const UserShaderSource &s = UserSource(userShader);
-	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.entry, userShader);
+	UserShaderSource &s = UserSource(userShader);
+	// [Doruk-Aksoy] The spec points at the cached key, so it is set where the key it names stays put.
+	s.spec.key = &s.key;
+	return zx::hwshaders::ComputeUserProgramBlock(kind, s.adapted, s.spec, userShader);
 }
 
 bool UserShaderUsable(int shader)
@@ -1017,7 +1089,7 @@ bool KeepUserPipeline(int shader, Diligent::IPipelineState *plain, Diligent::Ref
 
 const char *UserShaderName(int shader)
 {
-	return UserSource(shader).lump.c_str();
+	return UserSource(shader).name.c_str();
 }
 
 // [rc4l] `false`, not Diligent::False -- something in the reshaped DXSDK headers defines False as
@@ -1333,7 +1405,7 @@ bool EnsureScenePipeline(FString &err)
 	{
 		Diligent::BufferDesc cbd;
 		cbd.Name = "fua scene constants";
-		cbd.Size = sizeof(float) * zx::hwrender::kSceneConstantFloats;
+		cbd.Size = sizeof(float) * (zx::hwrender::kSceneConstantFloats + 4 * zx::hwshaders::kTextureUniformSlots);
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -1343,15 +1415,22 @@ bool EnsureScenePipeline(FString &err)
 
 	if (!g_slotRemapBuf)
 	{
-		std::vector<unsigned> identity(kMaxMaterialSlots);
-		for (unsigned i = 0; i < identity.size(); i++) identity[i] = i;
-		if (!CreateStructuredBuffer("fua slot remap", sizeof(unsigned), kMaxMaterialSlots, &identity[0], g_slotRemapBuf))
+		// [Doruk-Aksoy] The remap entries, identity, then every slot's layer row, empty.
+		std::vector<unsigned> identity(zx::hwrender::ComputeSlotRemapWords(), 0u);
+		for (unsigned i = 0; i < kMaxMaterialSlots; i++) identity[i] = i;
+		if (!CreateStructuredBuffer("fua slot remap", sizeof(unsigned), (Diligent::Uint32)identity.size(), &identity[0], g_slotRemapBuf))
 		{ err = "slot remap buffer creation failed"; return false; }
 	}
 	if (!EnsureLightBuffers(err)) return false;
 	// [rc4l] The player's sky holes, two vec4s each, created once at kMaxSkyHoles for the same reason: every world pipeline binds them statically.
-	if (!g_scene.skyHoleBuf && !CreateStructuredBuffer("fua sky holes", 16, zx::levelmesh::kMaxSkyHoles * 2, NULL, g_scene.skyHoleBuf))
-	{ err = "sky hole buffer creation failed"; return false; }
+	// [Doruk-Aksoy] The actor uniform rows follow the holes in the same buffer at their most (FUA_ACTOR_ROWS_STR), so a fua_Material's pipeline needs no binding the plain one lacks.
+	if (!g_scene.skyHoleBuf)
+	{
+		if (!CreateStructuredBuffer("fua sky holes and actor uniforms", 16, zx::levelmesh::kMaxSkyHoles * 2 +
+			(zx::actormaterials::kMaxActorMaterials + zx::actormaterials::kMaxActorInstances) * zx::actormaterials::kActorUniformVec4s, NULL, g_scene.skyHoleBuf))
+		{ err = "sky hole buffer creation failed"; return false; }
+		g_scene.actorUniformsTable = g_scene.actorUniformsDecls = ~0u;
+	}
 	if (!g_scene.sectorLightBuf || (unsigned)numsectors > g_scene.sectorLightCapacity)
 	{
 		const unsigned sectorsHeld = zx::hwrender::ComputeSectorLightCapacity(numsectors);

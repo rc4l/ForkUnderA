@@ -20,7 +20,7 @@ static_assert(zx::hwrender::kTexFlagStencil == 1 && zx::hwrender::kTexFlagAlphaT
 	zx::hwrender::kTexFlagCullMask == 3, "the scene shaders test texFlags by these values");
 // [rc4l] The scene vertex shaders' common part: what they hand the fragment stages, and fuaSceneVertex, which places one vertex of a piece from its record, its position and its texture coordinate.
 static const char *kSceneVSCommon =
-	FUA_CONSTANTS_GLSL
+	FUA_SCENE_CONSTANTS_GLSL
 	// [rc4l] Everything constant across a piece, read once here instead of ridden in on every vertex.
 	FUA_PIECEDATA_GLSL
 	FUA_SECTORLIT_GLSL
@@ -54,6 +54,11 @@ static const char *kSceneVSCommon =
 	"layout(location = 25) flat out vec4 vModel2;\n"
 	"layout(location = 26) flat out vec4 vModel3;\n"
 	"void fuaModelOut(mat4 m) { vModel0 = m[0]; vModel1 = m[1]; vModel2 = m[2]; vModel3 = m[3]; }\n"
+	// [Doruk-Aksoy] The material's layer row (ComputeLayerRow), two slots a word, which the program's fuaLayerTexel samples.
+	"layout(location = 27) flat out uvec4 vLayers0;\n"
+	"layout(location = 28) flat out uvec4 vLayers1;\n"
+	// [Doruk-Aksoy] The drawn actor's fua_Material uniform row plus one, 0 for none (ScenePieceData::actorRow).
+	"layout(location = 29) flat out float vActorRow;\n"
 	"#endif\n"
 	"layout(std430, binding = 10) readonly buffer StackVis { uint stackVis[]; } StackVisIn;\n"
 	"layout(std430, binding = 11) readonly buffer SlotRemap { uint slotRemap[]; } SlotRemapIn;\n"
@@ -112,6 +117,13 @@ static const char *kSceneVSCommon =
 	"    vPixelPos = vec4(aPos, clip.w);\n"
 	"    vLightIndex = int(pd.fogAlphaMat.w);\n"
 	"    if (pd.bright.z > 0.5) vLightIndex = int(SlotRemapIn.slotRemap[vLightIndex]);\n"
+	// [Doruk-Aksoy] The rows sit after the remap entries in the same buffer, a row per material slot (ComputeLayerRowWord).
+	"#ifdef FUA_USER_SHADER\n"
+	"    uint row = " FUA_LAYER_ROWS_STR " + uint(max(vLightIndex, 0)) * 8u;\n"
+	"    vLayers0 = uvec4(SlotRemapIn.slotRemap[row], SlotRemapIn.slotRemap[row + 1u], SlotRemapIn.slotRemap[row + 2u], SlotRemapIn.slotRemap[row + 3u]);\n"
+	"    vLayers1 = uvec4(SlotRemapIn.slotRemap[row + 4u], SlotRemapIn.slotRemap[row + 5u], SlotRemapIn.slotRemap[row + 6u], SlotRemapIn.slotRemap[row + 7u]);\n"
+	"    vActorRow = pd.user.x;\n"
+	"#endif\n"
 	"    vNormal = pd.normal.xyz;\n"
 	// [rc4l] The surface PLANE, flat: its normal and its distance from the origin.
 	//
@@ -182,6 +194,7 @@ static const std::string kDynamicVS = std::string(
 	"    pd.tint = vec4(0.0);\n"
 	"    pd.tintRange = vec4(0.0);\n"
 	"    pd.extra = vec4(fuaWordF(base + 23u), 0.0, 0.0, float(w19 & 65535u));\n"
+	"    pd.user = vec4(0.0);\n"
 	"    fuaSceneVertex(pd, pos, uv);\n"
 	"}\n";
 
@@ -246,6 +259,80 @@ static const std::string kDynamicVS = std::string(
 	"    if (vActorLight.w > 0.5) { if (wantDynLight) color = clamp(color + vActorLight.rgb, 0.0, 1.4); }\n" \
 	"    else if (wantDynLight) color = fuaDynLight(color);\n"
 
+// [Doruk-Aksoy] A layer's slot out of the row the vertex stage passed (two a word, low half first), and UZDoom's glossiness and specular level from the row's spare half (ComputeSpecularWord), its defaults where unset.
+#define FUA_LAYER_SLOT_GLSL \
+	"int fuaLayerSlot(int layer) {\n" \
+	"    uvec4 v = layer < 8 ? vLayers0 : vLayers1;\n" \
+	"    uint w = v[(layer & 7) >> 1];\n" \
+	"    return int((layer & 1) == 0 ? (w & 65535u) : (w >> 16));\n" \
+	"}\n" \
+	"vec2 fuaSpecularMaterial() {\n" \
+	"    int w = fuaLayerSlot(7);\n" \
+	"    int g = w & 255, l = w >> 8;\n" \
+	"    return vec2(g > 0 ? float(g - 1) : 10.0, l > 0 ? float(l - 1) / 100.0 : 0.1);\n" \
+	"}\n"
+
+// [Doruk-Aksoy] What a GLDEFS program reads beside its texel, after fuaTexel: UZDoom's Material, a material's layers (black where it has none or the device has no array), its brightmap, its specular settings, UZDoom's normal map, and the light hook its program defines.
+#define FUA_MATERIAL_GLSL \
+	"#ifdef FUA_USER_SHADER\n" \
+	"layout(location = 27) flat in uvec4 vLayers0;\n" \
+	"layout(location = 28) flat in uvec4 vLayers1;\n" \
+	"layout(location = 29) flat in float vActorRow;\n" \
+	FUA_MATERIAL_STRUCT_GLSL \
+	FUA_LAYER_SLOT_GLSL \
+	"vec4 fuaLayerTexel(int layer, vec2 uv) {\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    int slot = fuaLayerSlot(layer);\n" \
+	"    if (uSkyColor.w > 0.5 && slot > 0) return texture(sampler2D(uMaterials[nonuniformEXT(slot)], uMaterials_sampler), fuaFloodUV(uv));\n" \
+	"#endif\n" \
+	"    return vec4(0.0);\n" \
+	"}\n" \
+	/* [Doruk-Aksoy] A layer's size and one texel, -3 the surface's own texture and -1 its brightmap, a missing one 1x1 and black. */ \
+	"#ifdef FUA_BINDLESS\n" \
+	"int fuaBindlessSlot(int layer) {\n" \
+	"    if (uSkyColor.w <= 0.5 || vLightIndex <= 0) return -1;\n" \
+	"    return layer == -3 ? vLightIndex : layer == -1 ? vBrightSlot : fuaLayerSlot(layer);\n" \
+	"}\n" \
+	"#endif\n" \
+	"ivec2 fuaLayerSize(int layer, int lod) {\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    int slot = fuaBindlessSlot(layer);\n" \
+	"    if (slot > 0) return textureSize(sampler2D(uMaterials[nonuniformEXT(slot)], uMaterials_sampler), lod);\n" \
+	"    if (slot == 0) return ivec2(1);\n" \
+	"#endif\n" \
+	"    if (layer == -3) return textureSize(sampler2D(uTex, uTex_sampler), lod);\n" \
+	"    if (layer == -1) return textureSize(sampler2D(uBrightmap, uBrightmap_sampler), lod);\n" \
+	"    return ivec2(1);\n" \
+	"}\n" \
+	"vec4 fuaLayerFetch(int layer, ivec2 p, int lod) {\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    int slot = fuaBindlessSlot(layer);\n" \
+	"    if (slot > 0) return texelFetch(sampler2D(uMaterials[nonuniformEXT(slot)], uMaterials_sampler), p, lod);\n" \
+	"    if (slot == 0) return vec4(0.0);\n" \
+	"#endif\n" \
+	"    if (layer == -3) return texelFetch(sampler2D(uTex, uTex_sampler), p, lod);\n" \
+	"    if (layer == -1) return texelFetch(sampler2D(uBrightmap, uBrightmap_sampler), p, lod);\n" \
+	"    return vec4(0.0);\n" \
+	"}\n" \
+	/* [Doruk-Aksoy] Whether a layer is bound, which needs the material array. */ \
+	"bool fuaHasLayer(int layer) {\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    return uSkyColor.w > 0.5 && fuaLayerSlot(layer) > 0;\n" \
+	"#else\n" \
+	"    return false;\n" \
+	"#endif\n" \
+	"}\n" \
+	"vec4 fuaBrightTexel(vec2 uv) {\n" \
+	"    vec2 bmUV = fuaFloodUV(uv);\n" \
+	"#ifdef FUA_BINDLESS\n" \
+	"    if (uSkyColor.w > 0.5 && vLightIndex > 0) return vBrightSlot > 0 ? texture(sampler2D(uMaterials[nonuniformEXT(vBrightSlot)], uMaterials_sampler), bmUV) : vec4(0.0);\n" \
+	"#endif\n" \
+	"    return texture(sampler2D(uBrightmap, uBrightmap_sampler), bmUV);\n" \
+	"}\n" \
+	FUA_NORMAL_MAP_GLSL("vPixelPos.xyz", "vUV") \
+	"vec3 fuaUserLight(vec3 color);\n" \
+	"#endif\n"
+
 // [rc4l] The engine's real lighting, ported.
 //
 // This is a transcription of wadsrc/static/shaders/glsl/main.fp -- R_DoomLightingEquation and the
@@ -265,8 +352,80 @@ static const std::string kDynamicVS = std::string(
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
 // Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
 // ask the shader what it thinks depth and colour are is worth the three lines.
-// [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
+// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a over 0.5 subtractive), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
+#define FUA_LIGHT_LOOP_GLSL \
+	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
+	"    int first = 0;\n" \
+	"    int count = n;\n" \
+	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
+	"    if (clustered) {\n" \
+	"        int tileW = max((int(uScreen.x) + 31) / 32, 1);\n" \
+	"        int tileH = max((int(uScreen.y) + 17) / 18, 1);\n" \
+	"        int tx = clamp(int(gl_FragCoord.x) / tileW, 0, 31);\n" \
+	"        int ty = clamp(int(gl_FragCoord.y) / tileH, 0, 17);\n" \
+	/* [rc4l] Depth is the clip w the CPU slices lights by, from vPixelPos.w, since Firefox's WebGPU gives gl_FragCoord.w as w rather than 1/w and every fragment there read the nearest slice. */ \
+	"        float depth = vPixelPos.w;\n" \
+	"        int slice = 0;\n" \
+	"        if (depth > uLightParams.z)\n" \
+	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \
+	"                log(uLightParams.w / uLightParams.z) * 24.0)), 0, 23);\n" \
+	"        uvec2 cell = ClusterTableIn.clusterCells[(slice * 18 + ty) * 32 + tx];\n" \
+	"        first = int(cell.x);\n" \
+	"        count = int(cell.y);\n" \
+	/* [rc4l] CLAMP the loop bound. It comes out of a buffer, and a buffer can be stale.\
+	   Every light in the level is at most n, so anything larger is nonsense -- and nonsense is what\
+	   the cluster grid holds around a level change, before the CPU rebuilds it for the new map. A\
+	   garbage count runs this loop for millions of iterations, and a GPU loop that long IS a hang:\
+	   Windows times it out, resets the device, and the driver terminates the process -- no\
+	   exception, no dump, nothing in the log. See docs/tdr-crash-after-map-loads.md. One\
+	   instruction makes a stale grid a wrong pixel for one frame instead of a dead process. */ \
+	"        count = clamp(count, 0, n);\n" \
+	"        first = max(first, 0);\n" \
+	"    }\n" \
+	"    for (int i = 0; i < count; i++) {\n" \
+	/* ...and the index it reads: lights[] has n entries and a stale grid can name anything. An\
+	   out-of-range read is undefined, not merely wrong. */ \
+	"        int li = clustered ? int(ClusterLightIndicesIn.clusterLights[first + i]) : i;\n" \
+	"        li = clamp(li, 0, max(n - 1, 0));\n" \
+	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
+	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
+	"        vec4 lp = LightBufferIn.lights[li*2];\n" \
+	"        vec4 lc = LightBufferIn.lights[li*2+1];\n" \
+	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
+	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
+	   Without this the backs of walls and the room next door get lit, which reads as a scene far
+	   more saturated than GL's. */ \
+	/* [rc4l] ...and the same test read off the plane instead of the fragment.
 
+	   dot(n, lightPos) - planeD is dot(n, lightPos - fragPos) for any fragment ON the plane, so this
+	   is the same quantity, computed from numbers that do not vary across the face. A light lying
+	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
+	   a light only when the plane is strictly on the wrong side of it. */ \
+	/* [rc4l] ...and a light sitting exactly ON the plane is KEPT, which needs slack to survive.
+
+	   gl_flats.cpp drops a light only when the plane is STRICTLY above it, so a light exactly in the
+	   plane stays -- and Doom puts lights exactly in planes constantly. A projectile that dies on a
+	   floor comes to rest ON it, so its z equals the plane there to the last bit of fixed point:
+	   measured on dbab04 as a plasma ball at -59.053 under a floor plane of -59.053. GL keeps that
+	   light. This test computes the same quantity in floats, from a normalised normal and a plane
+	   constant built out of vertex coordinates in the thousands, so the exact zero arrives as a few
+	   thousandths either side of it -- and on the wrong side an entire surface is culled at once.
+
+	   That is what the reported hard cut-off was. Every plasma bolt landing on that floor lit the
+	   walkway above and left the floor it was resting on completely black, along a dead straight line
+	   at the piece boundary, in Vulkan only. GL 30.6 against Vulkan 0.0 over the same rectangle of
+	   the same frozen frame.
+
+	   The slack is a tenth of a map unit: thousands of times the float error being covered, and far
+	   below anything a player could see -- a light a tenth of a unit behind a surface lights it now.
+	   It is not an attempt to place the boundary exactly, which floats cannot do; it is to keep the
+	   case Doom actually produces on the same side of it as GL. */ \
+	/* [rc4l] ...and only while r_lights_checkside asks for it (uOptions.x), as gl_GetLight and the flats' test do. */ \
+	"        if (uOptions.x > 0.5 && dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
+	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
+	"        if (a <= 0.0) continue;\n"
+
+// [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
 #define FUA_LIGHT_GLSL \
 	"#ifdef FUA_BINDLESS\n" \
 	"#extension GL_EXT_nonuniform_qualifier : require\n" \
@@ -308,7 +467,7 @@ static const std::string kDynamicVS = std::string(
 	"    float gray = c.r * 0.3 + c.g * 0.56 + c.b * 0.14;\n" \
 	"    return mix(c, vec3(gray), vDesaturation);\n" \
 	"}\n" \
-	FUA_CONSTANTS_GLSL \
+	FUA_SCENE_CONSTANTS_GLSL \
 	FUA_FIXED_COLORMAP_GLSL \
 	FUA_FUZZ_GLSL \
 	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n" \
@@ -369,9 +528,17 @@ static const std::string kDynamicVS = std::string(
 	"#endif\n" \
 	"    return texture(sampler2D(uTex, uTex_sampler), uv);\n" \
 	"}\n" \
+	FUA_MATERIAL_GLSL \
 	"layout(std430, binding = 2) readonly buffer LightBuffer { vec4 lights[]; } LightBufferIn;\n" \
 	/* [rc4l] ComputeBehindSkyHole, line for line: whether the eye's line to this fragment passes through one of the player's sky holes (two vec4s each, ComputeSkyHoleRecord) first. */ \
 	"layout(std430, binding = 14) readonly buffer SkyHoles { vec4 skyHoles[]; } SkyHolesIn;\n" \
+	/* [Doruk-Aksoy] After the holes, every fua_Material's uniform defaults then each actor's own values, kActorUniformVec4s vec4s a row (ComputeActorUniformRows). */ \
+	"#ifdef FUA_USER_SHADER\n" \
+	"vec4 fuaActorUniform(int i) {\n" \
+	"    int row = int(vActorRow + 0.5) - 1;\n" \
+	"    return row < 0 ? vec4(0.0) : SkyHolesIn.skyHoles[" FUA_ACTOR_ROWS_STR " + row * " FUA_ACTOR_UNIFORM_VEC4S_STR " + i];\n" \
+	"}\n" \
+	"#endif\n" \
 	"bool fuaBehindSkyHole() {\n" \
 	"    if (vHoleCut < 0.5) return false;\n" \
 	"    vec2 d = vPixelPos.xz - uCameraPos.xz;\n" \
@@ -444,76 +611,7 @@ static const std::string kDynamicVS = std::string(
 	   So the marker now carries its full meaning -- no side, and no light from here. */ \
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
-	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
-	"    int first = 0;\n" \
-	"    int count = n;\n" \
-	"    bool clustered = uLightParams.z > 0.0 && uLightParams.w > uLightParams.z;\n" \
-	"    if (clustered) {\n" \
-	"        int tileW = max((int(uScreen.x) + 31) / 32, 1);\n" \
-	"        int tileH = max((int(uScreen.y) + 17) / 18, 1);\n" \
-	"        int tx = clamp(int(gl_FragCoord.x) / tileW, 0, 31);\n" \
-	"        int ty = clamp(int(gl_FragCoord.y) / tileH, 0, 17);\n" \
-	/* [rc4l] Depth is the clip w the CPU slices lights by, from vPixelPos.w, since Firefox's WebGPU gives gl_FragCoord.w as w rather than 1/w and every fragment there read the nearest slice. */ \
-	"        float depth = vPixelPos.w;\n" \
-	"        int slice = 0;\n" \
-	"        if (depth > uLightParams.z)\n" \
-	"            slice = clamp(int(floor(log(depth / uLightParams.z) /\n" \
-	"                log(uLightParams.w / uLightParams.z) * 24.0)), 0, 23);\n" \
-	"        uvec2 cell = ClusterTableIn.clusterCells[(slice * 18 + ty) * 32 + tx];\n" \
-	"        first = int(cell.x);\n" \
-	"        count = int(cell.y);\n" \
-	/* [rc4l] CLAMP the loop bound. It comes out of a buffer, and a buffer can be stale.\
-	   Every light in the level is at most n, so anything larger is nonsense -- and nonsense is what\
-	   the cluster grid holds around a level change, before the CPU rebuilds it for the new map. A\
-	   garbage count runs this loop for millions of iterations, and a GPU loop that long IS a hang:\
-	   Windows times it out, resets the device, and the driver terminates the process -- no\
-	   exception, no dump, nothing in the log. See docs/tdr-crash-after-map-loads.md. One\
-	   instruction makes a stale grid a wrong pixel for one frame instead of a dead process. */ \
-	"        count = clamp(count, 0, n);\n" \
-	"        first = max(first, 0);\n" \
-	"    }\n" \
-	"    for (int i = 0; i < count; i++) {\n" \
-	/* ...and the index it reads: lights[] has n entries and a stale grid can name anything. An\
-	   out-of-range read is undefined, not merely wrong. */ \
-	"        int li = clustered ? int(ClusterLightIndicesIn.clusterLights[first + i]) : i;\n" \
-	"        li = clamp(li, 0, max(n - 1, 0));\n" \
-	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
-	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
-	"        vec4 lp = LightBufferIn.lights[li*2];\n" \
-	"        vec4 lc = LightBufferIn.lights[li*2+1];\n" \
-	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
-	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
-	   Without this the backs of walls and the room next door get lit, which reads as a scene far
-	   more saturated than GL's. */ \
-	/* [rc4l] ...and the same test read off the plane instead of the fragment.
-
-	   dot(n, lightPos) - planeD is dot(n, lightPos - fragPos) for any fragment ON the plane, so this
-	   is the same quantity, computed from numbers that do not vary across the face. A light lying
-	   exactly in the plane gives exactly zero and is KEPT, which is what gl_flats.cpp does: it drops
-	   a light only when the plane is strictly on the wrong side of it. */ \
-	/* [rc4l] ...and a light sitting exactly ON the plane is KEPT, which needs slack to survive.
-
-	   gl_flats.cpp drops a light only when the plane is STRICTLY above it, so a light exactly in the
-	   plane stays -- and Doom puts lights exactly in planes constantly. A projectile that dies on a
-	   floor comes to rest ON it, so its z equals the plane there to the last bit of fixed point:
-	   measured on dbab04 as a plasma ball at -59.053 under a floor plane of -59.053. GL keeps that
-	   light. This test computes the same quantity in floats, from a normalised normal and a plane
-	   constant built out of vertex coordinates in the thousands, so the exact zero arrives as a few
-	   thousandths either side of it -- and on the wrong side an entire surface is culled at once.
-
-	   That is what the reported hard cut-off was. Every plasma bolt landing on that floor lit the
-	   walkway above and left the floor it was resting on completely black, along a dead straight line
-	   at the piece boundary, in Vulkan only. GL 30.6 against Vulkan 0.0 over the same rectangle of
-	   the same frozen frame.
-
-	   The slack is a tenth of a map unit: thousands of times the float error being covered, and far
-	   below anything a player could see -- a light a tenth of a unit behind a surface lights it now.
-	   It is not an attempt to place the boundary exactly, which floats cannot do; it is to keep the
-	   case Doom actually produces on the same side of it as GL. */ \
-	/* [rc4l] ...and only while r_lights_checkside asks for it (uOptions.x), as gl_GetLight and the flats' test do. */ \
-	"        if (uOptions.x > 0.5 && dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
-	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
-	"        if (a <= 0.0) continue;\n" \
+	FUA_LIGHT_LOOP_GLSL \
 	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
 	"        else            dyn += lc.rgb * a;\n" \
 	"    }\n" \
@@ -579,6 +677,10 @@ static const std::string kDynamicVS = std::string(
 	"        return vec3(1.0);\n" \
 	"    }\n" \
 	FUA_SECTOR_LIGHT_UP_GLSL \
+	/* [Doruk-Aksoy] Zandronum 3.3's main.fp hands the light to the shader's ProcessLight before the dynamic lights. */ \
+	"#ifdef FUA_USER_SHADER\n" \
+	"    color = fuaUserLight(color);\n" \
+	"#endif\n" \
 	FUA_DYN_LIGHT_UP_GLSL \
 	"    return color;\n" \
 	"}\n" \
@@ -586,6 +688,86 @@ static const std::string kDynamicVS = std::string(
 	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(frag * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
 	"    return fuaColouredFog(frag, vFog.rgb, fuaProcessFog.x, fuaProcessFog.y);\n" \
 	"}\n" \
+	"#ifdef FUA_USER_SHADER\n" \
+	/* [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad material_specular.fp: Blinn-Phong highlights over the dynamic lights, the light and the highlight each desaturated and held to 1.4, an actor's own light taken without one. */ \
+	"vec3 fuaSpecularLit(Material m, vec3 texel, vec3 color, bool wantDynLight) {\n" \
+	"    vec3 dyn = wantDynLight && vActorLight.w > 0.5 ? vActorLight.rgb : vec3(0.0);\n" \
+	"    vec3 spec = vec3(0.0);\n" \
+	"    int n = int(uLightParams.x);\n" \
+	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
+	"    vec3 viewdir = normalize(uCameraPos.xyz - vPixelPos.xyz);\n" \
+	FUA_LIGHT_LOOP_GLSL \
+	"        vec3 halfdir = normalize(viewdir + normalize(d));\n" \
+	"        float s = a * m.SpecularLevel * pow(clamp(dot(halfdir, m.Normal), 0.0, 1.0), m.Glossiness * 4.0);\n" \
+	"        float sgn = lc.a > 0.5 ? -1.0 : 1.0;\n" \
+	"        dyn += sgn * lc.rgb * a;\n" \
+	"        spec += sgn * lc.rgb * s;\n" \
+	"    }\n" \
+	"    }\n" \
+	"    return texel * clamp(color + fuaDesaturate(dyn), 0.0, 1.4) + m.Specular * clamp(fuaDesaturate(spec), 0.0, 1.4);\n" \
+	"}\n" \
+	/* [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad material_pbr.fp: Cook-Torrance over the dynamic lights in linear light, the room's light taken as irradiance through Schlick's Fresnel and the ambient occlusion. */ \
+	"const float FUA_PI = 3.14159265359;\n" \
+	"float fuaGGX(vec3 N, vec3 H, float roughness) {\n" \
+	"    float a2 = roughness * roughness * roughness * roughness;\n" \
+	"    float NdotH = max(dot(N, H), 0.0);\n" \
+	"    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;\n" \
+	"    return a2 / (FUA_PI * denom * denom);\n" \
+	"}\n" \
+	"float fuaSchlickGGX(float NdotV, float roughness) {\n" \
+	"    float r = roughness + 1.0;\n" \
+	"    float k = r * r / 8.0;\n" \
+	"    return NdotV / (NdotV * (1.0 - k) + k);\n" \
+	"}\n" \
+	"vec3 fuaPBRLit(Material m, vec3 texel, vec3 ambientLight, bool wantDynLight) {\n" \
+	"    vec3 albedo = pow(texel, vec3(2.2));\n" \
+	"    vec3 N = m.Normal;\n" \
+	"    vec3 V = normalize(uCameraPos.xyz - vPixelPos.xyz);\n" \
+	"    vec3 F0 = mix(vec3(0.04), albedo, m.Metallic);\n" \
+	"    vec3 Lo = wantDynLight && vActorLight.w > 0.5 ? vActorLight.rgb : vec3(0.0);\n" \
+	"    int n = int(uLightParams.x);\n" \
+	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
+	FUA_LIGHT_LOOP_GLSL \
+	"        vec3 L = normalize(d);\n" \
+	"        vec3 H = normalize(V + L);\n" \
+	"        float G = fuaSchlickGGX(max(dot(N, V), 0.0), m.Roughness) * fuaSchlickGGX(max(dot(N, L), 0.0), m.Roughness);\n" \
+	"        vec3 F = F0 + (1.0 - F0) * pow(1.0 - clamp(dot(H, V), 0.0, 1.0), 5.0);\n" \
+	"        vec3 kD = (vec3(1.0) - F) * (1.0 - m.Metallic);\n" \
+	"        vec3 specular = fuaGGX(N, H, m.Roughness) * G * F / max(4.0 * clamp(dot(N, V), 0.0, 1.0) * clamp(dot(N, L), 0.0, 1.0), 0.001);\n" \
+	"        Lo += (lc.a > 0.5 ? -1.0 : 1.0) * (kD * albedo / FUA_PI + specular) * lc.rgb * a;\n" \
+	"    }\n" \
+	"    }\n" \
+	"    vec3 F = F0 + (max(vec3(1.0 - m.Roughness), F0) - F0) * pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);\n" \
+	"    vec3 ambient = (vec3(1.0) - F) * pow(ambientLight, vec3(2.2)) * albedo * m.AO;\n" \
+	"    return pow(max(ambient + Lo, vec3(0.0)), vec3(1.0 / 2.2));\n" \
+	"}\n" \
+	/* [Doruk-Aksoy] UZDoom main.fp's getLightColor for a GLDEFS program's material: the sector light and glow, the material's glow mixed and bright added (not for an old ProcessMaterial), the shader's ProcessLight, the dynamic lights through its type's light model when its maps are bound, then fog. */ \
+	"vec3 fuaShadeMaterial(Material m, int type, bool layered) {\n" \
+	"    bool wantDynLight = true;\n" \
+	"    vec3 undesaturated = m.Base.rgb;\n" \
+	"    vec3 texel = fuaDesaturate(m.Base.rgb);\n" \
+	FUA_SURFACE_AT_GLSL \
+	FUA_CLIP_SURFACE_GLSL \
+	"    if (uFixedColormap.w > 0.5) {\n" \
+	"        if ((int(vTexFlags + 0.5) & 64) != 0) discard;\n" \
+	"        return fuaFixedColormap(undesaturated * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
+	"    }\n" \
+	FUA_SECTOR_LIGHT_UP_GLSL \
+	"    if (layered) {\n" \
+	"        color = mix(color, fuaDesaturate(m.Glow.rgb), m.Glow.a);\n" \
+	"        color = min(color + fuaDesaturate(m.Bright.rgb), vec3(1.0));\n" \
+	"    }\n" \
+	"    color = fuaUserLight(color);\n" \
+	"    vec3 frag;\n" \
+	"    if (type == 1 && fuaHasLayer(0)) frag = fuaSpecularLit(m, texel, color, wantDynLight);\n" \
+	"    else if (type == 2 && fuaHasLayer(0)) frag = fuaPBRLit(m, texel, color, wantDynLight);\n" \
+	"    else {\n" \
+	FUA_DYN_LIGHT_UP_GLSL \
+	"        frag = texel * color;\n" \
+	"    }\n" \
+	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
+	"}\n" \
+	"#endif\n" \
 	/* [Doruk-Aksoy] The piece's texel through its GLDEFS shader in that shader's own program, the alpha it is drawn at, and its colour shaded as its shader's entry asks (ComputeUserProgramBlock); defined at FUA_PROGRAM_BLOCK. */ \
 	"vec4 fuaSurfaceTexel(vec2 fuaUV);\n" \
 	"float fuaSurfaceAlpha();\n" \

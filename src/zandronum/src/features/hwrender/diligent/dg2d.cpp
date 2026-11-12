@@ -14,6 +14,8 @@
 #include "features/rendersettings/rendersettings.h"   // [rc4l] gl_frameMS, the frame's clock
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
 #include "features/materials/materials.h"   // [Doruk-Aksoy] a quad's GLDEFS shader and its speed
+#include "features/postprocess/postprocess.h"   // [Doruk-Aksoy] the texture shaders' fua_Uniform values
+#include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] kTextureUniformSlots
 #include <map>
 #include "v_video.h"
 #include "tarray.h"
@@ -38,7 +40,9 @@ namespace zx { namespace hwrender {
 struct Vertex2D { float x, y, u, v, r, g, b, a, texMode, fixedCm, fuzz, tint[4], tintRange[3], speed; };
 
 // [rc4l] The 2D constant block both stages read: the screen's reciprocal size and the fuzz clock in seconds (z), then the weapon's fixed colormap as the scene block carries it.
-#define FUA_SCREEN2D_GLSL "layout(binding = 0) uniform Screen { vec4 uInvScreen; vec4 uFixedColormap; vec4 uFixedRange; };\n"
+// [Doruk-Aksoy] Then the texture shaders' fua_Uniform values, as the scene's block has them.
+#define FUA_SCREEN2D_GLSL "layout(binding = 0) uniform Screen { vec4 uInvScreen; vec4 uFixedColormap; vec4 uFixedRange; " FUA_TEX_UNIFORMS_GLSL " };\n"
+enum { kScreen2DFloats = 12 };
 
 // [rc4l] One 2D pipeline per blend mode: 0 alpha, 1 additive, 2 multiply.
 //
@@ -115,7 +119,58 @@ static const char *k2DPS =
 	FUA_FUZZ_GLSL
 	FUA_DAMAGE_TINT_GLSL
 	"layout(binding = 1) uniform texture2D uTex; uniform sampler uTex_sampler;\n"
+	/* [Doruk-Aksoy] The quad's GLDEFS Texture lines (MaterialLayer kLayerCustom up), bound per material in every 2D shader, so a GLDEFS program takes the plain one's bindings. */
+	"layout(binding = 2) uniform texture2D uExtra0; uniform sampler uExtra0_sampler;\n"
+	"layout(binding = 3) uniform texture2D uExtra1; uniform sampler uExtra1_sampler;\n"
+	"layout(binding = 4) uniform texture2D uExtra2; uniform sampler uExtra2_sampler;\n"
+	"layout(binding = 5) uniform texture2D uExtra3; uniform sampler uExtra3_sampler;\n"
+	"layout(binding = 6) uniform texture2D uExtra4; uniform sampler uExtra4_sampler;\n"
+	"layout(binding = 7) uniform texture2D uExtra5; uniform sampler uExtra5_sampler;\n"
+	"layout(binding = 8) uniform texture2D uExtra6; uniform sampler uExtra6_sampler;\n"
+	"layout(binding = 9) uniform texture2D uExtra7; uniform sampler uExtra7_sampler;\n"
 	"layout(location = 0) out vec4 outColor;\n"
+	/* [Doruk-Aksoy] What a GLDEFS program reads beside its texel: a custom layer (black past them), and no brightmap, normal or specular settings, as a 2D draw lights nothing. */
+	"#ifdef FUA_USER_SHADER\n"
+	FUA_MATERIAL_STRUCT_GLSL
+	"vec4 fuaLayerTexel(int layer, vec2 uv) {\n"
+	"    switch (layer) {\n"
+	"    case 8: return texture(sampler2D(uExtra0, uExtra0_sampler), uv);\n"
+	"    case 9: return texture(sampler2D(uExtra1, uExtra1_sampler), uv);\n"
+	"    case 10: return texture(sampler2D(uExtra2, uExtra2_sampler), uv);\n"
+	"    case 11: return texture(sampler2D(uExtra3, uExtra3_sampler), uv);\n"
+	"    case 12: return texture(sampler2D(uExtra4, uExtra4_sampler), uv);\n"
+	"    case 13: return texture(sampler2D(uExtra5, uExtra5_sampler), uv);\n"
+	"    case 14: return texture(sampler2D(uExtra6, uExtra6_sampler), uv);\n"
+	"    case 15: return texture(sampler2D(uExtra7, uExtra7_sampler), uv);\n"
+	"    default: return vec4(0.0);\n"
+	"    }\n"
+	"}\n"
+	"bool fuaHasLayer(int layer) { return layer >= 8; }\n"
+	/* [Doruk-Aksoy] No actor draws in 2D, so a fua_Material's uniforms read zero there. */
+	"vec4 fuaActorUniform(int i) { return vec4(0.0); }\n"
+	/* [Doruk-Aksoy] A layer's size and one texel: the quad's own texture (-3), a custom one, else 1x1 and black. */
+	"#define FUA_EXTRA_CASES(op) \\\n"
+	"    case 8: return op(sampler2D(uExtra0, uExtra0_sampler)); case 9: return op(sampler2D(uExtra1, uExtra1_sampler)); \\\n"
+	"    case 10: return op(sampler2D(uExtra2, uExtra2_sampler)); case 11: return op(sampler2D(uExtra3, uExtra3_sampler)); \\\n"
+	"    case 12: return op(sampler2D(uExtra4, uExtra4_sampler)); case 13: return op(sampler2D(uExtra5, uExtra5_sampler)); \\\n"
+	"    case 14: return op(sampler2D(uExtra6, uExtra6_sampler)); case 15: return op(sampler2D(uExtra7, uExtra7_sampler));\n"
+	"ivec2 fuaLayerSize(int layer, int lod) {\n"
+	"#define FUA_OP(s) textureSize(s, lod)\n"
+	"    switch (layer) { case -3: return FUA_OP(sampler2D(uTex, uTex_sampler)); FUA_EXTRA_CASES(FUA_OP) default: return ivec2(1); }\n"
+	"#undef FUA_OP\n"
+	"}\n"
+	"vec4 fuaLayerFetch(int layer, ivec2 p, int lod) {\n"
+	"#define FUA_OP(s) texelFetch(s, p, lod)\n"
+	"    switch (layer) { case -3: return FUA_OP(sampler2D(uTex, uTex_sampler)); FUA_EXTRA_CASES(FUA_OP) default: return vec4(0.0); }\n"
+	"#undef FUA_OP\n"
+	"}\n"
+	"#undef FUA_EXTRA_CASES\n"
+	"vec4 fuaBrightTexel(vec2 uv) { return vec4(0.0); }\n"
+	"vec2 fuaSpecularMaterial() { return vec2(10.0, 0.1); }\n"
+	"vec3 fuaNormalMapped(vec3 n, vec3 map) { return n; }\n"
+	"#endif\n"
+	/* [Doruk-Aksoy] Every extra read where no texture mode reaches (vTexMode is 0 to 5), so no compiler drops one and a plain 2D pipeline takes them all. */
+	"vec4 fuaExtrasRead(vec2 uv) { return texture(sampler2D(uExtra0, uExtra0_sampler), uv) + texture(sampler2D(uExtra1, uExtra1_sampler), uv) + texture(sampler2D(uExtra2, uExtra2_sampler), uv) + texture(sampler2D(uExtra3, uExtra3_sampler), uv) + texture(sampler2D(uExtra4, uExtra4_sampler), uv) + texture(sampler2D(uExtra5, uExtra5_sampler), uv) + texture(sampler2D(uExtra6, uExtra6_sampler), uv) + texture(sampler2D(uExtra7, uExtra7_sampler), uv); }\n"
 	"vec4 fua2DRaw(vec2 uv) { return texture(sampler2D(uTex, uTex_sampler), uv); }\n"
 	"vec4 fua2DTexel(vec2 uv) {\n"
 	// [rc4l] A fuzzy weapon under r_fuzztype takes GL's fuzz shader on its texel, the jagged one sampling a splat of its coordinate.
@@ -135,6 +190,8 @@ static const char *k2DPS =
 	"vec4 fua2DColor(vec2 fuaUV);\n"
 	"void main() {\n"
 	"    outColor = fua2DColor(vUV);\n"
+	/* [Doruk-Aksoy] The quad's own texture too, which a GLDEFS program that never samples it would otherwise lose. */
+	"    if (vTexMode == 1000) outColor += fuaExtrasRead(vUV) + fua2DRaw(vUV);\n"
 	"    if (vFixed > 0.5 && uFixedColormap.w > 0.5) outColor.rgb = fuaFixedColormap(outColor.rgb);\n"
 	"}\n"
 	"//FUA_2D_SHADERS\n";
@@ -159,6 +216,14 @@ static const Diligent::LayoutElement k2DLayout[] = {
 };
 static const Diligent::ShaderResourceVariableDesc k2DVars[] = {
 	{ Diligent::SHADER_TYPE_PIXEL, "uTex", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra0", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra1", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra2", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra3", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra4", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra5", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra6", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
+	{ Diligent::SHADER_TYPE_PIXEL, "uExtra7", Diligent::SHADER_RESOURCE_VARIABLE_TYPE_MUTABLE },
 };
 
 // [rc4l] 2D pipeline `mode` over these shaders, its constants bound: 0 alpha, 1 additive, 2 multiply, and 3 a polygon's triangles, alpha-blended with the texture repeating.
@@ -174,7 +239,16 @@ static void Make2DPipeline(int mode, Diligent::IShader *vs, Diligent::IShader *p
 	samp.MagFilter = Diligent::FILTER_TYPE_POINT;
 	samp.MipFilter = Diligent::FILTER_TYPE_POINT;
 	samp.AddressU = samp.AddressV = mode == 3 ? Diligent::TEXTURE_ADDRESS_WRAP : Diligent::TEXTURE_ADDRESS_CLAMP;
-	const Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uTex", samp } };
+	const Diligent::ImmutableSamplerDesc samplers[] = { { Diligent::SHADER_TYPE_PIXEL, "uTex", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra0", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra1", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra2", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra3", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra4", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra5", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra6", samp },
+		{ Diligent::SHADER_TYPE_PIXEL, "uExtra7", samp },
+	};
 
 	Diligent::GraphicsPipelineStateCreateInfo pci;
 	pci.PSODesc.Name = name;
@@ -228,7 +302,7 @@ static bool Ensure2DPipeline()
 	{
 		Diligent::BufferDesc cbd;
 		cbd.Name = "fua 2D constants";
-		cbd.Size = sizeof(float) * 12;
+		cbd.Size = sizeof(float) * (kScreen2DFloats + 4 * zx::hwshaders::kTextureUniformSlots);
 		cbd.Usage = Diligent::USAGE_DYNAMIC;
 		cbd.BindFlags = Diligent::BIND_UNIFORM_BUFFER;
 		cbd.CPUAccessFlags = Diligent::CPU_ACCESS_WRITE;
@@ -403,6 +477,7 @@ void Draw2D(Diligent::IDeviceContext *ctx, int first, int end, Diligent::ITextur
 		Diligent::MapHelper<float> cb(ctx, g_cb2D, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		cb[0] = 1.0f / scrW; cb[1] = 1.0f / scrH; cb[2] = ComputeWarpTimer((unsigned int)gl_frameMS, 1.f); cb[3] = 0.f;
 		ComputeFixedColormapConstants(zx::viewsetup::FixedColormapShadeFor(fixed2D), &cb[4]);
+		if (zx::postprocess::TextureUniformsDeclared()) zx::postprocess::TextureUniformBlock((unsigned char *)&cb[kScreen2DFloats]);
 	}
 
 	Diligent::IBuffer *vbs[] = { g_vb2D };

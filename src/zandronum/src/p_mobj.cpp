@@ -104,6 +104,7 @@
 #include "features/playerclass-fallback/zx_playerclassfallback.h" // [rc4l]
 #include "features/compat-oldnodelay/computation/oldnodelay_compute.h" // [Doruk-Aksoy] compat_fua_oldnodelay's tics
 #include "features/bounce/computation/bounce_compute.h" // [Doruk-Aksoy] how bounces end
+#include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -528,6 +529,8 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << mvFlags;
 	}
+	// [Doruk-Aksoy] features/actormaterials: its fua_Material and own uniforms, from 4527 on.
+	zx::actormaterials::SerializeActor(arc, this);
 
 	{
 		FString tagstr;
@@ -5252,6 +5255,8 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 		actor->floorclip = 0;
 	}
 	actor->UpdateWaterLevel (actor->z, false);
+	// [Doruk-Aksoy] features/actormaterials: the GLDEFS fua_Material its class's DECORATE names.
+	zx::actormaterials::InitActor (actor);
 	if (!SpawningMapThing)
 	{
 		actor->BeginPlay ();
@@ -5573,6 +5578,9 @@ void AActor::Destroy ()
 
 	// [BC] If this is a bot's goal object, tell the bot it's been removed.
 	BOTS_RemoveGoal ( this );
+
+	// [Doruk-Aksoy] features/actormaterials: its own uniform values given back.
+	zx::actormaterials::ReleaseActor ( this );
 
 	// [RH] Destroy any inventory this actor is carrying
 	DestroyAllInventory ();

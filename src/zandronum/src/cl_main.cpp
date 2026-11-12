@@ -158,6 +158,7 @@
 #include "features/sound-amplify/computation/sound_amplify_compute.h"   // [Doruk-Aksoy] a sound command's volume byte
 #include "features/acs-setmusicvolume/computation/musicvolume_compute.h"   // [Doruk-Aksoy] FuaSetMusicVolume's factor
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] FuaSetShaderEnabled and FuaSetShaderUniform
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
 
@@ -7771,6 +7772,22 @@ void ServerCommands::FuaSetShaderUniform::Execute()
 {
 	const zx::acsshaders::UniformValue value = { kind, { kind == 0 ? double( intValue ) : double( x ), double( y ), double( z ), double( w ) } };
 	zx::acsshaders::ApplyShaderUniform( shader.GetChars(), uniform.GetChars(), own, value );
+}
+
+//*****************************************************************************
+//
+void ServerCommands::FuaSetActorMaterial::Execute()
+{
+	// [Doruk-Aksoy] features/actormaterials: a server's script gave this actor a GLDEFS fua_Material, or took it away.
+	zx::actormaterials::ApplyActorMaterial( actor, material.GetChars() );
+}
+
+//*****************************************************************************
+//
+void ServerCommands::FuaSetActorUniform::Execute()
+{
+	const zx::acsshaders::UniformValue value = { kind, { kind == 0 ? double( intValue ) : double( x ), double( y ), double( z ), double( w ) } };
+	zx::actormaterials::ApplyActorUniform( actor, uniform, value );
 }
 
 //*****************************************************************************

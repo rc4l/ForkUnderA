@@ -511,6 +511,38 @@ void SERVERCOMMANDS_FuaSetShaderUniform( const char *shader, const char *uniform
 
 //*****************************************************************************
 //
+void SERVERCOMMANDS_FuaSetActorMaterial( AActor *actor, const char *material, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID( actor ) )
+		return;
+
+	ServerCommands::FuaSetActorMaterial command;
+	command.SetActor( actor );
+	command.SetMaterial( material );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
+void SERVERCOMMANDS_FuaSetActorUniform( AActor *actor, int uniform, int kind, const double values[4], ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	if ( !EnsureActorHasNetID( actor ) )
+		return;
+
+	ServerCommands::FuaSetActorUniform command;
+	command.SetActor( actor );
+	command.SetUniform( uniform );
+	command.SetKind( kind );
+	command.SetIntValue( kind == 0 ? int( values[0] ) : 0 );
+	command.SetX( float( values[0] ));
+	command.SetY( float( values[1] ));
+	command.SetZ( float( values[2] ));
+	command.SetW( float( values[3] ));
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
 void SERVERCOMMANDS_KillPlayer( ULONG ulPlayer, AActor *pSource, AActor *pInflictor, FName MOD )
 {
 	if ( PLAYER_IsValidPlayer( ulPlayer ) == false )
