@@ -3968,7 +3968,9 @@ void SERVER_ForceToSpectate( ULONG ulPlayer, const char *pszReason )
 		return;
 	}
 
-	SERVER_Printf( PRINT_HIGH, TEXTCOLOR_ORANGE "%s" TEXTCOLOR_ORANGE " has been forced to spectate! Reason: %s\n",
+	// [rc4l] Ported from zandronum@2b3171b748094b415d23a47564b7bb3f2bebea21: an offline kick prints locally instead of writing to the network.
+	// [RK] Use NETWORK_Printf instead of SERVER_Printf.
+	NETWORK_Printf( TEXTCOLOR_ORANGE "%s" TEXTCOLOR_ORANGE " has been forced to spectate! Reason: %s\n",
 		players[ulPlayer].userinfo.GetName(), pszReason );
 
 	// Make this player a spectator.
