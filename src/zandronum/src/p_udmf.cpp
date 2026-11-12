@@ -1350,7 +1350,7 @@ public:
 				continue;
 
 			case NAME_Id:
-				sec->SetTag((short)CheckInt(key), false);
+				sec->SetMainTag((short)CheckInt(key));
 				continue;
 
 			default:
