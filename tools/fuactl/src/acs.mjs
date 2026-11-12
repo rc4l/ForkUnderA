@@ -22,7 +22,8 @@ export function acs0(code, strings = [], { open = true, number = 1 } = {}) {
 
 // [Doruk-Aksoy] Script types (the thousands of an ACS0 script number) and flags, as p_acs.h numbers them; a flag is what CLIENTSIDE or NET compiles to.
 export const SCRIPT = { CLOSED: 0, OPEN: 1, ENTER: 4 };
-export const SCRIPTF = { NET: 1, CLIENTSIDE: 2 };
+// [rc4l] BUSY exempts a script from the runaway limit (zandronum@b8fe8ef13df5).
+export const SCRIPTF = { NET: 1, CLIENTSIDE: 2, BUSY: 4 };
 
 // [Doruk-Aksoy] A script's type: its own, else OPEN unless `open` is false.
 const scriptType = (s) => s.type ?? ((s.open ?? true) ? SCRIPT.OPEN : SCRIPT.CLOSED);
@@ -158,12 +159,12 @@ export class AcsScript {
   label(name) { this.labels.set(name, this.parts.length); return this; }
   // [rc4l] A jump (GOTO, IFGOTO, IFNOTGOTO) to a named target, resolved once the script is done.
   jump(pcd, name) { this.parts.push(pcd, { label: name }); return this; }
-  // [rc4l] The script's words, every jump target turned into its byte offset; a target never named throws.
-  words() {
+  // [rc4l] The script's words, every jump target turned into its byte offset, `at` the word the script starts at when others precede it in the lump; a target never named throws.
+  words(at = 0) {
     return this.parts.map((w) => {
       if (typeof w === "number") return w;
       if (!this.labels.has(w.label)) throw new Error(`no label ${w.label}`);
-      return 8 + 4 * this.labels.get(w.label);
+      return 8 + 4 * (at + this.labels.get(w.label));
     });
   }
 }
