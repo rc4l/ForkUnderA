@@ -6,12 +6,15 @@
 
 #include "doomtype.h"        // BYTE/USHORT and friends (must precede networkshared.h)
 #include "networkshared.h"   // BYTESTREAM_s
+#include "wire_nettest.h"     // zx::nettest::Wire
 #include "network_enums.h"   // SVC_SETGAMEMODELIMITS
 
 #include <gtest/gtest.h>
 #include <cstring>
 #include <string>
 #include <vector>
+
+using zx::nettest::Wire;
 
 namespace {
 
@@ -38,22 +41,6 @@ Limits Sample() {
 	l.minFov = 60.f; l.maxFov = 120.f;
 	return l;
 }
-
-struct Wire {
-	std::vector<BYTE> buf;
-	BYTESTREAM_s w{}, r{};
-	explicit Wire(size_t n = 256) : buf(n, 0xCC) {
-		w.pbStream = buf.data();
-		w.pbStreamEnd = buf.data() + buf.size();
-	}
-	size_t written() const { return static_cast<size_t>(w.pbStream - buf.data()); }
-	void openReader(size_t truncateTo = static_cast<size_t>(-1)) {
-		const size_t n = (truncateTo == static_cast<size_t>(-1)) ? written() : truncateTo;
-		r = BYTESTREAM_s{};
-		r.pbStream = buf.data();
-		r.pbStreamEnd = buf.data() + n;
-	}
-};
 
 // [rc4l] What SERVERCOMMANDS_SetGameModeLimits writes, header first.
 void WriteCommand(Wire &wire, const Limits &l) {

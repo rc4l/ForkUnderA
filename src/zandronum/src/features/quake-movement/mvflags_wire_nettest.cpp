@@ -15,10 +15,13 @@
 
 #include "doomtype.h"        // BYTE/USHORT and friends (must precede networkshared.h)
 #include "networkshared.h"   // BYTESTREAM_s
+#include "wire_nettest.h"     // zx::nettest::Wire
 
 #include <gtest/gtest.h>
 #include <cstring>
 #include <vector>
+
+using zx::nettest::Wire;
 
 namespace {
 
@@ -44,23 +47,6 @@ enum MirroredFlagSet {
 const DWORD MV_CPMAIRCONTROL_BIT		= 0x00000001;
 const DWORD MV_CROUCHSLIDE_BIT			= 0x00000002;
 const DWORD MV_ABSOLUTESECONDJUMP_BIT	= 0x00001000;
-
-// Writer and reader views over the same bytes, mirroring server-writes / client-reads.
-struct Wire {
-	std::vector<BYTE> buf;
-	BYTESTREAM_s w{}, r{};
-	explicit Wire(size_t n = 256) : buf(n, 0xCC) {   // poison, so "unwritten" is visible
-		w.pbStream = buf.data();
-		w.pbStreamEnd = buf.data() + buf.size();
-	}
-	size_t written() const { return static_cast<size_t>(w.pbStream - buf.data()); }
-	void openReader(size_t truncateTo = static_cast<size_t>(-1)) {
-		const size_t n = (truncateTo == static_cast<size_t>(-1)) ? written() : truncateTo;
-		r = BYTESTREAM_s{};
-		r.pbStream = buf.data();
-		r.pbStreamEnd = buf.data() + n;
-	}
-};
 
 // SetThingFlags' payload after the actor reference: Byte flagset, ULong flags.
 // (protocolspec/spec.things.txt -- the actor NetID is written by the generated preamble.)

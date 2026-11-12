@@ -21,29 +21,16 @@
 
 #include "doomtype.h"        // BYTE/USHORT and friends (must precede networkshared.h)
 #include "networkshared.h"   // BYTESTREAM_s, MAX_NETWORK_STRING
+#include "wire_nettest.h"     // zx::nettest::Wire
 
 #include <gtest/gtest.h>
 #include <cstring>
 #include <string>
 #include <vector>
 
-namespace {
+using zx::nettest::Wire;
 
-// Writer and reader views over the same bytes, mirroring server-writes / client-reads.
-struct Wire {
-	std::vector<BYTE> buf;
-	BYTESTREAM_s w{}, r{};
-	explicit Wire(size_t n = 4096) : buf(n, 0xCC) {   // poison, so "unwritten" is visible
-		w.pbStream = buf.data();
-		w.pbStreamEnd = buf.data() + buf.size();
-	}
-	size_t written() const { return static_cast<size_t>(w.pbStream - buf.data()); }
-	void openReader() {
-		r = BYTESTREAM_s{};
-		r.pbStream = buf.data();
-		r.pbStreamEnd = buf.data() + written();
-	}
-};
+namespace {
 
 // The two strings SetMapSky puts on the wire, in order.
 void WriteSkyPair(Wire &wire, const char *sky1, const char *sky2) {

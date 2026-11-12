@@ -37,6 +37,8 @@ the standalone `zandrox_tests_net` target instead of the monolithic `zandrox_tes
 unit-under-test is vendored engine code that needs the `tests/shims/net/i_system.h` shim (`#define
 Printf printf`, `#define atterm atexit`) placed first on the include path — the masterserver recipe.
 New wire tests are new `*_nettest.cpp` files beside their subject; CMake re-globs, no edit needed.
+Each one models its command on `zx::nettest::Wire` from `wire_nettest.h` (a writer and a reader over
+one poisoned buffer, `openReader(n)` for a packet cut to `n` bytes); don't paste a copy of it.
 `gtest_discover_tests` registers them, so `ctest` (and CI's Build+test steps) run them with no
 workflow change. Runs under ASan+UBSan on Linux and macOS in milliseconds.
 
