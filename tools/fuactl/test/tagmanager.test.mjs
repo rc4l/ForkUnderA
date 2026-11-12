@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, buildCopyScrollerMap, BARRELS, CHECKS, COUNTER, READ, COLUMN } from "../scenarios/tagmanager.mjs";
+import { buildMoreIdsMap, buildHexenMap, buildLinelessMap, buildTagManagerPk3, buildCopyScrollerMap, buildConveyorMap, BARRELS, CHECKS, COUNTER, READ, COLUMN } from "../scenarios/tagmanager.mjs";
 import { judgeCounter } from "../src/template.mjs";
 import { readPk3, readWad, parseUdmf } from "../src/udmf.mjs";
 import { binaryMap } from "../src/mapdata.mjs";
@@ -59,6 +59,17 @@ test("the copy-scroller map scrolls the tagged block and copies it to the untagg
   const copy = u.linedef.find((l) => l.special === SPECIAL.Sector_CopyScroller);
   assert.deepEqual([copy.arg0, copy.arg1], [9, 4]);
   assert.equal(u.sector[u.sidedef[copy.sidefront].sector].id, undefined);
-  assert.deepEqual(u.thing.filter((t) => t.type === THING.ExplosiveBarrel).map((t) => [t.id, t.x]), Object.entries(BARRELS).map(([tid, at]) => [Number(tid), at.x]));
+  assert.deepEqual(u.thing.filter((t) => t.type === THING.ExplosiveBarrel).map((t) => [t.id, t.x]), [[12, BARRELS[12].x], [13, BARRELS[13].x]]);
   assert.deepEqual(READ.carried(13), [PCD.PUSHNUMBER, 13, PCD.GETACTORX, PCD.PUSHNUMBER, (608 + 16) * 65536, PCD.GE]);
+});
+
+test("the conveyor map is in the doom namespace, its conveyor's arg0 naming the west block and its ID the east one", () => {
+  const u = parseUdmf(buildConveyorMap().textmap());
+  assert.equal(u.namespace, "doom");
+  const conveyor = u.linedef.find((l) => l.special === 252);
+  assert.deepEqual([conveyor.arg0, conveyor.id], [7, 5]);
+  assert.ok(u.vertex[conveyor.v2].x > u.vertex[conveyor.v1].x && u.vertex[conveyor.v2].y === u.vertex[conveyor.v1].y);
+  assert.deepEqual([u.sector[1].id, u.sector[2].id], [7, 5]);
+  assert.deepEqual(u.thing.filter((t) => t.type === THING.ExplosiveBarrel).map((t) => t.id), [14, 15]);
+  assert.deepEqual(READ.still(15), [PCD.PUSHNUMBER, 15, PCD.GETACTORX, PCD.PUSHNUMBER, (608 + 16) * 65536, PCD.LT]);
 });

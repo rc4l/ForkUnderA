@@ -17,10 +17,12 @@ const FIXED = 65536;
 // [rc4l] The column standing in MAP01's untagged sector, which ThingCountSector and ThingCountNameSector find with tag 0.
 export const COLUMN = { x: 160, y: 160, tid: 11, type: THING.TallGreenColumn, name: "TallGreenColumn" };
 const STRINGS = [COUNTER_CVAR, COLUMN.name];
-// [rc4l] MAP05's barrels by tid and starting x, one in the scroller's tagged sector and one in the untagged sector that copies it.
-export const BARRELS = { 12: { x: 160, y: 160 }, 13: { x: 608, y: 160 } };
-// [rc4l] How far east a carried barrel must be after MAP05's wait, and the tag the copy line names.
-const CARRIED = 16, SCROLL_TAG = 9;
+// [rc4l] The carrying maps' barrels by tid, the first of each pair in the west block and the second in the east one.
+export const BARRELS = { 12: { x: 160, y: 160 }, 13: { x: 608, y: 160 }, 14: { x: 160, y: 160 }, 15: { x: 608, y: 160 } };
+// [rc4l] How far east a carried barrel must be after the wait, MAP05's scroller tag, and MAP06's conveyor tag and line ID.
+const CARRIED = 16, SCROLL_TAG = 9, CONVEYOR = { tag: 7, id: 5 };
+// [rc4l] Boom's carrying conveyor, Scroll_Floor along its line once xlat translates it.
+const BOOM_CONVEYOR = 252;
 export const CARRY_TICS = 35;
 
 // [rc4l] The words that leave each kind of check's value on the stack: a sector's light by tag, a line's activation by ID, or a count of the column by tid or class in sectors of a tag.
@@ -30,6 +32,7 @@ export const READ = {
   count: (tag) => [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, COLUMN.tid, PCD.PUSHNUMBER, tag, PCD.THINGCOUNTSECTOR],
   countname: (tag) => [PCD.PUSHNUMBER, STRINGS.indexOf(COLUMN.name), PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, tag, PCD.THINGCOUNTNAMESECTOR],
   carried: (tid) => [PCD.PUSHNUMBER, tid, PCD.GETACTORX, PCD.PUSHNUMBER, (BARRELS[tid].x + CARRIED) * FIXED, PCD.GE],
+  still: (tid) => [PCD.PUSHNUMBER, tid, PCD.GETACTORX, PCD.PUSHNUMBER, (BARRELS[tid].x + CARRIED) * FIXED, PCD.LT],
 };
 
 // [rc4l] Each map's checks as [what, kind, tag or ID, expected], read as READ[kind] does.
@@ -62,9 +65,14 @@ export const CHECKS = {
     ["the scroller carries its tagged sector's barrel", "carried", 12, 1],
     ["Sector_CopyScroller gives an untagged sector the scroller (zandronum@6fe64e17fb1e)", "carried", 13, 1],
   ],
+  // [rc4l] A doom-namespace map whose Boom conveyor names its sector in arg0 and has a line ID naming another, which it took for its tag until zandronum@a4ccbf23d1b7.
+  MAP06: [
+    ["a translated special's tag is its arg0 (zandronum@a4ccbf23d1b7)", "carried", 14, 1],
+    ["the sector the line's ID names stays put", "still", 15, 1],
+  ],
 };
 // [rc4l] The maps whose checks wait for the level to act first.
-const DELAY = { MAP05: CARRY_TICS };
+const DELAY = { MAP05: CARRY_TICS, MAP06: CARRY_TICS };
 
 function room(m, props, walls) {
   return m.room(0, 0, 1024, 512, { ...ROOM, ...props }, (edge) => ({ side: WALL, line: walls[edge] || {} }));
@@ -102,20 +110,31 @@ export function buildLinelessMap(tagged) {
   return m;
 }
 
-// [rc4l] The south wall's Scroll_Floor carries east in the tagged block, and the untagged block's west line copies it for carrying (arg1 bit 4).
-export function buildCopyScrollerMap() {
-  const m = new UdmfMap();
-  const outer = room(m, { lightlevel: 160 }, { south: { special: SPECIAL.Scroll_Floor, arg0: SCROLL_TAG, arg2: 1, arg3: 192, arg4: 128 } });
-  m.block(64, 64, 256, 256, { ...ROOM, id: SCROLL_TAG, lightlevel: 160 }, outer);
-  m.block(512, 64, 704, 256, { ...ROOM, lightlevel: 160 }, outer, () => ({}), () => ({}),
-    (edge) => (edge === "west" ? { special: SPECIAL.Sector_CopyScroller, arg0: SCROLL_TAG, arg1: 4 } : {}));
-  for (const [tid, at] of Object.entries(BARRELS)) m.thing({ ...at, angle: 0, type: THING.ExplosiveBarrel, id: Number(tid) });
+// [rc4l] The carrying maps' room: line, the walls' lines by edge, a west and an east block styled west and east, eastLine(edge) the east block's lines, and a barrel in each block.
+function carryRoom(m, { line, west, east, eastLine = () => ({}), tids }) {
+  const outer = room(m, { lightlevel: 160 }, line);
+  m.block(64, 64, 256, 256, { ...ROOM, ...west, lightlevel: 160 }, outer);
+  m.block(512, 64, 704, 256, { ...ROOM, ...east, lightlevel: 160 }, outer, () => ({}), () => ({}), eastLine);
+  for (const tid of tids) m.thing({ ...BARRELS[tid], angle: 0, type: THING.ExplosiveBarrel, id: tid });
   playerStart(m);
   return m;
 }
 
+// [rc4l] The south wall's Scroll_Floor carries east in the tagged west block, and the untagged east block's west line copies it for carrying (arg1 bit 4).
+export function buildCopyScrollerMap() {
+  return carryRoom(new UdmfMap(), { line: { south: { special: SPECIAL.Scroll_Floor, arg0: SCROLL_TAG, arg2: 1, arg3: 192, arg4: 128 } },
+    west: { id: SCROLL_TAG }, east: {}, eastLine: (edge) => (edge === "west" ? { special: SPECIAL.Sector_CopyScroller, arg0: SCROLL_TAG, arg1: 4 } : {}),
+    tids: [12, 13] });
+}
+
+// [rc4l] The north wall, drawn west to east, is the conveyor: arg0 the west block's tag, its line ID the east block's.
+export function buildConveyorMap() {
+  return carryRoom(new UdmfMap({ namespace: "doom" }), { line: { north: { special: BOOM_CONVEYOR, arg0: CONVEYOR.tag, id: CONVEYOR.id } },
+    west: { id: CONVEYOR.tag }, east: { id: CONVEYOR.id }, tids: [14, 15] });
+}
+
 const MAPS = { MAP01: buildMoreIdsMap, MAP02: buildHexenMap, MAP03: () => buildLinelessMap(false), MAP04: () => buildLinelessMap(true),
-  MAP05: buildCopyScrollerMap };
+  MAP05: buildCopyScrollerMap, MAP06: buildConveyorMap };
 
 export function buildTagManagerPk3() {
   const behavior = (map) => acsScripts([{ code: checksScript(CHECKS[map], READ, { delayTics: DELAY[map] || 0 }), open: false, number: 1 }], STRINGS);
