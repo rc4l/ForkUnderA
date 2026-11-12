@@ -28,7 +28,7 @@
   4 SVC2_SECRETMARKSECTORFOUND             [Extended] : Sector
  16 SVC_DOSCROLLER                         : Byte Fixed Fixed Long Bool Bool Bool Sector?{hasControl} Byte?{hasPos}
  17 SVC_SPAWNPLAYER                        : Player ShortByte<4> Bool Bool Bool Bool NetID Angle Fixed Fixed Fixed UShort Short?{isMorphed} Class?{isMorphed}
- 18 SVC_MOVEPLAYER                         [Unreliable] : Player Byte Fixed?{flags & PLAYER_VISIBLE} Fixed?{flags & PLAYER_VISIBLE} AproxFixed?{flags & PLAYER_VISIBLE} Angle?{flags & PLAYER_VISIBLE} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELX)} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELY)} AproxFixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELZ)}
+ 18 SVC_MOVEPLAYER                         [Unreliable] : Player Byte Fixed?{flags & PLAYER_VISIBLE} Fixed?{flags & PLAYER_VISIBLE} Fixed?{flags & PLAYER_VISIBLE} Angle?{flags & PLAYER_VISIBLE} Fixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELX)} Fixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELY)} Fixed?{(flags & PLAYER_VISIBLE) && (flags & PLAYER_SENDVELZ)}
  19 SVC_DAMAGEPLAYER                       : Player Variable Variable Actor
   5 SVC2_DAMAGEPLAYERWITHTYPE              [Extended] : Player Variable Variable String Actor
  20 SVC_KILLPLAYER                         : Player Actor Actor Short String<Name> String Class
