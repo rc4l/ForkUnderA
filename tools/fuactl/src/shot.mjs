@@ -496,6 +496,8 @@ export function compile(cm, root, dir, target, log, config = "Release") {
 
 // [rc4l] The data pk3s the engine loads from beside its binary, as the build names their targets.
 export const PK3_TARGETS = ["pk3", "brightmaps_pk3", "skulltag_actors_pk3"];
+// [rc4l] Every target a build compiles: the engine, its data pk3s, and the server registry, which scenarios/registryhost.mjs runs from beside the engine.
+export const BUILD_TARGETS = ["zdoom", ...PK3_TARGETS, "forkundera-server-registry"];
 
 // [rc4l] What is staged beside the exe from the build's output: the data pk3s it loads and its symbols, without which a sample or a crash of the staged binary names no function.
 export function stageCompanions(names) {
@@ -507,7 +509,7 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error, sta
   const cm = cmake || pickCmake();
   refreshGlobs(cm, root, "build-win", ["_compute.cpp"], log);
   // [rc4l] The pk3 targets too: building only zdoom left the data pk3s beside it as old as the last full build.
-  compile(cm, root, "build-win", ["zdoom", ...PK3_TARGETS], log);
+  compile(cm, root, "build-win", BUILD_TARGETS, log);
   let testRun = null;
   if (tests) {
     refreshGlobs(cm, root, "build-tests", ["_compute.cpp", "_test.cpp"], log);
