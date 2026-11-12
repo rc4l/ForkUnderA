@@ -38,6 +38,14 @@ TEST(PlayerSkin, AForbiddenOrOutOfRangeSkinShowsTheBase)
 	EXPECT_EQ(1, ComputeShownSkin(-1, 5, false, 1));
 }
 
+TEST(PlayerSkin, AMorphWearsAChosenSkinButNotItsClasssBaseSkin)
+{
+	EXPECT_TRUE(zx::skin::ComputeWearsSkin(false, false, true));
+	EXPECT_TRUE(zx::skin::ComputeWearsSkin(false, true, false));
+	EXPECT_FALSE(zx::skin::ComputeWearsSkin(false, true, true));
+	EXPECT_FALSE(zx::skin::ComputeWearsSkin(true, false, false));
+}
+
 TEST(PlayerSkin, ABodyShowingItsSpawnSpriteTakesTheSkin)
 {
 	EXPECT_EQ(SKIN_SPRITE_SKIN, ComputeSkinSprite(false, true, false, false));

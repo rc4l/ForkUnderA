@@ -3975,8 +3975,11 @@ void PLAYER_SetSpriteToSkin( player_t *pPlayer )
 	// [BB] There is no skin for the morphed class.
 	// [RK] Let the morph class keep the skin if they don't have +NOSKIN.
 	// [rc4l] Ported from zandronum@ed337e36b30715fd381a82f0ca846adcae1b7c34: the sprite changes only from the spawn sprite, so cl_skins no longer swaps a morph's.
+	// [AK] Except if the skin is the same as the base skin of the current class.
+	// [rc4l] Ported from zandronum@3f8adfdae9dbc2a11340f9d54d55c2bd4143ffcd, by ComputeWearsSkin.
 	AActor *const mo = pPlayer->mo;
-	switch ( zx::skin::ComputeSkinSprite(( mo->flags4 & MF4_NOSKIN ) != 0, mo->sprite == mo->SpawnState->sprite, mo->sprite == SPR_TNT1, mo->sprite == skins[skin].sprite ))
+	const bool wearsSkin = zx::skin::ComputeWearsSkin(( mo->flags4 & MF4_NOSKIN ) != 0, pPlayer->morphTics != 0, skin == pPlayer->CurrentPlayerClass );
+	switch ( zx::skin::ComputeSkinSprite( !wearsSkin, mo->sprite == mo->SpawnState->sprite, mo->sprite == SPR_TNT1, mo->sprite == skins[skin].sprite ))
 	{
 	case zx::skin::SKIN_SPRITE_SKIN: mo->sprite = skins[skin].sprite; break;
 	case zx::skin::SKIN_SPRITE_STATE: mo->sprite = mo->state->sprite; break;

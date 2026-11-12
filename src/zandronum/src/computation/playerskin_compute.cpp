@@ -17,6 +17,11 @@ int ComputeShownSkin(int userSkin, int numSkins, bool forbidden, int baseSkin)
 	return userSkin;
 }
 
+bool ComputeWearsSkin(bool noSkin, bool morphed, bool baseSkinOfClass)
+{
+	return !noSkin && (!morphed || !baseSkinOfClass);
+}
+
 SkinSprite ComputeSkinSprite(bool noSkin, bool showsSpawnSprite, bool showsTNT1, bool showsSkinSprite)
 {
 	if (!noSkin)
