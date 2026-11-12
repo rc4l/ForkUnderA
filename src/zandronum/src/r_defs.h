@@ -814,6 +814,7 @@ struct sector_t : SectorReads<sector_t>
 	}
 
 	bool HasTag(int checktag) const;
+	bool HasTags() const;
 	void SetMainTag(int tagnum);
 	int GetMainTag() const;
 	void ClearTags();

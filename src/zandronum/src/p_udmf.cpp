@@ -806,6 +806,7 @@ public:
 		bool strifetrans = false;
 		bool strifetrans2 = false;
 		FString arg0str, arg1str;
+		int lineid;	// forZDoomTranslated namespace
 
 		memset(ld, 0, sizeof(*ld));
 		ld->Alpha = FRACUNIT;
@@ -842,7 +843,8 @@ public:
 				continue;
 
 			case NAME_Id:
-				ld->SetMainId(CheckInt(key));
+				lineid = CheckInt(key);
+				ld->SetMainId(lineid);
 				continue;
 
 			case NAME_Sidefront:
@@ -1100,7 +1102,7 @@ public:
 			maplinedef_t mld;
 			memset(&mld, 0, sizeof(mld));
 			mld.special = ld->special;
-			mld.tag = ld->GetMainId();
+			mld.tag = lineid;
 			P_TranslateLineDef(ld, &mld, false);
 			ld->flags = saved | (ld->flags&(ML_MONSTERSCANACTIVATE|ML_REPEAT_SPECIAL|ML_FIRSTSIDEONLY));
 		}

@@ -856,6 +856,11 @@ bool sector_t::HasTag(int checktag) const
 	return tag == checktag;
 }
 
+bool sector_t::HasTags() const
+{
+	return tag != 0;
+}
+
 void sector_t::SetMainTag(int tagnum)
 {
 	tag = tagnum;
@@ -891,6 +896,7 @@ void line_t::SetMainId(int newid)
 	id = newid;
 }
 
+// [rc4l] Kept where zandronum@9c5e1cc8d4fa drops it, for fua_find_lines' dump, until a later upstream brings it back as GetFirstLineID.
 int line_t::GetMainId() const
 {
 	return id;
