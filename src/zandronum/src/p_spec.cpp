@@ -304,16 +304,14 @@ int FSectorTagIterator::NextCompat(bool compat, int start)
 
 // killough 4/16/98: Same thing, only for linedefs
 
-int P_FindLineFromID (int id, int start)
+int FLineIdIterator::Next()
 {
-	start = start >= 0 ? lines[start].nextid :
-		lines[(unsigned) id % (unsigned) numlines].firstid;
-	while (start >= 0 && lines[start].id != id)
-		start = lines[start].nextid;
-	return start;
+	while (start != -1 && lines[start].id != searchtag) start = lines[start].nextid;
+	if (start == -1) return -1;
+	int ret = start;
+	start = lines[start].nextid;
+	return ret;
 }
-
-
 
 
 //============================================================================
@@ -1223,7 +1221,8 @@ DWallLightTransfer::DWallLightTransfer (sector_t *srcSec, int target, BYTE flags
 		wallflags = WALLF_ABSLIGHTING | WALLF_NOFAKECONTRAST;
 	}
 
-	for (linenum = -1; (linenum = P_FindLineFromID (target, linenum)) >= 0; )
+	FLineIdIterator itr(target);
+	while ((linenum = itr.Next()) >= 0)
 	{
 		if (flags & WLF_SIDE1 && lines[linenum].sidedef[0] != NULL)
 		{
@@ -1253,7 +1252,8 @@ void DWallLightTransfer::DoTransfer (short lightlevel, int target, BYTE flags)
 {
 	int linenum;
 
-	for (linenum = -1; (linenum = P_FindLineFromID (target, linenum)) >= 0; )
+	FLineIdIterator itr(target);
+	while ((linenum = itr.Next()) >= 0)
 	{
 		line_t *line = &lines[linenum];
 
@@ -2297,15 +2297,19 @@ static void P_SpawnScrollers(void)
 		// killough 3/1/98: scroll wall according to linedef
 		// (same direction and speed as scrolling floors)
 		case Scroll_Texture_Model:
-
+		{
 			// [WS] The server will update these for us.
 			if ( NETWORK_InClientMode() )
 				break;
 
-			for (s=-1; (s = P_FindLineFromID (l->args[0],s)) >= 0;)
+			FLineIdIterator itr(l->args[0]);
+			while ((s = itr.Next()) >= 0)
+			{
 				if (s != i)
-					new DScroller (dx, dy, lines+s, control, accel);
+					new DScroller(dx, dy, lines + s, control, accel);
+			}
 			break;
+		}
 
 		case Scroll_Texture_Offsets:
 		{
@@ -2337,7 +2341,8 @@ static void P_SpawnScrollers(void)
 			}
 			else
 			{
-				for (s = -1; (s = P_FindLineFromID (l->args[1], s)) >= 0;)
+				FLineIdIterator itr(l->args[1]);
+				while ((s = itr.Next()) >= 0)
 				{
 					new DScroller (DScroller::sc_side, dx, dy, control,
 						int(lines[s].sidedef[0] - sides), accel, SCROLLTYPE(l->args[0]));

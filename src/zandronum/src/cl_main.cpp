@@ -7496,8 +7496,10 @@ void ServerCommands::SetLineTextureByID::Execute()
 
 	if ( texture.Exists() )
 	{
-		int linenum = -1;
-		while (( linenum = P_FindLineFromID( lineID, linenum )) >= 0)
+		int linenum;
+		FLineIdIterator itr( lineID );
+
+		while (( linenum = itr.Next( )) >= 0 )
 			client_SetLineTextureHelper( &lines[linenum], side, position, texture );
 	}
 	else

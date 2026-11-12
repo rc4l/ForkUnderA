@@ -300,6 +300,22 @@ public:
 	int NextCompat(bool compat, int secnum);
 };
 
+class FLineIdIterator
+{
+protected:
+	int searchtag;
+	int start;
+
+public:
+	FLineIdIterator(int id)
+	{
+		searchtag = id;
+		start = lines[(unsigned) id % (unsigned) numlines].firstid;
+	}
+
+	int Next();
+};
+
 
 inline int P_FindFirstSectorFromTag(int tag)
 {
@@ -307,8 +323,11 @@ inline int P_FindFirstSectorFromTag(int tag)
 	return it.Next();
 }
 
-int		P_FindLineFromID (int id, int start);
-
+inline int P_FindFirstLineFromID(int tag)
+{
+	FLineIdIterator it(tag);
+	return it.Next();
+}
 
 //
 // P_LIGHTS
