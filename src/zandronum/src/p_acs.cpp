@@ -112,6 +112,7 @@
 #include "computation/wadinfo_compute.h"   // [rc4l] ComputeIndexInRange, ComputeParentWadInfo
 #include "computation/maprotation_compute.h"   // [rc4l] ComputeSetsMapUsedStatus
 #include "computation/checkscript_compute.h"   // [rc4l] ComputeCheckScriptByName, ComputeCheckScriptNumber
+#include "computation/acsautomap_compute.h"   // [rc4l] ComputeAutomapStatus
 #include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
 #include <cstddef>
 
@@ -5805,6 +5806,8 @@ enum EACSFunctions
 	ACSF_SetMapUsedStatus,
 	// [rc4l] Ported from zandronum@92ebf777950155f28651186233b53d682acd986e: CheckScript, number 188 as theirs.
 	ACSF_CheckScript,
+	// [rc4l] Adapted from zandronum@6869793234d6828e47a2aa3b57a9ea7a87736e0b: CheckAutomap.
+	ACSF_CheckAutomap,
 
 	// ZDaemon
 	ACSF_GetTeamScore = 19620,	// (int team)
@@ -9366,6 +9369,10 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			const bool byName = zx::ComputeCheckScriptByName( argCount, argCount > 1 ? args[1] : 0 );
 			return ACS_ExistsScript( zx::ComputeCheckScriptNumber( byName, args[0], byName ? FName( FBehavior::StaticLookupString( args[0] ), true ).GetIndex( ) : 0 ));
 		}
+
+		// [rc4l] Adapted from zandronum@6869793234d6828e47a2aa3b57a9ea7a87736e0b: whether the automap is off, full or overlaid, the choice in computation/acsautomap_compute.
+		case ACSF_CheckAutomap:
+			return zx::ComputeAutomapStatus( automapactive, viewactive );
 
 		case ACSF_GetActorFloorTexture:
 		{
