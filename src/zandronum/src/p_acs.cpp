@@ -8902,7 +8902,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 							continue;
 
 						FString playerName = players[i].userinfo.GetName( );
-						V_UnColorizeString( playerName );
+						V_RemoveColorCodes( playerName );
 
 						if ( playerName.CompareNoCase( botName ) == 0 )
 						{
