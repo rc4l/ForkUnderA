@@ -2661,6 +2661,11 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 		SERVERCOMMANDS_SetAllPlayerUserInfo( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
 		// [BB] Make sure that morphed players are spawned as morphed.
 		SERVERCOMMANDS_SpawnPlayer( ulIdx, PST_REBORNNOINVENTORY, ulClient, SVCF_ONLYTHISCLIENT, !!( pPlayer->morphTics ) );
+		// [AK] After spawning this player, re-send their skin back to the client. This ensures that the
+		// player has the correct skin on the client's end after spawning, in case there's multiple
+		// player classes with their own set of skins (i.e. sending their userinfo before spawning them
+		// doesn't always set their skin correctly).
+		SERVERCOMMANDS_SetPlayerUserInfo( ulIdx, { NAME_Skin }, ulClient, SVCF_ONLYTHISCLIENT );
 		// [BB] Since the player possibly lost something from his default inventory, destory everything
 		// he is spawned with on the client. Everything the client has to know about the inventory is
 		// handled below.

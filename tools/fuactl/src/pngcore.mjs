@@ -95,6 +95,18 @@ export function cropImage(img, box, zoom = 4, gain = 1) {
   return { w, h, rgb, srcW: x1 - x0, srcH: y1 - y0 };
 }
 
+// [rc4l] A w by h image of one colour as RGB bytes.
+export function solidRGB(w, h, rgb) {
+  const out = Buffer.alloc(w * h * 3);
+  for (let i = 0; i < w * h; i++) out.set(rgb, i * 3);
+  return out;
+}
+
+// [rc4l] An n by n PNG of one colour, by default a sprite standing on its bottom middle.
+export function solidPNG(rgb, n = 32, { grab = [n / 2, n] } = {}) {
+  return encodePNG(n, n, solidRGB(n, n, rgb), { grab });
+}
+
 // [rc4l] An RGB image as PNG bytes, for a capture on disk or a graphic lump inside a template wad.
 // [Doruk-Aksoy] With grab [x, y], ZDoom's grAb chunk gives a sprite its offsets, so it stands on its actor rather than hanging below it.
 export function encodePNG(w, h, rgb, { grab = null } = {}) {
