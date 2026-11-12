@@ -6862,7 +6862,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Warp)
 		caller = temp;
 	}
 
-	const MOVE_THING_DATA_s oldPositionData ( caller ); // [TP]
+	const MoveThingData oldPositionData( caller ); // [TP]
 
 	if (!(flags & WARPF_ABSOLUTEANGLE))
 	{

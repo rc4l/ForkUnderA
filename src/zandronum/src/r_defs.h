@@ -382,9 +382,6 @@ struct secplane_t : secplane_core_t
 	// [Spleen] Store the old D's of the plane for unlagged support
 	fixed_t		unlaggedD[UNLAGGEDTICS];
 	fixed_t		restoreD;
-
-	// [AK] The old D of the plane before backtracing a player.
-	fixed_t		backtraceRestoreD;
 };
 
 FArchive &operator<< (FArchive &arc, secplane_t &plane);

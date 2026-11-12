@@ -82,6 +82,29 @@ typedef TFlags<ServerCommandFlag, unsigned int> ServerCommandFlags;
 DEFINE_TFLAGS_OPERATORS (ServerCommandFlags)
 
 //*****************************************************************************
+//	STRUCTURES
+
+struct MoveThingData
+{
+	MoveThingData( AActor *actor ) :
+		x( actor->x ),
+		y( actor->y ),
+		z( actor->z ),
+		velx( actor->velx ),
+		vely( actor->vely ),
+		velz( actor->velz ),
+		pitch( actor->pitch ),
+		angle( actor->angle ),
+		movedir( actor->movedir ) { }
+
+	fixed_t x, y, z;
+	fixed_t velx, vely, velz;
+	fixed_t pitch;
+	angle_t angle;
+	BYTE movedir;
+};
+
+//*****************************************************************************
 //	PROTOTYPES
 
 // General protocol commands. These handle connecting to and being part of the server.
@@ -160,7 +183,7 @@ void	SERVERCOMMANDS_SpawnThingExactNoNetID( AActor *pActor, ULONG ulPlayerExtra 
 void	SERVERCOMMANDS_LevelSpawnThing( AActor *mobj, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_LevelSpawnThingNoNetID( AActor *mobj, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_MoveThing( AActor *pActor, ULONG ulBits, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
-void	SERVERCOMMANDS_MoveThingIfChanged( AActor *pActor, const MOVE_THING_DATA_s &oldData, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+void	SERVERCOMMANDS_MoveThingIfChanged( AActor *pActor, const MoveThingData &oldData, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_MoveThingExact( AActor *pActor, ULONG ulBits, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_MoveThingExactWhole( AActor *pActor, ULONG ulBits );	// [Doruk-Aksoy] every coordinate exactly, nothing trimmed or reused
 void	SERVERCOMMANDS_KillThing( AActor *pActor, AActor *pSource, AActor *pInflictor );
