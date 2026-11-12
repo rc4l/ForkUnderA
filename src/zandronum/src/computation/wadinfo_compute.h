@@ -11,7 +11,7 @@ namespace zx { namespace wadinfo {
 // [rc4l] Whether an index a script hands in names one of count entries, a negative one never.
 bool ComputeIndexInRange(int index, unsigned count);
 
-// [rc4l] Ported from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: a wad's parent as GetWadInfo gives it, -1 for a wad no other file holds.
+// [rc4l] Ported from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: a wad's parent as GetWadInfo gives it, -1 for a wad no other file holds.
 int ComputeParentWadInfo(int parentWadNum, int wadNum);
 
 }} // namespace zx::wadinfo

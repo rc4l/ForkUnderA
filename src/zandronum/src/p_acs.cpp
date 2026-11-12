@@ -5797,7 +5797,7 @@ enum EACSFunctions
 	ASCF_SetControlPointInfo,
 	ASCF_GetSkinProperty, // [TRSR]
 	ACSF_IsPlayerContestingControlPoint,
-	// [rc4l] Ported from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: GetWadInfo, number 186 as theirs.
+	// [rc4l] Ported from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: GetWadInfo, number 186 as theirs.
 	ACSF_GetWadInfo,
 
 	// ZDaemon
@@ -8789,7 +8789,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				{
 					LUMP_INFO_SIZE,
 					LUMP_INFO_NAME,
-					// [rc4l] Ported from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: a lump's namespace and the wad it belongs to.
+					// [rc4l] Ported from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: a lump's namespace and the wad it belongs to.
 					LUMP_INFO_NAMESPACE,
 					LUMP_INFO_WAD,
 				};
@@ -9249,7 +9249,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				argCount > 11 ? FIXED2DBL(args[11]) : 1.0 );
 		}
 
-		// [rc4l] Adapted from zandronum@57fe0dc1ae24ae1c6a58bc2c2ce0f2a8460344cf: a wad's name, lumps, parent and flags, the range and parent rules in computation/wadinfo_compute.
+		// [rc4l] Adapted from zandronum@57fe0dc1ae24dc4352a3ab04ec232f6ff985062b: a wad's name, lumps, parent and flags, the range and parent rules in computation/wadinfo_compute.
 		case ACSF_GetWadInfo:
 		{
 			enum
