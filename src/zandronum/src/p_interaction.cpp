@@ -2788,14 +2788,19 @@ void PLAYER_SetSpectator( player_t *pPlayer, bool bBroadcast, bool bDeadSpectato
 						SERVERCOMMANDS_MoveLocalPlayer( ULONG( pPlayer - players ));
 				}
 
+				// [AK] Temporarily set the player's current weapon to what they were using before
+				// turning into a dead spectator. This is necessary because G_QueueBody uses their
+				// current weapon when it calls PLAYER_ApplySkinScaleToBody in it.
+				// [rc4l] Ported from zandronum@0e35b4f5c5d42805d0de2eb3ef77388ef9c08820: G_QueueBody scales the body once, with the weapon the player held.
+				AWeapon *currentWeapon = pPlayer->ReadyWeapon;
+				pPlayer->ReadyWeapon = pOldWeapon;
+
 				// [AK] Disassociate the player from their old body. This prevents the old body from
 				// being frozen and not finishing their animation when they become a spectator.
 				// Add their old body to body queue too.
 				G_QueueBody( pOldBody );
 				pOldBody->player = NULL;
-
-				// [AK] Apply the skin's scale to the old body's scale.
-				PLAYER_ApplySkinScaleToBody( pPlayer, pOldBody, pOldWeapon );
+				pPlayer->ReadyWeapon = currentWeapon;
 			}
 
 			// [AK] If the player was morphed before turning into a dead spectator, unmorph them now.
