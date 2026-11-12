@@ -8891,10 +8891,23 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				if (( NETWORK_InClientMode( )) || ( level.flagsZA & LEVEL_ZA_NOBOTNODES ))
 					return 0;
 
-				// [AK] If a name is provided, remove the bot with that name.
+				const char *botName = nullptr;
+
 				if ( argCount > 0 )
 				{
-					const char *botName = FBehavior::StaticLookupString( args[0] );
+					botName = FBehavior::StaticLookupString( args[0] );
+
+					// [TRSR] ACC doesn't allow not providing an argument, so we should treat empty strings as not provided.
+					if ( botName != nullptr && strlen( botName ) == 0 )
+						botName = nullptr;
+				}
+
+				// [AK] If a name is provided, remove the bot with that name.
+				if ( botName != nullptr )
+				{
+					// [TRSR] Remove color codes from input in case this comes from StrParam(n:x)
+					FString cleanBotName = botName;
+					V_RemoveColorCodes( cleanBotName );
 
 					for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 					{
@@ -8904,7 +8917,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 						FString playerName = players[i].userinfo.GetName( );
 						V_RemoveColorCodes( playerName );
 
-						if ( playerName.CompareNoCase( botName ) == 0 )
+						if ( playerName.CompareNoCase( cleanBotName ) == 0 )
 						{
 							BOTS_RemoveBot( i, true );
 							return 1;
