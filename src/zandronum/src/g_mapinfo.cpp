@@ -1608,6 +1608,7 @@ MapFlagHandlers[] =
 	{ "nobotnodes",						MITYPE_SETFLAGZA,	LEVEL_ZA_NOBOTNODES, 0 },// [BC] Allow the prevention of spawning bot nodes (helpful for very large maps).
 	{ "lobby",							MITYPE_SETFLAGZA,	LEVEL_ZA_ISLOBBY, 0 },	// [AM] Prefer this.
 	{ "islobby",						MITYPE_SETFLAGZA,	LEVEL_ZA_ISLOBBY, 0 },	// [BB]
+	{ "noskirmish",						MITYPE_SETFLAGZA,	LEVEL_ZA_NOSKIRMISH, 0 },	// [TRSR]
 	{ "compat_shorttex",				MITYPE_COMPATFLAG, COMPATF_SHORTTEX, 0 },
 	{ "compat_stairs",					MITYPE_COMPATFLAG, COMPATF_STAIRINDEX, 0 },
 	{ "compat_limitpain",				MITYPE_COMPATFLAG, COMPATF_LIMITPAIN, 0 },

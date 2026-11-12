@@ -249,6 +249,8 @@ enum ELevelFlags : unsigned int
 	// [BB] Ceartain game modes are supposed to behave differently on
 	// the map. For example in duel mode the countdown and the map reset are skipped.
 	LEVEL_ZA_ISLOBBY				= 0x00000002,
+	// [TRSR] Hide this map from Offline Skirmish and similar menus
+	LEVEL_ZA_NOSKIRMISH			= 0x00000004,
 };
 
 
