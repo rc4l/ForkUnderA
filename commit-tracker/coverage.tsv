@@ -2644,7 +2644,7 @@ bddad29acb79ac0e301574ac7603fa9ff2d5ab8f	2016-02-01T00:50:56Z	Merge branch 'Clip
 1d0a3d19c870d0fdcf83b5e7ffa8f2e58d49edd0	2016-02-01T02:45:37Z	Fix a part in maskwallscan that was missed for right-edge exclusivity	pending		/
 0b9aeb33e13418c9049527ec7768cbf101749a1b	2016-02-01T02:52:56Z	Fixed potential divide by 0 when drawing voxels	pending		/
 809a9d801cb69aedc0f449604954aaddd08e89f7	2016-02-01T03:23:45Z	Got a flag backwards	pending		/
-2f4dc1795496ba25217bc0a28325a993039675b0	2016-02-01T04:05:32Z	Add support for face sprite Y flipping	pending		/
+2f4dc1795496ba25217bc0a28325a993039675b0	2016-02-01T04:05:32Z	Add support for face sprite Y flipping	skip	twin zandronum@071188ccc: r_things.cpp, the software renderer's sprite drawer, is its only file and is not in our tree; a negative y scale flipping a sprite in GL and Vulkan is a separate gap, grep RF_YFLIP gl/scene/gl_sprite.cpp	/
 fd2828b1fe614f62faa2be91a105f89d17608896	2016-02-01T09:00:19Z	- fixed typo in monster movement code.	pending		/
 58196f77ff0e41fa8fc2c708c7477a2372a6e35c	2016-02-01T09:00:39Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 e0608f50d17bee0ccd2e8cb8e3a43428d9a285df	2016-02-01T09:45:33Z	- create a separate translation table for Heretic's rain pillar.	pending		/
