@@ -4667,7 +4667,17 @@ void player_t::Serialize (FArchive &arc)
 	//	arc << frags[i];
 	arc << psprites;	// [overlay] serializes the whole dynamic layer container
 
-	arc << CurrentPlayerClass;
+	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: the class number is an int, which saves before 4527 kept in a byte.
+	if (SaveVersion >= 4527)
+	{
+		arc << CurrentPlayerClass;
+	}
+	else
+	{
+		BYTE byteClass = 0;
+		arc << byteClass;
+		CurrentPlayerClass = byteClass;
+	}
 
 	arc << crouchfactor
 		<< crouching 

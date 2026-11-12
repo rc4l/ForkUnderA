@@ -174,7 +174,9 @@ int GetRevisionNumber();
 // (uzdoom@da74b9df95, guarded in P_SerializeSounds). Upstream's keyed saves needed no bump.
 // [Doruk-Aksoy] 4526: the level snapshot holds what the fua_ ACS functions turned its post-process shaders to
 // (features/acs-shaders, guarded in SerializeLevelShaders).
-#define SAVEVER 4526
+// [rc4l] 4527: player_t's CurrentPlayerClass is an int rather than a byte (zandronum@9cee7e80ec24, which
+// did not bump); older saves read it as a byte, guarded in player_t::Serialize.
+#define SAVEVER 4527
 
 
 #define SAVEVERSTRINGIFY2(x) #x

@@ -2265,7 +2265,8 @@ void G_PlayerReborn (int player, bool bGiveInventory)
 	int 		itemcount;
 	int 		secretcount;
 	int			chasecam;
-	BYTE		currclass;
+	// [rc4l] Ported from zandronum@9cee7e80ec2496a0ad90e0b01dc05be61c760d98: an int, as CurrentPlayerClass is.
+	int			currclass;
 	userinfo_t  userinfo;	// [RH] Save userinfo
 	// [BB]
 	//botskill_t  b_skill;	//Added by MC:
