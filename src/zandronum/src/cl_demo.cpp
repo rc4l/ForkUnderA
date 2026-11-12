@@ -78,6 +78,7 @@
 
 #include "features/fov-interp/fovcvar.h"
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
+#include "computation/demobytes_compute.h"	// [rc4l] ComputeDemoBytes
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -355,10 +356,11 @@ void CLIENTDEMO_WriteUserInfo( void )
 {
 	// First, make sure we have enough space to write this command. If not, add
 	// more space.
-	clientdemo_CheckDemoBuffer( 18 +
-		(ULONG)strlen( players[consoleplayer].userinfo.GetName() ) +
-		(ULONG)strlen( skins[players[consoleplayer].userinfo.GetSkin()].name ) +
-		(ULONG)strlen( PlayerClasses[players[consoleplayer].CurrentPlayerClass].Type->Meta.GetMetaString( APMETA_DisplayName )));
+	// [rc4l] Adapted from zandronum@25198379d37173b00002fc648c442f351a85edec: the null terminators counted by ComputeDemoBytes, beside the 19 bytes of the header and fixed fields.
+	clientdemo_CheckDemoBuffer( (ULONG)zx::ComputeDemoBytes( 19, {
+		strlen( players[consoleplayer].userinfo.GetName() ),
+		strlen( skins[players[consoleplayer].userinfo.GetSkin()].name ),
+		strlen( PlayerClasses[players[consoleplayer].CurrentPlayerClass].Type->Meta.GetMetaString( APMETA_DisplayName )) }));
 
 	// Write the header.
 	g_ByteStream.WriteByte( CLD_USERINFO );
@@ -806,8 +808,9 @@ void CLIENTDEMO_SetGameticOffset( LONG lOffset )
 //
 void CLIENTDEMO_WriteLocalCommand( ClientDemoLocalCommand command, const char* pszArg )
 {
+	// [rc4l] Adapted from zandronum@25198379d37173b00002fc648c442f351a85edec: the argument's null terminator counted by ComputeDemoBytes.
 	if ( pszArg != NULL )
-		clientdemo_CheckDemoBuffer( (ULONG)strlen( pszArg ) + 2 );
+		clientdemo_CheckDemoBuffer( (ULONG)zx::ComputeDemoBytes( 2, { strlen( pszArg ) } ));
 	else
 		clientdemo_CheckDemoBuffer( 2 );
 
