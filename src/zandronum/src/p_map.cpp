@@ -5742,13 +5742,15 @@ bool P_TalkFacing(AActor *player)
 {
 	AActor *linetarget;
 
-	P_AimLineAttack(player, player->angle, TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION);
+	// [SB] Added ALF_FORCEALLYCHECK to all of these so that conversations can be started
+	// with actors that have the FRIENDLY flag when sv_shootthroughallies is enabled.
+	P_AimLineAttack(player, player->angle, TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION | ALF_FORCEALLYCHECK);
 	if (linetarget == NULL)
 	{
-		P_AimLineAttack(player, player->angle + (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION);
+		P_AimLineAttack(player, player->angle + (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION | ALF_FORCEALLYCHECK);
 		if (linetarget == NULL)
 		{
-			P_AimLineAttack(player, player->angle - (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION);
+			P_AimLineAttack(player, player->angle - (ANGLE_90 >> 4), TALKRANGE, &linetarget, ANGLE_1 * 35, ALF_FORCENOSMART | ALF_CHECKCONVERSATION | ALF_FORCEALLYCHECK);
 			if (linetarget == NULL)
 			{
 				return false;

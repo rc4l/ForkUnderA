@@ -46,6 +46,11 @@ test("a map that runs scripts carries its BEHAVIOR between TEXTMAP and ENDMAP", 
   assert.deepEqual(names, ["MAP01", "TEXTMAP", "BEHAVIOR", "ENDMAP"]);
 });
 
+test("a map's extra lumps go after its BEHAVIOR, before ENDMAP", () => {
+  const names = mapLumps("MAP01", new UdmfMap(), { behavior: Buffer.from("ACS"), extra: [{ name: "DIALOGUE", data: "x" }] }).map((l) => l.name);
+  assert.deepEqual(names, ["MAP01", "TEXTMAP", "BEHAVIOR", "DIALOGUE", "ENDMAP"]);
+});
+
 test("a block is a two-sided sector inside another, on every line's front, styled on the side facing out", () => {
   const m = new UdmfMap();
   const outer = m.room(0, 0, 256, 256, { heightfloor: 0 });

@@ -158,10 +158,10 @@ export function wad(lumps) {
   return out;
 }
 
-// [rc4l] The lumps one UDMF map needs: its marker, its TEXTMAP, a BEHAVIOR when it runs scripts, and ENDMAP.
-export function mapLumps(name, map, { behavior = null } = {}) {
+// [rc4l] The lumps one UDMF map needs: its marker, its TEXTMAP, a BEHAVIOR when it runs scripts, any `extra` map lumps such as DIALOGUE, and ENDMAP.
+export function mapLumps(name, map, { behavior = null, extra = [] } = {}) {
   return [{ name, data: "" }, { name: "TEXTMAP", data: map.textmap() },
-    ...(behavior ? [{ name: "BEHAVIOR", data: behavior }] : []), { name: "ENDMAP", data: "" }];
+    ...(behavior ? [{ name: "BEHAVIOR", data: behavior }] : []), ...extra, { name: "ENDMAP", data: "" }];
 }
 
 // [rc4l] A WAD's lumps in directory order, as { name, data } with data a Buffer; wad() written backwards.
