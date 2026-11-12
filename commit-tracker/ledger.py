@@ -310,6 +310,25 @@ def tag_pattern(name, shas):
     return "(^|[^A-Za-z0-9_-])%s@(%s)" % (re.escape(name), alts)
 
 
+def full_tag_pattern(name):
+    """An extended regex for `<name>@<full 40-hex node>` tags, which a longer name ending in it (qzandronum@) does not match."""
+    return "(^|[^A-Za-z0-9_-])%s@[0-9a-f]{40}" % re.escape(name)
+
+
+def misnamed_tags(name, rows, grep_lines):
+    """`git grep -n` lines whose full `<name>@<node>` tag shares a row's 12-hex prefix but not its node: a tail typed by hand."""
+    by_prefix = {r["sha"][:12]: r["sha"] for r in rows if len(r["sha"]) == 40}
+    found = re.compile(r"(?:^|[^A-Za-z0-9_-])%s@([0-9a-f]{40})" % re.escape(name))
+    problems = []
+    for line in grep_lines:
+        where = ":".join(line.split(":", 2)[:2])
+        for node in found.findall(line):
+            real = by_prefix.get(node[:12])
+            if real and real != node:
+                problems.append("%s names %s@%s, whose row is %s" % (where, name, node, real))
+    return problems
+
+
 def aliases_of(led, sha, root=ROOT):
     """Legacy git-mirror shas recorded for a node in the ledger's aliases.tsv (D1)."""
     path = os.path.join(ledger_dir(led, root), "aliases.tsv")

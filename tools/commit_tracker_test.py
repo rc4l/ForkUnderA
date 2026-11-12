@@ -128,6 +128,25 @@ class Parsers(unittest.TestCase):
         self.assertEqual(list(vcs.parse_grep("src\\p.cpp:12120:5:a:b", "hg")), [("src/p.cpp", "a:b")])
 
 
+class Tags(unittest.TestCase):
+    def test_a_full_tag_with_a_rows_prefix_must_carry_its_node(self):
+        real = "0123456789abcdef0123456789abcdef01234567"
+        rows = [{"sha": real}, {"sha": "fedcba9876543210fedcba9876543210fedcba98"}]
+        lines = [
+            "src/a.cpp:5:// [rc4l] Ported from zandronum@%s: right." % real,
+            "src/a.cpp:9:// [rc4l] Ported from zandronum@0123456789abffffffffffffffffffffffffffff: a typed tail.",
+            "src/b.h:2:// [rc4l] Ported from zandronum@c3543573546a9691bc19ead5a0e3614254929ed5: no row, left alone.",
+            "src/c.h:3:// [rc4l] Ported from qzandronum@0123456789abffffffffffffffffffffffffffff: another port's.",
+        ]
+        self.assertEqual(L.misnamed_tags("zandronum", rows, lines),
+                         ["src/a.cpp:9 names zandronum@0123456789abffffffffffffffffffffffffffff, whose row is %s" % real])
+
+    def test_the_grep_pattern_skips_a_longer_name(self):
+        pat = re.compile(L.full_tag_pattern("zandronum"))
+        self.assertTrue(pat.search("x zandronum@" + "a" * 40))
+        self.assertFalse(pat.search("qzandronum@" + "a" * 40))
+
+
 class Rows(unittest.TestCase):
     def test_header_documents_columns(self):
         self.assertIn('"zandronum-base" if baseline', L.header(UZ))

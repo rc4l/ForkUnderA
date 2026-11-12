@@ -188,6 +188,11 @@ def check_ledger(cfg, led, reach=None):
                 problems.append("%s -> our commit %s is not reachable from HEAD (orphaned by an amend or a squash merge?)"
                                 % (r["sha"], t))
 
+    # [rc4l] A provenance tag whose prefix names a row must carry that row's node, since a hand-typed tail reads as real.
+    tags = subprocess.run(["git", "-C", ROOT, "grep", "-n", "-I", "-E", "-e", L.full_tag_pattern(led["name"]), "--", "src", "tools", "docs"],
+                          capture_output=True, text=True).stdout.splitlines()
+    problems += L.misnamed_tags(led["name"], rows, tags)
+
     mm, checked = overlap.mismatches(rows, L.read_files_map(led))
     for sha, status, ours, title in mm:
         problems.append("%s [%s] -> %s touched none of the upstream files (%s); say so with "

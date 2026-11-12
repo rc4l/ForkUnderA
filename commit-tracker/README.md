@@ -165,7 +165,8 @@ is unclear, ours wins. The note opens with `ours-wins:` or `theirs-wins:` and sa
 | `zscript` | `docs/zscript-insulation.md` | anything that needs the ZScript VM |
 
 A Zandronum row is never `zandronum-base`: every one of them is after our base, so the check
-rejects it. Documented existence checks for Zandronum skips: the auth server was removed, the
+rejects it. A full `<ledger>@<node>` provenance tag whose first 12 digits match a row must carry
+that row's node, so a tail typed by hand fails the check rather than reading as real. Documented existence checks for Zandronum skips: the auth server was removed, the
 changelog is not maintained past 3.2.1, and stock Zandronum peers are refused at connect
 (`src/zandronum/src/features/net-transport/README.md`).
 
