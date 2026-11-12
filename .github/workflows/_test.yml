@@ -91,6 +91,12 @@ jobs:
       - name: Version tag tripwire
         run: bash tools/version-tag-tripwire.sh
 
+      # [rc4l] A branch reaches only the root commits its base does, so an unrelated or stale copy of the history can't be merged in.
+      - name: History tripwire
+        run: |
+          python3 tools/history_tripwire_test.py
+          python3 tools/history_tripwire.py
+
       # [rc4l] The FF-parity tripwire retired with its subject at the GL 2.x removal
       # (staircase flight 13a): there is no fixed-function branch left to diverge from.
 
