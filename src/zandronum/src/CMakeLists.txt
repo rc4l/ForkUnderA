@@ -1809,6 +1809,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
 	features/frame-limit/computation/framelimit_compute.cpp
+	features/aspect-ratio/computation/ratiobucket_compute.cpp
 	features/dynres/computation/dynres_compute.cpp
 	features/dynlights/computation/nodeindex_compute.cpp
 	features/cvar-alias/computation/cvaralias_compute.cpp

@@ -58,6 +58,7 @@
 #include "r_nullrenderer.h"
 #endif
 #include "features/frame/framedriver.h"   // [rc4l] CreateLaunchRenderer
+#include "features/aspect-ratio/computation/ratiobucket_compute.h"
 
 EXTERN_CVAR (Bool, ticker)
 EXTERN_CVAR (Bool, fullscreen)
@@ -496,7 +497,8 @@ CUSTOM_CVAR (Float, vid_winscale, 1.f, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 
 CCMD (vid_listmodes)
 {
-	static const char *ratios[5] = { "", " - 16:9", " - 16:10", " - 17:10", " - 5:4" };
+	// [rc4l] Ported from zandronum@bab77c3aab00b84c18fc1fb997af3ef2776d8f07: 21:9 is bucket 6, with 5 the redundant 17:10, so the list is seven long.
+	static const char *ratios[7] = { "", " - 16:9", " - 16:10", " - 17:10", " - 5:4", " - 17:10", " - 21:9" };
 	int width, height, bits;
 	bool letterbox;
 
@@ -514,7 +516,7 @@ CCMD (vid_listmodes)
 			int ratio = CheckRatio (width, height);
 			Printf (thisMode ? PRINT_BOLD : PRINT_HIGH,
 				"%s%4d x%5d x%3d%s%s\n",
-				thisMode || !(ratio & 3) ? "" : TEXTCOLOR_GOLD,
+				thisMode || !zx::aspect::ComputeRatioIsWidescreen(ratio) ? "" : TEXTCOLOR_GOLD,
 				width, height, bits,
 				ratios[ratio],
 				thisMode || !letterbox ? "" : TEXTCOLOR_BROWN " LB"

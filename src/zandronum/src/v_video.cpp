@@ -71,6 +71,7 @@
 #include "features/draw2d/record.h"
 #include "features/hwrender/computation/rendererrate_compute.h"
 #include "features/hwrender/backendonly.h"                         // [rc4l] BackendApiName, for the backend line's name
+#include "features/aspect-ratio/computation/ratiobucket_compute.h"
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -1780,44 +1781,17 @@ CUSTOM_CVAR (Int, vid_aspect, 0, CVAR_GLOBALCONFIG|CVAR_ARCHIVE)
 // 2: 16:10
 // 3: 17:10
 // 4: 5:4
+// 6: 21:9
 // [rc4l] Helper for ActiveRatio and CheckRatio. Returns the forced ratio type, or -1 if none.
 // Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94 ("Add ActiveRatio to be used where CheckRatio is used today").
 //
 // Extracted verbatim out of CheckRatio so both the old bucket API and the new float one honour
 // vid_aspect / vid_nowidescreen identically -- two copies of this would drift the moment either was
 // touched.
-//
-// Our vid_aspect tops out at 5 where upstream's allows 6 (21:9); left as-is, since adding a ratio the
-// menu cannot select is a separate change.
+// [rc4l] The rule is features/aspect-ratio's, where vid_aspect 6 forces 21:9 (zandronum@bab77c3aab00b84c18fc1fb997af3ef2776d8f07).
 int ActiveFakeRatio(int width, int height)
 {
-	int fakeratio = -1;
-
-	if ((vid_aspect >= 1) && (vid_aspect <= 5))
-	{
-		// [SP] User wants to force aspect ratio; let them.
-		fakeratio = int(vid_aspect);
-		if (fakeratio == 3)
-		{
-			fakeratio = 0;
-		}
-		else if (fakeratio == 5)
-		{
-			fakeratio = 3;
-		}
-	}
-	if (vid_nowidescreen)
-	{
-		if (!vid_tft)
-		{
-			fakeratio = 0;
-		}
-		else
-		{
-			fakeratio = (height * 5/4 == width) ? 4 : 0;
-		}
-	}
-	return fakeratio;
+	return zx::aspect::ComputeForcedRatioBucket(vid_aspect, vid_nowidescreen, vid_tft, width, height);
 }
 
 // [rc4l] Active screen ratio based on cvars and size. Ported from UZDoom 5720634045b0812bc838eb4671a4039917582a94.
@@ -1849,43 +1823,8 @@ float ActiveRatio(int width, int height, float *trueratio)
 
 int CheckRatio (int width, int height, int *trueratio)
 {
-	int ratio;
-
-	int fakeratio = ActiveFakeRatio(width, height);
-
-	// If the size is approximately 16:9, consider it so.
-	if (abs (height * 16/9 - width) < 10)
-	{
-		ratio = 1;
-	}
-	// Consider 17:10 as well.
-	else if (abs (height * 17/10 - width) < 10)
-	{
-		ratio = 3;
-	}
-	// 16:10 has more variance in the pixel dimensions. Grr.
-	else if (abs (height * 16/10 - width) < 60)
-	{
-		// 320x200 and 640x400 are always 4:3, not 16:10
-		if ((width == 320 && height == 200) || (width == 640 && height == 400))
-		{
-			ratio = 0;
-		}
-		else
-		{
-			ratio = 2;
-		}
-	}
-	// Unless vid_tft is set, 1280x1024 is 4:3, not 5:4.
-	else if (height * 5/4 == width && vid_tft)
-	{
-		ratio = 4;
-	}
-	// Assume anything else is 4:3. (Which is probably wrong these days...)
-	else
-	{
-		ratio = 0;
-	}
+	const int ratio = zx::aspect::ComputeRatioBucket(width, height, vid_tft);
+	const int fakeratio = ActiveFakeRatio(width, height);
 
 	if (trueratio != NULL)
 	{
