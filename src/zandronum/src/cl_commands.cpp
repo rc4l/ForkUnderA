@@ -625,7 +625,8 @@ void CLIENTCOMMANDS_GiveCheat( char *pszItem, LONG lAmount )
 {
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( CLC_GIVECHEAT );
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteString( pszItem );
-	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( lAmount );
+	// [Doruk-Aksoy] A long, not a byte, so an amount past 255 reaches the server.
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( lAmount );
 }
 
 //*****************************************************************************
@@ -634,7 +635,8 @@ void CLIENTCOMMANDS_TakeCheat( const char *item, LONG amount )
 {
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( CLC_TAKECHEAT );
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteString( item );
-	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( amount );
+	// [Doruk-Aksoy] A long, not a byte, so an amount past 255 reaches the server.
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( amount );
 }
 
 //*****************************************************************************
