@@ -2318,14 +2318,14 @@ bool SERVER_GetUserInfo( BYTESTREAM_s *byteStream, bool allowKick, bool enforceR
 				// If so, give the player a generic unused name and inform the client.
 				else if ( PLAYER_NameUsed( value, g_lCurrentClient ))
 				{
-					overriddenNameMessage.Format( "The name '%s' is already in use. ", value.GetChars( ));
+					overriddenNameMessage.Format( "The name \"%s\" is already in use.", value.GetChars( ));
 					overriddenName = true;
 				}
 
 				if ( overriddenName )
 				{
 					value = PLAYER_GenerateUniqueName( );
-					overriddenNameMessage.AppendFormat( "You are renamed to '%s'.\n", value.GetChars( ));
+					overriddenNameMessage.AppendFormat( " You are renamed to \"%s\".", value.GetChars( ));
 					SERVERCOMMANDS_PrintMid( overriddenNameMessage.GetChars( ), true, g_lCurrentClient, SVCF_ONLYTHISCLIENT );
 				}
 
