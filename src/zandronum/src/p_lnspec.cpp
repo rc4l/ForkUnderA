@@ -1356,7 +1356,7 @@ FUNC(LS_Thing_Destroy)
 		while (actor)
 		{
 			AActor *temp = iterator.Next ();
-			if (actor->flags & MF_SHOOTABLE && actor->Sector->tag == arg2)
+			if (actor->flags & MF_SHOOTABLE && actor->Sector->HasTag(arg2))
 				P_DamageMobj (actor, NULL, it, arg1 ? TELEFRAG_DAMAGE : actor->health, NAME_None);
 			actor = temp;
 		}
@@ -1369,7 +1369,7 @@ FUNC(LS_Thing_Destroy)
 		while (actor)
 		{
 			AActor *temp = iterator.Next ();
-			if (actor->flags & MF_SHOOTABLE && (arg2 == 0 || actor->Sector->tag == arg2))
+			if (actor->flags & MF_SHOOTABLE && (arg2 == 0 || actor->Sector->HasTag(arg2)))
 				P_DamageMobj (actor, NULL, it, arg1 ? TELEFRAG_DAMAGE : actor->health, NAME_None);
 			actor = temp;
 		}
@@ -2398,7 +2398,7 @@ FUNC(LS_Scroll_Wall)
 	{
 		if (scroller->IsType (type))
 		{
-			if (sectors[scroller->GetAffectee ()].tag == tag)
+			if (sectors[scroller->GetAffectee ()].HasTag(tag))
 			{
 				i++;
 				scroller->SetRate (dx, dy);

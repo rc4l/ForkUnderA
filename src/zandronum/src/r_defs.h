@@ -813,6 +813,11 @@ struct sector_t : SectorReads<sector_t>
 		fua_dirty++;	// [rc4l] features/levelmesh wall cache
 	}
 
+	bool HasTag(int checktag) const;
+	void SetTag(int tagnum, bool discardall = true);
+	int GetTag() const;
+	static void HashTags();
+
 	bool PlaneMoving(int pos);
 
 
