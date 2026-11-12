@@ -8730,7 +8730,7 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 						len = args[4];
 				}
 
-				char *buf = new char[len];
+				unsigned char *buf = new unsigned char[len];
 				FWadLump &lump = ACSLumpHandles[args[0]].lump;
 				lump.Seek( args[1], SEEK_SET );
 

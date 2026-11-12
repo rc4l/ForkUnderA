@@ -161,6 +161,7 @@ test("adding to a cvar adds any amount, a negative one taking away", () => {
 
 test("an ACS function call pushes its arguments then CALLFUNC with their count and the function", () => {
   assert.deepEqual(callFunc(ACSF.SetCVar, [0, 5]), [PCD.PUSHNUMBER, 0, PCD.PUSHNUMBER, 5, PCD.CALLFUNC, 2, ACSF.SetCVar]);
+  assert.deepEqual(callFunc(ACSF.SetCVar, [[PCD.PUSHMAPVAR, 3], 5]), [PCD.PUSHMAPVAR, 3, PCD.PUSHNUMBER, 5, PCD.CALLFUNC, 2, ACSF.SetCVar]);
 });
 
 test("a script's named jump targets become byte offsets, and an unnamed one throws", () => {

@@ -7,11 +7,11 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LT
   IFGOTO: 53, DROP: 54, DELAYDIRECT: 56, IFNOTGOTO: 79, BEGINPRINT: 85, ENDPRINT: 86, PRINTSTRING: 87, CONSOLECOMMAND: 134,
   MOREHUDMESSAGE: 159, OPTHUDMESSAGE: 160, ENDHUDMESSAGE: 161, GETSCREENWIDTH: 250, GETSCREENHEIGHT: 251, GETCVAR: 255,
   GETSECTORFLOORZ: 261, SETCAMERATOTEXTURE: 269, ENDLOG: 270, THINGCOUNTNAME: 288, PRINTNUMBER: 88, SETMUGSHOTSTATE: 341, CHECKPLAYERCAMERA: 344, CALLFUNC: 351, SETFONT: 165, CHANGESKY: 266,
-  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, GETACTORPROPERTY: 246, THINGCOUNT: 59, TAGSTRING: 225, GIVEINVENTORY: 143,
+  CHANGEFLOORDIRECT: 66, SETLINETEXTURE: 97, SETACTORPROPERTY: 245, GETACTORPROPERTY: 246, THINGCOUNT: 59, TAGSTRING: 225, PUSHWORLDARRAY: 226, GIVEINVENTORY: 143,
   GETACTORANGLE: 260, SETAMMOCAPACITY: 272, PUSHSCRIPTVAR: 28, SETRESULTVALUE: 257, PLAYERNUMBER: 247, GETACTORX: 196, GETACTORY: 197, GETACTORZ: 198, STARTTRANSLATION: 199, TRANSLATIONRANGE1: 200, ENDTRANSLATION: 202, SETACTORANGLE: 276, SETACTORPOSITION: 283 };
 
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
-export const ACSF = { SpawnSpotForced: 20, SetActorVelocity: 23, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
+export const ACSF = { SpawnSpotForced: 20, SetActorVelocity: 23, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
   fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
 
@@ -147,7 +147,7 @@ export function gotoWord(index) {
 
 // [rc4l] The words of an ACS function called with these pushed arguments (string arguments as their string index), its result left on the stack.
 export function callFunc(fn, args) {
-  return [...args.flatMap((a) => [PCD.PUSHNUMBER, a]), PCD.CALLFUNC, args.length, fn];
+  return [...args.flatMap((a) => (Array.isArray(a) ? a : [PCD.PUSHNUMBER, a])), PCD.CALLFUNC, args.length, fn];
 }
 
 // [Doruk-Aksoy] The words of `SetCVar(strings[i], GetCVar(strings[i]) + n)`, its result dropped: a CVARINFO counter a scenario reads back, n negative to take away.
