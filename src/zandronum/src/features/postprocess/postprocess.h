@@ -38,6 +38,18 @@ void ClearPostProcessShaders(const char *gameDefsLump);
 // [Doruk-Aksoy] One `HardwareShader PostProcess <target> { ... }` block, the scanner past `PostProcess`.
 void ParsePostProcessShader(FScanner &sc);
 
+// [Doruk-Aksoy] One texture block's `fua_Uniform <type> <name> [= <values> | = cvar <cvar>]` for its fua_Name `set`, the scanner past fua_Uniform; each new uniform takes the next of the vec4s every texture shader shares.
+void ParseTextureShaderUniform(FScanner &sc, const std::string &set);
+
+// [Doruk-Aksoy] Texture shader set `name`'s uniforms, each at its shared vec4's offset, or null when no block declares one.
+const ShaderDecl *TextureShaderSet(const char *name);
+
+// [Doruk-Aksoy] Whether any texture shader declares a fua_Uniform, so a frame has values to write.
+bool TextureUniformsDeclared();
+
+// [Doruk-Aksoy] The shared vec4s (kTextureUniformSlots) as they stand this frame for the console player: the level's values over each uniform's cvar over its default.
+void TextureUniformBlock(unsigned char *block);
+
 int PostShaderCount();
 const ShaderDecl &PostShader(int i);
 // [Doruk-Aksoy] Bumped whenever the declarations change, so a renderer makes its programs again.
@@ -48,6 +60,10 @@ void NotePostProcessRenderer(bool backendDraws);
 
 // [Doruk-Aksoy] Reads only the post-process blocks of the game's *DEFS lump (NULL for none) and every GLDEFS, for a dedicated server whose null renderer reads none of the rest.
 void ReadPostProcessDeclarations(const char *gameDefsLump);
+
+// [Doruk-Aksoy] Hands each part a server reads (ComputePostProcessDeclarations) of the game's *DEFS lump (NULL for the one GLDEFS was last read with) and every GLDEFS, their includes followed, to `use` with its lump.
+typedef void (*DefsPartReader)(int lump, const DeclarationPart &part);
+void ForEachDefsPart(const char *gameDefsLump, DefsPartReader use);
 
 // [Doruk-Aksoy] Whether GLDEFS declares `shader` and, unless `uniform` is empty, that uniform of it; anything else a script names is ignored.
 bool PostShaderDeclared(const char *shader, const char *uniform);

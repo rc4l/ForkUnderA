@@ -31,6 +31,7 @@
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
+#include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
 #include <stdio.h>
@@ -3540,6 +3541,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	if ( zx::net::IsServer( ))
 		SERVER_SetMapMusicVolume( 1.f );
 	zx::acsshaders::ResetLevelShaders( );
+	zx::actormaterials::ResetRound( );
 
 	// [BB] We are going to reset the map now, so any request for a reset is fulfilled.
 	g_bResetMap = false;

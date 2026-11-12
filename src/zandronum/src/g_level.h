@@ -42,6 +42,7 @@
 //[BL] New Includes
 #include "sectinfo.h"
 #include "features/postprocess/computation/postprocess_compute.h"   // [Doruk-Aksoy] ShaderTable
+#include "features/actormaterials/computation/actormaterial_compute.h"   // [Doruk-Aksoy] InstanceTable
 #include "features/monster-stairs/computation/monsterstairs_compute.h"   // [Doruk-Aksoy] level_info_t::fua_monsterStairs
 
 struct level_info_t;
@@ -529,6 +530,8 @@ struct FLevelLocals
 
 	// [Doruk-Aksoy] features/postprocess: what this level turned its post-process shaders to, from the declarations at its start.
 	zx::postprocess::ShaderTable fua_postShaders;
+	// [Doruk-Aksoy] The actors whose fua_Material uniforms a script set, their own values by slot (features/actormaterials).
+	zx::actormaterials::InstanceTable fua_actorMaterials;
 
 	bool		IsJumpingAllowed() const;
 	bool		IsCrouchingAllowed() const;

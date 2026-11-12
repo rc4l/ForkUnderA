@@ -322,6 +322,7 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
+		WriteTextureUniforms(&cb[0] + zx::hwrender::kSceneConstantFloats);
 	}
 	g_pass.inSkyPortal = true;
 	DrawWorld(ctx);
@@ -335,6 +336,7 @@ bool RenderSkyPortal(Diligent::IDeviceContext *ctx)
 	{
 		Diligent::MapHelper<float> cb(ctx, g_cb, Diligent::MAP_WRITE, Diligent::MAP_FLAG_DISCARD);
 		for (int k = 0; k < 16; k++) cb[k] = g_mvp[k];
+		WriteTextureUniforms(&cb[0] + zx::hwrender::kSceneConstantFloats);
 	}
 	// [rc4l] The picture changes hands here, outside the frame's render pass, since a transition asked for mid-pass ends the pass and the world drawn after lands outside it.
 	{

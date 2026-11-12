@@ -50,6 +50,15 @@ test("fua_postshaders lines read back by shader", () => {
   assert.equal(s.at, 400);
   assert.deepEqual(s.shaders, { u3f: { on: true, since: 12, uniforms: { pad: [0, 0, 0, 1], c: [0, 0, 1, 1] } }, u1f: { on: false, since: null, uniforms: { a: [0.5, 0, 0, 1] } } });
   assert.deepEqual(parseShaderStates(""), { entries: null, at: null, shaders: {} });
+  // [Doruk-Aksoy] A texture shader set has uniforms and no switch.
+  assert.deepEqual(parseShaderStates("fua_postshaders: zxwall texture glow=1,0.5,0,1\n").shaders, { zxwall: { on: null, since: null, uniforms: { glow: [1, 0.5, 0, 1] } } });
+});
+
+// [Doruk-Aksoy] A wanted state without a switch judges only its uniforms.
+test("a texture set's state is judged by its uniforms", () => {
+  const states = { zxwall: { on: null, uniforms: { glow: [1, 0.5, 0, 1] } } };
+  assert.deepEqual(stateFaults(states, { zxwall: { uniforms: { glow: [1, 0.5, 0] } } }, "p"), []);
+  assert.deepEqual(stateFaults(states, { zxwall: { uniforms: { glow: [0, 0, 0] } } }, "p"), ["p has zxwall's glow at 1,0.5,0, not 0,0,0"]);
 });
 
 // [Doruk-Aksoy] A missing shader, a wrong switch and a wrong value each fault; the numbers past those wanted are not judged.

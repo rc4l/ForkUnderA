@@ -1165,6 +1165,9 @@ public:
 	fixed_t			radius, height;		// for movement checking
 	fixed_t			projectilepassheight;	// height for clipping projectile movement against this actor
 	fixed_t			projectilepassradius;	// effective radius (half-width) for clipping attacks against this actor, independent of movement radius
+	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
+	int				fua_material;			// [Doruk-Aksoy] this actor's fua_Material plus one, 0 for none
+	int				fua_materialSlot;		// [Doruk-Aksoy] the slot of its own uniform values in level.fua_actorMaterials plus one, 0 for none
 	float			renderradius;			// [Doruk-Aksoy] DECORATE's RenderRadius (uzdoom@87b23d160bcbfe8ed35d6ff0921b72f54109ae41): 0 leaves its reach to its model, above 0 it reaches at least that far, below 0 it is never drawn.
 
 	// [MGOOOOOO] Effective extents used when deciding whether an attack hits this actor. These are

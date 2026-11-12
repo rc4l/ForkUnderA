@@ -8,6 +8,30 @@
 
 namespace zx { namespace hwrender {
 
+unsigned ComputeLayerRowWord(int slot)
+{
+	return kMaxMaterialSlots + (unsigned)slot * kLayerRowWords;
+}
+
+unsigned ComputeSlotRemapWords()
+{
+	return ComputeLayerRowWord(kMaxMaterialSlots);
+}
+
+void ComputeLayerRow(const int (&slots)[kLayerRowEntries], unsigned spare, unsigned (&row)[kLayerRowWords])
+{
+	for (int w = 0; w < kLayerRowWords; w++)
+	{
+		unsigned half[2];
+		for (int h = 0; h < 2; h++)
+		{
+			const int entry = w * 2 + h;
+			half[h] = (entry == kLayerSpareEntry ? spare : (unsigned)(slots[entry] > 0 ? slots[entry] : 0)) & 0xffffu;
+		}
+		row[w] = half[0] | (half[1] << 16);
+	}
+}
+
 unsigned ComputeMaterialSlotCapacity(const DescriptorLimits &limits)
 {
 	const unsigned counted[] = { limits.perStageSampledImages, limits.perStageSamplers, limits.perStageResources,

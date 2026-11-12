@@ -405,6 +405,9 @@ BEGIN_ENUM( SVC2 )
 	// [Doruk-Aksoy] ACS fua_SetShaderEnabled and fua_SetShaderUniform: a GLDEFS post-process shader for every client or one.
 	ENUM_ELEMENT ( SVC2_FUASETSHADERENABLED ),
 	ENUM_ELEMENT ( SVC2_FUASETSHADERUNIFORM ),
+	// [Doruk-Aksoy] ACS fua_SetActorMaterial and fua_SetActorUniform: an actor's GLDEFS fua_Material and its own uniforms.
+	ENUM_ELEMENT ( SVC2_FUASETACTORMATERIAL ),
+	ENUM_ELEMENT ( SVC2_FUASETACTORUNIFORM ),
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

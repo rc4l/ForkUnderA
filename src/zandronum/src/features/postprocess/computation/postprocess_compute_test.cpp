@@ -281,6 +281,55 @@ TEST(PostProcess, OnlyDeclaredNamesAreTaken)
 	EXPECT_FALSE(ComputeShaderCallDeclared({}, "fire", ""));
 }
 
+// [Doruk-Aksoy] A server reads a texture block's fua_Name and fua_Uniform lines alone, each uniform's values as many words as its type has, and skips a block naming no set.
+TEST(PostProcess, AServerReadsATextureBlocksUniformLines)
+{
+	const std::string lump =
+		"HardwareShader texture LAVA1 { Shader \"lava.fp\" Speed 2 fua_Name \"lava\" Texture noise \"N\" fua_Uniform float glow = 1.5 Define A = \"1\"\n"
+		"\tFUA_UNIFORM vec3 tint = 1 0.5 0 fua_uniform int mode fua_Uniform vec2 dir = cvar my_dir \"tail\" }\n"
+		"HardwareShader Sprite TROOA1 { Shader \"x.fp\" fua_Uniform float lost = 2 }\n"
+		"HardwareShader LAVA2 { fua_Name lava }";
+	const std::vector<DeclarationPart> parts = ComputePostProcessDeclarations(lump);
+	ASSERT_EQ(2u, parts.size());
+	EXPECT_TRUE(parts[0].texture);
+	EXPECT_FALSE(parts[0].include);
+	EXPECT_EQ("{ fua_Name \"lava\" fua_Uniform float glow = 1.5 fua_Uniform vec3 tint = 1 0.5 0 fua_Uniform int mode fua_Uniform vec2 dir = cvar my_dir }", parts[0].text);
+	EXPECT_EQ("{ fua_Name \"lava\" }", parts[1].text);
+}
+
+// [Doruk-Aksoy] A fua_Material block gives its name and its fua_Uniform lines, even with none, and nothing else of it.
+TEST(PostProcess, AServerReadsAMaterialsUniformLines)
+{
+	const std::vector<DeclarationPart> parts = ComputePostProcessDeclarations(
+		"fua_Material \"glow\" { Shader \"g.fp\" Define A fua_Uniform vec3 tint = 1 0 0 fua_Uniform float level }\nfua_Material bare { Shader \"b.fp\" }");
+	ASSERT_EQ(2u, parts.size());
+	EXPECT_EQ("glow", parts[0].material);
+	EXPECT_FALSE(parts[0].texture || parts[0].include);
+	EXPECT_EQ("{ fua_Uniform vec3 tint = 1 0 0 fua_Uniform float level }", parts[0].text);
+	EXPECT_EQ("bare", parts[1].material);
+	EXPECT_EQ("{ }", parts[1].text);
+}
+
+// [Doruk-Aksoy] A texture block cut short gives what it has, and one with no brace or a name with nothing after it gives nothing.
+TEST(PostProcess, ACutTextureBlockGivesWhatItHas)
+{
+	std::vector<DeclarationPart> parts = ComputePostProcessDeclarations("HardwareShader X { fua_Name a fua_Uniform vec4 c = 1 2");
+	ASSERT_EQ(1u, parts.size());
+	EXPECT_EQ("{ fua_Name \"a\" fua_Uniform vec4 c = 1 2 }", parts[0].text);
+	parts = ComputePostProcessDeclarations("HardwareShader X { fua_Name a fua_Uniform vec4 c = cvar");
+	ASSERT_EQ(1u, parts.size());
+	EXPECT_EQ("{ fua_Name \"a\" fua_Uniform vec4 c = cvar }", parts[0].text);
+	parts = ComputePostProcessDeclarations("HardwareShader X { fua_Name a fua_Uniform float }");
+	ASSERT_EQ(1u, parts.size());
+	EXPECT_EQ("{ fua_Name \"a\" }", parts[0].text);
+	parts = ComputePostProcessDeclarations("HardwareShader X { fua_Name a fua_Uniform bogus b = 1 }");
+	ASSERT_EQ(1u, parts.size());
+	EXPECT_EQ("{ fua_Name \"a\" fua_Uniform bogus b = }", parts[0].text);
+	EXPECT_TRUE(ComputePostProcessDeclarations("HardwareShader X fua_Name a").empty());
+	EXPECT_TRUE(ComputePostProcessDeclarations("HardwareShader X { fua_Name }").empty());
+	EXPECT_TRUE(ComputePostProcessDeclarations("HardwareShader X { \"fua_Name\" a }").empty());
+}
+
 // [Doruk-Aksoy] A server reads a lump's includes and post-process blocks in order, skipping every other block, comments and strings with braces in them.
 TEST(PostProcess, AServerReadsOnlyThePostProcessBlocks)
 {
@@ -380,6 +429,8 @@ TEST(PostProcess, AShadersStateLine)
 {
 	EXPECT_EQ("vig off", ComputeShaderStateLine("vig", { false, 0 }, {}));
 	EXPECT_EQ("fire on since 35 alpha=0.5,0,0,1 one=1,0,0,1", ComputeShaderStateLine("fire", { true, 35 }, { { "alpha", { 0.5, 0, 0, 1 } }, { "one", { 1, 0, 0, 1 } } }));
+	EXPECT_EQ("lava texture glow=2,0,0,1", ComputeTextureSetStateLine("lava", { { "glow", { 2, 0, 0, 1 } } }));
+	EXPECT_EQ("lava texture", ComputeTextureSetStateLine("lava", {}));
 }
 
 TEST(PostProcess, TheConsoleTogglesOnMinusOne)
