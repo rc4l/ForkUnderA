@@ -31,7 +31,7 @@ void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void
 		const float radius = light.radius * r_lights_size;
 		// [rc4l] gl_SetDynSpriteLight takes the light's colour without the additive scaling a surface's light has.
 		float c[3];
-		zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, false, r_lights_intensity, c);
+		zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, false, r_lights_intensity * light.intensity, c);
 		const float bright = light.subtractive ? (float)FVector3(c[0], c[1], c[2]).Length() : 0.f;
 		zx::sprites::ComputeSpriteLightTerm(dist, radius, c[0], c[1], c[2], light.subtractive, bright, out);
 	}

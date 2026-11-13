@@ -136,6 +136,7 @@ public:
 	BYTE color2[3];
 	int bufferindex;
 	float scale;
+	float lightDefIntensity = 1.f;	// [Doruk-Aksoy] GLDEFS intensity, which multiplies the colour where it is drawn as UZDoom's does.
 
 };
 

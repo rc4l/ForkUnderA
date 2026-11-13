@@ -89,9 +89,9 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 
 					if (frac > 0)
 					{
-						lr = light->GetRed() / 255.0f * r_lights_intensity;
-						lg = light->GetGreen() / 255.0f * r_lights_intensity;
-						lb = light->GetBlue() / 255.0f * r_lights_intensity;
+						lr = light->GetRed() / 255.0f * r_lights_intensity * light->lightDefIntensity;
+						lg = light->GetGreen() / 255.0f * r_lights_intensity * light->lightDefIntensity;
+						lb = light->GetBlue() / 255.0f * r_lights_intensity * light->lightDefIntensity;
 						if (light->IsSubtractive())
 						{
 							float bright = FVector3(lr, lg, lb).Length();

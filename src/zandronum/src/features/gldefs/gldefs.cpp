@@ -151,6 +151,7 @@ public:
    void SetAdditive(bool add) { m_additive = add; }
    void SetDontLightSelf(bool add) { m_dontlightself = add; }
    void SetHalo(bool halo) { m_halo = halo; }
+   void SetLightDefIntensity(float intensity) { m_lightDefIntensity = intensity; }
 protected:
    FName m_Name;
    unsigned char m_Args[5];
@@ -158,6 +159,7 @@ protected:
    fixed_t m_X, m_Y, m_Z;
    ELightType m_type;
    bool m_subtractive, m_additive, m_halo, m_dontlightself;
+   float m_lightDefIntensity;
 };
 
 TArray<FLightDefaults *> LightDefaults;
@@ -180,6 +182,7 @@ FLightDefaults::FLightDefaults(FName name, ELightType type)
 	m_additive = false;
 	m_halo = false;
 	m_dontlightself = false;
+	m_lightDefIntensity = 1.f;
 }
 
 void FLightDefaults::ApplyProperties(ADynamicLight * light) const
@@ -188,6 +191,7 @@ void FLightDefaults::ApplyProperties(ADynamicLight * light) const
 	light->angle = m_Angle;
 	light->SetOffset(m_X, m_Y, m_Z);
 	light->halo = m_halo;
+	light->lightDefIntensity = m_lightDefIntensity;
 	for (int a = 0; a < 3; a++) light->args[a] = clamp<int>((int)(m_Args[a] * r_lights_intensity), 0, 255);
 	light->m_intensity[0] = int(m_Args[LIGHT_INTENSITY]);
 	light->m_intensity[1] = int(m_Args[LIGHT_SECONDARY_INTENSITY]);
@@ -369,8 +373,7 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 			gl_ParseFloat(sc);
 			break;
 		case LightTag::Intensity:
-			// [Doruk-Aksoy] UZDoom's colour multiplier, read and not yet acted on.
-			gl_ParseFloat(sc);
+			defaults->SetLightDefIntensity(gl_ParseFloat(sc));
 			break;
 		default:
 			break;
