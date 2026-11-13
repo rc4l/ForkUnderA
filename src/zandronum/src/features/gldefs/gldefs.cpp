@@ -61,6 +61,7 @@
 #include "features/dynlights/dynlight.h"
 #include "features/gldefs/gldefs.h"
 #include "features/gldefs/computation/lighttags_compute.h"
+#include "features/gldefs/computation/lightsize_compute.h"
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
 #include "features/postprocess/postprocess.h"
@@ -144,8 +145,8 @@ public:
    void ApplyProperties(ADynamicLight * light) const;
    FName GetName() const { return m_Name; }
    void SetAngle(angle_t angle) { m_Angle = angle; }
-   void SetArg(int arg, BYTE val) { m_Args[arg] = val; }
-   BYTE GetArg(int arg) { return m_Args[arg]; }
+   void SetArg(int arg, int val) { m_Args[arg] = val; }
+   int GetArg(int arg) { return m_Args[arg]; }
    void SetOffset(float* ft) { m_X = FLOAT2FIXED(ft[0]); m_Y = FLOAT2FIXED(ft[1]); m_Z = FLOAT2FIXED(ft[2]); }
    void SetSubtractive(bool subtract) { m_subtractive = subtract; }
    void SetAdditive(bool add) { m_additive = add; }
@@ -156,7 +157,7 @@ public:
    void SetDontLightOthers(bool on) { m_dontLightOthers = on; }
 protected:
    FName m_Name;
-   unsigned char m_Args[5];
+   int m_Args[5];   // [Doruk-Aksoy] ints, as UZDoom's, so a size reaches 1024
    angle_t m_Angle;
    fixed_t m_X, m_Y, m_Z;
    ELightType m_type;
@@ -179,7 +180,7 @@ FLightDefaults::FLightDefaults(FName name, ELightType type)
 	m_type = type;
 
 	m_X = m_Y = m_Z = 0;
-	memset(m_Args, 0, 5);
+	memset(m_Args, 0, sizeof(m_Args));
 
 	m_subtractive = false;
 	m_additive = false;
@@ -332,10 +333,10 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 			defaults->SetOffset(floatTriple);
 			break;
 		case LightTag::Size:
-			defaults->SetArg(LIGHT_INTENSITY, clamp<int>(gl_ParseInt(sc), 0, 255));
+			defaults->SetArg(LIGHT_INTENSITY, zx::gldefs::ComputeLightSize(gl_ParseInt(sc)));
 			break;
 		case LightTag::SecondarySize:
-			defaults->SetArg(LIGHT_SECONDARY_INTENSITY, clamp<int>(gl_ParseInt(sc), 0, 255));
+			defaults->SetArg(LIGHT_SECONDARY_INTENSITY, zx::gldefs::ComputeLightSize(gl_ParseInt(sc)));
 			break;
 		case LightTag::Interval:
 			floatVal = gl_ParseFloat(sc);
@@ -349,7 +350,7 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 			break;
 		case LightTag::Scale:
 			floatVal = gl_ParseFloat(sc);
-			defaults->SetArg(LIGHT_SCALE, (BYTE)(floatVal * 255));
+			defaults->SetArg(LIGHT_SCALE, zx::gldefs::ComputeSectorLightScale(floatVal));
 			break;
 		case LightTag::Subtractive:
 			defaults->SetSubtractive(gl_ParseInt(sc) != 0);
@@ -392,7 +393,7 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 	}
 	if (block == LightBlock::Flicker2 && defaults->GetArg(LIGHT_SECONDARY_INTENSITY) < defaults->GetArg(LIGHT_INTENSITY))
 	{
-		BYTE v = defaults->GetArg(LIGHT_SECONDARY_INTENSITY);
+		int v = defaults->GetArg(LIGHT_SECONDARY_INTENSITY);
 		defaults->SetArg(LIGHT_SECONDARY_INTENSITY, defaults->GetArg(LIGHT_INTENSITY));
 		defaults->SetArg(LIGHT_INTENSITY, v);
 	}
