@@ -79,7 +79,7 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 		{
 			if (!(light->flags2&MF2_DORMANT) &&
 				(!(light->flags4&MF4_DONTLIGHTSELF) || light->target != self) &&
-				(!actor || !light->dontLightActors))	// [Doruk-Aksoy] GLDEFS dontlightactors, as UZDoom's ShouldLightActor.
+				(!actor || (!light->dontLightActors && (!light->dontLightOthers || light->target == self))))	// [Doruk-Aksoy] GLDEFS dontlightactors and dontlightothers, as UZDoom's ShouldLightActor.
 			{
 				float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
 				radius = light->GetRadius() * r_lights_size;

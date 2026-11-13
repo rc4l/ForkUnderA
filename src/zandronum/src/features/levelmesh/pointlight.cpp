@@ -30,7 +30,7 @@ void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void
 		if (!light.active) continue;
 		const bool carriesIt = light.target == self;
 		const bool lit = actor
-			? zx::dynlights::ComputeShouldLightActor({ light.dontLightSelf, false, light.dontLightActors }, carriesIt)
+			? zx::dynlights::ComputeShouldLightActor({ light.dontLightSelf, light.dontLightOthers, light.dontLightActors }, carriesIt)
 			: !(light.dontLightSelf && carriesIt);
 		if (!lit) continue;
 		const float dist = FVector3(FIXED2FLOAT(x - light.x), FIXED2FLOAT(y - light.y), FIXED2FLOAT(z - light.z)).Length();

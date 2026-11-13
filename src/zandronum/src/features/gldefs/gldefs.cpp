@@ -153,6 +153,7 @@ public:
    void SetHalo(bool halo) { m_halo = halo; }
    void SetLightDefIntensity(float intensity) { m_lightDefIntensity = intensity; }
    void SetDontLightActors(bool on) { m_dontLightActors = on; }
+   void SetDontLightOthers(bool on) { m_dontLightOthers = on; }
 protected:
    FName m_Name;
    unsigned char m_Args[5];
@@ -161,7 +162,7 @@ protected:
    ELightType m_type;
    bool m_subtractive, m_additive, m_halo, m_dontlightself;
    float m_lightDefIntensity;
-   bool m_dontLightActors;
+   bool m_dontLightActors, m_dontLightOthers;
 };
 
 TArray<FLightDefaults *> LightDefaults;
@@ -186,6 +187,7 @@ FLightDefaults::FLightDefaults(FName name, ELightType type)
 	m_dontlightself = false;
 	m_lightDefIntensity = 1.f;
 	m_dontLightActors = false;
+	m_dontLightOthers = false;
 }
 
 void FLightDefaults::ApplyProperties(ADynamicLight * light) const
@@ -196,6 +198,7 @@ void FLightDefaults::ApplyProperties(ADynamicLight * light) const
 	light->halo = m_halo;
 	light->lightDefIntensity = m_lightDefIntensity;
 	light->dontLightActors = m_dontLightActors;
+	light->dontLightOthers = m_dontLightOthers;
 	for (int a = 0; a < 3; a++) light->args[a] = clamp<int>((int)(m_Args[a] * r_lights_intensity), 0, 255);
 	light->m_intensity[0] = int(m_Args[LIGHT_INTENSITY]);
 	light->m_intensity[1] = int(m_Args[LIGHT_SECONDARY_INTENSITY]);
@@ -368,9 +371,11 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 			defaults->SetDontLightActors(gl_ParseInt(sc) != 0);
 			break;
 		case LightTag::DontLightOthers:
+			defaults->SetDontLightOthers(gl_ParseInt(sc) != 0);
+			break;
 		case LightTag::NoShadowmap:
 		case LightTag::DontLightMap:
-			// [Doruk-Aksoy] UZDoom's flags, read and not yet acted on (we have no shadow maps or lightmaps), so a UZDoom GLDEFS loads.
+			// [Doruk-Aksoy] UZDoom's shadow map and lightmap flags, read and dropped since we have neither, so a UZDoom GLDEFS loads.
 			gl_ParseInt(sc);
 			break;
 		case LightTag::Spot:
