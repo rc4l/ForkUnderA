@@ -106,6 +106,7 @@ void TakeLight(ADynamicLight *light, LightRecord &r)
 	r.subtractive = light->IsSubtractive();
 	r.additive = light->IsAdditive();
 	r.dontLightSelf = (light->flags4 & MF4_DONTLIGHTSELF) != 0;
+	r.dontLightActors = light->dontLightActors;
 }
 
 } // namespace

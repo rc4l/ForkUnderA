@@ -23,6 +23,9 @@ so every module that lit a sprite or a wall included GL's headers to see a light
   and flats, the backend's light links), and a few units of movement change them at most at the faint edge of its
   reach: recorded on both renderers in an open room and through a doorway, no visible difference even at 64.
   On Complex Doom's crowd, 27% fewer relinks, `lights/link` 1.98 -> 1.57 ms a tic; `lights/relinks_kept` counts them.
+- `computation/shouldlight_compute`: UZDoom's `ShouldLightActor`, which of a light's GLDEFS flags (`dontlightself`,
+  `dontlightothers`, `dontlightactors`) let it light a given actor or particle; `features/levelmesh/pointlight` asks it
+  for sprites, models and particles, never for decals, which UZDoom lights as their wall.
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 

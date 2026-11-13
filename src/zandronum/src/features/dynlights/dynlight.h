@@ -137,6 +137,7 @@ public:
 	int bufferindex;
 	float scale;
 	float lightDefIntensity = 1.f;	// [Doruk-Aksoy] GLDEFS intensity, which multiplies the colour where it is drawn as UZDoom's does.
+	bool dontLightActors = false;	// [Doruk-Aksoy] GLDEFS dontlightactors: lights walls and flats but no sprite, model or particle.
 
 };
 

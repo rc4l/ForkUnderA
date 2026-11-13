@@ -334,7 +334,7 @@ inline float Dist2(float x1,float y1,float x2,float y2)
 
 // Light + color
 
-void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec);
+void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, bool actor = true);	// [Doruk-Aksoy] actor false for a decal, which UZDoom lights as its wall
 void gl_SetDynSpriteLight(AActor *actor, particle_t *particle);
 
 #endif

@@ -23,6 +23,7 @@ struct LightRecord
 	int red, green, blue;
 	float intensity;              // [Doruk-Aksoy] its GLDEFS intensity, multiplying the colour
 	bool active, subtractive, additive, dontLightSelf;
+	bool dontLightActors;         // [Doruk-Aksoy] GLDEFS dontlightactors: no sprite, model or particle takes its light
 	std::vector<unsigned> links;  // [rc4l] the subsectors it reached and numsubsectors plus each sidedef it lights, sorted
 };
 
