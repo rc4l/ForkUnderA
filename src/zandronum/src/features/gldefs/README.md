@@ -8,6 +8,11 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   (`features/materials/textureinfo.cpp`), and `hardwareshader` (`features/hwshaders`). It also attaches the
   defined lights to actors as their frames change (`gl_SetActorLights`), and drops and remakes them
   (`gl_DeleteAllAttachedLights`, `gl_RecreateAllAttachedLights`) around a save or a light setting change.
+- `computation/lighttags_compute`: which word in a light block is which tag and which blocks take it, so the
+  five light blocks, `object` and `frame` share one parser (`gl_ParseLight`). It takes every tag UZDoom's
+  parser takes; `spot`, `intensity`, `dontlightactors`, `dontlightothers`, `noshadowmap` and `dontlightmap`
+  are read and not yet acted on, as are the top-level `lightsizefactor` and `colorization`, so a UZDoom
+  GLDEFS loads instead of stopping on "Unknown tag".
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;

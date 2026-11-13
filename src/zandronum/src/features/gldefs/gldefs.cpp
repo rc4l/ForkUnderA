@@ -60,6 +60,7 @@
 #include "xs_Float.h"
 #include "features/dynlights/dynlight.h"
 #include "features/gldefs/gldefs.h"
+#include "features/gldefs/computation/lighttags_compute.h"
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
 #include "features/postprocess/postprocess.h"
@@ -69,6 +70,11 @@
 // [BB] New #includes.
 #include "network.h"
 #include "features/net-session/netrole.h"
+
+using zx::gldefs::LightBlock;
+using zx::gldefs::LightTag;
+using zx::gldefs::ComputeLightTag;
+using zx::gldefs::ComputeLightTagAccepted;
 
 EXTERN_CVAR (Float, r_lights_intensity);
 EXTERN_CVAR (Float, r_lights_size);
@@ -199,47 +205,6 @@ void FLightDefaults::ApplyProperties(ADynamicLight * light) const
 //==========================================================================
 
 
-static const char *LightTags[]=
-{
-   "color",
-   "size",
-   "secondarySize",
-   "offset",
-   "chance",
-   "interval",
-   "scale",
-   "frame",
-   "light",
-   "{",
-   "}",
-   "subtractive",
-   "additive",
-   "halo",
-   "dontlightself",
-   "attenuate",
-   NULL
-};
-
-
-enum {
-   LIGHTTAG_COLOR,
-   LIGHTTAG_SIZE,
-   LIGHTTAG_SECSIZE,
-   LIGHTTAG_OFFSET,
-   LIGHTTAG_CHANCE,
-   LIGHTTAG_INTERVAL,
-   LIGHTTAG_SCALE,
-   LIGHTTAG_FRAME,
-   LIGHTTAG_LIGHT,
-   LIGHTTAG_OPENBRACE,
-   LIGHTTAG_CLOSEBRACE,
-   LIGHTTAG_SUBTRACTIVE,
-   LIGHTTAG_ADDITIVE,
-   LIGHTTAG_HALO,
-   LIGHTTAG_DONTLIGHTSELF,
-   LIGHTTAG_ATTENUATE,
-};
-
 
 extern int ScriptDepth;
 
@@ -306,353 +271,14 @@ void gl_AddLightDefaults(FLightDefaults *defaults)
 
 //-----------------------------------------------------------------------------
 //
-//
+// [Doruk-Aksoy] One parser for the five light blocks, each taking the tags ComputeLightTagAccepted gives it.
 //
 //-----------------------------------------------------------------------------
 
-void gl_ParsePointLight(FScanner &sc)
+static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 {
-	int type;
-	float floatTriple[3];
-	int intVal;
-	FLightDefaults *defaults;
-
-	// get name
-	sc.GetString();
-	FName name = sc.String;
-
-	// check for opening brace
-	sc.GetString();
-	if (sc.Compare("{"))
-	{
-		defaults = new FLightDefaults(name, PointLight);
-		ScriptDepth++;
-		while (ScriptDepth)
-		{
-			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
-			{
-			case LIGHTTAG_OPENBRACE:
-				ScriptDepth++;
-				break;
-			case LIGHTTAG_CLOSEBRACE:
-				ScriptDepth--;
-				break;
-			case LIGHTTAG_COLOR:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetArg(LIGHT_RED, clamp<int>((int)(floatTriple[0] * 255), 0, 255));
-				defaults->SetArg(LIGHT_GREEN, clamp<int>((int)(floatTriple[1] * 255), 0, 255));
-				defaults->SetArg(LIGHT_BLUE, clamp<int>((int)(floatTriple[2] * 255), 0, 255));
-				break;
-			case LIGHTTAG_OFFSET:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetOffset(floatTriple);
-				break;
-			case LIGHTTAG_SIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_SUBTRACTIVE:
-				defaults->SetSubtractive(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_ADDITIVE:
-				defaults->SetAdditive(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_HALO:
-				defaults->SetHalo(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_DONTLIGHTSELF:
-				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_ATTENUATE:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
-				gl_ParseInt(sc);
-				break;
-			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
-			}
-		}
-		gl_AddLightDefaults(defaults);
-	}
-	else
-	{
-		sc.ScriptError("Expected '{'.\n");
-	}
-}
-
-
-//-----------------------------------------------------------------------------
-//
-//
-//
-//-----------------------------------------------------------------------------
-
-void gl_ParsePulseLight(FScanner &sc)
-{
-	int type;
-	float floatVal, floatTriple[3];
-	int intVal;
-	FLightDefaults *defaults;
-
-	// get name
-	sc.GetString();
-	FName name = sc.String;
-
-	// check for opening brace
-	sc.GetString();
-	if (sc.Compare("{"))
-	{
-		defaults = new FLightDefaults(name, PulseLight);
-		ScriptDepth++;
-		while (ScriptDepth)
-		{
-			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
-			{
-			case LIGHTTAG_OPENBRACE:
-				ScriptDepth++;
-				break;
-			case LIGHTTAG_CLOSEBRACE:
-				ScriptDepth--;
-				break;
-			case LIGHTTAG_COLOR:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetArg(LIGHT_RED, clamp<int>((int)(floatTriple[0] * 255), 0, 255));
-				defaults->SetArg(LIGHT_GREEN, clamp<int>((int)(floatTriple[1] * 255), 0, 255));
-				defaults->SetArg(LIGHT_BLUE, clamp<int>((int)(floatTriple[2] * 255), 0, 255));
-				break;
-			case LIGHTTAG_OFFSET:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetOffset(floatTriple);
-				break;
-			case LIGHTTAG_SIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_SECSIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_SECONDARY_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_INTERVAL:
-				floatVal = gl_ParseFloat(sc);
-				defaults->SetAngle(xs_RoundToUInt(floatVal * TICRATE / 180. * ANGLE_180));
-				break;
-			case LIGHTTAG_SUBTRACTIVE:
-				defaults->SetSubtractive(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_HALO:
-				defaults->SetHalo(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_DONTLIGHTSELF:
-				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_ATTENUATE:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
-				gl_ParseInt(sc);
-				break;
-			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
-			}
-		}
-		gl_AddLightDefaults(defaults);
-	}
-	else
-	{
-		sc.ScriptError("Expected '{'.\n");
-	}
-}
-
-
-//-----------------------------------------------------------------------------
-//
-//
-//
-//-----------------------------------------------------------------------------
-
-void gl_ParseFlickerLight(FScanner &sc)
-{
-	int type;
-	float floatVal, floatTriple[3];
-	int intVal;
-	FLightDefaults *defaults;
-
-	// get name
-	sc.GetString();
-	FName name = sc.String;
-
-	// check for opening brace
-	sc.GetString();
-	if (sc.Compare("{"))
-	{
-		defaults = new FLightDefaults(name, FlickerLight);
-		ScriptDepth++;
-		while (ScriptDepth)
-		{
-			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
-			{
-			case LIGHTTAG_OPENBRACE:
-				ScriptDepth++;
-				break;
-			case LIGHTTAG_CLOSEBRACE:
-				ScriptDepth--;
-				break;
-			case LIGHTTAG_COLOR:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetArg(LIGHT_RED, clamp<int>((int)(floatTriple[0] * 255), 0, 255));
-				defaults->SetArg(LIGHT_GREEN, clamp<int>((int)(floatTriple[1] * 255), 0, 255));
-				defaults->SetArg(LIGHT_BLUE, clamp<int>((int)(floatTriple[2] * 255), 0, 255));
-				break;
-			case LIGHTTAG_OFFSET:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetOffset(floatTriple);
-				break;
-			case LIGHTTAG_SIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_SECSIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_SECONDARY_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_CHANCE:
-				floatVal = gl_ParseFloat(sc);
-				defaults->SetAngle((angle_t)(floatVal * ANGLE_MAX));
-				break;
-			case LIGHTTAG_SUBTRACTIVE:
-				defaults->SetSubtractive(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_HALO:
-				defaults->SetHalo(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_DONTLIGHTSELF:
-				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_ATTENUATE:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
-				gl_ParseInt(sc);
-				break;
-			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
-			}
-		}
-		gl_AddLightDefaults(defaults);
-	}
-	else
-	{
-		sc.ScriptError("Expected '{'.\n");
-	}
-}
-
-
-//-----------------------------------------------------------------------------
-//
-//
-//
-//-----------------------------------------------------------------------------
-
-void gl_ParseFlickerLight2(FScanner &sc)
-{
-	int type;
-	float floatVal, floatTriple[3];
-	int intVal;
-	FLightDefaults *defaults;
-
-	// get name
-	sc.GetString();
-	FName name = sc.String;
-
-	// check for opening brace
-	sc.GetString();
-	if (sc.Compare("{"))
-	{
-		defaults = new FLightDefaults(name, RandomFlickerLight);
-		ScriptDepth++;
-		while (ScriptDepth)
-		{
-			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
-			{
-			case LIGHTTAG_OPENBRACE:
-				ScriptDepth++;
-				break;
-			case LIGHTTAG_CLOSEBRACE:
-				ScriptDepth--;
-				break;
-			case LIGHTTAG_COLOR:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetArg(LIGHT_RED, clamp<int>((int)(floatTriple[0] * 255), 0, 255));
-				defaults->SetArg(LIGHT_GREEN, clamp<int>((int)(floatTriple[1] * 255), 0, 255));
-				defaults->SetArg(LIGHT_BLUE, clamp<int>((int)(floatTriple[2] * 255), 0, 255));
-				break;
-			case LIGHTTAG_OFFSET:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetOffset(floatTriple);
-				break;
-			case LIGHTTAG_SIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_SECSIZE:
-				intVal = clamp<int>(gl_ParseInt(sc), 0, 255);
-				defaults->SetArg(LIGHT_SECONDARY_INTENSITY, intVal);
-				break;
-			case LIGHTTAG_INTERVAL:
-				floatVal = gl_ParseFloat(sc);
-				defaults->SetAngle((angle_t)(floatVal * ANGLE_MAX));
-				break;
-			case LIGHTTAG_SUBTRACTIVE:
-				defaults->SetSubtractive(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_HALO:
-				defaults->SetHalo(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_DONTLIGHTSELF:
-				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_ATTENUATE:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
-				gl_ParseInt(sc);
-				break;
-			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
-			}
-		}
-		if (defaults->GetArg(LIGHT_SECONDARY_INTENSITY) < defaults->GetArg(LIGHT_INTENSITY))
-		{
-			BYTE v = defaults->GetArg(LIGHT_SECONDARY_INTENSITY);
-			defaults->SetArg(LIGHT_SECONDARY_INTENSITY, defaults->GetArg(LIGHT_INTENSITY));
-			defaults->SetArg(LIGHT_INTENSITY, v);
-		}
-		gl_AddLightDefaults(defaults);
-	}
-	else
-	{
-		sc.ScriptError("Expected '{'.\n");
-	}
-}
-
-
-//-----------------------------------------------------------------------------
-//
-//
-//
-//-----------------------------------------------------------------------------
-
-void gl_ParseSectorLight(FScanner &sc)
-{
-	int type;
 	float floatVal;
 	float floatTriple[3];
-	FLightDefaults *defaults;
 
 	// get name
 	sc.GetString();
@@ -660,60 +286,103 @@ void gl_ParseSectorLight(FScanner &sc)
 
 	// check for opening brace
 	sc.GetString();
-	if (sc.Compare("{"))
-	{
-		defaults = new FLightDefaults(name, SectorLight);
-		ScriptDepth++;
-		while (ScriptDepth)
-		{
-			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
-			{
-			case LIGHTTAG_OPENBRACE:
-				ScriptDepth++;
-				break;
-			case LIGHTTAG_CLOSEBRACE:
-				ScriptDepth--;
-				break;
-			case LIGHTTAG_COLOR:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetArg(LIGHT_RED, clamp<int>((int)(floatTriple[0] * 255), 0, 255));
-				defaults->SetArg(LIGHT_GREEN, clamp<int>((int)(floatTriple[1] * 255), 0, 255));
-				defaults->SetArg(LIGHT_BLUE, clamp<int>((int)(floatTriple[2] * 255), 0, 255));
-				break;
-			case LIGHTTAG_OFFSET:
-				gl_ParseTriple(sc, floatTriple);
-				defaults->SetOffset(floatTriple);
-				break;
-			case LIGHTTAG_SCALE:
-				floatVal = gl_ParseFloat(sc);
-				defaults->SetArg(LIGHT_SCALE, (BYTE)(floatVal * 255));
-				break;
-			case LIGHTTAG_SUBTRACTIVE:
-				defaults->SetSubtractive(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_HALO:
-				defaults->SetHalo(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_DONTLIGHTSELF:
-				defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
-				break;
-			case LIGHTTAG_ATTENUATE:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
-				gl_ParseInt(sc);
-				break;
-			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
-			}
-		}
-		gl_AddLightDefaults(defaults);
-	}
-	else
+	if (!sc.Compare("{"))
 	{
 		sc.ScriptError("Expected '{'.\n");
+		return;
 	}
+
+	FLightDefaults *defaults = new FLightDefaults(name, lightType);
+	ScriptDepth++;
+	while (ScriptDepth)
+	{
+		sc.GetString();
+		const LightTag tag = ComputeLightTag(sc.String);
+		if (!ComputeLightTagAccepted(block, tag))
+		{
+			sc.ScriptError("Unknown tag: %s\n", sc.String);
+		}
+		switch (tag)
+		{
+		case LightTag::OpenBrace:
+			ScriptDepth++;
+			break;
+		case LightTag::CloseBrace:
+			ScriptDepth--;
+			break;
+		case LightTag::Color:
+			gl_ParseTriple(sc, floatTriple);
+			defaults->SetArg(LIGHT_RED, clamp<int>((int)(floatTriple[0] * 255), 0, 255));
+			defaults->SetArg(LIGHT_GREEN, clamp<int>((int)(floatTriple[1] * 255), 0, 255));
+			defaults->SetArg(LIGHT_BLUE, clamp<int>((int)(floatTriple[2] * 255), 0, 255));
+			break;
+		case LightTag::Offset:
+			gl_ParseTriple(sc, floatTriple);
+			defaults->SetOffset(floatTriple);
+			break;
+		case LightTag::Size:
+			defaults->SetArg(LIGHT_INTENSITY, clamp<int>(gl_ParseInt(sc), 0, 255));
+			break;
+		case LightTag::SecondarySize:
+			defaults->SetArg(LIGHT_SECONDARY_INTENSITY, clamp<int>(gl_ParseInt(sc), 0, 255));
+			break;
+		case LightTag::Interval:
+			floatVal = gl_ParseFloat(sc);
+			// [Doruk-Aksoy] A pulse light's interval is seconds; a random flicker light's is a fraction of a turn, as its chance is.
+			if (block == LightBlock::Pulse) defaults->SetAngle(xs_RoundToUInt(floatVal * TICRATE / 180. * ANGLE_180));
+			else defaults->SetAngle((angle_t)(floatVal * ANGLE_MAX));
+			break;
+		case LightTag::Chance:
+			floatVal = gl_ParseFloat(sc);
+			defaults->SetAngle((angle_t)(floatVal * ANGLE_MAX));
+			break;
+		case LightTag::Scale:
+			floatVal = gl_ParseFloat(sc);
+			defaults->SetArg(LIGHT_SCALE, (BYTE)(floatVal * 255));
+			break;
+		case LightTag::Subtractive:
+			defaults->SetSubtractive(gl_ParseInt(sc) != 0);
+			break;
+		case LightTag::Additive:
+			defaults->SetAdditive(gl_ParseInt(sc) != 0);
+			break;
+		case LightTag::Halo:
+			defaults->SetHalo(gl_ParseInt(sc) != 0);
+			break;
+		case LightTag::DontLightSelf:
+			defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
+			break;
+		case LightTag::Attenuate:
+			// [rc4l] GZDoom's attenuation flag, read and dropped (legacy GL always attenuates), so wads that set it, e.g. Judgment, still load.
+			gl_ParseInt(sc);
+			break;
+		case LightTag::DontLightActors:
+		case LightTag::DontLightOthers:
+		case LightTag::NoShadowmap:
+		case LightTag::DontLightMap:
+			// [Doruk-Aksoy] UZDoom's flags, read and not yet acted on (we have no shadow maps or lightmaps), so a UZDoom GLDEFS loads.
+			gl_ParseInt(sc);
+			break;
+		case LightTag::Spot:
+			// [Doruk-Aksoy] UZDoom's inner and outer cone angles, read and not yet acted on.
+			gl_ParseFloat(sc);
+			gl_ParseFloat(sc);
+			break;
+		case LightTag::Intensity:
+			// [Doruk-Aksoy] UZDoom's colour multiplier, read and not yet acted on.
+			gl_ParseFloat(sc);
+			break;
+		default:
+			break;
+		}
+	}
+	if (block == LightBlock::Flicker2 && defaults->GetArg(LIGHT_SECONDARY_INTENSITY) < defaults->GetArg(LIGHT_INTENSITY))
+	{
+		BYTE v = defaults->GetArg(LIGHT_SECONDARY_INTENSITY);
+		defaults->SetArg(LIGHT_SECONDARY_INTENSITY, defaults->GetArg(LIGHT_INTENSITY));
+		defaults->SetArg(LIGHT_INTENSITY, v);
+	}
+	gl_AddLightDefaults(defaults);
 }
 
 
@@ -754,7 +423,7 @@ void gl_AddLightAssociation(const char *actor, const char *frame, const char *li
 
 void gl_ParseFrame(FScanner &sc, FString name)
 {
-	int type, startDepth;
+	int startDepth;
 	FString frameName;
 
 	// get name
@@ -775,28 +444,32 @@ void gl_ParseFrame(FScanner &sc, FString name)
 		while (ScriptDepth > startDepth)
 		{
 			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
+			const LightTag tag = ComputeLightTag(sc.String);
+			if (!ComputeLightTagAccepted(LightBlock::Frame, tag))
 			{
-			case LIGHTTAG_OPENBRACE:
+				sc.ScriptError("Unknown tag: %s\n", sc.String);
+			}
+			switch (tag)
+			{
+			case LightTag::OpenBrace:
 				ScriptDepth++;
 				break;
-			case LIGHTTAG_CLOSEBRACE:
+			case LightTag::CloseBrace:
 				ScriptDepth--;
 				break;
-			case LIGHTTAG_LIGHT:
+			case LightTag::Light:
 				gl_ParseString(sc);
 				// [BB] The server just ignores all light associations.
 				if ( !zx::net::IsServer() )
 					gl_AddLightAssociation(name, frameName, sc.String);
 				break;
-			case LIGHTTAG_ATTENUATE:
+			case LightTag::Attenuate:
 				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
 				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
 				gl_ParseInt(sc);
 				break;
 			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
+				break;
 			}
 		}
 	}
@@ -815,7 +488,6 @@ void gl_ParseFrame(FScanner &sc, FString name)
 
 void gl_ParseObject(FScanner &sc)
 {
-	int type;
 	FString name;
 
 	// get name
@@ -832,25 +504,29 @@ void gl_ParseObject(FScanner &sc)
 		while (ScriptDepth)
 		{
 			sc.GetString();
-			type = sc.MatchString(LightTags);
-			switch (type)
+			const LightTag tag = ComputeLightTag(sc.String);
+			if (!ComputeLightTagAccepted(LightBlock::Object, tag))
 			{
-			case LIGHTTAG_OPENBRACE:
+				sc.ScriptError("Unknown tag: %s\n", sc.String);
+			}
+			switch (tag)
+			{
+			case LightTag::OpenBrace:
 				ScriptDepth++;
 				break;
-			case LIGHTTAG_CLOSEBRACE:
+			case LightTag::CloseBrace:
 				ScriptDepth--;
 				break;
-			case LIGHTTAG_FRAME:
+			case LightTag::Frame:
 				gl_ParseFrame(sc, name);
 				break;
-			case LIGHTTAG_ATTENUATE:
+			case LightTag::Attenuate:
 				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
 				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
 				gl_ParseInt(sc);
 				break;
 			default:
-				sc.ScriptError("Unknown tag: %s\n", sc.String);
+				break;
 			}
 		}
 	}
@@ -907,6 +583,8 @@ static const char *CoreKeywords[]=
    "#include",
    "material",
    "fua_material",
+   "lightsizefactor",
+   "colorization",
    NULL
 };
 
@@ -931,7 +609,24 @@ enum
    TAG_INCLUDE,
    TAG_MATERIAL,
    TAG_FUA_MATERIAL,
+   TAG_LIGHTSIZEFACTOR,
+   TAG_COLORIZATION,
 };
+
+//==========================================================================
+//
+// [Doruk-Aksoy] Skips a UZDoom colorization block (name, then key-value pairs in braces).
+//
+//==========================================================================
+static void gl_SkipColorization(FScanner &sc)
+{
+	sc.MustGetString();
+	sc.MustGetToken('{');
+	while (!sc.CheckToken('}'))
+	{
+		sc.MustGetString();
+	}
+}
 
 
 //==========================================================================
@@ -1289,19 +984,27 @@ void gl_DoParseDefs(FScanner &sc, int workingLump)
 				break;
 			}
 		case LIGHT_POINT:
-			gl_ParsePointLight(sc);
+			gl_ParseLight(sc, LightBlock::Point, PointLight);
 			break;
 		case LIGHT_PULSE:
-			gl_ParsePulseLight(sc);
+			gl_ParseLight(sc, LightBlock::Pulse, PulseLight);
 			break;
 		case LIGHT_FLICKER:
-			gl_ParseFlickerLight(sc);
+			gl_ParseLight(sc, LightBlock::Flicker, FlickerLight);
 			break;
 		case LIGHT_FLICKER2:
-			gl_ParseFlickerLight2(sc);
+			gl_ParseLight(sc, LightBlock::Flicker2, RandomFlickerLight);
 			break;
 		case LIGHT_SECTOR:
-			gl_ParseSectorLight(sc);
+			gl_ParseLight(sc, LightBlock::Sector, SectorLight);
+			break;
+		// [Doruk-Aksoy] UZDoom's size factor for attenuated lights, read and not yet acted on.
+		case TAG_LIGHTSIZEFACTOR:
+			gl_ParseFloat(sc);
+			break;
+		// [Doruk-Aksoy] UZDoom's texture colourisation, which we lack, skipped so a UZDoom GLDEFS loads.
+		case TAG_COLORIZATION:
+			gl_SkipColorization(sc);
 			break;
 		case LIGHT_OBJECT:
 			gl_ParseObject(sc);
