@@ -352,7 +352,7 @@ static const std::string kDynamicVS = std::string(
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
 // Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
 // ask the shader what it thinks depth and colour are is worth the three lines.
-// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a 1 subtractive, plus 2 attenuated), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
+// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a 1 subtractive, plus 2 attenuated, plus 4 spot), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
 #define FUA_LIGHT_LOOP_GLSL \
 	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
 	"    int first = 0;\n" \
@@ -389,8 +389,8 @@ static const std::string kDynamicVS = std::string(
 	"        li = clamp(li, 0, max(n - 1, 0));\n" \
 	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
 	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
-	"        vec4 lp = LightBufferIn.lights[li*2];\n" \
-	"        vec4 lc = LightBufferIn.lights[li*2+1];\n" \
+	"        vec4 lp = LightBufferIn.lights[li*4];\n" \
+	"        vec4 lc = LightBufferIn.lights[li*4+1];\n" \
 	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
 	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
 	   Without this the backs of walls and the room next door get lit, which reads as a scene far
@@ -425,13 +425,21 @@ static const std::string kDynamicVS = std::string(
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n"
 
-// [Doruk-Aksoy] uzdoom@62afe5f0 material_normal.fp: an attenuated light (bit 2 of its kind) is taken by the cosine of the angle it arrives at, against the normal N the caller lights by.
-#define FUA_LIGHT_ATTENUATE_GLSL(N) \
-	"        if (lc.a > 1.5) {\n" \
+// [Doruk-Aksoy] uzdoom@62afe5f0 main.fp and material_normal.fp: a spot (kind bit 4) lights only its cone, smoothstep from the outer cosine to the inner, and an attenuated light (bit 2) is taken by the cosine of the angle it arrives at against the normal N the caller lights by.
+#define FUA_LIGHT_SHAPE_GLSL(N) \
+	"        int kind = int(lc.a + 0.5);\n" \
+	"        if ((kind & 4) != 0) {\n" \
+	"            vec4 spot = LightBufferIn.lights[li*4+2];\n" \
+	"            float cosOuter = LightBufferIn.lights[li*4+3].x;\n" \
+	"            float cosDir = dot(normalize(d), spot.xyz);\n" \
+	"            a *= spot.w > cosOuter ? smoothstep(cosOuter, spot.w, cosDir) : step(cosOuter, cosDir);\n" \
+	"            if (a <= 0.0) continue;\n" \
+	"        }\n" \
+	"        if ((kind & 2) != 0) {\n" \
 	"            a *= clamp(dot(" N ", normalize(d)), 0.0, 1.0);\n" \
 	"            if (a <= 0.0) continue;\n" \
 	"        }\n" \
-	"        bool subtractive = mod(lc.a, 2.0) > 0.5;\n"
+	"        bool subtractive = (kind & 1) != 0;\n"
 
 // [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
 #define FUA_LIGHT_GLSL \
@@ -597,7 +605,7 @@ static const std::string kDynamicVS = std::string(
 	   world -- roughly 0.1% utilisation -- so there is nothing to save. It is also the shape a
 	   clustered forward renderer wants next.
 
-	   Layout: pairs of (x, z, y, radius) and (r, g, b, mode), mode 1 meaning subtractive, plus 2 attenuated. Positions
+	   Layout: four vec4s a light, (x, z, y, radius), (r, g, b, mode) with mode 1 subtractive, 2 attenuated and 4 spot, then a spot's (direction, cos inner) and (cos outer). Positions
 	   use the same axis swap as the mesh vertices, so they compare directly against vPixelPos.xyz. */ \
 	"vec3 fuaDynLight(vec3 base) {\n" \
 	"    int n = int(uLightParams.x);\n" \
@@ -620,7 +628,7 @@ static const std::string kDynamicVS = std::string(
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	FUA_LIGHT_ATTENUATE_GLSL("vPlane.xyz") \
+	FUA_LIGHT_SHAPE_GLSL("vPlane.xyz") \
 	"        if (subtractive) dyn -= lc.rgb * a;\n" \
 	"        else            dyn += lc.rgb * a;\n" \
 	"    }\n" \
@@ -706,7 +714,7 @@ static const std::string kDynamicVS = std::string(
 	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
 	"    vec3 viewdir = normalize(uCameraPos.xyz - vPixelPos.xyz);\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	FUA_LIGHT_ATTENUATE_GLSL("m.Normal") \
+	FUA_LIGHT_SHAPE_GLSL("m.Normal") \
 	"        vec3 halfdir = normalize(viewdir + normalize(d));\n" \
 	"        float s = a * m.SpecularLevel * pow(clamp(dot(halfdir, m.Normal), 0.0, 1.0), m.Glossiness * 4.0);\n" \
 	"        float sgn = subtractive ? -1.0 : 1.0;\n" \
@@ -738,7 +746,7 @@ static const std::string kDynamicVS = std::string(
 	"    int n = int(uLightParams.x);\n" \
 	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	FUA_LIGHT_ATTENUATE_GLSL("N") \
+	FUA_LIGHT_SHAPE_GLSL("N") \
 	"        vec3 L = normalize(d);\n" \
 	"        vec3 H = normalize(V + L);\n" \
 	"        float G = fuaSchlickGGX(max(dot(N, V), 0.0), m.Roughness) * fuaSchlickGGX(max(dot(N, L), 0.0), m.Roughness);\n" \

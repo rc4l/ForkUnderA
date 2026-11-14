@@ -88,13 +88,15 @@ TEST(ComputeDynLightColor, GldefsIntensityScalesLikeUZDoom)
 	EXPECT_FLOAT_EQ(204 / 255.f * 0.5f, c[0]);
 }
 
-// [Doruk-Aksoy] The shader reads bit 1 as subtractive and bit 2 as attenuated, in place of UZDoom's sign bit, so each of the four kinds is its own value.
+// [Doruk-Aksoy] The shader reads bit 1 as subtractive, bit 2 as attenuated (UZDoom's sign bit) and bit 4 as a spot (its lightType), so each of the eight kinds is its own value.
 TEST(ComputeDynLightKind, EachFlagItsOwnBit)
 {
-	EXPECT_FLOAT_EQ(0.f, zx::hwrender::ComputeDynLightKind(false, false));
-	EXPECT_FLOAT_EQ(1.f, zx::hwrender::ComputeDynLightKind(true, false));
-	EXPECT_FLOAT_EQ(2.f, zx::hwrender::ComputeDynLightKind(false, true));
-	EXPECT_FLOAT_EQ(3.f, zx::hwrender::ComputeDynLightKind(true, true));
+	EXPECT_FLOAT_EQ(0.f, zx::hwrender::ComputeDynLightKind(false, false, false));
+	EXPECT_FLOAT_EQ(1.f, zx::hwrender::ComputeDynLightKind(true, false, false));
+	EXPECT_FLOAT_EQ(2.f, zx::hwrender::ComputeDynLightKind(false, true, false));
+	EXPECT_FLOAT_EQ(3.f, zx::hwrender::ComputeDynLightKind(true, true, false));
+	EXPECT_FLOAT_EQ(4.f, zx::hwrender::ComputeDynLightKind(false, false, true));
+	EXPECT_FLOAT_EQ(7.f, zx::hwrender::ComputeDynLightKind(true, true, true));
 }
 
 TEST(ComputeLightLinksStale, AnyChangeOfLightPlaceOrReach)

@@ -59,10 +59,12 @@ static int g_clusterRefs = 0;                  // light-in-cell entries this fra
 static int g_clusterTruncated = 0;             // cells that did not fit, this frame
 static bool g_clusterBindFailed = false;
 
-// The lights of this frame as the shader will see them: eight floats each, position (x, z, y),
-// radius, colour, mode. The binning pass reads THESE rather than walking the thinkers again, so a
+// The lights of this frame as the shader will see them: kLightFloats floats each, position (x, z, y),
+// radius, colour, mode, then a spot's direction and cone (zero for any other light). The binning pass reads THESE rather than walking the thinkers again, so a
 // light the collector rejected cannot reappear in a cell.
 static TArray<float> g_lightData;
+// [Doruk-Aksoy] Four vec4s a light, as UZDoom's AddLightToList packs it, the last two a spot's direction, inner and outer cosine.
+static const unsigned kLightVec4s = 4, kLightFloats = kLightVec4s * 4;
 
 static Diligent::RefCntAutoPtr<Diligent::IBuffer> g_lightBuf;
 static unsigned int g_lightBufCapacity = 0;   // in vec4s
@@ -78,7 +80,7 @@ bool EnsureLightBuffers(FString &err)
 	//
 	// It is bound to the pipelines as a STATIC variable, which Diligent copies into every SRB at
 	// creation -- so recreating the buffer to grow it would silently leave existing SRBs pointing at
-	// the freed one. 65536 vec4s is 1 MB and holds ~32000 lights; a Doom frame produces a handful.
+	// the freed one. 65536 vec4s is 1 MB and holds ~16000 lights at four vec4s each; a Doom frame produces a handful.
 	if (!g_lightBuf)
 	{
 		g_lightBufCapacity = 65536;
@@ -237,7 +239,7 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			if (!light.active) continue;
 			const float radius = light.radius * r_lights_size;
 			if (radius <= 0.f) continue;
-			if ((unsigned)g_lightCount >= g_lightBufCapacity / 2) break;
+			if ((unsigned)g_lightCount >= g_lightBufCapacity / kLightVec4s) break;
 
 			float rgb[3];
 			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, r_lights_additive || light.additive, r_lights_intensity * light.intensity, rgb);
@@ -250,7 +252,16 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			g_lightData.Push(rgb[0]);
 			g_lightData.Push(rgb[1]);
 			g_lightData.Push(rgb[2]);
-			g_lightData.Push(zx::hwrender::ComputeDynLightKind(light.subtractive, light.attenuated));
+			g_lightData.Push(zx::hwrender::ComputeDynLightKind(light.subtractive, light.attenuated, light.spot));
+			// [Doruk-Aksoy] The spot's direction in the same (x, z, y) order, its inner cosine, then its outer.
+			g_lightData.Push(light.spot ? light.spotDirection[0] : 0.f);
+			g_lightData.Push(light.spot ? light.spotDirection[2] : 0.f);
+			g_lightData.Push(light.spot ? light.spotDirection[1] : 0.f);
+			g_lightData.Push(light.spot ? light.spotCosInner : 0.f);
+			g_lightData.Push(light.spot ? light.spotCosOuter : 0.f);
+			g_lightData.Push(0.f);
+			g_lightData.Push(0.f);
+			g_lightData.Push(0.f);
 			touched.push_back(&light.links);
 			g_lightCount++;
 		}
@@ -326,7 +337,7 @@ void BuildLightClusters(Diligent::IDeviceContext *ctx)
 	{
 		for (int l = lo; l < hi; l++)
 		{
-			const float *lp = &g_lightData[l * 8];
+			const float *lp = &g_lightData[l * kLightFloats];
 			ranges[l] = zx::hwrender::ComputeLightClustersFromMVP(grid, mvp, lp, lp[3]);
 		}
 	};
