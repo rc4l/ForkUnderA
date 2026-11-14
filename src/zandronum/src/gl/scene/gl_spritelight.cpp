@@ -63,7 +63,7 @@
 //
 //==========================================================================
 
-void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t * subsec)
+void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsector_t * subsec, bool actor)
 {
 	ADynamicLight *light;
 	float frac, lr, lg, lb;
@@ -78,7 +78,8 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 		//if (!light->owned || light->target == NULL || light->target->IsVisibleToPlayer())
 		{
 			if (!(light->flags2&MF2_DORMANT) &&
-				(!(light->flags4&MF4_DONTLIGHTSELF) || light->target != self))
+				(!(light->flags4&MF4_DONTLIGHTSELF) || light->target != self) &&
+				(!actor || (!light->dontLightActors && (!light->dontLightOthers || light->target == self))))	// [Doruk-Aksoy] GLDEFS dontlightactors and dontlightothers, as UZDoom's ShouldLightActor.
 			{
 				float dist = FVector3(FIXED2FLOAT(x - light->x), FIXED2FLOAT(y - light->y), FIXED2FLOAT(z - light->z)).Length();
 				radius = light->GetRadius() * r_lights_size;
@@ -89,9 +90,9 @@ void gl_SetDynSpriteLight(AActor *self, fixed_t x, fixed_t y, fixed_t z, subsect
 
 					if (frac > 0)
 					{
-						lr = light->GetRed() / 255.0f * r_lights_intensity;
-						lg = light->GetGreen() / 255.0f * r_lights_intensity;
-						lb = light->GetBlue() / 255.0f * r_lights_intensity;
+						lr = light->GetRed() / 255.0f * r_lights_intensity * light->lightDefIntensity;
+						lg = light->GetGreen() / 255.0f * r_lights_intensity * light->lightDefIntensity;
+						lb = light->GetBlue() / 255.0f * r_lights_intensity * light->lightDefIntensity;
 						if (light->IsSubtractive())
 						{
 							float bright = FVector3(lr, lg, lb).Length();

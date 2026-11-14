@@ -97,9 +97,9 @@ bool gl_GetLight(Plane & p, ADynamicLight * light, bool checkside, bool forceadd
 		cs = 1.0f;
 	}
 
-	float r = light->GetRed() / 255.0f * cs * r_lights_intensity;
-	float g = light->GetGreen() / 255.0f * cs * r_lights_intensity;
-	float b = light->GetBlue() / 255.0f * cs * r_lights_intensity;
+	float r = light->GetRed() / 255.0f * cs * r_lights_intensity * light->lightDefIntensity;
+	float g = light->GetGreen() / 255.0f * cs * r_lights_intensity * light->lightDefIntensity;
+	float b = light->GetBlue() / 255.0f * cs * r_lights_intensity * light->lightDefIntensity;
 
 	if (light->IsSubtractive())
 	{

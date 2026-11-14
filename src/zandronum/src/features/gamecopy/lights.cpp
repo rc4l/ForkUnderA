@@ -101,10 +101,13 @@ void TakeLight(ADynamicLight *light, LightRecord &r)
 	r.linkRadius = light->radius;
 	r.radius = light->GetRadius();
 	r.red = light->GetRed(); r.green = light->GetGreen(); r.blue = light->GetBlue();
+	r.intensity = light->lightDefIntensity;
 	r.active = light->IsActive();
 	r.subtractive = light->IsSubtractive();
 	r.additive = light->IsAdditive();
 	r.dontLightSelf = (light->flags4 & MF4_DONTLIGHTSELF) != 0;
+	r.dontLightActors = light->dontLightActors;
+	r.dontLightOthers = light->dontLightOthers;
 }
 
 } // namespace

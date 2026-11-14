@@ -240,7 +240,7 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			if ((unsigned)g_lightCount >= g_lightBufCapacity / 2) break;
 
 			float rgb[3];
-			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, r_lights_additive || light.additive, r_lights_intensity, rgb);
+			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, r_lights_additive || light.additive, r_lights_intensity * light.intensity, rgb);
 
 			// Same axis swap the mesh uses: (x, z, y).
 			g_lightData.Push(FIXED2FLOAT(light.x));

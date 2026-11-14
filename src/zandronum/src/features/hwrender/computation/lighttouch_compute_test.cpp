@@ -74,6 +74,20 @@ TEST(ComputeDynLightColor, AnAdditiveLightIsAFifthAsBright)
 	EXPECT_FLOAT_EQ(0.4f, c[0]);
 }
 
+// [Doruk-Aksoy] UZDoom parity: AddLightToList multiplies colour/255 by (additive ? 0.2 : 1) * GLDEFS intensity, unclamped, which the callers pass as r_lights_intensity * intensity.
+TEST(ComputeDynLightColor, GldefsIntensityScalesLikeUZDoom)
+{
+	float c[3];
+	const float kUZDoomIntensity = 2.5f;
+	zx::hwrender::ComputeDynLightColor(204, 102, 51, false, 1.f * kUZDoomIntensity, c);
+	EXPECT_FLOAT_EQ(204 / 255.f * 2.5f, c[0]); EXPECT_FLOAT_EQ(102 / 255.f * 2.5f, c[1]); EXPECT_FLOAT_EQ(51 / 255.f * 2.5f, c[2]);
+	EXPECT_GT(c[0], 1.f);
+	zx::hwrender::ComputeDynLightColor(204, 102, 51, true, 1.f * kUZDoomIntensity, c);
+	EXPECT_FLOAT_EQ(204 / 255.f * 0.2f * 2.5f, c[0]);
+	zx::hwrender::ComputeDynLightColor(204, 102, 51, false, 1.f * 0.5f, c);
+	EXPECT_FLOAT_EQ(204 / 255.f * 0.5f, c[0]);
+}
+
 TEST(ComputeLightLinksStale, AnyChangeOfLightPlaceOrReach)
 {
 	const zx::hwrender::LightLinkKey kept = { 7u, 1, 2, 3, 64.f };

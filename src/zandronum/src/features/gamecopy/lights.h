@@ -21,7 +21,10 @@ struct LightRecord
 	fixed_t linkRadius;           // [rc4l] how far it is linked, which a pulse leaves alone
 	float radius;                 // [rc4l] GetRadius, how far it lights before r_lights_size
 	int red, green, blue;
+	float intensity;              // [Doruk-Aksoy] its GLDEFS intensity, multiplying the colour
 	bool active, subtractive, additive, dontLightSelf;
+	bool dontLightActors;         // [Doruk-Aksoy] GLDEFS dontlightactors: no sprite, model or particle takes its light
+	bool dontLightOthers;         // [Doruk-Aksoy] GLDEFS dontlightothers: of actors and particles, only its carrier takes its light
 	std::vector<unsigned> links;  // [rc4l] the subsectors it reached and numsubsectors plus each sidedef it lights, sorted
 };
 

@@ -14,7 +14,8 @@ namespace zx { namespace gamecopy { struct ActorRecord; } }
 namespace zx { namespace levelmesh {
 
 // [rc4l] The dynamic light at a point in a subsector, added to out, but not from a light self carries that does not light it.
-void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void *self, float out[3]);
+// [Doruk-Aksoy] For an actor or particle (actor true), only from the lights UZDoom's ShouldLightActor lets light it.
+void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void *self, bool actor, float out[3]);
 
 // [rc4l] The dynamic light at an actor's middle, added to out.
 void ActorLight(const zx::gamecopy::ActorRecord &self, float out[3]);

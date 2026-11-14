@@ -642,7 +642,7 @@ static bool DeriveParticle(particle_t *particle, sector_t *sector, const Particl
 	zx::levelmesh::CaptureSpriteShading(lightlevel, foglevel, getExtraLight(), cm, ComputePlainDrawLook(trans), color.d, mp);
 	float dyn[3] = { 0.f, 0.f, 0.f };
 	if (r_lights && view.DynamicLightCount() && !gl_fixedcolormap && r_light_particles)
-		zx::levelmesh::PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, dyn);
+		zx::levelmesh::PointLight(particle->x, particle->y, particle->z, particle->subsector, NULL, true, dyn);
 	mp.dynR = dyn[0]; mp.dynG = dyn[1]; mp.dynB = dyn[2];
 	mp.cpuLight = true;
 	mp.normX = mp.normY = mp.normZ = 0.f;

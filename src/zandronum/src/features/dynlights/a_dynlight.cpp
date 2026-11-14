@@ -207,7 +207,7 @@ void ADynamicLight::Activate(AActor *activator)
 		m_cycler.SetParams(float(m_intensity[1]), float(m_intensity[0]), pulseTime);
 		m_cycler.ShouldCycle(true);
 		m_cycler.SetCycleType(CYCLE_Sin);
-		m_currentIntensity = (BYTE)m_cycler.GetVal();
+		m_currentIntensity = m_cycler.GetVal();	// [Doruk-Aksoy] no byte cast, which wrapped a size past 255 (UZDoom keeps the float)
 	}
 }
 

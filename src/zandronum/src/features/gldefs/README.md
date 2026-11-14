@@ -8,6 +8,18 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   (`features/materials/textureinfo.cpp`), and `hardwareshader` (`features/hwshaders`). It also attaches the
   defined lights to actors as their frames change (`gl_SetActorLights`), and drops and remakes them
   (`gl_DeleteAllAttachedLights`, `gl_RecreateAllAttachedLights`) around a save or a light setting change.
+- `computation/lighttags_compute`: which word in a light block is which tag and which blocks take it, so the
+  five light blocks, `object` and `frame` share one parser (`gl_ParseLight`). It takes every tag UZDoom's
+  parser takes. `intensity` multiplies the light's colour where it is drawn (`ADynamicLight::lightDefIntensity`,
+  carried in the render copy's light record), as UZDoom's does. `dontlightactors` keeps the light off every
+  sprite, model and particle (`features/dynlights/computation/shouldlight_compute`) while it still lights walls,
+  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot` and the top-level
+  `lightsizefactor` are read and not yet acted on, and `noshadowmap`, `dontlightmap` and the top-level
+  `colorization` read and dropped (we have no shadow maps, lightmaps or colourisation), so a UZDoom GLDEFS loads
+  instead of stopping on "Unknown tag".
+- `computation/lightsize_compute`: `size` and `secondarySize` clamped to UZDoom's 1 to 1024 (they were bytes, cut at
+  255), and a sector light's `scale` as UZDoom stores it. Our sector lights still ignore that scale, as Zandronum 3.3's
+  do (`ApplyProperties` never copies it to the light), where UZDoom applies it.
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;
