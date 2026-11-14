@@ -26,6 +26,9 @@ so every module that lit a sprite or a wall included GL's headers to see a light
 - `computation/shouldlight_compute`: UZDoom's `ShouldLightActor`, which of a light's GLDEFS flags (`dontlightself`,
   `dontlightothers`, `dontlightactors`) let it light a given actor or particle; `features/levelmesh/pointlight` asks it
   for sprites, models and particles, never for decals, which UZDoom lights as their wall.
+- `computation/sectorlight_compute`: a sector light's radius, UZDoom's: the sector's light level times `args[3]` / 8
+  (0 meaning 1), capped at 255. A GLDEFS `sectorlight`'s `scale` reaches `args[3]` through `ApplyProperties`, where
+  before only a map-placed light's did, so GLDEFS sector lights ignored their scale as Zandronum 3.3's do.
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 
