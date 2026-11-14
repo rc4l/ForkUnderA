@@ -250,7 +250,7 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			g_lightData.Push(rgb[0]);
 			g_lightData.Push(rgb[1]);
 			g_lightData.Push(rgb[2]);
-			g_lightData.Push(light.subtractive ? 1.0f : 0.0f);
+			g_lightData.Push(zx::hwrender::ComputeDynLightKind(light.subtractive, light.attenuated));
 			touched.push_back(&light.links);
 			g_lightCount++;
 		}

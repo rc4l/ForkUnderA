@@ -25,6 +25,9 @@ void ComputeSortedTouches(std::vector<unsigned> &touched);
 // [rc4l] A dynamic light's colour as gl_GetLight scales it: each 0..255 channel times r_lights_intensity, an additive light's a fifth of that.
 void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, float out[3]);
 
+// [Doruk-Aksoy] The light's flags as its colour's fourth float carries them to the scene shader: 1 for subtractive, plus 2 for attenuated.
+float ComputeDynLightKind(bool subtractive, bool attenuated);
+
 // [rc4l] The tic, level and light switches the lights were last collected under.
 struct LightsStamp
 {

@@ -43,6 +43,7 @@
 #include "d_player.h"
 #include "p_effect.h"
 #include "autosegs.h"
+#include "features/dynlights/dynlight.h"   // [Doruk-Aksoy] ADynamicLight's flags, for +DYNAMICLIGHT.ATTENUATE
 
 static TArray<FPropertyInfo*> properties;
 static TArray<AFuncDesc> AFTable;
@@ -453,6 +454,12 @@ static FFlagDef PowerSpeedFlagDefs[] =
 	DEFINE_FLAG(PSF, NOTRAIL, APowerSpeed, SpeedFlags),
 };
 
+// [Doruk-Aksoy] uzdoom@1e950d75bdb73ea6fcc6cd614c0deb73369393ca: a light class's own flags, as UZDoom's ZScript names them.
+static FFlagDef DynamicLightFlagDefs[] =
+{
+	DEFINE_FLAG(LF, ATTENUATE, ADynamicLight, lightflags),
+};
+
 static const struct FFlagList { const PClass *Type; FFlagDef *Defs; int NumDefs; } FlagLists[] =
 {
 	{ RUNTIME_CLASS(AActor), 		ActorFlagDefs,		countof(ActorFlagDefs) },
@@ -460,6 +467,7 @@ static const struct FFlagList { const PClass *Type; FFlagDef *Defs; int NumDefs;
 	{ RUNTIME_CLASS(AWeapon), 		WeaponFlagDefs,	countof(WeaponFlagDefs) },
 	{ RUNTIME_CLASS(APlayerPawn),	PlayerPawnFlagDefs,countof(PlayerPawnFlagDefs) },
 	{ RUNTIME_CLASS(APowerSpeed),	PowerSpeedFlagDefs,countof(PowerSpeedFlagDefs) },
+	{ RUNTIME_CLASS(ADynamicLight),	DynamicLightFlagDefs,countof(DynamicLightFlagDefs) },
 };
 #define NUM_FLAG_LISTS (countof(FlagLists))
 

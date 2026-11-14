@@ -13,13 +13,22 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   parser takes. `intensity` multiplies the light's colour where it is drawn (`ADynamicLight::lightDefIntensity`,
   carried in the render copy's light record), as UZDoom's does. `dontlightactors` keeps the light off every
   sprite, model and particle (`features/dynlights/computation/shouldlight_compute`) while it still lights walls,
-  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot` and the top-level
-  `lightsizefactor` are read and not yet acted on, and `noshadowmap`, `dontlightmap` and the top-level
+  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot` is read and not yet
+  acted on, and `noshadowmap`, `dontlightmap` and the top-level
   `colorization` read and dropped (we have no shadow maps, lightmaps or colourisation), so a UZDoom GLDEFS loads
   instead of stopping on "Unknown tag".
 - `computation/lightsize_compute`: `size` and `secondarySize` clamped to UZDoom's 1 to 1024 (they were bytes, cut at
   255), and a sector light's `scale` as UZDoom stores it, which `ApplyProperties` hands the light as its `args[3]`
   (`features/dynlights/computation/sectorlight_compute` turns it into a radius).
+- `computation/attenuate_compute`: UZDoom's attenuated lights. A light block's `attenuate 1` or `0` sets it, and one
+  without the tag follows the level's MAPINFO `attenuatelights` (`features/mapinfo-attenuatelights`); map things
+  9830 to 9834 (`PointLightAttenuated` and the rest, `+DYNAMICLIGHT.ATTENUATE` in `decorate.z`) always are. The
+  flag reaches the scene shader in the light's kind (`ComputeDynLightKind`), where a wall or flat takes an attenuated
+  light by the cosine of the angle it arrives at, as UZDoom's `material_normal.fp` does; sprites and particles take
+  it as before, as UZDoom's do. Models, which UZDoom always lights this way per pixel, still take every light on
+  the CPU as sprites do. The top-level `lightsizefactor` scales `size` and `secondarySize` of the definitions after
+  it in its lump and what that lump includes, except those with `attenuate 0`: UZDoom reads its unset tag (-1)
+  through an unsigned getter, so lights without the tag are scaled too.
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;

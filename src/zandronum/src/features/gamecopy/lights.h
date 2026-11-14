@@ -25,6 +25,7 @@ struct LightRecord
 	bool active, subtractive, additive, dontLightSelf;
 	bool dontLightActors;         // [Doruk-Aksoy] GLDEFS dontlightactors: no sprite, model or particle takes its light
 	bool dontLightOthers;         // [Doruk-Aksoy] GLDEFS dontlightothers: of actors and particles, only its carrier takes its light
+	bool attenuated;              // [Doruk-Aksoy] GLDEFS attenuate or an *Attenuated map light: a wall or flat takes it by the angle it arrives at
 	std::vector<unsigned> links;  // [rc4l] the subsectors it reached and numsubsectors plus each sidedef it lights, sorted
 };
 

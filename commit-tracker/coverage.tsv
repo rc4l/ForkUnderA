@@ -6182,7 +6182,7 @@ b77927fa6ddd205256cf412c71d629c58643046b	2016-12-07T21:49:42Z	Merge branch 'mast
 d12b92e926828b21f5b2d60e559ab35364524974	2016-12-07T21:49:44Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 f547daccc8849107c099838b9caf6e5df8e310a3	2016-12-07T21:51:05Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 aa939ef17a9ac79cd50ea22068990b8d53044a03	2016-12-07T21:53:06Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending		/
-1e950d75bdb73ea6fcc6cd614c0deb73369393ca	2016-12-07T22:17:18Z	- made dynamic light attenuation completely opt-in. This can be done either by setting a MAPINFO option for lights that do not automatically specify it and with a light property. The light property will always take precedence, if set.	pending		/
+1e950d75bdb73ea6fcc6cd614c0deb73369393ca	2016-12-07T22:17:18Z	- made dynamic light attenuation completely opt-in. This can be done either by setting a MAPINFO option for lights that do not automatically specify it and with a light property. The light property will always take precedence, if set.	adapted	GLDEFS attenuate (unset follows the level), things 9830-9834 via +DYNAMICLIGHT.ATTENUATE on ADynamicLight::lightflags; the cosine factor is in the Vulkan scene shader, read from the light kind instead of a sign bit	3ae8f603
 12f0b560363c78a660abd5c4383860bd58e50f78	2016-12-07T23:59:04Z	- fixed: Stepping up through a portal did not work when the step line was two-sided. This special case was only implemented for one-sided lines - fixed: The portal collector set bad flags for collected lower portals.	pending		/
 40b68bfea08657779edd653f6b73bec1ff47a1c1	2016-12-08T04:12:42Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending		/
 66d287ea81a3435d03688a42f7e758a71f3bc3f5	2016-12-08T09:16:22Z	- fixed: Stepping through a ceiling portal on a two-sided line did not work. - fixed: Stepping up an actor checked against the sector's own ceiling, even if it was a crossable portal.	pending		/
@@ -10151,7 +10151,7 @@ a4a4abe8966e3e558a6f8a34cbe29b632cfe5e1e	2018-04-17T14:06:58Z	Fixed usage of wro
 340f5818c7097bd374a223479136ab5a156a60a1	2018-04-18T14:01:33Z	Changed macOS targets in Travis configuration	pending		/
 c241f34f15217cd9aaa71b5b068bf005966b85e5	2018-04-18T14:01:35Z	Updated headers' paths for main project	pending		/
 4ab6034a366602466425981b70138b3405cab78c	2018-04-18T14:05:25Z	Cleaned up Windows backend from remains of Direct3D	pending		/
-e77cba1fd8ad45809d207a7c281af3e6baabef36	2018-04-18T20:15:06Z	- added a 'lightsizefactor' command to gldefs.	pending		/
+e77cba1fd8ad45809d207a7c281af3e6baabef36	2018-04-18T20:15:06Z	- added a 'lightsizefactor' command to gldefs.	ported	per lump and handed to includes; an unset attenuate is scaled too, as UZDoom reads it	3ae8f603
 671736ecdcf817fb2def804801dc9791be43deb2	2018-04-19T08:12:20Z	Disabled annoying MSVC 2015 warnings in ADL and OPN files	pending		/
 3212da8fcf78d77721496e3ee69aea9af682741f	2018-04-19T08:12:29Z	Cleaned up #include's in dynamic lights code	pending		/
 220d923e65f47737f4f6718705d44c1bb3153d3d	2018-04-19T08:36:52Z	Do not write g_pch.cpp if it's already up-to-date	pending		/
@@ -15867,7 +15867,7 @@ ce59b47e93883a7b8e423752b6bad2db36cb56b7	2022-04-26T18:50:37Z	- make StatusScree
 643e5c87fd361c8c6b7b2375351a625aa73c268a	2022-04-28T06:42:12Z	- added an option to delete a terrain type from a texture.	pending		/
 86c968c8a3c7ed98e198c3ddb5b2f7b2e4af4af4	2022-04-28T18:48:00Z	- where did that '!' come from?	pending		/
 739b015a4d6b9c3a43008904abd58ee765f79220	2022-04-28T19:14:50Z	- reinstated code that has gotten lost.	pending		/
-63bba40d7d1b6b0616131cadac597c8eaee4674c	2022-04-28T22:02:11Z	- expose the ‚attenuatelights‘ map flag.	pending		/
+63bba40d7d1b6b0616131cadac597c8eaee4674c	2022-04-28T22:02:11Z	- expose the ‚attenuatelights‘ map flag.	ported	LEVEL3_ATTENUATE, which an unset GLDEFS attenuate follows	3ae8f603
 519ecbe8eb32c0bc497930b5a32eb2c6c440fde3	2022-04-28T22:12:51Z	- added Get/SetAmmoCapacity ZScript functions	pending		/
 de0fcc3b6c15338ea1fede5b7ee9c5ccd7e8ec83	2022-04-28T22:24:47Z	- restrict RealGibs for players only	pending		/
 ee109e0bd5cb5fac0c9aefc31909a860da311bc8	2022-04-28T22:25:41Z	- we do not need ‚corpsegibs‘. in compatibility.txt anymore.	pending		/

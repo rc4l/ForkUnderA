@@ -554,6 +554,12 @@ DoomEdNums
   9822 = PointLightFlickerSubtractive
   9823 = SectorPointLightSubtractive
   9824 = PointLightFlickerRandomSubtractive
+  // [Doruk-Aksoy] uzdoom@1e950d75bdb73ea6fcc6cd614c0deb73369393ca
+  9830 = PointLightAttenuated
+  9831 = PointLightPulseAttenuated
+  9832 = PointLightFlickerAttenuated
+  9833 = SectorPointLightAttenuated
+  9834 = PointLightFlickerRandomAttenuated
   9825 = VavoomLight
   // [rc4l] uzdoom@51591d10b -- the slope and vertex-height things become specials too, so
   // the code that runs outside P_SpawnMapThing can recognise them from the stored entry.

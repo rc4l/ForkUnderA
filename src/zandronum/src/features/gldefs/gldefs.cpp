@@ -63,6 +63,8 @@
 #include "features/gldefs/gldefs.h"
 #include "features/gldefs/computation/lighttags_compute.h"
 #include "features/gldefs/computation/lightsize_compute.h"
+#include "features/gldefs/computation/attenuate_compute.h"
+#include "g_level.h"   // [Doruk-Aksoy] level.flags3, whose LEVEL3_ATTENUATE an unset attenuate follows
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
 #include "features/postprocess/postprocess.h"
@@ -156,6 +158,13 @@ public:
    void SetLightDefIntensity(float intensity) { m_lightDefIntensity = intensity; }
    void SetDontLightActors(bool on) { m_dontLightActors = on; }
    void SetDontLightOthers(bool on) { m_dontLightOthers = on; }
+   void SetAttenuate(bool on) { m_attenuate = on ? 1 : 0; }
+   // [Doruk-Aksoy] The GLDEFS lightsizefactor in force where the definition ends, as UZDoom's AddLightDefaults applies it.
+   void ApplySizeFactor(double factor)
+   {
+      m_Args[LIGHT_INTENSITY] = zx::gldefs::ComputeLightSizeFactor(m_Args[LIGHT_INTENSITY], m_attenuate, factor);
+      m_Args[LIGHT_SECONDARY_INTENSITY] = zx::gldefs::ComputeLightSizeFactor(m_Args[LIGHT_SECONDARY_INTENSITY], m_attenuate, factor);
+   }
 protected:
    FName m_Name;
    int m_Args[5];   // [Doruk-Aksoy] ints, as UZDoom's, so a size reaches 1024
@@ -165,6 +174,7 @@ protected:
    bool m_subtractive, m_additive, m_halo, m_dontlightself;
    float m_lightDefIntensity;
    bool m_dontLightActors, m_dontLightOthers;
+   int m_attenuate;   // [Doruk-Aksoy] the attenuate tag, 0 or 1, or zx::gldefs::kAttenuateUnset
 };
 
 TArray<FLightDefaults *> LightDefaults;
@@ -190,6 +200,7 @@ FLightDefaults::FLightDefaults(FName name, ELightType type)
 	m_lightDefIntensity = 1.f;
 	m_dontLightActors = false;
 	m_dontLightOthers = false;
+	m_attenuate = zx::gldefs::kAttenuateUnset;
 }
 
 void FLightDefaults::ApplyProperties(ADynamicLight * light) const
@@ -201,6 +212,8 @@ void FLightDefaults::ApplyProperties(ADynamicLight * light) const
 	light->lightDefIntensity = m_lightDefIntensity;
 	light->dontLightActors = m_dontLightActors;
 	light->dontLightOthers = m_dontLightOthers;
+	if (zx::gldefs::ComputeLightAttenuated(m_attenuate, (level.flags3 & LEVEL3_ATTENUATE) != 0)) light->lightflags |= LF_ATTENUATE;
+	else light->lightflags &= ~LF_ATTENUATE;
 	for (int a = 0; a < 3; a++) light->args[a] = clamp<int>((int)(m_Args[a] * r_lights_intensity), 0, 255);
 	light->m_intensity[0] = int(m_Args[LIGHT_INTENSITY]);
 	light->m_intensity[1] = int(m_Args[LIGHT_SECONDARY_INTENSITY]);
@@ -290,7 +303,7 @@ void gl_AddLightDefaults(FLightDefaults *defaults)
 //
 //-----------------------------------------------------------------------------
 
-static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
+static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType, double sizeFactor)
 {
 	float floatVal;
 	float floatTriple[3];
@@ -368,8 +381,7 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 			defaults->SetDontLightSelf(gl_ParseInt(sc) != 0);
 			break;
 		case LightTag::Attenuate:
-			// [rc4l] GZDoom's attenuation flag, read and dropped (legacy GL always attenuates), so wads that set it, e.g. Judgment, still load.
-			gl_ParseInt(sc);
+			defaults->SetAttenuate(gl_ParseInt(sc) != 0);
 			break;
 		case LightTag::DontLightActors:
 			defaults->SetDontLightActors(gl_ParseInt(sc) != 0);
@@ -400,6 +412,7 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType)
 		defaults->SetArg(LIGHT_SECONDARY_INTENSITY, defaults->GetArg(LIGHT_INTENSITY));
 		defaults->SetArg(LIGHT_INTENSITY, v);
 	}
+	defaults->ApplySizeFactor(sizeFactor);
 	gl_AddLightDefaults(defaults);
 }
 
@@ -482,8 +495,7 @@ void gl_ParseFrame(FScanner &sc, FString name)
 					gl_AddLightAssociation(name, frameName, sc.String);
 				break;
 			case LightTag::Attenuate:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				// [Doruk-Aksoy] GZDoom attenuation flag, not one UZDoom takes here: read and dropped so wads that set it, e.g. Judgment, still load.
 				gl_ParseInt(sc);
 				break;
 			default:
@@ -539,8 +551,7 @@ void gl_ParseObject(FScanner &sc)
 				gl_ParseFrame(sc, name);
 				break;
 			case LightTag::Attenuate:
-				// [rc4l] GZDoom attenuation flag: accept + consume its arg (legacy GL always
-				// attenuates), so MBF21/GZDoom wads that set it -- e.g. Judgment -- still load.
+				// [Doruk-Aksoy] GZDoom attenuation flag, not one UZDoom takes here: read and dropped so wads that set it, e.g. Judgment, still load.
 				gl_ParseInt(sc);
 				break;
 			default:
@@ -973,7 +984,8 @@ void gl_RecreateAllAttachedLights()
 // by LoadDynLightDefs, which wasn't simply integrated into ParseDefs
 // because of the way the code needs to load two out of five lumps.
 //==========================================================================
-void gl_DoParseDefs(FScanner &sc, int workingLump)
+// [Doruk-Aksoy] lightSizeFactor is UZDoom's per-lump GLDEFS lightsizefactor, 1 at a lump's start and handed on to what it includes.
+void gl_DoParseDefs(FScanner &sc, int workingLump, double lightSizeFactor = 1.)
 {
 	int recursion=0;
 	int lump, type;
@@ -998,27 +1010,27 @@ void gl_DoParseDefs(FScanner &sc, int workingLump)
 					sc.ScriptError("Lump '%s' not found", sc.String);
 
 				FScanner newscanner(lump);
-				gl_DoParseDefs(newscanner, lump);
+				gl_DoParseDefs(newscanner, lump, lightSizeFactor);
 				break;
 			}
 		case LIGHT_POINT:
-			gl_ParseLight(sc, LightBlock::Point, PointLight);
+			gl_ParseLight(sc, LightBlock::Point, PointLight, lightSizeFactor);
 			break;
 		case LIGHT_PULSE:
-			gl_ParseLight(sc, LightBlock::Pulse, PulseLight);
+			gl_ParseLight(sc, LightBlock::Pulse, PulseLight, lightSizeFactor);
 			break;
 		case LIGHT_FLICKER:
-			gl_ParseLight(sc, LightBlock::Flicker, FlickerLight);
+			gl_ParseLight(sc, LightBlock::Flicker, FlickerLight, lightSizeFactor);
 			break;
 		case LIGHT_FLICKER2:
-			gl_ParseLight(sc, LightBlock::Flicker2, RandomFlickerLight);
+			gl_ParseLight(sc, LightBlock::Flicker2, RandomFlickerLight, lightSizeFactor);
 			break;
 		case LIGHT_SECTOR:
-			gl_ParseLight(sc, LightBlock::Sector, SectorLight);
+			gl_ParseLight(sc, LightBlock::Sector, SectorLight, lightSizeFactor);
 			break;
-		// [Doruk-Aksoy] UZDoom's size factor for attenuated lights, read and not yet acted on.
+		// [Doruk-Aksoy] UZDoom's size factor, for the light definitions after it in this lump and what it includes.
 		case TAG_LIGHTSIZEFACTOR:
-			gl_ParseFloat(sc);
+			lightSizeFactor = gl_ParseFloat(sc);
 			break;
 		// [Doruk-Aksoy] UZDoom's texture colourisation, which we lack, skipped so a UZDoom GLDEFS loads.
 		case TAG_COLORIZATION:
