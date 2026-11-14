@@ -458,6 +458,7 @@ static FFlagDef PowerSpeedFlagDefs[] =
 static FFlagDef DynamicLightFlagDefs[] =
 {
 	DEFINE_FLAG(LF, ATTENUATE, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, SPOT, ADynamicLight, lightflags),
 };
 
 static const struct FFlagList { const PClass *Type; FFlagDef *Defs; int NumDefs; } FlagLists[] =

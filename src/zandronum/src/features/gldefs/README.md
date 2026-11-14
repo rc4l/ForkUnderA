@@ -13,8 +13,8 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   parser takes. `intensity` multiplies the light's colour where it is drawn (`ADynamicLight::lightDefIntensity`,
   carried in the render copy's light record), as UZDoom's does. `dontlightactors` keeps the light off every
   sprite, model and particle (`features/dynlights/computation/shouldlight_compute`) while it still lights walls,
-  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot` is read and not yet
-  acted on, and `noshadowmap`, `dontlightmap` and the top-level
+  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot inner outer` makes it a
+  spot light (`features/dynlights/computation/spotlight_compute`), and `noshadowmap`, `dontlightmap` and the top-level
   `colorization` read and dropped (we have no shadow maps, lightmaps or colourisation), so a UZDoom GLDEFS loads
   instead of stopping on "Unknown tag".
 - `computation/lightsize_compute`: `size` and `secondarySize` clamped to UZDoom's 1 to 1024 (they were bytes, cut at

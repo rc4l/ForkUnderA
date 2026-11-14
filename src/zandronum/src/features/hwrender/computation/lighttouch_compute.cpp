@@ -15,9 +15,9 @@ void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, f
 	out[2] = b / 255.0f * scale;
 }
 
-float ComputeDynLightKind(bool subtractive, bool attenuated)
+float ComputeDynLightKind(bool subtractive, bool attenuated, bool spot)
 {
-	return (subtractive ? 1.0f : 0.0f) + (attenuated ? 2.0f : 0.0f);
+	return (subtractive ? 1.0f : 0.0f) + (attenuated ? 2.0f : 0.0f) + (spot ? 4.0f : 0.0f);
 }
 
 bool ComputeLightsDue(LightsStamp &kept, int tic, int generation, int flags, bool &newLevel)

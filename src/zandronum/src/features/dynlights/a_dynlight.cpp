@@ -52,6 +52,7 @@
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 #include "features/dynlights/computation/samelinks_compute.h"   // [Doruk-Aksoy] a relink that would change no link skipped
+#include "features/dynlights/computation/spotlight_compute.h"   // [Doruk-Aksoy] a map spot's colour and cone out of its args
 #include "features/dynlights/computation/sectorlight_compute.h"   // [Doruk-Aksoy] a sector light's radius, as UZDoom gives it
 #include "features/net-session/netrole.h"
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how many relinks a tic, how many changed nothing, and what the walk costs of them
@@ -141,6 +142,8 @@ void ADynamicLight::Serialize(FArchive &arc)
 	arc << lightflags << lighttype;
 	arc << m_tickCount << m_currentIntensity;
 	arc << m_intensity[0] << m_intensity[1];
+	// [Doruk-Aksoy] SAVEVER 4532: a map spot's cone, which BeginPlay took out of the args it then overwrote with the colour.
+	if (SaveVersion >= 4532) arc << spotInner << spotOuter;
 
 	if (lighttype == PulseLight) arc << m_lastUpdate << m_cycler;
 	if (arc.IsLoading()) LinkLight();
@@ -160,6 +163,16 @@ void ADynamicLight::BeginPlay()
 
 	m_intensity[0] = args[LIGHT_INTENSITY];
 	m_intensity[1] = args[LIGHT_SECONDARY_INTENSITY];
+	// [Doruk-Aksoy] uzdoom@62afe5f0 P_SpawnMapThing: a spot thing packs its colour into arg0 and gives its cone in arg1 and arg2.
+	if (IsSpot())
+	{
+		const zx::dynlights::SpotMapArgs spot = zx::dynlights::ComputeSpotMapArgs(args[0], args[1], args[2]);
+		args[LIGHT_RED] = spot.red;
+		args[LIGHT_GREEN] = spot.green;
+		args[LIGHT_BLUE] = spot.blue;
+		spotInner = spot.inner;
+		spotOuter = spot.outer;
+	}
 }
 
 //==========================================================================
