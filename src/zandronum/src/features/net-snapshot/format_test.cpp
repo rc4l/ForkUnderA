@@ -1362,3 +1362,354 @@ TEST(SnapshotFormat, ARecordIsItsIdThenItsBody)
 	EXPECT_EQ(mh, nh);
 	EXPECT_EQ(0, memcmp(whole, parts, nh));
 }
+
+// [Kaori-Chani] An axis whose extent is empty keeps the narrow frame: a map can hold nothing on
+// one axis, and the sweep has no bounds there to widen from.
+TEST(SnapshotFormat, AnAxisWithNoExtentKeepsItsNarrowFrame)
+{
+	const long long lo[3] = { 1, -60000, 0 }, hi[3] = { -1, 60000, 0 };
+	bool bOver = true;
+	const SnapFrame f = FrameFromExtent(lo, hi, -0x80000000LL, 0x7FFFFFFFLL, &bOver);
+	EXPECT_FALSE(bOver);
+	EXPECT_EQ(0, f.origin[0]);
+	EXPECT_EQ(SNAP_FRAME_NARROW, f.width[0]) << "the empty axis";
+	EXPECT_EQ(SNAP_FRAME_WIDE, f.width[1]) << "the axis that does have an extent";
+}
+
+// [Kaori-Chani] The record id's own two refusals, apart from the gap reader's: a first id that
+// does not fit in what is left, and a gap the reader rejects. Each leaves the cursor as it was,
+// so a payload cut short mid-record cannot shift every id after it.
+TEST(SnapshotFormat, ATruncatedOrMalformedRecordIdIsRefused)
+{
+	BYTE buf[8];
+	memset(buf, 0xFF, sizeof(buf));
+	WORD id = 7;
+	SnapIdCursor c;
+	IdCursorReset(c);
+	for (unsigned int avail = 0; avail < SNAP_REC_IDBYTES_RAW; ++avail)
+	{
+		ASSERT_EQ(0u, ReadRecordId(buf, avail, id, c)) << avail << " bytes for the first id";
+		ASSERT_TRUE(c.first) << "the cursor stands where it was, at " << avail << " bytes";
+	}
+
+	// Past the first record an id is a gap, and an overlong one is refused here too.
+	IdCursorReset(c);
+	ASSERT_EQ((unsigned int)SNAP_REC_IDBYTES_RAW, ReadRecordId(buf, sizeof(buf), id, c));
+	EXPECT_EQ(0u, ReadRecordId(buf, sizeof(buf), id, c)) << "an overlong gap";
+}
+
+// [Kaori-Chani] A leave is its mask alone: no class and no groups, so nothing past the mask is
+// written for a reader to walk into.
+TEST(SnapshotFormat, ALeaveIsItsMaskAlone)
+{
+	const SnapFrame f = FrameNarrow();
+	SnapEntityState e;
+	memset(&e, 0, sizeof(e));
+	e.qx = 5; e.qy = 6;
+
+	BYTE rec[SNAP_MAX_RECORD_BYTES];
+	memset(rec, 0xAB, sizeof(rec));
+	const unsigned int n = WriteRecordBody(rec, f, 0, 1234, e);
+	EXPECT_EQ((unsigned int)SNAP_REC_MASK_BYTES, n);
+	EXPECT_EQ(0, rec[0]);
+	EXPECT_EQ(0xAB, rec[n]) << "nothing is written past the mask";
+}
+
+// [Kaori-Chani] The polyobject walk refuses before it reads: too little for the header, a count
+// past the array it would fill, an entry with no room left, and a kind this build does not know.
+TEST(SnapshotFormat, APolyobjectBodyIsRefusedBeforeItIsWalked)
+{
+	const SnapFrame f = FrameNarrow();
+	const unsigned int header = PolyHeaderBytes(f);
+	BYTE body[SNAPMV_BODY_MAX];
+	memset(body, 0, sizeof(body));
+
+	for (unsigned int avail = 0; avail < header; ++avail)
+		ASSERT_EQ(0u, MoverPolyBodyBytes(f, body, avail)) << avail << " of " << header << " bytes";
+
+	body[header - 1] = (BYTE)(SNAPPO_MAXENTRIES + 1);
+	EXPECT_EQ(0u, MoverPolyBodyBytes(f, body, sizeof(body))) << "a count past the array";
+
+	body[header - 1] = 1;
+	EXPECT_EQ(0u, MoverPolyBodyBytes(f, body, header)) << "an entry with no room at all";
+
+	body[header] = 6;	// no SNAPPO_ type is 6
+	EXPECT_EQ(0u, PolyEntryBytes(f, 6)) << "a kind this build does not know";
+	EXPECT_EQ(0u, MoverPolyBodyBytes(f, body, header + 1)) << "that kind inside the walk";
+
+	SnapMoverPoly s;
+	memset(&s, 0, sizeof(s));
+	EXPECT_FALSE(ReadMoverPoly(body, f, header + 1, s)) << "a body the walk refuses";
+}
+
+// [Kaori-Chani] A sliding door and a swinging one share one entry shape, so the writer and the
+// reader treat them as one arm: this pins the sliding half, which the round trip above does not.
+TEST(SnapshotFormat, ASlidingPolyobjectDoorRoundTrips)
+{
+	const SnapFrame f = FrameNarrow();
+	SnapMoverPoly a;
+	memset(&a, 0, sizeof(a));
+	a.x = 7 << FRACBITS; a.y = -(9 << FRACBITS); a.angle = 0x40000000u; a.count = 1;
+	a.e[0].kind = SNAPPO_SLIDE; a.e[0].gen = 3;
+	a.e[0].speed = 1 << FRACBITS; a.e[0].dist = 2;
+	a.e[0].xSpeed = -4; a.e[0].ySpeed = 5; a.e[0].direction = -2;
+	a.e[0].totalDist = 128 << FRACBITS; a.e[0].tics = 6;
+	a.e[0].waitTics = 35; a.e[0].close = 1;
+
+	BYTE body[SNAPMV_BODY_MAX];
+	const unsigned int bn = WriteMoverPoly(body, f, a);
+	EXPECT_EQ(PolyHeaderBytes(f) + (unsigned int)SNAPPO_DOOR_BYTES, bn);
+	EXPECT_EQ(bn, MoverPolyBodyBytes(f, body, bn));
+
+	SnapMoverPoly b;
+	memset(&b, 0, sizeof(b));
+	ASSERT_TRUE(ReadMoverPoly(body, f, bn, b));
+	ASSERT_EQ(1, (int)b.count);
+	EXPECT_EQ(SNAPPO_SLIDE, b.e[0].kind);
+	EXPECT_EQ(a.x, b.x);
+	EXPECT_EQ(a.y, b.y);
+	EXPECT_EQ(a.e[0].speed, b.e[0].speed);
+	EXPECT_EQ(a.e[0].dist, b.e[0].dist);
+	EXPECT_EQ(a.e[0].xSpeed, b.e[0].xSpeed);
+	EXPECT_EQ(a.e[0].ySpeed, b.e[0].ySpeed);
+	EXPECT_EQ(a.e[0].direction, b.e[0].direction);
+	EXPECT_EQ(a.e[0].totalDist, b.e[0].totalDist);
+	EXPECT_EQ(a.e[0].tics, b.e[0].tics);
+	EXPECT_EQ(a.e[0].waitTics, b.e[0].waitTics);
+	EXPECT_EQ(a.e[0].close, b.e[0].close);
+}
+
+// [Kaori-Chani] Alpha's two clamp ends: opaque must come back exactly opaque, since 1/63rds were
+// chosen over a shift so that a fully opaque actor does not draw slightly translucent.
+TEST(SnapshotFormat, AlphaClampsAtBothEndsAndOpaqueIsExact)
+{
+	EXPECT_EQ(63, QuantAlpha(FRACUNIT)) << "exactly opaque";
+	EXPECT_EQ(63, QuantAlpha(FRACUNIT * 2)) << "past opaque clamps, it does not wrap";
+	EXPECT_EQ(0, QuantAlpha(0));
+	EXPECT_EQ(0, QuantAlpha(-FRACUNIT)) << "a negative alpha floors at clear";
+	EXPECT_EQ(FRACUNIT, DequantAlpha(63)) << "opaque round-trips exactly";
+	EXPECT_EQ(FRACUNIT, DequantAlpha(255)) << "a wire value past the six bits still reads opaque";
+	EXPECT_EQ(0, DequantAlpha(0));
+	EXPECT_EQ(63, QuantAlpha(DequantAlpha(63))) << "and back again";
+}
+
+// [Kaori-Chani] The sprite and its frame share one word, so the pair that reads them back is what
+// makes the packing worth anything.
+TEST(SnapshotFormat, ASpriteAndItsFrameComeBackApart)
+{
+	static const WORD sprites[] = { 0, 1, 1000, 2047 };
+	static const BYTE frames[] = { 0, 1, 30, 31 };
+	for (unsigned int i = 0; i < sizeof(sprites) / sizeof(sprites[0]); ++i)
+	{
+		for (unsigned int j = 0; j < sizeof(frames) / sizeof(frames[0]); ++j)
+		{
+			const WORD sf = PackSpriteFrame(sprites[i], frames[j]);
+			EXPECT_EQ(sprites[i], SpriteFromPack(sf)) << i << ", " << j;
+			EXPECT_EQ(frames[j], FrameFromPack(sf)) << i << ", " << j;
+		}
+	}
+	// [Kaori-Chani] The clamped sprite reads back as the clamp, not as what was asked for.
+	EXPECT_EQ(2047, SpriteFromPack(PackSpriteFrame(5000, 0)));
+}
+
+// [Kaori-Chani] The psprite event's body and its reader, which the client's weapon layers go
+// through: the mask byte leads, and the reader is handed the payload past it.
+TEST(SnapshotFormat, ThePSpriteBodyRoundTripsBothLayers)
+{
+	SnapPSpriteState a, b;
+	memset(&a, 0, sizeof(a));
+	memset(&b, 0xEE, sizeof(b));
+	a.weaponClass = 0xBEEF;
+	a.qstate[0] = 1234;					a.qtics[0] = 7;
+	a.qstate[1] = SNAP_STATE_UNKNOWN;	a.qtics[1] = 255;
+
+	BYTE body[SNAP_MAX_EVENT_BYTES];
+	memset(body, 0, sizeof(body));
+	const unsigned int n = WritePSpriteBody(body, a);
+	EXPECT_EQ((unsigned int)(SNAP_EVENT_MASK_BYTES + 2 + (2 + 1) * 2), n);
+	EXPECT_EQ((BYTE)(SNAPGRP_EVENT | SNAPEV_PSPRITE), body[0]) << "the mask leads the body";
+
+	ReadPSprite(body + SNAP_EVENT_MASK_BYTES, b);
+	EXPECT_EQ(a.weaponClass, b.weaponClass);
+	for (unsigned int L = 0; L < 2; ++L)
+	{
+		EXPECT_EQ(a.qstate[L], b.qstate[L]) << "layer " << L;
+		EXPECT_EQ(a.qtics[L], b.qtics[L]) << "layer " << L;
+	}
+}
+
+// [Kaori-Chani] Each mover body writes its fixed_t fields as absolute 32-bit 16.16, so the tests
+// below pin both extremes a wire field can carry, in both signs: a writer that narrowed a 48.16
+// value without the reader sign-extending it back would turn every downward speed and every
+// negative plane constant into a huge positive one. The byte count is pinned with them, since the
+// chunk layout sizes a record from the constant and a writer disagreeing with it overruns a
+// datagram.
+namespace {
+
+const fixed_t MOVERTEST_LOW  = fixed_t::FromSignedBits(0x80000000u);
+const fixed_t MOVERTEST_HIGH = fixed_t::FromSignedBits(0x7FFFFFFFu);
+
+} // namespace
+
+TEST(SnapshotFormat, ACeilingBodyRoundTripsEveryField)
+{
+	SnapMoverCeiling a, b;
+	memset(&a, 0, sizeof(a));
+	memset(&b, 0xEE, sizeof(b));
+	a.speed = MOVERTEST_LOW; a.speed1 = MOVERTEST_HIGH; a.speed2 = -FRACUNIT;
+	a.bottom = -1; a.top = FRACUNIT * 64; a.planeD = MOVERTEST_LOW;
+	a.tag = -2; a.ceilingID = 0x7FFF; a.crush = -1;
+	a.type = 9; a.silent = 1; a.hexencrush = 1;
+	a.direction = -1; a.oldDirection = 1;
+
+	BYTE body[SNAPMV_BODY_MAX];
+	const unsigned int n = WriteMoverCeiling(body, a);
+	ASSERT_EQ((unsigned int)SNAPMV_CEILING_BYTES, n);
+	ReadMoverCeiling(body, b);
+	EXPECT_EQ(a.speed, b.speed);
+	EXPECT_EQ(a.speed1, b.speed1);
+	EXPECT_EQ(a.speed2, b.speed2);
+	EXPECT_EQ(a.bottom, b.bottom);
+	EXPECT_EQ(a.top, b.top);
+	EXPECT_EQ(a.planeD, b.planeD);
+	EXPECT_EQ(a.tag, b.tag);
+	EXPECT_EQ(a.ceilingID, b.ceilingID);
+	EXPECT_EQ(a.crush, b.crush);
+	EXPECT_EQ(a.type, b.type);
+	EXPECT_EQ(a.silent, b.silent);
+	EXPECT_EQ(a.hexencrush, b.hexencrush);
+	EXPECT_EQ(a.direction, b.direction);
+	EXPECT_EQ(a.oldDirection, b.oldDirection);
+}
+
+TEST(SnapshotFormat, AFloorBodyRoundTripsInBothItsShapes)
+{
+	for (unsigned int s = 0; s < 2; ++s)
+	{
+		const bool bStair = (s == 1);
+		SnapMoverFloor a, b;
+		memset(&a, 0, sizeof(a));
+		memset(&b, 0xEE, sizeof(b));
+		a.speed = MOVERTEST_HIGH; a.destDist = MOVERTEST_LOW; a.planeD = -1;
+		a.floorID = -3; a.crush = 0x7FFF;
+		a.type = 4; a.hexencrush = 1; a.direction = -1;
+		a.orgDist = MOVERTEST_LOW;
+		a.resetCount = -1; a.delay = 0x7FFFFFFF; a.pauseTime = -2;
+		a.stepTime = 8; a.perStepTime = -8;
+
+		BYTE body[SNAPMV_BODY_MAX];
+		const unsigned int n = WriteMoverFloor(body, a, bStair);
+		ASSERT_EQ(bStair ? (unsigned int)SNAPMV_FLOOR_STAIR_BYTES
+			: (unsigned int)SNAPMV_FLOOR_BYTES, n) << "stair " << bStair;
+		ReadMoverFloor(body, b, bStair);
+		EXPECT_EQ(a.speed, b.speed) << "stair " << bStair;
+		EXPECT_EQ(a.destDist, b.destDist) << "stair " << bStair;
+		EXPECT_EQ(a.planeD, b.planeD) << "stair " << bStair;
+		EXPECT_EQ(a.floorID, b.floorID) << "stair " << bStair;
+		EXPECT_EQ(a.crush, b.crush) << "stair " << bStair;
+		EXPECT_EQ(a.type, b.type) << "stair " << bStair;
+		EXPECT_EQ(a.hexencrush, b.hexencrush) << "stair " << bStair;
+		EXPECT_EQ(a.direction, b.direction) << "stair " << bStair;
+		if (bStair)
+		{
+			EXPECT_EQ(a.orgDist, b.orgDist);
+			EXPECT_EQ(a.resetCount, b.resetCount);
+			EXPECT_EQ(a.delay, b.delay);
+			EXPECT_EQ(a.pauseTime, b.pauseTime);
+			EXPECT_EQ(a.stepTime, b.stepTime);
+			EXPECT_EQ(a.perStepTime, b.perStepTime);
+		}
+		else
+		{
+			// [Kaori-Chani] A decoded record carries only what the wire did, so the stair
+			// fields read as zero rather than as whatever the caller left in the struct.
+			EXPECT_EQ(0, b.orgDist);
+			EXPECT_EQ(0, b.resetCount);
+			EXPECT_EQ(0, b.delay);
+			EXPECT_EQ(0, b.pauseTime);
+			EXPECT_EQ(0, b.stepTime);
+			EXPECT_EQ(0, b.perStepTime);
+		}
+	}
+}
+
+TEST(SnapshotFormat, ADoorBodyRoundTripsEveryField)
+{
+	SnapMoverDoor a, b;
+	memset(&a, 0, sizeof(a));
+	memset(&b, 0xEE, sizeof(b));
+	a.speed = MOVERTEST_LOW; a.topDist = MOVERTEST_HIGH; a.botDist = -1;
+	a.oldFloorDist = FRACUNIT * 8; a.planeD = MOVERTEST_LOW;
+	a.topWait = -1; a.topCountdown = 0x7FFFFFFF; a.botSpot = -2;
+	a.lightTag = -4; a.doorID = 0x7FFF;
+	a.type = 3; a.direction = 2;
+
+	BYTE body[SNAPMV_BODY_MAX];
+	const unsigned int n = WriteMoverDoor(body, a);
+	ASSERT_EQ((unsigned int)SNAPMV_DOOR_BYTES, n);
+	ReadMoverDoor(body, b);
+	EXPECT_EQ(a.speed, b.speed);
+	EXPECT_EQ(a.topDist, b.topDist);
+	EXPECT_EQ(a.botDist, b.botDist);
+	EXPECT_EQ(a.oldFloorDist, b.oldFloorDist);
+	EXPECT_EQ(a.planeD, b.planeD);
+	EXPECT_EQ(a.topWait, b.topWait);
+	EXPECT_EQ(a.topCountdown, b.topCountdown);
+	EXPECT_EQ(a.botSpot, b.botSpot);
+	EXPECT_EQ(a.lightTag, b.lightTag);
+	EXPECT_EQ(a.doorID, b.doorID);
+	EXPECT_EQ(a.type, b.type);
+	EXPECT_EQ(a.direction, b.direction) << "a first wait of 2 is a phase, not a sign";
+}
+
+TEST(SnapshotFormat, AnElevatorBodyRoundTripsEveryField)
+{
+	SnapMoverElevator a, b;
+	memset(&a, 0, sizeof(a));
+	memset(&b, 0xEE, sizeof(b));
+	a.speed = -FRACUNIT; a.floorDestDist = MOVERTEST_LOW;
+	a.ceilingDestDist = MOVERTEST_HIGH; a.floorPlaneD = -1;
+	a.ceilingPlaneD = FRACUNIT * 128;
+	a.elevatorID = -5; a.type = 2; a.direction = -1;
+
+	BYTE body[SNAPMV_BODY_MAX];
+	const unsigned int n = WriteMoverElevator(body, a);
+	ASSERT_EQ((unsigned int)SNAPMV_ELEVATOR_BYTES, n);
+	ReadMoverElevator(body, b);
+	EXPECT_EQ(a.speed, b.speed);
+	EXPECT_EQ(a.floorDestDist, b.floorDestDist);
+	EXPECT_EQ(a.ceilingDestDist, b.ceilingDestDist);
+	EXPECT_EQ(a.floorPlaneD, b.floorPlaneD);
+	EXPECT_EQ(a.ceilingPlaneD, b.ceilingPlaneD);
+	EXPECT_EQ(a.elevatorID, b.elevatorID);
+	EXPECT_EQ(a.type, b.type);
+	EXPECT_EQ(a.direction, b.direction);
+}
+
+TEST(SnapshotFormat, APillarBodyRoundTripsEveryField)
+{
+	SnapMoverPillar a, b;
+	memset(&a, 0, sizeof(a));
+	memset(&b, 0xEE, sizeof(b));
+	a.floorSpeed = MOVERTEST_LOW; a.ceilingSpeed = MOVERTEST_HIGH;
+	a.floorTarget = -1; a.ceilingTarget = FRACUNIT * 32;
+	a.floorPlaneD = MOVERTEST_LOW; a.ceilingPlaneD = -FRACUNIT;
+	a.pillarID = -6; a.crush = 0x7FFF;
+	a.type = 1; a.hexencrush = 1; a.blocked = SNAPMV_PLANE_BOTH;
+
+	BYTE body[SNAPMV_BODY_MAX];
+	const unsigned int n = WriteMoverPillar(body, a);
+	ASSERT_EQ((unsigned int)SNAPMV_PILLAR_BYTES, n);
+	ReadMoverPillar(body, b);
+	EXPECT_EQ(a.floorSpeed, b.floorSpeed);
+	EXPECT_EQ(a.ceilingSpeed, b.ceilingSpeed);
+	EXPECT_EQ(a.floorTarget, b.floorTarget);
+	EXPECT_EQ(a.ceilingTarget, b.ceilingTarget);
+	EXPECT_EQ(a.floorPlaneD, b.floorPlaneD);
+	EXPECT_EQ(a.ceilingPlaneD, b.ceilingPlaneD);
+	EXPECT_EQ(a.pillarID, b.pillarID);
+	EXPECT_EQ(a.crush, b.crush);
+	EXPECT_EQ(a.type, b.type);
+	EXPECT_EQ(a.hexencrush, b.hexencrush);
+	EXPECT_EQ(a.blocked, b.blocked) << "which plane stalled";
+}
