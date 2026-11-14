@@ -352,7 +352,7 @@ static const std::string kDynamicVS = std::string(
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
 // Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
 // ask the shader what it thinks depth and colour are is worth the three lines.
-// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a over 0.5 subtractive), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
+// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a 1 subtractive, plus 2 attenuated), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
 #define FUA_LIGHT_LOOP_GLSL \
 	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
 	"    int first = 0;\n" \
@@ -424,6 +424,14 @@ static const std::string kDynamicVS = std::string(
 	"        if (uOptions.x > 0.5 && dot(vPlane.xyz, lp.xyz) - vPlane.w < -0.1) continue;\n" \
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n"
+
+// [Doruk-Aksoy] uzdoom@62afe5f0 material_normal.fp: an attenuated light (bit 2 of its kind) is taken by the cosine of the angle it arrives at, against the normal N the caller lights by.
+#define FUA_LIGHT_ATTENUATE_GLSL(N) \
+	"        if (lc.a > 1.5) {\n" \
+	"            a *= clamp(dot(" N ", normalize(d)), 0.0, 1.0);\n" \
+	"            if (a <= 0.0) continue;\n" \
+	"        }\n" \
+	"        bool subtractive = mod(lc.a, 2.0) > 0.5;\n"
 
 // [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
 #define FUA_LIGHT_GLSL \
@@ -589,7 +597,7 @@ static const std::string kDynamicVS = std::string(
 	   world -- roughly 0.1% utilisation -- so there is nothing to save. It is also the shape a
 	   clustered forward renderer wants next.
 
-	   Layout: pairs of (x, z, y, radius) and (r, g, b, mode), mode 1 meaning subtractive. Positions
+	   Layout: pairs of (x, z, y, radius) and (r, g, b, mode), mode 1 meaning subtractive, plus 2 attenuated. Positions
 	   use the same axis swap as the mesh vertices, so they compare directly against vPixelPos.xyz. */ \
 	"vec3 fuaDynLight(vec3 base) {\n" \
 	"    int n = int(uLightParams.x);\n" \
@@ -612,7 +620,8 @@ static const std::string kDynamicVS = std::string(
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	"        if (lc.a > 0.5) dyn -= lc.rgb * a;\n" \
+	FUA_LIGHT_ATTENUATE_GLSL("vPlane.xyz") \
+	"        if (subtractive) dyn -= lc.rgb * a;\n" \
 	"        else            dyn += lc.rgb * a;\n" \
 	"    }\n" \
 	"    return clamp(base + dyn, 0.0, 1.4);\n" \
@@ -697,9 +706,10 @@ static const std::string kDynamicVS = std::string(
 	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
 	"    vec3 viewdir = normalize(uCameraPos.xyz - vPixelPos.xyz);\n" \
 	FUA_LIGHT_LOOP_GLSL \
+	FUA_LIGHT_ATTENUATE_GLSL("m.Normal") \
 	"        vec3 halfdir = normalize(viewdir + normalize(d));\n" \
 	"        float s = a * m.SpecularLevel * pow(clamp(dot(halfdir, m.Normal), 0.0, 1.0), m.Glossiness * 4.0);\n" \
-	"        float sgn = lc.a > 0.5 ? -1.0 : 1.0;\n" \
+	"        float sgn = subtractive ? -1.0 : 1.0;\n" \
 	"        dyn += sgn * lc.rgb * a;\n" \
 	"        spec += sgn * lc.rgb * s;\n" \
 	"    }\n" \
@@ -728,13 +738,14 @@ static const std::string kDynamicVS = std::string(
 	"    int n = int(uLightParams.x);\n" \
 	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
 	FUA_LIGHT_LOOP_GLSL \
+	FUA_LIGHT_ATTENUATE_GLSL("N") \
 	"        vec3 L = normalize(d);\n" \
 	"        vec3 H = normalize(V + L);\n" \
 	"        float G = fuaSchlickGGX(max(dot(N, V), 0.0), m.Roughness) * fuaSchlickGGX(max(dot(N, L), 0.0), m.Roughness);\n" \
 	"        vec3 F = F0 + (1.0 - F0) * pow(1.0 - clamp(dot(H, V), 0.0, 1.0), 5.0);\n" \
 	"        vec3 kD = (vec3(1.0) - F) * (1.0 - m.Metallic);\n" \
 	"        vec3 specular = fuaGGX(N, H, m.Roughness) * G * F / max(4.0 * clamp(dot(N, V), 0.0, 1.0) * clamp(dot(N, L), 0.0, 1.0), 0.001);\n" \
-	"        Lo += (lc.a > 0.5 ? -1.0 : 1.0) * (kD * albedo / FUA_PI + specular) * lc.rgb * a;\n" \
+	"        Lo += (subtractive ? -1.0 : 1.0) * (kD * albedo / FUA_PI + specular) * lc.rgb * a;\n" \
 	"    }\n" \
 	"    }\n" \
 	"    vec3 F = F0 + (max(vec3(1.0 - m.Roughness), F0) - F0) * pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);\n" \

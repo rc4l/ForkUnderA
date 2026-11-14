@@ -41,6 +41,12 @@ enum
 #define MF4_ADDITIVE MF4_MISSILEMORE
 #define MF4_DONTLIGHTSELF MF4_SEESDAGGERS
 
+// [Doruk-Aksoy] ADynamicLight::lightflags, which DECORATE sets as +DYNAMICLIGHT.ATTENUATE as UZDoom's ZScript does.
+enum
+{
+	LF_ATTENUATE = 1,
+};
+
 enum ELightType
 {
 	PointLight,
@@ -105,6 +111,7 @@ public:
 	bool IsActive() const { return !(flags2&MF2_DORMANT); }
 	bool IsSubtractive() { return !!(flags4&MF4_SUBTRACTIVE); }
 	bool IsAdditive() { return !!(flags4&MF4_ADDITIVE); }
+	bool IsAttenuated() const { return !!(lightflags & LF_ATTENUATE); }
 	FState *targetState;
 	FLightNode * touching_sides;
 	FLightNode * touching_subsectors;

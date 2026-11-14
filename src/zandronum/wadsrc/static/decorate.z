@@ -90,6 +90,32 @@ ACTOR PointLightFlickerRandomSubtractive : PointLightFlickerRandom
    +MISSILEEVENMORE
 }
 
+// [Doruk-Aksoy] uzdoom@1e950d75bdb73ea6fcc6cd614c0deb73369393ca: map lights a wall or flat takes by the angle their light arrives at.
+ACTOR PointLightAttenuated : PointLight
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR PointLightPulseAttenuated : PointLightPulse
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR PointLightFlickerAttenuated : PointLightFlicker
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR SectorPointLightAttenuated : SectorPointLight
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR PointLightFlickerRandomAttenuated : PointLightFlickerRandom
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
 
 ACTOR VavoomLight : DynamicLight native
 {

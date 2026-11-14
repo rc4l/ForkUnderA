@@ -108,6 +108,7 @@ void TakeLight(ADynamicLight *light, LightRecord &r)
 	r.dontLightSelf = (light->flags4 & MF4_DONTLIGHTSELF) != 0;
 	r.dontLightActors = light->dontLightActors;
 	r.dontLightOthers = light->dontLightOthers;
+	r.attenuated = light->IsAttenuated();
 }
 
 } // namespace
