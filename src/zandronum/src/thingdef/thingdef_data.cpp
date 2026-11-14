@@ -340,6 +340,7 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(RF, FORCEYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, FORCEXYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, ROLLSPRITE, AActor, renderflags),	// [rc4l] uzdoom
+	DEFINE_FLAG(RF, LIGHTMULTALPHA, AActor, renderflags),	// [Doruk-Aksoy] uzdoom@c0d17bbd
 
 	// Bounce flags
 	DEFINE_FLAG2(BOUNCE_Walls, BOUNCEONWALLS, AActor, BounceFlags),
