@@ -105,15 +105,20 @@ set(ZX_SNAPSHOT_FORMAT
   "${ENGINE_SRC}/features/net-snapshot/stream.cpp"
   "${ENGINE_SRC}/features/net-snapshot/recordread.cpp"
   "${ZX_REPO_ROOT}/deps/zstd/zstd.c")
+# [Kaori-Chani] The decode dumper's body, shared by the reference test and the snap_dump tool
+# below, so neither can hold a copy that drifts from the other.
+set(ZX_SNAPSHOT_DUMP "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/snapdump.cpp")
 set_source_files_properties("${ZX_REPO_ROOT}/deps/zstd/zstd.c" PROPERTIES
   COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
 add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}"
-  ${ZX_SNAPSHOT_FORMAT} "${ZX_GEN_LISTS}")
+  ${ZX_SNAPSHOT_FORMAT} ${ZX_SNAPSHOT_DUMP} "${ZX_GEN_LISTS}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/snapdump_test.cpp")
 # [Doruk-Aksoy] features/database: database_compute.cpp runs its SQL on the engine's own SQLite, built here from the same folder (which downloads it when missing).
 enable_language(C)
 add_subdirectory("${ENGINE_SRC}/../sqlite" "${CMAKE_CURRENT_BINARY_DIR}/sqlite")
 target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${ENGINE_SRC}/../sqlite"
-  "${ZX_REPO_ROOT}/deps/zstd" "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  "${ZX_REPO_ROOT}/deps/zstd" "${CMAKE_CURRENT_BINARY_DIR}/generated"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock sqlite3)
 # [Kaori-Chani] The wide snapshot reference ships beside its module, and a dump that differs is
 # written into the build folder, so the whole difference can be taken with any tool.
@@ -319,3 +324,38 @@ if(ZANDROX_SNAP_FUZZ AND NOT MSVC)
       "${CMAKE_CURRENT_BINARY_DIR}/ref-wide.regenerated.csnap")
   endif()
 endif()
+
+# [Kaori-Chani] snap_dump, the command line over that same dumper. The reference test decodes
+# the three recordings whose digests it knows; this decodes any recording, which is what makes a
+# new reference dump after a deliberate format change and what reads a recording when a later
+# layer goes wrong. It needs no sanitizer and no main of its own beyond argument handling, so
+# unlike snap_fuzz it builds everywhere, MSVC included.
+add_executable(snap_dump
+  "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/main.cpp"
+  ${ZX_SNAPSHOT_DUMP}
+  ${ZX_SNAPSHOT_FORMAT})
+target_include_directories(snap_dump PRIVATE "${ENGINE_SRC}" "${ZX_REPO_ROOT}/deps/zstd"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# [Kaori-Chani] The command line runs on every build, over the one reference that ships in the
+# repo. What the dump says is already held to its digest by
+# SnapshotRefDump.TheWideReferenceDecodesByteForByte, which calls the same SnapDumpWrite; this is
+# the argument handling around it, so the tool cannot quietly stop working between the steps that
+# need it.
+add_test(NAME snap_dump_wide_reference COMMAND snap_dump
+  "${ENGINE_SRC}/features/net-snapshot/testdata/ref-wide.csnap"
+  "${CMAKE_CURRENT_BINARY_DIR}/ref-wide.byhand.dump.txt")
+
+# [Kaori-Chani] And the two statuses a good recording never produces. The tool returns its result
+# as its exit code, so these pin the step the GoogleTests cannot reach: main()'s own mapping. Which
+# flavour of 2 a bad recording gets -- no container, a header that will not open, a record cut off
+# mid-payload -- is pinned by SnapshotDump in snapdump_test.cpp; what is checked here is that 1 and
+# 2 arrive at the shell as 1 and 2.
+add_test(NAME snap_dump_missing_file COMMAND "${CMAKE_COMMAND}"
+  -D "TOOL=$<TARGET_FILE:snap_dump>"
+  -D "IN=${CMAKE_CURRENT_BINARY_DIR}/no-such-recording.csnap"
+  -D WANT=1 -P "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/expect_exit.cmake")
+add_test(NAME snap_dump_not_a_recording COMMAND "${CMAKE_COMMAND}"
+  -D "TOOL=$<TARGET_FILE:snap_dump>"
+  -D "IN=${CMAKE_CURRENT_SOURCE_DIR}/snapdump/main.cpp"
+  -D WANT=2 -P "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/expect_exit.cmake")

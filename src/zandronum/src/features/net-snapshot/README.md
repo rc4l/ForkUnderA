@@ -44,7 +44,8 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   steps, the mover write order, the replay's histogram, the ghost sampler, the smoothing, and the
   wall sweep — each with its colocated `*_test.cpp`.
 - `format_test.cpp`: the format layer's own tests, narrow frame and wide.
-- `refdump_test.cpp`: the reference decode, below.
+- `refdump_test.cpp`: the reference decode, below. The dumper it decodes with is shared, in
+  `tests/snapdump/`, with the `snap_dump` command line beside it.
 
 ## In-engine hooks
 
@@ -54,8 +55,10 @@ layers that need them and are listed here as they do.
 ## The reference recordings
 
 Three recordings made on the source tree at its `snap-ref-premerge` tag pin what the format layer
-decodes to, byte for byte, through the dumper that wrote their shipped dumps
-(`refdump_test.cpp`, which is `snap_dump` with its `main` replaced).
+decodes to, byte for byte, through the dumper that wrote their shipped dumps. That dumper is
+`snap_dump`'s own body, shared from `tests/snapdump/`: `refdump_test.cpp` holds the three
+references to their digests through it, and the `snap_dump` target is a command line over the same
+call, so a dump taken by hand is the dump the test takes.
 
 `testdata/ref-wide.csnap` is committed, at 67 KB, and so is checked on every build: it is the only
 reference carrying wide frames and non-zero origins, where 48.16 is likeliest to go wrong. The two
@@ -70,6 +73,28 @@ Unset, those two report that they did not run, and say that a skip is not a pass
 they fail: each recording's own SHA-256 is checked before it is decoded, so a damaged or mistaken
 file fails as the wrong file rather than as a decode difference. A mismatching dump is written into
 the build folder and the first differing line is named.
+
+## The dumper
+
+`snap_dump <recording> [out.txt]` writes any `.zsnap` or `.csnap` as text, telling the container
+from the file's own magic. It is the tool that made the shipped reference dumps, and it is how a
+new reference dump is made after a deliberate format change, or a recording read when a later
+layer goes wrong. Its body is `tests/snapdump/snapdump.cpp`, which the reference test calls too;
+the standalone `formattest` tree it came from is not ported, since step 1 replaced all three of
+its jobs inside this build. Unlike the fuzzer it needs no sanitizer, so it builds everywhere,
+MSVC included.
+
+What it does with a recording it cannot read is pinned by `tests/snapdump/snapdump_test.cpp`: a
+file that is no container, one shorter than the magic, one whose cvar block is cut, a recording that
+stops mid-record, and a payload whose id gap cannot be read. Each is held to the exact line the dumper
+writes, since those refusals are part of what decoding byte for byte means.
+
+Its exit status is its answer rather than a mapping beside it: `0` the recording read whole with no
+error, `1` the bytes could not be got at all or the arguments were wrong, `2` the bytes were read and
+are wrong — no container this build knows, a header that would not open, or a record that did not
+decode, with the dump written so far naming which. `SnapDumpWrite` returns those three values and
+`main` returns what it was handed, so the status cannot drift from the result; one CTest case runs
+the tool for each of the three.
 
 ## The fuzzer
 
