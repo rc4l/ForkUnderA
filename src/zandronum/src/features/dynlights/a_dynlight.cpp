@@ -52,6 +52,7 @@
 #include "features/materials/spriteframe.h"   // [rc4l] gl_GetSpriteFrame, for the light list's frame names
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 #include "features/dynlights/computation/samelinks_compute.h"   // [Doruk-Aksoy] a relink that would change no link skipped
+#include "features/dynlights/computation/sectorlight_compute.h"   // [Doruk-Aksoy] a sector light's radius, as UZDoom gives it
 #include "features/net-session/netrole.h"
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how many relinks a tic, how many changed nothing, and what the walk costs of them
 
@@ -314,18 +315,8 @@ void ADynamicLight::Tick()
 #endif
 
 	case SectorLight:
-	{
-		float intensity;
-		float scale = args[LIGHT_SCALE] / 8.f;
-		
-		if (scale == 0.f) scale = 1.f;
-		
-		intensity = Sector->lightlevel * scale;
-		intensity = clamp<float>(intensity, 0.f, 255.f);
-		
-		m_currentIntensity = intensity;
+		m_currentIntensity = zx::dynlights::ComputeSectorLightRadius(args[LIGHT_SCALE], Sector->lightlevel);
 		break;
-	}
 
 	case PointLight:
 		m_currentIntensity = float(m_intensity[0]);

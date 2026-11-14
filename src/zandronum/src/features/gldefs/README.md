@@ -18,8 +18,8 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   `colorization` read and dropped (we have no shadow maps, lightmaps or colourisation), so a UZDoom GLDEFS loads
   instead of stopping on "Unknown tag".
 - `computation/lightsize_compute`: `size` and `secondarySize` clamped to UZDoom's 1 to 1024 (they were bytes, cut at
-  255), and a sector light's `scale` as UZDoom stores it. Our sector lights still ignore that scale, as Zandronum 3.3's
-  do (`ApplyProperties` never copies it to the light), where UZDoom applies it.
+  255), and a sector light's `scale` as UZDoom stores it, which `ApplyProperties` hands the light as its `args[3]`
+  (`features/dynlights/computation/sectorlight_compute` turns it into a radius).
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;

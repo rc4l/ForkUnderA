@@ -204,6 +204,8 @@ void FLightDefaults::ApplyProperties(ADynamicLight * light) const
 	for (int a = 0; a < 3; a++) light->args[a] = clamp<int>((int)(m_Args[a] * r_lights_intensity), 0, 255);
 	light->m_intensity[0] = int(m_Args[LIGHT_INTENSITY]);
 	light->m_intensity[1] = int(m_Args[LIGHT_SECONDARY_INTENSITY]);
+	// [Doruk-Aksoy] The light's own args[3] too, where a sector light reads its scale as UZDoom's reads it from the definition's args.
+	light->args[LIGHT_SCALE] = m_Args[LIGHT_SCALE];
 	light->flags4&=~(MF4_ADDITIVE|MF4_SUBTRACTIVE|MF4_DONTLIGHTSELF);
 	if (m_subtractive) light->flags4|=MF4_SUBTRACTIVE;
 	if (m_additive) light->flags4|=MF4_ADDITIVE;
