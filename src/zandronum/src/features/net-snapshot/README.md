@@ -10,10 +10,16 @@ Ported from the `snapshot` branch of Kaori-Chani/ZanZan, from its `snap-ref-prem
 for `zx::Fixed`; what that found is in the port's own notes, and the shape to watch for is an
 unsigned value widened into a `fixed_t` without saying which sign it carries.
 
-**Only the format layer is here so far.** The wire format, the two containers and the pure
-`Compute*` units are in, with nothing in the engine's build and no stock file touched: the module is
-reached only by the test target. The server, the client, the movers and the recorder follow, and
-the hooks that call them after that.
+**The format layer and the server layer are here so far.** The wire format, the two containers, the
+pure `Compute*` units and the server's capture and per-client tracking are in, with nothing in the
+engine's build and no stock file touched: only the format layer is reached at all, by the test
+target. The client, the movers and the recorder follow, and the hooks that call them after that.
+
+`capture.cpp` does not compile yet, by design rather than by accident. It needs the additions this
+port makes to stock files — four `SVC2_SNAP*` protocol values, `reservedIDForPlayer`,
+`NextSequence`, `SnapMoverGate` and the rest — which arrive with the hooks. Its own 23 remaining
+errors are exactly that list and nothing else: the port's notes carry it, so what step 3 owes this
+layer is written down rather than rediscovered.
 
 ## Owns
 
@@ -39,6 +45,11 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
 - `record.h`, `recordread.cpp`: the `.csnap` container and its engine-free reader, which the fuzzer
   and the replay both read through.
 - `fuzzgen.h`: the generator the fuzzer builds inputs with, shared with the in-engine fuzzer to come.
+- `capture.{h,cpp}`: the server's snapshot tick — the world capture and its censuses, legacy
+  suppression, mover capture, cosmetic events, snapshot sounds and the stats report. Was
+  `sv_snapshot`.
+- `clienttrack.{h,cpp}`: the per-client delta — what each client has been told, its ack ledger and
+  the interest scheduling that decides what its next datagram carries. Was `sv_snapclient`.
 - `computation/`: twelve pure units — the ack ledger, the animation census, the budget and chunk
   cuts, the clock model, the interest tiers, the join's frame and map stamp, the gravity law and run
   steps, the mover write order, the replay's histogram, the ghost sampler, the smoothing, and the
