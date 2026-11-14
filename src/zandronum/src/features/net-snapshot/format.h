@@ -51,12 +51,12 @@ struct SnapFrame
 namespace zx { namespace netsnapshot {
 
 // Whether a width read from a file or a command has an encoding in this build.
-static inline bool FrameWidthKnown(unsigned int width)
+inline bool FrameWidthKnown(unsigned int width)
 {
 	return (width == SNAP_FRAME_NARROW) || (width == SNAP_FRAME_WIDE);
 }
 
-static inline SnapFrame FrameNarrow()
+inline SnapFrame FrameNarrow()
 {
 	SnapFrame f;
 	for (unsigned int k = 0; k < 3; ++k)
@@ -69,7 +69,7 @@ static inline SnapFrame FrameNarrow()
 }
 
 // Every axis wide at origin 0, for a budget that must hold in any frame.
-static inline SnapFrame FrameWidest()
+inline SnapFrame FrameWidest()
 {
 	SnapFrame f = FrameNarrow();
 	for (unsigned int k = 0; k < 3; ++k)
@@ -78,23 +78,23 @@ static inline SnapFrame FrameWidest()
 }
 
 // Bytes axis k adds to a field over its narrow form: 0, or 1 when wide.
-static inline unsigned int FrameExtra(const SnapFrame& f, unsigned int k)
+inline unsigned int FrameExtra(const SnapFrame& f, unsigned int k)
 {
 	return (unsigned int)f.width[k] - SNAP_FRAME_NARROW;
 }
 
 // The frame's whole-unit bounds on axis k: a signed value of its width.
-static inline long long FrameLo(const SnapFrame& f, unsigned int k)
+inline long long FrameLo(const SnapFrame& f, unsigned int k)
 {
 	return (long long)f.origin[k] - (1LL << (8 * f.width[k] - 1));
 }
-static inline long long FrameHi(const SnapFrame& f, unsigned int k)
+inline long long FrameHi(const SnapFrame& f, unsigned int k)
 {
 	return (long long)f.origin[k] + (1LL << (8 * f.width[k] - 1)) - 1;
 }
 
 // Whole units clamped into the frame, never wrapped, and counted when clamped.
-static inline SDWORD FrameClamp(const SnapFrame& f, unsigned int k, long long u)
+inline SDWORD FrameClamp(const SnapFrame& f, unsigned int k, long long u)
 {
 	const long long lo = FrameLo(f, k), hi = FrameHi(f, k);
 	if ((u >= lo) && (u <= hi))
@@ -106,7 +106,7 @@ static inline SDWORD FrameClamp(const SnapFrame& f, unsigned int k, long long u)
 
 // The frame for a map's extent (whole units) within the engine's range
 // [unitsMin, unitsMax]; `pOverflow` is set where an axis outgrows a wide frame.
-static inline SnapFrame FrameFromExtent(const long long lo[3], const long long hi[3],
+inline SnapFrame FrameFromExtent(const long long lo[3], const long long hi[3],
 	long long unitsMin, long long unitsMax, bool* pOverflow)
 {
 	SnapFrame f = FrameNarrow();
@@ -137,7 +137,7 @@ static inline SnapFrame FrameFromExtent(const long long lo[3], const long long h
 
 // Position: a unit a step, clamped into the frame and rounded to nearest, so a
 // mirror scatters about the true position rather than off to one side.
-static inline SDWORD QuantPosIn(const SnapFrame& f, unsigned int k, fixed_t v)
+inline SDWORD QuantPosIn(const SnapFrame& f, unsigned int k, fixed_t v)
 {
 	// [Kaori-Chani] Rounded from the floor and the fraction, since adding half a unit to
 	// a 48.16 value near its limit overflows where a 32-bit one could not.
@@ -146,40 +146,40 @@ static inline SDWORD QuantPosIn(const SnapFrame& f, unsigned int k, fixed_t v)
 }
 
 // The same, floored, for the fields that have always floored (`x >> FRACBITS`).
-static inline SDWORD FloorPosIn(const SnapFrame& f, unsigned int k, fixed_t v)
+inline SDWORD FloorPosIn(const SnapFrame& f, unsigned int k, fixed_t v)
 {
 	return FrameClamp(f, k, (long long)v >> 16);
 }
 
 // Rounded into the narrow frame at origin 0: the frameless quantizer.
-static inline SDWORD QuantPos(fixed_t v)
+inline SDWORD QuantPos(fixed_t v)
 {
 	return QuantPosIn(FrameNarrow(), 0, v);
 }
 // [Kaori-Chani] Whole units to 16.16 as a 64-bit multiply, since a 48.16 position reaches past 32,767 units and shifting a negative value left is undefined.
-static inline fixed_t DequantPos(SDWORD q) { return (fixed_t)((long long)q * 65536); }
+inline fixed_t DequantPos(SDWORD q) { return (fixed_t)((long long)q * 65536); }
 
 // Quantized position to whole map units for the server's distance tests, the
 // identity kept so a precision change is one edit.
-static inline int PosToUnits(SDWORD q) { return (int)q; }
+inline int PosToUnits(SDWORD q) { return (int)q; }
 
 // Angle: 12 bits (steps of ~0.088 degrees).
-static inline WORD QuantAngle(angle_t a) { return (WORD)(a >> 20); }
-static inline angle_t DequantAngle(WORD q) { return ((angle_t)q) << 20; }
+inline WORD QuantAngle(angle_t a) { return (WORD)(a >> 20); }
+inline angle_t DequantAngle(WORD q) { return ((angle_t)q) << 20; }
 
 // Pitch: 10 bits.
-static inline WORD QuantPitch(fixed_t p) { return (WORD)(((angle_t)p) >> 22); }
+inline WORD QuantPitch(fixed_t p) { return (WORD)(((angle_t)p) >> 22); }
 // [Kaori-Chani] A pitch carries signed bits, so the field sign-extends into 48.16 rather than
 // zero-extending and aiming a shot into the floor.
-static inline fixed_t DequantPitch(WORD q) { return fixed_t::FromSignedBits(((angle_t)q) << 22); }
+inline fixed_t DequantPitch(WORD q) { return fixed_t::FromSignedBits(((angle_t)q) << 22); }
 
 // The pitch the client will hold, the top 8 of its 10 bits, which every held or
 // compared pitch goes through, or ANG would be dirty every frame.
-static inline WORD WirePitch(WORD q) { return (WORD)(q & ~(WORD)3); }
+inline WORD WirePitch(WORD q) { return (WORD)(q & ~(WORD)3); }
 
 // Velocity: 1/4 unit per step, clamped to a signed 14-bit range and rounded to
 // nearest in 64 bits, so zero has a symmetric band.
-static inline SWORD QuantVel(fixed_t v)
+inline SWORD QuantVel(fixed_t v)
 {
 	// [Kaori-Chani] Rounded from the floor and the fraction, as QuantPosIn is.
 	const SQWORD raw = (SQWORD)v;
@@ -189,16 +189,16 @@ static inline SWORD QuantVel(fixed_t v)
 	return (SWORD)q;
 }
 // [Kaori-Chani] A velocity step to 16.16 as a 64-bit multiply, for the same reason as DequantPos.
-static inline fixed_t DequantVel(SWORD q) { return (fixed_t)((long long)q * 16384); }
+inline fixed_t DequantVel(SWORD q) { return (fixed_t)((long long)q * 16384); }
 
 // Sprite+frame: sprite index (11 bits, clamped) | frame (5 bits).
-static inline WORD PackSpriteFrame(WORD sprite, BYTE frame)
+inline WORD PackSpriteFrame(WORD sprite, BYTE frame)
 {
 	if (sprite > 2047) sprite = 2047;
 	return (WORD)((sprite << 5) | (frame & 31));
 }
-static inline WORD SpriteFromPack(WORD sf) { return (WORD)(sf >> 5); }
-static inline BYTE FrameFromPack(WORD sf) { return (BYTE)(sf & 31); }
+inline WORD SpriteFromPack(WORD sf) { return (WORD)(sf >> 5); }
+inline BYTE FrameFromPack(WORD sf) { return (BYTE)(sf & 31); }
 
 }} // namespace zx::netsnapshot
 
@@ -235,7 +235,7 @@ namespace zx { namespace netsnapshot {
 
 // Alpha in 1/63rds, so opaque round-trips exactly (alpha >> 10 would leave
 // every actor slightly translucent).
-static inline BYTE QuantAlpha(fixed_t alpha)
+inline BYTE QuantAlpha(fixed_t alpha)
 {
 	if (alpha <= 0)
 		return 0;
@@ -244,14 +244,14 @@ static inline BYTE QuantAlpha(fixed_t alpha)
 	return (BYTE)((((long long)alpha * 63) + (SNAP_FRACUNIT / 2)) / SNAP_FRACUNIT);
 }
 
-static inline fixed_t DequantAlpha(BYTE a6)
+inline fixed_t DequantAlpha(BYTE a6)
 {
 	if (a6 >= 63)
 		return SNAP_FRACUNIT;
 	return (fixed_t)((((long long)a6 * SNAP_FRACUNIT) + 31) / 63);
 }
 
-static inline DWORD PackRenderState(DWORD translation, BYTE styleIndex, fixed_t alpha)
+inline DWORD PackRenderState(DWORD translation, BYTE styleIndex, fixed_t alpha)
 {
 	return (translation & SNAP_RS_TRANS_MASK)
 		| (((translation >> SNAP_RS_TRANS_SHIFT) & SNAP_RS_TRANSTYPE_MASK)
@@ -260,14 +260,14 @@ static inline DWORD PackRenderState(DWORD translation, BYTE styleIndex, fixed_t 
 		| (((DWORD)QuantAlpha(alpha) & SNAP_RS_ALPHA_MASK) << SNAP_RS_ALPHA_SHIFT);
 }
 
-static inline DWORD TranslationFromState(DWORD rs)
+inline DWORD TranslationFromState(DWORD rs)
 {
 	return (((rs >> SNAP_RS_TRANSTYPE_SHIFT) & SNAP_RS_TRANSTYPE_MASK)
 			<< SNAP_RS_TRANS_SHIFT)
 		| (rs & SNAP_RS_TRANS_MASK);
 }
-static inline BYTE StyleIndexFromState(DWORD rs) { return (BYTE)((rs >> SNAP_RS_STYLE_SHIFT) & SNAP_RS_STYLE_MASK); }
-static inline fixed_t AlphaFromState(DWORD rs) { return DequantAlpha((BYTE)((rs >> SNAP_RS_ALPHA_SHIFT) & SNAP_RS_ALPHA_MASK)); }
+inline BYTE StyleIndexFromState(DWORD rs) { return (BYTE)((rs >> SNAP_RS_STYLE_SHIFT) & SNAP_RS_STYLE_MASK); }
+inline fixed_t AlphaFromState(DWORD rs) { return DequantAlpha((BYTE)((rs >> SNAP_RS_ALPHA_SHIFT) & SNAP_RS_ALPHA_MASK)); }
 
 }} // namespace zx::netsnapshot
 
@@ -286,7 +286,7 @@ static inline fixed_t AlphaFromState(DWORD rs) { return DequantAlpha((BYTE)((rs 
 
 namespace zx { namespace netsnapshot {
 
-static inline BYTE PackEffects(DWORD effects)
+inline BYTE PackEffects(DWORD effects)
 {
 	BYTE b = 0;
 	if (effects & SNAP_FX_ROCKET)			b |= 1 << 0;
@@ -299,7 +299,7 @@ static inline BYTE PackEffects(DWORD effects)
 	return b;
 }
 
-static inline DWORD UnpackEffects(BYTE b)
+inline DWORD UnpackEffects(BYTE b)
 {
 	DWORD effects = 0;
 	if (b & (1 << 0))	effects |= SNAP_FX_ROCKET;
@@ -426,14 +426,14 @@ typedef char snap_assert_evbytes_max[
 namespace zx { namespace netsnapshot {
 
 // Whether a type carries its own length byte; readers test this, not the range.
-static inline bool EventSelfDescribing(BYTE type)
+inline bool EventSelfDescribing(BYTE type)
 {
 	return ((type & SNAPEV_TYPEMASK) & SNAPEV_SELFDESC) != 0;
 }
 
 // Whether this build reads a self-describing type rather than skipping it, so a
 // new type is a line here and nowhere else.
-static inline bool EventSelfDescKnown(BYTE type)
+inline bool EventSelfDescKnown(BYTE type)
 {
 	switch (type & SNAPEV_TYPEMASK)
 	{
@@ -444,7 +444,7 @@ static inline bool EventSelfDescKnown(BYTE type)
 
 // Payload bytes for a fixed-length type in frame `f`, or 0 (never a length) for
 // one this build does not know; test EventSelfDescribing first.
-static inline unsigned int EventBytes(const SnapFrame& f, BYTE type)
+inline unsigned int EventBytes(const SnapFrame& f, BYTE type)
 {
 	const unsigned int extra = FrameExtra(f, 0) + FrameExtra(f, 1)
 		+ FrameExtra(f, 2);
@@ -465,7 +465,7 @@ enum { SNAPEVLEN_OK = 0, SNAPEVLEN_UNKNOWN, SNAPEVLEN_BAD };
 
 namespace zx { namespace netsnapshot {
 
-static inline int EventRecordBytes(const SnapFrame& f, BYTE type, const BYTE* p,
+inline int EventRecordBytes(const SnapFrame& f, BYTE type, const BYTE* p,
 	unsigned int avail, unsigned int& n, bool& bSkip)
 {
 	bSkip = false;
@@ -511,7 +511,7 @@ namespace zx { namespace netsnapshot {
 
 // Bytes before APPEAR, which a reader needs before it can see APPEAR: a
 // function of the mask and the map's frame, whatever APPEAR costs.
-static inline unsigned int GroupBytesBeforeAppear(const SnapFrame& f, BYTE mask)
+inline unsigned int GroupBytesBeforeAppear(const SnapFrame& f, BYTE mask)
 {
 	unsigned int n = 0;
 	mask &= SNAPGRP_GROUPMASK;
@@ -525,7 +525,7 @@ static inline unsigned int GroupBytesBeforeAppear(const SnapFrame& f, BYTE mask)
 }
 
 // The widest a mask can be in frame `f`, the only length that sizes a buffer.
-static inline unsigned int GroupBytes(const SnapFrame& f, BYTE mask)
+inline unsigned int GroupBytes(const SnapFrame& f, BYTE mask)
 {
 	unsigned int n = GroupBytesBeforeAppear(f, mask);
 	mask &= SNAPGRP_GROUPMASK;
@@ -620,7 +620,7 @@ inline BYTE StateChecksum(const SnapEntityState & e)
 
 namespace zx { namespace netsnapshot {
 
-static inline bool AppearExempt(WORD id)
+inline bool AppearExempt(WORD id)
 {
 	return (id % SNAP_APPEAR_EXEMPT_STRIDE) == 0;
 }
@@ -628,7 +628,7 @@ static inline bool AppearExempt(WORD id)
 // Where a state flown unaided is after `tics`, from its quantized values, one
 // implementation so the client's sampler and the server's suppression agree.
 // accelZ is in units per tic per tic.
-static inline void ExtrapBallistic(const SnapEntityState& s, double tics,
+inline void ExtrapBallistic(const SnapEntityState& s, double tics,
 	double& x, double& y, double& z, double accelZ = 0.0)
 {
 	x = (double)DequantPos(s.qx) + (double)DequantVel(s.qvx) * tics;
@@ -640,7 +640,7 @@ static inline void ExtrapBallistic(const SnapEntityState& s, double tics,
 // The gravity class on both ends: P_ZMovement's step (z += velz, then velz -=
 // g, the reverse under ZACOMPATF_OLD_ZDOOM_ZMOVEMENT) from velz `vz0` at the
 // record's tic, g positive down in fixed units per tic per tic.
-static inline void ExtrapLaw(const SnapEntityState& s, double vz0, double tics,
+inline void ExtrapLaw(const SnapEntityState& s, double vz0, double tics,
 	double g, bool bOldZ, double& x, double& y, double& z)
 {
 	x = (double)DequantPos(s.qx) + (double)DequantVel(s.qvx) * tics;
@@ -678,19 +678,19 @@ namespace zx { namespace netsnapshot {
 
 // Whether either missile bit is set; the two bits are a three-way class, read
 // only through these predicates.
-static inline bool MissileFlagged(WORD misc)
+inline bool MissileFlagged(WORD misc)
 {
 	return (misc & (SNAP_MISC_BALLISTIC | SNAP_MISC_STEERING)) != 0;
 }
 
 // Whether the client may extrapolate it at all: true for both ballistic forms.
-static inline bool IsBallistic(WORD misc)
+inline bool IsBallistic(WORD misc)
 {
 	return (misc & SNAP_MISC_BALLISTIC) != 0;
 }
 
 // Ballistic, and with a constant Z acceleration the client must add.
-static inline bool IsGravBallistic(WORD misc)
+inline bool IsGravBallistic(WORD misc)
 {
 	return (misc & (SNAP_MISC_BALLISTIC | SNAP_MISC_STEERING))
 		== (SNAP_MISC_BALLISTIC | SNAP_MISC_STEERING);
@@ -698,13 +698,13 @@ static inline bool IsGravBallistic(WORD misc)
 
 // Whether the server may withhold its position: straight flight only, since a
 // gravity path on the client is an approximation.
-static inline bool IsSuppressible(WORD misc)
+inline bool IsSuppressible(WORD misc)
 {
 	return (misc & (SNAP_MISC_BALLISTIC | SNAP_MISC_STEERING)) == SNAP_MISC_BALLISTIC;
 }
 
 // Turning, or not yet proven: stepped.
-static inline bool IsSteering(WORD misc)
+inline bool IsSteering(WORD misc)
 {
 	return (misc & (SNAP_MISC_BALLISTIC | SNAP_MISC_STEERING)) == SNAP_MISC_STEERING;
 }
@@ -720,7 +720,7 @@ namespace zx { namespace netsnapshot {
 
 // crouchfactor to and from the 4-bit value, FRACUNIT passed in since this
 // header includes no engine header.
-static inline WORD QuantCrouch(int crouchfactor, int fracUnit)
+inline WORD QuantCrouch(int crouchfactor, int fracUnit)
 {
 	const int half = fracUnit / 2;
 	if (crouchfactor >= fracUnit)
@@ -734,7 +734,7 @@ static inline WORD QuantCrouch(int crouchfactor, int fracUnit)
 	return (WORD)((q < 0) ? 0 : ((q > 0xF) ? 0xF : q));
 }
 
-static inline int CrouchFromWire(WORD q, int fracUnit)
+inline int CrouchFromWire(WORD q, int fracUnit)
 {
 	const int half = fracUnit / 2;
 	if (q == 0)
@@ -746,7 +746,7 @@ static inline int CrouchFromWire(WORD q, int fracUnit)
 
 // The one definition of what changed, against the previous capture or
 // `believed`, covering exactly the fields StateChecksum hashes.
-static inline BYTE DiffMask(const SnapEntityState& a, const SnapEntityState& b)
+inline BYTE DiffMask(const SnapEntityState& a, const SnapEntityState& b)
 {
 	BYTE mask = 0;
 	if (a.qx != b.qx || a.qy != b.qy)							mask |= SNAPGRP_POS;
@@ -787,7 +787,7 @@ namespace zx { namespace netsnapshot {
 
 // The worst case in frame `f`, for a budget test: the buffer constant would
 // stop a narrow map's budget short.
-static inline unsigned int RecordBytesMax(const SnapFrame& f)
+inline unsigned int RecordBytesMax(const SnapFrame& f)
 {
 	return SNAP_MAX_RECORD_BYTES_NARROW + FrameExtra(f, 0) + FrameExtra(f, 1)
 		+ FrameExtra(f, 2);
@@ -811,25 +811,25 @@ typedef char snap_assert_emit_bytes[
 namespace zx { namespace netsnapshot {
 
 // --- little-endian primitives ---
-static inline WORD Read16(const BYTE* p) { return (WORD)(p[0] | (p[1] << 8)); }
-static inline DWORD Read32(const BYTE* p)
+inline WORD Read16(const BYTE* p) { return (WORD)(p[0] | (p[1] << 8)); }
+inline DWORD Read32(const BYTE* p)
 {
 	return (DWORD)(p[0] | (p[1] << 8) | (p[2] << 16) | ((DWORD)p[3] << 24));
 }
 // [Kaori-Chani] An absolute 32-bit 16.16 field off the wire holds a signed value in its bits, so it
 // sign-extends into a 48.16 fixed_t rather than zero-extending a negative into a huge positive.
-static inline fixed_t ReadFixed32(const BYTE* p) { return fixed_t::FromSignedBits(Read32(p)); }
-static inline void Put16(BYTE* p, WORD v) { p[0] = (BYTE)v; p[1] = (BYTE)(v >> 8); }
+inline fixed_t ReadFixed32(const BYTE* p) { return fixed_t::FromSignedBits(Read32(p)); }
+inline void Put16(BYTE* p, WORD v) { p[0] = (BYTE)v; p[1] = (BYTE)(v >> 8); }
 
-static inline void Put32(BYTE* p, DWORD v) { Put16(p, (WORD)v); Put16(p + 2, (WORD)(v >> 16)); }
+inline void Put32(BYTE* p, DWORD v) { Put16(p, (WORD)v); Put16(p + 2, (WORD)(v >> 16)); }
 
 // A signed value in `bytes` little-endian bytes (2 to 5), and back.
-static inline void PutSigned(BYTE* p, long long v, unsigned int bytes)
+inline void PutSigned(BYTE* p, long long v, unsigned int bytes)
 {
 	for (unsigned int i = 0; i < bytes; ++i)
 		p[i] = (BYTE)(v >> (8 * i));
 }
-static inline long long ReadSigned(const BYTE* p, unsigned int bytes)
+inline long long ReadSigned(const BYTE* p, unsigned int bytes)
 {
 	unsigned long long u = 0;
 	for (unsigned int i = 0; i < bytes; ++i)
@@ -840,26 +840,26 @@ static inline long long ReadSigned(const BYTE* p, unsigned int bytes)
 
 // A quantized position on axis k, already in the frame, written relative to the
 // origin, signed in the axis's width.
-static inline unsigned int PosBytes(const SnapFrame& f, unsigned int k)
+inline unsigned int PosBytes(const SnapFrame& f, unsigned int k)
 {
 	return f.width[k];
 }
 // The sum and difference wrap through DWORD, since a hostile origin can sit
 // anywhere in an int and overflow is undefined.
-static inline SDWORD PosRel(const SnapFrame& f, unsigned int k, SDWORD q)
+inline SDWORD PosRel(const SnapFrame& f, unsigned int k, SDWORD q)
 {
 	return (SDWORD)((DWORD)q - (DWORD)f.origin[k]);
 }
-static inline SDWORD PosAbs(const SnapFrame& f, unsigned int k, SDWORD rel)
+inline SDWORD PosAbs(const SnapFrame& f, unsigned int k, SDWORD rel)
 {
 	return (SDWORD)((DWORD)rel + (DWORD)f.origin[k]);
 }
-static inline unsigned int PutPosIn(BYTE* p, const SnapFrame& f, unsigned int k, SDWORD q)
+inline unsigned int PutPosIn(BYTE* p, const SnapFrame& f, unsigned int k, SDWORD q)
 {
 	PutSigned(p, PosRel(f, k, q), PosBytes(f, k));
 	return PosBytes(f, k);
 }
-static inline SDWORD ReadPosIn(const BYTE* p, const SnapFrame& f, unsigned int k)
+inline SDWORD ReadPosIn(const BYTE* p, const SnapFrame& f, unsigned int k)
 {
 	return PosAbs(f, k, (SDWORD)ReadSigned(p, PosBytes(f, k)));
 }
@@ -867,17 +867,17 @@ static inline SDWORD ReadPosIn(const BYTE* p, const SnapFrame& f, unsigned int k
 // A full-precision position on axis k, 16.16 relative to the frame's origin:
 // the axis's width in whole units and two bytes of fraction, clamped into the
 // frame and counted when clamped.
-static inline unsigned int FixedBytes(const SnapFrame& f, unsigned int k)
+inline unsigned int FixedBytes(const SnapFrame& f, unsigned int k)
 {
 	return f.width[k] + 2;
 }
 // The origin as 16.16, multiplied rather than shifted, since a negative value
 // shifted left is undefined.
-static inline long long OriginFixed(const SnapFrame& f, unsigned int k)
+inline long long OriginFixed(const SnapFrame& f, unsigned int k)
 {
 	return (long long)f.origin[k] * 65536;
 }
-static inline unsigned int PutFixedIn(BYTE* p, const SnapFrame& f, unsigned int k, fixed_t v)
+inline unsigned int PutFixedIn(BYTE* p, const SnapFrame& f, unsigned int k, fixed_t v)
 {
 	const long long rel = (long long)v - OriginFixed(f, k);
 	const long long hi = (1LL << (8 * FixedBytes(f, k) - 1)) - 1, lo = -hi - 1;
@@ -886,7 +886,7 @@ static inline unsigned int PutFixedIn(BYTE* p, const SnapFrame& f, unsigned int 
 	PutSigned(p, (rel < lo) ? lo : (rel > hi) ? hi : rel, FixedBytes(f, k));
 	return FixedBytes(f, k);
 }
-static inline fixed_t ReadFixedIn(const BYTE* p, const SnapFrame& f, unsigned int k)
+inline fixed_t ReadFixedIn(const BYTE* p, const SnapFrame& f, unsigned int k)
 {
 	return (fixed_t)(ReadSigned(p, FixedBytes(f, k)) + OriginFixed(f, k));
 }
@@ -898,14 +898,14 @@ static inline fixed_t ReadFixedIn(const BYTE* p, const SnapFrame& f, unsigned in
 // first in a payload raw, so each datagram decodes alone.
 
 // Bytes a gap costs, a function of the gap alone.
-static inline unsigned int IdGapBytes(unsigned int gap)
+inline unsigned int IdGapBytes(unsigned int gap)
 {
 	if (gap < 0x80)		return 1;
 	if (gap < 0x4000)	return 2;
 	return 3;
 }
 
-static inline unsigned int PutIdGap(BYTE* p, unsigned int gap)
+inline unsigned int PutIdGap(BYTE* p, unsigned int gap)
 {
 	unsigned int n = 0;
 	while (gap >= 0x80)
@@ -919,7 +919,7 @@ static inline unsigned int PutIdGap(BYTE* p, unsigned int gap)
 
 // Bytes consumed, or 0 for a gap cut short by `avail` or longer than the three
 // bytes a 16-bit gap needs.
-static inline unsigned int ReadIdGap(const BYTE* p, unsigned int avail,
+inline unsigned int ReadIdGap(const BYTE* p, unsigned int avail,
 	unsigned int& gap)
 {
 	unsigned int v = 0, shift = 0, n = 0;
@@ -950,19 +950,19 @@ struct SnapIdCursor
 
 namespace zx { namespace netsnapshot {
 
-static inline void IdCursorReset(SnapIdCursor& c)
+inline void IdCursorReset(SnapIdCursor& c)
 {
 	c.prev = 0;
 	c.first = true;
 }
 
-static inline unsigned int RecordIdBytes(WORD id, const SnapIdCursor& c)
+inline unsigned int RecordIdBytes(WORD id, const SnapIdCursor& c)
 {
 	return c.first ? SNAP_REC_IDBYTES_RAW
 		: IdGapBytes((unsigned int)(WORD)(id - c.prev));
 }
 
-static inline unsigned int WriteRecordId(BYTE* p, WORD id, SnapIdCursor& c)
+inline unsigned int WriteRecordId(BYTE* p, WORD id, SnapIdCursor& c)
 {
 	unsigned int n;
 	if (c.first)
@@ -981,7 +981,7 @@ static inline unsigned int WriteRecordId(BYTE* p, WORD id, SnapIdCursor& c)
 
 // Bytes consumed, or 0 on a truncated or malformed id, which leaves the cursor
 // as it was.
-static inline unsigned int ReadRecordId(const BYTE* p, unsigned int avail,
+inline unsigned int ReadRecordId(const BYTE* p, unsigned int avail,
 	WORD& id, SnapIdCursor& c)
 {
 	unsigned int n;
@@ -1007,21 +1007,21 @@ static inline unsigned int ReadRecordId(const BYTE* p, unsigned int avail,
 
 // Whether a state fits the narrow APPEAR form, both sentinels (qstate 0xFFFF,
 // qtics 255) going wide.
-static inline bool AppearIsNarrow(const SnapEntityState& e)
+inline bool AppearIsNarrow(const SnapEntityState& e)
 {
 	return ((e.qstate >> SNAP_STATE_DEPTH_SHIFT) == 0)
 		&& ((e.qstate & SNAP_STATE_OFFSET_MASK) < 256)
 		&& (e.qtics < 128);
 }
 
-static inline unsigned int AppearBytes(const SnapEntityState& e)
+inline unsigned int AppearBytes(const SnapEntityState& e)
 {
 	return AppearIsNarrow(e) ? SNAP_GRPB_APPEAR_NARROW
 		: SNAP_GRPB_APPEAR_WIDE;
 }
 
 // What the writer will emit for this state, which is what a census adds up.
-static inline unsigned int GroupBytesFor(const SnapFrame& f, BYTE mask,
+inline unsigned int GroupBytesFor(const SnapFrame& f, BYTE mask,
 	const SnapEntityState& e)
 {
 	unsigned int n = GroupBytesBeforeAppear(f, mask);
@@ -1034,7 +1034,7 @@ static inline unsigned int GroupBytesFor(const SnapFrame& f, BYTE mask,
 
 // What a reader must consume, from the bytes in hand, or false for a record
 // truncated within `avail`.
-static inline bool GroupBytesRead(const SnapFrame& f, BYTE mask, const BYTE* p,
+inline bool GroupBytesRead(const SnapFrame& f, BYTE mask, const BYTE* p,
 	unsigned int avail, unsigned int& n)
 {
 	const unsigned int pre = GroupBytesBeforeAppear(f, mask);
@@ -1057,7 +1057,7 @@ static inline bool GroupBytesRead(const SnapFrame& f, BYTE mask, const BYTE* p,
 // Writes the groups in mask into a buffer of GroupBytes( f, mask ),
 // returning the bytes written; `pHeld`, the state the receiver will hold, feeds
 // only the checksum (NULL: `e` itself).
-static inline unsigned int WriteGroups(BYTE* p, const SnapFrame& f,
+inline unsigned int WriteGroups(BYTE* p, const SnapFrame& f,
 	const SnapEntityState& e, BYTE mask, const SnapEntityState* pHeld = NULL)
 {
 	unsigned int n = 0;
@@ -1110,7 +1110,7 @@ static inline unsigned int WriteGroups(BYTE* p, const SnapFrame& f,
 
 // Reads the groups in mask onto st, the caller having checked the bounds with
 // GroupBytesRead, never GroupBytes.
-static inline void ReadGroups(const BYTE* p, const SnapFrame& f, SnapEntityState& st,
+inline void ReadGroups(const BYTE* p, const SnapFrame& f, SnapEntityState& st,
 	BYTE mask)
 {
 	if (mask & SNAPGRP_POS)
@@ -1158,7 +1158,7 @@ static inline void ReadGroups(const BYTE* p, const SnapFrame& f, SnapEntityState
 
 // Overlays the groups in `mask` from src onto dst through the codec rather than
 // a fourth field list, leaving dst's pitch as the client will hold it.
-static inline void MergeGroups(SnapEntityState& dst, const SnapFrame& f,
+inline void MergeGroups(SnapEntityState& dst, const SnapFrame& f,
 	const SnapEntityState& src, BYTE mask)
 {
 	BYTE buf[SNAP_MAX_RECORD_BYTES];
@@ -1176,7 +1176,7 @@ static inline void MergeGroups(SnapEntityState& dst, const SnapFrame& f,
 // Writes one event's body, mask and payload (the caller writes the id), and
 // returns its bytes; `tic` is the game tic the branch was observed on, so a
 // late event cannot wind back an entity a newer record moved.
-static inline unsigned int WriteEventBody(BYTE* p, const SnapFrame& f, BYTE type,
+inline unsigned int WriteEventBody(BYTE* p, const SnapFrame& f, BYTE type,
 	const SnapEntityState& e, unsigned int tic)
 {
 	p[0] = (BYTE)(SNAPGRP_EVENT | (type & SNAPEV_TYPEMASK));
@@ -1206,7 +1206,7 @@ struct SnapPSpriteState
 namespace zx { namespace netsnapshot {
 
 // Body only; see WriteEventBody.
-static inline unsigned int WritePSpriteBody(BYTE* p,
+inline unsigned int WritePSpriteBody(BYTE* p,
 	const SnapPSpriteState& s)
 {
 	p[0] = (BYTE)(SNAPGRP_EVENT | SNAPEV_PSPRITE);
@@ -1221,7 +1221,7 @@ static inline unsigned int WritePSpriteBody(BYTE* p,
 }
 
 // Payload only; the caller has already consumed id and mask.
-static inline void ReadPSprite(const BYTE* p, SnapPSpriteState& s)
+inline void ReadPSprite(const BYTE* p, SnapPSpriteState& s)
 {
 	s.weaponClass = Read16(p);	p += 2;
 	for (unsigned int L = 0; L < 2; ++L)
@@ -1251,7 +1251,7 @@ struct SnapLocalState
 namespace zx { namespace netsnapshot {
 
 // Body only; see WriteEventBody.
-static inline unsigned int WriteLocalBody(BYTE* p, const SnapFrame& f,
+inline unsigned int WriteLocalBody(BYTE* p, const SnapFrame& f,
 	const SnapLocalState& s)
 {
 	p[0] = (BYTE)(SNAPGRP_EVENT | SNAPEV_LOCAL);
@@ -1269,7 +1269,7 @@ static inline unsigned int WriteLocalBody(BYTE* p, const SnapFrame& f,
 }
 
 // Payload only; the caller has already consumed id and mask.
-static inline void ReadLocal(const BYTE* p, const SnapFrame& f, SnapLocalState& s)
+inline void ReadLocal(const BYTE* p, const SnapFrame& f, SnapLocalState& s)
 {
 	s.flags = p[0];							p += 1;
 	s.clientTic = Read32(p);			p += 4;
@@ -1293,7 +1293,7 @@ namespace zx { namespace netsnapshot {
 
 // Reads a branch payload (id and mask consumed), returning the tic it was
 // observed on, so the caller can reject one older than the state it overwrites.
-static inline WORD ReadEvent(const BYTE * p, const SnapFrame& f, BYTE type,
+inline WORD ReadEvent(const BYTE * p, const SnapFrame& f, BYTE type,
 	SnapEntityState & e)
 {
 	WORD tic = 0;
@@ -1319,7 +1319,7 @@ namespace zx { namespace netsnapshot {
 // Writes a record body, mask, classId on an enter, then the groups: SNAPGRP_ALL
 // with the classId enters, mask 0 is a leave, and a nonzero `targetId` on an
 // enter follows the class.
-static inline unsigned int WriteRecordBody(BYTE* p, const SnapFrame& f, BYTE mask,
+inline unsigned int WriteRecordBody(BYTE* p, const SnapFrame& f, BYTE mask,
 	WORD classId, const SnapEntityState& e, const SnapEntityState* pHeld = NULL,
 	WORD targetId = 0)
 {
@@ -1342,7 +1342,7 @@ static inline unsigned int WriteRecordBody(BYTE* p, const SnapFrame& f, BYTE mas
 
 // A whole record, id included, for the producers that write a payload in one
 // pass, unlike the per-client emitter, which writes ids at layout.
-static inline unsigned int WriteRecord(BYTE* p, const SnapFrame& f, WORD id,
+inline unsigned int WriteRecord(BYTE* p, const SnapFrame& f, WORD id,
 	SnapIdCursor& c, BYTE mask, WORD classId, const SnapEntityState& e,
 	const SnapEntityState* pHeld = NULL, WORD targetId = 0)
 {
@@ -1382,7 +1382,7 @@ namespace zx { namespace netsnapshot {
 
 // The classes the snapshot path tracks, whose legacy commands a gating server
 // stops (DAnimatedDoor is replicated by its effects).
-static inline bool MoverClassTracked(unsigned int cls)
+inline bool MoverClassTracked(unsigned int cls)
 {
 	return (cls < SNAPMV_COUNT) && (cls != SNAPMV_ANIMDOOR);
 }
@@ -1405,12 +1405,12 @@ namespace zx { namespace netsnapshot {
 
 // The envelope's width for a stream version: class, flags, index and the
 // generation (never 0), which a pre-v28 envelope lacks and reads as 0.
-static inline unsigned int MoverHeaderBytes(unsigned int version)
+inline unsigned int MoverHeaderBytes(unsigned int version)
 {
 	return (version >= 28) ? SNAPMV_HEADER_BYTES : (SNAPMV_HEADER_BYTES - 1);
 }
 
-static inline unsigned int WriteMoverHeader(BYTE* p, BYTE cls, BYTE flags,
+inline unsigned int WriteMoverHeader(BYTE* p, BYTE cls, BYTE flags,
 	WORD index, BYTE gen)
 {
 	p[0] = cls;
@@ -1421,7 +1421,7 @@ static inline unsigned int WriteMoverHeader(BYTE* p, BYTE cls, BYTE flags,
 }
 
 // `hdrBytes` is MoverHeaderBytes of the stream being read.
-static inline void ReadMoverHeader(const BYTE* p, unsigned int hdrBytes,
+inline void ReadMoverHeader(const BYTE* p, unsigned int hdrBytes,
 	BYTE& cls, BYTE& flags, WORD& index, BYTE& gen)
 {
 	cls = p[0];
@@ -1445,7 +1445,7 @@ struct SnapMoverPlat
 
 namespace zx { namespace netsnapshot {
 
-static inline unsigned int WriteMoverPlat(BYTE* p, const SnapMoverPlat& s)
+inline unsigned int WriteMoverPlat(BYTE* p, const SnapMoverPlat& s)
 {
 	unsigned int n = 0;
 	Put32(p + n, (DWORD)s.speed);	n += 4;
@@ -1463,7 +1463,7 @@ static inline unsigned int WriteMoverPlat(BYTE* p, const SnapMoverPlat& s)
 	return n;
 }
 
-static inline void ReadMoverPlat(const BYTE* p, SnapMoverPlat& s)
+inline void ReadMoverPlat(const BYTE* p, SnapMoverPlat& s)
 {
 	unsigned int n = 0;
 	s.speed  = ReadFixed32(p + n);	n += 4;
@@ -1496,7 +1496,7 @@ struct SnapMoverCeiling
 
 namespace zx { namespace netsnapshot {
 
-static inline unsigned int WriteMoverCeiling(BYTE* p, const SnapMoverCeiling& s)
+inline unsigned int WriteMoverCeiling(BYTE* p, const SnapMoverCeiling& s)
 {
 	unsigned int n = 0;
 	Put32(p + n, (DWORD)s.speed);		n += 4;
@@ -1516,7 +1516,7 @@ static inline unsigned int WriteMoverCeiling(BYTE* p, const SnapMoverCeiling& s)
 	return n;
 }
 
-static inline void ReadMoverCeiling(const BYTE* p, SnapMoverCeiling& s)
+inline void ReadMoverCeiling(const BYTE* p, SnapMoverCeiling& s)
 {
 	unsigned int n = 0;
 	s.speed		= ReadFixed32(p + n);	n += 4;
@@ -1556,7 +1556,7 @@ struct SnapMoverFloor
 
 namespace zx { namespace netsnapshot {
 
-static inline unsigned int WriteMoverFloor(BYTE* p, const SnapMoverFloor& s,
+inline unsigned int WriteMoverFloor(BYTE* p, const SnapMoverFloor& s,
 	bool bStair)
 {
 	unsigned int n = 0;
@@ -1580,7 +1580,7 @@ static inline unsigned int WriteMoverFloor(BYTE* p, const SnapMoverFloor& s,
 	return n;
 }
 
-static inline void ReadMoverFloor(const BYTE* p, SnapMoverFloor& s, bool bStair)
+inline void ReadMoverFloor(const BYTE* p, SnapMoverFloor& s, bool bStair)
 {
 	unsigned int n = 0;
 	s.speed		= ReadFixed32(p + n);	n += 4;
@@ -1625,7 +1625,7 @@ struct SnapMoverDoor
 
 namespace zx { namespace netsnapshot {
 
-static inline unsigned int WriteMoverDoor(BYTE* p, const SnapMoverDoor& s)
+inline unsigned int WriteMoverDoor(BYTE* p, const SnapMoverDoor& s)
 {
 	unsigned int n = 0;
 	Put32(p + n, (DWORD)s.speed);			n += 4;
@@ -1643,7 +1643,7 @@ static inline unsigned int WriteMoverDoor(BYTE* p, const SnapMoverDoor& s)
 	return n;
 }
 
-static inline void ReadMoverDoor(const BYTE* p, SnapMoverDoor& s)
+inline void ReadMoverDoor(const BYTE* p, SnapMoverDoor& s)
 {
 	unsigned int n = 0;
 	s.speed			= ReadFixed32(p + n);	n += 4;
@@ -1676,7 +1676,7 @@ struct SnapMoverElevator
 
 namespace zx { namespace netsnapshot {
 
-static inline unsigned int WriteMoverElevator(BYTE* p, const SnapMoverElevator& s)
+inline unsigned int WriteMoverElevator(BYTE* p, const SnapMoverElevator& s)
 {
 	unsigned int n = 0;
 	Put32(p + n, (DWORD)s.speed);				n += 4;
@@ -1690,7 +1690,7 @@ static inline unsigned int WriteMoverElevator(BYTE* p, const SnapMoverElevator& 
 	return n;
 }
 
-static inline void ReadMoverElevator(const BYTE* p, SnapMoverElevator& s)
+inline void ReadMoverElevator(const BYTE* p, SnapMoverElevator& s)
 {
 	unsigned int n = 0;
 	s.speed				= ReadFixed32(p + n);	n += 4;
@@ -1719,7 +1719,7 @@ struct SnapMoverPillar
 
 namespace zx { namespace netsnapshot {
 
-static inline unsigned int WriteMoverPillar(BYTE* p, const SnapMoverPillar& s)
+inline unsigned int WriteMoverPillar(BYTE* p, const SnapMoverPillar& s)
 {
 	unsigned int n = 0;
 	Put32(p + n, (DWORD)s.floorSpeed);		n += 4;
@@ -1736,7 +1736,7 @@ static inline unsigned int WriteMoverPillar(BYTE* p, const SnapMoverPillar& s)
 	return n;
 }
 
-static inline void ReadMoverPillar(const BYTE* p, SnapMoverPillar& s)
+inline void ReadMoverPillar(const BYTE* p, SnapMoverPillar& s)
 {
 	unsigned int n = 0;
 	s.floorSpeed	= ReadFixed32(p + n);	n += 4;
@@ -1800,13 +1800,13 @@ struct SnapMoverPoly
 namespace zx { namespace netsnapshot {
 
 // The header's bytes in frame `f`: x, y, angle and the count.
-static inline unsigned int PolyHeaderBytes(const SnapFrame& f)
+inline unsigned int PolyHeaderBytes(const SnapFrame& f)
 {
 	return SNAPPO_HEADER_BYTES + FrameExtra(f, 0) + FrameExtra(f, 1);
 }
 
 // One entry's bytes in frame `f`, or 0 for a kind this build does not know.
-static inline unsigned int PolyEntryBytes(const SnapFrame& f, BYTE kind)
+inline unsigned int PolyEntryBytes(const SnapFrame& f, BYTE kind)
 {
 	switch (kind & SNAPPO_TYPEMASK)
 	{
@@ -1821,7 +1821,7 @@ static inline unsigned int PolyEntryBytes(const SnapFrame& f, BYTE kind)
 
 // The body's length in frame `f`, walked, or 0 if it overruns `avail`, names an
 // unknown kind or counts past SNAPPO_MAXENTRIES.
-static inline unsigned int MoverPolyBodyBytes(const SnapFrame& f, const BYTE* p,
+inline unsigned int MoverPolyBodyBytes(const SnapFrame& f, const BYTE* p,
 	unsigned int avail)
 {
 	const unsigned int header = PolyHeaderBytes(f);
@@ -1844,7 +1844,7 @@ static inline unsigned int MoverPolyBodyBytes(const SnapFrame& f, const BYTE* p,
 }
 
 // The capture keeps this within SNAPMV_BODY_MAX in the widest frame.
-static inline unsigned int WriteMoverPoly(BYTE* p, const SnapFrame& f,
+inline unsigned int WriteMoverPoly(BYTE* p, const SnapFrame& f,
 	const SnapMoverPoly& s)
 {
 	unsigned int n = 0;
@@ -1891,7 +1891,7 @@ static inline unsigned int WriteMoverPoly(BYTE* p, const SnapFrame& f,
 
 // False on a body MoverPolyBodyBytes refuses or that disagrees with
 // `bodyBytes`, fields a kind does not carry reading as 0.
-static inline bool ReadMoverPoly(const BYTE* p, const SnapFrame& f,
+inline bool ReadMoverPoly(const BYTE* p, const SnapFrame& f,
 	unsigned int bodyBytes, SnapMoverPoly& s)
 {
 	if (MoverPolyBodyBytes(f, p, bodyBytes) != bodyBytes)
@@ -1941,7 +1941,7 @@ static inline bool ReadMoverPoly(const BYTE* p, const SnapFrame& f,
 
 // Body bytes for a fixed-shape class and its flags (which pick a shape), or 0
 // for a class this build does not know, which the reader refuses.
-static inline unsigned int MoverBodyBytes(BYTE cls, BYTE flags)
+inline unsigned int MoverBodyBytes(BYTE cls, BYTE flags)
 {
 	switch (cls)
 	{
@@ -1958,7 +1958,7 @@ static inline unsigned int MoverBodyBytes(BYTE cls, BYTE flags)
 
 // The body length a reader uses: by class and flags, or walked for a
 // polyobject, 0 refusing the record.
-static inline unsigned int MoverRecordBodyBytes(const SnapFrame& f, BYTE cls, BYTE flags,
+inline unsigned int MoverRecordBodyBytes(const SnapFrame& f, BYTE cls, BYTE flags,
 	const BYTE* pBody, unsigned int avail)
 {
 	if (cls == SNAPMV_POLY)
@@ -1976,7 +1976,7 @@ static inline unsigned int MoverRecordBodyBytes(const SnapFrame& f, BYTE cls, BY
 
 namespace zx { namespace netsnapshot {
 
-static inline BYTE MoverPlanes(BYTE cls)
+inline BYTE MoverPlanes(BYTE cls)
 {
 	switch (cls)
 	{
@@ -1992,7 +1992,7 @@ static inline BYTE MoverPlanes(BYTE cls)
 
 // The planes one record speaks for: its class's, less any a server takeover
 // narrowed off a GONE.
-static inline BYTE RecordPlanes(BYTE cls, BYTE flags)
+inline BYTE RecordPlanes(BYTE cls, BYTE flags)
 {
 	BYTE m = MoverPlanes(cls);
 	if (flags & SNAPMVF_NOFLOOR)
@@ -2019,7 +2019,7 @@ namespace zx { namespace netsnapshot {
 
 // Writes a mover event's body (mask, length, envelope, body; the caller writes
 // the id), taking `bodyBytes` so a body under the wrong class mismatches.
-static inline unsigned int WriteMoverBody(BYTE* p, BYTE cls, BYTE flags,
+inline unsigned int WriteMoverBody(BYTE* p, BYTE cls, BYTE flags,
 	WORD index, BYTE gen, const BYTE* pBody, unsigned int bodyBytes)
 {
 	p[0] = (BYTE)(SNAPGRP_EVENT | SNAPEV_MOVER);
@@ -2048,7 +2048,7 @@ namespace zx { namespace netsnapshot {
 
 // The header's size for a file of `version`, so every reader takes it from the
 // version rather than assuming the current one.
-static inline unsigned int ZsnapHeaderBytes(unsigned int version)
+inline unsigned int ZsnapHeaderBytes(unsigned int version)
 {
 	return ZSNAP_HEADER_SIZE + ((version >= 33) ? ZSNAP_HEADER_FRAME : 0);
 }
@@ -2124,19 +2124,19 @@ struct SnapCosCursor
 
 namespace zx { namespace netsnapshot {
 
-static inline int CosRead8(SnapCosCursor& c)
+inline int CosRead8(SnapCosCursor& c)
 {
 	const int v = (c.p + 1 <= c.end) ? c.p[0] : -1;
 	c.p += 1;
 	return v;
 }
-static inline int CosRead16(SnapCosCursor& c)
+inline int CosRead16(SnapCosCursor& c)
 {
 	const int v = (c.p + 2 <= c.end) ? (short)(c.p[0] + (c.p[1] << 8)) : -1;
 	c.p += 2;
 	return v;
 }
-static inline int CosRead32(SnapCosCursor& c)
+inline int CosRead32(SnapCosCursor& c)
 {
 	const int v = (c.p + 4 <= c.end) ? (int)((DWORD)c.p[0] | ((DWORD)c.p[1] << 8)
 		| ((DWORD)c.p[2] << 16) | ((DWORD)c.p[3] << 24)) : -1;
@@ -2145,7 +2145,7 @@ static inline int CosRead32(SnapCosCursor& c)
 }
 // A position on axis k in whole units, relative to the frame's origin on the
 // wire, -1 relative read past the end as CosRead16 reads.
-static inline int CosReadPos(SnapCosCursor& c, const SnapFrame& f, unsigned int k)
+inline int CosReadPos(SnapCosCursor& c, const SnapFrame& f, unsigned int k)
 {
 	const unsigned int w = PosBytes(f, k);
 	const SDWORD rel = (c.p + w <= c.end) ? (SDWORD)ReadSigned(c.p, w) : -1;
@@ -2154,7 +2154,7 @@ static inline int CosReadPos(SnapCosCursor& c, const SnapFrame& f, unsigned int 
 }
 // [Kaori-Chani] Clamps in 64-bit, so a 48.16 value meets the wire's range without truncating on
 // the way in.
-static inline long long CosClamp(long long in, long long lo, long long hi)
+inline long long CosClamp(long long in, long long lo, long long hi)
 {
 	return (in <= lo) ? lo : (in >= hi) ? hi : in;
 }
@@ -2162,7 +2162,7 @@ static inline long long CosClamp(long long in, long long lo, long long hi)
 // Writes a generic event of kind SNAP_COSE_COPY or SNAP_COSE_PLAIN, flags byte
 // first with no age (the pump adds it), in at most SNAP_COSE_GENERIC_MAX bytes;
 // bBig and bSmall say why the velocity went fine, for the census.
-static inline unsigned int CosWriteGeneric(BYTE* pOut, const SnapFrame& f, BYTE kind,
+inline unsigned int CosWriteGeneric(BYTE* pOut, const SnapFrame& f, BYTE kind,
 	const SnapCosGeneric& g, bool& bBig, bool& bSmall)
 {
 	BYTE* p = pOut;
@@ -2242,14 +2242,14 @@ static inline unsigned int CosWriteGeneric(BYTE* pOut, const SnapFrame& f, BYTE 
 
 // [Kaori-Chani] A signed field scaled up by a 64-bit multiply, since a negative value shifted left
 // is undefined and the 32-bit reinterpret would zero-extend it into 48.16.
-static inline fixed_t CosScale(int v, int shift)
+inline fixed_t CosScale(int v, int shift)
 {
 	return (fixed_t)((long long)v * (1LL << shift));
 }
 
 // Reads the generic body after its flags byte, every extras field read when the
 // mask was read past the end (-1), as the stream would.
-static inline void CosReadGeneric(SnapCosCursor& c, const SnapFrame& f, int flags,
+inline void CosReadGeneric(SnapCosCursor& c, const SnapFrame& f, int flags,
 	SnapCosGeneric& g)
 {
 	g.classId = (WORD)CosRead16(c);
@@ -2290,7 +2290,7 @@ static inline void CosReadGeneric(SnapCosCursor& c, const SnapFrame& f, int flag
 // Writes a blood or splatter event, its flags byte (the kind,
 // SNAP_COSE_BLOODPLAIN, SNAP_COSE_SPLATTER2) first, with a direction and damage
 // for SNAP_COSE_BLOOD only.
-static inline unsigned int CosWriteBlood(BYTE* pOut, const SnapFrame& f, BYTE flags,
+inline unsigned int CosWriteBlood(BYTE* pOut, const SnapFrame& f, BYTE flags,
 	const SnapCosBlood& b)
 {
 	BYTE* p = pOut;
@@ -2307,7 +2307,7 @@ static inline unsigned int CosWriteBlood(BYTE* pOut, const SnapFrame& f, BYTE fl
 	return (unsigned int)(p - pOut);
 }
 
-static inline void CosReadBlood(SnapCosCursor& c, const SnapFrame& f, int flags,
+inline void CosReadBlood(SnapCosCursor& c, const SnapFrame& f, int flags,
 	SnapCosBlood& b)
 {
 	b.x = CosScale(CosReadPos(c, f, 0), FRACBITS);
