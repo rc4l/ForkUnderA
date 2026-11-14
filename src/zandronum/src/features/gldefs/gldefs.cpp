@@ -41,6 +41,7 @@
 
 
 #include <ctype.h>
+#include <cstring>
 #include "i_system.h"
 #include "doomtype.h"
 #include "c_cvars.h"
