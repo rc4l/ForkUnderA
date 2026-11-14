@@ -325,6 +325,9 @@ void S_StopAllUnattachedSounds (void);
 // Is the sound playing on one of the emitter's channels?
 bool S_GetSoundPlayingInfo (const AActor *actor, int sound_id);
 bool S_GetSoundPlayingInfo (const sector_t *sector, int sound_id);
+// [Kaori-Chani] features/net-snapshot: whether a sound would still be audible that far away,
+// so the server can drop one no client could hear. Defined with the sound code.
+bool S_IsAudibleAtDistance ( FSoundID sound_id, float attenuation, float dist );
 bool S_GetSoundPlayingInfo (const FPolyObj *poly, int sound_id);
 
 bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id);

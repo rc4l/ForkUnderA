@@ -1664,6 +1664,16 @@ public:
 
 		return ( NULL );
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the id reserved for a player, or 0 if the number is
+	// out of range. A player's body keeps one id for the whole session, so a mirror can be made
+	// before its spawn arrives.
+	static unsigned short reservedIDForPlayer ( const int playernum )
+	{
+		if (( playernum < 0 ) || ( playernum >= MAXPLAYERS ))
+			return ( 0 );
+		return ( static_cast<unsigned short>( playernum ) + 1 );
+	}
 };
 
 extern	IDList<AActor> g_ActorNetIDList;

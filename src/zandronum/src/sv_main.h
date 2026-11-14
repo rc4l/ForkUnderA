@@ -643,6 +643,10 @@ LONG		SERVER_AdjustFloorDirection( LONG lDirection );
 LONG		SERVER_AdjustCeilingDirection( LONG lDirection );
 LONG		SERVER_AdjustElevatorDirection( LONG lDirection );
 ULONG		SERVER_GetMaxPacketSize( void );
+// [Kaori-Chani] features/net-snapshot: resends every tracked mover to one client, for a join
+// or a gate change. Declared only: its body walks the module's own lists, so it arrives with
+// the hooks.
+ULONG		SERVER_ResendTrackedMovers( ULONG ulClient );
 const char	*SERVER_GetMapMusic( void );
 int			SERVER_GetMapMusicOrder( void );
 void		SERVER_SetMapMusic( const char *pszMusic, int order );

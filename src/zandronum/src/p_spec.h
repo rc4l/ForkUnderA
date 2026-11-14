@@ -55,6 +55,11 @@ class DScroller : public DThinker
 	DECLARE_CLASS (DScroller, DThinker)
 	HAS_OBJECT_POINTERS
 public:
+	// [Kaori-Chani] features/net-snapshot: what the mover capture needs to read off a scroller
+	// without reaching into it. SnapDump is defined with the class.
+	bool IsAccelerative() const { return m_Accel != 0; }
+	bool HasControl() const { return m_Control != -1; }
+	void SnapDump() const;
 	enum EScrollType
 	{
 		sc_side,
@@ -114,6 +119,9 @@ class DPusher : public DThinker
 	DECLARE_CLASS (DPusher, DThinker)
 	HAS_OBJECT_POINTERS
 public:
+	// [Kaori-Chani] features/net-snapshot: as for DScroller above.
+	bool IsPoint() const { return m_Type == p_push; }
+	void SnapDump() const;
 	enum EPusher
 	{
 		p_push,
@@ -471,6 +479,10 @@ class DPlat : public DMovingFloor
 {
 	DECLARE_CLASS (DPlat, DMovingFloor)
 public:
+	// [Kaori-Chani] features/net-snapshot: a platform's wait and count reach the wire, so the
+	// capture reads them through accessors rather than being made a friend.
+	int		GetCount( void ) const { return m_Count; }
+	int		GetWait( void ) const { return m_Wait; }
 	enum EPlatState
 	{
 		up,

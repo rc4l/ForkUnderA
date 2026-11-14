@@ -412,6 +412,18 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SETTHINGFLOORCLIP ), // [RK] Terrain SmallClip value.
 	// [rc4l] Ported from zandronum@6107a231590b339460158bf55adcc8f1f92cf806: ACS SetSelectedInventory, appended where 3.3 adds it after SVC2_SETDOMINATIONPOINTSTATE.
 	ENUM_ELEMENT ( SVC2_PLAYERSETSELECTEDINVENTORY ),
+	// [Kaori-Chani] features/net-snapshot. Appended rather than inserted, as rc4l's own ports
+	// above are: our tree carries these eight after SVC2_SETDOMINATIONPOINTSTATE, and putting
+	// them there would move every FUA value after it. The module is not in the build yet, so
+	// nothing sends or reads one; they are here so each layer can compile as it lands.
+	ENUM_ELEMENT ( SVC2_SNAPSHOT ),			// the entity delta for a frame
+	ENUM_ELEMENT ( SVC2_DOORSOUND ),		// a door's sound sequence, keyed on the sector
+	ENUM_ELEMENT ( SVC2_SNAPJOIN ),			// the stream's map stamp and reset count
+	ENUM_ELEMENT ( SVC2_SETTHINGNETID ),	// a previous body moving off its reserved id
+	ENUM_ELEMENT ( SVC2_SNAPMOVERGATE ),	// whether legacy mover commands are stopped
+	ENUM_ELEMENT ( SVC2_SNAPSOUNDTABLE ),	// this map's sound table size and name hash
+	ENUM_ELEMENT ( SVC2_SNAPSOUND ),		// a snapshot sound by table index, not by name
+	ENUM_ELEMENT ( SVC2_SNAPCOSMETIC ),		// cosmetic spawns a client makes itself
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }
@@ -483,6 +495,9 @@ BEGIN_ENUM( CLC )
 	ENUM_ELEMENT( CLC_CONVERSATIONREPLY ),
 	ENUM_ELEMENT( CLC_CONVERSATIONCLOSE ),
 	ENUM_ELEMENT( CLC_ACSUSERINFO ),
+	// [Kaori-Chani] features/net-snapshot: acknowledges the newest frame a client has applied.
+	// This one lands where our tree has it, since CLC_ACSUSERINFO ends both enums.
+	ENUM_ELEMENT( CLC_SNAPSHOTACK ),
 
 	ENUM_ELEMENT( NUM_CLIENT_COMMANDS )
 }

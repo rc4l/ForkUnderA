@@ -716,6 +716,10 @@ public:
 	void Stop();
 	int GetSpeed() const { return m_Speed; }
 
+	// [Kaori-Chani] features/net-snapshot: the next action on the same polyobject
+	// (FPolyObj::snapActions), in creation order. Defaulted, as the list head is.
+	DPolyAction *	m_SnapNext = NULL;
+
 	void StopInterpolation ();
 
 	void	SetSpeed( LONG lSpeed );
