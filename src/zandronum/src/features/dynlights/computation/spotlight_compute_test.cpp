@@ -14,17 +14,41 @@ const float kCos25 = float(std::cos(25.0 * 3.14159265358979323846 / 180.0));
 
 }
 
-// [Doruk-Aksoy] arg0 is the colour packed 0xRRGGBB, arg1 and arg2 the cone's angles.
-TEST(ComputeSpotMapArgs, UnpacksColourAndCone)
+// [Doruk-Aksoy] A spot's arg0 is the colour packed 0xRRGGBB, arg1 and arg2 the cone's angles.
+TEST(ComputeMapLightArgs, SpotUnpacksColourAndCone)
 {
-	const SpotMapArgs a = ComputeSpotMapArgs(0x4D80FF, 10, 25);
+	const MapLightArgs a = ComputeMapLightArgs(0x4D80FF, 10, 25, true, -1);
 	EXPECT_EQ(a.red, 0x4D);
 	EXPECT_EQ(a.green, 0x80);
 	EXPECT_EQ(a.blue, 0xFF);
 	EXPECT_FLOAT_EQ(a.inner, 10.f);
 	EXPECT_FLOAT_EQ(a.outer, 25.f);
-	const SpotMapArgs black = ComputeSpotMapArgs(0, 0, 0);
+	const MapLightArgs black = ComputeMapLightArgs(0, 0, 0, true, -1);
 	EXPECT_EQ(black.red + black.green + black.blue, 0);
+}
+
+// [Doruk-Aksoy] Any other light keeps its args as red, green and blue, and has no cone.
+TEST(ComputeMapLightArgs, PointLightKeepsItsArgs)
+{
+	const MapLightArgs a = ComputeMapLightArgs(77, 128, 255, false, -1);
+	EXPECT_EQ(a.red, 77);
+	EXPECT_EQ(a.green, 128);
+	EXPECT_EQ(a.blue, 255);
+	EXPECT_FLOAT_EQ(a.inner, 0.f);
+	EXPECT_FLOAT_EQ(a.outer, 0.f);
+}
+
+// [Doruk-Aksoy] A named colour wins for any light, and a spot still takes its cone from the map's arg1 and arg2.
+TEST(ComputeMapLightArgs, NamedColourWins)
+{
+	const MapLightArgs point = ComputeMapLightArgs(-1234, 0, 0, false, 0xFF8000);
+	EXPECT_EQ(point.red, 0xFF);
+	EXPECT_EQ(point.green, 0x80);
+	EXPECT_EQ(point.blue, 0x00);
+	const MapLightArgs spot = ComputeMapLightArgs(-1234, 15, 40, true, 0x000000);
+	EXPECT_EQ(spot.red + spot.green + spot.blue, 0);
+	EXPECT_FLOAT_EQ(spot.inner, 15.f);
+	EXPECT_FLOAT_EQ(spot.outer, 40.f);
 }
 
 // [Doruk-Aksoy] The direction is the facing negated: a light facing east (yaw 0) points its vector west, one facing north (90) south.

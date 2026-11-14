@@ -43,6 +43,7 @@
 #include "g_level.h"
 #include "thingdef/thingdef.h"
 #include "i_system.h"
+#include "v_video.h"   // [Doruk-Aksoy] V_GetColor, for a map light's named colour
 #include "templates.h"
 
 // [BB] New #includes.
@@ -53,6 +54,7 @@
 #include "features/dynlights/computation/nodeindex_compute.h"   // [rc4l] a relinking light's nodes by what they link to
 #include "features/dynlights/computation/samelinks_compute.h"   // [Doruk-Aksoy] a relink that would change no link skipped
 #include "features/dynlights/computation/spotlight_compute.h"   // [Doruk-Aksoy] a map spot's colour and cone out of its args
+#include "features/dynlights/computation/lightheight_compute.h"   // [Doruk-Aksoy] a light kept off its floor and ceiling
 #include "features/dynlights/computation/sectorlight_compute.h"   // [Doruk-Aksoy] a sector light's radius, as UZDoom gives it
 #include "features/net-session/netrole.h"
 #include "features/telemetry/telemetry.h"   // [Doruk-Aksoy] how many relinks a tic, how many changed nothing, and what the walk costs of them
@@ -163,15 +165,16 @@ void ADynamicLight::BeginPlay()
 
 	m_intensity[0] = args[LIGHT_INTENSITY];
 	m_intensity[1] = args[LIGHT_SECONDARY_INTENSITY];
-	// [Doruk-Aksoy] uzdoom@62afe5f0 P_SpawnMapThing: a spot thing packs its colour into arg0 and gives its cone in arg1 and arg2.
-	if (IsSpot())
+	// [Doruk-Aksoy] uzdoom@6aaf5df6 P_SpawnMapThing: a UDMF arg0str (left in arg0 as a negative name) names the colour, a spot packs it into arg0, and a spot's cone is arg1 and arg2.
+	const int named = args[0] < 0 ? V_GetColor(NULL, FName(ENamedName(-args[0])).GetChars()) & 0xffffff : -1;
+	if (named >= 0 || IsSpot())
 	{
-		const zx::dynlights::SpotMapArgs spot = zx::dynlights::ComputeSpotMapArgs(args[0], args[1], args[2]);
-		args[LIGHT_RED] = spot.red;
-		args[LIGHT_GREEN] = spot.green;
-		args[LIGHT_BLUE] = spot.blue;
-		spotInner = spot.inner;
-		spotOuter = spot.outer;
+		const zx::dynlights::MapLightArgs light = zx::dynlights::ComputeMapLightArgs(args[0], args[1], args[2], IsSpot(), named);
+		args[LIGHT_RED] = light.red;
+		args[LIGHT_GREEN] = light.green;
+		args[LIGHT_BLUE] = light.blue;
+		spotInner = light.inner;
+		spotOuter = light.outer;
 	}
 }
 
@@ -364,7 +367,10 @@ void ADynamicLight::UpdateLocation()
 			angle_t angle = target->angle>>ANGLETOFINESHIFT;
 			PrevX = x = target->x + FixedMul(m_offX, finecosine[angle]) + FixedMul(m_offZ, finesine[angle]);
 			PrevY = y = target->y + FixedMul(m_offX, finesine[angle]) - FixedMul(m_offZ, finecosine[angle]);
-			PrevZ = z = target->z + m_offY + target->GetBobOffset();
+			z = target->z + m_offY + target->GetBobOffset();
+			// [Doruk-Aksoy] uzdoom@7ab7fc9a: kept 5 off its carrier's floor and ceiling, where an attenuated light would light neither.
+			PrevZ = z = fixed_t::FromRaw(zx::dynlights::ComputeLightZ(z.Raw(), target->floorz.Raw(), target->ceilingz.Raw(),
+				(5 * FRACUNIT).Raw(), (target->flags5 & MF5_NOINTERACTION) != 0));
 			// [Doruk-Aksoy] Most updates find the light where the last lookup put it, whose subsector the BSP would find again.
 			if (!zx::dynlights::ComputeLightKeepsSubsector(m_subsectorAt, x.Raw(), y.Raw(), subsector))
 			{
@@ -372,6 +378,12 @@ void ADynamicLight::UpdateLocation()
 				m_subsectorAt = zx::dynlights::LightSpot{ x.Raw(), y.Raw(), subsector };
 			}
 			Sector = subsector->sector;
+		}
+		else
+		{
+			// [Doruk-Aksoy] A map light is its own carrier, kept off its own floor and ceiling as UZDoom's is.
+			PrevZ = z = fixed_t::FromRaw(zx::dynlights::ComputeLightZ(z.Raw(), floorz.Raw(), ceilingz.Raw(),
+				(5 * FRACUNIT).Raw(), (flags5 & MF5_NOINTERACTION) != 0));
 		}
 
 

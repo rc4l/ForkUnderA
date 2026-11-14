@@ -1,4 +1,4 @@
-// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: p_mobj.cpp's spot arguments, hw_dynlightdata.cpp's spot direction and main.fp's spotLightAttenuation.
+// [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad: p_mobj.cpp's light arguments, hw_dynlightdata.cpp's spot direction and main.fp's spotLightAttenuation.
 #include "features/dynlights/computation/spotlight_compute.h"
 
 #include <cmath>
@@ -11,9 +11,22 @@ constexpr double kRadiansPerDegree = 3.14159265358979323846 / 180.0;
 
 }
 
-SpotMapArgs ComputeSpotMapArgs(int arg0, int arg1, int arg2)
+MapLightArgs ComputeMapLightArgs(int arg0, int arg1, int arg2, bool spot, int namedColour)
 {
-	return { (arg0 >> 16) & 0xff, (arg0 >> 8) & 0xff, arg0 & 0xff, float(arg1), float(arg2) };
+	MapLightArgs out = { arg0, arg1, arg2, 0.f, 0.f };
+	const int packed = namedColour >= 0 ? namedColour : spot ? arg0 : -1;
+	if (packed >= 0)
+	{
+		out.red = (packed >> 16) & 0xff;
+		out.green = (packed >> 8) & 0xff;
+		out.blue = packed & 0xff;
+	}
+	if (spot)
+	{
+		out.inner = float(arg1);
+		out.outer = float(arg2);
+	}
+	return out;
 }
 
 void ComputeSpotDirection(double yawDegrees, double pitchDegrees, float out[3])

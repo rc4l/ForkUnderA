@@ -32,7 +32,8 @@ so every module that lit a sprite or a wall included GL's headers to see a light
 - `computation/spotlight_compute`: UZDoom's spot lights, which light only a cone: full inside the inner angle,
   smoothstep to nothing at the outer. A GLDEFS `spot inner outer` makes one (`LF_SPOT` in `lightflags`), as do map
   things 9840 to 9874 (`SpotLight` and its pulse, flicker, sector, additive, subtractive and attenuated kinds in
-  `decorate.z`), whose `BeginPlay` takes the colour out of arg0 (0xRRGGBB) and the cone out of arg1 and arg2, kept in
+  `decorate.z`), whose `BeginPlay` takes the colour out of arg0 (0xRRGGBB) and the cone out of arg1 and arg2 (`ComputeMapLightArgs`, which
+  also gives any map light the colour a UDMF `arg0str` names, "red" or "#ff8000"), kept in
   `spotInner` and `spotOuter` (SAVEVER 4532). The render copy aims an attached spot where its carrier faces and a map
   spot by its own angle and pitch; walls and flats take the cone in the scene shader (light kind bit 4, four vec4s a
   light), sprites, particles, models and decals in `features/levelmesh/pointlight`.
@@ -40,6 +41,11 @@ so every module that lit a sprite or a wall included GL's headers to see a light
   follows its carrier's, which a client gets for monsters and missiles only through `SetActorPitch`, a Warp, a morph
   or a join (so theirs points level there; its yaw is sent), and an ACS change of a map spot's angle or pitch, since
   map lights have no net ID and each client spawns its own.
+- `computation/lightheight_compute`: UZDoom's `UpdateLocation` keeps a light 5 units off its carrier's floor and
+  ceiling (a map light's own), unless the carrier is `+NOINTERACTION`, so an attenuated light on an item lying on
+  the floor still lights it.
+- `computation/lightintensity_compute`: a carrier with `+LIGHTMULTALPHA` (`RF_LIGHTMULTALPHA`) dims its lights by its
+  alpha, folded into the render copy's intensity; the server already sends every alpha change.
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.
 
