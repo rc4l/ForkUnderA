@@ -2242,3 +2242,19 @@ endif()
 file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
 target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
 
+# [Kaori-Chani] features/net-snapshot's engine-side layers compile here before anything links
+# them. They call each other, so no layer links without the rest, and step 2 lands them one
+# commit at a time: an OBJECT library gives each the real compiler against the real ported
+# headers as it arrives, with the engine's own include directories and definitions, which this
+# directory's scope already supplies. Nothing links these objects. Step 3's hooks are what put
+# the module in the game, and it then links what has already compiled.
+#
+# In ALL on purpose: a layer that stops compiling should stop the build rather than wait to be
+# noticed. Its prerequisites are the engine's own, since the layers reach the generated
+# servercommands.h through network/netcommand.h.
+add_library( netsnapshot_layers OBJECT
+	features/net-snapshot/capture.cpp
+	features/net-snapshot/clienttrack.cpp )
+add_dependencies( netsnapshot_layers revision_check protocolspec )
+
+

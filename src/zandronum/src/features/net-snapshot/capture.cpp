@@ -36,9 +36,9 @@
 #include "network.h"
 #include "i_system.h"
 #include "s_sound.h"
-// [Kaori-Chani] The TIC_ time base is not part of this module: it replaces the signal
-// timer under posix/sdl/ and the Cocoa timer, so its declarations arrive with those in
-// step 3 and are reached through i_system.h, included above.
+// [Kaori-Chani] The time base: declarations here, implementations with posix/sdl/ and win32/
+// in step 3, since the counter is platform-specific and these declarations are not.
+#include "i_tictime.h"
 #include "tarray.h"
 #include "p_effect.h"
 #include "features/net-snapshot/format.h"

@@ -10,16 +10,22 @@ Ported from the `snapshot` branch of Kaori-Chani/ZanZan, from its `snap-ref-prem
 for `zx::Fixed`; what that found is in the port's own notes, and the shape to watch for is an
 unsigned value widened into a `fixed_t` without saying which sign it carries.
 
-**The format layer and the server layer are here so far.** The wire format, the two containers, the
-pure `Compute*` units and the server's capture and per-client tracking are in, with nothing in the
-engine's build and no stock file touched: only the format layer is reached at all, by the test
-target. The client, the movers and the recorder follow, and the hooks that call them after that.
+**The format layer and the server layer are here so far**, with every header the rest will need.
+The client, the movers and the recorder follow as their own commits, and the hooks that call them
+after that. **Nothing calls into this module from stock code yet**, so the game plays exactly as it
+did without it.
 
-`capture.cpp` does not compile yet, by design rather than by accident. It needs the additions this
-port makes to stock files — four `SVC2_SNAP*` protocol values, `reservedIDForPlayer`,
-`NextSequence`, `SnapMoverGate` and the rest — which arrive with the hooks. Its own 23 remaining
-errors are exactly that list and nothing else: the port's notes carry it, so what step 3 owes this
-layer is written down rather than rediscovered.
+What is in the engine's build, precisely, because "nothing" was not true:
+
+- The twelve `computation/*_compute.cpp` units are compiled into the game, and have been since they
+  landed. `src/CMakeLists.txt` globs `*_compute.cpp` recursively so a new computation needs no CMake
+  edit, and that glob reaches here too. They register no classes and nothing calls them, so they are
+  dead weight in the binary until the layers arrive, not behaviour.
+- `capture.cpp` and `clienttrack.cpp` are compiled by the `netsnapshot_layers` object library and
+  **not linked into the game**. The layers call each other, so none of them links until all of them
+  are here; compiling each as it lands is what gives it a compiler's opinion rather than a reading.
+  Step 3 links what has already compiled.
+- The format layer is also reached by the test target, which is what holds it to the references.
 
 ## Owns
 
