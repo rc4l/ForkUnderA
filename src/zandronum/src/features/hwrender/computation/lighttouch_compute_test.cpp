@@ -91,12 +91,21 @@ TEST(ComputeDynLightColor, GldefsIntensityScalesLikeUZDoom)
 // [Doruk-Aksoy] The shader reads bit 1 as subtractive, bit 2 as attenuated (UZDoom's sign bit) and bit 4 as a spot (its lightType), so each of the eight kinds is its own value.
 TEST(ComputeDynLightKind, EachFlagItsOwnBit)
 {
-	EXPECT_FLOAT_EQ(0.f, zx::hwrender::ComputeDynLightKind(false, false, false));
-	EXPECT_FLOAT_EQ(1.f, zx::hwrender::ComputeDynLightKind(true, false, false));
-	EXPECT_FLOAT_EQ(2.f, zx::hwrender::ComputeDynLightKind(false, true, false));
-	EXPECT_FLOAT_EQ(3.f, zx::hwrender::ComputeDynLightKind(true, true, false));
-	EXPECT_FLOAT_EQ(4.f, zx::hwrender::ComputeDynLightKind(false, false, true));
-	EXPECT_FLOAT_EQ(7.f, zx::hwrender::ComputeDynLightKind(true, true, true));
+	EXPECT_FLOAT_EQ(0.f, zx::hwrender::ComputeDynLightKind(false, false, false, false));
+	EXPECT_FLOAT_EQ(1.f, zx::hwrender::ComputeDynLightKind(true, false, false, false));
+	EXPECT_FLOAT_EQ(2.f, zx::hwrender::ComputeDynLightKind(false, true, false, false));
+	EXPECT_FLOAT_EQ(3.f, zx::hwrender::ComputeDynLightKind(true, true, false, false));
+	EXPECT_FLOAT_EQ(4.f, zx::hwrender::ComputeDynLightKind(false, false, true, false));
+	EXPECT_FLOAT_EQ(7.f, zx::hwrender::ComputeDynLightKind(true, true, true, false));
+}
+
+// [Doruk-Aksoy] uzdoom@62afe5f0 hw_dynlightdata.cpp AddLightToList: an additive light goes in list 2, added after the texture, unless it is subtractive, which list 1 takes; bit 8 says list 2.
+TEST(ComputeDynLightKind, AnAdditiveLightUnlessSubtractive)
+{
+	EXPECT_FLOAT_EQ(8.f, zx::hwrender::ComputeDynLightKind(false, false, false, true));
+	EXPECT_FLOAT_EQ(14.f, zx::hwrender::ComputeDynLightKind(false, true, true, true));
+	EXPECT_FLOAT_EQ(1.f, zx::hwrender::ComputeDynLightKind(true, false, false, true));
+	EXPECT_FLOAT_EQ(7.f, zx::hwrender::ComputeDynLightKind(true, true, true, true));
 }
 
 TEST(ComputeLightLinksStale, AnyChangeOfLightPlaceOrReach)

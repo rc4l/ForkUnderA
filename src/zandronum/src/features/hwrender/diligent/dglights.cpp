@@ -242,7 +242,8 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			if ((unsigned)g_lightCount >= g_lightBufCapacity / kLightVec4s) break;
 
 			float rgb[3];
-			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, r_lights_additive || light.additive, r_lights_intensity * light.intensity, rgb);
+			const bool additive = r_lights_additive || light.additive;
+			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, additive, r_lights_intensity * light.intensity, rgb);
 
 			// Same axis swap the mesh uses: (x, z, y).
 			g_lightData.Push(FIXED2FLOAT(light.x));
@@ -252,7 +253,7 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			g_lightData.Push(rgb[0]);
 			g_lightData.Push(rgb[1]);
 			g_lightData.Push(rgb[2]);
-			g_lightData.Push(zx::hwrender::ComputeDynLightKind(light.subtractive, light.attenuated, light.spot));
+			g_lightData.Push(zx::hwrender::ComputeDynLightKind(light.subtractive, light.attenuated, light.spot, additive));
 			// [Doruk-Aksoy] The spot's direction in the same (x, z, y) order, its inner cosine, then its outer.
 			g_lightData.Push(light.spot ? light.spotDirection[0] : 0.f);
 			g_lightData.Push(light.spot ? light.spotDirection[2] : 0.f);

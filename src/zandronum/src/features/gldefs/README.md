@@ -29,6 +29,10 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   the CPU as sprites do. The top-level `lightsizefactor` scales `size` and `secondarySize` of the definitions after
   it in its lump and what that lump includes, except those with `attenuate 0`: UZDoom reads its unset tag (-1)
   through an unsigned getter, so lights without the tag are scaled too.
+- Additive lights (`additive 1`, or every light under `r_lights_additive`) carry kind bit 8 unless subtractive, and
+  a wall or flat adds them after the texture, a fifth as bright and held to 1, as UZDoom's `material_normal.fp` and
+  Zandronum 3.3's `main.fp` do, so they brighten a dark texture as much as a light one. A PBR material takes none,
+  as UZDoom's `material_pbr.fp` takes none; sprites and particles take them as plain lights, as both engines do.
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;
