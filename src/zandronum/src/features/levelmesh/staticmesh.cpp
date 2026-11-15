@@ -240,6 +240,24 @@ bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run)
 	return true;
 }
 
+void DynAppendGpuModel(unsigned count, const MeshPiece &proto)
+{
+	if (count == 0 || proto.gpuGeometry == NULL) return;
+	if (g_dynPieceCount == g_dynPieces.size()) g_dynPieces.push_back(proto);
+	else g_dynPieces[g_dynPieceCount] = proto;
+	MeshPiece &p = g_dynPieces[g_dynPieceCount++];
+	p.range.offset = g_dynVerts.Size();
+	p.range.count = count;
+}
+
+void DynPlaceGpuModel(const DynQuadRun &run, unsigned piece, unsigned count, const MeshPiece &proto)
+{
+	MeshPiece &p = g_dynPieces[run.firstPiece + piece];
+	p = proto;
+	p.range.offset = run.firstVert;
+	p.range.count = count;
+}
+
 void DynPlace(const DynQuadRun &run, unsigned piece, unsigned vert, const MeshVertex *verts, unsigned count, const MeshPiece &proto)
 {
 	const unsigned at = run.firstVert + vert;

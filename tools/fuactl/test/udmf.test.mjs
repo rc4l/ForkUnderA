@@ -786,3 +786,16 @@ test("a Hexen-format map holds the UdmfMap's geometry, flags and things, reads b
   Object.assign(m.lines[0], { playeruse: true, playercross: true });
   assert.throws(() => hexenMapLumps("MAP01", m), /one activation, not playercross and playeruse/);
 });
+
+// [Doruk-Aksoy] Both models have two keyframes, an MD3 and an MD2, each actor's two states drawn as keyframes 0 and 1, and both are placed.
+test("the GPU models template animates an MD3 and an MD2 between two keyframes", async () => {
+  const { buildGpuModelsPk3, MODELS } = await import("../scenarios/gpumodels.mjs");
+  const files = Object.fromEntries(readPk3(buildGpuModelsPk3()).map((f) => [f.name, f.data]));
+  assert.equal(files["models/anim.md3"].readInt32LE(76), 2, "the MD3 has two frames");
+  assert.equal(files["models/anim.md2"].readInt32LE(4 + 9 * 4), 2, "the MD2 has two frames");
+  const modeldef = files["modeldef.txt"].toString("latin1");
+  for (const m of MODELS) assert.match(modeldef, new RegExp(`Model ${m.name}\n\{[^}]*FrameIndex BAR1 A 0 0\n  FrameIndex BAR1 B 0 1\n\}`));
+  assert.match(files["decorate.txt"].toString("latin1"), /BAR1 A 35\n    BAR1 B 35\n    Loop/);
+  const types = [...lumpsOf(files["maps/MAP01.wad"])[1].text.matchAll(/type = (\d+);/g)].map((t) => Number(t[1]));
+  for (const m of MODELS) assert.equal(types.filter((t) => t === m.num).length, 1);
+});

@@ -264,6 +264,8 @@ void EnsureDynamicRecords()
 		g_scene.dynDataCapacity = 0;
 		remade = true;
 	}
+	// [Doruk-Aksoy] ...and the model geometry, when this frame's new models pass it.
+	if (EnsureModelGeometry(ctx)) remade = true;
 	if (!remade) return;
 	// [rc4l] A new buffer object, so the pipelines binding it statically are made again, as a level's upload does.
 	ReleaseScenePipelines();
