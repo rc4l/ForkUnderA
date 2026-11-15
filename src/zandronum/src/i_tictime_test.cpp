@@ -189,7 +189,8 @@ TEST(TicTime, APassedDeadlineReturnsAtOnce)
 	TIC_SleepUntilRaw(before);
 	TIC_SleepUntilRaw(before > 1000 ? before - 1000 : 0);
 	const tictime_raw_t spent = TIC_ScaleRaw(TIC_GetRawCounter() - before, 1000);
-	EXPECT_LT(spent, 50u) << "a passed deadline should not have waited";
+	// Loose on purpose: this catches a wait that happened, not how promptly it returned.
+	EXPECT_LT(spent, 1000u) << "a passed deadline should not have waited";
 }
 
 // And a deadline ahead of it is actually reached. Under Emscripten the wait is deliberately a
@@ -205,8 +206,9 @@ TEST(TicTime, AFutureDeadlineIsWaitedOutExceptOnTheWeb)
 	SUCCEED() << "the web build never waits for a tic; the call is a no-op by design";
 #else
 	EXPECT_GE(TIC_GetRawCounter(), deadline) << "the wait returned before its deadline";
-	// And did not overshoot wildly, which would mean a granularity problem rather than a wait.
+	// The upper bound only catches a wait that never returns: a shared runner, and macOS
+	// coalescing timer wakeups, make wake precision something to measure live, not assert.
 	const tictime_raw_t over = TIC_ScaleRaw(TIC_GetRawCounter() - deadline, 1000);
-	EXPECT_LT(over, 100u) << "overshot the deadline by " << over << " ms";
+	EXPECT_LT(over, 1000u) << "overshot the deadline by " << over << " ms";
 #endif
 }

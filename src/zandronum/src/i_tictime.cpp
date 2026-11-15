@@ -39,9 +39,8 @@ static tictime_raw_t tictime_QueryFrequency()
 #endif
 }
 
-// [Kaori-Chani] Read once on first use, not eagerly with a zero check at each read. C++11
-// onward initialises a function-local static exactly once even under threads, which is the
-// race a zero check defends against, so the defence becomes the mechanism.
+// [Kaori-Chani] Read once on first use rather than eagerly with a zero check at each read,
+// since C++11 initialises a function-local static exactly once even under threads.
 static tictime_raw_t tictime_Frequency()
 {
 	static const tictime_raw_t freq = tictime_QueryFrequency();
@@ -105,37 +104,39 @@ tictime_raw_t TIC_TicsToRaw(tictime_raw_t tic)
 //*****************************************************************************
 //	WAITING FOR A DEADLINE
 //
-// [Kaori-Chani] Each platform sleeps until the deadline rather than sleeping near it and
-// spinning the rest. Spinning would buy sub-millisecond wake precision at a few percent of
-// a core on every server at all times, and the tic count does not depend on when the loop
-// wakes: a late wakeup runs its tic later in the same slot, and none is lost or gained.
+// [Kaori-Chani] Each platform sleeps until its deadline rather than sleeping near it and
+// spinning, which costs a few percent of a core for precision the tic count never needed.
 
 #if defined(__EMSCRIPTEN__)
 
-// [Kaori-Chani] The browser drives the loop one frame at a time, and TryRunTics skips the
-// wait whenever a main-loop driver is installed, so nothing reaches this there. Blocking
-// inside an animation frame would freeze the tab, so it must stay a no-op rather than
-// become a sleep that happens not to be called.
+// [Kaori-Chani] A no-op by design: TryRunTics never waits where a main-loop driver is
+// installed, and blocking inside an animation frame would freeze the tab.
 void TIC_SleepUntilRaw(tictime_raw_t)
 {
 }
 
 #elif defined(_WIN32)
 
-// [Kaori-Chani] A high-resolution waitable timer, as tools/mcp_sample.cpp already does here:
-// Sleep's granularity is the system timer tick, and this asks for fine granularity for this
-// one timer rather than changing anything else on the machine. Where the flag is
-// unsupported a plain waitable timer gives about a millisecond, i_main.cpp having already
-// called timeBeginPeriod.
-static HANDLE tictime_Timer()
-{
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION	0x00000002
 #endif
-	static HANDLE timer = CreateWaitableTimerExW(NULL, NULL,
+
+// [Kaori-Chani] A high-resolution waitable timer, as tools/mcp_sample.cpp already does; the
+// plain fallback gives about a millisecond, i_main.cpp having called timeBeginPeriod.
+static HANDLE tictime_CreateTimer()
+{
+	HANDLE timer = CreateWaitableTimerExW(NULL, NULL,
 		CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
 	if (timer == NULL)
 		timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+	return timer;
+}
+
+// [Kaori-Chani] One kernel object for the process, fallback included, rather than one opened
+// and closed 35 times a second.
+static HANDLE tictime_Timer()
+{
+	static HANDLE timer = tictime_CreateTimer();
 	return timer;
 }
 
@@ -159,12 +160,8 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline)
 
 #elif defined(__APPLE__)
 
-// [Kaori-Chani] Darwin has no clock_nanosleep, and mach_wait_until takes a deadline on
-// mach_absolute_time's timebase rather than on the CLOCK_MONOTONIC nanoseconds this
-// counter reports -- converting between them needs mach_timebase_info and is a hazard for
-// no gain here. A relative sleep of the remaining span is exact instead, because the span
-// is computed from an absolute deadline on the counter's own clock and the caller
-// recomputes it, so nothing accumulates.
+// [Kaori-Chani] A relative sleep of the span left, since Darwin has no clock_nanosleep and
+// mach_wait_until wants mach_absolute_time's timebase rather than this counter's.
 void TIC_SleepUntilRaw(tictime_raw_t deadline)
 {
 	const tictime_raw_t now = TIC_GetRawCounter();
@@ -179,9 +176,8 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline)
 
 #else
 
-// [Kaori-Chani] The deadline needs no conversion: this counter *is* CLOCK_MONOTONIC in
-// nanoseconds, so an absolute sleep on the same clock cannot drift and cannot be cut short
-// into an early tic.
+// [Kaori-Chani] No conversion needed: this counter *is* CLOCK_MONOTONIC in nanoseconds, so
+// an absolute sleep on the same clock cannot drift.
 void TIC_SleepUntilRaw(tictime_raw_t deadline)
 {
 	if (deadline <= TIC_GetRawCounter())
