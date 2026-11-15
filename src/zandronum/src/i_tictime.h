@@ -41,4 +41,8 @@ tictime_raw_t TIC_TicsToRaw(tictime_raw_t tic);
 tictime_raw_t TIC_ScaleRawWith(tictime_raw_t raw, tictime_raw_t mul, tictime_raw_t freq);
 tictime_raw_t TIC_TicsToRawWith(tictime_raw_t tic, tictime_raw_t freq);
 
+// [Kaori-Chani] Waits until the counter reaches `deadline`, returning at once if it passed;
+// the caller recomputes and calls again, so a short wait costs a call, not a tic.
+void TIC_SleepUntilRaw(tictime_raw_t deadline);
+
 #endif // __I_TICTIME_H__

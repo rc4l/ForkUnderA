@@ -1329,6 +1329,9 @@ add_executable( zdoom WIN32
 	gitinfo.cpp
 	#hu_scores.cpp
 	i_net.cpp
+	# [Kaori-Chani] features/net-snapshot: the shared tic time base, which the three
+	# platform timers read instead of their own clocks.
+	i_tictime.cpp
 	info.cpp
 	invasion.cpp #ST
 	joinqueue.cpp #ST

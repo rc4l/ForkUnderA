@@ -101,6 +101,9 @@ set_source_files_properties("${ZX_SOUND_DECODERS}" PROPERTIES COMPILE_OPTIONS "$
 # [Kaori-Chani] features/net-snapshot: the format layer's two engine-free .cpp files, which the
 # reference decode test reads recordings through. A .zsnap record is a zstd frame, so the vendored
 # single-file zstd is built in beside them as the engine builds it, with its warnings off.
+# [Kaori-Chani] The shared tic time base, built in here as well as into the game: this is the
+# only coverage its arithmetic gets on a platform nobody can run by hand, wasm32 above all.
+set(ZX_TICTIME "${ENGINE_SRC}/i_tictime.cpp")
 set(ZX_SNAPSHOT_FORMAT
   "${ENGINE_SRC}/features/net-snapshot/stream.cpp"
   "${ENGINE_SRC}/features/net-snapshot/recordread.cpp"
@@ -110,7 +113,7 @@ set(ZX_SNAPSHOT_FORMAT
 set(ZX_SNAPSHOT_DUMP "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/snapdump.cpp")
 set_source_files_properties("${ZX_REPO_ROOT}/deps/zstd/zstd.c" PROPERTIES
   COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}"
+add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}" ${ZX_TICTIME}
   ${ZX_SNAPSHOT_FORMAT} ${ZX_SNAPSHOT_DUMP} "${ZX_GEN_LISTS}"
   "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/snapdump_test.cpp")
 # [Doruk-Aksoy] features/database: database_compute.cpp runs its SQL on the engine's own SQLite, built here from the same folder (which downloads it when missing).
