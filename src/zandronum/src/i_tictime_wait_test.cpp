@@ -52,3 +52,28 @@ TEST(TicTimeWait, AFutureDeadlineIsWaitedOut)
 	const tictime_raw_t over = TIC_ScaleRaw(TIC_GetRawCounter() - deadline, 1000);
 	EXPECT_LT(over, 1000u) << "overshot the deadline by " << over << " ms";
 }
+
+static int s_reports;
+static const char* s_path;
+static void RecordPath(const char* path) { s_reports++; s_path = path; }
+
+// The first real wait names its path once, which holds in any order since no other test installs
+// a hook.
+TEST(TicTimeWait, TheFirstRealWaitNamesItsPathOnce)
+{
+	TIC_Init();
+	s_reports = 0;
+	TIC_WaitPathReport = RecordPath;
+	const tictime_raw_t ms = TIC_GetRawFrequency() / 1000ull;
+	TIC_SleepUntilRaw(TIC_GetRawCounter() + ms);
+	TIC_SleepUntilRaw(TIC_GetRawCounter() + ms);
+	TIC_WaitPathReport = NULL;
+	if (!TIC_SleepWaits())
+	{
+		EXPECT_EQ(0, s_reports) << "the browser's wait never waits, so it has nothing to name";
+		return;
+	}
+	EXPECT_EQ(1, s_reports);
+	ASSERT_NE(nullptr, s_path);
+	EXPECT_STRNE("", s_path);
+}

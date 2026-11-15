@@ -37,8 +37,8 @@ bool TIC_SleepWaits()
 	return true;
 }
 
-// [Kaori-Chani] The first real wait names its path and no later one repeats it, so a log says
-// which timer a machine actually got without a line every tic.
+// [Kaori-Chani] The first wait with a hook installed names its path and no later one repeats it,
+// so a log says which timer a machine got without a line every tic.
 static void tictime_ReportPath(const char *path)
 {
 	static bool reported = false;
@@ -89,19 +89,22 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline)
 		return;
 	// A negative due time is relative, in hundred-nanosecond units.
 	const tictime_raw_t units = TIC_ScaleRaw(deadline - now, TICTIME_HUNDRED_NS_PER_SECOND);
+	// [Kaori-Chani] Less than the timer's own unit left to wait, so returning costs the caller
+	// another call where sleeping would cost it a whole millisecond of a tic.
+	if (units == 0)
+		return;
 	HANDLE timer = tictime_Timer();
 	LARGE_INTEGER due;
 	due.QuadPart = -(LONGLONG)units;
-	if (timer != NULL && units != 0 && SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE))
+	if (timer != NULL && SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE))
 	{
 		tictime_ReportPath(tictime_timerPath);
 		WaitForSingleObject(timer, INFINITE);
 		return;
 	}
-	// [Kaori-Chani] With no timer to wait on, sleep the span out rather than return, which would
-	// leave the caller's loop spinning -- the one thing this replaced.
-	if (timer == NULL)
-		tictime_ReportPath("Sleep fallback");
+	// [Kaori-Chani] No timer, or one that would not arm: sleep the span out rather than return,
+	// which would leave the caller's loop spinning -- the one thing this replaced.
+	tictime_ReportPath("Sleep fallback");
 	const DWORD ms = (DWORD)TIC_ScaleRaw(deadline - now, 1000);
 	Sleep(ms > 0 ? ms : 1);
 }

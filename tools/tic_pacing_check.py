@@ -15,7 +15,8 @@
 #
 # A client rendering in software runs fewer tics than the counter passes for reasons that have
 # nothing to do with the clock: a measured run on Windows read 7.7 tics a second against a
-# counter still keeping time, so a leg that failed on that would be measuring the renderer.
+# counter still keeping time, so a run that failed on that would be measuring the renderer, which
+# is what --lenient-loop is for.
 #
 # Stdlib only, no test framework:  python3 tools/tic_pacing_check.py --engine PATH --iwad PATH
 
@@ -119,7 +120,7 @@ def judge(windows, max_behind=70, lenient_loop=False, min_windows=2):
         # A stamp is whole seconds, so two of them carry two seconds of slack between them, and
         # 1% on top. A clock stepped mid-run by NTP or a DST change fails this, which is rare and
         # plain enough from the two spans printed below.
-        allowed = max(2000, wall * 10)
+        allowed = 2000 + wall * 10
         if wall > 0 and abs(engine_ms - wall * 1000) > allowed:
             problems.append(
                 "the counter made the run %d ms long where the log's own stamps make it %d ms, "
@@ -147,8 +148,8 @@ def run_engine(engine, iwad, seconds, interval, extra, host=True):
     if sys.platform.startswith("linux") and not env.get("DISPLAY"):
         env.setdefault("SDL_VIDEODRIVER", "dummy")
 
-    # [Kaori-Chani] A client needs -host to run tics on its own clock; the dedicated server is one
-    # already, and takes the flag for a client it is not.
+    # [Kaori-Chani] -host makes the client a server (NETSTATE_SERVER), so it is passed to measure
+    # a server loop and withheld to measure a client's, single player running its own tics.
     args = [engine, "-iwad", iwad] + (["-host"] if host else [])
     # [Kaori-Chani] The stamps are asked for rather than assumed, both being archived settings,
     # and asked for undated so one format reaches the check.
@@ -178,21 +179,32 @@ def run_engine(engine, iwad, seconds, interval, extra, host=True):
                 proc.kill()
                 proc.wait()
 
-    # [Kaori-Chani] An early exit is reported with the engine's last words, since a loader error
-    # names the missing library there and never reaches the engine's own log.
     if early:
         print("tic-pacing: the engine exited early with code %d" % proc.returncode)
-        with open(console, encoding="utf-8", errors="replace") as fh:
-            tail = fh.read().splitlines()[-20:]
-        for line in tail or ["(the engine printed nothing)"]:
-            print("  " + line)
 
     # [Kaori-Chani] The engine stamps the name it was given with the date, so take what it wrote.
     text = ""
     for path in sorted(glob.glob(stem + "*")):
         with open(path, encoding="utf-8", errors="replace") as fh:
             text += fh.read()
-    return text
+    return text, console
+
+
+def print_console_tail(console, lines=20):
+    """[Kaori-Chani] The engine's last words, which say what its own log cannot: a loader error
+    naming a missing library, a crash, or the nothing at all that a hang leaves behind."""
+    if console is None:
+        return
+    try:
+        with open(console, encoding="utf-8", errors="replace") as fh:
+            tail = fh.read().splitlines()[-lines:]
+    except OSError as err:
+        print("tic-pacing: the engine's output could not be read: %s" % err, file=sys.stderr)
+        return
+    # On stderr, with the problems, since a buffered stdout would otherwise print it after them.
+    print("tic-pacing: the engine's final output, %d line(s):" % len(tail), file=sys.stderr)
+    for line in tail or ["(nothing at all, which a hang leaves behind)"]:
+        print("  " + line, file=sys.stderr)
 
 
 def main(argv):
@@ -210,22 +222,24 @@ def main(argv):
                     help="do not pass -host: the binary is a dedicated server already, or a "
                          "client is wanted rather than the server -host would make it")
     ap.add_argument("--log", help="judge this log instead of running the engine")
-    # [Kaori-Chani] A hosting client only waits on the tic timer with cl_capfps set, so a leg that
-    # means to measure the wait has to be able to say so.
+    # [Kaori-Chani] An unthreaded client is what reaches the tic wait, so a run measuring it needs
+    # to be able to ask for one with +fua_gamethread 0 and +cl_capfps 1.
     ap.add_argument("--engine-arg", action="append", default=[], metavar="ARG",
                     help="an extra argument for the engine, repeatable")
-    # [Kaori-Chani] What a client leg is for: proof that this platform's wait ran, and which one,
-    # since a leg can pace perfectly without ever reaching the wait.
+    # [Kaori-Chani] Not proof that the cap is what waited: D_DoomLoop sets r_NoInterpolate, so the
+    # first TryRunTics waits whatever cl_capfps says.
     ap.add_argument("--want-wait-path", metavar="REGEX",
-                    help="fail unless the engine's one-time 'tic wait:' line matches this")
+                    help="fail unless the engine's one-time 'tic wait:' line matches this, which "
+                         "says the platform's wait ran and which timer it got")
     args = ap.parse_args(argv[1:])
 
+    console = None
     if args.log:
         with open(args.log, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
     else:
-        text = run_engine(args.engine, args.iwad, args.seconds, args.interval, args.engine_arg,
-                          host=not args.no_host)
+        text, console = run_engine(args.engine, args.iwad, args.seconds, args.interval,
+                                   args.engine_arg, host=not args.no_host)
 
     windows = parse_lines(text)
     for i, w in enumerate(windows):
@@ -252,6 +266,9 @@ def main(argv):
         print("TIC PACING: the time base did not keep time:", file=sys.stderr)
         for p in problems:
             print("  " + p, file=sys.stderr)
+        # [Kaori-Chani] On any failure, not only an early exit: an engine that hung left no pacing
+        # line and no exit code, and its console was all that had anything to say.
+        print_console_tail(console)
         return 1
 
     print("tic-pacing: clean, %d windows: the loop ran the tics the counter passed, and the "
