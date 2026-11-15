@@ -2257,7 +2257,15 @@ add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/clienttrack.cpp
 	features/net-snapshot/apply.cpp
 	features/net-snapshot/entities.cpp
-	features/net-snapshot/ghostactor.cpp )
+	features/net-snapshot/ghostactor.cpp
+	features/net-snapshot/movers.cpp )
+# [Kaori-Chani] polyobj.cpp is ported and waiting rather than compiled here, and the
+# reason is worth knowing: its five classes' Snap* members are VIRTUAL, so po_man.cpp's
+# vtables reference them and the game cannot link without their bodies -- which are in
+# polyobj.cpp. A virtual declaration in a stock header is a link-time obligation, not an
+# inert addition, so declaration and definition have to arrive together. They do in step
+# 3, when the layers are linked; this line and p_local.h's declarations land then.
+#	features/net-snapshot/polyobj.cpp
 add_dependencies( netsnapshot_layers revision_check protocolspec )
 # [Kaori-Chani] zdoom's target-scoped definitions and include paths, copied by property, so the
 # layers build under the game's own settings and no struct differs when step 3 links them.

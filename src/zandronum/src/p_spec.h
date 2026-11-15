@@ -36,6 +36,19 @@
 #include "doomdata.h"
 #include "r_state.h"
 
+// [Kaori-Chani] features/net-snapshot: the movers below befriend these, each of which reads
+// one class's m_SnapSeen to answer whether a snapshot record owns a sector's plane. Declared
+// rather than included: the module's own header would make this stock header depend on it,
+// and a namespace and six signatures are all the friend declarations need.
+namespace zx { namespace netsnapshot {
+bool MoverPlatOwnsPlane (sector_t *sec);
+bool MoverFloorOwnsPlane (sector_t *sec);
+bool MoverCeilingOwnsPlane (sector_t *sec);
+bool MoverDoorOwnsPlane (sector_t *sec);
+bool MoverElevatorOwnsPlane (sector_t *sec);
+bool MoverPillarOwnsPlane (sector_t *sec);
+} }
+
 class FScanner;
 struct level_info_t;
 
@@ -122,6 +135,20 @@ public:
 	// [Kaori-Chani] features/net-snapshot: as for DScroller above.
 	bool IsPoint() const { return m_Type == p_push; }
 	void SnapDump() const;
+	// [Kaori-Chani] features/net-snapshot: a point pusher a client was told about, whose
+	// source actor it may not have yet. The id is kept so a later lookup is a re-resolve
+	// rather than a guess, and m_bSourceSeen records that it resolved once. Client only, so
+	// neither is serialised; defaulted, because the hook that calls this is step 3's.
+	void SetPointSource( int x, int y, int radius, unsigned short netID )
+	{
+		m_X = x;
+		m_Y = y;
+		m_Radius = radius;
+		m_SourceNetID = netID;
+		m_bSourceSeen = ( m_Source != NULL );
+	}
+	unsigned short m_SourceNetID = 0;
+	bool m_bSourceSeen = false;
 	enum EPusher
 	{
 		p_push,
@@ -483,6 +510,9 @@ public:
 	// capture reads them through accessors rather than being made a friend.
 	int		GetCount( void ) const { return m_Count; }
 	int		GetWait( void ) const { return m_Wait; }
+	// [Kaori-Chani] features/net-snapshot: as GetCount and GetWait above, which 2.1 added for
+	// the same reason -- fua_snap_sectorcheck reports what a join-time DoPlat does not carry.
+	int		GetCrush( void ) const { return m_Crush; }
 	enum EPlatState
 	{
 		up,
@@ -571,6 +601,19 @@ private:
 						   int height, int speed, int delay, int lip, int change);
 	friend void EV_StopPlat (int tag);
 	friend void P_ActivateInStasis (int tag);
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a platform; m_SnapSeen decides whether the plane is taken.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverPlat & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverPlatOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoPlat (int tag, line_t *line, DPlat::EPlatType type,
@@ -647,6 +690,19 @@ private:
 	// [BC] Make this a friend.
 	friend bool	EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
 							 fixed_t height2, int crush);
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a pillar; here m_SnapBlocked is a SNAPMV_PLANE_* mask rather than a flag.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverPillar & s );
+protected:
+	BYTE		m_SnapBlocked = 0;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverPillarOwnsPlane (sector_t *sec);
 };
 
 // [rc4l] uzdoom@c3c22315d -- takes the activating line so a zero tag can act on its back sector.
@@ -729,6 +785,19 @@ protected:
 private:
 	DDoor ();
 
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a door; directions 0 and 2 are this class's at-rest states.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverDoor & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverDoorOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoDoor (DDoor::EVlDoor type, line_t *line, AActor *thing,
@@ -884,6 +953,19 @@ private:
 
 	friend bool EV_CeilingCrushStop (int tag);
 	friend void P_ActivateInStasisCeiling (int tag);
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a ceiling; m_Direction 0 is at rest.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverCeiling & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverCeilingOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoCeiling (DCeiling::ECeiling type, line_t *line,
@@ -1030,6 +1112,19 @@ protected:
 	friend bool EV_DoDonut (int tag, line_t *line, fixed_t pillarspeed, fixed_t slimespeed);
 private:
 	DFloor ();
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a floor; at rest is m_Direction 0, and SNAPMVF_STAIR the stairs.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverFloor & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverFloorOwnsPlane (sector_t *sec);
 };
 
 bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
@@ -1096,6 +1191,19 @@ protected:
 		fixed_t height, int tag);
 private:
 	DElevator ();
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- an elevator, which moves both planes.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverElevator & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverElevatorOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoElevator (line_t *line, DElevator::EElevator type, fixed_t speed,
