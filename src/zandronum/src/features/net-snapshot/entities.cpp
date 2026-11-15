@@ -6,7 +6,7 @@
 //
 // Description: The client entity layer: the snapshot decoder, the ghost
 // table and its sampler, the censuses behind the client report, the server
-// clock model and the layer's self-tests. See cl_entities.h.
+// clock model and the layer's self-tests. See entities.h.
 //
 //-----------------------------------------------------------------------------
 
@@ -319,7 +319,7 @@ void zx::netsnapshot::GravStats(unsigned int & updates, unsigned int & extrap,
 }
 static unsigned int g_classEnded = 0, g_classBegan = 0, g_classChanged = 0;
 
-// Installed by cl_ghostactor.cpp; NULL in the self-tests.
+// Installed by ghostactor.cpp; NULL in the self-tests.
 static ClentLawGravityFn g_lawGravity = NULL;
 static unsigned int g_lawExtrap = 0, g_lawNoFn = 0, g_lawDisagree = 0;
 
@@ -582,7 +582,7 @@ bool zx::netsnapshot::MapStampCurrent(BYTE stamp)
 // The configuration line at a connection's first delta, armed by a connect or
 // a demo playback only.
 namespace zx { namespace netsnapshot {
-void ReportCvars();	// sv_snapshot.cpp, both ends
+void ReportCvars();	// capture.cpp, both ends
 }} // namespace zx::netsnapshot
 static bool g_cvarsReported = true;
 

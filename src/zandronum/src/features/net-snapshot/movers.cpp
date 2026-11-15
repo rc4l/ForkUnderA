@@ -7,7 +7,7 @@
 // Description: The snapshot path's sector movers: the client's record
 // sink, hold and reset window, the movers' capture and apply, plane
 // ownership, the join's link order, and the scroller and pusher state. See
-// snap_movers.h.
+// movers.h.
 //
 //-----------------------------------------------------------------------------
 
@@ -1317,7 +1317,7 @@ static void snapmv_Hold( BYTE cls, BYTE flags, BYTE gen, WORD index,
 	memcpy( h.body, pBody, bodyBytes );
 }
 
-// The sink cl_entities.cpp routes an arriving SNAPEV_MOVER to.
+// The sink entities.cpp routes an arriving SNAPEV_MOVER to.
 static void snapmv_MoverSink( BYTE cls, BYTE flags, BYTE gen, WORD index,
 	const BYTE * pBody, unsigned int bodyBytes )
 {

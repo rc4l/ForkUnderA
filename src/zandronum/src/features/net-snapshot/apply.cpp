@@ -5,7 +5,7 @@
 // Filename: apply.cpp
 //
 // Description: The client's snapshot commands: the snapshot datagram
-// and its ack, the door sound and the sound table. See cl_snapshot.h.
+// and its ack, the door sound and the sound table. See apply.h.
 //
 //-----------------------------------------------------------------------------
 
@@ -129,7 +129,7 @@ static unsigned int client_SnapGapDistance( int seq, int lastSeq, unsigned int h
 	return 0;
 }
 
-// The decode's share of the ghost report's timings, kept in cl_ghostactor.cpp.
+// The decode's share of the ghost report's timings, kept in ghostactor.cpp.
 extern unsigned long long g_applyDeltaRaw;
 
 //*****************************************************************************

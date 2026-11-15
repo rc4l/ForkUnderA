@@ -7,7 +7,7 @@
 // Description: The server's snapshot tick: the world capture and its
 // censuses, transmission to each client, legacy suppression, cosmetic classes
 // and events, snapshot sounds, mover capture, and the stats report. See
-// sv_snapshot.h.
+// capture.h.
 //
 //-----------------------------------------------------------------------------
 
@@ -117,7 +117,7 @@ CVAR(Int, fua_snap_missile_dist, 4096, CVAR_NOSETBYACS)
 // population, every record it buys coming out of d0's.
 CVAR(Int, fua_snap_bandreserve, 15, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 
-// Defined in sv_snapclient.cpp; read here only to report them.
+// Defined in clienttrack.cpp; read here only to report them.
 EXTERN_CVAR(Int, fua_snap_missile_predict)
 EXTERN_CVAR(Bool, fua_snap_appear_predict)
 EXTERN_CVAR(Int, fua_snap_animref_interval)
@@ -195,7 +195,7 @@ CUSTOM_CVAR(String, fua_snap_nonetid_classes, "RevenantTracerSmoke", CVAR_ARCHIV
 CVAR(Int, fua_snap_entergrade, 2, CVAR_NOSETBYACS)
 
 //*****************************************************************************
-//	SERVER-SIDE CAPTURE (format definitions live in snap_format.h)
+//	SERVER-SIDE CAPTURE (format definitions live in format.h)
 
 // An actor's render style as a legacy ERenderStyle index (snap_format.md).
 static BYTE snap_LegacyStyleIndex(const FRenderStyle& style)
@@ -2932,7 +2932,7 @@ static void snap_Init()
 // The capture payload's id base, reset with the buffer and nowhere else.
 static SnapIdCursor g_deltaIds;
 
-// Append one record to the delta buffer using the shared codec (snap_format.h),
+// Append one record to the delta buffer using the shared codec (format.h),
 // writing straight into the buffer with no intermediate copy.
 static void snap_AppendRecord(WORD id, BYTE mask, WORD classId, const SnapEntityState& st,
 	WORD targetId = 0)
@@ -3153,7 +3153,7 @@ static void snap_CaptureAndMeasure()
 	// Feed the stream recorder, if active.
 	snap_RecordCapture(spanTics, g_deltaBuf, zstdSize);
 
-	// Transmit per-client deltas (sv_snapclient.cpp).
+	// Transmit per-client deltas (clienttrack.cpp).
 	g_cePumpTics = spanTics;
 	snap_CosReleaseDue();
 	if (fua_snap_send)
@@ -5695,7 +5695,7 @@ CCMD(fua_snap_stoprecord)
 //*****************************************************************************
 //	EFFECT BITS
 
-// Fails the build if the engine's effect bits move from snap_format.h's.
+// Fails the build if the engine's effect bits move from format.h's.
 typedef char snap_AssertEffectBits[
 ((SNAP_FX_ROCKET == FX_ROCKET)
 	&& (SNAP_FX_GRENADE == FX_GRENADE)
@@ -5954,7 +5954,7 @@ struct SnapMoverSlot
 	// 11 entries would grow every slot tenfold.
 };
 
-// SNAPMV_MAXSLOTS is in sv_snapshot.h; the per-client pass sizes arrays from it.
+// SNAPMV_MAXSLOTS is in capture.h; the per-client pass sizes arrays from it.
 
 // The backstop, in frames, on a gone slot waiting only for clients that never
 // acked, which fua_snap_debug_ackdelay must stay well below.

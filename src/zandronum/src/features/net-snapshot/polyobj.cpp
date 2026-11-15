@@ -6,7 +6,7 @@
 //
 // Description: The snapshot path's polyobjects: the action list, the
 // server's capture, the actions' capture and apply, and the client's record
-// sink. See snap_polyobj.h.
+// sink. See polyobj.h.
 //
 //-----------------------------------------------------------------------------
 

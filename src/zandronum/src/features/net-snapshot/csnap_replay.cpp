@@ -60,7 +60,7 @@ using namespace zx::netsnapshot;
 CVAR(Int, fua_csnap_glide_missile, 125, CVAR_NOSETBYACS)
 CVAR(Int, fua_csnap_glide_monster, 55, CVAR_NOSETBYACS)
 
-// The mirror's smoothing settings (cl_ghostactor.cpp), which the replay applies.
+// The mirror's smoothing settings (ghostactor.cpp), which the replay applies.
 EXTERN_CVAR(Int, fua_csnap_smooth_step)
 EXTERN_CVAR(Int, fua_csnap_smooth_nonballistic)
 EXTERN_CVAR(Int, fua_csnap_smooth_ballistic)

@@ -36,7 +36,13 @@ using namespace zx::netsnapshot;
 
 // The blocks run together behind fua_snap_selftest; each names itself, so one
 // that never ran shows in the summary.
-unsigned int RunFormatSelfTests()
+//
+// [Kaori-Chani] Qualified, as every other file in the module writes its definitions:
+// selftest.h declares this inside zx::netsnapshot, and a using-directive brings names
+// in rather than putting a definition there. Written unqualified, this defined a second
+// function in the global namespace and left the declared one with no body -- which only
+// the linker can see, and nothing links the module yet.
+unsigned int zx::netsnapshot::RunFormatSelfTests()
 {
 	int failures = 0;
 

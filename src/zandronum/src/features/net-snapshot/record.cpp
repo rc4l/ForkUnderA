@@ -5,7 +5,7 @@
 // Filename: record.cpp
 //
 // Description: The client-side snapshot recorder (fua_csnap_record,
-// fua_csnap_stoprecord). The .csnap reader is cl_recordread.cpp.
+// fua_csnap_stoprecord). The .csnap reader is recordread.cpp.
 //
 //-----------------------------------------------------------------------------
 

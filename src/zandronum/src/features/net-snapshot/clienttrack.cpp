@@ -6,7 +6,7 @@
 //
 // Description: Per-client snapshot state, the acknowledgement fold and
 // repair, the priority scheduler, branch events, and the delta build: layout,
-// chunking and encoding. See sv_snapclient.h for the model.
+// chunking and encoding. See clienttrack.h for the model.
 //
 //-----------------------------------------------------------------------------
 
@@ -900,7 +900,7 @@ EXTERN_CVAR(Int, fua_snap_cull_fov)
 EXTERN_CVAR(Int, fua_snap_entergrade)
 
 // Missile priority, split from the interest cull; see the cvar definitions in
-// sv_snapshot.cpp.
+// capture.cpp.
 EXTERN_CVAR(Int, fua_snap_missile_dist)
 EXTERN_CVAR(Int, fua_snap_bandreserve)
 

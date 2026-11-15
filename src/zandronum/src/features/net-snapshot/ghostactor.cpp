@@ -7,7 +7,7 @@
 // Description: The render shim for the snapshot ghost table: mirror
 // actors, local animation, smoothing, the render cull, near-tier collision,
 // hiding the legacy copies, cosmetic event copies, mirror spawns, the client
-// report and the fua_csnap_ghostinfo command. See cl_ghostactor.h.
+// report and the fua_csnap_ghostinfo command. See ghostactor.h.
 //
 //-----------------------------------------------------------------------------
 

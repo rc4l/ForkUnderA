@@ -2259,15 +2259,15 @@ add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/entities.cpp
 	features/net-snapshot/ghostactor.cpp
 	features/net-snapshot/movers.cpp
+# [Kaori-Chani] Ported and compiled clean, but it cannot stay here yet: its classes Snap*
+# members are virtual, so po_man.cpp needs their bodies and the game only links once the
+# whole module does. Uncommented in the commit that links it -- see the port notes.
+#	features/net-snapshot/polyobj.cpp
 	features/net-snapshot/record.cpp
 	features/net-snapshot/csnap_replay.cpp
 	features/net-snapshot/selftest.cpp
 	features/net-snapshot/fuzz.cpp
 	features/net-snapshot/formattest.cpp )
-# [Kaori-Chani] Ported, but it cannot compile here: its classes' Snap* members are virtual,
-# so po_man.cpp's vtables need their bodies and the game would not link. Step 3 uncomments
-# this with p_local.h's declarations, and should compile it before any hook goes in.
-#	features/net-snapshot/polyobj.cpp
 add_dependencies( netsnapshot_layers revision_check protocolspec )
 # [Kaori-Chani] zdoom's target-scoped definitions and include paths, copied by property, so the
 # layers build under the game's own settings and no struct differs when step 3 links them.

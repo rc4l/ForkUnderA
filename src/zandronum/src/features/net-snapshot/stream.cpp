@@ -4,7 +4,7 @@
 //
 // Filename: stream.cpp
 //
-// Description: The .zsnap reader. See snap_stream.h.
+// Description: The .zsnap reader. See stream.h.
 //
 //-----------------------------------------------------------------------------
 

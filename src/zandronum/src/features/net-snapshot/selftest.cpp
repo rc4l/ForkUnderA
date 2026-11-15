@@ -6,7 +6,7 @@
 //
 // Description: fua_snap_verify, which validates a .zsnap through the
 // client's own decoder, and fua_snap_selftest with the block list behind its
-// summary. Kept out of cl_entities.cpp so the ghost table carries no file I/O
+// summary. Kept out of entities.cpp so the ghost table carries no file I/O
 // or test code.
 //
 //-----------------------------------------------------------------------------

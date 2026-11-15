@@ -46,8 +46,8 @@ void MoverApplyGonePlane( sector_t * pSec, int plane, BYTE cls, fixed_t planeD )
 
 }} // namespace zx::netsnapshot
 
-// Sized here because p_spec.h does not include snap_format.h;
-// snap_movers.cpp asserts this covers SNAPMV_COUNT.
+// Sized here because p_spec.h does not include format.h;
+// movers.cpp asserts this covers SNAPMV_COUNT.
 #define SNAPMV_STATCLASSES	16
 
 // The client's mover gate.

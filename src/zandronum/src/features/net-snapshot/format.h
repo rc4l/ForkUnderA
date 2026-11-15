@@ -6,8 +6,8 @@
 //
 // Description: The snapshot wire format: quantizers, entity and event
 // records, mover records and the .zsnap framing (design doc section 3,
-// appendix B). The server's encoder (sv_snapshot.cpp) and the client's
-// decoder (cl_entities.cpp) both use these definitions; never duplicate one
+// appendix B). The server's encoder (capture.cpp) and the client's
+// decoder (entities.cpp) both use these definitions; never duplicate one
 // on either side, since separate encoder and decoder copies drift apart.
 // fua_snap_selftest checks the round trips.
 //
@@ -275,7 +275,7 @@ inline fixed_t AlphaFromState(DWORD rs) { return DequantAlpha((BYTE)((rs >> SNAP
 //	ACTOR EFFECTS
 //
 // AActor::effects in a byte, as a fountain sets its own in PostBeginPlay, which
-// mirrors skip; sv_snapshot.cpp asserts the bits against p_effect.h's.
+// mirrors skip; capture.cpp asserts the bits against p_effect.h's.
 #define SNAP_FX_ROCKET			0x00000001
 #define SNAP_FX_GRENADE			0x00000002
 #define SNAP_FX_RESPAWNINVUL	0x00000020
