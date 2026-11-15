@@ -242,8 +242,13 @@ sort and the same pipelines.
 
 Measured with `.claude/notes/bench/playsim-probe/spellmodels.mjs`, one frozen session, four alternating rounds:
 p50 frame 1.87 ms on the GPU against 2.77 ms on the CPU, 1.61 ms with no models at all, so the models went from
-1.12 ms to 0.25 ms, and the GPU's own frame from 0.63 ms to 0.54 ms (less to upload). Scenario `gpumodels` checks
-an animated MD3 and MD2 mid-blend against GL in one frame; every model scenario against GL still passes.
+1.12 ms to 0.25 ms, and the GPU's own frame from 0.63 ms to 0.54 ms (less to upload).
+
+Against UZDoom's OpenGL, the reference: an MD3 and an MD2 at keyframe 0, keyframe 1 and frozen 17 tics into a
+35-tic blend match its shapes, leans and blend (0.484 against UZDoom's 0.475, the expected 17/35 being 0.486),
+measured by `.claude/notes/uzdoom-parity/modelparity.mjs`. In the repository, scenario `gpumodels` checks the same
+animated pair mid-blend against the built-in GL fixture (Zandronum 3.3's model renderer) in one frame, and every model
+scenario against that fixture still passes.
 
 Normals are the next step: the loaders still drop them, and per-pixel model lighting needs them in the resident
 geometry.
