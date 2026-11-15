@@ -21,20 +21,13 @@ namespace zx { namespace netsnapshot {
 int VerifyFixture(const char* pszFilename, double skew);
 
 // Self-test entry points, run together by the fua_snap_selftest command.
-unsigned int RunFormatSelfTests();	// snap_formattest.cpp
-unsigned int RunSelfTests();			// cl_entities.cpp
-unsigned int RunClockComputeTests();	// snap_clock_compute_test.cpp, from the format tests
-unsigned int RunSampleComputeTests();	// snap_sample_compute_test.cpp, from the format tests
-unsigned int RunWallComputeTests();	// snap_wall_compute_test.cpp, from the format tests
-unsigned int RunSmoothComputeTests();	// snap_smooth_compute_test.cpp, from the format tests
-unsigned int RunInterestComputeTests();	// snap_interest_compute_test.cpp, from the format tests
-unsigned int RunAckComputeTests();	// snap_ack_compute_test.cpp, from the format tests
-unsigned int RunBudgetComputeTests();	// snap_budget_compute_test.cpp, from the format tests
-unsigned int RunAnimComputeTests();	// snap_anim_compute_test.cpp, from the format tests
-unsigned int RunLawComputeTests();	// snap_law_compute_test.cpp, from the format tests
-unsigned int RunJoinComputeTests();	// snap_join_compute_test.cpp, from the format tests
-unsigned int RunMoverComputeTests();	// snap_mover_compute_test.cpp, from the format tests
-unsigned int RunReplayComputeTests();	// snap_replay_compute_test.cpp, from the format tests
+unsigned int RunFormatSelfTests();	// formattest.cpp
+unsigned int RunSelfTests();			// entities.cpp
+// [Kaori-Chani] The twelve units' own self-tests are not declared here any more: step 1
+// turned each into its *_compute_test.cpp GoogleTest file, so there is nothing left in
+// this tree to call. What a game binary can still answer, and a test binary cannot, is
+// whether its own build decodes the format correctly -- which is what formattest.cpp is
+// reduced to.
 
 // Each block names itself as it runs, and the summary prints the names and
 // their count, so a block that never ran, or never called this, shows.

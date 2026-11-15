@@ -692,7 +692,8 @@ private:
 							 fixed_t height2, int crush);
 
 	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
-	// and back out of one record -- a pillar; here m_SnapBlocked is a SNAPMV_PLANE_* mask rather than a flag.
+	// and back out of one record -- a pillar. Here m_SnapBlocked is a
+	// SNAPMV_PLANE_* mask rather than a flag.
 	// The record struct is named through an elaborated specifier so that this header needs
 	// no include from the module. Defaulted; step 3's hooks are what will set them.
 public:
@@ -1114,7 +1115,8 @@ private:
 	DFloor ();
 
 	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
-	// and back out of one record -- a floor; at rest is m_Direction 0, and SNAPMVF_STAIR the stairs.
+	// and back out of one record -- a floor. At rest is m_Direction 0,
+	// and SNAPMVF_STAIR the stairs.
 	// The record struct is named through an elaborated specifier so that this header needs
 	// no include from the module. Defaulted; step 3's hooks are what will set them.
 public:
