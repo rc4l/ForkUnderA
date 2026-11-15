@@ -95,6 +95,7 @@
 #include "c_console.h"
 #include "c_dispatch.h"
 #include "i_system.h"
+#include "i_tictime.h"
 #include "i_sound.h"
 #include "i_video.h"
 #include "g_game.h"
@@ -3186,6 +3187,13 @@ static void FinalGC()
 //
 //==========================================================================
 
+// [Kaori-Chani] i_tictime_wait.cpp links into the test binary without a console, so the console
+// side of its one-time report lives here.
+static void D_ReportTicWaitPath (const char *path)
+{
+	Printf ("tic wait: %s\n", path);
+}
+
 void D_DoomMain (void)
 {
 	zx::handoff::NoteMainThread();   // [rc4l] before any seam, so their thread checks know which thread is main
@@ -3446,6 +3454,8 @@ void D_DoomMain (void)
 		{
 			Printf ("I_Init: Setting up machine state.\n");
 			I_Init ();
+			// [Kaori-Chani] The time base is up, so the first wait has somewhere to report to.
+			TIC_WaitPathReport = D_ReportTicWaitPath;
 			I_CreateRenderer();
 		}
 

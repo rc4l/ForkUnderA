@@ -8,9 +8,13 @@
 // time base's platform half, in its own file that CMake chooses, so the browser
 // build's version is i_tictime_web.cpp rather than a condition in here
 // (tools/platform-ifdef-tripwire.sh). Each platform sleeps until its deadline
-// rather than sleeping near it and spinning, which costs a few percent of a
-// core for precision the tic count never needed: tics come from an absolute
-// counter, so a late wakeup runs its tic later in the same slot and loses none.
+// rather than sleeping near it and spinning, which cost a capped client a few
+// percent of a core for precision the tic count never needed: tics come from an
+// absolute counter, so a late wakeup runs its tic later in the same slot and
+// loses none. Only a client reaches this at all, and only a capped one, since
+// TryRunTics waits for a tic rather than asking for one when cl_capfps is set
+// (d_net.cpp); a server never waits here, SERVER_Tick sitting on its own
+// datagram wait between tics instead.
 //
 //-----------------------------------------------------------------------------
 
@@ -33,6 +37,17 @@ bool TIC_SleepWaits()
 	return true;
 }
 
+// [Kaori-Chani] The first real wait names its path and no later one repeats it, so a log says
+// which timer a machine actually got without a line every tic.
+static void tictime_ReportPath(const char *path)
+{
+	static bool reported = false;
+	if (reported || TIC_WaitPathReport == NULL)
+		return;
+	reported = true;
+	TIC_WaitPathReport(path);
+}
+
 #if defined(_WIN32)
 
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
@@ -41,12 +56,21 @@ bool TIC_SleepWaits()
 
 // [Kaori-Chani] A high-resolution waitable timer, as tools/mcp_sample.cpp already does; the
 // plain fallback gives about a millisecond, i_main.cpp having called timeBeginPeriod.
+// [Kaori-Chani] Which of the two the machine gave us, for the first wait to name.
+static const char *tictime_timerPath = "unknown timer";
+
 static HANDLE tictime_CreateTimer()
 {
 	HANDLE timer = CreateWaitableTimerExW(NULL, NULL,
 		CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
-	if (timer == NULL)
-		timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+	if (timer != NULL)
+	{
+		tictime_timerPath = "high-resolution waitable timer";
+		return timer;
+	}
+	timer = CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+	if (timer != NULL)
+		tictime_timerPath = "plain waitable timer";
 	return timer;
 }
 
@@ -70,11 +94,14 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline)
 	due.QuadPart = -(LONGLONG)units;
 	if (timer != NULL && units != 0 && SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE))
 	{
+		tictime_ReportPath(tictime_timerPath);
 		WaitForSingleObject(timer, INFINITE);
 		return;
 	}
 	// [Kaori-Chani] With no timer to wait on, sleep the span out rather than return, which would
 	// leave the caller's loop spinning -- the one thing this replaced.
+	if (timer == NULL)
+		tictime_ReportPath("Sleep fallback");
 	const DWORD ms = (DWORD)TIC_ScaleRaw(deadline - now, 1000);
 	Sleep(ms > 0 ? ms : 1);
 }
@@ -92,6 +119,7 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline)
 	struct timespec ts;
 	ts.tv_sec = (time_t)(ns / TICTIME_NS_PER_SECOND);
 	ts.tv_nsec = (long)(ns % TICTIME_NS_PER_SECOND);
+	tictime_ReportPath("nanosleep, relative");
 	nanosleep(&ts, NULL);
 }
 
@@ -106,6 +134,7 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline)
 	struct timespec ts;
 	ts.tv_sec = (time_t)(deadline / TICTIME_NS_PER_SECOND);
 	ts.tv_nsec = (long)(deadline % TICTIME_NS_PER_SECOND);
+	tictime_ReportPath("clock_nanosleep on CLOCK_MONOTONIC, absolute");
 	clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
 }
 

@@ -34,14 +34,13 @@ TEST(TicPacing, AHugeIntervalDoesNotOverflowIntoAlwaysDue)
 
 // The measured case: 70 tics in 2000 ms, which is what a host reports when the time base and the
 // loop are both keeping time.
-TEST(TicPacing, ExactPacingReadsTheTicrateOnBothCounts)
+TEST(TicPacing, ExactPacingReadsTheTicrate)
 {
 	const PacingReport r = ComputeReport(70u, 70u, 2000u);
 	EXPECT_EQ(70u, r.runTics);
 	EXPECT_EQ(70u, r.clockTics);
 	EXPECT_EQ(2000u, r.ms);
 	EXPECT_EQ(35000u, r.runMilliHz);
-	EXPECT_EQ(35000u, r.clockMilliHz);
 	EXPECT_EQ(0, r.behindTics);
 }
 
@@ -51,27 +50,25 @@ TEST(TicPacing, AHalfHourOfExactPacingStaysExact)
 {
 	const PacingReport r = ComputeReport(35u * 1800u, 35u * 1800u, 1800000u);
 	EXPECT_EQ(35000u, r.runMilliHz);
-	EXPECT_EQ(35000u, r.clockMilliHz);
 	EXPECT_EQ(0, r.behindTics);
 }
 
-// A loop that cannot keep up: the clock's rate stays right while the loop's falls away, which is
-// what an offscreen client reads and what must not be mistaken for a timer fault.
-TEST(TicPacing, AStalledLoopLeavesTheClocksRateIntact)
+// A loop that cannot keep up: its own rate falls away and the deficit counts it, which is what
+// a client reads on a machine with no GPU and must not be mistaken for a timer fault.
+TEST(TicPacing, AStalledLoopShowsInItsRateAndItsDeficit)
 {
 	const PacingReport r = ComputeReport(34u, 154u, 4400u);
 	EXPECT_EQ(7727u, r.runMilliHz);
-	EXPECT_EQ(35000u, r.clockMilliHz);
 	EXPECT_EQ(120, r.behindTics);
 }
 
-// And the other way round: a clock that stalls while the loop runs every tic it was given shows
-// up in the clock's rate, which is the failure the CI job is there to catch.
-TEST(TicPacing, AStalledClockShowsInItsOwnRate)
+// And the other way round, which a window cannot show at all: a window's tics and its
+// milliseconds are one counter span scaled twice, so a counter at half rate reads here exactly
+// like a correct one, and the logfile's stamps are what catch it (tools/tic_pacing_check.py).
+TEST(TicPacing, AHalfRateCounterLooksExactlyLikeAGoodOne)
 {
 	const PacingReport r = ComputeReport(1050u, 1050u, 60000u);
 	EXPECT_EQ(17500u, r.runMilliHz);
-	EXPECT_EQ(17500u, r.clockMilliHz);
 	EXPECT_EQ(0, r.behindTics);
 }
 
@@ -79,7 +76,6 @@ TEST(TicPacing, ALoopAheadOfTheClockReadsAsASurplus)
 {
 	const PacingReport r = ComputeReport(36u, 35u, 1000u);
 	EXPECT_EQ(36000u, r.runMilliHz);
-	EXPECT_EQ(35000u, r.clockMilliHz);
 	EXPECT_EQ(-1, r.behindTics);
 }
 
@@ -90,7 +86,6 @@ TEST(TicPacing, AWindowOfNoMillisecondsHasNoRates)
 	EXPECT_EQ(9u, r.clockTics);
 	EXPECT_EQ(0u, r.ms);
 	EXPECT_EQ(0u, r.runMilliHz);
-	EXPECT_EQ(0u, r.clockMilliHz);
 	// [Kaori-Chani] Still counted, since the tics are known even when no time has passed.
 	EXPECT_EQ(2, r.behindTics);
 }
@@ -101,6 +96,5 @@ TEST(TicPacing, ALongWindowNeitherWrapsNorTruncates)
 {
 	const PacingReport r = ComputeReport(4000000u, 4000000000u, 4000000000u);
 	EXPECT_EQ(1000u, r.runMilliHz);
-	EXPECT_EQ(1000000u, r.clockMilliHz);
 	EXPECT_EQ(4000000000ll - 4000000ll, r.behindTics);
 }

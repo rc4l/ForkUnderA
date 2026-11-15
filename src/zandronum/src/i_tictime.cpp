@@ -22,6 +22,10 @@
 // Replaces a failed or below-TICRATE frequency, which would divide by zero.
 #define TICTIME_FALLBACK_FREQUENCY	1000000ull
 
+// [Kaori-Chani] Defined in the shared half so that the desktop wait and the browser one can each
+// be the file that reports through it.
+void (*TIC_WaitPathReport)(const char *path) = NULL;
+
 static tictime_raw_t tictime_QueryFrequency()
 {
 #ifdef _WIN32

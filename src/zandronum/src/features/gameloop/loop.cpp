@@ -12,6 +12,7 @@
 #include "features/frame/framedriver.h"   // [rc4l] GLDrawsFrame
 #include "features/telemetry/telemetry.h"
 #include "features/frame/framestall.h"   // [rc4l] DebugPlaysimStall
+#include "features/tic-pacing/pacing.h"   // [Kaori-Chani] fua_tictime_report's measurement
 
 #include <atomic>
 #include <cstdint>
@@ -173,6 +174,10 @@ void FinishInFlight()
 
 bool GameThreadFrame()
 {
+	// [Kaori-Chani] Measured from here as well as from TryRunTics, which a threaded frame returns
+	// before reaching, so the report covers the loop a default client actually runs.
+	zx::ticpacing::Tick ((unsigned int)gametic);
+
 	if (TicInFlight ())
 	{
 		ServeAsks ();

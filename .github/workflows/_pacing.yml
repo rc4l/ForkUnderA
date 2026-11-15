@@ -4,9 +4,15 @@
 # [Kaori-Chani] The tic time base, measured on all three platforms. Replacing the platform timers
 # changed the pacing of every player, and nothing else here watches it: the unit tests cover the
 # arithmetic on a frequency they are handed, not the clock a machine actually has, and there is no
-# Mac in the loop to try it on by hand. Each leg hosts a map for two minutes and reads the engine's
+# Mac in the loop to try it on by hand. Each leg runs a map for two minutes and reads the engine's
 # own pacing lines (tools/tic_pacing_check.py), which is enough to catch a wrong rate, lost tics
 # and a stalled timer.
+#
+# [Kaori-Chani] Every leg here is a server: -host sets NETSTATE_SERVER (d_main.cpp), whose loop
+# calls SERVER_Tick alone, so none of them reaches TryRunTics or the tic wait, and a server waits
+# on its own datagram loop between tics. What CI covers is therefore the time base a server counts
+# tics with, through I_MSTime; the wait itself is covered by the unit tests, by the line the first
+# wait prints, and by a client run on a desktop.
 name: pacing (reusable)
 
 on:
@@ -19,27 +25,53 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # [Kaori-Chani] Linux takes the dedicated server, the only headless binary built here and
-          # the only leg that exercises SERVER_Tick's own pacing rather than a client loop's.
+          # [Kaori-Chani] Linux takes the dedicated server binary, the only headless one built
+          # here; the other two legs are the client binary told to be a server by -host.
           - os: ubuntu-22.04
             name: linux (dedicated server)
             artifact: ForkUnderA-linux-server
             unpack: tar -xzf *-server.tar.gz
             engine: forkundera-server
-            no_host: "--no-host"
+            args: "--no-host"
           - os: macos-latest
-            name: macos (host)
+            name: macos (server via -host)
             artifact: ForkUnderA-macos
             unpack: unzip -q -o *.zip
             engine: ForkUnderA.app/Contents/MacOS/forkundera
-            no_host: ""
+            args: ""
           # [Kaori-Chani] 7-Zip rather than unzip, which the Windows image does not carry.
           - os: windows-2022
-            name: windows (host)
+            name: windows (server via -host)
             artifact: ForkUnderA-windows
             unpack: 7z x -y *.zip
             engine: forkundera.exe
-            no_host: ""
+            args: ""
+          # [Kaori-Chani] The two legs that reach the wait at all: an unthreaded capped client,
+          # the one shape where TryRunTics waits for a tic rather than asking for one, since
+          # fua_gamethread returns from GameThreadFrame before TryRunTics and caps frames
+          # instead. What these legs prove is the wait-path line; their tic count is lenient
+          # because a runner rendering in software may not hold 35 frames a second, and that
+          # would be the runner's speed rather than the time base. A runner that cannot render
+          # fast enough never waits at all, and then the missing line fails the leg -- which is
+          # the signal to drop these two and say CI covers the server loop only.
+          - os: macos-latest
+            name: macos (capped client)
+            artifact: ForkUnderA-macos
+            unpack: unzip -q -o *.zip
+            engine: ForkUnderA.app/Contents/MacOS/forkundera
+            args: >-
+              --no-host --lenient-loop --want-wait-path nanosleep
+              --engine-arg=+fua_gamethread --engine-arg=0
+              --engine-arg=+cl_capfps --engine-arg=1
+          - os: windows-2022
+            name: windows (capped client)
+            artifact: ForkUnderA-windows
+            unpack: 7z x -y *.zip
+            engine: forkundera.exe
+            args: >-
+              --no-host --lenient-loop --want-wait-path "waitable timer"
+              --engine-arg=+fua_gamethread --engine-arg=0
+              --engine-arg=+cl_capfps --engine-arg=1
     runs-on: ${{ matrix.os }}
     name: pacing (${{ matrix.name }})
     defaults:
@@ -84,4 +116,4 @@ jobs:
           python3 tools/tic_pacing_check.py \
             --engine "${{ steps.find.outputs.engine }}" \
             --iwad "$PWD/tools/freedoom/freedoom2.wad" \
-            --seconds 120 --interval 30 ${{ matrix.no_host }}
+            --seconds 120 --interval 30 ${{ matrix.args }}

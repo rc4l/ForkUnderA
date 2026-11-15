@@ -17,7 +17,6 @@ struct PacingReport
 	unsigned int clockTics;		// tics the time base passed in the same window
 	unsigned int ms;			// milliseconds the time base advanced
 	unsigned int runMilliHz;	// tics run a second in thousandths, 35000 for exactly TICRATE
-	unsigned int clockMilliHz;	// the clock's own rate, which is what the time base is judged on
 	long long behindTics;		// tics the clock passed that the loop did not run
 };
 

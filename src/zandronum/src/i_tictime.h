@@ -50,4 +50,8 @@ void TIC_SleepUntilRaw(tictime_raw_t deadline);
 // asked at run time so that nothing needs a browser condition to know.
 bool TIC_SleepWaits();
 
+// [Kaori-Chani] Called once, by the first wait that really waits, with the name of the path it
+// took, so the wait file itself needs no console and a loop that never waits says nothing.
+extern void (*TIC_WaitPathReport)(const char *path);
+
 #endif // __I_TICTIME_H__

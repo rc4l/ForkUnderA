@@ -35,7 +35,6 @@ PacingReport ComputeReport(unsigned int runTics, unsigned int clockTics, unsigne
 	report.clockTics = clockTics;
 	report.ms = ms;
 	report.runMilliHz = 0;
-	report.clockMilliHz = 0;
 	// [Kaori-Chani] Signed and 64-bit: a loop can be ahead as well as behind, and a long stall
 	// passes what an int holds.
 	report.behindTics = (long long)clockTics - (long long)runTics;
@@ -46,7 +45,6 @@ PacingReport ComputeReport(unsigned int runTics, unsigned int clockTics, unsigne
 	}
 
 	report.runMilliHz = MilliHz(runTics, ms);
-	report.clockMilliHz = MilliHz(clockTics, ms);
 
 	return report;
 }

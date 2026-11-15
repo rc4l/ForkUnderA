@@ -32,8 +32,10 @@ void Open(tictime_raw_t now, unsigned int gametics)
 	s_windowOpen = true;
 }
 
-// [Kaori-Chani] Both figures come from the time base's own counter rather than from I_MSTime, so
-// what is measured is the clock the tics are counted from.
+// [Kaori-Chani] The tics and the milliseconds are one counter span scaled twice, so a rate taken
+// between them is TICRATE however wrong the counter is; what the window shows is the loop against
+// that counter, and the counter itself is checked against the logfile's stamps by
+// tools/tic_pacing_check.py.
 PacingReport Window(tictime_raw_t now, unsigned int gametics)
 {
 	const tictime_raw_t span = now - s_windowStart;
@@ -44,10 +46,8 @@ PacingReport Window(tictime_raw_t now, unsigned int gametics)
 
 void Print(const PacingReport &report)
 {
-	Printf("tic pacing: %u of %u tics run in %u ms; clock %u.%03u/s, run %u.%03u/s (%d asked), "
-		"%lld behind\n",
+	Printf("tic pacing: %u of %u tics run in %u ms; run %u.%03u/s (%d asked), %lld behind\n",
 		report.runTics, report.clockTics, report.ms,
-		report.clockMilliHz / 1000u, report.clockMilliHz % 1000u,
 		report.runMilliHz / 1000u, report.runMilliHz % 1000u,
 		TICRATE, report.behindTics);
 }
