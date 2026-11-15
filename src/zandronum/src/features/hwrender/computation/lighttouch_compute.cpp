@@ -4,6 +4,7 @@
 #include "features/hwrender/computation/lighttouch_compute.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace zx { namespace hwrender {
 
@@ -18,6 +19,12 @@ void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, f
 float ComputeDynLightKind(bool subtractive, bool attenuated, bool spot, bool additive)
 {
 	return (subtractive ? 1.0f : 0.0f) + (attenuated ? 2.0f : 0.0f) + (spot ? 4.0f : 0.0f) + (additive && !subtractive ? 8.0f : 0.0f);
+}
+
+void ComputeSubtractiveLightColor(float rgb[3])
+{
+	const float length = std::sqrt(rgb[0] * rgb[0] + rgb[1] * rgb[1] + rgb[2] * rgb[2]);
+	for (int i = 0; i < 3; i++) rgb[i] = length - rgb[i];
 }
 
 bool ComputeLightsDue(LightsStamp &kept, int tic, int generation, int flags, bool &newLevel)
