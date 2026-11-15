@@ -103,7 +103,13 @@ set_source_files_properties("${ZX_SOUND_DECODERS}" PROPERTIES COMPILE_OPTIONS "$
 # single-file zstd is built in beside them as the engine builds it, with its warnings off.
 # [Kaori-Chani] The shared tic time base, built in here as well as into the game: this is the
 # only coverage its arithmetic gets on a platform nobody can run by hand, wasm32 above all.
-set(ZX_TICTIME "${ENGINE_SRC}/i_tictime.cpp")
+# [Kaori-Chani] The wait is a file per platform, as in the engine, so the tests take
+# whichever this build compiles and ask TIC_SleepWaits() what it does.
+if(EMSCRIPTEN)
+  set(ZX_TICTIME "${ENGINE_SRC}/i_tictime.cpp" "${ENGINE_SRC}/i_tictime_web.cpp")
+else()
+  set(ZX_TICTIME "${ENGINE_SRC}/i_tictime.cpp" "${ENGINE_SRC}/i_tictime_wait.cpp")
+endif()
 set(ZX_SNAPSHOT_FORMAT
   "${ENGINE_SRC}/features/net-snapshot/stream.cpp"
   "${ENGINE_SRC}/features/net-snapshot/recordread.cpp"

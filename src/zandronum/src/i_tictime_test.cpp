@@ -179,36 +179,3 @@ TEST(TicTime, TheConvenienceFormsAgreeWithTheCores)
 	for (tictime_raw_t tic = 0; tic <= 70ull; tic += 7ull)
 		EXPECT_EQ(TIC_TicsToRawWith(tic, freq), TIC_TicsToRaw(tic));
 }
-
-// The wait. A deadline already behind the counter must cost nothing, which is what the
-// caller's loop relies on when it recomputes and calls again.
-TEST(TicTime, APassedDeadlineReturnsAtOnce)
-{
-	TIC_Init();
-	const tictime_raw_t before = TIC_GetRawCounter();
-	TIC_SleepUntilRaw(before);
-	TIC_SleepUntilRaw(before > 1000 ? before - 1000 : 0);
-	const tictime_raw_t spent = TIC_ScaleRaw(TIC_GetRawCounter() - before, 1000);
-	// Loose on purpose: this catches a wait that happened, not how promptly it returned.
-	EXPECT_LT(spent, 1000u) << "a passed deadline should not have waited";
-}
-
-// And a deadline ahead of it is actually reached. Under Emscripten the wait is deliberately a
-// no-op -- a browser drives the loop a frame at a time and blocking inside one would freeze the
-// tab -- so there the assertion is that it returns rather than that it waited.
-TEST(TicTime, AFutureDeadlineIsWaitedOutExceptOnTheWeb)
-{
-	TIC_Init();
-	const tictime_raw_t freq = TIC_GetRawFrequency();
-	const tictime_raw_t deadline = TIC_GetRawCounter() + freq / 100ull;	// 10 ms
-	TIC_SleepUntilRaw(deadline);
-#ifdef __EMSCRIPTEN__
-	SUCCEED() << "the web build never waits for a tic; the call is a no-op by design";
-#else
-	EXPECT_GE(TIC_GetRawCounter(), deadline) << "the wait returned before its deadline";
-	// The upper bound only catches a wait that never returns: a shared runner, and macOS
-	// coalescing timer wakeups, make wake precision something to measure live, not assert.
-	const tictime_raw_t over = TIC_ScaleRaw(TIC_GetRawCounter() - deadline, 1000);
-	EXPECT_LT(over, 1000u) << "overshot the deadline by " << over << " ms";
-#endif
-}

@@ -5,7 +5,7 @@
 // Filename: i_tictime.h
 //
 // Description: The monotonic high-resolution time base tics are derived
-// from on every platform (design doc section 8). Tics come from dividing the
+// from on every platform. Tics come from dividing the
 // whole elapsed span of the counter, so rounding error stays below one tic and
 // the long-run rate is exactly TICRATE, whatever the timer granularity,
 // scheduler load or wall-clock adjustment.
@@ -43,6 +43,11 @@ tictime_raw_t TIC_TicsToRawWith(tictime_raw_t tic, tictime_raw_t freq);
 
 // [Kaori-Chani] Waits until the counter reaches `deadline`, returning at once if it passed;
 // the caller recomputes and calls again, so a short wait costs a call, not a tic.
+// Defined by i_tictime_wait.cpp, or by i_tictime_web.cpp where a page drives the loop.
 void TIC_SleepUntilRaw(tictime_raw_t deadline);
+
+// [Kaori-Chani] Whether this build's wait actually waits, which the browser's does not;
+// asked at run time so that nothing needs a browser condition to know.
+bool TIC_SleepWaits();
 
 #endif // __I_TICTIME_H__

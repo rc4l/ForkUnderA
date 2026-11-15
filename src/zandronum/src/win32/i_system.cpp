@@ -78,6 +78,7 @@
 #include "g_game.h"
 #include "i_input.h"
 #include "i_system.h"
+#include "i_tictime.h"	// [Kaori-Chani] the shared monotonic tic time base
 #include "c_dispatch.h"
 #include "c_console.h"
 #include "templates.h"
@@ -130,10 +131,6 @@ static void I_SelectTimer();
 static int I_GetTimePolled(bool saveMS);
 static int I_WaitForTicPolled(int prevtic);
 static void I_FreezeTimePolled(bool frozen);
-static int I_GetTimeEventDriven(bool saveMS);
-static int I_WaitForTicEvent(int prevtic);
-static void I_FreezeTimeEventDriven(bool frozen);
-static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw1, DWORD_PTR dw2);
 
 static HCURSOR CreateCompatibleCursor(FTexture *cursorpic);
 static HCURSOR CreateAlphaCursor(FTexture *cursorpic);
@@ -164,9 +161,6 @@ CVAR (String, queryiwad_key, "shift", CVAR_GLOBALCONFIG|CVAR_ARCHIVE);
 
 double PerfToSec, PerfToMillisec;
 UINT TimerPeriod;
-UINT TimerEventID;
-UINT MillisecondsPerTic;
-HANDLE NewTicArrived;
 uint32 LanguageIDs[4];
 
 // [K6/BB]
@@ -186,15 +180,23 @@ bool gameisdead;
 static ticcmd_t emptycmd;
 static bool HasExited;
 
-static DWORD basetime = 0;
-// These are for the polled timer.
-static DWORD TicStart;
-static DWORD TicNext;
+// [Kaori-Chani] Tics come from the shared monotonic counter, and the spans are kept as raw
+// counts so that no tic boundary is lost to millisecond rounding.
+static tictime_raw_t RawBase;
+static tictime_raw_t RawFreezeStart;
+static tictime_raw_t TicStartRaw;
+static tictime_raw_t TicNextRaw;
+static uint32 TicNextMS;
 static int TicFrozen;
 
-// These are for the event-driven timer.
-static int tics;
-static DWORD ted_start, ted_next;
+// [Kaori-Chani] Seeded on the first read rather than at startup, since the dedicated
+// server reads I_MSTime without ever calling I_SelectTimer (I_Init).
+static tictime_raw_t I_RawBase()
+{
+	if (RawBase == 0)
+		RawBase = TIC_GetRawCounter();
+	return RawBase;
+}
 
 static WadStuff *WadList;
 static int NumWads;
@@ -270,45 +272,14 @@ static int I_WaitForTicSelect(int prevtic)
 
 static void I_SelectTimer()
 {
-	assert(basetime == 0);
+	// [Kaori-Chani] Nothing left to select between: the event timer is gone, and the
+	// polled one waits for a deadline rather than spinning.
+	TIC_Init();
+	(void)I_RawBase();
 
-	// Use a timer event if possible.
-	NewTicArrived = CreateEvent(NULL, FALSE, FALSE, NULL);
-	if (NewTicArrived)
-	{
-		UINT delay;
-		const char *cmdDelay;
-
-		cmdDelay = Args->CheckValue("-timerdelay");
-		delay = 0;
-		if (cmdDelay != 0)
-		{
-			delay = atoi(cmdDelay);
-		}
-		if (delay == 0)
-		{
-			delay = 1000/TICRATE;
-		}
-		MillisecondsPerTic = delay;
-		TimerEventID = timeSetEvent(delay, 0, TimerTicked, 0, TIME_PERIODIC);
-	}
-	// Get the current time as the basetime.
-	basetime = timeGetTime();
-	// Set timer functions.
-	/* [Leo] Zandronum needs a consistent ticrate across clients/servers
-	if (TimerEventID != 0)
-	{
-		I_GetTime = I_GetTimeEventDriven;
-		I_WaitForTic = I_WaitForTicEvent;
-		I_FreezeTime = I_FreezeTimeEventDriven;
-	}
-	else
-	*/
-	{
-		I_GetTime = I_GetTimePolled;
-		I_WaitForTic = I_WaitForTicPolled;
-		I_FreezeTime = I_FreezeTimePolled;
-	}
+	I_GetTime = I_GetTimePolled;
+	I_WaitForTic = I_WaitForTicPolled;
+	I_FreezeTime = I_FreezeTimePolled;
 }
 
 //==========================================================================
@@ -322,8 +293,9 @@ static void I_SelectTimer()
 
 unsigned int I_MSTime()
 {
-	// assert(basetime != 0);
-	return timeGetTime() - basetime;
+	// [Kaori-Chani] The same monotonic counter the tics come from, so the two cannot
+	// disagree, and no 49.7-day wrap moves it.
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - I_RawBase(), 1000);
 }
 
 //==========================================================================
@@ -339,7 +311,7 @@ unsigned int I_MSTime()
 
 unsigned int I_FPSTime()
 {
-	return timeGetTime();
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter(), 1000);
 }
 
 //==========================================================================
@@ -353,42 +325,33 @@ unsigned int I_FPSTime()
 
 static int I_GetTimePolled(bool saveMS)
 {
-	DWORD tm;
-
 	if (TicFrozen != 0)
 	{
 		return TicFrozen;
 	}
 
-	tm = timeGetTime();
-	if (basetime == 0)
-	{
-		basetime = tm;
-	}
+	const tictime_raw_t now = TIC_GetRawCounter();
+	const tictime_raw_t base = I_RawBase();
+	// [Kaori-Chani] One exact division across the whole span, so the tic count cannot
+	// drift however long the process has been up.
+	const tictime_raw_t curtic = TIC_ScaleRaw(now - base, TICRATE);
+
 	if (saveMS)
 	{
-		// [Leo] Replaced the expressions for TicStart and TicNext below.
-		/*
-		TicStart = tm;
-		TicNext = (tm * TICRATE / 1000 + 1) * 1000 / TICRATE;
-		*/
-		DWORD CurrentTic = ((tm - basetime) * TICRATE) / 1000;
-		TicStart = (CurrentTic * 1000 / TICRATE) + basetime;
-		TicNext = ((CurrentTic + 1) * 1000 / TICRATE) + basetime;
+		TicStartRaw = base + TIC_TicsToRaw(curtic);
+		TicNextRaw = base + TIC_TicsToRaw(curtic + 1);
+		TicNextMS = (uint32)TIC_ScaleRaw(TicNextRaw - base, 1000);
 	}
 
-	return ((tm-basetime)*TICRATE)/1000;
+	return static_cast<int>(curtic);
 }
 
 float I_GetTimeFloat( void )
 {
-	DWORD tm;
-
-	tm = timeGetTime();
-	if (!basetime)
-		basetime = tm;
-
-	return (( (float)tm - (float)basetime ) * (float)TICRATE ) / 1000.0f;
+	// [Kaori-Chani] In double, since a float holds about seven digits and the counter
+	// passes that within an hour.
+	const double elapsed = (double)(TIC_GetRawCounter() - I_RawBase());
+	return (float)(elapsed * (double)TICRATE / (double)TIC_GetRawFrequency());
 }
 
 /*
@@ -425,11 +388,9 @@ static int I_WaitForTicPolled(int prevtic)
 	assert(TicFrozen == 0);
 	while ((time = I_GetTimePolled(false)) <= prevtic)
 	{
-		// [Leo] Since in Zandronum there is no alternative to polling,
-		// we allow sleeping here.
-		int sleep = ((( prevtic + 1 ) * 1000 ) / TICRATE ) - I_MSTime( );
-		if ( sleep > 2 )
-			I_Sleep( sleep - 2 );
+		// [Kaori-Chani] Wait for the next tic's own boundary instead of sleeping to
+		// within 2 ms of it and spinning out the rest.
+		TIC_SleepUntilRaw(I_RawBase() + TIC_TicsToRaw((tictime_raw_t)prevtic + 1));
 	}
 
 	return time;
@@ -449,85 +410,16 @@ static void I_FreezeTimePolled(bool frozen)
 	{
 		assert(TicFrozen == 0);
 		TicFrozen = I_GetTimePolled(false);
+		RawFreezeStart = TIC_GetRawCounter();
 	}
 	else
 	{
 		assert(TicFrozen != 0);
-		int froze = TicFrozen;
+		// [Kaori-Chani] Shift the base by the frozen span exactly, where the millisecond
+		// form lost part of a tic on every freeze.
+		RawBase = I_RawBase() + (TIC_GetRawCounter() - RawFreezeStart);
 		TicFrozen = 0;
-		int now = I_GetTimePolled(false);
-		basetime += (now - froze) * 1000 / TICRATE;
 	}
-}
-
-//==========================================================================
-//
-// I_GetTimeEventDriven
-//
-// Returns the current tick counter. This is incremented asynchronously as
-// the timer event fires.
-//
-//==========================================================================
-
-static int I_GetTimeEventDriven(bool saveMS)
-{
-	if (saveMS)
-	{
-		TicStart = ted_start;
-		TicNext = ted_next;
-	}
-	return tics;
-}
-
-//==========================================================================
-//
-// I_WaitForTicEvent
-//
-// Waits on the timer event as long as the current tic is not later than
-// prevtic.
-//
-//==========================================================================
-
-static int I_WaitForTicEvent(int prevtic)
-{
-	assert(!TicFrozen);
-	while (prevtic >= tics)
-	{
-		WaitForSingleObject(NewTicArrived, 1000/TICRATE);
-	}
-	return tics;
-}
-
-//==========================================================================
-//
-// I_FreezeTimeEventDriven
-//
-// Freeze/unfreeze the ticker.
-//
-//==========================================================================
-
-static void I_FreezeTimeEventDriven(bool frozen)
-{
-	TicFrozen = frozen;
-}
-
-//==========================================================================
-//
-// TimerTicked
-//
-// Advance the tick count and signal the NewTicArrived event.
-//
-//==========================================================================
-
-static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw1, DWORD_PTR dw2)
-{
-	if (!TicFrozen)
-	{
-		tics++;
-	}
-	ted_start = timeGetTime ();
-	ted_next = ted_start + MillisecondsPerTic;
-	SetEvent(NewTicArrived);
 }
 
 //==========================================================================
@@ -541,21 +433,19 @@ static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw
 
 fixed_t I_GetTimeFrac(uint32 *ms)
 {
-	DWORD now = timeGetTime();
+	const tictime_raw_t now = TIC_GetRawCounter();
 	if (ms != NULL)
 	{
-		*ms = TicNext;
+		*ms = TicNextMS;
 	}
-	DWORD step = TicNext - TicStart;
-	if (step == 0)
+	if (TicNextRaw <= TicStartRaw)
 	{
 		return FRACUNIT;
 	}
-	else
-	{
-		fixed_t frac = clamp<fixed_t> ((now - TicStart)*FRACUNIT/step, 0, FRACUNIT);
-		return frac;
-	}
+	// [Kaori-Chani] FRACUNIT is a 48.16 value here, so the scale takes its raw 65536.
+	const tictime_raw_t mul = (tictime_raw_t)FRACUNIT.Raw() * TICRATE;
+	const tictime_raw_t frac = TIC_ScaleRaw(now - TicStartRaw, mul);
+	return clamp<fixed_t>(fixed_t::FromRaw((int64_t)frac), 0, FRACUNIT);
 }
 
 //==========================================================================
@@ -839,8 +729,10 @@ void I_Init()
 		SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
 
 		// [BB] The server doesn't call I_SelectTimer, so we have to set basetime manually.
-		if (!basetime)
-			basetime = timeGetTime();
+		// [Kaori-Chani] The base seeds itself on its first read, so this only fixes the
+		// origin where it was fixed before.
+		TIC_Init();
+		(void)I_RawBase();
 	}
 
 	I_GetTime = I_GetTimeSelect;
@@ -860,14 +752,6 @@ void I_Quit()
 {
 	HasExited = true;		/* Prevent infinitely recursive exits -- killough */
 
-	if (TimerEventID != 0)
-	{
-		timeKillEvent(TimerEventID);
-	}
-	if (NewTicArrived != NULL)
-	{
-		CloseHandle(NewTicArrived);
-	}
 	timeEndPeriod(TimerPeriod);
 	if (demorecording)
 	{

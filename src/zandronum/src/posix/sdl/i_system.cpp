@@ -71,6 +71,7 @@
 #include "d_net.h"
 #include "g_game.h"
 #include "i_system.h"
+#include "i_tictime.h"	// [Kaori-Chani] the shared monotonic tic time base
 #include "features/updater/computation/openurl_compute.h" // [rc4l] scheme allowlist for I_OpenURL
 #include "c_dispatch.h"
 #include "c_console.h"
@@ -131,30 +132,40 @@ void I_EndRead(void)
 }
 
 
-static DWORD TicStart;
-static DWORD BaseTime;
-// [rc4l] Atomic, since the alarm handler reads it on whichever thread the signal lands on.
-static std::atomic<int> TicFrozen;
-
-// Signal based timer.
-static Semaphore timerWait;
-// [rc4l] Atomic and lock-free, so the alarm handler can write them from any thread while the loop reads them.
-static std::atomic<int> tics;
-static std::atomic<DWORD> sig_start;
+// [Kaori-Chani] Tics come from the shared monotonic counter, and the spans are kept as raw
+// counts so that no tic boundary is lost to millisecond rounding.
+static tictime_raw_t RawBase;
+static tictime_raw_t RawFreezeStart;
+static tictime_raw_t TicStartRaw;
+static tictime_raw_t TicNextRaw;
+static uint32 TicNextMS;
+// [Kaori-Chani] Plain again: the alarm handler that made this atomic is gone with the
+// signal timer, and only the game thread freezes time.
+static int TicFrozen;
 
 void I_SelectTimer();
+
+// [Kaori-Chani] Seeded on the first read rather than at startup, since I_MSTime can be
+// called before I_SelectTimer runs.
+static tictime_raw_t I_RawBase()
+{
+	if (RawBase == 0)
+		RawBase = TIC_GetRawCounter();
+	return RawBase;
+}
 
 // [RH] Returns time in milliseconds
 unsigned int I_MSTime (void)
 {
-	unsigned int time = SDL_GetTicks ();
-	return time - BaseTime;
+	// [Kaori-Chani] The same monotonic counter the tics come from, so the two cannot
+	// disagree, and no NTP step or 49.7-day wrap moves it.
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - I_RawBase(), 1000);
 }
 
 // Exactly the same thing, but based does no modification to the time.
 unsigned int I_FPSTime()
 {
-	return SDL_GetTicks();
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter(), 1000);
 }
 
 //
@@ -174,50 +185,33 @@ int I_GetTimePolled (bool saveMS)
 		return TicFrozen;
 	}
 
-	DWORD tm = SDL_GetTicks();
+	const tictime_raw_t now = TIC_GetRawCounter();
+	const tictime_raw_t base = I_RawBase();
+	// [Kaori-Chani] One exact division across the whole span, so the tic count cannot
+	// drift however long the process has been up.
+	const tictime_raw_t curtic = TIC_ScaleRaw(now - base, TICRATE);
 
 	if (saveMS)
 	{
-		// [Leo] Replaced the expressions for TicStart and TicNext below.
-		/*
-		TicStart = tm;
-		*/
-		DWORD CurrentTic = ((tm - BaseTime) * TICRATE) / 1000;
-		TicStart = (CurrentTic * 1000 / TICRATE) + BaseTime;
+		TicStartRaw = base + TIC_TicsToRaw(curtic);
+		TicNextRaw = base + TIC_TicsToRaw(curtic + 1);
+		TicNextMS = (uint32)TIC_ScaleRaw(TicNextRaw - base, 1000);
 	}
-	return Scale(tm - BaseTime, TICRATE, 1000);
-}
-
-int I_GetTimeSignaled (bool saveMS)
-{
-	if (saveMS)
-	{
-		TicStart = sig_start;
-	}
-	return tics;
+	return static_cast<int>(curtic);
 }
 
 int I_WaitForTicPolled (int prevtic)
 {
-    int time;
+	int time;
 
 	assert (TicFrozen == 0);
-    while ((time = I_GetTimePolled(false)) <= prevtic)
-		;
-
-    return time;
-}
-
-int I_WaitForTicSignaled (int prevtic)
-{
-	assert (TicFrozen == 0);
-
-	while(tics <= prevtic)
+	while ((time = I_GetTimePolled(false)) <= prevtic)
 	{
-		SEMAPHORE_WAIT(timerWait)
+		// [Kaori-Chani] Wait for the next tic's own boundary instead of spinning up to it.
+		TIC_SleepUntilRaw(I_RawBase() + TIC_TicsToRaw((tictime_raw_t)prevtic + 1));
 	}
 
-	return tics;
+	return time;
 }
 
 void I_FreezeTimeSelect (bool frozen)
@@ -232,20 +226,16 @@ void I_FreezeTimePolled (bool frozen)
 	{
 		assert(TicFrozen == 0);
 		TicFrozen = I_GetTimePolled(false);
+		RawFreezeStart = TIC_GetRawCounter();
 	}
 	else
 	{
 		assert(TicFrozen != 0);
-		int froze = TicFrozen;
+		// [Kaori-Chani] Shift the base by the frozen span exactly, where the millisecond
+		// form lost part of a tic on every freeze.
+		RawBase = I_RawBase() + (TIC_GetRawCounter() - RawFreezeStart);
 		TicFrozen = 0;
-		int now = I_GetTimePolled(false);
-		BaseTime += (now - froze) * 1000 / TICRATE;
 	}
-}
-
-void I_FreezeTimeSignaled (bool frozen)
-{
-	TicFrozen = frozen;
 }
 
 int I_WaitForTicSelect (int prevtic)
@@ -255,69 +245,33 @@ int I_WaitForTicSelect (int prevtic)
 }
 
 //
-// I_HandleAlarm
-// Should be called every time there is an alarm.
-//
-void I_HandleAlarm (int sig)
-{
-	// [rc4l] The interrupted code's errno survives the clock and semaphore calls below.
-	const int interrupted = errno;
-	if(!TicFrozen)
-		tics++;
-	sig_start = SDL_GetTicks();
-	SEMAPHORE_SIGNAL(timerWait)
-	errno = interrupted;
-}
-
-//
 // I_SelectTimer
-// Sets up the timer function based on if we can use signals for efficent CPU
-// usage.
+// Sets up the polled timer on the shared monotonic time base.
 //
 void I_SelectTimer()
 {
-	SEMAPHORE_INIT(timerWait, 0, 0)
-#ifndef __sun
-	signal(SIGALRM, I_HandleAlarm);
-#else
-	struct sigaction alrmaction;
-	sigaction(SIGALRM, NULL, &alrmaction);
-	alrmaction.sa_handler = I_HandleAlarm;
-	sigaction(SIGALRM, &alrmaction, NULL);
-#endif
-
-	struct itimerval itv;
-	itv.it_interval.tv_sec = itv.it_value.tv_sec = 0;
-	itv.it_interval.tv_usec = itv.it_value.tv_usec = 1000000/TICRATE;
-
-	if (setitimer(ITIMER_REAL, &itv, NULL) != 0)
-	{
-		I_GetTime = I_GetTimePolled;
-		I_FreezeTime = I_FreezeTimePolled;
-		I_WaitForTic = I_WaitForTicPolled;
-	}
-	else
-	{
-		I_GetTime = I_GetTimeSignaled;
-		I_FreezeTime = I_FreezeTimeSignaled;
-		I_WaitForTic = I_WaitForTicSignaled;
-	}
+	// [Kaori-Chani] Nothing left to select between: the signal timer is gone, and the
+	// polled one no longer burns a core.
+	TIC_Init();
+	(void)I_RawBase();
+	I_GetTime = I_GetTimePolled;
+	I_FreezeTime = I_FreezeTimePolled;
+	I_WaitForTic = I_WaitForTicPolled;
 }
 
 // Returns the fractional amount of a tic passed since the most recent tic
 fixed_t I_GetTimeFrac (uint32 *ms)
 {
-	DWORD now = SDL_GetTicks ();
-	if (ms) *ms = TicStart + (1000 / TICRATE);
-	if (TicStart == 0)
+	const tictime_raw_t now = TIC_GetRawCounter();
+	if (ms) *ms = TicNextMS;
+	if (TicNextRaw <= TicStartRaw)
 	{
 		return FRACUNIT;
 	}
-	else
-	{
-		fixed_t frac = clamp<fixed_t> ((now - TicStart)*FRACUNIT*TICRATE/1000, 0, FRACUNIT);
-		return frac;
-	}
+	// [Kaori-Chani] FRACUNIT is a 48.16 value here, so the scale takes its raw 65536.
+	const tictime_raw_t mul = (tictime_raw_t)FRACUNIT.Raw() * TICRATE;
+	const tictime_raw_t frac = TIC_ScaleRaw(now - TicStartRaw, mul);
+	return clamp<fixed_t>(fixed_t::FromRaw((int64_t)frac), 0, FRACUNIT);
 }
 
 void I_WaitVBL (int count)
