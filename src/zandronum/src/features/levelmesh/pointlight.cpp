@@ -3,6 +3,7 @@
 
 #include "features/levelmesh/pointlight.h"
 #include "features/dynlights/computation/shouldlight_compute.h"   // [Doruk-Aksoy] ComputeShouldLightActor
+#include "features/dynlights/computation/spotlight_compute.h"   // [Doruk-Aksoy] ComputeSpotFactor
 #include "features/gamecopy/actors.h"   // [rc4l] ActorRecord
 #include "features/gamecopy/lights.h"   // [rc4l] the light records and each subsector's light list
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeDynLightColor
@@ -38,6 +39,14 @@ void PointLight(fixed_t x, fixed_t y, fixed_t z, subsector_t *subsec, const void
 		// [rc4l] gl_SetDynSpriteLight takes the light's colour without the additive scaling a surface's light has.
 		float c[3];
 		zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, false, r_lights_intensity * light.intensity, c);
+		// [Doruk-Aksoy] uzdoom@62afe5f0 GetDynSpriteLight: a spot's share of its light at this point scales what it adds.
+		if (light.spot)
+		{
+			const float share = zx::dynlights::ComputeSpotFactor(FIXED2FLOAT(light.x - x), FIXED2FLOAT(light.y - y), FIXED2FLOAT(light.z - z),
+				light.spotDirection, light.spotCosInner, light.spotCosOuter);
+			if (share <= 0.f) continue;
+			c[0] *= share; c[1] *= share; c[2] *= share;
+		}
 		const float bright = light.subtractive ? (float)FVector3(c[0], c[1], c[2]).Length() : 0.f;
 		zx::sprites::ComputeSpriteLightTerm(dist, radius, c[0], c[1], c[2], light.subtractive, bright, out);
 	}

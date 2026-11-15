@@ -26,6 +26,9 @@ struct LightRecord
 	bool dontLightActors;         // [Doruk-Aksoy] GLDEFS dontlightactors: no sprite, model or particle takes its light
 	bool dontLightOthers;         // [Doruk-Aksoy] GLDEFS dontlightothers: of actors and particles, only its carrier takes its light
 	bool attenuated;              // [Doruk-Aksoy] GLDEFS attenuate or an *Attenuated map light: a wall or flat takes it by the angle it arrives at
+	bool spot;                    // [Doruk-Aksoy] a spot light, lighting only its cone
+	float spotDirection[3];       // [Doruk-Aksoy] its facing negated, world x, y, z (ComputeSpotDirection)
+	float spotCosInner, spotCosOuter;  // [Doruk-Aksoy] the cosines of its cone's inner and outer angles
 	std::vector<unsigned> links;  // [rc4l] the subsectors it reached and numsubsectors plus each sidedef it lights, sorted
 };
 
