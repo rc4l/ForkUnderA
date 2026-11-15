@@ -70,6 +70,15 @@ jobs:
           chmod +x "$path" || true
           echo "engine=$(cd "$(dirname "$path")" && pwd)/$(basename "$path")" >> "$GITHUB_OUTPUT"
 
+      # [Kaori-Chani] The runner builds the server elsewhere and so carries none of its runtime
+      # libraries; this list is Dockerfile.game-server's own, less the libstdc++6 every image has.
+      - name: Install the server's runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libssl3 zlib1g libbz2-1.0 libcurl4 libopus0 libsdl2-2.0-0
+
       - name: Pace a map for two minutes
         run: |
           python3 tools/tic_pacing_check.py \

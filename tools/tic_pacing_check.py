@@ -120,21 +120,35 @@ def run_engine(engine, iwad, seconds, interval, extra, host=True):
              "+fua_tictime_report", str(interval), "+map", "MAP01"] + extra
     print("tic-pacing: " + " ".join(args))
 
-    proc = subprocess.Popen(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            print("tic-pacing: the engine exited early with code %d" % proc.returncode)
-            break
-        time.sleep(1)
+    # [Kaori-Chani] The engine's console output goes to a file rather than a pipe nobody drains,
+    # because a pipe filling up would stall the engine and read as a stalled time base.
+    console = os.path.join(logdir, "console.txt")
+    early = False
+    with open(console, "w", encoding="utf-8") as sink:
+        proc = subprocess.Popen(args, env=env, stdout=sink, stderr=subprocess.STDOUT)
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                early = True
+                break
+            time.sleep(1)
 
-    if proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.communicate(timeout=30)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+    # [Kaori-Chani] An early exit is reported with the engine's last words, since a loader error
+    # names the missing library there and never reaches the engine's own log.
+    if early:
+        print("tic-pacing: the engine exited early with code %d" % proc.returncode)
+        with open(console, encoding="utf-8", errors="replace") as fh:
+            tail = fh.read().splitlines()[-20:]
+        for line in tail or ["(the engine printed nothing)"]:
+            print("  " + line)
 
     # [Kaori-Chani] The engine stamps the name it was given with the date, so take what it wrote.
     text = ""
