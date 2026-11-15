@@ -43,6 +43,16 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 	const void *material, int translation);
 // [Doruk-Aksoy] A surface whose corners are already resolved (ComputeModelSurfaceCorners), handed on as CaptureModelSurface hands its own, from the main thread.
 void EmitModelSurface(const MeshVertex *tris, unsigned int indexCount, const void *material, int translation);
+// [Doruk-Aksoy] A surface the GPU blends and places from its resident geometry (GpuModelWanted), handed on from the main thread with no corners.
+void EmitGpuModelSurface(const FModelGeometry *geometry, unsigned base1, unsigned base2, float inter, unsigned firstIndex, unsigned indexCount,
+	const void *material, int translation);
+// [Doruk-Aksoy] Whether a surface of `geometry` captured as `kind` from a model whose look is a flat surface or not goes to the GPU (ComputeGpuModelWanted), from any thread.
+bool GpuModelWanted(const FModelGeometry *geometry, ModelCaptureKind kind, bool flatSurface);
+// [Doruk-Aksoy] The span a GPU model surface's piece carries in place of corners.
+void GpuModelSurfacePiece(const FModelGeometry *geometry, unsigned base1, unsigned base2, float inter, unsigned firstIndex, MeshPiece &mp);
+// [Doruk-Aksoy] What one storage buffer of a backend's device binds, set by a backend that draws model surfaces from resident geometry (a Vulkan device), 0 until then.
+void SetGpuModelStorage(unsigned long long maxStorageBytes);
+unsigned long long GpuModelStorage();
 // [Doruk-Aksoy] A surface whose corners were refused, counted for fua_models as CaptureModelSurface counts its own.
 void ModelSurfaceSkipped();
 

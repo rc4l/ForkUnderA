@@ -138,3 +138,30 @@ TEST(DynVertexCeiling, TooSmallABufferHoldsNothing)
 	EXPECT_EQ(0u, ComputeDynVertexCeiling((1ull << 22) - 1));
 	EXPECT_GT(ComputeDynVertexCeiling(1ull << 22), 0u);
 }
+
+// [Doruk-Aksoy] A GPU model surface takes a model record and a piece record but no general vertex, and the general pieces around it pack together.
+TEST(DynLayout, GpuModelSurfacesTakeAModelRecordInsteadOfGeneralVertices)
+{
+	const int order[4] = { 0, 1, 2, 3 };
+	const unsigned vertices[4] = { 36, 6, 9, 6 };
+	const bool packed[4] = { false, false, false, true };
+	const bool model[4] = { true, false, true, false };
+	std::vector<DynSlot> out;
+	const DynLayoutTotals t = ComputeDynLayout(order, 4, vertices, packed, 2, out, model);
+	EXPECT_EQ(57u, t.stream);
+	EXPECT_EQ(6u, t.general);
+	EXPECT_EQ(1, t.sprites);
+	EXPECT_EQ(2, t.models);
+	ASSERT_EQ(4u, out.size());
+	EXPECT_EQ(0, out[0].model);
+	EXPECT_EQ(0, out[0].record);
+	EXPECT_EQ(36u, out[0].count);
+	EXPECT_EQ(-1, out[1].model);
+	EXPECT_EQ(0u, out[1].general);
+	EXPECT_EQ(1, out[1].record);
+	EXPECT_EQ(1, out[2].model);
+	EXPECT_EQ(-1, out[2].record);
+	EXPECT_EQ(42u, out[2].first);
+	EXPECT_EQ(-1, out[3].model);
+	EXPECT_EQ(0, out[3].sprite);
+}

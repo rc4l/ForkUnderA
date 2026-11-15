@@ -8,6 +8,8 @@
 #include "features/hwrender/computation/pipelineswitch_compute.h"   // [Doruk-Aksoy] fua_dg_blendorder's switch tally
 #include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV, ComputeAtlasPieceEligible
 #include "features/hwrender/computation/dynlayout_compute.h"   // [rc4l] ComputeDynLayout
+#include "features/levelmesh/computation/modelgpu_compute.h"   // [Doruk-Aksoy] ComputeModelRecord, ComputeModelRef
+#include "features/models/modelgeometry.h"   // [Doruk-Aksoy] FModelGeometry, where a GPU surface's geometry is held
 #include "features/hwrender/computation/flatplane_compute.h"   // [Doruk-Aksoy] flat model surfaces ordered as planes
 #include "features/hwshaders/computation/hwshader_compute.h"   // [Doruk-Aksoy] ComputeUserShaderOf
 #include "features/jobs/jobs.h"                                 // [rc4l] the pool the records are written on
@@ -244,7 +246,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	int nverts = 0, npieces = 0;
 	const zx::levelmesh::MeshVertex *src = zx::levelmesh::DynVertices(nverts);
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
-	if (src == NULL || nverts <= 0 || pieces == NULL || npieces <= 0) { g_scene.dynRuns.Clear(); g_scene.tracedSprites.Clear(); g_scene.tracedSteps.clear(); return; }
+	// [Doruk-Aksoy] Pieces, not vertices, since a frame of GPU model surfaces alone has none in the stream.
+	if (pieces == NULL || npieces <= 0) { g_scene.dynRuns.Clear(); g_scene.tracedSprites.Clear(); g_scene.tracedSteps.clear(); return; }
 
 	// The dynamic path's piece records, rebuilt with its vertices every frame.
 
@@ -326,6 +329,26 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		static TArray<unsigned> dynVerts;
 		dynVerts.Resize(npieces);
 		for (int i = 0; i < npieces; i++) dynVerts[i] = pieces[i].range.count == 0 ? 0u : pieces[i].quad ? 6u : pieces[i].range.count;
+		// [Doruk-Aksoy] The GPU model surfaces and their world boxes, here on this thread since their spans' boxes are kept between frames; one not drawable (refused geometry, a bad span) draws nothing.
+		static std::vector<char> gpuModel;
+		static std::vector<float> gpuBox;
+		gpuModel.assign(npieces, 0);
+		gpuBox.resize((size_t)npieces * 6);
+		{
+			int heldMatrices = 0;
+			const float *mats = zx::levelmesh::DynMatrices(heldMatrices);
+			for (int i = 0; i < npieces; i++)
+			{
+				const zx::levelmesh::MeshPiece &p = pieces[i];
+				if (p.gpuGeometry == NULL || dynVerts[i] == 0) continue;
+				if (p.modelMatrix < 0 || p.modelMatrix >= heldMatrices || !ModelSurfaceWorldBox(p, mats + (size_t)p.modelMatrix * zx::hwrender::kModelMatrixWords, &gpuBox[(size_t)i * 6]))
+				{
+					dynVerts[i] = 0;
+					continue;
+				}
+				gpuModel[i] = 1;
+			}
+		}
 		static std::vector<PieceSlotSet> slots;
 		static std::vector<const AtlasEntry *> atlased;
 		slots.resize(npieces);
@@ -339,7 +362,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const zx::levelmesh::MeshPiece &p = pieces[k];
 			slots[k] = DynamicPieceSlots(k, p);
 			if (atlas) atlased[k] = AtlasFor(p.material, p.translation,
-				zx::hwrender::ComputeAtlasPieceEligible({ p.quad, p.depthBias, p.solid, p.hud, p.mirrorView, p.onMirror, p.fuzz }));
+				!gpuModel[k] && zx::hwrender::ComputeAtlasPieceEligible({ p.quad, p.depthBias, p.solid, p.hud, p.mirrorView, p.onMirror, p.fuzz }));
 			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
 		}
 		// [rc4l] Every record filled on the pool, and each plain quad packed with its corners (ComputeSpritePack) unless a traced mirror reads its record.
@@ -389,19 +412,22 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		const int recordsLeft = g_scene.pieceCapacity > g_scene.pieces.Size() ? int(g_scene.pieceCapacity - g_scene.pieces.Size()) : 0;
 		static std::vector<zx::hwrender::DynSlot> layout;
 		const zx::hwrender::DynLayoutTotals totals = zx::hwrender::ComputeDynLayout(&order[0], npieces, &dynVerts[0],
-			(const bool *)&packedFlag[0], recordsLeft, layout);
+			(const bool *)&packedFlag[0], recordsLeft, layout, (const bool *)&gpuModel[0]);
 		int records = 0;
 		for (const zx::hwrender::DynSlot &slot : layout) if (slot.record >= 0) records++;
 		ZX_COUNT("gpu/sprites_packed", "sprites", totals.sprites);
 		ZX_COUNT("gpu/sprites_whole", "pieces", (double)layout.size() - totals.sprites);
+		ZX_COUNT("gpu/model_surfaces", "surfaces", totals.models);   // [Doruk-Aksoy] blended and placed by the vertex shader
 		// [rc4l] The words: the general vertices first, as SceneVertex, then the packed sprites from a multiple of four.
 		const unsigned spriteBase = (totals.general * 6 + 3) & ~3u;
 		// [Doruk-Aksoy] ...then the frame's model matrices, which a GLDEFS shader's program reads its ModelMatrix from.
 		int nmatrices = 0;
 		const float *matrices = zx::levelmesh::DynMatrices(nmatrices);
 		const unsigned matBase = spriteBase + (unsigned)totals.sprites * zx::hwrender::kSpriteWords;
+		// [Doruk-Aksoy] ...then the GPU model surfaces' records (modelgpu_compute).
+		const unsigned modelBase = matBase + (unsigned)nmatrices * zx::hwrender::kModelMatrixWords;
 		static TArray<unsigned> words;
-		words.Resize(matBase + (unsigned)nmatrices * zx::hwrender::kModelMatrixWords);
+		words.Resize(modelBase + (unsigned)totals.models * zx::levelmesh::kModelRecordWords);
 		if (nmatrices > 0) memcpy(&words[matBase], matrices, (size_t)nmatrices * zx::hwrender::kModelMatrixWords * sizeof(unsigned));
 		static TArray<unsigned> refs;
 		refs.Resize(totals.stream);
@@ -451,7 +477,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const zx::levelmesh::MeshPiece *pieces;
 			const zx::levelmesh::MeshVertex *src;
 			int count;
-			unsigned spriteBase, matBase;
+			unsigned spriteBase, matBase, modelBase;
 			void operator()(int chunk, int) const
 			{
 				static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
@@ -505,6 +531,23 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 						dynPieces[slot.record] = filled[slot.piece];
 						dynPieces[slot.record].tintRange[3] = zx::hwrender::ComputeModelMatrixWord(matBase, p.modelMatrix);
 					}
+					// [Doruk-Aksoy] A GPU model surface: its record, and one reference to it for every corner, which the vertex shader tells apart by gl_VertexIndex.
+					if (slot.model >= 0)
+					{
+						const FModelGeometry *g = p.gpuGeometry;
+						const unsigned recordWord = modelBase + (unsigned)slot.model * zx::levelmesh::kModelRecordWords;
+						const zx::levelmesh::ModelRecordIn in = { slot.first, dynPieceIndex, { g->gpuVertWord, g->gpuIndexWord }, g->indexed && g->indices.Size() > 0,
+							p.gpuBase1, p.gpuBase2, p.gpuFirstIndex, p.gpuInter, matBase + (unsigned)p.modelMatrix * zx::hwrender::kModelMatrixWords };
+						zx::levelmesh::ComputeModelRecord(in, &words[recordWord]);
+						const unsigned ref = zx::levelmesh::ComputeModelRef(recordWord);
+						for (unsigned v = 0; v < slot.count; v++) refs[slot.first + v] = ref;
+						const float *b = &gpuBox[(size_t)slot.piece * 6];
+						r.lo = b[1]; r.hi = b[4];
+						r.minX = b[0]; r.maxX = b[3];
+						r.minZ = b[2]; r.maxZ = b[5];
+						r.general = -1;
+						continue;
+					}
 					for (unsigned v = 0; v < slot.count; v++)
 					{
 						const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
@@ -521,7 +564,7 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			}
 		};
 		const int chunks = (int)((layout.size() + kDynChunk - 1) / kDynChunk);
-		Fill fill = { pieces, src, (int)layout.size(), spriteBase, matBase };
+		Fill fill = { pieces, src, (int)layout.size(), spriteBase, matBase, modelBase };
 		zx::jobs::Pool().ParallelFor(chunks, fill);
 	if (refs.Size() == 0) return;
 
