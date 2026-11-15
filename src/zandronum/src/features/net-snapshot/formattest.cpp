@@ -22,7 +22,7 @@
 // a small recording embedded in the source, decoded through the game's own
 // ApplyDelta, with a checksum over the poses it produces. It is not here yet
 // because its constant has to come from CI agreeing across four platforms,
-// which needs a linked game to run -- see the port's notes.
+// which needs a linked game to run.
 //
 //-----------------------------------------------------------------------------
 

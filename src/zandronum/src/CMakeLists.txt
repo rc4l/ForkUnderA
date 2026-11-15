@@ -2259,9 +2259,9 @@ add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/entities.cpp
 	features/net-snapshot/ghostactor.cpp
 	features/net-snapshot/movers.cpp
-# [Kaori-Chani] Ported and compiled clean, but it cannot stay here yet: its classes Snap*
+# [Kaori-Chani] Ported and compiled clean, but it cannot stay here yet: its classes' Snap*
 # members are virtual, so po_man.cpp needs their bodies and the game only links once the
-# whole module does. Uncommented in the commit that links it -- see the port notes.
+# whole module does. Uncommented in the commit that links the module.
 #	features/net-snapshot/polyobj.cpp
 	features/net-snapshot/record.cpp
 	features/net-snapshot/csnap_replay.cpp
