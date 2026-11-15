@@ -264,6 +264,9 @@ struct SceneGeometry
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> dynDataBuf;
 	unsigned int dynDataCapacity = 0;               // [rc4l] in 32-bit words
 	unsigned int dynWordsPeak = 0;                  // [rc4l] the most words a frame's dynamic pieces could take
+	// [Doruk-Aksoy] Model geometry resident for the dynamic vertex shader's model surfaces (dgmodelgeo.cpp), its capacity in 32-bit words.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> modelGeoBuf;
+	unsigned int modelGeoCapacity = 0;
 	// [rc4l] The sector light table (fuaSectorLit), kSectorLightWords a sector, bound statically like the piece buffer, and what it holds.
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> sectorLightBuf;
 	unsigned int sectorLightCapacity = 0;           // [rc4l] in sectors
@@ -485,6 +488,10 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
 void ReserveDynamicSlots();
 // [rc4l] Room in the piece buffer for this frame's dynamic pieces, made before anything is recorded.
 void EnsureDynamicRecords();
+// [Doruk-Aksoy] The model geometry (dgmodelgeo.cpp): this frame's new geometries placed and sent, true when the buffer must be made again with the pipelines; made at the size held; and a GPU surface's world box, false when it is not drawn.
+bool EnsureModelGeometry(Diligent::IDeviceContext *ctx);
+bool MakeModelGeoBuffer(FString &err);
+bool ModelSurfaceWorldBox(const zx::levelmesh::MeshPiece &p, const float *matrix, float out[6]);
 bool SceneUpload(FString &report);
 
 // [rc4l] Mirrors (dgviews.cpp), and reflective planes and stacked views (dgviewtargets.cpp).

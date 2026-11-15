@@ -25,15 +25,21 @@ struct FModelVertex
 	}
 };
 
+// [Doruk-Aksoy] Whether a backend holds a geometry resident: not yet asked, held, or refused (it does not fit), which its surfaces then draw from the CPU.
+enum ModelGpuState { kModelGpuUnknown, kModelGpuResident, kModelGpuRefused };
+
 // [rc4l] `indexed` says the surfaces are drawn by `indices` (MD3, voxels) rather than as consecutive vertices (MD2); `built` that the loader has filled it.
+// [Doruk-Aksoy] `gpuState` and where the backend holds it, its vertices' and indices' first words, which only the main thread writes.
 struct FModelGeometry
 {
 	TArray<FModelVertex> verts;
 	TArray<unsigned int> indices;
 	bool indexed;
 	bool built;
+	mutable int gpuState;
+	mutable unsigned gpuVertWord, gpuIndexWord;
 
-	FModelGeometry() : indexed(false), built(false) {}
+	FModelGeometry() : indexed(false), built(false), gpuState(kModelGpuUnknown), gpuVertWord(0), gpuIndexWord(0) {}
 };
 
 #endif // ZX_MODELGEOMETRY_H

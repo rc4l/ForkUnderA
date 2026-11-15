@@ -33,9 +33,11 @@ so the backend's model path read GL's vertex buffer class to find a model's vert
   an unknown keyword, an unknown class or a class with no model is warned about, never fatal.
 
 GL's `gl/models/gl_models.cpp` keeps a vertex buffer per model, made from its geometry on first draw, and
-draws a frame's surfaces in one function for all three formats. The backend lerps the same geometry on the
-CPU (`features/levelmesh/modelmesh.cpp`, through `features/sprites/modelbuild.cpp`). `fua_sprite_check`
-compares every vertex of every surface the two make: 2,136 surfaces on scenario `modelstandalone`, 0 differed.
+draws a frame's surfaces in one function for all three formats. The backend keeps the same geometry resident
+and blends it in its vertex shader (`features/hwrender`'s GPU model surfaces); `FModelGeometry::gpuState` says
+whether it holds a model, and `ModelsGeneration` when every model was deleted. It still lerps on the CPU
+(`features/levelmesh/modelmesh.cpp`, through `features/sprites/modelbuild.cpp`) for what `fua_sprite_check`
+compares, every vertex of every surface the two make: 2,136 surfaces on scenario `modelstandalone`, 0 differed.
 
 ## In-engine hooks
 

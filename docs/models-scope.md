@@ -223,3 +223,27 @@ pass, which is also what GL does with one.
 Measured at `-5769,435,-184` facing `215,21` on `wdiex02`, the vantage rc4l reported it from --
 matched pair, same camera: **14.3% of pixels and `mean|d|` 4.3 before, 9.6% and 3.2 after**, and the
 interior is gone from the picture.
+
+## Built, 2026-11-15: blending and placing on the GPU
+
+Option A's warning came true: in a frozen DnD crowd, 20 spell models (16,313 triangles) cost 1.12 ms a frame,
+nearly all of it CPU, re-blending and transforming every corner every frame. So the vertex shader now does what
+GL's `main.vp` does, without Option B's second draw path: the models stay in the same dynamic stream, the same
+sort and the same pipelines.
+
+- **Geometry is resident.** Each model's keyframes and indices go to a storage buffer the first frame a surface of
+  it is drawn (`features/hwrender/diligent/dgmodelgeo.cpp`), and are dropped when the models are.
+- **A surface is a record, not corners.** The CPU writes 8 words a surface (both keyframes, the blend, the indices,
+  the matrix) and repeats one reference to it for every corner; the shader finds the corner from `gl_VertexIndex`
+  (`features/levelmesh/computation/modelgpu_compute`, whose `ComputeModelCorner` is the shader's branch word for word
+  and is tested against the CPU's corners).
+- **The CPU path stays** for what reads corners there (`fua_sprite_check`, GL's compared surfaces, FUAMODEL's
+  `FlatSurface`), for a model too big for one buffer, and on WebGPU. `fua_mesh_gpumodels 0` switches back.
+
+Measured with `.claude/notes/bench/playsim-probe/spellmodels.mjs`, one frozen session, four alternating rounds:
+p50 frame 1.87 ms on the GPU against 2.77 ms on the CPU, 1.61 ms with no models at all, so the models went from
+1.12 ms to 0.25 ms, and the GPU's own frame from 0.63 ms to 0.54 ms (less to upload). Scenario `gpumodels` checks
+an animated MD3 and MD2 mid-blend against GL in one frame; every model scenario against GL still passes.
+
+Normals are the next step: the loaders still drop them, and per-pixel model lighting needs them in the resident
+geometry.

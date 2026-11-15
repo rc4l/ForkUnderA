@@ -11,16 +11,21 @@
 namespace zx { namespace hwrender {
 
 // [rc4l] One dynamic piece's place: the piece, its first vertex of the stream and how many; a packed sprite's index among the frame's, else -1 with its first general vertex and its record behind the level's, -1 when the records ran out.
-struct DynSlot { int piece; unsigned first, count; int record; int sprite; unsigned general; };
+// [Doruk-Aksoy] `model` is a GPU model surface's index among the frame's model records, -1 for any other piece.
+struct DynSlot { int piece; unsigned first, count; int record; int sprite; unsigned general; int model; };
 
 // [rc4l] What a layout came to: the stream's vertices, the general vertices among them and the packed sprites.
-struct DynLayoutTotals { unsigned stream, general; int sprites; };
+// [Doruk-Aksoy] ...and the GPU model surfaces.
+struct DynLayoutTotals { unsigned stream, general; int sprites; int models; };
 
 // [rc4l] The pieces in draw order (`order`, `count` of them) back to back, `vertices[piece]` each and those with none left out; a packed piece (`packed[piece]`) takes the next sprite, any other the next general vertices and a record while `recordsLeft` last.
-DynLayoutTotals ComputeDynLayout(const int *order, int count, const unsigned *vertices, const bool *packed, int recordsLeft, std::vector<DynSlot> &out);
+// [Doruk-Aksoy] A GPU model surface (`model[piece]`, none when model is NULL) takes the next model record and a record, but no general vertices, since its corners come from the resident geometry.
+DynLayoutTotals ComputeDynLayout(const int *order, int count, const unsigned *vertices, const bool *packed, int recordsLeft, std::vector<DynSlot> &out,
+	const bool *model = nullptr);
 
 // [rc4l] The most dynamic words a frame of `pieces` pieces over `vertices` engine vertices can take: every piece packed (kSpriteWords) and every vertex general, a quad's four corners as six, plus the alignment before the sprites.
 // [Doruk-Aksoy] ...and its `matrices` model matrices behind the sprites.
+// [Doruk-Aksoy] A GPU model surface's record (kModelRecordWords) is under a packed sprite's words, so the bound holds it too.
 unsigned ComputeDynWordsBound(unsigned pieces, unsigned vertices, unsigned matrices);
 
 // [Doruk-Aksoy] Words a model matrix takes in the dynamic stream, its columns one after another.

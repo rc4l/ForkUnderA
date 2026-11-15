@@ -72,7 +72,10 @@ mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptur
 assigned over last frame's, and a run of pieces can be reserved at its end (`DynReserve`,
 `computation/dynquads_compute`) and written in place from the job pool (`DynPlace`) in the order appending
 them would have given. A model's surfaces resolved elsewhere (`computation/modelsurface_compute`) are handed over
-by `EmitModelSurface`, or placed by their caller with `ModelSurfacePiece` and counted by `ModelPlaced`. Decals on a 3D
+by `EmitModelSurface`, or placed by their caller with `ModelSurfacePiece` and counted by `ModelPlaced`. One the
+backend draws from resident geometry (`GpuModelWanted`, `computation/modelgpu_compute`) carries its span instead
+of corners (`MeshPiece::gpuGeometry`) and none of the stream's vertices (`EmitGpuModelSurface`, `DynAppendGpuModel`,
+`DynPlaceGpuModel`). Decals on a 3D
 floor's face, on a mirror's sheen and on a mid texture GL draws through a sky (`GLWF_SKYHACK`) are not built
 yet. Scenario `walldecal`.
 

@@ -6,17 +6,23 @@
 
 namespace zx { namespace hwrender {
 
-DynLayoutTotals ComputeDynLayout(const int *order, int count, const unsigned *vertices, const bool *packed, int recordsLeft, std::vector<DynSlot> &out)
+DynLayoutTotals ComputeDynLayout(const int *order, int count, const unsigned *vertices, const bool *packed, int recordsLeft, std::vector<DynSlot> &out,
+	const bool *model)
 {
 	out.clear();
-	DynLayoutTotals t = { 0, 0, 0 };
+	DynLayoutTotals t = { 0, 0, 0, 0 };
 	int records = 0;
 	for (int i = 0; i < count; i++)
 	{
 		const int piece = order[i];
 		if (vertices[piece] == 0) continue;
-		DynSlot s = { piece, t.stream, vertices[piece], -1, -1, 0 };
+		DynSlot s = { piece, t.stream, vertices[piece], -1, -1, 0, -1 };
 		if (packed[piece]) s.sprite = t.sprites++;
+		else if (model != nullptr && model[piece])
+		{
+			s.model = t.models++;
+			if (records < recordsLeft) s.record = records++;
+		}
 		else
 		{
 			s.general = t.general;

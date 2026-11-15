@@ -121,10 +121,11 @@ void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, in
 
 // [Doruk-Aksoy] One slot's surfaces into surfaces and verts, false when the slot's geometry or a skin's material is not made yet.
 static bool ResolveModelSlot(const FSpriteModelFrame *smf, int i, const FSpriteModelFrame *smfNext, double inter, int translation, const float *modelToWorld,
-	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts)
+	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts, bool drawnOnly, bool flatSurface)
 {
 	const FModelGeometry &g = smf->models[i]->mGeometry;
 	if (!g.built) return false;
+	const bool gpu = zx::levelmesh::GpuModelWanted(&g, drawnOnly ? zx::levelmesh::kModelDraw : zx::levelmesh::kModelChecked, flatSurface);
 	FModelSurface surfs[MD3_MAX_SURFACES];
 	float blend;
 	const int n = ModelSlotSurfaces(smf, i, smfNext, inter, surfs, blend);
@@ -134,7 +135,14 @@ static bool ResolveModelSlot(const FSpriteModelFrame *smf, int i, const FSpriteM
 		zx::materials::MaterialRef material = NULL;
 		if (!zx::materials::MaterialIfMade(surfs[k].skin, false, material)) return false;
 		if (material == NULL) continue;
-		ResolvedModelSurface r = { material, translation, (unsigned)verts.size(), surfs[k].count };
+		ResolvedModelSurface r = { material, translation, (unsigned)verts.size(), surfs[k].count, NULL, 0, 0, 0, 0.f };
+		if (gpu)
+		{
+			r.gpuGeometry = &g;
+			r.base1 = surfs[k].base1; r.base2 = surfs[k].base2; r.firstIndex = surfs[k].firstIndex; r.inter = blend;
+			surfaces.push_back(r);
+			continue;
+		}
 		verts.resize(verts.size() + r.count);
 		const zx::levelmesh::ModelSurfaceSpan span = { surfs[k].base1, surfs[k].base2, blend, surfs[k].firstIndex, surfs[k].count };
 		if (!zx::levelmesh::ComputeModelSurfaceCorners(g.verts.Size() ? &g.verts[0].x : NULL, g.verts.Size(), idx, g.indices.Size(), span, modelToWorld,
@@ -149,14 +157,14 @@ static bool ResolveModelSlot(const FSpriteModelFrame *smf, int i, const FSpriteM
 }
 
 bool ResolveModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation, const float *modelToWorld,
-	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts)
+	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts, bool drawnOnly, bool flatSurface)
 {
 	const size_t surfacesBefore = surfaces.size(), vertsBefore = verts.size();
 	double inter = 0.;
 	const FSpriteModelFrame *smfNext = NextModelFrame(smf, curState, curTics, ti, inter);
 	for (int i = 0; i < MAX_MODELS_PER_FRAME; i++)
 	{
-		if (smf->models[i] == NULL || ResolveModelSlot(smf, i, smfNext, inter, translation, modelToWorld, surfaces, verts)) continue;
+		if (smf->models[i] == NULL || ResolveModelSlot(smf, i, smfNext, inter, translation, modelToWorld, surfaces, verts, drawnOnly, flatSurface)) continue;
 		surfaces.resize(surfacesBefore);
 		verts.resize(vertsBefore);
 		return false;
