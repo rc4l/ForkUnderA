@@ -23,11 +23,8 @@ int VerifyFixture(const char* pszFilename, double skew);
 // Self-test entry points, run together by the fua_snap_selftest command.
 unsigned int RunFormatSelfTests();	// formattest.cpp
 unsigned int RunSelfTests();			// entities.cpp
-// [Kaori-Chani] The twelve units' own self-tests are not declared here any more: step 1
-// turned each into its *_compute_test.cpp GoogleTest file, so there is nothing left in
-// this tree to call. What a game binary can still answer, and a test binary cannot, is
-// whether its own build decodes the format correctly -- which is what formattest.cpp is
-// reduced to.
+// [Kaori-Chani] The units' self-tests became GoogleTest files in step 1; what only a game
+// binary can answer is whether its own build decodes correctly, which is formattest.cpp's.
 
 // Each block names itself as it runs, and the summary prints the names and
 // their count, so a block that never ran, or never called this, shows.
