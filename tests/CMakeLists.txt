@@ -122,9 +122,21 @@ target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${ENGINE_SRC}/
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock sqlite3)
 # [Kaori-Chani] The wide snapshot reference ships beside its module, and a dump that differs is
 # written into the build folder, so the whole difference can be taken with any tool.
-target_compile_definitions(zandrox_tests PRIVATE
-  ZX_SNAPSHOT_TESTDATA="${ENGINE_SRC}/features/net-snapshot/testdata"
-  ZX_SNAPSHOT_TESTOUT="${CMAKE_CURRENT_BINARY_DIR}")
+if(EMSCRIPTEN)
+  # [Kaori-Chani] Under Emscripten there is no host file system to reach, so both paths are
+  # MEMFS ones: the reference is embedded at /testdata by the link options below, and /tmp is
+  # a writable directory Emscripten's runtime creates for itself. A dump that differs lands
+  # there rather than in the build folder, so on this one platform it is in the node
+  # process's memory and gone when it exits; the failure still names the first line that
+  # differs, which is what the assertion reports, and any other build gives the file.
+  target_compile_definitions(zandrox_tests PRIVATE
+    ZX_SNAPSHOT_TESTDATA="/testdata"
+    ZX_SNAPSHOT_TESTOUT="/tmp")
+else()
+  target_compile_definitions(zandrox_tests PRIVATE
+    ZX_SNAPSHOT_TESTDATA="${ENGINE_SRC}/features/net-snapshot/testdata"
+    ZX_SNAPSHOT_TESTOUT="${CMAKE_CURRENT_BINARY_DIR}")
+endif()
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
 # it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
 # a hard error, not a warning), which silently made that impossible; /W4 is its equivalent. The
@@ -156,10 +168,23 @@ if(ZANDROX_TESTS_COVERAGE)
     -fprofile-instr-generate -fcoverage-mapping)
 endif()
 
-# [rc4l] The heap grows as the desktop's does, main runs on a worker so the job pool's threads can start while it waits, and the exit status is the tests' verdict; no test reads the disk, so the module keeps its in-memory file system.
+# [rc4l] The heap grows as the desktop's does, main runs on a worker so the job pool's threads can start while it waits, and the exit status is the tests' verdict.
+# [Kaori-Chani] "No test reads the disk" was true until the snapshot reference tests
+# arrived: they open ref-wide.csnap and write a dump beside it when it differs. The in-memory
+# file system stays -- the data goes into it instead. --embed-file puts the testdata folder
+# at /testdata inside the module (68 KB, one recording), which ZX_SNAPSHOT_TESTDATA names
+# above. Embedded rather than preloaded on purpose: an embedded file is there the moment main
+# runs, where a preloaded one needs the runtime's async fetch to have finished first, and
+# these tests are ordinary synchronous reads.
+#
+# [Kaori-Chani] These tests are NOT skipped on web, and that is the point: wasm32 is CI's
+# only 32-bit target, so the wide reference decoding byte for byte here is the strongest
+# check the 48.16 widening gets -- a fixed_t is eight bytes on every other platform in the
+# matrix, and a pointer is four here.
 if(EMSCRIPTEN)
   target_link_options(zandrox_tests PRIVATE "SHELL:-s ALLOW_MEMORY_GROWTH=1" "SHELL:-s EXIT_RUNTIME=1" "SHELL:-s STACK_SIZE=4MB"
-    "SHELL:-s PROXY_TO_PTHREAD=1" "SHELL:-s PTHREAD_POOL_SIZE=8")
+    "SHELL:-s PROXY_TO_PTHREAD=1" "SHELL:-s PTHREAD_POOL_SIZE=8"
+    "SHELL:--embed-file ${ENGINE_SRC}/features/net-snapshot/testdata@/testdata")
 endif()
 
 gtest_discover_tests(zandrox_tests)
