@@ -81,6 +81,7 @@
 #include "p_local.h"
 #include "sv_main.h"
 #include "features/identity/computation/connectchallenge_compute.h"
+#include "features/tic-pacing/pacing.h"   // [Kaori-Chani] fua_tictime_report
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
 #include "features/net-session/computation/joinupdate_compute.h"
@@ -685,6 +686,9 @@ void SERVER_Tick( void )
 	// [rc4l] Untimed, since the tick waits for its next tic inside.
 	ZX_SEAM_UNTIMED( "net/server_tick", Main );
 	unsigned int nowTime = 0;
+
+	// [Kaori-Chani] The server never calls TryRunTics, so it takes the pacing report here.
+	zx::ticpacing::Tick((unsigned int)gametic);
 
 	// [rc4l] features/net-transport: the receive thread follows its cvar, so it can be switched off and on in a running server.
 	if ( sv_fua_receivethread != zx::nettransport::ReceiveThreadRunning( ))

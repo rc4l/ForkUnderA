@@ -1255,6 +1255,14 @@ set( ONLINE_SOURCES
 if( NOT ZX_ONLINE )
 	set( ONLINE_SOURCES features/offline/offlinestubs.cpp )
 endif()
+
+# [Kaori-Chani] The tic wait is the time base's platform half, so it is a file chosen here
+# rather than a browser condition inside one (tools/platform-ifdef-tripwire.sh).
+if( EMSCRIPTEN )
+	set( ZX_TICTIME_WAIT i_tictime_web.cpp )
+else()
+	set( ZX_TICTIME_WAIT i_tictime_wait.cpp )
+endif()
 add_executable( zdoom WIN32
 	${HEADER_FILES}
 	${NOT_COMPILED_SOURCE_FILES}
@@ -1332,6 +1340,7 @@ add_executable( zdoom WIN32
 	# [Kaori-Chani] features/net-snapshot: the shared tic time base, which the three
 	# platform timers read instead of their own clocks.
 	i_tictime.cpp
+	${ZX_TICTIME_WAIT}
 	info.cpp
 	invasion.cpp #ST
 	joinqueue.cpp #ST
@@ -1744,6 +1753,7 @@ add_executable( zdoom WIN32
 	features/frame/framedriver.cpp
 	features/frame/viewtrace.cpp
 	features/frame/framestall.cpp
+	features/tic-pacing/pacing.cpp
 	features/frame/debugorbit.cpp
 	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
@@ -1811,6 +1821,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/frameroute_compute.cpp
 	features/frame/computation/viewtrace_compute.cpp
 	features/frame/computation/framestall_compute.cpp
+	features/tic-pacing/computation/pacing_compute.cpp
 	features/frame/computation/frameclock_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp

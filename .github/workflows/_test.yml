@@ -114,6 +114,11 @@ jobs:
       - name: crash-sync regression rule
         run: python3 tools/crash_sync_test.py
 
+      # [Kaori-Chani] The pacing job's own judgement: which figures fail a run and which are
+      # the runner's rather than the time base's.
+      - name: Test the tic pacing check
+        run: python3 tools/tic_pacing_check_test.py
+
       # [rc4l] Wire-format snapshot: the client/server protocol is Zandronum's (protocolspec/*.txt).
       # A backport that changes a command's fields/order/id -- or inserts a command, shifting every
       # later id -- silently desyncs multiplayer while single-player builds fine. This derives the

@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Kaori Ishida
+
+# [Kaori-Chani] The tic time base, measured on all three platforms. Replacing the platform timers
+# changed the pacing of every player, and nothing else here watches it: the unit tests cover the
+# arithmetic on a frequency they are handed, not the clock a machine actually has, and there is no
+# Mac in the loop to try it on by hand. Each leg hosts a map for two minutes and reads the engine's
+# own pacing lines (tools/tic_pacing_check.py), which is enough to catch a wrong rate, lost tics
+# and a stalled timer.
+name: pacing (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  pacing:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # [Kaori-Chani] Linux takes the dedicated server, the only headless binary built here and
+          # the only leg that exercises SERVER_Tick's own pacing rather than a client loop's.
+          - os: ubuntu-22.04
+            name: linux (dedicated server)
+            artifact: ForkUnderA-linux-server
+            unpack: tar -xzf *-server.tar.gz
+            engine: forkundera-server
+            no_host: "--no-host"
+          - os: macos-latest
+            name: macos (host)
+            artifact: ForkUnderA-macos
+            unpack: unzip -q -o *.zip
+            engine: ForkUnderA.app/Contents/MacOS/forkundera
+            no_host: ""
+          # [Kaori-Chani] 7-Zip rather than unzip, which the Windows image does not carry.
+          - os: windows-2022
+            name: windows (host)
+            artifact: ForkUnderA-windows
+            unpack: 7z x -y *.zip
+            engine: forkundera.exe
+            no_host: ""
+    runs-on: ${{ matrix.os }}
+    name: pacing (${{ matrix.name }})
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the engine
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: engine
+
+      - name: Unpack the engine
+        working-directory: engine
+        run: |
+          ${{ matrix.unpack }}
+          ls -R . | head -40
+
+      # [Kaori-Chani] The binary sits at a different depth in each package, so it is found rather
+      # than assumed; a rename would otherwise read as a pacing failure.
+      - name: Find the engine
+        id: find
+        working-directory: engine
+        run: |
+          path=$(find . -type f -name "$(basename '${{ matrix.engine }}')" | head -1)
+          [ -n "$path" ] || { echo "::error::no ${{ matrix.engine }} in the package"; exit 1; }
+          chmod +x "$path" || true
+          echo "engine=$(cd "$(dirname "$path")" && pwd)/$(basename "$path")" >> "$GITHUB_OUTPUT"
+
+      - name: Pace a map for two minutes
+        run: |
+          python3 tools/tic_pacing_check.py \
+            --engine "${{ steps.find.outputs.engine }}" \
+            --iwad "$PWD/tools/freedoom/freedoom2.wad" \
+            --seconds 120 --interval 30 ${{ matrix.no_host }}
