@@ -145,8 +145,8 @@ static int TicFrozen;
 
 void I_SelectTimer();
 
-// [Kaori-Chani] Seeded on the first read rather than at startup, since I_MSTime can be
-// called before I_SelectTimer runs.
+// [Kaori-Chani] Seeded on its first read, since I_MSTime can run before I_SelectTimer, so every
+// reader takes the base first rather than let one expression read the counter before the seed.
 static tictime_raw_t I_RawBase()
 {
 	if (RawBase == 0)
@@ -159,7 +159,8 @@ unsigned int I_MSTime (void)
 {
 	// [Kaori-Chani] The same monotonic counter the tics come from, so the two cannot
 	// disagree, and no NTP step or 49.7-day wrap moves it.
-	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - I_RawBase(), 1000);
+	const tictime_raw_t base = I_RawBase();
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - base, 1000);
 }
 
 // Exactly the same thing, but based does no modification to the time.
@@ -185,8 +186,8 @@ int I_GetTimePolled (bool saveMS)
 		return TicFrozen;
 	}
 
-	const tictime_raw_t now = TIC_GetRawCounter();
 	const tictime_raw_t base = I_RawBase();
+	const tictime_raw_t now = TIC_GetRawCounter();
 	// [Kaori-Chani] One exact division across the whole span, so the tic count cannot
 	// drift however long the process has been up.
 	const tictime_raw_t curtic = TIC_ScaleRaw(now - base, TICRATE);

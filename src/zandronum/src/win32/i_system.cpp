@@ -189,8 +189,8 @@ static tictime_raw_t TicNextRaw;
 static uint32 TicNextMS;
 static int TicFrozen;
 
-// [Kaori-Chani] Seeded on the first read rather than at startup, since the dedicated
-// server reads I_MSTime without ever calling I_SelectTimer (I_Init).
+// [Kaori-Chani] Seeded on its first read, since the dedicated server never calls I_SelectTimer,
+// so every reader takes the base first rather than read the counter before the seed.
 static tictime_raw_t I_RawBase()
 {
 	if (RawBase == 0)
@@ -295,7 +295,8 @@ unsigned int I_MSTime()
 {
 	// [Kaori-Chani] The same monotonic counter the tics come from, so the two cannot
 	// disagree, and no 49.7-day wrap moves it.
-	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - I_RawBase(), 1000);
+	const tictime_raw_t base = I_RawBase();
+	return (unsigned int)TIC_ScaleRaw(TIC_GetRawCounter() - base, 1000);
 }
 
 //==========================================================================
@@ -330,8 +331,8 @@ static int I_GetTimePolled(bool saveMS)
 		return TicFrozen;
 	}
 
-	const tictime_raw_t now = TIC_GetRawCounter();
 	const tictime_raw_t base = I_RawBase();
+	const tictime_raw_t now = TIC_GetRawCounter();
 	// [Kaori-Chani] One exact division across the whole span, so the tic count cannot
 	// drift however long the process has been up.
 	const tictime_raw_t curtic = TIC_ScaleRaw(now - base, TICRATE);
@@ -350,7 +351,8 @@ float I_GetTimeFloat( void )
 {
 	// [Kaori-Chani] In double, since a float holds about seven digits and the counter
 	// passes that within an hour.
-	const double elapsed = (double)(TIC_GetRawCounter() - I_RawBase());
+	const tictime_raw_t base = I_RawBase();
+	const double elapsed = (double)(TIC_GetRawCounter() - base);
 	return (float)(elapsed * (double)TICRATE / (double)TIC_GetRawFrequency());
 }
 

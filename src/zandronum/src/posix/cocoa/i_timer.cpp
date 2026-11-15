@@ -55,8 +55,8 @@ int s_ticFrozen;
 
 bool s_timerInitialized;
 
-// [Kaori-Chani] Seeded on the first read rather than in I_InitTimer, since I_MSTime is read
-// before the timer is initialised.
+// [Kaori-Chani] Seeded on its first read, since I_MSTime is read before I_InitTimer, so every
+// reader takes the base first rather than read the counter before the seed.
 tictime_raw_t RawBase()
 {
 	if (0 == s_rawBase)
@@ -74,8 +74,8 @@ int GetTimePolled(bool saveMS)
 		return s_ticFrozen;
 	}
 
-	const tictime_raw_t now = TIC_GetRawCounter();
 	const tictime_raw_t base = RawBase();
+	const tictime_raw_t now = TIC_GetRawCounter();
 	// [Kaori-Chani] One exact division across the whole span, so the tic count cannot drift
 	// however long the process has been up.
 	const tictime_raw_t curtic = TIC_ScaleRaw(now - base, TICRATE);
@@ -130,7 +130,8 @@ unsigned int I_MSTime()
 {
 	// [Kaori-Chani] The counter the tics come from, where this read gettimeofday, which an NTP
 	// correction steps mid-session.
-	return static_cast<unsigned int>(TIC_ScaleRaw(TIC_GetRawCounter() - RawBase(), 1000));
+	const tictime_raw_t base = RawBase();
+	return static_cast<unsigned int>(TIC_ScaleRaw(TIC_GetRawCounter() - base, 1000));
 }
 
 unsigned int I_FPSTime()
