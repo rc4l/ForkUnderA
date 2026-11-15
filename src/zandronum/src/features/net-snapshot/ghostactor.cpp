@@ -2654,9 +2654,8 @@ void zx::netsnapshot::GhostFrame()
 	// After this frame's mirrors exist, so a sound finds the one just created.
 	ghost_AttachPointSounds();
 
-	// [Kaori-Chani] Both held at I_MSTime's own width. Widening each to 64 bits before the
-	// subtraction breaks the modular arithmetic the wrap relies on: past the wrap the
-	// difference becomes enormous rather than small, and the report fires once in error.
+	// [Kaori-Chani] Both at I_MSTime's width, so the subtraction wraps with it; widening to
+	// 64 bits first breaks that.
 	const unsigned int nowMS2 = I_MSTime();
 	if (g_ghostReportMS == 0)
 		g_ghostReportMS = nowMS2;
