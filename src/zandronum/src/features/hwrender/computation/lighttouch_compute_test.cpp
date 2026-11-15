@@ -108,6 +108,21 @@ TEST(ComputeDynLightKind, AnAdditiveLightUnlessSubtractive)
 	EXPECT_FLOAT_EQ(7.f, zx::hwrender::ComputeDynLightKind(true, true, true, true));
 }
 
+// [Doruk-Aksoy] uzdoom@62afe5f0 hw_dynlightdata.cpp: r, g, b become length - r, length - g, length - b, so a red light takes green and blue away and a grey one a little of each.
+TEST(ComputeSubtractiveLightColor, EachChannelFromTheColoursLength)
+{
+	float red[3] = { 1.f, 0.f, 0.f };
+	zx::hwrender::ComputeSubtractiveLightColor(red);
+	EXPECT_FLOAT_EQ(0.f, red[0]); EXPECT_FLOAT_EQ(1.f, red[1]); EXPECT_FLOAT_EQ(1.f, red[2]);
+	float white[3] = { 0.5f, 0.5f, 0.5f };
+	zx::hwrender::ComputeSubtractiveLightColor(white);
+	const float len = 0.5f * 1.7320508f;
+	EXPECT_NEAR(len - 0.5f, white[0], 1e-6f); EXPECT_NEAR(len - 0.5f, white[1], 1e-6f); EXPECT_NEAR(len - 0.5f, white[2], 1e-6f);
+	float orange[3] = { 0.6f, 0.8f, 0.f };
+	zx::hwrender::ComputeSubtractiveLightColor(orange);
+	EXPECT_NEAR(0.4f, orange[0], 1e-6f); EXPECT_NEAR(0.2f, orange[1], 1e-6f); EXPECT_NEAR(1.f, orange[2], 1e-6f);
+}
+
 TEST(ComputeLightLinksStale, AnyChangeOfLightPlaceOrReach)
 {
 	const zx::hwrender::LightLinkKey kept = { 7u, 1, 2, 3, 64.f };

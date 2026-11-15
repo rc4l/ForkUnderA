@@ -244,6 +244,7 @@ void CollectDynamicLights(Diligent::IDeviceContext *ctx)
 			float rgb[3];
 			const bool additive = r_lights_additive || light.additive;
 			zx::hwrender::ComputeDynLightColor(light.red, light.green, light.blue, additive, r_lights_intensity * light.intensity, rgb);
+			if (light.subtractive) zx::hwrender::ComputeSubtractiveLightColor(rgb);
 
 			// Same axis swap the mesh uses: (x, z, y).
 			g_lightData.Push(FIXED2FLOAT(light.x));

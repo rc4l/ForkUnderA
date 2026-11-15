@@ -33,6 +33,9 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   a wall or flat adds them after the texture, a fifth as bright and held to 1, as UZDoom's `material_normal.fp` and
   Zandronum 3.3's `main.fp` do, so they brighten a dark texture as much as a light one. A PBR material takes none,
   as UZDoom's `material_pbr.fp` takes none; sprites and particles take them as plain lights, as both engines do.
+- A subtractive light takes each channel from its colour's length on walls and flats too
+  (`ComputeSubtractiveLightColor`), as UZDoom and Zandronum 3.3 do and sprites here already did, so a red one
+  darkens green and blue and leaves a surface reddened.
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;

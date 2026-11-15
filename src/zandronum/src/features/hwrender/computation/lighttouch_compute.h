@@ -28,6 +28,9 @@ void ComputeDynLightColor(int r, int g, int b, bool additive, float intensity, f
 // [Doruk-Aksoy] The light's flags as its colour's fourth float carries them to the scene shader: 1 for subtractive, plus 2 for attenuated, plus 4 for a spot, plus 8 for additive unless subtractive.
 float ComputeDynLightKind(bool subtractive, bool attenuated, bool spot, bool additive);
 
+// [Doruk-Aksoy] A subtractive light's colour as uzdoom@62afe5f0 hw_dynlightdata.cpp AddLightToList (and Zandronum 3.3's gl_GetLight) subtracts it: each channel taken from the colour's length.
+void ComputeSubtractiveLightColor(float rgb[3]);
+
 // [rc4l] The tic, level and light switches the lights were last collected under.
 struct LightsStamp
 {
