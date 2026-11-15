@@ -11,7 +11,7 @@
 #include "i_tictime.h"
 
 // [Kaori-Chani] Seconds between tic pacing lines, 0 for none; fua_tictime prints one on demand.
-CVAR(Int, fua_tictime_report, 0, CVAR_ARCHIVE)
+CVAR(Int, fua_tictime_report, 0, 0)
 
 namespace zx { namespace ticpacing {
 
