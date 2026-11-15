@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_stream.h
+// Filename: stream.h
 //
 // Description: The .zsnap reader: file framing, decompression and a
 // truncated tail, used by fua_snap_verify (design doc appendix B).

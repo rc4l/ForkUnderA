@@ -162,6 +162,9 @@ void				CLIENT_RequestSnapshot( void );
 bool				CLIENT_GetNextPacket( void );
 void				CLIENT_GetPackets( void );
 void				CLIENT_CheckForMissingPackets( void );
+// [Kaori-Chani] features/net-snapshot: reliable packets asked for past the highest received, read
+// and cleared together; declared only, since the counter it reads is a step 3 hook.
+unsigned int		CLIENT_TailPacketsRequested( bool bReset );
 bool				CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream );
 void				CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket );
 void				CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream );

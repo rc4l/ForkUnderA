@@ -337,6 +337,11 @@ bool S_ChangeSoundVolume(AActor *actor, int channel, float volume);
 
 // Moves all sounds from one mobj to another
 void S_RelinkSound (AActor *from, AActor *to);
+// [Kaori-Chani] features/net-snapshot: moves a free-standing S_Sound onto an actor that arrived
+// after it, returning 1 if moved, -1 if its channel was busy, 0 if none was playing.
+// Declared only: the body needs this tree's sound code read, which lacks S_IsChannelUsed.
+int S_AttachPointSound (fixed_t x, fixed_t y, fixed_t z, int channel, int sound_id,
+	AActor *actor);
 
 // Stores/retrieves playing channel information in an archive.
 void S_SerializeSounds(FArchive &arc);

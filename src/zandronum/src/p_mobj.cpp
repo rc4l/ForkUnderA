@@ -6819,7 +6819,7 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 // 
 //---------------------------------------------------------------------------
 
-void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator)
+AActor *P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator)	// [Kaori-Chani] returns its actor
 {
 	// [BB] Initialize with NULL.
 	AActor *th = NULL;
@@ -6924,6 +6924,8 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AAc
 
 	if (bloodtype >= 1)
 		P_DrawSplash2 (40, x, y, z, dir, 2, bloodcolor);
+
+	return th;	// [Kaori-Chani] NULL when no blood class spawned one
 }
 
 //---------------------------------------------------------------------------
@@ -6932,8 +6934,9 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AAc
 //
 //---------------------------------------------------------------------------
 
-void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
+AActor *P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	// [Kaori-Chani] returns its actor
 {
+	AActor *mo = NULL;	// [Kaori-Chani] hoisted, so the caller can have it
 	PalEntry bloodcolor = originator->GetBloodColor();
 	const PClass *bloodcls = originator->GetBloodType(1); 
 
@@ -6944,7 +6947,6 @@ void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 
 	if (bloodcls != NULL)
 	{
-		AActor *mo;
 
 		mo = Spawn(bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
 		mo->target = originator;
@@ -6977,6 +6979,8 @@ void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 	// [BB] Tell the clients to spawn the splatter.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVERCOMMANDS_SpawnBloodSplatter( x, y, z, originator, false );
+
+	return mo;	// [Kaori-Chani] NULL when no blood class spawned one
 }
 
 //===========================================================================
@@ -6985,8 +6989,9 @@ void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 //
 //===========================================================================
 
-void P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
+AActor *P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	// [Kaori-Chani] returns its actor
 {
+	AActor *mo = NULL;	// [Kaori-Chani] hoisted, so the caller can have it
 	PalEntry bloodcolor = originator->GetBloodColor();
 	const PClass *bloodcls = originator->GetBloodType(2);
 
@@ -6997,7 +7002,6 @@ void P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 
 	if (bloodcls != NULL)
 	{
-		AActor *mo;
 		
 		x += ((pr_splat()-128)<<11);
 		y += ((pr_splat()-128)<<11);
@@ -7021,6 +7025,8 @@ void P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 	// [BB] Tell the clients to spawn the splatter.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVERCOMMANDS_SpawnBloodSplatter( x, y, z, originator, true );
+
+	return mo;	// [Kaori-Chani] NULL when no blood class spawned one
 }
 
 //---------------------------------------------------------------------------

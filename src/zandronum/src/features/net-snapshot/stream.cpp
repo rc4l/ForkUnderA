@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_stream.cpp
+// Filename: stream.cpp
 //
 // Description: The .zsnap reader. See snap_stream.h.
 //

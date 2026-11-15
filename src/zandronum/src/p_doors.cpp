@@ -370,18 +370,25 @@ void DDoor::DoorSound(bool raise, DSeqNode *curseq) const
 		choice += 2;
 	}
 
-	if (m_Sector->seqType >= 0)
+	P_DoorSoundSector (m_Sector, choice, curseq);
+}
+
+// [Kaori-Chani] features/net-snapshot: DoorSound's body keyed by sector, for a client with no
+// DDoor. DoorSound calls it, and the body is unchanged but for m_Sector becoming sec.
+void P_DoorSoundSector (sector_t *sec, int choice, DSeqNode *curseq)
+{
+	if (sec->seqType >= 0)
 	{
-		if (curseq == NULL || !SN_AreModesSame(m_Sector->seqType, SEQ_DOOR, choice, curseq->GetModeNum()))
+		if (curseq == NULL || !SN_AreModesSame(sec->seqType, SEQ_DOOR, choice, curseq->GetModeNum()))
 		{
-			SN_StartSequence(m_Sector, CHAN_CEILING, m_Sector->seqType, SEQ_DOOR, choice);
+			SN_StartSequence(sec, CHAN_CEILING, sec->seqType, SEQ_DOOR, choice);
 		}
 	}
-	else if (m_Sector->SeqName != NAME_None)
+	else if (sec->SeqName != NAME_None)
 	{
-		if (curseq == NULL || !SN_AreModesSame(m_Sector->SeqName, choice, curseq->GetModeNum()))
+		if (curseq == NULL || !SN_AreModesSame(sec->SeqName, choice, curseq->GetModeNum()))
 		{
-			SN_StartSequence(m_Sector, CHAN_CEILING, m_Sector->SeqName, choice);
+			SN_StartSequence(sec, CHAN_CEILING, sec->SeqName, choice);
 		}
 	}
 	else
@@ -403,10 +410,10 @@ void DDoor::DoorSound(bool raise, DSeqNode *curseq) const
 
 			// Search the front top textures of 2-sided lines on the door sector
 			// for a door sound to use.
-			for (int i = 0; i < m_Sector->linecount; ++i)
+			for (int i = 0; i < sec->linecount; ++i)
 			{
 				const char *texname;
-				line_t *line = m_Sector->lines[i];
+				line_t *line = sec->lines[i];
 
 				if (line->backsector == NULL)
 					continue;
@@ -445,7 +452,7 @@ void DDoor::DoorSound(bool raise, DSeqNode *curseq) const
 		}
 		if (curseq == NULL || !SN_AreModesSame(snd, choice, curseq->GetModeNum()))
 		{
-			SN_StartSequence(m_Sector, CHAN_CEILING, snd, choice);
+			SN_StartSequence(sec, CHAN_CEILING, snd, choice);
 		}
 	}
 }

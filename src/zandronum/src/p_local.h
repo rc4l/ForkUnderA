@@ -149,9 +149,11 @@ enum EPuffFlags
 
 // [BC] Added bTellClientToSpawn.
 AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t y, fixed_t z, angle_t dir, int updown, int flags = 0, AActor *vict = NULL, bool bTellClientToSpawn = true);
-void	P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator);
-void	P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
-void	P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
+// [Kaori-Chani] features/net-snapshot: these return the actor they spawn, for step 3's cosmetic
+// capture; every existing caller ignores it, so behaviour is unchanged.
+AActor	*P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator);
+AActor	*P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
+AActor	*P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
 void	P_RipperBlood (AActor *mo, AActor *bleeder);
 int		P_GetThingFloorType (AActor *thing);
 void	P_ExplodeMissile (AActor *missile, line_t *explodeline, AActor *target, bool bExplodeOnClient = true); // [RK] Added bExplodeOnClient.

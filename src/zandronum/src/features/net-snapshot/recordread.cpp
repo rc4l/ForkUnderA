@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: cl_recordread.cpp
+// Filename: recordread.cpp
 //
 // Description: The .csnap reader, declared in cl_record.h. Engine-free, so
 // snap_tools/formattest's fuzzer can build it.

@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_format.h
+// Filename: format.h
 //
 // Description: The snapshot wire format: quantizers, entity and event
 // records, mover records and the .zsnap framing (design doc section 3,

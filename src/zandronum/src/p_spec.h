@@ -736,6 +736,8 @@ bool EV_DoDoor (DDoor::EVlDoor type, line_t *line, AActor *thing,
 				int lightTag, bool boomgen = false);
 void P_SpawnDoorCloseIn30 (sector_t *sec);
 void P_SpawnDoorRaiseIn5Mins (sector_t *sec);
+// [Kaori-Chani] features/net-snapshot: DoorSound's body by sector, choice being DoorSound's 0-3.
+void P_DoorSoundSector (sector_t *sec, int choice, class DSeqNode *curseq);
 
 class DAnimatedDoor : public DMovingCeiling
 {

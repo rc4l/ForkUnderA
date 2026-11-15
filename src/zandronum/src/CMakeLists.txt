@@ -2254,7 +2254,17 @@ target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
 # servercommands.h through network/netcommand.h.
 add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/capture.cpp
-	features/net-snapshot/clienttrack.cpp )
+	features/net-snapshot/clienttrack.cpp
+	features/net-snapshot/apply.cpp
+	features/net-snapshot/entities.cpp
+	features/net-snapshot/ghostactor.cpp )
 add_dependencies( netsnapshot_layers revision_check protocolspec )
+# [Kaori-Chani] zdoom's target-scoped definitions and include paths, copied by property, so the
+# layers build under the game's own settings and no struct differs when step 3 links them.
+target_compile_definitions( netsnapshot_layers
+	PRIVATE $<TARGET_PROPERTY:zdoom,COMPILE_DEFINITIONS> )
+target_include_directories( netsnapshot_layers
+	PRIVATE $<TARGET_PROPERTY:zdoom,INCLUDE_DIRECTORIES> )
+# [Kaori-Chani] COMPILE_OPTIONS (/Zi /FS) is not copied: it changes debug info, not meaning.
 
 

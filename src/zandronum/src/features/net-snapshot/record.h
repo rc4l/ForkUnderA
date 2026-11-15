@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: cl_record.h
+// Filename: record.h
 //
 // Description: The client-side snapshot recorder (.csnap) and its reader:
 // payloads with their arrival times, drawn frames with the player's pose,
