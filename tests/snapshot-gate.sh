@@ -29,7 +29,7 @@ record() { NAMES+=("$1"); RESULTS+=("$2"); }
 banner() { printf '\n\033[1m=== %s\033[0m\n' "$1"; }
 
 banner "environment"
-for t in cmake ctest clang clang++ llvm-profdata llvm-cov g++; do
+for t in cmake ctest clang clang++ llvm-profdata llvm-cov g++ python3; do
   printf '  %-14s %s\n' "$t" "$(command -v "$t" 2>/dev/null || echo '(not found)')"
 done
 printf '  %-14s %s\n' "cmake" "$(cmake --version 2>/dev/null | head -1)"
@@ -52,8 +52,12 @@ if cmake -S tests -B "$BUILD" -DZANDROX_TESTS_SANITIZE=ON >/dev/null &&
   else
     record "snapshot tests (ASan + UBSan)" FAIL
   fi
-  banner "1b   the rest of the suite, for the record"
-  if "$BUILD/zandrox_tests" --gtest_filter='-Snapshot*' >"$BUILD/rest.log" 2>&1; then
+  banner "1b   the rest of the suite, the way CI runs it"
+  # [Kaori-Chani] run_all.py runs every test program, as all three CI test jobs do; 1a, filtered
+  # to the module's own suites, is the step that must be clean.
+  if ! command -v python3 >/dev/null 2>&1; then
+    record "the repo's other tests" "skipped (python3 not found; CI runs tests/run_all.py)"
+  elif python3 tests/run_all.py "$BUILD" >"$BUILD/rest.log" 2>&1; then
     record "the repo's other tests" pass
   else
     echo "  not clean; its tail follows. A VoiceHear crash and VoicechatConvert.NullPointers are"
