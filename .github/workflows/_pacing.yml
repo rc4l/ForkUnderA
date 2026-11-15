@@ -58,7 +58,6 @@ jobs:
         working-directory: engine
         run: |
           ${{ matrix.unpack }}
-          ls -R . | head -40
 
       # [Kaori-Chani] The binary sits at a different depth in each package, so it is found rather
       # than assumed; a rename would otherwise read as a pacing failure.
@@ -66,7 +65,7 @@ jobs:
         id: find
         working-directory: engine
         run: |
-          path=$(find . -type f -name "$(basename '${{ matrix.engine }}')" | head -1)
+          path=$(find . -type f -name "$(basename '${{ matrix.engine }}')" | head -1 || true)
           [ -n "$path" ] || { echo "::error::no ${{ matrix.engine }} in the package"; exit 1; }
           chmod +x "$path" || true
           echo "engine=$(cd "$(dirname "$path")" && pwd)/$(basename "$path")" >> "$GITHUB_OUTPUT"
