@@ -1904,7 +1904,7 @@ static unsigned int g_ghostSolidMax = 0;
 static QWORD g_ghostSolidCorpseAccum = 0;
 static unsigned int g_ghostCensusFrames = 0;
 static unsigned int g_ghostNearMax = 0;
-static QWORD g_ghostReportMS = 0;
+static unsigned int g_ghostReportMS = 0;	// [Kaori-Chani] I_MSTime's width, so it wraps with it
 
 static void ghost_Report();
 
@@ -2654,7 +2654,10 @@ void zx::netsnapshot::GhostFrame()
 	// After this frame's mirrors exist, so a sound finds the one just created.
 	ghost_AttachPointSounds();
 
-	const QWORD nowMS2 = (QWORD)I_MSTime();
+	// [Kaori-Chani] Both held at I_MSTime's own width. Widening each to 64 bits before the
+	// subtraction breaks the modular arithmetic the wrap relies on: past the wrap the
+	// difference becomes enormous rather than small, and the report fires once in error.
+	const unsigned int nowMS2 = I_MSTime();
 	if (g_ghostReportMS == 0)
 		g_ghostReportMS = nowMS2;
 	if ((nowMS2 - g_ghostReportMS) >= 5000)

@@ -2008,9 +2008,13 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 	else if ((cl.fillStartMS != 0) && (cl.believedCount >= worldCount))
 	{
 		const unsigned int now = I_MSTime();
+		// [Kaori-Chani] Subtracted unsigned below, not guarded by a comparison. fillStartMS is
+		// set earlier on this same timeline, so `now` can only precede it when I_MSTime wraps
+		// -- 32-bit milliseconds, so about every 49.7 days of uptime -- and there the unsigned
+		// difference is still the right answer where a guard would report 0 ms instead.
 		Printf("[snap] JOIN FILL: client %u reached %u of %u entities in %u ms\n",
 			client, cl.believedCount, worldCount,
-			(now >= cl.fillStartMS) ? (now - cl.fillStartMS) : 0u);
+			now - cl.fillStartMS);
 		cl.fillStartMS = 0;
 		cl.fillReported = true;		// once per fill, not once per frame after it
 	}
