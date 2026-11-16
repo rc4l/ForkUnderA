@@ -1568,6 +1568,10 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 	// Tell the client that we're about to send him a snapshot of the level.
 	SERVERCOMMANDS_BeginSnapshot( g_lCurrentClient );
 
+	// [Kaori-Chani] features/net-snapshot: ahead of every legacy mover command below, and of
+	// the polyobjects' own.
+	zx::netsnapshot::SendMoverGateTo( g_lCurrentClient );
+
 	// Send welcome message.
 	SERVER_PrintfPlayer( g_lCurrentClient, "Version %s Server\n", DOTVERSIONSTR );
 
@@ -3174,6 +3178,11 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 	// [Doruk-Aksoy] features/acs-shaders: the level's post-process shaders as scripts left them, everyone's and the joiner's own.
 	zx::acsshaders::SendShaderStateTo( ulClient );
+
+	// [Kaori-Chani] features/net-snapshot: here and at each level authentication, so a spawned
+	// client has both before the first record reaches it.
+	SERVERCOMMANDS_SnapJoin( ulClient, SVCF_ONLYTHISCLIENT );
+	zx::netsnapshot::SendSoundTable( ulClient );
 }
 
 //*****************************************************************************
@@ -7193,6 +7202,10 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 		if ( invasion )
 			SERVERCOMMANDS_SetInvasionWave( g_lCurrentClient, SVCF_ONLYTHISCLIENT );
 	}
+
+	// [Kaori-Chani] features/net-snapshot: ahead of every legacy mover command below, and of
+	// the polyobjects' own.
+	zx::netsnapshot::SendMoverGateTo( g_lCurrentClient );
 
 	// Tell the client of any lines that have been altered since the level start.
 	SERVER_UpdateLines( g_lCurrentClient );

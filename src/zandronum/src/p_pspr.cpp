@@ -41,6 +41,7 @@
 #include "p_tick.h"
 #include "cl_main.h"
 #include "computation/psprite_overlay_compute.h"
+#include "features/net-snapshot/entities.h"   // [Kaori-Chani] the local fire's own stamp
 
 
 // MACROS ------------------------------------------------------------------
@@ -512,6 +513,16 @@ void P_FireWeapon (player_t *player, FState *state)
 		(( player - players ) == consoleplayer ))
 	{
 		player->mo->PlayAttacking ();
+	}
+
+	// [Kaori-Chani] features/net-snapshot: fire-to-draw latency, the live pass only, since a
+	// replay would restamp it.
+	if ((( player - players ) == consoleplayer )
+		&& ( CLIENT_PREDICT_IsPredicting( ) == false )
+		&& ( player->mo != NULL ))
+	{
+		zx::netsnapshot::NoteLocalFire( (int)( player->mo->x >> FRACBITS ),
+			(int)( player->mo->y >> FRACBITS ), I_MSTime( ));
 	}
 
 	weapon->bAltFire = false;

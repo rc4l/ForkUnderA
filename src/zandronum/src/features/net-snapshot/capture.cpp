@@ -72,6 +72,42 @@ using namespace zx::netsnapshot;
 CVAR(Bool, fua_snap, false, CVAR_NOSETBYACS)
 CVAR(Int, fua_snap_stats, 0, CVAR_NOSETBYACS)
 
+// [Kaori-Chani] The gate's two directions. Off is the fallback if the snapshot
+// misbehaves, so it takes effect in the tick it is set; on waits for the next
+// map, where every client is sent a frame and a sound table anyway, so none is
+// left applying records against a frame it never got.
+static bool g_snapGateOn = false;
+static bool g_snapGateAsked = false;	// an on, waiting for that map
+
+static bool snap_GateOn()
+{
+	return g_snapGateOn;
+}
+
+// Before any other work in the tick, so an off reaches the mover gate and the
+// resets below it in the same tick.
+static void snap_GateTick()
+{
+	if (fua_snap == false)
+	{
+		g_snapGateOn = false;
+		g_snapGateAsked = false;
+		return;
+	}
+	if (g_snapGateOn || g_snapGateAsked)
+		return;
+	g_snapGateAsked = true;
+	Printf("fua_snap takes effect at the next map.\n");
+}
+
+// At the teardown in P_SetupLevel, which runs before the next map's data loads
+// and before its clients are sent anything.
+static void snap_GateLatch()
+{
+	g_snapGateOn = fua_snap;
+	g_snapGateAsked = false;
+}
+
 // The per-frame payload budget in uncompressed bytes, across datagrams, the
 // packet ceiling applying to each chunk; archived, as a calibrated parameter.
 CUSTOM_CVAR(Int, fua_snap_maxbytes, 4500, CVAR_ARCHIVE | CVAR_NOSETBYACS)
@@ -1259,7 +1295,8 @@ CVAR(Int, fua_snap_cosmetic_bytes, 600, CVAR_NOSETBYACS)	// budget per client pe
 
 static bool snap_CosActive()
 {
-	return (fua_snap_cosmetic_events > 0) && fua_snap && (NETWORK_GetState() == NETSTATE_SERVER);
+	return (fua_snap_cosmetic_events > 0) && snap_GateOn()
+		&& (NETWORK_GetState() == NETSTATE_SERVER);
 }
 
 // Acting needs the events to reach someone.
@@ -3629,7 +3666,7 @@ bool zx::netsnapshot::ConsumeSnapshotQueued(unsigned int client)
 
 void zx::netsnapshot::NoteUnreliablePacket(unsigned int payloadBytes, unsigned int wireBytes, bool usedZstd)
 {
-	if ((fua_snap == false) || (payloadBytes == 0))
+	if ((snap_GateOn() == false) || (payloadBytes == 0))
 		return;
 
 	g_wirePayloadBytes += payloadBytes;
@@ -3652,7 +3689,7 @@ bool zx::netsnapshot::SuppressesLegacy( const AActor *pActor, int updateClass )
 {
 	// Nothing is suppressed unless deltas are going out, since capturing
 	// alone leaves the legacy channel the only one.
-	if ((fua_snap == false) || (fua_snap_send == false))
+	if ((snap_GateOn() == false) || (fua_snap_send == false))
 		return false;
 
 	// A routed cosmetic reaches clients as an event, at any level; a legacy
@@ -3687,7 +3724,7 @@ static QWORD g_legacyPlayerSkips = 0;
 
 bool zx::netsnapshot::SuppressesLegacyPlayer(unsigned int client)
 {
-	if ((fua_snap == false) || (fua_snap_send == false))
+	if ((snap_GateOn() == false) || (fua_snap_send == false))
 		return false;
 	if (fua_snap_nolegacy < 3)
 		return false;
@@ -3710,7 +3747,7 @@ QWORD zx::netsnapshot::LegacyPlayerSkips(bool bReset)
 
 bool zx::netsnapshot::SuppressesLegacyLocal(unsigned int client)
 {
-	if ((fua_snap == false) || (fua_snap_send == false))
+	if ((snap_GateOn() == false) || (fua_snap_send == false))
 		return false;
 	if (fua_snap_nolegacy < 3)
 		return false;
@@ -3817,6 +3854,9 @@ void zx::netsnapshot::TakeSoundTable()
 
 void zx::netsnapshot::SendSoundTable(unsigned int client)
 {
+	// A gate-off server sends the legacy protocol and nothing else.
+	if (snap_GateOn() == false)
+		return;
 	NetCommand command(SVC2_SNAPSOUNDTABLE);
 	command.addByte(g_snapMapStamp);
 	command.addShort((int)g_soundTableCount);
@@ -4006,6 +4046,9 @@ void zx::netsnapshot::MapChanged()
 	// The next map reuses ids without leaves and may take another frame, so a
 	// recording holds one map and ends here.
 	snap_RecordStop("map changed");
+
+	// [Kaori-Chani] And an fua_snap set during the last map takes effect here.
+	snap_GateLatch();
 
 	++g_snapMapStamp;
 	g_mapFrameDue = true;
@@ -5494,9 +5537,24 @@ static bool snap_MoverGateNow()
 		&& (fua_snap_nolegacy >= SNAPLEGACY_EXISTENCE);
 }
 
+bool zx::netsnapshot::GateOn()
+{
+	return snap_GateOn();
+}
+
 bool zx::netsnapshot::MoverGate()
 {
 	return g_moverGate;
+}
+
+// A joiner is told the gate as it stands, but only while the snapshot is on: a gate-off
+// server owes a joiner nothing, and the pump below sends the off itself, when GateOn has
+// already gone false.
+void zx::netsnapshot::SendMoverGateTo(unsigned int client)
+{
+	if (snap_GateOn() == false)
+		return;
+	SERVERCOMMANDS_SnapMoverGate(g_moverGate, 0, client, SVCF_ONLYTHISCLIENT);
 }
 
 bool zx::netsnapshot::MoverServerStops(BYTE cls, bool bPlane)
@@ -5565,6 +5623,9 @@ static void snap_MoverGatePump()
 
 void zx::netsnapshot::ServerTick()
 {
+	// First, so the rest of this tick acts on the gate as it stands now.
+	snap_GateTick();
+
 	// Above the fua_snap test, so turning it off mid-delay cannot strand
 	// the send and leave every client's window open.
 	if ((g_resetSplitDue != 0) && (gametic >= g_resetSplitDue))
@@ -5577,7 +5638,7 @@ void zx::netsnapshot::ServerTick()
 	if (NETWORK_GetState() == NETSTATE_SERVER)
 		snap_MoverGatePump();
 
-	if ((NETWORK_GetState() != NETSTATE_SERVER) || (fua_snap == false))
+	if ((NETWORK_GetState() != NETSTATE_SERVER) || (snap_GateOn() == false))
 		return;
 
 	// The wall period since the previous pump, sampled before any work, the
@@ -5707,7 +5768,7 @@ CCMD(fua_snap_record)
 	if (g_snapInitialized)
 		memset(g_prevPresent, 0, SNAP_MAXID);
 
-	if (fua_snap == false)
+	if (snap_GateOn() == false)
 		Printf("fua_snap_record: note - fua_snap is OFF; nothing will be captured until it is enabled.\n");
 
 	Printf("fua_snap_record: recording to '%s'.\n", filename.GetChars());
@@ -6263,7 +6324,7 @@ void zx::netsnapshot::MoverTick()
 // sweeps, so a capture without it fills slots nothing ever releases.
 bool zx::netsnapshot::MoversOn()
 {
-	return fua_snap_movers && fua_snap && (NETWORK_GetState() == NETSTATE_SERVER);
+	return fua_snap_movers && snap_GateOn() && (NETWORK_GetState() == NETSTATE_SERVER);
 }
 
 // The half every class shares, the seq and gone bookkeeping; `bAllocate` false

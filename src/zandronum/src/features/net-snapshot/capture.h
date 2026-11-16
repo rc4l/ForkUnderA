@@ -302,9 +302,16 @@ void MoverPolyStats(unsigned int & reclaimed, unsigned int & overCap,
 BYTE NewMoverGen();
 // The capture's own gate.
 bool MoversOn();
+// Whether the snapshot is on as the server is acting on it: fua_snap latched
+// at a map load, since an on mid-map waits for the next one.
+bool GateOn();
+
 // The legacy mover gate, latched once a pump, which stops the tracked classes'
 // state commands and the door sound.
 bool MoverGate();
+
+// Tells one joining client the mover gate, if the snapshot is on at all.
+void SendMoverGateTo(unsigned int client);
 // True, and counted, when the gate stops a legacy send for this class (bPlane:
 // a verification write, counted apart).
 bool MoverServerStops(BYTE cls, bool bPlane = false);

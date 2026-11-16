@@ -208,6 +208,7 @@
  50 SVC2_FUASETACTORUNIFORM                [Extended] : Actor Byte Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
  51 SVC2_SNAPMOVERGATE                     [Extended] : Bool Long
  52 SVC2_SETTHINGNETID                     [Extended] : NetID NetID
+ 53 SVC2_SNAPJOIN                          [Extended] : Byte Byte Long Long Long Byte Byte Byte
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE

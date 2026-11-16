@@ -163,6 +163,9 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
+#include "features/net-snapshot/apply.h"   // [Kaori-Chani] the client's side of the snapshot
+#include "features/net-snapshot/entities.h"   // [Kaori-Chani] the map frame and the stamps
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the ghost table
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
@@ -614,6 +617,11 @@ static void client_ResetValuesOnConnection( void )
 
 	// Make sure our visibility is normal.
 	R_SetVisibility( 8.0f );
+
+	// [Kaori-Chani] features/net-snapshot: a new server may count map stamps and resets from 1
+	// again.
+	zx::netsnapshot::ResetMapStamp( );
+	zx::netsnapshot::MoverForgetResetCount( );
 }
 
 //*****************************************************************************
@@ -1745,6 +1753,10 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			// Check to see if we have the map.
 			if ( P_CheckIfMapExists( g_szMapName ))
 			{
+				// [Kaori-Chani] features/net-snapshot: no ghost survives a map change, even
+				// with no level up.
+				zx::netsnapshot::LevelUnloaded( );
+
 				// Start new level.
 				G_InitNew( g_szMapName, false );
 
@@ -2303,6 +2315,28 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			switch ( lExtCommand )
 			{
+			// [Kaori-Chani] features/net-snapshot: the four the module reads, each ignored
+			// until a SnapJoin has anchored the stream.
+			case SVC2_SNAPSHOT:
+
+				zx::netsnapshot::OnSnapshot( pByteStream );
+				break;
+
+			case SVC2_DOORSOUND:
+
+				zx::netsnapshot::OnDoorSound( pByteStream );
+				break;
+
+			case SVC2_SNAPSOUNDTABLE:
+
+				zx::netsnapshot::OnSoundTable( pByteStream );
+				break;
+
+			case SVC2_SNAPCOSMETIC:
+
+				zx::netsnapshot::CosmeticEvents( pByteStream );
+				break;
+
 			case SVC2_SETINVENTORYICON:
 
 				client_SetInventoryIcon( pByteStream );
@@ -2874,6 +2908,11 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 
 	// Clear out the existing players.
 	CLIENT_ClearAllPlayers();
+
+	// [Kaori-Chani] features/net-snapshot: no ghosts left, so a later connection starts from an
+	// empty table, and no mover gate, so it starts as stock.
+	zx::netsnapshot::LevelUnloaded( );
+	zx::netsnapshot::MoverForgetServerGate( );
 
 	// If we're connected in any way, send a disconnect signal.
 	// [BB] But only if we are actually a client. Otherwise we can't send the signal anywhere.
@@ -3776,6 +3815,10 @@ void ServerCommands::BeginSnapshot::Execute()
 {
 	// Display in the console that we're receiving a snapshot.
 	Printf( "Receiving snapshot...\n" );
+
+	// [Kaori-Chani] features/net-snapshot: this update re-sends them all, so a repeated one
+	// would double them.
+	zx::netsnapshot::SpecialClearForFullUpdate( );
 
 	// Set the client connection state to receiving a snapshot. This disables things like
 	// announcer sounds.
@@ -7779,6 +7822,9 @@ void ServerCommands::MapLoad::Execute()
 	// Check to see if we have the map.
 	if ( P_CheckIfMapExists( mapName ))
 	{
+		// [Kaori-Chani] features/net-snapshot: as in the level-authentication handler above.
+		zx::netsnapshot::LevelUnloaded( );
+
 		// Start new level.
 		G_InitNew( mapName, false );
 
@@ -10229,6 +10275,16 @@ void ServerCommands::SetDominationPointState::Execute()
 
 	DOMINATION_SetContesting( point, contesting );
 	DOMINATION_SetDisabled( point, disabled );
+}
+
+//*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: destroys nothing, as the movers have just been sent;
+// the frame goes first, so a recording's map record carries it.
+void ServerCommands::SnapJoin::Execute()
+{
+	zx::netsnapshot::SetMapFrame( originX, originY, originZ, widthX, widthY, widthZ );
+	zx::netsnapshot::AnchorMapStamp( static_cast<BYTE>( mapStamp ));
+	zx::netsnapshot::MoverSetResetCount( static_cast<BYTE>( resetCount ));
 }
 
 //*****************************************************************************

@@ -492,6 +492,9 @@ void	SERVERCOMMANDS_CloseMenu( const unsigned int player );
 void	SERVERCOMMANDS_StartConversation( AActor *npc, ULONG player, int nodenum, bool facetalker, bool saveangle );
 void	SERVERCOMMANDS_ConversationReply( ULONG player, int nodenum, int replynum );
 void	SERVERCOMMANDS_EndConversation( ULONG player );
+// [Kaori-Chani] features/net-snapshot: the snapshot stream a joiner is about to read: its map
+// stamp, reset count and position frame.
+void	SERVERCOMMANDS_SnapJoin( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 // [Kaori-Chani] features/net-snapshot: tells a client whether the legacy mover commands are
 // stopped, and from which frame. Declared only: its body builds a ServerCommands class the
 // protocol spec generates, so the body arrives with that spec entry.

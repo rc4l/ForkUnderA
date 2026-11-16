@@ -5938,9 +5938,31 @@ void APathFollower::SyncWithClient ( const ULONG ulClient )
 
 //*****************************************************************************
 //
+// [Kaori-Chani] features/net-snapshot: the reset count is the last one DestroyAllSectorMovers
+// carried, so a client joining while that send is deferred waits for it.
+void SERVERCOMMANDS_SnapJoin( ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	// A gate-off server sends the legacy protocol and nothing else.
+	if ( zx::netsnapshot::GateOn( ) == false )
+		return;
+
+	ServerCommands::SnapJoin command;
+	command.SetMapStamp( zx::netsnapshot::MapStamp( ));
+	command.SetResetCount( zx::netsnapshot::MapResetCountSent( ));
+	const SnapFrame &frame = zx::netsnapshot::ServerMapFrame( );
+	command.SetOriginX( frame.origin[0] );
+	command.SetOriginY( frame.origin[1] );
+	command.SetOriginZ( frame.origin[2] );
+	command.SetWidthX( frame.width[0] );
+	command.SetWidthY( frame.width[1] );
+	command.SetWidthZ( frame.width[2] );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
 // [Kaori-Chani] features/net-snapshot: tells the clients whether the legacy mover state commands
 // have stopped, frame carrying the record floor of a mid-session gate-off and 0 otherwise.
-//
 void SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	ServerCommands::SnapMoverGate command;
