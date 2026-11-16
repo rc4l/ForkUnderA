@@ -2256,12 +2256,10 @@ endif()
 file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
 target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
 
-# [Kaori-Chani] features/net-snapshot's engine-side layers compile here before anything links
-# them. They call each other, so no layer links without the rest, and step 2 lands them one
-# commit at a time: an OBJECT library gives each the real compiler against the real ported
-# headers as it arrives, with the engine's own include directories and definitions, which this
-# directory's scope already supplies. Nothing links these objects. Step 3's hooks are what put
-# the module in the game, and it then links what has already compiled.
+# [Kaori-Chani] features/net-snapshot's engine-side layers, an OBJECT library so that each got the
+# real compiler against the real ported headers as step 2 landed it, with the engine's own include
+# directories and definitions, which this directory's scope already supplies. The game links them
+# now; nothing calls into them until step 3's hooks, so the module is in the binary and inert.
 #
 # In ALL on purpose: a layer that stops compiling should stop the build rather than wait to be
 # noticed. Its prerequisites are the engine's own, since the layers reach the generated
@@ -2273,22 +2271,26 @@ add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/entities.cpp
 	features/net-snapshot/ghostactor.cpp
 	features/net-snapshot/movers.cpp
-# [Kaori-Chani] Ported and compiled clean, but it cannot stay here yet: its classes' Snap*
-# members are virtual, so po_man.cpp needs their bodies and the game only links once the
-# whole module does. Uncommented in the commit that links the module.
-#	features/net-snapshot/polyobj.cpp
+	features/net-snapshot/polyobj.cpp
 	features/net-snapshot/record.cpp
+# [Kaori-Chani] The format layer, which the tests have built all along and the game needs now that
+# it links the rest: a .zsnap frame is zstd, built above as fua_zstd.
+	features/net-snapshot/recordread.cpp
+	features/net-snapshot/stream.cpp
 	features/net-snapshot/csnap_replay.cpp
 	features/net-snapshot/selftest.cpp
 	features/net-snapshot/fuzz.cpp
 	features/net-snapshot/formattest.cpp )
 add_dependencies( netsnapshot_layers revision_check protocolspec )
 # [Kaori-Chani] zdoom's target-scoped definitions and include paths, copied by property, so the
-# layers build under the game's own settings and no struct differs when step 3 links them.
+# layers build under the game's own settings and no struct differs now that it links them.
 target_compile_definitions( netsnapshot_layers
 	PRIVATE $<TARGET_PROPERTY:zdoom,COMPILE_DEFINITIONS> )
 target_include_directories( netsnapshot_layers
 	PRIVATE $<TARGET_PROPERTY:zdoom,INCLUDE_DIRECTORIES> )
 # [Kaori-Chani] COMPILE_OPTIONS (/Zi /FS) is not copied: it changes debug info, not meaning.
 
+# [Kaori-Chani] The module joins the game, which is what lets po_man.cpp's vtables find the five
+# polyobject classes' Snap* bodies in polyobj.cpp.
+target_link_libraries( zdoom netsnapshot_layers )
 

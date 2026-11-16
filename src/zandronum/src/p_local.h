@@ -706,6 +706,8 @@ FPolyObj *PO_GetPolyobj(int polyNum);
 
 bool P_AlignFlat (int linenum, int side, int fc);
 
+struct SnapPolyEntry;	// [Kaori-Chani] features/net-snapshot/format.h
+
 // [BB] Moved here from po_man.cpp
 class DPolyAction : public DThinker
 {
@@ -721,6 +723,22 @@ public:
 	// [Kaori-Chani] features/net-snapshot: the next action on the same polyobject
 	// (FPolyObj::snapActions), in creation order. Defaulted, as the list head is.
 	DPolyAction *	m_SnapNext = NULL;
+	BYTE	m_SnapGen = 0;			// [Kaori-Chani] the record entry this follows; 0 = none
+	bool	m_SnapSeen = false;		// [Kaori-Chani] made by a record, on a client
+	bool	m_SnapBlocked = false;	// [Kaori-Chani] server: the last move failed; client: as told
+	bool	m_SnapLegacy = false;	// [Kaori-Chani] made by a legacy handler, dropped at gate-on
+
+	// [Kaori-Chani] The whole polyobject, from any of its actions; server only.
+	void	SnapCapture ();
+	// [Kaori-Chani] This action as a record entry and back; SnapType 0xFF for none.
+	virtual BYTE	SnapType () const;
+	virtual void	SnapFill ( SnapPolyEntry & e ) const;
+	virtual void	SnapLoad ( const SnapPolyEntry & e );
+	// [Kaori-Chani] Client: the countdown ran out and the GONE has not come.
+	virtual bool	SnapDone () const;
+	// [Kaori-Chani] Client: a door's wait.
+	virtual bool	SnapWaiting () const { return false; }
+	bool	SnapMoving () const { return !m_SnapBlocked && !SnapDone( ) && !SnapWaiting( ); }
 
 	void StopInterpolation ();
 
@@ -740,6 +758,7 @@ protected:
 	TObjPtr<DInterpolation> m_Interpolation;
 
 	void SetInterpolation ();
+	bool	SnapHolds ();	// [Kaori-Chani] client: held or done, counted
 
 	friend void ThrustMobj (AActor *actor, seg_t *seg, FPolyObj *po);
 };
@@ -751,6 +770,8 @@ public:
 	DRotatePoly (int polyNum);
 	void Tick ();
 	void UpdateToClient( ULONG ulClient );
+	BYTE SnapType () const;		// [Kaori-Chani]
+	bool SnapDone () const;		// [Kaori-Chani]
 
 private:
 	DRotatePoly ();
@@ -767,6 +788,10 @@ public:
 	void Serialize (FArchive &arc);
 	void Tick ();
 	virtual void UpdateToClient( ULONG ulClient ); // [WS] This needs to be virtual.
+	BYTE SnapType () const;							// [Kaori-Chani]
+	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
+	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
+	bool SnapDone () const;							// [Kaori-Chani]
 
 	LONG	GetAngle( void );
 	void	SetAngle( LONG lAngle );
@@ -792,6 +817,10 @@ public:
 	DMovePolyTo(int polyNum);
 	void Serialize(FArchive &arc);
 	void Tick();
+	BYTE SnapType () const;							// [Kaori-Chani]
+	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
+	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
+	bool SnapDone () const;							// [Kaori-Chani]
 protected:
 	DMovePolyTo();
 	fixed_t m_xSpeed;
@@ -814,6 +843,11 @@ public:
 	void Serialize (FArchive &arc);
 	void Tick ();
 	void UpdateToClient( ULONG ulClient );
+	BYTE SnapType () const;							// [Kaori-Chani]
+	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
+	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
+	bool SnapDone () const;							// [Kaori-Chani]
+	bool SnapWaiting () const { return m_Tics != 0; }	// [Kaori-Chani]
 
 	LONG	GetDirection( void );
 	void	SetDirection( LONG lDirection );

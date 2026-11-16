@@ -163,6 +163,7 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -10228,6 +10229,13 @@ void ServerCommands::SetDominationPointState::Execute()
 
 	DOMINATION_SetContesting( point, contesting );
 	DOMINATION_SetDisabled( point, disabled );
+}
+
+//*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: taken ahead of every legacy mover command under it.
+void ServerCommands::SnapMoverGate::Execute()
+{
+	zx::netsnapshot::MoverSetServerGate( legacyOff, frame );
 }
 
 //*****************************************************************************

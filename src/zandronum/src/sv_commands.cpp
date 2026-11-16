@@ -5758,3 +5758,16 @@ void APathFollower::SyncWithClient ( const ULONG ulClient )
 	command.addFloat( this->Time );
 	command.sendCommandToOneClient( ulClient );
 }
+
+//*****************************************************************************
+//
+// [Kaori-Chani] features/net-snapshot: tells the clients whether the legacy mover state commands
+// have stopped, frame carrying the record floor of a mid-session gate-off and 0 otherwise.
+//
+void SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::SnapMoverGate command;
+	command.SetLegacyOff( bLegacyOff );
+	command.SetFrame( frame );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}

@@ -206,6 +206,7 @@
  48 SVC2_FUASETSHADERUNIFORM               [Extended] : String String Bool Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
  49 SVC2_FUASETACTORMATERIAL               [Extended] : Actor String
  50 SVC2_FUASETACTORUNIFORM                [Extended] : Actor Byte Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
+ 51 SVC2_SNAPMOVERGATE                     [Extended] : Bool Long
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE

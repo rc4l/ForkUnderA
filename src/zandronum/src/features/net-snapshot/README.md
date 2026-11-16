@@ -66,8 +66,13 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
 
 ## In-engine hooks
 
-None yet. The format layer is engine-free and nothing in `src/` calls it; the hooks arrive with the
-layers that need them and are listed here as they do.
+Each hook is one call from a stock file into the module, listed here as it lands.
+
+- `cl_main.cpp`, `ServerCommands::SnapMoverGate::Execute`: `MoverSetServerGate( legacyOff, frame )`,
+  taken ahead of every legacy mover command under it. The first hook, and the only kind a
+  protocol-spec command brings: a spec command is three parts — the entry, the server's sender and
+  this `Execute` — and the `Execute` is where it reaches the module, so no spec command can land
+  before the module links.
 
 ## The reference recordings
 

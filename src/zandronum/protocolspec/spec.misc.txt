@@ -203,3 +203,11 @@ Command FuaSetActorUniform
 		Float w
 	EndIf
 EndCommand
+
+# [Kaori-Chani] features/net-snapshot: whether the server stops the legacy mover state commands.
+# frame is the record floor at a mid-session gate-off, else 0.
+Command SnapMoverGate
+	ExtendedCommand
+	Bool legacyOff
+	Long frame
+EndCommand
