@@ -28,6 +28,9 @@ using namespace zx::netsnapshot;
 
 // One entity as sent in a pending frame, its full post-state, which an ack
 // folds by the groups written.
+// [Kaori-Chani] File-local, so an engine or module file that one day names the same type
+// cannot quietly link against this one.
+namespace {
 struct SnapSentEntity
 {
 	WORD				id;
@@ -37,22 +40,27 @@ struct SnapSentEntity
 	unsigned int		offset;		// where its record starts in the payload
 	SnapEntityState		state;
 };
+}
 
 // One psprite record as sent, in a list of its own, being a handful a frame.
+namespace {
 struct SnapSentPSprite
 {
 	WORD				player;
 	unsigned int		offset;		// where its record starts in the payload
 	SnapPSpriteState	state;
 };
+}
 
 // One mover record as sent, by seq, which is the whole dirty test.
+namespace {
 struct SnapSentMover
 {
 	WORD				slot;
 	WORD				seq;
 	unsigned int		offset;		// where its record starts in the payload
 };
+}
 
 // One datagram in flight, `seq` its delivery clock and `frame` its scheduling
 // clock (sv_snapclient.md, The model).

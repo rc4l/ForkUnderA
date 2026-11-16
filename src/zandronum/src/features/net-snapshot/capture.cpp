@@ -503,6 +503,9 @@ static double snap_RawToMS(QWORD raw);
 
 // A spawning action's class, flags and tid parameters, with the flag bits for a
 // client-side spawn and a telefrag (-1: none).
+// [Kaori-Chani] File-local, so an engine or module file that one day names the same type
+// cannot quietly link against this one.
+namespace {
 struct SnapCosSpawner
 {
 	const char*	name;
@@ -513,6 +516,7 @@ struct SnapCosSpawner
 	int			tidParam;
 	actionf_p	func;
 };
+}
 static SnapCosSpawner g_cosSpawners[] =
 {
 	{ "A_SpawnItem",		0, -1, 0, 0, -1,				NULL },
@@ -1094,6 +1098,7 @@ enum
 	SNAPCOSM_HELD		= 64,	// flushed, its event held for a server script
 	SNAPCOSM_SCRIPT		= 128,	// a server script has it as activator
 };
+namespace {
 struct SnapCosMark
 {
 	BYTE		row;
@@ -1105,6 +1110,7 @@ struct SnapCosMark
 	int			spawnTic;
 	DThinker*	spawner;	// read only at its children's flush, in the same pass
 };
+}
 static TMap<DThinker*, SnapCosMark> g_cosMarks;
 // Copies the TID rule refused at their flush this pump, for their children's.
 static TMap<DThinker*, bool> g_ceRefused;
@@ -1117,6 +1123,7 @@ static BYTE*		g_cosNetRow = NULL;
 // event being SNAP_COSE_GENERIC_MAX.
 #define SNAP_COSEVENT_HEADER	5
 #define SNAP_COSEVENT_MAXBYTES	( SNAP_COSE_GENERIC_MAX + 1 )
+namespace {
 struct SnapCosEvent
 {
 	fixed_t		x, y, z;
@@ -1127,6 +1134,7 @@ struct SnapCosEvent
 	signed char	shooter;
 	BYTE		data[SNAP_COSEVENT_MAXBYTES];	// the flags byte first; the age goes in at the pump
 };
+}
 static TArray<SnapCosEvent> g_ceEvents;	// this pump's
 static unsigned int	g_cePumpTics = 1;	// tics the pump simulated
 // Per client: bytes saved while quiet, and the last pump's overflow, carried
@@ -2022,12 +2030,14 @@ CVAR(Int, fua_snap_debug_loss, 0, CVAR_NOSETBYACS)		// percent of packets to dro
 CVAR(Int, fua_snap_debug_resetsplit, 0, CVAR_NOSETBYACS)
 static int g_resetSplitDue = 0;			// gametic to send it at; 0 = none pending
 
+namespace {
 struct SnapDelayedAck
 {
 	unsigned int seq;			// the datagram the client acknowledged
 	unsigned int history;		// bitmask of the 32 frames before it
 	unsigned int dueFrame;		// when the server is allowed to notice
 };
+}
 static TArray<SnapDelayedAck> g_delayedAcks[MAXPLAYERS];
 static unsigned int g_droppedPackets = 0;
 
@@ -2045,6 +2055,7 @@ CVAR(Int, fua_snap_debug_presencelog, 0, CVAR_NOSETBYACS)
 #define SNAP_HOLDBACK_SLOT			8192	// bytes a held payload may take, OnSnapshot's limit
 
 // A snapshot datagram's header, as built, so a held one goes out as it was.
+namespace {
 struct SnapDatagramHeader
 {
 	SDWORD	frame;
@@ -2062,6 +2073,7 @@ struct SnapHeldDatagram
 	unsigned int		slot;		// its payload's slot in g_heldBytes
 	unsigned int		length;
 };
+}
 static TArray<SnapHeldDatagram> g_heldDatagrams[MAXPLAYERS];
 // SNAP_HOLDBACK_MAX payload slots a client, made on its first hold.
 static BYTE* g_heldBytes[MAXPLAYERS];
@@ -2279,6 +2291,7 @@ WORD zx::netsnapshot::PlayerReservedId(unsigned int playernum)
 // counted, for the own-missile census the client's fire census is read against.
 #define SNAP_OWNMISSILE_RING	64
 
+namespace {
 struct SnapOwnMissile
 {
 	WORD			id;
@@ -2288,6 +2301,7 @@ struct SnapOwnMissile
 	// counted (two words for MAXPLAYERS 64).
 	unsigned int	sentTo[2];
 };
+}
 static SnapOwnMissile g_ownMissile[SNAP_OWNMISSILE_RING];
 static unsigned int g_ownMissileHead = 0;
 static unsigned int g_ownMissileSpawns = 0;
@@ -2772,6 +2786,7 @@ static bool snap_ClientInMap(unsigned int client);
 
 
 // Accumulated over the reporting window.
+namespace {
 struct SnapStats
 {
 	unsigned int frames;
@@ -2789,6 +2804,7 @@ struct SnapStats
 
 	void Reset() { memset(this, 0, sizeof(*this)); }
 };
+}
 static SnapStats g_stats;
 
 // Attributes a dirty record's mask to its groups (not an enter's: all).
@@ -5929,6 +5945,7 @@ CCMD(fua_snap_sectorcheck)
 
 // `seq` only ever increases and does double duty: the dirty test, and the
 // generation that makes slot reuse safe.
+namespace {
 struct SnapMoverSlot
 {
 	const void *	owner;		// thinker identity; NULL = free
@@ -5953,6 +5970,7 @@ struct SnapMoverSlot
 	// SNAPMV_POLY's body is g_moverPolyBody[index]: one slot per polyobject, and
 	// 11 entries would grow every slot tenfold.
 };
+}
 
 // SNAPMV_MAXSLOTS is in capture.h; the per-client pass sizes arrays from it.
 
