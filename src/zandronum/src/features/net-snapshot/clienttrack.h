@@ -295,6 +295,10 @@ unsigned int PendingFrames(unsigned int client);
 unsigned int BelievedCount(unsigned int client);
 unsigned int LastAckedSeq(unsigned int client);
 
+// [Kaori-Chani] The newest datagram sequence this client has been given, so a
+// report can take its ack lag with AckLag.
+unsigned int NewestSentSeq(unsigned int client);
+
 }} // namespace zx::netsnapshot
 
 // Aggregate client health for the stats block, scaling to any client count.

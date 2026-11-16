@@ -4758,10 +4758,23 @@ static void snap_MaybeReport()
 
 	if (g_sentPackets != 0)
 	{
-		snap_Say("[snap] sent %u packets, %.1f kB (%.1f kB/s) | client0 ack=%u pending=%u believed=%u\n",
+		snap_Say("[snap] sent %u packets, %.1f kB (%.1f kB/s)\n",
 			g_sentPackets, g_sentBytes / 1024.0,
-			(g_sentBytes / 1024.0) / gameSec,
-			LastAckedSeq(0), PendingFrames(0), BelievedCount(0));
+			(g_sentBytes / 1024.0) / gameSec);
+
+		// [Kaori-Chani] Every client in turn, not slot 0: one client settling
+		// says nothing about another's, and slot 0 may be the one that left.
+		for (unsigned int c = 0; c < MAXPLAYERS; ++c)
+		{
+			if (SERVER_IsValidClient(c) == false)
+				continue;
+			// lag is how far behind this client's newest datagram its ack is,
+			// where 255 is far or further and 0 is none credited: either none has
+			// arrived or a re-baseline has just forgotten the world.
+			snap_Say("[snap] client %u: ack=%u lag=%u pending=%u believed=%u\n",
+				c, LastAckedSeq(c), (unsigned int)AckLag(c, NewestSentSeq(c)),
+				PendingFrames(c), BelievedCount(c));
+		}
 
 		// Every client's health at once, max pending the signal and any
 		// rebaseline worth investigating.

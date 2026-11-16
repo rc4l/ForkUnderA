@@ -3074,6 +3074,16 @@ unsigned int zx::netsnapshot::LastAckedSeq(unsigned int client)
 	return (client < MAXPLAYERS) ? g_clients[client].lastAckedSeq : 0;
 }
 
+// [Kaori-Chani] The newest sequence given out, which an ack lag is measured
+// back from; nextSeq is the one the next datagram will take.
+unsigned int zx::netsnapshot::NewestSentSeq(unsigned int client)
+{
+	if (client >= MAXPLAYERS)
+		return 0;
+	const unsigned int next = g_clients[client].nextSeq;
+	return (next > 0) ? (next - 1) : 0;
+}
+
 // Every active client's health, the max pending depth being the signal.
 void zx::netsnapshot::AggregateHealth(SnapClientHealth& out)
 {
