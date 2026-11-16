@@ -40,6 +40,7 @@
 #include "doomdef.h"
 #include "p_local.h"
 #include "features/decals/decals.h"   // [rc4l] every mark, made and judged in one place
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
 #include "features/net-replication/actorstate.h"   // [rc4l] SendPuff, a rail's puff once it survived the sky
 #include "features/net-session/netrole.h"
 #include "p_lnspec.h"
@@ -5488,7 +5489,9 @@ void P_RailAttack(AActor *source, int damage, int offset_xy, fixed_t offset_z, i
 	{
 		endPuff->Destroy();
 	}
-	else if (endPuff != NULL)
+	// [Kaori-Chani] features/net-snapshot: not a routed puff, which reaches clients as an event
+	// that this send would hand a NetID.
+	else if (( endPuff != NULL ) && ( zx::netsnapshot::CosmeticRouted( endPuff ) == false ))
 	{
 		zx::netreplication::SendPuff(endPuff, source, endPuff->FindState(NAME_Crash) != NULL ? STATE_CRASH : STATE_SPAWN, 0);
 	}

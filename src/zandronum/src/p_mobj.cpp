@@ -84,6 +84,8 @@
 #include "cl_main.h"
 #include "features/net-client/computation/movedrain_compute.h"
 #include "features/net-session/netrole.h"
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] a mirror's own spawns
 #include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff
 #include "cooperative.h"
 #include "invasion.h"
@@ -746,7 +748,11 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 			}
 		}
 
-		if (!nofunction && newstate->CallAction(this, this))
+		// [Kaori-Chani] features/net-snapshot: a mirror runs the spawning actions its own copy
+		// needs, which only it is told to.
+		const bool bRunAction = ( nofunction == false ) || ( g_bSnapMirrorSpawns
+			&& ( NetworkFlags & NETFL_MIRROR ) && zx::netsnapshot::MirrorSpawnAction( newstate ));
+		if (bRunAction && newstate->CallAction(this, this))
 		{
 			// Check whether the called action function resulted in destroying the actor
 			if (ObjectFlags & OF_EuthanizeMe)
@@ -5310,16 +5316,24 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 			SERVERCOMMANDS_SetMapNumTotalSecrets();
 	}
 
+	// [Kaori-Chani] features/net-snapshot: the cosmetic events route, on which a routed spawn
+	// gets no NetID.
+	const bool bSnapRouted = zx::netsnapshot::NoteCosmeticSpawn( actor );
 	if ((( actor->NetworkFlags & NETFL_NONETID ) == false ) && ( ( actor->NetworkFlags & NETFL_SERVERSIDEONLY ) == false ) &&
-		( NETWORK_InClientMode() == false ))
+		( NETWORK_InClientMode() == false ) && ( bSnapRouted == false ))
 	{
 		actor->NetID = g_ActorNetIDList.getNewID( );
 		g_ActorNetIDList.useID ( actor->NetID, actor );
 		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && sv_showspawnnames )
 			Printf ( "%s %u\n", actor->GetClass()->TypeName.GetChars(), actor->NetID );
+		// [Kaori-Chani] features/net-snapshot: report only, a NetID taken by something a
+		// cosmetic actor spawned.
+		zx::netsnapshot::NoteSpawnNetID( actor );
 	}
 	else
 		actor->NetID = 0;
+	// [Kaori-Chani] features/net-snapshot: report mode counts the routed actors by NetID.
+	zx::netsnapshot::NoteCosmeticNetID( actor );
 
 	// [BB] Initilize the colormap of this actor.
 	actor->FixedColormap = NOFIXEDCOLORMAP;
@@ -5584,6 +5598,9 @@ bool AActor::IsActive( void ) const
 
 void AActor::Destroy ()
 {
+	// [Kaori-Chani] features/net-snapshot: the cosmetic events mark goes with the actor.
+	zx::netsnapshot::ForgetCosmetic( this );
+
 	// [BC/BB] Free it's network ID.
 	g_ActorNetIDList.freeID ( NetID );
 
@@ -6825,8 +6842,13 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 
 	// [BC] If we're the server, tell clients to spawn the thing.
 	// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: net-replication's SendPuff, which a rail calls itself once its puff survived the sky.
-	if ( bTellClientToSpawn )
+	// [Kaori-Chani] features/net-snapshot: not a routed puff, which reaches clients as an event
+	// that this send would hand a NetID.
+	if ( bTellClientToSpawn && ( zx::netsnapshot::CosmeticRouted( puff ) == false ))
 		zx::netreplication::SendPuff( puff, source, ulState, flags );
+
+	// [Kaori-Chani] features/net-snapshot: the shooter's prediction, and puffs not told to clients.
+	zx::netsnapshot::NotePuff( puff, source, bTellClientToSpawn );
 
 	if (!(flags & PF_TEMPORARY))
 	{
@@ -6873,6 +6895,8 @@ AActor *P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, 
 	{
 		z += pr_spawnblood.Random2 () << 10;
 		th = Spawn (bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: every blood spawn takes the cosmetic events route.
+		zx::netsnapshot::NoteBloodSpawn( th );
 		th->velz = FRACUNIT*2;
 		th->angle = dir;
 		// [NG] Applying PUFFGETSOWNER to the blood will make it target the owner
@@ -6943,7 +6967,9 @@ AActor *P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, 
 	}
 
 	// [BC] If we're the server, tell clients to spawn the blood.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: unless the cosmetic blood event does instead.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::NoteBloodEvent( x, y, z, dir, damage, originator, 0 ) == false ))
 	{
 		// [BB] If the bloodcolor is not the standard one, we have to inform the client 
 		// about the correct color.
@@ -6987,6 +7013,8 @@ AActor *P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	//
 	{
 
 		mo = Spawn(bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: every blood spawn takes the cosmetic events route.
+		zx::netsnapshot::NoteBloodSpawn( mo );
 		mo->target = originator;
 		mo->velx = pr_splatter.Random2 () << 10;
 		mo->vely = pr_splatter.Random2 () << 10;
@@ -7015,7 +7043,9 @@ AActor *P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	//
 	}
 
 	// [BB] Tell the clients to spawn the splatter.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: unless the cosmetic blood event does instead.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::NoteBloodEvent( x, y, z, 0, 0, originator, 1 ) == false ))
 		SERVERCOMMANDS_SpawnBloodSplatter( x, y, z, originator, false );
 
 	return mo;	// [Kaori-Chani] NULL when no blood class spawned one
@@ -7045,6 +7075,8 @@ AActor *P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	/
 		y += ((pr_splat()-128)<<11);
 
 		mo = Spawn (bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: every blood spawn takes the cosmetic events route.
+		zx::netsnapshot::NoteBloodSpawn( mo );
 		mo->target = originator;
 
 		// colorize the blood!
@@ -7061,7 +7093,9 @@ AActor *P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	/
 	}
 
 	// [BB] Tell the clients to spawn the splatter.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: unless the cosmetic blood event does instead.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::NoteBloodEvent( x, y, z, 0, 0, originator, 2 ) == false ))
 		SERVERCOMMANDS_SpawnBloodSplatter( x, y, z, originator, true );
 
 	return mo;	// [Kaori-Chani] NULL when no blood class spawned one
@@ -7092,6 +7126,8 @@ void P_RipperBlood (AActor *mo, AActor *bleeder)
 	{
 		AActor *th;
 		th = Spawn (bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: no stock command, so a cosmetic event either way.
+		zx::netsnapshot::NoteRipperBlood( th );
 		// [NG] Applying PUFFGETSOWNER to the blood will make it target the owner
 		if (th->flags5 & MF5_PUFFGETSOWNER) th->target = bleeder;
 		if (gameinfo.gametype == GAME_Heretic)

@@ -65,6 +65,7 @@
 #include "r_state.h"
 #include "sbar.h"
 #include "sv_commands.h"
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] what the snapshot carries instead
 #include "features/net-protocol/lineflags.h"
 #include "features/skywire/computation/sky_wire_compute.h"
 #include "features/hitboxviz/hitboxviz.h"
@@ -1148,6 +1149,10 @@ void SERVERCOMMANDS_MoveLocalPlayer( ULONG ulPlayer )
 	if ( SERVER_IsValidClient( ulPlayer ) == false || players[ulPlayer].mo == NULL )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: the local block carries this, at its only recipient.
+	if ( zx::netsnapshot::SuppressesLegacyLocal( ulPlayer ))
+		return;
+
 	ServerCommands::MoveLocalPlayer command;
 	command.SetClientTicOnServerEnd( SERVER_GetClient( ulPlayer )->ulClientGameTic );
 	command.SetLatestServerGametic( gametic );
@@ -1165,6 +1170,10 @@ void SERVERCOMMANDS_MoveLocalPlayer( ULONG ulPlayer )
 void SERVERCOMMANDS_SetLocalPlayerJumpTics( ULONG ulPlayer )
 {
 	if ( SERVER_IsValidClient( ulPlayer ) == false )
+		return;
+
+	// [Kaori-Chani] features/net-snapshot: the local block carries this, at its only recipient.
+	if ( zx::netsnapshot::SuppressesLegacyLocal( ulPlayer ))
 		return;
 
 	ServerCommands::SetLocalPlayerJumpTics command;
@@ -1563,6 +1572,10 @@ void SERVERCOMMANDS_SpawnThing( AActor *pActor, ULONG ulPlayerExtra, ServerComma
 	if ( pActor == NULL )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	// [rc4l] features/net-session: a thing whole units would move (a dropped clip sat a unit off on every client) spawns exactly.
 	if ( zx::netsession::ComputeSpawnRoundsPosition( pActor->x.Raw(), pActor->y.Raw(), pActor->z.Raw() ))
 		SERVERCOMMANDS_SpawnThingExact( pActor, ulPlayerExtra, flags );
@@ -1611,6 +1624,10 @@ void SERVERCOMMANDS_SpawnThingExact( AActor *pActor, ULONG ulPlayerExtra, Server
 	if ( pActor == NULL )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	// If the actor doesn't have a network ID, it's better to send it ID-less.
 	if ( pActor->NetID == 0 )
 	{
@@ -1652,6 +1669,10 @@ void SERVERCOMMANDS_LevelSpawnThing( AActor *pActor, ULONG ulPlayerExtra, Server
 	if ( pActor == NULL )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	// If the actor doesn't have a network ID, it's better to send it ID-less.
 	if ( pActor->NetID == 0 )
 	{
@@ -1691,6 +1712,10 @@ void SERVERCOMMANDS_LevelSpawnThingNoNetID( AActor *pActor, ULONG ulPlayerExtra,
  */
 void SERVERCOMMANDS_MoveThingIfChanged( AActor *actor, const MoveThingData &oldData, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's motion instead.
+	if ( zx::netsnapshot::SuppressesLegacy( actor, SNAPLEGACY_MOTION ))
+		return;
+
 	if ( EnsureActorHasNetID( actor ) )
 	{
 		ULONG bits = 0;
@@ -1731,6 +1756,10 @@ void SERVERCOMMANDS_MoveThingIfChanged( AActor *actor, const MoveThingData &oldD
 //
 void SERVERCOMMANDS_MoveThing( AActor *actor, ULONG bits, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's motion instead.
+	if ( zx::netsnapshot::SuppressesLegacy( actor, SNAPLEGACY_MOTION ))
+		return;
+
 	if ( !EnsureActorHasNetID (actor) )
 		return;
 
@@ -1820,6 +1849,10 @@ static void MoveThingExactCommand( AActor *actor, ULONG bits, ULONG ulPlayerExtr
 //
 void SERVERCOMMANDS_MoveThingExact( AActor *actor, ULONG bits, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's motion instead.
+	if ( zx::netsnapshot::SuppressesLegacy( actor, SNAPLEGACY_MOTION ))
+		return;
+
 	MoveThingExactCommand( actor, bits, ulPlayerExtra, flags, true );
 }
 
@@ -1835,6 +1868,10 @@ void SERVERCOMMANDS_MoveThingExactWhole( AActor *actor, ULONG bits )
 //
 void SERVERCOMMANDS_KillThing( AActor *pActor, AActor *pSource, AActor *pInflictor )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's animation instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_ANIM ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -1851,6 +1888,10 @@ void SERVERCOMMANDS_KillThing( AActor *pActor, AActor *pSource, AActor *pInflict
 //
 void SERVERCOMMANDS_SetThingState( AActor *pActor, NetworkActorState state, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's animation instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_ANIM ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -1864,6 +1905,10 @@ void SERVERCOMMANDS_SetThingState( AActor *pActor, NetworkActorState state, ULON
 //
 void SERVERCOMMANDS_SetThingTarget( AActor *pActor )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) || !EnsureActorHasNetID(pActor->target) )
 		return;
 
@@ -1877,6 +1922,10 @@ void SERVERCOMMANDS_SetThingTarget( AActor *pActor )
 //
 void SERVERCOMMANDS_DestroyThing( AActor *pActor )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -1889,6 +1938,10 @@ void SERVERCOMMANDS_DestroyThing( AActor *pActor )
 //
 void SERVERCOMMANDS_SetThingAngle( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's motion instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_MOTION ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -1902,6 +1955,10 @@ void SERVERCOMMANDS_SetThingAngle( AActor *pActor, ULONG ulPlayerExtra, ServerCo
 //
 void SERVERCOMMANDS_SetThingAngleExact( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's motion instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_MOTION ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -1915,6 +1972,10 @@ void SERVERCOMMANDS_SetThingAngleExact( AActor *pActor, ULONG ulPlayerExtra, Ser
 //
 void SERVERCOMMANDS_SetThingWaterLevel( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -1928,6 +1989,10 @@ void SERVERCOMMANDS_SetThingWaterLevel( AActor *pActor, ULONG ulPlayerExtra, Ser
 //
 void SERVERCOMMANDS_SetThingFlags( AActor *pActor, FlagSet flagset, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2013,6 +2078,10 @@ void SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults( AActor *pActor, ULONG ulPlaye
 //
 void SERVERCOMMANDS_SetThingArguments( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2030,6 +2099,10 @@ void SERVERCOMMANDS_SetThingArguments( AActor *pActor, ULONG ulPlayerExtra, Serv
 //
 void SERVERCOMMANDS_SetThingTranslation( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2043,6 +2116,10 @@ void SERVERCOMMANDS_SetThingTranslation( AActor *pActor, ULONG ulPlayerExtra, Se
 //
 void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2103,6 +2180,10 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 //
 void SERVERCOMMANDS_SetThingStringProperty( AActor *pActor, ULONG ulProperty, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2134,6 +2215,10 @@ void SERVERCOMMANDS_SetThingStringProperty( AActor *pActor, ULONG ulProperty, UL
 //
 void SERVERCOMMANDS_SetThingSound( AActor *pActor, ULONG ulSound, const char *pszSound, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE) )
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2148,6 +2233,10 @@ void SERVERCOMMANDS_SetThingSound( AActor *pActor, ULONG ulSound, const char *ps
 //
 void SERVERCOMMANDS_SetThingSpawnPoint( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2163,6 +2252,10 @@ void SERVERCOMMANDS_SetThingSpawnPoint( AActor *pActor, ULONG ulPlayerExtra, Ser
 //
 void SERVERCOMMANDS_SetThingSpecial( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2176,6 +2269,10 @@ void SERVERCOMMANDS_SetThingSpecial( AActor *pActor, ULONG ulPlayerExtra, Server
 //
 void SERVERCOMMANDS_SetThingSpecial1( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2189,6 +2286,10 @@ void SERVERCOMMANDS_SetThingSpecial1( AActor *pActor, ULONG ulPlayerExtra, Serve
 //
 void SERVERCOMMANDS_SetThingSpecial2( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2202,6 +2303,10 @@ void SERVERCOMMANDS_SetThingSpecial2( AActor *pActor, ULONG ulPlayerExtra, Serve
 //
 void SERVERCOMMANDS_SetThingTics( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2215,6 +2320,10 @@ void SERVERCOMMANDS_SetThingTics( AActor *pActor, ULONG ulPlayerExtra, ServerCom
 //
 void SERVERCOMMANDS_SetThingReactionTime( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2228,6 +2337,10 @@ void SERVERCOMMANDS_SetThingReactionTime( AActor *pActor, ULONG ulPlayerExtra, S
 //
 void SERVERCOMMANDS_SetThingTID( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2241,6 +2354,10 @@ void SERVERCOMMANDS_SetThingTID( AActor *pActor, ULONG ulPlayerExtra, ServerComm
 //
 void SERVERCOMMANDS_SetThingGravity( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2254,6 +2371,10 @@ void SERVERCOMMANDS_SetThingGravity( AActor *pActor, ULONG ulPlayerExtra, Server
 //
 void SERVERCOMMANDS_SetThingFrame( AActor *pActor, FState *pState, ULONG ulPlayerExtra, ServerCommandFlags flags, bool bCallStateFunction )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's animation instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_ANIM ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) || (pState == NULL) )
 		return;
 
@@ -2332,6 +2453,10 @@ void SERVERCOMMANDS_SetWeaponAmmoGive( AActor *pActor, ULONG ulPlayerExtra, Serv
 //
 void SERVERCOMMANDS_ThingIsCorpse( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's animation instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_ANIM ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2345,6 +2470,10 @@ void SERVERCOMMANDS_ThingIsCorpse( AActor *pActor, ULONG ulPlayerExtra, ServerCo
 //
 void SERVERCOMMANDS_HideThing( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	// [BB] The client will call HideIndefinitely on the actor, which only is possible on AInventory and descendants.
 	if ( !EnsureActorHasNetID (pActor) || !(pActor->IsKindOf( RUNTIME_CLASS( AInventory ))) )
 		return;
@@ -2358,6 +2487,10 @@ void SERVERCOMMANDS_HideThing( AActor *pActor, ULONG ulPlayerExtra, ServerComman
 //
 void SERVERCOMMANDS_TeleportThing( AActor *pActor, bool bSourceFog, bool bDestFog, bool bTeleZoom, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2407,6 +2540,10 @@ void SERVERCOMMANDS_ThingDeactivate( AActor *pActor, AActor *pActivator, ULONG u
 //
 void SERVERCOMMANDS_RespawnDoomThing( AActor *pActor, bool bFog, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2420,6 +2557,10 @@ void SERVERCOMMANDS_RespawnDoomThing( AActor *pActor, bool bFog, ULONG ulPlayerE
 //
 void SERVERCOMMANDS_RespawnRavenThing( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's animation instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_ANIM ))
+		return;
+
 	if ( !EnsureActorHasNetID (pActor) )
 		return;
 
@@ -2478,6 +2619,10 @@ void SERVERCOMMANDS_SpawnBloodSplatter( fixed_t x, fixed_t y, fixed_t z, AActor 
 // by the client. It differs a lot from SpawnPuffNoNetID.
 void SERVERCOMMANDS_SpawnPuff( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( pActor == NULL )
 		return;
 
@@ -3005,6 +3150,10 @@ void SERVERCOMMANDS_SpawnMissile( AActor *pMissile, ULONG ulPlayerExtra, ServerC
 	if ( pMissile == NULL )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pMissile, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	// [AK] If the missile is serversided only, don't tell the clients to spawn it.
 	if ( pMissile->NetworkFlags & NETFL_SERVERSIDEONLY )
 		return;
@@ -3039,6 +3188,10 @@ void SERVERCOMMANDS_SpawnMissileExact( AActor *pMissile, ULONG ulPlayerExtra, Se
 	if ( pMissile == NULL )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pMissile, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	// [AK] If the missile is serversided only, don't tell the clients to spawn it.
 	if ( pMissile->NetworkFlags & NETFL_SERVERSIDEONLY )
 		return;
@@ -3070,6 +3223,10 @@ void SERVERCOMMANDS_SpawnMissileExact( AActor *pMissile, ULONG ulPlayerExtra, Se
 //
 void SERVERCOMMANDS_MissileExplode( AActor *pMissile, line_t *pLine, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the snapshot carries this actor's animation instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pMissile, SNAPLEGACY_ANIM ))
+		return;
+
 	if ( !EnsureActorHasNetID (pMissile) )
 		return;
 
@@ -4343,6 +4500,10 @@ void SERVERCOMMANDS_SyncHexenArmorSlots( ULONG ulPlayer, ULONG ulPlayerExtra, Se
 // [Dusk]
 void SERVERCOMMANDS_SetFastChaseStrafeCount( AActor *mobj, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( mobj, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (mobj) )
 		return;
 
@@ -4361,6 +4522,10 @@ void SERVERCOMMANDS_SetFastChaseStrafeCount( AActor *mobj, ULONG ulPlayerExtra, 
 //
 void SERVERCOMMANDS_SetThingHealth( AActor* mobj, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( mobj, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (mobj) )
 		return;
 
@@ -4375,6 +4540,10 @@ void SERVERCOMMANDS_SetThingHealth( AActor* mobj, ULONG ulPlayerExtra, ServerCom
 //
 void SERVERCOMMANDS_SetThingScale( AActor* mobj, unsigned int scaleFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( mobj, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (mobj) )
 		return;
 
@@ -4418,6 +4587,10 @@ void SERVERCOMMANDS_SetThingSpriteOrientation( AActor *mobj, unsigned int orient
 // [RK]
 void SERVERCOMMANDS_SetThingFloorClip( AActor* mobj, unsigned int playerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( mobj, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID (mobj) )
 		return;
 
@@ -4539,6 +4712,10 @@ void SERVERCOMMANDS_UpdateThingSizeNotAtDefault( AActor* pActor, ULONG ulPlayerE
 //
 void SERVERCOMMANDS_FlashStealthMonster( AActor* pActor, SBYTE direction, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( EnsureActorHasNetID( pActor ) == false )
 		return;
 

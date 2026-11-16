@@ -304,7 +304,9 @@ static void snap_ComputeFrame()
 const SnapFrame& zx::netsnapshot::ServerMapFrame()
 {
 	// Outside a level there is no extent to take, so the frame waits for one.
-	if (g_mapFrameDue && (gamestate == GS_LEVEL))
+	// [Kaori-Chani] A server alone takes it, a client's arriving in SnapJoin and single
+	// player sending nothing at all.
+	if (g_mapFrameDue && (gamestate == GS_LEVEL) && (NETWORK_GetState() == NETSTATE_SERVER))
 	{
 		g_mapFrameDue = false;
 		snap_ComputeFrame();
@@ -1055,6 +1057,8 @@ static unsigned int g_cosInheritOverlap = 0;		// cosmetic children: already laye
 
 void zx::netsnapshot::NoteSpawnNetID(AActor* pActor)
 {
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+		return;
 	AActor* const pSpawner = g_pSnapActionSelf;
 	if ((pSpawner == NULL) || (pActor == NULL) || (pSpawner == pActor))
 		return;
@@ -1388,6 +1392,8 @@ void zx::netsnapshot::NoteAcsSpawn(AActor* pActor)
 
 void zx::netsnapshot::NoteCosmeticNetID(AActor* pActor)
 {
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+		return;
 	if ((g_cosNetRow == NULL) || (pActor == NULL) || (pActor->NetID == 0))
 		return;
 	const SnapCosMark* pMark = (g_cosMarks.CountUsed() > 0) ? g_cosMarks.CheckKey(pActor) : NULL;
@@ -1448,7 +1454,8 @@ void zx::netsnapshot::NoteRipperBlood(AActor* pBlood)
 
 // At the call, not the flush: direction, damage and originator are the
 // function's arguments, and stock tells clients even when no actor spawned.
-bool zx::netsnapshot::NoteBloodEvent(int x, int y, int z, unsigned int dir, int damage, AActor* pOriginator, int which)
+bool zx::netsnapshot::NoteBloodEvent(fixed_t x, fixed_t y, fixed_t z, unsigned int dir,
+	int damage, AActor* pOriginator, int which)
 {
 	if (snap_CosActive() == false)
 		return false;
@@ -1486,6 +1493,8 @@ bool zx::netsnapshot::NoteBloodEvent(int x, int y, int z, unsigned int dir, int 
 // After P_SpawnPuffForClients, which may have given the puff a NetID.
 void zx::netsnapshot::NotePuff(AActor* pPuff, AActor* pSource, bool bTellClients)
 {
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+		return;
 	if ((pPuff == NULL) || (g_cosMarks.CountUsed() == 0))
 		return;
 	SnapCosMark* pMark = g_cosMarks.CheckKey(pPuff);
@@ -1770,6 +1779,8 @@ void zx::netsnapshot::NoteFirstTickDone(DThinker* pThinker)
 
 void zx::netsnapshot::NoteScriptStart(AActor* pActivator, bool bClientSide)
 {
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+		return;
 	if ((pActivator == NULL) || bClientSide || (g_cosMarks.CountUsed() == 0))
 		return;
 	SnapCosMark* pMark = g_cosMarks.CheckKey(pActivator);
@@ -1781,6 +1792,8 @@ void zx::netsnapshot::NoteScriptStart(AActor* pActivator, bool bClientSide)
 // that Tick's end carries what it did.
 void zx::netsnapshot::NoteScriptStopped(AActor* pActivator)
 {
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+		return;
 	if ((pActivator == NULL) || (g_cosMarks.CountUsed() == 0))
 		return;
 	SnapCosMark* pMark = g_cosMarks.CheckKey(pActivator);
@@ -1799,6 +1812,8 @@ void zx::netsnapshot::NoteScriptStopped(AActor* pActivator)
 // The client copy never sees it.
 void zx::netsnapshot::NoteScriptChange(AActor* pActor)
 {
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+		return;
 	if ((pActor == NULL) || (g_cosMarks.CountUsed() == 0))
 		return;
 	const SnapCosMark* pMark = g_cosMarks.CheckKey(pActor);

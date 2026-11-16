@@ -89,7 +89,9 @@
 #include "features/net-session/syncedcvars.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] the link census and the write order
+#include "i_tictime.h"   // [Kaori-Chani] the counter the legacy send's own cost is timed on
 #include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
 #include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_server_stall_ms
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] the looping sounds a late joiner is sent
@@ -829,6 +831,8 @@ void SERVER_Tick( void )
 		SERVER_SendOutPackets( );
 
 		// [BB] Send out sheduled packets, respecting sv_maxpacketspertick.
+		// [Kaori-Chani] features/net-snapshot: the resend's own cost, timed for its report.
+		const tictime_raw_t resendStart = TIC_GetRawCounter( );
 		for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 		{
 			if ( g_aClients[i].State == CLS_FREE )
@@ -836,6 +840,7 @@ void SERVER_Tick( void )
 
 			SERVER_GetClient ( i )->SavedPackets.Tick ( );
 		}
+		zx::netsnapshot::CountLegacySendRaw( (QWORD)( TIC_GetRawCounter( ) - resendStart ));
 
 		// Potentially send an update to the server registry.
 		SERVER_SERVERREGISTRY_Tick( );
@@ -941,6 +946,9 @@ void SERVER_Tick( void )
 		if ( g_aClients[i].lOverMovementLevel >= MAX_OVERMOVEMENT_LEVEL )
 			SERVER_KickPlayer( i, "Abnormal level of movement commands detected!" );
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the capture, which does nothing unless fua_snap is on.
+	zx::netsnapshot::ServerTick( );
 }
 
 //*****************************************************************************
@@ -956,7 +964,13 @@ void SERVER_SendOutPackets( void )
 			continue;
 
 		if ( g_aClients[ulIdx].PacketBuffer.CalcSize() > 0 )
+		{
+			// [Kaori-Chani] features/net-snapshot: timed apart from the unreliable send, which is
+			// the one carrying a snapshot.
+			const tictime_raw_t sendStart = TIC_GetRawCounter( );
 			SERVER_SendClientPacket( ulIdx, true );
+			zx::netsnapshot::CountLegacySendRaw( (QWORD)( TIC_GetRawCounter( ) - sendStart ));
+		}
 
 		if ( g_aClients[ulIdx].UnreliablePacketBuffer.CalcSize() > 0 )
 			SERVER_SendClientPacket( ulIdx, false );
@@ -977,6 +991,8 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 
 	if ( bReliable )
 	{
+		// [Kaori-Chani] features/net-snapshot: what the legacy path flushed, for its own report.
+		zx::netsnapshot::CountLegacyFlush( pClient->PacketBuffer.CalcSize( ));
 		pClient->SavedPackets.ScheduleUnsentPacket( pClient->PacketBuffer );
 		pClient->PacketBuffer.Clear();
 		return;
@@ -1000,7 +1016,17 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out packets to clients who aren't connected.
 	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: the per-client send, zstd once the client is connected.
+	// [Kaori-Chani] features/net-snapshot: the payload as built, which only this line knows
+	// alongside what the wire cost.
+	const unsigned int snapPayloadSize = TempBuffer.CalcSize( );
 	NETWORK_LaunchPacket( &TempBuffer, pClient->Address, pClient->State >= CLS_CONNECTED );
+
+	// [Kaori-Chani] features/net-snapshot: built size against wire cost, known together here only.
+	if ( zx::netsnapshot::ConsumeSnapshotQueued( ulClient ))
+	{
+		zx::netsnapshot::NoteUnreliablePacket( snapPayloadSize, NETWORK_GetLastLaunchWireSize( ),
+			NETWORK_GetLastLaunchUsedZstd( ));
+	}
 	pClient->UnreliablePacketBuffer.Clear();
 }
 
@@ -2105,6 +2131,10 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].PacketBuffer.Clear();
 	g_aClients[lClient].UnreliablePacketBuffer.Clear();
 
+	// [Kaori-Chani] features/net-snapshot: the slot's snapshot state, which is the reference a
+	// new delta is built against.
+	zx::netsnapshot::ClientConnected( lClient );
+
 	// Who is connecting?
 	// [SB] Only print if sv_printconnectionmessages is enabled.
 	// We still see the player's IP when the "<player> has connected" message is printed once they're in the game.
@@ -3186,7 +3216,11 @@ void SERVER_WriteCommands( void )
 
 		// See if any players need to be updated to clients.
 		// [BB] Only necessary if we are in a level.
-		if ( gamestate == GS_LEVEL )
+		//
+		// [Kaori-Chani] features/net-snapshot: skipped for a client whose remote players the
+		// snapshot carries instead.
+		if (( gamestate == GS_LEVEL )
+			&& ( zx::netsnapshot::SuppressesLegacyPlayer( ulIdx ) == false ))
 		{
 			for ( ULONG ulPlayer = 0; ulPlayer < MAXPLAYERS; ulPlayer++ )
 			{
@@ -3414,6 +3448,9 @@ void SERVER_DisconnectClient( ULONG ulClient, bool bBroadcast, bool bSaveInfo, L
 	g_aClients[ulClient].PacketBuffer.Clear();
 	g_aClients[ulClient].UnreliablePacketBuffer.Clear();
 	g_aClients[ulClient].SavedPackets.Clear();
+
+	// [Kaori-Chani] features/net-snapshot: and the slot's snapshot state, as a connect clears it.
+	zx::netsnapshot::ClientDisconnected( ulClient );
 
 	// Tell the join queue module that a player has left the game.
 	JOINQUEUE_PlayerLeftGame( ulClient, true );
@@ -5190,6 +5227,20 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 		// Client is sending a remote control command to the server.
 		return ( server_RCONCommand( pByteStream ));
+	case CLC_SNAPSHOTACK:
+
+		// [Kaori-Chani] features/net-snapshot: the newest snapshot datagram the client has, and
+		// its answer about the sound table.
+		{
+			const int seq = pByteStream->ReadLong( );
+			const unsigned int history = static_cast<unsigned int>( pByteStream->ReadLong( ));
+			const BYTE soundIds = static_cast<BYTE>( pByteStream->ReadByte( ));
+			if ( seq > 0 )
+				zx::netsnapshot::ClientAcknowledged( g_lCurrentClient,
+					static_cast<unsigned int>( seq ), history );
+			zx::netsnapshot::ClientSoundIds( g_lCurrentClient, soundIds );
+		}
+		return ( false );
 	case CLC_SUICIDE:
 
 		// Client wishes to kill himself.

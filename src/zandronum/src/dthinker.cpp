@@ -49,6 +49,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists; [Doruk-Aksoy] NoteThinkerLists, NoteThinkerAdded, NoteThinkerRemoved
 #include "features/gamecopy/computation/thinkerorder_compute.h"   // [Doruk-Aksoy] ComputeListBucket
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] a thinker's first tick, either side
 
 #include <cstdint>
 
@@ -477,6 +478,9 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 				dest->AddTail(node);
 			}
 			node->PostBeginPlay();
+			// [Kaori-Chani] features/net-snapshot: before its first Tick, its spawner having
+			// finished with it.
+			zx::netsnapshot::NoteFirstTick( node );
 		}
 		else if (dest != NULL)
 		{
@@ -500,6 +504,10 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 				}
 				else node->Tick();
 			}
+			// [Kaori-Chani] features/net-snapshot: after its first Tick, a cosmetic copy held
+			// across that tick being free to go out.
+			if (node->ObjectFlags & OF_JustSpawned)
+				zx::netsnapshot::NoteFirstTickDone( node );
 			node->ObjectFlags &= ~OF_JustSpawned;
 			GC::CheckGC();
 		}

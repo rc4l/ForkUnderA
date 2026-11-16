@@ -132,7 +132,8 @@ void NoteBloodSpawn(AActor *pBlood);     // P_SpawnBlood, P_BloodSplatter(2)
 void NoteRipperBlood(AActor *pBlood);    // P_RipperBlood
 // Where P_SpawnBlood (which 0) or a splatter (1, 2) tells the clients, true
 // when the event replaces stock's command (mode 2).
-bool NoteBloodEvent(int x, int y, int z, unsigned int dir, int damage, AActor *pOriginator, int which);
+bool NoteBloodEvent(fixed_t x, fixed_t y, fixed_t z, unsigned int dir, int damage,
+	AActor *pOriginator, int which);
 void NotePuff(AActor *pPuff, AActor *pSource, bool bTellClients);
 // One entity record the snapshot emitted: enter, update or leave.
 void NoteCosmeticRecord(unsigned int id, unsigned int bytes);
