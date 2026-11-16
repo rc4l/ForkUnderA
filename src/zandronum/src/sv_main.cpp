@@ -395,8 +395,10 @@ CUSTOM_CVAR( String, sv_rconpassword, "", CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_SENS
 }
 
 //*****************************************************************************
+// [Kaori-Chani] 1550 rather than 1024, so a snapshot frame takes fewer datagrams; archived and
+// server info, so a server that prefers the old size can set it back.
 //
-CUSTOM_CVAR( Int, sv_maxpacketsize, 1024, CVAR_ARCHIVE | CVAR_SERVERINFO )
+CUSTOM_CVAR( Int, sv_maxpacketsize, 1550, CVAR_ARCHIVE | CVAR_SERVERINFO )
 {
 	if ( self > MAX_UDP_PACKET )
 	{
