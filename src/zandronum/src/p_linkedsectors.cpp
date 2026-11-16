@@ -386,3 +386,15 @@ void P_AddSectorLinksByID(sector_t *control, int id, INTBOOL ceiling)
 		}
 	}
 }
+
+//============================================================================
+//
+// [Kaori-Chani] features/net-snapshot: which of this file's own movement bits
+// a plane is linked by, the constants being file-local here.
+//
+//============================================================================
+
+int P_LinkPlaneBits(bool ceiling)
+{
+	return ceiling ? LINK_CEILINGBITS : LINK_FLOORBITS;
+}

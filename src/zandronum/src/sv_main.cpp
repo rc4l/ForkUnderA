@@ -3655,8 +3655,11 @@ void SERVER_UpdateSectors( ULONG ulClient )
 
 //*****************************************************************************
 //
-void SERVER_UpdateMovers( ULONG ulClient )
+ULONG SERVER_UpdateMovers( ULONG ulClient )
 {
+	// [Kaori-Chani] Counted for features/net-snapshot's resend, which reports how much a
+	// client was sent again; the walks and their order are untouched.
+	ULONG								ulSent = 0;
 	DDoor								*pDoor;
 	DPlat								*pPlat;
 	DFloor								*pFloor;
@@ -3676,41 +3679,88 @@ void SERVER_UpdateMovers( ULONG ulClient )
 
 	// Tell the client about any active doors.
 	while (( pDoor = DoorIterator.Next( )) != NULL )
+	{
 		pDoor->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active plats.
 	while (( pPlat = PlatIterator.Next( )) != NULL )
+	{
 		pPlat->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active floors.
 	while (( pFloor = FloorIterator.Next( )) != NULL )
+	{
 		pFloor->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active elevators.
 	while (( pElevator = ElevatorIterator.Next( )) != NULL )
+	{
 		pElevator->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active waggles.
 	while (( pWaggle = WaggleIterator.Next( )) != NULL )
+	{
 		pWaggle->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active pillars.
 	while (( pPillar = PillarIterator.Next( )) != NULL )
+	{
 		pPillar->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active ceilings.
 	while (( pCeiling = CeilingIterator.Next( )) != NULL )
+	{
 		pCeiling->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active scrollers.
 	while (( pScroller = ScrollerIterator.Next( )) != NULL )
+	{
 		pScroller->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// [BB] Tell the client about any active pusher.
 	DPusher *pPusher = NULL;
 	TThinkerIterator<DPusher> PusherIterator;
 	while (( pPusher = PusherIterator.Next( )) != NULL )
+	{
 		pPusher->UpdateToClient( ulClient );
+		++ulSent;
+	}
+	return ulSent;
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] features/net-snapshot: every tracked mover and polyobject action sent to one
+// client again, counted, the polyobjects walked here as SERVER_UpdateMovers does not carry them.
+//
+ULONG SERVER_ResendTrackedMovers( ULONG ulClient )
+{
+	ULONG							ulSent = SERVER_UpdateMovers( ulClient );
+	DPolyAction						*pPolyAction;
+	TThinkerIterator<DPolyAction>	PolyActionIterator;
+
+	while (( pPolyAction = PolyActionIterator.Next( )) != NULL )
+	{
+		pPolyAction->UpdateToClient( ulClient );
+		++ulSent;
+	}
+	return ulSent;
 }
 
 //*****************************************************************************

@@ -486,6 +486,13 @@ static	LONG				g_lHighestReceivedSequence;
 // Delay for sending a request missing packets.
 static	LONG				g_lMissingPacketTicks;
 
+// [Kaori-Chani] features/net-snapshot: the reliable sequence the server has announced, and how
+// many tail requests have gone out since the count was last read.
+static	LONG				g_lAnnouncedSequence = -1;
+static	unsigned int		g_ulTailRequested = 0;
+// [Kaori-Chani] Sequences past the announced one that a tail request may ask for at once.
+#define	SNAP_TAIL_WINDOW	64
+
 // Debugging variables.
 static	LONG				g_lLastCmd;
 
@@ -10533,3 +10540,89 @@ ADD_STAT( momentum )
 	return ( Out );
 }
 */
+
+//*****************************************************************************
+//	[Kaori-Chani] features/net-snapshot
+//
+// The client side the module calls into: the counts its ghost-sound report
+// prints, the sound trace, the reliable-sequence anchor and the tail-request
+// count. Inert until the hooks that feed them land -- nothing here increments
+// a count or asks for a tail yet.
+//*****************************************************************************
+
+// [Kaori-Chani] Why a ghost's sound was dropped, mirrored, or played where it was asked for.
+unsigned int g_ghostSndLegacy = 0, g_ghostSndMirror = 0;
+unsigned int g_ghostSndLost = 0, g_ghostSndWrongClass = 0;
+unsigned int g_ghostSndLostLeft = 0, g_ghostSndLostNoMirror = 0, g_ghostSndLostNoGhost = 0;
+unsigned int g_ghostSndPositional = 0;
+// [Kaori-Chani] The class a legacy sound named, so a count of them is a fact rather than a guess.
+char g_ghostSndLegacyClass[64] = "";
+// [Kaori-Chani] Sounds the client played itself: the local player's, and anyone else's.
+unsigned int g_sndLocalGhost = 0, g_sndLocalOther = 0;
+
+// [Kaori-Chani] A line per sound command whose name contains this.
+CVAR( String, fua_csnap_soundtrace, "", CVAR_NOSETBYACS )
+static bool g_sndTraceById = false;	// [Kaori-Chani] set around a sound command naming an id
+
+static bool client_SoundTraced( const FString &sound )
+{
+	const char *pszFilter = fua_csnap_soundtrace;
+	if (( pszFilter == NULL ) || ( *pszFilter == '\0' ))
+		return false;
+	FString name = sound, filter = pszFilter;
+	name.ToLower( );
+	filter.ToLower( );
+	return name.IndexOf( filter ) >= 0;
+}
+
+static void client_TraceSound( const char *form, const FString &sound, int channel,
+	const char *where, const char *result )
+{
+	Printf( "[snap] soundtrace tic %d: %s %s \"%s\" chan %d | %s | %s\n", gametic,
+		g_sndTraceById ? "id" : "name", form, sound.GetChars( ), channel, where, result );
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] One trace line for the point sound the module attached.
+//
+void CLIENT_TraceSoundEvent( int soundId, int channel, const char *result )
+{
+	if (( soundId <= 0 ) || ( static_cast<unsigned int>( soundId ) >= S_sfx.Size( )))
+		return;
+	const FString sound = S_sfx[soundId].name;
+	if ( client_SoundTraced( sound ) == false )
+		return;
+	g_sndTraceById = true;
+	client_TraceSound( "point", sound, channel, "attach", result );
+	g_sndTraceById = false;
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] The newest reliable sequence announced, as a sequence rather than the low
+// word it arrives as, and never further ahead than a tail request may ask for.
+//
+void CLIENT_NoteReliableSequence( WORD low )
+{
+	const LONG anchor = g_lHighestReceivedSequence;
+	const WORD wLow = static_cast<WORD>( low - static_cast<WORD>( anchor & 0xFFFF ));
+	const LONG n = anchor + static_cast<SWORD>( wLow );
+	if ( n <= anchor )
+		g_lAnnouncedSequence = -1;
+	else
+		g_lAnnouncedSequence = ( n - anchor > SNAP_TAIL_WINDOW )
+			? ( anchor + SNAP_TAIL_WINDOW ) : n;
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] Tail requests sent since this was last read, cleared on ask.
+//
+unsigned int CLIENT_TailPacketsRequested( bool bReset )
+{
+	const unsigned int n = g_ulTailRequested;
+	if ( bReset )
+		g_ulTailRequested = 0;
+	return n;
+}
