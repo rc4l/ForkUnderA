@@ -33,6 +33,9 @@
 #include "features/net-snapshot/polyobj.h"
 #include "features/net-snapshot/computation/mover_compute.h"
 
+// [Kaori-Chani] capture.cpp's, read here so the hook that asks for a census stays one call.
+EXTERN_CVAR(Bool, fua_snap_linkcensus)
+
 using namespace zx::netsnapshot;
 
 //*****************************************************************************
@@ -2223,7 +2226,8 @@ bool zx::netsnapshot::LinkControlOwned(sector_t *sector, bool ceiling)
 
 void zx::netsnapshot::LinkCensus()
 {
-	if (numsectors <= 0)
+	// [Kaori-Chani] The setting is read here rather than at the hook, which is one call.
+	if ((fua_snap_linkcensus == false) || (numsectors <= 0))
 		return;
 
 	TArray<SnapLinkEdge> edges;

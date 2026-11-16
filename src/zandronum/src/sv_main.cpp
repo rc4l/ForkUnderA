@@ -89,6 +89,7 @@
 #include "features/net-session/syncedcvars.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] the link census and the write order
 #include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
 #include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_server_stall_ms
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] the looping sounds a late joiner is sent
@@ -3574,21 +3575,46 @@ void SERVER_UpdateSectors( ULONG ulClient )
 	if ( SERVER_IsValidClient( ulClient ) == false )
 		return;
 
+	// [Kaori-Chani] Before the heights below, so the census describes what they then do; it
+	// returns at once unless fua_snap_linkcensus asked for it.
+	zx::netsnapshot::LinkCensus( );
+
 	// [BB] Set all existing sector links.
 	for ( ulIdx = 0; ulIdx < g_SectorLinkList.Size( ); ++ulIdx )
 		SERVERCOMMANDS_SetSectorLink( g_SectorLinkList[ulIdx].ulSector, g_SectorLinkList[ulIdx].iArg1, g_SectorLinkList[ulIdx].iArg2, g_SectorLinkList[ulIdx].iArg3, ulClient, SVCF_ONLYTHISCLIENT );
+
+	// [Kaori-Chani] The planes in link order, each control ahead of what it drives and a driven
+	// plane sent whether it changed or not, a control arriving last dragging a settled plane away.
+	if ( numsectors > 0 )
+	{
+		TArray<int> order;
+		TArray<BYTE> drivenPlanes;
+		order.Resize( static_cast<unsigned> (numsectors) );
+		drivenPlanes.Resize( static_cast<unsigned> (numsectors) );
+
+		const int lCyclic = zx::netsnapshot::LinkWriteOrder( &order[0], &drivenPlanes[0] );
+		if ( lCyclic > 0 )
+			Printf( "SERVER_UpdateSectors: %d sectors on or behind a link cycle; their planes may"
+				" be wrong on a joiner\n", lCyclic );
+
+		for ( unsigned k = 0; k < order.Size( ); k++ )
+		{
+			ulIdx = static_cast<ULONG> (order[k]);
+			pSector = &sectors[ulIdx];
+
+			if ( pSector->bFloorHeightChange || ( drivenPlanes[ulIdx] & 1 ))
+				SERVERCOMMANDS_SetSectorFloorPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+
+			if ( pSector->bCeilingHeightChange || ( drivenPlanes[ulIdx] & 2 ))
+				SERVERCOMMANDS_SetSectorCeilingPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+		}
+	}
 
 	for ( ulIdx = 0; static_cast<signed> (ulIdx) < numsectors; ulIdx++ )
 	{
 		pSector = &sectors[ulIdx];
 
-		// Update the floor heights.
-		if ( pSector->bFloorHeightChange )
-			SERVERCOMMANDS_SetSectorFloorPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-
-		// Update the ceiling heights.
-		if ( pSector->bCeilingHeightChange )
-			SERVERCOMMANDS_SetSectorCeilingPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+		// [Kaori-Chani] The heights go in link order above, not here.
 
 		// Update the panning.
 		if (( pSector->SavedCeilingXOffset != pSector->GetXOffset(sector_t::ceiling) ) ||
