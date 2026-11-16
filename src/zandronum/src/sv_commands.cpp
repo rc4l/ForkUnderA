@@ -5771,3 +5771,16 @@ void SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExt
 	command.SetFrame( frame );
 	command.sendCommandToClients( ulPlayerExtra, flags );
 }
+
+//*****************************************************************************
+//
+// [Kaori-Chani] features/net-snapshot: a body that held the id reserved for its player has moved
+// to newID, told before anything else refers to it.
+//
+void SERVERCOMMANDS_SetThingNetID( unsigned short oldID, unsigned short newID )
+{
+	ServerCommands::SetThingNetID command;
+	command.SetOldID( oldID );
+	command.SetNewID( newID );
+	command.sendCommandToClients();
+}

@@ -496,5 +496,7 @@ void	SERVERCOMMANDS_EndConversation( ULONG player );
 // stopped, and from which frame. Declared only: its body builds a ServerCommands class the
 // protocol spec generates, so the body arrives with that spec entry.
 void	SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: a body moved off the id reserved for its player.
+void	SERVERCOMMANDS_SetThingNetID( unsigned short oldID, unsigned short newID );
 
 #endif	// __SV_COMMANDS_H__

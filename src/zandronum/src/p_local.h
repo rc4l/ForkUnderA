@@ -131,6 +131,9 @@ void P_ClearStateStringCache ();
 #define SPF_TEMPPLAYER		1	// spawning a short-lived dummy player
 #define SPF_WEAPONFULLYUP	2	// spawn with weapon already raised
 #define SPF_CLIENTUPDATE	4	// [BB]
+// [Kaori-Chani] A voodoo doll, which P_SpawnPlayer would otherwise hand the id reserved for
+// the player it cannot tell it from.
+#define SPF_VOODOODOLL		8
 
 APlayerPawn *P_SpawnPlayer (struct FPlayerStart *mthing, int playernum, int flags=0);
 

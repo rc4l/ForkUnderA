@@ -5017,7 +5017,8 @@ void IDList<T>::clear( void )
 	for ( unsigned int i = 0; i <= ( std::numeric_limits<unsigned short>::max )( ); i++ )
 		freeID ( i );
 
-	_firstFreeID = 1;
+	// [Kaori-Chani] Not 1: the ids below firstDynamicID are each a player's own.
+	_firstFreeID = firstDynamicID( );
 }
 
 //*****************************************************************************
@@ -5064,7 +5065,8 @@ unsigned short IDList<T>::getNewID( void )
 	unsigned short id = _firstFreeID;
 
 	// [rc4l] The next free one found in the bitmap rather than by walking every entry: a full table (nuts.wad with Complex Doom, 70,000 actors) read all 65,535 on each spawn, 44% of a tic (features/netids).
-	_firstFreeID = static_cast<unsigned short>( zx::netids::ComputeNextFreeId ( _freeBits, id ));
+	_firstFreeID = static_cast<unsigned short>(
+		zx::netids::ComputeNextFreeId ( _freeBits, id, firstDynamicID( )));
 	if ( _firstFreeID == id )
 	{
 		// [BB] In case there is no free netID, the server has to abort the current game.
@@ -5072,9 +5074,11 @@ unsigned short IDList<T>::getNewID( void )
 		{
 			// [BB] We can only spawn (MAX_NETID-2) actors with netID, because ID zero is reserved and
 			// we already check that a new ID for the next actor is available when assign a net ID.
-			Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", ( std::numeric_limits<unsigned short>::max )( ));
+			// [Kaori-Chani] The true ceiling, id 0 and the player range both being reserved.
+			const unsigned int limit = ( std::numeric_limits<unsigned short>::max )( ) - MAXPLAYERS;
+			Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", limit );
 			CountActors ( );
-			I_Error ("Network ID limit reached (>=%u actors)!\n", ( std::numeric_limits<unsigned short>::max )( ));
+			I_Error ("Network ID limit reached (>=%u actors)!\n", limit );
 		}
 
 		return ( 0 );
@@ -5822,6 +5826,40 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	oldactor = p->mo;
 	p->mo = mobj;
 	mobj->player = p;
+
+	// [Kaori-Chani] features/net-snapshot: the body takes the id reserved for its player, so a
+	// client can make a mirror for one whose spawn has not arrived.
+	//
+	// [Kaori-Chani] A server alone, a client being told its ids and single player sending none,
+	// and never for a doll or a temporary player, which share their player's number.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& (( flags & ( SPF_TEMPPLAYER | SPF_VOODOODOLL )) == 0 ))
+	{
+		const unsigned short reserved = IDList<AActor>::reservedIDForPlayer ( playernum );
+		if (( reserved != 0 ) && ( mobj->NetID != reserved ))
+		{
+			// [Kaori-Chani] The incumbent is this player's own corpse, whose NetID field
+			// still holds the id Destroy frees by, so both halves are vacated first.
+			AActor *pIncumbent = g_ActorNetIDList.findPointerByID ( reserved );
+			if (( pIncumbent != NULL ) && ( pIncumbent != mobj ))
+			{
+				g_ActorNetIDList.freeID ( reserved );
+				pIncumbent->NetID = g_ActorNetIDList.getNewID( );
+				if ( pIncumbent->NetID != 0 )
+					g_ActorNetIDList.useID ( pIncumbent->NetID, pIncumbent );
+				// [Kaori-Chani] Moved rather than deleted, and the clients are told which id it
+				// went to before anything else refers to it.
+				if ( pIncumbent->NetID != 0 )
+					SERVERCOMMANDS_SetThingNetID( reserved, pIncumbent->NetID );
+			}
+
+			if ( mobj->NetID != 0 )
+				g_ActorNetIDList.freeID ( mobj->NetID );
+			mobj->NetID = reserved;
+			g_ActorNetIDList.useID ( reserved, mobj );
+		}
+	}
+
 	// [BB] The code below assumes that state won't be altered.
 	const BYTE state = p->playerstate;
 	// [BC] Added PST_REBORNNOINVENTORY, PST_ENTERNOINVENTORY.

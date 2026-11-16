@@ -211,3 +211,11 @@ Command SnapMoverGate
 	Bool legacyOff
 	Long frame
 EndCommand
+
+# [Kaori-Chani] A player's previous body hands its reserved id to the new pawn and moves to this
+# one, so it can still be destroyed or changed online.
+Command SetThingNetID
+	ExtendedCommand
+	NetID oldID
+	NetID newID
+EndCommand

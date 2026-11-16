@@ -34,11 +34,11 @@ bool ComputeIdFree(const uint64_t *bits, unsigned id)
 	return ((bits[id >> 6] >> (id & 63)) & 1) != 0;
 }
 
-unsigned ComputeNextFreeId(const uint64_t *bits, unsigned from)
+unsigned ComputeNextFreeId(const uint64_t *bits, unsigned from, unsigned lowest)
 {
 	const unsigned after = FirstSet(bits, from + 1, kIdCount);
 	if (after < kIdCount) return after;
-	return FirstSet(bits, 1, from);
+	return FirstSet(bits, lowest, from);
 }
 
 }} // namespace zx::netids

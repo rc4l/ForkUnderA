@@ -10239,6 +10239,35 @@ void ServerCommands::SnapMoverGate::Execute()
 }
 
 //*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: a body moved off the id reserved for its player, which
+// takes the new id here rather than being destroyed and respawned.
+void ServerCommands::SetThingNetID::Execute()
+{
+	AActor *pActor = g_ActorNetIDList.findPointerByID ( oldID );
+	if (( pActor == NULL ) || ( newID == 0 ) || ( newID == oldID ))
+		return;
+
+	AActor *pStale = g_ActorNetIDList.findPointerByID ( newID );
+	if ( pStale != NULL )
+	{
+		// [Kaori-Chani] A player's body never goes, the server having a reserved id for it.
+		if ( pStale->player != NULL )
+		{
+			CLIENT_PrintWarning( "SetThingNetID: refused to delete a player's body, netID = %u\n",
+				static_cast<unsigned int>( newID ));
+			return;
+		}
+
+		pStale->Destroy( );
+		g_ActorNetIDList.freeID ( newID );
+	}
+
+	g_ActorNetIDList.freeID ( oldID );
+	pActor->NetID = newID;
+	g_ActorNetIDList.useID ( newID, pActor );
+}
+
+//*****************************************************************************
 //
 void STACK_ARGS CLIENT_PrintWarning( const char* format, ... )
 {

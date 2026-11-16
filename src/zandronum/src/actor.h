@@ -1682,6 +1682,12 @@ public:
 			return ( 0 );
 		return ( static_cast<unsigned short>( playernum ) + 1 );
 	}
+
+	// [Kaori-Chani] The lowest id the allocator may hand out, every id below it being a player's.
+	static unsigned short firstDynamicID ( )
+	{
+		return ( static_cast<unsigned short>( MAXPLAYERS ) + 1 );
+	}
 };
 
 extern	IDList<AActor> g_ActorNetIDList;

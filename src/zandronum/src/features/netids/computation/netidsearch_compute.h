@@ -19,8 +19,11 @@ void ComputeMarkId(uint64_t *bits, unsigned id, bool free);
 // [rc4l] Whether id is marked free in bits.
 bool ComputeIdFree(const uint64_t *bits, unsigned id);
 
-// [rc4l] The first free id after from, up to 65535 and then from 1 up to from, as IDList::getNewID's walk finds it; from itself when no other id is free.
-unsigned ComputeNextFreeId(const uint64_t *bits, unsigned from);
+// [rc4l] The first free id after from, up to 65535 and then from lowest up to from, as
+// IDList::getNewID's walk finds it; from itself when no other id is free.
+//
+// [Kaori-Chani] lowest is firstDynamicID(), so the wrap skips the ids reserved for players.
+unsigned ComputeNextFreeId(const uint64_t *bits, unsigned from, unsigned lowest);
 
 }} // namespace zx::netids
 
