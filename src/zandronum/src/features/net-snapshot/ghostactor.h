@@ -22,6 +22,10 @@ namespace zx { namespace netsnapshot {
 
 // Called once per rendered frame, before the world is drawn.
 void GhostFrame();
+
+// [Kaori-Chani] The fold on the packet clock, called once for each payload applied: the
+// state it leaves is what the frame's own folds are taken from.
+void GhostFoldApplied(unsigned int nowMS);
 // The [snap] report now, clearing its counts as the 5 s one does: fua_snap_fuzz
 // calls it so its counts don't reach the next one.
 void GhostReportNow();

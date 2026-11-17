@@ -1025,3 +1025,77 @@ TEST(SnapshotSmooth, AWalkerDrawsAnEvenSlideWhateverItsRecordRate)
 		}
 	}
 }
+
+// [Kaori-Chani] Plan C's start pose, the one the replay and the live frame share: the renderer
+// blends from start to end by frac, so a start set this way draws the fold.
+TEST(SnapshotSmooth, AnAnchoredStartDrawsTheFoldThisFrame)
+{
+	const fixed_t end[3] = { (fixed_t)(100 * U), (fixed_t)(20 * U), (fixed_t)(-5 * U) };
+	fixed_t start[3];
+
+	// With the whole tic left the start is the fold itself, since nothing is blended off yet.
+	{
+		const double here[3] = { 100 * U + 1000.0, 20 * U, -5 * U };
+		EXPECT_TRUE(ComputeAnchorStart(end, here, (fixed_t)0, start));
+		EXPECT_EQ((fixed_t)(100 * U + 1000.0), start[0]);
+		EXPECT_EQ(end[1], start[1]);
+		EXPECT_EQ(end[2], start[2]);
+	}
+
+	// Half way through, half the offset is blended off, so the start carries twice it.
+	{
+		const double here[3] = { 100 * U + 1000.0, 20 * U - 300.0, -5 * U };
+		EXPECT_TRUE(ComputeAnchorStart(end, here, (fixed_t)(U / 2), start));
+		EXPECT_EQ((fixed_t)(100 * U + 2000.0), start[0]);
+		EXPECT_EQ((fixed_t)(20 * U - 600.0), start[1]) << "a negative offset scales the same way";
+		EXPECT_EQ(end[2], start[2]);
+	}
+
+	// A fold that landed on the end gives the end exactly, on every frac.
+	{
+		const double here[3] = { 100 * U, 20 * U, -5 * U };
+		EXPECT_TRUE(ComputeAnchorStart(end, here, (fixed_t)(U / 3), start));
+		for (unsigned int a = 0; a < 3; ++a)
+			EXPECT_EQ(end[a], start[a]);
+	}
+}
+
+// [Kaori-Chani] The guard: under a sixteenth of a tic there is too little left to divide an
+// offset into, and a frac forced to 1 by cl_capfps or r_NoInterpolate lands there too.
+TEST(SnapshotSmooth, TheLastSixteenthOfATicDrawsTheEndOutright)
+{
+	const fixed_t end[3] = { (fixed_t)(100 * U), (fixed_t)0, (fixed_t)0 };
+	const double here[3] = { 100 * U + 1000.0, 0.0, 0.0 };
+	fixed_t start[3];
+
+	// Exactly a sixteenth left still anchors, which is the edge the rule names.
+	EXPECT_TRUE(ComputeAnchorStart(end, here, (fixed_t)(U * 15 / 16), start));
+	EXPECT_EQ((fixed_t)(100 * U + 16000.0), start[0]);
+
+	// A unit past it does not, and the start is left on the end.
+	EXPECT_FALSE(ComputeAnchorStart(end, here, (fixed_t)(U * 15 / 16 + 1), start));
+	EXPECT_EQ(end[0], start[0]);
+
+	// As for a frac of 1, where the end is what the frame draws.
+	EXPECT_FALSE(ComputeAnchorStart(end, here, (fixed_t)U, start));
+	EXPECT_EQ(end[0], start[0]);
+}
+
+// [Kaori-Chani] A fold that did not move comes back on the end for every frac, which the
+// truncated form missed by a unit.
+TEST(SnapshotSmooth, ARestingMirrorIsNeverDrawnAUnitLow)
+{
+	static const double xs[] = { 1.0, 1234.5, 100 * U, 12345678.0, -98765432.0 };
+	for (unsigned int i = 0; i < sizeof(xs) / sizeof(xs[0]); ++i)
+	{
+		const fixed_t end[3] = { (fixed_t)xs[i], (fixed_t)(-xs[i]), (fixed_t)0 };
+		const double here[3] = { (double)end[0], (double)end[1], (double)end[2] };
+		for (unsigned int n = 0; n <= 16; ++n)
+		{
+			fixed_t start[3];
+			ComputeAnchorStart(end, here, (fixed_t)(U * n / 17), start);
+			for (unsigned int a = 0; a < 3; ++a)
+				EXPECT_EQ(end[a], start[a]) << "x " << xs[i] << ", frac " << n << "/17";
+		}
+	}
+}

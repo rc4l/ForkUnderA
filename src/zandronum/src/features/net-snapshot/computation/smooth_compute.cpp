@@ -348,6 +348,23 @@ bool zx::netsnapshot::ComputeSmoothSlides(const SnapSmooth & s, const SnapSmooth
 	return (cfg.bStepPop == false) || (cfg.stepLimit <= 0);
 }
 
+bool zx::netsnapshot::ComputeAnchorStart(const fixed_t end[3], const double here[3],
+	fixed_t frac, fixed_t start[3])
+{
+	for (unsigned int a = 0; a < 3; ++a)
+		start[a] = end[a];
+
+	const double f = (double)frac / (double)FRACUNIT;
+	if ((1.0 - f) < (1.0 / 16.0))
+		return false;
+
+	// As an offset from the end, rounded, so a fold that lands on the end gives the
+	// end exactly.
+	for (unsigned int a = 0; a < 3; ++a)
+		start[a] = end[a] + (fixed_t)floor((here[a] - (double)end[a]) / (1.0 - f) + 0.5);
+	return true;
+}
+
 void zx::netsnapshot::ComputeSlideFrame(bool bSlides, bool bNewTic, const fixed_t pose[3],
 	unsigned int gapTics, fixed_t pos[3], fixed_t prev[3])
 {

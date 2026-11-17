@@ -29,6 +29,7 @@
 #include "c_dispatch.h"
 #include "c_console.h"
 #include "i_system.h"
+#include "r_utility.h"	// [Kaori-Chani] r_NoInterpolate, which forces the frac to 1
 #include "i_tictime.h"
 #include "network.h"
 #include "cl_main.h"		// CLIENT_MoveThing, for the real player actors
@@ -44,6 +45,7 @@
 #include "features/net-snapshot/computation/anim_compute.h"
 #include "features/net-snapshot/computation/mover_compute.h"
 #include "features/net-snapshot/computation/smooth_compute.h"
+#include "features/net-snapshot/computation/replay_compute.h"	// [Kaori-Chani] ComputeCensusAdd
 #include "features/net-snapshot/computation/wall_compute.h"
 #include "features/net-snapshot/capture.h"
 #include "features/net-snapshot/record.h"
@@ -61,6 +63,7 @@ EXTERN_CVAR(Int, cl_rockettrails)
 EXTERN_CVAR(Bool, fua_csnap_nolocalsound)
 EXTERN_CVAR(Int, fua_csnap_missile_extrap)
 EXTERN_CVAR(Bool, nomonsterinterpolation)
+EXTERN_CVAR(Bool, cl_capfps)
 
 // Set by the network path when live snapshot traffic is arriving, so
 // ghosts appear without the player having to enable anything.
@@ -145,6 +148,11 @@ CVAR(Int, fua_csnap_smooth_entities, 1, CVAR_NOSETBYACS)
 
 // The smoothing census, window totals (SnapSmoothStats).
 static SnapSmoothStats g_sm;
+
+// [Kaori-Chani] The census describes a tic, taken from the last refill in it: a packet's
+// fold is held until the tic turns over, so a second packet's replaces the first's.
+static SnapSmoothStats g_smTic;
+static int g_smTicCounted = -1;
 
 // The last event sequence applied to each mirror, as an event changes no frame.
 static BYTE * g_mirrorEventSeq = NULL;
@@ -1659,12 +1667,10 @@ static float ghost_WallStop(const AActor * pActor, const SnapGhostPose & pose)
 	return (float)best;
 }
 
-// One frame of the mirror's smoothing with this client's settings, returning
-// whether the renderer slides it instead (bRawWalk: walking steps land raw).
-static bool ghost_Smooth(SnapSmooth & s, unsigned int id, const SnapGhostPose & pose,
-	unsigned int nowMS, bool bRawWalk, fixed_t & outX, fixed_t & outY, fixed_t & outZ)
+// [Kaori-Chani] The settings every one of the three below reads, so none of them can
+// disagree about what the smoothing was configured to do.
+static SnapSmoothCfg ghost_SmoothCfg(unsigned int id)
 {
-	const SnapSmoothIn in = ComputeSmoothIn(pose);
 	SnapSmoothCfg cfg;
 	cfg.stepLimit = fua_csnap_smooth_step;
 	cfg.extrapLimit = fua_csnap_smooth_nonballistic;
@@ -1672,8 +1678,77 @@ static bool ghost_Smooth(SnapSmooth & s, unsigned int id, const SnapGhostPose & 
 	cfg.bStepPop = ComputeSmoothStepPop(fua_csnap_smooth_entities, id, consoleplayer, MAXPLAYERS);
 	cfg.bInReset = g_smoothInReset;
 	cfg.ticRate = TICRATE;
-	ComputeSmooth(s, in, cfg, nowMS, g_sm, outX, outY, outZ);
-	return ComputeSmoothSlides(s, in, cfg, bRawWalk);
+	return cfg;
+}
+
+// [Kaori-Chani] The fold, and the only thing that takes a mirror's smoothing to write it:
+// a packet's records fold in at the moment it arrived, and that state is what carries
+// forward, so a second packet in the same tic starts from the first.
+static void ghost_Fold(SnapSmooth & s, unsigned int id, const SnapGhostPose & pose,
+	unsigned int nowMS, SnapSmoothStats & st, fixed_t & outX, fixed_t & outY, fixed_t & outZ)
+{
+	ComputeSmooth(s, ComputeSmoothIn(pose), ghost_SmoothCfg(id), nowMS, st, outX, outY, outZ);
+}
+
+// [Kaori-Chani] A fold into a copy the caller owns, so the frame can fold at its own
+// moment and then on to the tic's end from that same state, as the replay does.
+static void ghost_FoldCopy(SnapSmooth & copy, unsigned int id, const SnapGhostPose & pose,
+	unsigned int atMS, fixed_t & outX, fixed_t & outY, fixed_t & outZ)
+{
+	// A scratch census: the counts that are the tic's are the carried fold's alone.
+	SnapSmoothStats scratch;
+	memset(&scratch, 0, sizeof(scratch));
+	ComputeSmooth(copy, ComputeSmoothIn(pose), ghost_SmoothCfg(id), atMS, scratch,
+		outX, outY, outZ);
+}
+
+// [Kaori-Chani] features/net-snapshot: the fold, on the packet clock. Every id this
+// payload wrote a record for folds into its own carried smoothing at the moment the
+// payload arrived, so two packets inside one tic fold in turn rather than both from the
+// tic's end, and the frame draws where the newest one left the mirror.
+void zx::netsnapshot::GhostFoldApplied(unsigned int nowMS)
+{
+	if (g_smooth == NULL)
+		return;
+
+	unsigned int n = 0;
+	const unsigned int * pIds = TouchedIds(n);
+	if ((pIds == NULL) || (n == 0))
+		return;
+
+	// The tic before this one is counted now, so what is held is always the newest
+	// refill of the tic in hand.
+	if (gametic != g_smTicCounted)
+	{
+		ComputeCensusAdd(g_sm, g_smTic, false);
+		g_smTicCounted = gametic;
+	}
+	SnapSmoothStats thisRefill;
+	memset(&thisRefill, 0, sizeof(thisRefill));
+
+	for (unsigned int k = 0; k < n; ++k)
+	{
+		const unsigned int id = pIds[k];
+		if (id >= SNAP_MAXID)
+			continue;
+
+		// Quietly: the drawn jump is the tic-end sample's to measure, not this one's.
+		SnapGhostPose pose;
+		if (SampleGhostQuiet(id, nowMS, pose) == false)
+			continue;
+
+		fixed_t hx = pose.x, hy = pose.y, hz = pose.z;
+		ghost_Fold(g_smooth[id], id, pose, nowMS, thisRefill, hx, hy, hz);
+	}
+
+	g_smTic = thisRefill;
+}
+
+// [Kaori-Chani] Whether the renderer slides this one, read from the folded state.
+static bool ghost_Slides(const SnapSmooth & s, unsigned int id, const SnapGhostPose & pose,
+	bool bRawWalk)
+{
+	return ComputeSmoothSlides(s, ComputeSmoothIn(pose), ghost_SmoothCfg(id), bRawWalk);
 }
 
 // Sets the mirror's state with the wire's remaining tics (255 unknown), aged
@@ -1947,6 +2022,13 @@ void zx::netsnapshot::GhostFrame()
 	// Everything is sampled at now on the deltas' clock, once a frame.
 	const unsigned int renderMS = I_MSTime();
 
+	// [Kaori-Chani] The tic's end on that clock, and this frame's fraction of it: r_TicFrac
+	// is set after the fill, so reading it here would give the frame before.
+	uint32 ticEnd32 = 0;
+	const fixed_t ticFracNow = I_GetTimeFrac(&ticEnd32);
+	const fixed_t ticFrac = (cl_capfps || r_NoInterpolate) ? (fixed_t)FRACUNIT : ticFracNow;
+	const unsigned int tickEndMS = (unsigned int)ticEnd32;
+
 	// Smoothing restarts with the stream and around a map reset.
 	if (g_smooth != NULL)
 	{
@@ -2032,9 +2114,11 @@ void zx::netsnapshot::GhostFrame()
 	const long long farIn   = (long long)(fua_csnap_cull_far  - GHOST_CULL_HYST) * (fua_csnap_cull_far  - GHOST_CULL_HYST);
 	const long long farOut  = (long long)(fua_csnap_cull_far  + GHOST_CULL_HYST) * (fua_csnap_cull_far  + GHOST_CULL_HYST);
 
-	// One rotating slice of FAR ghosts is refreshed per frame; 8 phases means a
-	// far ghost updates about every 8th frame, which at distance is invisible.
-	g_cullRotor = (g_cullRotor + 1) & 7;
+	// One rotating slice of FAR ghosts is refreshed per tic, which at distance is
+	// invisible.
+	// [Kaori-Chani] Two phases off the tic, not eight off the call: a tic of two packets
+	// advanced it twice, and eight would refresh a far mirror far slower (README).
+	g_cullRotor = (unsigned int)(gametic & 1);
 
 	g_playerGhostSeen = g_playerGhostExcluded = 0;
 
@@ -2043,7 +2127,7 @@ void zx::netsnapshot::GhostFrame()
 		const unsigned int id = pIds[i];
 
 		SnapGhostPose pose;
-		if (SampleGhost(id, renderMS, pose) == false)
+		if (SampleGhost(id, tickEndMS, pose) == false)
 			continue;
 
 		// An excluded player gets no mirror, which would double it.
@@ -2190,7 +2274,7 @@ void zx::netsnapshot::GhostFrame()
 			else ++nFar;
 
 			// A FAR ghost is refreshed only on its rotor phase, its id.
-			if ((tier == GTIER_FAR) && ((id & 7) != g_cullRotor))
+			if ((tier == GTIER_FAR) && ((id & 1) != g_cullRotor))
 				continue;
 		}
 		else
@@ -2236,11 +2320,26 @@ void zx::netsnapshot::GhostFrame()
 
 		// Smoothing after the wall clamp; under nomonsterinterpolation
 		// a monster's walking steps land raw.
+		// The fold at this frame's moment is what it draws, with the tic's end folded on from
+		// that state; the carried one is const here, so only a packet's fold writes it.
 		bool bSlides = false;
+		bool bHere = false;
+		fixed_t hereNow[3] = { pose.x, pose.y, pose.z };
 		if (g_smooth != NULL)
-			bSlides = ghost_Smooth(g_smooth[id], id, pose, renderMS,
-				nomonsterinterpolation && ((pActor->GetDefault()->flags3 & MF3_ISMONSTER) != 0),
-				pose.x, pose.y, pose.z);
+		{
+			const SnapSmooth & carried = g_smooth[id];
+			SnapSmooth chain = carried;
+			SnapGhostPose atFrame;
+			if (SampleGhostQuiet(id, renderMS, atFrame))
+			{
+				ghost_FoldCopy(chain, id, atFrame, renderMS,
+					hereNow[0], hereNow[1], hereNow[2]);
+				bHere = true;
+			}
+			ghost_FoldCopy(chain, id, pose, tickEndMS, pose.x, pose.y, pose.z);
+			bSlides = ghost_Slides(carried, id, pose,
+				nomonsterinterpolation && ((pActor->GetDefault()->flags3 & MF3_ISMONSTER) != 0));
+		}
 
 		// The pose of a descending extrapolated ghost stops at its sector's
 		// floor plane, 3D floors and step-ups ignored.
@@ -2280,6 +2379,15 @@ void zx::netsnapshot::GhostFrame()
 		fixed_t prev[3] = { pActor->PrevX, pActor->PrevY, pActor->PrevZ };
 		ComputeSlideFrame(bSlides && (g_slideTic != NULL), bNewTic, want, pose.posGapTics,
 			pos, prev);
+
+		// [Kaori-Chani] The start that makes this frame draw the fold at its own moment;
+		// without it the start is the end and the mirror steps as the copy refills.
+		if ((bSlides == false) && bHere)
+		{
+			const double here[3] = { (double)hereNow[0], (double)hereNow[1],
+				(double)hereNow[2] };
+			ComputeAnchorStart(want, here, ticFrac, prev);
+		}
 		// Relinked directly and only on a move, SetOrigin's floor scan unread.
 		if ((pActor->x != pos[0]) || (pActor->y != pos[1]) || (pActor->z != pos[2]))
 		{
@@ -2721,8 +2829,8 @@ static void ghost_Report()
 			Printf("[snap] smoothing: stepped %u folds (mean %.1f u), %u snaps,"
 				" residual <0.5 %u <2 %u <8 %u 8+ %u | extrapolated %u folds"
 				" (mean %.2f u), %u snaps, residual <0.5 %u <2 %u <8 %u 8+ %u"
-				" | %u frames off target, %u stepped drawn OUTSIDE its records | %u records"
-				" moved nothing | extrapolated drawn REVERSED %u of %u moving frames\n",
+				" | %u tics off target, %u stepped drawn OUTSIDE its records | %u records"
+				" moved nothing | extrapolated drawn REVERSED %u of %u moving tics\n",
 				g_sm.folds[0], (g_sm.folds[0] > 0) ? g_sm.foldSum[0] / g_sm.folds[0] : 0.0,
 				g_sm.snaps[0], g_sm.resid[0][0], g_sm.resid[0][1], g_sm.resid[0][2],
 				g_sm.resid[0][3], g_sm.folds[1],

@@ -156,6 +156,10 @@ static unsigned int	g_streamEpoch = 0;
 
 // Ids that entered on the latest ApplyDelta.
 static unsigned int* g_enteredIds = NULL;
+// [Kaori-Chani] And every id a record of it was applied to, an update as much as an
+// enter, since a mirror's smoothing folds the same either way.
+static unsigned int* g_touchedIds = NULL;
+static unsigned int  g_touchedCount = 0;
 // Each id's last leave and the newest packet time on the arrival clock, the
 // stamp cleared on enter.
 static unsigned int* g_leftAtMS = NULL;
@@ -518,6 +522,7 @@ static void clent_Init()
 		g_presentIds = new unsigned int[SNAP_MAXID];
 		g_presentSlot = new int[SNAP_MAXID];
 		g_enteredIds = new unsigned int[SNAP_MAXID];
+		g_touchedIds = new unsigned int[SNAP_MAXID];
 		g_leftAtMS = new unsigned int[SNAP_MAXID];
 		memset(g_leftAtMS, 0, SNAP_MAXID * sizeof(unsigned int));
 		memset(g_presentSlot, 0xFF, SNAP_MAXID * sizeof(int));	// all -1
@@ -533,6 +538,7 @@ void zx::netsnapshot::ClientReset()
 		memset(g_leftAtMS, 0, SNAP_MAXID * sizeof(unsigned int));
 	g_presentCount = 0;
 	g_enteredCount = 0;
+	g_touchedCount = 0;
 	g_streamVersion = ZSNAP_VERSION;
 	g_haveServerTic = false;	// tic numbering does not carry across a map
 	++g_streamEpoch;
@@ -779,6 +785,7 @@ void zx::netsnapshot::ForgetWorld()
 		memset(g_leftAtMS, 0, SNAP_MAXID * sizeof(unsigned int));
 	g_presentCount = 0;
 	g_enteredCount = 0;
+	g_touchedCount = 0;
 	g_streamVersion = ZSNAP_VERSION;
 	g_haveServerTic = false;	// tic numbering does not carry across a map
 	++g_streamEpoch;
@@ -1371,6 +1378,12 @@ static void clent_ApplyEvent(WORD id, BYTE type, const BYTE * pPayload,
 
 static void clent_ClockFeed(int gameTic, unsigned int wallMS);
 
+const unsigned int* zx::netsnapshot::TouchedIds(unsigned int& count)
+{
+	count = (g_touchedIds != NULL) ? g_touchedCount : 0;
+	return g_touchedIds;
+}
+
 unsigned int zx::netsnapshot::ApplyDelta(const BYTE* pData, unsigned int size,
 	int serverTic, int gameTic, unsigned int wallMS, char* pszError, unsigned int errorLen,
 	SnapApplyStats* pStats)
@@ -1420,8 +1433,9 @@ unsigned int zx::netsnapshot::ApplyDelta(const BYTE* pData, unsigned int size,
 	if (pStats != NULL)
 		*pStats = SnapApplyStats();
 
-	// The entered list describes this payload only.
+	// The entered list describes this payload only, as the touched list does.
 	g_enteredCount = 0;
+	g_touchedCount = 0;
 
 	unsigned int errors = 0;
 	unsigned int off = 0;
@@ -1741,6 +1755,10 @@ unsigned int zx::netsnapshot::ApplyDelta(const BYTE* pData, unsigned int size,
 			}
 			g.targetNetID = targetId;
 		}
+
+		// [Kaori-Chani] Past every guard, so this id is one the fold must visit.
+		if ((g_touchedIds != NULL) && (g_touchedCount < SNAP_MAXID))
+			g_touchedIds[g_touchedCount++] = id;
 
 		if (g.present == false)
 		{
@@ -2265,6 +2283,13 @@ static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostP
 	else
 		{ ++g_sampHeld; g_lastBranch = "held"; }
 	return true;
+}
+
+// [Kaori-Chani] The sample without the measuring, for a caller that is not the pose the
+// mirror lands on: the jump, the span and recsSinceRender describe that one alone.
+bool zx::netsnapshot::SampleGhostQuiet(unsigned int id, unsigned int atMS, SnapGhostPose& out)
+{
+	return clent_SampleInner(id, atMS, out);
 }
 
 // Samples, then measures how far the rendered position moved since last frame.

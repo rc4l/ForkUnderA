@@ -258,6 +258,10 @@ void zx::netsnapshot::OnSnapshot( BYTESTREAM_s * pByteStream )
 	// Live traffic is arriving: show the ghosts without requiring a cvar.
 	GhostsFromNetwork( true );
 
+	// [Kaori-Chani] And the fold, on this same clock, so the records are in each mirror's
+	// smoothing before a frame draws them, whichever tic that frame falls in.
+	GhostFoldApplied( arrivalMS );
+
 	// The ack, by datagram sequence and never by frame, and sent even for a
 	// rejected payload, which still arrived.
 	ComputeAckFold( static_cast<unsigned int>( seq ), s_lastAckSeq, s_ackHistory );

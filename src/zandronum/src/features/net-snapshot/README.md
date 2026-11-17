@@ -60,6 +60,22 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   cuts, the clock model, the interest tiers, the join's frame and map stamp, the gravity law and run
   steps, the mover write order, the replay's histogram, the ghost sampler, the smoothing, and the
   wall sweep — each with its colocated `*_test.cpp`.
+  - `ComputeAnchorStart`, in the smoothing unit, is the mirror interpolation rule's start pose, and
+    both the live frame and the replay's analysis call it so that `fua_csnap_analyze ... anchor`
+    measures what a client actually draws. Two things about it are deliberate and easy to undo by
+    accident. It takes the offset from the end and rounds it, rather than dividing the pose as
+    `(h - f*x) / (1 - f)`: the truncated form drew a resting monster a unit low under this build's
+    floating-point settings, because a fold that did not move has to come back on the end exactly,
+    not near it. And `here` arrives in raw units, as the sampler leaves it, with `frac` the same
+    `fixed_t` both callers already hold, so neither converts before the division — a comparison
+    against the reference tag must not be able to fail on a conversion alone.
+  - The far rotor refreshes one slice of distant mirrors at a time, and its phase is keyed
+    on the game tic rather than advanced per call, because this fork's render copy refills
+    on a tic *or* a packet: advancing per call moved the phase twice in a tic that carried
+    two packets, leaving a far mirror's turn to the traffic rather than to the clock. The
+    phase count is two, not the reference's eight, because the reference advanced per drawn
+    frame at around 140 fps and so refreshed a far mirror about 18 times a second; eight
+    phases off a 35 Hz tic clock would give 4.4, where two give 17.5.
 - `format_test.cpp`: the format layer's own tests, narrow frame and wide.
 - `refdump_test.cpp`: the reference decode, below. The dumper it decodes with is shared, in
   `tests/snapdump/`, with the `snap_dump` command line beside it.

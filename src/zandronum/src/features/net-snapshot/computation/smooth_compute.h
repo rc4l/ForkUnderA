@@ -164,6 +164,11 @@ bool ComputeSmoothSlides(const SnapSmooth & s, const SnapSmoothIn & pose,
 void ComputeSlideFrame(bool bSlides, bool bNewTic, const fixed_t pose[3],
 	unsigned int gapTics, fixed_t pos[3], fixed_t prev[3]);
 
+// [Kaori-Chani] The start pose that makes this frame draw `here`, rounded so a resting mirror
+// stays on the end; in a tic's last sixteenth, or at frac 1, it is the end and false comes back.
+bool ComputeAnchorStart(const fixed_t end[3], const double here[3], fixed_t frac,
+	fixed_t start[3]);
+
 }} // namespace zx::netsnapshot
 
 #endif // __SNAP_SMOOTH_COMPUTE_H__

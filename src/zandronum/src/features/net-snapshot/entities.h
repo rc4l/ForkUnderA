@@ -239,6 +239,10 @@ unsigned int ApplyDelta(const BYTE* pData, unsigned int size,
 // the id is not present.
 bool SampleGhost(unsigned int id, unsigned int renderMS, SnapGhostPose& out);
 
+// [Kaori-Chani] The same sample, without the measuring SampleGhost does: the rendered
+// jump and the record span belong to the one pose a mirror is set to.
+bool SampleGhostQuiet(unsigned int id, unsigned int atMS, SnapGhostPose& out);
+
 // The exit the last SampleGhost call took (ahead, extrap, extrapvel,
 // heldnew, heldmove, held), or "?" when it drew nothing, for diagnostics.
 const char* SampleExit();
@@ -365,6 +369,10 @@ typedef void (*ClentLocalFn)(unsigned int id, const SnapLocalState & st,
 	int gameTic);
 
 namespace zx { namespace netsnapshot {
+
+// [Kaori-Chani] The ids the latest ApplyDelta applied a record to, which the fold walks
+// once per packet; NULL before the first one, and the count is this packet's alone.
+const unsigned int* TouchedIds(unsigned int& count);
 
 ClentLocalFn SetLocalSink(ClentLocalFn fn);
 

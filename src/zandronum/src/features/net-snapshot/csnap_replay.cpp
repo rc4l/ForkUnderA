@@ -603,17 +603,13 @@ static void replay_Refill(ReplayRefill& c, ReplayEntity& e, unsigned int id, boo
 	// fold's output, the end drawn outright in a tic's last sixteenth.
 	if (bWasDrawn || (bAnchorAll && bHere))
 	{
-		// As an offset from the end, rounded, so a fold that lands on the end
-		// gives the end exactly.
-		const double f = (double)frac16 / (double)FRACUNIT;
-		c.sx = c.ex; c.sy = c.ey; c.sz = c.ez;
-		if (1.0 - f >= 1.0 / 16.0)
-		{
-			c.sx += (fixed_t)floor((hereX - (double)c.ex) / (1.0 - f) + 0.5);
-			c.sy += (fixed_t)floor((hereY - (double)c.ey) / (1.0 - f) + 0.5);
-			c.sz += (fixed_t)floor((hereZ - (double)c.ez) / (1.0 - f) + 0.5);
-			c.anchored = true;
-		}
+		// [Kaori-Chani] The rule is shared with the live frame, so this analysis and what a
+		// client draws cannot drift apart.
+		const fixed_t end[3] = { c.ex, c.ey, c.ez };
+		const double here[3] = { hereX, hereY, hereZ };
+		fixed_t start[3];
+		c.anchored = ComputeAnchorStart(end, here, frac16, start);
+		c.sx = start[0]; c.sy = start[1]; c.sz = start[2];
 		c.sMinusE[0] = c.sx - c.ex; c.sMinusE[1] = c.sy - c.ey; c.sMinusE[2] = c.sz - c.ez;
 		return;
 	}
