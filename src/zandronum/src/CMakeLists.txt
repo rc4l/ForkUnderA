@@ -2270,6 +2270,7 @@ add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/apply.cpp
 	features/net-snapshot/entities.cpp
 	features/net-snapshot/ghostactor.cpp
+	features/net-snapshot/localpred.cpp
 	features/net-snapshot/movers.cpp
 	features/net-snapshot/polyobj.cpp
 	features/net-snapshot/record.cpp

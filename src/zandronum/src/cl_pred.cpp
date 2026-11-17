@@ -63,6 +63,7 @@
 #include "c_console.h"
 #include "cl_demo.h"
 #include "cl_main.h"
+#include "features/net-snapshot/localpred.h"   // [Kaori-Chani] the local block's census
 
 //*****************************************************************************
 //	VARIABLES
@@ -140,15 +141,29 @@ void CLIENT_PREDICT_Construct( void )
 	memset( g_PositionBase, 0, sizeof( g_PositionBase ));
 	memset( g_VelocityBase, 0, sizeof( g_VelocityBase ));
 	memset( g_JumpTicsBase, 0, sizeof( g_JumpTicsBase ));
+
+	// [Kaori-Chani] features/net-snapshot: the shadow ring and the slot stamps go with it.
+	zx::netsnapshot::LocalPredReset( );
 }
 
 //*****************************************************************************
 //
 void CLIENT_PREDICT_SetPosition( fixed_t X, fixed_t Y, fixed_t Z )
 {
-	g_PositionBase[0][CLIENT_GetLastConsolePlayerUpdateTick() % CLIENT_PREDICTION_TICS] = X;
-	g_PositionBase[1][CLIENT_GetLastConsolePlayerUpdateTick() % CLIENT_PREDICTION_TICS] = Y;
-	g_PositionBase[2][CLIENT_GetLastConsolePlayerUpdateTick() % CLIENT_PREDICTION_TICS] = Z;
+	const unsigned int tick = CLIENT_GetLastConsolePlayerUpdateTick();
+	const unsigned int slot = tick % CLIENT_PREDICTION_TICS;
+
+	// [Kaori-Chani] features/net-snapshot: ahead of the writes below, which replace what
+	// this client predicted for the tick with what the server says happened.
+	const fixed_t landed[3] = { X, Y, Z };
+	const fixed_t base[3] = { g_PositionBase[0][slot], g_PositionBase[1][slot],
+		g_PositionBase[2][slot] };
+	zx::netsnapshot::LocalPredLegacyWrote( tick );
+	zx::netsnapshot::LocalPredError( tick, landed, base );
+
+	g_PositionBase[0][slot] = X;
+	g_PositionBase[1][slot] = Y;
+	g_PositionBase[2][slot] = Z;
 }
 
 //*****************************************************************************
@@ -182,6 +197,20 @@ void CLIENT_PREDICT_PlayerPredict( void )
 
 	// Always predict only the console player.
 	pPlayer = &players[consoleplayer];
+
+	// [Kaori-Chani] features/net-snapshot: ahead of every early return, so every tic the
+	// cursor names is one visit with one outcome.
+	{
+		const unsigned int slot = BaseTick % CLIENT_PREDICTION_TICS;
+		const fixed_t pos[3] = { g_PositionBase[0][slot], g_PositionBase[1][slot],
+			g_PositionBase[2][slot] };
+		const fixed_t vel[3] = { g_VelocityBase[0][slot], g_VelocityBase[1][slot],
+			g_VelocityBase[2][slot] };
+		zx::netsnapshot::LocalPredVisit( BaseTick, ( pPlayer->mo == NULL )
+			|| ( pPlayer->bSpectating )
+			|| ( pPlayer->playerstate == PST_DEAD ), pos, vel, g_JumpTicsBase[slot] );
+	}
+
 	if ( pPlayer->mo == NULL )
 		return;
 
@@ -256,6 +285,10 @@ void CLIENT_PREDICT_PlayerPredict( void )
 		}
 	}
 #endif
+
+	// [Kaori-Chani] features/net-snapshot: the depth this tic replayed, and the census
+	// report once its interval is up.
+	zx::netsnapshot::LocalPredSample( (unsigned int)ulPredictionTicks );
 
 	// [BB] Save the "on ground" status. Necessary to keep movement on moving floors
 	// and on actors like bridge things smooth.
@@ -389,6 +422,10 @@ static void client_predict_SavePrediction( const player_t *pPlayer, const unsign
 	g_VelocityBase[1][Tick % CLIENT_PREDICTION_TICS] = pPlayer->mo->vely;
 	g_VelocityBase[2][Tick % CLIENT_PREDICTION_TICS] = pPlayer->mo->velz;
 	g_JumpTicsBase[Tick % CLIENT_PREDICTION_TICS] = pPlayer->jumpTics;
+
+	// [Kaori-Chani] features/net-snapshot: so a slot reused 70 tics on is not read as the
+	// tick it once held.
+	zx::netsnapshot::LocalPredStamp( Tick );
 }
 
 //*****************************************************************************

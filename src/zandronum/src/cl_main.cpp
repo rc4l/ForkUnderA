@@ -164,6 +164,7 @@
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
 #include "features/net-snapshot/apply.h"   // [Kaori-Chani] the client's side of the snapshot
+#include "features/net-snapshot/localpred.h"   // [Kaori-Chani] the local block and its census
 #include "features/net-snapshot/entities.h"   // [Kaori-Chani] the map frame and the stamps
 #include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the ghost table
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
@@ -5050,6 +5051,52 @@ void ServerCommands::UpdatePlayerTime::Execute()
 
 //*****************************************************************************
 //
+// [Kaori-Chani] features/net-snapshot: one local block applied where the command it
+// replaces is applied, since two of the side effects read file statics here.
+int CLIENT_ApplyLocalBlock( const SnapLocalState &st, int gameTic )
+{
+	player_t *pPlayer = &players[consoleplayer];
+	if ( pPlayer->mo == NULL )
+		return CLIENTLOCAL_NOPAWN;
+
+	// The ordering guard, on the frame's own game tic, which a reordered payload can
+	// really trip; see the module's README.
+	if ( CLIENT_GetLatestServerGametic( ) > gameTic )
+		return CLIENTLOCAL_OUTOFORDER;
+
+	CLIENT_SetLatestServerGametic( gameTic );
+	CLIENT_SetLastConsolePlayerUpdateTick( st.clientTic );
+
+	LONG lOffsettedTic = gametic - CLIENTDEMO_GetGameticOffset( );
+	if (( lOffsettedTic - (LONG)st.clientTic >= TICRATE ) &&
+		( lOffsettedTic - (LONG)g_ulFirstSpawnedTic >= TICRATE ) &&
+		( gametic + CLIENTDEMO_GetGameticOffset( ) - (LONG)g_ulEndFullUpdateTic > TICRATE ))
+	{
+		g_bClientLagging = true;
+	}
+	else
+	{
+		g_bClientLagging = false;
+	}
+
+	if ( pPlayer->playerstate == PST_DEAD )
+		return CLIENTLOCAL_DEAD;
+
+	// No spectator branch, unlike the command above: a block for a spectator is never
+	// sent, so this reports the claim rather than ignoring it.
+	if ( pPlayer->bSpectating )
+		return CLIENTLOCAL_SPECTATOR;
+
+	CLIENT_PREDICT_SetPosition( st.x, st.y, st.z );
+	// [Kaori-Chani] features/net-snapshot: a periodic correction, as the command's is.
+	zx::netsnapshot::LocalPredArrival( );
+	CLIENT_PREDICT_SetVelocity( st.velx, st.vely, st.velz );
+	CLIENT_PREDICT_SetJumpTics( (int)st.jumpTics );
+	return CLIENTLOCAL_APPLIED;
+}
+
+//*****************************************************************************
+//
 void ServerCommands::MoveLocalPlayer::Execute()
 {
 	player_t *pPlayer = &players[consoleplayer];
@@ -5099,6 +5146,9 @@ void ServerCommands::MoveLocalPlayer::Execute()
 	if ( pPlayer->bSpectating == false )
 	{
 		CLIENT_PREDICT_SetPosition( x, y, z );
+		// [Kaori-Chani] features/net-snapshot: the periodic correction's arrival, which the
+		// census keys its gaps on.
+		zx::netsnapshot::LocalPredArrival( );
 		CLIENT_PREDICT_SetVelocity( velx, vely, velz );
 	}
 	else

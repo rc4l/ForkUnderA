@@ -79,6 +79,24 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
     phase count is two, not the reference's eight, because the reference advanced per drawn
     frame at around 140 fps and so refreshed a far mirror about 18 times a second; eight
     phases off a 35 Hz tic clock would give 4.4, where two give 17.5.
+- `localpred.{h,cpp}`: the local player's block read against the prediction it replaces —
+  the shadow of each block, the comparison at the slot the replay is about to read, the
+  reconciliation error and correction arrival censuses, and their report. `cl_pred.cpp` and
+  `cl_main.cpp` hold only one-line calls into it.
+  - `CLIENT_ApplyLocalBlock` lives in `cl_main.cpp`, beside the command it replaces, because
+    two of the side effects it reproduces read file statics there (`g_ulFirstSpawnedTic`,
+    `g_ulEndFullUpdateTic`). Its ordering guard is a live case rather than a formality:
+    `ApplyDelta` applies a reordered payload's records rather than dropping them, keeping
+    only its own clock monotonic, so a block can arrive behind the latest server gametic.
+    It has no spectator branch of the kind the command above has, because the server
+    excludes spectators from the capture exactly as `sv_main.cpp` excludes them from
+    `MoveLocalPlayer`: a block for a spectator is never sent, and the refusal is counted
+    rather than ignored because "never sent" is a claim this client can check.
+  - The applier reaches `CLIENT_PREDICT_SetPosition`, the same setter the legacy periodic
+    correction reaches, so the module ignores its own write while the applier runs. The
+    reference distinguished the two with a `bPeriodic` argument on that stock setter; the
+    port keeps the stock signature and raises a module flag instead, which also keeps a
+    slot from being left marked after an authoritative block.
 - `format_test.cpp`: the format layer's own tests, narrow frame and wide.
 - `refdump_test.cpp`: the reference decode, below. The dumper it decodes with is shared, in
   `tests/snapdump/`, with the `snap_dump` command line beside it.

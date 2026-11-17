@@ -216,6 +216,20 @@ void				CLIENT_PREDICT_PlayerPredict( void );
 void				CLIENT_PREDICT_PlayerTeleported( void );
 bool				CLIENT_PREDICT_IsPredicting( void );
 
+// [Kaori-Chani] features/net-snapshot: the outcome of one local block, every refusal
+// named, so the counting lives with the report and the decision with its data.
+enum
+{
+	CLIENTLOCAL_APPLIED = 0,
+	CLIENTLOCAL_NOPAWN,
+	CLIENTLOCAL_OUTOFORDER,
+	CLIENTLOCAL_DEAD,
+	CLIENTLOCAL_SPECTATOR,
+};
+
+struct SnapLocalState;
+int					CLIENT_ApplyLocalBlock( const SnapLocalState &st, int gameTic );
+
 //*****************************************************************************
 //	EXTERNAL CONSOLE VARIABLES
 
