@@ -2585,6 +2585,10 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 		m_X = (int)(m_Source->x);
 		m_Y = (int)(m_Source->y);
 	}
+	// [Kaori-Chani] Zeroed, because DObject memory is not: a sourceless point
+	// pusher otherwise tests things against a bounding box of garbage.
+	else
+		m_Radius = m_X = m_Y = 0;
 	m_Affectee = affectee;
 }
 
@@ -2642,6 +2646,11 @@ void DPusher::Tick ()
 
 	if (m_Type == p_push)
 	{
+		// [Kaori-Chani] A removed point source, which P_CheckSight and the class
+		// test below dereference.
+		if (m_Source == NULL)
+			return;
+
 		// Seek out all pushable things within the force radius of this
 		// point pusher. Crosses sectors, so use blockmap.
 
