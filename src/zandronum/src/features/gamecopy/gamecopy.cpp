@@ -552,15 +552,21 @@ template <class Visit> void VisitSlots(const std::vector<void *> &items, int lo,
 }
 
 // [Doruk-Aksoy] The buckets holding actors in TThinkerIterator<AActor>'s order: the thinking statnums, each one's list then its fresh list.
+// [Kaori-Chani] features/net-snapshot parks a mirror in STAT_INFO, which does not think, so
+// its bucket comes last: an actor there is drawn without any record's order shifting.
 const std::vector<int> &ActorBuckets()
 {
 	static std::vector<int> buckets;
 	if (buckets.empty())
+	{
 		for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
 		{
 			buckets.push_back(stat);
 			buckets.push_back(kFreshBucket + stat);
 		}
+		buckets.push_back(STAT_INFO);
+		buckets.push_back(kFreshBucket + STAT_INFO);
+	}
 	return buckets;
 }
 
@@ -579,11 +585,18 @@ void CompactMirror()
 }
 
 // [Doruk-Aksoy] Every actor in thinker order walked down the lists themselves, which fua_copy_prescan_check holds the arrays to.
+// [Kaori-Chani] Walked by statnum in ActorBuckets' order rather than by one iterator over
+// them all, since STAT_INFO is 0 and would otherwise come first here and last there.
 void WalkActors(std::vector<AActor *> &out)
 {
 	out.clear();
-	TThinkerIterator<AActor> it;
-	for (AActor *a; (a = it.Next()) != NULL; ) out.push_back(a);
+	for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
+	{
+		TThinkerIterator<AActor> it(stat);
+		for (AActor *a; (a = it.Next()) != NULL; ) out.push_back(a);
+	}
+	TThinkerIterator<AActor> info(STAT_INFO);
+	for (AActor *a; (a = info.Next()) != NULL; ) out.push_back(a);
 }
 
 // [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
@@ -1489,10 +1502,13 @@ void CheckBeforeViews()
 			zx::frame::ComputeOracleNote(g_before, "  line %d's %s is not the live line's (flags %#x apart)\n", i, LineDiffers(lines[i]), unsigned(lines[i].rc.flags ^ lines[i].flags));
 	}
 	// [rc4l] Each live actor against its record, in the order the fill took them, the list links being the fill's own.
-	TThinkerIterator<AActor> it;
+	// [Kaori-Chani] Through WalkActors, so this walks exactly what the fill copies: a mirror
+	// in STAT_INFO is in both or in neither, where a plain iterator would miss it.
+	static std::vector<AActor *> live;
+	WalkActors(live);
 	ActorRecord fresh;
 	int n = 0;
-	for (AActor *a; (a = it.Next()) != NULL; n++)
+	for (AActor *a : live)
 	{
 		g_before.checked++;
 		const char *why = "record";
@@ -1504,6 +1520,7 @@ void CheckBeforeViews()
 		}
 		if (why != NULL && zx::frame::ComputeOracleDiffer(g_before, 6))
 			zx::frame::ComputeOracleNote(g_before, "  actor %d (%s)'s %s is not the live actor's\n", n, a->GetClass()->TypeName.GetChars(), why);
+		n++;
 	}
 	g_before.checked++;
 	if (n != (int)g_actors.size() && zx::frame::ComputeOracleDiffer(g_before, 6))
