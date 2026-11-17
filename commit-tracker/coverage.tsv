@@ -2120,7 +2120,7 @@ e5a4031a7010ac42559bfbcab5ffb71d1440e805	2015-12-15T20:47:43Z	Fixed another memo
 452c82cbe2154eabe6b7d9519c603480f5013913	2015-12-17T16:34:38Z	- Added TF_SENSITIVEZ to A_Teleport. Fail teleportation instead of adjusting the actor to fit if they cannot. - When checking whether to use spot z or floorz, use spot floorz instead of ref for consistency.	pending		/
 792d3906fd2be890a2f17c8a90f097981cdbc143	2015-12-19T19:32:41Z	- fixed: line activation checks for monster activation could be skipped if the lines also were flagged for player activation.	pending		/
 03ccf03b8f3161a601cd223a3abfcf345da79f16	2015-12-21T00:13:21Z	- fixed: UDMF with Doom format specials used the line's ID, not the first arg as the tag parameter for its special.	ported	twin zandronum@a4ccbf23d: Proof: scenarios/tagmanager.mjs MAP06 carries the sector of the line's ID on the build before it.	afb2e11e
-c51abb01610fc6eb399da8139eca83856fd3a5b5	2015-12-22T16:01:09Z	Added GetMaxInventory ACS function	pending		/
+c51abb01610fc6eb399da8139eca83856fd3a5b5	2015-12-22T16:01:09Z	Added GetMaxInventory ACS function	ported	ACSF 93 as upstream (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 beb7a8e4a2ace28fda777d59f5fcbda785713e65	2015-12-22T21:21:59Z	- added /LARGEADDRESSAWARE linker flag to CMake project.	pending		/
 7a96f91591b3f1ca76a5986cf46f5446caee2d38	2015-12-22T21:30:07Z	Merge pull request #449 from Blue-Shadow/getmaxinv	pending		/
 452479e5aa87b6da2479c7de9f7bf691c5b29979	2015-12-23T12:06:14Z	Merge commit '7a96f91591b3f1ca76a5986cf46f5446caee2d38'	pending		/
@@ -3527,7 +3527,7 @@ dbad946fe3ad6dd0813b402ba54b8486feb19536	2016-04-06T20:09:21Z	- revert default p
 a1c03c9a62d1b44e50323c8cd1b9c87fcaa44653	2016-04-07T10:44:46Z	- fixed: P_AimCamera inverted the pitch.	pending		/
 1eeaee1ac78900acfaed243b264b3431789b45e3	2016-04-07T11:05:29Z	- completely reviewed and fixed all codes using angles in the automap.	pending		/
 ddb2f6b6cbe3347940c9f1bd4a3a65f383b8a68c	2016-04-07T11:11:23Z	- fixed: P_SpawnPlayerMissile still used the angle_t values for offsetting the autoaim traces.	pending		/
-1d286d5bd5bda8a58955af90cc98a611e7634887	2016-04-07T11:41:54Z	- added APROP_MaxStepHeight + APROP_MaxDropOffHeight.	pending		/
+1d286d5bd5bda8a58955af90cc98a611e7634887	2016-04-07T11:41:54Z	- added APROP_MaxStepHeight + APROP_MaxDropOffHeight.	adapted	APROP 44/45 as upstream; sent through SetThingProperty and to late joiners (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 88542bed781ff9c59ae27689f7b6221713e01d6a	2016-04-07T11:43:00Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 4af859094c7db491ef91d96dc7ae7b23fecc3164	2016-04-07T12:09:07Z	- fixed: sprite clipping did not work anymore because the 'invalid' value was inconsistent. - cleaned up the 'if' condition in PerformSpriteClipAdjustment, - enabled weapon bobbing interpolation.	pending		/
 32bbec7cadbea9d5ca318030a29eaacaa921795d	2016-04-07T12:14:44Z	- fixed: the random offset that gets used when spawning blood applies to both sprites and particles, not just sprites.	pending		/
@@ -4048,7 +4048,7 @@ fc25a74a0380d183127a1db910d5416898311ffa	2016-05-28T18:11:19Z	- fixed: In case o
 6e53c1bd12019c63715987c0a76c79e868a05401	2016-05-28T18:40:33Z	Change render target output from PAL8 to BGRA8	pending		/
 89016020a8e518c82ded49f6e82c3ca877d3b86d	2016-05-29T07:58:12Z	Used ISO Latin 1 encoding for title text in startup window on OS X	ported	ported: taken as part of the 108dcf122 end state, vendored byte-identical at f7e67f0. Every change of this commit lives inside posix/cocoa and is present in that snapshot; it was never separately built here (the OpenAL-series precedent)	f7e67f0
 334962da2c563e7bd02c57f56b6fb7a95595abe9	2016-05-29T10:38:36Z	Corrected death message not being gender neutral.	pending		/
-6633e41ccaeb5381c88410297467a400fc1c07ae	2016-05-29T10:38:37Z	added CheckProximity to ACS	pending		/
+6633e41ccaeb5381c88410297467a400fc1c07ae	2016-05-29T10:38:37Z	added CheckProximity to ACS	ported	ACSF 98 as upstream; the scan is ComputeProximityScan (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 33ddbe8ab3889caf41e9b73b7b4a6160d0a24f28	2016-05-29T10:38:37Z	Added SKYEXPLODE support for P_LineAttack on horizons.	pending		/
 2719905ade9c7cd4e774e0f02d75cf554ba2d319	2016-05-29T10:40:17Z	- Added source and inflictor parameters to all A_Damage/Kill functions. - Source is the actor to blame for the cause of damage (monster infighting for example). For missiles, modders should consider setting to AAPTR_TARGET. - Inflictor is the actor doing the damage itself. Note that by changing this, it will take into account the flags on the pointed actor.	pending		/
 bb91723174e65bd5bb40f5738638be9259ec4234	2016-05-29T10:43:46Z	- Added GetCrouchFactor(ptr).	pending		/
@@ -4318,7 +4318,7 @@ e482a543891b755b7a2b2a7546e7187983daef62	2016-07-17T12:27:56Z	Fixed a crash with
 8369833dc5f5cc85781c76fb7ce70ff45cb89d80	2016-07-17T15:28:46Z	Fixed setting of custom color for static text in menu	pending		/
 d4352dd1a75d3a21927961d05d4a9c771ba4cfa1	2016-07-17T21:13:10Z	- fixed slope calculation error.	pending		/
 421cd2f403d9198dc2c9a23ad65f8a089402743b	2016-07-17T21:36:35Z	Merge remote-tracking branch 'upstream/master' into truecolor	pending		/
-d09ec5a930e3e16bb234e4a46a82394300620735	2016-07-19T00:16:12Z	Added DamageType ACS actor property	pending		/
+d09ec5a930e3e16bb234e4a46a82394300620735	2016-07-19T00:16:12Z	Added DamageType ACS actor property	ported	APROP 46 as upstream, server-only (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 c428e376cd561134a67dedecf462713ff2b82ce1	2016-07-19T06:34:55Z	Added INFLICTORDMGTYPE flag to A_Damage* action functions It forces the use of the inflictor's damagetype instead of whatever is passed to the functions.	pending		/
 881731d76bb0f2fd470a28b27fa8cdc7d1a122ac	2016-07-21T06:28:56Z	Merge branch 'master' of https://github.com/rheit/zdoom	skip	skip: merge commit, no unique content	/
 fa22acca5d524bedbee99d20028fb19f5a3eb970	2016-07-21T10:01:06Z	- fixed: Dehacked's 'Speed' value should be treated as signed when being assigned to a double variable.	pending		/
@@ -4528,7 +4528,7 @@ f63635e07a428f2a198274c719a1f48821f5a7b0	2016-08-18T23:11:11Z	Fix RFL_INVALIDATE
 dde81b33ea39d0f6649794a94c1a12702511ff53	2016-08-21T06:45:21Z	- glEnable(GL_TEXTURE_2D) only makes sense if no shaders are being used.	pending		/
 3e01039bbb49dc4f80b92a418602ab5a947c7fce	2016-08-21T12:47:56Z	Fixed missing #include for GCC/Clang	pending		/
 302f59ea33f557da33ca9b4555b4ad4a150c4633	2016-08-21T23:52:51Z	Fix r_clearbuffer color not being used	pending		/
-df4a8e38c5ef4a1d1bc51ae3354b411973e23aaa	2016-08-22T07:21:38Z	Add CheckActorState ACS function	pending		/
+df4a8e38c5ef4a1d1bc51ae3354b411973e23aaa	2016-08-22T07:21:38Z	Add CheckActorState ACS function	ported	ACSF 99 as upstream (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 e22043a25b7f2d61ddcff44b6b014233022ba5eb	2016-08-22T07:46:00Z	Fixed: A_FaceMovementDirection would not adjust the angle if it was actually under the limit.	pending		/
 7ba5acfb35aeeda77458895c10e0dae6a9b3bc8a	2016-08-22T12:00:25Z	- added quad drawer interface so that this part can be done without altering a vertex buffer.	pending		/
 250be72939aec68b5f27e6efdf956a33c482c5ea	2016-08-22T13:31:23Z	- added handling for drawing with uniform vertices. It draws something but in the wrong place. Right now I have no idea what's happening...	pending		/
@@ -4574,7 +4574,7 @@ da5cf760b0941306b81774f8e130e17466353e56	2016-08-28T08:10:32Z	- forgot to save t
 40780ce2dd3430e3c34012ac4b03e0e4674fb8ba	2016-08-28T08:10:53Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 03d055a5ec645beee5a953f78b5c6d6615686d52	2016-08-28T08:11:09Z	- adjustments for message modes.	pending		/
 47714509d6345fa0589b3d7aa3d412fc327010f0	2016-08-28T08:15:16Z	Changed render buffers format back to RGBA16F	pending		/
-3299a29c446ea13ee110f75f527acc179c78ed72	2016-08-28T14:14:24Z	- added CheckClass ACS function.	pending		/
+3299a29c446ea13ee110f75f527acc179c78ed72	2016-08-28T14:14:24Z	- added CheckClass ACS function.	ported	ACSF 200 as upstream (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 bb066f6f07815fccd2c78394158e13b2b1e40338	2016-08-28T16:07:44Z	Fall back to gl_renderbuffers 0 if buffer creation fails	pending		/
 945d5b154a3f810d79bda16b14f9574e3e45118e	2016-08-28T16:10:39Z	Remove gl_vid_multisample	adapted	adapted: its posix/cocoa half is present via the 108dcf122 end state vendored at f7e67f0, but this commit ALSO touches files outside that directory and those slices were NOT taken. Scoped-down, so adapted rather than ported	f7e67f0
 71387b1b42fff9f527758fbbc9680b2db1b70e15	2016-08-29T03:19:47Z	Fix wrong initial mClipSplit values.	pending		/
@@ -4609,7 +4609,7 @@ b1c1e6aae7ce9898e211cb878888ad09b588dbfc	2016-09-02T23:17:16Z	Merge remote-track
 902097d6da05cc4e4ca315d40bccef7dcf791d8a	2016-09-03T02:12:00Z	Resolve multisampling depth in shader	pending		/
 e7765bb240820c608dcb710a94a7b42d19ea465c	2016-09-03T02:29:50Z	Move SSAO pass to be before translucent rendering Fix depth sampling location when not using fullscreen scene	pending		/
 d14782fb37fc2283b2043e200a75c234fe298204	2016-09-03T06:27:38Z	Added Thing_Damage3 function	pending		/
-d7b5bdc0f7e68b45fe2f76f8da35b61459e441dc	2016-09-03T06:27:38Z	Renamed Thing_Damage3 to DamageActor	pending		/
+d7b5bdc0f7e68b45fe2f76f8da35b61459e441dc	2016-09-03T06:27:38Z	Renamed Thing_Damage3 to DamageActor	ported	ACSF 201 as upstream; a missing target gives -1, as isFakePain now checks for null (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 5770e5dfaf0711619f3bb1f17fdd89065f98983d	2016-09-03T10:00:08Z	- split up m_specialpaths.cpp to be a separate file for each operating system.	pending		/
 aece9aaa58bed5864fde2e7a84976e0afaf5288f	2016-09-03T12:01:51Z	- added xBRZ texture scaler after clearing the licensing conditions. A screenshot of the confirmation that this is ok has been added to the 'licenses' folder.	pending		/
 e08015a181e1c67ad468ea24fef2e42f856806c1	2016-09-03T12:02:28Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
@@ -6775,7 +6775,7 @@ fc29958dc727c8628bf135f08bf941364f045ecf	2017-01-11T20:33:28Z	Convert r_fogbound
 c80860cd5de5fb454f1337506a2c8356394b9293	2017-01-11T22:27:35Z	Split r_visibleplane into more files	pending		/
 5ef9429ae4cfaa364bfc84d51b90e2c572fe01d6	2017-01-11T22:46:03Z	- added the ability to attach a constructor or destructor to an internally defined struct.	pending		/
 ea163f389863cd905eb47a4426961abc32f22d76	2017-01-11T23:26:16Z	- exported FCheckPosition to the VM and completed the parameter lists for Actor.CheckPosition and Actor.TryMove.	pending		/
-85488f2f30a34c658177c8f29c825c1a9de743f8	2017-01-11T23:49:40Z	- added GetActorFloorTexture and GetActorFloorTerrain ACS functions.	pending		/
+85488f2f30a34c658177c8f29c825c1a9de743f8	2017-01-11T23:49:40Z	- added GetActorFloorTexture and GetActorFloorTerrain ACS functions.	ported	GetActorFloorTerrain at 205; GetActorFloorTexture was already in (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 a3ad22a4603ff8ae2c787a9790ce62a999d87d6c	2017-01-11T23:54:43Z	Merge https://github.com/coelckers/gzdoom	pending		/
 0d575a20cc6da6c67fe3d7864255a32dc99d80bf	2017-01-12T00:11:26Z	- added new PRINTNAME_ constants for retrieving next and secret next level.	pending		/
 1b750c1cfd8bee2aa0682dd34dd67b6eeb92269a	2017-01-12T05:17:40Z	Merge https://github.com/coelckers/gzdoom	pending		/
@@ -7685,11 +7685,11 @@ cc598dfddeb5ba507249041e95ca9d10498b8929	2017-02-27T14:16:03Z	- fixed: To get th
 e9364fccb86f1d06df48a04050a65d5ab6fb0b4b	2017-02-27T17:12:49Z	- Fixed: voxels were not properly remapped after "restart" ccmd	pending		/
 869de7554f619070a6ea85f3060dfce01f34ea0f	2017-02-27T17:15:17Z	- fixed: Opening automap without 2D acceleration and rgb666 blending crashed due to bad color calculations. (Attempted to pass rgb888 values into rgb666 array)	pending		/
 4bcbd5c0117b52d0e4c767d21c3299df3621536a	2017-02-27T17:38:01Z	- clear WF_WEAPONBOBBING in P_FireWeapon, because otherwise the first frame of the fire animation will be drawn in the current bobbing position and not centered.	pending		/
-f82ab889b21980e0d2c1588aca92bb047f409125	2017-02-27T17:44:58Z	- added ACS strarg function which can convert a string into a string argument for ACS specials.	pending		/
+f82ab889b21980e0d2c1588aca92bb047f409125	2017-02-27T17:44:58Z	- added ACS strarg function which can convert a string into a string argument for ACS specials.	ported	ACSF 206 as upstream (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 321c846d0123a35c6a3374eb177b47f7e8a15e8c	2017-02-27T18:46:27Z	- added StealthAlpha actor property for defining a minimum visibility value of a stealth monster.	pending		/
 ac4074a69a685810bfba58e76c8a76effd4d2149	2017-02-27T18:51:37Z	- allow sprites and particles simultaneously for puffs.	pending		/
 e511f7f84b96963557947e99325523ef8bf56548	2017-02-27T19:07:21Z	- added a damage type parameter to MDK CCMD.	pending		/
-1ff401649845990fd154007b459839b907ea4157	2017-02-27T19:42:12Z	- added ACS math functions floor, ceil and round.	pending		/
+1ff401649845990fd154007b459839b907ea4157	2017-02-27T19:42:12Z	- added ACS math functions floor, ceil and round.	adapted	ACSF 207-209 as upstream; Ceil keeps a whole number whole where upstream adds one (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 d5d383ee93326c160a3a3f0d7454b5247f936375	2017-02-27T20:31:59Z	- added Floor_Stop and Ceiling_Stop action specials.	pending		/
 3700dea3361361999d6b4102a0551faa42783c53	2017-02-27T21:05:20Z	Revert "- the UDMF health key for actors was not correctly implemented. This addresses the problem by adding a second one and documenting 'Health' as implemented."	pending		/
 f343d36ea941829b68c239eb91d0f68c4e7a3b38	2017-02-27T22:28:19Z	- implemented the basics of a working metadata system.	pending		/
@@ -8172,7 +8172,7 @@ fa893c082b679849c74838ec112f317651459c92	2017-03-28T20:51:37Z	- changed the defa
 19e7d60275505b9af72cf0aa70424c919c068d6c	2017-03-28T22:35:35Z	- removed DSBarInfo::Scaled because it tended to disagree with StatusBar->Scaled.	pending		/
 054d9a5bcc2bc7907fb8a6cd764c66b43234ba6a	2017-03-28T22:43:12Z	- allow passing the activator to ScriptCall.	pending		/
 d160424aea5f0a0bb77d492de69bfb5a00adb850	2017-03-28T22:45:53Z	- added DFrameBuffer::HasBegun2D to allow scripting to test if 2D drawing is active (instead of using IsLocked, which may return false when vid_hw2d is active)	pending		/
-3a569f176dc973e2c9735d0b65de0cacd3cfee2c	2017-03-28T23:02:29Z	- added GetLineX/GetLineY ACS functions.	pending		/
+3a569f176dc973e2c9735d0b65de0cacd3cfee2c	2017-03-28T23:02:29Z	- added GetLineX/GetLineY ACS functions.	ported	ACSF 300/301 as upstream (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 914c829f798fffa2b0ea25e5a061936073ae9966	2017-03-28T23:25:02Z	- added Floor/Ceiling_MoveToValueAndCrush action specials.	pending		/
 598523a1ded352283b426735315095831d61d1e8	2017-03-28T23:59:03Z	- moved all coordinate adjustment for the status bar mode into one function and use this function in all places where status bar related coordinate adjustments need to be performed, also in SBARINFO. - fixed unscaled status bar placement. - fixed inventory count display for Doom status bar.	pending		/
 fabf8451e7690fd36cd1e49ed5c3b9b516a0abad	2017-03-29T00:24:04Z	- use Fill to draw Strife's health bars.	pending		/
@@ -17713,7 +17713,7 @@ d9fa7c38946d18a9573ae5d1658d220e83db7cf3	2024-10-26T03:21:16Z	Re-move bounds che
 2ba57b50680da2331975cedbe366d687eb16922a	2024-10-26T22:36:45Z	Reduce number of multiply ops per frame and increase x-axis clipper range for orthographic projection.	pending		/
 7b95977e2afdb0e8eff514d0406d609a2856b973	2024-10-27T01:59:33Z	Allow using `Self` as the class name in the default block to refer to the current class	pending		/
 9ca5bef4ea2dd0442a1db889ad7d9ed89280262d	2024-10-30T21:54:23Z	Fixed STRETCHPIXELS flag not being exposed.	pending		/
-f5ceaafbbc1eea3d5c85389d68ed8c6d50fba9d4	2024-10-31T17:52:34Z	Added net id functions for ACS	pending		/
+f5ceaafbbc1eea3d5c85389d68ed8c6d50fba9d4	2024-10-31T17:52:34Z	Added net id functions for ACS	adapted	ACSF 215/216 as upstream, on Zandronum's NetID (features/acs-parity)	e42e4a7ee605ded1f0c33eb4034f615a75bcf49f
 de8d839885da1f792535a9a4ece9c20e9e18707b	2024-10-31T17:52:34Z	Moved Actor TID selector out of header	pending		/
 6fc256709c01fc7f08031b1ff14d86ccc24c1695	2024-11-01T07:46:02Z	fixed the particle replacement code.	pending		/
 a899571d8c104ac2d267a4544487d73bbd2a9d21	2024-11-02T08:07:07Z	got rid of strlwr.	pending		/
