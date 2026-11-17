@@ -20,6 +20,7 @@
 #include "features/net-snapshot/computation/ack_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
 #include "i_system.h"		// I_MSTime, for the join fill timer
+#include "sv_main.h"		// [Kaori-Chani] SERVER_IsValidClient, for the health summary
 
 using namespace zx::netsnapshot;
 
@@ -3098,7 +3099,10 @@ void zx::netsnapshot::AggregateHealth(SnapClientHealth& out)
 	for (unsigned int i = 0; i < MAXPLAYERS; ++i)
 	{
 		const SnapClientState& cl = g_clients[i];
-		if ((cl.believed == NULL) || (cl.active == false))
+		// [Kaori-Chani] A slot the server has let go still reads active, since
+		// nothing clears that on a disconnect, and it would skew every average.
+		if ((cl.believed == NULL) || (cl.active == false)
+			|| (SERVER_IsValidClient(i) == false))
 			continue;
 
 		++out.activeClients;
