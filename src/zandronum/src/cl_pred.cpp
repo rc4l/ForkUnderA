@@ -144,6 +144,10 @@ void CLIENT_PREDICT_Construct( void )
 
 	// [Kaori-Chani] features/net-snapshot: the shadow ring and the slot stamps go with it.
 	zx::netsnapshot::LocalPredReset( );
+
+	// [Kaori-Chani] features/net-snapshot: here, because every client passes through this
+	// before its first block; the install is guarded, so later calls do nothing.
+	zx::netsnapshot::LocalPredInstall( );
 }
 
 //*****************************************************************************

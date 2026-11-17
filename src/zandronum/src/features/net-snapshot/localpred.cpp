@@ -161,6 +161,10 @@ static bool			g_localLegacySeen[CLIENT_PREDICTION_TICS];
 // legacy correction reaches and its write is not a legacy one.
 static bool			g_localApplying = false;
 
+// Per-process state, where the reset beside it is per map, so a second map
+// change must not reinstall the sink.
+static bool			g_localSinkInstalled = false;
+
 // The wire's own id for this player, so a block addressed to someone else is
 // counted rather than silently applied. It cannot happen today - the server
 // builds one block per client and addresses it to that client - but a counter
@@ -242,7 +246,10 @@ static void snap_LocalSink(unsigned int id, const SnapLocalState & st, int gameT
 
 void zx::netsnapshot::LocalPredInstall()
 {
+	if (g_localSinkInstalled)
+		return;
 	SetLocalSink(snap_LocalSink);
+	g_localSinkInstalled = true;
 }
 
 void zx::netsnapshot::LocalPredReset()
