@@ -27,6 +27,7 @@
 #include "features/gamecopy/actorlists.h"
 #include "features/gamecopy/tintsubject.h"
 #include "features/frame/computation/oracle_compute.h"
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] GhostFrame, MirrorPlayerNum
 #include "features/handoff/seam.h"
 #include "features/telemetry/telemetry.h"
 
@@ -947,6 +948,14 @@ void TakeActor(AActor &live, ActorRecord &out)
 	int sprite = live.sprite;
 	fixed_t scaleX = live.scaleX, scaleY = live.scaleY;
 	if (live.player != NULL) P_CheckPlayerSprite(&live, sprite, scaleX, scaleY);
+	// [Kaori-Chani] features/net-snapshot: a mirror carries no player_t, so its skin comes
+	// from the player the wire named.
+	else if (live.IsKindOf(RUNTIME_CLASS(APlayerPawn)))
+	{
+		const int mirrorPlayer = zx::netsnapshot::MirrorPlayerNum(&live);
+		if ((mirrorPlayer >= 0) && (mirrorPlayer < MAXPLAYERS))
+			P_CheckPlayerSpriteFor(&live, &players[mirrorPlayer], sprite, scaleX, scaleY);
+	}
 	out.shownSprite = sprite;
 	out.shownScaleX = scaleX;
 	out.shownScaleY = scaleY;
@@ -1323,6 +1332,9 @@ void FillNow()
 {
 	// [rc4l] Between a level's data being freed and the next set up, as at the full console endgame leaves, there is nothing to copy.
 	if (!g_levelLoaded) return;
+	// [Kaori-Chani] features/net-snapshot: the ghost table is mirrored here, ahead of the walk
+	// below, so this copy carries the mirrors it makes rather than the previous frame's.
+	zx::netsnapshot::GhostFrame();
 	g_filled = StampOfNow();
 	ZX_SEAM("copy/fill", Handoff);
 	// [rc4l] Whether the tic's end found the map's changes, which spares the handoff comparing the whole map (Sunder MAP16's 62,000 sides) while the frames wait.

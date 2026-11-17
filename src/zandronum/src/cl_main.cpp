@@ -2913,6 +2913,9 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// empty table, and no mover gate, so it starts as stock.
 	zx::netsnapshot::LevelUnloaded( );
 	zx::netsnapshot::MoverForgetServerGate( );
+	// [Kaori-Chani] features/net-snapshot: and the mirroring goes off with the traffic that
+	// raised it, so no mirror is drawn in single player or on a gate-off server.
+	zx::netsnapshot::GhostsFromNetwork( false );
 
 	// If we're connected in any way, send a disconnect signal.
 	// [BB] But only if we are actually a client. Otherwise we can't send the signal anywhere.
