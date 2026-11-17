@@ -929,6 +929,7 @@ bool zx::netsnapshot::GhostDebug(unsigned int id, SnapGhostDebug& out)
 	const SnapGhost& g = g_ghosts[id];
 	out.classId = g.nextState.classId;
 	out.spriteframe = g.nextState.spriteframe;
+	out.qstate = g.nextState.qstate;
 	out.prevMS = g.prevMS;
 	out.nextMS = g.nextMS;
 	out.prevTic = g.prevTic;

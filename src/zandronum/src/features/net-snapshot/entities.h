@@ -181,6 +181,9 @@ struct SnapGhostDebug
 {
 	unsigned short	classId;
 	unsigned short	spriteframe;
+	// [Kaori-Chani] The state the records carried, which is on the wire where spriteframe
+	// is not: SNAP_STATE_UNKNOWN for one its own class does not own.
+	WORD			qstate;
 	unsigned int	prevMS, nextMS;		// arrival stamps of the two buffered states
 	int				prevTic, nextTic;	// server frame numbers they came from
 	fixed_t			x, y, z;			// newest record's position, dequantized

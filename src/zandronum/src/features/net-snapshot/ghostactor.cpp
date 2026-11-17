@@ -3813,9 +3813,14 @@ CCMD(fua_csnap_ghostinfo)
 		const unsigned int window = (dbg.nextMS > dbg.prevMS) ? (dbg.nextMS - dbg.prevMS) : 0;
 
 		// The frame the server reported beside the one the mirror shows.
+		// [Kaori-Chani] From the state the wire carried: spriteframe is filled by the
+		// capture for its own dumps and is 0 here, which read as TNT1 A for everything.
 		char wire[16], shown[16];
-		ghost_DescribeFrame(SpriteFromPack(dbg.spriteframe),
-			FrameFromPack(dbg.spriteframe), wire, sizeof(wire));
+		const FState * pWire = (pType != NULL) ? StateFromQState(pType, dbg.qstate) : NULL;
+		if (pWire != NULL)
+			ghost_DescribeFrame((WORD)pWire->sprite, (BYTE)pWire->GetFrame(), wire, sizeof(wire));
+		else
+			strcpy(wire, (dbg.qstate == SNAP_STATE_UNKNOWN) ? "other" : "?");
 
 		const AActor* pMirror = (g_mirror != NULL) ? (const AActor*)g_mirror[bestId] : NULL;
 		if (pMirror != NULL)
