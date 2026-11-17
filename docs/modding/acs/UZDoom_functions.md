@@ -28,9 +28,9 @@
 
 ## Usage
 
-zt-bcc's `zcommon.bcs` declares all of them but `GetNetID` and `SetActivatorByNetID`, and names the
-rounding functions `ZDoom_Floor`, `ZDoom_Round` and `ZDoom_Ceil`. A BCS script declares the two it lacks
-itself:
+zt-bcc's `zcommon.bcs` declares all of them, naming the rounding functions `ZDoom_Floor`, `ZDoom_Round`
+and `ZDoom_Ceil`. Builds of zt-bcc older than its UZDoom declarations lack `GetNetID` and
+`SetActivatorByNetID`, which a script built with one declares itself:
 
 ```
 special -215:GetNetID(int, int; int): int;
