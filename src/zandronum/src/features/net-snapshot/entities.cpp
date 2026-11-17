@@ -2135,6 +2135,15 @@ static bool clent_DateAges(int recTic, int posTic, unsigned int renderMS,
 	unsigned int& recAt, unsigned int& posAt);
 static const SnapClockModel& clent_ClockModel();
 
+// [Kaori-Chani] A quiet sample measures nothing, so every tally the sampler keeps goes
+// through here; SampleGhostQuiet raises the flag around its call.
+static bool g_sampleQuiet = false;
+static void samp_Tally(unsigned int & c)
+{
+	if (g_sampleQuiet == false)
+		++c;
+}
+
 // One sample through snap_sample_compute, then the censuses its exit and
 // outcome feed.
 static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostPose& out)
@@ -2170,7 +2179,7 @@ static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostP
 	{
 		const double d = (double)out.ageMS;
 		const int b = (d < 80.0) ? 0 : (d < 150.0) ? 1 : (d < 300.0) ? 2 : (d < 500.0) ? 3 : 4;
-		++g_delayBucket[b];
+		samp_Tally(g_delayBucket[b]);
 	}
 
 	const unsigned int ageMS = out.ageMS;
@@ -2181,32 +2190,32 @@ static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostP
 
 	case SNAP_SAMPLE_AHEAD:
 	case SNAP_SAMPLE_EXTRAP:
-		if (ageMS > g_misMaxAgeMS)
+		if ((g_sampleQuiet == false) && (ageMS > g_misMaxAgeMS))
 			g_misMaxAgeMS = ageMS;
-		if (ageMS < g_misMinAgeBit)
+		if ((g_sampleQuiet == false) && (ageMS < g_misMinAgeBit))
 			g_misMinAgeBit = ageMS;
 
 		// Age distribution rather than a bare maximum: one outlier and a
 		// population sitting just past the cap read the same on a max.
 		{
 			const int b = (ageMS < 100) ? 0 : (ageMS < 250) ? 1 : (ageMS < 500) ? 2 : (ageMS < 1000) ? 3 : 4;
-			++g_misCensus.ageBucket[b];
+			samp_Tally(g_misCensus.ageBucket[b]);
 		}
 		if (o.ahead == SNAP_AHEAD_INTERP)
-			++g_misCensus.aheadInterp;
+			samp_Tally(g_misCensus.aheadInterp);
 		else if (o.ahead == SNAP_AHEAD_JUMP)
-			++g_misCensus.aheadJump;
+			samp_Tally(g_misCensus.aheadJump);
 		else if (o.ahead == SNAP_AHEAD_FIRST)
-			++g_misCensus.aheadFirst;
+			samp_Tally(g_misCensus.aheadFirst);
 		if (o.exit == SNAP_SAMPLE_AHEAD)
 		{
-			++g_sampExtrap; ++g_sampExtrapBallistic; g_lastBranch = "ahead";
+			samp_Tally(g_sampExtrap); samp_Tally(g_sampExtrapBallistic); g_lastBranch = "ahead";
 			return true;
 		}
 
 		if (o.bCapped)
 		{
-			++g_misExtrapCapped;	// frozen at the cap: this is a visible halt
+			samp_Tally(g_misExtrapCapped);	// frozen at the cap: this is a visible halt
 
 			if (g_viewValid)
 			{
@@ -2214,52 +2223,56 @@ static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostP
 				const double ddy = (double)PosToUnits(newest.qy) - (double)(g_viewY >> 16);
 				if ((ddx * ddx + ddy * ddy)
 					<= (double)CLENT_MISSILE_NEAR_UNITS * (double)CLENT_MISSILE_NEAR_UNITS)
-					++g_misCensus.cappedNear;
+					samp_Tally(g_misCensus.cappedNear);
 				else
-					++g_misCensus.cappedFar;
+					samp_Tally(g_misCensus.cappedFar);
 			}
 		}
 		else
-			++g_misExtrap;
+			samp_Tally(g_misExtrap);
 
 		if (o.law != SNAP_LAW_NONE)
 		{
 			// The measured acceleration, as the sampler took it before the law.
 			const double useAccel = g.accelZ;
-			++g_gravExtrap;
+			samp_Tally(g_gravExtrap);
 			if (useAccel == 0.0)
-				++g_gravZeroAccel;
+				samp_Tally(g_gravZeroAccel);
 			const double mag = (useAccel < 0.0) ? -useAccel : useAccel;
-			g_gravAccelSum += mag;
-			if (mag > g_gravAccelWorst)
-				g_gravAccelWorst = mag;
+			if (g_sampleQuiet == false)
+			{
+				// With the count beside it quiet, a sum that is not would read the mean high.
+				g_gravAccelSum += mag;
+				if (mag > g_gravAccelWorst)
+					g_gravAccelWorst = mag;
+			}
 
 			if (o.law == SNAP_LAW_USED)
 			{
-				++g_lawExtrap;
+				samp_Tally(g_lawExtrap);
 				if (g.haveAccel && (fabs(g.accelZ + o.lawG) > CLENT_GRAV_AGREE))
-					++g_lawDisagree;
+					samp_Tally(g_lawDisagree);
 			}
 			else
-				++g_lawNoFn;
+				samp_Tally(g_lawNoFn);
 		}
-		++g_sampExtrap; ++g_sampExtrapBallistic; g_lastBranch = "extrap";
+		samp_Tally(g_sampExtrap); samp_Tally(g_sampExtrapBallistic); g_lastBranch = "extrap";
 		return true;
 
 	case SNAP_SAMPLE_EXTRAPVEL:
 		if (o.bVelCapped)
-			++g_sampExtrapVelCapped;
+			samp_Tally(g_sampExtrapVelCapped);
 		if (o.bVelCell)
-			++g_sampExtrapVelCell;
+			samp_Tally(g_sampExtrapVelCell);
 		if (o.bVelCellEdge)
-			++g_sampExtrapVelCellEdge;
+			samp_Tally(g_sampExtrapVelCellEdge);
 		if (IsSteering(newest.misc))
-			++g_sampExtrapVelMissile;
-		++g_sampExtrap; ++g_sampExtrapVel; g_lastBranch = "extrapvel";
+			samp_Tally(g_sampExtrapVelMissile);
+		samp_Tally(g_sampExtrap); samp_Tally(g_sampExtrapVel); g_lastBranch = "extrapvel";
 		return true;
 
 	case SNAP_SAMPLE_HELDNEW:
-		++g_sampHeldNew; g_lastBranch = "heldnew";
+		samp_Tally(g_sampHeldNew); g_lastBranch = "heldnew";
 		return true;
 
 	default:
@@ -2270,18 +2283,19 @@ static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostP
 	// ballistic bit.
 	if (MissileFlagged(newest.misc) && ((newest.qvx | newest.qvy | newest.qvz) != 0))
 	{
-		++g_misHeldNoBit;
-		if (ageMS < g_misMinAgeNoBit)
+		samp_Tally(g_misHeldNoBit);
+		if ((g_sampleQuiet == false) && (ageMS < g_misMinAgeNoBit))
 			g_misMinAgeNoBit = ageMS;
 	}
 
 	if (o.exit == SNAP_SAMPLE_HELDMOVE)
 	{
-		++g_sampHeldMoving; g_lastBranch = "heldmove";
-		clent_NoteHeldMove(g, id);
+		samp_Tally(g_sampHeldMoving); g_lastBranch = "heldmove";
+		if (g_sampleQuiet == false)
+			clent_NoteHeldMove(g, id);
 	}
 	else
-		{ ++g_sampHeld; g_lastBranch = "held"; }
+		{ samp_Tally(g_sampHeld); g_lastBranch = "held"; }
 	return true;
 }
 
@@ -2289,7 +2303,13 @@ static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostP
 // mirror lands on: the jump, the span and recsSinceRender describe that one alone.
 bool zx::netsnapshot::SampleGhostQuiet(unsigned int id, unsigned int atMS, SnapGhostPose& out)
 {
-	return clent_SampleInner(id, atMS, out);
+	// The branch is left as the measured sample found it, since SampleExit names that one.
+	const char * pszWas = g_lastBranch;
+	g_sampleQuiet = true;
+	const bool ok = clent_SampleInner(id, atMS, out);
+	g_sampleQuiet = false;
+	g_lastBranch = pszWas;
+	return ok;
 }
 
 // Samples, then measures how far the rendered position moved since last frame.

@@ -69,6 +69,9 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
     not near it. And `here` arrives in raw units, as the sampler leaves it, with `frac` the same
     `fixed_t` both callers already hold, so neither converts before the division — a comparison
     against the reference tag must not be able to fail on a conversion alone.
+- `ghostactor.{h,cpp}`: the client's mirrors — the ghost table sampled into actors the render
+  copy carries, their skins and states, the legacy copies they stand in front of, and the
+  mirror interpolation rule's live half. Was `cl_ghostactor`.
   - The far rotor refreshes one slice of distant mirrors at a time, and its phase is keyed
     on the game tic rather than advanced per call, because this fork's render copy refills
     on a tic *or* a packet: advancing per call moved the phase twice in a tic that carried
