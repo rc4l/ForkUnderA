@@ -19,7 +19,7 @@ from an earlier calculation, and two playbacks of one demo parted at tic 1.
 - The minimums are one table, `computation/acsargcount_compute.cpp`, by function index. Each is upstream's
   `MIN_ARG_COUNT`, or for Zandronum's and ZDaemon's functions the minimum `zspecial.acs` declares, and
   never above what ACC or BCC lets a script pass. `CallFunction` looks it up once before its switch: a
-  direct array for indices under 256, a binary search for ZDaemon's 19620.
+  direct array for indices under 256, a binary search for GetLineX and GetLineY (300, 301) and ZDaemon's 19620.
 - A function that checks every argument it reads has no entry: `UniqueTID`, `SetHUDClipRect`,
   `SetHUDWrapWidth`, `GetWeapon`, `GetMapPosition`, `AddBot`, `RemoveBot`, the shader functions and those
   that take none.

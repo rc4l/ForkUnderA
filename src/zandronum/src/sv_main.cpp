@@ -3912,6 +3912,12 @@ void SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient )
 	if ( pActor->fillcolor != pActor->GetDefault( )->fillcolor )
 		SERVERCOMMANDS_SetThingProperty( pActor, APROP_StencilColor, ulClient, SVCF_ONLYTHISCLIENT );
 
+	// [Doruk-Aksoy] features/acs-parity: a joining client steps and drops off as the server's actor does.
+	if ( pActor->MaxStepHeight != pActor->GetDefault( )->MaxStepHeight )
+		SERVERCOMMANDS_SetThingProperty( pActor, APROP_MaxStepHeight, ulClient, SVCF_ONLYTHISCLIENT );
+	if ( pActor->MaxDropOffHeight != pActor->GetDefault( )->MaxDropOffHeight )
+		SERVERCOMMANDS_SetThingProperty( pActor, APROP_MaxDropOffHeight, ulClient, SVCF_ONLYTHISCLIENT );
+
 	// [AK] Update the actor's species if it's changed.
 	if ( strcmp( pActor->Species, pActor->GetDefault()->Species ) != 0 )
 		SERVERCOMMANDS_SetThingStringProperty( pActor, APROP_Species, ulClient, SVCF_ONLYTHISCLIENT );

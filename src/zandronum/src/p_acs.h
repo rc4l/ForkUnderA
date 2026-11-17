@@ -432,11 +432,11 @@ enum
 	APROP_StencilColor	= 41,
 	APROP_Friction		= 42,	// [rc4l] uzdoom@ea7ba9dba
 	APROP_DamageMultiplier = 43,	// [rc4l] uzdoom@99b2cfa14 -- was reserved below, now implemented
-	// [ZandroX] 44-49 are left unused on purpose: UZDoom/GZDoom assign them
-	// (MaxStepHeight, MaxDropOffHeight, DamageType, SoundClass,
-	// FriendlySeeBlocks, WaterDepth). ZandroX doesn't implement those yet, so
-	// reserving the ids keeps ACS written against UZDoom's constants valid.
-	// Fork-specific properties therefore start at 50.
+	// [Doruk-Aksoy] features/acs-parity: uzdoom@1d286d5bd5 (step and drop-off heights) and d09ec5a930 (DamageType).
+	APROP_MaxStepHeight	= 44,
+	APROP_MaxDropOffHeight = 45,
+	APROP_DamageType	= 46,
+	// [ZandroX] 47-49 stay UZDoom's (SoundClass, FriendlySeeBlocks, WaterDepth), so fork-specific properties start at 50.
 	APROP_HitRadius		= 50,	// [ZandroX] projectilepassradius (attack half-width)
 	APROP_HitHeight		= 51,	// [ZandroX] projectilepassheight (attack height)
 	APROP_MvType		= 52,	// [rc4l] Player.MvType (features/quake-movement)

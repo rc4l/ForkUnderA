@@ -72,8 +72,19 @@ TEST(AcsArgCount, FunctionsThatCheckEveryArgumentAreNeverShort)
 
 TEST(AcsArgCount, IndicesNoFunctionHoldsAreNeverShort)
 {
-	const int indices[] = { -1, 0, 255, 256, 300, 19619, 19621, 30000 };
+	const int indices[] = { -1, 0, 255, 256, 302, 19619, 19621, 30000 };
 	for (int index : indices) EXPECT_EQ(ComputeShortCall(index, 0), nullptr) << index;
+}
+
+// [Doruk-Aksoy] UZDoom's MIN_ARG_COUNT for the functions features/acs-parity ports, GetLineX and GetLineY past the direct range.
+TEST(AcsArgCount, UZDoomParityFunctionsNeedUZDoomsMinimum)
+{
+	EXPECT_EQ(Needed(93), 2);    // [Doruk-Aksoy] GetMaxInventory
+	EXPECT_EQ(Needed(98), 3);    // [Doruk-Aksoy] CheckProximity
+	EXPECT_EQ(Needed(201), 6);   // [Doruk-Aksoy] DamageActor
+	EXPECT_EQ(Needed(215), 2);   // [Doruk-Aksoy] GetNetID
+	EXPECT_EQ(Needed(300), 3);   // [Doruk-Aksoy] GetLineX
+	EXPECT_EQ(Needed(301), 3);   // [Doruk-Aksoy] GetLineY
 }
 
 TEST(AcsArgCount, ZDaemonsGetTeamScoreIsFoundPastTheDirectRange)

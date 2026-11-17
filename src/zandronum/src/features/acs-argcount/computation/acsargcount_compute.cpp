@@ -97,7 +97,10 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 90, 1, "GetActorRoll" },
 	{ 91, 8, "QuakeEx" },
 	{ 92, 6, "Warp" },
+	{ 93, 2, "GetMaxInventory" },
 	{ 97, 1, "SetMusicVolume" },
+	{ 98, 3, "CheckProximity" },
+	{ 99, 2, "CheckActorState" },
 	{ 101, 1, "PlayerIsSpectator" },
 	{ 103, 2, "GetTeamProperty" },
 	{ 104, 1, "GetPlayerLivesLeft" },
@@ -167,14 +170,25 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 183, 3, "SetControlPointInfo" },
 	{ 184, 2, "GetSkinProperty" },
 	{ 185, 2, "IsPlayerContestingControlPoint" },
+	{ 200, 1, "CheckClass" },
+	{ 201, 6, "DamageActor" },
 	{ 204, 1, "GetActorFloorTexture" },
+	{ 205, 1, "GetActorFloorTerrain" },
+	{ 206, 1, "StrArg" },
+	{ 207, 1, "Floor" },
+	{ 208, 1, "Round" },
+	{ 209, 1, "Ceil" },
+	{ 215, 2, "GetNetID" },
+	{ 216, 1, "SetActivatorByNetID" },
+	{ 300, 3, "GetLineX" },
+	{ 301, 3, "GetLineY" },
 	{ 19620, 1, "GetTeamScore" },
 };
 const int kFunctionArgsCount = int(sizeof(kFunctionArgs) / sizeof(kFunctionArgs[0]));
 
 namespace {
 
-// [Doruk-Aksoy] Indices below this, which hold every function but ZDaemon's, are looked up directly, since CallFunction asks on every call.
+// [Doruk-Aksoy] Indices below this, which hold every function but GetLineX, GetLineY and ZDaemon's, are looked up directly, since CallFunction asks on every call.
 const int kDirect = 256;
 
 struct DirectTable

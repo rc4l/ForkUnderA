@@ -6098,6 +6098,15 @@ void ServerCommands::SetThingProperty::Execute()
 		actor->Friction = value;
 		break;
 
+	// [Doruk-Aksoy] features/acs-parity: P_TryMove reads both, for the pawn this client predicts and the monsters it walks.
+	case APROP_MaxStepHeight:
+		actor->MaxStepHeight = value;
+		break;
+
+	case APROP_MaxDropOffHeight:
+		actor->MaxDropOffHeight = value;
+		break;
+
 	// [rc4l] features/quake-movement. Range-checked on receipt too: the server is trusted, but a
 	// value outside the enum would put local prediction on a movement model that doesn't exist.
 	case APROP_MvType:

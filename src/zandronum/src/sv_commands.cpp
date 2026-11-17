@@ -2170,6 +2170,15 @@ void SERVERCOMMANDS_SetThingProperty( AActor *pActor, ULONG ulProperty, ULONG ul
 		value = (int)(pActor->Friction);
 		break;
 
+	// [Doruk-Aksoy] features/acs-parity.
+	case APROP_MaxStepHeight:
+		value = (int)(pActor->MaxStepHeight);
+		break;
+
+	case APROP_MaxDropOffHeight:
+		value = (int)(pActor->MaxDropOffHeight);
+		break;
+
 	// [rc4l] features/quake-movement.
 	case APROP_MvType:
 		if ( pActor->IsKindOf( RUNTIME_CLASS( APlayerPawn )))
