@@ -196,7 +196,18 @@ struct SnapScrollPushClientStats
 	unsigned int	replacedScrollers;	// destroyed for a full update's re-send
 	unsigned int	replacedPushers;
 	unsigned int	replacedWaggles;
+	// The join's own command: what it carried and how each record was matched.
+	unsigned int	stateChunks;		// commands received
+	unsigned int	stateScrollers;		// scroller records applied by ordinal
+	unsigned int	statePushers;		// pusher records applied by ordinal
+	unsigned int	stateEchoMismatch;	// records whose ordinal held another mover
+	unsigned int	stateFallback;		// of those, matched by searching instead
+	unsigned int	stateUnmatched;		// records no mover claimed, left at zero
 };
+
+// The join state command's records, defined with the command in
+// network/servercommands.h; the command hands them over, as its own members are protected.
+namespace ServerCommands { struct SnapScrollerState; struct SnapPusherState; }
 
 namespace zx { namespace netsnapshot {
 
@@ -205,6 +216,16 @@ void SpecialCountPointPusher( bool bSource );
 void SpecialClientStats( SnapScrollPushClientStats &st, bool bReset );
 AActor *SpecialResolveSource( unsigned short &netID, bool &bSeen );
 void SpecialClearForFullUpdate( );
+
+// The join's scroller and pusher state, sent after both of SERVER_UpdateMovers' loops so
+// every DoScroller and DoPusher has run on the client; the role and gate tests are inside.
+void SpecialSendJoinState( unsigned int client );
+
+// One chunk of that state applied to the movers the legacy commands built, by join ordinal
+// with the record's own type and affectee as the check.
+void SpecialApplyJoinState( int firstScroller,
+	const TArray<struct ServerCommands::SnapScrollerState> &scrollers, int firstPusher,
+	const TArray<struct ServerCommands::SnapPusherState> &pushers );
 
 // Whether this line is attached to a snapshot-owned plane.
 bool Midtex3dLineOwned(line_t *line);

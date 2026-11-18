@@ -499,6 +499,16 @@ void	SERVERCOMMANDS_SnapJoin( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFla
 // stopped, and from which frame. Declared only: its body builds a ServerCommands class the
 // protocol spec generates, so the body arrives with that spec entry.
 void	SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: the join state command's records, defined with the
+// command in network/servercommands.h.
+namespace ServerCommands { struct SnapScrollerState; struct SnapPusherState; }
+// [Kaori-Chani] features/net-snapshot: one chunk of the join's scroller and pusher state,
+// each array starting at the join ordinal beside it.
+void	SERVERCOMMANDS_SnapSpecialState( int firstScroller,
+			const TArray<struct ServerCommands::SnapScrollerState> &scrollers,
+			int firstPusher,
+			const TArray<struct ServerCommands::SnapPusherState> &pushers,
+			ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 // [Kaori-Chani] features/net-snapshot: a body moved off the id reserved for its player.
 void	SERVERCOMMANDS_SetThingNetID( unsigned short oldID, unsigned short newID );
 

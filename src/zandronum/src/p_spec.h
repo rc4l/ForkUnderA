@@ -72,6 +72,15 @@ public:
 	// without reaching into it. SnapDump is defined with the class.
 	bool IsAccelerative() const { return m_Accel != 0; }
 	bool HasControl() const { return m_Control != -1; }
+	// [Kaori-Chani] features/net-snapshot: what the join's own command carries for a
+	// scroller, which DoScroller's arguments leave out.
+	void SetLastHeight( fixed_t height ) { m_LastHeight = height; }
+	void SetVelocity( fixed_t vdx, fixed_t vdy ) { m_vdx = vdx; m_vdy = vdy; }
+	int ScrollType() const { return (int)m_Type; }
+	int Affectee() const { return m_Affectee; }
+	fixed_t LastHeight() const { return m_LastHeight; }
+	fixed_t VelocityX() const { return m_vdx; }
+	fixed_t VelocityY() const { return m_vdy; }
 	void SnapDump() const;
 	enum EScrollType
 	{
@@ -135,6 +144,16 @@ public:
 	// [Kaori-Chani] features/net-snapshot: as for DScroller above.
 	bool IsPoint() const { return m_Type == p_push; }
 	void SnapDump() const;
+	// [Kaori-Chani] features/net-snapshot: the echo the join's command matches a record by.
+	int PushType() const { return (int)m_Type; }
+	int Affectee() const { return m_Affectee; }
+	int PointX() const { return m_X; }
+	int PointY() const { return m_Y; }
+	int PointRadius() const { return m_Radius; }
+	unsigned short SourceNetID() const { return m_SourceNetID; }
+	// The server's own source, whose id a join record carries; m_SourceNetID is what a
+	// client was told and is zero here.
+	AActor *SourceActor() const { return const_cast<TObjPtr<AActor> &>( m_Source ); }
 	// [Kaori-Chani] features/net-snapshot: a point pusher a client was told about, whose
 	// source actor it may not have yet. The id is kept so a later lookup is a re-resolve
 	// rather than a guess, and m_bSourceSeen records that it resolved once. Client only, so

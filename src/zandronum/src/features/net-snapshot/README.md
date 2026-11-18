@@ -97,6 +97,24 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
     reference distinguished the two with a `bPeriodic` argument on that stock setter; the
     port keeps the stock signature and raises a module flag instead, which also keeps a
     slot from being left marked after an authoritative block.
+- `movers.{h,cpp}` also carries `SnapSpecialState`, the join's scroller and pusher state. The
+  reference put a control scroller's `lastHeight`, an accelerative one's `vdx`/`vdy` and a point
+  pusher's `x`/`y`/`radius` into the legacy `DoScroller` and `DoPusher` commands. This port must
+  leave the gate-off fallback byte-identical, so the same state rides a command of its own, sent
+  only while the gate is on, at the end of `SERVER_UpdateMovers` after both of its loops.
+  - A record names its mover by **ordinal within the join**, with its `type` and `affectee` as an
+    echo. That works because the client destroys every scroller and pusher at `BeginSnapshot`
+    (`SpecialClearForFullUpdate`) and rebuilds them from the server's stream alone, and because
+    thinkers are appended (`FThinkerList::AddTail`) while `FThinkerIterator` walks a stat's list
+    and then its fresh list, so iteration order is creation order. A refused `DoScroller` would
+    shift every later ordinal, which is what the echo catches: on a mismatch the module takes the
+    first unclaimed mover with that echo instead, and counts both. A record that matches nothing
+    leaves its mover at zero, as the gate-off fallback does.
+  - The arrays are chunked at 48 records so a command fits `sv_maxpacketsize`, and because the
+    generated array length is a byte. Each chunk carries the join ordinal it starts at.
+  - **A known limit of the gate-off fallback**: with the gate off, a mid-game joiner still builds
+    control and accelerative scrollers, and point pushers, from zero, exactly as stock does. The
+    fix reaches snapshot clients only, until legacy is removed.
 - `format_test.cpp`: the format layer's own tests, narrow frame and wide.
 - `refdump_test.cpp`: the reference decode, below. The dumper it decodes with is shared, in
   `tests/snapdump/`, with the `snap_dump` command line beside it.
@@ -104,6 +122,18 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
 ## In-engine hooks
 
 Each hook is one call from a stock file into the module, listed here as it lands.
+
+- `sv_main.cpp`, end of `SERVER_UpdateMovers`: `SpecialSendJoinState( ulClient )`, after the
+  scroller and pusher loops, so every mover its records name has already been built on the
+  client. The role and gate tests are inside the module.
+- `cl_main.cpp`, `ServerCommands::SnapSpecialState::Execute`: `SpecialApplyJoinState( ... )`,
+  which hands over the command's four members because they are protected.
+- `cl_main.cpp`, `ServerCommands::DoScroller::Execute` and `client_DoPusher`:
+  `SpecialCountScroller( ... )` and `SpecialCountPointPusher( ... )`, the census of what the
+  legacy commands did build, which the applied-record counts are read against.
+- `p_spec.cpp`, `DPusher::Tick`: `SpecialResolveSource( m_SourceNetID, m_bSourceSeen )`, inside
+  the point branch only, for a source actor that had not arrived when the join named it. With no
+  record applied the id is zero and the module returns at its first test.
 
 - `cl_main.cpp`, `ServerCommands::SnapMoverGate::Execute`: `MoverSetServerGate( legacyOff, frame )`,
   taken ahead of every legacy mover command under it. The first hook, and the only kind a

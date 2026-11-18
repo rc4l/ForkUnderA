@@ -5973,6 +5973,24 @@ void SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExt
 
 //*****************************************************************************
 //
+// [Kaori-Chani] features/net-snapshot: the module decides the chunk and whether to send
+// at all; this only puts it on the wire.
+void SERVERCOMMANDS_SnapSpecialState( int firstScroller,
+	const TArray<struct ServerCommands::SnapScrollerState> &scrollers,
+	int firstPusher,
+	const TArray<struct ServerCommands::SnapPusherState> &pushers,
+	ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	ServerCommands::SnapSpecialState command;
+	command.SetFirstScroller( firstScroller );
+	command.SetScrollers( scrollers );
+	command.SetFirstPusher( firstPusher );
+	command.SetPushers( pushers );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
 // [Kaori-Chani] features/net-snapshot: a body that held the id reserved for its player has moved
 // to newID, told before anything else refers to it.
 //

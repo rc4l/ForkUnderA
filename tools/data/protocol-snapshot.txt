@@ -209,6 +209,7 @@
  51 SVC2_SNAPMOVERGATE                     [Extended] : Bool Long
  52 SVC2_SETTHINGNETID                     [Extended] : NetID NetID
  53 SVC2_SNAPJOIN                          [Extended] : Byte Byte Long Long Long Byte Byte Byte
+ 54 SVC2_SNAPSPECIALSTATE                  [Extended] : Short Struct Short Struct
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -537,7 +538,8 @@
  86 SVC2_SNAPSOUNDTABLE
  87 SVC2_SNAPSOUND
  88 SVC2_SNAPCOSMETIC
- 89 NUM_SVC2_COMMANDS
+ 89 SVC2_SNAPSPECIALSTATE
+ 90 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION

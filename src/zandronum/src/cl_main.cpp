@@ -9911,6 +9911,10 @@ void ServerCommands::DoScroller::Execute()
 
 	// Finally, create the scroller.
 	new DScroller( (DScroller::EScrollType)type, x, y, control, affectee, (int)accel, position );
+
+	// [Kaori-Chani] features/net-snapshot: one scroller the join built, whose remaining state
+	// the module's own command fills in.
+	zx::netsnapshot::SpecialCountScroller( ContainsSector( ), !!accel, false );
 }
 
 //*****************************************************************************
@@ -10164,6 +10168,11 @@ static void client_DoPusher( BYTESTREAM_s *pByteStream )
 
 	line_t *pLine = ( iLineNum >= 0 && iLineNum < numlines ) ? &lines[iLineNum] : NULL;
 	new DPusher ( static_cast<DPusher::EPusher> ( ulType ), pLine, iMagnitude, iAngle, CLIENT_FindThingByNetID( sourceNetID ), iAffectee );
+
+	// [Kaori-Chani] features/net-snapshot: one point pusher the join built, counted whether
+	// or not its source actor is here yet.
+	if ( ulType == DPusher::p_push )
+		zx::netsnapshot::SpecialCountPointPusher( sourceNetID != 0 );
 }
 
 //*****************************************************************************
@@ -10342,6 +10351,13 @@ void ServerCommands::SnapJoin::Execute()
 
 //*****************************************************************************
 // [Kaori-Chani] features/net-snapshot: taken ahead of every legacy mover command under it.
+void ServerCommands::SnapSpecialState::Execute()
+{
+	zx::netsnapshot::SpecialApplyJoinState( firstScroller, scrollers, firstPusher, pushers );
+}
+
+//*****************************************************************************
+//
 void ServerCommands::SnapMoverGate::Execute()
 {
 	zx::netsnapshot::MoverSetServerGate( legacyOff, frame );

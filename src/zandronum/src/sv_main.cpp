@@ -3815,6 +3815,10 @@ ULONG SERVER_UpdateMovers( ULONG ulClient )
 		pPusher->UpdateToClient( ulClient );
 		++ulSent;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: after both loops, so every mover it names has
+	// already been built on the client.
+	zx::netsnapshot::SpecialSendJoinState( ulClient );
 	return ulSent;
 }
 

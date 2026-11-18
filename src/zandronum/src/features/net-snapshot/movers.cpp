@@ -32,6 +32,7 @@
 #include "features/net-snapshot/movers.h"
 #include "features/net-snapshot/polyobj.h"
 #include "features/net-snapshot/computation/mover_compute.h"
+#include "network/servercommands.h"	// the join state command this module fills
 
 // [Kaori-Chani] capture.cpp's, read here so the hook that asks for a census stays one call.
 EXTERN_CVAR(Bool, fua_snap_linkcensus)
@@ -2038,10 +2039,190 @@ void zx::netsnapshot::SpecialClientStats( SnapScrollPushClientStats &st, bool bR
 		memset( &g_snapSP, 0, sizeof( g_snapSP ));
 }
 
+//*****************************************************************************
+//	The join's own command: the state the legacy commands leave out.
+
+// A chunk's record count. 48 scroller records are 720 bytes and 48 pusher
+// records 816, so a chunk fits a packet at the 1550-byte default.
+#define SNAP_SPECIAL_CHUNK	48
+
+// Which join ordinals are taken, so the search a mismatched echo falls back on
+// cannot claim a mover twice; one array per kind, as their ordinals are separate.
+static TArray<bool>	g_scrollerClaimed;
+static TArray<bool>	g_pusherClaimed;
+
+// The scrollers and pushers in the order SERVER_UpdateMovers sends them, which
+// is the order a client creates and iterates them in.
+static void special_Scrollers( TArray<DScroller *> &out )
+{
+	out.Clear( );
+	TThinkerIterator<DScroller> it;
+	DScroller *p;
+	while (( p = it.Next( )) != NULL )
+		out.Push( p );
+}
+
+static void special_Pushers( TArray<DPusher *> &out )
+{
+	out.Clear( );
+	TThinkerIterator<DPusher> it;
+	DPusher *p;
+	while (( p = it.Next( )) != NULL )
+		out.Push( p );
+}
+
+void zx::netsnapshot::SpecialSendJoinState( unsigned int client )
+{
+	if (( NETWORK_GetState( ) != NETSTATE_SERVER ) || ( zx::netsnapshot::GateOn( ) == false ))
+		return;
+
+	TArray<DScroller *> scrollers;
+	TArray<DPusher *> pushers;
+	special_Scrollers( scrollers );
+	special_Pushers( pushers );
+
+	TArray<ServerCommands::SnapScrollerState> recs;
+	TArray<ServerCommands::SnapPusherState> none;
+	for ( unsigned int i = 0; i < scrollers.Size( ); i += SNAP_SPECIAL_CHUNK )
+	{
+		recs.Clear( );
+		for ( unsigned int j = i; ( j < scrollers.Size( ))
+			&& ( j < i + SNAP_SPECIAL_CHUNK ); ++j )
+		{
+			ServerCommands::SnapScrollerState r;
+			r.type = scrollers[j]->ScrollType( );
+			r.affectee = scrollers[j]->Affectee( );
+			// A scroller without a control sector has no last height to carry.
+			r.lastHeight = scrollers[j]->HasControl( )
+				? scrollers[j]->LastHeight( ) : fixed_t( 0 );
+			r.vdx = scrollers[j]->VelocityX( );
+			r.vdy = scrollers[j]->VelocityY( );
+			recs.Push( r );
+		}
+		SERVERCOMMANDS_SnapSpecialState( (int)i, recs, 0, none, client,
+			SVCF_ONLYTHISCLIENT );
+	}
+
+	TArray<ServerCommands::SnapPusherState> precs;
+	TArray<ServerCommands::SnapScrollerState> noneS;
+	for ( unsigned int i = 0; i < pushers.Size( ); i += SNAP_SPECIAL_CHUNK )
+	{
+		precs.Clear( );
+		for ( unsigned int j = i; ( j < pushers.Size( ))
+			&& ( j < i + SNAP_SPECIAL_CHUNK ); ++j )
+		{
+			ServerCommands::SnapPusherState r;
+			r.type = pushers[j]->PushType( );
+			r.affectee = pushers[j]->Affectee( );
+			// Only a point pusher has a centre, a radius and a source.
+			const bool bPoint = pushers[j]->IsPoint( );
+			r.x = bPoint ? pushers[j]->PointX( ) : 0;
+			r.y = bPoint ? pushers[j]->PointY( ) : 0;
+			r.radius = bPoint ? pushers[j]->PointRadius( ) : 0;
+			AActor *pSource = pushers[j]->SourceActor( );
+			r.sourceID = ( bPoint && ( pSource != NULL )) ? pSource->NetID : 0;
+			precs.Push( r );
+		}
+		SERVERCOMMANDS_SnapSpecialState( 0, noneS, (int)i, precs, client,
+			SVCF_ONLYTHISCLIENT );
+	}
+}
+
+// The mover a record belongs to: its ordinal, then a search when the echo says
+// that ordinal holds something else, as a refused DoScroller shifts them all.
+template <typename T>
+static T *special_Match( TArray<T *> &all, TArray<bool> &claimed, unsigned int ordinal,
+	int type, int affectee, int ( T::*kind )( ) const )
+{
+	// Push, not Resize: TArray default-initialises, which leaves a bool indeterminate,
+	// and a claim read as taken would refuse every record.
+	while ( claimed.Size( ) < all.Size( ))
+		claimed.Push( false );
+
+	if ( ordinal < all.Size( ))
+	{
+		T *p = all[ordinal];
+		if (( claimed[ordinal] == false )
+			&& (( p->*kind )( ) == type ) && ( p->Affectee( ) == affectee ))
+		{
+			claimed[ordinal] = true;
+			return p;
+		}
+	}
+
+	++g_snapSP.stateEchoMismatch;
+	for ( unsigned int i = 0; i < all.Size( ); ++i )
+	{
+		if ( claimed[i] )
+			continue;
+		if ((( all[i]->*kind )( ) == type ) && ( all[i]->Affectee( ) == affectee ))
+		{
+			claimed[i] = true;
+			++g_snapSP.stateFallback;
+			return all[i];
+		}
+	}
+	++g_snapSP.stateUnmatched;
+	return NULL;
+}
+
+void zx::netsnapshot::SpecialApplyJoinState( int firstScroller,
+	const TArray<struct ServerCommands::SnapScrollerState> &scrollers, int firstPusher,
+	const TArray<struct ServerCommands::SnapPusherState> &pushers )
+{
+	if ( NETWORK_InClientMode( ) == false )
+		return;
+
+	++g_snapSP.stateChunks;
+
+	if ( scrollers.Size( ) > 0 )
+	{
+		TArray<DScroller *> all;
+		special_Scrollers( all );
+		for ( unsigned int i = 0; i < scrollers.Size( ); ++i )
+		{
+			const ServerCommands::SnapScrollerState &r = scrollers[i];
+			DScroller *p = special_Match<DScroller>( all, g_scrollerClaimed,
+				(unsigned int)firstScroller + i, r.type, r.affectee,
+				&DScroller::ScrollType );
+			if ( p == NULL )
+				continue;
+			if ( p->HasControl( ))
+				p->SetLastHeight( r.lastHeight );
+			p->SetVelocity( r.vdx, r.vdy );
+			++g_snapSP.stateScrollers;
+		}
+	}
+
+	if ( pushers.Size( ) > 0 )
+	{
+		TArray<DPusher *> all;
+		special_Pushers( all );
+		for ( unsigned int i = 0; i < pushers.Size( ); ++i )
+		{
+			const ServerCommands::SnapPusherState &r = pushers[i];
+			DPusher *p = special_Match<DPusher>( all, g_pusherClaimed,
+				(unsigned int)firstPusher + i, r.type, r.affectee,
+				&DPusher::PushType );
+			if ( p == NULL )
+				continue;
+			// Wind and current have no centre, and SetPointSource is the point
+			// pusher's only writer.
+			if ( p->IsPoint( ))
+				p->SetPointSource( r.x, r.y, r.radius, (unsigned short)r.sourceID );
+			++g_snapSP.statePushers;
+		}
+	}
+}
+
 // A pusher's source by NetID, the real actor first and then its mirror, dropped
 // when the id holds a class P_SpawnPushers does not take.
 AActor *zx::netsnapshot::SpecialResolveSource( unsigned short &netID, bool &bSeen )
 {
+	// A server has its own source, and an id of zero is a pusher no join record named.
+	if (( NETWORK_InClientMode( ) == false ) || ( netID == 0 ))
+		return NULL;
+
 	bool bMirror = false;
 	AActor *pActor = CLIENT_FindThingByNetID( netID );
 	if ( pActor == NULL )
@@ -2081,6 +2262,8 @@ AActor *zx::netsnapshot::SpecialResolveSource( unsigned short &netID, bool &bSee
 // which re-sends them (a CLIENTSIDE script's scroller going for good).
 void zx::netsnapshot::SpecialClearForFullUpdate( )
 {
+	g_scrollerClaimed.Clear( );
+	g_pusherClaimed.Clear( );
 	TThinkerIterator<DScroller> scrollers;
 	DScroller *pScroller;
 	while (( pScroller = scrollers.Next( )) != NULL )

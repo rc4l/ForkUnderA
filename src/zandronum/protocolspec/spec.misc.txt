@@ -234,3 +234,36 @@ Command SnapJoin
 	Byte widthY
 	Byte widthZ
 EndCommand
+
+# [Kaori-Chani] features/net-snapshot: a scroller's control height and accumulated velocity,
+# which DoScroller does not carry.
+Struct SnapScrollerState
+	Byte type
+	Short affectee
+	Fixed lastHeight
+	Fixed vdx
+	Fixed vdy
+EndStruct
+
+# [Kaori-Chani] features/net-snapshot: a point pusher's centre, radius and source, whose actor
+# may not have arrived; DoPusher carries none of them.
+Struct SnapPusherState
+	Byte type
+	Short affectee
+	Long x
+	Long y
+	Long radius
+	NetID sourceID
+EndStruct
+
+# [Kaori-Chani] features/net-snapshot: the state the legacy DoScroller and DoPusher leave out,
+# in the order SERVER_UpdateMovers sent them, so the legacy fallback's own bytes are untouched.
+# first* is the join ordinal the chunk starts at; type and affectee echo the mover the record
+# belongs to. Sent only while the snapshot gate is on, in chunks that fit a packet.
+Command SnapSpecialState
+	ExtendedCommand
+	Short firstScroller
+	Struct<SnapScrollerState>[] scrollers
+	Short firstPusher
+	Struct<SnapPusherState>[] pushers
+EndCommand

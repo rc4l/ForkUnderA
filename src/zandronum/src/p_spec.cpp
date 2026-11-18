@@ -97,6 +97,7 @@
 #include "network_enums.h"
 #include "st_hud.h"
 #include "features/net-replication/mapstate.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] SpecialResolveSource
 
 static FRandom pr_playerinspecialsector ("PlayerInSpecialSector");
 void P_SetupPortals();
@@ -2647,9 +2648,13 @@ void DPusher::Tick ()
 	if (m_Type == p_push)
 	{
 		// [Kaori-Chani] A removed point source, which P_CheckSight and the class
-		// test below dereference.
+		// test below dereference; a client's may only now have arrived.
 		if (m_Source == NULL)
-			return;
+		{
+			m_Source = zx::netsnapshot::SpecialResolveSource(m_SourceNetID, m_bSourceSeen);
+			if (m_Source == NULL)
+				return;
+		}
 
 		// Seek out all pushable things within the force radius of this
 		// point pusher. Crosses sectors, so use blockmap.

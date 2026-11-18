@@ -3657,6 +3657,13 @@ static void ghost_Report()
 			sp.points, sp.noSource, sp.resolved, sp.resolvedMirror,
 			sp.reresolved, sp.unresolved, sp.gone, sp.replacedScrollers,
 			sp.replacedPushers, sp.replacedWaggles);
+
+		// The join's own command, where every record must land on a mover.
+		Printf("[snap] special state: %u chunks | %u scroller + %u pusher records applied"
+			" | %u echo mismatch (%u matched by search, %u unmatched)%s\n",
+			sp.stateChunks, sp.stateScrollers, sp.statePushers,
+			sp.stateEchoMismatch, sp.stateFallback, sp.stateUnmatched,
+			( sp.stateUnmatched > 0 ) ? "  ** UNACCOUNTED **" : "");
 	}
 
 	g_ghostNearAccum = g_ghostMidAccum = g_ghostFarAccum = 0;
