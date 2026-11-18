@@ -2342,14 +2342,17 @@ bool zx::netsnapshot::MoverHoldsPlane( bool bBlocked )
 	return true;
 }
 
-bool zx::netsnapshot::MoverHoldsFloor( BYTE blocked )
+void zx::netsnapshot::MoverHeldPlanes( BYTE blocked, bool & bFloor, bool & bCeiling )
 {
-	return (( blocked & SNAPMV_PLANE_FLOOR ) != 0 ) && NETWORK_InClientMode( );
-}
-
-bool zx::netsnapshot::MoverHoldsCeiling( BYTE blocked )
-{
-	return (( blocked & SNAPMV_PLANE_CEILING ) != 0 ) && NETWORK_InClientMode( );
+	const bool bClient = NETWORK_InClientMode( );
+	bFloor = bClient && (( blocked & SNAPMV_PLANE_FLOOR ) != 0 );
+	bCeiling = bClient && (( blocked & SNAPMV_PLANE_CEILING ) != 0 );
+	if ( bFloor || bCeiling )
+	{
+		MoverCountHeld( );
+		if ( bFloor != bCeiling )
+			MoverCountHeldOnePlane( );
+	}
 }
 
 bool zx::netsnapshot::MoverPlaneStalled( bool bWas, bool bStalled )

@@ -39,9 +39,9 @@ void MoverCountBlockedRecv();
 // Whether this client must leave the plane where the server's record says it stalled,
 // counted as one held tic; a server always moves it.
 bool MoverHoldsPlane( bool bBlocked );
-// The same for a two-plane mover, whose stall is per plane.
-bool MoverHoldsFloor( BYTE blocked );
-bool MoverHoldsCeiling( BYTE blocked );
+// The same for a two-plane mover, whose record carries a stall per plane: which planes
+// to hold, with the held tic and the one-plane case counted here rather than at the call.
+void MoverHeldPlanes( BYTE blocked, bool & bFloor, bool & bCeiling );
 // What the mover's stall flag becomes: the server decides it from the move it just
 // made, and a client keeps what the record told it.
 bool MoverPlaneStalled( bool bWas, bool bStalled );

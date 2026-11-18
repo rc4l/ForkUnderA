@@ -221,14 +221,8 @@ void DPillar::Tick ()
 
 	// [Kaori-Chani] features/net-snapshot: each plane the server says stalled stays put, and
 	// a held move reads as ok so the pair below still agree.
-	const bool bHoldFloor = zx::netsnapshot::MoverHoldsFloor( m_SnapBlocked );
-	const bool bHoldCeiling = zx::netsnapshot::MoverHoldsCeiling( m_SnapBlocked );
-	if ( bHoldFloor || bHoldCeiling )
-	{
-		zx::netsnapshot::MoverCountHeld( );
-		if ( bHoldFloor != bHoldCeiling )
-			zx::netsnapshot::MoverCountHeldOnePlane( );
-	}
+	bool bHoldFloor, bHoldCeiling;
+	zx::netsnapshot::MoverHeldPlanes( m_SnapBlocked, bHoldFloor, bHoldCeiling );
 
 	if (m_Type == pillarBuild)
 	{

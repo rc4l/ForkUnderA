@@ -155,7 +155,7 @@ Each hook is one call from a stock file into the module, listed here as it lands
   record applied the id is zero and the module returns at its first test.
 - `g_game.cpp`, `G_ResetMap`'s client branch: `MoverResetBegin( )`, ahead of the server's reset
   writes, so planes the module owns take them; the test for whether it owns any is inside.
-- `p_plats.cpp` and `p_pillar.cpp`, each mover's `Tick` and `Destroy`: `SnapCapture( )` at both
+- `p_plats.cpp`, `p_pillar.cpp` and `p_floor.cpp`, each mover's `Tick` and `Destroy`: `SnapCapture( )` at both
   ends of the tic and `SnapCapture( true )` in `Destroy`, which is the only hook that catches a
   mover destroyed outside `Tick` — the map reset's loop does exactly that. Beside them
   `MoverHoldsPlane( )` (and `MoverHoldsFloor`/`MoverHoldsCeiling` for a pillar's two planes),
@@ -166,6 +166,13 @@ Each hook is one call from a stock file into the module, listed here as it lands
     `SpecialResolveSource` does, so the stock sites stay at one call and the boundary counts do
     not move. The stall flag is therefore passed and returned by value rather than assigned under
     a role test.
+  - An elevator holds as one mover, not per plane: `SnapMoverElevator` carries no blocked
+    field, only the capture call's single flag, where `SnapMoverPillar` carries a `BYTE
+    blocked`. That follows the movers themselves — an elevator drives both planes with one
+    speed and reverses one when the other is crushed, while a pillar drives its two toward
+    separate targets and can stall on one, which `MoverCountHeldOnePlane` counts. Its stall is
+    written straight after its moves rather than at the tail, which the `pastdest` branch can
+    reach with the elevator already destroyed.
   - The reference also lets a client run a plat's own wait, dropping the stock
     `NETWORK_InClientMode( )` break from the `waiting` case. That changes gate-off client
     behaviour, so this port keeps the break and counts the waiting tic only; the client-run wait

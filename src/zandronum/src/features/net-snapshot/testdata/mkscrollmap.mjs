@@ -25,6 +25,7 @@ const SCROLL_FLOOR = 223;         // actionspecials.h: Scroll_Floor (tag, bits, 
 const SCROLL_CEILING = 224;       // Scroll_Ceiling, the same arguments
 const POINTPUSH_SETFORCE = 227;   // PointPush_SetForce (tag, tid, magnitude, line)
 const FLOOR_LOWERBYVALUE = 20;
+const ELEVATOR_LOWERTONEAREST = 247;  // actionspecials.h: Elevator_LowerToNearest (tag, speed)
 const SCROLL_DISPLACEMENT = 1;    // args[1] & 1: the control sector's movement scrolls it
 const SCROLL_ACCELERATIVE = 2;    // args[1] & 2: and accumulates a velocity
 const POINTPUSHER = 5001;         // the thing a point pusher takes its centre from
@@ -80,16 +81,23 @@ m.opening(-300, -64, -300, 64, room, room, OPEN, OPEN,
 m.thing({ x: -200, y: 0, angle: 0, type: POINTPUSHER, id: 7 });
 
 // A plat that never stops, so a mover is always mid-move: the reset's hold and release have
-// something to hold, and its one-second wait exercises the wait census too.
-m.opening(-350, -64, -350, 64, room, room, OPEN, OPEN,
+// something to hold. Behind the player's start, so only walking backwards begins it and a
+// forward step can start the floor below with nothing else running.
+m.opening(-372, -64, -372, 64, room, room, OPEN, OPEN,
   { special: PLAT_PERPETUALRAISE, arg0: 2, arg1: 8, arg2: 35, playercross: true,
     blocking: false });
 
-// Crossed on the way in, so the control sector is moving - and the accelerative scrollers are
-// accumulating - by the time a second client joins.
-m.opening(-340, -64, -340, 64, room, room, OPEN, OPEN,
-  { special: FLOOR_LOWERBYVALUE, arg0: 1, arg1: 1, arg2: 256, playercross: true,
-    blocking: false });
+// The first line a player meets, and repeatable: one step starts a floor that finishes
+// inside a capture window, without the lift behind the start having been touched.
+m.opening(-352, -64, -352, 64, room, room, OPEN, OPEN,
+  { special: FLOOR_LOWERBYVALUE, arg0: 1, arg1: 2, arg2: 64, playercross: true,
+    repeatspecial: true, blocking: false });
+
+// An elevator on the scrolled sector, which moves both its planes together, so the gate's
+// guard on that pair is exercised too. Also behind the start, and east of the lift's line.
+m.opening(-366, -64, -366, 64, room, room, OPEN, OPEN,
+  { special: ELEVATOR_LOWERTONEAREST, arg0: 2, arg1: 2, playercross: true,
+    repeatspecial: true, blocking: false });
 
 m.thing({ x: -360, y: 0, angle: 0, type: 1 });
 
