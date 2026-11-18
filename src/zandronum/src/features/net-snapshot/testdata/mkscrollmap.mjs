@@ -29,6 +29,7 @@ const SCROLL_DISPLACEMENT = 1;    // args[1] & 1: the control sector's movement 
 const SCROLL_ACCELERATIVE = 2;    // args[1] & 2: and accumulates a velocity
 const POINTPUSHER = 5001;         // the thing a point pusher takes its centre from
 const PUSH_MASK = 0x1000;         // p_lnspec.h: without it on the sector, DPusher::Tick returns
+const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door mover at map load, respawned by a reset
 
 const TEX = { texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -40,7 +41,7 @@ const m = new UdmfMap({ namespace: "zdoom" });
 // The room the player stands in, the two sectors that scroll, and the control whose floor
 // drives them. Tags: 1 control, 2 scrolled, 3 the pusher's sector.
 const room = m.sector({ ...FLAT, id: 3, special: PUSH_MASK });
-const scrolled = m.sector({ ...FLAT, id: 2 });
+const scrolled = m.sector({ ...FLAT, id: 2, special: DOOR_CLOSE_IN_30 });
 const control = m.sector({ ...FLAT, id: 1 });
 
 const perimeter = [

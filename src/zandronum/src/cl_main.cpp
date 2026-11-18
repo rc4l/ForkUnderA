@@ -7464,6 +7464,10 @@ void ServerCommands::DestroyAllSectorMovers::Execute()
 {
 	ULONG	ulIdx;
 
+	// [Kaori-Chani] features/net-snapshot: the reset's writes are done, so the window the
+	// client opened at G_ResetMap closes here, ahead of the loop that clears what is left.
+	zx::netsnapshot::MoverResetEnd( );
+
 	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
 	{
 		if ( sectors[ulIdx].ceilingdata )
@@ -10350,14 +10354,21 @@ void ServerCommands::SnapJoin::Execute()
 }
 
 //*****************************************************************************
-// [Kaori-Chani] features/net-snapshot: taken ahead of every legacy mover command under it.
+//
+void ServerCommands::SnapMapReset::Execute()
+{
+	zx::netsnapshot::MoverSetResetCount( static_cast<BYTE>( resetCount ));
+}
+
+//*****************************************************************************
+//
 void ServerCommands::SnapSpecialState::Execute()
 {
 	zx::netsnapshot::SpecialApplyJoinState( firstScroller, scrollers, firstPusher, pushers );
 }
 
 //*****************************************************************************
-//
+// [Kaori-Chani] features/net-snapshot: taken ahead of every legacy mover command under it.
 void ServerCommands::SnapMoverGate::Execute()
 {
 	zx::netsnapshot::MoverSetServerGate( legacyOff, frame );

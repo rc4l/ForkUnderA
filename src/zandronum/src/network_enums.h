@@ -425,6 +425,7 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SNAPSOUND ),		// a snapshot sound by table index, not by name
 	ENUM_ELEMENT ( SVC2_SNAPCOSMETIC ),		// cosmetic spawns a client makes itself
 	ENUM_ELEMENT ( SVC2_SNAPSPECIALSTATE ),	// what DoScroller and DoPusher leave out
+	ENUM_ELEMENT ( SVC2_SNAPMAPRESET ),		// which reset the destroy beside it carried out
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

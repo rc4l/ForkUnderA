@@ -30,6 +30,8 @@
 #include "features/gamecopy/level.h"   // [rc4l] the level as the copy holds it
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverResetBegin
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] ResetEnd
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
@@ -3587,6 +3589,10 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	// This is all we do in client mode.
 	if ( NETWORK_InClientMode() )
 	{
+		// [Kaori-Chani] features/net-snapshot: the server's reset writes follow, so planes it
+		// owns must take them; the test is inside.
+		zx::netsnapshot::MoverResetBegin( );
+
 		// [BB] Clients still need to reset the automap.
 		for ( ulIdx = 0; ulIdx < (ULONG)numlines; ulIdx++ )
 			lines[ulIdx].flags &= ~ ML_MAPPED;
@@ -4442,8 +4448,10 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	}
 
 	// If we're the server, tell clients to delete all their ceiling/floor movers.
+	// [Kaori-Chani] features/net-snapshot: through the module, which counts the reset and
+	// sends that same command, with its count beside it while the gate is on.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_DestroyAllSectorMovers( );
+		zx::netsnapshot::ResetEnd( );
 
 	// [BB] Reset all ACS scripts.
 	GAME_ResetScripts ( );

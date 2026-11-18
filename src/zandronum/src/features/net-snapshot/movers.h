@@ -147,6 +147,8 @@ struct SnapMoverClientStats
 	unsigned int	resetsClosed;	// of those, closed by DestroyAllSectorMovers
 	unsigned int	resetsAbandoned;// of those, ended by a reconnect or replaced
 	bool			bResetOpen;		// one open now; open across reports is stuck
+	unsigned int	resetCount;		// the generation this client has carried out
+	bool			bHaveResetCount;	// whether it knows one in this stream
 	unsigned int	holdIn;			// records deferred: in a window, before a reset count, or past it
 	unsigned int	holdAhead;		// of those, counted past the client's reset count
 	unsigned int	holdReplayed;	// deferred records applied after the reset

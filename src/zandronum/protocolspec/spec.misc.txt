@@ -267,3 +267,11 @@ Command SnapSpecialState
 	Short firstPusher
 	Struct<SnapPusherState>[] pushers
 EndCommand
+
+# [Kaori-Chani] features/net-snapshot: the server's map resets so far, this one included, sent
+# beside the legacy DestroyAllSectorMovers so a client can tell which reset it just carried out.
+# Gate-on only, which leaves that command's own bytes alone.
+Command SnapMapReset
+	ExtendedCommand
+	Byte resetCount
+EndCommand

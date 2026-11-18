@@ -5371,6 +5371,11 @@ static void snap_SendResetEnd()
 {
 	g_snapResetCountSent = g_snapResetCount;
 	SERVERCOMMANDS_DestroyAllSectorMovers();
+
+	// After the destroy, not before: a client applies the count once nothing is left to
+	// destroy the records it releases. Gated, so the legacy command's bytes stand alone.
+	if (snap_GateOn())
+		SERVERCOMMANDS_SnapMapReset(g_snapResetCount);
 }
 
 void zx::netsnapshot::ResetEnd()

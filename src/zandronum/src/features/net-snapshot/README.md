@@ -115,6 +115,25 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   - **A known limit of the gate-off fallback**: with the gate off, a mid-game joiner still builds
     control and accelerative scrollers, and point pushers, from zero, exactly as stock does. The
     fix reaches snapshot clients only, until legacy is removed.
+- `movers.{h,cpp}` also carries the reset count, which decides what a mover record arriving
+  around a map reset is worth. Two counts, the two sides of one comparison: the datagram's,
+  stamped on every snapshot (`MoverBeginDatagram`), says which generation the records describe,
+  and the client's own, set by `MoverSetResetCount`, says which reset it has carried out. The
+  sink subtracts them as a signed byte: behind is dropped, ahead is held, equal applies.
+  - The client's side needs a count at the moment its reset window closes, and the legacy
+    `DestroyAllSectorMovers` carries no fields. The reference added one to it; this port sends
+    `SnapMapReset` instead, gate-on only, from `snap_SendResetEnd()` straight after that command
+    on the same reliable channel — after it, because the count releases held records and nothing
+    must be left to destroy them.
+  - The datagram's count cannot stand in for it. Feeding one count into both sides makes the
+    difference always zero and removes the hold, which exists because a datagram can overtake
+    the reliable destroy; and with no count at the close the client's side never advances, so
+    every later record reads ahead and the hold is cleared only by a stream epoch change — the
+    planes freeze until a reconnect. Borrowing the last datagram's count at the close is wrong
+    whenever none has arrived yet, which `fua_snap_debug_resetsplit` widens deliberately.
+  - `MoverResetBegin` returns at its first test unless this client knows the server's
+    generation, which only a gate-on join gives it, so with the gate off the legacy destroy is
+    the whole reset exactly as it is today.
 - `format_test.cpp`: the format layer's own tests, narrow frame and wide.
 - `refdump_test.cpp`: the reference decode, below. The dumper it decodes with is shared, in
   `tests/snapdump/`, with the `snap_dump` command line beside it.
@@ -134,6 +153,12 @@ Each hook is one call from a stock file into the module, listed here as it lands
 - `p_spec.cpp`, `DPusher::Tick`: `SpecialResolveSource( m_SourceNetID, m_bSourceSeen )`, inside
   the point branch only, for a source actor that had not arrived when the join named it. With no
   record applied the id is zero and the module returns at its first test.
+- `g_game.cpp`, `G_ResetMap`'s client branch: `MoverResetBegin( )`, ahead of the server's reset
+  writes, so planes the module owns take them; the test for whether it owns any is inside.
+- `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
+  the stock loop, which is left as it is so the gate-off reset behaves as today.
+- `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,
+  which releases the records held for that reset.
 
 - `cl_main.cpp`, `ServerCommands::SnapMoverGate::Execute`: `MoverSetServerGate( legacyOff, frame )`,
   taken ahead of every legacy mover command under it. The first hook, and the only kind a

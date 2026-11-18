@@ -254,6 +254,11 @@ void zx::netsnapshot::DestroySectorMovers()
 // plane the reset wrote.
 void zx::netsnapshot::MoverResetBegin()
 {
+	// Without the server's generation - no gate-on join in this stream - this client holds
+	// no records of ours and the legacy destroy is the whole reset, as it is today.
+	if ( snapmv_HaveResetCount( ) == false )
+		return;
+
 	snapmv_ReapReset( );
 	if ( MoverInReset( ))
 		++g_moverResetsAbandoned;
@@ -575,6 +580,8 @@ void zx::netsnapshot::MoverClientStats( SnapMoverClientStats & st, bool bReset )
 	st.resetsClosed = g_moverResetsClosed;
 	st.resetsAbandoned = g_moverResetsAbandoned;
 	st.bResetOpen = MoverInReset( );
+	st.resetCount = g_moverResetCount;
+	st.bHaveResetCount = snapmv_HaveResetCount( );
 	st.holdIn = g_moverHoldIn;
 	st.holdAhead = g_moverHoldAhead;
 	st.holdReplayed = g_moverHoldReplayed;

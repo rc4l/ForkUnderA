@@ -3572,7 +3572,7 @@ static void ghost_Report()
 			" | on death:%s"
 			" | %u plane verifications suppressed, %u on linked planes"
 			" | %u midtex offsets suppressed"
-			" | map resets %u (%u closed, %u abandoned%s)"
+			" | map resets %u (%u closed, %u abandoned%s), generation %u%s"
 			" | reset hold: %u deferred (%u ahead of a reset), %u replayed,"
 			" %u dropped, %u coalesced, %u narrowed, peak %u of %u,"
 			" %u advanced (%u tics, worst %u), %u past the cap\n",
@@ -3593,6 +3593,7 @@ static void ghost_Report()
 			mv.midtexSuppressed, mv.resetsOpened, mv.resetsClosed,
 			mv.resetsAbandoned,
 			mv.bResetOpen ? ", one OPEN" : "",
+			mv.resetCount, mv.bHaveResetCount ? "" : " (none known)",
 			mv.holdIn, mv.holdAhead, mv.holdReplayed, mv.holdDropped,
 			mv.holdCoalesced, mv.holdNarrowed, mv.holdPeak, mv.holdBound,
 			mv.holdAdvanced, mv.holdAdvanceTics, mv.holdAdvanceWorst,

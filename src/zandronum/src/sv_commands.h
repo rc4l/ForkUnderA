@@ -499,6 +499,9 @@ void	SERVERCOMMANDS_SnapJoin( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFla
 // stopped, and from which frame. Declared only: its body builds a ServerCommands class the
 // protocol spec generates, so the body arrives with that spec entry.
 void	SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: the reset count beside the legacy destroy.
+void	SERVERCOMMANDS_SnapMapReset( int resetCount, ULONG ulPlayerExtra = MAXPLAYERS,
+			ServerCommandFlags flags = 0 );
 // [Kaori-Chani] features/net-snapshot: the join state command's records, defined with the
 // command in network/servercommands.h.
 namespace ServerCommands { struct SnapScrollerState; struct SnapPusherState; }

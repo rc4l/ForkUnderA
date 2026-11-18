@@ -5973,6 +5973,17 @@ void SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExt
 
 //*****************************************************************************
 //
+// [Kaori-Chani] features/net-snapshot: the module decides whether to send it at all.
+void SERVERCOMMANDS_SnapMapReset( int resetCount, ULONG ulPlayerExtra,
+	ServerCommandFlags flags )
+{
+	ServerCommands::SnapMapReset command;
+	command.SetResetCount( resetCount );
+	command.sendCommandToClients( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
+//
 // [Kaori-Chani] features/net-snapshot: the module decides the chunk and whether to send
 // at all; this only puts it on the wire.
 void SERVERCOMMANDS_SnapSpecialState( int firstScroller,
