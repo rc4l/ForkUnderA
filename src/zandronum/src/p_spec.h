@@ -1280,6 +1280,9 @@ protected:
 	// [BB] Changed Destroy to public, so that it can be called in cl_main.cpp.
 public:
 	void Destroy();
+	// [Kaori-Chani] features/net-snapshot: DoWaggle's last plane write, named so that a
+	// client destroying a waggle by record can make the same write.
+	void EndPlane();
 protected:
 	DWaggleBase ();
 };

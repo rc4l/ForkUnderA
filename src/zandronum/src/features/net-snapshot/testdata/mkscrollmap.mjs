@@ -32,6 +32,7 @@ const POINTPUSHER = 5001;         // the thing a point pusher takes its centre f
 const PUSH_MASK = 0x1000;         // p_lnspec.h: without it on the sector, DPusher::Tick returns
 const CEILING_LOWERBYVALUE = 40;  // actionspecials.h: Ceiling_LowerByValue (tag, speed, height)
 const DOOR_CLOSE = 10;            // actionspecials.h: Door_Close (tag, speed)
+const FLOOR_WAGGLE = 138;         // Floor_Waggle (tag, amplitude, frequency, offset, timer)
 const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door spawned at map load, closing 30s in
 const PLAT_PERPETUALRAISE = 60;   // actionspecials.h: Plat_PerpetualRaise (tag, speed, delay)
 
@@ -123,6 +124,12 @@ m.opening(-320, -64, -320, 64, room, room, OPEN, OPEN,
 m.opening(-288, -64, -288, 64, room, room, OPEN, OPEN,
   { special: DOOR_CLOSE, arg0: 5, arg1: 1, playercross: true, repeatspecial: true,
     blocking: false });
+
+// A waggle on the door room's floor, which nothing else moves, timed so it reduces and
+// removes itself: that write is what DWaggleBase::EndPlane now carries.
+m.opening(-256, -64, -256, 64, room, room, OPEN, OPEN,
+  { special: FLOOR_WAGGLE, arg0: 4, arg1: 32, arg2: 16, arg3: 0, arg4: 3,
+    playercross: true, repeatspecial: true, blocking: false });
 
 m.thing({ x: -360, y: 0, angle: 0, type: 1 });
 

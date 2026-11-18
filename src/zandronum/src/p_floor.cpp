@@ -1698,6 +1698,22 @@ void DWaggleBase::SetState( LONG lState )
 //
 //
 //==========================================================================
+// [Kaori-Chani] features/net-snapshot: the write DoWaggle makes when a waggle ends, named
+// here because a client ending one by record needs it too; the plane comes from the class.
+void DWaggleBase::EndPlane()
+{
+	if (m_Sector == NULL)
+		return;
+
+	const bool bCeiling = IsKindOf( RUNTIME_CLASS( DCeilingWaggle ));
+	secplane_t *plane = bCeiling ? &m_Sector->ceilingplane : &m_Sector->floorplane;
+	const fixed_t dist = FixedMul (m_OriginalDist - plane->d, plane->ic);
+	m_Sector->ChangePlaneTexZ( bCeiling ? sector_t::ceiling : sector_t::floor,
+		-plane->HeightDiff (m_OriginalDist));
+	plane->d = m_OriginalDist;
+	P_ChangeSector (m_Sector, true,(int)( dist), bCeiling, false);
+}
+
 void DWaggleBase::DoWaggle (bool ceiling)
 {
 	secplane_t *plane;
@@ -1736,10 +1752,8 @@ void DWaggleBase::DoWaggle (bool ceiling)
 	case WGLSTATE_REDUCE:
 		if ((m_Scale -= m_ScaleDelta) <= 0)
 		{ // Remove
-			dist = FixedMul (m_OriginalDist - plane->d, plane->ic);
-			m_Sector->ChangePlaneTexZ(pos, -plane->HeightDiff (m_OriginalDist));
-			plane->d = m_OriginalDist;
-			P_ChangeSector (m_Sector, true,(int)( dist), ceiling, false);
+			// [Kaori-Chani] features/net-snapshot: the same write, named above.
+			EndPlane( );
 			if (ceiling)
 			{
 				m_Sector->ceilingdata = NULL;

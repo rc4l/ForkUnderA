@@ -183,6 +183,13 @@ Each hook is one call from a stock file into the module, listed here as it lands
     reference suppressed the spawn instead, which a stale flag can turn into a door missing for
     a whole map when the gate goes off across a map change — the fallback case the gate exists
     for. `MoverSuppressesLegacy` keeps its inside role test for its other callers.
+  - `DWaggleBase::EndPlane` is the write `DoWaggle` makes when a waggle ends, named so that a
+    client ending one by record can make the same write. It takes its plane from the class
+    rather than an argument, since a caller outside `DoWaggle` has no such flag, and it is
+    otherwise the old write exactly — including the `P_ChangeSector` call on a plane already at
+    `m_OriginalDist`, which is not a no-op: that walks the sector's touching things through
+    `PIT_FloorRaise`/`PIT_CeilingRaise` and recalculates the 3D floors. A caller that wants to
+    skip a waggle already home tests that itself.
   - The test map is driven in **cooperative** for door and ceiling measurements. In survival the
     level does not tick until a round starts, and that round's own reset destroys the map's
     door, so a survival window catches the reset rather than the mover.
