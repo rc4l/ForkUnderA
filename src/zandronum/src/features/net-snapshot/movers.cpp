@@ -330,6 +330,14 @@ static void snapmv_GateDrop( bool bLegacyMade )
 		? PolyGateOn( g_gateKeptApplied ) : PolyGateOff( );
 }
 
+void zx::netsnapshot::MoverMadeByLegacy( DMover * pMover )
+{
+	// Only a client has legacy movers to drop; a server's are the originals.
+	if (( pMover == NULL ) || ( NETWORK_InClientMode( ) == false ))
+		return;
+	pMover->m_SnapLegacy = true;
+}
+
 // From SnapMoverGate, `frame` 0 leaving the floor.
 void zx::netsnapshot::MoverSetServerGate( bool bLegacyOff, int frame )
 {

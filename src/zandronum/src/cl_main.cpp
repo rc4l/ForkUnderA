@@ -8560,6 +8560,8 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 	if ( (pDoor = new DDoor( pSector, (DDoor::EVlDoor)type, lSpeed, 0, lLightTag, g_ConnectionState != CTS_ACTIVE )) )
 	{
 		pDoor->SetID( lDoorID );
+		// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+		zx::netsnapshot::MoverMadeByLegacy( pDoor );
 		pDoor->SetDirection( lDirection );
 	}
 }
@@ -8674,6 +8676,8 @@ static void client_DoFloor( BYTESTREAM_s *pByteStream )
 		return;
 
 	pFloor = new DFloor( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pFloor );
 	pFloor->SetType( (DFloor::EFloor)lType );
 	pFloor->SetCrush( Crush );
 	pFloor->SetHexencrush( Hexencrush );
@@ -8857,6 +8861,8 @@ static void client_BuildStair( BYTESTREAM_s *pByteStream )
 		return;
 
 	DFloor *floor = new DFloor( sector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( floor );
 	floor->SetType( (DFloor::EFloor)Type );
 	floor->SetCrush( Crush );
 	floor->SetHexencrush( Hexencrush );
@@ -8931,6 +8937,8 @@ static void client_DoCeiling( BYTESTREAM_s *pByteStream )
 	pSector = &sectors[lSectorID];
 
 	pCeiling = new DCeiling( pSector, lSpeed, 0, lSilent );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pCeiling );
 	pCeiling->SetBottomHeight( BottomHeight );
 	pCeiling->SetTopHeight( TopHeight );
 	pCeiling->SetCrush( lCrush );
@@ -9078,6 +9086,8 @@ static void client_DoPlat( BYTESTREAM_s *pByteStream )
 
 	// Create the plat, and set all its attributes that were read in.
 	pPlat = new DPlat( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pPlat );
 	pPlat->SetType( (DPlat::EPlatType)lType );
 	pPlat->SetStatus( lStatus );
 	pPlat->SetHigh( High );
@@ -9228,6 +9238,8 @@ static void client_DoElevator( BYTESTREAM_s *pByteStream )
 
 	// Create the elevator, and set all its attributes that were read in.
 	pElevator = new DElevator( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pElevator );
 	pElevator->SetType( (DElevator::EElevator)lType );
 	pElevator->SetSpeed( lSpeed );
 	pElevator->SetDirection( lDirection );
@@ -9330,6 +9342,8 @@ static void client_DoPillar( BYTESTREAM_s *pByteStream )
 
 	// Create the pillar, and set all its attributes that were read in.
 	pPillar = new DPillar( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pPillar );
 	pPillar->SetType( (DPillar::EPillar)lType );
 	pPillar->SetFloorSpeed( lFloorSpeed );
 	pPillar->SetCeilingSpeed( lCeilingSpeed );

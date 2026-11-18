@@ -32,6 +32,9 @@ void MoverCountPlatWaitExpired();
 // Whether this client's legacy handler for the class must stand aside, records driving
 // it instead; false on a server and whenever the gate is not suppressing that class.
 bool MoverSuppressesLegacy( BYTE cls );
+// A mover one of this client's legacy handlers built, which a mover gate-on drops: the
+// records then rebuild it, and without the mark the two would both own the plane.
+void MoverMadeByLegacy( class DMover * pMover );
 // SnapMoverGate: whether the server stopped its legacy mover state, and the
 // record floor (0 leaves it), forgotten at disconnect.
 void MoverSetServerGate( bool bLegacyOff, int frame );

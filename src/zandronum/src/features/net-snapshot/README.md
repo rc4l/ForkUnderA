@@ -153,6 +153,16 @@ Each hook is one call from a stock file into the module, listed here as it lands
 - `p_spec.cpp`, `DPusher::Tick`: `SpecialResolveSource( m_SourceNetID, m_bSourceSeen )`, inside
   the point branch only, for a source actor that had not arrived when the join named it. With no
   record applied the id is zero and the module returns at its first test.
+- `cl_main.cpp`, the seven legacy mover handlers — `client_DoPlat`, `client_DoFloor`,
+  `client_BuildStair`, `client_DoCeiling`, `client_DoDoor`, `client_DoElevator`,
+  `client_DoPillar`: `MoverMadeByLegacy( pMover )` on what each builds, so a mover gate-on
+  drops them and the records rebuild them rather than both owning the plane. The flag lives on
+  `DMover` and only `snapmv_GateDrop` reads it, which runs only when the gate changes, so with
+  the gate off the mark is never consulted.
+  - The timed-door spawners are deliberately not marked: records adopt a client's own spawned
+    door, and marking it would have the join's gate word destroy that door moments after it
+    was built. Waggles are not marked either — they are not a record class, so `GateDrop`
+    skips them and nothing would rebuild one.
 - `g_game.cpp`, `G_ResetMap`'s client branch: `MoverResetBegin( )`, ahead of the server's reset
   writes, so planes the module owns take them; the test for whether it owns any is inside.
 - `p_plats.cpp`, `p_pillar.cpp`, `p_floor.cpp`, `p_ceiling.cpp` and `p_doors.cpp`, each
