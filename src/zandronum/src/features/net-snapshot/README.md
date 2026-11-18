@@ -155,7 +155,8 @@ Each hook is one call from a stock file into the module, listed here as it lands
   record applied the id is zero and the module returns at its first test.
 - `g_game.cpp`, `G_ResetMap`'s client branch: `MoverResetBegin( )`, ahead of the server's reset
   writes, so planes the module owns take them; the test for whether it owns any is inside.
-- `p_plats.cpp`, `p_pillar.cpp` and `p_floor.cpp`, each mover's `Tick` and `Destroy`: `SnapCapture( )` at both
+- `p_plats.cpp`, `p_pillar.cpp`, `p_floor.cpp`, `p_ceiling.cpp` and `p_doors.cpp`, each
+  mover's `Tick` and `Destroy`: `SnapCapture( )` at both
   ends of the tic and `SnapCapture( true )` in `Destroy`, which is the only hook that catches a
   mover destroyed outside `Tick` — the map reset's loop does exactly that. Beside them
   `MoverHoldsPlane( )` (and `MoverHoldsFloor`/`MoverHoldsCeiling` for a pillar's two planes),
@@ -173,6 +174,18 @@ Each hook is one call from a stock file into the module, listed here as it lands
     separate targets and can stall on one, which `MoverCountHeldOnePlane` counts. Its stall is
     written straight after its moves rather than at the tail, which the `pastdest` branch can
     reach with the elevator already destroyed.
+  - A door's wait is the one client-side change taken here, because it is gate-off-identical by
+    construction: `MoverClientSkipsWait` answers true for every client until a record has
+    reached that door, which with the gate off never happens, so the stock break still takes
+    them all. The test lives in the module, so `p_doors.cpp` holds one fewer role crossing.
+  - A gated client still spawns its own timed doors, and the records adopt them: measured on a
+    join, where the flag is false at spawn time anyway, and the same on a map change. The
+    reference suppressed the spawn instead, which a stale flag can turn into a door missing for
+    a whole map when the gate goes off across a map change — the fallback case the gate exists
+    for. `MoverSuppressesLegacy` keeps its inside role test for its other callers.
+  - The test map is driven in **cooperative** for door and ceiling measurements. In survival the
+    level does not tick until a round starts, and that round's own reset destroys the map's
+    door, so a survival window catches the reset rather than the mover.
   - The reference also lets a client run a plat's own wait, dropping the stock
     `NETWORK_InClientMode( )` break from the `waiting` case. That changes gate-off client
     behaviour, so this port keeps the break and counts the waiting tic only; the client-run wait

@@ -41,6 +41,8 @@
 #include "farchive.h"
 // [BB] New #includes.
 #include "cl_demo.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 #include "network.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
@@ -90,6 +92,9 @@ void DDoor::Tick ()
 {
 	EResult res;
 
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
+
 	if (m_Sector->floorplane.d != m_OldFloorDist)
 	{
 		if (!m_Sector->floordata || !m_Sector->floordata->IsKindOf(RUNTIME_CLASS(DPlat)) ||
@@ -108,8 +113,11 @@ void DDoor::Tick ()
 		// de-sync the game. Instead, wait for the server to tell us to change
 		// the door's direction.
 		// [EP] Don't let the clients read the undefined m_TopCountdown variable
-		if ( NETWORK_InClientMode() )
+		// [Kaori-Chani] features/net-snapshot: unless a record has reached this door, which
+		// carries the countdown it is reading; with the gate off that is never true.
+		if ( zx::netsnapshot::MoverClientSkipsWait( m_SnapSeen ))
 			break;
+		zx::netsnapshot::MoverCountDoorWait( m_TopCountdown == 1 );
 
 		// WAITING
 		if (!--m_TopCountdown)
@@ -174,7 +182,11 @@ void DDoor::Tick ()
 		
 	case -1:
 		// DOWN
+		// [Kaori-Chani] features/net-snapshot: a plane the server says stalled stays put.
+		if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+			break;
 		res = MoveCeiling (m_Speed, m_BotDist, -1, m_Direction, false);
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, res == crushed );
 
 		// killough 10/98: implement gradual lighting effects
 		if (m_LightTag != 0 && m_TopDist != -m_Sector->floorplane.d)
@@ -194,10 +206,14 @@ void DDoor::Tick ()
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( m_Sector - sectors );
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( m_Sector - sectors );
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_DOOR, true ) == false )
+				{
+					if ( m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( m_Sector - sectors );
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( m_Sector - sectors );
+				}
 
 				// Tell clients to stop the floor's sound sequence.
 				SERVERCOMMANDS_StopSectorSequence( m_Sector );
@@ -253,7 +269,11 @@ void DDoor::Tick ()
 		
 	case 1:
 		// UP
+		// [Kaori-Chani] features/net-snapshot: as going down.
+		if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+			break;
 		res = MoveCeiling (m_Speed, m_TopDist, -1, m_Direction, false);
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, res == crushed );
 		
 		// killough 10/98: implement gradual lighting effects
 		if (m_LightTag != 0 && m_TopDist != -m_Sector->floorplane.d)
@@ -273,10 +293,14 @@ void DDoor::Tick ()
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( m_Sector - sectors );
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( m_Sector - sectors );
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_DOOR, true ) == false )
+				{
+					if ( m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( m_Sector - sectors );
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( m_Sector - sectors );
+				}
 
 				// Tell clients to stop the floor's sound sequence.
 				SERVERCOMMANDS_StopSectorSequence( m_Sector );
@@ -326,6 +350,19 @@ void DDoor::Tick ()
 		}
 		break;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the state the tic ended in, unless a Destroy
+	// above captured the GONE already.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
+}
+
+// [Kaori-Chani] features/net-snapshot: the GONE, and the only hook that catches a door
+// destroyed outside Tick, such as the map reset's loop.
+void DDoor::Destroy()
+{
+	SnapCapture( true );
+	Super::Destroy();
 }
 
 void DDoor::UpdateToClient( ULONG ulClient )

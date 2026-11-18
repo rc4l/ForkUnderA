@@ -30,6 +30,9 @@ const SCROLL_DISPLACEMENT = 1;    // args[1] & 1: the control sector's movement 
 const SCROLL_ACCELERATIVE = 2;    // args[1] & 2: and accumulates a velocity
 const POINTPUSHER = 5001;         // the thing a point pusher takes its centre from
 const PUSH_MASK = 0x1000;         // p_lnspec.h: without it on the sector, DPusher::Tick returns
+const CEILING_LOWERBYVALUE = 40;  // actionspecials.h: Ceiling_LowerByValue (tag, speed, height)
+const DOOR_CLOSE = 10;            // actionspecials.h: Door_Close (tag, speed)
+const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door spawned at map load, closing 30s in
 const PLAT_PERPETUALRAISE = 60;   // actionspecials.h: Plat_PerpetualRaise (tag, speed, delay)
 
 const TEX = { texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
@@ -39,18 +42,26 @@ const FLAT = { heightfloor: 0, heightceiling: 128, ...TEX };
 
 const m = new UdmfMap({ namespace: "zdoom" });
 
-// The room the player stands in, the two sectors that scroll, and the control whose floor
-// drives them. Tags: 1 control, 2 scrolled, 3 the pusher's sector.
+// The room the player stands in, the two sectors that scroll, the control whose floor
+// drives them, and a room east of it holding only a door. Tags: 1 control, 2 scrolled,
+// 3 the pusher's sector, 4 the door's, which shares its ceiling with no other mover and
+// spawns its own door at map load, so no line has to be reachable to start one.
 const room = m.sector({ ...FLAT, heightfloor: -64, id: 3, special: PUSH_MASK });
 const scrolled = m.sector({ ...FLAT, id: 2 });
 const control = m.sector({ ...FLAT, id: 1 });
+const doorsec = m.sector({ ...FLAT, id: 4, special: DOOR_CLOSE_IN_30 });
+const slowdoor = m.sector({ ...FLAT, id: 5 });
 
 const perimeter = [
   [-384, -128, -384, 128, room],
   [-384, 128, -128, 128, room],
   [-128, 128, 128, 128, scrolled],
   [128, 128, 384, 128, control],
-  [384, 128, 384, -128, control],
+  [384, 128, 640, 128, doorsec],
+  [640, 128, 896, 128, slowdoor],
+  [896, 128, 896, -128, slowdoor],
+  [896, -128, 640, -128, slowdoor],
+  [640, -128, 384, -128, doorsec],
   [384, -128, 128, -128, control],
   [128, -128, -128, -128, scrolled],
   [-128, -128, -384, -128, room],
@@ -59,6 +70,8 @@ for (const [x1, y1, x2, y2, s] of perimeter) m.wall(x1, y1, x2, y2, s, WALL, {})
 
 m.opening(-128, -128, -128, 128, scrolled, room, OPEN, OPEN);
 m.opening(128, -128, 128, 128, control, scrolled, OPEN, OPEN);
+m.opening(384, -128, 384, 128, doorsec, control, OPEN, OPEN);
+m.opening(640, -128, 640, 128, slowdoor, doorsec, OPEN, OPEN);
 
 // The four scrollers, all on sector tag 2, all driven by control sector tag 1. Each line's own
 // side sector is the control, as P_SpawnScrollers reads it from sidedef[0].
@@ -98,6 +111,18 @@ m.opening(-352, -64, -352, 64, room, room, OPEN, OPEN,
 m.opening(-366, -64, -366, 64, room, room, OPEN, OPEN,
   { special: ELEVATOR_LOWERTONEAREST, arg0: 2, arg1: 2, playercross: true,
     repeatspecial: true, blocking: false });
+
+// A ceiling on the scrolled sector, east of the floor's line and reachable with a forward
+// step: 32 units at speed 1. Not the door's room, whose ceiling rests on its floor once shut.
+m.opening(-320, -64, -320, 64, room, room, OPEN, OPEN,
+  { special: CEILING_LOWERBYVALUE, arg0: 2, arg1: 1, arg2: 32, playercross: true,
+    repeatspecial: true, blocking: false });
+
+// A door slow enough to still be moving ten seconds later, which is what a split reset
+// needs: 128 units at speed 1, in a room of its own so nothing else owns that ceiling.
+m.opening(-288, -64, -288, 64, room, room, OPEN, OPEN,
+  { special: DOOR_CLOSE, arg0: 5, arg1: 1, playercross: true, repeatspecial: true,
+    blocking: false });
 
 m.thing({ x: -360, y: 0, angle: 0, type: 1 });
 

@@ -29,6 +29,8 @@ void MoverCountCrushed();
 void MoverCountPlatWaitTick();
 void MoverCountPlatWaitExpired();
 
+// Whether this client's legacy handler for the class must stand aside, records driving
+// it instead; false on a server and whenever the gate is not suppressing that class.
 bool MoverSuppressesLegacy( BYTE cls );
 // SnapMoverGate: whether the server stopped its legacy mover state, and the
 // record floor (0 leaves it), forgotten at disconnect.
@@ -97,6 +99,10 @@ bool MoverPlatOwnsPlane( sector_t *sec );
 bool MoverDoorOwnsPlane( sector_t *sec );
 bool MoverElevatorOwnsPlane( sector_t *sec );
 bool MoverPillarOwnsPlane( sector_t *sec );
+
+// Whether this client leaves a door's countdown to the server: it runs its own only for a
+// door a record has reached, which with the gate off is none of them.
+bool MoverClientSkipsWait( bool bSeen );
 void MoverCountDoorWait( bool bExpired );
 void MoverCountDoorWaitEnded( int left );
 bool MoverOwnsPlane( sector_t *sec, bool bCeiling );

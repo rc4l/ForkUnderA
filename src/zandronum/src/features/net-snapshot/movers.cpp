@@ -293,7 +293,9 @@ static unsigned int g_gateKeptApplied = 0;
 // legacy state handlers must not run.
 bool zx::netsnapshot::MoverSuppressesLegacy( BYTE cls )
 {
-	if ( g_serverGatesMovers == false )
+	// A server owns its own movers; this asks whether a client's legacy handler must
+	// stand aside because records drive this class instead.
+	if (( g_serverGatesMovers == false ) || ( NETWORK_InClientMode( ) == false ))
 		return false;
 	return MoverClassTracked( cls );
 }
@@ -419,8 +421,15 @@ void zx::netsnapshot::MoverCountLinkSuppressed()
 	++g_moverLinkSuppressed;
 }
 
+bool zx::netsnapshot::MoverClientSkipsWait( bool bSeen )
+{
+	return NETWORK_InClientMode( ) && ( bSeen == false );
+}
+
 void zx::netsnapshot::MoverCountDoorWait( bool bExpired )
 {
+	if ( NETWORK_InClientMode( ) == false )
+		return;
 	++g_moverDoorWaitTicks;
 	if ( bExpired )
 		++g_moverDoorWaitExpired;
