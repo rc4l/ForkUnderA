@@ -188,6 +188,15 @@ Each hook is one call from a stock file into the module, listed here as it lands
     construction: `MoverClientSkipsWait` answers true for every client until a record has
     reached that door, which with the gate off never happens, so the stock break still takes
     them all. The test lives in the module, so `p_doors.cpp` holds one fewer role crossing.
+  - A crusher's reversal is derived on the same terms. The reference derives it on every client,
+    which would have a gate-off client turn at its own top or bottom and then be snapped back by
+    the server's plane set from that same moment — not legacy behaviour. Here
+    `MoverClientDerivesReversal( m_SnapSeen )` restricts it to a ceiling a record has reached, so
+    gate off derives none, measured at 0 with records flowing and the mover gate off. It sets
+    `m_Direction` and `m_Speed` only: at nolegacy 3 the server still sends every
+    `SVC_PLAYCEILINGSOUND`, and `SN_StartSequence` stops the sector's existing ceiling sound
+    first, so a local `PlayCeilingSound()` would restart the sound rather than layer it. The call
+    belongs here again if the sound unit later stops the server sending it under the gate.
   - A gated client still spawns its own timed doors, and the records adopt them: measured on a
     join, where the flag is false at spawn time anyway, and the same on a map change. The
     reference suppressed the spawn instead, which a stale flag can turn into a door missing for

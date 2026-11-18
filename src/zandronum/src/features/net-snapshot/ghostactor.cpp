@@ -3567,6 +3567,7 @@ static void ghost_Report()
 			" %u early (worst %u), over %u tics counted down"
 			" | blocked %u records, %u tics held (%u on one plane),"
 			" %u planes set (worst %u)"
+			" | %u reversals derived"
 			" | %u legacy calls suppressed"
 			" | at-rest planes corrected:%s"
 			" | on death:%s"
@@ -3588,6 +3589,7 @@ static void ghost_Report()
 			mv.doorWaitExpired, mv.doorWaitEnded, mv.doorWaitEarly,
 			mv.doorWaitEarlyWorst, mv.doorWaitTicks,
 			mv.blockedRecv, mv.held, mv.heldOnePlane, mv.stallPlane, mv.stallWorst,
+			mv.derivedReversals,
 			mv.legacySuppressed,
 			szRest, szGone, mv.planeSuppressed, mv.linkSuppressed,
 			mv.midtexSuppressed, mv.resetsOpened, mv.resetsClosed,

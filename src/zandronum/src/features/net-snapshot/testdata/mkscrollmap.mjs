@@ -30,6 +30,7 @@ const SCROLL_DISPLACEMENT = 1;    // args[1] & 1: the control sector's movement 
 const SCROLL_ACCELERATIVE = 2;    // args[1] & 2: and accumulates a velocity
 const POINTPUSHER = 5001;         // the thing a point pusher takes its centre from
 const PUSH_MASK = 0x1000;         // p_lnspec.h: without it on the sector, DPusher::Tick returns
+const CEILING_CRUSHANDRAISE = 42;  // Ceiling_CrushAndRaise (tag, speed, crush, crushmode)
 const CEILING_LOWERBYVALUE = 40;  // actionspecials.h: Ceiling_LowerByValue (tag, speed, height)
 const DOOR_CLOSE = 10;            // actionspecials.h: Door_Close (tag, speed)
 const FLOOR_WAGGLE = 138;         // Floor_Waggle (tag, amplitude, frequency, offset, timer)
@@ -112,6 +113,12 @@ m.opening(-352, -64, -352, 64, room, room, OPEN, OPEN,
 m.opening(-366, -64, -366, 64, room, room, OPEN, OPEN,
   { special: ELEVATOR_LOWERTONEAREST, arg0: 2, arg1: 2, playercross: true,
     repeatspecial: true, blocking: false });
+
+// A crusher on the control sector, whose ceiling nothing else owns: it reverses at the floor
+// and again at the top, which is the reversal a gated client has to work out for itself.
+m.opening(-224, -64, -224, 64, room, room, OPEN, OPEN,
+  { special: CEILING_CRUSHANDRAISE, arg0: 1, arg1: 8, arg2: 10, arg3: 0,
+    playercross: true, repeatspecial: true, blocking: false });
 
 // A ceiling on the scrolled sector, east of the floor's line and reachable with a forward
 // step: 32 units at speed 1. Not the door's room, whose ceiling rests on its floor once shut.

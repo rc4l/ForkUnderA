@@ -103,6 +103,10 @@ bool MoverDoorOwnsPlane( sector_t *sec );
 bool MoverElevatorOwnsPlane( sector_t *sec );
 bool MoverPillarOwnsPlane( sector_t *sec );
 
+// Whether this client works out a crusher's reversal for itself: only for a mover a record
+// has reached, so a client the records do not drive keeps taking the server's word for it.
+bool MoverClientDerivesReversal( bool bSeen );
+
 // Whether this client leaves a door's countdown to the server: it runs its own only for a
 // door a record has reached, which with the gate off is none of them.
 bool MoverClientSkipsWait( bool bSeen );
@@ -150,6 +154,7 @@ struct SnapMoverClientStats
 	unsigned int	doorWaitEnded;	// door waits a record ended within a tic
 	unsigned int	doorWaitEarly;	// the same, more left: a re-press, or lag
 	unsigned int	doorWaitEarlyWorst;// tics left at the worst of those
+	unsigned int	derivedReversals;// crusher reversals a client derived itself
 	unsigned int	blockedRecv;// records applied carrying SNAPMVF_BLOCKED
 	unsigned int	held;		// tics the hold skipped a local MoveFloor
 	unsigned int	heldOnePlane;	// of those, one plane of two

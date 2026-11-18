@@ -152,7 +152,17 @@ void DCeiling::Tick ()
 		
 		// [BC] Don't need to do anything more here if we're a client.
 		if ( NETWORK_InClientMode() )
+		{
+			// [Kaori-Chani] features/net-snapshot: a crusher a record has reached turns here as
+			// the server's case below does; with the gate off, none has been reached.
+			if (( res == pastdest ) && ( m_Type == ceilCrushAndRaise )
+				&& zx::netsnapshot::MoverClientDerivesReversal( m_SnapSeen ))
+			{
+				m_Direction = -1;
+				m_Speed = m_Speed1;
+			}
 			break;
+		}
 
 		if (res == pastdest)
 		{
@@ -240,7 +250,18 @@ void DCeiling::Tick ()
 		
 		// [BC] Don't need to do anything more here if we're a client.
 		if ( NETWORK_InClientMode() )
+		{
+			// [Kaori-Chani] features/net-snapshot: as the up stroke, for the two types the
+			// server's case below turns at the bottom.
+			if (( res == pastdest )
+				&& (( m_Type == ceilCrushAndRaise ) || ( m_Type == ceilCrushRaiseAndStay ))
+				&& zx::netsnapshot::MoverClientDerivesReversal( m_SnapSeen ))
+			{
+				m_Speed = m_Speed2;
+				m_Direction = 1;
+			}
 			break;
+		}
 
 		if (res == pastdest)
 		{

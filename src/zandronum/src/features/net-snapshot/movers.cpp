@@ -88,6 +88,8 @@ static unsigned int g_moverDoorWaitExpired = 0;
 static unsigned int g_moverDoorWaitEnded = 0;
 static unsigned int g_moverDoorWaitEarly = 0;
 static unsigned int g_moverDoorWaitEarlyWorst = 0;
+// Crusher reversals a client derived from its own plane rather than the wire.
+static unsigned int g_moverDerivedReversal = 0;
 // Records that arrived blocked, and tics the hold broke out of Tick.
 static unsigned int g_moverBlockedRecv = 0;
 // Legacy handler calls the gate turned away.
@@ -429,6 +431,14 @@ void zx::netsnapshot::MoverCountLinkSuppressed()
 	++g_moverLinkSuppressed;
 }
 
+bool zx::netsnapshot::MoverClientDerivesReversal( bool bSeen )
+{
+	if ( ( bSeen == false ) || ( NETWORK_InClientMode( ) == false ) )
+		return false;
+	++g_moverDerivedReversal;
+	return true;
+}
+
 bool zx::netsnapshot::MoverClientSkipsWait( bool bSeen )
 {
 	return NETWORK_InClientMode( ) && ( bSeen == false );
@@ -575,6 +585,7 @@ void zx::netsnapshot::MoverClientStats( SnapMoverClientStats & st, bool bReset )
 	st.doorWaitEnded = g_moverDoorWaitEnded;
 	st.doorWaitEarly = g_moverDoorWaitEarly;
 	st.doorWaitEarlyWorst = g_moverDoorWaitEarlyWorst;
+	st.derivedReversals = g_moverDerivedReversal;
 	st.blockedRecv = g_moverBlockedRecv;
 	st.legacySuppressed = g_moverLegacySuppressed;
 	for ( int i = 0; i < SNAPMV_COUNT; i++ )
