@@ -36,6 +36,17 @@ void MoverSetServerGate( bool bLegacyOff, int frame );
 void MoverForgetServerGate( );
 void MoverCountLegacySuppressed();
 void MoverCountBlockedRecv();
+// Whether this client must leave the plane where the server's record says it stalled,
+// counted as one held tic; a server always moves it.
+bool MoverHoldsPlane( bool bBlocked );
+// The same for a two-plane mover, whose stall is per plane.
+bool MoverHoldsFloor( BYTE blocked );
+bool MoverHoldsCeiling( BYTE blocked );
+// What the mover's stall flag becomes: the server decides it from the move it just
+// made, and a client keeps what the record told it.
+bool MoverPlaneStalled( bool bWas, bool bStalled );
+BYTE MoverPlanesStalled( BYTE was, bool bFloor, bool bCeiling );
+
 void MoverCountHeld();
 // A held tic on which a two-plane mover held only one plane.
 void MoverCountHeldOnePlane();

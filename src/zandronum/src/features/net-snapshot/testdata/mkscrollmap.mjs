@@ -29,7 +29,7 @@ const SCROLL_DISPLACEMENT = 1;    // args[1] & 1: the control sector's movement 
 const SCROLL_ACCELERATIVE = 2;    // args[1] & 2: and accumulates a velocity
 const POINTPUSHER = 5001;         // the thing a point pusher takes its centre from
 const PUSH_MASK = 0x1000;         // p_lnspec.h: without it on the sector, DPusher::Tick returns
-const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door mover at map load, respawned by a reset
+const PLAT_PERPETUALRAISE = 60;   // actionspecials.h: Plat_PerpetualRaise (tag, speed, delay)
 
 const TEX = { texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -40,8 +40,8 @@ const m = new UdmfMap({ namespace: "zdoom" });
 
 // The room the player stands in, the two sectors that scroll, and the control whose floor
 // drives them. Tags: 1 control, 2 scrolled, 3 the pusher's sector.
-const room = m.sector({ ...FLAT, id: 3, special: PUSH_MASK });
-const scrolled = m.sector({ ...FLAT, id: 2, special: DOOR_CLOSE_IN_30 });
+const room = m.sector({ ...FLAT, heightfloor: -64, id: 3, special: PUSH_MASK });
+const scrolled = m.sector({ ...FLAT, id: 2 });
 const control = m.sector({ ...FLAT, id: 1 });
 
 const perimeter = [
@@ -78,6 +78,12 @@ for (const [special, bits] of scrollers) {
 m.opening(-300, -64, -300, 64, room, room, OPEN, OPEN,
   { special: POINTPUSH_SETFORCE, arg0: 0, arg1: 7, arg2: 64, arg3: 0, blocking: false });
 m.thing({ x: -200, y: 0, angle: 0, type: POINTPUSHER, id: 7 });
+
+// A plat that never stops, so a mover is always mid-move: the reset's hold and release have
+// something to hold, and its one-second wait exercises the wait census too.
+m.opening(-350, -64, -350, 64, room, room, OPEN, OPEN,
+  { special: PLAT_PERPETUALRAISE, arg0: 2, arg1: 8, arg2: 35, playercross: true,
+    blocking: false });
 
 // Crossed on the way in, so the control sector is moving - and the accelerative scrollers are
 // accumulating - by the time a second client joins.

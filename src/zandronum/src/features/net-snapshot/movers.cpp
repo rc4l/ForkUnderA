@@ -2334,18 +2334,59 @@ void DPusher::SnapDump () const
 //*****************************************************************************
 //	DPlat::Tick's client counts.
 
+bool zx::netsnapshot::MoverHoldsPlane( bool bBlocked )
+{
+	if (( bBlocked == false ) || ( NETWORK_InClientMode( ) == false ))
+		return false;
+	MoverCountHeld( );
+	return true;
+}
+
+bool zx::netsnapshot::MoverHoldsFloor( BYTE blocked )
+{
+	return (( blocked & SNAPMV_PLANE_FLOOR ) != 0 ) && NETWORK_InClientMode( );
+}
+
+bool zx::netsnapshot::MoverHoldsCeiling( BYTE blocked )
+{
+	return (( blocked & SNAPMV_PLANE_CEILING ) != 0 ) && NETWORK_InClientMode( );
+}
+
+bool zx::netsnapshot::MoverPlaneStalled( bool bWas, bool bStalled )
+{
+	// A client is told whether the plane stalled; only a server works it out.
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		return bWas;
+	return bStalled;
+}
+
+BYTE zx::netsnapshot::MoverPlanesStalled( BYTE was, bool bFloor, bool bCeiling )
+{
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		return was;
+	return (BYTE)(( bFloor ? SNAPMV_PLANE_FLOOR : 0 )
+		| ( bCeiling ? SNAPMV_PLANE_CEILING : 0 ));
+}
+
 void zx::netsnapshot::MoverCountCrushed()
 {
+	// A crush the hold did not prevent, which only a client can be wrong about.
+	if ( NETWORK_InClientMode( ) == false )
+		return;
 	++g_moverCrushed;
 }
 
 void zx::netsnapshot::MoverCountPlatWaitTick()
 {
+	if ( NETWORK_InClientMode( ) == false )
+		return;
 	++g_moverWaitTicks;
 }
 
 void zx::netsnapshot::MoverCountPlatWaitExpired()
 {
+	if ( NETWORK_InClientMode( ) == false )
+		return;
 	++g_moverWaitExpired;
 }
 

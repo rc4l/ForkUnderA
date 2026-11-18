@@ -64,6 +64,7 @@
 #include "cl_demo.h"
 #include "cl_main.h"
 #include "features/net-snapshot/localpred.h"   // [Kaori-Chani] the local block's census
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverInstallSinks
 
 //*****************************************************************************
 //	VARIABLES
@@ -148,6 +149,10 @@ void CLIENT_PREDICT_Construct( void )
 	// [Kaori-Chani] features/net-snapshot: here, because every client passes through this
 	// before its first block; the install is guarded, so later calls do nothing.
 	zx::netsnapshot::LocalPredInstall( );
+
+	// [Kaori-Chani] features/net-snapshot: the mover sink goes in beside it, so a record
+	// applies rather than being counted as having nowhere to go.
+	zx::netsnapshot::MoverInstallSinks( );
 }
 
 //*****************************************************************************

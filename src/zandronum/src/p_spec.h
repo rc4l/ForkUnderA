@@ -626,6 +626,7 @@ private:
 	// The record struct is named through an elaborated specifier so that this header needs
 	// no include from the module. Defaulted; step 3's hooks are what will set them.
 public:
+	void	Destroy();
 	void	SnapCapture( bool bGone = false );
 	void	SnapApply( const struct SnapMoverPlat & s, BYTE flags );
 protected:

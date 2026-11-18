@@ -41,6 +41,8 @@
 #include "r_data/r_interpolate.h"
 // [BC] New #includes.
 #include "cl_demo.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 #include "network.h"
 #include "sv_commands.h"
 
@@ -75,6 +77,10 @@ DPillar::DPillar(sector_t *sector)
 
 void DPillar::Destroy()
 {
+	// [Kaori-Chani] features/net-snapshot: the GONE, which also catches a pillar destroyed
+	// outside Tick, such as the map reset's loop.
+	SnapCapture( true );
+
 	if (m_Interp_Ceiling != NULL)
 	{
 		m_Interp_Ceiling->DelRef();
@@ -207,18 +213,34 @@ void DPillar::Tick ()
 	int r, s;
 	fixed_t oldfloor, oldceiling;
 
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
+
 	oldfloor = m_Sector->floorplane.d;
 	oldceiling = m_Sector->ceilingplane.d;
 
+	// [Kaori-Chani] features/net-snapshot: each plane the server says stalled stays put, and
+	// a held move reads as ok so the pair below still agree.
+	const bool bHoldFloor = zx::netsnapshot::MoverHoldsFloor( m_SnapBlocked );
+	const bool bHoldCeiling = zx::netsnapshot::MoverHoldsCeiling( m_SnapBlocked );
+	if ( bHoldFloor || bHoldCeiling )
+	{
+		zx::netsnapshot::MoverCountHeld( );
+		if ( bHoldFloor != bHoldCeiling )
+			zx::netsnapshot::MoverCountHeldOnePlane( );
+	}
+
 	if (m_Type == pillarBuild)
 	{
-		r = MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, 1, m_Hexencrush);
-		s = MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, -1, m_Hexencrush);
+		r = bHoldFloor ? ok : MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, 1, m_Hexencrush);
+		s = bHoldCeiling ? ok
+			: MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, -1, m_Hexencrush);
 	}
 	else
 	{
-		r = MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, -1, m_Hexencrush);
-		s = MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, 1, m_Hexencrush);
+		r = bHoldFloor ? ok : MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, -1, m_Hexencrush);
+		s = bHoldCeiling ? ok
+			: MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, 1, m_Hexencrush);
 	}
 
 	if (r == pastdest && s == pastdest)
@@ -232,8 +254,12 @@ void DPillar::Tick ()
 
 			// Also, since this sector has reached its destination, verify that all the clients
 			// have the correct floor/ceiling height for this sector.
-			SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-			SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			// [Kaori-Chani] features/net-snapshot: a record writes both planes.
+			if ( zx::netsnapshot::MoverServerStops( SNAPMV_PILLAR, true ) == false )
+			{
+				SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+				SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			}
 		}
 
 		// [RK] Destroy the pillar on the server/host end.
@@ -254,6 +280,16 @@ void DPillar::Tick ()
 			MoveCeiling (m_CeilingSpeed, oldceiling, -1, 1, m_Hexencrush);
 		}
 	}
+
+	// [Kaori-Chani] features/net-snapshot: stalled where the tic ended as it began, by
+	// plane rather than by result, since a revert above also reads as crushed.
+	m_SnapBlocked = zx::netsnapshot::MoverPlanesStalled( m_SnapBlocked,
+		( m_Sector->floorplane.d == oldfloor ) && ( oldfloor != m_FloorTarget ),
+		( m_Sector->ceilingplane.d == oldceiling ) && ( oldceiling != m_CeilingTarget ));
+
+	// [Kaori-Chani] features/net-snapshot: skipped once Destroy has taken the GONE.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
 }
 
 DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,

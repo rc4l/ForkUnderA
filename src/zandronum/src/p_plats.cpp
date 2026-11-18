@@ -41,6 +41,8 @@
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
 #include "cl_demo.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 
 static FRandom pr_doplat ("DoPlat");
 
@@ -104,11 +106,25 @@ void DPlat::PlayPlatSound (const char *sound)
 void DPlat::Tick ()
 {
 	EResult res;
-		
+	fixed_t snapWas;	// [Kaori-Chani] the plane before the move, for the stall test
+
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
+
 	switch (m_Status)
 	{
 	case up:
+		// [Kaori-Chani] features/net-snapshot: a plane the server says stalled stays put.
+		if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+			break;
+		snapWas = m_Sector->floorplane.d;
 		res = MoveFloor (m_Speed, m_High, m_Crush, 1, false);
+		if ( res == crushed )
+			zx::netsnapshot::MoverCountCrushed( );
+		// [Kaori-Chani] features/net-snapshot: stalled is crushed with the plane unmoved.
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked,
+			( res == crushed ) && ( m_Crush != -1 )
+			&& ( m_Sector->floorplane.d == snapWas ));
 		
 		// [BC] That's all we need to do in client mode.
 		if ( NETWORK_InClientMode() )
@@ -133,10 +149,14 @@ void DPlat::Tick ()
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT, true ) == false )
+				{
+					if ( m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				}
 			}
 
 			SN_StopSequence (m_Sector, CHAN_FLOOR);
@@ -187,7 +207,15 @@ void DPlat::Tick ()
 		}
 		break;
 	case down:
+		// [Kaori-Chani] features/net-snapshot: as going up.
+		if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+			break;
 		res = MoveFloor (m_Speed, m_Low, -1, -1, false);
+		if ( res == crushed )
+			zx::netsnapshot::MoverCountCrushed( );
+		// [Kaori-Chani] features/net-snapshot: the bounce below is a turn, not a stall.
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked,
+			( res == crushed ) && (( m_Crush >= 0 ) || ( m_Type == platToggle )));
 
 		// [BC] That's all we need to do in client mode.
 		if ( NETWORK_InClientMode() )
@@ -199,10 +227,14 @@ void DPlat::Tick ()
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT, true ) == false )
+				{
+					if ( m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				}
 			}
 
 			SN_StopSequence (m_Sector, CHAN_FLOOR);
@@ -279,6 +311,10 @@ void DPlat::Tick ()
 		
 	case waiting:
 
+		// [Kaori-Chani] features/net-snapshot: the tic spent waiting, whoever ends the wait.
+		if ( m_Count > 0 )
+			zx::netsnapshot::MoverCountPlatWaitTick( );
+
 		// [BC] That's all we need to do in client mode.
 		if ( NETWORK_InClientMode() )
 			break;
@@ -316,6 +352,19 @@ void DPlat::Tick ()
 	case in_stasis:
 		break;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the state the tic ended in, unless a Destroy
+	// above captured the GONE already.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
+}
+
+// [Kaori-Chani] features/net-snapshot: the GONE, and the only hook that catches a plat
+// destroyed outside Tick, such as the map reset's loop.
+void DPlat::Destroy()
+{
+	SnapCapture( true );
+	Super::Destroy();
 }
 
 // [BC]
@@ -692,10 +741,14 @@ void P_ActivateInStasis (int tag)
 				// [BC] If the sector is starting to moved, then this is probably a good time
 				// to verify all the clients have the correct floor/ceiling height for
 				// this sector.
-				if ( scan->m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT, true ) == false )
+				{
+					if ( scan->m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+				}
 			}
 		}
 	}
@@ -726,10 +779,14 @@ void EV_StopPlat (int tag)
 				// [BC] If the sector has stopped, then this is probably a good time
 				// to verify all the clients have the correct floor/ceiling height for
 				// this sector.
-				if ( scan->m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT, true ) == false )
+				{
+					if ( scan->m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+				}
 			}
 		}
 	}

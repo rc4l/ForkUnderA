@@ -155,6 +155,21 @@ Each hook is one call from a stock file into the module, listed here as it lands
   record applied the id is zero and the module returns at its first test.
 - `g_game.cpp`, `G_ResetMap`'s client branch: `MoverResetBegin( )`, ahead of the server's reset
   writes, so planes the module owns take them; the test for whether it owns any is inside.
+- `p_plats.cpp` and `p_pillar.cpp`, each mover's `Tick` and `Destroy`: `SnapCapture( )` at both
+  ends of the tic and `SnapCapture( true )` in `Destroy`, which is the only hook that catches a
+  mover destroyed outside `Tick` — the map reset's loop does exactly that. Beside them
+  `MoverHoldsPlane( )` (and `MoverHoldsFloor`/`MoverHoldsCeiling` for a pillar's two planes),
+  `MoverPlaneStalled( )`/`MoverPlanesStalled( )`, `MoverServerStops( )` around each legacy plane
+  send, and the crush and plat-wait counters.
+  - The reference wrote the role tests into these files — `NETWORK_InClientMode( ) && m_SnapBlocked`,
+    and a server test around the stall write. This port keeps them inside the module, as
+    `SpecialResolveSource` does, so the stock sites stay at one call and the boundary counts do
+    not move. The stall flag is therefore passed and returned by value rather than assigned under
+    a role test.
+  - The reference also lets a client run a plat's own wait, dropping the stock
+    `NETWORK_InClientMode( )` break from the `waiting` case. That changes gate-off client
+    behaviour, so this port keeps the break and counts the waiting tic only; the client-run wait
+    belongs with the legacy suppression, where a record corrects the status.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,
