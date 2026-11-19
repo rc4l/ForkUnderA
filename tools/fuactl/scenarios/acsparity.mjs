@@ -1,8 +1,9 @@
-// [Doruk-Aksoy] UZDoom's ACS functions and actor properties at UZDoom's numbers (features/acs-parity): exit 0 when script 1 logs UZDoom's answer to every check and DamageActor on a missing tid gives -1.
+// [Doruk-Aksoy] UZDoom's ACS functions and actor properties at UZDoom's numbers (features/acs-parity): exit 0 when script 1 logs UZDoom's answer to every check, DamageActor on a missing tid gives -1,
+// [Doruk-Aksoy] and SetSectorDamage hurts the player once a 32-tic beat and stops when cleared (script 3, as UZDoom does), with an unknown type doing normal damage and one warning (script 4, ours).
 //
 // usage:  node scenarios/acsparity.mjs
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
-import { acsScripts, ACSF, PCD, SCRIPT, callFunc } from "../src/acs.mjs";
+import { acsScripts, ACSF, PCD, SCRIPT, callFunc, AcsScript } from "../src/acs.mjs";
 import { SPECIAL, THING } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareEachLaunch } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
@@ -11,14 +12,14 @@ const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", tex
 // [Doruk-Aksoy] A flat this pk3's TERRAIN names, since Doom's own gives no flat a terrain.
 const MUD_FLAT = "CEIL3_5";
 export const TERRAIN = `terrain ZxMud\n{\n}\nfloor ${MUD_FLAT} ZxMud\n`;
-export const SOUTH_LINE = 7, DIAGONAL_LINE = 8;
+export const SOUTH_LINE = 7, DIAGONAL_LINE = 8, ROOM_TAG = 5;
 export const DIAGONAL = [[100, 300], [160, 380], [220, 300]];
 export const BARREL = { near: 11, mud: 12, far: 13 };
 export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHeight: 45, DamageType: 46 };
 const CPXF = { LESSOREQUAL: 0x2, SETTARGET: 0x40, FARTHEST: 0x200 };
 
 export const STRINGS = ["parity", " ", "<", ">", "zxstrarg", "DoomImp", "ZxNoClass", "Thinker", "Clip", "Shell", "Health", "Spawn", "Pain.Fire",
-  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull "];
+  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma"];
 const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
 const fixed = (v) => Math.round(v * 65536);
@@ -105,10 +106,31 @@ export function buildNullDamageScript() {
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, S["damagenull "], PCD.PRINTSTRING, ...call("DamageActor", 999, 0, 0, 0, 10, S.Fire), PCD.PRINTNUMBER, PCD.ENDLOG, PCD.TERMINATE];
 }
 
+// [Doruk-Aksoy] SetSectorDamage is ACS function 94 at UZDoom's number; the PCD numbers of Timer, Modulus and PlayerHealth.
+export const SET_SECTOR_DAMAGE = 94;
+const TIMER = 93, MODULUS = 18, PLAYERHEALTH = 120;
+
+// [Doruk-Aksoy] Scripts 3 and 4: each step waits for tic 16 of the 32-tic beat sectors damage on, so a 32-tic wait holds exactly one hurt tic, then logs the player's health.
+export function sectorDamageScript(steps) {
+  const s = new AcsScript();
+  // [Doruk-Aksoy] Each health goes in a script variable and all print at the end, since a Delay ends the print buffer.
+  steps.forEach((args, i) => {
+    s.label(`beat${i}`).emit(TIMER, PCD.PUSHNUMBER, 32, MODULUS, PCD.PUSHNUMBER, 16, PCD.EQ).jump(PCD.IFGOTO, `go${i}`)
+      .emit(PCD.DELAYDIRECT, 1).jump(PCD.GOTO, `beat${i}`).label(`go${i}`)
+      .emit(...callFunc(SET_SECTOR_DAMAGE, args), PCD.DROP, PCD.DELAYDIRECT, 32, PLAYERHEALTH, PCD.ASSIGNSCRIPTVAR, i);
+  });
+  s.emit(PCD.BEGINPRINT, PCD.PUSHNUMBER, S.sectordamage, PCD.PRINTSTRING,
+    ...steps.flatMap((_, i) => [PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, PCD.PUSHSCRIPTVAR, i, PCD.PRINTNUMBER]));
+  return s.emit(PCD.ENDLOG, PCD.TERMINATE);
+}
+// [Doruk-Aksoy] 10 fire damage, then none; then an unknown type twice, given UZDoom's interval and leakiness, which ours leaves out, then none.
+export const SHARED_STEPS = [[ROOM_TAG, 10, S.Fire], [ROOM_TAG, 0]];
+export const OURS_STEPS = [[ROOM_TAG, 10, S.ZxPlasma, 1, 256], [ROOM_TAG, 10, S.ZxPlasma, 1, 256], [ROOM_TAG, 0]];
+
 // [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map, as netacsparity's CLIENTSIDE copies and player starts do.
 export function buildAcsParityPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
-  m.room(0, 0, 512, 512, ROOM, (edge) => ({ side: { texturemiddle: "STARTAN2" }, line: edge === "south" ? { id: SOUTH_LINE } : {} }));
+  m.room(0, 0, 512, 512, { ...ROOM, id: ROOM_TAG }, (edge) => ({ side: { texturemiddle: "STARTAN2" }, line: edge === "south" ? { id: SOUTH_LINE } : {} }));
   const first = m.lines.length;
   m.shape(DIAGONAL, { ...ROOM, texturefloor: MUD_FLAT }, 0);
   m.lines[first].id = DIAGONAL_LINE;
@@ -117,7 +139,10 @@ export function buildAcsParityPk3({ withScripts = (s) => s, withMap = () => {} }
   m.thing({ x: 160, y: 330, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.mud });
   m.thing({ x: 420, y: 64, angle: 0, type: THING.ExplosiveBarrel, id: BARREL.far });
   withMap(m);
-  const scripts = [{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }, { code: buildNullDamageScript(), type: SCRIPT.CLOSED, number: 2 },
+  // [Doruk-Aksoy] Scripts with jump labels go first, each starting where the ones before end.
+  const s3 = sectorDamageScript(SHARED_STEPS), w3 = s3.words(0), w4 = sectorDamageScript(OURS_STEPS).words(w3.length);
+  const scripts = [{ code: w3, type: SCRIPT.CLOSED, number: 3 }, { code: w4, type: SCRIPT.CLOSED, number: 4 },
+    { code: buildScript(), type: SCRIPT.CLOSED, number: 1 }, { code: buildNullDamageScript(), type: SCRIPT.CLOSED, number: 2 },
     { code: [PCD.PUSHNUMBER, 1, PCD.ASSIGNMAPVAR, 0, PCD.TERMINATE], type: SCRIPT.CLOSED, name: "zxstrarg" }];
   return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(withScripts(scripts), STRINGS) })) },
     { name: "terrain.txt", data: Buffer.from(TERRAIN, "latin1") }]);
@@ -148,11 +173,41 @@ export function judgeNullDamage(log) {
   return Number(m[1]) === -1 ? [] : [`DamageActor on a missing tid gave ${m[1]}, not -1`];
 }
 
+export const UNKNOWN_TYPE_WARNING = /SetSectorDamage: sectors here hold only the built-in damage types, so 'ZxPlasma' does normal damage/g;
+
+// [Doruk-Aksoy] The healths a sector damage script logged, or null.
+export function sectorHealths(log) {
+  const m = /sectordamage((?: -?\d+)+)/.exec(String(log));
+  return m ? m[1].trim().split(" ").map(Number) : null;
+}
+
+// [Doruk-Aksoy] What is wrong with scripts 3 and 4: one hurt tic of 10 a beat while set, none once cleared, and the unknown type's one warning.
+export function judgeSectorDamage(shared, ours) {
+  const faults = [];
+  const a = sectorHealths(shared), b = sectorHealths(ours);
+  if (!a || a.join() !== "90,90") faults.push(`script 3 logged healths ${a}, not 90,90`);
+  if (!b || b.join() !== "80,70,70") faults.push(`script 4 logged healths ${b}, not 80,70,70`);
+  const warnings = (String(ours).match(UNKNOWN_TYPE_WARNING) || []).length;
+  if (warnings !== 1) faults.push(`an unknown damage type warned ${warnings} times, not once`);
+  return faults;
+}
+
 export async function judgeLaunch(c, inst, label) {
   await cap.waitTics(c, 10);
   const faults = judgeParity(await cap.exec(c, "puke 1", { quietMs: 400 }));
   faults.push(...judgeNullDamage(await cap.exec(c, "puke 2", { quietMs: 300 })));
-  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${CHECKS.length} checks answer as UZDoom's (Ceil keeps a whole number), DamageActor on a missing tid gives -1`, failed: faults.length ? 1 : 0 };
+  // [Doruk-Aksoy] The sandbox makes the player a god, which no sector can hurt.
+  for (let i = 0; i < 2 && !/(God|Degreelessness) mode off/i.test(await cap.exec(c, "god", { quietMs: 200 })); i++);
+  // [Doruk-Aksoy] Each step waits at most a beat to line up and a beat to hurt, so the log is read once three steps could have run.
+  const run = async (n) => {
+    const heard = cap.listen(c);
+    await cap.exec(c, `puke ${n}`, { quietMs: 100 });
+    await cap.waitTics(c, 64 * 3 + 20);
+    heard.off();
+    return heard.text();
+  };
+  faults.push(...judgeSectorDamage(await run(3), await run(4)));
+  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${CHECKS.length} checks answer as UZDoom's (Ceil keeps a whole number), DamageActor on a missing tid gives -1, SetSectorDamage hurts once a beat and stops when cleared`, failed: faults.length ? 1 : 0 };
 }
 
 export const SIDES = [{ name: "vk" }];

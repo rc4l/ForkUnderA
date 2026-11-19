@@ -13,6 +13,7 @@ namespace zx { namespace acsparity {
 enum Function
 {
 	kGetMaxInventory = 93,
+	kSetSectorDamage = 94,
 	kCheckProximity = 98,
 	kCheckActorState = 99,
 	kCheckClass = 200,
@@ -45,6 +46,15 @@ enum ProximityFlag
 	kCpxSetOnPtr = 1 << 11,
 	kCpxCheckSight = 1 << 12,
 };
+
+// [Doruk-Aksoy] A damage type's old means-of-death number, the only form our sectors keep it in: 0 for none, -1 for a name they can't hold.
+int ComputeDamageTypeMod(const char* name);
+
+// [Doruk-Aksoy] The damage type a means-of-death number names, null for none.
+const char* ComputeModDamageType(int mod);
+
+// [Doruk-Aksoy] A sector damage amount held to the short our sectors keep it in; a negative one, which UZDoom heals with, is none.
+int16_t ComputeSectorDamageAmount(int32_t amount);
 
 // [Doruk-Aksoy] A 16.16 value rounded down to a whole number.
 int32_t ComputeFixedFloor(int32_t x);

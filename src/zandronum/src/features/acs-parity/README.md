@@ -6,6 +6,7 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
 | Number | Function | Upstream |
 |---|---|---|
 | 93 | `GetMaxInventory` | uzdoom@c51abb0161 |
+| 94 | `SetSectorDamage`, its amount and damage type only | uzdoom@d0c372692b |
 | 98 | `CheckProximity` | uzdoom@6633e41cca |
 | 99 | `CheckActorState` | uzdoom@df4a8e38c5 |
 | 200 | `CheckClass` | uzdoom@3299a29c44 |

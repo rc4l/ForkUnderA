@@ -283,3 +283,29 @@ TEST(AcsParity, InventoryAmountAndMax)
 	EXPECT_EQ(ComputeInventoryAmount({ false, 0, 0, true, 50 }, false), 0);
 	EXPECT_EQ(ComputeInventoryAmount({ false, 0, 0, false, 0 }, true), 0);
 }
+
+TEST(AcsParity, SectorDamageTypesAreTheOldMeansOfDeathNumbersBothWays)
+{
+	EXPECT_EQ(ComputeDamageTypeMod("Fire"), 14);
+	EXPECT_EQ(ComputeDamageTypeMod("fIrE"), 14);
+	EXPECT_EQ(ComputeDamageTypeMod("Massacre"), 1000);
+	EXPECT_EQ(ComputeDamageTypeMod("BFGSplash"), 9);
+	EXPECT_EQ(ComputeDamageTypeMod(nullptr), 0);
+	EXPECT_EQ(ComputeDamageTypeMod(""), 0);
+	EXPECT_EQ(ComputeDamageTypeMod("none"), 0);
+	EXPECT_EQ(ComputeDamageTypeMod("Plasma"), -1);
+	EXPECT_EQ(ComputeDamageTypeMod("Fir"), -1);
+	EXPECT_EQ(ComputeDamageTypeMod("Fires"), -1);
+	for (int mod : { 9, 12, 13, 14, 15, 16, 17, 18, 20, 22, 23, 24, 25, 26, 27, 1000 })
+		EXPECT_EQ(ComputeDamageTypeMod(ComputeModDamageType(mod)), mod) << mod;
+	EXPECT_EQ(ComputeModDamageType(0), nullptr);
+	EXPECT_EQ(ComputeModDamageType(10), nullptr);
+}
+
+TEST(AcsParity, SectorDamageAmountsFitTheShortSectorsKeep)
+{
+	EXPECT_EQ(ComputeSectorDamageAmount(10), 10);
+	EXPECT_EQ(ComputeSectorDamageAmount(0), 0);
+	EXPECT_EQ(ComputeSectorDamageAmount(-5), 0);
+	EXPECT_EQ(ComputeSectorDamageAmount(100000), 32767);
+}

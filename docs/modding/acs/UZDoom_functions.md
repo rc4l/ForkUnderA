@@ -9,6 +9,7 @@
 | Function | Number | Returns |
 |---|---|---|
 | `GetMaxInventory(tid, item)` | 93 | the most of `item` the actor can carry; `"Health"` gives its maximum health |
+| `SetSectorDamage(tag, amount [, damagetype [, interval [, leakiness]]])` | 94 | nothing; players in the tagged sectors take `amount` of `damagetype` damage |
 | `CheckProximity(tid, class, distance [, count [, flags [, ptr]]])` | 98 | whether `count` actors of `class` stand within `distance`, by `CPXF_` flags |
 | `CheckActorState(tid, state [, exact])` | 99 | whether the actor's class has the state |
 | `CheckClass(class)` | 200 | whether an actor class of that name exists |
@@ -56,6 +57,12 @@ In a netgame:
 - `Ceil` of a whole number returns it unchanged. UZDoom's adds one, so `Ceil(2.0)` is 3.0 there.
 - `DamageActor` on a tid no actor holds returns -1. UZDoom crashes.
 - The default terrain's name is `Solid`; UZDoom spells it `SOLID`.
+- `SetSectorDamage` sets what `Sector_SetDamage` does: the damage lands once every 32 tics, and a radiation
+  suit lets it through by the amount (none under 20, now and then under 50, always from 50). The
+  `interval` and `leakiness` arguments are accepted and ignored for now. The damage type is one of the
+  built-in ones (`Fire`, `Slime`, `Ice`, `Poison`, `Electric`, `Drowning`, `Crush` and the rest of
+  `Sector_SetDamage`'s); another name does normal damage and warns once. A negative amount, which heals
+  in UZDoom, sets no damage.
 
 ## Implementation notes
 
