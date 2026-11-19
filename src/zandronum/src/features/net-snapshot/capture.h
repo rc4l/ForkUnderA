@@ -310,6 +310,10 @@ bool GateOn();
 // state commands and the door sound.
 bool MoverGate();
 
+// Every door sound passes here, sent to clients while that gate is on: a gated client runs
+// the door off records and plays nothing itself.
+void MoverSendDoorSound( sector_t * sec, int choice, bool bCheckSequence );
+
 // Tells one joining client the mover gate, if the snapshot is on at all.
 void SendMoverGateTo(unsigned int client);
 // True, and counted, when the gate stops a legacy send for this class (bPlane:

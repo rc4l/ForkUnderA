@@ -32,6 +32,8 @@ void MoverCountPlatWaitExpired();
 // Whether this client's legacy handler for the class must stand aside, records driving
 // it instead; false on a server and whenever the gate is not suppressing that class.
 bool MoverSuppressesLegacy( BYTE cls );
+// The same, for a legacy handler's own test: counts the call it turns away.
+bool MoverLegacyStandsAside( BYTE cls );
 // A mover one of this client's legacy handlers built, which a mover gate-on drops: the
 // records then rebuild it, and without the mark the two would both own the plane.
 void MoverMadeByLegacy( class DMover * pMover );
@@ -39,7 +41,6 @@ void MoverMadeByLegacy( class DMover * pMover );
 // record floor (0 leaves it), forgotten at disconnect.
 void MoverSetServerGate( bool bLegacyOff, int frame );
 void MoverForgetServerGate( );
-void MoverCountLegacySuppressed();
 void MoverCountBlockedRecv();
 // Whether this client must leave the plane where the server's record says it stalled,
 // counted as one held tic; a server always moves it.
@@ -103,8 +104,8 @@ bool MoverDoorOwnsPlane( sector_t *sec );
 bool MoverElevatorOwnsPlane( sector_t *sec );
 bool MoverPillarOwnsPlane( sector_t *sec );
 
-// Whether this side plays a plat's wait-end sound itself: a client does not, because the
-// server sends it, and only a plat a record has reached reaches that code on a client.
+// Whether this side plays a door's or plat's wait-end sound itself: a client does not, the
+// server sending it, and only a mover a record has reached reaches that code on a client.
 bool MoverPlaysWaitSound( );
 
 // Whether this client works out a crusher's reversal for itself: only for a mover a record

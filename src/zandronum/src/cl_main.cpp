@@ -8537,6 +8537,11 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 	// Read in the door ID.
 	lDoorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the door; this command builds it
+	// with delay 0, so it cannot carry the wait.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_DOOR ))
+		return;
+
 	// Make sure the sector ID is valid.
 	if (( lSectorID >= 0 ) && ( lSectorID < numsectors ))
 		pSector = &sectors[lSectorID];
@@ -8576,6 +8581,10 @@ static void client_DestroyDoor( BYTESTREAM_s *pByteStream )
 	// Read in the door ID.
 	lDoorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the door.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_DOOR ))
+		return;
+
 	pDoor = P_GetDoorByID( lDoorID );
 	if ( pDoor == NULL )
 	{
@@ -8599,6 +8608,11 @@ static void client_ChangeDoorDirection( BYTESTREAM_s *pByteStream )
 
 	// Read in the new direction the door should move in.
 	lDirection = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the direction rides the door's record; the sound
+	// arrives as SVC2_DOORSOUND, which OnDoorSound plays only while these are suppressed.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_DOOR ))
+		return;
 
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.

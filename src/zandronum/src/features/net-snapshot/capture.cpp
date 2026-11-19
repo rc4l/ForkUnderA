@@ -5565,6 +5565,13 @@ bool zx::netsnapshot::MoverGate()
 	return g_moverGate;
 }
 
+void zx::netsnapshot::MoverSendDoorSound( sector_t * sec, int choice, bool bCheckSequence )
+{
+	if (( NETWORK_GetState() != NETSTATE_SERVER ) || ( g_moverGate == false ))
+		return;
+	SERVERCOMMANDS_DoorSound( sec, choice, bCheckSequence );
+}
+
 // A joiner is told the gate as it stands, but only while the snapshot is on: a gate-off
 // server owes a joiner nothing, and the pump below sends the off itself, when GateOn has
 // already gone false.

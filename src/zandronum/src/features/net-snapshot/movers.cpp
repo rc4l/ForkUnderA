@@ -380,9 +380,12 @@ void zx::netsnapshot::ClientMoverGateStats( SnapMoverGateStats & st, bool bReset
 	}
 }
 
-void zx::netsnapshot::MoverCountLegacySuppressed()
+bool zx::netsnapshot::MoverLegacyStandsAside( BYTE cls )
 {
+	if ( MoverSuppressesLegacy( cls ) == false )
+		return false;
 	++g_moverLegacySuppressed;
+	return true;
 }
 
 void zx::netsnapshot::MoverCountOutcome( int outcome )

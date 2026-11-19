@@ -173,7 +173,7 @@ Each hook is one call from a stock file into the module, listed here as it lands
   `MoverPlaneStalled( )`/`MoverPlanesStalled( )`, `MoverServerStops( )` around each legacy plane
   send, the crush and plat-wait counters, and the client-side predicates:
   `MoverClientSkipsWait( m_SnapSeen )` on a door's and a plat's countdown,
-  `MoverPlaysWaitSound( )` on the plat's two local sound calls, and
+  `MoverPlaysWaitSound( )` on the door's and the plat's local wait-end sounds, and
   `MoverClientDerivesReversal( m_SnapSeen )` on a crusher's turn.
   - The reference wrote the role tests into these files — `NETWORK_InClientMode( ) && m_SnapBlocked`,
     and a server test around the stall write. This port keeps them inside the module, as
@@ -237,6 +237,26 @@ Each hook is one call from a stock file into the module, listed here as it lands
     itself, which the plat suppression will rely on. What the countdown does run is visible in
     the client's `m_Count`: against HEAD it sits on a plateau between records, here it falls
     every tic.
+- `cl_main.cpp`, `client_DoDoor`, `client_DestroyDoor`, `client_ChangeDoorDirection`:
+  `MoverLegacyStandsAside( SNAPMV_DOOR )`, which is `MoverSuppressesLegacy` counting the call it
+  turns away, each after that handler's last read so the stream is consumed either way. The first
+  of the handler classes; the sounds are not among them, `SVC2_DOORSOUND` carrying them to
+  `OnDoorSound`, which plays them only while these three are suppressed. Suppression is
+  client-side alone, so the server's sends are unchanged. What ends a client's wait moves from
+  the command to the record, measured as `door waits: 1 early (worst 17)` where the same window
+  at HEAD counts none: the door's dirty compare leaves `topCountdown` out, so no record goes out
+  merely because it ticked and the client's countdown is stale by however long since the last
+  one. `ran out` therefore stays 0 on a clean link here too, the record reaching the door before
+  its own counter does.
+  - That sound had no sender here. The enum, `OnDoorSound` and `P_DoorSoundSector` were ported,
+    but nothing sent `SVC2_DOORSOUND`, measured as none of them on the wire in six windows.
+    Suppressing `client_ChangeDoorDirection` takes away the client's only wait-end sound, and it
+    does not reach its own, the record ending the wait first, so this class needs the sender to
+    behave at all. `DDoor::DoorSound` ends with `MoverSendDoorSound( )`, which sends only on a
+    server with the legacy mover gate on, so a `nolegacy 0` server sends nothing for
+    `OnDoorSound` to discard. The module holds the send, leaving `p_doors.cpp` no replication
+    crossing to allow, and the sender is written against `OnDoorSound`'s own hand parse, so
+    there is no protocolspec entry and the golden does not move.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,

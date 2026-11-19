@@ -4852,6 +4852,17 @@ void SERVERCOMMANDS_ChangeDoorDirection( LONG lID, LONG lDirection, ULONG ulPlay
 }
 
 //*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: keyed on the sector, a gated client having no
+// door of its own until a record reaches it.
+void SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequence, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	NetCommand command ( SVC2_DOORSOUND );
+	command.addShort ( pSector - sectors );
+	command.addByte (( choice & 3 ) | ( bCheckSequence ? 4 : 0 ));
+	command.sendCommandToClients ( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
 //*****************************************************************************
 //
 void SERVERCOMMANDS_DoFloor( DFloor::EFloor Type, sector_t *pSector, LONG lDirection, LONG lSpeed, LONG lFloorDestDist, LONG Crush, bool Hexencrush, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )

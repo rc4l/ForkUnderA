@@ -126,7 +126,10 @@ void DDoor::Tick ()
 			{
 			case doorRaise:
 				m_Direction = -1; // time to go back down
-				DoorSound (false);
+				// [Kaori-Chani] features/net-snapshot: the server sends this sound, so a
+				// client that counted the wait out itself does not also play it.
+				if ( zx::netsnapshot::MoverPlaysWaitSound( ))
+					DoorSound (false);
 
 				// [BC] If we're the server, tell clients to change the door's direction.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -136,7 +139,9 @@ void DDoor::Tick ()
 				
 			case doorCloseWaitOpen:
 				m_Direction = 1;
-				DoorSound (true);
+				// [Kaori-Chani] features/net-snapshot: as above.
+				if ( zx::netsnapshot::MoverPlaysWaitSound( ))
+					DoorSound (true);
 
 				// [BC] If we're the server, tell clients to change the door's direction.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -408,6 +413,10 @@ void DDoor::DoorSound(bool raise, DSeqNode *curseq) const
 	}
 
 	P_DoorSoundSector (m_Sector, choice, curseq);
+
+	// [Kaori-Chani] features/net-snapshot: every door sound passes here; the module sends it
+	// to clients while the legacy mover gate is on.
+	zx::netsnapshot::MoverSendDoorSound (m_Sector, choice, curseq != NULL);
 }
 
 // [Kaori-Chani] features/net-snapshot: DoorSound's body keyed by sector, for a client with no
