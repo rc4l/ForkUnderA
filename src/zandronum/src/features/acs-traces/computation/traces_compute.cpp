@@ -178,7 +178,12 @@ bool ComputeRuleKindValid(int kind)
 
 bool ComputeRuleActionValid(int action)
 {
-	return action >= kActStop && action <= kActRecord;
+	return action >= kActStop && action <= kActCallback;
+}
+
+int ComputeCallbackAction(int32_t value)
+{
+	return value >= kActStop && value <= kActRecord ? int(value) : kActStop;
 }
 
 acsqueries::ArgKind ComputeRuleFilterArg(int filter)
@@ -264,7 +269,7 @@ bool ScriptTracers::Create(int32_t id)
 {
 	if (tracers.size() >= kMaxTracersPerScript || Find(id) != nullptr)
 		return false;
-	tracers.push_back(Tracer{ id, ComputeEmptyHit(), {}, {} });
+	tracers.push_back(Tracer{ id, ComputeEmptyHit(), {}, {}, 0, 0 });
 	return true;
 }
 
@@ -297,6 +302,16 @@ bool ScriptTracers::Clear(int32_t id)
 	if (!SetResult(id, ComputeEmptyHit(), {}))
 		return false;
 	Find(id)->rules.clear();
+	return SetCallback(id, 0, 0);
+}
+
+bool ScriptTracers::SetCallback(int32_t id, int32_t callback, int32_t context)
+{
+	Tracer *t = Find(id);
+	if (t == nullptr)
+		return false;
+	t->callback = callback;
+	t->context = context;
 	return true;
 }
 
@@ -348,11 +363,13 @@ std::vector<int32_t> ComputeFlattenTracers(const ScriptTracers &tracers)
 			out.push_back(r.filter.a);
 			out.push_back(r.filter.b);
 		}
+		out.push_back(t.callback);
+		out.push_back(t.context);
 	}
 	return out;
 }
 
-bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers, bool withRules)
+bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers, int format)
 {
 	size_t at = 0;
 	// [Doruk-Aksoy] The next int, if one is left and it lies in [lo, hi].
@@ -386,7 +403,7 @@ bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &t
 				return false;
 		read.SetResult(id, last, kept);
 		int32_t rules = 0;
-		if (withRules && !take(0, int32_t(kMaxRules), rules))
+		if (format >= kTracerFormatRules && !take(0, int32_t(kMaxRules), rules))
 			return false;
 		for (int32_t j = 0; j < rules; ++j)
 		{
@@ -395,6 +412,10 @@ bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &t
 				|| !take(INT32_MIN, INT32_MAX, r.filter.a) || !take(INT32_MIN, INT32_MAX, r.filter.b) || !read.AddRule(id, r))
 				return false;
 		}
+		int32_t callback = 0, context = 0;
+		if (format >= kTracerFormatCallback && (!take(INT32_MIN, INT32_MAX, callback) || !take(INT32_MIN, INT32_MAX, context)))
+			return false;
+		read.SetCallback(id, callback, context);
 	}
 	if (at != count)
 		return false;

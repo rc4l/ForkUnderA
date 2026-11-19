@@ -300,7 +300,7 @@ TEST(AcsTraces, TracersSaveWithTheirHitsAndTexturesRemap)
 
 	const std::vector<int32_t> flat = ComputeFlattenTracers(s);
 	ScriptTracers back;
-	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, true));
+	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, kTracerFormatCallback));
 	ASSERT_EQ(back.Count(), 2u);
 	EXPECT_EQ(back.Find(11)->hits.size(), 0u);
 	EXPECT_EQ(back.Find(11)->last.v[kTrHitLine], -1);
@@ -320,7 +320,7 @@ TEST(AcsTraces, ADamagedSaveLoadsNothing)
 
 	const auto refused = [&](std::vector<int32_t> bad) {
 		ScriptTracers out = keep;
-		return !ComputeUnflattenTracers(bad.data(), bad.size(), out, true) && out.Count() == 1 && out.Find(99) != nullptr;
+		return !ComputeUnflattenTracers(bad.data(), bad.size(), out, kTracerFormatCallback) && out.Count() == 1 && out.Find(99) != nullptr;
 	};
 	EXPECT_TRUE(refused({}));
 	EXPECT_TRUE(refused({ 17 }));
@@ -344,7 +344,7 @@ TEST(AcsTraces, ADamagedSaveLoadsNothing)
 	EXPECT_TRUE(refused(std::vector<int32_t>(good.begin(), good.begin() + 2 + kTrPropCount + 1 + 3)));
 
 	ScriptTracers out;
-	EXPECT_TRUE(ComputeUnflattenTracers(good.data(), good.size(), out, true));
+	EXPECT_TRUE(ComputeUnflattenTracers(good.data(), good.size(), out, kTracerFormatCallback));
 	EXPECT_EQ(out.Find(2)->hits.size(), 1u);
 }
 
@@ -366,7 +366,8 @@ TEST(AcsTraces, RuleKindsActionsAndFiltersAreTheirOwnNumbers)
 	EXPECT_FALSE(ComputeRuleKindValid(kKind3DFloor + 1));
 	EXPECT_TRUE(ComputeRuleActionValid(kActStop));
 	EXPECT_TRUE(ComputeRuleActionValid(kActRecord));
-	EXPECT_FALSE(ComputeRuleActionValid(kActRecord + 1));
+	EXPECT_TRUE(ComputeRuleActionValid(kActCallback));
+	EXPECT_FALSE(ComputeRuleActionValid(kActCallback + 1));
 	EXPECT_FALSE(ComputeRuleActionValid(-1));
 
 	EXPECT_EQ(ComputeRuleFilterArg(0), zx::acsqueries::kArgNone);
@@ -487,7 +488,7 @@ TEST(AcsTraces, ATracerTakesThirtyTwoFittingRulesAndClearingDropsThem)
 	const Rule good = { kKindWall, kActRecord, { kTqSpecial, 80, 1 } };
 	EXPECT_FALSE(s.AddRule(9, good));
 	EXPECT_FALSE(s.AddRule(4, Rule{ kHitWall, kActStop, { 0, 0, 0 } }));
-	EXPECT_FALSE(s.AddRule(4, Rule{ kKindWall, kActRecord + 1, { 0, 0, 0 } }));
+	EXPECT_FALSE(s.AddRule(4, Rule{ kKindWall, kActCallback + 1, { 0, 0, 0 } }));
 	EXPECT_FALSE(s.AddRule(4, Rule{ kKindActor, kActStop, { zx::acsqueries::kFq2D, 0, 0 } }));
 	EXPECT_FALSE(s.AddRule(4, Rule{ kKindWall, kActStop, { zx::acsqueries::kFqTid, 3, 0 } }));
 	for (size_t i = 0; i < kMaxRules; ++i)
@@ -512,11 +513,11 @@ TEST(AcsTraces, RulesSaveWithTheirNamesAndAnOldRunHasNone)
 
 	const std::vector<int32_t> flat = ComputeFlattenTracers(s);
 	ScriptTracers back;
-	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, true));
+	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, kTracerFormatCallback));
 	ASSERT_EQ(back.Find(6)->rules.size(), 3u);
 	EXPECT_EQ(back.Find(6)->rules[1].action, kActRecord);
 	EXPECT_EQ(back.Find(6)->rules[1].filter.b, 0);
-	EXPECT_FALSE(ComputeUnflattenTracers(flat.data(), flat.size(), back, false));
+	EXPECT_FALSE(ComputeUnflattenTracers(flat.data(), flat.size(), back, kTracerFormatHits));
 
 	// [Doruk-Aksoy] A run saved before rules: one tracer, its last hit and no kept hits.
 	std::vector<int32_t> old = { 1, 6 };
@@ -524,17 +525,53 @@ TEST(AcsTraces, RulesSaveWithTheirNamesAndAnOldRunHasNone)
 	old.insert(old.end(), empty.v, empty.v + kTrPropCount);
 	old.push_back(0);
 	ScriptTracers fromOld;
-	ASSERT_TRUE(ComputeUnflattenTracers(old.data(), old.size(), fromOld, false));
+	ASSERT_TRUE(ComputeUnflattenTracers(old.data(), old.size(), fromOld, kTracerFormatHits));
 	EXPECT_TRUE(fromOld.Find(6)->rules.empty());
-	EXPECT_FALSE(ComputeUnflattenTracers(old.data(), old.size(), fromOld, true));
+	EXPECT_FALSE(ComputeUnflattenTracers(old.data(), old.size(), fromOld, kTracerFormatCallback));
 
 	std::vector<int32_t> badRule = flat;
-	badRule[badRule.size() - 5] = kHitWall;
-	EXPECT_FALSE(ComputeUnflattenTracers(badRule.data(), badRule.size(), back, true));
+	badRule[badRule.size() - 7] = kHitWall;
+	EXPECT_FALSE(ComputeUnflattenTracers(badRule.data(), badRule.size(), back, kTracerFormatCallback));
 	std::vector<int32_t> cut = flat;
 	cut.pop_back();
-	EXPECT_FALSE(ComputeUnflattenTracers(cut.data(), cut.size(), back, true));
+	EXPECT_FALSE(ComputeUnflattenTracers(cut.data(), cut.size(), back, kTracerFormatCallback));
 	std::vector<int32_t> tooMany = flat;
-	tooMany[tooMany.size() - 16] = int32_t(kMaxRules) + 1;
-	EXPECT_FALSE(ComputeUnflattenTracers(tooMany.data(), tooMany.size(), back, true));
+	tooMany[tooMany.size() - 18] = int32_t(kMaxRules) + 1;
+	EXPECT_FALSE(ComputeUnflattenTracers(tooMany.data(), tooMany.size(), back, kTracerFormatCallback));
+}
+
+TEST(AcsTraces, ACallbackNamesAnActionOrStops)
+{
+	EXPECT_EQ(ComputeCallbackAction(kActStop), kActStop);
+	EXPECT_EQ(ComputeCallbackAction(kActSkip), kActSkip);
+	EXPECT_EQ(ComputeCallbackAction(kActRecord), kActRecord);
+	EXPECT_EQ(ComputeCallbackAction(kActCallback), kActStop);
+	EXPECT_EQ(ComputeCallbackAction(-1), kActStop);
+	EXPECT_EQ(ComputeCallbackAction(99), kActStop);
+}
+
+TEST(AcsTraces, ATracerKeepsItsCallbackUntilClearedAndSavesIt)
+{
+	ScriptTracers s;
+	s.Create(3);
+	EXPECT_FALSE(s.SetCallback(8, 1, 2));
+	EXPECT_TRUE(s.SetCallback(3, 0x10005, 42));
+	EXPECT_EQ(s.Find(3)->callback, 0x10005);
+	EXPECT_EQ(s.Find(3)->context, 42);
+	const std::vector<int32_t> flat = ComputeFlattenTracers(s);
+	ScriptTracers back;
+	ASSERT_TRUE(ComputeUnflattenTracers(flat.data(), flat.size(), back, kTracerFormatCallback));
+	EXPECT_EQ(back.Find(3)->callback, 0x10005);
+	EXPECT_EQ(back.Find(3)->context, 42);
+	std::vector<int32_t> cut = flat;
+	cut.pop_back();
+	EXPECT_FALSE(ComputeUnflattenTracers(cut.data(), cut.size(), back, kTracerFormatCallback));
+	// [Doruk-Aksoy] A run from before callbacks loads with none.
+	std::vector<int32_t> rulesEra(flat.begin(), flat.end() - 2);
+	ScriptTracers old;
+	ASSERT_TRUE(ComputeUnflattenTracers(rulesEra.data(), rulesEra.size(), old, kTracerFormatRules));
+	EXPECT_EQ(old.Find(3)->callback, 0);
+	EXPECT_TRUE(s.Clear(3));
+	EXPECT_EQ(s.Find(3)->callback, 0);
+	EXPECT_EQ(s.Find(3)->context, 0);
 }

@@ -362,6 +362,8 @@ static	bool	g_bCalledFromConsoleCommand = false;
 // [AK] A pointer to the script currently being run. When it's not equal to NULL, it means that
 // any action or line specials are being executed inside an ACS script.
 static	DLevelScript	*g_pCurrentScript = NULL;
+// [Doruk-Aksoy] features/acs-traces: the DLevelScript flag of a callback's run, which is no script of its module.
+static const int ACS_FUAFUNCTION = 1 << 16;
 
 
 //============================================================================
@@ -5947,11 +5949,12 @@ enum EACSFunctions
 	ACSF_fua_FindActorsOfClass,			// (int q, str cls [, bool subclasses [, fixed x, fixed y, fixed z]])
 	ACSF_fua_FoundActor,				// (int q, int i)
 	ACSF_fua_FoundCount,				// (int q)
-	// [Doruk-Aksoy] features/acs-traces: line traces kept in tracers, decided by their rules; 24054 comes with the callback.
+	// [Doruk-Aksoy] features/acs-traces: line traces kept in tracers, decided by their rules and a callback function.
 	ACSF_fua_TracerCreate = 24050,		// ()
 	ACSF_fua_TracerFree,				// (int t)
 	ACSF_fua_TracerClear,				// (int t)
 	ACSF_fua_TraceRule,					// (int t, int hit, int action [, int filter [, a [, b]]])
+	ACSF_fua_TraceCallback,				// (int t, function fn [, int ctx])
 	ACSF_fua_LineTrace = 24055,			// (int t, int h, fixed angle, fixed distance, fixed pitch [, int flags [, fixed offsetz [, fixed offsetforward [, fixed offsetside]]]])
 	ACSF_fua_Trace,						// (int t, fixed x, fixed y, fixed z, fixed dx, fixed dy, fixed dz, fixed distance [, int flags [, int ignore]])
 	ACSF_fua_TraceHitCount,				// (int t)
@@ -5972,7 +5975,7 @@ static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField
 static_assert(ACSF_fua_SetActorData == zx::acshandles::kSetActorData && ACSF_fua_ClearActorData == zx::acshandles::kClearActorData, "the fua_ actor data functions keep their numbers");
 static_assert(ACSF_fua_QueryCreate == zx::acsqueries::kQueryCreate && ACSF_fua_FoundCount == zx::acsqueries::kFoundCount, "the fua_ query functions keep their numbers");
 static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_TraceRule == zx::acstraces::kTraceRule && ACSF_fua_LineTrace == zx::acstraces::kLineTrace
-	&& ACSF_fua_Trace == zx::acstraces::kTrace
+	&& ACSF_fua_Trace == zx::acstraces::kTrace && ACSF_fua_TraceCallback == zx::acstraces::kTraceCallback
 	&& ACSF_fua_TraceHitCount == zx::acstraces::kTraceHitCount && ACSF_fua_SectorInfo == zx::acstraces::kSectorInfo, "the fua_ trace functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
@@ -7630,36 +7633,39 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			return zx::acsqueries::FoundCount( fua_queries, args[0] );
 
 		case ACSF_fua_TracerCreate:
-			return zx::acstraces::TracerCreate( fua_tracers );
+			return zx::acstraces::TracerCreate( FuaTracers() );
 
 		case ACSF_fua_TracerFree:
-			zx::acstraces::TracerFree( fua_tracers, args[0] );
+			zx::acstraces::TracerFree( FuaTracers(), args[0] );
 			break;
 
 		case ACSF_fua_TracerClear:
-			zx::acstraces::TracerClear( fua_tracers, args[0] );
+			zx::acstraces::TracerClear( FuaTracers(), args[0] );
 			break;
 
 		case ACSF_fua_TraceRule:
-			return zx::acstraces::TraceRule( fua_tracers, args[0], args[1], args[2], argCount - 3, argCount > 3 ? args[3] : 0, argCount > 4 ? args[4] : 0,
+			return zx::acstraces::TraceRule( FuaTracers(), args[0], args[1], args[2], argCount - 3, argCount > 3 ? args[3] : 0, argCount > 4 ? args[4] : 0,
 				argCount > 5 ? args[5] : 0, argCount > 4 && zx::acstraces::ComputeRuleFilterArg( args[3] ) == zx::acsqueries::kArgName ? FBehavior::StaticLookupString( args[4] ) : NULL );
 
+		case ACSF_fua_TraceCallback:
+			return zx::acstraces::TraceCallback( FuaTracers(), args[0], args[1], argCount > 2 ? args[2] : 0 );
+
 		case ACSF_fua_Trace:
-			return zx::acstraces::Trace( fua_tracers, args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
+			return zx::acstraces::Trace( FuaTracers(), args[0], activator, args[1], args[2], args[3], args[4], args[5], args[6], args[7],
 				argCount > 8 ? args[8] : 0, argCount > 9 ? args[9] : 0 );
 
 		case ACSF_fua_LineTrace:
-			return zx::acstraces::LineTrace( fua_tracers, args[0], activator, args[1], args[2], args[3], args[4],
+			return zx::acstraces::LineTrace( FuaTracers(), args[0], activator, args[1], args[2], args[3], args[4],
 				argCount > 5 ? args[5] : 0, argCount > 6 ? args[6] : 0, argCount > 7 ? args[7] : 0, argCount > 8 ? args[8] : 0 );
 
 		case ACSF_fua_TraceHitCount:
-			return zx::acstraces::TraceHitCount( fua_tracers, args[0] );
+			return zx::acstraces::TraceHitCount( FuaTracers(), args[0] );
 
 		case ACSF_fua_TraceResult:
-			return zx::acstraces::TraceResult( fua_tracers, args[0], args[1], argCount > 2 ? args[2] : -1 );
+			return zx::acstraces::TraceResult( FuaTracers(), args[0], args[1], argCount > 2 ? args[2] : -1 );
 
 		case ACSF_fua_TraceResultStr:
-			return GlobalACSStrings.AddString( zx::acstraces::TraceResultStr( fua_tracers, args[0], args[1], argCount > 2 ? args[2] : -1 ) );
+			return GlobalACSStrings.AddString( zx::acstraces::TraceResultStr( FuaTracers(), args[0], args[1], argCount > 2 ? args[2] : -1 ) );
 
 		case ACSF_fua_LineInfo:
 			return zx::acstraces::LineInfo( args[0], args[1] );
@@ -9816,6 +9822,11 @@ int DLevelScript::RunScript ()
 			localarrays = &ptr->LocalArrays;
 		}
 	}
+	// [Doruk-Aksoy] features/acs-traces: a callback's run starts in its function, with that function's arrays.
+	if (fua_entryFunction != NULL)
+	{
+		localarrays = const_cast<ACSLocalArrays *>(&fua_entryFunction->LocalArrays);
+	}
 
 	// Hexen truncates all special arguments to bytes (only when using an old MAPINFO and old ACS format
 	const int specialargmask = ((level.flags2 & LEVEL2_HEXENHACK) && activeBehavior->GetFormat() == ACS_Old) ? 255 : ~0;
@@ -10253,6 +10264,14 @@ int DLevelScript::RunScript ()
 				else
 				{
 					value = 0;
+				}
+				// [Doruk-Aksoy] features/acs-traces: a return with no caller ends the run with its value, as a callback's function does.
+				if (activeFunction == NULL)
+				{
+					resultValue = value;
+					fua_returned = true;
+					state = SCRIPT_PleaseRemove;
+					break;
 				}
 				sp -= sizeof(CallReturn)/sizeof(int);
 				retsp = &Stack[sp];
@@ -13766,6 +13785,44 @@ scriptwait:
 
 #undef PushtoStack
 
+int DLevelScript::RunFunctionNow (int ref, AActor *who, zx::acstraces::ScriptTracers *tracers, const int *args, int argcount, bool &ok)
+{
+	ok = false;
+	int funcnum;
+	FBehavior *module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+	ScriptFunction *func = module != NULL ? module->GetFunction(funcnum, module) : NULL;
+	if (func == NULL || func->ArgCount != argcount || !func->HasReturnValue)
+		return 0;
+	ScriptPtr code = {};
+	code.Type = SCRIPT_Closed;
+	code.ArgCount = func->ArgCount;
+	code.VarCount = WORD(func->ArgCount + func->LocalCount);
+	code.Address = func->Address;
+	DLevelScript *outer = g_pCurrentScript;
+	DLevelScript *run = new DLevelScript(who, NULL, 0, &code, module, args, argcount, ACS_ALWAYS | ACS_FUAFUNCTION);
+	run->fua_entryFunction = func;
+	run->fua_tracerOwner = tracers;
+	const int value = run->RunScript();
+	g_pCurrentScript = outer;
+	// [Doruk-Aksoy] A callback that waits is ended here, since its trace can't wait for it.
+	if (run->state != SCRIPT_PleaseRemove)
+	{
+		run->state = SCRIPT_PleaseRemove;
+		run->Unlink();
+		return 0;
+	}
+	ok = run->fua_returned;
+	return value;
+}
+
+bool DLevelScript::IsCallableFunction (int ref, int argcount)
+{
+	int funcnum;
+	FBehavior *module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+	const ScriptFunction *func = module != NULL ? module->GetFunction(funcnum, module) : NULL;
+	return func != NULL && func->ArgCount == argcount && func->HasReturnValue;
+}
+
 static DLevelScript *P_GetScriptGoing (AActor *who, line_t *where, int num, const ScriptPtr *code, FBehavior *module,
 	const int *args, int argcount, int flags)
 {
@@ -13804,7 +13861,8 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 		localvars[i] = args[i];
 	}
 	pc = module->GetScriptAddress(code);
-	InModuleScriptNumber = module->GetScriptIndex(code);
+	// [Doruk-Aksoy] features/acs-traces: a callback's run is no script of the module.
+	InModuleScriptNumber = (flags & ACS_FUAFUNCTION) ? -1 : module->GetScriptIndex(code);
 	activator = who;
 	activationline = where;
 	backSide = flags & ACS_BACKSIDE;

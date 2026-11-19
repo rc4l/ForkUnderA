@@ -14,6 +14,7 @@
 #include "farchive.h"
 #include "name.h"
 #include "p_3dfloors.h"
+#include "p_acs.h"
 #include "p_local.h"
 #include "p_tags.h"
 #include "p_trace.h"
@@ -29,6 +30,7 @@
 // [Doruk-Aksoy] The SAVEVER from which scripts save their tracers, and from which tracers save their rules.
 static const int kTracerSaveVersion = 4541;
 static const int kTracerRulesSaveVersion = 4542;
+static const int kTracerCallbackSaveVersion = 4543;
 extern int SaveVersion;
 
 namespace zx { namespace acstraces {
@@ -48,8 +50,12 @@ static_assert(kFfUpperTexture == FF_UPPERTEXTURE && kFfLowerTexture == FF_LOWERT
 
 namespace {
 
-// [Doruk-Aksoy] Whether this map already warned of a script out of tracers.
+// [Doruk-Aksoy] Whether this map already warned of a script out of tracers, and of a callback that gave no action.
 bool g_warnedFull = false;
+bool g_warnedCallback = false;
+
+// [Doruk-Aksoy] How many callbacks are running, during which no trace may start.
+int g_callbackDepth = 0;
 
 // [Doruk-Aksoy] What UZDoom's CheckLineTrace needs at each hit.
 struct LineTraceData
@@ -136,10 +142,11 @@ bool IsSky(const FTraceResults &res)
 		&& res.Line->frontsector->GetTexture(sector_t::ceiling) == skyflatnum && res.Line->backsector->GetTexture(sector_t::ceiling) == skyflatnum;
 }
 
-// [Doruk-Aksoy] One fua_Trace: the tracer's rules, their actor filters looked up once, and the hits they keep.
+// [Doruk-Aksoy] One fua_Trace: a copy of the tracer's rules (a callback may change them), their actor filters looked up once, and the hits they keep.
 struct RuleTrace
 {
-	explicit RuleTrace(const std::vector<Rule> &r, const Fixed3 &d, bool sky) : rules(r), dir(d), noSky(sky), filters(r.size())
+	RuleTrace(ScriptTracers &ts, int32_t i, AActor *who, const std::vector<Rule> &r, const Fixed3 &d, bool sky)
+		: tracers(ts), id(i), activator(who), rules(r), dir(d), noSky(sky), filters(r.size())
 	{
 		for (size_t i = 0; i < rules.size(); ++i)
 		{
@@ -166,8 +173,8 @@ struct RuleTrace
 
 	ETraceStatus Decide(const FTraceResults &res)
 	{
-		// [Doruk-Aksoy] A client's snapshot mirror only draws the actor scripts read, so no rule ever sees one.
-		if (res.HitType == TRACE_HitActor && res.Actor != NULL && (res.Actor->NetworkFlags & NETFL_MIRROR))
+		// [Doruk-Aksoy] A client's snapshot mirror only draws the actor scripts read, so no rule ever sees one; an actor a callback removed is passed by.
+		if (res.HitType == TRACE_HitActor && res.Actor != NULL && ((res.Actor->NetworkFlags & NETFL_MIRROR) || (res.Actor->ObjectFlags & OF_EuthanizeMe)))
 			return TRACE_Skip;
 		decided = true;
 		lastType = res.HitType;
@@ -176,9 +183,33 @@ struct RuleTrace
 		if (noSky && IsSky(res))
 			return TRACE_Stop;
 		const int kind = ComputeHitKind(res.HitType, res.Tier);
-		const int action = ComputeRuleAction(rules, kind, [&](const Rule &r) { return Test(r, res); });
+		int action = ComputeRuleAction(rules, kind, [&](const Rule &r) { return Test(r, res); });
+		if (action == kActCallback)
+			action = Call(res);
 		ComputeRuleRecord(run, action, HitOf(res, dir));
 		return ETraceStatus(ComputeRuleStatus(action, kind));
+	}
+
+	// [Doruk-Aksoy] The tracer's callback's action for a hit, which it reads as the tracer's last result; one that waits or gives none stops the trace.
+	int Call(const FTraceResults &res)
+	{
+		const Tracer *t = tracers.Find(id);
+		if (t == NULL || t->callback == 0)
+			return kActStop;
+		const int32_t callback = t->callback, args[2] = { id, t->context };
+		tracers.SetResult(id, HitOf(res, dir), run.hits);
+		bool ok = false;
+		++g_callbackDepth;
+		const int32_t value = DLevelScript::RunFunctionNow(callback, activator, &tracers, args, 2, ok);
+		--g_callbackDepth;
+		if (!ok)
+		{
+			if (!g_warnedCallback)
+				Printf(TEXTCOLOR_ORANGE "fua_TraceCallback: a callback waited, ended without returning, or its function is gone; that hit stops the trace.\n");
+			g_warnedCallback = true;
+			return kActStop;
+		}
+		return ComputeCallbackAction(value);
 	}
 
 	// [Doruk-Aksoy] Whether the rules already saw the hit the trace ended on.
@@ -187,7 +218,10 @@ struct RuleTrace
 		return decided && res.HitType == lastType && res.Distance == lastDistance;
 	}
 
-	const std::vector<Rule> &rules;
+	ScriptTracers &tracers;
+	const int32_t id;
+	AActor *const activator;
+	const std::vector<Rule> rules;
 	const Fixed3 dir;
 	const bool noSky;
 	std::vector<std::unique_ptr<acsqueries::ActorFilters>> filters;
@@ -231,8 +265,8 @@ void TracerClear(ScriptTracers &tracers, int32_t id)
 int LineTrace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t h, int32_t angle, int32_t distance, int32_t pitch,
 	int flags, int32_t offsetZ, int32_t offsetForward, int32_t offsetSide)
 {
-	// [Doruk-Aksoy] A new trace drops the last one's hits but keeps the rules.
-	if (!tracers.SetResult(id, ComputeEmptyHit(), std::vector<Hit>()))
+	// [Doruk-Aksoy] A new trace drops the last one's hits but keeps the rules; none starts inside a callback.
+	if (g_callbackDepth > 0 || !tracers.SetResult(id, ComputeEmptyHit(), std::vector<Hit>()))
 		return 0;
 	AActor *t1 = h == 0 ? activator : acshandles::ActorOf(h);
 	if (t1 == NULL || distance <= 0)
@@ -279,9 +313,16 @@ bool TraceRule(ScriptTracers &tracers, int32_t id, int kind, int action, int cou
 	return tracers.AddRule(id, rule) && known;
 }
 
-int Trace(ScriptTracers &tracers, int32_t id, int32_t x, int32_t y, int32_t z, int32_t dx, int32_t dy, int32_t dz, int32_t distance, int flags, int32_t ignore)
+bool TraceCallback(ScriptTracers &tracers, int32_t id, int32_t function, int32_t context)
 {
-	if (!tracers.SetResult(id, ComputeEmptyHit(), std::vector<Hit>()))
+	if (function != 0 && !DLevelScript::IsCallableFunction(function, 2))
+		return false;
+	return tracers.SetCallback(id, function, context);
+}
+
+int Trace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t x, int32_t y, int32_t z, int32_t dx, int32_t dy, int32_t dz, int32_t distance, int flags, int32_t ignore)
+{
+	if (g_callbackDepth > 0 || !tracers.SetResult(id, ComputeEmptyHit(), std::vector<Hit>()))
 		return 0;
 	AActor *skip = ignore != 0 ? acshandles::ActorOf(ignore) : NULL;
 	Fixed3 dir;
@@ -300,7 +341,7 @@ int Trace(ScriptTracers &tracers, int32_t id, int32_t x, int32_t y, int32_t z, i
 	if (flags & kTrfFuaAllLines)
 		masks.lines = kMlEveryLine;
 	const Tracer *tracer = tracers.Find(id);
-	RuleTrace run(tracer->rules, dir, (flags & kTrfNoSky) != 0);
+	RuleTrace run(tracers, id, activator, tracer->rules, dir, (flags & kTrfNoSky) != 0);
 	FTraceResults res;
 	const fixed_t sx = fixed_t::FromRaw(x), sy = fixed_t::FromRaw(y);
 	::Trace(sx, sy, fixed_t::FromRaw(z), P_PointInSector(sx, sy), fixed_t::FromRaw(dir.x), fixed_t::FromRaw(dir.y), fixed_t::FromRaw(dir.z),
@@ -371,7 +412,8 @@ void SerializeScript(FArchive &arc, ScriptTracers &tracers)
 			tracers.tracers.clear();
 		return;
 	}
-	const bool withRules = arc.IsStoring() || SaveVersion >= kTracerRulesSaveVersion;
+	const int format = arc.IsStoring() || SaveVersion >= kTracerCallbackSaveVersion ? kTracerFormatCallback
+		: SaveVersion >= kTracerRulesSaveVersion ? kTracerFormatRules : kTracerFormatHits;
 	std::vector<int32_t> names;
 	std::vector<int32_t> flat;
 	if (arc.IsStoring())
@@ -383,7 +425,7 @@ void SerializeScript(FArchive &arc, ScriptTracers &tracers)
 	acsqueries::SerializeNamedRun(arc, names, flat);
 	if (arc.IsStoring())
 		return;
-	if (!ComputeUnflattenTracers(flat.data(), flat.size(), tracers, withRules))
+	if (!ComputeUnflattenTracers(flat.data(), flat.size(), tracers, format))
 	{
 		Printf(TEXTCOLOR_ORANGE "ACS traces: a script's saved tracers are damaged, so it starts with none.\n");
 		tracers.tracers.clear();
@@ -396,6 +438,7 @@ void SerializeScript(FArchive &arc, ScriptTracers &tracers)
 void EnterLevel()
 {
 	g_warnedFull = false;
+	g_warnedCallback = false;
 }
 
 }} // namespace zx::acstraces

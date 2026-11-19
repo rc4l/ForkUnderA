@@ -7,8 +7,10 @@ const WARN = "fua_TracerCreate: a script already holds 16 tracers; free one with
 const value = (w) => (Array.isArray(w) ? w[0] : w !== null && typeof w === "object" ? w.bits : w);
 const line = (tag, values) => `${tag} ${values.map(value).join(" ")}`;
 const strings = (tag, values) => `${tag}|${values.join("|")}|`;
+const CB_WARN = "fua_TraceCallback: a callback waited, ended without returning, or its function is gone; that hit stops the trace.";
+const warned = { l1: WARN, cb1: CB_WARN };
 const good = () => ({
-  ...Object.fromEntries(Object.entries(WANT).map(([tag, want]) => [tag, tag === "l1" ? `${WARN}\n${line(tag, want)}` : line(tag, want)])),
+  ...Object.fromEntries(Object.entries(WANT).map(([tag, want]) => [tag, warned[tag] ? `${warned[tag]}\n${line(tag, want)}` : line(tag, want)])),
   ...Object.fromEntries(Object.entries(WANT_STRINGS).map(([tag, want]) => [tag, strings(tag, want)])),
 });
 
@@ -19,6 +21,7 @@ test("the run passes with every expected value and names each wrong one by index
   assert.match(judgeTraces({ ...good(), v3: "" }).join(), /script v3 logged no strings/);
   assert.match(judgeTraces({ ...good(), n1: "" }).join(), /script n1 logged nothing/);
   assert.match(judgeTraces({ ...good(), l1: line("l1", WANT.l1) }).join(), /warned 0 times/);
+  assert.match(judgeTraces({ ...good(), cb1: line("cb1", WANT.cb1) }).join(), /waiting callback warned 0 times/);
 });
 
 test("a check fits exactly, within its slack, or by its bits", () => {
@@ -34,7 +37,7 @@ test("the trace functions, TR_ properties, TRF_ flags and rule constants keep th
   assert.deepEqual([FN.TracerCreate, FN.LineTrace, FN.TraceResult, FN.SectorInfo], [24050, 24055, 24058, 24061]);
   assert.deepEqual([TR.HitType, TR.HitLine, TR.F3DFloor, TR.HitTexture], [0, 10, 17, 20]);
   assert.deepEqual([TRF.ABSPOSITION, TRF.NOSKY, TRF.SOLIDACTORS, TRF.FUA_PHYSICALSIZE], [1, 64, 256, 1 << 20]);
-  assert.deepEqual([FN.TraceRule, FN.Trace, TRF.FUA_ALLLINES], [24053, 24056, 1 << 21]);
+  assert.deepEqual([FN.TraceRule, FN.TraceCallback, FN.Trace, TRF.FUA_ALLLINES], [24053, 24054, 24056, 1 << 21]);
   assert.deepEqual([KIND.ANY, KIND.FFLOOR, ACT.STOP, ACT.RECORD, TQ.LINEFLAG, TQ.TEXTURE], [64, 69, 0, 4, 48, 50]);
 });
 
@@ -45,5 +48,6 @@ test("the map names the lines and sectors the checks read, and the pk3 holds it"
   assert.equal(m.sectors[ix.step].heightfloor, 64);
   const words = waitingScript();
   assert.ok(words.includes(PCD.IFGOTO) && words.at(-1) === PCD.TERMINATE);
-  assert.ok(buildAcsTracesPk3().toString("latin1").includes("maps/MAP01.wad"));
+  const pk3 = buildAcsTracesPk3().toString("latin1");
+  assert.ok(pk3.includes("maps/MAP01.wad") && pk3.includes("acs/tracecb.o") && pk3.includes("LOADACS.txt"));
 });

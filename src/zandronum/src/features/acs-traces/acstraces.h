@@ -25,8 +25,11 @@ int LineTrace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t h, 
 // [Doruk-Aksoy] fua_TraceRule with `count` arguments after its action, `name` the filter's string for class, flag and texture filters.
 bool TraceRule(ScriptTracers &tracers, int32_t id, int kind, int action, int count, int filter, int32_t a, int32_t b, const char *name);
 
-// [Doruk-Aksoy] fua_Trace: LineTracer.Trace from a map point along a direction, each hit decided by the tracer's rules; returns how many hits they kept.
-int Trace(ScriptTracers &tracers, int32_t id, int32_t x, int32_t y, int32_t z, int32_t dx, int32_t dy, int32_t dz, int32_t distance, int flags, int32_t ignore);
+// [Doruk-Aksoy] fua_TraceCallback: the function a TRACE_Callback rule hands hits to, called with the tracer and `context`; 0 clears it.
+bool TraceCallback(ScriptTracers &tracers, int32_t id, int32_t function, int32_t context);
+
+// [Doruk-Aksoy] fua_Trace: LineTracer.Trace from a map point along a direction, each hit decided by the tracer's rules and callback, run as `activator`; returns how many hits they kept.
+int Trace(ScriptTracers &tracers, int32_t id, AActor *activator, int32_t x, int32_t y, int32_t z, int32_t dx, int32_t dy, int32_t dz, int32_t distance, int flags, int32_t ignore);
 
 int TraceHitCount(const ScriptTracers &tracers, int32_t id);
 

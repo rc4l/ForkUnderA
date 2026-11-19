@@ -204,6 +204,7 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 24051, 1, "fua_TracerFree" },
 	{ 24052, 1, "fua_TracerClear" },
 	{ 24053, 3, "fua_TraceRule" },
+	{ 24054, 2, "fua_TraceCallback" },
 	{ 24055, 5, "fua_LineTrace" },
 	{ 24056, 8, "fua_Trace" },
 	{ 24057, 1, "fua_TraceHitCount" },
