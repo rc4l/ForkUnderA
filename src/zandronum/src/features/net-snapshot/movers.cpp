@@ -431,6 +431,11 @@ void zx::netsnapshot::MoverCountLinkSuppressed()
 	++g_moverLinkSuppressed;
 }
 
+bool zx::netsnapshot::MoverPlaysWaitSound( )
+{
+	return ( NETWORK_InClientMode( ) == false );
+}
+
 bool zx::netsnapshot::MoverClientDerivesReversal( bool bSeen )
 {
 	if ( ( bSeen == false ) || ( NETWORK_InClientMode( ) == false ) )

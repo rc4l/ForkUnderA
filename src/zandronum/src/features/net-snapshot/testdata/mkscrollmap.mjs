@@ -35,6 +35,7 @@ const CEILING_LOWERBYVALUE = 40;  // actionspecials.h: Ceiling_LowerByValue (tag
 const DOOR_CLOSE = 10;            // actionspecials.h: Door_Close (tag, speed)
 const FLOOR_WAGGLE = 138;         // Floor_Waggle (tag, amplitude, frequency, offset, timer)
 const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door spawned at map load, closing 30s in
+const PLAT_DOWNWAITUPSTAY = 62;   // Plat_DownWaitUpStay (tag, speed, delay in tics)
 const PLAT_PERPETUALRAISE = 60;   // actionspecials.h: Plat_PerpetualRaise (tag, speed, delay)
 
 const TEX = { texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
@@ -53,6 +54,9 @@ const scrolled = m.sector({ ...FLAT, id: 2 });
 const control = m.sector({ ...FLAT, id: 1 });
 const doorsec = m.sector({ ...FLAT, id: 4, special: DOOR_CLOSE_IN_30 });
 const slowdoor = m.sector({ ...FLAT, id: 5 });
+// Tag 6, floor raised so FindLowestFloorSurrounding is below it: nothing else owns this
+// floor, so the plat's wait is the only countdown on it.
+const platsec = m.sector({ ...FLAT, heightfloor: 32, id: 6 });
 
 const perimeter = [
   [-384, -128, -384, 128, room],
@@ -61,7 +65,9 @@ const perimeter = [
   [128, 128, 384, 128, control],
   [384, 128, 640, 128, doorsec],
   [640, 128, 896, 128, slowdoor],
-  [896, 128, 896, -128, slowdoor],
+  [896, 128, 1152, 128, platsec],
+  [1152, 128, 1152, -128, platsec],
+  [1152, -128, 896, -128, platsec],
   [896, -128, 640, -128, slowdoor],
   [640, -128, 384, -128, doorsec],
   [384, -128, 128, -128, control],
@@ -74,6 +80,7 @@ m.opening(-128, -128, -128, 128, scrolled, room, OPEN, OPEN);
 m.opening(128, -128, 128, 128, control, scrolled, OPEN, OPEN);
 m.opening(384, -128, 384, 128, doorsec, control, OPEN, OPEN);
 m.opening(640, -128, 640, 128, slowdoor, doorsec, OPEN, OPEN);
+m.opening(896, -128, 896, 128, platsec, slowdoor, OPEN, OPEN);
 
 // The four scrollers, all on sector tag 2, all driven by control sector tag 1. Each line's own
 // side sector is the control, as P_SpawnScrollers reads it from sidedef[0].
@@ -118,6 +125,12 @@ m.opening(-366, -64, -366, 64, room, room, OPEN, OPEN,
 // and again at the top, which is the reversal a gated client has to work out for itself.
 m.opening(-224, -64, -224, 64, room, room, OPEN, OPEN,
   { special: CEILING_CRUSHANDRAISE, arg0: 1, arg1: 8, arg2: 10, arg3: 0,
+    playercross: true, repeatspecial: true, blocking: false });
+
+// The plat, on tag 6: down 32 units at speed 2, then a 70 tic wait, then up and gone.
+// The wait is what a gated client counts down for itself.
+m.opening(-192, -64, -192, 64, room, room, OPEN, OPEN,
+  { special: PLAT_DOWNWAITUPSTAY, arg0: 6, arg1: 2, arg2: 70,
     playercross: true, repeatspecial: true, blocking: false });
 
 // A ceiling on the scrolled sector, east of the floor's line and reachable with a forward

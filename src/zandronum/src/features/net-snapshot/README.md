@@ -171,7 +171,10 @@ Each hook is one call from a stock file into the module, listed here as it lands
   mover destroyed outside `Tick` — the map reset's loop does exactly that. Beside them
   `MoverHoldsPlane( )` (and `MoverHoldsFloor`/`MoverHoldsCeiling` for a pillar's two planes),
   `MoverPlaneStalled( )`/`MoverPlanesStalled( )`, `MoverServerStops( )` around each legacy plane
-  send, and the crush and plat-wait counters.
+  send, the crush and plat-wait counters, and the client-side predicates:
+  `MoverClientSkipsWait( m_SnapSeen )` on a door's and a plat's countdown,
+  `MoverPlaysWaitSound( )` on the plat's two local sound calls, and
+  `MoverClientDerivesReversal( m_SnapSeen )` on a crusher's turn.
   - The reference wrote the role tests into these files — `NETWORK_InClientMode( ) && m_SnapBlocked`,
     and a server test around the stall write. This port keeps them inside the module, as
     `SpecialResolveSource` does, so the stock sites stay at one call and the boundary counts do
@@ -212,10 +215,28 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - The test map is driven in **cooperative** for door and ceiling measurements. In survival the
     level does not tick until a round starts, and that round's own reset destroys the map's
     door, so a survival window catches the reset rather than the mover.
-  - The reference also lets a client run a plat's own wait, dropping the stock
-    `NETWORK_InClientMode( )` break from the `waiting` case. That changes gate-off client
-    behaviour, so this port keeps the break and counts the waiting tic only; the client-run wait
-    belongs with the legacy suppression, where a record corrects the status.
+  - A plat's wait is the door's case again. The reference drops the stock
+    `NETWORK_InClientMode( )` break from the `waiting` case outright, which would change
+    gate-off client behaviour, so here `MoverClientSkipsWait( m_SnapSeen )` takes the break for
+    every client until a record has reached that plat. `MoverPlaysWaitSound( )` guards both
+    local sound calls in the countdown block, since the server replicates them. The waiting-tic
+    counter sits below the break, as the door's is, so it counts only a plat whose record set
+    `m_Count`.
+  - `DPlat::DPlat( sector_t * )` initialises `m_Count` and `m_OldStatus`, which nothing else
+    sets before they are read. `DPlat::Tick` assigns `m_Count` from `m_Wait` on reaching an end,
+    and neither `EV_DoPlat` nor `client_DoPlat` sets it: `client_DoPlat`'s `SetDelay( 0 )` writes
+    `m_Wait`. `m_OldStatus` is written only by `DPlat::Stop` and the `platToggle` branch, so on
+    most plats nothing ever writes it. The client's wait, `SnapApply`'s wait-ended census and the
+    capture's `oldStatus` byte all read memory nobody set. Stock behaviour is unchanged, stock
+    code writing both fields before reading them, and the deserialising `DPlat::DPlat( )` taking
+    them straight from the archive.
+  - While the legacy plat handlers are live the client-run wait is inert, and deliberately so:
+    the client's countdown starts at or below the server's count, the record carrying what the
+    server had when it was sent, so on a clean link `SVC_CHANGEPLATSTATUS` ends the wait first
+    and `plat waits: ... ran out` reads 0. A delayed status command lets the client end the wait
+    itself, which the plat suppression will rely on. What the countdown does run is visible in
+    the client's `m_Count`: against HEAD it sits on a plateau between records, here it falls
+    every tic.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,

@@ -103,6 +103,10 @@ bool MoverDoorOwnsPlane( sector_t *sec );
 bool MoverElevatorOwnsPlane( sector_t *sec );
 bool MoverPillarOwnsPlane( sector_t *sec );
 
+// Whether this side plays a plat's wait-end sound itself: a client does not, because the
+// server sends it, and only a plat a record has reached reaches that code on a client.
+bool MoverPlaysWaitSound( );
+
 // Whether this client works out a crusher's reversal for itself: only for a mover a record
 // has reached, so a client the records do not drive keeps taking the server's word for it.
 bool MoverClientDerivesReversal( bool bSeen );

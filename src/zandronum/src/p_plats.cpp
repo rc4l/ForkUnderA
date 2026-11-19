@@ -311,13 +311,15 @@ void DPlat::Tick ()
 		
 	case waiting:
 
-		// [Kaori-Chani] features/net-snapshot: the tic spent waiting, whoever ends the wait.
+		// [Kaori-Chani] features/net-snapshot: a plat a record has reached counts its own
+		// wait down; no record has reached one with the gate off, so a client breaks here.
+		if ( zx::netsnapshot::MoverClientSkipsWait( m_SnapSeen ))
+			break;
+
+		// [Kaori-Chani] features/net-snapshot: the tic spent waiting, whoever ends it. Below
+		// the break, as the door's counter is, so it counts only a wait this side runs.
 		if ( m_Count > 0 )
 			zx::netsnapshot::MoverCountPlatWaitTick( );
-
-		// [BC] That's all we need to do in client mode.
-		if ( NETWORK_InClientMode() )
-			break;
 
 		if (m_Count > 0 && !--m_Count)
 		{
@@ -326,13 +328,19 @@ void DPlat::Tick ()
 			else
 				m_Status = down;
 
+			// [Kaori-Chani] features/net-snapshot: a wait this side counted out itself.
+			zx::netsnapshot::MoverCountPlatWaitExpired( );
+
 			// [BC] If we're the server, tell clients that that status is changing.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				SERVERCOMMANDS_ChangePlatStatus( m_PlatID, m_Status );
 
 			if (m_Type == platToggle)
 			{
-				SN_StartSequence (m_Sector, CHAN_FLOOR, "Silence", 0);
+				// [Kaori-Chani] features/net-snapshot: the server sends this sound, so a
+				// client that counted the wait out itself does not also play it.
+				if ( zx::netsnapshot::MoverPlaysWaitSound( ))
+					SN_StartSequence (m_Sector, CHAN_FLOOR, "Silence", 0);
 
 				// [BC] If we're the server, tell clients to play the plat sound.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -340,7 +348,9 @@ void DPlat::Tick ()
 			}
 			else
 			{
-				PlayPlatSound ("Platform");
+				// [Kaori-Chani] features/net-snapshot: as above.
+				if ( zx::netsnapshot::MoverPlaysWaitSound( ))
+					PlayPlatSound ("Platform");
 
 				// [BC] If we're the server, tell clients to play the plat sound.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -376,6 +386,11 @@ void DPlat::UpdateToClient( ULONG ulClient )
 DPlat::DPlat (sector_t *sector)
 	: DMovingFloor (sector)
 {
+	// [Kaori-Chani] features/net-snapshot: neither is set by EV_DoPlat or client_DoPlat, and
+	// both are read before stock code writes them (the wait, the census and the capture).
+	m_Count = 0;
+	m_OldStatus = up;
+
 	// [EP]
 	m_PlatID = -1;
 }
