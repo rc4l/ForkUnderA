@@ -84,19 +84,51 @@ void DPlat::Serialize (FArchive &arc)
 		<< m_PlatID;
 }
 
-void DPlat::PlayPlatSound (const char *sound)
+// [Kaori-Chani] features/net-snapshot: PlayPlatSound's body from the sector, unchanged but for
+// m_Sector becoming an argument. The sector's own sequence wins over the name, as it always did.
+static void PlayPlatSound (sector_t *sec, const char *sound)
 {
-	if (m_Sector->seqType >= 0)
+	if (sec->seqType >= 0)
 	{
-		SN_StartSequence (m_Sector, CHAN_FLOOR, m_Sector->seqType, SEQ_PLATFORM, 0);
+		SN_StartSequence (sec, CHAN_FLOOR, sec->seqType, SEQ_PLATFORM, 0);
 	}
-	else if (m_Sector->SeqName != NAME_None)
+	else if (sec->SeqName != NAME_None)
 	{
-		SN_StartSequence (m_Sector, CHAN_FLOOR, m_Sector->SeqName, 0);
+		SN_StartSequence (sec, CHAN_FLOOR, sec->SeqName, 0);
 	}
 	else
 	{
-		SN_StartSequence (m_Sector, CHAN_FLOOR, sound, 0);
+		SN_StartSequence (sec, CHAN_FLOOR, sound, 0);
+	}
+}
+
+void DPlat::PlayPlatSound (const char *sound)
+{
+	::PlayPlatSound (m_Sector, sound);
+}
+
+// [Kaori-Chani] features/net-snapshot: client_PlayPlatSound's switch, copied. Type 2 starts
+// Silence itself, since the body above would let a sector's own sequence override it.
+void P_PlatSoundSector (sector_t *sec, int type)
+{
+	switch (type)
+	{
+	case 0:
+
+		SN_StopSequence (sec, CHAN_FLOOR);
+		break;
+	case 1:
+
+		::PlayPlatSound (sec, "Platform");
+		break;
+	case 2:
+
+		SN_StartSequence (sec, CHAN_FLOOR, "Silence", 0);
+		break;
+	case 3:
+
+		::PlayPlatSound (sec, "Floor");
+		break;
 	}
 }
 
@@ -140,7 +172,7 @@ void DPlat::Tick ()
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_ChangePlatStatus( m_PlatID, m_Status );
-				SERVERCOMMANDS_PlayPlatSound( m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( m_Sector, m_PlatID, 1 );
 			}
 		}
 		else if (res == pastdest)
@@ -163,7 +195,7 @@ void DPlat::Tick ()
 
 			// [BC] If we're the server, tell clients to play the plat sound.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_PlayPlatSound( m_PlatID, 0 );
+				zx::netsnapshot::MoverSendPlatSound( m_Sector, m_PlatID, 0 );
 
 			if (m_Type != platToggle)
 			{
@@ -241,7 +273,7 @@ void DPlat::Tick ()
 
 			// [BC] If we're the server, tell clients to play the plat sound.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-				SERVERCOMMANDS_PlayPlatSound( m_PlatID, 0 );
+				zx::netsnapshot::MoverSendPlatSound( m_Sector, m_PlatID, 0 );
 
 			// if not an instant toggle, start waiting
 			if (m_Type != platToggle)		//jff 3/14/98 toggle up down
@@ -344,7 +376,7 @@ void DPlat::Tick ()
 
 				// [BC] If we're the server, tell clients to play the plat sound.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_PlayPlatSound( m_PlatID, 2 );
+					zx::netsnapshot::MoverSendPlatSound( m_Sector, m_PlatID, 2 );
 			}
 			else
 			{
@@ -354,7 +386,7 @@ void DPlat::Tick ()
 
 				// [BC] If we're the server, tell clients to play the plat sound.
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_PlayPlatSound( m_PlatID, 1 );
+					zx::netsnapshot::MoverSendPlatSound( m_Sector, m_PlatID, 1 );
 			}
 		}
 		break;
@@ -679,46 +711,46 @@ bool EV_DoPlat (int tag, line_t *line, DPlat::EPlatType type, int height,
 			{
 			case DPlat::platRaiseAndStay:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 3 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 3 );
 				break;
 			case DPlat::platUpByValue:
 			case DPlat::platUpByValueStay:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 3 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 3 );
 				break;
 			case DPlat::platDownByValue:
 
 				// [BC] I think this should be the platform sound, but I could be wrong.
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 1 );
 				break;
 			case DPlat::platDownWaitUpStay:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 1 );
 				break;
 			case DPlat::platDownWaitUpStayStone:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 3 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 3 );
 				break;
 			case DPlat::platUpNearestWaitDownStay:
 			case DPlat::platUpWaitDownStay:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 1 );
 				break;
 			case DPlat::platPerpetualRaise:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 1 );
 				break;
 			case DPlat::platToggle:	//jff 3/14/98 add new type to support instant toggle
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 2 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 2 );
 				break;
 			case DPlat::platDownToNearestFloor:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 1 );
 				break;
 			case DPlat::platDownToLowestCeiling:
 
-				SERVERCOMMANDS_PlayPlatSound( plat->m_PlatID, 1 );
+				zx::netsnapshot::MoverSendPlatSound( plat->m_Sector, plat->m_PlatID, 1 );
 				break;
 			default:
 

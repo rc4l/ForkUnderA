@@ -304,7 +304,7 @@
   "p_map.cpp": 5,
   "p_mobj.cpp": 62,
   "p_pillar.cpp": 6,
-  "p_plats.cpp": 35,
+  "p_plats.cpp": 20,
   "p_pspr.cpp": 5,
   "p_sectors.cpp": 1,
   "p_spec.cpp": 7,

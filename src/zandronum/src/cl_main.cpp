@@ -9149,6 +9149,11 @@ static void client_DoPlat( BYTESTREAM_s *pByteStream )
 	// Read in the plat ID.
 	lPlatID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the plat, and carries the count and
+	// the wait this command sets to zero.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PLAT ))
+		return;
+
 	// Invalid sector.
 	if (( lSectorID >= numsectors ) || ( lSectorID < 0 ))
 		return;
@@ -9184,6 +9189,10 @@ static void client_DestroyPlat( BYTESTREAM_s *pByteStream )
 	// Read in the plat ID.
 	lPlatID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the plat.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PLAT ))
+		return;
+
 	pPlat = P_GetPlatByID( lPlatID );
 	if ( pPlat == NULL )
 	{
@@ -9207,6 +9216,11 @@ static void client_ChangePlatStatus( BYTESTREAM_s *pByteStream )
 
 	// Read in the direction (aka status).
 	lStatus = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the status rides the record, and a plat a record has
+	// reached counts its own wait down under MoverClientSkipsWait.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PLAT ))
+		return;
 
 	pPlat = P_GetPlatByID( lPlatID );
 	if ( pPlat == NULL )

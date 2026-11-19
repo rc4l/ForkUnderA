@@ -346,6 +346,31 @@ Each hook is one call from a stock file into the module, listed here as it lands
 - A window that wants the server's own counters needs `fua_snap_stats 1` on it: the whole
   `[snap]` block, the `legacy movers` gate line among it, is behind that cvar and an interval.
   Without it the line never prints and every counter in it reads 0, which looks like a figure.
+- `cl_main.cpp`, `client_DoPlat`, `client_DestroyPlat`, `client_ChangePlatStatus`, and the same
+  three senders in `sv_commands.cpp`: `MoverLegacyStandsAside( SNAPMV_PLAT )` after each
+  handler's last read, and `MoverServerStops( SNAPMV_PLAT )` opening each sender. A record
+  carries the count and the wait that `client_DoPlat`'s `SetDelay( 0 )` sets to zero.
+- `p_plats.cpp`, the fifteen `PlayPlatSound` sites: `MoverSendPlatSound( sector, platID, type )`,
+  sending `SVC2_MOVERSOUND` with the plat kind under the gate and the legacy
+  `SVC_PLAYPLATSOUND` otherwise. Every site broadcasts and `DPlat::UpdateToClient` sends no
+  sound, so the legacy branch takes no client or flags. The fifteen leaving drops `p_plats.cpp`
+  to 20 replication crossings.
+  - `P_PlatSoundSector( sec, type )` is `client_PlayPlatSound`'s switch, copied rather than
+    rewritten: 0 stops the sequence, 1 and 3 go through the body where the sector's own
+    `seqType` or `SeqName` wins over the name, and 2 starts `Silence` itself. Routing 2 through
+    the body would let a sector's sequence override silence, which is the only point the four
+    types differ on. The body is `p_plats.cpp`'s own file-static `PlayPlatSound( sector_t *,
+    const char * )`, called as `::PlayPlatSound( m_Sector, sound )` from the method, as
+    `p_floor.cpp` already calls `::StartFloorSound`.
+  - One command for both classes, the kind in the bits above the choice. A window that counts it
+    must mask the kind: counting every `SVC2_MOVERSOUND` counts the ceiling's too, which made
+    four plat sends read as eighteen.
+- `fua_snap_soundcount` prints the mover sound counters and zeroes them, so a window can zero at
+  `fua_netcap_start` and have the next read cover exactly the captured interval. Without that
+  the counters run from the server's launch while the capture starts whenever the bridge answers,
+  and a counter ahead of the wire is indistinguishable from a dropped send. Aligned, the plat's
+  by-sector count and its share of the wire agree exactly, with the legacy count at 0 under the
+  gate -- which is the pair that would catch a send escaping the module.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,

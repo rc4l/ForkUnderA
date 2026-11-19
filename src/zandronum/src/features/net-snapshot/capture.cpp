@@ -4715,7 +4715,7 @@ static void snap_MaybeReport()
 			snap_Say("[snap] legacy movers: gate %d | stopped plat %u, floor %u,"
 				" elevator %u, pillar %u, ceiling %u, door %u, poly %u"
 				" (%u plane writes) | %u re-sent at gate off | %u table resets"
-				" | ceiling sounds %u by sector, %u legacy\n",
+				" | mover sounds %u by sector, %u legacy\n",
 				( MoverGate( ) ? 1 : 0 ), gtStop[SNAPMV_PLAT], gtStop[SNAPMV_FLOOR],
 				gtStop[SNAPMV_ELEVATOR], gtStop[SNAPMV_PILLAR], gtStop[SNAPMV_CEILING],
 				gtStop[SNAPMV_DOOR], gtStop[SNAPMV_POLY], gtPlanes, gtResent, gtResets,
@@ -5552,9 +5552,11 @@ static unsigned int	g_moverStopped[SNAPMV_COUNT];
 static unsigned int	g_moverStoppedPlanes = 0;
 static unsigned int	g_moverResent = 0;
 static unsigned int	g_moverTableResets = 0;
-// Ceiling sounds sent, by the command that carried them.
+// Ceiling and plat sounds sent, by the command that carried them.
 static unsigned int	g_ceilSoundBySector = 0;
 static unsigned int	g_ceilSoundLegacy = 0;
+static unsigned int	g_platSoundBySector = 0;
+static unsigned int	g_platSoundLegacy = 0;
 
 // Deltas going out, as for SuppressesLegacy, at level 3 only.
 static bool snap_MoverGateNow()
@@ -5580,6 +5582,24 @@ void zx::netsnapshot::MoverSendDoorSound( sector_t * sec, int choice, bool bChec
 	SERVERCOMMANDS_DoorSound( sec, choice, bCheckSequence );
 }
 
+void zx::netsnapshot::MoverSendPlatSound( sector_t * sec, int platID, int type )
+{
+	if ( NETWORK_GetState() != NETSTATE_SERVER )
+		return;
+	// Gate off, stock's own command, so the bytes match. Every site broadcasts, and
+	// DPlat::UpdateToClient sends no sound at all.
+	if ( g_moverGate )
+	{
+		SERVERCOMMANDS_MoverSound( sec, SNAPSND_PACK( SNAPSND_PLAT, type ));
+		++g_platSoundBySector;
+	}
+	else
+	{
+		SERVERCOMMANDS_PlayPlatSound( platID, type );
+		++g_platSoundLegacy;
+	}
+}
+
 void zx::netsnapshot::MoverSendCeilingSound( sector_t * sec, int ceilingID, int silent )
 {
 	if ( NETWORK_GetState() != NETSTATE_SERVER )
@@ -5600,10 +5620,27 @@ void zx::netsnapshot::MoverSendCeilingSound( sector_t * sec, int ceilingID, int 
 void zx::netsnapshot::MoverSoundStats( unsigned int & bySector, unsigned int & legacy,
 	bool bReset )
 {
-	bySector = g_ceilSoundBySector;
-	legacy = g_ceilSoundLegacy;
+	bySector = g_ceilSoundBySector + g_platSoundBySector;
+	legacy = g_ceilSoundLegacy + g_platSoundLegacy;
 	if ( bReset )
+	{
 		g_ceilSoundBySector = g_ceilSoundLegacy = 0;
+		g_platSoundBySector = g_platSoundLegacy = 0;
+	}
+}
+
+void zx::netsnapshot::MoverSoundStatsByKind( unsigned int * bySector, unsigned int * legacy,
+	bool bReset )
+{
+	bySector[SNAPSND_CEILING] = g_ceilSoundBySector;
+	bySector[SNAPSND_PLAT] = g_platSoundBySector;
+	legacy[SNAPSND_CEILING] = g_ceilSoundLegacy;
+	legacy[SNAPSND_PLAT] = g_platSoundLegacy;
+	if ( bReset )
+	{
+		g_ceilSoundBySector = g_ceilSoundLegacy = 0;
+		g_platSoundBySector = g_platSoundLegacy = 0;
+	}
 }
 
 void zx::netsnapshot::MoverSendFloorSound( sector_t * sec, int floorID, unsigned int client,
@@ -6027,6 +6064,20 @@ CCMD(fua_snap_planedump)
 				p->SnapDump();
 	}
 	Printf("fua_snap_planedump: %u sectors shown\n", shown);
+}
+
+//*****************************************************************************
+//
+// Prints the mover sound counts and zeroes them, so a window can align the counter with its
+// capture: called at fua_netcap_start, the next read covers exactly the captured interval.
+CCMD(fua_snap_soundcount)
+{
+	unsigned int bySector[2] = { 0, 0 }, legacy[2] = { 0, 0 };
+	zx::netsnapshot::MoverSoundStatsByKind(bySector, legacy, true);
+	Printf("[snap] mover sounds since the last read: ceiling %u by sector, %u legacy"
+		" | plat %u by sector, %u legacy\n",
+		bySector[SNAPSND_CEILING], legacy[SNAPSND_CEILING],
+		bySector[SNAPSND_PLAT], legacy[SNAPSND_PLAT]);
 }
 
 //*****************************************************************************

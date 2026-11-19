@@ -5132,6 +5132,10 @@ void SERVERCOMMANDS_PlayCeilingSound( LONG lID, ULONG ulPlayerExtra, ServerComma
 //
 void SERVERCOMMANDS_DoPlat( DPlat::EPlatType Type, sector_t *pSector, DPlat::EPlatState Status, LONG lHigh, LONG lLow, LONG lSpeed, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT ))
+		return;
+
 	LONG	lSectorID;
 
 	lSectorID = LONG( pSector - sectors );
@@ -5153,6 +5157,10 @@ void SERVERCOMMANDS_DoPlat( DPlat::EPlatType Type, sector_t *pSector, DPlat::EPl
 //
 void SERVERCOMMANDS_DestroyPlat( LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT ))
+		return;
+
 	NetCommand command ( SVC_DESTROYPLAT );
 	command.addShort ( lID );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -5162,6 +5170,10 @@ void SERVERCOMMANDS_DestroyPlat( LONG lID, ULONG ulPlayerExtra, ServerCommandFla
 //
 void SERVERCOMMANDS_ChangePlatStatus( LONG lID, DPlat::EPlatState Status, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_PLAT ))
+		return;
+
 	NetCommand command ( SVC_CHANGEPLATSTATUS );
 	command.addShort ( lID );
 	command.addByte ( (ULONG)Status );
