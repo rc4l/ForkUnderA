@@ -57,6 +57,7 @@
 #include "c_cvars.h"
 #include "features/monster-stairs/monsterstairs.h"	// [Doruk-Aksoy] ResetGameInfo
 #include "computation/musicspec_compute.h"	// [rc4l] ComputeMusicSpec
+#include "features/acs-handles/acshandles.h"	// [Doruk-Aksoy] ReleaseParked
 
 TArray<cluster_info_t> wadclusterinfos;
 TArray<level_info_t> wadlevelinfos;
@@ -221,6 +222,8 @@ void G_ClearSnapshots (void)
 	// Since strings are only locked when snapshotting a level, unlock them
 	// all now, since we got rid of all the snapshots that cared about them.
 	GlobalACSStrings.UnlockAll();
+	// [Doruk-Aksoy] features/acs-handles: so are the handles the hub's maps kept for their actors.
+	zx::acshandles::ReleaseParked();
 }
 
 //==========================================================================

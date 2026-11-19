@@ -1750,6 +1750,7 @@ add_executable( zdoom WIN32
 	features/acs-parity/acsparity.cpp
 	features/decorate-uzdoom/decorateexpr.cpp
 	features/decorate-uzdoom/uservars.cpp
+	features/acs-handles/acshandles.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp
