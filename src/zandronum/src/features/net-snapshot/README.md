@@ -273,6 +273,23 @@ Each hook is one call from a stock file into the module, listed here as it lands
     arrive, so the client's handlers are never reached and have nothing to turn away. It read 6
     with only the client half in and 4 -- the door's -- with both. The byte table is the evidence
     for a class from here on, not that counter.
+- `sv_commands.cpp`, `SERVERCOMMANDS_DoDoor`, `DestroyDoor`, `ChangeDoorDirection`:
+  `MoverServerStops( SNAPMV_DOOR )` opening each one, which is what the door class left undone --
+  its handlers stood aside while a gated server still sent all three for them to turn away. With
+  the floor already quiet, `legacy calls suppressed` now reads 0 across a `nolegacy 3` window,
+  which retires it as a class's evidence and leaves it a tripwire: non-zero there means a sender
+  has escaped its guard. `SVC2_DOORSOUND` keeps flowing, being an event.
+  - A guard inside an existing sender cannot move the recipients, which is the hazard the floor
+    sound's helper had: `DDoor::UpdateToClient` still passes its own client and
+    `SVCF_ONLYTHISCLIENT` to `SERVERCOMMANDS_DoDoor`, and the guard only decides whether that
+    send happens. A moved send is what needs its audience checked, not a gated one.
+  - Plane agreement is the checksum's job, not a sampled comparison. `fua_snap_sectorcheck`
+    costs a bridge round trip per side, so sampling a moving plane on server and clients reads
+    three different instants on three processes, and a progressive gap appears that says nothing
+    about the mover. What a join window can show is that the joiner was sent nothing and ran the
+    door anyway: at `nolegacy 3`, with no door command in the capture at all, a client connecting
+    mid-close saw its ceiling descend across every sample and verified its planes with none
+    diverged.
 - `p_floor.cpp`, `DFloor::UpdateToClient` and the four `EV_` creation sites:
   `MoverSendFloorSound( sector, floorID, client, flags )`, which sends exactly one command --
   `SVC2_FLOORSOUND` keyed on the sector while the gate is on, and the legacy ID-keyed
