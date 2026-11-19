@@ -72,6 +72,7 @@
 #include "features/hwrender/computation/rendererrate_compute.h"
 #include "features/hwrender/backendonly.h"                         // [rc4l] BackendApiName, for the backend line's name
 #include "features/aspect-ratio/computation/ratiobucket_compute.h"
+#include "features/handoff/gamethread.h"
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -573,7 +574,8 @@ FString V_GetColorStringByName (const char *name)
 		return FString();
 	}
 
-	rgbNames = Wads.ReadLump (rgblump);
+	// [MGOOOOOO] An archive has one reader, so a colour name read in a tic on its own thread, such as a joining bot's, has the main thread read the table.
+	zx::handoff::AskMainFor ([&] { rgbNames = Wads.ReadLump (rgblump); });
 	rgb = (char *)rgbNames.GetMem();
 	rgbEnd = rgb + Wads.LumpLength (rgblump);
 	step = 0;
