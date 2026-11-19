@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHECKS, judgeParity, judgeNullDamage, judgeSectorDamage, sectorHealths, sectorDamageScript, SHARED_STEPS, OURS_STEPS, SET_SECTOR_DAMAGE, parseParity, lineCoord,
+import { CHECKS, judgeParity, judgeNullDamage, judgeSectorDamage, judgeUzdoom, UZDOOM_CHAIN, sectorHealths, sectorDamageScript, SHARED_STEPS, OURS_STEPS, SET_SECTOR_DAMAGE, parseParity, lineCoord,
   buildScript, buildAcsParityPk3, TERRAIN } from "../scenarios/acsparity.mjs";
 import { ACSF, PCD } from "../src/acs.mjs";
 
@@ -64,4 +64,13 @@ test("the pk3 holds the map, its named script and the terrain", () => {
   const text = buildAcsParityPk3().toString("latin1");
   assert.ok(text.includes("maps/MAP01.wad") && text.includes("terrain.txt") && text.includes("zxstrarg"));
   assert.match(TERRAIN, /floor CEIL3_5 ZxMud/);
+});
+
+test("UZDoom's acsparity log passes with UZDoom's answers and the healths ours logs", () => {
+  const values = CHECKS.map((c) => ("uzdoom" in c ? c.uzdoom : c.want));
+  const log = `parity ${values.map((v) => (typeof v === "string" ? `<${v}>` : v)).join(" ")}\nsectordamage 90 90\n`;
+  assert.deepEqual(judgeUzdoom(log), []);
+  assert.match(judgeUzdoom(log.replace("sectordamage 90 90", "sectordamage 100 100")).join(), /healths 100,100, not 90,90/);
+  assert.match(judgeUzdoom("").join(), /script 1 logged no checks/);
+  assert.doesNotMatch(UZDOOM_CHAIN, /puke 2/);
 });
