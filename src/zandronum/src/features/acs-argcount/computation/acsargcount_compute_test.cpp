@@ -105,7 +105,9 @@ TEST(AcsArgCount, HandleFunctionsNeedTheirArguments)
 	EXPECT_EQ(Needed(24046), 2);   // [Doruk-Aksoy] fua_FindActorsOfClass
 	EXPECT_EQ(Needed(24048), 1);   // [Doruk-Aksoy] fua_FoundCount
 	EXPECT_EQ(Needed(24050), 0);   // [Doruk-Aksoy] fua_TracerCreate
+	EXPECT_EQ(Needed(24053), 3);   // [Doruk-Aksoy] fua_TraceRule
 	EXPECT_EQ(Needed(24055), 5);   // [Doruk-Aksoy] fua_LineTrace
+	EXPECT_EQ(Needed(24056), 8);   // [Doruk-Aksoy] fua_Trace
 	EXPECT_EQ(Needed(24058), 2);   // [Doruk-Aksoy] fua_TraceResult
 	EXPECT_EQ(Needed(24061), 2);   // [Doruk-Aksoy] fua_SectorInfo
 }

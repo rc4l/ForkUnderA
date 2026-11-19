@@ -1,6 +1,7 @@
 // [Doruk-Aksoy] ACS line traces (features/acs-traces): exit 0 when fua_LineTrace stops where ZScript's LineTrace would on a wall, a BLOCKHITSCAN
 // line, a step's upper and lower parts, a row of imps, a solid decoration, a 3D floor, deep water and the sky, every TR_ property reads back what it hit,
-// fua_LineInfo and fua_SectorInfo read lines and sectors by index, a script stops at 16 tracers with one warning, and tracers survive a savegame.
+// fua_LineInfo and fua_SectorInfo read lines and sectors by index, fua_Trace's rules keep, pass and stop at what they match, a script stops at 16
+// tracers with one warning, and tracers and their rules survive a savegame.
 //
 // usage:  node scenarios/acstraces.mjs
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
@@ -12,15 +13,22 @@ import { logged } from "./acshandles.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 export const FN = { GetActorHandle: 24020, GetField: 24030, QueryCreate: 24040, TracerCreate: 24050, TracerFree: 24051, TracerClear: 24052,
-  LineTrace: 24055, TraceHitCount: 24057, TraceResult: 24058, TraceResultStr: 24059, LineInfo: 24060, SectorInfo: 24061 };
+  TraceRule: 24053, LineTrace: 24055, Trace: 24056, TraceHitCount: 24057, TraceResult: 24058, TraceResultStr: 24059, LineInfo: 24060, SectorInfo: 24061 };
 export const TR = { HitType: 0, HitActor: 1, HitX: 2, HitY: 3, HitZ: 4, DirX: 5, DirY: 6, DirZ: 7, Distance: 8, Fraction: 9, HitLine: 10, LineId: 11,
   LineSide: 12, LinePart: 13, HitSector: 14, SectorTag: 15, SectorPlane: 16, F3DFloor: 17, CrossedWater: 18, Crossed3DWater: 19, HitTexture: 20 };
-export const TRF = { ABSPOSITION: 1, THRUSPECIES: 4, THRUACTORS: 8, THRUHITSCAN: 32, NOSKY: 64, ALLACTORS: 128, SOLIDACTORS: 256, FUA_PHYSICALSIZE: 1 << 20 };
+export const TRF = { ABSPOSITION: 1, THRUSPECIES: 4, THRUACTORS: 8, THRUHITSCAN: 32, NOSKY: 64, ALLACTORS: 128, SOLIDACTORS: 256, FUA_PHYSICALSIZE: 1 << 20,
+  FUA_ALLLINES: 1 << 21 };
 export const LI = { FLAGS: 0, SPECIAL: 1, ARG0: 2, ID: 7, FRONTSECTOR: 8, BACKSECTOR: 9, X1: 12, Y1: 13, X2: 14, Y2: 15 };
 export const SI = { FLOOR: 0, CEILING: 1, LIGHT: 2, TAG: 4 };
 export const HIT = { NONE: 0, FLOOR: 1, CEILING: 2, WALL: 3, ACTOR: 4 };
-const TAGS = ["w1", "w2", "b1", "b2", "p1", "p2", "a1", "a2", "c1", "f1", "f2", "h1", "s1", "s2", "i1", "l1", "x1", "v1", "v2", "v3", "n1"];
-export const STRINGS = [...TAGS, " ", "|", "tid"];
+// [Doruk-Aksoy] Rule kinds, actions and filters: TR_ kinds 64-69, TRACE_ actions, the FQ_ filters rules use and TQ_ 48-50.
+export const KIND = { ANY: 64, FLOOR: 65, CEILING: 66, WALL: 67, ACTOR: 68, FFLOOR: 69 };
+export const ACT = { STOP: 0, CONTINUE: 1, SKIP: 2, ABORT: 3, RECORD: 4 };
+export const FQ = { CLASS: 1, SHOOTABLE: 8, TID: 10, SIGHT: 13, EXCLUDE: 14, FLAT: 15 };
+export const TQ = { LINEFLAG: 48, SPECIAL: 49, TEXTURE: 50 };
+const TAGS = ["w1", "w2", "b1", "b2", "p1", "p2", "a1", "a2", "c1", "f1", "f2", "h1", "s1", "s2", "i1", "l1", "x1", "v1", "v2", "v3", "n1",
+  "r1", "r2", "r3", "r4", "r5"];
+export const STRINGS = [...TAGS, " ", "|", "tid", "DoomImp", "BRICK1", "CEIL3_5", "NoSuchClass", "NOSUCHTEX"];
 const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 // [Doruk-Aksoy] Tags: the room's sector and east wall, the BLOCKHITSCAN line, three 3D-floor and water targets; the imps' tids.
 export const TAG = { ROOM: 3, EAST: 7, BLOCKHITSCAN: 8, FFLOOR: 10, POOL: 11, WATER3D: 12 };
@@ -37,6 +45,13 @@ const keep = (n, words) => [...words, PCD.ASSIGNGLOBALVAR, n];
 const run = (...calls) => calls.flatMap((c) => [...c, PCD.DROP]);
 const tr = (t, prop, ...hit) => fn("TraceResult", t, TR[prop], ...hit);
 const tidOf = (h) => fn("GetField", h, S.tid);
+const rule = (t, kind, action, ...filter) => fn("TraceRule", t, KIND[kind], ACT[action], ...filter);
+// [Doruk-Aksoy] Clears the tracer, then gives it these rules, each [kind, action, filter...].
+const rules = (t, ...list) => run(fn("TracerClear", t), ...list.map((r) => rule(t, ...r)));
+// [Doruk-Aksoy] fua_Trace from a map point along a direction, east by default; `ignore` is a handle's words.
+const trace = (t, { x, y, z, dx = 1, dy = 0, dz = 0, dist = 4096, flags = 0, ignore }) =>
+  fn("Trace", t, fx(x), fx(y), fx(z), fx(dx), fx(dy), fx(dz), fx(dist), flags, ...(ignore === undefined ? [] : [ignore]));
+const IMPS = { x: 100, y: 680, z: 32 }, STEP = { x: 100, y: 780, z: 32 }, NORTH = { x: 500, y: 900, z: 32, dx: 0, dy: 1 };
 // [Doruk-Aksoy] fua_LineTrace from a map point by default; `h` and TRF_ABSPOSITION left out traces from that actor, x and y its forward and side offsets.
 const lt = (t, { h = 0, x, y, z, angle = 0, dist = 4096, pitch = 0, flags = 0, abs = true }) =>
   fn("LineTrace", t, h, angle, fx(dist), pitch, flags | (abs ? TRF.ABSPOSITION : 0), fx(z), fx(x), fx(y));
@@ -164,6 +179,50 @@ export const CHECKS = {
   ],
   // [Doruk-Aksoy] After the load: the saved tracers' hits, then a new tracer past the freed id.
   n1: [[[...fn("TracerCreate"), ...global(G.FREED), GT], 1]],
+  // [Doruk-Aksoy] Rules on the imps: recording through them, stopping at a tid, none, aborting, going on, a handle and a class filter, an ignored actor.
+  r1: [
+    [[...rules(t, ["ACTOR", "RECORD", FQ.SHOOTABLE], ["ACTOR", "SKIP"], ["WALL", "STOP"]), ...trace(t, IMPS)], 4],
+    [tidOf(tr(t, "HitActor", 0)), TID.IMP1], [tidOf(tr(t, "HitActor", 1)), TID.IMP2], [tidOf(tr(t, "HitActor", 2)), TID.IMP3],
+    [tr(t, "HitType", 3), HIT.WALL], [tr(t, "HitLine"), ix.east], [tr(t, "HitSector", 0), ix.room],
+    [[...rules(t, ["ACTOR", "STOP", FQ.TID, TID.IMP2], ["ACTOR", "SKIP"], ["WALL", "STOP"]), ...trace(t, IMPS)], 1], [tidOf(tr(t, "HitActor", 0)), TID.IMP2],
+    [[...rules(t), ...trace(t, IMPS)], 1], [tidOf(tr(t, "HitActor", 0)), TID.IMP1],
+    [[...rules(t, ["ACTOR", "ABORT"]), ...trace(t, IMPS)], 0], [tr(t, "HitType"), HIT.NONE], [fn("TraceHitCount", t), 0],
+    [[...rules(t, ["ACTOR", "CONTINUE"], ["WALL", "STOP"]), ...trace(t, IMPS)], 1], [tr(t, "HitType", 0), HIT.WALL],
+    [[...rules(t, ["ACTOR", "STOP", FQ.EXCLUDE, fn("GetActorHandle", TID.IMP1)], ["ACTOR", "SKIP"]), ...trace(t, IMPS)], 1], [tidOf(tr(t, "HitActor", 0)), TID.IMP2],
+    [[...rules(t, ["ACTOR", "STOP", FQ.CLASS, S.DoomImp]), ...trace(t, IMPS)], 1], [tidOf(tr(t, "HitActor", 0)), TID.IMP1],
+    [[...rules(t), ...trace(t, { x: 600, y: 680, z: 32, ignore: fn("GetActorHandle", TID.IMP1) })], 1], [tidOf(tr(t, "HitActor", 0)), TID.IMP2],
+    [trace(t, { ...IMPS, ignore: 999999 }), 0], [trace(t, { ...IMPS, dx: 0 }), 0], [trace(t, { ...IMPS, dist: 0 }), 0], [trace(999999, IMPS), 0],
+    // [Doruk-Aksoy] fua_LineTrace keeps to its flags and leaves the rules for the next fua_Trace.
+    [[...rules(t, ["ACTOR", "SKIP"]), ...lt(t, IMPS)], HIT.ACTOR], [trace(t, IMPS), 1], [tr(t, "HitType", 0), HIT.WALL],
+  ],
+  // [Doruk-Aksoy] Rules on lines: a line flag, every line crossed, a special kept or turned round, a texture, and a 3D floor's side apart from walls.
+  r2: [
+    [[...rules(t, ["WALL", "RECORD", TQ.LINEFLAG, ML_BLOCKHITSCAN], ["WALL", "STOP"]), ...trace(t, { x: 100, y: 880, z: 32 })], 2],
+    [tr(t, "HitLine", 0), ix.blockhitscan], [tr(t, "HitLine", 1), ix.east],
+    [[...rules(t, ["WALL", "RECORD"]), ...trace(t, { x: 100, y: 880, z: 32 })], 2],
+    [trace(t, { x: 100, y: 880, z: 32, flags: TRF.FUA_ALLLINES }), 3], [tr(t, "HitLine", 1), ix.blockhitscan + 2],
+    [[...rules(t, ["WALL", "RECORD", TQ.SPECIAL, SPECIAL_ACS_EXECUTE], ["WALL", "STOP"]), ...trace(t, NORTH)], 1], [tr(t, "HitLine", 0), ix.north], [tr(t, "HitType"), HIT.NONE],
+    [[...rules(t, ["WALL", "STOP", TQ.SPECIAL, SPECIAL_ACS_EXECUTE, 0], ["ANY", "ABORT"]), ...trace(t, NORTH)], 0],
+    [[...rules(t, ["WALL", "RECORD", TQ.TEXTURE, S.BRICK1], ["ANY", "STOP"]), ...trace(t, STEP)], 2], [tr(t, "HitLine", 0), ix.stepWest],
+    [[...rules(t, ["WALL", "ABORT"], ["FFLOOR", "STOP"]), ...trace(t, { x: 100, y: 440, z: 32 })], 1], [tr(t, "F3DFloor", 0), ix.ffControl],
+  ],
+  // [Doruk-Aksoy] Rules on planes: a floor kept or passed (it ends the trace either way), the sky with and without TRF_NOSKY, a ceiling by texture.
+  r3: [
+    [[...rules(t, ["FLOOR", "RECORD"]), ...trace(t, { x: 200, y: 960, z: 32, dz: -1 })], 1], [tr(t, "HitType", 0), HIT.FLOOR], [tr(t, "HitX", 0), [fx(232), fx(1)]],
+    [[...rules(t, ["FLOOR", "SKIP"]), ...trace(t, { x: 200, y: 960, z: 32, dz: -1 })], 0], [tr(t, "HitType"), HIT.FLOOR],
+    [[...rules(t, ["CEILING", "RECORD"]), ...trace(t, { x: 200, y: 90, z: 32, dx: 0.05, dz: 1 })], 1], [tr(t, "HitSector", 0), ix.sky],
+    [trace(t, { x: 200, y: 90, z: 32, dx: 0.05, dz: 1, flags: TRF.NOSKY }), 0], [tr(t, "HitType"), HIT.NONE],
+    [[...rules(t, ["CEILING", "STOP", TQ.TEXTURE, S.CEIL3_5], ["ANY", "ABORT"]), ...trace(t, { x: 200, y: 960, z: 32, dx: 0.05, dz: 1 })], 1],
+  ],
+  // [Doruk-Aksoy] Rules refused: no tracer, a hit type for a kind, a bad action, a shape filter, filters on kinds they can't test, unknown names
+  // and handles (added all the same), a filter without its argument, then 32 rules and a 33rd.
+  r4: [
+    [[...run(fn("TracerClear", t)), ...fn("TraceRule", 999999, KIND.ACTOR, ACT.STOP)], 0], [fn("TraceRule", t, HIT.ACTOR, ACT.STOP), 0],
+    [fn("TraceRule", t, KIND.WALL, 9), 0], [rule(t, "ACTOR", "STOP", FQ.FLAT), 0], [rule(t, "WALL", "STOP", FQ.TID, 3), 0],
+    [rule(t, "ACTOR", "STOP", TQ.SPECIAL, 80), 0], [rule(t, "ACTOR", "STOP", FQ.CLASS, S.NoSuchClass), 0], [rule(t, "WALL", "STOP", TQ.TEXTURE, S.NOSUCHTEX), 0],
+    [rule(t, "ACTOR", "STOP", FQ.SIGHT, 999999), 0], [rule(t, "ACTOR", "STOP", FQ.TID), 0],
+    [[PCD.PUSHNUMBER, 0, ...Array.from({ length: 29 }, () => [...rule(t, "WALL", "STOP"), PCD.ADD]).flat()], 29], [rule(t, "WALL", "STOP"), 0],
+  ],
 };
 // [Doruk-Aksoy] String logs: each value's words and the texture name it must give.
 export const STRING_CHECKS = {
@@ -177,6 +236,7 @@ export const STRING_CHECKS = {
   f2: [[[...run(lt(t, { x: 100, y: 440, z: 32 })), ...fn("TraceResultStr", t, TR.HitTexture)], "COMPBLUE"]],
   s2: [[[...run(lt(t, { x: 200, y: 960, z: 32, pitch: UP })), ...fn("TraceResultStr", t, TR.HitTexture)], "CEIL3_5"],
     [[...run(lt(t, { x: 200, y: 960, z: 32, pitch: DOWN })), ...fn("TraceResultStr", t, TR.HitTexture)], "FLOOR4_8"]],
+  r5: [[[...rules(t, ["WALL", "RECORD", TQ.TEXTURE, S.BRICK1], ["ANY", "STOP"]), ...run(trace(t, STEP)), ...fn("TraceResultStr", t, TR.HitTexture, 0)], "BRICK1"]],
 };
 
 function logWords(tag, values) {
@@ -208,17 +268,24 @@ export const SCRIPTS = {
   12: [...checksOf("x1"), PCD.TERMINATE],
   13: [PCD.PUSHNUMBER, 1, PCD.ASSIGNGLOBALVAR, G.RESUME, PCD.TERMINATE],
   14: [...checksOf("n1"), PCD.TERMINATE],
+  15: traced(checksOf("r1")),
+  16: traced(checksOf("r2"), stringsOf("r5")),
+  17: traced(checksOf("r3")),
+  18: traced(checksOf("r4")),
 };
 
-// [Doruk-Aksoy] Script 20 holds two tracers, one on an imp and one on the wall, and waits across a savegame; it goes first in the lump so its offsets start at 0.
+// [Doruk-Aksoy] Script 20 holds three tracers, one on an imp, one on the wall and one with rules, and waits across a savegame; it goes first in the
+// lump so its offsets start at 0.
 export function waitingScript() {
   const s = new AcsScript();
-  const a = [PCD.PUSHSCRIPTVAR, 0], b = [PCD.PUSHSCRIPTVAR, 1];
-  s.emit(...fn("TracerCreate"), PCD.ASSIGNSCRIPTVAR, 0, ...fn("TracerCreate"), PCD.ASSIGNSCRIPTVAR, 1,
+  const a = [PCD.PUSHSCRIPTVAR, 0], b = [PCD.PUSHSCRIPTVAR, 1], r = [PCD.PUSHSCRIPTVAR, 2];
+  s.emit(...fn("TracerCreate"), PCD.ASSIGNSCRIPTVAR, 0, ...fn("TracerCreate"), PCD.ASSIGNSCRIPTVAR, 1, ...fn("TracerCreate"), PCD.ASSIGNSCRIPTVAR, 2,
     ...keep(G.FREED, fn("TracerCreate")), ...run(fn("TracerFree", global(G.FREED))),
+    ...run(rule(r, "ACTOR", "SKIP", FQ.TID, TID.IMP1), rule(r, "ACTOR", "STOP", FQ.CLASS, S.DoomImp), rule(r, "WALL", "STOP")),
     ...logWords("v1", [lt(a, { x: 100, y: 680, z: 32 }), lt(b, { x: 100, y: 960, z: 32 })]));
   s.label("wait").emit(...global(G.RESUME)).jump(PCD.IFGOTO, "done").emit(PCD.DELAYDIRECT, 1).jump(PCD.GOTO, "wait");
-  s.label("done").emit(...logWords("v2", [fn("TraceHitCount", a), tidOf(tr(a, "HitActor")), tr(b, "HitLine"), tr(b, "HitX", 0)]),
+  s.label("done").emit(...logWords("v2", [fn("TraceHitCount", a), tidOf(tr(a, "HitActor")), tr(b, "HitLine"), tr(b, "HitX", 0),
+    trace(r, IMPS), tidOf(tr(r, "HitActor", 0))]),
     ...logStrings("v3", [fn("TraceResultStr", b, TR.HitTexture)]), PCD.TERMINATE);
   return s.words(0);
 }
@@ -243,7 +310,7 @@ const want = (checks) => checks.map(([, w]) => w);
 export const WANT = {
   ...Object.fromEntries(Object.keys(CHECKS).map((tag) => [tag, want(CHECKS[tag])])),
   v1: [HIT.ACTOR, HIT.WALL],
-  v2: [1, TID.IMP1, ix.east, fx(2048)],
+  v2: [1, TID.IMP1, ix.east, fx(2048), 1, TID.IMP2],
 };
 export const WANT_STRINGS = { ...Object.fromEntries(Object.keys(STRING_CHECKS).map((tag) => [tag, want(STRING_CHECKS[tag])])), v3: ["STARTAN2"] };
 
@@ -274,7 +341,7 @@ export function judgeTraces(logs, want = WANT, strings = WANT_STRINGS) {
 
 // [Doruk-Aksoy] The scripts run one after another before the savegame, each with the tags its log goes under.
 export const TRACE_STEPS = [[1, ["w1", "w2"]], [2, ["b1", "b2"]], [3, ["p1", "p2"]], [4, ["a1", "a2"]], [5, ["c1"]], [6, ["f1", "f2"]], [7, ["h1"]],
-  [8, ["s1", "s2"]], [9, ["i1"]], [10, ["l1"]], [11, []], [12, ["x1"]]];
+  [8, ["s1", "s2"]], [9, ["i1"]], [10, ["l1"]], [11, []], [12, ["x1"]], [15, ["r1"]], [16, ["r2", "r5"]], [17, ["r3"]], [18, ["r4"]]];
 
 // [Doruk-Aksoy] A locked launch comes up without monsters unless asked.
 export const SIDES = [{ name: "vk", launchCvars: { ...MUTE, sv_nomonsters: 0 } }];
@@ -304,7 +371,7 @@ export async function judgeLaunch(c, inst, label) {
   logs.n1 = await exec("puke 14");
   const faults = judgeTraces(logs);
   const count = Object.values(WANT).reduce((n, v) => n + v.length, 0) + Object.values(WANT_STRINGS).reduce((n, v) => n + v.length, 0);
-  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${count} trace values right on walls, lines, steps, actors, 3D floors, water and sky, 16 tracers with one warning, and tracers kept across a savegame`, failed: faults.length ? 1 : 0 };
+  return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: ${count} trace values right on walls, lines, steps, actors, 3D floors, water and sky, rules keeping, passing and stopping at what they match, 16 tracers with one warning, and tracers and rules kept across a savegame`, failed: faults.length ? 1 : 0 };
 }
 
 runScenarioIfMain(import.meta.url, () => ({ name: "acstraces", wad: buildAcsTracesPk3(), maps: ["MAP01"], sides: SIDES, judgeLaunch }), compareEachLaunch);

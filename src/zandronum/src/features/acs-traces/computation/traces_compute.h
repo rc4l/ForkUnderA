@@ -8,15 +8,19 @@
 #include <cstdint>
 #include <vector>
 
+#include "features/acs-queries/computation/queries_compute.h"
+
 namespace zx { namespace acstraces {
 
-// [Doruk-Aksoy] The ACS function numbers, fua_ block 24050-24061; 24053, 24054 and 24056 come with the tracer rules.
+// [Doruk-Aksoy] The ACS function numbers, fua_ block 24050-24061; 24054 comes with the callback.
 enum Function
 {
 	kTracerCreate = 24050,
 	kTracerFree = 24051,
 	kTracerClear = 24052,
+	kTraceRule = 24053,
 	kLineTrace = 24055,
+	kTrace = 24056,
 	kTraceHitCount = 24057,
 	kTraceResult = 24058,
 	kTraceResultStr = 24059,
@@ -39,6 +43,7 @@ enum TraceFlag
 	kTrfBlockUse = 512,
 	kTrfBlockSelf = 1024,
 	kTrfFuaPhysicalSize = 1 << 20,
+	kTrfFuaAllLines = 1 << 21,
 };
 
 // [Doruk-Aksoy] What a trace hit, at UZDoom's TRACE_Hit values.
@@ -58,6 +63,35 @@ enum TraceStatus
 	kTraceContinue,
 	kTraceSkip,
 	kTraceAbort,
+};
+
+// [Doruk-Aksoy] What a rule matches, numbered apart from the TR_ properties and hit types so one passed for another is refused.
+enum HitKind
+{
+	kKindAny = 64,
+	kKindFloor,
+	kKindCeiling,
+	kKindWall,
+	kKindActor,
+	kKind3DFloor,
+};
+
+// [Doruk-Aksoy] What a rule does with a hit: Trace()'s four, and recording it and going on.
+enum Action
+{
+	kActStop,
+	kActContinue,
+	kActSkip,
+	kActAbort,
+	kActRecord,
+};
+
+// [Doruk-Aksoy] The TQ_ filters a rule tests walls and planes with, numbered apart from the FQ_ kinds.
+enum WallFilter
+{
+	kTqLineFlag = 48,
+	kTqSpecial,
+	kTqTexture,
 };
 
 // [Doruk-Aksoy] The wall part Trace() reports, at its TIER_ values.
@@ -142,6 +176,7 @@ const uint32_t kMlBlockFloaters = 0x40000;
 const uint32_t kMlBlockProjectile = 0x01000000;
 const uint32_t kMlBlockUse = 0x02000000;
 const uint32_t kMlBlockHitscan = 0x08000000;
+const uint32_t kMlEveryLine = 0xFFFFFFFFu;
 const uint32_t kTraceNoSky = 1;
 const uint32_t kTraceNoPassWidth = 8;
 const uint32_t kFfUpperTexture = 0x20000;
@@ -149,6 +184,7 @@ const uint32_t kFfLowerTexture = 0x40000;
 
 const size_t kMaxTracersPerScript = 16;
 const size_t kMaxHits = 64;
+const size_t kMaxRules = 32;
 
 // [Doruk-Aksoy] What TRF_BLOCKSELF asks of the shooter, as UZDoom's P_LineTrace reads it.
 struct Shooter
@@ -236,13 +272,65 @@ int32_t ComputeTraceProp(const Hit &hit, int prop);
 // [Doruk-Aksoy] The `prop`-th of `count` values, 0 outside them.
 int32_t ComputeInfoProp(const int32_t *values, int count, int prop);
 
-// [Doruk-Aksoy] A tracer: its id, the result its last trace ended on, and the hits it kept.
+// [Doruk-Aksoy] One rule: the hits it matches, what it does with them, and an optional FQ_ or TQ_ filter (kind 0 for none).
+struct Rule
+{
+	int kind;
+	int action;
+	acsqueries::Filter filter;
+};
+
+// [Doruk-Aksoy] A tracer: its id, the result its last trace ended on, the hits it kept and its rules.
 struct Tracer
 {
 	int32_t id;
 	Hit last;
 	std::vector<Hit> hits;
+	std::vector<Rule> rules;
 };
+
+// [Doruk-Aksoy] Which kind a hit is for rules: a 3D floor's side is its own kind, not a wall; 0 for nothing.
+int ComputeHitKind(int type, int tier);
+
+bool ComputeRuleKindValid(int kind);
+bool ComputeRuleActionValid(int action);
+
+// [Doruk-Aksoy] What a rule filter's first argument is; the FQ_ shape filters don't fit a hit, so they are invalid.
+acsqueries::ArgKind ComputeRuleFilterArg(int filter);
+
+// [Doruk-Aksoy] The second argument when a call leaves it out: 1 (keep matches) for the TQ_ filters, the FQ_ defaults otherwise.
+int32_t ComputeRuleFilterDefaultB(int filter);
+
+// [Doruk-Aksoy] Whether a filter can apply to a kind: FQ_ to actors, TQ_LINEFLAG and TQ_SPECIAL to lines, TQ_TEXTURE to all but actors.
+bool ComputeRuleFilterFits(int kind, int filter);
+
+// [Doruk-Aksoy] The first rule matching a hit of `kind` (its filter passing `test`) decides; none matching stops the trace.
+template <class Test>
+int ComputeRuleAction(const std::vector<Rule> &rules, int kind, Test test)
+{
+	for (const Rule &r : rules)
+		if ((r.kind == kKindAny || r.kind == kind) && (r.filter.kind == 0 || test(r)))
+			return r.action;
+	return kActStop;
+}
+
+// [Doruk-Aksoy] What Trace() is told for an action on a hit of `kind`: recording goes on as a skip does, and a floor or ceiling ends the trace unless it aborts.
+TraceStatus ComputeRuleStatus(int action, int kind);
+
+// [Doruk-Aksoy] Whether TQ_LINEFLAG or TQ_SPECIAL keeps a line: all of `a`'s flag bits set, or its special `a`; `b` 0 turns either round.
+bool ComputeLineFilterMatch(const acsqueries::Filter &filter, uint32_t flags, int special);
+
+// [Doruk-Aksoy] A trace's hits as its rules keep them: stops and records, at most 64, and none once one aborts.
+struct RuleRun
+{
+	std::vector<Hit> hits;
+	bool aborted = false;
+};
+
+void ComputeRuleRecord(RuleRun &run, int action, const Hit &hit);
+
+// [Doruk-Aksoy] A direction in ACS fixed point made unit length in engine fixed point; false for none.
+bool ComputeTraceUnit(int32_t dx, int32_t dy, int32_t dz, Fixed3 &dir);
 
 // [Doruk-Aksoy] The hit at `index`, or the last result for -1; NULL past the hits.
 const Hit *ComputeTracerHit(const Tracer &tracer, int index);
@@ -257,8 +345,11 @@ public:
 	const Tracer *Find(int32_t id) const;
 	bool Free(int32_t id);
 
-	// [Doruk-Aksoy] Drops the tracer's hits and last result.
+	// [Doruk-Aksoy] Drops the tracer's rules, hits and last result.
 	bool Clear(int32_t id);
+
+	// [Doruk-Aksoy] Adds a rule, false for an unknown tracer, kind, action or filter, a filter that can't fit the kind, or a 33rd rule.
+	bool AddRule(int32_t id, const Rule &rule);
 
 	// [Doruk-Aksoy] A trace's result: what it ended on, and the hits it kept, at most 64.
 	bool SetResult(int32_t id, const Hit &last, const std::vector<Hit> &hits);
@@ -271,11 +362,11 @@ public:
 // [Doruk-Aksoy] The largest id the script holds, 0 for none.
 int32_t ComputeHighestTracerId(const ScriptTracers &tracers);
 
-// [Doruk-Aksoy] The tracers as one run of ints for a savegame, and back; decoding refuses a damaged run.
+// [Doruk-Aksoy] The tracers as one run of ints for a savegame, and back; decoding refuses a damaged run, and reads rules only when the run has them.
 std::vector<int32_t> ComputeFlattenTracers(const ScriptTracers &tracers);
-bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers);
+bool ComputeUnflattenTracers(const int32_t *data, size_t count, ScriptTracers &tracers, bool withRules);
 
-// [Doruk-Aksoy] Maps every texture name a tracer's hits hold through `map`.
+// [Doruk-Aksoy] Maps every name a tracer holds, its hits' textures and its rules' class, flag and texture names, through `map`.
 template <class Map>
 void ComputeRemapTracerNames(ScriptTracers &tracers, Map map)
 {
@@ -284,6 +375,9 @@ void ComputeRemapTracerNames(ScriptTracers &tracers, Map map)
 		t.last.v[kTrHitTexture] = map(t.last.v[kTrHitTexture]);
 		for (Hit &h : t.hits)
 			h.v[kTrHitTexture] = map(h.v[kTrHitTexture]);
+		for (Rule &r : t.rules)
+			if (ComputeRuleFilterArg(r.filter.kind) == acsqueries::kArgName)
+				r.filter.a = map(r.filter.a);
 	}
 }
 

@@ -4,21 +4,52 @@
 #ifndef ZX_ACSQUERIES_H
 #define ZX_ACSQUERIES_H
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <utility>
 #include <vector>
 
 #include "features/acs-queries/computation/queries_compute.h"
 
+class AActor;
 class FArchive;
+class PClass;
+struct FFlagDef;
 struct PNGHandle;
 
 namespace zx { namespace acsqueries {
+
+// [Doruk-Aksoy] Tests actors against FQ_ filters: classes and handles looked up once, each actor then tested in cost order; queries and trace rules share it.
+class ActorFilters
+{
+public:
+	explicit ActorFilters(const std::vector<Filter> &filters);
+
+	// [Doruk-Aksoy] False when a handle filter's actor is gone, so nothing can match.
+	bool Resolve();
+	bool Matches(AActor *actor);
+	RangeShape Shape() const { return shape; }
+
+private:
+	bool Test(size_t i, AActor *actor);
+	FFlagDef *Flag(size_t i, const PClass *type);
+
+	std::vector<Filter> filters;
+	std::vector<size_t> order;
+	RangeShape shape;
+	std::vector<const PClass *> classes;
+	std::vector<AActor *> refs;
+	std::vector<std::vector<std::pair<const PClass *, FFlagDef *>>> flags;
+};
 
 // [Doruk-Aksoy] fua_QueryCreate: a new query of the calling script, 0 when it already holds 16 (warned once a map).
 int32_t QueryCreate(ScriptQueries &queries);
 void QueryFree(ScriptQueries &queries, int32_t id);
 void QueryClear(ScriptQueries &queries, int32_t id, int kind);
+
+// [Doruk-Aksoy] Whether a class or flag filter's name names a class or flag.
+bool FilterNameKnown(int kind, const char *name);
 
 // [Doruk-Aksoy] fua_QueryFilter with `count` arguments after its kind, `name` the first one's string for class and flag filters.
 bool QueryFilter(ScriptQueries &queries, int32_t id, int kind, int count, int32_t a, int32_t b, const char *name);

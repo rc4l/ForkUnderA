@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { judgeTraces, buildAcsTracesPk3, waitingScript, loggedStrings, fits, FN, TR, TRF, WANT, WANT_STRINGS, MAP } from "../scenarios/acstraces.mjs";
+import { judgeTraces, buildAcsTracesPk3, waitingScript, loggedStrings, fits, FN, TR, TRF, KIND, ACT, TQ, WANT, WANT_STRINGS, MAP } from "../scenarios/acstraces.mjs";
 import { PCD } from "../src/acs.mjs";
 
 const WARN = "fua_TracerCreate: a script already holds 16 tracers; free one with fua_TracerFree.";
@@ -30,10 +30,12 @@ test("a check fits exactly, within its slack, or by its bits", () => {
   assert.equal(loggedStrings("nothing", "s2"), null);
 });
 
-test("the trace functions, TR_ properties and TRF_ flags keep their numbers", () => {
+test("the trace functions, TR_ properties, TRF_ flags and rule constants keep their numbers", () => {
   assert.deepEqual([FN.TracerCreate, FN.LineTrace, FN.TraceResult, FN.SectorInfo], [24050, 24055, 24058, 24061]);
   assert.deepEqual([TR.HitType, TR.HitLine, TR.F3DFloor, TR.HitTexture], [0, 10, 17, 20]);
   assert.deepEqual([TRF.ABSPOSITION, TRF.NOSKY, TRF.SOLIDACTORS, TRF.FUA_PHYSICALSIZE], [1, 64, 256, 1 << 20]);
+  assert.deepEqual([FN.TraceRule, FN.Trace, TRF.FUA_ALLLINES], [24053, 24056, 1 << 21]);
+  assert.deepEqual([KIND.ANY, KIND.FFLOOR, ACT.STOP, ACT.RECORD, TQ.LINEFLAG, TQ.TEXTURE], [64, 69, 0, 4, 48, 50]);
 });
 
 test("the map names the lines and sectors the checks read, and the pk3 holds it", () => {
