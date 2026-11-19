@@ -288,6 +288,22 @@ void zx::netsnapshot::OnDoorSound( BYTESTREAM_s *pByteStream )
 }
 
 //*****************************************************************************
+// A ceiling's or a plat's sound, played only while that class's legacy handlers
+// are gated. One kind per class, the plat's arriving with that class.
+void zx::netsnapshot::OnMoverSound( BYTESTREAM_s *pByteStream )
+{
+	const int sectorID = pByteStream->ReadShort();
+	const int packed = pByteStream->ReadByte();
+
+	if (( sectorID < 0 ) || ( sectorID >= numsectors ))
+		return;
+
+	if (( SNAPSND_KIND( packed ) == SNAPSND_CEILING )
+		&& MoverSuppressesLegacy( SNAPMV_CEILING ))
+		P_CeilingSoundSector( &sectors[sectorID], SNAPSND_CHOICE( packed ));
+}
+
+//*****************************************************************************
 // Played only while the legacy floor handlers are gated; otherwise the floor's
 // own SVC_STARTFLOORSOUND carries it, which this client can key on its mover.
 void zx::netsnapshot::OnFloorSound( BYTESTREAM_s *pByteStream )

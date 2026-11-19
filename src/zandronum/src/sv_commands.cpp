@@ -4875,6 +4875,21 @@ void SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequenc
 }
 
 //*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: keyed on the sector, for the classes whose own sound
+// command is keyed on the mover a gated client does not have yet.
+void SERVERCOMMANDS_MoverSound( sector_t *pSector, int packed, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	LONG lSectorID = LONG( pSector - sectors );
+	if (( lSectorID < 0 ) || ( lSectorID >= numsectors ))
+		return;
+
+	NetCommand command ( SVC2_MOVERSOUND );
+	command.addShort ( lSectorID );
+	command.addByte ( packed );
+	command.sendCommandToClients ( ulPlayerExtra, flags );
+}
+
+//*****************************************************************************
 // [Kaori-Chani] features/net-snapshot: keyed on the sector, a gated client having no floor of
 // its own until a record makes it.
 void SERVERCOMMANDS_FloorSound( sector_t *pSector, ULONG ulPlayerExtra, ServerCommandFlags flags )
@@ -5026,6 +5041,10 @@ void SERVERCOMMANDS_BuildStair( DFloor::EFloor Type, sector_t *pSector, int Dire
 //
 void SERVERCOMMANDS_DoCeiling( DCeiling::ECeiling Type, sector_t *pSector, LONG lDirection, LONG lBottomHeight, LONG lTopHeight, LONG lSpeed, LONG lCrush, bool Hexencrush, LONG lSilent, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING ))
+		return;
+
 	LONG	lSectorID;
 
 	lSectorID = LONG( pSector - sectors );
@@ -5056,6 +5075,10 @@ void SERVERCOMMANDS_DoCeiling( DCeiling::ECeiling Type, sector_t *pSector, LONG 
 //
 void SERVERCOMMANDS_DestroyCeiling( LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING ))
+		return;
+
 	NetCommand command ( SVC_DESTROYCEILING );
 	command.addShort ( lID );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -5065,6 +5088,10 @@ void SERVERCOMMANDS_DestroyCeiling( LONG lID, ULONG ulPlayerExtra, ServerCommand
 //
 void SERVERCOMMANDS_ChangeCeilingDirection( LONG lID, LONG lDirection, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING ))
+		return;
+
 	// Since we still want to send direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
 	lDirection = SERVER_AdjustCeilingDirection( lDirection );
@@ -5081,6 +5108,10 @@ void SERVERCOMMANDS_ChangeCeilingDirection( LONG lID, LONG lDirection, ULONG ulP
 //
 void SERVERCOMMANDS_ChangeCeilingSpeed( LONG lID, LONG lSpeed, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING ))
+		return;
+
 	NetCommand command ( SVC_CHANGECEILINGSPEED );
 	command.addShort ( lID );
 	command.addLong ( lSpeed );

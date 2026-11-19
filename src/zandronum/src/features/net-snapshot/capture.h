@@ -314,10 +314,18 @@ bool MoverGate();
 // the door off records and plays nothing itself.
 void MoverSendDoorSound( sector_t * sec, int choice, bool bCheckSequence );
 
+// Every ceiling sound passes here, and exactly one command goes out: keyed on the sector while
+// the gate is on, since the client's ceiling waits on a record, and on the ceiling otherwise.
+void MoverSendCeilingSound( sector_t * sec, int ceilingID, int silent );
+
 // Every floor start sound passes here, and exactly one command goes out: keyed on the sector
 // to `client` while the gate is on, and otherwise on the floor to everyone, as stock sends it.
 void MoverSendFloorSound( sector_t * sec, int floorID, unsigned int client = MAXPLAYERS,
 	unsigned int flags = 0 );
+
+// Ceiling sounds this server sent, by which command carried them: the two must add up to
+// every sound it played, and only one of them can be moving at a time.
+void MoverSoundStats( unsigned int & bySector, unsigned int & legacy, bool bReset );
 
 // Tells one joining client the mover gate, if the snapshot is on at all.
 void SendMoverGateTo(unsigned int client);

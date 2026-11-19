@@ -1378,6 +1378,17 @@ enum
 	SNAPMV_COUNT
 };
 
+// SVC2_MOVERSOUND's one byte: the class's own choice in the low two bits, the kind above it,
+// since a mover whose sound command is keyed on the mover has none a gated client can use.
+enum
+{
+	SNAPSND_CEILING = 0,	// choice is DCeiling's m_Silent, 0 to 2
+	SNAPSND_PLAT			// choice is client_PlayPlatSound's type, 0 to 3
+};
+#define SNAPSND_PACK( kind, choice )	(BYTE)((( choice ) & 3 ) | (( kind ) << 2 ))
+#define SNAPSND_KIND( packed )		(( packed ) >> 2 )
+#define SNAPSND_CHOICE( packed )	(( packed ) & 3 )
+
 namespace zx { namespace netsnapshot {
 
 // The classes the snapshot path tracks, whose legacy commands a gating server

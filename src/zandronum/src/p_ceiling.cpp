@@ -104,22 +104,29 @@ void DCeiling::Serialize (FArchive &arc)
 
 void DCeiling::PlayCeilingSound ()
 {
-	if (m_Sector->seqType >= 0)
+	P_CeilingSoundSector (m_Sector, m_Silent);
+}
+
+// [Kaori-Chani] features/net-snapshot: PlayCeilingSound's body from the sector and the silence
+// it was given, unchanged but for m_Sector and m_Silent becoming arguments.
+void P_CeilingSoundSector (sector_t *sec, int silent)
+{
+	if (sec->seqType >= 0)
 	{
-		SN_StartSequence (m_Sector, CHAN_CEILING, m_Sector->seqType, SEQ_PLATFORM, 0, false);
+		SN_StartSequence (sec, CHAN_CEILING, sec->seqType, SEQ_PLATFORM, 0, false);
 	}
-	else if (m_Sector->SeqName != NAME_None)
+	else if (sec->SeqName != NAME_None)
 	{
-		SN_StartSequence (m_Sector, CHAN_CEILING, m_Sector->SeqName, 0);
+		SN_StartSequence (sec, CHAN_CEILING, sec->SeqName, 0);
 	}
 	else
 	{
-		if (m_Silent == 2)
-			SN_StartSequence (m_Sector, CHAN_CEILING, "Silence", 0);
-		else if (m_Silent == 1)
-			SN_StartSequence (m_Sector, CHAN_CEILING, "CeilingSemiSilent", 0);
+		if (silent == 2)
+			SN_StartSequence (sec, CHAN_CEILING, "Silence", 0);
+		else if (silent == 1)
+			SN_StartSequence (sec, CHAN_CEILING, "CeilingSemiSilent", 0);
 		else
-			SN_StartSequence (m_Sector, CHAN_CEILING, "CeilingNormal", 0);
+			SN_StartSequence (sec, CHAN_CEILING, "CeilingNormal", 0);
 	}
 }
 
@@ -199,7 +206,7 @@ void DCeiling::Tick ()
 
 					// Potentially tell clients to stop playing a ceiling sound.
 					if ( SN_IsMakingLoopingSound( m_Sector ) == false )
-						SERVERCOMMANDS_PlayCeilingSound( m_CeilingID );
+						zx::netsnapshot::MoverSendCeilingSound( m_Sector, m_CeilingID, m_Silent );
 				}
 				break;
 				
@@ -299,7 +306,7 @@ void DCeiling::Tick ()
 
 					// Potentially tell clients to stop playing a ceiling sound.
 					if ( SN_IsMakingLoopingSound( m_Sector ) == false )
-						SERVERCOMMANDS_PlayCeilingSound( m_CeilingID );
+						zx::netsnapshot::MoverSendCeilingSound( m_Sector, m_CeilingID, m_Silent );
 				}
 				break;
 
@@ -736,7 +743,8 @@ DCeiling *DCeiling::Create(sector_t *sec, DCeiling::ECeiling type, line_t *line,
 
 	// [BC] If we're the server, tell clients to play the ceiling sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_PlayCeilingSound( ceiling->m_CeilingID );
+		zx::netsnapshot::MoverSendCeilingSound( ceiling->m_Sector, ceiling->m_CeilingID,
+			ceiling->m_Silent );
 
 	return ceiling;
 }
@@ -813,7 +821,8 @@ void P_ActivateInStasisCeiling (int tag)
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_ChangeCeilingDirection( scan->GetID( ), scan->GetDirection( ));
-				SERVERCOMMANDS_PlayCeilingSound( scan->GetID( ));
+				zx::netsnapshot::MoverSendCeilingSound( scan->m_Sector, scan->GetID( ),
+					scan->m_Silent );
 			}
 		}
 	}

@@ -22,6 +22,7 @@ namespace zx { namespace netsnapshot {
 void OnSnapshot( BYTESTREAM_s *pByteStream );
 void OnDoorSound( BYTESTREAM_s *pByteStream );
 void OnFloorSound( BYTESTREAM_s *pByteStream );
+void OnMoverSound( BYTESTREAM_s *pByteStream );
 void OnSoundTable( BYTESTREAM_s *pByteStream );
 
 // Datagrams refused as too late to count (ComputeAckTooLate), since the last

@@ -394,6 +394,10 @@ void	SERVERCOMMANDS_ChangeDoorDirection( LONG lID, LONG lDirection, ULONG ulPlay
 // keeps a matching sequence playing.
 void	SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequence, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 
+// [Kaori-Chani] features/net-snapshot: a ceiling's or plat's sound keyed on the sector, the
+// one byte packed by SNAPSND_PACK.
+void	SERVERCOMMANDS_MoverSound( sector_t *pSector, int packed, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+
 // [Kaori-Chani] features/net-snapshot: the floor sound keyed on the sector, which the module
 // sends in place of SVC_STARTFLOORSOUND while the legacy mover gate is on.
 void	SERVERCOMMANDS_FloorSound( sector_t *pSector, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );

@@ -316,6 +316,36 @@ Each hook is one call from a stock file into the module, listed here as it lands
     the sound played, where the warning only answers whether one lookup failed.
   - A joiner has the gate word before any of this: `SendMoverGateTo` is at `sv_main.cpp:1573`
     and `SERVER_UpdateMovers` at 1725, so `OnFloorSound`'s test is already true for it.
+- `cl_main.cpp`, `client_DoCeiling`, `client_DestroyCeiling`, `client_ChangeCeilingDirection`,
+  `client_ChangeCeilingSpeed`, and the same four senders in `sv_commands.cpp`:
+  `MoverLegacyStandsAside( SNAPMV_CEILING )` after each handler's last read, and
+  `MoverServerStops( SNAPMV_CEILING )` opening each sender. `client_DestroyCeiling` also stops
+  the sector's sequence, which the server's `StopSectorSequence` covers beside the destroy.
+  - The crush slowdown is why `ChangeCeilingSpeed` mattered: `DCeiling::Tick` drops `m_Speed` to
+    `FRACUNIT/8` while crushing, and that command was its only carrier. The record's `speed`
+    field carries it instead, measured identically on both trees, and the command's own traffic
+    goes from 399 sends in one window to none -- a crushing server re-sends the speed every tic.
+  - `Ceiling_CrushAndRaise` cannot exercise that: it passes `SPEED(arg1)` and `SPEED(arg1)/2`,
+    while the slowdown tests for both speeds at `FRACUNIT`. `Ceiling_LowerAndCrush` passes the
+    same speed twice, so MAP34 carries one at speed 8 on tag 3, the start room, where the player
+    can cross its line and step back under the ceiling. A Doom crusher damages and keeps going
+    rather than stalling, so the proof of a crush is `FRACUNIT/8` in the record, not a held plane.
+- `p_ceiling.cpp`, the four `PlayCeilingSound` sites: `MoverSendCeilingSound( sector, id, silent )`,
+  which sends `SVC2_MOVERSOUND` keyed on the sector while the gate is on and the legacy
+  `SVC_PLAYCEILINGSOUND` otherwise. All four broadcast and none is in an `UpdateToClient`, so the
+  legacy branch takes no client or flags. `OnMoverSound` plays it under
+  `MoverSuppressesLegacy( SNAPMV_CEILING )` through `P_CeilingSoundSector( sec, silent )`, which
+  is `DCeiling::PlayCeilingSound`'s body with its two reads as arguments.
+  - One command for both classes that need one, `SNAPSND_PACK` putting the class's own choice in
+    the low two bits and the kind above them, as the door sound packs its own. The plat's kind is
+    defined here and wired in that class, so there is one command rather than two.
+  - Keyed on the mover, this sound misses: a gated client has no ceiling until a record makes one,
+    and the reliable buffer goes out before the unreliable one carrying the snapshot. Measured at
+    `nolegacy 3`, two of seventeen sounds found no ceiling before this, and none after, with the
+    client's `CHAN_CEILING` sounding in every sample of a later window.
+- A window that wants the server's own counters needs `fua_snap_stats 1` on it: the whole
+  `[snap]` block, the `legacy movers` gate line among it, is behind that cvar and an interval.
+  Without it the line never prints and every counter in it reads 0, which looks like a figure.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,

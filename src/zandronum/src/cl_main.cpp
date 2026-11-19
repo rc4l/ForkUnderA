@@ -2333,6 +2333,11 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				zx::netsnapshot::OnFloorSound( pByteStream );
 				break;
 
+			case SVC2_MOVERSOUND:
+
+				zx::netsnapshot::OnMoverSound( pByteStream );
+				break;
+
 			case SVC2_SNAPSOUNDTABLE:
 
 				zx::netsnapshot::OnSoundTable( pByteStream );
@@ -8970,6 +8975,11 @@ static void client_DoCeiling( BYTESTREAM_s *pByteStream )
 	// Read in the network ID of the ceiling.
 	lCeilingID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the ceiling, and carries the
+	// crush fields this command cannot.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
+
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
 	lDirection = CLIENT_AdjustCeilingDirection( lDirection );
@@ -9003,6 +9013,11 @@ static void client_DestroyCeiling( BYTESTREAM_s *pByteStream )
 	// Read in the ceiling ID.
 	lCeilingID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the ceiling; the server sends
+	// StopSectorSequence beside this command, so the sound below is covered.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
+
 	pCeiling = P_GetCeilingByID( lCeilingID );
 	if ( pCeiling == NULL )
 	{
@@ -9027,6 +9042,11 @@ static void client_ChangeCeilingDirection( BYTESTREAM_s *pByteStream )
 
 	// Read in the new ceiling direction.
 	lDirection = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the direction rides the record, and a crusher a
+	// record has reached turns on its own under MoverClientDerivesReversal.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
 
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
@@ -9058,6 +9078,11 @@ static void client_ChangeCeilingSpeed( BYTESTREAM_s *pByteStream )
 
 	// Read in the new ceiling speed.
 	lSpeed = pByteStream->ReadLong();
+
+	// [Kaori-Chani] features/net-snapshot: the speed rides the record, the crush slowdown
+	// with it, which this command was the only carrier of.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
 
 	pCeiling = P_GetCeilingByID( lCeilingID );
 	if ( pCeiling == NULL )

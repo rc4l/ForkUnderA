@@ -33,6 +33,9 @@ const PUSH_MASK = 0x1000;         // p_lnspec.h: without it on the sector, DPush
 const CEILING_CRUSHANDRAISE = 42;  // Ceiling_CrushAndRaise (tag, speed, crush, crushmode)
 const CEILING_LOWERBYVALUE = 40;  // actionspecials.h: Ceiling_LowerByValue (tag, speed, height)
 const DOOR_CLOSE = 10;            // actionspecials.h: Door_Close (tag, speed)
+// Ceiling_LowerAndCrush (tag, speed, crush, crushtype): the only crusher shape whose two
+// speeds are equal, which is what the FRACUNIT/8 crush slowdown tests for.
+const CEILING_LOWERANDCRUSH = 43;
 const FLOOR_WAGGLE = 138;         // Floor_Waggle (tag, amplitude, frequency, offset, timer)
 const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door spawned at map load, closing 30s in
 const PLAT_DOWNWAITUPSTAY = 62;   // Plat_DownWaitUpStay (tag, speed, delay in tics)
@@ -132,6 +135,12 @@ m.opening(-224, -64, -224, 64, room, room, OPEN, OPEN,
 m.opening(-192, -64, -192, 64, room, room, OPEN, OPEN,
   { special: PLAT_DOWNWAITUPSTAY, arg0: 6, arg1: 2, arg2: 70,
     playercross: true, repeatspecial: true, blocking: false });
+
+// A crusher at speed 8, FRACUNIT both ways so the crush slowdown fires, on the start room's
+// ceiling so the player can cross this line and step straight back under it.
+m.opening(-176, -64, -176, 64, room, room, OPEN, OPEN,
+  { special: CEILING_LOWERANDCRUSH, arg0: 3, arg1: 8, arg2: 10, playercross: true,
+    repeatspecial: true, blocking: false });
 
 // A ceiling on the scrolled sector, east of the floor's line and reachable with a forward
 // step: 32 units at speed 1. Not the door's room, whose ceiling rests on its floor once shut.

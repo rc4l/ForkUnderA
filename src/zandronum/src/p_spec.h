@@ -827,6 +827,9 @@ bool EV_DoDoor (DDoor::EVlDoor type, line_t *line, AActor *thing,
 				int lightTag, bool boomgen = false);
 void P_SpawnDoorCloseIn30 (sector_t *sec);
 void P_SpawnDoorRaiseIn5Mins (sector_t *sec);
+// [Kaori-Chani] features/net-snapshot: DCeiling::PlayCeilingSound's body, which reads only the
+// sector and m_Silent, so a client with no ceiling can play it from those two.
+void P_CeilingSoundSector (sector_t *sec, int silent);
 // [Kaori-Chani] features/net-snapshot: the floor sound's body by sector, for a client whose
 // floor a record has yet to make. DFloor and DElevator both call it, as they always did.
 void P_FloorSoundSector (sector_t *sec);
