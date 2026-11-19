@@ -394,6 +394,10 @@ void	SERVERCOMMANDS_ChangeDoorDirection( LONG lID, LONG lDirection, ULONG ulPlay
 // keeps a matching sequence playing.
 void	SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequence, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 
+// [Kaori-Chani] features/net-snapshot: the floor sound keyed on the sector, which the module
+// sends in place of SVC_STARTFLOORSOUND while the legacy mover gate is on.
+void	SERVERCOMMANDS_FloorSound( sector_t *pSector, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+
 // Floor commands. Ditto.
 void	SERVERCOMMANDS_DoFloor( DFloor::EFloor Type, sector_t *pSector, LONG lDirection, LONG lSpeed, LONG lFloorDestDist, LONG Crush, bool Hexencrush, LONG lID, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_DestroyFloor( LONG lID, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );

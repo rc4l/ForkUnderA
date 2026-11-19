@@ -65,7 +65,7 @@ inline FArchive &operator<< (FArchive &arc, DFloor::EFloor &type)
 //
 //==========================================================================
 
-static void StartFloorSound (sector_t *sec)
+void P_FloorSoundSector (sector_t *sec)
 {
 	if (sec->seqType >= 0)
 	{
@@ -369,7 +369,8 @@ void DFloor::UpdateToClient( ULONG ulClient )
 		SERVERCOMMANDS_DoFloor( m_Type, m_Sector, m_Direction,(LONG)( m_Speed),(LONG)( m_FloorDestDist), m_Crush, m_Hexencrush, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
 	else
 		SERVERCOMMANDS_BuildStair( m_Type, m_Sector, m_Direction, m_Speed, m_FloorDestDist, m_Crush, m_Hexencrush, m_ResetCount, m_Delay, m_PauseTime, m_StepTime, m_PerStepTime, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
-	SERVERCOMMANDS_StartFloorSound( m_FloorID );
+	// [Kaori-Chani] features/net-snapshot: one of the two sound commands, never both.
+	zx::netsnapshot::MoverSendFloorSound( m_Sector, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 void DFloor::SetFloorChangeType (sector_t *sec, int change)
@@ -400,7 +401,7 @@ void DFloor::SetFloorChangeType (sector_t *sec, int change)
 
 void DFloor::StartFloorSound ()
 {
-	::StartFloorSound (m_Sector);
+	P_FloorSoundSector (m_Sector);
 }
 
 //==========================================================================
@@ -775,7 +776,7 @@ bool EV_DoFloor (DFloor::EFloor floortype, line_t *line, int tag,
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
 			SERVERCOMMANDS_DoFloor( floortype, &sectors[secnum], floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
-			SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+			zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 		}
 
 		// Do not interpolate instant movement floors.
@@ -1086,7 +1087,7 @@ bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
 					SERVERCOMMANDS_BuildStair( floor->m_Type, &sectors[secnum], floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_Crush, floor->m_Hexencrush, floor->m_ResetCount, floor->m_Delay, floor->m_PauseTime, floor->m_StepTime, floor->m_PerStepTime, floor->m_FloorID );
-					SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+					zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 				}
 			}
 		} while (ok);
@@ -1163,7 +1164,7 @@ bool EV_DoDonut (int tag, line_t *line, fixed_t pillarspeed, fixed_t slimespeed)
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
-				SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+				zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 			}
 
 			//	Spawn lowering donut-hole
@@ -1186,7 +1187,7 @@ bool EV_DoDonut (int tag, line_t *line, fixed_t pillarspeed, fixed_t slimespeed)
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
-				SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+				zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 			}
 
 			break;
@@ -1378,7 +1379,7 @@ void DElevator::Tick ()
 
 void DElevator::StartFloorSound ()
 {
-	::StartFloorSound (m_Sector);
+	P_FloorSoundSector (m_Sector);
 }
 
 //==========================================================================

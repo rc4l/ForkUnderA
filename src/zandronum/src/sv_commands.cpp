@@ -4863,6 +4863,19 @@ void SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequenc
 }
 
 //*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: keyed on the sector, a gated client having no floor of
+// its own until a record makes it.
+void SERVERCOMMANDS_FloorSound( sector_t *pSector, ULONG ulPlayerExtra, ServerCommandFlags flags )
+{
+	LONG lSectorID = LONG( pSector - sectors );
+	if (( lSectorID < 0 ) || ( lSectorID >= numsectors ))
+		return;
+
+	NetCommand command ( SVC2_FLOORSOUND );
+	command.addShort ( lSectorID );
+	command.sendCommandToClients ( ulPlayerExtra, flags );
+}
+
 //*****************************************************************************
 //
 void SERVERCOMMANDS_DoFloor( DFloor::EFloor Type, sector_t *pSector, LONG lDirection, LONG lSpeed, LONG lFloorDestDist, LONG Crush, bool Hexencrush, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )

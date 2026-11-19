@@ -426,6 +426,7 @@ BEGIN_ENUM( SVC2 )
 	ENUM_ELEMENT ( SVC2_SNAPCOSMETIC ),		// cosmetic spawns a client makes itself
 	ENUM_ELEMENT ( SVC2_SNAPSPECIALSTATE ),	// what DoScroller and DoPusher leave out
 	ENUM_ELEMENT ( SVC2_SNAPMAPRESET ),		// which reset the destroy beside it carried out
+	ENUM_ELEMENT ( SVC2_FLOORSOUND ),		// a floor's sound sequence, keyed on the sector
 
 	ENUM_ELEMENT ( NUM_SVC2_COMMANDS ),
 }

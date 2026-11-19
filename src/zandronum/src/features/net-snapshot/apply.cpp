@@ -288,6 +288,20 @@ void zx::netsnapshot::OnDoorSound( BYTESTREAM_s *pByteStream )
 }
 
 //*****************************************************************************
+// Played only while the legacy floor handlers are gated; otherwise the floor's
+// own SVC_STARTFLOORSOUND carries it, which this client can key on its mover.
+void zx::netsnapshot::OnFloorSound( BYTESTREAM_s *pByteStream )
+{
+	const int sectorID = pByteStream->ReadShort();
+
+	if (( sectorID < 0 ) || ( sectorID >= numsectors )
+		|| ( MoverSuppressesLegacy( SNAPMV_FLOOR ) == false ))
+		return;
+
+	P_FloorSoundSector( &sectors[sectorID] );
+}
+
+//*****************************************************************************
 // The server's sound table for this map, whose ids are taken only if this
 // client's first `count` names hash the same.
 void zx::netsnapshot::OnSoundTable( BYTESTREAM_s *pByteStream )

@@ -314,6 +314,11 @@ bool MoverGate();
 // the door off records and plays nothing itself.
 void MoverSendDoorSound( sector_t * sec, int choice, bool bCheckSequence );
 
+// Every floor start sound passes here, and exactly one command goes out: keyed on the sector
+// to `client` while the gate is on, and otherwise on the floor to everyone, as stock sends it.
+void MoverSendFloorSound( sector_t * sec, int floorID, unsigned int client = MAXPLAYERS,
+	unsigned int flags = 0 );
+
 // Tells one joining client the mover gate, if the snapshot is on at all.
 void SendMoverGateTo(unsigned int client);
 // True, and counted, when the gate stops a legacy send for this class (bPlane:

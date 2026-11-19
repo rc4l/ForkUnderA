@@ -2328,6 +2328,11 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				zx::netsnapshot::OnDoorSound( pByteStream );
 				break;
 
+			case SVC2_FLOORSOUND:
+
+				zx::netsnapshot::OnFloorSound( pByteStream );
+				break;
+
 			case SVC2_SNAPSOUNDTABLE:
 
 				zx::netsnapshot::OnSoundTable( pByteStream );

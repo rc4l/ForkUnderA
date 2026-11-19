@@ -49,6 +49,7 @@
 #include "features/net-snapshot/clienttrack.h"
 #include "sv_main.h"
 #include "sv_commands.h"
+#include "s_sndseq.h"	// [Kaori-Chani] SN_CheckSequence, for the probe below
 #include "network/netcommand.h"
 #include "features/net-snapshot/capture.h"
 #include "features/net-snapshot/selftest.h"
@@ -5572,6 +5573,18 @@ void zx::netsnapshot::MoverSendDoorSound( sector_t * sec, int choice, bool bChec
 	SERVERCOMMANDS_DoorSound( sec, choice, bCheckSequence );
 }
 
+void zx::netsnapshot::MoverSendFloorSound( sector_t * sec, int floorID, unsigned int client,
+	unsigned int flags )
+{
+	if ( NETWORK_GetState() != NETSTATE_SERVER )
+		return;
+	// Gate off, stock's send to every client, a join's resend included, so the bytes match.
+	if ( g_moverGate )
+		SERVERCOMMANDS_FloorSound( sec, client, ServerCommandFlags::FromInt( flags ));
+	else
+		SERVERCOMMANDS_StartFloorSound( floorID );
+}
+
 // A joiner is told the gate as it stands, but only while the snapshot is on: a gate-off
 // server owes a joiner nothing, and the pump below sends the off itself, when GateOn has
 // already gone false.
@@ -6013,6 +6026,11 @@ CCMD(fua_snap_sectorcheck)
 		sector_t * const pSec = &sectors[secnum];
 		Printf("sector %d (tag %d): floor.d %d, ceiling.d %d\n",
 			secnum, tag, (int)pSec->floorplane.d, (int)pSec->ceilingplane.d);
+		// A mover's sound, readable without a sound device: the node exists whenever the
+		// sequence was started, so an absent one is a sound that never played.
+		Printf("  sequence: floor %s, ceiling %s\n",
+			(SN_CheckSequence(pSec, CHAN_FLOOR) != NULL) ? "playing" : "none",
+			(SN_CheckSequence(pSec, CHAN_CEILING) != NULL) ? "playing" : "none");
 
 		DSectorEffect * const pFloor = pSec->floordata;
 		DSectorEffect * const pCeil = pSec->ceilingdata;

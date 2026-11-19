@@ -273,6 +273,32 @@ Each hook is one call from a stock file into the module, listed here as it lands
     arrive, so the client's handlers are never reached and have nothing to turn away. It read 6
     with only the client half in and 4 -- the door's -- with both. The byte table is the evidence
     for a class from here on, not that counter.
+- `p_floor.cpp`, `DFloor::UpdateToClient` and the four `EV_` creation sites:
+  `MoverSendFloorSound( sector, floorID, client, flags )`, which sends exactly one command --
+  `SVC2_FLOORSOUND` keyed on the sector while the gate is on, and the legacy ID-keyed
+  `SVC_STARTFLOORSOUND` otherwise, unchanged. `OnFloorSound` plays it only under
+  `MoverSuppressesLegacy( SNAPMV_FLOOR )`, through `P_FloorSoundSector`, which is the old
+  file-static `StartFloorSound( sector_t * )` exported; `DFloor` and `DElevator` call it as they
+  always did. The five sends leaving drops `p_floor.cpp` to 27 replication crossings.
+  - The sound is an event, not one of the 28, so it goes out under the gate while the client's
+    floor is still waiting on a record. It cannot be keyed on the floor: the reliable buffer is
+    sent before the unreliable one carrying the snapshot (`SERVER_SendOutPackets`), so the sound
+    lands first and `P_GetFloorByID` finds nothing. Measured at nolegacy 3 on the commit before
+    this one, five floor starts and five `client_StartFloorSound: Couldn't find floor`, against
+    none at nolegacy 0; the sector-keyed command needs no mover, and the same window here sends
+    four and logs none.
+  - What that costs is a silent floor, not just a failed lookup. `fua_snap_sectorcheck` now
+    reports `SN_CheckSequence` on both of a sector's channels: `SN_StartSequence` makes its
+    `DSeqSectorNode` whatever the sound device is, so the node is there under `-nosound` exactly
+    when the sound would be playing. Sampled through one movement at nolegacy 3, the server's
+    floor channel plays and the client's reads `none` for the whole travel with the ID-keyed
+    send, and plays, a sample behind the server, with the sector-keyed one.
+  - `cl_showwarnings` is off by default and `CLIENT_PrintWarning` is a no-op without it, so a
+    window that does not set it says nothing about a missing lookup. Three runs of mine said
+    nothing before this was noticed, which is what the sequence probe is for: it answers whether
+    the sound played, where the warning only answers whether one lookup failed.
+  - A joiner has the gate word before any of this: `SendMoverGateTo` is at `sv_main.cpp:1573`
+    and `SERVER_UpdateMovers` at 1725, so `OnFloorSound`'s test is already true for it.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,
