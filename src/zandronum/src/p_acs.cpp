@@ -123,6 +123,7 @@
 #include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] actor handles, fua_ 24020-24023
 #include "features/acs-fields/acsfields.h"   // [Doruk-Aksoy] field access by name, fua_ 24030-24031
+#include "features/acs-queries/acsqueries.h"   // [Doruk-Aksoy] actor queries, fua_ 24040-24048
 #include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] named random streams, fua_ 24070-24072
 #include "features/acs-random/computation/random_compute.h"
 #include <cstddef>
@@ -1079,6 +1080,8 @@ void P_ClearACSVars(bool alsoglobal)
 		GlobalACSStrings.Clear();
 		// [Doruk-Aksoy] features/acs-handles: nor to any handle, so the table starts over.
 		zx::acshandles::ResetTable();
+		// [Doruk-Aksoy] features/acs-queries: and no script holds a query, so ids start over.
+		zx::acsqueries::ResetIds();
 
 		// [BB] When the global vars are cleared, our query handles surely shouldn't
 		// be needed anymore. So clear them in case mods forgot to do so.
@@ -3910,6 +3913,7 @@ void DLevelScript::Serialize (FArchive &arc)
 	arc << ClipRectLeft << ClipRectTop << ClipRectWidth << ClipRectHeight
 		<< WrapWidth;
 	arc << InModuleScriptNumber;
+	zx::acsqueries::SerializeScript( arc, fua_queries );	// [Doruk-Aksoy] features/acs-queries, from SAVEVER 4540
 	// [Doruk-Aksoy] features/acs-random: found again by the script's number, as starting it found it, so savegames keep their layout.
 	if (arc.IsLoading())
 		fua_clientside = ACS_IsScriptClientSide(script);
@@ -5931,6 +5935,16 @@ enum EACSFunctions
 	ACSF_fua_GetActorData,				// (int h, str key [, int default])
 	ACSF_fua_HasActorData,				// (int h, str key)
 	ACSF_fua_ClearActorData,			// (int h [, str key])
+	// [Doruk-Aksoy] features/acs-queries: actors found by range or class, kept as handles.
+	ACSF_fua_QueryCreate = 24040,		// ()
+	ACSF_fua_QueryFree,					// (int q)
+	ACSF_fua_QueryClear,				// (int q [, int kind])
+	ACSF_fua_QueryFilter,				// (int q, int kind [, int a [, int b]])
+	ACSF_fua_QuerySort,					// (int q, int mode [, int max])
+	ACSF_fua_FindActors,				// (int q, fixed x, fixed y, fixed z, fixed radius)
+	ACSF_fua_FindActorsOfClass,			// (int q, str cls [, bool subclasses [, fixed x, fixed y, fixed z]])
+	ACSF_fua_FoundActor,				// (int q, int i)
+	ACSF_fua_FoundCount,				// (int q)
 	// [Doruk-Aksoy] features/acs-random: named random streams, apart from the one Random() draws on.
 	ACSF_fua_Random = 24070,			// (str stream, int min, int max)
 	ACSF_fua_FRandom,					// (str stream, fixed min, fixed max)
@@ -5942,6 +5956,7 @@ static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its numbe
 static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF_fua_SetActivatorHandle == zx::acshandles::kSetActivatorHandle, "the fua_ handle functions keep their numbers");
 static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField == zx::acsfields::kSetField, "the fua_ field functions keep their numbers");
 static_assert(ACSF_fua_SetActorData == zx::acshandles::kSetActorData && ACSF_fua_ClearActorData == zx::acshandles::kClearActorData, "the fua_ actor data functions keep their numbers");
+static_assert(ACSF_fua_QueryCreate == zx::acsqueries::kQueryCreate && ACSF_fua_FoundCount == zx::acsqueries::kFoundCount, "the fua_ query functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
@@ -7564,6 +7579,38 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_fua_SetRandomSeed:
 			return zx::acsrandom::SetSeed( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1] );
+
+		// [Doruk-Aksoy] features/acs-queries: read-only, so each machine's scripts query their own world.
+		case ACSF_fua_QueryCreate:
+			return zx::acsqueries::QueryCreate( fua_queries );
+
+		case ACSF_fua_QueryFree:
+			zx::acsqueries::QueryFree( fua_queries, args[0] );
+			return 0;
+
+		case ACSF_fua_QueryClear:
+			zx::acsqueries::QueryClear( fua_queries, args[0], argCount > 1 ? args[1] : 0 );
+			return 0;
+
+		case ACSF_fua_QueryFilter:
+			return zx::acsqueries::QueryFilter( fua_queries, args[0], args[1], argCount - 2, argCount > 2 ? args[2] : 0, argCount > 3 ? args[3] : 0,
+				argCount > 2 && zx::acsqueries::ComputeFilterArg( args[1] ) == zx::acsqueries::kArgName ? FBehavior::StaticLookupString( args[2] ) : NULL );
+
+		case ACSF_fua_QuerySort:
+			zx::acsqueries::QuerySort( fua_queries, args[0], args[1], argCount > 2 ? args[2] : 0 );
+			return 0;
+
+		case ACSF_fua_FindActors:
+			return zx::acsqueries::FindActors( fua_queries, args[0], args[1], args[2], args[3], args[4] );
+
+		case ACSF_fua_FindActorsOfClass:
+			return zx::acsqueries::FindActorsOfClass( fua_queries, args[0], FBehavior::StaticLookupString( args[1] ), argCount > 2 ? !!args[2] : true, argCount > 5 ? &args[3] : NULL );
+
+		case ACSF_fua_FoundActor:
+			return zx::acsqueries::FoundActor( fua_queries, args[0], args[1] );
+
+		case ACSF_fua_FoundCount:
+			return zx::acsqueries::FoundCount( fua_queries, args[0] );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:

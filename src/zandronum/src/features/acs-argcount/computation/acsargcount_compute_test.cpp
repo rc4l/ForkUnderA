@@ -99,6 +99,11 @@ TEST(AcsArgCount, HandleFunctionsNeedTheirArguments)
 	EXPECT_EQ(Needed(24031), 3);   // [Doruk-Aksoy] fua_SetField
 	EXPECT_EQ(Needed(24032), 3);   // [Doruk-Aksoy] fua_SetActorData
 	EXPECT_EQ(Needed(24035), 1);   // [Doruk-Aksoy] fua_ClearActorData
+	EXPECT_EQ(Needed(24040), 0);   // [Doruk-Aksoy] fua_QueryCreate
+	EXPECT_EQ(Needed(24043), 2);   // [Doruk-Aksoy] fua_QueryFilter
+	EXPECT_EQ(Needed(24045), 5);   // [Doruk-Aksoy] fua_FindActors
+	EXPECT_EQ(Needed(24046), 2);   // [Doruk-Aksoy] fua_FindActorsOfClass
+	EXPECT_EQ(Needed(24048), 1);   // [Doruk-Aksoy] fua_FoundCount
 }
 
 TEST(AcsArgCount, ZDaemonsGetTeamScoreIsFoundPastTheDirectRange)
