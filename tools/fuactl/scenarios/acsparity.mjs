@@ -1,12 +1,18 @@
 // [Doruk-Aksoy] UZDoom's ACS functions and actor properties at UZDoom's numbers (features/acs-parity): exit 0 when script 1 logs UZDoom's answer to every check, DamageActor on a missing tid gives -1,
 // [Doruk-Aksoy] and SetSectorDamage hurts the player once a 32-tic beat and stops when cleared (script 3, as UZDoom does), with an unknown type doing normal damage and one warning (script 4, ours).
 //
-// usage:  node scenarios/acsparity.mjs
+// usage:  node scenarios/acsparity.mjs              ours, against the answers below
+//         node scenarios/acsparity.mjs --uzdoom     UZDoom (FUACTL_UZDOOM), against its own: scripts 1 and 3, as script 2 crashes it
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { acsScripts, ACSF, PCD, SCRIPT, callFunc, AcsScript } from "../src/acs.mjs";
 import { SPECIAL, THING } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareEachLaunch } from "../src/template.mjs";
 import * as cap from "../src/capture.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { runUzdoom } from "../src/uzdoom.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 // [Doruk-Aksoy] A flat this pk3's TERRAIN names, since Doom's own gives no flat a terrain.
@@ -213,4 +219,22 @@ export async function judgeLaunch(c, inst, label) {
 
 export const SIDES = [{ name: "vk" }];
 
-runScenarioIfMain(import.meta.url, () => ({ name: "acsparity", wad: buildAcsParityPk3(), maps: ["MAP01"], sides: SIDES, judgeLaunch }), compareEachLaunch);
+// [Doruk-Aksoy] What is wrong with UZDoom's log: script 1 against UZDoom's answers, and script 3 hurting as ours does.
+export function judgeUzdoom(log) {
+  const healths = sectorHealths(log);
+  return judgeParity(log, "uzdoom").concat(healths && healths.join() === "90,90" ? [] : [`SetSectorDamage logged healths ${healths}, not 90,90`]);
+}
+
+// [Doruk-Aksoy] The UZDoom side: the same pk3, scripts 1 and 3 puked, never script 2 (UZDoom's P_DamageMobj reads a null target's class and crashes).
+export const UZDOOM_CHAIN = "wait 35;puke 1;wait 35;puke 3;wait 210;quit";
+
+if (process.argv.includes("--uzdoom") && process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "acsparity-uzdoom-"));
+  const pk3File = path.join(dir, "acsparity.pk3");
+  fs.writeFileSync(pk3File, buildAcsParityPk3());
+  const faults = judgeUzdoom(runUzdoom({ pk3: pk3File, map: "MAP01", chain: UZDOOM_CHAIN, dir }));
+  console.log(faults.length ? `FAIL UZDoom: ${faults.join("; ")}` : `PASS UZDoom: ${CHECKS.length} checks give UZDoom's answers and SetSectorDamage hurts as ours does (${dir})`);
+  process.exit(faults.length ? 1 : 0);
+} else {
+  runScenarioIfMain(import.meta.url, () => ({ name: "acsparity", wad: buildAcsParityPk3(), maps: ["MAP01"], sides: SIDES, judgeLaunch }), compareEachLaunch);
+}
