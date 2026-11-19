@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <vector>
 
 #include "features/acs-queries/computation/queries_compute.h"
 
@@ -35,6 +36,15 @@ int FoundCount(const ScriptQueries &queries, int32_t id);
 
 // [Doruk-Aksoy] From DLevelScript::Serialize: the script's queries, results included.
 void SerializeScript(FArchive &arc, ScriptQueries &queries);
+
+// [Doruk-Aksoy] The next script-object id; queries and tracers share one serial, so their ids never meet.
+int32_t NextObjectId();
+
+// [Doruk-Aksoy] A loaded script holds `id`, so the serial goes on past it.
+void NoteObjectId(int32_t id);
+
+// [Doruk-Aksoy] A script object's run of ints and the names it holds, saved as names since name numbers change between runs.
+void SerializeNamedRun(FArchive &arc, std::vector<int32_t> &names, std::vector<int32_t> &flat);
 
 // [Doruk-Aksoy] The next query id in savegames, so no saved id is granted again.
 void WriteIds(FILE *file);

@@ -124,6 +124,7 @@
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] actor handles, fua_ 24020-24023
 #include "features/acs-fields/acsfields.h"   // [Doruk-Aksoy] field access by name, fua_ 24030-24031
 #include "features/acs-queries/acsqueries.h"   // [Doruk-Aksoy] actor queries, fua_ 24040-24048
+#include "features/acs-traces/acstraces.h"   // [Doruk-Aksoy] line traces, fua_ 24050-24061
 #include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] named random streams, fua_ 24070-24072
 #include "features/acs-random/computation/random_compute.h"
 #include <cstddef>
@@ -3914,6 +3915,7 @@ void DLevelScript::Serialize (FArchive &arc)
 		<< WrapWidth;
 	arc << InModuleScriptNumber;
 	zx::acsqueries::SerializeScript( arc, fua_queries );	// [Doruk-Aksoy] features/acs-queries, from SAVEVER 4540
+	zx::acstraces::SerializeScript( arc, fua_tracers );	// [Doruk-Aksoy] features/acs-traces, from SAVEVER 4541
 	// [Doruk-Aksoy] features/acs-random: found again by the script's number, as starting it found it, so savegames keep their layout.
 	if (arc.IsLoading())
 		fua_clientside = ACS_IsScriptClientSide(script);
@@ -5945,6 +5947,16 @@ enum EACSFunctions
 	ACSF_fua_FindActorsOfClass,			// (int q, str cls [, bool subclasses [, fixed x, fixed y, fixed z]])
 	ACSF_fua_FoundActor,				// (int q, int i)
 	ACSF_fua_FoundCount,				// (int q)
+	// [Doruk-Aksoy] features/acs-traces: line traces kept in tracers; 24053, 24054 and 24056 come with the tracer rules.
+	ACSF_fua_TracerCreate = 24050,		// ()
+	ACSF_fua_TracerFree,				// (int t)
+	ACSF_fua_TracerClear,				// (int t)
+	ACSF_fua_LineTrace = 24055,			// (int t, int h, fixed angle, fixed distance, fixed pitch [, int flags [, fixed offsetz [, fixed offsetforward [, fixed offsetside]]]])
+	ACSF_fua_TraceHitCount = 24057,		// (int t)
+	ACSF_fua_TraceResult,				// (int t, int prop [, int hit])
+	ACSF_fua_TraceResultStr,			// (int t, int prop [, int hit])
+	ACSF_fua_LineInfo,					// (int line, int prop)
+	ACSF_fua_SectorInfo,				// (int sector, int prop)
 	// [Doruk-Aksoy] features/acs-random: named random streams, apart from the one Random() draws on.
 	ACSF_fua_Random = 24070,			// (str stream, int min, int max)
 	ACSF_fua_FRandom,					// (str stream, fixed min, fixed max)
@@ -5957,6 +5969,8 @@ static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF
 static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField == zx::acsfields::kSetField, "the fua_ field functions keep their numbers");
 static_assert(ACSF_fua_SetActorData == zx::acshandles::kSetActorData && ACSF_fua_ClearActorData == zx::acshandles::kClearActorData, "the fua_ actor data functions keep their numbers");
 static_assert(ACSF_fua_QueryCreate == zx::acsqueries::kQueryCreate && ACSF_fua_FoundCount == zx::acsqueries::kFoundCount, "the fua_ query functions keep their numbers");
+static_assert(ACSF_fua_TracerCreate == zx::acstraces::kTracerCreate && ACSF_fua_TracerClear == zx::acstraces::kTracerClear && ACSF_fua_LineTrace == zx::acstraces::kLineTrace
+	&& ACSF_fua_TraceHitCount == zx::acstraces::kTraceHitCount && ACSF_fua_SectorInfo == zx::acstraces::kSectorInfo, "the fua_ trace functions keep their numbers");
 static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
@@ -7611,6 +7625,36 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_fua_FoundCount:
 			return zx::acsqueries::FoundCount( fua_queries, args[0] );
+
+		case ACSF_fua_TracerCreate:
+			return zx::acstraces::TracerCreate( fua_tracers );
+
+		case ACSF_fua_TracerFree:
+			zx::acstraces::TracerFree( fua_tracers, args[0] );
+			break;
+
+		case ACSF_fua_TracerClear:
+			zx::acstraces::TracerClear( fua_tracers, args[0] );
+			break;
+
+		case ACSF_fua_LineTrace:
+			return zx::acstraces::LineTrace( fua_tracers, args[0], activator, args[1], args[2], args[3], args[4],
+				argCount > 5 ? args[5] : 0, argCount > 6 ? args[6] : 0, argCount > 7 ? args[7] : 0, argCount > 8 ? args[8] : 0 );
+
+		case ACSF_fua_TraceHitCount:
+			return zx::acstraces::TraceHitCount( fua_tracers, args[0] );
+
+		case ACSF_fua_TraceResult:
+			return zx::acstraces::TraceResult( fua_tracers, args[0], args[1], argCount > 2 ? args[2] : -1 );
+
+		case ACSF_fua_TraceResultStr:
+			return GlobalACSStrings.AddString( zx::acstraces::TraceResultStr( fua_tracers, args[0], args[1], argCount > 2 ? args[2] : -1 ) );
+
+		case ACSF_fua_LineInfo:
+			return zx::acstraces::LineInfo( args[0], args[1] );
+
+		case ACSF_fua_SectorInfo:
+			return zx::acstraces::SectorInfo( args[0], args[1] );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:

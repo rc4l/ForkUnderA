@@ -9,7 +9,8 @@ ACS actor queries: actors found in the blockmap or by class, filtered, sorted an
 - Ids are a serial number per machine that never repeats within a game, so another script's id or a
   freed one finds nothing, and a hub map's scripts coming back never collide with the current map's.
   A new game (`P_ClearACSVars(true)`) starts them over; savegames keep the last one in a chunk (`fqId`)
-  of their own.
+  of their own. Tracers (`features/acs-traces`) take their ids from the same serial (`NextObjectId`)
+  and save through the same `SerializeNamedRun`.
 - A run looks up its filters' classes and handles once, then tests each actor in
   `ComputeQueryFilterOrder`'s order; `FQ_FLAG` looks its flag up once per class it meets. Results are
   sorted by `ComputeQuerySort` (stable, capped at 1024) before any actor is given a handle.

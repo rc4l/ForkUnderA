@@ -182,9 +182,9 @@ int32_t QueryCreate(ScriptQueries &queries)
 		g_warnedFull = true;
 		return 0;
 	}
-	g_lastId = ComputeNextQueryId(g_lastId);
-	queries.Create(g_lastId);
-	return g_lastId;
+	const int32_t id = NextObjectId();
+	queries.Create(id);
+	return id;
 }
 
 void QueryFree(ScriptQueries &queries, int32_t id)
@@ -295,17 +295,36 @@ void SerializeScript(FArchive &arc, ScriptQueries &queries)
 	std::vector<int32_t> flat;
 	if (arc.IsStoring())
 	{
-		// [Doruk-Aksoy] Names are saved as names, since name numbers change between runs.
 		ScriptQueries saved = queries;
-		ComputeRemapQueryNames(saved, [&](int32_t name) {
-			const auto at = std::find(names.begin(), names.end(), name);
-			if (at != names.end())
-				return int32_t(at - names.begin() + 1);
-			names.push_back(name);
-			return int32_t(names.size());
-		});
+		ComputeRemapQueryNames(saved, [&](int32_t name) { return ComputeInternName(names, name); });
 		flat = ComputeFlattenQueries(saved);
 	}
+	SerializeNamedRun(arc, names, flat);
+	if (arc.IsStoring())
+		return;
+	if (!ComputeUnflattenQueries(flat.data(), flat.size(), queries))
+	{
+		Printf(TEXTCOLOR_ORANGE "ACS queries: a script's saved queries are damaged, so it starts with none.\n");
+		queries.queries.clear();
+		return;
+	}
+	ComputeRemapQueryNames(queries, [&](int32_t index) { return ComputeNameAt(names, index); });
+	NoteObjectId(ComputeHighestId(queries));
+}
+
+int32_t NextObjectId()
+{
+	g_lastId = ComputeNextQueryId(g_lastId);
+	return g_lastId;
+}
+
+void NoteObjectId(int32_t id)
+{
+	g_lastId = std::max(g_lastId, id);
+}
+
+void SerializeNamedRun(FArchive &arc, std::vector<int32_t> &names, std::vector<int32_t> &flat)
+{
 	DWORD count = DWORD(names.size());
 	arc << count;
 	names.resize(count);
@@ -324,16 +343,6 @@ void SerializeScript(FArchive &arc, ScriptQueries &queries)
 		arc << word;
 		v = word;
 	}
-	if (arc.IsStoring())
-		return;
-	if (!ComputeUnflattenQueries(flat.data(), flat.size(), queries))
-	{
-		Printf(TEXTCOLOR_ORANGE "ACS queries: a script's saved queries are damaged, so it starts with none.\n");
-		queries.queries.clear();
-		return;
-	}
-	ComputeRemapQueryNames(queries, [&](int32_t index) { return index >= 1 && size_t(index) <= names.size() ? names[index - 1] : 0; });
-	g_lastId = std::max(g_lastId, ComputeHighestId(queries));
 }
 
 void WriteIds(FILE *file)
