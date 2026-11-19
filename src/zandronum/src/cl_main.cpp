@@ -8673,6 +8673,11 @@ static void client_DoFloor( BYTESTREAM_s *pByteStream )
 	// Read in the floor's network ID.
 	lFloorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the floor, and carries the
+	// m_OrgDist a stair needs, which this command has no field for.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
+
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
 	lDirection = CLIENT_AdjustFloorDirection( lDirection );
@@ -8711,6 +8716,11 @@ static void client_DestroyFloor( BYTESTREAM_s *pByteStream )
 	// Read in the floor ID.
 	lFloorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the floor; the server sends
+	// StopSectorSequence beside this command, so the sound below is covered.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
+
 	pFloor = P_GetFloorByID( lFloorID );
 	if ( pFloor == NULL )
 	{
@@ -8735,6 +8745,10 @@ static void client_ChangeFloorDirection( BYTESTREAM_s *pByteStream )
 
 	// Read in the new floor direction.
 	lDirection = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the direction rides the floor's record.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
 
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
@@ -8766,6 +8780,10 @@ static void client_ChangeFloorType( BYTESTREAM_s *pByteStream )
 	// Read in the new type of floor this is.
 	lType = pByteStream->ReadByte();
 
+	// [Kaori-Chani] features/net-snapshot: the type rides the floor's record.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
+
 	pFloor = P_GetFloorByID( lFloorID );
 	if ( pFloor == NULL )
 	{
@@ -8789,6 +8807,10 @@ static void client_ChangeFloorDestDist( BYTESTREAM_s *pByteStream )
 
 	// Read in the new floor destination distance.
 	DestDist = pByteStream->ReadLong();
+
+	// [Kaori-Chani] features/net-snapshot: the destination rides the floor's record.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
 
 	pFloor = P_GetFloorByID( lFloorID );
 	if ( pFloor == NULL )
@@ -8863,6 +8885,11 @@ static void client_BuildStair( BYTESTREAM_s *pByteStream )
 
 	// Read in the floor's network ID.
 	int FloorID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record makes the stair as well, under
+	// SNAPMVF_STAIR, the shape that carries m_OrgDist.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
 
 	// Invalid sector.
 	if (( SectorID >= numsectors ) || ( SectorID < 0 ))

@@ -257,6 +257,22 @@ Each hook is one call from a stock file into the module, listed here as it lands
     `OnDoorSound` to discard. The module holds the send, leaving `p_doors.cpp` no replication
     crossing to allow, and the sender is written against `OnDoorSound`'s own hand parse, so
     there is no protocolspec entry and the golden does not move.
+- `cl_main.cpp`, `client_DoFloor`, `client_DestroyFloor`, `client_ChangeFloorDirection`,
+  `client_ChangeFloorType`, `client_ChangeFloorDestDist`, `client_BuildStair`:
+  `MoverLegacyStandsAside( SNAPMV_FLOOR )`, each after that handler's last read. `client_DoFloor`
+  and `client_BuildStair` cannot carry `m_OrgDist`, which the record does under `SNAPMVF_STAIR`.
+  `client_DestroyFloor` also stops the sector's sound sequence, which the server sends
+  `StopSectorSequence` for beside the destroy, so that side is covered either way.
+- `sv_commands.cpp`, the same six senders: `MoverServerStops( SNAPMV_FLOOR )` opening each one. The
+  reference carries this in all 28 of its mover state senders and this port had none of them, so
+  until here a gated server still sent every state command for the client to ignore. The join's
+  resend goes through the same senders, so a client connecting mid-cycle gets the floor from records
+  alone; the gate-off resend still goes out, because `snap_MoverGatePump` clears `g_moverGate`
+  before `SERVER_ResendTrackedMovers` runs and `MoverServerStops` reads that same latched flag.
+  - Once a class's senders stop, `legacy calls suppressed` goes quiet for it: the commands never
+    arrive, so the client's handlers are never reached and have nothing to turn away. It read 6
+    with only the client half in and 4 -- the door's -- with both. The byte table is the evidence
+    for a class from here on, not that counter.
 - `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
   the stock loop, which is left as it is so the gate-off reset behaves as today.
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,

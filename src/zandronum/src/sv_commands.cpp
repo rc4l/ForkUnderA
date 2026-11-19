@@ -4867,6 +4867,10 @@ void SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequenc
 //
 void SERVERCOMMANDS_DoFloor( DFloor::EFloor Type, sector_t *pSector, LONG lDirection, LONG lSpeed, LONG lFloorDestDist, LONG Crush, bool Hexencrush, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR ))
+		return;
+
 	LONG	lSectorID;
 
 	lSectorID = LONG( pSector - sectors );
@@ -4895,6 +4899,10 @@ void SERVERCOMMANDS_DoFloor( DFloor::EFloor Type, sector_t *pSector, LONG lDirec
 //
 void SERVERCOMMANDS_DestroyFloor( LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR ))
+		return;
+
 	NetCommand command ( SVC_DESTROYFLOOR );
 	command.addShort ( lID );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -4904,6 +4912,10 @@ void SERVERCOMMANDS_DestroyFloor( LONG lID, ULONG ulPlayerExtra, ServerCommandFl
 //
 void SERVERCOMMANDS_ChangeFloorDirection( LONG lID, LONG lDirection, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR ))
+		return;
+
 	// Since we still want to send direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
 	lDirection = SERVER_AdjustFloorDirection( lDirection );
@@ -4920,6 +4932,10 @@ void SERVERCOMMANDS_ChangeFloorDirection( LONG lID, LONG lDirection, ULONG ulPla
 //
 void SERVERCOMMANDS_ChangeFloorType( LONG lID, DFloor::EFloor Type, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR ))
+		return;
+
 	NetCommand command ( SVC_CHANGEFLOORTYPE );
 	command.addShort ( lID );
 	command.addByte ( (ULONG)Type );
@@ -4930,6 +4946,10 @@ void SERVERCOMMANDS_ChangeFloorType( LONG lID, DFloor::EFloor Type, ULONG ulPlay
 //
 void SERVERCOMMANDS_ChangeFloorDestDist( LONG lID, LONG lFloorDestDist, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR ))
+		return;
+
 	NetCommand command ( SVC_CHANGEFLOORDESTDIST );
 	command.addShort ( lID );
 	command.addLong ( lFloorDestDist );
@@ -4949,6 +4969,10 @@ void SERVERCOMMANDS_StartFloorSound( LONG lID, ULONG ulPlayerExtra, ServerComman
 //
 void SERVERCOMMANDS_BuildStair( DFloor::EFloor Type, sector_t *pSector, int Direction, fixed_t Speed, fixed_t FloorDestDist, int Crush, bool Hexencrush, int ResetCount, int Delay, int PauseTime, int StepTime, int PerStepTime, int ID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR ))
+		return;
+
 	int		SectorID;
 
 	SectorID = int( pSector - sectors );
