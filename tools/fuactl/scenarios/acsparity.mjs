@@ -58,7 +58,8 @@ export const CHECKS = [
   { what: "CheckActorState(Pain.Fire)", words: call("CheckActorState", 0, S["Pain.Fire"]), want: 1 },
   { what: "CheckActorState(Pain.Fire, exact)", words: call("CheckActorState", 0, S["Pain.Fire"], 1), want: 0 },
   { what: "CheckActorState(ZxNope)", words: call("CheckActorState", 0, S.ZxNope), want: 0 },
-  { what: "GetActorFloorTerrain(player)", words: call("GetActorFloorTerrain", 0), want: "Solid", str: true },
+  // [Doruk-Aksoy] Our default terrain is spelled Solid, UZDoom's SOLID.
+  { what: "GetActorFloorTerrain(player)", words: call("GetActorFloorTerrain", 0), want: "Solid", uzdoom: "SOLID", str: true },
   { what: "GetActorFloorTerrain(barrel on mud)", words: call("GetActorFloorTerrain", BARREL.mud), want: "ZxMud", str: true },
   { what: "GetActorFloorTerrain(no actor)", words: call("GetActorFloorTerrain", 999), want: "", str: true },
   { what: "GetLineX(south wall, 0.25)", words: call("GetLineX", SOUTH_LINE, fixed(0.25), 0), want: lineCoord(0, [512, 0], [0, 0], fixed(0.25), 0) },
