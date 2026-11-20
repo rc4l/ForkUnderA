@@ -544,11 +544,10 @@ subsector_t *R_PointInSubsector (fixed_t x, fixed_t y)
 	if (numnodes == 0)
 		return subsectors;
 
-	// [Doruk-Aksoy] features/bspgrid: from the deepest node every point of this one's grid cell reaches the same way, which lands on the same subsector.
-	const int start = zx::bspgrid::RenderStart (x, y);
-	if (start < 0)
-		return subsectors + (-1 - start);
-	node = nodes + start;
+	// [Doruk-Aksoy] features/bspgrid: from the deepest node every point of this one's grid cell reaches the same way, on a compact copy of the tree, which lands on the same subsector.
+	if (subsector_t *fuaSub = zx::bspgrid::RenderSubsector (x, y))
+		return fuaSub;
+	node = nodes + numnodes - 1;
 
 	do
 	{
