@@ -31,6 +31,7 @@
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverResetBegin
+#include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] PolyCapture
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] ResetEnd
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
@@ -3626,6 +3627,11 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		GAME_ResetScripts ( );
 		return;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: every polyobject as it stands, before the reset
+	// below moves them back, so a record describes what the reset then undoes.
+	for ( int i = 0; i < po_NumPolyobjs; ++i )
+		zx::netsnapshot::PolyCapture( &polyobjs[i], false );
 
 	// [BB] Reset the polyobjs.
 	for ( ulIdx = 0; ulIdx <= static_cast<unsigned> (po_NumPolyobjs); ulIdx++ )

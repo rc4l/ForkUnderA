@@ -367,6 +367,46 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - One command for both classes, the kind in the bits above the choice. A window that counts it
     must mask the kind: counting every `SVC2_MOVERSOUND` counts the ceiling's too, which made
     four plat sends read as eighteen.
+- `po_man.cpp`, `cl_main.cpp` and `sv_commands.cpp`, the polyobject unit. `DPolyAction::Tick`
+  becomes a wrapper -- `SnapCapture`, the class's `TickPoly`, then `SnapCapture` unless
+  euthanized -- and each of the four classes' `Tick` is now `TickPoly`, which is the whole of
+  the structural change: the members and every `Snap*` body were already ported and compiling.
+  The constructor takes `PolyNewGen( )` and `PolyLink`, `Destroy` takes `PolyUnlink` and
+  `PolyCapture`, and `GAME_ResetMap` captures every polyobject before it moves them back.
+  - Eight senders take `MoverServerStops( SNAPMV_POLY )`: the six `Do`/`Destroy` pairs and both
+    `SetPolyDoorSpeed` commands. Six call sites in `po_man.cpp` take the verification form
+    `MoverServerStops( SNAPMV_POLY, true )`, on `SetPolyobjPosition`/`Rotation` at a destination
+    reached, when blocked, and beside the poly door's destroy.
+  - The eight handlers take `MoverLegacyStandsAside( SNAPMV_POLY )` rather than the reference's
+    uncounted test, which puts polyobjects under the same `legacy calls suppressed` tripwire as
+    the sector classes, and the three that build an action mark it `m_SnapLegacy`.
+    `client_SetPolyobjPosition` and `Rotation` defer through `OwnsPoly` with
+    `PolyCountSuppressed`, whose count is expected at 0 and defensive: the absolute writes come
+    from the six sends now stopped, the reset pass after the client's own teardown, and the join
+    pass before any record.
+  - `PolyDestroyAll` returns early unless `MoverSuppressesLegacy( SNAPMV_POLY )`. The
+    constructor links every action, legacy-made ones included, so without that test the reset
+    teardown would destroy actions stock's own reset leaves alone.
+  - The sounds needed a sender after all, which the audit had wrong. They key on the polyobject
+    number, not a mover ID, so a gated client can resolve them -- but `EV_RotatePoly` and
+    `EV_MovePoly` start the sequence locally and send nothing, leaving a gated client turning in
+    silence. `PolySendStartSound` sits beside each, and `PolySendStopSound` beside
+    `DPolyAction::Stop`'s own silence, both gated so gate-off bytes stand; the lingering
+    sequence a gate-off client gets is stock's.
+  - Measured on the committed map's `Polyobj_RotateLeft`: gate off sends ids 206, 207 and 59 of
+    216, with the client's action reading `legacy 1, seen 0`; at nolegacy 3 all of 206-213, 215
+    and 216 are absent, the action reads `seen 1` with the server's generation, and the one
+    sound goes out as id 214. Both ends finish at angle 2147483648 exactly, `DIVERGED` 0 and
+    `legacy calls suppressed` 0. The sound's client half is wire-only: this polyobject's
+    `seqType` starts no sequence node, so `SN_CheckSequence` reads none at either end.
+  - `fua_snap_polycheck <po>` prints the clock, the polyobject's spot and angle, whether its
+    sequence plays, and each action on `snapActions` with its generation and `seen`, `legacy`
+    and `blocked` flags. A polyobject is not a sector, so the sector check cannot reach it, and
+    `SN_CheckSequence( FPolyObj * )` joins the sector overload in `s_sndseq.cpp` for it.
+  - The map's polyobject is built in a yard far larger than itself, since an island exactly its
+    size leaves it nothing to rotate into and the blocked branch then retries every tic. Its
+    trigger is a horizontal line at y = 40, which the forward and backward paths along y = 0
+    never cross, and it turns a finite half circle: byte angle 255 is Hexen's turn-for-ever.
 - `p_map.cpp`, `P_ChangeSector`, and `dsectoreffect.cpp`, `DMover::MoveAttached`: a client
   discards the veto either one raises, through `MoverDiscardsSectorVeto( )` and
   `MoverDiscardsAttachedVeto( )`, one call per site holding the role test and the count as the

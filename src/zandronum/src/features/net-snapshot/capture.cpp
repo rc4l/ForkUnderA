@@ -6127,6 +6127,49 @@ CCMD(fua_snap_soundcount)
 
 //*****************************************************************************
 //
+// A polyobject the sector check cannot reach: its axes, the actions on its list and whether
+// its sound sequence is playing, read the same way on either end.
+CCMD(fua_snap_polycheck)
+{
+	if (argv.argc() < 2)
+	{
+		Printf("usage: fua_snap_polycheck <polyobject number>\n");
+		return;
+	}
+
+	const int want = atoi(argv[1]);
+	FPolyObj * const poly = PO_GetPolyobj(want);
+	if (poly == NULL)
+	{
+		Printf("no polyobject %d\n", want);
+		return;
+	}
+
+	if (NETWORK_InClientMode())
+		Printf("[client] gametic %d, newest server tic %d\n",
+			gametic, NewestGameTic());
+	else
+		Printf("[server] gametic %d\n", gametic);
+
+	Printf("poly %d (tag %d): spot %d,%d angle %u | sequence %s\n",
+		want, poly->tag, (int)poly->StartSpot.x, (int)poly->StartSpot.y,
+		(unsigned int)poly->angle,
+		(SN_CheckSequence(poly) != NULL) ? "playing" : "none");
+
+	unsigned int n = 0;
+	for (DPolyAction * a = poly->snapActions; a != NULL; a = a->m_SnapNext)
+	{
+		Printf("  action %s: gen %d, seen %d, legacy %d, blocked %d\n",
+			a->GetClass()->TypeName.GetChars(), (int)a->m_SnapGen,
+			a->m_SnapSeen ? 1 : 0, a->m_SnapLegacy ? 1 : 0, a->m_SnapBlocked ? 1 : 0);
+		++n;
+	}
+	if (n == 0)
+		Printf("  no actions on its list\n");
+}
+
+//*****************************************************************************
+//
 CCMD(fua_snap_sectorcheck)
 {
 	if (argv.argc() < 2)

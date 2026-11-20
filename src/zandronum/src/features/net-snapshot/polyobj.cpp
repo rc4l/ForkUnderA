@@ -33,6 +33,29 @@ using namespace zx::netsnapshot;
 FPolyObj *GetPolyobjByIndex( ULONG ulPolyIdx );
 
 // Onto the end of the polyobject's action list, once.
+BYTE zx::netsnapshot::PolyNewGen()
+{
+	if ( NETWORK_GetState( ) != NETSTATE_SERVER )
+		return 0;
+	return NewMoverGen( );
+}
+
+void zx::netsnapshot::PolySendStartSound( int polyNum )
+{
+	// Gate off, the client's own handler starts it, so stock's bytes stand.
+	if ( MoverGate( ) == false )
+		return;
+	SERVERCOMMANDS_PlayPolyobjSound( polyNum, 0 );
+}
+
+void zx::netsnapshot::PolySendStopSound( int polyNum )
+{
+	// Gate off, stock's silence, so its bytes stand and its lingering sequence stays stock's.
+	if ( MoverGate( ) == false )
+		return;
+	SERVERCOMMANDS_StopPolyobjSound( polyNum );
+}
+
 void zx::netsnapshot::PolyLink( FPolyObj *poly, DPolyAction *pAction )
 {
 	DPolyAction **pp = &poly->snapActions;
@@ -605,6 +628,11 @@ unsigned int zx::netsnapshot::PolyGateOff( )
 // A map reset's: every action on every polyobject, and its sequence.
 void zx::netsnapshot::PolyDestroyAll()
 {
+	// The constructor links every action, legacy-made ones included, so with the gate off
+	// this would destroy actions stock's own reset leaves alone.
+	if ( MoverSuppressesLegacy( SNAPMV_POLY ) == false )
+		return;
+
 	for ( int i = 0; i < po_NumPolyobjs; ++i )
 	{
 		FPolyObj *poly = &polyobjs[i];

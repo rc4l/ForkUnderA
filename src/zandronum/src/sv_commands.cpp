@@ -5336,6 +5336,10 @@ void SERVERCOMMANDS_UpdateWaggle( LONG lID, LONG lAccumulator, ULONG ulPlayerExt
 //
 void SERVERCOMMANDS_DoRotatePoly( LONG lSpeed, LONG lPolyNum, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_DOROTATEPOLY );
 	command.addLong ( lSpeed );
 	command.addShort ( lPolyNum );
@@ -5346,6 +5350,10 @@ void SERVERCOMMANDS_DoRotatePoly( LONG lSpeed, LONG lPolyNum, ULONG ulPlayerExtr
 //
 void SERVERCOMMANDS_DestroyRotatePoly( LONG lPolyNum, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_DESTROYROTATEPOLY );
 	command.addShort ( lPolyNum );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -5356,6 +5364,10 @@ void SERVERCOMMANDS_DestroyRotatePoly( LONG lPolyNum, ULONG ulPlayerExtra, Serve
 //
 void SERVERCOMMANDS_DoMovePoly( LONG lXSpeed, LONG lYSpeed, LONG lPolyNum, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_DOMOVEPOLY );
 	command.addLong ( lXSpeed );
 	command.addLong ( lYSpeed );
@@ -5367,6 +5379,10 @@ void SERVERCOMMANDS_DoMovePoly( LONG lXSpeed, LONG lYSpeed, LONG lPolyNum, ULONG
 //
 void SERVERCOMMANDS_DestroyMovePoly( LONG lPolyNum, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_DESTROYMOVEPOLY );
 	command.addShort ( lPolyNum );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -5377,6 +5393,10 @@ void SERVERCOMMANDS_DestroyMovePoly( LONG lPolyNum, ULONG ulPlayerExtra, ServerC
 //
 void SERVERCOMMANDS_DoPolyDoor( LONG lType, LONG lXSpeed, LONG lYSpeed, LONG lSpeed, LONG lPolyNum, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_DOPOLYDOOR );
 	command.addByte ( lType );
 	command.addLong ( lXSpeed );
@@ -5390,6 +5410,10 @@ void SERVERCOMMANDS_DoPolyDoor( LONG lType, LONG lXSpeed, LONG lYSpeed, LONG lSp
 //
 void SERVERCOMMANDS_DestroyPolyDoor( LONG lPolyNum, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_DESTROYPOLYDOOR );
 	command.addShort ( lPolyNum );
 	command.sendCommandToClients ( ulPlayerExtra, flags );
@@ -5399,6 +5423,10 @@ void SERVERCOMMANDS_DestroyPolyDoor( LONG lPolyNum, ULONG ulPlayerExtra, ServerC
 //
 void SERVERCOMMANDS_SetPolyDoorSpeedPosition( LONG lPolyNum, LONG lXSpeed, LONG lYSpeed, LONG lX, LONG lY, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_SETPOLYDOORSPEEDPOSITION );
 	command.addShort ( lPolyNum );
 	command.addLong ( lXSpeed );
@@ -5412,6 +5440,10 @@ void SERVERCOMMANDS_SetPolyDoorSpeedPosition( LONG lPolyNum, LONG lXSpeed, LONG 
 //
 void SERVERCOMMANDS_SetPolyDoorSpeedRotation( LONG lPolyNum, LONG lSpeed, LONG lAngle, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_POLY ))
+		return;
+
 	NetCommand command ( SVC_SETPOLYDOORSPEEDROTATION );
 	command.addShort ( lPolyNum );
 	command.addLong ( lSpeed );

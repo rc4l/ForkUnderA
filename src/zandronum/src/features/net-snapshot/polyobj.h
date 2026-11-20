@@ -66,6 +66,13 @@ namespace zx { namespace netsnapshot {
 void PolyClientStats( SnapPolyClientStats &st, bool bReset );
 
 // The polyobject's own list of actions, kept by DPolyAction.
+// A new action's generation, 0 on a client: the role test belongs here, not at the one site.
+BYTE PolyNewGen();
+// The sounds stock left to the client's own handler: a rotate and a plain move start the
+// sequence locally and send none, so a gated client would turn in silence.
+void PolySendStartSound( int polyNum );
+// The sound stock never stopped, for a gated client whose own sequence would play on.
+void PolySendStopSound( int polyNum );
 void PolyLink( FPolyObj *poly, DPolyAction *pAction );
 void PolyUnlink( FPolyObj *poly, DPolyAction *pAction );
 

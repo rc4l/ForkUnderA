@@ -732,6 +732,9 @@ public:
 	bool	m_SnapLegacy = false;	// [Kaori-Chani] made by a legacy handler, dropped at gate-on
 
 	// [Kaori-Chani] The whole polyobject, from any of its actions; server only.
+	// [Kaori-Chani] features/net-snapshot: wraps each class's TickPoly in the captures.
+	void	Tick ();
+	virtual void	TickPoly () { }
 	void	SnapCapture ();
 	// [Kaori-Chani] This action as a record entry and back; SnapType 0xFF for none.
 	virtual BYTE	SnapType () const;
@@ -771,7 +774,8 @@ class DRotatePoly : public DPolyAction
 	DECLARE_CLASS (DRotatePoly, DPolyAction)
 public:
 	DRotatePoly (int polyNum);
-	void Tick ();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	void UpdateToClient( ULONG ulClient );
 	BYTE SnapType () const;		// [Kaori-Chani]
 	bool SnapDone () const;		// [Kaori-Chani]
@@ -789,7 +793,8 @@ class DMovePoly : public DPolyAction
 public:
 	DMovePoly (int polyNum);
 	void Serialize (FArchive &arc);
-	void Tick ();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	virtual void UpdateToClient( ULONG ulClient ); // [WS] This needs to be virtual.
 	BYTE SnapType () const;							// [Kaori-Chani]
 	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
@@ -819,7 +824,8 @@ class DMovePolyTo : public DPolyAction
 public:
 	DMovePolyTo(int polyNum);
 	void Serialize(FArchive &arc);
-	void Tick();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	BYTE SnapType () const;							// [Kaori-Chani]
 	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
 	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
@@ -844,7 +850,8 @@ class DPolyDoor : public DMovePoly
 public:
 	DPolyDoor (int polyNum, podoortype_t type);
 	void Serialize (FArchive &arc);
-	void Tick ();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	void UpdateToClient( ULONG ulClient );
 	BYTE SnapType () const;							// [Kaori-Chani]
 	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]

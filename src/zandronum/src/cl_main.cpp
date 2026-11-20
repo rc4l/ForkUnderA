@@ -169,6 +169,7 @@
 #include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the ghost table
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] TracePlaneWrite
+#include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] OwnsPoly, PolyCountSuppressed
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -9621,6 +9622,11 @@ static void client_DoRotatePoly( BYTESTREAM_s *pByteStream )
 	// Read in the polyobject ID.
 	lPolyNum = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	// Make sure the polyobj exists before we try to work with it.
 	pPoly = PO_GetPolyobj( lPolyNum );
 	if ( pPoly == NULL )
@@ -9631,6 +9637,8 @@ static void client_DoRotatePoly( BYTESTREAM_s *pByteStream )
 
 	// Create the polyobject.
 	pRotatePoly = new DRotatePoly( lPolyNum );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	pRotatePoly->m_SnapLegacy = true;
 	pRotatePoly->SetSpeed( lSpeed );
 
 	// Attach the new polyobject to this ID.
@@ -9651,6 +9659,11 @@ static void client_DestroyRotatePoly( BYTESTREAM_s *pByteStream )
 
 	// Read in the DRotatePoly ID.
 	lID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	// Try to find the object from the ID. If it exists, destroy it.
 	pPoly = NULL;
@@ -9684,6 +9697,11 @@ static void client_DoMovePoly( BYTESTREAM_s *pByteStream )
 	// Read in the polyobject ID.
 	lPolyNum = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	// Make sure the polyobj exists before we try to work with it.
 	pPoly = PO_GetPolyobj( lPolyNum );
 	if ( pPoly == NULL )
@@ -9694,6 +9712,8 @@ static void client_DoMovePoly( BYTESTREAM_s *pByteStream )
 
 	// Create the polyobject.
 	pMovePoly = new DMovePoly( lPolyNum );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	pMovePoly->m_SnapLegacy = true;
 	pMovePoly->SetXSpeed( lXSpeed );
 	pMovePoly->SetYSpeed( lYSpeed );
 
@@ -9715,6 +9735,11 @@ static void client_DestroyMovePoly( BYTESTREAM_s *pByteStream )
 
 	// Read in the DMovePoly ID.
 	lID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	// Try to find the object from the ID. If it exists, destroy it.
 	pPoly = NULL;
@@ -9754,6 +9779,11 @@ static void client_DoPolyDoor( BYTESTREAM_s *pByteStream )
 	// Read in the polyobject ID.
 	lPolyNum = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	// Make sure the polyobj exists before we try to work with it.
 	pPoly = PO_GetPolyobj( lPolyNum );
 	if ( pPoly == NULL )
@@ -9764,6 +9794,8 @@ static void client_DoPolyDoor( BYTESTREAM_s *pByteStream )
 
 	// Create the polyobject.
 	pPolyDoor = new DPolyDoor( lPolyNum, (podoortype_t)lType );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	pPolyDoor->m_SnapLegacy = true;
 	pPolyDoor->SetXSpeed( lXSpeed );
 	pPolyDoor->SetYSpeed( lYSpeed );
 	pPolyDoor->SetSpeed( lSpeed );
@@ -9783,6 +9815,11 @@ static void client_DestroyPolyDoor( BYTESTREAM_s *pByteStream )
 
 	// Read in the DPolyDoor ID.
 	lID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	// Try to find the object from the ID. If it exists, destroy it.
 	pPoly = NULL;
@@ -9823,6 +9860,11 @@ static void client_SetPolyDoorSpeedPosition( BYTESTREAM_s *pByteStream )
 	lX = pByteStream->ReadLong();
 	lY = pByteStream->ReadLong();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	pPoly = PO_GetPolyobj( lPolyID );
 	if ( pPoly == NULL )
 		return;
@@ -9857,6 +9899,11 @@ static void client_SetPolyDoorSpeedRotation( BYTESTREAM_s *pByteStream )
 
 	// Read in the polyobject angle.
 	lAngle = pByteStream->ReadLong();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	pPoly = PO_GetPolyobj( lPolyID );
 	if ( pPoly == NULL )
@@ -9936,6 +9983,14 @@ static void client_SetPolyobjPosition( BYTESTREAM_s *pByteStream )
 		return;
 	}
 
+	// [Kaori-Chani] features/net-snapshot: a record writes this polyobject's axes, so
+	// the legacy write stands aside and is counted apart from the mover classes.
+	if ( zx::netsnapshot::OwnsPoly( pPoly ))
+	{
+		zx::netsnapshot::PolyCountSuppressed( );
+		return;
+	}
+
 	lDeltaX = (LONG)(lX - pPoly->StartSpot.x);
 	lDeltaY = (LONG)(lY - pPoly->StartSpot.y);
 
@@ -9965,6 +10020,14 @@ static void client_SetPolyobjRotation( BYTESTREAM_s *pByteStream )
 	if ( pPoly == NULL )
 	{
 		CLIENT_PrintWarning( "client_SetPolyobjRotation: Invalid polyobj number: %ld\n", lPolyNum );
+		return;
+	}
+
+	// [Kaori-Chani] features/net-snapshot: a record writes this polyobject's axes, so
+	// the legacy write stands aside and is counted apart from the mover classes.
+	if ( zx::netsnapshot::OwnsPoly( pPoly ))
+	{
+		zx::netsnapshot::PolyCountSuppressed( );
 		return;
 	}
 
