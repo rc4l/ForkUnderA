@@ -44,7 +44,7 @@ const PILLAR_BUILD = 29;          // actionspecials.h: Pillar_Build (tag, speed,
 const POLYOBJ_STARTLINE = 1;      // actionspecials.h: Polyobj_StartLine (po, mirror, sound)
 const POLYOBJ_ROTATELEFT = 2;     // actionspecials.h: Polyobj_RotateLeft (po, speed, angle)
 const POLY_SPOT = 9301;           // the polyobject's start spot, its angle the poly number
-const POLY_ANCHOR = 9300;         // where that polyobject is placed, angle the same
+const POLY_ANCHOR = 9300;         // the polyobject's origin, beside its lines, angle the same
 
 const TEX = { texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -96,10 +96,10 @@ m.opening(640, -128, 640, 128, slowdoor, doorsec, OPEN, OPEN);
 m.opening(896, -128, 896, 128, platsec, slowdoor, OPEN, OPEN);
 m.opening(1152, -128, 1152, 128, pillarsec, platsec, OPEN, OPEN);
 
-// A polyobject, built in a sealed island east of the pillar's room and placed at the anchor
-// in the start room's north-west corner, clear of every trigger line's path.
-// The construction area is far larger than the polyobject, so its square has room to turn
-// where it is built: an island exactly the poly's size leaves it nothing to rotate into.
+// A polyobject, its lines and origin in a sealed yard east of the pillar's room and its start
+// spot in the start room's south-west corner, where it turns, clear of every trigger line.
+// A yard around the lines, so the sector they are cut from is not the polyobject itself and
+// the anchor inside it has somewhere to sit.
 const polyyard = m.sector({ ...FLAT, id: 8 });
 for (const [ax, ay, bx, by] of [[1400, -150, 1700, -150], [1700, -150, 1700, 150],
                                 [1700, 150, 1400, 150], [1400, 150, 1400, -150]])
@@ -110,10 +110,12 @@ m.opening(1500, -16, 1532, -16, polybox, polyyard, OPEN, OPEN,
 m.opening(1532, -16, 1532, 16, polybox, polyyard, OPEN, OPEN, {});
 m.opening(1532, 16, 1500, 16, polybox, polyyard, OPEN, OPEN, {});
 m.opening(1500, 16, 1500, -16, polybox, polyyard, OPEN, OPEN, {});
-m.thing({ x: 1516, y: 0, angle: 1, type: POLY_SPOT });
+// The anchor sits with the lines in the yard and the start spot at the destination: the engine
+// moves the polyobject by (spot - anchor), so the other way round carries it out of the map.
+m.thing({ x: 1516, y: 0, angle: 1, type: POLY_ANCHOR });
 // South of the start, where the sideways step that triggers it (+y) never reaches: a player
 // standing in the footprint blocks the turn, and the blocked branch then retries every tic.
-m.thing({ x: -350, y: -96, angle: 1, type: POLY_ANCHOR });
+m.thing({ x: -350, y: -96, angle: 1, type: POLY_SPOT });
 
 // Its trigger runs across y, not down it: the player walks along y = 0, so neither the forward
 // path nor the backward one crosses this, and only a sideways step starts the polyobject.

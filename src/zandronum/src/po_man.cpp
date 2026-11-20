@@ -35,6 +35,7 @@
 #include "network.h"
 #include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] PolyLink, PolyCapture
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] NewMoverGen, MoverServerStops
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverPlaneStalled
 #include "version.h"
 #include "sv_commands.h"
 
@@ -265,6 +266,16 @@ void DPolyAction::Serialize (FArchive &arc)
 {
 	Super::Serialize (arc);
 	arc << m_PolyObj << m_Speed << m_Dist << m_Interpolation;
+
+	// [Kaori-Chani] features/net-snapshot: a hub return links a reloaded action here, which
+	// the constructor cannot do for it.
+	if ( arc.IsLoading( ))
+	{
+		FPolyObj *poly = PO_GetPolyobj( m_PolyObj );
+		if ( poly != NULL )
+			zx::netsnapshot::PolyLink( poly, this );
+		m_SnapGen = zx::netsnapshot::PolyNewGen( );
+	}
 }
 
 DPolyAction::DPolyAction (int polyNum)
@@ -561,10 +572,17 @@ void DRotatePoly::TickPoly ()
 	if (poly == NULL) return;
 
 	// [BC] For clients, just tick them and get out.
+	// [Kaori-Chani] features/net-snapshot: one a record made runs the arithmetic below, and
+	// holds where the record says it is stalled or done.
 	if ( NETWORK_InClientMode() )
 	{
-		poly->RotatePolyobj( m_Speed );
-		return;
+		if ( m_SnapSeen == false )
+		{
+			poly->RotatePolyobj( m_Speed );
+			return;
+		}
+		if ( SnapHolds( ))
+			return;
 	}
 
 	// Don't let non-perpetual polyobjs overshoot their targets.
@@ -573,13 +591,23 @@ void DRotatePoly::TickPoly ()
 		m_Speed = m_Speed < 0 ? -m_Dist : m_Dist;
 	}
 
-	if (poly->RotatePolyobj (m_Speed))
+	// [Kaori-Chani] features/net-snapshot: a failed rotation is reverted whole, so it is
+	// always a stall, and a record says so rather than the client turning on alone.
+	const bool bRotated = poly->RotatePolyobj (m_Speed);
+	m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, bRotated == false );
+
+	if (bRotated)
 	{
 		if (m_Dist == -1)
 		{ // perpetual polyobj
 			return;
 		}
 		m_Dist -= abs(m_Speed);
+		// [Kaori-Chani] features/net-snapshot: the GONE ends a record-made action rather than
+		// its own countdown; m_SnapSeen is only ever true on a client.
+		if ( m_SnapSeen )
+			return;
+
 		if (m_Dist == 0)
 		{
 
@@ -677,21 +705,36 @@ void DMovePoly::TickPoly ()
 	FPolyObj *poly = PO_GetPolyobj (m_PolyObj);
 
 	// [BC] For clients, just tick them and get out.
+	// [Kaori-Chani] features/net-snapshot: as DRotatePoly's.
 	if ( NETWORK_InClientMode() )
 	{
-		if ( poly )
-			poly->MovePolyobj( (int)(m_xSpeed), (int)(m_ySpeed) );
-		return;
+		if ( m_SnapSeen == false )
+		{
+			if ( poly )
+				poly->MovePolyobj( (int)(m_xSpeed), (int)(m_ySpeed) );
+			return;
+		}
+		if ( SnapHolds( ))
+			return;
 	}
 
 	if (poly != NULL)
 	{
-		if (poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed)))
+		// [Kaori-Chani] features/net-snapshot: a failed move is reverted whole, so it is
+		// always a stall.
+		const bool bMoved = poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed));
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, bMoved == false );
+
+		if (bMoved)
 		{
 			int absSpeed = abs (m_Speed);
 			m_Dist -= absSpeed;
 			if (m_Dist <= 0)
 			{
+				// [Kaori-Chani] features/net-snapshot: as the rotate's, the GONE ends it.
+				if ( m_SnapSeen )
+					return;
+
 
 				// [BC] Now that our destination has been reached, tell clients.
 				// [Kaori-Chani] features/net-snapshot: a record writes it.
@@ -791,14 +834,27 @@ void DMovePolyTo::TickPoly ()
 {
 	FPolyObj *poly = PO_GetPolyobj (m_PolyObj);
 
+	// [Kaori-Chani] features/net-snapshot: one a record made holds as DMovePoly's does.
+	if ( m_SnapSeen && SnapHolds( ))
+		return;
+
 	if (poly != NULL)
 	{
-		if (poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed)))
+		// [Kaori-Chani] features/net-snapshot: a failed move is reverted whole, so it is
+		// always a stall.
+		const bool bMoved = poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed));
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, bMoved == false );
+
+		if (bMoved)
 		{
 			int absSpeed = abs (m_Speed);
 			m_Dist -= absSpeed;
 			if (m_Dist <= 0)
 			{
+				// [Kaori-Chani] features/net-snapshot: as the rotate's, the GONE ends it.
+				if ( m_SnapSeen )
+					return;
+
 				SN_StopSequence (poly);
 				Destroy ();
 			}
@@ -874,6 +930,34 @@ void DPolyDoor::TickPoly ()
 	// [BC] For clients, just tick them and get out.
 	if ( NETWORK_InClientMode() )
 	{
+		// [Kaori-Chani] features/net-snapshot: record-made, so it holds while the record
+		// says stalled or done, counts its own wait out, and then moves as told.
+		if ( m_SnapSeen )
+		{
+			if ( SnapHolds( ))
+				return;
+			if ( m_Tics )
+			{
+				--m_Tics;
+				return;
+			}
+			switch ( m_Type )
+			{
+			case PODOOR_SLIDE:
+				poly->MovePolyobj( (int)(m_xSpeed), (int)(m_ySpeed) );
+				m_Dist -= abs( m_Speed );
+				break;
+			case PODOOR_SWING:
+				poly->RotatePolyobj( m_Speed );
+				if ( m_Dist != -1 )
+					m_Dist -= abs( m_Speed );
+				break;
+			default:
+				break;
+			}
+			return;
+		}
+
 		switch ( m_Type )
 		{
 		case PODOOR_SLIDE:
@@ -908,6 +992,7 @@ void DPolyDoor::TickPoly ()
 	case PODOOR_SLIDE:
 		if (m_Dist <= 0 || poly->MovePolyobj ((int)(m_xSpeed), (int)(m_ySpeed)))
 		{
+			m_SnapBlocked = false;	// [Kaori-Chani] features/net-snapshot
 			// [WS] Inform clients that the door is closing.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER && ( ( m_TotalDist == m_Dist && m_Close ) || poly->bBlocked ) )
 			{
@@ -960,6 +1045,9 @@ void DPolyDoor::TickPoly ()
 		}
 		else
 		{
+			// [Kaori-Chani] features/net-snapshot: stalled until it frees, or reopening,
+			// which is a transition rather than a stall.
+			m_SnapBlocked = ( poly->crush || !m_Close );
 			if (poly->crush || !m_Close)
 			{ // continue moving if the poly is a crusher, or is opening
 				// [EP] Something just blocked the movement, inform the clients.
@@ -999,6 +1087,7 @@ void DPolyDoor::TickPoly ()
 		// Once the distance is used up the door is done regardless.
 		if (m_Dist <= 0 || poly->RotatePolyobj (m_Speed))
 		{
+			m_SnapBlocked = false;	// [Kaori-Chani] features/net-snapshot
 
 			// [WS] Inform clients that the door is closing.
 			if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( ( ( m_TotalDist == m_Dist ) && m_Close ) || poly->bBlocked ) )
@@ -1049,6 +1138,8 @@ void DPolyDoor::TickPoly ()
 		}
 		else
 		{
+			// [Kaori-Chani] features/net-snapshot: as the slide's.
+			m_SnapBlocked = ( poly->crush || !m_Close );
 			if(poly->crush || !m_Close)
 			{ // continue moving if the poly is a crusher, or is opening
 				// [BB] Something just blocked the movement, inform the clients.

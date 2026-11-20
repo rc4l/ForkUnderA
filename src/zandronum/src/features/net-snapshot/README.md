@@ -429,10 +429,26 @@ Each hook is one call from a stock file into the module, listed here as it lands
     sequence plays, and each action on `snapActions` with its generation and `seen`, `legacy`
     and `blocked` flags. A polyobject is not a sector, so the sector check cannot reach it, and
     `SN_CheckSequence( FPolyObj * )` joins the sector overload in `s_sndseq.cpp` for it.
-  - The map's polyobject is built in a yard far larger than itself, since an island exactly its
-    size leaves it nothing to rotate into and the blocked branch then retries every tic. Its
-    trigger is a horizontal line at y = 40, which the forward and backward paths along y = 0
-    never cross, and it turns a finite half circle: byte angle 255 is Hexen's turn-for-ever.
+  - Every blocked branch marks `m_SnapBlocked`, which neither tree did for `DRotatePoly` or
+    `DMovePoly` and the port also lacked for the poly door: a failed rotation or move is
+    reverted whole, so it is always a stall, and the door's two stalls are a crush or a reopen.
+    Each client branch acts on the mark through `SnapHolds( )`, which had no caller here, so
+    the census's held and done counters read 0 in every run and a gated client turned straight
+    past a blocked record -- hardware saw it reach 4135583744 against 2139095040 -- because the
+    per-tic position writes that paper over it with the gate off are stopped under it. A
+    record-made action now runs the server's arithmetic, holding first, and the GONE ends it.
+    The `[snap] checksum:` figure cannot catch a stall: it is the entity state checksum, four
+    bits in an actor record's `misc`, and knows nothing of polyobjects. The poly census's
+    `axes set ... worst units, worst deg` is what covers them.
+  - `DPolyAction::Serialize` links a reloaded action on load and gives it a generation, which
+    the constructor cannot do for it: a hub return would otherwise leave the action off the
+    polyobject's list, where no record describes it and the teardown never finds it.
+  - The map's polyobject has its lines and its anchor in a sealed yard, and its start spot at
+    the start room's south-west corner, where it turns: the engine moves a polyobject by
+    (spot - anchor), so the two the other way round carry it out of the map, where its turn
+    jams short of its target and the blocked branch retries every tic. Its trigger is a
+    horizontal line at y = 40, which the forward and backward paths along y = 0 never cross,
+    and it turns a finite half circle: byte angle 255 is Hexen's turn-for-ever.
 - `p_map.cpp`, `P_ChangeSector`, and `dsectoreffect.cpp`, `DMover::MoveAttached`: a client
   discards the veto either one raises, through `MoverDiscardsSectorVeto( )` and
   `MoverDiscardsAttachedVeto( )`, one call per site holding the role test and the count as the
