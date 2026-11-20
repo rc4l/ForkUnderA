@@ -110,6 +110,8 @@
 #include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
 #include "computation/rejumpdelay_compute.h" // [rc4l] ComputeLandingDelaysJump, ComputeRisingDelaysJump
 #include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
+#include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
+#include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -1559,6 +1561,7 @@ bool AActor::Grind(bool items)
 			flags &= ~MF_SOLID;
 			flags3 |= MF3_DONTGIB;
 			height = radius = 0;
+			zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 			SetState (state);
 			if (isgeneric)	// Not a custom crush state, so colorize it appropriately.
 			{
@@ -1594,6 +1597,7 @@ bool AActor::Grind(bool items)
 				flags &= ~MF_SOLID;
 				flags3 |= MF3_DONTGIB;
 				height = radius = 0;
+				zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 				return false;
 			}
 
@@ -1604,6 +1608,7 @@ bool AActor::Grind(bool items)
 				gib->alpha = alpha;
 				gib->height = 0;
 				gib->radius = 0;
+				zx::cells::Refresh (gib);	// [Doruk-Aksoy] features/blockmap-filter
 
 				// [BB] Apparently Skulltag always has let the clients spawn the gibs.
 				// Whether or not this is intentional, if the clients spawn the gibs on
@@ -2346,6 +2351,12 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	FCheckPosition tm(!!(mo->flags2 & MF2_RIP));
 
+	// [Doruk-Aksoy] features/swept-missiles: the leading steps that would only move the missile are skipped, and the move starts at the last of them.
+	if (zx::sweptmove::ComputeSweepPays(steps) && zx::sweptmove::Sweeps(mo, walkplane != NULL))
+	{
+		const int quiet = zx::sweptmove::QuietRunEndXY(mo, startx, starty, xmove, ymove, steps);
+		if (quiet >= 2) step = quiet;
+	}
 
 	do
 	{
@@ -5184,6 +5195,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	// set subsector and/or block links
 	actor->LinkToWorld (SpawningMapThing);
+	if (!(actor->flags & MF_NOBLOCKMAP)) zx::sweptmove::BlockmapSpawns++;	// [Doruk-Aksoy] features/swept-missiles
 
 	actor->dropoffz =			// killough 11/98: for tracking dropoffs
 	actor->floorz = actor->Sector->floorplane.ZatPoint (ix, iy);
@@ -5273,6 +5285,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	if (!SpawningMapThing)
 	{
 		actor->BeginPlay ();
+		zx::cells::Refresh (actor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 		if (actor->ObjectFlags & OF_EuthanizeMe)
 		{
 			g_SpawnCycles.Unclock();
@@ -6626,6 +6639,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mobj->fillcolor = mthing->fillcolor;
 
 	mobj->BeginPlay ();
+	zx::cells::Refresh (mobj);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 	if (!(mobj->ObjectFlags & OF_EuthanizeMe))
 	{
 		mobj->LevelSpawned ();
@@ -7388,6 +7402,7 @@ bool P_CheckMissileSpawn (AActor* th, fixed_t maxdist, bool bExplode, bool bClie
 		th->x += FLOAT2FIXED(advance.X);
 		th->y += FLOAT2FIXED(advance.Y);
 		th->z += FLOAT2FIXED(advance.Z);
+		zx::cells::Refresh (th);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 	}
 
 	FCheckPosition tm(!!(th->flags2 & MF2_RIP));
