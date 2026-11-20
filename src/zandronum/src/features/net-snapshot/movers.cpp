@@ -590,6 +590,24 @@ void zx::netsnapshot::MoverCountAttachedVeto()
 	++g_moverAttached;
 }
 
+// Only while records drive the movers: a gate-off client keeps stock's veto, its legacy
+// movers having nothing else to stop them.
+bool zx::netsnapshot::MoverDiscardsSectorVeto()
+{
+	if (( g_serverGatesMovers == false ) || ( NETWORK_InClientMode( ) == false ))
+		return false;
+	++g_moverNoBlock;
+	return true;
+}
+
+bool zx::netsnapshot::MoverDiscardsAttachedVeto()
+{
+	if (( g_serverGatesMovers == false ) || ( NETWORK_InClientMode( ) == false ))
+		return false;
+	++g_moverAttached;
+	return true;
+}
+
 void zx::netsnapshot::MoverClientStats( SnapMoverClientStats & st, bool bReset )
 {
 	st.applied = g_moverApplied;

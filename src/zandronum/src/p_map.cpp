@@ -41,6 +41,7 @@
 #include "p_local.h"
 #include "features/decals/decals.h"   // [rc4l] every mark, made and judged in one place
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverCountNoBlock
 #include "features/net-replication/actorstate.h"   // [rc4l] SendPuff, a rail's puff once it survived the sky
 #include "features/net-session/netrole.h"
 #include "p_lnspec.h"
@@ -7091,8 +7092,11 @@ bool P_ChangeSector(sector_t *sector, int crunch, int amt, int floorOrCeil, bool
 					if (!n->visited)
 					{
 						n->visited = true;
-						if (!(n->m_thing->flags & MF_NOBLOCKMAP) ||	//jff 4/7/98 don't do these
-							(n->m_thing->flags5 & MF5_MOVEWITHSECTOR))
+						// [Kaori-Chani] features/net-snapshot: a mirror keeps its sector
+						// link and the collide switch clears its MF_NOBLOCKMAP.
+						if ((( n->m_thing->NetworkFlags & NETFL_MIRROR ) == 0 ) &&
+							(!(n->m_thing->flags & MF_NOBLOCKMAP) ||	//jff 4/7/98 don't do these
+							(n->m_thing->flags5 & MF5_MOVEWITHSECTOR)))
 						{
 							iterator(n->m_thing, &cpos);
 						}
@@ -7154,8 +7158,11 @@ bool P_ChangeSector(sector_t *sector, int crunch, int amt, int floorOrCeil, bool
 			if (!n->visited)								// unprocessed thing found
 			{
 				n->visited = true; 							// mark thing as processed
-				if (!(n->m_thing->flags & MF_NOBLOCKMAP) ||	//jff 4/7/98 don't do these
-					(n->m_thing->flags5 & MF5_MOVEWITHSECTOR))
+				// [Kaori-Chani] features/net-snapshot: as in the walk above, a mirror is never
+				// crushed or pushed by a plane that moves under it.
+				if ((( n->m_thing->NetworkFlags & NETFL_MIRROR ) == 0 ) &&
+					(!(n->m_thing->flags & MF_NOBLOCKMAP) ||	//jff 4/7/98 don't do these
+					(n->m_thing->flags5 & MF5_MOVEWITHSECTOR)))
 				{
 					iterator(n->m_thing, &cpos);		 			// process it
 					if (iterator2 != NULL) iterator2(n->m_thing, &cpos);
@@ -7164,6 +7171,11 @@ bool P_ChangeSector(sector_t *sector, int crunch, int amt, int floorOrCeil, bool
 			}
 		}
 	} while (n);	// repeat from scratch until all things left are marked valid
+
+	// [Kaori-Chani] features/net-snapshot: a client's copy of an obstacle cannot hold its
+	// mover back, the server deciding a block and sending SNAPMVF_BLOCKED.
+	if ( cpos.nofit && zx::netsnapshot::MoverDiscardsSectorVeto( ))
+		cpos.nofit = false;
 
 	if (!cpos.nofit && !isreset /* && sector->MoreFlags & (SECF_UNDERWATERMASK)*/)
 	{

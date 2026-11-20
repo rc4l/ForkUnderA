@@ -131,6 +131,10 @@ void MoverMoveAttached( sector_t * pSec, fixed_t move, bool bCeiling, const char
 // A veto this client overrode, counted: a true predicate and an absent veto
 // read the same from a log otherwise.
 void MoverCountNoBlock();
+// True on a client under the mover gate, counting the veto it discards: the server decides
+// a block and sends SNAPMVF_BLOCKED. With the gate off a client keeps stock's veto.
+bool MoverDiscardsSectorVeto();
+bool MoverDiscardsAttachedVeto();
 void MoverCountAttachedVeto();
 
 }} // namespace zx::netsnapshot

@@ -7274,7 +7274,7 @@ void ServerCommands::SetSectorFloorPlane::Execute()
 	// [Kaori-Chani] features/net-snapshot: not during a map reset, where the server writes
 	// each driven sector itself.
 	if ( zx::netsnapshot::MoverInReset( ) == false )
-		P_MoveLinkedSectors(sector, false, -delta, false);
+		P_MoveLinkedSectors(sector, false, -delta, false, "cmd");
 }
 
 //*****************************************************************************
@@ -7308,7 +7308,7 @@ void ServerCommands::SetSectorCeilingPlane::Execute()
 	// [BB] We also need to move any linked sectors.
 	// [Kaori-Chani] features/net-snapshot: as in SetSectorFloorPlane.
 	if ( zx::netsnapshot::MoverInReset( ) == false )
-		P_MoveLinkedSectors(sector, false, delta, true);
+		P_MoveLinkedSectors(sector, false, delta, true, "cmd");
 }
 
 //*****************************************************************************

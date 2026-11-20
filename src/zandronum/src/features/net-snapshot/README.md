@@ -367,6 +367,29 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - One command for both classes, the kind in the bits above the choice. A window that counts it
     must mask the kind: counting every `SVC2_MOVERSOUND` counts the ceiling's too, which made
     four plat sends read as eighteen.
+- `p_map.cpp`, `P_ChangeSector`, and `dsectoreffect.cpp`, `DMover::MoveAttached`: a client
+  discards the veto either one raises, through `MoverDiscardsSectorVeto( )` and
+  `MoverDiscardsAttachedVeto( )`, one call per site holding the role test and the count as the
+  wait tests do -- left at the sites, the raw `NETWORK_InClientMode( )` put `p_map.cpp` at 22
+  role crossings against 21 and `dsectoreffect.cpp` at 1 against 0. It matters beyond the
+  counters: `MovePlane` writes the plane, calls `P_ChangeSector`, and on a true return rolls the
+  plane back and reverts `MoveAttached`, so a client's own copy of an obstacle could stall or
+  reverse a record-driven mover while the server's carried on. Both answer false with the mover
+  gate off, where a client's legacy movers still need stock's veto.
+  - `P_ChangeSector`'s two touching-list walks skip `NETFL_MIRROR`, which is not redundant here:
+    a mirror is relinked holding only its sector link, and the collide switch clears its
+    `MF_NOBLOCKMAP` (`ghostactor.cpp:2222`) with `fua_csnap_collide` on by default, so without
+    the skip a plane moving under a mirror can crush or push it.
+  - Not measured here. Six windows failed their own preconditions rather than the code: one
+    player start had two clients spawning inside each other, a crusher kills the obstacle
+    `nofit` needs to survive, a crusher line west of a door's takes `ceilingdata` first, and
+    `-forward` needs a bridge round trip to apply, so a lone walker leaves the room before the
+    ceiling reaches it. The window wants a client at 35 tics/s and a stationary second client,
+    so it is routed to hardware beside the drop test; the path itself is verified by reading.
+  - `p_linkedsectors.cpp` carries the trace this time: `P_MoveLinkedSectors` and both helpers
+    take a `who` label and the driving sector, which is what `TracePlaneWrite`'s `pFrom` was
+    always for and nothing passed. The plane handlers pass `cmd`, `MoveAttached` passes `mover`
+    and `revert`, and the default is `link`.
 - `cl_main.cpp`, `ServerCommands::SetSectorFloorPlane::Execute` and `SetSectorCeilingPlane`:
   `MoverSkipsPlaneWrite( sector, bCeiling )`, one call folding the reference's two tests and
   their counts -- a plane a record owns, or one linked to it, must not take an absolute write.
