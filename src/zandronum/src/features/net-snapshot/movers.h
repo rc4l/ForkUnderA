@@ -83,6 +83,11 @@ void ClientMoverGateStats( SnapMoverGateStats & st, bool bReset );
 void MoverCountPlaneSuppressed();
 void MoverCountLinkSuppressed();
 void MoverCountMidtexSuppressed();
+// One call per write site, folding the reference's test and its count: a plane a record owns,
+// or one linked to it, must not take an absolute write.
+bool MoverSkipsPlaneWrite( sector_t *sec, bool bCeiling );
+// The same for a 3D midtexture's y offset on such a plane, which records move.
+bool MoverSkipsMidtexY( line_t *line );
 // Client map reset window; see g_moverResetOpen.
 void DestroySectorMovers();
 void MoverResetBegin();

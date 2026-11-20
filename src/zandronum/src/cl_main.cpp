@@ -168,6 +168,7 @@
 #include "features/net-snapshot/entities.h"   // [Kaori-Chani] the map frame and the stamps
 #include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the ghost table
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] TracePlaneWrite
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -7244,6 +7245,11 @@ void ServerCommands::SetWeaponZoomFactor::Execute()
 //
 void ServerCommands::SetSectorFloorPlane::Execute()
 {
+	// [Kaori-Chani] features/net-snapshot: a plane a record owns, or one linked to it, is
+	// corrected there, and this absolute write would undo it.
+	if ( zx::netsnapshot::MoverSkipsPlaneWrite( sector, false ))
+		return;
+
 	// Calculate the change in floor height.
 	fixed_t delta = height - sector->floorplane.d;
 
@@ -7259,14 +7265,26 @@ void ServerCommands::SetSectorFloorPlane::Execute()
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::floor, sector->GetPlaneTexZ(sector_t::floor) + sector->floorplane.HeightDiff( lastPos ) );
 
+	// [Kaori-Chani] features/net-snapshot: traced before the writes below, so a propagated
+	// one logs after its cause.
+	zx::netsnapshot::TracePlaneWrite( sector, sector_t::floor, "SetSectorFloorPlane",
+		lastPos, sector->floorplane.d );
+
 	// [BB] We also need to move any linked sectors.
-	P_MoveLinkedSectors(sector, false, -delta, false);
+	// [Kaori-Chani] features/net-snapshot: not during a map reset, where the server writes
+	// each driven sector itself.
+	if ( zx::netsnapshot::MoverInReset( ) == false )
+		P_MoveLinkedSectors(sector, false, -delta, false);
 }
 
 //*****************************************************************************
 //
 void ServerCommands::SetSectorCeilingPlane::Execute()
 {
+	// [Kaori-Chani] features/net-snapshot: as in SetSectorFloorPlane.
+	if ( zx::netsnapshot::MoverSkipsPlaneWrite( sector, true ))
+		return;
+
 	// Calculate the change in ceiling height.
 	fixed_t delta = height - sector->ceilingplane.d;
 
@@ -7283,8 +7301,14 @@ void ServerCommands::SetSectorCeilingPlane::Execute()
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::ceiling, sector->GetPlaneTexZ(sector_t::ceiling) + sector->ceilingplane.HeightDiff( lastPos ) );
 
+	// [Kaori-Chani] features/net-snapshot: the ceiling half of the trace above.
+	zx::netsnapshot::TracePlaneWrite( sector, sector_t::ceiling, "SetSectorCeilingPlane",
+		lastPos, sector->ceilingplane.d );
+
 	// [BB] We also need to move any linked sectors.
-	P_MoveLinkedSectors(sector, false, delta, true);
+	// [Kaori-Chani] features/net-snapshot: as in SetSectorFloorPlane.
+	if ( zx::netsnapshot::MoverInReset( ) == false )
+		P_MoveLinkedSectors(sector, false, delta, true);
 }
 
 //*****************************************************************************
@@ -7472,32 +7496,13 @@ void ServerCommands::StopSectorLightEffect::Execute()
 //
 void ServerCommands::DestroyAllSectorMovers::Execute()
 {
-	ULONG	ulIdx;
-
 	// [Kaori-Chani] features/net-snapshot: the reset's writes are done, so the window the
-	// client opened at G_ResetMap closes here, ahead of the loop that clears what is left.
+	// client opened at G_ResetMap closes here, ahead of the teardown below.
 	zx::netsnapshot::MoverResetEnd( );
 
-	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
-	{
-		if ( sectors[ulIdx].ceilingdata )
-		{
-			// Stop the sound sequence (if any) associated with this sector.
-			SN_StopSequence( &sectors[ulIdx], CHAN_CEILING );
-
-			sectors[ulIdx].ceilingdata->Destroy( );
-			sectors[ulIdx].ceilingdata = NULL;
-		}
-
-		if ( sectors[ulIdx].floordata )
-		{
-			// Stop the sound sequence (if any) associated with this sector.
-			SN_StopSequence( &sectors[ulIdx], CHAN_FLOOR );
-
-			sectors[ulIdx].floordata->Destroy( );
-			sectors[ulIdx].floordata = NULL;
-		}
-	}
+	// [Kaori-Chani] features/net-snapshot: the module's teardown in place of the loop that
+	// was here, which stops both channels before either Destroy; see DestroySectorMovers.
+	zx::netsnapshot::DestroySectorMovers( );
 }
 
 //*****************************************************************************
@@ -7633,6 +7638,12 @@ void ServerCommands::SetLineTextureOffset::Execute()
 
 	// [Doruk-Aksoy] Through the setters, which tell the render copy, since a client's fill compares only the sides noted.
 	line->sidedef[side]->SetTextureXOffset( position, XOffset );
+
+	// [Kaori-Chani] features/net-snapshot: not y on an owned plane's 3D midtexture, which
+	// records move; x applies either way.
+	if (( position == side_t::mid ) && zx::netsnapshot::MoverSkipsMidtexY( line ))
+		return;
+
 	line->sidedef[side]->SetTextureYOffset( position, YOffset );
 }
 
@@ -9528,6 +9539,10 @@ static void client_DoWaggle( BYTESTREAM_s *pByteStream )
 		return;
 
 	pSector = &sectors[lSectorID];
+
+	// [Kaori-Chani] features/net-snapshot: a snapshot-driven predecessor whose GONE this
+	// command overtook, which would otherwise keep the plane.
+	zx::netsnapshot::MoverEvictForWaggle( pSector, bCeiling ? sector_t::ceiling : sector_t::floor );
 
 	// Create the waggle, and set all its attributes that were read in.
 	if ( bCeiling )

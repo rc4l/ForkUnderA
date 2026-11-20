@@ -367,6 +367,34 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - One command for both classes, the kind in the bits above the choice. A window that counts it
     must mask the kind: counting every `SVC2_MOVERSOUND` counts the ceiling's too, which made
     four plat sends read as eighteen.
+- `cl_main.cpp`, `ServerCommands::SetSectorFloorPlane::Execute` and `SetSectorCeilingPlane`:
+  `MoverSkipsPlaneWrite( sector, bCeiling )`, one call folding the reference's two tests and
+  their counts -- a plane a record owns, or one linked to it, must not take an absolute write.
+  `SetLineTextureOffset` takes `MoverSkipsMidtexY( line )` between the x write and the y, since
+  records move a 3D midtexture's y offset on such a plane and x applies either way, and
+  `client_DoWaggle` takes `MoverEvictForWaggle` before it builds, for a snapshot-driven
+  predecessor whose GONE the command overtook. Both handlers also trace through
+  `TracePlaneWrite` and wrap `P_MoveLinkedSectors` in `MoverInReset( )`, the server writing each
+  driven sector itself during a reset. `capture.h` joins `cl_main.cpp`'s includes for the trace,
+  as it does in the reference.
+  - Defensive parity, and the measurement says so rather than otherwise. The reset's pass does
+    broadcast absolute writes while a mover is live -- ids 118 and 119, four and six of them in
+    one window, two landing on the pillar's own planes and undoing its build -- but the client's
+    trace reads `thinker none` on every one: `SVC2_RESETMAP` makes the client run `GAME_ResetMap`
+    itself, whose client branch destroys its record-made movers before the pass's commands
+    arrive. The join pass cannot reach them either, its reliable writes landing before any
+    record, and mover code's own `pastdest` sends are stopped by `MoverServerStops( cls, true )`.
+    What is left during play is `DAnimatedDoor`, an uncaptured class whose three sends
+    (`p_doors.cpp:894`, `:1005`, `:1135`) are never gated, so a write can meet a plane a record
+    owns where a link drives it from a record-owned control, which is `LinkControlOwned`'s case.
+  - `DestroyAllSectorMovers::Execute` drops its own sector loop for the module's
+    `DestroySectorMovers( )`, which stops both channels before either `Destroy`: a two-plane
+    mover's destroy clears `floordata` too, so the stock loop's second test failed and left a
+    `CHAN_FLOOR` sequence playing. Its `PolyDestroyAll( )` tail walks `snapActions`, which
+    `PolyLink` fills, so it is inert until the polyobject unit hooks that.
+  - The three census columns it feeds -- plane verifications suppressed, on linked planes, and
+    midtex offsets -- could not move before this: nothing called their counters, so they read 0
+    whatever happened. They are still 0 in every window here, now because nothing collided.
 - `cl_main.cpp`, `client_DoElevator` and `client_DestroyElevator`, and both senders in
   `sv_commands.cpp`: `MoverLegacyStandsAside( SNAPMV_ELEVATOR )` after each handler's last read,
   and `MoverServerStops( SNAPMV_ELEVATOR )` opening each sender. Both handlers do mover state
@@ -424,8 +452,9 @@ Each hook is one call from a stock file into the module, listed here as it lands
   and a counter ahead of the wire is indistinguishable from a dropped send. Aligned, the plat's
   by-sector count and its share of the wire agree exactly, with the legacy count at 0 under the
   gate -- which is the pair that would catch a send escaping the module.
-- `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, ahead of
-  the stock loop, which is left as it is so the gate-off reset behaves as today.
+- `cl_main.cpp`, `ServerCommands::DestroyAllSectorMovers::Execute`: `MoverResetEnd( )`, then
+  `DestroySectorMovers( )` in place of the stock loop. With the gate off it does what that loop
+  did, except that a two-plane mover's `CHAN_FLOOR` sequence now stops too (see the plane guards).
 - `cl_main.cpp`, `ServerCommands::SnapMapReset::Execute`: `MoverSetResetCount( resetCount )`,
   which releases the records held for that reset.
 

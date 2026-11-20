@@ -434,6 +434,30 @@ void zx::netsnapshot::MoverCountLinkSuppressed()
 	++g_moverLinkSuppressed;
 }
 
+bool zx::netsnapshot::MoverSkipsPlaneWrite( sector_t *sec, bool bCeiling )
+{
+	if ( MoverOwnsPlane( sec, bCeiling ))
+	{
+		++g_moverPlaneSuppressed;
+		return true;
+	}
+	// A plane linked to one a record owns: a late absolute write would undo the record's.
+	if ( LinkControlOwned( sec, bCeiling ))
+	{
+		++g_moverLinkSuppressed;
+		return true;
+	}
+	return false;
+}
+
+bool zx::netsnapshot::MoverSkipsMidtexY( line_t *line )
+{
+	if ( Midtex3dLineOwned( line ) == false )
+		return false;
+	++g_moverMidtexSuppressed;
+	return true;
+}
+
 bool zx::netsnapshot::MoverPlaysWaitSound( )
 {
 	return ( NETWORK_InClientMode( ) == false );
