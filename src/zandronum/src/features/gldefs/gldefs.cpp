@@ -64,6 +64,7 @@
 #include "features/gldefs/computation/lighttags_compute.h"
 #include "features/gldefs/computation/lightsize_compute.h"
 #include "features/gldefs/computation/attenuate_compute.h"
+#include "features/gldefs/computation/actorlights_compute.h"
 #include "g_level.h"   // [Doruk-Aksoy] level.flags3, whose LEVEL3_ATTENUATE an unset attenuate follows
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
@@ -760,9 +761,10 @@ FInternalLightAssociation::FInternalLightAssociation(FLightAssociation * asso)
 //
 //==========================================================================
 
-inline TDeletingArray<FInternalLightAssociation *> * gl_GetActorLights(AActor * actor)
+// [Doruk-Aksoy] A class's light associations, kept on its FActorInfo since no actor ever changes them.
+inline TDeletingArray<FInternalLightAssociation *> * gl_GetActorLights(const PClass * cls)
 {
-	return (TDeletingArray<FInternalLightAssociation *>*)actor->lightassociations;
+	return (TDeletingArray<FInternalLightAssociation *>*)cls->ActorInfo->FuaLightAssociations;
 }
 
 TDeletingArray< TDeletingArray<FInternalLightAssociation *> * > AssoDeleter;
@@ -787,6 +789,14 @@ void gl_InitializeActorLights()
 {
 	// [rc4l] A restart (wad_reload) makes every class again with no lights, so the lists the last start made are freed here instead of at exit.
 	AssoDeleter.DeleteAndClear();
+	for (unsigned int i = 0; i < PClass::m_Types.Size(); i++)
+	{
+		if (FActorInfo *info = PClass::m_Types[i]->ActorInfo)
+		{
+			info->FuaLightAssociations = NULL;
+			info->FuaLightsAttached = false;
+		}
+	}
 	for(unsigned int i=0;i<LightAssociations.Size();i++)
 	{
 		const PClass * ti = PClass::FindClass(LightAssociations[i].ActorName());
@@ -798,13 +808,13 @@ void gl_InitializeActorLights()
 			{
 				FInternalLightAssociation * iasso = new FInternalLightAssociation(&LightAssociations[i]);
 
-				if (!defaults->lightassociations)
+				if (!ti->ActorInfo->FuaLightAssociations)
 				{
 					TDeletingArray<FInternalLightAssociation*> *p =new TDeletingArray<FInternalLightAssociation*>;
-					defaults->lightassociations = p;
+					ti->ActorInfo->FuaLightAssociations = p;
 					AssoDeleter.Push(p);
 				}
-				TDeletingArray<FInternalLightAssociation *> * lights = gl_GetActorLights(defaults);
+				TDeletingArray<FInternalLightAssociation *> * lights = gl_GetActorLights(ti);
 				if (iasso->Light()==NULL)
 				{
 					// The definition was not valid.
@@ -866,6 +876,7 @@ void gl_AttachLight(AActor *actor, unsigned int count, const FLightDefaults *lig
 		light->target = actor;
 		light->owned = true;
 		actor->dynamiclights.Push(light);
+		actor->GetClass()->ActorInfo->FuaLightsAttached = true;	// [Doruk-Aksoy] so gl_SetActorLights reads this class's actors' lights from now on
 	}
 	light->flags2&=~MF2_DORMANT;
 	lightdef->ApplyProperties(light);
@@ -887,10 +898,13 @@ void gl_SetActorLights(AActor *actor)
 	if (( actor->player != NULL ) && ( actor->player->bSpectating ))
 		return;
 
-	TArray<FInternalLightAssociation *> * l = gl_GetActorLights(actor);
+	const FActorInfo *info = actor->GetClass()->ActorInfo;
+	TArray<FInternalLightAssociation *> * l = gl_GetActorLights(actor->GetClass());
 	unsigned int count = 0;
 
 	if (actor->state == NULL) return;
+	// [Doruk-Aksoy] Nothing to attach and none held, decided without reading the actor's own light list.
+	if (zx::gldefs::ComputeActorLightsIdle(l != NULL && l->Size() > 0, actor->state->Light, info->FuaLightsAttached)) return;
 	if (l)
 	{
 		TArray<FInternalLightAssociation *> & LightAssociations=*l;

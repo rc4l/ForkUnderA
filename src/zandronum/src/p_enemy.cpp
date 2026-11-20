@@ -400,7 +400,8 @@ bool P_CheckMissileRange (AActor *actor)
 	dist = P_AproxDistance (actor->x-actor->target->x,
 							actor->y-actor->target->y) - 64*FRACUNIT;
 	
-	if (actor->MeleeState == NULL)
+	// [Doruk-Aksoy] MeleeState, MissileState and MinMissileChance are the class's (only p_states.cpp and DECORATE set them, on defaults), so chase code reads them from the defaults instead of a cold actor line.
+	if (actor->GetDefault()->MeleeState == NULL)
 		dist -= 128*FRACUNIT;	// no melee attack, so fire more
 
 	return actor->SuggestMissileAttack (dist);
@@ -415,13 +416,13 @@ bool AActor::SuggestMissileAttack (fixed_t dist)
 	if (maxtargetrange > 0 && dist > maxtargetrange)
 		return false;	// The Arch Vile's special behavior turned into a property
 		
-	if (MeleeState != NULL && dist < meleethreshold)
+	if (GetDefault()->MeleeState != NULL && dist < meleethreshold)
 		return false;	// From the Revenant: close enough for fist attack
 
 	if (flags4 & MF4_MISSILEMORE) dist >>= 1;
 	if (flags4 & MF4_MISSILEEVENMORE) dist >>= 3;
 	
-	int mmc = FixedMul(MinMissileChance, G_SkillProperty(SKILLP_Aggressiveness));
+	int mmc = FixedMul(GetDefault()->MinMissileChance, G_SkillProperty(SKILLP_Aggressiveness));
 	return pr_checkmissilerange() >= MIN<int> ((const int)(dist >> FRACBITS), mmc);
 }
 
@@ -3137,19 +3138,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Chase)
 	}
 	else // this is the old default A_Chase
 	{
-		A_DoChase (self, false, self->MeleeState, self->MissileState, true, gameinfo.nightmarefast, false);
+		A_DoChase (self, false, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, gameinfo.nightmarefast, false);
 	}
 }
 
 DEFINE_ACTION_FUNCTION(AActor, A_FastChase)
 {
-	A_DoChase (self, true, self->MeleeState, self->MissileState, true, true, false);
+	A_DoChase (self, true, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, true, false);
 }
 
 DEFINE_ACTION_FUNCTION(AActor, A_VileChase)
 {
 	if (!P_CheckForResurrection(self, true))
-		A_DoChase (self, false, self->MeleeState, self->MissileState, true, gameinfo.nightmarefast, false);
+		A_DoChase (self, false, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, gameinfo.nightmarefast, false);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ExtChase)
@@ -3162,14 +3163,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ExtChase)
 
 	// Now that A_Chase can handle state label parameters, this function has become rather useless...
 	A_DoChase(self, false,
-		domelee ? self->MeleeState:NULL, domissile ? self->MissileState:NULL,
+		domelee ? self->GetDefault()->MeleeState:NULL, domissile ? self->GetDefault()->MissileState:NULL,
 		playactive, nightmarefast, false);
 }
 
 // for internal use
 void A_Chase(AActor *self)
 {
-	A_DoChase (self, false, self->MeleeState, self->MissileState, true, gameinfo.nightmarefast, false);
+	A_DoChase (self, false, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, gameinfo.nightmarefast, false);
 }
 
 //=============================================================================
