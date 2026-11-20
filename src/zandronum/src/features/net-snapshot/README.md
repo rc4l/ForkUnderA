@@ -367,6 +367,32 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - One command for both classes, the kind in the bits above the choice. A window that counts it
     must mask the kind: counting every `SVC2_MOVERSOUND` counts the ceiling's too, which made
     four plat sends read as eighteen.
+- `cl_main.cpp`, `CLIENT_ReadActorFromNetID`: an id with no legacy actor falls back to
+  `MirrorForNetID`, for the seven commands `CLIENT_CommandAcceptsGhost` admits -- `SoundActor`,
+  `SoundActorIfNotPlaying`, `StopSound`, `SpawnBlood`, `SpawnBloodSplatter`,
+  `SpawnBloodSplatter2` and `StartConversation`. Of the 54 commands that resolve an actor by
+  NetID, 31 have senders `SuppressesLegacy` already stops, so 23 still arrive at nolegacy 3 and
+  must resolve an id whose actor the snapshot owns and `SpawnThing` never made. Sound, blood and
+  conversation keep separate counters, so one window's figures stay comparable across them, and
+  a miss records which of three causes it was: `LeftWithin` (the client dropped the entity and
+  the server's ack has not caught up), else `GhostPresent` (the ghost is here without a mirror),
+  else never known -- in that order, a departed ghost being absent too.
+  - The other misses are **deliberate**, because the snapshot already carries the effect:
+    `SetThingFrameNF` (the record's `qstate` and `qtics` decide the frame), `ThingActivate` and
+    `ThingDeactivate` on the actor (activation moves the server's actor, and the record carries
+    the state and position that follow). `DamagePlayer`, `DamagePlayerWithType`, `KillPlayer`,
+    `ACSScriptExecute`, `ACSSendString` and `SetPlayerCamera` pass `allowNull`, so only the
+    attacker, activator or camera is lost, not the command. `SecretFound`, `WeaponRailgun` and
+    `SetWeaponAmmoGive` are not at risk: their actor is a player or an inventory item, and a
+    player id is excluded from mirroring.
+  - Five are **queued**, not admitted: `SetThingSize`, `SetThingScale`,
+    `SetThingSpriteOrientation`, `FuaSetActorMaterial` and `FuaSetActorUniform` set properties no
+    record field carries -- `renderstate` is translation, style and alpha, `misc` is flags -- so
+    on a gated client they are lost today. `SetThingScale`'s sender is already suppressed, so
+    that one is lost now rather than later. The mirror is not the fix for them: a property set on
+    a mirror dies when the mirror is recreated, and a reliable command arrives before the
+    unreliable snapshot that makes the mirror at all, so the write would land on nothing. They
+    belong in a small entities unit that carries them as record state.
 - `po_man.cpp`, `cl_main.cpp` and `sv_commands.cpp`, the polyobject unit. `DPolyAction::Tick`
   becomes a wrapper -- `SnapCapture`, the class's `TickPoly`, then `SnapCapture` unless
   euthanized -- and each of the four classes' `Tick` is now `TickPoly`, which is the whole of

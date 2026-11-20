@@ -39,6 +39,10 @@ void HideEnteredLegacy();
 // entity the client has no legacy actor for. bCount false keeps a per-tic
 // retry (a point pusher's source) out of the mirror lookup line.
 AActor* MirrorForNetID(unsigned int id, bool bCount = true);
+// For CLIENT_ReadActorFromNetID: an id with no legacy actor resolves to its mirror for the
+// few commands that may use one, each resolution counted; a no-op for any other command.
+void ResolveThroughMirror(unsigned short netID, const PClass *subclass, AActor *&actor,
+	const char *commandName);
 
 // A snapshot point sound for an entity with no mirror yet, moved onto the
 // mirror when it appears, if the S_Sound just made started it (bStarted).

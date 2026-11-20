@@ -3779,6 +3779,10 @@ bool CLIENT_ReadActorFromNetID( unsigned short netID, const PClass *subclass, bo
 {
 	actor = CLIENT_FindThingByNetID( netID );
 
+	// [Kaori-Chani] features/net-snapshot: an id with no legacy actor may still have a mirror,
+	// which a few commands can use; the module decides which, and counts how each resolved.
+	zx::netsnapshot::ResolveThroughMirror( netID, subclass, actor, commandName );
+
 	if ( actor && ( actor->IsKindOf( subclass ) == false ))
 	{
 		if ( allowNull == false )

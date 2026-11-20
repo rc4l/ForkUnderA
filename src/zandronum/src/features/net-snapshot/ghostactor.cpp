@@ -2774,6 +2774,111 @@ void zx::netsnapshot::GhostFrame()
 	}
 }
 
+//*****************************************************************************
+// CLIENT_ReadActorFromNetID's mirror fallback, kept here with its counters.
+
+// The sound counters, defined in cl_main.cpp beside the sound trace that reads them.
+extern unsigned int g_ghostSndLegacy, g_ghostSndMirror, g_ghostSndLost;
+extern unsigned int g_ghostSndWrongClass, g_ghostSndLostLeft;
+extern unsigned int g_ghostSndLostNoMirror, g_ghostSndLostNoGhost;
+extern char g_ghostSndLegacyClass[64];
+// Blood and conversation resolve the same way but keep their own counters, so each family's
+// figures stay comparable with what was measured for it.
+unsigned int g_ghostBloodLegacy = 0, g_ghostBloodMirror = 0, g_ghostBloodLost = 0;
+unsigned int g_ghostConvLegacy = 0, g_ghostConvMirror = 0, g_ghostConvLost = 0;
+
+// How recently an entity may have left and still have its sound counted against that
+// departure rather than against never having been known.
+#define CLIENT_DEPARTED_SOUND_MS	500
+
+// The three families share this path and keep their own counters, and a miss records which
+// of the three causes it was.
+static void ghost_ResolveCounted( unsigned short netID, const PClass *subclass,
+	AActor *&actor, const char *commandName )
+{
+	const bool bBlood = ( strnicmp( commandName, "SpawnBlood", 10 ) == 0 );
+	const bool bConv = ( stricmp( commandName, "StartConversation" ) == 0 );
+
+	if ( actor != NULL )
+	{
+		if ( bBlood )
+			++g_ghostBloodLegacy;
+		else if ( bConv )
+			++g_ghostConvLegacy;
+		else
+		{
+			++g_ghostSndLegacy;
+			if (( g_ghostSndLegacyClass[0] == '\0' ) && ( actor->GetClass( ) != NULL ))
+			{
+				// Copied rather than pointed at: a name table entry outlives this
+				// call, but a copy cannot be wrong about that.
+				strncpy( g_ghostSndLegacyClass, actor->GetClass( )->TypeName.GetChars( ),
+					sizeof( g_ghostSndLegacyClass ) - 1 );
+				g_ghostSndLegacyClass[sizeof( g_ghostSndLegacyClass ) - 1] = '\0';
+			}
+		}
+		return;
+	}
+
+	actor = MirrorForNetID( netID );
+	if ( actor == NULL )
+	{
+		if ( bBlood )
+			++g_ghostBloodLost;
+		else if ( bConv )
+			++g_ghostConvLost;
+		else
+		{
+			++g_ghostSndLost;
+			// Three causes with opposite fixes, in this order because a departed
+			// ghost is also absent and would otherwise read as never known.
+			if ( LeftWithin( netID, CLIENT_DEPARTED_SOUND_MS ))
+				++g_ghostSndLostLeft;
+			else if ( GhostPresent( netID ))
+				++g_ghostSndLostNoMirror;
+			else
+				++g_ghostSndLostNoGhost;
+		}
+		return;
+	}
+
+	if ( actor->IsKindOf( subclass ) == false )
+	{
+		++g_ghostSndWrongClass;		// rejected by the class test below
+		return;
+	}
+
+	if ( bBlood )
+		++g_ghostBloodMirror;
+	else if ( bConv )
+		++g_ghostConvMirror;
+	else
+		++g_ghostSndMirror;
+}
+
+// The commands whose actor may be a mirror, every other
+// one naming a snapshot-owned actor being dropped deliberately; see the module's README.
+static bool ghost_CommandAcceptsGhost( const char *commandName )
+{
+	if ( commandName == NULL )
+		return false;
+
+	return ( stricmp( commandName, "SoundActor" ) == 0 )
+		|| ( stricmp( commandName, "SoundActorIfNotPlaying" ) == 0 )
+		|| ( stricmp( commandName, "StopSound" ) == 0 )
+		|| ( stricmp( commandName, "SpawnBlood" ) == 0 )
+		|| ( stricmp( commandName, "SpawnBloodSplatter" ) == 0 )
+		|| ( stricmp( commandName, "SpawnBloodSplatter2" ) == 0 )
+		|| ( stricmp( commandName, "StartConversation" ) == 0 );
+}
+
+void zx::netsnapshot::ResolveThroughMirror( unsigned short netID, const PClass *subclass,
+	AActor *&actor, const char *commandName )
+{
+	if ( ghost_CommandAcceptsGhost( commandName ))
+		ghost_ResolveCounted( netID, subclass, actor, commandName );
+}
+
 // The [snap] report, which clears the counts behind each line it prints.
 static void ghost_Report()
 {
@@ -3107,6 +3212,8 @@ static void ghost_Report()
 			extern unsigned int g_ghostSndLostNoGhost, g_ghostSndPositional;
 			extern char g_ghostSndLegacyClass[64];
 			extern unsigned int g_sndLocalGhost, g_sndLocalOther;
+			extern unsigned int g_ghostBloodLegacy, g_ghostBloodMirror, g_ghostBloodLost;
+			extern unsigned int g_ghostConvLegacy, g_ghostConvMirror, g_ghostConvLost;
 			if ((g_ghostSndLegacy | g_ghostSndMirror | g_ghostSndWrongClass | g_ghostSndLost | g_sndLocalGhost) != 0)
 			{
 				Printf("[snap] sound: %u to mirror, %u legacy%s%s, %u wrong-class,"
@@ -3132,6 +3239,16 @@ static void ghost_Report()
 			g_ghostSndLostLeft = g_ghostSndLostNoMirror = g_ghostSndLostNoGhost = 0;
 			g_ghostSndPositional = 0;
 			g_ghostSndLegacyClass[0] = '\0';
+			// Each family on its own line and reset with the sound's, so one window's figures
+			// stay comparable across them.
+			if (( g_ghostBloodLegacy | g_ghostBloodMirror | g_ghostBloodLost ) != 0 )
+				Printf("[snap] blood: %u to mirror, %u legacy, %u LOST\n",
+					g_ghostBloodMirror, g_ghostBloodLegacy, g_ghostBloodLost);
+			if (( g_ghostConvLegacy | g_ghostConvMirror | g_ghostConvLost ) != 0 )
+				Printf("[snap] conversation: %u to mirror, %u legacy, %u LOST\n",
+					g_ghostConvMirror, g_ghostConvLegacy, g_ghostConvLost);
+			g_ghostBloodLegacy = g_ghostBloodMirror = g_ghostBloodLost = 0;
+			g_ghostConvLegacy = g_ghostConvMirror = g_ghostConvLost = 0;
 			g_sndLocalGhost = g_sndLocalOther = 0;
 		}
 
