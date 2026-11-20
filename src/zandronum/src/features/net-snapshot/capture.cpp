@@ -6134,6 +6134,14 @@ CCMD(fua_snap_sectorcheck)
 					(int)pl->GetStatus(), pl->GetCount(), pl->GetWait(),
 					(int)pl->GetLow(), (int)pl->GetHigh());
 			}
+			if (p->IsKindOf(RUNTIME_CLASS(DDoor)))
+			{
+				DDoor * const dr = static_cast<DDoor *>(p);
+				// Direction 0 is the wait itself, so a window polls for it before placing
+				// a drop; countdown is the tics of that wait still to run.
+				Printf("    direction %d countdown %d wait %d\n",
+					dr->GetDirection(), dr->GetTopCountdown(), dr->GetTopWait());
+			}
 		}
 	}
 	if (found == 0)
@@ -6576,8 +6584,8 @@ void zx::netsnapshot::MoverCaptureCeiling(const void * pOwner, WORD index,
 }
 
 // DDoor excludes the plane, its wait countdown, and botDist and oldFloorDist,
-// which Tick recomputes on both machines every tic a floor moves under the door.
-// topWait is compared: it is what the countdown reloads from.
+// which Tick recomputes on both machines every tic a floor moves under the door;
+// all four still ride the record. topWait is compared: the countdown reloads from it.
 void zx::netsnapshot::MoverCaptureDoor(const void * pOwner, WORD index,
 	const SnapMoverDoor & s, bool bBlocked, bool bGone)
 {

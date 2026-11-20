@@ -231,8 +231,9 @@ Each hook is one call from a stock file into the module, listed here as it lands
     code writing both fields before reading them, and the deserialising `DPlat::DPlat( )` taking
     them straight from the archive.
   - While the legacy plat handlers are live the client-run wait is inert, and deliberately so:
-    the client's countdown starts at or below the server's count, the record carrying what the
-    server had when it was sent, so on a clean link `SVC_CHANGEPLATSTATUS` ends the wait first
+    the client's countdown starts at or below the server's count, `m_Count` being left out of
+    the compare but riding every record as the floor's countdowns do, so on a clean link
+    `SVC_CHANGEPLATSTATUS` ends the wait first
     and `plat waits: ... ran out` reads 0. A delayed status command lets the client end the wait
     itself, which the plat suppression will rely on. What the countdown does run is visible in
     the client's `m_Count`: against HEAD it sits on a plateau between records, here it falls
@@ -245,9 +246,10 @@ Each hook is one call from a stock file into the module, listed here as it lands
   client-side alone, so the server's sends are unchanged. What ends a client's wait moves from
   the command to the record, measured as `door waits: 1 early (worst 17)` where the same window
   at HEAD counts none: the door's dirty compare leaves `topCountdown` out, so no record goes out
-  merely because it ticked and the client's countdown is stale by however long since the last
-  one. `ran out` therefore stays 0 on a clean link here too, the record reaching the door before
-  its own counter does.
+  merely because it ticked, but the countdown rides every record that does go out:
+  `MoverSlotRead` serialises the slot's body as `MoverCaptureDoor` last refreshed it, which is
+  every tic. `ran out` therefore stays 0 on a clean link here too, the record reaching the door
+  before its own counter does.
   - That sound had no sender here. The enum, `OnDoorSound` and `P_DoorSoundSector` were ported,
     but nothing sent `SVC2_DOORSOUND`, measured as none of them on the wire in six windows.
     Suppressing `client_ChangeDoorDirection` takes away the client's only wait-end sound, and it

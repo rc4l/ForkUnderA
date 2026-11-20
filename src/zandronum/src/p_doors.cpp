@@ -626,6 +626,18 @@ void DDoor::SetLightTag( LONG lTag )
 	m_LightTag = lTag;
 }
 
+// [Kaori-Chani] features/net-snapshot: read by fua_snap_sectorcheck. On a client with no
+// record for this door yet, m_TopCountdown is the uninitialized value stock never reads.
+int DDoor::GetTopCountdown( void )
+{
+	return ( m_TopCountdown );
+}
+
+int DDoor::GetTopWait( void )
+{
+	return ( m_TopWait );
+}
+
 //============================================================================
 //
 // [RH] Merged EV_VerticalDoor and EV_DoLockedDoor into EV_DoDoor

@@ -772,6 +772,11 @@ public:
 	LONG	GetLightTag( void );
 	void	SetLightTag( LONG lTag );
 
+	// [Kaori-Chani] features/net-snapshot: the wait a door is counting, which is what
+	// fua_snap_sectorcheck reads to place a record drop inside that wait.
+	int		GetTopCountdown( void );
+	int		GetTopWait( void );
+
 protected:
 	EVlDoor		m_Type;
 	fixed_t 	m_TopDist;
