@@ -726,6 +726,10 @@ private:
 	friend bool zx::netsnapshot::MoverPillarOwnsPlane (sector_t *sec);
 };
 
+// [Kaori-Chani] features/net-snapshot: a pillar's sound, for a client whose DoPillar handler
+// is gated and whose sound therefore arrives keyed on the sector.
+void P_PillarSoundSector (sector_t *sec);
+
 // [rc4l] uzdoom@c3c22315d -- takes the activating line so a zero tag can act on its back sector.
 bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
 				  fixed_t height2, int crush, bool hexencrush);

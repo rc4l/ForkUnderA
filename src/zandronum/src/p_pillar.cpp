@@ -114,6 +114,9 @@ void DPillar::Serialize (FArchive &arc)
 void DPillar::UpdateToClient( ULONG ulClient )
 {
 	SERVERCOMMANDS_DoPillar( m_Type, m_Sector,(LONG)( m_FloorSpeed),(LONG)( m_CeilingSpeed),(LONG)( m_FloorTarget),(LONG)( m_CeilingTarget), m_Crush, m_Hexencrush, m_PillarID, ulClient, SVCF_ONLYTHISCLIENT );
+	// [Kaori-Chani] features/net-snapshot: this joiner's own copy of the sound the gated
+	// client_DoPillar would have started, to the same one client as the command above.
+	zx::netsnapshot::MoverSendPillarSound( m_Sector, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]
@@ -377,6 +380,16 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 	}
 }
 
+// [Kaori-Chani] features/net-snapshot: client_DoPillar's own sound, copied. It has no SeqName
+// branch, unlike the constructor above, so a gated client plays exactly what it played before.
+void P_PillarSoundSector (sector_t *sec)
+{
+	if (sec->seqType >= 0)
+		SN_StartSequence (sec, CHAN_FLOOR, sec->seqType, SEQ_PLATFORM, 0);
+	else
+		SN_StartSequence (sec, CHAN_FLOOR, "Floor", 0);
+}
+
 // [rc4l] uzdoom@c3c22315d -- a zero tag means "manual trigger": act on the activating line's
 // back sector instead of iterating tagged sectors.
 bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
@@ -419,7 +432,11 @@ bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, f
 
 			// [BC] If we're the server, tell clients to create the pillar.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
 				SERVERCOMMANDS_DoPillar( pPillar->GetType(), sec, pPillar->GetFloorSpeed(), pPillar->GetCeilingSpeed(), pPillar->GetFloorTarget(), pPillar->GetCeilingTarget(), pPillar->GetCrush(), pPillar->GetHexencrush(), pPillar->GetID() );
+				// [Kaori-Chani] features/net-snapshot: broadcast, as the command above is.
+				zx::netsnapshot::MoverSendPillarSound( sec );
+			}
 		}
 	}
 	return rtn;

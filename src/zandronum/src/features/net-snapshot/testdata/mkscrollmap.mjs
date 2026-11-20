@@ -40,6 +40,7 @@ const FLOOR_WAGGLE = 138;         // Floor_Waggle (tag, amplitude, frequency, of
 const DOOR_CLOSE_IN_30 = 74;      // p_lnspec.h: a door spawned at map load, closing 30s in
 const PLAT_DOWNWAITUPSTAY = 62;   // Plat_DownWaitUpStay (tag, speed, delay in tics)
 const PLAT_PERPETUALRAISE = 60;   // actionspecials.h: Plat_PerpetualRaise (tag, speed, delay)
+const PILLAR_BUILD = 29;          // actionspecials.h: Pillar_Build (tag, speed, height)
 
 const TEX = { texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 const WALL = { texturemiddle: "STARTAN2" };
@@ -60,6 +61,9 @@ const slowdoor = m.sector({ ...FLAT, id: 5 });
 // Tag 6, floor raised so FindLowestFloorSurrounding is below it: nothing else owns this
 // floor, so the plat's wait is the only countdown on it.
 const platsec = m.sector({ ...FLAT, heightfloor: 32, id: 6 });
+// Tag 7, tall and owned by nothing else: a pillar takes both of its planes, and at speed 1
+// its 192 units of travel each way run long enough for a client to be read mid-move.
+const pillarsec = m.sector({ ...FLAT, heightceiling: 384, id: 7 });
 
 const perimeter = [
   [-384, -128, -384, 128, room],
@@ -69,7 +73,9 @@ const perimeter = [
   [384, 128, 640, 128, doorsec],
   [640, 128, 896, 128, slowdoor],
   [896, 128, 1152, 128, platsec],
-  [1152, 128, 1152, -128, platsec],
+  [1152, 128, 1408, 128, pillarsec],
+  [1408, 128, 1408, -128, pillarsec],
+  [1408, -128, 1152, -128, pillarsec],
   [1152, -128, 896, -128, platsec],
   [896, -128, 640, -128, slowdoor],
   [640, -128, 384, -128, doorsec],
@@ -84,6 +90,7 @@ m.opening(128, -128, 128, 128, control, scrolled, OPEN, OPEN);
 m.opening(384, -128, 384, 128, doorsec, control, OPEN, OPEN);
 m.opening(640, -128, 640, 128, slowdoor, doorsec, OPEN, OPEN);
 m.opening(896, -128, 896, 128, platsec, slowdoor, OPEN, OPEN);
+m.opening(1152, -128, 1152, 128, pillarsec, platsec, OPEN, OPEN);
 
 // The four scrollers, all on sector tag 2, all driven by control sector tag 1. Each line's own
 // side sector is the control, as P_SpawnScrollers reads it from sidedef[0].
@@ -111,6 +118,12 @@ m.thing({ x: -200, y: 0, angle: 0, type: POINTPUSHER, id: 7 });
 m.opening(-372, -64, -372, 64, room, room, OPEN, OPEN,
   { special: PLAT_PERPETUALRAISE, arg0: 2, arg1: 8, arg2: 35, playercross: true,
     blocking: false });
+
+// A pillar on tag 7, two units past the floor's line so one forward step starts both: the
+// pillar owns a sector of its own, so the two cannot collide.
+m.opening(-350, -64, -350, 64, room, room, OPEN, OPEN,
+  { special: PILLAR_BUILD, arg0: 7, arg1: 1, arg2: 0, playercross: true,
+    repeatspecial: true, blocking: false });
 
 // The first line a player meets, and repeatable: one step starts a floor that finishes
 // inside a capture window, without the lift behind the start having been touched.

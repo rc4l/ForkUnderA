@@ -5249,6 +5249,10 @@ void SERVERCOMMANDS_StartElevatorSound( LONG lID, ULONG ulPlayerExtra, ServerCom
 //
 void SERVERCOMMANDS_DoPillar( DPillar::EPillar Type, sector_t *pSector, LONG lFloorSpeed, LONG lCeilingSpeed, LONG lFloorTarget, LONG lCeilingTarget, LONG Crush, bool Hexencrush, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_PILLAR ))
+		return;
+
 	LONG	lSectorID;
 
 	lSectorID = LONG( pSector - sectors );
@@ -5272,6 +5276,10 @@ void SERVERCOMMANDS_DoPillar( DPillar::EPillar Type, sector_t *pSector, LONG lFl
 //
 void SERVERCOMMANDS_DestroyPillar( LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_PILLAR ))
+		return;
+
 	NetCommand command ( SVC_DESTROYPILLAR );
 	command.addShort ( lID );
 	command.sendCommandToClients ( ulPlayerExtra, flags );

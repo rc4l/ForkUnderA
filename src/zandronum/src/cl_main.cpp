@@ -9432,6 +9432,11 @@ static void client_DoPillar( BYTESTREAM_s *pByteStream )
 	if (( lSectorID >= numsectors ) || ( lSectorID < 0 ))
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the pillar, and the sound this
+	// handler would start arrives keyed on the sector instead.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PILLAR ))
+		return;
+
 	pSector = &sectors[lSectorID];
 
 	// Create the pillar, and set all its attributes that were read in.
@@ -9463,6 +9468,10 @@ static void client_DestroyPillar( BYTESTREAM_s *pByteStream )
 
 	// Read in the elevator ID.
 	lPillarID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the pillar.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PILLAR ))
+		return;
 
 	pPillar = P_GetPillarByID( lPillarID );
 	if ( pPillar == NULL )

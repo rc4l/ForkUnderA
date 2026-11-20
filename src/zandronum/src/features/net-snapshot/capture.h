@@ -331,6 +331,11 @@ void MoverSendFloorSound( sector_t * sec, int floorID, unsigned int client = MAX
 // branch of the floor's, whose kind would have a client test the wrong class.
 void MoverSendElevatorSound( sector_t * sec, int elevatorID );
 
+// A pillar's sound had no command: client_DoPillar started it from the DoPillar it received.
+// Gate off sends nothing, so gate-off bytes stand; gate on takes DoPillar's own recipients.
+void MoverSendPillarSound( sector_t * sec, unsigned int client = MAXPLAYERS,
+	unsigned int flags = 0 );
+
 // Mover sounds this server sent, by which command carried them: the two counts must add
 // up to every sound it played, and only one of them can be moving at a time.
 void MoverSoundStats( unsigned int & bySector, unsigned int & legacy, bool bReset );

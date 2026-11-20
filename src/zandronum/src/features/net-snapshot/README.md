@@ -392,6 +392,32 @@ Each hook is one call from a stock file into the module, listed here as it lands
     shorter than one bridge read: on a throwaway map falling 192 units at speed 1, the client
     has the floor sequence playing on `CHAN_FLOOR` while the server is still mid-move, with no
     `client_StartElevatorSound: Couldn't find` warning, since the gate sends it nothing to find.
+- `cl_main.cpp`, `client_DoPillar` and `client_DestroyPillar`, and both senders in
+  `sv_commands.cpp`: `MoverLegacyStandsAside( SNAPMV_PILLAR )` after each handler's last read,
+  and `MoverServerStops( SNAPMV_PILLAR )` opening each sender. `client_DoPillar` is the only
+  handler in these classes that does more than mover state: it starts the pillar's sound itself
+  from the `DoPillar` it receives, stock having no pillar sound command at all. The destroy's
+  sequence stop is sent beside it as `StopSectorSequence`, and the plane sends at `pastdest`
+  were guarded already.
+  - The sound therefore has to go where stock never sent one. `MoverSendPillarSound( sector,
+    client, flags )` sends `SVC2_MOVERSOUND`'s fourth kind under the gate and nothing whatever
+    with the gate off, since a send there would change gate-off bytes. It sits at both
+    `DoPillar` sites with that site's own audience: broadcast from `EV_DoPillar`, the joiner
+    alone from `DPillar::UpdateToClient`, because stock's joiner got this sound inside the
+    handler and a gated one would otherwise build in silence.
+  - `P_PillarSoundSector( sec )` is `client_DoPillar`'s own two-branch `SN_StartSequence`,
+    copied. The constructor's third branch on `SeqName` is deliberately not in it: a gated
+    client plays what it played before rather than gaining a named sequence.
+  - The test map gained a pillar, tag 7 in a sector of its own east of the plat's, nothing else
+    owning both planes anywhere: ceiling 384, so each plane travels 192 units, which at speed 1
+    is 1536 tics -- the first mover slow enough that a client read reliably lands inside the
+    move, the elevator's 256 tics never having been. Its line is two units past the floor's, so
+    one forward step starts both, and the two own different sectors.
+  - Measured: gate off sends ids 201 and 202 with no sector-keyed sound and the counter still 0;
+    at nolegacy 3 both ids are absent, one sound goes out and the counter equals the wire
+    exactly. A client joining mid-build receives no id 201 and exactly one sound addressed to
+    it, which the other client does not receive; the same join at nolegacy 0 receives id 201 and
+    no sound at all. `DIVERGED` 0 and `legacy calls suppressed` 0 in every window.
 - `fua_snap_soundcount` prints the mover sound counters and zeroes them, so a window can zero at
   `fua_netcap_start` and have the next read cover exactly the captured interval. Without that
   the counters run from the server's launch while the capture starts whenever the bridge answers,
