@@ -24,6 +24,8 @@
 #include "r_state.h"
 
 #include "stats.h"
+#include "features/blockmap-filter/cellarrays.h"
+#include <cstdint>
 
 static FRandom pr_botchecksight ("BotCheckSight");
 static FRandom pr_checksight ("CheckSight");
@@ -60,6 +62,7 @@ class SightCheck
 
 	bool PTR_SightTraverse (intercept_t *in);
 	bool P_SightCheckLine (line_t *ld);
+	bool P_SightCheckCrossedLine (line_t *ld);
 	bool P_SightBlockLinesIterator (int x, int y);
 	bool P_SightTraverseIntercepts ();
 
@@ -254,7 +257,12 @@ bool SightCheck::P_SightCheckLine (line_t *ld)
 	{
 		return true;		// line isn't crossed
 	}
+	return P_SightCheckCrossedLine (ld);
+}
 
+// [Doruk-Aksoy] The rest of P_SightCheckLine, for a line the trace crosses and meets for the first time.
+bool SightCheck::P_SightCheckCrossedLine (line_t *ld)
+{
 	// try to early out the check
 	if (!ld->backsector || !(ld->flags & ML_TWOSIDED) || (ld->flags & ML_BLOCKSIGHT))
 		return false;	// stop checking
@@ -332,6 +340,21 @@ bool SightCheck::P_SightBlockLinesIterator (int x, int y)
 			}
 		}
 		polyLink = polyLink->next;
+	}
+
+	// [Doruk-Aksoy] features/blockmap-filter: the crossing tests read the cell's array, and only a crossed line is marked and read.
+	if (po_NumPolyobjs == 0 && zx::cells::SightReady())
+	{
+		const int64_t tx = trace.x.Raw(), ty = trace.y.Raw(), tdx = trace.dx.Raw(), tdy = trace.dy.Raw();
+		for (const zx::cells::SightLineEntry &e : zx::cells::SightLines(offset))
+		{
+			if (!zx::cells::ComputeSightLineCrossed(e, tx, ty, tdx, tdy)) continue;
+			line_t *ld = &lines[e.line];
+			if (ld->validcount == validcount) continue;
+			ld->validcount = validcount;
+			if (!P_SightCheckCrossedLine (ld)) return false;
+		}
+		return true;
 	}
 
 	offset = *(blockmap + offset);

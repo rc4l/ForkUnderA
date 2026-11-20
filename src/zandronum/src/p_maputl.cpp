@@ -50,6 +50,9 @@
 #include "v_text.h"
 #include "sv_main.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists
+#include "features/relink-in-place/computation/relink_compute.h"
+#include "features/blockmap-filter/cellarrays.h"
+#include <cstddef>
 
 static AActor *RoughBlockCheck (AActor *mo, int index, void *);
 
@@ -321,6 +324,7 @@ void AActor::UnlinkFromWorld ()
 			}
 			*(block->PrevActor) = block->NextActor;
 			FBlockNode *next = block->NextBlock;
+			zx::cells::Unlink (block);	// [Doruk-Aksoy] features/blockmap-filter
 			block->Release ();
 			block = next;
 		}
@@ -392,7 +396,18 @@ void AActor::LinkToWorld (sector_t *sec)
 		// When a node is deleted, its sector links (the links starting
 		// at sector_t->touching_thinglist) are broken. When a node is
 		// added, new sector links are created.
-		P_CreateSecNodeList (this, x, y);
+		// [Doruk-Aksoy] features/relink-in-place: client-side NOINTERACTION effects stay out of the sector lists, so the nodes their last link left are freed instead.
+		if (ComputeJoinsSectorLists((flags5 & MF5_NOINTERACTION) != 0, (NetworkFlags & NETFL_CLIENTSIDEONLY) != 0,
+			(flags5 & MF5_MOVEWITHSECTOR) || (flags2 & (MF2_FLOORCLIP | MF2_WINDTHRUST))))
+		{
+			P_CreateSecNodeList (this, x, y);
+		}
+		else
+		{
+			P_DelSeclist (sector_list);
+			sector_list = NULL;
+			P_DiscardSecnodeReplay ();
+		}
 		touching_sectorlist = sector_list;	// Attach to thing
 		sector_list = NULL;		// clear for next time
     }
@@ -423,6 +438,8 @@ void AActor::LinkToWorld (sector_t *sec)
 			y1 = MAX (0, y1);
 			x2 = MIN (bmapwidth - 1, x2);
 			y2 = MIN (bmapheight - 1, y2);
+			// [Doruk-Aksoy] features/blockmap-filter: whether the actor gets nodes in more than one cell, which the walks hash.
+			const bool multicell = x2 > x1 || y2 > y1;
 			for (int y = y1; y <= y2; ++y)
 			{
 				for (int x = x1; x <= x2; ++x)
@@ -443,6 +460,7 @@ void AActor::LinkToWorld (sector_t *sec)
 					node->NextBlock = NULL;
 					(*alink) = node;
 					alink = &node->NextBlock;
+					zx::cells::Link (node, this, multicell);	// [Doruk-Aksoy] features/blockmap-filter
 				}
 			}
 		}
@@ -892,11 +910,19 @@ void FBlockThingsIterator::StartBlock(int x, int y)
 	if (x >= 0 && y >= 0 && x < bmapwidth && y <bmapheight)
 	{
 		block = blocklinks[y*bmapwidth + x];
+		// [Doruk-Aksoy] features/blockmap-filter: the cell's array, read from its head at the back.
+		if (FuaCompact)
+		{
+			FuaCell = &zx::cells::Things(y*bmapwidth + x);
+			FuaPos = (int)FuaCell->size() - 1;
+		}
 	}
 	else
 	{
 		// invalid block
 		block = NULL;
+		FuaCell = NULL;
+		FuaPos = -1;
 	}
 }
 
@@ -919,16 +945,103 @@ void FBlockThingsIterator::SwitchBlock(int x, int y)
 //
 //===========================================================================
 
+// [Doruk-Aksoy] features/blockmap-filter: adds an actor that spans blocks to the checked ones, or says false when it already is.
+bool FBlockThingsIterator::FuaHashAdd(AActor *me)
+{
+	HashEntry *entry;
+	int i;
+	size_t hash = ((size_t)me >> 3) % countof(Buckets);
+	for (i = Buckets[hash]; i >= 0; )
+	{
+		entry = GetHashEntry(i);
+		if (entry->Actor == me)
+		{
+			return false;
+		}
+		i = entry->Next;
+	}
+	if (NumFixedHash < (int)countof(FixedHash))
+	{
+		entry = &FixedHash[NumFixedHash];
+		entry->Next = Buckets[hash];
+		Buckets[hash] = NumFixedHash++;
+	}
+	else
+	{
+		if (DynHash == NULL)
+		{
+			// Lease a block; pooled ones keep their grown capacity.
+			if (DynHashPool.Size() > 0)
+			{
+				DynHash = DynHashPool[DynHashPool.Size() - 1];
+				DynHashPool.Delete(DynHashPool.Size() - 1);
+			}
+			else
+			{
+				DynHash = new TArray<HashEntry>;
+			}
+		}
+		if (DynHash->Size() == 0 && DynHash->Max() == 0)
+		{
+			DynHash->Grow(50);
+		}
+		i = DynHash->Reserve(1);
+		entry = &(*DynHash)[i];
+		entry->Next = Buckets[hash];
+		Buckets[hash] = i + countof(FixedHash);
+	}
+	entry->Actor = me;
+	return true;
+}
+
+// [Doruk-Aksoy] features/blockmap-filter: starts P_CheckPosition's walk over the arrays at the cell the lists' walk starts at.
+void FBlockThingsIterator::FuaCompactFor(const AActor *mover, fixed_t x, fixed_t y)
+{
+	FuaMover = mover;
+	FuaMoverX = x;
+	FuaMoverY = y;
+	FuaCompact = true;
+	FuaEpoch = zx::cells::Epoch;
+	StartBlock(curx, cury);
+}
+
+// [Doruk-Aksoy] features/blockmap-filter: the lists' walk read from the arrays: same cells, same order, same hash, and `block` holding the node the lists' walk would go on from.
+AActor *FBlockThingsIterator::FuaNextCompact()
+{
+	for (;;)
+	{
+		while (FuaPos >= 0)
+		{
+			const zx::cells::ThingEntry &e = (*FuaCell)[FuaPos--];
+			block = FuaPos >= 0 ? static_cast<FBlockNode *>((*FuaCell)[FuaPos].node) : NULL;
+			AActor *me = static_cast<AActor *>(e.actor);
+			if (e.multi && !FuaHashAdd(me)) continue;
+			if (zx::cells::Missed(e, FuaMover, FuaMoverX.Raw(), FuaMoverY.Raw())) continue;
+			return me;
+		}
+		if (++curx > maxx)
+		{
+			curx = minx;
+			if (++cury > maxy) return NULL;
+		}
+		StartBlock(curx, cury);
+	}
+}
+
 AActor *FBlockThingsIterator::Next(bool centeronly)
 {
+	// [Doruk-Aksoy] features/blockmap-filter: a link or unlink since the walk began hands it to the lists, at the node it holds and with the hash it built.
+	if (FuaCompact)
+	{
+		if (zx::cells::Epoch == FuaEpoch && !centeronly) return FuaNextCompact();
+		FuaCompact = false;
+	}
 	for (;;)
 	{
 		while (block != NULL)
 		{
 			AActor *me = block->Me;
 			FBlockNode *mynode = block;
-			HashEntry *entry;
-			int i;
 
 			block = block->NextActor;
 			// Don't recheck things that were already checked
@@ -953,51 +1066,8 @@ AActor *FBlockThingsIterator::Next(bool centeronly)
 			}
 			else
 			{
-				size_t hash = ((size_t)me >> 3) % countof(Buckets);
-				for (i = Buckets[hash]; i >= 0; )
-				{
-					entry = GetHashEntry(i);
-					if (entry->Actor == me)
-					{ // I've already been checked. Skip to the next actor.
-						break;
-					}
-					i = entry->Next;
-				}
-				if (i < 0)
-				{ // Add me to the hash table and return me.
-					if (NumFixedHash < (int)countof(FixedHash))
-					{
-						entry = &FixedHash[NumFixedHash];
-						entry->Next = Buckets[hash];
-						Buckets[hash] = NumFixedHash++;
-					}
-					else
-					{
-						if (DynHash == NULL)
-						{
-							// Lease a block; pooled ones keep their grown capacity.
-							if (DynHashPool.Size() > 0)
-							{
-								DynHash = DynHashPool[DynHashPool.Size() - 1];
-								DynHashPool.Delete(DynHashPool.Size() - 1);
-							}
-							else
-							{
-								DynHash = new TArray<HashEntry>;
-							}
-						}
-						if (DynHash->Size() == 0 && DynHash->Max() == 0)
-						{
-							DynHash->Grow(50);
-						}
-						i = DynHash->Reserve(1);
-						entry = &(*DynHash)[i];
-						entry->Next = Buckets[hash];
-						Buckets[hash] = i + countof(FixedHash);
-					}
-					entry->Actor = me;
-					return me;
-				}
+				if (!FuaHashAdd(me)) continue;	// I've already been checked. Skip to the next actor.
+				return me;
 			}
 		}
 

@@ -91,6 +91,7 @@
 #include "features/spawnprojectile/computation/spawnprojectile_compute.h"
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] A_StartSound's flags as a channel
 #include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -1350,10 +1351,12 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 				self->x += x;
 				self->y += y;
 				self->z += z;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the missile spawns
 				missile = P_SpawnMissileXYZ(self->x, self->y, self->z + 32*FRACUNIT, self, ref, ti, false);
 				self->x -= x;
 				self->y -= y;
 				self->z -= z;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 				break;
 
 			case 1:
@@ -1363,9 +1366,11 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 			case 2:
 				self->x += x;
 				self->y += y;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the missile spawns
 				missile = P_SpawnMissileAngleZSpeed(self, self->z + self->GetBobOffset() + SpawnHeight, ti, self->angle, 0, GetDefaultByType(ti)->Speed, self, false);
  				self->x -= x;
 				self->y -= y;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 
 				flags |= CMF_ABSOLUTEPITCH;
 
@@ -2364,6 +2369,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 			// but then change the angle again to ensure proper aim.
 			self->x += Spawnofs_XY * finecosine[self->angle];
 			self->y += Spawnofs_XY * finesine[self->angle];
+			zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the rail fires
 			Spawnofs_XY = 0;
 			self->angle = R_PointToAngle2 (self->x, self->y,
 											self->target->x - self->target->velx * 3,
@@ -2398,6 +2404,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 
 	self->x = saved_x;
 	self->y = saved_y;
+	zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 	self->angle = saved_angle;
 	self->pitch = saved_pitch;
 }
