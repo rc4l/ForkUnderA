@@ -716,7 +716,8 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 				// except when this actor is a player chunk.
 				const int overrideSkin = IsKindOf( RUNTIME_CLASS( APlayerChunk )) ? -1 : PLAYER_GetOverrideSkin( this->player );
 				// [AK] Don't change to the skin's sprite if the new sprite is TNT1A0.
-				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == SpawnState->sprite && newsprite != SPR_TNT1)
+				// [Doruk-Aksoy] SpawnState read from the class defaults, which no actor changes, so this misses no cold actor line.
+				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == GetDefault()->SpawnState->sprite && newsprite != SPR_TNT1)
 				{ // [RH] If the new sprite is the same as the original sprite, and
 				// this actor is attached to a player, use the player's skin's
 				// sprite. If a player is not attached, do not change the sprite

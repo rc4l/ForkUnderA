@@ -1503,7 +1503,7 @@ public:
 
 	// begin of GZDoom specific additions
 	TArray<TObjPtr<AActor> >		dynamiclights;
-	void *				lightassociations;
+	// [Doruk-Aksoy] lightassociations moved to FActorInfo::FuaLightAssociations, as it is the class's (features/gldefs).
 	bool				hasmodel;
 	// end of GZDoom specific additions
 
