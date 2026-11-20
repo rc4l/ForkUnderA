@@ -163,6 +163,7 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
+#include "features/blockmap-filter/cellarrays.h"   // [Doruk-Aksoy] zx::cells::Refresh
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -3106,6 +3107,7 @@ AActor *CLIENT_SpawnThing( const PClass *pType, fixed_t X, fixed_t Y, fixed_t Z,
 		// [EP] Don't forget to drop the DROPPED flag if it wasn't present. See the comment in AActor::LevelSpawned for the reason.
 		if ( levelThing ) {
 			pActor->BeginPlay ();
+			zx::cells::Refresh (pActor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 			if (!(pActor->GetDefault()->flags & MF_DROPPED))
 			{
 				pActor->flags &= ~MF_DROPPED;

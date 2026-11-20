@@ -39,6 +39,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_SkelMissile)
 	{
 		missile->x += missile->velx;
 		missile->y += missile->vely;
+		zx::cells::Refresh (missile);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 		missile->tracer = self->target;
 
 		// [BC] If we're the server, tell clients to spawn the missile.

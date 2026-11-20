@@ -55,6 +55,7 @@
 #include "invasion.h"
 #include "cl_demo.h"
 #include "cooperative.h"
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 // Set of spawnable things for the Thing_Spawn and Thing_Projectile specials.
 TMap<int, const PClass *> SpawnableThings;
@@ -665,10 +666,12 @@ bool P_Thing_Raise(AActor *thing, bool byClient, AActor *raiser)
 	thing->flags |= MF_SOLID;
 	thing->height = info->height;	// [RH] Use real height
 	thing->radius = info->radius;	// [RH] Use real radius
+	zx::cells::Refresh (thing);	// [Doruk-Aksoy] features/blockmap-filter: resized without relinking (and back if the raise fails)
 	if (!P_CheckPosition (thing, thing->x, thing->y) && !byClient)
 	{
 		thing->flags = oldflags;
 		thing->radius = oldradius;
+		zx::cells::Refresh (thing);	// [Doruk-Aksoy] features/blockmap-filter: resized back
 		thing->height = oldheight;
 		return false;
 	}

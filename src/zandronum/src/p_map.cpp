@@ -89,6 +89,7 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
 #include "features/thing-walks/computation/thingwalk_compute.h"
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] the cells' arrays the position check walks
 #include "features/bounce/computation/bounce_compute.h"   // [Doruk-Aksoy] how bounces end, and what a client leaves to the server
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] walkers on narrow stairs
 #include "features/monster-stairs/computation/monsterstairs_compute.h"
@@ -112,6 +113,12 @@ static bool ClientLeavesActorsToServer(const AActor *mover)
 {
 	return zx::bounce::ComputeClientLeavesActorsToServer(NETWORK_InClientModeAndActorNotClientHandled(mover),
 		(mover->flags & MF_MISSILE) != 0, mover->BounceFlags);
+}
+
+// [Doruk-Aksoy] features/swept-missiles: whether P_CheckPosition walks the things near this mover at all.
+bool P_MoverChecksThings(const AActor *mover)
+{
+	return !ComputeMoverPassesThings(mover->flags2) && !ClientLeavesActorsToServer(mover);
 }
 
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
@@ -179,6 +186,7 @@ TArray<line_t *> spechit;
 static TArray<line_t *> SecnodeReplayLines;
 static AActor *SecnodeReplayThing;
 static fixed_t SecnodeReplayX, SecnodeReplayY;
+static fixed_t SecnodeReplayRadius;	// [Doruk-Aksoy] features/blockmap-filter: the recording holds only lines whose box meets this radius' box
 static bool SecnodeReplayValid;
 
 // Temporary holder for thing_sectorlist threads
@@ -1793,9 +1801,11 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	// [Doruk-Aksoy] features/thing-walks: a THRUACTORS mover clips against no thing, so the walk that would pass each one is skipped.
 	// [Doruk-Aksoy] features/bounce: so does a client's copy of a server's bouncing missile, which froze against a monster the server's copy missed.
-	if (!ComputeMoverPassesThings(thing->flags2) && !ClientLeavesActorsToServer(thing))
+	if (P_MoverChecksThings(thing))
 	{
 		FBlockThingsIterator it2(box);
+		// [Doruk-Aksoy] features/blockmap-filter: the candidates come from the cells' arrays, less those too far to touch.
+		it2.FuaCompactFor(thing, tm.x, tm.y);
 		AActor *th;
 		while ((th = it2.Next()))
 		{
@@ -1862,7 +1872,6 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	if (actorsonly || ((thing->flags & MF_NOCLIP) && P_IsSpectatorUnrestricted(thing) == false))
 		return (thing->BlockingMobj = thingblocker) == NULL;
 
-	FBlockLinesIterator it(box);
 	line_t *ld;
 
 	fixed_t thingdropoffz = tm.floorz;
@@ -1879,27 +1888,43 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	SecnodeReplayValid = false;
 	SecnodeReplayLines.Clear();
 
-	while ((ld = it.Next()))
+	// [Doruk-Aksoy] features/relink-in-place: no line straddles a radius-0 box, so PIT_CheckLine would pass every line and the walk is skipped.
+	if (specUnrestricted || ComputeLinesCanStraddle(thing->radius.Raw()))
 	{
-		SecnodeReplayLines.Push(ld); // [rc4l] record the enumeration for the secnode replay
-
-		// [AK] Spectators without physical restrictions should only be executing
-		// line specials if they reached this point.
-		if (specUnrestricted)
+		auto visit = [&](line_t *ld)
 		{
-			if (ld->special)
-				spechit.Push(ld);
+			SecnodeReplayLines.Push(ld); // [rc4l] record the enumeration for the secnode replay
 
-			continue;
+			// [AK] Spectators without physical restrictions should only be executing
+			// line specials if they reached this point.
+			if (specUnrestricted)
+			{
+				if (ld->special)
+					spechit.Push(ld);
+
+				return;
+			}
+
+			good &= PIT_CheckLine(ld, box, tm);
+		};
+		// [Doruk-Aksoy] features/blockmap-filter: on a map without polyobjects the lines come from the cells' arrays, less those whose box misses this one, which PIT_CheckLine and the secnode replay pass by.
+		if (!specUnrestricted && po_NumPolyobjs == 0)
+		{
+			zx::cells::LineWalk it(box);
+			while ((ld = it.Next())) visit(ld);
 		}
-
-		good &= PIT_CheckLine(ld, box, tm);
+		else
+		{
+			FBlockLinesIterator it(box);
+			while ((ld = it.Next())) visit(ld);
+		}
 	}
 	// [rc4l] The enumeration completed, so it is a faithful line list for this
 	// (thing, x, y) box -- publish it for the matching LinkToWorld.
 	SecnodeReplayThing = thing;
 	SecnodeReplayX = x;
 	SecnodeReplayY = y;
+	SecnodeReplayRadius = thing->radius;
 	SecnodeReplayValid = true;
 
 	if (!good)
@@ -7412,7 +7437,7 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 	// recorded line list in identical order instead of sweeping the blockmap again.
 	// Any P_CreateSecNodeList call consumes or discards the recording.
 	const bool replay = SecnodeReplayValid && SecnodeReplayThing == thing &&
-		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y;
+		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y && SecnodeReplayRadius == thing->radius;
 	SecnodeReplayValid = false;
 
 	// [Doruk-Aksoy] features/relink-in-place: a radius-0 box has one corner, so no line straddles it and the walk would add nothing.
@@ -7420,7 +7445,7 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 	line_t *ld;
 	unsigned int ri = 0;
 
-	for (; ComputeSecNodesWalkLines(thing->radius.Raw());)
+	for (; ComputeLinesCanStraddle(thing->radius.Raw());)
 	{
 		if (replay)
 		{
