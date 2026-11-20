@@ -327,7 +327,11 @@ void MoverSendPlatSound( sector_t * sec, int platID, int type );
 void MoverSendFloorSound( sector_t * sec, int floorID, unsigned int client = MAXPLAYERS,
 	unsigned int flags = 0 );
 
-// Ceiling and plat sounds this server sent, by which command carried them: the two must add
+// An elevator's sound is the floor's own body, so it rides the shared command rather than a
+// branch of the floor's, whose kind would have a client test the wrong class.
+void MoverSendElevatorSound( sector_t * sec, int elevatorID );
+
+// Mover sounds this server sent, by which command carried them: the two counts must add
 // up to every sound it played, and only one of them can be moving at a time.
 void MoverSoundStats( unsigned int & bySector, unsigned int & legacy, bool bReset );
 

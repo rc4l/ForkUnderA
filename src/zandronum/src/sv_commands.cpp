@@ -5195,6 +5195,10 @@ void SERVERCOMMANDS_PlayPlatSound( LONG lID, LONG lSound, ULONG ulPlayerExtra, S
 //
 void SERVERCOMMANDS_DoElevator( DElevator::EElevator Type, sector_t *pSector, LONG lSpeed, LONG lDirection, LONG lFloorDestDist, LONG lCeilingDestDist, LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_ELEVATOR ))
+		return;
+
 	LONG	lSectorID;
 
 	lSectorID = LONG( pSector - sectors );
@@ -5222,6 +5226,10 @@ void SERVERCOMMANDS_DoElevator( DElevator::EElevator Type, sector_t *pSector, LO
 //
 void SERVERCOMMANDS_DestroyElevator( LONG lID, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: the records carry this class under the gate.
+	if ( zx::netsnapshot::MoverServerStops( SNAPMV_ELEVATOR ))
+		return;
+
 	NetCommand command ( SVC_DESTROYELEVATOR );
 	command.addShort ( lID );
 	command.sendCommandToClients ( ulPlayerExtra, flags );

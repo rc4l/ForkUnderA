@@ -5552,11 +5552,13 @@ static unsigned int	g_moverStopped[SNAPMV_COUNT];
 static unsigned int	g_moverStoppedPlanes = 0;
 static unsigned int	g_moverResent = 0;
 static unsigned int	g_moverTableResets = 0;
-// Ceiling and plat sounds sent, by the command that carried them.
+// Mover sounds sent, by the command that carried them.
 static unsigned int	g_ceilSoundBySector = 0;
 static unsigned int	g_ceilSoundLegacy = 0;
 static unsigned int	g_platSoundBySector = 0;
 static unsigned int	g_platSoundLegacy = 0;
+static unsigned int	g_elevSoundBySector = 0;
+static unsigned int	g_elevSoundLegacy = 0;
 
 // Deltas going out, as for SuppressesLegacy, at level 3 only.
 static bool snap_MoverGateNow()
@@ -5617,15 +5619,34 @@ void zx::netsnapshot::MoverSendCeilingSound( sector_t * sec, int ceilingID, int 
 	}
 }
 
+void zx::netsnapshot::MoverSendElevatorSound( sector_t * sec, int elevatorID )
+{
+	if ( NETWORK_GetState() != NETSTATE_SERVER )
+		return;
+	// Gate off, stock's own command, so the bytes match. Its one site broadcasts, and
+	// DElevator::UpdateToClient sends no sound at all, so a joiner gets none either way.
+	if ( g_moverGate )
+	{
+		SERVERCOMMANDS_MoverSound( sec, SNAPSND_PACK( SNAPSND_ELEVATOR, 0 ));
+		++g_elevSoundBySector;
+	}
+	else
+	{
+		SERVERCOMMANDS_StartElevatorSound( elevatorID );
+		++g_elevSoundLegacy;
+	}
+}
+
 void zx::netsnapshot::MoverSoundStats( unsigned int & bySector, unsigned int & legacy,
 	bool bReset )
 {
-	bySector = g_ceilSoundBySector + g_platSoundBySector;
-	legacy = g_ceilSoundLegacy + g_platSoundLegacy;
+	bySector = g_ceilSoundBySector + g_platSoundBySector + g_elevSoundBySector;
+	legacy = g_ceilSoundLegacy + g_platSoundLegacy + g_elevSoundLegacy;
 	if ( bReset )
 	{
 		g_ceilSoundBySector = g_ceilSoundLegacy = 0;
 		g_platSoundBySector = g_platSoundLegacy = 0;
+		g_elevSoundBySector = g_elevSoundLegacy = 0;
 	}
 }
 
@@ -5634,12 +5655,15 @@ void zx::netsnapshot::MoverSoundStatsByKind( unsigned int * bySector, unsigned i
 {
 	bySector[SNAPSND_CEILING] = g_ceilSoundBySector;
 	bySector[SNAPSND_PLAT] = g_platSoundBySector;
+	bySector[SNAPSND_ELEVATOR] = g_elevSoundBySector;
 	legacy[SNAPSND_CEILING] = g_ceilSoundLegacy;
 	legacy[SNAPSND_PLAT] = g_platSoundLegacy;
+	legacy[SNAPSND_ELEVATOR] = g_elevSoundLegacy;
 	if ( bReset )
 	{
 		g_ceilSoundBySector = g_ceilSoundLegacy = 0;
 		g_platSoundBySector = g_platSoundLegacy = 0;
+		g_elevSoundBySector = g_elevSoundLegacy = 0;
 	}
 }
 
@@ -6072,12 +6096,13 @@ CCMD(fua_snap_planedump)
 // capture: called at fua_netcap_start, the next read covers exactly the captured interval.
 CCMD(fua_snap_soundcount)
 {
-	unsigned int bySector[2] = { 0, 0 }, legacy[2] = { 0, 0 };
+	unsigned int bySector[SNAPSND_COUNT] = { 0 }, legacy[SNAPSND_COUNT] = { 0 };
 	zx::netsnapshot::MoverSoundStatsByKind(bySector, legacy, true);
 	Printf("[snap] mover sounds since the last read: ceiling %u by sector, %u legacy"
-		" | plat %u by sector, %u legacy\n",
+		" | plat %u by sector, %u legacy | elevator %u by sector, %u legacy\n",
 		bySector[SNAPSND_CEILING], legacy[SNAPSND_CEILING],
-		bySector[SNAPSND_PLAT], legacy[SNAPSND_PLAT]);
+		bySector[SNAPSND_PLAT], legacy[SNAPSND_PLAT],
+		bySector[SNAPSND_ELEVATOR], legacy[SNAPSND_ELEVATOR]);
 }
 
 //*****************************************************************************

@@ -367,6 +367,31 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - One command for both classes, the kind in the bits above the choice. A window that counts it
     must mask the kind: counting every `SVC2_MOVERSOUND` counts the ceiling's too, which made
     four plat sends read as eighteen.
+- `cl_main.cpp`, `client_DoElevator` and `client_DestroyElevator`, and both senders in
+  `sv_commands.cpp`: `MoverLegacyStandsAside( SNAPMV_ELEVATOR )` after each handler's last read,
+  and `MoverServerStops( SNAPMV_ELEVATOR )` opening each sender. Both handlers do mover state
+  only -- the destroy's own `floordata` and interpolation work is commented out as ZDoom's job,
+  and `SERVERCOMMANDS_StopSectorSequence` is already sent beside the destroy, so the sound stop
+  is covered either way. The plane sends at `pastdest` were guarded already.
+  - `DElevator::StartFloorSound` is `P_FloorSoundSector( m_Sector )`, the floor's own body, so
+    the sound rides `SVC2_MOVERSOUND` as a third kind rather than a branch of the floor's
+    command: keyed on the floor's class it would have a client test `SNAPMV_FLOOR` for an
+    elevator's sound, which is wrong while classes are turned on one at a time. The kind has no
+    choice of its own and packs 0. `SNAPSND_COUNT` closes the enum, the stats arrays having been
+    sized `[2]` by hand.
+  - `DElevator::UpdateToClient` sends `DoElevator` to the joiner alone and no sound at all,
+    unlike `DFloor`'s, so `MoverSendElevatorSound( sector, elevatorID )` takes no client or
+    flags and its legacy branch broadcasts. Its one site leaving drops `p_floor.cpp` to 26
+    replication crossings.
+  - Measured on the committed map's `Elevator_LowerToNearest`: gate off sends ids 198, 199 and
+    200 once each with no sector-keyed sound and the counter at 0 by sector, 1 legacy; at
+    nolegacy 3 all three are absent, one sector-keyed sound goes out, and the counter reads 1 by
+    sector, 0 legacy -- equal to the wire exactly. A second client joining mid-elevator receives
+    no id 198 at all and still ends on the server's planes, `DIVERGED` 0 in every window.
+  - The client's own sound needs a slower elevator than the committed map's 256 tics, which is
+    shorter than one bridge read: on a throwaway map falling 192 units at speed 1, the client
+    has the floor sequence playing on `CHAN_FLOOR` while the server is still mid-move, with no
+    `client_StartElevatorSound: Couldn't find` warning, since the gate sends it nothing to find.
 - `fua_snap_soundcount` prints the mover sound counters and zeroes them, so a window can zero at
   `fua_netcap_start` and have the next read cover exactly the captured interval. Without that
   the counters run from the server's launch while the capture starts whenever the bridge answers,

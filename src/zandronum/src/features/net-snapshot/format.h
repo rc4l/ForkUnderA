@@ -1383,7 +1383,9 @@ enum
 enum
 {
 	SNAPSND_CEILING = 0,	// choice is DCeiling's m_Silent, 0 to 2
-	SNAPSND_PLAT			// choice is client_PlayPlatSound's type, 0 to 3
+	SNAPSND_PLAT,			// choice is client_PlayPlatSound's type, 0 to 3
+	SNAPSND_ELEVATOR,		// no choice: DElevator::StartFloorSound takes none
+	SNAPSND_COUNT
 };
 #define SNAPSND_PACK( kind, choice )	(BYTE)((( choice ) & 3 ) | (( kind ) << 2 ))
 #define SNAPSND_KIND( packed )		(( packed ) >> 2 )

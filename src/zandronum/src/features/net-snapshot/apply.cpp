@@ -304,6 +304,9 @@ void zx::netsnapshot::OnMoverSound( BYTESTREAM_s *pByteStream )
 	else if (( SNAPSND_KIND( packed ) == SNAPSND_PLAT )
 		&& MoverSuppressesLegacy( SNAPMV_PLAT ))
 		P_PlatSoundSector( &sectors[sectorID], SNAPSND_CHOICE( packed ));
+	else if (( SNAPSND_KIND( packed ) == SNAPSND_ELEVATOR )
+		&& MoverSuppressesLegacy( SNAPMV_ELEVATOR ))
+		P_FloorSoundSector( &sectors[sectorID] );
 }
 
 //*****************************************************************************

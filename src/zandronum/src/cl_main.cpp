@@ -9319,6 +9319,11 @@ static void client_DoElevator( BYTESTREAM_s *pByteStream )
 	if ( lDirection == INT_MAX )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the elevator and carries every
+	// attribute this command sets.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_ELEVATOR ))
+		return;
+
 	pSector = &sectors[lSectorID];
 
 	// Create the elevator, and set all its attributes that were read in.
@@ -9342,6 +9347,10 @@ static void client_DestroyElevator( BYTESTREAM_s *pByteStream )
 
 	// Read in the elevator ID.
 	lElevatorID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the elevator.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_ELEVATOR ))
+		return;
 
 	pElevator = P_GetElevatorByID( lElevatorID );
 	if ( pElevator == NULL )

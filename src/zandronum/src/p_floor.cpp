@@ -1487,7 +1487,7 @@ bool EV_DoElevator (line_t *line, DElevator::EElevator elevtype,
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
 			SERVERCOMMANDS_DoElevator( elevator->m_Type, elevator->m_Sector,(LONG)( elevator->m_Speed), elevator->m_Direction,(LONG)( elevator->m_FloorDestDist),(LONG)( elevator->m_CeilingDestDist), elevator->m_ElevatorID );
-			SERVERCOMMANDS_StartElevatorSound( elevator->m_ElevatorID );
+			zx::netsnapshot::MoverSendElevatorSound( elevator->m_Sector, elevator->m_ElevatorID );
 		}
 
 	}
