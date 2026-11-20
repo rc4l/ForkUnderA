@@ -50,6 +50,9 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
 
 - `features/frame/levelrenderer.cpp`: `Init` parses the definitions; `StateChanged`, `StartSerialize` and
   `EndSerialize` attach, drop and remake lights.
+- `info.h` `FActorInfo`: `FuaLightAssociations`, the class's frame lights that every actor once copied as
+  `lightassociations`, and `FuaLightsAttached`, so `gl_SetActorLights` returns on an unlit class's state change
+  without reading the actor's own light list (`ComputeActorLightsIdle`); `gl_AttachLight` sets it.
 - `gl/renderer/gl_lightdata.h`: includes `gldefs.h` in place of the declarations it held;
   `gl/renderer/gl_renderer.cpp` drops the lights when GL shuts down.
 - `gl/scene/*`: `glow.h` for the glowing flats.
