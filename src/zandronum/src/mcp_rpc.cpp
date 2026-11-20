@@ -90,6 +90,8 @@ namespace
 	// nondeterministic catch-up-batching mode, so lockstep scenarios must freeze at an
 	// EXACT tic instead.
 	bool g_pauseAtArmed = false;
+	// [Doruk-Aksoy] Whether the pause in force is one the bridge set, which a demo must not read commands through.
+	bool g_bridgePaused = false;
 	int g_pauseAtTic    = 0;
 
 	// --- perf capture -------------------------------------------------------
@@ -204,6 +206,7 @@ namespace
 		s += ",\"z\":" + I( (long long)( mo->z >> FRACBITS ) );
 		s += ",\"angle\":" + I( (long long)( mo->angle >> 24 ) ); // ~degrees*256/360; raw hi byte
 		s += ",\"health\":" + I( mo->health );
+		s += ",\"tid\":" + I( mo->tid );	// [Doruk-Aksoy] So a script's actors can be told apart by their thing ID.
 		s += "}";
 		return s;
 	}
@@ -232,6 +235,11 @@ void MCP_RPC_OverrideAxes( float *axes )
 	for ( int i = 0; i < NUM_JOYAXIS; ++i ) axes[i] = g_axisOverride[i];
 }
 
+bool MCP_HoldsPause()
+{
+	return g_bridgePaused;
+}
+
 // Called at the top of every game tic (anchor in d_net.cpp, before G_Ticker). Fires
 // tic-scheduled actions so scenario injection is deterministic -- see sim.cheatat.
 void MCP_SimPreTic()
@@ -242,6 +250,7 @@ void MCP_SimPreTic()
 	{
 		g_pauseAtArmed = false;
 		paused = 1;
+		g_bridgePaused = true;
 	}
 
 	if ( g_cheatAtArmed && gamestate == GS_LEVEL && level.time >= g_cheatAtTic )
@@ -362,12 +371,14 @@ void MCP_RPC_Tick()
 		if ( StepComplete( level.time, g_stepTarget ) )
 		{
 			paused = 1;
+			g_bridgePaused = true;
 			g_stepping = false;
 			EmitEvent( "stepped", std::string( "{\"leveltime\":" ) + I( level.time ) + "}" );
 		}
 		else
 		{
 			paused = 0;
+			g_bridgePaused = false;
 		}
 	}
 }
@@ -463,6 +474,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		bool on = true;
 		GetBool( args, "on", on );
 		paused = on ? 1 : 0;
+		g_bridgePaused = on;
 		if ( !paused ) g_stepping = false;
 		SendOk( id, paused ? "{\"paused\":1}" : "{\"paused\":0}" );
 	}
@@ -470,6 +482,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 	{
 		if ( IsNetInstance() ) { SendErr( id, "resume unsupported in a netgame (nothing to unpause -- the net sim was never frozen)" ); return; }
 		paused = 0;
+		g_bridgePaused = false;
 		g_stepping = false;
 		SendOk( id, "{\"paused\":0}" );
 	}
@@ -481,6 +494,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 		g_stepTarget = StepTarget( level.time, (int)tics );
 		g_stepping = true;
 		paused = 0; // let the world advance; MCP_RPC_Tick refreezes at the target and emits "stepped"
+		g_bridgePaused = false;
 		SendOk( id, std::string( "{\"target\":" ) + I( g_stepTarget ) + "}" );
 	}
 	else if ( cmd == "sim.trace" )
