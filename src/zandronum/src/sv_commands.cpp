@@ -513,6 +513,10 @@ void SERVERCOMMANDS_FuaSetShaderUniform( const char *shader, const char *uniform
 //
 void SERVERCOMMANDS_FuaSetActorMaterial( AActor *actor, const char *material, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( actor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID( actor ) )
 		return;
 
@@ -526,6 +530,10 @@ void SERVERCOMMANDS_FuaSetActorMaterial( AActor *actor, const char *material, UL
 //
 void SERVERCOMMANDS_FuaSetActorUniform( AActor *actor, int uniform, int kind, const double values[4], ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( actor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID( actor ) )
 		return;
 
@@ -4569,6 +4577,10 @@ void SERVERCOMMANDS_SetThingScale( AActor* mobj, unsigned int scaleFlags, ULONG 
 // billboard tilt -- 16 bits of arc is far finer than the eye can resolve on a sprite.
 void SERVERCOMMANDS_SetThingSpriteOrientation( AActor *mobj, unsigned int orientFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( mobj, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID( mobj ) )
 		return;
 
@@ -4624,6 +4636,10 @@ void SERVERCOMMANDS_UpdateThingScaleNotAtDefault( AActor* pActor, ULONG ulPlayer
 //
 void SERVERCOMMANDS_SetThingSize( AActor* pActor, unsigned int sizeFlags, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
+	// [Kaori-Chani] features/net-snapshot: not sent for an actor the snapshot carries instead.
+	if ( zx::netsnapshot::SuppressesLegacy( pActor, SNAPLEGACY_EXISTENCE ))
+		return;
+
 	if ( !EnsureActorHasNetID( pActor ) )
 		return;
 
