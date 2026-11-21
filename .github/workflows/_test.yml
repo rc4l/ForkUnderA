@@ -230,11 +230,16 @@ jobs:
       - name: MSVC developer shell
         uses: ilammy/msvc-dev-cmd@v1
 
+      # [Doruk-Aksoy] sccache pinned, since the cache action takes the latest release and v0.17.0 fails CMake's first compiler test.
+      - name: sccache
+        uses: ./.github/actions/sccache-pinned
+
       # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: test-windows
+          install: "no"
           max-size: 300M
           variant: sccache
 
