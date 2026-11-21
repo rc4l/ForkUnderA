@@ -599,6 +599,11 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - The body's first byte is the map stamp, as the sound table's and the cosmetic events' are.
     A sound for another map names an id in that map's table and entities whose mirrors are
     gone, so the handler drops it and the client's sound-ids line counts it.
+    - A known limit the cosmetic events share: the body has no length prefix, and a point's
+      length depends on the frame widths, so a stale NetID-0 point body from a map whose
+      widths differ is misread before its stamp can refuse it, putting the rest of that
+      packet out of step. Only an unreliable body can arrive across a map change at all, and
+      it is too rare to spend a wire byte on now.
 
 ## The reference recordings
 
