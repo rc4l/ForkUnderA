@@ -96,7 +96,8 @@ void CountLegacySendRaw(QWORD raw);
 // entity whose legacy replication is suppressed, false when the caller should
 // fall back to the legacy broadcast (bSoundOnClient: whether stock tells any).
 bool BroadcastActorSound(AActor *pActor, int channel, int soundId,
-	float volume, float attenuation, bool bSoundOnClient = true);
+	float volume, float attenuation, bool bSoundOnClient = true, bool bNoStop = false,
+	int pitch = -1);
 
 // True, and counted, for a sound no client can play (no sound, or no volume).
 bool SoundUnplayable(int soundId, float volume);
@@ -150,7 +151,12 @@ extern bool g_bSnapCatchUp;
 
 namespace zx { namespace netsnapshot {
 
-bool CatchUpHoldsSound(AActor *pActor, int soundId);
+bool CatchUpHoldsSound(AActor *pActor, int channel, int soundId);
+// True when the server is sending this entity's sounds and the client must not play its own.
+bool GhostSoundHandled(AActor *pActor);
+// A player's stop, which no record can carry: sent whenever the gate is on, since with it
+// off a client runs that player's states and stops the sound itself.
+void SendPlayerStopSound(AActor *pActor, int channel);
 
 // Both sides' hash of the first `count` names of S_sfx, in unsigned int, since
 // windows.h makes DWORD a different symbol in some units.

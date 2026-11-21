@@ -244,6 +244,9 @@ void S_SoundMinMaxDist (AActor *ent, int channel, FSoundID sfxid, float volume, 
 void S_Sound (const FPolyObj *poly, int channel, FSoundID sfxid, float volume, float attenuation);
 void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation, int pitch = -1); // [rc4l] explicit pitch (-1 = default).
 void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [RK] Added bSoundOnClient. [rc4l] explicit pitch.
+// [Kaori-Chani] features/net-snapshot: how many channels S_StartSound has handed out, which
+// a point sound's pending record reads to know whether its own sound started.
+unsigned int S_SoundStarts ();
 
 // sound channels
 // channel 0 never willingly overrides

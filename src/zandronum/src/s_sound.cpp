@@ -86,6 +86,7 @@ static_assert(ZX_ROLLOFF_LOG == ROLLOFF_Log, "rolloff mirror out of sync");
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the sound hooks
 
 // MACROS ------------------------------------------------------------------
 
@@ -235,6 +236,10 @@ static BYTE		*g_aOriginalSoundCurve;
 // PUBLIC DATA DEFINITIONS -------------------------------------------------
 
 int sfx_empty;
+
+// [Kaori-Chani] features/net-snapshot: channels S_StartSound handed out, which a point
+// sound's pending record reads to know whether its sound actually started.
+static unsigned int g_soundStarts = 0;
 
 FSoundChan *Channels;
 FSoundChan *FreeChannels;
@@ -1023,6 +1028,11 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	FVector3 pos, vel;
 	FRolloffInfo *rolloff;
 
+	// [Kaori-Chani] features/net-snapshot: an actor run forward by its age starts its CHAN_AUTO
+	// sound once, not once a caught-up tic.
+	if ( zx::netsnapshot::CatchUpHoldsSound( actor, channel, sound_id ))
+		return NULL;
+
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return NULL;
@@ -1341,8 +1351,16 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		default:										break;
 		}
 		IndexChannel (chan);
+		++g_soundStarts;	// [Kaori-Chani] features/net-snapshot: S_SoundStarts
 	}
 	return chan;
+}
+
+// [Kaori-Chani] features/net-snapshot: a start deferred by CHAN_QUEUED has its channel and so
+// counts here; one S_NeverHeard refuses returns before this and does not.
+unsigned int S_SoundStarts ()
+{
+	return g_soundStarts;
 }
 
 //==========================================================================
@@ -1429,7 +1447,9 @@ void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, b
 	S_StartSound (NULL, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
-	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+	// [Kaori-Chani] features/net-snapshot: not one no client can play.
+	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::SoundUnplayable( static_cast<int>( sound_id ), volume ) == false ) )
 		SERVERCOMMANDS_Sound( channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, pitch );
 }
 
@@ -1443,6 +1463,12 @@ void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float a
 {
 	if (ent == NULL || ent->Sector->Flags & SECF_SILENT)
 		return;
+
+	// [Kaori-Chani] features/net-snapshot: the server sends this entity's sounds, so playing it
+	// here as well would double it.
+	if ( zx::netsnapshot::GhostSoundHandled( ent ))
+		return;
+
 	// [Doruk-Aksoy] uzdoom@e82565373f: CHAN_NOSTOP, which clients decide for themselves online, since only they hold the sounds.
 	const bool noStop = (channel & CHAN_NOSTOP) != 0;
 	if (!ComputeNoStopBlocks(channel, noStop && S_IsActorPlayingSomething(ent, channel & 7, sound_id)))
@@ -1450,7 +1476,12 @@ void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float a
 
 	// [EP] If we're the server, tell the clients to make a sound.
 	// [rc4l] Forward the explicit pitch so the client plays it at the same pitch.
-	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+	// [Kaori-Chani] features/net-snapshot: the choke point for an actor's sounds, which routes
+	// by table index under the gate and answers true when it has taken the send.
+	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::SoundUnplayable( static_cast<int>( sound_id ), volume ) == false )
+		&& ( zx::netsnapshot::BroadcastActorSound( ent, channel, static_cast<int>( sound_id ),
+			volume, attenuation, bSoundOnClient, noStop, pitch ) == false ))
 		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, noStop, pitch );
 }
 
@@ -1498,7 +1529,9 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, f
 	S_StartSound (NULL, NULL, NULL, &pt, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [RK] Instruct the clients to play the sound.
-	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER))
+	// [Kaori-Chani] features/net-snapshot: as the channel form's.
+	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER)
+		&& (zx::netsnapshot::SoundUnplayable(static_cast<int>(sound_id), volume) == false))
 		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation, MAXPLAYERS, 0, pitch);
 }
 
@@ -1751,6 +1784,10 @@ void S_StopSound (int channel)
 
 void S_StopSound (AActor *actor, int channel)
 {
+	// [Kaori-Chani] features/net-snapshot: a player's stop goes out under the gate, no record
+	// carrying a stop and a mirror running no states.
+	zx::netsnapshot::SendPlayerStopSound( actor, channel );
+
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	ForActorChannels(actor, [channel](FSoundChan *chan)
 	{

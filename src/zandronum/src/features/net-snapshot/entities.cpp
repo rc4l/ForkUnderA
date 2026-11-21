@@ -661,6 +661,12 @@ const SnapFrame& zx::netsnapshot::ClientMapFrame()
 	return g_mapFrame;
 }
 
+void zx::netsnapshot::ClientFrameWire(BYTE w[3])
+{
+	for (unsigned int k = 0; k < 3; ++k)
+		w[k] = g_mapFrameWire[k];
+}
+
 fixed_t zx::netsnapshot::ReadFramePos(BYTESTREAM_s* pByteStream, unsigned int k)
 {
 	// Under an unknown width the announced bytes are skipped, so the rest of the

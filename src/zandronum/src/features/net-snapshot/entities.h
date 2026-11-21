@@ -110,6 +110,9 @@ void SetMapFrame(int originX, int originY, int originZ, int widthX, int widthY,
 	int widthZ);
 void UseMapFrame(const SnapFrame& frame);
 const SnapFrame& ClientMapFrame();
+// The bytes each axis travels in, which a frame this build cannot read leaves
+// at what the server announced, so a body still reads in step.
+void ClientFrameWire(BYTE w[3]);
 
 }} // namespace zx::netsnapshot
 

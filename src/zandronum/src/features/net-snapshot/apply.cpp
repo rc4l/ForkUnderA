@@ -29,6 +29,8 @@
 #include "features/net-snapshot/capture.h"
 #include "features/net-snapshot/format.h"
 #include "features/net-snapshot/computation/ack_compute.h"
+#include "features/net-snapshot/computation/sound_compute.h"
+#include "network/servercommands.h"	// ServerCommands::SoundActor and SoundPoint, below
 #include "features/net-snapshot/apply.h"
 
 using namespace zx::netsnapshot;
@@ -344,4 +346,89 @@ void zx::netsnapshot::OnSoundTable( BYTESTREAM_s *pByteStream )
 		bMatch = ( myLo == lo ) && ( myHi == hi );
 	}
 	SetSoundTable( stamp, bMatch, count, S_sfx.Size( ));
+}
+
+//*****************************************************************************
+// A SoundActor or a SoundPoint by table index, played through those commands.
+// The index means nothing unless this client matched the map's sound table.
+void zx::netsnapshot::OnSnapSound( BYTESTREAM_s *pByteStream )
+{
+	BYTE wire[3];
+	ClientFrameWire( wire );
+	SnapSoundWire snd;
+	SnapCosCursor cur = { pByteStream->pbStream, pByteStream->pbStreamEnd };
+	ReadSnapSound( cur, ClientMapFrame( ), wire, snd );
+	// The cursor read the body; the stream follows it, const dropped because it is
+	// the stream's own buffer.
+	pByteStream->pbStream = const_cast<BYTE *>( cur.p );
+	if ( pByteStream->pbStream > pByteStream->pbStreamEnd )
+	{
+		CLIENT_PrintWarning( "OnSnapSound: Packet contained %td too few bytes\n",
+			pByteStream->pbStream - pByteStream->pbStreamEnd );
+		return;
+	}
+
+	const int channel = snd.bLoop ? ( snd.channel | CHAN_LOOP ) : snd.channel;
+	const unsigned int id = static_cast<unsigned int>( snd.soundId );
+
+	// An index means something only below the count this client matched.
+	if (( SoundIdUsable( id ) == false ) || ( id >= S_sfx.Size( )))
+	{
+		CountSoundId( false );
+		return;
+	}
+	CountSoundId( true );
+
+	if ( snd.bPoint )
+	{
+		// The server sends a point while its belief is young; a mirror already
+		// here takes the sound attached, as stock plays a launch sound.
+		AActor *pMirror = ( snd.netID != 0 ) ? MirrorForNetID( snd.netID, false ) : NULL;
+		if ( pMirror != NULL )
+		{
+			CountPointSoundOnMirror( );
+			ServerCommands::SoundActor command;
+			command.SetActor( pMirror );
+			command.SetChannel( channel );
+			command.SetSound( S_sfx[id].name );
+			command.SetVolume( snd.volume );
+			command.SetAttenuation( snd.atten );
+			// The body carries no pitch, so the client computes its own, as it does
+			// for every stock sound a server leaves at the default.
+			command.SetPitch( -1 );
+			command.Execute( );
+			return;
+		}
+
+		ServerCommands::SoundPoint command;
+		command.SetX( snd.x );
+		command.SetY( snd.y );
+		command.SetZ( snd.z );
+		command.SetChannel( channel );
+		command.SetSound( S_sfx[id].name );
+		command.SetVolume( snd.volume );
+		command.SetAttenuation( snd.atten );
+		command.SetPitch( -1 );
+		const unsigned int starts = S_SoundStarts( );
+		command.Execute( );
+		// Moved onto the mirror when it appears, if this one started.
+		PointSoundPending( snd.netID, snd.x, snd.y, snd.z, channel,
+			static_cast<int>( id ), S_SoundStarts( ) != starts );
+		return;
+	}
+
+	// Resolved under SoundActor's name, which is what lets it reach a mirror.
+	AActor *pActor = NULL;
+	if ( CLIENT_ReadActorFromNetID( snd.netID, RUNTIME_CLASS( AActor ), true, pActor,
+		"SoundActor", "actor" ) == false )
+		return;
+
+	ServerCommands::SoundActor command;
+	command.SetActor( pActor );
+	command.SetChannel( channel );
+	command.SetSound( S_sfx[id].name );
+	command.SetVolume( snd.volume );
+	command.SetAttenuation( snd.atten );
+	command.SetPitch( -1 );
+	command.Execute( );
 }

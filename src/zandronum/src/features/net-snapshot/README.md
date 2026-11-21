@@ -575,6 +575,28 @@ Each hook is one call from a stock file into the module, listed here as it lands
   `Execute` is where it reaches the module, so no spec command can land before the module links.
   The golden is the part a compiler cannot catch; `tools/protocol-snapshot.py --check` does.
 
+- `s_sound.cpp`, four hooks on the sound path and one on the stop: `CatchUpHoldsSound( )` in
+  `S_StartSound`, which holds an actor's `CHAN_AUTO` sound while records run it forward by its
+  age; `GhostSoundHandled( )` at the head of the actor form of `S_Sound`, the double-play guard;
+  `SoundUnplayable( )` ahead of each of the three stock sends, screening out a call with no sound
+  or no volume; and `BroadcastActorSound( )` on the actor send, which takes that send by table
+  index under the gate and answers true when it has. `S_StopSound` calls `SendPlayerStopSound( )`,
+  since no state record carries a stop and a mirror runs no states. Beside them `S_SoundStarts( )`,
+  the channels `S_StartSound` has handed out, which a point sound's pending record reads to know
+  whether its own sound started.
+  - `GhostSoundHandled` is the one that must know the gate's level. Stock's own `SoundActor`
+    resolves to the hidden legacy copy and plays it through this same path, so below level 3 --
+    where the server still sends those commands -- muting it would silence every monster. It
+    therefore reads `ServerGatesLegacy( )`, the latch `SnapMoverGate` sets, which the server
+    sends at level 3 alone.
+  - `BroadcastActorSound`'s by-name fallback forwards `noStop` and `pitch`, which stock's own
+    call carries; the index route has no field for either, and the merge plan already holds
+    pitch for after the port.
+- `cl_main.cpp`, the `SVC2_SNAPSOUND` arm: `OnSnapSound( pByteStream )`, which reads the body and
+  plays it as `SoundActor` or `SoundPoint`. Both ends of that command go through
+  `computation/sound_compute`, so its test pins what is actually sent and a sender and a handler
+  cannot drift apart.
+
 ## The reference recordings
 
 Three recordings made on the source tree at its `snap-ref-premerge` tag pin what the format layer

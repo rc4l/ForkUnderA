@@ -592,8 +592,43 @@ void zx::netsnapshot::CosmeticFirstTick(DThinker* pThinker)
 
 // By the actor making the sound: a missile spawned in the catch-up plays its
 // own SeeSound.
-bool zx::netsnapshot::CatchUpHoldsSound(AActor* pActor, int soundId)
+// Counted in cl_main.cpp beside the report that prints them, so the declaration sits at file
+// scope here rather than inside the namespace below.
+extern unsigned int g_sndLocalGhost, g_sndLocalOther, g_sndLocalUngated;
+
+// The server sends this entity's sounds, so a client playing them itself would double them.
+// True to skip: the role test, the counters and the switch all live here.
+bool zx::netsnapshot::GhostSoundHandled(AActor* pActor)
 {
+	if ((NETWORK_InClientMode() == false) || (pActor == NULL)
+		|| (pActor->NetID == 0) || (pActor->player != NULL))
+		return false;
+
+	if (GhostPresent(pActor->NetID) == false)
+	{
+		++g_sndLocalOther;
+		return false;
+	}
+
+	// Only while the server routes this entity's sounds, which is level 3 alone: below it
+	// stock still sends them, and its own Execute plays them through this very path.
+	if ((ServerGatesLegacy() == false) || (fua_csnap_nolocalsound == false))
+	{
+		++g_sndLocalUngated;
+		return false;
+	}
+
+	++g_sndLocalGhost;
+	return true;
+}
+
+bool zx::netsnapshot::CatchUpHoldsSound(AActor* pActor, int channel, int soundId)
+{
+	// Only while an actor is being run forward by its age, and only its CHAN_AUTO sound: the
+	// flag and the channel test live here so the s_sound.cpp site is one call.
+	if ((g_bSnapCatchUp == false) || (pActor == NULL) || ((channel & 7) != CHAN_AUTO))
+		return false;
+
 	for (unsigned int i = 0; i < g_cosSoundsStarted.Size(); ++i)
 	{
 		if ((g_cosSoundsStarted[i].actor == pActor) && (g_cosSoundsStarted[i].soundId == soundId))
@@ -3211,20 +3246,24 @@ static void ghost_Report()
 			extern unsigned int g_ghostSndLostLeft, g_ghostSndLostNoMirror;
 			extern unsigned int g_ghostSndLostNoGhost, g_ghostSndPositional;
 			extern char g_ghostSndLegacyClass[64];
-			extern unsigned int g_sndLocalGhost, g_sndLocalOther;
+			extern unsigned int g_sndLocalGhost, g_sndLocalOther, g_sndLocalUngated;
 			extern unsigned int g_ghostBloodLegacy, g_ghostBloodMirror, g_ghostBloodLost;
 			extern unsigned int g_ghostConvLegacy, g_ghostConvMirror, g_ghostConvLost;
-			if ((g_ghostSndLegacy | g_ghostSndMirror | g_ghostSndWrongClass | g_ghostSndLost | g_sndLocalGhost) != 0)
+			// The two unsuppressed counts among them, so the line prints where the guard looked
+			// at sounds and suppressed none, which is what it reads below level 3.
+			if ((g_ghostSndLegacy | g_ghostSndMirror | g_ghostSndWrongClass | g_ghostSndLost
+				| g_sndLocalGhost | g_sndLocalOther | g_sndLocalUngated) != 0)
 			{
 				Printf("[snap] sound: %u to mirror, %u legacy%s%s, %u wrong-class,"
-					" %u LOST | local %u suppressed (%s), %u other\n",
+					" %u LOST | local %u suppressed (%s), %u left to stock,"
+					" %u other\n",
 					g_ghostSndMirror, g_ghostSndLegacy,
 					(g_ghostSndLegacyClass[0] != '\0') ? " first " : "",
 					g_ghostSndLegacyClass,
 					g_ghostSndWrongClass,
 					g_ghostSndLost, g_sndLocalGhost,
 					fua_csnap_nolocalsound ? "guard ON" : "GUARD OFF",
-					g_sndLocalOther);
+					g_sndLocalUngated, g_sndLocalOther);
 				if (g_ghostSndLost != 0)
 					Printf("[snap] sound LOST detail: %u left recently "
 						"(%u PLAYED positionally, %u still dropped), "
@@ -3249,7 +3288,7 @@ static void ghost_Report()
 					g_ghostConvMirror, g_ghostConvLegacy, g_ghostConvLost);
 			g_ghostBloodLegacy = g_ghostBloodMirror = g_ghostBloodLost = 0;
 			g_ghostConvLegacy = g_ghostConvMirror = g_ghostConvLost = 0;
-			g_sndLocalGhost = g_sndLocalOther = 0;
+			g_sndLocalGhost = g_sndLocalOther = g_sndLocalUngated = 0;
 		}
 
 		// Point sounds: on the mirror, moved onto it, or left at the point.

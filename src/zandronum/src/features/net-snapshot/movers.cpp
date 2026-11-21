@@ -291,6 +291,11 @@ static unsigned int g_gateDropped[2][SNAPMV_COUNT];	// [legacy-made, record-made
 static unsigned int g_gateBelowFloor = 0;
 static unsigned int g_gateKeptApplied = 0;
 
+bool zx::netsnapshot::ServerGatesLegacy( )
+{
+	return g_serverGatesMovers;
+}
+
 // Whether the snapshot path owns this mover class on this client, so its
 // legacy state handlers must not run.
 bool zx::netsnapshot::MoverSuppressesLegacy( BYTE cls )

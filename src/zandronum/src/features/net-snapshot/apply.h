@@ -5,8 +5,8 @@
 // Filename: apply.h
 //
 // Description: The client's snapshot commands: the snapshot datagram
-// and its ack, the door sound and the sound table. cl_main.cpp's dispatch
-// calls these; each reads its command's body from the stream.
+// and its ack, the door sound, the sound table and a sound by table index.
+// cl_main.cpp's dispatch calls these, each reading its body from the stream.
 //
 //-----------------------------------------------------------------------------
 
@@ -24,6 +24,7 @@ void OnDoorSound( BYTESTREAM_s *pByteStream );
 void OnFloorSound( BYTESTREAM_s *pByteStream );
 void OnMoverSound( BYTESTREAM_s *pByteStream );
 void OnSoundTable( BYTESTREAM_s *pByteStream );
+void OnSnapSound( BYTESTREAM_s *pByteStream );
 
 // Datagrams refused as too late to count (ComputeAckTooLate), since the last
 // reset; for the frame order line.

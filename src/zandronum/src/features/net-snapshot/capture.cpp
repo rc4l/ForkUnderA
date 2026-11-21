@@ -46,6 +46,8 @@
 #include "features/net-snapshot/computation/join_compute.h"
 #include "features/net-snapshot/computation/mover_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
+#include "features/net-snapshot/computation/sound_compute.h"
+#include "features/sound-amplify/computation/sound_amplify_compute.h"
 #include "features/net-snapshot/clienttrack.h"
 #include "sv_main.h"
 #include "sv_commands.h"
@@ -3814,8 +3816,21 @@ static unsigned int	g_soundNameRange = 0, g_soundNameChannel = 0;
 static unsigned int	g_soundNameOff = 0, g_soundNameUnmatched = 0;
 static unsigned int	g_soundUnplayable = 0;
 
+void zx::netsnapshot::SendPlayerStopSound(AActor *pActor, int channel)
+{
+	// No state record can carry a stop and a mirror runs no states, so the gate owes a player
+	// one; with the gate off stock's own sends stand and this adds nothing.
+	if ((NETWORK_GetState() != NETSTATE_SERVER) || (pActor == NULL)
+		|| (pActor->player == NULL) || (snap_GateOn() == false))
+		return;
+	SERVERCOMMANDS_StopSound(pActor, channel);
+}
+
 bool zx::netsnapshot::SoundUnplayable(int soundId, float volume)
 {
+	// Gate off, stock's own sends, so a silent one still goes out as it always did.
+	if (snap_GateOn() == false)
+		return false;
 	if ((soundId > 0) && (volume > 0.f))
 		return false;
 	++g_soundUnplayable;
@@ -3885,47 +3900,34 @@ static bool snap_ClientTakesSoundIds(unsigned int client)
 static void snap_SendSoundId(unsigned int client, const AActor *pActor, bool bPoint,
 	int channel, int soundId, float volume, float attenuation)
 {
-	const int vol = (int)(clamp(volume, 0.0f, 2.0f) * 127);
-	const int atten = NETWORK_AttenuationFloatToInt(attenuation);
-	int flags = bPoint ? SNAP_SOUND_POINT : 0;
-	// A point drops the loop, as SoundPoint's Byte channel does: a loop with
-	// no actor could never be stopped.
-	if ((bPoint == false) && ((channel & CHAN_LOOP) != 0))
-		flags |= SNAP_SOUND_LOOP;
-	if (vol != 127)
-		flags |= SNAP_SOUND_VOLUME;
-	if (atten != ATTN_INT_NORM)
-		flags |= SNAP_SOUND_ATTEN;
+	SnapSoundWire snd;
+	snd.bPoint = bPoint;
+	// A point drops the loop, as SoundPoint's Byte channel does, which the codec
+	// settles for both ends.
+	snd.bLoop = ((channel & CHAN_LOOP) != 0);
+	snd.x = pActor->x;
+	snd.y = pActor->y;
+	snd.z = pActor->z;
+	// A point carries the NetID too: the client moves the sound onto the mirror
+	// once one exists, so it travels with the entity as stock's does.
+	snd.netID = (unsigned short)pActor->NetID;
+	snd.channel = channel;
+	snd.soundId = soundId;
+	snd.volume = ComputeSoundVolumeToWire(volume);
+	snd.atten = NETWORK_AttenuationFloatToInt(attenuation);
 
+	BYTE body[SNAP_SOUND_MAX_BYTES];
+	const unsigned int bytes = WriteSnapSound(body, ServerMapFrame(), snd);
 	NetCommand command(SVC2_SNAPSOUND);
-	command.addByte(flags);
-	if (bPoint)
-	{
-		// Floored, as the cosmetic events are, and relative to the frame in its
-		// width, byte by byte, so a narrow axis is the SHORT it always was.
-		const SnapFrame &frame = ServerMapFrame();
-		const fixed_t pos[3] = { pActor->x, pActor->y, pActor->z };
-		for (unsigned int k = 0; k < 3; ++k)
-		{
-			BYTE rel[SNAP_FRAME_WIDEST];
-			const unsigned int n = PutPosIn(rel, frame, k, FloorPosIn(frame, k, pos[k]));
-			for (unsigned int b = 0; b < n; ++b)
-				command.addByte(rel[b]);
-		}
-	}
-	// A point carries it too: the client moves the sound onto the mirror once
-	// one exists, so it travels with the entity as stock's does.
-	command.addShort(pActor->NetID);
-	command.addByte(channel & 0xFF);
-	command.addShort(soundId);
-	if (flags & SNAP_SOUND_VOLUME)
-		command.addByte(vol);
-	if (flags & SNAP_SOUND_ATTEN)
-		command.addByte(atten);
+	command.addBuffer(body, bytes);
 	if (pActor->NetID == 0)
 		command.setUnreliable(true);
 	command.sendCommandToOneClient(client);
 }
+
+// The codec's attenuation default is the engine's, which a pure unit cannot
+// include to check for itself.
+typedef char snap_assert_sound_atten[(SNAP_SOUND_ATTEN_NORM == ATTN_INT_NORM) ? 1 : -1];
 
 // Check if the client is in the server and send the records it needs.
 static bool snap_ClientInMap(unsigned int client)
@@ -3938,7 +3940,7 @@ static bool snap_ClientInMap(unsigned int client)
 }
 
 bool zx::netsnapshot::BroadcastActorSound(AActor *pActor, int channel, int soundId,
-	float volume, float attenuation, bool bSoundOnClient)
+	float volume, float attenuation, bool bSoundOnClient, bool bNoStop, int pitch)
 {
 	if ((fua_snap_soundevents == false) || (pActor == NULL))
 		return false;
@@ -4016,8 +4018,10 @@ bool zx::netsnapshot::BroadcastActorSound(AActor *pActor, int channel, int sound
 			if (bById)
 				snap_SendSoundId(i, pActor, false, channel, soundId, volume, attenuation);
 			else
+				// Stock's own call carries these two, so the fallback does as well; the
+				// index route has no field for either yet.
 				SERVERCOMMANDS_SoundActor(pActor, channel, pszName, volume, attenuation,
-					i, SVCF_ONLYTHISCLIENT);
+					i, SVCF_ONLYTHISCLIENT, bNoStop, pitch);
 		}
 		else
 		{
@@ -4032,7 +4036,7 @@ bool zx::netsnapshot::BroadcastActorSound(AActor *pActor, int channel, int sound
 				// command's width ForkUnderA's decision rather than ours, as the snapshot's own
 				// wire stays 32-bit on purpose too.
 				SERVERCOMMANDS_SoundPoint((LONG)pActor->x, (LONG)pActor->y, (LONG)pActor->z,
-					channel, pszName, volume, attenuation, i, SVCF_ONLYTHISCLIENT);
+					channel, pszName, volume, attenuation, i, SVCF_ONLYTHISCLIENT, pitch);
 		}
 	}
 	return true;

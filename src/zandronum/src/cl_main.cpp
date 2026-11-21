@@ -2345,6 +2345,11 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 				zx::netsnapshot::OnSoundTable( pByteStream );
 				break;
 
+			case SVC2_SNAPSOUND:
+
+				zx::netsnapshot::OnSnapSound( pByteStream );
+				break;
+
 			case SVC2_SNAPCOSMETIC:
 
 				zx::netsnapshot::CosmeticEvents( pByteStream );
@@ -10930,7 +10935,7 @@ unsigned int g_ghostSndPositional = 0;
 // [Kaori-Chani] The class a legacy sound named, so a count of them is a fact rather than a guess.
 char g_ghostSndLegacyClass[64] = "";
 // [Kaori-Chani] Sounds the client played itself: the local player's, and anyone else's.
-unsigned int g_sndLocalGhost = 0, g_sndLocalOther = 0;
+unsigned int g_sndLocalGhost = 0, g_sndLocalOther = 0, g_sndLocalUngated = 0;
 
 // [Kaori-Chani] A line per sound command whose name contains this.
 CVAR( String, fua_csnap_soundtrace, "", CVAR_NOSETBYACS )

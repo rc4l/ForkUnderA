@@ -34,6 +34,9 @@ void MoverCountPlatWaitExpired();
 bool MoverSuppressesLegacy( BYTE cls );
 // The same, for a legacy handler's own test: counts the call it turns away.
 bool MoverLegacyStandsAside( BYTE cls );
+// The gate word SnapMoverGate carried, which the server sends at level 3 alone: read
+// outside the movers too, by the sound guard that must know records carry those sounds.
+bool ServerGatesLegacy( );
 // A mover one of this client's legacy handlers built, which a mover gate-on drops: the
 // records then rebuild it, and without the mark the two would both own the plane.
 void MoverMadeByLegacy( class DMover * pMover );
