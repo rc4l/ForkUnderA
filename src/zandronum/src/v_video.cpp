@@ -73,6 +73,8 @@
 #include "features/hwrender/backendonly.h"                         // [rc4l] BackendApiName, for the backend line's name
 #include "features/aspect-ratio/computation/ratiobucket_compute.h"
 #include "features/handoff/gamethread.h"
+#include "features/handoff/computation/lumpcache_compute.h"
+#include <atomic>
 
 // [TP] New includes.
 #include "cl_commands.h"
@@ -556,9 +558,14 @@ normal:
 //
 //==========================================================================
 
+// [MGOOOOOO] The X11R6RGB text, read on the main thread and kept, its lump number published last so a tic that sees it finds the text and its file and length already set.
+static FString RgbTable;
+static int RgbTableFile = -1;
+static int RgbTableLength = -1;
+static std::atomic<int> RgbTableLump (-1);
+
 FString V_GetColorStringByName (const char *name)
 {
-	FMemLump rgbNames;
 	char *rgbEnd;
 	char *rgb, *endp;
 	int rgblump;
@@ -574,10 +581,22 @@ FString V_GetColorStringByName (const char *name)
 		return FString();
 	}
 
-	// [MGOOOOOO] An archive has one reader, so a colour name read in a tic on its own thread, such as a joining bot's, has the main thread read the table.
-	zx::handoff::AskMainFor ([&] { rgbNames = Wads.ReadLump (rgblump); });
-	rgb = (char *)rgbNames.GetMem();
-	rgbEnd = rgb + Wads.LumpLength (rgblump);
+	// [MGOOOOOO] An archive has one reader, so a tic on its own thread has the main thread read the table, once: a joining bot looks up several colour names, each of which used to ask.
+	const int keptLump = RgbTableLump.load (std::memory_order_acquire);
+	const int file = Wads.GetLumpFile (rgblump);
+	const int length = Wads.LumpLength (rgblump);
+	if (zx::handoff::ComputeLumpCacheStale (keptLump, RgbTableFile, RgbTableLength, rgblump, file, length))
+	{
+		zx::handoff::AskMainFor ([&] {
+			FMemLump lump = Wads.ReadLump (rgblump);
+			RgbTable = FString ((const char *)lump.GetMem (), length);
+			RgbTableFile = file;
+			RgbTableLength = length;
+			RgbTableLump.store (rgblump, std::memory_order_release);
+		});
+	}
+	rgb = (char *)RgbTable.GetChars();
+	rgbEnd = rgb + RgbTableLength;
 	step = 0;
 	namelen = strlen (name);
 
