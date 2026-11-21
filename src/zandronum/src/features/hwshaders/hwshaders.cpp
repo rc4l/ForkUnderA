@@ -54,10 +54,14 @@ static bool BlockReaches(FTexture *tex, bool thiswad, bool iwad, int deflump)
 }
 
 // [Doruk-Aksoy] The type a texture's maps give it.
+// [Doruk-Aksoy] One lookup of its layers, not one a layer, since every dynamic piece's slot asks it each frame.
 static MaterialType MapsType(const FTexture *tex)
 {
-	return ComputeMaterialTypeFromLayers(LayerTexture(tex, kLayerNormal) != NULL, LayerTexture(tex, kLayerSpecular) != NULL,
-		LayerTexture(tex, kLayerMetallic) != NULL, LayerTexture(tex, kLayerRoughness) != NULL, LayerTexture(tex, kLayerAO) != NULL);
+	if (g_layers.empty()) return ComputeMaterialTypeFromLayers(false, false, false, false, false);
+	const auto it = g_layers.find(tex);
+	if (it == g_layers.end()) return ComputeMaterialTypeFromLayers(false, false, false, false, false);
+	const std::array<FTexture *, kLayerCount> &l = it->second;
+	return ComputeMaterialTypeFromLayers(l[kLayerNormal] != NULL, l[kLayerSpecular] != NULL, l[kLayerMetallic] != NULL, l[kLayerRoughness] != NULL, l[kLayerAO] != NULL);
 }
 
 // [Doruk-Aksoy] A Material block's maps put on its texture: the brightmap as gl_ParseBrightmap puts one, the rest as layers, and its type's built-in shader made.

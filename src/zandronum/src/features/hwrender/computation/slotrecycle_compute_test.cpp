@@ -110,3 +110,35 @@ TEST(SlotRecycle, AWhiteSlotRetriesUpToItsBound)
 	tries = 0;
 	EXPECT_TRUE(ComputeRetryWhite(tries, 2));
 }
+
+// [Doruk-Aksoy] A slot reads first once a reservation, again in the next, and a slot of 0 or less always does.
+TEST(ComputeFirstInReservation, OncePerReservation)
+{
+	std::vector<unsigned int> stamps;
+	EXPECT_TRUE(zx::hwrender::ComputeFirstInReservation(stamps, 5, 1));
+	EXPECT_FALSE(zx::hwrender::ComputeFirstInReservation(stamps, 5, 1));
+	EXPECT_TRUE(zx::hwrender::ComputeFirstInReservation(stamps, 2, 1));
+	EXPECT_TRUE(zx::hwrender::ComputeFirstInReservation(stamps, 5, 2));
+	EXPECT_TRUE(zx::hwrender::ComputeFirstInReservation(stamps, 0, 2));
+	EXPECT_TRUE(zx::hwrender::ComputeFirstInReservation(stamps, 0, 2));
+	EXPECT_TRUE(zx::hwrender::ComputeFirstInReservation(stamps, -1, 2));
+	EXPECT_EQ(stamps.size(), 6u);
+}
+
+// [Doruk-Aksoy] A key asked twice in a pass computes once, a new pass or another number computes again, and a collision still answers right.
+TEST(ComputePassMemo, OncePerKeyAndPass)
+{
+	zx::hwrender::ComputePassMemo<int> memo(1);
+	int calls = 0;
+	const int x = 0, y = 0;
+	auto get = [&](const void *a, int b, unsigned int pass, int v) { return memo.Get(a, b, pass, [&] { calls++; return v; }); };
+	EXPECT_EQ(get(&x, 1, 1, 7), 7);
+	EXPECT_EQ(get(&x, 1, 1, 99), 7);
+	EXPECT_EQ(calls, 1);
+	EXPECT_EQ(get(&x, 2, 1, 8), 8);
+	EXPECT_EQ(get(&x, 1, 2, 9), 9);
+	EXPECT_EQ(calls, 3);
+	// [Doruk-Aksoy] Two bits of table, so different keys meet in one entry and each still reads its own value.
+	for (int i = 0; i < 8; i++) EXPECT_EQ(get(&y, i, 3, i * 10), i * 10);
+	EXPECT_EQ(calls, 11);
+}

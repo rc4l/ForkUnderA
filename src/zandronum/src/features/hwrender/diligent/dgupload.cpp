@@ -57,24 +57,42 @@ void ReserveDynamicSlots()
 	reservedGen = gen;
 	int npieces = 0;
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
+	// [Doruk-Aksoy] This reservation's number, which the memos and stamps below are kept for, since thousands of pieces share a few hundred materials.
+	static unsigned int reservation = 0;
+	reservation++;
+	static ComputePassMemo<char> brightOf;
+	static ComputePassMemo<int> foundSlot;
 	// [Doruk-Aksoy] Two keys a piece, its colour and, when its material has a brightmap, its brightmap, so key k is piece k / 2's.
 	static std::vector<char> bright;
 	bright.resize(npieces);
-	for (int i = 0; i < npieces; i++) bright[i] = zx::materials::MaterialHasBrightmap(pieces[i].material);
+	for (int i = 0; i < npieces; i++)
+	{
+		const void *m = pieces[i].material;
+		bright[i] = brightOf.Get(m, 0, reservation, [m] { return (char)zx::materials::MaterialHasBrightmap(m); });
+	}
 	auto translationOf = [&](int k) { return k % 2 == 0 ? pieces[k / 2].translation : kBrightmapTranslation; };
 	BeginSlotReservation();
 	static std::vector<int> slots;
+	// [Doruk-Aksoy] A key's find read once a reservation, which is exact as no slot is made until every key has been looked for.
 	zx::hwrender::ComputeReserveSlots(npieces * 2,
-		[&](int k) { return k % 2 == 0 || bright[k / 2] ? FindReservedSlot(pieces[k / 2].material, translationOf(k)) : 0; },
+		[&](int k) {
+			if (k % 2 != 0 && !bright[k / 2]) return 0;
+			const void *m = pieces[k / 2].material;
+			const int t = translationOf(k);
+			return foundSlot.Get(m, t, reservation, [m, t] { return FindReservedSlot(m, t); });
+		},
 		[&](int k) { return MaterialSlotFor(pieces[k / 2].material, translationOf(k), false); }, slots);
 	g_keptSlots.resize(npieces);
+	// [Doruk-Aksoy] The reservation each colour and brightmap slot was noted in, so the pieces sharing a slot, and so its material, note it and fill its layer row once.
+	static std::vector<unsigned int> rowFilled, brightNoted;
 	for (int i = 0; i < npieces; i++)
 	{
 		g_keptSlots[i] = PieceSlotSet{ (float)slots[2 * i], (float)slots[2 * i + 1], false };
-		NoteDynamicSlotUse(slots[2 * i], pieces[i].material, pieces[i].translation);
-		if (bright[i]) NoteDynamicSlotUse(slots[2 * i + 1], pieces[i].material, kBrightmapTranslation);
+		const bool firstColour = ComputeFirstInReservation(rowFilled, slots[2 * i], reservation);
+		if (firstColour) NoteDynamicSlotUse(slots[2 * i], pieces[i].material, pieces[i].translation);
+		if (bright[i] && ComputeFirstInReservation(brightNoted, slots[2 * i + 1], reservation)) NoteDynamicSlotUse(slots[2 * i + 1], pieces[i].material, kBrightmapTranslation);
 		// [Doruk-Aksoy] Its GLDEFS layers take their slots in the same reservation, so none gives way while it draws.
-		FillLayerRow(slots[2 * i], pieces[i].material, false);
+		if (firstColour) FillLayerRow(slots[2 * i], pieces[i].material, false);
 	}
 	g_keptGen = gen;
 	g_keptTable = MaterialSlotTableId();
