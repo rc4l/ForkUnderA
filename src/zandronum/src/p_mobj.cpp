@@ -112,6 +112,7 @@
 #include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
 #include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
 #include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
+#include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -4914,20 +4915,20 @@ void AActor::CheckSectorTransition(sector_t *oldsec)
 
 bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 {
-	BYTE lastwaterlevel = waterlevel;
+	// [Doruk-Aksoy] features/actor-layout: measured into a local, so a dry actor's water fields are only read.
+	int measured = 0;
 	fixed_t fh = FIXED_MIN;
 	bool reset=false;
 
-	waterlevel = 0;
-
 	if (Sector == NULL)
 	{
+		if (waterlevel != 0) waterlevel = 0;
 		return false;
 	}
 
 	if (Sector->MoreFlags & SECF_UNDERWATER)	// intentionally not SECF_UNDERWATERMASK
 	{
-		waterlevel = 3;
+		measured = 3;
 	}
 	else
 	{
@@ -4939,24 +4940,24 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 			{
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
 				else if (!(hsec->MoreFlags & SECF_FAKEFLOORONLY) && (z + height > hsec->ceilingplane.ZatPoint (x, y)))
 				{
-					waterlevel = 3;
+					measured = 3;
 				}
 				else
 				{
-					waterlevel = 0;
+					measured = 0;
 				}
 			}
 			// even non-swimmable deep water must be checked here to do the splashes correctly
@@ -4985,14 +4986,14 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 				fh=ff_top;
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
@@ -5005,15 +5006,15 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 		
 	// some additional checks to make deep sectors like Boom's splash without setting
 	// the water flags. 
-	if (boomwaterlevel == 0 && waterlevel != 0 && dosplash) 
+	const WaterStore store = ComputeWaterStore(waterlevel, boomwaterlevel, measured, reset, dosplash);
+	if (store.splash)
 	{
+		// [Doruk-Aksoy] P_HitWater reads the measured level, as it did before the reset.
+		waterlevel = measured;
 		P_HitWater(this, Sector, FIXED_MIN, FIXED_MIN, fh, true);
 	}
-	boomwaterlevel = waterlevel;
-	if (reset)
-	{
-		waterlevel = lastwaterlevel;
-	}
+	if (boomwaterlevel != store.boom) boomwaterlevel = (BYTE)store.boom;
+	if (waterlevel != store.water) waterlevel = store.water;
 	return false;	// we did the splash ourselves
 }
 

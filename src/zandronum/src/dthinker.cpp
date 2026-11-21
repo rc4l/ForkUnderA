@@ -49,7 +49,9 @@
 #include "features/telemetry/telemetry.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists; [Doruk-Aksoy] NoteThinkerLists, NoteThinkerAdded, NoteThinkerRemoved
 #include "features/gamecopy/computation/thinkerorder_compute.h"   // [Doruk-Aksoy] ComputeListBucket
+#include "features/actor-layout/actorprefetch.h"   // [Doruk-Aksoy] the next thinker's hot lines fetched while one ticks
 
+#include <cstddef>
 #include <cstdint>
 
 
@@ -458,6 +460,7 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 {
 	int count = 0;
 	DThinker *node = list->GetHead();
+	const size_t fetch = zx::actorlayout::TickBytes();
 
 	if (node == NULL)
 	{
@@ -468,6 +471,8 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 	{
 		++count;
 		NextToThink = node->NextThinker;
+		// [Doruk-Aksoy] features/actor-layout: the next thinker's hot lines load while this one ticks.
+		zx::actorlayout::PrefetchLines(NextToThink, fetch);
 		if (node->ObjectFlags & OF_JustSpawned)
 		{
 			// Leave OF_JustSpawn set until after Tick() so the ticker can check it.

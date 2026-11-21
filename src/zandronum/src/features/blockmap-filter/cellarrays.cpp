@@ -113,9 +113,9 @@ const std::vector<SightLineEntry> &SightLines(int cell)
 	return SightCells[(size_t)cell];
 }
 
-bool Missed(const ThingEntry &e, const AActor *mover, int64_t moverX, int64_t moverY)
+bool Missed(const ThingEntry &e, int64_t moverX, int64_t moverY, int64_t moverRadius, bool moverMissile)
 {
-	return ComputeBlockCandidateMissed(e.x, e.y, e.radius, e.attackRadius, moverX, moverY, mover->radius.Raw(), (mover->flags & MF_MISSILE) != 0);
+	return ComputeBlockCandidateMissed(e.x, e.y, e.radius, e.attackRadius, moverX, moverY, moverRadius, moverMissile);
 }
 
 LineWalk::LineWalk(const FBoundingBox &box)

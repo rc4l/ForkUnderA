@@ -43,8 +43,8 @@ bool SightReady();
 // [Doruk-Aksoy] A cell's static lines as a sight trace tests them; read only when SightReady and the map has no polyobjects.
 const std::vector<SightLineEntry> &SightLines(int cell);
 
-// [Doruk-Aksoy] Whether a candidate is too far for PIT_CheckThing to act on, from its cached values.
-bool Missed(const ThingEntry &e, const AActor *mover, int64_t moverX, int64_t moverY);
+// [Doruk-Aksoy] Whether a candidate is too far for PIT_CheckThing to act on, from its cached values and the mover's, read once a walk.
+bool Missed(const ThingEntry &e, int64_t moverX, int64_t moverY, int64_t moverRadius, bool moverMissile);
 
 // [Doruk-Aksoy] The static lines near a box in FBlockLinesIterator's order, less those PIT_CheckLine's box test passes by; used only on maps without polyobjects.
 class LineWalk
