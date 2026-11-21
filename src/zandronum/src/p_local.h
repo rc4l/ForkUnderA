@@ -40,6 +40,9 @@
 #include "a_morph.h"
 
 #include <stdlib.h>
+#include <vector>
+#include <cstdint>
+#include "features/blockmap-filter/computation/cellarrays_compute.h" // [Doruk-Aksoy] zx::cells::ThingEntry
 
 #define STEEPSLOPE		46342	// [RH] Minimum floorplane.c value for walking
 
@@ -341,6 +344,17 @@ class FBlockThingsIterator
 
 	FBlockNode *block;
 
+	// [Doruk-Aksoy] features/blockmap-filter: walking the cells' arrays instead of their lists, for this mover at this spot, while no link or unlink has happened since the walk began.
+	int64_t FuaMoverRadius = 0;
+	bool FuaMoverMissile = false;
+	fixed_t FuaMoverX, FuaMoverY;
+	bool FuaCompact = false;
+	unsigned int FuaEpoch = 0;
+	const std::vector<zx::cells::ThingEntry> *FuaCell = NULL;
+	int FuaPos = -1;
+	AActor *FuaNextCompact();
+	bool FuaHashAdd(AActor *me);
+
 	int Buckets[32];
 
 	struct HashEntry
@@ -377,6 +391,8 @@ public:
 	~FBlockThingsIterator(); // [rc4l] returns the leased DynHash block to the pool
 	AActor *Next(bool centeronly = false);
 	void Reset() { StartBlock(minx, miny); }
+	// [Doruk-Aksoy] features/blockmap-filter: P_CheckPosition's walk over the cells' arrays, returning what the lists would less the candidates PIT_CheckThing passes by on distance.
+	void FuaCompactFor(const AActor *mover, fixed_t x, fixed_t y);
 };
 
 class FPathTraverse
@@ -597,6 +613,7 @@ void	P_DelSector_List();
 void	P_DelSeclist(msecnode_t *);							// phares 3/16/98
 void	P_CreateSecNodeList(AActor*,fixed_t,fixed_t);		// phares 3/14/98
 void	P_DiscardSecnodeReplay();		// [Doruk-Aksoy] features/relink-in-place: a link that builds no list still uses up the recording
+bool	P_MoverChecksThings(const AActor *mover);	// [Doruk-Aksoy] features/swept-missiles: whether P_CheckPosition walks the things near the mover
 int		P_GetMoveFactor(const AActor *mo, int *frictionp);	// phares  3/6/98
 int		P_GetFriction(const AActor *mo, int *frictionfactor);
 bool	Check_Sides(AActor *, int, int);					// phares

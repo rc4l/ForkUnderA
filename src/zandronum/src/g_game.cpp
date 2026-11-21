@@ -135,6 +135,7 @@
 
 #include "g_hub.h"
 #include "features/telemetry/telemetry.h"
+#include "features/blockmap-filter/cellarrays.h"   // [Doruk-Aksoy] zx::cells::Refresh
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
 #include "computation/mapangle_compute.h"   // [rc4l] ComputeMapThingAngle
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
@@ -4131,6 +4132,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				pNewActor->HandleSpawnFlags( );
 
 				pNewActor->BeginPlay ();
+				zx::cells::Refresh (pNewActor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 				if (!(pNewActor->ObjectFlags & OF_EuthanizeMe))
 				{
 					pNewActor->LevelSpawned ();
@@ -4312,6 +4314,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			pNewActor->HandleSpawnFlags( );
 
 			pNewActor->BeginPlay ();
+			zx::cells::Refresh (pNewActor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 			if (!(pNewActor->ObjectFlags & OF_EuthanizeMe))
 			{
 				pNewActor->LevelSpawned ();

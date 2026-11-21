@@ -103,6 +103,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated at its load
 #include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
+#include "features/blockmap-filter/cellarrays.h"   // [Doruk-Aksoy] the cells' arrays beside the blockmap's lists
 #include "features/net-session/netrole.h"
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
@@ -3202,6 +3203,7 @@ void P_LoadBlockMap (MapData * map)
 	blocklinks = new FBlockNode *[count];
 	memset (blocklinks, 0, count*sizeof(*blocklinks));
 	blockmap = blockmaplump+4;
+	zx::cells::Reset (count);	// [Doruk-Aksoy] features/blockmap-filter: the cells' arrays, empty as the lists
 }
 
 
@@ -3808,6 +3810,7 @@ void P_FreeLevelData ()
 	{
 		delete[] blocklinks;
 		blocklinks = NULL;
+		zx::cells::Reset (0);	// [Doruk-Aksoy] features/blockmap-filter
 	}
 	if (PolyBlockMap != NULL)
 	{
@@ -4505,6 +4508,7 @@ void P_SetupLevel (const char *lumpname, int position)
 	if (reloop) P_LoopSidedefs (false);
 	PO_Init ();	// Initialize the polyobjs
 	times[16].Unclock();
+	zx::cells::BuildStaticLines ();	// [Doruk-Aksoy] features/blockmap-filter: before play, so the crosshair's sight checks never build them
 
 	assert(sidetemp != NULL);
 	delete[] sidetemp;

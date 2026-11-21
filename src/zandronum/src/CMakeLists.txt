@@ -1888,6 +1888,9 @@ add_executable( zdoom WIN32
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
 	features/monster-stairs/monsterstairs.cpp
+	features/swept-missiles/sweptmove.cpp
+	features/blockmap-filter/cellarrays.cpp
+	features/actor-layout/actorprefetch.cpp
 	features/damage-taken/damagetaken.cpp
 	features/net-transport/netconditions.cpp
 	features/net-transport/recvthread.cpp
