@@ -562,6 +562,8 @@ static bool			g_soundIdsKnown = false;
 static bool			g_soundIdsMatch = false;
 static unsigned int	g_soundIdsServerCount = 0, g_soundIdsLocalCount = 0;
 static unsigned int	g_soundIdsPlayed = 0, g_soundIdsDropped = 0;
+// Sounds stamped for another map, which carry that map's table and its mirrors.
+static unsigned int	g_soundOtherMap = 0;
 
 bool zx::netsnapshot::AcceptMapStamp(BYTE stamp)
 {
@@ -750,6 +752,19 @@ void zx::netsnapshot::SoundIdStats(unsigned int& played, unsigned int& dropped, 
 	match = g_soundIdsMatch;
 	if (reset)
 		g_soundIdsPlayed = g_soundIdsDropped = 0;
+}
+
+void zx::netsnapshot::CountSoundOtherMap()
+{
+	++g_soundOtherMap;
+}
+
+unsigned int zx::netsnapshot::SoundOtherMap(bool reset)
+{
+	const unsigned int n = g_soundOtherMap;
+	if (reset)
+		g_soundOtherMap = 0;
+	return n;
 }
 
 unsigned int zx::netsnapshot::MapStampStale(bool reset)

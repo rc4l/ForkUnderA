@@ -3901,6 +3901,7 @@ static void snap_SendSoundId(unsigned int client, const AActor *pActor, bool bPo
 	int channel, int soundId, float volume, float attenuation)
 {
 	SnapSoundWire snd;
+	snd.stamp = g_snapMapStamp;
 	snd.bPoint = bPoint;
 	// A point drops the loop, as SoundPoint's Byte channel does, which the codec
 	// settles for both ends.

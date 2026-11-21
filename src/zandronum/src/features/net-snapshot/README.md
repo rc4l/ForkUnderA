@@ -596,6 +596,9 @@ Each hook is one call from a stock file into the module, listed here as it lands
   plays it as `SoundActor` or `SoundPoint`. Both ends of that command go through
   `computation/sound_compute`, so its test pins what is actually sent and a sender and a handler
   cannot drift apart.
+  - The body's first byte is the map stamp, as the sound table's and the cosmetic events' are.
+    A sound for another map names an id in that map's table and entities whose mirrors are
+    gone, so the handler drops it and the client's sound-ids line counts it.
 
 ## The reference recordings
 

@@ -368,6 +368,14 @@ void zx::netsnapshot::OnSnapSound( BYTESTREAM_s *pByteStream )
 		return;
 	}
 
+	// Stamped for another map: that map's table named the id and its mirrors are
+	// gone, so there is nothing here this sound could mean.
+	if ( MapStampCurrent( snd.stamp ) == false )
+	{
+		CountSoundOtherMap( );
+		return;
+	}
+
 	const int channel = snd.bLoop ? ( snd.channel | CHAN_LOOP ) : snd.channel;
 	const unsigned int id = static_cast<unsigned int>( snd.soundId );
 

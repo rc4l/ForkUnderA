@@ -137,6 +137,9 @@ BYTE SoundIdsAnswer();
 // the id is below the count the hash covered.
 bool SoundIdUsable(unsigned int id);
 void CountSoundId(bool bPlayed);
+// A sound whose stamp names another map, counted and played by nobody.
+void CountSoundOtherMap();
+unsigned int SoundOtherMap(bool reset);
 void SoundIdStats(unsigned int& played, unsigned int& dropped, unsigned int& serverCount,
 	unsigned int& localCount, bool& known, bool& match, bool reset);
 

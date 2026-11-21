@@ -38,6 +38,9 @@ unsigned int zx::netsnapshot::WriteSnapSound(BYTE* p, const SnapFrame& f, const 
 {
 	const int flags = SnapSoundFlags(s);
 	unsigned int n = 0;
+	// The stamp leads, as the sound table's and the cosmetic events' do, so a
+	// client reads it before anything it would have to act on.
+	p[n++] = s.stamp;
 	p[n++] = (BYTE)flags;
 	if (s.bPoint)
 	{
@@ -64,6 +67,7 @@ void zx::netsnapshot::ReadSnapSound(SnapCosCursor& c, const SnapFrame& f, const 
 {
 	// Past the end every read gives -1, which leaves the fields meaningless and
 	// the cursor past `end`, where the caller refuses the body.
+	s.stamp = (BYTE)CosRead8(c);
 	const int flags = CosRead8(c);
 	s.bPoint = ((flags & SNAP_SOUND_POINT) != 0);
 	s.bLoop = ((flags & SNAP_SOUND_LOOP) != 0);

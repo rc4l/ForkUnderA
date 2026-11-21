@@ -3310,11 +3310,12 @@ static void ghost_Report()
 			unsigned int idPlayed = 0, idDropped = 0, serverN = 0, localN = 0;
 			bool bKnown = false, bMatch = false;
 			SoundIdStats(idPlayed, idDropped, serverN, localN, bKnown, bMatch, true);
-			if (bKnown || (idPlayed | idDropped) != 0)
+			const unsigned int idOtherMap = SoundOtherMap(true);
+			if (bKnown || (idPlayed | idDropped | idOtherMap) != 0)
 				Printf("[snap] sound ids: table %s (server %u names, here %u)"
-					" | %u played by id, %u DROPPED\n",
+					" | %u played by id, %u DROPPED, %u for another map\n",
 					bKnown ? (bMatch ? "matched" : "DIFFERS, names") : "not received",
-					serverN, localN, idPlayed, idDropped);
+					serverN, localN, idPlayed, idDropped, idOtherMap);
 		}
 
 		// Cosmetic events, and the catch-up, which also runs spawns' children.

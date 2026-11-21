@@ -21,14 +21,15 @@
 #define SNAP_SOUND_VOLUME_NORM	127
 #define SNAP_SOUND_ATTEN_NORM	1
 
-// The flags, three positions at their widest, the NetID, the channel, the
-// sound id, and the two bytes a body may add.
-#define SNAP_SOUND_MAX_BYTES	( 1 + 3 * SNAP_FRAME_WIDEST + 2 + 1 + 2 + 1 + 1 )
+// The map stamp, the flags, three positions at their widest, the NetID, the
+// channel, the sound id, and the two bytes a body may add.
+#define SNAP_SOUND_MAX_BYTES	( 1 + 1 + 3 * SNAP_FRAME_WIDEST + 2 + 1 + 2 + 1 + 1 )
 
 // One SVC2_SNAPSOUND body. A point carries the NetID too: the client moves the
 // sound onto the mirror once one exists, as stock's travels with the entity.
 struct SnapSoundWire
 {
+	BYTE			stamp;		// the map it was sent for, ahead of everything else
 	bool			bPoint;		// x, y and z travel, ahead of the NetID
 	bool			bLoop;		// CHAN_LOOP at the call site, never sent on a point
 	fixed_t			x, y, z;	// floored into the frame; 0 unless bPoint
