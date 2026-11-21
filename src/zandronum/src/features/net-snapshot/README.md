@@ -175,6 +175,11 @@ Each hook is one call from a stock file into the module, listed here as it lands
   `MoverClientSkipsWait( m_SnapSeen )` on a door's and a plat's countdown,
   `MoverPlaysWaitSound( )` on the door's and the plat's local wait-end sounds, and
   `MoverClientDerivesReversal( m_SnapSeen )` on a crusher's turn.
+  - The two holds test the client role alone, not the gate. `snapmv_ApplyRecord` has no gate
+    test, and each class' branch ends `m_SnapLegacy = false`, so a record drives a gate-off
+    client's planes as soon as one arrives; the hold is what keeps that record and the legacy
+    tick from fighting over the same plane. A gate-off window therefore reads `blocked 1` and
+    a count of tics held, which is the hold working rather than a gate missing from it.
   - The reference wrote the role tests into these files — `NETWORK_InClientMode( ) && m_SnapBlocked`,
     and a server test around the stall write. This port keeps them inside the module, as
     `SpecialResolveSource` does, so the stock sites stay at one call and the boundary counts do
