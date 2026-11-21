@@ -353,7 +353,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_GenWizard)
 			mo = Spawn<ATeleportFog> (self->x, self->y, self->z, ALLOW_REPLACE);
 
 			// [BC]
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( mo, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( mo );
 		}
 	}

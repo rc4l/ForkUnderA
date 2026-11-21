@@ -36,6 +36,8 @@
 #include "tables.h"
 #include "tarray.h"
 #include "zstring.h"
+#include "s_sound.h"	// the respawn sound a mirrored item makes at its ghost
+#include "a_pickups.h"	// AInventory::DoRespawn, for the same
 #include "features/net-snapshot/format.h"
 #include "features/net-snapshot/entities.h"
 #include "features/net-snapshot/apply.h"
@@ -595,6 +597,30 @@ void zx::netsnapshot::CosmeticFirstTick(DThinker* pThinker)
 // Counted in cl_main.cpp beside the report that prints them, so the declaration sits at file
 // scope here rather than inside the namespace below.
 extern unsigned int g_sndLocalGhost, g_sndLocalOther, g_sndLocalUngated;
+
+// Item respawns answered behind a mirror, for the census line.
+static unsigned int g_respawnOnMirror = 0;
+
+bool zx::netsnapshot::RespawnBehindMirror(AActor* pActor, bool bFog)
+{
+	if ((pActor == NULL) || ((pActor->STFlags & STFL_SNAPGHOSTHIDDEN) == 0))
+		return false;
+
+	// The record draws this item, so the hidden copy keeps its state and its flags:
+	// only the sound and the fog are made, at the ghost it sits behind.
+	if (pActor->IsKindOf(RUNTIME_CLASS(AInventory)) == false
+		|| static_cast<AInventory *>(pActor)->DoRespawn() == false)
+		return true;
+	++g_respawnOnMirror;
+	if (bFog)
+	{
+		fixed_t x = pActor->x, y = pActor->y, z = pActor->z;
+		GhostPosition(pActor->NetID, x, y, z);
+		S_Sound(x, y, z, CHAN_VOICE, "misc/spawn", 1, ATTN_IDLE);
+		Spawn("ItemFog", x, y, z, ALLOW_REPLACE);
+	}
+	return true;
+}
 
 // The server sends this entity's sounds, so a client playing them itself would double them.
 // True to skip: the role test, the counters and the switch all live here.
@@ -3289,6 +3315,14 @@ static void ghost_Report()
 			g_ghostBloodLegacy = g_ghostBloodMirror = g_ghostBloodLost = 0;
 			g_ghostConvLegacy = g_ghostConvMirror = g_ghostConvLost = 0;
 			g_sndLocalGhost = g_sndLocalOther = g_sndLocalUngated = 0;
+		}
+
+		// Item respawns answered behind a mirror rather than on the hidden copy.
+		if (g_respawnOnMirror != 0)
+		{
+			Printf("[snap] item respawns: %u answered at the ghost, the hidden copy left"
+				" as it was\n", g_respawnOnMirror);
+			g_respawnOnMirror = 0;
 		}
 
 		// Point sounds: on the mirror, moved onto it, or left at the point.

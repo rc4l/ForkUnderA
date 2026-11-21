@@ -398,6 +398,13 @@ void MoverCaptureStats(unsigned int & live, unsigned int & captures,
 	unsigned int & heldPast, unsigned int & heldLongest, unsigned int & heldNow,
 	bool bReset);
 
+// A cosmetic effect the snapshot must never carry: under the gate it gives up its NetID
+// and is spawned id-less. True when it took it, so a site keeps its own send (README).
+bool ClientEffect(AActor *pEffect, bool bSend, int level = SNAPLEGACY_EXISTENCE);
+// A teleport's two fogs, and whether the server took them: from MOTION a client's copy of
+// the thing is record-driven, so its own fogs would stand at a stale position.
+bool TeleportFogs(AActor *pThing, AActor **pFogs);
+
 // Whether a client's own MoveLocalPlayer and SetLocalPlayerJumpTics give way to
 // the local block (level 3), never for a spectator.
 bool SuppressesLegacyLocal(unsigned int client);

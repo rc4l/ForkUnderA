@@ -3734,7 +3734,8 @@ void P_NightmareRespawn (AActor *mobj)
 	if (mo != NULL)
 	{
 		// [BC] If we're the server, tell clients to spawn the thing.
-		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+			&& ( zx::netsnapshot::ClientEffect( mo, true ) == false ))
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 
@@ -3743,7 +3744,8 @@ void P_NightmareRespawn (AActor *mobj)
 	if (mo != NULL)
 	{
 		// [BC] If we're the server, tell clients to spawn the thing.
-		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+			&& ( zx::netsnapshot::ClientEffect( mo, true ) == false ))
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 

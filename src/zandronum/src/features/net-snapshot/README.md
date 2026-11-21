@@ -605,6 +605,39 @@ Each hook is one call from a stock file into the module, listed here as it lands
       packet out of step. Only an unreliable body can arrive across a map change at all, and
       it is too rare to spend a wire byte on now.
 
+- Twenty-five effect sites, each one call: `ClientEffect( pEffect, bSend )`. A cosmetic
+  effect -- a teleport fog, a morph flash, an invasion fog, a pickup flash, the item-respawn
+  fog -- must never be a snapshot entity, because the capture sweep takes every actor holding
+  a NetID and a client would then mirror a three-tic animation, with records, an entry and a
+  leave. So under the gate the effect gives up its id and the server spawns it id-less, which
+  is what stock itself does by hand for the player-spawn fog (`p_mobj.cpp`, "Also remove the
+  netID"). The module answers whether it took the effect, so each site keeps its own stock
+  send for every other case and the gate-off wire is byte for byte what it was.
+  - `SuppressesLegacy( pEffect, EXISTENCE )` is asked of the **effect**, before the id goes,
+    so the answer lands exactly where stock's `SERVERCOMMANDS_SpawnThing` would have refused
+    the fog -- and the send goes back through that same function, so ForkUnderA's exact-spawn
+    path (`ComputeSpawnRoundsPosition`) and its id-less form stay its own choice.
+  - `p_teleport.cpp` is the one that decides from the **thing**: `TeleportFogs( thing, pFogs )`
+    asks it from `MOTION`, since a record-driven copy of the teleporting thing is already too
+    stale to place a fog, takes both fogs at that level, and answers whether it did, so
+    `TeleportThing`'s two fog flags stand down where it did. An `EXISTENCE` test would leave
+    levels 1 and 2 with no fog from either end.
+  - `A_RestoreSpecialDoomThing` sends its `ItemFog` because at level 3 `RespawnDoomThing` is
+    refused and the client has no item to reach.
+  - Four sites sent nothing at all before: `P_Teleport`'s pair, the `ItemFog`, the
+    `PickupFlash`, and `A_Warp`'s two `TF_USEACTORFOG` branches, which are ForkUnderA's own
+    (uzdoom@30acb7200) and have no counterpart in the reference.
+  - `cl_main.cpp`, `CLIENT_RestoreSpecialDoomThing`: one call, `RespawnBehindMirror( )`. A
+    copy behind a mirror (`STFL_SNAPGHOSTHIDDEN`) is not made visible or touchable and does
+    not run its state -- the record drives what is drawn. Only its sound and fog are made, at
+    the ghost's position through `GhostPosition`, since the hidden copy has not moved with it.
+  - Known limit: an id-less spawn carries no material or uniform, so a modded effect class
+    with either set arrives plain under the gate. The property unit decides that.
+  - Upstream, not this unit: `cl_main.cpp`'s `TeleportThing` handler spawns a hard-coded
+    `ATeleportFog`, ignoring the per-actor `TeleFogSourceType`/`TeleFogDestType` the server
+    honours, so gate-off a mod's own fog class already shows wrong on every client. Under the
+    gate this unit makes it right, because the class travels with the spawn.
+
 ## The reference recordings
 
 Three recordings made on the source tree at its `snap-ref-premerge` tag pin what the format layer

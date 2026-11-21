@@ -90,6 +90,7 @@
 #include "features/actorresize/actorresize.h"
 #include "features/spawnprojectile/computation/spawnprojectile_compute.h"
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] A_StartSound's flags as a channel
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -4667,7 +4668,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Respawn)
 			AActor *pFog = Spawn<ATeleportFog> (self->x, self->y, self->z + TELEFOGHEIGHT, ALLOW_REPLACE);
 
 			// [BB] If we're the server, tell the clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		if (self->CountsAsKill())
@@ -6492,7 +6494,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 			if (!(Flags & TF_NOSRCFOG))
 			{
 				if (Flags & TF_USEACTORFOG)
-					P_SpawnTeleportFog(ref, prevX, prevY, prevZ, true, true);
+				{
+					// [Kaori-Chani] features/net-snapshot: this branch never sent its fog, and a
+					// gated client has no copy of ref to make one from.
+					AActor *pFog = P_SpawnTeleportFog(ref, prevX, prevY, prevZ, true, true);
+					zx::netsnapshot::ClientEffect( pFog, true );
+				}
 				else
 				{
 					fog1 = Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
@@ -6501,7 +6508,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 						fog1->target = ref;
 
 						// [rc4l] the server owns the spawn; clients only draw what they are told.
-						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+							&& ( zx::netsnapshot::ClientEffect( fog1, true ) == false ))
 							SERVERCOMMANDS_SpawnThing( fog1 );
 					}
 				}
@@ -6509,7 +6517,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 			if (!(Flags & TF_NODESTFOG))
 			{
 				if (Flags & TF_USEACTORFOG)
-					P_SpawnTeleportFog(ref, ref->x, ref->y, ref->z, false, true);
+				{
+					AActor *pFog = P_SpawnTeleportFog(ref, ref->x, ref->y, ref->z, false, true);
+					zx::netsnapshot::ClientEffect( pFog, true );
+				}
 				else
 				{
 					fog2 = Spawn(FogType, ref->x, ref->y, ref->z, ALLOW_REPLACE);
@@ -6517,7 +6528,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 					{
 						fog2->target = ref;
 
-						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+							&& ( zx::netsnapshot::ClientEffect( fog2, true ) == false ))
 							SERVERCOMMANDS_SpawnThing( fog2 );
 					}
 				}

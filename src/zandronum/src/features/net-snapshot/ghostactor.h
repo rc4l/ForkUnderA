@@ -44,6 +44,10 @@ AActor* MirrorForNetID(unsigned int id, bool bCount = true);
 void ResolveThroughMirror(unsigned short netID, const PClass *subclass, AActor *&actor,
 	const char *commandName);
 
+// An item respawn for a copy behind a mirror: the record draws the item, so the copy stays
+// hidden and only its sound and fog are made, at the ghost. True when it answered.
+bool RespawnBehindMirror(AActor *pActor, bool bFog);
+
 // A snapshot point sound for an entity with no mirror yet, moved onto the
 // mirror when it appears, if the S_Sound just made started it (bStarted).
 void PointSoundPending(unsigned int netID, fixed_t x, fixed_t y, fixed_t z,

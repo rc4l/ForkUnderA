@@ -3376,6 +3376,11 @@ void CLIENT_RestoreSpecialPosition( AActor *pActor )
 //
 void CLIENT_RestoreSpecialDoomThing( AActor *pActor, bool bFog )
 {
+	// [Kaori-Chani] features/net-snapshot: a copy behind a mirror is answered there, the
+	// record drawing the item while this copy stays hidden.
+	if ( zx::netsnapshot::RespawnBehindMirror( pActor, bFog ))
+		return;
+
 	// Change an actor that's been put into a hidden for respawning back to its spawn state
 	// (respawning it). The reason we need to duplicate this function (this same code basically
 	// exists in A_RestoreSpecialDoomThing( )) is because normally, when items are touched and

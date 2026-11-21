@@ -3745,6 +3745,37 @@ QWORD zx::netsnapshot::LegacyPlayerSkips(bool bReset)
 	return n;
 }
 
+bool zx::netsnapshot::TeleportFogs(AActor *pThing, AActor **pFogs)
+{
+	// Asked of the thing, not of a fog: whether the client can still place its own.
+	const bool bServerFogs = SuppressesLegacy(pThing, SNAPLEGACY_MOTION);
+	for (unsigned int i = 0; (pFogs != NULL) && (i < 2); ++i)
+		ClientEffect(pFogs[i], bServerFogs, SNAPLEGACY_MOTION);
+	return bServerFogs;
+}
+
+bool zx::netsnapshot::ClientEffect(AActor *pEffect, bool bSend, int level)
+{
+	if ((pEffect == NULL) || (NETWORK_GetState() != NETSTATE_SERVER))
+		return false;
+
+	// Asked before the id goes, so the answer is exactly where stock's own spawn
+	// would have refused this effect.
+	if (SuppressesLegacy(pEffect, level) == false)
+		return false;
+
+	// Out of the capture sweep, which takes every actor holding an id, and out of
+	// the full update, which NETFL_ALLOWCLIENTSPAWN answers for.
+	pEffect->NetworkFlags |= NETFL_ALLOWCLIENTSPAWN;
+	if (pEffect->NetID != 0)
+		pEffect->FreeNetID();
+	// Through the stock sender, so a position whole units would move still spawns
+	// exactly (ComputeSpawnRoundsPosition) and the id-less form is its choice.
+	if (bSend)
+		SERVERCOMMANDS_SpawnThing(pEffect);
+	return true;
+}
+
 // Whether a client's own MoveLocalPlayer and SetLocalPlayerJumpTics give way to
 // the local block (level 3), both, since they write one prediction cursor.
 
