@@ -42,4 +42,13 @@ bool ComputeRetryWhite(int &tries, int bound)
 	return true;
 }
 
+bool ComputeFirstInReservation(std::vector<unsigned int> &stamps, int slot, unsigned int serial)
+{
+	if (slot <= 0) return true;
+	if ((size_t)slot >= stamps.size()) stamps.resize((size_t)slot + 1, 0u);
+	if (stamps[slot] == serial) return false;
+	stamps[slot] = serial;
+	return true;
+}
+
 }} // namespace zx::hwrender

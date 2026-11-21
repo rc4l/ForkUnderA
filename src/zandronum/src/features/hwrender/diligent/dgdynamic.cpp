@@ -810,22 +810,23 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 	}
 
 	// [Doruk-Aksoy] A flat blended model surface goes behind the sprites standing on it, and what lies beyond it behind it, as a floor or ceiling would (flatplane_compute).
+	// [Doruk-Aksoy] Only built when a flat plane is among them, since without one the order leaves every distance as it was.
+	bool anyPlane = false;
+	for (unsigned i = 0; i < list.Size() && !anyPlane; i++) anyPlane = list[i].dyn && !list[i].bias && !list[i].hud && list[i].flatPlane;
+	if (anyPlane)
 	{
 		static std::vector<zx::hwrender::FlatOrderItem> flat;
 		static std::vector<unsigned> flatOf;
 		flat.clear(); flatOf.clear();
-		bool anyPlane = false;
 		for (unsigned i = 0; i < list.Size(); i++)
 		{
 			const BlendDraw &d = list[i];
 			if (!d.dyn || d.bias || d.hud) continue;
 			zx::hwrender::FlatOrderItem it;
 			it.dist = d.dist; it.lo = d.lo; it.hi = d.hi; it.area = d.area; it.plane = d.flatPlane;
-			anyPlane |= it.plane;
 			flat.push_back(it);
 			flatOf.push_back(i);
 		}
-		if (anyPlane)
 		{
 			ZX_ZONE("scene/flat_order");
 			static zx::hwrender::FlatOrderScratch scratch;
