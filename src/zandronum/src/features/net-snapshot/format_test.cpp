@@ -1538,6 +1538,123 @@ TEST(SnapshotFormat, ThePSpriteBodyRoundTripsBothLayers)
 	}
 }
 
+// [Kaori-Chani] The property event: only what a script changed travels, so each flag is read
+// back exactly as it was written and a flag left out stays the class default.
+TEST(SnapshotFormat, APropsBodyCarriesOnlyTheFlagsItSets)
+{
+	static const BYTE combos[] = { 0, SNAP_PROPS_SCALE, SNAP_PROPS_ROLL, SNAP_PROPS_MATERIAL,
+		SNAP_PROPS_SCALE | SNAP_PROPS_ROLL,
+		SNAP_PROPS_SCALE | SNAP_PROPS_ROLL | SNAP_PROPS_MATERIAL };
+
+	for (unsigned int i = 0; i < sizeof(combos); ++i)
+	{
+		SnapProps a, b;
+		memset(&a, 0, sizeof(a));
+		memset(&b, 0xEE, sizeof(b));
+		a.flags = combos[i];
+		a.scaleX = QuantScale(DequantScale(358));	// 1.398, a scale a script would set
+		a.scaleY = 256;								// 1.0 exactly
+		a.roll = 0x4000;							// a quarter turn in the top 16 bits
+		a.matLen = 9;
+		memcpy(a.material, "fua_glow1", 9);
+
+		BYTE body[SNAP_MAX_EVENT_BYTES];
+		memset(body, 0, sizeof(body));
+		const unsigned int n = WritePropsBody(body, a);
+		EXPECT_EQ((BYTE)(SNAPGRP_EVENT | SNAPEV_PROPS), body[0]) << "the mask leads the body";
+		// The length byte counts everything after itself, and is never 0: a zero
+		// length is EventRecordBytes' sentinel for a body it cannot trust.
+		ASSERT_EQ((unsigned int)body[1], n - 2) << "combo " << (int)combos[i];
+		EXPECT_GT((unsigned int)body[1], 0u) << "combo " << (int)combos[i];
+		EXPECT_LE(n, (unsigned int)(SNAP_EVENT_MASK_BYTES + SNAP_EVBYTES_PROPS));
+
+		ASSERT_TRUE(ReadProps(body + 2, body[1], b)) << "combo " << (int)combos[i];
+		EXPECT_EQ(a.flags, b.flags);
+		EXPECT_EQ((combos[i] & SNAP_PROPS_SCALE) ? a.scaleX : 0, b.scaleX);
+		EXPECT_EQ((combos[i] & SNAP_PROPS_SCALE) ? a.scaleY : 0, b.scaleY);
+		EXPECT_EQ((combos[i] & SNAP_PROPS_ROLL) ? a.roll : 0, b.roll);
+		if (combos[i] & SNAP_PROPS_MATERIAL)
+		{
+			ASSERT_EQ(a.matLen, b.matLen);
+			EXPECT_EQ(0, memcmp(a.material, b.material, a.matLen));
+		}
+		else
+		{
+			EXPECT_EQ(0, b.matLen);
+		}
+	}
+}
+
+// [Kaori-Chani] A material flag with no name is how "no material at all" travels, which is a
+// different thing from the flag being absent, and the name is capped rather than overrunning.
+TEST(SnapshotFormat, APropsMaterialCarriesTheEmptyNameAndCapsALongOne)
+{
+	SnapProps a, b;
+	memset(&a, 0, sizeof(a));
+	a.flags = SNAP_PROPS_MATERIAL;
+	a.matLen = 0;
+
+	BYTE body[SNAP_MAX_EVENT_BYTES];
+	const unsigned int n = WritePropsBody(body, a);
+	EXPECT_EQ((unsigned int)(SNAP_EVENT_MASK_BYTES + 1 + 1 + 1), n);
+	ASSERT_TRUE(ReadProps(body + 2, body[1], b));
+	EXPECT_EQ(SNAP_PROPS_MATERIAL, b.flags);
+	EXPECT_EQ(0, b.matLen);
+
+	memset(&a, 0, sizeof(a));
+	a.flags = SNAP_PROPS_MATERIAL;
+	a.matLen = 255;					// past the cap, as a hostile or careless caller
+	memset(a.material, 'x', SNAP_PROPS_MATNAME_MAX);
+	const unsigned int wide = WritePropsBody(body, a);
+	EXPECT_EQ((unsigned int)(SNAP_EVENT_MASK_BYTES + 1 + 1 + 1 + SNAP_PROPS_MATNAME_MAX), wide);
+	ASSERT_TRUE(ReadProps(body + 2, body[1], b));
+	EXPECT_EQ(SNAP_PROPS_MATNAME_MAX, b.matLen);
+}
+
+// [Kaori-Chani] A body cut anywhere, or one claiming a name longer than it holds, is refused
+// rather than read past its end.
+TEST(SnapshotFormat, APropsBodyShorterThanItsFlagsIsRefused)
+{
+	SnapProps a, b;
+	memset(&a, 0, sizeof(a));
+	a.flags = SNAP_PROPS_SCALE | SNAP_PROPS_ROLL | SNAP_PROPS_MATERIAL;
+	a.scaleX = 300;
+	a.scaleY = 256;
+	a.roll = 1;
+	a.matLen = 4;
+	memcpy(a.material, "burn", 4);
+
+	BYTE body[SNAP_MAX_EVENT_BYTES];
+	const unsigned int n = WritePropsBody(body, a);
+	const unsigned int len = body[1];
+	for (unsigned int cut = 0; cut < len; ++cut)
+		EXPECT_FALSE(ReadProps(body + 2, cut, b)) << "cut at " << cut;
+	EXPECT_TRUE(ReadProps(body + 2, len, b)) << "the whole body reads";
+	EXPECT_EQ(n, len + 2);
+
+	// A name longer than the body holds, which only a bad sender or a mangled
+	// packet produces.
+	body[2 + 1 + 4 + 2] = (BYTE)(SNAP_PROPS_MATNAME_MAX);
+	EXPECT_FALSE(ReadProps(body + 2, len, b));
+}
+
+// [Kaori-Chani] A scale crosses at 1/256: the quantizer clamps instead of wrapping, since a
+// negative or enormous scale would otherwise come back as something else entirely.
+TEST(SnapshotFormat, AScaleQuantizesToTwoBytesAndClamps)
+{
+	EXPECT_EQ(256, QuantScale(DequantScale(256)));
+	EXPECT_EQ((long long)(256 << 8), (long long)DequantScale(256));
+	EXPECT_EQ(0, QuantScale((fixed_t)-1));
+	EXPECT_EQ(0, QuantScale((fixed_t)(-70000)));
+	EXPECT_EQ(65535, QuantScale((fixed_t)(70000 << 8)));
+	EXPECT_EQ(65535, QuantScale((fixed_t)((long long)1 << 40)));
+	// A scale set by A_SetScale(1.4) lands within a 1/256 step of itself.
+	const fixed_t set = (fixed_t)((long long)(1.4 * 65536.0));
+	const fixed_t back = DequantScale(QuantScale(set));
+	const long long off = (long long)set - (long long)back;
+	EXPECT_LT((off < 0) ? -off : off, 256) << "within one step of 1/256";
+}
+
 // [Kaori-Chani] Each mover body writes its fixed_t fields as absolute 32-bit 16.16, so the tests
 // below pin both extremes a wire field can carry, in both signs: a writer that narrowed a 48.16
 // value without the reader sign-extending it back would turn every downward speed and every

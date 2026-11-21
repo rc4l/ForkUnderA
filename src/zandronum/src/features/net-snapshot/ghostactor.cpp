@@ -38,6 +38,7 @@
 #include "zstring.h"
 #include "s_sound.h"	// the respawn sound a mirrored item makes at its ghost
 #include "a_pickups.h"	// AInventory::DoRespawn, for the same
+#include "features/actormaterials/actormaterials.h"	// a mirror's material
 #include "features/net-snapshot/format.h"
 #include "features/net-snapshot/entities.h"
 #include "features/net-snapshot/apply.h"
@@ -104,6 +105,64 @@ static DWORD * g_recLastDrawn = NULL;
 static int* g_shadowLastTic = NULL;
 
 static TObjPtr<AActor>* g_mirror = NULL;
+
+// An entity's properties as the server last sent them, by NetID: held rather than applied
+// and forgotten, so a mirror made later is built with them.
+static TMap<unsigned int, SnapProps> g_ghostProps;
+static unsigned int g_propsToMirror = 0, g_propsHeld = 0;
+
+// Scale, roll and material onto one mirror. A flag the set leaves out is the class
+// default, which a mirror spawned from that class already has.
+static void ghost_ApplyPropsTo(AActor * pMirror, const SnapProps & props)
+{
+	if (pMirror == NULL)
+		return;
+	const AActor * pDef = pMirror->GetDefault();
+	pMirror->scaleX = (props.flags & SNAP_PROPS_SCALE)
+		? DequantScale(props.scaleX) : pDef->scaleX;
+	pMirror->scaleY = (props.flags & SNAP_PROPS_SCALE)
+		? DequantScale(props.scaleY) : pDef->scaleY;
+	pMirror->roll = (props.flags & SNAP_PROPS_ROLL)
+		? (((angle_t)props.roll) << 16) : pDef->roll;
+	if (props.flags & SNAP_PROPS_MATERIAL)
+	{
+		char name[SNAP_PROPS_MATNAME_MAX + 1];
+		memcpy(name, props.material, props.matLen);
+		name[props.matLen] = '\0';
+		zx::actormaterials::ApplyActorMaterial(pMirror, name);
+	}
+	else
+		zx::actormaterials::ApplyActorMaterial(pMirror,
+			zx::actormaterials::MaterialName(pDef->fua_material - 1));
+}
+
+// From the event: kept for this id, and onto its mirror where one stands.
+static void ghost_ApplyProps(unsigned int id, const SnapProps & props)
+{
+	g_ghostProps[id] = props;
+	if ((g_mirror != NULL) && (id < SNAP_MAXID) && (g_mirror[id] != NULL))
+	{
+		ghost_ApplyPropsTo(g_mirror[id], props);
+		++g_propsToMirror;
+	}
+	else
+		++g_propsHeld;
+}
+
+// Every property event this client has been told about, for the census line.
+unsigned int zx::netsnapshot::PropsKept()
+{
+	return g_ghostProps.CountUsed();
+}
+
+void zx::netsnapshot::PropsStats(unsigned int & toMirror, unsigned int & held, bool reset)
+{
+	toMirror = g_propsToMirror;
+	held = g_propsHeld;
+	if (reset)
+		g_propsToMirror = g_propsHeld = 0;
+}
+
 static BYTE* g_hadMirror = NULL;		// diag: id had a live mirror last frame
 
 // The ids with a mirror, so the sweep and the teardown cost the population.
@@ -981,6 +1040,9 @@ static void ghost_AttachPointSounds()
 
 void zx::netsnapshot::GhostClearAll()
 {
+	// With the ghosts: across a map change an id is handed out again, and a set left here
+	// would dress whatever takes it.
+	g_ghostProps.Clear();
 	g_pointSounds.Clear();
 	g_msRings.Clear();
 	if (g_mirror == NULL)
@@ -1096,6 +1158,17 @@ static AActor* ghost_CreateMirror(unsigned int id, unsigned short classId,
 	// Pinned against the collector, as g_mirror is no root, until a
 	// deliberate Destroy clears it.
 	pActor->ObjectFlags |= OF_Fixed;
+
+	// Built with whatever the server has already said about this entity, which is what a
+	// joiner and a re-enter need: the event may be long past.
+	{
+		const SnapProps * pProps = g_ghostProps.CheckKey(id);
+		if (pProps != NULL)
+		{
+			ghost_ApplyPropsTo(pActor, *pProps);
+			++g_propsToMirror;
+		}
+	}
 
 	g_mirror[id] = pActor;
 	g_mirrorIds.Push(id);
@@ -2053,6 +2126,7 @@ void zx::netsnapshot::GhostFrame()
 		SetLawGravity(LawAt);
 		SetAnimatesLookup(ghost_MirrorAnimates);
 		SetPSpriteSink(ghost_ApplyPSprite);
+		SetPropsSink(ghost_ApplyProps);
 		s_hooksInstalled = true;
 	}
 
@@ -2766,6 +2840,9 @@ void zx::netsnapshot::GhostFrame()
 					++g_tgtNever;
 			}
 			ghost_ShowLegacy(id, false);
+			// An id is handed out again, so a set left here would dress whatever
+			// takes it next.
+			g_ghostProps.Remove(id);
 			// Unpin before destroying (see ghost_CreateMirror): a mirror whose
 			// ghost has genuinely left should be collectable again.
 			g_mirror[id]->ObjectFlags &= ~OF_Fixed;
@@ -3323,6 +3400,17 @@ static void ghost_Report()
 			Printf("[snap] item respawns: %u answered at the ghost, the hidden copy left"
 				" as it was\n", g_respawnOnMirror);
 			g_respawnOnMirror = 0;
+		}
+
+		// Properties off a class default: what arrived, and where it went.
+		{
+			unsigned int applied = 0, bad = 0, toMirror = 0, held = 0;
+			PropsEventStats(applied, bad, true);
+			PropsStats(toMirror, held, true);
+			if ((applied | bad | toMirror | held) != 0)
+				Printf("[snap] properties: %u sets arrived (%u REFUSED) | %u onto a mirror,"
+					" %u held for one not made yet | %u kept\n", applied, bad, toMirror, held,
+					PropsKept());
 		}
 
 		// Point sounds: on the mirror, moved onto it, or left at the point.

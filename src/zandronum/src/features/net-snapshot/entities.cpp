@@ -1083,6 +1083,23 @@ static fixed_t g_viewX = 0, g_viewY = 0;
 static bool g_viewValid = false;
 
 static ClentPSpriteFn g_psprSink = NULL;
+static ClentPropsFn g_propsSink = NULL;
+static unsigned int g_propsApplied = 0, g_propsBad = 0;
+
+ClentPropsFn zx::netsnapshot::SetPropsSink(ClentPropsFn fn)
+{
+	const ClentPropsFn was = g_propsSink;
+	g_propsSink = fn;
+	return was;
+}
+
+void zx::netsnapshot::PropsEventStats(unsigned int & applied, unsigned int & bad, bool reset)
+{
+	applied = g_propsApplied;
+	bad = g_propsBad;
+	if (reset)
+		g_propsApplied = g_propsBad = 0;
+}
 
 ClentPSpriteFn zx::netsnapshot::SetPSpriteSink(ClentPSpriteFn fn)
 {
@@ -1297,6 +1314,21 @@ static void clent_ApplyEvent(WORD id, BYTE type, const BYTE * pPayload,
 	if (g.present == false)
 	{
 		++g_evOrphan;
+		return;
+	}
+
+	if ((type & SNAPEV_TYPEMASK) == SNAPEV_PROPS)
+	{
+		// The length byte is behind the caller, so `bytes` is the body alone.
+		SnapProps props;
+		if (ReadProps(pPayload, payloadBytes, props) == false)
+		{
+			++g_propsBad;
+			return;
+		}
+		if (g_propsSink != NULL)
+			g_propsSink(id, props);
+		++g_propsApplied;
 		return;
 	}
 

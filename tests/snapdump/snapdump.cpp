@@ -183,6 +183,10 @@ static void dump_Mover(const SnapFrame& f, const BYTE* p, unsigned int n,
 	}
 }
 
+// Set per run by SnapDumpWrite: in tag mode every self-describing type this build has
+// learned since the reference tag is skipped rather than decoded.
+static bool g_tagTypesOnly = false;
+
 static void dump_Event(const SnapFrame& f, BYTE type, const BYTE* p,
 	unsigned int n, unsigned int version)
 {
@@ -196,6 +200,35 @@ static void dump_Event(const SnapFrame& f, BYTE type, const BYTE* p,
 		fprintf(g_out, " etic=%u state=%u tics=%u x=%lld y=%lld z=%lld",
 			(unsigned int)tic, (unsigned int)e.qstate, (unsigned int)e.qtics,
 			dump_Units(e.qx), dump_Units(e.qy), dump_Units(e.qz));
+		break;
+	}
+	case SNAPEV_PROPS:
+	{
+		SnapProps s;
+		if (ReadProps(p, n, s) == false)
+		{
+			fprintf(g_out, " props=bad");
+			dump_Raw(p, n);
+			break;
+		}
+		fprintf(g_out, " propflags=%u", (unsigned int)s.flags);
+		if (s.flags & SNAP_PROPS_SCALE)
+			fprintf(g_out, " scalex=%u scaley=%u", (unsigned int)s.scaleX,
+				(unsigned int)s.scaleY);
+		if (s.flags & SNAP_PROPS_ROLL)
+			fprintf(g_out, " roll=%u", (unsigned int)s.roll);
+		if (s.flags & SNAP_PROPS_MATERIAL)
+		{
+			// Printable bytes only: a body from the fuzzer or the wide reference
+			// carries anything, and a newline in it would break a line in two.
+			char name[SNAP_PROPS_MATNAME_MAX + 1];
+			unsigned int k = 0;
+			for (; k < s.matLen; ++k)
+				name[k] = ((s.material[k] >= 32) && (s.material[k] < 127))
+					? s.material[k] : '?';
+			name[k] = '\0';
+			fprintf(g_out, " matlen=%u material=%s", (unsigned int)s.matLen, name);
+		}
 		break;
 	}
 	case SNAPEV_PSPRITE:
@@ -278,6 +311,9 @@ static void dump_Walk(const SnapFrame& f, const BYTE* pData, unsigned int size,
 			// A self-describing payload starts past its length byte, which is
 			// counted in evBytes.
 			const unsigned int lead = EventSelfDescribing(type) ? 1u : 0u;
+			if (g_tagTypesOnly && EventSelfDescribing(type)
+				&& ((type & SNAPEV_TYPEMASK) != SNAPEV_MOVER))
+				bSkip = true;
 			if (bSkip)
 			{
 				fprintf(g_out, " skip=1");
@@ -491,8 +527,9 @@ static bool dump_Csnap(const char* pszPath)
 // test and the snap_dump tool both call, so the container sniff, the totals and
 // the closing line cannot drift between them.
 
-ESnapDumpResult SnapDumpWrite(FILE* pOut, const char* pszIn)
+ESnapDumpResult SnapDumpWrite(FILE* pOut, const char* pszIn, bool bTagTypesOnly)
 {
+	g_tagTypesOnly = bTagTypesOnly;
 	// [Kaori-Chani] Not being able to get four bytes is the one failure about the file rather than
 	// its contents, and so the only one that reads as unreadable.
 	char magic[4] = { 0, 0, 0, 0 };

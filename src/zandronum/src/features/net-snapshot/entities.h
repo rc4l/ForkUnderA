@@ -364,12 +364,19 @@ ClentAnimatesFn SetAnimatesLookup(ClentAnimatesFn fn);
 
 }} // namespace zx::netsnapshot
 
+// An entity's properties off its class defaults, for the mirror that draws them.
+typedef void (*ClentPropsFn)(unsigned int id, const SnapProps & props);
+
 // A remote player's psprite record (state on the event bit) for player_t.
 typedef void (*ClentPSpriteFn)(unsigned int id, const SnapPSpriteState & st);
 
 namespace zx { namespace netsnapshot {
 
 ClentPSpriteFn SetPSpriteSink(ClentPSpriteFn fn);
+ClentPropsFn SetPropsSink(ClentPropsFn fn);
+// Property events applied, and ones refused for a body that did not hold what its flags
+// claimed; for the client's census line.
+void PropsEventStats(unsigned int & applied, unsigned int & bad, bool reset);
 
 }} // namespace zx::netsnapshot
 

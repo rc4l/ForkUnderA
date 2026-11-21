@@ -53,6 +53,16 @@ struct SnapSentPSprite
 };
 }
 
+// One property record as sent, by the generation it carried, which is its whole dirty test.
+namespace {
+struct SnapSentProps
+{
+	WORD				slot;
+	WORD				gen;
+	unsigned int		offset;		// where its record starts in the payload
+};
+}
+
 // One mover record as sent, by seq, which is the whole dirty test.
 namespace {
 struct SnapSentMover
@@ -82,6 +92,7 @@ struct SnapPendingFrame
 	// the psprite rows it carried.
 	TArray<SnapSentPSprite>	psprRecords;
 	TArray<SnapSentMover>	moverRecords;
+	TArray<SnapSentProps>	propRecords;
 };
 
 // One branch event waiting to go to one client, sent as blind copies and then
@@ -145,6 +156,11 @@ struct SnapClientState
 	// Mover seqs per capture slot, the same pair, 0 meaning nothing sent, which
 	// no live seq is.
 	WORD					moverSentSeq[SNAPMV_MAXSLOTS];
+	// Property slots: what this client has been sent and what it has acked, two
+	// bytes a slot, which is the whole per-client cost of the channel.
+	WORD					propSentGen[SNAPPROP_MAXSLOTS];
+	WORD					propBelievedGen[SNAPPROP_MAXSLOTS];
+	unsigned int			propCursor;
 	WORD					moverBelievedSeq[SNAPMV_MAXSLOTS];
 
 	// Where the capped walk resumes, or it would serve the first slots forever.
@@ -273,6 +289,9 @@ static void snapcl_ForgetWorld(SnapClientState& cl)
 
 	// Zero is nothing sent, so every mover goes again, from the first slot.
 	memset(cl.moverSentSeq, 0, sizeof(cl.moverSentSeq));
+	memset(cl.propSentGen, 0, sizeof(cl.propSentGen));
+	memset(cl.propBelievedGen, 0, sizeof(cl.propBelievedGen));
+	cl.propCursor = 0;
 	memset(cl.moverBelievedSeq, 0, sizeof(cl.moverBelievedSeq));
 	cl.moverCursor = 0;
 
@@ -345,10 +364,16 @@ void zx::netsnapshot::ForgetMovers()
 	{
 		SnapClientState& cl = g_clients[i];
 		memset(cl.moverSentSeq, 0, sizeof(cl.moverSentSeq));
+		memset(cl.propSentGen, 0, sizeof(cl.propSentGen));
+		memset(cl.propBelievedGen, 0, sizeof(cl.propBelievedGen));
+		cl.propCursor = 0;
 		memset(cl.moverBelievedSeq, 0, sizeof(cl.moverBelievedSeq));
 		cl.moverCursor = 0;
 		for (unsigned int f = 0; f < cl.pending.Size(); ++f)
+		{
 			cl.pending[f].moverRecords.Clear();
+			cl.pending[f].propRecords.Clear();
+		}
 	}
 }
 
@@ -455,6 +480,15 @@ static void snapcl_ApplyFrame(SnapClientState& cl, const SnapPendingFrame& pf)
 			cl.psprBelieved[pr.player] = pr.state;
 	}
 
+	// Property rows on the generation they carried, for the same reason: the
+	// slot may have changed again since this one went out.
+	for (unsigned int i = 0; i < pf.propRecords.Size(); ++i)
+	{
+		const SnapSentProps & pr = pf.propRecords[i];
+		if (pr.slot < SNAPPROP_MAXSLOTS)
+			cl.propBelievedGen[pr.slot] = pr.gen;
+	}
+
 	// Mover rows likewise, on the seq the record CARRIED: the slot may have
 	// transitioned since, and the live value would mark that delivered too.
 	for (unsigned int i = 0; i < pf.moverRecords.Size(); ++i)
@@ -464,6 +498,10 @@ static void snapcl_ApplyFrame(SnapClientState& cl, const SnapPendingFrame& pf)
 			cl.moverBelievedSeq[mr.slot] = mr.seq;
 	}
 }
+
+// Property rows reverted by a repair, and emitted, for the stats line.
+static unsigned int g_repairedProps = 0;
+static unsigned int g_propsEmitted = 0, g_propsOutOfBytes = 0;
 
 // Frames the server sent, confirmed delivered, and confirmed LOST; the ack's
 // history bits are what make loss provable.
@@ -861,6 +899,16 @@ void zx::netsnapshot::OnAck(unsigned int client, unsigned int seq, unsigned int 
 				cl.psprSent[pl] = cl.psprBelieved[pl];
 				g_repairPlayer[pl] = true;
 				bRepaired = true;
+			}
+		}
+		// Properties too, the reverted generation re-sending the set next frame.
+		for (unsigned int r = 0; r < pf.propRecords.Size(); ++r)
+		{
+			const WORD sl = pf.propRecords[r].slot;
+			if (sl < SNAPPROP_MAXSLOTS)
+			{
+				cl.propSentGen[sl] = cl.propBelievedGen[sl];
+				++g_repairedProps;
 			}
 		}
 		// Movers too, the reverted seq re-sending the whole body next frame.
@@ -1471,6 +1519,7 @@ enum
 	SNAPEMIT_ENTITY = 0,
 	SNAPEMIT_PSPRITE,
 	SNAPEMIT_MOVER,
+	SNAPEMIT_PROPS,
 	SNAPEMIT_NOROW
 };
 
@@ -1482,6 +1531,7 @@ struct SnapEmitRec
 	SnapSentEntity	sent;		// SNAPEMIT_ENTITY
 	SnapSentPSprite	psent;		// SNAPEMIT_PSPRITE
 	SnapSentMover	msent;		// SNAPEMIT_MOVER
+	SnapSentProps	prsent;		// SNAPEMIT_PROPS
 	WORD			id;
 	BYTE			kind;
 	// Body bytes, mask and payload, the id written at encode after the cut.
@@ -2169,6 +2219,52 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			cl.moverCursor = (cl.moverCursor + examined) % slots;
 		if (emitted >= SNAPCL_MOVER_MAX)
 			++g_moverCapped;
+	}
+
+	// ---- then the property sets, which only a script's change makes ----
+	//
+	// A slot the capture moved on and this client has not been sent, under the
+	// entity's own id. Rare, so no cap of its own beyond the budget.
+	{
+		const unsigned int slots = PropSlots();
+		unsigned int examined = 0;
+		for (unsigned int k = 0; k < slots; ++k)
+		{
+			if (g_prefixBytes + SNAP_MAX_EVENT_BYTES > budgetBytes)
+			{
+				++g_propsOutOfBytes;
+				break;
+			}
+			++examined;
+
+			// Resumes where the last walk stopped, as the movers' does.
+			const unsigned int slot = (cl.propCursor + k) % slots;
+
+			WORD netID = 0, gen = 0;
+			SnapProps props;
+			if (PropSlotRead(slot, netID, props, gen) == false)
+				continue;			// a free slot
+			if (gen == cl.propSentGen[slot])
+				continue;
+			// An entity this client does not hold yet gets its properties once a
+			// record has entered it, not before.
+			if ((cl.present == NULL) || (netID >= SNAP_MAXID) || (cl.present[netID] == 0))
+				continue;
+
+			BYTE prec[SNAP_MAX_EVENT_BYTES];
+			const unsigned int n = WritePropsBody(prec, props);
+
+			SnapEmitRec & er = snapcl_PushPrefix(prec, n, netID, SNAPEMIT_PROPS);
+			er.prsent.slot = (WORD)slot;
+			er.prsent.gen = gen;
+			er.prsent.offset = 0;		// assigned at layout
+
+			// Optimistic, as the movers' is, and reverted by repair.
+			cl.propSentGen[slot] = gen;
+			++g_propsEmitted;
+		}
+		if (slots > 0)
+			cl.propCursor = (cl.propCursor + examined) % slots;
 	}
 
 	// ---- then psprite state, before the priority drain ----
@@ -3038,6 +3134,11 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			{
 				er.msent.offset = recOffset;
 				pf.moverRecords.Push(er.msent);
+			}
+			else if (er.kind == SNAPEMIT_PROPS)
+			{
+				er.prsent.offset = recOffset;
+				pf.propRecords.Push(er.prsent);
 			}
 			if (fua_snap_wirecensus && er.census)
 				snapcl_CensusRecord(er.censusTier, er.id, er.censusMask,

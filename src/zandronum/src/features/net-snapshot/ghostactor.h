@@ -44,6 +44,10 @@ AActor* MirrorForNetID(unsigned int id, bool bCount = true);
 void ResolveThroughMirror(unsigned short netID, const PClass *subclass, AActor *&actor,
 	const char *commandName);
 
+// The property sets this client is holding, and where they have gone.
+unsigned int PropsKept();
+void PropsStats(unsigned int & toMirror, unsigned int & held, bool reset);
+
 // An item respawn for a copy behind a mirror: the record draws the item, so the copy stays
 // hidden and only its sound and fog are made, at the ghost. True when it answered.
 bool RespawnBehindMirror(AActor *pActor, bool bFog);

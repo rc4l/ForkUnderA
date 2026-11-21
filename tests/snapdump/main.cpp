@@ -20,15 +20,31 @@
 // SnapDumpWrite, so a dump taken by hand is the dump the test would have taken.
 int main(int argc, char** argv)
 {
+	// [Kaori-Chani] --tag, in any position, decodes only the types the reference tag knew, which is
+	// how refdump_test reads the shipped references; the rest of the arguments read as before.
+	bool bTag = false;
+	for (int i = 1; i < argc; ++i)
+	{
+		if (strcmp(argv[i], "--tag") == 0)
+		{
+			bTag = true;
+			for (int j = i; (j + 1) < argc; ++j)
+				argv[j] = argv[j + 1];
+			--argc;
+			break;
+		}
+	}
+
 	if ((argc < 2) || (argc > 3) || (strcmp(argv[1], "--help") == 0))
 	{
 		fprintf(stderr,
 			"snap_dump: writes a .zsnap or .csnap recording as text.\n"
 			"\n"
-			"  snap_dump <recording> [out.txt]\n"
+			"  snap_dump <recording> [out.txt] [--tag]\n"
 			"\n"
 			"The container is told from the file's own magic. Without out.txt the dump goes to\n"
-			"standard output.\n"
+			"standard output. --tag decodes only the types the reference tag knew, as the\n"
+			"reference test does.\n"
 			"\n"
 			"Exit status: 0 the whole recording read with no error; 1 the bytes could not be got\n"
 			"at all, or these arguments were wrong; 2 the bytes were read and are wrong, which\n"
@@ -50,7 +66,7 @@ int main(int argc, char** argv)
 		}
 	}
 
-	const ESnapDumpResult res = SnapDumpWrite(pOut, argv[1]);
+	const ESnapDumpResult res = SnapDumpWrite(pOut, argv[1], bTag);
 	if (pOut != stdout)
 		fclose(pOut);
 

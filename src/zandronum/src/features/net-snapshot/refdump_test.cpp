@@ -85,7 +85,9 @@ bool refdump_Write(const std::string& in, const std::string& out)
 	FILE* f = fopen(out.c_str(), "wb");
 	if (f == NULL)
 		return false;
-	const ESnapDumpResult res = SnapDumpWrite(f, in.c_str());
+	// In tag mode, so a type this build has learned since the reference tag does not
+	// change what the shipped dumps hold.
+	const ESnapDumpResult res = SnapDumpWrite(f, in.c_str(), true);
 	fclose(f);
 	// [Kaori-Chani] A reference must read whole and report nothing, so only SNAPDUMP_OK will do:
 	// a recording that decoded as far as an error is a decode difference like any other.

@@ -379,6 +379,10 @@ enum
 	// A sector or polyobject mover (MOVER RECORDS, below).
 	SNAPEV_MOVER = SNAPEV_SELFDESC | 0,
 
+	// An entity's properties a script changed from its class defaults, which no group
+	// carries: scale, roll and material (ENTITY PROPERTIES, below).
+	SNAPEV_PROPS = SNAPEV_SELFDESC | 1,
+
 	SNAPEV_MAX = 31
 };
 
@@ -410,6 +414,11 @@ typedef char snap_assert_selfdesc_range[
 // The length byte is part of what the record occupies, so it is counted here.
 #define SNAP_EVBYTES_MOVER	( 1 + SNAPMV_HEADER_BYTES + SNAPMV_BODY_MAX )
 
+// An entity's properties: the length byte, the flags, scale, roll, and a material name
+// with its own length byte (ENTITY PROPERTIES, below).
+#define SNAP_PROPS_MATNAME_MAX	63
+#define SNAP_EVBYTES_PROPS	( 1 + 1 + 4 + 2 + 1 + SNAP_PROPS_MATNAME_MAX )
+
 // The largest payload any type carries, which sizes every event buffer; a
 // larger new type goes here as well as in EventBytes.
 #define SNAP_EVBYTES_MAX	SNAP_EVBYTES_MOVER
@@ -421,7 +430,8 @@ typedef char snap_assert_evbytes_max[
 	((SNAP_EVBYTES_BRANCH + SNAP_EVBYTES_WIDE_EXTRA <= SNAP_EVBYTES_MAX)
 	&& (SNAP_EVBYTES_PSPRITE <= SNAP_EVBYTES_MAX)
 	&& (SNAP_EVBYTES_LOCAL + SNAP_EVBYTES_WIDE_EXTRA <= SNAP_EVBYTES_MAX)
-	&& (SNAP_EVBYTES_MOVER <= SNAP_EVBYTES_MAX)) ? 1 : -1];
+	&& (SNAP_EVBYTES_MOVER <= SNAP_EVBYTES_MAX)
+	&& (SNAP_EVBYTES_PROPS <= SNAP_EVBYTES_MAX)) ? 1 : -1];
 
 namespace zx { namespace netsnapshot {
 
@@ -438,6 +448,7 @@ inline bool EventSelfDescKnown(BYTE type)
 	switch (type & SNAPEV_TYPEMASK)
 	{
 	case SNAPEV_MOVER:	return true;
+	case SNAPEV_PROPS:	return true;
 	default:			return false;
 	}
 }
@@ -1229,6 +1240,109 @@ inline void ReadPSprite(const BYTE* p, SnapPSpriteState& s)
 		s.qstate[L] = Read16(p);	p += 2;
 		s.qtics[L] = p[0];				p += 1;
 	}
+}
+
+}} // namespace zx::netsnapshot
+
+//*****************************************************************************
+//	ENTITY PROPERTIES
+//
+// What a script changed on an entity away from its class defaults, which no group
+// carries: a mirror spawned from the class would draw the class's own for ever.
+//
+// Rare and sticky, so a self-describing event re-sent until acked rather than
+// per-frame state, and an older reader skips it by its length.
+
+#define SNAP_PROPS_SCALE	0x01	// scaleX, scaleY, 1/256 in two bytes each
+#define SNAP_PROPS_ROLL		0x02	// roll, the top 16 bits as its own command sends
+#define SNAP_PROPS_MATERIAL	0x04	// a name, its own length first; 0 for none
+
+// An entity's properties as they travel. `flags` says which are carried: one
+// left out is the class default, which is what a mirror already has.
+struct SnapProps
+{
+	BYTE	flags;
+	WORD	scaleX, scaleY;		// 1/256, as a cosmetic copy's scale packs
+	WORD	roll;				// angle_t >> 16
+	BYTE	matLen;				// 0 with SNAP_PROPS_MATERIAL set means "no material"
+	char	material[SNAP_PROPS_MATNAME_MAX + 1];
+};
+
+namespace zx { namespace netsnapshot {
+
+// Scale to and from the 1/256 the wire carries, clamped: a scale is never
+// negative and 255.996 is past anything a sprite can usefully be.
+inline WORD QuantScale(fixed_t v)
+{
+	const long long raw = (long long)v;
+	const long long q = raw >> 8;
+	return (WORD)((q < 0) ? 0 : ((q > 65535) ? 65535 : q));
+}
+inline fixed_t DequantScale(WORD q) { return (fixed_t)(((long long)q) << 8); }
+
+// Body only; see WriteEventBody. The length byte counts everything after it.
+inline unsigned int WritePropsBody(BYTE* p, const SnapProps& s)
+{
+	p[0] = (BYTE)(SNAPGRP_EVENT | SNAPEV_PROPS);
+	unsigned int n = SNAP_EVENT_MASK_BYTES;
+	const unsigned int lenAt = n++;
+	p[n++] = s.flags;
+	if (s.flags & SNAP_PROPS_SCALE)
+	{
+		Put16(p + n, s.scaleX);	n += 2;
+		Put16(p + n, s.scaleY);	n += 2;
+	}
+	if (s.flags & SNAP_PROPS_ROLL)
+	{
+		Put16(p + n, s.roll);	n += 2;
+	}
+	if (s.flags & SNAP_PROPS_MATERIAL)
+	{
+		const unsigned int len = (s.matLen <= SNAP_PROPS_MATNAME_MAX)
+			? s.matLen : SNAP_PROPS_MATNAME_MAX;
+		p[n++] = (BYTE)len;
+		for (unsigned int i = 0; i < len; ++i)
+			p[n++] = (BYTE)s.material[i];
+	}
+	// Never 0: a zero length is EventRecordBytes' own sentinel for a bad body.
+	p[lenAt] = (BYTE)(n - lenAt - 1);
+	return n;
+}
+
+// Payload only, past the length byte, `len` being what that byte said. False
+// for a body that does not hold what its flags claim, which the caller counts.
+inline bool ReadProps(const BYTE* p, unsigned int len, SnapProps& s)
+{
+	memset(&s, 0, sizeof(s));
+	if (len < 1)
+		return false;
+	unsigned int n = 0;
+	s.flags = p[n++];
+	if (s.flags & SNAP_PROPS_SCALE)
+	{
+		if ((n + 4) > len)
+			return false;
+		s.scaleX = Read16(p + n);	n += 2;
+		s.scaleY = Read16(p + n);	n += 2;
+	}
+	if (s.flags & SNAP_PROPS_ROLL)
+	{
+		if ((n + 2) > len)
+			return false;
+		s.roll = Read16(p + n);	n += 2;
+	}
+	if (s.flags & SNAP_PROPS_MATERIAL)
+	{
+		if ((n + 1) > len)
+			return false;
+		const unsigned int mat = p[n++];
+		if ((mat > SNAP_PROPS_MATNAME_MAX) || ((n + mat) > len))
+			return false;
+		s.matLen = (BYTE)mat;
+		for (unsigned int i = 0; i < mat; ++i)
+			s.material[i] = (char)p[n++];
+	}
+	return true;
 }
 
 }} // namespace zx::netsnapshot

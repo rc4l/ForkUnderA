@@ -32,6 +32,8 @@ enum ESnapDumpResult
 // [Kaori-Chani] Writes every record of a .zsnap or .csnap to `pOut` as text, one line per container
 // record and per entity or event record, through format.h's readers alone. The container is told
 // from the file's own magic, so the caller does not choose a decoder.
-ESnapDumpResult SnapDumpWrite(FILE* pOut, const char* pszIn);
+// `bTagTypesOnly` decodes only the types the reference tag knew -- SNAPEV_MOVER the one
+// self-describing one -- so a reference dump stays what the shipped one is.
+ESnapDumpResult SnapDumpWrite(FILE* pOut, const char* pszIn, bool bTagTypesOnly = false);
 
 #endif // ZX_SNAPDUMP_H

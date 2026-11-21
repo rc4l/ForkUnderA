@@ -47,6 +47,7 @@
 #include "features/net-snapshot/computation/mover_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
 #include "features/net-snapshot/computation/sound_compute.h"
+#include "features/actormaterials/actormaterials.h"	// MaterialName, for a props slot
 #include "features/sound-amplify/computation/sound_amplify_compute.h"
 #include "features/net-snapshot/clienttrack.h"
 #include "sv_main.h"
@@ -3018,6 +3019,175 @@ static void snap_AppendRecord(WORD id, BYTE mask, WORD classId, const SnapEntity
 static void snap_SendToClients();
 
 //*****************************************************************************
+//	ENTITY PROPERTIES
+//
+// A mirror is spawned from its class, so only what a script moved away from that class
+// has to travel. One slot per such entity, walked by the emitter.
+
+namespace {
+struct SnapPropSlot
+{
+	WORD		netID;		// 0 for a free slot
+	WORD		gen;		// bumped when any carried property moves
+	WORD		seen;		// the capture pass that last visited it
+	SnapProps	props;
+};
+}
+static SnapPropSlot	g_propSlots[SNAPPROP_MAXSLOTS];
+static unsigned int	g_propLive = 0, g_propChanges = 0;
+static unsigned int	g_propOverflow = 0, g_propTruncated = 0;
+static WORD			g_propPass = 0;
+// Generations come from here, never from the slot: a slot freed and taken by another
+// entity must not reuse a number a client has already been sent for that slot.
+static WORD			g_propGenNext = 0;
+
+static WORD snap_PropGen()
+{
+	// 0 is what every client's array starts at, meaning nothing sent.
+	++g_propGenNext;
+	if (g_propGenNext == 0)
+		++g_propGenNext;
+	return g_propGenNext;
+}
+
+// What this actor carries away from its class: scale, roll and a material a script set.
+static SnapProps snap_PropsOf(const AActor * pActor)
+{
+	SnapProps p;
+	memset(&p, 0, sizeof(p));
+	const AActor * pDef = pActor->GetDefault();
+	if ((pActor->scaleX != pDef->scaleX) || (pActor->scaleY != pDef->scaleY))
+	{
+		p.flags |= SNAP_PROPS_SCALE;
+		p.scaleX = QuantScale(pActor->scaleX);
+		p.scaleY = QuantScale(pActor->scaleY);
+	}
+	if (pActor->roll != pDef->roll)
+	{
+		p.flags |= SNAP_PROPS_ROLL;
+		p.roll = (WORD)(pActor->roll >> 16);
+	}
+	if (pActor->fua_material != pDef->fua_material)
+	{
+		// By name, not by index: a name needs no agreement about the order the
+		// two ends read their GLDEFS in, and it travels once per change.
+		p.flags |= SNAP_PROPS_MATERIAL;
+		const char * pszName = zx::actormaterials::MaterialName(pActor->fua_material - 1);
+		if (pszName != NULL)
+		{
+			unsigned int n = 0;
+			while ((pszName[n] != '\0') && (n < SNAP_PROPS_MATNAME_MAX))
+			{
+				p.material[n] = pszName[n];
+				++n;
+			}
+			if (pszName[n] != '\0')
+				++g_propTruncated;
+			p.matLen = (BYTE)n;
+		}
+	}
+	return p;
+}
+
+// Whether two sets differ, which is what bumps a generation.
+static bool snap_PropsDiffer(const SnapProps & a, const SnapProps & b)
+{
+	if ((a.flags != b.flags) || (a.scaleX != b.scaleX) || (a.scaleY != b.scaleY)
+		|| (a.roll != b.roll) || (a.matLen != b.matLen))
+		return true;
+	return memcmp(a.material, b.material, a.matLen) != 0;
+}
+
+// One captured entity, from the sweep. A slot is kept while the entity lives, since a set
+// going back to the class defaults has to travel as well.
+static void snap_PropCapture(const AActor * pActor)
+{
+	const WORD id = (WORD)pActor->NetID;
+	const SnapProps live = snap_PropsOf(pActor);
+	unsigned int free = SNAPPROP_MAXSLOTS;
+	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	{
+		if (g_propSlots[i].netID == id)
+		{
+			g_propSlots[i].seen = g_propPass;
+			if (snap_PropsDiffer(g_propSlots[i].props, live))
+			{
+				g_propSlots[i].props = live;
+				g_propSlots[i].gen = snap_PropGen();
+				++g_propChanges;
+			}
+			return;
+		}
+		if ((g_propSlots[i].netID == 0) && (free == SNAPPROP_MAXSLOTS))
+			free = i;
+	}
+	// Nothing to say about an entity that is its class, which is most of them.
+	if (live.flags == 0)
+		return;
+	if (free == SNAPPROP_MAXSLOTS)
+	{
+		++g_propOverflow;
+		return;
+	}
+	g_propSlots[free].netID = id;
+	g_propSlots[free].gen = snap_PropGen();
+	g_propSlots[free].seen = g_propPass;
+	g_propSlots[free].props = live;
+	++g_propChanges;
+}
+
+// Slots whose entity the sweep did not visit: it has left, and a re-enter builds its
+// mirror from the class again.
+static void snap_PropSweepEnd()
+{
+	g_propLive = 0;
+	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	{
+		if (g_propSlots[i].netID == 0)
+			continue;
+		if (g_propSlots[i].seen != g_propPass)
+		{
+			memset(&g_propSlots[i], 0, sizeof(g_propSlots[i]));
+			continue;
+		}
+		++g_propLive;
+	}
+}
+
+bool zx::netsnapshot::PropSlotRead(unsigned int slot, WORD & netID, SnapProps & props,
+	WORD & gen)
+{
+	if ((slot >= SNAPPROP_MAXSLOTS) || (g_propSlots[slot].netID == 0))
+		return false;
+	netID = g_propSlots[slot].netID;
+	props = g_propSlots[slot].props;
+	gen = g_propSlots[slot].gen;
+	return true;
+}
+
+unsigned int zx::netsnapshot::PropSlots()
+{
+	return SNAPPROP_MAXSLOTS;
+}
+
+void zx::netsnapshot::PropForget()
+{
+	memset(g_propSlots, 0, sizeof(g_propSlots));
+	g_propLive = 0;
+}
+
+void zx::netsnapshot::PropStats(unsigned int & live, unsigned int & changes,
+	unsigned int & overflow, unsigned int & truncated, bool reset)
+{
+	live = g_propLive;
+	changes = g_propChanges;
+	overflow = g_propOverflow;
+	truncated = g_propTruncated;
+	if (reset)
+		g_propChanges = g_propOverflow = g_propTruncated = 0;
+}
+
+//*****************************************************************************
 //	THE CAPTURE PASS
 
 static void snap_CaptureAndMeasure()
@@ -3100,8 +3270,12 @@ static void snap_CaptureAndMeasure()
 					pri |= SNAPPRI_HOMING;
 			}
 			g_capturePriority.Push(pri);
+			// Its properties, where a script moved any off the class defaults.
+			snap_PropCapture(pActor);
 		}
 	}
+	snap_PropSweepEnd();
+	++g_propPass;
 
 	memset(g_curPresent, 0, SNAP_MAXID);
 
@@ -5063,6 +5237,15 @@ static void snap_MaybeReport()
 				matched, differ, unanswered, (int)fua_snap_soundids);
 			// Never audible anywhere, per S_Sound call before the fan-out,
 			// apart from culled.
+			{
+				unsigned int live = 0, changes = 0, overflow = 0, truncated = 0;
+				PropStats(live, changes, overflow, truncated, true);
+				if ((live | changes | overflow | truncated) != 0)
+					snap_Say("[snap] properties: %u entities off their class defaults,"
+						" %u changes | %u OVER the table, %u names cut\n",
+						live, changes, overflow, truncated);
+			}
+
 			snap_Say("[snap] sounds screened: %u unplayable calls (no sound or volume 0)\n",
 				g_soundUnplayable);
 			g_soundById = g_soundByName = 0;
@@ -5776,6 +5959,7 @@ static void snap_MoverGatePump()
 	{
 		MoverReset();
 		ForgetMovers();
+		PropForget();
 		++g_moverTableResets;
 	}
 	g_moverCaptureWas = bCapture;

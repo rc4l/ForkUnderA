@@ -401,6 +401,15 @@ void MoverCaptureStats(unsigned int & live, unsigned int & captures,
 // A cosmetic effect the snapshot must never carry: under the gate it gives up its NetID
 // and is spawned id-less. True when it took it, so a site keeps its own send (README).
 bool ClientEffect(AActor *pEffect, bool bSend, int level = SNAPLEGACY_EXISTENCE);
+// The entities whose properties a script moved off their class defaults, one slot each, as
+// the mover table holds a mover: the generation is the whole dirty test.
+#define SNAPPROP_MAXSLOTS	256
+bool PropSlotRead(unsigned int slot, WORD & netID, struct SnapProps & props, WORD & gen);
+unsigned int PropSlots();
+void PropForget();
+void PropStats(unsigned int & live, unsigned int & changes, unsigned int & overflow,
+	unsigned int & truncated, bool reset);
+
 // A teleport's two fogs, and whether the server took them: from MOTION a client's copy of
 // the thing is record-driven, so its own fogs would stand at a stale position.
 bool TeleportFogs(AActor *pThing, AActor **pFogs);
