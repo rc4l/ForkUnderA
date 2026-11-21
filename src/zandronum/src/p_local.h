@@ -41,6 +41,7 @@
 
 #include <stdlib.h>
 #include <vector>
+#include <cstdint>
 #include "features/blockmap-filter/computation/cellarrays_compute.h" // [Doruk-Aksoy] zx::cells::ThingEntry
 
 #define STEEPSLOPE		46342	// [RH] Minimum floorplane.c value for walking
@@ -349,7 +350,8 @@ class FBlockThingsIterator
 	FBlockNode *block;
 
 	// [Doruk-Aksoy] features/blockmap-filter: walking the cells' arrays instead of their lists, for this mover at this spot, while no link or unlink has happened since the walk began.
-	const AActor *FuaMover = NULL;
+	int64_t FuaMoverRadius = 0;
+	bool FuaMoverMissile = false;
 	fixed_t FuaMoverX, FuaMoverY;
 	bool FuaCompact = false;
 	unsigned int FuaEpoch = 0;

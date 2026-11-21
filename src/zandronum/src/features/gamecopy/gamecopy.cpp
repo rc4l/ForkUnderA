@@ -6,6 +6,7 @@
 #include "features/gamecopy/players.h"
 #include "features/gamecopy/xfloors.h"
 #include "features/gamecopy/lights.h"
+#include "features/actor-layout/actorprefetch.h"   // [Doruk-Aksoy] the lines TakeActor reads, fetched ahead
 #include "features/gamecopy/level.h"
 #include "features/gamecopy/particles.h"
 #include "features/gamecopy/decals.h"
@@ -531,6 +532,9 @@ inline void Prefetch(const void *p)
 #endif
 }
 
+// [Doruk-Aksoy] Actors ahead the render copy's take fetches, each one's lines overlapping the take of those before it.
+const int kCopyAhead = 4;
+
 // [Doruk-Aksoy] Slots ahead an array's actors are fetched, as many as their loads can overlap.
 const size_t kFetchAhead = 16;
 
@@ -748,8 +752,11 @@ void FillActors(bool listed, bool kept)
 	auto take = [](int lo, int hi, int) {
 		std::vector<int> &wide = g_wideChunks[lo / kActorChunk].value;
 		wide.clear();
+		const size_t fetch = zx::actorlayout::CopyBytes();
 		for (int i = lo; i < hi; i++)
 		{
+			// [Doruk-Aksoy] features/actor-layout: the lines TakeActor reads, a few actors ahead.
+			if (i + kCopyAhead < hi) zx::actorlayout::PrefetchLines(g_held[i + kCopyAhead], fetch);
 			g_held[i]->rcRecord = i;
 			TakeActor(*g_held[i], g_actors[i]);
 			g_actors[i].nextInSector = g_heldNext[i];
