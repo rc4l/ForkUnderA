@@ -104,6 +104,9 @@ The FON2 header is followed by variable length data:
 #include "features/handoff/effects.h"   // [rc4l] Deferring
 #include "features/handoff/gamethread.h"   // [rc4l] AskMain
 #include "features/handoff/seam.h"   // [rc4l] font/load
+#include "features/handoff/computation/namelist_compute.h"   // [MGOOOOOO] TicMissingFonts
+#include <string>
+#include <vector>
 #include "features/truecolorfont/computation/truecolorfont_compute.h"
 
 // MACROS ------------------------------------------------------------------
@@ -313,6 +316,8 @@ static int stripaccent(int code)
 
 // [rc4l] features/handoff: the fonts loaded before the tic, which a tic on its own thread looks in, since a frame beside it may be loading another.
 static TArray<FFont *> TicFonts;
+// [MGOOOOOO] Names the main thread found no font for, which a tic answers itself: a script setting one every tic (a HUD drawing an icon a class lacks) asked the main thread every tic, each ask holding the tic until the next frame.
+static std::vector<std::string> TicMissingFonts;
 
 void V_FontsForTic ()
 {
@@ -329,9 +334,11 @@ FFont *V_GetFont(const char *name)
 		{
 			if (stricmp (TicFonts[i]->Name, name) == 0) return TicFonts[i];
 		}
+		if (zx::handoff::ComputeNameListHas (TicMissingFonts, name)) return NULL;
 		FFont *loaded = NULL;
 		zx::handoff::AskMainFor ([&] { loaded = V_GetFont (name); });
 		if (loaded != NULL) TicFonts.Push (loaded);
+		else zx::handoff::ComputeNameListAdd (TicMissingFonts, name);
 		return loaded;
 	}
 	FFont *font = FFont::FindFont (name);
@@ -2841,6 +2848,7 @@ void V_ClearFonts()
 	}
 	FFont::FirstFont = NULL;
 	TicFonts.Clear ();
+	TicMissingFonts.clear ();
 	SmallFont = SmallFont2 = BigFont = ConFont = IntermissionFont = NULL;
 }
 

@@ -53,6 +53,8 @@ sends out goes through a queue. This folder is the low layer any feature may use
   drained oldest first, each listed with its depth and high-water mark.
 - `computation/asks_compute`: `Asks`, the call one thread hands another and waits on, served while the serving thread
   waits on the asker too, rethrowing what the call threw to the asker.
+- `computation/namelist_compute`: names compared without case, such as the font names the main thread found nothing
+  for (`V_GetFont`'s `TicMissingFonts`), which a tic then answers itself instead of asking every tic.
 
 Rules the boundary keeps are in `tools/boundary-rules.json`, checked by `tools/boundary_tripwire.py` against
 allowances in `tools/boundary-allow.json` that may only shrink; game code setting any variable a renderer header
