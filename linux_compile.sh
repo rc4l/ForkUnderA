@@ -109,6 +109,13 @@ if [ "${ZX_MCP_BRIDGE:-0}" = "1" ]; then
   echo "==> MCP bridge: ENABLED (dev build -- do not ship)"
 fi
 
+# [Doruk-Aksoy] Telemetry, seams and the dev-mode tools (docs/diagnostics.md) only in a test build (ZX_DIAGNOSTICS=1), passed OFF otherwise so a cached ON never reaches a public build; the bridge turns it on by itself.
+DIAG_ARGS=( -DFUA_DIAGNOSTICS=OFF )
+if [ "${ZX_DIAGNOSTICS:-0}" = "1" ]; then
+  DIAG_ARGS=( -DFUA_DIAGNOSTICS=ON )
+  echo "==> diagnostics: ENABLED (test build -- do not ship)"
+fi
+
 # [rc4l] ZX_TSAN=1 builds with ThreadSanitizer, for the game thread's CI job; never for a release.
 TSAN_ARGS=()
 if [ "${ZX_TSAN:-0}" = "1" ]; then
@@ -118,7 +125,7 @@ if [ "${ZX_TSAN:-0}" = "1" ]; then
 fi
 
 cmake -S src/zandronum --preset "linux-$PROFILE" \
-  "${BRIDGE_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}" "${TSAN_ARGS[@]}"
+  "${BRIDGE_ARGS[@]}" "${DIAG_ARGS[@]}" "${SYM_ARGS[@]}" "${OFFICIAL_ARGS[@]}" "${TSAN_ARGS[@]}"
 
 echo "==> Building"
 # [rc4l] ZX_KEEP_GOING=1 compiles past a failing file, so one run reports every compile error.

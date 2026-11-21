@@ -112,7 +112,6 @@ struct Registry
 	std::string crashSummary = "telemetry: no frames yet\n";
 	void (*offer)(const char *) = nullptr;
 	bool (*gameReadable)() = nullptr;
-	void (*summaryListener)(const char *) = nullptr;
 	OsReadings os;
 	// [rc4l] The OS probe runs at most a few times a second however many gauges ask.
 	Throttle osEvery{ 400 };
@@ -258,7 +257,6 @@ void RefreshCrashSummary(Registry &r, int64_t nowNs)
 	int recent = 0;
 	for (const int64_t t : r.hitchTimesNs) if (nowNs - t < 60000000000LL) recent++;
 	r.crashSummary = ComputeFlightSummary(r.seconds, r.frameMs, gauges, 30, recent);
-	if (r.summaryListener != nullptr) r.summaryListener(r.crashSummary.c_str());
 }
 
 void DetectHitch(Registry &r, int n, int64_t nowNs)
@@ -396,11 +394,6 @@ const bool s_osRegistered = (
 	true);
 
 } // namespace
-
-int64_t NowNs()
-{
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
 
 Counter Register(const CounterSpec &spec, double (*read)())
 {
@@ -571,11 +564,6 @@ bool GameReadable()
 std::string StatsJson(const char *prefix)
 {
 	return ComputeStatsJson(StatsRows(prefix != nullptr ? prefix : ""));
-}
-
-void SetSummaryListener(void (*listen)(const char *summary))
-{
-	R().summaryListener = listen;
 }
 
 }} // namespace zx::telemetry
