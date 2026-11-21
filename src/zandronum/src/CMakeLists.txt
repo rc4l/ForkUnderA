@@ -1757,12 +1757,10 @@ add_executable( zdoom WIN32
 	features/frame/debugorbit.cpp
 	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
+	features/crash-summary/crashsummary.cpp
 	features/frame-limit/framelimit.cpp
 	features/dynres/dynres.cpp
 	features/dynres/displayrefresh.cpp
-	features/telemetry/telemetry.cpp
-	features/telemetry/allocwatch.cpp
-	features/telemetry/census.cpp
 	features/mainloop/mainloop.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
@@ -2242,6 +2240,12 @@ if( FUA_DILIGENT )
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsAccessories/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsTools/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )
+endif()
+
+# [Doruk-Aksoy] The telemetry registry, allocation tracking and census only in a diagnostics build; without them telemetry.h's calls are inline no-ops.
+if( FUA_DIAGNOSTICS )
+	target_sources( zdoom PRIVATE features/telemetry/telemetry.cpp features/telemetry/allocwatch.cpp features/telemetry/census.cpp )
+	target_compile_definitions( zdoom PRIVATE FUA_DIAGNOSTICS )
 endif()
 
 if( FUA_MCP_BRIDGE )

@@ -164,6 +164,12 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
     $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
 }
+# [Doruk-Aksoy] Telemetry, seams and the dev-mode tools (docs/diagnostics.md) only in a test build (ZX_DIAGNOSTICS=1), passed OFF otherwise so a cached ON never reaches a public build.
+$diagArgs = @("-DFUA_DIAGNOSTICS=OFF")
+if ($env:ZX_DIAGNOSTICS -eq "1") {
+    Write-Status "diagnostics: ENABLED (test build - do not ship)"
+    $diagArgs = @("-DFUA_DIAGNOSTICS=ON")
+}
 & $CMake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$Deps" `
@@ -186,7 +192,7 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     "-DFFMPEG_AVFORMAT_LIB=$Deps/lib/avformat.lib" `
     "-DFFMPEG_AVUTIL_LIB=$Deps/lib/avutil.lib" `
     "-DFFMPEG_SWSCALE_LIB=$Deps/lib/swscale.lib" `
-    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF" @bridgeArgs | Tee-Object -FilePath $ConfigureLog
+    "-DOPENSSL_ROOT_DIR=$Deps" "-DOPENSSL_USE_STATIC_LIBS=OFF" @bridgeArgs @diagArgs | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { $ErrorActionPreference = $PrevEAP; throw "cmake configure failed" }
 
 # [rc4l] Belt and braces over the avcodec.lib check above: the libs can be present and CMake still
