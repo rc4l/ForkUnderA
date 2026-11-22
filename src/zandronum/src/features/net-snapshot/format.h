@@ -18,6 +18,7 @@
 
 #include "basictypes.h"		// fixed_t, WORD, DWORD, ...
 #include "tables.h"			// angle_t
+#include <string.h>			// memcpy, memset, for the property and uniform codecs
 
 //*****************************************************************************
 //	QUANTIZERS
