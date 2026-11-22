@@ -1326,6 +1326,9 @@ static void ghost_HideLegacy(unsigned int id, const AActor* pMirror, bool allowR
 	pReal->UnlinkFromWorld();
 	pReal->flags |= ActorFlags::FromInt(add);	// [Kaori-Chani] a typed set, not a DWORD
 	pReal->LinkToWorld();
+	// [Kaori-Chani] The unlink saved touching_sectorlist for a relink MF_NOSECTOR then
+	// skips: freed here, or the actor stays in every sector's touching list.
+	P_DelSector_List();
 	if (g_hidAddedFlags != NULL)
 		g_hidAddedFlags[id] |= add;
 	if (g_hidRelinkPending != NULL)
