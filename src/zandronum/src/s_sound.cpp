@@ -1476,12 +1476,12 @@ void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float a
 
 	// [EP] If we're the server, tell the clients to make a sound.
 	// [rc4l] Forward the explicit pitch so the client plays it at the same pitch.
-	// [Kaori-Chani] features/net-snapshot: the choke point for an actor's sounds, which routes
-	// by table index under the gate and answers true when it has taken the send.
-	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: the choke point for every actor sound, flagged or not,
+	// since a mirror runs no actions; true when it has taken the send.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
 		&& ( zx::netsnapshot::SoundUnplayable( static_cast<int>( sound_id ), volume ) == false )
 		&& ( zx::netsnapshot::BroadcastActorSound( ent, channel, static_cast<int>( sound_id ),
-			volume, attenuation, bSoundOnClient, noStop, pitch ) == false ))
+			volume, attenuation, bSoundOnClient, noStop, pitch ) == false ) && bSoundOnClient )
 		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, noStop, pitch );
 }
 
