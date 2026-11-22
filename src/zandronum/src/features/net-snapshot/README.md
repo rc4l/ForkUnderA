@@ -664,6 +664,23 @@ Each hook is one call from a stock file into the module, listed here as it lands
     covered by `format_test`'s codec cases and by `fua_snap_selftest`'s `entity properties`
     block, which puts a whole event through `ApplyDelta` as a datagram carries it.
 
+## The decode check, and its constant
+
+`fua_snap_selftest`'s `decode check` block walks a payload fixed in this source through
+`ApplyDelta`, the game's own decode path, and hashes the poses it leaves: every present ghost in
+id order, by the fields a record decides. The arrival stamps (wall-clock) and `spriteframe` (never
+on the wire) are left out. The frame is wide on every axis at a nonzero origin, with positions
+past 32,767 units and velocities at both signs, since a narrow frame at origin 0 never reaches
+`PosAbs` or `OriginFixed`.
+
+Correctness is anchored by the reference dumps, which the port reproduces byte for byte against
+the committed tag. This check answers whether a given binary decodes as the others do. Its
+constant cannot be independent of the engine without duplicating the decode, so it is pinned only
+once the platforms agree: the block prints `decode hash <16 hex digits>` on every run, CI prints
+it from the dedicated server (`_build.yml`), and `SNAP_DECODE_HASH` stays 0, reported as not
+pinned, until macOS, Linux, Windows and web show the same figure. A deliberate format change
+changes the hash, and the constant with it.
+
 ## Where the module writes
 
 Five files, all in one folder: `M_GetFuaUserPath()/net-snapshot`, made on demand. They are the

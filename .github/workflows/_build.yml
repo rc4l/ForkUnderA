@@ -242,6 +242,26 @@ jobs:
           ls -la dist-linux/
           ls dist-linux/*-server.tar.gz >/dev/null 2>&1             || { echo "::error::serveronly build produced no -server tarball"; exit 1; }
 
+      # [Kaori-Chani] features/net-snapshot: the engine's own decode check, on the one binary that runs
+      # without a display; its hash is compared across platforms (features/net-snapshot/README.md).
+      - name: Snapshot selftest, in the engine
+        run: |
+          set -euo pipefail
+          bin="$(ls dist-linux/*-server.tar.gz)"
+          tar -xzf "$bin" -C "$RUNNER_TEMP"
+          exe="$(find "$RUNNER_TEMP" -maxdepth 3 -type f -name '*-server' -perm -u+x | head -1)"
+          test -n "$exe" || { echo "::error::no server binary in $bin"; exit 1; }
+          cd "$RUNNER_TEMP"
+          # [Kaori-Chani] The PASS line is the verdict, not the exit code, which a teardown
+          # fault after the result has printed would fail.
+          "$exe" -iwad "$GITHUB_WORKSPACE/tools/freedoom/freedoom2.wad" -nosound -nomusic \
+            +logfile selftest.txt +fua_snap_selftest +quit || true
+          log="$(ls selftest.txt* | head -1)"
+          cat "$log"
+          grep -q "fua_snap_selftest: PASS" "$log" \
+            || { echo "::error::fua_snap_selftest did not pass in the engine"; exit 1; }
+          grep -oE "decode hash [0-9a-f]+" "$log" | head -1
+
       # [rc4l] The game server image around the server this job just built, started three ways (tools/game-server-smoke.sh); game-server-image.yml compiled the engine again inside Docker for every pull request, and its layers filled the Actions cache.
       - name: Package and start the game server image
         if: ${{ !inputs.upload_symbols }}

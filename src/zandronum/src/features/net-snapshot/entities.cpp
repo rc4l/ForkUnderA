@@ -2723,6 +2723,88 @@ void zx::netsnapshot::ClockDescribe(const SnapClockStats& ck, char* pszOut, size
 //*****************************************************************************
 //	SELF-TESTS: the client position codec, and the ghost table and sampler.
 
+//*****************************************************************************
+//	THE DECODE CHECK
+//
+// A payload fixed in the source, walked through ApplyDelta and hashed over the poses it
+// leaves: whether this binary decodes as the other platforms' do (README).
+
+#define SNAP_DECODE_ORIGIN_X	8000000
+#define SNAP_DECODE_ORIGIN_Y	(-8000000)
+#define SNAP_DECODE_ORIGIN_Z	40000
+
+// The hash the platforms agreed on, or 0 while they are being collected: the block then
+// prints what it computed and passes.
+#define SNAP_DECODE_HASH	0ull
+
+namespace {
+
+// FNV-1a over the bytes of one value, as the sound table's own hash folds a name.
+void dc_Fold(QWORD& h, const void* p, unsigned int bytes)
+{
+	const BYTE* b = (const BYTE*)p;
+	for (unsigned int i = 0; i < bytes; ++i)
+	{
+		h ^= (QWORD)b[i];
+		h *= 1099511628211ull;
+	}
+}
+
+void dc_FoldRaw(QWORD& h, fixed_t v)
+{
+	const int64_t raw = v.Raw();
+	dc_Fold(h, &raw, sizeof(raw));
+}
+
+} // namespace
+
+// Every present ghost, in id order, by the fields a record decides: the arrival stamps are
+// wall-clock and left out, as is spriteframe, which never crosses the wire.
+static QWORD snap_DecodePoseHash()
+{
+	QWORD h = 14695981039346656037ull;
+	unsigned int count = 0;
+	const unsigned int* ids = PresentIds(count);
+	dc_Fold(h, &count, sizeof(count));
+	if (ids == NULL)
+		return h;
+
+	// PresentIds is a compact list in arrival order, so the walk sorts by id: a decode must
+	// hash the same whatever order the records arrived in.
+	for (unsigned int want = 0; want < SNAP_MAXID; ++want)
+	{
+		bool bHere = false;
+		for (unsigned int k = 0; k < count; ++k)
+			if (ids[k] == want)
+				bHere = true;
+		if (bHere == false)
+			continue;
+
+		SnapGhostDebug g;
+		memset(&g, 0, sizeof(g));
+		if (GhostDebug(want, g) == false)
+			continue;
+		dc_Fold(h, &want, sizeof(want));
+		dc_Fold(h, &g.classId, sizeof(g.classId));
+		dc_Fold(h, &g.qstate, sizeof(g.qstate));
+		dc_Fold(h, &g.prevTic, sizeof(g.prevTic));
+		dc_Fold(h, &g.nextTic, sizeof(g.nextTic));
+		dc_Fold(h, &g.posTic, sizeof(g.posTic));
+		dc_Fold(h, &g.effects, sizeof(g.effects));
+		dc_Fold(h, &g.misc, sizeof(g.misc));
+		dc_FoldRaw(h, g.x);
+		dc_FoldRaw(h, g.y);
+		dc_FoldRaw(h, g.z);
+		dc_FoldRaw(h, g.posX);
+		dc_FoldRaw(h, g.posY);
+		dc_FoldRaw(h, g.posZ);
+		dc_FoldRaw(h, g.velX);
+		dc_FoldRaw(h, g.velY);
+		dc_FoldRaw(h, g.velZ);
+	}
+	return h;
+}
+
 unsigned int zx::netsnapshot::RunSelfTests()
 {
 	unsigned int failures = 0;
@@ -2784,6 +2866,102 @@ unsigned int zx::netsnapshot::RunSelfTests()
 	{
 		// Named INSIDE the branch that runs it: a block skipped at runtime is
 		// then absent from the summary without the summary knowing why.
+		SelfTestBlock("decode check");
+		// ---- the whole decode path, over a payload fixed in the source ----
+		//
+		// Wide on every axis at a nonzero origin, with positions past 32,767
+		// units, velocities at both signs, a branch event and a leave (README).
+		{
+			ClientReset();
+			SetStreamVersion(ZSNAP_VERSION);
+			const SnapFrame savedFrame = ClientMapFrame();
+			SnapFrame frame = FrameWidest();
+			frame.origin[0] = SNAP_DECODE_ORIGIN_X;
+			frame.origin[1] = SNAP_DECODE_ORIGIN_Y;
+			frame.origin[2] = SNAP_DECODE_ORIGIN_Z;
+			UseMapFrame(frame);
+
+			BYTE payload[SNAP_MAX_RECORD_BYTES * 4];
+			SnapEntityState st;
+			SnapIdCursor one;
+			unsigned int n = 0;
+
+			// id 7 enters, a long way from the origin on every axis.
+			memset(&st, 0, sizeof(st));
+			st.qx = SNAP_DECODE_ORIGIN_X + 123456;
+			st.qy = SNAP_DECODE_ORIGIN_Y - 98765;
+			st.qz = SNAP_DECODE_ORIGIN_Z + 4321;
+			st.qangle = 0x4000;
+			st.qpitch = 0x0100;
+			st.qstate = 1234;
+			st.qtics = 7;
+			st.qvx = 1000;
+			st.qvy = -1000;
+			st.qvz = 32;
+			st.misc = 0x1234;
+			st.effects = 3;
+			st.renderstate = 0x0DEADBEE;
+			IdCursorReset(one);
+			n = WriteRecord(payload, frame, 7, one, (BYTE)(SNAPGRP_ALL | SNAPGRP_ENTER), 42, st);
+
+			// id 9 enters at the opposite extremes, in the same payload.
+			memset(&st, 0, sizeof(st));
+			st.qx = SNAP_DECODE_ORIGIN_X - 8000000;
+			st.qy = SNAP_DECODE_ORIGIN_Y + 8000000;
+			st.qz = SNAP_DECODE_ORIGIN_Z - 40000;
+			st.qstate = SNAP_STATE_UNKNOWN;
+			st.qtics = 255;
+			st.qvx = -32000;
+			st.qvy = 32000;
+			st.qvz = -8;
+			n += WriteRecord(payload + n, frame, 9, one,
+				(BYTE)(SNAPGRP_ALL | SNAPGRP_ENTER), 43, st);
+
+			if (ApplyDelta(payload, n, 200, 200, 2000, NULL, 0, NULL) != 0)
+				{ Printf("selftest: decode check: enters rejected\n"); ++failures; }
+
+			// A second payload: id 7 moves, id 9 leaves, and a branch event lands
+			// on id 7 so the event codec is in the hash too.
+			memset(&st, 0, sizeof(st));
+			st.qx = SNAP_DECODE_ORIGIN_X + 123400;
+			st.qy = SNAP_DECODE_ORIGIN_Y - 98700;
+			st.qz = SNAP_DECODE_ORIGIN_Z + 4300;
+			st.qvx = -500;
+			st.qvy = 500;
+			st.qvz = 0;
+			IdCursorReset(one);
+			n = WriteRecord(payload, frame, 7, one,
+				(BYTE)(SNAPGRP_POS | SNAPGRP_POSZ | SNAPGRP_VELMISC), 0, st);
+			n += WriteRecord(payload + n, frame, 9, one, 0, 0, st);	// mask 0: a leave
+
+			memset(&st, 0, sizeof(st));
+			st.qstate = 2345;
+			st.qtics = 3;
+			st.qx = SNAP_DECODE_ORIGIN_X + 123411;
+			st.qy = SNAP_DECODE_ORIGIN_Y - 98711;
+			st.qz = SNAP_DECODE_ORIGIN_Z + 4311;
+			n += WriteRecordId(payload + n, 7, one);
+			n += WriteEventBody(payload + n, frame, SNAPEV_BRANCH, st, 201);
+
+			if (ApplyDelta(payload, n, 201, 201, 2100, NULL, 0, NULL) != 0)
+				{ Printf("selftest: decode check: the update payload was rejected\n"); ++failures; }
+
+			const QWORD hash = snap_DecodePoseHash();
+			// Printed on every run, pinned or not: this is the figure the four
+			// platforms are compared on.
+			Printf("fua_snap_selftest: decode hash %016llx\n", (unsigned long long)hash);
+			if (SNAP_DECODE_HASH == 0ull)
+				Printf("selftest: decode hash not pinned yet (four platforms must agree)\n");
+			else if (hash != SNAP_DECODE_HASH)
+			{
+				Printf("selftest: decode hash %016llx, wanted %016llx: this build decodes"
+					" differently from the pinned platforms\n", (unsigned long long)hash,
+					(unsigned long long)SNAP_DECODE_HASH);
+				++failures;
+			}
+			UseMapFrame(savedFrame);
+		}
+
 		SelfTestBlock("entity properties");
 		// ---- a property event, read as a client reads one off the wire ----
 		//
