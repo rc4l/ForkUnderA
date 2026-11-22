@@ -163,6 +163,7 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
+#include "features/net-protocol/testfaults.h"   // [Kaori-Chani] DropReceivedPacketForTest
 #include "features/net-snapshot/apply.h"   // [Kaori-Chani] the client's side of the snapshot
 #include "features/net-snapshot/localpred.h"   // [Kaori-Chani] the local block and its census
 #include "features/net-snapshot/entities.h"   // [Kaori-Chani] the map frame and the stamps
@@ -496,6 +497,9 @@ static	LONG				g_lMissingPacketTicks;
 // [Kaori-Chani] features/net-snapshot: the reliable sequence the server has announced, and how
 // many tail requests have gone out since the count was last read.
 static	LONG				g_lAnnouncedSequence = -1;
+// [Kaori-Chani] The previous call's announcement, which the check acts on: a tic's grace
+// for a packet that is merely reordered.
+static	LONG				g_lAnnouncedReady = -1;
 static	unsigned int		g_ulTailRequested = 0;
 // [Kaori-Chani] Sequences past the announced one that a tail request may ask for at once.
 #define	SNAP_TAIL_WINDOW	64
@@ -1097,6 +1101,8 @@ void CLIENT_AttemptConnection( void )
 	g_lCurrentPosition = 0;
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
+	// [Kaori-Chani] With them: a new connection's announcement comes from its own stream.
+	g_lAnnouncedSequence = g_lAnnouncedReady = -1;
 
 	g_lMissingPacketTicks = 0;
 
@@ -1473,6 +1479,11 @@ void CLIENT_CheckForMissingPackets( void )
 	LONG	lIdx;
 	LONG	lIdx2;
 
+	// [Kaori-Chani] Promoted ahead of the throttle, so the check acts on the previous
+	// call's announcement: a tic's grace for a reordered packet.
+	const LONG lAnnounced = g_lAnnouncedReady;
+	g_lAnnouncedReady = g_lAnnouncedSequence;
+
 	// We already told the server we're missing packets a little bit ago. No need
 	// to do it again.
 	if ( g_lMissingPacketTicks > 0 )
@@ -1481,16 +1492,25 @@ void CLIENT_CheckForMissingPackets( void )
 		return;
 	}
 
-	if ( g_lLastParsedSequence != g_lHighestReceivedSequence )
+	// [Kaori-Chani] An announcement extends the range: a lost tail reveals nothing on its
+	// own, no later packet having arrived to leave a gap.
+	const LONG lNewest = ( lAnnounced > g_lHighestReceivedSequence )
+		? lAnnounced : g_lHighestReceivedSequence;
+	const LONG lLastWanted = ( lAnnounced > g_lHighestReceivedSequence )
+		? lAnnounced : ( g_lHighestReceivedSequence - 1 );
+
+	if ( g_lLastParsedSequence != lNewest )
 	{
 		// If we've missed more than PACKET_BUFFER_SIZE packets, there's no hope that we can recover from this
 		// since the server only backs up PACKET_BUFFER_SIZE of our packets. We have to end the game.
-		if (( g_lHighestReceivedSequence - g_lLastParsedSequence ) >= PACKET_BUFFER_SIZE )
+		if (( lNewest - g_lLastParsedSequence ) >= PACKET_BUFFER_SIZE )
 		{
 			FString quitMessage;
 			// [rc4l] With the two sequences, so a log says whether the server ran ahead or the client never parsed its first packet.
-			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets (last parsed %d, highest received %d). Unable to recover.", PACKET_BUFFER_SIZE,
-				static_cast<int>( g_lLastParsedSequence ), static_cast<int>( g_lHighestReceivedSequence ));
+			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets"
+				" (last parsed %d, highest received %d, announced %d). Unable to recover.",
+				PACKET_BUFFER_SIZE, static_cast<int>( g_lLastParsedSequence ),
+				static_cast<int>( g_lHighestReceivedSequence ), static_cast<int>( lAnnounced ));
 			CLIENT_QuitNetworkGame( quitMessage.GetChars() );
 			return;
 		}
@@ -1498,7 +1518,7 @@ void CLIENT_CheckForMissingPackets( void )
 		g_LocalBuffer.ByteStream.WriteByte( CLC_MISSINGPACKET );
 
 		// Now, go through and figure out what packets we're missing. Request these from the server.
-		for ( lIdx = g_lLastParsedSequence + 1; lIdx <= g_lHighestReceivedSequence - 1; lIdx++ )
+		for ( lIdx = g_lLastParsedSequence + 1; lIdx <= lLastWanted; lIdx++ )
 		{
 			for ( lIdx2 = 0; lIdx2 < PACKET_BUFFER_SIZE; lIdx2++ )
 			{
@@ -1519,6 +1539,9 @@ void CLIENT_CheckForMissingPackets( void )
 					fprintf( debugfile, "Missing packet %d.\n", static_cast<int> (lIdx) );
 
 				g_LocalBuffer.ByteStream.WriteLong( lIdx );
+				// [Kaori-Chani] Past what arrived: only an announcement asks for this.
+				if ( lIdx > g_lHighestReceivedSequence )
+					++g_ulTailRequested;
 				CLIENTSTATISTICS_AddToMissingPacketsRequested ( 1 );
 
 				// [Leo] Print how many packets we missed.
@@ -1575,6 +1598,15 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 	{
 		if ( g_lPacketSequence[lIdx] == lSequence )
 			return ( false );
+	}
+
+	// [Kaori-Chani] features/net-protocol: thrown away before it is recorded, so the client
+	// sees the loss a wire would have caused and nothing later reveals it.
+	if ( zx::netprotocol::DropReceivedPacketForTest( ))
+	{
+		Printf( "CLIENT_ReadPacketHeader: dropped packet %d for a test\n",
+			static_cast<int>( lSequence ));
+		return ( false );
 	}
 
 	// The end of the buffer has been reached.
@@ -2967,6 +2999,8 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
+	// [Kaori-Chani] As on a connection: nothing announced survives the disconnect.
+	g_lAnnouncedSequence = g_lAnnouncedReady = -1;
 
 	g_lMissingPacketTicks = 0;
 
@@ -10928,8 +10962,7 @@ ADD_STAT( momentum )
 //
 // The client side the module calls into: the counts its ghost-sound report
 // prints, the sound trace, the reliable-sequence anchor and the tail-request
-// count. Inert until the hooks that feed them land -- nothing here increments
-// a count or asks for a tail yet.
+// count.
 //*****************************************************************************
 
 // [Kaori-Chani] Why a ghost's sound was dropped, mirrored, or played where it was asked for.

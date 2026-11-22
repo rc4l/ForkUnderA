@@ -10,6 +10,9 @@ namespace zx { namespace netprotocol {
 
 // [rc4l] Whether a command a server is about to write for a client is one fua_debug_netdrop leaves unsent.
 bool DroppedForTest(const unsigned char *bytes, int length);
+// [Kaori-Chani] True while fua_debug_droppackets still owes a drop, counting one down: a
+// received reliable packet thrown away before it is recorded, as a wire loss would be.
+bool DropReceivedPacketForTest();
 
 // [rc4l] The server tic a client reports for unlagged after fua_debug_unlagged_ticoffset.
 int ReportedServerTic(int held);
