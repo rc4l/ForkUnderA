@@ -684,6 +684,33 @@ online play yet; the browser smoke test is where its figure joins these when onl
 (`docs/web-port-snapshot.md`, section 5). A deliberate format change changes the hash, and the
 constant with it.
 
+## The anchor comparison, and its fixture
+
+The decode check answers for the decode. What a client *draws* from a decoded stream is the
+replay harness's question, and step 3's last check is that `fua_csnap_analyze <file> anchor`
+reports over a fixed recording what the source tree's own build reports: a difference there is
+the interpolation arithmetic differing, and is where a `fixed_t` -> `zx::Fixed` raw-value mistake
+would show.
+
+- The recording is `ref.csnap`, from the folder `ZX_SNAP_REFDIR` names (below).
+- The fixture is `testdata/ref.csnap.anchor-tag.txt`, the report at the `snap-ref-premerge` tag,
+  which the file names inside itself.
+- `tools/snap_anchor_compare.py <logfile>` compares a fresh report with it: the segment block, and
+  the summary's deltas, frames, resets and decode errors. `tools/snap_anchor_compare_test.py`
+  holds its rules and runs in CI (`_test.yml`).
+- Not compared, and printed as skipped: the glide tripwire block with its per-class rows, the
+  worst-class line, the worst step's class name, the drawn-state line, the unresolved-class
+  warning -- all of them the class table's (below) -- and the header line, which names the file as
+  it was passed.
+- Both sides run with no level loaded, as the fixture was taken. A report with no segment block or
+  no summary line fails: an empty comparison must not read as agreement.
+- Measured at 23a903fc, three ways -- without the recording's files and with them loaded in order
+  -- every compared figure is identical to the tag's.
+- `ref-wide.csnap` has no tag fixture and cannot have one: the tag's positions are 16.16 and wrap
+  past 32,767 units, so it reports worst snaps of 34-46k units there where the port reports 4-18M.
+  Wide decoding is covered by the dump test instead (`refdump_test.cpp`), and a pin of the port's
+  own wide report would be a separate fixture, labelled as the port's.
+
 ## Where the module writes
 
 Five files, all in one folder: `M_GetFuaUserPath()/net-snapshot`, made on demand. They are the
@@ -726,6 +753,14 @@ Unset, those two report that they did not run, and say that a skip is not a pass
 they fail: each recording's own SHA-256 is checked before it is decoded, so a damaged or mistaken
 file fails as the wrong file rather than as a decode difference. A mismatching dump is written into
 the build folder and the first differing line is named.
+
+What a recording cannot carry is which actor each class id meant: the ids are the recording
+build's, and a replay resolves them against its own table, so this engine's own actors shift the
+indices -- `ref.csnap`'s id 2057 is `PyroFireSpawner` on the tag and `WatcherGibbedGenerator`
+here, which says nothing about how either drew it. The dumps do not depend on that, and the
+anchor comparison leaves out the lines that do (above). Carrying a class-name table in the
+`.csnap` and `.zsnap` headers would settle it for any build, and is queued for Phase 7 beside the
+map marker, both being format changes.
 
 ## The dumper
 

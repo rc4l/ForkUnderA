@@ -119,6 +119,11 @@ jobs:
       - name: Test the tic pacing check
         run: python3 tools/tic_pacing_check_test.py
 
+      # [Kaori-Chani] The anchor comparison's own rules: which differences between two
+      # fua_csnap_analyze reports are the interpolation's, and which are the class table's.
+      - name: Test the anchor comparison
+        run: python3 tools/snap_anchor_compare_test.py
+
       # [rc4l] Wire-format snapshot: the client/server protocol is Zandronum's (protocolspec/*.txt).
       # A backport that changes a command's fields/order/id -- or inserts a command, shifting every
       # later id -- silently desyncs multiplayer while single-player builds fine. This derives the
