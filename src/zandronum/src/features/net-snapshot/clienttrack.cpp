@@ -2171,7 +2171,8 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 		{
 			if (emitted >= SNAPCL_MOVER_MAX)
 				break;
-			if (g_prefixBytes + SNAP_MAX_EVENT_BYTES > budgetBytes)
+			// Room for this loop's own largest record: SNAP_MAX_EVENT_BYTES sizes buffers, not budgets.
+			if (g_prefixBytes + (SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_MOVER) > budgetBytes)
 			{
 				++g_moverOutOfBytes;
 				break;
@@ -2230,7 +2231,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 		unsigned int examined = 0;
 		for (unsigned int k = 0; k < slots; ++k)
 		{
-			if (g_prefixBytes + SNAP_MAX_EVENT_BYTES > budgetBytes)
+			if (g_prefixBytes + (SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_PROPS) > budgetBytes)
 			{
 				++g_propsOutOfBytes;
 				break;
@@ -2282,7 +2283,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 				continue;
 			if (psprEmitted >= SNAPCL_PSPRITE_MAX)
 				break;
-			if (g_prefixBytes + SNAP_MAX_EVENT_BYTES > budgetBytes)
+			if (g_prefixBytes + (SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_PSPRITE) > budgetBytes)
 				break;
 			// Which state, not how far in, qtics riding as in APPEAR.
 			if ((pspr[pl].weaponClass == cl.psprSent[pl].weaponClass)

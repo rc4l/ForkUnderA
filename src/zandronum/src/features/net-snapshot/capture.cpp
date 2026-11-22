@@ -3033,6 +3033,11 @@ struct SnapPropSlot
 	SnapProps	props;
 };
 }
+// The wire's slot count is the materials feature's own, which is where the values come
+// from: a build that raised one and not the other would send part of a set.
+typedef char snap_assert_prop_uniform_slots[
+	(SNAP_PROPS_UNIFORM_SLOTS == zx::actormaterials::kActorUniformVec4s) ? 1 : -1];
+
 static SnapPropSlot	g_propSlots[SNAPPROP_MAXSLOTS];
 static unsigned int	g_propLive = 0, g_propChanges = 0;
 static unsigned int	g_propOverflow = 0, g_propTruncated = 0;
@@ -3086,6 +3091,18 @@ static SnapProps snap_PropsOf(const AActor * pActor)
 			p.matLen = (BYTE)n;
 		}
 	}
+	// Its own uniform values, which only a script gives it: the set mask and the
+	// rows, so an actor with none costs nothing.
+	{
+		unsigned set = 0;
+		float values[SNAP_PROPS_UNIFORM_SLOTS][4];
+		if (zx::actormaterials::ActorUniforms(pActor, set, values))
+		{
+			p.flags |= SNAP_PROPS_UNIFORMS;
+			p.uniSet = (BYTE)(set & 0xFF);
+			memcpy(p.uni, values, sizeof(p.uni));
+		}
+	}
 	return p;
 }
 
@@ -3093,9 +3110,16 @@ static SnapProps snap_PropsOf(const AActor * pActor)
 static bool snap_PropsDiffer(const SnapProps & a, const SnapProps & b)
 {
 	if ((a.flags != b.flags) || (a.scaleX != b.scaleX) || (a.scaleY != b.scaleY)
-		|| (a.roll != b.roll) || (a.matLen != b.matLen))
+		|| (a.roll != b.roll) || (a.matLen != b.matLen) || (a.uniSet != b.uniSet))
 		return true;
-	return memcmp(a.material, b.material, a.matLen) != 0;
+	if (memcmp(a.material, b.material, a.matLen) != 0)
+		return true;
+	// Only the rows the mask covers: an unset row is never written or read.
+	for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		if (((a.uniSet & (1u << u)) != 0)
+			&& (memcmp(a.uni[u], b.uni[u], sizeof(a.uni[u])) != 0))
+			return true;
+	return false;
 }
 
 // One captured entity, from the sweep. A slot is kept while the entity lives, since a set

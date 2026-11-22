@@ -187,6 +187,14 @@ static void dump_Mover(const SnapFrame& f, const BYTE* p, unsigned int n,
 // learned since the reference tag is skipped rather than decoded.
 static bool g_tagTypesOnly = false;
 
+// A float's bits, so a dump compares the same on every platform.
+static unsigned int dump_FloatBits(float v)
+{
+	unsigned int bits = 0;
+	memcpy(&bits, &v, 4);
+	return bits;
+}
+
 static void dump_Event(const SnapFrame& f, BYTE type, const BYTE* p,
 	unsigned int n, unsigned int version)
 {
@@ -228,6 +236,20 @@ static void dump_Event(const SnapFrame& f, BYTE type, const BYTE* p,
 					? s.material[k] : '?';
 			name[k] = '\0';
 			fprintf(g_out, " matlen=%u material=%s", (unsigned int)s.matLen, name);
+		}
+		if (s.flags & SNAP_PROPS_UNIFORMS)
+		{
+			fprintf(g_out, " uniset=%u", (unsigned int)s.uniSet);
+			for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+			{
+				if ((s.uniSet & (1u << u)) == 0)
+					continue;
+				// As the bits, not as text: a float printed by a C library is not
+				// the same string on every platform, and these dumps are compared.
+				fprintf(g_out, " u%u=%08x,%08x,%08x,%08x", u,
+					dump_FloatBits(s.uni[u][0]), dump_FloatBits(s.uni[u][1]),
+					dump_FloatBits(s.uni[u][2]), dump_FloatBits(s.uni[u][3]));
+			}
 		}
 		break;
 	}

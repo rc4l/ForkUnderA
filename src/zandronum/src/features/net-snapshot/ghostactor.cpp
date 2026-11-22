@@ -134,6 +134,20 @@ static void ghost_ApplyPropsTo(AActor * pMirror, const SnapProps & props)
 	else
 		zx::actormaterials::ApplyActorMaterial(pMirror,
 			zx::actormaterials::MaterialName(pDef->fua_material - 1));
+
+	// After the material, which is what decides whether a uniform index exists at
+	// all; kind 4, as the joiner path sends an actor's own rows.
+	if (props.flags & SNAP_PROPS_UNIFORMS)
+	{
+		for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		{
+			if ((props.uniSet & (1u << u)) == 0)
+				continue;
+			const zx::acsshaders::UniformValue value = { 4, { props.uni[u][0],
+				props.uni[u][1], props.uni[u][2], props.uni[u][3] } };
+			zx::actormaterials::ApplyActorUniform(pMirror, (int)u, value);
+		}
+	}
 }
 
 // From the event: kept for this id, and onto its mirror where one stands.

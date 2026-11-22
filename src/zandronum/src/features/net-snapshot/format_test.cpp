@@ -1585,6 +1585,70 @@ TEST(SnapshotFormat, APropsBodyCarriesOnlyTheFlagsItSets)
 	}
 }
 
+// [Kaori-Chani] A uniform costs bytes only where its slot is set, and an unset row is never
+// written, so it comes back as nothing rather than as stale values.
+TEST(SnapshotFormat, APropsCarriesOnlyTheUniformSlotsThatAreSet)
+{
+	SnapProps a, b;
+	memset(&a, 0, sizeof(a));
+	a.flags = SNAP_PROPS_UNIFORMS;
+	a.uniSet = 0xA5;					// slots 0, 2, 5 and 7
+	for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		for (unsigned int k = 0; k < 4; ++k)
+			a.uni[u][k] = (float)(u + 1) + (float)k / 8.f;
+
+	BYTE body[SNAP_MAX_EVENT_BYTES];
+	const unsigned int n = WritePropsBody(body, a);
+	EXPECT_EQ(4u, PropsUniformCount(a.uniSet));
+	ASSERT_EQ((unsigned int)(SNAP_EVENT_MASK_BYTES + 1 + 1 + 1 + 4 * 16), n);
+
+	memset(&b, 0xEE, sizeof(b));
+	ASSERT_TRUE(ReadProps(body + 2, body[1], b));
+	EXPECT_EQ(a.uniSet, b.uniSet);
+	for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		for (unsigned int k = 0; k < 4; ++k)
+			EXPECT_EQ((a.uniSet & (1u << u)) ? a.uni[u][k] : 0.f, b.uni[u][k])
+				<< "slot " << u << " component " << k;
+
+	// A float crosses as its bits: the value read back is the one written, not a
+	// rounding of it.
+	EXPECT_EQ(a.uni[0][1], b.uni[0][1]);
+
+	// Every flag at once, the widest body there is, which is what the envelope is
+	// sized for and what a buffer must hold.
+	a.flags = SNAP_PROPS_SCALE | SNAP_PROPS_ROLL | SNAP_PROPS_MATERIAL | SNAP_PROPS_UNIFORMS;
+	a.uniSet = 0xFF;
+	a.matLen = SNAP_PROPS_MATNAME_MAX;
+	memset(a.material, 'm', SNAP_PROPS_MATNAME_MAX);
+	const unsigned int widest = WritePropsBody(body, a);
+	EXPECT_EQ((unsigned int)(SNAP_EVENT_MASK_BYTES + SNAP_EVBYTES_PROPS), widest);
+	EXPECT_LE(SNAP_EVBYTES_PROPS, SNAP_EVBYTES_MAX) << "the envelope sizes every event buffer";
+	ASSERT_TRUE(ReadProps(body + 2, body[1], b));
+	EXPECT_EQ(0xFF, b.uniSet);
+	EXPECT_EQ(SNAP_PROPS_MATNAME_MAX, b.matLen);
+}
+
+// [Kaori-Chani] A body whose mask claims rows it does not hold is refused, which is what a
+// mangled packet or a bad sender produces.
+TEST(SnapshotFormat, APropsBodyShortOfItsUniformRowsIsRefused)
+{
+	SnapProps a, b;
+	memset(&a, 0, sizeof(a));
+	a.flags = SNAP_PROPS_UNIFORMS;
+	a.uniSet = 0x03;					// two slots, 32 bytes of rows
+	BYTE body[SNAP_MAX_EVENT_BYTES];
+	const unsigned int n = WritePropsBody(body, a);
+	const unsigned int len = body[1];
+	EXPECT_EQ(n, len + 2);
+	for (unsigned int cut = 0; cut < len; ++cut)
+		EXPECT_FALSE(ReadProps(body + 2, cut, b)) << "cut at " << cut;
+	EXPECT_TRUE(ReadProps(body + 2, len, b));
+
+	// The whole body, with the mask raised to claim rows that are not there.
+	body[2 + 1] = 0xFF;
+	EXPECT_FALSE(ReadProps(body + 2, len, b));
+}
+
 // [Kaori-Chani] A material flag with no name is how "no material at all" travels, which is a
 // different thing from the flag being absent, and the name is capped rather than overrunning.
 TEST(SnapshotFormat, APropsMaterialCarriesTheEmptyNameAndCapsALongOne)

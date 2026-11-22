@@ -414,14 +414,16 @@ typedef char snap_assert_selfdesc_range[
 // The length byte is part of what the record occupies, so it is counted here.
 #define SNAP_EVBYTES_MOVER	( 1 + SNAPMV_HEADER_BYTES + SNAPMV_BODY_MAX )
 
-// An entity's properties: the length byte, the flags, scale, roll, and a material name
-// with its own length byte (ENTITY PROPERTIES, below).
+// An entity's properties: the length byte, the flags, scale, roll, a material name with
+// its own length byte, and the uniform mask with four floats a set slot.
 #define SNAP_PROPS_MATNAME_MAX	63
-#define SNAP_EVBYTES_PROPS	( 1 + 1 + 4 + 2 + 1 + SNAP_PROPS_MATNAME_MAX )
+#define SNAP_EVBYTES_PROPS	( 1 + 1 + 4 + 2 + 1 + SNAP_PROPS_MATNAME_MAX \
+	+ 1 + 8 * 4 * 4 )
 
 // The largest payload any type carries, which sizes every event buffer; a
 // larger new type goes here as well as in EventBytes.
-#define SNAP_EVBYTES_MAX	SNAP_EVBYTES_MOVER
+#define SNAP_EVBYTES_MAX	( (SNAP_EVBYTES_PROPS > SNAP_EVBYTES_MOVER) \
+	? SNAP_EVBYTES_PROPS : SNAP_EVBYTES_MOVER )
 #define SNAP_MAX_EVENT_BYTES	(SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_MAX)
 
 // A larger type left out of SNAP_EVBYTES_MAX would undersize every event
@@ -1256,6 +1258,11 @@ inline void ReadPSprite(const BYTE* p, SnapPSpriteState& s)
 #define SNAP_PROPS_SCALE	0x01	// scaleX, scaleY, 1/256 in two bytes each
 #define SNAP_PROPS_ROLL		0x02	// roll, the top 16 bits as its own command sends
 #define SNAP_PROPS_MATERIAL	0x04	// a name, its own length first; 0 for none
+#define SNAP_PROPS_UNIFORMS	0x08	// a set mask, then four floats a set slot
+
+// Uniform slots an actor can hold values of its own in; capture.cpp asserts this against
+// the materials feature's own kActorUniformVec4s, which is where it comes from.
+#define SNAP_PROPS_UNIFORM_SLOTS	8
 
 // An entity's properties as they travel. `flags` says which are carried: one
 // left out is the class default, which is what a mirror already has.
@@ -1266,9 +1273,38 @@ struct SnapProps
 	WORD	roll;				// angle_t >> 16
 	BYTE	matLen;				// 0 with SNAP_PROPS_MATERIAL set means "no material"
 	char	material[SNAP_PROPS_MATNAME_MAX + 1];
+	// A uniform is four floats and no kind: the kind a script set folds into the
+	// values, and whether the shader reads them as ints is the declaration's own.
+	BYTE	uniSet;
+	float	uni[SNAP_PROPS_UNIFORM_SLOTS][4];
 };
 
 namespace zx { namespace netsnapshot {
+
+// A float as its four bytes, little-endian, copied rather than punned.
+inline void PutFloat32(BYTE* p, float v)
+{
+	DWORD bits = 0;
+	memcpy(&bits, &v, 4);
+	Put32(p, bits);
+}
+inline float ReadFloat32(const BYTE* p)
+{
+	const DWORD bits = Read32(p);
+	float v = 0.f;
+	memcpy(&v, &bits, 4);
+	return v;
+}
+
+// How many of a set mask's slots are set, which is what its rows cost.
+inline unsigned int PropsUniformCount(BYTE set)
+{
+	unsigned int n = 0;
+	for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		if ((set & (1u << u)) != 0)
+			++n;
+	return n;
+}
 
 // Scale to and from the 1/256 the wire carries, clamped: a scale is never
 // negative and 255.996 is past anything a sprite can usefully be.
@@ -1303,6 +1339,21 @@ inline unsigned int WritePropsBody(BYTE* p, const SnapProps& s)
 		p[n++] = (BYTE)len;
 		for (unsigned int i = 0; i < len; ++i)
 			p[n++] = (BYTE)s.material[i];
+	}
+	if (s.flags & SNAP_PROPS_UNIFORMS)
+	{
+		// The mask leads, so only the slots an actor actually holds cost bytes.
+		p[n++] = s.uniSet;
+		for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		{
+			if ((s.uniSet & (1u << u)) == 0)
+				continue;
+			for (unsigned int k = 0; k < 4; ++k)
+			{
+				PutFloat32(p + n, s.uni[u][k]);
+				n += 4;
+			}
+		}
 	}
 	// Never 0: a zero length is EventRecordBytes' own sentinel for a bad body.
 	p[lenAt] = (BYTE)(n - lenAt - 1);
@@ -1341,6 +1392,24 @@ inline bool ReadProps(const BYTE* p, unsigned int len, SnapProps& s)
 		s.matLen = (BYTE)mat;
 		for (unsigned int i = 0; i < mat; ++i)
 			s.material[i] = (char)p[n++];
+	}
+	if (s.flags & SNAP_PROPS_UNIFORMS)
+	{
+		if ((n + 1) > len)
+			return false;
+		s.uniSet = p[n++];
+		if ((n + 16 * PropsUniformCount(s.uniSet)) > len)
+			return false;
+		for (unsigned int u = 0; u < SNAP_PROPS_UNIFORM_SLOTS; ++u)
+		{
+			if ((s.uniSet & (1u << u)) == 0)
+				continue;
+			for (unsigned int k = 0; k < 4; ++k)
+			{
+				s.uni[u][k] = ReadFloat32(p + n);
+				n += 4;
+			}
+		}
 	}
 	return true;
 }

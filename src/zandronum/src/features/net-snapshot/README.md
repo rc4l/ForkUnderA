@@ -638,6 +638,32 @@ Each hook is one call from a stock file into the module, listed here as it lands
     honours, so gate-off a mod's own fog class already shows wrong on every client. Under the
     gate this unit makes it right, because the class travels with the spawn.
 
+- `sv_commands.cpp`, four property senders: `SetThingSize`, `SetThingSpriteOrientation`,
+  `FuaSetActorMaterial` and `FuaSetActorUniform` ask `SuppressesLegacy` as the other 23
+  per-actor senders do. All four are ForkUnderA's own, which is why the sweep of that file
+  never reached them; a gated client cannot resolve the NetID and must not fall back to its
+  mirror, so each arrival printed a warning and the property was lost anyway.
+  - What a script changes travels in the snapshot instead, as `SNAPEV_PROPS`: scale at 1/256
+    in two bytes an axis, roll as the top sixteen bits its own command sends, a material by
+    name behind a length byte, and the uniform rows an actor holds -- a set mask and four
+    floats a set slot, with no kind, since `ComputeSetInstanceUniform` folds the kind a script
+    used into the values and whether a shader reads them as ints is the declaration's own.
+  - Only what the entity holds away from its class travels: a flag left out means the class
+    default, which a mirror spawned from that class already has. The server keeps one slot an
+    entity in a table of 256, swept against the capture pass, with a generation from a single
+    counter -- never from the slot, or a slot freed and taken by another entity could reuse a
+    number a client had already been sent. Each client holds two bytes a slot, sent and
+    believed, so the channel costs a kilobyte a client; a lost datagram reverts the generation.
+  - The client keeps each set by NetID rather than applying and forgetting it, because the
+    clients that need it never saw the change: a joiner and a re-enter. A mirror is built with
+    what is known, and a set goes when its entity leaves or the map changes, since an id is
+    handed out again.
+  - Radius and height are deliberately not carried: a mirror is `MF5_NOINTERACTION`, so its
+    size changes nothing it draws or collides with, and the server owns every real collision.
+  - A material or a uniform only ACS sets, and no ACS compiler ships here, so the path is
+    covered by `format_test`'s codec cases and by `fua_snap_selftest`'s `entity properties`
+    block, which puts a whole event through `ApplyDelta` as a datagram carries it.
+
 ## The reference recordings
 
 Three recordings made on the source tree at its `snap-ref-premerge` tag pin what the format layer

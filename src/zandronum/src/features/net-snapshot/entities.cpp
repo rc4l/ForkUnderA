@@ -2773,6 +2773,68 @@ unsigned int zx::netsnapshot::RunSelfTests()
 	{
 		// Named INSIDE the branch that runs it: a block skipped at runtime is
 		// then absent from the summary without the summary knowing why.
+		SelfTestBlock("entity properties");
+		// ---- a property event, read as a client reads one off the wire ----
+		//
+		// An enter for id 9, then its properties, framed as the emitter frames
+		// them, so the decoder sees what a datagram carries.
+		{
+			ClientReset();
+			SetStreamVersion(ZSNAP_VERSION);
+			BYTE payload[SNAP_MAX_RECORD_BYTES + SNAP_MAX_EVENT_BYTES];
+			SnapEntityState st;
+			SnapIdCursor one;
+			memset(&st, 0, sizeof(st));
+			IdCursorReset(one);
+			unsigned int n = WriteRecord(payload, g_mapFrame, 9, one,
+				(BYTE)(SNAPGRP_ALL | SNAPGRP_ENTER), 1, st);
+
+			SnapProps props;
+			memset(&props, 0, sizeof(props));
+			props.flags = SNAP_PROPS_SCALE | SNAP_PROPS_ROLL | SNAP_PROPS_MATERIAL
+				| SNAP_PROPS_UNIFORMS;
+			props.scaleX = 358;					// 1.398, as A_SetScale(1.4) lands
+			props.scaleY = 256;
+			props.roll = 0x4000;
+			props.matLen = 4;
+			memcpy(props.material, "glow", 4);
+			props.uniSet = 0x05;				// slots 0 and 2
+			props.uni[0][0] = 0.25f;
+			props.uni[2][3] = -8.5f;
+			n += WriteRecordId(payload + n, 9, one);
+			n += WritePropsBody(payload + n, props);
+
+			unsigned int applied = 0, bad = 0;
+			PropsEventStats(applied, bad, true);
+			if (ApplyDelta(payload, n, 101, 101, 1000, NULL, 0, NULL) != 0)
+				{ Printf("selftest: property payload rejected\n"); ++failures; }
+			PropsEventStats(applied, bad, true);
+			if ((applied != 1) || (bad != 0))
+			{
+				Printf("selftest: property event: %u applied, %u refused, wanted 1 and 0\n",
+					applied, bad);
+				++failures;
+			}
+
+			// The same event with its length byte claiming rows it does not hold:
+			// refused, and counted as refused, rather than read past its end.
+			IdCursorReset(one);
+			n = WriteRecordId(payload, 9, one);
+			const unsigned int bodyAt = n;
+			n += WritePropsBody(payload + n, props);
+			payload[bodyAt + 1] = (BYTE)(payload[bodyAt + 1] - 16);
+			n -= 16;
+			if (ApplyDelta(payload, n, 102, 102, 1100, NULL, 0, NULL) != 0)
+				{ Printf("selftest: short property payload rejected whole\n"); ++failures; }
+			PropsEventStats(applied, bad, true);
+			if ((applied != 0) || (bad != 1))
+			{
+				Printf("selftest: short property event: %u applied, %u refused,"
+					" wanted 0 and 1\n", applied, bad);
+				++failures;
+			}
+		}
+
 		SelfTestBlock("ghost table");
 		ClientReset();
 		SetStreamVersion(ZSNAP_VERSION);
