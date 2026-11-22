@@ -6298,6 +6298,17 @@ static bool server_MissingPacket( BYTESTREAM_s *pByteStream )
 		}
 		lLastPacket = lPacket;
 
+		// [Kaori-Chani] A sequence this connection never sent, its archive's number having
+		// restarted at the connect: skipped, where one the archive dropped still kicks.
+		const unsigned int nextSeq = g_aClients[g_lCurrentClient].SavedPackets.NextSequence( );
+		if ( static_cast<unsigned int>( lPacket ) >= nextSeq )
+		{
+			DPrintf( "SERVER_ReadMissingPacket: client %d asked for packet %d, never sent"
+				" (next is %u)\n", static_cast<int>( g_lCurrentClient ),
+				static_cast<int>( lPacket ), nextSeq );
+			continue;
+		}
+
 		// Send the packet from the saved packet archive.
 		bool found = g_aClients[g_lCurrentClient].SavedPackets.SchedulePacket( lPacket );
 
