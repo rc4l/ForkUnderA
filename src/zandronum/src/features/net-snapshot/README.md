@@ -664,6 +664,27 @@ Each hook is one call from a stock file into the module, listed here as it lands
     covered by `format_test`'s codec cases and by `fua_snap_selftest`'s `entity properties`
     block, which puts a whole event through `ApplyDelta` as a datagram carries it.
 
+## Where the module writes
+
+Five files, all in one folder: `M_GetFuaUserPath()/net-snapshot`, made on demand. They are the
+server's presence log (`snappresence-sv.txt`), the client's (`snappresence-cl<n>.txt`), a
+`.zsnap` fixture from `fua_snap_record`, a `.csnap` recording from `fua_csnap_record`, and the
+CSV `fua_csnap_analyze` writes. Before this they went to the working directory, which is
+wherever the process was started -- a server's recordings landed beside whatever launched it,
+and two runs from different directories left their files apart.
+
+The fork's own per-user folder, not the clips folder `features/replay` uses: that one is the
+platform's video folder, which is right for a video clip and wrong for a recording or a log.
+Moving these to the clips folder instead is a one-line change of the base in `SnapFilePath`.
+
+A command that writes takes a **name**, never a path: `SnapFileNameBad` refuses an argument
+with a separator in it, and `SnapFilePath` puts the file in the folder. The readers --
+`fua_snap_verify` and `fua_csnap_analyze` -- resolve a bare name through `SnapFileFind`, which
+takes the folder's copy when there is one and the name as given otherwise, so a recording made
+before the move still opens; `fua_snap_verify` still refuses a path, as it always has, and
+`fua_csnap_analyze` still opens one. The three commands that write print the full path, since a
+script reading them afterwards needs it.
+
 ## The reference recordings
 
 Three recordings made on the source tree at its `snap-ref-premerge` tag pin what the format layer

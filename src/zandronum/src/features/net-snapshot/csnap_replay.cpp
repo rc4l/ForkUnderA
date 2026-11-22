@@ -953,6 +953,12 @@ CCMD(fua_csnap_analyze)
 		return;
 	}
 	const char* pszCsvPath = bCsv ? pszPos[1] : NULL;
+	// The CSV is written into the module's folder, so it takes a name, as the recorders do.
+	if (bCsv && SnapFileNameBad(pszCsvPath))
+	{
+		Printf("fua_csnap_analyze: the csv filename must not contain path separators.\n");
+		return;
+	}
 	int traceId = -1;
 	if ((nPos >= 1) && (bCsv == false))
 	{
@@ -967,9 +973,12 @@ CCMD(fua_csnap_analyze)
 	}
 
 	CsnapReader r;
-	if (CsnapOpen(r, argv[1]) == false)
+	// From the module's folder, where fua_csnap_record wrote it.
+	const FString found = SnapFileFind(argv[1]);
+	if (CsnapOpen(r, found.GetChars()) == false)
 	{
-		Printf("fua_csnap_analyze: %s: %s\n", argv[1], (r.error != NULL) ? r.error : "failed");
+		Printf("fua_csnap_analyze: %s: %s\n", found.GetChars(),
+			(r.error != NULL) ? r.error : "failed");
 		CsnapClose(r);
 		return;
 	}
@@ -1075,11 +1084,13 @@ CCMD(fua_csnap_analyze)
 	memset(&classSeen[0], 0, SNAP_CLASS_MASK + 1);
 
 	FILE* pCsv = NULL;
+	FString csvPath;
 	if (bCsv)
 	{
-		pCsv = fopen(pszCsvPath, "wb");
+		csvPath = SnapFilePath(pszCsvPath);
+		pCsv = fopen(csvPath.GetChars(), "wb");
 		if (pCsv == NULL)
-			Printf("fua_csnap_analyze: cannot write %s\n", pszCsvPath);
+			Printf("fua_csnap_analyze: cannot write %s\n", csvPath.GetChars());
 		else
 			fprintf(pCsv, "segment,id,samples,drawn,jumps,worstJumpUnits,"
 				"meanDelayMS,maxDelayMS,winServed,overServed,winStarved,overStarved,"
@@ -1593,7 +1604,7 @@ CCMD(fua_csnap_analyze)
 	if (pCsv != NULL)
 	{
 		fclose(pCsv);
-		Printf("fua_csnap_analyze: wrote %s\n", pszCsvPath);
+		Printf("fua_csnap_analyze: wrote %s\n", csvPath.GetChars());
 	}
 
 	// Restore, so the next measurement does not run in the recording's

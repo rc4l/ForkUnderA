@@ -635,7 +635,7 @@ void zx::netsnapshot::PresenceLog(unsigned int client, unsigned int frame)
 		}
 	}
 
-	FILE* f = fopen("snappresence-sv.txt", "a");
+	FILE* f = fopen(SnapFilePath("snappresence-sv.txt").GetChars(), "a");
 	if (f == NULL)
 		return;
 	fprintf(f, "sv %u %u %u", frame, client, ids.Size());

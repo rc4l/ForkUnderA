@@ -401,6 +401,16 @@ void MoverCaptureStats(unsigned int & live, unsigned int & captures,
 // A cosmetic effect the snapshot must never carry: under the gate it gives up its NetID
 // and is spawned id-less. True when it took it, so a site keeps its own send (README).
 bool ClientEffect(AActor *pEffect, bool bSend, int level = SNAPLEGACY_EXISTENCE);
+// Where the module writes: the fork's own per-user folder, under net-snapshot, made on
+// demand. A bare name, since a recording belongs beside the others, not in a cwd.
+FString SnapFilePath(const char *pszName);
+// Where a reader looks: the module's folder for a bare name that is there, else the name
+// as given, so a recording made before the move still opens.
+FString SnapFileFind(const char *pszName);
+// True for a name with a path separator in it, which these commands refuse: the folder is
+// the module's to choose, and a stray path is how files end up wherever a server started.
+bool SnapFileNameBad(const char *pszName);
+
 // The entities whose properties a script moved off their class defaults, one slot each, as
 // the mover table holds a mover: the generation is the whole dirty test.
 #define SNAPPROP_MAXSLOTS	256

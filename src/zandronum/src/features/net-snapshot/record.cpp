@@ -23,6 +23,7 @@
 #include "zstring.h"
 #include "tarray.h"
 #include "features/net-snapshot/record.h"
+#include "features/net-snapshot/capture.h"	// SnapFilePath, the folder it writes in
 #include "features/net-snapshot/entities.h"
 
 using namespace zx::netsnapshot;
@@ -277,14 +278,22 @@ CCMD(fua_csnap_record)
 
 	RecorderStopIfActive("restarted");
 
-	FString path;
-	path.Format("%s.csnap", argv[1]);
+	if (SnapFileNameBad(argv[1]))
+	{
+		Printf("fua_csnap_record: filename must not contain path separators.\n");
+		return;
+	}
+
+	FString name;
+	name.Format("%s.csnap", argv[1]);
+	const FString path = SnapFilePath(name.GetChars());
 	g_recFile = fopen(path.GetChars(), "wb");
 	if (g_recFile == NULL)
 	{
 		Printf("fua_csnap_record: cannot open %s\n", path.GetChars());
 		return;
 	}
+	Printf("fua_csnap_record: writing %s\n", path.GetChars());
 
 	g_recRecords = 0;
 	g_recBytes = 0;

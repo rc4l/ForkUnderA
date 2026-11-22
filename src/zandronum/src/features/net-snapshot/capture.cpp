@@ -55,6 +55,8 @@
 #include "s_sndseq.h"	// [Kaori-Chani] SN_CheckSequence, for the probe below
 #include "network/netcommand.h"
 #include "features/net-snapshot/capture.h"
+#include "m_misc.h"	// M_GetFuaUserPath, the folder the module writes in
+#include "cmdlib.h"	// CreatePath, which makes it
 #include "features/net-snapshot/selftest.h"
 #include "r_data/r_translate.h"	// TRANSLATION_SHIFT, NUM_TRANSLATION_TABLES
 #include "p_spec.h"				// DPlat, DDoor, DScroller, DPusher, ...
@@ -3017,6 +3019,41 @@ static void snap_AppendRecord(WORD id, BYTE mask, WORD classId, const SnapEntity
 }
 
 static void snap_SendToClients();
+
+//*****************************************************************************
+//	WHERE THE MODULE WRITES
+
+bool zx::netsnapshot::SnapFileNameBad(const char *pszName)
+{
+	if ((pszName == NULL) || (*pszName == '\0'))
+		return true;
+	for (const char *p = pszName; *p != '\0'; ++p)
+		if ((*p == '/') || (*p == '\\') || (*p == ':'))
+			return true;
+	return false;
+}
+
+FString zx::netsnapshot::SnapFileFind(const char *pszName)
+{
+	if (SnapFileNameBad(pszName))
+		return FString(pszName);		// a path of its own: taken as it is
+	const FString path = SnapFilePath(pszName);
+	FILE *f = fopen(path.GetChars(), "rb");
+	if (f == NULL)
+		return FString(pszName);
+	fclose(f);
+	return path;
+}
+
+FString zx::netsnapshot::SnapFilePath(const char *pszName)
+{
+	FString dir = M_GetFuaUserPath();
+	dir << "/net-snapshot";
+	CreatePath(dir.GetChars());
+	FString path = dir;
+	path << "/" << pszName;
+	return path;
+}
 
 //*****************************************************************************
 //	ENTITY PROPERTIES
@@ -6119,27 +6156,27 @@ CCMD(fua_snap_record)
 		return;
 	}
 
-	// Keep the file in the working directory: reject path separators.
+	// One folder for every file the module writes, so a recording never lands in
+	// whatever directory a server happened to start in.
 	const char* pszName = argv[1];
-	for (const char* p = pszName; *p; ++p)
+	if (SnapFileNameBad(pszName))
 	{
-		if ((*p == '/') || (*p == '\\') || (*p == ':'))
-		{
-			Printf("fua_snap_record: filename must not contain path separators.\n");
-			return;
-		}
+		Printf("fua_snap_record: filename must not contain path separators.\n");
+		return;
 	}
 
 	FString filename = pszName;
 	if (filename.IndexOf('.') == -1)
 		filename += ".zsnap";
+	const FString path = SnapFilePath(filename.GetChars());
 
-	g_recordFile = fopen(filename.GetChars(), "wb");
+	g_recordFile = fopen(path.GetChars(), "wb");
 	if (g_recordFile == NULL)
 	{
-		Printf("fua_snap_record: couldn't open '%s' for writing.\n", filename.GetChars());
+		Printf("fua_snap_record: couldn't open '%s' for writing.\n", path.GetChars());
 		return;
 	}
+	Printf("fua_snap_record: writing %s\n", path.GetChars());
 
 	// File header.
 	fwrite("ZSNP", 1, 4, g_recordFile);

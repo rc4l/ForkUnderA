@@ -91,7 +91,7 @@ static void client_PresenceLog( unsigned int nowMS )
 
 	char name[40];
 	mysnprintf( name, sizeof( name ), "snappresence-cl%d.txt", consoleplayer );
-	FILE* f = fopen( name, "a" );
+	FILE* f = fopen( SnapFilePath( name ).GetChars( ), "a" );
 	if ( f == NULL )
 		return;
 	fprintf( f, "cl %d %d %u", frame, consoleplayer, count );

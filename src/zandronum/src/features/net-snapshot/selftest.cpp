@@ -23,6 +23,7 @@
 #include "features/net-snapshot/stream.h"
 #include "features/net-snapshot/entities.h"
 #include "features/net-snapshot/selftest.h"
+#include "features/net-snapshot/capture.h"	// SnapFileFind, the folder it reads from
 
 using namespace zx::netsnapshot;
 
@@ -237,15 +238,15 @@ CCMD(fua_snap_verify)
 			"the ghost table\n");
 		return;
 	}
-	const char* pszName = argv[1];
-	for (const char* p = pszName; *p; ++p)
+	// The name is checked, then resolved: the folder this resolves to is the module's
+	// own and holds the separators the argument may not.
+	if (SnapFileNameBad(argv[1]))
 	{
-		if ((*p == '/') || (*p == '\\') || (*p == ':'))
-		{
-			Printf("fua_snap_verify: filename must not contain path separators.\n");
-			return;
-		}
+		Printf("fua_snap_verify: filename must not contain path separators.\n");
+		return;
 	}
+	const FString found = SnapFileFind(argv[1]);
+	const char* pszName = found.GetChars();
 	double skew = 1.0;
 	if (argv.argc() >= 3)
 	{
