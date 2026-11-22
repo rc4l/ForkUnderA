@@ -477,8 +477,6 @@ static BYTE				g_snapResetCount = 0;
 // What the last DestroyAllSectorMovers carried: behind the count only while
 // fua_snap_debug_resetsplit defers the send.
 static BYTE				g_snapResetCountSent = 0;
-// Missing-packet requests for a sequence not yet sent, this report window.
-static unsigned int		g_unsentRequests = 0;
 
 //*****************************************************************************
 //	COSMETIC CLASSES
@@ -5423,20 +5421,16 @@ static void snap_MaybeReport()
 
 		unsigned int aSeen = 0, aLost = 0, aWide = 0, aFolded = 0, aLate = 0, aSetAfter = 0;
 		AckLossStats(aSeen, aLost, aWide, aFolded, aLate, aSetAfter, true);
-		const unsigned int unsentSkipped = g_unsentRequests;
 		const unsigned int acksAhead = AcksAhead(true);
-		g_unsentRequests = 0;
 			if (aSeen > 0)
 				snap_Say("[snap] datagram delivery: %u sent datagrams confirmed, %u LOST"
 					" (%.2f%%), %u late, %u gaps beyond the window, %u folded on evidence"
-					" | %u set after declared lost"
-					" | %u requests for unsent packets skipped | %u acks ahead of sent\n",
+					" | %u set after declared lost | %u acks ahead of sent\n",
 					aSeen, aLost,
 					100.0 * (double)aLost / (double)aSeen, aLate, aWide, aFolded, aSetAfter,
-					unsentSkipped, acksAhead);
-			else if ((unsentSkipped > 0) || (acksAhead > 0))
-				snap_Say("[snap] datagram delivery: %u requests for unsent packets"
-					" skipped | %u acks ahead of sent\n", unsentSkipped, acksAhead);
+					acksAhead);
+			else if (acksAhead > 0)
+				snap_Say("[snap] datagram delivery: %u acks ahead of sent\n", acksAhead);
 
 		// The reference check, while fua_snap_debug_refcheck runs it.
 		{
@@ -5689,11 +5683,6 @@ BYTE zx::netsnapshot::MapResetCount()
 BYTE zx::netsnapshot::MapResetCountSent()
 {
 	return g_snapResetCountSent;
-}
-
-void zx::netsnapshot::CountUnsentRequest()
-{
-	++g_unsentRequests;
 }
 
 // Legacy traffic by command (see CountLegacyCommand). [0] reliable,

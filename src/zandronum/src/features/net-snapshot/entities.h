@@ -98,6 +98,9 @@ void ForgetWorld();
 bool AcceptMapStamp(BYTE stamp);
 // The same test without its counters, for a command that is not a snapshot.
 bool MapStampCurrent(BYTE stamp);
+// Whether this connection has had a SnapJoin, kept across map changes and cleared only at a
+// connect, so a previous connection's datagram is told apart from this one's.
+bool ConnectionJoined();
 void ResetMapStamp();
 // The current map's stamp from SnapJoin: joins the map.
 void AnchorMapStamp(BYTE stamp);

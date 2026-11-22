@@ -582,6 +582,15 @@ bool zx::netsnapshot::AcceptMapStamp(BYTE stamp)
 	return ahead == 0;
 }
 
+// Set by this connection's first SnapJoin and cleared only at a connect, unlike g_mapJoined,
+// which every map change clears too.
+static bool g_connectionJoined = false;
+
+bool zx::netsnapshot::ConnectionJoined()
+{
+	return g_connectionJoined;
+}
+
 bool zx::netsnapshot::MapStampCurrent(BYTE stamp)
 {
 	return g_mapJoined && (g_mapFrameUnknown == false) && (stamp == g_joinedStamp);
@@ -601,6 +610,7 @@ void zx::netsnapshot::ResetMapStamp()
 {
 	g_cvarsReported = false;
 	g_mapJoined = false;
+	g_connectionJoined = false;
 	g_mapFrame = FrameNarrow();
 	g_mapFrameUnknown = false;
 	for (unsigned int k = 0; k < 3; ++k)
@@ -622,6 +632,7 @@ void zx::netsnapshot::AnchorMapStamp(BYTE stamp)
 	++g_joinCount;
 	g_joinedStamp = stamp;
 	g_mapJoined = true;
+	g_connectionJoined = true;
 	RecorderMapJoined();
 }
 

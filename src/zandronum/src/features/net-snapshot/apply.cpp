@@ -175,8 +175,9 @@ void zx::netsnapshot::OnSnapshot( BYTESTREAM_s * pByteStream )
 
 	pByteStream->ReadBuffer( &s_payload[0], static_cast<size_t>( size ));
 
-	// Ahead of the map-stamp drop, and not in a demo, whose server is recorded.
-	if ( CLIENTDEMO_IsPlaying( ) == false )
+	// Ahead of the stamp drop, for a map change's reliable tail, but only once this connection
+	// has joined, since a previous connection's datagram announces a sequence this one never sent.
+	if (( CLIENTDEMO_IsPlaying( ) == false ) && ConnectionJoined( ))
 		CLIENT_NoteReliableSequence( reliableLow );
 
 	// Another map's datagram, or one before SnapJoin, is neither applied nor

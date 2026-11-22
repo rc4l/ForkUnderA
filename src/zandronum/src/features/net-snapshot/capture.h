@@ -80,8 +80,6 @@ void ResetEnd();
 BYTE MapStamp();
 BYTE MapResetCount();
 BYTE MapResetCountSent();
-// A CLC_MISSINGPACKET entry for a sequence not yet sent, which is skipped.
-void CountUnsentRequest();
 
 // Legacy traffic by command (SVC, or SVC2 when extended), raw bytes summed over
 // recipients, from the stock send paths for Phase 6's reclassify order.
