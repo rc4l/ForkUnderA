@@ -676,10 +676,13 @@ past 32,767 units and velocities at both signs, since a narrow frame at origin 0
 Correctness is anchored by the reference dumps, which the port reproduces byte for byte against
 the committed tag. This check answers whether a given binary decodes as the others do. Its
 constant cannot be independent of the engine without duplicating the decode, so it is pinned only
-once the platforms agree: the block prints `decode hash <16 hex digits>` on every run, CI prints
-it from the dedicated server (`_build.yml`), and `SNAP_DECODE_HASH` stays 0, reported as not
-pinned, until macOS, Linux, Windows and web show the same figure. A deliberate format change
-changes the hash, and the constant with it.
+once the platforms agree: the block prints `decode hash <16 hex digits>` on every run, and CI
+prints it from each native build (`_build.yml`). All three agreed at `e56e24e793833a3e`, which
+`SNAP_DECODE_HASH` now holds: Linux's dedicated server, macOS on arm64 and Windows, one figure
+across two architectures, so a build whose hash differs is broken. Web is not pinned, having no
+online play yet; the browser smoke test is where its figure joins these when online play arrives
+(`docs/web-port-snapshot.md`, section 5). A deliberate format change changes the hash, and the
+constant with it.
 
 ## Where the module writes
 

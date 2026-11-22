@@ -2733,9 +2733,9 @@ void zx::netsnapshot::ClockDescribe(const SnapClockStats& ck, char* pszOut, size
 #define SNAP_DECODE_ORIGIN_Y	(-8000000)
 #define SNAP_DECODE_ORIGIN_Z	40000
 
-// The hash the platforms agreed on, or 0 while they are being collected: the block then
-// prints what it computed and passes.
-#define SNAP_DECODE_HASH	0ull
+// The hash the three native platforms agreed on: Linux's dedicated server, macOS on arm64 and
+// Windows. Web is unmeasured, having no online play yet (docs/web-port-snapshot.md).
+#define SNAP_DECODE_HASH	0xe56e24e793833a3eull
 
 namespace {
 
