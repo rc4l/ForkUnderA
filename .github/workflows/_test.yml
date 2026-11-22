@@ -124,6 +124,19 @@ jobs:
       - name: Test the anchor comparison
         run: python3 tools/snap_anchor_compare_test.py
 
+      # [Kaori-Chani] The offline readers against the header they read, and over the committed
+      # reference: a format change that misses tools/snapshot/ fails here, not in a reader.
+      - name: Snapshot offline readers
+        run: |
+          set -euo pipefail
+          hdr=src/zandronum/src/features/net-snapshot/format.h
+          python3 tools/snapshot/csnap2.py --verify "$hdr"
+          out="$(python3 tools/snapshot/wide_count.py \
+            src/zandronum/src/features/net-snapshot/testdata/ref-wide.csnap)"
+          echo "$out"
+          echo "$out" | grep -q "0 walk errors" \
+            || { echo "::error::the payload walk did not read the committed reference"; exit 1; }
+
       # [rc4l] Wire-format snapshot: the client/server protocol is Zandronum's (protocolspec/*.txt).
       # A backport that changes a command's fields/order/id -- or inserts a command, shifting every
       # later id -- silently desyncs multiplayer while single-player builds fine. This derives the
