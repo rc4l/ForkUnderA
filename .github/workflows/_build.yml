@@ -102,6 +102,23 @@ jobs:
           name: ForkUnderA-macos
           path: dist-macos/*.zip
 
+      # [Kaori-Chani] features/net-snapshot: this platform's decode hash; it may not gate the build,
+      # since a runner with no window server for an .app is not this build failing.
+      - name: Snapshot selftest, in the engine
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/build/ForkUnderA.app/Contents/MacOS/forkundera" \
+            -iwad "$GITHUB_WORKSPACE/tools/freedoom/freedoom2.wad" -nosound -nomusic \
+            +logfile selftest.txt +fua_snap_selftest +quit || true
+          log="$(ls selftest.txt* | head -1)"
+          cat "$log"
+          grep -q "fua_snap_selftest: PASS" "$log" \
+            || { echo "::error::fua_snap_selftest did not pass in the engine"; exit 1; }
+          grep -oE "decode hash [0-9a-f]+" "$log" | head -1
+
       - name: Package debug symbols (dSYM)
         if: ${{ inputs.upload_symbols }}
         run: |
@@ -410,6 +427,26 @@ jobs:
         with:
           name: ForkUnderA-windows
           path: ForkUnderA-*-windows-x64.zip
+
+      # [Kaori-Chani] features/net-snapshot: as above, this platform's hash. No -host here: a
+      # host-mode +quit faults in upstream's DeinitMenus, which this check is not.
+      - name: Snapshot selftest, in the engine
+        continue-on-error: true
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(find . -maxdepth 4 -type f -name 'forkundera.exe' | head -1)"
+          test -n "$exe" || { echo "::error::no forkundera.exe in the build output"; exit 1; }
+          exe="$(cd "$(dirname "$exe")" && pwd)/$(basename "$exe")"
+          cd "$RUNNER_TEMP"
+          "$exe" -iwad "$GITHUB_WORKSPACE/tools/freedoom/freedoom2.wad" -nosound -nomusic \
+            +logfile selftest.txt +fua_snap_selftest +quit || true
+          log="$(ls selftest.txt* | head -1)"
+          cat "$log"
+          grep -q "fua_snap_selftest: PASS" "$log" \
+            || { echo "::error::fua_snap_selftest did not pass in the engine"; exit 1; }
+          grep -oE "decode hash [0-9a-f]+" "$log" | head -1
 
       - name: Package debug symbols (PDB)
         if: ${{ inputs.upload_symbols }}
