@@ -9,7 +9,7 @@
 # The recording is ref.csnap, archived beside ref.zsnap in the folder ZX_SNAP_REFDIR names. It is
 # not in this repo: at 4.9 MB it is one of the two large references the dump test also reads.
 #
-# tools/snap_anchor_compare.py compares the segment block and the summary's deltas, frames,
+# tools/snapshot/snap_anchor_compare.py compares the segment block and the summary's deltas, frames,
 # resets and decode errors. It does not compare what the class table decides, because a .csnap
 # carries the recording build's class numbering and this engine's own actors shift the indices:
 # the glide tripwire block with its per-class rows, the worst-class line, the worst step's class

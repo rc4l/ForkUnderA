@@ -695,9 +695,9 @@ would show.
 - The recording is `ref.csnap`, from the folder `ZX_SNAP_REFDIR` names (below).
 - The fixture is `testdata/ref.csnap.anchor-tag.txt`, the report at the `snap-ref-premerge` tag,
   which the file names inside itself.
-- `tools/snap_anchor_compare.py <logfile>` compares a fresh report with it: the segment block, and
-  the summary's deltas, frames, resets and decode errors. `tools/snap_anchor_compare_test.py`
-  holds its rules and runs in CI (`_test.yml`).
+- `tools/snapshot/snap_anchor_compare.py <logfile>` compares a fresh report with it: the
+  segment block, and the summary's deltas, frames, resets and decode errors.
+  `tools/snapshot/snap_anchor_compare_test.py` holds its rules and runs in CI (`_test.yml`).
 - Not compared, and printed as skipped: the glide tripwire block with its per-class rows, the
   worst-class line, the worst step's class name, the drawn-state line, the unresolved-class
   warning -- all of them the class table's (below) -- and the header line, which names the file as

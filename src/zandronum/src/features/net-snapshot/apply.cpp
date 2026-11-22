@@ -42,7 +42,7 @@ using namespace zx::netsnapshot;
 CVAR( Bool, fua_csnap_debug_applylate, false, CVAR_NOSETBYACS )
 
 // Seconds between this client's presence dumps to snappresence-cl<N>.txt, for
-// snap_tools/presence_diff.py (0 off).
+// tools/snapshot/presence_diff.py (0 off).
 CVAR( Int, fua_csnap_debug_presencelog, 0, CVAR_NOSETBYACS )
 
 static unsigned int g_tooLate = 0;

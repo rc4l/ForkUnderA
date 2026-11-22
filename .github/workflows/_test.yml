@@ -122,7 +122,7 @@ jobs:
       # [Kaori-Chani] The anchor comparison's own rules: which differences between two
       # fua_csnap_analyze reports are the interpolation's, and which are the class table's.
       - name: Test the anchor comparison
-        run: python3 tools/snap_anchor_compare_test.py
+        run: python3 tools/snapshot/snap_anchor_compare_test.py
 
       # [Kaori-Chani] The offline readers against the header they read, and over the committed
       # reference: a format change that misses tools/snapshot/ fails here, not in a reader.

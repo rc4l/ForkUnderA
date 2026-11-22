@@ -26,7 +26,7 @@
 # comparison must never read as agreement.
 #
 # Stdlib only, no test framework:
-#   python3 tools/snap_anchor_compare.py <fresh report or logfile> [<fixture>]
+#   python3 tools/snapshot/snap_anchor_compare.py <fresh report or logfile> [<fixture>]
 
 import argparse
 import os
@@ -35,8 +35,9 @@ import sys
 
 # [Kaori-Chani] The default fixture: the tag's report, committed beside the recording the dump
 # test reads.
-FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "zandronum",
-                       "src", "features", "net-snapshot", "testdata", "ref.csnap.anchor-tag.txt")
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src",
+                       "zandronum", "src", "features", "net-snapshot", "testdata",
+                       "ref.csnap.anchor-tag.txt")
 
 # A logfile's stamp, which carries a date first under sv_logfiletimestamp_usedate.
 STAMP = re.compile(r"^\[(?:\d\d:\d\d:\d\d;)?\d\d:\d\d:\d\d\] ")

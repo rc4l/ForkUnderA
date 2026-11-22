@@ -2105,7 +2105,7 @@ CVAR(Int, fua_snap_debug_holdback, 0, CVAR_NOSETBYACS)
 // inside the ack history, past 32 beyond it.
 CVAR(Int, fua_snap_debug_holdbackgap, SNAP_HOLDBACK_DATAGRAMS, CVAR_NOSETBYACS)
 // Seconds between dumps of what each client may hold to snappresence-sv.txt,
-// for snap_tools/presence_diff.py (0 off).
+// for tools/snapshot/presence_diff.py (0 off).
 CVAR(Int, fua_snap_debug_presencelog, 0, CVAR_NOSETBYACS)
 #define SNAP_HOLDBACK_MAX			16		// per client; past it a datagram goes out on time
 #define SNAP_HOLDBACK_SLOT			8192	// bytes a held payload may take, OnSnapshot's limit
