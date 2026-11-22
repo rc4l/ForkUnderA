@@ -4,8 +4,8 @@
 //
 // Filename: recordread.cpp
 //
-// Description: The .csnap reader, declared in record.h. Engine-free, so
-// snap_tools/formattest's fuzzer can build it.
+// Description: The .csnap reader, declared in record.h. Engine-free, so the
+// standalone fuzzer (tests/snapfuzz) can build it.
 //
 //-----------------------------------------------------------------------------
 

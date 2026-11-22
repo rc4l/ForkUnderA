@@ -5,8 +5,8 @@
 // Filename: fuzzgen.h
 //
 // Description: Fuzz inputs for the snapshot decoder: seeds built by the
-// writers, and the mutation. Engine-free, shared by snap_tools/formattest's
-// fuzzer and the engine's fua_snap_fuzz command.
+// writers, and the mutation. Engine-free, shared by the standalone fuzzer
+// (tests/snapfuzz, the snap_fuzz target) and the engine's fua_snap_fuzz command.
 //
 //-----------------------------------------------------------------------------
 

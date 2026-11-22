@@ -103,6 +103,10 @@ MV_CEILING = 4
 MV_CEILING_BYTES = 35
 MV_DOOR = 5
 MV_DOOR_BYTES = 38
+# [Kaori-Chani] Declared by the header and never written: an animated door is replicated by its
+# effects, so no body has a shape here (format.h's MoverClassTracked excludes it).
+MV_ANIMDOOR = 6
+MV_NOBODY = (MV_ANIMDOOR,)
 # One record per polyobject, every action on it, walked by mover_poly_body_bytes.
 MV_POLY = 7
 PO_HEADER_BYTES = 13
@@ -124,7 +128,7 @@ MVF_NOFLOOR = 0x20
 MVF_NOCEILING = 0x40
 MV_CLSNAME = {MV_PLAT: 'plat', MV_FLOOR: 'floor', MV_ELEVATOR: 'elevator',
               MV_PILLAR: 'pillar', MV_CEILING: 'ceiling', MV_DOOR: 'door',
-              MV_POLY: 'poly'}
+              MV_ANIMDOOR: 'animdoor', MV_POLY: 'poly'}
 
 
 def mover_body_bytes(cls, flags):
@@ -744,6 +748,13 @@ def verify_header(path):
     names = re.findall(r'\b(SNAPMV_\w+)\s*,', m.group(1)) if m else []
     if 'SNAPMV_POLY' not in names or names.index('SNAPMV_POLY') + 1 != MV_POLY:
         bad.append('  SNAPMV_POLY: not at %d in the class enum' % MV_POLY)
+    # [Kaori-Chani] And every class in it is one this decoder places: sized by mover_body_bytes,
+    # or named in MV_NOBODY as one the header declares and no writer emits.
+    for i, nm in enumerate(names):
+        if nm == 'SNAPMV_COUNT':
+            continue
+        if (i + 1) not in MV_CLSNAME:
+            bad.append('  %s = %d: a mover class this decoder does not know' % (nm, i + 1))
 
     m = re.search(r'SNAPEV_MOVER = SNAPEV_SELFDESC \| (\d+)', src)
     if m is None:
@@ -772,6 +783,6 @@ def verify_header(path):
     if bad:
         sys.exit('LAYOUT MISMATCH against %s:\n%s' % (path, '\n'.join(bad)))
     print('layout matches %s: wire v%d, 5 fixed group widths + APPEAR %d/%d, '
-          '8 mask bits, %d event payloads, %d mover bodies, id varint %d/%d'
+          '8 mask bits, %d event payloads, %d mover classes, id varint %d/%d'
           % (path, WIRE_VERSION, APPEAR_NARROW, APPEAR_WIDE, len(EVBYTES),
              len(MV_CLSNAME), REC_IDBYTES_RAW, IDGAP_MAXBYTES))

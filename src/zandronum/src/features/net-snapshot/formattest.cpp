@@ -10,8 +10,8 @@
 // are these blocks as step 1 ported them, and which runs on every platform
 // CI builds -- including wasm32, the only 32-bit one. Twenty-three of the
 // source tree's twenty-four blocks are those, and carrying them here as well
-// would be the second copy that retiring snap_tools/formattest was meant to
-// end: two sets of the same assertions, built differently, free to drift.
+// would be the second copy that retiring the source tree's standalone runner
+// was meant to end: two sets of assertions, built differently, free to drift.
 //
 // What a test binary cannot answer is whether THIS build decodes correctly.
 // It is compiled from the portable target's own flags, without the engine's

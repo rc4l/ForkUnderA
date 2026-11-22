@@ -111,7 +111,12 @@ def main(path):
                         return
                     h = mover_header(rec.body, frame)
                     if h is None:
-                        mv['bad'] += 1
+                        # [Kaori-Chani] A class the header declares with no body of its own is
+                        # counted apart: unplaceable, but not a peer disagreeing about a length.
+                        if (len(rec.body) > 0) and (rec.body[0] in snap_payload.MV_NOBODY):
+                            mv['nobody'] += 1
+                        else:
+                            mv['bad'] += 1
                         return
                     cls_, flags, index, gen, body = h
                     # The class names the index space: sector, or polyobject.
@@ -236,12 +241,13 @@ def main(path):
     print()
 
     # Movers, whenever the stream carried any, read as docs/net-snapshot/tools.md says.
-    if mv['n'] or mv['bad']:
+    if mv['n'] or mv['bad'] or mv['nobody']:
         print('MOVERS')
         print(f'{mv["n"]} records over {len(mvlast)} movers, '
               f'{mv["bytes"]} B ({mv["bytes"] / dur / 1024:.2f} kB/s)'
               if dur > 0 else f'{mv["n"]} records over {len(mvlast)} movers')
         print(f'{mv["gone"]} gone, {mv["blocked"]} blocked, {mv["bad"]} unreadable'
+              + (f', {mv["nobody"]} of a class with no body' if mv['nobody'] else '')
               + ('  ** UNREADABLE MOVER RECORDS: header mismatch **'
                  if mv['bad'] else ''))
         gaps = sorted(g for v in mvgap.values() for g in v)
