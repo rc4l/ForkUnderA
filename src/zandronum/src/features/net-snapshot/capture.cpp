@@ -5450,11 +5450,11 @@ static void snap_MaybeReport()
 					" confirmed enter\n", mM, mL, mE);
 		}
 		{
-			unsigned int rF = 0, rE = 0, rM = 0;
-			RepairStats(rF, rE, rM, true);
+			unsigned int rF = 0, rE = 0, rM = 0, rP = 0;
+			RepairStats(rF, rE, rM, rP, true);
 			if (rF > 0)
 				snap_Say("[snap] optimistic: repaired %u frames,"
-					" %u entities, %u movers\n", rF, rE, rM);
+					" %u entities, %u movers, %u property slots\n", rF, rE, rM, rP);
 		}
 
 		// The marker count now, not over the window, staying up when an id

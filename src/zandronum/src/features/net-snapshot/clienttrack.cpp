@@ -534,13 +534,17 @@ static unsigned int g_repairedFrames = 0, g_repairedEntities = 0;
 static unsigned int g_repairedMovers = 0;
 
 void zx::netsnapshot::RepairStats(unsigned int& frames, unsigned int& entities,
-	unsigned int& movers, bool reset)
+	unsigned int& movers, unsigned int& props, bool reset)
 {
 	frames = g_repairedFrames;
 	entities = g_repairedEntities;
 	movers = g_repairedMovers;
+	props = g_repairedProps;
 	if (reset)
+	{
 		g_repairedFrames = g_repairedEntities = g_repairedMovers = 0;
+		g_repairedProps = 0;
+	}
 }
 
 void zx::netsnapshot::MaybeStats(unsigned int& marked, unsigned int& leaves,

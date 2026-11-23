@@ -54,9 +54,9 @@ unsigned int BelievedFrames(unsigned int client, unsigned int id, unsigned int n
 void OnAck(unsigned int client, unsigned int seq, unsigned int history);
 
 // Optimistic references walked back because their frame was proven lost:
-// frames, entity rows and mover rows.
+// frames, entity rows, mover rows and property slots.
 void RepairStats(unsigned int& frames, unsigned int& entities,
-	unsigned int& movers, bool reset);
+	unsigned int& movers, unsigned int& props, bool reset);
 
 // Psprite records emitted, and client-frames stopped by SNAPCL_PSPRITE_MAX,
 // which is sized to read 0.

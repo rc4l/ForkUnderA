@@ -2350,8 +2350,8 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			switch ( lExtCommand )
 			{
-			// [Kaori-Chani] features/net-snapshot: the four the module reads, each ignored
-			// until a SnapJoin has anchored the stream.
+			// [Kaori-Chani] features/net-snapshot: the seven the module reads, each
+			// gated in its own handler -- by the map stamp, or by the suppression it serves.
 			case SVC2_SNAPSHOT:
 
 				zx::netsnapshot::OnSnapshot( pByteStream );
