@@ -37,8 +37,9 @@
 #
 # And across the repo:
 #
-#   - no pointer to a note kept outside it: a name ending in -note, or a path into the claude
-#     folder of the project the notes live in;
+#   - no pointer to a note kept outside it: a name ending in -note, a path into the claude
+#     folder of the project the notes live in, or the prose forms that name those notes, the
+#     recheck file or the merge plan;
 #   - every .md a comment names exists, since a page renamed leaves citations pointing nowhere;
 #   - none of the source tree's own file or unit names in a module comment, the port having
 #     renamed every one of them;
@@ -422,8 +423,10 @@ for name in ALLOWED:
 
 # ---------------------------------------------------------------- notes, pages and old names
 
-# Spelt with a class so this file does not match itself.
-NOTE_RE = re.compile(r'[A-Za-z0-9]-note\b|\bclaude[/]')
+# Each alternative is spelt with a class so this file does not match itself. `the design doc`
+# is not among them, naming design.md, which is in the repo.
+NOTE_RE = re.compile(r"[A-Za-z0-9]-note\b|\bclaude[/]|port'?[s] (own )?note[s]?\b"
+                     r"|recheck [d]ocument|fua-merge-[p]lan")
 LINEREF_RE = re.compile(r'\b[\w./-]+\.(?:cpp|h|c|py)[:]\d+')
 MD_RE = re.compile(r'\b([\w./-]+\.md)\b')
 

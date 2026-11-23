@@ -597,7 +597,8 @@ TEST(SnapshotSmooth, TheInputIsReadFromAPose)
 	EXPECT_TRUE(in.dated);
 }
 
-// [Kaori-Chani] The kind: the ballistic bit, alone or with steering, then steering alone, then neither.
+// [Kaori-Chani] The kind: the ballistic bit, alone or with steering, then steering alone, then
+// neither.
 TEST(SnapshotSmooth, TheKindFollowsTheMiscBits)
 {
 	SnapGhostPose pose;

@@ -84,7 +84,8 @@ TEST(SnapshotAnim, MirrorSpawnRingResyncsOnlyInsideItsWindow)
 	EXPECT_FALSE(ComputeMsResync(ring, 22, 3, 40));
 }
 
-// [Kaori-Chani] An endless state resyncs however late it is read, but only if the ring still holds it.
+// [Kaori-Chani] An endless state resyncs however late it is read, but only if the ring still holds
+// it.
 TEST(SnapshotAnim, MirrorSpawnRingResyncsAnEndlessStateAtAnyAge)
 {
 	SnapMsRing<int> ring;

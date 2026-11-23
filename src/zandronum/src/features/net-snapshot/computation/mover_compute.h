@@ -16,7 +16,7 @@
 #ifndef __SNAP_MOVER_COMPUTE_H__
 #define __SNAP_MOVER_COMPUTE_H__
 
-#include "features/net-snapshot/format.h"		// BYTE, SnapMoverPoly, the SNAPMV_ and SNAPPO_ values
+#include "features/net-snapshot/format.h"		// BYTE, SnapMoverPoly, SNAPMV_, SNAPPO_
 
 //*****************************************************************************
 //	LINK ORDER

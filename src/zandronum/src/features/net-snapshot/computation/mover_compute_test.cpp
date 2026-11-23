@@ -35,7 +35,8 @@ TEST(SnapshotMover, LinkOrderOfAMapWithNoLinksIsIndexOrder)
 	}
 }
 
-// [Kaori-Chani] 3 drives 1 and 1 drives 0, floor and then ceiling, 2 alone: rounds {2, 3}, {1}, {0}.
+// [Kaori-Chani] 3 drives 1 and 1 drives 0, floor and then ceiling, 2 alone: rounds {2, 3}, {1},
+// {0}.
 TEST(SnapshotMover, LinkOrderWritesADriverBeforeWhatItDrives)
 {
 	static const SnapLinkEdge chain[] =

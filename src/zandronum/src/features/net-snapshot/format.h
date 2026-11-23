@@ -23,7 +23,8 @@
 //*****************************************************************************
 //	QUANTIZERS
 
-// [Kaori-Chani] The quantizers below carry 16.16 through 64-bit arithmetic, so they hold for ForkUnderA's 48.16 fixed_t as they did for a 32-bit one.
+// [Kaori-Chani] The quantizers below carry 16.16 through 64-bit arithmetic, so they hold for
+// ForkUnderA's 48.16 fixed_t as they did for a 32-bit one.
 
 // Id field widths, ahead of the ceilings sized from them; SNAP_IDGAP_MAXBYTES
 // bounds the reader as well as the writer (ENTITY ID ENCODING).
@@ -124,7 +125,8 @@ inline SnapFrame FrameFromExtent(const long long lo[3], const long long hi[3],
 		if ((l >= -32768) && (h <= 32767))
 			continue;
 		const long long span = h - l;
-		// [Kaori-Chani] The origin is a 32-bit int in SnapFrame and on the wire, so a map centred past its range clamps here rather than truncating and misplacing every position on it.
+		// [Kaori-Chani] The origin is a 32-bit int in SnapFrame and on the wire, so a map centred
+		// past its range clamps here rather than truncating and misplacing every position on it.
 		const long long centre = l + ((span + 1) >> 1);
 		const long long originMin = -2147483647LL - 1, originMax = 2147483647LL;
 		f.origin[k] = (int)((centre < originMin) ? originMin : (centre > originMax) ? originMax : centre);
@@ -157,7 +159,8 @@ inline SDWORD QuantPos(fixed_t v)
 {
 	return QuantPosIn(FrameNarrow(), 0, v);
 }
-// [Kaori-Chani] Whole units to 16.16 as a 64-bit multiply, since a 48.16 position reaches past 32,767 units and shifting a negative value left is undefined.
+// [Kaori-Chani] Whole units to 16.16 as a 64-bit multiply, since a 48.16 position reaches past
+// 32,767 units and shifting a negative value left is undefined.
 inline fixed_t DequantPos(SDWORD q) { return (fixed_t)((long long)q * 65536); }
 
 // Quantized position to whole map units for the server's distance tests, the

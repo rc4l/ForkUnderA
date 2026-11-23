@@ -18,7 +18,8 @@
 
 using namespace zx::netsnapshot;
 
-// [Kaori-Chani] The random frames draw from this fixed seed, so every compiler tests the same inputs.
+// [Kaori-Chani] The random frames draw from this fixed seed, so every compiler tests the same
+// inputs.
 #define BUDGETTEST_SEED		0x9E3779B9u
 
 static DWORD budgettest_Next(DWORD& s)
@@ -56,7 +57,8 @@ TEST(SnapshotBudget, TheFrameBudgetHasAFloorOf64)
 	EXPECT_EQ(4500, ComputeEffectiveBudget(4500));
 }
 
-// [Kaori-Chani] Four tics' worth at most, or the pump's own tics where more; a rate of 0 holds nothing.
+// [Kaori-Chani] Four tics' worth at most, or the pump's own tics where more; a rate of 0 holds
+// nothing.
 TEST(SnapshotBudget, TheCosmeticBankRefillsToFourTics)
 {
 	EXPECT_EQ(600, ComputeCosBankRefill(0, 600, 1));

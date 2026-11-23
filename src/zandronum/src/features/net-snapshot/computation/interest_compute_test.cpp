@@ -203,7 +203,8 @@ TEST(SnapshotInterest, TheStarvationGuardPromotesAnAgeingRecord)
 	interesttest_Check(c, n);
 }
 
-// [Kaori-Chani] The observations beside the band: the ring, the facing, forced, cosmetic and culled.
+// [Kaori-Chani] The observations beside the band: the ring, the facing, forced, cosmetic and
+// culled.
 TEST(SnapshotInterest, ObservationsReportTheRingAndTheFacing)
 {
 	SnapTierOut out;

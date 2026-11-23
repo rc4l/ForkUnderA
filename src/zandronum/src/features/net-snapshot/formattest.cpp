@@ -18,11 +18,10 @@
 // defines, and the time base is the engine's: TICRATE, and the platform's
 // own clock frequency through i_tictime.h. So that block stays here.
 //
-// A second check belongs here and arrives in step 3, when the module links:
-// a small recording embedded in the source, decoded through the game's own
-// ApplyDelta, with a checksum over the poses it produces. It is not here yet
-// because its constant has to come from CI agreeing across four platforms,
-// which needs a linked game to run.
+// The other check that needs the game is the decode check, which hashes the
+// poses a payload fixed in the source leaves after the game's own ApplyDelta.
+// It sits in entities.cpp beside that decode rather than here, and its
+// constant was pinned once the three native builds agreed on it.
 //
 //-----------------------------------------------------------------------------
 

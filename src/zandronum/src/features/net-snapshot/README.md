@@ -6,9 +6,9 @@ netcode module beside `net-transport`, `net-protocol`, `net-replication`, `net-c
 `net-session`.
 
 Ported from the `snapshot` branch of Kaori-Chani/ZanZan, from its `snap-ref-premerge` tag at
-`b8a72a262`, where it was written against a 32-bit 16.16 `fixed_t`. The quantizers here are rewritten
-for `zx::Fixed`; what that found is in the port's own notes, and the shape to watch for is an
-unsigned value widened into a `fixed_t` without saying which sign it carries.
+`b8a72a262`, where it was written against a 32-bit 16.16 `fixed_t`. The quantizers here are
+rewritten for `zx::Fixed`, and the shape to watch for is an unsigned value widened into a
+`fixed_t` without saying which sign it carries.
 
 **The format layer and the server layer are here so far**, with every header the rest will need.
 The client, the movers and the recorder follow as their own commits, and the hooks that call them
@@ -29,14 +29,15 @@ What is in the engine's build, precisely, because "nothing" was not true:
 
 No vendored file. The module is its own folder, and each hook in a stock file is one call into it
 with any role test or send behind that call, so no stock file's crossings grow and
-`tools/boundary-allow.json` needs no raised allowance. The module's README joins the `owners` of the
-netcode rules in `tools/boundary-rules.json` when those hooks land, not before.
+`tools/boundary-allow.json` needs no raised allowance. The module's README is among the `owners`
+of the netcode rules in `tools/boundary-rules.json`, which it joined with the first of those
+hooks.
 
 ## Public header
 
 `format.h` is the wire: every record and event, the position frame, the quantizers and the
 checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are zstd frames.
-`record.h` is the `.csnap`, the client's recording, with its reader here and its writer to come.
+`record.h` is the `.csnap`, the client's recording, with its reader and its writer both here.
 
 ## Files
 
@@ -48,7 +49,9 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
 - `stream.{h,cpp}`: the `.zsnap` container's reader, which needs the vendored zstd.
 - `record.h`, `recordread.cpp`: the `.csnap` container and its engine-free reader, which the fuzzer
   and the replay both read through.
-- `fuzzgen.h`: the generator the fuzzer builds inputs with, shared with the in-engine fuzzer to come.
+- `record.cpp`: the client's recorder (`fua_csnap_record`, `fua_csnap_stoprecord`), the `.csnap`
+  writer.
+- `fuzzgen.h`: the generator the fuzzer builds inputs with, shared with the in-engine fuzzer.
 - `capture.{h,cpp}`: the server's snapshot tick — the world capture and its censuses, legacy
   suppression, mover capture, cosmetic events, snapshot sounds and the stats report. Was
   `sv_snapshot`.
@@ -67,6 +70,11 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
     not near it. And `here` arrives in raw units, as the sampler leaves it, with `frac` the same
     `fixed_t` both callers already hold, so neither converts before the division — a comparison
     against the reference tag must not be able to fail on a conversion alone.
+- `entities.{h,cpp}`: the client entity layer — the snapshot decoder, the ghost table, the
+  sampler and the server clock model, free of engine types. Was `cl_entities`.
+- `apply.{h,cpp}`: the client's snapshot commands — the datagram and its ack, the door sound,
+  the sound table and a sound by table index, each read from the stream by `cl_main.cpp`'s
+  dispatch. Was `cl_snapshot`.
 - `ghostactor.{h,cpp}`: the client's mirrors — the ghost table sampled into actors the render
   copy carries, their skins and states, the legacy copies they stand in front of, and the
   mirror interpolation rule's live half. Was `cl_ghostactor`.
@@ -132,6 +140,18 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   - `MoverResetBegin` returns at its first test unless this client knows the server's
     generation, which only a gate-on join gives it, so with the gate off the legacy destroy is
     the whole reset exactly as it is today.
+- `polyobj.{h,cpp}`: the snapshot path's polyobjects — the server's capture, the client's
+  record sink and its counts. Was `snap_polyobj`.
+- `selftest.{h,cpp}`: fixture validation (`fua_snap_verify`) and the self-test plumbing the
+  engine's `fua_snap_selftest` shares with the format runner. Was `snap_fixture`.
+- `formattest.cpp`: the one self-test block only a game binary can answer, the time base's.
+  Was `snap_formattest`.
+- `csnap_replay.cpp`: the replay harness (`fua_csnap_analyze`) — a `.csnap` through the real
+  decoder and sampler, reported per entity, with the glide tripwire and the drawn-state
+  comparison. Was `cl_replay`.
+- `fuzz.cpp`: `fua_snap_fuzz`, the decoder fuzzer in the engine — mutated payloads through
+  the real `ApplyDelta` and cosmetic streams through the real `CosmeticEvents`, against a
+  live ghost table. Was `snap_fuzz`.
 - `format_test.cpp`: the format layer's own tests, narrow frame and wide.
 - `refdump_test.cpp`: the reference decode, below. The dumper it decodes with is shared, in
   `tests/snapdump/`, with the `snap_dump` command line beside it.
@@ -180,11 +200,11 @@ Each hook is one call from a stock file into the module, listed here as it lands
     client's planes as soon as one arrives; the hold is what keeps that record and the legacy
     tick from fighting over the same plane. A gate-off window therefore reads `blocked 1` and
     a count of tics held, which is the hold working rather than a gate missing from it.
-  - The reference wrote the role tests into these files — `NETWORK_InClientMode( ) && m_SnapBlocked`,
-    and a server test around the stall write. This port keeps them inside the module, as
-    `SpecialResolveSource` does, so the stock sites stay at one call and the boundary counts do
-    not move. The stall flag is therefore passed and returned by value rather than assigned under
-    a role test.
+  - The reference wrote the role tests into these files —
+    `NETWORK_InClientMode( ) && m_SnapBlocked`, and a server test around the stall write. This
+    port keeps them inside the module, as `SpecialResolveSource` does, so the stock sites stay
+    at one call and the boundary counts do not move. The stall flag is therefore passed and
+    returned by value rather than assigned under a role test.
   - An elevator holds as one mover, not per plane: `SnapMoverElevator` carries no blocked
     field, only the capture call's single flag, where `SnapMoverPillar` carries a `BYTE
     blocked`. That follows the movers themselves — an elevator drives both planes with one
@@ -200,11 +220,12 @@ Each hook is one call from a stock file into the module, listed here as it lands
     which would have a gate-off client turn at its own top or bottom and then be snapped back by
     the server's plane set from that same moment — not legacy behaviour. Here
     `MoverClientDerivesReversal( m_SnapSeen )` restricts it to a ceiling a record has reached, so
-    gate off derives none, measured at 0 with records flowing and the mover gate off. It sets
-    `m_Direction` and `m_Speed` only: at nolegacy 3 the server still sends every
-    `SVC_PLAYCEILINGSOUND`, and `SN_StartSequence` stops the sector's existing ceiling sound
-    first, so a local `PlayCeilingSound()` would restart the sound rather than layer it. The call
-    belongs here again if the sound unit later stops the server sending it under the gate.
+    gate off derives none, which the client's own counter read as 0 with records flowing and
+    the mover gate off. It sets `m_Direction` and `m_Speed` only: at nolegacy 3 the server
+    still sends every `SVC_PLAYCEILINGSOUND`, and `SN_StartSequence` stops the sector's
+    existing ceiling sound first, so a local `PlayCeilingSound()` would restart the sound
+    rather than layer it. The call belongs here again if the sound unit later stops the server
+    sending it under the gate.
   - A gated client still spawns its own timed doors, and the records adopt them: measured on a
     join, where the flag is false at spawn time anyway, and the same on a map change. The
     reference suppressed the spawn instead, which a stale flag can turn into a door missing for
@@ -238,23 +259,23 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - While the legacy plat handlers are live the client-run wait is inert, and deliberately so:
     the client's countdown starts at or below the server's count, `m_Count` being left out of
     the compare but riding every record as the floor's countdowns do, so on a clean link
-    `SVC_CHANGEPLATSTATUS` ends the wait first
-    and `plat waits: ... ran out` reads 0. A delayed status command lets the client end the wait
-    itself, which the plat suppression will rely on. What the countdown does run is visible in
-    the client's `m_Count`: against HEAD it sits on a plateau between records, here it falls
-    every tic.
+    `SVC_CHANGEPLATSTATUS` ends the wait first and `plat waits: ... ran out` read 0 on the one
+    client it was read on, whose rate decides which counter fires at all. A delayed status
+    command lets the client end the wait itself, which the plat suppression will rely on. What
+    the countdown does run is visible in that client's `m_Count`: against HEAD it sits on a
+    plateau between records, here it falls every tic.
 - `cl_main.cpp`, `client_DoDoor`, `client_DestroyDoor`, `client_ChangeDoorDirection`:
   `MoverLegacyStandsAside( SNAPMV_DOOR )`, which is `MoverSuppressesLegacy` counting the call it
   turns away, each after that handler's last read so the stream is consumed either way. The first
   of the handler classes; the sounds are not among them, `SVC2_DOORSOUND` carrying them to
   `OnDoorSound`, which plays them only while these three are suppressed. Suppression is
   client-side alone, so the server's sends are unchanged. What ends a client's wait moves from
-  the command to the record, measured as `door waits: 1 early (worst 17)` where the same window
-  at HEAD counts none: the door's dirty compare leaves `topCountdown` out, so no record goes out
-  merely because it ticked, but the countdown rides every record that does go out:
-  `MoverSlotRead` serialises the slot's body as `MoverCaptureDoor` last refreshed it, which is
-  every tic. `ran out` therefore stays 0 on a clean link here too, the record reaching the door
-  before its own counter does.
+  the command to the record, counted as one `door waits` where the same window at HEAD counts
+  none: the door's dirty compare leaves `topCountdown` out, so no record goes out merely
+  because it ticked, but the countdown rides every record that does go out: `MoverSlotRead`
+  serialises the slot's body as `MoverCaptureDoor` last refreshed it, which is every tic.
+  Which counter takes that one, `early` or `ran out`, and how early it reads are the client's
+  own rate: the same clean link here gave each of them once.
   - That sound had no sender here. The enum, `OnDoorSound` and `P_DoorSoundSector` were ported,
     but nothing sent `SVC2_DOORSOUND`, measured as none of them on the wire in six windows.
     Suppressing `client_ChangeDoorDirection` takes away the client's only wait-end sound, and it
@@ -665,6 +686,20 @@ Each hook is one call from a stock file into the module, listed here as it lands
   - A material or a uniform only ACS sets, and no ACS compiler ships here, so the path is
     covered by `format_test`'s codec cases and by `fua_snap_selftest`'s `entity properties`
     block, which puts a whole event through `ApplyDelta` as a datagram carries it.
+- `info.h`, `FState::CallAction`: `g_pSnapActionSelf` saved, set to `self` and restored around
+  the action call, so a cosmetic spawned inside an action knows what spawned it. Two stores and
+  no call, this being the hottest path in the engine, and the pointer is read only by the
+  cosmetic route, which tests the gate, so a gate-off server writes a pointer nothing reads.
+- `dthinker.cpp`, `DThinker::TickThinkers`: `g_pSnapTickSelf` set to each thinker before it
+  runs and cleared after it, so a spawn from `PostBeginPlay` or `Tick` has a spawner while ACS
+  and level code outside a thinker's turn have none. Read on the same terms as the pointer
+  above.
+- `p_spec.cpp`, `P_SpawnSpecials`: `sector->SavedTimedDoor` beside each of the two timed-door
+  spawner calls, and `g_game.cpp`, `GAME_ResetMap`: the loop that spawns them again after the
+  plane writes. `SavedSpecial` cannot hold these two, the spawner zeroing `special` as it
+  builds the door, so a reset left the sector with no door at all; the loop restores what the
+  map's own setup built, gate or no gate, and a gated client builds none of them and takes
+  them by record.
 
 ## The decode check, and its constant
 
@@ -683,8 +718,8 @@ prints it from each native build (`_build.yml`). All three agreed at `e56e24e793
 `SNAP_DECODE_HASH` now holds: Linux's dedicated server, macOS on arm64 and Windows, one figure
 across two architectures, so a build whose hash differs is broken. Web is not pinned, having no
 online play yet; the browser smoke test is where its figure joins these when online play arrives
-(`docs/web-port-snapshot.md`, section 5). A deliberate format change changes the hash, and the
-constant with it.
+(`docs/web-port-snapshot.md`, section 5). A change to what a record decodes to changes the hash,
+and the constant with it.
 
 ## The anchor comparison, and its fixture
 
@@ -775,16 +810,16 @@ its jobs inside this build. Unlike the fuzzer it needs no sanitizer, so it build
 MSVC included.
 
 What it does with a recording it cannot read is pinned by `tests/snapdump/snapdump_test.cpp`: a
-file that is no container, one shorter than the magic, one whose cvar block is cut, a recording that
-stops mid-record, and a payload whose id gap cannot be read. Each is held to the exact line the dumper
-writes, since those refusals are part of what decoding byte for byte means.
+file that is no container, one shorter than the magic, one whose cvar block is cut, a recording
+that stops mid-record, and a payload whose id gap cannot be read. Each is held to the exact
+line the dumper writes, since those refusals are part of what decoding byte for byte means.
 
 Its exit status is its answer rather than a mapping beside it: `0` the recording read whole with no
-error, `1` the bytes could not be got at all or the arguments were wrong, `2` the bytes were read and
-are wrong — no container this build knows, a header that would not open, or a record that did not
-decode, with the dump written so far naming which. `SnapDumpWrite` returns those three values and
-`main` returns what it was handed, so the status cannot drift from the result; one CTest case runs
-the tool for each of the three.
+error, `1` the bytes could not be got at all or the arguments were wrong, `2` the bytes were
+read and are wrong — no container this build knows, a header that would not open, or a record
+that did not decode, with the dump written so far naming which. `SnapDumpWrite` returns those
+three values and `main` returns what it was handed, so the status cannot drift from the
+result; one CTest case runs the tool for each of the three.
 
 ## The fuzzer
 

@@ -2175,7 +2175,8 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 		{
 			if (emitted >= SNAPCL_MOVER_MAX)
 				break;
-			// Room for this loop's own largest record: SNAP_MAX_EVENT_BYTES sizes buffers, not budgets.
+			// Room for this loop's own largest record: SNAP_MAX_EVENT_BYTES sizes buffers, not
+			// budgets.
 			if (g_prefixBytes + (SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_MOVER) > budgetBytes)
 			{
 				++g_moverOutOfBytes;
@@ -2414,10 +2415,8 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			const int stale = (int)(WORD)((WORD)frame - cl.lastSentFrame[cur.id]);
 
 			// Map units per tic, not fixed_t: the census buckets at 8 units.
-			// [Kaori-Chani] A 48.16 shifted right by FRACBITS is still a fixed_t, holding whole
-			// units in its raw, so the narrowing to int is written out. A velocity per tic is far
-			// inside an int either way; what the cast rules out is the shift being forgotten and
-			// a raw fixed_t landing in the census as if it were units.
+			// [Kaori-Chani] The narrowing to int is written out because a 48.16 shifted right by
+			// FRACBITS is still a fixed_t, which must not land in the census as if it were units.
 			int vel = (int)(DequantVel(cur.qvx) >> FRACBITS); if (vel < 0) vel = -vel;
 			int vy = (int)(DequantVel(cur.qvy) >> FRACBITS); if (vy < 0) vy = -vy;
 

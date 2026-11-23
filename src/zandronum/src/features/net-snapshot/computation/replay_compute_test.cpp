@@ -123,7 +123,8 @@ TEST(SnapshotReplay, HistogramCountsEachErrorInItsBin)
 	EXPECT_EQ(2u, hist[SNAP_REPLAY_BINS - 1]);
 }
 
-// [Kaori-Chani] 991 under 0.1 and 9 at 5.0 put the sample at 990 under 0.1; one more at 5.0 moves it.
+// [Kaori-Chani] 991 under 0.1 and 9 at 5.0 put the sample at 990 under 0.1; one more at 5.0 moves
+// it.
 TEST(SnapshotReplay, HistogramP99MovesWithTheSample)
 {
 	static unsigned int hist[SNAP_REPLAY_BINS];

@@ -18,7 +18,8 @@ using namespace zx::netsnapshot;
 // [Kaori-Chani] Each case names itself through the assertion's own message rather than
 // SCOPED_TRACE, whose thread-local trace stack faults inside GoogleTest on this platform.
 
-// [Kaori-Chani] The joined map, a map behind it and one ahead, through the wrap, and the halves' edges.
+// [Kaori-Chani] The joined map, a map behind it and one ahead, through the wrap, and the halves'
+// edges.
 TEST(SnapshotJoin, MapStampDistanceReadsThroughTheWrap)
 {
 	static const struct { BYTE stamp, joined; int want; } cases[] =

@@ -98,7 +98,8 @@ TEST(SnapshotLaw, ARunStartsLengthensAndIsEndedByATurn)
 	EXPECT_EQ(1, t.straightRun);
 	EXPECT_EQ(1, t.gravRun);
 
-	// [Kaori-Chani] A turn the other way, east to south: the difference is taken whole, whatever its sign.
+	// [Kaori-Chani] A turn the other way, east to south: the difference is taken whole, whatever
+	// its sign.
 	s = ComputeRunStep(t, LAWTEST_V, 0, 0);
 	s = ComputeRunStep(t, 0, -LAWTEST_V, 0);
 	EXPECT_FALSE(s.bHeld);

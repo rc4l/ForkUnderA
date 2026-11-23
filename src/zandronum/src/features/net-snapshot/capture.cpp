@@ -36,8 +36,8 @@
 #include "network.h"
 #include "i_system.h"
 #include "s_sound.h"
-// [Kaori-Chani] The time base: declarations here, implementations with posix/sdl/ and win32/
-// in step 3, since the counter is platform-specific and these declarations are not.
+// [Kaori-Chani] The time base: declarations here, bodies in posix/sdl/ and win32/, since the
+// counter is platform-specific and these declarations are not.
 #include "i_tictime.h"
 #include "tarray.h"
 #include "p_effect.h"
@@ -66,7 +66,7 @@
 #include "dsectoreffect.h"	// DSectorEffect, the base the census walks
 #include "p_tags.h"			// tagManager: a sector carries a list of tags here, not one short
 #include "features/net-snapshot/entities.h"	// NewestGameTic, to align a client reading
-#include "features/net-snapshot/ghostactor.h"	// cosmetic events: the client side of the hooks below
+#include "features/net-snapshot/ghostactor.h"	// cosmetic events: the client side of these hooks
 #include "thingdef/thingdef.h"		// cosmetic classes: action functions and their parameters
 #include "thingdef/thingdef_exp.h"
 #include "p_acs.h"					// cosmetic classes: a script's CLIENTSIDE flag
@@ -423,11 +423,8 @@ static void snap_CaptureActor(AActor* pActor, SnapEntityState& out)
 		out.misc |= (WORD)((pActor->waterlevel & 3) << SNAPMISC_WATERSHIFT);
 	// The crouch value, sent since the client's integrator runs on a local
 	// P_TryMove and a crouch decides whether a shot passes over.
-	// [Kaori-Chani] QuantCrouch takes ints, since format.h includes no engine header, and neither
-	// argument converts on its own now: crouchfactor is a 48.16 fixed_t, and FRACUNIT is one too,
-	// being ((fixed_t)1<<FRACBITS) rather than the plain constant it reads as. Both raws are the
-	// right things to hand over, because both sides of the comparison inside are 1/65536ths, and a
-	// crouch lives between half a unit and one, so neither narrowing loses anything.
+	// [Kaori-Chani] Both raws go to QuantCrouch, which takes ints because format.h includes no
+	// engine header, and a crouch between half a unit and one narrows losslessly.
 	if (pActor->player != NULL)
 		out.misc |= (WORD)(QuantCrouch((int)pActor->player->crouchfactor, (int)FRACUNIT)
 			<< SNAPMISC_CROUCH_SHIFT);
@@ -4355,12 +4352,8 @@ bool zx::netsnapshot::BroadcastActorSound(AActor *pActor, int channel, int sound
 			if (bById)
 				snap_SendSoundId(i, pActor, true, channel, soundId, volume, attenuation);
 			else
-				// [Kaori-Chani] The stock command's coordinates are LONG, so a 48.16 position is
-				// cast the way every other caller in the engine casts it ((LONG)self->x in
-				// a_bossbrain.cpp, p_mobj.cpp, p_switch.cpp): the raw, truncated to 32 bits. That
-				// keeps this call the same shape as the engine's own and leaves the stock sound
-				// command's width ForkUnderA's decision rather than ours, as the snapshot's own
-				// wire stays 32-bit on purpose too.
+				// [Kaori-Chani] The stock command's coordinates are LONG, so a 48.16 position
+				// is cast as every other engine caller casts it: the raw, truncated to 32 bits.
 				SERVERCOMMANDS_SoundPoint((LONG)pActor->x, (LONG)pActor->y, (LONG)pActor->z,
 					channel, pszName, volume, attenuation, i, SVCF_ONLYTHISCLIENT, pitch);
 		}
@@ -5103,9 +5096,8 @@ static void snap_MaybeReport()
 		{
 			if (SERVER_IsValidClient(c) == false)
 				continue;
-			// lag is how far behind this client's newest datagram its ack is,
-			// where 255 is far or further and 0 is none credited: either none has
-			// arrived or a re-baseline has just forgotten the world.
+			// lag is how far behind this client's newest datagram its ack is, 255 being far or
+			// further and 0 none credited, by no arrival or a re-baseline.
 			snap_Say("[snap] client %u: ack=%u lag=%u pending=%u believed=%u\n",
 				c, LastAckedSeq(c), (unsigned int)AckLag(c, NewestSentSeq(c)),
 				PendingFrames(c), BelievedCount(c));
@@ -6385,9 +6377,8 @@ CCMD(fua_snap_planedump)
 		{
 			// Movers and tagged sectors, the tag reaching a linked lift's
 			// visible sectors.
-			// [Kaori-Chani] A sector carries a list of tags here, not the one short it did in the
-			// source, so "untagged" asks the tag manager rather than comparing a first tag with
-			// zero: a sector tagged 0 and a sector with no tag at all are different things to it.
+			// [Kaori-Chani] A sector carries a list of tags here, so "untagged" asks the tag
+			// manager, to which a sector tagged 0 and one with no tag at all differ.
 			if ((pSec->floordata == NULL) && (pSec->ceilingdata == NULL)
 				&& (tagManager.SectorHasTags(pSec) == false))
 				continue;
@@ -6529,9 +6520,8 @@ CCMD(fua_snap_sectorcheck)
 			gametic, NewestGameTic());
 	else
 		Printf("[server] gametic %d\n", gametic);
-	// [Kaori-Chani] P_FindSectorFromTag's walk is the tag manager's iterator here, since a sector
-	// holds a list of tags rather than one: cl_main.cpp's own colour and light commands walk it
-	// this way, so this reads as the engine's other tag loops do.
+	// [Kaori-Chani] A sector holds a list of tags rather than one, so P_FindSectorFromTag's walk
+	// is the tag manager's iterator here, as cl_main.cpp's colour and light commands walk it.
 	FSectorTagIterator sectorsWithTag(tag);
 	while ((secnum = sectorsWithTag.Next()) >= 0)
 	{

@@ -17,7 +17,7 @@
 // acks fold into `believed` (clienttrack.md, The model).
 
 #include "features/net-snapshot/format.h"
-#include "features/net-snapshot/computation/interest_compute.h"	// the bands, priority hints and scheduler constants
+#include "features/net-snapshot/computation/interest_compute.h"	// bands, priority hints, constants
 #include "tarray.h"
 
 // Pending depth in frames, not entries, at which a client is forced back to a

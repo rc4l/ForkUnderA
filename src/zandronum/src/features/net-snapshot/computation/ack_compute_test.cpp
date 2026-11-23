@@ -59,7 +59,8 @@ TEST(SnapshotAck, AnAckIsReadOnlyWhenItIsNewAndAlreadySent)
 	}
 }
 
-// [Kaori-Chani] Each verdict, at the edges of the history and the reorder window, for an ack of 100.
+// [Kaori-Chani] Each verdict, at the edges of the history and the reorder window, for an ack of
+// 100.
 TEST(SnapshotAck, EachVerdictAtTheEdgesOfTheHistoryAndWindow)
 {
 	static const struct
