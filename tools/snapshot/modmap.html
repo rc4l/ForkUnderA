@@ -1,0 +1,788 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later. The module map's page; tools/snapshot/modmap.py fills its data slot. -->
+<title>Snapshot Module Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a toolbar over a scrolling board of layer columns, with a details panel docked right (a bottom sheet on phones). */
+:root {
+  --bg: #e9ece7;
+  --board: #f1f3ef;
+  --surface: #fbfcfa;
+  --surface-2: #f3f5f1;
+  --ink: #18211d;
+  --muted: #5b6862;
+  --faint: #8a958f;
+  --rule: #cdd4ce;
+  --edge: #9aa69f;
+  --out: #0a7a6d;
+  --out-soft: #d5ece8;
+  --in: #b75917;
+  --in-soft: #f6e2d2;
+  --hook: #7d6a1f;
+  --hook-soft: #efe7c8;
+  --l-server: #3263a3;
+  --l-format: #4b5b67;
+  --l-client: #7a52a8;
+  --l-world: #4b7a36;
+  --l-tools: #a2456a;
+  --l-compute: #1f7a99;
+  --l-engine: #7d6a1f;
+  --shadow: 0 1px 2px rgba(24,33,29,.06), 0 2px 8px rgba(24,33,29,.05);
+  --f-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-code: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111614; --board: #151b18; --surface: #1c2420; --surface-2: #212a26;
+  --ink: #e4ebe6; --muted: #9eaba4; --faint: #6f7c75; --rule: #2e3833; --edge: #4f5d56;
+  --out: #3cc4b0; --out-soft: #173a35; --in: #f0955a; --in-soft: #45291a;
+  --hook: #d3b955; --hook-soft: #3a3318;
+  --l-server: #77a3e0; --l-format: #9fb0bd; --l-client: #b994e6; --l-world: #8cc06f; --l-tools: #e486ab; --l-compute: #5cc0de; --l-engine: #d3b955;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 2px 10px rgba(0,0,0,.25);
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #111614; --board: #151b18; --surface: #1c2420; --surface-2: #212a26;
+  --ink: #e4ebe6; --muted: #9eaba4; --faint: #6f7c75; --rule: #2e3833; --edge: #4f5d56;
+  --out: #3cc4b0; --out-soft: #173a35; --in: #f0955a; --in-soft: #45291a;
+  --hook: #d3b955; --hook-soft: #3a3318;
+  --l-server: #77a3e0; --l-format: #9fb0bd; --l-client: #b994e6; --l-world: #8cc06f; --l-tools: #e486ab; --l-compute: #5cc0de; --l-engine: #d3b955;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 2px 10px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-ui); font-size: 14px;
+  display: grid; grid-template-rows: auto 1fr; overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--out); outline-offset: 2px; }
+code, .mono { font-family: var(--f-code); }
+
+/* ---- toolbar ---- */
+.bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px;
+  padding-block: 12px 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--rule); background: var(--surface);
+}
+.brand { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.brand h1 { margin: 0; font-size: 18px; font-weight: 700; font-stretch: 85%; letter-spacing: .01em; text-wrap: balance; }
+.brand p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.brand p code { font-size: 11.5px; }
+.search { position: relative; flex: 1 1 240px; max-width: 360px; min-width: 0; }
+.search input {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--surface-2); color: var(--ink); font: 13px var(--f-code);
+}
+.results {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow);
+  max-height: 320px; overflow: auto;
+}
+.results li { padding: 6px 8px; border-radius: 5px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.results li[aria-selected="true"], .results li:hover { background: var(--surface-2); }
+.results .r-name { font-family: var(--f-code); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results .r-file { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.btn {
+  border: 1px solid var(--rule); background: var(--surface); border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  font-size: 12.5px; font-weight: 500;
+}
+.btn:hover { background: var(--surface-2); }
+.btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 12px; align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend i { display: inline-block; width: 22px; height: 0; border-top: 2px solid; }
+.lg-out { color: var(--out); } .lg-in { color: var(--in); } .lg-hook { color: var(--hook); } .lg-ptr { color: var(--muted); }
+.lg-ptr i { border-top-style: dashed; }
+
+/* ---- main ---- */
+.main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
+.main.no-panel { grid-template-columns: 1fr 0; }
+.viewport { overflow: auto; min-width: 0; min-height: 0; background: var(--board); position: relative; }
+.board {
+  position: relative; display: flex; align-items: flex-start; gap: 72px;
+  padding: 22px max(28px, env(safe-area-inset-left, 0px)) 80px; width: max-content;
+}
+svg.edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 1; }
+.col { width: 284px; display: flex; flex-direction: column; gap: 16px; position: relative; z-index: 2; }
+.col[hidden] { display: none !important; }
+.col-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 0 2px; min-height: 30px; }
+.col-head b { font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; font-weight: 650; color: var(--muted); }
+.col-head small { color: var(--faint); font-size: 11.5px; }
+.layer-dot { width: 8px; height: 8px; border-radius: 2px; background: var(--lc); flex: none; align-self: center; }
+
+.ent {
+  --lc: var(--l-format);
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; box-shadow: var(--shadow);
+  transition: opacity .15s, border-color .15s, box-shadow .15s;
+}
+.ent[data-layer="server"] { --lc: var(--l-server); }
+.ent[data-layer="client"] { --lc: var(--l-client); }
+.ent[data-layer="world"] { --lc: var(--l-world); }
+.ent[data-layer="tools"] { --lc: var(--l-tools); }
+.ent[data-layer="compute"] { --lc: var(--l-compute); }
+.ent[data-layer="engine"] { --lc: var(--l-engine); }
+.ent-head {
+  display: grid; grid-template-columns: 14px 1fr auto; gap: 2px 8px; align-items: center; width: 100%;
+  background: none; border: 0; padding: 10px 12px 9px; text-align: left; cursor: pointer; border-radius: 8px;
+}
+.ent-head:hover { background: var(--surface-2); }
+.chev { width: 0; height: 0; border-left: 5px solid var(--muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s; justify-self: center; }
+.ent.open .chev { transform: rotate(90deg); }
+.fname { font-family: var(--f-code); font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ent[data-layer="engine"] .fname { font-weight: 400; font-size: 12.5px; }
+.ftag { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--lc); font-weight: 650; display: inline-flex; align-items: center; gap: 5px; }
+.ftag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--lc); }
+.fmeta { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.fmeta code { font-size: 11px; }
+.ent-body { border-top: 1px solid var(--rule); padding: 4px 0 6px; }
+.sec { padding: 6px 12px 2px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 650; display: flex; justify-content: space-between; }
+.fn {
+  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; border: 0; background: none;
+  padding: 3px 12px 3px 14px; text-align: left; cursor: pointer; border-left: 3px solid transparent; min-height: 23px;
+}
+.fn:hover { background: var(--surface-2); }
+.fn .n { font-family: var(--f-code); font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fn .k { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.deg { display: inline-flex; gap: 6px; font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.more { display: block; width: calc(100% - 24px); margin: 6px 12px 2px; padding: 5px 8px; border: 1px dashed var(--rule); background: none; border-radius: 5px; color: var(--muted); font-size: 12px; cursor: pointer; text-align: left; }
+.more:hover { background: var(--surface-2); }
+
+/* focus states */
+.board.focusing .ent:not(.e-active):not(.e-rel) { opacity: .38; }
+.ent.e-active { border-color: var(--ink); }
+.ent.e-rel-out { border-color: var(--out); }
+.ent.e-rel-in { border-color: var(--in); }
+.ent.e-rel-hook { border-color: var(--hook); }
+.ent .relcount { font-size: 10.5px; font-weight: 600; border-radius: 4px; padding: 1px 5px; display: none; white-space: nowrap; }
+.ent.e-rel .relcount { display: inline-block; }
+.relcount.o { background: var(--out-soft); color: var(--out); }
+.relcount.i { background: var(--in-soft); color: var(--in); }
+.relcount.h { background: var(--hook-soft); color: var(--hook); }
+.fn.f-active { background: var(--surface-2); border-left-color: var(--ink); }
+.fn.f-active .n { font-weight: 600; }
+.fn.f-out { background: var(--out-soft); border-left-color: var(--out); }
+.fn.f-in { background: var(--in-soft); border-left-color: var(--in); }
+.fn.f-hook { background: var(--hook-soft); border-left-color: var(--hook); }
+.fn.f-sel::after { content: "pinned"; font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--surface); background: var(--ink); border-radius: 3px; padding: 1px 4px; }
+
+path.e-base { fill: none; stroke: var(--edge); opacity: .55; }
+.board.focusing path.e-base { opacity: .12; }
+path.e-base.hl-out { stroke: var(--out); opacity: .9; }
+path.e-base.hl-in { stroke: var(--in); opacity: .9; }
+path.e-base.hl-hook { stroke: var(--hook); opacity: .9; }
+path.e-fn { fill: none; stroke-width: 1.6; }
+path.e-fn.out { stroke: var(--out); }
+path.e-fn.in { stroke: var(--in); }
+path.e-fn.hook { stroke: var(--hook); }
+path.e-fn.ptr { stroke-dasharray: 5 4; }
+marker path { stroke: none; }
+#m-base path { fill: var(--edge); } #m-out path { fill: var(--out); } #m-in path { fill: var(--in); } #m-hook path { fill: var(--hook); }
+.elabel rect { fill: var(--surface); stroke: var(--rule); }
+.elabel text { font: 600 10.5px var(--f-ui); fill: var(--ink); }
+
+/* ---- panel ---- */
+.panel { border-left: 1px solid var(--rule); background: var(--surface); overflow: auto; min-width: 0; min-height: 0; }
+.main.no-panel .panel { display: none; }
+.p-inner { padding: 16px 18px 40px; display: flex; flex-direction: column; gap: 14px; }
+.p-state { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 650; }
+.p-state .pin { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.p-name { font-family: var(--f-code); font-size: 16px; font-weight: 600; word-break: break-all; margin: 0; }
+.p-where { color: var(--muted); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.p-where code { font-size: 12px; }
+.p-sig { font-family: var(--f-code); font-size: 12px; background: var(--surface-2); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.p-sum { line-height: 1.55; font-size: 13.5px; max-width: 62ch; }
+.p-sum p { margin: 0 0 8px; }
+.p-src { font-size: 11.5px; color: var(--faint); }
+.p-h { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 650; display: flex; align-items: center; gap: 8px; margin: 0; }
+.p-h.o { color: var(--out); } .p-h.i { color: var(--in); } .p-h.h { color: var(--hook); } .p-h.n { color: var(--muted); }
+.p-h .cnt { font-variant-numeric: tabular-nums; color: var(--faint); }
+.grp { display: flex; flex-direction: column; gap: 1px; }
+.grp-f { font-family: var(--f-code); font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+.grp-f.same { font-style: italic; }
+.lnk { background: none; border: 0; padding: 2px 0 2px 10px; text-align: left; cursor: pointer; font-family: var(--f-code); font-size: 12.5px; color: var(--ink); border-left: 2px solid var(--rule); }
+.lnk:hover { border-left-color: var(--ink); text-decoration: underline; }
+.lnk.ptr::after { content: " (as a pointer)"; color: var(--faint); font-family: var(--f-ui); font-size: 11px; }
+.hookrow { padding: 2px 0 2px 10px; border-left: 2px solid var(--hook-soft); font-size: 12.5px; }
+.hookrow code { font-size: 12px; }
+.hookrow small { color: var(--faint); }
+.p-empty { color: var(--muted); line-height: 1.55; font-size: 13.5px; }
+.p-empty ul { padding-left: 18px; margin: 8px 0; }
+.p-empty li { margin: 4px 0; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
+.stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); }
+.relrow { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.relrow .lnk { flex: 1; }
+.relrow small { color: var(--faint); font-variant-numeric: tabular-nums; }
+.p-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+@media (max-width: 860px) {
+  .main, .main.no-panel { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--rule); max-height: 44vh; }
+  .p-inner { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .legend, .brand p { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="bar">
+  <div class="brand">
+    <h1>Snapshot Module Map</h1>
+    <p id="tagline"></p>
+  </div>
+  <div class="search">
+    <input id="q" type="search" placeholder="Find a function or file" autocomplete="off" aria-label="Find a function or file" aria-controls="results">
+    <ul class="results" id="results" role="listbox" hidden></ul>
+  </div>
+  <div class="tools">
+    <button class="btn" id="expandAll" type="button">Expand all</button>
+    <button class="btn" id="collapseAll" type="button">Collapse all</button>
+    <button class="btn" id="engineBtn" type="button" aria-pressed="false">Engine hooks</button>
+    <button class="btn" id="panelBtn" type="button" aria-pressed="true">Details</button>
+  </div>
+  <div class="legend" aria-label="Legend">
+    <span class="lg-out"><i></i>calls</span>
+    <span class="lg-in"><i></i>called by</span>
+    <span class="lg-hook"><i></i>engine hook</span>
+    <span class="lg-ptr"><i></i>passed as a pointer</span>
+  </div>
+</header>
+
+<div class="main" id="main">
+  <div class="viewport" id="viewport">
+    <div class="board" id="board">
+      <svg class="edges" id="edges" aria-hidden="true">
+        <defs>
+          <marker id="m-base" viewBox="0 0 8 8" refX="7" refY="4" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z"/></marker>
+          <marker id="m-out" viewBox="0 0 8 8" refX="7" refY="4" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z"/></marker>
+          <marker id="m-in" viewBox="0 0 8 8" refX="7" refY="4" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z"/></marker>
+          <marker id="m-hook" viewBox="0 0 8 8" refX="7" refY="4" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z"/></marker>
+        </defs>
+        <g id="g-base"></g><g id="g-fn"></g><g id="g-lab"></g>
+      </svg>
+    </div>
+  </div>
+  <aside class="panel" id="panel" aria-live="polite"><div class="p-inner" id="pin"></div></aside>
+</div>
+
+<script type="application/json" id="data">@MODMAP_DATA@</script>
+<script>
+(function () {
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const F = D.funcs, E = D.entities, ENG = D.engine;
+const $ = (s, r) => (r || document).querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+/* ---------- model ---------- */
+const byName = {};
+for (const k in F) if (F[k].k === "function") byName[F[k].n] = k;
+const outs = {}, ins = {}, hooksIn = {};
+for (const k in F) { outs[k] = []; ins[k] = ins[k] || []; }
+for (const k in F) {
+  const f = F[k];
+  const add = (n, ptr) => { const t = byName[n]; if (!t || t === k) return; outs[k].push({ t, ptr }); (ins[t] = ins[t] || []).push({ t: k, ptr }); };
+  f.c.forEach(n => add(n, false)); f.r.forEach(n => add(n, true));
+}
+// engine entities: one per stock file; its rows are the stock functions that call in
+const engKeys = {};   // "eng:file|caller" -> {file, caller, targets:{key:[lines]}}
+for (const file in ENG) {
+  for (const caller in ENG[file].callers) {
+    const key = "eng:" + file + "|" + caller, tg = {};
+    for (const n in ENG[file].callers[caller]) {
+      const t = byName[n]; if (!t) continue;
+      tg[t] = ENG[file].callers[caller][n];
+      (hooksIn[t] = hooksIn[t] || []).push({ file, caller, lines: tg[t], key });
+    }
+    engKeys[key] = { file, caller, targets: tg };
+  }
+}
+const isEng = k => k.startsWith("eng:");
+const entOf = k => isEng(k) ? "eng:" + engKeys[k].file : F[k].e;
+const cross = (k, list) => list.filter(x => entOf(x.t) !== entOf(k));
+
+// entity -> entity weights (calls between functions), plus engine file -> entity
+const pair = {};
+const bump = (a, b, n) => { if (a === b) return; const id = a + "\u0000" + b; pair[id] = (pair[id] || 0) + n; };
+for (const k in F) for (const o of outs[k]) bump(F[k].e, F[o.t].e, 1);
+for (const key in engKeys) for (const t in engKeys[key].targets) bump("eng:" + engKeys[key].file, F[t].e, 1);
+
+const COLS = [
+  { id: "engine", title: "Engine", note: "files outside the module that call in", layer: "engine" },
+  ...D.cols
+];
+const engFiles = Object.keys(ENG).sort((a, b) => Object.keys(ENG[b].callers).length - Object.keys(ENG[a].callers).length || a.localeCompare(b));
+COLS[0].ents = engFiles.map(f => "eng:" + f);
+
+/* ---------- state ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("fmm:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("fmm:" + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } }
+};
+const S = {
+  open: new Set(store.get("open", D.open)),
+  more: new Set(),
+  engine: store.get("engine", false),
+  panel: store.get("panel", true),
+  hover: null, sel: null
+};
+
+/* ---------- render ---------- */
+const board = $("#board"), svg = $("#edges"), gBase = $("#g-base"), gFn = $("#g-fn"), gLab = $("#g-lab");
+const entEls = {}, rowEls = {};
+
+function fnSections(e) {
+  const keys = Object.keys(F).filter(k => F[k].e === e);
+  const hooked = [], cmds = [], crossing = [], inner = [];
+  for (const k of keys) {
+    const f = F[k];
+    if (f.k !== "function") cmds.push(k);
+    else if (hooksIn[k]) hooked.push(k);
+    else if (cross(k, outs[k]).length || cross(k, ins[k]).length) crossing.push(k);
+    else inner.push(k);
+  }
+  const by = (a, b) => F[a].n.localeCompare(F[b].n);
+  return [
+    ["Called by the engine", hooked.sort(by)],
+    ["Console commands and entry points", cmds.sort(by)],
+    ["Used by other snapshot files", crossing.sort(by)],
+    ["Public, used only in this file", inner.sort(by), true]
+  ];
+}
+function engSections(id) {
+  const file = id.slice(4);
+  const keys = Object.keys(engKeys).filter(k => engKeys[k].file === file).sort((a, b) => engKeys[a].caller.localeCompare(engKeys[b].caller));
+  return [["Functions that call into the module", keys]];
+}
+function rowHTML(k) {
+  if (isEng(k)) {
+    const n = Object.keys(engKeys[k].targets).length;
+    return `<button type="button" class="fn" data-k="${esc(k)}"><span class="n">${esc(engKeys[k].caller)}</span><span class="deg" title="module functions it calls">→${n}</span></button>`;
+  }
+  const f = F[k], o = cross(k, outs[k]).length, i = cross(k, ins[k]).length + (hooksIn[k] ? hooksIn[k].length : 0);
+  const kind = f.k === "command" ? '<span class="k">cmd</span>' : f.k === "entry" ? '<span class="k">main</span>' : "";
+  return `<button type="button" class="fn" data-k="${esc(k)}"><span class="n">${esc(f.n)}</span>${kind}<span class="deg" title="calls into other files · called from other files">${o ? "→" + o : ""} ${i ? "←" + i : ""}</span></button>`;
+}
+function entHead(id) {
+  if (id.startsWith("eng:")) {
+    const file = id.slice(4), callers = Object.keys(ENG[file].callers).length;
+    let sites = 0; for (const c in ENG[file].callers) for (const n in ENG[file].callers[c]) sites += ENG[file].callers[c][n].length;
+    return { name: file.split("/").pop(), meta: `${esc(file)} · ${callers} caller${callers > 1 ? "s" : ""} · ${sites} call site${sites > 1 ? "s" : ""}`, layer: "engine" };
+  }
+  const e = E[id], n = Object.keys(F).filter(k => F[k].e === id).length;
+  const other = e.files.filter(f => f.split("/").pop() !== id.split("/").pop()).map(f => "+ <code>" + esc(f.split("/").pop()) + "</code>");
+  return { name: id, meta: [other.join(" "), e.lines.toLocaleString() + " lines", n + " public"].filter(Boolean).join(" · "), layer: e.layer };
+}
+function renderEnt(id) {
+  const h = entHead(id);
+  const open = S.open.has(id);
+  const el = entEls[id] || document.createElement("section");
+  el.className = "ent" + (open ? " open" : "");
+  el.dataset.ent = id; el.dataset.layer = h.layer;
+  let body = "";
+  if (open) {
+    const secs = id.startsWith("eng:") ? engSections(id) : fnSections(id);
+    for (const [title, keys, folded] of secs) {
+      if (!keys.length) continue;
+      if (folded && !S.more.has(id)) { body += `<button type="button" class="more" data-more="${esc(id)}">Show ${keys.length} public function${keys.length > 1 ? "s" : ""} used only in this file</button>`; continue; }
+      body += `<div class="sec"><span>${title}</span><span>${keys.length}</span></div>` + keys.map(rowHTML).join("");
+    }
+  }
+  el.innerHTML = `<button type="button" class="ent-head" aria-expanded="${open}" data-head="${esc(id)}">
+      <span class="chev" aria-hidden="true"></span><span class="fname">${esc(h.name)}</span><span class="ftag">${h.layer}</span>
+      <span></span><span class="fmeta">${h.meta} <span class="relcount o"></span> <span class="relcount i"></span> <span class="relcount h"></span></span>
+    </button>` + (open ? `<div class="ent-body">${body}</div>` : "");
+  entEls[id] = el;
+  el.querySelectorAll(".fn").forEach(b => { rowEls[b.dataset.k] = b; });
+  return el;
+}
+function renderAll() {
+  for (const k in rowEls) delete rowEls[k];
+  board.querySelectorAll(".col").forEach(c => c.remove());
+  for (const c of COLS) {
+    const col = document.createElement("div");
+    col.className = "col"; col.dataset.col = c.id; col.hidden = c.id === "engine" && !S.engine;
+    col.innerHTML = `<div class="col-head" style="--lc:var(--l-${c.layer})"><span class="layer-dot"></span><b>${c.title}</b><small>${c.note}</small></div>`;
+    for (const id of c.ents) col.appendChild(renderEnt(id));
+    board.appendChild(col);
+  }
+  applyFocus();
+}
+function rerenderEnt(id) {
+  const el = entEls[id];
+  el.querySelectorAll(".fn").forEach(b => { delete rowEls[b.dataset.k]; });
+  renderEnt(id);
+  applyFocus();
+}
+
+/* ---------- geometry ---------- */
+function boxOf(el) {
+  const b = board.getBoundingClientRect(), r = el.getBoundingClientRect();
+  return { l: r.left - b.left, r: r.right - b.left, t: r.top - b.top, b: r.bottom - b.top, cy: (r.top + r.bottom) / 2 - b.top, cx: (r.left + r.right) / 2 - b.left };
+}
+function visibleRow(k) { const el = rowEls[k]; return el && el.isConnected && el.offsetParent ? el : null; }
+function anchorEl(k) { return visibleRow(k) || entHeadEl(entOf(k)); }
+function entHeadEl(id) { const el = entEls[id]; return el && el.offsetParent ? el.querySelector(".ent-head") : null; }
+function curve(a, b, cls, marker, width) {
+  const A = boxOf(a), B = boxOf(b);
+  let x1, x2, d;
+  if (Math.abs(A.cx - B.cx) < 40) {
+    x1 = A.r; x2 = B.r;
+    const bulge = 36 + Math.min(120, Math.abs(A.cy - B.cy) * 0.12);
+    d = `M${x1},${A.cy} C${x1 + bulge},${A.cy} ${x2 + bulge},${B.cy} ${x2 + 2},${B.cy}`;
+  } else {
+    const fwd = B.cx > A.cx;
+    x1 = fwd ? A.r : A.l; x2 = fwd ? B.l : B.r;
+    const dx = Math.max(40, Math.abs(x2 - x1) * 0.45) * (fwd ? 1 : -1);
+    d = `M${x1},${A.cy} C${x1 + dx},${A.cy} ${x2 - dx},${B.cy} ${x2 + (fwd ? -2 : 2)},${B.cy}`;
+  }
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", d); p.setAttribute("class", cls);
+  if (marker) p.setAttribute("marker-end", `url(#${marker})`);
+  if (width) p.setAttribute("stroke-width", width);
+  return p;
+}
+function label(a, b, text, cls) {
+  const A = boxOf(a), B = boxOf(b);
+  const same = Math.abs(A.cx - B.cx) < 40;
+  const x = same ? Math.max(A.r, B.r) + 30 + Math.min(80, Math.abs(A.cy - B.cy) * 0.09) : (A.cx + B.cx) / 2;
+  const y = (A.cy + B.cy) / 2;
+  const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  g.setAttribute("class", "elabel " + cls);
+  const w = 8 + String(text).length * 6.4;
+  g.innerHTML = `<rect x="${x - w / 2}" y="${y - 9}" width="${w}" height="18" rx="4"></rect><text x="${x}" y="${y + 4}" text-anchor="middle">${esc(text)}</text>`;
+  return g;
+}
+
+/* ---------- focus ---------- */
+function related(key) {
+  const r = { active: key, outs: [], ins: [], hooks: [], ents: { out: {}, in: {}, hook: {} } };
+  if (!key) return r;
+  if (key.startsWith("ent:")) {
+    const id = key.slice(4);
+    for (const p in pair) {
+      const [a, b] = p.split("\u0000");
+      if (a === id) r.ents[a.startsWith("eng:") ? "hook" : "out"][b] = pair[p];
+      if (b === id) r.ents[a.startsWith("eng:") ? "hook" : "in"][a] = pair[p];
+    }
+    return r;
+  }
+  if (isEng(key)) {
+    for (const t in engKeys[key].targets) { r.hooks.push({ t }); r.ents.hook[F[t].e] = (r.ents.hook[F[t].e] || 0) + 1; }
+    return r;
+  }
+  r.outs = outs[key]; r.ins = ins[key]; r.hooks = (hooksIn[key] || []).map(h => ({ t: h.key, h }));
+  const me = F[key].e;
+  for (const o of r.outs) if (F[o.t].e !== me) r.ents.out[F[o.t].e] = (r.ents.out[F[o.t].e] || 0) + 1;
+  for (const o of r.ins) if (F[o.t].e !== me) r.ents.in[F[o.t].e] = (r.ents.in[F[o.t].e] || 0) + 1;
+  for (const h of r.hooks) { const id = "eng:" + h.h.file; r.ents.hook[id] = (r.ents.hook[id] || 0) + 1; }
+  return r;
+}
+let lastRel = related(null);
+function applyFocus() {
+  const key = S.hover || S.sel;
+  const R = related(key);
+  lastRel = R;
+  board.classList.toggle("focusing", !!key);
+  for (const id in entEls) {
+    const el = entEls[id];
+    el.classList.remove("e-active", "e-rel", "e-rel-out", "e-rel-in", "e-rel-hook");
+    const o = R.ents.out[id], i = R.ents.in[id], h = R.ents.hook[id];
+    if (o) el.classList.add("e-rel", "e-rel-out");
+    if (i) el.classList.add("e-rel", "e-rel-in");
+    if (h) el.classList.add("e-rel", "e-rel-hook");
+    const rc = el.querySelectorAll(".relcount");
+    rc[0].textContent = o ? (key && key.startsWith("ent:") ? `called ${o}×` : `calls ${o}`) : "";
+    rc[1].textContent = i ? (key && key.startsWith("ent:") ? `calls in ${i}×` : `called by ${i}`) : "";
+    rc[2].textContent = h ? (key && key.startsWith("ent:") ? `hook ${h}×` : `${h} hook${h > 1 ? "s" : ""}`) : "";
+    rc[0].style.display = o ? "" : "none"; rc[1].style.display = i ? "" : "none"; rc[2].style.display = h ? "" : "none";
+  }
+  if (key) {
+    const ownEnt = key.startsWith("ent:") ? key.slice(4) : entOf(key);
+    if (entEls[ownEnt]) entEls[ownEnt].classList.add("e-active", "e-rel");
+  }
+  for (const k in rowEls) rowEls[k].classList.remove("f-active", "f-out", "f-in", "f-hook", "f-sel");
+  if (key && rowEls[key]) rowEls[key].classList.add("f-active");
+  if (S.sel && rowEls[S.sel]) rowEls[S.sel].classList.add("f-sel");
+  for (const o of R.outs) rowEls[o.t] && rowEls[o.t].classList.add("f-out");
+  for (const o of R.ins) rowEls[o.t] && rowEls[o.t].classList.add("f-in");
+  for (const h of R.hooks) rowEls[h.t] && rowEls[h.t].classList.add("f-hook");
+  drawEdges();
+  renderPanel();
+}
+function drawEdges() {
+  const R = lastRel, key = R.active;
+  svg.setAttribute("width", board.scrollWidth); svg.setAttribute("height", board.scrollHeight);
+  gBase.textContent = ""; gFn.textContent = ""; gLab.textContent = "";
+  const entKey = key && key.startsWith("ent:") ? key.slice(4) : null;
+  for (const p in pair) {
+    const [a, b] = p.split("\u0000");
+    const A = entHeadEl(a), B = entHeadEl(b);
+    if (!A || !B) continue;
+    const ea = entEls[a], eb = entEls[b];
+    const n = pair[p];
+    let cls = "e-base", mk = "m-base";
+    if (entKey && (a === entKey || b === entKey)) {
+      const hk = a.startsWith("eng:");
+      cls += hk ? " hl-hook" : a === entKey ? " hl-out" : " hl-in"; mk = hk ? "m-hook" : a === entKey ? "m-out" : "m-in";
+    }
+    const pth = curve(ea, eb, cls, mk, (1 + Math.log2(n) * 0.8).toFixed(2));
+    gBase.appendChild(pth);
+    if (entKey && (a === entKey || b === entKey)) gLab.appendChild(label(ea, eb, n, ""));
+  }
+  if (!key || entKey) return;
+  // function-level edges, bundled per target file where the target row is not shown
+  const src = anchorEl(key);
+  if (!src) return;
+  const draw = (list, dir) => {
+    const bundles = {};
+    for (const o of list) {
+      if (entOf(o.t) === entOf(key)) continue;
+      const row = visibleRow(o.t);
+      if (row) {
+        const a = dir === "in" ? row : src, b = dir === "in" ? src : row;
+        gFn.appendChild(curve(a, b, `e-fn ${dir}${o.ptr ? " ptr" : ""}`, "m-" + dir));
+      } else {
+        const id = entOf(o.t); (bundles[id] = bundles[id] || []).push(o);
+      }
+    }
+    for (const id in bundles) {
+      const head = entHeadEl(id); if (!head) continue;
+      const a = dir === "in" ? head : src, b = dir === "in" ? src : head;
+      gFn.appendChild(curve(a, b, `e-fn ${dir}`, "m-" + dir, 1.6 + Math.log2(bundles[id].length) * 0.8));
+      if (bundles[id].length > 1) gLab.appendChild(label(a, b, bundles[id].length, ""));
+    }
+  };
+  if (isEng(key)) draw(R.hooks.map(h => ({ t: h.t })), "hook");
+  else { draw(R.outs, "out"); draw(R.ins, "in"); draw(R.hooks.map(h => ({ t: h.t })), "hook"); }
+}
+// hook edges run from the engine caller into the function
+const _draw = drawEdges;
+
+/* ---------- panel ---------- */
+const pin = $("#pin");
+function paragraphs(s) {
+  return s.split(/(?<=\.)\s+(?=[A-Z`(])/).reduce((acc, sent) => {
+    const last = acc[acc.length - 1];
+    if (last && last.length + sent.length < 320) acc[acc.length - 1] = last + " " + sent; else acc.push(sent);
+    return acc;
+  }, []).map(p => `<p>${esc(p).replace(/`([^`]+)`/g, "<code>$1</code>")}</p>`).join("");
+}
+function groupList(list, me, dir) {
+  const groups = {};
+  for (const o of list) { const e = entOf(o.t); (groups[e] = groups[e] || []).push(o); }
+  const order = Object.keys(groups).sort((a, b) => (a === me) - (b === me) || groups[b].length - groups[a].length || a.localeCompare(b));
+  return order.map(e => `<div class="grp"><div class="grp-f${e === me ? " same" : ""}">${e === me ? "same file" : esc(e.replace(/^eng:/, ""))}</div>` +
+    groups[e].sort((a, b) => F[a.t].n.localeCompare(F[b.t].n)).map(o => `<button type="button" class="lnk${o.ptr ? " ptr" : ""}" data-go="${esc(o.t)}">${esc(F[o.t].n)}</button>`).join("") + "</div>").join("");
+}
+function stateLine() {
+  const hov = S.hover && S.hover !== S.sel;
+  const what = hov ? "Previewing" : S.sel ? "Pinned" : "";
+  const btn = S.sel ? `<button type="button" class="btn pin" id="unpin">Unpin</button>` : "";
+  return `<div class="p-state"><span>${what}</span>${btn}</div>`;
+}
+function renderPanel() {
+  const key = S.hover || S.sel;
+  if (!key) {
+    const nf = Object.keys(F).length, nPub = Object.values(F).filter(f => f.k === "function").length;
+    let sites = 0; for (const k in hooksIn) sites += hooksIn[k].reduce((s, h) => s + h.lines.length, 0);
+    pin.innerHTML = `<div class="p-state"><span>Overview</span></div>
+      <div class="stats"><div class="stat"><b>${Object.keys(E).length}</b><span>snapshot files</span></div><div class="stat"><b>${nPub}</b><span>public functions</span></div><div class="stat"><b>${nf - nPub}</b><span>commands and mains</span></div>
+      <div class="stat"><b>${Object.keys(pair).filter(p => !p.startsWith("eng:")).length}</b><span>file-to-file links</span></div><div class="stat"><b>${engFiles.length}</b><span>engine files</span></div><div class="stat"><b>${sites}</b><span>engine call sites</span></div></div>
+      <div class="p-empty"><ul>
+        <li>Click a file to open it and list its public functions, grouped by who uses them.</li>
+        <li>Hover a function to preview its calls (teal) and callers (orange); click it to pin it here.</li>
+        <li>Lines between closed files are bundled, with the count on the line.</li>
+        <li><b>Engine hooks</b> adds the engine files outside the module that call into it.</li>
+        <li>Esc unpins. Names in this panel are links.</li></ul>
+        <p>Calls are found in each public function's body and in the file-local helpers it reaches, so a public function is credited with what its helpers call. Summaries are the comment on or above each declaration, or at its definition where the declaration has none, or else the guide page's sentence naming it or its family. Engine calls are counted by site and named by the function that makes them.</p></div>`;
+    return;
+  }
+  if (key.startsWith("ent:")) return renderEntPanel(key.slice(4));
+  if (isEng(key)) {
+    const g = engKeys[key];
+    const list = Object.keys(g.targets).map(t => ({ t }));
+    pin.innerHTML = stateLine() + `<h2 class="p-name">${esc(g.caller)}</h2>
+      <div class="p-where"><span>Stock file <code>${esc(g.file)}</code></span></div>
+      <p class="p-src">An engine function outside the module that calls into it, at ${Object.values(g.targets).flat().length} site${Object.values(g.targets).flat().length > 1 ? "s" : ""}.</p>
+      <h3 class="p-h h">Calls into the module <span class="cnt">${list.length}</span></h3>${groupList(list, null)}`;
+    return;
+  }
+  const f = F[key], me = f.e;
+  const xo = outs[key], xi = ins[key], hk = hooksIn[key] || [];
+  const sig = f.k === "function" ? `${esc(f.ret)} ${esc(f.n)}${esc(f.sig || "()")}`.replace(/,/g, ", ") : f.k === "command" ? `console command  ${esc(f.n)}` : `int main()  standalone`;
+  const page = E[me].page;
+  const src = f.src === "comment" ? `From the comment above it in <code>${esc(f.h.split("/").pop())}</code>.` : f.src === "def" ? `From the comment above its definition in <code>${esc(f.f.split("/").pop())}</code>.` : f.src === "guide" ? `No comment on the declaration; this is the sentence naming it in <code>${esc(page)}</code>.` : `No comment on the declaration, and no sentence on <code>${esc(page || "")}</code> names it alone.`;
+  pin.innerHTML = stateLine() + `<h2 class="p-name">${esc(f.n)}</h2>
+    <div class="p-where"><span><code>${esc(f.f)}</code></span><span>${f.k === "function" ? "declared in <code>" + esc(f.h) + "</code>" : ""}</span></div>
+    <div class="p-sig">${sig}</div>
+    <div class="p-sum">${f.s ? paragraphs(f.s) : '<p class="p-empty">No summary.</p>'}</div>
+    <p class="p-src">${src}</p>
+    ${xo.length ? `<h3 class="p-h o">Calls <span class="cnt">${xo.length}</span></h3>${groupList(xo, me)}` : ""}
+    ${xi.length ? `<h3 class="p-h i">Called by <span class="cnt">${xi.length}</span></h3>${groupList(xi, me)}` : ""}
+    ${hk.length ? `<h3 class="p-h h">Called from the engine <span class="cnt">${hk.reduce((s, h) => s + h.lines.length, 0)} sites</span></h3>` + hk.map(h => `<div class="hookrow"><button type="button" class="lnk" data-go="${esc(h.key)}">${esc(h.caller)}</button> <small>${esc(h.file)}, ${h.lines.length} site${h.lines.length > 1 ? "s" : ""}</small></div>`).join("") : ""}
+    ${!xo.length && !xi.length && !hk.length ? '<p class="p-empty">No calls to or from other snapshot functions.</p>' : ""}
+    <div class="p-actions">${openRelatedBtn(key)}</div>`;
+}
+function openRelatedBtn(key) {
+  const R = related(key), ids = new Set([...Object.keys(R.ents.out), ...Object.keys(R.ents.in), ...(S.engine ? Object.keys(R.ents.hook) : [])]);
+  const closed = [...ids].filter(id => !S.open.has(id) && entEls[id]);
+  return closed.length ? `<button type="button" class="btn" id="openRel">Open ${closed.length} related file${closed.length > 1 ? "s" : ""}</button>` : "";
+}
+function renderEntPanel(id) {
+  const R = related("ent:" + id);
+  const rows = (obj, dir) => Object.keys(obj).sort((a, b) => obj[b] - obj[a]).map(e => `<div class="relrow"><button type="button" class="lnk" data-goent="${esc(e)}">${esc(e.replace(/^eng:/, ""))}</button><small>${obj[e]} call${obj[e] > 1 ? "s" : ""}</small></div>`).join("");
+  if (id.startsWith("eng:")) {
+    const h = entHead(id);
+    pin.innerHTML = stateLine() + `<h2 class="p-name">${esc(id.slice(4))}</h2><div class="p-where"><span>${h.meta}</span></div>
+      <p class="p-sum">An engine file outside the module. These are its calls into the module, the hooks the port carries.</p>
+      <h3 class="p-h h">Calls into <span class="cnt">${Object.keys(R.ents.hook).length}</span></h3>${rows(Object.fromEntries(Object.entries(pair).filter(([p]) => p.startsWith(id + "\u0000")).map(([p, n]) => [p.split("\u0000")[1], n])), "out")}`;
+    return;
+  }
+  const e = E[id], fns = Object.keys(F).filter(k => F[k].e === id);
+  const hookSites = fns.reduce((s, k) => s + (hooksIn[k] || []).reduce((t, h) => t + h.lines.length, 0), 0);
+  pin.innerHTML = stateLine() + `<h2 class="p-name">${esc(id)}</h2>
+    <div class="p-where">${e.files.map(f => `<code>${esc(f)}</code>`).join("")}</div>
+    <div class="stats"><div class="stat"><b>${e.lines.toLocaleString()}</b><span>lines</span></div><div class="stat"><b>${fns.length}</b><span>public</span></div><div class="stat"><b>${hookSites}</b><span>engine call sites</span></div></div>
+    <div class="p-sum">${paragraphs(e.resp)}</div>
+    <p class="p-src">From the description at the top of <code>${esc(e.files[0].split("/").pop())}</code>${e.page ? `; its guide page is <code>${esc(e.page)}</code>` : ""}.</p>
+    ${Object.keys(R.ents.out).length ? `<h3 class="p-h o">Calls into</h3>${rows(R.ents.out)}` : ""}
+    ${Object.keys(R.ents.in).length ? `<h3 class="p-h i">Called from</h3>${rows(R.ents.in)}` : ""}
+    ${Object.keys(R.ents.hook).length ? `<h3 class="p-h h">Called from the engine</h3>${rows(R.ents.hook)}` : ""}`;
+}
+
+/* ---------- interaction ---------- */
+function setHover(k) { if (S.hover === k) return; S.hover = k; applyFocus(); }
+function select(k, opts) {
+  S.sel = (S.sel === k && !(opts && opts.keep)) ? null : k;
+  S.hover = null;
+  applyFocus();
+}
+function reveal(k) {
+  const id = k.startsWith("ent:") ? k.slice(4) : entOf(k);
+  if (id.startsWith("eng:") && !S.engine) setEngine(true);
+  let changed = false;
+  if (!S.open.has(id)) { S.open.add(id); changed = true; }
+  if (!k.startsWith("ent:") && !isEng(k) && !rowEls[k]) { S.more.add(id); changed = true; }
+  if (changed) { saveOpen(); rerenderEnt(id); }
+  const el = k.startsWith("ent:") ? entEls[id] : rowEls[k];
+  if (el) el.scrollIntoView({ block: "center", inline: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
+function saveOpen() { store.set("open", [...S.open]); }
+function setEngine(on) {
+  S.engine = on; store.set("engine", on);
+  $("#engineBtn").setAttribute("aria-pressed", on);
+  board.querySelector('.col[data-col="engine"]').hidden = !on;
+  applyFocus();
+}
+
+board.addEventListener("click", ev => {
+  const head = ev.target.closest("[data-head]");
+  if (head) {
+    const id = head.dataset.head;
+    if (S.open.has(id)) S.open.delete(id); else S.open.add(id);
+    saveOpen(); rerenderEnt(id);
+    entEls[id].querySelector(".ent-head").focus({ preventScroll: true });
+    select("ent:" + id, { keep: true });
+    return;
+  }
+  const more = ev.target.closest("[data-more]");
+  if (more) { S.more.add(more.dataset.more); rerenderEnt(more.dataset.more); return; }
+  const row = ev.target.closest(".fn");
+  if (row) select(row.dataset.k);
+});
+board.addEventListener("pointerover", ev => {
+  const row = ev.target.closest(".fn");
+  if (row) return setHover(row.dataset.k);
+  const head = ev.target.closest("[data-head]");
+  if (head) return setHover("ent:" + head.dataset.head);
+});
+board.addEventListener("pointerleave", () => setHover(null));
+board.addEventListener("pointerout", ev => {
+  if (!ev.relatedTarget || !board.contains(ev.relatedTarget)) return;
+  if (!ev.relatedTarget.closest(".fn,[data-head]")) setHover(null);
+});
+board.addEventListener("focusin", ev => {
+  const row = ev.target.closest(".fn"); if (row) return setHover(row.dataset.k);
+  const head = ev.target.closest("[data-head]"); if (head) setHover("ent:" + head.dataset.head);
+});
+board.addEventListener("focusout", ev => { if (!board.contains(ev.relatedTarget)) setHover(null); });
+
+$("#panel").addEventListener("click", ev => {
+  const go = ev.target.closest("[data-go]");
+  if (go) { const k = go.dataset.go; reveal(k); select(k, { keep: true }); return; }
+  const ge = ev.target.closest("[data-goent]");
+  if (ge) { const id = ge.dataset.goent; reveal("ent:" + id); select("ent:" + id, { keep: true }); return; }
+  if (ev.target.closest("#unpin")) { S.sel = null; S.hover = null; applyFocus(); return; }
+  if (ev.target.closest("#openRel")) {
+    const R = related(S.hover || S.sel);
+    for (const id of [...Object.keys(R.ents.out), ...Object.keys(R.ents.in), ...(S.engine ? Object.keys(R.ents.hook) : [])]) if (entEls[id] && !S.open.has(id)) { S.open.add(id); renderEnt(id); }
+    saveOpen(); applyFocus();
+  }
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && document.activeElement !== $("#q")) { S.sel = null; S.hover = null; applyFocus(); }
+});
+$("#expandAll").addEventListener("click", () => { for (const c of COLS) if (c.id !== "engine" || S.engine) c.ents.forEach(id => S.open.add(id)); saveOpen(); renderAll(); });
+$("#collapseAll").addEventListener("click", () => { S.open.clear(); S.more.clear(); saveOpen(); renderAll(); });
+$("#engineBtn").addEventListener("click", () => setEngine(!S.engine));
+$("#panelBtn").addEventListener("click", () => {
+  S.panel = !S.panel; store.set("panel", S.panel);
+  $("#panelBtn").setAttribute("aria-pressed", S.panel);
+  $("#main").classList.toggle("no-panel", !S.panel);
+  requestAnimationFrame(drawEdges);
+});
+
+/* ---------- search ---------- */
+const q = $("#q"), res = $("#results");
+const index = [
+  ...Object.keys(F).map(k => ({ k, name: F[k].n, file: F[k].e, kind: F[k].k })),
+  ...Object.keys(E).map(id => ({ k: "ent:" + id, name: id, file: "file", kind: "file" })),
+  ...Object.keys(engKeys).map(k => ({ k, name: engKeys[k].caller, file: engKeys[k].file, kind: "engine" }))
+];
+let hits = [], hi = 0;
+function search() {
+  const s = q.value.trim().toLowerCase();
+  if (!s) { res.hidden = true; return; }
+  hits = index.filter(x => x.name.toLowerCase().includes(s))
+    .sort((a, b) => (a.name.toLowerCase().indexOf(s) - b.name.toLowerCase().indexOf(s)) || a.name.length - b.name.length).slice(0, 14);
+  hi = 0;
+  res.innerHTML = hits.length ? hits.map((x, i) => `<li role="option" data-i="${i}" aria-selected="${i === hi}"><span class="r-name">${esc(x.name)}</span><span class="r-file">${esc(x.kind === "file" ? "file" : x.file)}</span></li>`).join("") : `<li aria-disabled="true"><span class="r-file">No function or file matches.</span></li>`;
+  res.hidden = false;
+}
+function choose(i) {
+  const x = hits[i]; if (!x) return;
+  res.hidden = true; q.blur();
+  reveal(x.k); select(x.k, { keep: true });
+}
+q.addEventListener("input", search);
+q.addEventListener("keydown", ev => {
+  if (res.hidden) return;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault(); hi = (hi + (ev.key === "ArrowDown" ? 1 : -1) + hits.length) % hits.length;
+    res.querySelectorAll("li").forEach((li, i) => li.setAttribute("aria-selected", i === hi));
+  } else if (ev.key === "Enter") { ev.preventDefault(); choose(hi); }
+  else if (ev.key === "Escape") { res.hidden = true; }
+});
+res.addEventListener("mousedown", ev => { const li = ev.target.closest("li[data-i]"); if (li) { ev.preventDefault(); choose(+li.dataset.i); } });
+q.addEventListener("blur", () => setTimeout(() => { res.hidden = true; }, 120));
+
+/* ---------- boot ---------- */
+$("#tagline").innerHTML = `Every source file of <code>features/net-snapshot</code> and its tools at <code>${esc(D.tag)}</code>, the functions and commands each declares, and the calls between them.`;
+$("#engineBtn").setAttribute("aria-pressed", S.engine);
+$("#panelBtn").setAttribute("aria-pressed", S.panel);
+$("#main").classList.toggle("no-panel", !S.panel);
+renderAll();
+let raf = 0;
+const redraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(drawEdges); };
+if (window.ResizeObserver) new ResizeObserver(redraw).observe(board);
+window.addEventListener("resize", redraw);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
+})();
+</script>

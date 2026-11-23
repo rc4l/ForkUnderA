@@ -1,6 +1,6 @@
 # tools: the offline readers and the anchor comparison
 
-Covers: tools/snapshot/csnap2.py, tools/snapshot/snap_payload.py, tools/snapshot/zsnap_info.py, tools/snapshot/wide_count.py, tools/snapshot/presence_diff.py, tools/snapshot/snap_anchor_compare.py, tools/snapshot/snap_anchor_compare_test.py, tools/snapshot/doccheck.py
+Covers: tools/snapshot/csnap2.py, tools/snapshot/snap_payload.py, tools/snapshot/zsnap_info.py, tools/snapshot/wide_count.py, tools/snapshot/presence_diff.py, tools/snapshot/snap_anchor_compare.py, tools/snapshot/snap_anchor_compare_test.py, tools/snapshot/doccheck.py, tools/snapshot/modmap.py
 
 ## Responsibility
 
@@ -9,7 +9,8 @@ server `.zsnap` ([stream.md](stream.md)); `csnap2.py` summarises a client `.csna
 ([record.md](record.md)); `wide_count.py` prices wide positions on one; all three walk payloads with
 `snap_payload.py`, the one Python copy of the record layout. `presence_diff.py` compares the
 presence logs of a server and a client. `snap_anchor_compare.py` holds a replay report to the
-source tree's. The design: [The recorders](design.md#94-the-recorders) and [Appendix
+source tree's. `doccheck.py` holds this guide to the code, and `modmap.py` draws the module map
+from it. The design: [The recorders](design.md#94-the-recorders) and [Appendix
 B](design.md#appendix-b--the-zsnap-fixture-format).
 
 The source tree's standalone runner and its fuzzer are not here. Step 1 replaced all three of their
@@ -162,6 +163,25 @@ module's own comments: a `.md` a comment names must exist, and none of the sourc
 or unit names may appear, the port having renamed every one. A page, a module file and the
 module's README cite code by function, never by line number, since line numbers move. It runs
 in CI beside the other tool tests.
+
+## modmap.py
+
+```
+python3 tools/snapshot/modmap.py [-o OUT.html] [--standalone] [--tag TAG]
+```
+
+Writes the module map: one page with every source file of the module and its tools grouped into
+parts by column, the public functions and commands each declares, the calls between them, and the
+engine functions that call in, counted by site. The page is `modmap.html` with the data filled
+in; it is written to be published as a page, and `--standalone` adds the document around it so
+the file opens in a browser as it is. The header names the commit it was made at.
+
+What it reads is in its own header. The parts are a table in the script (`COLUMNS`), and a module
+source that no part claims fails the run, as does a part that yields nothing, so a new file is
+placed before a map is made. Its public functions are the ones `doccheck.py` finds, read the same
+way. A function's summary is the comment on or above its declaration, else at its definition,
+else the sentence of its guide page naming it or its family; calls are credited through the
+file-local helpers a function reaches. It is run by hand before the map is published, not in CI.
 
 ## Rules that must hold
 
