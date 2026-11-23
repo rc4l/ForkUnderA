@@ -2110,7 +2110,7 @@ void G_FinishTravel ()
 
 				// [Kaori-Chani] features/net-snapshot: a new id, the old one having been handed
 				// to another actor while this item travelled.
-				if (( NETWORK_InClientMode( ) == false ) && ( inv->NetID != 0 )
+				if (( zx::net::InClientMode( ) == false ) && ( inv->NetID != 0 )
 					&& ( g_ActorNetIDList.findPointerByID( inv->NetID ) != inv ))
 				{
 					inv->NetID = g_ActorNetIDList.getNewID( );
