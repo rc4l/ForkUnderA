@@ -137,7 +137,7 @@ extern unsigned long long g_applyDeltaRaw;
 //*****************************************************************************
 //
 // One snapshot datagram, decoded by the same code that reads recorded fixtures
-// and acked (cl_snapshot.md).
+// and acked (apply.md).
 //
 void zx::netsnapshot::OnSnapshot( BYTESTREAM_s * pByteStream )
 {

@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_interest_compute.cpp
+// Filename: interest_compute.cpp
 //
-// Description: The server's interest scoring. See snap_interest_compute.h.
+// Description: The server's interest scoring. See interest_compute.h.
 //
 //-----------------------------------------------------------------------------
 
@@ -172,7 +172,7 @@ unsigned int zx::netsnapshot::ComputeTier(const SnapTierIn& in, SnapTierOut& out
 	}
 
 	// The interest cull, out of view or past fua_snap_cull_dist, missiles and
-	// terminal sequences exempt (sv_snapclient.md, The bands).
+	// terminal sequences exempt (clienttrack.md, The bands).
 	if ((in.pri & (SNAPPRI_MISSILE | SNAPPRI_TERMINAL)) == 0)
 	{
 		const long long cullSq = (long long)in.cullDist * (long long)in.cullDist;

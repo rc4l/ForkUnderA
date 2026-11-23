@@ -14,7 +14,7 @@
 #define ZX_NETSNAPSHOT_CLIENTTRACK_H
 
 // Per-client snapshot state: each client is delta'd against `sent`, and its
-// acks fold into `believed` (sv_snapclient.md, The model).
+// acks fold into `believed` (clienttrack.md, The model).
 
 #include "features/net-snapshot/format.h"
 #include "features/net-snapshot/computation/interest_compute.h"	// the bands, priority hints and scheduler constants

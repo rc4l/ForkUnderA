@@ -2,13 +2,13 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_smooth_compute.h
+// Filename: smooth_compute.h
 //
 // Description: The mirrors' error smoothing: one frame of the offset that
 // carries a ghost from where it was drawn to its new target, which stepped
 // ghosts it applies to, which threshold an extrapolated ghost takes by its
 // kind, what it reads of a sampled pose, and for a ghost it leaves alone, the
-// renderer's slide over the tic. Pure: cl_ghostactor.cpp and cl_replay.cpp own
+// renderer's slide over the tic. Pure: ghostactor.cpp and csnap_replay.cpp own
 // the state and the census.
 //
 //-----------------------------------------------------------------------------
@@ -20,7 +20,7 @@
 #include "features/net-snapshot/computation/sample_compute.h"	// SnapGhostPose
 
 // One ghost's smoothing, the drawn position being the target plus an offset
-// that decays over the record gap (cl_ghostactor.md).
+// that decays over the record gap (ghostactor.md).
 struct SnapSmooth
 {
 	// Floats for 65,536 entries of a few units, drawn at target plus
@@ -99,7 +99,7 @@ bool ComputeSmoothStepPop(int pop, unsigned int id, int localPlayer,
 }} // namespace zx::netsnapshot
 
 // One cell of the extrapolated census, split by kind and by what
-// dated it (cl_ghostactor.md).
+// dated it (ghostactor.md).
 struct SnapSmoothSplit
 {
 	unsigned int	folds, snaps, snapsBack, reversed, moving;

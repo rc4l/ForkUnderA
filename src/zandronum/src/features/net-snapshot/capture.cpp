@@ -244,7 +244,7 @@ CVAR(Int, fua_snap_entergrade, 2, CVAR_NOSETBYACS)
 //*****************************************************************************
 //	SERVER-SIDE CAPTURE (format definitions live in format.h)
 
-// An actor's render style as a legacy ERenderStyle index (snap_format.md).
+// An actor's render style as a legacy ERenderStyle index (format.md).
 static BYTE snap_LegacyStyleIndex(const FRenderStyle& style)
 {
 	for (int i = 0; i < STYLE_Count; ++i)
@@ -3841,7 +3841,7 @@ static void snap_SendToClients()
 		}
 
 		// One unreliable datagram per chunk, the loss injector rolling for
-		// each, and a dropped one counted as if it left (sv_snapshot.md).
+		// each, and a dropped one counted as if it left (capture.md).
 		for (unsigned int c = 0; c < g_chunks.Size(); ++c)
 		{
 			const SnapChunk& ch = g_chunks[c];
@@ -6294,7 +6294,7 @@ typedef char snap_AssertEffectBits[
 //	PLANE WRITE TRACE
 //
 // Every plane write from outside a mover thinker, linked sectors' too, by
-// sector index (sv_snapshot.md).
+// sector index (capture.md).
 CVAR(Int, fua_csnap_planetrace, 0, CVAR_NOSETBYACS)	// sector index, -1 all, 0 off
 
 // Report of the sector link graph, taken by the join sector pass.
@@ -6352,7 +6352,7 @@ void zx::netsnapshot::TracePlaneWrite(sector_t * pSec, int plane, const char * p
 //*****************************************************************************
 //	WHOLE-MAP PLANE DUMP
 //
-// Dumps sector planes by index to diff across machines (sv_snapshot.md): every
+// Dumps sector planes by index to diff across machines (capture.md): every
 // mover or tagged sector, `all`, or one index and its linked sectors.
 CCMD(fua_snap_planedump)
 {

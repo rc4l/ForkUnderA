@@ -17,7 +17,7 @@
 #include "features/net-snapshot/format.h"
 
 // The pump, at the end of every SERVER_Tick: the capture, each client's delta
-// sent as SVC2_SNAPSHOT datagrams, and the statistics (sv_snapshot.md).
+// sent as SVC2_SNAPSHOT datagrams, and the statistics (capture.md).
 
 namespace zx { namespace netsnapshot {
 
@@ -26,7 +26,7 @@ void ServerTick();
 }} // namespace zx::netsnapshot
 
 // The legacy suppression levels, each a superset of the one below, and the
-// commands each stops (sv_snapshot.md).
+// commands each stops (capture.md).
 enum
 {
 	SNAPLEGACY_MOTION		= 1,

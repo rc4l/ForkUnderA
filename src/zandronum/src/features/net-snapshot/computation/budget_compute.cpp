@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_budget_compute.cpp
+// Filename: budget_compute.cpp
 //
-// Description: The server's byte budgets. See snap_budget_compute.h.
+// Description: The server's byte budgets. See budget_compute.h.
 //
 //-----------------------------------------------------------------------------
 

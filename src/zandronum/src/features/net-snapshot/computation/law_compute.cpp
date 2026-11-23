@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_law_compute.cpp
+// Filename: law_compute.cpp
 //
-// Description: The server's motion laws. See snap_law_compute.h.
+// Description: The server's motion laws. See law_compute.h.
 //
 //-----------------------------------------------------------------------------
 

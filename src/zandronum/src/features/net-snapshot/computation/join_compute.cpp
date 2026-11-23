@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_join_compute.cpp
+// Filename: join_compute.cpp
 //
-// Description: Which map a stream belongs to. See snap_join_compute.h.
+// Description: Which map a stream belongs to. See join_compute.h.
 //
 //-----------------------------------------------------------------------------
 

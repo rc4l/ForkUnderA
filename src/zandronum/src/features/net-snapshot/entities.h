@@ -50,7 +50,7 @@ void MissileStatsReset();
 }} // namespace zx::netsnapshot
 
 // Would-be blind flight: how far extrapolating from the previous record would
-// have strayed, by tics flown blind, which sizes the cap (cl_entities.md).
+// have strayed, by tics flown blind, which sizes the cap (entities.md).
 #define CLENT_BLIND_BUCKETS	5		// <4t, 4-8t, 9-17t, 18-35t, 36t+
 struct SnapBlindPredict
 {
@@ -281,7 +281,7 @@ void LocalFireStats(unsigned int* hist, unsigned int& samples,
 
 }} // namespace zx::netsnapshot
 
-// Which exit the sampler took, per sample (cl_entities.md, Sampling).
+// Which exit the sampler took, per sample (entities.md, Sampling).
 
 struct SnapSampleCensus
 {

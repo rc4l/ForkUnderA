@@ -2,12 +2,12 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_replay_compute.h
+// Filename: replay_compute.h
 //
 // Description: The replay's statistics over plain values: the distance between
 // two positions in whole units, a histogram of errors in 0.1 u bins and its
 // p99, and the sums of the smoothing census that the replay's plan C refills
-// add, take back and split. Pure: cl_replay.cpp walks the recording and the
+// add, take back and split. Pure: csnap_replay.cpp walks the recording and the
 // ghosts and reports what these count.
 //
 //-----------------------------------------------------------------------------

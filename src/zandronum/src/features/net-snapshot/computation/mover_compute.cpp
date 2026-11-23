@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_mover_compute.cpp
+// Filename: mover_compute.cpp
 //
-// Description: The movers' decisions. See snap_mover_compute.h.
+// Description: The movers' decisions. See mover_compute.h.
 //
 //-----------------------------------------------------------------------------
 

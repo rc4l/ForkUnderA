@@ -117,7 +117,7 @@ static unsigned int g_moverLinkSuppressed = 0;
 // Legacy mid y offsets skipped on a line attached to an owned plane.
 static unsigned int g_moverMidtexSuppressed = 0;
 
-// The client's map reset window (snap_movers.md), and its counts, where
+// The client's map reset window (movers.md), and its counts, where
 // opened = closed + abandoned + one open.
 static bool g_moverResetOpen = false;
 static unsigned int g_moverResetEpoch = 0;
@@ -135,7 +135,7 @@ static BYTE g_datagramResetCount = 0;
 static bool g_inDatagram = false;
 
 // A record held back, in a reset window, before the reset count is known or
-// counted past it, coalesced per plane (snap_movers.md).
+// counted past it, coalesced per plane (movers.md).
 struct SnapMoverHeld
 {
 	int				frame;		// as ApplyingServerTic read it on arrival
@@ -707,7 +707,7 @@ void zx::netsnapshot::MoverClientStats( SnapMoverClientStats & st, bool bReset )
 }
 
 // Applies one plat record, every field but the plane, which is taken on the
-// plat's first record and at rest (snap_movers.md).
+// plat's first record and at rest (movers.md).
 void DPlat::SnapApply( const SnapMoverPlat & s, BYTE flags )
 {
 	// A record ending a wait still counting down, sampled before the
@@ -773,7 +773,7 @@ void DPlat::SnapApply( const SnapMoverPlat & s, BYTE flags )
 		}
 		m_Sector->floorplane.d = s.planeD;
 		// The plane's TexZ moves with it by the same delta, as every writer's
-		// does, or the drawn height stays where it was (snap_movers.md).
+		// does, or the drawn height stays where it was (movers.md).
 		m_Sector->ChangePlaneTexZ( sector_t::floor,
 			m_Sector->floorplane.HeightDiff( lastpos ));
 		m_Sector->AdjustFloorClip( );
@@ -817,7 +817,7 @@ static int snapmv_Plane( BYTE bit )
 }
 
 // The one map from a local mover's class to its record class, which a new class
-// needs a line in (snap_movers.md).
+// needs a line in (movers.md).
 static int snapmv_RecordClassOf( DSectorEffect * pMover )
 {
 	if ( pMover == NULL )
@@ -1026,7 +1026,7 @@ unsigned int zx::netsnapshot::MoverStaleRecords( bool bReset )
 }
 
 // Applies one mover record from the sink or the hold's replay, at the record's
-// own `frame`, finding the mover on its sector's plane (snap_movers.md).
+// own `frame`, finding the mover on its sector's plane (movers.md).
 static void snapmv_ApplyRecord( BYTE cls, BYTE flags, BYTE gen, WORD index,
 	const BYTE * pBody, unsigned int bodyBytes, int frame )
 {

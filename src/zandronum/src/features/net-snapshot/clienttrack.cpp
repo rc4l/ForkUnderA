@@ -74,7 +74,7 @@ struct SnapSentMover
 }
 
 // One datagram in flight, `seq` its delivery clock and `frame` its scheduling
-// clock (sv_snapclient.md, The model).
+// clock (clienttrack.md, The model).
 struct SnapPendingFrame
 {
 	unsigned int			seq;
@@ -96,7 +96,7 @@ struct SnapPendingFrame
 };
 
 // One branch event waiting to go to one client, sent as blind copies and then
-// dropped (sv_snapclient.md, Building a frame).
+// dropped (clienttrack.md, Building a frame).
 struct SnapPendingEvent
 {
 	SnapEntityState	state;		// the fields the event carries
@@ -134,7 +134,7 @@ struct SnapClientState
 	BYTE* present;		// parallel presence flags
 
 	// A leave sent for this id and not yet folded, nor an enter after it, so an
-	// entity back in the world meanwhile is sent enters (sv_snapclient.md).
+	// entity back in the world meanwhile is sent enters (clienttrack.md).
 	BYTE* leaving;
 	unsigned int* leaveFrame;
 	unsigned int			believedCount;
@@ -186,7 +186,7 @@ struct SnapClientState
 	BYTE* listed;		// id is in believedIds already
 
 	// Ids whose enter rode a datagram lost without proof, which the client may
-	// hold, so each is sent a leave once out of the world (sv_snapclient.md).
+	// hold, so each is sent a leave once out of the world (clienttrack.md).
 	BYTE* maybe;
 	TArray<WORD>			maybeIds;
 	WORD* lastSentFrame;	// for the aging term (wraps harmlessly)
@@ -691,7 +691,7 @@ static void snapcl_RebuildRepaired(SnapClientState& cl, unsigned int firstInFlig
 	memset(g_repairPlayer, 0, sizeof(g_repairPlayer));
 }
 
-// The reference check after every ack (sv_snapclient.md): each client's `sent`
+// The reference check after every ack (clienttrack.md): each client's `sent`
 // against `believed` with the records in flight merged over.
 CVAR(Bool, fua_snap_debug_refcheck, false, CVAR_NOSETBYACS)
 static unsigned int g_refInFlight = 0, g_refInFlightDiffer = 0;
@@ -827,7 +827,7 @@ void zx::netsnapshot::OnAck(unsigned int client, unsigned int seq, unsigned int 
 	const bool canReadBits = rd.bCanReadBits;
 
 	// Resolves pending datagrams in sequence order, stopping at the first one
-	// that may only be late (sv_snapclient.md, The model).
+	// that may only be late (clienttrack.md, The model).
 	unsigned int resolved = 0;
 	unsigned int newestFolded = 0;
 	bool haveFolded = false;
@@ -950,7 +950,7 @@ void zx::netsnapshot::OnAck(unsigned int client, unsigned int seq, unsigned int 
 //*****************************************************************************
 //	PRIORITY SCORING (design doc section 5.2)
 //
-// The bands, their constants and the classifier are snap_interest_compute's;
+// The bands, their constants and the classifier are interest_compute's;
 // this file reads the settings and the view, counts and drains.
 
 // The interest cull's distance, past which an entity is demoted, never omitted.
@@ -1105,7 +1105,7 @@ void zx::netsnapshot::OwedStats(unsigned int* byGroup, unsigned int* stale, unsi
 static unsigned int g_bandRecs[SNAPCL_TIERS_REPORT] = { 0 };
 static unsigned int g_bandPos[SNAPCL_TIERS_REPORT] = { 0 };
 
-// One record's band from snap_interest_compute, with the settings in force,
+// One record's band from interest_compute, with the settings in force,
 // and the terminal counts it returns.
 static unsigned int snapcl_Tier(const SnapEntityState& e, BYTE pri, BYTE mask,
 	const SnapViewpoint& view, double viewCos, double viewSin, unsigned int age,
@@ -1825,7 +1825,7 @@ void zx::netsnapshot::QueueEvent(unsigned int client, WORD id, BYTE type,
 	++g_evQueued;
 }
 
-// Copies, spacing and deadline from snap_interest_compute.
+// Copies, spacing and deadline from interest_compute.
 static void snapcl_EventDelivery(const SnapPendingEvent& ev, unsigned int& copies,
 	unsigned int& spacing, unsigned int& deadline)
 {
@@ -2784,7 +2784,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 
 	for (unsigned int pass = 0; (pass < 4) && (budgetHit == false); ++pass)
 	{
-		// The four passes of sv_snapclient.md's step 7, the reserve after
+		// The four passes of clienttrack.md's step 7, the reserve after
 		// pass 1, whose aging cap it would otherwise spend through.
 		if ((pass == 2) && (reservedBytes == 0))
 			continue;
@@ -2877,7 +2877,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 
 				if (emitBytes + RecordBytesMax(ServerMapFrame()) > cap)
 				{
-					// Each cap means what sv_snapclient.md's rule says, the
+					// Each cap means what clienttrack.md's rule says, the
 					// budget alone stopping everything.
 					const bool agingCapped = (pass != 0) && (t <= SNAPCL_TIER_ENTER)
 						&& (cap == agingCap) && (agingCap < budgetBytes);
@@ -3057,7 +3057,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 		s_emit.Push(&g_emitRecs[e]);
 
 	// Each record's estimated start, every id a gap, which the cut at
-	// chunkBytes - 1 bounds (sv_snapshot.md).
+	// chunkBytes - 1 bounds (capture.md).
 	unsigned int estBytes = 0;
 	{
 		SnapIdCursor est;

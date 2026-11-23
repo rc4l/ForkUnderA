@@ -16,7 +16,7 @@
 class AActor;	// declared here so an includer needs no particular header order
 
 // Each present ghost is drawn by a client-side actor of its class that never
-// ticks, written from the sampler each frame (cl_ghostactor.md).
+// ticks, written from the sampler each frame (ghostactor.md).
 
 namespace zx { namespace netsnapshot {
 

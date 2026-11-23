@@ -13,7 +13,7 @@
 #ifndef ZX_NETSNAPSHOT_RECORD_H
 #define ZX_NETSNAPSHOT_RECORD_H
 
-// What one client was told and when, beside the server's .zsnap (cl_record.md).
+// What one client was told and when, beside the server's .zsnap (record.md).
 
 #include <stdio.h>
 #include "features/net-snapshot/format.h"
@@ -22,7 +22,7 @@
 #include "features/net-snapshot/stream.h"
 
 #define CSNAP_MAGIC			"CSNP"
-// Moves with every wire change a decoder cannot skip (history in cl_record.md).
+// Moves with every wire change a decoder cannot skip (history in record.md).
 #define CSNAP_VERSION		18
 #define CSNAP_VERSION_MIN	14
 

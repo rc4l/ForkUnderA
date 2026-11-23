@@ -2,13 +2,13 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_mover_compute.h
+// Filename: mover_compute.h
 //
 // Description: The movers' decisions over plain values: the join's sector
 // write order over the link graph, a mover class's report name, the flags
 // that narrow a GONE, which polyobject actions turn, and the part of a
-// polyobject's capture its dirty compare reads. Pure: snap_movers.cpp,
-// snap_polyobj.cpp and sv_snapshot.cpp read the level and the thinkers and
+// polyobject's capture its dirty compare reads. Pure: movers.cpp,
+// polyobj.cpp and capture.cpp read the level and the thinkers and
 // act on what these return.
 //
 //-----------------------------------------------------------------------------
@@ -52,7 +52,7 @@ BYTE ComputeMoverNoFlags(BYTE planes);
 bool ComputePolyTurns(BYTE type);
 
 // Clears the phases a polyobject's dirty compare leaves out: its position and
-// angle, and each entry's speeds and countdowns (snap_movers.md).
+// angle, and each entry's speeds and countdowns (movers.md).
 void ComputePolyCompareKey(SnapMoverPoly& s);
 
 }} // namespace zx::netsnapshot

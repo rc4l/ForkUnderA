@@ -1123,7 +1123,7 @@ static ClentLocalFn g_localSink = NULL;
 static unsigned int g_localApplied = 0, g_localNoSink = 0;
 
 // The game tic of the frame being applied now, not g_newestGameTic, which the
-// local sink's ordering guard needs (cl_entities.md).
+// local sink's ordering guard needs (entities.md).
 static int			g_applyingGameTic = 0;
 // Its frame number, the ordering clock (9.2), for the mover sink.
 static int			g_applyingServerTic = 0;
@@ -2209,7 +2209,7 @@ static void samp_Tally(unsigned int & c)
 		++c;
 }
 
-// One sample through snap_sample_compute, then the censuses its exit and
+// One sample through sample_compute, then the censuses its exit and
 // outcome feed.
 static bool clent_SampleInner(unsigned int id, unsigned int renderMS, SnapGhostPose& out)
 {
@@ -2540,7 +2540,7 @@ void zx::netsnapshot::SampleCensus(SnapSampleCensus& out, bool reset)
 //	SERVER CLOCK MODEL (design doc section 8)
 //
 // A fit of server tic to arrival time that tracks the server's actual tic
-// period (snap_clock_compute), with report counters that outlive a reset.
+// period (clock_compute), with report counters that outlive a reset.
 
 static SnapClockModel	g_clock;
 

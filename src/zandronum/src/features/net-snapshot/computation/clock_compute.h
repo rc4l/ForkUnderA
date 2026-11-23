@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_clock_compute.h
+// Filename: clock_compute.h
 //
 // Description: The client's model of the server clock: a windowed
 // least-squares fit of game tic to arrival time, with outlier rejection and
-// step-change recovery, and what dates a ghost's ages. Pure: cl_entities.cpp
+// step-change recovery, and what dates a ghost's ages. Pure: entities.cpp
 // owns the model and the report's counters, which these functions feed
 // through what they return.
 //
@@ -25,7 +25,7 @@
 // corrupt record) - as opposed to merely variable cadence.
 #define CLENT_CLOCK_STEP_MS			5000
 // Outlier rejection is adaptive and permissive: a multiple of the window's
-// residual spread over this floor (cl_entities.md, The clock model).
+// residual spread over this floor (entities.md, The clock model).
 #define CLENT_CLOCK_OUTLIER_FLOOR_MS	2000.0
 #define CLENT_CLOCK_OUTLIER_SIGMAS	8.0
 // If this many consecutive samples are rejected, the stream has genuinely

@@ -535,7 +535,7 @@ void zx::netsnapshot::PolyApplyRecord( BYTE flags, WORD index, const BYTE *pBody
 		poly->specialdata = pSpecial;
 
 	// Per axis on the first record, one giving the axis a new action, or
-	// where nothing on it moves, never under a moving action (snap_polyobj.md).
+	// where nothing on it moves, never under a moving action (polyobj.md).
 	bool bMoveMoving = false, bMoveBlocked = false;
 	bool bTurnMoving = false, bTurnBlocked = false;
 	for ( unsigned int i = 0; i < s.count; ++i )

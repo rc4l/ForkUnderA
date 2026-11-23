@@ -2,12 +2,12 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_sample_compute.h
+// Filename: sample_compute.h
 //
 // Description: The client's sampler: where a ghost is drawn at a render
 // time, from its newest records, extrapolated where the server flagged the
 // motion predictable, and the dated-ahead curve between two records. Pure:
-// cl_entities.cpp gathers the ghost's inputs and counts what the sampler
+// entities.cpp gathers the ghost's inputs and counts what the sampler
 // returns.
 //
 //-----------------------------------------------------------------------------

@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_wall_compute.cpp
+// Filename: wall_compute.cpp
 //
-// Description: The mirrors' wall clamp. See snap_wall_compute.h.
+// Description: The mirrors' wall clamp. See wall_compute.h.
 //
 //-----------------------------------------------------------------------------
 

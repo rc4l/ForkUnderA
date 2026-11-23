@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_sample_compute.cpp
+// Filename: sample_compute.cpp
 //
-// Description: The client's sampler. See snap_sample_compute.h.
+// Description: The client's sampler. See sample_compute.h.
 //
 //-----------------------------------------------------------------------------
 

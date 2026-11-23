@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_sound_compute.cpp
+// Filename: sound_compute.cpp
 //
-// Description: SVC2_SNAPSOUND's body. See snap_sound_compute.h.
+// Description: SVC2_SNAPSOUND's body. See sound_compute.h.
 //
 //-----------------------------------------------------------------------------
 

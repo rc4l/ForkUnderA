@@ -2,13 +2,13 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_anim_compute.h
+// Filename: anim_compute.h
 //
 // Description: The client's animation decisions over states as plain keys:
 // the ring of states a mirror entered, which tells a record's resync from a
 // jump, and the loop census's verdict on a shadow against the wire's state.
 // The ring and the verdict are templates on the state key, defined here; the
-// engine's key is a state pointer, the tests' an int. cl_ghostactor.cpp
+// engine's key is a state pointer, the tests' an int. ghostactor.cpp
 // walks the real states and counts by what these return.
 //
 //-----------------------------------------------------------------------------

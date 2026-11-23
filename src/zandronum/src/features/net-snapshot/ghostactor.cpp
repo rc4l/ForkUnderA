@@ -241,7 +241,7 @@ static WORD* g_mirrorAnimTic = NULL;
 static int * g_stLastAppearTic = NULL;
 
 // The client-side render cull's tiers by distance, with hysteresis
-// (cl_ghostactor.md, A frame).
+// (ghostactor.md, A frame).
 
 // Records drawn-state changes to the .csnap for one id in N, by id modulo
 // (0 records none, 1 all).
@@ -1774,7 +1774,7 @@ static bool ghost_LineBlocks(const SnapBodyFlags & body, bool bProjectile, const
 }
 
 // How far an extrapolated ghost goes before its box touches a wall, negative
-// if nothing blocks within its cap (cl_ghostactor.md).
+// if nothing blocks within its cap (ghostactor.md).
 static float ghost_WallStop(const AActor * pActor, const SnapGhostPose & pose)
 {
 	const double F = 65536.0;
@@ -3850,7 +3850,7 @@ static void ghost_Report()
 			(int)fua_csnap_collide_dist);
 	}
 
-	// Phase 5 movers every window, read as snap_movers.md says.
+	// Phase 5 movers every window, read as movers.md says.
 	{
 		unsigned int mvRecords = 0, mvNoSink = 0, mvBad = 0;
 		SnapMoverClientStats mv;
@@ -3966,7 +3966,7 @@ static void ghost_Report()
 			gt.bGate ? 1 : 0, szDrop[0], szDrop[1], gt.keptApplied, gt.belowFloor,
 			gt.floor);
 
-		// Polyobjects (7.1), read as snap_polyobj.md says.
+		// Polyobjects (7.1), read as polyobj.md says.
 		SnapPolyClientStats po;
 		memset(&po, 0, sizeof(po));
 		PolyClientStats(po, true);
@@ -3987,7 +3987,7 @@ static void ghost_Report()
 			po.resyncWorst * ( 360.0 / 4294967296.0 ),
 			po.suppressed);
 
-		// DoScroller and DoPusher (7), read as snap_movers.md says.
+		// DoScroller and DoPusher (7), read as movers.md says.
 		SnapScrollPushClientStats sp;
 		memset(&sp, 0, sizeof(sp));
 		SpecialClientStats(sp, true);
@@ -4065,7 +4065,7 @@ void zx::netsnapshot::GhostReportNow()
 //	CONSOLE COMMANDS
 
 // What the client holds for the ghosts nearest the camera, or every ghost of a
-// class; `age` (ms since the newest state) is read as cl_ghostactor.md says.
+// class; `age` (ms since the newest state) is read as ghostactor.md says.
 CCMD(fua_csnap_ghostinfo)
 {
 	// A class filter lists every ghost of that class, a duplicate's question.

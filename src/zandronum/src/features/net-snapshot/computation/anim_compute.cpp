@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_anim_compute.cpp
+// Filename: anim_compute.cpp
 //
-// Description: The client's animation decisions. See snap_anim_compute.h.
+// Description: The client's animation decisions. See anim_compute.h.
 //
 //-----------------------------------------------------------------------------
 

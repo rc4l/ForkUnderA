@@ -2,12 +2,12 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_wall_compute.h
+// Filename: wall_compute.h
 //
 // Description: The mirrors' wall clamp: how far an extrapolated ghost may go
 // along its path before its box touches a line, and whether that line stops
 // a body of its kind, from PIT_CheckLine's flags and P_TryMove's opening
-// tests. Pure: cl_ghostactor.cpp walks the lines, reads the flags and the
+// tests. Pure: ghostactor.cpp walks the lines, reads the flags and the
 // opening, and keeps the census.
 //
 //-----------------------------------------------------------------------------

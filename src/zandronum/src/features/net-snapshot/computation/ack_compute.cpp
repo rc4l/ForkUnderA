@@ -2,10 +2,10 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_ack_compute.cpp
+// Filename: ack_compute.cpp
 //
 // Description: The server's reading of a client's ack. See
-// snap_ack_compute.h.
+// ack_compute.h.
 //
 //-----------------------------------------------------------------------------
 

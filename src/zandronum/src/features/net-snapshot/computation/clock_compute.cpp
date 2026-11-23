@@ -2,10 +2,10 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_clock_compute.cpp
+// Filename: clock_compute.cpp
 //
 // Description: The client's model of the server clock. See
-// snap_clock_compute.h.
+// clock_compute.h.
 //
 //-----------------------------------------------------------------------------
 

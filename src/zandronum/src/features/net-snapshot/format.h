@@ -474,7 +474,7 @@ inline unsigned int EventBytes(const SnapFrame& f, BYTE type)
 }} // namespace zx::netsnapshot
 
 // How far past the mask byte (`p`, with `avail` left) an event record reaches,
-// and whether the parse can carry on (SNAPEVLEN_*, snap_format.md).
+// and whether the parse can carry on (SNAPEVLEN_*, format.md).
 enum { SNAPEVLEN_OK = 0, SNAPEVLEN_UNKNOWN, SNAPEVLEN_BAD };
 
 namespace zx { namespace netsnapshot {
@@ -512,7 +512,7 @@ inline int EventRecordBytes(const SnapFrame& f, BYTE type, const BYTE* p,
 #define SNAP_GRPB_ANG		3
 #define SNAP_GRPB_VELMISC	9
 // APPEAR, the one variable group, is narrow (2 bytes) or wide (4) by the top
-// bit of its first byte (snap_format.md).
+// bit of its first byte (format.md).
 #define SNAP_GRPB_APPEAR_NARROW	2
 #define SNAP_GRPB_APPEAR_WIDE	4
 #define SNAP_APPEAR_WIDE_FLAG	0x80
@@ -1681,7 +1681,7 @@ inline void ReadMoverPlat(const BYTE* p, SnapMoverPlat& s)
 }} // namespace zx::netsnapshot
 
 // One ceiling: DCeiling::Serialize's members less m_Texture and m_NewSpecial,
-// read only at a terminal pastdest (snap_format.md).
+// read only at a terminal pastdest (format.md).
 struct SnapMoverCeiling
 {
 	fixed_t	speed, speed1, speed2, bottom, top, planeD;	// the ceiling plane
@@ -1809,7 +1809,7 @@ inline void ReadMoverFloor(const BYTE* p, SnapMoverFloor& s, bool bStair)
 }} // namespace zx::netsnapshot
 
 // One door: DDoor::Serialize's members plus the plane, m_BotSpot crossing as
-// one of the sector's line ends (snap_movers.md).
+// one of the sector's line ends (movers.md).
 struct SnapMoverDoor
 {
 	fixed_t	speed, topDist, botDist, oldFloorDist, planeD;
@@ -2232,7 +2232,7 @@ inline unsigned int WriteMoverBody(BYTE* p, BYTE cls, BYTE flags,
 }} // namespace zx::netsnapshot
 
 // The stream's version, raised for a change of meaning as well as of shape; the
-// history is in snap_format.md.
+// history is in format.md.
 #define ZSNAP_VERSION		34
 // The oldest stream this reader decodes (v22 gave APPEAR two widths), raised
 // whenever an older stream would be misread rather than skipped.
@@ -2265,7 +2265,7 @@ inline unsigned int ZsnapHeaderBytes(unsigned int version)
 #define SNAP_SOUND_ATTEN	0x08	// attenuation byte follows; else ATTN_INT_NORM
 
 // SVC2_SNAPCOSMETIC: the map stamp, a count, then each event's flags byte and
-// body (snap_format.md).
+// body (format.md).
 #define SNAP_COSE_KIND_MASK		0x03
 #define SNAP_COSE_COPY			0		// generic; the copy gets NETFL_CLIENTSIDEONLY
 #define SNAP_COSE_PLAIN			1		// generic; a plain NetID-0 copy

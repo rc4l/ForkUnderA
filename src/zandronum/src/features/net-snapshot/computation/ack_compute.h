@@ -2,11 +2,11 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_ack_compute.h
+// Filename: ack_compute.h
 //
 // Description: The server's reading of a client's ack: whether it is read at
 // all, whether its history covers everything since the last one, and the
-// verdict on each pending datagram it reaches. Pure: sv_snapclient.cpp walks
+// verdict on each pending datagram it reaches. Pure: clienttrack.cpp walks
 // the client's pending datagrams, folds the delivered, repairs the lost and
 // counts both by what these return. Also the ack lag each datagram echoes,
 // and the client's test of whether the server had repaired every loss before

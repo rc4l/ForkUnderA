@@ -2,12 +2,12 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_law_compute.h
+// Filename: law_compute.h
 //
 // Description: The server's motion laws over plain values: the gravity law's
 // acceleration, and the per-tic step of an entity's straight and gravity
 // runs, which set the ballistic bits (design doc 5.2). Pure:
-// sv_snapshot.cpp reads the actor and the level, keeps the runs per id, and
+// capture.cpp reads the actor and the level, keeps the runs per id, and
 // counts by what these return.
 //
 //-----------------------------------------------------------------------------
@@ -66,7 +66,7 @@ struct SnapRunStep
 
 namespace zx { namespace netsnapshot {
 
-// Advances one id's runs by this tic's velocity (sv_snapshot.md): still in plan
+// Advances one id's runs by this tic's velocity (capture.md): still in plan
 // they clear, and a turn records the run it ended and starts one of a tic.
 SnapRunStep ComputeRunStep(SnapRunTrack& track, fixed_t velx, fixed_t vely, fixed_t velz);
 

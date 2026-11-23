@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_sound_compute.h
+// Filename: sound_compute.h
 //
 // Description: SVC2_SNAPSOUND's body, written and read in one place: the
 // flags its fields imply, a point's three positions in the map's frame, and

@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_replay_compute.cpp
+// Filename: replay_compute.cpp
 //
-// Description: The replay's statistics. See snap_replay_compute.h.
+// Description: The replay's statistics. See replay_compute.h.
 //
 //-----------------------------------------------------------------------------
 

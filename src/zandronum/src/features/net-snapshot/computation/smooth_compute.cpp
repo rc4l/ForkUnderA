@@ -2,9 +2,9 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_smooth_compute.cpp
+// Filename: smooth_compute.cpp
 //
-// Description: The mirrors' error smoothing. See snap_smooth_compute.h.
+// Description: The mirrors' error smoothing. See smooth_compute.h.
 //
 //-----------------------------------------------------------------------------
 

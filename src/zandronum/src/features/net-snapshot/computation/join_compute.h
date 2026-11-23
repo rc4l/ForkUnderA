@@ -2,12 +2,12 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_join_compute.h
+// Filename: join_compute.h
 //
 // Description: Which map a stream belongs to, over plain values: how far a
 // datagram's map stamp is from the joined map's, and the whole-unit extent the
-// server's map frame is built around. Pure: cl_entities.cpp and
-// sv_snapshot.cpp read the stamp, the level and the actors.
+// server's map frame is built around. Pure: entities.cpp and
+// capture.cpp read the stamp, the level and the actors.
 //
 //-----------------------------------------------------------------------------
 

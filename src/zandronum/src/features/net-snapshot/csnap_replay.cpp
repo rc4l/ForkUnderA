@@ -10,7 +10,7 @@
 //
 //-----------------------------------------------------------------------------
 
-// The real decoder and sampler on a recording, never a copy (cl_replay.md):
+// The real decoder and sampler on a recording, never a copy (csnap_replay.md):
 //
 //   fua_csnap_analyze <file>              summary over the whole stream
 //   fua_csnap_analyze <file> <id>         per-frame trace for one entity
@@ -531,7 +531,7 @@ static void replay_RefillForget(ReplayRefill& c)
 }
 
 // A plan C refill of one ghost at the frame's time, `nowMS`, folding a record
-// once there and smoothing the tic's end on from it (cl_replay.md, Use).
+// once there and smoothing the tic's end on from it (csnap_replay.md, Use).
 static void replay_Refill(ReplayRefill& c, ReplayEntity& e, unsigned int id, bool bTicFirst,
 	bool bBackdate, bool bAnchorAll, unsigned int startMS, unsigned int nowMS,
 	unsigned int endMS, fixed_t frac16, int localPlayer, SnapSmoothStats& st)

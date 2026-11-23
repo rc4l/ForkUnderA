@@ -2,12 +2,12 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_interest_compute.h
+// Filename: interest_compute.h
 //
 // Description: The server's interest scoring (design doc section 5.2): the
 // band each dirty record of a client's frame goes in, by priority hint,
 // distance, facing, age and the interest cull, and a branch event's copies
-// and deadline. Pure: sv_snapclient.cpp reads the settings and the view,
+// and deadline. Pure: clienttrack.cpp reads the settings and the view,
 // counts what the classifier returns, and drains the bands.
 //
 // Every dirty entity is placed in one of SNAPCL_TIERS bands, and the bands

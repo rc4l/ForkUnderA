@@ -2,13 +2,13 @@
 //
 // Copyright (C) 2026 Kaori Ishida
 //
-// Filename: snap_budget_compute.h
+// Filename: budget_compute.h
 //
 // Description: The server's byte budgets: the snapshot command one datagram
 // may carry, a frame's budget across datagrams, the cut of a frame into
 // chunks, and the cosmetic event bank (its refill, the order and fit of one
 // client's events, what overflows, and whether the command joins the last
-// chunk's datagram). Pure: sv_snapshot.cpp and sv_snapclient.cpp read the
+// chunk's datagram). Pure: capture.cpp and clienttrack.cpp read the
 // settings and the packet size, and count by what these return.
 //
 //-----------------------------------------------------------------------------
@@ -22,7 +22,7 @@
 //	PACKET AND FRAME
 
 // Bytes the payload leaves free in one unreliable packet: the command's header
-// and the send path's slack, 27, rounded up (sv_snapshot.md).
+// and the send path's slack, 27, rounded up (capture.md).
 #define SNAP_PACKET_OVERHEAD	28
 
 namespace zx { namespace netsnapshot {
