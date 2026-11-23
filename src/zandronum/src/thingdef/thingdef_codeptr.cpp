@@ -59,6 +59,7 @@
 #include "team.h"			// [rc4l] teamgame (A_FindTracer friend check)
 #include "d_event.h"		// [rc4l] BT_ATTACK (A_RefireTo)
 #include "features/mbf21/computation/hitscan_spread_compute.h"
+#include "features/a_fireprojectile/computation/fireprojectile_ammo_compute.h"
 #include "i_system.h"
 #include "p_local.h"
 #include "c_console.h"
@@ -1998,7 +1999,8 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 							   const int SpawnOfs_XY, const fixed_t SpawnHeight, const INTBOOL AimAtAngle,
 							   const fixed_t PitchAdjust, const INTBOOL NoAutoAim = false,
 							   const INTBOOL TransferTranslation = false,
-							   const bool CalledFromWeapon = true )
+							   const bool CalledFromWeapon = true,
+							   const bool CalledFromInventory = false )
 {
 	if (!self->player) return;
 
@@ -2011,7 +2013,8 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 	// statecall, which are only in scope inside DEFINE_ACTION_FUNCTION, so the callers evaluate
 	// it and pass the answer in. Upstream's modern A_FireProjectile gates the same way, on
 	// stateinfo.mStateType == STATE_Psprite.
-	if (UseAmmo && CalledFromWeapon && weapon)
+	// [MGOOOOOO] An inventory item's chain spends it again, as on Zandronum, where MM8BDM's classes fire their weapons' shots from CustomInventory items.
+	if (zx::fireprojectile::ComputeFireProjectileUsesAmmo(UseAmmo, weapon != NULL, CalledFromWeapon, CalledFromInventory))
 	{
 		if (!weapon->DepleteAmmo(weapon->bAltFire, true)) return;	// out of ammo
 	}
@@ -2071,7 +2074,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   Flags & FPF_AIMATANGLE, -fixed_t::FromSignedBits(pitch),
 					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION,
-					   ACTION_CALL_FROM_WEAPON() );
+					   ACTION_CALL_FROM_WEAPON(), ACTION_CALL_FROM_INVENTORY() );
 }
 
 //==========================================================================
@@ -2096,7 +2099,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireProjectile)
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch),
 					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION,
-					   ACTION_CALL_FROM_WEAPON() );
+					   ACTION_CALL_FROM_WEAPON(), ACTION_CALL_FROM_INVENTORY() );
 }
 
 
