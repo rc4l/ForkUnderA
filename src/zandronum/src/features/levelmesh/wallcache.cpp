@@ -73,6 +73,9 @@ static TArray<int>          g_sideDirty;
 // [rc4l] Per-sector fua_placement as of the last sweep, so a scrolled floor reaches the map bake.
 static TArray<int>          g_sectorPlacement;
 static TArray<TArray<int> > g_sectorSegs;
+// [Doruk-Aksoy] Each sector's look as the map bake drew it (below, with g_lastLook), and its forgetting when a level is set up.
+static void KeepBakedLooks();
+static void ForgetBakedLooks();
 // [rc4l] Bumped once per level load. A backend that wants to set itself up per level needs to know a
 // level happened, and "numsegs changed" is not that -- reloading the same map gives the same count.
 static int              g_levelGeneration = 0;
@@ -96,6 +99,8 @@ void AllocForLevel(int numsegs)
 	// The per-sidedef bake owners belong to the level that is going away.
 	extern void ClearSideOwners();
 	ClearSideOwners();
+	// [Doruk-Aksoy] The last load's looks would make a sector already moved then read as unchanged against this load's bake.
+	ForgetBakedLooks();
 	zx::levelmesh::ClearFlats();
 	zx::levelmesh::ClearSprites();
 	g_cache.Clear();
@@ -1121,6 +1126,7 @@ int BakeLevelFromMap()
 	g_bakedShading = RenderShadingEnv(false);
 	int made = 0;
 	for (int i = 0; i < numsegs; i++) { const int m = BakeSegFromMap(i); if (m > 0) made += m; }
+	KeepBakedLooks();
 	return made;
 }
 
@@ -1304,6 +1310,15 @@ static SectorLook LookOf(const sector_t &s)
 	return l;
 }
 
+// [Doruk-Aksoy] The looks the map bake just drew every sector from, the copy's own, which a later change is measured against.
+static void KeepBakedLooks()
+{
+	g_lastLook.Resize((unsigned)numsectors);
+	for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
+}
+
+static void ForgetBakedLooks() { g_lastLook.Clear(); }
+
 // [rc4l] A sector's change since the last look, re-baking its walls and flats and those of any sector it is a 3D floor in.
 static void InvalidateSector(int s, TArray<int> &fillMoved)
 {
@@ -1352,11 +1367,7 @@ void InvalidateMovedSectors(const WalkedThisFrame *walked)
 	g_movedThisFrame = 0;
 	cycle_t invalClock; invalClock.Reset(); invalClock.Clock();
 	g_invalFrames++;
-	if ((int)g_lastLook.Size() != numsectors)
-	{
-		g_lastLook.Resize((unsigned)numsectors);
-		for (int i = 0; i < numsectors; i++) g_lastLook[i] = LookOf(sectors[i]);
-	}
+	if ((int)g_lastLook.Size() != numsectors) KeepBakedLooks();
 	if (!g_enabled || g_sectorDirty.Size() == 0) return;
 	// [rc4l] r_seamless reshapes every wall's fan, so a change bakes the level's walls again.
 	if (g_bakedSeamless != (bool)r_seamless) BakeLevelFromMap();

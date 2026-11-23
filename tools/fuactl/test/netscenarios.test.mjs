@@ -247,3 +247,41 @@ test("devmode fails a client of a server without cheats that kept or ran a dev-m
   assert.match(toolFaults(sky, true, { ...open, set: { text: refused("fua_mesh_sky"), value: "false" }, run: refused("fua_mesh_blank") }).join("; "), /refused fua_mesh_sky with cheats on.*fua_mesh_blank did not run/);
   assert.match(toolFaults(hitbox, true, { ...openHitbox, flipped: "true" }).join("; "), /cheats off, the client.s own cl_fua_hitbox 1 read true, not false/);
 });
+
+test("netonetime's map has the one-time switch and lines, and its judges name each action a world lacks", async () => {
+  const { buildNetOneTimeWad, oneTimeFaults, worstBlock, SECTOR, AFTER, CONFIGS, PICTURE_FROM_Y } = await import("../scenarios/netonetime.mjs");
+  const lumps = readWad(buildNetOneTimeWad());
+  assert.deepEqual(lumps.map((l) => l.name), ["MAP01", "TEXTMAP", "ENDMAP"]);
+  const text = lumps[1].data.toString("latin1");
+  assert.equal((text.match(/playeruse = true;/g) || []).length, 1, "the switch");
+  assert.equal((text.match(/playercross = true;/g) || []).length, 2, "the door and platform lines");
+  assert.ok(!/repeatspecial/.test(text), "every action one-time");
+  assert.ok(CONFIGS.some((c) => c.observers) && CONFIGS.some((c) => c.gapMs) && CONFIGS.some((c) => c.survival) && CONFIGS.some((c) => c.players === 1 && !c.observers && !c.survival));
+  const at = (i, floor, ceiling) => ({ i, floor, ceiling });
+  const done = { sectors: [at(0, 0, 256), at(SECTOR.lower, AFTER.lowerFloor, 256), at(SECTOR.door, 0, 252), at(SECTOR.plat, AFTER.platFloor, 256)], sides: [{ mid: AFTER.switchTex }] };
+  assert.deepEqual(oneTimeFaults(done), []);
+  const start = { sectors: [at(0, 0, 256), at(SECTOR.lower, 64, 256), at(SECTOR.door, 0, 0), at(SECTOR.plat, 0, 256)], sides: [{ mid: "SW1STRTN" }] };
+  assert.equal(oneTimeFaults(start).length, 4);
+  // [Doruk-Aksoy] A block's worth of difference counts below the teammate panel's rows and not inside them.
+  const frame = (w, h, fill) => ({ w, h, channels: 3, data: Buffer.alloc(w * h * 3, fill) });
+  const a = frame(32, PICTURE_FROM_Y + 32, 0), b = frame(32, PICTURE_FROM_Y + 32, 0);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) b.data.fill(90, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  assert.equal(worstBlock(a, b).d, 0, "the panel's rows are left out");
+  for (let y = PICTURE_FROM_Y; y < PICTURE_FROM_Y + 16; y++) for (let x = 16; x < 32; x++) b.data.fill(90, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  assert.deepEqual(worstBlock(a, b), { d: 90, x: 16, y: PICTURE_FROM_Y });
+});
+
+test("singlereload judges each stage's pictures against the first and names a missing capture", async () => {
+  const { judgeStage } = await import("../scenarios/singlereload.mjs");
+  const { LOOK_ANGLES, PICTURE_FROM_Y } = await import("../scenarios/netonetime.mjs");
+  const frames = { same: { w: 16, h: PICTURE_FROM_Y + 16, channels: 3, data: Buffer.alloc(16 * (PICTURE_FROM_Y + 16) * 3, 10) } };
+  frames.moved = { ...frames.same, data: Buffer.alloc(frames.same.data.length, 200) };
+  const decode = (name) => frames[name];
+  const pass = judgeStage("stage", LOOK_ANGLES.map(() => "same"), LOOK_ANGLES.map(() => "same"), decode);
+  assert.equal(pass.failed, 0);
+  assert.ok(pass.lines.every((l) => l.startsWith("PASS stage")));
+  const fail = judgeStage("stage", LOOK_ANGLES.map(() => "same"), [null, "moved", "same"], decode);
+  assert.equal(fail.failed, 2);
+  assert.match(fail.lines[0], /^FAIL stage \d+: no capture$/);
+  assert.match(fail.lines[1], /drawn otherwise than the first time \(worst block 190\.0/);
+});
