@@ -124,6 +124,11 @@ jobs:
       - name: Test the anchor comparison
         run: python3 tools/snapshot/snap_anchor_compare_test.py
 
+      # [Kaori-Chani] The maintainers guide against the code: a patch that changes a module file
+      # and not its page fails here, as does a comment citing a page or a name that is gone.
+      - name: Snapshot guide against the code
+        run: python3 tools/snapshot/doccheck.py
+
       # [Kaori-Chani] The offline readers against the header they read, and over the committed
       # reference: a format change that misses tools/snapshot/ fails here, not in a reader.
       - name: Snapshot offline readers

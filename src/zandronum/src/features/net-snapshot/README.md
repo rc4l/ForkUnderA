@@ -321,8 +321,9 @@ Each hook is one call from a stock file into the module, listed here as it lands
     window that does not set it says nothing about a missing lookup. Three runs of mine said
     nothing before this was noticed, which is what the sequence probe is for: it answers whether
     the sound played, where the warning only answers whether one lookup failed.
-  - A joiner has the gate word before any of this: `SendMoverGateTo` is at `sv_main.cpp:1573`
-    and `SERVER_UpdateMovers` at 1725, so `OnFloorSound`'s test is already true for it.
+  - A joiner has the gate word before any of this: `SERVER_ConnectNewPlayer` calls
+    `SendMoverGateTo` before `SERVER_UpdateMovers`, so `OnFloorSound`'s test is already true for
+    it.
 - `cl_main.cpp`, `client_DoCeiling`, `client_DestroyCeiling`, `client_ChangeCeilingDirection`,
   `client_ChangeCeilingSpeed`, and the same four senders in `sv_commands.cpp`:
   `MoverLegacyStandsAside( SNAPMV_CEILING )` after each handler's last read, and
@@ -465,8 +466,8 @@ Each hook is one call from a stock file into the module, listed here as it lands
   gate off, where a client's legacy movers still need stock's veto.
   - `P_ChangeSector`'s two touching-list walks skip `NETFL_MIRROR`, which is not redundant here:
     a mirror is relinked holding only its sector link, and the collide switch clears its
-    `MF_NOBLOCKMAP` (`ghostactor.cpp:2222`) with `fua_csnap_collide` on by default, so without
-    the skip a plane moving under a mirror can crush or push it.
+    `MF_NOBLOCKMAP` (`GhostFrame`'s solidity step) with `fua_csnap_collide` on by default, so
+    without the skip a plane moving under a mirror can crush or push it.
   - Not measured here. Six windows failed their own preconditions rather than the code: one
     player start had two clients spawning inside each other, a crusher kills the obstacle
     `nofit` needs to survive, a crusher line west of a door's takes `ceilingdata` first, and
@@ -494,9 +495,10 @@ Each hook is one call from a stock file into the module, listed here as it lands
     itself, whose client branch destroys its record-made movers before the pass's commands
     arrive. The join pass cannot reach them either, its reliable writes landing before any
     record, and mover code's own `pastdest` sends are stopped by `MoverServerStops( cls, true )`.
-    What is left during play is `DAnimatedDoor`, an uncaptured class whose three sends
-    (`p_doors.cpp:894`, `:1005`, `:1135`) are never gated, so a write can meet a plane a record
-    owns where a link drives it from a record-owned control, which is `LinkControlOwned`'s case.
+    What is left during play is `DAnimatedDoor`, an uncaptured class whose three sends (in
+    `StartClosing`, `Tick` and its constructor) are never gated, so a write can meet a plane a
+    record owns where a link drives it from a record-owned control, which is
+    `LinkControlOwned`'s case.
   - `DestroyAllSectorMovers::Execute` drops its own sector loop for the module's
     `DestroySectorMovers( )`, which stops both channels before either `Destroy`: a two-plane
     mover's destroy clears `floordata` too, so the stock loop's second test failed and left a

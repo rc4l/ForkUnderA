@@ -1,6 +1,6 @@
 # tools: the offline readers and the anchor comparison
 
-Covers: tools/snapshot/csnap2.py, tools/snapshot/snap_payload.py, tools/snapshot/zsnap_info.py, tools/snapshot/wide_count.py, tools/snapshot/presence_diff.py, tools/snapshot/snap_anchor_compare.py, tools/snapshot/snap_anchor_compare_test.py
+Covers: tools/snapshot/csnap2.py, tools/snapshot/snap_payload.py, tools/snapshot/zsnap_info.py, tools/snapshot/wide_count.py, tools/snapshot/presence_diff.py, tools/snapshot/snap_anchor_compare.py, tools/snapshot/snap_anchor_compare_test.py, tools/snapshot/doccheck.py
 
 ## Responsibility
 
@@ -147,6 +147,21 @@ is compared and what is not is in the module's README (The anchor comparison, an
 the fixture names the tag it came from. `snap_anchor_compare_test.py` holds the rules in cases
 built from real reports and runs in CI; a log holding more than one report is refused rather than
 compared as one.
+
+## doccheck.py
+
+```
+python3 tools/snapshot/doccheck.py
+```
+
+Checks every page in `docs/net-snapshot/` against the code and exits non-zero on a failure;
+what it checks is in the guide's index ([README.md](README.md), Keeping the guide true) and in
+its own header. `ALLOWED` lists public functions deliberately left off a page, each with a
+reason, and a name there that is no longer public fails too. Beyond the pages it reads the
+module's own comments: a `.md` a comment names must exist, and none of the source tree's file
+or unit names may appear, the port having renamed every one. A page, a module file and the
+module's README cite code by function, never by line number, since line numbers move. It runs
+in CI beside the other tool tests.
 
 ## Rules that must hold
 

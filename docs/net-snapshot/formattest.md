@@ -1,6 +1,6 @@
 # formattest: the codec's tests, and the two offline targets
 
-Covers: src/zandronum/src/features/net-snapshot/formattest.cpp, src/zandronum/src/features/net-snapshot/format_test.cpp, src/zandronum/src/features/net-snapshot/refdump_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/formattest.cpp, src/zandronum/src/features/net-snapshot/format_test.cpp, src/zandronum/src/features/net-snapshot/refdump_test.cpp, tests/snapdump/snapdump.h, tests/snapdump/snapdump.cpp, tests/snapdump/main.cpp, tests/snapdump/snapdump_test.cpp
 
 ## Responsibility
 
@@ -27,7 +27,7 @@ and `TICRATE` and so cannot be a pure unit ([i_tictime.md](i_tictime.md)).
 | does each pure unit's arithmetic hold | `computation/*_compute_test.cpp`, 100% line gate |
 | does this tree decode the references byte for byte | `refdump_test.cpp` against the shipped digests |
 | does malformed input crash a reader | `snap_fuzz`, and `fua_snap_fuzz` in the engine |
-| what does a recording decode to, by hand | `snap_dump <in> <out> [--tag]` |
+| what does a recording decode to, by hand | `SnapDumpWrite`, through `snap_dump <in> <out> [--tag]` |
 | does the time base's arithmetic hold in the engine | `formattest.cpp`'s one block, `fua_snap_selftest` |
 | does **this** binary decode as the others do | the decode check in `entities.cpp` |
 

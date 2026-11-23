@@ -113,7 +113,7 @@ The pump and the client lifecycle:
   and by the client when snapshot traffic starts.
 
 A client's own missing-packet request for a sequence this connection never sent is skipped in
-`sv_main.cpp`'s `SERVER_ReadMissingPacket`, against the archive's `NextSequence`, rather than here:
+`sv_main.cpp`'s `server_MissingPacket`, against the archive's `NextSequence`, rather than here:
 an archive numbering from the connect would otherwise read an old connection's request as a gap it
 must kick for.
 
@@ -251,8 +251,7 @@ Mover capture (see [Movers](design.md#71-movers)):
 - `MoversOn`, `MoverGate`, `MoverServerStops`, `ServerMoverGateStats`: the capture's gate, the
   legacy mover gate latched once a pump, the call in each stopped legacy mover command, and what it
   stopped. `ServerGatesLegacy` ([movers.md](movers.md)) exposes the same latch to the mover code.
-- `MoverSendDoorSound`, `MoverSendCeilingSound`, `MoverSendPlatSound`, `MoverSendFloorSound`,
-  `MoverSendElevatorSound`, `MoverSendPillarSound`: the sounds a mover's own legacy command used to
+- `MoverSend*` (6), one a class: the sounds a mover's own legacy command used to
   carry, sent by sector so a gated client still hears them (`SVC2_DOORSOUND`, `SVC2_FLOORSOUND`,
   `SVC2_MOVERSOUND`, read in [apply.md](apply.md)); `MoverSoundStats` and `MoverSoundStatsByKind`
   count them against the legacy path, and `SendMoverGateTo` tells one client the latch's state at
@@ -382,7 +381,7 @@ Each site carries a `[Kaori-Chani]` line. Twenty-eight stock files call this hea
   `SendPlayerStopSound`, and on the client `CatchUpHoldsSound`.
 - `g_game.cpp`: `ResetEnd` at the end of a map reset.
 - `p_plats.cpp`, `p_ceiling.cpp`, `p_floor.cpp`, `p_doors.cpp`, `p_pillar.cpp`: `MoverServerStops`
-  in the legacy mover commands and the `MoverSend*Sound` call each one's sound moved to;
+  in the legacy mover commands and the sound sender each one's own sound moved to;
   `po_man.cpp`: `MoverServerStops` alone.
 - `p_linkedsectors.cpp`, `cl_main.cpp`: `TracePlaneWrite` on plane writes.
 - `p_teleport.cpp`: `TeleportFogs` for a teleport's pair.

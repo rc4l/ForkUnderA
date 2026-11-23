@@ -196,6 +196,8 @@ mirror-spawn rings (`MsRing`, by id, for spawner classes only), the pending poin
 
 The frame and the lifecycle:
 - `GhostFrame`: a frame, above. `GhostFoldApplied`: the fold on the packet clock.
+- `RegisterMirrorEffects`: every mirror carrying effects into the tic's effects registry, since
+  a mirror never ticks and so never registers itself.
 - `GhostsFromNetwork`: turns `fua_csnap_ghosts` on when snapshot traffic arrives, and off with every
   mirror cleared when it stops.
 - `GhostClearAll`: destroys every mirror, reveals every hidden actor and drops the property sets.
@@ -276,6 +278,8 @@ The smoothing (`computation/smooth_compute.h`, also used by `csnap_replay.cpp`):
   its back and off-course counts, so the jumps that mixing two thresholds makes are in the census (a
   stepped ghost's clear, outside it, is not counted, nor is one inside a map reset).
 - `ComputeSmoothStepPop`: whether a stepped ghost is smoothed, by `fua_csnap_smooth_entities`.
+- `ComputeAnchorStart`: the start a mid-tic refill sets so the frame draws the fold's own output,
+  called by the mirrors here and by the replay's `anchor` mode ([csnap_replay.md](csnap_replay.md)).
 - `ComputeSmoothSlides`: whether the renderer slides a ghost this frame, read after `ComputeSmooth`:
   held, outside the stepped smoothing (its population, or a threshold of 0), not smoothed as
   extrapolated, and not a walking step to draw raw. The mirror asks that of a monster

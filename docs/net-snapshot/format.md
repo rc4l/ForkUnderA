@@ -92,7 +92,7 @@ Its quantizers carry 16.16 through 64-bit arithmetic, so they hold for this engi
 ## Public functions
 
 Quantizers and packing:
-- `QuantPos`, `QuantPosIn`, `QuantAngle`, `QuantPitch`, `QuantVel`, `QuantAlpha` and `Dequant*` (5):
+- `QuantPos`, `QuantPosIn`, `QuantAngle`, `QuantPitch`, `QuantVel`, `QuantAlpha` and `Dequant*` (6):
   position (one unit, rounded, into a given frame or the narrow one at origin 0), angle (12 bits),
   pitch (10 bits), velocity (1/4 unit, clamped, rounded) and alpha (1/63rds, so opaque round-trips).
 - `PosToUnits`: a quantized position in map units, for the server's distance tests.
@@ -118,7 +118,8 @@ The map's position frame:
   origin in its axis's width, as a value or on the wire.
 - `FixedBytes`, `OriginFixed`, `PutFixedIn`, `ReadFixedIn`: a 16.16 position relative to the origin,
   the axis's width plus two bytes of fraction, clamped and counted.
-- `PutSigned`, `ReadSigned`: a signed little-endian value of two to five bytes.
+- `PutSigned`, `ReadSigned`: a signed little-endian value of two to five bytes. `ReadFixed32`
+  reads a whole 16.16 word as this engine's `fixed_t`.
 - `ZsnapHeaderBytes`: the `.zsnap` header's size for a file's version.
 
 Entity records:
@@ -155,7 +156,9 @@ Events:
 - `WriteEventBody`, `ReadEvent`: a branch event, with the game tic it was observed on.
 - `WritePSpriteBody`, `ReadPSprite`, `WriteLocalBody`, `ReadLocal`: the psprite and local-block
   payloads.
-- `WritePropsBody`, `ReadProps`: the property payload, by set flag.
+- `WritePropsBody`, `ReadProps`: the property payload, by set flag. `QuantScale` is a scale at
+  1/256 in two bytes, `PropsUniformCount` the slots a set mask names, and `PutFloat32` and
+  `ReadFloat32` one uniform's float, the only float on the wire.
 
 Movers:
 - `WriteMover*` (9) and `ReadMover*` (8): the envelope, one per class, and on the write side the

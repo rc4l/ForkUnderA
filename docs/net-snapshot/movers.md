@@ -138,8 +138,8 @@ Scrollers and pushers:
   DoPusher carried.
 
 Counters and names:
-- `MoverCount*`: the client's counts, each at the point where its event happens (a crush, a held
-  tic, a wait, a vetoed block, a suppressed legacy write, a record's outcome).
+- `MoverCount*` (16): the client's counts, each at the point where its event happens (a crush,
+  a held tic, a wait, a vetoed block, a suppressed legacy write, a record's outcome).
 - `MoverClientStats`, `MoverStaleRecords`.
 
 The movers' decisions (`computation/mover_compute.h`), also used by `polyobj.cpp`, `capture.cpp` and

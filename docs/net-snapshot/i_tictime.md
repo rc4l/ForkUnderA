@@ -64,7 +64,7 @@ nanoseconds) elsewhere.
   `TICRATE` and by 1000, so a window's tics and its milliseconds come from one span and the figure
   is about pacing rather than about any other clock.
 - `sv_main.cpp`: `TIC_GetRawCounter` where the server's own report times a pump. Zandronum has its
-  own unrelated `TIC_*` family in that file for the server's statistics; only the counter call here
+  own unrelated `TIC_` family in that file for the server's statistics; only the counter call here
   is this header's.
 - `d_main.cpp`: `TIC_WaitPathReport`, set so the first real wait names its path.
 - The snapshot module reads the counter in `ghostactor.cpp`, `apply.cpp` and `capture.cpp`, which is

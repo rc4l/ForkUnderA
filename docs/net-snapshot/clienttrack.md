@@ -151,7 +151,8 @@ Lifecycle and acks:
   path's grace reads the second, with `g_snapFrame` as now.
 - `MoverAcked`, `StreamStarted`: the mover sweep's release test, and whether this connection has
   acked anything.
-- `AckLag`: the ack lag a datagram to this client echoes (`ComputeAckLag`).
+- `AckLag`, `NewestSentSeq`: the ack lag a datagram to this client echoes (`ComputeAckLag`), and
+  the newest sequence it has been given, which a report takes that lag against.
 - `UpdateCullFov`: the `fua_snap_cull_fov` callback's cached cosine.
 
 The scoring (`computation/interest_compute.h`):
