@@ -46,6 +46,7 @@
 #include "features/net-snapshot/computation/join_compute.h"
 #include "features/net-snapshot/computation/mover_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
+#include "features/net-snapshot/computation/catchup_compute.h"
 #include "features/net-snapshot/computation/sound_compute.h"
 #include "features/actormaterials/actormaterials.h"	// MaterialName, for a props slot
 #include "features/sound-amplify/computation/sound_amplify_compute.h"
@@ -137,6 +138,10 @@ CUSTOM_CVAR(Int, fua_snap_maxbytes, 4500, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 }
 
 CVAR(Int, fua_snap_zstd_level, 3, CVAR_NOSETBYACS)	// lower to 1 if CPU-bound during stress runs
+
+// [Kaori-Chani] Tics one pump may run before the rest are dropped and game time dilates (5.4);
+// 0 uncapped, and read only while the gate is on, so a gate-off server catches up as stock does.
+CVAR(Int, fua_snap_maxcatchuptics, 8, CVAR_ARCHIVE | CVAR_NOSETBYACS)
 
 CVAR(Bool, fua_snap_send, false, CVAR_NOSETBYACS)	// actually transmit deltas to clients
 // The interest cull radius, past which an entity gets a bounded refresh.
@@ -2936,6 +2941,62 @@ static void snap_RecordCapture(unsigned int spanTics, const TArray<BYTE>& raw, u
 }
 
 //*****************************************************************************
+//	THE CATCH-UP CLAMP
+
+// [Kaori-Chani] The run of dropping pumps, and the window's counts for the report.
+static SnapCatchUpRun	g_catchRun = { 0, 0, 0, 0, -(TICRATE * SNAPCATCHUP_WARN_SECS) };
+static unsigned int		g_catchDropped = 0;		// tics dropped over the window
+static unsigned int		g_catchPumps = 0;		// pumps that dropped any
+static unsigned int		g_catchWorst = 0;		// the most one pump dropped
+static unsigned int		g_catchRuns = 0;		// runs begun
+static int				g_catchWorstPercent = 100;	// the slowest the run's game time read
+
+// The tics this pump may run. Gate off it is every tic the clock passed, as stock catches up; on,
+// the rest are dropped and game time dilates rather than the world running behind its own clock.
+unsigned int zx::netsnapshot::CatchUpTics(unsigned int deltaTics, unsigned int nowMS)
+{
+	if (snap_GateOn() == false)
+	{
+		g_catchRun.pumps = 0;
+		return deltaTics;
+	}
+
+	const bool bWasRunning = (g_catchRun.pumps > 0);
+	const SnapCatchUpOut out = ComputeCatchUp(deltaTics, fua_snap_maxcatchuptics, nowMS,
+		gametic, level.maptime, TICRATE, g_catchRun);
+	if (out.dropped > 0)
+	{
+		g_catchDropped += out.dropped;
+		++g_catchPumps;
+		if (out.dropped > g_catchWorst)
+			g_catchWorst = out.dropped;
+		if (bWasRunning == false)
+			++g_catchRuns;
+		if (out.percent < g_catchWorstPercent)
+			g_catchWorstPercent = out.percent;
+	}
+	if (out.bWarn)
+	{
+		snap_Say("Server overloaded: game time is running at %d%% of real time. "
+			"(Simulation cannot sustain %d Hz at current load.)\n", out.percent, TICRATE);
+	}
+	return out.tics;
+}
+
+// What the window's clamp did, for the report; reset on read.
+static void snap_CatchUpStats(unsigned int& dropped, unsigned int& pumps, unsigned int& worst,
+	unsigned int& runs, int& worstPercent)
+{
+	dropped = g_catchDropped;
+	pumps = g_catchPumps;
+	worst = g_catchWorst;
+	runs = g_catchRuns;
+	worstPercent = g_catchWorstPercent;
+	g_catchDropped = g_catchPumps = g_catchWorst = g_catchRuns = 0;
+	g_catchWorstPercent = 100;
+}
+
+//*****************************************************************************
 //	INITIALIZATION
 
 // Every snapshot cvar not at its default, skipping CVAR_AUTO ones, the ini's
@@ -5310,6 +5371,18 @@ static void snap_MaybeReport()
 			g_soundById = g_soundByName = 0;
 			g_soundNameRange = g_soundNameChannel = g_soundNameOff = g_soundNameUnmatched = 0;
 			g_soundUnplayable = 0;
+		}
+
+		// The clamp: printed only when it dropped something, since a server keeping up has
+		// nothing to say here and the line would read as a problem.
+		{
+			unsigned int dropped = 0, pumps = 0, worst = 0, runs = 0;
+			int worstPercent = 100;
+			snap_CatchUpStats(dropped, pumps, worst, runs, worstPercent);
+			if (dropped > 0)
+				snap_Say("[snap] catch-up: %u tics DROPPED over %u pumps (worst %u in one)"
+					" | %u runs | game time %d%% of real at its slowest\n",
+					dropped, pumps, worst, runs, worstPercent);
 		}
 
 		g_branchCount = g_brTotal = g_brDeaths = g_brDeathsNear = 0;

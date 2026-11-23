@@ -17,14 +17,12 @@ did without it.
 
 What is in the engine's build, precisely, because "nothing" was not true:
 
-- The twelve `computation/*_compute.cpp` units are compiled into the game, and have been since they
-  landed. `src/CMakeLists.txt` globs `*_compute.cpp` recursively so a new computation needs no CMake
-  edit, and that glob reaches here too. They register no classes and nothing calls them, so they are
-  dead weight in the binary until the layers arrive, not behaviour.
-- `capture.cpp` and `clienttrack.cpp` are compiled by the `netsnapshot_layers` object library and
-  **not linked into the game**. The layers call each other, so none of them links until all of them
-  are here; compiling each as it lands is what gives it a compiler's opinion rather than a reading.
-  Step 3 links what has already compiled.
+- The fourteen `computation/*_compute.cpp` units are compiled into the game and called by the
+  layers above them. `src/CMakeLists.txt` globs `*_compute.cpp` recursively so a new computation
+  needs no CMake edit, and that glob reaches here too; `tests/CMakeLists.txt` globs the same
+  pattern beside `*_test.cpp`, which is where each unit's coverage gate runs.
+- The layers are compiled by the `netsnapshot_layers` object library, which `zdoom` links
+  (`target_link_libraries`), so every file here is in the game.
 - The format layer is also reached by the test target, which is what holds it to the references.
 
 ## Owns
@@ -56,10 +54,10 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   `sv_snapshot`.
 - `clienttrack.{h,cpp}`: the per-client delta — what each client has been told, its ack ledger and
   the interest scheduling that decides what its next datagram carries. Was `sv_snapclient`.
-- `computation/`: twelve pure units — the ack ledger, the animation census, the budget and chunk
-  cuts, the clock model, the interest tiers, the join's frame and map stamp, the gravity law and run
-  steps, the mover write order, the replay's histogram, the ghost sampler, the smoothing, and the
-  wall sweep — each with its colocated `*_test.cpp`.
+- `computation/`: fourteen pure units — the ack ledger, the animation census, the budget and chunk
+  cuts, the catch-up clamp, the clock model, the interest tiers, the join's frame and map stamp, the
+  gravity law and run steps, the mover write order, the replay's histogram, the ghost sampler, the
+  smoothing, the snapshot sound's body and the wall sweep — each with its colocated `*_test.cpp`.
   - `ComputeAnchorStart`, in the smoothing unit, is the mirror interpolation rule's start pose, and
     both the live frame and the replay's analysis call it so that `fua_csnap_analyze ... anchor`
     measures what a client actually draws. Two things about it are deliberate and easy to undo by
@@ -142,6 +140,8 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
 
 Each hook is one call from a stock file into the module, listed here as it lands.
 
+- `sv_main.cpp`, `SERVER_Tick`, before the tics run: `CatchUpTics( deltaTics, nowTime )`, which
+  returns the count unchanged while the gate is off.
 - `sv_main.cpp`, end of `SERVER_UpdateMovers`: `SpecialSendJoinState( ulClient )`, after the
   scroller and pusher loops, so every mover its records name has already been built on the
   client. The role and gate tests are inside the module.

@@ -637,7 +637,7 @@ death spiral: backlogs grew to **1,682 game tics per `SERVER_Tick` call**, ~60 w
 with no recovery. The snapshot protocol caps bandwidth and reduces CPU - one capture sweep per pump
 instead of per-monster command construction - but cannot fix simulation cost.
 
-**The fix is to let game time dilate rather than let the loop chase.** `sv_maxcatchuptics` (default
+**The fix is to let game time dilate rather than let the loop chase.** `fua_snap_maxcatchuptics` (default
 8) processes at most N tics per pump; a rerun at 2,989 awake pinned sim/pump at the cap, the world
 running at ~70% speed and the client surviving a session that had previously timed it out. An
 overloaded server degrades to slow motion instead of minute-long grinds.
@@ -697,7 +697,7 @@ a slow simulation from slow netcode. On MAP13 with ~1,100 hunting:
 | full fight | 1.75 | 2.48 | **4.22 ms** (15%) | 6.5 |
 
 **A 6.5 ms worst tick cannot push a 28.6 ms budget over**, so saturation is simulation cost and
-`sv_maxcatchuptics` is doing its job. Capture is nearly flat with load while the per-client pass
+`fua_snap_maxcatchuptics` is doing its job. Capture is nearly flat with load while the per-client pass
 scales 5x - the shape to remember as later phases add to that pass.
 
 **Stats windows with sim ≫ 1 aggregate multi-tic spans.** The frame builder's per-pump capture
@@ -1992,7 +1992,7 @@ Each phase ends green: playable, measurable, revertible.
 
 One client on MAP13 (~7,200 entities, ~1,000-1,100 hunting monsters in a fight) unless noted.
 **Anything measured before the report drain (§10.1) is not comparable**: the five-second stats block
-cost 220-250 ms of console output, which built an 8-tic backlog that `sv_maxcatchuptics` then
+cost 220-250 ms of console output, which built an 8-tic backlog that `fua_snap_maxcatchuptics` then
 processed in one pump, so every distance figure carried one self-inflicted catch-up per window in its
 tail. Medians and directions survived it; worst cases did not. Earlier still, anything before
 `snapcl_ApplyFrame` was corrected (§9.2) worked from a dirty set roughly half its true size.
@@ -2270,7 +2270,7 @@ measured, not a property it shares** - a tap keyed on `NETFL_MIRROR` recorded wh
 last.
 
 **An instrument whose reporting perturbs the system cannot measure it.** The stats block cost
-220-250 ms of console output on the game thread, building a backlog that `sv_maxcatchuptics` drained
+220-250 ms of console output on the game thread, building a backlog that `fua_snap_maxcatchuptics` drained
 8 tics at once - everything on screen snapping together once a window, contaminating every
 measurement taken before it was found. **Diagnostics on the game thread must be bounded per tic, not
 per report.**

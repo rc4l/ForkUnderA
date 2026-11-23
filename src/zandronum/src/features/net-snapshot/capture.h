@@ -191,6 +191,10 @@ bool LawAt(unsigned int classId, fixed_t x, fixed_t y, double &g, bool &bOldZ);
 // tick, a client when snapshot traffic starts.
 void ReportCvars();
 
+// [Kaori-Chani] The tics one server pump may run: every tic the clock passed while the gate
+// is off, and at most fua_snap_maxcatchuptics while it is on (computation/catchup_compute.h).
+unsigned int CatchUpTics(unsigned int deltaTics, unsigned int nowMS);
+
 // Mirror spawns: the four spawner actions, and a class owning a parameter
 // expression that runs a special.
 bool IsSpawnerState(const FState *pState);

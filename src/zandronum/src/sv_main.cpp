@@ -715,6 +715,10 @@ void SERVER_Tick( void )
 		deltaTics = server_GetDeltaTicks( nowTime, previousTics );
 	}
 
+	// [Kaori-Chani] features/net-snapshot: the catch-up clamp drops the tics past its cap, so game
+	// time dilates rather than the world running behind its clock. Gate off, it caps nothing.
+	deltaTics = zx::netsnapshot::CatchUpTics( deltaTics, nowTime );
+
 #ifdef NO_SERVER_GUI
 	// console input
 	char *cmd = I_ConsoleInput();

@@ -1,6 +1,6 @@
 # capture: the server's snapshot tick
 
-Covers: src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
 
 ## Responsibility
 
@@ -47,6 +47,14 @@ frame's budget and each chunk's limit, which this file reads from `sv_maxpackets
 ([clienttrack.md](clienttrack.md)); and the cosmetic event bank, whose refill, order, fit, overflow
 and append decide each client's events in `snap_CosClientPump`, which keeps the cull, the counters
 and the copying.
+
+The catch-up clamp is `catchup_compute`, also pure: `CatchUpTics` hands `ComputeCatchUp` the tics
+the clock passed and takes back the tics to run, so a pump past `fua_snap_maxcatchuptics` drops the
+rest and game time dilates rather than the world running behind its own clock ([Scale limits and
+overload behaviour](design.md#54-scale-limits-and-overload-behaviour)). Gate off it caps nothing, so
+a server without snapshots catches up as stock does. A run of dropping pumps that lasts a second
+warns once every five, through the report's drain, skipping a level load's first seconds, and the
+window's drops reach the `[snap] catch-up` line, which prints only when something was dropped.
 
 The motion laws are `law_compute`: the gravity law's acceleration, which `LawGravity` takes from the
 level, the sector and the class, and each tic's step of an id's straight and gravity runs, which set
@@ -266,7 +274,8 @@ Operating parameters (archived): `fua_snap_maxbytes` (per-frame payload, uncompr
 datagrams), `fua_snap_cull_dist`, `fua_snap_bandreserve` (the share reserved for the bands below
 d0), `fua_snap_sound_entergrace`, `fua_snap_soundevents` (snapshot sound events at all),
 `fua_snap_nonetid_classes`, `fua_snap_cosmetic_force` and `fua_snap_cosmetic_never`,
-`fua_snap_movers`.
+`fua_snap_movers`, `fua_snap_maxcatchuptics` (8: the tics one pump may run before the rest
+are dropped; 0 uncapped).
 
 Unarchived, so a restart returns them to their defaults: `fua_snap_cull_fov`,
 `fua_snap_missile_dist`, `fua_snap_entergrade`, `fua_snap_soundids`, `fua_snap_zstd_level` (the
@@ -358,7 +367,8 @@ Each site carries a `[Kaori-Chani]` line. Twenty-eight stock files call this hea
 - `sv_main.cpp`: `SERVER_Tick` calls `ServerTick`; the client connect, disconnect and ack paths; the
   sound table after `SnapJoin` and each ack's answer; the remote `MovePlayer` gate; the unreliable
   send's accounting; the reliable flush and its send time (`CountLegacyFlush`,
-  `CountLegacySendRaw`); and the mover gate at a join (`SendMoverGateTo`).
+  `CountLegacySendRaw`); the mover gate at a join (`SendMoverGateTo`); and the catch-up clamp
+  (`CatchUpTics`).
 - `sv_commands.cpp`: the legacy suppression tests in the actor and local-player commands
   (`SuppressesLegacy`, `SuppressesLegacyLocal`), `GateOn`, the mover gate's stops, the reset count,
   map stamp and frame on `DestroyAllSectorMovers` and `SnapJoin`.
@@ -383,13 +393,17 @@ Each site carries a `[Kaori-Chani]` line. Twenty-eight stock files call this hea
 
 ## Tests
 
-Both units are GoogleTest files under the 100% line gate, and each takes all of its unit's lines and
-branches. `computation/law_compute_test.cpp` takes the gravity law at `GetGravity`'s values,
-truncation included, and the run step through a stop, a first moving tic, held headings, turns
-either way, velz changing, constant acceleration, each ended run's bucket, the caps, the wrap at
-west and due west. `computation/budget_compute_test.cpp` takes the packet room, the frame budget and
-the chunk limit at their floors, the bank's refill, the pick order and the fit, a capped pump's
+The three units are GoogleTest files under the 100% line gate, and each takes all of its unit's
+lines and branches. `computation/law_compute_test.cpp` takes the gravity law at `GetGravity`'s
+values, truncation included, and the run step through a stop, a first moving tic, held headings,
+turns either way, velz changing, constant acceleration, each ended run's bucket, the caps, the wrap
+at west and due west. `computation/budget_compute_test.cpp` takes the packet room, the frame budget
+and the chunk limit at their floors, the bank's refill, the pick order and the fit, a capped pump's
 overflow, and the chunk cut over fixed and random frames with the events command's append.
+`computation/catchup_compute_test.cpp` takes the clamp inside the cap, past it and uncapped, the
+run's start, its break on a clean pump and its dilation, and the warning's three conditions -- the
+run's length, a level load's grace and the rate limit -- with the millisecond counter wrapping under
+it.
 
 No self-test block covers the rest of this file: the capture needs a running server. What checks it:
 - the `[snap]` report, whose lines each count what a mechanism did, so "on" and "ran" read apart;

@@ -83,8 +83,8 @@ identity is in the body, and their history is kept across a reset, since a secto
 recycled. They are recorded only in the client stream: the per-client pass writes them, after the
 world diff the `.zsnap` records. A mover sends on its transitions, so one lift's records should be
 seconds apart; a median interval near one tic means the dirty test is firing on the plane. Game
-tics against wall time below the tic rate mean the server was dilating (`sv_maxcatchuptics`), and
-every rate is then over a world that ran slow.
+tics against wall time below the tic rate mean the server was dilating
+(`fua_snap_maxcatchuptics`), and every rate is then over a world that ran slow.
 
 Two counts stand apart at the end of that line, and they mean different things:
 
