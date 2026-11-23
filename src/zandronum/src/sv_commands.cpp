@@ -111,6 +111,10 @@ bool EnsureActorHasNetID( const AActor *pActor )
 
 	if ( pActor->NetID == 0 )
 	{
+		// [Kaori-Chani] features/net-snapshot: a routed cosmetic has no NetID by design, so the
+		// warning would fire for every one of them (fua_snap_cosmetic_events 2).
+		if ( zx::netsnapshot::CosmeticRouted( pActor ))
+			return false;
 		if ( sv_showwarnings && !( pActor->NetworkFlags & NETFL_SERVERSIDEONLY ) )
 			Printf ( "Warning: Actor %s doesn't have a netID and therefore can't be manipulated online!\n", pActor->GetClass()->TypeName.GetChars() );
 		return false;
@@ -1612,6 +1616,11 @@ void SERVERCOMMANDS_SpawnThing( AActor *pActor, ULONG ulPlayerExtra, ServerComma
 void SERVERCOMMANDS_SpawnThingNoNetID( AActor *pActor, ULONG ulPlayerExtra, ServerCommandFlags flags )
 {
 	if ( pActor == NULL )
+		return;
+
+	// [Kaori-Chani] features/net-snapshot: a routed cosmetic reaches clients as an event, so this
+	// command would have each one spawned twice.
+	if ( zx::netsnapshot::CosmeticRouted( pActor ))
 		return;
 
 	if ( pActor->NetworkFlags & NETFL_SERVERSIDEONLY )
@@ -3976,6 +3985,10 @@ void SERVERCOMMANDS_SoundActor( AActor *pActor, LONG lChannel, const char *pszSo
 	// [BB] If the actor doesn't have a NetID, we have to instruct the clients differently how to play the sound.
 	if ( pActor->NetID == 0 )
 	{
+		// [Kaori-Chani] features/net-snapshot: a routed cosmetic's own action sound is its client
+		// copy's to play, so sending it as a point would play it twice.
+		if ( zx::netsnapshot::CosmeticMutesSound( pActor ))
+			return;
 		SERVERCOMMANDS_SoundPoint((LONG)( pActor->x),(LONG)( pActor->y),(LONG)( pActor->z), lChannel, pszSound, fVolume, fAttenuation, ulPlayerExtra, flags, pitch );
 		return;
 	}

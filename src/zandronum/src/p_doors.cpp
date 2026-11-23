@@ -42,6 +42,7 @@
 // [BB] New #includes.
 #include "cl_demo.h"
 #include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-session/netrole.h"	// [Kaori-Chani] zx::net::InClientMode
 #include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 #include "network.h"
 #include "sv_commands.h"
@@ -52,6 +53,10 @@
 // VERTICAL DOORS
 //
 //============================================================================
+
+// [Kaori-Chani] Vanilla's door wait, which every other door here takes from its line special
+// instead; P_SpawnDoorCloseIn30 has no line to take it from.
+#define VDOORWAIT	150
 
 IMPLEMENT_CLASS (DDoor)
 
@@ -774,8 +779,18 @@ bool EV_DoDoor (DDoor::EVlDoor type, line_t *line, AActor *thing,
 
 void P_SpawnDoorCloseIn30 (sector_t *sec)
 {
+	// [Kaori-Chani] features/net-snapshot: a gated client takes timed doors from their records,
+	// so it builds none of its own and clears the special as the spawn would have (7.1).
+	if ( zx::net::InClientMode( ) && zx::netsnapshot::MoverSuppressesLegacy( SNAPMV_DOOR ))
+	{
+		sec->special = 0;
+		return;
+	}
+
 	fixed_t height;
 	DDoor *door = new DDoor (sec);
+	// [Kaori-Chani] A client's own copy, which a mover gate-on then drops.
+	zx::netsnapshot::MoverMadeByLegacy( door );
 
 	sec->special = 0;
 
@@ -789,6 +804,9 @@ void P_SpawnDoorCloseIn30 (sector_t *sec)
 	door->m_OldFloorDist = sec->floorplane.d;
 	door->m_TopDist = sec->ceilingplane.d;
 	door->m_LightTag = 0;
+	// [Kaori-Chani] A re-press copies this into the countdown, and a record carries it, so it is
+	// set here rather than left at whatever the constructor made of it.
+	door->m_TopWait = VDOORWAIT;
 }
 
 //============================================================================
@@ -800,7 +818,11 @@ void P_SpawnDoorCloseIn30 (sector_t *sec)
 void P_SpawnDoorRaiseIn5Mins (sector_t *sec)
 {
 	sec->special = 0;
-	new DDoor (sec, DDoor::doorRaiseIn5Mins, 2*FRACUNIT, TICRATE*30/7, 0);
+	// [Kaori-Chani] features/net-snapshot: as P_SpawnDoorCloseIn30.
+	if ( zx::net::InClientMode( ) && zx::netsnapshot::MoverSuppressesLegacy( SNAPMV_DOOR ))
+		return;
+	DDoor *door = new DDoor (sec, DDoor::doorRaiseIn5Mins, 2*FRACUNIT, TICRATE*30/7, 0);
+	zx::netsnapshot::MoverMadeByLegacy( door );
 }
 
 //============================================================================
