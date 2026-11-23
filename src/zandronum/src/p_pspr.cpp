@@ -462,13 +462,14 @@ void P_BringUpWeapon (player_t *player)
 	player->psprites.ClearOverlays();
 	player->psprites[ps_weapon].sy = player->cheats & CF_INSTANTWEAPSWITCH
 		? WEAPONTOP : WEAPONBOTTOM;
-	P_SetPsprite (player, ps_weapon, newstate);
 	// [rc4l] uzdoom@261bc7784: make sure that the previous weapon's flash state is terminated.
 	// When coming here from a weapon drop it may still be active. ClearOverlays() above does not
 	// cover this -- ps_flash is a reserved layer and that call only removes non-reserved ones.
-	// Ungated on purpose, mirroring the P_SetPsprite right above it: psprites are per-player
+	// Ungated on purpose, mirroring the P_SetPsprite right below it: psprites are per-player
 	// presentation state that both ends run locally, with no SERVERCOMMANDS behind them.
+	// [MGOOOOOO] uzdoom@599fa7cfd1: cleared before the new weapon's state, so a flash its first frames start (a zero-tic raise into an A_GunFlash Ready) is kept.
 	P_SetPsprite(player, ps_flash, NULL);
+	P_SetPsprite (player, ps_weapon, newstate);
 	// [rc4l] uzdoom@ee6e87d94: clear the weapon scratch counter when bringing a weapon up.
 	player->mo->weaponspecial = 0;
 }
