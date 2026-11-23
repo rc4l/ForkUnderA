@@ -121,7 +121,7 @@ Legacy suppression (see [Gating legacy](design.md#gating-legacy)):
 - `ClientEffect`: an effect actor the server spawns for its clients to draw -- a teleport fog, a
   morph flash, a respawn puff. It frees the NetID the spawn took, so the capture pass cannot mirror
   a three-tic actor, and routes the spawn through `SERVERCOMMANDS_SpawnThing` instead. Nine stock
-  sites call it, and `TeleportFogs` asks the same of a teleport's pair of fogs from the motion
+  files call it, and `TeleportFogs` asks the same of a teleport's pair of fogs from the motion
   class.
 
 Wire accounting:
@@ -216,14 +216,13 @@ Cosmetic classes and events (see [Cosmetic actors](design.md#63-cosmetic-actors)
   forward by its age, a repeat of the same `CHAN_AUTO` sound from it does not start again.
 
 Snapshot sounds (see [Sounds and the derivation contract](design.md#61-sounds-and-the-derivation-contract)):
-- `BroadcastActorSound`: from `S_Sound`, an actor's sound for an entity whose legacy replication is
-  suppressed: per client, culled by rolloff, attached once the client has held the entity for
-  `fua_snap_sound_entergrace` frames and positional before that. False when the caller should fall
-  back to the legacy broadcast. A sound id goes reliable, so it cannot arrive before the entity it
-  names; until the client has believed the entity for `fua_snap_sound_entergrace` frames it goes
-  positional as `SVC2_SNAPSOUND` through the shared codec
-  (`computation/sound_compute.h`), carrying the NetID for a client matched on the sound table, which
-  moves it onto the mirror once one exists.
+- `BroadcastActorSound`: asked by `S_Sound` about every actor sound, flagged for the clients or not,
+  since a mirror runs no actions; false when the caller should fall back to the legacy broadcast.
+  For an entity whose legacy replication is suppressed it sends per client, culled by rolloff. A
+  sound id goes reliable, so it cannot arrive before the entity it names: attached once the client
+  has believed the entity for `fua_snap_sound_entergrace` frames, and before that positional as
+  `SVC2_SNAPSOUND` through the shared codec (`computation/sound_compute.h`), carrying the NetID for
+  a client matched on the sound table, which moves it onto the mirror once one exists.
 - `SoundUnplayable`: a sound no client can play (no sound, or no volume), counted and skipped.
 - `GhostSoundHandled`, `SendPlayerStopSound`: whether a mirror's own copy has taken a sound, and a
   player's channel stop for the gated client.
@@ -358,11 +357,10 @@ Each site carries a `[Kaori-Chani]` line. Twenty-eight stock files call this hea
 - `sv_main.cpp`: `SERVER_Tick` calls `ServerTick`; the client connect, disconnect and ack paths; the
   sound table after `SnapJoin` and each ack's answer; the remote `MovePlayer` gate; the unreliable
   send's accounting; the reliable flush and its send time (`CountLegacyFlush`,
-  `CountLegacySendRaw`); the mover gate at a join (`SendMoverGateTo`); and the missing-packet
-  guard.
+  `CountLegacySendRaw`); and the mover gate at a join (`SendMoverGateTo`).
 - `sv_commands.cpp`: the legacy suppression tests in the actor and local-player commands
   (`SuppressesLegacy`, `SuppressesLegacyLocal`), `GateOn`, the mover gate's stops, the reset count,
-  map stamp and frame on `DestroyAllSectorMovers` and `SnapJoin`, and the cosmetic route tests.
+  map stamp and frame on `DestroyAllSectorMovers` and `SnapJoin`.
 - `p_mobj.cpp`: spawns (`NoteCosmeticSpawn`, `NoteSpawnNetID`, `NoteCosmeticNetID`), blood, splatter
   and puffs, routed-cosmetic tests, `ClientEffect`, and `ForgetCosmetic` from `AActor::Destroy`.
 - `dthinker.cpp`: the first-tick hooks around a thinker's first `Tick`.
@@ -372,9 +370,9 @@ Each site carries a `[Kaori-Chani]` line. Twenty-eight stock files call this hea
 - `s_sound.cpp`: `BroadcastActorSound`, `SoundUnplayable`, `GhostSoundHandled`,
   `SendPlayerStopSound`, and on the client `CatchUpHoldsSound`.
 - `g_game.cpp`: `ResetEnd` at the end of a map reset.
-- `p_plats.cpp`, `p_ceiling.cpp`, `p_floor.cpp`, `p_doors.cpp`, `p_pillar.cpp`, `po_man.cpp`:
-  `MoverServerStops` in the legacy mover commands and the `MoverSend*Sound` call each one's sound
-  moved to.
+- `p_plats.cpp`, `p_ceiling.cpp`, `p_floor.cpp`, `p_doors.cpp`, `p_pillar.cpp`: `MoverServerStops`
+  in the legacy mover commands and the `MoverSend*Sound` call each one's sound moved to;
+  `po_man.cpp`: `MoverServerStops` alone.
 - `p_linkedsectors.cpp`, `cl_main.cpp`: `TracePlaneWrite` on plane writes.
 - `p_teleport.cpp`: `TeleportFogs` for a teleport's pair.
 - `a_pickups.cpp`, `p_things.cpp`, `p_map.cpp`, `invasion.cpp`, `a_morph.cpp`, `a_bossbrain.cpp`,

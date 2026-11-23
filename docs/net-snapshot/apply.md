@@ -7,8 +7,8 @@ Covers: src/zandronum/src/features/net-snapshot/apply.h, src/zandronum/src/featu
 The client's handlers for the snapshot server commands, kept out of `cl_main.cpp`, whose dispatch
 holds a one-line call for each: the snapshot datagram and its ack, the door, mover and floor sounds,
 the sound table, and a snapshot sound. Each reads its command's body from the stream. Decoding the
-payload itself is `entities.cpp`'s ([entities.md](entities.md)), and the cosmetic events, the
-seventh command in that dispatch, are read there too.
+payload itself is `entities.cpp`'s ([entities.md](entities.md)); the cosmetic events, the seventh
+command in that dispatch, are read in `ghostactor.cpp` ([ghostactor.md](ghostactor.md)).
 
 ## A snapshot datagram
 
