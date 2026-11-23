@@ -20,6 +20,31 @@ class AActor;	// declared here so an includer needs no particular header order
 
 namespace zx { namespace netsnapshot {
 
+// [Kaori-Chani] The calls the client census times, each bracketed by a CensusScope at its site:
+// the frame's own phases come from features/framephase, which already measures them.
+enum ESnapCensusPhase
+{
+	SNAPCENSUS_THINKERS,	// DThinker::RunThinkers
+	SNAPCENSUS_EFFECTS,		// P_RunEffects
+	SNAPCENSUS_GTICKER,		// G_Ticker
+	SNAPCENSUS_NETUPDATE,	// NetUpdate
+	SNAPCENSUS_PREDTHINK,	// P_PlayerThink in the prediction replay
+	SNAPCENSUS_PREDMOVE,	// the replay's AActor::Tick
+	SNAPCENSUS_COUNT
+};
+
+// One timed call: the span from construction to destruction is added to the phase's window
+// total, which the client's [snap] ghostframe and predict lines report.
+class CensusScope
+{
+public:
+	explicit CensusScope( ESnapCensusPhase phase );
+	~CensusScope();
+private:
+	ESnapCensusPhase	m_phase;
+	long long			m_startRaw;
+};
+
 // Called once per rendered frame, before the world is drawn.
 void GhostFrame();
 

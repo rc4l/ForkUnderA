@@ -31,6 +31,7 @@
 #include "i_system.h"
 #include "r_utility.h"	// [Kaori-Chani] r_NoInterpolate, which forces the frac to 1
 #include "i_tictime.h"
+#include "features/framephase/framephase.h"	// [Kaori-Chani] the loop's own sim and display times
 #include "network.h"
 #include "cl_main.h"		// CLIENT_MoveThing, for the real player actors
 #include "tables.h"
@@ -2105,9 +2106,10 @@ static size_t g_gcAllocMin = 0, g_gcAllocMax = 0;
 static bool g_gcAllocSeen = false;
 // GhostFrame's own time, in raw monotonic counts.
 static QWORD g_ghostSelfRaw = 0;
-// Frame phases from d_main.cpp's loop: sim (TryRunTics) and render (D_Display).
-unsigned long long g_frameSimRaw = 0;
-unsigned long long g_frameRenderRaw = 0;
+// [Kaori-Chani] The frame's own phases, in microseconds, read from features/framephase once a
+// ghost frame: it already times the loop's sim (TryRunTics) and display (D_Display).
+double g_frameSimUs = 0.0;
+double g_frameRenderUs = 0.0;
 unsigned long long g_frameTicsRun = 0;		// tics executed across the window
 unsigned long long g_ticThinkersRaw = 0;		// RunThinkers time across the window
 unsigned long long g_ticEffectsRaw = 0;		// P_RunEffects time across the window
@@ -2115,6 +2117,31 @@ unsigned long long g_applyDeltaRaw = 0;		// ApplyDelta (snapshot parse) time
 unsigned long long g_gtickerRaw = 0;			// G_Ticker time across the window
 unsigned long long g_netupdateRaw = 0;		// NetUpdate time across the window
 extern unsigned int I_FPSTime();
+
+// [Kaori-Chani] One timed call: the span goes to the window total its phase is reported from,
+// so a site costs one line and this file keeps the counters.
+zx::netsnapshot::CensusScope::CensusScope( ESnapCensusPhase phase )
+	: m_phase( phase ), m_startRaw( (long long)TIC_GetRawCounter( ) )
+{
+}
+
+zx::netsnapshot::CensusScope::~CensusScope()
+{
+	const long long now = (long long)TIC_GetRawCounter( );
+	if ( now <= m_startRaw )
+		return;
+	const unsigned long long span = (unsigned long long)( now - m_startRaw );
+	switch ( m_phase )
+	{
+	case SNAPCENSUS_THINKERS:	g_ticThinkersRaw += span;	break;
+	case SNAPCENSUS_EFFECTS:	g_ticEffectsRaw += span;	break;
+	case SNAPCENSUS_GTICKER:	g_gtickerRaw += span;		break;
+	case SNAPCENSUS_NETUPDATE:	g_netupdateRaw += span;		break;
+	case SNAPCENSUS_PREDTHINK:	g_predThinkRaw += span;		break;
+	case SNAPCENSUS_PREDMOVE:	g_predMoveRaw += span;		break;
+	default:												break;
+	}
+}
 
 // Raw counts -> milliseconds, at microsecond resolution so a sub-ms phase is
 // visible rather than truncated to zero.
@@ -2897,6 +2924,21 @@ void zx::netsnapshot::GhostFrame()
 	// This frame's per-tier counts and elapsed time, averaged in the report.
 	g_ghostSelfRaw += (QWORD)(TIC_GetRawCounter() - ghostStartRaw);
 
+	// [Kaori-Chani] The loop's own phases, once a ghost frame: the last whole frame's figures,
+	// and the tics it ran, which is the gametic this frame stands at less the previous one's.
+	{
+		const float* phases = zx::framephase::LastFramePhases();
+		if (phases != NULL)
+		{
+			g_frameSimUs += (double)phases[zx::framephase::kPhaseSim];
+			g_frameRenderUs += (double)phases[zx::framephase::kPhaseDisplay];
+		}
+		static int s_lastGametic = 0;
+		if ((gametic > s_lastGametic) && (s_lastGametic != 0))
+			g_frameTicsRun += (unsigned long long)(gametic - s_lastGametic);
+		s_lastGametic = gametic;
+	}
+
 	g_ghostNearAccum += nNear;
 	g_ghostMidAccum += nMid;
 	g_ghostFarAccum += nFar;
@@ -3059,8 +3101,8 @@ static void ghost_Report()
 			(double)g_gcAllocMin / (1024.0 * 1024.0),
 			(double)g_gcAllocMax / (1024.0 * 1024.0),
 			ghost_RawToMS(g_ghostSelfRaw), ghost_RawToMS(g_ghostSelfRaw) * inv,
-			ghost_RawToMS(g_frameSimRaw) * inv,
-			ghost_RawToMS(g_frameRenderRaw) * inv,
+			g_frameSimUs / 1000.0 * inv,
+			g_frameRenderUs / 1000.0 * inv,
 			(double)g_frameTicsRun * inv,
 			ghost_RawToMS(g_ticThinkersRaw) * inv,
 			ghost_RawToMS(g_ticEffectsRaw) * inv,
@@ -3977,8 +4019,8 @@ static void ghost_Report()
 	g_predCalls = g_predTicsSum = g_predTicsMax = 0;
 	g_predThinkRaw = g_predMoveRaw = 0;
 	g_ghostSelfRaw = 0;
-	g_frameSimRaw = 0;
-	g_frameRenderRaw = 0;
+	g_frameSimUs = 0.0;
+	g_frameRenderUs = 0.0;
 	g_frameTicsRun = 0;
 	g_ticThinkersRaw = 0;
 	g_ticEffectsRaw = 0;

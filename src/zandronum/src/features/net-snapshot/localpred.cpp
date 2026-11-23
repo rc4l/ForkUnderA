@@ -28,6 +28,10 @@
 
 EXTERN_CVAR(Bool, cl_buffercommands)
 
+// [Kaori-Chani] At global scope, as ghostactor.cpp defines them there beside the predict
+// line that reports them.
+extern unsigned long long g_predCalls, g_predTicsSum, g_predTicsMax;
+
 // The reconciliation error census's interval in seconds, 0 off.
 CVAR(Int, fua_csnap_predcensus, 0, CVAR_NOSETBYACS)
 
@@ -456,6 +460,15 @@ void zx::netsnapshot::LocalPredVisit(unsigned int baseTick, bool bIdle,
 // across pings.
 void zx::netsnapshot::LocalPredSample(unsigned int predictionTics)
 {
+	// [Kaori-Chani] Ahead of the census gate: the client's predict line reports these every
+	// window, whether or not the detailed census is on.
+	{
+		++g_predCalls;
+		g_predTicsSum += predictionTics;
+		if (predictionTics > g_predTicsMax)
+			g_predTicsMax = predictionTics;
+	}
+
 	if (fua_csnap_predcensus <= 0)
 		return;
 

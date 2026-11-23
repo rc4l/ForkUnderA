@@ -65,6 +65,7 @@
 #include "cl_main.h"
 #include "features/net-snapshot/localpred.h"   // [Kaori-Chani] the local block's census
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverInstallSinks
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the client census scope
 
 //*****************************************************************************
 //	VARIABLES
@@ -528,8 +529,16 @@ static void client_predict_DoPrediction( player_t *pPlayer, ULONG ulTicks )
 		memcpy( &pPlayer->cmd, &g_SavedTiccmd[lTick % CLIENT_PREDICTION_TICS], sizeof( ticcmd_t ));
 
 		// Tick the player.
-		P_PlayerThink( pPlayer );
-		pPlayer->mo->Tick( );
+		// [Kaori-Chani] features/net-snapshot: timed apart for the client's predict line, the
+		// weapons (P_PlayerThink) against the movement (the pawn's own Tick).
+		{
+			const zx::netsnapshot::CensusScope think( zx::netsnapshot::SNAPCENSUS_PREDTHINK );
+			P_PlayerThink( pPlayer );
+		}
+		{
+			const zx::netsnapshot::CensusScope move( zx::netsnapshot::SNAPCENSUS_PREDMOVE );
+			pPlayer->mo->Tick( );
+		}
 
 		// [BB] The effect of all DPushers needs to be manually predicted.
 		pusherIt.Reinit();

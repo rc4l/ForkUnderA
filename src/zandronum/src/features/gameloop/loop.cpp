@@ -34,6 +34,7 @@
 #include "v_font.h"   // [rc4l] V_FontsForTic
 #include "mcp_ticprof.h"   // [ForkUnderA] MCP_SimPreTic, MCP_TicProf_TicDone
 #include "mcp_simtrace.h"  // [ForkUnderA] MCP_SimTrace_TicDone
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the client census scope
 
 // [rc4l] Runs each tic's playsim on the game thread while the main thread draws, wherever ComputeThreadedTic allows.
 CVAR(Bool, fua_gamethread, true, CVAR_ARCHIVE)
@@ -80,7 +81,12 @@ void PlaysimTic(bool drawn)
 	ZX_SEAM("tic/playsim", GameThread);
 	const int64_t start = zx::telemetry::NowNs ();
 	zx::frame::DebugPlaysimStall ();
-	G_TickerPlaysim ();
+	// [Kaori-Chani] features/net-snapshot: the ticker's cost for the client's ghostframe line, the
+	// playsim being the part of this tree's three-way G_Ticker the figure is about.
+	{
+		const zx::netsnapshot::CensusScope gtick( zx::netsnapshot::SNAPCENSUS_GTICKER );
+		G_TickerPlaysim ();
+	}
 	g_lastPlaysimNs.store (zx::telemetry::NowNs () - start, std::memory_order_relaxed);
 	// [rc4l] Found while the frames still draw, so the handoff takes only what changed.
 	if (drawn) zx::gamecopy::ScanAtTicEnd ();
@@ -108,7 +114,12 @@ void AfterTic(bool drawn)
 	MCP_SimTrace_TicDone ();
 	gametic++;
 	DrainEffects ();
-	NetUpdate ();	// check for new console commands
+	// [Kaori-Chani] features/net-snapshot: the per-tic NetUpdate, which the ghostframe line
+	// reports beside the parse so a client's send cost reads apart from its receive.
+	{
+		const zx::netsnapshot::CensusScope netupd( zx::netsnapshot::SNAPCENSUS_NETUPDATE );
+		NetUpdate ();	// check for new console commands
+	}
 	// [rc4l] The render copy of what this tic left, before any frame draws beside the next; a tic no frame draws leaves it to the next, which takes every change since.
 	if (drawn) zx::gamecopy::FillMap ();
 }
