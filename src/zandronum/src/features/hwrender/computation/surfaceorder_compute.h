@@ -34,6 +34,8 @@ struct TranslucentDraw
 	int      blend;         // 0 opaque/alpha-tested, 1 translucent, 2 additive, 3 fuzz
 	bool     decal;         // paint on a surface: coplanar with it, and depth-biased to win against it
 	unsigned first;         // vertex offset, which is creation order: older marks have smaller ones
+	// [Doruk-Aksoy] The actor a sprite piece draws, whose record order breaks a tie ahead of the offset so the tic stream and the CPU path agree, or -1.
+	int      who = -1;
 	// [rc4l] How many translucent level planes lie between it and the eye, and whether it is one of them (ComputeBlendLayers).
 	int      layer = 0;
 	bool     plane = false;

@@ -92,6 +92,9 @@ void RenderCameraTexture(const void *material, int w, int h, float aspect,
 // [rc4l] True once the backend's scene is up (switched on, the level baked and uploaded), whatever fua_dg_standalone says.
 bool StandaloneActive();
 
+// [Doruk-Aksoy] Whether the backend draws a tic stream of sprites, which takes bindless material slots.
+bool TicSpritesSupported();
+
 // [rc4l] Whether the backend's window is the picture the player sees, which decides who presents, where StandaloneActive decides who builds.
 bool BackendPresenting();
 

@@ -416,12 +416,14 @@ TEST(SurfaceOrder, TheSortKeyIsTheRule)
 				for (int plane = 0; plane < 2; plane++)
 					for (float dist : dists)
 						for (int age = 0; age < 2; age++)
-						{
-							TranslucentDraw d;
-							d.distSq = dist; d.blend = blend; d.decal = decal != 0; d.layer = layer; d.plane = plane != 0;
-							d.first = (first++ * 2654435761u) >> (age * 3);
-							draws.push_back(d);
-						}
+							for (int who = -1; who < 2; who++)
+							{
+								TranslucentDraw d;
+								d.distSq = dist; d.blend = blend; d.decal = decal != 0; d.layer = layer; d.plane = plane != 0;
+								d.first = (first++ * 2654435761u) >> (age * 3);
+								d.who = who;
+								draws.push_back(d);
+							}
 	for (size_t i = 0; i < draws.size(); i++)
 		for (size_t j = 0; j < draws.size(); j++)
 			ASSERT_EQ(ComputeDrawsBefore(draws[i], draws[j]),
@@ -495,4 +497,20 @@ TEST(SurfaceOrder, TheSortKeyClampsTheLayer)
 	beyond.layer = 0;
 	EXPECT_FALSE(ComputeTranslucentSortKey(deep) < ComputeTranslucentSortKey(beyond));
 	EXPECT_FALSE(ComputeTranslucentSortKey(beyond) < ComputeTranslucentSortKey(deep));
+}
+
+// [Doruk-Aksoy] Two sprites at one distance tie by their actors' records, not where each stream put them, and a piece with no actor goes first.
+TEST(SurfaceOrder, ATieFallsToTheActorsRecordBeforeTheOffset)
+{
+	TranslucentDraw early, late, loose;
+	early.distSq = late.distSq = loose.distSq = 100.f;
+	early.blend = late.blend = loose.blend = 1;
+	early.who = 3; early.first = 900;
+	late.who = 7; late.first = 12;
+	loose.who = -1; loose.first = 5000;
+	EXPECT_TRUE(ComputeDrawsBefore(early, late));
+	EXPECT_FALSE(ComputeDrawsBefore(late, early));
+	EXPECT_TRUE(ComputeDrawsBefore(loose, early));
+	EXPECT_TRUE(ComputeTranslucentSortKey(early) < ComputeTranslucentSortKey(late));
+	EXPECT_TRUE(ComputeTranslucentSortKey(loose) < ComputeTranslucentSortKey(early));
 }

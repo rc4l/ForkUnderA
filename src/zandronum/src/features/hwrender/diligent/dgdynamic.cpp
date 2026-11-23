@@ -4,6 +4,11 @@
 // [rc4l] The per-frame stream: sprites, models and decals, the solid ones drawn after the world and the translucent ones sorted into one pass with the world's.
 
 #include "features/hwrender/diligent/dgscene_internal.h"
+#include "r_utility.h"   // [Doruk-Aksoy] r_ActorFrac
+#include "features/sprites/spritebuild.h"   // [Doruk-Aksoy] LastTicSplit
+#include "features/gamecopy/actors.h"   // [Doruk-Aksoy] FillCount, for fua_dg_ticstats
+#include "features/dev-mode/devmode.h"   // [Doruk-Aksoy] fua_dg_ticstats
+#include "features/viewsetup/spriteview.h"   // [Doruk-Aksoy] the view tic sprites turn to
 #include "features/hwrender/computation/pieceorder_compute.h"   // [rc4l] ComputePieceOrderKey
 #include "features/hwrender/computation/pipelineswitch_compute.h"   // [Doruk-Aksoy] fua_dg_blendorder's switch tally
 #include "features/hwrender/computation/spriteatlas_compute.h"   // [rc4l] ComputeAtlasUV, ComputeAtlasPieceEligible
@@ -43,6 +48,8 @@ EXTERN_CVAR(Bool, fua_dg_premulblend)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
 // [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
 CVAR(Bool, fua_dg_blendwalk, true, CVAR_FUA_DEV_MODE)
+// [Doruk-Aksoy] Picks which actors fua_dg_gpuview draws, 1 those the tic stream may carry and 2 every other piece, the same in either path.
+CVAR(Int, fua_dg_gpuview, 0, CVAR_FUA_DEV_MODE)
 
 // [Doruk-Aksoy] One of the frame's flat planes: its height, footprint, and the view whose walk captured it.
 struct FlatPlaneInfo { float h; zx::hwrender::FlatFootprint area; int mirrorView, stackSlot; };
@@ -228,6 +235,220 @@ static void GatherTracedSprites(const SceneVertex *vb, unsigned count)
 	zx::levelmesh::MirrorSteps(g_scene.tracedSteps);
 }
 
+// [rc4l] The dynamic words (general vertices, packed sprites, model matrices) and the vertex refs into them.
+// [Doruk-Aksoy] The tic stream's packed sprites first, kept between frames, then the frame's.
+static TArray<unsigned> g_dynWords, g_dynRefs;
+
+// [Doruk-Aksoy] The tic stream's region at the front of the words, refs and runs, made again only when the tic's stream, its slots or its buffers change.
+struct TicRegion
+{
+	unsigned int gen = 0, table = 0;
+	bool premul = false, built = false;
+	unsigned int words = 0, refs = 0;   // [Doruk-Aksoy] its packed sprites' words and refs
+	TArray<DynRun> runs;                // [Doruk-Aksoy] one a packed sprite, ticPiece naming its piece
+	std::vector<char> unpacked;         // [Doruk-Aksoy] a tic piece no packed sprite could carry, drawn each frame from a moved copy
+	std::vector<PieceSlotSet> slots;    // [Doruk-Aksoy] the slots each piece was packed with, which each reservation must still give it
+	std::vector<std::array<zx::hwrender::SpriteCorner, 4>> corners;   // [Doruk-Aksoy] each run's stored corners (scene x, height, map y)
+	std::vector<zx::hwrender::SpriteMotion> motion;                     // [Doruk-Aksoy] ...and its motion, for its bounds each frame
+	std::vector<std::array<float, 3>> sort;                             // [Doruk-Aksoy] ...and its sort centre at the tic's end
+	const void *wordsBuf = NULL, *refsBuf = NULL;   // [Doruk-Aksoy] the buffers it went to, so a new buffer takes it again
+};
+static TicRegion g_tic;
+// [Doruk-Aksoy] Tic stream runs a camera texture's pass drew since fua_dg_ticstats last printed, which must stay 0.
+static unsigned g_cameraTicDraws = 0;
+
+// [Doruk-Aksoy] The view the scene shader turns tic sprites to, as dgviews hands it the same frame.
+struct TicView { float frac, perpX, perpY, pitch; };
+static TicView TicViewNow()
+{
+	float dirX = 0.f, dirY = 0.f, yaw = 0.f, pitch = 0.f;
+	zx::viewsetup::SpriteView().ViewVector(dirX, dirY);
+	zx::viewsetup::SpriteView().ViewAngles(yaw, pitch);
+	return TicView{ FIXED2FLOAT(r_ActorFrac), -dirY, dirX, pitch };
+}
+
+// [Doruk-Aksoy] A tic piece's stored corners and motion, as its packed sprite holds them.
+static void TicPieceCorners(const zx::levelmesh::MeshVertex *src, const zx::levelmesh::MeshPiece &p, zx::hwrender::SpriteCorner corners[4], zx::hwrender::SpriteMotion &m)
+{
+	for (int c = 0; c < 4; c++)
+	{
+		const SceneVertex dv = ToSceneVertex(src[p.range.offset + c], 0);
+		corners[c] = { dv.x, dv.y, dv.z, dv.u, dv.v };
+	}
+	m = { p.gpuCx, p.gpuCy, p.gpuPx, p.gpuPy, p.gpuDx, p.gpuDh, p.gpuDy, p.gpuXY };
+}
+
+// [Doruk-Aksoy] Whether a reservation now gives any packed tic piece other slots than it was packed with.
+static bool TicSlotsMoved(const zx::levelmesh::MeshPiece *pieces, int count)
+{
+	if ((int)g_tic.slots.size() != count || (int)g_tic.unpacked.size() != count) return true;
+	for (int k = 0; k < count; k++)
+	{
+		if (g_tic.unpacked[k]) continue;
+		const PieceSlotSet now = DynamicPieceSlots(k, pieces[k]);
+		if (now.mat != g_tic.slots[k].mat || now.bright != g_tic.slots[k].bright) return true;
+	}
+	return false;
+}
+
+// [Doruk-Aksoy] The tic stream packed into the front of the words and refs, one run a sprite.
+static void BuildTicRegion(const zx::levelmesh::MeshVertex *src, const zx::levelmesh::MeshPiece *pieces, int count)
+{
+	ZX_ZONE("scene/tic_region");   // [Doruk-Aksoy] the tic stream packed, once a tic
+	static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
+	static std::vector<unsigned> packed;
+	static std::vector<char> ok;
+	static std::vector<ScenePieceData> filled;
+	static std::vector<int> unfilled;
+	packed.resize((size_t)count * zx::hwrender::kSpriteWords);
+	ok.assign(count, 0);
+	filled.resize(count);
+	g_tic.slots.resize(count);
+	const int chunks = (count + kDynChunk - 1) / kDynChunk;
+	unfilled.assign(chunks, 0);
+	auto pack = [&](int chunk, int)
+	{
+		int missed = 0;
+		for (int k = chunk * kDynChunk; k < count && k < (chunk + 1) * kDynChunk; k++)
+		{
+			const zx::levelmesh::MeshPiece &p = pieces[k];
+			g_tic.slots[k] = DynamicPieceSlots(k, p);
+			FillPieceDataWith(p, g_tic.slots[k], filled[k], false);
+			missed += MaterialSlotsUnfilled((int)filled[k].matSlot, (int)filled[k].brightSlot);
+			zx::hwrender::SpriteCorner corners[4];
+			zx::hwrender::SpriteMotion m;
+			TicPieceCorners(src, p, corners, m);
+			ok[k] = p.quad && p.range.count == 4 && zx::hwrender::ComputeSpritePack(filled[k], corners, &packed[(size_t)k * zx::hwrender::kSpriteWords], &m) ? 1 : 0;
+		}
+		unfilled[chunk] = missed;
+	};
+	zx::jobs::Pool().ParallelFor(chunks, pack);
+	for (int c = 0; c < chunks; c++) { g_stats.dynSlotUnfilled += unfilled[c]; g_stats.dynSlotUnfilledTotal += unfilled[c]; }
+	ZX_ZONE("scene/tic_compact");   // [Doruk-Aksoy] the packed sprites laid out with their runs, each at its place among the packed
+	static std::vector<int> place;
+	place.resize(count);
+	g_tic.unpacked.assign(count, 0);
+	int sprites = 0;
+	for (int k = 0; k < count; k++)
+	{
+		place[k] = ok[k] ? sprites++ : -1;
+		if (!ok[k]) { g_tic.unpacked[k] = 1; ZX_COUNT("ticstream/tic_unpacked", "sprites", 1); }
+	}
+	g_dynWords.Resize((unsigned)sprites * zx::hwrender::kSpriteWords);
+	g_dynRefs.Resize((unsigned)sprites * 6);
+	g_tic.runs.Resize((unsigned)sprites);
+	g_tic.corners.resize(sprites);
+	g_tic.motion.resize(sprites);
+	g_tic.sort.resize(sprites);
+	auto lay = [&](int lo, int hi, int) { for (int k = lo; k < hi; k++)
+	{
+		const int j = place[k];
+		if (j < 0) continue;
+		const zx::levelmesh::MeshPiece &p = pieces[k];
+		const unsigned at = (unsigned)j * zx::hwrender::kSpriteWords;
+		memcpy(&g_dynWords[at], &packed[(size_t)k * zx::hwrender::kSpriteWords], zx::hwrender::kSpriteWords * sizeof(unsigned));
+		for (unsigned v = 0; v < 6; v++) g_dynRefs[(unsigned)j * 6 + v] = zx::hwrender::ComputeSpriteRef(at, kQuadOrder[v]);
+		DynRun &r = g_tic.runs[j];
+		r.material = p.material; r.first = (unsigned)j * 6; r.count = 6; r.blend = p.blendMode;
+		r.translation = p.translation; r.depthBias = p.depthBias; r.redAlpha = p.redToAlpha; r.solid = p.solid;
+		r.flatPlane = false; r.hud = p.hud; r.mirrorView = p.mirrorView; r.stackSlot = p.stackSlot; r.onMirror = p.onMirror;
+		r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
+		r.lo = r.hi = 0.f; r.minX = r.maxX = r.minZ = r.maxZ = 0.f;
+		r.atlasPage = -1; r.general = -1;
+		r.userShader = zx::hwshaders::ComputeUserShaderOf((int)(filled[k].warpStyle + 0.5f));
+		r.ticPiece = k; r.hidden = false; r.eligible = true; r.sortWho = p.sortWho;
+		TicPieceCorners(src, p, g_tic.corners[j].data(), g_tic.motion[j]);
+		g_tic.sort[j] = { p.sortX, p.sortY, p.sortZ };
+	} };
+	if (count > 0) zx::jobs::Pool().ParallelChunks(count, 256, lay);
+	g_tic.words = (unsigned)sprites * zx::hwrender::kSpriteWords;
+	g_tic.refs = (unsigned)sprites * 6;
+	ZX_COUNT("ticstream/tic_packed", "sprites", sprites);
+}
+
+// [Doruk-Aksoy] A tic piece drawn by the CPU where the shader would draw it this frame, an ordinary piece of the frame's.
+static void MovedCopy(const zx::levelmesh::MeshVertex *src, const zx::levelmesh::MeshPiece &p, const TicView &view,
+	std::vector<zx::levelmesh::MeshVertex> &verts, std::vector<zx::levelmesh::MeshPiece> &pieces)
+{
+	zx::hwrender::SpriteCorner in[4], out[4];
+	zx::hwrender::SpriteMotion m;
+	TicPieceCorners(src, p, in, m);
+	zx::hwrender::ComputeSpriteMotionCorners(in, m, view.frac, view.perpX, view.perpY, view.pitch, out);
+	zx::levelmesh::MeshPiece copy = p;
+	copy.gpuMove = false;
+	const float back = 1.f - view.frac;
+	copy.sortX -= p.gpuDx * back; copy.sortY -= p.gpuDy * back; copy.sortZ -= p.gpuDh * back;
+	copy.range.offset = (unsigned)verts.size();
+	copy.range.count = 4;
+	for (int c = 0; c < 4; c++)
+	{
+		zx::levelmesh::MeshVertex mv = src[p.range.offset + c];
+		mv.x = out[c].x; mv.z = out[c].y; mv.y = out[c].z;
+		verts.push_back(mv);
+	}
+	pieces.push_back(copy);
+	ZX_COUNT("ticstream/tic_copied", "sprites", 1);
+}
+
+// [Doruk-Aksoy] Each frame, the tic runs hidden as the sprite side says (or forced), their bounds and sort centre where the shader draws them, and fua_dg_gpuview's pick over every run.
+static void ApplyTicFrame(const std::vector<char> &forced)
+{
+	int hiddenCount = 0;
+	const unsigned char *hidden = zx::levelmesh::DynTicHidden(hiddenCount);
+	const TicView view = TicViewNow();
+	const float back = 1.f - view.frac;
+	const int pick = fua_dg_gpuview;
+	TArray<DynRun> &runs = g_scene.dynRuns;
+	const unsigned ticRuns = g_tic.runs.Size() <= runs.Size() ? g_tic.runs.Size() : 0;
+	for (unsigned i = ticRuns; i < runs.Size(); i++) runs[i].hidden = (pick == 1 && !runs[i].eligible) || (pick == 2 && runs[i].eligible);
+	// [Doruk-Aksoy] One turn for every XY billboard of the frame, worked out once.
+	const float ang = -view.pitch * 3.14159265358979323846f / 180.f, cs = cosf(ang), sn = sinf(ang);
+	// [Doruk-Aksoy] Each tic run on its own lane's chunk, since they write only themselves.
+	auto apply = [&](int lo, int hi, int) { for (int i = lo; i < hi; i++)
+	{
+		DynRun &r = runs[i];
+		r.hidden = (pick == 1 && !r.eligible) || (pick == 2 && r.eligible);
+		const int k = r.ticPiece;
+		if ((k < hiddenCount && hidden[k]) || (k < (int)forced.size() && forced[k])) r.hidden = true;
+		if (r.hidden) continue;
+		zx::hwrender::SpriteCorner out[4];
+		const zx::hwrender::SpriteMotion &m = g_tic.motion[i];
+		zx::hwrender::ComputeSpriteMotionCornersCS(g_tic.corners[i].data(), m, view.frac, view.perpX, view.perpY, cs, sn, out);
+		r.lo = r.minX = r.minZ = 1e30f;
+		r.hi = r.maxX = r.maxZ = -1e30f;
+		for (int c = 0; c < 4; c++)
+		{
+			r.lo = std::min(r.lo, out[c].y); r.hi = std::max(r.hi, out[c].y);
+			r.minX = std::min(r.minX, out[c].x); r.maxX = std::max(r.maxX, out[c].x);
+			r.minZ = std::min(r.minZ, out[c].z); r.maxZ = std::max(r.maxZ, out[c].z);
+		}
+		r.cx = g_tic.sort[i][0] - m.dx * back; r.cy = g_tic.sort[i][1] - m.dy * back; r.cz = g_tic.sort[i][2] - m.dh * back;
+	} };
+	if (ticRuns > 0) zx::jobs::Pool().ParallelChunks((int)ticRuns, 512, apply);
+}
+
+}} // namespace zx::hwrender
+// [Doruk-Aksoy] The tic stream's state, so a test can tell the shader path drew what it judged.
+DEV_MODE_CCMD(fua_dg_ticstats)
+{
+	int pieces = 0, hiddenCount = 0, shown = 0, frameDerived = 0;
+	zx::levelmesh::DynTicPieces(pieces);
+	const unsigned char *hidden = zx::levelmesh::DynTicHidden(hiddenCount);
+	int hiddenNow = 0;
+	for (int i = 0; i < hiddenCount; i++) hiddenNow += hidden[i] ? 1 : 0;
+	zx::sprites::LastTicSplit(shown, frameDerived);
+	int unpacked = 0;
+	for (char u : zx::hwrender::g_tic.unpacked) unpacked += u ? 1 : 0;
+	Printf("ticstats pieces %d packed %u unpacked %d hidden %d shown %d framederived %d cameraticdraws %u builds %u fill %u\n", pieces, zx::hwrender::g_tic.runs.Size(), unpacked, hiddenNow, shown, frameDerived, zx::hwrender::g_cameraTicDraws,
+		zx::sprites::TakeTicBuilds(), zx::gamecopy::FillCount());
+	zx::hwrender::g_cameraTicDraws = 0;
+	int why[12];
+	zx::sprites::LastTicWhy(why);
+	Printf("ticwhy never %d nosubject %d playerbob %d model %d shape %d sector %d shader %d clip %d glow %d shadowfog %d lane %d pieces %d\n",
+		why[0], why[1], why[2], why[3], why[4], why[5], why[6], why[7], why[8], why[9], why[10], why[11]);
+}
+namespace zx { namespace hwrender {
+
 void BuildDynamic(Diligent::IDeviceContext *ctx)
 {
 	ZX_ZONE("scene/dynamic");   // [rc4l] the frame's sprites, models and decals laid out and written
@@ -243,16 +464,23 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	g_stats.dynByBlend[0] = g_stats.dynByBlend[1] = g_stats.dynByBlend[2] = g_stats.dynByBlend[3] = 0;
 	g_scene.dynReady = false;
 
-	int nverts = 0, npieces = 0;
+	int nverts = 0, npieces = 0, nTicVerts = 0, nTic = 0;
 	const zx::levelmesh::MeshVertex *src = zx::levelmesh::DynVertices(nverts);
 	const zx::levelmesh::MeshPiece *pieces = zx::levelmesh::DynPieces(npieces);
+	const zx::levelmesh::MeshVertex *ticSrc = zx::levelmesh::DynTicVertices(nTicVerts);
+	const zx::levelmesh::MeshPiece *ticPieces = zx::levelmesh::DynTicPieces(nTic);
 	// [Doruk-Aksoy] Pieces, not vertices, since a frame of GPU model surfaces alone has none in the stream.
-	if (pieces == NULL || npieces <= 0) { g_scene.dynRuns.Clear(); g_scene.tracedSprites.Clear(); g_scene.tracedSteps.clear(); return; }
+	if (pieces == NULL || npieces <= 0) { npieces = 0; nverts = 0; }
+	if (ticSrc == NULL || ticPieces == NULL || nTic <= 0) { nTic = 0; ticPieces = NULL; }
+	static std::vector<char> forced;
+	if (npieces == 0 && nTic == 0) { g_scene.dynRuns.Clear(); g_scene.dynTicRuns = 0; g_scene.tracedSprites.Clear(); g_scene.tracedSteps.clear(); g_tic.built = false; return; }
 
 	// The dynamic path's piece records, rebuilt with its vertices every frame.
 
 	static TArray<ScenePieceData> dynPieces;
 	TArray<DynRun> &runs = g_scene.dynRuns;
+	TArray<unsigned> &words = g_dynWords;
+	TArray<unsigned> &refs = g_dynRefs;
 
 	// [rc4l] Rebuild and re-upload ONCE per engine frame, not once per draw call.
 	//
@@ -263,10 +491,24 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 	// [Doruk-Aksoy] Records hold the additive flag fua_dg_premulblend sets, so a change of it fills them again, a paused frame's included.
 	static bool builtPremul = false;
 	const unsigned int gen = zx::levelmesh::DynGeneration();
-	if (gen != builtGen || builtPremul != (bool)fua_dg_premulblend)
+	const bool premul = fua_dg_premulblend;
+	// [Doruk-Aksoy] The tic region again when its stream, the blend setting, its slots or a buffer it lives in changed.
+	bool ticRebuild = !g_tic.built || zx::levelmesh::DynTicGeneration() != g_tic.gen || premul != g_tic.premul || MaterialSlotTableId() != g_tic.table ||
+		g_scene.dynDataBuf.RawPtr() != g_tic.wordsBuf || g_dynVB.RawPtr() != g_tic.refsBuf;
+	if (!ticRebuild) { ZX_ZONE("scene/tic_slotcheck"); ticRebuild = TicSlotsMoved(ticPieces, nTic); }   // [Doruk-Aksoy] every frame the tic stream stands
+	if (gen != builtGen || builtPremul != premul || ticRebuild)
 	{
 		builtGen = gen;
-		builtPremul = fua_dg_premulblend;
+		builtPremul = premul;
+		if (ticRebuild)
+		{
+			BuildTicRegion(ticSrc, ticPieces, nTic);
+			g_tic.gen = zx::levelmesh::DynTicGeneration();
+			g_tic.premul = premul;
+			g_tic.table = MaterialSlotTableId();
+			g_tic.built = true;
+		}
+		const int framePieces = npieces;   // [Doruk-Aksoy] the frame's own pieces, whose slots the reservation found behind the tic's
 		static std::vector<zx::levelmesh::MeshVertex> splitVerts;
 		static std::vector<zx::levelmesh::MeshPiece> splitPieces;
 		static std::vector<FlatPlaneInfo> flatPlanes;
@@ -274,6 +516,30 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		{
 			ZX_ZONE("scene/flat_split");
 			FindFlatPlanes(src, pieces, npieces, flatPlanes, isFlatPlane);
+			// [Doruk-Aksoy] Tic pieces no packed sprite carries, and every shown one when a flat plane may cut it, drawn as moved copies among the frame's.
+			int hiddenCount = 0;
+			const unsigned char *hidden = zx::levelmesh::DynTicHidden(hiddenCount);
+			forced.assign(nTic, 0);
+			bool anyCopy = false;
+			for (int k = 0; k < nTic; k++)
+			{
+				const bool shown = !(k < hiddenCount && hidden[k]);
+				// [Doruk-Aksoy] Not in a camera texture's pass, which draws its own view's sprites and none of the player's tic stream.
+				forced[k] = !g_pass.inCameraPass && shown && (g_tic.unpacked[k] || !flatPlanes.empty()) ? 1 : 0;
+				anyCopy = anyCopy || forced[k];
+			}
+			static std::vector<zx::levelmesh::MeshVertex> withCopiesVerts;
+			static std::vector<zx::levelmesh::MeshPiece> withCopies;
+			if (anyCopy)
+			{
+				const TicView view = TicViewNow();
+				withCopiesVerts.assign(src, src + nverts);
+				withCopies.assign(pieces, pieces + npieces);
+				for (int k = 0; k < nTic; k++) if (forced[k]) MovedCopy(ticSrc, ticPieces[k], view, withCopiesVerts, withCopies);
+				src = withCopiesVerts.data(); nverts = (int)withCopiesVerts.size();
+				pieces = withCopies.data(); npieces = (int)withCopies.size();
+				isFlatPlane.resize(npieces, 0);
+			}
 			if (SplitAtFlatPlanes(src, nverts, pieces, npieces, flatPlanes, splitVerts, splitPieces))
 			{
 				src = splitVerts.data(); nverts = (int)splitVerts.size();
@@ -360,7 +626,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const int k = order[i];
 			if (dynVerts[k] == 0) continue;
 			const zx::levelmesh::MeshPiece &p = pieces[k];
-			slots[k] = DynamicPieceSlots(k, p);
+			// [Doruk-Aksoy] The reservation numbers the tic's pieces first, then the frame's own; a copy or a cut half has no number and is looked up.
+			slots[k] = DynamicPieceSlots(k < framePieces ? nTic + k : -1, p);
 			if (atlas) atlased[k] = AtlasFor(p.material, p.translation,
 				!gpuModel[k] && zx::hwrender::ComputeAtlasPieceEligible({ p.quad, p.depthBias, p.solid, p.hud, p.mirrorView, p.onMirror, p.fuzz }));
 			if (p.mirrorView >= 0) g_stats.dynMirrorRuns++;
@@ -411,27 +678,31 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 		}
 		const int recordsLeft = g_scene.pieceCapacity > g_scene.pieces.Size() ? int(g_scene.pieceCapacity - g_scene.pieces.Size()) : 0;
 		static std::vector<zx::hwrender::DynSlot> layout;
-		const zx::hwrender::DynLayoutTotals totals = zx::hwrender::ComputeDynLayout(&order[0], npieces, &dynVerts[0],
-			(const bool *)&packedFlag[0], recordsLeft, layout, (const bool *)&gpuModel[0]);
+		const zx::hwrender::DynLayoutTotals totals = zx::hwrender::ComputeDynLayout(npieces > 0 ? &order[0] : NULL, npieces, npieces > 0 ? &dynVerts[0] : NULL,
+			npieces > 0 ? (const bool *)&packedFlag[0] : NULL, recordsLeft, layout, npieces > 0 ? (const bool *)&gpuModel[0] : NULL);
 		int records = 0;
 		for (const zx::hwrender::DynSlot &slot : layout) if (slot.record >= 0) records++;
 		ZX_COUNT("gpu/sprites_packed", "sprites", totals.sprites);
 		ZX_COUNT("gpu/sprites_whole", "pieces", (double)layout.size() - totals.sprites);
 		ZX_COUNT("gpu/model_surfaces", "surfaces", totals.models);   // [Doruk-Aksoy] blended and placed by the vertex shader
 		// [rc4l] The words: the general vertices first, as SceneVertex, then the packed sprites from a multiple of four.
-		const unsigned spriteBase = (totals.general * 6 + 3) & ~3u;
+		// [Doruk-Aksoy] All behind the tic region, from a multiple of twelve so a general vertex starts on a whole one and a sprite on a multiple of four.
+		const unsigned frameBase = (g_tic.words + 11) / 12 * 12;
+		const unsigned generalBase = frameBase / 6;
+		const unsigned spriteBase = (frameBase + totals.general * 6 + 3) & ~3u;
 		// [Doruk-Aksoy] ...then the frame's model matrices, which a GLDEFS shader's program reads its ModelMatrix from.
 		int nmatrices = 0;
 		const float *matrices = zx::levelmesh::DynMatrices(nmatrices);
 		const unsigned matBase = spriteBase + (unsigned)totals.sprites * zx::hwrender::kSpriteWords;
 		// [Doruk-Aksoy] ...then the GPU model surfaces' records (modelgpu_compute).
 		const unsigned modelBase = matBase + (unsigned)nmatrices * zx::hwrender::kModelMatrixWords;
-		static TArray<unsigned> words;
 		words.Resize(modelBase + (unsigned)totals.models * zx::levelmesh::kModelRecordWords);
 		if (nmatrices > 0) memcpy(&words[matBase], matrices, (size_t)nmatrices * zx::hwrender::kModelMatrixWords * sizeof(unsigned));
-		static TArray<unsigned> refs;
-		refs.Resize(totals.stream);
-		runs.Resize((unsigned)layout.size());
+		const unsigned refBase = g_tic.refs, runBase = g_tic.runs.Size();
+		refs.Resize(refBase + totals.stream);
+		runs.Resize(runBase + (unsigned)layout.size());
+		{ ZX_ZONE("scene/tic_runs_copy"); for (unsigned i = 0; i < runBase; i++) runs[i] = g_tic.runs[i]; }
+		g_scene.dynTicRuns = runBase;
 		dynPieces.Resize(records);
 
 		// [rc4l] Every dynamic piece is its own run.
@@ -477,19 +748,19 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			const zx::levelmesh::MeshPiece *pieces;
 			const zx::levelmesh::MeshVertex *src;
 			int count;
-			unsigned spriteBase, matBase, modelBase;
+			unsigned spriteBase, matBase, generalBase, refBase, runBase, modelBase;
 			void operator()(int chunk, int) const
 			{
 				static const int kQuadOrder[6] = { 0, 1, 2, 2, 1, 3 };
 				const unsigned base = g_scene.pieces.Size();
 				const unsigned lastRecord = g_scene.pieceCapacity > 0 ? g_scene.pieceCapacity - 1 : 0;
-				SceneVertex *general = (SceneVertex *)&words[0];
+				SceneVertex *general = (SceneVertex *)&g_dynWords[0];
 				for (int k = chunk * kDynChunk; k < count && k < (chunk + 1) * kDynChunk; k++)
 				{
 					const zx::hwrender::DynSlot &slot = layout[k];
 					const zx::levelmesh::MeshPiece &p = pieces[slot.piece];
-					DynRun &r = g_scene.dynRuns[k];
-					r.material = p.material; r.first = slot.first; r.count = slot.count; r.blend = p.blendMode;
+					DynRun &r = g_scene.dynRuns[runBase + k];
+					r.material = p.material; r.first = refBase + slot.first; r.count = slot.count; r.blend = p.blendMode;
 					r.translation = p.translation;
 					r.depthBias = p.depthBias;
 					r.redAlpha = p.redToAlpha;
@@ -502,22 +773,23 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					r.cx = p.sortX; r.cy = p.sortY; r.cz = p.sortZ;
 					r.lo = 1e30f; r.hi = -1e30f;
 					r.minX = r.minZ = 1e30f; r.maxX = r.maxZ = -1e30f;
+					r.ticPiece = -1; r.hidden = false; r.eligible = p.gpuEligible; r.sortWho = p.sortWho;
 					const AtlasEntry *ae = atlased[slot.piece];
 					r.atlasPage = ae != NULL ? ae->page : -1;
-					r.general = slot.sprite >= 0 ? -1 : (int)slot.general;
+					r.general = slot.sprite >= 0 ? -1 : (int)(generalBase + slot.general);
 					r.userShader = zx::hwshaders::ComputeUserShaderOf((int)(filled[slot.piece].warpStyle + 0.5f));
 					if (slot.sprite >= 0)
 					{
 						// [rc4l] A packed sprite: its words, and six references to its corners.
 						const unsigned at = spriteBase + (unsigned)slot.sprite * zx::hwrender::kSpriteWords;
-						memcpy(&words[at], &packedWords[(size_t)slot.piece * zx::hwrender::kSpriteWords], zx::hwrender::kSpriteWords * sizeof(unsigned));
-						for (unsigned v = 0; v < 6; v++) refs[slot.first + v] = zx::hwrender::ComputeSpriteRef(at, kQuadOrder[v]);
+						memcpy(&g_dynWords[at], &packedWords[(size_t)slot.piece * zx::hwrender::kSpriteWords], zx::hwrender::kSpriteWords * sizeof(unsigned));
+						for (unsigned v = 0; v < 6; v++) g_dynRefs[refBase + slot.first + v] = zx::hwrender::ComputeSpriteRef(at, kQuadOrder[v]);
 						for (int c = 0; c < 4; c++)
 						{
 							float x, y, z;
-							memcpy(&x, &words[at + c * 4], sizeof(x));
-							memcpy(&y, &words[at + c * 4 + 1], sizeof(y));
-							memcpy(&z, &words[at + c * 4 + 2], sizeof(z));
+							memcpy(&x, &g_dynWords[at + c * 4], sizeof(x));
+							memcpy(&y, &g_dynWords[at + c * 4 + 1], sizeof(y));
+							memcpy(&z, &g_dynWords[at + c * 4 + 2], sizeof(z));
 							if (y < r.lo) r.lo = y;
 							if (y > r.hi) r.hi = y;
 							r.minX = std::min(r.minX, x); r.maxX = std::max(r.maxX, x);
@@ -536,11 +808,11 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 					{
 						const FModelGeometry *g = p.gpuGeometry;
 						const unsigned recordWord = modelBase + (unsigned)slot.model * zx::levelmesh::kModelRecordWords;
-						const zx::levelmesh::ModelRecordIn in = { slot.first, dynPieceIndex, { g->gpuVertWord, g->gpuIndexWord }, g->indexed && g->indices.Size() > 0,
+						const zx::levelmesh::ModelRecordIn in = { refBase + slot.first, dynPieceIndex, { g->gpuVertWord, g->gpuIndexWord }, g->indexed && g->indices.Size() > 0,
 							p.gpuBase1, p.gpuBase2, p.gpuFirstIndex, p.gpuInter, matBase + (unsigned)p.modelMatrix * zx::hwrender::kModelMatrixWords };
-						zx::levelmesh::ComputeModelRecord(in, &words[recordWord]);
+						zx::levelmesh::ComputeModelRecord(in, &g_dynWords[recordWord]);
 						const unsigned ref = zx::levelmesh::ComputeModelRef(recordWord);
-						for (unsigned v = 0; v < slot.count; v++) refs[slot.first + v] = ref;
+						for (unsigned v = 0; v < slot.count; v++) g_dynRefs[refBase + slot.first + v] = ref;
 						const float *b = &gpuBox[(size_t)slot.piece * 6];
 						r.lo = b[1]; r.hi = b[4];
 						r.minX = b[0]; r.maxX = b[3];
@@ -553,8 +825,8 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 						const unsigned srcIndex = p.quad ? (unsigned)kQuadOrder[v] : v;
 						SceneVertex dv = ToSceneVertex(src[p.range.offset + srcIndex], dynPieceIndex);
 						if (ae != NULL) zx::hwrender::ComputeAtlasUV(ae->x, ae->y, ae->w, ae->h, AtlasPageSize(), AtlasPageSize(), dv.u, dv.v);
-						general[slot.general + v] = dv;
-						refs[slot.first + v] = zx::hwrender::ComputeGeneralRef(slot.general + v);
+						general[generalBase + slot.general + v] = dv;
+						g_dynRefs[refBase + slot.first + v] = zx::hwrender::ComputeGeneralRef(generalBase + slot.general + v);
 						if (dv.y < r.lo) r.lo = dv.y;
 						if (dv.y > r.hi) r.hi = dv.y;
 						r.minX = std::min(r.minX, dv.x); r.maxX = std::max(r.maxX, dv.x);
@@ -564,21 +836,29 @@ void BuildDynamic(Diligent::IDeviceContext *ctx)
 			}
 		};
 		const int chunks = (int)((layout.size() + kDynChunk - 1) / kDynChunk);
-		Fill fill = { pieces, src, (int)layout.size(), spriteBase, matBase, modelBase };
+		Fill fill = { pieces, src, (int)layout.size(), spriteBase, matBase, generalBase, refBase, runBase, modelBase };
 		zx::jobs::Pool().ParallelFor(chunks, fill);
-	if (refs.Size() == 0) return;
+		if (refs.Size() == 0) return;
 
-		GatherTracedSprites((const SceneVertex *)&words[0], totals.general);
-		if (!UploadGrowingVB(ctx, g_dynVB, g_dynVBCapacity, &refs[0], refs.Size(), sizeof(unsigned), 1024, "fua dynamic refs")) return;
+		GatherTracedSprites((const SceneVertex *)&words[0], generalBase + totals.general);
+		ZX_ZONE("scene/dyn_upload");   // [Doruk-Aksoy] the refs, words and records sent
+		// [Doruk-Aksoy] Only the frame's part goes up again when the tic region already sits in these very buffers.
+		const bool whole = ticRebuild || refs.Size() > g_dynVBCapacity;
+		if (whole) { if (!UploadGrowingVB(ctx, g_dynVB, g_dynVBCapacity, &refs[0], refs.Size(), sizeof(unsigned), 1024, "fua dynamic refs")) return; }
+		else if (refs.Size() > refBase) UpdateBufferInPages(ctx, g_dynVB, (unsigned long long)refBase * sizeof(unsigned), (size_t)(refs.Size() - refBase) * sizeof(unsigned), &refs[refBase]);
 		// [rc4l] The words EnsureDynamicRecords made room for; a frame past them draws no dynamic piece rather than read past the buffer.
-		if (!g_scene.dynDataBuf || words.Size() > g_scene.dynDataCapacity) { ZX_COUNT("gpu/dyn_words_short", "frames", 1); return; }
-		if (words.Size() > 0) UpdateBufferInPages(ctx, g_scene.dynDataBuf, 0, (size_t)words.Size() * sizeof(unsigned), &words[0]);
+		if (!g_scene.dynDataBuf || words.Size() > g_scene.dynDataCapacity) { ZX_COUNT("gpu/dyn_words_short", "frames", 1); g_tic.built = false; return; }
+		const unsigned wordsFrom = whole ? 0u : std::min(frameBase, words.Size());
+		if (words.Size() > wordsFrom) UpdateBufferInPages(ctx, g_scene.dynDataBuf, (unsigned long long)wordsFrom * sizeof(unsigned), (size_t)(words.Size() - wordsFrom) * sizeof(unsigned), &words[wordsFrom]);
+		g_tic.wordsBuf = g_scene.dynDataBuf.RawPtr();
+		g_tic.refsBuf = g_dynVB.RawPtr();
 		// ...and the records they index, into the back of the shared piece buffer.
 		if (g_scene.pieceBuf && dynPieces.Size() > 0 &&
 		    g_scene.pieces.Size() + dynPieces.Size() <= g_scene.pieceCapacity)
 			UpdateBufferInPages(ctx, g_scene.pieceBuf, (unsigned long long)g_scene.pieces.Size() * sizeof(ScenePieceData),
 				(size_t)dynPieces.Size() * sizeof(ScenePieceData), &dynPieces[0]);
 	}
+	{ ZX_ZONE("scene/tic_apply"); ApplyTicFrame(forced); }   // [Doruk-Aksoy] each tic sprite's hide flag and exact bounds, every frame
 	if (!g_dynVB || g_scene.dynRuns.Size() == 0) return;
 	g_scene.dynReady = true;
 }
@@ -628,7 +908,9 @@ void DrawSolidDyn(Diligent::IDeviceContext *ctx)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (r.count == 0 || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
+		if (r.count == 0 || r.hidden || !r.solid || r.blend != 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
+		if (!zx::hwrender::ComputePassDrawsRun(i, g_scene.dynTicRuns, g_pass.inCameraPass)) continue;
+		if (g_pass.inCameraPass && i < g_scene.dynTicRuns) g_cameraTicDraws++;
 		auto *srb = WorldSRB(g_pso.world[kWpMaskedNoCull].RawPtr());
 		if (srb) g_stats.dynBindless++;
 		else { g_stats.dynPerMaterial++; srb = DynSRB(g_pso.world[kWpMaskedNoCull].RawPtr(), r); }
@@ -663,7 +945,7 @@ void DrawMirrorFaceDecals(Diligent::IDeviceContext *ctx, int line)
 	for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 	{
 		const DynRun &r = g_scene.dynRuns[i];
-		if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, -1, -1, line)) continue;
+		if (r.count == 0 || r.hidden || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, -1, -1, line)) continue;
 		const int pipeline = ComputeDynamicPipeline(r.blend, r.redAlpha, r.depthBias, r.hud);
 		Diligent::IPipelineState *pso = g_pso.world[pipeline].RawPtr();
 		if (!pso) continue;
@@ -703,7 +985,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 {
 	// [rc4l] `pipeline` is its world pipeline's index, chosen once where the draw is made and the key a run of draws merges on.
 	// [Doruk-Aksoy] `user` is the GLDEFS shader whose program it draws with (ScenePSO), which a run merges on too.
-	struct BlendDraw { bool dyn; unsigned first, count; int blend, translation, pipeline, user; const void *material;
+	struct BlendDraw { bool dyn; unsigned first, count; int who, blend, translation, pipeline, user; const void *material;
 	                   Diligent::IShaderResourceBinding *srb; float dist; bool bias, red, hud;
 	                   float cx, cy, cz;      // [rc4l] the centre too: distance alone cannot tell two
 	                                          // marks on ONE spot from two marks on two walls
@@ -733,7 +1015,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		if (b.count == 0 || BatchSRB(b) == NULL) continue;
 		const float dx = b.sortX - cx, dy = b.sortY - cy, dz = b.sortZ - cz;
 		BlendDraw d;
-		d.dyn = false; d.first = b.first; d.count = b.count; d.blend = b.blend;
+		d.dyn = false; d.first = b.first; d.count = b.count; d.who = -1; d.blend = b.blend;
 		d.translation = 0; d.pipeline = ComputeBatchPipeline(b.blend); d.user = b.userShader; d.material = b.material; d.srb = b.srb;
 		d.bias = false; d.red = false; d.hud = false;
 		d.cx = b.sortX; d.cy = b.sortY; d.cz = b.sortZ;
@@ -750,7 +1032,9 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		for (unsigned i = 0; i < g_scene.dynRuns.Size(); i++)
 		{
 			const DynRun &r = g_scene.dynRuns[i];
-			if (r.count == 0 || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
+			if (r.count == 0 || r.hidden || !zx::levelmesh::ComputeDrawsDynamicPiece(r.mirrorView, r.stackSlot, r.onMirror, g_pass.mirrorView, g_pass.stackSlot, -1)) continue;
+			if (!zx::hwrender::ComputePassDrawsRun(i, g_scene.dynTicRuns, g_pass.inCameraPass)) continue;
+			if (g_pass.inCameraPass && i < g_scene.dynTicRuns) g_cameraTicDraws++;
 			// [rc4l] An opaque solid is drawn with the world, not in this list. See DrawSolidDyn.
 			if (r.solid && r.blend == 0) continue;
 			// [rc4l] blend 0 takes the TRANSLUCENT pipeline, not the masked one.
@@ -774,7 +1058,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 			if (r.atlasPage >= 0) g_stats.dynAtlas++;
 			if (!srb) continue;
 			BlendDraw d;
-			d.dyn = true; d.first = r.first; d.count = r.count; d.blend = r.blend;
+			d.dyn = true; d.first = r.first; d.count = r.count; d.who = r.sortWho; d.blend = r.blend;
 			d.translation = r.translation; d.pipeline = pipeline; d.user = r.userShader; d.material = r.material; d.srb = srb;
 			d.bias = r.depthBias;
 			d.red = r.redAlpha;
@@ -858,7 +1142,7 @@ void DrawBlended(Diligent::IDeviceContext *ctx)
 		{
 			const BlendDraw &d = list[i];
 			zx::hwrender::TranslucentDraw k;
-			k.distSq = d.dist; k.blend = d.blend; k.decal = d.bias; k.first = d.first;
+			k.distSq = d.dist; k.blend = d.blend; k.decal = d.bias; k.first = d.first; k.who = d.who;
 			k.layer = d.layer; k.plane = d.plane;
 			keys[i].key = zx::hwrender::ComputeTranslucentSortKey(k);
 			keys[i].index = i;

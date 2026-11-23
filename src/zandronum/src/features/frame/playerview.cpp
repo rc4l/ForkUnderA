@@ -40,6 +40,12 @@
 EXTERN_CVAR(Bool, cl_capfps)
 // [rc4l] A frame clock pinned at this many milliseconds (0 runs it), so captures from two launches show shader animation, warps and fuzz, at the same moment.
 CVAR(Int, fua_debug_frameclock, 0, CVAR_FUA_DEV_MODE)
+// [Doruk-Aksoy] The tic fraction every frame takes, in thousandths, when 0 or more.
+CVAR(Int, fua_debug_ticfrac, -1, CVAR_FUA_DEV_MODE)
+// [Doruk-Aksoy] The view turned by this many degrees and moved by these map units after it is interpolated, so a held tic can be drawn from another camera.
+CVAR(Int, fua_debug_viewyaw, 0, CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_debug_viewdx, 0, CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_debug_viewdy, 0, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace frame {
 
@@ -65,6 +71,8 @@ void BeginPlayerFrame(int player)
 	if (zx::viewsetup::CameraChanged(cam != NULL ? cam->id : 0u)) R_ResetViewInterpolation();
 	if (cl_capfps || r_NoInterpolate) r_TicFrac = FRACUNIT;
 	else r_TicFrac = I_GetTimeFrac(&r_FrameTime);
+	// [Doruk-Aksoy] A pinned fraction, so two launches draw one paused moment at the same point of its tic.
+	if (fua_debug_ticfrac >= 0) r_TicFrac = (fixed_t)((long long)fua_debug_ticfrac * FRACUNIT / 1000);
 	r_frameSerial++;
 	gl_frameMS = (long)FrameClock(I_MSTime());
 	// [rc4l] Camera textures the last frame used, each drawn from the render copy's record of its viewpoint.

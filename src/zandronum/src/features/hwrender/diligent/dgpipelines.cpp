@@ -809,6 +809,7 @@ void FlushTextureCache()
 
 bool BindlessWanted() { return fua_dg_bindless && MaterialSlotCapacity() > 0 && !g_matSlotOverflow; }
 bool BindlessActive() { return BindlessWanted() && g_bindlessReady; }
+bool TicSpritesSupported() { return BindlessActive(); }
 
 
 static_assert(zx::hwrender::kBindVertexBuffer == Diligent::BIND_VERTEX_BUFFER && zx::hwrender::kBindIndexBuffer == Diligent::BIND_INDEX_BUFFER &&

@@ -7,6 +7,7 @@
 #include "features/gamecopy/tintsubject.h"   // [rc4l] TintSubject
 #include "features/levelmesh/levelmesh.h"   // [rc4l] LightListBottom
 #include "features/frame/computation/oracle_compute.h"   // [rc4l] OracleTally
+#include <atomic>
 #include "features/jobs/jobs.h"   // [rc4l] the pool BuildSprites derives on
 #include "features/jobs/computation/joinparts_compute.h"   // [Doruk-Aksoy] Padded, each lane's chunk on lines of its own
 
@@ -61,6 +62,9 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] an actor's fua_Material row
 #include "features/hwshaders/hwshaders.h"   // [Doruk-Aksoy] ActorMaterialShader
 
+// [Doruk-Aksoy] Face sprites built once a tic and turned and interpolated by the vertex shader (the tic stream), off only to compare against the CPU path.
+CVAR(Bool, fua_dg_gpusprites, true, CVAR_FUA_DEV_MODE)
+EXTERN_CVAR(Int, fua_dg_gpuview)
 EXTERN_CVAR(Int, r_spriteclip)
 EXTERN_CVAR(Float, r_sclipfactor)
 EXTERN_CVAR(Float, r_sclipthreshold)
@@ -161,41 +165,66 @@ struct Subject
 	int spritenum;
 	fixed_t scaleX, scaleY;
 	fixed_t frac, thingx, thingy, thingz;
+	fixed_t rotx, roty;   // [Doruk-Aksoy] where the rotation is picked from, this frame's position even when the corners take the tic's
 	sector_t *rendersector;
 	float x, y, z;
 	FSpriteModelFrame *model;
 };
 
-static bool SubjectOf(const ActorRecord *thing, Subject &s)
+// [Doruk-Aksoy] While true, actors are derived for the tic stream: at the tic's end, only those the shader draws as the CPU would, the rest returning nothing.
+static bool g_ticDerive = false;
+// [Doruk-Aksoy] Why the last tic derive left actors out of the tic stream, for fua_dg_ticstats.
+enum TicWhy { kWhyNever, kWhyNoSubject, kWhyPlayerOrBob, kWhyModel, kWhyShape, kWhySector, kWhyShader, kWhyClip, kWhyGlow, kWhyShadowOrFog, kWhyLane, kWhyPieces, kWhyCount };
+static std::atomic<int> g_ticWhy[kWhyCount];
+static void NoteTicWhy(int why) { if (g_ticDerive) g_ticWhy[why].fetch_add(1, std::memory_order_relaxed); }
+void LastTicWhy(int out[12]) { for (int i = 0; i < kWhyCount; i++) out[i] = g_ticWhy[i].load(); }
+static unsigned g_ticBuilds = 0;
+unsigned TakeTicBuilds() { const unsigned n = g_ticBuilds; g_ticBuilds = 0; return n; }
+
+// [rc4l] Whether this frame's view leaves the actor out, standing at (x, y): a map section the walk missed, a camera icon outside a mirror, too close to the camera, or the view's own missile just fired.
+// [Doruk-Aksoy] One test for the derive and the tic stream's per-frame check, so the two cannot disagree.
+static bool ViewRejects(const ActorRecord *thing, int spritenum, fixed_t x, fixed_t y)
 {
 	const zx::viewsetup::SpriteViewProvider &view = zx::viewsetup::SpriteView();
-	if (thing->who == view.ViewActor()) return false;
-	if (thing->sprite == 0 || !thing->visible) return false;
-
-	s.spritenum = thing->shownSprite;
-	s.scaleX = thing->shownScaleX; s.scaleY = thing->shownScaleY;
-
-	if (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha))
-	{
-		if (!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision) return false;
-	}
 	// [Doruk-Aksoy] A model wider than its radius is in view from a sector under it the walk reached, though its centre's map section is not.
 	if (!(currentmapsection[thing->subsector->mapsection >> 3] & (1 << (thing->subsector->mapsection & 7))) &&
-	    !zx::modelreach::FootprintReached(zx::gamecopy::IndexOf(thing))) return false;
-	if (!view.PortalIsMirror() && thing->cameraIcon) return false;
+	    !zx::modelreach::FootprintReached(zx::gamecopy::IndexOf(thing))) return true;
+	if (!view.PortalIsMirror() && thing->cameraIcon) return true;
+	// [rc4l] Too close to the camera to look like anything, unless it only moves up and down or is a model.
+	if (P_AproxDistance(x - viewx, y - viewy) < 2 * FRACUNIT && !(thing->velx == 0 && thing->vely == 0 && thing->velz != 0) &&
+	    !gl_FindModelFrame(thing->type, spritenum, thing->frame, false)) return true;
+	const void *const viewActor = view.ViewActor();
+	if (thing->flags & MF_MISSILE && thing->target == viewActor && viewActor != NULL &&
+	    P_AproxDistance(x - viewx, y - viewy) < thing->Speed) return true;
+	return view.PortalRejectsPoint(x, y);
+}
 
-	s.frac = r_ActorFrac;
+// [rc4l] An actor no view draws as it stands: the view's own, without a sprite or hidden, or invisible unless night vision shows it.
+// [Doruk-Aksoy] None of it changes within a tic, so the tic stream's split asks it once a tic.
+static bool NeverDrawn(const ActorRecord *thing)
+{
+	if (thing->who == zx::viewsetup::SpriteView().ViewActor()) return true;
+	if (thing->sprite == 0 || !thing->visible) return true;
+	return (thing->renderflags & RF_INVISIBLE || !thing->RenderStyle.IsVisible(thing->alpha)) &&
+		(!(thing->flags & MF_STEALTH) || !gl_fixedcolormap || !r_enhanced_nightvision);
+}
+
+static bool SubjectOf(const ActorRecord *thing, Subject &s)
+{
+	if (NeverDrawn(thing)) return false;
+	s.spritenum = thing->shownSprite;
+	s.scaleX = thing->shownScaleX; s.scaleY = thing->shownScaleY;
+	// [Doruk-Aksoy] The tic stream carries neither a player, whose damage tint keeps per-actor state, nor a bobbing actor, whose bob is no straight line.
+	if (g_ticDerive && (thing->isPlayer || (thing->flags2 & MF2_FLOATBOB))) { NoteTicWhy(kWhyPlayerOrBob); return false; }
+
+	// [Doruk-Aksoy] The tic stream takes the tic's own position, which the shader slides back by the part of the tic not yet shown; the view's tests always take this frame's.
+	s.frac = g_ticDerive ? FRACUNIT : r_ActorFrac;
 	s.thingx = thing->PrevX + FixedMul(s.frac, thing->x - thing->PrevX);
 	s.thingy = thing->PrevY + FixedMul(s.frac, thing->y - thing->PrevY);
 	s.thingz = thing->PrevZ + FixedMul(s.frac, thing->z - thing->PrevZ);
-
-	// [rc4l] Too close to the camera to look like anything, unless it only moves up and down or is a model.
-	if (P_AproxDistance(s.thingx - viewx, s.thingy - viewy) < 2 * FRACUNIT && !(thing->velx == 0 && thing->vely == 0 && thing->velz != 0) &&
-	    !gl_FindModelFrame(thing->type, s.spritenum, thing->frame, false)) return false;
-	const void *const viewActor = view.ViewActor();
-	if (thing->flags & MF_MISSILE && thing->target == viewActor && viewActor != NULL &&
-	    P_AproxDistance(s.thingx - viewx, s.thingy - viewy) < thing->Speed) return false;
-	if (view.PortalRejectsPoint(s.thingx, s.thingy)) return false;
+	s.rotx = thing->PrevX + FixedMul(r_ActorFrac, thing->x - thing->PrevX);
+	s.roty = thing->PrevY + FixedMul(r_ActorFrac, thing->y - thing->PrevY);
+	if (ViewRejects(thing, s.spritenum, s.rotx, s.roty)) return false;
 
 	// [rc4l] The sweep hands each actor its own sector, so GL never fakes the flat here.
 	s.rendersector = thing->Sector;
@@ -204,6 +233,7 @@ static bool SubjectOf(const ActorRecord *thing, Subject &s)
 	s.y = FIXED2FLOAT(s.thingy);
 	if (thing->flags2 & MF2_FLOATBOB) s.z += FIXED2FLOAT(zx::gamecopy::BobOffset(*thing, r_TicFrac));
 	s.model = gl_FindModelFrame(thing->type, s.spritenum, thing->frame, !!(thing->flags & MF_DROPPED));
+	if (g_ticDerive && s.model != NULL) { NoteTicWhy(kWhyModel); return false; }
 	return true;
 }
 
@@ -370,11 +400,22 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 
 	// [rc4l] The rotation the viewer sees, as GL picks it.
 	bool mirror = false;
-	const FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, R_PointToAngle(thingx, thingy) - thing->angle, &mirror);
+	const FTextureID patch = gl_GetSpriteFrame(spritenum, thing->frame, -1, R_PointToAngle(s.rotx, s.roty) - thing->angle, &mirror);
 	if (!patch.isValid()) return 0;
 	const int type = thing->renderflags & RF_SPRITETYPEMASK;
 	// [rc4l] A floor sprite leaves GL's quad unset, so it is not drawn here either.
 	if (type != RF_FACESPRITE && type != RF_WALLSPRITE) return 0;
+	// [Doruk-Aksoy] Whether the tic stream may carry it, a face sprite of one band whose picture only the shader's turn and slide change within the tic; the tic derive draws nothing else.
+	const extsector_t::xfloorcopy &xfloors = thing->Sector->e->rcXFloor;
+	bool eligible = (g_ticDerive || fua_dg_gpuview != 0) && type == RF_FACESPRITE && !(thing->renderflags & RF_ROLLSPRITE) && !thing->isPlayer &&
+		!(thing->flags2 & MF2_FLOATBOB) && xfloors.ffloors.Size() == 0 && xfloors.lightlist.Size() == 0 && thing->Sector->heightsec == NULL &&
+		zx::hwshaders::ActorMaterialShader(thing->fua_material - 1) < 0 && zx::levelmesh::MirrorCaptureView() < 0 && zx::levelmesh::StackCaptureSlot() < 0;
+	if (g_ticDerive && !eligible)
+	{
+		NoteTicWhy(type != RF_FACESPRITE || (thing->renderflags & RF_ROLLSPRITE) || thing->isPlayer || (thing->flags2 & MF2_FLOATBOB) ? kWhyShape :
+			zx::hwshaders::ActorMaterialShader(thing->fua_material - 1) >= 0 ? kWhyShader : kWhySector);
+		return 0;
+	}
 	zx::materials::MaterialRef material = NULL;
 	if (!lane) material = zx::materials::MaterialForTexture(TexMan[patch], type == RF_FACESPRITE);
 	else if (!zx::materials::MaterialIfMade(TexMan[patch], type == RF_FACESPRITE, material)) return -1;
@@ -437,6 +478,17 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		ci.top = top;
 		ci.spriteHeight = spriteheight;
 		ComputeSpriteClip(ci, e.z1, e.z2);
+		// [Doruk-Aksoy] The clip idle at both ends of the tic, each end at its own floor and ceiling, is idle all through it.
+		for (int end = 0; end < 2 && eligible; end++)
+		{
+			const fixed_t ex = end ? thing->x : thing->PrevX, ey = end ? thing->y : thing->PrevY, ez = end ? thing->z : thing->PrevZ;
+			const SpriteEdges ee = ComputeSpriteEdges(FIXED2FLOAT(ex), FIXED2FLOAT(ey), FIXED2FLOAT(ez - thing->floorclip), r, false, dirX, dirY);
+			SpriteClipIn ce = ci;
+			ce.bottom = FIXED2FLOAT(thing->Sector->rc.floorplane.ZatPoint(ex, ey) - thing->floorclip);
+			ce.top = FIXED2FLOAT(thing->Sector->rc.ceilingplane.ZatPoint(ex, ey));
+			eligible = ComputeSpriteClipIdle(ce, ee.z1, ee.z2);
+			if (!eligible) NoteTicWhy(kWhyClip);
+		}
 	}
 
 	Look look;
@@ -445,6 +497,16 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	const int lightlevel = look.light;
 	const FColormap cm = look.cm;
 	const SpriteStyleOut so = look.so;
+	// [Doruk-Aksoy] Nor a glowing floor's light by height, a shadow's alpha by distance, or a fog layer (judged before Draw's fade, which only ever clears one).
+	if (eligible)
+	{
+		FTexture *floorTex = TexMan[thing->Sector->rc.GetTexture(sector_t::floor)];
+		const SpriteDrawLook drawn0 = SpriteDrawLookAt(so.style, so.trans, cm, x, y, false);
+		const bool glow = floorTex != NULL && floorTex->isGlowing();
+		eligible = !glow && !drawn0.shadow && !drawn0.fogLayer;
+		if (!eligible) NoteTicWhy(glow ? kWhyGlow : kWhyShadowOrFog);
+	}
+	if (g_ticDerive && !eligible) return 0;
 
 	// [rc4l] Bands: one, unless a 3D floor's light list cuts the sprite; an XY billboard takes the band holding its centre instead.
 	struct Band { float z1, z2, vt, vb; int light; FColormap cm; };
@@ -503,7 +565,9 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		SpriteEdges be = e;
 		be.z1 = b.z1; be.z2 = b.z2;
 		float c[4][3];
-		ComputeSpriteCorners(be, xyDraw, roll, viewYaw, viewPitch, rollDegrees, c);
+		// [Doruk-Aksoy] A tic-stream sprite is turned, slid and XY-billboarded by the shader, so its corners stay unrotated here.
+		const bool gpuMove = g_ticDerive;
+		ComputeSpriteCorners(be, xyDraw && !gpuMove, roll, viewYaw, viewPitch, rollDegrees, c);
 
 		SpritePiece &p = out[drawn++];
 		// [rc4l] A fresh record per piece, and only for the pieces drawn.
@@ -541,6 +605,21 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		mp.blendMode = ComputeSpriteBlendMode(so.style.blendOp, so.style.destAlpha, so.trans);
 		mp.sortX = x; mp.sortY = y; mp.sortZ = z;
 		mp.quad = true;
+		mp.gpuEligible = eligible;
+		mp.sortWho = zx::gamecopy::IndexOf(thing);
+		if (gpuMove)
+		{
+			mp.gpuMove = true;
+			mp.gpuXY = xyDraw;
+			mp.gpuCx = x; mp.gpuCy = y;
+			mp.gpuWho = zx::gamecopy::IndexOf(thing);
+			mp.gpuPatch = patch.GetIndex() * 2 + (mirror ? 1 : 0);
+			mp.gpuPx = -dirY; mp.gpuPy = dirX;
+			mp.gpuDx = FIXED2FLOAT(thing->x - thing->PrevX);
+			mp.gpuDy = FIXED2FLOAT(thing->y - thing->PrevY);
+			mp.gpuDh = FIXED2FLOAT(thing->z - thing->PrevZ);
+			if (thing->flags2 & MF2_FLOATBOB) mp.gpuDh += FIXED2FLOAT(zx::gamecopy::BobOffset(*thing, FRACUNIT) - zx::gamecopy::BobOffset(*thing, 0));
+		}
 		// [rc4l] Then the fog GL lays over it, the next piece so it sorts straight after.
 		if (drawLook.fogLayer && drawn < max)
 		{
@@ -1054,6 +1133,177 @@ void BuildSprites(const ActorRecord *const *things, int count)
 		}
 	}
 	PlaceItems(run);
+}
+
+// [Doruk-Aksoy] One chunk of the tic derive, each actor's piece in the chunk's list, -1 for none, or -2 when only the main thread may derive it.
+struct TicChunk
+{
+	std::vector<SpritePiece> pieces;
+	std::vector<int> got;
+};
+static std::vector<zx::jobs::Padded<TicChunk>> g_ticChunks;
+// [Doruk-Aksoy] The tic piece each record of the fill is drawn by, -1 for none, -2 for one no view draws this tic.
+static std::vector<int> g_ticPieceOf;
+
+static void DeriveTicChunk(const ActorRecord *const *things, int count, int chunk)
+{
+	TicChunk &c = g_ticChunks[chunk].value;
+	c.got.clear();
+	int used = 0;
+	const int end = (chunk + 1) * kSpriteChunk < count ? (chunk + 1) * kSpriteChunk : count;
+	for (int i = chunk * kSpriteChunk; i < end; i++)
+	{
+		Subject s;
+		int got = -1;
+		if (NeverDrawn(things[i])) got = -3;
+		else if (SubjectOf(things[i], s))
+		{
+			if ((int)c.pieces.size() < used + kMaxPieces) c.pieces.resize(used + kMaxPieces);
+			const int n = DeriveSprite(things[i], s, &c.pieces[used], kMaxPieces, true);
+			if (n < 0) { got = -2; NoteTicWhy(kWhyLane); }
+			else if (n == 1) got = used++;
+			else if (n > 1) NoteTicWhy(kWhyPieces);
+		}
+		else NoteTicWhy(kWhyNoSubject);
+		if (got == -3) NoteTicWhy(kWhyNever);
+		c.got.push_back(got);
+	}
+}
+
+void BuildTicSprites(const ActorRecord *const *things, int count)
+{
+	g_ticBuilds++;
+	ZX_ZONE("scene/tic_sprites");   // [Doruk-Aksoy] the tic stream derived, on a tic's first frame
+	int records = 0;
+	zx::gamecopy::Actors(records);
+	g_ticPieceOf.assign(records, -1);
+	if (count <= 0) { const zx::levelmesh::DynTicScope scope; return; }
+	const int chunks = (count + kSpriteChunk - 1) / kSpriteChunk;
+	if ((int)g_ticChunks.size() < chunks) g_ticChunks.resize(chunks);
+	for (std::atomic<int> &w : g_ticWhy) w.store(0);
+	g_ticDerive = true;
+	struct Derive
+	{
+		const ActorRecord *const *things;
+		int count;
+		void operator()(int chunk, int) const { DeriveTicChunk(things, count, chunk); }
+	} derive = { things, count };
+	zx::jobs::Pool().ParallelFor(chunks, derive);
+	// [Doruk-Aksoy] Those whose material a lane could not make, derived here, their pieces kept apart until every one is in.
+	static std::vector<SpritePiece> mainPieces;
+	static std::vector<int> mainAt;
+	mainAt.assign(count, -1);
+	int mainUsed = 0;
+	for (int i = 0; i < count; i++)
+	{
+		if (g_ticChunks[i / kSpriteChunk].value.got[i % kSpriteChunk] != -2) continue;
+		Subject s;
+		if (!SubjectOf(things[i], s)) continue;
+		if ((int)mainPieces.size() < mainUsed + kMaxPieces) mainPieces.resize(mainUsed + kMaxPieces);
+		if (DeriveSprite(things[i], s, &mainPieces[mainUsed], kMaxPieces) == 1) mainAt[i] = mainUsed++;
+	}
+	g_ticDerive = false;
+	ZX_ZONE("scene/tic_append");   // [Doruk-Aksoy] the derived pieces put on the tic stream
+	// [Doruk-Aksoy] Gathered in sweep order with their records, so one run is reserved for all and each placed on its own lane.
+	static std::vector<const SpritePiece *> quads;
+	static std::vector<int> owners;
+	quads.clear();
+	owners.clear();
+	for (int i = 0; i < count; i++)
+	{
+		const int got = g_ticChunks[i / kSpriteChunk].value.got[i % kSpriteChunk];
+		const int at = zx::gamecopy::IndexOf(things[i]);
+		if (got == -3)
+		{
+			if (at >= 0 && at < records) g_ticPieceOf[at] = -2;
+			continue;
+		}
+		const SpritePiece *p = got >= 0 ? &g_ticChunks[i / kSpriteChunk].value.pieces[got] : mainAt[i] >= 0 ? &mainPieces[mainAt[i]] : NULL;
+		if (p == NULL) continue;
+		quads.push_back(p);
+		owners.push_back(at);
+	}
+	const zx::levelmesh::DynTicScope scope;
+	const int n = (int)quads.size();
+	int placed = 0;
+	static std::vector<int> pieceAt;   // [Doruk-Aksoy] each gathered quad's index in the tic stream, -1 for one that did not fit
+	pieceAt.assign(n, -1);
+	zx::levelmesh::DynQuadRun run;
+	if (n > 0 && zx::levelmesh::DynReserve(4u * (unsigned)n, (unsigned)n, run))
+	{
+		auto put = [&](int lo, int hi, int) { for (int k = lo; k < hi; k++) zx::levelmesh::DynPlace(run, (unsigned)k, 4u * (unsigned)k, quads[k]->quad, 4, quads[k]->piece); };
+		zx::jobs::Pool().ParallelChunks(n, 256, put);
+		for (int k = 0; k < n; k++) pieceAt[k] = k;
+		placed = n;
+	}
+	// [Doruk-Aksoy] Past the stream's ceiling, as many as fit one at a time; the rest are derived each frame instead.
+	else for (int k = 0; k < n; k++)
+	{
+		zx::levelmesh::DynAppend(quads[k]->quad, 4, quads[k]->piece);
+		int now = 0;
+		zx::levelmesh::DynTicPieces(now);
+		if (now == placed) continue;
+		pieceAt[k] = placed;
+		placed = now;
+	}
+	for (int k = 0; k < n; k++)
+		if (pieceAt[k] >= 0 && owners[k] >= 0 && owners[k] < records) g_ticPieceOf[owners[k]] = pieceAt[k];
+	ZX_COUNT("ticstream/tic_pieces", "sprites", placed);
+}
+
+// [Doruk-Aksoy] Whether a tic piece still draws its actor as the CPU would this frame: the view keeps it at this frame's position, and the rotation picked from there is the piece's.
+static bool TicPieceHolds(const ActorRecord *thing, const MeshPiece &p)
+{
+	const fixed_t rx = thing->PrevX + FixedMul(r_ActorFrac, thing->x - thing->PrevX);
+	const fixed_t ry = thing->PrevY + FixedMul(r_ActorFrac, thing->y - thing->PrevY);
+	if (ViewRejects(thing, thing->shownSprite, rx, ry)) return false;
+	bool mirror = false;
+	const FTextureID patch = gl_GetSpriteFrame(thing->shownSprite, thing->frame, -1, R_PointToAngle(rx, ry) - thing->angle, &mirror);
+	return patch.GetIndex() * 2 + (mirror ? 1 : 0) == p.gpuPatch;
+}
+
+// [Doruk-Aksoy] The last split's tic pieces shown and actors derived for the frame, for fua_dg_ticstats.
+static int g_lastShown = 0, g_lastFrameDerived = 0;
+void LastTicSplit(int &shown, int &frameDerived) { shown = g_lastShown; frameDerived = g_lastFrameDerived; }
+
+void SplitFrameSprites(const ActorRecord *const *things, int count)
+{
+	ZX_ZONE("scene/tic_split");   // [Doruk-Aksoy] this frame's actors shared between the tic stream and the frame's
+	int hiddenCount = 0, ticCount = 0;
+	unsigned char *hidden = zx::levelmesh::DynTicHidden(hiddenCount);
+	const MeshPiece *tic = zx::levelmesh::DynTicPieces(ticCount);
+	for (int i = 0; i < hiddenCount; i++) hidden[i] = 1;
+	static std::vector<const ActorRecord *> frame;
+	// [Doruk-Aksoy] Checked across the pool: each actor holds at most one tic piece, so lanes clear different flags, and each chunk lists its frame actors to be joined in order.
+	zx::jobs::JobPool &pool = zx::jobs::Pool();
+	const int chunk = zx::jobs::ComputeChunkFor(count, 256, pool.Workers());
+	static std::vector<zx::jobs::Part<const ActorRecord *>> parts;
+	zx::jobs::ComputeEmptyParts(parts, zx::jobs::ComputeChunkCount(count, chunk));
+	std::atomic<int> shownAll(0);
+	auto check = [&](int lo, int hi, int)
+	{
+		std::vector<const ActorRecord *> &into = parts[lo / chunk].items;
+		int shownHere = 0;
+		for (int i = lo; i < hi; i++)
+		{
+			const ActorRecord *thing = things[i];
+			const int at = zx::gamecopy::IndexOf(thing);
+			const int t = at >= 0 && at < (int)g_ticPieceOf.size() ? g_ticPieceOf[at] : -1;
+			if (t == -2) continue;   // [Doruk-Aksoy] drawn by no view this tic
+			if (t >= 0 && t < hiddenCount && t < ticCount && TicPieceHolds(thing, tic[t])) { hidden[t] = 0; shownHere++; }
+			else into.push_back(thing);
+		}
+		shownAll.fetch_add(shownHere, std::memory_order_relaxed);
+	};
+	if (count > 0) pool.ParallelChunks(count, chunk, check);
+	static std::vector<int> starts;
+	zx::jobs::ComputeJoinParts(parts, frame, starts);
+	const int shown = shownAll.load();
+	g_lastShown = shown;
+	g_lastFrameDerived = (int)frame.size();
+	ZX_COUNT("ticstream/tic_shown", "sprites", shown);
+	ZX_COUNT("ticstream/frame_derived", "actors", (double)frame.size());
+	if (!frame.empty()) BuildSprites(&frame[0], (int)frame.size());
 }
 
 // [Doruk-Aksoy] A particle the walk reached, waiting for BuildQueuedParticles.

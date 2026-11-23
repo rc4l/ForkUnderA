@@ -54,4 +54,10 @@ void ComputeSpriteClip(const SpriteClipIn &in, float &z1, float &z2)
 	z1 -= diffb;
 }
 
+bool ComputeSpriteClipIdle(const SpriteClipIn &in, float z1, float z2)
+{
+	const bool smarterclip = !in.living && in.spriteClip == 3;
+	return (z2 + 1) - in.bottom >= 0 && (!smarterclip || (z1 - 1) - in.top <= 0);
+}
+
 }} // namespace zx::sprites

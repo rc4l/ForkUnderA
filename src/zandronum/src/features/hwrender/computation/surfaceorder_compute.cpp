@@ -15,6 +15,12 @@ namespace zx { namespace hwrender {
 
 static bool IsAdditive(const TranslucentDraw &d) { return d.blend == 2; }
 
+// [Doruk-Aksoy] The last word on a tie: a piece with no actor first, then by its actor's record, then creation order, so the tic stream and the CPU path tie alike.
+static unsigned long long TieOrder(const TranslucentDraw &d)
+{
+	return d.who >= 0 ? ((unsigned long long)(d.who + 1) << 32) | d.first : d.first;
+}
+
 bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 {
 	// [rc4l] A decal is a STAGE, not a distance. This is the whole of the fix.
@@ -41,7 +47,7 @@ bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 	if (aDecal)
 	{
 		if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
-		return a.first < b.first;
+		return TieOrder(a) < TieOrder(b);
 	}
 
 	// [rc4l] Then the plane layers, farthest first, a plane ahead of what shares its layer: a medkit under water is drawn before the water over it.
@@ -57,13 +63,13 @@ bool ComputeDrawsBefore(const TranslucentDraw &a, const TranslucentDraw &b)
 	// flickered through each other. Falling back to creation order makes equal distances resolve the
 	// same way every frame.
 	if (IsAdditive(a) != IsAdditive(b)) return !IsAdditive(a);
-	return a.first < b.first;
+	return TieOrder(a) < TieOrder(b);
 }
 
 TranslucentSortKey ComputeTranslucentSortKey(const TranslucentDraw &d)
 {
 	TranslucentSortKey k;
-	k.lo = d.first;
+	k.lo = TieOrder(d);
 	const unsigned long long additive = IsAdditive(d) ? 1ull : 0ull;
 	// [rc4l] Decals are a stage ahead of everything (the top bit clear), ordered additive last then oldest first.
 	if (d.decal)

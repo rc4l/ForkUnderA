@@ -230,6 +230,10 @@ struct DynRun
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 	float        minX, maxX, minZ, maxZ;   // [Doruk-Aksoy] its footprint on the map (SceneVertex x and z), which flat planes are ordered over
+	int          sortWho;      // [Doruk-Aksoy] its piece's actor, whose record order breaks a tie at one distance, or -1
+	int          ticPiece;     // [Doruk-Aksoy] the tic stream's piece it draws, or -1 for the frame's
+	bool         hidden;       // [Doruk-Aksoy] left out this frame (its tic piece hidden, or fua_dg_gpuview)
+	bool         eligible;     // [Doruk-Aksoy] an actor the tic stream may carry (MeshPiece::gpuEligible)
 	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
 	int          general;      // [rc4l] its first general vertex, or -1 for a packed sprite, which has none
 	int          userShader;   // [Doruk-Aksoy] the GLDEFS shader it draws with (ScenePSO), or -1
@@ -283,6 +287,7 @@ struct SceneGeometry
 	unsigned     actorUniformsTable = ~0u, actorUniformsDecls = ~0u;
 	int          skyHoleCount = 0;
 	TArray<DynRun> dynRuns;                         // [rc4l] this frame's sprite, model and decal draws
+	unsigned     dynTicRuns = 0;                    // [Doruk-Aksoy] how many of dynRuns lead from the tic stream, which a camera pass leaves out
 	bool         dynReady = false;
 	unsigned int batchesGen = 0;                        // [rc4l] bumped when the batches are rebuilt or one is appended, for what is cached per batch
 	TArray<zx::hwrender::TracedSprite> tracedSprites;   // [rc4l] this frame's sprites as a traced mirror's rays meet them

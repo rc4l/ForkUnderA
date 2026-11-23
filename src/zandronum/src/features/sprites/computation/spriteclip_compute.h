@@ -26,6 +26,9 @@ bool ComputeSpriteClips(bool living, int spriteClip);
 // [rc4l] Shift z1 and z2 as GL does; call only when ComputeSpriteClips says so.
 void ComputeSpriteClip(const SpriteClipIn &in, float &z1, float &z2);
 
+// [Doruk-Aksoy] Whether ComputeSpriteClip leaves z1 and z2 alone because the sprite stands inside the floor and (for the smarter clip) the ceiling; both tests are linear in the edges, so true at a tic's two ends is true all through it.
+bool ComputeSpriteClipIdle(const SpriteClipIn &in, float z1, float z2);
+
 }} // namespace zx::sprites
 
 #endif // ZX_SPRITECLIP_COMPUTE_H

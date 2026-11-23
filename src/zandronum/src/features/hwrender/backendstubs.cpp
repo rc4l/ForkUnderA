@@ -26,6 +26,7 @@ zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend)
 	return zx::frame::ComputeFrameRoute(in);
 }
 bool StandaloneActive() { return false; }
+bool TicSpritesSupported() { return false; }
 const float *SceneMVP() { return NULL; }
 bool ViewMVPNow(float *) { return false; }
 void LiveFrame() {}

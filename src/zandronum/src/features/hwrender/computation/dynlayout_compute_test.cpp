@@ -75,7 +75,7 @@ TEST(DynLayout, PackedSpritesTakeASpriteInsteadOfARecord)
 TEST(DynLayout, TheWordsBoundCoversEveryPiecePackedAndEveryVertexGeneral)
 {
 	// [rc4l] Two quads of four corners each: 56 words packed, or twelve general vertices of six words, plus four of alignment.
-	EXPECT_EQ(2u * 28 + 12u * 6 + 4, ComputeDynWordsBound(2, 8, 0));
+	EXPECT_EQ(2u * 36 + 12u * 6 + 4, ComputeDynWordsBound(2, 8, 0));   // [Doruk-Aksoy] 36-word packed sprites
 	EXPECT_EQ(4u, ComputeDynWordsBound(0, 0, 0));
 	// [rc4l] An odd count rounds its half up.
 	EXPECT_EQ(2u * 6 + 4, ComputeDynWordsBound(0, 1, 0));
@@ -114,7 +114,7 @@ unsigned long long WorstBytes(unsigned vertices)
 TEST(DynVertexCeiling, TheLeastVulkanDeviceHoldsFarMoreThanTheOldCeiling)
 {
 	const unsigned v = ComputeDynVertexCeiling(kMinStorageBufferBytes);
-	EXPECT_GT(v, 900000u);
+	EXPECT_GT(v, 800000u);   // [Doruk-Aksoy] 36-word packed sprites hold fewer, 849,477
 	EXPECT_LE(WorstBytes(v), kMinStorageBufferBytes);
 	EXPECT_GT(WorstBytes(v + 1), kMinStorageBufferBytes);
 }
