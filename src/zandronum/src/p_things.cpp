@@ -622,6 +622,11 @@ int P_Thing_Damage (int tid, AActor *whofor0, int amount, FName type)
 
 void P_RemoveThing(AActor * actor)
 {
+	// [Kaori-Chani] features/net-snapshot: a snapshot mirror leaves only with its ghost, never by
+	// gameplay (a child's A_RemoveMaster).
+	if ( actor->NetworkFlags & NETFL_MIRROR )
+		return;
+
 	// [rc4l] uzdoom@978667143 with its fix c1a0ee962 folded in: an inventory item that is OWNED
 	// must not be removed here -- doing so leaves the owner holding a destroyed pointer. Upstream
 	// first wrote Owner == NULL and corrected it to != NULL the next commit; the corrected form is

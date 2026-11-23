@@ -4179,6 +4179,18 @@ void AActor::Tick ()
 	if ( measureTraffic )
 		NETWORK_StartTrafficMeasurement ( );
 
+	// [Kaori-Chani] features/net-snapshot: a legacy actor whose mirror is drawn in its place does
+	// not tick, and the two counters are the client's [snap] hide: line.
+	extern unsigned long long g_tickSkipped, g_tickRan;
+	if ( STFlags & STFL_SNAPGHOSTHIDDEN )
+	{
+		++g_tickSkipped;
+		if ( measureTraffic )
+			NETWORK_StopTrafficMeasurement ( );
+		return;
+	}
+	++g_tickRan;
+
 	// [rc4l] Self-register for this tic's P_RunEffects pass (see p_effect.cpp) --
 	// the effects walk no longer scans every thinker.
 	if (effects && ( NETWORK_GetState( ) != NETSTATE_SERVER ))

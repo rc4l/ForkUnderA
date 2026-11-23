@@ -1162,6 +1162,17 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		}
 	}
 
+	// [Kaori-Chani] features/net-snapshot: a mirror blocks and can be stood on, nothing else, and
+	// never against an actor the server positions. Below the pass-over block, above touchy.
+	if (thing->NetworkFlags & NETFL_MIRROR)
+	{
+		solid = ((tm.thing->STFlags & STFL_SNAPGHOSTHIDDEN) == 0) &&
+			(thing->flags & MF_SOLID) &&
+			!(thing->flags & MF_NOCLIP) &&
+			((tm.thing->flags & MF_SOLID) || (tm.thing->flags6 & MF6_BLOCKEDBYSOLIDACTORS));
+		return !solid || unblocking;
+	}
+
 	if ((tm.thing->player == NULL) || (thing->flags6 & MF6_TOUCHY) || (tm.thing->flags6 & MF6_TOUCHY)) // || !(tm.thing->player->cheats & CF_PREDICTING)) // [BB] // [RK] Added checks.
 	{
 		// touchy object is alive, toucher is solid
