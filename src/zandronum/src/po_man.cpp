@@ -267,13 +267,16 @@ void DPolyAction::Serialize (FArchive &arc)
 	Super::Serialize (arc);
 	arc << m_PolyObj << m_Speed << m_Dist << m_Interpolation;
 
-	// [Kaori-Chani] features/net-snapshot: a hub return links a reloaded action here, which
-	// the constructor cannot do for it.
+	// [Kaori-Chani] features/net-snapshot: a hub return links a reloaded action here and puts it
+	// back in specialdata, which the constructor cannot do for it.
 	if ( arc.IsLoading( ))
 	{
 		FPolyObj *poly = PO_GetPolyobj( m_PolyObj );
 		if ( poly != NULL )
+		{
 			zx::netsnapshot::PolyLink( poly, this );
+			poly->specialdata = this;
+		}
 		m_SnapGen = zx::netsnapshot::PolyNewGen( );
 	}
 }
