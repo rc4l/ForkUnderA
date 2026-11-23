@@ -123,6 +123,7 @@
 #include "announcer.h"
 #include "p_acs.h"
 #include "p_effect.h"
+#include "p_lnspec.h"	// [Kaori-Chani] dSector_DoorCloseIn30, dSector_DoorRaiseIn5Mins
 #include "cl_commands.h"
 #include "possession.h"
 #include "statnums.h"
@@ -4451,6 +4452,16 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			sectors[ulIdx].floordata->Destroy( );
 			sectors[ulIdx].floordata = NULL;
 		}
+	}
+
+	// [Kaori-Chani] features/net-snapshot: the timed doors again, after the plane writes above
+	// have cleared the movers; a gated client builds none of these and takes them by record.
+	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
+	{
+		if ( sectors[ulIdx].SavedTimedDoor == dSector_DoorCloseIn30 )
+			P_SpawnDoorCloseIn30( &sectors[ulIdx] );
+		else if ( sectors[ulIdx].SavedTimedDoor == dSector_DoorRaiseIn5Mins )
+			P_SpawnDoorRaiseIn5Mins( &sectors[ulIdx] );
 	}
 
 	// If we're the server, tell clients to delete all their ceiling/floor movers.

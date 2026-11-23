@@ -1484,6 +1484,8 @@ void P_SpawnSpecials (void)
 			
 		case dSector_DoorCloseIn30:
 			// DOOR CLOSE IN 30 SECONDS
+			// [Kaori-Chani] features/net-snapshot: for GAME_ResetMap to spawn it again.
+			sector->SavedTimedDoor = dSector_DoorCloseIn30;
 			P_SpawnDoorCloseIn30 (sector);
 			break;
 			
@@ -1509,6 +1511,8 @@ void P_SpawnSpecials (void)
 
 		case dSector_DoorRaiseIn5Mins:
 			// DOOR RAISE IN 5 MINUTES
+			// [Kaori-Chani] features/net-snapshot: as the close-in-30 above.
+			sector->SavedTimedDoor = dSector_DoorRaiseIn5Mins;
 			P_SpawnDoorRaiseIn5Mins (sector);
 			break;
 			
