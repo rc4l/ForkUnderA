@@ -4703,7 +4703,8 @@ void AActor::Tick ()
 					zx::bounce::OnTop ontop = zx::bounce::OnTop::Land;
 					if (velz != 0 && (BounceFlags & BOUNCE_Actors))
 					{
-						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0);
+						// [MGOOOOOO] A ripper rips through what it can rip rather than exploding on it (OnTop::RipThrough: Cut Man's point-blank slices on MM8BDM).
+						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0, P_RipsThrough(this, onmo));
 					}
 					if (ontop == zx::bounce::OnTop::Explode)
 					{

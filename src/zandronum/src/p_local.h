@@ -502,6 +502,7 @@ void	P_SlideMove (AActor* mo, fixed_t tryx, fixed_t tryy, int numsteps);
 void	P_OldSlideMove (AActor* mo);
 bool	P_BounceWall (AActor *mo);
 bool	P_BounceActor (AActor *mo, AActor *BlockingMobj, bool ontop);
+bool	P_RipsThrough (const AActor *missile, const AActor *victim);	// [MGOOOOOO] features/ripper
 bool	P_CheckSight (const AActor *t1, const AActor *t2, int flags=0);
 
 enum ESightFlags
