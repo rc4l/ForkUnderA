@@ -746,15 +746,18 @@ def verify_header(path):
     # its position in it.
     m = re.search(r'enum\s*\{\s*SNAPMV_PLAT = 0,(.*?)SNAPMV_COUNT', src, re.S)
     names = re.findall(r'\b(SNAPMV_\w+)\s*,', m.group(1)) if m else []
-    if 'SNAPMV_POLY' not in names or names.index('SNAPMV_POLY') + 1 != MV_POLY:
-        bad.append('  SNAPMV_POLY: not at %d in the class enum' % MV_POLY)
-    # [Kaori-Chani] And every class in it is one this decoder places: sized by mover_body_bytes,
-    # or named in MV_NOBODY as one the header declares and no writer emits.
-    for i, nm in enumerate(names):
-        if nm == 'SNAPMV_COUNT':
-            continue
-        if (i + 1) not in MV_CLSNAME:
-            bad.append('  %s = %d: a mover class this decoder does not know' % (nm, i + 1))
+    # [Kaori-Chani] The enum against this decoder's own classes, name by name from PLAT: a class
+    # added or moved names itself, where a check by position alone names the one it displaced.
+    want = [MV_CLSNAME[c].upper() for c in sorted(MV_CLSNAME)]
+    got = ['PLAT'] + [nm[len('SNAPMV_'):] for nm in names]
+    for i in range(max(len(want), len(got))):
+        a = want[i] if i < len(want) else None
+        b = got[i] if i < len(got) else None
+        if a != b:
+            bad.append('  class %d: the header has %s, this decoder has %s'
+                       % (i, ('SNAPMV_' + b) if b else 'nothing',
+                          a.lower() if a else 'nothing, and places no body there'))
+            break
 
     m = re.search(r'SNAPEV_MOVER = SNAPEV_SELFDESC \| (\d+)', src)
     if m is None:
