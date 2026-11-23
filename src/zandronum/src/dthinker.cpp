@@ -469,6 +469,9 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 	{
 		++count;
 		NextToThink = node->NextThinker;
+		// [Kaori-Chani] features/net-snapshot: the spawner of anything spawned in PostBeginPlay
+		// or Tick, which a cosmetic spawn reads when no action is running.
+		g_pSnapTickSelf = node;
 		if (node->ObjectFlags & OF_JustSpawned)
 		{
 			// Leave OF_JustSpawn set until after Tick() so the ticker can check it.
@@ -511,6 +514,9 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 			node->ObjectFlags &= ~OF_JustSpawned;
 			GC::CheckGC();
 		}
+		// [Kaori-Chani] features/net-snapshot: so ACS and level code after RunThinkers spawn
+		// with no spawner.
+		g_pSnapTickSelf = NULL;
 		node = NextToThink;
 	}
 	return count;
