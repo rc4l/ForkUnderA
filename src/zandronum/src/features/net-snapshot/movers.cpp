@@ -537,14 +537,7 @@ void zx::netsnapshot::MoverMoveAttached( sector_t * pSec, fixed_t move, bool bCe
 	if ( move == 0 )
 		return;
 	P_Scroll3dMidtex( pSec, 0, move, bCeiling );
-	// [Kaori-Chani] The source tree gives P_MoveLinkedSectors a fifth parameter naming who
-	// moved the plane, which p_linkedsectors.cpp threads down for one purpose: to reach
-	// zx::netsnapshot::TracePlaneWrite. The parameter is a hook's, so it arrives with the
-	// hook in step 3 and this calls the four-argument form meanwhile. The argument stays in
-	// this function's own signature, where movers.h declares it, so step 3 restores one
-	// argument rather than a signature, and the tracing it feeds is diagnostic either way.
-	(void)who;
-	P_MoveLinkedSectors( pSec, false, move, bCeiling );
+	P_MoveLinkedSectors( pSec, false, move, bCeiling, who );
 }
 
 // Writes the plane a GONE carries, as the server destroyed it, with its
