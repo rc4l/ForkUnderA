@@ -464,6 +464,9 @@ void P_Ticker (void)
 
 		if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		{
+			// [Kaori-Chani] features/net-snapshot: the mirrors, which never tick and so never
+			// register themselves, added to this tic's registry before the effects run.
+			zx::netsnapshot::RegisterMirrorEffects( );
 			{
 				ZX_ZONE ("sim/effects"); // [rc4l] in features/telemetry, which perf.ticprof reads too
 				// [Kaori-Chani] features/net-snapshot: the particle effects' share, which the

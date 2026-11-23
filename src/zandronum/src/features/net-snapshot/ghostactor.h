@@ -48,6 +48,10 @@ private:
 // Called once per rendered frame, before the world is drawn.
 void GhostFrame();
 
+// [Kaori-Chani] Every mirror carrying effects, into this tic's effects registry: a mirror never
+// ticks, so AActor::Tick's own registration never reaches one.
+void RegisterMirrorEffects();
+
 // [Kaori-Chani] The fold on the packet clock, called once for each payload applied: the
 // state it leaves is what the frame's own folds are taken from.
 void GhostFoldApplied(unsigned int nowMS);

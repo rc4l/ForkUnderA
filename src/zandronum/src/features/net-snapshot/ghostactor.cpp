@@ -31,6 +31,7 @@
 #include "i_system.h"
 #include "r_utility.h"	// [Kaori-Chani] r_NoInterpolate, which forces the frac to 1
 #include "i_tictime.h"
+#include "p_effect.h"	// [Kaori-Chani] P_RegisterEffectActor, for the mirrors
 #include "features/framephase/framephase.h"	// [Kaori-Chani] the loop's own sim and display times
 #include "network.h"
 #include "cl_main.h"		// CLIENT_MoveThing, for the real player actors
@@ -4030,6 +4031,20 @@ static void ghost_Report()
 	g_ghostCensusFrames = 0;
 	g_ghostNearMax = 0;
 	g_ghostRelinkMax = 0;
+}
+
+// [Kaori-Chani] A mirror never ticks, so AActor::Tick's own registration never reaches one: the
+// tic registers them here instead, and P_RunEffects then draws a mirror's trail as an actor's.
+void zx::netsnapshot::RegisterMirrorEffects()
+{
+	if (g_mirror == NULL)
+		return;
+	for (unsigned int k = 0; k < g_mirrorIds.Size(); ++k)
+	{
+		AActor * pM = g_mirror[g_mirrorIds[k]];
+		if ((pM != NULL) && (pM->effects != 0))
+			P_RegisterEffectActor(pM);
+	}
 }
 
 void zx::netsnapshot::GhostReportNow()
