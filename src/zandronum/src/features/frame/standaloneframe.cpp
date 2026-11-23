@@ -92,7 +92,9 @@ void SweepActors()
 	// [rc4l] Derived in one batch across the job pool unless a check compares them one at a time against GL.
 	const bool batch = !fua_sprite_check && !fua_shading_check;
 	g_swept.clear();
-	const float *mvp = zx::hwrender::SceneMVP();
+	// [Doruk-Aksoy] This view's own matrix, since SceneMVP is the backend's last frame's, or a camera texture's, until this frame records.
+	float viewMvp[16];
+	const float *mvp = zx::hwrender::ViewMVPNow(viewMvp) ? viewMvp : NULL;
 	int count;
 	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
 	int pointCount = 0;

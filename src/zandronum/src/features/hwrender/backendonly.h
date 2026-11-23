@@ -97,6 +97,8 @@ bool BackendPresenting();
 
 // [rc4l] The camera the backend draws with, column-major, so a standalone frame culls against the same matrix rather than deriving the camera again.
 const float *SceneMVP();
+// [Doruk-Aksoy] The matrix of the view the engine's globals hold now, as the backend will frame it, false without a backend; SceneMVP is still the last frame's while a frame is built.
+bool ViewMVPNow(float *out);
 
 }} // namespace zx::hwrender
 

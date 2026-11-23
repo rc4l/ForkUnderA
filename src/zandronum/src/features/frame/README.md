@@ -26,6 +26,9 @@ first has the backend forget its textures (`ForgetBackendTextures`), since the s
 `computation/actorcull_compute` is the sweep's frustum test, padded by the actor's size since a sprite
 is wider than the point it stands on. The sweep culls chunks of the actor records on the job lanes and joins their
 kept lists in chunk order, so the batch is in record order as one pass made it (`scene/actor_sweep`).
+It culls with the matrix of the view being built (`hwrender::ViewMVPNow`), not `SceneMVP`, which still holds the last
+frame's view, or a camera texture's, until this frame records; the `sweepcull` scenario (a quarter turn a frame in a
+ring of columns) fails on a build that culls with the last frame's.
 
 `playerview` is the player's view, shared by GL and the backend:
 

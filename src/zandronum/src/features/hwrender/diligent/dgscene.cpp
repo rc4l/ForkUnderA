@@ -989,6 +989,7 @@ bool BindSceneConstants(Diligent::IPipelineState *pso)
 	return vv != NULL;
 }
 const float *SceneMVP() { return g_mvp; }
+bool ViewMVPNow(float *out) { BuildMVP(out); return true; }
 
 // [rc4l] What the backend spends its frame on, phase by phase.
 //
