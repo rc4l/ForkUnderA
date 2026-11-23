@@ -215,7 +215,8 @@ Cosmetic classes and events (see [Cosmetic actors](design.md#63-cosmetic-actors)
 - `CatchUpHoldsSound`: declared here and defined in `ghostactor.cpp`. While a client copy is ticked
   forward by its age, a repeat of the same `CHAN_AUTO` sound from it does not start again.
 
-Snapshot sounds (see [Sounds and the derivation contract](design.md#61-sounds-and-the-derivation-contract)):
+Snapshot sounds (see [Sounds and the derivation
+contract](design.md#61-sounds-and-the-derivation-contract)):
 - `BroadcastActorSound`: asked by `S_Sound` about every actor sound, flagged for the clients or not,
   since a mirror runs no actions; false when the caller should fall back to the legacy broadcast.
   For an entity whose legacy replication is suppressed it sends per client, culled by rolloff. A

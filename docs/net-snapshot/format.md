@@ -221,8 +221,8 @@ Cosmetic events:
 - **The suppression control group is compiled in, by id modulo.** Both ends must agree on its
   membership, which a cvar cannot give (`CVAR_SERVERINFO` does not reach gameplay clients), and a
   range would pick map-load actors, since id order is spawn order.
-- **Bounds-check with the reader's length.** `GroupBytes` sizes buffers; checking a record against it
-  rejects a valid narrow record that ends a payload. Readers use `GroupBytesRead`.
+- **Bounds-check with the reader's length.** `GroupBytes` sizes buffers; checking a record
+  against it rejects a valid narrow record that ends a payload. Readers use `GroupBytesRead`.
 - **Group order carries length.** APPEAR is the one variable group and RENDER the only one after it.
   A second variable group goes after APPEAR, or the prefix length stops being a function of the mask
   and the map's frame.
