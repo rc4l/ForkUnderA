@@ -514,8 +514,8 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 			node->ObjectFlags &= ~OF_JustSpawned;
 			GC::CheckGC();
 		}
-		// [Kaori-Chani] features/net-snapshot: so ACS and level code after RunThinkers spawn
-		// with no spawner.
+		// [Kaori-Chani] features/net-snapshot: cleared after each thinker's turn, so ACS and level
+		// code spawn with no spawner.
 		g_pSnapTickSelf = NULL;
 		node = NextToThink;
 	}

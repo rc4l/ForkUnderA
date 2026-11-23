@@ -226,11 +226,31 @@ Each hook is one call from a stock file into the module, listed here as it lands
     existing ceiling sound first, so a local `PlayCeilingSound()` would restart the sound
     rather than layer it. The call belongs here again if the sound unit later stops the server
     sending it under the gate.
-  - A gated client still spawns its own timed doors, and the records adopt them: measured on a
-    join, where the flag is false at spawn time anyway, and the same on a map change. The
-    reference suppressed the spawn instead, which a stale flag can turn into a door missing for
-    a whole map when the gate goes off across a map change — the fallback case the gate exists
-    for. `MoverSuppressesLegacy` keeps its inside role test for its other callers.
+  - A gated client builds neither timed door: `P_SpawnDoorCloseIn30` and
+    `P_SpawnDoorRaiseIn5Mins` return at `MoverSuppressesLegacy( SNAPMV_DOOR )`, clearing
+    `special` as the spawn would have, and the records bring the doors instead. Off the gate
+    each door is marked legacy-made for a gate-on to drop, and `P_SpawnDoorCloseIn30` also sets
+    `m_TopWait` to `VDOORWAIT`, which a reversal at the top reads and nothing else set.
+    `MoverSuppressesLegacy` keeps its inside role test for its other callers.
+  - The stale flag that suppression invites cannot cost a map its timed door, because the
+    gate-off always reaches a client before it loads the next map. `MapChanged` latches the
+    server's new gate inside `P_SetupLevel`, before `G_DoLoadLevel` calls `SERVER_LoadNewLevel`,
+    and `ServerTick` pumps the gate after the tic loop that holds `G_Ticker`, so
+    `SnapMoverGate( false )` is queued in the same `SERVER_Tick` as the change. It reaches a
+    client mid-change, the automatic `SVCF_SKIP_CLIENTS_WITHOUT_FULLUPDATE` skipping only
+    `CLS_SPAWNED_BUT_NEEDS_AUTHENTICATION` where `SERVER_LoadNewLevel` sets
+    `CLS_AUTHENTICATED_BUT_OUTDATED_MAP`. And `MapLoad` is sent only by
+    `server_AuthenticateLevel`, in answer to a `CLC_AUTHENTICATELEVEL` that cannot arrive before
+    `MapAuthenticate` goes out, so it is always later in that client's reliable stream and
+    `P_SpawnSpecials` runs with the flag already clear. That the gate-off resend goes to
+    `CLS_SPAWNED` clients only does not matter here: this client has no map yet and builds its
+    own doors.
+  - Measured on `MAP02` of the test wad, after `fua_snap 0` and a map change from a gated
+    `MAP01`: the client reported `mover gate: legacy off 0`, tag 10 held a `Door` at
+    `direction 0 countdown 1050 wait 150` and tag 14 one at `direction 2 countdown 10500`.
+    That `wait 150` is the `m_TopWait` above, so these are the client's own doors and not ones a
+    command built. Their countdowns do not run, the stock wait break still taking every client,
+    and the tag-10 door went when the server's did, through `client_DestroyDoor`.
   - `DWaggleBase::EndPlane` is the write `DoWaggle` makes when a waggle ends, named so that a
     client ending one by record can make the same write. It takes its plane from the class
     rather than an argument, since a caller outside `DoWaggle` has no such flag, and it is
