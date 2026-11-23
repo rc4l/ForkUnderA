@@ -435,6 +435,11 @@ bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting)
 	return ComputeSkyCaptureList(mainView, sceneNesting, -1) == kSkyCaptureMain;
 }
 
+bool ComputeCapturesDynamic(bool playerWalk, bool cameraView, int stackSlot, int mirrorView)
+{
+	return playerWalk || cameraView || stackSlot >= 0 || mirrorView >= 0;
+}
+
 FlatChange ComputeFlatChange(bool stored, const FlatStamp &baked, const FlatStamp &now, bool scrolled)
 {
 	if (!stored) return kFlatRebuild;

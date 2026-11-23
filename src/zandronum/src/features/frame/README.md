@@ -30,6 +30,13 @@ It culls with the matrix of the view being built (`hwrender::ViewMVPNow`), not `
 frame's view, or a camera texture's, until this frame records; the `sweepcull` scenario (a quarter turn a frame in a
 ring of columns) fails on a build that culls with the last frame's.
 
+A camera texture's view is a scene of its own, as GL's `RenderViewpoint` is. Its pass draws straight from the dynamic
+stream, so the view clears the stream and fills it alone, with the camera's own walk's particles and decals
+(`WalkCameraView`) and the actors its sweep keeps (`levelmesh::CameraCapture`), before the player's view clears it again.
+`BeginRecordViewpoint` marks the viewpoint's own map section for every view, as GL's `ProcessScene` does. The
+`cameraactors` scenario (a camera aimed at columns and a particle fountain in a room the player never sees) fails on a
+build whose camera picture draws the player's last frame instead.
+
 `playerview` is the player's view, shared by GL and the backend:
 
 - `BeginPlayerFrame`: a new camera's interpolation reset, the tic fraction and clock, particles, last

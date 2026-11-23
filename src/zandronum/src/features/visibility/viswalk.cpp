@@ -1715,7 +1715,7 @@ void WalkView(bool publish, bool derive, const WalkHooks *hooks)
 	if (clock.TimeMS() > g_walkMaxMs) g_walkMaxMs = clock.TimeMS();
 }
 
-void WalkCameraSky()
+void WalkCameraView(const WalkHooks *hooks)
 {
 	zx::levelmesh::BeginViewSky(zx::levelmesh::kSkyCaptureCamera);
 	// [rc4l] Over the camera's own map section, as RenderViewpoint walks it, not the player's.
@@ -1723,8 +1723,12 @@ void WalkCameraSky()
 	MarkMapSectionBit(R_PointInSubsector(viewx, viewy)->mapsection);
 	g_clip.Clear();
 	ComputeSeedFrustum(g_clip, viewangle, zx::viewsetup::CurrentView().frustumAngle);
-	const WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureCamera, false, zx::viewsetup::CurrentView().viewRecord, NULL, NULL, NULL, NULL, NULL };
+	const WalkSpec spec = { -1, zx::levelmesh::kSkyCaptureCamera, false, zx::viewsetup::CurrentView().viewRecord, NULL, NULL, NULL, NULL,
+		hooks != NULL ? hooks->particles : NULL };
 	Walk(spec);
+	zx::modelreach::MarkReached(g_sectorOrder.empty() ? NULL : &g_sectorOrder[0], (int)g_sectorOrder.size());
+	if (hooks != NULL && hooks->walked != NULL) hooks->walked();
+	HandDecals(hooks);
 }
 
 void WalkPortalViews(const WalkHooks *hooks)

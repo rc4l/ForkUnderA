@@ -176,25 +176,25 @@ void StandaloneScene()
 	zx::jobs::Pool().Wake();
 	const zx::levelmesh::SceneScope scene;
 	// [rc4l] Last frame's sprites are dead the moment the camera moves, marks age on the frame clock, and a sector that moved has invalidated its cached geometry.
-	if (zx::levelmesh::PlayerWalkActive())
-	{
-		zx::levelmesh::DynClear();
-		zx::levelmesh::ClearSprites();
-	}
+	// [Doruk-Aksoy] A camera texture's view, which its pass draws at once, holds the stream alone: its own walk's particles and decals and its own sweep's actors, not the player's last frame.
+	const bool cameraView = !zx::levelmesh::PlayerWalkActive();
+	const zx::levelmesh::CameraCapture capture(cameraView);
+	zx::levelmesh::DynClear();
+	if (!cameraView) zx::levelmesh::ClearSprites();
 	zx::horizon::UpdateHorizons();
 	// [Doruk-Aksoy] The actors wider than their radius, before a stacked view's or mirror's walk hands its actors over.
 	zx::modelreach::PrepareWide();
 	// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
+	const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals, zx::sprites::BuildQueuedParticles };
 	if (walked)
 	{
-		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals, zx::sprites::BuildQueuedParticles };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(true, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);
 	}
-	// [rc4l] A camera texture's view walks for its sky surfaces alone, so another sky than the level's shows on its screen.
-	else if (fua_vis_walk) zx::visibility::WalkCameraSky();
+	// [rc4l] A camera texture's view walks for its own sky surfaces, so another sky than the level's shows on its screen.
+	else if (fua_vis_walk) zx::visibility::WalkCameraView(&hooks);
 	zx::levelmesh::WalkedThisFrame walkedSet;
 	walkedSet.sectors = zx::visibility::SectorsWalkedThisFrame(walkedSet.sectorCount);
 	walkedSet.sides = zx::visibility::SidesWalkedThisFrame(walkedSet.sideCount);
@@ -208,8 +208,8 @@ void StandaloneScene()
 	if (zx::levelmesh::PlayerWalkActive()) zx::hitboxviz::CollectBackendFrame(camera, walkedSet.sectors, walkedSet.sectorCount);
 #endif
 	const zx::framephase::Scope actorsPhase(zx::framephase::kPhaseActors);
-	// [Doruk-Aksoy] What the walks reached, so a wide actor whose centre is in a map section out of view is still drawn from a sector under it.
-	zx::modelreach::MarkReached(walkedSet.sectors, walkedSet.sectorCount);
+	// [Doruk-Aksoy] What the walks reached, so a wide actor whose centre is in a map section out of view is still drawn from a sector under it; a camera's walk marked its own.
+	if (!cameraView) zx::modelreach::MarkReached(walkedSet.sectors, walkedSet.sectorCount);
 	SweepActors();
 }
 

@@ -83,6 +83,8 @@ bool BeginRecordViewpoint(int record, const FViewLens &lens, bool mainview, bool
 	zx::levelmesh::SetMainView(mainview);
 	R_SetupFrameFromRecord(record, false);
 	SetViewpointUp(lens, mainview, toscreen);
+	// [Doruk-Aksoy] The viewpoint's own map section, as GL's ProcessScene marks each view's, so a camera texture's actors are not tested against the player's.
+	MarkMapSection();
 	return saved;
 }
 
@@ -112,7 +114,6 @@ void RenderPlayerView(int player, int paletteBrightness)
 	const bool savedMain = BeginRecordViewpoint(zx::gamecopy::IndexOf(zx::gamecopy::CameraOf(player)), r_viewLens, true, true);
 	zx::viewsetup::TurnView(viewangle);
 	sector_t *const sector = viewsector;
-	MarkMapSection();
 	StandaloneScene();
 	// [rc4l] GL drew the frame first when a check was on, so its sprites are there to compare the derived ones against.
 	zx::sprites::CheckFrameSprites();
