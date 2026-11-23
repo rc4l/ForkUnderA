@@ -1,6 +1,6 @@
 # apply: the client's snapshot commands
 
-Covers: src/zandronum/src/features/net-snapshot/apply.h, src/zandronum/src/features/net-snapshot/apply.cpp
+Covers: src/zandronum/src/features/net-snapshot/apply.h, src/zandronum/src/features/net-snapshot/apply.cpp, src/zandronum/src/features/net-snapshot/computation/sound_compute.h, src/zandronum/src/features/net-snapshot/computation/sound_compute.cpp, src/zandronum/src/features/net-snapshot/computation/sound_compute_test.cpp
 
 ## Responsibility
 
@@ -70,6 +70,21 @@ command in that dispatch, are read in `ghostactor.cpp` ([ghostactor.md](ghostact
   `SNAP_TAIL_WINDOW` past it is clamped, and a longer run is requested in parts as the highest
   rises.
 
+## The sound codec
+
+`SVC2_SNAPSOUND`'s body is written and read in one place, `computation/sound_compute.h`, so the
+server's `BroadcastActorSound` ([capture.md](capture.md)) and `OnSnapSound` cannot drift apart:
+- `SnapSoundWire`: one body: the map stamp, whether it is a point (x, y and z travel, in the map's
+  frame) or on an actor, the loop bit, the NetID (a point carries it too, so the client can move
+  the sound onto a mirror that appears late), the channel's low byte, the table id, volume and
+  attenuation.
+- `SnapSoundFlags`: the flags byte those fields imply. A point drops the loop, since a loop with no
+  actor could never be stopped.
+- `WriteSnapSound`, `ReadSnapSound`: the body into a buffer of `SNAP_SOUND_MAX_BYTES`, and back
+  through the codec's cursor. A volume of `SNAP_SOUND_VOLUME_NORM` and an attenuation of
+  `SNAP_SOUND_ATTEN_NORM` are left out. The reader takes each axis's travelling width, so an axis
+  this build cannot read is skipped and the rest stay in step.
+
 ## Data structures
 
 The ack state: the newest datagram sequence and the 32-bit history behind it, statics here because a
@@ -100,10 +115,12 @@ rejected payload still updates them. The payload buffer the decoder reads.
 
 ## Tests
 
-None in the self-tests: a datagram needs a server. The sound codec has its own unit
-(`computation/sound_compute.cpp`) with its tests. The client's `[snap]` lines check the rest live:
-the datagram and ack counts, the checksum's verified, unsettled and DIVERGED counts, the ack-state
-resets at each join, and the reliable tail requests. `fua_snap_debug_loss` and
+None in the self-tests: a datagram needs a server. `computation/sound_compute_test.cpp` is a
+GoogleTest file under the 100% line gate: the stamp leading every body, the flags leaving out every
+default, an actor's sound at seven bytes, a point's three axes in the frame's width, every body
+reading back as written, a short body, and an unknown width skipped. The client's `[snap]` lines
+check the rest live: the datagram and ack counts, the checksum's verified, unsettled and DIVERGED
+counts, the ack-state resets at each join, and the reliable tail requests. `fua_snap_debug_loss` and
 `fua_snap_debug_ackdelay` on the server exercise the ack history under loss and reordering, and
 `fua_snap_debug_holdback` past the reorder window or the history.
 
