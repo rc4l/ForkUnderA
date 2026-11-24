@@ -3133,6 +3133,8 @@ typedef char snap_assert_prop_uniform_slots[
 	(SNAP_PROPS_UNIFORM_SLOTS == zx::actormaterials::kActorUniformVec4s) ? 1 : -1];
 
 static SnapPropSlot	g_propSlots[SNAPPROP_MAXSLOTS];
+// [Kaori-Chani] NetID to slot + 1, 0 being none, so the capture needs no scan.
+static WORD			g_propByID[SNAP_MAXID];
 static unsigned int	g_propLive = 0, g_propChanges = 0;
 static unsigned int	g_propOverflow = 0, g_propTruncated = 0;
 static WORD			g_propPass = 0;
@@ -3225,30 +3227,40 @@ static bool snap_PropsDiffer(const SnapProps & a, const SnapProps & b)
 static void snap_PropCapture(const AActor * pActor)
 {
 	const WORD id = (WORD)pActor->NetID;
-	const SnapProps live = snap_PropsOf(pActor);
-	unsigned int free = SNAPPROP_MAXSLOTS;
 	++g_propWalks;
-	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	// [Kaori-Chani] The index answers in one step, so an entity already in the table costs the
+	// same whatever the table holds.
+	const WORD at = (id != 0) ? g_propByID[id] : (WORD)0;
+	if (at != 0)
 	{
-		if (g_propSlots[i].netID == id)
+		SnapPropSlot & slot = g_propSlots[at - 1];
+		++g_propSteps;
+		slot.seen = g_propPass;
+		const SnapProps live = snap_PropsOf(pActor);
+		if (snap_PropsDiffer(slot.props, live))
 		{
-			g_propSteps += (QWORD)i + 1;
-			g_propSlots[i].seen = g_propPass;
-			if (snap_PropsDiffer(g_propSlots[i].props, live))
-			{
-				g_propSlots[i].props = live;
-				g_propSlots[i].gen = snap_PropGen();
-				++g_propChanges;
-			}
-			return;
+			slot.props = live;
+			slot.gen = snap_PropGen();
+			++g_propChanges;
 		}
-		if ((g_propSlots[i].netID == 0) && (free == SNAPPROP_MAXSLOTS))
-			free = i;
+		return;
 	}
-	g_propSteps += SNAPPROP_MAXSLOTS;
 	// Nothing to say about an entity that is its class, which is most of them.
+	const SnapProps live = snap_PropsOf(pActor);
 	if (live.flags == 0)
 		return;
+	// The scan is the one path that needs a free slot, and it runs for an entity entering the
+	// table rather than for every entity every tic.
+	unsigned int free = SNAPPROP_MAXSLOTS;
+	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	{
+		if (g_propSlots[i].netID == 0)
+		{
+			free = i;
+			break;
+		}
+	}
+	g_propSteps += (QWORD)((free == SNAPPROP_MAXSLOTS) ? SNAPPROP_MAXSLOTS : free + 1);
 	if (free == SNAPPROP_MAXSLOTS)
 	{
 		++g_propOverflow;
@@ -3258,6 +3270,8 @@ static void snap_PropCapture(const AActor * pActor)
 	g_propSlots[free].gen = snap_PropGen();
 	g_propSlots[free].seen = g_propPass;
 	g_propSlots[free].props = live;
+	if (id != 0)
+		g_propByID[id] = (WORD)(free + 1);
 	++g_propChanges;
 }
 
@@ -3272,6 +3286,7 @@ static void snap_PropSweepEnd()
 			continue;
 		if (g_propSlots[i].seen != g_propPass)
 		{
+			g_propByID[g_propSlots[i].netID] = 0;
 			memset(&g_propSlots[i], 0, sizeof(g_propSlots[i]));
 			continue;
 		}
@@ -3298,6 +3313,7 @@ unsigned int zx::netsnapshot::PropSlots()
 void zx::netsnapshot::PropForget()
 {
 	memset(g_propSlots, 0, sizeof(g_propSlots));
+	memset(g_propByID, 0, sizeof(g_propByID));
 	g_propLive = 0;
 }
 
