@@ -22,9 +22,9 @@
 #   - every public function (declared, or defined inline, at the top level of a covered header or
 #     inside its namespace blocks) is named on the page or in a family, unless ALLOWED gives a
 #     reason;
-#   - every setting and command (CVAR, CUSTOM_CVAR, CCMD) is named: all of them in a module-owned
-#     file; in a stock file those with a snapshot prefix or a [Kaori-Chani] tag on their line or in
-#     the comment block just above;
+#   - every setting and command (CVAR, CUSTOM_CVAR, CCMD, DEV_MODE_CCMD) is named: all of them in
+#     a module-owned file; in a stock file those with a snapshot prefix or a [Kaori-Chani] tag on
+#     their line or in the comment block just above;
 #   - every stock file that calls a covered header's function is named;
 #   - a page covering entities.h names each installer hook (a Set* taking and returning a Clent*Fn)
 #     and each file that calls one.
@@ -164,7 +164,7 @@ for base, dirs, names in os.walk(ROOT):
 basenames = set(os.path.basename(p) for p in all_paths)
 
 SETTING_RE = re.compile(r'^\s*(?:CUSTOM_CVAR|CVAR)\s*\(\s*\w+\s*,\s*(\w+)'
-                        r'|^\s*CCMD\s*\(\s*(\w+)', re.M)
+                        r'|^\s*(?:DEV_MODE_|UNSAFE_)?CCMD\s*\(\s*(\w+)', re.M)
 
 
 def settings_in(path, stock):

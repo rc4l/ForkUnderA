@@ -19,8 +19,8 @@
 #   - Each part's description: the Description block of its first file's credit header. Its guide
 #     page: the page in docs/net-snapshot/ whose Covers: line names that file.
 #   - Public functions: those declared, or defined inline, at the top level of a part's headers
-#     or inside their namespace blocks, as doccheck.py reads them; commands are a part's CCMDs and
-#     standalone programs their main or fuzzer entry.
+#     or inside their namespace blocks, as doccheck.py reads them; commands are a part's CCMDs,
+#     DEV_MODE_CCMD among them, and standalone programs their main or fuzzer entry.
 #   - A summary for each: the comment after its declaration on the same line or just above it,
 #     else the one at its definition, else the sentence of its guide page naming it or its family
 #     (`WriteMover*`) in backticks, a sentence leading into a list taken last.
@@ -181,7 +181,7 @@ def top_level(text):
                                        params=' '.join(fm.group(2).split()), ns=ns > 0,
                                        line=line_of(code, stmt_start + len(s) - len(s.lstrip())),
                                        body=None)
-                        cm = re.match(r'CCMD\s*\(\s*(\w+)\s*\)$', flat)
+                        cm = re.search(r'\b(?:[A-Z]+_)*CCMD\s*\(\s*(\w+)\s*\)$', flat)
                         if cm:
                             current.update(name=cm.group(1), qual=cm.group(1), kind='command')
                         elif name in ('CUSTOM_CVAR', 'CVAR', 'EXTERN_CVAR'):
