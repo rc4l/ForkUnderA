@@ -3155,6 +3155,16 @@ static WORD snap_PropGen()
 	return g_propGenNext;
 }
 
+// [Kaori-Chani] Whether anything is off the class defaults at all, answered from the fields
+// rather than by building the record, which is what the common entity costs.
+static bool snap_PropsOffDefaults(const AActor * pActor)
+{
+	const AActor * pDef = pActor->GetDefault();
+	return (pActor->scaleX != pDef->scaleX) || (pActor->scaleY != pDef->scaleY)
+		|| (pActor->roll != pDef->roll) || (pActor->fua_material != pDef->fua_material)
+		|| (pActor->fua_materialSlot != 0);
+}
+
 // What this actor carries away from its class: scale, roll and a material a script set.
 static SnapProps snap_PropsOf(const AActor * pActor)
 {
@@ -3246,7 +3256,10 @@ static void snap_PropCapture(const AActor * pActor)
 		return;
 	}
 	// Nothing to say about an entity that is its class, which is most of them.
+	if (snap_PropsOffDefaults(pActor) == false)
+		return;
 	const SnapProps live = snap_PropsOf(pActor);
+	// A material slot whose rows are all unset still carries nothing.
 	if (live.flags == 0)
 		return;
 	// The scan is the one path that needs a free slot, and it runs for an entity entering the
