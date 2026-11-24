@@ -40,11 +40,11 @@ using namespace zx::netsnapshot;
 //
 // Applies a datagram too late to count, as before the drop, to compare the two
 // (the checksum can then read DIVERGED).
-CVAR( Bool, fua_csnap_debug_applylate, false, CVAR_NOSETBYACS )
+CVAR( Bool, fua_csnap_debug_applylate, false, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE )
 
 // Seconds between this client's presence dumps to snappresence-cl<N>.txt, for
 // tools/snapshot/presence_diff.py (0 off).
-CVAR( Int, fua_csnap_debug_presencelog, 0, CVAR_NOSETBYACS )
+CVAR( Int, fua_csnap_debug_presencelog, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE )
 
 static unsigned int g_tooLate = 0;
 static unsigned int g_pastHistory = 0;

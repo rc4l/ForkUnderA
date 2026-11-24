@@ -225,7 +225,7 @@ int zx::netsnapshot::VerifyFixture(const char* pszFilename, double skew)
 //*****************************************************************************
 //	CONSOLE COMMANDS
 
-CCMD(fua_snap_verify)
+DEV_MODE_CCMD(fua_snap_verify)
 {
 	if (argv.argc() < 2)
 	{
@@ -313,7 +313,7 @@ void zx::netsnapshot::SelfTestPrint(const char* pszFormat, ...)
 	va_end(args);
 }
 
-CCMD(fua_snap_selftest)
+DEV_MODE_CCMD(fua_snap_selftest)
 {
 	SelfTestBlocksReset();
 	unsigned int failures = RunFormatSelfTests();

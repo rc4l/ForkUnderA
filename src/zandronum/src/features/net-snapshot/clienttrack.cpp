@@ -694,7 +694,7 @@ static void snapcl_RebuildRepaired(SnapClientState& cl, unsigned int firstInFlig
 
 // The reference check after every ack (clienttrack.md): each client's `sent`
 // against `believed` with the records in flight merged over.
-CVAR(Bool, fua_snap_debug_refcheck, false, CVAR_NOSETBYACS)
+CVAR(Bool, fua_snap_debug_refcheck, false, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 static unsigned int g_refInFlight = 0, g_refInFlightDiffer = 0;
 static unsigned int g_refAtRest = 0, g_refAtRestDiffer = 0;
 static unsigned int g_refPsprites = 0, g_refPspritesDiffer = 0;
@@ -1479,7 +1479,7 @@ void zx::netsnapshot::ServerPSpriteStats(unsigned int & emitted, unsigned int & 
 //   idgap     - gaps between emitted ids once sorted, bucketed by varint width
 //   qstate    - (depth, offset) over emitted APPEAR, and whether qtics fits in
 //               seven bits: the narrow form's reach
-CVAR(Bool, fua_snap_wirecensus, false, CVAR_NOSETBYACS)
+CVAR(Bool, fua_snap_wirecensus, false, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 
 #define SNAPCL_CENSUS_IDBUCKETS	3	// varint width a sorted-id gap would need
 

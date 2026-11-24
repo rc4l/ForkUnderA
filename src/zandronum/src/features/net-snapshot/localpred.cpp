@@ -34,7 +34,7 @@ EXTERN_CVAR(Bool, cl_buffercommands)
 extern unsigned long long g_predCalls, g_predTicsSum, g_predTicsMax;
 
 // The reconciliation error census's interval in seconds, 0 off.
-CVAR(Int, fua_csnap_predcensus, 0, CVAR_NOSETBYACS)
+CVAR(Int, fua_csnap_predcensus, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 
 //*****************************************************************************
 //	THE PREDICTION ERROR CENSUS

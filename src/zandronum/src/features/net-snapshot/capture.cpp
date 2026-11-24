@@ -78,7 +78,7 @@ using namespace zx::netsnapshot;
 //	CONSOLE VARIABLES
 
 CVAR(Bool, fua_snap, false, CVAR_NOSETBYACS)
-CVAR(Int, fua_snap_stats, 0, CVAR_NOSETBYACS)
+CVAR(Int, fua_snap_stats, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 
 // [Kaori-Chani] The gate's two directions. Off is the fallback if the snapshot
 // misbehaves, so it takes effect in the tick it is set; on waits for the next
@@ -1991,7 +1991,7 @@ static void snap_CosTop3(const unsigned int* pByClass, char* psz, size_t size)
 
 // The cosmetic set, or with an argument every class whose name contains it,
 // networked ones with the reason.
-CCMD(fua_snap_cosmetics)
+DEV_MODE_CCMD(fua_snap_cosmetics)
 {
 	if (NETWORK_GetState() != NETSTATE_SERVER)
 	{
@@ -2082,11 +2082,11 @@ static QWORD		g_chunkDatagrams = 0;
 static QWORD		g_chunkFrames = 0;
 
 // Link impairment in the protocol, per client, for tests without an emulator.
-CVAR(Int, fua_snap_debug_ackdelay, 0, CVAR_NOSETBYACS)	// frames to hold each ack
-CVAR(Int, fua_snap_debug_loss, 0, CVAR_NOSETBYACS)		// percent of packets to drop
+CVAR(Int, fua_snap_debug_ackdelay, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)	// frames an ack waits
+CVAR(Int, fua_snap_debug_loss, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)		// percent dropped
 // Tics to delay DestroyAllSectorMovers after a map reset (0 off), a second
 // reset inside the delay restarting it.
-CVAR(Int, fua_snap_debug_resetsplit, 0, CVAR_NOSETBYACS)
+CVAR(Int, fua_snap_debug_resetsplit, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 static int g_resetSplitDue = 0;			// gametic to send it at; 0 = none pending
 
 namespace {
@@ -2102,14 +2102,14 @@ static unsigned int g_droppedPackets = 0;
 
 // Percent of snapshot datagrams held back and sent fua_snap_debug_holdbackgap
 // later, the reproducer for a datagram arriving after it was declared lost.
-CVAR(Int, fua_snap_debug_holdback, 0, CVAR_NOSETBYACS)
+CVAR(Int, fua_snap_debug_holdback, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 #define SNAP_HOLDBACK_DATAGRAMS		12
 // Datagrams a held one waits, 1 to 64: 12 is past the reorder window and
 // inside the ack history, past 32 beyond it.
-CVAR(Int, fua_snap_debug_holdbackgap, SNAP_HOLDBACK_DATAGRAMS, CVAR_NOSETBYACS)
+CVAR(Int, fua_snap_debug_holdbackgap, SNAP_HOLDBACK_DATAGRAMS, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 // Seconds between dumps of what each client may hold to snappresence-sv.txt,
 // for tools/snapshot/presence_diff.py (0 off).
-CVAR(Int, fua_snap_debug_presencelog, 0, CVAR_NOSETBYACS)
+CVAR(Int, fua_snap_debug_presencelog, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 #define SNAP_HOLDBACK_MAX			16		// per client; past it a datagram goes out on time
 #define SNAP_HOLDBACK_SLOT			8192	// bytes a held payload may take, OnSnapshot's limit
 
@@ -6288,10 +6288,10 @@ typedef char snap_AssertEffectBits[
 //
 // Every plane write from outside a mover thinker, linked sectors' too, by
 // sector index (capture.md).
-CVAR(Int, fua_csnap_planetrace, 0, CVAR_NOSETBYACS)	// sector index, -1 all, 0 off
+CVAR(Int, fua_csnap_planetrace, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)	// -1 all, 0 off
 
 // Report of the sector link graph, taken by the join sector pass.
-CVAR(Bool, fua_snap_linkcensus, false, CVAR_NOSETBYACS)
+CVAR(Bool, fua_snap_linkcensus, false, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 
 // Orders writes within a tic, where two to one sector are the fault.
 static unsigned int g_planeWriteSeq = 0;
@@ -6347,7 +6347,7 @@ void zx::netsnapshot::TracePlaneWrite(sector_t * pSec, int plane, const char * p
 //
 // Dumps sector planes by index to diff across machines (capture.md): every
 // mover or tagged sector, `all`, or one index and its linked sectors.
-CCMD(fua_snap_planedump)
+DEV_MODE_CCMD(fua_snap_planedump)
 {
 	if (numsectors <= 0)
 	{
@@ -6447,7 +6447,7 @@ CCMD(fua_snap_planedump)
 //
 // Prints the mover sound counts and zeroes them, so a window can align the counter with its
 // capture: called at fua_netcap_start, the next read covers exactly the captured interval.
-CCMD(fua_snap_soundcount)
+DEV_MODE_CCMD(fua_snap_soundcount)
 {
 	unsigned int bySector[SNAPSND_COUNT] = { 0 }, legacy[SNAPSND_COUNT] = { 0 };
 	zx::netsnapshot::MoverSoundStatsByKind(bySector, legacy, true);
@@ -6464,7 +6464,7 @@ CCMD(fua_snap_soundcount)
 //
 // A polyobject the sector check cannot reach: its axes, the actions on its list and whether
 // its sound sequence is playing, read the same way on either end.
-CCMD(fua_snap_polycheck)
+DEV_MODE_CCMD(fua_snap_polycheck)
 {
 	if (argv.argc() < 2)
 	{
@@ -6505,7 +6505,7 @@ CCMD(fua_snap_polycheck)
 
 //*****************************************************************************
 //
-CCMD(fua_snap_sectorcheck)
+DEV_MODE_CCMD(fua_snap_sectorcheck)
 {
 	if (argv.argc() < 2)
 	{

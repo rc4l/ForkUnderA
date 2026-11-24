@@ -46,7 +46,7 @@ static void fuzz_ClearCounts()
 //   fua_snap_fuzz [inputs [seed]] [sinks|spawn]
 // `sinks` sends mover records to the mover sink and `spawn` makes the cosmetic
 // events' actors, both changing the loaded level (test sessions only).
-CCMD(fua_snap_fuzz)
+DEV_MODE_CCMD(fua_snap_fuzz)
 {
 	// It clears the ghost table, which a connection or a demo is using.
 	if (NETWORK_InClientMode())
