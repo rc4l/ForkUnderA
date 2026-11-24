@@ -11,12 +11,12 @@ export const TOOLS = [
   { setting: "fua_mesh_sky", own: 0, command: "fua_mesh_blank", ran: /mesh pieces blanked/ },
   { setting: "cl_fua_hitbox", own: 1, command: "fua_hitbox", ran: /Hitbox overlay (on|off)\./ },
   { setting: "fua_dg_lightlinks", own: 0, command: "fua_light", ran: /usage: fua_light/ },
+  // [rc4l] GL's untextured view, held at its default for clients where zandronum@2849267e9bef forces it on them.
+  { setting: "gl_texture", own: 0 },
   // [Kaori-Chani] features/net-snapshot: two of the module's own dev-mode tools, each with a
   // command that prints a usage line and does nothing else.
   { setting: "fua_csnap_loopcensus", own: 1, command: "fua_snap_verify", ran: /Usage: fua_snap_verify/ },
   { setting: "fua_csnap_debug_applylate", own: 1, command: "fua_snap_sectorcheck", ran: /usage: fua_snap_sectorcheck/ },
-  // [rc4l] GL's untextured view, held at its default for clients where zandronum@2849267e9bef forces it on them.
-  { setting: "gl_texture", own: 0 },
 ];
 export const REFUSED = /is a dev-mode tool: sv_cheats must be true on this server/;
 const shown = (v) => (v ? "true" : "false");
