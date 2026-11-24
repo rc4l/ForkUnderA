@@ -3136,6 +3136,10 @@ static SnapPropSlot	g_propSlots[SNAPPROP_MAXSLOTS];
 static unsigned int	g_propLive = 0, g_propChanges = 0;
 static unsigned int	g_propOverflow = 0, g_propTruncated = 0;
 static WORD			g_propPass = 0;
+// [Kaori-Chani] The walk's size, counted rather than timed: a counter read an actor costs the
+// order of the walk itself, and the sweep below is the only part a bracket can hold.
+static QWORD		g_propWalks = 0, g_propSteps = 0;
+static QWORD		g_propSweepRaw = 0;
 // Generations come from here, never from the slot: a slot freed and taken by another
 // entity must not reuse a number a client has already been sent for that slot.
 static WORD			g_propGenNext = 0;
@@ -3223,10 +3227,12 @@ static void snap_PropCapture(const AActor * pActor)
 	const WORD id = (WORD)pActor->NetID;
 	const SnapProps live = snap_PropsOf(pActor);
 	unsigned int free = SNAPPROP_MAXSLOTS;
+	++g_propWalks;
 	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
 	{
 		if (g_propSlots[i].netID == id)
 		{
+			g_propSteps += (QWORD)i + 1;
 			g_propSlots[i].seen = g_propPass;
 			if (snap_PropsDiffer(g_propSlots[i].props, live))
 			{
@@ -3239,6 +3245,7 @@ static void snap_PropCapture(const AActor * pActor)
 		if ((g_propSlots[i].netID == 0) && (free == SNAPPROP_MAXSLOTS))
 			free = i;
 	}
+	g_propSteps += SNAPPROP_MAXSLOTS;
 	// Nothing to say about an entity that is its class, which is most of them.
 	if (live.flags == 0)
 		return;
@@ -3295,14 +3302,21 @@ void zx::netsnapshot::PropForget()
 }
 
 void zx::netsnapshot::PropStats(unsigned int & live, unsigned int & changes,
-	unsigned int & overflow, unsigned int & truncated, bool reset)
+	unsigned int & overflow, unsigned int & truncated, QWORD & walks, QWORD & steps,
+	double & sweepMS, bool reset)
 {
 	live = g_propLive;
 	changes = g_propChanges;
 	overflow = g_propOverflow;
 	truncated = g_propTruncated;
+	walks = g_propWalks;
+	steps = g_propSteps;
+	sweepMS = snap_RawToMS(g_propSweepRaw);
 	if (reset)
+	{
 		g_propChanges = g_propOverflow = g_propTruncated = 0;
+		g_propWalks = g_propSteps = g_propSweepRaw = 0;
+	}
 }
 
 //*****************************************************************************
@@ -3392,7 +3406,10 @@ static void snap_CaptureAndMeasure()
 			snap_PropCapture(pActor);
 		}
 	}
+	// [Kaori-Chani] One pass a tic, so the bracket costs nothing beside it.
+	const tictime_raw_t sweepStart = TIC_GetRawCounter();
 	snap_PropSweepEnd();
+	g_propSweepRaw += (QWORD)(TIC_GetRawCounter() - sweepStart);
 	++g_propPass;
 
 	memset(g_curPresent, 0, SNAP_MAXID);
@@ -4953,6 +4970,20 @@ static void snap_MaybeReport()
 			snap_RawToMS(g_reportRaw), g_reportSkipped);
 	}
 
+	// The property pass, whose walk comes out of the capture figure above.
+	{
+		unsigned int live = 0, changes = 0, overflow = 0, truncated = 0;
+		QWORD walks = 0, steps = 0;
+		double sweepMS = 0.0;
+		PropStats(live, changes, overflow, truncated, walks, steps, sweepMS, true);
+		const double tics = (g_stats.simTics > 0) ? (double)g_stats.simTics : 1.0;
+		snap_Say("[snap] properties: %.0f walks stepping %.0f slots a tic, sweep %.3f ms/tic"
+			" | %u entities off their class defaults, %u changes | %u OVER the table,"
+			" %u names cut\n",
+			(double)walks / tics, (double)steps / tics, sweepMS / tics,
+			live, changes, overflow, truncated);
+	}
+
 	{
 		// Psprite emission when it did anything, `capped` nonzero if clipped.
 		unsigned int psEmit = 0, psCap = 0;
@@ -5350,14 +5381,6 @@ static void snap_MaybeReport()
 				matched, differ, unanswered, (int)fua_snap_soundids);
 			// Never audible anywhere, per S_Sound call before the fan-out,
 			// apart from culled.
-			{
-				unsigned int live = 0, changes = 0, overflow = 0, truncated = 0;
-				PropStats(live, changes, overflow, truncated, true);
-				if ((live | changes | overflow | truncated) != 0)
-					snap_Say("[snap] properties: %u entities off their class defaults,"
-						" %u changes | %u OVER the table, %u names cut\n",
-						live, changes, overflow, truncated);
-			}
 
 			snap_Say("[snap] sounds screened: %u unplayable calls (no sound or volume 0)\n",
 				g_soundUnplayable);

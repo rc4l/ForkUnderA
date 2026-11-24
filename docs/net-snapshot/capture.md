@@ -162,8 +162,8 @@ The property slots:
 - `PropSlotRead`, `PropSlots`: how the per-client pass reads the table -- a slot's NetID, its
   `SnapProps` and its generation.
 - `PropForget`: the table at a level change.
-- `PropStats`: live slots, changes seen, sets refused for want of a slot, and material names cut to
-  `SNAP_PROPS_MATNAME_MAX`, for the report.
+- `PropStats`: live slots, changes seen, sets refused for want of a slot, material names cut
+  to `SNAP_PROPS_MATNAME_MAX`, and the pass's own size and sweep time, for the report.
 
 Mirror spawns (the client reads these too):
 - `IsSpawnerState`, `ClassSpawns`, `OwnsSpecialExpression`: the four spawner actions, a class with a

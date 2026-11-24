@@ -421,7 +421,7 @@ bool PropSlotRead(unsigned int slot, WORD & netID, struct SnapProps & props, WOR
 unsigned int PropSlots();
 void PropForget();
 void PropStats(unsigned int & live, unsigned int & changes, unsigned int & overflow,
-	unsigned int & truncated, bool reset);
+	unsigned int & truncated, QWORD & walks, QWORD & steps, double & sweepMS, bool reset);
 
 // A teleport's two fogs, and whether the server took them: from MOTION a client's copy of
 // the thing is record-driven, so its own fogs would stand at a stale position.
