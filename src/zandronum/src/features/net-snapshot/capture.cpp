@@ -16,6 +16,9 @@
 #include <math.h>		// atan2, for the straightness census
 #include <stdlib.h>
 #include <stdio.h>
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <xmmintrin.h>	// _mm_prefetch, for the capture walk
+#endif
 
 #include <zstd.h>
 
@@ -3351,6 +3354,18 @@ void zx::netsnapshot::PropStats(unsigned int & live, unsigned int & changes,
 //*****************************************************************************
 //	THE CAPTURE PASS
 
+// [Kaori-Chani] Starts loading the cache line at p, a hint that never faults, as in gamecopy.
+static inline void snap_Prefetch(const void * p)
+{
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+	_mm_prefetch((const char *)p, _MM_HINT_T0);
+#elif defined(__GNUC__) || defined(__clang__)
+	__builtin_prefetch(p);
+#else
+	(void)p;
+#endif
+}
+
 static void snap_CaptureAndMeasure()
 {
 	// Sweep every net-visible actor into this frame's capture set.
@@ -3361,9 +3376,16 @@ static void snap_CaptureAndMeasure()
 	g_ownedSkipped = 0;
 	{
 		TThinkerIterator<AActor> iterator;
-		AActor* pActor;
-		while ((pActor = iterator.Next()) != NULL)
+		// [Kaori-Chani] The step moves into the header because the body's continues would
+		// otherwise never reach it.
+		AActor* pAhead = iterator.Next();
+		for (AActor* pActor = pAhead; pActor != NULL; pActor = pAhead)
 		{
+			// [Kaori-Chani] The next actor fetched while this one is captured: the walk's cost is
+			// the width of an actor rather than the work done on it.
+			pAhead = iterator.Next();
+			for (unsigned int line = 0; (pAhead != NULL) && (line < 256); line += 64)
+				snap_Prefetch((const char *)pAhead + line);
 			if (pActor->NetID == 0)
 				continue;
 
