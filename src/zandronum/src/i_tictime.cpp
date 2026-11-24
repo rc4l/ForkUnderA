@@ -39,18 +39,15 @@ static tictime_raw_t tictime_QueryFrequency()
 #endif
 }
 
-// [Kaori-Chani] Read once on first use rather than eagerly with a zero check at each read,
-// since C++11 initialises a function-local static exactly once even under threads.
-static tictime_raw_t tictime_Frequency()
-{
-	static const tictime_raw_t freq = tictime_QueryFrequency();
-	return freq;
-}
+// [Kaori-Chani] Set during static initialization, before any thread, rather than kept in a
+// function-local static, since MSVC guards every read of one and every tic reads this.
+static tictime_raw_t g_rawFrequency = tictime_QueryFrequency();
 
 void TIC_Init()
 {
-	// Kept for its callers: the frequency is read here or at the first use, either way once.
-	(void)tictime_Frequency();
+	// Covers another unit's static initializer calling in before this one ran.
+	if (g_rawFrequency == 0)
+		g_rawFrequency = tictime_QueryFrequency();
 }
 
 tictime_raw_t TIC_GetRawCounter()
@@ -68,7 +65,9 @@ tictime_raw_t TIC_GetRawCounter()
 
 tictime_raw_t TIC_GetRawFrequency()
 {
-	return tictime_Frequency();
+	if (g_rawFrequency == 0)
+		TIC_Init();
+	return g_rawFrequency;
 }
 
 //*****************************************************************************
