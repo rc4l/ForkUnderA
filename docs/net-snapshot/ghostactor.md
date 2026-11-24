@@ -326,7 +326,9 @@ Unarchived: `fua_csnap_ghosts` (the master switch, set by the network path), `fu
 off), `fua_csnap_smooth_ballistic` (0, for ballistic missiles; the census still counts at 0),
 `fua_csnap_smooth_entities` (1: remote players; 0 none, 2 all; a held ghost outside it slides over
 its tic, as stock), `fua_csnap_recmirror` (record one drawn-state change in N to a client recording;
-0 none), `fua_csnap_loopcensus` (off; the loop-hint census's shadow state machines). Stock's
+0 none), `fua_csnap_loopcensus` (off; the loop-hint census's shadow state machines). Of these only
+`fua_csnap_recmirror` and `fua_csnap_loopcensus` are dev-mode tools; the rest set how the game
+looks, which is a player's choice on any server. Stock's
 `nomonsterinterpolation` draws a walking monster's steps as they land, and `cl_capfps` draws every
 actor at its tic's end; the recorder logs both.
 

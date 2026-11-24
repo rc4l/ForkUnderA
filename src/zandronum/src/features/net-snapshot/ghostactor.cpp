@@ -213,16 +213,16 @@ static bool g_smoothInReset = false;
 // Threshold in units per tic of the record gap (up to 4) for stepped ghosts:
 // over p99 running (21) with room for strafe-running and knockback; a teleport
 // or respawn still snaps. 0 off.
-CVAR(Int, fua_csnap_smooth_step, 32, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_csnap_smooth_step, 32, CVAR_NOSETBYACS)
 // The units of a correction to a turning or unproven missile outside the
 // record's rounding cell that are smoothed, past which it lands (0 off).
-CVAR(Int, fua_csnap_smooth_nonballistic, 1, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_csnap_smooth_nonballistic, 1, CVAR_NOSETBYACS)
 // The same threshold for an extrapolated ballistic missile, 0, as easing its
 // small corrections only cost it accuracy (design doc, Error smoothing).
-CVAR(Int, fua_csnap_smooth_ballistic, 0, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
-// Stepped ghosts smoothed: 0 none, 1 remote players, 2 all. 2 relinks a moving
-// monster every frame instead of once per record; measured before default.
-CVAR(Int, fua_csnap_smooth_entities, 1, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_csnap_smooth_ballistic, 0, CVAR_NOSETBYACS)
+// Stepped ghosts smoothed: 0 none, 1 remote players, 2 all, which relinks a moving monster
+// every frame instead of once per record.
+CVAR(Int, fua_csnap_smooth_entities, 1, CVAR_NOSETBYACS)
 
 // The smoothing census, window totals (SnapSmoothStats).
 static SnapSmoothStats g_sm;
@@ -1426,7 +1426,7 @@ void zx::netsnapshot::HideEnteredLegacy()
 
 // The highest render tier running the local state machine: 0 off, 1 NEAR,
 // 2 NEAR and MID, 3 all.
-CVAR(Int, fua_csnap_localanim, 3, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_csnap_localanim, 3, CVAR_NOSETBYACS)
 
 // The loop-hint census, off by default, as it walks a shadow state machine.
 CVAR(Bool, fua_csnap_loopcensus, false, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)

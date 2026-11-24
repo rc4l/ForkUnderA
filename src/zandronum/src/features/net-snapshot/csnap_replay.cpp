@@ -58,8 +58,8 @@ using namespace zx::netsnapshot;
 
 // Plausible sustained rate as a percentage of the class's Speed per tic, by the
 // missile bits: a missile moves Speed every tic, a walker once per chase state.
-CVAR(Int, fua_csnap_glide_missile, 125, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
-CVAR(Int, fua_csnap_glide_monster, 55, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
+CVAR(Int, fua_csnap_glide_missile, 125, CVAR_NOSETBYACS)
+CVAR(Int, fua_csnap_glide_monster, 55, CVAR_NOSETBYACS)
 
 // The mirror's smoothing settings (ghostactor.cpp), which the replay applies.
 EXTERN_CVAR(Int, fua_csnap_smooth_step)

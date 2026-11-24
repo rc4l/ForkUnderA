@@ -173,7 +173,7 @@ The start a mid-tic refill sets is `ComputeAnchorStart`, in the smoothing unit t
 
 Client only, unarchived: `fua_csnap_glide_missile` (125: percent of the class's speed a missile may
 sustain), `fua_csnap_glide_monster` (55: the same for everything else). They are content
-calibration, not sampler settings.
+calibration, not sampler settings, and not dev-mode tools.
 
 The command: `fua_csnap_analyze`.
 
