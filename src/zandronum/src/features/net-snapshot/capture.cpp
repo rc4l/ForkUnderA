@@ -178,9 +178,8 @@ EXTERN_CVAR(Bool, fua_snap_wirecensus)
 // it above that point.
 EXTERN_CVAR(Bool, fua_snap_movers)
 
-// The open log file and its name (c_console.cpp), for the report's notice of where it goes.
+// The open log file (c_console.cpp), for the report's notice of where it goes.
 extern FILE *Logfile;
-extern char g_szActualLogFilename[512];
 
 // Frames a client must have believed in an entity before its sounds go attached
 // rather than positional (18: about 510 ms; 0 as soon as it is believed).
@@ -4524,18 +4523,16 @@ void zx::netsnapshot::MapChanged()
 // Where the report goes, said on the console once and again when it changes, since the report's
 // own lines reach the log file alone.
 static int				g_noticeStats = 0;	// 0 until the next report says where it goes
-static FString			g_noticeLog;
+static const FILE *		g_noticeLog = NULL;
 static int				g_noticeMsg = 0;
 
 static void snap_ReportNotice()
 {
 	const int msg = (int)C_GetMessageLevel();
-	const FString log = (Logfile != NULL) ? FString(g_szActualLogFilename) : FString();
-	if ((fua_snap_stats == g_noticeStats) && (log.Compare(g_noticeLog) == 0)
-		&& (msg == g_noticeMsg))
+	if ((fua_snap_stats == g_noticeStats) && (Logfile == g_noticeLog) && (msg == g_noticeMsg))
 		return;
 	g_noticeStats = fua_snap_stats;
-	g_noticeLog = log;
+	g_noticeLog = Logfile;
 	g_noticeMsg = msg;
 	if (Logfile == NULL)
 		snap_Warn("[snap] stats report on, but no log file is open: use logfile <name>\n");
@@ -4543,8 +4540,8 @@ static void snap_ReportNotice()
 		snap_Warn("[snap] stats report on, but msg is %d: its lines are dropped before the log"
 			" file; set msg 0\n", msg);
 	if ((Logfile != NULL) && (msg <= PRINT_LOW))
-		snap_Warn("[snap] stats report every %d s, written to %s\n", (int)fua_snap_stats,
-			log.GetChars());
+		snap_Warn("[snap] stats report every %d s, written to the log file\n",
+			(int)fua_snap_stats);
 }
 
 static void snap_MaybeReport()
