@@ -2950,12 +2950,15 @@ carried the authority bit - which is what separates "never toggled" from "toggle
 cvars and commands carry the `fua_csnap_` prefix: `fua_csnap_` is read on the client only,
 `fua_snap_` on the server or both, and the master switch is `fua_snap` itself.
 
-**Diagnostics can cost more than they report, and the cost is the OUTPUT.** The capture's world-delta
-compression measures ~0.1 ms/tic and runs only while recording; the report's own printing cost
-220-250 ms on the game thread against a 28.6 ms tic. It is now queued through `snap_Say` and drained
-one line per tic - 0.5-0.7 ms, no pump gap over one tic - and a report due while the previous is
-still draining is skipped and counted, since one that silently stopped covering whole windows would
-look like a quiet server. **Anything printing from inside the tic loop goes through that drain.**
+**Diagnostics can cost more than they report, and the cost is the OUTPUT.** The capture's
+world-delta compression measures ~0.1 ms/tic and runs only while recording; the report's own
+printing cost 220-250 ms on the game thread against a 28.6 ms tic. It is now queued through
+`snap_Say` and drained one line per tic at `PRINT_LOW`, which reaches the log file but not the
+server console window or RCON, where a line cost about 6 ms on MAP11; the `pump gap` line reports
+what printing the previous report cost. Warnings (`snap_Warn`) still reach the console, and so does
+one notice of where the report goes. A report due while the previous is still draining is skipped
+and counted, since one that silently stopped covering whole windows would look like a quiet server.
+**Anything printing from inside the tic loop goes through that drain.**
 
 **The apparatus wants one gate.** A single `fua_snap_debug` server cvar, rather than a toggle per report,
 would keep it available without shipping it, make "is this build reporting?" one question, and give

@@ -36,7 +36,7 @@
 #include "c_cvars.h"
 #include "c_dispatch.h"
 #include "r_state.h"
-#include "c_console.h"
+#include "c_console.h"	// C_GetMessageLevel, for the report's notice
 #include "network.h"
 #include "i_system.h"
 #include "s_sound.h"
@@ -177,6 +177,10 @@ EXTERN_CVAR(Bool, fua_snap_wirecensus)
 // Defined further down, with the mover work it gates; the stats report reads
 // it above that point.
 EXTERN_CVAR(Bool, fua_snap_movers)
+
+// The open log file and its name (c_console.cpp), for the report's notice of where it goes.
+extern FILE *Logfile;
+extern char g_szActualLogFilename[512];
 
 // Frames a client must have believed in an entity before its sounds go attached
 // rather than positional (18: about 510 ms; 0 as soon as it is believed).
@@ -2052,24 +2056,47 @@ static unsigned int		g_pumpGapCount = 0;
 // Reset inside the report and sampled after it, so at print time this holds
 // the duration of the PREVIOUS report - the current one has not finished.
 static QWORD			g_reportRaw = 0;
+static QWORD			g_drainRaw = 0, g_drainWorstRaw = 0;	// printing the previous report
 static unsigned int	g_phaseFrames = 0;
 
 // The report, printed a line a pump, since printed whole it takes longer than
 // a tic and the catch-up moves every entity at once.
-static TArray<FString>	g_reportQueue;
+struct SnapSaid
+{
+	FString text;
+	int printLevel;
+};
+static TArray<SnapSaid>	g_reportQueue;
 static unsigned int		g_reportSkipped = 0;
 
-// The report drain, in place of Printf for anything printing inside the tic
-// loop, formatting at once so the resets that follow are safe.
+// The drain, in place of Printf for anything printing inside the tic loop, formatting at once so
+// the resets that follow are safe.
+static void snap_Queue(int printLevel, const char* fmt, va_list ap)
+{
+	SnapSaid said;
+	said.text.VFormat(fmt, ap);
+	said.printLevel = printLevel;
+	g_reportQueue.Push(said);
+}
+
+// A report line, for the log file alone: PRINT_LOW skips the server console window and RCON.
 static void snap_Say(const char* fmt, ...) GCCPRINTF(1, 2);
 static void snap_Say(const char* fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	FString s;
-	s.VFormat(fmt, ap);
+	snap_Queue(PRINT_LOW, fmt, ap);
 	va_end(ap);
-	g_reportQueue.Push(s);
+}
+
+// A line the server's operator must see, on the console as well as in the log.
+static void snap_Warn(const char* fmt, ...) GCCPRINTF(1, 2);
+static void snap_Warn(const char* fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	snap_Queue(PRINT_HIGH, fmt, ap);
+	va_end(ap);
 }
 
 static double snap_RawToMS(QWORD raw)
@@ -2978,7 +3005,7 @@ unsigned int zx::netsnapshot::CatchUpTics(unsigned int deltaTics, unsigned int n
 	}
 	if (out.bWarn)
 	{
-		snap_Say("Server overloaded: game time is running at %d%% of real time. "
+		snap_Warn("Server overloaded: game time is running at %d%% of real time. "
 			"(Simulation cannot sustain %d Hz at current load.)\n", out.percent, TICRATE);
 	}
 	return out.tics;
@@ -4494,8 +4521,36 @@ void zx::netsnapshot::MapChanged()
 //*****************************************************************************
 //	REPORTING
 
+// Where the report goes, said on the console once and again when it changes, since the report's
+// own lines reach the log file alone.
+static int				g_noticeStats = 0;	// 0 until the next report says where it goes
+static FString			g_noticeLog;
+static int				g_noticeMsg = 0;
+
+static void snap_ReportNotice()
+{
+	const int msg = (int)C_GetMessageLevel();
+	const FString log = (Logfile != NULL) ? FString(g_szActualLogFilename) : FString();
+	if ((fua_snap_stats == g_noticeStats) && (log.Compare(g_noticeLog) == 0)
+		&& (msg == g_noticeMsg))
+		return;
+	g_noticeStats = fua_snap_stats;
+	g_noticeLog = log;
+	g_noticeMsg = msg;
+	if (Logfile == NULL)
+		snap_Warn("[snap] stats report on, but no log file is open: use logfile <name>\n");
+	if (msg > PRINT_LOW)
+		snap_Warn("[snap] stats report on, but msg is %d: its lines are dropped before the log"
+			" file; set msg 0\n", msg);
+	if ((Logfile != NULL) && (msg <= PRINT_LOW))
+		snap_Warn("[snap] stats report every %d s, written to %s\n", (int)fua_snap_stats,
+			log.GetChars());
+}
+
 static void snap_MaybeReport()
 {
+	if (fua_snap_stats <= 0)
+		g_noticeStats = 0;
 	if ((fua_snap_stats <= 0) || (g_stats.frames == 0))
 		return;
 
@@ -4510,6 +4565,7 @@ static void snap_MaybeReport()
 		return;
 	}
 	g_lastReportTic = gametic;
+	snap_ReportNotice();
 
 	const double f = (double)g_stats.frames;
 	const double simRatio = (double)g_stats.simTics / f;	// 1.00 = holding 35 Hz
@@ -5015,10 +5071,11 @@ static void snap_MaybeReport()
 	if (g_pumpGapCount > 0)
 	{
 		snap_Say("[snap] pump gap: mean %.1f ms, worst %.1f ms spanning %d tics"
-			" | previous report took %.1f ms, %u skipped\n",
+			" | previous report took %.1f ms, printing it %.1f ms (worst line %.1f), %u skipped\n",
 			snap_RawToMS(g_pumpGapSumRaw) / (double)g_pumpGapCount,
 			snap_RawToMS(g_pumpGapWorstRaw), g_pumpGapWorstTics,
-			snap_RawToMS(g_reportRaw), g_reportSkipped);
+			snap_RawToMS(g_reportRaw), snap_RawToMS(g_drainRaw), snap_RawToMS(g_drainWorstRaw),
+			g_reportSkipped);
 	}
 
 	// The property pass, whose walk comes out of the capture figure above.
@@ -5163,6 +5220,7 @@ static void snap_MaybeReport()
 	g_phaseCaptureRaw = g_phaseSendRaw = g_phaseTickRaw = g_phaseWorstRaw = 0;
 	g_phaseFrames = 0;
 	g_pumpGapSumRaw = g_pumpGapWorstRaw = g_reportRaw = 0;
+	g_drainRaw = g_drainWorstRaw = 0;
 	g_pumpGapCount = 0;
 	g_pumpGapWorstTics = 0;
 	g_reportSkipped = 0;
@@ -6249,11 +6307,16 @@ void zx::netsnapshot::ServerTick()
 	if (repRaw > g_reportRaw)
 		g_reportRaw = repRaw;
 
-	// One report line a pump, after the timing, which so leaves out the drain.
+	// One queued line a pump, after the timing, at the level it was queued with.
 	if (g_reportQueue.Size() > 0)
 	{
-		Printf("%s", g_reportQueue[0].GetChars());
+		const tictime_raw_t drainStart = TIC_GetRawCounter();
+		Printf(g_reportQueue[0].printLevel, "%s", g_reportQueue[0].text.GetChars());
 		g_reportQueue.Delete(0);
+		const QWORD drainRaw = (QWORD)(TIC_GetRawCounter() - drainStart);
+		g_drainRaw += drainRaw;
+		if (drainRaw > g_drainWorstRaw)
+			g_drainWorstRaw = drainRaw;
 	}
 }
 
