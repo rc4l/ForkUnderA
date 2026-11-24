@@ -22,6 +22,10 @@
 #include "i_tictime.h"
 #include "doomdef.h"	// TICRATE
 
+// The time base's frequency (i_tictime.cpp), cleared below as a static initializer in another unit
+// would find it before the time base's own had run.
+extern tictime_raw_t g_rawFrequency;
+
 namespace
 {
 
@@ -162,6 +166,19 @@ TEST(TicTime, ThePlatformsCounterIsMonotonic)
 		ASSERT_GE(now, last) << "the counter went backwards at read " << i;
 		last = now;
 	}
+}
+
+// A read that comes before the time base's own static initialization finds the frequency unset and
+// reads the platform's then, so nothing initialized earlier ever scales by zero.
+TEST(TicTime, AReadBeforeStaticInitializationStillFindsTheFrequency)
+{
+	TIC_Init();
+	const tictime_raw_t freq = TIC_GetRawFrequency();
+	g_rawFrequency = 0;
+	EXPECT_EQ(TIC_GetRawFrequency(), freq);
+	g_rawFrequency = 0;
+	TIC_Init();
+	EXPECT_EQ(TIC_GetRawFrequency(), freq);
 }
 
 // The convenience pair reads the platform's frequency and otherwise agrees

@@ -39,9 +39,9 @@ static tictime_raw_t tictime_QueryFrequency()
 #endif
 }
 
-// [Kaori-Chani] Set during static initialization, before any thread, rather than kept in a
-// function-local static, since MSVC guards every read of one and every tic reads this.
-static tictime_raw_t g_rawFrequency = tictime_QueryFrequency();
+// [Kaori-Chani] A plain global set during static initialization, since MSVC guards every read of a
+// function-local static; not static, so the test can clear it to stand in for an early reader.
+tictime_raw_t g_rawFrequency = tictime_QueryFrequency();
 
 void TIC_Init()
 {
