@@ -4956,7 +4956,7 @@ void SERVER_STATISTIC_AddToOutboundDataTransfer( ULONG ulNumBytes )
 	g_qwTotalOutboundDataTransferred += ulNumBytes;
 	g_lCurrentOutboundDataTransfer += ulNumBytes;
 
-	SERVERCONSOLE_UpdateStatistics( );
+	// [Kaori-Chani] No redraw a packet: SERVER_Tick's once-a-second update keeps the panel current.
 }
 
 //*****************************************************************************
@@ -4987,7 +4987,7 @@ void SERVER_STATISTIC_AddToInboundDataTransfer( ULONG ulNumBytes )
 	g_qwTotalInboundDataTransferred += ulNumBytes;
 	g_lCurrentInboundDataTransfer += ulNumBytes;
 
-	SERVERCONSOLE_UpdateStatistics( );
+	// [Kaori-Chani] No redraw a packet: SERVER_Tick's once-a-second update keeps the panel current.
 }
 
 //*****************************************************************************
