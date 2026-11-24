@@ -88,7 +88,9 @@ rather than the previous frame's:
    rocket-trail choice.
 9. Sweeps the mirrors whose ghost has left, keeping the legacy copy hidden, and moves pending point
    sounds onto mirrors that now exist.
-10. Every 5 s, prints the `[snap]` report and clears its counts.
+10. Every `fua_snap_stats` seconds, prints the `[snap]` report and clears its counts; with it at 0
+    (the default) the report still runs every 5 s to clear them, printing nothing, so one turned on
+    later covers its own window.
 
 `GhostFoldApplied` is the fold on the packet clock, called once for each payload applied: the state
 it leaves is what the frame's own folds are taken from.

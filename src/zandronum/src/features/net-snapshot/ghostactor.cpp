@@ -1469,6 +1469,25 @@ static bool ghost_StateMatches(const FState* pState, WORD wantSprite, BYTE wantF
 // report block.
 static unsigned int g_stateRecs = 0;
 
+// Defined in capture.cpp: on a client too, the report's interval in seconds, 0 off.
+EXTERN_CVAR(Int, fua_snap_stats)
+
+// Set while the report runs with fua_snap_stats at 0, which still clears its counts on the
+// same cadence so a report turned on later covers its own window, but prints nothing.
+static bool g_ghostReportQuiet = false;
+
+// A report line, unless the report is running quiet.
+static void ghost_Print(const char* fmt, ...) GCCPRINTF(1, 2);
+static void ghost_Print(const char* fmt, ...)
+{
+	if (g_ghostReportQuiet)
+		return;
+	va_list ap;
+	va_start(ap, fmt);
+	VPrintf(PRINT_HIGH, fmt, ap);
+	va_end(ap);
+}
+
 // Prints a census by tier, each percentage beside its count.
 static void ghost_PrintTierSplit(const char* pszWhat, const unsigned int* pOk,
 	const unsigned int* pMiss)
@@ -1480,7 +1499,7 @@ static void ghost_PrintTierSplit(const char* pszWhat, const unsigned int* pOk,
 		tot[t] = pOk[t] + pMiss[t];
 		pct[t] = (tot[t] > 0) ? (100.0 * (double)pOk[t] / (double)tot[t]) : 0.0;
 	}
-	Printf("[snap] %s by tier: near %.0f%% (%u) | mid %.0f%% (%u) | far %.0f%% (%u)\n",
+	ghost_Print("[snap] %s by tier: near %.0f%% (%u) | mid %.0f%% (%u) | far %.0f%% (%u)\n",
 		pszWhat, pct[0], tot[0], pct[1], tot[1], pct[2], tot[2]);
 }
 
@@ -2966,9 +2985,12 @@ void zx::netsnapshot::GhostFrame()
 	const unsigned int nowMS2 = I_MSTime();
 	if (g_ghostReportMS == 0)
 		g_ghostReportMS = nowMS2;
-	if ((nowMS2 - g_ghostReportMS) >= 5000)
+	const unsigned int reportMS = (fua_snap_stats > 0) ? (unsigned int)fua_snap_stats * 1000 : 5000;
+	if ((nowMS2 - g_ghostReportMS) >= reportMS)
 	{
+		g_ghostReportQuiet = (fua_snap_stats <= 0);
 		ghost_Report();
+		g_ghostReportQuiet = false;
 		g_ghostReportMS = nowMS2;
 	}
 }
@@ -3090,7 +3112,7 @@ static void ghost_Report()
 	if (g_ghostCensusFrames > 0)
 	{
 		const double inv = 1.0 / (double)g_ghostCensusFrames;
-		Printf("[snap] ghostframe: %u mirrors | near %.0f (max %u) mid %.0f far %.0f | "
+		ghost_Print("[snap] ghostframe: %u mirrors | near %.0f (max %u) mid %.0f far %.0f | "
 			"relink %.0f (max %u) create %.1f (recreate %.1f) | gc %.0f-%.0fMB | "
 			"ghostMS %.1f (%.2f/f) | sim %.2f/f render %.2f/f | tics %.2f/f | "
 			"think %.2f/f fx %.2f/f parse %.2f/f gtick %.2f/f netupd %.2f/f | %u frames/5s\n",
@@ -3112,7 +3134,7 @@ static void ghost_Report()
 			ghost_RawToMS(g_gtickerRaw) * inv,
 			ghost_RawToMS(g_netupdateRaw) * inv,
 			g_ghostCensusFrames);
-		Printf("[snap] player mirrors: %u player ghosts, %u excluded\n",
+		ghost_Print("[snap] player mirrors: %u player ghosts, %u excluded\n",
 			g_playerGhostSeen, g_playerGhostExcluded);
 		{
 			unsigned int gU = 0, gE = 0, gZ = 0, gR = 0, gN = 0;
@@ -3121,7 +3143,7 @@ static void ghost_Report()
 			unsigned int lE = 0, lN = 0, lD = 0;
 			ClientLawStats(lE, lN, lD, true);
 			if ((gU | gE) != 0)
-				Printf("[snap] gravity ballistic: %u records, %u extrapolated"
+				ghost_Print("[snap] gravity ballistic: %u records, %u extrapolated"
 					" (%u with no accel) | accel mean %.2f worst %.2f u/t/t"
 					" | %u refused, %u unconfirmed | by the law %u, no law %u,"
 					" measured disagreeing %u\n",
@@ -3130,7 +3152,7 @@ static void ghost_Report()
 		if ((g_sm.folds[0] | g_sm.folds[1] | g_sm.snaps[0] | g_sm.snaps[1]
 			| g_sm.zero | g_sm.movingFrames) != 0)
 		{
-			Printf("[snap] smoothing: stepped %u folds (mean %.1f u), %u snaps,"
+			ghost_Print("[snap] smoothing: stepped %u folds (mean %.1f u), %u snaps,"
 				" residual <0.5 %u <2 %u <8 %u 8+ %u | extrapolated %u folds"
 				" (mean %.2f u), %u snaps, residual <0.5 %u <2 %u <8 %u 8+ %u"
 				" | %u tics off target, %u stepped drawn OUTSIDE its records | %u records"
@@ -3151,19 +3173,19 @@ static void ghost_Report()
 			{
 				if (ComputeSmoothCellText(g_sm, order[i / 2], 1 - (i & 1), "frames", szCell,
 					sizeof(szCell)))
-					Printf("[snap] smoothing by kind: %s\n", szCell);
+					ghost_Print("[snap] smoothing by kind: %s\n", szCell);
 			}
 		}
 		memset(&g_sm, 0, sizeof(g_sm));
 		if ((g_wallClamped | g_wallTraces | g_ceilClamped) != 0)
 		{
-			Printf("[snap] extrap clamps: %u wall, %u ceiling (frames) | %u wall traces\n",
+			ghost_Print("[snap] extrap clamps: %u wall, %u ceiling (frames) | %u wall traces\n",
 				g_wallClamped, g_ceilClamped, g_wallTraces);
 			g_wallClamped = g_wallTraces = g_ceilClamped = 0;
 		}
 		if (g_evPhaseForced != 0)
 		{
-			Printf("[snap] event phase: %u refreshes the frame test would"
+			ghost_Print("[snap] event phase: %u refreshes the frame test would"
 				" have skipped\n", g_evPhaseForced);
 			g_evPhaseForced = 0;
 		}
@@ -3173,7 +3195,7 @@ static void ghost_Report()
 			ClientPSpriteStats(psApplied, psNoSink, true);
 			if ((psApplied | psNoSink | g_psprApply | g_psprBadClass
 				| g_psprBadState) != 0)
-				Printf("[snap] psprite apply: %u routed, %u applied"
+				ghost_Print("[snap] psprite apply: %u routed, %u applied"
 					" | %u no sink, %u bad class, %u bad state\n",
 					psApplied, g_psprApply,
 					psNoSink, g_psprBadClass, g_psprBadState);
@@ -3197,7 +3219,7 @@ static void ghost_Report()
 						}
 						if (n == 0)
 							continue;
-						Printf("[snap] loop census gap %-6s: %6u samples, %3.0f%% derivable"
+						ghost_Print("[snap] loop census gap %-6s: %6u samples, %3.0f%% derivable"
 							" | behind %u ahead %u OFF-CHAIN %u (%.0f%%)\n",
 							g_szLcBucket[b], n,
 							100.0 * (double)g_lcBucket[b][0] / (double)n,
@@ -3206,7 +3228,7 @@ static void ghost_Report()
 					}
 					const unsigned int lcTot = tot[0] + tot[1] + tot[2] + tot[3];
 					if ((lcTot + g_lcNoIndex) > 0)
-						Printf("[snap] loop census ALL: %u samples, %.0f%% derivable,"
+						ghost_Print("[snap] loop census ALL: %u samples, %.0f%% derivable,"
 							" %u OFF-CHAIN, %u no index\n", lcTot,
 							(lcTot > 0) ? (100.0 * (double)tot[0] / (double)lcTot) : 0.0,
 							tot[3], g_lcNoIndex);
@@ -3214,7 +3236,7 @@ static void ghost_Report()
 					g_lcNoIndex = 0;
 				}
 
-				Printf("[snap] localanim: %u predicted, %u missed (%.0f%% correct, level %d)"
+				ghost_Print("[snap] localanim: %u predicted, %u missed (%.0f%% correct, level %d)"
 					" | behind 1:%u 2:%u 3:%u 4+:%u ahead:%u offchain:%u"
 					" | final state held %u, %u stale\n",
 					g_animPredictOk, g_animPredictMiss, 100.0 * g_animPredictOk / (double)tot,
@@ -3231,7 +3253,8 @@ static void ghost_Report()
 						unsigned int evSP = 0, evD = 0;
 						ClientEventStats(evA, evO, evU, evS, evN, evSP, evD);
 						if ((evA > 0) || (evO > 0) || (evU > 0) || (evS > 0) || (evN > 0) || (evD > 0))
-							Printf("[snap] events: %u applied | %u not animating (mirror cannot"
+							ghost_Print("[snap] events: %u applied | %u not animating (mirror"
+								" cannot"
 								" animate out) | %u STALE | %u stale POSITION only"
 								" | %u ORPHAN | %u payloads ABANDONED on an unknown"
 								" event type | %u duplicate copies\n",
@@ -3241,7 +3264,7 @@ static void ghost_Report()
 						EventCarryStats(evC, evCP, evCS);
 						if ((evA > 0) || (evC > 0))
 						{
-							Printf("[snap] event carry: %u pushes kept an event's"
+							ghost_Print("[snap] event carry: %u pushes kept an event's"
 								" values the model lacks (pos %u, state %u)\n",
 								evC, evCP, evCS);
 						}
@@ -3249,7 +3272,7 @@ static void ghost_Report()
 						unsigned int evAge[5], evDur[4], evExp = 0;
 						EventAgeStats(evAge, evDur, evExp);
 						if (evA > 0)
-							Printf("[snap] event age (tics): <2 %u | <4 %u | <7 %u | <12 %u"
+							ghost_Print("[snap] event age (tics): <2 %u | <4 %u | <7 %u | <12 %u"
 								" | 12+ %u || state left: <3 %u <7 %u <15 %u 15+ %u"
 								" || EXPIRED on arrival %u (%.0f%%)\n",
 								evAge[0], evAge[1], evAge[2], evAge[3], evAge[4],
@@ -3264,7 +3287,7 @@ static void ghost_Report()
 						if (mMinN == 0xFFFFFFFF)	strcpy(szMinN, "none");
 						else	mysnprintf(szMinN, 16, "%u", mMinN);
 						if ((mNo > 0) || (mEx > 0) || (mCap > 0))
-							Printf("[snap] missiles: %u stepped (no bit), %u extrap, "
+							ghost_Print("[snap] missiles: %u stepped (no bit), %u extrap, "
 								"%u FROZEN at cap %dms | age worst %u, min-bit %s, min-nobit %s"
 								" | sampler: %u ballistic\n",
 								mNo, mEx, mCap, (int)MissileCapMS(), mAge, szMinB, szMinN,
@@ -3284,7 +3307,7 @@ static void ghost_Report()
 								mysnprintf(szAhead, sizeof(szAhead), " || dated ahead: %u between"
 									" records, held %u with none earlier, %u at a jump",
 									mc.aheadInterp, mc.aheadFirst, mc.aheadJump);
-							Printf("[snap] missile age (ballistic): <100 %u | <250 %u | "
+							ghost_Print("[snap] missile age (ballistic): <100 %u | <250 %u | "
 								"<500 %u | <1000 %u | 1000+ %u || capped near %u far %u%s\n",
 								mc.ageBucket[0], mc.ageBucket[1], mc.ageBucket[2],
 								mc.ageBucket[3], mc.ageBucket[4],
@@ -3310,14 +3333,15 @@ static void ghost_Report()
 									bpBad[q] = (bp.samples[q] > 0)
 										? (100.0 * (double)bp.over64[q] / (double)bp.samples[q]) : 0.0;
 								}
-								Printf("[snap] blind predict: <4t %u@%.0fu | 4-8t %u@%.0fu"
+								ghost_Print("[snap] blind predict: <4t %u@%.0fu | 4-8t %u@%.0fu"
 									" | 9-17t %u@%.0fu | 18-35t %u@%.0fu | 36t+ %u@%.0fu"
 									"  (samples @ mean error, flying unaided from the"
 									" previous record)\n",
 									bp.samples[0], bpAvg[0], bp.samples[1], bpAvg[1],
 									bp.samples[2], bpAvg[2], bp.samples[3], bpAvg[3],
 									bp.samples[4], bpAvg[4]);
-								Printf("[snap] blind predict past 64u: <4t %.0f%% | 4-8t %.0f%%"
+								ghost_Print("[snap] blind predict past 64u: <4t %.0f%% | 4-8t"
+									" %.0f%%"
 									" | 9-17t %.0f%% | 18-35t %.0f%% | 36t+ %.0f%%"
 									" || bit cleared mid-gap: %u %u %u %u %u\n",
 									bpBad[0], bpBad[1], bpBad[2], bpBad[3], bpBad[4],
@@ -3333,7 +3357,8 @@ static void ghost_Report()
 					const unsigned int stTot = g_stAgree + g_stBehind[0] + g_stBehind[1]
 						+ g_stBehind[2] + g_stBehind[3] + g_stAhead + g_stOffChain;
 					if (stTot > 0)
-						Printf("[snap] bystate: %u samples, %.0f%% correct | behind 1:%u 2:%u 3:%u"
+						ghost_Print("[snap] bystate: %u samples, %.0f%% correct | behind 1:%u 2:%u"
+							" 3:%u"
 							" 4:%u | ahead<=4:%u DIVERGED:%u | %u no index\n",
 							stTot, 100.0 * (double)g_stAgree / (double)stTot,
 							g_stBehind[0], g_stBehind[1], g_stBehind[2], g_stBehind[3],
@@ -3350,7 +3375,7 @@ static void ghost_Report()
 								+ g_stSplitSamp[ex][1] + g_stSplitSamp[ex][2];
 							if (tot == 0)
 								continue;
-							Printf("[snap] bystate %s: near %u%% (%u) | mid %u%% (%u)"
+							ghost_Print("[snap] bystate %s: near %u%% (%u) | mid %u%% (%u)"
 								" | far %u%% (%u)\n", szEx[ex],
 								g_stSplitSamp[ex][0] ? g_stSplitAgree[ex][0] * 100
 									/ g_stSplitSamp[ex][0] : 0, g_stSplitSamp[ex][0],
@@ -3362,21 +3387,21 @@ static void ghost_Report()
 					}
 
 					// Correctness against the wire by time run unaided.
-					Printf("[snap] bystate by gap:");
+					ghost_Print("[snap] bystate by gap:");
 					for (int gb = 0; gb < GST_GAPS; ++gb)
 					{
 						if (g_stGapSamp[gb] == 0)
 							continue;
 						if (gb + 1 < GST_GAPS)
-							Printf(" <=%dt %u%% (%u)", g_stGapMax[gb],
+							ghost_Print(" <=%dt %u%% (%u)", g_stGapMax[gb],
 								g_stGapAgree[gb] * 100 / g_stGapSamp[gb],
 								g_stGapSamp[gb]);
 						else
-							Printf(" >%dt %u%% (%u)", g_stGapMax[GST_GAPS - 2],
+							ghost_Print(" >%dt %u%% (%u)", g_stGapMax[GST_GAPS - 2],
 								g_stGapAgree[gb] * 100 / g_stGapSamp[gb],
 								g_stGapSamp[gb]);
 					}
-					Printf("\n");
+					ghost_Print("\n");
 				}
 			}
 			g_animPredictOk = g_animPredictMiss = 0;
@@ -3398,7 +3423,7 @@ static void ghost_Report()
 
 		// nb = how many of the hidden actors we actually unlinked from the
 		// blockmap, so a dead gate is visible rather than inferred.
-		Printf("[snap] mirror lookup: %u ok, %u empty, %u badid, %u notable | mirrors %u\n",
+		ghost_Print("[snap] mirror lookup: %u ok, %u empty, %u badid, %u notable | mirrors %u\n",
 			g_mirrorLookupOk, g_mirrorLookupEmpty, g_mirrorLookupBadId,
 			g_mirrorLookupNoTable, g_mirrorCount);
 
@@ -3418,7 +3443,7 @@ static void ghost_Report()
 			if ((g_ghostSndLegacy | g_ghostSndMirror | g_ghostSndWrongClass | g_ghostSndLost
 				| g_sndLocalGhost | g_sndLocalOther | g_sndLocalUngated) != 0)
 			{
-				Printf("[snap] sound: %u to mirror, %u legacy%s%s, %u wrong-class,"
+				ghost_Print("[snap] sound: %u to mirror, %u legacy%s%s, %u wrong-class,"
 					" %u LOST | local %u suppressed (%s), %u left to stock,"
 					" %u other\n",
 					g_ghostSndMirror, g_ghostSndLegacy,
@@ -3429,7 +3454,7 @@ static void ghost_Report()
 					fua_csnap_nolocalsound ? "guard ON" : "GUARD OFF",
 					g_sndLocalUngated, g_sndLocalOther);
 				if (g_ghostSndLost != 0)
-					Printf("[snap] sound LOST detail: %u left recently "
+					ghost_Print("[snap] sound LOST detail: %u left recently "
 						"(%u PLAYED positionally, %u still dropped), "
 						"%u ghost but no mirror, %u never known\n",
 						g_ghostSndLostLeft, g_ghostSndPositional,
@@ -3445,10 +3470,10 @@ static void ghost_Report()
 			// Each family on its own line and reset with the sound's, so one window's figures
 			// stay comparable across them.
 			if (( g_ghostBloodLegacy | g_ghostBloodMirror | g_ghostBloodLost ) != 0 )
-				Printf("[snap] blood: %u to mirror, %u legacy, %u LOST\n",
+				ghost_Print("[snap] blood: %u to mirror, %u legacy, %u LOST\n",
 					g_ghostBloodMirror, g_ghostBloodLegacy, g_ghostBloodLost);
 			if (( g_ghostConvLegacy | g_ghostConvMirror | g_ghostConvLost ) != 0 )
-				Printf("[snap] conversation: %u to mirror, %u legacy, %u LOST\n",
+				ghost_Print("[snap] conversation: %u to mirror, %u legacy, %u LOST\n",
 					g_ghostConvMirror, g_ghostConvLegacy, g_ghostConvLost);
 			g_ghostBloodLegacy = g_ghostBloodMirror = g_ghostBloodLost = 0;
 			g_ghostConvLegacy = g_ghostConvMirror = g_ghostConvLost = 0;
@@ -3458,7 +3483,7 @@ static void ghost_Report()
 		// Item respawns answered behind a mirror rather than on the hidden copy.
 		if (g_respawnOnMirror != 0)
 		{
-			Printf("[snap] item respawns: %u answered at the ghost, the hidden copy left"
+			ghost_Print("[snap] item respawns: %u answered at the ghost, the hidden copy left"
 				" as it was\n", g_respawnOnMirror);
 			g_respawnOnMirror = 0;
 		}
@@ -3469,7 +3494,7 @@ static void ghost_Report()
 			PropsEventStats(applied, bad, true);
 			PropsStats(toMirror, held, true);
 			if ((applied | bad | toMirror | held) != 0)
-				Printf("[snap] properties: %u sets arrived (%u REFUSED) | %u onto a mirror,"
+				ghost_Print("[snap] properties: %u sets arrived (%u REFUSED) | %u onto a mirror,"
 					" %u held for one not made yet | %u kept\n", applied, bad, toMirror, held,
 					PropsKept());
 		}
@@ -3478,7 +3503,7 @@ static void ghost_Report()
 		if ((g_ptSndOnMirror | g_ptSndAttached | g_ptSndAttachedLate | g_ptSndRefused
 			| g_ptSndEnded | g_ptSndCap | g_ptSndBusy) != 0)
 		{
-			Printf("[snap] point sounds: %u on the mirror at once, %u re-attached (+%u late),"
+			ghost_Print("[snap] point sounds: %u on the mirror at once, %u re-attached (+%u late),"
 				" %u refused at the start, %u ended at the point, %u not tracked (list full),"
 				" %u mirror channel busy | %u pending\n",
 				g_ptSndOnMirror, g_ptSndAttached, g_ptSndAttachedLate, g_ptSndRefused,
@@ -3495,7 +3520,7 @@ static void ghost_Report()
 			SoundIdStats(idPlayed, idDropped, serverN, localN, bKnown, bMatch, true);
 			const unsigned int idOtherMap = SoundOtherMap(true);
 			if (bKnown || (idPlayed | idDropped | idOtherMap) != 0)
-				Printf("[snap] sound ids: table %s (server %u names, here %u)"
+				ghost_Print("[snap] sound ids: table %s (server %u names, here %u)"
 					" | %u played by id, %u DROPPED, %u for another map\n",
 					bKnown ? (bMatch ? "matched" : "DIFFERS, names") : "not received",
 					serverN, localN, idPlayed, idDropped, idOtherMap);
@@ -3504,7 +3529,8 @@ static void ghost_Report()
 		// Cosmetic events, and the catch-up, which also runs spawns' children.
 		if ((g_cosEvents > 0) || (g_cosCatchUpTicks > 0))
 		{
-			Printf("[snap] cosmetic events: %u received (%u blood), %u copies (%u plain) | dropped:"
+			ghost_Print("[snap] cosmetic events: %u received (%u blood), %u copies (%u plain) |"
+				" dropped:"
 				" %u unknown class, %u originator unknown, %u not this map | %u states not found | catch-up %u tics,"
 				" %u sounds held back | copied most:%s\n", g_cosEvents, g_cosBloodEvents, g_cosCopies, g_cosPlain,
 				g_cosNoClass, g_cosNoOriginator, g_cosOtherMap, g_cosBadState, g_cosCatchUpTicks, g_cosSoundsHeld,
@@ -3518,7 +3544,8 @@ static void ghost_Report()
 		if ((g_msActions > 0) || (g_msJump + g_msResync + g_msSeed + g_msHard + g_msUnnamed > 0))
 		{
 			const FString top = ghost_TopClasses(g_msByClass);
-			Printf("[snap] mirror spawns: %u actions, %u spawned, %u tics owed | records: %u jump, %u resync,"
+			ghost_Print("[snap] mirror spawns: %u actions, %u spawned, %u tics owed | records: %u"
+				" jump, %u resync,"
 				" %u held, %u seed, %u behind, %u undecided, %u hard, %u unnamed | %u rings | top:%s\n",
 				g_msActions, g_msSpawned, g_msOwedTics, g_msJump, g_msResync, g_msHold, g_msSeed,
 				g_msBehind, g_msUndecided, g_msHard, g_msUnnamed, g_msRings.CountUsed(), top.GetChars());
@@ -3528,7 +3555,7 @@ static void ghost_Report()
 		if (g_tgtAtEnter + g_tgtLate + g_tgtNever + g_tgtNoneMissile + g_tgtNoneOther + g_tgtNoneUnknown > 0)
 		{
 			const FString top = ghost_TopClasses(g_tgtNoneByClass);
-			Printf("[snap] missile target: resolved at enter %u, late %u, never %u"
+			ghost_Print("[snap] missile target: resolved at enter %u, late %u, never %u"
 				" | A_CustomMissile with no target that would spawn: missile caster %u, other %u, unknown %u | top:%s\n",
 				g_tgtAtEnter, g_tgtLate, g_tgtNever, g_tgtNoneMissile, g_tgtNoneOther, g_tgtNoneUnknown, top.GetChars());
 			g_tgtAtEnter = g_tgtLate = g_tgtNever = g_tgtNoneMissile = g_tgtNoneOther = g_tgtNoneUnknown = 0;
@@ -3546,11 +3573,11 @@ static void ghost_Report()
 					++mirrorFx;
 			}
 		}
-		Printf("[snap] effects: %u ghosts carry effects | %u mirrors nonzero"
+		ghost_Print("[snap] effects: %u ghosts carry effects | %u mirrors nonzero"
 			" | %u mirrors total\n",
 			GhostsWithEffects(), mirrorFx, g_mirrorCount);
 
-		Printf("[snap] hide: hidden %u"
+		ghost_Print("[snap] hide: hidden %u"
 			" | tick skipped %.0f/t ran %.0f/t\n",
 			g_hidCount,
 			(g_frameTicsRun > 0) ? (double)g_tickSkipped / (double)g_frameTicsRun : 0.0,
@@ -3574,7 +3601,7 @@ static void ghost_Report()
 						jl[i].units, jl[i].branch, jl[i].gapTics,
 						jl[i].posGapMS, jl[i].recs);
 				}
-				Printf("[snap] jumps: %s\n", line.GetChars());
+				ghost_Print("[snap] jumps: %s\n", line.GetChars());
 			}
 
 			// Outside the jump-log gate, as both censuses reset on read.
@@ -3586,11 +3613,11 @@ static void ghost_Report()
 				{
 					// Two forms, so no divergence prints no id.
 					if (cBad > 0)
-						Printf("[snap] checksum: %u verified, %u DIVERGED"
+						ghost_Print("[snap] checksum: %u verified, %u DIVERGED"
 							" | %u unsettled (%u failed) | %u late, not checked"
 							" | first bad id %u\n", cChk, cBad, cUns, cUnsBad, cLate, cId);
 					else
-						Printf("[snap] checksum: %u verified, 0 DIVERGED"
+						ghost_Print("[snap] checksum: %u verified, 0 DIVERGED"
 							" | %u unsettled (%u failed) | %u late, not checked\n",
 							cChk, cUns, cUnsBad, cLate);
 				}
@@ -3606,7 +3633,7 @@ static void ghost_Report()
 				StampStats(sKept, sHeld, sLeave, sEnter, sAbsent, sAfter, true);
 				// Stale beside its witness: without an older payload it can
 				// only read zero.
-				Printf("[snap] frame order: %u older (worst %u frames back)"
+				ghost_Print("[snap] frame order: %u older (worst %u frames back)"
 					" | %u same-frame chunks | %u mover records refused stale"
 					" | %u from a previous map, %u from a map not yet loaded,"
 					" %u before the join, %u too late to count, %u past the ack history,"
@@ -3629,7 +3656,7 @@ static void ghost_Report()
 				ClockStats(ck, true);
 				char szClock[384];
 				ClockDescribe(ck, szClock, sizeof(szClock));
-				Printf("[snap] clock: %s\n", szClock);
+				ghost_Print("[snap] clock: %s\n", szClock);
 			}
 
 			// The attribution by population, `pos` the records with position.
@@ -3664,7 +3691,7 @@ static void ghost_Report()
 							? 100.0 * (double)jc[p][b] / (double)jtot[p] : 0.0);
 					}
 
-					Printf("[snap] pop %s: recs %u, pos %u (%s) | jumps64 %u (%s) avg %uu\n",
+					ghost_Print("[snap] pop %s: recs %u, pos %u (%s) | jumps64 %u (%s) avg %uu\n",
 						CLENT_PopNames[p], rtot[p], itot[p], recs.GetChars(),
 						jtot[p], jumps.GetChars(),
 						(jtot[p] > 0) ? (uSum / jtot[p]) : 0u);
@@ -3674,7 +3701,8 @@ static void ghost_Report()
 
 		// High depth with low per-tic cost is a catch-up spiral, which a cap
 		// fixes; the reverse is not.
-		Printf("[snap] predict: %.1f calls/f depth avg %.1f max %llu | think %.2f/f move %.2f/f\n",
+		ghost_Print("[snap] predict: %.1f calls/f depth avg %.1f max %llu | think %.2f/f move"
+			" %.2f/f\n",
 			(double)g_predCalls * inv,
 			(g_predCalls > 0) ? (double)g_predTicsSum / (double)g_predCalls : 0.0,
 			(unsigned long long)g_predTicsMax,
@@ -3686,7 +3714,7 @@ static void ghost_Report()
 			SnapSampleCensus sc;
 			SampleCensus(sc, true);
 			const double active = (double)(sc.held + sc.heldMoving +sc.extrapolated + sc.jumped);
-			Printf("[snap] sampler: active %.0f/f | held %.0f/f (%.0f%%, moving %.0f/f) "
+			ghost_Print("[snap] sampler: active %.0f/f | held %.0f/f (%.0f%%, moving %.0f/f) "
 				"extrap %.0f/f (velocity %.1f/f: %.1f/f at %dms cap, %.1f/f unproven missile,"
 				" %.1f/f x/y in cell, %.1f/f at its edge)"
 				" jump %.0f/f | heldnew %.0f/f (settled)\n",
@@ -3702,7 +3730,8 @@ static void ghost_Report()
 				(double)sc.heldNew* inv);
 
 			// The age of each entity's newest record, dated as ageMS is.
-			Printf("[snap] age: <80ms %.0f/f | <150 %.0f/f | <300 %.0f/f | <500 %.0f/f | 500+ %.0f/f\n",
+			ghost_Print("[snap] age: <80ms %.0f/f | <150 %.0f/f | <300 %.0f/f | <500 %.0f/f | 500+"
+				" %.0f/f\n",
 				(double)sc.delayBucket[0] * inv, (double)sc.delayBucket[1] * inv,
 				(double)sc.delayBucket[2] * inv, (double)sc.delayBucket[3] * inv,
 				(double)sc.delayBucket[4] * inv);
@@ -3738,7 +3767,7 @@ static void ghost_Report()
 				{
 					// Shares are of heldmove, as the design reads them.
 					const double hmAll = (sc.heldMoving > 0) ? (double)sc.heldMoving : 1.0;
-					Printf("[snap] held moving: wire velocity %.1f/f %.0f%% (%u%% monster),"
+					ghost_Print("[snap] held moving: wire velocity %.1f/f %.0f%% (%u%% monster),"
 						" position only %.1f/f %.0f%% (%u%% monster),"
 						" missile unproven %.1f/f %.0f%%, no position for %d tics %.1f/f %.0f%%"
 						" | players %.1f/f %.0f%%\n",
@@ -3787,7 +3816,7 @@ static void ghost_Report()
 								at += w;
 						}
 					}
-					Printf("[snap] held moving, top:%s%s | position only, not monsters:%s\n",
+					ghost_Print("[snap] held moving, top:%s%s | position only, not monsters:%s\n",
 						buf[0][0] ? "" : " none", buf[0], buf[1][0] ? buf[1] : " none");
 				}
 			}
@@ -3795,7 +3824,7 @@ static void ghost_Report()
 			// Classification churn over the update counts, window totals.
 			if ((sc.ballisticUpdates | sc.steeringUpdates | sc.classEnded | sc.classBegan | sc.classChanged) != 0)
 			{
-				Printf("[snap] ballistic: %u updates ballistic, %u steering"
+				ghost_Print("[snap] ballistic: %u updates ballistic, %u steering"
 					" | began %u ended %u | CHANGED IN FLIGHT %u\n",
 					sc.ballisticUpdates, sc.steeringUpdates,
 					sc.classBegan, sc.classEnded, sc.classChanged);
@@ -3827,7 +3856,7 @@ static void ghost_Report()
 					jat += (unsigned int)w;
 			}
 			const double finv = (fs > 0) ? (100.0 / (double)fs) : 0.0;
-			Printf("[snap] own fire: %u shots | to first draw <35ms %.0f%% "
+			ghost_Print("[snap] own fire: %u shots | to first draw <35ms %.0f%% "
 				"<70 %.0f%% <105 %.0f%% <175 %.0f%% 175+ %.0f%% (worst %u ms)"
 				" | speed by record (mean/worst)%s | %u unmatched\n",
 				fs, fh[0] * finv, fh[1] * finv, fh[2] * finv,
@@ -3841,7 +3870,7 @@ static void ghost_Report()
 	{
 		// `solid` a per-frame mean, the other two window totals.
 		const double cinv = 1.0 / (double)g_ghostCensusFrames;
-		Printf("[snap] collide: %s | %.1f solid/frame (max %u)"
+		ghost_Print("[snap] collide: %s | %.1f solid/frame (max %u)"
 			" | %llu transitions, %llu corpse-released over %u frames | dist %d\n",
 			fua_csnap_collide ? "on" : "off",
 			(double)(QWORD)g_ghostSolidAccum * cinv, g_ghostSolidMax,
@@ -3893,7 +3922,7 @@ static void ghost_Report()
 		if (nGone == 0)
 			mysnprintf(szGone, sizeof(szGone), " none");
 
-		Printf("[snap] movers: %u records (%u no sink, %u unreadable)"
+		ghost_Print("[snap] movers: %u records (%u no sink, %u unreadable)"
 			" | %u applied, %u gone (%u no local, %u of them moving the plane,"
 			" %u superseded, %u with a plane stale),"
 			" %u no level, %u unusable, %u stale"
@@ -3961,7 +3990,7 @@ static void ghost_Report()
 			if (nDrop == 0)
 				mysnprintf(szDrop[k], sizeof(szDrop[k]), " none");
 		}
-		Printf("[snap] mover gate: legacy off %d | dropped at the gate: legacy-made%s,"
+		ghost_Print("[snap] mover gate: legacy off %d | dropped at the gate: legacy-made%s,"
 			" record-made%s | %u kept poly records applied | %u records refused"
 			" below the gate floor (floor %d)\n",
 			gt.bGate ? 1 : 0, szDrop[0], szDrop[1], gt.keptApplied, gt.belowFloor,
@@ -3971,7 +4000,7 @@ static void ghost_Report()
 		SnapPolyClientStats po;
 		memset(&po, 0, sizeof(po));
 		PolyClientStats(po, true);
-		Printf("[snap] polys: %u records, %u actions created, %u evicted,"
+		ghost_Print("[snap] polys: %u records, %u actions created, %u evicted,"
 			" %u gone (%u no local), %u stale, %u unusable,"
 			" %u ignored with legacy live"
 			" | tics held %u blocked, %u done"
@@ -3992,7 +4021,7 @@ static void ghost_Report()
 		SnapScrollPushClientStats sp;
 		memset(&sp, 0, sizeof(sp));
 		SpecialClientStats(sp, true);
-		Printf("[snap] scrollers: %u joined (%u controlled, %u accelerative,"
+		ghost_Print("[snap] scrollers: %u joined (%u controlled, %u accelerative,"
 			" %u moving) | point pushers: %u joined (%u no source),"
 			" %u resolved (%u mirror), %u again, %u unresolved tics, %u gone"
 			" | full update replaced %u scrollers, %u pushers, %u waggles\n",
@@ -4002,7 +4031,7 @@ static void ghost_Report()
 			sp.replacedPushers, sp.replacedWaggles);
 
 		// The join's own command, where every record must land on a mover.
-		Printf("[snap] special state: %u chunks | %u scroller + %u pusher records applied"
+		ghost_Print("[snap] special state: %u chunks | %u scroller + %u pusher records applied"
 			" | %u echo mismatch (%u matched by search, %u unmatched)%s\n",
 			sp.stateChunks, sp.stateScrollers, sp.statePushers,
 			sp.stateEchoMismatch, sp.stateFallback, sp.stateUnmatched,

@@ -281,20 +281,20 @@ Unarchived, so a restart returns them to their defaults: `fua_snap_cull_fov`,
 world diff's compression, for the recorder and the wire-cost line only), `fua_snap_cosmetic_events`
 (0 off, 1 report, 2 act), `fua_snap_cosmetic_dist`, `fua_snap_cosmetic_bytes`.
 
-Reports and tools: `fua_snap_stats` (report every N seconds to the log file alone, 0 off; the
-console says once where it goes, or that no log file is open or `msg` above 0 drops it),
-`fua_snap_cosmetics` with an optional filter (the classified cosmetic set), `fua_snap_record` with a
-file name and `fua_snap_stoprecord` (the `.zsnap` recorder, server only), `fua_snap_planedump` (no
-argument, all, or a sector index), `fua_snap_sectorcheck` with a tag, `fua_snap_soundcount`,
-`fua_snap_polycheck`, `fua_csnap_planetrace` (client only; a sector index, -1 for every write) and
-`fua_snap_linkcensus` (the link graph at each join). `fua_snap_planedump` walks `sectors[]` by
-index, since a linked lift is driven from a control sector that is not the one on screen; run it on
-the server and each client at the same moment and diff the output. `d` is the authoritative plane,
-so a sector at another `d` on one machine is the divergence; `texz+d` (0 for an unsloped plane) and
-`vbo` (VALID when the flat is drawn from the cached buffer) are local consistency checks; a sector
-with 3D midtextures adds the first attached line's mid y offset per plane. `fua_csnap_planetrace` is
-keyed on the index too, since a control sector's tag differs from those of the sectors it drives,
-and prints a signed delta per write with no threshold.
+Reports and tools: `fua_snap_stats` (report every N seconds, 0 off: the server's to the log file
+alone, the console saying once where it goes, or that no log file is open or `msg` above 0 drops it;
+a client's own to its console), `fua_snap_cosmetics` with an optional filter (the classified
+cosmetic set), `fua_snap_record` with a file name and `fua_snap_stoprecord` (the `.zsnap` recorder,
+server only), `fua_snap_planedump` (no argument, all, or a sector index), `fua_snap_sectorcheck`
+with a tag, `fua_snap_soundcount`, `fua_snap_polycheck`, `fua_csnap_planetrace` (client only; a
+sector index, -1 for every write) and `fua_snap_linkcensus` (the link graph at each join).
+`fua_snap_planedump` walks `sectors[]` by index, since a linked lift is driven from a control sector
+that is not the one on screen; run it on the server and each client at the same moment and diff the
+output. `d` is the authoritative plane, so a sector at another `d` on one machine is the divergence;
+`texz+d` (0 for an unsloped plane) and `vbo` (VALID when the flat is drawn from the cached buffer)
+are local consistency checks; a sector with 3D midtextures adds the first attached line's mid y
+offset per plane. `fua_csnap_planetrace` is keyed on the index too, since a control sector's tag
+differs from those of the sectors it drives, and prints a signed delta per write with no threshold.
 
 Reproducers: `fua_snap_debug_ackdelay` holds each client's acks N frames, `fua_snap_debug_loss`
 drops N% of snapshot datagrams, `fua_snap_debug_holdback` holds N% of them back and sends each
