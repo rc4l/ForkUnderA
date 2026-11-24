@@ -5,12 +5,11 @@
 # [Kaori-Chani] Build the snapshot module map: one page showing every source file of the module
 # and its tools, the functions and commands each declares, and the calls between them.
 #
-#   python3 tools/snapshot/modmap.py [-o OUT.html] [--standalone] [--tag TAG]
+#   python3 tools/snapshot/modmap.py [-o OUT.html] [--tag TAG]
 #
 # Run from anywhere; paths are taken from this file's place in the repo. The page is modmap.html
-# beside this file with the data filled in. It is written as an artifact page, which is given its
-# document skeleton when published; --standalone adds one so the file opens in a browser as it
-# is. The tag in the page's header is the commit, or what --tag says.
+# beside this file with the data filled in: one self-contained file that opens in any browser,
+# with nothing to serve. The tag in the page's header is the commit, or what --tag says.
 #
 # What it reads:
 #
@@ -505,7 +504,6 @@ def tag():
 def main():
     ap = argparse.ArgumentParser(description='Build the snapshot module map page.')
     ap.add_argument('-o', '--out', default='snapshot-module-map.html')
-    ap.add_argument('--standalone', action='store_true', help='add a document skeleton')
     ap.add_argument('--tag', help='what the header names as the source, instead of the commit')
     a = ap.parse_args()
 
@@ -525,11 +523,6 @@ def main():
         print('modmap: %s has no single @MODMAP_DATA@ slot' % TEMPLATE, file=sys.stderr)
         return 1
     page = page.replace('@MODMAP_DATA@', blob)
-    if a.standalone:
-        page = ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n'
-                '<meta name="viewport" content="width=device-width,initial-scale=1,'
-                'viewport-fit=cover">\n'
-                '</head><body>\n' + page + '</body></html>\n')
     with open(a.out, 'w', encoding='utf-8', newline='\n') as f:
         f.write(page)
 

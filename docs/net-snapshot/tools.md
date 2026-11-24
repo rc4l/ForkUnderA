@@ -167,21 +167,21 @@ in CI beside the other tool tests.
 ## modmap.py
 
 ```
-python3 tools/snapshot/modmap.py [-o OUT.html] [--standalone] [--tag TAG]
+python3 tools/snapshot/modmap.py [-o OUT.html] [--tag TAG]
 ```
 
 Writes the module map: one page with every source file of the module and its tools grouped into
 parts by column, the public functions and commands each declares, the calls between them, and the
 engine functions that call in, counted by site. The page is `modmap.html` with the data filled
-in; it is written to be published as a page, and `--standalone` adds the document around it so
-the file opens in a browser as it is. The header names the commit it was made at.
+in, one self-contained file that opens in any browser. The header names the commit it was made
+at.
 
 What it reads is in its own header. The parts are a table in the script (`COLUMNS`), and a module
 source that no part claims fails the run, as does a part that yields nothing, so a new file is
 placed before a map is made. Its public functions are the ones `doccheck.py` finds, read the same
 way. A function's summary is the comment on or above its declaration, else at its definition,
 else the sentence of its guide page naming it or its family; calls are credited through the
-file-local helpers a function reaches. It is run by hand before the map is published, not in CI.
+file-local helpers a function reaches. It is run by hand, not in CI.
 
 ## Rules that must hold
 

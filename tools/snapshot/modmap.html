@@ -1,6 +1,10 @@
+<!doctype html>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later. The module map's page; tools/snapshot/modmap.py fills its data slot. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Snapshot Module Map</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -53,6 +57,7 @@
 }
 html, body { height: 100%; }
 body {
+  margin: 0;
   background: var(--bg); color: var(--ink); font-family: var(--f-ui); font-size: 14px;
   display: grid; grid-template-rows: auto 1fr; overflow: hidden;
 }
@@ -230,6 +235,8 @@ marker path { stroke: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
+</head>
+<body>
 
 <header class="bar">
   <div class="brand">
@@ -786,3 +793,5 @@ window.addEventListener("resize", redraw);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(redraw);
 })();
 </script>
+</body>
+</html>
