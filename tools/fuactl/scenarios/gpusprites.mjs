@@ -38,6 +38,8 @@ export const MISSILES = {
 };
 // [Doruk-Aksoy] A soulsphere that bobs, whose bob is no straight line across a tic.
 export const BOBBER = 30690;
+// [Doruk-Aksoy] A still, additive, fullbright imp ball in view, which r_usecolorblending blends by its own colour whatever the monsters fire.
+export const GLOWER = 30691;
 
 // [Doruk-Aksoy] Unseen turrets firing straight ahead, Doom's rocket (eight rotations) or one of MISSILES, each class on its own period so the shots never line up.
 export const TURRETS = [["Rocket", 7], ["Rocket", 9], ["Rocket", 11], ["Rocket", 13], ["FuaRollBall", 8], ["FuaXYBall", 10], ["FuaSubBall", 12], ["FuaShadowBall", 9]];
@@ -60,6 +62,7 @@ const turret = ([missile, period], i) => `actor FuaGpuTurret${i} ${TURRET + i}
 export const DECORATE = [
   ...Object.entries(MISSILES).map(([name, body]) => `actor ${name}\n{\n${body}\n}\n`),
   `actor FuaBobber ${BOBBER}\n{\n\t+FLOATBOB\n\t+NOGRAVITY\n\tStates\n\t{\n\tSpawn:\n\t\tSOUL ABCD 6 Bright\n\t\tLoop\n\t}\n}\n`,
+  `actor FuaGlower ${GLOWER}\n{\n\t+NOGRAVITY\n\tRenderStyle Add\n\tScale 2\n\tStates\n\t{\n\tSpawn:\n\t\tBAL1 A -1 Bright\n\t\tStop\n\t}\n}\n`,
   ...TURRETS.map(turret),
 ].join("\n");
 // [Doruk-Aksoy] Nukage glows, so a sprite over it takes light by its height.
@@ -83,12 +86,13 @@ function arena(m, room, { monsters, turrets = [0, 1, 2, 3], pen = { ...ROOM } })
   return penSector;
 }
 
-// [Doruk-Aksoy] MAP01, motion: monsters walking and firing, rockets crossing near and far, a particle fountain among them.
+// [Doruk-Aksoy] MAP01, motion: monsters walking and firing, rockets crossing near and far, a particle fountain and a still additive ball among them.
 export function motionMap() {
   const m = new UdmfMap();
   const room = m.room(0, 0, 2048, 2048, ROOM, WALL);
   arena(m, room, { monsters: [[3001, 6], [3004, 4], [3002, 3], [3005, 2], [66, 2]] });
   m.thing({ x: 1300, y: 860, type: 9027 });
+  m.thing({ x: 900, y: 640, height: 48, type: GLOWER });
   return m;
 }
 

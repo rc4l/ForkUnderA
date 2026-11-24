@@ -70,6 +70,13 @@ inline bool ComputeTicDrawn(int ticsAfter)
 	return ticsAfter <= 0;
 }
 
+// [Doruk-Aksoy] The tics a frame runs of `due` while fua_debug_holdtics holds the game: none, or one when a step was asked for.
+inline int ComputeHeldTics(bool hold, bool stepAsked, int due)
+{
+	if (!hold) return due;
+	return stepAsked && due > 0 ? 1 : 0;
+}
+
 }} // namespace zx::gameloop
 
 #endif // ZX_THREADEDTIC_COMPUTE_H

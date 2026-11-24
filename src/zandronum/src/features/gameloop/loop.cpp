@@ -52,6 +52,18 @@ DEV_MODE_CCMD(fua_debug_steptic) { g_stepTics = 1; }
 
 namespace zx { namespace gameloop {
 
+int HoldTics(int due)
+{
+	const int run = ComputeHeldTics (fua_debug_holdtics, g_stepTics > 0, due);
+	if (fua_debug_holdtics && run > 0) g_stepTics = 0;
+	return run;
+}
+
+bool HoldingTics()
+{
+	return fua_debug_holdtics;
+}
+
 using namespace zx::handoff;
 
 namespace {
@@ -215,9 +227,7 @@ bool GameThreadFrame()
 
 	// [rc4l] The handoff: input and the clock, the catch-up tics that fit kInlineCatchUpMs inline, then the frame's view of the game and the next tic started; the rest wait for the game thread, a handoff each, with frames drawn beside them.
 	// [Doruk-Aksoy] Fua_debug_holdtics runs no tic while frames go on, the last tic's motion kept, unlike a pause.
-	const int ticsDue = Net_TicsDue ();
-	const int due = !fua_debug_holdtics ? ticsDue : g_stepTics > 0 && ticsDue > 0 ? 1 : 0;
-	if (fua_debug_holdtics && due > 0) g_stepTics = 0;
+	const int due = HoldTics (Net_TicsDue ());
 	ZX_COUNT ("handoff/backlog_tics", "tics", due);
 	const int inlineTics = ComputeInlineCatchUp (due - 1, g_lastPlaysimNs.load (std::memory_order_relaxed) / 1e6, kInlineCatchUpMs);
 	ZX_COUNT ("handoff/inline_catchup", "tics", inlineTics);
