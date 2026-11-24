@@ -533,6 +533,13 @@ int FindReservedSlot(const void *material, int translation)
 	return slot;
 }
 
+bool KeepReservedSlot(int slot, const void *material, int translation)
+{
+	if (slot <= 0 || MatIndexFind(material, SlotKey(translation)) != slot) return false;
+	g_slotState[slot].reserved = g_reserveSerial;
+	return true;
+}
+
 void BeginSlotReservation() { g_reserveSerial++; }
 void OpenMaterialSlots() { g_sealedFrame = ~0ull; }
 void SealMaterialSlots() { g_sealedFrame = FrameBeingBuilt(); }

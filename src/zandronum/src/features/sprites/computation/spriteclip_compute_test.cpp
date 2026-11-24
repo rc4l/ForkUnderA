@@ -139,3 +139,13 @@ TEST(SpriteClipIdle, WhenIdleTheClipMovesNothing)
 					EXPECT_EQ(z2, b);
 				}
 }
+
+// [Doruk-Aksoy] A corpse resting below its frame's bottom offset was left to the CPU each frame though its lift never changed within the tic.
+TEST(SpriteClip, AnActorIsSteadyOnlyWithItsHeightFloorAndCeilingKept)
+{
+	const TicEnd rest = { 64, 0, 256 };
+	EXPECT_TRUE(ComputeSteadyAcrossTic(rest, rest));
+	EXPECT_FALSE(ComputeSteadyAcrossTic(rest, { 65, 0, 256 }));
+	EXPECT_FALSE(ComputeSteadyAcrossTic(rest, { 64, 8, 256 }));
+	EXPECT_FALSE(ComputeSteadyAcrossTic(rest, { 64, 0, 248 }));
+}

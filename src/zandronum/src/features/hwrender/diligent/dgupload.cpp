@@ -17,6 +17,7 @@
 #include "r_state.h"   // [rc4l] sides, numsides, numsubsectors
 #include "features/hwrender/computation/texflags_compute.h"   // [rc4l] kTexFlagSectorLit
 #include "features/hwrender/computation/slotrecycle_compute.h"   // [Doruk-Aksoy] ComputeReserveSlots
+#include <cstddef>   // [Doruk-Aksoy] size_t
 #include <vector>
 
 EXTERN_CVAR(Bool, fua_dg_premulblend)
@@ -48,6 +49,11 @@ PieceSlotSet PieceSlots(const zx::levelmesh::MeshPiece &p, int translation, bool
 static std::vector<PieceSlotSet> g_keptSlots;
 static unsigned int g_keptGen = 0, g_keptTable = 0;
 
+// [Doruk-Aksoy] The tic stream's distinct slot keys, found when it is made and only held on the frames after, and the stream and table they were found for.
+struct TicSlotKey { int slot; const void *material; int translation; bool colour; };
+static std::vector<TicSlotKey> g_ticKeys;
+static unsigned int g_ticKeysGen = ~0u, g_ticKeysTable = ~0u;
+
 // [rc4l] This frame's sprites, models and decals given their slots before RefreshBindless fills the array, since BuildDynamic runs after it and a slot first made there sampled the white placeholder for a frame.
 void ReserveDynamicSlots()
 {
@@ -67,40 +73,59 @@ void ReserveDynamicSlots()
 	// [Doruk-Aksoy] This reservation's number, which the memos and stamps below are kept for, since thousands of pieces share a few hundred materials.
 	static unsigned int reservation = 0;
 	reservation++;
+	BeginSlotReservation();
+	// [Doruk-Aksoy] The tic stream's slots found when it was made, held by its distinct keys alone while it and the table stand.
+	const unsigned int ticGen = zx::levelmesh::DynTicGeneration();
+	bool ticHeld = ComputeTicSlotsHeld(nTic, g_ticKeysGen, ticGen, g_ticKeysTable, MaterialSlotTableId(), (int)g_keptSlots.size());
+	for (size_t j = 0; ticHeld && j < g_ticKeys.size(); j++) ticHeld = KeepReservedSlot(g_ticKeys[j].slot, g_ticKeys[j].material, g_ticKeys[j].translation);
+	if (ticHeld)
+		for (const TicSlotKey &key : g_ticKeys)
+		{
+			NoteDynamicSlotUse(key.slot, key.material, key.translation);
+			if (key.colour) FillLayerRow(key.slot, key.material, false);
+		}
+	const int first = ticHeld ? nTic : 0;
+	const int count = npieces - first;
 	static ComputePassMemo<char> brightOf;
 	static ComputePassMemo<int> foundSlot;
-	// [Doruk-Aksoy] Two keys a piece, its colour and, when its material has a brightmap, its brightmap, so key k is piece k / 2's.
+	// [Doruk-Aksoy] Two keys a piece, its colour and, when its material has a brightmap, its brightmap, so key k is piece first + k / 2's.
 	static std::vector<char> bright;
 	bright.resize(npieces);
-	for (int i = 0; i < npieces; i++)
+	for (int i = first; i < npieces; i++)
 	{
 		const void *m = pieceAt(i).material;
 		bright[i] = brightOf.Get(m, 0, reservation, [m] { return (char)zx::materials::MaterialHasBrightmap(m); });
 	}
-	auto translationOf = [&](int k) { return k % 2 == 0 ? pieceAt(k / 2).translation : kBrightmapTranslation; };
-	BeginSlotReservation();
+	auto translationOf = [&](int k) { return k % 2 == 0 ? pieceAt(first + k / 2).translation : kBrightmapTranslation; };
 	static std::vector<int> slots;
 	// [Doruk-Aksoy] A key's find read once a reservation, which is exact as no slot is made until every key has been looked for.
-	zx::hwrender::ComputeReserveSlots(npieces * 2,
+	zx::hwrender::ComputeReserveSlots(count * 2,
 		[&](int k) {
-			if (k % 2 != 0 && !bright[k / 2]) return 0;
-			const void *m = pieceAt(k / 2).material;
+			if (k % 2 != 0 && !bright[first + k / 2]) return 0;
+			const void *m = pieceAt(first + k / 2).material;
 			const int t = translationOf(k);
 			return foundSlot.Get(m, t, reservation, [m, t] { return FindReservedSlot(m, t); });
 		},
-		[&](int k) { return MaterialSlotFor(pieceAt(k / 2).material, translationOf(k), false); }, slots);
+		[&](int k) { return MaterialSlotFor(pieceAt(first + k / 2).material, translationOf(k), false); }, slots);
 	g_keptSlots.resize(npieces);
 	// [Doruk-Aksoy] The reservation each colour and brightmap slot was noted in, so the pieces sharing a slot, and so its material, note it and fill its layer row once.
 	static std::vector<unsigned int> rowFilled, brightNoted;
-	for (int i = 0; i < npieces; i++)
+	if (!ticHeld) g_ticKeys.clear();
+	for (int i = first; i < npieces; i++)
 	{
-		g_keptSlots[i] = PieceSlotSet{ (float)slots[2 * i], (float)slots[2 * i + 1], false };
-		const bool firstColour = ComputeFirstInReservation(rowFilled, slots[2 * i], reservation);
-		if (firstColour) NoteDynamicSlotUse(slots[2 * i], pieceAt(i).material, pieceAt(i).translation);
-		if (bright[i] && ComputeFirstInReservation(brightNoted, slots[2 * i + 1], reservation)) NoteDynamicSlotUse(slots[2 * i + 1], pieceAt(i).material, kBrightmapTranslation);
+		const int colourSlot = slots[2 * (i - first)], brightSlot = slots[2 * (i - first) + 1];
+		g_keptSlots[i] = PieceSlotSet{ (float)colourSlot, (float)brightSlot, false };
+		const bool firstColour = ComputeFirstInReservation(rowFilled, colourSlot, reservation);
+		if (firstColour) NoteDynamicSlotUse(colourSlot, pieceAt(i).material, pieceAt(i).translation);
+		const bool firstBright = bright[i] && ComputeFirstInReservation(brightNoted, brightSlot, reservation);
+		if (firstBright) NoteDynamicSlotUse(brightSlot, pieceAt(i).material, kBrightmapTranslation);
 		// [Doruk-Aksoy] Its GLDEFS layers take their slots in the same reservation, so none gives way while it draws.
-		if (firstColour) FillLayerRow(slots[2 * i], pieceAt(i).material, false);
+		if (firstColour) FillLayerRow(colourSlot, pieceAt(i).material, false);
+		// [Doruk-Aksoy] A tic piece's keys kept the first time the reservation meets them, for the frames to come.
+		if (i < nTic && firstColour) g_ticKeys.push_back({ colourSlot, pieceAt(i).material, pieceAt(i).translation, true });
+		if (i < nTic && firstBright) g_ticKeys.push_back({ brightSlot, pieceAt(i).material, kBrightmapTranslation, false });
 	}
+	if (!ticHeld) { g_ticKeysGen = ticGen; g_ticKeysTable = MaterialSlotTableId(); }
 	g_keptGen = gen;
 	g_keptTable = MaterialSlotTableId();
 }

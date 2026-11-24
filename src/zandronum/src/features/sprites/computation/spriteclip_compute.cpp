@@ -60,4 +60,9 @@ bool ComputeSpriteClipIdle(const SpriteClipIn &in, float z1, float z2)
 	return (z2 + 1) - in.bottom >= 0 && (!smarterclip || (z1 - 1) - in.top <= 0);
 }
 
+bool ComputeSteadyAcrossTic(const TicEnd &prev, const TicEnd &now)
+{
+	return prev.z == now.z && prev.floor == now.floor && prev.ceiling == now.ceiling;
+}
+
 }} // namespace zx::sprites

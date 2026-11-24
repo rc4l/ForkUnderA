@@ -82,11 +82,15 @@ swept actors at the tic's end into a second dynamic stream (`levelmesh::DynTicSc
 shader turns each quad to the view, slides it back along the tic's move by the part of the tic not yet shown and
 XY-billboards it (`hwrender::ComputeSpriteMotionCorners`, the same maths on the CPU for the pieces it cannot pack).
 Only sprites the shader draws exactly as the CPU would enter it: a face sprite of one light band, not rolled, not
-a player, not bobbing, without an actor shader, a glowing floor, a shadow or a fog layer, and whose clip is idle
-at both ends of the tic (`ComputeSpriteClipIdle`); models, particles, decals and the views of mirrors and stacked
+a player, not bobbing, without an actor shader, a shadow or a fog layer, and either steady through the tic (the same
+height, floor and ceiling at both ends, `ComputeSteadyAcrossTic`, so its clip lift and floor glow hold) or off a
+glowing floor with its clip idle at both ends (`ComputeSpriteClipIdle`); models, particles, decals and the views of mirrors and stacked
 sectors stay on the frame's stream. Each frame `SplitFrameSprites` keeps a tic sprite only where this frame's view
 keeps it and picks the same rotation (`TicPieceHolds`), and derives every other actor exactly into the frame's
 stream.
+
+Its bindless slots are reserved when it is made; later frames only hold its distinct keys (`KeepReservedSlot`) while
+the stream and the slot table stand (`hwrender::ComputeTicSlotsHeld`) and reserve the frame stream's pieces.
 
 The stream is made again when it is stale (`frame/computation/ticstream_compute`): a new fill of the render copy,
 any cvar set since (`CVarSetGeneration`, so a setting changed in a paused game's menu reaches it), another view
@@ -100,6 +104,8 @@ pins the fraction, `fua_debug_viewyaw`/`viewdx`/`viewdy` move the view of a held
 the fractions drawn. Scenario `gpusprites` draws a held tic both ways from five cameras at five fractions over
 five maps (motion, terrain and clip, fog and styles with a mirror, models, a camera screen), changes settings
 while the tic is held, then runs tics and holds the stream to one make a fill with no tic run in a camera's pass.
+Scenario `netgpusprites` holds a netgame client's tic stream to its CPU path on a still scene of corpses, those on a
+glowing floor carried as steady, on joining, after its own `reconnect` and after the server restarts the map.
 
 ## In-engine hooks
 

@@ -434,6 +434,12 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	}
 	SpriteEdges e = ComputeSpriteEdges(x, y, z, r, type == RF_WALLSPRITE, dirX, dirY);
 
+	// [Doruk-Aksoy] A steady actor's clip lift and floor glow hold all through the tic, which the tic derive bakes.
+	const auto &floorPlane = thing->Sector->rc.floorplane;
+	const auto &ceilingPlane = thing->Sector->rc.ceilingplane;
+	const bool steady = eligible && ComputeSteadyAcrossTic(
+		{ thing->PrevZ.Raw(), floorPlane.ZatPoint(thing->PrevX, thing->PrevY).Raw(), ceilingPlane.ZatPoint(thing->PrevX, thing->PrevY).Raw() },
+		{ thing->z.Raw(), floorPlane.ZatPoint(thing->x, thing->y).Raw(), ceilingPlane.ZatPoint(thing->x, thing->y).Raw() });
 	// [rc4l] GL scales the already scaled height once more here.
 	const float spriteheight = FIXED2FLOAT(scaleY) * r.height;
 	const bool living = (thing->isPlayer || thing->flags3 & MF3_ISMONSTER || thing->inventory) &&
@@ -479,7 +485,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 		ci.spriteHeight = spriteheight;
 		ComputeSpriteClip(ci, e.z1, e.z2);
 		// [Doruk-Aksoy] The clip idle at both ends of the tic, each end at its own floor and ceiling, is idle all through it.
-		for (int end = 0; end < 2 && eligible; end++)
+		for (int end = 0; end < 2 && eligible && !steady; end++)
 		{
 			const fixed_t ex = end ? thing->x : thing->PrevX, ey = end ? thing->y : thing->PrevY, ez = end ? thing->z : thing->PrevZ;
 			const SpriteEdges ee = ComputeSpriteEdges(FIXED2FLOAT(ex), FIXED2FLOAT(ey), FIXED2FLOAT(ez - thing->floorclip), r, false, dirX, dirY);
@@ -502,7 +508,7 @@ static int DeriveSprite(const ActorRecord *thing, const Subject &s, SpritePiece 
 	{
 		FTexture *floorTex = TexMan[thing->Sector->rc.GetTexture(sector_t::floor)];
 		const SpriteDrawLook drawn0 = SpriteDrawLookAt(so.style, so.trans, cm, x, y, false);
-		const bool glow = floorTex != NULL && floorTex->isGlowing();
+		const bool glow = floorTex != NULL && floorTex->isGlowing() && !steady;
 		eligible = !glow && !drawn0.shadow && !drawn0.fogLayer;
 		if (!eligible) NoteTicWhy(glow ? kWhyGlow : kWhyShadowOrFog);
 	}
@@ -1142,6 +1148,7 @@ struct TicChunk
 	std::vector<int> got;
 };
 static std::vector<zx::jobs::Padded<TicChunk>> g_ticChunks;
+
 // [Doruk-Aksoy] The tic piece each record of the fill is drawn by, -1 for none, -2 for one no view draws this tic.
 static std::vector<int> g_ticPieceOf;
 

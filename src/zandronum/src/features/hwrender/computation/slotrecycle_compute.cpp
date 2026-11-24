@@ -51,4 +51,9 @@ bool ComputeFirstInReservation(std::vector<unsigned int> &stamps, int slot, unsi
 	return true;
 }
 
+bool ComputeTicSlotsHeld(int ticPieces, unsigned int keysGen, unsigned int ticGen, unsigned int keysTable, unsigned int table, int keptSlots)
+{
+	return ticPieces > 0 && keysGen == ticGen && keysTable == table && keptSlots >= ticPieces;
+}
+
 }} // namespace zx::hwrender

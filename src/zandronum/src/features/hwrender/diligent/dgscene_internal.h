@@ -417,6 +417,8 @@ int MaterialSlotFor(const void *material, int translation, bool inMesh);
 void FillLayerRow(int slot, const void *material, bool inMesh);
 // [Doruk-Aksoy] A key's slot, marked as used by the reservation running, or -1 when the table lacks it, found before any slot is given to a missing key.
 int FindReservedSlot(const void *material, int translation);
+// [Doruk-Aksoy] Whether slot `slot` still holds the key, marked as used by the reservation running when it does.
+bool KeepReservedSlot(int slot, const void *material, int translation);
 // [Doruk-Aksoy] Counts the slot table's resets, so slots kept for a sprite list are read only against the table they came from.
 unsigned int MaterialSlotTableId();
 // [Doruk-Aksoy] Starts a dynamic reservation, whose slots and the last one's never give way to a new key.
