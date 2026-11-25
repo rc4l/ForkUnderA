@@ -21,6 +21,7 @@
 #include "team.h"
 #include "unlagged.h"
 #include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh for the files below
 
 // Include all the other Doom stuff here to reduce compile time
 #include "a_arachnotron.cpp"

@@ -63,6 +63,7 @@
 #include "features/alert-reuse/computation/alertreuse_compute.h"
 #include "features/telemetry/telemetry.h"
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] LiftOntoStairs
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_checkmissilerange ("CheckMissileRange");
 static FRandom pr_opendoor ("OpenDoor");
@@ -579,6 +580,7 @@ bool P_Move (AActor *actor)
 	{
 		actor->x = origx;
 		actor->y = origy;
+		zx::cells::Refresh (actor);	// [Doruk-Aksoy] features/blockmap-filter: moved back without relinking
 		movefactor *= (int)(FRACUNIT / ORIG_FRICTION_FACTOR / 4);
 		actor->velx += FixedMul (deltax, movefactor);
 		actor->vely += FixedMul (deltay, movefactor);
@@ -3087,6 +3089,7 @@ bool P_CheckForResurrection(AActor *self, bool usevilestates, FState *customstat
 				{
 					corpsehit->height = info->height;	// [RH] Use real mobj height
 					corpsehit->radius = info->radius;	// [RH] Use real radius
+					zx::cells::Refresh (corpsehit);	// [Doruk-Aksoy] features/blockmap-filter: resized without relinking
 				}
 
 				corpsehit->Revive();
