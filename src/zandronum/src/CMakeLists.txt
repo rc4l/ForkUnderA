@@ -1255,6 +1255,14 @@ set( ONLINE_SOURCES
 if( NOT ZX_ONLINE )
 	set( ONLINE_SOURCES features/offline/offlinestubs.cpp )
 endif()
+
+# [Kaori-Chani] The tic wait is the time base's platform half, so it is a file chosen here
+# rather than a browser condition inside one (tools/platform-ifdef-tripwire.sh).
+if( EMSCRIPTEN )
+	set( ZX_TICTIME_WAIT i_tictime_web.cpp )
+else()
+	set( ZX_TICTIME_WAIT i_tictime_wait.cpp )
+endif()
 add_executable( zdoom WIN32
 	${HEADER_FILES}
 	${NOT_COMPILED_SOURCE_FILES}
@@ -1329,6 +1337,10 @@ add_executable( zdoom WIN32
 	gitinfo.cpp
 	#hu_scores.cpp
 	i_net.cpp
+	# [Kaori-Chani] features/net-snapshot: the shared tic time base, which the three
+	# platform timers read instead of their own clocks.
+	i_tictime.cpp
+	${ZX_TICTIME_WAIT}
 	info.cpp
 	invasion.cpp #ST
 	joinqueue.cpp #ST
@@ -1741,6 +1753,7 @@ add_executable( zdoom WIN32
 	features/frame/framedriver.cpp
 	features/frame/viewtrace.cpp
 	features/frame/framestall.cpp
+	features/tic-pacing/pacing.cpp
 	features/frame/debugorbit.cpp
 	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
@@ -1808,6 +1821,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/frameroute_compute.cpp
 	features/frame/computation/viewtrace_compute.cpp
 	features/frame/computation/framestall_compute.cpp
+	features/tic-pacing/computation/pacing_compute.cpp
 	features/frame/computation/frameclock_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
@@ -2241,4 +2255,43 @@ endif()
 # source list; this glob is safe because these TUs never use IMPLEMENT_CLASS.)
 file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
 target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
+
+# [Kaori-Chani] features/net-snapshot's engine-side layers, an OBJECT library so that each got the
+# real compiler against the real ported headers as step 2 landed it, with the engine's own include
+# directories and definitions, which this directory's scope already supplies. The game links them
+# now; nothing calls into them until step 3's hooks, so the module is in the binary and inert.
+#
+# In ALL on purpose: a layer that stops compiling should stop the build rather than wait to be
+# noticed. Its prerequisites are the engine's own, since the layers reach the generated
+# servercommands.h through network/netcommand.h.
+add_library( netsnapshot_layers OBJECT
+	features/net-snapshot/capture.cpp
+	features/net-snapshot/clienttrack.cpp
+	features/net-snapshot/apply.cpp
+	features/net-snapshot/entities.cpp
+	features/net-snapshot/ghostactor.cpp
+	features/net-snapshot/localpred.cpp
+	features/net-snapshot/movers.cpp
+	features/net-snapshot/polyobj.cpp
+	features/net-snapshot/record.cpp
+# [Kaori-Chani] The format layer, which the tests have built all along and the game needs now that
+# it links the rest: a .zsnap frame is zstd, built above as fua_zstd.
+	features/net-snapshot/recordread.cpp
+	features/net-snapshot/stream.cpp
+	features/net-snapshot/csnap_replay.cpp
+	features/net-snapshot/selftest.cpp
+	features/net-snapshot/fuzz.cpp
+	features/net-snapshot/formattest.cpp )
+add_dependencies( netsnapshot_layers revision_check protocolspec )
+# [Kaori-Chani] zdoom's target-scoped definitions and include paths, copied by property, so the
+# layers build under the game's own settings and no struct differs now that it links them.
+target_compile_definitions( netsnapshot_layers
+	PRIVATE $<TARGET_PROPERTY:zdoom,COMPILE_DEFINITIONS> )
+target_include_directories( netsnapshot_layers
+	PRIVATE $<TARGET_PROPERTY:zdoom,INCLUDE_DIRECTORIES> )
+# [Kaori-Chani] COMPILE_OPTIONS (/Zi /FS) is not copied: it changes debug info, not meaning.
+
+# [Kaori-Chani] The module joins the game, which is what lets po_man.cpp's vtables find the five
+# polyobject classes' Snap* bodies in polyobj.cpp.
+target_link_libraries( zdoom netsnapshot_layers )
 

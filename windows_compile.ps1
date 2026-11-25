@@ -231,7 +231,9 @@ if (-not $isVS -and -not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
     & (Join-Path $vsPath "Common7\Tools\Launch-VsDevShell.ps1") -Arch amd64 -HostArch amd64 -SkipAutomaticLocation | Out-Null
 }
 # [rc4l] Visual Studio takes its platform and toolset here; Ninja Multi-Config gets them from the developer shell and builds the one configuration asked for, since a Debug one breaks on a generated source.
-$genArgs = @(if ($isVS) { "-A", "x64", "-T", "v143" } else { "-DCMAKE_CONFIGURATION_TYPES=$Configuration" })
+# [Kaori-Chani] CMake's compiler check builds that configuration too, not Debug, whose /Zi
+# program database sccache fails to cache.
+$genArgs = @(if ($isVS) { "-A", "x64", "-T", "v143" } else { "-DCMAKE_CONFIGURATION_TYPES=$Configuration", "-DCMAKE_TRY_COMPILE_CONFIGURATION=$Configuration" })
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G $Generator @genArgs `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `

@@ -20,6 +20,7 @@
 #include "deathmatch.h"
 #include "team.h"
 #include "unlagged.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 // Include all the other Doom stuff here to reduce compile time
 #include "a_arachnotron.cpp"

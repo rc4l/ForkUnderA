@@ -517,6 +517,10 @@ enum ActorFlag7
 	// [AK] This actor was spawned by a random spawner.
 	STFL_RANDOMSPAWNED			= 0x20000000,
 
+	// [Kaori-Chani] features/net-snapshot: a legacy actor whose snapshot mirror is drawn in its
+	// place, so its own Tick and render are pure cost; nothing sets it yet.
+	STFL_SNAPGHOSTHIDDEN		= 0x40000000,
+
 // More flags for Skulltag... these having to do with the network.
 
 	// This object does not have a network ID.
@@ -548,6 +552,10 @@ enum ActorFlag7
 	// [BB] The clients have already destroyed this actor and thus it needs special treatment
 	// (used for respawning barrels).
 	NETFL_DESTROYED_ON_CLIENT		= 0x00000080,
+
+	// [Kaori-Chani] features/net-snapshot: a ghost mirror, a render stand-in never subject to
+	// gameplay; nothing sets it yet.
+	NETFL_MIRROR				= 0x00000100,
 
 	// [BC] End of new ST flags.
 
@@ -1663,6 +1671,22 @@ public:
 			return ( _entries[netID].pActor );
 
 		return ( NULL );
+	}
+
+	// [Kaori-Chani] features/net-snapshot: the id reserved for a player, or 0 if the number is
+	// out of range. A player's body keeps one id for the whole session, so a mirror can be made
+	// before its spawn arrives.
+	static unsigned short reservedIDForPlayer ( const int playernum )
+	{
+		if (( playernum < 0 ) || ( playernum >= MAXPLAYERS ))
+			return ( 0 );
+		return ( static_cast<unsigned short>( playernum ) + 1 );
+	}
+
+	// [Kaori-Chani] The lowest id the allocator may hand out, every id below it being a player's.
+	static unsigned short firstDynamicID ( )
+	{
+		return ( static_cast<unsigned short>( MAXPLAYERS ) + 1 );
 	}
 };
 

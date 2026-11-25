@@ -596,6 +596,23 @@ FPropertyInfo *FindProperty(const char * string)
 
 //==========================================================================
 //
+// [Kaori-Chani] features/net-snapshot: a function's name from its address,
+// for a record that names the action a ghost's state called.
+//
+//==========================================================================
+
+const char *FindFunctionName(actionf_p func)
+{
+	for (unsigned int i = 0; i < AFTable.Size(); ++i)
+	{
+		if (AFTable[i].Function == func)
+			return AFTable[i].Name;
+	}
+	return NULL;
+}
+
+//==========================================================================
+//
 // Find a function by name using a binary search
 //
 //==========================================================================

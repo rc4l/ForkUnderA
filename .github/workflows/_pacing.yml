@@ -1,0 +1,101 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Kaori Ishida
+
+# [Kaori-Chani] The tic time base, measured on all three platforms. Replacing the platform timers
+# changed the pacing of every player, and nothing else here watches it: the unit tests cover the
+# arithmetic on a frequency they are handed, not the clock a machine actually has, and there is no
+# Mac in the loop to try it on by hand. Each leg runs a map for two minutes and reads the engine's
+# own pacing lines (tools/tic_pacing_check.py), which is enough to catch a wrong rate, lost tics
+# and a stalled timer.
+#
+# [Kaori-Chani] What CI covers here is the server loop only. Every leg is a server: the dedicated
+# binary, and the client binary given -host, which sets NETSTATE_SERVER (d_main.cpp), whose loop
+# calls SERVER_Tick alone, never reaches TryRunTics or the tic wait, and waits on its own datagram
+# loop between tics. These legs therefore watch the time base a server counts its tics with,
+# through I_MSTime, and nothing here reaches the wait.
+#
+# [Kaori-Chani] A capped-client leg was tried and dropped, a runner having no GPU: macOS died of
+# SIGSEGV in the renderer's fallback for devices without bindless support before its first window,
+# and Windows printed nothing in two minutes. The wait is covered instead by the unit tests, by
+# the CPU a capped client uses against an uncapped one on hardware (2 to 3.6% against 19% on a
+# Ryzen 2700), and by tools/tic_pacing_check.py --want-wait-path on a desktop, which says that the
+# platform's wait ran and which timer it got -- not that the cap is what made it wait, since
+# D_DoomLoop sets r_NoInterpolate and the first TryRunTics waits whatever cl_capfps says.
+name: pacing (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  pacing:
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # [Kaori-Chani] Linux takes the dedicated server binary, the only headless one built
+          # here; the other two legs are the client binary told to be a server by -host.
+          - os: ubuntu-22.04
+            name: linux (dedicated server)
+            artifact: ForkUnderA-linux-server
+            unpack: tar -xzf *-server.tar.gz
+            engine: forkundera-server
+            args: "--no-host"
+          - os: macos-latest
+            name: macos (server via -host)
+            artifact: ForkUnderA-macos
+            unpack: unzip -q -o *.zip
+            engine: ForkUnderA.app/Contents/MacOS/forkundera
+            args: ""
+          # [Kaori-Chani] 7-Zip rather than unzip, which the Windows image does not carry.
+          - os: windows-2022
+            name: windows (server via -host)
+            artifact: ForkUnderA-windows
+            unpack: 7z x -y *.zip
+            engine: forkundera.exe
+            args: ""
+    runs-on: ${{ matrix.os }}
+    name: pacing (${{ matrix.name }})
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the engine
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: engine
+
+      - name: Unpack the engine
+        working-directory: engine
+        run: |
+          ${{ matrix.unpack }}
+
+      # [Kaori-Chani] The binary sits at a different depth in each package, so it is found rather
+      # than assumed; a rename would otherwise read as a pacing failure.
+      - name: Find the engine
+        id: find
+        working-directory: engine
+        run: |
+          path=$(find . -type f -name "$(basename '${{ matrix.engine }}')" | head -1 || true)
+          [ -n "$path" ] || { echo "::error::no ${{ matrix.engine }} in the package"; exit 1; }
+          chmod +x "$path" || true
+          echo "engine=$(cd "$(dirname "$path")" && pwd)/$(basename "$path")" >> "$GITHUB_OUTPUT"
+
+      # [Kaori-Chani] The runner builds the server elsewhere and so carries none of its runtime
+      # libraries; this list is Dockerfile.game-server's own, less the libstdc++6 every image has.
+      - name: Install the server's runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libssl3 zlib1g libbz2-1.0 libcurl4 libopus0 libsdl2-2.0-0
+
+      - name: Pace a map for two minutes
+        run: |
+          python3 tools/tic_pacing_check.py \
+            --engine "${{ steps.find.outputs.engine }}" \
+            --iwad "$PWD/tools/freedoom/freedoom2.wad" \
+            --seconds 120 --interval 30 ${{ matrix.args }}

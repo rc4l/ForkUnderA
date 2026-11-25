@@ -141,7 +141,13 @@ struct FState
 	{
 		if (ActionFunc != NULL)
 		{
+			// [Kaori-Chani] features/net-snapshot: the actor whose action spawns whatever is
+			// spawned here, and whose own action sound its client copy plays.
+			extern AActor *g_pSnapActionSelf;
+			AActor *const pPrevSelf = g_pSnapActionSelf;
+			g_pSnapActionSelf = self;
 			ActionFunc(self, stateowner, this, ParameterIndex-1, statecall);
+			g_pSnapActionSelf = pPrevSelf;
 			return true;
 		}
 		else

@@ -114,6 +114,34 @@ jobs:
       - name: crash-sync regression rule
         run: python3 tools/crash_sync_test.py
 
+      # [Kaori-Chani] The pacing job's own judgement: which figures fail a run and which are
+      # the runner's rather than the time base's.
+      - name: Test the tic pacing check
+        run: python3 tools/tic_pacing_check_test.py
+
+      # [Kaori-Chani] The anchor comparison's own rules: which differences between two
+      # fua_csnap_analyze reports are the interpolation's, and which are the class table's.
+      - name: Test the anchor comparison
+        run: python3 tools/snapshot/snap_anchor_compare_test.py
+
+      # [Kaori-Chani] The maintainers guide against the code: a patch that changes a module file
+      # and not its page fails here, as does a comment citing a page or a name that is gone.
+      - name: Snapshot guide against the code
+        run: python3 tools/snapshot/doccheck.py
+
+      # [Kaori-Chani] The offline readers against the header they read, and over the committed
+      # reference: a format change that misses tools/snapshot/ fails here, not in a reader.
+      - name: Snapshot offline readers
+        run: |
+          set -euo pipefail
+          hdr=src/zandronum/src/features/net-snapshot/format.h
+          python3 tools/snapshot/csnap2.py --verify "$hdr"
+          out="$(python3 tools/snapshot/wide_count.py \
+            src/zandronum/src/features/net-snapshot/testdata/ref-wide.csnap)"
+          echo "$out"
+          echo "$out" | grep -q "0 walk errors" \
+            || { echo "::error::the payload walk did not read the committed reference"; exit 1; }
+
       # [rc4l] Wire-format snapshot: the client/server protocol is Zandronum's (protocolspec/*.txt).
       # A backport that changes a command's fields/order/id -- or inserts a command, shifting every
       # later id -- silently desyncs multiplayer while single-player builds fine. This derives the

@@ -216,17 +216,24 @@ test("devmode fails a client of a server without cheats that kept or ran a dev-m
   const closedHitbox = { joined: "false", set: { text: refused("cl_fua_hitbox"), value: "false" }, run: refused("fua_hitbox"), server: "true", flipped: "true" };
   const closedLinks = { joined: "true", set: { text: refused("fua_dg_lightlinks"), value: "true" }, run: refused("fua_light"), server: "false", flipped: "false" };
   const closedTexture = { joined: "true", set: { text: refused("gl_texture"), value: "true" }, run: "", server: "false", flipped: "false" };
-  assert.equal(judgeDevMode("MAP01 nocheats", false, [closed, closedHitbox, closedLinks, closedTexture]).failed, 0);
+  // [Kaori-Chani] features/net-snapshot: the module's two, each a client's own 1 over a default of 0.
+  const closedCensus = { joined: "false", set: { text: refused("fua_csnap_loopcensus"), value: "false" }, run: refused("fua_snap_verify"), server: "true", flipped: "true" };
+  const closedLate = { joined: "false", set: { text: refused("fua_csnap_debug_applylate"), value: "false" }, run: refused("fua_snap_sectorcheck"), server: "true", flipped: "true" };
+  assert.equal(judgeDevMode("MAP01 nocheats", false, [closed, closedHitbox, closedLinks, closedTexture, closedCensus, closedLate]).failed, 0);
   // [rc4l] What a build without the gate reads: the client keeps and uses every tool.
   const before = judgeDevMode("MAP01 nocheats", false, [
     { ...closed, joined: "false", set: { text: "", value: "false" }, run: "12 mesh pieces blanked\n" },
     { ...closedHitbox, joined: "true", set: { text: "", value: "true" }, run: "Hitbox overlay off.\n" },
     { ...closedLinks, joined: "false", set: { text: "", value: "false" }, run: "usage: fua_light <radius> [r g b] [dz]\n" },
-    { ...closedTexture, joined: "false", set: { text: "", value: "false" } }]);
+    { ...closedTexture, joined: "false", set: { text: "", value: "false" } },
+    { ...closedCensus, joined: "true", set: { text: "", value: "true" }, run: "Usage: fua_snap_verify <file.zsnap> [skew]\n" },
+    { ...closedLate, joined: "true", set: { text: "", value: "true" }, run: "usage: fua_snap_sectorcheck <tag>\n" }]);
   assert.equal(before.failed, 1);
   for (const want of [/own fua_mesh_sky 0 read false, not true/, /was not told fua_mesh_sky/, /fua_mesh_sky 0, fua_mesh_sky read false/, /fua_mesh_blank ran on a client/,
     /own cl_fua_hitbox 1 read true, not false/, /fua_hitbox ran on a client/, /own fua_dg_lightlinks 0 read false, not true/, /fua_light ran on a client/,
-    /own gl_texture 0 read false, not true/, /was not told gl_texture/]) assert.match(before.line, want);
+    /own gl_texture 0 read false, not true/, /was not told gl_texture/,
+    /own fua_csnap_loopcensus 1 read true, not false/, /fua_snap_verify ran on a client/,
+    /own fua_csnap_debug_applylate 1 read true, not false/, /fua_snap_sectorcheck ran on a client/]) assert.match(before.line, want);
   // [rc4l] A tool without a command is never judged on one.
   assert.doesNotMatch(before.line, /undefined/);
   assert.match(toolFaults(sky, false, { ...closed, server: "true", flipped: null }).join("; "), /server.s own console, fua_mesh_sky 0 read true.*cheats on, the client.s own fua_mesh_sky 0 read nothing, not false/);
@@ -234,7 +241,9 @@ test("devmode fails a client of a server without cheats that kept or ran a dev-m
   const openHitbox = { joined: "true", set: { text: "", value: "false" }, run: "Hitbox overlay on.\n", server: "true", flipped: "false" };
   const openLinks = { joined: "false", set: { text: "", value: "true" }, run: "usage: fua_light <radius> [r g b] [dz]\n", server: "false", flipped: "true" };
   const openTexture = { joined: "false", set: { text: "", value: "true" }, run: "", server: "false", flipped: "true" };
-  assert.equal(judgeDevMode("MAP01 cheats", true, [open, openHitbox, openLinks, openTexture]).failed, 0);
+  const openCensus = { joined: "true", set: { text: "", value: "false" }, run: "Usage: fua_snap_verify <file.zsnap> [skew]\n", server: "true", flipped: "false" };
+  const openLate = { joined: "true", set: { text: "", value: "false" }, run: "usage: fua_snap_sectorcheck <tag>\n", server: "true", flipped: "false" };
+  assert.equal(judgeDevMode("MAP01 cheats", true, [open, openHitbox, openLinks, openTexture, openCensus, openLate]).failed, 0);
   assert.match(toolFaults(sky, true, { ...open, set: { text: refused("fua_mesh_sky"), value: "false" }, run: refused("fua_mesh_blank") }).join("; "), /refused fua_mesh_sky with cheats on.*fua_mesh_blank did not run/);
   assert.match(toolFaults(hitbox, true, { ...openHitbox, flipped: "true" }).join("; "), /cheats off, the client.s own cl_fua_hitbox 1 read true, not false/);
 });

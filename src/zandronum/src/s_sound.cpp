@@ -86,6 +86,7 @@ static_assert(ZX_ROLLOFF_LOG == ROLLOFF_Log, "rolloff mirror out of sync");
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the sound hooks
 
 // MACROS ------------------------------------------------------------------
 
@@ -236,6 +237,10 @@ static BYTE		*g_aOriginalSoundCurve;
 
 int sfx_empty;
 
+// [Kaori-Chani] features/net-snapshot: channels S_StartSound handed out, which a point
+// sound's pending record reads to know whether its sound actually started.
+static unsigned int g_soundStarts = 0;
+
 FSoundChan *Channels;
 FSoundChan *FreeChannels;
 
@@ -254,6 +259,10 @@ EXTERN_CVAR (Bool, snd_pitched)	// [rc4l] gates the random PitchMask variation (
 
 // [AK] Prevents any music changes as if a playlist was playing, originally from ZCC.
 CVAR (Bool, snd_lockmusic, false, CVAR_ARCHIVE);
+
+// [Kaori-Chani] features/net-snapshot: suppresses an actor's own sound where the server sends
+// that sound as an event instead.
+CVAR( Bool, fua_csnap_nolocalsound, true, CVAR_NOSETBYACS )
 
 // CODE --------------------------------------------------------------------
 
@@ -1019,6 +1028,11 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 	FVector3 pos, vel;
 	FRolloffInfo *rolloff;
 
+	// [Kaori-Chani] features/net-snapshot: an actor run forward by its age starts its CHAN_AUTO
+	// sound once, not once a caught-up tic.
+	if ( zx::netsnapshot::CatchUpHoldsSound( actor, channel, sound_id ))
+		return NULL;
+
 	// [BC] Server doesn't use music/sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		return NULL;
@@ -1337,8 +1351,16 @@ static FSoundChan *S_StartSound(AActor *actor, const sector_t *sec, const FPolyO
 		default:										break;
 		}
 		IndexChannel (chan);
+		++g_soundStarts;	// [Kaori-Chani] features/net-snapshot: S_SoundStarts
 	}
 	return chan;
+}
+
+// [Kaori-Chani] features/net-snapshot: a start deferred by CHAN_QUEUED has its channel and so
+// counts here; one S_NeverHeard refuses returns before this and does not.
+unsigned int S_SoundStarts ()
+{
+	return g_soundStarts;
 }
 
 //==========================================================================
@@ -1425,7 +1447,9 @@ void S_Sound (int channel, FSoundID sound_id, float volume, float attenuation, b
 	S_StartSound (NULL, NULL, NULL, NULL, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [EP] If we're the server, tell the clients to make a sound.
-	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+	// [Kaori-Chani] features/net-snapshot: not one no client can play.
+	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::SoundUnplayable( static_cast<int>( sound_id ), volume ) == false ) )
 		SERVERCOMMANDS_Sound( channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, pitch );
 }
 
@@ -1439,6 +1463,12 @@ void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float a
 {
 	if (ent == NULL || ent->Sector->Flags & SECF_SILENT)
 		return;
+
+	// [Kaori-Chani] features/net-snapshot: the server sends this entity's sounds, so playing it
+	// here as well would double it.
+	if ( zx::netsnapshot::GhostSoundHandled( ent ))
+		return;
+
 	// [Doruk-Aksoy] uzdoom@e82565373f: CHAN_NOSTOP, which clients decide for themselves online, since only they hold the sounds.
 	const bool noStop = (channel & CHAN_NOSTOP) != 0;
 	if (!ComputeNoStopBlocks(channel, noStop && S_IsActorPlayingSomething(ent, channel & 7, sound_id)))
@@ -1446,7 +1476,12 @@ void S_Sound (AActor *ent, int channel, FSoundID sound_id, float volume, float a
 
 	// [EP] If we're the server, tell the clients to make a sound.
 	// [rc4l] Forward the explicit pitch so the client plays it at the same pitch.
-	if ( bSoundOnClient && ( NETWORK_GetState( ) == NETSTATE_SERVER ))
+	// [Kaori-Chani] features/net-snapshot: the choke point for every actor sound, flagged or not,
+	// since a mirror runs no actions; true when it has taken the send.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::SoundUnplayable( static_cast<int>( sound_id ), volume ) == false )
+		&& ( zx::netsnapshot::BroadcastActorSound( ent, channel, static_cast<int>( sound_id ),
+			volume, attenuation, bSoundOnClient, noStop, pitch ) == false ) && bSoundOnClient )
 		SERVERCOMMANDS_SoundActor( ent, channel, S_GetName( sound_id ), volume, attenuation, MAXPLAYERS, 0, noStop, pitch );
 }
 
@@ -1494,7 +1529,9 @@ void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sound_id, f
 	S_StartSound (NULL, NULL, NULL, &pt, channel, sound_id, volume, attenuation, NULL, pitch);
 
 	// [RK] Instruct the clients to play the sound.
-	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER))
+	// [Kaori-Chani] features/net-snapshot: as the channel form's.
+	if (bSoundOnClient && (NETWORK_GetState() == NETSTATE_SERVER)
+		&& (zx::netsnapshot::SoundUnplayable(static_cast<int>(sound_id), volume) == false))
 		SERVERCOMMANDS_SoundPoint((LONG)(x),(LONG)( y),(LONG)( z), channel, S_GetName(sound_id), volume, attenuation, MAXPLAYERS, 0, pitch);
 }
 
@@ -1747,6 +1784,10 @@ void S_StopSound (int channel)
 
 void S_StopSound (AActor *actor, int channel)
 {
+	// [Kaori-Chani] features/net-snapshot: a player's stop goes out under the gate, no record
+	// carrying a stop and a mirror running no states.
+	zx::netsnapshot::SendPlayerStopSound( actor, channel );
+
 	ZX_SEAM_UNTIMED("sound/channels", GameData);   // [rc4l] features/handoff: the channels are game data, a tic's or the handoff's
 	ForActorChannels(actor, [channel](FSoundChan *chan)
 	{
@@ -1913,6 +1954,93 @@ void S_RelinkSound (AActor *from, AActor *to)
 
 //==========================================================================
 //
+// S_IsChannelUsed
+//
+// [Kaori-Chani] Whether this actor has a sound on the channel already, over its own
+// channels rather than every one, noting in `seen` each channel of its that we passed.
+//==========================================================================
+
+static bool S_IsChannelUsed (AActor *actor, int channel, int *seen)
+{
+	if (*seen & (1 << channel))
+	{
+		return true;
+	}
+
+	bool used = false;
+	ForActorChannels(actor, [channel, seen, &used](FSoundChan *chan)
+	{
+		*seen |= 1 << chan->EntChannel;
+		if (chan->EntChannel == channel)
+		{
+			used = true;
+			return true;
+		}
+		return false;
+	});
+	return used;
+}
+
+//==========================================================================
+//
+// S_IsPointSoundChannel
+//
+// [Kaori-Chani] Whether this channel is the free-standing sound that was
+// started at exactly this point, on this channel, from this sound.
+//==========================================================================
+
+static bool S_IsPointSoundChannel (const FSoundChan *chan, const FVector3 &pt, int channel,
+	int sound_id)
+{
+	return chan->SourceType == SOURCE_Unattached && chan->OrgID == sound_id &&
+		chan->EntChannel == channel && chan->Point[0] == pt.X && chan->Point[1] == pt.Y &&
+		chan->Point[2] == pt.Z;
+}
+
+//==========================================================================
+//
+// S_AttachPointSound
+//
+// [Kaori-Chani] features/net-snapshot: moves a free-standing S_Sound onto an actor that
+// arrived after it -- 1 moved, -1 that channel was busy, 0 no such point sound playing.
+//==========================================================================
+
+int S_AttachPointSound (fixed_t x, fixed_t y, fixed_t z, int channel, int sound_id, AActor *actor)
+{
+	// [rc4l] features/handoff: the channels are game data, a tic's or the handoff's.
+	ZX_SEAM_UNTIMED("sound/channels", GameData);
+	// [Kaori-Chani] y and z swapped, as every other reader of Point[] here has them.
+	const FVector3 pt(FIXED2FLOAT(x), FIXED2FLOAT(z), FIXED2FLOAT(y));
+	channel &= 7;
+	for (FSoundChan *chan = Channels; chan != NULL; chan = chan->NextChan)
+	{
+		if (!S_IsPointSoundChannel(chan, pt, channel, sound_id))
+		{
+			continue;
+		}
+		if (actor == NULL)
+		{
+			return 1;
+		}
+		int seen = 0;
+		if (S_IsChannelUsed(actor, channel, &seen))
+		{
+			return -1;
+		}
+		// [Kaori-Chani] Listed under the actor and the actor marked, which S_RelinkSound does for
+		// the same move: an unlisted channel is one this tree's per-actor walks never visit.
+		chan->Actor = actor;
+		chan->SourceType = SOURCE_Actor;
+		IndexChannel(chan);
+		NoteChannelActor(actor);
+		return 1;
+	}
+	return 0;
+}
+
+
+//==========================================================================
+//
 // S_ChangeSoundVolume
 //
 //==========================================================================
@@ -2012,6 +2140,54 @@ bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id)
 		return found = ((channel == 0 || chan->EntChannel == channel) && (sound_id <= 0 || chan->OrgID == sound_id));
 	});
 	return found;
+}
+
+//==========================================================================
+//
+// S_IsAudibleAtDistance
+//
+// [Kaori-Chani] features/net-snapshot: whether this sound would be heard at
+// all that far from the listener, asked before a sound event is sent.
+//==========================================================================
+
+// [Kaori-Chani] ROLLOFF_Log never reaches zero, so a "volume is zero" test would never cull it;
+// where this floor sits is a judgement about what a player expects to hear, not arithmetic.
+CVAR( Float, fua_snap_cullfloor, 0.02f, CVAR_ARCHIVE )
+
+bool S_IsAudibleAtDistance( FSoundID sound_id, float attenuation, float dist )
+{
+	// [Kaori-Chani] Attenuation 0 is ATTN_NONE: full volume everywhere, never culled.
+	if ( attenuation <= 0.f )
+		return true;
+
+	const int id = int(sound_id);
+	if (( id <= 0 ) || ( static_cast<unsigned>( id ) >= S_sfx.Size( ) ))
+		return true;
+
+	// [Kaori-Chani] Follow links the way S_StartSound does, bounded in case of a cycle.
+	sfxinfo_t* sfx = &S_sfx[id];
+	for ( int hops = 0; ( sfx->link != sfxinfo_t::NO_LINK ) && ( hops < 8 ); ++hops )
+	{
+		if ( sfx->link >= S_sfx.Size( ))
+			return true;
+		sfx = &S_sfx[sfx->link];
+	}
+
+	attenuation *= sfx->Attenuation;
+	if ( attenuation <= 0.f )
+		return true;
+
+	FRolloffInfo* rolloff = &sfx->Rolloff;
+	if ( rolloff->MinDistance == 0 )
+		rolloff = &S_Rolloff;
+
+	if ( rolloff->MinDistance == 0 )
+		return true;			// [Kaori-Chani] no usable curve, so assume audible
+
+	// [Kaori-Chani] Higher attenuation means the sound falls off sooner, which is the same as
+	// the listener being proportionally further away.
+	const float effective = dist * attenuation;
+	return ( S_GetRolloff(rolloff, effective, false) > fua_snap_cullfloor );
 }
 
 //==========================================================================

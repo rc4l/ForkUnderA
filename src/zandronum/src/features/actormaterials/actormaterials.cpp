@@ -231,6 +231,18 @@ void ApplyActorUniform(AActor *actor, int uniform, const zx::acsshaders::Uniform
 	if (material >= 0 && material < MaterialCount() && uniform >= 0 && uniform < (int)Uniforms(material).size()) SetUniform(actor, uniform, value);
 }
 
+bool ActorUniforms(const AActor *actor, unsigned &set, float values[kActorUniformVec4s][4])
+{
+	set = 0;
+	if (actor == NULL) return false;
+	const int slot = SlotOf(actor);
+	if (slot < 0 || slot >= (int)level.fua_actorMaterials.instances.size()) return false;
+	const ActorInstance &own = level.fua_actorMaterials.instances[slot];
+	set = own.set;
+	memcpy(values, own.values, sizeof(own.values));
+	return own.set != 0;
+}
+
 void SendActorMaterialTo(AActor *actor, int player)
 {
 	const AActor *defaults = actor->GetDefault();

@@ -67,6 +67,10 @@ int CallActorMaterialFunction(AActor *activator, int function, const int *args, 
 void ApplyActorMaterial(AActor *actor, const char *material);
 void ApplyActorUniform(AActor *actor, int uniform, const zx::acsshaders::UniformValue &value);
 
+// [Kaori-Chani] features/net-snapshot: an actor's own uniform values, the set mask and the
+// rows it covers, false for an actor with none. The snapshot carries these for a mirror.
+bool ActorUniforms(const AActor *actor, unsigned &set, float values[kActorUniformVec4s][4]);
+
 // [Doruk-Aksoy] Sends a joining player an actor's material, when DECORATE does not already give it, and its own values.
 void SendActorMaterialTo(AActor *actor, int player);
 

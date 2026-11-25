@@ -30,6 +30,9 @@
 #include "features/gamecopy/level.h"   // [rc4l] the level as the copy holds it
 #include "features/gamecopy/players.h"   // [rc4l] the console player as the copy holds it
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverResetBegin
+#include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] PolyCapture
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] ResetEnd
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
@@ -120,6 +123,7 @@
 #include "announcer.h"
 #include "p_acs.h"
 #include "p_effect.h"
+#include "p_lnspec.h"	// [Kaori-Chani] dSector_DoorCloseIn30, dSector_DoorRaiseIn5Mins
 #include "cl_commands.h"
 #include "possession.h"
 #include "statnums.h"
@@ -3587,6 +3591,10 @@ void GAME_ResetMap( bool bRunEnterScripts )
 	// This is all we do in client mode.
 	if ( NETWORK_InClientMode() )
 	{
+		// [Kaori-Chani] features/net-snapshot: the server's reset writes follow, so planes it
+		// owns must take them; the test is inside.
+		zx::netsnapshot::MoverResetBegin( );
+
 		// [BB] Clients still need to reset the automap.
 		for ( ulIdx = 0; ulIdx < (ULONG)numlines; ulIdx++ )
 			lines[ulIdx].flags &= ~ ML_MAPPED;
@@ -3620,6 +3628,11 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		GAME_ResetScripts ( );
 		return;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: every polyobject as it stands, before the reset
+	// below moves them back, so a record describes what the reset then undoes.
+	for ( int i = 0; i < po_NumPolyobjs; ++i )
+		zx::netsnapshot::PolyCapture( &polyobjs[i], false );
 
 	// [BB] Reset the polyobjs.
 	for ( ulIdx = 0; ulIdx <= static_cast<unsigned> (po_NumPolyobjs); ulIdx++ )
@@ -4441,9 +4454,21 @@ void GAME_ResetMap( bool bRunEnterScripts )
 		}
 	}
 
+	// [Kaori-Chani] features/net-snapshot: the timed doors again, after the plane writes above
+	// have cleared the movers; a gated client builds none of these and takes them by record.
+	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
+	{
+		if ( sectors[ulIdx].SavedTimedDoor == dSector_DoorCloseIn30 )
+			P_SpawnDoorCloseIn30( &sectors[ulIdx] );
+		else if ( sectors[ulIdx].SavedTimedDoor == dSector_DoorRaiseIn5Mins )
+			P_SpawnDoorRaiseIn5Mins( &sectors[ulIdx] );
+	}
+
 	// If we're the server, tell clients to delete all their ceiling/floor movers.
+	// [Kaori-Chani] features/net-snapshot: through the module, which counts the reset and
+	// sends that same command, with its count beside it while the gate is on.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_DestroyAllSectorMovers( );
+		zx::netsnapshot::ResetEnd( );
 
 	// [BB] Reset all ACS scripts.
 	GAME_ResetScripts ( );

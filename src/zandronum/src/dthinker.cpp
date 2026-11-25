@@ -49,6 +49,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists; [Doruk-Aksoy] NoteThinkerLists, NoteThinkerAdded, NoteThinkerRemoved
 #include "features/gamecopy/computation/thinkerorder_compute.h"   // [Doruk-Aksoy] ComputeListBucket
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] a thinker's first tick, either side
 
 #include <cstdint>
 
@@ -468,6 +469,9 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 	{
 		++count;
 		NextToThink = node->NextThinker;
+		// [Kaori-Chani] features/net-snapshot: the spawner of anything spawned in PostBeginPlay
+		// or Tick, which a cosmetic spawn reads when no action is running.
+		g_pSnapTickSelf = node;
 		if (node->ObjectFlags & OF_JustSpawned)
 		{
 			// Leave OF_JustSpawn set until after Tick() so the ticker can check it.
@@ -477,6 +481,9 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 				dest->AddTail(node);
 			}
 			node->PostBeginPlay();
+			// [Kaori-Chani] features/net-snapshot: before its first Tick, its spawner having
+			// finished with it.
+			zx::netsnapshot::NoteFirstTick( node );
 		}
 		else if (dest != NULL)
 		{
@@ -500,9 +507,16 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 				}
 				else node->Tick();
 			}
+			// [Kaori-Chani] features/net-snapshot: after its first Tick, a cosmetic copy held
+			// across that tick being free to go out.
+			if (node->ObjectFlags & OF_JustSpawned)
+				zx::netsnapshot::NoteFirstTickDone( node );
 			node->ObjectFlags &= ~OF_JustSpawned;
 			GC::CheckGC();
 		}
+		// [Kaori-Chani] features/net-snapshot: cleared after each thinker's turn, so ACS and level
+		// code spawn with no spawner.
+		g_pSnapTickSelf = NULL;
 		node = NextToThink;
 	}
 	return count;

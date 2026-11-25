@@ -163,6 +163,14 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
+#include "features/net-protocol/testfaults.h"   // [Kaori-Chani] DropReceivedPacketForTest
+#include "features/net-snapshot/apply.h"   // [Kaori-Chani] the client's side of the snapshot
+#include "features/net-snapshot/localpred.h"   // [Kaori-Chani] the local block and its census
+#include "features/net-snapshot/entities.h"   // [Kaori-Chani] the map frame and the stamps
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the ghost table
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] TracePlaneWrite
+#include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] OwnsPoly, PolyCountSuppressed
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -486,6 +494,16 @@ static	LONG				g_lHighestReceivedSequence;
 // Delay for sending a request missing packets.
 static	LONG				g_lMissingPacketTicks;
 
+// [Kaori-Chani] features/net-snapshot: the reliable sequence the server has announced, and how
+// many tail requests have gone out since the count was last read.
+static	LONG				g_lAnnouncedSequence = -1;
+// [Kaori-Chani] The previous call's announcement, which the check acts on: a tic's grace
+// for a packet that is merely reordered.
+static	LONG				g_lAnnouncedReady = -1;
+static	unsigned int		g_ulTailRequested = 0;
+// [Kaori-Chani] Sequences past the announced one that a tail request may ask for at once.
+#define	SNAP_TAIL_WINDOW	64
+
 // Debugging variables.
 static	LONG				g_lLastCmd;
 
@@ -606,6 +624,11 @@ static void client_ResetValuesOnConnection( void )
 
 	// Make sure our visibility is normal.
 	R_SetVisibility( 8.0f );
+
+	// [Kaori-Chani] features/net-snapshot: a new server may count map stamps and resets from 1
+	// again.
+	zx::netsnapshot::ResetMapStamp( );
+	zx::netsnapshot::MoverForgetResetCount( );
 }
 
 //*****************************************************************************
@@ -1078,6 +1101,8 @@ void CLIENT_AttemptConnection( void )
 	g_lCurrentPosition = 0;
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
+	// [Kaori-Chani] With them: a new connection's announcement comes from its own stream.
+	g_lAnnouncedSequence = g_lAnnouncedReady = -1;
 
 	g_lMissingPacketTicks = 0;
 
@@ -1454,6 +1479,11 @@ void CLIENT_CheckForMissingPackets( void )
 	LONG	lIdx;
 	LONG	lIdx2;
 
+	// [Kaori-Chani] Promoted ahead of the throttle, so the check acts on the previous
+	// call's announcement: a tic's grace for a reordered packet.
+	const LONG lAnnounced = g_lAnnouncedReady;
+	g_lAnnouncedReady = g_lAnnouncedSequence;
+
 	// We already told the server we're missing packets a little bit ago. No need
 	// to do it again.
 	if ( g_lMissingPacketTicks > 0 )
@@ -1462,16 +1492,25 @@ void CLIENT_CheckForMissingPackets( void )
 		return;
 	}
 
-	if ( g_lLastParsedSequence != g_lHighestReceivedSequence )
+	// [Kaori-Chani] An announcement extends the range: a lost tail reveals nothing on its
+	// own, no later packet having arrived to leave a gap.
+	const LONG lNewest = ( lAnnounced > g_lHighestReceivedSequence )
+		? lAnnounced : g_lHighestReceivedSequence;
+	const LONG lLastWanted = ( lAnnounced > g_lHighestReceivedSequence )
+		? lAnnounced : ( g_lHighestReceivedSequence - 1 );
+
+	if ( g_lLastParsedSequence != lNewest )
 	{
 		// If we've missed more than PACKET_BUFFER_SIZE packets, there's no hope that we can recover from this
 		// since the server only backs up PACKET_BUFFER_SIZE of our packets. We have to end the game.
-		if (( g_lHighestReceivedSequence - g_lLastParsedSequence ) >= PACKET_BUFFER_SIZE )
+		if (( lNewest - g_lLastParsedSequence ) >= PACKET_BUFFER_SIZE )
 		{
 			FString quitMessage;
 			// [rc4l] With the two sequences, so a log says whether the server ran ahead or the client never parsed its first packet.
-			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets (last parsed %d, highest received %d). Unable to recover.", PACKET_BUFFER_SIZE,
-				static_cast<int>( g_lLastParsedSequence ), static_cast<int>( g_lHighestReceivedSequence ));
+			quitMessage.Format ( "CLIENT_CheckForMissingPackets: Missing more than %d packets"
+				" (last parsed %d, highest received %d, announced %d). Unable to recover.",
+				PACKET_BUFFER_SIZE, static_cast<int>( g_lLastParsedSequence ),
+				static_cast<int>( g_lHighestReceivedSequence ), static_cast<int>( lAnnounced ));
 			CLIENT_QuitNetworkGame( quitMessage.GetChars() );
 			return;
 		}
@@ -1479,7 +1518,7 @@ void CLIENT_CheckForMissingPackets( void )
 		g_LocalBuffer.ByteStream.WriteByte( CLC_MISSINGPACKET );
 
 		// Now, go through and figure out what packets we're missing. Request these from the server.
-		for ( lIdx = g_lLastParsedSequence + 1; lIdx <= g_lHighestReceivedSequence - 1; lIdx++ )
+		for ( lIdx = g_lLastParsedSequence + 1; lIdx <= lLastWanted; lIdx++ )
 		{
 			for ( lIdx2 = 0; lIdx2 < PACKET_BUFFER_SIZE; lIdx2++ )
 			{
@@ -1500,6 +1539,9 @@ void CLIENT_CheckForMissingPackets( void )
 					fprintf( debugfile, "Missing packet %d.\n", static_cast<int> (lIdx) );
 
 				g_LocalBuffer.ByteStream.WriteLong( lIdx );
+				// [Kaori-Chani] Past what arrived: only an announcement asks for this.
+				if ( lIdx > g_lHighestReceivedSequence )
+					++g_ulTailRequested;
 				CLIENTSTATISTICS_AddToMissingPacketsRequested ( 1 );
 
 				// [Leo] Print how many packets we missed.
@@ -1556,6 +1598,15 @@ bool CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream )
 	{
 		if ( g_lPacketSequence[lIdx] == lSequence )
 			return ( false );
+	}
+
+	// [Kaori-Chani] features/net-protocol: thrown away before it is recorded, so the client
+	// sees the loss a wire would have caused and nothing later reveals it.
+	if ( zx::netprotocol::DropReceivedPacketForTest( ))
+	{
+		Printf( "CLIENT_ReadPacketHeader: dropped packet %d for a test\n",
+			static_cast<int>( lSequence ));
+		return ( false );
 	}
 
 	// The end of the buffer has been reached.
@@ -1737,6 +1788,10 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 			// Check to see if we have the map.
 			if ( P_CheckIfMapExists( g_szMapName ))
 			{
+				// [Kaori-Chani] features/net-snapshot: no ghost survives a map change, even
+				// with no level up.
+				zx::netsnapshot::LevelUnloaded( );
+
 				// Start new level.
 				G_InitNew( g_szMapName, false );
 
@@ -2295,6 +2350,43 @@ void CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 			switch ( lExtCommand )
 			{
+			// [Kaori-Chani] features/net-snapshot: the seven the module reads, each
+			// gated in its own handler -- by the map stamp, or by the suppression it serves.
+			case SVC2_SNAPSHOT:
+
+				zx::netsnapshot::OnSnapshot( pByteStream );
+				break;
+
+			case SVC2_DOORSOUND:
+
+				zx::netsnapshot::OnDoorSound( pByteStream );
+				break;
+
+			case SVC2_FLOORSOUND:
+
+				zx::netsnapshot::OnFloorSound( pByteStream );
+				break;
+
+			case SVC2_MOVERSOUND:
+
+				zx::netsnapshot::OnMoverSound( pByteStream );
+				break;
+
+			case SVC2_SNAPSOUNDTABLE:
+
+				zx::netsnapshot::OnSoundTable( pByteStream );
+				break;
+
+			case SVC2_SNAPSOUND:
+
+				zx::netsnapshot::OnSnapSound( pByteStream );
+				break;
+
+			case SVC2_SNAPCOSMETIC:
+
+				zx::netsnapshot::CosmeticEvents( pByteStream );
+				break;
+
 			case SVC2_SETINVENTORYICON:
 
 				client_SetInventoryIcon( pByteStream );
@@ -2867,6 +2959,14 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 	// Clear out the existing players.
 	CLIENT_ClearAllPlayers();
 
+	// [Kaori-Chani] features/net-snapshot: no ghosts left, so a later connection starts from an
+	// empty table, and no mover gate, so it starts as stock.
+	zx::netsnapshot::LevelUnloaded( );
+	zx::netsnapshot::MoverForgetServerGate( );
+	// [Kaori-Chani] features/net-snapshot: and the mirroring goes off with the traffic that
+	// raised it, so no mirror is drawn in single player or on a gate-off server.
+	zx::netsnapshot::GhostsFromNetwork( false );
+
 	// If we're connected in any way, send a disconnect signal.
 	// [BB] But only if we are actually a client. Otherwise we can't send the signal anywhere.
 	if ( ( g_ConnectionState != CTS_DISCONNECTED ) && ( NETWORK_GetState() == NETSTATE_CLIENT ) )
@@ -2899,6 +2999,8 @@ void CLIENT_QuitNetworkGame( const char *pszString )
 
 	g_lLastParsedSequence = -1;
 	g_lHighestReceivedSequence = -1;
+	// [Kaori-Chani] As on a connection: nothing announced survives the disconnect.
+	g_lAnnouncedSequence = g_lAnnouncedReady = -1;
 
 	g_lMissingPacketTicks = 0;
 
@@ -3308,6 +3410,11 @@ void CLIENT_RestoreSpecialPosition( AActor *pActor )
 //
 void CLIENT_RestoreSpecialDoomThing( AActor *pActor, bool bFog )
 {
+	// [Kaori-Chani] features/net-snapshot: a copy behind a mirror is answered there, the
+	// record drawing the item while this copy stays hidden.
+	if ( zx::netsnapshot::RespawnBehindMirror( pActor, bFog ))
+		return;
+
 	// Change an actor that's been put into a hidden for respawning back to its spawn state
 	// (respawning it). The reason we need to duplicate this function (this same code basically
 	// exists in A_RestoreSpecialDoomThing( )) is because normally, when items are touched and
@@ -3716,6 +3823,10 @@ bool CLIENT_ReadActorFromNetID( unsigned short netID, const PClass *subclass, bo
 {
 	actor = CLIENT_FindThingByNetID( netID );
 
+	// [Kaori-Chani] features/net-snapshot: an id with no legacy actor may still have a mirror,
+	// which a few commands can use; the module decides which, and counts how each resolved.
+	zx::netsnapshot::ResolveThroughMirror( netID, subclass, actor, commandName );
+
 	if ( actor && ( actor->IsKindOf( subclass ) == false ))
 	{
 		if ( allowNull == false )
@@ -3768,6 +3879,10 @@ void ServerCommands::BeginSnapshot::Execute()
 {
 	// Display in the console that we're receiving a snapshot.
 	Printf( "Receiving snapshot...\n" );
+
+	// [Kaori-Chani] features/net-snapshot: this update re-sends them all, so a repeated one
+	// would double them.
+	zx::netsnapshot::SpecialClearForFullUpdate( );
 
 	// Set the client connection state to receiving a snapshot. This disables things like
 	// announcer sounds.
@@ -4996,6 +5111,52 @@ void ServerCommands::UpdatePlayerTime::Execute()
 
 //*****************************************************************************
 //
+// [Kaori-Chani] features/net-snapshot: one local block applied where the command it
+// replaces is applied, since two of the side effects read file statics here.
+int CLIENT_ApplyLocalBlock( const SnapLocalState &st, int gameTic )
+{
+	player_t *pPlayer = &players[consoleplayer];
+	if ( pPlayer->mo == NULL )
+		return CLIENTLOCAL_NOPAWN;
+
+	// The ordering guard, on the frame's own game tic, which a reordered payload can
+	// really trip; see the module's README.
+	if ( CLIENT_GetLatestServerGametic( ) > gameTic )
+		return CLIENTLOCAL_OUTOFORDER;
+
+	CLIENT_SetLatestServerGametic( gameTic );
+	CLIENT_SetLastConsolePlayerUpdateTick( st.clientTic );
+
+	LONG lOffsettedTic = gametic - CLIENTDEMO_GetGameticOffset( );
+	if (( lOffsettedTic - (LONG)st.clientTic >= TICRATE ) &&
+		( lOffsettedTic - (LONG)g_ulFirstSpawnedTic >= TICRATE ) &&
+		( gametic + CLIENTDEMO_GetGameticOffset( ) - (LONG)g_ulEndFullUpdateTic > TICRATE ))
+	{
+		g_bClientLagging = true;
+	}
+	else
+	{
+		g_bClientLagging = false;
+	}
+
+	if ( pPlayer->playerstate == PST_DEAD )
+		return CLIENTLOCAL_DEAD;
+
+	// No spectator branch, unlike the command above: a block for a spectator is never
+	// sent, so this reports the claim rather than ignoring it.
+	if ( pPlayer->bSpectating )
+		return CLIENTLOCAL_SPECTATOR;
+
+	CLIENT_PREDICT_SetPosition( st.x, st.y, st.z );
+	// [Kaori-Chani] features/net-snapshot: a periodic correction, as the command's is.
+	zx::netsnapshot::LocalPredArrival( );
+	CLIENT_PREDICT_SetVelocity( st.velx, st.vely, st.velz );
+	CLIENT_PREDICT_SetJumpTics( (int)st.jumpTics );
+	return CLIENTLOCAL_APPLIED;
+}
+
+//*****************************************************************************
+//
 void ServerCommands::MoveLocalPlayer::Execute()
 {
 	player_t *pPlayer = &players[consoleplayer];
@@ -5045,6 +5206,9 @@ void ServerCommands::MoveLocalPlayer::Execute()
 	if ( pPlayer->bSpectating == false )
 	{
 		CLIENT_PREDICT_SetPosition( x, y, z );
+		// [Kaori-Chani] features/net-snapshot: the periodic correction's arrival, which the
+		// census keys its gaps on.
+		zx::netsnapshot::LocalPredArrival( );
 		CLIENT_PREDICT_SetVelocity( velx, vely, velz );
 	}
 	else
@@ -7130,6 +7294,11 @@ void ServerCommands::SetWeaponZoomFactor::Execute()
 //
 void ServerCommands::SetSectorFloorPlane::Execute()
 {
+	// [Kaori-Chani] features/net-snapshot: a plane a record owns, or one linked to it, is
+	// corrected there, and this absolute write would undo it.
+	if ( zx::netsnapshot::MoverSkipsPlaneWrite( sector, false ))
+		return;
+
 	// Calculate the change in floor height.
 	fixed_t delta = height - sector->floorplane.d;
 
@@ -7145,14 +7314,26 @@ void ServerCommands::SetSectorFloorPlane::Execute()
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::floor, sector->GetPlaneTexZ(sector_t::floor) + sector->floorplane.HeightDiff( lastPos ) );
 
+	// [Kaori-Chani] features/net-snapshot: traced before the writes below, so a propagated
+	// one logs after its cause.
+	zx::netsnapshot::TracePlaneWrite( sector, sector_t::floor, "SetSectorFloorPlane",
+		lastPos, sector->floorplane.d );
+
 	// [BB] We also need to move any linked sectors.
-	P_MoveLinkedSectors(sector, false, -delta, false);
+	// [Kaori-Chani] features/net-snapshot: not during a map reset, where the server writes
+	// each driven sector itself.
+	if ( zx::netsnapshot::MoverInReset( ) == false )
+		P_MoveLinkedSectors(sector, false, -delta, false, "cmd");
 }
 
 //*****************************************************************************
 //
 void ServerCommands::SetSectorCeilingPlane::Execute()
 {
+	// [Kaori-Chani] features/net-snapshot: as in SetSectorFloorPlane.
+	if ( zx::netsnapshot::MoverSkipsPlaneWrite( sector, true ))
+		return;
+
 	// Calculate the change in ceiling height.
 	fixed_t delta = height - sector->ceilingplane.d;
 
@@ -7169,8 +7350,14 @@ void ServerCommands::SetSectorCeilingPlane::Execute()
 	// Finally, adjust textures.
 	sector->SetPlaneTexZ(sector_t::ceiling, sector->GetPlaneTexZ(sector_t::ceiling) + sector->ceilingplane.HeightDiff( lastPos ) );
 
+	// [Kaori-Chani] features/net-snapshot: the ceiling half of the trace above.
+	zx::netsnapshot::TracePlaneWrite( sector, sector_t::ceiling, "SetSectorCeilingPlane",
+		lastPos, sector->ceilingplane.d );
+
 	// [BB] We also need to move any linked sectors.
-	P_MoveLinkedSectors(sector, false, delta, true);
+	// [Kaori-Chani] features/net-snapshot: as in SetSectorFloorPlane.
+	if ( zx::netsnapshot::MoverInReset( ) == false )
+		P_MoveLinkedSectors(sector, false, delta, true, "cmd");
 }
 
 //*****************************************************************************
@@ -7358,28 +7545,13 @@ void ServerCommands::StopSectorLightEffect::Execute()
 //
 void ServerCommands::DestroyAllSectorMovers::Execute()
 {
-	ULONG	ulIdx;
+	// [Kaori-Chani] features/net-snapshot: the reset's writes are done, so the window the
+	// client opened at G_ResetMap closes here, ahead of the teardown below.
+	zx::netsnapshot::MoverResetEnd( );
 
-	for ( ulIdx = 0; ulIdx < (ULONG)numsectors; ulIdx++ )
-	{
-		if ( sectors[ulIdx].ceilingdata )
-		{
-			// Stop the sound sequence (if any) associated with this sector.
-			SN_StopSequence( &sectors[ulIdx], CHAN_CEILING );
-
-			sectors[ulIdx].ceilingdata->Destroy( );
-			sectors[ulIdx].ceilingdata = NULL;
-		}
-
-		if ( sectors[ulIdx].floordata )
-		{
-			// Stop the sound sequence (if any) associated with this sector.
-			SN_StopSequence( &sectors[ulIdx], CHAN_FLOOR );
-
-			sectors[ulIdx].floordata->Destroy( );
-			sectors[ulIdx].floordata = NULL;
-		}
-	}
+	// [Kaori-Chani] features/net-snapshot: the module's teardown in place of the loop that
+	// was here, which stops both channels before either Destroy; see DestroySectorMovers.
+	zx::netsnapshot::DestroySectorMovers( );
 }
 
 //*****************************************************************************
@@ -7515,6 +7687,12 @@ void ServerCommands::SetLineTextureOffset::Execute()
 
 	// [Doruk-Aksoy] Through the setters, which tell the render copy, since a client's fill compares only the sides noted.
 	line->sidedef[side]->SetTextureXOffset( position, XOffset );
+
+	// [Kaori-Chani] features/net-snapshot: not y on an owned plane's 3D midtexture, which
+	// records move; x applies either way.
+	if (( position == side_t::mid ) && zx::netsnapshot::MoverSkipsMidtexY( line ))
+		return;
+
 	line->sidedef[side]->SetTextureYOffset( position, YOffset );
 }
 
@@ -7771,6 +7949,9 @@ void ServerCommands::MapLoad::Execute()
 	// Check to see if we have the map.
 	if ( P_CheckIfMapExists( mapName ))
 	{
+		// [Kaori-Chani] features/net-snapshot: as in the level-authentication handler above.
+		zx::netsnapshot::LevelUnloaded( );
+
 		// Start new level.
 		G_InitNew( mapName, false );
 
@@ -8426,6 +8607,11 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 	// Read in the door ID.
 	lDoorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the door; this command builds it
+	// with delay 0, so it cannot carry the wait.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_DOOR ))
+		return;
+
 	// Make sure the sector ID is valid.
 	if (( lSectorID >= 0 ) && ( lSectorID < numsectors ))
 		pSector = &sectors[lSectorID];
@@ -8449,6 +8635,8 @@ static void client_DoDoor( BYTESTREAM_s *pByteStream )
 	if ( (pDoor = new DDoor( pSector, (DDoor::EVlDoor)type, lSpeed, 0, lLightTag, g_ConnectionState != CTS_ACTIVE )) )
 	{
 		pDoor->SetID( lDoorID );
+		// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+		zx::netsnapshot::MoverMadeByLegacy( pDoor );
 		pDoor->SetDirection( lDirection );
 	}
 }
@@ -8462,6 +8650,10 @@ static void client_DestroyDoor( BYTESTREAM_s *pByteStream )
 
 	// Read in the door ID.
 	lDoorID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the door.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_DOOR ))
+		return;
 
 	pDoor = P_GetDoorByID( lDoorID );
 	if ( pDoor == NULL )
@@ -8486,6 +8678,11 @@ static void client_ChangeDoorDirection( BYTESTREAM_s *pByteStream )
 
 	// Read in the new direction the door should move in.
 	lDirection = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the direction rides the door's record; the sound
+	// arrives as SVC2_DOORSOUND, which OnDoorSound plays only while these are suppressed.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_DOOR ))
+		return;
 
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
@@ -8546,6 +8743,11 @@ static void client_DoFloor( BYTESTREAM_s *pByteStream )
 	// Read in the floor's network ID.
 	lFloorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the floor, and carries the
+	// m_OrgDist a stair needs, which this command has no field for.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
+
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
 	lDirection = CLIENT_AdjustFloorDirection( lDirection );
@@ -8563,6 +8765,8 @@ static void client_DoFloor( BYTESTREAM_s *pByteStream )
 		return;
 
 	pFloor = new DFloor( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pFloor );
 	pFloor->SetType( (DFloor::EFloor)lType );
 	pFloor->SetCrush( Crush );
 	pFloor->SetHexencrush( Hexencrush );
@@ -8581,6 +8785,11 @@ static void client_DestroyFloor( BYTESTREAM_s *pByteStream )
 
 	// Read in the floor ID.
 	lFloorID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the floor; the server sends
+	// StopSectorSequence beside this command, so the sound below is covered.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
 
 	pFloor = P_GetFloorByID( lFloorID );
 	if ( pFloor == NULL )
@@ -8606,6 +8815,10 @@ static void client_ChangeFloorDirection( BYTESTREAM_s *pByteStream )
 
 	// Read in the new floor direction.
 	lDirection = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the direction rides the floor's record.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
 
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
@@ -8637,6 +8850,10 @@ static void client_ChangeFloorType( BYTESTREAM_s *pByteStream )
 	// Read in the new type of floor this is.
 	lType = pByteStream->ReadByte();
 
+	// [Kaori-Chani] features/net-snapshot: the type rides the floor's record.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
+
 	pFloor = P_GetFloorByID( lFloorID );
 	if ( pFloor == NULL )
 	{
@@ -8660,6 +8877,10 @@ static void client_ChangeFloorDestDist( BYTESTREAM_s *pByteStream )
 
 	// Read in the new floor destination distance.
 	DestDist = pByteStream->ReadLong();
+
+	// [Kaori-Chani] features/net-snapshot: the destination rides the floor's record.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
 
 	pFloor = P_GetFloorByID( lFloorID );
 	if ( pFloor == NULL )
@@ -8735,6 +8956,11 @@ static void client_BuildStair( BYTESTREAM_s *pByteStream )
 	// Read in the floor's network ID.
 	int FloorID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the stair as well, under
+	// SNAPMVF_STAIR, the shape that carries m_OrgDist.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_FLOOR ))
+		return;
+
 	// Invalid sector.
 	if (( SectorID >= numsectors ) || ( SectorID < 0 ))
 		return;
@@ -8746,6 +8972,8 @@ static void client_BuildStair( BYTESTREAM_s *pByteStream )
 		return;
 
 	DFloor *floor = new DFloor( sector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( floor );
 	floor->SetType( (DFloor::EFloor)Type );
 	floor->SetCrush( Crush );
 	floor->SetHexencrush( Hexencrush );
@@ -8807,6 +9035,11 @@ static void client_DoCeiling( BYTESTREAM_s *pByteStream )
 	// Read in the network ID of the ceiling.
 	lCeilingID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the ceiling, and carries the
+	// crush fields this command cannot.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
+
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
 	lDirection = CLIENT_AdjustCeilingDirection( lDirection );
@@ -8820,6 +9053,8 @@ static void client_DoCeiling( BYTESTREAM_s *pByteStream )
 	pSector = &sectors[lSectorID];
 
 	pCeiling = new DCeiling( pSector, lSpeed, 0, lSilent );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pCeiling );
 	pCeiling->SetBottomHeight( BottomHeight );
 	pCeiling->SetTopHeight( TopHeight );
 	pCeiling->SetCrush( lCrush );
@@ -8837,6 +9072,11 @@ static void client_DestroyCeiling( BYTESTREAM_s *pByteStream )
 
 	// Read in the ceiling ID.
 	lCeilingID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the ceiling; the server sends
+	// StopSectorSequence beside this command, so the sound below is covered.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
 
 	pCeiling = P_GetCeilingByID( lCeilingID );
 	if ( pCeiling == NULL )
@@ -8862,6 +9102,11 @@ static void client_ChangeCeilingDirection( BYTESTREAM_s *pByteStream )
 
 	// Read in the new ceiling direction.
 	lDirection = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the direction rides the record, and a crusher a
+	// record has reached turns on its own under MoverClientDerivesReversal.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
 
 	// Since we still want to receive direction as a byte, but -1 can't be represented in byte
 	// form, adjust the value into something that can be represented.
@@ -8893,6 +9138,11 @@ static void client_ChangeCeilingSpeed( BYTESTREAM_s *pByteStream )
 
 	// Read in the new ceiling speed.
 	lSpeed = pByteStream->ReadLong();
+
+	// [Kaori-Chani] features/net-snapshot: the speed rides the record, the crush slowdown
+	// with it, which this command was the only carrier of.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_CEILING ))
+		return;
 
 	pCeiling = P_GetCeilingByID( lCeilingID );
 	if ( pCeiling == NULL )
@@ -8959,6 +9209,11 @@ static void client_DoPlat( BYTESTREAM_s *pByteStream )
 	// Read in the plat ID.
 	lPlatID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the plat, and carries the count and
+	// the wait this command sets to zero.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PLAT ))
+		return;
+
 	// Invalid sector.
 	if (( lSectorID >= numsectors ) || ( lSectorID < 0 ))
 		return;
@@ -8967,6 +9222,8 @@ static void client_DoPlat( BYTESTREAM_s *pByteStream )
 
 	// Create the plat, and set all its attributes that were read in.
 	pPlat = new DPlat( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pPlat );
 	pPlat->SetType( (DPlat::EPlatType)lType );
 	pPlat->SetStatus( lStatus );
 	pPlat->SetHigh( High );
@@ -8992,6 +9249,10 @@ static void client_DestroyPlat( BYTESTREAM_s *pByteStream )
 	// Read in the plat ID.
 	lPlatID = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the plat.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PLAT ))
+		return;
+
 	pPlat = P_GetPlatByID( lPlatID );
 	if ( pPlat == NULL )
 	{
@@ -9015,6 +9276,11 @@ static void client_ChangePlatStatus( BYTESTREAM_s *pByteStream )
 
 	// Read in the direction (aka status).
 	lStatus = pByteStream->ReadByte();
+
+	// [Kaori-Chani] features/net-snapshot: the status rides the record, and a plat a record has
+	// reached counts its own wait down under MoverClientSkipsWait.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PLAT ))
+		return;
 
 	pPlat = P_GetPlatByID( lPlatID );
 	if ( pPlat == NULL )
@@ -9113,10 +9379,17 @@ static void client_DoElevator( BYTESTREAM_s *pByteStream )
 	if ( lDirection == INT_MAX )
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the elevator and carries every
+	// attribute this command sets.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_ELEVATOR ))
+		return;
+
 	pSector = &sectors[lSectorID];
 
 	// Create the elevator, and set all its attributes that were read in.
 	pElevator = new DElevator( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pElevator );
 	pElevator->SetType( (DElevator::EElevator)lType );
 	pElevator->SetSpeed( lSpeed );
 	pElevator->SetDirection( lDirection );
@@ -9134,6 +9407,10 @@ static void client_DestroyElevator( BYTESTREAM_s *pByteStream )
 
 	// Read in the elevator ID.
 	lElevatorID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the elevator.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_ELEVATOR ))
+		return;
 
 	pElevator = P_GetElevatorByID( lElevatorID );
 	if ( pElevator == NULL )
@@ -9215,10 +9492,17 @@ static void client_DoPillar( BYTESTREAM_s *pByteStream )
 	if (( lSectorID >= numsectors ) || ( lSectorID < 0 ))
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: a record makes the pillar, and the sound this
+	// handler would start arrives keyed on the sector instead.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PILLAR ))
+		return;
+
 	pSector = &sectors[lSectorID];
 
 	// Create the pillar, and set all its attributes that were read in.
 	pPillar = new DPillar( pSector );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	zx::netsnapshot::MoverMadeByLegacy( pPillar );
 	pPillar->SetType( (DPillar::EPillar)lType );
 	pPillar->SetFloorSpeed( lFloorSpeed );
 	pPillar->SetCeilingSpeed( lCeilingSpeed );
@@ -9244,6 +9528,10 @@ static void client_DestroyPillar( BYTESTREAM_s *pByteStream )
 
 	// Read in the elevator ID.
 	lPillarID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a GONE record ends the pillar.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_PILLAR ))
+		return;
 
 	pPillar = P_GetPillarByID( lPillarID );
 	if ( pPillar == NULL )
@@ -9300,6 +9588,10 @@ static void client_DoWaggle( BYTESTREAM_s *pByteStream )
 		return;
 
 	pSector = &sectors[lSectorID];
+
+	// [Kaori-Chani] features/net-snapshot: a snapshot-driven predecessor whose GONE this
+	// command overtook, which would otherwise keep the plane.
+	zx::netsnapshot::MoverEvictForWaggle( pSector, bCeiling ? sector_t::ceiling : sector_t::floor );
 
 	// Create the waggle, and set all its attributes that were read in.
 	if ( bCeiling )
@@ -9378,6 +9670,11 @@ static void client_DoRotatePoly( BYTESTREAM_s *pByteStream )
 	// Read in the polyobject ID.
 	lPolyNum = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	// Make sure the polyobj exists before we try to work with it.
 	pPoly = PO_GetPolyobj( lPolyNum );
 	if ( pPoly == NULL )
@@ -9388,6 +9685,8 @@ static void client_DoRotatePoly( BYTESTREAM_s *pByteStream )
 
 	// Create the polyobject.
 	pRotatePoly = new DRotatePoly( lPolyNum );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	pRotatePoly->m_SnapLegacy = true;
 	pRotatePoly->SetSpeed( lSpeed );
 
 	// Attach the new polyobject to this ID.
@@ -9408,6 +9707,11 @@ static void client_DestroyRotatePoly( BYTESTREAM_s *pByteStream )
 
 	// Read in the DRotatePoly ID.
 	lID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	// Try to find the object from the ID. If it exists, destroy it.
 	pPoly = NULL;
@@ -9441,6 +9745,11 @@ static void client_DoMovePoly( BYTESTREAM_s *pByteStream )
 	// Read in the polyobject ID.
 	lPolyNum = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	// Make sure the polyobj exists before we try to work with it.
 	pPoly = PO_GetPolyobj( lPolyNum );
 	if ( pPoly == NULL )
@@ -9451,6 +9760,8 @@ static void client_DoMovePoly( BYTESTREAM_s *pByteStream )
 
 	// Create the polyobject.
 	pMovePoly = new DMovePoly( lPolyNum );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	pMovePoly->m_SnapLegacy = true;
 	pMovePoly->SetXSpeed( lXSpeed );
 	pMovePoly->SetYSpeed( lYSpeed );
 
@@ -9472,6 +9783,11 @@ static void client_DestroyMovePoly( BYTESTREAM_s *pByteStream )
 
 	// Read in the DMovePoly ID.
 	lID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	// Try to find the object from the ID. If it exists, destroy it.
 	pPoly = NULL;
@@ -9511,6 +9827,11 @@ static void client_DoPolyDoor( BYTESTREAM_s *pByteStream )
 	// Read in the polyobject ID.
 	lPolyNum = pByteStream->ReadShort();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	// Make sure the polyobj exists before we try to work with it.
 	pPoly = PO_GetPolyobj( lPolyNum );
 	if ( pPoly == NULL )
@@ -9521,6 +9842,8 @@ static void client_DoPolyDoor( BYTESTREAM_s *pByteStream )
 
 	// Create the polyobject.
 	pPolyDoor = new DPolyDoor( lPolyNum, (podoortype_t)lType );
+	// [Kaori-Chani] features/net-snapshot: legacy-made, so a mover gate-on drops it.
+	pPolyDoor->m_SnapLegacy = true;
 	pPolyDoor->SetXSpeed( lXSpeed );
 	pPolyDoor->SetYSpeed( lYSpeed );
 	pPolyDoor->SetSpeed( lSpeed );
@@ -9540,6 +9863,11 @@ static void client_DestroyPolyDoor( BYTESTREAM_s *pByteStream )
 
 	// Read in the DPolyDoor ID.
 	lID = pByteStream->ReadShort();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	// Try to find the object from the ID. If it exists, destroy it.
 	pPoly = NULL;
@@ -9580,6 +9908,11 @@ static void client_SetPolyDoorSpeedPosition( BYTESTREAM_s *pByteStream )
 	lX = pByteStream->ReadLong();
 	lY = pByteStream->ReadLong();
 
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
+
 	pPoly = PO_GetPolyobj( lPolyID );
 	if ( pPoly == NULL )
 		return;
@@ -9614,6 +9947,11 @@ static void client_SetPolyDoorSpeedRotation( BYTESTREAM_s *pByteStream )
 
 	// Read in the polyobject angle.
 	lAngle = pByteStream->ReadLong();
+
+	// [Kaori-Chani] features/net-snapshot: a record carries this action, and the count
+	// goes through the same tripwire as the sector classes.
+	if ( zx::netsnapshot::MoverLegacyStandsAside( SNAPMV_POLY ))
+		return;
 
 	pPoly = PO_GetPolyobj( lPolyID );
 	if ( pPoly == NULL )
@@ -9693,6 +10031,14 @@ static void client_SetPolyobjPosition( BYTESTREAM_s *pByteStream )
 		return;
 	}
 
+	// [Kaori-Chani] features/net-snapshot: a record writes this polyobject's axes, so
+	// the legacy write stands aside and is counted apart from the mover classes.
+	if ( zx::netsnapshot::OwnsPoly( pPoly ))
+	{
+		zx::netsnapshot::PolyCountSuppressed( );
+		return;
+	}
+
 	lDeltaX = (LONG)(lX - pPoly->StartSpot.x);
 	lDeltaY = (LONG)(lY - pPoly->StartSpot.y);
 
@@ -9722,6 +10068,14 @@ static void client_SetPolyobjRotation( BYTESTREAM_s *pByteStream )
 	if ( pPoly == NULL )
 	{
 		CLIENT_PrintWarning( "client_SetPolyobjRotation: Invalid polyobj number: %ld\n", lPolyNum );
+		return;
+	}
+
+	// [Kaori-Chani] features/net-snapshot: a record writes this polyobject's axes, so
+	// the legacy write stands aside and is counted apart from the mover classes.
+	if ( zx::netsnapshot::OwnsPoly( pPoly ))
+	{
+		zx::netsnapshot::PolyCountSuppressed( );
 		return;
 	}
 
@@ -9804,6 +10158,10 @@ void ServerCommands::DoScroller::Execute()
 
 	// Finally, create the scroller.
 	new DScroller( (DScroller::EScrollType)type, x, y, control, affectee, (int)accel, position );
+
+	// [Kaori-Chani] features/net-snapshot: one scroller the join built, whose remaining state
+	// the module's own command fills in.
+	zx::netsnapshot::SpecialCountScroller( ContainsSector( ), !!accel, false );
 }
 
 //*****************************************************************************
@@ -10057,6 +10415,11 @@ static void client_DoPusher( BYTESTREAM_s *pByteStream )
 
 	line_t *pLine = ( iLineNum >= 0 && iLineNum < numlines ) ? &lines[iLineNum] : NULL;
 	new DPusher ( static_cast<DPusher::EPusher> ( ulType ), pLine, iMagnitude, iAngle, CLIENT_FindThingByNetID( sourceNetID ), iAffectee );
+
+	// [Kaori-Chani] features/net-snapshot: one point pusher the join built, counted whether
+	// or not its source actor is here yet.
+	if ( ulType == DPusher::p_push )
+		zx::netsnapshot::SpecialCountPointPusher( sourceNetID != 0 );
 }
 
 //*****************************************************************************
@@ -10221,6 +10584,66 @@ void ServerCommands::SetDominationPointState::Execute()
 
 	DOMINATION_SetContesting( point, contesting );
 	DOMINATION_SetDisabled( point, disabled );
+}
+
+//*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: destroys nothing, as the movers have just been sent;
+// the frame goes first, so a recording's map record carries it.
+void ServerCommands::SnapJoin::Execute()
+{
+	zx::netsnapshot::SetMapFrame( originX, originY, originZ, widthX, widthY, widthZ );
+	zx::netsnapshot::AnchorMapStamp( static_cast<BYTE>( mapStamp ));
+	zx::netsnapshot::MoverSetResetCount( static_cast<BYTE>( resetCount ));
+}
+
+//*****************************************************************************
+//
+void ServerCommands::SnapMapReset::Execute()
+{
+	zx::netsnapshot::MoverSetResetCount( static_cast<BYTE>( resetCount ));
+}
+
+//*****************************************************************************
+//
+void ServerCommands::SnapSpecialState::Execute()
+{
+	zx::netsnapshot::SpecialApplyJoinState( firstScroller, scrollers, firstPusher, pushers );
+}
+
+//*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: taken ahead of every legacy mover command under it.
+void ServerCommands::SnapMoverGate::Execute()
+{
+	zx::netsnapshot::MoverSetServerGate( legacyOff, frame );
+}
+
+//*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: a body moved off the id reserved for its player, which
+// takes the new id here rather than being destroyed and respawned.
+void ServerCommands::SetThingNetID::Execute()
+{
+	AActor *pActor = g_ActorNetIDList.findPointerByID ( oldID );
+	if (( pActor == NULL ) || ( newID == 0 ) || ( newID == oldID ))
+		return;
+
+	AActor *pStale = g_ActorNetIDList.findPointerByID ( newID );
+	if ( pStale != NULL )
+	{
+		// [Kaori-Chani] A player's body never goes, the server having a reserved id for it.
+		if ( pStale->player != NULL )
+		{
+			CLIENT_PrintWarning( "SetThingNetID: refused to delete a player's body, netID = %u\n",
+				static_cast<unsigned int>( newID ));
+			return;
+		}
+
+		pStale->Destroy( );
+		g_ActorNetIDList.freeID ( newID );
+	}
+
+	g_ActorNetIDList.freeID ( oldID );
+	pActor->NetID = newID;
+	g_ActorNetIDList.useID ( newID, pActor );
 }
 
 //*****************************************************************************
@@ -10533,3 +10956,88 @@ ADD_STAT( momentum )
 	return ( Out );
 }
 */
+
+//*****************************************************************************
+//	[Kaori-Chani] features/net-snapshot
+//
+// The client side the module calls into: the counts its ghost-sound report
+// prints, the sound trace, the reliable-sequence anchor and the tail-request
+// count.
+//*****************************************************************************
+
+// [Kaori-Chani] Why a ghost's sound was dropped, mirrored, or played where it was asked for.
+unsigned int g_ghostSndLegacy = 0, g_ghostSndMirror = 0;
+unsigned int g_ghostSndLost = 0, g_ghostSndWrongClass = 0;
+unsigned int g_ghostSndLostLeft = 0, g_ghostSndLostNoMirror = 0, g_ghostSndLostNoGhost = 0;
+unsigned int g_ghostSndPositional = 0;
+// [Kaori-Chani] The class a legacy sound named, so a count of them is a fact rather than a guess.
+char g_ghostSndLegacyClass[64] = "";
+// [Kaori-Chani] Sounds the client played itself: the local player's, and anyone else's.
+unsigned int g_sndLocalGhost = 0, g_sndLocalOther = 0, g_sndLocalUngated = 0;
+
+// [Kaori-Chani] A line per sound command whose name contains this.
+CVAR( String, fua_csnap_soundtrace, "", CVAR_NOSETBYACS )
+static bool g_sndTraceById = false;	// [Kaori-Chani] set around a sound command naming an id
+
+static bool client_SoundTraced( const FString &sound )
+{
+	const char *pszFilter = fua_csnap_soundtrace;
+	if (( pszFilter == NULL ) || ( *pszFilter == '\0' ))
+		return false;
+	FString name = sound, filter = pszFilter;
+	name.ToLower( );
+	filter.ToLower( );
+	return name.IndexOf( filter ) >= 0;
+}
+
+static void client_TraceSound( const char *form, const FString &sound, int channel,
+	const char *where, const char *result )
+{
+	Printf( "[snap] soundtrace tic %d: %s %s \"%s\" chan %d | %s | %s\n", gametic,
+		g_sndTraceById ? "id" : "name", form, sound.GetChars( ), channel, where, result );
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] One trace line for the point sound the module attached.
+//
+void CLIENT_TraceSoundEvent( int soundId, int channel, const char *result )
+{
+	if (( soundId <= 0 ) || ( static_cast<unsigned int>( soundId ) >= S_sfx.Size( )))
+		return;
+	const FString sound = S_sfx[soundId].name;
+	if ( client_SoundTraced( sound ) == false )
+		return;
+	g_sndTraceById = true;
+	client_TraceSound( "point", sound, channel, "attach", result );
+	g_sndTraceById = false;
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] The newest reliable sequence announced, as a sequence rather than the low
+// word it arrives as, and never further ahead than a tail request may ask for.
+//
+void CLIENT_NoteReliableSequence( WORD low )
+{
+	const LONG anchor = g_lHighestReceivedSequence;
+	const WORD wLow = static_cast<WORD>( low - static_cast<WORD>( anchor & 0xFFFF ));
+	const LONG n = anchor + static_cast<SWORD>( wLow );
+	if ( n <= anchor )
+		g_lAnnouncedSequence = -1;
+	else
+		g_lAnnouncedSequence = ( n - anchor > SNAP_TAIL_WINDOW )
+			? ( anchor + SNAP_TAIL_WINDOW ) : n;
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] Tail requests sent since this was last read, cleared on ask.
+//
+unsigned int CLIENT_TailPacketsRequested( bool bReset )
+{
+	const unsigned int n = g_ulTailRequested;
+	if ( bReset )
+		g_ulTailRequested = 0;
+	return n;
+}

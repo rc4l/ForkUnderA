@@ -114,6 +114,7 @@
 #include "computation/checkscript_compute.h"   // [rc4l] ComputeCheckScriptByName, ComputeCheckScriptNumber
 #include "computation/acsautomap_compute.h"   // [rc4l] ComputeAutomapStatus
 #include "features/net-replication/rotation.h"   // [rc4l] SendMapUsedStatus
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
 #include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
 #include <cstddef>
@@ -4309,7 +4310,12 @@ int DLevelScript::DoSpawn (int type, fixed_t x, fixed_t y, fixed_t z, int tid, i
 
 	if (info != NULL)
 	{
+		// [Kaori-Chani] features/net-snapshot: an ACS spawn has no spawning actor for the
+		// cosmetic events route.
+		zx::netsnapshot::AcsSpawnScope( true );
 		actor = Spawn (info, x, y, z, ALLOW_REPLACE);
+		zx::netsnapshot::AcsSpawnScope( false );
+		zx::netsnapshot::NoteAcsSpawn( actor );
 		if (actor != NULL)
 		{
 			ActorFlags2 oldFlags2 = actor->flags2;
@@ -4337,7 +4343,10 @@ int DLevelScript::DoSpawn (int type, fixed_t x, fixed_t y, fixed_t z, int tid, i
 						SERVERCOMMANDS_SetThingTID( actor );
 
 					// [AK] Destroy the actor if it's supposed to be clientsided only.
-					SERVER_DestroyActorIfClientsidedOnly( actor );
+					// [Kaori-Chani] features/net-snapshot: a routed one goes at its first tick,
+					// after its event.
+					if ( zx::netsnapshot::CosmeticRouted( actor ) == false )
+						SERVER_DestroyActorIfClientsidedOnly( actor );
 				}
 				// [AK] If we're a client and did the spawning, then the actor is clientsided only.
 				else if ( NETWORK_InClientMode( ))
@@ -4691,6 +4700,9 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 	// [WS/BB] Do not do this for spectators.
 	if ( actor->player && actor->player->bSpectating )
 		return;
+
+	// [Kaori-Chani] features/net-snapshot: counted on a cosmetic copy whose event has gone.
+	zx::netsnapshot::NoteScriptChange( actor );
 
 	// [BB]
 	int oldValue = 0;
@@ -13037,6 +13049,8 @@ scriptwait:
 							// [BC] Tell clients to change this thing's state.
 							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 								SERVERCOMMANDS_SetThingFrame( activator, state );
+							// [Kaori-Chani] features/net-snapshot: counted on a cosmetic copy.
+							zx::netsnapshot::NoteScriptChange( activator );
 
 							activator->SetState (state);
 							STACK(3) = 1;
@@ -13061,6 +13075,8 @@ scriptwait:
 							// [BC] Tell clients to change this thing's state.
 							if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 								SERVERCOMMANDS_SetThingFrame( actor, state );
+							// [Kaori-Chani] features/net-snapshot: counted on a cosmetic copy.
+							zx::netsnapshot::NoteScriptChange( actor );
 
 							actor->SetState (state);
 							count++;
@@ -13465,6 +13481,10 @@ scriptwait:
 	// [AK] We're done running this script so any action or line specials activated now aren't done in ACS.
 	g_pCurrentScript = NULL;
 
+	// [Kaori-Chani] features/net-snapshot: finished or paused, a cosmetic copy waiting for it
+	// goes out.
+	zx::netsnapshot::NoteScriptStopped( activator );
+
 	// [BB] Stop the net traffic measurement and add the result to this script's traffic.
 	if ( measureTraffic )
 		NETTRAFFIC_AddACSScriptTraffic ( script, NETWORK_StopTrafficMeasurement ( ) );
@@ -13540,6 +13560,9 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 	{
 		pDamageTarget = pDamageSource = pDamageInflictor = NULL;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: a cosmetic copy waits for a server script it activates.
+	zx::netsnapshot::NoteScriptStart( activator, ACS_IsScriptClientSide( code ));
 
 	hudwidth = hudheight = 0;
 	ClipRectLeft = ClipRectTop = ClipRectWidth = ClipRectHeight = WrapWidth = 0;
