@@ -73,3 +73,20 @@ test("a frame-dependent kind that parts is told but does not fail the comparison
     "the traces agree: 1 tics hashed alike (with random streams), 0 events in the same order",
     "the seen bits part at tic 10, which the frames between tics set, so it is not judged"]);
 });
+
+test("stream moves stay out of the events, and the first tic they part names the streams only one run moved", () => {
+  const a = "10 H 111\n10 R 5\n10 r 77:3 88:9\n11 H 222\n11 R 6\n11 r 77:4\n";
+  const b = "10 H 111\n10 R 5\n10 r 88:9 77:3\n11 H 222\n11 R 7\n11 r 77:5 99:1\n";
+  const d = diffSimTraces(parseSimTrace(a), parseSimTrace(b));
+  assert.deepEqual(parseSimTrace(a).events, []);
+  assert.deepEqual(d.moved, { tic: 11, a: ["77:4"], b: ["77:5", "99:1"] });
+  assert.deepEqual(describeSimTraceDiff(d), [
+    "the random streams part at tic 11: 6 against 7",
+    "the streams first move apart at tic 11: 77:4 against 77:5 99:1"]);
+});
+
+test("a tic where only one run moved a stream reads (none) on the other side", () => {
+  const d = diffSimTraces(parseSimTrace("10 H 1\n10 R 4\n10 r 77:3\n"), parseSimTrace("10 H 1\n10 R 5\n10 r\n"));
+  assert.deepEqual(d.moved, { tic: 10, a: ["77:3"], b: [] });
+  assert.equal(describeSimTraceDiff(d).at(-1), "the streams first move apart at tic 10: 77:3 against (none)");
+});

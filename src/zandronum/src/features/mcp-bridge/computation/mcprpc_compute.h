@@ -85,7 +85,7 @@ uint64_t FnvInit();
 uint64_t FnvMixU64(uint64_t h, uint64_t v);
 uint64_t FnvMixStr(uint64_t h, const std::string &s);
 
-// [Doruk-Aksoy] The random streams the frames and the audio advance rather than the tics (torch flicker, renderer decals, animated textures' random frame lengths, $random sound picks), which a sim fingerprint leaves out.
+// [Doruk-Aksoy] The random streams the frames and the audio advance rather than the tics (torch flicker, renderer decals, animated textures' random frame lengths, $random sound picks, the status bar face), which a sim fingerprint leaves out.
 const std::vector<std::string> &ComputeFrameRandomStreams();
 
 // ---- Sim-step planning -----------------------------------------------------
