@@ -75,6 +75,7 @@
 #include "team.h"
 #include "v_text.h"
 #include "p_acs.h"
+#include "features/handoff/gamethread.h"
 
 //*****************************************************************************
 //	PROTOTYPES
@@ -480,7 +481,11 @@ void CChatFile::ParseChatLump( char *pszLumpName )
 	if ( lLump == -1 )
 		lLump = Wads.GetNumForFullName( pszLumpName );
 
-	FScanner sc( lLump );
+	// [MGOOOOOO] An archive has one reader, so a bot chatting in a tic on its own thread has the main thread read the lump.
+	FString text;
+	zx::handoff::AskMainFor ([&] { text = Wads.ReadLump( lLump ).GetString( ); });
+	FScanner sc;
+	sc.OpenMem( Wads.GetLumpFullName( lLump ), text.GetChars( ), text.Len( ));
 
 	while ( sc.GetString( ))
 	{

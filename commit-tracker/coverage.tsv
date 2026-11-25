@@ -4964,7 +4964,7 @@ ff0d409e2bde15fbd39c1ae0cbeb6e05b92ae0db	2016-10-01T23:06:43Z	Merge http://githu
 eb2ee339503112a0db5059c866b925cb49bdbb43	2016-10-02T03:29:57Z	FxVMFunctionCall must pass null pointers when calling an action function from a non-action function	pending		/
 efc9ed2fe9685a448af32065935eb33228c011c3	2016-10-02T03:31:07Z	Fix state lookup from non-action functions (i.e. Damage functions)	pending		/
 d7683a8c552fc38720967dedb4a89b0f0908c06f	2016-10-02T07:13:45Z	Fixed crash on early fatal error exit	pending		/
-a505e910321cc55f03e1fd3211ed68761bfb1bc8	2016-10-02T11:35:25Z	- added TRNSLATE lump for defining global translations which are accessible by name.	pending		/
+a505e910321cc55f03e1fd3211ed68761bfb1bc8	2016-10-02T11:35:25Z	- added TRNSLATE lump for defining global translations which are accessible by name.	adapted	features/trnslate: ComputeParseTrnslate, R_FindCustomTranslation, TRANSLATION_Custom, Translation "Name", A_SetTranslation (None restores, as DECORATE passes "" as None); RainPillar bases and ZScript-only users not ported	bc7cb847
 0bce6e39256c7054918dfe0302b83b574051e034	2016-10-02T12:09:45Z	- added ACS and DECORATE setter functions for named translations.	pending		/
 865863ab6fb2d8cd464bc6637955eaf11bb41b57	2016-10-02T12:37:26Z	- fixed: AFastProjectile did not work properly for perfectly vertically moving missiles. Like AActor::Tick it needs to ensure that a tiny bit of lateral movement is present so that collision detection and the Effect() function work as intended.	pending		/
 3418710a383d18323d0e9aa37e171a1ca0b15db9	2016-10-02T12:38:48Z	- be a bit more thorough and also call Effect() on vertically moving missiles with zero damage.	pending		/
@@ -14166,12 +14166,12 @@ f46e80e2b450f7e0b88ae307ae380ef1293bbc3c	2020-03-14T10:51:06Z	- fixed FLineTrace
 2edbbac759a41fb137e943fa650a2fb981cd05ae	2020-03-14T12:17:04Z	Print weapon name tag when switching with "slot" command (#1048)	pending		/
 db5efddf12ca22b6655f26639bc43d12824e7a70	2020-03-15T08:27:02Z	- implemented better aspect ratio control for fullscreen images.	pending		/
 27b8284881d7dac7fa713f06430e5dcc2a398062	2020-03-15T09:02:19Z	- forgot to remove the test settings for the fullscreen feature.	pending		/
-0c04cddd28ba775e41c79186e31c4aed91361263	2020-03-15T09:22:42Z	- allow specifying full palettes in translation definitions.	pending		/
+0c04cddd28ba775e41c79186e31c4aed91361263	2020-03-15T09:22:42Z	- allow specifying full palettes in translation definitions.	adapted	ComputeReadPaletteLump (PNG PLTE, JASC-PAL, raw) and FRemapTable::AddColors in features/trnslate	bc7cb847
 16ae7e312458e68b50cc45816b63018fc8d67133	2020-03-15T11:19:22Z	- fixed typo.	pending		/
 a50a5101bc3f9fd6a23b768213a1b14cef6b3f27	2020-03-15T14:56:35Z	- fixed another typo.	pending		/
 b7970ed76386ca045fd3a964e4a6dd0fb3bb3e8a	2020-03-16T08:21:37Z	- block StaticPointerSubstitution for non-player objects.	pending		/
 828cba13a1339d197c57906fa52f3dea54b49199	2020-03-16T16:23:30Z	- changed translation management so that the fonts also use translation IDs.	pending		/
-15d4fb8fcd86052216e0fd75f2bed5defb3bb961	2020-03-17T06:57:59Z	- fixed file existence check in TRNSLATE parser.	pending		/
+15d4fb8fcd86052216e0fd75f2bed5defb3bb961	2020-03-17T06:57:59Z	- fixed file existence check in TRNSLATE parser.	ported	palette lumps found by full name, then short name (CheckNumForFullName in trnslate.cpp)	bc7cb847
 d32e0b91c2eb7bbd4dd354f90b5160438ea7ada0	2020-03-17T07:50:00Z	- clear the screen before drawing content, not afterward.	pending		/
 d19527cf87d1caa58a23ae2b9b6d1e9030c989a5	2020-03-18T20:11:44Z	Fix compile error when using std::sort with Visual Studio 16.5.0	pending		/
 aa0df7479e09535107d52bd1987f52638c99e43d	2020-03-22T10:47:34Z	- remove assumption in DFrameBuffer::FillBorder that ultrawide screens will stretch an image, since it is no longer the case.	pending		/

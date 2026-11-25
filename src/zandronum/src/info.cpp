@@ -54,6 +54,7 @@
 #include "cl_commands.h"
 #include "cl_main.h"
 #include "network.h"
+#include "computation/doomednum_compute.h"
 
 extern void LoadActors ();
 extern void InitBotStuff();
@@ -190,7 +191,15 @@ void FActorInfo::RegisterIDs ()
 			// DECORATE definition for the same number is reported while a MAPINFO one is silently
 			// overridden. That override is what keeps our own actors' DECORATE numbers working.
 			FDoomEdEntry *oldent = DoomEdMap.CheckKey(DoomEdNum);
-			if (oldent != NULL && oldent->Special == -2)
+			// [MGOOOOOO] A special mapthing such as a player or deathmatch start keeps its number, as Zandronum's hardcoded checks did, so a mod's editor-only marker actor cannot take every start of its maps.
+			const zx::DecorateEdNumClaim claim = zx::ComputeDecorateEdNumClaim(oldent != NULL,
+				oldent != NULL && oldent->Type != NULL, oldent != NULL ? oldent->Special : 0);
+			if (claim == zx::DecorateEdNumClaim::KeepSpecial)
+			{
+				DPrintf("Editor number %d stays a special mapthing; class '%s' does not take it\n", DoomEdNum, cls->TypeName.GetChars());
+				return;
+			}
+			if (claim == zx::DecorateEdNumClaim::TakeAndWarnTwice)
 			{
 				Printf(TEXTCOLOR_RED"Editor number %d defined twice for classes '%s' and '%s'\n", DoomEdNum, cls->TypeName.GetChars(), oldent->Type->TypeName.GetChars());
 			}

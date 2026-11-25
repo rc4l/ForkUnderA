@@ -62,7 +62,7 @@ std::string ComputeWorldActorJson(const WorldActorRow &row)
 	return "{\"netid\":" + std::to_string(row.netId) + ",\"c\":" + Quoted(row.cls) + ",\"x\":" + Num(row.x) + ",\"y\":" + Num(row.y) + ",\"z\":" + Num(row.z) + ",\"px\":" + Num(row.prevX) + ",\"py\":" + Num(row.prevY) + ",\"pz\":" + Num(row.prevZ) + ",\"fz\":" + Num(row.floorZ) + ",\"clip\":" + Num(row.floorClip) +
 		",\"vx\":" + Num(row.velX) + ",\"vy\":" + Num(row.velY) + ",\"vz\":" + Num(row.velZ) + ",\"angle\":" + Num(row.angle) +
 		",\"health\":" + std::to_string(row.health) + ",\"player\":" + std::to_string(row.player) + ",\"sx\":" + Num(row.scaleX) + ",\"sy\":" + Num(row.scaleY) +
-		",\"dsx\":" + Num(row.drawnScaleX) + ",\"dsy\":" + Num(row.drawnScaleY) + ",\"sprite\":" + Quoted(row.sprite) + "}";
+		",\"dsx\":" + Num(row.drawnScaleX) + ",\"dsy\":" + Num(row.drawnScaleY) + ",\"sprite\":" + Quoted(row.sprite) + ",\"tr\":" + std::to_string(row.translation) + "}";
 }
 
 void ComputeSortActorRows(std::vector<WorldActorRow> &rows)

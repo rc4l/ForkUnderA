@@ -78,6 +78,9 @@
 #include "gstrings.h"
 // [BB] new #includes.
 #include "deathmatch.h"
+#include "features/trnslate/trnslate.h"
+#include "features/trnslate/computation/trnslate_compute.h"
+#include "features/net-replication/actorstate.h"
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "invasion.h"
@@ -3364,6 +3367,41 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslucent)
 		SERVERCOMMANDS_SetThingProperty(self, APROP_RenderStyle);
 		SERVERCOMMANDS_SetThingProperty(self, APROP_Alpha);
 	}
+}
+
+//===========================================================================
+//
+// A_SetTranslation
+//
+// [Doruk-Aksoy] uzdoom@a505e910: a named translation, "" restoring the class's and an unknown name ignored.
+//
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslation)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_NAME(trname, 0);
+
+	// [Doruk-Aksoy] The server sets it and tells the clients, as Thing_SetTranslation does.
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	// [Doruk-Aksoy] DECORATE hands "" over as None, so None restores the class's translation here where UZDoom's clears it.
+	const int tnum = R_FindCustomTranslation(trname);
+	switch (zx::trnslate::ComputeSetTranslationOutcome(trname == NAME_None, tnum != INVALID_TRANSLATION))
+	{
+	case zx::trnslate::kSetTranslationDefault:
+		self->Translation = self->GetDefault()->Translation;
+		break;
+	case zx::trnslate::kSetTranslationFound:
+		self->Translation = tnum;
+		break;
+	default:
+		return;
+	}
+
+	if ( NETWORK_IsActorClientHandled( self ) == false )
+		zx::netreplication::SendThingTranslation( self );
 }
 
 //===========================================================================
