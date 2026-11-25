@@ -11,12 +11,14 @@ test("a burst finds the captures that repeat the one before", () => {
   assert.deepEqual(repeatedCaptures([]), []);
 });
 
-// [MGOOOOOO] The note names a hung window when it saw one, else what to rule out.
-test("a burst's repeat note names the cause it saw", () => {
+// [MGOOOOOO] The note names the causes seen so far, and the slow Vulkan HUD capture only for a Vulkan burst.
+test("a burst's repeat note names the causes to rule out", () => {
   assert.equal(repeatNote([]), null);
-  assert.match(repeatNote([1], { hung: true }), /^capture 1 repeats the one before byte for byte: .*NOT RESPONDING/);
-  assert.match(repeatNote([1, 2]), /^captures 1, 2 repeat the one before byte for byte: a still scene does that/);
-  assert.match(repeatNote([3], { hung: false }), /fuactl window, fuactl hang/);
+  assert.match(repeatNote([1]), /^capture 1 repeats the one before byte for byte: a still scene does that, .*fua_render_in_background 0/);
+  assert.match(repeatNote([1, 2]), /^captures 1, 2 repeat the one before byte for byte: /);
+  assert.match(repeatNote([3], { side: "vk" }), /Vulkan capture also shows a HUD animation slower .*fuactl window --shot gl/);
+  assert.doesNotMatch(repeatNote([3], { side: "gl" }), /Vulkan/);
+  assert.doesNotMatch(repeatNote([3]), /NOT RESPONDING|fuactl hang/);
 });
 
 // [Doruk-Aksoy] An over-time pair waits intervalMs with the sim running by default, and steps tics in a paused one when asked.

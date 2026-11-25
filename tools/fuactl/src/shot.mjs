@@ -351,12 +351,12 @@ export function repeatedCaptures(contents) {
   return out;
 }
 
-// [MGOOOOOO] What a burst says when captures repeat: which ones, then a hung window if it saw one, else what to rule out.
-export function repeatNote(repeated, { hung = false } = {}) {
+// [MGOOOOOO] What a burst says when captures repeat: which ones, then the causes seen so far, none of them a stall (Windows marks healthy engine windows NOT RESPONDING too).
+export function repeatNote(repeated, { side = "vk" } = {}) {
   if (!repeated.length) return null;
   const which = `capture${repeated.length > 1 ? "s" : ""} ${repeated.join(", ")} repeat${repeated.length > 1 ? "" : "s"} the one before byte for byte`;
-  if (hung) return `${which}: the engine's window is NOT RESPONDING, so it presented nothing new (fuactl hang says where it is stuck)`;
-  return `${which}: a still scene does that, but if this one moves the window presented no new frame (fuactl window, fuactl hang)`;
+  const vk = side === "vk" ? "; a Vulkan capture also shows a HUD animation slower than the window does, which `fuactl window --shot gl` reads itself" : "";
+  return `${which}: a still scene does that, and so does a window that lost the focus with fua_render_in_background 0, which keeps its last picture${vk}`;
 }
 
 // [Doruk-Aksoy] Advances a paused sim n tics and waits until the engine says it froze again.
