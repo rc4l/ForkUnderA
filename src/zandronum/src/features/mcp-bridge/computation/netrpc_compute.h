@@ -52,6 +52,7 @@ struct WorldActorRow
 	double scaleX = 1, scaleY = 1;   // [rc4l] its sprite's scale, which a player's skin sets on their body
 	double drawnScaleX = 1, drawnScaleY = 1;   // [rc4l] the scale it is drawn at, which for a player's pawn is their skin's (P_CheckPlayerSprite)
 	std::string sprite;  // [rc4l] the sprite and frame it shows, as "TROOA"
+	unsigned translation = 0;   // [Doruk-Aksoy] its colour translation, type << 16 | index, as a server sends it
 };
 
 std::string ComputeWorldActorJson(const WorldActorRow &row);

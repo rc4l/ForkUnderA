@@ -58,6 +58,7 @@
 #include "v_palette.h"
 #include "doomerrors.h"
 #include "a_hexenglobal.h"
+#include "features/trnslate/trnslate.h"
 #include "a_weaponpiece.h"
 #include "p_conversation.h"
 #include "v_text.h"
@@ -1054,9 +1055,11 @@ DEFINE_PROPERTY(translation, L, Actor)
 		for(int i = 1; i < PROP_PARM_COUNT; i++)
 		{
 			PROP_STRING_PARM(str, i);
-			if (i== 1 && PROP_PARM_COUNT == 2 && !stricmp(str, "Ice"))
+			// [Doruk-Aksoy] uzdoom@a505e910: a lone string naming a translation (TRNSLATE's, Ice, None, PlayerN) takes it.
+			int tnum;
+			if (i== 1 && PROP_PARM_COUNT == 2 && (tnum = R_FindCustomTranslation(str)) != INVALID_TRANSLATION)
 			{
-				defaults->Translation = TRANSLATION(TRANSLATION_Standard, 7);
+				defaults->Translation = tnum;
 				return;
 			}
 			else
