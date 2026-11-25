@@ -583,7 +583,7 @@ void R_Init ()
 
 	R_InitPointToAngle ();
 	R_InitTables ();
-	R_InitTranslationTables ();
+	// [Doruk-Aksoy] R_InitTranslationTables runs before the actors now, in D_DoomMain, so DECORATE can name TRNSLATE's translations.
 	R_SetViewSize (screenblocks);
 	Renderer->Init();
 }

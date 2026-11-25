@@ -89,6 +89,8 @@
 #include "f_wipe.h"
 #include "features/wipe/wipetrace.h"   // [rc4l] NoteWipeStarted
 #include "features/telemetry/telemetry.h"   // [rc4l] SetSoakReady
+#include "features/trnslate/trnslate.h" // [Doruk-Aksoy] R_ParseTrnslate
+#include "r_data/r_translate.h"
 #include "m_argv.h"
 #include "m_misc.h"
 #include "menu/menu.h"
@@ -3523,6 +3525,10 @@ void D_DoomMain (void)
 		//TeamLibrary.ParseTeamInfo ();
 		// [BB] At the moment Skulltag still doesn't use the new ZDoom TeamLibrary class.
 		TEAMINFO_Init ();
+
+		// [Doruk-Aksoy] The standard tables and TRNSLATE's named ones come before the actors, whose Translation can name them (uzdoom@a505e910).
+		R_InitTranslationTables ();
+		R_ParseTrnslate ();
 
 		FActorInfo::StaticInit ();
 

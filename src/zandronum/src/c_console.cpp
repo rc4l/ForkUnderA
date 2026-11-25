@@ -85,6 +85,7 @@
 #include "r_utility.h"
 #include "p_tick.h"
 #include "c_consolebuffer.h"	// [rc4l] uzdoom@9d846395b
+#include "computation/midmessagelog_compute.h"
 
 #define LEFTMARGIN 8
 #define RIGHTMARGIN 8
@@ -2007,7 +2008,16 @@ static const char bar2[] = TEXTCOLOR_RED "\n\35\36\36\36\36\36\36\36\36\36\36\36
 						  "\36\36\36\36\36\36\36\36\36\36\36\36\37" TEXTCOLOR_GREEN "\n";
 static const char bar3[] = TEXTCOLOR_RED "\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 						  "\36\36\36\36\36\36\36\36\36\36\36\36\37" TEXTCOLOR_NORMAL "\n";
-static const char logbar[] = "\n<------------------------------->\n";
+
+// [MGOOOOOO] AddToConsole leaves the log to PrintString, so a message that only reaches the console through it is written to the log here, as Zandronum did.
+void C_LogMidMessage (const char *msg)
+{
+	if (Logfile)
+	{
+		fputs (zx::ComputeMidMessageLogText(msg).c_str(), Logfile);
+		fflush (Logfile);
+	}
+}
 
 void C_MidPrint (FFont *font, const char *msg)
 {
@@ -2019,6 +2029,7 @@ void C_MidPrint (FFont *font, const char *msg)
 		AddToConsole (-1, bar1);
 		AddToConsole (-1, msg);
 		AddToConsole (-1, bar3);
+		C_LogMidMessage (msg);
 
 		StatusBar->AttachMessage (new DHUDMessage (font, msg, 1.5f, 0.375f, 0, 0,
 			(EColorRange)PrintColors[PRINTLEVELS], con_midtime), MAKE_ID('C','N','T','R'));
@@ -2039,6 +2050,7 @@ void C_MidPrintBold (FFont *font, const char *msg)
 		AddToConsole (-1, bar2);
 		AddToConsole (-1, msg);
 		AddToConsole (-1, bar3);
+		C_LogMidMessage (msg);
 
 		StatusBar->AttachMessage (new DHUDMessage (font, msg, 1.5f, 0.375f, 0, 0,
 			(EColorRange)PrintColors[PRINTLEVELS+1], con_midtime), MAKE_ID('C','N','T','R'));

@@ -183,7 +183,7 @@ Seams:
 
 Handed to the handoff, by helper:
 
-- `AskMainFor`: `p_acs.cpp`, `v_font.cpp`
+- `AskMainFor`: `botcommands.cpp`, `p_acs.cpp`, `v_font.cpp`, `v_video.cpp`
 - `QueuePrint`: `c_console.cpp`
 - `QueueUI`: `g_game.cpp`, `s_sound.cpp`
 - `QueuedBesideTic`: `features/postprocess/postprocess.cpp`, `features/video-scale/videoscale.cpp`, `s_sound.cpp`

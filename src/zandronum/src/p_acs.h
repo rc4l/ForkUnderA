@@ -504,6 +504,8 @@ public:
 	int FindMapVarName (const char *varname) const;
 	int FindMapArray (const char *arrayname) const;
 	int GetLibraryID () const { return LibraryID; }
+	int GetLibraryOrdinal () const { return LibraryOrdinal; }	// [Doruk-Aksoy] features/acs-funcrefs: its place among the ACS library lumps, -1 for a map's own BEHAVIOR
+	int GetFunctionIndex (const ScriptFunction *func) const { return (int)(func - Functions); }
 	int *GetScriptAddress (const ScriptPtr *ptr) const { return (int *)(ptr->Address + Data); }
 	int GetScriptIndex (const ScriptPtr *ptr) const { ptrdiff_t index = ptr - Scripts; return index >= NumScripts ? -1 : (int)index; }
 	ScriptPtr *GetScriptPtr(int index) const { return index >= 0 && index < NumScripts ? &Scripts[index] : NULL; }
@@ -521,6 +523,7 @@ public:
 	static void StaticUnloadModules ();
 	static bool StaticCheckAllGood ();
 	static FBehavior *StaticGetModule (int lib);
+	static int StaticModuleCount () { return (int)StaticModules.Size(); }
 	static void StaticSerializeModuleStates (FArchive &arc);
 	static void StaticMarkLevelVarStrings();
 	static void StaticLockLevelVarStrings();
@@ -562,6 +565,7 @@ private:
 	SDWORD MapVarStore[NUM_MAPVARS];
 	TArray<FBehavior *> Imports;
 	DWORD LibraryID;
+	int LibraryOrdinal;
 	char ModuleName[9];
 	TArray<int> JumpPoints;
 
