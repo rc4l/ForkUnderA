@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -98,11 +99,13 @@ struct Registry
 	bool capturing = false;
 	std::string captureName;
 	int64_t captureStartNs = 0;
-	std::vector<float> captureRows;
+	std::deque<float> captureRows;   // [Doruk-Aksoy] a deque for the same reason as the trace's below
 	std::vector<int> captureWidths;
 	std::vector<int64_t> captureFrames;
 	std::vector<double> captureTimes;
-	std::vector<TraceEvent> traceEvents;
+	// [Doruk-Aksoy] A deque of counter indices, since a vector of named events moved a million strings on the main thread each time it grew, a 20-30 ms frame inside every capture.
+	struct TraceRaw { int counter; int thread; double startUs, durationUs; };
+	std::deque<TraceRaw> traceEvents;
 	std::map<std::string, std::vector<Reading>> snaps;
 	std::vector<std::vector<Reading>> soakMarks;
 	bool soaking = false;   // [rc4l] from fua_soak begin to its verdict, while the heaps are walked
@@ -112,7 +115,6 @@ struct Registry
 	std::string crashSummary = "telemetry: no frames yet\n";
 	void (*offer)(const char *) = nullptr;
 	bool (*gameReadable)() = nullptr;
-	void (*summaryListener)(const char *) = nullptr;
 	OsReadings os;
 	// [rc4l] The OS probe runs at most a few times a second however many gauges ask.
 	Throttle osEvery{ 400 };
@@ -258,7 +260,6 @@ void RefreshCrashSummary(Registry &r, int64_t nowNs)
 	int recent = 0;
 	for (const int64_t t : r.hitchTimesNs) if (nowNs - t < 60000000000LL) recent++;
 	r.crashSummary = ComputeFlightSummary(r.seconds, r.frameMs, gauges, 30, recent);
-	if (r.summaryListener != nullptr) r.summaryListener(r.crashSummary.c_str());
 }
 
 void DetectHitch(Registry &r, int n, int64_t nowNs)
@@ -282,7 +283,7 @@ void DrainTrace(Registry &r)
 		std::lock_guard<std::mutex> tl(t->lock);
 		for (const RawEvent &e : t->events)
 			if (r.traceEvents.size() < kTraceEventCap)
-				r.traceEvents.push_back(TraceEvent{ r.slots[e.counter].name, t->id, (e.start - r.captureStartNs) / 1000.0, (e.end - e.start) / 1000.0 });
+				r.traceEvents.push_back(Registry::TraceRaw{ e.counter, t->id, (e.start - r.captureStartNs) / 1000.0, (e.end - e.start) / 1000.0 });
 		t->events.clear();
 	}
 }
@@ -292,14 +293,17 @@ void StopCapture(Registry &r)
 	r.capturing = false;
 	r.tracing = false;
 	DrainTrace(r);
-	const std::string csv = ComputeCaptureCsv(Names(r.count.load(std::memory_order_acquire)), r.captureFrames, r.captureTimes, r.captureWidths, r.captureRows);
+	const std::string csv = ComputeCaptureCsv(Names(r.count.load(std::memory_order_acquire)), r.captureFrames, r.captureTimes, r.captureWidths, std::vector<float>(r.captureRows.begin(), r.captureRows.end()));
 	std::vector<std::string> threadNames;
 	{
 		std::lock_guard<std::mutex> g(r.threadLock);
 		for (auto &t : r.threads) threadNames.push_back(t->name);
 	}
 	WriteFile(FilePath(r.captureName + ".csv"), csv);
-	WriteFile(FilePath(r.captureName + "-trace.json"), ComputeChromeTrace(r.traceEvents, threadNames));
+	std::vector<TraceEvent> trace;
+	trace.reserve(r.traceEvents.size());
+	for (const Registry::TraceRaw &e : r.traceEvents) trace.push_back(TraceEvent{ r.slots[e.counter].name, e.thread, e.startUs, e.durationUs });
+	WriteFile(FilePath(r.captureName + "-trace.json"), ComputeChromeTrace(trace, threadNames));
 	Printf("telemetry: captured %d frames (%.1f s), %d timed regions\n", (int)r.captureFrames.size(),
 		r.captureTimes.empty() ? 0.0 : r.captureTimes.back() / 1000.0, (int)r.traceEvents.size());
 	r.captureRows.clear(); r.captureWidths.clear(); r.captureFrames.clear(); r.captureTimes.clear(); r.traceEvents.clear();
@@ -396,11 +400,6 @@ const bool s_osRegistered = (
 	true);
 
 } // namespace
-
-int64_t NowNs()
-{
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-}
 
 Counter Register(const CounterSpec &spec, double (*read)())
 {
@@ -571,11 +570,6 @@ bool GameReadable()
 std::string StatsJson(const char *prefix)
 {
 	return ComputeStatsJson(StatsRows(prefix != nullptr ? prefix : ""));
-}
-
-void SetSummaryListener(void (*listen)(const char *summary))
-{
-	R().summaryListener = listen;
 }
 
 }} // namespace zx::telemetry

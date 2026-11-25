@@ -6,6 +6,7 @@
 
 // [Dusk]
 #include "network.h"
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_orbit ("Orbit");
 
@@ -115,6 +116,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_BridgeOrbit)
 	self->angle += rotationspeed;
 	self->x = self->target->x + rotationradius * finecosine[self->angle >> ANGLETOFINESHIFT];
 	self->y = self->target->y + rotationradius * finesine[self->angle >> ANGLETOFINESHIFT];
+	zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 	self->z = self->target->z;
 }
 

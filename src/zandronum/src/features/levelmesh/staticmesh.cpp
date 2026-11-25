@@ -159,39 +159,58 @@ void ApplyShading(const Shading &s, MeshPiece &out)
 // Dynamic stream -- see staticmesh.h
 // ---------------------------------------------------------------------------
 
-static TArray<MeshVertex> g_dynVerts;
-// [Doruk-Aksoy] Only grows, its first g_dynPieceCount this frame's, so a frame's pieces are assigned over last frame's rather than constructed again.
-static std::vector<MeshPiece> g_dynPieces;
-static unsigned int g_dynPieceCount = 0;
-static TArray<float>       g_dynMatrices;
+// [Doruk-Aksoy] One dynamic stream: its vertices, its pieces (only growing, the first `count` this stream's, so pieces are assigned over last time's rather than constructed again) and its model matrices.
+struct DynStream
+{
+	TArray<MeshVertex> verts;
+	std::vector<MeshPiece> pieces;
+	unsigned int count = 0;
+	TArray<float> matrices;
+	void Clear() { verts.Clear(); count = 0; matrices.Clear(); }
+};
+// [Doruk-Aksoy] The frame's stream, and the tic's sprites the shader moves, which DynTicScope appends to.
+static DynStream g_frameDyn, g_ticDyn;
+static DynStream *g_into = &g_frameDyn;
+static std::vector<unsigned char> g_ticHidden;
 
-static unsigned int g_dynGen = 1;
+static unsigned int g_dynGen = 1, g_ticGen = 1;
 
 void DynClear()
 {
 	// Clear, not free: the arrays settle at the frame's high-water mark after a few frames and stop
 	// allocating entirely.
-	g_dynVerts.Clear();
-	g_dynPieceCount = 0;
-	g_dynMatrices.Clear();
+	g_frameDyn.Clear();
 	g_dynGen++;
 }
 
+void DynClearTic()
+{
+	g_ticDyn.Clear();
+	g_ticHidden.clear();
+	g_ticGen++;
+	g_dynGen++;
+}
+
+DynTicScope::DynTicScope() { g_into = &g_ticDyn; }
+DynTicScope::~DynTicScope() { g_into = &g_frameDyn; g_ticHidden.assign(g_ticDyn.count, 0); g_dynGen++; }
+
 int DynAddMatrix(const float *matrix)
 {
-	const unsigned at = g_dynMatrices.Size();
-	g_dynMatrices.Resize(at + 16);
-	memcpy(&g_dynMatrices[at], matrix, 16 * sizeof(float));
+	TArray<float> &m = g_into->matrices;
+	const unsigned at = m.Size();
+	m.Resize(at + 16);
+	memcpy(&m[at], matrix, 16 * sizeof(float));
 	return (int)(at / 16);
 }
 
 const float *DynMatrices(int &count)
 {
-	count = (int)(g_dynMatrices.Size() / 16);
-	return count ? &g_dynMatrices[0] : NULL;
+	count = (int)(g_frameDyn.matrices.Size() / 16);
+	return count ? &g_frameDyn.matrices[0] : NULL;
 }
 
 unsigned int DynGeneration() { return g_dynGen; }
+unsigned int DynTicGeneration() { return g_ticGen; }
 
 // [Doruk-Aksoy] The most vertices a frame's stream holds: what every Vulkan device binds until the device says how much it does.
 static unsigned g_dynCeiling = zx::hwrender::ComputeDynVertexCeiling(zx::hwrender::kMinStorageBufferBytes);
@@ -202,9 +221,10 @@ unsigned DynVertexCeiling() { return g_dynCeiling; }
 void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 {
 	if (verts == NULL || count <= 0) return;
+	DynStream &d = *g_into;
 	// [Doruk-Aksoy] Past the most the device's buffers bind, counted rather than dropped unseen, where a fixed 300k ceiling dropped every model of over 100k triangles that GL drew.
 	DynQuadRun fits;
-	if (!ComputeDynRun(g_dynVerts.Size(), g_dynPieceCount, (unsigned)count, g_dynCeiling, fits))
+	if (!ComputeDynRun(g_frameDyn.verts.Size() + g_ticDyn.verts.Size(), d.count, (unsigned)count, g_dynCeiling, fits))
 	{
 		ZX_COUNT("levelmesh/dyn_dropped", "vertices", count);
 		return;
@@ -216,35 +236,58 @@ void DynAppend(const MeshVertex *verts, int count, const MeshPiece &proto)
 	// individually was eighteen thousand bounds tests a frame to append a fixed-size block that is
 	// always six long. The proto came by VALUE as well, which copied a MeshPiece into the argument
 	// and then copied it again into the array -- twice per sprite for a struct of seventeen fields.
-	const unsigned base = g_dynVerts.Size();
-	g_dynVerts.Resize(base + (unsigned)count);
-	memcpy(&g_dynVerts[base], verts, (size_t)count * sizeof(MeshVertex));
+	const unsigned base = d.verts.Size();
+	d.verts.Resize(base + (unsigned)count);
+	memcpy(&d.verts[base], verts, (size_t)count * sizeof(MeshVertex));
 
-	if (g_dynPieceCount == g_dynPieces.size()) g_dynPieces.push_back(proto);
-	else g_dynPieces[g_dynPieceCount] = proto;
-	MeshPiece &p = g_dynPieces[g_dynPieceCount++];
+	if (d.count == d.pieces.size()) d.pieces.push_back(proto);
+	else d.pieces[d.count] = proto;
+	MeshPiece &p = d.pieces[d.count++];
 	p.range.offset = base;
 	p.range.count = (unsigned)count;
 }
 
 bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run)
 {
-	if (!ComputeDynRun(g_dynVerts.Size(), g_dynPieceCount, verts, g_dynCeiling, run))
+	DynStream &d = *g_into;
+	if (!ComputeDynRun(g_frameDyn.verts.Size() + g_ticDyn.verts.Size(), d.count, verts, g_dynCeiling, run))
 	{
 		ZX_COUNT("levelmesh/dyn_dropped", "vertices", verts);
 		return false;
 	}
-	g_dynVerts.Resize(run.firstVert + verts);
-	if (g_dynPieces.size() < run.firstPiece + pieces) g_dynPieces.resize(run.firstPiece + pieces);
-	g_dynPieceCount = run.firstPiece + pieces;
+	// [Doruk-Aksoy] The run counted both streams for the ceiling; its first vertex is this stream's.
+	run.firstVert = d.verts.Size();
+	d.verts.Resize(run.firstVert + verts);
+	if (d.pieces.size() < run.firstPiece + pieces) d.pieces.resize(run.firstPiece + pieces);
+	d.count = run.firstPiece + pieces;
 	return true;
+}
+
+void DynAppendGpuModel(unsigned count, const MeshPiece &proto)
+{
+	if (count == 0 || proto.gpuGeometry == NULL) return;
+	DynStream &d = *g_into;
+	if (d.count == d.pieces.size()) d.pieces.push_back(proto);
+	else d.pieces[d.count] = proto;
+	MeshPiece &p = d.pieces[d.count++];
+	p.range.offset = d.verts.Size();
+	p.range.count = count;
+}
+
+void DynPlaceGpuModel(const DynQuadRun &run, unsigned piece, unsigned count, const MeshPiece &proto)
+{
+	MeshPiece &p = g_into->pieces[run.firstPiece + piece];
+	p = proto;
+	p.range.offset = run.firstVert;
+	p.range.count = count;
 }
 
 void DynPlace(const DynQuadRun &run, unsigned piece, unsigned vert, const MeshVertex *verts, unsigned count, const MeshPiece &proto)
 {
+	DynStream &d = *g_into;
 	const unsigned at = run.firstVert + vert;
-	memcpy(&g_dynVerts[at], verts, count * sizeof(MeshVertex));
-	MeshPiece &p = g_dynPieces[run.firstPiece + piece];
+	memcpy(&d.verts[at], verts, count * sizeof(MeshVertex));
+	MeshPiece &p = d.pieces[run.firstPiece + piece];
 	p = proto;
 	p.range.offset = at;
 	p.range.count = count;
@@ -252,14 +295,32 @@ void DynPlace(const DynQuadRun &run, unsigned piece, unsigned vert, const MeshVe
 
 const MeshVertex *DynVertices(int &count)
 {
-	count = (int)g_dynVerts.Size();
-	return count ? &g_dynVerts[0] : NULL;
+	count = (int)g_frameDyn.verts.Size();
+	return count ? &g_frameDyn.verts[0] : NULL;
 }
 
 const MeshPiece *DynPieces(int &count)
 {
-	count = (int)g_dynPieceCount;
-	return count ? &g_dynPieces[0] : NULL;
+	count = (int)g_frameDyn.count;
+	return count ? &g_frameDyn.pieces[0] : NULL;
+}
+
+const MeshVertex *DynTicVertices(int &count)
+{
+	count = (int)g_ticDyn.verts.Size();
+	return count ? &g_ticDyn.verts[0] : NULL;
+}
+
+const MeshPiece *DynTicPieces(int &count)
+{
+	count = (int)g_ticDyn.count;
+	return count ? &g_ticDyn.pieces[0] : NULL;
+}
+
+unsigned char *DynTicHidden(int &count)
+{
+	count = (int)g_ticHidden.size();
+	return count ? &g_ticHidden[0] : NULL;
 }
 
 void MeshInitForLevel()

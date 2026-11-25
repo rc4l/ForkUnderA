@@ -468,6 +468,11 @@ int				NETWORK_AttenuationFloatToInt ( const float fAttenuation );
 float			NETWORK_AttenuationIntToFloat ( const int iAttenuation );
 
 
+// [Kaori-Chani] features/net-snapshot: what the last launched packet cost on the wire, and
+// whether zstd carried it, which a snapshot payload's built size is reported against.
+unsigned		NETWORK_GetLastLaunchWireSize( void );
+bool			NETWORK_GetLastLaunchUsedZstd( void );
+
 // Access functions.
 LONG			NETWORK_GetState( void );
 void			NETWORK_SetState( LONG lState );

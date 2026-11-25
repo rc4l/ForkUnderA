@@ -29,6 +29,7 @@ const int kMaxWorkers = 63;
 // [Doruk-Aksoy] The game thread's pool at most, since it works only at a tic's end, beside the frames' pool.
 const int kTicWorkersCap = 3;
 
+#ifdef FUA_DIAGNOSTICS
 // [Doruk-Aksoy] What a pool is called in features/telemetry: its workers in traces, its lanes' runs summed, its caller's wait for the rest, and by the zone it was in that wait, its last worker's start, the workers asleep, the workers that ran and the jobs.
 struct PoolNames { const char *worker, *run, *wait, *waitIn, *startIn, *asleepIn, *lanesIn, *callsIn; };
 const PoolNames kNames[] = {
@@ -71,6 +72,11 @@ const JobObserver kTelemetry[] = {
 	{ zx::telemetry::NowNs, WorkerStarted<1>, RanItems<1>, Waited<1> },
 };
 const bool s_observed = (SetJobObserver(&kTelemetry[0]), true);
+const JobObserver *const kTicObserver = &kTelemetry[1];
+#else
+// [Doruk-Aksoy] A public build times no job: the pools report to no observer.
+const JobObserver *const kTicObserver = nullptr;
+#endif
 
 // [Doruk-Aksoy] pool made with want workers, or resized to them unless its caller may not block, its own observer set and its spin kept to fua_jobs_spin_us.
 JobPool &Sized(JobPool *&pool, int want, const JobObserver *observer)
@@ -102,7 +108,7 @@ JobPool &TicPool()
 {
 	int want = fua_jobs_tic_threads;
 	if (want < 0) want = ComputeAutoWorkers((int)std::thread::hardware_concurrency(), kTicWorkersCap, 1);
-	return Sized(g_ticPool, want, &kTelemetry[1]);
+	return Sized(g_ticPool, want, kTicObserver);
 }
 
 }} // namespace zx::jobs

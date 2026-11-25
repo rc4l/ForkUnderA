@@ -48,3 +48,10 @@ jobs:
     uses: ./.github/workflows/_build.yml
     with:
       version: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('main-{0}', github.run_number) }}
+
+  # [Kaori-Chani] The tic time base paces every player, and nothing else here watches the
+  # clock a real machine keeps -- least of all macOS, which nobody can run by hand. It needs
+  # the builds, since it runs what they produced rather than building a fourth time.
+  pacing:
+    needs: build
+    uses: ./.github/workflows/_pacing.yml

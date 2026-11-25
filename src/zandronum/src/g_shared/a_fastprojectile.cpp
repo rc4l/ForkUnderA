@@ -6,6 +6,7 @@
 #include "p_lnspec.h"
 // [BB] New #includes.
 #include "network.h"
+#include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet steps skipped
 
 
 IMPLEMENT_CLASS(AFastProjectile)
@@ -66,8 +67,16 @@ void AFastProjectile::Tick ()
 		zfrac = velz >> shift;
 		changexy = xfrac || yfrac;
 		int ripcount = count >> 3;
+		// [Doruk-Aksoy] features/swept-missiles: runs of steps that would only move the projectile are done without their P_TryMove but the last, planned again past each loud step.
+		zx::sweptmove::FastPlan plan = { 0, -1, 3 };
+		if (changexy) zx::sweptmove::PlanFast(this, plan, 0, count, xfrac, yfrac, zfrac);
 		for (i = 0; i < count; i++)
 		{
+			if (i < plan.emulateTo)
+			{
+				if (!zx::sweptmove::EmulateQuietFastStep(this, tm, ripcount, count >> 3, xfrac, yfrac, zfrac, oldz)) plan.emulateTo = 0, plan.loudAt = -1;
+				continue;
+			}
 			if (changexy)
 			{
 				if (--ripcount <= 0)
@@ -150,6 +159,7 @@ void AFastProjectile::Tick ()
 				ripcount = count >> 3;
 				Effect();
 			}
+			if (changexy && i == plan.loudAt) zx::sweptmove::PlanFast(this, plan, i + 1, count, xfrac, yfrac, zfrac);
 		}
 	}
 

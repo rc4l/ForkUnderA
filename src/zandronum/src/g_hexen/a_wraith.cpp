@@ -177,6 +177,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_WraithFX3)
 
 			mo->x += (pr_wraithfx3()-128)<<11;
 			mo->y += (pr_wraithfx3()-128)<<11;
+			zx::cells::Refresh (mo);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 			mo->z += (pr_wraithfx3()<<10);
 			mo->target = self;
 		}
@@ -234,6 +235,7 @@ void A_WraithFX4 (AActor *self)
 
 			mo->x += (pr_wraithfx4()-128)<<12;
 			mo->y += (pr_wraithfx4()-128)<<12;
+			zx::cells::Refresh (mo);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 			mo->z += (pr_wraithfx4()<<10);
 			mo->target = self;
 		}
@@ -254,6 +256,7 @@ void A_WraithFX4 (AActor *self)
 
 			mo->x += (pr_wraithfx4()-128)<<11;
 			mo->y += (pr_wraithfx4()-128)<<11;
+			zx::cells::Refresh (mo);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 			mo->z += (pr_wraithfx4()<<10);
 			mo->target = self;
 		}

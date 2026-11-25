@@ -25,6 +25,8 @@ namespace zx { namespace hwrender {
 // [rc4l] Where this level's set-up stands, as levelsetup_compute steps it.
 static LevelSetup g_setup = ComputeLevelSetupStart();
 
+// [Doruk-Aksoy] What was made in play is telemetry's alone, so a public build keeps no record and takes no lock for it.
+#ifdef FUA_DIAGNOSTICS
 // [rc4l] What the backend made while this level was played, which should be nothing: each is a compile or an upload a frame waited on.
 static MadeInPlay g_madeInPlay;
 static std::mutex g_madeLock;
@@ -43,28 +45,39 @@ void NoteMadeInPlay(const char *kind, const char *name)
 	// [rc4l] Counted outside the lock, which the gauge's read takes under telemetry's own.
 	if (inPlay) ZX_COUNT("gpu/made_in_play", "objects", 1);
 }
+#else
+void NoteMadeInPlay(const char *, const char *) {}
+#endif
 
 // [rc4l] A frame drawn, which arms the count a few frames after the level is ready and ends gpu/upload/'s frame.
 static void MadeInPlayFrame(bool ready)
 {
 	NoteUploadFrame();
+#ifdef FUA_DIAGNOSTICS
 	std::lock_guard<std::mutex> guard(g_madeLock);
 	ComputeMadeInPlayFrame(g_madeInPlay, ready);
+#else
+	(void)ready;
+#endif
 }
 
+#ifdef FUA_DIAGNOSTICS
 DEV_MODE_CCMD( fua_dg_made )
 {
 	std::lock_guard<std::mutex> guard(g_madeLock);
 	Printf("%s", ComputeMadeInPlayReport(g_madeInPlay).c_str());
 }
+#endif
 
 // [rc4l] Everything a level owned on the GPU, released for the next level, and at shutdown before what is still held is reported.
 void ReleaseLevelResources()
 {
+#ifdef FUA_DIAGNOSTICS
 	{
 		std::lock_guard<std::mutex> guard(g_madeLock);
 		ComputeMadeInPlayClear(g_madeInPlay);
 	}
+#endif
 	// [rc4l] The texture cache and material SRBs are keyed on raw FMaterial*, so a new level's materials at an old one's addresses wore its textures after a few map changes; SRBs reference the textures, so they go first.
 	ReleaseBatchSRBs();
 	ReleaseMaterialSRBs();

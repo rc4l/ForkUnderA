@@ -99,3 +99,53 @@ TEST(SpriteClip, TheSmarterClipScalesTheLiftAndClearsTheCeiling)
 	ComputeSpriteClip(in, z1, z2);
 	EXPECT_EQ(z1, 41.f);
 }
+
+TEST(SpriteClipIdle, AnythingAboveTheFloorIsLeftAloneAndAnythingInItIsNot)
+{
+	EXPECT_TRUE(ComputeSpriteClipIdle(Monster(0.f), 50.f, -1.f));
+	EXPECT_TRUE(ComputeSpriteClipIdle(Monster(0.f), 50.f, 20.f));
+	EXPECT_FALSE(ComputeSpriteClipIdle(Monster(0.f), 50.f, -1.5f));
+	// [Doruk-Aksoy] Without the smarter clip the ceiling is never measured, however far through it the top goes.
+	EXPECT_TRUE(ComputeSpriteClipIdle(Monster(0.f), 5000.f, 0.f));
+}
+
+TEST(SpriteClipIdle, TheSmarterClipAlsoWantsTheTopUnderTheCeiling)
+{
+	SpriteClipIn in = Monster(0.f);
+	in.living = false;
+	in.spriteClip = 3;
+	in.top = 100.f;
+	EXPECT_TRUE(ComputeSpriteClipIdle(in, 101.f, 0.f));
+	EXPECT_FALSE(ComputeSpriteClipIdle(in, 101.5f, 0.f));
+}
+
+TEST(SpriteClipIdle, WhenIdleTheClipMovesNothing)
+{
+	// [Doruk-Aksoy] Every edge pair it calls idle, under every clip setting and kind of actor, comes back from ComputeSpriteClip as it went in.
+	for (int clip = 1; clip <= 3; clip++)
+		for (int kind = 0; kind < 4; kind++)
+			for (float z2 = -40.f; z2 <= 40.f; z2 += 0.5f)
+				for (float z1 = z2 + 10.f; z1 <= 160.f; z1 += 7.5f)
+				{
+					SpriteClipIn in = Monster(0.f);
+					in.spriteClip = clip;
+					in.living = (kind & 1) != 0;
+					in.corpse = (kind & 2) != 0;
+					in.top = 100.f;
+					if (!ComputeSpriteClipIdle(in, z1, z2)) continue;
+					float a = z1, b = z2;
+					ComputeSpriteClip(in, a, b);
+					EXPECT_EQ(z1, a);
+					EXPECT_EQ(z2, b);
+				}
+}
+
+// [Doruk-Aksoy] A corpse resting below its frame's bottom offset was left to the CPU each frame though its lift never changed within the tic.
+TEST(SpriteClip, AnActorIsSteadyOnlyWithItsHeightFloorAndCeilingKept)
+{
+	const TicEnd rest = { 64, 0, 256 };
+	EXPECT_TRUE(ComputeSteadyAcrossTic(rest, rest));
+	EXPECT_FALSE(ComputeSteadyAcrossTic(rest, { 65, 0, 256 }));
+	EXPECT_FALSE(ComputeSteadyAcrossTic(rest, { 64, 8, 256 }));
+	EXPECT_FALSE(ComputeSteadyAcrossTic(rest, { 64, 0, 248 }));
+}

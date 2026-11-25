@@ -2559,9 +2559,15 @@ FxActionSpecialCall::~FxActionSpecialCall()
 //
 //==========================================================================
 
+// [Kaori-Chani] features/net-snapshot: resolves so far, so ResolveAll can tell which entries
+// made one. This counts at DECORATE resolve time, which runs once at startup; no per-tic path
+// touches it, and nothing reads callsSpecial until the module's hooks land.
+static unsigned int g_ActionSpecialResolves = 0;
+
 FxExpression *FxActionSpecialCall::Resolve(FCompileContext& ctx)
 {
 	CHECKRESOLVED();
+	++g_ActionSpecialResolves;	// [Kaori-Chani]
 	bool failed = false;
 
 	if (ArgList != NULL)
@@ -3032,12 +3038,15 @@ int FStateExpressions::ResolveAll()
 			// Now that everything coming before has been resolved we may copy the actual pointer.
 			unsigned ii = unsigned((intptr_t)expressions[i].expr);
 			expressions[i].expr = expressions[ii].expr;
+			expressions[i].callsSpecial = expressions[ii].callsSpecial;	// [Kaori-Chani]
 		}
 		else if (expressions[i].expr != NULL)
 		{
 			ctx.cls = expressions[i].owner;
 			ctx.isconst = expressions[i].constant;
+			const unsigned int specialsBefore = g_ActionSpecialResolves;	// [Kaori-Chani]
 			expressions[i].expr = expressions[i].expr->Resolve(ctx);
+			expressions[i].callsSpecial = ( g_ActionSpecialResolves != specialsBefore );	// [Kaori-Chani]
 			if (expressions[i].expr == NULL)
 			{
 				errorcount++;

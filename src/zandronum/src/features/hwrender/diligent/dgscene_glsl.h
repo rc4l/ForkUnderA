@@ -156,7 +156,33 @@ static const std::string kDynamicVS = std::string(
 	"layout(std430, binding = 12) readonly buffer DynData { uint words[]; } DynDataIn;\n"
 	"float fuaWordF(uint i) { return uintBitsToFloat(DynDataIn.words[i]); }\n"
 	"float fuaByte(uint w, int at) { return float((w >> uint(at)) & 255u) / 255.0; }\n"
+	// [Doruk-Aksoy] Model geometry resident for the GPU model surfaces (dgmodelgeo.cpp), and both buffers' words held inside them, as ComputeModelCorner holds them.
+	"layout(std430, binding = 15) readonly buffer ModelGeo { uint words[]; } ModelGeoIn;\n"
+	"uint fuaDynHeld(uint i) { return DynDataIn.words[min(i, uint(DynDataIn.words.length()) - 1u)]; }\n"
+	"uint fuaGeoHeld(uint i) { return ModelGeoIn.words[min(i, uint(ModelGeoIn.words.length()) - 1u)]; }\n"
+	"float fuaDynHeldF(uint i) { return uintBitsToFloat(fuaDynHeld(i)); }\n"
+	"float fuaGeoHeldF(uint i) { return uintBitsToFloat(fuaGeoHeld(i)); }\n"
 	"void main() {\n"
+	// [Doruk-Aksoy] ComputeModelCorner, word for word: a model surface's corner gl_VertexIndex less its run's first, its two keyframes blended and placed by its matrix.
+	"    if ((aRef & 0xC0000000u) == 0x40000000u) {\n"
+	"        uint r = aRef & 0x3fffffffu;\n"
+	"        uint i = uint(gl_VertexIndex) - fuaDynHeld(r);\n"
+	"        uint idx = fuaDynHeld(r + 5u);\n"
+	"        uint vi = (idx & 0x80000000u) != 0u ? (idx & 0x7fffffffu) + i : fuaGeoHeld(idx + i);\n"
+	"        uint a = fuaDynHeld(r + 2u) + vi * 5u, b = fuaDynHeld(r + 3u) + vi * 5u;\n"
+	"        float t = fuaDynHeldF(r + 4u);\n"
+	"        vec3 pa = vec3(fuaGeoHeldF(a), fuaGeoHeldF(a + 1u), fuaGeoHeldF(a + 2u));\n"
+	"        vec3 p = pa + (vec3(fuaGeoHeldF(b), fuaGeoHeldF(b + 1u), fuaGeoHeldF(b + 2u)) - pa) * t;\n"
+	"        uint mw = fuaDynHeld(r + 6u);\n"
+	"        mat4 mm = mat4(fuaDynHeldF(mw), fuaDynHeldF(mw + 1u), fuaDynHeldF(mw + 2u), fuaDynHeldF(mw + 3u), fuaDynHeldF(mw + 4u), fuaDynHeldF(mw + 5u), fuaDynHeldF(mw + 6u), fuaDynHeldF(mw + 7u),\n"
+	"                       fuaDynHeldF(mw + 8u), fuaDynHeldF(mw + 9u), fuaDynHeldF(mw + 10u), fuaDynHeldF(mw + 11u), fuaDynHeldF(mw + 12u), fuaDynHeldF(mw + 13u), fuaDynHeldF(mw + 14u), fuaDynHeldF(mw + 15u));\n"
+	"        PieceData mpd = PiecesIn.pieces[int(fuaDynHeld(r + 1u))];\n"
+	"        fuaSceneVertex(mpd, (mm * vec4(p, 1.0)).xyz, vec2(fuaGeoHeldF(a + 3u), fuaGeoHeldF(a + 4u)));\n"
+	"#ifdef FUA_USER_SHADER\n"
+	"        if (mpd.tintRange.w > 0.5) fuaModelOut(mm);\n"
+	"#endif\n"
+	"        return;\n"
+	"    }\n"
 	"    if ((aRef & 0x80000000u) == 0u) {\n"
 	"        uint b = aRef * 6u;\n"
 	"        PieceData gpd = PiecesIn.pieces[int(fuaWordF(b + 5u) + 0.5)];\n"
@@ -177,6 +203,27 @@ static const std::string kDynamicVS = std::string(
 	"    uint w16 = DynDataIn.words[base + 16u], w17 = DynDataIn.words[base + 17u], w18 = DynDataIn.words[base + 18u], w19 = DynDataIn.words[base + 19u];\n"
 	"    uint sel = (w16 >> 24) >> (2u * corner);\n"
 	"    vec3 pos = vec3(fuaWordF(base + corner * 4u), fuaWordF(base + corner * 4u + 1u), fuaWordF(base + corner * 4u + 2u));\n"
+	// [Doruk-Aksoy] A moving face sprite turned from the tic's view to this frame's and slid back along the tic's move by the part of it not yet shown.
+	"    uint motionFlags = DynDataIn.words[base + 27u];\n"
+	"    if (motionFlags != 0u) {\n"
+	"        vec2 c = vec2(fuaWordF(base + 28u), fuaWordF(base + 29u));\n"
+	"        vec2 perpTic = vec2(fuaWordF(base + 30u), fuaWordF(base + 31u));\n"
+	"        vec3 slide = vec3(fuaWordF(base + 32u), fuaWordF(base + 33u), fuaWordF(base + 34u)) * (1.0 - uOptions.z);\n"
+	"        pos.xz = c + uShadeFog.zw * dot(pos.xz - c, perpTic);\n"
+	"        pos -= slide;\n"
+	// [Doruk-Aksoy] An XY billboard turned about its middle by -pitch round the view's perpendicular, as ComputeSpriteCorners turns it (Rodrigues, the same matrix).
+	"        if ((motionFlags & 2u) != 0u) {\n"
+	"            vec3 mid = vec3(0.0);\n"
+	"            for (uint k = 0u; k < 4u; k++) mid += vec3(fuaWordF(base + k * 4u), fuaWordF(base + k * 4u + 1u), fuaWordF(base + k * 4u + 2u));\n"
+	"            mid *= 0.25;\n"
+	"            mid.xz = c + uShadeFog.zw * dot(mid.xz - c, perpTic);\n"
+	"            mid -= slide;\n"
+	"            vec3 axis = vec3(uShadeFog.z, 0.0, uShadeFog.w);\n"
+	"            float ang = radians(-uOptions.w), cs = cos(ang), sn = sin(ang);\n"
+	"            vec3 v = pos - mid;\n"
+	"            pos = mid + v * cs + cross(axis, v) * sn + axis * dot(axis, v) * (1.0 - cs);\n"
+	"        }\n"
+	"    }\n"
 	"    vec2 uv = vec2(fuaWordF(base + ((sel & 1u) != 0u ? 7u : 3u)), fuaWordF(base + ((sel & 2u) != 0u ? 15u : 11u)));\n"
 	"    PieceData pd;\n"
 	"    pd.colorLight = vec4(fuaByte(w16, 0), fuaByte(w16, 8), fuaByte(w16, 16), fuaWordF(base + 20u));\n"
@@ -352,7 +399,7 @@ static const std::string kDynamicVS = std::string(
 // makes the debug views free (no resize, no extra binding) so they can stay in the shipped shader.
 // Two silent-failure bugs this port survived were caught only by looking at a picture; being able to
 // ask the shader what it thinks depth and colour are is worth the three lines.
-// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a 1 subtractive, plus 2 attenuated), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
+// [Doruk-Aksoy] The dynamic lights that reach this fragment, one at a time, each its position lp, colour lc (a 1 subtractive, plus 2 attenuated, plus 4 spot, plus 8 additive), offset d and falloff a, for the line after it to take; open, so that line ends with the loop's closing brace.
 #define FUA_LIGHT_LOOP_GLSL \
 	/* [rc4l] The fragment's light grid cell (tiles of kClusterTilesX by kClusterTilesY, kClusterSlices depth slices over uLightParams.zw, zero z meaning every light), which must light exactly as no grid does. */ \
 	"    int first = 0;\n" \
@@ -389,8 +436,8 @@ static const std::string kDynamicVS = std::string(
 	"        li = clamp(li, 0, max(n - 1, 0));\n" \
 	/* [rc4l] GL's flood stops at solid walls, so a light whose links do not name this surface does not light it. */ \
 	"        if (vLinkId >= 0 && !fuaLightTouches(li, uint(vLinkId))) continue;\n" \
-	"        vec4 lp = LightBufferIn.lights[li*2];\n" \
-	"        vec4 lc = LightBufferIn.lights[li*2+1];\n" \
+	"        vec4 lp = LightBufferIn.lights[li*4];\n" \
+	"        vec4 lc = LightBufferIn.lights[li*4+1];\n" \
 	"        vec3 d = lp.xyz - vPixelPos.xyz;\n" \
 	/* The side test gl_GetLight does per surface: a light behind the plane does not light it.
 	   Without this the backs of walls and the room next door get lit, which reads as a scene far
@@ -425,13 +472,22 @@ static const std::string kDynamicVS = std::string(
 	"        float a = max(lp.w - length(d), 0.0) / lp.w;\n" \
 	"        if (a <= 0.0) continue;\n"
 
-// [Doruk-Aksoy] uzdoom@62afe5f0 material_normal.fp: an attenuated light (bit 2 of its kind) is taken by the cosine of the angle it arrives at, against the normal N the caller lights by.
-#define FUA_LIGHT_ATTENUATE_GLSL(N) \
-	"        if (lc.a > 1.5) {\n" \
+// [Doruk-Aksoy] uzdoom@62afe5f0 main.fp and material_normal.fp: a spot (kind bit 4) lights only its cone, smoothstep from the outer cosine to the inner, and an attenuated light (bit 2) is taken by the cosine of the angle it arrives at against the normal N the caller lights by.
+#define FUA_LIGHT_SHAPE_GLSL(N) \
+	"        int kind = int(lc.a + 0.5);\n" \
+	"        if ((kind & 4) != 0) {\n" \
+	"            vec4 spot = LightBufferIn.lights[li*4+2];\n" \
+	"            float cosOuter = LightBufferIn.lights[li*4+3].x;\n" \
+	"            float cosDir = dot(normalize(d), spot.xyz);\n" \
+	"            a *= spot.w > cosOuter ? smoothstep(cosOuter, spot.w, cosDir) : step(cosOuter, cosDir);\n" \
+	"            if (a <= 0.0) continue;\n" \
+	"        }\n" \
+	"        if ((kind & 2) != 0) {\n" \
 	"            a *= clamp(dot(" N ", normalize(d)), 0.0, 1.0);\n" \
 	"            if (a <= 0.0) continue;\n" \
 	"        }\n" \
-	"        bool subtractive = mod(lc.a, 2.0) > 0.5;\n"
+	"        bool subtractive = (kind & 1) != 0;\n" \
+	"        bool additive = (kind & 8) != 0;\n"
 
 // [rc4l] FUA_MAT_SLOTS, the material array's size, is defined by CompileShader from the device's limits (MaterialSlotCapacity).
 #define FUA_LIGHT_GLSL \
@@ -597,9 +653,15 @@ static const std::string kDynamicVS = std::string(
 	   world -- roughly 0.1% utilisation -- so there is nothing to save. It is also the shape a
 	   clustered forward renderer wants next.
 
-	   Layout: pairs of (x, z, y, radius) and (r, g, b, mode), mode 1 meaning subtractive, plus 2 attenuated. Positions
+	   Layout: four vec4s a light, (x, z, y, radius), (r, g, b, mode) with mode 1 subtractive, 2 attenuated, 4 spot and 8 additive, then a spot's (direction, cos inner) and (cos outer). Positions
 	   use the same axis swap as the mesh vertices, so they compare directly against vPixelPos.xyz. */ \
+	/* [Doruk-Aksoy] uzdoom@62afe5f0 material_normal.fp, as Zandronum 3.3's main.fp: additive lights (kind bit 8) are kept apart from the others and added after the texture, desaturated and held to 1, by fuaAddAfter. */ \
+	"vec3 fuaAddLight = vec3(0.0);\n" \
+	"bool fuaAddLit = false;\n" \
+	"vec3 fuaAddAfter(vec3 frag) { return fuaAddLit ? clamp(frag + fuaDesaturate(fuaAddLight), 0.0, 1.0) : frag; }\n" \
 	"vec3 fuaDynLight(vec3 base) {\n" \
+	"    fuaAddLight = vec3(0.0);\n" \
+	"    fuaAddLit = false;\n" \
 	"    int n = int(uLightParams.x);\n" \
 	"    if (n <= 0) return base;\n" \
 	/* [rc4l] A zero normal means the CPU already did this piece's dynamic lighting -- take none here.
@@ -620,8 +682,9 @@ static const std::string kDynamicVS = std::string(
 	"    if (dot(vPlane.xyz, vPlane.xyz) <= 0.0001) return base;\n" \
 	"    vec3 dyn = vec3(0.0);\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	FUA_LIGHT_ATTENUATE_GLSL("vPlane.xyz") \
-	"        if (subtractive) dyn -= lc.rgb * a;\n" \
+	FUA_LIGHT_SHAPE_GLSL("vPlane.xyz") \
+	"        if (additive) { fuaAddLight += lc.rgb * a; fuaAddLit = true; }\n" \
+	"        else if (subtractive) dyn -= lc.rgb * a;\n" \
 	"        else            dyn += lc.rgb * a;\n" \
 	"    }\n" \
 	"    return clamp(base + dyn, 0.0, 1.4);\n" \
@@ -670,7 +733,7 @@ static const std::string kDynamicVS = std::string(
 	FUA_SECTOR_LIGHT_UP_GLSL \
 	FUA_BRIGHTMAP_LIGHT_GLSL \
 	FUA_DYN_LIGHT_UP_GLSL \
-	"    vec3 frag = texel * color;\n" \
+	"    vec3 frag = fuaAddAfter(texel * color);\n" \
 	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \
 	"vec3 fuaShade(vec3 texel) { return fuaShadeEx(texel, true); }\n" \
@@ -695,18 +758,21 @@ static const std::string kDynamicVS = std::string(
 	"}\n" \
 	"vec3 fuaShadeFinal(vec3 frag) {\n" \
 	"    if (uFixedColormap.w > 0.5) return fuaFixedColormap(frag * ((int(vTexFlags + 0.5) & 8) != 0 ? vec3(1.0) : vColor));\n" \
-	"    return fuaColouredFog(frag, vFog.rgb, fuaProcessFog.x, fuaProcessFog.y);\n" \
+	"    return fuaColouredFog(fuaAddAfter(frag), vFog.rgb, fuaProcessFog.x, fuaProcessFog.y);\n" \
 	"}\n" \
 	"#ifdef FUA_USER_SHADER\n" \
 	/* [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad material_specular.fp: Blinn-Phong highlights over the dynamic lights, the light and the highlight each desaturated and held to 1.4, an actor's own light taken without one. */ \
 	"vec3 fuaSpecularLit(Material m, vec3 texel, vec3 color, bool wantDynLight) {\n" \
 	"    vec3 dyn = wantDynLight && vActorLight.w > 0.5 ? vActorLight.rgb : vec3(0.0);\n" \
 	"    vec3 spec = vec3(0.0);\n" \
+	"    vec3 add = vec3(0.0);\n" \
+	"    bool addLit = false;\n" \
 	"    int n = int(uLightParams.x);\n" \
 	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
 	"    vec3 viewdir = normalize(uCameraPos.xyz - vPixelPos.xyz);\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	FUA_LIGHT_ATTENUATE_GLSL("m.Normal") \
+	FUA_LIGHT_SHAPE_GLSL("m.Normal") \
+	"        if (additive) { add += lc.rgb * a; addLit = true; continue; }\n" \
 	"        vec3 halfdir = normalize(viewdir + normalize(d));\n" \
 	"        float s = a * m.SpecularLevel * pow(clamp(dot(halfdir, m.Normal), 0.0, 1.0), m.Glossiness * 4.0);\n" \
 	"        float sgn = subtractive ? -1.0 : 1.0;\n" \
@@ -714,7 +780,8 @@ static const std::string kDynamicVS = std::string(
 	"        spec += sgn * lc.rgb * s;\n" \
 	"    }\n" \
 	"    }\n" \
-	"    return texel * clamp(color + fuaDesaturate(dyn), 0.0, 1.4) + m.Specular * clamp(fuaDesaturate(spec), 0.0, 1.4);\n" \
+	"    vec3 frag = texel * clamp(color + fuaDesaturate(dyn), 0.0, 1.4) + m.Specular * clamp(fuaDesaturate(spec), 0.0, 1.4);\n" \
+	"    return addLit ? clamp(frag + fuaDesaturate(add), 0.0, 1.0) : frag;\n" \
 	"}\n" \
 	/* [Doruk-Aksoy] uzdoom@62afe5f0a914610bd70ea9302da992ede38a36ad material_pbr.fp: Cook-Torrance over the dynamic lights in linear light, the room's light taken as irradiance through Schlick's Fresnel and the ambient occlusion. */ \
 	"const float FUA_PI = 3.14159265359;\n" \
@@ -738,7 +805,9 @@ static const std::string kDynamicVS = std::string(
 	"    int n = int(uLightParams.x);\n" \
 	"    if (wantDynLight && vActorLight.w <= 0.5 && n > 0 && dot(vPlane.xyz, vPlane.xyz) > 0.0001) {\n" \
 	FUA_LIGHT_LOOP_GLSL \
-	FUA_LIGHT_ATTENUATE_GLSL("N") \
+	FUA_LIGHT_SHAPE_GLSL("N") \
+	/* [Doruk-Aksoy] uzdoom@62afe5f0 material_pbr.fp loops over the modulated and subtractive lists only, so a PBR surface takes no additive light. */ \
+	"        if (additive) continue;\n" \
 	"        vec3 L = normalize(d);\n" \
 	"        vec3 H = normalize(V + L);\n" \
 	"        float G = fuaSchlickGGX(max(dot(N, V), 0.0), m.Roughness) * fuaSchlickGGX(max(dot(N, L), 0.0), m.Roughness);\n" \
@@ -774,7 +843,7 @@ static const std::string kDynamicVS = std::string(
 	"    else if (type == 2 && fuaHasLayer(0)) frag = fuaPBRLit(m, texel, color, wantDynLight);\n" \
 	"    else {\n" \
 	FUA_DYN_LIGHT_UP_GLSL \
-	"        frag = texel * color;\n" \
+	"        frag = fuaAddAfter(texel * color);\n" \
 	"    }\n" \
 	"    return fuaColouredFog(frag, vFog.rgb, fogMode, fogfactor);\n" \
 	"}\n" \

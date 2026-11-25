@@ -1,0 +1,17 @@
+# [Doruk-Aksoy] sccache at a pinned release on PATH, for hendrikmuhs/ccache-action to use with install: no, since the action takes the latest release and v0.17.0 fails CMake's first compiler test (it cannot zip the Debug try-compile's .pdb).
+name: sccache (pinned)
+description: Installs one sccache release on PATH.
+inputs:
+  version:
+    description: The sccache release to install.
+    default: v0.10.0
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        dest="$(cygpath -u "$RUNNER_TEMP")/sccache"
+        mkdir -p "$dest"
+        curl -fsSL "https://github.com/mozilla/sccache/releases/download/${{ inputs.version }}/sccache-${{ inputs.version }}-x86_64-pc-windows-msvc.tar.gz" -o "$dest/sccache.tar.gz"
+        tar xf "$dest/sccache.tar.gz" -C "$dest" --strip-components=1
+        cygpath -w "$dest" >> "$GITHUB_PATH"

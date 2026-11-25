@@ -7,6 +7,7 @@
 
 #include "r_defs.h"
 #include "r_state.h"
+#include "r_utility.h"
 #include "p_local.h"
 #include "c_cvars.h"
 #include "c_console.h"
@@ -14,6 +15,8 @@
 #include <algorithm>
 #include <climits>
 #include <vector>
+#include <cstddef>
+#include <cstdint>
 
 namespace zx { namespace bspgrid {
 
@@ -23,12 +26,14 @@ namespace {
 const int kMinShift = 22;
 const int kMaxCells = 1 << 20;
 
-// [Doruk-Aksoy] A grid with the tree it was built from, which a lookup checks so a tree replaced since never uses it.
+// [Doruk-Aksoy] A grid with the tree it was built from, which a lookup checks so a tree replaced since never uses it, and the tree's nodes in preorder that the grid's starts index.
 struct TreeGrid
 {
 	const node_t *tree = nullptr;
 	int count = 0;
+	subsector_t *subs = nullptr;
 	StartGrid grid;
+	std::vector<GridNode> walk;
 };
 
 TreeGrid g_game, g_render;
@@ -52,20 +57,30 @@ void Convert(const node_t *tree, int count, const subsector_t *subs, std::vector
 	}
 }
 
-void Build(const node_t *tree, int count, const subsector_t *subs, int64_t minX, int64_t minY, int64_t maxX, int64_t maxY, TreeGrid &out)
+void Build(const node_t *tree, int count, subsector_t *subs, int64_t minX, int64_t minY, int64_t maxX, int64_t maxY, TreeGrid &out)
 {
 	std::vector<GridNode> converted;
 	Convert(tree, count, subs, converted);
 	ComputeStartGrid(converted, count - 1, minX, minY, maxX, maxY, kMinShift, kMaxCells, out.grid);
+	std::vector<int> newIndex;
+	ComputePreorder(converted, count - 1, out.walk, newIndex);
+	ComputeRenumberGrid(out.grid, newIndex);
 	out.tree = tree;
 	out.count = count;
+	out.subs = subs;
 }
 
-// [Doruk-Aksoy] Where a walk of tree's count nodes starts for (x, y): from the grid built for that tree, else from the root.
-int StartIn(const TreeGrid &built, const node_t *tree, int count, fixed_t x, fixed_t y)
+// [Doruk-Aksoy] The subsector at (x, y) walking the compact copy from its grid's start with R_PointOnSide's test, or NULL when the grid was not built for this tree.
+subsector_t *WalkIn(const TreeGrid &built, const node_t *tree, int count, fixed_t x, fixed_t y)
 {
-	if (built.tree != tree || built.count != count || tree == nullptr) return count - 1;
-	return ComputeGridStart(built.grid, x.Raw(), y.Raw());
+	if (built.tree != tree || built.count != count || tree == nullptr || built.walk.empty()) return nullptr;
+	int at = ComputeGridStart(built.grid, x.Raw(), y.Raw());
+	while (at >= 0)
+	{
+		const GridNode &n = built.walk[(size_t)at];
+		at = n.child[R_PointOnPartition(x, y, fixed_t::FromRaw(n.x), fixed_t::FromRaw(n.y), fixed_t::FromRaw(n.dx), fixed_t::FromRaw(n.dy))];
+	}
+	return built.subs + (-1 - at);
 }
 
 } // namespace
@@ -95,14 +110,14 @@ void ForgetLevel()
 	g_render = TreeGrid();
 }
 
-int GameStart(fixed_t x, fixed_t y)
+subsector_t *GameSubsector(fixed_t x, fixed_t y)
 {
-	return StartIn(g_game, gamenodes, numgamenodes, x, y);
+	return WalkIn(g_game, gamenodes, numgamenodes, x, y);
 }
 
-int RenderStart(fixed_t x, fixed_t y)
+subsector_t *RenderSubsector(fixed_t x, fixed_t y)
 {
-	return StartIn(nodes == gamenodes ? g_game : g_render, nodes, numnodes, x, y);
+	return WalkIn(nodes == gamenodes ? g_game : g_render, nodes, numnodes, x, y);
 }
 
 }} // namespace zx::bspgrid

@@ -36,6 +36,7 @@
 #include "features/crashreport/computation/crash_report_compute.h"
 #include "features/crashreport/computation/crash_symbolize_compute.h"
 #include "features/telemetry/telemetry.h"
+#include "features/crash-summary/crashsummary.h" // [Doruk-Aksoy] the last minute, kept in every build
 #include "features/handoff/seam.h"   // [rc4l] the seam each thread was in
 
 #ifndef _WIN32
@@ -233,7 +234,7 @@ static sentry_value_t zx_before_send(sentry_value_t event, void *hint, void *clo
 	return event;
 }
 
-// [rc4l] The last minute's frame times and memory (features/telemetry) in the crash's extras, kept every ten seconds since each change is written to disk.
+// [rc4l] The last minute's frame times and memory (features/crash-summary) in the crash's extras, kept every ten seconds since each change is written to disk.
 static void KeepTelemetry(const char *summary)
 {
 	static zx::telemetry::Throttle every(10000000000LL);
@@ -289,7 +290,7 @@ static void ZX_CrashReportDoInit(int consentAction)
 	if (sentry_init(options) != 0)
 		return;
 	g_sentryInited = true;
-	zx::telemetry::SetSummaryListener(KeepTelemetry);
+	zx::crashsummary::SetListener(KeepTelemetry);
 
 	// [rc4l] WHICH BINARY this is, which is not the same question as which ROLE it is playing.
 	//

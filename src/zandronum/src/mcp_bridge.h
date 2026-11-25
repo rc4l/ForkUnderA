@@ -56,6 +56,9 @@ bool MCP_InputLocked();
 // [Doruk-Aksoy] True when this instance must leave the user's foreground alone (ZANDRONUM_BRIDGE_NO_FOCUS set, as fuactl's --no-focus or FUACTL_NO_FOCUS asks, or a hands-off one): its window opens without activating, under the user's, and never pulls itself forward.
 bool MCP_NoFocus();
 
+// [Doruk-Aksoy] True while a pause the bridge set (sim.pause, sim.pauseat, a finished sim.step) holds, so a playing demo reads no commands through it.
+bool MCP_HoldsPause();
+
 #else
 
 // Release build: no bridge. The anchors compile to nothing.
@@ -71,6 +74,7 @@ inline void MCP_NetProf_Recv( int, int ) {}
 inline void MCP_RPC_OverrideAxes( float * ) {}
 inline bool MCP_InputLocked() { return false; }
 inline bool MCP_NoFocus() { return false; }
+inline bool MCP_HoldsPause() { return false; }
 
 #endif // FUA_MCP_BRIDGE
 

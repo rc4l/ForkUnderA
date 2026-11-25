@@ -230,6 +230,10 @@ struct DynRun
 	float        cx, cy, cz;   // centroid, for the merged sort
 	float        lo, hi;       // [rc4l] its height span, which sides of a translucent plane it is on
 	float        minX, maxX, minZ, maxZ;   // [Doruk-Aksoy] its footprint on the map (SceneVertex x and z), which flat planes are ordered over
+	int          sortWho;      // [Doruk-Aksoy] its piece's actor, whose record order breaks a tie at one distance, or -1
+	int          ticPiece;     // [Doruk-Aksoy] the tic stream's piece it draws, or -1 for the frame's
+	bool         hidden;       // [Doruk-Aksoy] left out this frame (its tic piece hidden, or fua_dg_gpuview)
+	bool         eligible;     // [Doruk-Aksoy] an actor the tic stream may carry (MeshPiece::gpuEligible)
 	int          atlasPage;    // [rc4l] the sprite atlas page it draws from, -1 for its own binding
 	int          general;      // [rc4l] its first general vertex, or -1 for a packed sprite, which has none
 	int          userShader;   // [Doruk-Aksoy] the GLDEFS shader it draws with (ScenePSO), or -1
@@ -264,6 +268,9 @@ struct SceneGeometry
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> dynDataBuf;
 	unsigned int dynDataCapacity = 0;               // [rc4l] in 32-bit words
 	unsigned int dynWordsPeak = 0;                  // [rc4l] the most words a frame's dynamic pieces could take
+	// [Doruk-Aksoy] Model geometry resident for the dynamic vertex shader's model surfaces (dgmodelgeo.cpp), its capacity in 32-bit words.
+	Diligent::RefCntAutoPtr<Diligent::IBuffer> modelGeoBuf;
+	unsigned int modelGeoCapacity = 0;
 	// [rc4l] The sector light table (fuaSectorLit), kSectorLightWords a sector, bound statically like the piece buffer, and what it holds.
 	Diligent::RefCntAutoPtr<Diligent::IBuffer> sectorLightBuf;
 	unsigned int sectorLightCapacity = 0;           // [rc4l] in sectors
@@ -280,6 +287,7 @@ struct SceneGeometry
 	unsigned     actorUniformsTable = ~0u, actorUniformsDecls = ~0u;
 	int          skyHoleCount = 0;
 	TArray<DynRun> dynRuns;                         // [rc4l] this frame's sprite, model and decal draws
+	unsigned     dynTicRuns = 0;                    // [Doruk-Aksoy] how many of dynRuns lead from the tic stream, which a camera pass leaves out
 	bool         dynReady = false;
 	unsigned int batchesGen = 0;                        // [rc4l] bumped when the batches are rebuilt or one is appended, for what is cached per batch
 	TArray<zx::hwrender::TracedSprite> tracedSprites;   // [rc4l] this frame's sprites as a traced mirror's rays meet them
@@ -409,6 +417,8 @@ int MaterialSlotFor(const void *material, int translation, bool inMesh);
 void FillLayerRow(int slot, const void *material, bool inMesh);
 // [Doruk-Aksoy] A key's slot, marked as used by the reservation running, or -1 when the table lacks it, found before any slot is given to a missing key.
 int FindReservedSlot(const void *material, int translation);
+// [Doruk-Aksoy] Whether slot `slot` still holds the key, marked as used by the reservation running when it does.
+bool KeepReservedSlot(int slot, const void *material, int translation);
 // [Doruk-Aksoy] Counts the slot table's resets, so slots kept for a sprite list are read only against the table they came from.
 unsigned int MaterialSlotTableId();
 // [Doruk-Aksoy] Starts a dynamic reservation, whose slots and the last one's never give way to a new key.
@@ -485,6 +495,10 @@ void RefreshMovedGeometry(Diligent::IDeviceContext *ctx);
 void ReserveDynamicSlots();
 // [rc4l] Room in the piece buffer for this frame's dynamic pieces, made before anything is recorded.
 void EnsureDynamicRecords();
+// [Doruk-Aksoy] The model geometry (dgmodelgeo.cpp): this frame's new geometries placed and sent, true when the buffer must be made again with the pipelines; made at the size held; and a GPU surface's world box, false when it is not drawn.
+bool EnsureModelGeometry(Diligent::IDeviceContext *ctx);
+bool MakeModelGeoBuffer(FString &err);
+bool ModelSurfaceWorldBox(const zx::levelmesh::MeshPiece &p, const float *matrix, float out[6]);
 bool SceneUpload(FString &report);
 
 // [rc4l] Mirrors (dgviews.cpp), and reflective planes and stacked views (dgviewtargets.cpp).

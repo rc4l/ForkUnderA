@@ -181,7 +181,8 @@ int GetRevisionNumber();
 // [rc4l] 4529: APlayerPawn serializes RejumpDelay (zandronum@f6f2e6ee1991123e36a712985f37df73bf1e1ace, which did not bump), guarded in APlayerPawn::Serialize.
 // [rc4l] 4530: sectors no longer save their tag, which the tag manager rebuilds from the map (zandronum@a17262422dfc, its 4523); older saves skip it in P_SerializeWorld.
 // [rc4l] 4531: lines no longer save their ID either (zandronum@020ebf903625, also its 4523); older saves skip it in P_SerializeWorld.
-#define SAVEVER 4531
+// [Doruk-Aksoy] 4532: ADynamicLight serializes a spot's inner and outer angles (features/dynlights, guarded in ADynamicLight::Serialize).
+#define SAVEVER 4532
 
 
 #define SAVEVERSTRINGIFY2(x) #x
