@@ -39,6 +39,25 @@ FRipProgress Progress(int damageDone, int hitsDone, int hitsOnVictim)
 
 } // namespace
 
+// ---- whether a missile rips its victim --------------------------------------
+
+TEST(RipsThrough, RipperRipsAnOrdinaryVictim)
+{
+	EXPECT_TRUE(ComputeRipsThrough(true, false, 0, 0, 0, false, false));
+	// [MGOOOOOO] A boss is ripped unless the ripper says +NOBOSSRIP, and +NOBOSSRIP spares only bosses.
+	EXPECT_TRUE(ComputeRipsThrough(true, false, 0, 0, 0, false, true));
+	EXPECT_TRUE(ComputeRipsThrough(true, false, 0, 0, 0, true, false));
+}
+
+TEST(RipsThrough, EachRuleStopsIt)
+{
+	// [MGOOOOOO] In order: not a ripper, a +DONTRIP victim, below the level window, +NOBOSSRIP on a boss.
+	EXPECT_FALSE(ComputeRipsThrough(false, false, 0, 0, 0, false, false));
+	EXPECT_FALSE(ComputeRipsThrough(true, true, 0, 0, 0, false, false));
+	EXPECT_FALSE(ComputeRipsThrough(true, false, 1, 2, 0, false, false));
+	EXPECT_FALSE(ComputeRipsThrough(true, false, 0, 0, 0, true, true));
+}
+
 // ---- tiered ripping -------------------------------------------------------
 
 TEST(RipLevel, NoWindowAlwaysAllows)

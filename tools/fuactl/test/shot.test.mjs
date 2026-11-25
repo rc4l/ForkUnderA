@@ -1,6 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { overTimeSteps, stepPausedTics, BUILD_TARGETS, PK3_TARGETS } from "../src/shot.mjs";
+import { overTimeSteps, stepPausedTics, BUILD_TARGETS, PK3_TARGETS, repeatedCaptures, repeatNote } from "../src/shot.mjs";
+
+// [MGOOOOOO] A burst marks each capture equal to the one before, and a failed capture repeats nothing.
+test("a burst finds the captures that repeat the one before", () => {
+  const a = Buffer.from("frame a"), b = Buffer.from("frame b");
+  assert.deepEqual(repeatedCaptures([a, b, Buffer.from("frame b"), b, a]), [2, 3]);
+  assert.deepEqual(repeatedCaptures([a, null, null, a]), []);
+  assert.deepEqual(repeatedCaptures([a]), []);
+  assert.deepEqual(repeatedCaptures([]), []);
+});
+
+// [MGOOOOOO] The note names the causes seen so far, and the slow Vulkan HUD capture only for a Vulkan burst.
+test("a burst's repeat note names the causes to rule out", () => {
+  assert.equal(repeatNote([]), null);
+  assert.match(repeatNote([1]), /^capture 1 repeats the one before byte for byte: a still scene does that, .*fua_render_in_background 0/);
+  assert.match(repeatNote([1, 2]), /^captures 1, 2 repeat the one before byte for byte: /);
+  assert.match(repeatNote([3], { side: "vk" }), /Vulkan capture also shows a HUD animation slower .*fuactl window --shot gl/);
+  assert.doesNotMatch(repeatNote([3], { side: "gl" }), /Vulkan/);
+  assert.doesNotMatch(repeatNote([3]), /NOT RESPONDING|fuactl hang/);
+});
 
 // [Doruk-Aksoy] An over-time pair waits intervalMs with the sim running by default, and steps tics in a paused one when asked.
 test("an over-time pair is timed by default and stepped when asked", () => {

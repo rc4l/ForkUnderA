@@ -5,6 +5,8 @@ import { windowKind, parseWindowLines, shotScript, resizeScript, gameWindowOf, a
 // [rc4l] Queue #41 was read off a hung GL window and a minimized backend one, with PowerShell written beside the tool each time.
 test("a window is GL's or the backend's by its title", () => {
   assert.equal(windowKind("Fua v0.3.0  64-bit (experimental fac32fc2f27b)"), "gl");
+  assert.equal(windowKind("Fua 5093018a  64-bit (experimental 5093018a94d5)"), "gl");
+  assert.equal(windowKind("Fua Fatal Error"), null);
   assert.equal(windowKind("ForkUnderA - Diligent (Vulkan) backend"), "vk");
   assert.equal(windowKind("Default IME"), null);
 });

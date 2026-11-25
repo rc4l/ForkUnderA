@@ -338,7 +338,25 @@ export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 
       : await captureVulkan(c, path.posix.join(outDir, `${tag}_vk${i}.png`));
     out.push({ i, t, file, mean: file ? boxMean(decodePNG(file), box) : NaN });
   }
+  for (const i of repeatedCaptures(out.map((r) => (r.file ? fs.readFileSync(r.file) : null)))) out[i].repeat = true;
   return out;
+}
+
+// [MGOOOOOO] The burst captures that repeat the one before byte for byte, by index (a capture that failed repeats nothing).
+export function repeatedCaptures(contents) {
+  const out = [];
+  for (let i = 1; i < contents.length; i++) {
+    if (contents[i] && contents[i - 1] && Buffer.compare(contents[i], contents[i - 1]) === 0) out.push(i);
+  }
+  return out;
+}
+
+// [MGOOOOOO] What a burst says when captures repeat: which ones, then the causes seen so far, none of them a stall (Windows marks healthy engine windows NOT RESPONDING too).
+export function repeatNote(repeated, { side = "vk" } = {}) {
+  if (!repeated.length) return null;
+  const which = `capture${repeated.length > 1 ? "s" : ""} ${repeated.join(", ")} repeat${repeated.length > 1 ? "" : "s"} the one before byte for byte`;
+  const vk = side === "vk" ? "; a Vulkan capture also shows a HUD animation slower than the window does, which `fuactl window --shot gl` reads itself" : "";
+  return `${which}: a still scene does that, and so does a window that lost the focus with fua_render_in_background 0, which keeps its last picture${vk}`;
 }
 
 // [Doruk-Aksoy] Advances a paused sim n tics and waits until the engine says it froze again.

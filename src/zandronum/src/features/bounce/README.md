@@ -8,7 +8,9 @@ bounced the actor nor ended it:
   of an actor and for MBF bouncers ignored that, and the spent count of 0 then meant unlimited. It now
   ends the bouncer itself (uzdoom@1eb2c7532, uzdoom@46ee2c5ec).
 - **On top of an actor it does not bounce off.** It kept its vertical speed with no gravity and hung
-  there. A missile now explodes on it (uzdoom@5ca1bb397); anything else lands on it.
+  there. A missile now explodes on it (uzdoom@5ca1bb397); anything else lands on it. A ripper that can rip
+  it rips on through instead, as when it hits an actor side-on and as Zandronum leaves it (MM8BDM's Cut Man
+  slices an opponent touching him with bouncing rippers aimed down into him).
 - **A plane it does not bounce off.** A walls-only bouncer stopped by a ramp "bounced" off the floor
   without changing anything and pressed into it forever. It now explodes as any missile would
   (uzdoom@72ed0c437).
