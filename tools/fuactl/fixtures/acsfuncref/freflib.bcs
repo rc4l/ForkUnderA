@@ -1,0 +1,13 @@
+#library "freflib"
+#include "zcommon.h"
+
+// [Doruk-Aksoy] The library scenarios/acsfuncref.mjs loads through LOADACS on every map, whose functions the other modules take references to.
+// [Doruk-Aksoy] Every .o beside it is its .bcs built with BCC: bcc -i <bcc>/lib freflib.bcs freflib.o (frefuse, frefmap and map02 alike).
+
+int Seven( void ) { return 7; }
+int Eight( void ) { return 8; }
+
+// [Doruk-Aksoy] Whether a reference another module took names the same function as this library's own reference does.
+bool IsSeven( int function( void )? f ) {
+   return f == Seven;
+}
