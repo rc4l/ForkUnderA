@@ -13414,7 +13414,7 @@ bf9c5849e86f776e85cb69bf3c02396a985aa0b3	2019-08-08T06:09:31Z	- merged all usefu
 d1026e4b5b4d03d794988e997bd0fe1d6977e8b8	2019-08-08T18:56:11Z	- call vkDeviceWaitIdle before RAII tears down buffers	pending		/
 84475250192dd4274c5a09e35047db6ac21a3c04	2019-08-09T06:32:23Z	- fixed: Takedown of an expired HUD message did not properly detach it from the list.	pending		/
 a239675fb59c4c114820098bed5e44f6b284fed6	2019-08-09T06:42:36Z	- fixed incorrect write barrier in sound sequence code.	pending		/
-5ca1bb39799865523ade57ceb6802172f4b0fbec	2019-08-09T07:36:50Z	- fixed an inconsistency with missiles bouncing off actors.	adapted	a missile on top of an actor it did not bounce off explodes on it, and a non-missile lands there instead of hanging; a ripper that can rip the actor rips through it instead, as side-on and as on Zandronum (MM8BDM Cut Man)	4aa7de77 a6cd629c
+5ca1bb39799865523ade57ceb6802172f4b0fbec	2019-08-09T07:36:50Z	- fixed an inconsistency with missiles bouncing off actors.	adapted	a missile on top of an actor it did not bounce off explodes on it, and a non-missile lands there instead of hanging; a ripper that can rip the actor rips through it instead, as side-on and as on Zandronum (MM8BDM Cut Man)	4aa7de77,a6cd629c
 c3e3fda94add6ac82f9c73dd875c997d8d2acd92	2019-08-09T07:58:40Z	- fixed handling of the "ouch" face.	pending		/
 14a21c2a7ec00cc175f26ce496879d444d405e98	2019-08-09T08:18:15Z	- made some changes to the survey code to give clearer output and removed a few obsolete things that are no longer relevant.	pending		/
 afe4a45a76cdff68bd4ddec735e146f9333ca3ce	2019-08-09T08:39:09Z	- fixed: The frozen state was not reset when the global level variable was reset.	pending		/
