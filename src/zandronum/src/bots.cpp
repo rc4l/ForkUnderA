@@ -91,6 +91,7 @@
 #include "doomerrors.h"
 #include "chat.h"
 #include "scoreboard.h"
+#include "features/handoff/gamethread.h"
 
 //*****************************************************************************
 //	VARIABLES
@@ -1888,8 +1889,12 @@ CSkullBot::CSkullBot( const char *pszName, const char *pszTeamName, ULONG ulPlay
 		// This bot now has a script. Now, initialize all the script data.
 		m_bHasScript = true;
 
-		// Open the lump name specified.
-		m_ScriptData.RawData = Wads.OpenLumpName( g_BotInfo[m_ulBotInfoIdx].szScriptName );
+		// [MGOOOOOO] An archive has one reader, so the main thread reads the script into memory, from which the bot reads it every tic on any thread.
+		zx::handoff::AskMainFor ([&] {
+			FWadLump *script = Wads.ReopenLumpNum( Wads.GetNumForName( g_BotInfo[m_ulBotInfoIdx].szScriptName ));
+			m_ScriptData.RawData = *script;
+			delete script;
+		});
 		
 		m_ScriptData.lScriptPos = 0;
 		m_ScriptData.bExitingState = false;

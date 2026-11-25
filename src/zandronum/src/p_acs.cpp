@@ -117,6 +117,8 @@
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
 #include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
+#include "features/acsvec/acsvec.h"   // [Doruk-Aksoy] CallVecFunction
+#include "features/acs-funcrefs/acsfuncrefs.h"   // [Doruk-Aksoy] PushFunctionRef, ResolveFunctionRef
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -2365,6 +2367,7 @@ FBehavior::FBehavior (int lumpnum, FileReader * fr, int len)
 	Data = NULL;
 	Format = ACS_Unknown;
 	LumpNum = lumpnum;
+	LibraryOrdinal = zx::acsfuncrefs::LibraryOrdinalOf (lumpnum);
 	memset (MapVarStore, 0, sizeof(MapVarStore));
 	ModuleName[0] = 0;
 	FunctionProfileData = NULL;
@@ -5867,9 +5870,12 @@ enum EACSFunctions
 	ACSF_fua_SetActorUniform3f,
 	ACSF_fua_SetActorUniform4f,
 	ACSF_fua_SetActorUniform1i,			// (int tid, str uniform, int x)
+	// [Doruk-Aksoy] features/acsvec: what zt-bcc compiles vector length, unit, dot and cross to.
+	ACSF_fua_Vec,						// (operands..., int channel, int op)
 };
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
+static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
@@ -7463,6 +7469,9 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_fua_SetActorUniform4f:
 		case ACSF_fua_SetActorUniform1i:
 			return zx::actormaterials::CallActorMaterialFunction( activator, funcIndex, args, argCount );
+
+		case ACSF_fua_Vec:
+			return zx::acsvec::CallVecFunction( activeBehavior, args, argCount );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:
@@ -9904,8 +9913,8 @@ int DLevelScript::RunScript ()
 		case PCD_PUSHFUNCTION:
 		{
 			int funcnum = NEXTBYTE;
-			// Not technically a string, but since we use the same tagging mechanism
-			PushToStack(TAGSTR(funcnum));
+			// [Doruk-Aksoy] features/acs-funcrefs: a library's function is named by its home library, so every module's reference to it is the same and lasts across maps.
+			PushToStack(zx::acsfuncrefs::PushFunctionRef(activeBehavior, funcnum));
 			break;
 		}
 		case PCD_CALL:
@@ -9919,11 +9928,16 @@ int DLevelScript::RunScript ()
 
 				if(pcd == PCD_CALLSTACK)
 				{
-					funcnum = STACK(1);
-					module = FBehavior::StaticGetModule(funcnum>>LIBRARYID_SHIFT);
+					const int ref = STACK(1);
 					--sp;
-
-					funcnum &= 0xFFFF; // Clear out tag
+					// [Doruk-Aksoy] features/acs-funcrefs: a reference into a module this map does not hold stops the script rather than calling another module's function.
+					module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+					if (module == NULL)
+					{
+						zx::acsfuncrefs::PrintMissingFunction(ref, ScriptPresentation(script).GetChars());
+						state = SCRIPT_PleaseRemove;
+						break;
+					}
 				}
 				else
 				{
@@ -11550,7 +11564,6 @@ scriptwait:
 					{
 						static const char bar[] = TEXTCOLOR_ORANGE "\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37" TEXTCOLOR_NORMAL "\n";
-						static const char logbar[] = "\n<------------------------------->\n";
 						char consolecolor[3];
 
 						consolecolor[0] = '\x1c';
@@ -11560,6 +11573,7 @@ scriptwait:
 						AddToConsole (-1, consolecolor);
 						AddToConsole (-1, work);
 						AddToConsole (-1, bar);
+						C_LogMidMessage (work);
 					}
 				}
 			}

@@ -34,6 +34,7 @@ struct SceneConstantInputs
 	int walkSlot;                     // [rc4l] the walk slot whose drawing alone this pass draws (ComputePassWalkSlot), else -1; uFrame.y carries it plus one
 	bool playerPass;                  // [rc4l] the player's own pass, the main view outside any line mirror, the only one whose walk the holes and walk bits are
 	int skyHoles;                     // [rc4l] the player's sky holes this frame, which uFrame.z carries to the player's pass alone
+	float spriteFrac = 0.f, spritePerpX = 0.f, spritePerpY = 0.f, spritePitch = 0.f;   // [Doruk-Aksoy] the actor fraction and the view's perpendicular a moving sprite takes; uOptions.z, uShadeFog.zw
 	float spriteAlphaCut;             // [rc4l] the texel alpha at or below which an alpha-tested sprite is dropped, GL's uAlphaThreshold for r_mask_sprite_threshold; uFrame.w
 	zx::viewsetup::FixedColormapShade fixedColormap;   // [rc4l] what the view's fixed colormap does to every texel, uFixedColormap and uFixedRange
 	bool lightsCheckSide;             // [rc4l] r_lights_checkside: a light behind a surface's plane does not reach it; uOptions.x

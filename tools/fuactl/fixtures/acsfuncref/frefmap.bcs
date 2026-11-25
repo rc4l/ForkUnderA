@@ -1,0 +1,6 @@
+#library "frefmap"
+#include "zcommon.h"
+
+// [Doruk-Aksoy] A library only MAP02's BEHAVIOR imports, so no other map loads it.
+
+int NinetyNine( void ) { return 99; }

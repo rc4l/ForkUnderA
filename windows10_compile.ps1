@@ -216,6 +216,12 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     Write-Status "MCP bridge: ENABLED (dev build - do not ship)"
     $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
 }
+# [Doruk-Aksoy] Telemetry, seams and the dev-mode tools (docs/diagnostics.md) only in a test build (ZX_DIAGNOSTICS=1), passed OFF otherwise so a cached ON never reaches a public build.
+$diagArgs = @("-DFUA_DIAGNOSTICS=OFF")
+if ($env:ZX_DIAGNOSTICS -eq "1") {
+    Write-Status "diagnostics: ENABLED (test build - do not ship)"
+    $diagArgs = @("-DFUA_DIAGNOSTICS=ON")
+}
 & cmake -S (Join-Path $ScriptRoot "src\zandronum") -B $BuildDir -G "Visual Studio 17 2022" -A x64 -T v143 `
     "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
     "-DCMAKE_PREFIX_PATH=$dep" `
@@ -236,7 +242,7 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
-    @symArgs @bridgeArgs
+    @symArgs @bridgeArgs @diagArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 # --- Build -----------------------------------------------------------------

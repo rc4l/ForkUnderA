@@ -26,6 +26,16 @@ first has the backend forget its textures (`ForgetBackendTextures`), since the s
 `computation/actorcull_compute` is the sweep's frustum test, padded by the actor's size since a sprite
 is wider than the point it stands on. The sweep culls chunks of the actor records on the job lanes and joins their
 kept lists in chunk order, so the batch is in record order as one pass made it (`scene/actor_sweep`).
+It culls with the matrix of the view being built (`hwrender::ViewMVPNow`), not `SceneMVP`, which still holds the last
+frame's view, or a camera texture's, until this frame records; the `sweepcull` scenario (a quarter turn a frame in a
+ring of columns) fails on a build that culls with the last frame's.
+
+A camera texture's view is a scene of its own, as GL's `RenderViewpoint` is. Its pass draws straight from the dynamic
+stream, so the view clears the stream and fills it alone, with the camera's own walk's particles and decals
+(`WalkCameraView`) and the actors its sweep keeps (`levelmesh::CameraCapture`), before the player's view clears it again.
+`BeginRecordViewpoint` marks the viewpoint's own map section for every view, as GL's `ProcessScene` does. The
+`cameraactors` scenario (a camera aimed at columns and a particle fountain in a room the player never sees) fails on a
+build whose camera picture draws the player's last frame instead.
 
 `playerview` is the player's view, shared by GL and the backend:
 

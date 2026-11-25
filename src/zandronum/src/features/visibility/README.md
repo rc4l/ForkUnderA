@@ -102,8 +102,8 @@ included, and GL's walk on all of them.
 - `features/frame/standaloneframe.cpp` `StandaloneScene`: `PO_LinkToSubsectors`, `WalkView` (publishing to
   the player's walk slot) and `WalkPortalViews`, with `WalkHooks` for the
   particles, actors and decals they reach and `walked`, called when the player's walk is done and before its
-  decals are handed; for a camera texture's view, `WalkCameraSky`, its sky surfaces
-  alone over its own map section, as GL's walk of `RenderViewpoint` captures them. A mirror's walk fills the
+  decals are handed; for a camera texture's view, `WalkCameraView`, its sky surfaces, particles and decals
+  over its own map section, as GL's walk of `RenderViewpoint` captures them. A mirror's walk fills the
   mirrors' sky list (`kSkyCaptureMirror`), which every mirror pass paints other skies from.
 - `features/frame/levelrenderer.cpp` `FLevelRenderer::CleanLevelData`: `ForgetWalk`.
 - `skyfog.cpp` `SetSkyFog`: the sky's fog the walk finds, which the backend's sky pass (`GetSkyFog`) lays over

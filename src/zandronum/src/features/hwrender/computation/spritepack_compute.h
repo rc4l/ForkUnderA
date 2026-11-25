@@ -34,10 +34,18 @@ struct ScenePieceData
 struct SpriteCorner { float x, y, z, u, v; };
 
 // [rc4l] The 32-bit words a packed sprite takes, a multiple of four so each starts on a word offset whose low two bits can carry a corner.
-enum { kSpriteWords = 28 };
+enum { kSpriteWords = 36 };
+
+// [Doruk-Aksoy] A face sprite the shader turns to the view and interpolates, its tic centre and perpendicular (scene x, map y) and the tic's move (x, height, map y), in words 27-34.
+struct SpriteMotion { float cx, cy, px, py, dx, dh, dy; bool xy; };
+
+// [Doruk-Aksoy] The corners the dynamic scene shader draws a moving packed sprite's stored corners at (kDynamicVS, step for step): turned from the tic's perpendicular to (perpX, perpY), slid back by 1 - frac of the move, and an XY billboard turned by -pitchDeg about its middle.
+void ComputeSpriteMotionCorners(const SpriteCorner in[4], const SpriteMotion &m, float frac, float perpX, float perpY, float pitchDeg, SpriteCorner out[4]);
+// [Doruk-Aksoy] The same with the turn's cosine and sine of -pitchDeg already worked out, for a frame turning thousands of sprites by one pitch.
+void ComputeSpriteMotionCornersCS(const SpriteCorner in[4], const SpriteMotion &m, float frac, float perpX, float perpY, float cs, float sn, SpriteCorner out[4]);
 
 // [rc4l] Packs a quad's record and corners into out, false when the record holds anything the packed form cannot carry bit for bit: a warp, a normal, a flood, a glow, a tint, a scroll, a stacked view, an animated slot, a plain draw, a colour off an 8-bit step, texture coordinates that are no rectangle, or a slot or texture flag past 16 bits.
-bool ComputeSpritePack(const ScenePieceData &pd, const SpriteCorner corners[4], unsigned out[kSpriteWords]);
+bool ComputeSpritePack(const ScenePieceData &pd, const SpriteCorner corners[4], unsigned out[kSpriteWords], const SpriteMotion *motion = nullptr);
 
 // [rc4l] The record and the corner'th corner a packed sprite holds, as the dynamic scene shader reads them (dgscene_glsl.h kDynamicVS).
 void ComputeSpriteUnpack(const unsigned in[kSpriteWords], int corner, ScenePieceData &pd, SpriteCorner &c);
@@ -45,6 +53,9 @@ void ComputeSpriteUnpack(const unsigned in[kSpriteWords], int corner, ScenePiece
 // [rc4l] A vertex of the dynamic stream: a corner of the packed sprite at wordOffset (a multiple of four), else the general vertex at index; the shader tells them apart by the top bit.
 unsigned ComputeSpriteRef(unsigned wordOffset, int corner);
 unsigned ComputeGeneralRef(unsigned index);
+
+// [Doruk-Aksoy] Whether a pass draws dynamic run `run`: a camera texture's pass leaves out the first `ticRuns`, the player's tic stream, since it draws its own view's sprites.
+bool ComputePassDrawsRun(unsigned run, unsigned ticRuns, bool cameraPass);
 
 }} // namespace zx::hwrender
 

@@ -142,11 +142,14 @@
 
 #include "g_hub.h"
 #include "features/telemetry/telemetry.h"
+#include "features/blockmap-filter/cellarrays.h"   // [Doruk-Aksoy] zx::cells::Refresh
 #include "computation/saveversion_compute.h"   // [rc4l] ComputeSaveVersionVerdict
 #include "computation/mapangle_compute.h"   // [rc4l] ComputeMapThingAngle
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 #include "features/latency/latency.h"   // [rc4l] latency/ counters
 #include "features/aimassist/aimassist.h"   // [Doruk-Aksoy] zx::aimassist::Apply
+#include "mcp_bridge.h"   // [Doruk-Aksoy] MCP_HoldsPause
+#include "features/mcp-bridge/computation/mcprpc_compute.h"   // [Doruk-Aksoy] zx::mcp::ComputeTiccmdSource
 
 static FRandom pr_dmspawn ("DMSpawn");
 static FRandom pr_pspawn ("PlayerSpawn");
@@ -1814,11 +1817,13 @@ G_TickerPart G_TickerBegin ()
 				// If the user alt-tabbed away, paused gets set to -1. In this case,
 				// we do not want to read more demo commands until paused is no
 				// longer negative.
-				if (demoplayback && paused >= 0)
+				// [Doruk-Aksoy] features/mcp-bridge: a pause the bridge holds reads no demo commands, so the demo resumes at the one it stopped at.
+				const zx::mcp::TiccmdSource source = zx::mcp::ComputeTiccmdSource(demoplayback, paused, MCP_HoldsPause());
+				if (source == zx::mcp::TiccmdSource::Demo)
 				{
 					G_ReadDemoTiccmd (cmd, i);
 				}
-				else
+				else if (source == zx::mcp::TiccmdSource::Local)
 				{
 					memcpy (cmd, newcmd, sizeof(ticcmd_t));
 				}
@@ -4147,6 +4152,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 				pNewActor->HandleSpawnFlags( );
 
 				pNewActor->BeginPlay ();
+				zx::cells::Refresh (pNewActor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 				if (!(pNewActor->ObjectFlags & OF_EuthanizeMe))
 				{
 					pNewActor->LevelSpawned ();
@@ -4328,6 +4334,7 @@ void GAME_ResetMap( bool bRunEnterScripts )
 			pNewActor->HandleSpawnFlags( );
 
 			pNewActor->BeginPlay ();
+			zx::cells::Refresh (pNewActor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 			if (!(pNewActor->ObjectFlags & OF_EuthanizeMe))
 			{
 				pNewActor->LevelSpawned ();

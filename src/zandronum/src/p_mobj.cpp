@@ -112,6 +112,9 @@
 #include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
 #include "computation/rejumpdelay_compute.h" // [rc4l] ComputeLandingDelaysJump, ComputeRisingDelaysJump
 #include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
+#include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
+#include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
+#include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -718,7 +721,8 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 				// except when this actor is a player chunk.
 				const int overrideSkin = IsKindOf( RUNTIME_CLASS( APlayerChunk )) ? -1 : PLAYER_GetOverrideSkin( this->player );
 				// [AK] Don't change to the skin's sprite if the new sprite is TNT1A0.
-				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == SpawnState->sprite && newsprite != SPR_TNT1)
+				// [Doruk-Aksoy] SpawnState read from the class defaults, which no actor changes, so this misses no cold actor line.
+				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == GetDefault()->SpawnState->sprite && newsprite != SPR_TNT1)
 				{ // [RH] If the new sprite is the same as the original sprite, and
 				// this actor is attached to a player, use the player's skin's
 				// sprite. If a player is not attached, do not change the sprite
@@ -1565,6 +1569,7 @@ bool AActor::Grind(bool items)
 			flags &= ~MF_SOLID;
 			flags3 |= MF3_DONTGIB;
 			height = radius = 0;
+			zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 			SetState (state);
 			if (isgeneric)	// Not a custom crush state, so colorize it appropriately.
 			{
@@ -1600,6 +1605,7 @@ bool AActor::Grind(bool items)
 				flags &= ~MF_SOLID;
 				flags3 |= MF3_DONTGIB;
 				height = radius = 0;
+				zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 				return false;
 			}
 
@@ -1610,6 +1616,7 @@ bool AActor::Grind(bool items)
 				gib->alpha = alpha;
 				gib->height = 0;
 				gib->radius = 0;
+				zx::cells::Refresh (gib);	// [Doruk-Aksoy] features/blockmap-filter
 
 				// [BB] Apparently Skulltag always has let the clients spawn the gibs.
 				// Whether or not this is intentional, if the clients spawn the gibs on
@@ -2352,6 +2359,12 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	FCheckPosition tm(!!(mo->flags2 & MF2_RIP));
 
+	// [Doruk-Aksoy] features/swept-missiles: the leading steps that would only move the missile are skipped, and the move starts at the last of them.
+	if (zx::sweptmove::ComputeSweepPays(steps) && zx::sweptmove::Sweeps(mo, walkplane != NULL))
+	{
+		const int quiet = zx::sweptmove::QuietRunEndXY(mo, startx, starty, xmove, ymove, steps);
+		if (quiet >= 2) step = quiet;
+	}
 
 	do
 	{
@@ -4723,7 +4736,8 @@ void AActor::Tick ()
 					zx::bounce::OnTop ontop = zx::bounce::OnTop::Land;
 					if (velz != 0 && (BounceFlags & BOUNCE_Actors))
 					{
-						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0);
+						// [MGOOOOOO] A ripper rips through what it can rip rather than exploding on it (OnTop::RipThrough: Cut Man's point-blank slices on MM8BDM).
+						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0, P_RipsThrough(this, onmo));
 					}
 					if (ontop == zx::bounce::OnTop::Explode)
 					{
@@ -4923,20 +4937,20 @@ void AActor::CheckSectorTransition(sector_t *oldsec)
 
 bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 {
-	BYTE lastwaterlevel = waterlevel;
+	// [Doruk-Aksoy] features/actor-layout: measured into a local, so a dry actor's water fields are only read.
+	int measured = 0;
 	fixed_t fh = FIXED_MIN;
 	bool reset=false;
 
-	waterlevel = 0;
-
 	if (Sector == NULL)
 	{
+		if (waterlevel != 0) waterlevel = 0;
 		return false;
 	}
 
 	if (Sector->MoreFlags & SECF_UNDERWATER)	// intentionally not SECF_UNDERWATERMASK
 	{
-		waterlevel = 3;
+		measured = 3;
 	}
 	else
 	{
@@ -4948,24 +4962,24 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 			{
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
 				else if (!(hsec->MoreFlags & SECF_FAKEFLOORONLY) && (z + height > hsec->ceilingplane.ZatPoint (x, y)))
 				{
-					waterlevel = 3;
+					measured = 3;
 				}
 				else
 				{
-					waterlevel = 0;
+					measured = 0;
 				}
 			}
 			// even non-swimmable deep water must be checked here to do the splashes correctly
@@ -4994,14 +5008,14 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 				fh=ff_top;
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
@@ -5014,15 +5028,15 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 		
 	// some additional checks to make deep sectors like Boom's splash without setting
 	// the water flags. 
-	if (boomwaterlevel == 0 && waterlevel != 0 && dosplash) 
+	const WaterStore store = ComputeWaterStore(waterlevel, boomwaterlevel, measured, reset, dosplash);
+	if (store.splash)
 	{
+		// [Doruk-Aksoy] P_HitWater reads the measured level, as it did before the reset.
+		waterlevel = measured;
 		P_HitWater(this, Sector, FIXED_MIN, FIXED_MIN, fh, true);
 	}
-	boomwaterlevel = waterlevel;
-	if (reset)
-	{
-		waterlevel = lastwaterlevel;
-	}
+	if (boomwaterlevel != store.boom) boomwaterlevel = (BYTE)store.boom;
+	if (waterlevel != store.water) waterlevel = store.water;
 	return false;	// we did the splash ourselves
 }
 
@@ -5208,6 +5222,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	// set subsector and/or block links
 	actor->LinkToWorld (SpawningMapThing);
+	if (!(actor->flags & MF_NOBLOCKMAP)) zx::sweptmove::BlockmapSpawns++;	// [Doruk-Aksoy] features/swept-missiles
 
 	actor->dropoffz =			// killough 11/98: for tracking dropoffs
 	actor->floorz = actor->Sector->floorplane.ZatPoint (ix, iy);
@@ -5297,6 +5312,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	if (!SpawningMapThing)
 	{
 		actor->BeginPlay ();
+		zx::cells::Refresh (actor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 		if (actor->ObjectFlags & OF_EuthanizeMe)
 		{
 			g_SpawnCycles.Unclock();
@@ -6695,6 +6711,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mobj->fillcolor = mthing->fillcolor;
 
 	mobj->BeginPlay ();
+	zx::cells::Refresh (mobj);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 	if (!(mobj->ObjectFlags & OF_EuthanizeMe))
 	{
 		mobj->LevelSpawned ();
@@ -7482,6 +7499,7 @@ bool P_CheckMissileSpawn (AActor* th, fixed_t maxdist, bool bExplode, bool bClie
 		th->x += FLOAT2FIXED(advance.X);
 		th->y += FLOAT2FIXED(advance.Y);
 		th->z += FLOAT2FIXED(advance.Z);
+		zx::cells::Refresh (th);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 	}
 
 	FCheckPosition tm(!!(th->flags2 & MF2_RIP));

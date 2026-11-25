@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/gameloop/loop.h"
+#include "features/dev-mode/devmode.h"   // [Doruk-Aksoy] fua_debug_steptic
 #include "features/handoff/seam.h"
 #include "features/handoff/effects.h"
 #include "features/handoff/snapshot.h"
@@ -43,7 +44,25 @@ extern bool singletics;
 extern bool advancedemo;
 extern gamestate_t wipegamestate;
 
+// [Doruk-Aksoy] Hold the game between two tics, for a test that draws one moment at several fractions.
+CVAR(Bool, fua_debug_holdtics, false, CVAR_FUA_DEV_MODE)
+// [Doruk-Aksoy] One tic let through the hold, for a test that holds each tic in turn.
+static int g_stepTics = 0;
+DEV_MODE_CCMD(fua_debug_steptic) { g_stepTics = 1; }
+
 namespace zx { namespace gameloop {
+
+int HoldTics(int due)
+{
+	const int run = ComputeHeldTics (fua_debug_holdtics, g_stepTics > 0, due);
+	if (fua_debug_holdtics && run > 0) g_stepTics = 0;
+	return run;
+}
+
+bool HoldingTics()
+{
+	return fua_debug_holdtics;
+}
 
 using namespace zx::handoff;
 
@@ -207,7 +226,8 @@ bool GameThreadFrame()
 	if (!ThreadedNow ()) return false;
 
 	// [rc4l] The handoff: input and the clock, the catch-up tics that fit kInlineCatchUpMs inline, then the frame's view of the game and the next tic started; the rest wait for the game thread, a handoff each, with frames drawn beside them.
-	const int due = Net_TicsDue ();
+	// [Doruk-Aksoy] Fua_debug_holdtics runs no tic while frames go on, the last tic's motion kept, unlike a pause.
+	const int due = HoldTics (Net_TicsDue ());
 	ZX_COUNT ("handoff/backlog_tics", "tics", due);
 	const int inlineTics = ComputeInlineCatchUp (due - 1, g_lastPlaysimNs.load (std::memory_order_relaxed) / 1e6, kInlineCatchUpMs);
 	ZX_COUNT ("handoff/inline_catchup", "tics", inlineTics);

@@ -50,7 +50,9 @@
 #include "features/gamecopy/actorlists.h"   // [rc4l] NoteActorLists; [Doruk-Aksoy] NoteThinkerLists, NoteThinkerAdded, NoteThinkerRemoved
 #include "features/gamecopy/computation/thinkerorder_compute.h"   // [Doruk-Aksoy] ComputeListBucket
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] a thinker's first tick, either side
+#include "features/actor-layout/actorprefetch.h"   // [Doruk-Aksoy] the next thinker's hot lines fetched while one ticks
 
+#include <cstddef>
 #include <cstdint>
 
 
@@ -444,6 +446,7 @@ void DThinker::RunThinkers ()
 	ThinkCycles.Unclock();
 }
 
+#ifdef FUA_DIAGNOSTICS
 // [rc4l] fua_telemetry_thinkers times every thinker's tick by class, which fua_stats sim/thinker/ lists, at a clock read a thinker.
 CVAR (Bool, fua_telemetry_thinkers, false, CVAR_FUA_DEV_MODE)
 static zx::telemetry::KeyedTimer s_thinkerTimes;
@@ -454,11 +457,13 @@ static void ThinkerReadings (std::vector<zx::telemetry::Reading> &out)
 	out.insert (out.end (), top.begin (), top.end ());
 }
 static const bool s_thinkerBreakdown = (zx::telemetry::RegisterBreakdown ("sim/thinker/", ThinkerReadings), true);
+#endif
 
 int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 {
 	int count = 0;
 	DThinker *node = list->GetHead();
+	const size_t fetch = zx::actorlayout::TickBytes();
 
 	if (node == NULL)
 	{
@@ -472,6 +477,8 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 		// [Kaori-Chani] features/net-snapshot: the spawner of anything spawned in PostBeginPlay
 		// or Tick, which a cosmetic spawn reads when no action is running.
 		g_pSnapTickSelf = node;
+		// [Doruk-Aksoy] features/actor-layout: the next thinker's hot lines load while this one ticks.
+		zx::actorlayout::PrefetchLines(NextToThink, fetch);
 		if (node->ObjectFlags & OF_JustSpawned)
 		{
 			// Leave OF_JustSpawn set until after Tick() so the ticker can check it.
@@ -498,6 +505,7 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 				( node->IsKindOf( RUNTIME_CLASS( AActor )) == false ) ||
 				( static_cast<AActor *>( node ) != players[consoleplayer].mo ))
 			{
+#ifdef FUA_DIAGNOSTICS
 				if (fua_telemetry_thinkers)
 				{
 					const PClass *cls = node->GetClass();
@@ -506,6 +514,9 @@ int DThinker::TickThinkers (FThinkerList *list, FThinkerList *dest)
 					s_thinkerTimes.Add (cls, cls->TypeName.GetChars(), zx::telemetry::NowNs() - start);
 				}
 				else node->Tick();
+#else
+				node->Tick();
+#endif
 			}
 			// [Kaori-Chani] features/net-snapshot: after its first Tick, a cosmetic copy held
 			// across that tick being free to go out.

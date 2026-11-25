@@ -595,6 +595,7 @@ enum ActorRenderFlag
 	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides r_billboard_mode setting)
 	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides r_billboard_mode setting)
 	RF_ROLLSPRITE			= 0x40000,	// [rc4l] uzdoom: [marrub] roll the sprite billboard around the sight vector
+	RF_LIGHTMULTALPHA		= 0x80000,	// [Doruk-Aksoy] uzdoom@c0d17bbd: the lights this actor carries are dimmed by its alpha
 };
 
 // [rc4l] MBF21 needed more flag bits. These back the MBF21 thing flags that have no existing
@@ -1145,38 +1146,125 @@ public:
 // info for drawing
 // NOTE: The first member variable *must* be x.
 	fixed_t	 		x,y,z;
-	AActor			*snext, **sprev;	// links in sector (if needed)
+
+	// [Doruk-Aksoy] Up to the cold fields, each group is one 64-byte line of what one measured pass reads (features/actor-access), so keep each group's bytes at 64.
+	// [Doruk-Aksoy] Line 1, with x,y,z: what another actor's collision check reads of this one.
+	fixed_t			radius, height;		// for movement checking
+	ActorFlags		flags;
+	ActorFlags2		flags2;			// Heretic flags
+	ActorFlags3		flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
+	ActorFlags6		flags6;			// Shit! Where did all the flags go?
+	player_t		*player;		// only valid if type of APlayerPawn
+
+	// [Doruk-Aksoy] Line 2: what this actor's own tick reads first, with both water levels.
+	fixed_t			velx, vely, velz;	// velocity
+	fixed_t			floorz, ceilingz;	// closest together of contacted secs
+	struct sector_t	*Sector;
+	FState			*state;
+	int				waterlevel;		// 0=none, 1=feet, 2=waist, 3=eyes
+	BYTE			boomwaterlevel;	// splash information for non-swimmable water sectors
+	BYTE			movedir;		// 0-7
+	WORD			BounceFlags;	// which bouncing type?
+
+	// [Doruk-Aksoy] Line 3: the rest of the tick, blocking and the chase target.
+	TObjPtr<AActor> target;			// thing being chased/attacked (or NULL)
+									// also the originator for missiles
+	AActor			*BlockingMobj;	// Actor that blocked the last move
+	TObjPtr<AInventory>	Inventory;		// [RH] This actor's inventory
+	subsector_t *		subsector;
+	ActorFlags4		flags4;			// [RH] Even more flags!
+	ActorFlags5		flags5;			// OMG! We need another one.
+	ActorFlags7		flags7;			//
+	DWORD			effects;			// [RH] see p_effect.h
 	angle_t			angle;
+	int 			health;
+	int PoisonDurationReceived; // Duration left for receiving poison damage.
+	SDWORD			tics;				// state tic counter
+
+	// [Doruk-Aksoy] Line 4: what the render copy reads of how the actor looks.
+	fixed_t			scaleX, scaleY;		// Scaling values; FRACUNIT is normal size
+	fixed_t			alpha;
+	fixed_t			pitch;
 	WORD			sprite;				// used to find patch_t and flip value
 	BYTE			frame;				// sprite frame to draw
-	fixed_t			scaleX, scaleY;		// Scaling values; FRACUNIT is normal size
-	FRenderStyle	RenderStyle;		// Style to draw this actor with
+	BYTE			FloatBobPhase;
 	ActorRenderFlags	renderflags;		// Different rendering flags
-	FTextureID		picnum;				// Draw this instead of sprite if valid
-	DWORD			effects;			// [RH] see p_effect.h
-	fixed_t			alpha;
+	FRenderStyle	RenderStyle;		// Style to draw this actor with
 	DWORD			fillcolor;			// Color to draw when STYLE_Shaded
-
-// interaction info
-	fixed_t			pitch;
+	DWORD			Translation;
+	float			renderradius;			// [Doruk-Aksoy] DECORATE's RenderRadius (uzdoom@87b23d160bcbfe8ed35d6ff0921b72f54109ae41): 0 leaves its reach to its model, above 0 it reaches at least that far, below 0 it is never drawn.
 	angle_t			roll;	// This was fixed_t before, which is probably wrong
-	FBlockNode		*BlockNode;			// links in blocks (if needed)
-	struct sector_t	*Sector;
-	subsector_t *		subsector;
-	fixed_t			floorz, ceilingz;	// closest together of contacted secs
-	fixed_t			dropoffz;		// killough 11/98: the lowest floor over all contacted Sectors.
+	unsigned int	NetworkFlags;	// [BC] A new set of flags that deal with network games.
 
-	struct sector_t	*floorsector;
-	FTextureID		floorpic;			// contacted sec floorpic
-	struct sector_t	*ceilingsector;
-	FTextureID		ceilingpic;			// contacted sec ceilingpic
-	fixed_t			radius, height;		// for movement checking
+	// [Doruk-Aksoy] Line 5: what the render copy reads of where the actor was and what it is drawn with.
+	fixed_t PrevX, PrevY, PrevZ;	// [RH] Used to interpolate the view to get >35 FPS
+	angle_t PrevAngle;
+	angle_t PrevRoll;	// [rc4l] +ROLLSPRITE interpolation, mirrors PrevAngle
+	fixed_t			floorclip;		// value to use for floor clipping
 	fixed_t			projectilepassheight;	// height for clipping projectile movement against this actor
 	fixed_t			projectilepassradius;	// effective radius (half-width) for clipping attacks against this actor, independent of movement radius
-	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
 	int				fua_material;			// [Doruk-Aksoy] this actor's fua_Material plus one, 0 for none
 	int				fua_materialSlot;		// [Doruk-Aksoy] the slot of its own uniform values in level.fua_actorMaterials plus one, 0 for none
-	float			renderradius;			// [Doruk-Aksoy] DECORATE's RenderRadius (uzdoom@87b23d160bcbfe8ed35d6ff0921b72f54109ae41): 0 leaves its reach to its model, above 0 it reaches at least that far, below 0 it is never drawn.
+
+	// [Doruk-Aksoy] Line 6: the sector and render list links, and the chase counters.
+	AActor			*snext, **sprev;	// links in sector (if needed)
+	fixed_t			Speed;
+	struct sector_t	*floorsector;
+	unsigned int	rcSerial;	// [rc4l] features/gamecopy: this actor's id, given by the first fill that takes it and never reused
+	int				rcListed;		// [rc4l] features/gamecopy: its place in the actor list a tic's end made, read only to link that list
+	int				rcRecord;		// [rc4l] features/gamecopy: this actor's record in the render copy, written between tics only
+	SDWORD			reactiontime;	// if non 0, don't attack yet; used by
+									// player to freeze a bit after teleporting
+	unsigned int	STFlags;		// [BC] A new set of flags that ST uses.
+	SWORD			movecount;		// when 0, select a new dir
+	SWORD			strafecount;	// for MF3_AVOIDMELEE
+	SDWORD			threshold;		// if > 0, the target will be chased
+									// no matter what (even if shot)
+	int				TIDtoHate;			// TID of things to hate (0 if none)
+
+	// [Doruk-Aksoy] Line 7: what linking and unlinking read.
+	FBlockNode		*BlockNode;			// links in blocks (if needed)
+	struct msecnode_t	*touching_sectorlist;	// a linked list of sectors where this object appears (phares 3/14/98)
+	ZxLinkedAt		FuaLinkedAt;		// [Doruk-Aksoy] features/relink-in-place: where and how the last link put this actor
+
+	// [Doruk-Aksoy] Line 8: what a step and a chase read past the above.
+	fixed_t			dropoffz;		// killough 11/98: the lowest floor over all contacted Sectors.
+	fixed_t			MaxDropOffHeight, MaxStepHeight;
+	struct sector_t	*ceilingsector;
+	line_t			*BlockingLine;	// Line that blocked the last move
+	TObjPtr<AActor> goal;			// Monster's goal if not chasing anything
+	fixed_t			meleerange;		// specifies how far a melee attack reaches.
+	FTextureID		floorpic;			// contacted sec floorpic
+	FTextureID		ceilingpic;			// contacted sec ceilingpic
+
+	// [Doruk-Aksoy] Line 9: specials, missiles' damage and gravity, the network id and the chase memory.
+	int				special1;
+	SDWORD			Damage;			// For missiles and monster railgun
+	fixed_t			gravity;		// [GRB] Gravity factor
+	int				args[5];		// special arguments
+	int				special;		// special
+	int				tid;			// thing identifier
+	unsigned short	NetID;			// ID used to identify this actor over network games.
+	SBYTE			LastLookPlayerNumber;// Player number last looked for (if TIDtoHate == 0)
+	SBYTE			visdir;
+	TObjPtr<AActor>	lastenemy;		// Last known enemy -- killough 2/15/98
+	TObjPtr<AActor> LastHeard;		// [RH] Last actor this one heard
+
+	// [Doruk-Aksoy] Lines 10-11: what a server reads and writes for the position updates it sends.
+	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.
+	int	lastNetXUpdateTic, lastNetYUpdateTic, lastNetZUpdateTic, lastNetVelXUpdateTic, lastNetVelYUpdateTic, lastNetVelZUpdateTic, lastNetMovedirUpdateTic;
+	// [BB] Last movedir that was sent to the client.
+	BYTE lastMovedir;
+	// [BB] Last xyz-position that was sent to the client.
+	fixed_t lastX, lastY, lastZ;
+	// [BB] Last xyz-velocity that was sent to the client.
+	fixed_t lastVelx, lastVely, lastVelz;
+
+	// [Doruk-Aksoy] The cold fields: no traced pass reads them every tic.
+
+	FTextureID		picnum;				// Draw this instead of sprite if valid
+
+	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
 
 	// [MGOOOOOO] Effective extents used when deciding whether an attack hits this actor. These are
 	// independent of the physical radius/height that govern movement, so an actor can be shot at
@@ -1189,18 +1277,7 @@ public:
 	// [MGOOOOOO] True when the attack hitbox is larger than the physical box, so an occlusion check
 	// is needed to stop the widened box hitting through thin geometry. Smaller/equal boxes skip it.
 	bool AttackHitboxEnlarged() const { return AttackHitboxIsEnlarged(GetAttackRadius(), radius, GetAttackHeight(), height); }
-	fixed_t			velx, vely, velz;	// velocity
-	SDWORD			tics;				// state tic counter
-	FState			*state;
-	SDWORD			Damage;			// For missiles and monster railgun
 	int				projectileKickback;
-	ActorFlags		flags;
-	ActorFlags2		flags2;			// Heretic flags
-	ActorFlags3		flags3;			// [RH] Hexen/Heretic actor-dependant behavior made flaggable
-	ActorFlags4		flags4;			// [RH] Even more flags!
-	ActorFlags5		flags5;			// OMG! We need another one.
-	ActorFlags6		flags6;			// Shit! Where did all the flags go?
-	ActorFlags7		flags7;			//
 	ActorFlags8		flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
 	ActorFlags9		flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
 	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
@@ -1211,29 +1288,8 @@ public:
 	// [BB] If 0, not limited to any team, if > 0, limited to the team with number (LimitedToTeam-1).
 	unsigned int	LimitedToTeam;
 
-	// [BC] A new set of flags that ST uses.
-	unsigned int	STFlags;
-
-	// [BC] A new set of flags that deal with network games.
-	unsigned int	NetworkFlags;
-
-	int				special1;
 	int				weaponspecial;	// [rc4l] uzdoom@ee6e87d94: weapon state, split out of special1.		// Special info
 	int				special2;		// Special info
-	int 			health;
-	BYTE			movedir;		// 0-7
-	SBYTE			visdir;
-	SWORD			movecount;		// when 0, select a new dir
-	SWORD			strafecount;	// for MF3_AVOIDMELEE
-	TObjPtr<AActor> target;			// thing being chased/attacked (or NULL)
-									// also the originator for missiles
-	TObjPtr<AActor>	lastenemy;		// Last known enemy -- killough 2/15/98
-	TObjPtr<AActor> LastHeard;		// [RH] Last actor this one heard
-	SDWORD			reactiontime;	// if non 0, don't attack yet; used by
-									// player to freeze a bit after teleporting
-	SDWORD			threshold;		// if > 0, the target will be chased
-									// no matter what (even if shot)
-	player_t		*player;		// only valid if type of APlayerPawn
 	TObjPtr<AActor>	LastLookActor;	// Actor last looked for (if TIDtoHate != 0)
 	fixed_t			SpawnPoint[3]; 	// For nightmare respawn
 	WORD			SpawnAngle;
@@ -1241,29 +1297,18 @@ public:
 	BYTE			WeaveIndexXY;	// Separated from special2 because it's used by globally accessible functions.
 	BYTE			WeaveIndexZ;
 	int				skillrespawncount;
-	int				TIDtoHate;			// TID of things to hate (0 if none)
 	FNameNoInit		Species;		// For monster families
 	TObjPtr<AActor>	tracer;			// Thing being chased/attacked for tracers
 	TObjPtr<AActor>	master;			// Thing which spawned this one (prevents mutual attacks)
-	fixed_t			floorclip;		// value to use for floor clipping
-	int				tid;			// thing identifier
-	int				special;		// special
 	BYTE			SavedSpecial;	// [BC] Saved actor special for when a map gets reset.
-	int				args[5];		// special arguments
 	int				SavedArgs[5];	// [Dusk] More map reset stuff
 	int				SavedTID;		// [Dusk]
 
 	int		accuracy, stamina;		// [RH] Strife stats -- [XA] moved here for DECORATE/ACS access.
 
 	AActor			*inext, **iprev;// Links to other mobjs in same bucket
-	TObjPtr<AActor> goal;			// Monster's goal if not chasing anything
-	int				waterlevel;		// 0=none, 1=feet, 2=waist, 3=eyes
-	BYTE			boomwaterlevel;	// splash information for non-swimmable water sectors
 	BYTE			MinMissileChance;// [RH] If a random # is > than this, then missile attack.
-	SBYTE			LastLookPlayerNumber;// Player number last looked for (if TIDtoHate == 0)
-	WORD			BounceFlags;	// which bouncing type?
 	DWORD			SpawnFlags;		// Increased to DWORD because of Doom 64
-	fixed_t			meleerange;		// specifies how far a melee attack reaches.
 	fixed_t			meleethreshold;	// Distance below which a monster doesn't try to shoot missiles anynore
 									// but instead tries to come closer for a melee attack.
 									// This is not the same as meleerange
@@ -1296,7 +1341,6 @@ public:
 	fixed_t			bouncefactor;	// Strife's grenades use 50%, Hexen's Flechettes 70.
 	fixed_t			wallbouncefactor;	// The bounce factor for walls can be different.
 	int				bouncecount;	// Strife's grenades only bounce twice before exploding
-	fixed_t			gravity;		// [GRB] Gravity factor
 	fixed_t			Friction;
 	int 			FastChaseStrafeCount;
 	fixed_t			pushfactor;
@@ -1307,9 +1351,6 @@ public:
 	FString *		Tag;			// Strife's tag name.
 	int				DesignatedTeam;	// Allow for friendly fire cacluations to be done on non-players.
 
-	AActor			*BlockingMobj;	// Actor that blocked the last move
-	line_t			*BlockingLine;	// Line that blocked the last move
-
 	int PoisonDamage; // Damage received per tic from poison.
 	FNameNoInit PoisonDamageType; // Damage type dealt by poison.
 	int PoisonDuration; // Duration left for receiving poison damage.
@@ -1317,24 +1358,16 @@ public:
 
 	int PoisonDamageReceived; // Damage received per tic from poison.
 	FNameNoInit PoisonDamageTypeReceived; // Damage type received by poison.
-	int PoisonDurationReceived; // Duration left for receiving poison damage.
 	int PoisonPeriodReceived; // How often poison damage is applied. (Every X tics.)
 	TObjPtr<AActor> Poisoner; // Last source of received poison damage.
 
-	// a linked list of sectors where this object appears
-	struct msecnode_t	*touching_sectorlist;				// phares 3/14/98
-	ZxLinkedAt		FuaLinkedAt;		// [Doruk-Aksoy] features/relink-in-place: where and how the last link put this actor
-
-	TObjPtr<AInventory>	Inventory;		// [RH] This actor's inventory
 	DWORD			InventoryID;	// A unique ID to keep track of inventory items
 
 	//Added by MC:
 	SDWORD id;						// Player ID (for items, # in list.)
 
 	BYTE smokecounter;
-	BYTE FloatBobPhase;
 	BYTE FriendPlayer;				// [RH] Player # + 1 this friendly monster works for (so 0 is no player, 1 is player 0, etc)
-	DWORD Translation;
 
 	// [RH] Stuff that used to be part of an Actor Info
 	FSoundIDNoInit SeeSound;
@@ -1347,9 +1380,7 @@ public:
 	FSoundIDNoInit WallBounceSound;
 	FSoundIDNoInit CrushPainSound;
 
-	fixed_t Speed;
 	fixed_t FloatSpeed;
-	fixed_t MaxDropOffHeight, MaxStepHeight;
 	SDWORD Mass;
 	SWORD PainChance;
 	int PainThreshold;
@@ -1373,10 +1404,8 @@ public:
 	// isn't necessarily the spawn state).
 	FState	*InitialState;
 
-	
 	int ConversationRoot;				// THe root of the current dialogue
 	FStrifeDialogueNode *Conversation;	// [RH] The dialogue to show when this actor is "used."
-
 
 	// [RH] Decal(s) this weapon/projectile generates on impact.
 	FDecalBase *DecalGenerator;
@@ -1384,9 +1413,6 @@ public:
 	// [BC] Bunch of new stuff for ST.
 	// Should this actor be drawn with a different colormap?
 	int			FixedColormap;
-
-	// ID used to identify this actor over network games.
-	unsigned short NetID;
 
 	// Pointer to the pickup spot this item was spawned from.
 	ABaseMonsterInvasionSpot		*pMonsterSpot;
@@ -1399,26 +1425,6 @@ public:
 	TObjPtr<class APowerup> Rune;
 
 	// [BC] End of ST stuff.
-
-	// [RH] Used to interpolate the view to get >35 FPS
-	fixed_t PrevX, PrevY, PrevZ;
-	angle_t PrevAngle;
-	angle_t PrevRoll;	// [rc4l] +ROLLSPRITE interpolation, mirrors PrevAngle
-	int rcRecord;		// [rc4l] features/gamecopy: this actor's record in the render copy, written between tics only
-	int rcListed;		// [rc4l] features/gamecopy: its place in the actor list a tic's end made, read only to link that list
-	unsigned int rcSerial;	// [rc4l] features/gamecopy: this actor's id, given by the first fill that takes it and never reused
-
-	// [BB] Last tic in which the server sent a xyz-position / movedir update about this actor to the clients.
-	int	lastNetXUpdateTic, lastNetYUpdateTic, lastNetZUpdateTic, lastNetVelXUpdateTic, lastNetVelYUpdateTic, lastNetVelZUpdateTic, lastNetMovedirUpdateTic;
-
-	// [BB] Last xyz-position that was sent to the client.
-	fixed_t lastX, lastY, lastZ;
-
-	// [BB] Last xyz-velocity that was sent to the client.
-	fixed_t lastVelx, lastVely, lastVelz;
-
-	// [BB] Last movedir that was sent to the client.
-	BYTE lastMovedir;
 
 	// [BOF] Save more MapThing values for map resets.
 	TMap<PSymbolVariable *, int> savedUserVars;
@@ -1511,7 +1517,7 @@ public:
 
 	// begin of GZDoom specific additions
 	TArray<TObjPtr<AActor> >		dynamiclights;
-	void *				lightassociations;
+	// [Doruk-Aksoy] lightassociations moved to FActorInfo::FuaLightAssociations, as it is the class's (features/gldefs).
 	bool				hasmodel;
 	// end of GZDoom specific additions
 

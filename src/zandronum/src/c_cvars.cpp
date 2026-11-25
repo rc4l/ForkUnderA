@@ -101,6 +101,10 @@ static void CVarMemoForget()
 	CVarMemoGeneration.fetch_add(1, std::memory_order_relaxed);
 }
 
+// [Doruk-Aksoy] Every cvar set bumps this, so what is built from settings can tell it must be built again.
+static std::atomic<unsigned> CVarSets{ 0 };
+unsigned CVarSetGeneration() { return CVarSets.load(std::memory_order_relaxed); }
+
 // [Doruk-Aksoy] Set once the process is destroying its globals, whose order across files is unspecified, so a cvar destroyed then must not touch the name table or the cache.
 static bool CVarStaticTeardown = false;
 
@@ -248,6 +252,7 @@ FBaseCVar::~FBaseCVar ()
 void FBaseCVar::ForceSet (UCVarValue value, ECVarType type, bool nouserinfosend)
 {
 	DoSet (value, type);
+	CVarSets.fetch_add(1, std::memory_order_relaxed);
 	if ((Flags & CVAR_USERINFO) && !nouserinfosend && !(Flags & CVAR_IGNORE))
 		D_UserInfoChanged (this);
 	if (m_UseCallback)
