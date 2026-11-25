@@ -118,6 +118,7 @@
 #include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
 #include "features/acsvec/acsvec.h"   // [Doruk-Aksoy] CallVecFunction
+#include "features/acs-funcrefs/acsfuncrefs.h"   // [Doruk-Aksoy] PushFunctionRef, ResolveFunctionRef
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -2366,6 +2367,7 @@ FBehavior::FBehavior (int lumpnum, FileReader * fr, int len)
 	Data = NULL;
 	Format = ACS_Unknown;
 	LumpNum = lumpnum;
+	LibraryOrdinal = zx::acsfuncrefs::LibraryOrdinalOf (lumpnum);
 	memset (MapVarStore, 0, sizeof(MapVarStore));
 	ModuleName[0] = 0;
 	FunctionProfileData = NULL;
@@ -9911,8 +9913,8 @@ int DLevelScript::RunScript ()
 		case PCD_PUSHFUNCTION:
 		{
 			int funcnum = NEXTBYTE;
-			// Not technically a string, but since we use the same tagging mechanism
-			PushToStack(TAGSTR(funcnum));
+			// [Doruk-Aksoy] features/acs-funcrefs: a library's function is named by its home library, so every module's reference to it is the same and lasts across maps.
+			PushToStack(zx::acsfuncrefs::PushFunctionRef(activeBehavior, funcnum));
 			break;
 		}
 		case PCD_CALL:
@@ -9926,11 +9928,16 @@ int DLevelScript::RunScript ()
 
 				if(pcd == PCD_CALLSTACK)
 				{
-					funcnum = STACK(1);
-					module = FBehavior::StaticGetModule(funcnum>>LIBRARYID_SHIFT);
+					const int ref = STACK(1);
 					--sp;
-
-					funcnum &= 0xFFFF; // Clear out tag
+					// [Doruk-Aksoy] features/acs-funcrefs: a reference into a module this map does not hold stops the script rather than calling another module's function.
+					module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+					if (module == NULL)
+					{
+						zx::acsfuncrefs::PrintMissingFunction(ref, ScriptPresentation(script).GetChars());
+						state = SCRIPT_PleaseRemove;
+						break;
+					}
 				}
 				else
 				{

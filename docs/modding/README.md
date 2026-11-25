@@ -107,6 +107,8 @@ than only at class-definition time.
   actor's material and its own uniforms.
 - [Vector math](acs/Vectors.md) — `fua_Vec`, the exact length, unit, dot and cross zt-bcc's `vec2`
   and `vec3` call with `-target fua` or `any`.
+- [Function references](acs/Function_references.md) — BCS function references compare equal between
+  modules and last across map changes.
 
 ### GLDEFS
 
