@@ -338,7 +338,25 @@ export async function captureBurst(c, { side = "vk", count = 8, box = [0, 0, 1, 
       : await captureVulkan(c, path.posix.join(outDir, `${tag}_vk${i}.png`));
     out.push({ i, t, file, mean: file ? boxMean(decodePNG(file), box) : NaN });
   }
+  for (const i of repeatedCaptures(out.map((r) => (r.file ? fs.readFileSync(r.file) : null)))) out[i].repeat = true;
   return out;
+}
+
+// [MGOOOOOO] The burst captures that repeat the one before byte for byte, by index (a capture that failed repeats nothing).
+export function repeatedCaptures(contents) {
+  const out = [];
+  for (let i = 1; i < contents.length; i++) {
+    if (contents[i] && contents[i - 1] && Buffer.compare(contents[i], contents[i - 1]) === 0) out.push(i);
+  }
+  return out;
+}
+
+// [MGOOOOOO] What a burst says when captures repeat: which ones, then a hung window if it saw one, else what to rule out.
+export function repeatNote(repeated, { hung = false } = {}) {
+  if (!repeated.length) return null;
+  const which = `capture${repeated.length > 1 ? "s" : ""} ${repeated.join(", ")} repeat${repeated.length > 1 ? "" : "s"} the one before byte for byte`;
+  if (hung) return `${which}: the engine's window is NOT RESPONDING, so it presented nothing new (fuactl hang says where it is stuck)`;
+  return `${which}: a still scene does that, but if this one moves the window presented no new frame (fuactl window, fuactl hang)`;
 }
 
 // [Doruk-Aksoy] Advances a paused sim n tics and waits until the engine says it froze again.

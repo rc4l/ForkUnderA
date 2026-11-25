@@ -184,7 +184,7 @@ const USAGE = `fuactl <command>
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   queue add <description> [--port P] [--name SPOT] [--no-instance [--map M]]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill); --no-instance queues one seen where no engine answers (a browser page, an engine already gone), with its map when known and no spot
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
-  burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
+  burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides; a capture repeating the one before is marked, with the cause the tool can see
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, pressing use through each intermission, the way a player reached it
@@ -465,7 +465,14 @@ async function main() {
         box: flags.box ? String(flags.box).split(",").map(Number) : [0, 0, 1, 1],
         engineBin: slashed(engineOf(flags)), tag: rest[0] || "burst",
       });
-      for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
+      for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}${r.repeat ? "  (repeats the one before)" : ""}`);
+      const repeated = out.filter((r) => r.repeat).map((r) => r.i);
+      if (repeated.length) {
+        // [MGOOOOOO] A hung window is the cause a burst can see for itself (Windows marks it NOT RESPONDING).
+        let hung = false;
+        try { hung = process.platform === "win32" && engineWindows().windows.some((w) => w.pid === sessionPid(flags) && w.hung); } catch { /* no session: unknown */ }
+        console.log(shot.repeatNote(repeated, { hung }));
+      }
       c.close();
       break;
     }
