@@ -77,11 +77,11 @@ Headless Chrome (always muted) reproduces what the page holds:
 - A player's fight, not a map's start: `probe.mjs --save game.zds` loads a save into the page before the steps (begin them with a `wait`). A player's browser save leaves their page as a download when they type `fua_offer <save name>` in the game console; a browser save does not load in a desktop build, nor a desktop one in the browser.
 - `--visits N` makes the run a returning player's (the same profile N times) and `--heap` names what a soak's page heap grew in, by constructor, from Chrome heap snapshots.
 - Headless Chrome and off-screen Firefox pace frames to no display (Chrome near 325 Hz, Firefox in bursts), so dynamic resolution reads a refresh no player has there; judge it by `fua_dynres_report` with `fua_dg_gpuload` against a run without, never by its budget.
-- Headless Firefox has no WebGPU, so `--browser firefox` on `probe.mjs` (and `check.mjs`) opens a Firefox window off the screen instead. For what only the player's machine shows, ask them to type these in the console and paste what they print:
+- Headless Firefox has no WebGPU, so `--browser firefox` on `probe.mjs` (and `check.mjs`) opens a Firefox window off the screen instead. For what only the player's machine shows, give them a diagnostics build (`ZX_DIAGNOSTICS=1`; a public build has no telemetry, `docs/diagnostics.md`), then ask them to type these in its console and paste what they print:
   - `fua_flightdump` writes the last frames, seconds and hitches as downloads and prints a summary.
   - `fua_hitches`.
   - `fua_memdiff` after a `fua_memsnap`.
-- A crash report's "Last minute" section already holds the summary.
+- A crash report's "Last minute" section already holds the summary, from `features/crash-summary`, in every build: each second's frame time, stalls over 50 ms and memory.
 
 ## Adding a counter
 

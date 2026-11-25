@@ -55,6 +55,8 @@ void FreeAlignedNew(void *ptr)
 	if (ptr != nullptr) ::operator delete(static_cast<AlignedHeader *>(ptr)[-1].base);
 }
 
+// [Doruk-Aksoy] The ledger of held objects exists only in a diagnostics build: a public one tracks nothing, and none of it is swept without telemetry's gauges.
+#ifdef FUA_DIAGNOSTICS
 namespace {
 
 struct Held
@@ -140,24 +142,39 @@ double TextureBytes(const Diligent::TextureDesc &d)
 }
 
 } // namespace
+#endif // FUA_DIAGNOSTICS
 
 void TrackDeviceTexture(Diligent::ITexture *texture, const Diligent::TextureDesc &desc)
 {
+#ifdef FUA_DIAGNOSTICS
 	Track(texture, desc.Name, TextureBytes(desc));
+#else
+	(void)texture;
+	(void)desc;
+#endif
 }
 
 void TrackDeviceBuffer(Diligent::IBuffer *buffer, const Diligent::BufferDesc &desc)
 {
+#ifdef FUA_DIAGNOSTICS
 	Track(buffer, desc.Name, (double)desc.Size);
+#else
+	(void)buffer;
+	(void)desc;
+#endif
 }
 
 void ReportHeldDeviceObjects(const char *when)
 {
+#ifdef FUA_DIAGNOSTICS
 	std::lock_guard<std::mutex> lock(g_lock);
 	SweepLocked();
 	Printf("telemetry: %.0f GPU objects (%s) held %s\n", g_ledger.TotalObjects(), zx::telemetry::ComputeBytesText(g_ledger.TotalBytes()).c_str(), when);
 	for (const zx::telemetry::Reading &r : g_ledger.Readings(""))
 		Printf("  %s %s\n", r.name.c_str(), zx::telemetry::ComputeBytesText(r.value).c_str());
+#else
+	(void)when;
+#endif
 }
 
 }} // namespace zx::hwrender

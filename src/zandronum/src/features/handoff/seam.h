@@ -61,6 +61,7 @@ uint64_t SeamViolations();
 
 #define ZX_SEAM_CAT2(a, b) a##b
 #define ZX_SEAM_CAT(a, b) ZX_SEAM_CAT2(a, b)
+#ifdef FUA_DIAGNOSTICS
 // [rc4l] Declares and enters the seam name (a "group/name" literal, also its timing counter) owned by owner for the rest of the scope.
 #define ZX_SEAM(name, owner) \
 	static const zx::handoff::SeamSite ZX_SEAM_CAT(zxSeamSite, __LINE__)(name, zx::handoff::Owner::owner, true, __func__, __LINE__); \
@@ -69,6 +70,11 @@ uint64_t SeamViolations();
 #define ZX_SEAM_UNTIMED(name, owner) \
 	static const zx::handoff::SeamSite ZX_SEAM_CAT(zxSeamSite, __LINE__)(name, zx::handoff::Owner::owner, false, __func__, __LINE__); \
 	const zx::handoff::SeamScope ZX_SEAM_CAT(zxSeam, __LINE__)(ZX_SEAM_CAT(zxSeamSite, __LINE__))
+#else
+// [Doruk-Aksoy] A public build checks, times and stresses no seam: both expand to nothing but a check that the name is a literal.
+#define ZX_SEAM(name, owner) static_assert(sizeof(name) > 0, "")
+#define ZX_SEAM_UNTIMED(name, owner) static_assert(sizeof(name) > 0, "")
+#endif
 
 }} // namespace zx::handoff
 

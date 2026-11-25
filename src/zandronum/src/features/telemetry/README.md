@@ -2,6 +2,10 @@
 
 What runs in players' builds, what each diagnostic costs and the rules for adding one: `docs/diagnostics.md`.
 
+It is built only with `FUA_DIAGNOSTICS` (test builds; the bridge turns it on). Without it `telemetry.cpp`, `allocwatch.cpp` and `census.cpp`
+are not compiled and `telemetry.h` is inline no-ops, so a feature reports through the same lines in both builds and a public one pays
+nothing. `NowNs` is the engine's clock in both.
+
 One registry every feature reports its performance through. Counters are named `group/name` and read or fed once a frame. Timed regions work on any thread. A flight recorder keeps the last frames and seconds (`kFrameRows` and `kSecondRows` in `telemetry.cpp`). Console commands, files and the bridge read it, on every platform the engine builds for. `fua_stats` lists every counter there is, so this file names groups and where they come from rather than each counter.
 
 - `telemetry.h`/`.cpp`, the registry:
@@ -9,7 +13,7 @@ One registry every feature reports its performance through. Counters are named `
   - Feeding: `Add`, `Set`, `ZX_COUNT`, `ZX_ZONE` (a scope timed into a timing counter, and into the trace while one is captured) and `Region` (a span timed by hand). `TimedNs` is a timing's running total, for a reader that keeps its own intervals.
   - Frames: `FrameMark` ends a frame and `TicMark` counts a game tic. `NameThisThread` names a thread in traces.
   - Hitches: a frame over twice the recent median and over `fua_telemetry_hitch_ms` is kept with the regions it spent most in.
-  - Turning it off: `fua_telemetry 0` stops the timed regions; the counters stay.
+  - Turning it off: `fua_telemetry 0` stops a diagnostics build's timed regions; the counters stay. A public build has none.
   - Console commands:
     - `fua_stats [json|watch] [prefix]`: the counters as a table, as JSON, or on screen through the stat overlay (`ADD_STAT(telemetry)`). `fua_stats watch off` hides them.
     - `fua_capture start [name] | stop`: every counter each frame and every timed region on every thread, written as `telemetry/<name>.csv` and `<name>-trace.json`. Perfetto and `chrome://tracing` open the trace.
@@ -17,7 +21,7 @@ One registry every feature reports its performance through. Counters are named `
     - `fua_hitches [n]`: the last slow frames.
     - `fua_memsnap [name]` and `fua_memdiff [a] [b]`: every gauge and breakdown kept under a name, and what changed between two snapshots or between one and now.
     - `fua_soak begin | mark | verdict [warmup] [json] [-prefix ...]`: a mark after each repetition of an action, and whether any count of bytes, objects, handles or threads kept growing past the warm-up (`ComputeSoakVerdict`). A counter registered with `CounterSpec::soaked` false, such as a peak or the heaps' committed bytes, which settle rather than leak, is not judged, and neither is a reading under a `-prefix`. The JSON carries each growth's line and the whole report.
-  - Output: `SetFileOfferer` hands a written file to the player, which a browser does as a download. `SetSummaryListener` hears the last minute's frame times and memory each second, for a crash report. `SetGameReadable`, which the handoff installs, says when the game's own state may be read; the census's thinker counts keep their last value while a tic is in flight. `SetSoakReady`, which `d_main.cpp` installs, holds a soak mark asked for during a wipe until the frame after it has destroyed the wipe's copies of both screens, which would read as memory kept; the browser's soak waits for each mark's line.
+  - Output: `SetFileOfferer` hands a written file to the player, which a browser does as a download. `SetGameReadable`, which the handoff installs, says when the game's own state may be read; the census's thinker counts keep their last value while a tic is in flight. `SetSoakReady`, which `d_main.cpp` installs, holds a soak mark asked for during a wipe until the frame after it has destroyed the wipe's copies of both screens, which would read as memory kept; the browser's soak waits for each mark's line.
 - `allocwatch.cpp` replaces the global `operator new`/`delete` (still `malloc` and `free` underneath), except in a ThreadSanitizer build (`features/sanitizer`):
   - It counts the allocations live and made each frame.
   - `fua_allocsites start | report [n] | stop` records each new allocation's call stack from then on. A report lists the stacks still holding the most, named through the platform's symbols.
