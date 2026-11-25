@@ -3,6 +3,8 @@
 
 #include "features/net-transport/computation/netconditions_compute.h"
 
+#include <utility>	// [Kaori-Chani] std::move, so a held datagram is handed over, not copied.
+
 namespace zx { namespace nettransport {
 
 int ComputeFakeDelayMs(int pingMs, bool outbound)
@@ -35,7 +37,7 @@ void ComputeHoldPacket(HeldPackets &held, long long nowMs, int delayMs, const un
 	if (length > 0) p.bytes.assign(bytes, bytes + length);
 	if (addressLength > 0) p.address.assign(address, address + addressLength);
 	p.addressLength = addressLength > 0 ? addressLength : 0;
-	held.queue.push_back(p);
+	held.queue.push_back(std::move(p));
 }
 
 bool ComputeAdmitDatagram(const HeldPackets &held, std::size_t capacity)
@@ -46,7 +48,7 @@ bool ComputeAdmitDatagram(const HeldPackets &held, std::size_t capacity)
 bool ComputeTakeDuePacket(HeldPackets &held, long long nowMs, HeldPacket &out)
 {
 	if (held.queue.empty() || held.queue.front().releaseMs > nowMs) return false;
-	out = held.queue.front();
+	out = std::move(held.queue.front());
 	held.queue.pop_front();
 	return true;
 }
