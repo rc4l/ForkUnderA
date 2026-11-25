@@ -533,6 +533,13 @@ int FindReservedSlot(const void *material, int translation)
 	return slot;
 }
 
+bool KeepReservedSlot(int slot, const void *material, int translation)
+{
+	if (slot <= 0 || MatIndexFind(material, SlotKey(translation)) != slot) return false;
+	g_slotState[slot].reserved = g_reserveSerial;
+	return true;
+}
+
 void BeginSlotReservation() { g_reserveSerial++; }
 void OpenMaterialSlots() { g_sealedFrame = ~0ull; }
 void SealMaterialSlots() { g_sealedFrame = FrameBeingBuilt(); }
@@ -809,6 +816,7 @@ void FlushTextureCache()
 
 bool BindlessWanted() { return fua_dg_bindless && MaterialSlotCapacity() > 0 && !g_matSlotOverflow; }
 bool BindlessActive() { return BindlessWanted() && g_bindlessReady; }
+bool TicSpritesSupported() { return BindlessActive(); }
 
 
 static_assert(zx::hwrender::kBindVertexBuffer == Diligent::BIND_VERTEX_BUFFER && zx::hwrender::kBindIndexBuffer == Diligent::BIND_INDEX_BUFFER &&

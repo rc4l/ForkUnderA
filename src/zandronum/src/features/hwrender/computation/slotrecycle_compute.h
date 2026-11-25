@@ -47,6 +47,9 @@ void ComputeReserveSlots(int count, Find find, Make make, std::vector<int> &slot
 // [Doruk-Aksoy] Whether slot is met for the first time in reservation `serial`, stamping it so the rest of that reservation reads false; a slot of 0 or less always reads true.
 bool ComputeFirstInReservation(std::vector<unsigned int> &stamps, int slot, unsigned int serial);
 
+// [Doruk-Aksoy] Whether the tic stream's slots, found when it was made, are held rather than looked up again: a stream with pieces, the stream and slot table they were found for, and a slot kept for each piece.
+bool ComputeTicSlotsHeld(int ticPieces, unsigned int keysGen, unsigned int ticGen, unsigned int keysTable, unsigned int table, int keptSlots);
+
 // [Doruk-Aksoy] A direct-mapped memo of one value per (pointer, number) key, kept for one pass: a key asked again in the same pass reads what the first ask computed, and a collision computes again.
 template <class V>
 class ComputePassMemo

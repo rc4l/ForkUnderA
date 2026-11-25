@@ -33,6 +33,7 @@
 #include "features/handoff/gamethread.h"   // [rc4l] TicInFlight
 #include "features/handoff/effects.h"   // [rc4l] QueuedForHandoff
 #include <math.h>
+#include <cstdint>   // [Doruk-Aksoy] int64_t
 
 #include "templates.h"
 #include "doomdef.h"
@@ -74,6 +75,10 @@
 #include "cl_demo.h"
 #include "g_game.h"
 #include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
+EXTERN_CVAR(Int, fua_debug_ticfrac)
+EXTERN_CVAR(Int, fua_debug_viewyaw)
+EXTERN_CVAR(Int, fua_debug_viewdx)
+EXTERN_CVAR(Int, fua_debug_viewdy)
 
 
 // EXTERNAL DATA DECLARATIONS ----------------------------------------------
@@ -949,8 +954,14 @@ void R_SetupFrameFromRecord (int record, bool interpolateLive)
 		r_TicFrac = FRACUNIT;
 	}
 	r_ActorFrac = C_ShouldForceInterpolation () ? FRACUNIT : r_TicFrac;
+	// [Doruk-Aksoy] A pinned fraction holds for actors too, paused or not.
+	if (fua_debug_ticfrac >= 0) r_ActorFrac = r_TicFrac = (fixed_t)((long long)fua_debug_ticfrac * FRACUNIT / 1000);
 
 	R_InterpolateView (player, cam, camIndex, r_TicFrac, iview);
+	// [Doruk-Aksoy] A dev camera nudge on the interpolated view.
+	viewangle += (angle_t)((long long)fua_debug_viewyaw * (long long)ANGLE_1);
+	viewx += fixed_t::FromRaw((int64_t)fua_debug_viewdx << FRACBITS);
+	viewy += fixed_t::FromRaw((int64_t)fua_debug_viewdy << FRACBITS);
 
 #ifdef TEST_X
 	viewx = TEST_X;
@@ -1318,4 +1329,11 @@ void FCanvasTextureInfo::UpdateToClient( ULONG ulClient )
 		// long names since this same commit. Truncating instead would hand the client a name that
 		// silently resolves to the WRONG texture, which is worse than one it cannot find.
 		SERVERCOMMANDS_SetCameraToTexture( pProbe->Viewpoint, pProbe->Texture->Name.GetChars(), pProbe->FOV, ulClient, SVCF_ONLYTHISCLIENT );
+}
+
+#include "features/dev-mode/devmode.h"
+// [Doruk-Aksoy] The fractions the last frame drew with, to check a pinned one took.
+DEV_MODE_CCMD(fua_debug_fracs)
+{
+	Printf("r_TicFrac %d r_ActorFrac %d (of %d)\n", (int)r_TicFrac, (int)r_ActorFrac, (int)FRACUNIT);
 }

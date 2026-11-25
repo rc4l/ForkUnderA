@@ -1801,9 +1801,12 @@ void TryRunTics (void)
 	else
 		counts = availabletics;
 
+	// [Doruk-Aksoy] Fua_debug_holdtics holds the inline loop's tics as it does the threaded one's.
+	const bool held = zx::gameloop::HoldingTics();
+	counts = zx::gameloop::HoldTics(counts);
 
 	// [rc4l] Nor does it run a tic before one is due, which waiting would have made due.
-	if (counts == 0 && (!doWait || zx::mainloop::Stepped()))
+	if (counts == 0 && (held || !doWait || zx::mainloop::Stepped()))
 	{
 		// Check possible stall conditions
 		Net_CheckLastReceived(counts);

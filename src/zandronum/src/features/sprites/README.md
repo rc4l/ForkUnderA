@@ -74,13 +74,52 @@ and with models on about 4.2 million more actor-frames and 103,000 model surface
 maps. In standalone the actors only a mirror or stacked view sees count as "only ours", since GL walks
 neither there.
 
+## The tic stream (`fua_dg_gpusprites`, on by default)
+
+Most actors look the same through a tic except for where they stand and which way they face the camera, so the
+backend builds those once a tic and lets the vertex shader do the per-frame part. `BuildTicSprites` derives the
+swept actors at the tic's end into a second dynamic stream (`levelmesh::DynTicScope`), uploaded once a tic; the
+shader turns each quad to the view, slides it back along the tic's move by the part of the tic not yet shown and
+XY-billboards it (`hwrender::ComputeSpriteMotionCorners`, the same maths on the CPU for the pieces it cannot pack).
+Only sprites the shader draws exactly as the CPU would enter it: a face sprite of one light band, not rolled, not
+a player, not bobbing, without an actor shader, a shadow or a fog layer, and either steady through the tic (the same
+height, floor and ceiling at both ends, `ComputeSteadyAcrossTic`, so its clip lift and floor glow hold) or off a
+glowing floor with its clip idle at both ends (`ComputeSpriteClipIdle`); models, particles, decals and the views of mirrors and stacked
+sectors stay on the frame's stream. Each frame `SplitFrameSprites` keeps a tic sprite only where this frame's view
+keeps it and picks the same rotation (`TicPieceHolds`), and derives every other actor exactly into the frame's
+stream.
+
+Its bindless slots are reserved when it is made; later frames only hold its distinct keys (`KeepReservedSlot`) while
+the stream and the slot table stand (`hwrender::ComputeTicSlotsHeld`) and reserve the frame stream's pieces.
+
+The stream is made again when it is stale (`frame/computation/ticstream_compute`): a new fill of the render copy,
+any cvar set since (`CVarSetGeneration`, so a setting changed in a paused game's menu reaches it), another view
+actor, or another fixed colormap. A camera texture's view keeps it and its pass draws none of it
+(`hwrender::ComputePassDrawsRun`), since that view derives its own actors.
+
+Tools (dev-mode): `fua_dg_ticstats` prints the stream's pieces, those shown, the actors derived for the frame, the
+tic runs a camera pass drew, the times it was made and the fill; `fua_dg_gpuview` draws only the actors it may carry,
+or only the rest; `fua_debug_holdtics` and `fua_debug_steptic` hold the game between tics, `fua_debug_ticfrac`
+pins the fraction, `fua_debug_viewyaw`/`viewdx`/`viewdy` move the view of a held tic and `fua_debug_fracs` prints
+the fractions drawn. Scenario `gpusprites` draws a held tic both ways from five cameras at five fractions over
+five maps (motion, terrain and clip, fog and styles with a mirror, models, a camera screen), changes settings
+while the tic is held, then runs tics and holds the stream to one make a fill with no tic run in a camera's pass.
+Scenario `netgpusprites` holds a netgame client's tic stream to its CPU path on a still scene of corpses, those on a
+glowing floor carried as steady, on joining, after its own `reconnect` and after the server restarts the map.
+
 ## In-engine hooks
 
 - `features/frame/standaloneframe.cpp`, the sprite sweep: `BuildSprites` for the actors in view, derived in
   chunks on `features/jobs`' pool (a model, or a sprite whose material is not made yet, on the main thread)
   and appended in sweep order, or one at a time with a check on; `BuildSprite` for each actor a stacked
   view's or mirror's walk reaches; `QueueParticle` for each particle the player's walk reaches, and
-  `BuildQueuedParticles` as its `WalkHooks::walked`.
+  `BuildQueuedParticles` as its `WalkHooks::walked`; with the tic stream on, `BuildTicSprites` when it is stale
+  and `SplitFrameSprites` every frame instead of `BuildSprites`.
+- `c_cvars.cpp` `FBaseCVar::ForceSet`: counts every cvar set (`CVarSetGeneration`), which makes the tic stream stale.
+- `features/gameloop/loop.cpp`: `fua_debug_holdtics` and `fua_debug_steptic`; `r_utility.cpp` and
+  `features/frame/playerview.cpp`: `fua_debug_ticfrac` and the held view's nudge; `features/hwrender/diligent`
+  `dgdynamic.cpp`, `dgupload.cpp`, `dgviews.cpp` and `dgscene_glsl.h`: the tic region, its slots, the view the
+  shader turns it to, and the shader.
 - `features/sidebyside/glchecks.cpp`: GL's sprites, models and weapon as GL reports them, for the checks.
 - `features/levelmesh/flatmesh.cpp` `RegisterSprite`: `NoteGLSprite`, GL's piece for the check, and the
   `ThingColor` fold.

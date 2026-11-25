@@ -84,6 +84,13 @@ struct MeshPiece
 	// Centre of the piece, for the back-to-front sort translucency needs. Only meaningful for
 	// dynamic pieces; blendMode 0 never gets sorted.
 	float         sortX, sortY, sortZ;
+	// [Doruk-Aksoy] A face sprite the vertex shader turns to the view and interpolates: its centre and the view's perpendicular at the tic (scene x, map y), and the tic's move (x, height, map y).
+	bool          gpuMove = false;
+	bool          gpuXY = false;   // [Doruk-Aksoy] and XY-billboarded by the shader, its corners left unrotated
+	float         gpuCx = 0.f, gpuCy = 0.f, gpuPx = 0.f, gpuPy = 0.f, gpuDx = 0.f, gpuDh = 0.f, gpuDy = 0.f;
+	int           sortWho = -1;   // [Doruk-Aksoy] the actor whose record order breaks a tie between blended draws at one distance, -1 for none
+	int           gpuWho = -1, gpuPatch = -1;   // [Doruk-Aksoy] the actor's record in the copy, and the rotation's patch index twice plus its mirror, checked again each frame
+	bool          gpuEligible = false;   // [Doruk-Aksoy] an actor the tic stream may carry, set where fua_dg_gpuview asks
 
 	// [rc4l] The sidedef's or sector's BASE texture (FTexture*), not the resolved animation frame.
 	// NULL when unknown.
@@ -335,6 +342,16 @@ void MeshClearPieces();
 
 // Drop last frame's dynamic geometry. Called once per frame before anything generates any.
 void DynClear();
+
+// [Doruk-Aksoy] A second stream, the tic's sprites the shader turns and slides, kept across the frames of a tic.
+void DynClearTic();
+// [Doruk-Aksoy] While one lives, appends go to the tic's stream; its end shows every tic piece again.
+struct DynTicScope { DynTicScope(); ~DynTicScope(); DynTicScope(const DynTicScope &) = delete; DynTicScope &operator=(const DynTicScope &) = delete; };
+const MeshVertex *DynTicVertices(int &count);
+const MeshPiece *DynTicPieces(int &count);
+unsigned int DynTicGeneration();
+// [Doruk-Aksoy] One flag a tic piece, set each frame for those not drawn as they stand (out of view, or another rotation).
+unsigned char *DynTicHidden(int &count);
 
 // Append one piece's triangle-list vertices. `proto` carries the material and shading; its range is
 // filled in by this call.

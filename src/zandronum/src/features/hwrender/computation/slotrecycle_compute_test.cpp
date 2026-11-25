@@ -142,3 +142,13 @@ TEST(ComputePassMemo, OncePerKeyAndPass)
 	for (int i = 0; i < 8; i++) EXPECT_EQ(get(&y, i, 3, i * 10), i * 10);
 	EXPECT_EQ(calls, 11);
 }
+
+// [Doruk-Aksoy] Every frame looked up the tic stream's few hundred keys again for its thousands of pieces, though they only change with the stream or the table.
+TEST(SlotRecycle, TheTicStreamsSlotsAreHeldWhileItsStreamAndTableStand)
+{
+	EXPECT_TRUE(ComputeTicSlotsHeld(40, 7, 7, 3, 3, 120));
+	EXPECT_FALSE(ComputeTicSlotsHeld(0, 7, 7, 3, 3, 120)) << "no tic stream";
+	EXPECT_FALSE(ComputeTicSlotsHeld(40, 6, 7, 3, 3, 120)) << "a stream made since";
+	EXPECT_FALSE(ComputeTicSlotsHeld(40, 7, 7, 2, 3, 120)) << "a table reset since, as a new level makes";
+	EXPECT_FALSE(ComputeTicSlotsHeld(40, 7, 7, 3, 3, 39)) << "fewer slots kept than pieces";
+}
