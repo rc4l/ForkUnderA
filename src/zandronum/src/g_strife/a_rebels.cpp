@@ -137,7 +137,8 @@ DEFINE_ACTION_FUNCTION(AActor, A_Beacon)
 	pFog = Spawn<ATeleportFog> (rebel->x + 20*finecosine[an], rebel->y + 20*finesine[an], rebel->z + TELEFOGHEIGHT, ALLOW_REPLACE);
 	// [BC] Spawn the teleport fog.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) &&
-		( pFog ))
+		( pFog )
+		&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 	{
 		SERVERCOMMANDS_SpawnThing( pFog );
 	}

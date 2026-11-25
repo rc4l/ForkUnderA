@@ -97,6 +97,7 @@
 #include "network_enums.h"
 #include "st_hud.h"
 #include "features/net-replication/mapstate.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] SpecialResolveSource
 
 static FRandom pr_playerinspecialsector ("PlayerInSpecialSector");
 void P_SetupPortals();
@@ -1483,6 +1484,8 @@ void P_SpawnSpecials (void)
 			
 		case dSector_DoorCloseIn30:
 			// DOOR CLOSE IN 30 SECONDS
+			// [Kaori-Chani] features/net-snapshot: for GAME_ResetMap to spawn it again.
+			sector->SavedTimedDoor = dSector_DoorCloseIn30;
 			P_SpawnDoorCloseIn30 (sector);
 			break;
 			
@@ -1508,6 +1511,8 @@ void P_SpawnSpecials (void)
 
 		case dSector_DoorRaiseIn5Mins:
 			// DOOR RAISE IN 5 MINUTES
+			// [Kaori-Chani] features/net-snapshot: as the close-in-30 above.
+			sector->SavedTimedDoor = dSector_DoorRaiseIn5Mins;
 			P_SpawnDoorRaiseIn5Mins (sector);
 			break;
 			
@@ -2585,6 +2590,10 @@ DPusher::DPusher (DPusher::EPusher type, line_t *l, int magnitude, int angle,
 		m_X = (int)(m_Source->x);
 		m_Y = (int)(m_Source->y);
 	}
+	// [Kaori-Chani] Zeroed, because DObject memory is not: a sourceless point
+	// pusher otherwise tests things against a bounding box of garbage.
+	else
+		m_Radius = m_X = m_Y = 0;
 	m_Affectee = affectee;
 }
 
@@ -2642,6 +2651,15 @@ void DPusher::Tick ()
 
 	if (m_Type == p_push)
 	{
+		// [Kaori-Chani] A removed point source, which P_CheckSight and the class
+		// test below dereference; a client's may only now have arrived.
+		if (m_Source == NULL)
+		{
+			m_Source = zx::netsnapshot::SpecialResolveSource(m_SourceNetID, m_bSourceSeen);
+			if (m_Source == NULL)
+				return;
+		}
+
 		// Seek out all pushable things within the force radius of this
 		// point pusher. Crosses sectors, so use blockmap.
 

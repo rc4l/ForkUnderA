@@ -55,6 +55,7 @@
 #include "cl_commands.h"
 #include "cl_demo.h"
 #include "features/cheat-amount/computation/cheatamount_compute.h" // [Doruk-Aksoy] ComputeSaturatingAdd/Mul
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 // [RH] Actually handle the cheat. The cheat code in st_stuff.c now just
 // writes some bytes to the network data stream, and the network code
@@ -347,6 +348,7 @@ void cht_DoCheat (player_t *player, int cheat)
 				player->mo->renderflags &= ~RF_INVISIBLE;
 				player->mo->height = player->mo->GetDefault()->height;
 				player->mo->radius = player->mo->GetDefault()->radius;
+				zx::cells::Refresh (player->mo);	// [Doruk-Aksoy] features/blockmap-filter: resized without relinking
 				player->mo->special1 = 0;	// required for the Hexen fighter's fist attack. 
 											// This gets set by AActor::Die as flag for the wimpy death and must be reset here.
 				player->mo->SetState (player->mo->SpawnState);

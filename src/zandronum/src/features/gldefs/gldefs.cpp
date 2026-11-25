@@ -64,6 +64,7 @@
 #include "features/gldefs/computation/lighttags_compute.h"
 #include "features/gldefs/computation/lightsize_compute.h"
 #include "features/gldefs/computation/attenuate_compute.h"
+#include "features/gldefs/computation/actorlights_compute.h"
 #include "g_level.h"   // [Doruk-Aksoy] level.flags3, whose LEVEL3_ATTENUATE an unset attenuate follows
 #include "features/gldefs/glow.h"
 #include "features/hwshaders/hwshaders.h"
@@ -159,6 +160,7 @@ public:
    void SetDontLightActors(bool on) { m_dontLightActors = on; }
    void SetDontLightOthers(bool on) { m_dontLightOthers = on; }
    void SetAttenuate(bool on) { m_attenuate = on ? 1 : 0; }
+   void SetSpot(float inner, float outer) { m_spot = true; m_spotInner = inner; m_spotOuter = outer; }
    // [Doruk-Aksoy] The GLDEFS lightsizefactor in force where the definition ends, as UZDoom's AddLightDefaults applies it.
    void ApplySizeFactor(double factor)
    {
@@ -175,6 +177,8 @@ protected:
    float m_lightDefIntensity;
    bool m_dontLightActors, m_dontLightOthers;
    int m_attenuate;   // [Doruk-Aksoy] the attenuate tag, 0 or 1, or zx::gldefs::kAttenuateUnset
+   bool m_spot;   // [Doruk-Aksoy] the spot tag, with its inner and outer angles in degrees
+   float m_spotInner, m_spotOuter;
 };
 
 TArray<FLightDefaults *> LightDefaults;
@@ -201,6 +205,8 @@ FLightDefaults::FLightDefaults(FName name, ELightType type)
 	m_dontLightActors = false;
 	m_dontLightOthers = false;
 	m_attenuate = zx::gldefs::kAttenuateUnset;
+	m_spot = false;
+	m_spotInner = m_spotOuter = 0.f;
 }
 
 void FLightDefaults::ApplyProperties(ADynamicLight * light) const
@@ -214,6 +220,11 @@ void FLightDefaults::ApplyProperties(ADynamicLight * light) const
 	light->dontLightOthers = m_dontLightOthers;
 	if (zx::gldefs::ComputeLightAttenuated(m_attenuate, (level.flags3 & LEVEL3_ATTENUATE) != 0)) light->lightflags |= LF_ATTENUATE;
 	else light->lightflags &= ~LF_ATTENUATE;
+	// [Doruk-Aksoy] A spot aims where its carrier faces (features/gamecopy), as uzdoom@62afe5f0 ApplyProperties turns it.
+	if (m_spot) light->lightflags |= LF_SPOT;
+	else light->lightflags &= ~LF_SPOT;
+	light->spotInner = m_spotInner;
+	light->spotOuter = m_spotOuter;
 	for (int a = 0; a < 3; a++) light->args[a] = clamp<int>((int)(m_Args[a] * r_lights_intensity), 0, 255);
 	light->m_intensity[0] = int(m_Args[LIGHT_INTENSITY]);
 	light->m_intensity[1] = int(m_Args[LIGHT_SECONDARY_INTENSITY]);
@@ -395,9 +406,10 @@ static void gl_ParseLight(FScanner &sc, LightBlock block, ELightType lightType, 
 			gl_ParseInt(sc);
 			break;
 		case LightTag::Spot:
-			// [Doruk-Aksoy] UZDoom's inner and outer cone angles, read and not yet acted on.
-			gl_ParseFloat(sc);
-			gl_ParseFloat(sc);
+			{
+				const float inner = gl_ParseFloat(sc);
+				defaults->SetSpot(inner, gl_ParseFloat(sc));
+			}
 			break;
 		case LightTag::Intensity:
 			defaults->SetLightDefIntensity(gl_ParseFloat(sc));
@@ -760,9 +772,10 @@ FInternalLightAssociation::FInternalLightAssociation(FLightAssociation * asso)
 //
 //==========================================================================
 
-inline TDeletingArray<FInternalLightAssociation *> * gl_GetActorLights(AActor * actor)
+// [Doruk-Aksoy] A class's light associations, kept on its FActorInfo since no actor ever changes them.
+inline TDeletingArray<FInternalLightAssociation *> * gl_GetActorLights(const PClass * cls)
 {
-	return (TDeletingArray<FInternalLightAssociation *>*)actor->lightassociations;
+	return (TDeletingArray<FInternalLightAssociation *>*)cls->ActorInfo->FuaLightAssociations;
 }
 
 TDeletingArray< TDeletingArray<FInternalLightAssociation *> * > AssoDeleter;
@@ -787,6 +800,14 @@ void gl_InitializeActorLights()
 {
 	// [rc4l] A restart (wad_reload) makes every class again with no lights, so the lists the last start made are freed here instead of at exit.
 	AssoDeleter.DeleteAndClear();
+	for (unsigned int i = 0; i < PClass::m_Types.Size(); i++)
+	{
+		if (FActorInfo *info = PClass::m_Types[i]->ActorInfo)
+		{
+			info->FuaLightAssociations = NULL;
+			info->FuaLightsAttached = false;
+		}
+	}
 	for(unsigned int i=0;i<LightAssociations.Size();i++)
 	{
 		const PClass * ti = PClass::FindClass(LightAssociations[i].ActorName());
@@ -798,13 +819,13 @@ void gl_InitializeActorLights()
 			{
 				FInternalLightAssociation * iasso = new FInternalLightAssociation(&LightAssociations[i]);
 
-				if (!defaults->lightassociations)
+				if (!ti->ActorInfo->FuaLightAssociations)
 				{
 					TDeletingArray<FInternalLightAssociation*> *p =new TDeletingArray<FInternalLightAssociation*>;
-					defaults->lightassociations = p;
+					ti->ActorInfo->FuaLightAssociations = p;
 					AssoDeleter.Push(p);
 				}
-				TDeletingArray<FInternalLightAssociation *> * lights = gl_GetActorLights(defaults);
+				TDeletingArray<FInternalLightAssociation *> * lights = gl_GetActorLights(ti);
 				if (iasso->Light()==NULL)
 				{
 					// The definition was not valid.
@@ -866,6 +887,7 @@ void gl_AttachLight(AActor *actor, unsigned int count, const FLightDefaults *lig
 		light->target = actor;
 		light->owned = true;
 		actor->dynamiclights.Push(light);
+		actor->GetClass()->ActorInfo->FuaLightsAttached = true;	// [Doruk-Aksoy] so gl_SetActorLights reads this class's actors' lights from now on
 	}
 	light->flags2&=~MF2_DORMANT;
 	lightdef->ApplyProperties(light);
@@ -887,10 +909,13 @@ void gl_SetActorLights(AActor *actor)
 	if (( actor->player != NULL ) && ( actor->player->bSpectating ))
 		return;
 
-	TArray<FInternalLightAssociation *> * l = gl_GetActorLights(actor);
+	const FActorInfo *info = actor->GetClass()->ActorInfo;
+	TArray<FInternalLightAssociation *> * l = gl_GetActorLights(actor->GetClass());
 	unsigned int count = 0;
 
 	if (actor->state == NULL) return;
+	// [Doruk-Aksoy] Nothing to attach and none held, decided without reading the actor's own light list.
+	if (zx::gldefs::ComputeActorLightsIdle(l != NULL && l->Size() > 0, actor->state->Light, info->FuaLightsAttached)) return;
 	if (l)
 	{
 		TArray<FInternalLightAssociation *> & LightAssociations=*l;

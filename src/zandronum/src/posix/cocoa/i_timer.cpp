@@ -32,144 +32,95 @@
  */
 
 #include <assert.h>
-#include <sys/sysctl.h>
-#include <sys/time.h>
-#include <pthread.h>
-#include <libkern/OSAtomic.h>
 
 #include "basictypes.h"
 // [rc4l] no basicinlines.h in our base; its contents live in basictypes.h here.
 #include "doomdef.h"
 #include "i_system.h"
+#include "i_tictime.h"	// [Kaori-Chani] the shared monotonic tic time base
 #include "templates.h"
 
 
 namespace
 {
 
-timeval s_gameStartTicks;
-timeval s_systemBootTicks;
+// [Kaori-Chani] Tics come from the shared monotonic counter, and the spans are kept as raw
+// counts so that no tic boundary is lost to millisecond rounding.
+tictime_raw_t s_rawBase;
+tictime_raw_t s_rawFreezeStart;
+tictime_raw_t s_ticStartRaw;
+tictime_raw_t s_ticNextRaw;
+uint32 s_ticNextMS;
+int s_ticFrozen;
 
-unsigned int GetMillisecondsSince(const timeval& time)
+bool s_timerInitialized;
+
+// [Kaori-Chani] Seeded on its first read, since I_MSTime is read before I_InitTimer, so every
+// reader takes the base first rather than read the counter before the seed.
+tictime_raw_t RawBase()
 {
-	timeval now;
-	gettimeofday(&now, NULL);
+	if (0 == s_rawBase)
+	{
+		s_rawBase = TIC_GetRawCounter();
+	}
 
-	return static_cast<unsigned int>(
-		  (now.tv_sec  - time.tv_sec ) * 1000
-		+ (now.tv_usec - time.tv_usec) / 1000);
+	return s_rawBase;
 }
 
-
-bool s_isTicFrozen;
-
-timespec GetNextTickTime()
+int GetTimePolled(bool saveMS)
 {
-	static const long MILLISECONDS_IN_SECOND = 1000;
-	static const long MICROSECONDS_IN_SECOND = 1000 * MILLISECONDS_IN_SECOND;
-	static const long NANOSECONDS_IN_SECOND  = 1000 * MICROSECONDS_IN_SECOND;
-
-	static timespec ts = {};
-
-	if (__builtin_expect((0 == ts.tv_sec), 0))
+	if (0 != s_ticFrozen)
 	{
-		timeval tv;
-		gettimeofday(&tv, NULL);
+		return s_ticFrozen;
+	}
 
-		ts.tv_sec = tv.tv_sec;
-		ts.tv_nsec = (tv.tv_usec + MICROSECONDS_IN_SECOND / TICRATE) * MILLISECONDS_IN_SECOND;
+	const tictime_raw_t base = RawBase();
+	const tictime_raw_t now = TIC_GetRawCounter();
+	// [Kaori-Chani] One exact division across the whole span, so the tic count cannot drift
+	// however long the process has been up.
+	const tictime_raw_t curtic = TIC_ScaleRaw(now - base, TICRATE);
+
+	if (saveMS)
+	{
+		s_ticStartRaw = base + TIC_TicsToRaw(curtic);
+		s_ticNextRaw = base + TIC_TicsToRaw(curtic + 1);
+		s_ticNextMS = static_cast<uint32>(TIC_ScaleRaw(s_ticNextRaw - base, 1000));
+	}
+
+	return static_cast<int>(curtic);
+}
+
+int WaitForTicPolled(int prevTic)
+{
+	int time;
+
+	assert(0 == s_ticFrozen);
+
+	while ((time = GetTimePolled(false)) <= prevTic)
+	{
+		// [Kaori-Chani] Wait for the next tic's own boundary, where a second thread used to
+		// signal a condition variable on each one.
+		TIC_SleepUntilRaw(RawBase() + TIC_TicsToRaw(static_cast<tictime_raw_t>(prevTic) + 1));
+	}
+
+	return time;
+}
+
+void FreezeTimePolled(bool frozen)
+{
+	if (frozen)
+	{
+		assert(0 == s_ticFrozen);
+		s_ticFrozen = GetTimePolled(false);
+		s_rawFreezeStart = TIC_GetRawCounter();
 	}
 	else
 	{
-		ts.tv_nsec += (MICROSECONDS_IN_SECOND / TICRATE) * MILLISECONDS_IN_SECOND;
+		assert(0 != s_ticFrozen);
+		// [Kaori-Chani] Shift the base by the frozen span exactly, losing no part of a tic.
+		s_rawBase = RawBase() + (TIC_GetRawCounter() - s_rawFreezeStart);
+		s_ticFrozen = 0;
 	}
-
-	if (ts.tv_nsec >= NANOSECONDS_IN_SECOND)
-	{
-		ts.tv_sec++;
-		ts.tv_nsec -= NANOSECONDS_IN_SECOND;
-	}
-
-	return ts;
-}
-
-
-pthread_cond_t  s_timerEvent;
-pthread_mutex_t s_timerMutex;
-pthread_t       s_timerThread;
-
-bool s_timerInitialized;
-bool s_timerExitRequested;
-
-uint32_t s_ticStart;
-uint32_t s_timerStart;
-
-int  s_tics;
-
-
-void* TimerThreadFunc(void*)
-{
-	assert(s_timerInitialized);
-	assert(!s_timerExitRequested);
-
-	while (true)
-	{
-		if (s_timerExitRequested)
-		{
-			break;
-		}
-
-		const timespec timeToNextTick = GetNextTickTime();
-
-		pthread_mutex_lock(&s_timerMutex);
-		pthread_cond_timedwait(&s_timerEvent, &s_timerMutex, &timeToNextTick);
-
-		if (!s_isTicFrozen)
-		{
-			// The following GCC/Clang intrinsic can be used instead of OS X specific function:
-			// __sync_add_and_fetch(&s_tics, 1);
-			// Although it's not supported on all platform/compiler combination,
-			// e.g. GCC 4.0.1 with PowerPC target architecture
-
-			OSAtomicIncrement32(&s_tics);
-		}
-
-		s_timerStart = I_MSTime();
-
-		pthread_cond_broadcast(&s_timerEvent);
-		pthread_mutex_unlock(&s_timerMutex);
-	}
-
-	return NULL;
-}
-
-int GetTimeThreaded(bool saveMS)
-{
-	if (saveMS)
-	{
-		s_ticStart = s_timerStart;
-	}
-
-	return s_tics;
-}
-
-int WaitForTicThreaded(int prevTic)
-{
-	assert(!s_isTicFrozen);
-
-	while (s_tics <= prevTic)
-	{
-		pthread_mutex_lock(&s_timerMutex);
-		pthread_cond_wait(&s_timerEvent, &s_timerMutex);
-		pthread_mutex_unlock(&s_timerMutex);
-	}
-
-	return s_tics;
-}
-
-void FreezeTimeThreaded(bool frozen)
-{
-	s_isTicFrozen = frozen;
 }
 
 } // unnamed namespace
@@ -177,33 +128,40 @@ void FreezeTimeThreaded(bool frozen)
 
 unsigned int I_MSTime()
 {
-	return GetMillisecondsSince(s_gameStartTicks);
+	// [Kaori-Chani] The counter the tics come from, where this read gettimeofday, which an NTP
+	// correction steps mid-session.
+	const tictime_raw_t base = RawBase();
+	return static_cast<unsigned int>(TIC_ScaleRaw(TIC_GetRawCounter() - base, 1000));
 }
 
 unsigned int I_FPSTime()
 {
-	return GetMillisecondsSince(s_systemBootTicks);
+	// [Kaori-Chani] Only differences are taken from this, so the counter's own epoch serves as
+	// well as the boot time the KERN_BOOTTIME sysctl reported.
+	return static_cast<unsigned int>(TIC_ScaleRaw(TIC_GetRawCounter(), 1000));
 }
 
 
 // [rc4l] ours returns fixed_t (48.16), not upstream's double -- see posix/i_system.h.
 fixed_t I_GetTimeFrac(uint32* ms)
 {
-	const uint32_t now = I_MSTime();
+	const tictime_raw_t now = TIC_GetRawCounter();
 
 	if (NULL != ms)
 	{
-		*ms = s_ticStart + 1000 / TICRATE;
+		*ms = s_ticNextMS;
 	}
 
-	// [rc4l] fixed-point, matching posix/i_system.cpp:298-311 exactly rather than converting
-	// upstream's double at the end. Our fixed_t is a strong 48.16 type, so the multiply happens in
-	// fixed-point from the start and there is no float round-trip to reason about.
-	if (0 == s_ticStart)
+	if (s_ticNextRaw <= s_ticStartRaw)
 	{
 		return FRACUNIT;
 	}
-	return clamp<fixed_t>( (now - s_ticStart) * FRACUNIT * TICRATE / 1000, 0, FRACUNIT );
+
+	// [Kaori-Chani] FRACUNIT is a 48.16 value here, so the scale takes its raw 65536.
+	const tictime_raw_t mul = static_cast<tictime_raw_t>(FRACUNIT.Raw()) * TICRATE;
+	const tictime_raw_t frac = TIC_ScaleRaw(now - s_ticStartRaw, mul);
+
+	return clamp<fixed_t>(fixed_t::FromRaw(static_cast<int64_t>(frac)), 0, FRACUNIT);
 }
 
 
@@ -212,36 +170,19 @@ void I_InitTimer()
 	assert(!s_timerInitialized);
 	s_timerInitialized = true;
 
-	gettimeofday(&s_gameStartTicks, NULL);
+	// [Kaori-Chani] No thread to start: the tics are read from the shared counter, so there is
+	// none to join at exit or to lose a tic to.
+	TIC_Init();
+	(void)RawBase();
 
-	int mib[2] = { CTL_KERN, KERN_BOOTTIME };
-	size_t len = sizeof s_systemBootTicks;
-
-	sysctl(mib, 2, &s_systemBootTicks, &len, NULL, 0);
-
-	pthread_cond_init (&s_timerEvent,  NULL);
-	pthread_mutex_init(&s_timerMutex,  NULL);
-
-	pthread_create(&s_timerThread, NULL, TimerThreadFunc, NULL);
-
-	I_GetTime = GetTimeThreaded;
-	I_WaitForTic = WaitForTicThreaded;
-	I_FreezeTime = FreezeTimeThreaded;
+	I_GetTime = GetTimePolled;
+	I_WaitForTic = WaitForTicPolled;
+	I_FreezeTime = FreezeTimePolled;
 }
 
 void I_ShutdownTimer()
 {
-	if (!s_timerInitialized)
-	{
-		// This might happen if Cancel button was pressed
-		// in the IWAD selector window
-		return;
-	}
-
-	s_timerExitRequested = true;
-
-	pthread_join(s_timerThread, NULL);
-
-	pthread_mutex_destroy(&s_timerMutex);
-	pthread_cond_destroy (&s_timerEvent);
+	// [Kaori-Chani] Nothing to shut down now the timer thread is gone, and still called on the
+	// path where the IWAD selector was cancelled.
+	s_timerInitialized = false;
 }

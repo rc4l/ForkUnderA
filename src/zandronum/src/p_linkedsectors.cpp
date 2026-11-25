@@ -36,6 +36,7 @@
 #include "templates.h"
 #include "p_local.h"
 #include "p_lnspec.h"
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] TracePlaneWrite
 
 enum
 {
@@ -92,13 +93,21 @@ bool sector_t::IsLinked(sector_t *other, bool ceiling) const
 //
 //============================================================================
 
-static bool MoveCeiling(sector_t *sector, int crush, fixed_t move)
+static bool MoveCeiling(sector_t *sector, int crush, fixed_t move,
+	const sector_t *from, const char *who)
 {
+	const fixed_t before = sector->ceilingplane.d;	// [Kaori-Chani] for the trace below
+
 	sector->ceilingplane.ChangeHeight (move);
 	sector->ChangePlaneTexZ(sector_t::ceiling, move);
 
 	// [BB] Ceiling height was changed.
 	sector->bCeilingHeightChange = true;
+
+	// [Kaori-Chani] features/net-snapshot: after ChangePlaneTexZ, so the trace reads texz+d
+	// as a pair, and with the sector that drove it.
+	zx::netsnapshot::TracePlaneWrite( sector, sector_t::ceiling, who, before,
+		sector->ceilingplane.d, from );
 
 	if (P_ChangeSector(sector, crush,(int)( move), 1, true)) return false;
 
@@ -110,13 +119,20 @@ static bool MoveCeiling(sector_t *sector, int crush, fixed_t move)
 	return true;
 }
 
-static bool MoveFloor(sector_t *sector, int crush, fixed_t move)
+static bool MoveFloor(sector_t *sector, int crush, fixed_t move,
+	const sector_t *from, const char *who)
 {
+	const fixed_t before = sector->floorplane.d;	// [Kaori-Chani] for the trace below
+
 	sector->floorplane.ChangeHeight (move);
 	sector->ChangePlaneTexZ(sector_t::floor, move);
 
 	// [BB] Floor height was changed.
 	sector->bFloorHeightChange = true;
+
+	// [Kaori-Chani] features/net-snapshot: as in MoveCeiling above.
+	zx::netsnapshot::TracePlaneWrite( sector, sector_t::floor, who, before,
+		sector->floorplane.d, from );
 
 	if (P_ChangeSector(sector, crush,(int)( move), 0, true)) return false;
 
@@ -138,7 +154,8 @@ static bool MoveFloor(sector_t *sector, int crush, fixed_t move)
 //
 //============================================================================
 
-bool P_MoveLinkedSectors(sector_t *sector, int crush, fixed_t move, bool ceiling)
+bool P_MoveLinkedSectors(sector_t *sector, int crush, fixed_t move, bool ceiling,
+	const char *who)
 {
 	extsector_t::linked::plane &scrollplane = ceiling? sector->e->Linked.Ceiling : sector->e->Linked.Floor;
 	bool ok = true;
@@ -148,55 +165,55 @@ bool P_MoveLinkedSectors(sector_t *sector, int crush, fixed_t move, bool ceiling
 		switch(scrollplane.Sectors[i].Type)
 		{
 		case LINK_FLOOR:
-			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move);
+			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move, sector, who);
 			break;
 
 		case LINK_CEILING:
-			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move);
+			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move, sector, who);
 			break;
 
 		case LINK_BOTH:
 			if (move < 0)
 			{
-				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move);
-				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move);
+				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move, sector, who);
+				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move, sector, who);
 			}
 			else
 			{
-				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move);
-				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move);
+				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move, sector, who);
+				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move, sector, who);
 			}
 			break;
 
 		case LINK_FLOORMIRROR:
-			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move);
+			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
 			break;
 
 		case LINK_CEILINGMIRROR:
-			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move);
+			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
 			break;
 
 		case LINK_BOTHMIRROR:
 			if (move > 0)
 			{
-				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move);
-				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move);
+				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
+				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
 			}
 			else
 			{
-				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move);
-				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move);
+				ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
+				ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
 			}
 			break;
 
 		case LINK_FLOOR+LINK_CEILINGMIRROR:
-			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move);
-			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move);
+			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, move, sector, who);
+			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
 			break;
 
 		case LINK_CEILING+LINK_FLOORMIRROR:
-			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move);
-			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move);
+			ok &= MoveFloor(scrollplane.Sectors[i].Sector, crush, -move, sector, who);
+			ok &= MoveCeiling(scrollplane.Sectors[i].Sector, crush, move, sector, who);
 			break;
 
 		default:
@@ -385,4 +402,16 @@ void P_AddSectorLinksByID(sector_t *control, int id, INTBOOL ceiling)
 			}
 		}
 	}
+}
+
+//============================================================================
+//
+// [Kaori-Chani] features/net-snapshot: which of this file's own movement bits
+// a plane is linked by, the constants being file-local here.
+//
+//============================================================================
+
+int P_LinkPlaneBits(bool ceiling)
+{
+	return ceiling ? LINK_CEILINGBITS : LINK_FLOORBITS;
 }

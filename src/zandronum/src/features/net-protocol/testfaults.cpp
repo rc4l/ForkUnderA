@@ -12,6 +12,11 @@
 
 // [rc4l] Server commands left unsent, as "id" or "id/extended id" (fuactl netcap names them), to prove a netgame scenario fails without them.
 CVAR(String, fua_debug_netdrop, "", CVAR_FUA_DEV_MODE)
+
+// [Kaori-Chani] How many of the next received reliable packets a client throws away before
+// recording them, for the tail-recovery window: a loss nothing later reveals.
+CVAR(Int, fua_debug_droppackets, 0, CVAR_FUA_DEV_MODE)
+
 // [rc4l] Tics a client takes off the server tic it reports, as a screen that far behind would, to prove unlaggedhit fails.
 CVAR(Int, fua_debug_unlagged_ticoffset, 0, CVAR_FUA_DEV_MODE)
 
@@ -27,6 +32,13 @@ bool DroppedForTest(const unsigned char *bytes, int length)
 	int id, ext;
 	ComputeCommandIds(bytes, length, SVC_EXTENDEDCOMMAND, id, ext);
 	return ComputeNetDropMatches(spec, id, ext);
+}
+
+bool DropReceivedPacketForTest()
+{
+	if (fua_debug_droppackets <= 0) return false;
+	fua_debug_droppackets = *fua_debug_droppackets - 1;
+	return true;
 }
 
 void StallServerForTest(int tic)

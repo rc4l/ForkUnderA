@@ -108,6 +108,7 @@ void	CLIENTCOMMANDS_Puke ( int script, int args[4], bool always );
 void	CLIENTCOMMANDS_ACSSendString( int script, const char* pszString );
 void	CLIENTCOMMANDS_MorphCheat ( const char *pszMorphClass );
 void	CLIENTCOMMANDS_FullUpdateReceived ( void );
+void	CLIENTCOMMANDS_SnapshotAck ( int seq, unsigned int history, BYTE soundIds );	// [Kaori-Chani]
 void	CLIENTCOMMANDS_InfoCheat( AActor* mobj, bool extended );
 void	CLIENTCOMMANDS_WarpCheat( fixed_t x, fixed_t y );
 void	CLIENTCOMMANDS_KillCheat( const char* what );

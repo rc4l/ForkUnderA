@@ -624,7 +624,7 @@ void		STACK_ARGS SERVER_PrintfPlayer( ULONG ulPrintLevel, ULONG ulPlayer, const 
 void		STACK_ARGS SERVER_PrintfPlayer( ULONG ulPlayer, const char *pszString, ... ) GCCPRINTF(2,3);
 void		SERVER_VPrintf( int printlevel, const char* format, va_list argptr, int playerToPrintTo );
 void		SERVER_UpdateSectors( ULONG ulClient );
-void		SERVER_UpdateMovers( ULONG ulClient );
+ULONG		SERVER_UpdateMovers( ULONG ulClient );
 void		SERVER_UpdateLines( ULONG ulClient );
 void		SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient );
 void		SERVER_ReconnectNewLevel( const char *pszMapName );
@@ -643,6 +643,10 @@ LONG		SERVER_AdjustFloorDirection( LONG lDirection );
 LONG		SERVER_AdjustCeilingDirection( LONG lDirection );
 LONG		SERVER_AdjustElevatorDirection( LONG lDirection );
 ULONG		SERVER_GetMaxPacketSize( void );
+// [Kaori-Chani] features/net-snapshot: resends every tracked mover to one client, for a join
+// or a gate change. Declared only: its body walks the module's own lists, so it arrives with
+// the hooks.
+ULONG		SERVER_ResendTrackedMovers( ULONG ulClient );
 const char	*SERVER_GetMapMusic( void );
 int			SERVER_GetMapMusicOrder( void );
 void		SERVER_SetMapMusic( const char *pszMusic, int order );

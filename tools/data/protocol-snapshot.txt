@@ -206,6 +206,11 @@
  48 SVC2_FUASETSHADERUNIFORM               [Extended] : String String Bool Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
  49 SVC2_FUASETACTORMATERIAL               [Extended] : Actor String
  50 SVC2_FUASETACTORUNIFORM                [Extended] : Actor Byte Byte Long?{kind == 0} Float?{kind >= 1} Float?{kind >= 2} Float?{kind >= 3} Float?{kind >= 4}
+ 51 SVC2_SNAPMOVERGATE                     [Extended] : Bool Long
+ 52 SVC2_SETTHINGNETID                     [Extended] : NetID NetID
+ 53 SVC2_SNAPJOIN                          [Extended] : Byte Byte Long Long Long Byte Byte Byte
+ 54 SVC2_SNAPSPECIALSTATE                  [Extended] : Short Struct Short Struct
+ 55 SVC2_SNAPMAPRESET                      [Extended] : Byte
 ## wire ids (network_enums.h)
 # ServerConnectionCommand
   0 SVCC_AUTHENTICATE
@@ -526,7 +531,19 @@
  78 SVC2_FUASETACTORUNIFORM
  79 SVC2_SETTHINGFLOORCLIP
  80 SVC2_PLAYERSETSELECTEDINVENTORY
- 81 NUM_SVC2_COMMANDS
+ 81 SVC2_SNAPSHOT
+ 82 SVC2_DOORSOUND
+ 83 SVC2_SNAPJOIN
+ 84 SVC2_SETTHINGNETID
+ 85 SVC2_SNAPMOVERGATE
+ 86 SVC2_SNAPSOUNDTABLE
+ 87 SVC2_SNAPSOUND
+ 88 SVC2_SNAPCOSMETIC
+ 89 SVC2_SNAPSPECIALSTATE
+ 90 SVC2_SNAPMAPRESET
+ 91 SVC2_FLOORSOUND
+ 92 SVC2_MOVERSOUND
+ 93 NUM_SVC2_COMMANDS
 # CLCC
   0 CLCC_ATTEMPTCONNECTION
   1 CLCC_ATTEMPTAUTHENTICATION
@@ -582,4 +599,5 @@
  49 CLC_CONVERSATIONREPLY
  50 CLC_CONVERSATIONCLOSE
  51 CLC_ACSUSERINFO
- 52 NUM_CLIENT_COMMANDS
+ 52 CLC_SNAPSHOTACK
+ 53 NUM_CLIENT_COMMANDS
