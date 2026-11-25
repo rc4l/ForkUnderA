@@ -7,6 +7,7 @@
 #define ZX_ACSVEC_H
 
 #include "features/acsvec/computation/acsvec_compute.h"
+#include <cstdint>
 
 class FBehavior;
 
