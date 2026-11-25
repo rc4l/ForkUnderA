@@ -59,10 +59,11 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   `report.h`, so an edit to a report line cannot move the capture loop's own code.
 - `clienttrack.{h,cpp}`: the per-client delta — what each client has been told, its ack ledger and
   the interest scheduling that decides what its next datagram carries. Was `sv_snapclient`.
-- `computation/`: fourteen pure units — the ack ledger, the animation census, the budget and chunk
+- `computation/`: fifteen pure units — the ack ledger, the animation census, the budget and chunk
   cuts, the catch-up clamp, the clock model, the interest tiers, the join's frame and map stamp, the
-  gravity law and run steps, the mover write order, the replay's histogram, the ghost sampler, the
-  smoothing, the snapshot sound's body and the wall sweep — each with its colocated `*_test.cpp`.
+  gravity law and run steps, the mover write order, the property census, the replay's histogram, the
+  ghost sampler, the smoothing, the snapshot sound's body and the wall sweep — each with its
+  colocated `*_test.cpp`.
   - `ComputeAnchorStart`, in the smoothing unit, is the mirror interpolation rule's start pose, and
     both the live frame and the replay's analysis call it so that `fua_csnap_analyze ... anchor`
     measures what a client actually draws. Two things about it are deliberate and easy to undo by

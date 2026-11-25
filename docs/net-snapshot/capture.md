@@ -1,6 +1,6 @@
 # capture: the server's snapshot tick
 
-Covers: src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/report.h, src/zandronum/src/features/net-snapshot/report.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/computation/propcensus_compute.h, src/zandronum/src/features/net-snapshot/computation/propcensus_compute.cpp, src/zandronum/src/features/net-snapshot/computation/propcensus_compute_test.cpp, src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/report.h, src/zandronum/src/features/net-snapshot/report.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
 
 ## Responsibility
 
@@ -169,6 +169,13 @@ The property slots:
 - `PropForget`: the table at a level change.
 - `PropStats`: live slots, changes seen, sets refused for want of a slot, material names cut
   to `SNAP_PROPS_MATNAME_MAX`, and the pass's own size and sweep time, for the report.
+- `fua_snap_propclasses`: which classes hold the slots, run while the table is full. It reads
+  the table as it stands and tallies it with `ComputePropClassCensus` -- most slots first, the
+  lower class id breaking a tie -- naming each class, how many slots it holds and which of scale,
+  roll, material and uniforms those slots carry. On demand, not kept per window, so a pump pays
+  nothing for it; during a fight the table is at its peak anyway. A slot whose entity has gone
+  since the capture is counted as `(gone)` rather than skipped, and `PropStats` is read without
+  its reset so the report's window is left alone.
 
 Mirror spawns (the client reads these too):
 - `IsSpawnerState`, `ClassSpawns`, `OwnsSpecialExpression`: the four spawner actions, a class with a

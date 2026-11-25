@@ -51,6 +51,7 @@
 #include "features/net-snapshot/computation/mover_compute.h"
 #include "features/net-snapshot/computation/budget_compute.h"
 #include "features/net-snapshot/computation/catchup_compute.h"
+#include "features/net-snapshot/computation/propcensus_compute.h"
 #include "features/net-snapshot/computation/sound_compute.h"
 #include "features/actormaterials/actormaterials.h"	// MaterialName, for a props slot
 #include "features/sound-amplify/computation/sound_amplify_compute.h"
@@ -3280,6 +3281,62 @@ void zx::netsnapshot::PropStats(unsigned int & live, unsigned int & changes,
 		g_propChanges = g_propOverflow = g_propTruncated = 0;
 		g_propWalks = g_propSteps = g_propSweepRaw = 0;
 	}
+}
+
+// The classes holding the table's slots, most first, with what each slot carries.
+// On demand rather than kept per window: a pump pays nothing for a command nobody ran.
+DEV_MODE_CCMD(fua_snap_propclasses)
+{
+	if (NETWORK_GetState() != NETSTATE_SERVER)
+	{
+		Printf("fua_snap_propclasses is only available on a server.\n");
+		return;
+	}
+
+	SnapPropSlotSeen seen[SNAPPROP_MAXSLOTS];
+	unsigned int nSeen = 0, nGone = 0;
+	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	{
+		if (g_propSlots[i].netID == 0)
+			continue;
+		// An entity gone since the capture leaves its slot until the sweep, so it is
+		// counted without a name rather than skipped.
+		const AActor * pActor = g_ActorNetIDList.findPointerByID(g_propSlots[i].netID);
+		seen[nSeen].classId = (pActor != NULL)
+			? (unsigned short)pActor->GetClass()->getActorNetworkIndex() : 0;
+		seen[nSeen].flags = g_propSlots[i].props.flags;
+		if (pActor == NULL)
+			++nGone;
+		++nSeen;
+	}
+
+	unsigned int live = 0, changes = 0, overflow = 0, truncated = 0;
+	QWORD walks = 0, steps = 0;
+	double sweepMS = 0.0;
+	// Read without the reset, so the report's own window is left alone.
+	PropStats(live, changes, overflow, truncated, walks, steps, sweepMS, false);
+	Printf("[snap] property slots: %u of %u live | %u refused since the last report"
+		" | %u names cut\n", nSeen, (unsigned int)SNAPPROP_MAXSLOTS, overflow, truncated);
+	if (nSeen == 0)
+		return;
+
+	SnapPropClassCount byClass[SNAPPROP_MAXSLOTS];
+	unsigned int nClasses = 0;
+	ComputePropClassCensus(seen, nSeen, byClass, SNAPPROP_MAXSLOTS, nClasses);
+	unsigned int total[SNAPPROPCENSUS_BITS] = { 0 };
+	for (unsigned int c = 0; c < nClasses; ++c)
+	{
+		const PClass * pType = (byClass[c].classId != 0)
+			? NETWORK_GetClassFromIdentification(byClass[c].classId) : NULL;
+		Printf("  %-26s %4u  scale %u, roll %u, material %u, uniforms %u\n",
+			(pType != NULL) ? pType->TypeName.GetChars() : "(gone)", byClass[c].slots,
+			byClass[c].byBit[0], byClass[c].byBit[1], byClass[c].byBit[2], byClass[c].byBit[3]);
+		for (unsigned int b = 0; b < SNAPPROPCENSUS_BITS; ++b)
+			total[b] += byClass[c].byBit[b];
+	}
+	Printf("[snap] property slots by property: scale %u, roll %u, material %u,"
+		" uniforms %u | %u classes, %u entities gone\n", total[0], total[1], total[2],
+		total[3], nClasses, nGone);
 }
 
 //*****************************************************************************

@@ -72,7 +72,8 @@ COLUMNS = [
         (s + '.cpp', comp(s)) for s in (
             'budget_compute', 'interest_compute', 'ack_compute', 'join_compute', 'catchup_compute',
             'law_compute', 'clock_compute', 'sample_compute', 'smooth_compute', 'anim_compute',
-            'wall_compute', 'sound_compute', 'mover_compute', 'replay_compute')
+            'wall_compute', 'sound_compute', 'mover_compute', 'replay_compute',
+            'propcensus_compute')
     ]),
     ('format', 'Wire format and clock', 'engine-free', [
         ('format.h', [MODULE + '/format.h']),
