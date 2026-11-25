@@ -33,12 +33,15 @@
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverResetBegin
 #include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] PolyCapture
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] ResetEnd
+#include "features/handoff/effects.h"   // [Doruk-Aksoy] QueueUI, the timed demo's quit
+#include "features/timedemo/computation/timedemo_compute.h"   // [Doruk-Aksoy] ComputeTimedemoLine
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
+#include <cstdint>
 #include <time.h>
 #ifdef __APPLE__
 #include <CoreServices/CoreServices.h>
@@ -5833,12 +5836,9 @@ bool G_CheckDemoStatus (void)
 		{
 			if (timingdemo)
 			{
-				// Trying to get back to a stable state after timing a demo
-				// seems to cause problems. I don't feel like fixing that
-				// right now.
-				I_FatalError ("timed %i gametics in %i realtics (%.1f fps)\n"
-							  "(This is not really an error.)", gametic,
-							  endtime, (float)gametic/(float)endtime*(float)TICRATE);
+				// [Doruk-Aksoy] features/timedemo: printed, and a quit queued for the handoff, where upstream's I_FatalError left a modal box waiting on Windows.
+				Printf ("%s", ComputeTimedemoLine (gametic, endtime, TICRATE).c_str ());
+				zx::handoff::QueueUI ({ [](intptr_t, intptr_t) { C_DoCommand ("quit"); }, 0, 0 });
 			}
 			else
 			{
