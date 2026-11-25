@@ -146,8 +146,11 @@ a DECORATE-authored `flags9`, so it adds no traffic there.
 - `p_local.h` — `FCheckPosition::RipStatePending`, the `+USERIPSTATE` deferral carrier.
 - `p_mobj.cpp` (`P_XYMovement`) and `g_shared/a_fastprojectile.cpp` (`Tick`) — the two movers
   that apply the deferred `Rip:` state once the move is out of the blockmap iterator.
-- `p_map.cpp` — the rip path in `PIT_CheckThing`, plus the level check in the PASSMOBJ/bridge
-  gate and in `P_BounceActor` so a level-rejected ripper is consistently "not a ripper" there too.
+- `p_map.cpp` — the rip path in `PIT_CheckThing`, and `P_RipsThrough` (`ComputeRipsThrough`: +RIPPER,
+  +DONTRIP, the level window, +NOBOSSRIP) for the PASSMOBJ/bridge gate and `P_BounceActor`, so a
+  ripper that cannot rip is consistently "not a ripper" there too.
+- `p_mobj.cpp` (`AActor::Tick`) — a bouncing ripper coming down on an actor it can rip rips through it
+  (`P_RipsThrough`) instead of exploding there (features/bounce).
 - `p_mobj.cpp` — the ledger accessors, the `FRipVictim` archiver, and the guarded serialization.
 - `p_local.h` / `p_interaction.cpp` — `DMG_NO_PAIN` and the three pain gates that honour it.
 - `thingdef/thingdef_data.cpp`, `thingdef_properties.cpp`, `thingdef_expression.cpp`,

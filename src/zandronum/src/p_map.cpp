@@ -1153,13 +1153,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	// you can use a scrolling floor to move scenery items underneath a bridge.
 	if ((tm.thing->flags2 & MF2_PASSMOBJ || thing->flags4 & MF4_ACTLIKEBRIDGE) && !(i_compatflags & COMPATF_NO_PASSMOBJ))
 	{ // check if a mobj passed over/under another object
-		if (!(tm.thing->flags & MF_MISSILE) ||
-			!(tm.thing->flags2 & MF2_RIP) ||
-			(thing->flags5 & MF5_DONTRIP) ||
-			// [MGOOOOOO] A projectile outside the victim's RipperLevel window can't rip it, so it
-			// must take the pass-over/under branch just like the +DONTRIP case above.
-			!zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax) ||
-			((tm.thing->flags6 & MF6_NOBOSSRIP) && (thing->flags2 & MF2_BOSS)))
+		// [MGOOOOOO] A projectile that cannot rip the victim (P_RipsThrough: +DONTRIP, the RipperLevel window, +NOBOSSRIP) takes the pass-over/under branch.
+		if (!(tm.thing->flags & MF_MISSILE) || !P_RipsThrough(tm.thing, thing))
 		{
 			if (tm.thing->flags3 & thing->flags3 & MF3_DONTOVERLAP)
 			{ // Some things prefer not to overlap each other, if possible
@@ -4001,6 +3996,14 @@ bool P_BounceWall(AActor *mo)
 //
 //==========================================================================
 
+// [MGOOOOOO] features/ripper: whether a missile rips this victim instead of stopping on it (ComputeRipsThrough).
+bool P_RipsThrough(const AActor *missile, const AActor *victim)
+{
+	return zx::ripper::ComputeRipsThrough(!!(missile->flags2 & MF2_RIP), !!(victim->flags5 & MF5_DONTRIP),
+		missile->RipperLevel, victim->RipLevelMin, victim->RipLevelMax,
+		!!(missile->flags6 & MF6_NOBOSSRIP), !!(victim->flags2 & MF2_BOSS));
+}
+
 extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
@@ -4010,10 +4013,8 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 		return true;
 
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
-		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
-		// projectile the victim's RipperLevel window rejects is not a ripper as far as this
-		// reflective actor is concerned, so it bounces instead of passing through.
-		|| ((mo->flags & MF_MISSILE) && (!(mo->flags2 & MF2_RIP) || (BlockingMobj->flags5 & MF5_DONTRIP) || !zx::ripper::ComputeRipLevelAllows(mo->RipperLevel, BlockingMobj->RipLevelMin, BlockingMobj->RipLevelMax) || ((mo->flags6 & MF6_NOBOSSRIP) && (BlockingMobj->flags2 & MF2_BOSS))) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
+		// [MGOOOOOO] A missile that cannot rip this reflective actor (P_RipsThrough, as PIT_CheckThing asks) bounces instead of passing through.
+		|| ((mo->flags & MF_MISSILE) && !P_RipsThrough(mo, BlockingMobj) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 		|| ((BlockingMobj->player == NULL) && (!(BlockingMobj->flags3 & MF3_ISMONSTER)))
 		))
 	{

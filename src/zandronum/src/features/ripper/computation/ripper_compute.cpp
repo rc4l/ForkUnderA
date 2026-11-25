@@ -15,6 +15,13 @@ bool ComputeRipLevelAllows(int ripperLevel, int victimLevelMin, int victimLevelM
 	return true;
 }
 
+bool ComputeRipsThrough(bool ripper, bool victimDontRip, int ripperLevel, int victimLevelMin, int victimLevelMax,
+	bool noBossRip, bool victimBoss)
+{
+	return ripper && !victimDontRip && ComputeRipLevelAllows(ripperLevel, victimLevelMin, victimLevelMax) &&
+		!(noBossRip && victimBoss);
+}
+
 // A budget of 0 is "unlimited", so every test is gated on the limit being positive first.
 static bool DamageBudgetSpent(const FRipLimits &limits, const FRipProgress &progress)
 {
