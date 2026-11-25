@@ -117,6 +117,7 @@
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
 #include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
+#include "features/acsvec/acsvec.h"   // [Doruk-Aksoy] CallVecFunction
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -5867,9 +5868,12 @@ enum EACSFunctions
 	ACSF_fua_SetActorUniform3f,
 	ACSF_fua_SetActorUniform4f,
 	ACSF_fua_SetActorUniform1i,			// (int tid, str uniform, int x)
+	// [Doruk-Aksoy] features/acsvec: what zt-bcc compiles vector length, unit, dot and cross to.
+	ACSF_fua_Vec,						// (operands..., int channel, int op)
 };
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
+static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
@@ -7463,6 +7467,9 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_fua_SetActorUniform4f:
 		case ACSF_fua_SetActorUniform1i:
 			return zx::actormaterials::CallActorMaterialFunction( activator, funcIndex, args, argCount );
+
+		case ACSF_fua_Vec:
+			return zx::acsvec::CallVecFunction( activeBehavior, args, argCount );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:

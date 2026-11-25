@@ -105,6 +105,8 @@ than only at class-definition time.
   texture shader's `fua_Uniform` lines too. Declared for ACC in [`fua.acs`](acs/fua.acs).
 - [Actor materials](gldefs/Actor_materials.md) — `fua_SetActorMaterial` and `fua_SetActorUniform*`, one
   actor's material and its own uniforms.
+- [Vector math](acs/Vectors.md) — `fua_Vec`, the exact length, unit, dot and cross zt-bcc's `vec2`
+  and `vec3` call with `-target fua` or `any`.
 
 ### GLDEFS
 
