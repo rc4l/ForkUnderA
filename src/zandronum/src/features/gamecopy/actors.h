@@ -7,6 +7,7 @@
 #define ZX_GAMECOPY_ACTORS_H
 
 #include "actor.h"
+#include "features/gamecopy/computation/cullpoint_compute.h"
 
 namespace zx { namespace gamecopy {
 
@@ -25,6 +26,8 @@ void TakeActor(AActor &live, ActorRecord &out);
 
 // [rc4l] The actors of the last fill, in thinker order.
 const ActorRecord *Actors(int &count);
+// [Doruk-Aksoy] Each record's frustum test inputs, in record order, written as the record is taken.
+const ActorCullPoint *ActorCullPoints(int &count);
 // [rc4l] Record n of the last fill, NULL for none.
 const ActorRecord *Record(int n);
 // [rc4l] A record's index in the last fill, -1 for one not in it.

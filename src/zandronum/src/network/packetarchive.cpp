@@ -52,6 +52,7 @@
 #include "../network.h"
 #include "../network_enums.h" 
 #include "packetarchive.h"
+#include "../features/net-snapshot/capture.h"   // [Kaori-Chani] the resend counter
 
 //*****************************************************************************
 //
@@ -243,6 +244,15 @@ bool OutgoingPacketBuffer::SendPacket( unsigned int packetNumber, const NETADDRE
 //
 bool OutgoingPacketBuffer::SchedulePacket ( unsigned int packetNumber )
 {
+	// [Kaori-Chani] features/net-snapshot: a resend on request, counted apart, with
+	// SendPacket's 5-byte header.
+	{
+		const BYTE* resendData;
+		size_t resendSize;
+		if ( this->FindPacket( packetNumber, resendData, resendSize ))
+			zx::netsnapshot::CountLegacyResend( static_cast<unsigned int>( resendSize ) + 5 );
+	}
+
 	if ( ( _scheduledPacketIndices.Size() == 0 ) && ( _packetsSentThisTick < static_cast<unsigned int> ( sv_maxpacketspertick ) ) )
 	{
 		++_packetsSentThisTick;

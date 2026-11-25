@@ -16,6 +16,7 @@
 // [BB] New #includes.
 #include "sv_commands.h"
 #include "features/net-session/netrole.h"   // [rc4l] zx::net roles
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 static FRandom pr_morphmonst ("MorphMonster");
 
@@ -124,7 +125,8 @@ bool P_MorphPlayer (player_t *activator, player_t *p, const PClass *spawntype, i
 	AActor *fog = Spawn(((enter_flash) ? enter_flash : RUNTIME_CLASS(ATeleportFog)), actor->x, actor->y, actor->z + TELEFOGHEIGHT, ALLOW_REPLACE);
 	// [WS] Inform the clients of the fog.
 	// [BB] Needs a net id otherwise not all code pointers work on the fog.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::ClientEffect( fog, true ) == false ))
 		SERVERCOMMANDS_SpawnThing( fog );
 	actor->player = NULL;
 	actor->flags &= ~(MF_SOLID|MF_SHOOTABLE);
@@ -385,7 +387,8 @@ bool P_UndoPlayerMorph (player_t *activator, player_t *player, int unmorphflag, 
 		AActor *fog = Spawn(exit_flash, pmo->x + 20*finecosine[angle], pmo->y + 20*finesine[angle], pmo->z + TELEFOGHEIGHT, ALLOW_REPLACE);
 		// [WS] Inform the clients of the fog.
 		// [BB] Needs a net id otherwise not all code pointers work on the fog.
-		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+			&& ( zx::netsnapshot::ClientEffect( fog, true ) == false ))
 			SERVERCOMMANDS_SpawnThing( fog );
 	}
 	mo->SetupWeaponSlots();		// Use original class's weapon slots.
@@ -510,7 +513,8 @@ bool P_MorphMonster (AActor *actor, const PClass *spawntype, int duration, int s
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		SERVERCOMMANDS_SpawnThing( morphed );
 	AActor* fog = Spawn(((enter_flash) ? enter_flash : RUNTIME_CLASS(ATeleportFog)), actor->x, actor->y, actor->z + TELEFOGHEIGHT, ALLOW_REPLACE);
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::ClientEffect( fog, true ) == false ))
 		SERVERCOMMANDS_SpawnThing( fog );
 	return true;
 }
@@ -576,7 +580,8 @@ bool P_UndoMonsterMorph (AMorphedMonster *beast, bool force)
 		SERVERCOMMANDS_SpawnThing( actor );
 	beast->Destroy ();
 	AActor* fog = Spawn(exit_flash, beast->x, beast->y, beast->z + TELEFOGHEIGHT, ALLOW_REPLACE);
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::ClientEffect( fog, true ) == false ))
 		SERVERCOMMANDS_SpawnThing( fog );
 	return true;
 }

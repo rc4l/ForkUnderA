@@ -881,6 +881,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireGrenade)
 		an >>= ANGLETOFINESHIFT;
 		grenade->x += FixedMul (finecosine[an], 15*FRACUNIT);
 		grenade->y += FixedMul (finesine[an], 15*FRACUNIT);
+		zx::cells::Refresh (grenade);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			SERVERCOMMANDS_MoveThingExact( grenade, CM_X|CM_Y|CM_VELZ );

@@ -1,6 +1,7 @@
 # latency
 
-How long input and server packets take to reach the screen, as `features/telemetry` timing counters.
+How long input and server packets take to reach the screen, as `features/telemetry` timing counters, in a diagnostics
+build only: without `FUA_DIAGNOSTICS` every note is an inline no-op (`latency.h`).
 
 - `latency/input_to_frame_ms`: from the first input event no frame has shown yet to the end of the first
   frame after a tic's command carried it.

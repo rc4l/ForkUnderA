@@ -116,6 +116,108 @@ ACTOR PointLightFlickerRandomAttenuated : PointLightFlickerRandom
    +DYNAMICLIGHT.ATTENUATE
 }
 
+// [Doruk-Aksoy] uzdoom@62afe5f0 dynlights.zs: spot lights, a thing's arg0 its colour as 0xRRGGBB, arg1 and arg2 its cone, aimed by its angle and pitch.
+ACTOR SpotLight : DynamicLight
+{
+   DynamicLight.Type "Point"
+   +DYNAMICLIGHT.SPOT
+}
+
+ACTOR SpotLightPulse : SpotLight
+{
+   DynamicLight.Type "Pulse"
+}
+
+ACTOR SpotLightFlicker : SpotLight
+{
+   DynamicLight.Type "Flicker"
+}
+
+ACTOR SectorSpotLight : SpotLight
+{
+   DynamicLight.Type "Sector"
+}
+
+ACTOR SpotLightFlickerRandom : SpotLight
+{
+   DynamicLight.Type "RandomFlicker"
+}
+
+ACTOR SpotLightAdditive : SpotLight
+{
+   +MISSILEMORE
+}
+
+ACTOR SpotLightPulseAdditive : SpotLightPulse
+{
+   +MISSILEMORE
+}
+
+ACTOR SpotLightFlickerAdditive : SpotLightFlicker
+{
+   +MISSILEMORE
+}
+
+ACTOR SectorSpotLightAdditive : SectorSpotLight
+{
+   +MISSILEMORE
+}
+
+ACTOR SpotLightFlickerRandomAdditive : SpotLightFlickerRandom
+{
+   +MISSILEMORE
+}
+
+ACTOR SpotLightSubtractive : SpotLight
+{
+   +MISSILEEVENMORE
+}
+
+ACTOR SpotLightPulseSubtractive : SpotLightPulse
+{
+   +MISSILEEVENMORE
+}
+
+ACTOR SpotLightFlickerSubtractive : SpotLightFlicker
+{
+   +MISSILEEVENMORE
+}
+
+ACTOR SectorSpotLightSubtractive : SectorSpotLight
+{
+   +MISSILEEVENMORE
+}
+
+ACTOR SpotLightFlickerRandomSubtractive : SpotLightFlickerRandom
+{
+   +MISSILEEVENMORE
+}
+
+ACTOR SpotLightAttenuated : SpotLight
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR SpotLightPulseAttenuated : SpotLightPulse
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR SpotLightFlickerAttenuated : SpotLightFlicker
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR SectorSpotLightAttenuated : SectorSpotLight
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
+ACTOR SpotLightFlickerRandomAttenuated : SpotLightFlickerRandom
+{
+   +DYNAMICLIGHT.ATTENUATE
+}
+
 
 ACTOR VavoomLight : DynamicLight native
 {

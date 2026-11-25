@@ -96,4 +96,48 @@ int ComputeWalk(const std::vector<GridNode> &nodes, int from, int64_t x, int64_t
 	return at;
 }
 
+void ComputePreorder(const std::vector<GridNode> &nodes, int root, std::vector<GridNode> &out, std::vector<int> &newIndex)
+{
+	const int count = (int)nodes.size();
+	newIndex.assign((size_t)count, -1);
+	std::vector<int> order, stack;
+	order.reserve((size_t)count);
+	if (root >= 0 && root < count) stack.push_back(root);
+	while (!stack.empty())
+	{
+		const int at = stack.back();
+		stack.pop_back();
+		if (newIndex[(size_t)at] >= 0) continue;
+		newIndex[(size_t)at] = (int)order.size();
+		order.push_back(at);
+		// [Doruk-Aksoy] The back child goes on first, so the front one comes right after its parent.
+		for (int k = 1; k >= 0; k--)
+		{
+			const int child = nodes[(size_t)at].child[k];
+			if (child >= 0) stack.push_back(child);
+		}
+	}
+	for (int i = 0; i < count; i++)
+	{
+		if (newIndex[(size_t)i] >= 0) continue;
+		newIndex[(size_t)i] = (int)order.size();
+		order.push_back(i);
+	}
+	out.resize((size_t)count);
+	for (int i = 0; i < count; i++)
+	{
+		GridNode n = nodes[(size_t)order[(size_t)i]];
+		for (int k = 0; k < 2; k++)
+			if (n.child[k] >= 0) n.child[k] = newIndex[(size_t)n.child[k]];
+		out[(size_t)i] = n;
+	}
+}
+
+void ComputeRenumberGrid(StartGrid &grid, const std::vector<int> &newIndex)
+{
+	if (grid.root >= 0) grid.root = newIndex[(size_t)grid.root];
+	for (int &s : grid.start)
+		if (s >= 0) s = newIndex[(size_t)s];
+}
+
 }} // namespace zx::bspgrid

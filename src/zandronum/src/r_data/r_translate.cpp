@@ -52,6 +52,8 @@
 #include "features/handoff/seam.h"   // [rc4l] translation/player
 
 #include "gi.h"
+#include "features/trnslate/computation/trnslate_compute.h"
+#include "v_text.h"
 #include "stats.h"
 
 TAutoGrowArray<FRemapTablePtr, FRemapTable *> translationtables[NUM_TRANSLATION_TABLES];
@@ -571,6 +573,28 @@ void FRemapTable::AddToTranslation(const char *range)
 	{
 		Printf("Error in translation '%s':\n%s\n", range, err.GetMessage());
 	}
+}
+
+//----------------------------------------------------------------------------
+//
+// [Doruk-Aksoy] uzdoom@0c04cddd: a palette lump's colours, matched to the game's palette.
+//
+//----------------------------------------------------------------------------
+
+bool FRemapTable::AddColors(int start, int count, const BYTE *colors)
+{
+	if (!zx::trnslate::ComputePaletteSpanFits(start, count))
+	{
+		Printf(TEXTCOLOR_ORANGE "Palette indices %d to %d are out of range [0..255]\n", start, start + count - 1);
+		return false;
+	}
+	for (int i = start; i < start + count; ++i, colors += 3)
+	{
+		const int j = GPalette.Remap[i];
+		Palette[j] = PalEntry(j == 0 ? 0 : 255, colors[0], colors[1], colors[2]);
+		Remap[j] = ColorMatcher.Pick(colors[0], colors[1], colors[2]);
+	}
+	return true;
 }
 
 //----------------------------------------------------------------------------

@@ -195,6 +195,19 @@ its vertices among the stream's words. A Complex Doom fight's 6,500 sprites a fr
 each to 136, and its uploads from 3.5 to 1.8 MB a frame in Firefox. The words buffer (`fua dynamic data`) is bound statically, so it grows with the piece buffer in
 `EnsureDynamicRecords` (`ComputeDynWordsBound`) and the pipelines are made again with it.
 
+A model surface is blended and placed by the vertex shader, as GL's `main.vp` does, rather than on the CPU
+(`features/levelmesh/computation/modelgpu_compute`). Each model's keyframes and indices are sent once, the first frame
+a surface of it is drawn, into a buffer bound statically beside the words (`fua model geometry`, `diligent/dgmodelgeo.cpp`),
+which grows as `fua dynamic data` does, up to what one storage buffer binds, and is dropped when the models are
+(`ModelsGeneration`); a model past it draws from the CPU. A surface takes an 8-word record after the model matrices (its
+run's first vertex, its piece, both keyframes, the blend, its indices, its matrix) and every one of its corners the
+same reference to it, `0x40000000` and the record's word, so the shader finds the corner from `gl_VertexIndex`, which
+counts from the run's `StartVertexLocation`. `ComputeModelCorner` is the shader's model branch word for word, tested
+against the CPU's corners. The translucent pass's height and footprint come from each keyframe span's box, kept
+between frames, under the matrix. Surfaces whose corners are read on the CPU stay there: `fua_sprite_check`'s and GL's
+compared ones, FUAMODEL's `FlatSurface` models, and every one on a device that has not set `SetGpuModelStorage` (WebGPU).
+`fua_mesh_gpumodels 0` puts them all back on the CPU; `gpu/model_surfaces` counts the GPU's. Scenario `gpumodels`.
+
 The deferred decal pass draws each floor or ceiling mark over a screen rectangle the CPU works out
 (`computation/decalbounds_compute`): the cube round everything the mark can paint, its run-out radius, its centre riding
 its plane, cut at the near plane, so a mark behind the eye is not drawn and one beside it covers only the part in front.

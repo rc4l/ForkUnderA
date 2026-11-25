@@ -256,6 +256,11 @@ static unsigned g_zstdDictId = 0;
 static ZSTD_CDict *g_zstdCdict = nullptr;
 static ZSTD_DDict *g_zstdDdict = nullptr;
 
+// [Kaori-Chani] features/net-snapshot: what the last launch cost on the wire, which only the
+// launch knows, read back by NETWORK_GetLastLaunchWireSize.
+static unsigned	g_lastLaunchWireSize = 0;
+static bool		g_lastLaunchUsedZstd = false;
+
 // [SB] Hashes for Freedoom lumps that must be detected for Doom network compatibility.
 static const std::vector<std::string> g_FreedoomPlayPalHashes = {
 	"2e01ae6258f2a0fdad32125537efe1af", // Freedoom PLAYPAL hash
@@ -879,6 +884,8 @@ void NETWORK_Destruct( void )
 // [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
 static void network_InitZstd( void )
 {
+	// [Doruk-Aksoy] A restart builds them in net_zstd_level's callback before NETWORK_Construct builds them again, so the held ones go first.
+	network_DestructZstd( );
 	g_zstdCctx = ZSTD_createCCtx( );
 	g_zstdDctx = ZSTD_createDCtx( );
 
@@ -1207,6 +1214,10 @@ void NETWORK_LaunchPacket( NETBUFFER_s *buffer, NETADDRESS_s address, bool bUseZ
 	}
 	bUsedZstd = zx::nettransport::ComputeUsedZstd( bUsedZstd, bFellBackToHuffman );
 
+	// [Kaori-Chani] Published before the send, so a failed one leaves no stale size behind.
+	g_lastLaunchWireSize = (unsigned)numBytesOut;
+	g_lastLaunchUsedZstd = bUsedZstd;
+
 	// [rc4l] features/net-transport: under a fake ping or loss the packet waits its turn behind those held before it, or is dropped.
 	if ( zx::nettransport::HoldOutbound( g_ucHuffmanBuffer, numBytesOut, &socketAddress, addressLength ))
 	{
@@ -1474,6 +1485,22 @@ ULONG NETWORK_GetBoundInAddr( void )
 unsigned NETWORK_GetArrivalMS( void )
 {
 	return ( g_ulArrivalMS );
+}
+
+//*****************************************************************************
+// [Kaori-Chani] features/net-snapshot: what the last launched packet cost on the wire, against
+// which a snapshot payload's built size is reported.
+//
+unsigned NETWORK_GetLastLaunchWireSize( void )
+{
+	return ( g_lastLaunchWireSize );
+}
+
+//*****************************************************************************
+//
+bool NETWORK_GetLastLaunchUsedZstd( void )
+{
+	return ( g_lastLaunchUsedZstd );
 }
 
 //*****************************************************************************

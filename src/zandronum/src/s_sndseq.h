@@ -90,6 +90,8 @@ DSeqNode *SN_CheckSequence (sector_t *sector, int chan);
 void SN_StopSequence (AActor *mobj);
 void SN_StopSequence (sector_t *sector, int chan);
 void SN_StopSequence (FPolyObj *poly);
+// [Kaori-Chani] features/net-snapshot: the polyobject's own node, for fua_snap_polycheck.
+DSeqNode *SN_CheckSequence (FPolyObj *poly);
 bool SN_AreModesSame(int sequence, seqtype_t type, int mode1, int mode2);
 bool SN_AreModesSame(const char *name, int mode1, int mode2);
 void SN_UpdateActiveSequences (void);

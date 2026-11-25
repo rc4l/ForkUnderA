@@ -58,9 +58,15 @@ const int				r_Yaspect = 200;	// Why did I make this a variable? It's never set 
 //
 //==========================================================================
 
+// [Doruk-Aksoy] R_PointOnSide's test on a partition given by its fields, so features/bspgrid's compact copy of a tree answers the same.
+inline int R_PointOnPartition (fixed_t x, fixed_t y, fixed_t nx, fixed_t ny, fixed_t ndx, fixed_t ndy)
+{
+	return DMulScale32 (y-ny, ndx, nx-x, ndy) > 0;
+}
+
 inline int R_PointOnSide (fixed_t x, fixed_t y, const node_t *node)
 {
-	return DMulScale32 (y-node->y, node->dx, node->x-x, node->dy) > 0;
+	return R_PointOnPartition (x, y, node->x, node->y, node->dx, node->dy);
 }
 
 angle_t R_PointToAngle2 (fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2);

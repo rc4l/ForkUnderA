@@ -533,6 +533,13 @@ int FindReservedSlot(const void *material, int translation)
 	return slot;
 }
 
+bool KeepReservedSlot(int slot, const void *material, int translation)
+{
+	if (slot <= 0 || MatIndexFind(material, SlotKey(translation)) != slot) return false;
+	g_slotState[slot].reserved = g_reserveSerial;
+	return true;
+}
+
 void BeginSlotReservation() { g_reserveSerial++; }
 void OpenMaterialSlots() { g_sealedFrame = ~0ull; }
 void SealMaterialSlots() { g_sealedFrame = FrameBeingBuilt(); }
@@ -809,6 +816,7 @@ void FlushTextureCache()
 
 bool BindlessWanted() { return fua_dg_bindless && MaterialSlotCapacity() > 0 && !g_matSlotOverflow; }
 bool BindlessActive() { return BindlessWanted() && g_bindlessReady; }
+bool TicSpritesSupported() { return BindlessActive(); }
 
 
 static_assert(zx::hwrender::kBindVertexBuffer == Diligent::BIND_VERTEX_BUFFER && zx::hwrender::kBindIndexBuffer == Diligent::BIND_INDEX_BUFFER &&
@@ -1148,6 +1156,9 @@ static void BindWorldStatics(Diligent::IPipelineState *pso)
 		rv->Set(g_slotRemapBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 	if (auto *dv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "DynData"))
 		dv->Set(g_scene.dynDataBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
+	if (g_scene.modelGeoBuf)
+		if (auto *gv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "ModelGeo"))
+			gv->Set(g_scene.modelGeoBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 	if (auto *lv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_VERTEX, "SectorLight"))
 		lv->Set(g_scene.sectorLightBuf->GetDefaultView(Diligent::BUFFER_VIEW_SHADER_RESOURCE));
 	if (auto *hv = pso->GetStaticVariableByName(Diligent::SHADER_TYPE_PIXEL, "SkyHoles"))
@@ -1447,6 +1458,8 @@ bool EnsureScenePipeline(FString &err)
 		if (!CreateStructuredBuffer("fua dynamic data", 4, words, NULL, g_scene.dynDataBuf)) { err = "dynamic data buffer creation failed"; return false; }
 		g_scene.dynDataCapacity = words;
 	}
+	// [Doruk-Aksoy] The model geometry at the size held, every model's words sent again.
+	if (!g_scene.modelGeoBuf && !MakeModelGeoBuffer(err)) return false;
 
 	// [rc4l] Per call, never static: the filter is the engine's at this rebuild, and a static array would keep the first one forever.
 	g_sceneSampler = Diligent::SamplerDesc();

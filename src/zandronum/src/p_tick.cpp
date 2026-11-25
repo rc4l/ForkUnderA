@@ -46,6 +46,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/gameloop/computation/tickerpause_compute.h"   // [rc4l] ComputeMenuPausesTicker
 #include "features/net-session/computation/movebuffer_compute.h"
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the client census scope
 
 extern gamestate_t wipegamestate;
 
@@ -432,6 +433,9 @@ void P_Ticker (void)
 		P_ClearEffectRegistry ();	// [rc4l] actors re-register during their Tick below
 		{
 			ZX_ZONE ("sim/thinkers"); // [rc4l] actors, scripts and lights in features/telemetry, which perf.ticprof reads too
+			// [Kaori-Chani] features/net-snapshot: the thinkers' share of a tic, for the client's
+			// ghostframe line, which reads it against the ghost frame's own cost.
+			const zx::netsnapshot::CensusScope think( zx::netsnapshot::SNAPCENSUS_THINKERS );
 			DThinker::RunThinkers ();
 		}
 	}
@@ -460,8 +464,14 @@ void P_Ticker (void)
 
 		if ( NETWORK_GetState( ) != NETSTATE_SERVER )
 		{
+			// [Kaori-Chani] features/net-snapshot: the mirrors, which never tick and so never
+			// register themselves, added to this tic's registry before the effects run.
+			zx::netsnapshot::RegisterMirrorEffects( );
 			{
 				ZX_ZONE ("sim/effects"); // [rc4l] in features/telemetry, which perf.ticprof reads too
+				// [Kaori-Chani] features/net-snapshot: the particle effects' share, which the
+				// mirrors add to by carrying effects of their own.
+				const zx::netsnapshot::CensusScope fx( zx::netsnapshot::SNAPCENSUS_EFFECTS );
 				P_RunEffects ();	// [RH] Run particle effects
 			}
 		}

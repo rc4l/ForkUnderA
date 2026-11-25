@@ -36,6 +36,19 @@
 #include "doomdata.h"
 #include "r_state.h"
 
+// [Kaori-Chani] features/net-snapshot: the movers below befriend these, each of which reads
+// one class's m_SnapSeen to answer whether a snapshot record owns a sector's plane. Declared
+// rather than included: the module's own header would make this stock header depend on it,
+// and a namespace and six signatures are all the friend declarations need.
+namespace zx { namespace netsnapshot {
+bool MoverPlatOwnsPlane (sector_t *sec);
+bool MoverFloorOwnsPlane (sector_t *sec);
+bool MoverCeilingOwnsPlane (sector_t *sec);
+bool MoverDoorOwnsPlane (sector_t *sec);
+bool MoverElevatorOwnsPlane (sector_t *sec);
+bool MoverPillarOwnsPlane (sector_t *sec);
+} }
+
 class FScanner;
 struct level_info_t;
 
@@ -55,6 +68,20 @@ class DScroller : public DThinker
 	DECLARE_CLASS (DScroller, DThinker)
 	HAS_OBJECT_POINTERS
 public:
+	// [Kaori-Chani] features/net-snapshot: what the mover capture needs to read off a scroller
+	// without reaching into it. SnapDump is defined with the class.
+	bool IsAccelerative() const { return m_Accel != 0; }
+	bool HasControl() const { return m_Control != -1; }
+	// [Kaori-Chani] features/net-snapshot: what the join's own command carries for a
+	// scroller, which DoScroller's arguments leave out.
+	void SetLastHeight( fixed_t height ) { m_LastHeight = height; }
+	void SetVelocity( fixed_t vdx, fixed_t vdy ) { m_vdx = vdx; m_vdy = vdy; }
+	int ScrollType() const { return (int)m_Type; }
+	int Affectee() const { return m_Affectee; }
+	fixed_t LastHeight() const { return m_LastHeight; }
+	fixed_t VelocityX() const { return m_vdx; }
+	fixed_t VelocityY() const { return m_vdy; }
+	void SnapDump() const;
 	enum EScrollType
 	{
 		sc_side,
@@ -114,6 +141,33 @@ class DPusher : public DThinker
 	DECLARE_CLASS (DPusher, DThinker)
 	HAS_OBJECT_POINTERS
 public:
+	// [Kaori-Chani] features/net-snapshot: as for DScroller above.
+	bool IsPoint() const { return m_Type == p_push; }
+	void SnapDump() const;
+	// [Kaori-Chani] features/net-snapshot: the echo the join's command matches a record by.
+	int PushType() const { return (int)m_Type; }
+	int Affectee() const { return m_Affectee; }
+	int PointX() const { return m_X; }
+	int PointY() const { return m_Y; }
+	int PointRadius() const { return m_Radius; }
+	unsigned short SourceNetID() const { return m_SourceNetID; }
+	// The server's own source, whose id a join record carries; m_SourceNetID is what a
+	// client was told and is zero here.
+	AActor *SourceActor() const { return const_cast<TObjPtr<AActor> &>( m_Source ); }
+	// [Kaori-Chani] features/net-snapshot: a point pusher a client was told about, whose
+	// source actor it may not have yet. The id is kept so a later lookup is a re-resolve
+	// rather than a guess, and m_bSourceSeen records that it resolved once. Client only, so
+	// neither is serialised; defaulted, because the hook that calls this is step 3's.
+	void SetPointSource( int x, int y, int radius, unsigned short netID )
+	{
+		m_X = x;
+		m_Y = y;
+		m_Radius = radius;
+		m_SourceNetID = netID;
+		m_bSourceSeen = ( m_Source != NULL );
+	}
+	unsigned short m_SourceNetID = 0;
+	bool m_bSourceSeen = false;
 	enum EPusher
 	{
 		p_push,
@@ -471,6 +525,13 @@ class DPlat : public DMovingFloor
 {
 	DECLARE_CLASS (DPlat, DMovingFloor)
 public:
+	// [Kaori-Chani] features/net-snapshot: a platform's wait and count reach the wire, so the
+	// capture reads them through accessors rather than being made a friend.
+	int		GetCount( void ) const { return m_Count; }
+	int		GetWait( void ) const { return m_Wait; }
+	// [Kaori-Chani] features/net-snapshot: as GetCount and GetWait above, which 2.1 added for
+	// the same reason -- fua_snap_sectorcheck reports what a join-time DoPlat does not carry.
+	int		GetCrush( void ) const { return m_Crush; }
 	enum EPlatState
 	{
 		up,
@@ -559,6 +620,20 @@ private:
 						   int height, int speed, int delay, int lip, int change);
 	friend void EV_StopPlat (int tag);
 	friend void P_ActivateInStasis (int tag);
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a platform; m_SnapSeen decides whether the plane is taken.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	Destroy();
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverPlat & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverPlatOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoPlat (int tag, line_t *line, DPlat::EPlatType type,
@@ -635,7 +710,25 @@ private:
 	// [BC] Make this a friend.
 	friend bool	EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
 							 fixed_t height2, int crush);
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a pillar. Here m_SnapBlocked is a
+	// SNAPMV_PLANE_* mask rather than a flag.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverPillar & s );
+protected:
+	BYTE		m_SnapBlocked = 0;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverPillarOwnsPlane (sector_t *sec);
 };
+
+// [Kaori-Chani] features/net-snapshot: a pillar's sound, for a client whose DoPillar handler
+// is gated and whose sound therefore arrives keyed on the sector.
+void P_PillarSoundSector (sector_t *sec);
 
 // [rc4l] uzdoom@c3c22315d -- takes the activating line so a zero tag can act on its back sector.
 bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
@@ -683,6 +776,11 @@ public:
 	LONG	GetLightTag( void );
 	void	SetLightTag( LONG lTag );
 
+	// [Kaori-Chani] features/net-snapshot: the wait a door is counting, which is what
+	// fua_snap_sectorcheck reads to place a record drop inside that wait.
+	int		GetTopCountdown( void );
+	int		GetTopWait( void );
+
 protected:
 	EVlDoor		m_Type;
 	fixed_t 	m_TopDist;
@@ -717,6 +815,20 @@ protected:
 private:
 	DDoor ();
 
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a door; directions 0 and 2 are this class's at-rest states.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	Destroy();
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverDoor & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverDoorOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoDoor (DDoor::EVlDoor type, line_t *line, AActor *thing,
@@ -724,6 +836,17 @@ bool EV_DoDoor (DDoor::EVlDoor type, line_t *line, AActor *thing,
 				int lightTag, bool boomgen = false);
 void P_SpawnDoorCloseIn30 (sector_t *sec);
 void P_SpawnDoorRaiseIn5Mins (sector_t *sec);
+// [Kaori-Chani] features/net-snapshot: client_PlayPlatSound's switch by sector, for a client
+// whose plat a record has yet to make. Type 2 starts Silence itself, as that switch does.
+void P_PlatSoundSector (sector_t *sec, int type);
+// [Kaori-Chani] features/net-snapshot: DCeiling::PlayCeilingSound's body, which reads only the
+// sector and m_Silent, so a client with no ceiling can play it from those two.
+void P_CeilingSoundSector (sector_t *sec, int silent);
+// [Kaori-Chani] features/net-snapshot: the floor sound's body by sector, for a client whose
+// floor a record has yet to make. DFloor and DElevator both call it, as they always did.
+void P_FloorSoundSector (sector_t *sec);
+// [Kaori-Chani] features/net-snapshot: DoorSound's body by sector, choice being DoorSound's 0-3.
+void P_DoorSoundSector (sector_t *sec, int choice, class DSeqNode *curseq);
 
 class DAnimatedDoor : public DMovingCeiling
 {
@@ -870,6 +993,20 @@ private:
 
 	friend bool EV_CeilingCrushStop (int tag);
 	friend void P_ActivateInStasisCeiling (int tag);
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a ceiling; m_Direction 0 is at rest.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	Destroy();
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverCeiling & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverCeilingOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoCeiling (DCeiling::ECeiling type, line_t *line,
@@ -1016,6 +1153,21 @@ protected:
 	friend bool EV_DoDonut (int tag, line_t *line, fixed_t pillarspeed, fixed_t slimespeed);
 private:
 	DFloor ();
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- a floor. At rest is m_Direction 0,
+	// and SNAPMVF_STAIR the stairs.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	Destroy();
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverFloor & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverFloorOwnsPlane (sector_t *sec);
 };
 
 bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
@@ -1082,6 +1234,19 @@ protected:
 		fixed_t height, int tag);
 private:
 	DElevator ();
+
+	// [Kaori-Chani] features/net-snapshot: into the capture table from Tick and Destroy,
+	// and back out of one record -- an elevator, which moves both planes.
+	// The record struct is named through an elaborated specifier so that this header needs
+	// no include from the module. Defaulted; step 3's hooks are what will set them.
+public:
+	void	SnapCapture( bool bGone = false );
+	void	SnapApply( const struct SnapMoverElevator & s, BYTE flags );
+protected:
+	bool		m_SnapBlocked = false;
+	bool		m_SnapSeen = false;
+private:
+	friend bool zx::netsnapshot::MoverElevatorOwnsPlane (sector_t *sec);
 };
 
 bool EV_DoElevator (line_t *line, DElevator::EElevator type, fixed_t speed,
@@ -1133,6 +1298,9 @@ protected:
 	// [BB] Changed Destroy to public, so that it can be called in cl_main.cpp.
 public:
 	void Destroy();
+	// [Kaori-Chani] features/net-snapshot: DoWaggle's last plane write, named so that a
+	// client destroying a waggle by record can make the same write.
+	void EndPlane();
 protected:
 	DWaggleBase ();
 };

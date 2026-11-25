@@ -72,7 +72,10 @@ mirror's pieces are kept for that view's pass (`StackCaptureSlot`, `MirrorCaptur
 assigned over last frame's, and a run of pieces can be reserved at its end (`DynReserve`,
 `computation/dynquads_compute`) and written in place from the job pool (`DynPlace`) in the order appending
 them would have given. A model's surfaces resolved elsewhere (`computation/modelsurface_compute`) are handed over
-by `EmitModelSurface`, or placed by their caller with `ModelSurfacePiece` and counted by `ModelPlaced`. Decals on a 3D
+by `EmitModelSurface`, or placed by their caller with `ModelSurfacePiece` and counted by `ModelPlaced`. One the
+backend draws from resident geometry (`GpuModelWanted`, `computation/modelgpu_compute`) carries its span instead
+of corners (`MeshPiece::gpuGeometry`) and none of the stream's vertices (`EmitGpuModelSurface`, `DynAppendGpuModel`,
+`DynPlaceGpuModel`). Decals on a 3D
 floor's face, on a mirror's sheen and on a mid texture GL draws through a sky (`GLWF_SKYHACK`) are not built
 yet. Scenario `walldecal`.
 
@@ -135,6 +138,14 @@ and writes nothing. The dirty-tracking hooks the later phases need are enumerate
 
 ## Things that will bite
 
+- **A moved sector is re-baked only when its look differs from the look it was baked with** (`InvalidateSector`,
+  `g_lastLook` in `wallcache.cpp`). That baseline is taken by `BakeLevelFromMap` from the render copy it bakes from,
+  and dropped by `AllocForLevel`. Kept across a load of the same map it read a sector moved before as unchanged, so
+  a reconnecting or late-joining client, and a single player whose restarted map moved a sector out of view, drew the
+  map's start while collision used the moved plane. Any change to the bake, the invalidation or the sector fill runs
+  scenarios `netonetime` (a one-time switch and lines, a reconnect, a late joiner, coop and survival, judged by
+  state and by pictures) and `singlereload` (a save loaded over a restart, and a restart moved out of view); both
+  fail on a build that keeps the last load's looks.
 - **`side_t::numsegs` and `vertex_t::numsectors` come from `zx::levelprep::PrepareLevel`** (`PrepareSegs` and
   `InitVertexData` in `features/levelprep/levelprep.cpp`). A dedicated server skips that, so both read zero and
   the budget understates. `CollectSideBudgets` detects this and `fua_levelmesh_stats` says so rather

@@ -99,6 +99,9 @@ no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints
   (`m.block(..., () => ({ blocksound: true }))`, as `farhitscan` and `netmapchange` do).
 - **Judge by state read at the server's tic, not by pictures**: what a client draws depends on its view and
   timing. Coarse picture checks only, if any.
+  Except where the mesh is the question: a client's state can agree while it draws the map's start, so `netonetime`
+  (one-time switch and lines, a reconnect, a late joiner) also compares each client's pictures from one spot with the
+  player's own before it left; see the `moved-sectors` skill.
 
 ## When to add an observer
 
