@@ -52,6 +52,7 @@
 #include "features/net-snapshot/computation/budget_compute.h"
 #include "features/net-snapshot/computation/catchup_compute.h"
 #include "features/net-snapshot/computation/propcensus_compute.h"
+#include "features/net-snapshot/computation/proptell_compute.h"
 #include "features/net-snapshot/computation/sound_compute.h"
 #include "features/actormaterials/actormaterials.h"	// MaterialName, for a props slot
 #include "features/sound-amplify/computation/sound_amplify_compute.h"
@@ -3070,9 +3071,18 @@ typedef char snap_assert_prop_uniform_slots[
 static SnapPropSlot	g_propSlots[SNAPPROP_MAXSLOTS];
 // [Kaori-Chani] NetID to slot + 1, 0 being none, so the capture needs no scan.
 static WORD			g_propByID[SNAP_MAXID];
+// What was told for this id, so a set that never changes needs no slot: 0 is nothing told,
+// written when an id leaves and at PropForget, and never a real mark's value.
+static DWORD		g_propMark[SNAP_MAXID];
+// Every live marked entity, told or not, which every client walks in full every frame, so a
+// set reaches one that is sent no record of its own (capture.md).
+static TArray<WORD>	g_propMarkedIds;
 static unsigned int	g_propLive = 0, g_propChanges = 0;
 static unsigned int	g_propOverflow = 0, g_propTruncated = 0;
 static WORD			g_propPass = 0;
+namespace zx { namespace netsnapshot {
+unsigned int	g_propMarked = 0;	// sets marked to be told, needing no slot
+}} // namespace zx::netsnapshot
 // [Kaori-Chani] The walk's size, counted rather than timed: a counter read an actor costs the
 // order of the walk itself, and the sweep below is the only part a bracket can hold.
 static QWORD		g_propWalks = 0, g_propSteps = 0;
@@ -3167,6 +3177,42 @@ static bool snap_PropsDiffer(const SnapProps & a, const SnapProps & b)
 	return false;
 }
 
+// The mark of the record a set would send, over the bytes that travel.
+static DWORD snap_PropMarkOf(const SnapProps & props)
+{
+	BYTE body[SNAP_MAX_EVENT_BYTES];
+	const unsigned int n = WritePropsBody(body, props);
+	return (DWORD)ComputePropMark(body, n);
+}
+
+// The one path that needs a free slot, which runs for an entity entering the table rather
+// than for every entity every tic.
+static bool snap_PropTakeSlot(WORD id, const SnapProps & live)
+{
+	unsigned int free = SNAPPROP_MAXSLOTS;
+	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	{
+		if (g_propSlots[i].netID == 0)
+		{
+			free = i;
+			break;
+		}
+	}
+	g_propSteps += (QWORD)((free == SNAPPROP_MAXSLOTS) ? SNAPPROP_MAXSLOTS : free + 1);
+	if (free == SNAPPROP_MAXSLOTS)
+	{
+		++g_propOverflow;
+		return false;
+	}
+	g_propSlots[free].netID = id;
+	g_propSlots[free].gen = snap_PropGen();
+	g_propSlots[free].seen = g_propPass;
+	g_propSlots[free].props = live;
+	g_propByID[id] = (WORD)(free + 1);
+	++g_propChanges;
+	return true;
+}
+
 // One captured entity, from the sweep. A slot is kept while the entity lives, since a set
 // going back to the class defaults has to travel as well.
 static void snap_PropCapture(const AActor * pActor)
@@ -3190,37 +3236,30 @@ static void snap_PropCapture(const AActor * pActor)
 		}
 		return;
 	}
-	// Nothing to say about an entity that is its class, which is most of them.
-	if (snap_PropsOffDefaults(pActor) == false)
+	// An entity with no id of its own can be told to nobody, so there is nothing to keep.
+	if (id == 0)
+		return;
+	// The class is all a mirror needs -- unless a set was told for this id, when a return
+	// to the class defaults has to travel as well, so the mark is read first.
+	const DWORD mark = g_propMark[id];
+	const bool off = snap_PropsOffDefaults(pActor);
+	if ((mark == SNAPPROP_MARK_NONE) && (off == false))
 		return;
 	const SnapProps live = snap_PropsOf(pActor);
-	// A material slot whose rows are all unset still carries nothing.
-	if (live.flags == 0)
+	const DWORD body = snap_PropMarkOf(live);
+	const SnapPropAction act = ComputePropTellOrSlot(mark, off, live.flags != 0, body);
+	if (act == SNAPPROPACT_NOTHING)
 		return;
-	// The scan is the one path that needs a free slot, and it runs for an entity entering the
-	// table rather than for every entity every tic.
-	unsigned int free = SNAPPROP_MAXSLOTS;
-	for (unsigned int i = 0; i < SNAPPROP_MAXSLOTS; ++i)
+	if (act == SNAPPROPACT_TELL)
 	{
-		if (g_propSlots[i].netID == 0)
-		{
-			free = i;
-			break;
-		}
-	}
-	g_propSteps += (QWORD)((free == SNAPPROP_MAXSLOTS) ? SNAPPROP_MAXSLOTS : free + 1);
-	if (free == SNAPPROP_MAXSLOTS)
-	{
-		++g_propOverflow;
+		// Told once to each client that holds it, by the per-client walk, which waits on no
+		// record of its own.
+		g_propMark[id] = body;
+		g_propMarkedIds.Push(id);
+		++g_propMarked;
 		return;
 	}
-	g_propSlots[free].netID = id;
-	g_propSlots[free].gen = snap_PropGen();
-	g_propSlots[free].seen = g_propPass;
-	g_propSlots[free].props = live;
-	if (id != 0)
-		g_propByID[id] = (WORD)(free + 1);
-	++g_propChanges;
+	snap_PropTakeSlot(id, live);
 }
 
 // Slots whose entity the sweep did not visit: it has left, and a re-enter builds its
@@ -3239,6 +3278,20 @@ static void snap_PropSweepEnd()
 			continue;
 		}
 		++g_propLive;
+	}
+
+	// The marked list, pruned where the mark has gone or the table has taken the id over,
+	// so the per-client walk covers the live marked entities and no more.
+	for (unsigned int i = 0; i < g_propMarkedIds.Size(); )
+	{
+		const WORD id = g_propMarkedIds[i];
+		if ((g_propMark[id] == SNAPPROP_MARK_NONE) || (g_propByID[id] != 0))
+		{
+			g_propMarkedIds[i] = g_propMarkedIds[g_propMarkedIds.Size() - 1];
+			g_propMarkedIds.Pop();
+			continue;
+		}
+		++i;
 	}
 }
 
@@ -3262,7 +3315,31 @@ void zx::netsnapshot::PropForget()
 {
 	memset(g_propSlots, 0, sizeof(g_propSlots));
 	memset(g_propByID, 0, sizeof(g_propByID));
+	memset(g_propMark, 0, sizeof(g_propMark));
+	g_propMarkedIds.Clear();
 	g_propLive = 0;
+}
+
+bool zx::netsnapshot::PropsToTell(WORD netID, SnapProps & out)
+{
+	// A slot carries its own set, so telling would send it twice; and a mark is what says
+	// the capture has seen this one at all.
+	if ((netID == 0) || (netID >= SNAP_MAXID) || (g_propByID[netID] != 0)
+		|| (g_propMark[netID] == SNAPPROP_MARK_NONE))
+		return false;
+	const AActor * pActor = g_ActorNetIDList.findPointerByID(netID);
+	if (pActor == NULL)
+		return false;
+	// Read live rather than from the mark: a re-entry and a joiner both need what the
+	// entity carries now, and a difference the capture has not seen yet takes a slot next pump.
+	out = snap_PropsOf(pActor);
+	return (out.flags != 0);
+}
+
+const WORD * zx::netsnapshot::PropsMarkedIds(unsigned int & count)
+{
+	count = g_propMarkedIds.Size();
+	return (count > 0) ? &g_propMarkedIds[0] : NULL;
 }
 
 void zx::netsnapshot::PropStats(unsigned int & live, unsigned int & changes,
@@ -3279,6 +3356,7 @@ void zx::netsnapshot::PropStats(unsigned int & live, unsigned int & changes,
 	if (reset)
 	{
 		g_propChanges = g_propOverflow = g_propTruncated = 0;
+		g_propMarked = 0;
 		g_propWalks = g_propSteps = g_propSweepRaw = 0;
 	}
 }
@@ -3539,6 +3617,8 @@ static void snap_CaptureAndMeasure()
 			SnapEntityState dummy;
 			snap_AppendRecord((WORD)id, 0, 0, dummy);
 			g_idleTics[id] = 0;
+			// The next entity on this id is told its own set, not read as a change.
+			g_propMark[id] = SNAPPROP_MARK_NONE;
 		}
 	}
 

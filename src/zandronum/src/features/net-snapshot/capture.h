@@ -420,6 +420,15 @@ bool SnapFileNameBad(const char *pszName);
 bool PropSlotRead(unsigned int slot, WORD & netID, struct SnapProps & props, WORD & gen);
 unsigned int PropSlots();
 void PropForget();
+
+// A set is told once to each client that holds the entity, so the table carries what changes
+// during a life and nothing else.
+#define SNAPPROP_NOSLOT	0xFFFF	// a props record told once a client, holding no slot
+// The live set an id has to be told, read from the actor at send time: false for one that
+// is its class, already holds a slot, or has gone.
+bool PropsToTell(WORD netID, struct SnapProps & out);
+// The ids with a set to tell, which the per-client walk reads rather than every id.
+const WORD * PropsMarkedIds(unsigned int & count);
 void PropStats(unsigned int & live, unsigned int & changes, unsigned int & overflow,
 	unsigned int & truncated, QWORD & walks, QWORD & steps, double & sweepMS, bool reset);
 

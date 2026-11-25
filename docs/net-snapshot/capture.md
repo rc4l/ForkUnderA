@@ -1,6 +1,6 @@
 # capture: the server's snapshot tick
 
-Covers: src/zandronum/src/features/net-snapshot/computation/propcensus_compute.h, src/zandronum/src/features/net-snapshot/computation/propcensus_compute.cpp, src/zandronum/src/features/net-snapshot/computation/propcensus_compute_test.cpp, src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/report.h, src/zandronum/src/features/net-snapshot/report.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/computation/proptell_compute.h, src/zandronum/src/features/net-snapshot/computation/proptell_compute.cpp, src/zandronum/src/features/net-snapshot/computation/proptell_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/propcensus_compute.h, src/zandronum/src/features/net-snapshot/computation/propcensus_compute.cpp, src/zandronum/src/features/net-snapshot/computation/propcensus_compute_test.cpp, src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/report.h, src/zandronum/src/features/net-snapshot/report.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
 
 ## Responsibility
 
@@ -169,6 +169,23 @@ The property slots:
 - `PropForget`: the table at a level change.
 - `PropStats`: live slots, changes seen, sets refused for want of a slot, material names cut
   to `SNAP_PROPS_MATNAME_MAX`, and the pass's own size and sweep time, for the report.
+- `PropsToTell`, `PropsMarkedIds`: a set is told once to each client that holds the entity,
+  rather than taking a slot, so the table carries what changes during a life and nothing else.
+  The capture keeps one mark an id of what was told -- `ComputePropMark` over the bytes that
+  travel, never 0 -- and `ComputePropTellOrSlot` says whether a pump marks a set to tell, takes
+  a slot or does nothing: a slot once what the entity would send stops matching the mark, since
+  the clients told already have no second telling coming. A return to the class defaults reads
+  as a change too, a body naming nothing having a mark of its own. The mark is cleared with the
+  id's leave and at `PropForget`, so the next entity on that id is told its own set. The
+  per-client walk reads `PropsMarkedIds` -- every live marked entity, told or not, walked in
+  full by every client every frame at about 4.5 ns an id, so a few thousand marked ids cost a
+  client some 0.3 ms a second; an id cleared by a leave and re-marked before the sweep sits
+  in the list twice, which costs one skipped iteration more -- and
+  `PropsToTell` reads the live actor at send time, which is what a re-entry and a joiner need.
+  It waits on no record of the entity's own, so a settled entity is told as well, and it sends
+  only to a client whose `present` is set: that is acked belief, and an event for an id a
+  client does not hold is dropped as an orphan. `SNAPPROP_NOSLOT` marks the row, which holds
+  no generation, so the repair clears `propsTold` and the walk tells it again.
 - `fua_snap_propclasses`: which classes hold the slots, run while the table is full. It reads
   the table as it stands and tallies it with `ComputePropClassCensus` -- most slots first, the
   lower class id breaking a tie -- naming each class, how many slots it holds and which of scale,
@@ -341,6 +358,10 @@ client's references after every ack and prints `[snap] reference check`.
 - **An effect actor the clients draw themselves keeps no NetID.** `ClientEffect` frees it before the
   capture pass can see it, since the pass takes every actor with a NetID and a three-tic fog would
   enter and leave in one breath.
+- **A set is told once a client, and only a second change takes a slot.** The telling waits on
+  no record of the entity's own and goes only to a client that has acked holding it, so nothing
+  is dropped as an orphan and a lost telling is repaired by telling again. An older client
+  reads the same event it always did.
 - **A property slot is marked by the capture pass and swept at its end**, and its generation comes
   from one counter that never repeats and never reaches 0, so a reused slot cannot read as the
   previous occupant's set.

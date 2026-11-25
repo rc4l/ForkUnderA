@@ -855,13 +855,16 @@ void zx::netsnapshot::snap_MaybeReport()
 		unsigned int live = 0, changes = 0, overflow = 0, truncated = 0;
 		QWORD walks = 0, steps = 0;
 		double sweepMS = 0.0;
+		// Read before PropStats, which resets the window with the rest of them.
+		const unsigned int marked = g_propMarked, told = g_propsTold;
+		g_propsTold = 0;
 		PropStats(live, changes, overflow, truncated, walks, steps, sweepMS, true);
 		const double tics = (g_stats.simTics > 0) ? (double)g_stats.simTics : 1.0;
 		snap_Say("[snap] properties: %.0f walks stepping %.0f slots a tic, sweep %.3f ms/tic"
-			" | %u entities off their class defaults, %u changes | %u OVER the table,"
-			" %u names cut\n",
+			" | %u entities off their class defaults, %u changes | %u marked, %u told"
+			" | %u OVER the table, %u names cut\n",
 			(double)walks / tics, (double)steps / tics, sweepMS / tics,
-			live, changes, overflow, truncated);
+			live, changes, marked, told, overflow, truncated);
 	}
 
 	{

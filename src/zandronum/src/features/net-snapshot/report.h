@@ -169,6 +169,8 @@ extern unsigned int g_huntingFrames;
 extern unsigned int* g_enterByClass;	// indexed by classId
 extern unsigned int* g_popByClass;
 extern unsigned int* g_popSettledByClass;
+// Sets marked to be told, and sets told to a client.
+extern unsigned int g_propMarked, g_propsTold;
 extern unsigned int g_popTotal;
 extern unsigned int g_popSettledTotal;
 extern unsigned int g_enterClassTotal;

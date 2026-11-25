@@ -58,8 +58,9 @@ struct SnapSentPSprite
 namespace {
 struct SnapSentProps
 {
-	WORD				slot;
+	WORD				slot;	// SNAPPROP_NOSLOT for a set told once a client
 	WORD				gen;
+	WORD				id;	// the entity, which a told row is all there is to repair by
 	unsigned int		offset;		// where its record starts in the payload
 };
 }
@@ -162,6 +163,8 @@ struct SnapClientState
 	WORD					propSentGen[SNAPPROP_MAXSLOTS];
 	WORD					propBelievedGen[SNAPPROP_MAXSLOTS];
 	unsigned int			propCursor;
+	// Where the walk of sets to tell stopped, as the slot loop's cursor does.
+	unsigned int			propTellCursor;
 	WORD					moverBelievedSeq[SNAPMV_MAXSLOTS];
 
 	// Where the capped walk resumes, or it would serve the first slots forever.
@@ -195,6 +198,9 @@ struct SnapClientState
 	// Whether this entity was culled or held at its previous classification,
 	// the edge the re-entry census needs.
 	BYTE * wasHeld;
+	// Whether this client has been told an id's properties, so the walk tells them once
+	// and the repair can ask for them again.
+	BYTE *		propsTold;
 
 	// How long since the client heard anything of it, bounding a hold, where
 	// lastSentFrame is the starvation guard's clock.
@@ -243,6 +249,7 @@ static void snapcl_EnsureAllocated(SnapClientState& cl)
 		cl.lastAppearFrame = new WORD[SNAP_MAXID];
 		cl.enterFrame = new WORD[SNAP_MAXID];
 		cl.wasHeld = new BYTE[SNAP_MAXID];
+		cl.propsTold = new BYTE[SNAP_MAXID];
 		cl.psprSent = new SnapPSpriteState[MAXPLAYERS];
 		cl.psprBelieved = new SnapPSpriteState[MAXPLAYERS];
 		memset(cl.psprSent, 0, MAXPLAYERS * sizeof(SnapPSpriteState));
@@ -259,6 +266,7 @@ static void snapcl_EnsureAllocated(SnapClientState& cl)
 		memset(cl.lastAppearFrame, 0, SNAP_MAXID * sizeof(WORD));
 		memset(cl.enterFrame, 0, SNAP_MAXID * sizeof(WORD));
 		memset(cl.wasHeld, 0, SNAP_MAXID);
+		memset(cl.propsTold, 0, SNAP_MAXID);
 		memset(cl.bandCursor, 0, sizeof(cl.bandCursor));
 		cl.believedCount = 0;
 		cl.fillStartMS = 0;
@@ -287,12 +295,15 @@ static void snapcl_ForgetWorld(SnapClientState& cl)
 	memset(cl.lastAppearFrame, 0, SNAP_MAXID * sizeof(WORD));
 	if (cl.wasHeld != NULL)
 		memset(cl.wasHeld, 0, SNAP_MAXID);
+	if (cl.propsTold != NULL)
+		memset(cl.propsTold, 0, SNAP_MAXID);
 
 	// Zero is nothing sent, so every mover goes again, from the first slot.
 	memset(cl.moverSentSeq, 0, sizeof(cl.moverSentSeq));
 	memset(cl.propSentGen, 0, sizeof(cl.propSentGen));
 	memset(cl.propBelievedGen, 0, sizeof(cl.propBelievedGen));
 	cl.propCursor = 0;
+	cl.propTellCursor = 0;
 	memset(cl.moverBelievedSeq, 0, sizeof(cl.moverBelievedSeq));
 	cl.moverCursor = 0;
 
@@ -367,7 +378,12 @@ void zx::netsnapshot::ForgetMovers()
 		memset(cl.moverSentSeq, 0, sizeof(cl.moverSentSeq));
 		memset(cl.propSentGen, 0, sizeof(cl.propSentGen));
 		memset(cl.propBelievedGen, 0, sizeof(cl.propBelievedGen));
+		// Capture stopping clears every mark (PropForget), so what was told goes with
+		// them, or a re-marked id is skipped by the walk and never told again.
+		if (cl.propsTold != NULL)
+			memset(cl.propsTold, 0, SNAP_MAXID);
 		cl.propCursor = 0;
+		cl.propTellCursor = 0;
 		memset(cl.moverBelievedSeq, 0, sizeof(cl.moverBelievedSeq));
 		cl.moverCursor = 0;
 		for (unsigned int f = 0; f < cl.pending.Size(); ++f)
@@ -411,6 +427,7 @@ static void snapcl_ApplyFrame(SnapClientState& cl, const SnapPendingFrame& pf)
 			}
 			cl.unackedMask[rec.id] = 0;
 			cl.maybe[rec.id] = 0;
+			cl.propsTold[rec.id] = 0;
 			// The newest leave folds, so the marker is done (an older one's
 			// must not clear a newer leave's).
 			if (cl.leaving[rec.id] && (pf.frame >= cl.leaveFrame[rec.id]))
@@ -503,6 +520,9 @@ static void snapcl_ApplyFrame(SnapClientState& cl, const SnapPendingFrame& pf)
 // Property rows reverted by a repair, and emitted, for the stats line.
 static unsigned int g_repairedProps = 0;
 static unsigned int g_propsEmitted = 0, g_propsOutOfBytes = 0;
+namespace zx { namespace netsnapshot {
+unsigned int g_propsTold = 0;	// sets told to a client, needing no slot
+}} // namespace zx::netsnapshot
 
 // Frames the server sent, confirmed delivered, and confirmed LOST; the ack's
 // history bits are what make loss provable.
@@ -913,6 +933,12 @@ void zx::netsnapshot::OnAck(unsigned int client, unsigned int seq, unsigned int 
 			if (sl < SNAPPROP_MAXSLOTS)
 			{
 				cl.propSentGen[sl] = cl.propBelievedGen[sl];
+				++g_repairedProps;
+			}
+			else
+			{
+				// A told set holds no generation to revert, so the walk tells it again.
+				cl.propsTold[pf.propRecords[r].id] = 0;
 				++g_repairedProps;
 			}
 		}
@@ -2264,6 +2290,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			SnapEmitRec & er = snapcl_PushPrefix(prec, n, netID, SNAPEMIT_PROPS);
 			er.prsent.slot = (WORD)slot;
 			er.prsent.gen = gen;
+			er.prsent.id = netID;
 			er.prsent.offset = 0;		// assigned at layout
 
 			// Optimistic, as the movers' is, and reverted by repair.
@@ -2272,6 +2299,46 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 		}
 		if (slots > 0)
 			cl.propCursor = (cl.propCursor + examined) % slots;
+	}
+
+	// ---- then the sets told once a client, which wait on no record of their own ----
+	//
+	// A settled entity gets no record to carry a set, so the ids with one are walked here.
+	//
+	// On `present`, the acked belief: an event for an id a client does not hold is dropped
+	// as an orphan, and `propsTold` would be set with nothing to bring it back.
+	{
+		unsigned int marked = 0;
+		const WORD * const ids = PropsMarkedIds(marked);
+		unsigned int examined = 0;
+		for (unsigned int k = 0; (ids != NULL) && (k < marked); ++k)
+		{
+			if (g_prefixBytes + (SNAP_EVENT_HEADER_MAX + SNAP_EVBYTES_PROPS) > budgetBytes)
+			{
+				++g_propsOutOfBytes;
+				break;
+			}
+			++examined;
+			const WORD id = ids[(cl.propTellCursor + k) % marked];
+			if ((cl.present == NULL) || (id == 0) || (id >= SNAP_MAXID)
+				|| (cl.present[id] == 0) || (cl.propsTold[id] != 0))
+				continue;
+			SnapProps tell;
+			if (PropsToTell(id, tell) == false)
+				continue;
+			BYTE prec[SNAP_MAX_EVENT_BYTES];
+			const unsigned int n = WritePropsBody(prec, tell);
+			SnapEmitRec & er = snapcl_PushPrefix(prec, n, id, SNAPEMIT_PROPS);
+			er.prsent.slot = SNAPPROP_NOSLOT;
+			er.prsent.gen = 0;
+			er.prsent.id = id;
+			er.prsent.offset = 0;	// assigned at layout
+			// Optimistic, as the slot rows are: the repair clears it and the walk tells again.
+			cl.propsTold[id] = 1;
+			++g_propsTold;
+		}
+		if (marked > 0)
+			cl.propTellCursor = (cl.propTellCursor + examined) % marked;
 	}
 
 	// ---- then psprite state, before the priority drain ----
