@@ -4,7 +4,8 @@ import { spawnSync } from "node:child_process";
 // [rc4l] Which renderer a window belongs to, by its title: GL's game window, the backend's, or neither.
 export function windowKind(title) {
   const t = String(title);
-  if (t.startsWith("Fua v")) return "gl";
+  // [MGOOOOOO] A release's title carries its tag ("Fua v0.3.0"), a build from a tree without tags its commit ("Fua 5093018a").
+  if (/^Fua (v|[0-9a-f]{7,} )/.test(t)) return "gl";
   if (t.startsWith("ForkUnderA - Diligent")) return "vk";
   return null;
 }

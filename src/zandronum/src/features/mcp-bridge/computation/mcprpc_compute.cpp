@@ -229,7 +229,7 @@ uint64_t FnvMixStr(uint64_t h, const std::string &s)
 
 const std::vector<std::string> &ComputeFrameRandomStreams()
 {
-	static const std::vector<std::string> streams = { "TorchFlicker", "ProjDecal", "AnimatePics", "RandSound" };
+	static const std::vector<std::string> streams = { "TorchFlicker", "ProjDecal", "AnimatePics", "RandSound", "MugShot" };
 	return streams;
 }
 
