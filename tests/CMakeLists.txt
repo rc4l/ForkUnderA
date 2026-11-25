@@ -146,6 +146,11 @@ else()
     ZX_SNAPSHOT_TESTDATA="${ENGINE_SRC}/features/net-snapshot/testdata"
     ZX_SNAPSHOT_TESTOUT="${CMAKE_CURRENT_BINARY_DIR}")
 endif()
+# [MGOOOOOO] features/dtoa-lock: FString's float formatter, gdtoa, built as the engine builds it.
+add_subdirectory("${ENGINE_SRC}/../gdtoa" "${CMAKE_CURRENT_BINARY_DIR}/gdtoa")
+target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}/../gdtoa" "${CMAKE_CURRENT_BINARY_DIR}/gdtoa")
+target_sources(zandrox_tests PRIVATE "${ENGINE_SRC}/features/dtoa-lock/dtoalock.cpp")
+target_link_libraries(zandrox_tests PRIVATE gdtoa)
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
 # it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
 # a hard error, not a warning), which silently made that impossible; /W4 is its equivalent. The

@@ -54,6 +54,8 @@ sends out goes through a queue. This folder is the low layer any feature may use
   drained oldest first, each listed with its depth and high-water mark.
 - `computation/asks_compute`: `Asks`, the call one thread hands another and waits on, served while the serving thread
   waits on the asker too, rethrowing what the call threw to the asker.
+- `computation/lumpcache_compute`: when a lump's text kept from an asked read must be read again, as
+  `V_GetColorStringByName` keeps X11R6RGB so a tic's colour names ask the main thread once.
 
 Rules the boundary keeps are in `tools/boundary-rules.json`, checked by `tools/boundary_tripwire.py` against
 allowances in `tools/boundary-allow.json` that may only shrink; game code setting any variable a renderer header
@@ -124,7 +126,7 @@ Seams:
 
 Handed to the handoff, by helper:
 
-- `AskMainFor`: `p_acs.cpp`, `v_font.cpp`
+- `AskMainFor`: `botcommands.cpp`, `p_acs.cpp`, `v_font.cpp`, `v_video.cpp`
 - `QueuePrint`: `c_console.cpp`
 - `QueueUI`: `g_game.cpp`, `s_sound.cpp`
 - `QueuedBesideTic`: `features/postprocess/postprocess.cpp`, `features/video-scale/videoscale.cpp`, `s_sound.cpp`
