@@ -1214,6 +1214,11 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		return -1;
 	}
 
+	// [Kaori-Chani] features/net-snapshot: a snapshot mirror takes no damage, the server's own
+	// actor being the one that can (a child's A_KillMaster, A_DamageMaster).
+	if ( target->NetworkFlags & NETFL_MIRROR )
+		return -1;
+
 	// [BB] For the time being, unassigned voodoo dolls can't be damaged.
 	// [RK] But we should thrust them about if they're being used to trigger line actions.
 	if ( target->player == COOP_GetVoodooDollDummyPlayer() )

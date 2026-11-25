@@ -1190,7 +1190,11 @@ bool PlayerWalkActive()
 
 int MirrorCaptureView() { return ComputeMirrorCaptures((int)s_mirrorPath.Size(), s_mainView, s_sceneNesting) ? s_mirrorView : -1; }
 
-bool DynamicCaptureActive() { return PlayerWalkActive() || StackCaptureSlot() >= 0 || MirrorCaptureView() >= 0; }
+static bool s_cameraCapture = false;
+CameraCapture::CameraCapture(bool on) : saved(s_cameraCapture) { s_cameraCapture = on; }
+CameraCapture::~CameraCapture() { s_cameraCapture = saved; }
+
+bool DynamicCaptureActive() { return ComputeCapturesDynamic(PlayerWalkActive(), s_cameraCapture, StackCaptureSlot(), MirrorCaptureView()); }
 
 
 void RegisterDecal(const MeshVertex *quad, const void *material, int translation,

@@ -6,6 +6,7 @@
 #include "features/levelmesh/captureshading.h"   // [rc4l] CaptureShading, the light model for a GL colormap
 #include "features/levelmesh/flatmesh.h"   // [rc4l] DynamicCaptureActive, StackCaptureSlot, MirrorCaptureView
 #include "features/levelmesh/computation/modelsurface_compute.h"   // [Doruk-Aksoy] ComputeModelSurfaceCorners
+#include "features/levelmesh/computation/modelgpu_compute.h"   // [Doruk-Aksoy] ComputeGpuModelWanted
 
 #include "features/models/modelgeometry.h"
 #include "features/rendersettings/rendersettings.h"   // [rc4l] the render settings it reads
@@ -16,6 +17,8 @@
 // [rc4l] Off switch for the whole capture, so a model fault can be told apart from a mesh fault
 // without a rebuild -- the same role fua_dg_skyportal plays for the sky.
 CVAR(Bool, fua_mesh_models, true, CVAR_ARCHIVE)
+// [Doruk-Aksoy] Off: every model surface is blended and placed on the CPU again, to compare against the GPU's.
+CVAR(Bool, fua_mesh_gpumodels, true, CVAR_FUA_DEV_MODE)
 
 namespace zx { namespace levelmesh {
 
@@ -26,6 +29,25 @@ static_assert(sizeof(FModelVertex) == 5 * sizeof(float) && sizeof(MeshVertex) ==
 static ModelPieceListener g_pieceListener = NULL;
 
 void SetModelPieceListener(ModelPieceListener listener) { g_pieceListener = listener; }
+
+// [Doruk-Aksoy] What one storage buffer of the backend's device binds, set only by a Vulkan device, which draws model surfaces from resident geometry; 0 for none.
+static unsigned long long g_gpuModelStorage = 0;
+void SetGpuModelStorage(unsigned long long maxStorageBytes) { g_gpuModelStorage = maxStorageBytes; }
+unsigned long long GpuModelStorage() { return g_gpuModelStorage; }
+
+bool GpuModelWanted(const FModelGeometry *geometry, ModelCaptureKind kind, bool flatSurface)
+{
+	return geometry != NULL && ComputeGpuModelWanted(fua_mesh_gpumodels, g_gpuModelStorage > 0, kind == kModelDraw, flatSurface, geometry->gpuState);
+}
+
+void GpuModelSurfacePiece(const FModelGeometry *geometry, unsigned base1, unsigned base2, float inter, unsigned firstIndex, MeshPiece &mp)
+{
+	mp.gpuGeometry = geometry;
+	mp.gpuBase1 = base1;
+	mp.gpuBase2 = base2;
+	mp.gpuInter = inter;
+	mp.gpuFirstIndex = firstIndex;
+}
 
 namespace {
 
@@ -145,6 +167,11 @@ void CaptureModelSurface(const FModelGeometry *geometry, unsigned int base1, uns
 	const void *material, int translation)
 {
 	if (!ModelCaptureActive() || geometry == NULL || material == NULL) return;
+	if (GpuModelWanted(geometry, g_kind, g_look.flatSurface))
+	{
+		EmitGpuModelSurface(geometry, base1, base2, inter, firstIndex, indexCount, material, translation);
+		return;
+	}
 	// [rc4l] No index buffer means the draw was sequential, not that there is nothing to draw: MD2 keeps one vertex per corner, MD3 and voxels are indexed.
 	const unsigned int *idx = geometry->indexed && geometry->indices.Size() ? &geometry->indices[0] : NULL;
 	g_tris.Resize(indexCount);
@@ -216,6 +243,22 @@ int ModelPlaced(const float *matrix, const MeshPiece &look, const void *lastMate
 	g_surfaces += (int)surfaces;
 	g_triangles += (int)triangles;
 	return DynAddMatrix(matrix);
+}
+
+void EmitGpuModelSurface(const FModelGeometry *geometry, unsigned base1, unsigned base2, float inter, unsigned firstIndex, unsigned indexCount,
+	const void *material, int translation)
+{
+	if (!ModelCaptureActive() || material == NULL || indexCount == 0) return;
+	MeshPiece mp;
+	const ModelPlacing at = { true, MirrorCaptureView(), StackCaptureSlot() };
+	ModelSurfacePiece(g_look, at, material, translation, g_look.modelMatrix, mp);
+	NoteLast(mp, mp.material);
+	if (g_matrixIndex < 0) g_matrixIndex = DynAddMatrix(g_matrix);
+	mp.modelMatrix = g_matrixIndex;
+	GpuModelSurfacePiece(geometry, base1, base2, inter, firstIndex, mp);
+	DynAppendGpuModel(indexCount, mp);
+	g_surfaces++;
+	g_triangles += (int)(indexCount / 3);
 }
 
 void EmitModelSurface(const MeshVertex *tris, unsigned int indexCount, const void *material, int translation)

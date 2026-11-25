@@ -40,10 +40,19 @@ TEST(ComputeRelinkInPlace, EverythingElseRelinksInFull)
 }
 
 // [Doruk-Aksoy] Only a box with a radius can be straddled by a line.
-TEST(ComputeSecNodesWalkLines, OnlyWithARadius)
+TEST(ComputeLinesCanStraddle, OnlyWithARadius)
 {
-	EXPECT_FALSE(ComputeSecNodesWalkLines(0));
-	EXPECT_TRUE(ComputeSecNodesWalkLines(1));
-	EXPECT_TRUE(ComputeSecNodesWalkLines(20 << 16));
+	EXPECT_FALSE(ComputeLinesCanStraddle(0));
+	EXPECT_TRUE(ComputeLinesCanStraddle(1));
+	EXPECT_TRUE(ComputeLinesCanStraddle(20 << 16));
+}
+
+TEST(ComputeJoinsSectorLists, OnlyClientSideNoInteractionStaysOut)
+{
+	EXPECT_TRUE(ComputeJoinsSectorLists(false, false, false));
+	EXPECT_TRUE(ComputeJoinsSectorLists(true, false, false));
+	EXPECT_TRUE(ComputeJoinsSectorLists(false, true, false));
+	EXPECT_FALSE(ComputeJoinsSectorLists(true, true, false));
+	EXPECT_TRUE(ComputeJoinsSectorLists(true, true, true));
 }
 }

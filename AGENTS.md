@@ -19,3 +19,5 @@ Don't add CI steps that play the game. Tests that launch the engine or the brows
 Never put a Claude session link (`claude.ai/code/session_...`, a `Claude-Session:` trailer) in a pull request, a commit message or anything else pushed; session links are private.
 
 Every test or debug cvar and console command is a dev-mode tool: flag it `CVAR_FUA_DEV_MODE` or declare it `DEV_MODE_CCMD`, never a check of its own. `src/zandronum/src/features/dev-mode/README.md` says which tools are.
+
+Public builds carry no diagnostics: `FUA_DIAGNOSTICS` is off by default and compiles out telemetry, seams and allocation tracking (`docs/diagnostics.md`). Test and measurement builds turn it on (`ZX_DIAGNOSTICS=1` for the compile scripts, or `-DFUA_DIAGNOSTICS=ON`; the bridge turns it on too). When a release build for public use is made, build it with the flag off.

@@ -825,6 +825,20 @@ void CLIENTCOMMANDS_MorphCheat ( const char *pszMorphClass )
 
 //*****************************************************************************
 //
+// [Kaori-Chani] features/net-snapshot: the client's answer to a snapshot datagram. Nothing
+// calls it until step 3 links the apply layer, and the server ignores CLC_SNAPSHOTACK until then.
+void CLIENTCOMMANDS_SnapshotAck ( int seq, unsigned int history, BYTE soundIds )
+{
+	// [Kaori-Chani] The newest datagram, then a mask of the thirty-two before it.
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( CLC_SNAPSHOTACK );
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( seq );
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteLong( (int)history );
+	// [Kaori-Chani] The sound table's answer rides every ack; nothing is retransmitted here.
+	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( soundIds );
+}
+
+//*****************************************************************************
+//
 void CLIENTCOMMANDS_FullUpdateReceived ( void )
 {
 	CLIENT_GetLocalBuffer( )->ByteStream.WriteByte( CLC_FULLUPDATE );

@@ -141,7 +141,13 @@ struct FState
 	{
 		if (ActionFunc != NULL)
 		{
+			// [Kaori-Chani] features/net-snapshot: the actor whose action spawns whatever is
+			// spawned here, and whose own action sound its client copy plays.
+			extern AActor *g_pSnapActionSelf;
+			AActor *const pPrevSelf = g_pSnapActionSelf;
+			g_pSnapActionSelf = self;
 			ActionFunc(self, stateowner, this, ParameterIndex-1, statecall);
+			g_pSnapActionSelf = pPrevSelf;
 			return true;
 		}
 		else
@@ -277,6 +283,8 @@ struct FActorInfo
 	TArray<const PClass *> VisibleToPlayerClass;
 	TArray<const PClass *> RestrictedToPlayerClass;
 	TArray<const PClass *> ForbiddenToPlayerClass;
+	void *FuaLightAssociations = nullptr;	// [Doruk-Aksoy] features/gldefs: the class's GLDEFS frame lights, once kept in every actor
+	bool FuaLightsAttached = false;		// [Doruk-Aksoy] features/gldefs: an actor of the class was given a dynamic light since GLDEFS was read
 };
 
 // [rc4l] uzdoom@15dbbc913 -- a plain TMap now, with the entry carrying the map special and its

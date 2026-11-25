@@ -66,6 +66,10 @@ struct FPolyObj
 	fixed_t		size;			// polyobj size (area of POLY_AREAUNIT == size of FRACUNIT)
 	FPolyNode	*subsectorlinks;
 	DPolyAction	*specialdata;	// pointer to a thinker, if the poly is moving
+	// [Kaori-Chani] features/net-snapshot: this polyobject's actions in creation order, which
+	// specialdata cannot give, holding only the newest. Defaulted so every polyobject starts
+	// with an empty list whichever way it is built.
+	DPolyAction	*snapActions = NULL;
 	TObjPtr<DInterpolation> interpolation;
 
 	// [BC/BB] Has this polyobject moved at all? If so, we need to tell connecting clients of its new position.

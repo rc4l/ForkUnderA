@@ -1,0 +1,57 @@
+# The source tree's own report for the anchor comparison:
+#
+#     fua_csnap_analyze ref.csnap anchor
+#
+# run on the snapshot branch of Kaori-Chani/ZanZan at its snap-ref-premerge tag, b8a72a262, with
+# no level loaded and without the recording's files -- as the comparison runs. Its compared lines
+# match a run with the recording's files loaded (Complex Doom and Sunder, in order).
+#
+# The recording is ref.csnap, archived beside ref.zsnap in the folder ZX_SNAP_REFDIR names. It is
+# not in this repo: at 4.9 MB it is one of the two large references the dump test also reads.
+#
+# tools/snapshot/snap_anchor_compare.py compares the segment block and the summary's deltas, frames,
+# resets and decode errors. It does not compare what the class table decides, because a .csnap
+# carries the recording build's class numbering and this engine's own actors shift the indices:
+# the glide tripwire block with its per-class rows, the worst-class line, the worst step's class
+# name, the drawn-state agreement line and the unresolved-class warning. Nor does it compare the
+# header line, which names the file as it was passed -- REF.csnap in this run.
+
+fua_csnap_analyze: REF.csnap (v18, 35 Hz, 14 cvars recorded, player 0)
+fua_csnap_analyze: plan C: poses at each client tic's start and end, refilled on a new tic or a delta, drawn blended by the fraction of the span sampled; tics are phased from the first frame; every refill anchors its start to the fold at its frame
+fua_csnap_analyze: applying recorded settings
+  fua_csnap_rendercull = 1
+  fua_csnap_localanim = 3
+  fua_csnap_cull_near = 3000
+  fua_csnap_cull_far = 6000
+  fua_csnap_missile_extrap = 500
+  fua_csnap_age_servertime = 1
+  fua_csnap_age_maxjitter = 50
+  fua_csnap_smooth_step = 32
+  fua_csnap_smooth_nonballistic = 1
+  fua_csnap_smooth_ballistic = 0
+  fua_csnap_smooth_entities = 1
+  nomonsterinterpolation = 0
+  cl_capfps = 0
+  fua_csnap_recmirror = 1
+fua_csnap_analyze: recorded on MAP01, but no level is loaded; the gravity law is off for it
+fua_csnap_analyze: recorded on MAP02, but no level is loaded; the gravity law is off for it
+[seg 0] 210.6 s, 40523 frames
+         3055 active entities | mean delay 492 ms | snaps 0.017/frame (worst 8300 u)
+         clock 28.570 ms/tic (128 samples, 25.520-28.696 this interval) | jitter 1.8 ms mean, 1.5 recent, 48.4 worst | 0 rejected, 0 resets | aged 9426584 by the model (77475 ahead), 374650 untrusted, 0 jittery (window 2.2 ms now), 0 switches | date offset 16.6 ms mean, 5% past 50
+         plan C: 13965 refills, 7326 on a new tic and 6639 on a delta alone, 2.90 frames each | 0 ghost refills with no start pose, 0 backdated | 4900617 ghost refills anchored, 12741 of them after a snap or a fresh start
+         ballistic draw error 0.10 u mean over 294594 steps, p99 1.3, max 25.3 | 71 past 8 u, 0 past 32 u
+         worst step 25.3 u: id 2057 (?) at 93845 ms, exit extrap, start anchored after a snap or a fresh start, 0 frames after a delta refill
+         ballistic accuracy 2.03 u mean over 248781 frames, p99 16.0, max 57.7 | 14238 past 8 u, 374 past 32 u | 26.93 u over 27172 before a stop | 19940 unresolved
+         dated ahead: 1724 between records, held 0 with none earlier, 0 at a jump (counted at each of a refill's samples)
+         smoothing: stepped 0 folds (mean 0.0 u), 0 snaps | extrapolated 2799 folds (mean 0.76 u), 8667 snaps, residual <0.5 11641 <2 817 <8 0 8+ 0 | 2847 tics off target, 0 stepped OUTSIDE its records | REVERSED 93 of 60603 moving tics
+         smoothing by kind, 192.5 frames/s:
+           ballistic/model 0 folds (mean 0.00 u), 6758 snaps (268 back; by size 966 <0.5 u, 3949 <2 u, 1843 2+ u), REVERSED 92 of 53114 moving tics, off course 4274 past 15 deg and 750 past 45 deg of 59872 moving tics and snaps
+           turning/model 2799 folds (mean 0.76 u), 1851 snaps (89 back; by size 0 <0.5 u, 165 <2 u, 1686 2+ u), REVERSED 1 of 7489 moving tics, off course 58 past 15 deg and 19 past 45 deg of 9340 moving tics and snaps
+           body/model 0 folds (mean 0.00 u), 58 snaps (0 back; by size 0 <0.5 u, 0 <2 u, 58 2+ u), REVERSED 0 of 0 moving tics, off course 0 past 15 deg and 0 past 45 deg of 58 moving tics and snaps
+         glide (tripwire) SERVED  0.00% of 0 windows | 0 sustained | worst 0% (id 0)
+         glide STARVED 0.00% of 0 windows | worst 0% (id 0)   <- refresh rate, not the sampler
+         worst classes: served ?, starved ?
+fua_csnap_analyze: 7379 deltas, 40523 frames, 2 resets, 0 decode errors, 1 segments over 210.6 s
+fua_csnap_analyze: WARNING: 116 of 123 class ids do not resolve; load the recording's files in its order
+fua_csnap_analyze: drawn state: 139681 recorded changes | replay agrees on 22069 of 22070 sampled frames (100%)
+fua_csnap_analyze: restored previous settings

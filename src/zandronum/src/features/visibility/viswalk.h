@@ -28,7 +28,8 @@ void WalkView(bool publish = false, bool derive = false, const WalkHooks *hooks 
 void WalkPortalViews(const WalkHooks *hooks);
 
 // [rc4l] A camera texture's walk from the view BeginViewpoint set up, for the sky surfaces GL's walk of RenderViewpoint captures into the camera's list, and nothing else of the frame's.
-void WalkCameraSky();
+// [Doruk-Aksoy] Its particles and decals go to `hooks`, and the sectors it reached are marked for the wide actors, as the player's walk's are.
+void WalkCameraView(const WalkHooks *hooks);
 
 // [rc4l] With fua_vis_check on, walk beside GL's own walk of the player's view and compare what the two reached and made; the stacked views, skyboxes and mirrors are compared once GL has walked them, by CheckPortalViews.
 void CheckAgainstGL();

@@ -8,6 +8,8 @@
 
 namespace zx { namespace latency {
 
+#ifdef FUA_DIAGNOSTICS
+
 // [rc4l] An input event the game took (D_ProcessEvents).
 void NoteInput();
 
@@ -19,6 +21,16 @@ void NotePacketApplied();
 
 // [rc4l] A frame ended (the main loop's frame boundary), which shows what was armed before it.
 void FrameShown();
+
+#else
+
+// [Doruk-Aksoy] A public build measures no latency, so every note is an inline no-op.
+inline void NoteInput() {}
+inline void NoteTicBuilt() {}
+inline void NotePacketApplied() {}
+inline void FrameShown() {}
+
+#endif
 
 }} // namespace zx::latency
 

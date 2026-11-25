@@ -17,6 +17,7 @@
 #include "features/hwrender/computation/materialslots_compute.h"   // [Doruk-Aksoy] kMaxMaterialSlots, which the descriptor pools are sized for
 #include "features/hwrender/computation/dynlayout_compute.h"   // [Doruk-Aksoy] ComputeDynVertexCeiling
 #include "features/levelmesh/staticmesh.h"   // [Doruk-Aksoy] SetDynVertexCeiling
+#include "features/levelmesh/modelmesh.h"   // [Doruk-Aksoy] SetGpuModelStorage
 
 #include "c_cvars.h"
 
@@ -51,6 +52,8 @@ static void SetDynamicCeiling(Diligent::IRenderDevice *device)
 	VkPhysicalDeviceProperties props;
 	vkGetPhysicalDeviceProperties(vk->GetVkPhysicalDevice(), &props);
 	zx::levelmesh::SetDynVertexCeiling(zx::hwrender::ComputeDynVertexCeiling(props.limits.maxStorageBufferRange));
+	// [Doruk-Aksoy] Model surfaces are blended and placed by the vertex shader from geometry held in one storage buffer, as big as this device binds.
+	zx::levelmesh::SetGpuModelStorage(props.limits.maxStorageBufferRange);
 }
 
 // [rc4l] The device the memory budget is read from, which lives for the process once made.

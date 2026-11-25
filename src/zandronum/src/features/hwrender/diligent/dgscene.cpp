@@ -474,6 +474,8 @@ void UpdateBufferIfChanged(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf
 	else ZX_COUNT("gpu/upload_spared", "bytes", (double)bytes);
 }
 
+// [Doruk-Aksoy] The per-buffer tally is telemetry's alone, so a public build takes no lock on every buffer write.
+#ifdef FUA_DIAGNOSTICS
 // [rc4l] What each buffer has been sent since gpu/upload/ was last read.
 static std::mutex g_uploadTallyLock;
 static zx::hwrender::UploadTally g_uploadTally;
@@ -485,20 +487,25 @@ static void UploadBreakdown(std::vector<zx::telemetry::Reading> &out)
 }
 
 static const bool s_uploadBreakdown = (zx::telemetry::RegisterBreakdown("gpu/upload/", UploadBreakdown, false), true);
+#endif
 
 void SendToBuffer(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
 {
 	ctx->UpdateBuffer(buf, offset, bytes, data, Diligent::RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 	NoteBufferWritten(buf);
 	ZX_COUNT("gpu/upload_bytes", "bytes", (double)bytes);
+#ifdef FUA_DIAGNOSTICS
 	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
 	zx::hwrender::ComputeUploadTallyAdd(g_uploadTally, buf->GetDesc().Name, (double)bytes);
+#endif
 }
 
 void NoteUploadFrame()
 {
+#ifdef FUA_DIAGNOSTICS
 	std::lock_guard<std::mutex> lock(g_uploadTallyLock);
 	zx::hwrender::ComputeUploadTallyFrame(g_uploadTally);
+#endif
 }
 
 void UpdateBufferInPages(Diligent::IDeviceContext *ctx, Diligent::IBuffer *buf, unsigned long long offset, size_t bytes, const void *data)
@@ -982,6 +989,7 @@ bool BindSceneConstants(Diligent::IPipelineState *pso)
 	return vv != NULL;
 }
 const float *SceneMVP() { return g_mvp; }
+bool ViewMVPNow(float *out) { BuildMVP(out); return true; }
 
 // [rc4l] What the backend spends its frame on, phase by phase.
 //

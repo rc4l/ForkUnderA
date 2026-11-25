@@ -43,6 +43,7 @@
 #include "d_netinf.h"
 #include "d_net.h"
 #include "features/mainloop/mainloop.h"   // [rc4l] Stepped
+#include "features/tic-pacing/pacing.h"   // [Kaori-Chani] fua_tictime_report
 #include "cmdlib.h"
 #include "s_sound.h"
 #include "m_cheat.h"
@@ -1741,6 +1742,9 @@ void D_QuitNetGame (void)
 //
 void TryRunTics (void)
 {
+	// [Kaori-Chani] One pass of a tic loop, which is where fua_tictime_report measures from.
+	zx::ticpacing::Tick((unsigned int)gametic);
+
 	int 		i;
 	int 		lowtic;
 	int 		realtics;
@@ -1797,9 +1801,12 @@ void TryRunTics (void)
 	else
 		counts = availabletics;
 
+	// [Doruk-Aksoy] Fua_debug_holdtics holds the inline loop's tics as it does the threaded one's.
+	const bool held = zx::gameloop::HoldingTics();
+	counts = zx::gameloop::HoldTics(counts);
 
 	// [rc4l] Nor does it run a tic before one is due, which waiting would have made due.
-	if (counts == 0 && (!doWait || zx::mainloop::Stepped()))
+	if (counts == 0 && (held || !doWait || zx::mainloop::Stepped()))
 	{
 		// Check possible stall conditions
 		Net_CheckLastReceived(counts);

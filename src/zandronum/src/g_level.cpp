@@ -2107,6 +2107,15 @@ void G_FinishTravel ()
 				// end up being off. This is a problem if the object tries to move or
 				// something, which is the case with bobbing objects.
 				P_OldAdjustFloorCeil( inv );
+
+				// [Kaori-Chani] features/net-snapshot: a new id, the old one having been handed
+				// to another actor while this item travelled.
+				if (( zx::net::InClientMode( ) == false ) && ( inv->NetID != 0 )
+					&& ( g_ActorNetIDList.findPointerByID( inv->NetID ) != inv ))
+				{
+					inv->NetID = g_ActorNetIDList.getNewID( );
+					g_ActorNetIDList.useID( inv->NetID, inv );
+				}
 			}
 			if (ib_compatflags & BCOMPATF_RESETPLAYERSPEED)
 			{

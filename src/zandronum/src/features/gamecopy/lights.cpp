@@ -6,6 +6,8 @@
 #include "features/gamecopy/computation/lightlists_compute.h"   // [Doruk-Aksoy] the subsector runs made from the lit subsectors
 #include "features/hwrender/computation/lighttouch_compute.h"   // [rc4l] ComputeLightLinksStale, ComputeSortedTouches
 #include "features/dynlights/dynlight.h"
+#include "features/dynlights/computation/spotlight_compute.h"   // [Doruk-Aksoy] a spot's direction for the renderer
+#include "features/dynlights/computation/lightintensity_compute.h"   // [Doruk-Aksoy] a carrier's +LIGHTMULTALPHA
 #include "features/jobs/jobs.h"   // [Doruk-Aksoy] the light records taken across the pool
 #include "features/gamecopy/scanpool.h"   // [Doruk-Aksoy] the subsector light lists made across the scanning thread's pool
 #include "features/jobs/computation/joinparts_compute.h"
@@ -14,6 +16,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -101,7 +104,9 @@ void TakeLight(ADynamicLight *light, LightRecord &r)
 	r.linkRadius = light->radius;
 	r.radius = light->GetRadius();
 	r.red = light->GetRed(); r.green = light->GetGreen(); r.blue = light->GetBlue();
-	r.intensity = light->lightDefIntensity;
+	// [Doruk-Aksoy] What carries the light: an attached light's actor, or a map light itself, as UZDoom's target is.
+	const AActor *carrier = light->IsOwned() && light->target != NULL ? static_cast<const AActor *>(light->target) : light;
+	r.intensity = zx::dynlights::ComputeLightIntensity(light->lightDefIntensity, (carrier->renderflags & RF_LIGHTMULTALPHA) != 0, FIXED2FLOAT(carrier->alpha));
 	r.active = light->IsActive();
 	r.subtractive = light->IsSubtractive();
 	r.additive = light->IsAdditive();
@@ -109,6 +114,14 @@ void TakeLight(ADynamicLight *light, LightRecord &r)
 	r.dontLightActors = light->dontLightActors;
 	r.dontLightOthers = light->dontLightOthers;
 	r.attenuated = light->IsAttenuated();
+	r.spot = light->IsSpot();
+	if (r.spot)
+	{
+		// [Doruk-Aksoy] A spot aims where its carrier faces, as UZDoom's UpdateLocation turns it.
+		zx::dynlights::ComputeSpotDirection(ANGLE2DBL(carrier->angle), ANGLE2DBL(int(carrier->pitch)), r.spotDirection);
+		r.spotCosInner = float(std::cos(light->spotInner * (3.14159265358979323846 / 180.0)));
+		r.spotCosOuter = float(std::cos(light->spotOuter * (3.14159265358979323846 / 180.0)));
+	}
 }
 
 } // namespace

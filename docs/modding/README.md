@@ -105,6 +105,10 @@ than only at class-definition time.
   texture shader's `fua_Uniform` lines too. Declared for ACC in [`fua.acs`](acs/fua.acs).
 - [Actor materials](gldefs/Actor_materials.md) — `fua_SetActorMaterial` and `fua_SetActorUniform*`, one
   actor's material and its own uniforms.
+- [Vector math](acs/Vectors.md) — `fua_Vec`, the exact length, unit, dot and cross zt-bcc's `vec2`
+  and `vec3` call with `-target fua` or `any`.
+- [Function references](acs/Function_references.md) — BCS function references compare equal between
+  modules and last across map changes.
 
 ### GLDEFS
 
@@ -124,6 +128,11 @@ than only at class-definition time.
 - [A_JumpIfInput](decorate/A_JumpIfInput.md) — jump when a player is holding given buttons
   ([#56](https://github.com/rc4l/ZandroX/pull/56)). Puts input tests in the state sequence
   instead of a client-side ACS script. Unlike the overlay family, this one works in netgames.
+
+### Lumps
+
+- [TRNSLATE](lumps/TRNSLATE.md) — named translations, used by DECORATE's `Translation "Name"` and
+  `A_SetTranslation`.
 
 ### Not yet written
 

@@ -5,6 +5,9 @@
 #include "features/latency/computation/latency_compute.h"
 #include "features/telemetry/telemetry.h"
 
+// [Doruk-Aksoy] Only a diagnostics build measures latency; a public one has inline no-ops (latency.h).
+#ifdef FUA_DIAGNOSTICS
+
 namespace zx { namespace latency {
 
 namespace {
@@ -50,3 +53,5 @@ void FrameShown()
 }
 
 }} // namespace zx::latency
+
+#endif // FUA_DIAGNOSTICS

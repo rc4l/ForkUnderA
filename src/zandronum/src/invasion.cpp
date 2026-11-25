@@ -78,6 +78,7 @@
 #include "gamemode.h"
 #include "farchive.h"
 #include "st_hud.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 //*****************************************************************************
 //	PROTOTYPES
@@ -235,7 +236,8 @@ void ABaseMonsterInvasionSpot::Tick( void )
 			pFog = Spawn<ATeleportFog>( x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE );
 
 			// If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		pActor->pMonsterSpot = this;
@@ -405,7 +407,8 @@ void ABasePickupInvasionSpot::Tick( void )
 			pFog = Spawn<ATeleportFog>( x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE );
 
 			// If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		pActor->pPickupSpot = this;
@@ -571,7 +574,8 @@ void ABaseWeaponInvasionSpot::Tick( void )
 			pFog = Spawn<ATeleportFog>( x, y, z + TELEFOGHEIGHT, ALLOW_REPLACE );
 
 			// If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 
@@ -1064,7 +1068,8 @@ void INVASION_BeginWave( ULONG ulWave )
 			pFog = Spawn<ATeleportFog>( pMonsterSpot->x, pMonsterSpot->y, pMonsterSpot->z + TELEFOGHEIGHT, ALLOW_REPLACE );
 
 			// If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		pActor->pMonsterSpot = pMonsterSpot;
@@ -1145,7 +1150,8 @@ void INVASION_BeginWave( ULONG ulWave )
 			pFog = Spawn<ATeleportFog>( pPickupSpot->x, pPickupSpot->y, pPickupSpot->z + TELEFOGHEIGHT, ALLOW_REPLACE );
 
 			// If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		pActor->pPickupSpot = pPickupSpot;
@@ -1194,7 +1200,8 @@ void INVASION_BeginWave( ULONG ulWave )
 			pFog = Spawn<ATeleportFog>( pWeaponSpot->x, pWeaponSpot->y, pWeaponSpot->z + TELEFOGHEIGHT, ALLOW_REPLACE );
 
 			// If we're the server, tell clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 

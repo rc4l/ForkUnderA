@@ -30,7 +30,7 @@ under Customize Controls → FUA.
 | `cl_fua_hitbox_xray` | off | ignore the depth buffer — see boxes through walls |
 | `cl_fua_hitbox_linewidth` | 2 | clamped to `GL_ALIASED_LINE_WIDTH_RANGE` |
 | `cl_fua_hitbox_color` / `_attackcolor` / `_blastcolor` | blue / green / red | collision box / hurtbox / explosion |
-| `sv_debugexplosions` | **on** | **server**: broadcast explosion regions (`CVAR_SERVERINFO`). Bandwidth escape hatch only — it does nothing unless `sv_cheats` is also true, so it is not a second enable switch. |
+| `sv_debugexplosions` | off | **server**: broadcast explosion regions (`CVAR_SERVERINFO`). Works only while `sv_cheats` is also true. Off by default because every explosion then goes as a reliable command to every client, whether it draws boxes or not: about 20 kB/s on a crowded map. |
 
 `cl_fua_hitbox_self` exists because spectating attaches the camera to the followed player's
 body, so skipping the camera actor (which the sprite path does, to avoid drawing a wireframe
