@@ -845,7 +845,8 @@ static bool DeriveLaneModel(const ActorRecord *thing, const Subject &s, SpriteCh
 	LaneModel m;
 	ModelLookOf(thing, s, l, m.look, m.matrix);
 	m.firstSurface = (unsigned)store.surfaces.size();
-	if (!ResolveModelFrames(s.model, thing->state, thing->tics, thing->type, ModelTranslationOf(thing, s.model), m.matrix, store.surfaces, store.verts)) return false;
+	if (!ResolveModelFrames(s.model, thing->state, thing->tics, thing->type, ModelTranslationOf(thing, s.model), m.matrix, store.surfaces, store.verts,
+		!fua_sprite_check, m.look.flatSurface)) return false;
 	m.surfaces = (unsigned)store.surfaces.size() - m.firstSurface;
 	ls.model = (int)store.models.size();
 	store.models.push_back(m);
@@ -860,6 +861,7 @@ static void EmitLaneModel(const LaneModels &c, const LaneModel &m, const void *w
 	{
 		const ResolvedModelSurface &f = c.surfaces[m.firstSurface + k];
 		if (f.count == 0) zx::levelmesh::ModelSurfaceSkipped();
+		else if (f.gpuGeometry != NULL) zx::levelmesh::EmitGpuModelSurface(f.gpuGeometry, f.base1, f.base2, f.inter, f.firstIndex, f.count, f.material, f.translation);
 		else zx::levelmesh::EmitModelSurface(&c.verts[f.first], f.count, f.material, f.translation);
 	}
 	zx::levelmesh::ModelCaptureEnd();
@@ -930,7 +932,7 @@ static void ModelExtent(const LaneModels &store, const LaneModel &m, unsigned &s
 		const ResolvedModelSurface &f = store.surfaces[m.firstSurface + k];
 		if (f.count == 0) continue;
 		surfaces++;
-		verts += f.count;
+		if (f.gpuGeometry == NULL) verts += f.count;   // [Doruk-Aksoy] a GPU surface's corners are not in the stream's vertices
 		triangles += f.count / 3;
 	}
 }
@@ -946,7 +948,7 @@ static int CountPlacedModel(const PlaceItem &it)
 	{
 		const ResolvedModelSurface &f = store.surfaces[m.firstSurface + k];
 		if (f.count == 0) continue;
-		if (first == NULL) first = &store.verts[f.first];
+		if (first == NULL && f.gpuGeometry == NULL) first = &store.verts[f.first];
 		last = f.material;
 	}
 	return zx::levelmesh::ModelPlaced(m.matrix, m.look, last, first, it.verts, it.surfaces, it.triangles, m.surfaces - it.surfaces);
@@ -965,6 +967,12 @@ static void PlaceOne(const zx::levelmesh::DynQuadRun &at, const zx::levelmesh::M
 		if (f.count == 0) continue;
 		MeshPiece mp;
 		zx::levelmesh::ModelSurfacePiece(m.look, placing, f.material, f.translation, it.matrix, mp);
+		if (f.gpuGeometry != NULL)
+		{
+			zx::levelmesh::GpuModelSurfacePiece(f.gpuGeometry, f.base1, f.base2, f.inter, f.firstIndex, mp);
+			zx::levelmesh::DynPlaceGpuModel(at, piece++, f.count, mp);
+			continue;
+		}
 		zx::levelmesh::DynPlace(at, piece++, vert, &store.verts[f.first], f.count, mp);
 		vert += f.count;
 	}

@@ -28,6 +28,8 @@
 #include "features/levelmesh/computation/dynquads_compute.h"   // [Doruk-Aksoy] DynQuadRun
 #include "features/damage-tint/computation/damagetint_compute.h"   // [rc4l] TintGradient
 
+struct FModelGeometry;
+
 namespace zx { namespace levelmesh {
 
 // [rc4l] A mesh vertex: position as (x, height, y) and texture coordinate, the layout GL's FFlatVertex has.
@@ -194,6 +196,10 @@ struct MeshPiece
 	int           modelMatrix;  // [Doruk-Aksoy] a model surface's model-to-world matrix among the frame's (DynMatrices), which a GLDEFS shader reads as ModelMatrix, or -1
 	int           actorShader;  // [Doruk-Aksoy] the GLDEFS shader of the drawn actor's fua_Material, which it draws with over its texture's, or -1
 	int           actorRow;     // [Doruk-Aksoy] that actor's uniform row plus one (ComputeActorUniformRow), 0 for none
+	// [Doruk-Aksoy] A model surface the GPU blends and places from its resident geometry, with range.count corners and none in the stream's vertices; NULL for every other piece.
+	const FModelGeometry *gpuGeometry;
+	unsigned      gpuBase1, gpuBase2, gpuFirstIndex;
+	float         gpuInter;
 
 	// [rc4l] Zero-initialise. Every site fills the fields it cares about and leaves the rest, so a
 	// field added later is garbage at the sites that predate it -- which is how SegCache::pieces
@@ -226,6 +232,7 @@ struct MeshPiece
 		plain = false;
 		modelMatrix = -1;
 		actorShader = -1; actorRow = 0;
+		gpuGeometry = NULL; gpuBase1 = gpuBase2 = gpuFirstIndex = 0; gpuInter = 0.f;
 		for (int i = 0; i < 6; i++) floodUV[i] = 0.f;
 	}
 };
@@ -342,6 +349,10 @@ bool DynReserve(unsigned verts, unsigned pieces, DynQuadRun &run);
 
 // [Doruk-Aksoy] The run's piece `piece`, its `count` vertices from the run's vertex `vert`, written in place as DynAppend would have; lanes may write different pieces of a run at once.
 void DynPlace(const DynQuadRun &run, unsigned piece, unsigned vert, const MeshVertex *verts, unsigned count, const MeshPiece &proto);
+
+// [Doruk-Aksoy] A GPU model surface (proto.gpuGeometry) of `count` corners appended, or placed as the run's piece `piece`, with none of its corners in the stream's vertices.
+void DynAppendGpuModel(unsigned count, const MeshPiece &proto);
+void DynPlaceGpuModel(const DynQuadRun &run, unsigned piece, unsigned count, const MeshPiece &proto);
 
 // This frame's dynamic vertices and pieces.
 const MeshVertex *DynVertices(int &count);
