@@ -37,3 +37,11 @@ upstream (added) pitch sign.
 `a_fireprojectile_conformance.txt` exercises the plain, `FPF_AIMATANGLE`, `FPF_NOAUTOAIM`, and
 `FPF_TRANSFERTRANSLATION` call shapes. Pack into a pk3 and load (see run steps in
 `features/a_noisealert`).
+
+## Ammo from inventory items
+
+`useammo` spends the firing weapon's ammo when a weapon frame calls either function (uzdoom@bc206f21a)
+and also when a `CustomInventory` item's chain calls it, as on Zandronum: MM8BDM's classes give an item
+from the weapon's `Fire` state and fire the shot from the item. The player's own actor states still spend
+nothing. The rule is `ComputeFireProjectileUsesAmmo` in `computation/fireprojectile_ammo_compute.h`
+(tests beside it); `tools/fuactl/scenarios/inventoryammo.mjs` checks it in the engine.
