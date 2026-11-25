@@ -189,10 +189,10 @@ TEST(McpRpc, ABridgePauseReadsNoDemoCommands)
 	EXPECT_EQ(ComputeTiccmdSource(true, 0, true), TiccmdSource::Demo);     // the hold ended with the pause
 }
 
-TEST(McpRpc, FrameRandomStreamsIncludeAnimatedTexturesAndSoundPicks)
+TEST(McpRpc, FrameRandomStreamsIncludeAnimatedTexturesSoundPicksAndTheFace)
 {
 	const std::vector<std::string> &s = ComputeFrameRandomStreams();
-	EXPECT_EQ(s, (std::vector<std::string>{ "TorchFlicker", "ProjDecal", "AnimatePics", "RandSound" }));
+	EXPECT_EQ(s, (std::vector<std::string>{ "TorchFlicker", "ProjDecal", "AnimatePics", "RandSound", "MugShot" }));
 }
 
 TEST(McpRpc, HashMixStrDistinguishesStrings)

@@ -17,11 +17,14 @@ export function formatTic(key) {
 // [rc4l] A trace file's lines as each tic's fingerprints by kind (hashes is the world's) and the events in order; a world tic lower than the last starts the next level.
 export function parseSimTrace(text) {
   const kinds = new Map();
+  const moves = new Map();
   const events = [];
   let level = 0, lastWorld = null;
   for (const line of String(text).split(/\r?\n/)) {
     const m = /^(-?\d+) ([A-Z]) (\d+)$/.exec(line.trim());
-    if (m && KINDS[m[2]]) {
+    const r = /^(-?\d+) r((?: \d+:\d+)*)$/.exec(line.trim());
+    if (r) moves.set(level * LEVEL_SPAN + Number(r[1]), r[2].trim().split(" ").filter(Boolean));
+    else if (m && KINDS[m[2]]) {
       const tic = Number(m[1]);
       if (m[2] === "H") {
         if (lastWorld !== null && tic < lastWorld) level++;
@@ -31,13 +34,24 @@ export function parseSimTrace(text) {
       kinds.get(m[2]).set(level * LEVEL_SPAN + tic, m[3]);
     } else if (line.trim()) events.push(line.trim());
   }
-  return { hashes: kinds.get("H") || new Map(), kinds, events };
+  return { hashes: kinds.get("H") || new Map(), kinds, moves, events };
 }
 
 // [rc4l] The first tic two fingerprint series both hold with different values, null when none does.
 function firstDiffering(a, b) {
   const tics = [...a.keys()].filter((t) => b.has(t)).sort((x, y) => x - y);
   for (const t of tics) if (a.get(t) !== b.get(t)) return { tic: t, a: a.get(t), b: b.get(t) };
+  return null;
+}
+
+// [Doruk-Aksoy] The first tic both traces list stream moves for that moved different streams, with the "crc:index" words only one side holds.
+function firstMovedApart(a = new Map(), b = new Map()) {
+  const tics = [...a.keys()].filter((t) => b.has(t)).sort((x, y) => x - y);
+  for (const t of tics) {
+    const sa = new Set(a.get(t)), sb = new Set(b.get(t));
+    const onlyA = [...sa].filter((w) => !sb.has(w)), onlyB = [...sb].filter((w) => !sa.has(w));
+    if (onlyA.length || onlyB.length) return { tic: t, a: onlyA, b: onlyB };
+  }
   return null;
 }
 
@@ -58,9 +72,10 @@ export function diffSimTraces(a, b) {
   for (let i = 0; i < n; i++) {
     if (a.events[i] !== b.events[i]) { firstEvent = { index: i, a: a.events[i] ?? null, b: b.events[i] ?? null }; break; }
   }
+  const moved = firstMovedApart(a.moves, b.moves);
   const compared = Object.keys(KINDS).filter((k) => a.kinds.has(k) && b.kinds.has(k));
   const judged = parts.filter((p) => !FRAME_DEPENDENT.has(p.kind));
-  return { tics, events: [a.events.length, b.events.length], firstTic, parts, compared, firstEvent, same: judged.length === 0 && !firstEvent };
+  return { tics, events: [a.events.length, b.events.length], firstTic, parts, compared, firstEvent, moved, same: judged.length === 0 && !firstEvent };
 }
 
 // [rc4l] The verdict tracediff prints, one line per finding.
@@ -75,6 +90,7 @@ export function describeSimTraceDiff(d) {
   for (const p of d.parts) {
     out.push(p.kind === "H" ? `the sim parts at tic ${formatTic(p.tic)}: fingerprint ${p.a} against ${p.b}` : `the ${KINDS[p.kind]} part at tic ${formatTic(p.tic)}: ${p.a} against ${p.b}`);
   }
+  if (d.moved) out.push(`the streams first move apart at tic ${formatTic(d.moved.tic)}: ${d.moved.a.join(" ") || "(none)"} against ${d.moved.b.join(" ") || "(none)"}`);
   if (d.firstEvent) out.push(`the first event that differs is #${d.firstEvent.index}: ${d.firstEvent.a ?? "(none)"} against ${d.firstEvent.b ?? "(none)"}`);
   return out;
 }

@@ -49,6 +49,9 @@
 
 TArray<FMugShotState> MugShotStates;
 
+// [Doruk-Aksoy] The face's own stream, since drawing the status bar resets its states between tics and took M_Random out of the game's sequence at frame-rate-dependent times.
+static FRandom rr_mugshot ("MugShot");
+
 
 //===========================================================================
 //
@@ -127,7 +130,7 @@ FMugShotState::FMugShotState(FName name)
 	bHealthSpecial = false;
 	bDirectional = false;
 	bFinished = true;
-	Random = M_Random();
+	Random = rr_mugshot();
 }
 
 //===========================================================================
@@ -160,7 +163,7 @@ void FMugShotState::Tick()
 	{
 		Position++;
 		Time = Frames[Position].Delay;
-		Random = M_Random();
+		Random = rr_mugshot();
 	}
 	else
 	{
@@ -179,7 +182,7 @@ void FMugShotState::Reset()
 	Time = Frames[0].Delay;
 	Position = 0;
 	bFinished = false;
-	Random = M_Random();
+	Random = rr_mugshot();
 }
 
 //===========================================================================

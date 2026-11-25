@@ -40,6 +40,7 @@ byte-identical and simply vanish.
 | `computation/bridgeclient_compute.{h,cpp,_test.cpp}` | Pure, unit-tested reading of one connection: its line framing, its token gate and its hello, and which socket results retry (a signal's interruption) or close it. |
 | `computation/glperf_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of the GPU profiler: ring-slot math, timestamp→ms + span validity, the all-zero "driver can't time" verdict, and report-JSON assembly. |
 | `computation/ticprof_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of `perf.ticprof`: which `features/telemetry` zones a tic is split into, each tic's phases from their totals, and the event's JSON. |
+| `computation/streammoves_compute.{h,cpp,_test.cpp}` | Pure, unit-tested core of the sim trace's `r` lines: which random streams a traced tic moved, frame streams left out, so `tracediff` names the stream whose draws shifted. |
 
 ## In-place anchors (the only edits outside this feature)
 
