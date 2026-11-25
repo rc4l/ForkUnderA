@@ -997,7 +997,8 @@ bool FBlockThingsIterator::FuaHashAdd(AActor *me)
 // [Doruk-Aksoy] features/blockmap-filter: starts P_CheckPosition's walk over the arrays at the cell the lists' walk starts at.
 void FBlockThingsIterator::FuaCompactFor(const AActor *mover, fixed_t x, fixed_t y)
 {
-	FuaMover = mover;
+	FuaMoverRadius = mover->radius.Raw();
+	FuaMoverMissile = (mover->flags & MF_MISSILE) != 0;
 	FuaMoverX = x;
 	FuaMoverY = y;
 	FuaCompact = true;
@@ -1016,7 +1017,7 @@ AActor *FBlockThingsIterator::FuaNextCompact()
 			block = FuaPos >= 0 ? static_cast<FBlockNode *>((*FuaCell)[FuaPos].node) : NULL;
 			AActor *me = static_cast<AActor *>(e.actor);
 			if (e.multi && !FuaHashAdd(me)) continue;
-			if (zx::cells::Missed(e, FuaMover, FuaMoverX.Raw(), FuaMoverY.Raw())) continue;
+			if (zx::cells::Missed(e, FuaMoverX.Raw(), FuaMoverY.Raw(), FuaMoverRadius, FuaMoverMissile)) continue;
 			return me;
 		}
 		if (++curx > maxx)
