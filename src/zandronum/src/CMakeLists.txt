@@ -2266,6 +2266,7 @@ target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
 # servercommands.h through network/netcommand.h.
 add_library( netsnapshot_layers OBJECT
 	features/net-snapshot/capture.cpp
+	features/net-snapshot/report.cpp
 	features/net-snapshot/clienttrack.cpp
 	features/net-snapshot/apply.cpp
 	features/net-snapshot/entities.cpp

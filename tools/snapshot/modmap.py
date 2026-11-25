@@ -55,6 +55,7 @@ def comp(stem):
 COLUMNS = [
     ('server', 'Server', 'once per pump, then per client', [
         ('capture.cpp', [MODULE + '/capture.h', MODULE + '/capture.cpp']),
+        ('report.cpp', [MODULE + '/report.h', MODULE + '/report.cpp']),
         ('clienttrack.cpp', [MODULE + '/clienttrack.h', MODULE + '/clienttrack.cpp']),
     ]),
     ('client', 'Client', 'datagrams, ghosts and mirrors', [

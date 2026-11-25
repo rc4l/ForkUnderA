@@ -1,6 +1,6 @@
 # capture: the server's snapshot tick
 
-Covers: src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
+Covers: src/zandronum/src/features/net-snapshot/capture.h, src/zandronum/src/features/net-snapshot/capture.cpp, src/zandronum/src/features/net-snapshot/report.h, src/zandronum/src/features/net-snapshot/report.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute.h, src/zandronum/src/features/net-snapshot/computation/budget_compute.cpp, src/zandronum/src/features/net-snapshot/computation/budget_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute.h, src/zandronum/src/features/net-snapshot/computation/law_compute.cpp, src/zandronum/src/features/net-snapshot/computation/law_compute_test.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute.h, src/zandronum/src/features/net-snapshot/computation/catchup_compute.cpp, src/zandronum/src/features/net-snapshot/computation/catchup_compute_test.cpp
 
 ## Responsibility
 
@@ -38,8 +38,13 @@ In order:
    one is counted as sent, since to the server a drop must look like a datagram that left and never
    arrived. The header carries the frame, which counts pumps, and the absolute game tic, so a lost
    frame cannot desync the client's clock.
-6. The report: `snap_MaybeReport` builds the window's `[snap]` lines into a queue, and one line is
-   printed per pump.
+6. The report: `snap_MaybeReport` builds the window's `[snap]` lines into a queue, and
+   `snap_DrainOneLine` prints one of them a pump. Both are `report.cpp`, which this file's counters
+   feed through `report.h`, so an edit to a report line cannot move the capture loop's own code.
+   Every figure it prints passes through `snap_RawToMS`, and it reads this file through
+   `snap_CatchUpStats`, `snap_CosEnsure`, `snap_CosRow`, `snap_CosIsCosmetic`,
+   `snap_CosCountersReset`, `snap_CosCountAlive`, `snap_ClientInMap`, `snap_PacketRoom`,
+   `snap_EffectiveBudget` and `snap_ChunkLimit`.
 
 The byte budgets are `budget_compute`, a pure unit: the snapshot command one datagram may carry, the
 frame's budget and each chunk's limit, which this file reads from `sv_maxpacketsize` and

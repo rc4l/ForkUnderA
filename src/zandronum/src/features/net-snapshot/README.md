@@ -53,8 +53,10 @@ checksum. `stream.h` reads a `.zsnap`, the server's recording, whose records are
   writer.
 - `fuzzgen.h`: the generator the fuzzer builds inputs with, shared with the in-engine fuzzer.
 - `capture.{h,cpp}`: the server's snapshot tick — the world capture and its censuses, legacy
-  suppression, mover capture, cosmetic events, snapshot sounds and the stats report. Was
-  `sv_snapshot`.
+  suppression, mover capture, cosmetic events and snapshot sounds. Was `sv_snapshot`.
+- `report.{h,cpp}`: the `[snap]` stats report and the queue it prints a line a pump from,
+  beside the legacy traffic census. The counters it prints stay in `capture.cpp`, declared in
+  `report.h`, so an edit to a report line cannot move the capture loop's own code.
 - `clienttrack.{h,cpp}`: the per-client delta — what each client has been told, its ack ledger and
   the interest scheduling that decides what its next datagram carries. Was `sv_snapclient`.
 - `computation/`: fourteen pure units — the ack ledger, the animation census, the budget and chunk
