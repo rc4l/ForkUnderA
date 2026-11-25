@@ -45,6 +45,7 @@ enum
 enum
 {
 	LF_ATTENUATE = 1,
+	LF_SPOT = 2,	// [Doruk-Aksoy] +DYNAMICLIGHT.SPOT or GLDEFS spot: lights only a cone along its aim
 };
 
 enum ELightType
@@ -112,6 +113,7 @@ public:
 	bool IsSubtractive() { return !!(flags4&MF4_SUBTRACTIVE); }
 	bool IsAdditive() { return !!(flags4&MF4_ADDITIVE); }
 	bool IsAttenuated() const { return !!(lightflags & LF_ATTENUATE); }
+	bool IsSpot() const { return !!(lightflags & LF_SPOT); }
 	FState *targetState;
 	FLightNode * touching_sides;
 	FLightNode * touching_subsectors;
@@ -146,6 +148,7 @@ public:
 	float lightDefIntensity = 1.f;	// [Doruk-Aksoy] GLDEFS intensity, which multiplies the colour where it is drawn as UZDoom's does.
 	bool dontLightActors = false;	// [Doruk-Aksoy] GLDEFS dontlightactors: lights walls and flats but no sprite, model or particle.
 	bool dontLightOthers = false;	// [Doruk-Aksoy] GLDEFS dontlightothers: of actors and particles, lights only the actor carrying it.
+	float spotInner = 0.f, spotOuter = 0.f;	// [Doruk-Aksoy] a spot's cone in degrees, full light inside the inner and none past the outer.
 
 };
 

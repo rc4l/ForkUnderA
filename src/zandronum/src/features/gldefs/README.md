@@ -13,8 +13,8 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   parser takes. `intensity` multiplies the light's colour where it is drawn (`ADynamicLight::lightDefIntensity`,
   carried in the render copy's light record), as UZDoom's does. `dontlightactors` keeps the light off every
   sprite, model and particle (`features/dynlights/computation/shouldlight_compute`) while it still lights walls,
-  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot` is read and not yet
-  acted on, and `noshadowmap`, `dontlightmap` and the top-level
+  flats and decals; `dontlightothers` lets only the actor carrying the light take it. `spot inner outer` makes it a
+  spot light (`features/dynlights/computation/spotlight_compute`), and `noshadowmap`, `dontlightmap` and the top-level
   `colorization` read and dropped (we have no shadow maps, lightmaps or colourisation), so a UZDoom GLDEFS loads
   instead of stopping on "Unknown tag".
 - `computation/lightsize_compute`: `size` and `secondarySize` clamped to UZDoom's 1 to 1024 (they were bytes, cut at
@@ -29,6 +29,13 @@ GLDEFS for every renderer, moved from GL's `gl/dynlights/gl_dynlight.cpp` and `g
   the CPU as sprites do. The top-level `lightsizefactor` scales `size` and `secondarySize` of the definitions after
   it in its lump and what that lump includes, except those with `attenuate 0`: UZDoom reads its unset tag (-1)
   through an unsigned getter, so lights without the tag are scaled too.
+- Additive lights (`additive 1`, or every light under `r_lights_additive`) carry kind bit 8 unless subtractive, and
+  a wall or flat adds them after the texture, a fifth as bright and held to 1, as UZDoom's `material_normal.fp` and
+  Zandronum 3.3's `main.fp` do, so they brighten a dark texture as much as a light one. A PBR material takes none,
+  as UZDoom's `material_pbr.fp` takes none; sprites and particles take them as plain lights, as both engines do.
+- A subtractive light takes each channel from its colour's length on walls and flats too
+  (`ComputeSubtractiveLightColor`), as UZDoom and Zandronum 3.3 do and sprites here already did, so a red one
+  darkens green and blue and leaves a surface reddened.
 - `lightsettings.cpp`: the light settings both renderers read (`r_lights`, `r_attachedlights`,
   `r_lights_checkside`, `r_lights_intensity`, `r_lights_size`, `r_light_sprites`, `r_light_particles`,
   `r_lights_additive`), moved from `gl/dynlights/gl_dynlight1.cpp` by way of `features/dynlights`;

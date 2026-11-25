@@ -595,6 +595,7 @@ enum ActorRenderFlag
 	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides r_billboard_mode setting)
 	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides r_billboard_mode setting)
 	RF_ROLLSPRITE			= 0x40000,	// [rc4l] uzdoom: [marrub] roll the sprite billboard around the sight vector
+	RF_LIGHTMULTALPHA		= 0x80000,	// [Doruk-Aksoy] uzdoom@c0d17bbd: the lights this actor carries are dimmed by its alpha
 };
 
 // [rc4l] MBF21 needed more flag bits. These back the MBF21 thing flags that have no existing
