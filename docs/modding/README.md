@@ -127,6 +127,11 @@ than only at class-definition time.
   ([#56](https://github.com/rc4l/ZandroX/pull/56)). Puts input tests in the state sequence
   instead of a client-side ACS script. Unlike the overlay family, this one works in netgames.
 
+### Lumps
+
+- [TRNSLATE](lumps/TRNSLATE.md) — named translations, used by DECORATE's `Translation "Name"` and
+  `A_SetTranslation`.
+
 ### Not yet written
 
 Merged features whose reference pages are still to be written, roughly in the order they are

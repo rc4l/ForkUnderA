@@ -22,6 +22,9 @@ void SendFloorClip(AActor *actor);
 // [rc4l] An actor property a script changed, on a server: the new value to every client (SVC_SETTHINGPROPERTY).
 void SendThingProperty(AActor *actor, int property);
 
+// [Doruk-Aksoy] An actor whose translation a state changed (A_SetTranslation), on a server: the new one to every client (SVC_SETTHINGTRANSLATION).
+void SendThingTranslation(AActor *actor);
+
 // [rc4l] A puff a server spawned, to its clients in state (STATE_SPAWN or the one it jumped to) as ComputePuffSend says, flags its P_SpawnPuff flags.
 void SendPuff(AActor *puff, AActor *source, unsigned state, int flags);
 

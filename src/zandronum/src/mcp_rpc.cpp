@@ -782,6 +782,7 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 				fixed_t drawnScaleX = mo->scaleX, drawnScaleY = mo->scaleY;
 				if ( mo->player != NULL ) P_CheckPlayerSprite( mo, drawnSprite, drawnScaleX, drawnScaleY );
 				r.drawnScaleX = FIXED2DBL( drawnScaleX ); r.drawnScaleY = FIXED2DBL( drawnScaleY );
+				r.translation = mo->Translation;
 				if ( (unsigned)mo->sprite < sprites.Size() ) r.sprite = std::string( sprites[mo->sprite].name, 4 ) + (char)( 'A' + mo->frame );
 				rows.push_back( r );
 			}
