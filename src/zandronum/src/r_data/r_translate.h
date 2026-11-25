@@ -18,6 +18,7 @@ enum
 	TRANSLATION_PlayerCorpses,
 	TRANSLATION_Decorate,
 	TRANSLATION_Blood,
+	TRANSLATION_Custom,			// [Doruk-Aksoy] TRNSLATE's named translations (features/trnslate).
 
 	NUM_TRANSLATION_TABLES
 };
@@ -40,6 +41,8 @@ struct FRemapTable
 	void AddColorRange(int start, int end, int r1,int g1, int b1, int r2, int g2, int b2);
 	void AddDesaturation(int start, int end, double r1, double g1, double b1, double r2, double g2, double b2);
 	void AddToTranslation(const char * range);
+	// [Doruk-Aksoy] uzdoom@0c04cddd: count palette-lump colours (RGB triplets) from start, index 0 kept transparent.
+	bool AddColors(int start, int count, const BYTE *colors);
 	int StoreTranslation();
 
 	BYTE *Remap;				// For the software renderer

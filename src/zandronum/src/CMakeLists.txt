@@ -1700,6 +1700,7 @@ add_executable( zdoom WIN32
 	features/rendersettings/computation/mapoptions_compute.cpp
 	features/levelprep/levelprep.cpp
 	features/gldefs/gldefs.cpp
+	features/trnslate/trnslate.cpp
 	features/gldefs/glow.cpp
 	features/fakeflat/fakeflat.cpp
 	features/models/modeldef.cpp
