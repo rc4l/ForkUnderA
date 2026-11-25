@@ -54,6 +54,8 @@ sends out goes through a queue. This folder is the low layer any feature may use
   drained oldest first, each listed with its depth and high-water mark.
 - `computation/asks_compute`: `Asks`, the call one thread hands another and waits on, served while the serving thread
   waits on the asker too, rethrowing what the call threw to the asker.
+- `computation/namelist_compute`: names compared without case, such as the font names the main thread found nothing
+  for (`V_GetFont`'s `TicMissingFonts`), which a tic then answers itself instead of asking every tic.
 - `computation/lumpcache_compute`: when a lump's text kept from an asked read must be read again, as
   `V_GetColorStringByName` keeps X11R6RGB so a tic's colour names ask the main thread once.
 
