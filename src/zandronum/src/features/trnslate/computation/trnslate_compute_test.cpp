@@ -134,6 +134,8 @@ TEST(Trnslate, PaletteStartMustBeANumber)
 	ExpectError("A = \"P\", \"x\"", "Expected a number but got 'x' instead", 1, "P");
 	ExpectError("A = \"P\", - \"x\"", "Expected a number but got 'x' instead", 1, "P");
 	ExpectError("A = \"P\", 0x", "Bad numeric constant '0x'", 1, "P");
+	ExpectError("A = \"P\", 0X", "Bad numeric constant '0X'", 1, "P");
+	ExpectError("A = \"P\", 0xg", "Bad numeric constant '0xg'", 1, "P");
 	ExpectError("A = \"P\",", "Expected a number but reached the end of the lump", 1, "P");
 }
 
@@ -283,6 +285,10 @@ TEST(TrnslatePalette, JascGivesItsColours)
 	EXPECT_EQ(out[6], 0);
 	EXPECT_EQ(ReadPalette(Bytes("JASC-PAL\n0100\n0\n"), out, &error), 0);
 	EXPECT_EQ(ReadPalette(Bytes("JASC-PAL\n0100\n-4\n"), out, &error), 0);
+	EXPECT_EQ(ReadPalette(Bytes("JASC-PAL\n0100\n+0X1\n0xA 0Xb +0x0\n"), out, &error), 1);
+	EXPECT_EQ(out[0], 10);
+	EXPECT_EQ(out[1], 11);
+	EXPECT_EQ(out[2], 0);
 
 	std::string many = "JASC-PAL\n0100\n300\n";
 	for (int i = 0; i < 768; i++) many += "9 ";
@@ -299,6 +305,9 @@ TEST(TrnslatePalette, BadJascIsAnError)
 		{ "JASC-PAL\n0100\n1\n255 256 0", "Color 256 value out of range" },
 		{ "JASC-PAL\n0100\n1\n255 -1 0", "Color -1 value out of range" },
 		{ "JASC-PAL\n0100\n1\n255 red 0", "Bad numeric constant 'red'" },
+		{ "JASC-PAL\n0100\n1\n255 -0x 0", "Bad numeric constant '-0x'" },
+		{ "JASC-PAL\n0100\n1\n255 +0X 0", "Bad numeric constant '+0X'" },
+		{ "JASC-PAL\n0100\n1\n255 0xg 0", "Bad numeric constant '0xg'" },
 		{ "JASC-PAL\n0100\n2\n255 0 0", "Missing integer (unexpected end of file)" },
 		{ "JASC-PAL\n0100\n", "Missing integer (unexpected end of file)" },
 	};

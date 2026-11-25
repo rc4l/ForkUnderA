@@ -21,6 +21,17 @@ enum TokenKind
 	kTokPunct,
 };
 
+// [Doruk-Aksoy] strtol base 0 over the whole word, with a bare "0x" refused here since musl's strtol takes it whole where glibc's and MSVC's stop at the x.
+bool ParseWholeLong(const std::string &word, long *value)
+{
+	const char *digits = word.c_str();
+	if (*digits == '-' || *digits == '+') digits++;
+	if (digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X') && !std::isxdigit((unsigned char)digits[2])) return false;
+	char *stop;
+	*value = std::strtol(word.c_str(), &stop, 0);
+	return *stop == 0;
+}
+
 struct Token
 {
 	TokenKind kind;
@@ -102,9 +113,7 @@ struct Lexer
 			tok.text.assign(text + begin, pos - begin);
 			if (tok.kind == kTokInt)
 			{
-				char *stop;
-				tok.number = std::strtol(tok.text.c_str(), &stop, 0);
-				if (*stop != 0)
+				if (!ParseWholeLong(tok.text, &tok.number))
 				{
 					tok.kind = kTokError;
 					tok.text = "Bad numeric constant '" + tok.text + "'";
@@ -223,9 +232,8 @@ int ReadJascPalette(const unsigned char *data, size_t size, unsigned char *out, 
 		const size_t begin = pos;
 		while (pos < size && !std::isspace(data[pos])) pos++;
 		const std::string word(reinterpret_cast<const char *>(data) + begin, pos - begin);
-		char *stop;
-		const long value = std::strtol(word.c_str(), &stop, 0);
-		if (*stop != 0)
+		long value;
+		if (!ParseWholeLong(word, &value))
 		{
 			*error = "Bad numeric constant '" + word + "'";
 			return -1;
