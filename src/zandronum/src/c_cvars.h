@@ -222,6 +222,8 @@ void C_BackupCVars (void);
 // Finds a named cvar
 FBaseCVar *FindCVar (const char *var_name, FBaseCVar **prev);
 void C_ClearCVarCache (); // [rc4l] see c_cvars.cpp -- flush on engine restart
+// [Doruk-Aksoy] How many cvar sets there have been, for state built from settings to know when to build again.
+unsigned CVarSetGeneration ();
 void C_MarkStaticTeardown (); // [Doruk-Aksoy] registered with atexit just before call_terms, so it runs after them and before any global destructor
 FBaseCVar *FindCVarSub (const char *var_name, int namelen);
 

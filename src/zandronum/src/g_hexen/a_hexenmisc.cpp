@@ -24,6 +24,7 @@
 #include "cl_demo.h"
 #include "deathmatch.h"
 #include "sv_commands.h"
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh for the files below
 
 // Include all the Hexen stuff here to reduce compile time
 #include "a_bats.cpp"

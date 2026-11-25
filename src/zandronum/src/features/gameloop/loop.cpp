@@ -2,6 +2,7 @@
 // Copyright (C) 2026 rc4l
 
 #include "features/gameloop/loop.h"
+#include "features/dev-mode/devmode.h"   // [Doruk-Aksoy] fua_debug_steptic
 #include "features/handoff/seam.h"
 #include "features/handoff/effects.h"
 #include "features/handoff/snapshot.h"
@@ -12,6 +13,7 @@
 #include "features/frame/framedriver.h"   // [rc4l] GLDrawsFrame
 #include "features/telemetry/telemetry.h"
 #include "features/frame/framestall.h"   // [rc4l] DebugPlaysimStall
+#include "features/tic-pacing/pacing.h"   // [Kaori-Chani] fua_tictime_report's measurement
 
 #include <atomic>
 #include <cstdint>
@@ -33,6 +35,7 @@
 #include "v_font.h"   // [rc4l] V_FontsForTic
 #include "mcp_ticprof.h"   // [ForkUnderA] MCP_SimPreTic, MCP_TicProf_TicDone
 #include "mcp_simtrace.h"  // [ForkUnderA] MCP_SimTrace_TicDone
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the client census scope
 
 // [rc4l] Runs each tic's playsim on the game thread while the main thread draws, wherever ComputeThreadedTic allows.
 CVAR(Bool, fua_gamethread, true, CVAR_ARCHIVE)
@@ -41,7 +44,25 @@ extern bool singletics;
 extern bool advancedemo;
 extern gamestate_t wipegamestate;
 
+// [Doruk-Aksoy] Hold the game between two tics, for a test that draws one moment at several fractions.
+CVAR(Bool, fua_debug_holdtics, false, CVAR_FUA_DEV_MODE)
+// [Doruk-Aksoy] One tic let through the hold, for a test that holds each tic in turn.
+static int g_stepTics = 0;
+DEV_MODE_CCMD(fua_debug_steptic) { g_stepTics = 1; }
+
 namespace zx { namespace gameloop {
+
+int HoldTics(int due)
+{
+	const int run = ComputeHeldTics (fua_debug_holdtics, g_stepTics > 0, due);
+	if (fua_debug_holdtics && run > 0) g_stepTics = 0;
+	return run;
+}
+
+bool HoldingTics()
+{
+	return fua_debug_holdtics;
+}
 
 using namespace zx::handoff;
 
@@ -79,7 +100,12 @@ void PlaysimTic(bool drawn)
 	ZX_SEAM("tic/playsim", GameThread);
 	const int64_t start = zx::telemetry::NowNs ();
 	zx::frame::DebugPlaysimStall ();
-	G_TickerPlaysim ();
+	// [Kaori-Chani] features/net-snapshot: the ticker's cost for the client's ghostframe line, the
+	// playsim being the part of this tree's three-way G_Ticker the figure is about.
+	{
+		const zx::netsnapshot::CensusScope gtick( zx::netsnapshot::SNAPCENSUS_GTICKER );
+		G_TickerPlaysim ();
+	}
 	g_lastPlaysimNs.store (zx::telemetry::NowNs () - start, std::memory_order_relaxed);
 	// [rc4l] Found while the frames still draw, so the handoff takes only what changed.
 	if (drawn) zx::gamecopy::ScanAtTicEnd ();
@@ -107,7 +133,12 @@ void AfterTic(bool drawn)
 	MCP_SimTrace_TicDone ();
 	gametic++;
 	DrainEffects ();
-	NetUpdate ();	// check for new console commands
+	// [Kaori-Chani] features/net-snapshot: the per-tic NetUpdate, which the ghostframe line
+	// reports beside the parse so a client's send cost reads apart from its receive.
+	{
+		const zx::netsnapshot::CensusScope netupd( zx::netsnapshot::SNAPCENSUS_NETUPDATE );
+		NetUpdate ();	// check for new console commands
+	}
 	// [rc4l] The render copy of what this tic left, before any frame draws beside the next; a tic no frame draws leaves it to the next, which takes every change since.
 	if (drawn) zx::gamecopy::FillMap ();
 }
@@ -173,6 +204,10 @@ void FinishInFlight()
 
 bool GameThreadFrame()
 {
+	// [Kaori-Chani] Measured from here as well as from TryRunTics, which a threaded frame returns
+	// before reaching, so the report covers the loop a default client actually runs.
+	zx::ticpacing::Tick ((unsigned int)gametic);
+
 	if (TicInFlight ())
 	{
 		ServeAsks ();
@@ -191,7 +226,8 @@ bool GameThreadFrame()
 	if (!ThreadedNow ()) return false;
 
 	// [rc4l] The handoff: input and the clock, the catch-up tics that fit kInlineCatchUpMs inline, then the frame's view of the game and the next tic started; the rest wait for the game thread, a handoff each, with frames drawn beside them.
-	const int due = Net_TicsDue ();
+	// [Doruk-Aksoy] Fua_debug_holdtics runs no tic while frames go on, the last tic's motion kept, unlike a pause.
+	const int due = HoldTics (Net_TicsDue ());
 	ZX_COUNT ("handoff/backlog_tics", "tics", due);
 	const int inlineTics = ComputeInlineCatchUp (due - 1, g_lastPlaysimNs.load (std::memory_order_relaxed) / 1e6, kInlineCatchUpMs);
 	ZX_COUNT ("handoff/inline_catchup", "tics", inlineTics);

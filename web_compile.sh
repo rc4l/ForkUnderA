@@ -34,7 +34,11 @@ fi
 SYM_ARGS=( -DNO_STRIP=OFF "-DCMAKE_EXE_LINKER_FLAGS=" )
 if [ "${ZX_WITH_SYMBOLS:-0}" = "1" ]; then SYM_ARGS=( -DNO_STRIP=ON "-DCMAKE_EXE_LINKER_FLAGS=--profiling-funcs" ); fi
 
-cmake -S src/zandronum --preset web -DIMPORT_EXECUTABLES="$ROOT/$NATIVE_BUILD/ImportExecutables.cmake" "${SYM_ARGS[@]}"
+# [Doruk-Aksoy] Telemetry, seams and the dev-mode tools only in a test build (ZX_DIAGNOSTICS=1, which tools/web/check.mjs needs), OFF for the page players load.
+DIAG_ARGS=( -DFUA_DIAGNOSTICS=OFF )
+if [ "${ZX_DIAGNOSTICS:-0}" = "1" ]; then DIAG_ARGS=( -DFUA_DIAGNOSTICS=ON ); fi
+
+cmake -S src/zandronum --preset web -DIMPORT_EXECUTABLES="$ROOT/$NATIVE_BUILD/ImportExecutables.cmake" "${SYM_ARGS[@]}" "${DIAG_ARGS[@]}"
 # [rc4l] JOBS caps the compile, to leave the machine to something else running.
 cmake --build build-web ${JOBS:+-j "$JOBS"} ${ZX_KEEP_GOING:+-- -k 0}
 node tools/web/stage.mjs build-web dist-web

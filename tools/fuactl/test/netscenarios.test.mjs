@@ -216,17 +216,24 @@ test("devmode fails a client of a server without cheats that kept or ran a dev-m
   const closedHitbox = { joined: "false", set: { text: refused("cl_fua_hitbox"), value: "false" }, run: refused("fua_hitbox"), server: "true", flipped: "true" };
   const closedLinks = { joined: "true", set: { text: refused("fua_dg_lightlinks"), value: "true" }, run: refused("fua_light"), server: "false", flipped: "false" };
   const closedTexture = { joined: "true", set: { text: refused("gl_texture"), value: "true" }, run: "", server: "false", flipped: "false" };
-  assert.equal(judgeDevMode("MAP01 nocheats", false, [closed, closedHitbox, closedLinks, closedTexture]).failed, 0);
+  // [Kaori-Chani] features/net-snapshot: the module's two, each a client's own 1 over a default of 0.
+  const closedCensus = { joined: "false", set: { text: refused("fua_csnap_loopcensus"), value: "false" }, run: refused("fua_snap_verify"), server: "true", flipped: "true" };
+  const closedLate = { joined: "false", set: { text: refused("fua_csnap_debug_applylate"), value: "false" }, run: refused("fua_snap_sectorcheck"), server: "true", flipped: "true" };
+  assert.equal(judgeDevMode("MAP01 nocheats", false, [closed, closedHitbox, closedLinks, closedTexture, closedCensus, closedLate]).failed, 0);
   // [rc4l] What a build without the gate reads: the client keeps and uses every tool.
   const before = judgeDevMode("MAP01 nocheats", false, [
     { ...closed, joined: "false", set: { text: "", value: "false" }, run: "12 mesh pieces blanked\n" },
     { ...closedHitbox, joined: "true", set: { text: "", value: "true" }, run: "Hitbox overlay off.\n" },
     { ...closedLinks, joined: "false", set: { text: "", value: "false" }, run: "usage: fua_light <radius> [r g b] [dz]\n" },
-    { ...closedTexture, joined: "false", set: { text: "", value: "false" } }]);
+    { ...closedTexture, joined: "false", set: { text: "", value: "false" } },
+    { ...closedCensus, joined: "true", set: { text: "", value: "true" }, run: "Usage: fua_snap_verify <file.zsnap> [skew]\n" },
+    { ...closedLate, joined: "true", set: { text: "", value: "true" }, run: "usage: fua_snap_sectorcheck <tag>\n" }]);
   assert.equal(before.failed, 1);
   for (const want of [/own fua_mesh_sky 0 read false, not true/, /was not told fua_mesh_sky/, /fua_mesh_sky 0, fua_mesh_sky read false/, /fua_mesh_blank ran on a client/,
     /own cl_fua_hitbox 1 read true, not false/, /fua_hitbox ran on a client/, /own fua_dg_lightlinks 0 read false, not true/, /fua_light ran on a client/,
-    /own gl_texture 0 read false, not true/, /was not told gl_texture/]) assert.match(before.line, want);
+    /own gl_texture 0 read false, not true/, /was not told gl_texture/,
+    /own fua_csnap_loopcensus 1 read true, not false/, /fua_snap_verify ran on a client/,
+    /own fua_csnap_debug_applylate 1 read true, not false/, /fua_snap_sectorcheck ran on a client/]) assert.match(before.line, want);
   // [rc4l] A tool without a command is never judged on one.
   assert.doesNotMatch(before.line, /undefined/);
   assert.match(toolFaults(sky, false, { ...closed, server: "true", flipped: null }).join("; "), /server.s own console, fua_mesh_sky 0 read true.*cheats on, the client.s own fua_mesh_sky 0 read nothing, not false/);
@@ -234,7 +241,47 @@ test("devmode fails a client of a server without cheats that kept or ran a dev-m
   const openHitbox = { joined: "true", set: { text: "", value: "false" }, run: "Hitbox overlay on.\n", server: "true", flipped: "false" };
   const openLinks = { joined: "false", set: { text: "", value: "true" }, run: "usage: fua_light <radius> [r g b] [dz]\n", server: "false", flipped: "true" };
   const openTexture = { joined: "false", set: { text: "", value: "true" }, run: "", server: "false", flipped: "true" };
-  assert.equal(judgeDevMode("MAP01 cheats", true, [open, openHitbox, openLinks, openTexture]).failed, 0);
+  const openCensus = { joined: "true", set: { text: "", value: "false" }, run: "Usage: fua_snap_verify <file.zsnap> [skew]\n", server: "true", flipped: "false" };
+  const openLate = { joined: "true", set: { text: "", value: "false" }, run: "usage: fua_snap_sectorcheck <tag>\n", server: "true", flipped: "false" };
+  assert.equal(judgeDevMode("MAP01 cheats", true, [open, openHitbox, openLinks, openTexture, openCensus, openLate]).failed, 0);
   assert.match(toolFaults(sky, true, { ...open, set: { text: refused("fua_mesh_sky"), value: "false" }, run: refused("fua_mesh_blank") }).join("; "), /refused fua_mesh_sky with cheats on.*fua_mesh_blank did not run/);
   assert.match(toolFaults(hitbox, true, { ...openHitbox, flipped: "true" }).join("; "), /cheats off, the client.s own cl_fua_hitbox 1 read true, not false/);
+});
+
+test("netonetime's map has the one-time switch and lines, and its judges name each action a world lacks", async () => {
+  const { buildNetOneTimeWad, oneTimeFaults, worstBlock, SECTOR, AFTER, CONFIGS, PICTURE_FROM_Y } = await import("../scenarios/netonetime.mjs");
+  const lumps = readWad(buildNetOneTimeWad());
+  assert.deepEqual(lumps.map((l) => l.name), ["MAP01", "TEXTMAP", "ENDMAP"]);
+  const text = lumps[1].data.toString("latin1");
+  assert.equal((text.match(/playeruse = true;/g) || []).length, 1, "the switch");
+  assert.equal((text.match(/playercross = true;/g) || []).length, 2, "the door and platform lines");
+  assert.ok(!/repeatspecial/.test(text), "every action one-time");
+  assert.ok(CONFIGS.some((c) => c.observers) && CONFIGS.some((c) => c.gapMs) && CONFIGS.some((c) => c.survival) && CONFIGS.some((c) => c.players === 1 && !c.observers && !c.survival));
+  const at = (i, floor, ceiling) => ({ i, floor, ceiling });
+  const done = { sectors: [at(0, 0, 256), at(SECTOR.lower, AFTER.lowerFloor, 256), at(SECTOR.door, 0, 252), at(SECTOR.plat, AFTER.platFloor, 256)], sides: [{ mid: AFTER.switchTex }] };
+  assert.deepEqual(oneTimeFaults(done), []);
+  const start = { sectors: [at(0, 0, 256), at(SECTOR.lower, 64, 256), at(SECTOR.door, 0, 0), at(SECTOR.plat, 0, 256)], sides: [{ mid: "SW1STRTN" }] };
+  assert.equal(oneTimeFaults(start).length, 4);
+  // [Doruk-Aksoy] A block's worth of difference counts below the teammate panel's rows and not inside them.
+  const frame = (w, h, fill) => ({ w, h, channels: 3, data: Buffer.alloc(w * h * 3, fill) });
+  const a = frame(32, PICTURE_FROM_Y + 32, 0), b = frame(32, PICTURE_FROM_Y + 32, 0);
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) b.data.fill(90, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  assert.equal(worstBlock(a, b).d, 0, "the panel's rows are left out");
+  for (let y = PICTURE_FROM_Y; y < PICTURE_FROM_Y + 16; y++) for (let x = 16; x < 32; x++) b.data.fill(90, (y * 32 + x) * 3, (y * 32 + x) * 3 + 3);
+  assert.deepEqual(worstBlock(a, b), { d: 90, x: 16, y: PICTURE_FROM_Y });
+});
+
+test("singlereload judges each stage's pictures against the first and names a missing capture", async () => {
+  const { judgeStage } = await import("../scenarios/singlereload.mjs");
+  const { LOOK_ANGLES, PICTURE_FROM_Y } = await import("../scenarios/netonetime.mjs");
+  const frames = { same: { w: 16, h: PICTURE_FROM_Y + 16, channels: 3, data: Buffer.alloc(16 * (PICTURE_FROM_Y + 16) * 3, 10) } };
+  frames.moved = { ...frames.same, data: Buffer.alloc(frames.same.data.length, 200) };
+  const decode = (name) => frames[name];
+  const pass = judgeStage("stage", LOOK_ANGLES.map(() => "same"), LOOK_ANGLES.map(() => "same"), decode);
+  assert.equal(pass.failed, 0);
+  assert.ok(pass.lines.every((l) => l.startsWith("PASS stage")));
+  const fail = judgeStage("stage", LOOK_ANGLES.map(() => "same"), [null, "moved", "same"], decode);
+  assert.equal(fail.failed, 2);
+  assert.match(fail.lines[0], /^FAIL stage \d+: no capture$/);
+  assert.match(fail.lines[1], /drawn otherwise than the first time \(worst block 190\.0/);
 });

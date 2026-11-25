@@ -18,6 +18,7 @@
 // [BB] New #includes.
 #include "cl_demo.h"
 #include "sv_commands.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 // Include all the other Heretic stuff here to reduce compile time
 #include "a_chicken.cpp"

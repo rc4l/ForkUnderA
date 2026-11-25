@@ -48,7 +48,8 @@ export function judgeSkyPuffs(results) {
     .map((r) => `a rail into ${r.name} left ${r.after - r.before} of its puffs, not ${r.stays}`);
 }
 
-const countOf = async (c, cls) => ((await c.rpc("world.actors", {}))?.actors || []).filter((a) => a.c === cls).length;
+// [Doruk-Aksoy] The rail's endpoint puff has no network id (zandronum@7d12f80d spawns it untold), so actors without one count too.
+const countOf = async (c, cls) => ((await c.rpc("world.actors", { all: true }))?.actors || []).filter((a) => a.c === cls).length;
 
 export async function judgeLaunch(c, inst, label) {
   await cap.waitTics(c, 10);

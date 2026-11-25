@@ -79,6 +79,9 @@
 #include "gstrings.h"
 // [BB] new #includes.
 #include "deathmatch.h"
+#include "features/trnslate/trnslate.h"
+#include "features/trnslate/computation/trnslate_compute.h"
+#include "features/net-replication/actorstate.h"
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "invasion.h"
@@ -91,6 +94,8 @@
 #include "features/actorresize/actorresize.h"
 #include "features/spawnprojectile/computation/spawnprojectile_compute.h"
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] A_StartSound's flags as a channel
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -1350,10 +1355,12 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 				self->x += x;
 				self->y += y;
 				self->z += z;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the missile spawns
 				missile = P_SpawnMissileXYZ(self->x, self->y, self->z + 32*FRACUNIT, self, ref, ti, false);
 				self->x -= x;
 				self->y -= y;
 				self->z -= z;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 				break;
 
 			case 1:
@@ -1363,9 +1370,11 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 			case 2:
 				self->x += x;
 				self->y += y;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the missile spawns
 				missile = P_SpawnMissileAngleZSpeed(self, self->z + self->GetBobOffset() + SpawnHeight, ti, self->angle, 0, GetDefaultByType(ti)->Speed, self, false);
  				self->x -= x;
 				self->y -= y;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 
 				flags |= CMF_ABSOLUTEPITCH;
 
@@ -2366,6 +2375,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 			// but then change the angle again to ensure proper aim.
 			self->x += Spawnofs_XY * finecosine[self->angle];
 			self->y += Spawnofs_XY * finesine[self->angle];
+			zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the rail fires
 			Spawnofs_XY = 0;
 			self->angle = R_PointToAngle2 (self->x, self->y,
 											self->target->x - self->target->velx * 3,
@@ -2400,6 +2410,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 
 	self->x = saved_x;
 	self->y = saved_y;
+	zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 	self->angle = saved_angle;
 	self->pitch = saved_pitch;
 }
@@ -3359,6 +3370,41 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslucent)
 		SERVERCOMMANDS_SetThingProperty(self, APROP_RenderStyle);
 		SERVERCOMMANDS_SetThingProperty(self, APROP_Alpha);
 	}
+}
+
+//===========================================================================
+//
+// A_SetTranslation
+//
+// [Doruk-Aksoy] uzdoom@a505e910: a named translation, "" restoring the class's and an unknown name ignored.
+//
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslation)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_NAME(trname, 0);
+
+	// [Doruk-Aksoy] The server sets it and tells the clients, as Thing_SetTranslation does.
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	// [Doruk-Aksoy] DECORATE hands "" over as None, so None restores the class's translation here where UZDoom's clears it.
+	const int tnum = R_FindCustomTranslation(trname);
+	switch (zx::trnslate::ComputeSetTranslationOutcome(trname == NAME_None, tnum != INVALID_TRANSLATION))
+	{
+	case zx::trnslate::kSetTranslationDefault:
+		self->Translation = self->GetDefault()->Translation;
+		break;
+	case zx::trnslate::kSetTranslationFound:
+		self->Translation = tnum;
+		break;
+	default:
+		return;
+	}
+
+	if ( NETWORK_IsActorClientHandled( self ) == false )
+		zx::netreplication::SendThingTranslation( self );
 }
 
 //===========================================================================
@@ -4670,7 +4716,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Respawn)
 			AActor *pFog = Spawn<ATeleportFog> (self->x, self->y, self->z + TELEFOGHEIGHT, ALLOW_REPLACE);
 
 			// [BB] If we're the server, tell the clients to spawn the fog.
-			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		if (self->CountsAsKill())
@@ -6495,7 +6542,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 			if (!(Flags & TF_NOSRCFOG))
 			{
 				if (Flags & TF_USEACTORFOG)
-					P_SpawnTeleportFog(ref, prevX, prevY, prevZ, true, true);
+				{
+					// [Kaori-Chani] features/net-snapshot: this branch never sent its fog, and a
+					// gated client has no copy of ref to make one from.
+					AActor *pFog = P_SpawnTeleportFog(ref, prevX, prevY, prevZ, true, true);
+					zx::netsnapshot::ClientEffect( pFog, true );
+				}
 				else
 				{
 					fog1 = Spawn(FogType, prevX, prevY, prevZ, ALLOW_REPLACE);
@@ -6504,7 +6556,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 						fog1->target = ref;
 
 						// [rc4l] the server owns the spawn; clients only draw what they are told.
-						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+							&& ( zx::netsnapshot::ClientEffect( fog1, true ) == false ))
 							SERVERCOMMANDS_SpawnThing( fog1 );
 					}
 				}
@@ -6512,7 +6565,10 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 			if (!(Flags & TF_NODESTFOG))
 			{
 				if (Flags & TF_USEACTORFOG)
-					P_SpawnTeleportFog(ref, ref->x, ref->y, ref->z, false, true);
+				{
+					AActor *pFog = P_SpawnTeleportFog(ref, ref->x, ref->y, ref->z, false, true);
+					zx::netsnapshot::ClientEffect( pFog, true );
+				}
 				else
 				{
 					fog2 = Spawn(FogType, ref->x, ref->y, ref->z, ALLOW_REPLACE);
@@ -6520,7 +6576,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Teleport)
 					{
 						fog2->target = ref;
 
-						if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+							&& ( zx::netsnapshot::ClientEffect( fog2, true ) == false ))
 							SERVERCOMMANDS_SpawnThing( fog2 );
 					}
 				}

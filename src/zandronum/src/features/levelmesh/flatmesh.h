@@ -52,6 +52,13 @@ int MirrorViewOf(const int *path, int depth);
 void MirrorSteps(std::vector<int> &out);
 // [rc4l] Whether a sprite, model or decal GL draws now is captured: the player's walk's for the frame, a stacked view's or a line mirror's walk's for that pass alone.
 bool DynamicCaptureActive();
+// [Doruk-Aksoy] While it stands with `on`, a camera texture's view captures its own sprites, particles and decals, which its pass draws before the player's view clears them.
+struct CameraCapture
+{
+	explicit CameraCapture(bool on);
+	~CameraCapture();
+	bool saved;
+};
 // [rc4l] A particle handed to the backend this frame, for fua_particles.
 void CountParticle();
 

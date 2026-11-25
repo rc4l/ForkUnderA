@@ -390,6 +390,17 @@ void	SERVERCOMMANDS_SyncHexenArmorSlots( ULONG ulPlayer, ULONG ulPlayerExtra = M
 void	SERVERCOMMANDS_DoDoor( sector_t *pSector, DDoor::EVlDoor type, LONG lSpeed, LONG lDirection, LONG lLightTag, LONG lID, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_DestroyDoor( LONG lID, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 void	SERVERCOMMANDS_ChangeDoorDirection( LONG lID, LONG lDirection, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: `choice` is DDoor::DoorSound's 0-3; bCheckSequence
+// keeps a matching sequence playing.
+void	SERVERCOMMANDS_DoorSound( sector_t *pSector, int choice, bool bCheckSequence, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+
+// [Kaori-Chani] features/net-snapshot: a ceiling's or plat's sound keyed on the sector, the
+// one byte packed by SNAPSND_PACK.
+void	SERVERCOMMANDS_MoverSound( sector_t *pSector, int packed, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+
+// [Kaori-Chani] features/net-snapshot: the floor sound keyed on the sector, which the module
+// sends in place of SVC_STARTFLOORSOUND while the legacy mover gate is on.
+void	SERVERCOMMANDS_FloorSound( sector_t *pSector, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
 
 // Floor commands. Ditto.
 void	SERVERCOMMANDS_DoFloor( DFloor::EFloor Type, sector_t *pSector, LONG lDirection, LONG lSpeed, LONG lFloorDestDist, LONG Crush, bool Hexencrush, LONG lID, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
@@ -492,5 +503,27 @@ void	SERVERCOMMANDS_CloseMenu( const unsigned int player );
 void	SERVERCOMMANDS_StartConversation( AActor *npc, ULONG player, int nodenum, bool facetalker, bool saveangle );
 void	SERVERCOMMANDS_ConversationReply( ULONG player, int nodenum, int replynum );
 void	SERVERCOMMANDS_EndConversation( ULONG player );
+// [Kaori-Chani] features/net-snapshot: the snapshot stream a joiner is about to read: its map
+// stamp, reset count and position frame.
+void	SERVERCOMMANDS_SnapJoin( ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: tells a client whether the legacy mover commands are
+// stopped, and from which frame. Declared only: its body builds a ServerCommands class the
+// protocol spec generates, so the body arrives with that spec entry.
+void	SERVERCOMMANDS_SnapMoverGate( bool bLegacyOff, int frame, ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: the reset count beside the legacy destroy.
+void	SERVERCOMMANDS_SnapMapReset( int resetCount, ULONG ulPlayerExtra = MAXPLAYERS,
+			ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: the join state command's records, defined with the
+// command in network/servercommands.h.
+namespace ServerCommands { struct SnapScrollerState; struct SnapPusherState; }
+// [Kaori-Chani] features/net-snapshot: one chunk of the join's scroller and pusher state,
+// each array starting at the join ordinal beside it.
+void	SERVERCOMMANDS_SnapSpecialState( int firstScroller,
+			const TArray<struct ServerCommands::SnapScrollerState> &scrollers,
+			int firstPusher,
+			const TArray<struct ServerCommands::SnapPusherState> &pushers,
+			ULONG ulPlayerExtra = MAXPLAYERS, ServerCommandFlags flags = 0 );
+// [Kaori-Chani] features/net-snapshot: a body moved off the id reserved for its player.
+void	SERVERCOMMANDS_SetThingNetID( unsigned short oldID, unsigned short newID );
 
 #endif	// __SV_COMMANDS_H__

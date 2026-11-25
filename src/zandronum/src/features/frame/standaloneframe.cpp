@@ -4,6 +4,9 @@
 #include "features/frame/standaloneframe.h"
 #include "features/frame/computation/actorcull_compute.h"
 #include "features/frame/computation/cameraseen_compute.h"
+#include "features/frame/computation/ticstream_compute.h"
+#include "features/viewsetup/spriteview.h"     // [Doruk-Aksoy] the view's actor, which the tic stream leaves out
+#include "features/rendersettings/colormap.h"   // [Doruk-Aksoy] gl_fixedcolormap
 
 #include "features/levelmesh/staticmesh.h"     // [rc4l] DynClear
 #include "features/hitboxviz/hitboxviz.h"         // [rc4l] CollectBackendFrame
@@ -24,7 +27,7 @@
 #include "features/telemetry/telemetry.h"      // [Doruk-Aksoy] scene/actor_sweep
 
 #include "actor.h"
-#include "c_cvars.h"
+#include "c_cvars.h"   // [Doruk-Aksoy] CVarSetGeneration
 #include "dthinker.h"
 #include "p_effect.h"
 #include "po_man.h"
@@ -33,10 +36,12 @@
 #include "textures/textures.h"
 
 #include <algorithm>
+#include <cstdint>   // [Doruk-Aksoy] uintptr_t
 #include <vector>
 
 // [rc4l] Standalone walks the player's view without GL for its sky surfaces, the automap and the cull, as GL's walk serves GL; about 0.04 ms on wdiex02.
 CVAR(Bool, fua_vis_walk, true, CVAR_FUA_DEV_MODE)
+EXTERN_CVAR(Bool, fua_dg_gpusprites)
 EXTERN_CVAR(Bool, fua_sprite_check)
 EXTERN_CVAR(Bool, fua_shading_check)
 EXTERN_CVAR(Bool, gl_render_things)
@@ -65,15 +70,12 @@ std::vector<const zx::gamecopy::ActorRecord *> g_swept;
 // [Doruk-Aksoy] What the sweep makes of an actor: kept, or why it is left out.
 enum SweepVerdict { kSweepKept, kSweepNoSector, kSweepBehind, kSweepOffScreen, kSweepVerdicts };
 
-SweepVerdict VerdictOf(const zx::gamecopy::ActorRecord *thing, const float *mvp)
+// [Doruk-Aksoy] Read from the record's packed point (ComputeActorCullPoint), which holds the record's size and place as the test wants them.
+SweepVerdict VerdictOf(const zx::gamecopy::ActorCullPoint &point, const float *mvp)
 {
-	if (thing->Sector == NULL) return kSweepNoSector;
+	if (point.pad < 0.f) return kSweepNoSector;
 	if (mvp == NULL) return kSweepKept;
-	// [rc4l] Mesh space is (x, up, y), and the actor's size pads the test since a sprite is wider than the point it stands on.
-	// [Doruk-Aksoy] A model reaching past the radius pads it by its reach, or a big one went as its centre left the view.
-	const float pad = std::max(FIXED2FLOAT(thing->radius), thing->modelReach) + FIXED2FLOAT(thing->height) + 64.f;
-	const int cull = ComputeActorCull(mvp, FIXED2FLOAT(thing->x), FIXED2FLOAT(thing->z) + FIXED2FLOAT(thing->height) * 0.5f,
-		FIXED2FLOAT(thing->y), pad);
+	const int cull = ComputeActorCull(mvp, point.x, point.up, point.y, point.pad);
 	return cull == kActorBehind ? kSweepBehind : cull == kActorOffScreen ? kSweepOffScreen : kSweepKept;
 }
 
@@ -89,15 +91,21 @@ std::vector<zx::jobs::Padded<SweepChunk>> g_sweepChunks;
 const int kSweepChunk = 512;
 
 // [rc4l] The actors the frustum may hold, derived; taken from the thinker list, which is where they live, rather than found by a walk.
-void SweepActors()
+void SweepActors(bool ticStream, bool newTic)
 {
 	int verdicts[kSweepVerdicts] = {};
 	// [rc4l] Derived in one batch across the job pool unless a check compares them one at a time against GL.
 	const bool batch = !fua_sprite_check && !fua_shading_check;
 	g_swept.clear();
-	const float *mvp = zx::hwrender::SceneMVP();
+	// [Doruk-Aksoy] This view's own matrix, since SceneMVP is the backend's last frame's, or a camera texture's, until this frame records.
+	float viewMvp[16];
+	const float *mvp = zx::hwrender::ViewMVPNow(viewMvp) ? viewMvp : NULL;
 	int count;
 	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
+	int pointCount = 0;
+	const zx::gamecopy::ActorCullPoint *points = zx::gamecopy::ActorCullPoints(pointCount);
+	// [Doruk-Aksoy] The points are taken with the records, one each, so a fill always holds as many of both.
+	if (points == NULL || pointCount != count) count = 0;
 	{
 		ZX_ZONE("scene/actor_sweep");   // [Doruk-Aksoy] the actors culled against the view, before any is derived
 		if (batch && count > 0)
@@ -112,7 +120,7 @@ void SweepActors()
 				for (int &v : sc.verdicts) v = 0;
 				for (int i = lo; i < hi; i++)
 				{
-					const SweepVerdict v = VerdictOf(&records[i], mvp);
+					const SweepVerdict v = VerdictOf(points[i], mvp);
 					sc.verdicts[v]++;
 					if (v == kSweepKept) sc.kept.push_back(&records[i]);
 				}
@@ -128,14 +136,25 @@ void SweepActors()
 		else
 			for (int i = 0; i < count; i++)
 			{
-				const SweepVerdict v = VerdictOf(&records[i], mvp);
+				const SweepVerdict v = VerdictOf(points[i], mvp);
 				verdicts[v]++;
 				if (v != kSweepKept) continue;
 				if (batch) g_swept.push_back(&records[i]);
 				else zx::sprites::BuildSprite(records[i]);
 			}
 	}
-	if (!g_swept.empty()) zx::sprites::BuildSprites(&g_swept[0], (int)g_swept.size());
+	// [Doruk-Aksoy] The tic stream made when it is stale, and every frame shared out between it and the frame's.
+	if (ticStream)
+	{
+		const zx::gamecopy::ActorRecord *const *kept = g_swept.empty() ? NULL : &g_swept[0];
+		if (newTic)
+		{
+			zx::levelmesh::DynClearTic();
+			zx::sprites::BuildTicSprites(kept, (int)g_swept.size());
+		}
+		zx::sprites::SplitFrameSprites(kept, (int)g_swept.size());
+	}
+	else if (!g_swept.empty()) zx::sprites::BuildSprites(&g_swept[0], (int)g_swept.size());
 	zx::levelmesh::RecordSpriteSweep(count, verdicts[kSweepNoSector], verdicts[kSweepBehind], verdicts[kSweepOffScreen], verdicts[kSweepKept]);
 }
 
@@ -172,26 +191,35 @@ void StandaloneScene()
 	// [Doruk-Aksoy] The pool's workers sleep between frames, so they are woken here to spin into the walk's clip, the frame's first job, instead of waking ~13 us into it.
 	zx::jobs::Pool().Wake();
 	const zx::levelmesh::SceneScope scene;
+	// [Doruk-Aksoy] The tic stream (features/sprites), on the bindless path only; a camera texture's view keeps it, since its pass leaves it out, so only switching the path off drops it.
+	const bool ticEnabled = fua_dg_gpusprites && zx::hwrender::TicSpritesSupported() && !fua_sprite_check && !fua_shading_check;
+	const bool ticStream = ticEnabled && zx::levelmesh::PlayerWalkActive();
+	static TicStreamStamp ticBuilt;
+	static bool ticLive = false;
+	const TicStreamStamp ticNow = { zx::gamecopy::FillCount(), CVarSetGeneration(), (uintptr_t)zx::viewsetup::SpriteView().ViewActor(), (unsigned)gl_fixedcolormap };
+	const bool newTic = ticStream && ComputeTicStreamStale(ticLive, ticBuilt, ticNow);
+	if (!ticEnabled && ticLive) { zx::levelmesh::DynClearTic(); ticLive = false; }
+	if (newTic) { ticBuilt = ticNow; ticLive = true; }
 	// [rc4l] Last frame's sprites are dead the moment the camera moves, marks age on the frame clock, and a sector that moved has invalidated its cached geometry.
-	if (zx::levelmesh::PlayerWalkActive())
-	{
-		zx::levelmesh::DynClear();
-		zx::levelmesh::ClearSprites();
-	}
+	// [Doruk-Aksoy] A camera texture's view, which its pass draws at once, holds the stream alone: its own walk's particles and decals and its own sweep's actors, not the player's last frame.
+	const bool cameraView = !zx::levelmesh::PlayerWalkActive();
+	const zx::levelmesh::CameraCapture capture(cameraView);
+	zx::levelmesh::DynClear();
+	if (!cameraView) zx::levelmesh::ClearSprites();
 	zx::horizon::UpdateHorizons();
 	// [Doruk-Aksoy] The actors wider than their radius, before a stacked view's or mirror's walk hands its actors over.
 	zx::modelreach::PrepareWide();
 	// [rc4l] The walks first, so a sector or side that moved or relit is re-baked only once one of them reaches it.
 	const bool walked = fua_vis_walk && zx::levelmesh::PlayerWalkActive();
+	const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals, zx::sprites::BuildQueuedParticles };
 	if (walked)
 	{
-		const zx::visibility::WalkHooks hooks = { WalkParticles, PortalActor, zx::levelmesh::BuildWallDecals, zx::sprites::BuildQueuedParticles };
 		const zx::framephase::Scope walkPhase(zx::framephase::kPhaseWalk);
 		zx::visibility::WalkView(true, true, &hooks);
 		zx::visibility::WalkPortalViews(&hooks);
 	}
-	// [rc4l] A camera texture's view walks for its sky surfaces alone, so another sky than the level's shows on its screen.
-	else if (fua_vis_walk) zx::visibility::WalkCameraSky();
+	// [rc4l] A camera texture's view walks for its own sky surfaces, so another sky than the level's shows on its screen.
+	else if (fua_vis_walk) zx::visibility::WalkCameraView(&hooks);
 	zx::levelmesh::WalkedThisFrame walkedSet;
 	walkedSet.sectors = zx::visibility::SectorsWalkedThisFrame(walkedSet.sectorCount);
 	walkedSet.sides = zx::visibility::SidesWalkedThisFrame(walkedSet.sideCount);
@@ -205,9 +233,9 @@ void StandaloneScene()
 	if (zx::levelmesh::PlayerWalkActive()) zx::hitboxviz::CollectBackendFrame(camera, walkedSet.sectors, walkedSet.sectorCount);
 #endif
 	const zx::framephase::Scope actorsPhase(zx::framephase::kPhaseActors);
-	// [Doruk-Aksoy] What the walks reached, so a wide actor whose centre is in a map section out of view is still drawn from a sector under it.
-	zx::modelreach::MarkReached(walkedSet.sectors, walkedSet.sectorCount);
-	SweepActors();
+	// [Doruk-Aksoy] What the walks reached, so a wide actor whose centre is in a map section out of view is still drawn from a sector under it; a camera's walk marked its own.
+	if (!cameraView) zx::modelreach::MarkReached(walkedSet.sectors, walkedSet.sectorCount);
+	SweepActors(ticStream, newTic);
 }
 
 }} // namespace zx::frame

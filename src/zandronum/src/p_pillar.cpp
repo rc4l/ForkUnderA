@@ -41,6 +41,8 @@
 #include "r_data/r_interpolate.h"
 // [BC] New #includes.
 #include "cl_demo.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 #include "network.h"
 #include "sv_commands.h"
 
@@ -75,6 +77,10 @@ DPillar::DPillar(sector_t *sector)
 
 void DPillar::Destroy()
 {
+	// [Kaori-Chani] features/net-snapshot: the GONE, which also catches a pillar destroyed
+	// outside Tick, such as the map reset's loop.
+	SnapCapture( true );
+
 	if (m_Interp_Ceiling != NULL)
 	{
 		m_Interp_Ceiling->DelRef();
@@ -108,6 +114,9 @@ void DPillar::Serialize (FArchive &arc)
 void DPillar::UpdateToClient( ULONG ulClient )
 {
 	SERVERCOMMANDS_DoPillar( m_Type, m_Sector,(LONG)( m_FloorSpeed),(LONG)( m_CeilingSpeed),(LONG)( m_FloorTarget),(LONG)( m_CeilingTarget), m_Crush, m_Hexencrush, m_PillarID, ulClient, SVCF_ONLYTHISCLIENT );
+	// [Kaori-Chani] features/net-snapshot: this joiner's own copy of the sound the gated
+	// client_DoPillar would have started, to the same one client as the command above.
+	zx::netsnapshot::MoverSendPillarSound( m_Sector, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 // [BC]
@@ -207,18 +216,28 @@ void DPillar::Tick ()
 	int r, s;
 	fixed_t oldfloor, oldceiling;
 
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
+
 	oldfloor = m_Sector->floorplane.d;
 	oldceiling = m_Sector->ceilingplane.d;
 
+	// [Kaori-Chani] features/net-snapshot: each plane the server says stalled stays put, and
+	// a held move reads as ok so the pair below still agree.
+	bool bHoldFloor, bHoldCeiling;
+	zx::netsnapshot::MoverHeldPlanes( m_SnapBlocked, bHoldFloor, bHoldCeiling );
+
 	if (m_Type == pillarBuild)
 	{
-		r = MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, 1, m_Hexencrush);
-		s = MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, -1, m_Hexencrush);
+		r = bHoldFloor ? ok : MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, 1, m_Hexencrush);
+		s = bHoldCeiling ? ok
+			: MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, -1, m_Hexencrush);
 	}
 	else
 	{
-		r = MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, -1, m_Hexencrush);
-		s = MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, 1, m_Hexencrush);
+		r = bHoldFloor ? ok : MoveFloor (m_FloorSpeed, m_FloorTarget, m_Crush, -1, m_Hexencrush);
+		s = bHoldCeiling ? ok
+			: MoveCeiling (m_CeilingSpeed, m_CeilingTarget, m_Crush, 1, m_Hexencrush);
 	}
 
 	if (r == pastdest && s == pastdest)
@@ -232,8 +251,12 @@ void DPillar::Tick ()
 
 			// Also, since this sector has reached its destination, verify that all the clients
 			// have the correct floor/ceiling height for this sector.
-			SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-			SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			// [Kaori-Chani] features/net-snapshot: a record writes both planes.
+			if ( zx::netsnapshot::MoverServerStops( SNAPMV_PILLAR, true ) == false )
+			{
+				SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+				SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			}
 		}
 
 		// [RK] Destroy the pillar on the server/host end.
@@ -254,6 +277,16 @@ void DPillar::Tick ()
 			MoveCeiling (m_CeilingSpeed, oldceiling, -1, 1, m_Hexencrush);
 		}
 	}
+
+	// [Kaori-Chani] features/net-snapshot: stalled where the tic ended as it began, by
+	// plane rather than by result, since a revert above also reads as crushed.
+	m_SnapBlocked = zx::netsnapshot::MoverPlanesStalled( m_SnapBlocked,
+		( m_Sector->floorplane.d == oldfloor ) && ( oldfloor != m_FloorTarget ),
+		( m_Sector->ceilingplane.d == oldceiling ) && ( oldceiling != m_CeilingTarget ));
+
+	// [Kaori-Chani] features/net-snapshot: skipped once Destroy has taken the GONE.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
 }
 
 DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
@@ -347,6 +380,16 @@ DPillar::DPillar (sector_t *sector, EPillar type, fixed_t speed,
 	}
 }
 
+// [Kaori-Chani] features/net-snapshot: client_DoPillar's own sound, copied. It has no SeqName
+// branch, unlike the constructor above, so a gated client plays exactly what it played before.
+void P_PillarSoundSector (sector_t *sec)
+{
+	if (sec->seqType >= 0)
+		SN_StartSequence (sec, CHAN_FLOOR, sec->seqType, SEQ_PLATFORM, 0);
+	else
+		SN_StartSequence (sec, CHAN_FLOOR, "Floor", 0);
+}
+
 // [rc4l] uzdoom@c3c22315d -- a zero tag means "manual trigger": act on the activating line's
 // back sector instead of iterating tagged sectors.
 bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, fixed_t height,
@@ -389,7 +432,11 @@ bool EV_DoPillar (DPillar::EPillar type, line_t *line, int tag, fixed_t speed, f
 
 			// [BC] If we're the server, tell clients to create the pillar.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+			{
 				SERVERCOMMANDS_DoPillar( pPillar->GetType(), sec, pPillar->GetFloorSpeed(), pPillar->GetCeilingSpeed(), pPillar->GetFloorTarget(), pPillar->GetCeilingTarget(), pPillar->GetCrush(), pPillar->GetHexencrush(), pPillar->GetID() );
+				// [Kaori-Chani] features/net-snapshot: broadcast, as the command above is.
+				zx::netsnapshot::MoverSendPillarSound( sec );
+			}
 		}
 	}
 	return rtn;

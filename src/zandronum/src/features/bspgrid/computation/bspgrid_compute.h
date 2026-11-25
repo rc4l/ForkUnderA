@@ -29,5 +29,9 @@ void ComputeStartGrid(const std::vector<GridNode> &nodes, int root, int64_t minX
 int ComputeGridStart(const StartGrid &grid, int64_t x, int64_t y);
 // [Doruk-Aksoy] The subsector (-1 - its index) a walk from node `from` lands on.
 int ComputeWalk(const std::vector<GridNode> &nodes, int from, int64_t x, int64_t y);
+// [Doruk-Aksoy] The nodes in preorder from root (unreached ones after), so the few levels a walk takes from a grid start sit together; newIndex maps old indices to new.
+void ComputePreorder(const std::vector<GridNode> &nodes, int root, std::vector<GridNode> &out, std::vector<int> &newIndex);
+// [Doruk-Aksoy] A grid's node starts and root renumbered by newIndex; subsector starts stay.
+void ComputeRenumberGrid(StartGrid &grid, const std::vector<int> &newIndex);
 }} // namespace zx::bspgrid
 #endif // ZX_BSPGRID_COMPUTE_H

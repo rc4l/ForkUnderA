@@ -57,12 +57,9 @@ CVAR(Color, cl_fua_hitbox_blastcolor,  0xff0000, CVAR_ARCHIVE | CVAR_GLOBALCONFI
 // [MGOOOOOO] Server-side switch for the explosion feed. CVAR_SERVERINFO so a client can tell whether
 // the server is feeding it anything; NOSETBYACS because a mod must not be able to turn a debug
 // broadcast on.
-//
-// Defaults to ON. It only ever does anything while sv_cheats is also true (see ServerDebugActive),
-// and a cheats-enabled server is a test server by definition -- so making an admin opt in twice
-// just meant explosions silently never appeared online. This cvar remains as the bandwidth escape
-// hatch for a busy cheats-on server, not as the thing that enables the feature.
-CVAR(Bool, sv_debugexplosions, true, CVAR_SERVERINFO | CVAR_NOSETBYACS)
+// [Kaori-Chani] Off, since on every explosion is a reliable command to every client whether it
+// draws boxes or not, about 20 kB/s on a crowded map, so a cheats-on server opts in.
+CVAR(Bool, sv_debugexplosions, false, CVAR_SERVERINFO | CVAR_NOSETBYACS)
 
 namespace zx { namespace hitboxviz {
 

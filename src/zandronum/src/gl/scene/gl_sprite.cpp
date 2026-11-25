@@ -466,7 +466,10 @@ void GLSprite::SetSpriteColor(sector_t *sector, fixed_t center_y)
 void GLSprite::PerformSpriteClipAdjustment(AActor *thing, fixed_t thingx, fixed_t thingy, float spriteheight)
 {
 	bool smarterclip = false; // Set to true if one condition triggers the test below
-	if (((thing->player || thing->flags3&MF3_ISMONSTER ||
+	// [Kaori-Chani] features/net-snapshot: `player` is per-actor and a mirror pawn has none, so a
+	// remote player's mirror is clipped as a player by its class instead.
+	if (((thing->player || thing->IsKindOf(RUNTIME_CLASS(APlayerPawn)) ||
+		thing->flags3&MF3_ISMONSTER ||
 		thing->IsKindOf(RUNTIME_CLASS(AInventory))) && (thing->flags&MF_ICECORPSE ||
 		!(thing->flags&MF_CORPSE))) || (r_spriteclip == 3 && (smarterclip = true)) || r_spriteclip > 1)
 	{

@@ -47,6 +47,7 @@
 //-----------------------------------------------------------------------------
 
 #include "netcommand.h"
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the legacy command counter
 #include "features/net-protocol/commandcapture.h"   // [rc4l] fua_netcap
 #include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_netdrop
 
@@ -346,6 +347,11 @@ void NetCommand::sendCommandToOneClient( ULONG i )
 	// [rc4l] features/net-protocol: fua_netcap's record of every command a client is sent.
 	zx::netprotocol::CaptureCommand( static_cast<int>( i ), _unreliable == false, _buffer.pbData, static_cast<int>( _buffer.CalcSize( )));
 	writeCommandToStream( getBytestreamForClient( i ));
+
+	// [Kaori-Chani] features/net-snapshot: per command, per recipient, for the reclassify order.
+	zx::netsnapshot::CountLegacyCommand( _buffer.pbData[0],
+		( _buffer.ulCurrentSize > 1 ) ? _buffer.pbData[1] : 0, _buffer.ulCurrentSize,
+		_unreliable == false );
 }
 
 //*****************************************************************************
