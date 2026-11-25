@@ -98,12 +98,59 @@ add_custom_command(OUTPUT "${ZX_GEN_LISTS}"
 # [rc4l] features/sound-decoders: pcmdecode_compute.cpp calls the vendored decoders, built once here as in the engine, with their warnings off.
 set(ZX_SOUND_DECODERS "${ENGINE_SRC}/features/sound-decoders/vendor/decoders_vendor.cpp")
 set_source_files_properties("${ZX_SOUND_DECODERS}" PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}" "${ZX_GEN_LISTS}")
+# [Kaori-Chani] features/net-snapshot: the format layer's two engine-free .cpp files, which the
+# reference decode test reads recordings through. A .zsnap record is a zstd frame, so the vendored
+# single-file zstd is built in beside them as the engine builds it, with its warnings off.
+# [Kaori-Chani] The shared tic time base, built in here as well as into the game: this is the
+# only coverage its arithmetic gets on a platform nobody can run by hand, wasm32 above all.
+# [Kaori-Chani] The wait is a file per platform, as in the engine, so the tests take
+# whichever this build compiles and ask TIC_SleepWaits() what it does.
+if(EMSCRIPTEN)
+  set(ZX_TICTIME "${ENGINE_SRC}/i_tictime.cpp" "${ENGINE_SRC}/i_tictime_web.cpp")
+else()
+  set(ZX_TICTIME "${ENGINE_SRC}/i_tictime.cpp" "${ENGINE_SRC}/i_tictime_wait.cpp")
+endif()
+set(ZX_SNAPSHOT_FORMAT
+  "${ENGINE_SRC}/features/net-snapshot/stream.cpp"
+  "${ENGINE_SRC}/features/net-snapshot/recordread.cpp"
+  "${ZX_REPO_ROOT}/deps/zstd/zstd.c")
+# [Kaori-Chani] The decode dumper's body, shared by the reference test and the snap_dump tool
+# below, so neither can hold a copy that drifts from the other.
+set(ZX_SNAPSHOT_DUMP "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/snapdump.cpp")
+set_source_files_properties("${ZX_REPO_ROOT}/deps/zstd/zstd.c" PROPERTIES
+  COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+add_executable(zandrox_tests ${TEST_SOURCES} ${COMPUTE_SOURCES} "${ZX_SOUND_DECODERS}" ${ZX_TICTIME}
+  ${ZX_SNAPSHOT_FORMAT} ${ZX_SNAPSHOT_DUMP} "${ZX_GEN_LISTS}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/snapdump_test.cpp")
 # [Doruk-Aksoy] features/database: database_compute.cpp runs its SQL on the engine's own SQLite, built here from the same folder (which downloads it when missing).
 enable_language(C)
 add_subdirectory("${ENGINE_SRC}/../sqlite" "${CMAKE_CURRENT_BINARY_DIR}/sqlite")
-target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${ENGINE_SRC}/../sqlite" "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}" "${ENGINE_SRC}/../sqlite"
+  "${ZX_REPO_ROOT}/deps/zstd" "${CMAKE_CURRENT_BINARY_DIR}/generated"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(zandrox_tests PRIVATE GTest::gtest_main GTest::gmock sqlite3)
+# [Kaori-Chani] The wide snapshot reference ships beside its module, and a dump that differs is
+# written into the build folder, so the whole difference can be taken with any tool.
+if(EMSCRIPTEN)
+  # [Kaori-Chani] Under Emscripten there is no host file system to reach, so both paths are
+  # MEMFS ones: the reference is embedded at /testdata by the link options below, and /tmp is
+  # a writable directory Emscripten's runtime creates for itself. A dump that differs lands
+  # there rather than in the build folder, so on this one platform it is in the node
+  # process's memory and gone when it exits; the failure still names the first line that
+  # differs, which is what the assertion reports, and any other build gives the file.
+  target_compile_definitions(zandrox_tests PRIVATE
+    ZX_SNAPSHOT_TESTDATA="/testdata"
+    ZX_SNAPSHOT_TESTOUT="/tmp")
+else()
+  target_compile_definitions(zandrox_tests PRIVATE
+    ZX_SNAPSHOT_TESTDATA="${ENGINE_SRC}/features/net-snapshot/testdata"
+    ZX_SNAPSHOT_TESTOUT="${CMAKE_CURRENT_BINARY_DIR}")
+endif()
+# [MGOOOOOO] features/dtoa-lock: FString's float formatter, gdtoa, built as the engine builds it.
+add_subdirectory("${ENGINE_SRC}/../gdtoa" "${CMAKE_CURRENT_BINARY_DIR}/gdtoa")
+target_include_directories(zandrox_tests PRIVATE "${ENGINE_SRC}/../gdtoa" "${CMAKE_CURRENT_BINARY_DIR}/gdtoa")
+target_sources(zandrox_tests PRIVATE "${ENGINE_SRC}/features/dtoa-lock/dtoalock.cpp")
+target_link_libraries(zandrox_tests PRIVATE gdtoa)
 # [rc4l] This target is the portable one -- pure Compute* logic with no engine or platform deps -- so
 # it is the one a Windows dev can actually run before pushing. MSVC rejects -Wextra outright (D8021,
 # a hard error, not a warning), which silently made that impossible; /W4 is its equivalent. The
@@ -135,10 +182,23 @@ if(ZANDROX_TESTS_COVERAGE)
     -fprofile-instr-generate -fcoverage-mapping)
 endif()
 
-# [rc4l] The heap grows as the desktop's does, main runs on a worker so the job pool's threads can start while it waits, and the exit status is the tests' verdict; no test reads the disk, so the module keeps its in-memory file system.
+# [rc4l] The heap grows as the desktop's does, main runs on a worker so the job pool's threads can start while it waits, and the exit status is the tests' verdict.
+# [Kaori-Chani] "No test reads the disk" was true until the snapshot reference tests
+# arrived: they open ref-wide.csnap and write a dump beside it when it differs. The in-memory
+# file system stays -- the data goes into it instead. --embed-file puts the testdata folder
+# at /testdata inside the module (68 KB, one recording), which ZX_SNAPSHOT_TESTDATA names
+# above. Embedded rather than preloaded on purpose: an embedded file is there the moment main
+# runs, where a preloaded one needs the runtime's async fetch to have finished first, and
+# these tests are ordinary synchronous reads.
+#
+# [Kaori-Chani] These tests are NOT skipped on web, and that is the point: wasm32 is CI's
+# only 32-bit target, so the wide reference decoding byte for byte here is the strongest
+# check the 48.16 widening gets -- a fixed_t is eight bytes on every other platform in the
+# matrix, and a pointer is four here.
 if(EMSCRIPTEN)
   target_link_options(zandrox_tests PRIVATE "SHELL:-s ALLOW_MEMORY_GROWTH=1" "SHELL:-s EXIT_RUNTIME=1" "SHELL:-s STACK_SIZE=4MB"
-    "SHELL:-s PROXY_TO_PTHREAD=1" "SHELL:-s PTHREAD_POOL_SIZE=8")
+    "SHELL:-s PROXY_TO_PTHREAD=1" "SHELL:-s PTHREAD_POOL_SIZE=8"
+    "SHELL:--embed-file ${ENGINE_SRC}/features/net-snapshot/testdata@/testdata")
 endif()
 
 gtest_discover_tests(zandrox_tests)
@@ -259,3 +319,82 @@ if(NET_TEST_SOURCES AND NOT EMSCRIPTEN)
   endif()
   gtest_discover_tests(zandrox_tests_net)
 endif()
+
+# [Kaori-Chani] features/net-snapshot's decoder fuzzer. It stays a program of its own rather than
+# a test case: libFuzzer supplies its own main, the seeded mode takes a count, a seed and a corpus
+# folder, and the sanitizers it needs are build flags that would otherwise apply to the whole test
+# binary. It is also what writes ref-wide.csnap, so --wide-reference has to stay buildable here.
+option(ZANDROX_SNAP_FUZZ "Build the snapshot decoder fuzzer (GCC/Clang)" ON)
+option(ZANDROX_SNAP_FUZZ_LIBFUZZER "Build the snapshot fuzzer as a libFuzzer target (Clang)" OFF)
+if(ZANDROX_SNAP_FUZZ AND NOT MSVC)
+  add_executable(snap_fuzz
+    "${CMAKE_CURRENT_SOURCE_DIR}/snapfuzz/fuzz.cpp"
+    "${ENGINE_SRC}/features/net-snapshot/recordread.cpp"
+    "${ENGINE_SRC}/features/net-snapshot/stream.cpp"
+    "${ZX_REPO_ROOT}/deps/zstd/zstd.c")
+  target_include_directories(snap_fuzz PRIVATE "${ENGINE_SRC}" "${ZX_REPO_ROOT}/deps/zstd")
+  # [Kaori-Chani] The vendored zstd is always here, so the .zsnap container is fuzzed as well as
+  # the .csnap one, which the standalone build could only do where it found a system zstd.
+  target_compile_definitions(snap_fuzz PRIVATE SNAP_FUZZ_ZSNAP)
+  # [Kaori-Chani] A finding stops the run with a nonzero exit rather than being reported and
+  # walked past, which is what -fno-sanitize-recover=all is for.
+  if(ZANDROX_SNAP_FUZZ_LIBFUZZER)
+    target_compile_definitions(snap_fuzz PRIVATE SNAP_FUZZ_LIBFUZZER)
+    target_compile_options(snap_fuzz PRIVATE -O1 -g
+      -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
+    target_link_options(snap_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+  else()
+    target_compile_options(snap_fuzz PRIVATE -O1 -g
+      -fsanitize=address,undefined -fno-sanitize-recover=all)
+    target_link_options(snap_fuzz PRIVATE -fsanitize=address,undefined)
+  endif()
+
+  # [Kaori-Chani] Two short deterministic runs on every build, so the fuzzer is exercised rather
+  # than only ever run by hand; the long runs on both widths stay a gate someone runs themselves.
+  if(NOT ZANDROX_SNAP_FUZZ_LIBFUZZER)
+    add_test(NAME snap_fuzz_seeded COMMAND snap_fuzz 20000)
+    # [Kaori-Chani] The generator writes a fresh wide reference and reads it back, so the mode
+    # that makes new wide references is exercised end to end. It is not compared with the
+    # committed ref-wide.csnap: the generator draws one byte at a time from its stream, and a
+    # fixed_t is eight bytes here where it was four in the build that wrote that file, so no
+    # port can reproduce it byte for byte. The committed copy stays the reference, held to its
+    # dump by SnapshotRefDump.TheWideReferenceDecodesByteForByte.
+    add_test(NAME snap_fuzz_wide_reference COMMAND snap_fuzz --wide-reference
+      "${CMAKE_CURRENT_BINARY_DIR}/ref-wide.regenerated.csnap")
+  endif()
+endif()
+
+# [Kaori-Chani] snap_dump, the command line over that same dumper. The reference test decodes
+# the three recordings whose digests it knows; this decodes any recording, which is what makes a
+# new reference dump after a deliberate format change and what reads a recording when a later
+# layer goes wrong. It needs no sanitizer and no main of its own beyond argument handling, so
+# unlike snap_fuzz it builds everywhere, MSVC included.
+add_executable(snap_dump
+  "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/main.cpp"
+  ${ZX_SNAPSHOT_DUMP}
+  ${ZX_SNAPSHOT_FORMAT})
+target_include_directories(snap_dump PRIVATE "${ENGINE_SRC}" "${ZX_REPO_ROOT}/deps/zstd"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# [Kaori-Chani] The command line runs on every build, over the one reference that ships in the
+# repo. What the dump says is already held to its digest by
+# SnapshotRefDump.TheWideReferenceDecodesByteForByte, which calls the same SnapDumpWrite; this is
+# the argument handling around it, so the tool cannot quietly stop working between the steps that
+# need it.
+add_test(NAME snap_dump_wide_reference COMMAND snap_dump
+  "${ENGINE_SRC}/features/net-snapshot/testdata/ref-wide.csnap"
+  "${CMAKE_CURRENT_BINARY_DIR}/ref-wide.byhand.dump.txt")
+
+# [Kaori-Chani] And the two statuses a good recording never produces. The tool returns its result
+# as its exit code, so these pin the step the GoogleTests cannot reach: main()'s own mapping. Which
+# flavour of 2 a bad recording gets -- no container, a header that will not open, a record cut off
+# mid-payload -- is pinned by SnapshotDump in snapdump_test.cpp; what is checked here is that 1 and
+# 2 arrive at the shell as 1 and 2.
+add_test(NAME snap_dump_missing_file COMMAND "${CMAKE_COMMAND}"
+  -D "TOOL=$<TARGET_FILE:snap_dump>"
+  -D "IN=${CMAKE_CURRENT_BINARY_DIR}/no-such-recording.csnap"
+  -D WANT=1 -P "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/expect_exit.cmake")
+add_test(NAME snap_dump_not_a_recording COMMAND "${CMAKE_COMMAND}"
+  -D "TOOL=$<TARGET_FILE:snap_dump>"
+  -D "IN=${CMAKE_CURRENT_SOURCE_DIR}/snapdump/main.cpp"
+  -D WANT=2 -P "${CMAKE_CURRENT_SOURCE_DIR}/snapdump/expect_exit.cmake")

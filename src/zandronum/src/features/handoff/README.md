@@ -5,7 +5,8 @@ The line between the game and the main thread. Tics run on their own thread (`fu
 stretch between tics; everything else it draws comes from `features/gamecopy`'s copy, and everything a tic
 sends out goes through a queue. This folder is the low layer any feature may use; the loop is above it.
 
-- `seam.h`/`.cpp`: `ZX_SEAM("group/name", Owner)` declares a crossing once, and that one line checks the thread
+- `seam.h`/`.cpp`: in a diagnostics build (`FUA_DIAGNOSTICS`; a public build expands both macros to nothing),
+  `ZX_SEAM("group/name", Owner)` declares a crossing once, and that one line checks the thread
   entering it (`computation/handoff_compute`'s `ComputeOwnerAllows`), times it as a telemetry counter of the same
   name, records it as the seam the thread is in for a crash report and the hang watchdog, beats the thread's
   heartbeat, and under `fua_gamethread_stress <us>` (seeded by `fua_gamethread_stress_seed`) delays about one entry
@@ -55,6 +56,8 @@ sends out goes through a queue. This folder is the low layer any feature may use
   waits on the asker too, rethrowing what the call threw to the asker.
 - `computation/namelist_compute`: names compared without case, such as the font names the main thread found nothing
   for (`V_GetFont`'s `TicMissingFonts`), which a tic then answers itself instead of asking every tic.
+- `computation/lumpcache_compute`: when a lump's text kept from an asked read must be read again, as
+  `V_GetColorStringByName` keeps X11R6RGB so a tic's colour names ask the main thread once.
 
 Rules the boundary keeps are in `tools/boundary-rules.json`, checked by `tools/boundary_tripwire.py` against
 allowances in `tools/boundary-allow.json` that may only shrink; game code setting any variable a renderer header
@@ -125,9 +128,9 @@ Seams:
 
 Handed to the handoff, by helper:
 
-- `AskMainFor`: `p_acs.cpp`, `v_font.cpp`
+- `AskMainFor`: `botcommands.cpp`, `p_acs.cpp`, `v_font.cpp`, `v_video.cpp`
 - `QueuePrint`: `c_console.cpp`
-- `QueueUI`: `s_sound.cpp`
+- `QueueUI`: `g_game.cpp`, `s_sound.cpp`
 - `QueuedBesideTic`: `features/postprocess/postprocess.cpp`, `features/video-scale/videoscale.cpp`, `s_sound.cpp`
 - `QueuedForHandoff`: `am_map.cpp`, `c_console.cpp`, `features/music-cache/musiccache.cpp`, `menu/menu.cpp`, `r_data/r_translate.cpp`, `r_sky.cpp`, `r_utility.cpp`, `s_sound.cpp`
 - `RunOrQueue`: `features/wad-folders/zx_wadfolders.cpp`, `p_conversation.cpp`, `p_user.cpp`

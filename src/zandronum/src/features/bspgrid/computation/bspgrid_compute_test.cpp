@@ -8,6 +8,7 @@
 #include <climits>
 #include <cstdint>
 #include <vector>
+#include <cstddef>
 
 using namespace zx::bspgrid;
 
@@ -211,4 +212,64 @@ TEST(BspGridCompute, CellsAndInputsAreBounded)
 	EXPECT_TRUE(grid.start.empty());
 	ComputeStartGrid(nodes, -1, 0, 0, kUnit, kUnit, 22, 100, grid);
 	EXPECT_TRUE(grid.start.empty());
+}
+
+// [Doruk-Aksoy] The preorder copy, walked from its renumbered grid, lands on the subsector the original does from its root, and a front child sits right after its parent.
+TEST(BspGridCompute, PreorderCopyLandsWhereTheOriginalDoes)
+{
+	Rng rng = { 11 };
+	for (int tree = 0; tree < 40; tree++)
+	{
+		std::vector<GridNode> nodes;
+		int leaves = 0;
+		const int64_t x0 = rng.In(-30000, 0) * kUnit, y0 = rng.In(-30000, 0) * kUnit;
+		const int64_t x1 = x0 + rng.In(64, 30000) * kUnit, y1 = y0 + rng.In(64, 30000) * kUnit;
+		const int root = Build(nodes, rng, 4 + tree % 10, x0, y0, x1, y1, leaves);
+		if (root < 0) continue;
+		StartGrid grid;
+		ComputeStartGrid(nodes, root, x0, y0, x1, y1, 22, 1 << 14, grid);
+		std::vector<GridNode> pre;
+		std::vector<int> newIndex;
+		ComputePreorder(nodes, root, pre, newIndex);
+		ASSERT_EQ(pre.size(), nodes.size());
+		EXPECT_EQ(newIndex[(size_t)root], 0);
+		for (size_t i = 0; i < pre.size(); i++)
+			if (pre[i].child[0] >= 0) EXPECT_EQ(pre[i].child[0], (int)i + 1);
+		StartGrid renumbered = grid;
+		ComputeRenumberGrid(renumbered, newIndex);
+		EXPECT_EQ(renumbered.root, 0);
+		for (int i = 0; i < 4000; i++)
+		{
+			const int64_t x = rng.In(x0 - kUnit * 300, x1 + kUnit * 300), y = rng.In(y0 - kUnit * 300, y1 + kUnit * 300);
+			ASSERT_EQ(ComputeWalk(pre, ComputeGridStart(renumbered, x, y), x, y), ComputeWalk(nodes, root, x, y)) << "at " << x << "," << y;
+		}
+	}
+}
+
+// [Doruk-Aksoy] Nodes the root never reaches follow in their old order, a child two parents share is placed once, and with no root every node keeps its place.
+TEST(BspGridCompute, PreorderKeepsEveryNodeOnce)
+{
+	const std::vector<GridNode> nodes = {
+		{ 0, 0, kUnit, 0, { -1, -2 } },   // [Doruk-Aksoy] 0: shared by 2 and 3
+		{ 0, 0, kUnit, 0, { -3, -4 } },   // [Doruk-Aksoy] 1: unreached
+		{ 0, 0, kUnit, 0, { 0, -5 } },
+		{ 0, 0, 0, kUnit, { 2, 0 } },     // [Doruk-Aksoy] 3: root
+	};
+	std::vector<GridNode> pre;
+	std::vector<int> newIndex;
+	ComputePreorder(nodes, 3, pre, newIndex);
+	EXPECT_EQ(newIndex, (std::vector<int>{ 2, 3, 1, 0 }));
+	EXPECT_EQ(pre[0].child[0], 1);
+	EXPECT_EQ(pre[0].child[1], 2);
+	EXPECT_EQ(pre[1].child[0], 2);
+	EXPECT_EQ(pre[1].child[1], -5);
+	EXPECT_EQ(pre[3].child[0], -3) << "the unreached node keeps its subsector children";
+	ComputePreorder(nodes, -1, pre, newIndex);
+	EXPECT_EQ(newIndex, (std::vector<int>{ 0, 1, 2, 3 }));
+	StartGrid grid;
+	grid.root = -1;
+	grid.start = { 3, -2, 1 };
+	ComputeRenumberGrid(grid, std::vector<int>{ 2, 3, 1, 0 });
+	EXPECT_EQ(grid.root, -1) << "no root stays none";
+	EXPECT_EQ(grid.start, (std::vector<int>{ 0, -2, 3 }));
 }

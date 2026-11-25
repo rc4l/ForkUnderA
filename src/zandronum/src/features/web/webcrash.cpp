@@ -8,6 +8,7 @@
 #include "features/crashreport/zx_crashreport.h"
 #include "features/web/computation/crashcontext_compute.h"
 #include "features/telemetry/telemetry.h"
+#include "features/crash-summary/crashsummary.h" // [Doruk-Aksoy] the last minute, kept in every build
 #include "c_cvars.h"
 #include "c_console.h"
 #include "version.h"
@@ -42,7 +43,7 @@ static void TellPageTelemetry(const char *summary)
 	EM_ASM({ if (Module.fuaCrashReporter) Module.fuaCrashReporter.setTelemetry(UTF8ToString($0)); }, summary);
 }
 
-void ZX_CrashReportInit() { zx::telemetry::SetSummaryListener(TellPageTelemetry); }
+void ZX_CrashReportInit() { zx::crashsummary::SetListener(TellPageTelemetry); }
 void ZX_CrashReportShutdown() {}
 
 void ZX_CrashReportCheckPreviousCrash()

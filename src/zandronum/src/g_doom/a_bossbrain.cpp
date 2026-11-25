@@ -221,7 +221,8 @@ static void SpawnFly(AActor *self, const PClass *spawntype, FSoundID sound)
 	// [BC] If we're the server, spawn the fire, and tell clients to play the sound.
 	if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( fog ))
 	{
-		SERVERCOMMANDS_SpawnThing( fog );
+		if ( zx::netsnapshot::ClientEffect( fog, true ) == false )
+			SERVERCOMMANDS_SpawnThing( fog );
 		SERVERCOMMANDS_SoundPoint((LONG)( fog->x), (LONG)fog->y, (LONG)fog->z, CHAN_BODY, S_GetName( sound ), 1, ATTN_NORM );
 	}
 

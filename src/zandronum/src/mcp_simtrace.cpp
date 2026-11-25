@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace
 {
@@ -74,16 +75,18 @@ namespace
 		return zx::mcp::FnvMixU64( h, bits );
 	}
 
-	// [rc4l] Every random stream's place but the two the renderer advances once a frame, which vary with the frame rate: M_Random and every stream the sim and the HUD draw from.
+	// [rc4l] Every random stream's place but those the frames advance, which vary with the frame rate: M_Random and every stream the sim and the HUD draw from.
 	uint64_t RandomHash()
 	{
-		struct Fold { uint64_t h; DWORD skip[2]; } fold = { zx::mcp::FnvInit(), {
-			CalcCRC32( (const BYTE *)"TorchFlicker", 12 ), CalcCRC32( (const BYTE *)"ProjDecal", 9 ) } };
+		struct Fold { uint64_t h; std::vector<DWORD> skip; } fold = { zx::mcp::FnvInit(), {} };
+		for ( const std::string &name : zx::mcp::ComputeFrameRandomStreams() )
+			fold.skip.push_back( CalcCRC32( (const BYTE *)name.c_str(), (unsigned int)name.size() ) );
 		FRandom::StaticEnumStates( []( DWORD crc, unsigned int idx, DWORD u0, void *ctx )
 		{
 			Fold &f = *static_cast<Fold *>( ctx );
-			if ( crc != 0 && ( crc == f.skip[0] || crc == f.skip[1] ) )
-				return;
+			for ( DWORD s : f.skip )
+				if ( crc != 0 && crc == s )
+					return;
 			f.h = zx::mcp::FnvMixU64( f.h, crc );
 			f.h = zx::mcp::FnvMixU64( f.h, idx );
 			f.h = zx::mcp::FnvMixU64( f.h, u0 );

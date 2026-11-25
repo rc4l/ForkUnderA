@@ -62,6 +62,10 @@ public:
 	void Clear();
 	unsigned int StorePacket( const NETBUFFER_s& packet );
 	bool FindPacket( unsigned int packetNumber, const BYTE*& data, size_t& size ) const;
+	// [Kaori-Chani] features/net-snapshot: the next stored packet's number, every one below it
+	// having been sent, so a snapshot datagram can be dated before it goes. On the archive
+	// rather than on OutgoingPacketBuffer, since _sequenceNumber is this class's own.
+	unsigned int NextSequence() const { return _sequenceNumber; }
 
 private:
 	struct Record

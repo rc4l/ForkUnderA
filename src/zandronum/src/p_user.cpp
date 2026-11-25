@@ -2748,8 +2748,18 @@ DEFINE_ACTION_FUNCTION(AActor, A_CheckPlayerDone)
 
 void P_CheckPlayerSprite(AActor *actor, int &spritenum, fixed_t &scalex, fixed_t &scaley)
 {
-	player_t *player = actor->player;
+	P_CheckPlayerSpriteFor(actor, actor->player, spritenum, scalex, scaley);
+}
+
+// [Kaori-Chani] features/net-snapshot: for a stand-in with no player_t of its own, whose
+// skin is the one the wire named.
+void P_CheckPlayerSpriteFor(AActor *actor, player_t *player, int &spritenum, fixed_t &scalex,
+	fixed_t &scaley)
+{
 	int crouchspriteno;
+
+	if ( player == NULL )
+		return;
 
 	// [AK] Don't set the player's sprite if their current body doesn't match their class due to A_SkullPop.
 	if ( actor->IsKindOf( RUNTIME_CLASS( APlayerChunk )))

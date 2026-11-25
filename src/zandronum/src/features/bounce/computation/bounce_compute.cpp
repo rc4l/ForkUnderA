@@ -22,11 +22,13 @@ bool ComputeBouncesOffPlane(int bounceFlags, bool ceiling)
 	return (bounceFlags & (ceiling ? ZX_BOUNCE_Ceilings : ZX_BOUNCE_Floors)) != 0;
 }
 
-OnTop ComputeOnTopResult(bool bounced, bool isMissile)
+OnTop ComputeOnTopResult(bool bounced, bool isMissile, bool ripsThrough)
 {
 	if (bounced)
 		return OnTop::Bounced;
-	return isMissile ? OnTop::Explode : OnTop::Land;
+	if (!isMissile)
+		return OnTop::Land;
+	return ripsThrough ? OnTop::RipThrough : OnTop::Explode;
 }
 
 double ComputeHeadOn(double lineDx, double lineDy, double velX, double velY)

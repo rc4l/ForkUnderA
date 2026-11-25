@@ -13,6 +13,10 @@ void RunTic(bool drawn);
 
 // [rc4l] fua_gamethread's single-player frame: a tic's playsim started on the game thread, a frame drawn beside one in flight, or the one in flight taken back on its boundary; false when this frame runs inline instead.
 bool GameThreadFrame();
+// [Doruk-Aksoy] The tics of `due` a frame runs under fua_debug_holdtics, in either loop, a step asked for used up by the one it lets through.
+int HoldTics(int due);
+// [Doruk-Aksoy] Whether fua_debug_holdtics holds the game, so the inline loop runs no tic it would have waited for.
+bool HoldingTics();
 // [rc4l] Takes a tic in flight back, waiting for it, before a quit or anything else that needs the game.
 void FinishInFlight();
 // [rc4l] The tics run on the game thread and the frames beside one that held positions, since the start.

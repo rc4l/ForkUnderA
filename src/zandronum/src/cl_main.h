@@ -162,6 +162,9 @@ void				CLIENT_RequestSnapshot( void );
 bool				CLIENT_GetNextPacket( void );
 void				CLIENT_GetPackets( void );
 void				CLIENT_CheckForMissingPackets( void );
+// [Kaori-Chani] features/net-snapshot: reliable packets asked for past the highest received, read
+// and cleared together; declared only, since the counter it reads is a step 3 hook.
+unsigned int		CLIENT_TailPacketsRequested( bool bReset );
 bool				CLIENT_ReadPacketHeader( BYTESTREAM_s *pByteStream );
 void				CLIENT_ParsePacket( BYTESTREAM_s *pByteStream, bool bSequencedPacket );
 void				CLIENT_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream );
@@ -212,6 +215,20 @@ void				CLIENT_PREDICT_SetJumpTics( int tics );
 void				CLIENT_PREDICT_PlayerPredict( void );
 void				CLIENT_PREDICT_PlayerTeleported( void );
 bool				CLIENT_PREDICT_IsPredicting( void );
+
+// [Kaori-Chani] features/net-snapshot: the outcome of one local block, every refusal
+// named, so the counting lives with the report and the decision with its data.
+enum
+{
+	CLIENTLOCAL_APPLIED = 0,
+	CLIENTLOCAL_NOPAWN,
+	CLIENTLOCAL_OUTOFORDER,
+	CLIENTLOCAL_DEAD,
+	CLIENTLOCAL_SPECTATOR,
+};
+
+struct SnapLocalState;
+int					CLIENT_ApplyLocalBlock( const SnapLocalState &st, int gameTic );
 
 //*****************************************************************************
 //	EXTERNAL CONSOLE VARIABLES

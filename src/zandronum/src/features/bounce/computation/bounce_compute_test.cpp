@@ -62,10 +62,18 @@ TEST(ComputeBouncesOffPlane, EachPlaneItsOwnFlag)
 // [Doruk-Aksoy] Coming down on an actor it did not bounce off, a missile explodes and anything else lands, so neither hangs there.
 TEST(ComputeOnTopResult, NeverHangs)
 {
-	EXPECT_EQ(ComputeOnTopResult(true, true), OnTop::Bounced);
-	EXPECT_EQ(ComputeOnTopResult(true, false), OnTop::Bounced);
-	EXPECT_EQ(ComputeOnTopResult(false, true), OnTop::Explode);
-	EXPECT_EQ(ComputeOnTopResult(false, false), OnTop::Land);
+	EXPECT_EQ(ComputeOnTopResult(true, true, false), OnTop::Bounced);
+	EXPECT_EQ(ComputeOnTopResult(true, false, false), OnTop::Bounced);
+	EXPECT_EQ(ComputeOnTopResult(false, true, false), OnTop::Explode);
+	EXPECT_EQ(ComputeOnTopResult(false, false, false), OnTop::Land);
+}
+
+// [MGOOOOOO] A ripper that did not bounce off what it came down on rips on through it, where any other missile explodes.
+TEST(ComputeOnTopResult, RipperRipsThrough)
+{
+	EXPECT_EQ(ComputeOnTopResult(false, true, true), OnTop::RipThrough);
+	EXPECT_EQ(ComputeOnTopResult(true, true, true), OnTop::Bounced);
+	EXPECT_EQ(ComputeOnTopResult(false, false, true), OnTop::Land);
 }
 
 // [Doruk-Aksoy] Only a server-owned bouncing missile; the client's own missiles and non-bouncing ones keep their rules.

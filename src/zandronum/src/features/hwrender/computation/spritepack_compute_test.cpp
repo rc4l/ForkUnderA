@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstring>
 #include <functional>
 
@@ -134,4 +135,100 @@ TEST(ComputeSpriteRef, TheTopBitTellsACornerFromAVertex)
 	EXPECT_EQ(0x80000000u, ComputeSpriteRef(0, 0));
 	EXPECT_EQ(5u, ComputeGeneralRef(5));
 	EXPECT_EQ(0x7fffffffu, ComputeGeneralRef(0xffffffffu));
+}
+
+namespace {
+
+// [Doruk-Aksoy] A 32-wide, 56-tall quad facing a view down +y (perpendicular +x), standing at (100, 0, 200) in scene x, height, map y.
+void TicQuad(SpriteCorner c[4])
+{
+	c[0] = { 84.f, 56.f, 200.f, 0.f, 0.f };
+	c[1] = { 116.f, 56.f, 200.f, 1.f, 0.f };
+	c[2] = { 84.f, 0.f, 200.f, 0.f, 1.f };
+	c[3] = { 116.f, 0.f, 200.f, 1.f, 1.f };
+}
+
+SpriteMotion Moving(bool xy) { return SpriteMotion{ 100.f, 200.f, 1.f, 0.f, 8.f, 4.f, -16.f, xy }; }
+
+} // namespace
+
+TEST(SpriteMotionCorners, AtTheTicsEndFromTheTicsViewTheyStandAsStored)
+{
+	SpriteCorner in[4], out[4];
+	TicQuad(in);
+	ComputeSpriteMotionCorners(in, Moving(false), 1.f, 1.f, 0.f, 30.f, out);
+	for (int k = 0; k < 4; k++)
+	{
+		EXPECT_FLOAT_EQ(in[k].x, out[k].x);
+		EXPECT_FLOAT_EQ(in[k].y, out[k].y);
+		EXPECT_FLOAT_EQ(in[k].z, out[k].z);
+		EXPECT_EQ(in[k].u, out[k].u);
+		EXPECT_EQ(in[k].v, out[k].v);
+	}
+}
+
+TEST(SpriteMotionCorners, AtTheTicsStartTheWholeMoveIsTakenBack)
+{
+	SpriteCorner in[4], out[4];
+	TicQuad(in);
+	ComputeSpriteMotionCorners(in, Moving(false), 0.f, 1.f, 0.f, 0.f, out);
+	EXPECT_FLOAT_EQ(76.f, out[0].x);
+	EXPECT_FLOAT_EQ(52.f, out[0].y);
+	EXPECT_FLOAT_EQ(216.f, out[0].z);
+	EXPECT_FLOAT_EQ(108.f, out[3].x);
+	EXPECT_FLOAT_EQ(-4.f, out[3].y);
+	// [Doruk-Aksoy] Half way, half of it.
+	ComputeSpriteMotionCorners(in, Moving(false), 0.5f, 1.f, 0.f, 0.f, out);
+	EXPECT_FLOAT_EQ(80.f, out[0].x);
+	EXPECT_FLOAT_EQ(208.f, out[0].z);
+}
+
+TEST(SpriteMotionCorners, AViewTurnedAQuarterTurnsTheQuadAboutItsCentre)
+{
+	SpriteCorner in[4], out[4];
+	TicQuad(in);
+	// [Doruk-Aksoy] The view now looks down -x, so the perpendicular is +y on the map (scene z).
+	ComputeSpriteMotionCorners(in, Moving(false), 1.f, 0.f, 1.f, 0.f, out);
+	EXPECT_FLOAT_EQ(100.f, out[0].x);
+	EXPECT_FLOAT_EQ(184.f, out[0].z);
+	EXPECT_FLOAT_EQ(100.f, out[1].x);
+	EXPECT_FLOAT_EQ(216.f, out[1].z);
+	EXPECT_FLOAT_EQ(56.f, out[1].y);
+}
+
+TEST(SpriteMotionCorners, AnXYBillboardLeansBackByThePitchAboutItsMiddle)
+{
+	SpriteCorner in[4], out[4];
+	TicQuad(in);
+	// [Doruk-Aksoy] Level, nothing turns.
+	ComputeSpriteMotionCorners(in, Moving(true), 1.f, 1.f, 0.f, 0.f, out);
+	for (int k = 0; k < 4; k++) { EXPECT_NEAR(in[k].x, out[k].x, 1e-4f); EXPECT_NEAR(in[k].y, out[k].y, 1e-4f); EXPECT_NEAR(in[k].z, out[k].z, 1e-4f); }
+	// [Doruk-Aksoy] Pitched 90 degrees the quad lies flat: its top edge swings onto the map about the middle (100, 28, 200), keeping its x.
+	ComputeSpriteMotionCorners(in, Moving(true), 1.f, 1.f, 0.f, 90.f, out);
+	EXPECT_NEAR(84.f, out[0].x, 1e-4f);
+	EXPECT_NEAR(28.f, out[0].y, 1e-4f);
+	EXPECT_NEAR(172.f, out[0].z, 1e-4f);
+	EXPECT_NEAR(28.f, out[2].y, 1e-4f);
+	EXPECT_NEAR(228.f, out[2].z, 1e-4f);
+}
+
+TEST(SpriteMotionCorners, TheCosineFormMatchesThePitchForm)
+{
+	SpriteCorner in[4], a[4], b[4];
+	TicQuad(in);
+	const float pitch = 23.5f, ang = -pitch * 3.14159265358979323846f / 180.f;
+	ComputeSpriteMotionCorners(in, Moving(true), 0.25f, 0.6f, 0.8f, pitch, a);
+	ComputeSpriteMotionCornersCS(in, Moving(true), 0.25f, 0.6f, 0.8f, std::cos(ang), std::sin(ang), b);
+	for (int k = 0; k < 4; k++) { EXPECT_EQ(a[k].x, b[k].x); EXPECT_EQ(a[k].y, b[k].y); EXPECT_EQ(a[k].z, b[k].z); }
+}
+
+// [Doruk-Aksoy] The player's pass draws every run; a camera's pass only the runs behind the tic stream's.
+TEST(PassDrawsRun, ACameraPassLeavesOutTheTicStream)
+{
+	EXPECT_TRUE(ComputePassDrawsRun(0, 3, false));
+	EXPECT_TRUE(ComputePassDrawsRun(2, 3, false));
+	EXPECT_FALSE(ComputePassDrawsRun(0, 3, true));
+	EXPECT_FALSE(ComputePassDrawsRun(2, 3, true));
+	EXPECT_TRUE(ComputePassDrawsRun(3, 3, true));
+	EXPECT_TRUE(ComputePassDrawsRun(0, 0, true));
 }

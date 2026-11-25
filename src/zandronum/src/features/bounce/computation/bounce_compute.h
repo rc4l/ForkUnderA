@@ -20,8 +20,9 @@ bool ComputeTriesWallBounce(int bounceFlags);
 bool ComputeBouncesOffPlane(int bounceFlags, bool ceiling);
 
 // [Doruk-Aksoy] What an actor coming down on another does: it bounced, or a missile explodes on it, or anything else lands on it.
-enum class OnTop { Bounced, Explode, Land };
-OnTop ComputeOnTopResult(bool bounced, bool isMissile);
+// [MGOOOOOO] A ripper that can rip the actor it comes down on rips on through it (RipThrough: nothing happens), as Zandronum leaves it and as it rips one it hits side-on.
+enum class OnTop { Bounced, Explode, Land, RipThrough };
+OnTop ComputeOnTopResult(bool bounced, bool isMissile, bool ripsThrough);
 
 // [Doruk-Aksoy] Whether a client leaves a missile's actor collisions to the server: a bouncer it does not own, whose every bounce off and hit on an actor the server sends with its position.
 bool ComputeClientLeavesActorsToServer(bool serverOwned, bool isMissile, int bounceFlags);

@@ -3,6 +3,7 @@
 
 #include "features/framephase/framephase.h"
 #include "features/telemetry/telemetry.h"
+#include "features/crash-summary/crashsummary.h" // [Doruk-Aksoy] the crash report's last minute, in every build
 
 #include <chrono>
 #include <string>
@@ -57,6 +58,7 @@ void FrameBoundary()
 		g_lastStart[p] = g_nowStart[p]; g_nowStart[p] = 0;
 	}
 	zx::telemetry::FrameMark();
+	zx::crashsummary::NoteFrame();
 }
 
 const float *LastFramePhases()

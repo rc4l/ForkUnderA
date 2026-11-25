@@ -48,6 +48,10 @@ enum
 // projectile behave exactly as if the victim had +DONTRIP.
 bool ComputeRipLevelAllows(int ripperLevel, int victimLevelMin, int victimLevelMax);
 
+// [MGOOOOOO] Whether a missile rips a victim it touches instead of stopping on it: +RIPPER, a victim without +DONTRIP, inside the level window, and no boss to a +NOBOSSRIP ripper.
+bool ComputeRipsThrough(bool ripper, bool victimDontRip, int ripperLevel, int victimLevelMin, int victimLevelMax,
+	bool noBossRip, bool victimBoss);
+
 // The projectile's DECORATE-authored budget. All-zero (the default) means unlimited.
 struct FRipLimits
 {

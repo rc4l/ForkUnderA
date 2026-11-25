@@ -29,6 +29,17 @@ void BuildSprite(const zx::gamecopy::ActorRecord &thing);
 // [rc4l] BuildSprite for `count` actors, in that order: sprites derived on the job pool and appended in turn, models and a sprite whose material is not made yet on the main thread; not for the checks, which compare one actor at a time.
 void BuildSprites(const zx::gamecopy::ActorRecord *const *things, int count);
 
+// [Doruk-Aksoy] The tic stream made from this frame's swept actors, those the shader draws as the CPU would for the whole tic.
+void BuildTicSprites(const zx::gamecopy::ActorRecord *const *things, int count);
+// [Doruk-Aksoy] Each frame, the swept actors whose tic piece still holds shown from it, every other one derived into the frame's stream as BuildSprites does.
+void SplitFrameSprites(const zx::gamecopy::ActorRecord *const *things, int count);
+// [Doruk-Aksoy] The last split's tic pieces shown and actors derived for the frame.
+void LastTicSplit(int &shown, int &frameDerived);
+// [Doruk-Aksoy] The last tic derive's actors left out, by reason: never drawn this tic, not drawn here, player or bob, model, shape, sector, actor shader, clip, glow, shadow or fog layer, lane, pieces.
+void LastTicWhy(int out[12]);
+// [Doruk-Aksoy] How many times the tic stream was made since the last call, which a test holds to the tics run.
+unsigned TakeTicBuilds();
+
 // [Doruk-Aksoy] A particle in `sector` (as GL's walk sees it) held for BuildQueuedParticles, in the order the walk reached it.
 void QueueParticle(particle_t *particle, const void *who, sector_t *sector);
 

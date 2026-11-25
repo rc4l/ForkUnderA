@@ -149,6 +149,9 @@ struct ClassReg
 
 enum EInPlace { EC_InPlace };
 
+// [Doruk-Aksoy] The alignment of every DObject block, one cache line, so an actor's fields fall on the same lines in every actor.
+#define ZX_OBJECT_ALIGN 64
+
 #define DECLARE_ABSTRACT_CLASS(cls,parent) \
 public: \
 	static PClass _StaticType; \

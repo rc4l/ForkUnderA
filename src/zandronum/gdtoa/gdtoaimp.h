@@ -524,10 +524,16 @@ extern double rnd_prod(double, double), rnd_quot(double, double);
 #define ALL_ON 0xffff
 #endif
 
-//#ifndef MULTIPLE_THREADS
+/* [MGOOOOOO] The game thread formats numbers beside the main thread, so the two locks are real ones (features/dtoa-lock). */
+#ifdef MULTIPLE_THREADS
+ extern void fua_dtoa_lock ANSI((int));
+ extern void fua_dtoa_unlock ANSI((int));
+#define ACQUIRE_DTOA_LOCK(n)	fua_dtoa_lock(n)
+#define FREE_DTOA_LOCK(n)	fua_dtoa_unlock(n)
+#else
 #define ACQUIRE_DTOA_LOCK(n)	/*nothing*/
 #define FREE_DTOA_LOCK(n)	/*nothing*/
-//#endif
+#endif
 
 #define Kmax 9
 

@@ -39,6 +39,8 @@
 #include "r_data/r_interpolate.h"
 // [BB] New #includes.
 #include "cl_demo.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 #include "network.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
@@ -63,7 +65,7 @@ inline FArchive &operator<< (FArchive &arc, DFloor::EFloor &type)
 //
 //==========================================================================
 
-static void StartFloorSound (sector_t *sec)
+void P_FloorSoundSector (sector_t *sec)
 {
 	if (sec->seqType >= 0)
 	{
@@ -171,6 +173,9 @@ void DFloor::Tick ()
 {
 	EResult res;
 
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
+
 	// [RH] Handle resetting stairs
 	if (m_Type == buildStair || m_Type == waitStair)
 	{
@@ -201,7 +206,17 @@ void DFloor::Tick ()
 	if (m_Type == waitStair)
 		return;
 
+	// [Kaori-Chani] features/net-snapshot: a plane the server says stalled stays put.
+	if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+		return;
+
+	const fixed_t snapWas = m_Sector->floorplane.d;
 	res = MoveFloor (m_Speed, m_FloorDestDist, m_Crush, m_Direction, m_Hexencrush);
+
+	// [Kaori-Chani] features/net-snapshot: stalled is crushed with the plane unmoved, since
+	// a Doom crush moves on regardless.
+	m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked,
+		( res == crushed ) && ( m_Sector->floorplane.d == snapWas ));
 
 	// [BC] If we're in client mode, just move the floor and get out. The server will
 	// tell us when it stops.
@@ -216,10 +231,14 @@ void DFloor::Tick ()
 		// have the correct floor/ceiling height for this sector.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			if ( m_Sector->floorOrCeiling == 0 )
-				SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-			else
-				SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+			if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR, true ) == false )
+			{
+				if ( m_Sector->floorOrCeiling == 0 )
+					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+				else
+					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			}
 		}
 
 		// [BC] If we're the server, tell clients to stop the floor's sound sequence.
@@ -323,6 +342,19 @@ void DFloor::Tick ()
 			Destroy ();
 		}
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the state the tic ended in, unless a Destroy
+	// above captured the GONE already.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
+}
+
+// [Kaori-Chani] features/net-snapshot: the GONE, and the only hook that catches a floor
+// destroyed outside Tick, such as the map reset's loop.
+void DFloor::Destroy ()
+{
+	SnapCapture( true );
+	Super::Destroy();
 }
 
 //==========================================================================
@@ -337,7 +369,8 @@ void DFloor::UpdateToClient( ULONG ulClient )
 		SERVERCOMMANDS_DoFloor( m_Type, m_Sector, m_Direction,(LONG)( m_Speed),(LONG)( m_FloorDestDist), m_Crush, m_Hexencrush, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
 	else
 		SERVERCOMMANDS_BuildStair( m_Type, m_Sector, m_Direction, m_Speed, m_FloorDestDist, m_Crush, m_Hexencrush, m_ResetCount, m_Delay, m_PauseTime, m_StepTime, m_PerStepTime, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
-	SERVERCOMMANDS_StartFloorSound( m_FloorID );
+	// [Kaori-Chani] features/net-snapshot: one of the two sound commands, never both.
+	zx::netsnapshot::MoverSendFloorSound( m_Sector, m_FloorID, ulClient, SVCF_ONLYTHISCLIENT );
 }
 
 void DFloor::SetFloorChangeType (sector_t *sec, int change)
@@ -368,7 +401,7 @@ void DFloor::SetFloorChangeType (sector_t *sec, int change)
 
 void DFloor::StartFloorSound ()
 {
-	::StartFloorSound (m_Sector);
+	P_FloorSoundSector (m_Sector);
 }
 
 //==========================================================================
@@ -743,7 +776,7 @@ bool EV_DoFloor (DFloor::EFloor floortype, line_t *line, int tag,
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
 			SERVERCOMMANDS_DoFloor( floortype, &sectors[secnum], floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
-			SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+			zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 		}
 
 		// Do not interpolate instant movement floors.
@@ -827,10 +860,14 @@ bool EV_FloorCrushStop (int tag)
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( sec->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( sec - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( sec - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_FLOOR, true ) == false )
+				{
+					if ( sec->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( sec - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( sec - sectors ));
+				}
 			}
 
 			// [BC] If we're the server, tell clients to stop the floor's sound sequence.
@@ -1050,7 +1087,7 @@ bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
 				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 				{
 					SERVERCOMMANDS_BuildStair( floor->m_Type, &sectors[secnum], floor->m_Direction, floor->m_Speed, floor->m_FloorDestDist, floor->m_Crush, floor->m_Hexencrush, floor->m_ResetCount, floor->m_Delay, floor->m_PauseTime, floor->m_StepTime, floor->m_PerStepTime, floor->m_FloorID );
-					SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+					zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 				}
 			}
 		} while (ok);
@@ -1127,7 +1164,7 @@ bool EV_DoDonut (int tag, line_t *line, fixed_t pillarspeed, fixed_t slimespeed)
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
-				SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+				zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 			}
 
 			//	Spawn lowering donut-hole
@@ -1150,7 +1187,7 @@ bool EV_DoDonut (int tag, line_t *line, fixed_t pillarspeed, fixed_t slimespeed)
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_DoFloor( floor->m_Type, floor->m_Sector, floor->m_Direction,(LONG)( floor->m_Speed),(LONG)( floor->m_FloorDestDist), floor->m_Crush, floor->m_Hexencrush, floor->m_FloorID );
-				SERVERCOMMANDS_StartFloorSound( floor->m_FloorID );
+				zx::netsnapshot::MoverSendFloorSound( floor->m_Sector, floor->m_FloorID );
 			}
 
 			break;
@@ -1215,6 +1252,10 @@ void DElevator::Serialize (FArchive &arc)
 
 void DElevator::Destroy()
 {
+	// [Kaori-Chani] features/net-snapshot: the GONE, which also catches an elevator
+	// destroyed outside Tick, such as the map reset's loop.
+	SnapCapture( true );
+
 	if (m_Interp_Ceiling != NULL)
 	{
 		m_Interp_Ceiling->DelRef();
@@ -1249,6 +1290,14 @@ void DElevator::Tick ()
 
 	fixed_t oldfloor, oldceiling;
 
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
+
+	// [Kaori-Chani] features/net-snapshot: an elevator moves both planes together and
+	// reverses one if the other is crushed, so its record carries a single stall.
+	if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+		return;
+
 	oldfloor = m_Sector->floorplane.d;
 	oldceiling = m_Sector->ceilingplane.d;
 
@@ -1277,6 +1326,10 @@ void DElevator::Tick ()
 		}
 	}
 
+	// [Kaori-Chani] features/net-snapshot: a stall rather than a reversal, and here rather
+	// than at the tail, which the branch below may reach with this elevator destroyed.
+	m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, res == crushed );
+
 	// [BC] This is all we need to do in client mode.
 	if ( NETWORK_InClientMode() )
 	{
@@ -1289,8 +1342,12 @@ void DElevator::Tick ()
 		// have the correct floor/ceiling height for this sector.
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
-			SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-			SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			// [Kaori-Chani] features/net-snapshot: a record writes both planes.
+			if ( zx::netsnapshot::MoverServerStops( SNAPMV_ELEVATOR, true ) == false )
+			{
+				SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+				SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+			}
 		}
 
 		// [BC] If we're the server, tell clients to play the elevator sound, and then
@@ -1308,6 +1365,10 @@ void DElevator::Tick ()
 		m_Sector->ceilingdata = NULL;	//jff 2/22/98
 		Destroy ();		// remove elevator from actives
 	}
+
+	// [Kaori-Chani] features/net-snapshot: skipped once Destroy has taken the GONE.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
 }
 
 //==========================================================================
@@ -1318,7 +1379,7 @@ void DElevator::Tick ()
 
 void DElevator::StartFloorSound ()
 {
-	::StartFloorSound (m_Sector);
+	P_FloorSoundSector (m_Sector);
 }
 
 //==========================================================================
@@ -1426,7 +1487,7 @@ bool EV_DoElevator (line_t *line, DElevator::EElevator elevtype,
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 		{
 			SERVERCOMMANDS_DoElevator( elevator->m_Type, elevator->m_Sector,(LONG)( elevator->m_Speed), elevator->m_Direction,(LONG)( elevator->m_FloorDestDist),(LONG)( elevator->m_CeilingDestDist), elevator->m_ElevatorID );
-			SERVERCOMMANDS_StartElevatorSound( elevator->m_ElevatorID );
+			zx::netsnapshot::MoverSendElevatorSound( elevator->m_Sector, elevator->m_ElevatorID );
 		}
 
 	}
@@ -1638,6 +1699,22 @@ void DWaggleBase::SetState( LONG lState )
 //
 //
 //==========================================================================
+// [Kaori-Chani] features/net-snapshot: the write DoWaggle makes when a waggle ends, named
+// here because a client ending one by record needs it too; the plane comes from the class.
+void DWaggleBase::EndPlane()
+{
+	if (m_Sector == NULL)
+		return;
+
+	const bool bCeiling = IsKindOf( RUNTIME_CLASS( DCeilingWaggle ));
+	secplane_t *plane = bCeiling ? &m_Sector->ceilingplane : &m_Sector->floorplane;
+	const fixed_t dist = FixedMul (m_OriginalDist - plane->d, plane->ic);
+	m_Sector->ChangePlaneTexZ( bCeiling ? sector_t::ceiling : sector_t::floor,
+		-plane->HeightDiff (m_OriginalDist));
+	plane->d = m_OriginalDist;
+	P_ChangeSector (m_Sector, true,(int)( dist), bCeiling, false);
+}
+
 void DWaggleBase::DoWaggle (bool ceiling)
 {
 	secplane_t *plane;
@@ -1676,10 +1753,8 @@ void DWaggleBase::DoWaggle (bool ceiling)
 	case WGLSTATE_REDUCE:
 		if ((m_Scale -= m_ScaleDelta) <= 0)
 		{ // Remove
-			dist = FixedMul (m_OriginalDist - plane->d, plane->ic);
-			m_Sector->ChangePlaneTexZ(pos, -plane->HeightDiff (m_OriginalDist));
-			plane->d = m_OriginalDist;
-			P_ChangeSector (m_Sector, true,(int)( dist), ceiling, false);
+			// [Kaori-Chani] features/net-snapshot: the same write, named above.
+			EndPlane( );
 			if (ceiling)
 			{
 				m_Sector->ceilingdata = NULL;

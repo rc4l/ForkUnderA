@@ -5,14 +5,15 @@
 #ifndef ZX_BSPGRID_H
 #define ZX_BSPGRID_H
 #include "basictypes.h"
+struct subsector_t;
 namespace zx { namespace bspgrid {
 // [Doruk-Aksoy] Both trees' grids, once the level's nodes are final.
 void BuildForLevel();
 // [Doruk-Aksoy] The level's nodes are about to be freed, so no grid is read until the next level's are built.
 void ForgetLevel();
-// [Doruk-Aksoy] Where P_PointInSubsector's walk starts: an index into gamenodes, or -1 - an index into gamesubsectors.
-int GameStart(fixed_t x, fixed_t y);
-// [Doruk-Aksoy] Where R_PointInSubsector's walk starts: an index into nodes, or -1 - an index into subsectors.
-int RenderStart(fixed_t x, fixed_t y);
+// [Doruk-Aksoy] The game tree's subsector at (x, y) from its grid and compact copy, or NULL when that tree has none, for P_PointInSubsector.
+subsector_t *GameSubsector(fixed_t x, fixed_t y);
+// [Doruk-Aksoy] The renderer tree's subsector at (x, y) likewise, or NULL, for R_PointInSubsector.
+subsector_t *RenderSubsector(fixed_t x, fixed_t y);
 }} // namespace zx::bspgrid
 #endif // ZX_BSPGRID_H

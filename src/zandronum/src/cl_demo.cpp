@@ -76,6 +76,8 @@
 #include "m_cheat.h"
 #include "network_enums.h"
 
+#include "features/net-snapshot/entities.h"   // [Kaori-Chani] the recorded server's own stamps
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] and its reset count
 #include "features/fov-interp/fovcvar.h"
 #include "features/command-safety/computation/commandsafety_compute.h" // [rc4l] ComputeOwnExtension
 #include "computation/demobytes_compute.h"	// [rc4l] ComputeDemoBytes
@@ -731,6 +733,11 @@ void CLIENTDEMO_DoPlayDemo( const char *pszDemoName )
 
 	if ( CLIENTDEMO_ProcessDemoHeader( ))
 	{
+		// [Kaori-Chani] features/net-snapshot: the recorded server counted map stamps and
+		// resets for itself.
+		zx::netsnapshot::ResetMapStamp( );
+		zx::netsnapshot::MoverForgetResetCount( );
+
 		C_HideConsole( );
 		g_bDemoPlaying = true;
 		g_bDemoPlayingHonest = true;

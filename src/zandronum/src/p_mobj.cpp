@@ -84,6 +84,8 @@
 #include "cl_main.h"
 #include "features/net-client/computation/movedrain_compute.h"
 #include "features/net-session/netrole.h"
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] a mirror's own spawns
 #include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff
 #include "cooperative.h"
 #include "invasion.h"
@@ -110,6 +112,9 @@
 #include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
 #include "computation/rejumpdelay_compute.h" // [rc4l] ComputeLandingDelaysJump, ComputeRisingDelaysJump
 #include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
+#include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
+#include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
+#include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -716,7 +721,8 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 				// except when this actor is a player chunk.
 				const int overrideSkin = IsKindOf( RUNTIME_CLASS( APlayerChunk )) ? -1 : PLAYER_GetOverrideSkin( this->player );
 				// [AK] Don't change to the skin's sprite if the new sprite is TNT1A0.
-				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == SpawnState->sprite && newsprite != SPR_TNT1)
+				// [Doruk-Aksoy] SpawnState read from the class defaults, which no actor changes, so this misses no cold actor line.
+				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == GetDefault()->SpawnState->sprite && newsprite != SPR_TNT1)
 				{ // [RH] If the new sprite is the same as the original sprite, and
 				// this actor is attached to a player, use the player's skin's
 				// sprite. If a player is not attached, do not change the sprite
@@ -746,7 +752,11 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 			}
 		}
 
-		if (!nofunction && newstate->CallAction(this, this))
+		// [Kaori-Chani] features/net-snapshot: a mirror runs the spawning actions its own copy
+		// needs, which only it is told to.
+		const bool bRunAction = ( nofunction == false ) || ( g_bSnapMirrorSpawns
+			&& ( NetworkFlags & NETFL_MIRROR ) && zx::netsnapshot::MirrorSpawnAction( newstate ));
+		if (bRunAction && newstate->CallAction(this, this))
 		{
 			// Check whether the called action function resulted in destroying the actor
 			if (ObjectFlags & OF_EuthanizeMe)
@@ -1559,6 +1569,7 @@ bool AActor::Grind(bool items)
 			flags &= ~MF_SOLID;
 			flags3 |= MF3_DONTGIB;
 			height = radius = 0;
+			zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 			SetState (state);
 			if (isgeneric)	// Not a custom crush state, so colorize it appropriately.
 			{
@@ -1594,6 +1605,7 @@ bool AActor::Grind(bool items)
 				flags &= ~MF_SOLID;
 				flags3 |= MF3_DONTGIB;
 				height = radius = 0;
+				zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 				return false;
 			}
 
@@ -1604,6 +1616,7 @@ bool AActor::Grind(bool items)
 				gib->alpha = alpha;
 				gib->height = 0;
 				gib->radius = 0;
+				zx::cells::Refresh (gib);	// [Doruk-Aksoy] features/blockmap-filter
 
 				// [BB] Apparently Skulltag always has let the clients spawn the gibs.
 				// Whether or not this is intentional, if the clients spawn the gibs on
@@ -2346,6 +2359,12 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	FCheckPosition tm(!!(mo->flags2 & MF2_RIP));
 
+	// [Doruk-Aksoy] features/swept-missiles: the leading steps that would only move the missile are skipped, and the move starts at the last of them.
+	if (zx::sweptmove::ComputeSweepPays(steps) && zx::sweptmove::Sweeps(mo, walkplane != NULL))
+	{
+		const int quiet = zx::sweptmove::QuietRunEndXY(mo, startx, starty, xmove, ymove, steps);
+		if (quiet >= 2) step = quiet;
+	}
 
 	do
 	{
@@ -3728,7 +3747,8 @@ void P_NightmareRespawn (AActor *mobj)
 	if (mo != NULL)
 	{
 		// [BC] If we're the server, tell clients to spawn the thing.
-		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+			&& ( zx::netsnapshot::ClientEffect( mo, true ) == false ))
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 
@@ -3737,7 +3757,8 @@ void P_NightmareRespawn (AActor *mobj)
 	if (mo != NULL)
 	{
 		// [BC] If we're the server, tell clients to spawn the thing.
-		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+		if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+			&& ( zx::netsnapshot::ClientEffect( mo, true ) == false ))
 			SERVERCOMMANDS_SpawnThing( mo );
 	}
 
@@ -4170,6 +4191,18 @@ void AActor::Tick ()
 	const bool measureTraffic = NETTRAFFIC_IsMeasuring ( );
 	if ( measureTraffic )
 		NETWORK_StartTrafficMeasurement ( );
+
+	// [Kaori-Chani] features/net-snapshot: a legacy actor whose mirror is drawn in its place does
+	// not tick, and the two counters are the client's [snap] hide: line.
+	extern unsigned long long g_tickSkipped, g_tickRan;
+	if ( STFlags & STFL_SNAPGHOSTHIDDEN )
+	{
+		++g_tickSkipped;
+		if ( measureTraffic )
+			NETWORK_StopTrafficMeasurement ( );
+		return;
+	}
+	++g_tickRan;
 
 	// [rc4l] Self-register for this tic's P_RunEffects pass (see p_effect.cpp) --
 	// the effects walk no longer scans every thinker.
@@ -4703,7 +4736,8 @@ void AActor::Tick ()
 					zx::bounce::OnTop ontop = zx::bounce::OnTop::Land;
 					if (velz != 0 && (BounceFlags & BOUNCE_Actors))
 					{
-						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0);
+						// [MGOOOOOO] A ripper rips through what it can rip rather than exploding on it (OnTop::RipThrough: Cut Man's point-blank slices on MM8BDM).
+						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0, P_RipsThrough(this, onmo));
 					}
 					if (ontop == zx::bounce::OnTop::Explode)
 					{
@@ -4903,20 +4937,20 @@ void AActor::CheckSectorTransition(sector_t *oldsec)
 
 bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 {
-	BYTE lastwaterlevel = waterlevel;
+	// [Doruk-Aksoy] features/actor-layout: measured into a local, so a dry actor's water fields are only read.
+	int measured = 0;
 	fixed_t fh = FIXED_MIN;
 	bool reset=false;
 
-	waterlevel = 0;
-
 	if (Sector == NULL)
 	{
+		if (waterlevel != 0) waterlevel = 0;
 		return false;
 	}
 
 	if (Sector->MoreFlags & SECF_UNDERWATER)	// intentionally not SECF_UNDERWATERMASK
 	{
-		waterlevel = 3;
+		measured = 3;
 	}
 	else
 	{
@@ -4928,24 +4962,24 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 			{
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
 				else if (!(hsec->MoreFlags & SECF_FAKEFLOORONLY) && (z + height > hsec->ceilingplane.ZatPoint (x, y)))
 				{
-					waterlevel = 3;
+					measured = 3;
 				}
 				else
 				{
-					waterlevel = 0;
+					measured = 0;
 				}
 			}
 			// even non-swimmable deep water must be checked here to do the splashes correctly
@@ -4974,14 +5008,14 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 				fh=ff_top;
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
@@ -4994,15 +5028,15 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 		
 	// some additional checks to make deep sectors like Boom's splash without setting
 	// the water flags. 
-	if (boomwaterlevel == 0 && waterlevel != 0 && dosplash) 
+	const WaterStore store = ComputeWaterStore(waterlevel, boomwaterlevel, measured, reset, dosplash);
+	if (store.splash)
 	{
+		// [Doruk-Aksoy] P_HitWater reads the measured level, as it did before the reset.
+		waterlevel = measured;
 		P_HitWater(this, Sector, FIXED_MIN, FIXED_MIN, fh, true);
 	}
-	boomwaterlevel = waterlevel;
-	if (reset)
-	{
-		waterlevel = lastwaterlevel;
-	}
+	if (boomwaterlevel != store.boom) boomwaterlevel = (BYTE)store.boom;
+	if (waterlevel != store.water) waterlevel = store.water;
 	return false;	// we did the splash ourselves
 }
 
@@ -5017,7 +5051,8 @@ void IDList<T>::clear( void )
 	for ( unsigned int i = 0; i <= ( std::numeric_limits<unsigned short>::max )( ); i++ )
 		freeID ( i );
 
-	_firstFreeID = 1;
+	// [Kaori-Chani] Not 1: the ids below firstDynamicID are each a player's own.
+	_firstFreeID = firstDynamicID( );
 }
 
 //*****************************************************************************
@@ -5064,7 +5099,8 @@ unsigned short IDList<T>::getNewID( void )
 	unsigned short id = _firstFreeID;
 
 	// [rc4l] The next free one found in the bitmap rather than by walking every entry: a full table (nuts.wad with Complex Doom, 70,000 actors) read all 65,535 on each spawn, 44% of a tic (features/netids).
-	_firstFreeID = static_cast<unsigned short>( zx::netids::ComputeNextFreeId ( _freeBits, id ));
+	_firstFreeID = static_cast<unsigned short>(
+		zx::netids::ComputeNextFreeId ( _freeBits, id, firstDynamicID( )));
 	if ( _firstFreeID == id )
 	{
 		// [BB] In case there is no free netID, the server has to abort the current game.
@@ -5072,9 +5108,11 @@ unsigned short IDList<T>::getNewID( void )
 		{
 			// [BB] We can only spawn (MAX_NETID-2) actors with netID, because ID zero is reserved and
 			// we already check that a new ID for the next actor is available when assign a net ID.
-			Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", ( std::numeric_limits<unsigned short>::max )( ));
+			// [Kaori-Chani] The true ceiling, id 0 and the player range both being reserved.
+			const unsigned int limit = ( std::numeric_limits<unsigned short>::max )( ) - MAXPLAYERS;
+			Printf( "ACTOR_GetNewNetID: Network ID limit reached (>=%u actors)\n", limit );
 			CountActors ( );
-			I_Error ("Network ID limit reached (>=%u actors)!\n", ( std::numeric_limits<unsigned short>::max )( ));
+			I_Error ("Network ID limit reached (>=%u actors)!\n", limit );
 		}
 
 		return ( 0 );
@@ -5184,6 +5222,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	// set subsector and/or block links
 	actor->LinkToWorld (SpawningMapThing);
+	if (!(actor->flags & MF_NOBLOCKMAP)) zx::sweptmove::BlockmapSpawns++;	// [Doruk-Aksoy] features/swept-missiles
 
 	actor->dropoffz =			// killough 11/98: for tracking dropoffs
 	actor->floorz = actor->Sector->floorplane.ZatPoint (ix, iy);
@@ -5273,6 +5312,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	if (!SpawningMapThing)
 	{
 		actor->BeginPlay ();
+		zx::cells::Refresh (actor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 		if (actor->ObjectFlags & OF_EuthanizeMe)
 		{
 			g_SpawnCycles.Unclock();
@@ -5306,16 +5346,24 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 			SERVERCOMMANDS_SetMapNumTotalSecrets();
 	}
 
+	// [Kaori-Chani] features/net-snapshot: the cosmetic events route, on which a routed spawn
+	// gets no NetID.
+	const bool bSnapRouted = zx::netsnapshot::NoteCosmeticSpawn( actor );
 	if ((( actor->NetworkFlags & NETFL_NONETID ) == false ) && ( ( actor->NetworkFlags & NETFL_SERVERSIDEONLY ) == false ) &&
-		( NETWORK_InClientMode() == false ))
+		( NETWORK_InClientMode() == false ) && ( bSnapRouted == false ))
 	{
 		actor->NetID = g_ActorNetIDList.getNewID( );
 		g_ActorNetIDList.useID ( actor->NetID, actor );
 		if ( ( NETWORK_GetState( ) == NETSTATE_SERVER ) && sv_showspawnnames )
 			Printf ( "%s %u\n", actor->GetClass()->TypeName.GetChars(), actor->NetID );
+		// [Kaori-Chani] features/net-snapshot: report only, a NetID taken by something a
+		// cosmetic actor spawned.
+		zx::netsnapshot::NoteSpawnNetID( actor );
 	}
 	else
 		actor->NetID = 0;
+	// [Kaori-Chani] features/net-snapshot: report mode counts the routed actors by NetID.
+	zx::netsnapshot::NoteCosmeticNetID( actor );
 
 	// [BB] Initilize the colormap of this actor.
 	actor->FixedColormap = NOFIXEDCOLORMAP;
@@ -5580,6 +5628,9 @@ bool AActor::IsActive( void ) const
 
 void AActor::Destroy ()
 {
+	// [Kaori-Chani] features/net-snapshot: the cosmetic events mark goes with the actor.
+	zx::netsnapshot::ForgetCosmetic( this );
+
 	// [BC/BB] Free it's network ID.
 	g_ActorNetIDList.freeID ( NetID );
 
@@ -5822,6 +5873,40 @@ APlayerPawn *P_SpawnPlayer (FPlayerStart *mthing, int playernum, int flags)
 	oldactor = p->mo;
 	p->mo = mobj;
 	mobj->player = p;
+
+	// [Kaori-Chani] features/net-snapshot: the body takes the id reserved for its player, so a
+	// client can make a mirror for one whose spawn has not arrived.
+	//
+	// [Kaori-Chani] A server alone, a client being told its ids and single player sending none,
+	// and never for a doll or a temporary player, which share their player's number.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& (( flags & ( SPF_TEMPPLAYER | SPF_VOODOODOLL )) == 0 ))
+	{
+		const unsigned short reserved = IDList<AActor>::reservedIDForPlayer ( playernum );
+		if (( reserved != 0 ) && ( mobj->NetID != reserved ))
+		{
+			// [Kaori-Chani] The incumbent is this player's own corpse, whose NetID field
+			// still holds the id Destroy frees by, so both halves are vacated first.
+			AActor *pIncumbent = g_ActorNetIDList.findPointerByID ( reserved );
+			if (( pIncumbent != NULL ) && ( pIncumbent != mobj ))
+			{
+				g_ActorNetIDList.freeID ( reserved );
+				pIncumbent->NetID = g_ActorNetIDList.getNewID( );
+				if ( pIncumbent->NetID != 0 )
+					g_ActorNetIDList.useID ( pIncumbent->NetID, pIncumbent );
+				// [Kaori-Chani] Moved rather than deleted, and the clients are told which id it
+				// went to before anything else refers to it.
+				if ( pIncumbent->NetID != 0 )
+					SERVERCOMMANDS_SetThingNetID( reserved, pIncumbent->NetID );
+			}
+
+			if ( mobj->NetID != 0 )
+				g_ActorNetIDList.freeID ( mobj->NetID );
+			mobj->NetID = reserved;
+			g_ActorNetIDList.useID ( reserved, mobj );
+		}
+	}
+
 	// [BB] The code below assumes that state won't be altered.
 	const BYTE state = p->playerstate;
 	// [BC] Added PST_REBORNNOINVENTORY, PST_ENTERNOINVENTORY.
@@ -6626,6 +6711,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mobj->fillcolor = mthing->fillcolor;
 
 	mobj->BeginPlay ();
+	zx::cells::Refresh (mobj);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 	if (!(mobj->ObjectFlags & OF_EuthanizeMe))
 	{
 		mobj->LevelSpawned ();
@@ -6787,8 +6873,13 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 
 	// [BC] If we're the server, tell clients to spawn the thing.
 	// [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: net-replication's SendPuff, which a rail calls itself once its puff survived the sky.
-	if ( bTellClientToSpawn )
+	// [Kaori-Chani] features/net-snapshot: not a routed puff, which reaches clients as an event
+	// that this send would hand a NetID.
+	if ( bTellClientToSpawn && ( zx::netsnapshot::CosmeticRouted( puff ) == false ))
 		zx::netreplication::SendPuff( puff, source, ulState, flags );
+
+	// [Kaori-Chani] features/net-snapshot: the shooter's prediction, and puffs not told to clients.
+	zx::netsnapshot::NotePuff( puff, source, bTellClientToSpawn );
 
 	if (!(flags & PF_TEMPORARY))
 	{
@@ -6819,7 +6910,7 @@ AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t 
 // 
 //---------------------------------------------------------------------------
 
-void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator)
+AActor *P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator)	// [Kaori-Chani] returns its actor
 {
 	// [BB] Initialize with NULL.
 	AActor *th = NULL;
@@ -6835,6 +6926,8 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AAc
 	{
 		z += pr_spawnblood.Random2 () << 10;
 		th = Spawn (bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: every blood spawn takes the cosmetic events route.
+		zx::netsnapshot::NoteBloodSpawn( th );
 		th->velz = FRACUNIT*2;
 		th->angle = dir;
 		// [NG] Applying PUFFGETSOWNER to the blood will make it target the owner
@@ -6905,7 +6998,9 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AAc
 	}
 
 	// [BC] If we're the server, tell clients to spawn the blood.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: unless the cosmetic blood event does instead.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::NoteBloodEvent( x, y, z, dir, damage, originator, 0 ) == false ))
 	{
 		// [BB] If the bloodcolor is not the standard one, we have to inform the client 
 		// about the correct color.
@@ -6924,6 +7019,8 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AAc
 
 	if (bloodtype >= 1)
 		P_DrawSplash2 (40, x, y, z, dir, 2, bloodcolor);
+
+	return th;	// [Kaori-Chani] NULL when no blood class spawned one
 }
 
 //---------------------------------------------------------------------------
@@ -6932,8 +7029,9 @@ void P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AAc
 //
 //---------------------------------------------------------------------------
 
-void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
+AActor *P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	// [Kaori-Chani] returns its actor
 {
+	AActor *mo = NULL;	// [Kaori-Chani] hoisted, so the caller can have it
 	PalEntry bloodcolor = originator->GetBloodColor();
 	const PClass *bloodcls = originator->GetBloodType(1); 
 
@@ -6944,9 +7042,10 @@ void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 
 	if (bloodcls != NULL)
 	{
-		AActor *mo;
 
 		mo = Spawn(bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: every blood spawn takes the cosmetic events route.
+		zx::netsnapshot::NoteBloodSpawn( mo );
 		mo->target = originator;
 		mo->velx = pr_splatter.Random2 () << 10;
 		mo->vely = pr_splatter.Random2 () << 10;
@@ -6975,8 +7074,12 @@ void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 	}
 
 	// [BB] Tell the clients to spawn the splatter.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: unless the cosmetic blood event does instead.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::NoteBloodEvent( x, y, z, 0, 0, originator, 1 ) == false ))
 		SERVERCOMMANDS_SpawnBloodSplatter( x, y, z, originator, false );
+
+	return mo;	// [Kaori-Chani] NULL when no blood class spawned one
 }
 
 //===========================================================================
@@ -6985,8 +7088,9 @@ void P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 //
 //===========================================================================
 
-void P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
+AActor *P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)	// [Kaori-Chani] returns its actor
 {
+	AActor *mo = NULL;	// [Kaori-Chani] hoisted, so the caller can have it
 	PalEntry bloodcolor = originator->GetBloodColor();
 	const PClass *bloodcls = originator->GetBloodType(2);
 
@@ -6997,12 +7101,13 @@ void P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 
 	if (bloodcls != NULL)
 	{
-		AActor *mo;
 		
 		x += ((pr_splat()-128)<<11);
 		y += ((pr_splat()-128)<<11);
 
 		mo = Spawn (bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: every blood spawn takes the cosmetic events route.
+		zx::netsnapshot::NoteBloodSpawn( mo );
 		mo->target = originator;
 
 		// colorize the blood!
@@ -7019,8 +7124,12 @@ void P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator)
 	}
 
 	// [BB] Tell the clients to spawn the splatter.
-	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+	// [Kaori-Chani] features/net-snapshot: unless the cosmetic blood event does instead.
+	if (( NETWORK_GetState( ) == NETSTATE_SERVER )
+		&& ( zx::netsnapshot::NoteBloodEvent( x, y, z, 0, 0, originator, 2 ) == false ))
 		SERVERCOMMANDS_SpawnBloodSplatter( x, y, z, originator, true );
+
+	return mo;	// [Kaori-Chani] NULL when no blood class spawned one
 }
 
 //---------------------------------------------------------------------------
@@ -7048,6 +7157,8 @@ void P_RipperBlood (AActor *mo, AActor *bleeder)
 	{
 		AActor *th;
 		th = Spawn (bloodcls, x, y, z, NO_REPLACE); // GetBloodType already performed the replacement
+		// [Kaori-Chani] features/net-snapshot: no stock command, so a cosmetic event either way.
+		zx::netsnapshot::NoteRipperBlood( th );
 		// [NG] Applying PUFFGETSOWNER to the blood will make it target the owner
 		if (th->flags5 & MF5_PUFFGETSOWNER) th->target = bleeder;
 		if (gameinfo.gametype == GAME_Heretic)
@@ -7388,6 +7499,7 @@ bool P_CheckMissileSpawn (AActor* th, fixed_t maxdist, bool bExplode, bool bClie
 		th->x += FLOAT2FIXED(advance.X);
 		th->y += FLOAT2FIXED(advance.Y);
 		th->z += FLOAT2FIXED(advance.Z);
+		zx::cells::Refresh (th);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 	}
 
 	FCheckPosition tm(!!(th->flags2 & MF2_RIP));

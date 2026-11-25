@@ -12,12 +12,13 @@ using namespace zx::netids;
 namespace {
 
 // [rc4l] IDList::getNewID's walk as it was, entry by entry, which the bitmap search must agree with.
-unsigned WalkedNextFreeId(const std::vector<bool> &free, unsigned from)
+// [Kaori-Chani] lowest is where the wrap lands, the player range sitting below it.
+unsigned WalkedNextFreeId(const std::vector<bool> &free, unsigned from, unsigned lowest = 1)
 {
 	unsigned at = from;
 	do
 	{
-		at = at == kIdCount - 1 ? 1 : at + 1;
+		at = at == kIdCount - 1 ? lowest : at + 1;
 		if (at == from) return from;
 	} while (!free[at]);
 	return at;
@@ -28,7 +29,10 @@ struct Ids
 	std::vector<uint64_t> bits = std::vector<uint64_t>(kIdWords, 0);
 	std::vector<bool> free = std::vector<bool>(kIdCount, false);
 	void Mark(unsigned id, bool isFree) { ComputeMarkId(&bits[0], id, isFree); free[id] = isFree; }
-	unsigned Next(unsigned from) const { return ComputeNextFreeId(&bits[0], from); }
+	unsigned Next(unsigned from, unsigned lowest = 1) const
+	{
+		return ComputeNextFreeId(&bits[0], from, lowest);
+	}
 };
 
 } // namespace
@@ -114,4 +118,26 @@ TEST(NetIdSearch, AgreesWithTheWalkOnRandomTables)
 			ASSERT_EQ(WalkedNextFreeId(ids.free, from), ids.Next(from)) << "round " << round << " from " << from;
 		}
 	}
+}
+
+// [Kaori-Chani] The wrap lands on lowest, not 1, so the ids reserved for players are never handed
+// out however free they are marked.
+TEST(NetIdSearch, TheWrapSkipsTheReservedRange)
+{
+	const unsigned firstDynamic = 65;   // MAXPLAYERS + 1
+	Ids ids;
+	for (unsigned id = 1; id <= 64; ++id) ids.Mark(id, true);
+	ids.Mark(70, true);
+	ids.Mark(900, true);
+
+	// Above the range it behaves as before.
+	EXPECT_EQ(900u, ids.Next(70, firstDynamic));
+	// Wrapping from the top skips 1..64 and finds the first dynamic id that is free.
+	EXPECT_EQ(70u, ids.Next(65535, firstDynamic));
+	// With nothing free above the range, the search returns from itself rather than a player's id.
+	Ids bare;
+	for (unsigned id = 1; id <= 64; ++id) bare.Mark(id, true);
+	EXPECT_EQ(5000u, bare.Next(5000, firstDynamic));
+	// And the reference walk agrees with the bitmap, bound for bound.
+	EXPECT_EQ(WalkedNextFreeId(ids.free, 65535, firstDynamic), ids.Next(65535, firstDynamic));
 }
