@@ -83,3 +83,12 @@ TEST(ThreadedTic, CheapCatchUpRunsInlineAndExpensiveWaitsForTheGameThread)
 	// [rc4l] Before any tic has been timed, the whole backlog runs as it always did.
 	EXPECT_EQ(4, zx::gameloop::ComputeInlineCatchUp(4, 0.0, 6.0));
 }
+
+// [Doruk-Aksoy] A held game ran tics anyway with fua_gamethread off, since only the threaded loop asked the hold.
+TEST(ThreadedTic, AHeldGameRunsNoTicButAStepAskedFor)
+{
+	EXPECT_EQ(3, zx::gameloop::ComputeHeldTics(false, false, 3));
+	EXPECT_EQ(0, zx::gameloop::ComputeHeldTics(true, false, 3));
+	EXPECT_EQ(1, zx::gameloop::ComputeHeldTics(true, true, 3));
+	EXPECT_EQ(0, zx::gameloop::ComputeHeldTics(true, true, 0));
+}

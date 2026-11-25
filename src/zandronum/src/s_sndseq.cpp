@@ -1012,6 +1012,18 @@ void SN_StopSequence (FPolyObj *poly)
 	SN_DoStop (poly);
 }
 
+// [Kaori-Chani] features/net-snapshot: the sector overload above, keyed on a polyobject,
+// which has one node rather than a channel apiece.
+DSeqNode *SN_CheckSequence (FPolyObj *poly)
+{
+	for (DSeqNode *node = DSeqNode::FirstSequence(); node; node = node->NextSequence())
+	{
+		if (node->Source() == poly)
+			return node;
+	}
+	return NULL;
+}
+
 void SN_DoStop (void *source)
 {
 	DSeqNode *node;

@@ -38,7 +38,10 @@ TEST(PlayerSetSelectedInventoryWire, IsAppendedAfterTheLastExistingCommand) {
 	// [rc4l] 3.3 inserts it after SVC2_SETDOMINATIONPOINTSTATE, which would shift every id after it; ours goes last.
 	EXPECT_EQ(79, SVC2_SETTHINGFLOORCLIP);
 	EXPECT_EQ(80, SVC2_PLAYERSETSELECTEDINVENTORY);
-	EXPECT_EQ(SVC2_PLAYERSETSELECTEDINVENTORY + 1, NUM_SVC2_COMMANDS);
+	// [Kaori-Chani] The snapshot block follows directly, so an insertion before or after this
+	// command still moves an id and fails here.
+	EXPECT_EQ(SVC2_PLAYERSETSELECTEDINVENTORY + 1, SVC2_SNAPSHOT);
+	EXPECT_LT(SVC2_PLAYERSETSELECTEDINVENTORY, NUM_SVC2_COMMANDS);
 	EXPECT_LE(NUM_SVC2_COMMANDS, 0x100);
 }
 

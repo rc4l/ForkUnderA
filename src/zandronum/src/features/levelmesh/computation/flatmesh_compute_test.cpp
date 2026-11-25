@@ -786,6 +786,16 @@ TEST(FlatMeshCompute, OnlyThePlayersOutermostSceneOwnsTheFramesCapture)
 	EXPECT_FALSE(ComputeOwnsFrameCapture(false, 1));
 }
 
+// [Doruk-Aksoy] A camera texture's view captures its own sprites, as the player's walk and a stacked view's or mirror's do, and no other walk captures.
+TEST(FlatMeshCompute, ACameraViewCapturesAsThePlayersWalkDoes)
+{
+	EXPECT_TRUE(ComputeCapturesDynamic(true, false, -1, -1));
+	EXPECT_TRUE(ComputeCapturesDynamic(false, true, -1, -1));
+	EXPECT_TRUE(ComputeCapturesDynamic(false, false, 0, -1));
+	EXPECT_TRUE(ComputeCapturesDynamic(false, false, -1, 0));
+	EXPECT_FALSE(ComputeCapturesDynamic(false, false, -1, -1));
+}
+
 // [rc4l] WDI04's corner room: subsector 3796 has the nodebuilder's sector 385 and render sector 164, and only 164's floor is where GL draws it.
 TEST(FlatMeshCompute, AFlatIsDrawnWithItsRenderSector)
 {

@@ -54,6 +54,8 @@
 #include "s_sound.h"
 #include "doomstat.h"
 #include "p_lnspec.h"
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the map things and the sound table
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] the mirrors let go at unload
 #include "v_palette.h"
 #include "features/hitboxviz/hitboxviz.h"
 #include "features/levelmesh/projdecals.h"   // [rc4l] projected mesh decals
@@ -103,6 +105,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/music-cache/musiccache.h"   // [Doruk-Aksoy] the level's songs, inflated at its load
 #include "features/bspgrid/bspgrid.h"   // [Doruk-Aksoy] where a subsector walk starts
+#include "features/blockmap-filter/cellarrays.h"   // [Doruk-Aksoy] the cells' arrays beside the blockmap's lists
 #include "features/net-session/netrole.h"
 
 #define MISSING_TEXTURE_WARN_LIMIT		20
@@ -1953,6 +1956,8 @@ void P_SpawnThings (int position)
 	for (int i=0; i < numthings; i++)
 	{
 		AActor *actor = SpawnMapThing (i, &MapThingsConverted[i], position);
+		// [Kaori-Chani] features/net-snapshot: the map things a client can make itself.
+		zx::netsnapshot::NoteMapThing( actor );
 		unsigned *udi = MapThingsUserDataIndex.CheckKey((unsigned)i);
 		if (udi != NULL)
 		{
@@ -3202,6 +3207,7 @@ void P_LoadBlockMap (MapData * map)
 	blocklinks = new FBlockNode *[count];
 	memset (blocklinks, 0, count*sizeof(*blocklinks));
 	blockmap = blockmaplump+4;
+	zx::cells::Reset (count);	// [Doruk-Aksoy] features/blockmap-filter: the cells' arrays, empty as the lists
 }
 
 
@@ -3710,6 +3716,10 @@ extern polyblock_t **PolyBlockMap;
 
 void P_FreeLevelData ()
 {
+	// [Kaori-Chani] features/net-snapshot: ghosts let go of their mirrors before the thinkers go.
+	zx::netsnapshot::LevelUnloaded( );
+	zx::netsnapshot::MapChanged( );
+
 	// [Doruk-Aksoy] Before the nodes go, so no walk starts from a grid of them.
 	zx::bspgrid::ForgetLevel();
 	Renderer->CleanLevelData();
@@ -3808,6 +3818,7 @@ void P_FreeLevelData ()
 	{
 		delete[] blocklinks;
 		blocklinks = NULL;
+		zx::cells::Reset (0);	// [Doruk-Aksoy] features/blockmap-filter
 	}
 	if (PolyBlockMap != NULL)
 	{
@@ -3974,6 +3985,9 @@ void P_SetupLevel (const char *lumpname, int position)
 
 	// Make sure all sounds are stopped before Z_FreeTags.
 	S_Start ();
+	// [Kaori-Chani] features/net-snapshot: this map's sound table is final here, and an id is
+	// only vouched for below its size.
+	zx::netsnapshot::TakeSoundTable( );
 	// [RH] Clear all ThingID hash chains.
 	AActor::ClearTIDHashes ();
 
@@ -4505,6 +4519,13 @@ void P_SetupLevel (const char *lumpname, int position)
 	if (reloop) P_LoopSidedefs (false);
 	PO_Init ();	// Initialize the polyobjs
 	times[16].Unclock();
+	zx::cells::BuildStaticLines ();	// [Doruk-Aksoy] features/blockmap-filter: before play, so the crosshair's sight checks never build them
+
+	// [Kaori-Chani] features/net-snapshot: the map's position frame taken here, once the
+	// things are spawned, the ones a mode forbids removed and the polyobjs in, because it is
+	// the extent of all three; computing it on first use would take a half-built map, the
+	// gamestate being GS_LEVEL before this function runs.
+	zx::netsnapshot::ServerMapFrame( );
 
 	assert(sidetemp != NULL);
 	delete[] sidetemp;

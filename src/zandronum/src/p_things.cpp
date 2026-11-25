@@ -55,6 +55,8 @@
 #include "invasion.h"
 #include "cl_demo.h"
 #include "cooperative.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 // Set of spawnable things for the Thing_Spawn and Thing_Projectile specials.
 TMap<int, const PClass *> SpawnableThings;
@@ -231,7 +233,8 @@ bool P_Thing_Spawn (int tid, AActor *source, int type, angle_t angle, bool fog, 
 					pFog = P_SpawnTeleportFog(mobj, spot->x, spot->y, spot->z + TELEFOGHEIGHT, false, true);
 
 					// [BC] If we're the server, tell clients to spawn the thing.
-					if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
+					if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog )
+						&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 						SERVERCOMMANDS_SpawnThing( pFog );
 				}
 
@@ -292,7 +295,8 @@ bool P_MoveThing(AActor *source, fixed_t x, fixed_t y, fixed_t z, bool fog)
 			// [BC] If we're the server, tell clients to spawn the fog.
 			// [rc4l] P_SpawnTeleportFog returns NULL when the actor's fog type is none, which a mod
 			// can set -- so this null check is load-bearing now in a way the old Spawn call's was not.
-			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 
 			pFog = P_SpawnTeleportFog(source, oldx, oldy, oldz + TELEFOGHEIGHT, true, true);
@@ -300,7 +304,8 @@ bool P_MoveThing(AActor *source, fixed_t x, fixed_t y, fixed_t z, bool fog)
 			// [BC] If we're the server, tell clients to spawn the fog.
 			// [rc4l] P_SpawnTeleportFog returns NULL when the actor's fog type is none, which a mod
 			// can set -- so this null check is load-bearing now in a way the old Spawn call's was not.
-			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog ))
+			if (( NETWORK_GetState( ) == NETSTATE_SERVER ) && ( pFog )
+				&& ( zx::netsnapshot::ClientEffect( pFog, true ) == false ))
 				SERVERCOMMANDS_SpawnThing( pFog );
 		}
 		source->PrevX = x;
@@ -618,6 +623,11 @@ int P_Thing_Damage (int tid, AActor *whofor0, int amount, FName type)
 
 void P_RemoveThing(AActor * actor)
 {
+	// [Kaori-Chani] features/net-snapshot: a snapshot mirror leaves only with its ghost, never by
+	// gameplay (a child's A_RemoveMaster).
+	if ( actor->NetworkFlags & NETFL_MIRROR )
+		return;
+
 	// [rc4l] uzdoom@978667143 with its fix c1a0ee962 folded in: an inventory item that is OWNED
 	// must not be removed here -- doing so leaves the owner holding a destroyed pointer. Upstream
 	// first wrote Owner == NULL and corrected it to != NULL the next commit; the corrected form is
@@ -665,10 +675,12 @@ bool P_Thing_Raise(AActor *thing, bool byClient, AActor *raiser)
 	thing->flags |= MF_SOLID;
 	thing->height = info->height;	// [RH] Use real height
 	thing->radius = info->radius;	// [RH] Use real radius
+	zx::cells::Refresh (thing);	// [Doruk-Aksoy] features/blockmap-filter: resized without relinking (and back if the raise fails)
 	if (!P_CheckPosition (thing, thing->x, thing->y) && !byClient)
 	{
 		thing->flags = oldflags;
 		thing->radius = oldradius;
+		zx::cells::Refresh (thing);	// [Doruk-Aksoy] features/blockmap-filter: resized back
 		thing->height = oldheight;
 		return false;
 	}

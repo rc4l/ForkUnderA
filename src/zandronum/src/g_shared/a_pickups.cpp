@@ -35,6 +35,7 @@
 #include "p_acs.h"
 #include "a_keys.h"
 #include "d_dehacked.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 // [Doruk-Aksoy] A state name found in the name table once for its call site, as every pickup and give looks its states up by name.
 #define ZX_STATE_NAME(name) ([]() -> FName { static const FName found (name); return found; }())
@@ -396,7 +397,10 @@ DEFINE_ACTION_FUNCTION(AActor, A_RestoreSpecialDoomThing)
 
 		self->SetState (self->SpawnState);
 		S_Sound (self, CHAN_VOICE, "misc/spawn", 1, ATTN_IDLE);
-		Spawn ("ItemFog", self->x, self->y, self->z, ALLOW_REPLACE);
+		// [Kaori-Chani] features/net-snapshot: at level 3 the client has no item for
+		// RespawnDoomThing to reach, so this fog comes from here instead.
+		AActor *pFog = Spawn ("ItemFog", self->x, self->y, self->z, ALLOW_REPLACE);
+		zx::netsnapshot::ClientEffect( pFog, true );
 	}
 }
 
@@ -1160,7 +1164,9 @@ void AInventory::Touch (AActor *toucher)
 	// This is the only situation when a pickup flash should ever play.
 	if (PickupFlash != NULL && !ShouldStay())
 	{
-		Spawn(PickupFlash, x, y, z, ALLOW_REPLACE);
+		// [Kaori-Chani] features/net-snapshot: id-less under the gate, where this flash is
+		// otherwise captured and drawn as a mirror.
+		zx::netsnapshot::ClientEffect( Spawn(PickupFlash, x, y, z, ALLOW_REPLACE), true );
 	}
 
 	// [BC] Tell the client that he successfully picked up the item.

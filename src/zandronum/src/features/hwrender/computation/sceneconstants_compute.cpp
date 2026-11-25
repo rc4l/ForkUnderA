@@ -34,7 +34,7 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	ComputeFixedColormapConstants(in.fixedColormap, out + 40);
 	out[48] = in.lightsCheckSide ? 1.f : 0.f;
 	out[49] = (float)in.walkSlots;
-	out[50] = out[51] = 0.f;
+	out[50] = in.spriteFrac; out[51] = in.spritePitch;
 	out[52] = (float)in.shading.lightMode; out[53] = (float)in.shading.ambient;
 	out[54] = (float)in.shading.fogMode; out[55] = (float)in.shading.distFog;
 	out[56] = (in.shading.fadeTable ? 1.f : 0.f) + (in.shading.brightFog ? 2.f : 0.f);
@@ -43,7 +43,7 @@ void ComputeSceneConstants(const SceneConstantInputs &in, float *out)
 	// [rc4l] The outside fog's colour as a 24-bit whole number a float holds exactly, and its alpha apart.
 	out[60] = (float)(in.shading.outsideFogColor & 0xffffff);
 	out[61] = (float)(in.shading.outsideFogColor >> 24);
-	out[62] = out[63] = 0.f;
+	out[62] = in.spritePerpX; out[63] = in.spritePerpY;
 }
 
 }} // namespace zx::hwrender

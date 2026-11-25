@@ -139,6 +139,13 @@ set( ZDOOM_EXE_NAME "forkundera" CACHE STRING "Name of the executable to create"
 # features/mcp-bridge/README.md. Even when ON it is runtime opt-in (ZANDRONUM_BRIDGE_PORT) + loopback.
 option( FUA_MCP_BRIDGE "Build the in-engine MCP control bridge (DEV ONLY -- never ship it ON)" OFF )
 
+# [Doruk-Aksoy] Telemetry, seams, allocation tracking and the dev-mode tools (docs/diagnostics.md), OFF so a public build carries none of them; test builds turn it on (-DFUA_DIAGNOSTICS=ON, or ZX_DIAGNOSTICS=1 for the compile scripts), and the bridge, which reads them, needs it.
+option( FUA_DIAGNOSTICS "Build the telemetry, seams and dev-mode tools (TEST BUILDS ONLY -- never ship it ON)" OFF )
+if( FUA_MCP_BRIDGE AND NOT FUA_DIAGNOSTICS )
+	message( STATUS "FUA_MCP_BRIDGE reads the telemetry, so FUA_DIAGNOSTICS is on too" )
+	set( FUA_DIAGNOSTICS ON CACHE BOOL "Build the telemetry, seams and dev-mode tools (TEST BUILDS ONLY -- never ship it ON)" FORCE )
+endif()
+
 # [rc4l] DiligentCore (Apache-2.0, deps/DiligentCore), the default Vulkan renderer on every client build with GL (Legacy) beside it, off for a server, which has no renderer.
 if( SERVERONLY OR NO_GL )
 	set( FUA_DILIGENT_DEFAULT OFF )

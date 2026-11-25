@@ -9,7 +9,12 @@ bool ComputeRelinkInPlace(const ZxRelinkAsk &ask, const ZxLinkedAt &last, bool m
 	return last.byPoint && last.noSector == ask.noSector && last.x == ask.x && last.y == ask.y && last.radius == ask.radius;
 }
 
-bool ComputeSecNodesWalkLines(int64_t radius)
+bool ComputeLinesCanStraddle(int64_t radius)
 {
 	return radius != 0;
+}
+
+bool ComputeJoinsSectorLists(bool noInteraction, bool clientSideOnly, bool asksForSectors)
+{
+	return !(noInteraction && clientSideOnly) || asksForSectors;
 }

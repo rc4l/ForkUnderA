@@ -30,7 +30,10 @@ struct ZxRelinkAsk
 // [Doruk-Aksoy] Whether unlinking and linking again would rebuild exactly what the last link built, so moving the actor to its sector list's head does the same: it stays in x and y, out of the blockmap, linked by its point where it was with the radius and sector-list flag it had, on a map without polyobjects, whose walls are the only ones that move.
 bool ComputeRelinkInPlace(const ZxRelinkAsk &ask, const ZxLinkedAt &last, bool mapHasPolyobjects);
 
-// [Doruk-Aksoy] Whether a sector list build must walk the lines near the actor: a radius-0 box has one corner, so no line can straddle it and only the actor's own sector is listed.
-bool ComputeSecNodesWalkLines(int64_t radius);
+// [Doruk-Aksoy] Whether a line can straddle an actor's box, so a position check or sector list build must walk the lines near it: a radius-0 box has one corner, so none can.
+bool ComputeLinesCanStraddle(int64_t radius);
+
+// [Doruk-Aksoy] Whether a linked actor joins the sector lists that moving floors, doors, wind and group teleports walk: a NOINTERACTION actor that only clients keep stays out unless it asks to ride floors, sink in liquid or take wind.
+bool ComputeJoinsSectorLists(bool noInteraction, bool clientSideOnly, bool asksForSectors);
 
 #endif

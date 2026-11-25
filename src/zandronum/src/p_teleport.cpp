@@ -43,6 +43,7 @@
 // [BB] New #includes.
 #include "sv_commands.h"
 #include "network.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
 
 #define FUDGEFACTOR		10
 
@@ -212,11 +213,14 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	// fresh fog on every replay pass, because nothing gates the spechit SPAC_Cross loop on clients.
 	const bool predicting = CLIENT_PREDICT_IsPredicting( );
 
+	// [Kaori-Chani] features/net-snapshot: kept for the server block below, which sends
+	// these where the client's own copy of the thing is too stale to place them.
+	AActor *pFogs[2] = { NULL, NULL };
 	if (sourceFog && !predicting)
 	{
 		fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
 		// [rc4l] uzdoom@30acb7200: the departure fog comes from the actor's own property.
-		P_SpawnTeleportFog(thing, oldx, oldy, oldz + fogDelta, true, true);
+		pFogs[0] = P_SpawnTeleportFog(thing, oldx, oldy, oldz + fogDelta, true, true);
 	}
 	if (useFog)
 	{
@@ -225,7 +229,7 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 			fixed_t fogDelta = thing->flags & MF_MISSILE ? 0 : TELEFOGHEIGHT;
 			an = angle >> ANGLETOFINESHIFT;
 			// [rc4l] uzdoom@30acb7200: arrival fog, likewise from the actor's property.
-			P_SpawnTeleportFog(thing, x + 20*finecosine[an],
+			pFogs[1] = P_SpawnTeleportFog(thing, x + 20*finecosine[an],
 				y + 20*finesine[an], thing->z + fogDelta, false, true);
 		}
 		if (thing->player)
@@ -261,7 +265,12 @@ bool P_Teleport (AActor *thing, fixed_t x, fixed_t y, fixed_t z, angle_t angle,
 	// [BC] If we're the server, update clients about this teleport.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 	{
-		SERVERCOMMANDS_TeleportThing( thing, sourceFog, useFog, ( useFog && bHaltVelocity ));
+		// [Kaori-Chani] features/net-snapshot: the fogs, and whether the server took them;
+		// where it did, the flags below stand down.
+		const bool bServerFogs = zx::netsnapshot::TeleportFogs( thing, pFogs );
+
+		SERVERCOMMANDS_TeleportThing( thing, sourceFog && !bServerFogs,
+			useFog && !bServerFogs, ( useFog && bHaltVelocity ));
 
 		// [BB] The clients start their reactiontime later on their end. Try to adjust for this.
 		if ( thing->player && thing->reactiontime )

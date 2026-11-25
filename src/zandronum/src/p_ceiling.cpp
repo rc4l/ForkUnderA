@@ -37,6 +37,8 @@
 #include "farchive.h"
 // [BB] New #includes.
 #include "cl_demo.h"
+#include "features/net-snapshot/movers.h"	// [Kaori-Chani] the capture and its holds
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] MoverServerStops
 #include "network.h"
 #include "sv_commands.h"
 #include "features/net-replication/mapstate.h"
@@ -102,22 +104,29 @@ void DCeiling::Serialize (FArchive &arc)
 
 void DCeiling::PlayCeilingSound ()
 {
-	if (m_Sector->seqType >= 0)
+	P_CeilingSoundSector (m_Sector, m_Silent);
+}
+
+// [Kaori-Chani] features/net-snapshot: PlayCeilingSound's body from the sector and the silence
+// it was given, unchanged but for m_Sector and m_Silent becoming arguments.
+void P_CeilingSoundSector (sector_t *sec, int silent)
+{
+	if (sec->seqType >= 0)
 	{
-		SN_StartSequence (m_Sector, CHAN_CEILING, m_Sector->seqType, SEQ_PLATFORM, 0, false);
+		SN_StartSequence (sec, CHAN_CEILING, sec->seqType, SEQ_PLATFORM, 0, false);
 	}
-	else if (m_Sector->SeqName != NAME_None)
+	else if (sec->SeqName != NAME_None)
 	{
-		SN_StartSequence (m_Sector, CHAN_CEILING, m_Sector->SeqName, 0);
+		SN_StartSequence (sec, CHAN_CEILING, sec->SeqName, 0);
 	}
 	else
 	{
-		if (m_Silent == 2)
-			SN_StartSequence (m_Sector, CHAN_CEILING, "Silence", 0);
-		else if (m_Silent == 1)
-			SN_StartSequence (m_Sector, CHAN_CEILING, "CeilingSemiSilent", 0);
+		if (silent == 2)
+			SN_StartSequence (sec, CHAN_CEILING, "Silence", 0);
+		else if (silent == 1)
+			SN_StartSequence (sec, CHAN_CEILING, "CeilingSemiSilent", 0);
 		else
-			SN_StartSequence (m_Sector, CHAN_CEILING, "CeilingNormal", 0);
+			SN_StartSequence (sec, CHAN_CEILING, "CeilingNormal", 0);
 	}
 }
 
@@ -130,6 +139,10 @@ void DCeiling::PlayCeilingSound ()
 void DCeiling::Tick ()
 {
 	EResult res;
+	fixed_t snapWas;	// [Kaori-Chani] the plane before the move, for the stall test
+
+	// [Kaori-Chani] features/net-snapshot: the state this tic starts in.
+	SnapCapture( );
 		
 	switch (m_Direction)
 	{
@@ -138,11 +151,25 @@ void DCeiling::Tick ()
 		break;
 	case 1:
 		// UP
+		// [Kaori-Chani] features/net-snapshot: a plane the server says stalled stays put.
+		if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+			break;
 		res = MoveCeiling (m_Speed, m_TopHeight, m_Direction);
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked, res == crushed );
 		
 		// [BC] Don't need to do anything more here if we're a client.
 		if ( NETWORK_InClientMode() )
+		{
+			// [Kaori-Chani] features/net-snapshot: a crusher a record has reached turns here as
+			// the server's case below does; with the gate off, none has been reached.
+			if (( res == pastdest ) && ( m_Type == ceilCrushAndRaise )
+				&& zx::netsnapshot::MoverClientDerivesReversal( m_SnapSeen ))
+			{
+				m_Direction = -1;
+				m_Speed = m_Speed1;
+			}
 			break;
+		}
 
 		if (res == pastdest)
 		{
@@ -150,10 +177,14 @@ void DCeiling::Tick ()
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING, true ) == false )
+				{
+					if ( m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				}
 			}
 
 			switch (m_Type)
@@ -175,7 +206,7 @@ void DCeiling::Tick ()
 
 					// Potentially tell clients to stop playing a ceiling sound.
 					if ( SN_IsMakingLoopingSound( m_Sector ) == false )
-						SERVERCOMMANDS_PlayCeilingSound( m_CeilingID );
+						zx::netsnapshot::MoverSendCeilingSound( m_Sector, m_CeilingID, m_Silent );
 				}
 				break;
 				
@@ -213,11 +244,31 @@ void DCeiling::Tick ()
 		
 	case -1:
 		// DOWN
+		// [Kaori-Chani] features/net-snapshot: as going up.
+		if ( zx::netsnapshot::MoverHoldsPlane( m_SnapBlocked ))
+			break;
+		snapWas = m_Sector->ceilingplane.d;
 		res = MoveCeiling (m_Speed, m_BottomHeight, m_Crush, m_Direction, m_Hexencrush);
+
+		// [Kaori-Chani] features/net-snapshot: stalled is crushed with the plane unmoved,
+		// since a Doom crush moves on regardless.
+		m_SnapBlocked = zx::netsnapshot::MoverPlaneStalled( m_SnapBlocked,
+			( res == crushed ) && ( m_Sector->ceilingplane.d == snapWas ));
 		
 		// [BC] Don't need to do anything more here if we're a client.
 		if ( NETWORK_InClientMode() )
+		{
+			// [Kaori-Chani] features/net-snapshot: as the up stroke, for the two types the
+			// server's case below turns at the bottom.
+			if (( res == pastdest )
+				&& (( m_Type == ceilCrushAndRaise ) || ( m_Type == ceilCrushRaiseAndStay ))
+				&& zx::netsnapshot::MoverClientDerivesReversal( m_SnapSeen ))
+			{
+				m_Speed = m_Speed2;
+				m_Direction = 1;
+			}
 			break;
+		}
 
 		if (res == pastdest)
 		{
@@ -225,10 +276,14 @@ void DCeiling::Tick ()
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING, true ) == false )
+				{
+					if ( m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( m_Sector - sectors ));
+				}
 			}
 
 			switch (m_Type)
@@ -251,7 +306,7 @@ void DCeiling::Tick ()
 
 					// Potentially tell clients to stop playing a ceiling sound.
 					if ( SN_IsMakingLoopingSound( m_Sector ) == false )
-						SERVERCOMMANDS_PlayCeilingSound( m_CeilingID );
+						zx::netsnapshot::MoverSendCeilingSound( m_Sector, m_CeilingID, m_Silent );
 				}
 				break;
 
@@ -312,6 +367,19 @@ void DCeiling::Tick ()
 		}
 		break;
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the state the tic ended in, unless a Destroy
+	// above captured the GONE already.
+	if (( ObjectFlags & OF_EuthanizeMe ) == 0 )
+		SnapCapture( );
+}
+
+// [Kaori-Chani] features/net-snapshot: the GONE, and the only hook that catches a ceiling
+// destroyed outside Tick, such as the map reset's loop.
+void DCeiling::Destroy()
+{
+	SnapCapture( true );
+	Super::Destroy();
 }
 
 void DCeiling::UpdateToClient( ULONG ulClient )
@@ -675,7 +743,8 @@ DCeiling *DCeiling::Create(sector_t *sec, DCeiling::ECeiling type, line_t *line,
 
 	// [BC] If we're the server, tell clients to play the ceiling sound.
 	if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-		SERVERCOMMANDS_PlayCeilingSound( ceiling->m_CeilingID );
+		zx::netsnapshot::MoverSendCeilingSound( ceiling->m_Sector, ceiling->m_CeilingID,
+			ceiling->m_Silent );
 
 	return ceiling;
 }
@@ -752,7 +821,8 @@ void P_ActivateInStasisCeiling (int tag)
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
 				SERVERCOMMANDS_ChangeCeilingDirection( scan->GetID( ), scan->GetDirection( ));
-				SERVERCOMMANDS_PlayCeilingSound( scan->GetID( ));
+				zx::netsnapshot::MoverSendCeilingSound( scan->m_Sector, scan->GetID( ),
+					scan->m_Silent );
 			}
 		}
 	}
@@ -780,10 +850,14 @@ bool EV_CeilingCrushStop (int tag)
 			// have the correct floor/ceiling height for this sector.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
 			{
-				if ( scan->m_Sector->floorOrCeiling == 0 )
-					SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
-				else
-					SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+				// [Kaori-Chani] features/net-snapshot: a record writes this plane.
+				if ( zx::netsnapshot::MoverServerStops( SNAPMV_CEILING, true ) == false )
+				{
+					if ( scan->m_Sector->floorOrCeiling == 0 )
+						SERVERCOMMANDS_SetSectorFloorPlane( ULONG( scan->m_Sector - sectors ));
+					else
+						SERVERCOMMANDS_SetSectorCeilingPlane( ULONG( scan->m_Sector - sectors ));
+				}
 
 				// Tell clients to stop the floor's sound sequence.
 				SERVERCOMMANDS_StopSectorSequence( scan->m_Sector );

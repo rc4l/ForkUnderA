@@ -1054,6 +1054,10 @@ void	PLAYER_SetSpriteToSkin( player_t *pPlayer ); // [RK]
 bool	PLAYER_SetSelectedInventory( player_t *player, AInventory *item, bool showInventoryBar );
 
 void P_CheckPlayerSprite(AActor *mo, int &spritenum, fixed_t &scalex, fixed_t &scaley);
+// [Kaori-Chani] features/net-snapshot: the same for an actor whose player_t is not its own,
+// which a snapshot mirror of a remote player never has.
+void P_CheckPlayerSpriteFor(AActor *mo, player_t *player, int &spritenum, fixed_t &scalex,
+	fixed_t &scaley);
 
 inline void AActor::SetFriendPlayer(player_t *player)
 {

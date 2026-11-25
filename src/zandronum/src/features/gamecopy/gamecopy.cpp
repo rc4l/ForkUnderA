@@ -6,6 +6,7 @@
 #include "features/gamecopy/players.h"
 #include "features/gamecopy/xfloors.h"
 #include "features/gamecopy/lights.h"
+#include "features/actor-layout/actorprefetch.h"   // [Doruk-Aksoy] the lines TakeActor reads, fetched ahead
 #include "features/gamecopy/level.h"
 #include "features/gamecopy/particles.h"
 #include "features/gamecopy/decals.h"
@@ -27,6 +28,7 @@
 #include "features/gamecopy/actorlists.h"
 #include "features/gamecopy/tintsubject.h"
 #include "features/frame/computation/oracle_compute.h"
+#include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] GhostFrame, MirrorPlayerNum
 #include "features/handoff/seam.h"
 #include "features/telemetry/telemetry.h"
 
@@ -488,6 +490,7 @@ void FillPolyobjects()
 }
 
 std::vector<ActorRecord> g_actors;   // [rc4l] the last fill's actors, reused fill to fill
+std::vector<ActorCullPoint> g_cullPoints;   // [Doruk-Aksoy] g_actors' frustum test inputs, one a record
 std::vector<int> g_firstIn;          // [rc4l] each sector's first record
 std::vector<int> g_skyBoxes;         // [rc4l] each sector's floor and ceiling sky viewpoint records
 int g_defaultSkyBox = -1;
@@ -530,6 +533,9 @@ inline void Prefetch(const void *p)
 #endif
 }
 
+// [Doruk-Aksoy] Actors ahead the render copy's take fetches, each one's lines overlapping the take of those before it.
+const int kCopyAhead = 4;
+
 // [Doruk-Aksoy] Slots ahead an array's actors are fetched, as many as their loads can overlap.
 const size_t kFetchAhead = 16;
 
@@ -551,15 +557,21 @@ template <class Visit> void VisitSlots(const std::vector<void *> &items, int lo,
 }
 
 // [Doruk-Aksoy] The buckets holding actors in TThinkerIterator<AActor>'s order: the thinking statnums, each one's list then its fresh list.
+// [Kaori-Chani] features/net-snapshot parks a mirror in STAT_INFO, which does not think, so
+// its bucket comes last: an actor there is drawn without any record's order shifting.
 const std::vector<int> &ActorBuckets()
 {
 	static std::vector<int> buckets;
 	if (buckets.empty())
+	{
 		for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
 		{
 			buckets.push_back(stat);
 			buckets.push_back(kFreshBucket + stat);
 		}
+		buckets.push_back(STAT_INFO);
+		buckets.push_back(kFreshBucket + STAT_INFO);
+	}
 	return buckets;
 }
 
@@ -578,11 +590,18 @@ void CompactMirror()
 }
 
 // [Doruk-Aksoy] Every actor in thinker order walked down the lists themselves, which fua_copy_prescan_check holds the arrays to.
+// [Kaori-Chani] Walked by statnum in ActorBuckets' order rather than by one iterator over
+// them all, since STAT_INFO is 0 and would otherwise come first here and last there.
 void WalkActors(std::vector<AActor *> &out)
 {
 	out.clear();
-	TThinkerIterator<AActor> it;
-	for (AActor *a; (a = it.Next()) != NULL; ) out.push_back(a);
+	for (int stat = STAT_FIRST_THINKING; stat <= MAX_STATNUM; stat++)
+	{
+		TThinkerIterator<AActor> it(stat);
+		for (AActor *a; (a = it.Next()) != NULL; ) out.push_back(a);
+	}
+	TThinkerIterator<AActor> info(STAT_INFO);
+	for (AActor *a; (a = info.Next()) != NULL; ) out.push_back(a);
 }
 
 // [rc4l] Every actor in thinker order, each given its id in that order, as the records will hold them.
@@ -726,6 +745,7 @@ void FillActors(bool listed, bool kept)
 	AActor *const camera = players[consoleplayer].camera;
 	(void)camera;
 	g_actors.resize(g_held.size());
+	g_cullPoints.resize(g_held.size());
 	// [rc4l] Taken across the pool, each lane writing only its own actors and records, since Sunder MAP11's 6,029 took 0.9 ms of a browser's handoff.
 	ZX_ZONE("copy/actor_take");
 	// [Doruk-Aksoy] Each chunk notes its wide actors while their records are at hand, where a pass over the records afterwards took 0.09 ms of Sunder MAP11's fill.
@@ -734,11 +754,16 @@ void FillActors(bool listed, bool kept)
 	auto take = [](int lo, int hi, int) {
 		std::vector<int> &wide = g_wideChunks[lo / kActorChunk].value;
 		wide.clear();
+		const size_t fetch = zx::actorlayout::CopyBytes();
 		for (int i = lo; i < hi; i++)
 		{
+			// [Doruk-Aksoy] features/actor-layout: the lines TakeActor reads, a few actors ahead.
+			if (i + kCopyAhead < hi) zx::actorlayout::PrefetchLines(g_held[i + kCopyAhead], fetch);
 			g_held[i]->rcRecord = i;
 			TakeActor(*g_held[i], g_actors[i]);
 			g_actors[i].nextInSector = g_heldNext[i];
+			const ActorRecord &r = g_actors[i];
+			g_cullPoints[i] = ComputeActorCullPoint(r.Sector != NULL, FIXED2FLOAT(r.x), FIXED2FLOAT(r.y), FIXED2FLOAT(r.z), FIXED2FLOAT(r.height), FIXED2FLOAT(r.radius), r.modelReach);
 			if (g_actors[i].Sector != NULL && zx::modelreach::ComputeReachIsWide(g_actors[i].modelFootprint, FIXED2FLOAT(g_actors[i].radius))) wide.push_back(i);
 		}
 	};
@@ -947,6 +972,14 @@ void TakeActor(AActor &live, ActorRecord &out)
 	int sprite = live.sprite;
 	fixed_t scaleX = live.scaleX, scaleY = live.scaleY;
 	if (live.player != NULL) P_CheckPlayerSprite(&live, sprite, scaleX, scaleY);
+	// [Kaori-Chani] features/net-snapshot: a mirror carries no player_t, so its skin comes
+	// from the player the wire named.
+	else if (live.IsKindOf(RUNTIME_CLASS(APlayerPawn)))
+	{
+		const int mirrorPlayer = zx::netsnapshot::MirrorPlayerNum(&live);
+		if ((mirrorPlayer >= 0) && (mirrorPlayer < MAXPLAYERS))
+			P_CheckPlayerSpriteFor(&live, &players[mirrorPlayer], sprite, scaleX, scaleY);
+	}
 	out.shownSprite = sprite;
 	out.shownScaleX = scaleX;
 	out.shownScaleY = scaleY;
@@ -974,6 +1007,12 @@ const ActorRecord *Actors(int &count)
 {
 	count = (int)g_actors.size();
 	return g_actors.empty() ? NULL : &g_actors[0];
+}
+
+const ActorCullPoint *ActorCullPoints(int &count)
+{
+	count = (int)g_cullPoints.size();
+	return g_cullPoints.empty() ? NULL : &g_cullPoints[0];
 }
 
 const ActorRecord *Record(int n)
@@ -1145,6 +1184,7 @@ void InitLevel()
 	g_prescan.stamp.found = false;
 	g_heldMade = ActorListStamp();
 	g_actors.clear();
+	g_cullPoints.clear();
 	g_byIdBuilt = false;
 	g_level++;
 	g_firstIn.clear();
@@ -1323,6 +1363,9 @@ void FillNow()
 {
 	// [rc4l] Between a level's data being freed and the next set up, as at the full console endgame leaves, there is nothing to copy.
 	if (!g_levelLoaded) return;
+	// [Kaori-Chani] features/net-snapshot: the ghost table is mirrored here, ahead of the walk
+	// below, so this copy carries the mirrors it makes rather than the previous frame's.
+	zx::netsnapshot::GhostFrame();
 	g_filled = StampOfNow();
 	ZX_SEAM("copy/fill", Handoff);
 	// [rc4l] Whether the tic's end found the map's changes, which spares the handoff comparing the whole map (Sunder MAP16's 62,000 sides) while the frames wait.
@@ -1477,10 +1520,13 @@ void CheckBeforeViews()
 			zx::frame::ComputeOracleNote(g_before, "  line %d's %s is not the live line's (flags %#x apart)\n", i, LineDiffers(lines[i]), unsigned(lines[i].rc.flags ^ lines[i].flags));
 	}
 	// [rc4l] Each live actor against its record, in the order the fill took them, the list links being the fill's own.
-	TThinkerIterator<AActor> it;
+	// [Kaori-Chani] Through WalkActors, so this walks exactly what the fill copies: a mirror
+	// in STAT_INFO is in both or in neither, where a plain iterator would miss it.
+	static std::vector<AActor *> live;
+	WalkActors(live);
 	ActorRecord fresh;
 	int n = 0;
-	for (AActor *a; (a = it.Next()) != NULL; n++)
+	for (AActor *a : live)
 	{
 		g_before.checked++;
 		const char *why = "record";
@@ -1492,6 +1538,7 @@ void CheckBeforeViews()
 		}
 		if (why != NULL && zx::frame::ComputeOracleDiffer(g_before, 6))
 			zx::frame::ComputeOracleNote(g_before, "  actor %d (%s)'s %s is not the live actor's\n", n, a->GetClass()->TypeName.GetChars(), why);
+		n++;
 	}
 	g_before.checked++;
 	if (n != (int)g_actors.size() && zx::frame::ComputeOracleDiffer(g_before, 6))

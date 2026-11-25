@@ -25,6 +25,9 @@ never reads what that tic is changing.
 - `d_main.cpp` `D_PrepareDisplay` and `features/gameloop/loop.cpp` `AfterTic`: `FillMap` between tics.
   On a client it fills again when a server packet was applied since (`features/net-client` `ParsedPackets`,
   `ComputeFillDue`), where it filled every frame, comparing the whole map each time.
+- A sector change the fill takes bumps `rcShape`, `rcPlacement` or `rcLook`, which the level mesh's caches key on; a
+  plane a joining client is sent after its level baked reaches the mesh only that way. Scenarios `netonetime` and
+  `singlereload` judge the pictures after a reconnect, a late join and a reload of the same map.
 - `features/gameloop/loop.cpp` `Playsim`: `ScanAtTicEnd`, the sectors, sides and lines the tic changed found on the
   thread that ran it against the states the copy last took (`g_sectorTaken`, `g_sideTaken`, `g_lineTaken`), so the
   fill compares only those, what the frames blended and what they marked seen (`computation/prescan_compute`). A
@@ -182,7 +185,7 @@ Handed to the handoff, by helper:
 
 - `AskMainFor`: `p_acs.cpp`, `v_font.cpp`
 - `QueuePrint`: `c_console.cpp`
-- `QueueUI`: `s_sound.cpp`
+- `QueueUI`: `g_game.cpp`, `s_sound.cpp`
 - `QueuedBesideTic`: `features/postprocess/postprocess.cpp`, `features/video-scale/videoscale.cpp`, `s_sound.cpp`
 - `QueuedForHandoff`: `am_map.cpp`, `c_console.cpp`, `features/music-cache/musiccache.cpp`, `menu/menu.cpp`, `r_data/r_translate.cpp`, `r_sky.cpp`, `r_utility.cpp`, `s_sound.cpp`
 - `RunOrQueue`: `features/wad-folders/zx_wadfolders.cpp`, `p_conversation.cpp`, `p_user.cpp`

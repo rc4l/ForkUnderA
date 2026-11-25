@@ -87,6 +87,8 @@ DeletingModelArray Models;
 
 
 int ModelCount() { return (int)Models.Size(); }
+static unsigned g_modelsGeneration = 0;
+unsigned ModelsGeneration() { return g_modelsGeneration; }
 FModel *ModelAt(int index) { return Models[index]; }
 
 //===========================================================================
@@ -344,6 +346,7 @@ void gl_InitModels()
 		delete Models[i];
 	}
 	Models.Clear();
+	g_modelsGeneration++;
 	SpriteModelFrames.Clear();
 	DeleteModelHash();
 

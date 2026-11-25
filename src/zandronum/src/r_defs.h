@@ -980,6 +980,9 @@ struct sector_t : SectorReads<sector_t>
 	fixed_t				SavedFriction;
 	fixed_t				SavedMoveFactor;
 	short				SavedSpecial;
+	// [Kaori-Chani] features/net-snapshot: the timed door P_SpawnSpecials cleared, which
+	// SavedSpecial cannot hold because the spawner zeroes special as it builds the door.
+	short				SavedTimedDoor;
 	short				SavedDamage;
 	short				SavedMOD;
 	float				SavedCeilingReflect;
