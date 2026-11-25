@@ -64,7 +64,8 @@
 
 // [Doruk-Aksoy] Face sprites built once a tic and turned and interpolated by the vertex shader (the tic stream), off only to compare against the CPU path.
 CVAR(Bool, fua_dg_gpusprites, true, CVAR_FUA_DEV_MODE)
-EXTERN_CVAR(Int, fua_dg_gpuview)
+// [Doruk-Aksoy] Picks which actors fua_dg_gpuview draws, 1 those the tic stream may carry and 2 every other piece, the same in either path; here so a headless build without the backend still links.
+CVAR(Int, fua_dg_gpuview, 0, CVAR_FUA_DEV_MODE)
 EXTERN_CVAR(Int, r_spriteclip)
 EXTERN_CVAR(Float, r_sclipfactor)
 EXTERN_CVAR(Float, r_sclipthreshold)

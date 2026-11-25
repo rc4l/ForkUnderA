@@ -48,8 +48,7 @@ EXTERN_CVAR(Bool, fua_dg_premulblend)
 EXTERN_CVAR(Bool, fua_dg_rtsprites)
 // [rc4l] The translucent pass skips what the pass's walk did not reach; 0 sorts every translucent surface, to measure and compare against.
 CVAR(Bool, fua_dg_blendwalk, true, CVAR_FUA_DEV_MODE)
-// [Doruk-Aksoy] Picks which actors fua_dg_gpuview draws, 1 those the tic stream may carry and 2 every other piece, the same in either path.
-CVAR(Int, fua_dg_gpuview, 0, CVAR_FUA_DEV_MODE)
+EXTERN_CVAR(Int, fua_dg_gpuview)
 
 // [Doruk-Aksoy] One of the frame's flat planes: its height, footprint, and the view whose walk captured it.
 struct FlatPlaneInfo { float h; zx::hwrender::FlatFootprint area; int mirrorView, stackSlot; };

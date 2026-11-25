@@ -505,6 +505,7 @@ TEST(SurfaceOrder, ATieFallsToTheActorsRecordBeforeTheOffset)
 	TranslucentDraw early, late, loose;
 	early.distSq = late.distSq = loose.distSq = 100.f;
 	early.blend = late.blend = loose.blend = 1;
+	early.decal = late.decal = loose.decal = false;
 	early.who = 3; early.first = 900;
 	late.who = 7; late.first = 12;
 	loose.who = -1; loose.first = 5000;
