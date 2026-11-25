@@ -1747,6 +1747,7 @@ add_executable( zdoom WIN32
 	features/actormaterials/actormaterials.cpp
 	features/acsvec/acsvec.cpp
 	features/acs-funcrefs/acsfuncrefs.cpp
+	features/acs-parity/acsparity.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp

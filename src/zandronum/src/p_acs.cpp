@@ -119,6 +119,7 @@
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
 #include "features/acsvec/acsvec.h"   // [Doruk-Aksoy] CallVecFunction
 #include "features/acs-funcrefs/acsfuncrefs.h"   // [Doruk-Aksoy] PushFunctionRef, ResolveFunctionRef
+#include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -1584,21 +1585,7 @@ static int UseInventory (AActor *activator, const char *type)
 
 static int CheckInventory (AActor *activator, const char *type)
 {
-	if (activator == NULL || type == NULL)
-		return 0;
-
-	if (stricmp (type, "Armor") == 0)
-	{
-		type = "BasicArmor";
-	}
-	else if (stricmp (type, "Health") == 0)
-	{
-		return activator->health;
-	}
-
-	const PClass *info = PClass::FindClass (type);
-	AInventory *item = activator->FindInventory (info);
-	return item ? item->Amount : 0;
+	return zx::acsparity::InventoryAmount(activator, type, false);
 }
 
 //============================================================================
@@ -5162,6 +5149,23 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_Friction );
 		break;
 
+	// [Doruk-Aksoy] uzdoom@1d286d5bd5, sent to clients when it changed since they move their own pawn and walking monsters through P_TryMove.
+	case APROP_MaxStepHeight:
+	case APROP_MaxDropOffHeight:
+	{
+		fixed_t &height = property == APROP_MaxStepHeight ? actor->MaxStepHeight : actor->MaxDropOffHeight;
+		const fixed_t oldHeight = height;
+		height = value;
+		if ( oldHeight != height )
+			zx::netreplication::SendThingProperty( actor, property );
+		break;
+	}
+
+	// [Doruk-Aksoy] uzdoom@d09ec5a930, kept on the server since only it deals damage.
+	case APROP_DamageType:
+		actor->DamageType = FBehavior::StaticLookupString(value);
+		break;
+
 	default:
 		// do nothing.
 		break;
@@ -5280,6 +5284,9 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_DamageMultiplier: return actor->DamageMultiply.Raw();	// [rc4l] uzdoom@99b2cfa14
 	case APROP_StencilColor:return actor->fillcolor;
 	case APROP_Friction:	return (int)(actor->Friction);
+	case APROP_MaxStepHeight:	return (int)(actor->MaxStepHeight);
+	case APROP_MaxDropOffHeight:	return (int)(actor->MaxDropOffHeight);
+	case APROP_DamageType:	return GlobalACSStrings.AddString(actor->DamageType.GetChars());
 
 	default:				return 0;
 	}
@@ -5328,6 +5335,8 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_MeleeRange:
 		case APROP_ViewHeight:
 		case APROP_AttackZOffset:
+		case APROP_MaxStepHeight:
+		case APROP_MaxDropOffHeight:
 		case APROP_StencilColor:
 		case APROP_MvType:
 		case APROP_IsCrouchSliding:
@@ -5357,6 +5366,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_ActiveSound:	string = actor->ActiveSound; break; 
 		case APROP_Species:		string = actor->GetSpecies(); break;
 		case APROP_NameTag:		string = actor->GetTag(); break;
+		case APROP_DamageType:	string = actor->DamageType.GetChars(); break;
 	}
 	if (string == NULL) string = "";
 	return (!stricmp(string, FBehavior::StaticLookupString(value)));
@@ -5736,9 +5746,13 @@ enum EACSFunctions
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
+	// [Doruk-Aksoy] features/acs-parity: UZDoom's functions at UZDoom's numbers, uzdoom@c51abb0161.
+	ACSF_GetMaxInventory = 93,
 
 	// [Doruk-Aksoy] uzdoom@a1e8d83724: out of order, at upstream's number, which ACC compiles SetMusicVolume to (-97).
 	ACSF_SetMusicVolume = 97,
+	ACSF_CheckProximity,		// [Doruk-Aksoy] 98, uzdoom@6633e41cca
+	ACSF_CheckActorState,		// [Doruk-Aksoy] 99, uzdoom@df4a8e38c5
 
 	/* Zandronum's - these must be skipped when we reach 99!
 	-100:ResetMap(0),
@@ -5750,8 +5764,23 @@ enum EACSFunctions
 	-106 : KickFromGame(2),
 	*/
 
+	// [Doruk-Aksoy] features/acs-parity: uzdoom@3299a29c44 (CheckClass), d7b5bdc0f7 (DamageActor).
+	ACSF_CheckClass = 200,
+	ACSF_DamageActor = 201,
 	// [BB] Out of order ZDoom backport.
 	ACSF_GetActorFloorTexture = 204,
+	// [Doruk-Aksoy] uzdoom@85488f2f30 (GetActorFloorTerrain), f82ab889b2 (StrArg), 1ff4016498 (Floor, Round, Ceil).
+	ACSF_GetActorFloorTerrain = 205,
+	ACSF_StrArg = 206,
+	ACSF_Floor = 207,
+	ACSF_Round = 208,
+	ACSF_Ceil = 209,
+	// [Doruk-Aksoy] uzdoom@f5ceaafbbc.
+	ACSF_GetNetID = 215,
+	ACSF_SetActivatorByNetID = 216,
+	// [Doruk-Aksoy] Eternity's, uzdoom@3a569f176d.
+	ACSF_GetLineX = 300,
+	ACSF_GetLineY = 301,
 
 	// [BB] Skulltag functions
 	ACSF_ResetMap = 100,
@@ -5876,6 +5905,9 @@ enum EACSFunctions
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
 static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
+static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
+	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
+	&& ACSF_GetLineY == zx::acsparity::kGetLineY, "UZDoom's functions keep UZDoom's numbers");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
@@ -9474,6 +9506,67 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			}
 			break;
 		}
+
+		// [Doruk-Aksoy] features/acs-parity: UZDoom's functions, numbered and answering as UZDoom's do.
+		case ACSF_GetMaxInventory:
+			return zx::acsparity::InventoryAmount(SingleActorFromTID(args[0], activator), FBehavior::StaticLookupString(args[1]), true);
+
+		case ACSF_CheckProximity:
+			return zx::acsparity::CheckProximity(SingleActorFromTID(args[0], activator), FBehavior::StaticLookupString(args[1]), args[2],
+				argCount >= 4 ? args[3] : 1, argCount >= 5 ? args[4] : 0, argCount >= 6 ? args[5] : AAPTR_DEFAULT);
+
+		case ACSF_CheckActorState:
+		{
+			actor = SingleActorFromTID(args[0], activator);
+			const char *statename = FBehavior::StaticLookupString(args[1]);
+			return actor != NULL && statename != NULL && actor->GetClass()->ActorInfo->FindStateByString(statename, argCount > 2 && args[2] != 0) != NULL;
+		}
+
+		case ACSF_CheckClass:
+			return zx::acsparity::IsActorClass(FBehavior::StaticLookupString(args[0]));
+
+		case ACSF_DamageActor:
+		{
+			// [Doruk-Aksoy] (target, its pointer, inflictor, its pointer, amount, damage type), what P_DamageMobj gives back.
+			AActor *target = COPY_AAPTR(SingleActorFromTID(args[0], activator), args[1]);
+			AActor *inflictor = COPY_AAPTR(SingleActorFromTID(args[2], activator), args[3]);
+			return P_DamageMobj(target, inflictor, inflictor, args[4], FName(FBehavior::StaticLookupString(args[5])));
+		}
+
+		case ACSF_GetActorFloorTerrain:
+			actor = SingleActorFromTID(args[0], activator);
+			return GlobalACSStrings.AddString(actor != NULL ? zx::acsparity::FloorTerrainName(actor) : "");
+
+		case ACSF_StrArg:
+			return -FName(FBehavior::StaticLookupString(args[0])).GetIndex();
+
+		case ACSF_Floor:
+			return zx::acsparity::ComputeFixedFloor(args[0]);
+
+		case ACSF_Round:
+			return zx::acsparity::ComputeFixedRound(args[0]);
+
+		case ACSF_Ceil:
+			return zx::acsparity::ComputeFixedCeil(args[0]);
+
+		case ACSF_GetNetID:
+			actor = zx::acsparity::NthActorFromTID(args[0], args[1], activator);
+			if (argCount > 2)
+				actor = COPY_AAPTR(actor, args[2]);
+			return actor != NULL ? actor->NetID : 0;
+
+		case ACSF_SetActivatorByNetID:
+			actor = zx::acsparity::ActorFromNetID(args[0]);
+			if (argCount > 1)
+				actor = COPY_AAPTR(actor, args[1]);
+			if (actor == NULL)
+				return 0;
+			activator = actor;
+			return 1;
+
+		case ACSF_GetLineX:
+		case ACSF_GetLineY:
+			return zx::acsparity::LineCoord(args[0], funcIndex - ACSF_GetLineX, args[1], args[2]);
 
 		default:
 			break;

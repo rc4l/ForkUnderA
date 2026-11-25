@@ -1173,6 +1173,9 @@ static inline bool MustForcePain(AActor *target, AActor *inflictor, int flags)
 // damage itself is going to be refused? ALLOWPAIN on the victim, CAUSEPAIN on the inflictor.
 static inline bool isFakePain(AActor *target, AActor *inflictor, int damage)
 {
+	// [Doruk-Aksoy] P_DamageMobj asks this before its own null check, which ACS's DamageActor reaches with a tid no actor holds.
+	if (target == NULL)
+		return false;
 	return ((target->flags7 & MF7_ALLOWPAIN && damage > 0) || ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)));
 }
 

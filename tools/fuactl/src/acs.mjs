@@ -13,7 +13,10 @@ export const PCD = { TERMINATE: 1, PUSHNUMBER: 3, LSPEC1: 4, ADD: 14, EQ: 19, LT
 // [rc4l] The ACS functions templates call through CALLFUNC, numbered as EACSFunctions in p_acs.cpp.
 export const ACSF = { GetLineUDMFInt: 1, GetSectorUDMFInt: 5, GetSideUDMFInt: 7, SpawnSpotForced: 20, CheckActorProperty: 22, SetActorVelocity: 23, CheckActorClass: 27, SpawnForced: 36, SetCVar: 53, GetUserCVar: 54, SetUserCVar: 55, LineAttack: 60, PlaySound: 61, CheckFlag: 75, GetLineActivation: 77, LumpOpen: 159, LumpGetInfo: 166, ConsolePlayerNumber: 102, GetTeamProperty: 103, LumpReadHub: 164, AddBot: 168, RemoveBot: 169, GetWadInfo: 186, SetMapUsedStatus: 187, CheckScript: 188, CheckAutomap: 189, GetSelectedInventory: 190, SetSelectedInventory: 191,
   fua_SetShaderEnabled: 24000, fua_SetShaderUniform1f: 24001, fua_SetShaderUniform2f: 24002, fua_SetShaderUniform3f: 24003,
-  fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005 };
+  fua_SetShaderUniform4f: 24004, fua_SetShaderUniform1i: 24005,
+  // [Doruk-Aksoy] UZDoom's, at UZDoom's numbers (features/acs-parity).
+  GetMaxInventory: 93, CheckProximity: 98, CheckActorState: 99, CheckClass: 200, DamageActor: 201, GetActorFloorTerrain: 205, StrArg: 206,
+  Floor: 207, Round: 208, Ceil: 209, GetNetID: 215, SetActivatorByNetID: 216, GetLineX: 300, GetLineY: 301 };
 
 // [rc4l] OPEN script 1 running `code` (words), with `strings` indexed from 0 as the script's string arguments; `{ open: false, number }` makes it a closed script that `puke number` runs.
 export function acs0(code, strings = [], { open = true, number = 1 } = {}) {

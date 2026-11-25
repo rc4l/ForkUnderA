@@ -109,6 +109,8 @@ than only at class-definition time.
   and `vec3` call with `-target fua` or `any`.
 - [Function references](acs/Function_references.md) — BCS function references compare equal between
   modules and last across map changes.
+- [UZDoom's ACS functions](acs/UZDoom_functions.md) — `CheckProximity`, `DamageActor`, `GetLineX`,
+  net ids, `Floor`/`Round`/`Ceil` and more, and `APROP_MaxStepHeight`, at UZDoom's numbers.
 
 ### GLDEFS
 
