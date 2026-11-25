@@ -32,6 +32,7 @@
 #include "r_data/r_interpolate.h"
 #include "statnums.h"
 #include "farchive.h"
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverCountAttachedVeto
 
 IMPLEMENT_CLASS (DSectorEffect)
 
@@ -137,16 +138,24 @@ DMovingCeiling::DMovingCeiling (sector_t *sector)
 
 bool DMover::MoveAttached(int crush, fixed_t move, int floorOrCeiling, bool resetfailed)
 {
+	// [Kaori-Chani] features/net-snapshot: a client discards this veto as it discards
+	// P_ChangeSector's, so a rollback here cannot hold its mover back.
 	if (!P_Scroll3dMidtex(m_Sector, crush, move, !!floorOrCeiling) && resetfailed)
 	{
-		P_Scroll3dMidtex(m_Sector, crush, -move, !!floorOrCeiling);
-		return false;
+		if ( zx::netsnapshot::MoverDiscardsAttachedVeto( ) == false )
+		{
+			P_Scroll3dMidtex(m_Sector, crush, -move, !!floorOrCeiling);
+			return false;
+		}
 	}
-	if (!P_MoveLinkedSectors(m_Sector, crush, move, !!floorOrCeiling) && resetfailed)
+	if (!P_MoveLinkedSectors(m_Sector, crush, move, !!floorOrCeiling, "mover") && resetfailed)
 	{
-		P_MoveLinkedSectors(m_Sector, crush, -move, !!floorOrCeiling);
-		P_Scroll3dMidtex(m_Sector, crush, -move, !!floorOrCeiling);
-		return false;
+		if ( zx::netsnapshot::MoverDiscardsAttachedVeto( ) == false )
+		{
+			P_MoveLinkedSectors(m_Sector, crush, -move, !!floorOrCeiling, "revert");
+			P_Scroll3dMidtex(m_Sector, crush, -move, !!floorOrCeiling);
+			return false;
+		}
 	}
 	return true;
 }

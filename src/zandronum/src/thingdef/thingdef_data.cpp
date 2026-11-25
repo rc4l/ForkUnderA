@@ -340,6 +340,7 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(RF, FORCEYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, FORCEXYBILLBOARD, AActor, renderflags),
 	DEFINE_FLAG(RF, ROLLSPRITE, AActor, renderflags),	// [rc4l] uzdoom
+	DEFINE_FLAG(RF, LIGHTMULTALPHA, AActor, renderflags),	// [Doruk-Aksoy] uzdoom@c0d17bbd
 
 	// Bounce flags
 	DEFINE_FLAG2(BOUNCE_Walls, BOUNCEONWALLS, AActor, BounceFlags),
@@ -458,6 +459,7 @@ static FFlagDef PowerSpeedFlagDefs[] =
 static FFlagDef DynamicLightFlagDefs[] =
 {
 	DEFINE_FLAG(LF, ATTENUATE, ADynamicLight, lightflags),
+	DEFINE_FLAG(LF, SPOT, ADynamicLight, lightflags),
 };
 
 static const struct FFlagList { const PClass *Type; FFlagDef *Defs; int NumDefs; } FlagLists[] =
@@ -590,6 +592,23 @@ FPropertyInfo *FindProperty(const char * string)
 		{
 			max = mid - 1;
 		}
+	}
+	return NULL;
+}
+
+//==========================================================================
+//
+// [Kaori-Chani] features/net-snapshot: a function's name from its address,
+// for a record that names the action a ghost's state called.
+//
+//==========================================================================
+
+const char *FindFunctionName(actionf_p func)
+{
+	for (unsigned int i = 0; i < AFTable.Size(); ++i)
+	{
+		if (AFTable[i].Function == func)
+			return AFTable[i].Name;
 	}
 	return NULL;
 }

@@ -124,6 +124,11 @@ struct FStateExpression
 	const PClass *owner;
 	bool constant;
 	bool cloned;
+	// [Kaori-Chani] features/net-snapshot: resolving this expression made an
+	// FxActionSpecialCall, so the cosmetic classifier can tell a state that runs a line special
+	// or a script from one that does not. Defaulted here rather than at the two sites that
+	// build an entry, so every construction path starts false, including any added since.
+	bool callsSpecial = false;
 };
 
 class FStateExpressions
@@ -143,9 +148,21 @@ public:
 	// spawn-closure precache can group constant refs by class without the VM.
 	const PClass *GetOwner(unsigned int no);
 	unsigned int Size() { return expressions.Size(); }
+	// [Kaori-Chani] features/net-snapshot: the owner of an expression that runs a line special
+	// or script when evaluated, else NULL. GetOwner above answers for any entry; this one
+	// answers only for those, which is the question the cosmetic classifier asks.
+	const PClass *SpecialCallOwner(unsigned int no) const
+	{
+		return ((no < expressions.Size()) && expressions[no].callsSpecial)
+			? expressions[no].owner : NULL;
+	}
 };
 
 extern FStateExpressions StateParams;
+
+// [Kaori-Chani] features/net-snapshot: the DECORATE name of an action function, for the
+// cosmetic classifier's report. Defined with the action function table.
+const char *FindFunctionName(actionf_p func);
 
 
 //==========================================================================

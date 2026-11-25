@@ -8,6 +8,7 @@
 
 #include "features/telemetry/computation/telemetry_compute.h"
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -19,6 +20,12 @@ typedef int Counter;
 
 // [rc4l] A counter's name ("group/name"), unit, kind, for a gauge how often its read runs (0 being every frame), and whether a soak judges its growth, which a peak or the OS's working set says nothing about.
 struct CounterSpec { const char *name; const char *unit; CounterKind kind; int intervalMs; bool soaked = true; };
+
+// [rc4l] Nanoseconds on the clock regions are timed with.
+// [Doruk-Aksoy] Inline and in every build, as the game loop, the job pool and the crash summary keep time by it.
+inline int64_t NowNs() { return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+#ifdef FUA_DIAGNOSTICS
 
 // [rc4l] Registers a counter, read through read (a gauge) or fed with Add and Set; a name registered twice returns the first counter, and a read returning a negative value marks the counter unavailable on this platform.
 Counter Register(const CounterSpec &spec, double (*read)() = nullptr);
@@ -34,9 +41,6 @@ void Set(Counter c, double value);
 
 // [rc4l] A breakdown snapshots and fua_stats list beside the counters: readings a feature makes on request, such as memory by tag; soaked false keeps a diagnostic that restates another reading out of a soak's verdict.
 void RegisterBreakdown(const char *name, void (*read)(std::vector<Reading> &out), bool soaked = true);
-
-// [rc4l] Nanoseconds on the clock regions are timed with.
-int64_t NowNs();
 
 // [rc4l] Whether regions are timed (fua_telemetry), which a disabled region costs one load of.
 extern bool g_enabled;
@@ -106,8 +110,38 @@ void SetSoakReady(bool (*ready)());
 // [rc4l] The counters whose names start with prefix as fua_stats json prints them, for the bridge's perf.counters.
 std::string StatsJson(const char *prefix);
 
-// [rc4l] Who hears the last minute in a few lines each second, which a crash report keeps to send with a crash; NULL hears nothing.
-void SetSummaryListener(void (*listen)(const char *summary));
+#else // FUA_DIAGNOSTICS
+
+// [Doruk-Aksoy] A public build: every call is an inline no-op the optimizer removes, so a feature reports through the same lines in both builds.
+inline Counter Register(const CounterSpec &, double (*)() = nullptr) { return -1; }
+inline Counter Find(const char *) { return -1; }
+inline int64_t TimedNs(Counter) { return 0; }
+inline void Add(Counter, double) {}
+inline void Set(Counter, double) {}
+inline void RegisterBreakdown(const char *, void (*)(std::vector<Reading> &), bool = true) {}
+constexpr bool g_enabled = false;
+struct ZoneSite
+{
+	explicit ZoneSite(const char *n) : counter(-1), name(n) {}
+	Counter counter;
+	const char *name;
+};
+constexpr const ZoneSite *t_innermostZone = nullptr;
+inline Counter CounterUnderZone(const char *, const ZoneSite *, const char * = "ms", CounterKind = CounterKind::Time) { return -1; }
+// [Doruk-Aksoy] Expands to nothing, and ZX_COUNT never evaluates its amount.
+#define ZX_ZONE(name) static_assert(sizeof(name) > 0, "")
+#define ZX_COUNT(name, unit, amount) do { (void)sizeof(amount); } while (0)
+inline void Region(Counter, int64_t, int64_t) {}
+inline void FrameMark() {}
+inline void TicMark() {}
+inline void NameThisThread(const char *) {}
+inline void SetFileOfferer(void (*)(const char *)) {}
+inline void SetGameReadable(bool (*)()) {}
+inline bool GameReadable() { return true; }
+inline void SetSoakReady(bool (*)()) {}
+inline std::string StatsJson(const char *) { return "{}"; }
+
+#endif // FUA_DIAGNOSTICS
 
 }} // namespace zx::telemetry
 

@@ -40,6 +40,9 @@
 #include "a_morph.h"
 
 #include <stdlib.h>
+#include <vector>
+#include <cstdint>
+#include "features/blockmap-filter/computation/cellarrays_compute.h" // [Doruk-Aksoy] zx::cells::ThingEntry
 
 #define STEEPSLOPE		46342	// [RH] Minimum floorplane.c value for walking
 
@@ -131,6 +134,9 @@ void P_ClearStateStringCache ();
 #define SPF_TEMPPLAYER		1	// spawning a short-lived dummy player
 #define SPF_WEAPONFULLYUP	2	// spawn with weapon already raised
 #define SPF_CLIENTUPDATE	4	// [BB]
+// [Kaori-Chani] A voodoo doll, which P_SpawnPlayer would otherwise hand the id reserved for
+// the player it cannot tell it from.
+#define SPF_VOODOODOLL		8
 
 APlayerPawn *P_SpawnPlayer (struct FPlayerStart *mthing, int playernum, int flags=0);
 
@@ -149,9 +155,11 @@ enum EPuffFlags
 
 // [BC] Added bTellClientToSpawn.
 AActor *P_SpawnPuff (AActor *source, const PClass *pufftype, fixed_t x, fixed_t y, fixed_t z, angle_t dir, int updown, int flags = 0, AActor *vict = NULL, bool bTellClientToSpawn = true);
-void	P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator);
-void	P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
-void	P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
+// [Kaori-Chani] features/net-snapshot: these return the actor they spawn, for step 3's cosmetic
+// capture; every existing caller ignores it, so behaviour is unchanged.
+AActor	*P_SpawnBlood (fixed_t x, fixed_t y, fixed_t z, angle_t dir, int damage, AActor *originator);
+AActor	*P_BloodSplatter (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
+AActor	*P_BloodSplatter2 (fixed_t x, fixed_t y, fixed_t z, AActor *originator);
 void	P_RipperBlood (AActor *mo, AActor *bleeder);
 int		P_GetThingFloorType (AActor *thing);
 void	P_ExplodeMissile (AActor *missile, line_t *explodeline, AActor *target, bool bExplodeOnClient = true); // [RK] Added bExplodeOnClient.
@@ -341,6 +349,17 @@ class FBlockThingsIterator
 
 	FBlockNode *block;
 
+	// [Doruk-Aksoy] features/blockmap-filter: walking the cells' arrays instead of their lists, for this mover at this spot, while no link or unlink has happened since the walk began.
+	int64_t FuaMoverRadius = 0;
+	bool FuaMoverMissile = false;
+	fixed_t FuaMoverX, FuaMoverY;
+	bool FuaCompact = false;
+	unsigned int FuaEpoch = 0;
+	const std::vector<zx::cells::ThingEntry> *FuaCell = NULL;
+	int FuaPos = -1;
+	AActor *FuaNextCompact();
+	bool FuaHashAdd(AActor *me);
+
 	int Buckets[32];
 
 	struct HashEntry
@@ -377,6 +396,8 @@ public:
 	~FBlockThingsIterator(); // [rc4l] returns the leased DynHash block to the pool
 	AActor *Next(bool centeronly = false);
 	void Reset() { StartBlock(minx, miny); }
+	// [Doruk-Aksoy] features/blockmap-filter: P_CheckPosition's walk over the cells' arrays, returning what the lists would less the candidates PIT_CheckThing passes by on distance.
+	void FuaCompactFor(const AActor *mover, fixed_t x, fixed_t y);
 };
 
 class FPathTraverse
@@ -597,6 +618,7 @@ void	P_DelSector_List();
 void	P_DelSeclist(msecnode_t *);							// phares 3/16/98
 void	P_CreateSecNodeList(AActor*,fixed_t,fixed_t);		// phares 3/14/98
 void	P_DiscardSecnodeReplay();		// [Doruk-Aksoy] features/relink-in-place: a link that builds no list still uses up the recording
+bool	P_MoverChecksThings(const AActor *mover);	// [Doruk-Aksoy] features/swept-missiles: whether P_CheckPosition walks the things near the mover
 int		P_GetMoveFactor(const AActor *mo, int *frictionp);	// phares  3/6/98
 int		P_GetFriction(const AActor *mo, int *frictionfactor);
 bool	Check_Sides(AActor *, int, int);					// phares
@@ -704,6 +726,8 @@ FPolyObj *PO_GetPolyobj(int polyNum);
 
 bool P_AlignFlat (int linenum, int side, int fc);
 
+struct SnapPolyEntry;	// [Kaori-Chani] features/net-snapshot/format.h
+
 // [BB] Moved here from po_man.cpp
 class DPolyAction : public DThinker
 {
@@ -715,6 +739,29 @@ public:
 	void Destroy();
 	void Stop();
 	int GetSpeed() const { return m_Speed; }
+
+	// [Kaori-Chani] features/net-snapshot: the next action on the same polyobject
+	// (FPolyObj::snapActions), in creation order. Defaulted, as the list head is.
+	DPolyAction *	m_SnapNext = NULL;
+	BYTE	m_SnapGen = 0;			// [Kaori-Chani] the record entry this follows; 0 = none
+	bool	m_SnapSeen = false;		// [Kaori-Chani] made by a record, on a client
+	bool	m_SnapBlocked = false;	// [Kaori-Chani] server: the last move failed; client: as told
+	bool	m_SnapLegacy = false;	// [Kaori-Chani] made by a legacy handler, dropped at gate-on
+
+	// [Kaori-Chani] The whole polyobject, from any of its actions; server only.
+	// [Kaori-Chani] features/net-snapshot: wraps each class's TickPoly in the captures.
+	void	Tick ();
+	virtual void	TickPoly () { }
+	void	SnapCapture ();
+	// [Kaori-Chani] This action as a record entry and back; SnapType 0xFF for none.
+	virtual BYTE	SnapType () const;
+	virtual void	SnapFill ( SnapPolyEntry & e ) const;
+	virtual void	SnapLoad ( const SnapPolyEntry & e );
+	// [Kaori-Chani] Client: the countdown ran out and the GONE has not come.
+	virtual bool	SnapDone () const;
+	// [Kaori-Chani] Client: a door's wait.
+	virtual bool	SnapWaiting () const { return false; }
+	bool	SnapMoving () const { return !m_SnapBlocked && !SnapDone( ) && !SnapWaiting( ); }
 
 	void StopInterpolation ();
 
@@ -734,6 +781,7 @@ protected:
 	TObjPtr<DInterpolation> m_Interpolation;
 
 	void SetInterpolation ();
+	bool	SnapHolds ();	// [Kaori-Chani] client: held or done, counted
 
 	friend void ThrustMobj (AActor *actor, seg_t *seg, FPolyObj *po);
 };
@@ -743,8 +791,11 @@ class DRotatePoly : public DPolyAction
 	DECLARE_CLASS (DRotatePoly, DPolyAction)
 public:
 	DRotatePoly (int polyNum);
-	void Tick ();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	void UpdateToClient( ULONG ulClient );
+	BYTE SnapType () const;		// [Kaori-Chani]
+	bool SnapDone () const;		// [Kaori-Chani]
 
 private:
 	DRotatePoly ();
@@ -759,8 +810,13 @@ class DMovePoly : public DPolyAction
 public:
 	DMovePoly (int polyNum);
 	void Serialize (FArchive &arc);
-	void Tick ();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	virtual void UpdateToClient( ULONG ulClient ); // [WS] This needs to be virtual.
+	BYTE SnapType () const;							// [Kaori-Chani]
+	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
+	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
+	bool SnapDone () const;							// [Kaori-Chani]
 
 	LONG	GetAngle( void );
 	void	SetAngle( LONG lAngle );
@@ -785,7 +841,12 @@ class DMovePolyTo : public DPolyAction
 public:
 	DMovePolyTo(int polyNum);
 	void Serialize(FArchive &arc);
-	void Tick();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
+	BYTE SnapType () const;							// [Kaori-Chani]
+	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
+	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
+	bool SnapDone () const;							// [Kaori-Chani]
 protected:
 	DMovePolyTo();
 	fixed_t m_xSpeed;
@@ -806,8 +867,14 @@ class DPolyDoor : public DMovePoly
 public:
 	DPolyDoor (int polyNum, podoortype_t type);
 	void Serialize (FArchive &arc);
-	void Tick ();
+	// [Kaori-Chani] features/net-snapshot: was Tick, which the base now wraps.
+	void TickPoly ();
 	void UpdateToClient( ULONG ulClient );
+	BYTE SnapType () const;							// [Kaori-Chani]
+	void SnapFill ( SnapPolyEntry & e ) const;		// [Kaori-Chani]
+	void SnapLoad ( const SnapPolyEntry & e );		// [Kaori-Chani]
+	bool SnapDone () const;							// [Kaori-Chani]
+	bool SnapWaiting () const { return m_Tics != 0; }	// [Kaori-Chani]
 
 	LONG	GetDirection( void );
 	void	SetDirection( LONG lDirection );

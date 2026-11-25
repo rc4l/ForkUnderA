@@ -46,24 +46,52 @@
 #include "i_system.h"
 #include "r_state.h"
 #include "stats.h"
+#include <cstddef>
 
 // [rc4l] actor-pool -- see the declaration in dobject.h. Buckets are keyed by the
 // allocator's real block size, read identically on both ends, so a recycled block
 // always exactly fits its bucket. GC::AllocBytes is adjusted exactly as
 // M_Malloc/M_Free would, so collection pacing does not change.
+// [Doruk-Aksoy] Every block starts on a 64-byte cache line, so a field sits on the same line of every actor and a layout can be planned by line.
 #if defined(__APPLE__)
 #include <malloc/malloc.h>
+#include <stdlib.h>
 #define ZX_POOL_MSIZE(p) malloc_size(p)
 #elif defined(_WIN32)
 #include <malloc.h>
-#define ZX_POOL_MSIZE(p) _msize(p)
+#define ZX_POOL_MSIZE(p) _aligned_msize(p, ZX_OBJECT_ALIGN, 0)
 #else
 #include <malloc.h>
+#include <stdlib.h>
 #define ZX_POOL_MSIZE(p) malloc_usable_size(p)
 #endif
 
 namespace
 {
+	// [Doruk-Aksoy] A block from the platform's aligned allocator, which ZX_POOL_MSIZE measures and FreeObjectBlock returns.
+	void *AllocObjectBlock(size_t len)
+	{
+#if defined(_WIN32)
+		void *block = _aligned_malloc(len, ZX_OBJECT_ALIGN);
+#else
+		void *block = NULL;
+		if (posix_memalign(&block, ZX_OBJECT_ALIGN, len) != 0) block = NULL;
+#endif
+		if (block == NULL) I_FatalError("Could not malloc %zu bytes", len);
+		GC::AllocBytes += ZX_POOL_MSIZE(block); // as M_Malloc counts it
+		return block;
+	}
+
+	void FreeObjectBlock(void *block)
+	{
+		GC::AllocBytes -= ZX_POOL_MSIZE(block); // as M_Free counts it
+#if defined(_WIN32)
+		_aligned_free(block);
+#else
+		free(block);
+#endif
+	}
+
 	const size_t POOL_MAX_BLOCK = 8192;            // objects only; anything bigger goes to the allocator
 	const unsigned int POOL_MAX_PER_BUCKET = 4096; // cap hoarding after a storm ends
 
@@ -90,7 +118,7 @@ void *DObject::operator new(size_t len)
 			}
 		}
 	}
-	void *block = M_Malloc(len);
+	void *block = AllocObjectBlock(len);
 	if (PoolRealSize == NULL)
 		PoolRealSize = new TMap<size_t, size_t>;
 	PoolRealSize->Insert(len, ZX_POOL_MSIZE(block));
@@ -121,7 +149,7 @@ void DObject::operator delete (void *mem)
 			return;
 		}
 	}
-	M_Free(mem);
+	FreeObjectBlock(mem);
 }
 
 #include "a_sharedglobal.h"

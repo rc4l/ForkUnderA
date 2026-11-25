@@ -51,8 +51,12 @@ def wire_enum_types():
         text = fh.read()
     found = set()
     for decl in re.findall(r"\bSERVERCOMMANDS_\w+\s*\(([^;]*?)\)\s*;", text, re.S):
-        for cls, enum in re.findall(r"\b([A-Z]\w+)::([A-Z]\w+)\b", decl):
-            found.add((cls, enum))
+        # [Kaori-Chani] A name the declaration itself marks `struct` or `class` is a record the
+        # command carries, not an enum, so it has no value space to pin.
+        for kind, cls, enum in re.findall(
+                r"\b(?:(struct|class)\s+)?([A-Z]\w+)::([A-Z]\w+)\b", decl):
+            if not kind:
+                found.add((cls, enum))
     return sorted(found)
 
 

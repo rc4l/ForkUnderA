@@ -4964,7 +4964,7 @@ ff0d409e2bde15fbd39c1ae0cbeb6e05b92ae0db	2016-10-01T23:06:43Z	Merge http://githu
 eb2ee339503112a0db5059c866b925cb49bdbb43	2016-10-02T03:29:57Z	FxVMFunctionCall must pass null pointers when calling an action function from a non-action function	pending		/
 efc9ed2fe9685a448af32065935eb33228c011c3	2016-10-02T03:31:07Z	Fix state lookup from non-action functions (i.e. Damage functions)	pending		/
 d7683a8c552fc38720967dedb4a89b0f0908c06f	2016-10-02T07:13:45Z	Fixed crash on early fatal error exit	pending		/
-a505e910321cc55f03e1fd3211ed68761bfb1bc8	2016-10-02T11:35:25Z	- added TRNSLATE lump for defining global translations which are accessible by name.	pending		/
+a505e910321cc55f03e1fd3211ed68761bfb1bc8	2016-10-02T11:35:25Z	- added TRNSLATE lump for defining global translations which are accessible by name.	adapted	features/trnslate: ComputeParseTrnslate, R_FindCustomTranslation, TRANSLATION_Custom, Translation "Name", A_SetTranslation (None restores, as DECORATE passes "" as None); RainPillar bases and ZScript-only users not ported	bc7cb847
 0bce6e39256c7054918dfe0302b83b574051e034	2016-10-02T12:09:45Z	- added ACS and DECORATE setter functions for named translations.	pending		/
 865863ab6fb2d8cd464bc6637955eaf11bb41b57	2016-10-02T12:37:26Z	- fixed: AFastProjectile did not work properly for perfectly vertically moving missiles. Like AActor::Tick it needs to ensure that a tiny bit of lateral movement is present so that collision detection and the Effect() function work as intended.	pending		/
 3418710a383d18323d0e9aa37e171a1ca0b15db9	2016-10-02T12:38:48Z	- be a bit more thorough and also call Effect() on vertically moving missiles with zero damage.	pending		/
@@ -4990,7 +4990,7 @@ c6408e92e2375bd584f38cca07cd4ed4a4eb4d28	2016-10-03T03:10:07Z	Merge http://githu
 7c4780638201122f6ad8024c5edcce26b6759767	2016-10-03T07:18:47Z	Fix aspect ratio bug in LensDistortScene	pending		/
 41ab08ee4716b5e2e7da10bf52b4ce5c3ed49321	2016-10-03T09:00:26Z	- fixed: TVector::Resized needs to consider that the input vector has a length of 0. In this case just performing the normal calculations results in an invalid vector.	pending		/
 4eb5f10b02cc2b1844f0a6894f3a7005049d767a	2016-10-03T14:09:32Z	- use normals to have proper light attenuation. So far only implemented for walls and flats. Models are planned but need some thinking about how to efficiently collect all required lights for an object.	pending		/
-7ab7fc9a57f8d329f53e9643586eb1ed958afb51	2016-10-03T14:21:50Z	- seems I missed this part...	pending		/
+7ab7fc9a57f8d329f53e9643586eb1ed958afb51	2016-10-03T14:21:50Z	- seems I missed this part...	ported	ComputeLightZ in UpdateLocation, for attached and map lights	7d9be643
 15af9242d6fe49308077780ea7867f9762206ffe	2016-10-03T14:22:16Z	Merge branch 'master' of https://github.com/rheit/zdoom	pending		/
 d597af149494337e1a4ef6f3a17ea67a59bad61b	2016-10-03T18:14:48Z	- Fixed a few corner cases where forcing alpha wouldn't work. - On the other hand, soultrans, fuzzy and stencil (as is, not including the mixing styles like stenciladd) are no longer accounted for by FORCEALPHA.	pending		/
 d6346fb0c6987a5bad559fee5b4a61b5270070dd	2016-10-03T18:44:00Z	Fixed compilation with GCC or Clang	pending		/
@@ -9457,12 +9457,12 @@ a280cbc62cfc877f79bf547571ee51ea8cdb52ba	2018-01-02T12:56:37Z	Add sprite support
 549a9d3cf0ae304d1ae40875e27fcad3e1eede03	2018-01-03T08:48:10Z	Extended Actor.CheckMove() with optional position information	pending		/
 6aa724a9b442e5f019fff4605498a659055ce8bc	2018-01-04T02:46:04Z	- add 'gl_riskymodernpath' for computers that worked before the GL >= 3.3 modern path enforcement, since some did, but they seemed to be the exception rather than the rule.	pending		/
 4b044e30d7ae9a8343eb5d42706272ba13d5ad6f	2018-01-04T04:35:57Z	- ACS stack checking (proxy commit by Rachael)	pending		/
-5f36b86013018c5a7b76b069952c0ef94d87d3f9	2018-01-04T16:58:11Z	- Add dynamic spot lights	pending		/
+5f36b86013018c5a7b76b069952c0ef94d87d3f9	2018-01-04T16:58:11Z	- Add dynamic spot lights	adapted	GLDEFS spot and LF_SPOT; the cone is in the Vulkan scene shader (light kind bit 4, four vec4s a light) and features/levelmesh/pointlight	558834ac
 f3982861621247d2d0a7c8a725fd499fdb012ac5	2018-01-04T18:09:12Z	- Fix wrong spot direction	pending		/
 bae36205404bdc5c348ef9f68a31c66faa45385a	2018-01-04T18:27:03Z	- Added spot light support to gl_SetDynSpriteLight	pending		/
 79440d70141eb504990acf5e8023108e070ed66e	2018-01-04T18:42:52Z	- Fix sprite spot light calculation	pending		/
-7f7c720883e6841ced9c5e66cdae5e6b531872ad	2018-01-04T22:41:57Z	- added UDMF properties for spotlights (args have all been used up for dynlights)	pending		/
-254501d3e8ee3ec77ff24d68a1bc364f3da71aaa	2018-01-04T23:09:48Z	- fixing last commit, which didn't seem to work correctly	pending		/
+7f7c720883e6841ced9c5e66cdae5e6b531872ad	2018-01-04T22:41:57Z	- added UDMF properties for spotlights (args have all been used up for dynlights)	skip	superseded by uzdoom@6aaf5df6, which moved the spot settings into the args	/
+254501d3e8ee3ec77ff24d68a1bc364f3da71aaa	2018-01-04T23:09:48Z	- fixing last commit, which didn't seem to work correctly	skip	fix of 7f7c7208, superseded by uzdoom@6aaf5df6	/
 acf83c2a74445d697a46fa463f605f624fe7f3dc	2018-01-04T23:13:14Z	- fixing the last commit...	pending		/
 e754fe04efc8720d46f5fb266899219bb7f24c1f	2018-01-04T23:22:45Z	- removed the 0 check on the UDMF property, so 0 can be a valid aperture	pending		/
 67e3106254e987f5acb9534e725d4f5c3eaa82b2	2018-01-04T23:31:10Z	- add the default spotlight apertures in FMapThing	pending		/
@@ -9516,7 +9516,7 @@ a01ca4c3a128699dec8511c3c8096f600e247c1a	2018-01-20T18:01:47Z	Exported S_IsActor
 6df936e0a0195e425998bb9605777eb9a052eb41	2018-01-20T18:01:47Z	- remove A_IsPlayingSound	pending		/
 dbf0a68b02921861eaa3c978cecd5b3d663b4edb	2018-01-20T18:07:54Z	Merge commit '67e3106254e987f5acb9534e725d4f5c3eaa82b2'	pending		/
 708d24aba748f5e1e138b739c631161982c09a4d	2018-01-20T20:56:34Z	- added Screen.getViewWindow function	pending		/
-6aaf5df6175650e224b59f6f35c27d0730a7721e	2018-01-20T21:41:28Z	- reworked spot lights to receive all relevant information through the args.	pending		/
+6aaf5df6175650e224b59f6f35c27d0730a7721e	2018-01-20T21:41:28Z	- reworked spot lights to receive all relevant information through the args.	adapted	no-file-overlap: the arg handling moved from p_mobj.cpp P_SpawnMapThing into features/dynlights (ADynamicLight::BeginPlay, ComputeMapLightArgs); ComputeMapLightArgs in ADynamicLight::BeginPlay: spot colour and cone from the args, arg0str colours for every map light; SAVEVER 4532 keeps the cone	558834ac,7d9be643
 9b40097e485ae5a60581862f5ab01bb781fa34fe	2018-01-20T21:41:41Z	Merge branch 'master' of https://github.com/coelckers/gzdoom	pending		/
 4dd2d789f47fba1178e89bd49ae59f541de9c610	2018-01-21T00:19:16Z	- Rename mTextureEffects to mMaterialShaders to help distinguish between those and effect shaders (mEffectShaders) - Add MaterialShaderIndex enum	pending		/
 0f69778e233ebab0b8eafe2fb02e206a535bc109	2018-01-21T00:53:44Z	- Add new material shader entries for specular and PBR light modes	pending		/
@@ -14166,12 +14166,12 @@ f46e80e2b450f7e0b88ae307ae380ef1293bbc3c	2020-03-14T10:51:06Z	- fixed FLineTrace
 2edbbac759a41fb137e943fa650a2fb981cd05ae	2020-03-14T12:17:04Z	Print weapon name tag when switching with "slot" command (#1048)	pending		/
 db5efddf12ca22b6655f26639bc43d12824e7a70	2020-03-15T08:27:02Z	- implemented better aspect ratio control for fullscreen images.	pending		/
 27b8284881d7dac7fa713f06430e5dcc2a398062	2020-03-15T09:02:19Z	- forgot to remove the test settings for the fullscreen feature.	pending		/
-0c04cddd28ba775e41c79186e31c4aed91361263	2020-03-15T09:22:42Z	- allow specifying full palettes in translation definitions.	pending		/
+0c04cddd28ba775e41c79186e31c4aed91361263	2020-03-15T09:22:42Z	- allow specifying full palettes in translation definitions.	adapted	ComputeReadPaletteLump (PNG PLTE, JASC-PAL, raw) and FRemapTable::AddColors in features/trnslate	bc7cb847
 16ae7e312458e68b50cc45816b63018fc8d67133	2020-03-15T11:19:22Z	- fixed typo.	pending		/
 a50a5101bc3f9fd6a23b768213a1b14cef6b3f27	2020-03-15T14:56:35Z	- fixed another typo.	pending		/
 b7970ed76386ca045fd3a964e4a6dd0fb3bb3e8a	2020-03-16T08:21:37Z	- block StaticPointerSubstitution for non-player objects.	pending		/
 828cba13a1339d197c57906fa52f3dea54b49199	2020-03-16T16:23:30Z	- changed translation management so that the fonts also use translation IDs.	pending		/
-15d4fb8fcd86052216e0fd75f2bed5defb3bb961	2020-03-17T06:57:59Z	- fixed file existence check in TRNSLATE parser.	pending		/
+15d4fb8fcd86052216e0fd75f2bed5defb3bb961	2020-03-17T06:57:59Z	- fixed file existence check in TRNSLATE parser.	ported	palette lumps found by full name, then short name (CheckNumForFullName in trnslate.cpp)	bc7cb847
 d32e0b91c2eb7bbd4dd354f90b5160438ea7ada0	2020-03-17T07:50:00Z	- clear the screen before drawing content, not afterward.	pending		/
 d19527cf87d1caa58a23ae2b9b6d1e9030c989a5	2020-03-18T20:11:44Z	Fix compile error when using std::sort with Visual Studio 16.5.0	pending		/
 aa0df7479e09535107d52bd1987f52638c99e43d	2020-03-22T10:47:34Z	- remove assumption in DFrameBuffer::FillBorder that ultrawide screens will stretch an image, since it is no longer the case.	pending		/
@@ -17729,7 +17729,7 @@ d85d04f4217817d815bbf3542449f81f1c506a6d	2024-11-05T06:02:19Z	Fixed crash on fun
 2bc561d135bd58e102f7bfe0156a6c134d3af26f	2024-11-11T11:51:30Z	- add automap default markers for all games (can be overridden)	pending		/
 a145eac056233caaeeb702f2a15eabdcb6b40dd9	2024-11-11T11:59:43Z	added constants for the most recently added level flags	pending		/
 ea7ea182edd9d8e5674b42fedf43b2db123aa0c1	2024-11-12T02:27:22Z	Add missing CHANF_ constants and fix the styling of the comments for better readability	pending		/
-bb5c8d8124181180f505e34093fc133616f9cd17	2024-11-12T11:25:30Z	- don't fudge light position out of the floor for +NOINTERACTION actors	pending		/
+bb5c8d8124181180f505e34093fc133616f9cd17	2024-11-12T11:25:30Z	- don't fudge light position out of the floor for +NOINTERACTION actors	ported	+NOINTERACTION carriers keep their light where it is	7d9be643
 1e4f17639556daed8ff44a4d85e7753fafd538c0	2024-11-12T11:34:26Z	- move appimage workflow to unused/	pending		/
 3a83762c5119061ec5e4cbd28305c20e6ac054c4	2024-11-13T18:47:22Z	Allow property-less flagdefs for non-actors	pending		/
 3622e2bb2a7d17ede6443c6bbb39011b923fd467	2024-11-13T18:47:22Z	Compress visualthinker bools into a flags field	pending		/
@@ -17799,7 +17799,7 @@ eefad0764e6a55bdc4837215c0a75ed732823e28	2024-12-21T09:33:25Z	fix TranslationID 
 d36fa3c36b54aa0d848657dcfe9355a844491409	2024-12-21T09:33:25Z	add helper methods to Sound/SpriteID/TranslationID	pending		/
 bdddfcc80ad2168dd451f0b78a4234e08f5e7842	2024-12-21T09:33:25Z	allow nullptr with spriteid/textureid/translationid (for default parameters/etc)	pending		/
 d3e5cf77ab6410fad4b901e2dacac320744ca125	2024-12-22T08:06:20Z	Add lm_sunintensity documentation. Clean up styling of all ZDRay-related entries	pending		/
-a4e527979d51066b748b94184dfda57c8a6fc2e6	2024-12-26T09:10:44Z	Allow setting a dynamic light's alpha to influence its brightness. This brings it in parity with VKDoom	pending		/
+a4e527979d51066b748b94184dfda57c8a6fc2e6	2024-12-26T09:10:44Z	Allow setting a dynamic light's alpha to influence its brightness. This brings it in parity with VKDoom	adapted	no-file-overlap: the scale lives in the render copy (features/gamecopy/lights.cpp) and features/dynlights, not hw_dynlightdata.cpp or hw_spritelight.cpp; only as limited to the flag by uzdoom@c0d17bbd; folded into the render copy's intensity	7d9be643
 d6e1097b85ad9e7ad876b470e7eec94202aa70ee	2024-12-26T09:12:06Z	- enable mipmapping in 2D	pending		/
 aebabd2307dda19b8c618bba67b4badc7f3054d8	2024-12-31T02:25:37Z	Fix coop key share failing if the item was spawned in-game (for example, via the console)	pending		/
 902bf03c47cc544b80441b0d039090efc555aa09	2025-01-01T22:11:12Z	- implement new cvar `save_sort_order` - for now options are only 0 or 1 - 0 is alphabetical, 1 is descending by time (most recent first)	pending		/
@@ -18000,7 +18000,7 @@ d56b84d09484b1a33ad09a75340c6fedfeba481b	2025-04-23T21:49:23Z	hook up includes f
 b7d6f0b1a45fc6fd93344f795d113f30efe81c35	2025-04-27T04:31:13Z	Added am_showlevelname CVar	pending		/
 a393a6ac56b94517988fb96d60be1d6bf04b134a	2025-04-29T10:53:02Z	fix dsdhacked actors not spawning when placed in a map	pending		/
 80c36d4069db5ed92c100d4d26c3add3576b2d41	2025-04-29T11:05:38Z	add a few commonly-used gzdoom-specific properties to the dehacked parser	pending		/
-c0d17bbda34015b214d5c96cb141ad02d8b0ddb1	2025-04-29T18:47:28Z	limit light alpha mult to renderflag	pending		/
+c0d17bbda34015b214d5c96cb141ad02d8b0ddb1	2025-04-29T18:47:28Z	limit light alpha mult to renderflag	ported	RF_LIGHTMULTALPHA (renderflags 0x80000); the server already sends alpha changes	7d9be643
 3780c5910ae378fb2759e60554943cdcc024ce37	2025-05-01T13:15:46Z	Bone Manip part 1 - bone setters	pending		/
 0d612553a42178be8578cd642c4383a7e8673c3b	2025-05-02T13:36:05Z	- do not allow sv_gravity to be INF	pending		/
 502af6adb9d00c6d9cc603bd9f5e11796f2eb7b8	2025-05-02T13:37:59Z	SSECMF_DRAWN was being skipped for some cases, affecting texture automap drawing. See bug #3066.	pending		/

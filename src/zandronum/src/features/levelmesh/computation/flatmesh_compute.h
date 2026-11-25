@@ -303,6 +303,9 @@ bool ComputeRendersMirror(bool walkedByGL, bool standalone, bool onScreen);
 // [rc4l] Whether a sprite, model or decal being captured belongs to the frame: the player's view from the outermost DrawScene (nesting 1, or 0 outside any), since GL raises the portal depth for the player's own scene once its walk is done.
 bool ComputeOwnsFrameCapture(bool mainView, int sceneNesting);
 
+// [Doruk-Aksoy] Whether a sprite, model or decal made now is captured: the player's walk's, a camera texture's view's, or a stacked view's or line mirror's walk's (slot or view from 0).
+bool ComputeCapturesDynamic(bool playerWalk, bool cameraView, int stackSlot, int mirrorView);
+
 // [rc4l] What a stored flat was built from, compared field by field: its plane, placement and texture shape its vertices, the rest only shades the piece, and dynLightIndex stays out because nothing reads it and it changes most frames.
 struct FlatStamp
 {

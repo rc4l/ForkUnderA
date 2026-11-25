@@ -56,6 +56,14 @@ protected:
 	{
 		return MovePlane (speed, dest, -1, 1, direction, false);
 	}
+
+	// [Kaori-Chani] features/net-snapshot: transient network state every sector mover carries,
+	// and neither is serialised -- the record instance a client's mover follows, 0 for none,
+	// and whether a legacy handler made it, which a gate-on drops. Defaulted, because nothing
+	// sets them until step 3's hooks land.
+public:
+	BYTE	m_SnapGen = 0;
+	bool	m_SnapLegacy = false;
 };
 
 class DMovingFloor : public DMover

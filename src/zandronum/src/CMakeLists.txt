@@ -1255,6 +1255,14 @@ set( ONLINE_SOURCES
 if( NOT ZX_ONLINE )
 	set( ONLINE_SOURCES features/offline/offlinestubs.cpp )
 endif()
+
+# [Kaori-Chani] The tic wait is the time base's platform half, so it is a file chosen here
+# rather than a browser condition inside one (tools/platform-ifdef-tripwire.sh).
+if( EMSCRIPTEN )
+	set( ZX_TICTIME_WAIT i_tictime_web.cpp )
+else()
+	set( ZX_TICTIME_WAIT i_tictime_wait.cpp )
+endif()
 add_executable( zdoom WIN32
 	${HEADER_FILES}
 	${NOT_COMPILED_SOURCE_FILES}
@@ -1329,6 +1337,10 @@ add_executable( zdoom WIN32
 	gitinfo.cpp
 	#hu_scores.cpp
 	i_net.cpp
+	# [Kaori-Chani] features/net-snapshot: the shared tic time base, which the three
+	# platform timers read instead of their own clocks.
+	i_tictime.cpp
+	${ZX_TICTIME_WAIT}
 	info.cpp
 	invasion.cpp #ST
 	joinqueue.cpp #ST
@@ -1688,6 +1700,7 @@ add_executable( zdoom WIN32
 	features/rendersettings/computation/mapoptions_compute.cpp
 	features/levelprep/levelprep.cpp
 	features/gldefs/gldefs.cpp
+	features/trnslate/trnslate.cpp
 	features/gldefs/glow.cpp
 	features/fakeflat/fakeflat.cpp
 	features/models/modeldef.cpp
@@ -1732,6 +1745,8 @@ add_executable( zdoom WIN32
 	features/bspgrid/bspgrid.cpp
 	features/acs-shaders/acsshaders.cpp
 	features/actormaterials/actormaterials.cpp
+	features/acsvec/acsvec.cpp
+	features/acs-funcrefs/acsfuncrefs.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp
@@ -1741,15 +1756,14 @@ add_executable( zdoom WIN32
 	features/frame/framedriver.cpp
 	features/frame/viewtrace.cpp
 	features/frame/framestall.cpp
+	features/tic-pacing/pacing.cpp
 	features/frame/debugorbit.cpp
 	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
+	features/crash-summary/crashsummary.cpp
 	features/frame-limit/framelimit.cpp
 	features/dynres/dynres.cpp
 	features/dynres/displayrefresh.cpp
-	features/telemetry/telemetry.cpp
-	features/telemetry/allocwatch.cpp
-	features/telemetry/census.cpp
 	features/mainloop/mainloop.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
@@ -1808,6 +1822,7 @@ add_executable( zdoom WIN32
 	features/frame/computation/frameroute_compute.cpp
 	features/frame/computation/viewtrace_compute.cpp
 	features/frame/computation/framestall_compute.cpp
+	features/tic-pacing/computation/pacing_compute.cpp
 	features/frame/computation/frameclock_compute.cpp
 	features/frame/computation/debugorbit_compute.cpp
 	features/framephase/computation/framephase_compute.cpp
@@ -1888,6 +1903,9 @@ add_executable( zdoom WIN32
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
 	features/monster-stairs/monsterstairs.cpp
+	features/swept-missiles/sweptmove.cpp
+	features/blockmap-filter/cellarrays.cpp
+	features/actor-layout/actorprefetch.cpp
 	features/damage-taken/damagetaken.cpp
 	features/net-transport/netconditions.cpp
 	features/net-transport/recvthread.cpp
@@ -2169,7 +2187,7 @@ endif()
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
-	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dggpuload.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgatlas.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp features/hwrender/diligent/dgpostprocess.cpp )
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dggpuload.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgmodelgeo.cpp features/hwrender/diligent/dgatlas.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp features/hwrender/diligent/dgpostprocess.cpp )
 	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
 	if( EMSCRIPTEN )
 		# [rc4l] The browser's canvas, drawn on through WebGPU alone.
@@ -2230,6 +2248,12 @@ if( FUA_DILIGENT )
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )
 endif()
 
+# [Doruk-Aksoy] The telemetry registry, allocation tracking and census only in a diagnostics build; without them telemetry.h's calls are inline no-ops.
+if( FUA_DIAGNOSTICS )
+	target_sources( zdoom PRIVATE features/telemetry/telemetry.cpp features/telemetry/allocwatch.cpp features/telemetry/census.cpp )
+	target_compile_definitions( zdoom PRIVATE FUA_DIAGNOSTICS )
+endif()
+
 if( FUA_MCP_BRIDGE )
 	target_sources( zdoom PRIVATE mcp_bridge.cpp mcp_rpc.cpp mcp_crash.cpp mcp_event.cpp mcp_renderinfo.cpp mcp_hud.cpp mcp_glperf.cpp mcp_ticprof.cpp mcp_simtrace.cpp mcp_sample.cpp )
 	target_compile_definitions( zdoom PRIVATE FUA_MCP_BRIDGE )
@@ -2241,4 +2265,43 @@ endif()
 # source list; this glob is safe because these TUs never use IMPLEMENT_CLASS.)
 file( GLOB_RECURSE ZX_COMPUTE_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*_compute.cpp" )
 target_sources( zdoom PRIVATE ${ZX_COMPUTE_SOURCES} )
+
+# [Kaori-Chani] features/net-snapshot's engine-side layers, an OBJECT library so that each got the
+# real compiler against the real ported headers as step 2 landed it, with the engine's own include
+# directories and definitions, which this directory's scope already supplies. The game links them
+# now; nothing calls into them until step 3's hooks, so the module is in the binary and inert.
+#
+# In ALL on purpose: a layer that stops compiling should stop the build rather than wait to be
+# noticed. Its prerequisites are the engine's own, since the layers reach the generated
+# servercommands.h through network/netcommand.h.
+add_library( netsnapshot_layers OBJECT
+	features/net-snapshot/capture.cpp
+	features/net-snapshot/clienttrack.cpp
+	features/net-snapshot/apply.cpp
+	features/net-snapshot/entities.cpp
+	features/net-snapshot/ghostactor.cpp
+	features/net-snapshot/localpred.cpp
+	features/net-snapshot/movers.cpp
+	features/net-snapshot/polyobj.cpp
+	features/net-snapshot/record.cpp
+# [Kaori-Chani] The format layer, which the tests have built all along and the game needs now that
+# it links the rest: a .zsnap frame is zstd, built above as fua_zstd.
+	features/net-snapshot/recordread.cpp
+	features/net-snapshot/stream.cpp
+	features/net-snapshot/csnap_replay.cpp
+	features/net-snapshot/selftest.cpp
+	features/net-snapshot/fuzz.cpp
+	features/net-snapshot/formattest.cpp )
+add_dependencies( netsnapshot_layers revision_check protocolspec )
+# [Kaori-Chani] zdoom's target-scoped definitions and include paths, copied by property, so the
+# layers build under the game's own settings and no struct differs now that it links them.
+target_compile_definitions( netsnapshot_layers
+	PRIVATE $<TARGET_PROPERTY:zdoom,COMPILE_DEFINITIONS> )
+target_include_directories( netsnapshot_layers
+	PRIVATE $<TARGET_PROPERTY:zdoom,INCLUDE_DIRECTORIES> )
+# [Kaori-Chani] COMPILE_OPTIONS (/Zi /FS) is not copied: it changes debug info, not meaning.
+
+# [Kaori-Chani] The module joins the game, which is what lets po_man.cpp's vtables find the five
+# polyobject classes' Snap* bodies in polyobj.cpp.
+target_link_libraries( zdoom netsnapshot_layers )
 

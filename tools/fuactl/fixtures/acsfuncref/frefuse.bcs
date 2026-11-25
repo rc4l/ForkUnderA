@@ -1,0 +1,28 @@
+#library "frefuse"
+#include "zcommon.h"
+#import "freflib.bcs"
+
+// [Doruk-Aksoy] The second LOADACS library: it takes references to freflib's functions, keeps them in global variables and calls them on later maps.
+
+global int function( void )? 1:gRef;
+global int function( void )? 2:gMapRef;
+
+// [Doruk-Aksoy] MAP01: a reference taken here compares equal to freflib's own, and is kept for the next map.
+script 901 ( void ) {
+   int function( void )? f = Seven;
+   Log( s: "FREF same ", d: IsSeven( f ) );
+   Log( s: "FREF call ", d: f() );
+   gRef = Seven;
+}
+
+// [Doruk-Aksoy] MAP02, whose own BEHAVIOR loads first and moves every library's load position: the kept reference still calls and compares right.
+script 902 ( void ) {
+   Log( s: "FREF stored ", d: gRef() );
+   Log( s: "FREF storedsame ", d: IsSeven( gRef ) );
+}
+
+// [Doruk-Aksoy] MAP03, which never loads frefmap: calling a kept reference into it must stop this script, not run another module's function.
+script 903 ( void ) {
+   Log( s: "FREF reached" );
+   Log( s: "FREF unloaded ", d: gMapRef() );
+}

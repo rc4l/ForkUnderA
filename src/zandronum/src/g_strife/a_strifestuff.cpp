@@ -23,6 +23,8 @@
 #include "cl_demo.h"
 #include "sv_commands.h"
 #include "deathmatch.h"
+#include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh for the files below
 
 // Include all the other Strife stuff here to reduce compile time
 #include "a_acolyte.cpp"

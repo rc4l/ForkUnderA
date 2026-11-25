@@ -203,3 +203,75 @@ Command FuaSetActorUniform
 		Float w
 	EndIf
 EndCommand
+
+# [Kaori-Chani] features/net-snapshot: whether the server stops the legacy mover state commands.
+# frame is the record floor at a mid-session gate-off, else 0.
+Command SnapMoverGate
+	ExtendedCommand
+	Bool legacyOff
+	Long frame
+EndCommand
+
+# [Kaori-Chani] A player's previous body hands its reserved id to the new pawn and moves to this
+# one, so it can still be destroyed or changed online.
+Command SetThingNetID
+	ExtendedCommand
+	NetID oldID
+	NetID newID
+EndCommand
+
+# [Kaori-Chani] features/net-snapshot: sent with a full update, the stream's map stamp and
+# reset count, and the map's position frame: an origin in whole units and a width in bytes an
+# axis.
+Command SnapJoin
+	ExtendedCommand
+	Byte mapStamp
+	Byte resetCount
+	Long originX
+	Long originY
+	Long originZ
+	Byte widthX
+	Byte widthY
+	Byte widthZ
+EndCommand
+
+# [Kaori-Chani] features/net-snapshot: a scroller's control height and accumulated velocity,
+# which DoScroller does not carry.
+Struct SnapScrollerState
+	Byte type
+	Short affectee
+	Fixed lastHeight
+	Fixed vdx
+	Fixed vdy
+EndStruct
+
+# [Kaori-Chani] features/net-snapshot: a point pusher's centre, radius and source, whose actor
+# may not have arrived; DoPusher carries none of them.
+Struct SnapPusherState
+	Byte type
+	Short affectee
+	Long x
+	Long y
+	Long radius
+	NetID sourceID
+EndStruct
+
+# [Kaori-Chani] features/net-snapshot: the state the legacy DoScroller and DoPusher leave out,
+# in the order SERVER_UpdateMovers sent them, so the legacy fallback's own bytes are untouched.
+# first* is the join ordinal the chunk starts at; type and affectee echo the mover the record
+# belongs to. Sent only while the snapshot gate is on, in chunks that fit a packet.
+Command SnapSpecialState
+	ExtendedCommand
+	Short firstScroller
+	Struct<SnapScrollerState>[] scrollers
+	Short firstPusher
+	Struct<SnapPusherState>[] pushers
+EndCommand
+
+# [Kaori-Chani] features/net-snapshot: the server's map resets so far, this one included, sent
+# beside the legacy DestroyAllSectorMovers so a client can tell which reset it just carried out.
+# Gate-on only, which leaves that command's own bytes alone.
+Command SnapMapReset
+	ExtendedCommand
+	Byte resetCount
+EndCommand

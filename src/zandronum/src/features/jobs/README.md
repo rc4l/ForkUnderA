@@ -19,7 +19,7 @@ The engine's one pool of worker threads, for work a frame splits across cores.
   once (stamps, flags, the smallest key of a race with `LowerWithin`).
 - `jobs.cpp`: `Pool()`, sized by `fua_jobs_threads` (-1 picks by the machine, 0 runs every job on the
   main thread). It is resized on the next call after the cvar changes, except in a browser, where the main thread may not wait for workers that may still need it to start (`ComputePoolWorkers`), and is never destroyed, so no worker
-  is joined while the process exits. Its observer times `jobs/run` and `jobs/wait` into `features/telemetry`
+  is joined while the process exits. In a diagnostics build its observer times `jobs/run` and `jobs/wait` into `features/telemetry`
   and names each worker "job N" in its traces. It also files counters under the zone that called the job:
   - `jobwait/<zone>`: the wait;
   - `jobstart/<zone>`: from the job's opening to its last worker's first item;
@@ -28,7 +28,7 @@ The engine's one pool of worker threads, for work a frame splits across cores.
   - `jobcalls/<zone>`: the jobs.
   `TicPool()` is the game thread's own, sized by `fua_jobs_tic_threads` (-1 picks by the machine, at most 3; 0
   runs its jobs on the game thread alone), so a tic's end can split its reads without taking the frames' pool.
-  A pool can report to an observer of its own (`SetObserver`): this one times `jobs/tic_run` and `jobs/tic_wait`,
+  A pool can report to an observer of its own (`SetObserver`): this one times `jobs/tic_run` and `jobs/tic_wait` (a public build sets none),
   files the same counters by zone with a `tic` prefix (`ticjobwait/`, `ticjobstart/`, and so on), and names its
   workers "tic job N".
 

@@ -81,6 +81,7 @@
 #include "p_local.h"
 #include "sv_main.h"
 #include "features/identity/computation/connectchallenge_compute.h"
+#include "features/tic-pacing/pacing.h"   // [Kaori-Chani] fua_tictime_report
 #include "features/identity/zx_identity.h"
 #include "features/identity/zx_identitynet.h"
 #include "features/net-session/computation/joinupdate_compute.h"
@@ -88,6 +89,9 @@
 #include "features/net-session/syncedcvars.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
+#include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
+#include "features/net-snapshot/movers.h"   // [Kaori-Chani] the link census and the write order
+#include "i_tictime.h"   // [Kaori-Chani] the counter the legacy send's own cost is timed on
 #include "features/net-transport/recvthread.h"   // [rc4l] the receive thread the tick waits on
 #include "features/net-protocol/testfaults.h"   // [rc4l] fua_debug_server_stall_ms
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] the looping sounds a late joiner is sent
@@ -394,8 +398,10 @@ CUSTOM_CVAR( String, sv_rconpassword, "", CVAR_ARCHIVE|CVAR_NOSETBYACS|CVAR_SENS
 }
 
 //*****************************************************************************
+// [Kaori-Chani] 1550 rather than 1024, so a snapshot frame takes fewer datagrams; archived and
+// server info, so a server that prefers the old size can set it back.
 //
-CUSTOM_CVAR( Int, sv_maxpacketsize, 1024, CVAR_ARCHIVE | CVAR_SERVERINFO )
+CUSTOM_CVAR( Int, sv_maxpacketsize, 1550, CVAR_ARCHIVE | CVAR_SERVERINFO )
 {
 	if ( self > MAX_UDP_PACKET )
 	{
@@ -686,6 +692,9 @@ void SERVER_Tick( void )
 	ZX_SEAM_UNTIMED( "net/server_tick", Main );
 	unsigned int nowTime = 0;
 
+	// [Kaori-Chani] The server never calls TryRunTics, so it takes the pacing report here.
+	zx::ticpacing::Tick((unsigned int)gametic);
+
 	// [rc4l] features/net-transport: the receive thread follows its cvar, so it can be switched off and on in a running server.
 	if ( sv_fua_receivethread != zx::nettransport::ReceiveThreadRunning( ))
 		NETWORK_SetReceiveThread( sv_fua_receivethread );
@@ -705,6 +714,10 @@ void SERVER_Tick( void )
 		zx::nettransport::WaitForDatagram( 1 );
 		deltaTics = server_GetDeltaTicks( nowTime, previousTics );
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the catch-up clamp drops the tics past its cap, so game
+	// time dilates rather than the world running behind its clock. Gate off, it caps nothing.
+	deltaTics = zx::netsnapshot::CatchUpTics( deltaTics, nowTime );
 
 #ifdef NO_SERVER_GUI
 	// console input
@@ -822,6 +835,8 @@ void SERVER_Tick( void )
 		SERVER_SendOutPackets( );
 
 		// [BB] Send out sheduled packets, respecting sv_maxpacketspertick.
+		// [Kaori-Chani] features/net-snapshot: the resend's own cost, timed for its report.
+		const tictime_raw_t resendStart = TIC_GetRawCounter( );
 		for ( unsigned int i = 0; i < MAXPLAYERS; i++ )
 		{
 			if ( g_aClients[i].State == CLS_FREE )
@@ -829,6 +844,7 @@ void SERVER_Tick( void )
 
 			SERVER_GetClient ( i )->SavedPackets.Tick ( );
 		}
+		zx::netsnapshot::CountLegacySendRaw( (QWORD)( TIC_GetRawCounter( ) - resendStart ));
 
 		// Potentially send an update to the server registry.
 		SERVER_SERVERREGISTRY_Tick( );
@@ -934,6 +950,9 @@ void SERVER_Tick( void )
 		if ( g_aClients[i].lOverMovementLevel >= MAX_OVERMOVEMENT_LEVEL )
 			SERVER_KickPlayer( i, "Abnormal level of movement commands detected!" );
 	}
+
+	// [Kaori-Chani] features/net-snapshot: the capture, which does nothing unless fua_snap is on.
+	zx::netsnapshot::ServerTick( );
 }
 
 //*****************************************************************************
@@ -949,7 +968,13 @@ void SERVER_SendOutPackets( void )
 			continue;
 
 		if ( g_aClients[ulIdx].PacketBuffer.CalcSize() > 0 )
+		{
+			// [Kaori-Chani] features/net-snapshot: timed apart from the unreliable send, which is
+			// the one carrying a snapshot.
+			const tictime_raw_t sendStart = TIC_GetRawCounter( );
 			SERVER_SendClientPacket( ulIdx, true );
+			zx::netsnapshot::CountLegacySendRaw( (QWORD)( TIC_GetRawCounter( ) - sendStart ));
+		}
 
 		if ( g_aClients[ulIdx].UnreliablePacketBuffer.CalcSize() > 0 )
 			SERVER_SendClientPacket( ulIdx, false );
@@ -970,6 +995,8 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 
 	if ( bReliable )
 	{
+		// [Kaori-Chani] features/net-snapshot: what the legacy path flushed, for its own report.
+		zx::netsnapshot::CountLegacyFlush( pClient->PacketBuffer.CalcSize( ));
 		pClient->SavedPackets.ScheduleUnsentPacket( pClient->PacketBuffer );
 		pClient->PacketBuffer.Clear();
 		return;
@@ -993,7 +1020,17 @@ void SERVER_SendClientPacket( ULONG ulClient, bool bReliable )
 	// versions that don't support ZStd compression, always use Huffman encoding
 	// when sending out packets to clients who aren't connected.
 	// [KI] Ported from zandronum@32ff6e13bd13b4c843ef76e9ed1974a214154935: the per-client send, zstd once the client is connected.
+	// [Kaori-Chani] features/net-snapshot: the payload as built, which only this line knows
+	// alongside what the wire cost.
+	const unsigned int snapPayloadSize = TempBuffer.CalcSize( );
 	NETWORK_LaunchPacket( &TempBuffer, pClient->Address, pClient->State >= CLS_CONNECTED );
+
+	// [Kaori-Chani] features/net-snapshot: built size against wire cost, known together here only.
+	if ( zx::netsnapshot::ConsumeSnapshotQueued( ulClient ))
+	{
+		zx::netsnapshot::NoteUnreliablePacket( snapPayloadSize, NETWORK_GetLastLaunchWireSize( ),
+			NETWORK_GetLastLaunchUsedZstd( ));
+	}
 	pClient->UnreliablePacketBuffer.Clear();
 }
 
@@ -1534,6 +1571,10 @@ void SERVER_ConnectNewPlayer( BYTESTREAM_s *pByteStream )
 
 	// Tell the client that we're about to send him a snapshot of the level.
 	SERVERCOMMANDS_BeginSnapshot( g_lCurrentClient );
+
+	// [Kaori-Chani] features/net-snapshot: ahead of every legacy mover command below, and of
+	// the polyobjects' own.
+	zx::netsnapshot::SendMoverGateTo( g_lCurrentClient );
 
 	// Send welcome message.
 	SERVER_PrintfPlayer( g_lCurrentClient, "Version %s Server\n", DOTVERSIONSTR );
@@ -2097,6 +2138,10 @@ void SERVER_SetupNewConnection( BYTESTREAM_s *pByteStream, bool bNewPlayer )
 	g_aClients[lClient].SavedPackets.Clear();
 	g_aClients[lClient].PacketBuffer.Clear();
 	g_aClients[lClient].UnreliablePacketBuffer.Clear();
+
+	// [Kaori-Chani] features/net-snapshot: the slot's snapshot state, which is the reference a
+	// new delta is built against.
+	zx::netsnapshot::ClientConnected( lClient );
 
 	// Who is connecting?
 	// [SB] Only print if sv_printconnectionmessages is enabled.
@@ -3137,6 +3182,11 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 
 	// [Doruk-Aksoy] features/acs-shaders: the level's post-process shaders as scripts left them, everyone's and the joiner's own.
 	zx::acsshaders::SendShaderStateTo( ulClient );
+
+	// [Kaori-Chani] features/net-snapshot: here and at each level authentication, so a spawned
+	// client has both before the first record reaches it.
+	SERVERCOMMANDS_SnapJoin( ulClient, SVCF_ONLYTHISCLIENT );
+	zx::netsnapshot::SendSoundTable( ulClient );
 }
 
 //*****************************************************************************
@@ -3179,7 +3229,11 @@ void SERVER_WriteCommands( void )
 
 		// See if any players need to be updated to clients.
 		// [BB] Only necessary if we are in a level.
-		if ( gamestate == GS_LEVEL )
+		//
+		// [Kaori-Chani] features/net-snapshot: skipped for a client whose remote players the
+		// snapshot carries instead.
+		if (( gamestate == GS_LEVEL )
+			&& ( zx::netsnapshot::SuppressesLegacyPlayer( ulIdx ) == false ))
 		{
 			for ( ULONG ulPlayer = 0; ulPlayer < MAXPLAYERS; ulPlayer++ )
 			{
@@ -3408,6 +3462,9 @@ void SERVER_DisconnectClient( ULONG ulClient, bool bBroadcast, bool bSaveInfo, L
 	g_aClients[ulClient].UnreliablePacketBuffer.Clear();
 	g_aClients[ulClient].SavedPackets.Clear();
 
+	// [Kaori-Chani] features/net-snapshot: and the slot's snapshot state, as a connect clears it.
+	zx::netsnapshot::ClientDisconnected( ulClient );
+
 	// Tell the join queue module that a player has left the game.
 	JOINQUEUE_PlayerLeftGame( ulClient, true );
 
@@ -3568,21 +3625,46 @@ void SERVER_UpdateSectors( ULONG ulClient )
 	if ( SERVER_IsValidClient( ulClient ) == false )
 		return;
 
+	// [Kaori-Chani] Before the heights below, so the census describes what they then do; it
+	// returns at once unless fua_snap_linkcensus asked for it.
+	zx::netsnapshot::LinkCensus( );
+
 	// [BB] Set all existing sector links.
 	for ( ulIdx = 0; ulIdx < g_SectorLinkList.Size( ); ++ulIdx )
 		SERVERCOMMANDS_SetSectorLink( g_SectorLinkList[ulIdx].ulSector, g_SectorLinkList[ulIdx].iArg1, g_SectorLinkList[ulIdx].iArg2, g_SectorLinkList[ulIdx].iArg3, ulClient, SVCF_ONLYTHISCLIENT );
+
+	// [Kaori-Chani] The planes in link order, each control ahead of what it drives and a driven
+	// plane sent whether it changed or not, a control arriving last dragging a settled plane away.
+	if ( numsectors > 0 )
+	{
+		TArray<int> order;
+		TArray<BYTE> drivenPlanes;
+		order.Resize( static_cast<unsigned> (numsectors) );
+		drivenPlanes.Resize( static_cast<unsigned> (numsectors) );
+
+		const int lCyclic = zx::netsnapshot::LinkWriteOrder( &order[0], &drivenPlanes[0] );
+		if ( lCyclic > 0 )
+			Printf( "SERVER_UpdateSectors: %d sectors on or behind a link cycle; their planes may"
+				" be wrong on a joiner\n", lCyclic );
+
+		for ( unsigned k = 0; k < order.Size( ); k++ )
+		{
+			ulIdx = static_cast<ULONG> (order[k]);
+			pSector = &sectors[ulIdx];
+
+			if ( pSector->bFloorHeightChange || ( drivenPlanes[ulIdx] & 1 ))
+				SERVERCOMMANDS_SetSectorFloorPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+
+			if ( pSector->bCeilingHeightChange || ( drivenPlanes[ulIdx] & 2 ))
+				SERVERCOMMANDS_SetSectorCeilingPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+		}
+	}
 
 	for ( ulIdx = 0; static_cast<signed> (ulIdx) < numsectors; ulIdx++ )
 	{
 		pSector = &sectors[ulIdx];
 
-		// Update the floor heights.
-		if ( pSector->bFloorHeightChange )
-			SERVERCOMMANDS_SetSectorFloorPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
-
-		// Update the ceiling heights.
-		if ( pSector->bCeilingHeightChange )
-			SERVERCOMMANDS_SetSectorCeilingPlane( ulIdx, ulClient, SVCF_ONLYTHISCLIENT );
+		// [Kaori-Chani] The heights go in link order above, not here.
 
 		// Update the panning.
 		if (( pSector->SavedCeilingXOffset != pSector->GetXOffset(sector_t::ceiling) ) ||
@@ -3651,8 +3733,11 @@ void SERVER_UpdateSectors( ULONG ulClient )
 
 //*****************************************************************************
 //
-void SERVER_UpdateMovers( ULONG ulClient )
+ULONG SERVER_UpdateMovers( ULONG ulClient )
 {
+	// [Kaori-Chani] Counted for features/net-snapshot's resend, which reports how much a
+	// client was sent again; the walks and their order are untouched.
+	ULONG								ulSent = 0;
 	DDoor								*pDoor;
 	DPlat								*pPlat;
 	DFloor								*pFloor;
@@ -3672,41 +3757,92 @@ void SERVER_UpdateMovers( ULONG ulClient )
 
 	// Tell the client about any active doors.
 	while (( pDoor = DoorIterator.Next( )) != NULL )
+	{
 		pDoor->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active plats.
 	while (( pPlat = PlatIterator.Next( )) != NULL )
+	{
 		pPlat->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active floors.
 	while (( pFloor = FloorIterator.Next( )) != NULL )
+	{
 		pFloor->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active elevators.
 	while (( pElevator = ElevatorIterator.Next( )) != NULL )
+	{
 		pElevator->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active waggles.
 	while (( pWaggle = WaggleIterator.Next( )) != NULL )
+	{
 		pWaggle->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active pillars.
 	while (( pPillar = PillarIterator.Next( )) != NULL )
+	{
 		pPillar->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active ceilings.
 	while (( pCeiling = CeilingIterator.Next( )) != NULL )
+	{
 		pCeiling->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// Tell the client about any active scrollers.
 	while (( pScroller = ScrollerIterator.Next( )) != NULL )
+	{
 		pScroller->UpdateToClient( ulClient );
+		++ulSent;
+	}
 
 	// [BB] Tell the client about any active pusher.
 	DPusher *pPusher = NULL;
 	TThinkerIterator<DPusher> PusherIterator;
 	while (( pPusher = PusherIterator.Next( )) != NULL )
+	{
 		pPusher->UpdateToClient( ulClient );
+		++ulSent;
+	}
+
+	// [Kaori-Chani] features/net-snapshot: after both loops, so every mover it names has
+	// already been built on the client.
+	zx::netsnapshot::SpecialSendJoinState( ulClient );
+	return ulSent;
+}
+
+//*****************************************************************************
+//
+// [Kaori-Chani] features/net-snapshot: every tracked mover and polyobject action sent to one
+// client again, counted, the polyobjects walked here as SERVER_UpdateMovers does not carry them.
+//
+ULONG SERVER_ResendTrackedMovers( ULONG ulClient )
+{
+	ULONG							ulSent = SERVER_UpdateMovers( ulClient );
+	DPolyAction						*pPolyAction;
+	TThinkerIterator<DPolyAction>	PolyActionIterator;
+
+	while (( pPolyAction = PolyActionIterator.Next( )) != NULL )
+	{
+		pPolyAction->UpdateToClient( ulClient );
+		++ulSent;
+	}
+	return ulSent;
 }
 
 //*****************************************************************************
@@ -4820,7 +4956,7 @@ void SERVER_STATISTIC_AddToOutboundDataTransfer( ULONG ulNumBytes )
 	g_qwTotalOutboundDataTransferred += ulNumBytes;
 	g_lCurrentOutboundDataTransfer += ulNumBytes;
 
-	SERVERCONSOLE_UpdateStatistics( );
+	// [Kaori-Chani] No redraw a packet: SERVER_Tick's once-a-second update keeps the panel current.
 }
 
 //*****************************************************************************
@@ -4851,7 +4987,7 @@ void SERVER_STATISTIC_AddToInboundDataTransfer( ULONG ulNumBytes )
 	g_qwTotalInboundDataTransferred += ulNumBytes;
 	g_lCurrentInboundDataTransfer += ulNumBytes;
 
-	SERVERCONSOLE_UpdateStatistics( );
+	// [Kaori-Chani] No redraw a packet: SERVER_Tick's once-a-second update keeps the panel current.
 }
 
 //*****************************************************************************
@@ -5108,6 +5244,20 @@ bool SERVER_ProcessCommand( LONG lCommand, BYTESTREAM_s *pByteStream )
 
 		// Client is sending a remote control command to the server.
 		return ( server_RCONCommand( pByteStream ));
+	case CLC_SNAPSHOTACK:
+
+		// [Kaori-Chani] features/net-snapshot: the newest snapshot datagram the client has, and
+		// its answer about the sound table.
+		{
+			const int seq = pByteStream->ReadLong( );
+			const unsigned int history = static_cast<unsigned int>( pByteStream->ReadLong( ));
+			const BYTE soundIds = static_cast<BYTE>( pByteStream->ReadByte( ));
+			if ( seq > 0 )
+				zx::netsnapshot::ClientAcknowledged( g_lCurrentClient,
+					static_cast<unsigned int>( seq ), history );
+			zx::netsnapshot::ClientSoundIds( g_lCurrentClient, soundIds );
+		}
+		return ( false );
 	case CLC_SUICIDE:
 
 		// Client wishes to kill himself.
@@ -6152,6 +6302,17 @@ static bool server_MissingPacket( BYTESTREAM_s *pByteStream )
 		}
 		lLastPacket = lPacket;
 
+		// [Kaori-Chani] A sequence this connection never sent, its archive's number having
+		// restarted at the connect: skipped, where one the archive dropped still kicks.
+		const unsigned int nextSeq = g_aClients[g_lCurrentClient].SavedPackets.NextSequence( );
+		if ( static_cast<unsigned int>( lPacket ) >= nextSeq )
+		{
+			DPrintf( "SERVER_ReadMissingPacket: client %d asked for packet %d, never sent"
+				" (next is %u)\n", static_cast<int>( g_lCurrentClient ),
+				static_cast<int>( lPacket ), nextSeq );
+			continue;
+		}
+
 		// Send the packet from the saved packet archive.
 		bool found = g_aClients[g_lCurrentClient].SavedPackets.SchedulePacket( lPacket );
 
@@ -7060,6 +7221,10 @@ static bool server_AuthenticateLevel( BYTESTREAM_s *pByteStream )
 		if ( invasion )
 			SERVERCOMMANDS_SetInvasionWave( g_lCurrentClient, SVCF_ONLYTHISCLIENT );
 	}
+
+	// [Kaori-Chani] features/net-snapshot: ahead of every legacy mover command below, and of
+	// the polyobjects' own.
+	zx::netsnapshot::SendMoverGateTo( g_lCurrentClient );
 
 	// Tell the client of any lines that have been altered since the level start.
 	SERVER_UpdateLines( g_lCurrentClient );

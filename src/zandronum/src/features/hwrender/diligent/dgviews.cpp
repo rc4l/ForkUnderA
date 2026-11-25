@@ -7,6 +7,8 @@
 #include "features/gamecopy/level.h"   // [rc4l] the level as the render copy holds it
 #include "features/hwrender/diligent/dgscene_glsl.h"   // [rc4l] the scene's light model, shared with the mirror pass
 #include "features/viewsetup/viewsetup.h"   // [rc4l] FixedColormapShadeFor
+#include "features/viewsetup/spriteview.h"   // [Doruk-Aksoy] the sprites' view vector
+#include "r_utility.h"   // [Doruk-Aksoy] r_ActorFrac
 #include "features/hwrender/computation/linemirror_compute.h"   // [rc4l] the reflected eye and how deep mirrors nest
 #include "features/hwrender/computation/growbuffer_compute.h"   // [rc4l] ComputeGrownCapacity
 #include "features/telemetry/telemetry.h"
@@ -965,6 +967,17 @@ void WriteSceneConstants(float *cb, const float *clip, float targetW, float targ
 	in.skyHoles = g_scene.skyHoleCount;
 	// [rc4l] AlphaFunc(GL_GEQUAL, t) keeps a texel only above t - 0.001, as FRenderState stores it.
 	in.spriteAlphaCut = r_mask_sprite_threshold - 0.001f;
+	// [Doruk-Aksoy] The main view's actor fraction and perpendicular, which a moving sprite is turned and slid by.
+	if (g_pass.mainView)
+	{
+		float dirX = 0.f, dirY = 0.f;
+		zx::viewsetup::SpriteView().ViewVector(dirX, dirY);
+		in.spriteFrac = FIXED2FLOAT(r_ActorFrac);
+		in.spritePerpX = -dirY;
+		in.spritePerpY = dirX;
+		float yaw = 0.f;
+		zx::viewsetup::SpriteView().ViewAngles(yaw, in.spritePitch);
+	}
 	// [rc4l] GL draws a camera texture with no fixed colormap (RenderTextureView), and every other view under the player's.
 	in.fixedColormap = zx::viewsetup::FixedColormapShadeFor(g_pass.inCameraPass ? CM_DEFAULT : (int)gl_fixedcolormap);
 	in.lightsCheckSide = r_lights_checkside;

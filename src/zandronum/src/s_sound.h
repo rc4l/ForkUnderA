@@ -244,6 +244,9 @@ void S_SoundMinMaxDist (AActor *ent, int channel, FSoundID sfxid, float volume, 
 void S_Sound (const FPolyObj *poly, int channel, FSoundID sfxid, float volume, float attenuation);
 void S_Sound (const sector_t *sec, int channel, FSoundID sfxid, float volume, float attenuation, int pitch = -1); // [rc4l] explicit pitch (-1 = default).
 void S_Sound (fixed_t x, fixed_t y, fixed_t z, int channel, FSoundID sfxid, float volume, float attenuation, bool bSoundOnClient = false, int pitch = -1); // [RK] Added bSoundOnClient. [rc4l] explicit pitch.
+// [Kaori-Chani] features/net-snapshot: how many channels S_StartSound has handed out, which
+// a point sound's pending record reads to know whether its own sound started.
+unsigned int S_SoundStarts ();
 
 // sound channels
 // channel 0 never willingly overrides
@@ -325,6 +328,9 @@ void S_StopAllUnattachedSounds (void);
 // Is the sound playing on one of the emitter's channels?
 bool S_GetSoundPlayingInfo (const AActor *actor, int sound_id);
 bool S_GetSoundPlayingInfo (const sector_t *sector, int sound_id);
+// [Kaori-Chani] features/net-snapshot: whether a sound would still be audible that far away,
+// so the server can drop one no client could hear. Defined with the sound code.
+bool S_IsAudibleAtDistance ( FSoundID sound_id, float attenuation, float dist );
 bool S_GetSoundPlayingInfo (const FPolyObj *poly, int sound_id);
 
 bool S_IsActorPlayingSomething (AActor *actor, int channel, int sound_id);
@@ -334,6 +340,11 @@ bool S_ChangeSoundVolume(AActor *actor, int channel, float volume);
 
 // Moves all sounds from one mobj to another
 void S_RelinkSound (AActor *from, AActor *to);
+// [Kaori-Chani] features/net-snapshot: moves a free-standing S_Sound onto an actor that arrived
+// after it, returning 1 if moved, -1 if its channel was busy, 0 if none was playing.
+// Declared only: the body needs this tree's sound code read, which lacks S_IsChannelUsed.
+int S_AttachPointSound (fixed_t x, fixed_t y, fixed_t z, int channel, int sound_id,
+	AActor *actor);
 
 // Stores/retrieves playing channel information in an archive.
 void S_SerializeSounds(FArchive &arc);

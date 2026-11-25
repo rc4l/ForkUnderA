@@ -179,6 +179,22 @@ TEST(McpRpc, HashDetectsASingleFieldDifference)
 	EXPECT_NE(h1, h2);
 }
 
+TEST(McpRpc, ABridgePauseReadsNoDemoCommands)
+{
+	EXPECT_EQ(ComputeTiccmdSource(false, 0, false), TiccmdSource::Local);
+	EXPECT_EQ(ComputeTiccmdSource(true, -1, true), TiccmdSource::Local);   // alt-tab pause, as stock
+	EXPECT_EQ(ComputeTiccmdSource(true, 0, false), TiccmdSource::Demo);
+	EXPECT_EQ(ComputeTiccmdSource(true, 1, false), TiccmdSource::Demo);    // a pause the demo recorded keeps reading
+	EXPECT_EQ(ComputeTiccmdSource(true, 1, true), TiccmdSource::Held);
+	EXPECT_EQ(ComputeTiccmdSource(true, 0, true), TiccmdSource::Demo);     // the hold ended with the pause
+}
+
+TEST(McpRpc, FrameRandomStreamsIncludeAnimatedTexturesAndSoundPicks)
+{
+	const std::vector<std::string> &s = ComputeFrameRandomStreams();
+	EXPECT_EQ(s, (std::vector<std::string>{ "TorchFlicker", "ProjDecal", "AnimatePics", "RandSound" }));
+}
+
 TEST(McpRpc, HashMixStrDistinguishesStrings)
 {
 	EXPECT_NE(FnvMixStr(FnvInit(), "MAP01"), FnvMixStr(FnvInit(), "MAP02"));
