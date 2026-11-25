@@ -1921,6 +1921,7 @@ add_executable( zdoom WIN32
 	features/net-client/rejoin.cpp
 	features/dev-mode/devmode.cpp
 	features/latency/latency.cpp
+	features/dtoa-lock/dtoalock.cpp
 	zzautozend.cpp
 )
 
