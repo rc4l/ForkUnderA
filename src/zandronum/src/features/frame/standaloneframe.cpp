@@ -65,15 +65,12 @@ std::vector<const zx::gamecopy::ActorRecord *> g_swept;
 // [Doruk-Aksoy] What the sweep makes of an actor: kept, or why it is left out.
 enum SweepVerdict { kSweepKept, kSweepNoSector, kSweepBehind, kSweepOffScreen, kSweepVerdicts };
 
-SweepVerdict VerdictOf(const zx::gamecopy::ActorRecord *thing, const float *mvp)
+// [Doruk-Aksoy] Read from the record's packed point (ComputeActorCullPoint), which holds the record's size and place as the test wants them.
+SweepVerdict VerdictOf(const zx::gamecopy::ActorCullPoint &point, const float *mvp)
 {
-	if (thing->Sector == NULL) return kSweepNoSector;
+	if (point.pad < 0.f) return kSweepNoSector;
 	if (mvp == NULL) return kSweepKept;
-	// [rc4l] Mesh space is (x, up, y), and the actor's size pads the test since a sprite is wider than the point it stands on.
-	// [Doruk-Aksoy] A model reaching past the radius pads it by its reach, or a big one went as its centre left the view.
-	const float pad = std::max(FIXED2FLOAT(thing->radius), thing->modelReach) + FIXED2FLOAT(thing->height) + 64.f;
-	const int cull = ComputeActorCull(mvp, FIXED2FLOAT(thing->x), FIXED2FLOAT(thing->z) + FIXED2FLOAT(thing->height) * 0.5f,
-		FIXED2FLOAT(thing->y), pad);
+	const int cull = ComputeActorCull(mvp, point.x, point.up, point.y, point.pad);
 	return cull == kActorBehind ? kSweepBehind : cull == kActorOffScreen ? kSweepOffScreen : kSweepKept;
 }
 
@@ -95,9 +92,15 @@ void SweepActors()
 	// [rc4l] Derived in one batch across the job pool unless a check compares them one at a time against GL.
 	const bool batch = !fua_sprite_check && !fua_shading_check;
 	g_swept.clear();
-	const float *mvp = zx::hwrender::SceneMVP();
+	// [Doruk-Aksoy] This view's own matrix, since SceneMVP is the backend's last frame's, or a camera texture's, until this frame records.
+	float viewMvp[16];
+	const float *mvp = zx::hwrender::ViewMVPNow(viewMvp) ? viewMvp : NULL;
 	int count;
 	const zx::gamecopy::ActorRecord *records = zx::gamecopy::Actors(count);
+	int pointCount = 0;
+	const zx::gamecopy::ActorCullPoint *points = zx::gamecopy::ActorCullPoints(pointCount);
+	// [Doruk-Aksoy] The points are taken with the records, one each, so a fill always holds as many of both.
+	if (points == NULL || pointCount != count) count = 0;
 	{
 		ZX_ZONE("scene/actor_sweep");   // [Doruk-Aksoy] the actors culled against the view, before any is derived
 		if (batch && count > 0)
@@ -112,7 +115,7 @@ void SweepActors()
 				for (int &v : sc.verdicts) v = 0;
 				for (int i = lo; i < hi; i++)
 				{
-					const SweepVerdict v = VerdictOf(&records[i], mvp);
+					const SweepVerdict v = VerdictOf(points[i], mvp);
 					sc.verdicts[v]++;
 					if (v == kSweepKept) sc.kept.push_back(&records[i]);
 				}
@@ -128,7 +131,7 @@ void SweepActors()
 		else
 			for (int i = 0; i < count; i++)
 			{
-				const SweepVerdict v = VerdictOf(&records[i], mvp);
+				const SweepVerdict v = VerdictOf(points[i], mvp);
 				verdicts[v]++;
 				if (v != kSweepKept) continue;
 				if (batch) g_swept.push_back(&records[i]);

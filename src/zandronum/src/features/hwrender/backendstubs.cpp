@@ -27,6 +27,7 @@ zx::frame::FrameRoute FrameRouteNow(bool hasGL, bool hasBackend)
 }
 bool StandaloneActive() { return false; }
 const float *SceneMVP() { return NULL; }
+bool ViewMVPNow(float *) { return false; }
 void LiveFrame() {}
 void RenderCameraTexture(const void *, int, int, float, fixed_t, fixed_t, fixed_t, unsigned int, int, float) {}
 

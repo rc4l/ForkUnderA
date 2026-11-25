@@ -490,6 +490,7 @@ void FillPolyobjects()
 }
 
 std::vector<ActorRecord> g_actors;   // [rc4l] the last fill's actors, reused fill to fill
+std::vector<ActorCullPoint> g_cullPoints;   // [Doruk-Aksoy] g_actors' frustum test inputs, one a record
 std::vector<int> g_firstIn;          // [rc4l] each sector's first record
 std::vector<int> g_skyBoxes;         // [rc4l] each sector's floor and ceiling sky viewpoint records
 int g_defaultSkyBox = -1;
@@ -744,6 +745,7 @@ void FillActors(bool listed, bool kept)
 	AActor *const camera = players[consoleplayer].camera;
 	(void)camera;
 	g_actors.resize(g_held.size());
+	g_cullPoints.resize(g_held.size());
 	// [rc4l] Taken across the pool, each lane writing only its own actors and records, since Sunder MAP11's 6,029 took 0.9 ms of a browser's handoff.
 	ZX_ZONE("copy/actor_take");
 	// [Doruk-Aksoy] Each chunk notes its wide actors while their records are at hand, where a pass over the records afterwards took 0.09 ms of Sunder MAP11's fill.
@@ -760,6 +762,8 @@ void FillActors(bool listed, bool kept)
 			g_held[i]->rcRecord = i;
 			TakeActor(*g_held[i], g_actors[i]);
 			g_actors[i].nextInSector = g_heldNext[i];
+			const ActorRecord &r = g_actors[i];
+			g_cullPoints[i] = ComputeActorCullPoint(r.Sector != NULL, FIXED2FLOAT(r.x), FIXED2FLOAT(r.y), FIXED2FLOAT(r.z), FIXED2FLOAT(r.height), FIXED2FLOAT(r.radius), r.modelReach);
 			if (g_actors[i].Sector != NULL && zx::modelreach::ComputeReachIsWide(g_actors[i].modelFootprint, FIXED2FLOAT(g_actors[i].radius))) wide.push_back(i);
 		}
 	};
@@ -1005,6 +1009,12 @@ const ActorRecord *Actors(int &count)
 	return g_actors.empty() ? NULL : &g_actors[0];
 }
 
+const ActorCullPoint *ActorCullPoints(int &count)
+{
+	count = (int)g_cullPoints.size();
+	return g_cullPoints.empty() ? NULL : &g_cullPoints[0];
+}
+
 const ActorRecord *Record(int n)
 {
 	return ComputeHoldsRecord(n, (int)g_actors.size()) ? &g_actors[n] : NULL;
@@ -1174,6 +1184,7 @@ void InitLevel()
 	g_prescan.stamp.found = false;
 	g_heldMade = ActorListStamp();
 	g_actors.clear();
+	g_cullPoints.clear();
 	g_byIdBuilt = false;
 	g_level++;
 	g_firstIn.clear();
