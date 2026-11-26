@@ -113,6 +113,8 @@ than only at class-definition time.
   net ids, `Floor`/`Round`/`Ceil` and more, and `APROP_MaxStepHeight`, at UZDoom's numbers.
 - [Actor handles](acs/Actor_handles.md) — `fua_GetActorHandle` and its siblings: an actor named by a handle
   instead of a TID, kept across savegames and hub maps, and how to use them in clientside scripts.
+- [Named random streams](acs/Random_streams.md) — `fua_Random`, `fua_FRandom` and `fua_SetRandomSeed`:
+  sequences of their own that never move `Random()`'s, kept in savegames and demos.
 
 ### GLDEFS
 

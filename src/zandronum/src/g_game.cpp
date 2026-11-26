@@ -38,6 +38,7 @@
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] the handle table in savegames
+#include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] the named random streams in savegames
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
 #include <stdio.h>
@@ -4908,6 +4909,7 @@ void G_DoLoadGame ()
 
 	G_ReadSnapshots (png);
 	STAT_Read(png);
+	zx::acsrandom::ReadStreams (png);	// [Doruk-Aksoy] features/acs-random: the named streams first, so their saved state has somewhere to go
 	FRandom::StaticReadRNGState (png);
 	P_ReadACSDefereds (png);
 	// [Doruk-Aksoy] features/acs-handles: before the level is rebuilt, so its actors claim their slots.
@@ -5215,6 +5217,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	G_WriteSnapshots (stdfile);
 	STAT_Write(stdfile);
 	FRandom::StaticWriteRNGState (stdfile);
+	zx::acsrandom::WriteStreams (stdfile);	// [Doruk-Aksoy] features/acs-random
 	P_WriteACSDefereds (stdfile);
 	zx::acshandles::WriteTable (stdfile);	// [Doruk-Aksoy] features/acs-handles
 
