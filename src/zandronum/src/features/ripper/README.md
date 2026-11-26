@@ -23,7 +23,7 @@ behaves exactly as it did before this feature existed.
 | `RipLevelMax <int>` | victim | `0` | Rippers above this tier can't rip it. `0` disables the bound. |
 | `RipSound <sound>` | projectile | *(none)* | The field already existed for MBF21's DeHackEd "Rip sound"; this makes it authorable in DECORATE. Empty = `misc/ripslop`. |
 
-## Flags (`flags9`)
+## Flags (`fua_flags`)
 
 | Flag | Side | Meaning |
 |---|---|---|
@@ -133,21 +133,24 @@ projectile flying.
 decision and are not broadcast, matching the `HitRadius`/`HitHeight` precedent in
 [`features/actorresize`](../actorresize/README.md).
 
-The one thing that *can* cost bytes is the `flags9` word, and only when a mod changes it at
+The one thing that *can* cost bytes is the `fua_flags` word, and only when a mod changes it at
 runtime: 8 bytes per `A_ChangeFlag` (`SetThingFlags` = SVC byte + Short netID + Byte flagset +
 Long flags). The late-join full update gates each word on `!= GetDefault()`, which is false for
-a DECORATE-authored `flags9`, so it adds no traffic there.
+a DECORATE-authored `fua_flags`, so it adds no traffic there.
 
 ## In-engine hooks (edits to existing files, not part of this folder)
 
-- `actor.h` — the `MF9_*` enum, `DWORD flags9`, the ripper fields, `FRipVictim`, the
+- `actor.h` — the `FUAF_*` enum, `DWORD fua_flags` (UZDoom's flags9 took the old word), the ripper fields, `FRipVictim`, the
   `RipHitsOn` / `RecordRipHit` / `ResetRipCounters` declarations, and `RipSound`'s type.
 - `namedef.h` — `NAME_Rip`, appended (never inserted: namedef indices go over the wire).
 - `p_local.h` — `FCheckPosition::RipStatePending`, the `+USERIPSTATE` deferral carrier.
 - `p_mobj.cpp` (`P_XYMovement`) and `g_shared/a_fastprojectile.cpp` (`Tick`) — the two movers
   that apply the deferred `Rip:` state once the move is out of the blockmap iterator.
-- `p_map.cpp` — the rip path in `PIT_CheckThing`, plus the level check in the PASSMOBJ/bridge
-  gate and in `P_BounceActor` so a level-rejected ripper is consistently "not a ripper" there too.
+- `p_map.cpp` — the rip path in `PIT_CheckThing`, and `P_RipsThrough` (`ComputeRipsThrough`: +RIPPER,
+  +DONTRIP, the level window, +NOBOSSRIP) for the PASSMOBJ/bridge gate and `P_BounceActor`, so a
+  ripper that cannot rip is consistently "not a ripper" there too.
+- `p_mobj.cpp` (`AActor::Tick`) — a bouncing ripper coming down on an actor it can rip rips through it
+  (`P_RipsThrough`) instead of exploding there (features/bounce).
 - `p_mobj.cpp` — the ledger accessors, the `FRipVictim` archiver, and the guarded serialization.
 - `p_local.h` / `p_interaction.cpp` — `DMG_NO_PAIN` and the three pain gates that honour it.
 - `thingdef/thingdef_data.cpp`, `thingdef_properties.cpp`, `thingdef_expression.cpp`,

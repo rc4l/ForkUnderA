@@ -62,10 +62,18 @@ TEST(ComputeBouncesOffPlane, EachPlaneItsOwnFlag)
 // [Doruk-Aksoy] Coming down on an actor it did not bounce off, a missile explodes and anything else lands, so neither hangs there.
 TEST(ComputeOnTopResult, NeverHangs)
 {
-	EXPECT_EQ(ComputeOnTopResult(true, true), OnTop::Bounced);
-	EXPECT_EQ(ComputeOnTopResult(true, false), OnTop::Bounced);
-	EXPECT_EQ(ComputeOnTopResult(false, true), OnTop::Explode);
-	EXPECT_EQ(ComputeOnTopResult(false, false), OnTop::Land);
+	EXPECT_EQ(ComputeOnTopResult(true, true, false), OnTop::Bounced);
+	EXPECT_EQ(ComputeOnTopResult(true, false, false), OnTop::Bounced);
+	EXPECT_EQ(ComputeOnTopResult(false, true, false), OnTop::Explode);
+	EXPECT_EQ(ComputeOnTopResult(false, false, false), OnTop::Land);
+}
+
+// [MGOOOOOO] A ripper that did not bounce off what it came down on rips on through it, where any other missile explodes.
+TEST(ComputeOnTopResult, RipperRipsThrough)
+{
+	EXPECT_EQ(ComputeOnTopResult(false, true, true), OnTop::RipThrough);
+	EXPECT_EQ(ComputeOnTopResult(true, true, true), OnTop::Bounced);
+	EXPECT_EQ(ComputeOnTopResult(false, false, true), OnTop::Land);
 }
 
 // [Doruk-Aksoy] Only a server-owned bouncing missile; the client's own missiles and non-bouncing ones keep their rules.
@@ -126,4 +134,13 @@ TEST(ComputeBlockedLine, ElseTheWalksLine)
 	EXPECT_EQ(ComputeBlockedLine<int>(nullptr, &floorLine, &ceilingLine, &divider, false, false), &divider);
 	EXPECT_EQ(ComputeBlockedLine<int>(nullptr, nullptr, nullptr, nullptr, true, true), nullptr);
 }
+}
+
+// [Doruk-Aksoy] Down is a positive pitch, as UZDoom's -VecToAngle(length, z) gives it.
+TEST(ComputeBouncePitch, PointsAlongTheVelocity)
+{
+	EXPECT_NEAR(0.0, ComputeBouncePitch(10, 0, 0), 1e-9);
+	EXPECT_NEAR(-45.0, ComputeBouncePitch(3, 4, 5), 1e-9);
+	EXPECT_NEAR(45.0, ComputeBouncePitch(0, -5, -5), 1e-9);
+	EXPECT_NEAR(-90.0, ComputeBouncePitch(0, 0, 2), 1e-9);
 }

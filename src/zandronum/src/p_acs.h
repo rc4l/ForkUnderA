@@ -432,11 +432,11 @@ enum
 	APROP_StencilColor	= 41,
 	APROP_Friction		= 42,	// [rc4l] uzdoom@ea7ba9dba
 	APROP_DamageMultiplier = 43,	// [rc4l] uzdoom@99b2cfa14 -- was reserved below, now implemented
-	// [ZandroX] 44-49 are left unused on purpose: UZDoom/GZDoom assign them
-	// (MaxStepHeight, MaxDropOffHeight, DamageType, SoundClass,
-	// FriendlySeeBlocks, WaterDepth). ZandroX doesn't implement those yet, so
-	// reserving the ids keeps ACS written against UZDoom's constants valid.
-	// Fork-specific properties therefore start at 50.
+	// [Doruk-Aksoy] features/acs-parity: uzdoom@1d286d5bd5 (step and drop-off heights) and d09ec5a930 (DamageType).
+	APROP_MaxStepHeight	= 44,
+	APROP_MaxDropOffHeight = 45,
+	APROP_DamageType	= 46,
+	// [ZandroX] 47-49 stay UZDoom's (SoundClass, FriendlySeeBlocks, WaterDepth), so fork-specific properties start at 50.
 	APROP_HitRadius		= 50,	// [ZandroX] projectilepassradius (attack half-width)
 	APROP_HitHeight		= 51,	// [ZandroX] projectilepassheight (attack height)
 	APROP_MvType		= 52,	// [rc4l] Player.MvType (features/quake-movement)
@@ -504,6 +504,8 @@ public:
 	int FindMapVarName (const char *varname) const;
 	int FindMapArray (const char *arrayname) const;
 	int GetLibraryID () const { return LibraryID; }
+	int GetLibraryOrdinal () const { return LibraryOrdinal; }	// [Doruk-Aksoy] features/acs-funcrefs: its place among the ACS library lumps, -1 for a map's own BEHAVIOR
+	int GetFunctionIndex (const ScriptFunction *func) const { return (int)(func - Functions); }
 	int *GetScriptAddress (const ScriptPtr *ptr) const { return (int *)(ptr->Address + Data); }
 	int GetScriptIndex (const ScriptPtr *ptr) const { ptrdiff_t index = ptr - Scripts; return index >= NumScripts ? -1 : (int)index; }
 	ScriptPtr *GetScriptPtr(int index) const { return index >= 0 && index < NumScripts ? &Scripts[index] : NULL; }
@@ -521,6 +523,7 @@ public:
 	static void StaticUnloadModules ();
 	static bool StaticCheckAllGood ();
 	static FBehavior *StaticGetModule (int lib);
+	static int StaticModuleCount () { return (int)StaticModules.Size(); }
 	static void StaticSerializeModuleStates (FArchive &arc);
 	static void StaticMarkLevelVarStrings();
 	static void StaticLockLevelVarStrings();
@@ -562,6 +565,7 @@ private:
 	SDWORD MapVarStore[NUM_MAPVARS];
 	TArray<FBehavior *> Imports;
 	DWORD LibraryID;
+	int LibraryOrdinal;
 	char ModuleName[9];
 	TArray<int> JumpPoints;
 
@@ -1106,6 +1110,7 @@ protected:
 	int				WrapWidth;
 	FBehavior	    *activeBehavior;
 	int				InModuleScriptNumber;
+	bool			fua_clientside;	// [Doruk-Aksoy] features/acs-random: a CLIENTSIDE script, whose named streams are apart from every other script's
 	FString			activefontname; // [TP]
 
 	// [AK] Pointers to the source, inflictor, and target actors that triggered a GAMEEVENT_ACTOR_DAMAGED or
@@ -1229,5 +1234,12 @@ AActor	*ACS_GetScriptDamagePointers( unsigned int pointer ); // [AK]
 
 // [BB] Export DoGiveInv
 bool	DoGiveInv(AActor *actor, const PClass *info, int amount);
+
+class player_t;
+// [Doruk-Aksoy] One of a player's INPUT_ or MODINPUT_ values, or 0 for no player.
+int		P_PlayerInputValue(player_t *p, int inputnum);
+class FBaseCVar;
+// [Doruk-Aksoy] The cvar ACS GetCVar reads for an activator, or NULL.
+FBaseCVar *P_FindScriptCVar(AActor *activator, const char *cvarname);
 
 #endif //__P_ACS_H__

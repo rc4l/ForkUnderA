@@ -85,7 +85,14 @@ uint64_t FnvInit();
 uint64_t FnvMixU64(uint64_t h, uint64_t v);
 uint64_t FnvMixStr(uint64_t h, const std::string &s);
 
+// [Doruk-Aksoy] The random streams the frames and the audio advance rather than the tics (torch flicker, renderer decals, animated textures' random frame lengths, $random sound picks, the status bar face), which a sim fingerprint leaves out.
+const std::vector<std::string> &ComputeFrameRandomStreams();
+
 // ---- Sim-step planning -----------------------------------------------------
+
+// [Doruk-Aksoy] Where a player's ticcmd comes from this tic: the demo, the local input, or nowhere while the bridge holds a demo paused, so the demo resumes at the command it stopped at.
+enum class TiccmdSource { Demo, Local, Held };
+TiccmdSource ComputeTiccmdSource(bool demoPlayback, int paused, bool bridgeHoldsPause);
 
 // Advancing the world by `tics` means unpausing until level.time reaches this target, then refreezing.
 // tics <= 0 is clamped to 1 (a step always advances at least one tic).

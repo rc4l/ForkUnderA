@@ -31,6 +31,7 @@
 
 #include <stdlib.h>
 
+#include "features/decorate-uzdoom/classprops.h"
 #include "templates.h"
 #include "m_random.h"
 #include "i_system.h"
@@ -63,6 +64,7 @@
 #include "features/alert-reuse/computation/alertreuse_compute.h"
 #include "features/telemetry/telemetry.h"
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] LiftOntoStairs
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_checkmissilerange ("CheckMissileRange");
 static FRandom pr_opendoor ("OpenDoor");
@@ -400,7 +402,8 @@ bool P_CheckMissileRange (AActor *actor)
 	dist = P_AproxDistance (actor->x-actor->target->x,
 							actor->y-actor->target->y) - 64*FRACUNIT;
 	
-	if (actor->MeleeState == NULL)
+	// [Doruk-Aksoy] MeleeState, MissileState and MinMissileChance are the class's (only p_states.cpp and DECORATE set them, on defaults), so chase code reads them from the defaults instead of a cold actor line.
+	if (actor->GetDefault()->MeleeState == NULL)
 		dist -= 128*FRACUNIT;	// no melee attack, so fire more
 
 	return actor->SuggestMissileAttack (dist);
@@ -415,13 +418,15 @@ bool AActor::SuggestMissileAttack (fixed_t dist)
 	if (maxtargetrange > 0 && dist > maxtargetrange)
 		return false;	// The Arch Vile's special behavior turned into a property
 		
-	if (MeleeState != NULL && dist < meleethreshold)
+	if (GetDefault()->MeleeState != NULL && dist < meleethreshold)
 		return false;	// From the Revenant: close enough for fist attack
 
 	if (flags4 & MF4_MISSILEMORE) dist >>= 1;
 	if (flags4 & MF4_MISSILEEVENMORE) dist >>= 3;
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: MissileChanceMult scales the distance too (features/decorate-uzdoom).
+	dist = FixedMul(dist, zx::decorateuzdoom::MissileChanceMult(this));
 	
-	int mmc = FixedMul(MinMissileChance, G_SkillProperty(SKILLP_Aggressiveness));
+	int mmc = FixedMul(GetDefault()->MinMissileChance, G_SkillProperty(SKILLP_Aggressiveness));
 	return pr_checkmissilerange() >= MIN<int> ((const int)(dist >> FRACBITS), mmc);
 }
 
@@ -578,6 +583,7 @@ bool P_Move (AActor *actor)
 	{
 		actor->x = origx;
 		actor->y = origy;
+		zx::cells::Refresh (actor);	// [Doruk-Aksoy] features/blockmap-filter: moved back without relinking
 		movefactor *= (int)(FRACUNIT / ORIG_FRICTION_FACTOR / 4);
 		actor->velx += FixedMul (deltax, movefactor);
 		actor->vely += FixedMul (deltay, movefactor);
@@ -967,8 +973,10 @@ void P_NewChaseDir(AActor * actor)
 
 		if (!(actor->flags6 & MF6_NOFEAR))
 		{
+			// [Doruk-Aksoy] uzdoom: a +FRIGHTENING target scares monsters off as the cheat does (features/decorate-uzdoom).
 			if ((actor->target->player != NULL && (actor->target->player->cheats & CF_FRIGHTENING)) || 
-				(actor->flags4 & MF4_FRIGHTENED))
+				(actor->flags4 & MF4_FRIGHTENED) ||
+				(actor->target->flags8 & MF8_FRIGHTENING))
 			{
 				deltax = -deltax;
 				deltay = -deltay;
@@ -1119,7 +1127,8 @@ void P_RandomChaseDir (AActor *actor)
 	int turndir;
 
 	// Friendly monsters like to head toward a player
-	if (actor->flags & MF_FRIENDLY)
+	// [Doruk-Aksoy] uzdoom: unless +DONTFOLLOWPLAYERS.
+	if ((actor->flags & MF_FRIENDLY) && !(actor->flags8 & MF8_DONTFOLLOWPLAYERS))
 	{
 		AActor *player;
 		fixed_t deltax, deltay;
@@ -1337,6 +1346,11 @@ bool P_IsVisible(AActor *lookee, AActor *other, INTBOOL allaround, FLookExParams
 	fixed_t maxdist;
 	fixed_t mindist;
 	angle_t fov;
+	// [Doruk-Aksoy] uzdoom: a +MVISBLOCKED actor is never seen by a looking monster.
+	if (other == NULL || (other->flags8 & MF8_MVISBLOCKED))
+	{
+		return false;
+	}
 
 	if (params != NULL)
 	{
@@ -1644,7 +1658,13 @@ AActor *LookForEnemiesInBlock (AActor *lookee, int index, void *extparam)
 			continue;
 
 		other = NULL;
-		if (link->flags & MF_FRIENDLY)
+		// [Doruk-Aksoy] uzdoom: a hostile lookee (+SEEFRIENDLYMONSTERS) only goes after friendly monsters (features/decorate-uzdoom).
+		if (!(lookee->flags & MF_FRIENDLY))
+		{
+			if (link->flags & MF_FRIENDLY)
+				other = link;
+		}
+		else if (link->flags & MF_FRIENDLY)
 		{
 			if (!lookee->IsFriend(link))
 			{
@@ -1706,7 +1726,8 @@ bool P_LookForEnemies (AActor *actor, INTBOOL allaround, FLookExParams *params)
 {
 	AActor *other;
 
-	other = P_BlockmapSearch (actor, 10, LookForEnemiesInBlock, params);
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: FriendlySeeBlocks, 10 by default (features/decorate-uzdoom).
+	other = P_BlockmapSearch (actor, zx::decorateuzdoom::FriendlySeeBlocks(actor), LookForEnemiesInBlock, params);
 
 	if (other != NULL)
 	{
@@ -1833,6 +1854,12 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 
 
 	}	// [SP] if false, and in deathmatch, intentional fall-through
+	// [Doruk-Aksoy] uzdoom: a hostile +SEEFRIENDLYMONSTERS monster looks for friendly monsters before players.
+	else if (actor->flags8 & MF8_SEEFRIENDLYMONSTERS)
+	{
+		if (P_LookForEnemies (actor, allaround, params))
+			return true;
+	}
 
 	if (!(gameinfo.gametype & (GAME_DoomStrifeChex)) &&
 		( NETWORK_GetState( ) == NETSTATE_SINGLE ) &&
@@ -2515,7 +2542,7 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 
 	// [RH] Don't chase invisible targets
 	if (actor->target != NULL &&
-		actor->target->renderflags & RF_INVISIBLE &&
+		((actor->target->renderflags & RF_INVISIBLE) || (actor->target->flags8 & MF8_MINVISIBLE)) &&
 		actor->target != actor->goal)
 	{
 		actor->target = NULL;
@@ -2781,7 +2808,7 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 
 	// [RH] Scared monsters attack less frequently
 	if (((actor->target->player == NULL ||
-		!(actor->target->player->cheats & CF_FRIGHTENING)) &&
+		!((actor->target->player->cheats & CF_FRIGHTENING) || (actor->target->flags8 & MF8_FRIGHTENING))) &&
 		!(actor->flags4 & MF4_FRIGHTENED)) ||
 		pr_scaredycat() < 43)
 	{
@@ -3086,6 +3113,7 @@ bool P_CheckForResurrection(AActor *self, bool usevilestates, FState *customstat
 				{
 					corpsehit->height = info->height;	// [RH] Use real mobj height
 					corpsehit->radius = info->radius;	// [RH] Use real radius
+					zx::cells::Refresh (corpsehit);	// [Doruk-Aksoy] features/blockmap-filter: resized without relinking
 				}
 
 				corpsehit->Revive();
@@ -3137,19 +3165,19 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Chase)
 	}
 	else // this is the old default A_Chase
 	{
-		A_DoChase (self, false, self->MeleeState, self->MissileState, true, gameinfo.nightmarefast, false);
+		A_DoChase (self, false, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, gameinfo.nightmarefast, false);
 	}
 }
 
 DEFINE_ACTION_FUNCTION(AActor, A_FastChase)
 {
-	A_DoChase (self, true, self->MeleeState, self->MissileState, true, true, false);
+	A_DoChase (self, true, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, true, false);
 }
 
 DEFINE_ACTION_FUNCTION(AActor, A_VileChase)
 {
 	if (!P_CheckForResurrection(self, true))
-		A_DoChase (self, false, self->MeleeState, self->MissileState, true, gameinfo.nightmarefast, false);
+		A_DoChase (self, false, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, gameinfo.nightmarefast, false);
 }
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ExtChase)
@@ -3162,14 +3190,14 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ExtChase)
 
 	// Now that A_Chase can handle state label parameters, this function has become rather useless...
 	A_DoChase(self, false,
-		domelee ? self->MeleeState:NULL, domissile ? self->MissileState:NULL,
+		domelee ? self->GetDefault()->MeleeState:NULL, domissile ? self->GetDefault()->MissileState:NULL,
 		playactive, nightmarefast, false);
 }
 
 // for internal use
 void A_Chase(AActor *self)
 {
-	A_DoChase (self, false, self->MeleeState, self->MissileState, true, gameinfo.nightmarefast, false);
+	A_DoChase (self, false, self->GetDefault()->MeleeState, self->GetDefault()->MissileState, true, gameinfo.nightmarefast, false);
 }
 
 //=============================================================================
@@ -3430,7 +3458,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Scream)
 	{
 		// Check for bosses.
 		// [rc4l] MBF21 FULLVOLSOUNDS makes the death sound full-volume even on non-boss actors.
-		if (self->flags2 & MF2_BOSS || self->flags8 & MF8_FULLVOLDEATH)
+		if (self->flags2 & MF2_BOSS || self->flags3 & MF3_FULLVOLDEATH)
 		{
 			// full volume
 			S_Sound (self, CHAN_VOICE, self->DeathSound, 1, ATTN_NONE);

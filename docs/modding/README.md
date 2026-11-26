@@ -105,6 +105,18 @@ than only at class-definition time.
   texture shader's `fua_Uniform` lines too. Declared for ACC in [`fua.acs`](acs/fua.acs).
 - [Actor materials](gldefs/Actor_materials.md) — `fua_SetActorMaterial` and `fua_SetActorUniform*`, one
   actor's material and its own uniforms.
+- [Vector math](acs/Vectors.md) — `fua_Vec`, the exact length, unit, dot and cross zt-bcc's `vec2`
+  and `vec3` call with `-target fua` or `any`.
+- [Function references](acs/Function_references.md) — BCS function references compare equal between
+  modules and last across map changes.
+- [UZDoom's ACS functions](acs/UZDoom_functions.md) — `CheckProximity`, `DamageActor`, `GetLineX`,
+  net ids, `Floor`/`Round`/`Ceil` and more, and `APROP_MaxStepHeight`, at UZDoom's numbers.
+- [Actor handles](acs/Actor_handles.md) — `fua_GetActorHandle` and its siblings: an actor named by a handle
+  instead of a TID, kept across savegames and hub maps, and how to use them in clientside scripts.
+- [Actor fields](acs/Actor_fields.md) — `fua_GetField` and `fua_SetField`: any DECORATE field read by name,
+  `user_` variables written.
+- [Named random streams](acs/Random_streams.md) — `fua_Random`, `fua_FRandom` and `fua_SetRandomSeed`:
+  sequences of their own that never move `Random()`'s, kept in savegames and demos.
 
 ### GLDEFS
 
@@ -124,6 +136,17 @@ than only at class-definition time.
 - [A_JumpIfInput](decorate/A_JumpIfInput.md) — jump when a player is holding given buttons
   ([#56](https://github.com/rc4l/ZandroX/pull/56)). Puts input tests in the state sequence
   instead of a client-side ACS script. Unlike the overlay family, this one works in netgames.
+
+### DECORATE — UZDoom's features
+
+- [UZDoom's DECORATE features](decorate/UZDoom_features.md) — UZDoom's math and actor queries, float user
+  variables, new functions, parameters and properties, and gameplay flags such as `+HITOWNER`,
+  `+STOPRAILS` and `+NOINFIGHTSPECIES`, under UZDoom's names.
+
+### Lumps
+
+- [TRNSLATE](lumps/TRNSLATE.md) — named translations, used by DECORATE's `Translation "Name"` and
+  `A_SetTranslation`.
 
 ### Not yet written
 

@@ -6,6 +6,8 @@
 #ifndef ZX_SPRITECLIP_COMPUTE_H
 #define ZX_SPRITECLIP_COMPUTE_H
 
+#include <cstdint>
+
 namespace zx { namespace sprites {
 
 // [rc4l] What the clip asks of the actor, and the floor and ceiling it stands between.
@@ -25,6 +27,18 @@ bool ComputeSpriteClips(bool living, int spriteClip);
 
 // [rc4l] Shift z1 and z2 as GL does; call only when ComputeSpriteClips says so.
 void ComputeSpriteClip(const SpriteClipIn &in, float &z1, float &z2);
+
+// [Doruk-Aksoy] Whether ComputeSpriteClip leaves z1 and z2 alone because the sprite stands inside the floor and (for the smarter clip) the ceiling; both tests are linear in the edges, so true at a tic's two ends is true all through it.
+bool ComputeSpriteClipIdle(const SpriteClipIn &in, float z1, float z2);
+
+// [Doruk-Aksoy] An actor's height and the floor and ceiling under it at one end of a tic, raw fixed-point.
+struct TicEnd
+{
+	int64_t z, floor, ceiling;
+};
+
+// [Doruk-Aksoy] Whether both ends of the tic match, which holds the clip lift and floor glow all through it, as planes are linear.
+bool ComputeSteadyAcrossTic(const TicEnd &prev, const TicEnd &now);
 
 }} // namespace zx::sprites
 

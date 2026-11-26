@@ -258,6 +258,14 @@ configure() {
         args+=( -DFUA_MCP_BRIDGE=OFF )
     fi
 
+    # [Doruk-Aksoy] Telemetry, seams and the dev-mode tools (docs/diagnostics.md) only in a test build (ZX_DIAGNOSTICS=1), OFF otherwise so a cached ON never reaches a public build.
+    if [[ "${ZX_DIAGNOSTICS:-0}" == "1" ]]; then
+        args+=( -DFUA_DIAGNOSTICS=ON )
+        status "diagnostics: ENABLED (test build -- do not ship)"
+    else
+        args+=( -DFUA_DIAGNOSTICS=OFF )
+    fi
+
     # [rc4l] ZX_WITH_SYMBOLS=1 (release CI) builds with debug info; a .dSYM is generated after the
     # build (RELEASE_WITH_DEBUG_FILE is off on Apple) and uploaded to GlitchTip so crashes symbolicate.
     if [[ "${ZX_WITH_SYMBOLS:-0}" == "1" ]]; then

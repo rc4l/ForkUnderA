@@ -10,6 +10,9 @@ namespace zx { namespace bounce {
 // [Doruk-Aksoy] Mirrors actor.h's BOUNCE_Walls, BOUNCE_Floors and BOUNCE_Ceilings, static_asserted where the engine includes this.
 enum { ZX_BOUNCE_Walls = 1 << 0, ZX_BOUNCE_Floors = 1 << 1, ZX_BOUNCE_Ceilings = 1 << 2 };
 
+// [Doruk-Aksoy] uzdoom: the pitch in degrees a +BOUNCEMODIFIESPITCH bouncer takes from its velocity, pointing along it (down positive).
+double ComputeBouncePitch(double velX, double velY, double velZ);
+
 // [Doruk-Aksoy] Takes one bounce off a limited count and says whether it was the last; a count of 0 is unlimited and stays so.
 bool ComputeBounceSpent(int &bouncecount);
 
@@ -20,8 +23,9 @@ bool ComputeTriesWallBounce(int bounceFlags);
 bool ComputeBouncesOffPlane(int bounceFlags, bool ceiling);
 
 // [Doruk-Aksoy] What an actor coming down on another does: it bounced, or a missile explodes on it, or anything else lands on it.
-enum class OnTop { Bounced, Explode, Land };
-OnTop ComputeOnTopResult(bool bounced, bool isMissile);
+// [MGOOOOOO] A ripper that can rip the actor it comes down on rips on through it (RipThrough: nothing happens), as Zandronum leaves it and as it rips one it hits side-on.
+enum class OnTop { Bounced, Explode, Land, RipThrough };
+OnTop ComputeOnTopResult(bool bounced, bool isMissile, bool ripsThrough);
 
 // [Doruk-Aksoy] Whether a client leaves a missile's actor collisions to the server: a bouncer it does not own, whose every bounce off and hit on an actor the server sends with its position.
 bool ComputeClientLeavesActorsToServer(bool serverOwned, bool isMissile, int bounceFlags);

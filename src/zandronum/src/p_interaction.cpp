@@ -29,6 +29,8 @@
 
 
 // Data.
+#include "features/decorate-uzdoom/classprops.h"
+#include "features/decorate-uzdoom/computation/decorateprops_compute.h"
 #include "doomdef.h"
 #include "gstrings.h"
 
@@ -1173,6 +1175,9 @@ static inline bool MustForcePain(AActor *target, AActor *inflictor, int flags)
 // damage itself is going to be refused? ALLOWPAIN on the victim, CAUSEPAIN on the inflictor.
 static inline bool isFakePain(AActor *target, AActor *inflictor, int damage)
 {
+	// [Doruk-Aksoy] P_DamageMobj asks this before its own null check, which ACS's DamageActor reaches with a tid no actor holds.
+	if (target == NULL)
+		return false;
 	return ((target->flags7 & MF7_ALLOWPAIN && damage > 0) || ((inflictor != NULL) && (inflictor->flags7 & MF7_CAUSEPAIN)));
 }
 
@@ -1237,7 +1242,8 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 	}
 	if (target->health <= 0)
 	{
-		if (inflictor && mod == NAME_Ice)
+		// [Doruk-Aksoy] uzdoom: an +ICESHATTER inflictor shatters an ice corpse with ice damage too (features/decorate-uzdoom).
+		if (inflictor && mod == NAME_Ice && !(inflictor->flags7 & MF7_ICESHATTER))
 		{
 			return -1;
 		}
@@ -1257,6 +1263,9 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		}
 		return -1;
 	}
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: SelfDamageFactor scales an actor's damage to itself (features/decorate-uzdoom).
+	if (target == source)
+		damage = zx::decorateuzdoom::ComputeSelfDamage(damage, FIXED2DBL(zx::decorateuzdoom::SelfDamageFactor(target)), damage >= TELEFRAG_DAMAGE && !(target->flags7 & MF7_LAXTELEFRAGDMG));
 	if ((target->flags2 & MF2_INVULNERABLE) && damage < TELEFRAG_DAMAGE && !(flags & DMG_FORCED))
 	{ // actor is invulnerable
 		if (target->player == NULL)
@@ -1338,7 +1347,8 @@ int P_DamageMobj (AActor *target, AActor *inflictor, AActor *source, int damage,
 		// The DamageMultiply now applies BEFORE the inventory modifiers, reversing uzdoom@e303833e5
 		// which we had ported in sequence -- upstream's HEAD still multiplies first, so this is
 		// their lasting answer rather than an accident of the rewrite.
-		if (damage < TELEFRAG_DAMAGE) // TELEFRAG_DAMAGE may not be reduced at all or it may not guarantee its effect.
+		// [Doruk-Aksoy] uzdoom: +LAXTELEFRAGDMG lets telefrag damage be reduced like any other (features/decorate-uzdoom).
+		if (damage < TELEFRAG_DAMAGE || (target->flags7 & MF7_LAXTELEFRAGDMG)) // TELEFRAG_DAMAGE may not be reduced at all or it may not guarantee its effect.
 		{
 			if (player && damage > 1)
 			{
@@ -1575,7 +1585,7 @@ thrust:
 		// [BL] Some adjustments for Skulltag
 		if (player && (( teamlms || survival ) && ( MeansOfDeath == NAME_SpawnTelefrag )) == false )
 			FriendlyFire = true;
-		if (damage < TELEFRAG_DAMAGE)
+		if (damage < TELEFRAG_DAMAGE || (target->flags7 & MF7_LAXTELEFRAGDMG))
 		{ // Still allow telefragging :-(
 			damage = (int)((float)damage * level.teamdamage);
 			if (damage <= 0)
@@ -1648,7 +1658,7 @@ thrust:
 				}
 				// [rc4l] uzdoom@83be901ad: if we are telefragging, do not let armour drag the damage
 				// below TELEFRAG_DAMAGE -- later checks compare against that exact value.
-				if (damage < TELEFRAG_DAMAGE)
+				if (damage < TELEFRAG_DAMAGE || (player->mo->flags7 & MF7_LAXTELEFRAGDMG))
 				{
 					damage = newdam;
 				}
@@ -2013,7 +2023,7 @@ dopain:
 	{
 		if (source == target->target)
 		{
-			target->threshold = BASETHRESHOLD;
+			target->threshold = zx::decorateuzdoom::DefThreshold(target);	// [Doruk-Aksoy] uzdoom@62afe5f0a9
 			if (target->state == target->SpawnState && target->SeeState != NULL)
 			{
 				// [BB] If we are the server, tell clients about the state change.
@@ -2038,7 +2048,7 @@ dopain:
 				target->lastenemy = target->target; // remember last enemy - killough
 			}
 			target->target = source;
-			target->threshold = BASETHRESHOLD;
+			target->threshold = zx::decorateuzdoom::DefThreshold(target);	// [Doruk-Aksoy] uzdoom@62afe5f0a9
 			if (target->state == target->SpawnState && target->SeeState != NULL)
 			{
 				// If we are the server, tell clients about the state change.
@@ -2149,11 +2159,17 @@ bool AActor::OkayToSwitchTarget (AActor *other)
 	if (zx::mbf21::ComputeInfightingImmune(InfightingGroup, other->InfightingGroup))
 		return false;
 
+	// [Doruk-Aksoy] uzdoom: +NOINFIGHTSPECIES never retaliates against its own species (features/decorate-uzdoom).
+	if ((flags7 & MF7_NOINFIGHTSPECIES) && GetSpecies() == other->GetSpecies())
+		return false;
+
 	int infight;
 	// [rc4l] uzdoom@1ad02a6ce: a skill's NoInfighting/TotalInfighting overrides the level/global
 	// setting (but never the per-actor MF5_NOINFIGHTING).
 	const int skillInfight = G_SkillProperty(SKILLP_Infight);
-	if (flags5 & MF5_NOINFIGHTING) infight=-1;
+	// [Doruk-Aksoy] uzdoom: +FORCEINFIGHTING retaliates whatever the level or skill says.
+	if (flags7 & MF7_FORCEINFIGHTING) infight=1;
+	else if (flags5 & MF5_NOINFIGHTING) infight=-1;
 	else if (skillInfight > 0) infight=1;
 	else if (skillInfight < 0) infight=-1;
 	else if (level.flags2 & LEVEL2_TOTALINFIGHTING) infight=1;
@@ -2252,7 +2268,7 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 	{
 		return;
 	}
-	if (damage < TELEFRAG_DAMAGE && ((target->flags2 & MF2_INVULNERABLE) ||
+	if ((damage < TELEFRAG_DAMAGE || (target->flags7 & MF7_LAXTELEFRAGDMG)) && ((target->flags2 & MF2_INVULNERABLE) ||
 		(player->cheats & CF_GODMODE)))
 	{ // target is invulnerable
 		return;
@@ -2311,7 +2327,7 @@ void P_PoisonDamage (player_t *player, AActor *source, int damage,
 	if (target->health <= 0)
 	{ // Death
 		// [rc4l] uzdoom@c63adf920: MF7_BUDDHA counts here as well.
-		if ((((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && damage < TELEFRAG_DAMAGE) || (player->cheats & CF_BUDDHA2))
+		if ((((player->cheats & CF_BUDDHA) || (player->mo->flags7 & MF7_BUDDHA)) && (damage < TELEFRAG_DAMAGE || (target->flags7 & MF7_LAXTELEFRAGDMG))) || (player->cheats & CF_BUDDHA2))
 		{ // [SP] Save the player... 
 			player->health = target->health = 1;
 		}

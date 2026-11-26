@@ -277,7 +277,7 @@ async function driveFight(c, tics) {
 
 // [rc4l] Waits for a file a run writes when it finishes, until it has stopped growing, or throws after timeoutMs.
 // [rc4l] ...or throws at once with what giveUp() returns, when it returns something.
-async function waitForFile(file, timeoutMs, proc, giveUp = () => null) {
+export async function waitForFile(file, timeoutMs, proc, giveUp = () => null) {
   timeoutMs = scaled(timeoutMs);
   const deadline = Date.now() + timeoutMs;
   let last = -1;

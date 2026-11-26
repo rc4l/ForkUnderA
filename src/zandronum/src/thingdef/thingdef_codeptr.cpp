@@ -59,12 +59,18 @@
 #include "team.h"			// [rc4l] teamgame (A_FindTracer friend check)
 #include "d_event.h"		// [rc4l] BT_ATTACK (A_RefireTo)
 #include "features/mbf21/computation/hitscan_spread_compute.h"
+#include "features/a_fireprojectile/computation/fireprojectile_ammo_compute.h"
 #include "i_system.h"
 #include "p_local.h"
 #include "c_console.h"
 #include "doomerrors.h"
 #include "a_sharedglobal.h"
 #include "thingdef/thingdef.h"
+#include "features/decorate-uzdoom/uservars.h"
+#include "features/net-session/netrole.h"
+#include "features/acs-parity/acsparity.h"
+#include "features/decorate-uzdoom/computation/decoratemath_compute.h"
+#include "features/decorate-uzdoom/computation/decorateparams_compute.h"
 #include "v_video.h"
 #include "v_font.h"
 #include "doomstat.h"
@@ -78,6 +84,9 @@
 #include "gstrings.h"
 // [BB] new #includes.
 #include "deathmatch.h"
+#include "features/trnslate/trnslate.h"
+#include "features/trnslate/computation/trnslate_compute.h"
+#include "features/net-replication/actorstate.h"
 #include "cl_main.h"
 #include "cl_demo.h"
 #include "invasion.h"
@@ -91,6 +100,7 @@
 #include "features/spawnprojectile/computation/spawnprojectile_compute.h"
 #include "features/sound-overlap/computation/sound_overlap_compute.h"   // [Doruk-Aksoy] A_StartSound's flags as a channel
 #include "features/net-snapshot/capture.h"	// [Kaori-Chani] ClientEffect
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] zx::cells::Refresh
 
 static FRandom pr_camissile ("CustomActorfire");
 static FRandom pr_camelee ("CustomMelee");
@@ -997,18 +1007,16 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfTargetInsideMeleeRange)
 //==========================================================================
 void DoJumpIfCloser(AActor *target, DECLARE_PARAMINFO)
 {
-	ACTION_PARAM_START(2);
+	ACTION_PARAM_START(3);
 	ACTION_PARAM_FIXED(dist, 0);
 	ACTION_PARAM_STATE(jump, 1);
+	ACTION_PARAM_BOOL(noz, 2);	// [Doruk-Aksoy] uzdoom@62afe5f0a9: across the ground only
 
 	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
 
 	// No target - no jump
-	if (target != NULL && P_AproxDistance(self->x-target->x, self->y-target->y) < dist &&
-		( (self->z > target->z && self->z - (target->z + target->height) < dist) || 
-		  (self->z <=target->z && target->z - (self->z + self->height) < dist) 
-		)
-	   )
+	if (target != NULL && zx::decorateuzdoom::ComputeCloserThan(FIXED2DBL(P_AproxDistance(self->x-target->x, self->y-target->y)),
+		FIXED2DBL(self->z), FIXED2DBL(self->z + self->height), FIXED2DBL(target->z), FIXED2DBL(target->z + target->height), FIXED2DBL(dist), noz))
 	{
 		ACTION_JUMP(jump,CLIENTUPDATE_FRAME|CLIENTUPDATE_POSITION);	// [BC] Since monsters don't have targets on the client end, we need to send an update.
 	}
@@ -1157,7 +1165,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Explode)
 		return;
 	}
 
-	ACTION_PARAM_START(8);
+	ACTION_PARAM_START(10);
 	ACTION_PARAM_INT(damage, 0);
 	ACTION_PARAM_INT(distance, 1);
 	ACTION_PARAM_INT(flags, 2);
@@ -1166,6 +1174,8 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Explode)
 	ACTION_PARAM_INT(nails, 5);
 	ACTION_PARAM_INT(naildamage, 6);
 	ACTION_PARAM_CLASS(pufftype, 7);
+	ACTION_PARAM_NAME(damagetype, 8);	// [Doruk-Aksoy] uzdoom@62afe5f0a9: damagetype and nailrange
+	ACTION_PARAM_FIXED(nailrange, 9);
 
 	if (damage < 0)	// get parameters from metadata
 	{
@@ -1188,14 +1198,18 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Explode)
 		{
 			ang = i*(ANGLE_MAX/nails);
 			// Comparing the results of a test wad with Eternity, it seems A_NailBomb does not aim
-			P_LineAttack (self, ang, MISSILERANGE, 0,
+			P_LineAttack (self, ang, nailrange, 0,
 				//P_AimLineAttack (self, ang, MISSILERANGE), 
 				naildamage, NAME_Hitscan, pufftype);
 		}
 	}
 
-	P_RadiusAttack (self, self->target, damage, distance, self->DamageType, flags, fulldmgdistance);
-	P_CheckSplash(self, distance<<FRACBITS);
+	// [Doruk-Aksoy] The XF_ flags mapped to RADF_ ones, so XF_EXPLICITDAMAGETYPE never reads as RADF_NODAMAGE.
+	if (zx::decorateuzdoom::ComputeExplodeUsesOwnDamageType(damagetype == NAME_None, flags))
+		damagetype = self->DamageType;
+	P_RadiusAttack (self, self->target, damage, distance, damagetype, zx::decorateuzdoom::ComputeExplodeRadiusFlags(flags), fulldmgdistance);
+	if (!(flags & zx::decorateuzdoom::kXfNoSplash))
+		P_CheckSplash(self, distance<<FRACBITS);
 	if (alert && self->target != NULL && self->target->player != NULL)
 	{
 		P_NoiseAlert(self->target, self);
@@ -1350,10 +1364,12 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 				self->x += x;
 				self->y += y;
 				self->z += z;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the missile spawns
 				missile = P_SpawnMissileXYZ(self->x, self->y, self->z + 32*FRACUNIT, self, ref, ti, false);
 				self->x -= x;
 				self->y -= y;
 				self->z -= z;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 				break;
 
 			case 1:
@@ -1363,9 +1379,11 @@ static void ZX_SpawnProjectile( AActor *self, const PClass *ti, fixed_t SpawnHei
 			case 2:
 				self->x += x;
 				self->y += y;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the missile spawns
 				missile = P_SpawnMissileAngleZSpeed(self, self->z + self->GetBobOffset() + SpawnHeight, ti, self->angle, 0, GetDefaultByType(ti)->Speed, self, false);
  				self->x -= x;
 				self->y -= y;
+				zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 
 				flags |= CMF_ABSOLUTEPITCH;
 
@@ -1999,7 +2017,8 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 							   const int SpawnOfs_XY, const fixed_t SpawnHeight, const INTBOOL AimAtAngle,
 							   const fixed_t PitchAdjust, const INTBOOL NoAutoAim = false,
 							   const INTBOOL TransferTranslation = false,
-							   const bool CalledFromWeapon = true )
+							   const bool CalledFromWeapon = true,
+							   const bool CalledFromInventory = false )
 {
 	if (!self->player) return;
 
@@ -2012,7 +2031,8 @@ static void ZX_FireProjectile( AActor *self, const PClass *ti, const angle_t Ang
 	// statecall, which are only in scope inside DEFINE_ACTION_FUNCTION, so the callers evaluate
 	// it and pass the answer in. Upstream's modern A_FireProjectile gates the same way, on
 	// stateinfo.mStateType == STATE_Psprite.
-	if (UseAmmo && CalledFromWeapon && weapon)
+	// [MGOOOOOO] An inventory item's chain spends it again, as on Zandronum, where MM8BDM's classes fire their weapons' shots from CustomInventory items.
+	if (zx::fireprojectile::ComputeFireProjectileUsesAmmo(UseAmmo, weapon != NULL, CalledFromWeapon, CalledFromInventory))
 	{
 		if (!weapon->DepleteAmmo(weapon->bAltFire, true)) return;	// out of ammo
 	}
@@ -2072,7 +2092,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireCustomMissile)
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   Flags & FPF_AIMATANGLE, -fixed_t::FromSignedBits(pitch),
 					   Flags & FPF_NOAUTOAIM, Flags & FPF_TRANSFERTRANSLATION,
-					   ACTION_CALL_FROM_WEAPON() );
+					   ACTION_CALL_FROM_WEAPON(), ACTION_CALL_FROM_INVENTORY() );
 }
 
 //==========================================================================
@@ -2097,7 +2117,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FireProjectile)
 	ZX_FireProjectile( self, ti, Angle, UseAmmo, SpawnOfs_XY, SpawnHeight,
 					   flags & FPF_AIMATANGLE, fixed_t::FromSignedBits(pitch),
 					   flags & FPF_NOAUTOAIM, flags & FPF_TRANSFERTRANSLATION,
-					   ACTION_CALL_FROM_WEAPON() );
+					   ACTION_CALL_FROM_WEAPON(), ACTION_CALL_FROM_INVENTORY() );
 }
 
 
@@ -2364,6 +2384,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 			// but then change the angle again to ensure proper aim.
 			self->x += Spawnofs_XY * finecosine[self->angle];
 			self->y += Spawnofs_XY * finesine[self->angle];
+			zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: offset without relinking while the rail fires
 			Spawnofs_XY = 0;
 			self->angle = R_PointToAngle2 (self->x, self->y,
 											self->target->x - self->target->velx * 3,
@@ -2398,6 +2419,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CustomRailgun)
 
 	self->x = saved_x;
 	self->y = saved_y;
+	zx::cells::Refresh (self);	// [Doruk-Aksoy] features/blockmap-filter: back
 	self->angle = saved_angle;
 	self->pitch = saved_pitch;
 }
@@ -2701,6 +2723,9 @@ enum SIX_Flags
 	SIXF_ORIGINATOR				= 0x00800000,	// [rc4l] uzdoom@f766a1ab3
 	SIXF_TRANSFERSPRITEFRAME	= 0x01000000,	// [rc4l] uzdoom@b37a98689
 	SIXF_TRANSFERROLL			= 0x02000000,	// [rc4l] uzdoom@0f4bca860
+	SIXF_ISTARGET				= 0x04000000,	// [Doruk-Aksoy] uzdoom@62afe5f0a9: the spawner points at what it spawned
+	SIXF_ISMASTER				= 0x08000000,
+	SIXF_ISTRACER				= 0x10000000,
 };
 
 // [BB] Changed return value to bool (returns false if the actor already was destroyed).
@@ -2867,6 +2892,13 @@ static bool InitSpawnedItem(AActor *self, AActor *mo, int flags)
 	{
 		mo->roll = self->roll;
 	}
+
+	if (flags & SIXF_ISTARGET)
+		self->target = mo;
+	if (flags & SIXF_ISMASTER)
+		self->master = mo;
+	if (flags & SIXF_ISTRACER)
+		self->tracer = mo;
 
 	return true;
 }
@@ -3307,27 +3339,43 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_PrintBold)
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_Log)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_STRING(text, 0);
+	ACTION_PARAM_BOOL(local, 1);	// [Doruk-Aksoy] uzdoom@62afe5f0a9: only where this actor is the one viewed
 
+	ACTION_SET_RESULT(false);	// Prints should never set the result for inventory state chains!
+	if (local && !self->CheckLocalView(consoleplayer)) return;
 	if (text[0] == '$') text = GStrings(text+1);
 	FString formatted = strbin1(text);
 	Printf("%s\n", formatted.GetChars());
-	ACTION_SET_RESULT(false);	// Prints should never set the result for inventory state chains!
 }
 
 //=========================================================================
 //
-// A_LogInt
+// A_LogInt, A_LogFloat
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: A_LogFloat, and each one's local.
 //
 //===========================================================================
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_LogInt)
 {
-	ACTION_PARAM_START(1);
+	ACTION_PARAM_START(2);
 	ACTION_PARAM_INT(num, 0);
-	Printf("%d\n", num);
+	ACTION_PARAM_BOOL(local, 1);
 	ACTION_SET_RESULT(false);	// Prints should never set the result for inventory state chains!
+	if (local && !self->CheckLocalView(consoleplayer)) return;
+	Printf("%d\n", num);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_LogFloat)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_DOUBLE(num, 0);
+	ACTION_PARAM_BOOL(local, 1);
+	ACTION_SET_RESULT(false);	// Prints should never set the result for inventory state chains!
+	if (local && !self->CheckLocalView(consoleplayer)) return;
+	Printf("%g\n", num);
 }
 
 //===========================================================================
@@ -3357,6 +3405,49 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslucent)
 		SERVERCOMMANDS_SetThingProperty(self, APROP_RenderStyle);
 		SERVERCOMMANDS_SetThingProperty(self, APROP_Alpha);
 	}
+}
+
+//===========================================================================
+//
+// A_SetTranslation, A_fua_ResetTranslation
+//
+// [Doruk-Aksoy] uzdoom@a505e910: a named translation, None (and "", which DECORATE hands over as None) clearing it and an unknown name ignored.
+// [Doruk-Aksoy] A_fua_ResetTranslation restores the class's own, which UZDoom's DECORATE has no way to ask for.
+//
+//===========================================================================
+
+static void SetActorTranslation(AActor *self, bool resetToDefault, int tnum)
+{
+	// [Doruk-Aksoy] The server sets it and tells the clients, as Thing_SetTranslation does.
+	if ( NETWORK_InClientModeAndActorNotClientHandled( self ) )
+		return;
+
+	switch (zx::trnslate::ComputeSetTranslationOutcome(resetToDefault, tnum != INVALID_TRANSLATION))
+	{
+	case zx::trnslate::kSetTranslationDefault:
+		self->Translation = self->GetDefault()->Translation;
+		break;
+	case zx::trnslate::kSetTranslationFound:
+		self->Translation = tnum;
+		break;
+	default:
+		return;
+	}
+
+	if ( NETWORK_IsActorClientHandled( self ) == false )
+		zx::netreplication::SendThingTranslation( self );
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetTranslation)
+{
+	ACTION_PARAM_START(1);
+	ACTION_PARAM_NAME(trname, 0);
+	SetActorTranslation(self, false, R_FindCustomTranslation(trname));
+}
+
+DEFINE_ACTION_FUNCTION(AActor, A_fua_ResetTranslation)
+{
+	SetActorTranslation(self, true, INVALID_TRANSLATION);
 }
 
 //===========================================================================
@@ -3565,10 +3656,11 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_FadeTo)
 //===========================================================================
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetScale)
 {
-	ACTION_PARAM_START(3);
+	ACTION_PARAM_START(4);
 	ACTION_PARAM_FIXED(scalex, 0);
 	ACTION_PARAM_FIXED(scaley, 1);
 	ACTION_PARAM_INT(ptr, 2);	// [rc4l] uzdoom@19b43d475
+	ACTION_PARAM_BOOL(usezero, 3);	// [Doruk-Aksoy] uzdoom@62afe5f0a9: a vertical 0 kept rather than taken from scalex
 
 	// [rc4l] uzdoom@19b43d475 -- `ref` is the actor actually acted on, so the Zandronum
 	// gate and broadcast below follow it rather than self; COPY_AAPTR must therefore run
@@ -3590,7 +3682,7 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetScale)
 	fixed_t savedScaleY = ref->scaleY;
 
 	ref->scaleX = scalex;
-	ref->scaleY = scaley ? scaley : scalex;
+	ref->scaleY = FLOAT2FIXED(zx::decorateuzdoom::ComputeSetScaleY(FIXED2DBL(scalex), FIXED2DBL(scaley), usezero));
 
 	// [EP] Tell the clients to change the scale if anything changed.
 	if (( NETWORK_GetState() == NETSTATE_SERVER ) && ( NETWORK_IsActorClientHandled( ref ) == false ))
@@ -4267,7 +4359,7 @@ enum KILS
 	KILS_EITHER		=	1 << 6,	// [rc4l] uzdoom@f2551dced
 };
 
-static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags, const PClass *filter, FName species)
+static void DoKill(AActor *killtarget, AActor *inflictor, AActor *source, FName damagetype, int flags, const PClass *filter, FName species)
 {
 	// [rc4l] uzdoom@5a472e815 / f2551dced
 	bool filterpass = DoCheckClass(killtarget, filter, (flags & KILS_EXFILTER) ? true : false),
@@ -4301,120 +4393,84 @@ static void DoKill(AActor *killtarget, AActor *self, FName damagetype, int flags
 	}
 	if (!(flags & KILS_NOMONSTERS))
 	{
-		P_DamageMobj(killtarget, self, self, killtarget->health, damagetype, dmgFlags);
+		P_DamageMobj(killtarget, inflictor, source, killtarget->health, damagetype, dmgFlags);
 	}
 }
 
 //===========================================================================
 //
-// A_KillTarget(damagetype, int flags)
+// [Doruk-Aksoy] Who A_Damage* and A_Kill* act on, and each one walking its actors (features/decorate-uzdoom).
 //
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget)
+
+enum ERelatedActors
 {
-	ACTION_PARAM_START(4);
-	ACTION_PARAM_NAME(damagetype, 0);
-	ACTION_PARAM_INT(flags, 1);
-	ACTION_PARAM_CLASS(filter, 2);
-	ACTION_PARAM_NAME(species, 3);
+	RELATED_Self,
+	RELATED_Target,
+	RELATED_Tracer,
+	RELATED_Master,
+	RELATED_Children,
+	RELATED_Siblings,
+};
 
-	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
-	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->target != NULL)
-		DoKill(self->target, self, damagetype, flags, filter, species);
-}
-
-//===========================================================================
-//
-// A_KillTracer(damagetype, int flags)
-//
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer)
+template <class F>
+static void ForEachRelated(AActor *self, ERelatedActors related, F act)
 {
-	ACTION_PARAM_START(4);
-	ACTION_PARAM_NAME(damagetype, 0);
-	ACTION_PARAM_INT(flags, 1);
-	ACTION_PARAM_CLASS(filter, 2);
-	ACTION_PARAM_NAME(species, 3);
-
-	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
-	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->tracer != NULL)
-		DoKill(self->tracer, self, damagetype, flags, filter, species);
-}
-
-//===========================================================================
-//
-// A_KillMaster(damagetype, int flags)
-//
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster)
-{
-	ACTION_PARAM_START(4);
-	ACTION_PARAM_NAME(damagetype, 0);
-	ACTION_PARAM_INT(flags, 1);
-	ACTION_PARAM_CLASS(filter, 2);
-	ACTION_PARAM_NAME(species, 3);
-
-	if (self->master != NULL)
-		DoKill(self->master, self, damagetype, flags, filter, species);
-}
-
-//===========================================================================
-//
-// A_KillChildren(damagetype, int flags)
-//
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren)
-{
-	ACTION_PARAM_START(4);
-	ACTION_PARAM_NAME(damagetype, 0);
-	ACTION_PARAM_INT(flags, 1);
-	ACTION_PARAM_CLASS(filter, 2);
-	ACTION_PARAM_NAME(species, 3);
-
-	TThinkerIterator<AActor> it;
-	AActor *mo;
-
-	while ( (mo = it.Next()) )
+	switch (related)
 	{
-		if (mo->master == self)
-			DoKill(mo, self, damagetype, flags, filter, species);
-	}
-}
-
-//===========================================================================
-//
-// A_KillSiblings(damagetype, int flags)
-//
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings)
-{
-	ACTION_PARAM_START(4);
-	ACTION_PARAM_NAME(damagetype, 0);
-	ACTION_PARAM_INT(flags, 1);
-	ACTION_PARAM_CLASS(filter, 2);
-	ACTION_PARAM_NAME(species, 3);
-
-	TThinkerIterator<AActor> it;
-	AActor *mo;
-
-	// [BB] This is handled server-side.
-	if ( NETWORK_InClientMode() )
+	case RELATED_Self: act(self); break;
+	case RELATED_Target: if (self->target != NULL) act(self->target); break;
+	case RELATED_Tracer: if (self->tracer != NULL) act(self->tracer); break;
+	case RELATED_Master: if (self->master != NULL) act(self->master); break;
+	case RELATED_Children:
+	case RELATED_Siblings:
 	{
-		if (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false )
-			return;
-	}
-
-	if (self->master != NULL)
-	{
+		if (related == RELATED_Siblings && self->master == NULL)
+			break;
+		TThinkerIterator<AActor> it;
+		AActor *mo;
 		while ( (mo = it.Next()) )
 		{
-			if (mo->master == self->master && mo != self)
-				DoKill(mo, self, damagetype, flags, filter, species);
+			if (related == RELATED_Children ? mo->master == self : (mo->master == self->master && mo != self))
+				act(mo);
 		}
+		break;
+	}
 	}
 }
+
+//===========================================================================
+//
+// A_KillTarget, A_KillTracer, A_KillMaster, A_KillChildren, A_KillSiblings (damagetype, flags, filter, species, src, inflict)
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: src and inflict pick the damage's source and inflictor, self by default.
+//
+//===========================================================================
+
+static void KillRelated(AActor *self, int ParameterIndex, ERelatedActors related)
+{
+	ACTION_PARAM_START(6);
+	ACTION_PARAM_NAME(damagetype, 0);
+	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_CLASS(filter, 2);
+	ACTION_PARAM_NAME(species, 3);
+	ACTION_PARAM_INT(src, 4);
+	ACTION_PARAM_INT(inflict, 5);
+
+	// [BB] This is handled server-side.
+	if ( related == RELATED_Siblings && zx::net::InClientMode() && (( self->NetworkFlags & NETFL_CLIENTSIDEONLY ) == false ))
+		return;
+
+	AActor *source = COPY_AAPTR(self, src);
+	AActor *inflictor = COPY_AAPTR(self, inflict);
+	ForEachRelated(self, related, [&](AActor *mo) { DoKill(mo, inflictor, source, damagetype, flags, filter, species); });
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTarget) { KillRelated(self, ParameterIndex, RELATED_Target); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillTracer) { KillRelated(self, ParameterIndex, RELATED_Tracer); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillMaster) { KillRelated(self, ParameterIndex, RELATED_Master); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillChildren) { KillRelated(self, ParameterIndex, RELATED_Children); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_KillSiblings) { KillRelated(self, ParameterIndex, RELATED_Siblings); }
 
 //===========================================================================
 //
@@ -5296,9 +5352,10 @@ enum DMSS
 	DMSS_EXFILTER			= 64,	// [rc4l] uzdoom@5a472e815: invert the class test
 	DMSS_EXSPECIES			= 128,	// [rc4l] uzdoom@5a472e815: invert the species test
 	DMSS_EITHER				= 256,	// [rc4l] uzdoom@f2551dced: pass if EITHER test matches
+	DMSS_INFLICTORDMGTYPE	= 512,	// [Doruk-Aksoy] uzdoom@62afe5f0a9: the inflictor's damage type
 };
 
-static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageType, int flags, const PClass *filter, FName species)
+static void DoDamage(AActor *dmgtarget, AActor *inflictor, AActor *source, int amount, FName DamageType, int flags, const PClass *filter, FName species)
 {
 	// [rc4l] uzdoom@5a472e815 / f2551dced: narrow by class OR species, either test invertible.
 	bool filterpass = DoCheckClass(dmgtarget, filter, (flags & DMSS_EXFILTER) ? true : false),
@@ -5324,7 +5381,12 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 		dmgFlags |= DMG_NO_PROTECT;
 
 	if (amount > 0)
-		P_DamageMobj(dmgtarget, self, self, amount, DamageType, dmgFlags); //Should wind up passing them through just fine.
+	{
+		// [Doruk-Aksoy] uzdoom@62afe5f0a9: DMSS_INFLICTORDMGTYPE takes the inflictor's damage type.
+		if (inflictor != NULL && (flags & DMSS_INFLICTORDMGTYPE))
+			DamageType = inflictor->DamageType;
+		P_DamageMobj(dmgtarget, inflictor, source, amount, DamageType, dmgFlags); //Should wind up passing them through just fine.
+	}
 
 	else if (amount < 0)
 	{
@@ -5334,109 +5396,36 @@ static void DoDamage(AActor *dmgtarget, AActor *self, int amount, FName DamageTy
 }
 
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf)
-{
-	ACTION_PARAM_START(5);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
-	ACTION_PARAM_INT(flags, 2);
-	ACTION_PARAM_CLASS(filter, 3);
-	ACTION_PARAM_NAME(species, 4);
-
-	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
-	// exactly this class. NULL (the default) means no filtering, as before.
-	DoDamage(self, self, amount, DamageType, flags, filter, species);
-}
-
+//
+// A_DamageSelf, A_DamageTarget, A_DamageTracer, A_DamageMaster, A_DamageChildren, A_DamageSiblings
+// (amount, damagetype, flags, filter, species, src, inflict)
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: src and inflict pick the damage's source and inflictor, self by default.
+//
 //===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget)
+
+static void DamageRelated(AActor *self, int ParameterIndex, ERelatedActors related)
 {
-	ACTION_PARAM_START(5);
+	ACTION_PARAM_START(7);
 	ACTION_PARAM_INT(amount, 0);
 	ACTION_PARAM_NAME(DamageType, 1);
 	ACTION_PARAM_INT(flags, 2);
 	ACTION_PARAM_CLASS(filter, 3);
 	ACTION_PARAM_NAME(species, 4);
+	ACTION_PARAM_INT(src, 5);
+	ACTION_PARAM_INT(inflict, 6);
 
-	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
-	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->target != NULL)
-		DoDamage(self->target, self, amount, DamageType, flags, filter, species);
+	AActor *source = COPY_AAPTR(self, src);
+	AActor *inflictor = COPY_AAPTR(self, inflict);
+	ForEachRelated(self, related, [&](AActor *mo) { DoDamage(mo, inflictor, source, amount, DamageType, flags, filter, species); });
 }
 
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer)
-{
-	ACTION_PARAM_START(5);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
-	ACTION_PARAM_INT(flags, 2);
-	ACTION_PARAM_CLASS(filter, 3);
-	ACTION_PARAM_NAME(species, 4);
-
-	// [rc4l] uzdoom@e5a41a135: an optional class filter -- act only when the pointer is
-	// exactly this class. NULL (the default) means no filtering, as before.
-	if (self->tracer != NULL)
-		DoDamage(self->tracer, self, amount, DamageType, flags, filter, species);
-}
-
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageMaster)
-{
-	ACTION_PARAM_START(5);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
-	ACTION_PARAM_INT(flags, 2);
-	ACTION_PARAM_CLASS(filter, 3);
-	ACTION_PARAM_NAME(species, 4);
-
-	if (self->master != NULL)
-		DoDamage(self->master, self, amount, DamageType, flags, filter, species);
-}
-
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageChildren)
-{
-	ACTION_PARAM_START(5);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
-	ACTION_PARAM_INT(flags, 2);
-	ACTION_PARAM_CLASS(filter, 3);
-	ACTION_PARAM_NAME(species, 4);
-
-	TThinkerIterator<AActor> it;
-	AActor *mo;
-
-	while ( (mo = it.Next()) )
-	{
-		if (mo->master == self)
-			DoDamage(mo, self, amount, DamageType, flags, filter, species);
-	}
-}
-
-//===========================================================================
-DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings)
-{
-	ACTION_PARAM_START(5);
-	ACTION_PARAM_INT(amount, 0);
-	ACTION_PARAM_NAME(DamageType, 1);
-	ACTION_PARAM_INT(flags, 2);
-	ACTION_PARAM_CLASS(filter, 3);
-	ACTION_PARAM_NAME(species, 4);
-
-	TThinkerIterator<AActor> it;
-	AActor *mo;
-
-	if (self->master != NULL)
-	{
-		while ( (mo = it.Next()) )
-		{
-			if (mo->master == self->master && mo != self)
-				DoDamage(mo, self, amount, DamageType, flags, filter, species);
-		}
-	}
-}
-
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSelf) { DamageRelated(self, ParameterIndex, RELATED_Self); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTarget) { DamageRelated(self, ParameterIndex, RELATED_Target); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageTracer) { DamageRelated(self, ParameterIndex, RELATED_Tracer); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageMaster) { DamageRelated(self, ParameterIndex, RELATED_Master); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageChildren) { DamageRelated(self, ParameterIndex, RELATED_Children); }
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_DamageSiblings) { DamageRelated(self, ParameterIndex, RELATED_Siblings); }
 
 //===========================================================================
 //
@@ -5582,6 +5571,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 				// [rc4l] Movement-model flags (see actor.h MV_*).
 				else if ( (void*)flagp == (void*)&self->mvFlags )
 					flagset = FLAGSET_MVFLAGS;
+				else if ( (void*)flagp == (void*)&self->fua_flags )
+					flagset = FLAGSET_FUAFLAGS;
+				else if ( (void*)flagp == (void*)&self->renderflags )
+					flagset = FLAGSET_RENDERFLAGS;
+				else if ( (void*)flagp == (void*)&self->BounceFlags )
+					flagset = FLAGSET_BOUNCEFLAGS;
 				else if ( (void*)flagp == (void*)&self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 
@@ -5673,6 +5668,177 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckFlag)
 	{
 		ACTION_JUMP(jumpto, 0); // [BB] Clients know the flags, so it's hopefully ok.
 	}
+}
+
+//===========================================================================
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: A_CheckSpecies, A_CheckProximity, A_CheckBlock and A_JumpIfHigherOrLower (features/decorate-uzdoom).
+//
+// Each reads pointers and other actors that only the server holds, so only the server jumps and it tells the clients.
+//
+//===========================================================================
+
+// [Doruk-Aksoy] Whether a jump that reads the server's world runs here: on the server, offline, or for an actor of this client's own.
+static bool JumpReadsWorldHere(AActor *self)
+{
+	return !zx::net::InClientMode() || ( self->NetworkFlags & NETFL_CLIENTSIDEONLY );
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckSpecies)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_NAME(species, 1);
+	ACTION_PARAM_INT(ptr, 2);
+
+	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
+	if (!JumpReadsWorldHere(self))
+		return;
+	AActor *mobj = COPY_AAPTR(self, ptr);
+	if (mobj != NULL && mobj->GetSpecies() == species)
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckProximity)
+{
+	ACTION_PARAM_START(6);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_CLASS(classname, 1);
+	ACTION_PARAM_DOUBLE(distance, 2);
+	ACTION_PARAM_INT(count, 3);
+	ACTION_PARAM_INT(flags, 4);
+	ACTION_PARAM_INT(ptr, 5);
+
+	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
+	if (!JumpReadsWorldHere(self))
+		return;
+	// [Doruk-Aksoy] With no label to jump to it still runs when it would set a pointer, as UZDoom's does.
+	if (jump == NULL && !(flags & (zx::acsparity::kCpxSetTarget | zx::acsparity::kCpxSetMaster | zx::acsparity::kCpxSetTracer)))
+		return;
+	if (zx::acsparity::Proximity(self, classname, distance, count, flags, ptr, false))
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_CheckBlock)
+{
+	ACTION_PARAM_START(7);
+	ACTION_PARAM_STATE(jump, 0);
+	ACTION_PARAM_INT(flags, 1);
+	ACTION_PARAM_INT(ptr, 2);
+	ACTION_PARAM_DOUBLE(xofs, 3);
+	ACTION_PARAM_DOUBLE(yofs, 4);
+	ACTION_PARAM_DOUBLE(zofs, 5);
+	ACTION_PARAM_DOUBLE(angle, 6);
+
+	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
+	if (!JumpReadsWorldHere(self))
+		return;
+	AActor *mobj = COPY_AAPTR(self, ptr);
+	if (mobj == NULL)
+		return;
+
+	// [Doruk-Aksoy] The offset turns by self's yaw from mobj's spot, as UZDoom's does.
+	using namespace zx::decorateuzdoom;
+	const int pointFlags = ((flags & kCbfAbsolutePos) ? kGzfAbsolutePos : 0) | ((flags & kCbfAbsoluteAngle) ? kGzfAbsoluteAng : 0);
+	double x, y;
+	ComputeGetZAtPoint(FIXED2DBL(mobj->x), FIXED2DBL(mobj->y), ANGLE2DBL(self->angle), xofs, yofs, angle, pointFlags, &x, &y);
+	const fixed_t nx = FLOAT2FIXED(x), ny = FLOAT2FIXED(y);
+	const fixed_t nz = (flags & kCbfAbsolutePos) ? FLOAT2FIXED(zofs) : mobj->z + FLOAT2FIXED(zofs);
+	const fixed_t ox = mobj->x, oy = mobj->y, oz = mobj->z;
+
+	// [Doruk-Aksoy] Our P_CheckMove takes no PCM_ flags, so a dropoff check still tests lines and actors.
+	bool passed;
+	mobj->BlockingMobj = NULL;
+	mobj->BlockingLine = NULL;
+	if (flags & kCbfDropoff)
+	{
+		mobj->z = nz;
+		passed = P_CheckMove(mobj, nx, ny);
+		mobj->z = oz;
+	}
+	else
+	{
+		mobj->SetOrigin(nx, ny, nz);
+		passed = P_TestMobjLocation(mobj);
+		mobj->SetOrigin(ox, oy, oz);
+	}
+	if (passed)
+		return;
+
+	AActor *blocking = mobj->BlockingMobj;
+	if (blocking != NULL && !(blocking->ObjectFlags & OF_EuthanizeMe))
+	{
+		AActor *setter = (flags & kCbfSetOnPtr) ? mobj : self;
+		if (flags & kCbfSetTarget) setter->target = blocking;
+		if (flags & kCbfSetMaster) setter->master = blocking;
+		if (flags & kCbfSetTracer) setter->tracer = blocking;
+	}
+	if (ComputeCheckBlockResult(false, blocking != NULL, mobj->BlockingLine != NULL, flags))
+		ACTION_JUMP(jump, CLIENTUPDATE_FRAME);
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_JumpIfHigherOrLower)
+{
+	ACTION_PARAM_START(6);
+	ACTION_PARAM_STATE(high, 0);
+	ACTION_PARAM_STATE(low, 1);
+	ACTION_PARAM_DOUBLE(offsethigh, 2);
+	ACTION_PARAM_DOUBLE(offsetlow, 3);
+	ACTION_PARAM_BOOL(includeHeight, 4);
+	ACTION_PARAM_INT(ptr, 5);
+
+	ACTION_SET_RESULT(false);	// Jumps should never set the result for inventory state chains!
+	if (!JumpReadsWorldHere(self))
+		return;
+	AActor *mobj = COPY_AAPTR(self, ptr);
+	if (mobj == NULL || mobj == self)
+		return;
+	switch (zx::decorateuzdoom::ComputeHigherOrLower(FIXED2DBL(self->z), FIXED2DBL(self->height), FIXED2DBL(mobj->z), FIXED2DBL(mobj->height),
+		offsethigh, offsetlow, includeHeight, high != NULL, low != NULL))
+	{
+	case zx::decorateuzdoom::kHigher: ACTION_JUMP(high, CLIENTUPDATE_FRAME); break;
+	case zx::decorateuzdoom::kLower: ACTION_JUMP(low, CLIENTUPDATE_FRAME); break;
+	default: break;
+	}
+}
+
+//===========================================================================
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: A_SetSpecies, A_SetFloatSpeed and A_SetPainThreshold, which only the server's play reads.
+//
+//===========================================================================
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSpecies)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(species, 0);
+	ACTION_PARAM_INT(ptr, 1);
+
+	AActor *mobj = COPY_AAPTR(self, ptr);
+	if (mobj != NULL)
+		mobj->Species = species;
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetFloatSpeed)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_FIXED(speed, 0);
+	ACTION_PARAM_INT(ptr, 1);
+
+	AActor *mobj = COPY_AAPTR(self, ptr);
+	if (mobj != NULL)
+		mobj->FloatSpeed = speed;
+}
+
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetPainThreshold)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_INT(threshold, 0);
+	ACTION_PARAM_INT(ptr, 1);
+
+	AActor *mobj = COPY_AAPTR(self, ptr);
+	if (mobj != NULL)
+		mobj->PainThreshold = threshold;
 }
 
 
@@ -6302,36 +6468,47 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetSpecial)
 
 //===========================================================================
 //
-// A_SetUserVar
+// A_SetUserVar, A_SetUserVarFloat, A_SetUserArray, A_SetUserArrayFloat
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: each takes an int or a float variable, the int truncating a float value (features/decorate-uzdoom).
 //
 //===========================================================================
+
+template <class T>
+static void SetUserVarFrom(AActor *self, FName varname, bool array, int pos, T value)
+{
+	const zx::decorateuzdoom::UserVarSlot slot = zx::decorateuzdoom::FindUserVar(self, varname,
+		array ? zx::decorateuzdoom::kUserVarArray : zx::decorateuzdoom::kUserVarScalar, pos);
+	if (slot.miss == zx::decorateuzdoom::kUserVarOutOfBounds)
+	{
+		Printf("%d is out of bounds in array %s in class %s\n", pos, varname.GetChars(),
+			self->GetClass()->TypeName.GetChars());
+		return;
+	}
+	if (slot.miss != zx::decorateuzdoom::kUserVarFound)
+	{
+		Printf("%s is not a user %s in class %s\n", varname.GetChars(), array ? "array" : "variable",
+			self->GetClass()->TypeName.GetChars());
+		return;
+	}
+	zx::decorateuzdoom::StoreUserVar(slot, value);
+}
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetUserVar)
 {
 	ACTION_PARAM_START(2);
 	ACTION_PARAM_NAME(varname, 0);
-	ACTION_PARAM_INT(value, 1);	
-
-	PSymbol *sym = self->GetClass()->Symbols.FindSymbol(varname, true);
-	PSymbolVariable *var;
-
-	if (sym == NULL || sym->SymbolType != SYM_Variable ||
-		!(var = static_cast<PSymbolVariable *>(sym))->bUserVar ||
-		var->ValueType.Type != VAL_Int)
-	{
-		Printf("%s is not a user variable in class %s\n", varname.GetChars(),
-			self->GetClass()->TypeName.GetChars());
-		return;
-	}
-	// Set the value of the specified user variable.
-	*(int *)(reinterpret_cast<BYTE *>(self) + var->offset) = value;
+	ACTION_PARAM_INT(value, 1);
+	SetUserVarFrom(self, varname, false, 0, value);
 }
 
-//===========================================================================
-//
-// A_SetUserArray
-//
-//===========================================================================
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetUserVarFloat)
+{
+	ACTION_PARAM_START(2);
+	ACTION_PARAM_NAME(varname, 0);
+	ACTION_PARAM_DOUBLE(value, 1);
+	SetUserVarFrom(self, varname, false, 0, value);
+}
 
 DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetUserArray)
 {
@@ -6339,26 +6516,16 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetUserArray)
 	ACTION_PARAM_NAME(varname, 0);
 	ACTION_PARAM_INT(pos, 1);
 	ACTION_PARAM_INT(value, 2);
+	SetUserVarFrom(self, varname, true, pos, value);
+}
 
-	PSymbol *sym = self->GetClass()->Symbols.FindSymbol(varname, true);
-	PSymbolVariable *var;
-
-	if (sym == NULL || sym->SymbolType != SYM_Variable ||
-		!(var = static_cast<PSymbolVariable *>(sym))->bUserVar ||
-		var->ValueType.Type != VAL_Array || var->ValueType.BaseType != VAL_Int)
-	{
-		Printf("%s is not a user array in class %s\n", varname.GetChars(),
-			self->GetClass()->TypeName.GetChars());
-		return;
-	}
-	if (pos < 0 || pos >= var->ValueType.size)
-	{
-		Printf("%d is out of bounds in array %s in class %s\n", pos, varname.GetChars(),
-			self->GetClass()->TypeName.GetChars());
-		return;
-	}
-	// Set the value of the specified user array at index pos.
-	((int *)(reinterpret_cast<BYTE *>(self) + var->offset))[pos] = value;
+DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_SetUserArrayFloat)
+{
+	ACTION_PARAM_START(3);
+	ACTION_PARAM_NAME(varname, 0);
+	ACTION_PARAM_INT(pos, 1);
+	ACTION_PARAM_DOUBLE(value, 2);
+	SetUserVarFrom(self, varname, true, pos, value);
 }
 
 //===========================================================================

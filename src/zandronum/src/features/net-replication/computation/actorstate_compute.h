@@ -29,6 +29,12 @@ int ComputePuffSend(bool spawnState, bool hitThingSeeSound, bool attackSound, bo
 // [rc4l] Whether a client is left out of a puff sent to each in turn: the shooter itself, predicting a NONETID puff.
 bool ComputeSkipsPuffFor(bool isShooter, bool noNetId, bool clientSidePuffs);
 
+// [Doruk-Aksoy] Whether a joining client is sent an actor's translation: whenever it is not its class's, which a cleared one of a translated class is not.
+bool ComputeJoinSendsTranslation(uint32_t translation, uint32_t classTranslation);
+
+// [Doruk-Aksoy] A flag word a client takes from its server: the server's bits, but those in clientOwned the client keeps its own (a player body's RF_INVISIBLE).
+uint32_t ComputeClientAppliedFlags(uint32_t current, uint32_t incoming, uint32_t clientOwned);
+
 }} // namespace zx::netreplication
 
 #endif // ZX_ACTORSTATE_COMPUTE_H

@@ -89,6 +89,7 @@
 #include "features/net-session/syncedcvars.h"
 #include "features/handoff/seam.h"   // [rc4l] ZX_SEAM, where the netcode runs
 #include "features/net-replication/mapstate.h"   // [rc4l] the map state sent from one place
+#include "features/net-replication/computation/actorstate_compute.h"   // [Doruk-Aksoy] what a joiner is sent of an actor
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] the link census and the write order
 #include "i_tictime.h"   // [Kaori-Chani] the counter the legacy send's own cost is timed on
@@ -3028,7 +3029,8 @@ void SERVER_SendFullUpdate( ULONG ulClient )
 				SERVERCOMMANDS_SetThingTID( pActor, ulClient, SVCF_ONLYTHISCLIENT );
 
 			// If this thing's translation has been altered, tell the client.
-			if ( pActor->Translation != 0 )
+			// [Doruk-Aksoy] Against its class's, so a translated class cleared to 0 goes too (features/decorate-uzdoom).
+			if ( zx::netreplication::ComputeJoinSendsTranslation( pActor->Translation, pActor->GetDefault()->Translation ))
 				SERVERCOMMANDS_SetThingTranslation( pActor, ulClient, SVCF_ONLYTHISCLIENT );
 
 			// This item has been picked up, and is in its hidden, respawn state. Let
@@ -3911,6 +3913,12 @@ void SERVER_UpdateActorProperties( AActor *pActor, ULONG ulClient )
 	// [AK] Update the actor's stencil color if it's changed.
 	if ( pActor->fillcolor != pActor->GetDefault( )->fillcolor )
 		SERVERCOMMANDS_SetThingProperty( pActor, APROP_StencilColor, ulClient, SVCF_ONLYTHISCLIENT );
+
+	// [Doruk-Aksoy] features/acs-parity: a joining client steps and drops off as the server's actor does.
+	if ( pActor->MaxStepHeight != pActor->GetDefault( )->MaxStepHeight )
+		SERVERCOMMANDS_SetThingProperty( pActor, APROP_MaxStepHeight, ulClient, SVCF_ONLYTHISCLIENT );
+	if ( pActor->MaxDropOffHeight != pActor->GetDefault( )->MaxDropOffHeight )
+		SERVERCOMMANDS_SetThingProperty( pActor, APROP_MaxDropOffHeight, ulClient, SVCF_ONLYTHISCLIENT );
 
 	// [AK] Update the actor's species if it's changed.
 	if ( strcmp( pActor->Species, pActor->GetDefault()->Species ) != 0 )

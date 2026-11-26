@@ -1,0 +1,62 @@
+# UZDoom's ACS functions
+
+## Availability
+
+> **ZandroX behaviour.** These are UZDoom's (and GZDoom's) ACS functions and actor properties, at
+> UZDoom's numbers, so a script compiled for UZDoom calls them unchanged. Zandronum 3.3 has none of
+> them: there, each function returns 0 and each property reads 0.
+
+| Function | Number | Returns |
+|---|---|---|
+| `GetMaxInventory(tid, item)` | 93 | the most of `item` the actor can carry; `"Health"` gives its maximum health |
+| `CheckProximity(tid, class, distance [, count [, flags [, ptr]]])` | 98 | whether `count` actors of `class` stand within `distance`, by `CPXF_` flags |
+| `CheckActorState(tid, state [, exact])` | 99 | whether the actor's class has the state |
+| `CheckClass(class)` | 200 | whether an actor class of that name exists |
+| `DamageActor(tid, ptr, inflictor, ptr, amount, damagetype)` | 201 | the damage dealt, or -1 when none was |
+| `GetActorFloorTerrain(tid)` | 205 | the name of the TERRAIN under the actor |
+| `StrArg(string)` | 206 | a name an action special takes, such as a named script for `ACS_Execute` |
+| `Floor(x)`, `Round(x)`, `Ceil(x)` | 207-209 | a fixed-point value made whole |
+| `GetNetID(tid, index [, ptr])` | 215 | the actor's net id, the same on a server and its clients, or 0 |
+| `SetActivatorByNetID(netid [, ptr])` | 216 | 1 after making that actor the activator, else 0 |
+| `GetLineX(lineid, along, offset)`, `GetLineY(...)` | 300, 301 | a point `along` the line (0 to 1.0), moved `offset` units off its front side |
+
+| Actor property | Number | |
+|---|---|---|
+| `APROP_MaxStepHeight` | 44 | fixed; how high the actor steps up |
+| `APROP_MaxDropOffHeight` | 45 | fixed; how far a monster walks down |
+| `APROP_DamageType` | 46 | string; the damage type the actor deals |
+
+## Usage
+
+zt-bcc's `zcommon.bcs` declares all of them, naming the rounding functions `ZDoom_Floor`, `ZDoom_Round`
+and `ZDoom_Ceil`. Builds of zt-bcc older than its UZDoom declarations lack `GetNetID` and
+`SetActivatorByNetID`, which a script built with one declares itself:
+
+```
+special -215:GetNetID(int, int; int): int;
+special -216:SetActivatorByNetID(int; int): bool;
+```
+
+```
+// The barrel nearest the player becomes its target, then takes 10 fire damage from it.
+if (CheckProximity(0, "ExplosiveBarrel", 300.0, 1, CPXF_SETTARGET | CPXF_CLOSEST))
+    DamageActor(0, AAPTR_TARGET, 0, AAPTR_DEFAULT, 10, "Fire");
+SetActorProperty(0, APROP_MaxStepHeight, 40.0);
+```
+
+In a netgame:
+- A step or drop-off height a server script sets reaches every client, and players who join later,
+  since a client moves its own player and walking monsters itself.
+- A damage type stays on the server, which deals all damage.
+- A net id names the same actor on the server and on each client, so a script can pass one to a
+  clientside script.
+
+## Differences from UZDoom
+
+- `Ceil` of a whole number returns it unchanged. UZDoom's adds one, so `Ceil(2.0)` is 3.0 there.
+- `DamageActor` on a tid no actor holds returns -1. UZDoom crashes.
+- The default terrain's name is `Solid`; UZDoom spells it `SOLID`.
+
+## Implementation notes
+
+[`src/zandronum/src/features/acs-parity/`](../../../src/zandronum/src/features/acs-parity/README.md).

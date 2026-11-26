@@ -73,6 +73,9 @@ const int SXF_NOPOINTERS = 4194304;
 const int SXF_ORIGINATOR = 8388608;
 const int SXF_TRANSFERSPRITEFRAME = 16777216;	// [rc4l] uzdoom@b37a98689
 const int SXF_TRANSFERROLL = 33554432;	// [rc4l] uzdoom@0f4bca860
+const int SXF_ISTARGET = 67108864;	// [Doruk-Aksoy] uzdoom@62afe5f0a9
+const int SXF_ISMASTER = 134217728;
+const int SXF_ISTRACER = 268435456;
 
 // Flags for A_QuakeEx	// [rc4l] uzdoom@7050d0322
 enum
@@ -208,6 +211,8 @@ const int MSF_DontHurt = 2;
 // Flags for A_Explode
 const int XF_HURTSOURCE = 1;
 const int XF_NOTMISSILE = 4;
+const int XF_EXPLICITDAMAGETYPE = 8;	// [Doruk-Aksoy] uzdoom@62afe5f0a9
+const int XF_NOSPLASH = 16;
 
 // Flags for A_RadiusThrust
 const int RTF_AFFECTSOURCE = 1;
@@ -543,6 +548,7 @@ const int DMSS_NOPROTECT =		32;
 const int DMSS_EXFILTER =		64;
 const int DMSS_EXSPECIES =		128;
 const int DMSS_EITHER =			256;
+const int DMSS_INFLICTORDMGTYPE =	512;
 
 // Flags for A_Fade*
 const int FTF_REMOVE =		1;
@@ -556,3 +562,53 @@ const int RMVF_EVERYTHING =		8;
 const int RMVF_EXFILTER =		16;
 const int RMVF_EXSPECIES =		32;
 const int RMVF_EITHER =			64;
+
+// [Doruk-Aksoy] uzdoom@62afe5f0a9 constants.zs: what the expression functions and A_Explode take (features/decorate-uzdoom).
+const int MISSILERANGE = 2048;
+const int PLAYERMISSILERANGE = 8192;
+const int GAF_RELATIVE = 1;
+const int GAF_SWITCH = 2;
+const int GZF_ABSOLUTEPOS = 1;
+const int GZF_ABSOLUTEANG = 2;
+const int GZF_CEILING = 4;
+const int GZF_3DRESTRICT = 8;
+const int GZF_NOPORTALS = 16;
+const int GZF_NO3DFLOOR = 32;
+const int INPUT_OLDBUTTONS = 0;
+const int INPUT_BUTTONS = 1;
+const int INPUT_PITCH = 2;
+const int INPUT_YAW = 3;
+const int INPUT_ROLL = 4;
+const int INPUT_FORWARDMOVE = 5;
+const int INPUT_SIDEMOVE = 6;
+const int INPUT_UPMOVE = 7;
+const int MODINPUT_OLDBUTTONS = 8;
+const int MODINPUT_BUTTONS = 9;
+const int MODINPUT_PITCH = 10;
+const int MODINPUT_YAW = 11;
+const int MODINPUT_ROLL = 12;
+const int MODINPUT_FORWARDMOVE = 13;
+const int MODINPUT_SIDEMOVE = 14;
+const int MODINPUT_UPMOVE = 15;
+const int CPXF_ANCESTOR = 1;
+const int CPXF_LESSOREQUAL = 2;
+const int CPXF_NOZ = 4;
+const int CPXF_COUNTDEAD = 8;
+const int CPXF_DEADONLY = 16;
+const int CPXF_EXACT = 32;
+const int CPXF_SETTARGET = 64;
+const int CPXF_SETMASTER = 128;
+const int CPXF_SETTRACER = 256;
+const int CPXF_FARTHEST = 512;
+const int CPXF_CLOSEST = 1024;
+const int CPXF_SETONPTR = 2048;
+const int CPXF_CHECKSIGHT = 4096;
+const int CBF_NOLINES = 1;
+const int CBF_SETTARGET = 2;
+const int CBF_SETMASTER = 4;
+const int CBF_SETTRACER = 8;
+const int CBF_SETONPTR = 16;
+const int CBF_DROPOFF = 32;
+const int CBF_NOACTORS = 64;
+const int CBF_ABSOLUTEPOS = 128;
+const int CBF_ABSOLUTEANGLE = 256;

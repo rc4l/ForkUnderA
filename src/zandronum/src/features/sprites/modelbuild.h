@@ -15,6 +15,7 @@ struct FState;
 struct FSpriteModelFrame;
 
 struct FModelSurface;
+struct FModelGeometry;
 
 namespace zx { namespace sprites {
 
@@ -33,16 +34,21 @@ int ModelSlotSurfaces(const FSpriteModelFrame *smf, int i, const FSpriteModelFra
 void CaptureModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation);
 
 // [Doruk-Aksoy] A surface ResolveModelFrames resolved: its material and translation, and its corners in the caller's list, none for one whose corners were refused.
+// [Doruk-Aksoy] A surface the GPU draws (gpuGeometry set) has `count` corners and none in the list, only its span.
 struct ResolvedModelSurface
 {
 	const void *material;
 	int translation;
 	unsigned first, count;
+	const FModelGeometry *gpuGeometry;
+	unsigned base1, base2, firstIndex;
+	float inter;
 };
 
 // [Doruk-Aksoy] CaptureModelFrames without the capture, so a lane may run it: each surface's corners under modelToWorld appended to verts and listed in surfaces; false, with neither grown, when a slot's geometry or a skin's material is not made yet, which only the main thread may do.
+// [Doruk-Aksoy] A surface the GPU may draw (levelmesh::GpuModelWanted, for a model only `drawnOnly` and a `flatSurface` look or not) is listed with its span instead of corners.
 bool ResolveModelFrames(const FSpriteModelFrame *smf, const FState *curState, int curTics, const PClass *ti, int translation, const float *modelToWorld,
-	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts);
+	std::vector<ResolvedModelSurface> &surfaces, std::vector<zx::levelmesh::MeshVertex> &verts, bool drawnOnly = false, bool flatSurface = false);
 
 }} // namespace zx::sprites
 

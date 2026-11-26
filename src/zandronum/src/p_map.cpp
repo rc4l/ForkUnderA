@@ -91,6 +91,7 @@ static_assert(ZX_TRACE_HitActor == TRACE_HitActor, "TRACE_Hit mirror out of sync
 #include "v_video.h"
 #include "features/ripper/computation/ripper_compute.h"	// [MGOOOOOO] rip budget decisions
 #include "features/thing-walks/computation/thingwalk_compute.h"
+#include "features/blockmap-filter/cellarrays.h"	// [Doruk-Aksoy] the cells' arrays the position check walks
 #include "features/bounce/computation/bounce_compute.h"   // [Doruk-Aksoy] how bounces end, and what a client leaves to the server
 #include "features/monster-stairs/monsterstairs.h"   // [Doruk-Aksoy] walkers on narrow stairs
 #include "features/monster-stairs/computation/monsterstairs_compute.h"
@@ -116,6 +117,12 @@ static bool ClientLeavesActorsToServer(const AActor *mover)
 		(mover->flags & MF_MISSILE) != 0, mover->BounceFlags);
 }
 
+// [Doruk-Aksoy] features/swept-missiles: whether P_CheckPosition walks the things near this mover at all.
+bool P_MoverChecksThings(const AActor *mover)
+{
+	return !ComputeMoverPassesThings(mover->flags2) && !ClientLeavesActorsToServer(mover);
+}
+
 // [MGOOOOOO] Collects a ripping projectile's DECORATE-authored budget for the pure decision
 // helpers. All-zero (the default) means unlimited, so a ripper that sets none of these resolves
 // to RIP_DAMAGE forever and behaves exactly as it did before features/ripper existed.
@@ -125,7 +132,7 @@ static zx::ripper::FRipLimits P_RipLimitsOf( AActor *projectile )
 	limits.maxDamage = projectile->RipperMaxDamage;
 	limits.perVictimHits = projectile->RipperCount;
 	limits.totalHits = projectile->RipperMaxCount;
-	limits.explodeOnLimit = !!( projectile->flags9 & MF9_RIPEXPLODEONLIMIT );
+	limits.explodeOnLimit = !!( projectile->fua_flags & FUAF_RIPEXPLODEONLIMIT );
 	return limits;
 }
 
@@ -181,6 +188,7 @@ TArray<line_t *> spechit;
 static TArray<line_t *> SecnodeReplayLines;
 static AActor *SecnodeReplayThing;
 static fixed_t SecnodeReplayX, SecnodeReplayY;
+static fixed_t SecnodeReplayRadius;	// [Doruk-Aksoy] features/blockmap-filter: the recording holds only lines whose box meets this radius' box
 static bool SecnodeReplayValid;
 
 // Temporary holder for thing_sectorlist threads
@@ -1145,13 +1153,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 	// you can use a scrolling floor to move scenery items underneath a bridge.
 	if ((tm.thing->flags2 & MF2_PASSMOBJ || thing->flags4 & MF4_ACTLIKEBRIDGE) && !(i_compatflags & COMPATF_NO_PASSMOBJ))
 	{ // check if a mobj passed over/under another object
-		if (!(tm.thing->flags & MF_MISSILE) ||
-			!(tm.thing->flags2 & MF2_RIP) ||
-			(thing->flags5 & MF5_DONTRIP) ||
-			// [MGOOOOOO] A projectile outside the victim's RipperLevel window can't rip it, so it
-			// must take the pass-over/under branch just like the +DONTRIP case above.
-			!zx::ripper::ComputeRipLevelAllows(tm.thing->RipperLevel, thing->RipLevelMin, thing->RipLevelMax) ||
-			((tm.thing->flags6 & MF6_NOBOSSRIP) && (thing->flags2 & MF2_BOSS)))
+		// [MGOOOOOO] A projectile that cannot rip the victim (P_RipsThrough: +DONTRIP, the RipperLevel window, +NOBOSSRIP) takes the pass-over/under branch.
+		if (!(tm.thing->flags & MF_MISSILE) || !P_RipsThrough(tm.thing, thing))
 		{
 			if (tm.thing->flags3 & thing->flags3 & MF3_DONTOVERLAP)
 			{ // Some things prefer not to overlap each other, if possible
@@ -1322,7 +1325,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		// MBF bouncer might have a non-0 damage value, but they must not deal damage on impact either.
 		if ((tm.thing->BounceFlags & BOUNCE_Actors) && (tm.thing->Damage == 0 || !(tm.thing->flags & MF_MISSILE)))
 		{
-			return (tm.thing->target == thing || !(thing->flags & MF_SOLID));
+			return ((tm.thing->target == thing && !(tm.thing->flags8 & MF8_HITOWNER)) || !(thing->flags & MF_SOLID));
 		}
 
 		switch (tm.thing->SpecialMissileHit(thing))
@@ -1341,7 +1344,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 
 		if (tm.thing->target != NULL)
 		{
-			if (thing == tm.thing->target)
+			// [Doruk-Aksoy] uzdoom: a +HITOWNER missile can hit the one who fired it (features/decorate-uzdoom).
+			if (thing == tm.thing->target && !(tm.thing->flags8 & MF8_HITOWNER))
 			{ // Don't missile self
 				return true;
 			}
@@ -1354,6 +1358,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				if (level.flags2 & LEVEL2_TOTALINFIGHTING) infight = 1;
 				else if (level.flags2 & LEVEL2_NOINFIGHTING) infight = -1;
 				else infight = infighting;
+				// [Doruk-Aksoy] uzdoom: a +FORCEINFIGHTING victim takes the species rule even with infighting off.
+				if (infight < 0 && (thing->flags7 & MF7_FORCEINFIGHTING)) infight = 0;
 
 				// [rc4l] MBF21 projectile groups: an explicitly set group overrides the default
 				// species-immunity rules below. Actors in the same positive group don't take
@@ -1474,7 +1480,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					}
 					// [rc4l] MBF21: a ripper can override the default rip sound via its RipSound.
 					// [MGOOOOOO] +NORIPSOUND silences it outright, which RipSound alone cannot do.
-					if (!(tm.thing->flags9 & MF9_NORIPSOUND))
+					if (!(tm.thing->fua_flags & FUAF_NORIPSOUND))
 					{
 						// [MGOOOOOO] Resolve to an id up front so +RIPSOUNDNORESTART can ask
 						// whether this exact sound is still playing. Note misc/ripslop is only
@@ -1489,7 +1495,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						// is no CHAN_NOSTOP here). That machine-guns the short vanilla squelch,
 						// which is the intended shredding effect, but chops any longer sound down
 						// to a few milliseconds. +RIPSOUNDNORESTART lets it run to completion.
-						if (!(tm.thing->flags9 & MF9_RIPSOUNDNORESTART) ||
+						if (!(tm.thing->fua_flags & FUAF_RIPSOUNDNORESTART) ||
 							!S_IsActorPlayingSomething(tm.thing, CHAN_BODY, ripSnd))
 						{
 							S_Sound(tm.thing, CHAN_BODY, ripSnd, 1, ATTN_IDLE);
@@ -1510,7 +1516,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						tm.thing->RipperDamageFactor.Raw(), ripProgress.hitsOnVictim);
 					// [MGOOOOOO] +RIPPERNOPAIN suppresses pain for the rip only; the terminal
 					// explosion still goes through P_DamageMobj without the flag.
-					const int ripDmgFlags = (tm.thing->flags9 & MF9_RIPPERNOPAIN) ? DMG_NO_PAIN : 0;
+					const int ripDmgFlags = (tm.thing->fua_flags & FUAF_RIPPERNOPAIN) ? DMG_NO_PAIN : 0;
 					// [BB] The server handles the damage of RIPPER weapons.
 					int newdam = 0;
 					if ( NETWORK_InClientMode() == false )
@@ -1540,7 +1546,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 
 					// [MGOOOOOO] +USERIPSTATE: hand the state change to the mover rather than
 					// doing it here -- see FCheckPosition::RipStatePending for why.
-					if (tm.thing->flags9 & MF9_USERIPSTATE)
+					if (tm.thing->fua_flags & FUAF_USERIPSTATE)
 						tm.RipStatePending = true;
 
 					// Detonate on the very bite that spends a budget, not on the next contact.
@@ -1806,9 +1812,11 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 
 	// [Doruk-Aksoy] features/thing-walks: a THRUACTORS mover clips against no thing, so the walk that would pass each one is skipped.
 	// [Doruk-Aksoy] features/bounce: so does a client's copy of a server's bouncing missile, which froze against a monster the server's copy missed.
-	if (!ComputeMoverPassesThings(thing->flags2) && !ClientLeavesActorsToServer(thing))
+	if (P_MoverChecksThings(thing))
 	{
 		FBlockThingsIterator it2(box);
+		// [Doruk-Aksoy] features/blockmap-filter: the candidates come from the cells' arrays, less those too far to touch.
+		it2.FuaCompactFor(thing, tm.x, tm.y);
 		AActor *th;
 		while ((th = it2.Next()))
 		{
@@ -1875,7 +1883,6 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	if (actorsonly || ((thing->flags & MF_NOCLIP) && P_IsSpectatorUnrestricted(thing) == false))
 		return (thing->BlockingMobj = thingblocker) == NULL;
 
-	FBlockLinesIterator it(box);
 	line_t *ld;
 
 	fixed_t thingdropoffz = tm.floorz;
@@ -1892,27 +1899,43 @@ bool P_CheckPosition(AActor *thing, fixed_t x, fixed_t y, FCheckPosition &tm, bo
 	SecnodeReplayValid = false;
 	SecnodeReplayLines.Clear();
 
-	while ((ld = it.Next()))
+	// [Doruk-Aksoy] features/relink-in-place: no line straddles a radius-0 box, so PIT_CheckLine would pass every line and the walk is skipped.
+	if (specUnrestricted || ComputeLinesCanStraddle(thing->radius.Raw()))
 	{
-		SecnodeReplayLines.Push(ld); // [rc4l] record the enumeration for the secnode replay
-
-		// [AK] Spectators without physical restrictions should only be executing
-		// line specials if they reached this point.
-		if (specUnrestricted)
+		auto visit = [&](line_t *ld)
 		{
-			if (ld->special)
-				spechit.Push(ld);
+			SecnodeReplayLines.Push(ld); // [rc4l] record the enumeration for the secnode replay
 
-			continue;
+			// [AK] Spectators without physical restrictions should only be executing
+			// line specials if they reached this point.
+			if (specUnrestricted)
+			{
+				if (ld->special)
+					spechit.Push(ld);
+
+				return;
+			}
+
+			good &= PIT_CheckLine(ld, box, tm);
+		};
+		// [Doruk-Aksoy] features/blockmap-filter: on a map without polyobjects the lines come from the cells' arrays, less those whose box misses this one, which PIT_CheckLine and the secnode replay pass by.
+		if (!specUnrestricted && po_NumPolyobjs == 0)
+		{
+			zx::cells::LineWalk it(box);
+			while ((ld = it.Next())) visit(ld);
 		}
-
-		good &= PIT_CheckLine(ld, box, tm);
+		else
+		{
+			FBlockLinesIterator it(box);
+			while ((ld = it.Next())) visit(ld);
+		}
 	}
 	// [rc4l] The enumeration completed, so it is a faithful line list for this
 	// (thing, x, y) box -- publish it for the matching LinkToWorld.
 	SecnodeReplayThing = thing;
 	SecnodeReplayX = x;
 	SecnodeReplayY = y;
+	SecnodeReplayRadius = thing->radius;
 	SecnodeReplayValid = true;
 
 	if (!good)
@@ -2136,7 +2159,7 @@ bool P_TestMobjZ(AActor *actor, bool quick, AActor **pOnmobj)
 		{ // Don't clip against self
 			continue;
 		}
-		if ((actor->flags & MF_MISSILE) && thing == actor->target)
+		if ((actor->flags & MF_MISSILE) && thing == actor->target && !(actor->flags8 & MF8_HITOWNER))
 		{ // Don't clip against whoever shot the missile.
 			continue;
 		}
@@ -3906,7 +3929,10 @@ bool FSlide::BounceWall(AActor *mo)
 	line = bestslideline;
 
 	// [DA] -- Bouncing projectiles never bounced off properly from/exploded on line horizons like normal projectiles did.
-	if (line->special == Line_Horizon && !(mo->flags3 & MF3_SKYEXPLODE))
+	// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSKY vanishes into a sky wall too, above a back sector whose ceiling is sky (features/decorate-uzdoom).
+	if ((line->special == Line_Horizon && !(mo->flags3 & MF3_SKYEXPLODE)) ||
+		((mo->BounceFlags & BOUNCE_NotOnSky) && line->backsector && line->backsector->GetTexture(sector_t::ceiling) == skyflatnum &&
+		 mo->z >= line->backsector->ceilingplane.ZatPoint(mo->x, mo->y)))
 	{
 		mo->SeeSound = 0;	// it might make a sound otherwise
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -3933,7 +3959,9 @@ bool FSlide::BounceWall(AActor *mo)
 	}
 	moveangle = R_PointToAngle2(0, 0, mo->velx, mo->vely);
 	deltaangle = (2 * lineangle) - moveangle;
-	mo->angle = deltaangle;
+	// [Doruk-Aksoy] uzdoom: +KEEPBOUNCEANGLE keeps its yaw through a bounce.
+	if (!(mo->BounceFlags & BOUNCE_KeepAngle))
+		mo->angle = deltaangle;
 
 	lineangle >>= ANGLETOFINESHIFT;
 	deltaangle >>= ANGLETOFINESHIFT;
@@ -3976,6 +4004,14 @@ bool P_BounceWall(AActor *mo)
 //
 //==========================================================================
 
+// [MGOOOOOO] features/ripper: whether a missile rips this victim instead of stopping on it (ComputeRipsThrough).
+bool P_RipsThrough(const AActor *missile, const AActor *victim)
+{
+	return zx::ripper::ComputeRipsThrough(!!(missile->flags2 & MF2_RIP), !!(victim->flags5 & MF5_DONTRIP),
+		missile->RipperLevel, victim->RipLevelMin, victim->RipLevelMax,
+		!!(missile->flags6 & MF6_NOBOSSRIP), !!(victim->flags2 & MF2_BOSS));
+}
+
 extern FRandom pr_bounce;
 bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 {
@@ -3985,13 +4021,20 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 		return true;
 
 	if (mo && BlockingMobj && ((mo->BounceFlags & BOUNCE_AllActors)
-		// [MGOOOOOO] The ComputeRipLevelAllows term keeps this in step with PIT_CheckThing: a
-		// projectile the victim's RipperLevel window rejects is not a ripper as far as this
-		// reflective actor is concerned, so it bounces instead of passing through.
-		|| ((mo->flags & MF_MISSILE) && (!(mo->flags2 & MF2_RIP) || (BlockingMobj->flags5 & MF5_DONTRIP) || !zx::ripper::ComputeRipLevelAllows(mo->RipperLevel, BlockingMobj->RipLevelMin, BlockingMobj->RipLevelMax) || ((mo->flags6 & MF6_NOBOSSRIP) && (BlockingMobj->flags2 & MF2_BOSS))) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
+		// [MGOOOOOO] A missile that cannot rip this reflective actor (P_RipsThrough, as PIT_CheckThing asks) bounces instead of passing through.
+		|| ((mo->flags & MF_MISSILE) && !P_RipsThrough(mo, BlockingMobj) && (BlockingMobj->flags2 & MF2_REFLECTIVE))
 		|| ((BlockingMobj->player == NULL) && (!(BlockingMobj->flags3 & MF3_ISMONSTER)))
 		))
 	{
+		// [Doruk-Aksoy] uzdoom: a ripper rips through shootable actors rather than bouncing, unless +BOUNCEONUNRIPPABLES meets a DONTRIP one.
+		if ((mo->flags & MF_MISSILE) && (mo->flags2 & MF2_RIP) && (BlockingMobj->flags & MF_SHOOTABLE)
+			&& !((mo->BounceFlags & BOUNCE_BounceOnUnrips) && (BlockingMobj->flags5 & MF5_DONTRIP)))
+			return true;
+
+		// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSHOOTABLES explodes on a shootable actor instead of bouncing.
+		if ((BlockingMobj->flags & MF_SHOOTABLE) && (mo->BounceFlags & BOUNCE_NotOnShootables))
+			mo->bouncecount = 1;
+
 		// [Doruk-Aksoy] uzdoom@1eb2c7532, uzdoom@46ee2c5ec: the last bounce ends the bouncer here, since callers that ignored a false left a spent 0 meaning unlimited.
 		if (zx::bounce::ComputeBounceSpent(mo->bouncecount))
 		{
@@ -4018,7 +4061,8 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 				BlockingMobj->y, mo->x, mo->y) + ANGLE_1*((pr_bounce() % 16) - 8);
 			speed = P_AproxDistance(mo->velx, mo->vely);
 			speed = FixedMul(speed, mo->wallbouncefactor); // [GZ] was 0.75, using wallbouncefactor seems more consistent
-			mo->angle = angle;
+			if (!(mo->BounceFlags & BOUNCE_KeepAngle))
+				mo->angle = angle;
 			angle >>= ANGLETOFINESHIFT;
 			mo->velx = FixedMul(speed, finecosine[angle]);
 			mo->vely = FixedMul(speed, finesine[angle]);
@@ -4065,6 +4109,10 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 				// The reflected velocity keeps only about 70% of its original speed
 				mo->velz = FixedMul(mo->velz - MulScale15(FRACUNIT, dot), mo->bouncefactor);
 			}
+
+			// [Doruk-Aksoy] uzdoom: +BOUNCEMODIFIESPITCH points along its new velocity.
+			if (mo->BounceFlags & BOUNCE_ModifyPitch)
+				mo->pitch = (int)FLOAT2ANGLE(zx::bounce::ComputeBouncePitch(FIXED2DBL(mo->velx), FIXED2DBL(mo->vely), FIXED2DBL(mo->velz)));
 
 			mo->PlayBounceSound(true);
 			if (mo->BounceFlags & BOUNCE_MBF) // Bring it to rest below a certain speed
@@ -5296,7 +5344,8 @@ static ETraceStatus ProcessRailHit(FTraceResults &res, void *userdata)
 	newhit.Distance = res.Distance - 10 * FRACUNIT;	// put blood in front
 	data->RailHits.Push(newhit);
 
-	return data->StopAtOne ? TRACE_Stop : TRACE_Continue;
+	// [Doruk-Aksoy] uzdoom: a +STOPRAILS actor takes the rail and stops it (features/decorate-uzdoom).
+	return (data->StopAtOne || (res.Actor->flags8 & MF8_STOPRAILS)) ? TRACE_Stop : TRACE_Continue;
 }
 
 //==========================================================================
@@ -6305,7 +6354,8 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			// [rc4l] uzdoom@34aeb428a dropped the CAUSEPAIN test here: the sign check is about
 			// whether damage and thrust agree, not about pain, and CAUSEPAIN is honoured inside
 			// P_DamageMobj anyway.
-			if (((points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [Doruk-Aksoy] uzdoom: a +FORCEZERORADIUSDMG bomb passes zero damage on too (features/decorate-uzdoom).
+			if (((points * bombdamage) > 0 || ((points * bombdamage) == 0 && (bombspot->flags7 & MF7_FORCEZERORADIUSDMG))) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;
@@ -6426,7 +6476,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				damage = (int)((double)damage * splashfactor);
 
 				damage = (int)(Scale(damage, thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT), FRACUNIT));
-				if (damage > 0)
+				if (damage > 0 || (damage == 0 && (bombspot->flags7 & MF7_FORCEZERORADIUSDMG)))
 				{
 					// [BC/BB] Damage is server side.
 					int newdam = 0;
@@ -7438,7 +7488,7 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 	// recorded line list in identical order instead of sweeping the blockmap again.
 	// Any P_CreateSecNodeList call consumes or discards the recording.
 	const bool replay = SecnodeReplayValid && SecnodeReplayThing == thing &&
-		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y;
+		SecnodeReplayX == thing->x && SecnodeReplayY == thing->y && SecnodeReplayRadius == thing->radius;
 	SecnodeReplayValid = false;
 
 	// [Doruk-Aksoy] features/relink-in-place: a radius-0 box has one corner, so no line straddles it and the walk would add nothing.
@@ -7446,7 +7496,7 @@ void P_CreateSecNodeList(AActor *thing, fixed_t x, fixed_t y)
 	line_t *ld;
 	unsigned int ri = 0;
 
-	for (; ComputeSecNodesWalkLines(thing->radius.Raw());)
+	for (; ComputeLinesCanStraddle(thing->radius.Raw());)
 	{
 		if (replay)
 		{

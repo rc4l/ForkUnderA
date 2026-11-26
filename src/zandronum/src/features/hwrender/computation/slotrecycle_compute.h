@@ -44,6 +44,34 @@ void ComputeReserveSlots(int count, Find find, Make make, std::vector<int> &slot
 		if (slots[k] < 0) slots[k] = make(k);
 }
 
+// [Doruk-Aksoy] Whether slot is met for the first time in reservation `serial`, stamping it so the rest of that reservation reads false; a slot of 0 or less always reads true.
+bool ComputeFirstInReservation(std::vector<unsigned int> &stamps, int slot, unsigned int serial);
+
+// [Doruk-Aksoy] Whether the tic stream's slots, found when it was made, are held rather than looked up again: a stream with pieces, the stream and slot table they were found for, and a slot kept for each piece.
+bool ComputeTicSlotsHeld(int ticPieces, unsigned int keysGen, unsigned int ticGen, unsigned int keysTable, unsigned int table, int keptSlots);
+
+// [Doruk-Aksoy] A direct-mapped memo of one value per (pointer, number) key, kept for one pass: a key asked again in the same pass reads what the first ask computed, and a collision computes again.
+template <class V>
+class ComputePassMemo
+{
+public:
+	explicit ComputePassMemo(int bits = 10) : m_mask(((size_t)1 << bits) - 1), m_entries(m_mask + 1) {}
+	template <class Compute>
+	V Get(const void *a, int b, unsigned int pass, Compute compute)
+	{
+		const uintptr_t p = (uintptr_t)a;
+		Entry &e = m_entries[(size_t)((p >> 4) ^ (p >> 14) ^ ((unsigned int)b * 2654435761u)) & m_mask];
+		if (e.pass == pass && e.a == a && e.b == b) return e.value;
+		e.a = a; e.b = b; e.pass = pass; e.value = compute();
+		return e.value;
+	}
+
+private:
+	struct Entry { const void *a = nullptr; int b = 0; unsigned int pass = 0; V value = V(); };
+	size_t m_mask;
+	std::vector<Entry> m_entries;
+};
+
 }} // namespace zx::hwrender
 
 #endif // ZX_SLOTRECYCLE_COMPUTE_H

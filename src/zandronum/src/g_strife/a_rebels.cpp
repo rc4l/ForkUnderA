@@ -99,7 +99,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Beacon)
 	self->flags &= ~MF_SPECIAL;
 	static_cast<AInventory *>(self)->DropTime = 0;
 	// Set up the new rebel.
-	rebel->threshold = BASETHRESHOLD;
+	rebel->threshold = zx::decorateuzdoom::DefThreshold(rebel);	// [Doruk-Aksoy] uzdoom@62afe5f0a9
 	rebel->target = NULL;
 	rebel->flags4 |= MF4_INCOMBAT;
 	rebel->LastHeard = owner;	// Make sure the rebels look for targets

@@ -859,7 +859,8 @@ void DEH_ChangeMBF21Flags (AActor *actor, DWORD bits, bool set)
 	if (bits & DEH21F_E4M6BOSS)			Deh21SetFlag(actor->flags8, MF8_E4M6BOSS, set);
 	if (bits & DEH21F_E4M8BOSS)			Deh21SetFlag(actor->flags8, MF8_E4M8BOSS, set);
 	if (bits & DEH21F_RIP)				Deh21SetFlag(actor->flags2, MF2_RIP, set);
-	if (bits & DEH21F_FULLVOLSOUNDS)	Deh21SetFlag(actor->flags8, MF8_FULLVOLSEE|MF8_FULLVOLDEATH, set);
+	// [Doruk-Aksoy] The death sound's full volume is MF3_FULLVOLDEATH, as UZDoom's FULLVOLSOUNDS sets it.
+	if (bits & DEH21F_FULLVOLSOUNDS)	{ Deh21SetFlag(actor->flags8, MF8_FULLVOLSEE, set); Deh21SetFlag(actor->flags3, MF3_FULLVOLDEATH, set); }
 }
 
 bool DEH_CheckMBF21Flags (AActor *actor, DWORD bits)

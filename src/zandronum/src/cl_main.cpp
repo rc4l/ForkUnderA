@@ -162,6 +162,7 @@
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] FuaSetShaderEnabled and FuaSetShaderUniform
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
+#include "features/net-replication/computation/actorstate_compute.h"   // [Doruk-Aksoy] ComputeClientAppliedFlags
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
 #include "features/net-protocol/testfaults.h"   // [Kaori-Chani] DropReceivedPacketForTest
 #include "features/net-snapshot/apply.h"   // [Kaori-Chani] the client's side of the snapshot
@@ -171,6 +172,7 @@
 #include "features/net-snapshot/movers.h"   // [Kaori-Chani] MoverSetServerGate, for SnapMoverGate
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] TracePlaneWrite
 #include "features/net-snapshot/polyobj.h"   // [Kaori-Chani] OwnsPoly, PolyCountSuppressed
+#include "features/blockmap-filter/cellarrays.h"   // [Doruk-Aksoy] zx::cells::Refresh
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -3208,6 +3210,7 @@ AActor *CLIENT_SpawnThing( const PClass *pType, fixed_t X, fixed_t Y, fixed_t Z,
 		// [EP] Don't forget to drop the DROPPED flag if it wasn't present. See the comment in AActor::LevelSpawned for the reason.
 		if ( levelThing ) {
 			pActor->BeginPlay ();
+			zx::cells::Refresh (pActor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 			if (!(pActor->GetDefault()->flags & MF_DROPPED))
 			{
 				pActor->flags &= ~MF_DROPPED;
@@ -6025,6 +6028,20 @@ void ServerCommands::SetThingFlags::Execute()
 
 		actor->mvFlags = flags;
 		break;
+	// [Doruk-Aksoy] ZandroX's own flags (see actor.h FUAF_*).
+	case FLAGSET_FUAFLAGS:
+
+		actor->fua_flags = flags;
+		break;
+	// [Doruk-Aksoy] Render and bounce flags a server state changed; a player body keeps its own RF_INVISIBLE, which the client sets.
+	case FLAGSET_RENDERFLAGS:
+
+		actor->renderflags = ActorRenderFlags::FromInt (zx::netreplication::ComputeClientAppliedFlags (actor->renderflags, flags, actor->player ? RF_INVISIBLE : 0));
+		break;
+	case FLAGSET_BOUNCEFLAGS:
+
+		actor->BounceFlags = flags;
+		break;
 	case FLAGSET_FLAGSST:
 
 		actor->STFlags = flags;
@@ -6094,6 +6111,15 @@ void ServerCommands::SetThingProperty::Execute()
 
 	case APROP_Friction:
 		actor->Friction = value;
+		break;
+
+	// [Doruk-Aksoy] features/acs-parity: P_TryMove reads both, for the pawn this client predicts and the monsters it walks.
+	case APROP_MaxStepHeight:
+		actor->MaxStepHeight = value;
+		break;
+
+	case APROP_MaxDropOffHeight:
+		actor->MaxDropOffHeight = value;
 		break;
 
 	// [rc4l] features/quake-movement. Range-checked on receipt too: the server is trusted, but a

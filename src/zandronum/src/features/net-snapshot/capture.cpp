@@ -577,7 +577,7 @@ static const char* const g_cosSafeNames[] =
 	"A_SetAngle", "A_SetPitch", "A_Stop", "A_ScaleVelocity", "A_ChangeVelocity",
 	"A_SetGravity", "A_Gravity", "A_LowGravity", "A_NoGravity",
 	"A_PlaySound", "A_PlaySoundEx", "A_StopSound", "A_StopSoundEx",
-	"A_Jump", "A_JumpIf", "A_SetTics", "A_Weave", "A_SetUserVar",
+	"A_Jump", "A_JumpIf", "A_SetTics", "A_Weave", "A_SetUserVar", "A_SetUserVarFloat",
 	"A_SetFloorClip", "A_UnSetFloorClip", "A_HideThing", "A_UnHideThing",
 	"A_SetShadow", "A_ClearShadow",
 	"A_CheckFloor", "A_CheckCeiling", "A_CheckRange", "A_CheckSightOrRange",

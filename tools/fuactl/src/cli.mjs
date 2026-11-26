@@ -41,6 +41,7 @@ import { runCoverage, runLlvmCoverage } from "./coverage.mjs";
 import * as netplay from "./netplay.mjs";
 import * as netdiffMod from "./netdiff.mjs";
 import * as netcap from "./netcap.mjs";
+import { runUzdoom, logFileIn } from "./uzdoom.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { runTracker } from "./tracker.mjs";
@@ -184,11 +185,12 @@ const USAGE = `fuactl <command>
   rpc <cmd> [jsonArgs] --port P [--token T]   send one RPC to an instance and print the result
   queue add <description> [--port P] [--name SPOT] [--no-instance [--map M]]   save the instance's vantage as a spot and queue the problem seen there (report-queue skill); --no-instance queues one seen where no engine answers (a browser page, an engine already gone), with its map when known and no spot
   queue list [--all] | next | note <id> <text> | done <id> [--unverified] [--note TEXT]   read and work the queue, oldest open item first
-  burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides
+  burst <tag> [--side gl|vk] [--count N] [--box x0,y0,x1,y1] [--spot S | --at --face] [--port P]   timed captures with the sim running and each one's box brightness, for an animation's rate or a light a paused shot hides; a capture repeating the one before is marked, with the causes to rule out
   steps <tag> --hold +ACTION [--count N] [--spot S | --at --face] [--port P]   an action (+crouch) held and stepped one tic at a time, a GL/Vulkan pair and the eye height each tic, for a fault that shows only mid-transition
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, pressing use through each intermission, the way a player reached it
   quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; one that refuses (no token) and whose launcher is gone is stopped as \`reap --kill\` would; exit 1 if it would not go; --park files its camera, wads and renderer first
+  uzdoom --map M --chain "wait 35;puke 1;wait 35;quit" [--file a.pk3] [--out DIR]   run a UZDoom build (FUACTL_UZDOOM, else UZDoom-build/Release beside the repo) on a map, its window never activated, muted, on a config of its own, and print where its log and screenshots went; exit 1 when it logged nothing
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
@@ -218,7 +220,7 @@ const USAGE = `fuactl <command>
   mapdata <MAP> (--preset ID | --file a.pk3,b.wad) [--sector N,..] [--line N,..] [--special N] [--tag N] [--thing TYPE,..] [--scripts REGEX]   a level's summary (UDMF, Doom or Hexen format), sectors, lines, things of the given types and ACS source lines, read from its files
   actors [--near x,y] [--radius R] [--toward YAW | --ahead] [--cone DEG] [--class REGEX]   actors near a point (default the player), nearest first, optionally only in a direction
   probe <scenario.mjs> [--map M] [--vantage V] [--side S] [--engine path/to/forkundera.exe] [<command> ...]   launch a template scenario's map at a vantage and run console commands there
-  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b] [--validate core|sync|gpu] [--port P]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1); --validate runs every launch under the Khronos validation layer (sync adds its synchronization checks, gpu its checks inside shaders; the Vulkan SDK's layer must be installed) and fails a scenario whose launches reported anything; --port runs every engine on that port rather than each scenario's own
+  scenarios [name ...] [--engine path/to/forkundera.exe] [--side S --cvar k=v,...] [--webgpu] [--matrix k=a,b] [--validate core|sync|gpu] [--port P]   run every template scenario (or the named ones, each passing box printed with what it measured) in turn and summarise; --engine picks the binary, as FUACTL_ENGINE does; --side/--cvar adds cvars to one side, to show a test fails under the old behaviour (scenarios without that side are skipped); every Vulkan side runs without GL as players do unless it is judged against GL in one frame; --webgpu runs each one's Vulkan side on WebGPU against Vulkan, every box at WEBGPU_CEILING; --matrix runs the suite once per value with the cvar on every side (fua_gamethread=0,1); --validate runs every launch under the Khronos validation layer (sync adds its synchronization checks, gpu its checks inside shaders; the Vulkan SDK's layer must be installed) and fails a scenario whose launches reported anything; --port runs every engine on that port rather than each scenario's own, and a netgame's server on game port P+3000
   ready [--port P --token T] [--timeout S]   wait until an instance answers (defaults to the last play session)
   goto (--spot NAME | --at x,y,z --face yaw,pitch) [--port P]   stand the player there
   motion [--spot NAME | --at x,y,z --face yaw,pitch] [--box x0,y0,x1,y1] [--interval MS]   per-pixel change between two captures apart, Vulkan and GL, sim running
@@ -465,7 +467,9 @@ async function main() {
         box: flags.box ? String(flags.box).split(",").map(Number) : [0, 0, 1, 1],
         engineBin: slashed(engineOf(flags)), tag: rest[0] || "burst",
       });
-      for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}`);
+      for (const r of out) console.log(`${r.i} t=${r.t}ms mean=${r.mean.toFixed(2)} ${r.file || "(no capture)"}${r.repeat ? "  (repeats the one before)" : ""}`);
+      const repeated = out.filter((r) => r.repeat).map((r) => r.i);
+      if (repeated.length) console.log(shot.repeatNote(repeated, { side: flags.side === "gl" ? "gl" : "vk" }));
       c.close();
       break;
     }
@@ -583,6 +587,15 @@ async function main() {
         saveQueue(closed);
         console.log(formatItem(closed.items.find((x) => x.id === Number(words[0]))));
       } else { console.error(usage); process.exit(2); }
+      break;
+    }
+    case "uzdoom": {
+      // [Doruk-Aksoy] UZDoom side by side: the run's folder holds its log (log-uzdoom.txt) and any screenshots the chain took.
+      const dir = flags.out ? path.resolve(String(flags.out)) : fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-uzdoom-"));
+      const log = runUzdoom({ pk3: flags.file ? path.resolve(String(flags.file)) : undefined, map: String(flags.map || "MAP01"),
+        chain: String(flags.chain || "wait 70;screenshot;wait 35;quit"), dir, tries: 1 });
+      console.log(log ? `logged ${log.split("\n").length} lines: ${logFileIn(dir)}` : `UZDoom logged nothing in ${dir}`);
+      process.exitCode = log ? 0 : 1;
       break;
     }
     // [rc4l] `fuactl quit` -- stop an instance by its token and wait for its port to close, where a bare console quit left no way to tell it had gone.

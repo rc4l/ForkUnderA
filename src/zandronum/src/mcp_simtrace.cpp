@@ -7,6 +7,7 @@
 //   <tic> S <class> <x> <y> <z>
 //   <tic> H <hash>                     the sim's fingerprint once the tic has run (MCP_StateHash, world scope)
 //   <tic> R|A|P|L|T <hash>             [rc4l] the game's random streams, ACS variables, players, seen bits, and lights, sequences and quakes
+//   <tic> r <crc>:<index> ...          [Doruk-Aksoy] each stream the R hash folds that moved since the last traced tic
 // Coordinates are whole map units. The first differing H line names the tic two runs diverged at,
 // and the first differing event line the event that shifted.
 //
@@ -23,6 +24,7 @@
 #include "r_defs.h"
 #include "r_state.h"
 #include "features/mcp-bridge/computation/mcprpc_compute.h"
+#include "features/mcp-bridge/computation/streammoves_compute.h"
 #include "d_player.h"
 #include "m_crc32.h"
 #include "p_pspr.h"
@@ -36,6 +38,7 @@
 #include <stdlib.h>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace
 {
@@ -74,22 +77,45 @@ namespace
 		return zx::mcp::FnvMixU64( h, bits );
 	}
 
-	// [rc4l] Every random stream's place but the two the renderer advances once a frame, which vary with the frame rate: M_Random and every stream the sim and the HUD draw from.
-	uint64_t RandomHash()
+	// [Doruk-Aksoy] The name CRCs of the streams the frames and the audio advance (ComputeFrameRandomStreams).
+	const std::vector<uint32_t> &FrameStreamCrcs()
 	{
-		struct Fold { uint64_t h; DWORD skip[2]; } fold = { zx::mcp::FnvInit(), {
-			CalcCRC32( (const BYTE *)"TorchFlicker", 12 ), CalcCRC32( (const BYTE *)"ProjDecal", 9 ) } };
+		static std::vector<uint32_t> crcs;
+		if ( crcs.empty() )
+			for ( const std::string &name : zx::mcp::ComputeFrameRandomStreams() )
+				crcs.push_back( CalcCRC32( (const BYTE *)name.c_str(), (unsigned int)name.size() ) );
+		return crcs;
+	}
+
+	// [Doruk-Aksoy] Every random stream's place, in the list's order.
+	std::vector<zx::mcp::StreamPlace> StreamPlacesNow()
+	{
+		std::vector<zx::mcp::StreamPlace> now;
 		FRandom::StaticEnumStates( []( DWORD crc, unsigned int idx, DWORD u0, void *ctx )
 		{
-			Fold &f = *static_cast<Fold *>( ctx );
-			if ( crc != 0 && ( crc == f.skip[0] || crc == f.skip[1] ) )
-				return;
-			f.h = zx::mcp::FnvMixU64( f.h, crc );
-			f.h = zx::mcp::FnvMixU64( f.h, idx );
-			f.h = zx::mcp::FnvMixU64( f.h, u0 );
-		}, &fold );
-		return fold.h;
+			const zx::mcp::StreamPlace place = { (uint32_t)crc, (uint32_t)idx, (uint32_t)u0 };
+			static_cast<std::vector<zx::mcp::StreamPlace> *>( ctx )->push_back( place );
+		}, &now );
+		return now;
 	}
+
+	// [rc4l] Every random stream's place but those the frames advance, which vary with the frame rate: M_Random and every stream the sim and the HUD draw from.
+	uint64_t RandomHash()
+	{
+		uint64_t h = zx::mcp::FnvInit();
+		for ( const zx::mcp::StreamPlace &s : StreamPlacesNow() )
+		{
+			if ( zx::mcp::ComputeFrameStream( s.crc, FrameStreamCrcs() ) )
+				continue;
+			h = zx::mcp::FnvMixU64( h, s.crc );
+			h = zx::mcp::FnvMixU64( h, s.idx );
+			h = zx::mcp::FnvMixU64( h, s.u0 );
+		}
+		return h;
+	}
+
+	// [Doruk-Aksoy] Each stream's place at the end of the last traced tic.
+	zx::mcp::StreamPlaces g_lastStreams;
 
 	// [rc4l] What the game holds of each player that a mod or the view reads: its camera, field of view, light and colormap, blends and counters, cheats and its weapon's layers.
 	uint64_t PlayerHash()
@@ -217,6 +243,7 @@ void MCP_SimTrace_Arm( int tics, const char *path )
 	g_ticsLeft = tics < 1 ? 1 : tics;
 	g_path = path ? path : "";
 	g_lines.clear();
+	g_lastStreams.clear();
 	g_reportReady = false;
 	g_armed = true;
 }
@@ -258,6 +285,8 @@ void MCP_SimTrace_TicDone()
 			snprintf( hash, sizeof hash, "%d %c %llu", level.time, m.kind, m.value );
 			g_lines.push_back( hash );
 		}
+		snprintf( hash, sizeof hash, "%d r", level.time );
+		g_lines.push_back( hash + zx::mcp::ComputeStreamMoves( StreamPlacesNow(), FrameStreamCrcs(), g_lastStreams ) );
 	}
 	if ( --g_ticsLeft > 0 )
 		return;

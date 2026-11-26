@@ -33,7 +33,10 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   order, so packets arrive in bursts. A lone value applies to every client; a scenario config takes `jitter` too.
 - `--for-user` leaves the first client's input unlocked for the user to play, with every other client locked.
 - Ports: the user's own game is on bridge 7801; netplay uses 7820 and up and game ports 10820 and up, the
-  scenarios 7840 and 10840. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
+  scenarios 7840 and 10840 by default. A game port is always its bridge port + 3000 (`--port P` on netplay and
+  scenarios hosts on P+3000), so a session's own bridge port (787x) keeps its game port its own too; an engine that
+  finds its game port taken binds the next one up, and fuactl then stops the set rather than let its clients join
+  another session's server. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
 - Cheats are on from launch (`sv_cheats 1`), since a latched change reaches a joined client only with the next
   map; `god` and `give` typed on a client work, and so do the dev-mode tools (`features/dev-mode`), which a
   client of a server without cheats is refused. A scenario config's `cheats: false` launches without. `setpos` and `sim.pause` are refused in a netgame: drive players with
@@ -79,6 +82,16 @@ logs should have listed (`fua_copy_prescan_check`, on for every client from laun
 a late joiner takes the set's client cvars; `fillMisses`), and a server that sent a map change a tic late because
 no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints each).
 
+- **ACS on every machine.** `src/netacs.mjs` runs a single-player ACS scenario's scripts on a netgame:
+  `withNetCopies` makes each step's script NET and adds its CLIENTSIDE copy (number + 1000) and script 30000,
+  which starts a copy on every client as a mod's server code does; `runSteps` runs each step on the clients,
+  then on the server (so the server's answers show no copy reached it), keeping each machine's output by tag
+  for the scenario's own judge (a step's `clients: false` or `server: false` runs it on one side, such as a
+  server-only removal); `netJudge` is the usual judgeNetplay, the steps then a late joiner's; `changeMap`
+  follows a changemap to every client. A machine whose right answer differs from single player's (a synced
+  actor's health, state a late joiner arrives to) names it, as `netacsparity`'s `ANSWERS` do through
+  `answerFor`; library scripts get their copies in their `.bcs` (`netacsfuncref`).
+
 - **Joining as a player does.** `addClient(set, { files: [], via: "browser" })` launches a client without the
   set's wads and joins from its browser (`browser.add`, `browser.select`, `fua_join_selected_server`) with
   the browser on screen, since a download that finishes with it shut waits for the player to come back;
@@ -99,6 +112,9 @@ no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints
   (`m.block(..., () => ({ blocksound: true }))`, as `farhitscan` and `netmapchange` do).
 - **Judge by state read at the server's tic, not by pictures**: what a client draws depends on its view and
   timing. Coarse picture checks only, if any.
+  Except where the mesh is the question: a client's state can agree while it draws the map's start, so `netonetime`
+  (one-time switch and lines, a reconnect, a late joiner) also compares each client's pictures from one spot with the
+  player's own before it left; see the `moved-sectors` skill.
 
 ## When to add an observer
 

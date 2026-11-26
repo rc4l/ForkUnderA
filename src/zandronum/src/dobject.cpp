@@ -33,6 +33,7 @@
 */
 
 #include <stdlib.h>
+#include "features/decorate-uzdoom/uservars.h"
 #include "features/handoff/seam.h"   // [rc4l] gc seams
 #include <string.h>
 
@@ -46,24 +47,52 @@
 #include "i_system.h"
 #include "r_state.h"
 #include "stats.h"
+#include <cstddef>
 
 // [rc4l] actor-pool -- see the declaration in dobject.h. Buckets are keyed by the
 // allocator's real block size, read identically on both ends, so a recycled block
 // always exactly fits its bucket. GC::AllocBytes is adjusted exactly as
 // M_Malloc/M_Free would, so collection pacing does not change.
+// [Doruk-Aksoy] Every block starts on a 64-byte cache line, so a field sits on the same line of every actor and a layout can be planned by line.
 #if defined(__APPLE__)
 #include <malloc/malloc.h>
+#include <stdlib.h>
 #define ZX_POOL_MSIZE(p) malloc_size(p)
 #elif defined(_WIN32)
 #include <malloc.h>
-#define ZX_POOL_MSIZE(p) _msize(p)
+#define ZX_POOL_MSIZE(p) _aligned_msize(p, ZX_OBJECT_ALIGN, 0)
 #else
 #include <malloc.h>
+#include <stdlib.h>
 #define ZX_POOL_MSIZE(p) malloc_usable_size(p)
 #endif
 
 namespace
 {
+	// [Doruk-Aksoy] A block from the platform's aligned allocator, which ZX_POOL_MSIZE measures and FreeObjectBlock returns.
+	void *AllocObjectBlock(size_t len)
+	{
+#if defined(_WIN32)
+		void *block = _aligned_malloc(len, ZX_OBJECT_ALIGN);
+#else
+		void *block = NULL;
+		if (posix_memalign(&block, ZX_OBJECT_ALIGN, len) != 0) block = NULL;
+#endif
+		if (block == NULL) I_FatalError("Could not malloc %zu bytes", len);
+		GC::AllocBytes += ZX_POOL_MSIZE(block); // as M_Malloc counts it
+		return block;
+	}
+
+	void FreeObjectBlock(void *block)
+	{
+		GC::AllocBytes -= ZX_POOL_MSIZE(block); // as M_Free counts it
+#if defined(_WIN32)
+		_aligned_free(block);
+#else
+		free(block);
+#endif
+	}
+
 	const size_t POOL_MAX_BLOCK = 8192;            // objects only; anything bigger goes to the allocator
 	const unsigned int POOL_MAX_PER_BUCKET = 4096; // cap hoarding after a storm ends
 
@@ -90,7 +119,7 @@ void *DObject::operator new(size_t len)
 			}
 		}
 	}
-	void *block = M_Malloc(len);
+	void *block = AllocObjectBlock(len);
 	if (PoolRealSize == NULL)
 		PoolRealSize = new TMap<size_t, size_t>;
 	PoolRealSize->Insert(len, ZX_POOL_MSIZE(block));
@@ -121,7 +150,7 @@ void DObject::operator delete (void *mem)
 			return;
 		}
 	}
-	M_Free(mem);
+	FreeObjectBlock(mem);
 }
 
 #include "a_sharedglobal.h"
@@ -639,13 +668,16 @@ void DObject::ResetUserVars()
 				PSymbolVariable *var = static_cast<PSymbolVariable *>(sym);
 				if (var->bUserVar)
 				{
-					count = var->ValueType.Type == VAL_Array ? var->ValueType.size : 1;
+					count = zx::decorateuzdoom::UserVarCount(var);
+					int *savedValue = static_cast<AActor *>(this)->savedUserVars.CheckKey(var);
 					for (DWORD j = 0; j < count; j++)
 					{
-						int *savedValue = static_cast<AActor *>(this)->savedUserVars.CheckKey(var);
-
 						// [BOF] Restore original value if it exists; set to 0 otherwise.
-						((int *)(reinterpret_cast<BYTE *>(this) + var->offset))[j] = savedValue ? *savedValue : 0;
+						// [Doruk-Aksoy] A float variable's elements are doubles, which only a map's int value restores.
+						if (zx::decorateuzdoom::IsFloatUserVar(var))
+							((double *)(reinterpret_cast<BYTE *>(this) + var->offset))[j] = savedValue ? *savedValue : 0;
+						else
+							((int *)(reinterpret_cast<BYTE *>(this) + var->offset))[j] = savedValue ? *savedValue : 0;
 					}
 				}
 			}
@@ -675,14 +707,18 @@ void DObject::SerializeUserVars(FArchive &arc)
 					PSymbolVariable *var = static_cast<PSymbolVariable *>(sym);
 					if (var->bUserVar)
 					{
-						count = var->ValueType.Type == VAL_Array ? var->ValueType.size : 1;
+						count = zx::decorateuzdoom::UserVarCount(var);
 						varloc = (int *)(reinterpret_cast<BYTE *>(this) + var->offset);
 
 						arc << var->SymbolName;
 						arc.WriteCount(count);
+						// [Doruk-Aksoy] A float variable writes its doubles, which only a float variable of that name reads back.
 						for (j = 0; j < count; ++j)
 						{
-							arc << varloc[j];
+							if (zx::decorateuzdoom::IsFloatUserVar(var))
+								arc << ((double *)varloc)[j];
+							else
+								arc << varloc[j];
 						}
 					}
 				}
@@ -700,6 +736,7 @@ void DObject::SerializeUserVars(FArchive &arc)
 		{
 			PSymbol *sym = symt->FindSymbol(varname, true);
 			DWORD wanted = 0;
+			bool isFloat = false;
 
 			if (sym != NULL && sym->SymbolType == SYM_Variable)
 			{
@@ -707,22 +744,34 @@ void DObject::SerializeUserVars(FArchive &arc)
 
 				if (var->bUserVar)
 				{
-					wanted = var->ValueType.Type == VAL_Array ? var->ValueType.size : 1;
+					wanted = zx::decorateuzdoom::UserVarCount(var);
+					isFloat = zx::decorateuzdoom::IsFloatUserVar(var);
 					varloc = (int *)(reinterpret_cast<BYTE *>(this) + var->offset);
 				}
 			}
 			count = arc.ReadCount();
 			for (j = 0; j < MIN(wanted, count); ++j)
 			{
-				arc << varloc[j];
+				if (isFloat)
+					arc << ((double *)varloc)[j];
+				else
+					arc << varloc[j];
 			}
 			if (wanted < count)
 			{
 				// Ignore remaining values from archive.
 				for (; j < count; ++j)
 				{
-					int foo;
-					arc << foo;
+					if (isFloat)
+					{
+						double foo;
+						arc << foo;
+					}
+					else
+					{
+						int foo;
+						arc << foo;
+					}
 				}
 			}
 			arc << varname;

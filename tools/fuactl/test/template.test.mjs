@@ -352,6 +352,7 @@ test("a matrix names one cvar set per value, each laid on every side over the ru
 test("a suite's port goes on every scenario over the run's own adjustment, a skipped or absent one left as it is", () => {
   const opts = { name: "t", port: 7796, sides: [{ name: "vk", gl: false }] };
   assert.equal(portAdjust(7872)(opts).port, 7872);
+  assert.equal(portAdjust(7872)(opts).gamePort, 10872, "a netgame's server hosts on that port's own game port, not the default every suite shares");
   assert.equal(opts.port, 7796, "the scenario's own options are left alone");
   const seen = [];
   const run = portAdjust(7872, (o, compare) => { seen.push(compare); return withEverySideCvars(o, { y: "1" }); });
@@ -396,6 +397,9 @@ test("a netplay scenario hosts each configuration on each map, judges the set an
   assert.deepEqual([launched[0].clientCvars, launched[1].clientCvars], [FILL_CHECK, { ...FILL_CHECK, cl_unlagged: 1 }], "every client holds its fills to the whole-map compare");
   assert.deepEqual([launched[0].broadcast, launched[1].broadcast], [true, false]);
   assert.deepEqual([launched[0].cheats, launched[1].cheats], [true, false]);
+  assert.deepEqual([launched[0].basePort, launched[0].gamePort], [7840, 10840]);
+  await compareNetplay({ name: "nt", wad: Buffer.from("PWAD"), maps: ["MAP01"], port: 7870, configs: [{ name: "lan" }], judgeNetplay: async () => ({ lines: [], failed: 0 }) }, deps);
+  assert.deepEqual([launched.at(-1).basePort, launched.at(-1).gamePort], [7870, 10870], "a set's game port follows its bridge port");
   assert.equal(compareNetplay.judgedAlone, true);
   assert.match(webgpuOptions({}, compareNetplay).skip, /netgame/);
 });

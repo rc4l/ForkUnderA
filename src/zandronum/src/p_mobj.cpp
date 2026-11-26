@@ -30,6 +30,8 @@
 
 // [BB] network.h has to be included before stats.h under Linux.
 // The reason should be investigated.
+#include "features/decorate-uzdoom/classprops.h"
+#include "features/decorate-uzdoom/computation/decorateprops_compute.h"
 #include "network.h"
 
 #include "templates.h"
@@ -112,6 +114,20 @@
 #include "computation/mapangle_compute.h" // [rc4l] ComputeMapThingAngle
 #include "computation/rejumpdelay_compute.h" // [rc4l] ComputeLandingDelaysJump, ComputeRisingDelaysJump
 #include "features/actormaterials/actormaterials.h" // [Doruk-Aksoy] an actor's fua_Material
+#include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
+#include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
+#include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
+#include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] an actor's handle slot
+#include "version.h"
+#include "features/decorate-uzdoom/computation/flagrehome_compute.h" // [Doruk-Aksoy] old saves' flag words moved to UZDoom's bits
+
+// [Doruk-Aksoy] The old-save remap names today's bits by value, so each must still be the flag it says.
+static_assert(zx::decorateuzdoom::kFlags7Moves[0].to == MF7_NODECAL && zx::decorateuzdoom::kFlags7Moves[1].to == MF7_FORCEDECAL && zx::decorateuzdoom::kFlags7Moves[2].to == MF7_FLYCHEAT, "flags7 remap");
+static_assert(zx::decorateuzdoom::kFlags8Moves[1].to == MF8_FULLVOLSEE && zx::decorateuzdoom::kFlags8Moves[2].to == MF8_E1M8BOSS && zx::decorateuzdoom::kFlags8Moves[3].to == MF8_E2M8BOSS
+	&& zx::decorateuzdoom::kFlags8Moves[4].to == MF8_E3M8BOSS && zx::decorateuzdoom::kFlags8Moves[5].to == MF8_E4M6BOSS && zx::decorateuzdoom::kFlags8Moves[6].to == MF8_E4M8BOSS
+	&& zx::decorateuzdoom::kFlags8Moves[7].to == MF8_MAP07BOSS1 && zx::decorateuzdoom::kFlags8Moves[8].to == MF8_MAP07BOSS2, "flags8 remap");
+static_assert(zx::decorateuzdoom::kFlags3FullVolDeath == MF3_FULLVOLDEATH, "FULLVOLDEATH remap");
+static_assert(zx::decorateuzdoom::kFlagRehomeSaveVer <= SAVEVER, "the remap's save version is written");
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -372,6 +388,14 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << flags8;
 	}
+	// [Doruk-Aksoy] An older save's flags7 and flags8 are in the layout before UZDoom's bits; flags8 is only moved when the save held it.
+	if (arc.IsLoading() && SaveVersion < zx::decorateuzdoom::kFlagRehomeSaveVer)
+	{
+		const zx::decorateuzdoom::SavedFlags out = zx::decorateuzdoom::ComputeRehomedSaveFlags({ flags3.GetValue(), flags7.GetValue(), SaveVersion >= 4509 ? flags8.GetValue() : 0u });
+		flags3 = ActorFlags3::FromInt(out.flags3);
+		flags7 = ActorFlags7::FromInt(out.flags7);
+		if (SaveVersion >= 4509) flags8 = ActorFlags8::FromInt(out.flags8);
+	}
 	arc	<< special1
 		<< special2
 		<< health
@@ -430,9 +454,17 @@ void AActor::Serialize (FArchive &arc)
 		<< MeleeState
 		<< MissileState
 		<< MaxDropOffHeight 
-		<< MaxStepHeight
-		<< BounceFlags
-		<< bouncefactor
+		<< MaxStepHeight;
+	// [Doruk-Aksoy] BounceFlags is 32 bits from 4538 on, as UZDoom's; an older save holds 16.
+	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
+		arc << BounceFlags;
+	else
+	{
+		WORD bounce16 = (WORD)BounceFlags;
+		arc << bounce16;
+		BounceFlags = bounce16;
+	}
+	arc	<< bouncefactor
 		<< wallbouncefactor
 		<< bouncecount
 		<< maxtargetrange
@@ -511,13 +543,13 @@ void AActor::Serialize (FArchive &arc)
 			<< RipSound;
 	}
 
-	// [MGOOOOOO] ZandroX's flags9 word and the ripper controls (features/ripper). Version-guarded
+	// [MGOOOOOO] ZandroX's own flag word (fua_flags, held in flags9 before 4538) and the ripper controls (features/ripper). Version-guarded
 	// so older snapshots (which never stored them) load with the class defaults -- all budgets 0
 	// (= unlimited) and no falloff, which is exactly pre-feature ripper behaviour. RipVictims is
 	// live per-projectile state, so a ripper saved mid-flight resumes with its budget intact.
 	if (SaveVersion >= 4511)
 	{
-		arc << flags9
+		arc << fua_flags
 			<< RipperLevel
 			<< RipLevelMin
 			<< RipLevelMax
@@ -536,8 +568,15 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << mvFlags;
 	}
+	// [Doruk-Aksoy] UZDoom's flags9, from 4538 on.
+	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
+	{
+		arc << flags9;
+	}
 	// [Doruk-Aksoy] features/actormaterials: its fua_Material and own uniforms, from 4527 on.
 	zx::actormaterials::SerializeActor(arc, this);
+	// [Doruk-Aksoy] features/acs-handles: its handle slot, from 4533 on.
+	zx::acshandles::SerializeActor(arc, this);
 
 	{
 		FString tagstr;
@@ -718,7 +757,8 @@ bool AActor::SetState (FState *newstate, bool nofunction)
 				// except when this actor is a player chunk.
 				const int overrideSkin = IsKindOf( RUNTIME_CLASS( APlayerChunk )) ? -1 : PLAYER_GetOverrideSkin( this->player );
 				// [AK] Don't change to the skin's sprite if the new sprite is TNT1A0.
-				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == SpawnState->sprite && newsprite != SPR_TNT1)
+				// [Doruk-Aksoy] SpawnState read from the class defaults, which no actor changes, so this misses no cold actor line.
+				if ((!(flags4 & MF4_NOSKIN) || overrideSkin != -1) && newsprite == GetDefault()->SpawnState->sprite && newsprite != SPR_TNT1)
 				{ // [RH] If the new sprite is the same as the original sprite, and
 				// this actor is attached to a player, use the player's skin's
 				// sprite. If a player is not attached, do not change the sprite
@@ -1565,6 +1605,7 @@ bool AActor::Grind(bool items)
 			flags &= ~MF_SOLID;
 			flags3 |= MF3_DONTGIB;
 			height = radius = 0;
+			zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 			SetState (state);
 			if (isgeneric)	// Not a custom crush state, so colorize it appropriately.
 			{
@@ -1600,6 +1641,7 @@ bool AActor::Grind(bool items)
 				flags &= ~MF_SOLID;
 				flags3 |= MF3_DONTGIB;
 				height = radius = 0;
+				zx::cells::Refresh (this);	// [Doruk-Aksoy] features/blockmap-filter
 				return false;
 			}
 
@@ -1610,6 +1652,7 @@ bool AActor::Grind(bool items)
 				gib->alpha = alpha;
 				gib->height = 0;
 				gib->radius = 0;
+				zx::cells::Refresh (gib);	// [Doruk-Aksoy] features/blockmap-filter
 
 				// [BB] Apparently Skulltag always has let the clients spawn the gibs.
 				// Whether or not this is intentional, if the clients spawn the gibs on
@@ -1864,10 +1907,14 @@ void AActor::PlayBounceSound(bool onfloor)
 
 bool AActor::FloorBounceMissile (secplane_t &plane)
 {
-	if (z <= floorz && P_HitFloor (this))
+	// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSKY vanishes on a sky floor or ceiling it would bounce off (features/decorate-uzdoom).
+	const bool skyStop = (BounceFlags & BOUNCE_NotOnSky) && zx::bounce::ComputeBouncesOffPlane(BounceFlags, plane.c < 0) &&
+		(plane.c < 0 ? ceilingpic : floorpic) == skyflatnum;
+	const bool inLiquid = z <= floorz && P_HitFloor (this);
+	if (inLiquid || skyStop)
 	{
 		// Landed in some sort of liquid
-		if (BounceFlags & BOUNCE_ExplodeOnWater)
+		if (inLiquid && (BounceFlags & BOUNCE_ExplodeOnWater))
 		{
 			if (flags & MF_MISSILE)
 				P_ExplodeMissile(this, NULL, NULL);
@@ -1875,7 +1922,7 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 				Die(NULL, NULL);
 			return true;
 		}
-		if (!(BounceFlags & BOUNCE_CanBounceWater))
+		if (skyStop || !(BounceFlags & BOUNCE_CanBounceWater))
 		{
 			// [BB] Inform the clients.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -1907,7 +1954,8 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		velx -= MulScale15 (plane.a, dot);
 		vely -= MulScale15 (plane.b, dot);
 		velz -= MulScale15 (plane.c, dot);
-		angle = R_PointToAngle2 (0, 0, velx, vely);
+		if (!(BounceFlags & BOUNCE_KeepAngle))
+			angle = R_PointToAngle2 (0, 0, velx, vely);
 		if (!(BounceFlags & BOUNCE_MBF)) // Heretic projectiles die, MBF projectiles don't.
 		{
 			flags |= MF_INBOUNCE;
@@ -1923,8 +1971,13 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		velx = FixedMul (velx - MulScale15 (plane.a, dot), bouncefactor);
 		vely = FixedMul (vely - MulScale15 (plane.b, dot), bouncefactor);
 		velz = FixedMul (velz - MulScale15 (plane.c, dot), bouncefactor);
-		angle = R_PointToAngle2 (0, 0, velx, vely);
+		if (!(BounceFlags & BOUNCE_KeepAngle))
+			angle = R_PointToAngle2 (0, 0, velx, vely);
 	}
+
+	// [Doruk-Aksoy] uzdoom: +BOUNCEMODIFIESPITCH points along its new velocity.
+	if (BounceFlags & BOUNCE_ModifyPitch)
+		pitch = (int)FLOAT2ANGLE(zx::bounce::ComputeBouncePitch(FIXED2DBL(velx), FIXED2DBL(vely), FIXED2DBL(velz)));
 
 	PlayBounceSound(true);
 
@@ -2035,6 +2088,7 @@ bool AActor::CanSeek(AActor *target) const
 	if ((flags2 & MF2_DONTSEEKINVISIBLE) && 
 		((target->flags & MF_SHADOW) || 
 		 (target->renderflags & RF_INVISIBLE) || 
+		 (target->flags8 & MF8_MINVISIBLE) ||
 		 !target->RenderStyle.IsVisible(target->alpha)
 		)
 	   ) return false;
@@ -2242,7 +2296,8 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	if ((xmove | ymove) == 0)
 	{
-		if ( (mo->flags & MF_SKULLFLY)
+		// [Doruk-Aksoy] uzdoom: +NOAUTOOFFSKULLFLY keeps the charge on at rest (features/decorate-uzdoom).
+		if ( (mo->flags & MF_SKULLFLY) && !(mo->flags9 & MF9_NOAUTOOFFSKULLFLY)
 			 && ( NETWORK_InClientMode() == false ) )
 		{
 			// the skull slammed into something
@@ -2352,6 +2407,12 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	FCheckPosition tm(!!(mo->flags2 & MF2_RIP));
 
+	// [Doruk-Aksoy] features/swept-missiles: the leading steps that would only move the missile are skipped, and the move starts at the last of them.
+	if (zx::sweptmove::ComputeSweepPays(steps) && zx::sweptmove::Sweeps(mo, walkplane != NULL))
+	{
+		const int quiet = zx::sweptmove::QuietRunEndXY(mo, startx, starty, xmove, ymove, steps);
+		if (quiet >= 2) step = quiet;
+	}
 
 	do
 	{
@@ -3349,6 +3410,12 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 				}
 				// Let the actor do something special for hitting the floor
 				mo->HitFloor ();
+				// [Doruk-Aksoy] uzdoom: a +SMASHABLE actor dies landing, by the server (features/decorate-uzdoom).
+				if ((mo->flags7 & MF7_SMASHABLE) && !zx::net::InClientMode())
+				{
+					static const FName smash("Smash");
+					P_DamageMobj(mo, NULL, NULL, mo->health, smash);
+				}
 				if (mo->player)
 				{
 					// [BB] ZDoom changed the jumping here revision 2238.
@@ -3958,6 +4025,12 @@ bool AActor::Slam (AActor *thing)
 		return false;
 	}
 
+	// [Doruk-Aksoy] uzdoom: a +ONLYSLAMSOLID charger passes through what is neither solid nor shootable (features/decorate-uzdoom).
+	if ((flags8 & MF8_ONLYSLAMSOLID) && !(thing->flags & MF_SOLID) && !(thing->flags & MF_SHOOTABLE))
+	{
+		return true;
+	}
+
 	flags &= ~MF_SKULLFLY;
 	velx = vely = velz = 0;
 
@@ -3978,12 +4051,24 @@ bool AActor::Slam (AActor *thing)
 			// The charging monster may have died by the target's actions here.
 			if (health > 0)
 			{
-				// [BC] If we are the server, tell clients about the state change.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetThingState( this, SeeState != NULL ? STATE_SEE : STATE_IDLE );
+				// [Doruk-Aksoy] uzdoom: a Slam state of the class's own goes first, and +RETARGETAFTERSLAM goes idle instead of to See.
+				static const FName slamName("Slam");
+				FState *slam = FindState(slamName);
+				if (slam != NULL)
+				{
+					zx::netreplication::SendThingFrame(this, slam);
+					SetState (slam);
+				}
+				else
+				{
+					const bool see = SeeState != NULL && !(flags8 & MF8_RETARGETAFTERSLAM);
+					// [BC] If we are the server, tell clients about the state change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingState( this, see ? STATE_SEE : STATE_IDLE );
 
-				if (SeeState != NULL) SetState (SeeState);
-				else SetIdle();
+					if (see) SetState (SeeState);
+					else SetIdle();
+				}
 			}
 		}
 		else
@@ -4021,7 +4106,8 @@ bool AActor::AdjustReflectionAngle (AActor *thing, angle_t &angle)
 	if (thing->flags4&MF4_SHIELDREFLECT)
 	{
 		// Shield reflection (from the Centaur
-		if (absangle(angle - thing->angle)>>24 > 45)
+		// [Doruk-Aksoy] uzdoom: +NOSHIELDREFLECT missiles explode on a shield instead (features/decorate-uzdoom).
+		if ((flags7 & MF7_NOSHIELDREFLECT) || absangle(angle - thing->angle)>>24 > 45)
 			return true;	// Let missile explode
 
 		if (thing->IsKindOf (RUNTIME_CLASS(AHolySpirit)))	// shouldn't this be handled by another flag???
@@ -4430,9 +4516,11 @@ void AActor::Tick ()
 			else if (visdir < 0)
 			{
 				alpha -= 3*FRACUNIT/TICRATE/2;
-				if (alpha < 0)
+				// [Doruk-Aksoy] uzdoom@62afe5f0a9: StealthAlpha is how far it fades (features/decorate-uzdoom).
+				const fixed_t floorAlpha = zx::decorateuzdoom::StealthAlpha(this);
+				if (alpha < floorAlpha)
 				{
-					alpha = 0;
+					alpha = floorAlpha;
 					visdir = 0;
 				}
 			}
@@ -4723,7 +4811,8 @@ void AActor::Tick ()
 					zx::bounce::OnTop ontop = zx::bounce::OnTop::Land;
 					if (velz != 0 && (BounceFlags & BOUNCE_Actors))
 					{
-						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0);
+						// [MGOOOOOO] A ripper rips through what it can rip rather than exploding on it (OnTop::RipThrough: Cut Man's point-blank slices on MM8BDM).
+						ontop = zx::bounce::ComputeOnTopResult(P_BounceActor(this, onmo, true), (flags & MF_MISSILE) != 0, P_RipsThrough(this, onmo));
 					}
 					if (ontop == zx::bounce::OnTop::Explode)
 					{
@@ -4850,6 +4939,9 @@ void AActor::Tick ()
 				return;
 		}
 
+		// [Doruk-Aksoy] uzdoom@62afe5f0a9: MinRespawnTics and RespawnDice (features/decorate-uzdoom).
+		respawn_monsters = zx::decorateuzdoom::ComputeRespawnTics(respawn_monsters, zx::decorateuzdoom::MinRespawnTics(this), TICRATE);
+
 		movecount++;
 
 		if (movecount < respawn_monsters)
@@ -4858,7 +4950,7 @@ void AActor::Tick ()
 		if (level.time & 31)
 			return;
 
-		if (pr_nightmarerespawn() > 4)
+		if (pr_nightmarerespawn() > zx::decorateuzdoom::RespawnDice(this))
 			return;
 
 		P_NightmareRespawn (this);
@@ -4923,20 +5015,20 @@ void AActor::CheckSectorTransition(sector_t *oldsec)
 
 bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 {
-	BYTE lastwaterlevel = waterlevel;
+	// [Doruk-Aksoy] features/actor-layout: measured into a local, so a dry actor's water fields are only read.
+	int measured = 0;
 	fixed_t fh = FIXED_MIN;
 	bool reset=false;
 
-	waterlevel = 0;
-
 	if (Sector == NULL)
 	{
+		if (waterlevel != 0) waterlevel = 0;
 		return false;
 	}
 
 	if (Sector->MoreFlags & SECF_UNDERWATER)	// intentionally not SECF_UNDERWATERMASK
 	{
-		waterlevel = 3;
+		measured = 3;
 	}
 	else
 	{
@@ -4948,24 +5040,24 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 			{
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
 				else if (!(hsec->MoreFlags & SECF_FAKEFLOORONLY) && (z + height > hsec->ceilingplane.ZatPoint (x, y)))
 				{
-					waterlevel = 3;
+					measured = 3;
 				}
 				else
 				{
-					waterlevel = 0;
+					measured = 0;
 				}
 			}
 			// even non-swimmable deep water must be checked here to do the splashes correctly
@@ -4994,14 +5086,14 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 				fh=ff_top;
 				if (z < fh)
 				{
-					waterlevel = 1;
+					measured = 1;
 					if (z + height/2 < fh)
 					{
-						waterlevel = 2;
+						measured = 2;
 						if ((player && z + player->viewheight <= fh) ||
 							(z + height <= fh))
 						{
-							waterlevel = 3;
+							measured = 3;
 						}
 					}
 				}
@@ -5014,15 +5106,15 @@ bool AActor::UpdateWaterLevel (fixed_t oldz, bool dosplash)
 		
 	// some additional checks to make deep sectors like Boom's splash without setting
 	// the water flags. 
-	if (boomwaterlevel == 0 && waterlevel != 0 && dosplash) 
+	const WaterStore store = ComputeWaterStore(waterlevel, boomwaterlevel, measured, reset, dosplash);
+	if (store.splash)
 	{
+		// [Doruk-Aksoy] P_HitWater reads the measured level, as it did before the reset.
+		waterlevel = measured;
 		P_HitWater(this, Sector, FIXED_MIN, FIXED_MIN, fh, true);
 	}
-	boomwaterlevel = waterlevel;
-	if (reset)
-	{
-		waterlevel = lastwaterlevel;
-	}
+	if (boomwaterlevel != store.boom) boomwaterlevel = (BYTE)store.boom;
+	if (waterlevel != store.water) waterlevel = store.water;
 	return false;	// we did the splash ourselves
 }
 
@@ -5208,6 +5300,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 
 	// set subsector and/or block links
 	actor->LinkToWorld (SpawningMapThing);
+	if (!(actor->flags & MF_NOBLOCKMAP)) zx::sweptmove::BlockmapSpawns++;	// [Doruk-Aksoy] features/swept-missiles
 
 	actor->dropoffz =			// killough 11/98: for tracking dropoffs
 	actor->floorz = actor->Sector->floorplane.ZatPoint (ix, iy);
@@ -5297,6 +5390,7 @@ AActor *AActor::StaticSpawn (const PClass *type, fixed_t ix, fixed_t iy, fixed_t
 	if (!SpawningMapThing)
 	{
 		actor->BeginPlay ();
+		zx::cells::Refresh (actor);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 		if (actor->ObjectFlags & OF_EuthanizeMe)
 		{
 			g_SpawnCycles.Unclock();
@@ -5629,6 +5723,9 @@ void AActor::Destroy ()
 
 	// [Doruk-Aksoy] features/actormaterials: its own uniform values given back.
 	zx::actormaterials::ReleaseActor ( this );
+
+	// [Doruk-Aksoy] features/acs-handles: its handles go stale.
+	zx::acshandles::ReleaseActor ( this );
 
 	// [RH] Destroy any inventory this actor is carrying
 	DestroyAllInventory ();
@@ -6695,6 +6792,7 @@ AActor *P_SpawnMapThing (FMapThing *mthing, int position)
 		mobj->fillcolor = mthing->fillcolor;
 
 	mobj->BeginPlay ();
+	zx::cells::Refresh (mobj);	// [Doruk-Aksoy] features/blockmap-filter: BeginPlay may resize what it linked
 	if (!(mobj->ObjectFlags & OF_EuthanizeMe))
 	{
 		mobj->LevelSpawned ();
@@ -7482,6 +7580,7 @@ bool P_CheckMissileSpawn (AActor* th, fixed_t maxdist, bool bExplode, bool bClie
 		th->x += FLOAT2FIXED(advance.X);
 		th->y += FLOAT2FIXED(advance.Y);
 		th->z += FLOAT2FIXED(advance.Z);
+		zx::cells::Refresh (th);	// [Doruk-Aksoy] features/blockmap-filter: moved without relinking
 	}
 
 	FCheckPosition tm(!!(th->flags2 & MF2_RIP));

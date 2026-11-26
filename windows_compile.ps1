@@ -222,6 +222,12 @@ if ($env:ZX_MCP_BRIDGE -eq "1") {
     Write-Status "MCP bridge: ENABLED (dev build -- do not ship)"
     $bridgeArgs = @("-DFUA_MCP_BRIDGE=ON")
 }
+# [Doruk-Aksoy] Telemetry, seams and the dev-mode tools (docs/diagnostics.md) only in a test build (ZX_DIAGNOSTICS=1), passed OFF otherwise so a cached ON never reaches a public build.
+$diagArgs = @("-DFUA_DIAGNOSTICS=OFF")
+if ($env:ZX_DIAGNOSTICS -eq "1") {
+    Write-Status "diagnostics: ENABLED (test build - do not ship)"
+    $diagArgs = @("-DFUA_DIAGNOSTICS=ON")
+}
 # [rc4l] Ninja needs MSVC on PATH, which a plain PowerShell lacks, so the script enters Visual Studio's developer shell itself when it is not in one already (CI's is).
 if (-not $isVS -and -not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
@@ -254,7 +260,7 @@ $genArgs = @(if ($isVS) { "-A", "x64", "-T", "v143" } else { "-DCMAKE_CONFIGURAT
     "-DGLEW_INCLUDE_DIR=$dep/include" `
     "-DGLEW_LIBRARY=$($glewLib.FullName)" `
     "-DOPENSSL_ROOT_DIR=$dep" "-DOPENSSL_USE_STATIC_LIBS=ON" `
-    @symArgs @bridgeArgs | Tee-Object -FilePath $ConfigureLog
+    @symArgs @bridgeArgs @diagArgs | Tee-Object -FilePath $ConfigureLog
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
 # [rc4l] Instant replay is OPTIONAL to CMake -- without FFmpeg it compiles as a no-capture stub and

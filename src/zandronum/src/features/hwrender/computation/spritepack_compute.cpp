@@ -52,7 +52,45 @@ bool TwoValues(const float v[4], float &a, float &b)
 
 } // namespace
 
-bool ComputeSpritePack(const ScenePieceData &pd, const SpriteCorner corners[4], unsigned out[kSpriteWords])
+void ComputeSpriteMotionCorners(const SpriteCorner in[4], const SpriteMotion &m, float frac, float perpX, float perpY, float pitchDeg, SpriteCorner out[4])
+{
+	const float ang = -pitchDeg * 3.14159265358979323846f / 180.f;
+	ComputeSpriteMotionCornersCS(in, m, frac, perpX, perpY, std::cos(ang), std::sin(ang), out);
+}
+
+void ComputeSpriteMotionCornersCS(const SpriteCorner in[4], const SpriteMotion &m, float frac, float perpX, float perpY, float cs, float sn, SpriteCorner out[4])
+{
+	const float back = 1.f - frac;
+	const float sx = m.dx * back, sh = m.dh * back, sy = m.dy * back;
+	// [Doruk-Aksoy] One point turned about the tic centre and slid, as the shader does a corner and the middle.
+	auto turn = [&](float x, float y, float z, SpriteCorner &o) {
+		const float t = (x - m.cx) * m.px + (z - m.cy) * m.py;
+		o.x = m.cx + perpX * t - sx;
+		o.y = y - sh;
+		o.z = m.cy + perpY * t - sy;
+	};
+	for (int k = 0; k < 4; k++)
+	{
+		turn(in[k].x, in[k].y, in[k].z, out[k]);
+		out[k].u = in[k].u;
+		out[k].v = in[k].v;
+	}
+	if (!m.xy) return;
+	SpriteCorner mid = {};
+	turn((in[0].x + in[1].x + in[2].x + in[3].x) * 0.25f, (in[0].y + in[1].y + in[2].y + in[3].y) * 0.25f,
+		(in[0].z + in[1].z + in[2].z + in[3].z) * 0.25f, mid);
+	const float ax = perpX, az = perpY;
+	for (int k = 0; k < 4; k++)
+	{
+		const float vx = out[k].x - mid.x, vy = out[k].y - mid.y, vz = out[k].z - mid.z;
+		const float d = ax * vx + az * vz;
+		out[k].x = mid.x + vx * cs + (-az * vy) * sn + ax * d * (1.f - cs);
+		out[k].y = mid.y + vy * cs + (az * vx - ax * vz) * sn;
+		out[k].z = mid.z + vz * cs + (ax * vy) * sn + az * d * (1.f - cs);
+	}
+}
+
+bool ComputeSpritePack(const ScenePieceData &pd, const SpriteCorner corners[4], unsigned out[kSpriteWords], const SpriteMotion *motion)
 {
 	const float flood[8] = { pd.floodUx, pd.floodUy, pd.floodU0, pd.floodZ, pd.floodVx, pd.floodVy, pd.floodV0, pd.flood };
 	const float normal[3] = { pd.nx, pd.ny, pd.nz };
@@ -92,7 +130,11 @@ bool ComputeSpritePack(const ScenePieceData &pd, const SpriteCorner corners[4], 
 	out[24] = Bits(pd.actorR);
 	out[25] = Bits(pd.actorG);
 	out[26] = Bits(pd.actorB);
-	out[27] = 0;
+	out[27] = motion == nullptr ? 0u : motion->xy ? 3u : 1u;
+	const float m[7] = { motion ? motion->cx : 0.f, motion ? motion->cy : 0.f, motion ? motion->px : 0.f, motion ? motion->py : 0.f,
+		motion ? motion->dx : 0.f, motion ? motion->dh : 0.f, motion ? motion->dy : 0.f };
+	for (int i = 0; i < 7; i++) out[28 + i] = Bits(m[i]);
+	out[35] = 0;
 	return true;
 }
 
@@ -134,6 +176,11 @@ unsigned ComputeSpriteRef(unsigned wordOffset, int corner)
 unsigned ComputeGeneralRef(unsigned index)
 {
 	return index & 0x7fffffffu;
+}
+
+bool ComputePassDrawsRun(unsigned run, unsigned ticRuns, bool cameraPass)
+{
+	return !cameraPass || run >= ticRuns;
 }
 
 }} // namespace zx::hwrender

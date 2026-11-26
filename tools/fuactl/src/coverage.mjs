@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { pickCmake, compile } from "./shot.mjs";
+import { pickCmake, compile, TOOL_OUTPUT_LIMIT } from "./shot.mjs";
 
 // [rc4l] The units the tests gate: each test file's sibling .cpp and .h that exist.
 export function gatedUnits(testFiles, exists) {
@@ -107,7 +107,7 @@ export function runLlvmCoverage({ root, since, log = console.error }) {
   const units = unitsToGate(root, since).filter((u) => u.endsWith(".cpp"));
   log(`coverage: ${units.length} unit(s)`);
   if (!units.length) return { results: [], report: "none" };
-  const run = spawnSync("bash", ["tests/coverage.sh", "--enforce", ...units], { cwd: root, encoding: "utf8", maxBuffer: 1 << 26, env: coverageEnv(process.env) });
+  const run = spawnSync("bash", ["tests/coverage.sh", "--enforce", ...units], { cwd: root, encoding: "utf8", maxBuffer: TOOL_OUTPUT_LIMIT, env: coverageEnv(process.env) });
   const results = parseCoverageGate(`${run.stdout || ""}\n${run.stderr || ""}`);
   if (!results.length) throw new Error(`tests/coverage.sh gave no verdict:\n${(run.stderr || run.stdout || "").slice(-2000)}`);
   return { results, report: "tests/coverage.sh" };
@@ -125,7 +125,7 @@ export function runCoverage({ root, tool, since, log = console.error }) {
   const report = path.join(root, "build-tests", "coverage.xml");
   log(`coverage: ${units.length} unit(s), report ${report}`);
   const run = spawnSync(exe, ["--quiet", "--sources", src, "--export_type", `cobertura:${report}`, "--", tests, "--gtest_brief=1"],
-    { encoding: "utf8", maxBuffer: 1 << 26 });
+    { encoding: "utf8", maxBuffer: TOOL_OUTPUT_LIMIT });
   if (run.status !== 0) throw new Error(`the unit tests failed under coverage:\n${(run.stdout || "").slice(-2000)}${run.stderr || ""}`);
   const sources = {};
   const lineOf = (unit, n) => {

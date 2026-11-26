@@ -160,6 +160,12 @@ jobs:
       - name: Wire-carried enum snapshot
         run: python3 tools/wire-enum-snapshot.py --check
 
+      # [Doruk-Aksoy] Saves store flag words raw, so a DECORATE flag moved to another bit needs SAVEVER bumped and older saves remapped; this pins every flag's bit.
+      - name: Flag bit snapshot
+        run: |
+          python3 tools/flag_bits_snapshot_test.py
+          python3 tools/flag_bits_snapshot.py --check
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux; each test binary runs once (tests/run_all.py), not once per test as ctest starts it.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:
@@ -258,11 +264,16 @@ jobs:
       - name: MSVC developer shell
         uses: ilammy/msvc-dev-cmd@v1
 
+      # [Doruk-Aksoy] sccache pinned, since the cache action takes the latest release and v0.17.0 fails CMake's first compiler test.
+      - name: sccache
+        uses: ./.github/actions/sccache-pinned
+
       # [rc4l] Objects compiled by earlier runs of this job, so a run compiles what changed.
       - name: Compiler cache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: test-windows
+          install: "no"
           max-size: 300M
           variant: sccache
 

@@ -227,6 +227,18 @@ uint64_t FnvMixStr(uint64_t h, const std::string &s)
 	return h;
 }
 
+const std::vector<std::string> &ComputeFrameRandomStreams()
+{
+	static const std::vector<std::string> streams = { "TorchFlicker", "ProjDecal", "AnimatePics", "RandSound", "MugShot" };
+	return streams;
+}
+
+TiccmdSource ComputeTiccmdSource(bool demoPlayback, int paused, bool bridgeHoldsPause)
+{
+	if (!demoPlayback || paused < 0) return TiccmdSource::Local;
+	return (bridgeHoldsPause && paused != 0) ? TiccmdSource::Held : TiccmdSource::Demo;
+}
+
 long StepTarget(long currentLevelTime, int tics)
 {
 	if (tics < 1) tics = 1;

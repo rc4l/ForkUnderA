@@ -72,8 +72,31 @@ TEST(AcsArgCount, FunctionsThatCheckEveryArgumentAreNeverShort)
 
 TEST(AcsArgCount, IndicesNoFunctionHoldsAreNeverShort)
 {
-	const int indices[] = { -1, 0, 255, 256, 300, 19619, 19621, 30000 };
+	const int indices[] = { -1, 0, 255, 256, 302, 19619, 19621, 30000 };
 	for (int index : indices) EXPECT_EQ(ComputeShortCall(index, 0), nullptr) << index;
+}
+
+// [Doruk-Aksoy] UZDoom's MIN_ARG_COUNT for the functions features/acs-parity ports, GetLineX and GetLineY past the direct range.
+TEST(AcsArgCount, UZDoomParityFunctionsNeedUZDoomsMinimum)
+{
+	EXPECT_EQ(Needed(93), 2);    // [Doruk-Aksoy] GetMaxInventory
+	EXPECT_EQ(Needed(98), 3);    // [Doruk-Aksoy] CheckProximity
+	EXPECT_EQ(Needed(201), 6);   // [Doruk-Aksoy] DamageActor
+	EXPECT_EQ(Needed(215), 2);   // [Doruk-Aksoy] GetNetID
+	EXPECT_EQ(Needed(300), 3);   // [Doruk-Aksoy] GetLineX
+	EXPECT_EQ(Needed(301), 3);   // [Doruk-Aksoy] GetLineY
+}
+
+// [Doruk-Aksoy] features/acs-handles: each handle function reads its handle, and fua_HandlePointer its pointer too.
+TEST(AcsArgCount, HandleFunctionsNeedTheirArguments)
+{
+	EXPECT_EQ(Needed(24020), 1);
+	EXPECT_EQ(Needed(24021), 1);
+	EXPECT_EQ(Needed(24022), 2);
+	EXPECT_EQ(Needed(24023), 1);
+	EXPECT_EQ(Needed(24024), 0);
+	EXPECT_EQ(Needed(24030), 2);   // [Doruk-Aksoy] fua_GetField
+	EXPECT_EQ(Needed(24031), 3);   // [Doruk-Aksoy] fua_SetField
 }
 
 TEST(AcsArgCount, ZDaemonsGetTeamScoreIsFoundPastTheDirectRange)

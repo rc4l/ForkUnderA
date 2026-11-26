@@ -884,6 +884,8 @@ void NETWORK_Destruct( void )
 // [KI] Ported from zandronum@65c18dca9d3cd2a2f9624dc90daa56991ecac303: the contexts, the zstddict lump and its dictionary id, an invalid or missing lump reported and compression running without one.
 static void network_InitZstd( void )
 {
+	// [Doruk-Aksoy] A restart builds them in net_zstd_level's callback before NETWORK_Construct builds them again, so the held ones go first.
+	network_DestructZstd( );
 	g_zstdCctx = ZSTD_createCCtx( );
 	g_zstdDctx = ZSTD_createDCtx( );
 

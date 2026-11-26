@@ -1700,6 +1700,7 @@ add_executable( zdoom WIN32
 	features/rendersettings/computation/mapoptions_compute.cpp
 	features/levelprep/levelprep.cpp
 	features/gldefs/gldefs.cpp
+	features/trnslate/trnslate.cpp
 	features/gldefs/glow.cpp
 	features/fakeflat/fakeflat.cpp
 	features/models/modeldef.cpp
@@ -1744,6 +1745,14 @@ add_executable( zdoom WIN32
 	features/bspgrid/bspgrid.cpp
 	features/acs-shaders/acsshaders.cpp
 	features/actormaterials/actormaterials.cpp
+	features/acsvec/acsvec.cpp
+	features/acs-funcrefs/acsfuncrefs.cpp
+	features/acs-parity/acsparity.cpp
+	features/decorate-uzdoom/decorateexpr.cpp
+	features/decorate-uzdoom/uservars.cpp
+	features/acs-handles/acshandles.cpp
+	features/acs-fields/acsfields.cpp
+	features/acs-random/acsrandom.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp
@@ -1757,12 +1766,10 @@ add_executable( zdoom WIN32
 	features/frame/debugorbit.cpp
 	features/aimassist/aimassist.cpp
 	features/framephase/framephase.cpp
+	features/crash-summary/crashsummary.cpp
 	features/frame-limit/framelimit.cpp
 	features/dynres/dynres.cpp
 	features/dynres/displayrefresh.cpp
-	features/telemetry/telemetry.cpp
-	features/telemetry/allocwatch.cpp
-	features/telemetry/census.cpp
 	features/mainloop/mainloop.cpp
 	features/display/display.cpp
 	features/hwrender/backendvideo.cpp
@@ -1902,6 +1909,9 @@ add_executable( zdoom WIN32
 	features/speedometer/speedometer.cpp
 	features/crosshair/crosshair.cpp
 	features/monster-stairs/monsterstairs.cpp
+	features/swept-missiles/sweptmove.cpp
+	features/blockmap-filter/cellarrays.cpp
+	features/actor-layout/actorprefetch.cpp
 	features/damage-taken/damagetaken.cpp
 	features/net-transport/netconditions.cpp
 	features/net-transport/recvthread.cpp
@@ -1917,6 +1927,7 @@ add_executable( zdoom WIN32
 	features/net-client/rejoin.cpp
 	features/dev-mode/devmode.cpp
 	features/latency/latency.cpp
+	features/dtoa-lock/dtoalock.cpp
 	zzautozend.cpp
 )
 
@@ -2183,7 +2194,7 @@ endif()
 # The probe is the only consumer today; it proves the library links and a device creates in-process.
 if( FUA_DILIGENT )
 	# [rc4l] The sources that include Diligent's headers, listed once for the build and the C++17 flag below.
-	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dggpuload.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgatlas.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp features/hwrender/diligent/dgpostprocess.cpp )
+	set( FUA_DILIGENT_SOURCES features/hwrender/diligent/dgprobe.cpp features/hwrender/diligent/dgmemory.cpp features/hwrender/diligent/dggputimer.cpp features/hwrender/diligent/dggpuload.cpp features/hwrender/diligent/dgdevice_vk.cpp features/hwrender/diligent/dgdevice_wgpu.cpp features/hwrender/diligent/dgwindow.cpp features/hwrender/diligent/dgscene.cpp features/hwrender/diligent/dg2d.cpp features/hwrender/diligent/dglights.cpp features/hwrender/diligent/dgsky.cpp features/hwrender/diligent/dgskyportal.cpp features/hwrender/diligent/dgskylooks.cpp features/hwrender/diligent/dgpipelines.cpp features/hwrender/diligent/dgdynamic.cpp features/hwrender/diligent/dgmodelgeo.cpp features/hwrender/diligent/dgatlas.cpp features/hwrender/diligent/dgupload.cpp features/hwrender/diligent/dgviews.cpp features/hwrender/diligent/dgviewtargets.cpp features/hwrender/diligent/dgcamera.cpp features/hwrender/diligent/dgframe.cpp features/hwrender/diligent/dgdiag.cpp features/hwrender/diligent/dgdecals.cpp features/hwrender/diligent/dghorizon.cpp features/hwrender/diligent/dgtexture.cpp features/hwrender/diligent/dgtarget.cpp features/hwrender/diligent/dgwipe.cpp features/hwrender/diligent/dglines.cpp features/hwrender/diligent/dgstereo.cpp features/hwrender/diligent/dgpostprocess.cpp )
 	# [rc4l] Each platform's window for it: Win32, Cocoa with a Metal layer through MoltenVK, or SDL2 on X11 and Wayland.
 	if( EMSCRIPTEN )
 		# [rc4l] The browser's canvas, drawn on through WebGPU alone.
@@ -2242,6 +2253,12 @@ if( FUA_DILIGENT )
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsAccessories/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Graphics/GraphicsTools/interface"
 		"${CMAKE_SOURCE_DIR}/../../deps/DiligentCore/Primitives/interface" )
+endif()
+
+# [Doruk-Aksoy] The telemetry registry, allocation tracking and census only in a diagnostics build; without them telemetry.h's calls are inline no-ops.
+if( FUA_DIAGNOSTICS )
+	target_sources( zdoom PRIVATE features/telemetry/telemetry.cpp features/telemetry/allocwatch.cpp features/telemetry/census.cpp )
+	target_compile_definitions( zdoom PRIVATE FUA_DIAGNOSTICS )
 endif()
 
 if( FUA_MCP_BRIDGE )

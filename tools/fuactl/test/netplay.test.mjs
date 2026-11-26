@@ -1,6 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble, setCrash, memberName } from "../src/netplay.mjs";
+import { serverArgs, clientArgs, clientCvars, perClient, clientRoles, clientPlaying, launchNetplay, addClient, joinThroughBrowser, seamViolations, fillMisses, replicationMisses, fireUntilDead, joinGame, closeNetplay, netplaySession, netplayOptionsFromFlags, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, writeNetplaySession, readNetplaySession, connectionTrouble, withTrouble, setCrash, memberName, gamePortFor, assertGamePort, readEngineLog } from "../src/netplay.mjs";
+
+// [Doruk-Aksoy] A server that found its game port taken binds the next one up, so its clients would join whichever engine holds the asked one.
+test("a server that bound another game port than it was asked for stops the set, and a game port follows its bridge port", async () => {
+  assert.equal(gamePortFor(NETPLAY_BRIDGE_PORT), NETPLAY_GAME_PORT);
+  assert.equal(gamePortFor(7891), 10891);
+  const fell = "NETWORK_Construct: Couldn't bind to 10840. Binding to 10841 instead...\r\nIP address 127.0.0.1:10841\r\n";
+  assert.throws(() => assertGamePort(fell, 10840), /game port 10840 is held by another engine \(this server bound 10841 instead\)/);
+  assert.doesNotThrow(() => assertGamePort(fell, 10950), "another port's fallback is not this server's");
+  assert.doesNotThrow(() => assertGamePort("IP address 127.0.0.1:10840\r\n", 10840));
+  assert.doesNotThrow(() => assertGamePort(undefined, 10840));
+  assert.equal(readEngineLog({}), "");
+  assert.equal(readEngineLog({ log: "/nowhere/engine.log" }), "");
+  const f = fakes();
+  await assert.rejects(launchNetplay({ players: 1, basePort: 7900, gamePort: 10840 }, { ...f.deps, readLog: () => fell }), /held by another engine/);
+  assert.equal(f.launched.length, 1, "no client is launched against a server on the wrong port");
+  assert.deepEqual(f.stopped, [7900]);
+  assert.equal(netplayOptionsFromFlags({ port: "7891" }).gamePort, 10891);
+  assert.equal(netplayOptionsFromFlags({ port: "7891", "game-port": "10999" }).gamePort, 10999);
+});
 
 test("a client's log gives the reason it never got in, and an error carries it", () => {
   assert.equal(connectionTrouble("Connecting to 127.0.0.1:10840\r\nToo many connections from your IP.\r\nupdate check"), "Too many connections from your IP.");

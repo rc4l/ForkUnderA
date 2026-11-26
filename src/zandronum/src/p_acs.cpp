@@ -117,6 +117,14 @@
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the cosmetic events route
 #include "features/net-replication/actorstate.h"   // [rc4l] SendThingProperty
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] CallActorMaterialFunction
+#include "features/acsvec/acsvec.h"   // [Doruk-Aksoy] CallVecFunction
+#include "features/acs-funcrefs/acsfuncrefs.h"   // [Doruk-Aksoy] PushFunctionRef, ResolveFunctionRef
+#include "features/decorate-uzdoom/uservars.h"
+#include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
+#include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] actor handles, fua_ 24020-24023
+#include "features/acs-fields/acsfields.h"   // [Doruk-Aksoy] field access by name, fua_ 24030-24031
+#include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] named random streams, fua_ 24070-24072
+#include "features/acs-random/computation/random_compute.h"
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -1069,6 +1077,8 @@ void P_ClearACSVars(bool alsoglobal)
 		// Since we cleared all ACS variables, we know nothing refers to them
 		// anymore.
 		GlobalACSStrings.Clear();
+		// [Doruk-Aksoy] features/acs-handles: nor to any handle, so the table starts over.
+		zx::acshandles::ResetTable();
 
 		// [BB] When the global vars are cleared, our query handles surely shouldn't
 		// be needed anymore. So clear them in case mods forgot to do so.
@@ -1582,21 +1592,7 @@ static int UseInventory (AActor *activator, const char *type)
 
 static int CheckInventory (AActor *activator, const char *type)
 {
-	if (activator == NULL || type == NULL)
-		return 0;
-
-	if (stricmp (type, "Armor") == 0)
-	{
-		type = "BasicArmor";
-	}
-	else if (stricmp (type, "Health") == 0)
-	{
-		return activator->health;
-	}
-
-	const PClass *info = PClass::FindClass (type);
-	AInventory *item = activator->FindInventory (info);
-	return item ? item->Amount : 0;
+	return zx::acsparity::InventoryAmount(activator, type, false);
 }
 
 //============================================================================
@@ -2365,6 +2361,7 @@ FBehavior::FBehavior (int lumpnum, FileReader * fr, int len)
 	Data = NULL;
 	Format = ACS_Unknown;
 	LumpNum = lumpnum;
+	LibraryOrdinal = zx::acsfuncrefs::LibraryOrdinalOf (lumpnum);
 	memset (MapVarStore, 0, sizeof(MapVarStore));
 	ModuleName[0] = 0;
 	FunctionProfileData = NULL;
@@ -3913,9 +3910,13 @@ void DLevelScript::Serialize (FArchive &arc)
 	arc << ClipRectLeft << ClipRectTop << ClipRectWidth << ClipRectHeight
 		<< WrapWidth;
 	arc << InModuleScriptNumber;
+	// [Doruk-Aksoy] features/acs-random: found again by the script's number, as starting it found it, so savegames keep their layout.
+	if (arc.IsLoading())
+		fua_clientside = ACS_IsScriptClientSide(script);
 }
 
 DLevelScript::DLevelScript ()
+	: fua_clientside (false)
 {
 	next = prev = NULL;
 	if (DACSThinker::ActiveThinker == NULL)
@@ -5159,6 +5160,23 @@ void DLevelScript::DoSetActorProperty (AActor *actor, int property, int value)
 			SERVERCOMMANDS_SetThingProperty( actor, APROP_Friction );
 		break;
 
+	// [Doruk-Aksoy] uzdoom@1d286d5bd5, sent to clients when it changed since they move their own pawn and walking monsters through P_TryMove.
+	case APROP_MaxStepHeight:
+	case APROP_MaxDropOffHeight:
+	{
+		fixed_t &height = property == APROP_MaxStepHeight ? actor->MaxStepHeight : actor->MaxDropOffHeight;
+		const fixed_t oldHeight = height;
+		height = value;
+		if ( oldHeight != height )
+			zx::netreplication::SendThingProperty( actor, property );
+		break;
+	}
+
+	// [Doruk-Aksoy] uzdoom@d09ec5a930, kept on the server since only it deals damage.
+	case APROP_DamageType:
+		actor->DamageType = FBehavior::StaticLookupString(value);
+		break;
+
 	default:
 		// do nothing.
 		break;
@@ -5277,6 +5295,9 @@ int DLevelScript::GetActorProperty (int tid, int property)
 	case APROP_DamageMultiplier: return actor->DamageMultiply.Raw();	// [rc4l] uzdoom@99b2cfa14
 	case APROP_StencilColor:return actor->fillcolor;
 	case APROP_Friction:	return (int)(actor->Friction);
+	case APROP_MaxStepHeight:	return (int)(actor->MaxStepHeight);
+	case APROP_MaxDropOffHeight:	return (int)(actor->MaxDropOffHeight);
+	case APROP_DamageType:	return GlobalACSStrings.AddString(actor->DamageType.GetChars());
 
 	default:				return 0;
 	}
@@ -5325,6 +5346,8 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_MeleeRange:
 		case APROP_ViewHeight:
 		case APROP_AttackZOffset:
+		case APROP_MaxStepHeight:
+		case APROP_MaxDropOffHeight:
 		case APROP_StencilColor:
 		case APROP_MvType:
 		case APROP_IsCrouchSliding:
@@ -5354,6 +5377,7 @@ int DLevelScript::CheckActorProperty (int tid, int property, int value)
 		case APROP_ActiveSound:	string = actor->ActiveSound; break; 
 		case APROP_Species:		string = actor->GetSpecies(); break;
 		case APROP_NameTag:		string = actor->GetTag(); break;
+		case APROP_DamageType:	string = actor->DamageType.GetChars(); break;
 	}
 	if (string == NULL) string = "";
 	return (!stricmp(string, FBehavior::StaticLookupString(value)));
@@ -5483,6 +5507,12 @@ int DLevelScript::GetPlayerInput(int playernum, int inputnum)
 	{
 		p = &players[playernum];
 	}
+	return P_PlayerInputValue(p, inputnum);
+}
+
+// [Doruk-Aksoy] One of a player's INPUT_ or MODINPUT_ values, shared by ACS GetPlayerInput and DECORATE's (uzdoom@62afe5f0a9).
+int P_PlayerInputValue(player_t *p, int inputnum)
+{
 	if (p == NULL)
 	{
 		return 0;
@@ -5733,9 +5763,13 @@ enum EACSFunctions
 
 	// [BB] Out of order ZDoom backport.
 	ACSF_Warp = 92,
+	// [Doruk-Aksoy] features/acs-parity: UZDoom's functions at UZDoom's numbers, uzdoom@c51abb0161.
+	ACSF_GetMaxInventory = 93,
 
 	// [Doruk-Aksoy] uzdoom@a1e8d83724: out of order, at upstream's number, which ACC compiles SetMusicVolume to (-97).
 	ACSF_SetMusicVolume = 97,
+	ACSF_CheckProximity,		// [Doruk-Aksoy] 98, uzdoom@6633e41cca
+	ACSF_CheckActorState,		// [Doruk-Aksoy] 99, uzdoom@df4a8e38c5
 
 	/* Zandronum's - these must be skipped when we reach 99!
 	-100:ResetMap(0),
@@ -5747,8 +5781,23 @@ enum EACSFunctions
 	-106 : KickFromGame(2),
 	*/
 
+	// [Doruk-Aksoy] features/acs-parity: uzdoom@3299a29c44 (CheckClass), d7b5bdc0f7 (DamageActor).
+	ACSF_CheckClass = 200,
+	ACSF_DamageActor = 201,
 	// [BB] Out of order ZDoom backport.
 	ACSF_GetActorFloorTexture = 204,
+	// [Doruk-Aksoy] uzdoom@85488f2f30 (GetActorFloorTerrain), f82ab889b2 (StrArg), 1ff4016498 (Floor, Round, Ceil).
+	ACSF_GetActorFloorTerrain = 205,
+	ACSF_StrArg = 206,
+	ACSF_Floor = 207,
+	ACSF_Round = 208,
+	ACSF_Ceil = 209,
+	// [Doruk-Aksoy] uzdoom@f5ceaafbbc.
+	ACSF_GetNetID = 215,
+	ACSF_SetActivatorByNetID = 216,
+	// [Doruk-Aksoy] Eternity's, uzdoom@3a569f176d.
+	ACSF_GetLineX = 300,
+	ACSF_GetLineY = 301,
 
 	// [BB] Skulltag functions
 	ACSF_ResetMap = 100,
@@ -5867,9 +5916,30 @@ enum EACSFunctions
 	ACSF_fua_SetActorUniform3f,
 	ACSF_fua_SetActorUniform4f,
 	ACSF_fua_SetActorUniform1i,			// (int tid, str uniform, int x)
+	// [Doruk-Aksoy] features/acsvec: what zt-bcc compiles vector length, unit, dot and cross to.
+	ACSF_fua_Vec,						// (operands..., int channel, int op)
+	// [Doruk-Aksoy] features/acs-handles: an actor named by a handle rather than a tid.
+	ACSF_fua_GetActorHandle = 24020,	// (int tid [, int aaptr])
+	ACSF_fua_HandleValid,				// (int h)
+	ACSF_fua_HandlePointer,				// (int h, int aaptr)
+	ACSF_fua_SetActivatorHandle,		// (int h)
+	// [Doruk-Aksoy] features/acs-fields: an actor's DECORATE fields by name.
+	ACSF_fua_GetField = 24030,			// (int h, str name [, int index])
+	ACSF_fua_SetField,					// (int h, str name, int value [, int index])
+	// [Doruk-Aksoy] features/acs-random: named random streams, apart from the one Random() draws on.
+	ACSF_fua_Random = 24070,			// (str stream, int min, int max)
+	ACSF_fua_FRandom,					// (str stream, fixed min, fixed max)
+	ACSF_fua_SetRandomSeed,				// (str stream, int seed)
 };
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
+static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
+static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF_fua_SetActivatorHandle == zx::acshandles::kSetActivatorHandle, "the fua_ handle functions keep their numbers");
+static_assert(ACSF_fua_GetField == zx::acsfields::kGetField && ACSF_fua_SetField == zx::acsfields::kSetField, "the fua_ field functions keep their numbers");
+static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
+static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
+	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
+	&& ACSF_GetLineY == zx::acsparity::kGetLineY, "UZDoom's functions keep UZDoom's numbers");
 static_assert(ACSF_fua_SetActorMaterial == zx::actormaterials::kSetActorMaterial && ACSF_fua_SetActorUniform1i == zx::actormaterials::kSetActorUniform1i, "the fua_ actor material functions keep their numbers");
 
 int DLevelScript::SideFromID(int id, int side)
@@ -5904,65 +5974,25 @@ int DLevelScript::LineFromID(int id)
 	}
 }
 
+// [Doruk-Aksoy] A float user variable reads and writes as 16.16, as UZDoom's (features/decorate-uzdoom).
 static void SetUserVariable(AActor *self, FName varname, int index, int value)
 {
-	PSymbol *sym = self->GetClass()->Symbols.FindSymbol(varname, true);
-	int max;
-	PSymbolVariable *var;
-
-	if (sym == NULL || sym->SymbolType != SYM_Variable ||
-		!(var = static_cast<PSymbolVariable *>(sym))->bUserVar)
-	{
+	const zx::decorateuzdoom::UserVarSlot slot = zx::decorateuzdoom::FindUserVar(self, varname, zx::decorateuzdoom::kUserVarEither, index);
+	if (slot.miss != zx::decorateuzdoom::kUserVarFound)
 		return;
-	}
-	if (var->ValueType.Type == VAL_Int)
-	{
-		max = 1;
-	}
-	else if (var->ValueType.Type == VAL_Array && var->ValueType.BaseType == VAL_Int)
-	{
-		max = var->ValueType.size;
-	}
+	if (slot.isFloat)
+		zx::decorateuzdoom::StoreUserVar(slot, zx::decorateuzdoom::ComputeUserVarFromAcs(value));
 	else
-	{
-		return;
-	}
-	// Set the value of the specified user variable.
-	if (index >= 0 && index < max)
-	{
-		((int *)(reinterpret_cast<BYTE *>(self) + var->offset))[index] = value;
-	}
+		zx::decorateuzdoom::StoreUserVar(slot, value);
 }
 
 static int GetUserVariable(AActor *self, FName varname, int index)
 {
-	PSymbol *sym = self->GetClass()->Symbols.FindSymbol(varname, true);
-	int max;
-	PSymbolVariable *var;
-
-	if (sym == NULL || sym->SymbolType != SYM_Variable ||
-		!(var = static_cast<PSymbolVariable *>(sym))->bUserVar)
-	{
+	const zx::decorateuzdoom::UserVarSlot slot = zx::decorateuzdoom::FindUserVar(self, varname, zx::decorateuzdoom::kUserVarEither, index);
+	if (slot.miss != zx::decorateuzdoom::kUserVarFound)
 		return 0;
-	}
-	if (var->ValueType.Type == VAL_Int)
-	{
-		max = 1;
-	}
-	else if (var->ValueType.Type == VAL_Array && var->ValueType.BaseType == VAL_Int)
-	{
-		max = var->ValueType.size;
-	}
-	else
-	{
-		return 0;
-	}
-	// Get the value of the specified user variable.
-	if (index >= 0 && index < max)
-	{
-		return ((int *)(reinterpret_cast<BYTE *>(self) + var->offset))[index];
-	}
-	return 0;
+	const double value = zx::decorateuzdoom::LoadUserVar(slot);
+	return slot.isFloat ? zx::decorateuzdoom::ComputeUserVarToAcs(value) : int(value);
 }
 
 // Converts fixed- to floating-point as required.
@@ -6025,47 +6055,57 @@ static int DoGetCVar(FBaseCVar *cvar, bool is_string)
 	}
 }
 
-static int GetUserCVar(int playernum, const char *cvarname, bool is_string)
+// [Doruk-Aksoy] The player's own copy of a userinfo cvar, or NULL when there is none to read.
+static FBaseCVar *FindUserCVar(int playernum, const char *cvarname)
 {
 	if ((unsigned)playernum >= MAXPLAYERS || !playeringame[playernum])
 	{
-		return 0;
+		return NULL;
 	}
 	FBaseCVar **cvar_p = players[playernum].userinfo.CheckKey(FName(cvarname, true));
-	FBaseCVar *cvar;
-	if (cvar_p == NULL || (cvar = *cvar_p) == NULL || (cvar->GetFlags() & CVAR_IGNORE))
+	if (cvar_p == NULL || *cvar_p == NULL || ((*cvar_p)->GetFlags() & CVAR_IGNORE))
 	{
-		return 0;
+		return NULL;
 	}
-	return DoGetCVar(cvar, is_string);
+	return *cvar_p;
 }
 
-static int GetCVar(AActor *activator, const char *cvarname, bool is_string)
+static int GetUserCVar(int playernum, const char *cvarname, bool is_string)
+{
+	FBaseCVar *cvar = FindUserCVar(playernum, cvarname);
+	return cvar != NULL ? DoGetCVar(cvar, is_string) : 0;
+}
+
+// [Doruk-Aksoy] The cvar ACS GetCVar reads for an activator, a userinfo one being the activator's player's, shared with DECORATE's GetCVar.
+FBaseCVar *P_FindScriptCVar(AActor *activator, const char *cvarname)
 {
 	FBaseCVar *cvar = FindCVar(cvarname, NULL);
 	// Either the cvar doesn't exist, or it's for a mod that isn't loaded, so return 0.
 	if (cvar == NULL || (cvar->GetFlags() & CVAR_IGNORE))
 	{
-		return 0;
+		return NULL;
 	}
-	else
+	// For userinfo cvars, redirect to GetUserCVar
+	if (cvar->GetFlags() & CVAR_USERINFO)
 	{
-		// For userinfo cvars, redirect to GetUserCVar
-		if (cvar->GetFlags() & CVAR_USERINFO)
+		if (activator == NULL || activator->player == NULL)
 		{
-			if (activator == NULL || activator->player == NULL)
-			{
-				// [BB] Compatibility with Zandronum 2.x: In CLIENTSIDE scripts,
-				// return the value belonging to the consoleplayer
-				if ( NETWORK_InClientMode() ) 
-					return GetUserCVar(consoleplayer, cvarname, is_string);
+			// [BB] Compatibility with Zandronum 2.x: In CLIENTSIDE scripts,
+			// return the value belonging to the consoleplayer
+			if ( NETWORK_InClientMode() ) 
+				return FindUserCVar(consoleplayer, cvarname);
 
-				return 0;
-			}
-			return GetUserCVar(int(activator->player - players), cvarname, is_string);
+			return NULL;
 		}
-		return DoGetCVar(cvar, is_string);
+		return FindUserCVar(int(activator->player - players), cvarname);
 	}
+	return cvar;
+}
+
+static int GetCVar(AActor *activator, const char *cvarname, bool is_string)
+{
+	FBaseCVar *cvar = P_FindScriptCVar(activator, cvarname);
+	return cvar != NULL ? DoGetCVar(cvar, is_string) : 0;
 }
 
 static int SetUserCVar(int playernum, const char *cvarname, int value, bool is_string)
@@ -7463,6 +7503,47 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 		case ACSF_fua_SetActorUniform4f:
 		case ACSF_fua_SetActorUniform1i:
 			return zx::actormaterials::CallActorMaterialFunction( activator, funcIndex, args, argCount );
+
+		case ACSF_fua_Vec:
+			return zx::acsvec::CallVecFunction( activeBehavior, args, argCount );
+
+		// [Doruk-Aksoy] features/acs-handles: tid 0 is the activator, and an aaptr follows a pointer first, as SetActivator does.
+		case ACSF_fua_GetActorHandle:
+			actor = SingleActorFromTID( args[0], activator );
+			if ( argCount > 1 )
+				actor = COPY_AAPTR( actor, args[1] );
+			return zx::acshandles::HandleFor( actor );
+
+		case ACSF_fua_HandleValid:
+			return zx::acshandles::ActorOf( args[0] ) != NULL;
+
+		case ACSF_fua_HandlePointer:
+			actor = zx::acshandles::ActorOf( args[0] );
+			return actor != NULL ? zx::acshandles::HandleFor( COPY_AAPTR( actor, args[1] )) : 0;
+
+		// [Doruk-Aksoy] A stale handle keeps the activator the script had.
+		case ACSF_fua_SetActivatorHandle:
+			actor = zx::acshandles::ActorOf( args[0] );
+			if ( actor == NULL )
+				return 0;
+			activator = actor;
+			return 1;
+
+		// [Doruk-Aksoy] features/acs-fields: reads any DECORATE field, writes only user_ variables, which stay on this machine as SetUserVariable's do.
+		case ACSF_fua_GetField:
+			return zx::acsfields::GetField( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 2 ? args[2] : 0 );
+
+		case ACSF_fua_SetField:
+			return zx::acsfields::SetField( zx::acshandles::ActorOf( args[0] ), FBehavior::StaticLookupString( args[1] ), argCount > 3 ? args[3] : 0, args[2] );
+		// [Doruk-Aksoy] features/acs-random: a stream by name, a CLIENTSIDE script's apart.
+		case ACSF_fua_Random:
+			return zx::acsrandom::Random( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1], args[2] );
+
+		case ACSF_fua_FRandom:
+			return zx::acsrandom::FixedRandom( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1], args[2] );
+
+		case ACSF_fua_SetRandomSeed:
+			return zx::acsrandom::SetSeed( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1] );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:
@@ -9466,6 +9547,70 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 			break;
 		}
 
+		// [Doruk-Aksoy] features/acs-parity: UZDoom's functions, numbered and answering as UZDoom's do.
+		case ACSF_GetMaxInventory:
+			return zx::acsparity::InventoryAmount(SingleActorFromTID(args[0], activator), FBehavior::StaticLookupString(args[1]), true);
+
+		case ACSF_CheckProximity:
+			return zx::acsparity::CheckProximity(SingleActorFromTID(args[0], activator), FBehavior::StaticLookupString(args[1]), args[2],
+				argCount >= 4 ? args[3] : 1, argCount >= 5 ? args[4] : 0, argCount >= 6 ? args[5] : AAPTR_DEFAULT);
+
+		case ACSF_CheckActorState:
+		{
+			actor = SingleActorFromTID(args[0], activator);
+			const char *statename = FBehavior::StaticLookupString(args[1]);
+			return actor != NULL && statename != NULL && actor->GetClass()->ActorInfo->FindStateByString(statename, argCount > 2 && args[2] != 0) != NULL;
+		}
+
+		case ACSF_CheckClass:
+			return zx::acsparity::IsActorClass(FBehavior::StaticLookupString(args[0]));
+
+		case ACSF_DamageActor:
+		{
+			// [Doruk-Aksoy] (target, its pointer, inflictor, its pointer, amount, damage type), what P_DamageMobj gives back.
+			AActor *target = COPY_AAPTR(SingleActorFromTID(args[0], activator), args[1]);
+			AActor *inflictor = COPY_AAPTR(SingleActorFromTID(args[2], activator), args[3]);
+			// [Doruk-Aksoy] A client's P_DamageMobj takes the health off a synced actor and keeps it, so a CLIENTSIDE script gets its -1 without that.
+			if (target != NULL && !zx::acsparity::ComputeClientMayDamage(zx::net::InClientMode(), (target->NetworkFlags & NETFL_CLIENTSIDEONLY) != 0))
+				return -1;
+			return P_DamageMobj(target, inflictor, inflictor, args[4], FName(FBehavior::StaticLookupString(args[5])));
+		}
+
+		case ACSF_GetActorFloorTerrain:
+			actor = SingleActorFromTID(args[0], activator);
+			return GlobalACSStrings.AddString(actor != NULL ? zx::acsparity::FloorTerrainName(actor) : "");
+
+		case ACSF_StrArg:
+			return -FName(FBehavior::StaticLookupString(args[0])).GetIndex();
+
+		case ACSF_Floor:
+			return zx::acsparity::ComputeFixedFloor(args[0]);
+
+		case ACSF_Round:
+			return zx::acsparity::ComputeFixedRound(args[0]);
+
+		case ACSF_Ceil:
+			return zx::acsparity::ComputeFixedCeil(args[0]);
+
+		case ACSF_GetNetID:
+			actor = zx::acsparity::NthActorFromTID(args[0], args[1], activator);
+			if (argCount > 2)
+				actor = COPY_AAPTR(actor, args[2]);
+			return actor != NULL ? actor->NetID : 0;
+
+		case ACSF_SetActivatorByNetID:
+			actor = zx::acsparity::ActorFromNetID(args[0]);
+			if (argCount > 1)
+				actor = COPY_AAPTR(actor, args[1]);
+			if (actor == NULL)
+				return 0;
+			activator = actor;
+			return 1;
+
+		case ACSF_GetLineX:
+		case ACSF_GetLineY:
+			return zx::acsparity::LineCoord(args[0], funcIndex - ACSF_GetLineX, args[1], args[2]);
+
 		default:
 			break;
 	}
@@ -9904,8 +10049,8 @@ int DLevelScript::RunScript ()
 		case PCD_PUSHFUNCTION:
 		{
 			int funcnum = NEXTBYTE;
-			// Not technically a string, but since we use the same tagging mechanism
-			PushToStack(TAGSTR(funcnum));
+			// [Doruk-Aksoy] features/acs-funcrefs: a library's function is named by its home library, so every module's reference to it is the same and lasts across maps.
+			PushToStack(zx::acsfuncrefs::PushFunctionRef(activeBehavior, funcnum));
 			break;
 		}
 		case PCD_CALL:
@@ -9919,11 +10064,16 @@ int DLevelScript::RunScript ()
 
 				if(pcd == PCD_CALLSTACK)
 				{
-					funcnum = STACK(1);
-					module = FBehavior::StaticGetModule(funcnum>>LIBRARYID_SHIFT);
+					const int ref = STACK(1);
 					--sp;
-
-					funcnum &= 0xFFFF; // Clear out tag
+					// [Doruk-Aksoy] features/acs-funcrefs: a reference into a module this map does not hold stops the script rather than calling another module's function.
+					module = zx::acsfuncrefs::ResolveFunctionRef(ref, funcnum);
+					if (module == NULL)
+					{
+						zx::acsfuncrefs::PrintMissingFunction(ref, ScriptPresentation(script).GetChars());
+						state = SCRIPT_PleaseRemove;
+						break;
+					}
 				}
 				else
 				{
@@ -11550,7 +11700,6 @@ scriptwait:
 					{
 						static const char bar[] = TEXTCOLOR_ORANGE "\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
 					"\36\36\36\36\36\36\36\36\36\36\36\36\37" TEXTCOLOR_NORMAL "\n";
-						static const char logbar[] = "\n<------------------------------->\n";
 						char consolecolor[3];
 
 						consolecolor[0] = '\x1c';
@@ -11560,6 +11709,7 @@ scriptwait:
 						AddToConsole (-1, consolecolor);
 						AddToConsole (-1, work);
 						AddToConsole (-1, bar);
+						C_LogMidMessage (work);
 					}
 				}
 			}
@@ -13521,6 +13671,8 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 		new DACSThinker;
 
 	script = num;
+	// [Doruk-Aksoy] features/acs-random: taken here, as activeBehavior later follows the script into a library's functions.
+	fua_clientside = ACS_IsScriptClientSide(code);
 	assert(code->VarCount >= code->ArgCount);
 	numlocalvars = code->VarCount;
 	localvars = new SDWORD[code->VarCount];
