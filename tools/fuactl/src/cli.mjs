@@ -41,6 +41,7 @@ import { runCoverage, runLlvmCoverage } from "./coverage.mjs";
 import * as netplay from "./netplay.mjs";
 import * as netdiffMod from "./netdiff.mjs";
 import * as netcap from "./netcap.mjs";
+import { runUzdoom, logFileIn } from "./uzdoom.mjs";
 import { changeSince, commentIssues } from "./comments.mjs";
 import { machinePatterns, patternsPath, privacyIssues } from "./privacy.mjs";
 import { runTracker } from "./tracker.mjs";
@@ -189,6 +190,7 @@ const USAGE = `fuactl <command>
   sector-of --pixel x,y [--side gl|vk] [--spot S | --at --face] [--port P]   which sector's colour that pixel of a capture follows, found by painting halves of the map red and green (fua_sector_color); the sectors stay painted
   travel --to MAP [--max N] [--port P]   nextmap until the instance is on MAP, pressing use through each intermission, the way a player reached it
   quit [--port P] [--token T] [--park]   quit an instance (else the last play session) and wait until its port closes; one that refuses (no token) and whose launcher is gone is stopped as \`reap --kill\` would; exit 1 if it would not go; --park files its camera, wads and renderer first
+  uzdoom --map M --chain "wait 35;puke 1;wait 35;quit" [--file a.pk3] [--out DIR]   run a UZDoom build (FUACTL_UZDOOM, else UZDoom-build/Release beside the repo) on a map, its window never activated, muted, on a config of its own, and print where its log and screenshots went; exit 1 when it logged nothing
   session [--instances N] [--seed S] [--map M] [--tics T]   run the determinism + desync check
   perf-ab [--seed S] [--map M] [--spawn CLS] [--count N] [--frames F]   deterministic perf ablation (baseline vs perturbation, causal ms delta + sim/render verdict)
   gl-timers --port P [--token T] [--frames N] [--warmup M]   GPU render profiling: per-pass GPU ms (scene/translucent/hud2d) of a running instance
@@ -585,6 +587,15 @@ async function main() {
         saveQueue(closed);
         console.log(formatItem(closed.items.find((x) => x.id === Number(words[0]))));
       } else { console.error(usage); process.exit(2); }
+      break;
+    }
+    case "uzdoom": {
+      // [Doruk-Aksoy] UZDoom side by side: the run's folder holds its log (log-uzdoom.txt) and any screenshots the chain took.
+      const dir = flags.out ? path.resolve(String(flags.out)) : fs.mkdtempSync(path.join(os.tmpdir(), "fuactl-uzdoom-"));
+      const log = runUzdoom({ pk3: flags.file ? path.resolve(String(flags.file)) : undefined, map: String(flags.map || "MAP01"),
+        chain: String(flags.chain || "wait 70;screenshot;wait 35;quit"), dir, tries: 1 });
+      console.log(log ? `logged ${log.split("\n").length} lines: ${logFileIn(dir)}` : `UZDoom logged nothing in ${dir}`);
+      process.exitCode = log ? 0 : 1;
       break;
     }
     // [rc4l] `fuactl quit` -- stop an instance by its token and wait for its port to close, where a bare console quit left no way to tell it had gone.

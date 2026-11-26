@@ -138,6 +138,20 @@ Tag it `zandronum@<node>` (`provenance-links`).
 7. Commit per verified step, plain messages, no attribution (user's global rules). Do not merge
    WIP branches; draft PRs are the CI vehicle.
 
+## Checking against UZDoom itself
+
+A port's behaviour is checked against a running UZDoom, not only its code: a scenario's pk3 runs in
+both, and each side's log is judged. `fuactl uzdoom --file a.pk3 --map MAP01 --chain "wait 35;puke 1;wait 35;quit"`
+runs a UZDoom build (`FUACTL_UZDOOM`, else `UZDoom-build/Release/uzdoom.exe` beside the repository) with
+its window never activated, muted, on a fresh config, and prints where its log went; `src/uzdoom.mjs`
+(`runUzdoom`, `uzdoomScreenshot`) does the same for a harness; `tools/fuactl/uzdoom/` holds the light,
+model and OBJ harnesses and its README the results so far. Three traps it handles: UZDoom's `wait` only
+delays the rest of its own string, so the chain is one string; `+logfile` takes a bare name and writes
+`log-<name>.txt` in the working directory (a path prints "Could not start log"), so UZDoom runs in the
+output folder; and UZDoom stops its game while its window isn't active, so every run sets
+`+i_pauseinbackground 0`. Never puke a script that crashes UZDoom (acsparity's
+script 2, DamageActor on a missing tid): its crash dialog lands on the user's screen.
+
 ## Hard prohibitions
 
 - No ZScript VM code compiled into the engine, ever (`docs/zscript-insulation.md`).
