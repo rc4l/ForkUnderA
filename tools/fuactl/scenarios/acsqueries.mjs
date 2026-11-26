@@ -15,31 +15,33 @@ export const FN = { ...HANDLES, GetField: 24030, QueryCreate: 24040, QueryFree: 
 export const FQ = { CLASS: 1, NOTCLASS: 2, ALIVE: 3, DEAD: 4, MONSTER: 5, PLAYER: 6, MISSILE: 7, SHOOTABLE: 8, FLAG: 9, TID: 10, FRIENDLY: 11,
   HOSTILE: 12, SIGHT: 13, EXCLUDE: 14, FLAT: 15, EDGES: 16, NONE: 0, NEAREST: 32, FARTHEST: 33 };
 const TAGS = ["q1", "c1", "c2", "l1", "h1", "x1", "s1", "s2", "n1"];
-export const STRINGS = [...TAGS, " ", "tid", "ExplosiveBarrel", "Clip", "Ammo", "BulletPuff", "SHOOTABLE", "NOSUCHFLAG", "NoSuchClass"];
+// [Doruk-Aksoy] q0 and q2 are netacsqueries' own.
+export const STRINGS = [...TAGS, " ", "tid", "ExplosiveBarrel", "Clip", "Ammo", "BulletPuff", "SHOOTABLE", "NOSUCHFLAG", "NoSuchClass", "q0", "q2"];
 const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 // [Doruk-Aksoy] Things by tid: barrels A-E (E on a platform, D in a closed room), a zombieman, a killed and a live imp, two friends in D's room, a clip.
 export const TID = { A: 11, B: 12, C: 13, D: 14, E: 15, ZOMBIE: 21, DEADIMP: 22, FRIEND1: 23, FRIEND2: 24, IMP: 25, CLIP: 26, PUFF: 30 };
 // [Doruk-Aksoy] Globals: the player's, E's and the first friend's handles, then each script's query ids and the resume flag.
-const G = { PLAYER: 0, E: 1, FRIEND1: 2, Q: 3, HELD: 4, RESUME: 5, Q2: 7, SAVED: 8, FREED: 9 };
+export const G = { PLAYER: 0, E: 1, FRIEND1: 2, Q: 3, HELD: 4, RESUME: 5, Q2: 7, SAVED: 8, FREED: 9 };
 const LSPEC3 = 6, GT = 22;
 
 const fx = (n) => n * 65536;
-const fn = (name, ...args) => callFunc(FN[name], args);
-const global = (n) => [PCD.PUSHGLOBALVAR, n];
-const keep = (n, words) => [...words, PCD.ASSIGNGLOBALVAR, n];
-const run = (...calls) => calls.flatMap((c) => [...c, PCD.DROP]);
+export const fn = (name, ...args) => callFunc(FN[name], args);
+export const global = (n) => [PCD.PUSHGLOBALVAR, n];
+export const keep = (n, words) => [...words, PCD.ASSIGNGLOBALVAR, n];
+export const run = (...calls) => calls.flatMap((c) => [...c, PCD.DROP]);
 const tidOf = (h) => fn("GetField", h, S.tid);
-const find = (q, x, y, z, r) => fn("FindActors", q, fx(x), fx(y), fx(z), fx(r));
+export const find = (q, x, y, z, r) => fn("FindActors", q, fx(x), fx(y), fx(z), fx(r));
 const ofClass = (q, cls, ...rest) => fn("FindActorsOfClass", q, S[cls], ...rest);
-const filter = (q, ...args) => fn("QueryFilter", q, ...args);
+export const filter = (q, ...args) => fn("QueryFilter", q, ...args);
 
 function logWords(tag, values) {
   return [PCD.BEGINPRINT, PCD.PUSHNUMBER, S[tag], PCD.PRINTSTRING,
     ...values.flatMap((v) => [PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, ...v, PCD.PRINTNUMBER]), PCD.ENDLOG];
 }
-const logScript = (tag, values, before = [], after = []) => [...before, ...logWords(tag, values), ...after, PCD.TERMINATE];
+export const logScript = (tag, values, before = [], after = []) => [...before, ...logWords(tag, values), ...after, PCD.TERMINATE];
 
-const q = global(G.Q), q2 = global(G.Q2), BIG = [1024, 512, 0, 4000], ROOM1 = [512, 512, 0, 2000];
+const q = global(G.Q), q2 = global(G.Q2), BIG = [1024, 512, 0, 4000];
+export const ROOM1 = [512, 512, 0, 2000];
 
 export const SCRIPTS = {
   // [Doruk-Aksoy] Handles kept for the filters, and the imp killed so a corpse is on the map.
@@ -107,7 +109,8 @@ export function waitingScript() {
   return s.words(0);
 }
 
-export function buildAcsQueriesPk3() {
+// [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map, as netacsqueries' CLIENTSIDE copies, own step and player starts do.
+export function buildAcsQueriesPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
   const room = m.room(0, 0, 1024, 1024, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.block(800, 600, 900, 700, { ...ROOM, heightfloor: 200 }, room, () => ({ texturebottom: "STARTAN2" }));
@@ -122,8 +125,9 @@ export function buildAcsQueriesPk3() {
   m.thing({ x: 1300, y: 200, angle: 90, type: THING.Zombieman, id: TID.FRIEND1, friend: true });
   m.thing({ x: 1500, y: 200, angle: 90, type: THING.Zombieman, id: TID.FRIEND2, friend: true });
   m.thing({ x: 600, y: 150, angle: 0, type: THING.Clip, id: TID.CLIP });
-  const scripts = [{ code: waitingScript(), type: SCRIPT.CLOSED, number: 6 },
-    ...Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) }))];
+  withMap(m);
+  const scripts = withScripts([{ code: waitingScript(), type: SCRIPT.CLOSED, number: 6 },
+    ...Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) }))]);
   return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) }]);
 }
 
@@ -140,18 +144,18 @@ export const WANT = {
   n1: [1],
 };
 
-// [Doruk-Aksoy] What is wrong with each log: the values that differ from WANT, by index; null in WANT means any positive value.
-export function judgeQueries(logs) {
+// [Doruk-Aksoy] What is wrong with each log: the values that differ from `want` (WANT, or a scenario's own tags and answers), by index; null means any positive value and undefined a value not judged.
+export function judgeQueries(logs, want = WANT) {
   const faults = [];
-  for (const [tag, want] of Object.entries(WANT)) {
+  for (const [tag, values] of Object.entries(want)) {
     const got = logged(logs[tag], tag);
     if (!got) { faults.push(`script ${tag} logged nothing (${String(logs[tag]).trim().slice(0, 100)})`); continue; }
-    want.forEach((w, i) => {
-      if (w === null ? !(got[i] > 0) : got[i] !== w) faults.push(`${tag}[${i}] is ${got[i]}, not ${w === null ? "an id" : w}`);
+    values.forEach((w, i) => {
+      if (w !== undefined && (w === null ? !(got[i] > 0) : got[i] !== w)) faults.push(`${tag}[${i}] is ${got[i]}, not ${w === null ? "an id" : w}`);
     });
   }
   const warnings = (String(logs.l1).match(FULL_WARNING) || []).length;
-  if (warnings !== 1) faults.push(`a full script warned ${warnings} times, not once`);
+  if ("l1" in want && warnings !== 1) faults.push(`a full script warned ${warnings} times, not once`);
   return faults;
 }
 

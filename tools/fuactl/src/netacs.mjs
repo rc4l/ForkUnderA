@@ -68,21 +68,30 @@ export async function runSteps(set, steps, { on = set.clients, by = set.clients[
   return logs;
 }
 
-// [Doruk-Aksoy] A scenario's judgeNetplay: `steps` on every machine, then a late joiner and `late` on it alone, each machine's faults from `judge(logs, member)`;
-// `by` "player" runs them from the first client, its pawn the activator, and "server" from the server's console.
-export function netJudge({ steps, late = [], judge, passed, by = "player" }, deps = {}) {
+// [Doruk-Aksoy] A scenario's judgeNetplay: `steps` on every machine, then a late joiner and `late` on it alone, then `after` on every machine with it, each
+// machine's output merged over the rounds and its faults from `judge(logs, member)`; `by` "player" runs them from the first client, its pawn the activator,
+// and "server" from the server's console.
+export function netJudge({ steps, late = [], after = [], judge, passed, by = "player" }, deps = {}) {
   const { join = addClient, waitTics = cap.waitTics, run = runSteps } = deps;
   return async (set, label) => {
     await waitTics(set.server.c, 35);
     const runner = by === "server" ? set.server : set.clients[0];
-    const faults = judgeEach(await run(set, steps, { by: runner }), judge);
-    if (late.length) {
+    const rounds = [await run(set, steps, { by: runner })];
+    if (late.length || after.length) {
       const joiner = await join(set, { role: "latejoin" });
       await waitTics(set.server.c, 35);
-      faults.push(...judgeEach(await run(set, late, { on: [joiner], server: false, by: runner }), judge));
+      if (late.length) rounds.push(await run(set, late, { on: [joiner], server: false, by: runner }));
+      if (after.length) rounds.push(await run(set, after, { by: runner }));
     }
-    return result(label, faults, passed);
+    return result(label, judgeEach(mergeLogs(rounds), judge), passed);
   };
+}
+
+// [Doruk-Aksoy] Each machine's output over several rounds of runSteps, merged by tag.
+export function mergeLogs(rounds) {
+  const out = new Map();
+  for (const logs of rounds) for (const [m, l] of logs) out.set(m, { ...(out.get(m) || {}), ...l });
+  return out;
 }
 
 // [Doruk-Aksoy] `role`'s answer for `key` from a scenario's per-machine answers, else `fallback`; "client" stands for every client's role.

@@ -34,3 +34,7 @@ ACS actor queries: actors found in the blockmap or by class, filtered, sorted an
   inventory out and finding a `NOBLOCKMAP` puff, a result whose actor went, 16 queries and one warning,
   another script's and a freed id, and a script waiting mid-loop across a savegame, with the id counter
   surviving a new game and the load. It fails with `ReadIds` taken out.
+- `fuactl scenarios netacsqueries`: the blockmap and class queries, the cap and a held query as CLIENTSIDE
+  copies on the player's client, an observer and a late joiner, then on the server, each in its own world
+  with its own ids; `FQ_PLAYER` finds every player in the game. Leaving the imp's `SVC_KILLTHING` unsent
+  (`fua_debug_netdrop=55`) fails the clients' alive and dead filters.
