@@ -20,6 +20,9 @@ void AppendActor(const zx::gamecopy::ActorRecord &thing, const void *viewActor, 
 // [rc4l] The blasts still alive at this tic as wireframe into `dest`, when explosions are shown at all.
 void CollectBlasts(TArray<Vertex3> &dest);
 
+// [MGOOOOOO] The boxes of the one-tic actors the frame's tic had into `physical` and `attack`, when they are shown at all.
+void CollectTicBoxes(TArray<Vertex3> &physical, TArray<Vertex3> &attack);
+
 }} // namespace zx::hitboxviz
 
 #endif // ZX_HITBOXVIZ_INTERNAL_H

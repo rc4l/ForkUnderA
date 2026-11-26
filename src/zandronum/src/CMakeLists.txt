@@ -1689,8 +1689,8 @@ add_executable( zdoom WIN32
 	features/panel-menu/panelmenu.cpp
 	features/panel-menu/computation/panelmenu_compute.cpp
 	features/hitboxviz/hitboxviz.cpp
+	features/hitboxviz/ticboxgame.cpp
 	features/hitboxviz/computation/boxedges_compute.cpp
-	features/hitboxviz/computation/blastrecords_compute.cpp
 	features/hitboxviz/computation/vizgate_compute.cpp
 	features/levelmesh/levelmesh.cpp
 	features/levelmesh/wallcache.cpp
