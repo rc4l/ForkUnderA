@@ -31,7 +31,7 @@ struct Scanned
 	int sightAsks;
 };
 
-Scanned Scan(const std::vector<Candidate>& all, double distance, int count, int flags)
+Scanned Scan(const std::vector<Candidate>& all, double distance, int count, int flags, bool counting = false)
 {
 	size_t at = 0;
 	int asks = 0;
@@ -45,11 +45,22 @@ Scanned Scan(const std::vector<Candidate>& all, double distance, int count, int 
 		return true;
 	};
 	const auto sight = [&](const Candidate* c) { ++asks; return c->visible; };
-	const ProximityScan<const Candidate*> scan = ComputeProximityScan<const Candidate*>(next, sight, ref, distance, count, flags);
+	const ProximityScan<const Candidate*> scan = ComputeProximityScan<const Candidate*>(next, sight, ref, distance, count, flags, counting);
 	return { scan.result, scan.chosen, asks };
 }
 
 } // namespace
+
+// [Doruk-Aksoy] Counting, as CountProximity, scans past count and answers how many counted.
+TEST(AcsParity, ProximityCountingAnswersHowManyCounted)
+{
+	const std::vector<Candidate> all = { { 10, 0, 0, false, true }, { 20, 0, 0, false, true }, { 30, 0, 0, true, true },
+		{ 500, 0, 0, false, true } };
+	EXPECT_EQ(Scan(all, 100, 0, 0, true).result, 2);
+	EXPECT_EQ(Scan(all, 100, 0, kCpxCountDead, true).result, 3);
+	EXPECT_EQ(Scan(all, 0, 0, 0, true).result, 0);
+	EXPECT_EQ(Scan(all, 100, 0, 0, false).result, 1);
+}
 
 // [Doruk-Aksoy] Compiled mods hold UZDoom's numbers (src/playsim/p_acs.cpp, EACSFunctions).
 TEST(AcsParity, FunctionNumbersAreUZDooms)

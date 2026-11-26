@@ -372,9 +372,9 @@ bool ComputePaletteSpanFits(int start, int count)
 	return start >= 0 && start <= 255 && last >= 0 && last <= 255;
 }
 
-SetTranslationOutcome ComputeSetTranslationOutcome(bool nameEmpty, bool found)
+SetTranslationOutcome ComputeSetTranslationOutcome(bool resetToDefault, bool found)
 {
-	if (nameEmpty) return kSetTranslationDefault;
+	if (resetToDefault) return kSetTranslationDefault;
 	return found ? kSetTranslationFound : kSetTranslationKeep;
 }
 

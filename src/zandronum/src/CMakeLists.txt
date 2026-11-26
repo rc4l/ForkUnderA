@@ -1748,6 +1748,8 @@ add_executable( zdoom WIN32
 	features/acsvec/acsvec.cpp
 	features/acs-funcrefs/acsfuncrefs.cpp
 	features/acs-parity/acsparity.cpp
+	features/decorate-uzdoom/decorateexpr.cpp
+	features/decorate-uzdoom/uservars.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp
 	features/sprites/pspritebuild.cpp

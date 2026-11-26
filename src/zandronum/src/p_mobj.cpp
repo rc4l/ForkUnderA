@@ -30,6 +30,8 @@
 
 // [BB] network.h has to be included before stats.h under Linux.
 // The reason should be investigated.
+#include "features/decorate-uzdoom/classprops.h"
+#include "features/decorate-uzdoom/computation/decorateprops_compute.h"
 #include "network.h"
 
 #include "templates.h"
@@ -4443,9 +4445,11 @@ void AActor::Tick ()
 			else if (visdir < 0)
 			{
 				alpha -= 3*FRACUNIT/TICRATE/2;
-				if (alpha < 0)
+				// [Doruk-Aksoy] uzdoom@62afe5f0a9: StealthAlpha is how far it fades (features/decorate-uzdoom).
+				const fixed_t floorAlpha = zx::decorateuzdoom::StealthAlpha(this);
+				if (alpha < floorAlpha)
 				{
-					alpha = 0;
+					alpha = floorAlpha;
 					visdir = 0;
 				}
 			}
@@ -4864,6 +4868,9 @@ void AActor::Tick ()
 				return;
 		}
 
+		// [Doruk-Aksoy] uzdoom@62afe5f0a9: MinRespawnTics and RespawnDice (features/decorate-uzdoom).
+		respawn_monsters = zx::decorateuzdoom::ComputeRespawnTics(respawn_monsters, zx::decorateuzdoom::MinRespawnTics(this), TICRATE);
+
 		movecount++;
 
 		if (movecount < respawn_monsters)
@@ -4872,7 +4879,7 @@ void AActor::Tick ()
 		if (level.time & 31)
 			return;
 
-		if (pr_nightmarerespawn() > 4)
+		if (pr_nightmarerespawn() > zx::decorateuzdoom::RespawnDice(this))
 			return;
 
 		P_NightmareRespawn (this);

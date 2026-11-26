@@ -92,6 +92,33 @@ DEFINE_MEMBER_VARIABLE(height, AActor)
 DEFINE_MEMBER_VARIABLE(radius, AActor)
 DEFINE_MEMBER_VARIABLE(reactiontime, AActor)
 DEFINE_MEMBER_VARIABLE(meleerange, AActor)
+// [Doruk-Aksoy] uzdoom@62afe5f0a9 actor.zs: the four-byte fields UZDoom's DECORATE reads that ours did not (features/decorate-uzdoom).
+DEFINE_MEMBER_VARIABLE(threshold, AActor)
+DEFINE_MEMBER_VARIABLE(FloatSpeed, AActor)
+DEFINE_MEMBER_VARIABLE(tics, AActor)
+DEFINE_MEMBER_VARIABLE(gravity, AActor)
+DEFINE_MEMBER_VARIABLE(floorclip, AActor)
+DEFINE_MEMBER_VARIABLE(bouncefactor, AActor)
+DEFINE_MEMBER_VARIABLE(wallbouncefactor, AActor)
+DEFINE_MEMBER_VARIABLE(bouncecount, AActor)
+DEFINE_MEMBER_VARIABLE(DamageFactor, AActor)
+DEFINE_MEMBER_VARIABLE(DamageMultiply, AActor)
+DEFINE_MEMBER_VARIABLE(MaxStepHeight, AActor)
+DEFINE_MEMBER_VARIABLE(MaxDropOffHeight, AActor)
+DEFINE_MEMBER_VARIABLE(projectilepassheight, AActor)
+DEFINE_MEMBER_VARIABLE(PainThreshold, AActor)
+DEFINE_MEMBER_VARIABLE(Friction, AActor)
+DEFINE_MEMBER_VARIABLE(meleethreshold, AActor)
+DEFINE_MEMBER_VARIABLE(maxtargetrange, AActor)
+DEFINE_MEMBER_VARIABLE(DesignatedTeam, AActor)
+DEFINE_MEMBER_VARIABLE(lastpush, AActor)
+DEFINE_MEMBER_VARIABLE(lastbump, AActor)
+DEFINE_MEMBER_VARIABLE(weaponspecial, AActor)
+DEFINE_MEMBER_VARIABLE(StartHealth, AActor)
+DEFINE_MEMBER_VARIABLE(PoisonDamage, AActor)
+DEFINE_MEMBER_VARIABLE(PoisonDuration, AActor)
+DEFINE_MEMBER_VARIABLE(PoisonPeriod, AActor)
+DEFINE_MEMBER_VARIABLE(skillrespawncount, AActor)
 // [MGOOOOOO] Ripper state, so DECORATE can branch on how much a ripper has spent
 // (features/ripper). RipperDamageDone only advances on the server; see the feature README.
 DEFINE_MEMBER_VARIABLE(RipperLevel, AActor)
@@ -2402,10 +2429,10 @@ FxExpression *FxArrayElement::Resolve(FCompileContext &ctx)
 	}
 
 	ValueType = Array->ValueType.GetBaseType();
-	if (ValueType != VAL_Int)
+	// [Doruk-Aksoy] Float user arrays too, as UZDoom's (features/decorate-uzdoom).
+	if (ValueType != VAL_Int && ValueType != VAL_Float)
 	{
-		// int arrays only for now
-		ScriptPosition.Message(MSG_ERROR, "Only integer arrays are supported.");
+		ScriptPosition.Message(MSG_ERROR, "Only integer and float arrays are supported.");
 		delete this;
 		return NULL;
 	}
@@ -2421,7 +2448,7 @@ FxExpression *FxArrayElement::Resolve(FCompileContext &ctx)
 
 ExpVal FxArrayElement::EvalExpression (AActor *self)
 {
-	int * arraystart = Array->EvalExpression(self).GetPointer<int>();
+	char * arraystart = Array->EvalExpression(self).GetPointer<char>();
 	int indexval = index->EvalExpression(self).GetInt();
 
 	if (indexval < 0 || indexval >= Array->ValueType.size)
@@ -2431,8 +2458,16 @@ ExpVal FxArrayElement::EvalExpression (AActor *self)
 
 	ExpVal ret;
 
-	ret.Int = arraystart[indexval];
-	ret.Type = VAL_Int;
+	if (ValueType == VAL_Float)
+	{
+		ret.Float = ((double *)arraystart)[indexval];
+		ret.Type = VAL_Float;
+	}
+	else
+	{
+		ret.Int = ((int *)arraystart)[indexval];
+		ret.Type = VAL_Int;
+	}
 	return ret;
 }
 
@@ -2513,6 +2548,12 @@ FxExpression *FxFunctionCall::Resolve(FCompileContext& ctx)
 			return NULL;
 		}
 		FxExpression *x = FxGlobalFunctionCall::StaticCreate(MethodName, ArgList, ScriptPosition);
+		// [Doruk-Aksoy] An unknown name gives no call, which was resolved through a null pointer; its arguments are this call's still.
+		if (x == NULL)
+		{
+			delete this;
+			return NULL;
+		}
 		ArgList = NULL;
 		delete this;
 		return x->Resolve(ctx);

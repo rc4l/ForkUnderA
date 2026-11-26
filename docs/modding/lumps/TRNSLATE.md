@@ -32,32 +32,13 @@ A malformed range is printed and skipped.
 ### Using it
 
 - `Translation "Name"`: the actor's default translation.
-- `A_SetTranslation (name transname)` (**Actor**): sets the actor's translation by name. `""` restores
-  its class's translation, and so does `"None"`. A name that is not defined is ignored without a message.
+- `A_SetTranslation (name transname)` (**Actor**): sets the actor's translation by name. `"None"` removes
+  the actor's translation, and so does `""`, as in UZDoom's DECORATE. A name that is not defined is ignored
+  without a message.
+- `A_fua_ResetTranslation ()` (**Actor**, **ZandroX only**): gives the actor its class's translation back.
+  UZDoom's DECORATE has no way to ask for this; its ZScript does it with `A_SetTranslation('')`.
 
-### Clearing a translation
-
-> **Differs from UZDoom.** In UZDoom, `A_SetTranslation("None")` removes the actor's translation. Here it
-> restores the class's translation, the same as `""`.
-
-ZandroX's DECORATE parser passes an empty string to an action as the name `None`. By the time
-`A_SetTranslation` runs, `""` and `"None"` are the same value, so it cannot tell them apart.
-`Thing_SetTranslation(tid, 0)` also restores the class's translation rather than clearing it.
-
-To show an actor without its class's translation, define a translation that changes nothing and switch
-to it:
-
-```
-// TRNSLATE
-Untranslated = "1:1=1:1"
-```
-
-```
-	BOSS H 0 A_SetTranslation("Untranslated")
-```
-
-The entry must not touch palette index 0. A range that includes index 0 makes that colour transparent,
-which an actor with no translation does not do.
+`Thing_SetTranslation(tid, 0)` restores the class's translation, as in UZDoom.
 
 ## Examples
 
@@ -76,7 +57,7 @@ actor BlueBaron : BaronOfHell replaces BaronOfHell
 	Pain:
 		BOSS H 2 A_SetTranslation("DarkBaron")
 		BOSS H 2 A_Pain
-		BOSS H 0 A_SetTranslation("")
+		BOSS H 0 A_fua_ResetTranslation
 		Goto See
 	}
 }
