@@ -127,6 +127,11 @@ test("the seam report counts the seams entered and takes the total violations, n
   assert.deepEqual([clean.walked, clean.differed, clean.first, clean.sites], [1, 0, "", []]);
   assert.equal(parseSeamReport("1 violations, the first in sound/channels on the main thread in S_StartSound:1234; 0 locks").first, "sound/channels (main, S_StartSound:1234)");
   assert.equal(parseSeamReport("Unknown command").found, false);
+  // [Kaori-Chani] The registry's size closes the summary, which must still read from its start.
+  const counted = parseSeamReport("copy/fill  handoff  3 entries  0 violations\n"
+    + "0 violations; 0 locks taken while holding another; 0 seams declared with a second owner;"
+    + " 1 seams declared in all");
+  assert.deepEqual([counted.found, counted.walked, counted.differed], [true, 1, 0]);
 });
 
 test("the HUD check pauses at the picture tic and the half second before it", () => {
