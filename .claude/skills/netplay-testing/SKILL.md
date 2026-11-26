@@ -74,7 +74,8 @@ server tick stalled by `fua_debug_server_stall_ms`) and `farhitscan` (a pistol a
 shot's client trace against the server's, what the observer holds) and `netmapchange` (`changemap` through the
 intermission, each client's own `reconnect`, then `map`, each judged on the accounts, playing, the world and a
 kill) and `netmusic` (ACS `SetMusic` and `SetMusicVolume` from the server, the song and volume the player and a
-late joiner after each hear, and each one's music cache, from a wad and from a deflated pk3). `fireUntilDead` holds a client's fire on the first live actor of a class and `joinGame` waits a join out. A config's `maps` limits it to those maps, and its `wad`
+late joiner after each hear, and each one's music cache, from a wad and from a deflated pk3) and `netjoinstomp`
+(joiners spawning onto starts that monsters hold, each corpse the telefrag threw held where the server stopped it). `fireUntilDead` holds a client's fire on the first live actor of a class and `joinGame` waits a join out. A config's `maps` limits it to those maps, and its `wad`
 (a wad or a pk3 buffer, such as udmf.mjs's `pk3(files, { deflate: true })` writes as mods ship them) replaces the
 scenario's file for it. After each judge it fails an instance
 whose netcode seams another thread entered (`fua_seams`), a client whose render copy missed a change its change

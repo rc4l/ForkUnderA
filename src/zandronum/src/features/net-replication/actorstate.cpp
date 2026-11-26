@@ -59,6 +59,13 @@ void SendThingFrame(AActor *actor, FState *state)
 	if (actor != NULL && state != NULL && zx::net::IsServer()) SERVERCOMMANDS_SetThingFrame(actor, state);
 }
 
+void SendBlockedStop(AActor *actor, bool wasMoving)
+{
+	// [Doruk-Aksoy] Whole, not trimmed: the place it stopped at is the one last sent, which a client that moved on is no longer at.
+	if (actor != NULL && zx::net::IsServer() && ComputeSendsBlockedStop(actor->player != NULL, wasMoving))
+		SERVERCOMMANDS_MoveThingExactWhole(actor, CM_X | CM_Y | CM_VELX | CM_VELY);
+}
+
 // [rc4l] Ported from zandronum@7d12f80d364050901f782f5e013f780956202611: the send P_SpawnPuff made, on its own so a rail sends its puff once the puff survived the sky.
 void SendPuff(AActor *puff, AActor *source, unsigned state, int flags)
 {
