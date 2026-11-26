@@ -71,7 +71,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `computation/mapstate_compute.{h,cpp}` (the families, what changed, what a compact send covered) with its
   `_test.cpp`.
 - `mapstate.{h,cpp}` (the snapshots, the touched rows, the audit, the joiner, `fua_net_replication`).
-- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`, `SendFloorClip`, `SendThingProperty`, `SendThingTranslation`, `SendPuff`).
+- `computation/actorstate_compute.{h,cpp}` with its `_test.cpp`, and `actorstate.{h,cpp}` (`NoteDamaged`, `SendWoundedHealth`, `SendFloorClip`, `SendThingProperty`, `SendThingTranslation`, `SendThingFrame`, `SendPuff`).
 - `playerstate.{h,cpp}` (`SendUserCVar`, `SendSelectedInventory`).
 - `rotation.{h,cpp}` (`SendMapUsedStatus`).
 
@@ -85,6 +85,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
 - `p_acs.cpp` `SetActorProperty`: `SendThingProperty` when a script changed a pawn's `APROP_RejumpDelay`.
 - `thingdef/thingdef_codeptr.cpp` `A_SetTranslation`: `SendThingTranslation` once a state changed the actor's translation (`features/trnslate`).
+- `p_mobj.cpp` `AActor::Slam`: `SendThingFrame` when a charger enters its class's own `Slam` state (`features/decorate-uzdoom`).
 - `p_mobj.cpp` `P_SpawnPuff`: `SendPuff` when its caller lets the clients hear of the puff.
 - `p_map.cpp` `P_RailAttack`: `SendPuff` for the endpoint puff once it survived the sky.
 - `sv_main.cpp` `SERVER_Tick`: `SendChanges` after `G_Ticker`; the two full updates call `SendToJoiner` between

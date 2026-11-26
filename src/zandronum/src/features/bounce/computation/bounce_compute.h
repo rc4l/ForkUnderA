@@ -10,6 +10,9 @@ namespace zx { namespace bounce {
 // [Doruk-Aksoy] Mirrors actor.h's BOUNCE_Walls, BOUNCE_Floors and BOUNCE_Ceilings, static_asserted where the engine includes this.
 enum { ZX_BOUNCE_Walls = 1 << 0, ZX_BOUNCE_Floors = 1 << 1, ZX_BOUNCE_Ceilings = 1 << 2 };
 
+// [Doruk-Aksoy] uzdoom: the pitch in degrees a +BOUNCEMODIFIESPITCH bouncer takes from its velocity, pointing along it (down positive).
+double ComputeBouncePitch(double velX, double velY, double velZ);
+
 // [Doruk-Aksoy] Takes one bounce off a limited count and says whether it was the last; a count of 0 is unlimited and stays so.
 bool ComputeBounceSpent(int &bouncecount);
 

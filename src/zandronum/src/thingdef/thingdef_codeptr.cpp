@@ -5571,6 +5571,12 @@ DEFINE_ACTION_FUNCTION_PARAMS(AActor, A_ChangeFlag)
 				// [rc4l] Movement-model flags (see actor.h MV_*).
 				else if ( (void*)flagp == (void*)&self->mvFlags )
 					flagset = FLAGSET_MVFLAGS;
+				else if ( (void*)flagp == (void*)&self->fua_flags )
+					flagset = FLAGSET_FUAFLAGS;
+				else if ( (void*)flagp == (void*)&self->renderflags )
+					flagset = FLAGSET_RENDERFLAGS;
+				else if ( (void*)flagp == (void*)&self->BounceFlags )
+					flagset = FLAGSET_BOUNCEFLAGS;
 				else if ( (void*)flagp == (void*)&self->STFlags )
 					flagset = FLAGSET_FLAGSST;
 

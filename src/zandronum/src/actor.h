@@ -301,7 +301,7 @@ enum ActorFlag5
 {
 
 	MF5_DONTDRAIN		= 0x00000001,	// cannot be drained health from.
-	/*					= 0x00000002,	   reserved for use by scripting branch */
+	MF5_GETOWNER		= 0x00000002,	// [Doruk-Aksoy] uzdoom: a fast projectile's trail takes its shooter as target, not the projectile.
 	MF5_NODROPOFF		= 0x00000004,	// cannot drop off under any circumstances.
 	MF5_NOFORWARDFALL	= 0x00000008,	// Does not make any actor fall forward by being damaged by this
 	MF5_COUNTSECRET		= 0x00000010,	// From Doom 64: actor acts like a secret
@@ -400,23 +400,19 @@ enum ActorFlag7
 	MF7_HITTARGET		= 0x00004000,	// The actor the projectile dies on is set to target, provided it's targetable anyway.
 	MF7_HITMASTER		= 0x00008000,	// Same as HITTARGET, except it's master instead of target.
 	MF7_HITTRACER		= 0x00010000,	// Same as HITTARGET, but for tracer.
-	MF7_NODECAL			= 0x00020000,	// [ZK] Forces puff to have no impact decal
-	//
-	// [rc4l] THE REAL FIX, when someone has time: engine-specific flags of ours should not live in
-	// upstream's flag fields at all. Every time upstream adds a flag it takes the next free bit, and
-	// so did Zandronum, so the two keep landing on the same one -- this is the second rehoming in a
-	// single seam. A dedicated fua_flags field would end it permanently: upstream grows into its own
-	// fields at its own numbers and every future flag port applies verbatim. It is close to free --
-	// flags are sent one flagset at a time and only when they differ from the default, so an unused
-	// field costs nothing on the wire even in a 30k-monster map, and 4 bytes per actor is noise
-	// against an AActor. What it needs first is an accurate list of which flags are genuinely ours,
-	// which is not obvious: comparing against upstream HEAD is noisy because upstream has since
-	// renamed and restructured whole families.
-	// [rc4l] uzdoom@337682934 -- upstream numbered this 0x00020000, taken here by MF7_NODECAL, so it
-	// moves to the next free bit. flags7 IS wire-synced (SERVERCOMMANDS_SetThingFlags FLAGSET_FLAGS7),
-	// but only added bits matter -- no existing value shifts.
-	MF7_FLYCHEAT		= 0x00080000,	// must be part of the actor so that it can be tracked properly
-	MF7_FORCEDECAL		= 0x00040000,	// [ZK] Forces P_LineAttack to use the puff's decal, even if the player's weapon has a decal defined
+	// [Doruk-Aksoy] MF7 to MF9 hold UZDoom's bits exactly, ours living in fua_flags, so upstream flag ports apply verbatim (old saves are moved by features/decorate-uzdoom/computation/flagrehome_compute.h).
+	MF7_FLYCHEAT		= 0x00020000,	// must be part of the actor so that it can be tracked properly
+	MF7_NODECAL			= 0x00040000,	// [ZK] Forces puff to have no impact decal
+	MF7_FORCEDECAL		= 0x00080000,	// [ZK] Forces P_LineAttack to use the puff's decal, even if the player's weapon has a decal defined
+	MF7_LAXTELEFRAGDMG	= 0x00100000,	// [MC] Telefrag damage can be reduced.
+	MF7_ICESHATTER		= 0x00200000,	// [MC] Shatters ice corpses regardless of damagetype.
+	MF7_ALLOWTHRUFLAGS	= 0x00400000,	// [MC] Allow THRUACTORS and the likes on puffs to prevent mod breakage.
+	MF7_SPRITEANGLE		= 0x02000000,	// [MC] Utilize the SpriteAngle property and lock the rotation to the degrees specified.
+	MF7_SMASHABLE		= 0x04000000,	// dies if hitting the floor.
+	MF7_NOSHIELDREFLECT = 0x08000000,	// will not be reflected by shields.
+	MF7_FORCEZERORADIUSDMG = 0x10000000,// passes zero radius damage on to P_DamageMobj.
+	MF7_NOINFIGHTSPECIES = 0x20000000,	// don't start infights with one's own species.
+	MF7_FORCEINFIGHTING	= 0x40000000,	// overrides a map setting of 'no infighting'.
 
 	// [BB] Out of order ZDoom backport.
 	MF7_USEKILLSCRIPTS	= 0x00800000,	// [JM] Use "KILL" Script on death if not forced by GameInfo.
@@ -598,33 +594,64 @@ enum ActorRenderFlag
 	RF_LIGHTMULTALPHA		= 0x80000,	// [Doruk-Aksoy] uzdoom@c0d17bbd: the lights this actor carries are dimmed by its alpha
 };
 
-// [rc4l] MBF21 needed more flag bits. These back the MBF21 thing flags that have no existing
-// ZDoom equivalent (the episode/MAP07 boss actions and full-volume sounds); the rest of the
-// MBF21 "Bits" mnemonics map onto the flags2/3/4 words above. Values match Zandronum lz/mbf21.
-// Ported behaviour: DSDA-Doom + Zandronum lz/mbf21; MBF21 spec v1.4.
+// [Doruk-Aksoy] UZDoom's flags8, bit for bit; the MBF21 boss and full-volume flags are its own (MBF21 FULLVOLSOUNDS sets MF3_FULLVOLDEATH for the death sound, as UZDoom).
 enum ActorFlag8
 {
-	MF8_FULLVOLDEATH	= 0x00000001,	// [MBF21] death sound plays at full volume
-	MF8_FULLVOLSEE		= 0x00000002,	// [MBF21] see sound plays at full volume
-	MF8_E1M8BOSS		= 0x00000004,	// [MBF21] E1M8 boss (Baron-like: lower floor tag 666 on death)
-	MF8_E2M8BOSS		= 0x00000008,	// [MBF21] E2M8 boss (Cyberdemon-like: exit on death)
-	MF8_E3M8BOSS		= 0x00000010,	// [MBF21] E3M8 boss (Mastermind-like: exit on death)
-	MF8_E4M6BOSS		= 0x00000020,	// [MBF21] E4M6 boss (Cyberdemon-like: open tag 666 on death)
-	MF8_E4M8BOSS		= 0x00000040,	// [MBF21] E4M8 boss (Mastermind-like: lower floor tag 666)
-	MF8_MAP07BOSS1		= 0x00000080,	// [MBF21] MAP07 tag 666 boss (Mancubus-like)
-	MF8_MAP07BOSS2		= 0x00000100,	// [MBF21] MAP07 tag 667 boss (Arachnotron-like)
+	MF8_FRIGHTENING		= 0x00000001,	// for those moments when halloween just won't do
+	MF8_INSCROLLSEC		= 0x00000002,	// actor is partially inside a scrolling sector
+	MF8_BLOCKASPLAYER	= 0x00000004,	// actor is blocked by player-blocking lines even if not a player
+	MF8_DONTFACETALKER	= 0x00000008,	// don't alter the angle to face the player in conversations
+	MF8_HITOWNER		= 0x00000010,	// projectile can hit the actor that fired it
+	MF8_NOFRICTION		= 0x00000020,	// friction doesn't apply to the actor at all
+	MF8_NOFRICTIONBOUNCE	= 0x00000040,	// don't bounce off walls when on icy floors
+	MF8_RETARGETAFTERSLAM	= 0x00000080,	// Forces jumping to the idle state after slamming into something
+	MF8_RECREATELIGHTS	= 0x00000100,	// Internal flag that signifies that the light attachments need to be recreated
+	MF8_STOPRAILS		= 0x00000200,	// [MC] Prevent rails from going further if an actor has this flag.
+	MF8_ABSVIEWANGLES	= 0x00000400,	// [MC] By default view angle/pitch/roll is an offset. This will make it absolute instead.
+	MF8_FALLDAMAGE		= 0x00000800,	// Monster will take fall damage regardless of map settings.
+	MF8_MINVISIBLE		= 0x00001000,	// Actor not visible to monsters
+	MF8_MVISBLOCKED		= 0x00002000,	// Monster(only) sight checks to actor always fail
+	MF8_ALLOWTHRUBITS	= 0x00008000,	// [MC] Enable ThruBits property
+	MF8_FULLVOLSEE		= 0x00010000,	// [MBF21] see sound plays at full volume
+	MF8_E1M8BOSS		= 0x00020000,	// [MBF21] E1M8 boss (Baron-like: lower floor tag 666 on death)
+	MF8_E2M8BOSS		= 0x00040000,	// [MBF21] E2M8 boss (Cyberdemon-like: exit on death)
+	MF8_E3M8BOSS		= 0x00080000,	// [MBF21] E3M8 boss (Mastermind-like: exit on death)
+	MF8_E4M8BOSS		= 0x00100000,	// [MBF21] E4M8 boss (Mastermind-like: lower floor tag 666)
+	MF8_E4M6BOSS		= 0x00200000,	// [MBF21] E4M6 boss (Cyberdemon-like: open tag 666 on death)
+	MF8_MAP07BOSS1		= 0x00400000,	// [MBF21] MAP07 tag 666 boss (Mancubus-like)
+	MF8_MAP07BOSS2		= 0x00800000,	// [MBF21] MAP07 tag 667 boss (Arachnotron-like)
+	MF8_AVOIDHAZARDS	= 0x01000000,	// MBF AI enhancement.
+	MF8_STAYONLIFT		= 0x02000000,	// MBF AI enhancement.
+	MF8_DONTFOLLOWPLAYERS	= 0x04000000,	// [inkoalawetrust] Friendly monster will not follow players.
+	MF8_SEEFRIENDLYMONSTERS	= 0x08000000,	// [inkoalawetrust] Hostile monster can see friendly monsters.
+	MF8_CROSSLINECHECK	= 0x10000000,	// [MC] Enables CanCrossLine virtual
+	MF8_MASTERNOSEE		= 0x20000000,	// Don't show object in first person if their master is the current camera.
+	MF8_ADDLIGHTLEVEL	= 0x40000000,	// [MC] Actor light level is additive with sector.
+	MF8_ONLYSLAMSOLID	= 0x80000000,	// [B] Things with skullfly will ignore non-solid Actors.
 };
 
-// [MGOOOOOO] ZandroX-owned actor flags. flags8 is MBF21's word and its bit values are fixed by
-// that spec, so fork-specific flags get their own word rather than squatting on bits a future
-// MBF21/id24 port may want. See features/ripper/README.md for the ripper set.
+// [Doruk-Aksoy] UZDoom's flags9, bit for bit.
 enum ActorFlag9
 {
-	MF9_NORIPSOUND		= 0x00000001,	// ripper makes no sound at all when it rips
-	MF9_RIPEXPLODEONLIMIT = 0x00000002,	// spent rip budget detonates the ripper instead of ghosting
-	MF9_RIPPERNOPAIN	= 0x00000004,	// rips never induce pain; the terminal explosion still can
-	MF9_RIPSOUNDNORESTART = 0x00000008,	// let the rip sound finish instead of restarting it every tic
-	MF9_USERIPSTATE		= 0x00000010,	// enter the Rip state after ripping, like +USEBOUNCESTATE
+	MF9_SHADOWAIM			= 0x00000001,	// [inkoalawetrust] Monster still gets aim penalty from aiming at shadow actors even with MF6_SEEINVISIBLE on.
+	MF9_DOSHADOWBLOCK		= 0x00000002,	// [inkoalawetrust] Should the monster look for SHADOWBLOCK actors ?
+	MF9_SHADOWBLOCK			= 0x00000004,	// [inkoalawetrust] Actors in the line of fire with this flag trigger the MF_SHADOW aiming penalty.
+	MF9_SHADOWAIMVERT		= 0x00000008,	// [inkoalawetrust] Monster aim is also offset vertically when aiming at shadow actors.
+	MF9_DECOUPLEDANIMATIONS	= 0x00000010,	// [Jay] Decouple model animations from states
+	MF9_NOSECTORDAMAGE		= 0x00000020,	// [inkoalawetrust] Actor ignores any sector-based damage (i.e damaging floors, NOT crushers)
+	MF9_ISPUFF				= 0x00000040,	// [AA] Set on actors by P_SpawnPuff
+	MF9_FORCESECTORDAMAGE	= 0x00000080,	// [inkoalawetrust] Actor ALWAYS takes hurt floor damage if there's any.
+	MF9_NOAUTOOFFSKULLFLY	= 0x00000100,	// Don't automatically disable MF_SKULLFLY if velocity is 0.
+};
+
+// [MGOOOOOO] ZandroX-owned actor flags, in fua_flags since upstream took flags9. See features/ripper/README.md for the ripper set.
+enum
+{
+	FUAF_NORIPSOUND		= 0x00000001,	// ripper makes no sound at all when it rips
+	FUAF_RIPEXPLODEONLIMIT = 0x00000002,	// spent rip budget detonates the ripper instead of ghosting
+	FUAF_RIPPERNOPAIN	= 0x00000004,	// rips never induce pain; the terminal explosion still can
+	FUAF_RIPSOUNDNORESTART = 0x00000008,	// let the rip sound finish instead of restarting it every tic
+	FUAF_USERIPSTATE		= 0x00000010,	// enter the Rip state after ripping, like +USEBOUNCESTATE
 };
 
 // [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: the movement-model flag
@@ -695,6 +722,13 @@ enum ActorBounceFlag
 	BOUNCE_MBF = 1<<12,			// This in itself is not a valid mode, but replaces MBF's MF_BOUNCE flag.
 	BOUNCE_AutoOffFloorOnly = 1<<13,		// like BOUNCE_AutoOff, but only on floors
 	BOUNCE_UseBounceState = 1<<14,	// Use Bounce[.*] states
+	// [Doruk-Aksoy] UZDoom's, at its bits (features/decorate-uzdoom).
+	BOUNCE_NotOnShootables = 1<<15,	// do not bounce off shootable actors if we are a projectile. Explode instead.
+	BOUNCE_BounceOnUnrips = 1<<16,	// projectile bounces on actors with DONTRIP
+	BOUNCE_NotOnSky = 1<<17,		// Don't bounce on sky floors / ceilings / walls
+	BOUNCE_DEH = 1<<18,				// Flag was set through Dehacked.
+	BOUNCE_KeepAngle = 1<<19,		// Don't change yaw when bouncing off a surface.
+	BOUNCE_ModifyPitch = 1<<20,		// Change pitch when bouncing off a surface.
 
 	BOUNCE_TypeMask = BOUNCE_Walls | BOUNCE_Floors | BOUNCE_Ceilings | BOUNCE_Actors | BOUNCE_AutoOff | BOUNCE_HereticType | BOUNCE_MBF,
 
@@ -740,7 +774,7 @@ typedef TFlags<ActorFlag7> ActorFlags7;
 typedef TFlags<ActorFlag8> ActorFlags8;
 typedef TFlags<ActorFlag9> ActorFlags9;
 typedef TFlags<ActorRenderFlag> ActorRenderFlags;
-typedef TFlags<ActorBounceFlag, WORD> ActorBounceFlags;
+typedef TFlags<ActorBounceFlag, DWORD> ActorBounceFlags;
 DEFINE_TFLAGS_OPERATORS (ActorFlags)
 DEFINE_TFLAGS_OPERATORS (ActorFlags2)
 DEFINE_TFLAGS_OPERATORS (ActorFlags3)
@@ -1172,7 +1206,7 @@ public:
 	int				waterlevel;		// 0=none, 1=feet, 2=waist, 3=eyes
 	BYTE			boomwaterlevel;	// splash information for non-swimmable water sectors
 	BYTE			movedir;		// 0-7
-	WORD			BounceFlags;	// which bouncing type?
+	DWORD			BounceFlags;	// which bouncing type? [Doruk-Aksoy] 32 bits, as UZDoom's, for its flags past bit 15.
 
 	// [Doruk-Aksoy] Line 3: the rest of the tick, blocking and the chase target.
 	TObjPtr<AActor> target;			// thing being chased/attacked (or NULL)
@@ -1287,8 +1321,9 @@ public:
 	// is needed to stop the widened box hitting through thin geometry. Smaller/equal boxes skip it.
 	bool AttackHitboxEnlarged() const { return AttackHitboxIsEnlarged(GetAttackRadius(), radius, GetAttackHeight(), height); }
 	int				projectileKickback;
-	ActorFlags8		flags8;			// [rc4l] MBF21 needed more of them (see MF8_* above).
-	ActorFlags9		flags9;			// [MGOOOOOO] ZandroX's own flags (see MF9_* above).
+	ActorFlags8		flags8;			// [Doruk-Aksoy] UZDoom's flags8 (see MF8_* above).
+	ActorFlags9		flags9;			// [Doruk-Aksoy] UZDoom's flags9 (see MF9_* above).
+	DWORD			fua_flags;		// [Doruk-Aksoy] ZandroX's own flags (see FUAF_* above).
 	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.

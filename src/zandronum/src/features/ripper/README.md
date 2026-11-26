@@ -23,7 +23,7 @@ behaves exactly as it did before this feature existed.
 | `RipLevelMax <int>` | victim | `0` | Rippers above this tier can't rip it. `0` disables the bound. |
 | `RipSound <sound>` | projectile | *(none)* | The field already existed for MBF21's DeHackEd "Rip sound"; this makes it authorable in DECORATE. Empty = `misc/ripslop`. |
 
-## Flags (`flags9`)
+## Flags (`fua_flags`)
 
 | Flag | Side | Meaning |
 |---|---|---|
@@ -133,14 +133,14 @@ projectile flying.
 decision and are not broadcast, matching the `HitRadius`/`HitHeight` precedent in
 [`features/actorresize`](../actorresize/README.md).
 
-The one thing that *can* cost bytes is the `flags9` word, and only when a mod changes it at
+The one thing that *can* cost bytes is the `fua_flags` word, and only when a mod changes it at
 runtime: 8 bytes per `A_ChangeFlag` (`SetThingFlags` = SVC byte + Short netID + Byte flagset +
 Long flags). The late-join full update gates each word on `!= GetDefault()`, which is false for
-a DECORATE-authored `flags9`, so it adds no traffic there.
+a DECORATE-authored `fua_flags`, so it adds no traffic there.
 
 ## In-engine hooks (edits to existing files, not part of this folder)
 
-- `actor.h` — the `MF9_*` enum, `DWORD flags9`, the ripper fields, `FRipVictim`, the
+- `actor.h` — the `FUAF_*` enum, `DWORD fua_flags` (UZDoom's flags9 took the old word), the ripper fields, `FRipVictim`, the
   `RipHitsOn` / `RecordRipHit` / `ResetRipCounters` declarations, and `RipSound`'s type.
 - `namedef.h` — `NAME_Rip`, appended (never inserted: namedef indices go over the wire).
 - `p_local.h` — `FCheckPosition::RipStatePending`, the `+USERIPSTATE` deferral carrier.

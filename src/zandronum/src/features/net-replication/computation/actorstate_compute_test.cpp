@@ -75,6 +75,14 @@ TEST(ComputeSkipsPuffFor, OnlyTheShooterPredictingANoNetIdPuff)
 }
 
 // [Doruk-Aksoy] A joiner kept a translated class's translation when the server had cleared it to 0, since only a non-zero one was sent.
+TEST(ComputeClientAppliedFlags, TheServersBitsButTheClientsOwn)
+{
+	EXPECT_EQ(0x6u, ComputeClientAppliedFlags(0x1, 0x6, 0));
+	EXPECT_EQ(0x7u, ComputeClientAppliedFlags(0x1, 0x6, 0x1));
+	EXPECT_EQ(0x6u, ComputeClientAppliedFlags(0x0, 0x7, 0x1));
+	EXPECT_EQ(0x0u, ComputeClientAppliedFlags(0xF, 0x0, 0));
+}
+
 TEST(ComputeJoinSendsTranslation, WhateverDiffersFromTheClass)
 {
 	EXPECT_TRUE(ComputeJoinSendsTranslation(0, 0x30007));

@@ -973,8 +973,10 @@ void P_NewChaseDir(AActor * actor)
 
 		if (!(actor->flags6 & MF6_NOFEAR))
 		{
+			// [Doruk-Aksoy] uzdoom: a +FRIGHTENING target scares monsters off as the cheat does (features/decorate-uzdoom).
 			if ((actor->target->player != NULL && (actor->target->player->cheats & CF_FRIGHTENING)) || 
-				(actor->flags4 & MF4_FRIGHTENED))
+				(actor->flags4 & MF4_FRIGHTENED) ||
+				(actor->target->flags8 & MF8_FRIGHTENING))
 			{
 				deltax = -deltax;
 				deltay = -deltay;
@@ -1125,7 +1127,8 @@ void P_RandomChaseDir (AActor *actor)
 	int turndir;
 
 	// Friendly monsters like to head toward a player
-	if (actor->flags & MF_FRIENDLY)
+	// [Doruk-Aksoy] uzdoom: unless +DONTFOLLOWPLAYERS.
+	if ((actor->flags & MF_FRIENDLY) && !(actor->flags8 & MF8_DONTFOLLOWPLAYERS))
 	{
 		AActor *player;
 		fixed_t deltax, deltay;
@@ -1343,6 +1346,11 @@ bool P_IsVisible(AActor *lookee, AActor *other, INTBOOL allaround, FLookExParams
 	fixed_t maxdist;
 	fixed_t mindist;
 	angle_t fov;
+	// [Doruk-Aksoy] uzdoom: a +MVISBLOCKED actor is never seen by a looking monster.
+	if (other == NULL || (other->flags8 & MF8_MVISBLOCKED))
+	{
+		return false;
+	}
 
 	if (params != NULL)
 	{
@@ -1650,7 +1658,13 @@ AActor *LookForEnemiesInBlock (AActor *lookee, int index, void *extparam)
 			continue;
 
 		other = NULL;
-		if (link->flags & MF_FRIENDLY)
+		// [Doruk-Aksoy] uzdoom: a hostile lookee (+SEEFRIENDLYMONSTERS) only goes after friendly monsters (features/decorate-uzdoom).
+		if (!(lookee->flags & MF_FRIENDLY))
+		{
+			if (link->flags & MF_FRIENDLY)
+				other = link;
+		}
+		else if (link->flags & MF_FRIENDLY)
 		{
 			if (!lookee->IsFriend(link))
 			{
@@ -1840,6 +1854,12 @@ bool P_LookForPlayers (AActor *actor, INTBOOL allaround, FLookExParams *params)
 
 
 	}	// [SP] if false, and in deathmatch, intentional fall-through
+	// [Doruk-Aksoy] uzdoom: a hostile +SEEFRIENDLYMONSTERS monster looks for friendly monsters before players.
+	else if (actor->flags8 & MF8_SEEFRIENDLYMONSTERS)
+	{
+		if (P_LookForEnemies (actor, allaround, params))
+			return true;
+	}
 
 	if (!(gameinfo.gametype & (GAME_DoomStrifeChex)) &&
 		( NETWORK_GetState( ) == NETSTATE_SINGLE ) &&
@@ -2522,7 +2542,7 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 
 	// [RH] Don't chase invisible targets
 	if (actor->target != NULL &&
-		actor->target->renderflags & RF_INVISIBLE &&
+		((actor->target->renderflags & RF_INVISIBLE) || (actor->target->flags8 & MF8_MINVISIBLE)) &&
 		actor->target != actor->goal)
 	{
 		actor->target = NULL;
@@ -2788,7 +2808,7 @@ void A_DoChase (AActor *actor, bool fastchase, FState *meleestate, FState *missi
 
 	// [RH] Scared monsters attack less frequently
 	if (((actor->target->player == NULL ||
-		!(actor->target->player->cheats & CF_FRIGHTENING)) &&
+		!((actor->target->player->cheats & CF_FRIGHTENING) || (actor->target->flags8 & MF8_FRIGHTENING))) &&
 		!(actor->flags4 & MF4_FRIGHTENED)) ||
 		pr_scaredycat() < 43)
 	{
@@ -3438,7 +3458,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Scream)
 	{
 		// Check for bosses.
 		// [rc4l] MBF21 FULLVOLSOUNDS makes the death sound full-volume even on non-boss actors.
-		if (self->flags2 & MF2_BOSS || self->flags8 & MF8_FULLVOLDEATH)
+		if (self->flags2 & MF2_BOSS || self->flags3 & MF3_FULLVOLDEATH)
 		{
 			// full volume
 			S_Sound (self, CHAN_VOICE, self->DeathSound, 1, ATTN_NONE);

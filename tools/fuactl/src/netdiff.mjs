@@ -51,7 +51,9 @@ export function diffActors(server, client, { tolerance = DEFAULT_TOLERANCE, skip
     const b = k.get(id);
     if (!b) continue;
     if (a.c !== b.c) out.push({ kind: "actor", netid: id, what: `class ${a.c} on the server, ${b.c} on the client (${id})` });
-    if (a.health !== b.health && Math.abs(a.health - b.health) > tolerance.health) out.push({ kind: "actor", netid: id, what: `${actorName(a)} health ${a.health} on the server, ${b.health} on the client` });
+    // [Doruk-Aksoy] Dead on both is agreement: a player's health travels as 16 bits and a late joiner spawns a corpse at 0, so a telefrag's -999900 reads -32768 or 0 on a client, and either is just as dead.
+    const bothDead = a.health <= 0 && b.health <= 0;
+    if (!bothDead && a.health !== b.health && Math.abs(a.health - b.health) > tolerance.health) out.push({ kind: "actor", netid: id, what: `${actorName(a)} health ${a.health} on the server, ${b.health} on the client` });
     if (!positions || skip.has(id)) continue;
     const apart = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
     if (apart > tolerance.pos) out.push({ kind: "actor", netid: id, what: `${actorName(a)} ${apart.toFixed(2)} units apart`, apart });

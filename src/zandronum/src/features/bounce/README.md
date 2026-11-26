@@ -41,3 +41,6 @@ and `netbounce.mjs` (a hosted game) are the regression tests.
   `P_BounceActor`.
 - `p_mobj.cpp`: `AActor::FloorBounceMissile`, the on-top bounce in `AActor::Tick`, and
   `P_SendBounceOffActor`, called from `AActor::Tick`.
+- UZDoom's bounce flags (`features/decorate-uzdoom`): `DONTBOUNCEONSHOOTABLES`, `BOUNCEONUNRIPPABLES`,
+  `DONTBOUNCEONSKY`, `KEEPBOUNCEANGLE` and `BOUNCEMODIFIESPITCH` (`ComputeBouncePitch`), in `FSlide::BounceWall`,
+  `P_BounceActor` and `AActor::FloorBounceMissile`. `BounceFlags` is 32 bits, as UZDoom's.

@@ -1580,6 +1580,7 @@ DEFINE_PROPERTY(clearflags, 0, Actor)
 	defaults->flags7 = 0;
 	defaults->flags8 = 0;
 	defaults->flags9 = 0;
+	defaults->fua_flags = 0;
 
 	// [BC] Also zero out ST's flags.
 	defaults->STFlags = 0;

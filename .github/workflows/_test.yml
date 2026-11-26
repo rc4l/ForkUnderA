@@ -160,6 +160,12 @@ jobs:
       - name: Wire-carried enum snapshot
         run: python3 tools/wire-enum-snapshot.py --check
 
+      # [Doruk-Aksoy] Saves store flag words raw, so a DECORATE flag moved to another bit needs SAVEVER bumped and older saves remapped; this pins every flag's bit.
+      - name: Flag bit snapshot
+        run: |
+          python3 tools/flag_bits_snapshot_test.py
+          python3 tools/flag_bits_snapshot.py --check
+
       # [rc4l] detect_leaks=1 turns on LeakSanitizer, which is supported here on Linux; each test binary runs once (tests/run_all.py), not once per test as ctest starts it.
       - name: Run tests (ASan + UBSan + LeakSanitizer)
         env:

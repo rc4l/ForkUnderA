@@ -109,10 +109,22 @@ export function buildMap(map) {
   m.thing({ ...PLAYER, angle: 270, type: 1 });
   // [Doruk-Aksoy] Starts for a cooperative netgame's other players (netmonsterstairs.mjs), on the landing clear of the goal.
   for (const [type, x, y] of COOP_STARTS) m.thing({ x, y, angle: 270, type });
+  // [Doruk-Aksoy] Every start fenced from the enemies, which wander to the players once at their goals: a joiner whose start one stood on was spawned on another player's and telefragged them.
+  if (MAPS[map].enemies) m.block(...START_PEN, { ...SECTOR, heightfloor: 0 }, m.sectors.length - 1, undefined, undefined, () => ({ blockmonsters: true }));
   return m;
 }
 
 export const COOP_STARTS = [[2, 352, HALL + 384], [3, 160, HALL + 384], [4, 64, HALL + 384]];
+
+// [Doruk-Aksoy] The pen around every player start (x0, y0, x1, y1), its lines closed to monsters and open to players.
+export const START_PEN = [32, HALL + 352, 480, HALL + 416];
+
+// [Doruk-Aksoy] Where player n starts: the first start for player 0, then the cooperative ones.
+export function startOf(n) {
+  if (n === 0) return PLAYER;
+  const s = COOP_STARTS[n - 1];
+  return s ? { x: s[1], y: s[2] } : null;
+}
 
 export const COUNTER_CVAR = "zx_stairs_wrong";
 
