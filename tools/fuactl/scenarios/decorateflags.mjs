@@ -11,6 +11,7 @@ import { runScenarioIfMain, compareNetplay, writeTemplateFile, FREEDOOM2, MUTE }
 import { withLockedInstance } from "../src/play.mjs";
 import { resolveEngine } from "../src/launch.mjs";
 import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
+import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 import * as cap from "../src/capture.mjs";
 
 export const FIRST_TID = 100, CHECK_SCRIPT = 1;
@@ -27,6 +28,9 @@ export const ACTORS = [
   // [Doruk-Aksoy] renderflags and BounceFlags, which a client never heard of a change to before FLAGSET_RENDERFLAGS and FLAGSET_BOUNCEFLAGS; names an older build knows, since it loads this pk3 too.
   { cls: "ZxRenderChanged", change: { INVISIBLE: true }, want: { INVISIBLE: 1 } },
   { cls: "ZxBounceChanged", flags: ["BOUNCEONWALLS"], change: { BOUNCEONWALLS: false, BOUNCEONFLOORS: true }, want: { BOUNCEONWALLS: 0, BOUNCEONFLOORS: 1 } },
+  // [Doruk-Aksoy] LIGHTMULTALPHA, in renderflags2 since its old renderflags bit is UZDoom's DONTFLIP; an older build's save has it there.
+  { cls: "ZxRender2", flags: ["LIGHTMULTALPHA"], want: { LIGHTMULTALPHA: 1, INVISIBLE: 0 } },
+  { cls: "ZxRender2Changed", change: { LIGHTMULTALPHA: true }, want: { LIGHTMULTALPHA: 1 } },
 ];
 
 // [Doruk-Aksoy] Every [actor index, flag, wanted value], in the order script 1 logs them.
@@ -130,7 +134,8 @@ export async function compareOffline({ name, wad: data, iwad = FREEDOOM2, port, 
   return { lines: results.map((r) => r.line), failed: results.reduce((n, r) => n + r.failed, 0) };
 }
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }];
+// [Doruk-Aksoy] The legacy netcode and the snapshot overhaul, whose server cvars are its settings until they become the defaults.
+export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "snap", players: 1, observers: 1, serverCvars: SNAP_SERVER_CVARS }];
 
 // [Doruk-Aksoy] Every machine reads the flags it joined with, the late joiner too, each by script 1's CLIENTSIDE copy.
 export const judgeNetplay = netJudge({ steps: [{ script: CHECK_SCRIPT, tags: ["flags"] }], late: [{ script: CHECK_SCRIPT, tags: ["flags"] }], by: "server",

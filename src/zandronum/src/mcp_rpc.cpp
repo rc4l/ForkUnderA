@@ -877,6 +877,8 @@ void MCP_RPC_Dispatch( long id, const char *cmdC, const char *argsC )
 			body += ",\"fullUpdateIncomplete\":" + B( CLIENT_GetFullUpdateIncomplete() );
 			// [rc4l] The account this client's server says it plays as.
 			body += ",\"account\":\"" + zx::json::ComputeJsonEscape( CLIENT_GetPlayerAccountName( consoleplayer ).GetChars() ) + "\"";
+			// [Doruk-Aksoy] Whether this client still holds itself a spectator, which it does for a round trip after the server already holds it playing.
+			body += ",\"spectating\":" + B( players[consoleplayer].bSpectating );
 		}
 		if ( state == NETSTATE_SERVER )
 		{

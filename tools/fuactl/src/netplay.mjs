@@ -10,6 +10,8 @@ import { crashedError } from "./play.mjs";
 
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
+// [Doruk-Aksoy] The server cvars that run the snapshot netcode in place of the legacy commands, until they are the engine's defaults.
+export const SNAP_SERVER_CVARS = { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 2 };
 
 // [Doruk-Aksoy] The game port a netgame on bridge port `port` hosts on, 3000 above it as the defaults are, so sets on different bridge ports never share one.
 export function gamePortFor(port) {
@@ -97,7 +99,8 @@ export async function joinThroughBrowser(c, address, deps = {}, { lan = false } 
 }
 
 // [rc4l] Launches one client into a set, joins it to the game and waits until the server holds it playing; via "browser" joins from the browser by address and "lan" from its LAN listing, and files replaces the set's wads, empty for a client that has to fetch them.
-export async function addClient(set, { role = "player", lag = 0, loss = 0, jitter = 0, cvars = set.clientCvars || {}, forUser = false, files = set.files, via = "connect", args = [] } = {}, deps = {}) {
+// [Doruk-Aksoy] userDir names the client's user folder (features/userdir), for a client that has to find what an earlier launch left there.
+export async function addClient(set, { role = "player", lag = 0, loss = 0, jitter = 0, cvars = set.clientCvars || {}, forUser = false, files = set.files, via = "connect", args = [], userDir } = {}, deps = {}) {
   const { launch = launchInstance, connect = attach, waitInLevel = cap.waitInLevel, exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000) } = deps;
   const index = set.clients.length;
   // [rc4l] The slot is taken before the launch, so clients added at once each get their own port.
@@ -108,7 +111,7 @@ export async function addClient(set, { role = "player", lag = 0, loss = 0, jitte
   // [rc4l] -record starts a clientside demo only beside -connect on the command line, so a recording client connects that way.
   const connectArg = via === "launch" || args.includes("-record");
   const inst = client.inst = await launch({ port: set.basePort + 1 + index, iwad: set.iwad, extraArgs: [...clientArgs({ ...set, files }), ...args], ...(fromBrowser ? {} : { connect: address, connectArg }),
-    cvars: clientCvars({ lag, loss, jitter, cvars }), allowOsInput: forUser });
+    cvars: clientCvars({ lag, loss, jitter, cvars }), allowOsInput: forUser, ...(userDir ? { userDir } : {}) });
   const readLog = deps.readLog || readEngineLog;
   try {
     client.c = await connect(inst);
@@ -123,14 +126,22 @@ export async function addClient(set, { role = "player", lag = 0, loss = 0, jitte
   return client;
 }
 
+// [Doruk-Aksoy] Whether a client's own net.state says it is in and playing: a test acting before then acted on its spectator body, which the server's word of the join then replaced (a look lost to a pitch-0 pawn); a build with no spectating field is taken at its connection.
+export function clientSeesItselfPlaying(mine) {
+  return mine?.connection === "active" && mine?.spectating !== true;
+}
+
 // [rc4l] A connected client asks to play, again each resendMs as a player would (a client's commands ride its unreliable packet, so a lossy one loses a join, and the server refuses another within 3 seconds), until its server holds it playing: whether it did, with what the client last said of itself.
+// [Doruk-Aksoy] And until the client holds itself playing, a round trip after the server does, longer when that word is lost and sent again.
 export async function joinGame(client, server, { exec = cap.exec, sleep = cap.sleep, timeoutMs = scaled(60000), resendMs = 3500, now = () => Date.now() } = {}) {
   const deadline = now() + timeoutMs;
   for (let asked = -Infinity; ;) {
-    if (now() - asked >= resendMs) { await exec(client.c, "join"); asked = now(); }
     const mine = await client.c.rpc("net.state", {});
     client.player = mine?.consoleplayer ?? -1;
-    if (mine?.connection === "active" && clientPlaying(await server.rpc("net.state", {}), client.player)) return { joined: true, mine };
+    const serverHolds = mine?.connection === "active" && clientPlaying(await server.rpc("net.state", {}), client.player);
+    if (serverHolds && clientSeesItselfPlaying(mine)) return { joined: true, mine };
+    // [Doruk-Aksoy] Asked again only while the server does not hold it playing, since one it holds is only waiting on its own word.
+    if (!serverHolds && now() - asked >= resendMs) { await exec(client.c, "join"); asked = now(); }
     if (now() > deadline) return { joined: false, mine };
     await sleep(250);
   }
@@ -264,6 +275,7 @@ export function netplayOptionsFromFlags(flags = {}, parseCvars = () => ({})) {
     gamePort: count(flags["game-port"], gamePortFor(count(flags.port, NETPLAY_BRIDGE_PORT))),
     forUser: !!flags["for-user"],
     clientCvars: parseCvars(flags.cvar) || {},
+    cvars: parseCvars(flags["server-cvar"]) || {},
   };
   const flagOf = { players: "players", observers: "observers", basePort: "port", gamePort: "game-port" };
   for (const [k, flag] of Object.entries(flagOf)) {

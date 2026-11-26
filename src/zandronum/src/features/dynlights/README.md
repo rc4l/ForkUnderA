@@ -44,7 +44,7 @@ so every module that lit a sprite or a wall included GL's headers to see a light
 - `computation/lightheight_compute`: UZDoom's `UpdateLocation` keeps a light 5 units off its carrier's floor and
   ceiling (a map light's own), unless the carrier is `+NOINTERACTION`, so an attenuated light on an item lying on
   the floor still lights it.
-- `computation/lightintensity_compute`: a carrier with `+LIGHTMULTALPHA` (`RF_LIGHTMULTALPHA`) dims its lights by its
+- `computation/lightintensity_compute`: a carrier with `+LIGHTMULTALPHA` (`RF2_LIGHTMULTALPHA`, in `renderflags2` as UZDoom) dims its lights by its
   alpha, folded into the render copy's intensity; the server already sends every alpha change.
 - `cycler.h`, `cycler.cpp`: `FCycler`, the value a pulsing light (and a GL texture shader) cycles through,
   moved from `gl/utility/`.

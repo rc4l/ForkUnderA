@@ -88,6 +88,7 @@ test("every launch names its renderers after the wads: -vulkan by default, -gl f
   assert.deepEqual(playArgs([], MODES.gl), ["-gl"]);
   assert.deepEqual(playArgs(["a.pk3"], MODES.beside), ["-file", "a.pk3", "-gl"]);
   assert.deepEqual(playArgs(["a.pk3"], MODES.webgpu), ["-file", "a.pk3", "-webgpu"]);
+  assert.deepEqual(playArgs(["a.pk3"], MODES.vulkan, { offline: true }), ["-file", "a.pk3", "-vulkan", "-offline"]);
 });
 
 // [rc4l] GL beside the backend is asked for, never the default, since players never run it.

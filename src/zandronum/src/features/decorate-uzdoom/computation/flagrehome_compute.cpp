@@ -22,4 +22,12 @@ SavedFlags ComputeRehomedSaveFlags(SavedFlags saved)
 	return out;
 }
 
+SavedRenderFlags ComputeRehomedSaveRenderFlags(uint32_t renderflags)
+{
+	SavedRenderFlags out;
+	out.renderflags = renderflags & ~kOldRenderLightMultAlpha;
+	out.renderflags2 = (renderflags & kOldRenderLightMultAlpha) ? kRenderFlags2LightMultAlpha : 0;
+	return out;
+}
+
 } }

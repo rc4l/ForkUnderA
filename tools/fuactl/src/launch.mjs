@@ -202,6 +202,9 @@ export function engineArgs(opts = {}, configPath) {
   // into that ini and break the user's real mouse. A fresh file starts from engine defaults, which is
   // identical across instances and never touches the user's config.
   args.push("-config", configPath);
+  // [Doruk-Aksoy] A driven launch keeps its identity keys, Continue records and wad stores in a folder beside its config, never the player's (features/userdir), unless opts.userDir names one.
+  const userDir = opts.userDir ?? (opts.allowOsInput ? null : path.join(path.dirname(configPath), "profile"));
+  if (userDir) args.push("-fua_userdir", userDir);
   args.push(
     "-skill", String(opts.skill ?? 3),
     "+set", "fullscreen", "0",

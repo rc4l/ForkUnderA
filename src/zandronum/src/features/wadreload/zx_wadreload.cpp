@@ -35,6 +35,14 @@ const char *PendingReloadMap()
 	return StoredReloadMap.GetChars();
 }
 
+// [Doruk-Aksoy] Raised by ResetStartupStateForRestart, which only the restart path calls.
+static int g_RestartCount = 0;
+
+int RestartCount()
+{
+	return g_RestartCount;
+}
+
 namespace {
 
 // Pull the current -iwad value and the -file run out of the global Args (what's loaded right now).
@@ -184,6 +192,8 @@ bool WadLoadable(const char *path, FString &outWhy)
 
 void ResetStartupStateForRestart()
 {
+	++g_RestartCount;
+
 	// 1. LoadStrings keeps DEHACKED-set entries -- PassNum 0 survives FreeNonDehackedStrings -- so a
 	//    Dehacked patch beats a LANGUAGE lump. Right within one boot; wrong across a restart, where
 	//    the patch that set them is no longer loaded. Freedoom's DEHACKED renames the weapons, so
@@ -303,8 +313,7 @@ ReloadResult RequestReload(const char *iwad, const TArray<FString> &pwads, const
 
 	// Switches to drop: always the file set; the IWAD only when we're replacing it (empty iwad keeps
 	// the current one); and demo/save/connect switches that must not survive into a fresh WAD set.
-	std::vector<std::string> remove = { "-file", "-playdemo", "-timedemo", "-record", "-loadgame", "-connect" };
-	if (changingIwad) remove.push_back("-iwad");
+	const std::vector<std::string> remove = ComputeReloadDroppedSwitches(changingIwad);
 
 	std::vector<std::string> append;
 	if (changingIwad) { append.push_back("-iwad"); append.push_back(iwad); }

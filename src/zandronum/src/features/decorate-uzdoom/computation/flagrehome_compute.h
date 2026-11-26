@@ -53,4 +53,21 @@ struct SavedFlags
 // [Doruk-Aksoy] `saved` as it reads in today's layout.
 SavedFlags ComputeRehomedSaveFlags(SavedFlags saved);
 
+// [Doruk-Aksoy] Saves before this version hold LIGHTMULTALPHA in renderflags and no renderflags2.
+const int kRenderRehomeSaveVer = 4539;
+
+// [Doruk-Aksoy] Our LIGHTMULTALPHA's old renderflags bit, and UZDoom's in renderflags2.
+constexpr uint32_t kOldRenderLightMultAlpha = 0x00080000;
+constexpr uint32_t kRenderFlags2LightMultAlpha = 0x00000400;
+
+// [Doruk-Aksoy] An old save's renderflags split into today's two words.
+struct SavedRenderFlags
+{
+	uint32_t renderflags;
+	uint32_t renderflags2;
+};
+
+// [Doruk-Aksoy] `renderflags` from a save before kRenderRehomeSaveVer, as today's two words.
+SavedRenderFlags ComputeRehomedSaveRenderFlags(uint32_t renderflags);
+
 } }
