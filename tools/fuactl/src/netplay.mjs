@@ -10,6 +10,8 @@ import { crashedError } from "./play.mjs";
 
 export const NETPLAY_BRIDGE_PORT = 7820;
 export const NETPLAY_GAME_PORT = 10820;
+// [Doruk-Aksoy] The server cvars that run the snapshot netcode in place of the legacy commands, until they are the engine's defaults.
+export const SNAP_SERVER_CVARS = { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 2 };
 
 // [Doruk-Aksoy] The game port a netgame on bridge port `port` hosts on, 3000 above it as the defaults are, so sets on different bridge ports never share one.
 export function gamePortFor(port) {
@@ -264,6 +266,7 @@ export function netplayOptionsFromFlags(flags = {}, parseCvars = () => ({})) {
     gamePort: count(flags["game-port"], gamePortFor(count(flags.port, NETPLAY_BRIDGE_PORT))),
     forUser: !!flags["for-user"],
     clientCvars: parseCvars(flags.cvar) || {},
+    cvars: parseCvars(flags["server-cvar"]) || {},
   };
   const flagOf = { players: "players", observers: "observers", basePort: "port", gamePort: "game-port" };
   for (const [k, flag] of Object.entries(flagOf)) {

@@ -2031,6 +2031,7 @@ void SERVERCOMMANDS_SetThingFlags( AActor *pActor, FlagSet flagset, ULONG ulPlay
 		case FLAGSET_FUAFLAGS:	actorFlags = pActor->fua_flags; break;
 		case FLAGSET_RENDERFLAGS:	actorFlags = pActor->renderflags; break;
 		case FLAGSET_BOUNCEFLAGS:	actorFlags = pActor->BounceFlags; break;
+		case FLAGSET_RENDERFLAGS2:	actorFlags = pActor->renderflags2; break;
 		case FLAGSET_FLAGSST:	actorFlags = pActor->STFlags; break;
 		default: return;
 	}
@@ -2103,6 +2104,11 @@ void SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults( AActor *pActor, ULONG ulPlaye
 	if ( pActor->BounceFlags != pActor->GetDefault( )->BounceFlags )
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_BOUNCEFLAGS, ulPlayerExtra, flags );
+	}
+	// [Doruk-Aksoy] No renderflags2 bit is a client's own, so a player body's go too.
+	if ( pActor->renderflags2 != pActor->GetDefault( )->renderflags2 )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_RENDERFLAGS2, ulPlayerExtra, flags );
 	}
 	// [BB] STFlags is intentionally left out here.
 }

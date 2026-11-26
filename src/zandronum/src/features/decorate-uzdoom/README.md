@@ -55,6 +55,12 @@ word when it differs from the class's, a player body's `renderflags` excepted, a
 flags (`DONTBOUNCEONSHOOTABLES`, `BOUNCEONUNRIPPABLES`, `DONTBOUNCEONSKY`, `KEEPBOUNCEANGLE`, `BOUNCEMODIFIESPITCH`),
 read as 16 bits from a save before 4538.
 
+`renderflags` holds UZDoom's `RF_` bits exactly and `renderflags2` (UZDoom's `RF2_` word) is new, with its own
+`FLAGSET_RENDERFLAGS2`; no bit of it is a client's own, so a joiner gets a player body's too. `LIGHTMULTALPHA` moved
+to `RF2_LIGHTMULTALPHA`, since its old bit is UZDoom's `DONTFLIP`, and a save before 4539 has it moved on load by
+`ComputeRehomedSaveRenderFlags`. The other `RF_`/`RF2_` names are declared but not yet settable: each comes with its
+renderer work.
+
 ## Gameplay flags
 
 UZDoom's `LAXTELEFRAGDMG`, `FORCEZERORADIUSDMG`, `HITOWNER`, `STOPRAILS`, `NOSHIELDREFLECT`, `ICESHATTER`,
@@ -108,6 +114,9 @@ Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
 - Render and bounce flagsets: `network.h`, `sv_commands.cpp` (`SetThingFlags`, the joiner's flags), `cl_main.cpp`,
   `thingdef/thingdef_codeptr.cpp` (`A_ChangeFlag`), `actor.h` and `p_mobj.cpp` (32-bit `BounceFlags`), `version.h`
   (4538); `features/net-replication`'s `ComputeClientAppliedFlags`.
+- Render words: `actor.h` (UZDoom's `RF_`/`RF2_`, `renderflags2`), `p_mobj.cpp` (`AActor::Serialize`'s `renderflags2` and
+  its remap), `version.h` (4539), `network.h` (`FLAGSET_RENDERFLAGS2`), `cl_main.cpp`, `sv_commands.cpp`,
+  `thingdef/thingdef_codeptr.cpp`, `thingdef/thingdef_data.cpp` (`LIGHTMULTALPHA`), `features/gamecopy/lights.cpp`.
 - Gameplay flags: `p_interaction.cpp` (`P_DamageMobj`, `P_PoisonDamage`, `OkayToSwitchTarget`), `p_map.cpp`
   (`PIT_CheckThing`, `P_TestMobjZ`, `P_RadiusAttack`, `ProcessRailHit`), `p_mobj.cpp` (`P_XYMovement`,
   `P_ZMovement`, `AdjustReflectionAngle`, `Slam`, `CanSeek`), `p_enemy.cpp` (`P_NewChaseDir`, `P_IsVisible`,
