@@ -28,18 +28,6 @@ const DWORD kChunkId = MAKE_ID('f', 'R', 'n', 'd');
 std::map<std::string, FRandom *> g_streams;
 std::set<std::string> g_warned;
 
-// [Doruk-Aksoy] Whether any engine random stream already has `crc`, DECORATE's and the engine's own included.
-bool CrcTaken(DWORD crc)
-{
-	struct Probe { DWORD crc; bool found; } probe = { crc, false };
-	FRandom::StaticEnumStates([](DWORD c, unsigned int, DWORD, void *ctx) {
-		Probe *p = static_cast<Probe *>(ctx);
-		if (c == p->crc)
-			p->found = true;
-	}, &probe);
-	return probe.found;
-}
-
 // [Doruk-Aksoy] The stream of `key`, made and seeded from the game's rngseed when new, as every stream is at a level's start; NULL when its key's CRC is
 // another stream's, which would draw on that one.
 FRandom *StreamOfKey(const std::string &key)
@@ -48,7 +36,7 @@ FRandom *StreamOfKey(const std::string &key)
 	if (found != g_streams.end())
 		return found->second;
 	const DWORD crc = CalcCRC32(reinterpret_cast<const BYTE *>(key.c_str()), unsigned(key.size()));
-	if (crc == 0 || CrcTaken(crc))
+	if (crc == 0 || FRandom::StaticHasCRC(crc))
 	{
 		if (g_warned.insert(key).second)
 			Printf(TEXTCOLOR_ORANGE "fua_Random: the stream name in \"%s\" clashes with another random stream, so it draws nothing; pick another name.\n", key.c_str());

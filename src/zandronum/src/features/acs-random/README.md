@@ -19,6 +19,7 @@ Named random streams for ACS, `fua_` functions 24070-24072. Modder reference:
 - `p_acs.cpp`: the three functions, `fua_clientside` set in the script's constructor and on load.
 - `p_acs.h`: `DLevelScript::fua_clientside`.
 - `g_game.cpp`: the chunk written beside the RNG state and read before it.
+- `m_random.cpp`: `FRandom::StaticHasCRC`, which the name-clash check asks, in every build.
 - `features/acs-argcount`: each function's minimum argument count.
 
 ## Tests
