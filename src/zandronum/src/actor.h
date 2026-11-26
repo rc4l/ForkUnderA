@@ -591,7 +591,40 @@ enum ActorRenderFlag
 	RF_FORCEYBILLBOARD		= 0x10000,	// [BB] OpenGL only: draw with y axis billboard, i.e. anchored to the floor (overrides r_billboard_mode setting)
 	RF_FORCEXYBILLBOARD		= 0x20000,	// [BB] OpenGL only: draw with xy axis billboard, i.e. unanchored (overrides r_billboard_mode setting)
 	RF_ROLLSPRITE			= 0x40000,	// [rc4l] uzdoom: [marrub] roll the sprite billboard around the sight vector
-	RF_LIGHTMULTALPHA		= 0x80000,	// [Doruk-Aksoy] uzdoom@c0d17bbd: the lights this actor carries are dimmed by its alpha
+	// [Doruk-Aksoy] UZDoom's remaining bits, bit for bit, so its render flags port verbatim (older saves move by features/decorate-uzdoom/computation/flagrehome_compute.h).
+	RF_DONTFLIP			= 0x00080000,	// Don't flip it when viewed from behind.
+	RF_ROLLCENTER		= 0x00100000, // Rotate from the center of sprite instead of offsets
+	RF_MASKROTATION		= 0x00200000, // [MC] Only draw the actor when viewed from a certain angle range.
+	RF_ABSMASKANGLE		= 0x00400000, // [MC] The mask rotation does not offset by the actor's angle.
+	RF_ABSMASKPITCH		= 0x00800000, // [MC] The mask rotation does not offset by the actor's pitch.
+	RF_INTERPOLATEANGLES = 0x01000000, // [MC] Allow interpolation of the actor's angle, pitch and roll.
+	RF_MAYBEINVISIBLE	= 0x02000000,
+	RF_DONTINTERPOLATE	= 0x04000000,	// no render interpolation ever!
+	RF_SPRITEFLIP		= 0x08000000,	// sprite flipped on x-axis
+	RF_ZDOOMTRANS		= 0x10000000,	// is not normally transparent in Vanilla Doom
+	RF_CASTSPRITESHADOW = 0x20000000,	// actor will cast a sprite shadow
+	RF_NOINTERPOLATEVIEW = 0x40000000,	// don't interpolate the view next frame if this actor is a camera.
+	RF_NOSPRITESHADOW	= 0x80000000,	// actor will not cast a sprite shadow
+};
+
+// [Doruk-Aksoy] UZDoom's renderflags2, bit for bit.
+enum ActorRenderFlag2
+{
+	RF2_INVISIBLEINMIRRORS		= 0x0001,	// [Nash] won't render in mirrors
+	RF2_ONLYVISIBLEINMIRRORS	= 0x0002,	// [Nash] only renders in mirrors
+	RF2_BILLBOARDFACECAMERA		= 0x0004,	// Sprite billboard face camera (override gl_billboard_faces_camera)
+	RF2_BILLBOARDNOFACECAMERA	= 0x0008,	// Sprite billboard face camera angle (override gl_billboard_faces_camera)
+	RF2_FLIPSPRITEOFFSETX		= 0x0010,
+	RF2_FLIPSPRITEOFFSETY		= 0x0020,
+	RF2_CAMFOLLOWSPLAYER		= 0x0040,	// Matches the cam's base position and angles to the main viewpoint.
+	RF2_ISOMETRICSPRITES		= 0x0080,
+	RF2_SQUAREPIXELS			= 0x0100,	// apply +ROLLSPRITE scaling math so that non rolling sprites get the same scaling
+	RF2_STRETCHPIXELS			= 0x0200,	// don't apply SQUAREPIXELS for ROLLSPRITES
+	RF2_LIGHTMULTALPHA			= 0x0400,	// attached lights use alpha as intensity multiplier
+	RF2_ANGLEDROLL				= 0x0800,	// Sprite roll amount depends on (actor.Angle - actor.AngledRollOffset)
+	RF2_INTERPOLATESCALE		= 0x1000,
+	RF2_INTERPOLATEALPHA		= 0x2000,
+	RF2_NODYNAMICLIGHTING		= 0x4000,	// [MC] Disable dynamic lighting effects on sprites/models
 };
 
 // [Doruk-Aksoy] UZDoom's flags8, bit for bit; the MBF21 boss and full-volume flags are its own (MBF21 FULLVOLSOUNDS sets MF3_FULLVOLDEATH for the death sound, as UZDoom).
@@ -774,6 +807,7 @@ typedef TFlags<ActorFlag7> ActorFlags7;
 typedef TFlags<ActorFlag8> ActorFlags8;
 typedef TFlags<ActorFlag9> ActorFlags9;
 typedef TFlags<ActorRenderFlag> ActorRenderFlags;
+typedef TFlags<ActorRenderFlag2> ActorRenderFlags2;
 typedef TFlags<ActorBounceFlag, DWORD> ActorBounceFlags;
 DEFINE_TFLAGS_OPERATORS (ActorFlags)
 DEFINE_TFLAGS_OPERATORS (ActorFlags2)
@@ -785,6 +819,7 @@ DEFINE_TFLAGS_OPERATORS (ActorFlags7)
 DEFINE_TFLAGS_OPERATORS (ActorFlags8)
 DEFINE_TFLAGS_OPERATORS (ActorFlags9)
 DEFINE_TFLAGS_OPERATORS (ActorRenderFlags)
+DEFINE_TFLAGS_OPERATORS (ActorRenderFlags2)
 DEFINE_TFLAGS_OPERATORS (ActorBounceFlags)
 
 // Used to affect the logic for thing activation through death, USESPECIAL and BUMPSPECIAL
@@ -1324,6 +1359,7 @@ public:
 	ActorFlags8		flags8;			// [Doruk-Aksoy] UZDoom's flags8 (see MF8_* above).
 	ActorFlags9		flags9;			// [Doruk-Aksoy] UZDoom's flags9 (see MF9_* above).
 	DWORD			fua_flags;		// [Doruk-Aksoy] ZandroX's own flags (see FUAF_* above).
+	ActorRenderFlags2	renderflags2;	// [Doruk-Aksoy] UZDoom's second render word (see RF2_* above).
 	DWORD			mvFlags;		// [rc4l] Movement-model flags (see MV_* above).
 
 	// [BB] If 0, everybody can see the actor, if > 0, only members of team (VisibleToTeam-1) can see it.

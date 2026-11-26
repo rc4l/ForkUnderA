@@ -16,7 +16,7 @@ Run from `tools/fuactl` as `node src/cli.mjs …`, with `FUACTL_ENGINE` at the b
 ## A netgame in one command
 
 ```bash
-node src/cli.mjs netplay --players 1 --observers 1 [--map MAP01] [--iwad W] [--file a.wad] [--lag 100,0] [--loss 0,10]
+node src/cli.mjs netplay --players 1 --observers 1 [--map MAP01] [--iwad W] [--file a.wad] [--lag 100,0] [--loss 0,10] [--cvar k=v] [--server-cvar k=v]
 node src/cli.mjs netdiff            # the server against every client of the running set; exit 1 on a difference
 node src/cli.mjs netcap record --out cap --seconds 5   # what the server wrote for each client, to cap.netcap
 node src/cli.mjs netcap diff a.netcap b.netcap         # commands whose counts changed, and where each client's stream parts
@@ -27,6 +27,7 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   ports above it, all bound to `127.0.0.1` so no firewall prompt appears. Each client joins as a player and
   the command returns once the server holds every one spawned (`net.state`). It is recorded in
   `.netplay-session.json` for the other commands.
+- `--cvar` reaches the clients alone and `--server-cvar` the server, as a scenario config's `clientCvars` and `serverCvars` do; the snapshot netcode is the server's `fua_snap 1`, `fua_snap_send 1`, `fua_snap_nolegacy 3` until those are the defaults.
 - `--lag` and `--loss` are per client, comma-separated: `fua_net_fakeping` adds that many ms to the client's
   round trip (half each way) and `fua_net_fakeloss` drops that percent of its packets each way
   (`features/net-transport`). `--jitter` (`fua_net_fakejitter`) holds each packet up to that many ms more, in
