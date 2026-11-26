@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PCD, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 import { SPECIAL } from "../src/doomnums.mjs";
 import { UdmfMap } from "../src/udmf.mjs";
-import { COPY, START, startWords, withNetCopies, addPlayerStarts, who, runSteps, arriveOn, changeMap, judgeEach, result } from "../src/netacs.mjs";
+import { COPY, START, MORE_TICS, startWords, withNetCopies, addPlayerStarts, who, runSteps, netJudge, answerFor, arriveOn, changeMap, judgeEach, result } from "../src/netacs.mjs";
 import { GS_INTERMISSION } from "../src/capture.mjs";
 
 test("START runs ACS_ExecuteAlways on its argument, and each copied script gets a NET original and a CLIENTSIDE copy", () => {
@@ -85,4 +85,46 @@ test("faults name the machine, and a scenario's line is PASS or FAIL", () => {
   assert.deepEqual(judgeEach(logs, (l, m) => (l.a === "1" ? [] : [`${m.role} read ${l.a}`])), ["the player's client: player read 2"]);
   assert.deepEqual(result("MAP01 lan", [], "ok"), { line: "PASS MAP01 lan: ok", failed: 0 });
   assert.deepEqual(result("MAP01 lan", ["x", "y"], "ok"), { line: "FAIL MAP01 lan: x; y", failed: 1 });
+});
+
+test("a step may run on one side alone", async () => {
+  const { set, order, deps } = fakeSet();
+  await runSteps(set, [{ script: 3, tags: ["x"], clients: false }, { script: 4, tags: ["y"], server: false }], {}, deps);
+  assert.deepEqual(order, ["player: puke 3", `player: puke ${START} ${4 + COPY}`]);
+});
+
+test("a scenario's netJudge runs the steps, then the late joiner's alone, judging every machine", async () => {
+  const { set } = fakeSet();
+  const late = { role: "latejoin", c: {} };
+  const runs = [];
+  const run = async (s, steps, opts) => { runs.push([steps.map((x) => x.script), (opts.on || s.clients).map((m) => m.role), opts.server ?? true, opts.by.role]);
+    return new Map([...(opts.on || s.clients).map((m) => [m, { a: m.role }]), ...(opts.server === false ? [] : [[s.server, { a: "server" }]])]); };
+  const judge = netJudge({ steps: [{ script: 1 }], late: [{ script: 2 }], judge: (l) => (l.a === "observer" ? ["off"] : []), passed: "ok" },
+    { join: async (s) => { s.clients.push(late); return late; }, waitTics: async () => {}, run });
+  assert.deepEqual(await judge(set, "MAP01 lan"), { line: "FAIL MAP01 lan: the observer's client: off", failed: 1 });
+  assert.deepEqual(runs, [[[1], ["player", "observer"], true, "player"], [[2], ["latejoin"], false, "player"]]);
+  const byServer = netJudge({ steps: [{ script: 1 }], judge: () => [], passed: "ok", by: "server" }, { waitTics: async () => {}, run });
+  assert.deepEqual(await byServer(fakeSet().set, "M"), { line: "PASS M: ok", failed: 0 });
+  assert.equal(runs.at(-1)[3], "server");
+});
+
+test("a machine's answer is its role's, then any client's, then the fallback", () => {
+  const answers = { client: { a: 1, b: 2 }, latejoin: { b: 3 } };
+  assert.deepEqual(["server", "player", "latejoin"].map((r) => [answerFor(answers, r, "a", 0), answerFor(answers, r, "b", 0)]), [[0, 0], [1, 2], [1, 3]]);
+  assert.equal(answerFor(answers, "player", "c", 9), 9);
+});
+
+test("a step waits on, at most MORE_TICS, for a machine whose output comes late", async () => {
+  const { set, deps } = fakeSet();
+  let waits = 0, late = null;
+  const slow = { ...deps,
+    listen: (c) => { const h = deps.listen(c); if (c.role === "observer") { late = { c, text: h.text }; return { text: () => (waits >= 4 ? "observer ran late\n" : ""), off: h.off }; } return h; },
+    waitTics: async () => { waits++; } };
+  const logs = await runSteps(set, [{ script: 1, tags: ["a"], server: false }], {}, slow);
+  assert.equal(logs.get(set.clients[1]).a, "observer ran late\n");
+  assert.equal(waits, 4);
+  waits = -1000;
+  await runSteps(set, [{ script: 1, tags: ["a"], server: false }], {}, slow);
+  assert.equal(waits, -1000 + 1 + MORE_TICS / 5);
+  assert.ok(late);
 });

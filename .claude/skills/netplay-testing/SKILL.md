@@ -83,9 +83,11 @@ no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints
   `withNetCopies` makes each step's script NET and adds its CLIENTSIDE copy (number + 1000) and script 30000,
   which starts a copy on every client as a mod's server code does; `runSteps` runs each step on the clients,
   then on the server (so the server's answers show no copy reached it), keeping each machine's output by tag
-  for the scenario's own judge; `changeMap` follows a changemap to every client. A machine whose right answer
-  differs from single player's (a synced actor's health, state a late joiner arrives to) names it, as
-  `netacsparity`'s `ANSWERS` do; library scripts get their copies in their `.bcs` (`netacsfuncref`).
+  for the scenario's own judge (a step's `clients: false` or `server: false` runs it on one side, such as a
+  server-only removal); `netJudge` is the usual judgeNetplay, the steps then a late joiner's; `changeMap`
+  follows a changemap to every client. A machine whose right answer differs from single player's (a synced
+  actor's health, state a late joiner arrives to) names it, as `netacsparity`'s `ANSWERS` do through
+  `answerFor`; library scripts get their copies in their `.bcs` (`netacsfuncref`).
 
 - **Joining as a player does.** `addClient(set, { files: [], via: "browser" })` launches a client without the
   set's wads and joins from its browser (`browser.add`, `browser.select`, `fua_join_selected_server`) with

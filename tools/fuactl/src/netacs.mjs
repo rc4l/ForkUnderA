@@ -3,9 +3,12 @@
 import { PCD, SCRIPT, SCRIPTF } from "./acs.mjs";
 import { SPECIAL } from "./doomnums.mjs";
 import * as cap from "./capture.mjs";
+import { addClient } from "./netplay.mjs";
 
 // [Doruk-Aksoy] A script's CLIENTSIDE copy is its number plus COPY; START is the server script that starts any copy, its number its argument.
 export const COPY = 1000, START = 30000;
+// [Doruk-Aksoy] How many more tics a step waits for a machine that has printed nothing yet.
+export const MORE_TICS = 105;
 
 // [Doruk-Aksoy] START's words: ACS_ExecuteAlways(its argument) on this map, which a server sends to every client for a CLIENTSIDE script, with the activator that ran START.
 export function startWords() {
@@ -36,25 +39,50 @@ export function addPlayerStarts(m, spots) {
 export const who = (m) => (m.role === "server" ? "the server" : `the ${m.role === "latejoin" ? "late joiner" : `${m.role}'s client`}`);
 
 // [Doruk-Aksoy] Runs each step through START on the clients in `on`, then on the server, and returns each machine's output by step tag; the clients go first, so the
-// server's answers also show that nothing a client's copy did reached the server. A step is { script, tags, tics }: its output goes under each of its tags, and `tics`
-// (default 20) is how long the server's tics wait for it. `by` runs both, a player's client making itself the activator (the scripts NET) or the server's console
-// leaving none; `server: false` skips the server's run.
+// server's answers also show that nothing a client's copy did reached the server. A step is { script, tags, tics, clients, server }: its output goes under each of its
+// tags, `tics` (default 20) is how long the server's tics wait for it, and `clients: false` or `server: false` runs it on one side alone. `by` runs both, a player's
+// client making itself the activator (the scripts NET) or the server's console leaving none; `server: false` skips every server run.
 export async function runSteps(set, steps, { on = set.clients, by = set.clients[0], server = true, quietMs = 400 } = {}, deps = {}) {
   const { exec = cap.exec, listen = cap.listen, waitTics = cap.waitTics } = deps;
   const sc = set.server.c;
   const logs = new Map([...on.map((m) => [m, {}]), ...(server ? [[set.server, {}]] : [])]);
   const keep = (m, step, text) => { for (const tag of step.tags) logs.get(m)[tag] = (logs.get(m)[tag] || "") + text; };
+  // [Doruk-Aksoy] Waits `tics`, then up to MORE_TICS more while a machine has printed nothing, as a lagged client's script starts late.
   const run = async (members, command, tics) => {
     const heard = members.map((m) => [m, listen(m.c)]);
     await exec(by.c, command, { quietMs });
     await waitTics(sc, tics);
+    for (let more = 0; more < MORE_TICS && heard.some(([, h]) => !h.text().trim()); more += 5) await waitTics(sc, 5);
     return heard.map(([m, h]) => { h.off(); return [m, h.text()]; });
   };
   for (const step of steps) {
-    for (const [m, text] of await run(on, `puke ${START} ${step.script + COPY}`, step.tics ?? 20)) keep(m, step, text);
-    if (server) for (const [m, text] of await run([set.server], `puke ${step.script}`, step.tics ?? 20)) keep(m, step, text);
+    if (step.clients !== false) for (const [m, text] of await run(on, `puke ${START} ${step.script + COPY}`, step.tics ?? 20)) keep(m, step, text);
+    if (server && step.server !== false) for (const [m, text] of await run([set.server], `puke ${step.script}`, step.tics ?? 20)) keep(m, step, text);
   }
   return logs;
+}
+
+// [Doruk-Aksoy] A scenario's judgeNetplay: `steps` on every machine, then a late joiner and `late` on it alone, each machine's faults from `judge(logs, member)`;
+// `by` "player" runs them from the first client, its pawn the activator, and "server" from the server's console.
+export function netJudge({ steps, late = [], judge, passed, by = "player" }, deps = {}) {
+  const { join = addClient, waitTics = cap.waitTics, run = runSteps } = deps;
+  return async (set, label) => {
+    await waitTics(set.server.c, 35);
+    const runner = by === "server" ? set.server : set.clients[0];
+    const faults = judgeEach(await run(set, steps, { by: runner }), judge);
+    if (late.length) {
+      const joiner = await join(set, { role: "latejoin" });
+      await waitTics(set.server.c, 35);
+      faults.push(...judgeEach(await run(set, late, { on: [joiner], server: false, by: runner }), judge));
+    }
+    return result(label, faults, passed);
+  };
+}
+
+// [Doruk-Aksoy] `role`'s answer for `key` from a scenario's per-machine answers, else `fallback`; "client" stands for every client's role.
+export function answerFor(answers, role, key, fallback) {
+  for (const r of [role, role === "server" ? null : "client"]) if (r && answers[r] && key in answers[r]) return answers[r][key];
+  return fallback;
 }
 
 // [Doruk-Aksoy] Until `m` is in a level on `map`, a client connected again too, pressing use through an intermission as a player does; false when it never got there.
