@@ -59,6 +59,8 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   assembly, since zt-bcc refuses `Delay` in a function), a refused nested trace, a cleared callback, one
   removing an actor ahead, and one kept across the savegame. It fails on a build without the functions,
   with the tracers' `SerializeScript` taken out, and with the rules or the callback left out of the save.
-- `fuactl scenarios netacstraces`: every step before that savegame, the rules' too, as CLIENTSIDE copies
-  on the player's client, an observer and a late joiner, then on the server, each tracing its own copy of
-  the map and its actors with its own tracer ids, the server on the snapshot netcode at `fua_snap_nolegacy 2`.
+- `fuactl scenarios netacstraces`: every step before that savegame, the rules' and the first callbacks'
+  too (`tracecb.bcs`' CLIENTSIDE copies 1030 and 1032), as CLIENTSIDE copies on the player's client, an
+  observer and a late joiner, then on the server, each tracing its own copy of the map and its actors
+  with its own tracer ids; the callback that removes an imp runs last, on every machine. The server runs
+  the snapshot netcode at `fua_snap_nolegacy 2`.

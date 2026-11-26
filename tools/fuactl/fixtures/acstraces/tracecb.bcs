@@ -1,4 +1,5 @@
 // fuactl scenarios acstraces: fua_TraceCallback's functions, run on the scenario's imp lane (y 680, imps 31-33 at x 600-800).
+// Scripts 1030 and 1032 are 30's and 32's CLIENTSIDE copies, for netacstraces.
 // Build: zt-bcc -i <zt-bcc>/lib tracecb.bcs tracecb.o
 #library "tracecb"
 #import "zcommon.bcs"
@@ -48,7 +49,7 @@ int TidOf( int t, int i ) {
    return fua_GetField( fua_TraceResult( t, TR_HitActor, i ), "tid" );
 }
 
-script 30 ( void ) {
+void Callbacks( void ) {
    int t = fua_TracerCreate();
    fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
    fua_TraceRule( t, TR_WALL, TRACE_Stop );
@@ -78,6 +79,9 @@ script 30 ( void ) {
       d: cleared, s: " ", d: none );
 }
 
+script 30 ( void ) { Callbacks(); }
+script 1030 ( void ) clientside { Callbacks(); }
+
 // Holds a tracer with a callback across a savegame, then traces with it.
 script 31 ( void ) {
    int t = fua_TracerCreate();
@@ -91,9 +95,12 @@ script 31 ( void ) {
 }
 
 // Removes an imp ahead of the trace, so it runs last.
-script 32 ( void ) {
+void RemovesAhead( void ) {
    int t = fua_TracerCreate();
    fua_TraceRule( t, TR_ACTOR, TRACE_Callback );
    fua_TraceCallback( t, Removes );
    Log( s: "cb3 ", d: Imps( t ), s: " ", d: TidOf( t, 0 ) );
 }
+
+script 32 ( void ) { RemovesAhead(); }
+script 1032 ( void ) clientside { RemovesAhead(); }

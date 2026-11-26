@@ -2,13 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TRACE_STEPS, WANT } from "../scenarios/acstraces.mjs";
 import { logged } from "../scenarios/acshandles.mjs";
-import { STEPS, LATE, AFTER, STARTS, WANT_ONLINE, STRINGS_ONLINE, judgeMachine, buildNetTracesPk3 } from "../scenarios/netacstraces.mjs";
+import fs from "node:fs";
+import { objectScripts, SCRIPTF } from "../src/acs.mjs";
+import { COPY } from "../src/netacs.mjs";
+import { STEPS, LATE, AFTER, STARTS, LIBRARY_SCRIPTS, WANT_ONLINE, STRINGS_ONLINE, judgeMachine, buildNetTracesPk3 } from "../scenarios/netacstraces.mjs";
 
 test("every step before the savegame runs on every machine and again on the late joiner, a silent one under a tag of its own", () => {
   assert.deepEqual(STEPS.map((s) => s.script), [...TRACE_STEPS.map(([n]) => n), ...STEPS.slice(TRACE_STEPS.length).map((s) => s.script)]);
   assert.ok(STEPS.find((s) => s.script === 11).tags[0].startsWith("held"));
   assert.ok(LATE.every((s) => s.server === false) && LATE.length === STEPS.length);
-  assert.ok(Array.isArray(AFTER));
+  assert.deepEqual(STEPS.at(-1).script, 30);
+  assert.deepEqual(AFTER.map((s) => s.script), [32], "the callback that removes an imp runs last");
   assert.ok(STARTS.every(([x, y]) => x < 300 && y === 1000), "north-west, behind the imps");
 });
 
@@ -26,4 +30,13 @@ test("a machine that logged nothing fails, naming the script", () => {
 
 test("the pk3 builds", () => {
   assert.ok(buildNetTracesPk3().toString("latin1").includes("maps/MAP01.wad"));
+});
+
+test("the callback scripts' CLIENTSIDE copies are compiled into tracecb.o", () => {
+  const scripts = objectScripts(fs.readFileSync(new URL("../fixtures/acstraces/tracecb.o", import.meta.url)));
+  for (const n of LIBRARY_SCRIPTS) {
+    assert.ok(scripts.some((s) => s.number === n && !(s.flags & SCRIPTF.CLIENTSIDE)), `${n}`);
+    assert.ok(scripts.some((s) => s.number === n + COPY && s.flags & SCRIPTF.CLIENTSIDE), `${n + COPY}`);
+  }
+  assert.ok("cb1" in WANT_ONLINE && "cb3" in WANT_ONLINE && !("cb2" in WANT_ONLINE));
 });
