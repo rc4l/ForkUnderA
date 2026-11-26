@@ -122,6 +122,8 @@
 #include "features/decorate-uzdoom/uservars.h"
 #include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] actor handles, fua_ 24020-24023
+#include "features/acs-random/acsrandom.h"   // [Doruk-Aksoy] named random streams, fua_ 24070-24072
+#include "features/acs-random/computation/random_compute.h"
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -3907,9 +3909,13 @@ void DLevelScript::Serialize (FArchive &arc)
 	arc << ClipRectLeft << ClipRectTop << ClipRectWidth << ClipRectHeight
 		<< WrapWidth;
 	arc << InModuleScriptNumber;
+	// [Doruk-Aksoy] features/acs-random: found again by the script's number, as starting it found it, so savegames keep their layout.
+	if (arc.IsLoading())
+		fua_clientside = ACS_IsScriptClientSide(script);
 }
 
 DLevelScript::DLevelScript ()
+	: fua_clientside (false)
 {
 	next = prev = NULL;
 	if (DACSThinker::ActiveThinker == NULL)
@@ -5916,11 +5922,16 @@ enum EACSFunctions
 	ACSF_fua_HandleValid,				// (int h)
 	ACSF_fua_HandlePointer,				// (int h, int aaptr)
 	ACSF_fua_SetActivatorHandle,		// (int h)
+	// [Doruk-Aksoy] features/acs-random: named random streams, apart from the one Random() draws on.
+	ACSF_fua_Random = 24070,			// (str stream, int min, int max)
+	ACSF_fua_FRandom,					// (str stream, fixed min, fixed max)
+	ACSF_fua_SetRandomSeed,				// (str stream, int seed)
 };
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
 static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
 static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF_fua_SetActivatorHandle == zx::acshandles::kSetActivatorHandle, "the fua_ handle functions keep their numbers");
+static_assert(ACSF_fua_Random == zx::acsrandom::kRandom && ACSF_fua_FRandom == zx::acsrandom::kFRandom && ACSF_fua_SetRandomSeed == zx::acsrandom::kSetRandomSeed, "the fua_ random stream functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
 	&& ACSF_GetLineY == zx::acsparity::kGetLineY, "UZDoom's functions keep UZDoom's numbers");
@@ -7512,6 +7523,16 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 				return 0;
 			activator = actor;
 			return 1;
+
+		// [Doruk-Aksoy] features/acs-random: a stream by name, a CLIENTSIDE script's apart.
+		case ACSF_fua_Random:
+			return zx::acsrandom::Random( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1], args[2] );
+
+		case ACSF_fua_FRandom:
+			return zx::acsrandom::FixedRandom( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1], args[2] );
+
+		case ACSF_fua_SetRandomSeed:
+			return zx::acsrandom::SetSeed( FBehavior::StaticLookupString( args[0] ), fua_clientside, args[1] );
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:
@@ -13639,6 +13660,8 @@ DLevelScript::DLevelScript (AActor *who, line_t *where, int num, const ScriptPtr
 		new DACSThinker;
 
 	script = num;
+	// [Doruk-Aksoy] features/acs-random: taken here, as activeBehavior later follows the script into a library's functions.
+	fua_clientside = ACS_IsScriptClientSide(code);
 	assert(code->VarCount >= code->ArgCount);
 	numlocalvars = code->VarCount;
 	localvars = new SDWORD[code->VarCount];

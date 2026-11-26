@@ -187,6 +187,9 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 24021, 1, "fua_HandleValid" },
 	{ 24022, 2, "fua_HandlePointer" },
 	{ 24023, 1, "fua_SetActivatorHandle" },
+	{ 24070, 3, "fua_Random" },
+	{ 24071, 3, "fua_FRandom" },
+	{ 24072, 2, "fua_SetRandomSeed" },
 };
 const int kFunctionArgsCount = int(sizeof(kFunctionArgs) / sizeof(kFunctionArgs[0]));
 

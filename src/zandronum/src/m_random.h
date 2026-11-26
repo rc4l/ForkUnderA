@@ -179,6 +179,8 @@ public:
 	static void StaticReadRNGState (PNGHandle *png);
 	static void StaticWriteRNGState (FILE *file);
 	static FRandom *StaticFindRNG(const char *name);
+	// [Doruk-Aksoy] Whether any stream has this name CRC, so features/acs-random never draws on one it didn't make.
+	static bool StaticHasCRC (DWORD crc);
 
 #ifndef NDEBUG
 	static void StaticPrintSeeds ();
