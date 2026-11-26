@@ -417,6 +417,9 @@ bool SnapFileNameBad(const char *pszName);
 // The entities whose properties a script moved off their class defaults, one slot each, as
 // the mover table holds a mover: the generation is the whole dirty test.
 #define SNAPPROP_MAXSLOTS	256
+// A slot's id and generation, which is the whole dirty test: the set itself is a struct the
+// size of a wire record, so the per-client walk reads it only past the guards.
+bool PropSlotId(unsigned int slot, WORD & netID, WORD & gen);
 bool PropSlotRead(unsigned int slot, WORD & netID, struct SnapProps & props, WORD & gen);
 unsigned int PropSlots();
 void PropForget();

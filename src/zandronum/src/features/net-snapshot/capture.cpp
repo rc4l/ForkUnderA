@@ -3295,14 +3295,22 @@ static void snap_PropSweepEnd()
 	}
 }
 
-bool zx::netsnapshot::PropSlotRead(unsigned int slot, WORD & netID, SnapProps & props,
-	WORD & gen)
+bool zx::netsnapshot::PropSlotId(unsigned int slot, WORD & netID, WORD & gen)
 {
 	if ((slot >= SNAPPROP_MAXSLOTS) || (g_propSlots[slot].netID == 0))
 		return false;
 	netID = g_propSlots[slot].netID;
-	props = g_propSlots[slot].props;
 	gen = g_propSlots[slot].gen;
+	return true;
+}
+
+bool zx::netsnapshot::PropSlotRead(unsigned int slot, WORD & netID, SnapProps & props,
+	WORD & gen)
+{
+	// The same guards, so a walk that passed PropSlotId reads the set it has just tested.
+	if (PropSlotId(slot, netID, gen) == false)
+		return false;
+	props = g_propSlots[slot].props;
 	return true;
 }
 

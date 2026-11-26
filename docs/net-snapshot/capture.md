@@ -164,8 +164,9 @@ Capture helpers the per-client pass and the client use:
   a record's position, with the compat order. Both ends call `LawAt`.
 
 The property slots:
-- `PropSlotRead`, `PropSlots`: how the per-client pass reads the table -- a slot's NetID, its
-  `SnapProps` and its generation.
+- `PropSlotId`, `PropSlotRead`, `PropSlots`: how the per-client pass reads the table -- a
+  slot's NetID and generation, which is the whole dirty test, and then its `SnapProps`,
+  read past the guards because the set is a struct the size of a wire record.
 - `PropForget`: the table at a level change.
 - `PropStats`: live slots, changes seen, sets refused for want of a slot, material names cut
   to `SNAP_PROPS_MATNAME_MAX`, and the pass's own size and sweep time, for the report.

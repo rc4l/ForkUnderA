@@ -2274,8 +2274,7 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			const unsigned int slot = (cl.propCursor + k) % slots;
 
 			WORD netID = 0, gen = 0;
-			SnapProps props;
-			if (PropSlotRead(slot, netID, props, gen) == false)
+			if (PropSlotId(slot, netID, gen) == false)
 				continue;			// a free slot
 			if (gen == cl.propSentGen[slot])
 				continue;
@@ -2284,6 +2283,10 @@ unsigned int zx::netsnapshot::BuildDelta(unsigned int client, const SnapEntitySt
 			if ((cl.present == NULL) || (netID >= SNAP_MAXID) || (cl.present[netID] == 0))
 				continue;
 
+			// The set itself, past the guards: a slot this walk skips copies none of it.
+			SnapProps props;
+			if (PropSlotRead(slot, netID, props, gen) == false)
+				continue;
 			BYTE prec[SNAP_MAX_EVENT_BYTES];
 			const unsigned int n = WritePropsBody(prec, props);
 
