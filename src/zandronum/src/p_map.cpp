@@ -1325,7 +1325,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 		// MBF bouncer might have a non-0 damage value, but they must not deal damage on impact either.
 		if ((tm.thing->BounceFlags & BOUNCE_Actors) && (tm.thing->Damage == 0 || !(tm.thing->flags & MF_MISSILE)))
 		{
-			return (tm.thing->target == thing || !(thing->flags & MF_SOLID));
+			return ((tm.thing->target == thing && !(tm.thing->flags8 & MF8_HITOWNER)) || !(thing->flags & MF_SOLID));
 		}
 
 		switch (tm.thing->SpecialMissileHit(thing))
@@ -1344,7 +1344,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 
 		if (tm.thing->target != NULL)
 		{
-			if (thing == tm.thing->target)
+			// [Doruk-Aksoy] uzdoom: a +HITOWNER missile can hit the one who fired it (features/decorate-uzdoom).
+			if (thing == tm.thing->target && !(tm.thing->flags8 & MF8_HITOWNER))
 			{ // Don't missile self
 				return true;
 			}
@@ -1357,6 +1358,8 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 				if (level.flags2 & LEVEL2_TOTALINFIGHTING) infight = 1;
 				else if (level.flags2 & LEVEL2_NOINFIGHTING) infight = -1;
 				else infight = infighting;
+				// [Doruk-Aksoy] uzdoom: a +FORCEINFIGHTING victim takes the species rule even with infighting off.
+				if (infight < 0 && (thing->flags7 & MF7_FORCEINFIGHTING)) infight = 0;
 
 				// [rc4l] MBF21 projectile groups: an explicitly set group overrides the default
 				// species-immunity rules below. Actors in the same positive group don't take
@@ -2156,7 +2159,7 @@ bool P_TestMobjZ(AActor *actor, bool quick, AActor **pOnmobj)
 		{ // Don't clip against self
 			continue;
 		}
-		if ((actor->flags & MF_MISSILE) && thing == actor->target)
+		if ((actor->flags & MF_MISSILE) && thing == actor->target && !(actor->flags8 & MF8_HITOWNER))
 		{ // Don't clip against whoever shot the missile.
 			continue;
 		}
@@ -5322,7 +5325,8 @@ static ETraceStatus ProcessRailHit(FTraceResults &res, void *userdata)
 	newhit.Distance = res.Distance - 10 * FRACUNIT;	// put blood in front
 	data->RailHits.Push(newhit);
 
-	return data->StopAtOne ? TRACE_Stop : TRACE_Continue;
+	// [Doruk-Aksoy] uzdoom: a +STOPRAILS actor takes the rail and stops it (features/decorate-uzdoom).
+	return (data->StopAtOne || (res.Actor->flags8 & MF8_STOPRAILS)) ? TRACE_Stop : TRACE_Continue;
 }
 
 //==========================================================================
@@ -6331,7 +6335,8 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 			// [rc4l] uzdoom@34aeb428a dropped the CAUSEPAIN test here: the sign check is about
 			// whether damage and thrust agree, not about pain, and CAUSEPAIN is honoured inside
 			// P_DamageMobj anyway.
-			if (((points * bombdamage) > 0) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
+			// [Doruk-Aksoy] uzdoom: a +FORCEZERORADIUSDMG bomb passes zero damage on too (features/decorate-uzdoom).
+			if (((points * bombdamage) > 0 || ((points * bombdamage) == 0 && (bombspot->flags7 & MF7_FORCEZERORADIUSDMG))) && P_CheckSight(thing, bombspot, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY))
 			{ // OK to damage; target is in direct path
 				double velz;
 				double thrust;
@@ -6452,7 +6457,7 @@ void P_RadiusAttack(AActor *bombspot, AActor *bombsource, int bombdamage, int bo
 				damage = (int)((double)damage * splashfactor);
 
 				damage = (int)(Scale(damage, thing->GetClass()->Meta.GetMetaFixed(AMETA_RDFactor, FRACUNIT), FRACUNIT));
-				if (damage > 0)
+				if (damage > 0 || (damage == 0 && (bombspot->flags7 & MF7_FORCEZERORADIUSDMG)))
 				{
 					// [BC/BB] Damage is server side.
 					int newdam = 0;

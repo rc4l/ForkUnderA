@@ -281,6 +281,27 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(MF8, MAP07BOSS1, AActor, flags8),
 	DEFINE_FLAG(MF8, MAP07BOSS2, AActor, flags8),
 
+	// [Doruk-Aksoy] UZDoom's gameplay flags at its own bits (features/decorate-uzdoom).
+	DEFINE_FLAG(MF5, GETOWNER, AActor, flags5),
+	DEFINE_FLAG(MF7, LAXTELEFRAGDMG, AActor, flags7),
+	DEFINE_FLAG(MF7, ICESHATTER, AActor, flags7),
+	DEFINE_FLAG(MF7, SMASHABLE, AActor, flags7),
+	DEFINE_FLAG(MF7, NOSHIELDREFLECT, AActor, flags7),
+	DEFINE_FLAG(MF7, FORCEZERORADIUSDMG, AActor, flags7),
+	DEFINE_FLAG(MF7, NOINFIGHTSPECIES, AActor, flags7),
+	DEFINE_FLAG(MF7, FORCEINFIGHTING, AActor, flags7),
+	DEFINE_FLAG(MF8, FRIGHTENING, AActor, flags8),
+	DEFINE_FLAG(MF8, DONTFACETALKER, AActor, flags8),
+	DEFINE_FLAG(MF8, HITOWNER, AActor, flags8),
+	DEFINE_FLAG(MF8, RETARGETAFTERSLAM, AActor, flags8),
+	DEFINE_FLAG(MF8, STOPRAILS, AActor, flags8),
+	DEFINE_FLAG(MF8, MINVISIBLE, AActor, flags8),
+	DEFINE_FLAG(MF8, MVISBLOCKED, AActor, flags8),
+	DEFINE_FLAG(MF8, DONTFOLLOWPLAYERS, AActor, flags8),
+	DEFINE_FLAG(MF8, SEEFRIENDLYMONSTERS, AActor, flags8),
+	DEFINE_FLAG(MF8, ONLYSLAMSOLID, AActor, flags8),
+	DEFINE_FLAG(MF9, NOAUTOOFFSKULLFLY, AActor, flags9),
+
 	// [MGOOOOOO] ZandroX's own fua_flags word. The ripper set -- see features/ripper/README.md.
 	DEFINE_FLAG(FUAF, NORIPSOUND, AActor, fua_flags),
 	DEFINE_FLAG(FUAF, RIPEXPLODEONLIMIT, AActor, fua_flags),

@@ -217,6 +217,8 @@ void AFastProjectile::Effect()
 				if (act != NULL)
 				{
 					act->angle = this->angle;
+					// [Doruk-Aksoy] uzdoom: the trail's target is the projectile, or with +GETOWNER its shooter (features/decorate-uzdoom).
+					act->target = ((flags5 & MF5_GETOWNER) && target != NULL) ? (AActor *)target : (AActor *)this;
 
 					// [BB] Assume that the trail is just for decorative purposes and let the
 					// client spawn it on its own.

@@ -46,6 +46,18 @@ new bits on load, by `ComputeRehomedSaveFlags`; its old `flags9` slot now loads 
 gone: MBF21's `FULLVOLSOUNDS` sets `MF3_FULLVOLDEATH`, as UZDoom does, and `A_Scream` now reads it, so `+FULLVOLDEATH`
 makes a monster's death scream full volume as well as a missile's death.
 
+## Gameplay flags
+
+UZDoom's `LAXTELEFRAGDMG`, `FORCEZERORADIUSDMG`, `HITOWNER`, `STOPRAILS`, `NOSHIELDREFLECT`, `ICESHATTER`,
+`SMASHABLE`, `NOINFIGHTSPECIES`, `FORCEINFIGHTING`, `FRIGHTENING`, `SEEFRIENDLYMONSTERS`, `DONTFOLLOWPLAYERS`,
+`MINVISIBLE`, `MVISBLOCKED`, `DONTFACETALKER`, `RETARGETAFTERSLAM` (with a class's own `Slam` state),
+`ONLYSLAMSOLID`, `NOAUTOOFFSKULLFLY` and `GETOWNER`, each read where UZDoom reads it. All of them act on the
+server's world: what they change reaches clients as any damage, state or movement does.
+
+Left for later: `NOSECTORDAMAGE` and `FORCESECTORDAMAGE` need monsters to take sector damage (and UDMF's
+`hurtmonsters`); `AVOIDHAZARDS` and `STAYONLIFT` need MBF's `P_SmartMove`; `MASTERNOSEE` is a render flag;
+Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
+
 ## Files
 
 - `computation/decoratemath_compute` — the math table and builtins, `GetDistance`, `GetAngle`, `GetZAt`'s point and its
@@ -84,6 +96,11 @@ makes a monster's death scream full volume as well as a missile's death.
   `sv_commands.cpp`, `thingdef/thingdef_codeptr.cpp` (`A_ChangeFlag`), `thingdef/thingdef_data.cpp`,
   `thingdef/thingdef_properties.cpp` (`ClearFlags`), `p_map.cpp` (the ripper), `d_dehacked.cpp` and `p_enemy.cpp`
   (`FULLVOLDEATH`).
+- Gameplay flags: `p_interaction.cpp` (`P_DamageMobj`, `P_PoisonDamage`, `OkayToSwitchTarget`), `p_map.cpp`
+  (`PIT_CheckThing`, `P_TestMobjZ`, `P_RadiusAttack`, `ProcessRailHit`), `p_mobj.cpp` (`P_XYMovement`,
+  `P_ZMovement`, `AdjustReflectionAngle`, `Slam`, `CanSeek`), `p_enemy.cpp` (`P_NewChaseDir`, `P_IsVisible`,
+  `LookForEnemiesInBlock`, `P_LookForPlayers`, `A_Chase`), `p_sight.cpp`, `p_conversation.cpp`,
+  `g_shared/a_fastprojectile.cpp`, and their rows in `thingdef/thingdef_data.cpp`.
 
 ## Tests
 
@@ -92,8 +109,10 @@ makes a monster's death scream full volume as well as a missile's death.
   pass or fail marker, judged offline, then on a server and on a player and an observer; translation and scale are read
   off the actors' rows. A build without this feature crashes loading it.
 - `node scenarios/decorateuzdoom.mjs --uzdoom` runs the checks without ours-only ones in a UZDoom build and judges its
-  log, so each expectation is UZDoom's own: 31 of 31 pass there.
+  log, so each expectation is UZDoom's own: 44 of 44 pass there.
 - `fuactl scenarios decorateflags` (`tools/fuactl/scenarios/decorateflags.mjs`): the moved flags read back at map start,
   from this build's save, from a save an older build wrote (`--old PATH` or `FUACTL_OLD_ENGINE`), and on a server, its
   player, observer and late joiner. It fails with the remap left out, and online with `SetThingFlags` dropped.
 - `tools/flag_bits_snapshot.py` (CI): every DECORATE flag's bit, refusing a moved one until SAVEVER is bumped.
+- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (44 of 44 pass there); each
+  behaviour check fails with its flag taken out.

@@ -2067,6 +2067,7 @@ bool AActor::CanSeek(AActor *target) const
 	if ((flags2 & MF2_DONTSEEKINVISIBLE) && 
 		((target->flags & MF_SHADOW) || 
 		 (target->renderflags & RF_INVISIBLE) || 
+		 (target->flags8 & MF8_MINVISIBLE) ||
 		 !target->RenderStyle.IsVisible(target->alpha)
 		)
 	   ) return false;
@@ -2274,7 +2275,8 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	if ((xmove | ymove) == 0)
 	{
-		if ( (mo->flags & MF_SKULLFLY)
+		// [Doruk-Aksoy] uzdoom: +NOAUTOOFFSKULLFLY keeps the charge on at rest (features/decorate-uzdoom).
+		if ( (mo->flags & MF_SKULLFLY) && !(mo->flags9 & MF9_NOAUTOOFFSKULLFLY)
 			 && ( NETWORK_InClientMode() == false ) )
 		{
 			// the skull slammed into something
@@ -3387,6 +3389,12 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 				}
 				// Let the actor do something special for hitting the floor
 				mo->HitFloor ();
+				// [Doruk-Aksoy] uzdoom: a +SMASHABLE actor dies landing, by the server (features/decorate-uzdoom).
+				if ((mo->flags7 & MF7_SMASHABLE) && !zx::net::InClientMode())
+				{
+					static const FName smash("Smash");
+					P_DamageMobj(mo, NULL, NULL, mo->health, smash);
+				}
 				if (mo->player)
 				{
 					// [BB] ZDoom changed the jumping here revision 2238.
@@ -3996,6 +4004,12 @@ bool AActor::Slam (AActor *thing)
 		return false;
 	}
 
+	// [Doruk-Aksoy] uzdoom: a +ONLYSLAMSOLID charger passes through what is neither solid nor shootable (features/decorate-uzdoom).
+	if ((flags8 & MF8_ONLYSLAMSOLID) && !(thing->flags & MF_SOLID) && !(thing->flags & MF_SHOOTABLE))
+	{
+		return true;
+	}
+
 	flags &= ~MF_SKULLFLY;
 	velx = vely = velz = 0;
 
@@ -4016,12 +4030,24 @@ bool AActor::Slam (AActor *thing)
 			// The charging monster may have died by the target's actions here.
 			if (health > 0)
 			{
-				// [BC] If we are the server, tell clients about the state change.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetThingState( this, SeeState != NULL ? STATE_SEE : STATE_IDLE );
+				// [Doruk-Aksoy] uzdoom: a Slam state of the class's own goes first, and +RETARGETAFTERSLAM goes idle instead of to See.
+				static const FName slamName("Slam");
+				FState *slam = FindState(slamName);
+				if (slam != NULL)
+				{
+					zx::netreplication::SendThingFrame(this, slam);
+					SetState (slam);
+				}
+				else
+				{
+					const bool see = SeeState != NULL && !(flags8 & MF8_RETARGETAFTERSLAM);
+					// [BC] If we are the server, tell clients about the state change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingState( this, see ? STATE_SEE : STATE_IDLE );
 
-				if (SeeState != NULL) SetState (SeeState);
-				else SetIdle();
+					if (see) SetState (SeeState);
+					else SetIdle();
+				}
 			}
 		}
 		else
@@ -4059,7 +4085,8 @@ bool AActor::AdjustReflectionAngle (AActor *thing, angle_t &angle)
 	if (thing->flags4&MF4_SHIELDREFLECT)
 	{
 		// Shield reflection (from the Centaur
-		if (absangle(angle - thing->angle)>>24 > 45)
+		// [Doruk-Aksoy] uzdoom: +NOSHIELDREFLECT missiles explode on a shield instead (features/decorate-uzdoom).
+		if ((flags7 & MF7_NOSHIELDREFLECT) || absangle(angle - thing->angle)>>24 > 45)
 			return true;	// Let missile explode
 
 		if (thing->IsKindOf (RUNTIME_CLASS(AHolySpirit)))	// shouldn't this be handled by another flag???

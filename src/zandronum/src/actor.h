@@ -301,7 +301,7 @@ enum ActorFlag5
 {
 
 	MF5_DONTDRAIN		= 0x00000001,	// cannot be drained health from.
-	/*					= 0x00000002,	   reserved for use by scripting branch */
+	MF5_GETOWNER		= 0x00000002,	// [Doruk-Aksoy] uzdoom: a fast projectile's trail takes its shooter as target, not the projectile.
 	MF5_NODROPOFF		= 0x00000004,	// cannot drop off under any circumstances.
 	MF5_NOFORWARDFALL	= 0x00000008,	// Does not make any actor fall forward by being damaged by this
 	MF5_COUNTSECRET		= 0x00000010,	// From Doom 64: actor acts like a secret
