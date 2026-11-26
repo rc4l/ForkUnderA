@@ -1,7 +1,7 @@
 // [Doruk-Aksoy] The DECORATE-gap scenario: one check actor and two markers per check, and the judge's reading of a world.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHECKS, LIVE, LIVE_SPOT, liveFor, checkClass, checksFor, buildDecorate, buildMap, checkSpot, judgeWorld, judgeLive, actorDef, compareOfflineAndOnline, ROOM_SIZE } from "../scenarios/decorateuzdoom.mjs";
+import { CHECKS, LIVE, LIVE_SPOT, liveFor, checkClass, checksFor, buildDecorate, buildMap, checkSpot, judgeWorld, judgeLive, actorDef, compareOfflineAndOnline, judgeUzdoomLog, runInUzdoom, ROOM_SIZE } from "../scenarios/decorateuzdoom.mjs";
 
 test("every check has its actor, both markers and a doomednum the map places", () => {
   const decorate = buildDecorate();
@@ -108,4 +108,30 @@ test("the live judge wants each change held and a client's rows like the server'
   assert.ok(judgeLive(stale, good).some((f) => /ZxLiveNone: unlike the server's/.test(f)));
   assert.ok(judgeLive(good.slice(1)).some((f) => /ZxLiveNone: not held/.test(f)));
   assert.ok(judgeLive(good, good.slice(0, 2)).some((f) => /ZxLiveScale: unlike the server's/.test(f)));
+});
+
+test("UZDoom's log judge wants a pass line for every shared check", () => {
+  const shared = checksFor(false);
+  const all = shared.map((c) => `zxcheck ${c.id} pass`).join("\n");
+  assert.deepEqual(judgeUzdoomLog(all), []);
+  const one = shared[0];
+  assert.deepEqual(judgeUzdoomLog(all.replace(`zxcheck ${one.id} pass`, `zxcheck ${one.id} fail`)), [`${one.id} (${one.what}) failed`]);
+  assert.deepEqual(judgeUzdoomLog(all.replace(`zxcheck ${one.id} pass`, "")), [`${one.id} (${one.what}) logged nothing`]);
+  assert.equal(judgeUzdoomLog("").length, shared.length);
+});
+
+test("the UZDoom run hands it the pk3 without our checks and judges its log", async () => {
+  const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "duz-test-"));
+  let asked = null;
+  const pass = runInUzdoom({ dir, run: (o) => { asked = o; return checksFor(false).map((c) => `zxcheck ${c.id} pass`).join("\n"); } });
+  assert.equal(pass.failed, 0);
+  assert.match(pass.line, /^PASS uzdoom: \d+ shared checks pass in UZDoom$/);
+  assert.equal(asked.map, "MAP01");
+  assert.ok(fs.existsSync(asked.pk3));
+  assert.match(asked.chain, /quit$/);
+  const fail = runInUzdoom({ dir, run: () => "" });
+  assert.equal(fail.failed, 1);
+  assert.match(fail.line, /^FAIL uzdoom: /);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

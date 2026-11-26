@@ -1,10 +1,14 @@
 // [Doruk-Aksoy] UZDoom's DECORATE features ours lacked (features/decorate-uzdoom), one check actor each that spawns a pass or fail marker: exit 0 when every check passes offline, on a server and on each of its clients.
 //
-// usage:  node scenarios/decorateuzdoom.mjs
+// usage:  node scenarios/decorateuzdoom.mjs [--uzdoom]   (--uzdoom runs the checks ours shares with UZDoom in a UZDoom build instead)
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { acsScripts, callFunc, ACSF, PCD, SCRIPT } from "../src/acs.mjs";
 import { THING } from "../src/doomnums.mjs";
-import { runScenarioIfMain, compareEachLaunch, compareNetplay } from "../src/template.mjs";
+import { runScenarioIfMain, compareEachLaunch, compareNetplay, isMain } from "../src/template.mjs";
+import { runUzdoom } from "../src/uzdoom.mjs";
 import * as cap from "../src/capture.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
@@ -264,5 +268,28 @@ export async function compareOfflineAndOnline(opts, { offline = compareEachLaunc
 }
 compareOfflineAndOnline.judgedAlone = true;
 
-runScenarioIfMain(import.meta.url, () => ({ name: "decorateuzdoom", wad: buildDecorateUzdoomPk3(), maps: ["MAP01"], sides: SIDES, configs: CONFIGS, gamePort: 10884,
-  judgeLaunch, judgeNetplay }), compareOfflineAndOnline);
+// [Doruk-Aksoy] What is wrong with UZDoom's log of the checks it shares with ours, each check logging its verdict.
+export function judgeUzdoomLog(log) {
+  const results = new Map([...String(log).matchAll(/zxcheck (\w+) (pass|fail)/g)].map((m) => [m[1], m[2]]));
+  return checksFor(false).flatMap((c) => {
+    const v = results.get(c.id);
+    return v === "pass" ? [] : [`${c.id} (${c.what}) ${v ? "failed" : "logged nothing"}`];
+  });
+}
+
+// [Doruk-Aksoy] The shared checks in UZDoom, judged by its log since no world rpc reaches it.
+export function runInUzdoom({ dir = fs.mkdtempSync(path.join(os.tmpdir(), "decorateuzdoom-uz-")), run = runUzdoom } = {}) {
+  const file = path.join(dir, "decorateuzdoom-uz.pk3");
+  fs.writeFileSync(file, buildDecorateUzdoomPk3({ withFua: false }));
+  const faults = judgeUzdoomLog(run({ pk3: file, map: "MAP01", chain: `wait ${SETTLE_TICS};quit`, dir: path.join(dir, "run"), timeoutMs: 90000 }));
+  return { line: verdict("uzdoom", faults, `${checksFor(false).length} shared checks pass in UZDoom`), failed: faults.length ? 1 : 0 };
+}
+
+if (process.argv.includes("--uzdoom") && isMain(import.meta.url)) {
+  const r = runInUzdoom();
+  console.log(r.line);
+  process.exit(r.failed ? 1 : 0);
+} else {
+  runScenarioIfMain(import.meta.url, () => ({ name: "decorateuzdoom", wad: buildDecorateUzdoomPk3(), maps: ["MAP01"], sides: SIDES, configs: CONFIGS,
+    judgeLaunch, judgeNetplay }), compareOfflineAndOnline);
+}

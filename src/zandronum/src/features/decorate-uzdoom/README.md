@@ -77,3 +77,5 @@ Not here yet, since each needs more than a flag or a parameter: `A_SetChaseThres
 - `fuactl scenarios decorateuzdoom` (`tools/fuactl/scenarios/decorateuzdoom.mjs`): one check actor per feature spawns a
   pass or fail marker, judged offline, then on a server and on a player and an observer; translation and scale are read
   off the actors' rows. A build without this feature crashes loading it.
+- `node scenarios/decorateuzdoom.mjs --uzdoom` runs the checks without ours-only ones in a UZDoom build and judges its
+  log, so each expectation is UZDoom's own: 31 of 31 pass there.
