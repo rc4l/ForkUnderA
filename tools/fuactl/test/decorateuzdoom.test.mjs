@@ -1,7 +1,7 @@
 // [Doruk-Aksoy] The DECORATE-gap scenario: one check actor and two markers per check, and the judge's reading of a world.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHECKS, LIVE, LIVE_SPOT, liveFor, checkClass, checksFor, buildDecorate, buildMap, checkSpot, judgeWorld, judgeLive, actorDef, compareOfflineAndOnline, judgeUzdoomLog, runInUzdoom, ROOM_SIZE } from "../scenarios/decorateuzdoom.mjs";
+import { CHECKS, LIVE, LIVE_SPOT, liveFor, checkClass, checksFor, buildDecorate, buildMap, checkSpot, judgeWorld, judgeLive, actorDef, compareOfflineAndOnline, judgeUzdoomLog, runInUzdoom, NEW_FLAGS, checkDecorate, ROOM_SIZE } from "../scenarios/decorateuzdoom.mjs";
 
 test("every check has its actor, both markers and a doomednum the map places", () => {
   const decorate = buildDecorate();
@@ -134,4 +134,21 @@ test("the UZDoom run hands it the pk3 without our checks and judges its log", as
   assert.equal(fail.failed, 1);
   assert.match(fail.line, /^FAIL uzdoom: /);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the new-flags check sets and reads every one of UZDoom's gameplay flags", () => {
+  const c = CHECKS.find((x) => x.id === "newflags");
+  const d = checkDecorate(c);
+  for (const f of NEW_FLAGS) {
+    assert.ok(d.includes(`\t+${f}\n`), `+${f}`);
+    assert.ok(d.includes(`A_CheckFlag("${f}", `), `A_CheckFlag ${f}`);
+  }
+  assert.equal(new Set(NEW_FLAGS).size, NEW_FLAGS.length);
+});
+
+test("a check judged by another actor has no Passed label of its own, and that actor logs the verdict", () => {
+  for (const c of CHECKS.filter((x) => x.verdictBy)) {
+    assert.ok(!checkDecorate(c).includes("\tPassed:"), c.id);
+    assert.ok((c.defs || "").includes(`zxcheck ${c.id} pass`), c.id);
+  }
 });

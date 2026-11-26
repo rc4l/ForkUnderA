@@ -685,6 +685,12 @@ bool P_CheckSight (const AActor *t1, const AActor *t2, int flags)
 	{
 		return false;
 	}
+	// [Doruk-Aksoy] uzdoom: sight checks to a +MVISBLOCKED actor always fail (features/decorate-uzdoom).
+	if ((t2->flags8 & MF8_MVISBLOCKED) && !(flags & SF_IGNOREVISIBILITY))
+	{
+		SightCycles.Unclock();
+		return false;
+	}
 
 	const sector_t *s1 = t1->Sector;
 	const sector_t *s2 = t2->Sector;
@@ -706,7 +712,8 @@ sightcounts[0]++;
 //
 	// [RH] Andy Baker's stealth monsters:
 	// Cannot see an invisible object
-	if ((flags & SF_IGNOREVISIBILITY) == 0 && ((t2->renderflags & RF_INVISIBLE) || !t2->RenderStyle.IsVisible(t2->alpha)))
+	// [Doruk-Aksoy] uzdoom: +MINVISIBLE hides an actor from monsters as RF_INVISIBLE does.
+	if ((flags & SF_IGNOREVISIBILITY) == 0 && ((t2->renderflags & RF_INVISIBLE) || (t2->flags8 & MF8_MINVISIBLE) || !t2->RenderStyle.IsVisible(t2->alpha)))
 	{ // small chance of an attack being made anyway
 		if (pr_checksight() > 50)
 		{

@@ -32,6 +32,15 @@ const pointAt = (cls, x, y, z) => spawn(cls, x, y, z, "SXF_NOCHECKPOSITION|SXF_I
 const jumpIf = (expr) => `TNT1 A 0 A_JumpIf(${expr}, "Passed")`;
 const near = (expr, want, eps = 0.001) => `abs((${expr}) - (${want})) < ${eps}`;
 const all = (...parts) => parts.join(" && ");
+// [Doruk-Aksoy] The states with which an actor other than the check gives check `id` its verdict.
+const verdictFrom = (kind, id) => [`TNT1 A 0 A_Log("zxcheck ${id} ${kind}")`, spawn(`Zx${kind === "pass" ? "Pass" : "Fail"}_${id}`, 0, 0, 0), "TNT1 A -1", "Stop"];
+// [Doruk-Aksoy] A_CheckFlag on each flag in turn, any one unset going to Failed.
+const allFlagsSet = (flags) => flags.flatMap((f, i) => [`TNT1 A 0 A_CheckFlag("${f}", "Flag${i}")`, "Goto Failed", `Flag${i}:`]).concat(["Goto Passed"]);
+// [Doruk-Aksoy] UZDoom's gameplay flags now at its bits (features/decorate-uzdoom).
+export const NEW_FLAGS = ["GETOWNER", "LAXTELEFRAGDMG", "ICESHATTER", "SMASHABLE", "NOSHIELDREFLECT", "FORCEZERORADIUSDMG", "NOINFIGHTSPECIES", "FORCEINFIGHTING",
+  "FRIGHTENING", "DONTFACETALKER", "HITOWNER", "RETARGETAFTERSLAM", "STOPRAILS", "MINVISIBLE", "MVISBLOCKED", "DONTFOLLOWPLAYERS", "SEEFRIENDLYMONSTERS", "ONLYSLAMSOLID",
+  "NOAUTOOFFSKULLFLY", "DONTBOUNCEONSHOOTABLES", "BOUNCEONUNRIPPABLES", "DONTBOUNCEONSKY", "KEEPBOUNCEANGLE", "BOUNCEMODIFIESPITCH"];
+const solidBox = (name, extra = []) => actorDef(name, ["+SOLID", "+NOGRAVITY", "Radius 16", "Height 56", ...extra]);
 
 // [Doruk-Aksoy] Each check: its states (ending at Pass, or falling to Fail), its properties, extra actors, and fua when only ours has it.
 export const CHECKS = [
@@ -99,6 +108,72 @@ export const CHECKS = [
   { id: "props", what: "the class properties load (groups, MissileChanceMult, StealthAlpha, FriendlySeeBlocks, MinRespawnTics, RespawnDice, DefThreshold)",
     props: ["InfightingGroup 1", "ProjectileGroup -1", "SplashGroup 2", "MissileChanceMult 0.5", "StealthAlpha 0.25", "FriendlySeeBlocks 4", "MinRespawnTics -2",
       "RespawnDice 8", "DefThreshold 50"], states: ["Goto Passed"] },
+  { id: "newflags", what: "UZDoom's gameplay flags set from DECORATE", props: NEW_FLAGS.map((f) => `+${f}`), states: allFlagsSet(NEW_FLAGS) },
+  { id: "laxtelefrag", what: "+LAXTELEFRAGDMG lets DamageFactor cut telefrag damage", props: ["Health 1500000", "+SHOOTABLE", "PainChance 0", "DamageFactor 0.5", "+LAXTELEFRAGDMG"],
+    states: ['TNT1 A 0 A_DamageSelf(1000000, "None", 0, "None", "None", AAPTR_DEFAULT, AAPTR_DEFAULT)', jumpIf("health == 1000000")] },
+  { id: "forcezero", what: "+FORCEZERORADIUSDMG passes a zero-damage blast on (here as a forced pain)", verdictBy: "ZxZeroTarget", props: ["+FORCEZERORADIUSDMG", "+FORCEPAIN"],
+    defs: actorDef("ZxZeroTarget", ["Health 100", "+SHOOTABLE", "+NOGRAVITY", "PainChance 256", "Radius 8", "Height 16"],
+      ["TNT1 A -1", "Stop", "Pain:", ...verdictFrom("pass", "forcezero")]),
+    states: [spawn("ZxZeroTarget", 48, 0, 0), "TNT1 A 1", 'TNT1 A 0 A_Explode(0, 128, 0)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] The missile starts 64 east flying back west, and is gone before it could reach the next check.
+  // [Doruk-Aksoy] DOHARMSPECIES, since a missile's own shooter is of its species and both engines' species rule would spare it.
+  { id: "hitowner", what: "+HITOWNER missiles hit the one who fired them", props: ["Health 100", "+SHOOTABLE", "+SOLID", "+DOHARMSPECIES", "PainChance 0", "Radius 16", "Height 56"],
+    defs: actorDef("ZxOwnMissile", ["Projectile", "+HITOWNER", "Radius 4", "Height 4", "Speed 6", "Damage 5"], ["TNT1 A 15", "Stop"]),
+    states: ['TNT1 A 0 A_SpawnItemEx("ZxOwnMissile", 64, 0, 8, -6, 0, 0, 0, SXF_NOCHECKPOSITION)', "TNT1 A 20", jumpIf("health < 100")] },
+  { id: "stoprails", what: "+STOPRAILS takes the rail and stops it", defs: actorDef("ZxRailStopper", ["Health 100", "+SHOOTABLE", "+NOGRAVITY", "+STOPRAILS", "PainChance 0", "Radius 8", "Height 56"])
+      + actorDef("ZxRailBehind", ["Health 100", "+SHOOTABLE", "+NOGRAVITY", "PainChance 0", "Radius 8", "Height 56"]),
+    states: [spawn("ZxRailStopper", 48, 0, 0, "SXF_NOCHECKPOSITION|SXF_ISMASTER"), spawn("ZxRailBehind", 96, 0, 0, "SXF_NOCHECKPOSITION|SXF_ISTARGET"), "TNT1 A 1",
+      'TNT1 A 0 A_CustomRailgun(10, 0, "ff 00 00", "ff 00 00", RGF_SILENT, 0, 0, "BulletPuff", 0, 0, 128)', "TNT1 A 2",
+      'TNT1 A 0 A_JumpIfHealthLower(100, "Failed", AAPTR_TARGET)', 'TNT1 A 0 A_JumpIfHealthLower(100, "Passed", AAPTR_MASTER)'] },
+  // [Doruk-Aksoy] The victim goes to See only when it turns on the check, so its See state is the verdict; the check is a monster, so the victim does not take it as target when spawned.
+  { id: "noinfightspecies", what: "+NOINFIGHTSPECIES never turns on its own species", props: ["+ISMONSTER", "+SHOOTABLE", 'Species "ZxSpA"'],
+    defs: actorDef("ZxSpeciesVictim", ["+ISMONSTER", "+SHOOTABLE", "+NOGRAVITY", "Health 1000", "PainChance 0", 'Species "ZxSpA"', "+NOINFIGHTSPECIES"],
+      ["TNT1 A -1", "Stop", "See:", ...verdictFrom("fail", "noinfightspecies")]),
+    states: [spawn("ZxSpeciesVictim", 48, 0, 0, "SXF_NOCHECKPOSITION|SXF_ISTARGET"), "TNT1 A 1", "TNT1 A 0 A_DamageTarget(5)", "TNT1 A 10", "Goto Passed"] },
+  { id: "forceinfighting", what: "+FORCEINFIGHTING turns on its attacker through NOINFIGHTING", verdictBy: "ZxForceVictim", props: ["+ISMONSTER", "+SHOOTABLE"],
+    defs: actorDef("ZxForceVictim", ["+ISMONSTER", "+SHOOTABLE", "+NOGRAVITY", "Health 1000", "PainChance 0", "+NOINFIGHTING", "+FORCEINFIGHTING"],
+      ["TNT1 A -1", "Stop", "See:", ...verdictFrom("pass", "forceinfighting")]),
+    states: [spawn("ZxForceVictim", 48, 0, 0, "SXF_NOCHECKPOSITION|SXF_ISTARGET"), "TNT1 A 1", "TNT1 A 0 A_DamageTarget(5)", "TNT1 A -1", "Stop"] },
+  { id: "smashable", what: "+SMASHABLE dies landing", verdictBy: "ZxSmash",
+    defs: actorDef("ZxSmash", ["Health 10", "+SHOOTABLE", "+SMASHABLE", "Radius 8", "Height 8"], ["TNT1 A -1", "Stop", "Death:", ...verdictFrom("pass", "smashable")]),
+    states: [spawn("ZxSmash", 0, 0, 64), "TNT1 A -1", "Stop"] },
+  { id: "noautooffskullfly", what: "+NOAUTOOFFSKULLFLY keeps a charge on at rest", props: ["+SKULLFLY", "+NOAUTOOFFSKULLFLY"],
+    states: ["TNT1 A 3", 'TNT1 A 0 A_CheckFlag("SKULLFLY", "Passed")'] },
+  // [Doruk-Aksoy] A user variable tells the second pass through Spawn, where a slam that goes idle lands, from the first; the charge starts with its velocity, since one at rest turns itself off.
+  { id: "retargetslam", what: "+RETARGETAFTERSLAM goes idle, not to See, after a slam", vars: ["var int user_slammed;"], defs: solidBox("ZxSlamWall"),
+    props: ["+SOLID", "+RETARGETAFTERSLAM", "Radius 8", "Height 16"],
+    states: ["TNT1 A 0 A_JumpIf(user_slammed == 1, \"Passed\")", 'TNT1 A 0 A_SetUserVar("user_slammed", 1)', spawn("ZxSlamWall", 48, 0, 0),
+      'TNT1 A 0 A_ChangeFlag("SKULLFLY", true)', "TNT1 A 0 A_ChangeVelocity(8, 0, 0, CVF_REPLACE|CVF_RELATIVE)", "TNT1 A 20", "Goto Failed", "See:", "Goto Failed"] },
+  { id: "slamstate", what: "a charger's own Slam state after a slam", props: ["+SOLID", "Radius 8", "Height 16"], defs: solidBox("ZxSlamWall2"),
+    states: [spawn("ZxSlamWall2", 48, 0, 0), 'TNT1 A 0 A_ChangeFlag("SKULLFLY", true)', "TNT1 A 0 A_ChangeVelocity(8, 0, 0, CVF_REPLACE|CVF_RELATIVE)", "TNT1 A 20",
+      "Goto Failed", "Slam:", "Goto Passed"] },
+  { id: "onlyslamsolid", what: "+ONLYSLAMSOLID charges through what is neither solid nor shootable", props: ["+SOLID", "+ONLYSLAMSOLID", "Radius 8", "Height 16"],
+    defs: actorDef("ZxSlamPickup", ["+SPECIAL", "+NOGRAVITY", "Radius 16", "Height 16"]),
+    states: [pointAt("ZxSlamPickup", 40, 0, 0), 'TNT1 A 0 A_ChangeFlag("SKULLFLY", true)', "TNT1 A 0 A_ChangeVelocity(8, 0, 0, CVF_REPLACE|CVF_RELATIVE)", "TNT1 A 16", jumpIf("GetDistance(false) > 60")] },
+  // [Doruk-Aksoy] Only a trail whose target is the check gives a verdict, since one may spawn before the projectile has its shooter.
+  { id: "getowner", what: "+GETOWNER gives a fast projectile's trail its shooter as target", verdictBy: "ZxOwnerTrail",
+    defs: actorDef("ZxFastShot : FastProjectile", ["Radius 2", "Height 2", "Speed 30", "Damage 0", 'MissileType "ZxOwnerTrail"', "+GETOWNER"], ["TNT1 A 3", "Stop"])
+      + actorDef("ZxOwnerTrail", ["+NOINTERACTION"], ["TNT1 A 1", 'TNT1 A 0 A_JumpIf(CheckClass("ZxChk_getowner", AAPTR_TARGET), "Yes")', "Stop",
+        "Yes:", ...verdictFrom("pass", "getowner")]),
+    states: ['TNT1 A 0 A_CustomMissile("ZxFastShot", 8, 0, 0, CMF_AIMDIRECTION)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] The bouncers outlive a check only by dying (Death) or by a state that checks them; one that just bounces runs out and leaves no marker.
+  { id: "nobounceshootable", what: "+DONTBOUNCEONSHOOTABLES explodes on a shootable actor", verdictBy: "ZxNoShootBounce",
+    defs: actorDef("ZxNoShootBounce", ["Projectile", 'BounceType "Doom"', "+DONTBOUNCEONSHOOTABLES", "Radius 4", "Height 4", "Damage 1"], ["TNT1 A 20", "Stop", "Death:", ...verdictFrom("pass", "nobounceshootable")])
+      + actorDef("ZxBounceTarget", ["+SHOOTABLE", "+SOLID", "+NOGRAVITY", "Health 1000", "PainChance 0", "Radius 16", "Height 56"]),
+    states: [spawn("ZxBounceTarget", 64, 0, 0), 'TNT1 A 0 A_SpawnItemEx("ZxNoShootBounce", 16, 0, 16, 8, 0, 0, 0, SXF_NOCHECKPOSITION)', "TNT1 A -1", "Stop"] },
+  { id: "keepbounceangle", what: "+KEEPBOUNCEANGLE keeps its yaw bouncing off an actor", verdictBy: "ZxKeepAngle",
+    defs: actorDef("ZxKeepAngle", ["Projectile", 'BounceType "Doom"', "+KEEPBOUNCEANGLE", "Radius 4", "Height 4", "Damage 0"],
+      ["TNT1 A 8", 'TNT1 A 0 A_JumpIf(abs(angle) < 1 || angle > 359, "Yes")', "Stop", "Yes:", ...verdictFrom("pass", "keepbounceangle")]) + solidBox("ZxKeepBox"),
+    states: [spawn("ZxKeepBox", 48, 0, 0), 'TNT1 A 0 A_SpawnItemEx("ZxKeepAngle", 8, 0, 16, 8, 0, 0, 0, SXF_NOCHECKPOSITION)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] UZDoom's pitch is signed (up negative) and ours reads as an angle, so either form of "up" passes.
+  { id: "bouncepitch", what: "+BOUNCEMODIFIESPITCH points along its velocity after a floor bounce", verdictBy: "ZxPitchBounce",
+    defs: actorDef("ZxPitchBounce", ["Projectile", 'BounceType "Hexen"', "+BOUNCEMODIFIESPITCH", "BounceFactor 1", "Radius 4", "Height 4", "Damage 0"],
+      ["TNT1 A 14", 'TNT1 A 0 A_JumpIf(pitch < -10 || (pitch > 270 && pitch < 350), "Yes")', "Stop", "Yes:", ...verdictFrom("pass", "bouncepitch")]),
+    states: ['TNT1 A 0 A_SpawnItemEx("ZxPitchBounce", 16, 0, 32, 4, 0, -4, 0, SXF_NOCHECKPOSITION)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] Not a missile, since ours already removes a bouncing missile on a sky floor, so an MBF bouncer (Grenade), the one kind of non-missile both engines bounce; the check holds it as its target and sees it gone.
+  { id: "nobouncesky", what: "+DONTBOUNCEONSKY vanishes on a sky floor", sky: true,
+    defs: actorDef("ZxSkyBouncer", ['BounceType "Grenade"', "+DONTBOUNCEONSKY", "BounceFactor 1", "Radius 4", "Height 4"]),
+    states: [spawn("ZxSkyBouncer", 80, 0, 48, "SXF_NOCHECKPOSITION|SXF_ISTARGET"), "TNT1 A 35", jumpIf("IsPointerEqual(AAPTR_TARGET, AAPTR_NULL)")] },
   { id: "transnone", what: 'A_SetTranslation("None") clears the translation', props: ['Translation "Ice"'], translation: "none",
     states: ['TNT1 A 0 A_SetTranslation("None")', "Goto Passed"] },
   { id: "transreset", what: "A_fua_ResetTranslation restores the class's", props: ['Translation "Ice"'], translation: "class", fua: true,
@@ -163,6 +238,8 @@ export function buildMap({ withFua = true } = {}) {
     const { x, y } = checkSpot(i);
     // [Doruk-Aksoy] The zat check has a 32-high step 64 to 128 east of it.
     if (c.step) m.block(x + 64, y - 32, x + 128, y + 32, { ...ROOM, heightfloor: 32 }, 0);
+    // [Doruk-Aksoy] The nobouncesky check has a sky floor 48 to 112 east of it.
+    if (c.sky) m.block(x + 48, y - 32, x + 112, y + 32, { ...ROOM, texturefloor: "F_SKY1" }, 0);
     m.thing({ x, y, angle: 0, type: FIRST_NUM + CHECKS.indexOf(c) });
   });
   m.thing({ x: 1024, y: 128, angle: 0, type: THING.MapSpot, id: LIVE_SPOT });
@@ -257,7 +334,8 @@ export async function judgeNetplay(set, label) {
   return { lines, failed };
 }
 
-export const SIDES = [{ name: "vk" }];
+// [Doruk-Aksoy] Monsters kept offline, since the infighting checks are monsters (none of them moves or attacks).
+export const SIDES = [{ name: "vk", launchCvars: { sv_nomonsters: 0 } }];
 export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }];
 
 // [Doruk-Aksoy] Offline first, then hosted with a player and an observer.

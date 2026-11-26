@@ -133,6 +133,12 @@ than only at class-definition time.
   ([#56](https://github.com/rc4l/ZandroX/pull/56)). Puts input tests in the state sequence
   instead of a client-side ACS script. Unlike the overlay family, this one works in netgames.
 
+### DECORATE — UZDoom's features
+
+- [UZDoom's DECORATE features](decorate/UZDoom_features.md) — UZDoom's math and actor queries, float user
+  variables, new functions, parameters and properties, and gameplay flags such as `+HITOWNER`,
+  `+STOPRAILS` and `+NOINFIGHTSPECIES`, under UZDoom's names.
+
 ### Lumps
 
 - [TRNSLATE](lumps/TRNSLATE.md) — named translations, used by DECORATE's `Translation "Name"` and

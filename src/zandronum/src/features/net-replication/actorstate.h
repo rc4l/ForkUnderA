@@ -7,6 +7,7 @@
 #define ZX_ACTORSTATE_H
 
 class AActor;
+struct FState;
 
 namespace zx { namespace netreplication {
 
@@ -24,6 +25,9 @@ void SendThingProperty(AActor *actor, int property);
 
 // [Doruk-Aksoy] An actor whose translation a state changed (A_SetTranslation), on a server: the new one to every client (SVC_SETTHINGTRANSLATION).
 void SendThingTranslation(AActor *actor);
+
+// [Doruk-Aksoy] An actor a server put in a state of its class's own (a Slam state), on a server: the state to every client (SVC_SETTHINGFRAME).
+void SendThingFrame(AActor *actor, FState *state);
 
 // [rc4l] A puff a server spawned, to its clients in state (STATE_SPAWN or the one it jumped to) as ComputePuffSend says, flags its P_SpawnPuff flags.
 void SendPuff(AActor *puff, AActor *source, unsigned state, int flags);

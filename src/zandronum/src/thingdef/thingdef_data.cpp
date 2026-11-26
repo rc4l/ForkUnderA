@@ -281,12 +281,33 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(MF8, MAP07BOSS1, AActor, flags8),
 	DEFINE_FLAG(MF8, MAP07BOSS2, AActor, flags8),
 
-	// [MGOOOOOO] ZandroX's own flags9 word. The ripper set -- see features/ripper/README.md.
-	DEFINE_FLAG(MF9, NORIPSOUND, AActor, flags9),
-	DEFINE_FLAG(MF9, RIPEXPLODEONLIMIT, AActor, flags9),
-	DEFINE_FLAG(MF9, RIPPERNOPAIN, AActor, flags9),
-	DEFINE_FLAG(MF9, RIPSOUNDNORESTART, AActor, flags9),
-	DEFINE_FLAG(MF9, USERIPSTATE, AActor, flags9),
+	// [Doruk-Aksoy] UZDoom's gameplay flags at its own bits (features/decorate-uzdoom).
+	DEFINE_FLAG(MF5, GETOWNER, AActor, flags5),
+	DEFINE_FLAG(MF7, LAXTELEFRAGDMG, AActor, flags7),
+	DEFINE_FLAG(MF7, ICESHATTER, AActor, flags7),
+	DEFINE_FLAG(MF7, SMASHABLE, AActor, flags7),
+	DEFINE_FLAG(MF7, NOSHIELDREFLECT, AActor, flags7),
+	DEFINE_FLAG(MF7, FORCEZERORADIUSDMG, AActor, flags7),
+	DEFINE_FLAG(MF7, NOINFIGHTSPECIES, AActor, flags7),
+	DEFINE_FLAG(MF7, FORCEINFIGHTING, AActor, flags7),
+	DEFINE_FLAG(MF8, FRIGHTENING, AActor, flags8),
+	DEFINE_FLAG(MF8, DONTFACETALKER, AActor, flags8),
+	DEFINE_FLAG(MF8, HITOWNER, AActor, flags8),
+	DEFINE_FLAG(MF8, RETARGETAFTERSLAM, AActor, flags8),
+	DEFINE_FLAG(MF8, STOPRAILS, AActor, flags8),
+	DEFINE_FLAG(MF8, MINVISIBLE, AActor, flags8),
+	DEFINE_FLAG(MF8, MVISBLOCKED, AActor, flags8),
+	DEFINE_FLAG(MF8, DONTFOLLOWPLAYERS, AActor, flags8),
+	DEFINE_FLAG(MF8, SEEFRIENDLYMONSTERS, AActor, flags8),
+	DEFINE_FLAG(MF8, ONLYSLAMSOLID, AActor, flags8),
+	DEFINE_FLAG(MF9, NOAUTOOFFSKULLFLY, AActor, flags9),
+
+	// [MGOOOOOO] ZandroX's own fua_flags word. The ripper set -- see features/ripper/README.md.
+	DEFINE_FLAG(FUAF, NORIPSOUND, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, RIPEXPLODEONLIMIT, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, RIPPERNOPAIN, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, RIPSOUNDNORESTART, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, USERIPSTATE, AActor, fua_flags),
 
 	// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: movement-model flags.
 	// Inert unless the pawn sets Player.MvType 1 -- see features/quake-movement/README.md.
@@ -357,6 +378,12 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG2(BOUNCE_MBF, MBFBOUNCER, AActor, BounceFlags),
 	DEFINE_FLAG2(BOUNCE_AutoOffFloorOnly, BOUNCEAUTOOFFFLOORONLY, AActor, BounceFlags),
 	DEFINE_FLAG2(BOUNCE_UseBounceState, USEBOUNCESTATE, AActor, BounceFlags),
+	// [Doruk-Aksoy] UZDoom's bounce flags (features/decorate-uzdoom).
+	DEFINE_FLAG2(BOUNCE_NotOnShootables, DONTBOUNCEONSHOOTABLES, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_BounceOnUnrips, BOUNCEONUNRIPPABLES, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_NotOnSky, DONTBOUNCEONSKY, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_KeepAngle, KEEPBOUNCEANGLE, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_ModifyPitch, BOUNCEMODIFIESPITCH, AActor, BounceFlags),
 
 	// Deprecated flags. Handling must be performed in HandleDeprecatedFlags
 	DEFINE_DEPRECATED_FLAG(FIREDAMAGE),

@@ -1160,7 +1160,9 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 	npc->target = pc;
 	if (facetalker)
 	{
-		A_FaceTarget (npc);
+		// [Doruk-Aksoy] uzdoom: a +DONTFACETALKER speaker keeps its angle through a conversation (features/decorate-uzdoom).
+		if (!(npc->flags8 & MF8_DONTFACETALKER))
+			A_FaceTarget (npc);
 		pc->angle = R_PointToAngle2 (pc->x, pc->y, npc->x, npc->y);
 	}
 	if ((npc->flags & MF_FRIENDLY) || (npc->flags4 & MF4_NOHATEPLAYERS))
@@ -1300,7 +1302,7 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 	if (reply == NULL)
 	{
 		// The default reply was selected
-		npc->angle = player->ConversationNPCAngle;
+		if (!(npc->flags8 & MF8_DONTFACETALKER)) npc->angle = player->ConversationNPCAngle;
 		npc->flags5 &= ~MF5_INCONVERSATION;
 		if (gameaction != ga_slideshow) ClearConversationStuff(player);
 		return;
@@ -1317,7 +1319,7 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 				TerminalResponse(reply->QuickNo);
 			}
 			npc->ConversationAnimation(2);
-			npc->angle = player->ConversationNPCAngle;
+			if (!(npc->flags8 & MF8_DONTFACETALKER)) npc->angle = player->ConversationNPCAngle;
 			npc->flags5 &= ~MF5_INCONVERSATION;
 			if (gameaction != ga_slideshow) ClearConversationStuff(player);
 			return;
@@ -1441,7 +1443,7 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 		}
 	}
 
-	npc->angle = player->ConversationNPCAngle;
+	if (!(npc->flags8 & MF8_DONTFACETALKER)) npc->angle = player->ConversationNPCAngle;
 
 	// [CW] Set these to NULL because we're not using to them
 	// anymore. However, this can interfere with slideshows
@@ -1488,7 +1490,7 @@ void P_ConversationCommand (int netcode, int pnum, BYTE **stream)
 		assert(netcode == DEM_CONVNULL || netcode == DEM_CONVCLOSE);
 		if (player->ConversationNPC != NULL)
 		{
-			player->ConversationNPC->angle = player->ConversationNPCAngle;
+			if (!(player->ConversationNPC->flags8 & MF8_DONTFACETALKER)) player->ConversationNPC->angle = player->ConversationNPCAngle;
 			player->ConversationNPC->flags5 &= ~MF5_INCONVERSATION;
 		}
 		if (netcode == DEM_CONVNULL)
@@ -1525,7 +1527,7 @@ void P_ConversationClose( int pnum )
 
 	if ( player->ConversationNPC != NULL )
 	{
-		player->ConversationNPC->angle = player->ConversationNPCAngle;
+		if (!(player->ConversationNPC->flags8 & MF8_DONTFACETALKER)) player->ConversationNPC->angle = player->ConversationNPCAngle;
 		player->ConversationNPC->flags5 &= ~MF5_INCONVERSATION;
 	}
 

@@ -118,6 +118,16 @@
 #include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
 #include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
 #include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] an actor's handle slot
+#include "version.h"
+#include "features/decorate-uzdoom/computation/flagrehome_compute.h" // [Doruk-Aksoy] old saves' flag words moved to UZDoom's bits
+
+// [Doruk-Aksoy] The old-save remap names today's bits by value, so each must still be the flag it says.
+static_assert(zx::decorateuzdoom::kFlags7Moves[0].to == MF7_NODECAL && zx::decorateuzdoom::kFlags7Moves[1].to == MF7_FORCEDECAL && zx::decorateuzdoom::kFlags7Moves[2].to == MF7_FLYCHEAT, "flags7 remap");
+static_assert(zx::decorateuzdoom::kFlags8Moves[1].to == MF8_FULLVOLSEE && zx::decorateuzdoom::kFlags8Moves[2].to == MF8_E1M8BOSS && zx::decorateuzdoom::kFlags8Moves[3].to == MF8_E2M8BOSS
+	&& zx::decorateuzdoom::kFlags8Moves[4].to == MF8_E3M8BOSS && zx::decorateuzdoom::kFlags8Moves[5].to == MF8_E4M6BOSS && zx::decorateuzdoom::kFlags8Moves[6].to == MF8_E4M8BOSS
+	&& zx::decorateuzdoom::kFlags8Moves[7].to == MF8_MAP07BOSS1 && zx::decorateuzdoom::kFlags8Moves[8].to == MF8_MAP07BOSS2, "flags8 remap");
+static_assert(zx::decorateuzdoom::kFlags3FullVolDeath == MF3_FULLVOLDEATH, "FULLVOLDEATH remap");
+static_assert(zx::decorateuzdoom::kFlagRehomeSaveVer <= SAVEVER, "the remap's save version is written");
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -378,6 +388,14 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << flags8;
 	}
+	// [Doruk-Aksoy] An older save's flags7 and flags8 are in the layout before UZDoom's bits; flags8 is only moved when the save held it.
+	if (arc.IsLoading() && SaveVersion < zx::decorateuzdoom::kFlagRehomeSaveVer)
+	{
+		const zx::decorateuzdoom::SavedFlags out = zx::decorateuzdoom::ComputeRehomedSaveFlags({ flags3.GetValue(), flags7.GetValue(), SaveVersion >= 4509 ? flags8.GetValue() : 0u });
+		flags3 = ActorFlags3::FromInt(out.flags3);
+		flags7 = ActorFlags7::FromInt(out.flags7);
+		if (SaveVersion >= 4509) flags8 = ActorFlags8::FromInt(out.flags8);
+	}
 	arc	<< special1
 		<< special2
 		<< health
@@ -436,9 +454,17 @@ void AActor::Serialize (FArchive &arc)
 		<< MeleeState
 		<< MissileState
 		<< MaxDropOffHeight 
-		<< MaxStepHeight
-		<< BounceFlags
-		<< bouncefactor
+		<< MaxStepHeight;
+	// [Doruk-Aksoy] BounceFlags is 32 bits from 4538 on, as UZDoom's; an older save holds 16.
+	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
+		arc << BounceFlags;
+	else
+	{
+		WORD bounce16 = (WORD)BounceFlags;
+		arc << bounce16;
+		BounceFlags = bounce16;
+	}
+	arc	<< bouncefactor
 		<< wallbouncefactor
 		<< bouncecount
 		<< maxtargetrange
@@ -517,13 +543,13 @@ void AActor::Serialize (FArchive &arc)
 			<< RipSound;
 	}
 
-	// [MGOOOOOO] ZandroX's flags9 word and the ripper controls (features/ripper). Version-guarded
+	// [MGOOOOOO] ZandroX's own flag word (fua_flags, held in flags9 before 4538) and the ripper controls (features/ripper). Version-guarded
 	// so older snapshots (which never stored them) load with the class defaults -- all budgets 0
 	// (= unlimited) and no falloff, which is exactly pre-feature ripper behaviour. RipVictims is
 	// live per-projectile state, so a ripper saved mid-flight resumes with its budget intact.
 	if (SaveVersion >= 4511)
 	{
-		arc << flags9
+		arc << fua_flags
 			<< RipperLevel
 			<< RipLevelMin
 			<< RipLevelMax
@@ -541,6 +567,11 @@ void AActor::Serialize (FArchive &arc)
 	if (SaveVersion >= 4521)
 	{
 		arc << mvFlags;
+	}
+	// [Doruk-Aksoy] UZDoom's flags9, from 4538 on.
+	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
+	{
+		arc << flags9;
 	}
 	// [Doruk-Aksoy] features/actormaterials: its fua_Material and own uniforms, from 4527 on.
 	zx::actormaterials::SerializeActor(arc, this);
@@ -1876,10 +1907,14 @@ void AActor::PlayBounceSound(bool onfloor)
 
 bool AActor::FloorBounceMissile (secplane_t &plane)
 {
-	if (z <= floorz && P_HitFloor (this))
+	// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSKY vanishes on a sky floor or ceiling it would bounce off (features/decorate-uzdoom).
+	const bool skyStop = (BounceFlags & BOUNCE_NotOnSky) && zx::bounce::ComputeBouncesOffPlane(BounceFlags, plane.c < 0) &&
+		(plane.c < 0 ? ceilingpic : floorpic) == skyflatnum;
+	const bool inLiquid = z <= floorz && P_HitFloor (this);
+	if (inLiquid || skyStop)
 	{
 		// Landed in some sort of liquid
-		if (BounceFlags & BOUNCE_ExplodeOnWater)
+		if (inLiquid && (BounceFlags & BOUNCE_ExplodeOnWater))
 		{
 			if (flags & MF_MISSILE)
 				P_ExplodeMissile(this, NULL, NULL);
@@ -1887,7 +1922,7 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 				Die(NULL, NULL);
 			return true;
 		}
-		if (!(BounceFlags & BOUNCE_CanBounceWater))
+		if (skyStop || !(BounceFlags & BOUNCE_CanBounceWater))
 		{
 			// [BB] Inform the clients.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -1919,7 +1954,8 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		velx -= MulScale15 (plane.a, dot);
 		vely -= MulScale15 (plane.b, dot);
 		velz -= MulScale15 (plane.c, dot);
-		angle = R_PointToAngle2 (0, 0, velx, vely);
+		if (!(BounceFlags & BOUNCE_KeepAngle))
+			angle = R_PointToAngle2 (0, 0, velx, vely);
 		if (!(BounceFlags & BOUNCE_MBF)) // Heretic projectiles die, MBF projectiles don't.
 		{
 			flags |= MF_INBOUNCE;
@@ -1935,8 +1971,13 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		velx = FixedMul (velx - MulScale15 (plane.a, dot), bouncefactor);
 		vely = FixedMul (vely - MulScale15 (plane.b, dot), bouncefactor);
 		velz = FixedMul (velz - MulScale15 (plane.c, dot), bouncefactor);
-		angle = R_PointToAngle2 (0, 0, velx, vely);
+		if (!(BounceFlags & BOUNCE_KeepAngle))
+			angle = R_PointToAngle2 (0, 0, velx, vely);
 	}
+
+	// [Doruk-Aksoy] uzdoom: +BOUNCEMODIFIESPITCH points along its new velocity.
+	if (BounceFlags & BOUNCE_ModifyPitch)
+		pitch = (int)FLOAT2ANGLE(zx::bounce::ComputeBouncePitch(FIXED2DBL(velx), FIXED2DBL(vely), FIXED2DBL(velz)));
 
 	PlayBounceSound(true);
 
@@ -2047,6 +2088,7 @@ bool AActor::CanSeek(AActor *target) const
 	if ((flags2 & MF2_DONTSEEKINVISIBLE) && 
 		((target->flags & MF_SHADOW) || 
 		 (target->renderflags & RF_INVISIBLE) || 
+		 (target->flags8 & MF8_MINVISIBLE) ||
 		 !target->RenderStyle.IsVisible(target->alpha)
 		)
 	   ) return false;
@@ -2254,7 +2296,8 @@ fixed_t P_XYMovement (AActor *mo, fixed_t scrollx, fixed_t scrolly)
 
 	if ((xmove | ymove) == 0)
 	{
-		if ( (mo->flags & MF_SKULLFLY)
+		// [Doruk-Aksoy] uzdoom: +NOAUTOOFFSKULLFLY keeps the charge on at rest (features/decorate-uzdoom).
+		if ( (mo->flags & MF_SKULLFLY) && !(mo->flags9 & MF9_NOAUTOOFFSKULLFLY)
 			 && ( NETWORK_InClientMode() == false ) )
 		{
 			// the skull slammed into something
@@ -3367,6 +3410,12 @@ void P_ZMovement (AActor *mo, fixed_t oldfloorz)
 				}
 				// Let the actor do something special for hitting the floor
 				mo->HitFloor ();
+				// [Doruk-Aksoy] uzdoom: a +SMASHABLE actor dies landing, by the server (features/decorate-uzdoom).
+				if ((mo->flags7 & MF7_SMASHABLE) && !zx::net::InClientMode())
+				{
+					static const FName smash("Smash");
+					P_DamageMobj(mo, NULL, NULL, mo->health, smash);
+				}
 				if (mo->player)
 				{
 					// [BB] ZDoom changed the jumping here revision 2238.
@@ -3976,6 +4025,12 @@ bool AActor::Slam (AActor *thing)
 		return false;
 	}
 
+	// [Doruk-Aksoy] uzdoom: a +ONLYSLAMSOLID charger passes through what is neither solid nor shootable (features/decorate-uzdoom).
+	if ((flags8 & MF8_ONLYSLAMSOLID) && !(thing->flags & MF_SOLID) && !(thing->flags & MF_SHOOTABLE))
+	{
+		return true;
+	}
+
 	flags &= ~MF_SKULLFLY;
 	velx = vely = velz = 0;
 
@@ -3996,12 +4051,24 @@ bool AActor::Slam (AActor *thing)
 			// The charging monster may have died by the target's actions here.
 			if (health > 0)
 			{
-				// [BC] If we are the server, tell clients about the state change.
-				if ( NETWORK_GetState( ) == NETSTATE_SERVER )
-					SERVERCOMMANDS_SetThingState( this, SeeState != NULL ? STATE_SEE : STATE_IDLE );
+				// [Doruk-Aksoy] uzdoom: a Slam state of the class's own goes first, and +RETARGETAFTERSLAM goes idle instead of to See.
+				static const FName slamName("Slam");
+				FState *slam = FindState(slamName);
+				if (slam != NULL)
+				{
+					zx::netreplication::SendThingFrame(this, slam);
+					SetState (slam);
+				}
+				else
+				{
+					const bool see = SeeState != NULL && !(flags8 & MF8_RETARGETAFTERSLAM);
+					// [BC] If we are the server, tell clients about the state change.
+					if ( NETWORK_GetState( ) == NETSTATE_SERVER )
+						SERVERCOMMANDS_SetThingState( this, see ? STATE_SEE : STATE_IDLE );
 
-				if (SeeState != NULL) SetState (SeeState);
-				else SetIdle();
+					if (see) SetState (SeeState);
+					else SetIdle();
+				}
 			}
 		}
 		else
@@ -4039,7 +4106,8 @@ bool AActor::AdjustReflectionAngle (AActor *thing, angle_t &angle)
 	if (thing->flags4&MF4_SHIELDREFLECT)
 	{
 		// Shield reflection (from the Centaur
-		if (absangle(angle - thing->angle)>>24 > 45)
+		// [Doruk-Aksoy] uzdoom: +NOSHIELDREFLECT missiles explode on a shield instead (features/decorate-uzdoom).
+		if ((flags7 & MF7_NOSHIELDREFLECT) || absangle(angle - thing->angle)>>24 > 45)
 			return true;	// Let missile explode
 
 		if (thing->IsKindOf (RUNTIME_CLASS(AHolySpirit)))	// shouldn't this be handled by another flag???

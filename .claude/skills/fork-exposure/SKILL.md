@@ -121,7 +121,7 @@ Properties a good check here has, drawn from the ones that work:
   shows up as a reviewable diff instead of a silenced alarm.
 
 `tools/wire-enum-snapshot.py` is the reference implementation; `tools/protocol-snapshot.py`
-is the older sibling it complements.
+is the older sibling it complements. `tools/flag_bits_snapshot.py` does the same for saves: it pins the bit of every DECORATE flag and refuses a moved one until SAVEVER is bumped (older saves are remapped in `AActor::Serialize`).
 
 ## Relationship to the other skills
 

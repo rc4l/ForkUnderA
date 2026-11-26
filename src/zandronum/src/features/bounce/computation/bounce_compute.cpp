@@ -7,6 +7,11 @@
 
 namespace zx { namespace bounce {
 
+double ComputeBouncePitch(double velX, double velY, double velZ)
+{
+	return -std::atan2(velZ, std::sqrt(velX * velX + velY * velY)) * (180.0 / 3.14159265358979323846);
+}
+
 bool ComputeBounceSpent(int &bouncecount)
 {
 	return bouncecount > 0 && --bouncecount == 0;

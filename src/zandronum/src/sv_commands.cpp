@@ -2028,6 +2028,9 @@ void SERVERCOMMANDS_SetThingFlags( AActor *pActor, FlagSet flagset, ULONG ulPlay
 		case FLAGSET_FLAGS8:	actorFlags = pActor->flags8; break;
 		case FLAGSET_FLAGS9:	actorFlags = pActor->flags9; break;
 		case FLAGSET_MVFLAGS:	actorFlags = pActor->mvFlags; break;
+		case FLAGSET_FUAFLAGS:	actorFlags = pActor->fua_flags; break;
+		case FLAGSET_RENDERFLAGS:	actorFlags = pActor->renderflags; break;
+		case FLAGSET_BOUNCEFLAGS:	actorFlags = pActor->BounceFlags; break;
 		case FLAGSET_FLAGSST:	actorFlags = pActor->STFlags; break;
 		default: return;
 	}
@@ -2087,6 +2090,19 @@ void SERVERCOMMANDS_UpdateThingFlagsNotAtDefaults( AActor *pActor, ULONG ulPlaye
 	if ( pActor->mvFlags != pActor->GetDefault( )->mvFlags )
 	{
 		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_MVFLAGS, ulPlayerExtra, flags );
+	}
+	if ( pActor->fua_flags != pActor->GetDefault( )->fua_flags )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_FUAFLAGS, ulPlayerExtra, flags );
+	}
+	// [Doruk-Aksoy] A joiner gets render and bounce flags a state changed; a player body's are the client's to keep.
+	if ( pActor->player == NULL && pActor->renderflags != pActor->GetDefault( )->renderflags )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_RENDERFLAGS, ulPlayerExtra, flags );
+	}
+	if ( pActor->BounceFlags != pActor->GetDefault( )->BounceFlags )
+	{
+		SERVERCOMMANDS_SetThingFlags( pActor, FLAGSET_BOUNCEFLAGS, ulPlayerExtra, flags );
 	}
 	// [BB] STFlags is intentionally left out here.
 }

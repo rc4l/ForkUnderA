@@ -38,6 +38,35 @@ Not here yet, since each needs more than a flag or a parameter: `A_SetChaseThres
 `GetSpriteRotation` (no sprite angle here). `A_CheckBlock`'s `CBF_DROPOFF` still tests lines and actors, since our
 `P_CheckMove` takes no `PCM_` flags. `GetZAt` does not pass through portals.
 
+## Flag words
+
+`flags7`, `flags8` and `flags9` hold UZDoom's bits exactly, so its flags port verbatim. Our own flags (the ripper set)
+moved to `fua_flags`, with its own `FLAGSET_FUAFLAGS`. A save before 4538 has its `flags7` and `flags8` moved to the
+new bits on load, by `ComputeRehomedSaveFlags`; its old `flags9` slot now loads as `fua_flags`. `MF8_FULLVOLDEATH` is
+gone: MBF21's `FULLVOLSOUNDS` sets `MF3_FULLVOLDEATH`, as UZDoom does, and `A_Scream` now reads it, so `+FULLVOLDEATH`
+makes a monster's death scream full volume as well as a missile's death.
+
+## Render and bounce flagsets
+
+`FLAGSET_RENDERFLAGS` and `FLAGSET_BOUNCEFLAGS` (appended) carry `A_ChangeFlag` on `renderflags` and `BounceFlags`
+to clients; a client never changes them itself, so before this a change stayed on the server. A joiner gets either
+word when it differs from the class's, a player body's `renderflags` excepted, and a client keeps its own
+`RF_INVISIBLE` on a player body (`ComputeClientAppliedFlags`). `BounceFlags` widened to 32 bits for UZDoom's bounce
+flags (`DONTBOUNCEONSHOOTABLES`, `BOUNCEONUNRIPPABLES`, `DONTBOUNCEONSKY`, `KEEPBOUNCEANGLE`, `BOUNCEMODIFIESPITCH`),
+read as 16 bits from a save before 4538.
+
+## Gameplay flags
+
+UZDoom's `LAXTELEFRAGDMG`, `FORCEZERORADIUSDMG`, `HITOWNER`, `STOPRAILS`, `NOSHIELDREFLECT`, `ICESHATTER`,
+`SMASHABLE`, `NOINFIGHTSPECIES`, `FORCEINFIGHTING`, `FRIGHTENING`, `SEEFRIENDLYMONSTERS`, `DONTFOLLOWPLAYERS`,
+`MINVISIBLE`, `MVISBLOCKED`, `DONTFACETALKER`, `RETARGETAFTERSLAM` (with a class's own `Slam` state),
+`ONLYSLAMSOLID`, `NOAUTOOFFSKULLFLY` and `GETOWNER`, each read where UZDoom reads it. All of them act on the
+server's world: what they change reaches clients as any damage, state or movement does.
+
+Left for later: `NOSECTORDAMAGE` and `FORCESECTORDAMAGE` need monsters to take sector damage (and UDMF's
+`hurtmonsters`); `AVOIDHAZARDS` and `STAYONLIFT` need MBF's `P_SmartMove`; `MASTERNOSEE` is a render flag;
+Dehacked does not yet give its classes `RETARGETAFTERSLAM` as UZDoom does.
+
 ## Files
 
 - `computation/decoratemath_compute` — the math table and builtins, `GetDistance`, `GetAngle`, `GetZAt`'s point and its
@@ -46,6 +75,7 @@ Not here yet, since each needs more than a flag or a parameter: `A_SetChaseThres
 - `computation/decorateparams_compute` — `A_Explode`'s flags and damage type, `A_JumpIf*Closer`, `A_SetScale`,
   `A_JumpIfHigherOrLower`, `A_CheckBlock`.
 - `computation/decorateprops_compute` — the group values, respawn tics and self damage.
+- `computation/flagrehome_compute` — the bit moves an older save's flag words take.
 - `decorateexpr.{h,cpp}` — the expression calls, one class for the math table and one for the query table.
 - `uservars.{h,cpp}` — the user-variable lookup every reader and writer shares.
 - `classprops.h` — the class properties' values.
@@ -70,6 +100,19 @@ Not here yet, since each needs more than a flag or a parameter: `A_SetChaseThres
   `CountProximity` share with ACS.
 - `features/net-snapshot/capture.cpp`: `A_SetUserVarFloat` is cosmetic-safe as `A_SetUserVar` is.
 - `wadsrc/static/actors/actor.txt`, `constants.txt`: the declarations, fields and constants.
+- Flag words: `actor.h` (UZDoom's `MF7_`/`MF8_`/`MF9_`, `FUAF_`, `fua_flags`), `p_mobj.cpp` (`AActor::Serialize`'s remap
+  and the asserts tying it to the enums), `version.h` (SAVEVER 4538), `network.h` (`FLAGSET_FUAFLAGS`), `cl_main.cpp`,
+  `sv_commands.cpp`, `thingdef/thingdef_codeptr.cpp` (`A_ChangeFlag`), `thingdef/thingdef_data.cpp`,
+  `thingdef/thingdef_properties.cpp` (`ClearFlags`), `p_map.cpp` (the ripper), `d_dehacked.cpp` and `p_enemy.cpp`
+  (`FULLVOLDEATH`).
+- Render and bounce flagsets: `network.h`, `sv_commands.cpp` (`SetThingFlags`, the joiner's flags), `cl_main.cpp`,
+  `thingdef/thingdef_codeptr.cpp` (`A_ChangeFlag`), `actor.h` and `p_mobj.cpp` (32-bit `BounceFlags`), `version.h`
+  (4538); `features/net-replication`'s `ComputeClientAppliedFlags`.
+- Gameplay flags: `p_interaction.cpp` (`P_DamageMobj`, `P_PoisonDamage`, `OkayToSwitchTarget`), `p_map.cpp`
+  (`PIT_CheckThing`, `P_TestMobjZ`, `P_RadiusAttack`, `ProcessRailHit`), `p_mobj.cpp` (`P_XYMovement`,
+  `P_ZMovement`, `AdjustReflectionAngle`, `Slam`, `CanSeek`), `p_enemy.cpp` (`P_NewChaseDir`, `P_IsVisible`,
+  `LookForEnemiesInBlock`, `P_LookForPlayers`, `A_Chase`), `p_sight.cpp`, `p_conversation.cpp`,
+  `g_shared/a_fastprojectile.cpp`, and their rows in `thingdef/thingdef_data.cpp`.
 
 ## Tests
 
@@ -78,4 +121,10 @@ Not here yet, since each needs more than a flag or a parameter: `A_SetChaseThres
   pass or fail marker, judged offline, then on a server and on a player and an observer; translation and scale are read
   off the actors' rows. A build without this feature crashes loading it.
 - `node scenarios/decorateuzdoom.mjs --uzdoom` runs the checks without ours-only ones in a UZDoom build and judges its
-  log, so each expectation is UZDoom's own: 31 of 31 pass there.
+  log, so each expectation is UZDoom's own: 48 of 48 pass there.
+- `fuactl scenarios decorateflags` (`tools/fuactl/scenarios/decorateflags.mjs`): the moved flags read back at map start,
+  from this build's save, from a save an older build wrote (`--old PATH` or `FUACTL_OLD_ENGINE`), and on a server, its
+  player, observer and late joiner. It fails with the remap left out, and online with `SetThingFlags` dropped.
+- `tools/flag_bits_snapshot.py` (CI): every DECORATE flag's bit, refusing a moved one until SAVEVER is bumped.
+- The gameplay flags are decorateuzdoom checks, so `--uzdoom` holds them to UZDoom too (48 of 48 pass there); each
+  behaviour check fails with its flag taken out.
