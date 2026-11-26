@@ -87,6 +87,16 @@ TEST(AcsArgCount, UZDoomParityFunctionsNeedUZDoomsMinimum)
 	EXPECT_EQ(Needed(301), 3);   // [Doruk-Aksoy] GetLineY
 }
 
+// [Doruk-Aksoy] features/acs-handles: each handle function reads its handle, and fua_HandlePointer its pointer too.
+TEST(AcsArgCount, HandleFunctionsNeedTheirArguments)
+{
+	EXPECT_EQ(Needed(24020), 1);
+	EXPECT_EQ(Needed(24021), 1);
+	EXPECT_EQ(Needed(24022), 2);
+	EXPECT_EQ(Needed(24023), 1);
+	EXPECT_EQ(Needed(24024), 0);
+}
+
 TEST(AcsArgCount, ZDaemonsGetTeamScoreIsFoundPastTheDirectRange)
 {
 	const FunctionArgs *shortCall = ComputeShortCall(19620, 0);

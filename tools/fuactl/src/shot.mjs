@@ -487,7 +487,7 @@ function refreshGlobs(cm, root, dir, suffixes, log) {
   const stamp = sourcesStamp(listSources(path.join(root, "src/zandronum/src"), suffixes));
   const file = path.join(root, dir, ".globbed-sources");
   if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === stamp) return;
-  const r = spawnSync(cm, [path.join(root, dir)], { encoding: "utf8", env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") } });
+  const r = spawnSync(cm, [path.join(root, dir)], { encoding: "utf8", maxBuffer: TOOL_OUTPUT_LIMIT, env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") } });
   if (r.status !== 0) {
     log(((r.stdout || "") + (r.stderr || "")).split(/\r?\n/).filter((l) => /error/i.test(l)).slice(0, 10).join("\n"));
     throw new Error(`configuring ${dir} again failed`);
@@ -495,14 +495,19 @@ function refreshGlobs(cm, root, dir, suffixes, log) {
   fs.writeFileSync(file, stamp);
 }
 
+// [Doruk-Aksoy] How much a build, configure or test run may print before Node stops it: a build from an empty tree prints far past spawnSync's 1 MB default, and the cut-off build left its compilers running.
+export const TOOL_OUTPUT_LIMIT = 1 << 28;
+
 // [rc4l] One cmake build of the tree in dir (one target, or all of it) in config, its log beside it, throwing with the first errors when it fails.
-export function compile(cm, root, dir, target, log, config = "Release") {
-  const r = spawnSync(cm, ["--build", path.join(root, dir), "--config", config, ...(target ? ["--target", ...[].concat(target)] : []), "--", "-m"], {
-    encoding: "utf8", env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") },
+export function compile(cm, root, dir, target, log, config = "Release", run = spawnSync) {
+  const r = run(cm, ["--build", path.join(root, dir), "--config", config, ...(target ? ["--target", ...[].concat(target)] : []), "--", "-m"], {
+    encoding: "utf8", maxBuffer: TOOL_OUTPUT_LIMIT, env: { ...process.env, DXSDK_DIR: path.join(root, "dxsdk") },
   });
   const out = (r.stdout || "") + (r.stderr || "");
   fs.mkdirSync(path.join(root, dir), { recursive: true });
   fs.writeFileSync(path.join(root, dir, "build.log"), out);
+  // [Doruk-Aksoy] A build Node stopped (its output past the limit, or cmake not started) says why, where its log has no error to show.
+  if (r.error) throw new Error(`cmake --build ${dir} did not finish: ${r.error.code || r.error.message}`);
   const { errors, locked } = buildErrors(out);
   // A zero exit with errors in the log has happened too; belt and braces.
   if (r.status !== 0 || errors.length) {
@@ -533,7 +538,7 @@ export function build({ root = REPO_ROOT, cmake = null, log = console.error, sta
     refreshGlobs(cm, root, "build-tests", ["_compute.cpp", "_test.cpp"], log);
     compile(cm, root, "build-tests", null, log);
     const runs = testBinaries(root).map((exe) => {
-      const r = spawnSync(exe, ["--gtest_brief=1"], { encoding: "utf8" });
+      const r = spawnSync(exe, ["--gtest_brief=1"], { encoding: "utf8", maxBuffer: TOOL_OUTPUT_LIMIT });
       return { exe, status: r.status, ...summarizeGtest((r.stdout || "") + (r.stderr || "")) };
     });
     testRun = combineGtest(runs);
