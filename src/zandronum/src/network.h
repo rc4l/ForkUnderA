@@ -212,7 +212,9 @@ enum FlagSet
 	// [rc4l] Appended for the same reason as flags8/flags9 above: this enum goes out as a Byte, so a
 	// new entry may only ever go on the end. mvFlags is authored from DECORATE and only changes at
 	// runtime if a mod calls A_ChangeFlag/SetActorProperty on one, so this costs nothing in practice.
-	FLAGSET_MVFLAGS
+	FLAGSET_MVFLAGS,
+	// [Doruk-Aksoy] ZandroX's own fua_flags word, appended for the same reason.
+	FLAGSET_FUAFLAGS
 };
 
 enum ActorScaleFlag

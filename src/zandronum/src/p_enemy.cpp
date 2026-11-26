@@ -3438,7 +3438,7 @@ DEFINE_ACTION_FUNCTION(AActor, A_Scream)
 	{
 		// Check for bosses.
 		// [rc4l] MBF21 FULLVOLSOUNDS makes the death sound full-volume even on non-boss actors.
-		if (self->flags2 & MF2_BOSS || self->flags8 & MF8_FULLVOLDEATH)
+		if (self->flags2 & MF2_BOSS || self->flags3 & MF3_FULLVOLDEATH)
 		{
 			// full volume
 			S_Sound (self, CHAN_VOICE, self->DeathSound, 1, ATTN_NONE);

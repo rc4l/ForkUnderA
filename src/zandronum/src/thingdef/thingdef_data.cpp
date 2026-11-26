@@ -281,12 +281,12 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG(MF8, MAP07BOSS1, AActor, flags8),
 	DEFINE_FLAG(MF8, MAP07BOSS2, AActor, flags8),
 
-	// [MGOOOOOO] ZandroX's own flags9 word. The ripper set -- see features/ripper/README.md.
-	DEFINE_FLAG(MF9, NORIPSOUND, AActor, flags9),
-	DEFINE_FLAG(MF9, RIPEXPLODEONLIMIT, AActor, flags9),
-	DEFINE_FLAG(MF9, RIPPERNOPAIN, AActor, flags9),
-	DEFINE_FLAG(MF9, RIPSOUNDNORESTART, AActor, flags9),
-	DEFINE_FLAG(MF9, USERIPSTATE, AActor, flags9),
+	// [MGOOOOOO] ZandroX's own fua_flags word. The ripper set -- see features/ripper/README.md.
+	DEFINE_FLAG(FUAF, NORIPSOUND, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, RIPEXPLODEONLIMIT, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, RIPPERNOPAIN, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, RIPSOUNDNORESTART, AActor, fua_flags),
+	DEFINE_FLAG(FUAF, USERIPSTATE, AActor, fua_flags),
 
 	// [rc4l] Ported from qzandronum@397272811e4f71b168f1949d21369d3e91a7146c: movement-model flags.
 	// Inert unless the pawn sets Player.MvType 1 -- see features/quake-movement/README.md.

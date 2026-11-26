@@ -182,7 +182,8 @@ int GetRevisionNumber();
 // [rc4l] 4530: sectors no longer save their tag, which the tag manager rebuilds from the map (zandronum@a17262422dfc, its 4523); older saves skip it in P_SerializeWorld.
 // [rc4l] 4531: lines no longer save their ID either (zandronum@020ebf903625, also its 4523); older saves skip it in P_SerializeWorld.
 // [Doruk-Aksoy] 4532: ADynamicLight serializes a spot's inner and outer angles (features/dynlights, guarded in ADynamicLight::Serialize).
-#define SAVEVER 4532
+// [Doruk-Aksoy] 4538: flags7, flags8 and flags9 take UZDoom's bits and ours move to fua_flags (older saves remapped in AActor::Serialize); 4533-4537 are the ACS chain's.
+#define SAVEVER 4538
 
 
 #define SAVEVERSTRINGIFY2(x) #x

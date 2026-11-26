@@ -117,6 +117,16 @@
 #include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
 #include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
 #include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
+#include "version.h"
+#include "features/decorate-uzdoom/computation/flagrehome_compute.h" // [Doruk-Aksoy] old saves' flag words moved to UZDoom's bits
+
+// [Doruk-Aksoy] The old-save remap names today's bits by value, so each must still be the flag it says.
+static_assert(zx::decorateuzdoom::kFlags7Moves[0].to == MF7_NODECAL && zx::decorateuzdoom::kFlags7Moves[1].to == MF7_FORCEDECAL && zx::decorateuzdoom::kFlags7Moves[2].to == MF7_FLYCHEAT, "flags7 remap");
+static_assert(zx::decorateuzdoom::kFlags8Moves[1].to == MF8_FULLVOLSEE && zx::decorateuzdoom::kFlags8Moves[2].to == MF8_E1M8BOSS && zx::decorateuzdoom::kFlags8Moves[3].to == MF8_E2M8BOSS
+	&& zx::decorateuzdoom::kFlags8Moves[4].to == MF8_E3M8BOSS && zx::decorateuzdoom::kFlags8Moves[5].to == MF8_E4M6BOSS && zx::decorateuzdoom::kFlags8Moves[6].to == MF8_E4M8BOSS
+	&& zx::decorateuzdoom::kFlags8Moves[7].to == MF8_MAP07BOSS1 && zx::decorateuzdoom::kFlags8Moves[8].to == MF8_MAP07BOSS2, "flags8 remap");
+static_assert(zx::decorateuzdoom::kFlags3FullVolDeath == MF3_FULLVOLDEATH, "FULLVOLDEATH remap");
+static_assert(zx::decorateuzdoom::kFlagRehomeSaveVer <= SAVEVER, "the remap's save version is written");
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -377,6 +387,14 @@ void AActor::Serialize (FArchive &arc)
 	{
 		arc << flags8;
 	}
+	// [Doruk-Aksoy] An older save's flags7 and flags8 are in the layout before UZDoom's bits; flags8 is only moved when the save held it.
+	if (arc.IsLoading() && SaveVersion < zx::decorateuzdoom::kFlagRehomeSaveVer)
+	{
+		const zx::decorateuzdoom::SavedFlags out = zx::decorateuzdoom::ComputeRehomedSaveFlags({ flags3.GetValue(), flags7.GetValue(), SaveVersion >= 4509 ? flags8.GetValue() : 0u });
+		flags3 = ActorFlags3::FromInt(out.flags3);
+		flags7 = ActorFlags7::FromInt(out.flags7);
+		if (SaveVersion >= 4509) flags8 = ActorFlags8::FromInt(out.flags8);
+	}
 	arc	<< special1
 		<< special2
 		<< health
@@ -516,13 +534,13 @@ void AActor::Serialize (FArchive &arc)
 			<< RipSound;
 	}
 
-	// [MGOOOOOO] ZandroX's flags9 word and the ripper controls (features/ripper). Version-guarded
+	// [MGOOOOOO] ZandroX's own flag word (fua_flags, held in flags9 before 4538) and the ripper controls (features/ripper). Version-guarded
 	// so older snapshots (which never stored them) load with the class defaults -- all budgets 0
 	// (= unlimited) and no falloff, which is exactly pre-feature ripper behaviour. RipVictims is
 	// live per-projectile state, so a ripper saved mid-flight resumes with its budget intact.
 	if (SaveVersion >= 4511)
 	{
-		arc << flags9
+		arc << fua_flags
 			<< RipperLevel
 			<< RipLevelMin
 			<< RipLevelMax
@@ -540,6 +558,11 @@ void AActor::Serialize (FArchive &arc)
 	if (SaveVersion >= 4521)
 	{
 		arc << mvFlags;
+	}
+	// [Doruk-Aksoy] UZDoom's flags9, from 4538 on.
+	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
+	{
+		arc << flags9;
 	}
 	// [Doruk-Aksoy] features/actormaterials: its fua_Material and own uniforms, from 4527 on.
 	zx::actormaterials::SerializeActor(arc, this);

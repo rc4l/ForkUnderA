@@ -41,6 +41,7 @@ enum MirroredFlagSet {
 	MIRROR_FLAGSET_FLAGS8,
 	MIRROR_FLAGSET_FLAGS9,
 	MIRROR_FLAGSET_MVFLAGS,
+	MIRROR_FLAGSET_FUAFLAGS,
 };
 
 // The MV_* bits, mirrored from actor.h for the same reason.
@@ -80,6 +81,12 @@ TEST(MvFlagsWire, MvFlagsIsAppendedLast) {
 	EXPECT_EQ(MIRROR_FLAGSET_FLAGS9 + 1, MIRROR_FLAGSET_MVFLAGS);
 	// It must still fit the Byte the field is declared as, or the flagset silently truncates.
 	EXPECT_LE(MIRROR_FLAGSET_MVFLAGS, 0xFF);
+}
+
+// [Doruk-Aksoy] fua_flags' flagset went on the end after MVFLAGS, so every earlier value stays.
+TEST(MvFlagsWire, FuaFlagsIsAppendedAfterMvFlags) {
+	EXPECT_EQ(12, MIRROR_FLAGSET_FUAFLAGS);
+	EXPECT_EQ(MIRROR_FLAGSET_MVFLAGS + 1, MIRROR_FLAGSET_FUAFLAGS);
 }
 
 TEST(MvFlagsWire, GoldenFlagsetByteThenLittleEndianFlagsLong) {

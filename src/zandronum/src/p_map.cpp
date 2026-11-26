@@ -132,7 +132,7 @@ static zx::ripper::FRipLimits P_RipLimitsOf( AActor *projectile )
 	limits.maxDamage = projectile->RipperMaxDamage;
 	limits.perVictimHits = projectile->RipperCount;
 	limits.totalHits = projectile->RipperMaxCount;
-	limits.explodeOnLimit = !!( projectile->flags9 & MF9_RIPEXPLODEONLIMIT );
+	limits.explodeOnLimit = !!( projectile->fua_flags & FUAF_RIPEXPLODEONLIMIT );
 	return limits;
 }
 
@@ -1477,7 +1477,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 					}
 					// [rc4l] MBF21: a ripper can override the default rip sound via its RipSound.
 					// [MGOOOOOO] +NORIPSOUND silences it outright, which RipSound alone cannot do.
-					if (!(tm.thing->flags9 & MF9_NORIPSOUND))
+					if (!(tm.thing->fua_flags & FUAF_NORIPSOUND))
 					{
 						// [MGOOOOOO] Resolve to an id up front so +RIPSOUNDNORESTART can ask
 						// whether this exact sound is still playing. Note misc/ripslop is only
@@ -1492,7 +1492,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						// is no CHAN_NOSTOP here). That machine-guns the short vanilla squelch,
 						// which is the intended shredding effect, but chops any longer sound down
 						// to a few milliseconds. +RIPSOUNDNORESTART lets it run to completion.
-						if (!(tm.thing->flags9 & MF9_RIPSOUNDNORESTART) ||
+						if (!(tm.thing->fua_flags & FUAF_RIPSOUNDNORESTART) ||
 							!S_IsActorPlayingSomething(tm.thing, CHAN_BODY, ripSnd))
 						{
 							S_Sound(tm.thing, CHAN_BODY, ripSnd, 1, ATTN_IDLE);
@@ -1513,7 +1513,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 						tm.thing->RipperDamageFactor.Raw(), ripProgress.hitsOnVictim);
 					// [MGOOOOOO] +RIPPERNOPAIN suppresses pain for the rip only; the terminal
 					// explosion still goes through P_DamageMobj without the flag.
-					const int ripDmgFlags = (tm.thing->flags9 & MF9_RIPPERNOPAIN) ? DMG_NO_PAIN : 0;
+					const int ripDmgFlags = (tm.thing->fua_flags & FUAF_RIPPERNOPAIN) ? DMG_NO_PAIN : 0;
 					// [BB] The server handles the damage of RIPPER weapons.
 					int newdam = 0;
 					if ( NETWORK_InClientMode() == false )
@@ -1543,7 +1543,7 @@ bool PIT_CheckThing(AActor *thing, FCheckPosition &tm)
 
 					// [MGOOOOOO] +USERIPSTATE: hand the state change to the mover rather than
 					// doing it here -- see FCheckPosition::RipStatePending for why.
-					if (tm.thing->flags9 & MF9_USERIPSTATE)
+					if (tm.thing->fua_flags & FUAF_USERIPSTATE)
 						tm.RipStatePending = true;
 
 					// Detonate on the very bite that spends a budget, not on the next contact.

@@ -6027,6 +6027,11 @@ void ServerCommands::SetThingFlags::Execute()
 
 		actor->mvFlags = flags;
 		break;
+	// [Doruk-Aksoy] ZandroX's own flags (see actor.h FUAF_*).
+	case FLAGSET_FUAFLAGS:
+
+		actor->fua_flags = flags;
+		break;
 	case FLAGSET_FLAGSST:
 
 		actor->STFlags = flags;
