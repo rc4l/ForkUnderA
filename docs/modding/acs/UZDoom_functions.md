@@ -52,6 +52,89 @@ In a netgame:
 - A net id names the same actor on the server and on each client, so a script can pass one to a
   clientside script.
 
+## Examples
+
+Each example is a whole library: compile it with zt-bcc, add it to `LOADACS` and run its scripts with
+`pukename`.
+
+The closest barrel within 200 units becomes the player's target and takes fire damage from it:
+
+```bcs
+#library "fuaburn"
+#import "zcommon.bcs"
+
+script "BurnNearest" ( void ) {
+   if ( CheckProximity( 0, "ExplosiveBarrel", 200.0, 1, CPXF_SETTARGET | CPXF_CLOSEST ) ) {
+      int dealt = DamageActor( 0, AAPTR_TARGET, 0, AAPTR_DEFAULT, 5, "Fire" );
+      Log( s: "burned for ", d: dealt );
+   }
+   else {
+      Log( s: "nothing to burn" );
+   }
+}
+```
+
+<!-- example
+pukename BurnNearest => /nothing to burn/
+pukename Place 250 250 0
+pukename BurnNearest => /burned for 5/
+-->
+
+Footsteps by what the player stands on, from TERRAIN:
+
+```bcs
+#library "fuastep"
+#import "zcommon.bcs"
+
+script "Footstep" ( void ) {
+   str terrain = GetActorFloorTerrain( 0 );
+   if ( StrCmp( terrain, "Water" ) == 0 ) {
+      Log( s: "splash" );
+   }
+   else {
+      Log( s: "step on ", s: terrain );
+   }
+}
+```
+
+<!-- example
+pukename Footstep => /step on Solid/
+-->
+
+A server script hands an actor to every client's clientside script by its net id, the one name for an
+actor every machine shares:
+
+```bcs
+#library "fuaflash"
+#import "zcommon.bcs"
+
+script "FlashActor" ( int tid ) {
+   ACS_NamedExecuteAlways( "FlashOnClients", 0, GetNetID( tid, 0 ) );
+}
+
+script "FlashOnClients" ( int netid ) clientside {
+   if ( SetActivatorByNetID( netid ) ) {
+      // The actor is this script's activator now: spawn a client-only effect at it, change its look.
+      Log( s: "flashing a ", s: GetActorClass( 0 ) );
+   }
+}
+```
+
+<!-- example
+pukename FlashActor 31 => /flashing a DoomImp/
+-->
+
+## Best practices
+
+- **Deal damage from server scripts.** In a clientside script `DamageActor` only hurts actors that exist
+  on that client alone (and returns -1 for the rest), since the server holds every other actor's health.
+- **Pass net ids to clientside scripts,** not tids or handles: a tid can name several actors, and each
+  machine has its own handle table. `GetNetID( tid, 0 )` on the server, `SetActivatorByNetID` on the client.
+- **Prefer `CheckProximity` to a loop over tids** for "is there one near": it walks the blockmap around
+  the actor rather than every actor with a tid.
+- **Round only what you show.** `ZDoom_Round` and the others drop the fraction a position or speed keeps
+  in its low 16 bits, so movement built on rounded values drifts.
+
 ## Differences from UZDoom
 
 - `Ceil` of a whole number returns it unchanged. UZDoom's adds one, so `Ceil(2.0)` is 3.0 there.
