@@ -14,16 +14,17 @@ export const FN = { ...HANDLES, SetActorData: 24032, GetActorData: 24033, HasAct
 export const KEPT = 5, FULL = 6, SPAWNED = 7;
 export const MAX_KEYS = 64;
 const KEYS = Array.from({ length: MAX_KEYS + 1 }, (_, i) => `k${i}`);
-export const STRINGS = ["d1", "d2", "d3", " ", "combo", "COMBO", "missing", "friend", "ExplosiveBarrel", ...KEYS];
-const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
+// [Doruk-Aksoy] d4, d5 and srv are netacsactordata's own.
+export const STRINGS = ["d1", "d2", "d3", " ", "combo", "COMBO", "missing", "friend", "ExplosiveBarrel", ...KEYS, "d4", "d5", "srv"];
+export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
-const fn = (name, ...args) => callFunc(FN[name], args);
-const global = (n) => [PCD.PUSHGLOBALVAR, n];
+export const fn = (name, ...args) => callFunc(FN[name], args);
+export const global = (n) => [PCD.PUSHGLOBALVAR, n];
 const keep = (n, words) => [...words, PCD.ASSIGNGLOBALVAR, n];
 // [Doruk-Aksoy] The sum of SetActorData's results over the first 64 keys, on the second barrel.
 const fillKeys = [PCD.PUSHNUMBER, 0, ...KEYS.slice(0, MAX_KEYS).flatMap((k) => [...fn("SetActorData", global(1), S[k], 1), PCD.ADD])];
 
-function logScript(tag, values, before = []) {
+export function logScript(tag, values, before = []) {
   return [...before, PCD.BEGINPRINT, PCD.PUSHNUMBER, S[tag], PCD.PRINTSTRING,
     ...values.flatMap((v) => [PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, ...v, PCD.PRINTNUMBER]), PCD.ENDLOG, PCD.TERMINATE];
 }
@@ -47,26 +48,31 @@ export const SCRIPTS = {
   3: logScript("d3", [fn("GetActorData", global(0), S.combo), fn("HasActorData", global(0), S.friend), fn("ClearActorData", global(0)), fn("HasActorData", global(0), S.combo)]),
 };
 
-export function buildAcsActorDataPk3() {
+// [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map, as netacsactordata's CLIENTSIDE copies, own steps and player starts do.
+export function buildAcsActorDataPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
   m.room(0, 0, 512, 512, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.thing({ x: 256, y: 64, angle: 90, type: 1 });
   m.thing({ x: 256, y: 160, angle: 0, type: THING.ExplosiveBarrel, id: KEPT });
   m.thing({ x: 128, y: 300, angle: 0, type: THING.ExplosiveBarrel, id: FULL });
-  const scripts = Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) }));
+  withMap(m);
+  const scripts = withScripts(Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) })));
   return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) }]);
 }
 
 export const FULL_WARNING = /fua_SetActorData: a ExplosiveBarrel already carries 64 keys, so "k64" was not set\./g;
 
-// [Doruk-Aksoy] What is wrong with each step's log.
-export function judgeActorData(steps) {
+// [Doruk-Aksoy] The values a step logged after its tag, or [] with a fault in `faults` when it logged none.
+export function stepValues(steps, tag, faults) {
+  const v = logged(steps[tag], tag);
+  if (!v) faults.push(`script ${tag} logged nothing (${String(steps[tag]).trim().slice(0, 100)})`);
+  return v || [];
+}
+
+// [Doruk-Aksoy] What is wrong with script 1's log: setting, reading, defaults, a handle as a value, clearing, the 64-key cap and its one warning.
+export function judgeFirst(steps) {
   const faults = [];
-  const step = (tag) => {
-    const v = logged(steps[tag], tag);
-    if (!v) faults.push(`script ${tag} logged nothing (${String(steps[tag]).trim().slice(0, 100)})`);
-    return v || [];
-  };
+  const step = (tag) => stepValues(steps, tag, faults);
   const want = (ok, what) => { if (!ok) faults.push(what); };
   const [set, got, gotUpper, has, fallback, hasMissing, reset, regot, setFriend, friend, friendHandle, cleared, hasFriend, filled, past, replace, replaced, zeroGet, zeroSet] = step("d1");
   want(set === 1 && got === 3 && gotUpper === 3 && has === 1, `set and read gave ${set} ${got} ${gotUpper} ${has}, not 1 3 3 1`);
@@ -79,6 +85,14 @@ export function judgeActorData(steps) {
   want(zeroGet === 5 && zeroSet === 0, `handle 0 read ${zeroGet} and set ${zeroSet}, not the default 5 and 0`);
   const warnings = (String(steps.d1).match(FULL_WARNING) || []).length;
   want(warnings === 1, `the full actor warned ${warnings} times, not once`);
+  return faults;
+}
+
+// [Doruk-Aksoy] What is wrong with each step's log.
+export function judgeActorData(steps) {
+  const faults = judgeFirst(steps);
+  const step = (tag) => stepValues(steps, tag, faults);
+  const want = (ok, what) => { if (!ok) faults.push(what); };
   const [staleGet, removed, spawned, spawnedHas] = step("d2");
   want(staleGet === -1, `a removed actor's handle read ${staleGet}, not the default -1`);
   want((spawned & 0xFFFFF) === (removed & 0xFFFFF) && spawnedHas === 0, `the actor taking the removed one's slot has its values: ${spawnedHas}`);

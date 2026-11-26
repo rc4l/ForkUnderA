@@ -51,6 +51,10 @@ the per-actor values kept with each slot, 24032-24035. Modder references:
 - `fuactl scenarios acsactordata`: setting, reading in any case, defaults, a handle as a value, clearing,
   the 64-key cap's single warning, a removed actor's values not reaching its slot's next actor, and a
   savegame round trip.
+- `fuactl scenarios netacsactordata`: the first step as CLIENTSIDE copies on the player's client and an
+  observer, then on the server, each machine with its own store; a value only the server sets never reaches a
+  client or a late joiner, and a barrel the server removes takes each client's values along
+  (`fua_debug_netdrop=58` fails it).
 - `fuactl scenarios acshandles`: getting, checking, pointers, the activator, a removed actor's slot reused
   one generation on, a savegame round trip, a map change and a new game.
 - `fuactl scenarios acshandleshub`: three maps in a hub cluster, eight round trips with the table's counts
