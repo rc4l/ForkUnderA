@@ -43,6 +43,7 @@
 #include "a_pickups.h"
 #include "sc_man.h"
 #include "thingdef.h"
+#include "features/decorate-uzdoom/computation/uservar_compute.h"
 #include "features/dupconst/computation/dup_const_compute.h"
 #include "a_morph.h"
 #include "cmdlib.h"
@@ -436,14 +437,15 @@ static void ParseUserVariable (FScanner &sc, PSymbolTable *symt, PClass *cls)
 		sc.ScriptError("Native classes may not have user variables");
 	}
 
-	// Read the type and make sure it's int.
+	// [Doruk-Aksoy] Read the type, int or float as UZDoom's DECORATE takes them (features/decorate-uzdoom).
 	sc.MustGetAnyToken();
-	if (sc.TokenType != TK_Int)
+	if (sc.TokenType != TK_Int && sc.TokenType != TK_Float)
 	{
-		sc.ScriptMessage("User variables must be of type int");
+		sc.ScriptMessage("User variables must be of type int or float");
 		FScriptPosition::ErrorCounter++;
 	}
-	valuetype = VAL_Int;
+	const bool isFloat = sc.TokenType == TK_Float;
+	valuetype = isFloat ? VAL_Float : VAL_Int;
 
 	sc.MustGetToken(TK_Identifier);
 	// For now, restrict user variables to those that begin with "user_" to guarantee
@@ -498,7 +500,11 @@ static void ParseUserVariable (FScanner &sc, PSymbolTable *symt, PClass *cls)
 	}
 
 	PSymbolVariable *sym = new PSymbolVariable(symname);
-	sym->offset = cls->Extend(sizeof(int) * (valuetype.Type == VAL_Array ? valuetype.size : 1));
+	// [Doruk-Aksoy] A float's doubles start on an 8-byte boundary.
+	const zx::decorateuzdoom::UserVarLayout layout = zx::decorateuzdoom::ComputeUserVarLayout(cls->Size, isFloat,
+		valuetype.Type == VAL_Array ? valuetype.size : 1);
+	cls->Extend(layout.extension);
+	sym->offset = layout.offset;
 	sym->ValueType = valuetype;
 	sym->bUserVar = true;
 	if (symt->AddSymbol(sym) == NULL)

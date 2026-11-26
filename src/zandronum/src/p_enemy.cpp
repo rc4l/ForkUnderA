@@ -31,6 +31,7 @@
 
 #include <stdlib.h>
 
+#include "features/decorate-uzdoom/classprops.h"
 #include "templates.h"
 #include "m_random.h"
 #include "i_system.h"
@@ -422,6 +423,8 @@ bool AActor::SuggestMissileAttack (fixed_t dist)
 
 	if (flags4 & MF4_MISSILEMORE) dist >>= 1;
 	if (flags4 & MF4_MISSILEEVENMORE) dist >>= 3;
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: MissileChanceMult scales the distance too (features/decorate-uzdoom).
+	dist = FixedMul(dist, zx::decorateuzdoom::MissileChanceMult(this));
 	
 	int mmc = FixedMul(GetDefault()->MinMissileChance, G_SkillProperty(SKILLP_Aggressiveness));
 	return pr_checkmissilerange() >= MIN<int> ((const int)(dist >> FRACBITS), mmc);
@@ -1709,7 +1712,8 @@ bool P_LookForEnemies (AActor *actor, INTBOOL allaround, FLookExParams *params)
 {
 	AActor *other;
 
-	other = P_BlockmapSearch (actor, 10, LookForEnemiesInBlock, params);
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9: FriendlySeeBlocks, 10 by default (features/decorate-uzdoom).
+	other = P_BlockmapSearch (actor, zx::decorateuzdoom::FriendlySeeBlocks(actor), LookForEnemiesInBlock, params);
 
 	if (other != NULL)
 	{

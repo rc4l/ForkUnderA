@@ -58,8 +58,12 @@ int InventoryAmount(AActor* actor, const char* type, bool max)
 
 int CheckProximity(AActor* self, const char* className, int32_t distance, int count, int flags, int ptr)
 {
+	return Proximity(self, className != nullptr ? PClass::FindClass(className) : nullptr, distance / 65536.0, count, flags, ptr, false);
+}
+
+int Proximity(AActor* self, const PClass* cls, double distance, int count, int flags, int ptr, bool counting)
+{
 	AActor* ref = COPY_AAPTR(self, ptr);
-	const PClass* cls = className != nullptr ? PClass::FindClass(className) : nullptr;
 	if (ref == nullptr || cls == nullptr)
 		return 0;
 	TThinkerIterator<AActor> it;
@@ -81,7 +85,7 @@ int CheckProximity(AActor* self, const char* className, int32_t distance, int co
 		return false;
 	};
 	const auto sight = [ref](AActor* mo) { return P_CheckSight(mo, ref, SF_IGNOREVISIBILITY | SF_IGNOREWATERBOUNDARY); };
-	const ProximityScan<AActor*> scan = ComputeProximityScan<AActor*>(next, sight, PointOf(ref), distance / 65536.0, count, flags);
+	const ProximityScan<AActor*> scan = ComputeProximityScan<AActor*>(next, sight, PointOf(ref), distance, count, flags, counting);
 	if (scan.chosen != nullptr)
 	{
 		AActor* owner = (flags & kCpxSetOnPtr) ? ref : self;

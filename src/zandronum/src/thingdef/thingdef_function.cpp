@@ -46,6 +46,7 @@
 #include "actor.h"
 #include "actorptrselect.h"
 #include "p_pspr.h"		// [overlay] P_GetCurrentPSpriteLayer for OverlayID()
+#include "features/decorate-uzdoom/decorateexpr.h"
 
 static TMap<FName, FxGlobalFunctionCall::Creator> CreatorMap;
 
@@ -112,6 +113,9 @@ FxExpression *FxGlobalFunctionCall::StaticCreate
 
 	if (!creator)
 	{
+		// [Doruk-Aksoy] UZDoom's math builtins and actor queries (features/decorate-uzdoom).
+		if (FxExpression *x = zx::decorateuzdoom::CreateGlobalCall(methodname, args, pos))
+			return x;
 		pos.Message(MSG_ERROR, "Call to unknown function '%s'", methodname.GetChars());
 		return NULL;
 	}

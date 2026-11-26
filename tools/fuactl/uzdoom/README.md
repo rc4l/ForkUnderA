@@ -10,6 +10,7 @@ checkout with Visual Studio's cmake (`cmake --build <UZDoom-build> --config Rele
   does the same from the command line.
 - `shots.mjs` takes each engine's picture of a map; ours through `fuactl launch` on a port of its own, quit by port.
 - A scenario can run in UZDoom too, as `node scenarios/acsparity.mjs --uzdoom` (on the ACS branches) judges UZDoom's ACS answers.
+  `node scenarios/decorateuzdoom.mjs --uzdoom` does the same for the DECORATE checks, by the verdict each logs.
 
 Traps the module handles:
 - UZDoom's `wait` only delays the rest of its own command string, so `+wait 70 +screenshot +quit` quits at once; the

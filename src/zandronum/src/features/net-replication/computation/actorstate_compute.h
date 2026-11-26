@@ -29,6 +29,9 @@ int ComputePuffSend(bool spawnState, bool hitThingSeeSound, bool attackSound, bo
 // [rc4l] Whether a client is left out of a puff sent to each in turn: the shooter itself, predicting a NONETID puff.
 bool ComputeSkipsPuffFor(bool isShooter, bool noNetId, bool clientSidePuffs);
 
+// [Doruk-Aksoy] Whether a joining client is sent an actor's translation: whenever it is not its class's, which a cleared one of a translated class is not.
+bool ComputeJoinSendsTranslation(uint32_t translation, uint32_t classTranslation);
+
 }} // namespace zx::netreplication
 
 #endif // ZX_ACTORSTATE_COMPUTE_H

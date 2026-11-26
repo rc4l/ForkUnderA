@@ -38,6 +38,7 @@
 **
 */
 
+#include "features/decorate-uzdoom/computation/decorateprops_compute.h"
 #include "gi.h"
 #include "actor.h"
 #include "info.h"
@@ -545,6 +546,96 @@ DEFINE_PROPERTY(painthreshold, I, Actor)
 	PROP_INT_PARM(id, 0);
 
 	defaults->PainThreshold = id;
+}
+
+//==========================================================================
+//
+// [Doruk-Aksoy] uzdoom@62afe5f0a9: Threshold, DefThreshold, the MBF21 groups, MissileChanceMult, SelfDamageFactor,
+// StealthAlpha, FriendlySeeBlocks, MinRespawnTics and RespawnDice (features/decorate-uzdoom).
+//
+//==========================================================================
+
+// [Doruk-Aksoy] A negative value UZDoom refuses is a script error here too.
+static int NonNegativeProperty(Baggage &bag, int value, const char *what)
+{
+	if (value < 0)
+		bag.ScriptPosition.Message(MSG_ERROR, "%s cannot be negative.", what);
+	return value;
+}
+
+DEFINE_PROPERTY(threshold, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	defaults->threshold = NonNegativeProperty(bag, id, "Threshold");
+}
+
+DEFINE_PROPERTY(defthreshold, I, Actor)
+{
+	PROP_INT_PARM(id, 0);
+	info->Class->Meta.SetMetaInt(AMETA_DefThreshold, NonNegativeProperty(bag, id, "DefThreshold"));
+}
+
+// [Doruk-Aksoy] One group property onto the field our DEHACKED fills too.
+static void SetGroupProperty(Baggage &bag, int value, zx::decorateuzdoom::GroupKind kind, int &field, const char *what)
+{
+	int stored = 0;
+	if (!zx::decorateuzdoom::ComputeDecorateGroupStored(kind, value, &stored))
+		bag.ScriptPosition.Message(MSG_ERROR, "%s must be >= %d.", what, kind == zx::decorateuzdoom::kProjectileGroup ? -1 : 0);
+	field = stored;
+}
+
+DEFINE_PROPERTY(infightinggroup, I, Actor)
+{
+	PROP_INT_PARM(i, 0);
+	SetGroupProperty(bag, i, zx::decorateuzdoom::kInfightingGroup, defaults->InfightingGroup, "Infighting groups");
+}
+
+DEFINE_PROPERTY(projectilegroup, I, Actor)
+{
+	PROP_INT_PARM(i, 0);
+	SetGroupProperty(bag, i, zx::decorateuzdoom::kProjectileGroup, defaults->ProjectileGroup, "Projectile groups");
+}
+
+DEFINE_PROPERTY(splashgroup, I, Actor)
+{
+	PROP_INT_PARM(i, 0);
+	SetGroupProperty(bag, i, zx::decorateuzdoom::kSplashGroup, defaults->SplashGroup, "Splash groups");
+}
+
+DEFINE_PROPERTY(missilechancemult, F, Actor)
+{
+	PROP_FIXED_PARM(i, 0);
+	info->Class->Meta.SetMetaFixed(AMETA_MissileChanceMult, i);
+}
+
+DEFINE_PROPERTY(selfdamagefactor, F, Actor)
+{
+	PROP_FIXED_PARM(i, 0);
+	info->Class->Meta.SetMetaFixed(AMETA_SelfDamageFactor, i);
+}
+
+DEFINE_PROPERTY(stealthalpha, F, Actor)
+{
+	PROP_FIXED_PARM(i, 0);
+	info->Class->Meta.SetMetaFixed(AMETA_StealthAlpha, i);
+}
+
+DEFINE_PROPERTY(friendlyseeblocks, I, Actor)
+{
+	PROP_INT_PARM(i, 0);
+	info->Class->Meta.SetMetaInt(AMETA_FriendlySeeBlocks, i);
+}
+
+DEFINE_PROPERTY(minrespawntics, I, Actor)
+{
+	PROP_INT_PARM(i, 0);
+	info->Class->Meta.SetMetaInt(AMETA_MinRespawnTics, i);
+}
+
+DEFINE_PROPERTY(respawndice, I, Actor)
+{
+	PROP_INT_PARM(i, 0);
+	info->Class->Meta.SetMetaInt(AMETA_RespawnDice, i);
 }
 
 //==========================================================================

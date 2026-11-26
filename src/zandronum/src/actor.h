@@ -836,6 +836,14 @@ enum
 	AMETA_BloodType2,		// Bloodsplatter replacement type
 	AMETA_BloodType3,		// AxeBlood replacement type
 	AMETA_SelfObituary,		// [SB] Used when a player kills themselves with this actor
+	// [Doruk-Aksoy] uzdoom@62afe5f0a9 properties DECORATE sets per class (features/decorate-uzdoom).
+	AMETA_MissileChanceMult,	// fixed, 1.0 by default
+	AMETA_SelfDamageFactor,		// fixed, 1.0 by default
+	AMETA_StealthAlpha,			// fixed, 0 by default
+	AMETA_FriendlySeeBlocks,	// int, 10 by default
+	AMETA_MinRespawnTics,		// int, 0 by default
+	AMETA_RespawnDice,			// int, 4 by default
+	AMETA_DefThreshold,			// int, BASETHRESHOLD by default
 };
 
 struct FDropItem 
