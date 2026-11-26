@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readWad, readPk3, parseUdmf } from "../src/udmf.mjs";
-import { buildMonsterStairsPk3, behavior, flight, walkerDecorate, MAPS, COUNTER, SIDES, VANTAGES, GOAL, SPAWN_WALKERS, FIGHT_SCRIPT, WAVE_SCRIPT, floorUnder, ENEMY_GOAL_Y, JUDGED_MAPS } from "../scenarios/monsterstairs.mjs";
+import { buildMonsterStairsPk3, behavior, flight, walkerDecorate, MAPS, COUNTER, SIDES, VANTAGES, GOAL, SPAWN_WALKERS, FIGHT_SCRIPT, WAVE_SCRIPT, floorUnder, ENEMY_GOAL_Y, JUDGED_MAPS, START_PEN, startOf } from "../scenarios/monsterstairs.mjs";
 
 const HALL_END_OF_STAIRS = 624;
 import { ACSF, PCD } from "../src/acs.mjs";
@@ -23,8 +23,9 @@ test("each map's sectors carry its floors, joined by textured steps, with three 
   const all = files(buildMonsterStairsPk3(Object.keys(MAPS)));
   for (const [map, { floors }] of Object.entries(MAPS)) {
     const t = textmap(all, map);
-    assert.deepEqual(t.sector.map((s) => s.heightfloor), floors.map(([, f]) => f), map);
-    const steps = t.linedef.filter((l) => l.twosided);
+    assert.deepEqual(t.sector.slice(0, floors.length).map((s) => s.heightfloor), floors.map(([, f]) => f), map);
+    assert.equal(t.sector.length, floors.length + (MAPS[map].enemies ? 1 : 0), `${map}: the hall's sectors, and the start pen on an enemies map`);
+    const steps = t.linedef.filter((l) => l.twosided && !l.blockmonsters);
     assert.equal(steps.length, floors.length - 1, map);
     for (const l of steps) for (const s of [l.sidefront, l.sideback]) assert.equal(t.sidedef[s].texturebottom, "STEP1", map);
     assert.equal(t.thing.filter((th) => th.type === 1).length, 1, map);
@@ -41,6 +42,27 @@ test("each map's sectors carry its floors, joined by textured steps, with three 
   }
   const ledge = textmap(all, "MAP03");
   assert.equal(ledge.sector[0].heightfloor - ledge.sector[1].heightfloor, 64, "one line drops 64, past MaxDropOffHeight");
+});
+
+// [Doruk-Aksoy] netmonsterstairs: an enemy wandering to the players stood on a joiner's start, which sent the joiner onto another player's start and telefragged them.
+test("on an enemies map every player start stands in a pen closed to monsters and open to players, level with the landing", () => {
+  const all = files(buildMonsterStairsPk3(Object.keys(MAPS)));
+  for (const [map, { floors, enemies }] of Object.entries(MAPS)) {
+    const t = textmap(all, map);
+    const fence = t.linedef.filter((l) => l.blockmonsters);
+    if (!enemies) { assert.equal(fence.length, 0, map); continue; }
+    assert.equal(fence.length, 4, map);
+    assert.ok(fence.every((l) => l.twosided && !l.blocking), `${map}: players walk through the pen's lines`);
+    const pen = t.sector.length - 1;
+    assert.ok(fence.every((l) => t.sidedef[l.sidefront].sector === pen && t.sidedef[l.sideback].sector === floors.length - 1), `${map}: the pen stands inside the landing`);
+    assert.equal(t.sector[pen].heightfloor, 0, map);
+    assert.equal(t.sector[pen].heightceiling, t.sector[floors.length - 1].heightceiling, map);
+    const [x0, y0, x1, y1] = START_PEN;
+    for (const s of t.thing.filter((th) => th.type >= 1 && th.type <= 4)) assert.ok(s.x - 16 > x0 && s.x + 16 < x1 && s.y - 16 > y0 && s.y + 16 < y1, `${map} start ${s.type} lies wholly inside the pen`);
+    assert.ok(ENEMY_GOAL_Y + 64 < y0, `${map}: an Arachnotron at its goal stays outside the pen`);
+  }
+  assert.deepEqual([0, 1, 2, 3].map((n) => startOf(n)), [{ x: 448, y: 896 }, { x: 352, y: 896 }, { x: 160, y: 896 }, { x: 64, y: 896 }]);
+  assert.equal(startOf(4), null);
 });
 
 test("a walker that must arrive counts in at spawn and out when it does; one that must stay counts only if it leaves", () => {
