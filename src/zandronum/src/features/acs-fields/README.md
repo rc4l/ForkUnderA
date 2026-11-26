@@ -22,3 +22,6 @@ ACS field access by name through an actor handle, `fua_` functions 24030-24031. 
   of each kind and the write rules.
 - `fuactl scenarios acsfields`: native fields against `GetActorX`, `GetActorAngle` and the map, an array
   by index, a far actor's truncated x matching `GetActorX`, and writes to `user_` variables only.
+- `fuactl scenarios netacsfields`: the same checks as CLIENTSIDE copies on the player's client, an
+  observer and a late joiner, then on the server, each on its own actors; the server reads the `user_`
+  variables the clients wrote on their copies as 0, since a client's write stays on that client.

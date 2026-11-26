@@ -12,11 +12,12 @@ const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", tex
 export const FN = { ...HANDLES, GetField: 24030, SetField: 24031, GetUserVariable: 25 };
 export const NEAR = 5, FAR = 8, FAR_X = 40000, ARG2 = 7;
 export const DECORATE = "Actor ZxFieldBarrel : ExplosiveBarrel 21000\n{\n\tvar int user_count;\n\tvar int user_list[3];\n}\n";
-export const STRINGS = ["f1", " ", "health", "x", "angle", "args", "radius", "tid", "nosuch", "user_count", "user_list"];
-const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
+// [Doruk-Aksoy] f2 is netacsfields' own step.
+export const STRINGS = ["f1", " ", "health", "x", "angle", "args", "radius", "tid", "nosuch", "user_count", "user_list", "f2"];
+export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 const ONE = 65536;
 
-const fn = (name, ...args) => callFunc(FN[name], args);
+export const fn = (name, ...args) => callFunc(FN[name], args);
 const h = [PCD.PUSHSCRIPTVAR, 0];
 const far = [PCD.PUSHSCRIPTVAR, 1];
 
@@ -52,14 +53,17 @@ export function buildScript() {
     ...CHECKS.flatMap((c) => [PCD.PUSHNUMBER, S[" "], PCD.PRINTSTRING, ...c.words, PCD.PRINTNUMBER]), PCD.ENDLOG, PCD.TERMINATE];
 }
 
-export function buildAcsFieldsPk3() {
+// [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map, as netacsfields' CLIENTSIDE copies, own step and player starts do.
+export function buildAcsFieldsPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
   const m = new UdmfMap();
   m.room(0, 0, 512, 512, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.room(FAR_X - 256, 0, FAR_X + 256, 512, ROOM, () => ({ side: { texturemiddle: "STARTAN2" } }));
   m.thing({ x: 256, y: 64, angle: 90, type: 1 });
   m.thing({ x: 256, y: 160, angle: 90, type: 21000, id: NEAR, arg2: ARG2 });
   m.thing({ x: FAR_X, y: 256, angle: 0, type: 21000, id: FAR });
-  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts([{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }], STRINGS) })) },
+  withMap(m);
+  const scripts = withScripts([{ code: buildScript(), type: SCRIPT.CLOSED, number: 1 }]);
+  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) },
     { name: "decorate.txt", data: Buffer.from(DECORATE, "latin1") }]);
 }
 
