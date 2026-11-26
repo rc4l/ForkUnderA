@@ -1,10 +1,11 @@
-// [Doruk-Aksoy] Model parity with UZDoom's OpenGL: an MD3 (MAP01) and an MD2 (MAP02), each as keyframe 0, keyframe 1 and an actor blending between them,
+// [Doruk-Aksoy] Model parity with UZDoom: an MD3 (MAP01) and an MD2 (MAP02), each as keyframe 0, keyframe 1 and an actor blending between them,
 // time frozen 17 tics in by an ENTER script so both engines hold the same blend; each block's shape and lean, and the blend the animated one shows, against UZDoom's.
-// usage: node uzdoom/modelparity.mjs [--port 7874] [--only MAP01]   (FUACTL_ENGINE picks our binary; needs src/quakemodel.mjs, from PR #425 on)
+// usage: node uzdoom/modelparity.mjs [--port 7874] [--only MAP01] [--api vulkan|opengl|both] [--uzdoom-backend gl|vulkan]   (FUACTL_ENGINE picks our binary; needs src/quakemodel.mjs, from PR #425 on)
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { uzdoomShot, oursShot } from "./shots.mjs";
+import { parityApis, parityUzdoomBackend } from "../src/uzdoom.mjs";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { encodePNG, decodePNG, px } from "../src/pngcore.mjs";
 import { acsScripts, PCD, SCRIPT } from "../src/acs.mjs";
@@ -12,6 +13,7 @@ import { acsScripts, PCD, SCRIPT } from "../src/acs.mjs";
 const args = process.argv.slice(2);
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 const port = Number(flag("--port")) || 7874;
+const apis = parityApis(args), uzBackend = parityUzdoomBackend(args);
 // [Doruk-Aksoy] The MD2 and MD3 writers arrive with the GPU model path (PR #425); without them this harness has nothing to build.
 const { md2, md3 } = await import("../src/quakemodel.mjs").catch(() => {
   console.error("modelparity needs src/quakemodel.mjs, which comes with the GPU model path (PR #425)");
@@ -124,22 +126,24 @@ function measure(png) {
 
 const pk3File = buildPk3();
 let ok = true;
+// [Doruk-Aksoy] One measure in UZDoom and in ours on each API, each of ours held to UZDoom's within tol.
 const row = (label, uz, ours, tol) => {
-  const match = Math.abs(ours - uz) <= tol;
+  const match = ours.every((v) => Math.abs(v - uz) <= tol);
   ok &&= match;
-  console.log(`${label.padEnd(26)} ${uz.toFixed(3).padStart(7)} ${ours.toFixed(3).padStart(7)}  ${match ? "ok" : "MISMATCH"}`);
+  console.log(`${label.padEnd(26)} ${uz.toFixed(3).padStart(7)}${ours.map((v) => v.toFixed(3).padStart(8)).join("")}  ${match ? "ok" : "MISMATCH"}`);
 };
 for (const f of FORMATS.filter((x) => !flag("--only") || x.map === flag("--only"))) {
-  const uz = measure(uzdoomShot(pk3File, f.map, out));
-  const ours = measure(await oursShot(pk3File, f.map, { port, minTic: 70, tag: "modelparity" }));
+  const uz = measure(uzdoomShot(pk3File, f.map, out, uzBackend));
+  const ours = [];
+  for (const api of apis) ours.push(measure(await oursShot(pk3File, f.map, { port, minTic: 70, tag: "modelparity", api })));
   console.log(`\n${f.map} ${f.file}: keyframe 0, keyframe 1, and frozen ${FREEZE_TIC} tics into a 35-tic blend`);
-  console.log(`${"".padEnd(26)}  UZDoom    ours`);
+  console.log(`${"".padEnd(26)}  UZDoom ${uzBackend}${apis.map((a) => a.padStart(8)).join("")}`);
   for (const k of ["kf0", "kf1", "anim"]) {
-    row(`${k} width / height`, uz[k].aspect, ours[k].aspect, 0.03);
-    row(`${k} lean`, uz[k].lean, ours[k].lean, 0.03);
+    row(`${k} width / height`, uz[k].aspect, ours.map((o) => o[k].aspect), 0.03);
+    row(`${k} lean`, uz[k].lean, ours.map((o) => o[k].lean), 0.03);
   }
-  row("anim blend (from height)", uz.t, ours.t, 0.06);
-  row("kf1 height / kf0 height", uz.kf1.h / uz.kf0.h, ours.kf1.h / ours.kf0.h, 0.03);
+  row("anim blend (from height)", uz.t, ours.map((o) => o.t), 0.06);
+  row("kf1 height / kf0 height", uz.kf1.h / uz.kf0.h, ours.map((o) => o.kf1.h / o.kf0.h), 0.03);
 }
 console.log(`\nshots in ${out}`);
 process.exit(ok ? 0 : 1);

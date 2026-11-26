@@ -1,16 +1,18 @@
 // [Doruk-Aksoy] GLDEFS light parity with UZDoom: one small black map per light property, screenshotted in UZDoom and in ours,
 // each lit spot's added brightness taken as a ratio of its map's reference spot; exit 0 when ours match UZDoom's.
-// usage: node uzdoom/lightparity.mjs [--port 7875] [--only MAP02]   (ours is the build FUACTL_ENGINE or the staged one; UZDoom is FUACTL_UZDOOM or UZDoom-build beside the repo)
+// usage: node uzdoom/lightparity.mjs [--port 7875] [--only MAP02] [--api vulkan|opengl|both] [--uzdoom-backend gl|vulkan]   (ours is the build FUACTL_ENGINE or the staged one, on each API; UZDoom is FUACTL_UZDOOM or UZDoom-build beside the repo)
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { uzdoomShot, oursShot } from "./shots.mjs";
+import { parityApis, parityUzdoomBackend } from "../src/uzdoom.mjs";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { encodePNG, decodePNG, px } from "../src/pngcore.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null);
 const port = Number(flag("--port")) || 7875;
+const apis = parityApis(args), uzBackend = parityUzdoomBackend(args);
 const out = fs.mkdtempSync(path.join(os.tmpdir(), "lightparity-"));
 
 // [Doruk-Aksoy] A black room (lightlevel 0), so an unlit pixel is near zero in both engines.
@@ -355,16 +357,21 @@ const cases = flag("--only") ? CASES.filter((c) => c.map === flag("--only")) : C
 const pk3File = buildPk3(cases);
 let ok = true;
 for (const c of cases) {
-  const uz = ratios(c, uzdoomShot(pk3File, c.map, out));
-  const ours = ratios(c, await oursShot(pk3File, c.map, { port, tag: "lightparity" }));
+  const uz = ratios(c, uzdoomShot(pk3File, c.map, out, uzBackend));
+  // [Doruk-Aksoy] Ours on each API, each held to UZDoom on its own.
+  const ours = [];
+  for (const api of apis) ours.push({ api, r: ratios(c, await oursShot(pk3File, c.map, { port, tag: "lightparity", api })) });
   console.log(`\n${c.map} ${c.title}  (added brightness over "${c.labels[c.reference]}")`);
-  console.log(`${"".padEnd(20)}  UZDoom    ours`);
+  console.log(`${"".padEnd(20)}  ${`UZDoom ${uzBackend}`.padStart(13)}${ours.map((o) => o.api.padStart(8)).join("")}`);
   c.labels.forEach((label, i) => {
-    const match = Math.abs(ours.ratio[i] - uz.ratio[i]) <= Math.max(0.1, 0.15 * Math.abs(uz.ratio[i]));
-    ok &&= match;
-    console.log(`${label.padEnd(20)}  ${uz.ratio[i].toFixed(2).padStart(6)}  ${ours.ratio[i].toFixed(2).padStart(6)}  ${match ? "ok" : "MISMATCH"}`);
+    const marks = ours.map((o) => {
+      const match = Math.abs(o.r.ratio[i] - uz.ratio[i]) <= Math.max(0.1, 0.15 * Math.abs(uz.ratio[i]));
+      ok &&= match;
+      return { value: o.r.ratio[i], match };
+    });
+    console.log(`${label.padEnd(20)}  ${uz.ratio[i].toFixed(2).padStart(13)}${marks.map((m) => m.value.toFixed(2).padStart(8)).join("")}  ${marks.every((m) => m.match) ? "ok" : "MISMATCH"}`);
   });
-  console.log(`unlit level: UZDoom ${uz.base.toFixed(1)}, ours ${ours.base.toFixed(1)}; reference added: UZDoom ${uz.added[c.reference].toFixed(1)}, ours ${ours.added[c.reference].toFixed(1)}`);
+  console.log(`unlit level: UZDoom ${uz.base.toFixed(1)}, ${ours.map((o) => `${o.api} ${o.r.base.toFixed(1)}`).join(", ")}; reference added: UZDoom ${uz.added[c.reference].toFixed(1)}, ${ours.map((o) => `${o.api} ${o.r.added[c.reference].toFixed(1)}`).join(", ")}`);
 }
 console.log(`\nshots in ${out}`);
 process.exit(ok ? 0 : 1);

@@ -11,14 +11,40 @@ checkout with Visual Studio's cmake (`cmake --build <UZDoom-build> --config Rele
 - `shots.mjs` takes each engine's picture of a map; ours through `fuactl launch` on a port of its own, quit by port.
 - A scenario can run in UZDoom too, as `node scenarios/acsparity.mjs --uzdoom` (on the ACS branches) judges UZDoom's ACS answers.
 
-Four traps the module handles:
+Traps the module handles:
 - UZDoom's `wait` only delays the rest of its own command string, so `+wait 70 +screenshot +quit` quits at once; the
   chain is one string, `+wait 70;screenshot;wait 35;quit`.
-- `+logfile` takes a bare name and writes `log-<name>.txt` in the working directory, so UZDoom runs in the output
-  folder; a path makes it print "Could not start log" and write nothing.
+- `+logfile` takes a bare name and writes `log-<name>.txt` in the working directory (a 4.14 release writes the bare
+  name itself; `logFileIn` reads either), so UZDoom runs in the output folder; a path makes it print "Could not start
+  log" and write nothing.
 - UZDoom stops its game while its window isn't active (`i_pauseinbackground`), and the launcher never activates it,
   so a run stalled whenever Windows called it inactive; every run sets `+i_pauseinbackground 0`.
 - A stale `LIB` (a removed MSVC folder) fails PowerShell's Add-Type, so the launcher clears it.
+- UZDoom skips drawing while its window isn't active (`vid_activeinbackground`, `d_main.cpp`), so every run sets it to 1.
+
+## Ours on Vulkan and OpenGL, and UZDoom's backend
+
+Each harness runs ours on both of the backend's APIs by default, and holds each to UZDoom on its own.
+`--api vulkan|opengl` runs one of them. Our launch must name the API asked for (`dumprenderer`'s `backend_api`), so a
+build without the OpenGL device, which runs Vulkan on `-opengl`, fails rather than passing as OpenGL.
+
+UZDoom runs on OpenGL, the reference parity is judged against first, unless `--uzdoom-backend vulkan` asks
+otherwise. Its window is never activated on either backend. The command chain loads the map a tic in (`+wait 1;map MAP01;…`):
+a `+map` of its own is a startup warp, after which UZDoom's OpenGL (and GZDoom's) draws only black, and a chain that
+starts with `+map` is taken whole as the map's name. A picture counts only when UZDoom logged entering its map (a title
+screen is not blank), and a blank one is an error rather than a match.
+
+A pk3 holding a DECORATE flag the build lacks stops our engine on a fatal dialog, so `lightparity` needs a build
+with #424.
+
+Results with the OpenGL device (branch opengl-device, 2026-11-25), against UZDoom's Vulkan:
+
+| Map | UZDoom | ours Vulkan | ours OpenGL |
+| --- | --- | --- | --- |
+| lightparity MAP01, intensity 0.5 / 1 / 2 | 0.52 / 1 / 1.95 | 0.50 / 1 / 2.00 | 0.50 / 1 / 2.00 |
+| lightparity MAP02, dontlightactors | 0.06 | 0.00 | 0.00 |
+| lightparity MAP03, dontlightothers | 0.02 | 0.00 | 0.00 |
+| objparity MAP01 and MAP02 | same orientation, v flip and winding | pixel-identical to ours on OpenGL | pixel-identical to ours on Vulkan |
 
 Never puke a script that crashes UZDoom (acsparity's script 2, `DamageActor` on a missing tid): its crash dialog
 lands on the user's screen.

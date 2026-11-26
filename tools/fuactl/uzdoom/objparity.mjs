@@ -1,12 +1,13 @@
 // [Doruk-Aksoy] OBJ parity with UZDoom, by eye: an OBJ "axes" model (an arm along +X, +Y and +Z, each its own texture) and the octagonal prism,
 // seen from a player start south of them (MAP01) and east of them (MAP02); writes the pk3 and, with --shots, each engine's picture of each map.
-// usage: node uzdoom/objparity.mjs <out.pk3> [--shots [--port 7874]]   (CULL=1 adds FORCECULLBACKFACES, which shows whether the engines wind triangles alike)
+// usage: node uzdoom/objparity.mjs <out.pk3> [--shots [--port 7874] [--api vulkan|opengl|both] [--uzdoom-backend gl|vulkan]]   (CULL=1 adds FORCECULLBACKFACES, which shows whether the engines wind triangles alike)
 import fs, { writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { UdmfMap, wad, mapLumps, pk3 } from "../src/udmf.mjs";
 import { prismObj } from "../scenarios/objmodel.mjs";
 import { uzdoomShot, oursShot } from "./shots.mjs";
+import { parityApis, parityUzdoomBackend } from "../src/uzdoom.mjs";
 
 // [Doruk-Aksoy] A box from (x0, y0, z0) to (x1, y1, z1) in OBJ space, its six faces as quads after `base` vertices already written.
 function box(lines, base, [x0, y0, z0], [x1, y1, z1]) {
@@ -59,8 +60,9 @@ console.log("wrote", process.argv[2]);
 if (process.argv.includes("--shots")) {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), "objparity-"));
   const port = Number(process.argv[process.argv.indexOf("--port") + 1]) || 7874;
+  const args = process.argv.slice(2), uzBackend = parityUzdoomBackend(args);
   for (const map of ["MAP01", "MAP02"]) {
-    console.log(`${map} UZDoom: ${uzdoomShot(process.argv[2], map, out)}`);
-    console.log(`${map} ours:   ${await oursShot(process.argv[2], map, { port, tag: "objparity" })}`);
+    console.log(`${map} UZDoom ${uzBackend}: ${uzdoomShot(process.argv[2], map, out, uzBackend)}`);
+    for (const api of parityApis(args)) console.log(`${map} ours ${api}: ${await oursShot(process.argv[2], map, { port, tag: "objparity", api })}`);
   }
 }
