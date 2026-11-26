@@ -121,6 +121,7 @@
 #include "features/telemetry/telemetry.h"
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] SerializeLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetLevelInstances
+#include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] ParkLevel, EnterLevel
 #include "features/handoff/effects.h"   // [Doruk-Aksoy] Deferred, for the music volume a tic sets
 
 void STAT_StartNewGame(const char *lev);
@@ -1103,6 +1104,8 @@ void G_DoCompleted (void)
 		if (!(level.flags2 & LEVEL2_FORGETSTATE))
 		{
 			G_SnapshotLevel ();
+			// [Doruk-Aksoy] features/acs-handles: its actors keep their handles until the hub comes back here.
+			zx::acshandles::ParkLevel ();
 			// Do not free any global strings this level might reference
 			// while it's not loaded.
 			FBehavior::StaticLockLevelVarStrings();
@@ -1646,6 +1649,7 @@ void G_DoLoadLevel (int position, bool autosave)
 
 	level.starttime = gametic;
 	G_UnSnapshotLevel (!savegamerestore);	// [RH] Restore the state of the level.
+	zx::acshandles::EnterLevel ();	// [Doruk-Aksoy] a visit, for the handle table's release-oldest valve
 
 	// [BB] If the snapshot was taken with less players than we have now (possible due to ingame joining),
 	// the new ones don't have a body. Just give them one.

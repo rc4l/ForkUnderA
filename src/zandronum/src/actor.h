@@ -1273,6 +1273,7 @@ public:
 	FTextureID		picnum;				// Draw this instead of sprite if valid
 
 	FNameNoInit		fua_MaterialName;		// [Doruk-Aksoy] DECORATE's fua_Material, the GLDEFS fua_Material its actors start with (features/actormaterials)
+	DWORD			fua_handleSlot;			// [Doruk-Aksoy] features/acs-handles: its slot in this machine's handle table, 0 until a script asks
 
 	// [MGOOOOOO] Effective extents used when deciding whether an attack hits this actor. These are
 	// independent of the physical radius/height that govern movement, so an actor can be shot at

@@ -37,6 +37,7 @@
 #include "features/timedemo/computation/timedemo_compute.h"   // [Doruk-Aksoy] ComputeTimedemoLine
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] ResetLevelShaders
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] ResetRound
+#include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] the handle table in savegames
 #include "features/net-session/netrole.h"   // [Doruk-Aksoy] zx::net::IsServer
 #include <stdlib.h>
 #include <stdio.h>
@@ -4909,6 +4910,8 @@ void G_DoLoadGame ()
 	STAT_Read(png);
 	FRandom::StaticReadRNGState (png);
 	P_ReadACSDefereds (png);
+	// [Doruk-Aksoy] features/acs-handles: before the level is rebuilt, so its actors claim their slots.
+	zx::acshandles::ReadTable (png);
 
 	// load a base level
 	// [rc4l] Re-occupy the slots the bots held BEFORE the matcher runs. Their data is already in
@@ -4922,6 +4925,7 @@ void G_DoLoadGame ()
 	demoplayback = demoplaybacksave;
 	delete[] map;
 	savegamerestore = false;
+	zx::acshandles::FinishLoad ();	// [Doruk-Aksoy] the slots no actor claimed
 
 	P_ReadACSVars(png);
 
@@ -5212,6 +5216,7 @@ void G_DoSaveGame (bool okForQuicksave, FString filename, const char *descriptio
 	STAT_Write(stdfile);
 	FRandom::StaticWriteRNGState (stdfile);
 	P_WriteACSDefereds (stdfile);
+	zx::acshandles::WriteTable (stdfile);	// [Doruk-Aksoy] features/acs-handles
 
 	P_WriteACSVars(stdfile);
 

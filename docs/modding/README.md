@@ -111,6 +111,8 @@ than only at class-definition time.
   modules and last across map changes.
 - [UZDoom's ACS functions](acs/UZDoom_functions.md) — `CheckProximity`, `DamageActor`, `GetLineX`,
   net ids, `Floor`/`Round`/`Ceil` and more, and `APROP_MaxStepHeight`, at UZDoom's numbers.
+- [Actor handles](acs/Actor_handles.md) — `fua_GetActorHandle` and its siblings: an actor named by a handle
+  instead of a TID, kept across savegames and hub maps, and how to use them in clientside scripts.
 
 ### GLDEFS
 
