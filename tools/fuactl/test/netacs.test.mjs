@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { PCD, SCRIPT, SCRIPTF } from "../src/acs.mjs";
 import { SPECIAL } from "../src/doomnums.mjs";
 import { UdmfMap } from "../src/udmf.mjs";
-import { COPY, START, MORE_TICS, SNAP_SERVER, onSnapshots, NET_CONFIGS, startWords, withNetCopies, addPlayerStarts, who, runSteps, netJudge, answerFor, arriveOn, changeMap, judgeEach, result } from "../src/netacs.mjs";
+import { COPY, START, MORE_TICS, onSnapshots, NET_CONFIGS, startWords, withNetCopies, addPlayerStarts, who, runSteps, netJudge, answerFor, arriveOn, changeMap, judgeEach, result } from "../src/netacs.mjs";
+import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 import { GS_INTERMISSION } from "../src/capture.mjs";
 
 test("START runs ACS_ExecuteAlways on its argument, and each copied script gets a NET original and a CLIENTSIDE copy", () => {
@@ -131,9 +132,8 @@ test("a step waits on, at most MORE_TICS, for a machine whose output comes late"
 
 test("onSnapshots puts every config's server on the snapshot netcode, keeping its own server cvars and its clients' as they are", () => {
   const [plain, own] = onSnapshots([{ name: "a" }, { name: "b", serverCvars: { sv_cheats: 0, fua_snap_nolegacy: 1 }, clientCvars: { x: 1 } }]);
-  assert.deepEqual(plain.serverCvars, SNAP_SERVER);
+  assert.deepEqual(plain.serverCvars, SNAP_SERVER_CVARS);
   assert.deepEqual(own.serverCvars, { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 1, sv_cheats: 0 });
   assert.deepEqual(own.clientCvars, { x: 1 });
-  assert.deepEqual(SNAP_SERVER, { fua_snap: 1, fua_snap_send: 1, fua_snap_nolegacy: 2 });
-  assert.deepEqual(NET_CONFIGS.map((c) => [c.name, c.observers, c.serverCvars]), [["lan", 1, SNAP_SERVER], ["ping100", 1, SNAP_SERVER]]);
+  assert.deepEqual(NET_CONFIGS.map((c) => [c.name, c.observers, c.serverCvars]), [["lan", 1, SNAP_SERVER_CVARS], ["ping100", 1, SNAP_SERVER_CVARS]]);
 });
