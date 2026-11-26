@@ -8,7 +8,8 @@ import { SPECIAL, THING } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { addClient } from "../src/netplay.mjs";
 import * as cap from "../src/capture.mjs";
-import { FN } from "./acshandles.mjs";
+import { FN, BARREL as HANDLES_BARREL, buildAcsHandlesPk3, judgeFirst, stepValues, logScript, global, keep } from "./acshandles.mjs";
+import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 // [Doruk-Aksoy] Each client's user cvars hold what its script found; the server cvar holds the server's own handle.
@@ -74,6 +75,45 @@ export async function judgeNetplay(set, label) {
   return { line: faults.length ? `FAIL ${label}: ${faults.join("; ")}` : `PASS ${label}: the player's client and a late joiner each took a handle to the barrel from its net id, and the server holds its own`, failed: faults.length ? 1 : 0 };
 }
 
-export const CONFIGS = [{ name: "lan", players: 1 }, { name: "ping100", players: 1, lag: "100" }];
+// [Doruk-Aksoy] acshandles' first step on every machine, then a barrel the clients hold handles to that the server removes: 6 keeps a handle on each client,
+// 7 removes the barrel on the server alone, and 8 reads each client's kept handle and the tid again, both stale once the removal reached it.
+export const COPY_STEPS = [{ script: 1, tags: ["h1"] }, { script: 6, tags: ["h6"], server: false }, { script: 7, tags: ["h7"], clients: false }, { script: 8, tags: ["h8"], server: false }];
+const OWN = {
+  6: logScript("h6", [global(1), fn("HandleValid", global(1))], keep(1, fn("GetActorHandle", HANDLES_BARREL.removed))),
+  7: logScript("h7", [[PCD.PUSHNUMBER, 1]], [PCD.PUSHNUMBER, HANDLES_BARREL.removed, PCD.LSPEC1, SPECIAL.Thing_Remove]),
+  8: logScript("h8", [fn("HandleValid", global(1)), fn("GetActorHandle", HANDLES_BARREL.removed)]),
+};
+export const STARTS = [[64, 64], [448, 64], [448, 448]];
 
-runScenarioIfMain(import.meta.url, () => ({ name: "netacshandles", wad: buildNetHandlesPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);
+export function buildCopiesPk3() {
+  return buildAcsHandlesPk3({
+    withScripts: (s) => withNetCopies([...s, ...Object.entries(OWN).map(([n, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(n) }))], [1, 6, 7, 8]),
+    withMap: (m) => addPlayerStarts(m, STARTS),
+  });
+}
+
+// [Doruk-Aksoy] What is wrong with one machine's copies run: its own handles from script 1, and on a client that saw it, the kept handle stale after the removal.
+export function judgeCopies(logs, member) {
+  const { faults } = judgeFirst(logs);
+  if (member.role === "server") {
+    if (!/h7 1/.test(String(logs.h7))) faults.push("script 7 never removed the barrel");
+  } else if (member.role !== "latejoin") {
+    const [kept, valid] = stepValues(logs, "h6", faults);
+    if (!(kept > 0 && valid === 1)) faults.push(`its handle to the second barrel was ${kept}, valid ${valid}`);
+    const [after, again] = stepValues(logs, "h8", faults);
+    if (after !== 0 || again !== 0) faults.push(`after the server removed the barrel its handle read valid ${after} and the tid gave handle ${again}, not 0 and 0`);
+  }
+  return faults;
+}
+
+const judgeCopiesRun = netJudge({ steps: COPY_STEPS, late: COPY_STEPS.slice(0, 1), judge: judgeCopies,
+  passed: "every machine's handles resolve, follow pointers and set the activator from its own table, and a barrel the server removed left each client's handle stale" });
+
+// [Doruk-Aksoy] The net id configs take a handle from a server's net id; the copies configs run acshandles' steps on every machine.
+export const CONFIGS = [{ name: "lan", players: 1 }, { name: "ping100", players: 1, lag: "100" },
+  { name: "copies-lan", players: 1, observers: 1, copies: true, wad: buildCopiesPk3() },
+  { name: "copies-ping100", players: 1, observers: 1, lag: "100,100", copies: true, wad: buildCopiesPk3() }];
+
+export const judgeEither = (set, label, ctx) => (ctx?.config?.copies ? judgeCopiesRun(set, label) : judgeNetplay(set, label));
+
+runScenarioIfMain(import.meta.url, () => ({ name: "netacshandles", wad: buildNetHandlesPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay: judgeEither }), compareNetplay);

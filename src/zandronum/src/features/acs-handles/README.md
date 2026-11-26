@@ -48,5 +48,7 @@ reference: [`docs/modding/acs/Actor_handles.md`](../../../../../docs/modding/acs
   steady, a removed actor staying stale, and leaving the hub freeing every parked slot. It fails with
   `ParkLevel` taken out.
 - `fuactl scenarios netacshandles`: a server sends a net ID to a clientside script, which takes its own
-  handle, on the player's client and a late joiner.
+  handle, on the player's client and a late joiner; its copies configs run `acshandles`' first step on
+  the server, the player's client, an observer and a late joiner, then a barrel the server removes leaves
+  each client's handle to it stale (`fua_debug_netdrop=58`, the removal unsent, fails them).
 - `fua_handles` (dev mode) prints the table's slots by state.
