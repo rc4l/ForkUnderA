@@ -7,6 +7,7 @@ import { SPECIAL } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
 import { addClient } from "../src/netplay.mjs";
 import * as cap from "../src/capture.mjs";
+import { onSnapshots } from "../src/netacs.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 // [Doruk-Aksoy] Each client's user cvars hold what it sees of the pawn, the server cvars what the server holds.
@@ -81,6 +82,6 @@ export async function judgeNetplay(set, label) {
 }
 
 // [Doruk-Aksoy] --side lan --cvar fua_debug_netdrop=65 leaves SetThingProperty unsent, and both clients keep the default 24.
-export const CONFIGS = [{ name: "lan", players: 1 }, { name: "ping100", players: 1, lag: "100" }];
+export const CONFIGS = onSnapshots([{ name: "lan", players: 1 }, { name: "ping100", players: 1, lag: "100" }]);
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsstepheight", wad: buildNetStepHeightPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);

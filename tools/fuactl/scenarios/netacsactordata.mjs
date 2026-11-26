@@ -6,7 +6,7 @@
 import { PCD, SCRIPT } from "../src/acs.mjs";
 import { SPECIAL } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareNetplay } from "../src/template.mjs";
-import { withNetCopies, addPlayerStarts, netJudge } from "../src/netacs.mjs";
+import { withNetCopies, addPlayerStarts, netJudge, NET_CONFIGS } from "../src/netacs.mjs";
 import { KEPT, FULL, S, fn, global, logScript, buildAcsActorDataPk3, judgeFirst, stepValues } from "./acsactordata.mjs";
 
 // [Doruk-Aksoy] The value only the server's script 4 sets on the kept barrel, and the default a machine without it reads.
@@ -46,6 +46,6 @@ export function judgeMachine(logs, member) {
 export const judgeNetplay = netJudge({ steps: STEPS, late: LATE, judge: judgeMachine,
   passed: "every machine's values read back from its own store, none of the server's reaching a client or a late joiner, and a barrel the server removed took each client's values along" });
 
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "ping100", players: 1, observers: 1, lag: "100,100" }];
+export const CONFIGS = NET_CONFIGS;
 
 runScenarioIfMain(import.meta.url, () => ({ name: "netacsactordata", wad: buildNetActorDataPk3(), maps: ["MAP01"], configs: CONFIGS, judgeNetplay }), compareNetplay);
