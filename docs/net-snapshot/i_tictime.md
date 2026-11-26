@@ -21,7 +21,9 @@ nanoseconds) elsewhere.
 
 - `tictime_raw_t`: the raw count, 64 bits by assertion; a narrower type fails the build in this
   header rather than as a confusing error in the definitions.
-- The frequency, read once during static initialization.
+- `tictime_rawFrequency`: the frequency, read once during static initialization. It is
+  declared in the header, and not static, because the test clears it to stand in for a reader
+  that runs before the time base's own initializer.
 
 ## Public functions
 

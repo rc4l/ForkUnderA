@@ -39,15 +39,14 @@ static tictime_raw_t tictime_QueryFrequency()
 #endif
 }
 
-// [Kaori-Chani] A plain global set during static initialization, since MSVC guards every read of a
-// function-local static; not static, so the test can clear it to stand in for an early reader.
-tictime_raw_t g_rawFrequency = tictime_QueryFrequency();
+// Set during static initialization; TIC_Init covers a reader that runs before it (i_tictime.h).
+tictime_raw_t tictime_rawFrequency = tictime_QueryFrequency();
 
 void TIC_Init()
 {
 	// Covers another unit's static initializer calling in before this one ran.
-	if (g_rawFrequency == 0)
-		g_rawFrequency = tictime_QueryFrequency();
+	if (tictime_rawFrequency == 0)
+		tictime_rawFrequency = tictime_QueryFrequency();
 }
 
 tictime_raw_t TIC_GetRawCounter()
@@ -65,9 +64,9 @@ tictime_raw_t TIC_GetRawCounter()
 
 tictime_raw_t TIC_GetRawFrequency()
 {
-	if (g_rawFrequency == 0)
+	if (tictime_rawFrequency == 0)
 		TIC_Init();
-	return g_rawFrequency;
+	return tictime_rawFrequency;
 }
 
 //*****************************************************************************
