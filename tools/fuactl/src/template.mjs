@@ -545,7 +545,8 @@ export async function compareOverTime({ name, wad, maps, vantages, boxes, interv
 export const FILL_CHECK = { fua_copy_prescan_check: 1 };
 
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
-export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = 10840, judgeNetplay }, deps = {}) {
+// [Doruk-Aksoy] The game port follows the bridge port (7840 hosts on 10840), so two sessions' sets on bridge ports of their own never share a game port.
+export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = port + 3000, judgeNetplay }, deps = {}) {
   const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses, crash = setCrash,
     replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
   const wadPath = writeTemplateFile(name, wad);
