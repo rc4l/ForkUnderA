@@ -36,6 +36,14 @@ size_t SizeOf(FieldKind kind)
 	}
 }
 
+// [Doruk-Aksoy] The value of type T stored at `at`, which may be unaligned.
+template <class T> T Load(const unsigned char *at)
+{
+	T value;
+	std::memcpy(&value, at, sizeof value);
+	return value;
+}
+
 } // namespace
 
 FieldShape ComputeFieldShape(int type, int baseType, int arrayLength, bool userVar)
@@ -79,36 +87,11 @@ int32_t ComputeFieldRead(const FieldShape &shape, const void *address, int index
 	const unsigned char *at = static_cast<const unsigned char *>(address) + SizeOf(shape.kind) * size_t(index);
 	switch (shape.kind)
 	{
-	case kFieldInt:
-	{
-		int32_t value;
-		std::memcpy(&value, at, sizeof value);
-		return value;
-	}
-	case kFieldFixed:
-	{
-		int64_t raw;
-		std::memcpy(&raw, at, sizeof raw);
-		return ComputeFixedToAcs(raw);
-	}
-	case kFieldAngle:
-	{
-		uint32_t bam;
-		std::memcpy(&bam, at, sizeof bam);
-		return ComputeAngleToAcs(bam);
-	}
-	case kFieldBool:
-	{
-		bool flag;
-		std::memcpy(&flag, at, sizeof flag);
-		return flag ? 1 : 0;
-	}
-	default:
-	{
-		double value;
-		std::memcpy(&value, at, sizeof value);
-		return ComputeFloatToAcs(value);
-	}
+	case kFieldInt: return Load<int32_t>(at);
+	case kFieldFixed: return ComputeFixedToAcs(Load<int64_t>(at));
+	case kFieldAngle: return ComputeAngleToAcs(Load<uint32_t>(at));
+	case kFieldBool: return Load<bool>(at) ? 1 : 0;
+	default: return ComputeFloatToAcs(Load<double>(at));
 	}
 }
 
