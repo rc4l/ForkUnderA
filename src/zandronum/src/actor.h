@@ -722,6 +722,13 @@ enum ActorBounceFlag
 	BOUNCE_MBF = 1<<12,			// This in itself is not a valid mode, but replaces MBF's MF_BOUNCE flag.
 	BOUNCE_AutoOffFloorOnly = 1<<13,		// like BOUNCE_AutoOff, but only on floors
 	BOUNCE_UseBounceState = 1<<14,	// Use Bounce[.*] states
+	// [Doruk-Aksoy] UZDoom's, at its bits (features/decorate-uzdoom).
+	BOUNCE_NotOnShootables = 1<<15,	// do not bounce off shootable actors if we are a projectile. Explode instead.
+	BOUNCE_BounceOnUnrips = 1<<16,	// projectile bounces on actors with DONTRIP
+	BOUNCE_NotOnSky = 1<<17,		// Don't bounce on sky floors / ceilings / walls
+	BOUNCE_DEH = 1<<18,				// Flag was set through Dehacked.
+	BOUNCE_KeepAngle = 1<<19,		// Don't change yaw when bouncing off a surface.
+	BOUNCE_ModifyPitch = 1<<20,		// Change pitch when bouncing off a surface.
 
 	BOUNCE_TypeMask = BOUNCE_Walls | BOUNCE_Floors | BOUNCE_Ceilings | BOUNCE_Actors | BOUNCE_AutoOff | BOUNCE_HereticType | BOUNCE_MBF,
 
@@ -767,7 +774,7 @@ typedef TFlags<ActorFlag7> ActorFlags7;
 typedef TFlags<ActorFlag8> ActorFlags8;
 typedef TFlags<ActorFlag9> ActorFlags9;
 typedef TFlags<ActorRenderFlag> ActorRenderFlags;
-typedef TFlags<ActorBounceFlag, WORD> ActorBounceFlags;
+typedef TFlags<ActorBounceFlag, DWORD> ActorBounceFlags;
 DEFINE_TFLAGS_OPERATORS (ActorFlags)
 DEFINE_TFLAGS_OPERATORS (ActorFlags2)
 DEFINE_TFLAGS_OPERATORS (ActorFlags3)
@@ -1199,7 +1206,7 @@ public:
 	int				waterlevel;		// 0=none, 1=feet, 2=waist, 3=eyes
 	BYTE			boomwaterlevel;	// splash information for non-swimmable water sectors
 	BYTE			movedir;		// 0-7
-	WORD			BounceFlags;	// which bouncing type?
+	DWORD			BounceFlags;	// which bouncing type? [Doruk-Aksoy] 32 bits, as UZDoom's, for its flags past bit 15.
 
 	// [Doruk-Aksoy] Line 3: the rest of the tick, blocking and the chase target.
 	TObjPtr<AActor> target;			// thing being chased/attacked (or NULL)

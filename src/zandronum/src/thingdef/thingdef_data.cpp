@@ -378,6 +378,12 @@ static FFlagDef ActorFlagDefs[]=
 	DEFINE_FLAG2(BOUNCE_MBF, MBFBOUNCER, AActor, BounceFlags),
 	DEFINE_FLAG2(BOUNCE_AutoOffFloorOnly, BOUNCEAUTOOFFFLOORONLY, AActor, BounceFlags),
 	DEFINE_FLAG2(BOUNCE_UseBounceState, USEBOUNCESTATE, AActor, BounceFlags),
+	// [Doruk-Aksoy] UZDoom's bounce flags (features/decorate-uzdoom).
+	DEFINE_FLAG2(BOUNCE_NotOnShootables, DONTBOUNCEONSHOOTABLES, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_BounceOnUnrips, BOUNCEONUNRIPPABLES, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_NotOnSky, DONTBOUNCEONSKY, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_KeepAngle, KEEPBOUNCEANGLE, AActor, BounceFlags),
+	DEFINE_FLAG2(BOUNCE_ModifyPitch, BOUNCEMODIFIESPITCH, AActor, BounceFlags),
 
 	// Deprecated flags. Handling must be performed in HandleDeprecatedFlags
 	DEFINE_DEPRECATED_FLAG(FIREDAMAGE),

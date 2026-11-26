@@ -3929,7 +3929,10 @@ bool FSlide::BounceWall(AActor *mo)
 	line = bestslideline;
 
 	// [DA] -- Bouncing projectiles never bounced off properly from/exploded on line horizons like normal projectiles did.
-	if (line->special == Line_Horizon && !(mo->flags3 & MF3_SKYEXPLODE))
+	// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSKY vanishes into a sky wall too, above a back sector whose ceiling is sky (features/decorate-uzdoom).
+	if ((line->special == Line_Horizon && !(mo->flags3 & MF3_SKYEXPLODE)) ||
+		((mo->BounceFlags & BOUNCE_NotOnSky) && line->backsector && line->backsector->GetTexture(sector_t::ceiling) == skyflatnum &&
+		 mo->z >= line->backsector->ceilingplane.ZatPoint(mo->x, mo->y)))
 	{
 		mo->SeeSound = 0;	// it might make a sound otherwise
 		if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -3956,7 +3959,9 @@ bool FSlide::BounceWall(AActor *mo)
 	}
 	moveangle = R_PointToAngle2(0, 0, mo->velx, mo->vely);
 	deltaangle = (2 * lineangle) - moveangle;
-	mo->angle = deltaangle;
+	// [Doruk-Aksoy] uzdoom: +KEEPBOUNCEANGLE keeps its yaw through a bounce.
+	if (!(mo->BounceFlags & BOUNCE_KeepAngle))
+		mo->angle = deltaangle;
 
 	lineangle >>= ANGLETOFINESHIFT;
 	deltaangle >>= ANGLETOFINESHIFT;
@@ -4021,6 +4026,15 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 		|| ((BlockingMobj->player == NULL) && (!(BlockingMobj->flags3 & MF3_ISMONSTER)))
 		))
 	{
+		// [Doruk-Aksoy] uzdoom: a ripper rips through shootable actors rather than bouncing, unless +BOUNCEONUNRIPPABLES meets a DONTRIP one.
+		if ((mo->flags & MF_MISSILE) && (mo->flags2 & MF2_RIP) && (BlockingMobj->flags & MF_SHOOTABLE)
+			&& !((mo->BounceFlags & BOUNCE_BounceOnUnrips) && (BlockingMobj->flags5 & MF5_DONTRIP)))
+			return true;
+
+		// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSHOOTABLES explodes on a shootable actor instead of bouncing.
+		if ((BlockingMobj->flags & MF_SHOOTABLE) && (mo->BounceFlags & BOUNCE_NotOnShootables))
+			mo->bouncecount = 1;
+
 		// [Doruk-Aksoy] uzdoom@1eb2c7532, uzdoom@46ee2c5ec: the last bounce ends the bouncer here, since callers that ignored a false left a spent 0 meaning unlimited.
 		if (zx::bounce::ComputeBounceSpent(mo->bouncecount))
 		{
@@ -4047,7 +4061,8 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 				BlockingMobj->y, mo->x, mo->y) + ANGLE_1*((pr_bounce() % 16) - 8);
 			speed = P_AproxDistance(mo->velx, mo->vely);
 			speed = FixedMul(speed, mo->wallbouncefactor); // [GZ] was 0.75, using wallbouncefactor seems more consistent
-			mo->angle = angle;
+			if (!(mo->BounceFlags & BOUNCE_KeepAngle))
+				mo->angle = angle;
 			angle >>= ANGLETOFINESHIFT;
 			mo->velx = FixedMul(speed, finecosine[angle]);
 			mo->vely = FixedMul(speed, finesine[angle]);
@@ -4094,6 +4109,10 @@ bool P_BounceActor(AActor *mo, AActor *BlockingMobj, bool ontop)
 				// The reflected velocity keeps only about 70% of its original speed
 				mo->velz = FixedMul(mo->velz - MulScale15(FRACUNIT, dot), mo->bouncefactor);
 			}
+
+			// [Doruk-Aksoy] uzdoom: +BOUNCEMODIFIESPITCH points along its new velocity.
+			if (mo->BounceFlags & BOUNCE_ModifyPitch)
+				mo->pitch = (int)FLOAT2ANGLE(zx::bounce::ComputeBouncePitch(FIXED2DBL(mo->velx), FIXED2DBL(mo->vely), FIXED2DBL(mo->velz)));
 
 			mo->PlayBounceSound(true);
 			if (mo->BounceFlags & BOUNCE_MBF) // Bring it to rest below a certain speed

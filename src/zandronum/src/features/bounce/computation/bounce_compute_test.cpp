@@ -135,3 +135,12 @@ TEST(ComputeBlockedLine, ElseTheWalksLine)
 	EXPECT_EQ(ComputeBlockedLine<int>(nullptr, nullptr, nullptr, nullptr, true, true), nullptr);
 }
 }
+
+// [Doruk-Aksoy] Down is a positive pitch, as UZDoom's -VecToAngle(length, z) gives it.
+TEST(ComputeBouncePitch, PointsAlongTheVelocity)
+{
+	EXPECT_NEAR(0.0, ComputeBouncePitch(10, 0, 0), 1e-9);
+	EXPECT_NEAR(-45.0, ComputeBouncePitch(3, 4, 5), 1e-9);
+	EXPECT_NEAR(45.0, ComputeBouncePitch(0, -5, -5), 1e-9);
+	EXPECT_NEAR(-90.0, ComputeBouncePitch(0, 0, 2), 1e-9);
+}

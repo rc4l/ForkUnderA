@@ -39,7 +39,7 @@ const allFlagsSet = (flags) => flags.flatMap((f, i) => [`TNT1 A 0 A_CheckFlag("$
 // [Doruk-Aksoy] UZDoom's gameplay flags now at its bits (features/decorate-uzdoom).
 export const NEW_FLAGS = ["GETOWNER", "LAXTELEFRAGDMG", "ICESHATTER", "SMASHABLE", "NOSHIELDREFLECT", "FORCEZERORADIUSDMG", "NOINFIGHTSPECIES", "FORCEINFIGHTING",
   "FRIGHTENING", "DONTFACETALKER", "HITOWNER", "RETARGETAFTERSLAM", "STOPRAILS", "MINVISIBLE", "MVISBLOCKED", "DONTFOLLOWPLAYERS", "SEEFRIENDLYMONSTERS", "ONLYSLAMSOLID",
-  "NOAUTOOFFSKULLFLY"];
+  "NOAUTOOFFSKULLFLY", "DONTBOUNCEONSHOOTABLES", "BOUNCEONUNRIPPABLES", "DONTBOUNCEONSKY", "KEEPBOUNCEANGLE", "BOUNCEMODIFIESPITCH"];
 const solidBox = (name, extra = []) => actorDef(name, ["+SOLID", "+NOGRAVITY", "Radius 16", "Height 56", ...extra]);
 
 // [Doruk-Aksoy] Each check: its states (ending at Pass, or falling to Fail), its properties, extra actors, and fua when only ours has it.
@@ -156,6 +156,24 @@ export const CHECKS = [
       + actorDef("ZxOwnerTrail", ["+NOINTERACTION"], ["TNT1 A 1", 'TNT1 A 0 A_JumpIf(CheckClass("ZxChk_getowner", AAPTR_TARGET), "Yes")', "Stop",
         "Yes:", ...verdictFrom("pass", "getowner")]),
     states: ['TNT1 A 0 A_CustomMissile("ZxFastShot", 8, 0, 0, CMF_AIMDIRECTION)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] The bouncers outlive a check only by dying (Death) or by a state that checks them; one that just bounces runs out and leaves no marker.
+  { id: "nobounceshootable", what: "+DONTBOUNCEONSHOOTABLES explodes on a shootable actor", verdictBy: "ZxNoShootBounce",
+    defs: actorDef("ZxNoShootBounce", ["Projectile", 'BounceType "Doom"', "+DONTBOUNCEONSHOOTABLES", "Radius 4", "Height 4", "Damage 1"], ["TNT1 A 20", "Stop", "Death:", ...verdictFrom("pass", "nobounceshootable")])
+      + actorDef("ZxBounceTarget", ["+SHOOTABLE", "+SOLID", "+NOGRAVITY", "Health 1000", "PainChance 0", "Radius 16", "Height 56"]),
+    states: [spawn("ZxBounceTarget", 64, 0, 0), 'TNT1 A 0 A_SpawnItemEx("ZxNoShootBounce", 16, 0, 16, 8, 0, 0, 0, SXF_NOCHECKPOSITION)', "TNT1 A -1", "Stop"] },
+  { id: "keepbounceangle", what: "+KEEPBOUNCEANGLE keeps its yaw bouncing off an actor", verdictBy: "ZxKeepAngle",
+    defs: actorDef("ZxKeepAngle", ["Projectile", 'BounceType "Doom"', "+KEEPBOUNCEANGLE", "Radius 4", "Height 4", "Damage 0"],
+      ["TNT1 A 8", 'TNT1 A 0 A_JumpIf(abs(angle) < 1 || angle > 359, "Yes")', "Stop", "Yes:", ...verdictFrom("pass", "keepbounceangle")]) + solidBox("ZxKeepBox"),
+    states: [spawn("ZxKeepBox", 48, 0, 0), 'TNT1 A 0 A_SpawnItemEx("ZxKeepAngle", 8, 0, 16, 8, 0, 0, 0, SXF_NOCHECKPOSITION)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] UZDoom's pitch is signed (up negative) and ours reads as an angle, so either form of "up" passes.
+  { id: "bouncepitch", what: "+BOUNCEMODIFIESPITCH points along its velocity after a floor bounce", verdictBy: "ZxPitchBounce",
+    defs: actorDef("ZxPitchBounce", ["Projectile", 'BounceType "Hexen"', "+BOUNCEMODIFIESPITCH", "BounceFactor 1", "Radius 4", "Height 4", "Damage 0"],
+      ["TNT1 A 14", 'TNT1 A 0 A_JumpIf(pitch < -10 || (pitch > 270 && pitch < 350), "Yes")', "Stop", "Yes:", ...verdictFrom("pass", "bouncepitch")]),
+    states: ['TNT1 A 0 A_SpawnItemEx("ZxPitchBounce", 16, 0, 32, 4, 0, -4, 0, SXF_NOCHECKPOSITION)', "TNT1 A -1", "Stop"] },
+  // [Doruk-Aksoy] Not a missile, since ours already removes a bouncing missile on a sky floor, so an MBF bouncer (Grenade), the one kind of non-missile both engines bounce; the check holds it as its target and sees it gone.
+  { id: "nobouncesky", what: "+DONTBOUNCEONSKY vanishes on a sky floor", sky: true,
+    defs: actorDef("ZxSkyBouncer", ['BounceType "Grenade"', "+DONTBOUNCEONSKY", "BounceFactor 1", "Radius 4", "Height 4"]),
+    states: [spawn("ZxSkyBouncer", 80, 0, 48, "SXF_NOCHECKPOSITION|SXF_ISTARGET"), "TNT1 A 35", jumpIf("IsPointerEqual(AAPTR_TARGET, AAPTR_NULL)")] },
   { id: "transnone", what: 'A_SetTranslation("None") clears the translation', props: ['Translation "Ice"'], translation: "none",
     states: ['TNT1 A 0 A_SetTranslation("None")', "Goto Passed"] },
   { id: "transreset", what: "A_fua_ResetTranslation restores the class's", props: ['Translation "Ice"'], translation: "class", fua: true,
@@ -220,6 +238,8 @@ export function buildMap({ withFua = true } = {}) {
     const { x, y } = checkSpot(i);
     // [Doruk-Aksoy] The zat check has a 32-high step 64 to 128 east of it.
     if (c.step) m.block(x + 64, y - 32, x + 128, y + 32, { ...ROOM, heightfloor: 32 }, 0);
+    // [Doruk-Aksoy] The nobouncesky check has a sky floor 48 to 112 east of it.
+    if (c.sky) m.block(x + 48, y - 32, x + 112, y + 32, { ...ROOM, texturefloor: "F_SKY1" }, 0);
     m.thing({ x, y, angle: 0, type: FIRST_NUM + CHECKS.indexOf(c) });
   });
   m.thing({ x: 1024, y: 128, angle: 0, type: THING.MapSpot, id: LIVE_SPOT });

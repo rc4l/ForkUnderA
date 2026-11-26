@@ -454,9 +454,17 @@ void AActor::Serialize (FArchive &arc)
 		<< MeleeState
 		<< MissileState
 		<< MaxDropOffHeight 
-		<< MaxStepHeight
-		<< BounceFlags
-		<< bouncefactor
+		<< MaxStepHeight;
+	// [Doruk-Aksoy] BounceFlags is 32 bits from 4538 on, as UZDoom's; an older save holds 16.
+	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
+		arc << BounceFlags;
+	else
+	{
+		WORD bounce16 = (WORD)BounceFlags;
+		arc << bounce16;
+		BounceFlags = bounce16;
+	}
+	arc	<< bouncefactor
 		<< wallbouncefactor
 		<< bouncecount
 		<< maxtargetrange
@@ -1899,10 +1907,14 @@ void AActor::PlayBounceSound(bool onfloor)
 
 bool AActor::FloorBounceMissile (secplane_t &plane)
 {
-	if (z <= floorz && P_HitFloor (this))
+	// [Doruk-Aksoy] uzdoom: +DONTBOUNCEONSKY vanishes on a sky floor or ceiling it would bounce off (features/decorate-uzdoom).
+	const bool skyStop = (BounceFlags & BOUNCE_NotOnSky) && zx::bounce::ComputeBouncesOffPlane(BounceFlags, plane.c < 0) &&
+		(plane.c < 0 ? ceilingpic : floorpic) == skyflatnum;
+	const bool inLiquid = z <= floorz && P_HitFloor (this);
+	if (inLiquid || skyStop)
 	{
 		// Landed in some sort of liquid
-		if (BounceFlags & BOUNCE_ExplodeOnWater)
+		if (inLiquid && (BounceFlags & BOUNCE_ExplodeOnWater))
 		{
 			if (flags & MF_MISSILE)
 				P_ExplodeMissile(this, NULL, NULL);
@@ -1910,7 +1922,7 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 				Die(NULL, NULL);
 			return true;
 		}
-		if (!(BounceFlags & BOUNCE_CanBounceWater))
+		if (skyStop || !(BounceFlags & BOUNCE_CanBounceWater))
 		{
 			// [BB] Inform the clients.
 			if ( NETWORK_GetState( ) == NETSTATE_SERVER )
@@ -1942,7 +1954,8 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		velx -= MulScale15 (plane.a, dot);
 		vely -= MulScale15 (plane.b, dot);
 		velz -= MulScale15 (plane.c, dot);
-		angle = R_PointToAngle2 (0, 0, velx, vely);
+		if (!(BounceFlags & BOUNCE_KeepAngle))
+			angle = R_PointToAngle2 (0, 0, velx, vely);
 		if (!(BounceFlags & BOUNCE_MBF)) // Heretic projectiles die, MBF projectiles don't.
 		{
 			flags |= MF_INBOUNCE;
@@ -1958,8 +1971,13 @@ bool AActor::FloorBounceMissile (secplane_t &plane)
 		velx = FixedMul (velx - MulScale15 (plane.a, dot), bouncefactor);
 		vely = FixedMul (vely - MulScale15 (plane.b, dot), bouncefactor);
 		velz = FixedMul (velz - MulScale15 (plane.c, dot), bouncefactor);
-		angle = R_PointToAngle2 (0, 0, velx, vely);
+		if (!(BounceFlags & BOUNCE_KeepAngle))
+			angle = R_PointToAngle2 (0, 0, velx, vely);
 	}
+
+	// [Doruk-Aksoy] uzdoom: +BOUNCEMODIFIESPITCH points along its new velocity.
+	if (BounceFlags & BOUNCE_ModifyPitch)
+		pitch = (int)FLOAT2ANGLE(zx::bounce::ComputeBouncePitch(FIXED2DBL(velx), FIXED2DBL(vely), FIXED2DBL(velz)));
 
 	PlayBounceSound(true);
 

@@ -24,6 +24,9 @@ export const ACTORS = [
   { cls: "ZxFlags8Cleared", flags: ["E2M8BOSS", "E3M8BOSS"], change: { E2M8BOSS: false }, want: { E2M8BOSS: 0, E3M8BOSS: 1 } },
   { cls: "ZxRipper", flags: ["NORIPSOUND", "USERIPSTATE", "RIPPERNOPAIN"], want: { NORIPSOUND: 1, USERIPSTATE: 1, RIPPERNOPAIN: 1, RIPEXPLODEONLIMIT: 0 } },
   { cls: "ZxRipperChanged", flags: ["NORIPSOUND"], change: { NORIPSOUND: false, RIPEXPLODEONLIMIT: true }, want: { NORIPSOUND: 0, RIPEXPLODEONLIMIT: 1 } },
+  // [Doruk-Aksoy] renderflags and BounceFlags, which a client never heard of a change to before FLAGSET_RENDERFLAGS and FLAGSET_BOUNCEFLAGS; names an older build knows, since it loads this pk3 too.
+  { cls: "ZxRenderChanged", change: { INVISIBLE: true }, want: { INVISIBLE: 1 } },
+  { cls: "ZxBounceChanged", flags: ["BOUNCEONWALLS"], change: { BOUNCEONWALLS: false, BOUNCEONFLOORS: true }, want: { BOUNCEONWALLS: 0, BOUNCEONFLOORS: 1 } },
 ];
 
 // [Doruk-Aksoy] Every [actor index, flag, wanted value], in the order script 1 logs them.

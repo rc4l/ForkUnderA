@@ -214,7 +214,10 @@ enum FlagSet
 	// runtime if a mod calls A_ChangeFlag/SetActorProperty on one, so this costs nothing in practice.
 	FLAGSET_MVFLAGS,
 	// [Doruk-Aksoy] ZandroX's own fua_flags word, appended for the same reason.
-	FLAGSET_FUAFLAGS
+	FLAGSET_FUAFLAGS,
+	// [Doruk-Aksoy] renderflags and BounceFlags, which A_ChangeFlag changed on the server alone until now.
+	FLAGSET_RENDERFLAGS,
+	FLAGSET_BOUNCEFLAGS
 };
 
 enum ActorScaleFlag

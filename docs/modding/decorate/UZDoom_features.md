@@ -61,8 +61,16 @@ New parameters:
 | `+ONLYSLAMSOLID` | A charge passes through what is neither solid nor shootable. |
 | `+NOAUTOOFFSKULLFLY` | A charge does not end when the actor stops moving. |
 | `+GETOWNER` | A fast projectile's trail takes the shooter as its target, not the projectile. |
+| `+DONTBOUNCEONSHOOTABLES` | A bouncing projectile explodes on a shootable actor instead of bouncing. |
+| `+BOUNCEONUNRIPPABLES` | A bouncing ripper bounces off actors it cannot rip; otherwise a ripper rips through shootable actors rather than bouncing. |
+| `+DONTBOUNCEONSKY` | A bouncer vanishes into a sky floor, ceiling or wall. |
+| `+KEEPBOUNCEANGLE` | A bounce leaves the actor's angle as it was. |
+| `+BOUNCEMODIFIESPITCH` | A bounce points the actor's pitch along its new velocity. |
 
 `+FULLVOLDEATH` now also makes a monster's death scream full volume, as in UZDoom.
+
+In a netgame, `A_ChangeFlag` on a render flag (such as `INVISIBLE`) or a bounce flag now reaches every client and
+players who join later. Before, only the server's copy changed.
 
 ```
 // A charger that stays put after a slam, passes through pickups, and cannot be hurt by its own kind.
@@ -80,7 +88,7 @@ actor Rammer : LostSoul
 - `A_CheckBlock`'s `CBF_DROPOFF` still tests lines and actors.
 - Not here yet: `NOSECTORDAMAGE` and `FORCESECTORDAMAGE` (monsters take no sector damage here yet),
   `AVOIDHAZARDS` and `STAYONLIFT` (MBF's smarter monster movement), `MASTERNOSEE`, and the render,
-  bounce, player-movement and shadow flags.
+  player-movement and shadow flags.
 
 ## Implementation notes
 

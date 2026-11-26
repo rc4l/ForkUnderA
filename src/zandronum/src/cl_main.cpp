@@ -162,6 +162,7 @@
 #include "features/acs-shaders/acsshaders.h"   // [Doruk-Aksoy] FuaSetShaderEnabled and FuaSetShaderUniform
 #include "features/actormaterials/actormaterials.h"   // [Doruk-Aksoy] FuaSetActorMaterial and FuaSetActorUniform
 #include "features/net-client/computation/serverfloor_compute.h"   // [Doruk-Aksoy] ComputeServerHeldFloorZ
+#include "features/net-replication/computation/actorstate_compute.h"   // [Doruk-Aksoy] ComputeClientAppliedFlags
 #include "features/dev-mode/devmode.h"   // [rc4l] the server's sv_cheats opens or closes the dev-mode gate
 #include "features/net-protocol/testfaults.h"   // [Kaori-Chani] DropReceivedPacketForTest
 #include "features/net-snapshot/apply.h"   // [Kaori-Chani] the client's side of the snapshot
@@ -6031,6 +6032,15 @@ void ServerCommands::SetThingFlags::Execute()
 	case FLAGSET_FUAFLAGS:
 
 		actor->fua_flags = flags;
+		break;
+	// [Doruk-Aksoy] Render and bounce flags a server state changed; a player body keeps its own RF_INVISIBLE, which the client sets.
+	case FLAGSET_RENDERFLAGS:
+
+		actor->renderflags = ActorRenderFlags::FromInt (zx::netreplication::ComputeClientAppliedFlags (actor->renderflags, flags, actor->player ? RF_INVISIBLE : 0));
+		break;
+	case FLAGSET_BOUNCEFLAGS:
+
+		actor->BounceFlags = flags;
 		break;
 	case FLAGSET_FLAGSST:
 
