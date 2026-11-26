@@ -79,6 +79,14 @@ logs should have listed (`fua_copy_prescan_check`, on for every client from laun
 a late joiner takes the set's client cvars; `fillMisses`), and a server that sent a map change a tic late because
 no Touch marked it (`fua_net_replication`; `fua_net_replication_misses 1` prints each).
 
+- **ACS on every machine.** `src/netacs.mjs` runs a single-player ACS scenario's scripts on a netgame:
+  `withNetCopies` makes each step's script NET and adds its CLIENTSIDE copy (number + 1000) and script 30000,
+  which starts a copy on every client as a mod's server code does; `runSteps` runs each step on the clients,
+  then on the server (so the server's answers show no copy reached it), keeping each machine's output by tag
+  for the scenario's own judge; `changeMap` follows a changemap to every client. A machine whose right answer
+  differs from single player's (a synced actor's health, state a late joiner arrives to) names it, as
+  `netacsparity`'s `ANSWERS` do; library scripts get their copies in their `.bcs` (`netacsfuncref`).
+
 - **Joining as a player does.** `addClient(set, { files: [], via: "browser" })` launches a client without the
   set's wads and joins from its browser (`browser.add`, `browser.select`, `fua_join_selected_server`) with
   the browser on screen, since a download that finishes with it shut waits for the player to come back;
