@@ -5023,25 +5023,16 @@ CVAR(Bool, fua_snap_linkcensus, false, CVAR_NOSETBYACS | CVAR_FUA_DEV_MODE)
 
 // Orders writes within a tic, where two to one sector are the fault.
 static unsigned int g_planeWriteSeq = 0;
-static bool g_planeTraceWarned = false;
 
 void zx::netsnapshot::TracePlaneWrite(sector_t * pSec, int plane, const char * pszWho,
 	fixed_t before, fixed_t after, const sector_t * pFrom)
 {
-	if (fua_csnap_planetrace == 0)
+	// First: shared code calls this, and fua_csnap_planetrace is a client setting.
+	if (NETWORK_InClientMode() == false)
 		return;
 
-	// Client only, with a warning, since a Printf per write would back the
-	// server up.
-	if (NETWORK_InClientMode() == false)
-	{
-		if (g_planeTraceWarned == false)
-		{
-			g_planeTraceWarned = true;
-			Printf("fua_csnap_planetrace: client only, ignored here\n");
-		}
+	if (fua_csnap_planetrace == 0)
 		return;
-	}
 
 	if (pSec == NULL)
 		return;

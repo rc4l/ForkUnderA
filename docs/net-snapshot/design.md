@@ -2898,8 +2898,9 @@ with `fua_snap` still the master switch.
 
 **Plane instruments, all diagnostic and unarchived.** `fua_csnap_planetrace` (a sector index, or -1
 for every write) is CLIENT ONLY: its linked-sector hooks fire every tic a mover moves, so a print
-per write on the server's game thread would build a catch-up backlog, and set on a server it warns
-once. `fua_snap_linkcensus` is the server half and reports the link graph at each join. Set both
+per write on the server's game thread would build a catch-up backlog; `TracePlaneWrite` tests for a
+client before it reads the cvar, so a server never reads it. `fua_snap_linkcensus` is the server
+half and reports the link graph at each join. Set both
 before connecting, since the writes they measure arrive during the join pass. `fua_csnap_planetrace`
 is noisy - most traced writes on a running lift carry a delta of zero - and wants a filter.
 
