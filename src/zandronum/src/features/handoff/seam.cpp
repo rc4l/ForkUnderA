@@ -200,7 +200,9 @@ DEV_MODE_CCMD(fua_seams)
 {
 	Printf("%s", zx::handoff::ComputeSeamTable(zx::handoff::Registry()).c_str());
 	const char *first = zx::handoff::g_firstViolation.load();
-	Printf("%llu violations", (unsigned long long)zx::handoff::SeamViolations());
+	// [Kaori-Chani] The count first, so no seams declared cannot read as a table that went missing.
+	Printf("%d seams; %llu violations", zx::handoff::Registry().Size(),
+		(unsigned long long)zx::handoff::SeamViolations());
 	const zx::handoff::SeamSite *site = zx::handoff::g_firstViolationSite.load();
 	if (first != nullptr) Printf(", the first in %s on the %s thread in %s:%d", first, zx::handoff::g_firstViolationThread.load(), site ? site->function : "?", site ? site->line : 0);
 	Printf("; %d locks taken while holding another", zx::handoff::g_nestedLocks.load());
