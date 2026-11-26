@@ -223,10 +223,13 @@ export function waitingScript() {
   return s.words(0);
 }
 
-export function buildAcsTracesPk3() {
-  const scripts = [{ code: waitingScript(), type: SCRIPT.CLOSED, number: 20 },
-    ...Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) }))];
-  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", buildMap().m, { behavior: acsScripts(scripts, STRINGS) })) }]);
+// [Doruk-Aksoy] `withScripts` changes the script list and `withMap` the map (things only, so the judge's indexes hold), as netacstraces' copies and starts do.
+export function buildAcsTracesPk3({ withScripts = (s) => s, withMap = () => {} } = {}) {
+  const scripts = withScripts([{ code: waitingScript(), type: SCRIPT.CLOSED, number: 20 },
+    ...Object.entries(SCRIPTS).map(([number, code]) => ({ code, type: SCRIPT.CLOSED, number: Number(number) }))]);
+  const { m } = buildMap();
+  withMap(m);
+  return pk3([{ name: "maps/MAP01.wad", data: wad(mapLumps("MAP01", m, { behavior: acsScripts(scripts, STRINGS) })) }]);
 }
 
 // [Doruk-Aksoy] The strings a log printed between bars, or null.
@@ -251,23 +254,27 @@ export function fits(got, w) {
   return got === w;
 }
 
-// [Doruk-Aksoy] What is wrong with each log, by index.
-export function judgeTraces(logs) {
+// [Doruk-Aksoy] What is wrong with each log, by index, against `want` and `strings` (WANT and WANT_STRINGS, or a scenario's own tags of them).
+export function judgeTraces(logs, want = WANT, strings = WANT_STRINGS) {
   const faults = [];
-  for (const [tag, values] of Object.entries(WANT)) {
+  for (const [tag, values] of Object.entries(want)) {
     const got = logged(logs[tag], tag);
     if (!got) { faults.push(`script ${tag} logged nothing (${String(logs[tag]).trim().slice(0, 100)})`); continue; }
     values.forEach((w, i) => { if (!fits(got[i], w)) faults.push(`${tag}[${i}] is ${got[i]}, not ${JSON.stringify(w)}`); });
   }
-  for (const [tag, values] of Object.entries(WANT_STRINGS)) {
+  for (const [tag, values] of Object.entries(strings)) {
     const got = loggedStrings(logs[tag], tag);
     if (!got) { faults.push(`script ${tag} logged no strings`); continue; }
     values.forEach((w, i) => { if (got[i] !== w) faults.push(`${tag}[${i}] is "${got[i]}", not "${w}"`); });
   }
   const warnings = (String(logs.l1).match(FULL_WARNING) || []).length;
-  if (warnings !== 1) faults.push(`a full script warned ${warnings} times, not once`);
+  if ("l1" in want && warnings !== 1) faults.push(`a full script warned ${warnings} times, not once`);
   return faults;
 }
+
+// [Doruk-Aksoy] The scripts run one after another before the savegame, each with the tags its log goes under.
+export const TRACE_STEPS = [[1, ["w1", "w2"]], [2, ["b1", "b2"]], [3, ["p1", "p2"]], [4, ["a1", "a2"]], [5, ["c1"]], [6, ["f1", "f2"]], [7, ["h1"]],
+  [8, ["s1", "s2"]], [9, ["i1"]], [10, ["l1"]], [11, []], [12, ["x1"]]];
 
 // [Doruk-Aksoy] A locked launch comes up without monsters unless asked.
 export const SIDES = [{ name: "vk", launchCvars: { ...MUTE, sv_nomonsters: 0 } }];
@@ -281,8 +288,7 @@ export async function judgeLaunch(c, inst, label) {
   };
   await cap.waitTics(c, 10);
   const logs = {};
-  for (const [n, tags] of [[1, ["w1", "w2"]], [2, ["b1", "b2"]], [3, ["p1", "p2"]], [4, ["a1", "a2"]], [5, ["c1"]], [6, ["f1", "f2"]], [7, ["h1"]],
-    [8, ["s1", "s2"]], [9, ["i1"]], [10, ["l1"]], [11, []], [12, ["x1"]]]) {
+  for (const [n, tags] of TRACE_STEPS) {
     const out = await exec(`puke ${n}`);
     for (const tag of tags) logs[tag] = out;
   }

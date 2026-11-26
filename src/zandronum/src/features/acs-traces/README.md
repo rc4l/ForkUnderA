@@ -34,3 +34,6 @@ reference: [`docs/modding/acs/Line_traces.md`](../../../../../docs/modding/acs/L
   Boom and 3D-floor water, the sky with and without `TRF_NOSKY`, `fua_LineInfo` and `fua_SectorInfo`,
   16 tracers and one warning, another script's and a freed id, and two tracers kept across a savegame.
   It fails on a build without the functions, and with the tracers' `SerializeScript` taken out.
+- `fuactl scenarios netacstraces`: every step before that savegame as CLIENTSIDE copies on the player's
+  client, an observer and a late joiner, then on the server, each tracing its own copy of the map and its
+  actors with its own tracer ids.
