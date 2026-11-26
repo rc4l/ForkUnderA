@@ -53,7 +53,9 @@ reference: [`docs/modding/acs/UZDoom_functions.md`](../../../../../docs/modding/
   `isFakePain` check.
 - `fuactl scenarios netacsparity`: `acsparity`'s checks run by the player on the server and as CLIENTSIDE
   copies on the player's client, an observer and a late joiner, each machine against its own answers; it
-  fails on a build whose client `DamageActor` hurts a synced barrel.
+  fails on a build whose client `DamageActor` hurts a synced barrel. `SetSectorDamage` runs the same way:
+  a client's own call hurts no one, the server's hurts the player, and every client then holds the health
+  the server left (`fua_debug_netdrop=12`, `SVC_DAMAGEPLAYER` unsent, fails them).
 - `fuactl scenarios netacsstepheight`: the server, its player's client and a late joiner hold the
   heights a server script set; `--side lan --cvar fua_debug_netdrop=65` leaves `SetThingProperty`
   unsent and fails it.

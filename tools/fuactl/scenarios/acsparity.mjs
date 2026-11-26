@@ -25,8 +25,8 @@ export const APROP = { Health: 0, TargetTID: 26, MaxStepHeight: 44, MaxDropOffHe
 const CPXF = { LESSOREQUAL: 0x2, SETTARGET: 0x40, FARTHEST: 0x200 };
 
 export const STRINGS = ["parity", " ", "<", ">", "zxstrarg", "DoomImp", "ZxNoClass", "Thinker", "Clip", "Shell", "Health", "Spawn", "Pain.Fire",
-  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma"];
-const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
+  "ZxNope", "ExplosiveBarrel", "Fire", "fire", "damagenull ", "sectordamage", "ZxPlasma", "sdh"];
+export const S = Object.fromEntries(STRINGS.map((s, i) => [s, i]));
 
 const fixed = (v) => Math.round(v * 65536);
 const call = (fn, ...args) => callFunc(ACSF[fn], args);
@@ -115,7 +115,8 @@ export function buildNullDamageScript() {
 
 // [Doruk-Aksoy] SetSectorDamage is ACS function 94 at UZDoom's number; the PCD numbers of Timer, Modulus and PlayerHealth.
 export const SET_SECTOR_DAMAGE = 94;
-const TIMER = 93, MODULUS = 18, PLAYERHEALTH = 120;
+const TIMER = 93, MODULUS = 18;
+export const PLAYERHEALTH = 120;
 
 // [Doruk-Aksoy] Scripts 3 and 4: each step waits for tic 16 of the 32-tic beat sectors damage on, so a 32-tic wait holds exactly one hurt tic, then logs the player's health.
 export function sectorDamageScript(steps) {
