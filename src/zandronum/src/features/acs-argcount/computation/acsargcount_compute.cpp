@@ -183,6 +183,10 @@ const FunctionArgs kFunctionArgs[] = {
 	{ 300, 3, "GetLineX" },
 	{ 301, 3, "GetLineY" },
 	{ 19620, 1, "GetTeamScore" },
+	{ 24020, 1, "fua_GetActorHandle" },
+	{ 24021, 1, "fua_HandleValid" },
+	{ 24022, 2, "fua_HandlePointer" },
+	{ 24023, 1, "fua_SetActivatorHandle" },
 };
 const int kFunctionArgsCount = int(sizeof(kFunctionArgs) / sizeof(kFunctionArgs[0]));
 

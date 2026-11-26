@@ -117,6 +117,7 @@
 #include "features/swept-missiles/sweptmove.h" // [Doruk-Aksoy] quiet missile steps skipped
 #include "features/blockmap-filter/cellarrays.h" // [Doruk-Aksoy] the cells' arrays beside the blockmap lists
 #include "features/actor-layout/computation/waterlevel_compute.h" // [Doruk-Aksoy] water levels stored only on change
+#include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] an actor's handle slot
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -543,6 +544,8 @@ void AActor::Serialize (FArchive &arc)
 	}
 	// [Doruk-Aksoy] features/actormaterials: its fua_Material and own uniforms, from 4527 on.
 	zx::actormaterials::SerializeActor(arc, this);
+	// [Doruk-Aksoy] features/acs-handles: its handle slot, from 4533 on.
+	zx::acshandles::SerializeActor(arc, this);
 
 	{
 		FString tagstr;
@@ -5652,6 +5655,9 @@ void AActor::Destroy ()
 
 	// [Doruk-Aksoy] features/actormaterials: its own uniform values given back.
 	zx::actormaterials::ReleaseActor ( this );
+
+	// [Doruk-Aksoy] features/acs-handles: its handles go stale.
+	zx::acshandles::ReleaseActor ( this );
 
 	// [RH] Destroy any inventory this actor is carrying
 	DestroyAllInventory ();

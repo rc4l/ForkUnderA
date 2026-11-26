@@ -121,6 +121,7 @@
 #include "features/acs-funcrefs/acsfuncrefs.h"   // [Doruk-Aksoy] PushFunctionRef, ResolveFunctionRef
 #include "features/decorate-uzdoom/uservars.h"
 #include "features/acs-parity/acsparity.h"   // [Doruk-Aksoy] UZDoom's ACS functions at UZDoom's numbers
+#include "features/acs-handles/acshandles.h"   // [Doruk-Aksoy] actor handles, fua_ 24020-24023
 #include <cstddef>
 
 // [BB] A std::pair inside TArray inside TArray didn't seem to work.
@@ -1073,6 +1074,8 @@ void P_ClearACSVars(bool alsoglobal)
 		// Since we cleared all ACS variables, we know nothing refers to them
 		// anymore.
 		GlobalACSStrings.Clear();
+		// [Doruk-Aksoy] features/acs-handles: nor to any handle, so the table starts over.
+		zx::acshandles::ResetTable();
 
 		// [BB] When the global vars are cleared, our query handles surely shouldn't
 		// be needed anymore. So clear them in case mods forgot to do so.
@@ -5908,10 +5911,16 @@ enum EACSFunctions
 	ACSF_fua_SetActorUniform1i,			// (int tid, str uniform, int x)
 	// [Doruk-Aksoy] features/acsvec: what zt-bcc compiles vector length, unit, dot and cross to.
 	ACSF_fua_Vec,						// (operands..., int channel, int op)
+	// [Doruk-Aksoy] features/acs-handles: an actor named by a handle rather than a tid.
+	ACSF_fua_GetActorHandle = 24020,	// (int tid [, int aaptr])
+	ACSF_fua_HandleValid,				// (int h)
+	ACSF_fua_HandlePointer,				// (int h, int aaptr)
+	ACSF_fua_SetActivatorHandle,		// (int h)
 };
 
 static_assert(ACSF_fua_SetShaderEnabled == zx::acsshaders::kSetShaderEnabled && ACSF_fua_SetShaderUniform1i == zx::acsshaders::kSetShaderUniform1i, "the fua_ shader functions keep their numbers");
 static_assert(ACSF_fua_Vec == zx::acsvec::kVecFunction, "fua_Vec keeps its number");
+static_assert(ACSF_fua_GetActorHandle == zx::acshandles::kGetActorHandle && ACSF_fua_SetActivatorHandle == zx::acshandles::kSetActivatorHandle, "the fua_ handle functions keep their numbers");
 static_assert(ACSF_GetMaxInventory == zx::acsparity::kGetMaxInventory && ACSF_CheckProximity == zx::acsparity::kCheckProximity && ACSF_CheckActorState == zx::acsparity::kCheckActorState
 	&& ACSF_GetActorFloorTerrain == zx::acsparity::kGetActorFloorTerrain && ACSF_Ceil == zx::acsparity::kCeil && ACSF_SetActivatorByNetID == zx::acsparity::kSetActivatorByNetID
 	&& ACSF_GetLineY == zx::acsparity::kGetLineY, "UZDoom's functions keep UZDoom's numbers");
@@ -7481,6 +7490,28 @@ doplaysound:			if (funcIndex == ACSF_PlayActorSound)
 
 		case ACSF_fua_Vec:
 			return zx::acsvec::CallVecFunction( activeBehavior, args, argCount );
+
+		// [Doruk-Aksoy] features/acs-handles: tid 0 is the activator, and an aaptr follows a pointer first, as SetActivator does.
+		case ACSF_fua_GetActorHandle:
+			actor = SingleActorFromTID( args[0], activator );
+			if ( argCount > 1 )
+				actor = COPY_AAPTR( actor, args[1] );
+			return zx::acshandles::HandleFor( actor );
+
+		case ACSF_fua_HandleValid:
+			return zx::acshandles::ActorOf( args[0] ) != NULL;
+
+		case ACSF_fua_HandlePointer:
+			actor = zx::acshandles::ActorOf( args[0] );
+			return actor != NULL ? zx::acshandles::HandleFor( COPY_AAPTR( actor, args[1] )) : 0;
+
+		// [Doruk-Aksoy] A stale handle keeps the activator the script had.
+		case ACSF_fua_SetActivatorHandle:
+			actor = zx::acshandles::ActorOf( args[0] );
+			if ( actor == NULL )
+				return 0;
+			activator = actor;
+			return 1;
 
 		// [Doruk-Aksoy] uzdoom@a1e8d83724 + da74b9df95: SetMusicVolume(fixed volume), a factor on the song's own volume until the level ends.
 		case ACSF_SetMusicVolume:
