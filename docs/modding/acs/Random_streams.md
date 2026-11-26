@@ -22,6 +22,9 @@ int rooms = fua_Random( "dungeon", 4, 9 );
 fixed jitter = fua_FRandom( "sparks", -0.5, 0.5 );
 ```
 
+zt-bcc with `-target fua` also takes ZScript's own spelling, `random[Dungeon]( 4, 9 )`, `frandom[Sparks]( -0.5,
+0.5 )` and `setrandomseed[Dungeon]( 1234 )`, which compile to the same calls.
+
 - **Draws from a stream move no other.** `Random()`'s sequence, DECORATE's `random[...]` streams and the
   engine's own are untouched, `compat_oldrandom` or not.
 - **Names ignore case,** up to 64 characters. An empty name draws nothing and returns 0.
