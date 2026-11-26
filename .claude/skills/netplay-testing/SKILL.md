@@ -33,8 +33,10 @@ node src/cli.mjs netplay --quit     # stops the set by its tokens
   order, so packets arrive in bursts. A lone value applies to every client; a scenario config takes `jitter` too.
 - `--for-user` leaves the first client's input unlocked for the user to play, with every other client locked.
 - Ports: the user's own game is on bridge 7801; netplay uses 7820 and up and game ports 10820 and up, the
-  scenarios 7840 and 10840 by default, a scenario's game port always its bridge port + 3000, so a session's
-  own bridge port (787x) keeps its game port its own too. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
+  scenarios 7840 and 10840 by default. A game port is always its bridge port + 3000 (`--port P` on netplay and
+  scenarios hosts on P+3000), so a session's own bridge port (787x) keeps its game port its own too; an engine that
+  finds its game port taken binds the next one up, and fuactl then stops the set rather than let its clients join
+  another session's server. Quit by token (`netplay --quit`, `quit --port P`), never by process name.
 - Cheats are on from launch (`sv_cheats 1`), since a latched change reaches a joined client only with the next
   map; `god` and `give` typed on a client work, and so do the dev-mode tools (`features/dev-mode`), which a
   client of a server without cheats is refused. A scenario config's `cheats: false` launches without. `setpos` and `sim.pause` are refused in a netgame: drive players with

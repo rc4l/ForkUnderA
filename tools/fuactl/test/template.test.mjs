@@ -352,6 +352,7 @@ test("a matrix names one cvar set per value, each laid on every side over the ru
 test("a suite's port goes on every scenario over the run's own adjustment, a skipped or absent one left as it is", () => {
   const opts = { name: "t", port: 7796, sides: [{ name: "vk", gl: false }] };
   assert.equal(portAdjust(7872)(opts).port, 7872);
+  assert.equal(portAdjust(7872)(opts).gamePort, 10872, "a netgame's server hosts on that port's own game port, not the default every suite shares");
   assert.equal(opts.port, 7796, "the scenario's own options are left alone");
   const seen = [];
   const run = portAdjust(7872, (o, compare) => { seen.push(compare); return withEverySideCvars(o, { y: "1" }); });

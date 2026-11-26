@@ -12,7 +12,7 @@ import { attach } from "./session.mjs";
 import { scaled } from "./timeouts.mjs";
 import { decodePNG, boxDiff } from "./pngcore.mjs";
 import { runSoak } from "./telemetry.mjs";
-import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses, setCrash } from "./netplay.mjs";
+import { launchNetplay, closeNetplay, seamViolations, fillMisses, replicationMisses, setCrash, gamePortFor, assertGamePort, readEngineLog } from "./netplay.mjs";
 
 // [rc4l] The repo's own Freedoom 2, found from this file so the harness runs from any checkout.
 export const FREEDOOM2 = fileURLToPath(new URL("../../freedoom/freedoom2.wad", import.meta.url));
@@ -174,11 +174,11 @@ export function matrixSets(text) {
   return m[2].split(",").map((v) => ({ [m[1]]: v }));
 }
 
-// [Doruk-Aksoy] An adjustment that runs each scenario's engine on `port` over whatever the run adjusts, so one session's suite never meets another's on the default port.
+// [Doruk-Aksoy] An adjustment that runs each scenario's engine on `port`, and a netgame's server on that port's game port, over whatever the run adjusts, so one session's suite never meets another's.
 export function portAdjust(port, adjust = (o) => o) {
   return (opts, compare) => {
     const a = adjust(opts, compare);
-    return a && !a.skip ? { ...a, port } : a;
+    return a && !a.skip ? { ...a, port, gamePort: gamePortFor(port) } : a;
   };
 }
 
@@ -280,6 +280,7 @@ export async function compareHosted({ name, wad, maps, sides = [{ name: "vk" }],
       const sc = await attach(server);
       conns.push(sc);
       await cap.waitInLevel(sc, scaled(60000));
+      assertGamePort(readEngineLog(server), gamePort);
       const client = await launchInstance({ port: port + 1, iwad, extraArgs: ["-file", wadPath, ...(side.webgpu ? ["-webgpu"] : [])], connect: `127.0.0.1:${gamePort}`, cvars: { fua_render_in_background: 1 } });
       insts.push(client);
       const cc = await attach(client);
@@ -546,7 +547,7 @@ export const FILL_CHECK = { fua_copy_prescan_check: 1 };
 
 // [rc4l] Each netplay configuration (a name and its players, observers, per-client lag and loss, client cvars) hosted on each map and judged by judgeNetplay(set, label, { wadPath, iwad, map, config }) with the whole set: for what a netgame splits between a server, the players and those watching them.
 // [Doruk-Aksoy] The game port follows the bridge port (7840 hosts on 10840), so two sessions' sets on bridge ports of their own never share a game port.
-export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = port + 3000, judgeNetplay }, deps = {}) {
+export async function compareNetplay({ name, wad, maps, configs, iwad = FREEDOOM2, port = 7840, gamePort = gamePortFor(port), judgeNetplay }, deps = {}) {
   const { launch = launchNetplay, close = closeNetplay, seams = seamViolations, fills = fillMisses, crash = setCrash,
     replication = async (set) => replicationMisses(await cap.exec(set.server.c, "fua_net_replication")) } = deps;
   const wadPath = writeTemplateFile(name, wad);
