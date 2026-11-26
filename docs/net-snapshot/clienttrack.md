@@ -200,6 +200,8 @@ Report readings, per frame or per window (each feeds a `[snap]` line):
   quota, terminal promotions, returns from a hold, band contents and what the contested set owes.
 - `ServerPSpriteStats`, `ServerLocalStats`, `ServerMoverStats`, `TargetStats`, `OwnEnterStats`,
   `WireCensus`: per-stream counts and the encoding census.
+- `PropWalkStats`: property sets sent from a slot, and the walks a client's byte budget cut
+  short, both on the properties line.
 - `PendingFrames`, `BelievedCount`, `LastAckedSeq`, `AggregateHealth`, `GetCensus`,
   `ResetWindowStats`: client health and the visibility census.
 - `ReferenceCheckStats`: the reference check's ids in flight, ids at rest and psprites, and those

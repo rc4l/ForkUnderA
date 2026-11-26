@@ -63,6 +63,10 @@ void RepairStats(unsigned int& frames, unsigned int& entities,
 // which is sized to read 0.
 void ServerPSpriteStats(unsigned int & emitted, unsigned int & capped, bool reset);
 
+// Property sets the slot walk sent, and walks the byte budget cut short, the slots' or the
+// telling's, which is what a set waiting a frame longer than it should looks like.
+void PropWalkStats(unsigned int & sent, unsigned int & cutByBudget, bool reset);
+
 }} // namespace zx::netsnapshot
 
 // Local-block emission over all clients: `noId` and `noClient` must read 0, and

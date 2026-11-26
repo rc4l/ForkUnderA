@@ -568,6 +568,15 @@ void zx::netsnapshot::RepairStats(unsigned int& frames, unsigned int& entities,
 	}
 }
 
+void zx::netsnapshot::PropWalkStats(unsigned int & sent, unsigned int & cutByBudget,
+	bool reset)
+{
+	sent = g_propsEmitted;
+	cutByBudget = g_propsOutOfBytes;
+	if (reset)
+		g_propsEmitted = g_propsOutOfBytes = 0;
+}
+
 void zx::netsnapshot::MaybeStats(unsigned int& marked, unsigned int& leaves,
 	unsigned int& clearedEnter, bool reset)
 {

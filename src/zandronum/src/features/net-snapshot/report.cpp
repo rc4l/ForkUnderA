@@ -858,13 +858,16 @@ void zx::netsnapshot::snap_MaybeReport()
 		// Read before PropStats, which resets the window with the rest of them.
 		const unsigned int marked = g_propMarked, told = g_propsTold;
 		g_propsTold = 0;
+		unsigned int sent = 0, cutByBudget = 0;
+		PropWalkStats(sent, cutByBudget, true);
 		PropStats(live, changes, overflow, truncated, walks, steps, sweepMS, true);
 		const double tics = (g_stats.simTics > 0) ? (double)g_stats.simTics : 1.0;
 		snap_Say("[snap] properties: %.0f walks stepping %.0f slots a tic, sweep %.3f ms/tic"
-			" | %u entities off their class defaults, %u changes | %u marked, %u told"
-			" | %u OVER the table, %u names cut\n",
+			" | %u entities off their class defaults, %u changes"
+			" | %u marked, %u told, %u sent from a slot"
+			" | %u OVER the table, %u names cut, %u walks cut by the budget\n",
 			(double)walks / tics, (double)steps / tics, sweepMS / tics,
-			live, changes, marked, told, overflow, truncated);
+			live, changes, marked, told, sent, overflow, truncated, cutByBudget);
 	}
 
 	{
