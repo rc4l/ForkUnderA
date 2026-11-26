@@ -106,7 +106,7 @@ void TakeLight(ADynamicLight *light, LightRecord &r)
 	r.red = light->GetRed(); r.green = light->GetGreen(); r.blue = light->GetBlue();
 	// [Doruk-Aksoy] What carries the light: an attached light's actor, or a map light itself, as UZDoom's target is.
 	const AActor *carrier = light->IsOwned() && light->target != NULL ? static_cast<const AActor *>(light->target) : light;
-	r.intensity = zx::dynlights::ComputeLightIntensity(light->lightDefIntensity, (carrier->renderflags & RF_LIGHTMULTALPHA) != 0, FIXED2FLOAT(carrier->alpha));
+	r.intensity = zx::dynlights::ComputeLightIntensity(light->lightDefIntensity, (carrier->renderflags2 & RF2_LIGHTMULTALPHA) != 0, FIXED2FLOAT(carrier->alpha));
 	r.active = light->IsActive();
 	r.subtractive = light->IsSubtractive();
 	r.additive = light->IsAdditive();

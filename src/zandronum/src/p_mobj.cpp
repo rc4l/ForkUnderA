@@ -88,7 +88,7 @@
 #include "features/net-session/netrole.h"
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
 #include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] a mirror's own spawns
-#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff
+#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff, SendBlockedStop
 #include "cooperative.h"
 #include "invasion.h"
 #include "st_hud.h"
@@ -128,6 +128,8 @@ static_assert(zx::decorateuzdoom::kFlags8Moves[1].to == MF8_FULLVOLSEE && zx::de
 	&& zx::decorateuzdoom::kFlags8Moves[7].to == MF8_MAP07BOSS1 && zx::decorateuzdoom::kFlags8Moves[8].to == MF8_MAP07BOSS2, "flags8 remap");
 static_assert(zx::decorateuzdoom::kFlags3FullVolDeath == MF3_FULLVOLDEATH, "FULLVOLDEATH remap");
 static_assert(zx::decorateuzdoom::kFlagRehomeSaveVer <= SAVEVER, "the remap's save version is written");
+static_assert(zx::decorateuzdoom::kRenderFlags2LightMultAlpha == RF2_LIGHTMULTALPHA && zx::decorateuzdoom::kOldRenderLightMultAlpha == RF_DONTFLIP, "LIGHTMULTALPHA remap");
+static_assert(zx::decorateuzdoom::kRenderRehomeSaveVer <= SAVEVER, "the render remap's save version is written");
 
 // [rc4l] fov-interp: the player's chosen FOV, restored on respawn.
 EXTERN_CVAR (Float, fov)
@@ -572,6 +574,17 @@ void AActor::Serialize (FArchive &arc)
 	if (SaveVersion >= zx::decorateuzdoom::kFlagRehomeSaveVer)
 	{
 		arc << flags9;
+	}
+	// [Doruk-Aksoy] renderflags2 from 4539 on; an older save's LIGHTMULTALPHA sits at UZDoom's DONTFLIP and moves into it.
+	if (SaveVersion >= zx::decorateuzdoom::kRenderRehomeSaveVer)
+	{
+		arc << renderflags2;
+	}
+	else if (arc.IsLoading())
+	{
+		const zx::decorateuzdoom::SavedRenderFlags out = zx::decorateuzdoom::ComputeRehomedSaveRenderFlags(renderflags.GetValue());
+		renderflags = ActorRenderFlags::FromInt(out.renderflags);
+		renderflags2 = ActorRenderFlags2::FromInt(out.renderflags2);
 	}
 	// [Doruk-Aksoy] features/actormaterials: its fua_Material and own uniforms, from 4527 on.
 	zx::actormaterials::SerializeActor(arc, this);
@@ -2672,8 +2685,10 @@ explode:
 			}
 			else
 			{
+				const bool bWasMoving = ( mo->velx | mo->vely ) != 0;	// [Doruk-Aksoy] for SendBlockedStop
 				mo->velx = mo->vely = 0;
 				steps = 0;
+				zx::netreplication::SendBlockedStop( mo, bWasMoving );
 			}
 		}
 		else

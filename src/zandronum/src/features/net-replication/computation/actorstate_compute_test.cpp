@@ -41,6 +41,20 @@ TEST(ComputeSettledDeathZ, AWalkerBelowTheFloorItSteppedOntoIsSentStandingOnIt)
 	EXPECT_EQ(-16 * UNIT, ComputeSettledDeathZ(-32 * UNIT, -16 * UNIT, false));
 }
 
+// [Doruk-Aksoy] Seen in netjoinstomp: a joiner's telefrag threw a corpse still solid inside it, the server's stopped dead, and a client its own block missed kept it a 32-unit step off.
+TEST(ComputeSendsBlockedStop, AMovingNonPlayerStoppedByABlockSendsWhereItStopped)
+{
+	EXPECT_TRUE(ComputeSendsBlockedStop(false, true));
+}
+
+// [Doruk-Aksoy] A player's place goes with its own movement commands, and a mover already at rest changed nothing a client holds.
+TEST(ComputeSendsBlockedStop, APlayerOrAMoverAlreadyAtRestSendsNothing)
+{
+	EXPECT_FALSE(ComputeSendsBlockedStop(true, true));
+	EXPECT_FALSE(ComputeSendsBlockedStop(false, false));
+	EXPECT_FALSE(ComputeSendsBlockedStop(true, false));
+}
+
 // [Doruk-Aksoy] Standing on its floor or above it, falling, a death goes out where it is, and one without gravity is never moved.
 TEST(ComputeSettledDeathZ, OnOrAboveTheFloorOrWithoutGravityItIsWhereItIs)
 {

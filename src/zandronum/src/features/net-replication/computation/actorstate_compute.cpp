@@ -21,6 +21,8 @@ int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity)
 	return (!noGravity && z < floorz) ? floorz : z;
 }
 
+bool ComputeSendsBlockedStop(bool isPlayer, bool wasMoving) { return !isPlayer && wasMoving; }
+
 int ComputePuffSend(bool spawnState, bool hitThingSeeSound, bool attackSound, bool temporaryObituary)
 {
 	if (!spawnState) return kPuffNoNetID;

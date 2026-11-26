@@ -1751,6 +1751,7 @@ add_executable( zdoom WIN32
 	features/decorate-uzdoom/decorateexpr.cpp
 	features/decorate-uzdoom/uservars.cpp
 	features/acs-handles/acshandles.cpp
+	features/acs-fields/acsfields.cpp
 	features/acs-random/acsrandom.cpp
 	features/sprites/spritebuild.cpp
 	features/sprites/modelbuild.cpp

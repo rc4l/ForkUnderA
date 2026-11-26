@@ -217,7 +217,9 @@ enum FlagSet
 	FLAGSET_FUAFLAGS,
 	// [Doruk-Aksoy] renderflags and BounceFlags, which A_ChangeFlag changed on the server alone until now.
 	FLAGSET_RENDERFLAGS,
-	FLAGSET_BOUNCEFLAGS
+	FLAGSET_BOUNCEFLAGS,
+	// [Doruk-Aksoy] UZDoom's second render word.
+	FLAGSET_RENDERFLAGS2
 };
 
 enum ActorScaleFlag

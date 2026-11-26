@@ -282,8 +282,8 @@ test("a client the server never holds playing times out", async () => {
 });
 
 test("a command line's netplay options, with the defaults and the bad values refused", () => {
-  const o = netplayOptionsFromFlags({ map: "MAP02", file: "a.wad, b.pk3", players: "2", observers: "1", lag: "100,0", jitter: "0,40", "for-user": true, cvar: "x=1" }, () => ({ x: "1" }));
-  assert.deepEqual([o.map, o.files, o.players, o.observers, o.lag, o.jitter, o.forUser, o.clientCvars], ["MAP02", ["a.wad", "b.pk3"], 2, 1, "100,0", "0,40", true, { x: "1" }]);
+  const o = netplayOptionsFromFlags({ map: "MAP02", file: "a.wad, b.pk3", players: "2", observers: "1", lag: "100,0", jitter: "0,40", "for-user": true, cvar: "x=1", "server-cvar": "y=2" }, (v) => (v === "x=1" ? { x: "1" } : v === "y=2" ? { y: "2" } : {}));
+  assert.deepEqual([o.map, o.files, o.players, o.observers, o.lag, o.jitter, o.forUser, o.clientCvars, o.cvars], ["MAP02", ["a.wad", "b.pk3"], 2, 1, "100,0", "0,40", true, { x: "1" }, { y: "2" }]);
   const d = netplayOptionsFromFlags({});
   assert.deepEqual([d.map, d.files, d.players, d.observers, d.basePort, d.gamePort, d.forUser], ["MAP01", [], 1, 0, NETPLAY_BRIDGE_PORT, NETPLAY_GAME_PORT, false]);
   assert.throws(() => netplayOptionsFromFlags({ players: "two" }), /--players wants a whole number, not two/);

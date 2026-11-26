@@ -10,6 +10,7 @@ import { THING } from "../src/doomnums.mjs";
 import { runScenarioIfMain, compareEachLaunch, compareNetplay, isMain } from "../src/template.mjs";
 import { runUzdoom } from "../src/uzdoom.mjs";
 import * as cap from "../src/capture.mjs";
+import { SNAP_SERVER_CVARS } from "../src/netplay.mjs";
 
 const ROOM = { heightfloor: 0, heightceiling: 256, texturefloor: "FLOOR4_8", textureceiling: "CEIL3_5", lightlevel: 192 };
 export const ROOM_SIZE = 2048, SPACING = 192, FIRST_NUM = 31000;
@@ -336,7 +337,8 @@ export async function judgeNetplay(set, label) {
 
 // [Doruk-Aksoy] Monsters kept offline, since the infighting checks are monsters (none of them moves or attacks).
 export const SIDES = [{ name: "vk", launchCvars: { sv_nomonsters: 0 } }];
-export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }];
+// [Doruk-Aksoy] The legacy netcode and the snapshot overhaul.
+export const CONFIGS = [{ name: "lan", players: 1, observers: 1 }, { name: "snap", players: 1, observers: 1, serverCvars: SNAP_SERVER_CVARS }];
 
 // [Doruk-Aksoy] Offline first, then hosted with a player and an observer.
 export async function compareOfflineAndOnline(opts, { offline = compareEachLaunch, online = compareNetplay } = {}) {
