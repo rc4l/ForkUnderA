@@ -7,6 +7,9 @@
 #include "tables.h"
 #include "textures/textures.h"
 
-FTextureID gl_GetSpriteFrame(unsigned sprite, int frame, int rot, angle_t ang, bool *mirror);
+FTextureID gl_GetSpriteFrame(unsigned sprite, int frame, int rot, angle_t ang, bool *mirror, bool spriteFlip = false);
+
+// [Doruk-Aksoy] An actor's rotation for a view angle relative to it, and whether it is drawn mirrored once its XFLIP and SPRITEFLIP render flags count, as UZDoom.
+FTextureID gl_GetActorSpriteFrame(unsigned sprite, int frame, angle_t ang, DWORD renderflags, bool *mirror);
 
 #endif // ZX_SPRITEFRAME_H

@@ -9,7 +9,14 @@
 namespace zx { namespace sprites {
 
 // [rc4l] The rotation for a view angle relative to the actor (BAM) and whether it is drawn mirrored, a symmetric frame (first two rotations sharing a texture) not being offset by half a step.
-int ComputeSpriteRotation(unsigned int angle, bool symmetric, unsigned int flipMask, bool &mirror);
+// [Doruk-Aksoy] With spriteFlip (RF_SPRITEFLIP) the angle is turned the other way round first, as UZDoom's spritedef_t::GetSpriteFrame does for flipagain.
+int ComputeSpriteRotation(unsigned int angle, bool symmetric, unsigned int flipMask, bool &mirror, bool spriteFlip = false);
+
+// [Doruk-Aksoy] Whether an actor's rotation is drawn mirrored once its RF_XFLIP and RF_SPRITEFLIP each turn it over, as UZDoom's HWSprite::Process.
+bool ComputeSpriteDrawnMirror(bool rotationMirror, bool xflip, bool spriteFlip);
+
+// [Doruk-Aksoy] A sprite's top and bottom texture coordinates, swapped for RF_YFLIP as UZDoom's HWSprite::Process.
+void ComputeSpriteVFlip(bool yflip, float &vt, float &vb);
 
 }} // namespace zx::sprites
 
