@@ -4095,7 +4095,7 @@ c058ab9cc9ac17a23a86964387e9f138359935f1	2016-06-05T15:34:51Z	Fixed non-standard
 c176d38b7e8992f006a99950a249848ba0a0f039	2016-06-05T16:41:08Z	Fixed compilation with Clang	pending		/
 e2bcf5f4d71b01509d8a9b52d791e62e4e5fa3c7	2016-06-05T19:28:51Z	Merge pull request #1 from alexey-lysiuk/non_msvc	pending		/
 e58c6de7d68cb6c901a85a676bcae2243c524d51	2016-06-05T20:14:40Z	DONTFLIP flag prevents the backside from flipping over.	pending		/
-53837de17dd86407fc3fba2a61faf3aa35b78001	2016-06-05T20:21:19Z	Added DONTFLIP flag.	pending		/
+53837de17dd86407fc3fba2a61faf3aa35b78001	2016-06-05T20:21:19Z	Added DONTFLIP flag.	ported	RF_DONTFLIP at UZDoom's 0x80000 (#466) and its DECORATE row; a name only, read by no hardware renderer, as in UZDoom	109e79cfe
 b2d2389343cbd2ac8247a321cf229a22bb14956d	2016-06-05T20:51:23Z	Fixed: Slanted flat + roll sprites didn't take DONTFLIP into account.	pending		/
 1703842a9404f8c12ced1a2547714f05bfea5873	2016-06-06T08:48:40Z	- fixed some issues with teleport fog:	pending		/
 c5fcfb664f210996eadc22e20c036b50b4064abb	2016-06-06T22:55:52Z	Changed rgba renderer to use a command queue system for its drawers	pending		/
@@ -6935,7 +6935,7 @@ e235d83e5b049aef2e82bc4ea1cf38a499f6f7fb	2017-01-19T02:19:39Z	Merge branch 'mast
 3c30b59babc5b01314cc1cea988bd8ff5d71b0a2	2017-01-19T22:42:12Z	more inventory scriptification	pending		/
 545ae678e8a1315e08773a1991a1e8e5eb954a68	2017-01-19T23:22:29Z	Merge remote-tracking branch 'gzdoom/master' into qzdoom	pending		/
 62fb5d87c851c3de72658a4f2ccee59f1f911c7e	2017-01-19T23:48:21Z	- fixed: Remove ccmd should check if an object is actually an inventory object before attempting to check its owner. (Ooops!)	pending		/
-c880b26d985ced8c15d22a6511516df736ad619a	2017-01-20T00:11:36Z	- scriptified MorphProjectile and CustomSprite.	pending		/
+c880b26d985ced8c15d22a6511516df736ad619a	2017-01-20T00:11:36Z	- scriptified MorphProjectile and CustomSprite.	adapted	only the XFLIP and YFLIP DECORATE rows, with their sprite drawing on GL and the backend; the scriptification is never ours (no ZScript)	109e79cfe
 9d828a7ca08c72930af0beba3edbc2cd019fe683	2017-01-20T00:42:21Z	- marked all virtual overrides in DSBarInfo with the 'override' keyword so that I do not have to search for them again.	pending		/
 e52772745be154f58566be95a75e45e2ad8069d5	2017-01-20T04:07:14Z	Merge https://github.com/coelckers/gzdoom	pending		/
 f3159af211f6aa052863f57a6761eb6c22c1b984	2017-01-20T09:03:33Z	- fixed: Remove ccmd should check if an object is actually an inventory object before attempting to check its owner. (Ooops!)	pending		/
@@ -8717,7 +8717,7 @@ c3808bbc2d142d2350db231f34c8127995d15ff9	2017-06-04T00:17:44Z	- Add licenses to 
 e5eb173165ff85e993298be88bef77f17ab2498e	2017-06-04T09:33:37Z	- fixed minor menudef mistake	pending		/
 01f88cfb16eb151e72fa6ab40da57c3585831971	2017-06-04T10:30:35Z	- Added 'canonical transparency' cvar r_canontrans - this simply turns off transparency for Doom objects that were marked as transparent sometime in ZDoom's development cycle	pending		/
 c252b5d753e5d3fa5ab8012987007cf6ee826e46	2017-06-04T10:30:35Z	- fixed: forgot to assign +ZDOOMTRANS to rockets	pending		/
-89b372cb0151fbcdca76bad604ef29c78c8d700f	2017-06-04T10:30:35Z	- Changed MF7_SPRITEFLIP, MF8_ZDOOMTRANS to RenderFlags - Added RF_ZDOOMADD - renamed r_canontrans to r_vanillatrans - this developer's insanity level has increased by 231%.	pending		/
+89b372cb0151fbcdca76bad604ef29c78c8d700f	2017-06-04T10:30:35Z	- Changed MF7_SPRITEFLIP, MF8_ZDOOMTRANS to RenderFlags - Added RF_ZDOOMADD - renamed r_canontrans to r_vanillatrans - this developer's insanity level has increased by 231%.	pending	SPRITEFLIP done in 109e79cfe (rotation picked the other way round, mirror turned); left: RF_ZDOOMTRANS, RF_ZDOOMADD, r_vanillatrans	/
 a937f709aab0d9c16e4d0b47606022c4bfe0c963	2017-06-04T10:30:35Z	- Added +ZDOOMADD to all Heretic, Hexen, and Strife actors that needed it (that I know of...) - this developer's insanity level increased another 21%	pending		/
 2997f31f9f6616a6ee32763306a61c5e17a9f02e	2017-06-04T10:30:35Z	- removed ZDOOMADD and updated actors in question with ZDOOMTRANS	pending		/
 10a9d087f1cc36794f97688962f0b68111dfc6e1	2017-06-04T10:30:35Z	- fixed: missed the golden wand puff for the +ZDOOMTRANS flag	pending		/
@@ -18000,7 +18000,7 @@ d56b84d09484b1a33ad09a75340c6fedfeba481b	2025-04-23T21:49:23Z	hook up includes f
 b7d6f0b1a45fc6fd93344f795d113f30efe81c35	2025-04-27T04:31:13Z	Added am_showlevelname CVar	pending		/
 a393a6ac56b94517988fb96d60be1d6bf04b134a	2025-04-29T10:53:02Z	fix dsdhacked actors not spawning when placed in a map	pending		/
 80c36d4069db5ed92c100d4d26c3add3576b2d41	2025-04-29T11:05:38Z	add a few commonly-used gzdoom-specific properties to the dehacked parser	pending		/
-c0d17bbda34015b214d5c96cb141ad02d8b0ddb1	2025-04-29T18:47:28Z	limit light alpha mult to renderflag	ported	RF_LIGHTMULTALPHA (renderflags 0x80000); the server already sends alpha changes	7d9be643
+c0d17bbda34015b214d5c96cb141ad02d8b0ddb1	2025-04-29T18:47:28Z	limit light alpha mult to renderflag	ported	RF2_LIGHTMULTALPHA (renderflags2 0x400, as UZDoom, since #466); the server already sends alpha changes	7d9be643
 3780c5910ae378fb2759e60554943cdcc024ce37	2025-05-01T13:15:46Z	Bone Manip part 1 - bone setters	pending		/
 0d612553a42178be8578cd642c4383a7e8673c3b	2025-05-02T13:36:05Z	- do not allow sv_gravity to be INF	pending		/
 502af6adb9d00c6d9cc603bd9f5e11796f2eb7b8	2025-05-02T13:37:59Z	SSECMF_DRAWN was being skipped for some cases, affecting texture automap drawing. See bug #3066.	pending		/
