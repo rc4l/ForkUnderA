@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildVsyncPacingWad, pacingOf, inRhythm, judgePacing, STALLS_US } from "../scenarios/vsyncpacing.mjs";
+import { buildVsyncPacingWad, pacingOf, inRhythm, judgePacing, STALLS_US, swapchainImages, pacingEvidence } from "../scenarios/vsyncpacing.mjs";
 
 const rows = (times, vsync = 1) => times.map((ms) => ({ "frame/ms": ms, "frame/vsync": vsync }));
 const even = pacingOf(rows(Array(144).fill(6.94)));
@@ -51,4 +51,14 @@ test("no trials, vsync off or an empty recording fail", () => {
   assert.equal(judgePacing("x", [{ stall: 8000, first: rhythm, after: off }]).failed, 1);
   const none = { frames: 0, mean: 0, short: 0, vsync: true };
   assert.equal(judgePacing("x", [{ stall: 8000, first: none, after: null }]).line, "FAIL x: no frames were recorded after the 8000 us stall");
+});
+
+// [Doruk-Aksoy] A failure names the swapchain it ran on and how busy the display was, since the clustered failures never reproduced.
+test("a failure's evidence reads the last swapchain from the log and names the frames' file", () => {
+  const log = "Diligent swapchain: color 28, depth 40 (1280x720), 3 images\nvid_vsync=false\nDiligent swapchain: color 28, depth 40 (1280x720), 2 images\n";
+  assert.equal(swapchainImages(log), 2);
+  assert.equal(swapchainImages("no backend here"), null);
+  assert.equal(swapchainImages(undefined), null);
+  assert.equal(pacingEvidence({ images: 2, others: 3, file: "f.json" }), "the swapchain had 2 images, 3 other engine(s) were open; frames in f.json");
+  assert.equal(pacingEvidence({ images: null, others: 0, file: "f.json" }), "the swapchain had an unreported number of images, 0 other engine(s) were open; frames in f.json");
 });

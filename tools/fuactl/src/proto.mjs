@@ -61,10 +61,11 @@ export function partitionRegistry(entries, isAlive) {
 //   orphan : engine alive, but its launcher (ppid>0) is dead  -> a true hanging instance, safe to kill
 //   owned  : engine alive and its launcher is alive, OR ppid is untracked (<=0) -> LEAVE ALONE by default
 // so `reap --kill` reaps only orphans; killing owned/untracked ones requires an explicit --all.
-export function classifyInstances(entries, isAlive) {
+// [Doruk-Aksoy] isEngine says the entry's pid is still an engine: an entry outlives a killed engine and its pid is soon another program's, which a liveness check alone then killed.
+export function classifyInstances(entries, isAlive, isEngine = isAlive) {
   const dead = [], orphan = [], owned = [];
   for (const e of entries) {
-    if (!e || typeof e.pid !== "number" || !isAlive(e.pid)) { dead.push(e); continue; }
+    if (!e || typeof e.pid !== "number" || !isEngine(e.pid)) { dead.push(e); continue; }
     const ppid = e.ppid;
     if (Number.isInteger(ppid) && ppid > 0 && !isAlive(ppid)) orphan.push(e);
     else owned.push(e); // launcher alive, or no launcher recorded -> don't touch without --all
@@ -73,8 +74,8 @@ export function classifyInstances(entries, isAlive) {
 }
 
 // [rc4l] The live instances registered on `port`, each marked whether it is an orphan (its launcher gone); dead entries are left out.
-export function liveOnPort(entries, port, isAlive) {
-  const { orphan, owned } = classifyInstances(entries.filter((e) => e && String(e.port) === String(port)), isAlive);
+export function liveOnPort(entries, port, isAlive, isEngine = isAlive) {
+  const { orphan, owned } = classifyInstances(entries.filter((e) => e && String(e.port) === String(port)), isAlive, isEngine);
   return [...owned.map((e) => ({ ...e, orphan: false })), ...orphan.map((e) => ({ ...e, orphan: true }))];
 }
 

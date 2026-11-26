@@ -86,6 +86,15 @@ test("a harness instance keeps the OS mouse out of the game", () => {
   assert.equal(setValue(args, "use_joystick"), "0");
 });
 
+// [Doruk-Aksoy] A test engine wrote Continue records and test wads into the player's own folder, and a disconnecting test client was sent back to an earlier test's save.
+test("a driven launch keeps its user folder beside its config, a hands-on one the player's, and userDir names another", () => {
+  const valueOf = (args) => { const i = args.indexOf("-fua_userdir"); return i < 0 ? null : args[i + 1]; };
+  assert.equal(valueOf(engineArgs({}, path.join("tmp", "fuactl-x", "fua-bridge.ini"))), path.join("tmp", "fuactl-x", "profile"));
+  assert.equal(valueOf(engineArgs({ allowOsInput: true }, "x.ini")), null);
+  assert.equal(valueOf(engineArgs({ userDir: "shared" }, "x.ini")), "shared");
+  assert.equal(valueOf(engineArgs({ allowOsInput: true, userDir: "mine" }, "x.ini")), "mine");
+});
+
 // [Doruk-Aksoy] focus false or true decides for one launch, and otherwise FUACTL_NO_FOCUS (set, and not 0) for every launch.
 test("a launch leaves the user's foreground alone when asked to, or when FUACTL_NO_FOCUS says so", () => {
   assert.equal(launchesWithoutFocus({}, {}), false);
