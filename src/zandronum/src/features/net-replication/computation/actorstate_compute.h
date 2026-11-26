@@ -20,6 +20,9 @@ bool ComputeAddPendingHealth(std::vector<int> &pending, int netId);
 // [Doruk-Aksoy] The height a death is sent at: a walker killed after stepping onto a higher floor, before the next tic's P_ZMovement raised it there, stands below it, and that raise came after the send, so clients kept a corpse a step low on narrow stairs; one with gravity is sent standing on the floor.
 int64_t ComputeSettledDeathZ(int64_t z, int64_t floorz, bool noGravity);
 
+// [Doruk-Aksoy] Whether a non-sliding mover stopped dead by a block sends where it stopped: a non-player that was moving, since a client its block did not stop (a spawn telefrag's corpse, still solid inside the joiner) moved on the velocity it was sent.
+bool ComputeSendsBlockedStop(bool isPlayer, bool wasMoving);
+
 // [rc4l] How a server sends a puff: with no net id, with one, or to each client in turn.
 enum PuffSend { kPuffNoNetID, kPuffWithNetID, kPuffEachClient };
 

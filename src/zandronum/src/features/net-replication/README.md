@@ -43,6 +43,12 @@ off on a flat floor and a step off on narrow stairs (`netmonsterstairs`). A walk
 floor, before the next tic's `P_ZMovement` raised it there, is first stood on that floor (`ComputeSettledDeathZ`, on a
 server only): the raise came after the send, and every client kept the corpse a step low.
 
+A moving non-player that `P_XYMovement` stops dead against a block sends its place and velocity whole
+(`SendBlockedStop`, `ComputeSendsBlockedStop`). A joiner whose start is blocked spawns on another and telefrags what
+stands there, and the kickback throws the corpse up to 32 units a tic in a random direction. The server's corpse is
+still solid inside the joiner, so it stops where it stood. A client whose copy the joiner did not block yet moved it a
+tic on the velocity it was sent, then kept that step for good (`netjoinstomp`).
+
 ## Players
 
 A server script's `SetUserCVar` that changes a player's mod user cvar sends it to every client at once
@@ -83,6 +89,7 @@ code are counted by `net-sends-through-replication` (`tools/boundary-rules.json`
 - `p_acs.cpp` `SetMapUsedStatus`: `SendMapUsedStatus` when a script changed an entry's used status.
 - `p_acs.cpp` `SetSelectedInventory`: `SendSelectedInventory` once a script selected a held inventory-bar item.
 - `p_mobj.cpp` `P_HitWater`: `SendFloorClip` when a small splash's SmallClip changed the splash's clip.
+- `p_mobj.cpp` `P_XYMovement`: `SendBlockedStop` where a blocked mover that cannot slide stops dead.
 - `p_acs.cpp` `SetActorProperty`: `SendThingProperty` when a script changed a pawn's `APROP_RejumpDelay`.
 - `thingdef/thingdef_codeptr.cpp` `A_SetTranslation`: `SendThingTranslation` once a state changed the actor's translation (`features/trnslate`).
 - `p_mobj.cpp` `AActor::Slam`: `SendThingFrame` when a charger enters its class's own `Slam` state (`features/decorate-uzdoom`).

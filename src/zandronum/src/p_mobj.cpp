@@ -88,7 +88,7 @@
 #include "features/net-session/netrole.h"
 #include "features/net-snapshot/capture.h"   // [Kaori-Chani] the snapshot path's server side
 #include "features/net-snapshot/ghostactor.h"   // [Kaori-Chani] a mirror's own spawns
-#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff
+#include "features/net-replication/actorstate.h"   // [rc4l] SendFloorClip, SendPuff, SendBlockedStop
 #include "cooperative.h"
 #include "invasion.h"
 #include "st_hud.h"
@@ -2672,8 +2672,10 @@ explode:
 			}
 			else
 			{
+				const bool bWasMoving = ( mo->velx | mo->vely ) != 0;	// [Doruk-Aksoy] for SendBlockedStop
 				mo->velx = mo->vely = 0;
 				steps = 0;
+				zx::netreplication::SendBlockedStop( mo, bWasMoving );
 			}
 		}
 		else
